@@ -200,7 +200,7 @@ pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
 /// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at
 /// comptime, and each `roleOf` reads its own entries as a CONTIGUOUS RUN off the first of them — so
 /// inserting a kind in the middle silently renumbers all of it.
-pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer };
+pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, florid_ravager, mushroom_mage };
 
 pub fn foeName(k: FoeKind) [:0]const u8 {
     return switch (k) {
@@ -222,6 +222,8 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
         .bone_knight => "Bone Knight",
         .delver => "Delver",
         .necromancer => "Necromancer",
+        .florid_ravager => "Florid Ravager",
+        .mushroom_mage => "Mushroom Mage",
     };
 }
 
@@ -2020,6 +2022,22 @@ fn parseVal(comptime T: type, tok: []const u8) !T {
 
 pub const DIR = "worlds";
 pub const START_MAP = DIR ++ "/01_fallen_plain" ++ EXT;
+
+/// **THE MAP THE GAME ACTUALLY BOOTS**, which is `START_MAP` unless a DEV FLAG has overridden it
+/// (`--map <path>`). A knob for whoever is building a creature, and nothing the player can reach: there is
+/// no menu for it and no save carries it. It exists so a new thing is tried in a TEST MAP of its own
+/// (`worlds/test_*.world`) instead of being dropped into the authored world to see it run — that file is
+/// the GAME, and scratch does not go in it.
+var bootMap: []const u8 = START_MAP;
+
+pub fn startMap() []const u8 {
+    return bootMap;
+}
+
+/// Set once, from `main`, before anything loads. Not restored: the process runs one map.
+pub fn setStartMap(path: []const u8) void {
+    bootMap = path;
+}
 
 var textBuf: [1 << 20]u8 = undefined;
 

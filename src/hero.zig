@@ -707,6 +707,30 @@ pub fn armourOf(worn: Worn) f32 {
     return a;
 }
 
+/// …AND EVERY CHARM ON IT, ADDED UP. A FREE function for `armourOf`'s own reason: the character page prices a
+/// set he is only considering (`book.derive`), and the red bar's length is one of the numbers that moves.
+pub fn charmOf(worn: Worn) item.Charm {
+    var out = item.Charm{ .slot = .ring };
+    inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
+        if (worn.at(@enumFromInt(f.value))) |k| {
+            switch (item.equip(k)) {
+                .charm => |c| {
+                    out.leech += c.leech;
+                    out.hpFrac += c.hpFrac;
+                },
+                else => {},
+            }
+        }
+    }
+    return out;
+}
+
+/// THE RED BAR'S LENGTH FOR A SHEET AND A SUIT — the sheet's own figure less whatever a charm is eating.
+/// `Hero.refitHp` is this same expression on the live man; the page needs it off a loadout.
+pub fn hpMaxOf(sheet: statsmod.Sheet, worn: Worn) f32 {
+    return sheet.hp() * (1.0 - mathx.clampF(charmOf(worn).hpFrac, 0, 0.9));
+}
+
 /// …AND WHAT IT IS WORTH IN POINTS OF SKILL, folded onto a sheet that already carries the tree's (`item.Boon`).
 /// Walked over the SOCKETS rather than named per piece, so a boon in a socket nobody thought about still counts.
 pub fn boonsOnto(worn: Worn, sheet: *statsmod.Sheet) void {
@@ -1152,10 +1176,11 @@ pub const Off = Armament;
 /// mid-fight.
 pub const HAND_SLOTS: usize = 2;
 
-/// WHICH HAND. Indices into `Hero.hands`, named because `[0]`/`[1]` at thirty call sites is a coin flip.
+/// WHICH HAND — the `hand` argument of `Hero.equip`/`slotAt`, named because `0`/`1` at thirty call sites is a
+/// coin flip. There is no array behind them: the four slots are `arm`/`armAlt` and `off`/`offAlt`, and those
+/// two functions are the only place the pair is resolved.
 pub const RIGHT: usize = 0;
 pub const LEFT: usize = 1;
-pub const HANDS: usize = 2;
 
 /// EXHAUSTIVE, so a sixth armament that also does not swing is a row here and no edit elsewhere. A FREE
 /// function rather than a `Hero` method, because the character book prices a CANDIDATE armament.
@@ -2685,19 +2710,7 @@ pub const Hero = struct {
     /// EVERY CHARM HE HAS ON, ADDED UP — walked over the sockets because there are two fingers now, and a second
     /// band read off the first socket's name would have been a piece of gear silently doing nothing.
     pub fn charm(self: *const Hero) item.Charm {
-        var out = item.Charm{ .slot = .ring };
-        inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
-            if (self.worn.at(@enumFromInt(f.value))) |k| {
-                switch (item.equip(k)) {
-                    .charm => |c| {
-                        out.leech += c.leech;
-                        out.hpFrac += c.hpFrac;
-                    },
-                    else => {},
-                }
-            }
-        }
-        return out;
+        return charmOf(self.worn);
     }
 
     /// **THE LIVE SHEET IS THE TREE PLUS WHAT HE HAS ON**, and it is rebuilt here rather than at either of the two
@@ -2737,7 +2750,7 @@ pub const Hero = struct {
     /// that jumped either way would be the one number on screen the player cannot trust.
     fn refitHp(self: *Hero) void {
         const frac = if (self.vit.hpMax > 1e-4) self.vit.hp / self.vit.hpMax else 1.0;
-        self.vit.hpMax = self.sheet.hp() * (1.0 - mathx.clampF(self.charm().hpFrac, 0, 0.9));
+        self.vit.hpMax = hpMaxOf(self.sheet, self.worn);
         self.vit.hp = mathx.minF(self.vit.hpMax, self.vit.hpMax * frac);
     }
 

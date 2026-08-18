@@ -6,6 +6,7 @@ const combat = @import("combat.zig");
 const foe = @import("foe.zig");
 const wf = @import("worldfmt.zig");
 const sfx = @import("audio.zig");
+const heromod = @import("hero.zig"); // …only for the SPEEDS its own chase is bracketed against, in tests
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -25,6 +26,9 @@ const HIDE = rgba(8, 8, 11, 255); // the big smooth back — the biggest face on
 const HIDE_LO = rgba(12, 11, 15, 255); // belly and flanks
 const PLATE = rgba(17, 16, 21, 255); // the sunk dorsal plates
 const CLAW = rgba(44, 40, 32, 255); // horn: SMALL and proud, so it is the one thing here allowed to run pale
+/// …AND THE WORN TIPS, paler still. The claws are the one part of this animal the eye is meant to find first
+/// and the ends of them are what it finds: bone-dry horn, polished by the ground it digs.
+const CLAW_LT = rgba(96, 88, 70, 255);
 const SNOUT = rgba(20, 17, 14, 255);
 const EYE = rgba(70, 66, 54, 255); // tiny and milky — it does not live by them
 const SOIL = rgba(24, 19, 14, 255); // the mound MESH — an albedo, so it is authored near-black like the rest
@@ -65,7 +69,13 @@ pub const BURST_HIT = combat.Hit{ .dmg = 28, .poise = 42, .stance = 18 };
 pub const BURST_R: f32 = 1.9;
 
 const WALK_SPEED: f32 = 2.2;
-const TURN_RATE: f32 = 3.0;
+/// …and what it moves at once it has SEEN him, which is the difference between a creature crossing a field
+/// and a creature coming for you. Under the hero's sprint — you can still break away — and over his run, so
+/// backing off is a decision that costs ground rather than a free reset.
+const CHASE_SPEED: f32 = 3.9;
+/// It turns HARD on the surface: a burrower's whole body is a shoulder, and out of the ground the one thing
+/// it should not be is easy to walk around.
+const TURN_RATE: f32 = 4.2;
 /// WHAT THE POSED CLAW ACTUALLY REACHES off the creature's own axis. **MEASURED, NOT ARGUED** — a test walks
 /// the stroke frame by frame and brackets this from both sides, which is what caught the first pass declaring
 /// 2.9 m off a limb that arrived at 1.19.
@@ -78,8 +88,13 @@ const CLAW_BAND: f32 = CLAW_REACH + CLAW_SWEEP_R;
 const CLAW_KEEP: f32 = CLAW_BAND - 0.5; // …and inside this it stops closing
 pub const CLAW_WIND: f32 = 0.48; // >= foe.TELL_MIN, and the shoulder travels the whole of it
 const CLAW_STRIKE: f32 = 0.20;
-const CLAW_RECOVER: f32 = 0.52;
-const CLAW_CD: f32 = 1.9;
+/// **AND IT IS VICIOUS ON ITS FEET, NOT ONLY UNDER THEM** (owner: more vicious even when not underground).
+/// The surface kit was a courtesy — one stroke every 1.9 s off a body that walked at 2.2 m/s, so a delver
+/// caught above ground was a punching bag between dives and the whole creature lived in the burrow. The
+/// recovery is shorter, the cooldown is most of a second off, and it CLOSES rather than ambling: the thing
+/// that goes under the world is not supposed to be safe to stand next to when it comes out of it.
+const CLAW_RECOVER: f32 = 0.40;
+const CLAW_CD: f32 = 1.05;
 
 // THE DIVE, AND EVERYTHING UNDER IT.
 pub const DIVE_WIND: f32 = 0.62; // reared right up on its hind legs, forelimbs overhead: its biggest silhouette
@@ -98,12 +113,30 @@ pub const UNDER_DEPTH: f32 = 2.6;
 const SURGE_LOCK_R: f32 = 1.0; // it wants to be UNDER him before it commits
 /// THE MOUND'S TWO SIZES, NAMED ONCE. Written out at each of the three sites that set them they were the same
 /// four literals in three places, and the swell's start had to agree with the travelling ridge's rest or the
-/// dome jumped on the frame the mound stopped. The swell is DERIVED off the blow: the dome IS the picture of
-/// where it lands, so a bigger one promises ground the burst never reaches.
+/// dome jumped on the frame the mound stopped.
 const MOUND_TRAVEL_R: f32 = 1.05;
 const MOUND_TRAVEL_H: f32 = 0.28;
-const MOUND_SWELL_R: f32 = BURST_R * 0.86;
-const MOUND_SWELL_H: f32 = 0.55;
+
+/// **THE TELL IS THROWN EARTH, NOT A SWELLING DOME** (owner: instead of distending the bump, steadily add
+/// particles until he jumps out). The dome grew to `BURST_R * 0.86` and stood there — a mound inflating is a
+/// slow, soft read at exactly the moment the read has to be urgent, and a shape held for over a second stops
+/// being motion at all. What replaces it is a spray that BUILDS: a few clods at the commit, a fountain by the
+/// end, so the ground comes apart harder every frame and the eye is pulled by CHANGE rather than by size.
+/// The disc the blow lands on is still exactly `BURST_R` — the picture has simply stopped lying about it by
+/// being smaller than the thing it announces.
+///
+/// The mound itself HOLDS at its travelling size right to the burst, which is what keeps the spot honest: the
+/// ridge stopped there, and that is where it comes out.
+const MOUND_SWELL_R: f32 = MOUND_TRAVEL_R;
+const MOUND_SWELL_H: f32 = MOUND_TRAVEL_H;
+/// Clods a second at the START of the tell and at its END.
+const SURGE_SPRAY_0: f32 = 14.0;
+const SURGE_SPRAY_1: f32 = 190.0;
+/// …and the CURVE it builds along. Over 1 so most of the growth is LATE: a linear ramp spends its first half
+/// at a rate the player reads as ambient churn and then has nowhere left to go.
+const SURGE_SPRAY_CURVE: f32 = 2.4;
+/// How much harder the clods are thrown by the end. Rate alone is more of the same; the earth has to go UP.
+const SURGE_SPRAY_LIFT: f32 = 2.6;
 /// THE TELL, AND IT IS THE LONGEST THING IT DOES. The mound STOPS, the earth domes up over the spot and
 /// throws dirt; the blow lands where it stopped. Bracketed from below by its own dive wind, because the one
 /// move that arrives from a direction the camera cannot be turned toward may not be the one you get least
@@ -326,6 +359,9 @@ pub const Delver = struct {
     depth: f32 = 0,
     moundR: f32 = 0,
     moundH: f32 = 0,
+    /// **HOW FAR INTO THE SURGE'S BUILD IT IS**, 0..1 — read by `emitSpray` so the clods are thrown harder as
+    /// well as thicker. A field rather than a second clock: the shape is `updateSurge`'s alone.
+    surgeK: f32 = 0,
     /// …and how far the heap is drawn OUT ALONG ITS HEADING, as a multiple of its width. 1 is the round
     /// travelling mound and the surge's dome; the plough is the only thing that moves it (`MOUND_PLOUGH_LONG`).
     moundLong: f32 = 1,
@@ -577,7 +613,10 @@ pub const Delver = struct {
         // It walks where it is LOOKING — a low four-limbed body does not strafe — so the way round is read
         // through `Nav.aim` (the ogre's reading, not the kobold's).
         self.faceToward(self.nav.aim(self.pos, to), TURN_RATE, dt);
-        const moved = WALK_SPEED * self.scale * dt;
+        // **IT WALKS HOME AND IT RUNS AT HIM.** One speed for both was what made a surfaced delver something
+        // you could simply stroll away from — and a creature whose whole threat is the ambush has to be able
+        // to make you deal with it when the ambush is over.
+        const moved = (if (self.homing) WALK_SPEED else CHASE_SPEED) * self.scale * dt;
         mathx.stepXZ(&self.pos, self.fdir(), moved, bounds);
         // PHASE OFF DISTANCE, never time, or the limbs skate the moment anything scales the speed.
         self.gait += moved / (STRIDE * self.scale);
@@ -792,10 +831,12 @@ pub const Delver = struct {
         // IT SWELLS TO THE RING IT IS ANNOUNCING and no further — the dome IS the picture of where the blow
         // lands, so a bigger one promises ground the burst never reaches. And it stays LOW: what the player
         // has to see over it is his own feet.
-        self.moundR = lerpF(MOUND_TRAVEL_R, MOUND_SWELL_R, u);
-        self.moundH = lerpF(MOUND_TRAVEL_H, MOUND_SWELL_H, u);
+        // THE MOUND HOLDS ITS SIZE and the SPRAY is what builds (`SURGE_SPRAY_*`).
+        self.moundR = MOUND_SWELL_R;
+        self.moundH = MOUND_SWELL_H;
         self.shudder = u;
-        self.emitSpray(dt, 12.0 + 34.0 * u);
+        self.surgeK = std.math.pow(f32, u, SURGE_SPRAY_CURVE);
+        self.emitSpray(dt, lerpF(SURGE_SPRAY_0, SURGE_SPRAY_1, self.surgeK));
         if (self.t >= SURGE_DUR) {
             sfx.world(.delver_burst, self.pos);
             self.enter(.burst);
@@ -830,6 +871,7 @@ pub const Delver = struct {
             self.depth = 0;
             self.moundR = 0;
             self.moundH = 0;
+            self.surgeK = 0;
             self.armDive();
             self.enter(.heave);
         }
@@ -904,6 +946,10 @@ pub const Delver = struct {
         self.state = .idle;
         self.t = 0;
         self.idleWait = wait;
+        // THE SURGE'S BUILD GOES WITH IT. Left standing, the next thing this creature does inherits the
+        // fountain — a scuff or a dive wind throwing clods at the tell's own peak rate, which is the surge
+        // announcing itself when nothing is coming.
+        self.surgeK = 0;
     }
     /// A BLOW NEVER LANDS ON SOMETHING SUBMERGED, so a stun always finds it on the surface — but the depth is
     /// cleared here anyway, because a stagger arriving on the rise must not strand it half in the ground.
@@ -1060,6 +1106,7 @@ pub const Delver = struct {
     /// The earth jetting off the dome while it gathers, and off the drill on the way down.
     fn emitSpray(self: *Delver, dt: f32, rate: f32) void {
         if (rate <= 0) return;
+        const kick = 1.0 + (SURGE_SPRAY_LIFT - 1.0) * self.surgeK;
         self.fxAccum += rate * dt;
         while (self.fxAccum >= 1.0) {
             self.fxAccum -= 1.0;
@@ -1067,8 +1114,10 @@ pub const Delver = struct {
             const rr = self.fxRng.range(0.2, 1.0) * mathx.maxF(0.5, self.moundR) * self.scale;
             self.emit(
                 v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + 0.06, self.pos.z + mathx.sinf(a) * rr),
-                v3(mathx.cosf(a) * 0.8, self.fxRng.range(1.2, 3.0), mathx.sinf(a) * 0.8),
-                self.fxRng.range(0.3, 0.6),
+                // …AND HARDER AS IT BUILDS. `surgeK` is 0 everywhere but the surge, so every other caller of
+                // this emitter throws exactly what it always did.
+                v3(mathx.cosf(a) * 0.8 * kick, self.fxRng.range(1.2, 3.0) * kick, mathx.sinf(a) * 0.8 * kick),
+                self.fxRng.range(0.3, 0.6) * (1.0 + 0.5 * self.surgeK),
                 self.fxRng.range(0.05, 0.11),
                 0.03,
                 if (self.fxRng.float() < 0.4) CLOD_DK else CLOD,
@@ -1320,10 +1369,31 @@ fn clawMesh(side: f32) rl.Mesh {
     b.addCapsule(v3(0, 0, 0), v3(side * 0.05, -0.09, 0.40), 0.125, 0.10, 9, HIDE_LO); // the forearm
     b.addBlob(v3(side * 0.05, -0.10, 0.44), v3(0.14, 0.11, 0.13), 5, 10, HIDE_LO); // the pad it digs on
     b.setMat(.plain);
-    // THREE CLAWS, none of them alike and none of them a needle: blunt worn horn, longest in the middle.
-    b.addCapsule(v3(side * 0.10, -0.12, 0.50), v3(side * 0.12, -0.17, 0.72), 0.040, 0.021, 7, CLAW);
-    b.addCapsule(v3(side * 0.00, -0.13, 0.51), v3(0, -0.15, 0.78), 0.044, 0.023, 7, CLAW);
-    b.addCapsule(v3(side * -0.09, -0.12, 0.49), v3(side * -0.11, -0.16, 0.68), 0.036, 0.020, 7, CLAW);
+    // **THE CLAWS ARE THE CREATURE'S POINT AND THEY HAVE TO LOOK IT** (owner: more pronounced claws and
+    // nails). At 0.04 thick and 0.22 long they were three scratches on the end of a pad — a digging animal's
+    // whole argument is its hands, and on a body this dark the only thing that carries at distance is the pale
+    // horn on the front of it. Half again as long, half again as thick at the root, and hooked DOWN and UNDER
+    // rather than laid flat, which is what says they are for tearing earth rather than for standing on.
+    //
+    // Still THREE, still uneven, still longest in the middle, and **still none of them ends in a point** — the
+    // tip is a blunt capsule cap, because a rosette of needles is a hub of spokes. What makes them read as
+    // sharp is the TAPER (0.062 to 0.020, a hair over 3:1) and the hook, never a spike.
+    inline for (.{
+        .{ 0.11, -0.12, 0.50, 0.13, -0.30, 0.92, 0.056, 0.020 }, // outer
+        .{ 0.00, -0.13, 0.51, 0.00, -0.33, 1.02, 0.062, 0.022 }, // middle, the longest
+        .{ -0.09, -0.12, 0.49, -0.12, -0.28, 0.87, 0.050, 0.019 }, // inner
+    }) |c| {
+        // A KNUCKLE AT THE ROOT of each, so the horn comes OUT of something instead of being stuck on.
+        b.addBlob(v3(side * c[0], c[1] + 0.01, c[2] - 0.02), v3(c[6] * 1.5, c[6] * 1.4, c[6] * 1.6), 5, 8, HIDE_LO);
+        // …AND THE HORN IN TWO SEGMENTS, so the hook is a curve and not a straight spike leaning down.
+        const mx = side * (c[0] + c[3]) * 0.5;
+        const my = (c[1] + c[4]) * 0.5 + 0.035; // …the bend rides ABOVE the chord, which is what hooks it
+        const mz = (c[2] + c[5]) * 0.5;
+        b.addCapsule(v3(side * c[0], c[1], c[2]), v3(mx, my, mz), c[6], c[6] * 0.72, 7, CLAW);
+        b.addCapsule(v3(mx, my, mz), v3(side * c[3], c[4], c[5]), c[6] * 0.72, c[7], 7, CLAW);
+        // …and a blunt cap on the end of it. NOTHING ENDS IN A POINT.
+        b.addBlob(v3(side * c[3], c[4], c[5]), v3(c[7] * 1.1, c[7] * 1.1, c[7] * 1.2), 4, 7, CLAW_LT);
+    }
     return b.toMesh();
 }
 
@@ -1718,4 +1788,45 @@ test "hurt in its own coin: a bolt earths through it, the cold stiffens it, fire
     var f = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS);
     _ = f.hit(combat.Hit{ .elem = combat.elems(.{ .fire = 20 }) });
     try std.testing.expect(f.hp > HP_MAX - 17.0);
+}
+
+test "THE SURFACE TELL IS A BUILDING SPRAY, NOT A SWELLING DOME — the mound holds and the earth escalates" {
+    var d = Delver.spawn(mathx.zero3, 0, 1.0, 0.3);
+    d.enter(.surge);
+    // THE MOUND DOES NOT MOVE. Its size is what says where the blow lands, and a dome that grows through the
+    // tell is a promise that keeps changing.
+    var rates: [3]f32 = undefined;
+    for ([_]f32{ 0.1, 0.5, 0.95 }, 0..) |frac, i| {
+        d.t = SURGE_DUR * frac;
+        d.updateSurge(0);
+        try std.testing.expectApproxEqAbs(MOUND_TRAVEL_R, d.moundR, 1e-5);
+        try std.testing.expectApproxEqAbs(MOUND_TRAVEL_H, d.moundH, 1e-5);
+        rates[i] = lerpF(SURGE_SPRAY_0, SURGE_SPRAY_1, d.surgeK);
+    }
+    // …AND THE SPRAY CLIMBS, hard, and MOST OF IT LATE (the curve's whole reason).
+    try std.testing.expect(rates[1] > rates[0] * 2.0);
+    try std.testing.expect(rates[2] > rates[1] * 3.0);
+    try std.testing.expect(rates[2] > SURGE_SPRAY_1 * 0.85);
+    std.debug.print("\n  delver surge: spray {d:.0} -> {d:.0} -> {d:.0} clods/s, mound held at r {d:.2}\n", .{ rates[0], rates[1], rates[2], d.moundR });
+    // …and it is CLEARED when the move ends, or the next thing it does inherits the fountain.
+    d.enterIdle(0.2);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), d.surgeK, 1e-6);
+}
+
+test "IT IS VICIOUS ON ITS FEET TOO — it runs him down and its stroke comes round again quickly" {
+    // OVER THE HERO'S RUN so backing off costs ground, and UNDER his sprint so it is still breakable.
+    try std.testing.expect(CHASE_SPEED > heromod.RUN_SPEED);
+    try std.testing.expect(CHASE_SPEED < heromod.SPRINT_SPEED);
+    // …and it walks HOME at the old amble: the speed is what it does about HIM, not how it moves.
+    try std.testing.expect(WALK_SPEED < heromod.RUN_SPEED);
+    // THE STROKE COMES BACK. A claw every 1.9 s off a body that could not close was a punching bag between
+    // dives; the whole cycle now fits inside what the dive alone used to cost.
+    const cycle = CLAW_WIND + CLAW_STRIKE + CLAW_RECOVER + CLAW_CD;
+    try std.testing.expect(cycle < 2.2);
+    // …but the TELL is untouched: faster may never mean harder to read (`foe.TELL_MIN`, and the parry).
+    try std.testing.expect(CLAW_WIND >= foe.TELL_MIN);
+    try std.testing.expect(foe.PARRY_LEAD < CLAW_WIND * 0.5);
+    std.debug.print("  delver surface: chases {d:.2} m/s (hero runs {d:.2}, sprints {d:.2}), claw cycle {d:.2} s\n", .{
+        CHASE_SPEED, heromod.RUN_SPEED, heromod.SPRINT_SPEED, cycle,
+    });
 }

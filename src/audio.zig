@@ -466,6 +466,17 @@ pub const Id = enum {
     shroom_puff,
     shroom_hurt,
     shroom_die,
+    ravager_bloom,
+    ravager_leap,
+    ravager_snap,
+    ravager_hurt,
+    ravager_die,
+    mage_kindle,
+    mage_throw,
+    mage_hurt,
+    mage_die,
+    ember_bounce,
+    ember_burst,
     delver_churn,
     delver_dig,
     delver_claw,
@@ -1971,6 +1982,135 @@ fn mkCrickets(r: *Rack) void {
 
 
 const BATTLE_FLOOR: f32 = 0.34;
+// THE FLORID RAVAGER — and **NOTHING HERE IS A DOG.** The silhouette is a hound and the read has to be that
+// the head on it is not one: every voice is WET AND VEGETAL over a chest that is only just an animal. The
+// wolf's growl was the obvious borrow and it is exactly the wrong one — it would make the thing a dog again.
+
+/// **THE BLOOM OPENING**, and it is the creature's whole tell in sound: a long wet unfurl, low and rising,
+/// with the creak of something fibrous being forced apart under it. No voice in it at all — a flower has no
+/// throat, and the moment it sounds like it is snarling the head goes back to being a face.
+fn mkRavagerBloom(r: *Rack) void {
+    // **AND IT IS THE SPOOKY ONE** (owner). What makes it spooky is that a VOICE comes out of a thing that
+    // has no throat: a low detuned choir swelling up under the wet unfurl, pitched so it reads as almost —
+    // not quite — a person. Every other creature in the game growls or shrieks, which is an animal noise and
+    // therefore a safe one. This one sings, badly, out of a flower, and it is the only thing here that does.
+    r.air(0.0, 0.72, 0.28, 240, 1900, 0.55, 1.9); // the unfurl: a slow open filter, wet at the bottom
+    r.grit(0.05, 0.50, 0.13, 1500, 0.55, 2.4); // …fibres letting go, one at a time
+    r.choir(0.06, 0.66, 132, 0.30, 5, 0.72); // …AND THE VOICE. Low, detuned, swelling — it arrives late
+    r.choir(0.20, 0.48, 197, 0.13, 3, 0.62); // …with a bare fifth over it, which is what stops it being warm
+    r.ring(0.10, 0.44, 214, 0.13, 4.0, 3); // a hollow that gets bigger as it opens
+    r.body(0.0, 0.10, 78, 44, 0.30, 3.2); // the stalk taking the strain
+    r.wow(0.006, 0.9); // …and it will not sit still in pitch, which is most of the unease
+    r.warm(2600);
+    r.master(1.5, 3000);
+}
+
+/// THE LEAP — the gather and the launch as ONE sound, because they are one movement: a scrape of claws
+/// loading, then the whole mass leaving. Dry and short; the wet is the head's, not the body's.
+fn mkRavagerLeap(r: *Rack) void {
+    r.grit(0.0, 0.13, 0.34, 2600, 0.70, 2.6); // claws tearing turf
+    r.body(0.05, 0.20, 150, 62, 0.62, 4.2); // …and the weight going
+    r.air(0.06, 0.26, 0.24, 700, 2400, 0.34, 2.2);
+    r.master(1.8, 3400);
+}
+
+/// **THE BITE, AND IT IS A WET CLOSE, NOT A CLACK.** Petals shutting on meat: a soft heavy slap with a suck
+/// behind it. Teeth would be a jaw and there is no jaw on this thing.
+fn mkRavagerSnap(r: *Rack) void {
+    r.body(0.0, 0.07, 300, 96, 0.85, 6.5); // the ring meeting itself
+    r.air(0.0, 0.20, 0.42, 3000, 420, 0.62, 3.0); // …the suck as it closes, bright falling to nothing
+    r.grit(0.01, 0.10, 0.24, 1900, 0.45, 3.4);
+    r.ring(0.02, 0.16, 168, 0.20, 7.0, 2);
+    r.master(2.0, 3200);
+}
+
+/// HURT — a shriek out of the STALK rather than the chest, which is what makes it unpleasant: a torn-reed
+/// squeal with the wet under it. Rough, and it bends the wrong way (up at the end, not down).
+fn mkRavagerHurt(r: *Rack) void {
+    r.growl(0.0, 0.26, 380, 720, 0.52, 0.46, 0.09); // …RISING: an animal's cry falls, this one does not
+    r.air(0.02, 0.30, 0.26, 1400, 3400, 0.48, 1.6);
+    r.grit(0.0, 0.18, 0.22, 2800, 0.50, 2.2);
+    r.master(2.1, 3600);
+}
+
+/// AND THE DEATH: the shriek collapsing into a long wet exhale as the bloom comes apart. Longest of the five
+/// by some way — the body has to be audibly finished, or a pack of them is a wall of yelps with no ending.
+fn mkRavagerDie(r: *Rack) void {
+    r.growl(0.0, 0.30, 620, 190, 0.54, 0.52, 0.10); // the cry going out
+    r.air(0.10, 0.86, 0.34, 2200, 200, 0.50, 1.2); // …and the long collapse
+    r.grit(0.14, 0.52, 0.18, 1200, 0.60, 1.8);
+    r.body(0.24, 0.26, 96, 38, 0.34, 2.6); // the mass hitting the ground
+    r.warm(2400);
+    r.master(1.7, 2800);
+}
+
+// THE MUSHROOM MAGE, and **NOTHING HERE IS A WIZARD.** No chime, no bell, no rising sparkle — every one of
+// those says "spell" in the register a menu says it in, and this creature is a damp thing in a wood that has
+// learned to make fire. The family is WET AND SMOULDERING: a hiss with something soft under it.
+
+/// **THE GATHER**, and it is the tell in sound: a slow inhale of air being pulled INTO a point, with the
+/// hiss of something wet meeting something hot climbing under it. It RISES the whole way, so the ear knows
+/// how far through the gather it is without looking — which is the entire job, because what the player is
+/// reading off this creature is a clock.
+fn mkMageKindle(r: *Rack) void {
+    r.air(0.0, 0.62, 0.30, 300, 2600, 0.50, 2.2); // the draw: a filter opening, slow and wide
+    r.grit(0.04, 0.54, 0.16, 2400, 0.40, 2.6); // …damp wood taking light
+    r.body(0.10, 0.48, 62, 128, 0.26, 0.7); // …and a low swell that CLIMBS, which is the clock
+    r.ring(0.24, 0.34, 268, 0.10, 3.2, 3); // one thin overtone, so it is not pure noise
+    r.wow(0.005, 1.4);
+    r.warm(2800);
+    r.master(1.4, 3200);
+}
+
+/// THE THROW — a wet WHUMP and the ball leaving. Short, and it is the only bright thing in the set: the
+/// gather is a long dark climb and this is what the climb was for.
+fn mkMageThrow(r: *Rack) void {
+    r.body(0.0, 0.11, 210, 74, 0.68, 5.0); // the shove
+    r.air(0.0, 0.24, 0.36, 2800, 500, 0.44, 2.8); // …and the fire going away from you, bright falling to dull
+    r.grit(0.0, 0.09, 0.26, 3200, 0.52, 3.6);
+    r.master(1.8, 3400);
+}
+
+/// HURT — a wet tear, not a shriek. It has no throat: what it makes is the noise a mushroom makes when you
+/// stand on one, one size up and with a voice trapped somewhere behind it.
+fn mkMageHurt(r: *Rack) void {
+    r.grit(0.0, 0.20, 0.34, 1700, 0.62, 3.0);
+    r.body(0.0, 0.16, 240, 92, 0.42, 4.0);
+    r.air(0.02, 0.26, 0.22, 900, 2100, 0.46, 2.0);
+    r.master(2.0, 3400);
+}
+
+/// AND THE DEATH: the tear again, longer, collapsing into a dry PUFF as the cap goes — the spore cloud is
+/// what the eye sees and this is it.
+fn mkMageDie(r: *Rack) void {
+    r.grit(0.0, 0.30, 0.36, 1500, 0.66, 2.4);
+    r.body(0.0, 0.22, 190, 58, 0.44, 3.2);
+    r.air(0.16, 0.68, 0.30, 1800, 240, 0.38, 1.4); // the long collapse
+    r.grit(0.22, 0.46, 0.20, 900, 0.50, 1.6); // …and the puff
+    r.warm(2500);
+    r.master(1.6, 2800);
+}
+
+/// **THE BALL COMING OFF THE GROUND**, and it is the sound the whole move is learned from: it fires once per
+/// bounce, so what the player hears is the RHYTHM of the thing coming — and a rhythm is the one cue you can
+/// follow without looking at it. Soft-bodied, because a fireball is not a stone: a dull thud with a hiss of
+/// steam off the wet earth.
+fn mkEmberBounce(r: *Rack) void {
+    r.body(0.0, 0.09, 130, 52, 0.56, 5.5);
+    r.air(0.0, 0.17, 0.24, 2200, 620, 0.40, 3.0); // the steam off it
+    r.grit(0.0, 0.06, 0.18, 1800, 0.44, 4.0);
+    r.master(1.6, 2800);
+}
+
+/// …and the last one, where it stops being a threat and is just a fire on the ground for a moment.
+fn mkEmberBurst(r: *Rack) void {
+    r.body(0.0, 0.14, 170, 44, 0.62, 4.2);
+    r.air(0.0, 0.40, 0.34, 3000, 300, 0.46, 2.2);
+    r.grit(0.01, 0.22, 0.24, 2000, 0.50, 2.6);
+    r.warm(2600);
+    r.master(1.9, 3000);
+}
+
 fn battle(old: f32) f32 {
     return @sqrt(BATTLE_FLOOR * old);
 }
@@ -2018,6 +2158,22 @@ const BANK = [NV]Row{
     .{ .id = .shroom_puff, .make = mkShroomPuff, .gain = battle(0.56), .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 30 },
     .{ .id = .shroom_hurt, .make = mkShroomHurt, .gain = battle(0.48), .mix = .combat, .jit = 0.16, .vjit = 0.24, .vars = 4, .poly = 3, .reach = 26 },
     .{ .id = .shroom_die, .make = mkShroomDie, .gain = battle(0.56), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 30 },
+    .{ .id = .ravager_bloom, .make = mkRavagerBloom, .gain = battle(0.70), .mix = .combat, .jit = 0.08, .vjit = 0.14, .vars = 4, .poly = 4, .reach = 34 },
+    .{ .id = .ravager_leap, .make = mkRavagerLeap, .gain = battle(0.52), .mix = .combat, .jit = 0.14, .vjit = 0.22, .vars = 4, .poly = 4, .reach = 26 },
+    .{ .id = .ravager_snap, .make = mkRavagerSnap, .gain = battle(0.82), .mix = .combat, .jit = 0.08, .vjit = 0.14, .vars = 4, .poly = 4, .reach = 30 },
+    .{ .id = .ravager_hurt, .make = mkRavagerHurt, .gain = battle(0.50), .mix = .combat, .jit = 0.16, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 26 },
+    .{ .id = .ravager_die, .make = mkRavagerDie, .gain = battle(0.58), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 32 },
+    // THE MUSHROOM MAGE. The GATHER carries furthest of the four by a clear margin — it is a tell, and a
+    // tell you cannot hear from where the fight is happening is not one.
+    .{ .id = .mage_kindle, .make = mkMageKindle, .gain = battle(0.62), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 4, .poly = 4, .reach = 38 },
+    .{ .id = .mage_throw, .make = mkMageThrow, .gain = battle(0.58), .mix = .combat, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 4, .reach = 32 },
+    .{ .id = .mage_hurt, .make = mkMageHurt, .gain = battle(0.50), .mix = .combat, .jit = 0.16, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 26 },
+    .{ .id = .mage_die, .make = mkMageDie, .gain = battle(0.56), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 30 },
+    // …AND THE BALL'S OWN TWO, which belong to the SHOT and not to the caster: they go off wherever it has
+    // got to, long after its hands are empty. Heavily jittered and deeply polyphonic — three mages in a ring
+    // is a dozen bounces overlapping, and one voice repeated exactly is a machine gun.
+    .{ .id = .ember_bounce, .make = mkEmberBounce, .gain = battle(0.48), .mix = .combat, .jit = 0.18, .vjit = 0.30, .vars = 4, .poly = 6, .reach = 30 },
+    .{ .id = .ember_burst, .make = mkEmberBurst, .gain = battle(0.60), .mix = .combat, .jit = 0.12, .vjit = 0.22, .vars = 4, .poly = 5, .reach = 32 },
     // THE DELVER. Its whole family is EARTH — grit and a low body, never a ring — and the CHURN is texture:
     // under the floor, and thinned in count by `delver.CHURN_EVERY`, because it repeats through a hold.
     .{ .id = .delver_churn, .make = mkDelverChurn, .gain = battle(0.30), .mix = .combat, .jit = 0.16, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 34 },

@@ -40,6 +40,8 @@ pub const Icon = enum {
     bone_knight,
     delver,
     necromancer,
+    florid_ravager,
+    mushroom_mage,
     new,
     open,
     save,
@@ -382,6 +384,48 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             dot(cx + s * 0.28, cy - s * 0.46, w * 1.6, col); // …the head on it
             dot(cx - s * 0.30, cy + s * 0.42, w * 1.1, d); // the ring it laid
             dot(cx + s * 0.02, cy + s * 0.44, w * 1.1, d);
+        },
+
+        .florid_ravager => {
+            // A LOW FOUR-LEGGED BODY WITH AN OPEN RING FOR A HEAD. The read at this size is the RING: the
+            // hound under it is three lines, and the petals radiating off a hollow are what nothing else in
+            // the set has.
+            hline(cx - s * 0.30, cy + s * 0.04, s * 0.40, w * 1.4, col); // the back
+            line(cx - s * 0.28, cy + s * 0.04, cx - s * 0.34, cy + s * 0.36, w * 1.1, col); // hind legs
+            line(cx - s * 0.14, cy + s * 0.04, cx - s * 0.10, cy + s * 0.36, w * 1.1, col);
+            line(cx + s * 0.06, cy + s * 0.06, cx + s * 0.02, cy + s * 0.36, w * 1.1, col); // fore legs
+            line(cx - s * 0.32, cy + s * 0.02, cx - s * 0.44, cy - s * 0.14, w * 1.0, d); // the tail, up
+            line(cx + s * 0.08, cy + s * 0.02, cx + s * 0.16, cy - s * 0.18, w * 1.2, col); // the neck
+            // THE BLOOM: a hollow with six blunt petals off it, and the hollow is drawn dim so it reads as a
+            // throat rather than as a ball.
+            dot(cx + s * 0.19, cy - s * 0.24, w * 1.8, d);
+            var k: u32 = 0;
+            while (k < 6) : (k += 1) {
+                const a = @as(f32, @floatFromInt(k)) / 6.0 * std.math.tau;
+                const bx = cx + s * 0.19 + @cos(a) * s * 0.10;
+                const by = cy - s * 0.24 + @sin(a) * s * 0.10;
+                line(cx + s * 0.19, cy - s * 0.24, bx, by, w * 1.1, col);
+                dot(bx, by, w * 1.1, col); // blunt — nothing ends in a point
+            }
+        },
+
+        .mushroom_mage => {
+            // A WIDE CAP OVER A NARROW CLOAK, AND AN ARC LEAVING IT. The read at this size is the
+            // proportion — a dome far wider than the body under it is a mushroom and nothing else in the
+            // set has it — and the dotted arc is what says this one throws.
+            hline(cx - s * 0.34, cy - s * 0.14, s * 0.68, w * 1.6, col); // the cap's brim, the widest line
+            line(cx - s * 0.30, cy - s * 0.14, cx - s * 0.06, cy - s * 0.40, w * 1.1, col); // …and its dome
+            line(cx + s * 0.30, cy - s * 0.14, cx + s * 0.06, cy - s * 0.40, w * 1.1, col);
+            hline(cx - s * 0.10, cy - s * 0.40, s * 0.20, w * 1.1, col);
+            dot(cx, cy - s * 0.04, w * 1.3, d); // the hollow of gills under the brim
+            // The cloak: two lines flaring to a hem, narrow at the shoulders.
+            line(cx - s * 0.13, cy - s * 0.10, cx - s * 0.21, cy + s * 0.40, w * 1.2, col);
+            line(cx + s * 0.13, cy - s * 0.10, cx + s * 0.21, cy + s * 0.40, w * 1.2, col);
+            hline(cx - s * 0.21, cy + s * 0.40, s * 0.42, w * 1.2, col);
+            // …and the LOB, as three dots climbing away and falling — a ball on an arc, not a beam.
+            dot(cx + s * 0.26, cy + s * 0.02, w * 1.1, col);
+            dot(cx + s * 0.38, cy - s * 0.16, w * 1.3, col);
+            dot(cx + s * 0.46, cy + s * 0.06, w * 1.6, col);
         },
 
         .new => {

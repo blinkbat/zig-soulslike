@@ -24,6 +24,8 @@ const shroommod = @import("shroom.zig");
 const knightmod = @import("knight.zig");
 const delvermod = @import("delver.zig");
 const necromod = @import("necro.zig");
+const ravagermod = @import("ravager.zig");
+const magemod = @import("shroommage.zig");
 const combat = @import("combat.zig");
 const foemod = @import("foe.zig");
 const elemfx = @import("elemfx.zig"); // the elements' particle LANGUAGE — the bench is where it is TUNED
@@ -301,6 +303,8 @@ const CharSet = struct {
     warrens: delvermod.Warrens,
     rite: necromod.Rite,
     vigil: knightmod.Vigil,
+    thicket: ravagermod.Thicket,
+    ring: magemod.Ring,
 };
 var charSet: ?CharSet = null;
 
@@ -320,6 +324,8 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
             .warrens = delvermod.Warrens.init(scene.shader),
             .rite = necromod.Rite.init(scene.shader),
             .vigil = knightmod.Vigil.init(scene.shader),
+            .thicket = ravagermod.Thicket.init(scene.shader),
+            .ring = magemod.Ring.init(scene.shader),
         };
         var cs = &charSet.?;
         cs.warren.n = 0;
@@ -334,6 +340,8 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
         cs.cluster.n = 0;
         cs.warrens.n = 0;
         cs.vigil.n = 0;
+        cs.thicket.n = 0;
+        cs.ring.n = 0;
     }
     return &charSet.?;
 }
@@ -358,6 +366,12 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         // TALL AND NARROW, and the box says so: nothing else on this list is more than twice as high as it
         // is wide. The bound has to hold the dragging hem, which is wider than the body above it.
         .necromancer => .{ .top = 2.8, .bound = 1.3 },
+        // LOW AND LONG, which is the one shape on this list that is WIDER than it is tall — a quadruped.
+        // The bound holds the body nose to tail, not the withers.
+        .florid_ravager => .{ .top = 1.9, .bound = 2.2 },
+        // SHORT AND WIDE AT THE TOP — the cap is the broadest thing on it and the whole reason to look, so
+        // the bound is the CAP's span and not the body's, or the brim runs out of both sides of the plate.
+        .mushroom_mage => .{ .top = 1.6, .bound = 1.4 },
     };
 }
 
@@ -440,6 +454,22 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
             cs.rite.n = 1;
             cs.rite.live()[0] = necromod.Necro.spawn(mathx.zero3, 0, 1.0, seed);
             cs.rite.draw(scene);
+        },
+        // POSED WITH THE BLOOM OPEN — the rooted's rule (a dormant snag is a useless portrait): shut, this
+        // creature is a dog, and the whole reason to look at it is the flower.
+        .florid_ravager => {
+            cs.thicket.n = 1;
+            cs.thicket.live()[0] = ravagermod.Ravager.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.thicket.live()[0].stageGather(1.0);
+            cs.thicket.draw(scene);
+        },
+        // POSED AT THE TOP OF THE GATHER — the rooted's rule, and this creature's most of all: standing
+        // idle it is a cloak with a mushroom on it, and the fire cupped in its hands is the whole subject.
+        .mushroom_mage => {
+            cs.ring.n = 1;
+            cs.ring.live()[0] = magemod.Mage.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.ring.live()[0].stageGather(1.0);
+            cs.ring.draw(scene);
         },
     }
 }

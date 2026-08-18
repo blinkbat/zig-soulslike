@@ -179,10 +179,17 @@ const armourOf = heromod.armourOf;
 /// live one. **OFF THE TREE, NOT OFF `v.sheet`** — the hero's sheet already has his CURRENT gear folded into it
 /// (`hero.resheet`), so adding the loadout's boons to that would count the belt he is wearing twice and price
 /// every candidate belt as if it were a second one.
-fn sheetOf(l: Loadout, v: View) stats.Sheet {
-    var s = v.tree.bonus().sheet();
+fn sheetOf(l: Loadout, perk: ptree.Bonus) stats.Sheet {
+    var s = perk.sheet();
     heromod.boonsOnto(l.worn, &s);
     return s;
+}
+
+/// **WHAT A CAST ACTUALLY BILLS HIM** — `hero.castCost`'s own expression, and the page has to use it: the tree
+/// carries a `spellCost` node, so the bare `combat.spellFp` this row and the socket's cast tally were both
+/// printing was the price of the spell rather than the price to him.
+fn castFp(s: combat.Spell, perk: ptree.Bonus) f32 {
+    return combat.spellFp(s) * perk.spellCost;
 }
 
 fn derive(l: Loadout, v: View) [ND]f32 {
@@ -203,8 +210,15 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     // …AND ON THE SHEET THAT LOADOUT WOULD PUT HIM ON, because the skill curve multiplies the damage dial
     // (`hero.weigh`): a belt is worth strength and strength is worth damage, so a page that priced the swing off
     // the live sheet could not see what the belt in the picker was for.
-    const sheet = sheetOf(l, v);
-    const light = heromod.weigh(if (bow) heromod.BOW_QUICK_HIT else heromod.ATK_LIGHT_HIT, row, sheet);
+    // …AND THE TREE'S OWN MULTIPLES, which are NOT attributes and so are not in the sheet: the guard node, the
+    // sorcery node and the cast's discount are all read by the fight and were all missing from these rows.
+    // Taken ONCE and handed down — `Bonus` is a walk of every node on the wheel.
+    const perk = v.tree.bonus();
+    const sheet = sheetOf(l, perk);
+    // BOTH SHOTS THROUGH `hero.arrowBlow`, the door the loose goes through — that function is exhaustive over
+    // the arrow "rather than `== .fire` tests in the loose, the shot harness and the HUD", and the quick row
+    // naming `BOW_QUICK_HIT` was a fourth place deciding what a fire arrow is worth.
+    const light = heromod.weigh(if (bow) heromod.arrowBlow(l.ammo, false) else heromod.ATK_LIGHT_HIT, row, sheet);
     const heavy = heromod.weigh(if (bow) heromod.arrowBlow(l.ammo, true) else heromod.ATK_HEAVY_HIT, row, sheet);
     var d: [ND]f32 = undefined;
     d[@intFromEnum(Der.light)] = if (attacks) light.dmg else 0;
@@ -220,9 +234,10 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     // than lore, and it is the same number for both because it is the same left hand being spent.
     const guards = heromod.handsHold(l.arm, l.off, .shield);
     const board = heromod.armRow(l.worn, .hand_shield);
-    // THE BOARD'S OWN NEGATION, capped where the fight caps it (`combat.GUARD_NEGATE_CAP`) — a page promising
-    // 97% behind a door the fight holds to 95 is a page lying about the one number it exists to compare.
-    d[@intFromEnum(Der.guard)] = if (guards) @min(combat.GUARD_NEGATE_CAP, combat.GUARD_NEGATE * board.negate) * 100.0 else 0;
+    // THE BOARD'S OWN NEGATION **PLUS THE TREE'S**, capped where the fight caps it (`hero.blockHit`, and
+    // `combat.GUARD_NEGATE_CAP`) — a page promising 97% behind a door the fight holds to 95 is a page lying
+    // about the one number it exists to compare, and one that leaves the guard node out lies the other way.
+    d[@intFromEnum(Der.guard)] = if (guards) @min(combat.GUARD_NEGATE_CAP, combat.GUARD_NEGATE * board.negate + perk.guard) * 100.0 else 0;
     d[@intFromEnum(Der.arc)] = if (guards) combat.GUARD_ARC * board.arc else 0;
     // WHAT HE IS WEARING, and it is worth nothing against a blow of no size — so the row is priced against a
     // BLOW, his own heavy, rather than printed as a bare armour number nobody can read a percentage off.
@@ -231,11 +246,15 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     // he cannot cast is not worth a number — and it is the SORCERY THAT IS LOADED that is priced, through
     // `combat`'s own two answers: the rod carries FIVE, and no two of them cost or deal the same.
     const casts = heromod.handsHold(l.arm, l.off, .wand);
-    // …through INTELLIGENCE, the same multiple the cast itself takes (`hero.castBlow`): the amulet's whole worth
-    // is this row, and priced off the bare figure the page would have said the bead does nothing.
-    d[@intFromEnum(Der.spell)] = if (casts) combat.spellDamage(l.spell) * sheet.scale(.intelligence) else 0;
-    d[@intFromEnum(Der.spell_fp)] = if (casts) combat.spellFp(l.spell) else 0;
-    d[@intFromEnum(Der.quick)] = quickWorth(l.quick, v);
+    // …through the WHOLE multiple the cast itself takes (`hero.castBlow`: the sorcery node times INTELLIGENCE),
+    // and **ONLY FOR THE THREE THAT ARE SCALED AT ALL**. `spellBlow` is null for the roots and the rime because
+    // neither lands a blow — their chaos and their cold are billed flat, a frame at a time, by `combat.Root.tick`
+    // and `combat.Chill.tick`, which read no sheet and no perk. Multiplied here, the page promised an Intelligence
+    // build a stronger grip and a colder breath than it was ever going to get.
+    const spellK: f32 = if (combat.spellBlow(l.spell) != null) perk.spellDmg * sheet.scale(.intelligence) else 1.0;
+    d[@intFromEnum(Der.spell)] = if (casts) combat.spellDamage(l.spell) * spellK else 0;
+    d[@intFromEnum(Der.spell_fp)] = if (casts) castFp(l.spell, perk) else 0;
+    d[@intFromEnum(Der.quick)] = quickWorth(l.quick, l.worn, sheet);
     d[@intFromEnum(Der.ammo)] = @floatFromInt(v.quiver.count(l.ammo));
     return d;
 }
@@ -484,23 +503,27 @@ fn slotTally(s: SlotId, v: View) ?u8 {
     if (wearOf(s) != null) return null; // one coat is one coat: a worn socket has nothing to count
     return switch (s) {
         .arrows => v.quiver.count(v.quiver.sel),
-        .sorcery => if (slotHas(.sorcery, v)) castsLeft(v.fp, v.spell) else null,
+        .sorcery => if (slotHas(.sorcery, v)) castsLeft(v.fp, v.spell, v) else null,
         .left, .right, .left2, .right2 => null,
         else => if (quickAt(s, v)) |k| quickTally(k, v) else null,
     };
 }
 
-/// What one press of the quick slot gives back. Off the SHEET, so the row moves when the attribute does.
-fn quickWorth(kind: ?item.Kind, v: View) f32 {
+/// What one press of the quick slot gives back. Off the LOADOUT'S sheet, so the row moves when a considered
+/// boon moves the attribute — and off the RED BAR rather than off the sheet's raw HP, because that is what the
+/// flask and the jerky are both a fraction of (`hero.startDrink`, `game.useItem`). Priced off `sheet.hp()` it
+/// promised a man wearing the leech signet a bigger swallow than the ring leaves room for.
+fn quickWorth(kind: ?item.Kind, worn: heromod.Worn, sheet: stats.Sheet) f32 {
     const k = kind orelse return 0;
+    const hpMax = heromod.hpMaxOf(sheet, worn);
     if (combat.flaskOf(k)) |f| return switch (f) {
-        .crimson => v.sheet.hp() * combat.FLASK_HP_FRAC,
-        .cerulean => v.sheet.fp() * combat.FLASK_FP_FRAC,
+        .crimson => hpMax * combat.FLASK_HP_FRAC,
+        .cerulean => sheet.fp() * combat.FLASK_FP_FRAC,
     };
     return switch (item.use(k)) {
         .none => 0,
-        .regen => |r| v.sheet.hp() * r.frac,
-        .lob => |l| l.dmg + l.fire + l.lightning, // what one press throws, in the only number a throw has
+        .regen => |r| hpMax * r.frac,
+        .lob => |b| b.dmg + b.fire + b.lightning, // what one press throws, in the only number a throw has
         .ward, .wind, .grease, .souls, .brew => 0, // none of these restores a bar the row could price
     };
 }
@@ -518,8 +541,10 @@ fn quickTally(k: item.Kind, v: View) u8 {
     return combat.quickCount(k, v.flasks, v.bag);
 }
 
-fn castsLeft(fp: f32, s: combat.Spell) u8 {
-    const cost = combat.spellFp(s);
+/// …AND THROUGH THE SAME BILL THE POOL IS ACTUALLY CHARGED (`castFp`), or the socket counts casts at the
+/// list price while the fight charges him the discounted one.
+fn castsLeft(fp: f32, s: combat.Spell, v: View) u8 {
+    const cost = castFp(s, v.tree.bonus());
     if (cost <= 0) return 0;
     return @intFromFloat(@max(0, @floor(fp / cost)));
 }
@@ -545,13 +570,17 @@ const CAND_MAX = blk: {
     break :blk n;
 };
 
-/// WHICH HAND SOCKET A ROW BELONGS TO, once, so the four-way switch is not written per row.
+/// WHICH HAND SOCKET A ROW BELONGS TO, once, so the four-way switch is not written per row. EXHAUSTIVE over the
+/// four (`hero.steerQueuedRoll`'s rule, this file's own): as `else => offAlt` every socket that is NOT a hand
+/// silently answered "the left alternate", so the day a non-hand slot reached this it would have quietly rearmed
+/// a fist instead of failing.
 fn handAct(s: SlotId, h: Hand) Action {
     return switch (s) {
         .right => .{ .arm = h },
         .left => .{ .off = h },
         .right2 => .{ .armAlt = h },
-        else => .{ .offAlt = h },
+        .left2 => .{ .offAlt = h },
+        else => unreachable, // only the four hand sockets have a hand row
     };
 }
 
@@ -560,6 +589,22 @@ fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
     // is the reason it has to be structural: it grew a real picker the day the wand landed, and with a bow
     // out that picker would have offered two rows for a hand the panel had already said was not free.
     if (locked(s, v) != null) return out[0..0];
+    // THE WORN SOCKETS, ASKED THROUGH `wearOf` AND NOT LISTED AGAIN — `locked`, `slotHas`, `slotFilled` and
+    // `slotTally` all open on exactly this line. Written out as a seven-tag prong instead, a socket added to
+    // `wearOf` fell through to the `else` below and offered a helm the QUICK BAR's rows.
+    // What he carries for it, plus an EMPTY row: a coat you cannot take off is a coat the player is stuck in.
+    if (wearOf(s)) |w| {
+        var n: usize = 1;
+        out[0] = .{ .name = "(nothing)", .act = .{ .wear = .{ .slot = w, .kind = null } } };
+        inline for (@typeInfo(item.Kind).@"enum".fields) |f| {
+            const k: item.Kind = @enumFromInt(f.value);
+            if (item.wearSlot(k) == w and v.bag.count(k) > 0) {
+                out[n] = .{ .name = item.displayName(k), .act = .{ .wear = .{ .slot = w, .kind = k } } };
+                n += 1;
+            }
+        }
+        return out[0..n];
+    }
     switch (s) {
         // Each list is walked off the ENUM it offers, so a third arrow or a third armament is a row here
         // the day it exists rather than a row somebody remembered to add.
@@ -583,22 +628,6 @@ fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
                             }
                         }
                     }
-                }
-            }
-            return out[0..n];
-        },
-        // THE WORN SOCKETS: what he carries for it, plus an EMPTY row — a coat you cannot take off is a coat the
-        // player is stuck in (the quick bar's own first row, for its own reason). ONE branch for all seven,
-        // through `wearOf`, so a socket gaining its first piece of gear is a row in `item.equip` and nothing here.
-        .chest, .ring1, .ring2, .helm, .amulet, .belt, .boots => {
-            const w = wearOf(s).?;
-            var n: usize = 1;
-            out[0] = .{ .name = "(nothing)", .act = .{ .wear = .{ .slot = w, .kind = null } } };
-            inline for (@typeInfo(item.Kind).@"enum".fields) |f| {
-                const k: item.Kind = @enumFromInt(f.value);
-                if (item.wearSlot(k) == w and v.bag.count(k) > 0) {
-                    out[n] = .{ .name = item.displayName(k), .act = .{ .wear = .{ .slot = w, .kind = k } } };
-                    n += 1;
                 }
             }
             return out[0..n];
@@ -1131,9 +1160,22 @@ fn pickRowH() i32 {
     return hud.lineH(hud.BODY) + 14;
 }
 
+/// **WHAT THE COLUMN UNDER THE PICKER NEEDS, IN THE PICKER'S OWN UNITS** — `ND` rows at their tightest pitch
+/// (`rowFloor`), the NOW/THEN header, two lines of prose and the panel's own inset. The two panels share one
+/// column, so one of them has to give: taking half of it regardless, the picker left the numbers short and the
+/// last rows of the list drew off the bottom of the card and over the button strip. The PICKER is the half that
+/// yields, because it already fits its own rows to whatever box it gets (`pickStep`/`pickSize`) and the derived
+/// list is the thing the page exists to be read for.
+fn derivedNeedH() i32 {
+    return rowFloor() * @as(i32, ND) + hud.lineH(hud.TINY) + 4 + hud.lineH(hud.HINT) * 2 + 22 + 28;
+}
+
 fn pickBox(col: Box, n: usize) Box {
     const want = pickRowH() * @as(i32, @intCast(n)) + titleH() + 24;
-    return .{ .x = col.x, .y = col.y, .w = col.w, .h = @min(@divTrunc(col.h, 2), want) };
+    // …and never under a quarter of the column, or a narrow window squeezes the list being chosen FROM to
+    // nothing in order to protect numbers nobody can read on it either.
+    const room = @max(@divTrunc(col.h, 4), col.h - derivedNeedH() - GUTTER);
+    return .{ .x = col.x, .y = col.y, .w = col.w, .h = @min(room, want) };
 }
 
 /// **THE ROWS ARE FITTED TO THE PANEL** — `drawDerived`'s own rule one panel along, and for the same reason: the
@@ -1147,9 +1189,13 @@ fn pickStep(box: Box, n: usize) i32 {
 
 /// …AND THE TEXT COMES OFF THE PITCH, never the other way round (`hud`'s type scale, and the rule that rows step
 /// by `lineH(size)`): squeezed to fit, a row too short to carry the BODY face has to take the next one down or
-/// the descenders of one line sit in the crown of the next.
+/// the descenders of one line sit in the crown of the next. **EVERY RUNG DOWN TO THE FLOOR, not just one** —
+/// stopping at `SMALL` while `rowFloor` lets the pitch reach `TINY`, the tightest list overlapped its own rows
+/// and pushed the last one out through the bottom of the panel.
 fn pickSize(step: i32) i32 {
-    return if (step >= hud.lineH(hud.BODY)) hud.BODY else hud.SMALL;
+    if (step >= hud.lineH(hud.BODY)) return hud.BODY;
+    if (step >= hud.lineH(hud.SMALL)) return hud.SMALL;
+    return hud.TINY;
 }
 
 fn pickRow(box: Box, i: usize, n: usize) rl.Rectangle {
@@ -1224,15 +1270,37 @@ fn panel(b: Box, title: [:0]const u8) Box {
 /// straight through the last row.
 fn rowStep(space: i32, n: usize) i32 {
     const natural = hud.lineH(hud.SMALL) + 7;
-    return mathx.clampI(@divTrunc(space, @as(i32, @intCast(n))), hud.SMALL + 1, natural);
+    return mathx.clampI(@divTrunc(space, @as(i32, @intCast(n))), rowFloor(), natural);
+}
+
+/// **THE TIGHTEST A ROW MAY BE SQUEEZED**, and it is the SMALLEST FACE'S line rather than the ordinary one's.
+/// Floored at `SMALL + 1`, a list that would not fit ran off the bottom of its own recess and over the button
+/// strip instead of tightening — which is what the derived column did the day it gained its fourteenth and
+/// fifteenth rows and a hand's picker grew to nine. `rowSize` takes the face back down to match.
+fn rowFloor() i32 {
+    return hud.TINY + 1;
+}
+
+/// …AND THE FACE COMES OFF THE PITCH, never the other way round (`pickSize`'s rule, one panel along): a row
+/// too short to carry `SMALL` sits the descenders of one line in the crown of the next.
+fn rowSize(step: i32) i32 {
+    return if (step >= hud.lineH(hud.SMALL)) hud.SMALL else hud.TINY;
 }
 
 fn rowLabel(s: [:0]const u8, x: i32, y: i32, col: rl.Color) void {
-    hud.text(s, x, y, hud.SMALL, col);
+    rowLabelAt(s, x, y, hud.SMALL, col);
+}
+
+fn rowLabelAt(s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
+    hud.text(s, x, y, size, col);
 }
 
 fn rowValue(s: [:0]const u8, right: i32, y: i32, col: rl.Color) void {
-    hud.text(s, right - hud.textW(s, hud.SMALL), y, hud.SMALL, col);
+    rowValueAt(s, right, y, hud.SMALL, col);
+}
+
+fn rowValueAt(s: [:0]const u8, right: i32, y: i32, size: i32, col: rl.Color) void {
+    hud.text(s, right - hud.textW(s, size), y, size, col);
 }
 
 fn unitStr(u: Unit, x: f32) [:0]const u8 {
@@ -1459,6 +1527,9 @@ fn drawSlot(self: *const Book, r: rl.Rectangle, s: SlotId, v: View, sel: bool) v
 }
 
 fn drawSlotArt(s: SlotId, v: View, cx: f32, cy: f32, px: f32) void {
+    // THROUGH `wearOf`, `candidates`' own opening line and every other question the doll asks: listed as a
+    // seven-tag prong below, a socket added there drew a QUICK-BAR item instead of what is in it.
+    if (wearOf(s)) |w| return if (v.worn.at(w)) |k| itemart.drawHeld(k, cx, cy, px, true);
     switch (s) {
         // EXHAUSTIVE over the arm, like the HUD's own right-hand cell (`game.hud`): as a two-way `if` the
         // BELL drew a sword in his fist on the one page whose whole job is showing what he is carrying.
@@ -1469,10 +1540,9 @@ fn drawSlotArt(s: SlotId, v: View, cx: f32, cy: f32, px: f32) void {
         .left => if (v.offInHand()) handArt(v.off, v.worn, cx, cy, px),
         .right2 => handArt(v.armAlt, v.worn, cx, cy, px),
         .left2 => handArt(v.offAlt, v.worn, cx, cy, px),
-        .chest, .ring1, .ring2, .helm, .amulet, .belt, .boots => if (v.worn.at(wearOf(s).?)) |k| itemart.drawHeld(k, cx, cy, px, true),
         // THE PICTURE FOLLOWS THE ROD TOO, greyed by the pool the same way the cross's own cell is — and through
         // `itemart`'s own one answer, since which picture a spell is was the same list of five in both files.
-        .sorcery => if (slotHas(.sorcery, v)) itemart.spellArt(v.spell, cx, cy, px, v.fp >= combat.spellFp(v.spell)),
+        .sorcery => if (slotHas(.sorcery, v)) itemart.spellArt(v.spell, cx, cy, px, v.fp >= castFp(v.spell, v.tree.bonus())),
         // A shaft is drawn 0.3 of the box it is handed where a blade is 1.4, so it is given a bigger one.
         .arrows => itemart.arrow(cx, cy, px * 1.5, v.quiver.count(v.quiver.sel) > 0, v.quiver.sel == .fire),
         else => if (quickAt(s, v)) |k| itemart.drawHeld(k, cx, cy, px, quickTally(k, v) > 0),
@@ -1500,28 +1570,32 @@ fn drawDerived(box: Box, v: View, cand: ?Cand) void {
     // the height it has to itself, and ten rows at a fixed pitch walked straight off the bottom of it.
     const says = if (cand) |c| candSays(c, v) else armSays(v.arm, v.off);
     const foot = proseH(says, inner.w, hud.HINT) + 22;
-    const head: i32 = if (cand == null) 0 else hud.lineH(hud.SMALL) + 4;
+    const step0 = rowStep(inner.h - foot - hud.lineH(hud.SMALL) - 4, ND);
+    // THE HEADER IS A ROW LIKE THE OTHERS, so it takes the same face — sized off `SMALL` while the fifteen
+    // under it had tightened to `TINY`, it stole a row's worth of height back off the list it heads.
+    const size = rowSize(step0);
+    const head: i32 = if (cand == null) 0 else hud.lineH(size) + 4;
     const step = rowStep(inner.h - foot - head, ND);
     const colB = inner.right();
     const colA = colB - @divTrunc(inner.w, 3);
     var y = inner.y;
     if (cand != null) {
-        rowValue("NOW", colA, y, uiart.TEXT_DIM);
-        rowValue("THEN", colB, y, mathx.withAlpha(uiart.GILT, 220));
+        rowValueAt("NOW", colA, y, size, uiart.TEXT_DIM);
+        rowValueAt("THEN", colB, y, size, mathx.withAlpha(uiart.GILT, 220));
         y += head;
     }
     for (DER, 0..) |row, i| {
         const moved = @abs(then[i] - now[i]) > 0.005;
-        rowLabel(row.name, inner.x, y, if (moved) uiart.TEXT_VALUE else uiart.TEXT_DIM);
+        rowLabelAt(row.name, inner.x, y, size, if (moved) uiart.TEXT_VALUE else uiart.TEXT_DIM);
         if (cand == null) {
-            rowValue(unitStr(row.unit, now[i]), colB, y, uiart.TEXT_VALUE);
+            rowValueAt(unitStr(row.unit, now[i]), colB, y, size, uiart.TEXT_VALUE);
         } else {
-            rowValue(unitStr(row.unit, now[i]), colA, y, mathx.withAlpha(uiart.TEXT_DIM, 200));
+            rowValueAt(unitStr(row.unit, now[i]), colA, y, size, mathx.withAlpha(uiart.TEXT_DIM, 200));
             // A COST IS NOT AN IMPROVEMENT: on the stamina rows, and only there, LESS is the better number.
             const rose = then[i] > now[i];
             const col = if (!moved) uiart.TEXT_DIM else if (rose != row.cost) uiart.GOOD else uiart.BAD;
-            rowValue(unitStr(row.unit, then[i]), colB, y, col);
-            if (moved) uiart.diamond(fi(colA + 20), fi(y) + fi(hud.lineH(hud.SMALL)) * 0.45, if (rose) 3.4 else 2.2, col);
+            rowValueAt(unitStr(row.unit, then[i]), colB, y, size, col);
+            if (moved) uiart.diamond(fi(colA + 20), fi(y) + fi(hud.lineH(size)) * 0.45, if (rose) 3.4 else 2.2, col);
         }
         y += step;
     }
@@ -2171,9 +2245,9 @@ test "THE WAND IS PRICED HONESTLY TOO: it buys a bolt and it costs him the guard
         try std.testing.expectEqual(worth(board, k), worth(rod, k));
     }
     // THE TALLY IS CASTS, NOT POINTS — a full pool reads as a countable number in the slot.
-    try std.testing.expectEqual(@as(u8, 0), castsLeft(combat.BOLT_FP - 0.01, .bolt));
-    try std.testing.expectEqual(@as(u8, 1), castsLeft(combat.BOLT_FP, .bolt));
-    try std.testing.expect(castsLeft(combat.FP_MAX, .bolt) >= 4);
+    try std.testing.expectEqual(@as(u8, 0), castsLeft(combat.BOLT_FP - 0.01, .bolt, v));
+    try std.testing.expectEqual(@as(u8, 1), castsLeft(combat.BOLT_FP, .bolt, v));
+    try std.testing.expect(castsLeft(combat.FP_MAX, .bolt, v) >= 4);
 }
 
 test "THE PAGE PRICES THE SORCERY THAT IS LOADED, not the first one ever written" {
@@ -2193,7 +2267,55 @@ test "THE PAGE PRICES THE SORCERY THAT IS LOADED, not the first one ever written
     try std.testing.expectEqualStrings(combat.spellName(.bolt), slotFilled(.sorcery, v));
     v.spell = .roots;
     try std.testing.expectEqualStrings(combat.spellName(.roots), slotFilled(.sorcery, v));
-    try std.testing.expect(castsLeft(combat.FP_MAX, .roots) < castsLeft(combat.FP_MAX, .bolt));
+    try std.testing.expect(castsLeft(combat.FP_MAX, .roots, v) < castsLeft(combat.FP_MAX, .bolt, v));
+}
+
+test "THE DERIVED COLUMN PRICES THE TREE'S OWN MULTIPLES, not only its attribute points" {
+    const bag = item.Bag{};
+    const sheet = stats.Sheet{};
+    const res = combat.Resists{};
+    const flasks = combat.Flasks{};
+    const quiver = combat.Quiver{};
+    // The three nodes that are NOT attributes: the guard, the cast's discount, the sorcery multiple. None of
+    // them reaches `Bonus.sheet()`, which is the whole reason every row below read straight past them.
+    var tree = ptree.Tree{};
+    for (ptree.NODES, 0..) |n, i| switch (n.grant) {
+        .guard, .spellCost, .spellDmg => tree.taken[i] = true,
+        else => {},
+    };
+    const perk = tree.bonus();
+    try std.testing.expect(perk.guard > 0 and perk.spellCost < 1 and perk.spellDmg > 1);
+
+    var v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
+    v.tree = &tree;
+    const boards = Loadout{ .arm = .sword, .off = .shield, .ammo = .plain, .quick = null, .spell = .bolt };
+    // THE GUARD ROW IS WHAT THE FIGHT ACTUALLY BLOCKS (`hero.blockHit`), node and cap and all.
+    try std.testing.expectApproxEqAbs(
+        @min(combat.GUARD_NEGATE_CAP, combat.GUARD_NEGATE + perk.guard) * 100.0,
+        worth(derive(boards, v), .guard),
+        1e-3,
+    );
+
+    var rod = boards;
+    rod.off = .wand;
+    const bolt = derive(rod, v);
+    // …and a cast is billed what `hero.castCost` bills and deals what `hero.castBlow` deals.
+    try std.testing.expectApproxEqAbs(combat.BOLT_FP * perk.spellCost, worth(bolt, .spell_fp), 1e-3);
+    try std.testing.expectApproxEqAbs(
+        combat.spellDamage(.bolt) * perk.spellDmg * sheet.scale(.intelligence),
+        worth(bolt, .spell),
+        1e-3,
+    );
+    try std.testing.expect(castsLeft(combat.FP_MAX, .bolt, v) > castsLeft(combat.FP_MAX, .bolt, testView(&bag, &sheet, &res, &flasks, &quiver, .sword)));
+
+    // **AND THE TWO THAT BILL OVER TIME ARE SCALED BY NOTHING AT ALL** — `combat.Root.tick` and
+    // `combat.Chill.tick` read no sheet and no perk (`combat.spellBlow` is null for both), so a page that put
+    // the sorcery multiple on them promised a grip and a breath that were never going to arrive.
+    for ([_]combat.Spell{ .roots, .rime }) |s| {
+        var flat = rod;
+        flat.spell = s;
+        try std.testing.expectApproxEqAbs(combat.spellDamage(s), worth(derive(flat, v), .spell), 1e-3);
+    }
 }
 
 test "the bag cursor is pulled back onto a real cell when the last of something is drunk" {
@@ -2302,10 +2424,17 @@ test "the quick row prices whatever the bar holds, flask or not" {
     const flasks = combat.Flasks{};
     const quiver = combat.Quiver{};
     const v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
-    try std.testing.expectApproxEqAbs(sheet.hp() * combat.FLASK_HP_FRAC, quickWorth(.crimson_flask, v), 1e-3);
-    try std.testing.expectApproxEqAbs(sheet.fp() * combat.FLASK_FP_FRAC, quickWorth(.cerulean_flask, v), 1e-3);
+    _ = v;
+    const bare = heromod.Worn{};
+    try std.testing.expectApproxEqAbs(sheet.hp() * combat.FLASK_HP_FRAC, quickWorth(.crimson_flask, bare, sheet), 1e-3);
+    try std.testing.expectApproxEqAbs(sheet.fp() * combat.FLASK_FP_FRAC, quickWorth(.cerulean_flask, bare, sheet), 1e-3);
     const jerky = item.use(.mushroom_jerky).regen;
-    try std.testing.expectApproxEqAbs(sheet.hp() * jerky.frac, quickWorth(.mushroom_jerky, v), 1e-3);
+    try std.testing.expectApproxEqAbs(sheet.hp() * jerky.frac, quickWorth(.mushroom_jerky, bare, sheet), 1e-3);
+    // **AND A CHARM SHORTENS THE BAR THE SWALLOW IS A FRACTION OF** (`hero.hpMaxOf`): priced off the raw sheet
+    // this row promised a man wearing the signet a mouthful the ring has already taken the room for.
+    var ringed = heromod.Worn{};
+    ringed.put(.ring, .leech_signet);
+    try std.testing.expect(quickWorth(.crimson_flask, ringed, sheet) < quickWorth(.crimson_flask, bare, sheet));
 }
 
 test "the sockets are fitted to the panel, and never off the end of it" {

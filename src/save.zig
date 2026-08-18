@@ -374,15 +374,22 @@ pub fn scatter(d: *const Data, s: Slot) void {
     h.flasks.sel = d.flask;
     h.quick.slots = d.quick;
     h.quick.sel = @min(d.quickSel, combat.QUICK_SLOTS - 1);
-    // …AND THROUGH `wear`, NOT BY ASSIGNMENT, so the red bar is refitted for a charm on the way in: written
-    // straight onto the field, a character saved wearing the signet would load with the full bar it eats into.
+
+    s.bag.counts = d.bag;
+    // **THE TREE BEFORE THE GEAR, AND STAMPED ONTO HIM HERE.** `hero.wear` rebuilds the live sheet off
+    // `hero.perk` (`resheet`), so putting the coat on against the perks of whatever character was loaded LAST
+    // sizes all three bars off the wrong tree. It only ever came out right because `game.loadGame` re-applies
+    // the tree afterwards, which is an ordering nothing in this file states and nothing enforces.
+    s.tree.taken = d.tree;
+    h.applyPerks(s.tree.bonus());
+    // …AND THE GEAR THROUGH `wear`, NOT BY ASSIGNMENT, so the red bar is refitted for a charm on the way in:
+    // written straight onto the field, a character saved wearing the signet would load with the full bar it
+    // eats into.
     inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
         const w: item.Wear = @enumFromInt(f.value);
         _ = h.wear(w, d.worn.at(w));
     }
 
-    s.bag.counts = d.bag;
-    s.tree.taken = d.tree;
     // THROUGH THE MODULE'S OWN DOOR — `spill` arms the mote stream and the hum off the amount, where
     // writing the three fields by hand leaves a pile of gold standing there in silence.
     s.souls.spill(d.dropAt, d.dropAmount);

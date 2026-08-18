@@ -571,7 +571,7 @@ the hop → nothing, it is HIS answer to you), against 640 HP that only comes of
   barrel roll lying down. **So every world point on him comes off a POSED BONE, not a height off his feet**:
   `centerWorld` rides the pelvis, `lockPoint` the chest, `topWorld` the helm. A hurt sphere pinned to 2.9 m
   would hang in the air over a body lying on the ground.
-- **AND THE DOOR MUST BE SEEN TO LEAVE** (`stowAmt`, the picture of `guardUp`, and a test pins them together).
+- **AND THE DOOR MUST BE SEEN TO LEAVE** (`swipeOpen`, the picture of `guardUp`, and a test pins them together).
   The shield arm swings out to pay for a SWIPE, so the door turns edge-on and off his front — which is the
   other way in. The first pass of this law had `guardUp` false through a whole stroke while the shield still
   sat square across his chest, which is a mechanic and a picture telling the player opposite things.

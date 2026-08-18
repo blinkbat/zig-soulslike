@@ -21,9 +21,16 @@ const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 
 // CUTE IS A SHAPE LANGUAGE: one big dome, one squat pale body, one gaping mouth, and everything blunt.
-const CAP_COL = rgba(52, 18, 14, 255);
-const CAP_DK = rgba(34, 12, 10, 255); // the chipped bite out of the rim, and the gills' shadow
-const WART = rgba(88, 78, 58, 255); // the cream flecks — small areas, so they may run pale
+/// **THE KINGDOM'S OWN RUST, AND IT IS PUBLIC BECAUSE IT IS NOT THIS CREATURE'S.** The mushroom mage
+/// wears the same cap (`shroommage.zig`), and a second copy of these three drifted the day either was
+/// retuned — two fungal things in one wood that no longer look like the same substance.
+pub const CAP_COL = rgba(52, 18, 14, 255);
+pub const CAP_DK = rgba(34, 12, 10, 255); // the chipped bite out of the rim, and the gills' shadow
+/// **THE FLECKS FAINTLY GLOW** (owner). Vertex alpha is the emissive channel and lower is more self-lit, so
+/// this is only a little under full: FAINT is the whole brief — a sporeling that lit up like the ravager's
+/// gullet would out-read the creature the glow belongs to, and these are meant to be a hint in the dark that
+/// something small is standing in the bracken. Small areas, so they may run pale without washing the cap out.
+pub const WART = rgba(122, 112, 84, 186);
 const STALK = rgba(72, 62, 45, 255);
 const STALK_DK = rgba(52, 44, 32, 255); // the skirt fold under the cap
 const MOUTH = rgba(10, 8, 7, 255);

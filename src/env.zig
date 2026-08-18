@@ -2751,6 +2751,12 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(solids0, e.solidCount());
     try std.testing.expectEqual(lights0, e.lightCount());
 
+    // …AND WHEN THEY HAVE MOVED, THIS SAYS WHAT TO RE-PIN TO. It is meant to fail while somebody is authoring
+    // the map — but failing with three numbers you then have to go and dig out is a minute per edit session,
+    // and printing them costs nothing on the runs that pass.
+    if (props0 != 17329 or solids0 != 1754 or lights0 != 52) {
+        std.debug.print("\n  SHIPPED MAP MOVED - re-pin: props {d}, solids {d}, lights {d}\n", .{ props0, solids0, lights0 });
+    }
     // THESE MOVING IS THE POINT OF PINNING THEM: re-pin only when the world was MEANT to change. Anything
     // touching the waterline shifts the shore scatter by up to half a facet (`facetWater` moved 196 props),
     // and `materialize` reads the OPS alone, so foe records cannot move any of the three.

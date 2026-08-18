@@ -18,13 +18,31 @@ pub fn main() void {
         };
         return;
     }
-    const mode: game.Mode = if (argv.len >= 2 and std.mem.eql(u8, argv[1], "--shot-props"))
+    // **`--map <path>` IS A DEV FLAG AND NOTHING ELSE** — it is how a new creature is tried in a test map
+    // of its own instead of being placed in the authored world. Scanned across every argument so it can sit
+    // beside `--shot`, and it must be read BEFORE `game.run` because `Game.init` loads the map.
+    var i: usize = 1;
+    while (i + 1 < argv.len) : (i += 1) {
+        if (std.mem.eql(u8, argv[i], "--map")) {
+            wf.setStartMap(argv[i + 1]);
+            std.debug.print("MAP: {s}\n", .{argv[i + 1]});
+            break;
+        }
+    }
+    const mode: game.Mode = if (hasArg(argv, "--shot-props"))
         .props
-    else if (argv.len >= 2 and std.mem.eql(u8, argv[1], "--shot"))
+    else if (hasArg(argv, "--shot"))
         .shots
     else
         .play;
     game.run(mode);
+}
+
+fn hasArg(argv: []const [:0]u8, want: []const u8) bool {
+    for (argv[1..]) |a| {
+        if (std.mem.eql(u8, a, want)) return true;
+    }
+    return false;
 }
 
 fn runBake(alloc: std.mem.Allocator) !void {
@@ -68,6 +86,8 @@ test {
     _ = @import("knight.zig"); // THE BONE KNIGHT — the tower shield's arc and the fall's strip
     _ = @import("delver.zig"); // THE DELVER — the burrow's dwell, and that the depth is what refuses the sword
     _ = @import("necro.zig"); // THE NECROMANCER — the committed sigil, and the hem that overshoots its rest
+    _ = @import("ravager.zig"); // THE FLORID RAVAGER — the quadruped rig's second user, and the bloom that is the tell
+    _ = @import("shroommage.zig"); // THE MUSHROOM MAGE — the cap that is a hood, and the fireball that bounces
     _ = @import("wolf.zig"); // THE FIRST SPIRIT, and the first QUADRUPED — the tests are Hildebrand's two dials
     _ = @import("pickup.zig"); // THE ITEM PICKUP — the reach ring, the one-shot latch and the fade
     _ = @import("award.zig"); // …and WHAT IT SAYS you got: the first-time card's queue and the toast stack

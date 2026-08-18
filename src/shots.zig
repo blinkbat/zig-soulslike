@@ -47,6 +47,10 @@ const WALK_SPEED = heromod.WALK_SPEED;
 const RUN_SPEED = heromod.RUN_SPEED;
 const SPRINT_SPEED = heromod.SPRINT_SPEED;
 
+/// WHERE IN THE BOOT PASS THE TITLE CARD IS PHOTOGRAPHED. Not 0: the swoop is at its rest there and the
+/// frame would say nothing about the motion the screen actually shows.
+const BOOT_SHOT_T: f32 = 11.0;
+
 pub const SHOT_DT: f32 = 1.0 / 60.0;
 /// The DRAWING clock, one shot at a time: every camera here TELEPORTS, and a still frame cannot show a
 /// fade — so the occluder fade is handed a step big enough to arrive within the one frame we capture.
@@ -268,6 +272,62 @@ pub fn runPropShots(g: *Game) void {
         const name = std.fmt.bufPrintZ(&buf, "shots/props/{d:0>2}_{s}.png", .{ i, @tagName(row.kind) }) catch unreachable;
         shootAt(g, name, aim, 35, 0.30, dist);
     }
+}
+
+/// **THE DEV MAP PASS — `--shot --map worlds/test_x.world`.** `runShots` below is the AUTHORED world's
+/// harness and it panics without that world's exact cast, which is right: it photographs a fixed sequence.
+/// This one photographs WHATEVER THE MAP POSTS, so a creature under construction is tried in a test map of
+/// its own rather than dropped into `01_fallen_plain` to see it run. Dev only — no menu reaches it.
+///
+/// Two shots per creature on the field: STANDING, and its own staged move if it has one. Framed off the
+/// creature's own box (`objview.charDims`' idea, solved here off the body rather than a table), and lit —
+/// `gfx.SUN_DIR` puts the sun over the shoulder of a camera at yaw 53, so that is where every one is taken
+/// from and a foe turning to face the hero shows its front rather than its own shadow.
+pub fn runMapShots(g: *Game) void {
+    std.fs.cwd().makePath("shots/map") catch {};
+    g.drawDt = SETTLE_DT;
+    g.menu.screen = .closed;
+    g.retro.allOff();
+    game.pinHourForShot(g, game.daynight.SHOT_HOUR);
+
+    var n: usize = 0;
+    inline for (game.FOE_GROUPS) |gr| {
+        for (@field(g, gr.field).live(), 0..) |*f, idx| {
+            if (idx > 0) continue; // ONE of each kind: a pack is four photographs of the same animal
+            // THE HERO STANDS ON THE SUN'S BEARING so the creature turns its FRONT into the light, and far
+            // enough out that it is not already mid-leap when the shutter opens.
+            // A MULTI-KIND GROUP ANSWERS FOR ITS OWN MEMBERS and a single-kind one is named on the row —
+            // `FOE_GROUPS`' own rule, asked here rather than assuming every creature has a `kind()`.
+            const T = @TypeOf(f.*);
+            const kindOf: worldfmt.FoeKind = if (comptime gr.kind) |k| k else f.kind();
+            const top = f.topWorld().y - f.pos.y;
+            const r = mathx.maxF(f.bodyR(), 0.6);
+            standHero(g, f.pos.x + 4.5, f.pos.z + 3.4, mathx.radians(215));
+            f.pose();
+            const aim = v3(f.pos.x, f.pos.y + top * 0.55, f.pos.z);
+            // OFF THE CREATURE'S LENGTH, NOT ITS RADIUS: a quadruped is twice as long as it is wide, and framed off
+            // `bodyR` the animal ran out of both sides of the plate.
+            const dist = mathx.clampF(mathx.maxF(r * 7.0, top * 4.2), 4.0, 34.0);
+            var buf: [96]u8 = undefined;
+            const stand = std.fmt.bufPrintZ(&buf, "shots/map/{d:0>2}_{s}_stand.png", .{ n, @tagName(kindOf) }) catch unreachable;
+            shootAt(g, stand, aim, 53, 0.16, dist);
+            // …AND ITS MOVE, for anything that can stage one. `@hasDecl` rather than a list, so a creature
+            // gaining a staged pose is photographed here without an edit (`markWays`' rule).
+            if (comptime @hasDecl(T, "stagePounce")) {
+                f.stagePounce(1.0);
+                var b2: [96]u8 = undefined;
+                const leap = std.fmt.bufPrintZ(&b2, "shots/map/{d:0>2}_{s}_move.png", .{ n, @tagName(kindOf) }) catch unreachable;
+                shootAt(g, leap, aim, 90, 0.10, dist * 1.1);
+            } else if (comptime @hasDecl(T, "stageGather")) {
+                f.stageGather(1.0);
+                var b2: [96]u8 = undefined;
+                const tell = std.fmt.bufPrintZ(&b2, "shots/map/{d:0>2}_{s}_move.png", .{ n, @tagName(kindOf) }) catch unreachable;
+                shootAt(g, tell, aim, 53, 0.16, dist);
+            }
+            n += 1;
+        }
+    }
+    std.debug.print("MAP SHOTS: {d} creature(s) into shots/map/\n", .{n});
 }
 
 pub fn runShots(g: *Game) void {
@@ -1692,10 +1752,10 @@ pub fn runShots(g: *Game) void {
     // THE BOOT SCREEN, framed the way the LOOP frames it (`game.BOOT_*`) — the card is only half of what is
     // being judged and the other half is what stands behind it. Sun over the shoulder at yaw 53, or the
     // world it is drawn over is its own shadow. NO HUD: nothing has been started, so there are no bars.
-    g.rig.yaw = mathx.radians(53);
-    g.rig.pitch = game.BOOT_PITCH;
-    g.rig.dist = game.BOOT_DIST;
-    g.rig.follow(g.hero.shoulderPoint());
+    // THROUGH THE LOOP'S OWN CAMERA (`game.bootCam`), handed a time: the pass is a pure function of its
+    // clock, so this is the exact frame the title screen draws rather than a second guess at its framing.
+    // The instant is picked to sit off the swoop's own zeroes, so what is photographed is a camera in motion.
+    game.bootCamForShot(g, BOOT_SHOT_T);
     g.menu.screen = .boot;
     g.menu.home = .boot;
     g.menu.cursor = 1; // ON Load, which is the only row whose two states differ
@@ -3614,6 +3674,12 @@ fn wolfShots(g: *Game) void {
     // was standing. Read the other way round it reached past its own span and stood 20 cm into the earth.
     game.poseWolfGatherForShot(g, 0.5);
     shootAt(g, "shots/135b_wolf_gather.png", at, 90, 0.05, 3.4);
+    // …AND THE TOP OF THE LEAP THE GATHER IS FOR. Framed from the SIDE, because the whole read is height off
+    // the ground and a nose-up body, and neither survives a front-on shot. The look-at is RAISED onto the
+    // animal in the air — pointed at the ground it left, the horizon sits across its chest and the one thing
+    // the shot is for (the gap under it) is off the bottom of the frame.
+    game.poseWolfPounceForShot(g, 1.0);
+    shootAt(g, "shots/135c_wolf_pounce.png", mathx.addV(at, v3(0, wolfmod.W * 0.8, 0)), 90, 0.10, 4.0);
     game.poseWolfForShot(g, 0, 0);
     shootPortrait(g, "shots/136_wolf_head.png", mathx.addV(at, v3(0, wolfmod.W * 1.0, 0)), 40, 0.02, 1.5);
 

@@ -209,6 +209,10 @@ const BOLT_GRAV: f32 = 0.8;
 /// …and the shade's wisp barely more: it is a thing thrown by something that does not obey the ground it
 /// floats over, and a lobbed one would read as a stone rather than as a piece of the creature.
 const WISP_GRAV: f32 = 1.1;
+/// **THE MAGE'S FIREBALL FALLS LIKE A THROWN THING, BECAUSE IT IS ONE** (owner: slow moving, bouncing).
+/// Heavier than the sling's lob: the arc has to be tall enough that the whole flight is legible from the
+/// side, which is what makes a slow projectile a puzzle rather than a nuisance.
+const EMBER_GRAV: f32 = 10.5;
 const ARROW_LIFE = 3.5; // seconds airborne before it gives up (falls + sticks)
 const ARROW_STICK_FADE = 1.4; // seconds a stuck arrow lingers, then fades
 pub const ARROW_COVER_MARGIN: f32 = 0.04;
@@ -234,7 +238,7 @@ const TRAIL_CROCK = rgba(198, 228, 252, 255);
 /// EVERYTHING BURNING GETS THE EMBER STREAK, and it is the streak — not the mesh — that reads at range.
 fn trailCol(s: Shot) rl.Color {
     return switch (s) {
-        .firearrow, .clump => TRAIL_FIRE,
+        .firearrow, .clump, .emberball => TRAIL_FIRE,
         .bolt => TRAIL_BOLT,
         .wisp => TRAIL_WISP,
         .crock => TRAIL_CROCK,
@@ -246,7 +250,9 @@ fn trailCol(s: Shot) rl.Color {
 /// drawn and streaked as its own thing. `clump` is the kobold sling's burning lump. `bolt` is the WAND's
 /// chaos sorcery, in this pool because cover, gravity, expiry and the swept pierce test are one body of
 /// code, and a spell with its own copy of them stops agreeing with the world.
-pub const Shot = enum { arrow, clump, venom, firearrow, bolt, wisp, crock };
+/// `emberball` is the mushroom mage's, and it is the one thing in this pool that does not stop where it
+/// first touches the earth (`bouncesOf`).
+pub const Shot = enum { arrow, clump, venom, firearrow, bolt, wisp, crock, emberball };
 
 pub fn dropOf(s: Shot) f32 {
     return switch (s) {
@@ -255,8 +261,42 @@ pub fn dropOf(s: Shot) f32 {
         .venom => VENOM_GRAV,
         .bolt => BOLT_GRAV,
         .wisp => WISP_GRAV,
+        .emberball => EMBER_GRAV,
     };
 }
+
+/// **HOW MANY TIMES A SHOT COMES OFF THE GROUND AGAIN**, and it is 0 for every other thing that flies: a
+/// shaft, a glob and a jar all end where they first touch. The mage's fireball is the one that keeps
+/// coming — and the line it keeps coming ALONG runs on away from whoever threw it, which is what makes a
+/// slow projectile a decision rather than a nuisance: walking backwards out of the first arc is walking down
+/// the rest of them (`shroommage.zig`'s own note, and the test below measures the touches).
+pub fn bouncesOf(s: Shot) u8 {
+    return switch (s) {
+        .emberball => EMBER_BOUNCES,
+        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp => 0,
+    };
+}
+const EMBER_BOUNCES: u8 = 3;
+/// What each bounce KEEPS — of the upward speed it arrived with, and of the ground speed it was carrying.
+/// The vertical is cut hard and the horizontal barely at all, so the arcs get flatter and shorter while the
+/// thing keeps travelling: a ball that kept its height would be a pogo stick, and one that kept neither
+/// would stop dead at his feet and be a puddle with extra steps.
+const BOUNCE_KEEP_Y: f32 = 0.56;
+const BOUNCE_KEEP_XZ: f32 = 0.86;
+/// **AND A BOUNCE THAT CANNOT CLEAR THIS IS NOT A BOUNCE**, it is a ball vibrating on the floor a frame at a
+/// time. Under it the shot simply lands, whatever budget it had left — the geometric series has to be
+/// allowed to end somewhere and a metre a second of lift is already a hop you can barely see.
+const BOUNCE_MIN_UP: f32 = 1.0;
+
+/// HOW LONG EACH THING STAYS UP. The fireball's is its own: at `EMBER_GRAV` and three bounces its whole
+/// journey is most of four seconds, and on the shared 3.5 it winked out mid-arc on the last one.
+fn lifeOf(s: Shot) f32 {
+    return switch (s) {
+        .emberball => EMBER_LIFE,
+        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp => ARROW_LIFE,
+    };
+}
+const EMBER_LIFE: f32 = 6.0;
 
 pub const Arrow = struct {
     pos: rl.Vector3 = mathx.zero3,
@@ -265,6 +305,12 @@ pub const Arrow = struct {
     stuck: bool = false,
     age: f32 = 0, // in flight: seconds airborne; stuck: seconds since it stuck (fade timer)
     hit: bool = false, // it connected with the hero this frame (game.zig reads + clears)
+    /// IT CAME OFF THE GROUND THIS FRAME — a one-frame edge like `hit`, and `game.zig` is what turns it into
+    /// a thud and a puff of embers. The creature that threw it is long out of the conversation by then, so
+    /// the flag has to ride the shot itself.
+    bounced: bool = false,
+    /// How many it has already spent (`bouncesOf` is the budget).
+    bounces: u8 = 0,
     /// WHAT IT STUCK IN, set on the frame it plants. null = the bare earth, which wants its own duller,
     /// fizzier impact. `game.zig` reads it to pick the sound; nothing else cares.
     struck: ?collision.Surface = null,
@@ -386,11 +432,26 @@ fn plantIn(a: *Arrow, at: rl.Vector3, surf: collision.Surface) void {
 fn plantGround(a: *Arrow, groundY: f32) bool {
     const floor = groundY + GROUND_BITE;
     if (a.pos.y <= floor) {
+        // **IT COMES OFF THE EARTH AGAIN IF IT HAS A BOUNCE LEFT IN IT** (`bouncesOf`, which is 0 for
+        // everything but the mage's fireball, so every other shaft plants here exactly as it always did).
+        // Taken on the way IN rather than as a separate stepper, because the cover test, the hero test,
+        // expiry and the trail are one body of code and a bouncing shot that skipped them would be a second
+        // set of ballistics to keep in step.
+        const up = @abs(a.vel.y) * BOUNCE_KEEP_Y;
+        if (a.bounces < bouncesOf(a.shot) and up >= BOUNCE_MIN_UP) {
+            a.bounces += 1;
+            a.bounced = true;
+            a.pos.y = floor;
+            a.vel.y = up;
+            a.vel.x *= BOUNCE_KEEP_XZ;
+            a.vel.z *= BOUNCE_KEEP_XZ;
+            return false; // …and it is still very much in the air
+        }
         a.pos.y = floor; // stuck in the earth where it landed
         plantShaft(a);
         return true;
     }
-    if (a.age < ARROW_LIFE) return false;
+    if (a.age < lifeOf(a.shot)) return false;
     a.live = false;
     return true;
 }
@@ -412,10 +473,25 @@ pub fn plantShaft(a: *Arrow) void {
     a.age = 0;
 }
 
+/// **A BOUNCING THING SPENDS ITS LIFE DOWN AT HIS BOOTS, AND THE SHARED COLUMN DOES NOT REACH THEM.**
+/// `ARROW_HIT_HALF_H` is 0.85 about a centre a metre up, so it opens 0.15 m ABOVE the ground he is standing
+/// on — right for a shaft, which arrives at chest height or not at all, and wrong for a ball skimming the
+/// grass, which rolled through his shins and out the other side. The fireball's own reaches from under his
+/// soles to over his head, and it is a hair wider because a ball has a radius where a shaft has a point.
+fn hitBoxOf(s: Shot) struct { r: f32, halfH: f32 } {
+    return switch (s) {
+        .emberball => .{ .r = EMBER_HIT_R, .halfH = EMBER_HIT_HALF_H },
+        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp => .{ .r = ARROW_HIT_R, .halfH = ARROW_HIT_HALF_H },
+    };
+}
+const EMBER_HIT_R: f32 = 0.62;
+const EMBER_HIT_HALF_H: f32 = 1.15;
+
 // LIGHT homing (a bend toward the hero, never a lock — a sidestep beats it), gravity arc, then STICK on
 // cover / hero / ground / expiry.
-fn heroReached(p: rl.Vector3, hero: rl.Vector3, heroCenterY: f32) bool {
-    return mathx.distXZ(p, hero) <= ARROW_HIT_R and @abs(p.y - heroCenterY) <= ARROW_HIT_HALF_H;
+fn heroReached(a: *const Arrow, p: rl.Vector3, hero: rl.Vector3, heroCenterY: f32) bool {
+    const box = hitBoxOf(a.shot);
+    return mathx.distXZ(p, hero) <= box.r and @abs(p.y - heroCenterY) <= box.halfH;
 }
 
 pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, groundY: f32, heroDodging: bool, solids: []const collision.Solid, dt: f32) void {
@@ -439,7 +515,7 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, groundY: f32, he
     // a fast shaft cannot tunnel a thin trunk.
     if (coverHit(prev, a.pos, solids)) |c| return plantIn(a, c.at, c.surf);
     const mid = mathx.lerpV(prev, a.pos, 0.5);
-    if (!heroDodging and (heroReached(a.pos, hero, heroCenterY) or heroReached(mid, hero, heroCenterY))) {
+    if (!heroDodging and (heroReached(a, a.pos, hero, heroCenterY) or heroReached(a, mid, hero, heroCenterY))) {
         a.hit = true;
         plantShaft(a);
     } else _ = plantGround(a, groundY);
@@ -1636,4 +1712,62 @@ test "a SIDESTEP beats an arrow: the homing is a launch nudge, not a lock" {
     i = 0;
     while (i < 300 and !lead.stuck) : (i += 1) stepArrow(&lead, v3(0.5, 0, 12.0), 1.0, 0, false, &.{}, dt);
     try std.testing.expect(lead.hit);
+}
+
+test "A FIREBALL BOUNCES, AND EACH ARC IS SHORTER THAN THE ONE BEFORE IT" {
+    // The mage's own numbers are `shroommage`'s (this file owns the ballistics, that one owns the spell), so
+    // the speed is written out here rather than imported back the way the dependency runs.
+    const dt: f32 = 1.0 / 60.0;
+    const speed: f32 = 8.0;
+    var a = launchShaft(v3(0, 1.15, 0), v3(0, 1.0, 11.0), speed, .{}, true, .emberball);
+
+    var touches: [8]f32 = undefined; // the z of every ground contact, in order
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i < 900 and !a.stuck) : (i += 1) {
+        _ = stepShaft(&a, 0, &.{}, dt);
+        if (a.bounced) {
+            a.bounced = false;
+            if (n < touches.len) {
+                touches[n] = a.pos.z;
+                n += 1;
+            }
+        }
+    }
+    // IT SPENDS ITS WHOLE BUDGET and then plants — a ball that expired in the air never threatened the
+    // ground it was aimed past.
+    try std.testing.expectEqual(@as(usize, bouncesOf(.emberball)), n);
+    try std.testing.expect(a.stuck);
+
+    // **THE FIRST ARC LANDS WHERE IT WAS AIMED** — that is the one the player reads and steps out of.
+    try std.testing.expectApproxEqAbs(@as(f32, 11.0), touches[0], 1.2);
+    // …AND THE BOUNCES CARRY IT PAST HIM, which is the whole move: the ground behind where he was standing
+    // is threatened too, so stepping back down the line is not an answer.
+    try std.testing.expect(a.pos.z > touches[0] + 2.0);
+    // …EACH ARC SHORTER THAN THE LAST (`BOUNCE_KEEP_Y` cuts the height harder than `BOUNCE_KEEP_XZ` cuts the
+    // run), so the thing visibly runs out of energy rather than pogoing away over the horizon.
+    var prev = touches[0];
+    var span = touches[0];
+    var k: usize = 1;
+    while (k < n) : (k += 1) {
+        const gap = touches[k] - prev;
+        try std.testing.expect(gap > 0 and gap < span);
+        span = gap;
+        prev = touches[k];
+    }
+    std.debug.print("\n  fireball: aimed 11.00 m, touches at", .{});
+    for (touches[0..n]) |z| std.debug.print(" {d:.2}", .{z});
+    std.debug.print(", rests at {d:.2} m\n", .{a.pos.z});
+}
+
+test "AND NOTHING ELSE IN THE POOL GAINED A BOUNCE — a shaft still plants where it first lands" {
+    const dt: f32 = 1.0 / 60.0;
+    var a = launchShaft(v3(0, 1.3, 0), v3(0, 1.0, 14.0), ARROW_SPEED, .{}, true, .arrow);
+    var i: usize = 0;
+    while (i < 900 and !a.stuck) : (i += 1) {
+        _ = stepShaft(&a, 0, &.{}, dt);
+        try std.testing.expect(!a.bounced); // …not once, on the way there or at the end
+    }
+    try std.testing.expect(a.stuck);
+    try std.testing.expectEqual(@as(u8, 0), a.bounces);
 }

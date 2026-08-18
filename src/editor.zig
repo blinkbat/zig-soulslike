@@ -221,6 +221,8 @@ const unitTips = [_][:0]const u8{
     "Post a Bone Knight - a giant behind a tower shield nothing can break. Work round the side; stand dead behind him and he falls on you",
     "Post a delver - it burrows and travels under the ground as a moving mound, then bursts up under your feet. Watch the floor",
     "Post a necromancer - skeletons near it stop dissolving, and it puts them back up. Kill it first, or fight away from the bodies",
+    "Post a Florid Ravager - a big hound with a flower for a head. The bloom OPENS before it leaps; that is your cue to move",
+    "Post a Mushroom Mage - a cloaked caster that lobs SLOW, BOUNCING fireballs. Do not back away, that is down the bounce line - go sideways, or straight at it",
     "Hold and sweep to remove spawns ([ ] sets radius)",
 };
 
@@ -261,6 +263,8 @@ const unitIcons = [_]ui.Icon{
     .bone_knight,
     .delver,
     .necromancer,
+    .florid_ravager,
+    .mushroom_mage,
     .erase,
 };
 
@@ -369,6 +373,8 @@ const UnitBrush = enum {
     bone_knight,
     delver,
     necromancer,
+    florid_ravager,
+    mushroom_mage,
     erase,
 };
 
@@ -2377,6 +2383,12 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         // Its own frost — the one PALE BLUE, and it separates from the shade's cold violet as well as from
         // the skeletons' greys, since all three stand in the same courtyards.
         .necromancer => ui.col(126, 196, 224, 255),
+        // The bloom itself — the one PINK on the map, and nothing near it in hue: the shroom's dusty rose
+        // is warmer and browner, and these two share a wood.
+        .florid_ravager => ui.col(226, 138, 196, 255),
+        // The fire it throws — the one ORANGE on the map, and nothing near it: the sporeling it shares a
+        // wood with is a dusty rose and the ravager's bloom is pink, so the fungal three separate by hue.
+        .mushroom_mage => ui.col(238, 152, 66, 255),
     };
 }
 

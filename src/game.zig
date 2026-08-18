@@ -27,6 +27,8 @@ const rootedmod = @import("rooted.zig");
 const knightmod = @import("knight.zig");
 const delvermod = @import("delver.zig");
 const necromod = @import("necro.zig");
+const ravagermod = @import("ravager.zig");
+const magemod = @import("shroommage.zig");
 const leechmod = @import("leechfly.zig");
 const shademod = @import("shade.zig");
 const chestmod = @import("chest.zig");
@@ -206,6 +208,8 @@ pub const Game = struct {
     cluster: shroommod.Cluster,
     warrens: delvermod.Warrens,
     rite: necromod.Rite,
+    thicket: ravagermod.Thicket,
+    ring: magemod.Ring,
     vigil: knightmod.Vigil,
     swarm: leechmod.Swarm,
     haunt: shademod.Haunt,
@@ -223,6 +227,7 @@ pub const Game = struct {
     npcPos: [npcmod.CAP]rl.Vector3 = [_]rl.Vector3{mathx.zero3} ** npcmod.CAP,
     nNpcPos: usize = 0,
     rest: restmod.Rest = .{},
+    bootT: f32 = 0,
     bossK: f32 = 0,
     bossFrac: f32 = 0,
     spiritK: f32 = 0,
@@ -242,6 +247,7 @@ pub const Game = struct {
     venomModel: rl.Model,
     fireArrowModel: rl.Model,
     boltModel: rl.Model,
+    emberModel: rl.Model,
     wispModel: rl.Model,
     arrows: [MAX_ARROWS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_ARROWS,
     shafts: [MAX_SHAFTS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_SHAFTS,
@@ -277,7 +283,7 @@ pub const Game = struct {
         g.retro = gfx.Retro.init(rl.getScreenWidth(), rl.getScreenHeight());
         g.menu = .{};
         phase(&initTimer, "gfx");
-        worldfmt.loadOrPanic(worldfmt.START_MAP, &g.map);
+        worldfmt.loadOrPanic(worldfmt.startMap(), &g.map);
         PLAY_HALF = playHalfOf(g.map.half); // before anything spawns against it
         phase(&initTimer, "map");
         g.env.build(&g.scene);
@@ -298,6 +304,8 @@ pub const Game = struct {
         g.cluster = shroommod.Cluster.init(g.scene.shader);
         g.warrens = delvermod.Warrens.init(g.scene.shader);
         g.rite = necromod.Rite.init(g.scene.shader);
+        g.thicket = ravagermod.Thicket.init(g.scene.shader);
+        g.ring = magemod.Ring.init(g.scene.shader);
         g.vigil = knightmod.Vigil.init(g.scene.shader);
         g.swarm = leechmod.Swarm.init(g.scene.shader);
         g.haunt = shademod.Haunt.init(g.scene.shader);
@@ -310,6 +318,7 @@ pub const Game = struct {
         g.pickups = .{};
         g.award = .{};
         g.day = .{};
+        g.bootT = 0;
         g.bossK = 0;
         g.bossFrac = 0;
         g.spiritK = 0;
@@ -323,6 +332,7 @@ pub const Game = struct {
         g.venomModel = broodmod.venomMesh(g.scene.shader);
         g.fireArrowModel = archermod.fireArrowMesh(g.scene.shader);
         g.boltModel = heromod.boltMesh(g.scene.shader);
+        g.emberModel = magemod.emberMesh(g.scene.shader);
         g.wispModel = shademod.wispMesh(g.scene.shader);
         g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
         g.shafts = [_]archermod.Arrow{.{}} ** MAX_SHAFTS;
@@ -349,9 +359,68 @@ pub const Game = struct {
 
 const SHOT_CLEAR: f32 = 0.02;
 
-const BOOT_SPIN: f32 = 0.07; // radians a second
-pub const BOOT_PITCH: f32 = 0.34; // …the two the HARNESS has to match, or it photographs a framing nobody sees
-pub const BOOT_DIST: f32 = 7.2;
+// THE BOOT SCREEN IS AN AERIAL PASS OVER THE WOOD (owner: aerial, scenic, trees, looking somewhat down,
+// swooping) — not a turntable on the hero's shoulder. Nothing has been started when this is on screen, so
+// there is no character to be looking at and no reason to be standing in a runway: what the title card wants
+// behind it is the WORLD.
+//
+// **THE WHOLE PATH IS A PURE FUNCTION OF ONE CLOCK** (`bootCam`), which is what lets the harness photograph
+// the exact framing the loop draws by handing it a time — where two copies of the arithmetic would be a shot
+// of a framing nobody ever sees.
+
+/// Where the pass is centred: deep in the WOOD (`zone: wood` runs west of x = -52 at 0.98 density), well off
+/// the runway and well off the village, so what is under the lens is canopy.
+const BOOT_AT_X: f32 = -104.0;
+const BOOT_AT_Z: f32 = 18.0;
+/// How far the look-at wanders about that centre. The drift is what makes it a PASS rather than a turntable:
+/// the ground under the camera changes, so new trees keep arriving instead of the same ring going by.
+const BOOT_DRIFT_R: f32 = 26.0;
+const BOOT_DRIFT_RATE: f32 = 0.036; // rad/s on the drift's own circle — slower than the turn
+/// …and how far above the ground the pass is AIMED. Off the terrain rather than a fixed Y, or the look-at
+/// sinks into a hillside and the horizon rolls.
+const BOOT_LOOK_UP: f32 = 6.0;
+
+/// **THE PASS SWEEPS, IT DOES NOT ORBIT — AND THAT IS A LIGHTING DECISION, NOT A TASTE ONE.** `gfx.SUN_DIR`
+/// puts the sun over the shoulder of a camera at yaw 53 and INTO THE LENS of one at 233, so a turntable spends
+/// half its cycle looking at the shaded side of everything: the first pass came back at a mean background luma
+/// of 24 of 255, which is not scenery, it is murk. Swept about the lit bearing instead, the canopy is front-lit
+/// the whole way round and the motion is still a camera in flight.
+const BOOT_YAW_MID: f32 = 53.0; // degrees — the sun's own over-the-shoulder bearing
+const BOOT_YAW_SWEEP: f32 = 38.0; // …and how far either side of it the pass is allowed, which keeps 15..91
+const BOOT_YAW_T: f32 = 41.0; // seconds for the sweep to go and come back — the slowest clock in the move
+/// **LOOKING SOMEWHAT DOWN**, and this is the dial that says so: 0.44 rad is about 25 degrees under the
+/// horizon, which keeps the horizon and its sky in the upper third while the canopy fills the rest. At 35 the
+/// frame was all shaded crown and no distance — a map rather than a view.
+pub const BOOT_PITCH: f32 = 0.44;
+pub const BOOT_DIST: f32 = 46.0;
+/// **THE SWOOP.** The pass rises and falls and pushes in and out on clocks SLOWER than the turn and prime to
+/// each other, so the path never repeats on the beat the orbit does and the motion reads as flight rather
+/// than as a mechanism. Amplitudes, and the periods in seconds.
+const BOOT_SWOOP_PITCH: f32 = 0.17;
+const BOOT_SWOOP_DIST: f32 = 9.0;
+const BOOT_SWOOP_T: f32 = 17.0;
+const BOOT_PUSH_T: f32 = 26.0;
+
+/// WHERE THE PASS IS LOOKING at `t` seconds in — a slow drift about the wood's centre, laid on the ground it
+/// is actually over.
+fn bootLook(g: *const Game, t: f32) rl.Vector3 {
+    const a = t * BOOT_DRIFT_RATE;
+    // The two axes on different multiples, so the drift is a slow figure rather than a second circle.
+    const x = BOOT_AT_X + mathx.cosf(a) * BOOT_DRIFT_R;
+    const z = BOOT_AT_Z + mathx.sinf(a * 1.7) * BOOT_DRIFT_R * 0.7;
+    return v3(x, g.env.groundAt(x, z) + BOOT_LOOK_UP, z);
+}
+
+/// …and the whole camera for that instant. ONE function, so the loop and the harness cannot frame it two
+/// different ways.
+pub fn bootCam(g: *Game, t: f32) void {
+    g.rig.yaw = mathx.radians(BOOT_YAW_MID + BOOT_YAW_SWEEP * mathx.sinf(t * std.math.tau / BOOT_YAW_T));
+    g.rig.pitch = BOOT_PITCH + BOOT_SWOOP_PITCH * mathx.sinf(t * std.math.tau / BOOT_SWOOP_T);
+    g.rig.dist = BOOT_DIST + BOOT_SWOOP_DIST * mathx.sinf(t * std.math.tau / BOOT_PUSH_T + 1.1);
+    // CENTRED, not `follow`: that one is the over-the-shoulder rig and its boom gives way to terrain, which
+    // on a camera this high is a hard zoom every time a bank passes under it.
+    g.rig.followCentred(bootLook(g, t));
+}
 
 fn beginGame(g: *Game) void {
     var start = mathx.ground(0, 4);
@@ -475,7 +544,7 @@ fn tickEnter(g: *Game, dt: f32) void {
 
 fn saveMap(g: *const Game) []const u8 {
     _ = g; // one map today; the parameter is where a per-`Game` current map goes when there is more than one
-    return worldfmt.START_MAP;
+    return worldfmt.startMap();
 }
 
 fn slotOf(g: *Game) savemod.Slot {
@@ -514,7 +583,7 @@ const FoeGroup = struct {
     /// …and by these OTHER groups. DELIBERATELY ONE-WAY, or two bodies each half-correct and jitter.
     vs: []const []const u8 = &.{},
 };
-const FOE_GROUPS = [_]FoeGroup{
+pub const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "warren", .kind = .toad, .aggro = frogmod.AGGRO_R },
     .{ .field = "line", .kind = .archer, .aggro = archermod.AGGRO_R, .vs = &.{"warren"} },
     .{ .field = "grief", .kind = .ogre, .aggro = ogremod.AGGRO_R, .vsHero = false },
@@ -528,13 +597,17 @@ const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "cluster", .kind = .shroom, .aggro = shroommod.AGGRO_R },
     .{ .field = "warrens", .kind = .delver, .aggro = delvermod.AGGRO_R },
     .{ .field = "rite", .kind = .necromancer, .aggro = necromod.AGGRO_R, .vs = &.{ "line", "muster" } },
+    // A PACK, and it shoulders the small things aside: a hound this size walks through a sporeling.
+    .{ .field = "thicket", .kind = .florid_ravager, .aggro = ravagermod.AGGRO_R, .vs = &.{ "cluster", "warren" } },
+    // It is small and it is squishy: everything on this list walks through it, and it walks through nothing.
+    .{ .field = "ring", .kind = .mushroom_mage, .aggro = magemod.AGGRO_R },
     .{ .field = "vigil", .kind = .bone_knight, .aggro = knightmod.AGGRO_R, .vsHero = false, .vs = &.{ "line", "muster" } },
 };
 
 const BLOW_GROUPS = [_][]const u8{
     "warren", "grief",  "line",    "band",    "muster", "haunt",
     "swarm",  "grove",  "cluster", "warrens", "vigil",  "brood",
-    "rite",
+    "rite",   "thicket", "ring",
 };
 
 comptime {
@@ -796,24 +869,52 @@ fn chase(f: anytype, lead: f32, secs: f32) Chase {
     return .{ .turned = null, .out = mathx.distXZ(f.pos, f.home), .gap = mathx.distXZ(f.pos, hero) };
 }
 
-test "A SPIRIT'S JAWS MUST REACH THE BOTTOM OF WHAT IT IS SET ON — one sphere at a giant's chest is out of a wolf's world" {
+test "A SPIRIT'S JAWS MUST REACH INTO WHAT IT IS SET ON — the BOTTOM of a giant's sphere is a window she keeps falling out of" {
     var w = wolfmod.Wolf.spawn(mathx.zero3, 0);
     w.pose();
-    const jaw = w.jawPoint().y - w.pos.y + 0.20 * w.scale; // the teeth, plus the blade's own radius
+    const rest = w.jawPoint().y - w.pos.y + 0.20 * w.scale; // the teeth, plus the blade's own radius
+    // …AND THE SAME MEASUREMENT AT THE TOP OF THE POUNCE, which is the one that has to clear anything: the
+    // blade is only live across the strike, and the leap is what the strike is thrown off (owner: she has to
+    // jump and reach higher). Posed rather than derived — the lift and the nose-up are two contributions and
+    // solving them by hand is how the number and the animation part company.
+    w.stagePounce(1.0);
+    const full = w.jawPoint().y - w.pos.y + 0.20 * w.scale;
     var giant = ogremod.Ogre.spawn(mathx.zero3, 0, 1.0, 0.3);
     var snag = rootedmod.Rooted.spawn(mathx.zero3, 0, 1.0, 0.3);
     var plate = knightmod.Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
-    std.debug.print("\n  wolf teeth reach {d:.2} m\n", .{jaw});
+    std.debug.print("\n  wolf teeth reach {d:.2} m standing, {d:.2} m at a full pounce\n", .{ rest, full });
+    try std.testing.expect(full > rest + 0.4); // the leap is a LEAP, not a hop with a new name
+    // THE TWO ENDS OF THE DIAL ARE WHAT `pounceFor` INTERPOLATES, and they are written down in `wolf.zig` where
+    // it can read them. Measured here, because both come out of the posed rig and adding the lift and the
+    // nose-up together by hand is exactly how a number and an animation part company.
+    try std.testing.expectApproxEqAbs(wolfmod.TEETH_REST, rest, 0.04);
+    try std.testing.expectApproxEqAbs(wolfmod.TEETH_POUNCE, full, 0.04);
+
     inline for (.{ .{ "ogre", &giant }, .{ "rooted", &snag }, .{ "knight", &plate } }) |row| {
         const f = row[1];
-        const floor = f.centerWorld().y - f.pos.y - f.hurtRadius();
+        const mid = f.centerWorld().y - f.pos.y;
+        const r = f.hurtRadius();
+        const floor = mid - r;
         const held = f.bodyR() + w.bodyR();
         const trigger = wolfmod.triggerR(f.bodyR()); // the gate as `update` actually asks it
-        std.debug.print("  {s}: sphere floor {d:.2} (jaw gap {d:.2}) | held {d:.2} m out, bite triggers at {d:.2}\n", .{
-            row[0], floor, floor - jaw, held, trigger,
+        // …AND THE LEAP THIS BODY IS ACTUALLY WORTH (`wolf.pounceFor`), never the full one: a pounce sized for
+        // a giant's chest sails clean over a snag, which is the same complaint one creature along.
+        w.stagePounce(wolfmod.pounceFor(mid));
+        const jaw = w.jawPoint().y - w.pos.y + 0.20 * w.scale;
+        // HOW WIDE THE SPHERE IS AT THE HEIGHT SHE ACTUALLY BITES AT — the window her snout has to find, and
+        // the number that says whether "reachable" means anything. Grazing the floor it is nearly zero.
+        const dy = @abs(mid - jaw);
+        const window: f32 = if (dy >= r) 0 else @sqrt(r * r - dy * dy);
+        std.debug.print("  {s}: sphere {d:.2}..{d:.2} centre {d:.2} | pounce {d:.2}, teeth at {d:.2} ({d:.2} into it), window {d:.2} m against a hold of {d:.2}\n", .{
+            row[0], floor, mid + r, mid, wolfmod.pounceFor(mid), jaw, jaw - floor, window, held,
         });
-        try std.testing.expect(floor < jaw); // reachable in HEIGHT — every one of them is
         try std.testing.expect(held < trigger);
+        // **NOT MERELY REACHABLE — REACHABLE WITH ROOM, ON BOTH SIDES.** `floor < jaw` was the old bar and every
+        // one of them passed it while she bit air, because a sphere is a point at its floor; and a leap that
+        // clears the top of a low one fails the same way from above.
+        try std.testing.expect(@abs(mid - jaw) <= (1.0 - wolfmod.POUNCE_INTO) * r);
+        // …and the window she has to find has to be worth more than the collider holding her out of it.
+        try std.testing.expect(window > held * 0.55);
     }
 }
 
@@ -1139,6 +1240,13 @@ pub fn spawnWisp(g: *Game, from: rl.Vector3) void {
     poolPut(g, archermod.launchShaft(from, heroAimPoint(g), shademod.WISP_SPEED, shademod.WISP_HIT, true, .wisp));
 }
 
+/// **THE FIREBALL, LOBBED** — `loft` is the whole point of it: aimed flat a slow ball is a thing you sidestep
+/// once and forget, and lobbed it arrives on a tall arc you have to read the LANDING of. Where it goes after
+/// that is `archer.bouncesOf`'s business and nothing here has an opinion about it.
+fn spawnEmber(g: *Game, from: rl.Vector3) void {
+    poolPut(g, archermod.launchShaft(from, heroAimPoint(g), magemod.EMBER_SPEED, magemod.EMBER_HIT, true, .emberball));
+}
+
 pub fn noteYank(g: *Game, from: rl.Vector3, pull: f32) void {
     g.hook = .{ .from = from, .pull = pull };
 }
@@ -1273,6 +1381,11 @@ pub fn stepArrowsForShot(g: *Game, dt: f32) void {
     for (&g.arrows) |*ar| {
         if (!ar.live) continue;
         flyArrow(g, ar, dt);
+        // **THE HARNESS STILL HAS TO SPEND THE ONE-FRAME FLAG** even though it deliberately skips the voice
+        // and the embers (`emberBounces` — a shot must not play a sound). A one-frame flag with a reset on
+        // only ONE of its two drive paths is `justDied`'s own hazard: left set it latches for the rest of
+        // the run and every later frame reads a bounce that already happened.
+        ar.bounced = false;
     }
 }
 pub fn clearShaftsForShot(g: *Game) void {
@@ -1305,6 +1418,14 @@ pub fn poseWolfGatherForShot(g: *Game, u: f32) void {
     for (g.pack.live()) |*w| {
         plantActor(g, &w.pos);
         w.stageGather(u);
+    }
+}
+
+/// …and the LEAP at its top, which is the frame the whole move is for.
+pub fn poseWolfPounceForShot(g: *Game, amt: f32) void {
+    for (g.pack.live()) |*w| {
+        plantActor(g, &w.pos);
+        w.stagePounce(amt);
     }
 }
 
@@ -1525,6 +1646,13 @@ fn quarryKey(kind: FoeKind, idx: usize) u32 {
     return (@as(u32, @intFromEnum(kind)) << 16) | @as(u32, @intCast(@min(idx, 0xFFFF)));
 }
 
+/// **HOW HIGH UP A BODY ITS MASS ACTUALLY IS**, off its own feet — what a spirit aims its leap at
+/// (`wolf.Quarry.aim`). The hurt sphere's CENTRE and not its top: the top of an ogre is above anything with
+/// four legs, and biting the middle of a thing is what a wolf does anyway.
+fn aimOf(f: anytype) f32 {
+    return f.centerWorld().y - f.pos.y;
+}
+
 fn huntFor(g: *const Game, w: *const wolfmod.Wolf) ?wolfmod.Quarry {
     const from = w.pos;
     if (mathx.distXZ(from, g.hero.pos) > wolfmod.RECALL_R) return null;
@@ -1548,13 +1676,13 @@ fn huntFor(g: *const Game, w: *const wolfmod.Wolf) ?wolfmod.Quarry {
                 const d = mathx.distXZ(self.from, f.pos);
                 const out = mathx.distXZ(self.hero, f.pos);
                 if (key == self.held and d <= wolfmod.HUNT_R * wolfmod.HUNT_KEEP and out <= wolfmod.TETHER_R * wolfmod.HUNT_KEEP) {
-                    self.keep = .{ .at = f.pos, .r = f.bodyR(), .key = key };
+                    self.keep = .{ .at = f.pos, .r = f.bodyR(), .aim = aimOf(f), .key = key };
                     continue;
                 }
                 if (out > wolfmod.TETHER_R) continue;
                 if (d >= self.best) continue;
                 self.best = d;
-                self.at = .{ .at = f.pos, .r = f.bodyR(), .key = key };
+                self.at = .{ .at = f.pos, .r = f.bodyR(), .aim = aimOf(f), .key = key };
             }
         }
     };
@@ -1814,6 +1942,11 @@ fn applyHour(g: *Game) void {
     g.scene.setHour(g.day.hour);
     g.sky.setHour(g.day.hour);
     sfx.setDaylight(daynight.dayAmt(g.day.hour));
+}
+
+pub fn bootCamForShot(g: *Game, t: f32) void {
+    g.bootT = t;
+    bootCam(g, t);
 }
 
 pub fn pinHourForShot(g: *Game, hour: f32) void {
@@ -2472,8 +2605,30 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
         .venom => g.brood.splash(ground),
         .clump => g.band.splash(ar.pos), // at the CONTACT, not the floor: it can burst against a chest
         .bolt => g.hero.boltBurst(ar.pos, ground.y, g.hero.casts),
+        // THE FIREBALL GOING OUT — this is the LAST touch only, because `planted` is what calls this and a
+        // ball with budget left never plants (`archer.plantGround`). The bounces get their own, smaller
+        // voice and puff below.
+        .emberball => {
+            sfx.world(.ember_burst, ar.pos);
+            g.ring.splash(ar.pos);
+        },
         // The crock's gap is deliberate, until the owner picks what lightning landing looks like.
         .arrow, .firearrow, .wisp, .crock => {},
+    }
+}
+
+/// **AND THE BOUNCES, WHICH ARE THE MOVE.** Walked over both quivers after they have flown, because the flag
+/// is one frame wide and set inside `archer`'s own step — the creature that threw it is long out of the
+/// conversation and may well be dead. The RHYTHM is the cue: one thud per touch, so a player who has heard
+/// the pattern once knows where the next one is landing without looking down at it.
+fn emberBounces(g: *Game) void {
+    for (quivers(g)) |pool| {
+        for (pool) |*ar| {
+            if (!ar.bounced) continue;
+            ar.bounced = false;
+            sfx.world(.ember_bounce, ar.pos);
+            g.ring.bounce(ar.pos);
+        }
     }
 }
 
@@ -2488,6 +2643,7 @@ fn drawArrows(g: *Game) void {
                 .venom => &g.venomModel,
                 .firearrow => &g.fireArrowModel,
                 .bolt => &g.boltModel,
+                .emberball => &g.emberModel,
                 .wisp => &g.wispModel,
             };
             rl.drawMesh(m.meshes[0], m.materials[0], archermod.arrowXform(ar));
@@ -2506,6 +2662,14 @@ fn sceneCam(g: *const Game) rl.Camera3D {
 }
 
 fn sunFocus(g: *const Game) rl.Vector3 {
+    // **THE SHADOW BOX FOLLOWS THE LENS WHEREVER THE LENS IS NOT ON HIM.** It tracks the hero because that is
+    // where the fight is; on the boot screen there is no fight and the camera is a hundred metres away over
+    // the wood, so anchored to him the whole pass renders with no cast shadow in frame at all — which on a
+    // canopy is most of what there is to look at. The editor's branch below is the same rule, older.
+    if (g.menu.booting()) {
+        const at = bootLook(g, g.bootT);
+        return v3(at.x, g.env.groundAt(at.x, at.z), at.z);
+    }
     if (!g.editor.on) return g.hero.pos;
     const t = g.editor.cam.target;
     return v3(t.x, g.env.groundAt(t.x, t.z), t.z);
@@ -2885,7 +3049,13 @@ pub fn run(mode: Mode) void {
     rl.gl.rlSetClipPlanes(CLIP_NEAR, CLIP_FAR);
 
     if (mode == .shots) {
-        @import("shots.zig").runShots(g);
+        // A MAP THAT IS NOT THE AUTHORED ONE GETS THE DEV PASS. `runShots` photographs a fixed sequence and
+        // needs that world's exact cast; a test map posts whatever it posts.
+        if (std.mem.eql(u8, worldfmt.startMap(), worldfmt.START_MAP)) {
+            @import("shots.zig").runShots(g);
+        } else {
+            @import("shots.zig").runMapShots(g);
+        }
         return;
     }
     if (mode == .props) {
@@ -3011,11 +3181,9 @@ pub fn run(mode: Mode) void {
             g.rig.tickShake(rawDt);
             const booting = g.menu.booting();
             if (booting) {
-                g.rig.orbit(BOOT_SPIN * rawDt, 0);
-                g.rig.pitch = BOOT_PITCH;
-                g.rig.dist = BOOT_DIST;
-            }
-            g.rig.follow(g.hero.shoulderPoint());
+                g.bootT += rawDt;
+                bootCam(g, g.bootT);
+            } else g.rig.follow(g.hero.shoulderPoint());
             g.rumble.update(rawDt, false); // motors silent while paused (envelopes still decay)
             sfx.ambience(rawDt);
             drawScene(g);
@@ -3398,6 +3566,34 @@ pub fn run(mode: Mode) void {
         if (g.rite.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.heavy(), true);
         }
+        if (g.thicket.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.heavy(), true);
+        }
+        // **THE CREATURE SAYS WHEN AND THIS SAYS IT** (the spirit's arrangement) — a creature that called
+        // `sfx` itself would be one that plays through the pause card and the shot harness. Five one-frame
+        // edges, cleared at the top of its own update.
+        for (g.thicket.live()) |*r| {
+            if (r.opened) sfx.world(.ravager_bloom, r.pos);
+            if (r.leapt) sfx.world(.ravager_leap, r.pos);
+            if (r.snapped) sfx.world(.ravager_snap, r.pos);
+            if (r.yelped) sfx.world(.ravager_hurt, r.pos);
+            if (r.justDied) sfx.world(.ravager_die, r.pos);
+        }
+        if (g.ring.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.heavy(), true);
+        }
+        // **THE MAGE'S BLOW IS NOT ITS OWN** — the ball goes into the shared pool and arrives seconds later,
+        // so the creature's `update` above can only ever return null. What it hands over here is the FLAG and
+        // the point it left from; everything after that belongs to `archer`.
+        for (g.ring.live()) |*k| {
+            if (k.kindled) sfx.world(.mage_kindle, k.pos);
+            if (k.yelped) sfx.world(.mage_hurt, k.pos);
+            if (k.justDied) sfx.world(.mage_die, k.pos);
+            if (k.lobbed) {
+                sfx.world(.mage_throw, k.lobFrom);
+                spawnEmber(g, k.lobFrom);
+            }
+        }
         applyRaises(g);
         if (g.rite.anyLaid()) {
             g.rumble.play(rumblemod.swing_light);
@@ -3490,6 +3686,10 @@ pub fn run(mode: Mode) void {
             if (g.hero.attacking) _ = g.hero.drinkLeech();
         }
         stepShafts(g, dt);
+        // **AFTER BOTH QUIVERS HAVE FLOWN**, so one pass covers every ball in the sky whoever threw it — the
+        // flag is one frame wide and set inside `archer`'s own step, so a pass that ran before `stepShafts`
+        // would silently miss anything bouncing out of HIS hands the day he gets one.
+        emberBounces(g);
         if (anyFoeDied(g)) {
             g.rumble.play(rumblemod.kill);
             g.rig.addShake(SHAKE_KILL);

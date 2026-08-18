@@ -378,7 +378,7 @@ const OVERHEAD = Attack{
 
 /// THE THRUST — "longest range of them all, only used when no other attacks will reach": the mid-range
 /// answer, the gap-filler between the big cooldowns (its own clock is the shortest he has), and the GUARD
-/// COUNTER — a blow caught on the door may be answered with exactly this, at once (`riposteArm`).
+/// COUNTER — a blow caught on the door may be answered with exactly this, at once (`caught`, clocked by `riposteCd`).
 const THRUST = Attack{
     .reachOut = 1.70, // MEASURED off the posed point alone: 4.99 m — the LUNGE is on top (`thrustBandR`)
     .windDur = 0.50,
@@ -1402,7 +1402,7 @@ pub const SWAT_I = 5;
 
 comptime {
     // **THE INDICES ARE PINNED TO THE ROWS THEY NAME.** They are hand-written ordinals mirroring `MOVES`'
-    // ORDER, and every one of `keysFor`, `routeFor`, `windState`, `cdSlot`, `blowOf`, the `cds` array and
+    // ORDER, and every one of `keysFor`, `routeFor`, `trackFor`, `cdSlot`, the `cds` array and
     // `takeParry`'s SWEEP2→SWEEP chain resolves through them — so inserting a seventh stroke anywhere but the
     // end, or reordering the table, silently re-points the whole kit and still compiles. `FOE_GROUPS`'
     // arrangement in `game.zig`: a table that cannot be derived is cross-checked against the one it mirrors.
@@ -3424,7 +3424,7 @@ pub const Knight = struct {
     fn setStrike(self: *Knight, k: f32) void {
         self.chanSet(samplePose(self.trackFor().strike, k));
     }
-    /// The move's track, with the two-picture rows resolved (`shoving` for the bash, `swatSide` for the swat).
+    /// The move's track, with the two-picture rows resolved (`shoving` for the bash, `swatShield` for the swat).
     fn trackFor(self: *const Knight) MoveKeys {
         return switch (self.atk) {
             BASH_I => bashKeys(self.shoving),
@@ -4785,7 +4785,7 @@ const SH_STANDOFF = 0.028 * H;
 /// measured 1.29 m off the ground against a hero whose chest is at 1.12 m and whose crown is 1.80 m — so three
 /// metres of iron came at him and the hurt test clipped the top of his head (owner: the swings go right over
 /// my head). The mesh reached his shins the whole time: the PICTURE was right and the mechanic disagreed with
-/// it, which is the failure `stowAmt` was written for one layer up. A test pins the height as well as the
+/// it, which is the failure `swipeOpen` was written for one layer up. A test pins the height as well as the
 /// reach, because outward reach was measured and this never was.
 const SH_LOW = v3(0, -SH_BOT, SH_THICK);
 const SH_HIGH = v3(0, SH_TOP, SH_THICK);

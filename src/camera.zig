@@ -9,7 +9,7 @@ const clampF = mathx.clampF;
 pub const MIN_DIST = 2.4;
 pub const MAX_DIST = 9.0;
 const DEFAULT_DIST = 4.6;
-const DEFAULT_PITCH = 0.28; // gentle downward framing; recenter (R3) returns here too
+const DEFAULT_PITCH = 0.28;
 const ZOOM_STEP = 0.6;
 const LOOK_SENS = 0.0032; // radians per pixel of mouse motion
 /// ~ -22 deg, looking UP from below. Wider than the -0.20 the free look ever asked for, because the LOCK
@@ -18,9 +18,8 @@ const LOOK_SENS = 0.0032; // radians per pixel of mouse motion
 /// to against the top edge of the screen.
 const PITCH_MIN = -0.38;
 const PITCH_MAX = 1.15; // ~  66 deg (looking down)
-const SHOULDER = 0.55; // lateral offset (world units): hero sits left of centre
-const TARGET_RAISE = 0.15; // lift the look-at a touch above the shoulder point
-/// How far the eye stays clear of the ground (see `followClear`)…
+const SHOULDER = 0.55;
+const TARGET_RAISE = 0.15;
 const GROUND_CLEAR = 0.7;
 /// …and how much boom one probe of that search gives up. Named beside the clearance it is searching for:
 /// the two are only ever chosen against each other, and a bare 0.25 in the loop reads as arbitrary.
@@ -30,36 +29,27 @@ const GROUND_PROBE = 0.25;
 /// noise never bills a step of zoom.
 const GROUND_RISE = 0.2;
 
-// AIMING PUSHES THE EYE IN PAST HIM (L2 / RMB with the bow).
-const AIM_DIST = 0.7; // right up past his head — near enough that he is behind the lens, not in front of it
+const AIM_DIST = 0.7;
 const AIM_SHOULDER = 0.30;
 const AIM_RAISE = 0.42;
 
-/// HOW MUCH OF A JUMP THE LENS TAKES. Not all of it, and that is the whole point: the rig is bolted to his
-/// shoulder, so a target that rose the full metre would hold him dead still in frame and move the WORLD
-/// instead — the same picture with the wrong subject. At a bit over half, he visibly climbs out of the frame
-/// and the horizon barely stirs. And it is EASED (`LIFT_RATE`), for `game.GROUND_RISE_RATE`'s reason: the eye
-/// rides this, so anything that snaps it kicks the frame.
 const LIFT_SHARE: f32 = 0.55;
 const LIFT_RATE: f32 = 10.0;
 
-const SHAKE_MAX = 0.13; // world-unit jitter amplitude at full trauma
-const SHAKE_DECAY = 2.6; // trauma drained per second — shakes die fast (a crack, not a wobble)
-const SHAKE_FREQ = 33.0; // base jitter frequency (layered sines, incommensurate)
+const SHAKE_MAX = 0.13;
+const SHAKE_DECAY = 2.6;
+const SHAKE_FREQ = 33.0;
 
 pub const CamRig = struct {
     cam: rl.Camera3D,
     yaw: f32, // azimuth (radians); 0 = camera behind a +Z-facing hero
     pitch: f32, // elevation (radians); + looks down
     dist: f32,
-    /// HOW FAR THE AIM VIEW IS BLENDED IN, 0..1 — pushed in from the hero's own stance blend every frame.
     aimB: f32 = 0,
-    /// HOW FAR THE LENS HAS COME UP WITH A JUMP, in metres — stamped every frame by `tickLift`, the aim
-    /// blend's shape exactly. See `LIFT_SHARE`: the rest of the jump is what the player watches him do.
     lift: f32 = 0,
-    trauma: f32 = 0, // 0..1 impact charge; addShake() feeds it, tickShake() drains it
-    shakeT: f32 = 0, // running phase for the jitter noise
-    shakeOff: rl.Vector3 = mathx.zero3, // this frame's world-space jitter (zero when calm)
+    trauma: f32 = 0,
+    shakeT: f32 = 0,
+    shakeOff: rl.Vector3 = mathx.zero3,
 
     pub fn forwardXZ(c: *const CamRig) rl.Vector3 {
         return mathx.headingDir(c.yaw);
@@ -99,12 +89,11 @@ pub const CamRig = struct {
     pub fn tickShake(c: *CamRig, dt: f32) void {
         c.trauma = clampF(c.trauma - SHAKE_DECAY * dt, 0, 1);
         c.shakeT += dt;
-        const s = c.trauma * c.trauma * SHAKE_MAX; // trauma² — big hits crack, small ones whisper
+        const s = c.trauma * c.trauma * SHAKE_MAX;
         if (s < 0.0005) {
             c.shakeOff = mathx.zero3;
             return;
         }
-        // Layered incommensurate sines ≈ smooth noise, and no RNG to reseed or replay.
         const t = c.shakeT;
         c.shakeOff = v3(
             (mathx.sinf(t * SHAKE_FREQ) + 0.5 * mathx.sinf(t * SHAKE_FREQ * 2.31 + 1.7)) * s,
@@ -129,7 +118,6 @@ pub const CamRig = struct {
         );
     }
 
-    /// The player's own zoom, pulled in past the hero by the aim blend.
     pub fn boom(c: *const CamRig) f32 {
         return mathx.lerpF(c.dist, AIM_DIST, mathx.clampF(c.aimB, 0, 1));
     }
@@ -138,7 +126,6 @@ pub const CamRig = struct {
         return mathx.minF(MIN_DIST, c.boom());
     }
 
-    /// The share of the hero's own `lift` the eye is to carry, walked toward every frame.
     pub fn tickLift(c: *CamRig, heroLift: f32, dt: f32) void {
         c.lift = mathx.approach(c.lift, LIFT_SHARE * heroLift, LIFT_RATE * dt);
     }
@@ -178,7 +165,6 @@ pub const CamRig = struct {
     }
 
     fn place(c: *CamRig, target: rl.Vector3, dist: f32) void {
-        // Impact jitter rides BOTH ends so the whole frame kicks (a shake, not a re-aim).
         c.cam.target = mathx.addV(target, c.shakeOff);
         c.cam.position = mathx.addV(mathx.addV(target, mathx.scaleV(c.backDir(), dist)), c.shakeOff);
     }
@@ -210,16 +196,13 @@ test "AN UP-TILT IS NOT A ZOOM — flat ground costs no boom, a hill behind stil
             return 0;
         }
     };
-    // Locked up at a tall foe: full negative pitch on level ground.
     var rig = CamRig{ .cam = undefined, .yaw = 0, .pitch = PITCH_MIN, .dist = DEFAULT_DIST };
     rig.followClear(v3(0, 1.4, 0), {}, Flat.ground);
     // The skim clamp lifts the eye a little, so measure against 0.9.
     const boomKept = mathx.lenV(mathx.subV(rig.cam.position, rig.cam.target));
-    try std.testing.expect(boomKept > DEFAULT_DIST * 0.9); // the distance stays the player's…
-    try std.testing.expect(rig.cam.position.y >= GROUND_CLEAR - 1e-4); // …and the skim clamp holds the eye up
-    // A hillside behind the lens is still paid for in boom, not by lifting the eye over it.
+    try std.testing.expect(boomKept > DEFAULT_DIST * 0.9);
+    try std.testing.expect(rig.cam.position.y >= GROUND_CLEAR - 1e-4);
     const Hill = struct {
-        // Rising behind a hero at the origin: the camera at yaw 0 sits at -Z, and the ground climbs that way.
         fn ground(_: void, _: f32, z: f32) f32 {
             return mathx.maxF(0, -z - 1.0);
         }
@@ -227,7 +210,7 @@ test "AN UP-TILT IS NOT A ZOOM — flat ground costs no boom, a hill behind stil
     var rig2 = CamRig{ .cam = undefined, .yaw = 0, .pitch = 0.1, .dist = MAX_DIST };
     rig2.followClear(v3(0, 1.4, 0), {}, Hill.ground);
     const boomPaid = mathx.lenV(mathx.subV(rig2.cam.position, rig2.cam.target));
-    try std.testing.expect(boomPaid < MAX_DIST - GROUND_PROBE); // it gave ground to the hill
+    try std.testing.expect(boomPaid < MAX_DIST - GROUND_PROBE);
 }
 
 test "the centre ray is the line the reticle marks" {

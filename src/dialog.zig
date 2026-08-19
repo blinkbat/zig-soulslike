@@ -4,7 +4,7 @@ const mathx = @import("mathx.zig");
 const wf = @import("worldfmt.zig");
 const trigger = @import("trigger.zig");
 const gfx = @import("gfx.zig");
-const npcmod = @import("npc.zig"); // for the PORTRAIT FRAMING only — never for a body
+const npcmod = @import("npc.zig");
 const hud = @import("hud.zig");
 const uiart = @import("uiart.zig");
 const sfx = @import("audio.zig");
@@ -12,24 +12,17 @@ const sfx = @import("audio.zig");
 const rgba = mathx.rgba;
 const v3 = mathx.v3;
 
-// A CONVERSATION, and the panel it is read off.
 
-/// How long the panel takes to come up…
 const RAISE: f32 = 0.14;
-/// …and how far it slides through on the way, in px.
 const RAISE_LIFT: f32 = 40.0;
-/// The plate's own opacity at full raise.
 const PLATE_A: f32 = 235.0;
 
 const SIDE_MARGIN: i32 = 54;
 const BOTTOM_MARGIN: i32 = 44;
 const PAD: i32 = 22;
-/// Gap above and below a rule.
 const RULE_GAP: i32 = 10;
 const ROW_GAP: i32 = 8;
 const MAX_LINES: usize = 7;
-/// The panel never grows past this share of the screen, however long a node's prose runs — past it the words
-/// have taken the world with them.
 const MAX_FRAC: f32 = 0.62;
 const WRAP_BUF: usize = 640;
 const LABEL_CAP: usize = 128;
@@ -37,27 +30,17 @@ const LABEL_CAP: usize = 128;
 const TEXT = rgba(224, 214, 190, 246);
 const TEXT_OFF = rgba(150, 142, 124, 230);
 const NAME = uiart.GILT;
-/// How black the world goes behind the panel. Dimmed, never hidden: you are still standing somewhere.
 const VEIL: u8 = 132;
 
-// THE PORTRAIT — the man you are talking to, photographed live.
 const PORT_W: i32 = 176;
 const PORT_H: i32 = 200;
-/// Degrees off his own front. Three-quarters: enough to give the head a near side and a far side — a dead-on
-/// face is a passport photo and reads flat on a low-poly head with no shading break in it.
 const PORT_YAW = hud.PORTRAIT_YAW;
 const PORT_PITCH = hud.PORTRAIT_PITCH;
 const PORT_DIST = npcmod.PORTRAIT_DIST;
 const PORT_FOV = hud.PORTRAIT_FOV;
-/// The plate is sized to what it holds, and from here that includes the picture.
 const PORT_GAP: i32 = 16;
-/// …and the fewest pixels of PROSE worth wrapping into. Under this the portrait is dropped instead: the
-/// words are the panel and the picture is an attribution on them.
 const PROSE_MIN_W: i32 = 240;
 
-/// WHAT THE PANEL NEEDS TO TAKE THE PICTURE, handed in by the game rather than reached for: the scene it
-/// draws through, where the face is, which way he is pointing, and how to draw him. `who` is an index into
-/// the folk, and `drawFn` is passed so this file never has to import the creature.
 pub const Portrait = struct {
     scene: *gfx.Scene,
     face: rl.Vector3,
@@ -70,7 +53,6 @@ pub const Input = struct {
     up: bool = false,
     down: bool = false,
     confirm: bool = false,
-    /// A number key, 1-based, or null.
     pick: ?usize = null,
 };
 
@@ -79,21 +61,16 @@ pub const Session = struct {
     node: u16 = wf.NO_NODE,
     cursor: usize = 0,
     t: f32 = 0,
-    /// Which of the map's folk is speaking, when a prompt rather than a trigger opened this.
     npc: ?usize = null,
-    /// Who the panel names when a node does not say (`who:`).
     speaker: [wf.ID_CAP * 2]u8 = undefined,
     speakerLen: usize = 0,
-    /// An EDGE, true for exactly the frame the conversation ends on (`rest.justLeft`'s pattern).
     justClosed: bool = false,
-    /// …and WHICH conversation closed, since `dlg` is already back to nothing by then.
     closed: u16 = wf.NO_DIALOG,
 
     pub fn active(self: *const Session) bool {
         return self.dlg != wf.NO_DIALOG;
     }
 
-    /// How far up the panel is, 0..1.
     pub fn raise(self: *const Session) f32 {
         return mathx.smoothstep(0, RAISE, self.t);
     }
@@ -107,8 +84,6 @@ pub const Session = struct {
         @memcpy(self.speaker[0..self.speakerLen], s[0..self.speakerLen]);
     }
 
-    /// OPEN one, at its first node. Refuses a dialog that is not there or has no nodes, so a bad map record
-    /// costs a silent no-op rather than a panel with nothing in it.
     pub fn open(self: *Session, m: *const wf.Map, rt: *trigger.Runtime, dlg: u16, who: []const u8, npc: ?usize) bool {
         const d = m.dialogAt(dlg) orelse return false;
         if (d.nnodes == 0) return false;
@@ -118,8 +93,6 @@ pub const Session = struct {
         return true;
     }
 
-    /// The node's own actions fire on ARRIVAL, so a line that opens a gate has opened it by the time the
-    /// player reads it.
     fn enter(self: *Session, m: *const wf.Map, rt: *trigger.Runtime) void {
         self.cursor = 0;
         const nd = self.nodeOf(m) orelse return;
@@ -131,7 +104,6 @@ pub const Session = struct {
         return &m.nodes[self.node];
     }
 
-    /// The lines actually on offer, gates applied — written into `out` as indices into the node's choices.
     pub fn offered(self: *const Session, m: *const wf.Map, rt: *const trigger.Runtime, w: trigger.World, out: []usize) []usize {
         const nd = self.nodeOf(m) orelse return out[0..0];
         var n: usize = 0;
@@ -161,7 +133,6 @@ pub const Session = struct {
                 self.cursor += 1;
                 sfx.play(.menu_move);
             }
-            // A number key jumps AND picks, the way BG2's own list does.
             var take: ?usize = null;
             if (in.pick) |p| {
                 if (p >= 1 and p <= shown.len) take = p - 1;
@@ -176,7 +147,6 @@ pub const Session = struct {
             }
             return;
         }
-        // No lines to answer with: Continue, and where `then:` said.
         if (in.confirm or in.pick != null) {
             const nd = self.nodeOf(m) orelse return self.close(rt);
             sfx.play(.menu_pick);
@@ -187,15 +157,11 @@ pub const Session = struct {
     fn go(self: *Session, m: *const wf.Map, rt: *trigger.Runtime, next: u16) void {
         if (next == wf.NO_NODE or next >= m.nnodes) return self.close(rt);
         self.node = next;
-        // The panel is already up, so the reveal does not replay between nodes.
         self.enter(m, rt);
     }
 
     fn close(self: *Session, rt: *trigger.Runtime) void {
         const was = self.dlg;
-        // WHO WAS SPEAKING SURVIVES THE EDGE. The whole point of `justClosed` is that the caller acts on it —
-        // it is what fires the wanderer's parting nod — and a wipe that took `npc` with it left that read as
-        // `null` on the one frame anybody looks.
         const who = self.npc;
         rt.finished(was);
         rt.dialogClosed();
@@ -203,8 +169,6 @@ pub const Session = struct {
         sfx.play(.menu_back);
     }
 
-    /// THE PANEL. Drawn after the retro blit like the rest of the HUD, so these colours are literal screen
-    /// values and the author-dark rule does not apply.
     pub fn draw(self: *const Session, m: *const wf.Map, rt: *const trigger.Runtime, w: trigger.World, port: ?Portrait) void {
         if (!self.active()) return;
         const nd = self.nodeOf(m) orelse return;
@@ -244,23 +208,16 @@ pub const Session = struct {
         need += @as(i32, @intCast(lines.len)) * bodyH;
         if (shown.len > 0) need += RULE_GAP * 2 + @as(i32, @intCast(shown.len)) * rowStep;
         need += RULE_GAP + hud.lineH(hud.HINT);
-        // …and the picture is content too: a two-line exchange must still leave a plate tall enough to hold
-        // a face, or the portrait spills out of the frame it is supposed to be mounted in.
         if (showPort) need = @max(need, PAD * 2 + PORT_H);
 
         const capH = @as(i32, @intFromFloat(@as(f32, @floatFromInt(sh)) * MAX_FRAC));
         const hpx = @min(need, capH);
-        // It RISES: the panel slides up into place rather than appearing, which is what says a conversation
-        // began rather than the frame changing.
         const lift = @as(i32, @intFromFloat((1.0 - k) * RAISE_LIFT));
         const y = sh - BOTTOM_MARGIN - hpx + lift;
         const a: u8 = @intFromFloat(PLATE_A * k);
         uiart.plate(x, y, wpx, hpx, a);
         uiart.frame(x, y, wpx, hpx, a);
         if (showPort) {
-            // Fitted to whatever the plate ended up being, and KEEPING ITS ASPECT: `MAX_FRAC` may have
-            // refused the height `need` asked for, and a picture squashed to fill the hole is a different
-            // face. It shrinks in both axes and centres in the column instead.
             const ph = @min(PORT_H, @max(0, hpx - PAD * 2));
             const pw = @divTrunc(PORT_W * ph, PORT_H);
             if (ph > 0) drawPortrait(port.?, x + PAD + @divTrunc(PORT_W - pw, 2), y + PAD, pw, ph);
@@ -270,7 +227,6 @@ pub const Session = struct {
         const midX = x + @divTrunc(wpx, 2);
         const halfW = @divTrunc(innerW, 2);
 
-        // WHO IS TALKING — the node's own `who:` first, then whoever the prompt named.
         if (who.len > 0) {
             hud.engraved(zterm(&nameBuf, who), innerX, cy, hud.BODY, NAME);
             cy += bodyH + RULE_GAP;
@@ -293,8 +249,6 @@ pub const Session = struct {
             uiart.divider(midX, cy, halfW, a);
             cy += RULE_GAP;
             for (shown, 0..) |ci, row| {
-                // The measure above wanted `need`, and `MAX_FRAC` may have refused it on a short window. A row
-                // that will not fit inside the plate is not drawn OUTSIDE it.
                 if (cy + rowStep > footer) break;
                 const c = &nd.choices[ci];
                 const on = row == self.cursor;
@@ -303,14 +257,10 @@ pub const Session = struct {
                 var out: [LABEL_CAP]u8 = undefined;
                 const label = m.spanText(c.label);
                 const numbered = std.fmt.bufPrint(&out, "{d}. {s}", .{ row + 1, label }) catch label;
-                // The bar `rowHilite` lays down IS the cursor here as it is in every menu (`uiart.caret`);
-                // this row used to carry a gilt diamond on top of it, which is one cursor drawn twice.
                 hud.text(zterm(&lb, numbered), innerX + (if (on) @as(i32, 10) else 0), cy, hud.BODY, if (on) uiart.HOT else TEXT_OFF);
                 cy += rowStep;
             }
         }
-        // THE FOOTER NAMES THE BUTTONS AND NOTHING ELSE — the same interact glyph the world's own prompt
-        // showed to open this conversation, so the button that got you in is the button that walks you out.
         var hints: [2]hud.Hint = undefined;
         var n: usize = 0;
         if (shown.len > 0) {
@@ -323,9 +273,6 @@ pub const Session = struct {
     }
 };
 
-/// TAKE THE PICTURE AND MOUNT IT. The render target is lazy and lives as long as the process (`book`'s
-/// `portRT`), because a conversation opens and closes constantly and reallocating a target per panel is a
-/// stall you can feel.
 fn drawPortrait(p: Portrait, dx: i32, dy: i32, dw: i32, dh: i32) void {
     const dst = rl.Rectangle{
         .x = @floatFromInt(dx),
@@ -333,8 +280,6 @@ fn drawPortrait(p: Portrait, dx: i32, dy: i32, dw: i32, dh: i32) void {
         .width = @floatFromInt(dw),
         .height = @floatFromInt(dh),
     };
-    // THE CAMERA AND THE TARGET ARE `hud.livePortrait`'s — three callers photograph a body now (the book's
-    // doll, this, the spirit toast) and three copies of one camera is three things to retune apart.
     hud.livePortrait(.{
         .scene = p.scene,
         .focus = p.face,
@@ -345,7 +290,6 @@ fn drawPortrait(p: Portrait, dx: i32, dy: i32, dw: i32, dh: i32) void {
         .ctx = p.ctx,
         .drawFn = p.drawFn,
     }, dst, rl.Color.white);
-    // Dusk at the edges so he sits IN the plate rather than on top of it, and a gilt rebate to mount it.
     const band = @divTrunc(dh, 5);
     rl.drawRectangleGradientV(dx, dy, dw, band, rgba(0, 0, 0, 175), rgba(0, 0, 0, 0));
     rl.drawRectangleGradientV(dx, dy + dh - band, dw, band, rgba(0, 0, 0, 0), rgba(0, 0, 0, 195));
@@ -355,7 +299,6 @@ fn drawPortrait(p: Portrait, dx: i32, dy: i32, dw: i32, dh: i32) void {
     rl.drawRectangleLinesEx(dst, 1, mathx.withAlpha(uiart.GILT_DIM, 95));
 }
 
-/// A NUL-terminated copy, because `hud.text` takes a sentinel slice and the arena's prose has none.
 fn zterm(buf: []u8, s: []const u8) [:0]const u8 {
     const n = @min(s.len, buf.len - 1);
     @memcpy(buf[0..n], s[0..n]);
@@ -400,10 +343,10 @@ test "a conversation walks its nodes and a then: brings it back" {
     try std.testing.expect(s.active());
     try std.testing.expectEqualStrings("root", wf.idText(&s.nodeOf(m).?.id));
 
-    pick(&s, m, &rt, 1); // "The way north?"
+    pick(&s, m, &rt, 1);
     try std.testing.expectEqualStrings("north", wf.idText(&s.nodeOf(m).?.id));
-    try std.testing.expect(rt.flags[m.findFlag("told").?]); // the node's act fired on arrival
-    s.update(m, &rt, .{}, 1.0 / 60.0, .{ .confirm = true }); // Continue
+    try std.testing.expect(rt.flags[m.findFlag("told").?]);
+    s.update(m, &rt, .{}, 1.0 / 60.0, .{ .confirm = true });
     try std.testing.expectEqualStrings("root", wf.idText(&s.nodeOf(m).?.id));
 }
 
@@ -418,7 +361,6 @@ test "a gated line is not offered until its flag is up, and numbering follows wh
 
     var buf: [wf.MAX_CHOICES]usize = undefined;
     try std.testing.expectEqual(@as(usize, 2), s.offered(m, &rt, .{}, &buf).len);
-    // …so line 2 is "Nothing." while the gate is shut, and picking it ENDS the conversation.
     pick(&s, m, &rt, 2);
     try std.testing.expect(!s.active());
     try std.testing.expect(rt.talked[0]);
@@ -427,7 +369,7 @@ test "a gated line is not offered until its flag is up, and numbering follows wh
     _ = s.open(m, &rt, 0, "Someone", null);
     const shown = s.offered(m, &rt, .{}, &buf);
     try std.testing.expectEqual(@as(usize, 3), shown.len);
-    try std.testing.expectEqual(@as(usize, 1), shown[1]); // the gated one is back in the middle
+    try std.testing.expectEqual(@as(usize, 1), shown[1]);
 }
 
 test "the cursor cannot leave the offered lines" {
@@ -443,7 +385,7 @@ test "the cursor cannot leave the offered lines" {
     try std.testing.expectEqual(@as(usize, 0), s.cursor);
     i = 0;
     while (i < 8) : (i += 1) s.update(m, &rt, .{}, 1.0 / 60.0, .{ .down = true });
-    try std.testing.expectEqual(@as(usize, 1), s.cursor); // two lines offered, so the last is 1
+    try std.testing.expectEqual(@as(usize, 1), s.cursor);
 }
 
 test "closing is a one-frame edge that names what closed AND who was speaking" {
@@ -457,7 +399,6 @@ test "closing is a one-frame edge that names what closed AND who was speaking" {
     pick(&s, m, &rt, 2);
     try std.testing.expect(s.justClosed);
     try std.testing.expectEqual(@as(u16, 0), s.closed);
-    // …and WHICH of the folk it was, or the parting gesture has nobody to play on.
     try std.testing.expectEqual(@as(?usize, 3), s.npc);
     s.update(m, &rt, .{}, 1.0 / 60.0, .{});
     try std.testing.expect(!s.justClosed);
@@ -471,7 +412,6 @@ test "a hidden gate cannot be reached by its own number" {
     rt.arm(m);
     var s = Session{};
     _ = s.open(m, &rt, 0, "Someone", null);
-    // Three lines are authored and two are offered, so a 3 must do nothing at all.
     pick(&s, m, &rt, 3);
     try std.testing.expect(s.active());
     try std.testing.expectEqualStrings("root", wf.idText(&s.nodeOf(m).?.id));

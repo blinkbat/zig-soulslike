@@ -7,10 +7,10 @@ const rumblemod = @import("rumble.zig");
 const sfx = @import("audio.zig");
 const item = @import("item.zig");
 const uiart = @import("uiart.zig");
-const bookmod = @import("book.zig"); // pad START opens the CHARACTER BOOK, which is its own three pages
-const daynight = @import("daynight.zig"); // …and Debug carries the world clock's one scrub row
-const weathermod = @import("weather.zig"); // …and the sky's own events, on the same row's terms
-const savemod = @import("save.zig"); // …and the boot screen carries the three slots
+const bookmod = @import("book.zig");
+const daynight = @import("daynight.zig");
+const weathermod = @import("weather.zig");
+const savemod = @import("save.zig");
 
 const rgba = mathx.rgba;
 
@@ -18,22 +18,13 @@ const padPressed = rumblemod.padPressed;
 const padDown = rumblemod.padDown;
 
 
-/// The three swap actions are the BOOK's, passed straight through: the menu owns no game state and never
-/// has, and an equipment screen that reached into the hero would be the first place it did. The two BOOT
-/// actions keep the same split: this file says which row was pressed, `game.zig` is what starts a world.
 pub const Action = union(enum) {
     none,
     quit,
-    /// PUT THE TITLE BACK UP. Quit is the BOOT screen's row now — from inside a game the way out is the
-    /// screen you came in through, and a running character is never more than a bonfire from being saved.
     toTitle,
     editor,
-    /// …all three carrying WHICH SLOT, because with three of them the row pressed is only half the answer.
     newGame: usize,
     loadGame: usize,
-    /// THROW A CHARACTER AWAY. Handed up like the other two rather than done here: the file is `save.zig`'s
-    /// and the shelf is `game.zig`'s, and a menu that deleted one would be the first place this file touched
-    /// the disk. It is already ARMED by the time it is returned — the picker asked, and this is the answer.
     deleteSlot: usize,
     use: item.Kind,
     arm: bookmod.Action,
@@ -41,23 +32,13 @@ pub const Action = union(enum) {
 
 const Screen = enum {
     closed,
-    /// ── THE BOOT SCREEN, which is what the window opens on. It is NOT the pause card with different rows:
-    /// there is no world behind it to go back to, so it has no Back and no Continue, and Select/Start are
-    /// refused while it is up rather than gated at the call site.
     boot,
-    /// THE THREE SLOTS, each shown by the picture taken at the fire it was written at. Reached from Load
-    /// always, and from New Game only when all three are full — which is the one time starting a character
-    /// is a decision about an existing one.
     slots,
-    main, // ── the GAME menu (Select) …
+    main,
     options,
     debug,
     retro,
-    // THE SOUND FILTER RACK IS NOT HERE ANY MORE — it moved to the EDITOR, beside the jukebox, because it
-    // is an authoring tool and not a setting: you turn a dial to hear what a voice becomes, and the one
-    // place you can hear a voice on demand is the jukebox. The RETRO rack stays: that one is a LOOK the
-    // player picks. See `editor.zig`'s `.jukebox` modal.
-    character, // …and the CHARACTER BOOK (Start), which is `book.zig` end to end
+    character,
 };
 
 const OPT_MIX = [_]sfx.Submix{ .ambience, .sfx, .combat };
@@ -67,19 +48,11 @@ comptime {
 const OPT_CLOSE = OPT_MIX.len;
 const OPT_COUNT = OPT_CLOSE + 1;
 
-// Debug rows (the retro list gets a submenu; the rest toggle/cycle in place). The SOUND filter rack used to
-// sit here and is now the editor's — see the note on `Screen`.
 const DBG_RETRO = 0;
 const DBG_STATS = 1;
 const DBG_WIREFRAME = 2;
 const DBG_HITBOX = 3;
-/// THE WORLD CLOCK, scrubbed by hand: Left/Right walk the hour, Confirm holds it where it is. A row and not a
-/// submenu, because there is exactly one number in it and the whole point is to watch the sky move while you
-/// turn it — a card in the way would hide the thing being adjusted.
 const DBG_HOUR = 4;
-/// …AND HOW FAST IT RUNS ON ITS OWN, which is a different question from where it is pointed and gets its own
-/// row for that reason. At the standard speed a day is twenty real minutes, so "does the clock move" is not a
-/// thing you can sit and watch — this is the row that makes it one.
 const DBG_DAYRATE = 5;
 const DBG_TIMESCALE = 6;
 /// **THE SKY'S OWN EVENTS, ON DEMAND** — `DBG_HOUR`'s arrangement one system along, and for its exact reason.
@@ -87,16 +60,10 @@ const DBG_TIMESCALE = 6;
 /// and answer; Confirm cycles dry → gentle → moderate → dry (`weather.Weather.cycleForce`). A row and not a
 /// submenu, because the whole point is to watch the sky while you turn it.
 const DBG_WEATHER = 7;
-/// **THE DISTANCE HAZE, FORCED** (owner: add fog opt to debug). The storm moves it on its own
-/// (`gfx.HAZE_STORM`) and that is the thing being tuned, so what this row is for is looking at the dial ALONE:
-/// Off says what the world looks like with the far field wide open, and the thick settings say what the rain
-/// is asking for without waiting for a storm. AUTO is the game — the row is an override, never a setting.
 const DBG_FOG = 8;
 const DBG_CLOSE = 9;
 const DBG_COUNT = DBG_CLOSE + 1;
 
-/// What each stop on that row multiplies the haze distance by. `auto` is the one that is not a number: it
-/// leaves the weather in charge.
 const Fog = enum { auto, off, thick, soup };
 fn fogMulOf(f: Fog) f32 {
     return switch (f) {
@@ -107,12 +74,8 @@ fn fogMulOf(f: Fog) f32 {
     };
 }
 
-/// How far one tap of the hour row moves the clock, fine and coarse. A quarter hour is about the finest step
-/// whose effect on the light you can actually see; an hour is the step for getting somewhere.
 const HOUR_TAP: f32 = 0.25;
 const HOUR_COARSE: f32 = 1.0;
-/// …and how fast it runs while a direction is HELD — a whole day in about four seconds, so the sweep reads as
-/// a sweep. This is the control the sky is really judged with.
 const HOUR_GLIDE: f32 = 6.0;
 
 const RET_PRESET_PS1 = gfx.RETRO_COUNT + 0;
@@ -124,11 +87,10 @@ const RET_ALL_OFF = gfx.RETRO_COUNT + 5;
 const RET_CLOSE = gfx.RETRO_COUNT + 6;
 const RET_COUNT = RET_CLOSE + 1;
 
-// Slider feel: a TAP steps fine, Shift/LB-tap steps coarse, and HOLDING a direction glides after a delay.
 const ADJ_TAP: f32 = 0.01;
 const ADJ_COARSE: f32 = 0.10;
-const ADJ_GLIDE_DELAY: f32 = 0.35; // seconds held before the glide kicks in
-const ADJ_GLIDE_RATE: f32 = 0.25; // intensity per second while gliding
+const ADJ_GLIDE_DELAY: f32 = 0.35;
+const ADJ_GLIDE_RATE: f32 = 0.25;
 
 const MAIN_CONTINUE = 0;
 const MAIN_OPTIONS = 1;
@@ -144,25 +106,18 @@ const BOOT_EDITOR = 3;
 const BOOT_QUIT = 4;
 const BOOT_COUNT = BOOT_QUIT + 1;
 
-/// The picker: one row per slot, then Back.
 const SLOT_BACK = savemod.SLOTS;
 const SLOT_COUNT = SLOT_BACK + 1;
 
-/// WHY THE PICKER IS UP, which is the whole of what a press on a row means.
 const SlotIntent = enum { load, new };
 
-/// HOW FAR A ROW'S HILITE IS INSET FROM THE PLATE. One number, because the picker lays itself out relative
-/// to the hilite and the cards lay themselves out relative to the plate, and two literals that had to agree
-/// is exactly how the caret ended up under the thumbnail.
 const CARD_INSET: i32 = 14;
 
-/// The thumbnail is the row's height, not the other way round: 16:10 to match the window the grab came off,
-/// small enough that three of them and a Back row still centre on a short screen.
 const SLOT_THUMB_W: i32 = 144;
 const SLOT_THUMB_H: i32 = 90;
 const SLOT_H: i32 = SLOT_THUMB_H + 16;
 const SLOT_GAP: i32 = 8;
-const SLOT_TEXT_GAP: i32 = 18; // picture to its two lines
+const SLOT_TEXT_GAP: i32 = 18;
 /// WHERE A ROW'S CONTENT SITS, measured from the HILITE's left edge and shared by both kinds of card — so the
 /// picker's thumbnail starts exactly where an ordinary row's label starts. Written once rather than at each
 /// call site: the picker laid its picture out at the hilite inset instead and it came out over the cursor bar
@@ -184,33 +139,23 @@ const BAR_EDGE = rgba(120, 104, 74, 160);
 const BAR_FILL = rgba(198, 164, 96, 220);
 
 pub const Menu = struct {
-    screen: Screen = .boot, // the window opens on the BOOT screen, and nothing is running behind it
-    /// WHICH ROOT A SUB-SCREEN GOES BACK TO. Options hangs off both cards, so "one level up" is a different
-    /// place depending on which one opened it — as a fixed `.main` it dropped you into the pause card of a
-    /// game that had not been started.
+    screen: Screen = .boot,
     home: Screen = .boot,
     slotIntent: SlotIntent = .load,
-    /// THE DELETE IS ARMED ON THE ROW THE CURSOR IS ON. Cleared by walking off it, by Back, and by opening
-    /// the picker — an armed question that outlives the row it was asked about is one you answer by accident.
     askDelete: bool = false,
     cursor: usize = 0,
-    // debug toggles the game loop reads
     stats: bool = false,
     wireframe: bool = false,
-    hitboxes: bool = false, // draw the blade hit capsule during attacks
+    hitboxes: bool = false,
     timeScale: f32 = 1.0,
-    /// The haze override (`DBG_FOG`). `.auto` is the game's own, which is the weather's.
     fog: Fog = .auto,
-    adjHoldT: f32 = 0, // seconds an adjust direction has been held (glide timer)
-    /// The CHARACTER BOOK, which keeps its own cursor per page and its own animation.
+    adjHoldT: f32 = 0,
     book: bookmod.Book = .{},
 
     pub fn isOpen(self: *const Menu) bool {
         return self.screen != .closed;
     }
 
-    /// IS THE BOOT SCREEN UP — this screen or anything hanging off it. The one predicate for "no world has
-    /// been started yet", asked by every rule that must not fire before one has.
     pub fn booting(self: *const Menu) bool {
         return self.root() == .boot;
     }
@@ -225,20 +170,16 @@ pub const Menu = struct {
         };
     }
 
-    /// Esc, and pad SELECT. The sound screen persists on the way out — the levels live in `settings.cfg`
-    /// and are written when the screen closes, never per nudge. (The racks are written the same way by the
-    /// editor's own rack panel, into the same file.)
     fn leavingSound(self: *Menu) void {
         if (self.screen == .options) sfx.saveSettings();
     }
 
     pub fn onEscape(self: *Menu) void {
-        if (self.screen == .boot) return; // there is nothing behind it to escape to
-        // Inside the book, Back closes an open picker first — one press, one level, like every other screen.
+        if (self.screen == .boot) return;
         if (self.screen == .character and self.book.onBack()) return;
         self.leavingSound();
         self.cursor = 0;
-        if (self.screen == .slots) unloadShots(); // the three textures live no longer than the picker does
+        if (self.screen == .slots) unloadShots();
         self.screen = switch (self.screen) {
             .boot => .boot,
             .closed => .main,
@@ -250,9 +191,6 @@ pub const Menu = struct {
         };
     }
 
-    /// FROM A RUNNING GAME BACK TO THE TITLE. The world behind is left exactly where it stood — nothing here
-    /// tears it down, because the next New Game or Load builds one from scratch anyway, and until one of
-    /// those is pressed the picture behind the card is as good a backdrop as any.
     pub fn toTitle(self: *Menu) void {
         self.home = .boot;
         self.cursor = 0;
@@ -266,9 +204,8 @@ pub const Menu = struct {
         self.screen = if (self.root() == .main) .closed else .main;
     }
 
-    /// Pad START — the CHARACTER BOOK (owner's call: "start menu will be character-driven").
     pub fn onStartButton(self: *Menu) void {
-        if (self.booting()) return; // …and there is no character yet to open a book on
+        if (self.booting()) return;
         self.leavingSound();
         self.cursor = 0;
         if (self.root() == .character) {
@@ -279,25 +216,13 @@ pub const Menu = struct {
         self.book.opened();
     }
 
-    /// A WORLD IS RUNNING NOW — the boot screen's one way out, taken by both New Game and Load Game.
     pub fn started(self: *Menu) void {
-        unloadShots(); // …and the picker's pictures go with it, whichever row started the world
+        unloadShots();
         self.home = .main;
         self.cursor = 0;
         self.screen = .closed;
     }
 
-    /// **CAN THIS ROW BE PRESSED** — the one predicate, read by the PRESS and by the card that draws it, so
-    /// a row can never look available and do nothing.
-    ///
-    /// **A NEW CHARACTER NEEDS AN EMPTY SLOT** (owner's call). New over an occupied slot used to be allowed
-    /// and this file argued it as the point of showing the picker; it is the one press in the game that
-    /// destroys a save without the delete row's second confirm, and the two intents were inverses of each
-    /// other everywhere else. So they are inverses here too: LOAD wants a file, NEW wants the absence of one.
-    /// The way to reuse an occupied slot is to DELETE it, which is the press that already asks twice.
-    ///
-    /// …and with all three written there is nowhere to put a new one, so the boot row itself goes dim rather
-    /// than opening a picker on which every row is refused.
     fn rowLive(self: *const Menu, i: usize, shelf: *const savemod.Shelf) bool {
         return switch (self.screen) {
             .boot => switch (i) {
@@ -313,7 +238,6 @@ pub const Menu = struct {
         };
     }
 
-    /// HOW MANY ROWS THE LIVE SCREEN HAS — asked by the cursor wrap AND by "is the cursor on Back".
     fn rowCount(self: *const Menu) usize {
         return switch (self.screen) {
             .closed, .character => 0,
@@ -331,7 +255,7 @@ pub const Menu = struct {
         if (self.screen == .closed) return .none;
         if (self.screen == .character) return self.updateBook(dt, v);
         const rows = self.rowCount();
-        if (rows == 0) return .none; // a screen with no rows has no cursor to wrap (and no modulo to do)
+        if (rows == 0) return .none;
         const wasRow = self.cursor;
         if (navPressed(.up)) {
             self.cursor = (self.cursor + rows - 1) % rows;
@@ -341,13 +265,8 @@ pub const Menu = struct {
             self.cursor = (self.cursor + 1) % rows;
             sfx.play(.menu_move);
         }
-        // WALKING OFF THE ROW TAKES THE QUESTION WITH IT. Left armed, the next Confirm anywhere on the picker
-        // would delete whatever the cursor had wandered onto.
         if (self.cursor != wasRow) self.askDelete = false;
 
-        // **THE PICKER'S SECOND BUTTON, AND THE ONLY PRESS IN THE GAME THAT DESTROYS ANYTHING.** Armed on one
-        // press and done on a second — and the second is the ordinary Confirm, because by then the row itself
-        // has become the question and the button that answers a question is the one that answers this.
         if (self.screen == .slots) {
             if (self.askDelete) {
                 if (backPressed()) {
@@ -357,15 +276,13 @@ pub const Menu = struct {
                 }
                 if (confirmPressed()) {
                     self.askDelete = false;
-                    // Re-asked at the press: the shelf is handed in fresh every frame, and a row that lost
-                    // its file between the two presses is not a row to act on.
                     if (self.cursor < savemod.SLOTS and shelf.head[self.cursor] != null) {
                         sfx.play(.menu_pick);
                         return .{ .deleteSlot = self.cursor };
                     }
                     sfx.play(.menu_back);
                 }
-                return .none; // nothing else on this screen means anything while the question is up
+                return .none;
             }
             if (deletePressed() and self.cursor < savemod.SLOTS and shelf.head[self.cursor] != null) {
                 self.askDelete = true;
@@ -421,21 +338,14 @@ pub const Menu = struct {
         return .none;
     }
 
-    /// THE BOOK'S OWN INPUT. It is a grid, not a row list: four directions move a cursor, the shoulders
-    /// turn the page, and Left/Right doubles as the portrait's turntable — none of which the card
-    /// screens' one-dimensional nav can express.
     fn updateBook(self: *Menu, dt: f32, v: bookmod.View) Action {
         if (tabPressed(-1)) self.book.onTab(-1);
         if (tabPressed(1)) self.book.onTab(1);
-        // The bumpers stay the PAGE TURN on every page, this one included — that is the whole reason the
-        // zoom is not on them, and `navFor` is where the rest of that rule lives.
         const nav = navFor(self.book.wheelUp());
         if (nav(.up)) self.book.move(0, -1, v);
         if (nav(.down)) self.book.move(0, 1, v);
         if (nav(.left)) self.book.move(-1, 0, v);
         if (nav(.right)) self.book.move(1, 0, v);
-        // …and the LEFT STICK. On the WHEEL it hands over the thumb's own bearing (`stickPush`'s `radial`) —
-        // point at a node, go to that node; on every other page it is one of four, as those pages are.
         if (stickPush(dt, self.book.wheelUp())) |d| self.book.move(d.x, d.y, v);
         self.book.spinBy(adjHeldDir(), dt);
         self.book.panBy(stickPan(), dt);
@@ -454,9 +364,6 @@ pub const Menu = struct {
         return act;
     }
 
-    /// THE PICKER, AND THE PICTURES IT IS READ OFF. The textures are loaded HERE and dropped the moment it
-    /// closes (`onEscape`, and the Back row): three screen-sized PNGs held for the life of the process to
-    /// serve a screen nobody is on is the kind of thing that is never noticed and never freed.
     fn openSlots(self: *Menu, why: SlotIntent) void {
         self.slotIntent = why;
         self.screen = .slots;
@@ -465,38 +372,24 @@ pub const Menu = struct {
         loadShots();
     }
 
-    /// A SLOT WAS DELETED UNDER THE PICKER and its picture went with it, so the three textures are re-read.
     pub fn slotsChanged(self: *Menu) void {
         self.askDelete = false;
         if (self.screen == .slots) loadShots();
     }
 
-    /// The harness's own door onto the picker: `--shot` never presses a row, and staging `screen = .slots`
-    /// by hand skips the texture load, so the shot comes out with three empty plates.
     pub fn showSlotsForShot(self: *Menu, why: SlotIntent, row: usize) void {
         self.openSlots(why);
         self.cursor = row;
     }
 
-    /// …and onto the ARMED delete, for the same reason: the harness presses no buttons, and this is the one
-    /// state of this screen where a wrong press destroys something.
     pub fn armDeleteForShot(self: *Menu) void {
         self.askDelete = true;
     }
 
-    /// The SHELF is not a parameter here any more: the only row that read it was New Game's first-free
-    /// shortcut, and both boot rows now ask which slot instead. `rowLive` is where the shelf still decides
-    /// anything, and that is asked before this is ever reached.
     fn confirm(self: *Menu, retro: *gfx.Retro, day: *daynight.Clock, sky: *weathermod.Weather) Action {
         switch (self.screen) {
             .closed => {},
-            // THE BOOT ROWS HAND BACK AN ACTION AND CHANGE NOTHING. Starting a world is `game.zig`'s, and
-            // the screen only closes once it has actually started one (`started`) — a Load that finds a
-            // broken file leaves you on the boot screen rather than in an empty world.
             .boot => switch (self.cursor) {
-                // **BOTH ROWS ASK WHICH SLOT** (owner's call). New Game used to take the first empty one
-                // without asking (ER's own) and only showed the picker when all three were full — so the
-                // one press that decides where a character LIVES was the one press that never said where.
                 BOOT_NEW => self.openSlots(.new),
                 BOOT_LOAD => self.openSlots(.load),
                 BOOT_OPTIONS => {
@@ -526,7 +419,7 @@ pub const Menu = struct {
                     self.cursor = 0;
                 },
                 MAIN_EDITOR => {
-                    self.screen = .closed; // the editor is its own scene; the menu gets out of the way
+                    self.screen = .closed;
                     return .editor;
                 },
                 MAIN_DEBUG => {
@@ -537,7 +430,6 @@ pub const Menu = struct {
                 else => {},
             },
             .options => {
-                // Confirm on a level row does nothing (Left/Right adjust it) — only Back acts.
                 if (self.cursor == OPT_CLOSE) {
                     self.leavingSound();
                     self.screen = self.home;
@@ -552,8 +444,6 @@ pub const Menu = struct {
                 DBG_STATS => self.stats = !self.stats,
                 DBG_WIREFRAME => self.wireframe = !self.wireframe,
                 DBG_HITBOX => self.hitboxes = !self.hitboxes,
-                // …and Confirm on the hour HOLDS it. Scrubbing to the light you want and then watching it walk
-                // off again is the one thing this row must not do.
                 DBG_HOUR => day.freeze(!day.frozen()),
                 DBG_DAYRATE => day.cycleSpeed(),
                 DBG_TIMESCALE => self.cycleTimeScale(),
@@ -565,7 +455,7 @@ pub const Menu = struct {
                 },
                 else => {},
             },
-            .character => {}, // the book handles its own confirm — see `updateBook`
+            .character => {},
             .retro => switch (self.cursor) {
                 RET_PRESET_PS1 => retro.applyPreset(&gfx.PRESET_PS1),
                 RET_PRESET_CRT => retro.applyPreset(&gfx.PRESET_CRT),
@@ -577,13 +467,12 @@ pub const Menu = struct {
                     self.screen = .debug;
                     self.cursor = 0;
                 },
-                else => {}, // confirm on a slider row: nothing (Left/Right adjust)
+                else => {},
             },
         }
         return .none;
     }
 
-    /// How far the adjust inputs want the value under the cursor to move THIS FRAME.
     fn adjustDelta(self: *Menu, dt: f32) f32 {
         const step: f32 = if (coarseHeld()) ADJ_COARSE else ADJ_TAP;
         var d: f32 = 0;
@@ -603,8 +492,6 @@ pub const Menu = struct {
         self.timeScale = if (self.timeScale > 0.75) 0.5 else if (self.timeScale > 0.35) 0.25 else 1.0;
     }
 
-    /// **THE FOG ROW, FORCED** — the shot harness's alone (`game.forceFogForShot`). `Fog` is this file's own
-    /// type and stays that way: a caller that could name the stops is a second place deciding what they are.
     pub fn forceFog(self: *Menu, on: bool) void {
         self.fog = if (on) .soup else .auto;
     }
@@ -618,15 +505,10 @@ pub const Menu = struct {
         };
     }
 
-    /// WHAT THE HAZE DISTANCE IS MULTIPLIED BY — 1 unless the debug row has taken it over (`gfx.Scene.setHour`).
     pub fn fogK(self: *const Menu) f32 {
         return fogMulOf(self.fog);
     }
 
-    /// …AND HOW FOGGY IT ACTUALLY IS, 0..1, which is a different question from how far you can see through it:
-    /// the haze is a DISTANCE and the mist banks are a QUANTITY (`weather.Mist`). One row answers both because
-    /// it is one dial, and each half reads the half it needs — Off is no fog of either kind, and the two thick
-    /// settings are what let the banks be looked at without waiting for a storm.
     pub fn fogAmt(self: *const Menu, wet: f32) f32 {
         return switch (self.fog) {
             .auto => wet,
@@ -642,8 +524,6 @@ pub const Menu = struct {
         out[DBG_STATS] = if (self.stats) "Stats: On" else "Stats: Off";
         out[DBG_WIREFRAME] = if (self.wireframe) "Wireframe: On" else "Wireframe: Off";
         out[DBG_HITBOX] = if (self.hitboxes) "Hitboxes: On" else "Hitboxes: Off";
-        // The clock, the PHASE it is in, and whether it is running — the phase is what makes the number mean
-        // something without having to remember when this world's sun comes up.
         var clock: [8]u8 = undefined;
         out[DBG_HOUR] = std.fmt.bufPrintZ(&dbgHourBuf, "Hour: {s} {s}{s}", .{
             daynight.clockText(day.hour, &clock),
@@ -676,20 +556,12 @@ pub const Menu = struct {
         if (self.screen == .closed) return;
         const sw = rl.getScreenWidth();
         const sh = rl.getScreenHeight();
-        // THE BOOT SCREEN SITS DEEPER IN THE DUSK than the pause card. A pause is a held breath in a game you
-        // are already looking at, so it stays legible under the veil; a title screen is a picture with a name
-        // on it, and the world behind it is scenery.
         const boot = self.booting();
         rl.drawRectangle(0, 0, sw, sh, if (boot) BOOT_VEIL else VEIL);
-        // …and the letterbox is DEEPER, not darker. A title screen wants the cinematic crop; what it does not
-        // want is the picture it is drawn over gone, and at 205 over a wooded frame the world went black and
-        // the card was floating on nothing. The separation is the CARD's job — that is what the plate is for.
-        const lb = @divTrunc(sh, if (boot) @as(i32, 6) else 8); // dusk gathers at the frame's edges
+        const lb = @divTrunc(sh, if (boot) @as(i32, 6) else 8);
         const lbA: u8 = if (boot) 180 else 140;
         rl.drawRectangleGradientV(0, 0, sw, lb, rgba(0, 0, 0, lbA), rgba(0, 0, 0, 0));
         rl.drawRectangleGradientV(0, sh - lb, sw, lb, rgba(0, 0, 0, 0), rgba(0, 0, 0, lbA));
-        // THE BOOK IS NOT A CARD. It fills the frame and carries its own crib line, so it returns here
-        // rather than falling through to the row-list chrome below.
         if (self.screen == .character) {
             bookmod.draw(&self.book, v, portrait);
             return;
@@ -706,26 +578,16 @@ pub const Menu = struct {
             .debug => self.drawCard("DEBUG", &self.debugLabels(day, sky), .{}),
             .retro => self.drawCard("RETRO FILTERS", &retroLabels(retro), .{ .gauges = retro.values[0..gfx.RETRO_COUNT] }),
         }
-        // THE CRIB NAMES BUTTONS AND NOTHING ELSE (owner's call) — one strip, whether a pad is plugged in or
-        // not. The keys still work; they are simply not what the chrome talks about, so there is no second
-        // caption to keep in step with this one and no branch that can show the wrong half.
-        // THE BOOT SCREEN'S IS SHORTER because its rows are: nothing there adjusts, there is nowhere to go
-        // back to, and there is no character yet to open a book on. A crib that names three dead buttons is
-        // three things to try before finding out they do nothing.
         const bootHints = [_]hud.Hint{
             .{ .glyph = .{ .dpad = .updown }, .label = "Move" },
             .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Select" },
         };
-        // …and the picker's, which HAS a way back where the title screen has none, and one button the rest of
-        // the game does not: the only press that can destroy a character.
         const slotHints = [_]hud.Hint{
             .{ .glyph = .{ .dpad = .updown }, .label = "Move" },
             .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Select" },
             .{ .glyph = .{ .face = hud.BTN_QUICK }, .label = "Delete" },
             .{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Back" },
         };
-        // …and while the question is up the crib is only the two answers to it. Every other button on the
-        // screen is refused there, so naming one would be naming a button that does nothing.
         const askHints = [_]hud.Hint{
             .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Delete" },
             .{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Keep" },
@@ -746,8 +608,6 @@ pub const Menu = struct {
         hud.hintRow(row, sh - @divTrunc(hud.lineH(hud.HINT), 2) - 14, hud.HINT, HINT_COL);
     }
 
-    /// **THE PICKER IS NOT A ROW LIST**, which is why it is not `drawCard` with a fourth optional column: a
-    /// row here is a PICTURE with two lines beside it, and the plate has to be tall enough to hold one.
     fn drawSlots(self: *const Menu, shelf: *const savemod.Shelf) void {
         const sw = rl.getScreenWidth();
         const sh = rl.getScreenHeight();
@@ -775,8 +635,6 @@ pub const Menu = struct {
         hud.text("Back", cx + CARD_INSET + ROW_LABEL, by, hud.BODY, if (onBack) TEXT_HOT else TEXT_DIM);
     }
 
-    /// `dead` is the CALLER's, off `rowLive` — under Load an empty row is refused, under New an occupied one
-    /// is, and neither rule is re-derived here where it could drift from the press.
     fn drawSlotRow(self: *const Menu, i: usize, head: ?savemod.Head, dead: bool, x: i32, y: i32, w: i32) void {
         const on = self.cursor == i;
         if (on and !dead) {
@@ -786,18 +644,11 @@ pub const Menu = struct {
             uiart.diamond(@floatFromInt(x + 2), @floatFromInt(y + 3), 2.6, uiart.GILT_BRIGHT);
             uiart.diamond(@floatFromInt(x + 2), @floatFromInt(y + SLOT_H - 3), 2.6, uiart.GILT_BRIGHT);
         } else if (on) {
-            // AN EMPTY SLOT UNDER LOAD TAKES NO WASH, and it is the row you most want to see the cursor on:
-            // "there is nothing here" is only an answer if you can tell you are asking about THIS one.
             uiart.caret(x, y, SLOT_H, uiart.CARET_DIM);
         }
-        // THE PICTURE, in a sunk plate that is drawn WHETHER OR NOT there is one: an empty slot with no
-        // frame around its gap makes the three rows read as two rows and a margin.
         const px = x + ROW_LABEL;
         const py = y + @divTrunc(SLOT_H - SLOT_THUMB_H, 2);
         rl.drawRectangle(px, py, SLOT_THUMB_W, SLOT_THUMB_H, rgba(6, 5, 4, 220));
-        // THE PICTURE IS PART OF WHAT THE HEAD SAYS, so a slot with no head shows none — a file refused on
-        // load leaves its PNG on disk, and a row reading "Empty" beside a photograph of somebody's game is
-        // the two halves of one row disagreeing.
         if (if (head == null) null else slotTex[i]) |tex| {
             const src = rl.Rectangle{ .x = 0, .y = 0, .width = @floatFromInt(tex.width), .height = @floatFromInt(tex.height) };
             const dst = rl.Rectangle{
@@ -817,9 +668,6 @@ pub const Menu = struct {
         const name = std.fmt.bufPrintZ(&nameBuf, "Slot {d}", .{i + 1}) catch "Slot";
         hud.text(name, tx, py + 2, hud.BODY, col);
 
-        // **ARE YOU SURE.** A save is the only thing in the game a press can destroy, so the row it is
-        // standing on says what is about to happen and takes a SECOND press to do it — and the second press
-        // is Confirm, on a row whose whole caption has become the question.
         if (self.askDelete and on and head != null) {
             hud.text("Delete this slot?", tx, py + hud.lineH(hud.BODY) + 6, hud.SMALL, uiart.BAD);
             return;
@@ -841,15 +689,13 @@ pub const Menu = struct {
     fn drawCard(self: *const Menu, title: [:0]const u8, labels: []const [:0]const u8, card: Card) void {
         const sw = rl.getScreenWidth();
         const sh = rl.getScreenHeight();
-        const compact = labels.len > 8; // the long retro list packs tighter than the short menus
+        const compact = labels.len > 8;
         const fontSize: i32 = if (compact) hud.SMALL else hud.BODY;
         const rowH: i32 = hud.lineH(fontSize) + (if (compact) @as(i32, 2) else @as(i32, 14));
         const rowGap: i32 = if (compact) 2 else 8;
         const headerH: i32 = hud.lineH(hud.TITLE) + 22;
         const noteH: i32 = if (card.note != null) hud.lineH(hud.HINT) + 14 else 0;
         const footH: i32 = 20 + noteH;
-        // THE CARD IS AT LEAST AS WIDE AS ITS FOOTNOTE. The note is centred on the plate, so one longer
-        // than the plate spills out over the world on BOTH sides — measure it rather than hoping.
         const noteW: i32 = if (card.note) |n| hud.textW(n, hud.HINT) else 0;
         const cardW: i32 = @max(if (card.gauges != null or card.note != null) @as(i32, 620) else @as(i32, 470), noteW + 72);
         const cardH: i32 = headerH + (rowH + rowGap) * @as(i32, @intCast(labels.len)) + footH;
@@ -868,13 +714,11 @@ pub const Menu = struct {
             const col = if (dead) TEXT_OFF else if (selected) TEXT_HOT else TEXT_DIM;
             if (selected and !dead) {
                 uiart.rowHilite(cx + CARD_INSET, y - 3, cardW - CARD_INSET * 2, rowH);
-                // …and the card's own two hairlines and jewelled spine-ends on top of the shared wash.
                 rl.drawRectangle(cx + CARD_INSET, y - 3, cardW - CARD_INSET * 2, 1, mathx.withAlpha(uiart.GILT, 70));
                 rl.drawRectangle(cx + CARD_INSET, y - 4 + rowH, cardW - CARD_INSET * 2, 1, mathx.withAlpha(uiart.GILT, 46));
                 uiart.diamond(@floatFromInt(cx + CARD_INSET + 2), @floatFromInt(y), 2.6, uiart.GILT_BRIGHT);
                 uiart.diamond(@floatFromInt(cx + CARD_INSET + 2), @floatFromInt(y - 3 + rowH), 2.6, uiart.GILT_BRIGHT);
             }
-            // …and a row too dim to take the wash still shows where the cursor is (`drawSlotRow`'s reason).
             if (selected and dead) uiart.caret(cx + CARD_INSET, y - 3, rowH, uiart.CARET_DIM);
             hud.text(label, cx + CARD_INSET + ROW_LABEL, y, fontSize, col);
             if (card.gauges) |g| {
@@ -892,8 +736,6 @@ pub const Menu = struct {
     }
 };
 
-/// The optional columns a card can carry: a GAUGE per row, a footnote about the row the cursor is on, and
-/// which rows are UNAVAILABLE. A slice shorter than the row list leaves the tail bare.
 const Card = struct {
     gauges: ?[]const f32 = null,
     note: ?[:0]const u8 = null,
@@ -905,7 +747,7 @@ const Card = struct {
 fn drawGauge(x: i32, y: i32, w: i32, h: i32, v: f32, selected: bool) void {
     rl.drawRectangle(x, y, w, h, rgba(6, 5, 4, 200));
     rl.drawRectangleLines(x, y, w, h, BAR_EDGE);
-    rl.drawRectangle(x + 1, y + 1, w - 2, 1, rgba(0, 0, 0, 130)); // sunk top lip
+    rl.drawRectangle(x + 1, y + 1, w - 2, 1, rgba(0, 0, 0, 130));
     const fill: i32 = @intFromFloat(@as(f32, @floatFromInt(w - 2)) * mathx.clampF(v, 0, 1));
     if (fill > 0) {
         rl.drawRectangleGradientH(x + 1, y + 1, fill, h - 2, mathx.lerpColor(BAR_FILL, rl.Color.black, 0.45), BAR_FILL);
@@ -921,8 +763,6 @@ fn drawGauge(x: i32, y: i32, w: i32, h: i32, v: f32, selected: bool) void {
     }
 }
 
-/// WHAT THE SAVE IS AND WHERE IT COMES FROM, said once on the one screen that can act on it. The empty case
-/// is not an apology: it names the one place a save is made, which is a thing a soulslike has to teach.
 const BOOT_NOTE: [:0]const u8 = "Three slots. A bonfire saves over the one you are playing.";
 const BOOT_NOTE_EMPTY: [:0]const u8 = "No save yet. Rest at a bonfire to write one.";
 /// …and the one that says WHY New Game is dim. A greyed row the player cannot read the reason for is the
@@ -939,9 +779,6 @@ fn bootLabels() [BOOT_COUNT][:0]const u8 {
     return out;
 }
 
-/// WHICH BOOT ROWS ARE DIM — walked off `rowLive` rather than re-deriving it, because a second copy of "may
-/// this be pressed" is how a row comes to look available and do nothing. It was already a second copy for
-/// Load, and New Game's own rule would have made it two.
 fn bootDim(self: *const Menu, shelf: *const savemod.Shelf) [BOOT_COUNT]bool {
     var out = [_]bool{false} ** BOOT_COUNT;
     for (0..BOOT_COUNT) |i| out[i] = !self.rowLive(i, shelf);
@@ -949,15 +786,11 @@ fn bootDim(self: *const Menu, shelf: *const savemod.Shelf) [BOOT_COUNT]bool {
 }
 
 
-/// THE PICTURE EACH SLOT IS SHOWN BY, held only while the picker is up. File-scope like `book.zig`'s
-/// portrait target and `objview.zig`'s two: a texture is chrome, and the menu owning one is not the menu
-/// owning game state.
 var slotTex: [savemod.SLOTS]?rl.Texture2D = [_]?rl.Texture2D{null} ** savemod.SLOTS;
 
 fn loadShots() void {
     unloadShots();
     for (0..savemod.SLOTS) |i| {
-        // A slot with no picture is not an error: the file predates the thumbnail, or the export failed.
         slotTex[i] = rl.loadTexture(savemod.shotPath(i)) catch null;
     }
 }
@@ -969,7 +802,6 @@ fn unloadShots() void {
     }
 }
 
-/// Called on the way out of the program, beside `book.unload` and `objview.unload`.
 pub fn unload() void {
     unloadShots();
 }
@@ -1016,7 +848,6 @@ fn optionLabels() [OPT_COUNT][:0]const u8 {
 }
 var optBufs: [OPT_MIX.len][48]u8 = undefined;
 
-/// The same three numbers as bars, for `drawCard`'s gauge column.
 fn soundLevels() [OPT_MIX.len]f32 {
     var out: [OPT_MIX.len]f32 = undefined;
     for (OPT_MIX, 0..) |m, i| out[i] = sfx.volume(m);
@@ -1049,9 +880,6 @@ fn retroLabels(retro: *const gfx.Retro) [RET_COUNT][:0]const u8 {
 var retroBufs: [gfx.RETRO_COUNT][48]u8 = undefined;
 
 
-/// PUBLIC because this file is where full-screen UI navigation lives — the pause card's rows, the character
-/// book's grid, and now the dialog panel's answer list all read the pad and the keyboard through here. A
-/// second private copy of "is Down pressed" is a second thing to drift out of step with this one.
 pub const NavDir = enum { up, down, left, right };
 
 fn keyNav(dir: NavDir) struct { a: rl.KeyboardKey, b: rl.KeyboardKey } {
@@ -1091,25 +919,15 @@ pub fn navPressed(dir: NavDir) bool {
 //     reads as a hard push.
 const STICK_FIRE: f32 = 0.72;
 const STICK_REARM: f32 = 0.42;
-const STICK_CONE: f32 = 0.848; // cos 32° — the half-angle a push must sit inside to count as an AXIS
-const STICK_DAS: f32 = 0.42; // seconds a held push waits before it starts repeating
-const STICK_ARR: f32 = 0.20; // …and the gap between repeats after that
-/// HOW FAR THE THUMB HAS TO TURN TO COUNT AS A FRESH INTENT, as the cosine of the angle between the push that
-/// fired last and the one on the stick now. cos 40°. Under it he is holding the same push and the DAS/ARR
-/// clock governs; past it he has aimed somewhere else. ONE rule for both layouts: two cardinals are 90° apart,
-/// so a list reads exactly as it always did, and a wheel gets a heading it can steer.
+const STICK_CONE: f32 = 0.848;
+const STICK_DAS: f32 = 0.42;
+const STICK_ARR: f32 = 0.20;
 const AIM_TURN: f32 = 0.766;
 
-/// The push that last fired, as a unit heading — null once the stick is home.
 var stickDir: ?rl.Vector2 = null;
 var stickWait: f32 = 0;
-/// Has the stick been back to centre since the last step? A LIST makes you come back before it will take a new
-/// direction — rolling a thumb round the rim crosses all four quadrants and firing each one is the twitch. A
-/// WHEEL does not: steering to a new bearing without letting go IS how you cross a radial layout.
 var stickArmed: bool = true;
 
-/// WHAT THE LEFT STICK IS ASKING FOR THIS FRAME, as a unit heading in SCREEN space (+y down, which is the
-/// stick's own sense and `passivetree.unitPos`'s), or null. Call ONCE a frame — it owns its own clock.
 pub fn stickPush(dt: f32, radial: bool) ?rl.Vector2 {
     if (!rl.isGamepadAvailable(0)) {
         stickDir = null;
@@ -1119,29 +937,28 @@ pub fn stickPush(dt: f32, radial: bool) ?rl.Vector2 {
     const x = rl.getGamepadAxisMovement(0, .left_x);
     const y = rl.getGamepadAxisMovement(0, .left_y);
     const mag = @sqrt(x * x + y * y);
-    if (mag < STICK_REARM) { // home again: everything resets, and the next push is instant
+    if (mag < STICK_REARM) {
         stickDir = null;
         stickArmed = true;
         return null;
     }
-    if (mag < STICK_FIRE) return null; // inside the hysteresis band: neither fires nor resets
+    if (mag < STICK_FIRE) return null;
 
     const nx = x / mag;
     const ny = y / mag;
     const d: rl.Vector2 = if (radial)
-        .{ .x = nx, .y = ny } // the thumb's own bearing, and the wheel's wedge does the rest
+        .{ .x = nx, .y = ny }
     else if (@abs(nx) >= STICK_CONE)
         .{ .x = std.math.sign(nx), .y = 0 }
     else if (@abs(ny) >= STICK_CONE)
         .{ .x = 0, .y = std.math.sign(ny) }
     else
-        return null; // a diagonal is not one of four directions — hold, and step nothing
+        return null;
 
     const turned = if (stickDir) |was| (was.x * d.x + was.y * d.y) < AIM_TURN else true;
     if (turned) {
         stickDir = d;
         stickWait = STICK_DAS;
-        // A LIST costs a full DAS for a direction rolled into, exactly as a repeat would; a WHEEL is steered.
         if (!radial and !stickArmed) return null;
         stickArmed = false;
         return d;
@@ -1149,15 +966,10 @@ pub fn stickPush(dt: f32, radial: bool) ?rl.Vector2 {
     stickWait -= dt;
     if (stickWait > 0) return null;
     stickWait = STICK_ARR;
-    // …and the REPEAT goes down the heading the stick is on NOW, not the one that armed the clock: a thumb
-    // easing round the rim under `AIM_TURN` should crawl round the wheel with it rather than off the old line.
     stickDir = d;
     return d;
 }
 
-/// THE RIGHT STICK AS A VIEW SLIDE, raw thumb in both axes (owner's call: the look stick pans the passive
-/// tree). NOT run through `stickRadial`'s deadzone-and-curve: a pan is the one input here that wants to be
-/// analogue all the way down, so a feather push creeps and a shove flies. Only the resting slop is cut.
 const PAN_DEAD: f32 = 0.18;
 pub fn stickPan() rl.Vector2 {
     if (!rl.isGamepadAvailable(0)) return .{ .x = 0, .y = 0 };
@@ -1168,9 +980,6 @@ pub fn stickPan() rl.Vector2 {
     return .{ .x = x, .y = y };
 }
 
-/// THE CROSS'S UP AND DOWN AS A ZOOM, −1 (out) … +1 (in), read as a HELD level so it glides rather than
-/// notching (owner's call). NOT the bumpers: those are the book's page turn, and the passive tree is one of
-/// its pages — a zoom that took them would strand you on the wheel with no way to turn off it.
 pub fn dpadZoom() f32 {
     var v: f32 = 0;
     if (padDown(.left_face_up)) v += 1;
@@ -1180,17 +989,11 @@ pub fn dpadZoom() f32 {
     return v;
 }
 
-/// …and the walk with the CROSS TAKEN OUT OF IT, for the two screens that have spent it on the zoom above.
 pub fn navPressedNoPad(dir: NavDir) bool {
     const k = keyNav(dir);
     return rl.isKeyPressed(k.a) or rl.isKeyPressed(k.b) or rl.isKeyPressedRepeat(k.a) or rl.isKeyPressedRepeat(k.b);
 }
 
-/// WHICH WALK A SCREEN GETS, and the ONE copy of that decision. On a WHEEL the cross is the zoom (`dpadZoom`),
-/// so it is withheld from the walk there and the left stick does it instead; on a plain LIST the cross is the
-/// only sensible way to pick a row and it keeps it. Both wheel screens — the character book's tree page and the
-/// bonfire's — read this; hand-rolled at each site the rule was two declarations of one fact, and moving it
-/// meant editing two files.
 pub fn navFor(onWheel: bool) *const fn (NavDir) bool {
     return if (onWheel) &navPressedNoPad else &navPressed;
 }
@@ -1225,29 +1028,23 @@ fn tabPressed(dir: i32) bool {
     return padPressed(if (back) .left_trigger_1 else .right_trigger_1);
 }
 
-/// Confirm HELD, not tapped — the book's slots sink for as long as the button is down.
 fn confirmHeld() bool {
     const altHeld = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
     if ((rl.isKeyDown(.enter) and !altHeld) or rl.isKeyDown(.space)) return true;
-    return padDown(hud.padOf(hud.BTN_CONFIRM)); // the HELD half off the same name as the tap
+    return padDown(hud.padOf(hud.BTN_CONFIRM));
 }
 
-/// THE PICKER'S THIRD BUTTON — named off the crib (`hud.BTN_QUICK`) like every other binding in the game, so
-/// the glyph the hint row draws IS the button that arms the delete. It is bound nowhere else on this screen.
 fn deletePressed() bool {
     return rl.isKeyPressed(.delete) or padPressed(hud.padOf(hud.BTN_QUICK));
 }
 
 pub fn confirmPressed() bool {
-    // ALT+Enter is the game loop's borderless-fullscreen toggle, so Enter must not ALSO confirm the highlighted row while Alt is down.
     const altHeld = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
     if ((rl.isKeyPressed(.enter) and !altHeld) or rl.isKeyPressed(.space)) return true;
-    // …and the pad press comes off the NAME the cribs draw (`hud.BTN_CONFIRM`), not a second literal beside it.
     return padPressed(hud.padOf(hud.BTN_CONFIRM));
 }
 
 pub fn backPressed() bool {
-    // Esc is routed by the game loop (onEscape); pad B backs out here — off `hud.BTN_BACK`, as above.
     return padPressed(hud.padOf(hud.BTN_BACK));
 }
 
@@ -1256,39 +1053,31 @@ test "A NEW CHARACTER NEEDS AN EMPTY SLOT, and Load needs a written one — exac
     var sh = savemod.Shelf{};
     sh.head[0] = .{ .level = 7, .souls = 1240, .playtime = 8100 };
 
-    // UNDER LOAD: the written row is the press, the empty ones are refused.
     m.screen = .slots;
     m.slotIntent = .load;
     try std.testing.expect(m.rowLive(0, &sh));
     try std.testing.expect(!m.rowLive(1, &sh));
 
-    // UNDER NEW: the other way round, exactly. This is the owner's rule — new over an occupied slot is the
-    // one press that would destroy a save without the delete row's second confirm.
     m.slotIntent = .new;
     try std.testing.expect(!m.rowLive(0, &sh));
     try std.testing.expect(m.rowLive(1, &sh));
-    // …and every slot answers the two intents oppositely, whatever is on the shelf.
     for (0..savemod.SLOTS) |i| {
         m.slotIntent = .load;
         const onLoad = m.rowLive(i, &sh);
         m.slotIntent = .new;
         try std.testing.expect(onLoad != m.rowLive(i, &sh));
     }
-    // BACK is always live, under either intent — it is not a slot.
     try std.testing.expect(m.rowLive(SLOT_BACK, &sh));
 
-    // NOWHERE TO PUT ONE: the boot row goes dim rather than opening a picker with no live row on it.
     m.screen = .boot;
-    try std.testing.expect(m.rowLive(BOOT_NEW, &sh)); // one hole left
+    try std.testing.expect(m.rowLive(BOOT_NEW, &sh));
     sh.head[1] = .{ .level = 1, .souls = 0, .playtime = 1 };
     sh.head[2] = .{ .level = 1, .souls = 0, .playtime = 1 };
     try std.testing.expect(!m.rowLive(BOOT_NEW, &sh));
-    try std.testing.expect(m.rowLive(BOOT_LOAD, &sh)); // …and Load is at its most useful precisely then
-    // The card's greying is walked off the same predicate, so the two can never disagree.
+    try std.testing.expect(m.rowLive(BOOT_LOAD, &sh));
     const dim = bootDim(&m, &sh);
     try std.testing.expect(dim[BOOT_NEW] and !dim[BOOT_LOAD]);
 
-    // A BARE SHELF is the mirror: nothing to load, and three places to start.
     const bare = savemod.Shelf{};
     try std.testing.expect(m.rowLive(BOOT_NEW, &bare));
     try std.testing.expect(!m.rowLive(BOOT_LOAD, &bare));

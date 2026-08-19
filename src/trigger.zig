@@ -5,20 +5,15 @@ const wf = @import("worldfmt.zig");
 
 const v3 = mathx.v3;
 
-// THE TRIGGER MACHINE — StarEdit's, running on this world.
 
-/// How long a preserved trigger must wait before it may fire again.
 pub const REPEAT_GUARD: f32 = 0.5;
 
-/// How long a `text` action's line stays on screen.
 pub const BANNER_DUR: f32 = 4.5;
 pub const BANNER_CAP: usize = 120;
 
 const NFOE = @typeInfo(wf.FoeKind).@"enum".fields.len;
 
 comptime {
-    // `order` and `actAt` below are u8 cursors into the map's own tables. Tied to the caps here, or growing
-    // one of them past 256 turns `@intCast` into a runtime panic on a map that merely got bigger.
     std.debug.assert(wf.MAX_TRIGGERS <= std.math.maxInt(u8) + 1);
     std.debug.assert(wf.MAX_ACTS <= std.math.maxInt(u8) + 1);
 }
@@ -27,9 +22,7 @@ comptime {
 /// reach into the game to find a foe list — the same rule the creatures' `Leash` follows.
 pub const World = struct {
     heroPos: rl.Vector3 = mathx.zero3,
-    /// NPC positions, INDEX-ALIGNED with `Map.npcs` — a `near npc=2` reads the third one.
     npcs: []const rl.Vector3 = &.{},
-    /// How many of each foe kind are still standing.
     alive: [NFOE]u32 = [_]u32{0} ** NFOE,
 };
 
@@ -40,28 +33,19 @@ pub const Runtime = struct {
     /// pass before something armed it — the alternative makes every unstarted timer a free `always`.
     timers: [wf.MAX_TIMERS]f32 = [_]f32{0} ** wf.MAX_TIMERS,
     armed: [wf.MAX_TIMERS]bool = [_]bool{false} ** wf.MAX_TIMERS,
-    /// SC1's Deaths: how many of each kind have died since the world loaded.
     deaths: [NFOE]u32 = [_]u32{0} ** NFOE,
-    /// Seconds since the world loaded — SC1's Elapsed Time.
     elapsed: f32 = 0,
 
-    /// Which dialogs have been seen through to their end.
     talked: [wf.MAX_DIALOGS]bool = [_]bool{false} ** wf.MAX_DIALOGS,
 
     fired: [wf.MAX_TRIGGERS]bool = [_]bool{false} ** wf.MAX_TRIGGERS,
-    /// Seconds since each last fired, for `REPEAT_GUARD`.
     since: [wf.MAX_TRIGGERS]f32 = [_]f32{mathx.LONG_AGO} ** wf.MAX_TRIGGERS,
-    /// A trigger MID-EXECUTION: where its action cursor sits, and what is holding it there.
     running: [wf.MAX_TRIGGERS]bool = [_]bool{false} ** wf.MAX_TRIGGERS,
     actAt: [wf.MAX_TRIGGERS]u8 = [_]u8{0} ** wf.MAX_TRIGGERS,
     waitLeft: [wf.MAX_TRIGGERS]f32 = [_]f32{0} ** wf.MAX_TRIGGERS,
-    /// Blocked on the conversation it opened — cleared by `dialogClosed`.
     inDialog: [wf.MAX_TRIGGERS]bool = [_]bool{false} ** wf.MAX_TRIGGERS,
-    /// A `preserve` seen in THIS run, which spends the one-shot latch the way SC1's does.
     preserved: [wf.MAX_TRIGGERS]bool = [_]bool{false} ** wf.MAX_TRIGGERS,
 
-    /// The evaluation order: priority descending, file order breaking ties. Settled once by `arm`, because
-    /// a re-sort per frame is sixty needless sorts and the map does not change under the loop.
     order: [wf.MAX_TRIGGERS]u8 = undefined,
     n: usize = 0,
 
@@ -69,13 +53,11 @@ pub const Runtime = struct {
     bannerLen: usize = 0,
     bannerLeft: f32 = 0,
 
-    /// EVERYTHING BACK TO A FRESH WORLD, and the order rebuilt from the map it is about to run.
     pub fn arm(self: *Runtime, m: *const wf.Map) void {
         self.* = .{};
         self.n = @min(m.ntrigs, wf.MAX_TRIGGERS);
         for (0..self.n) |i| self.order[i] = @intCast(i);
         const ord = self.order[0..self.n];
-        // Insertion sort: stable, so equal priorities keep FILE order, which is the tie-break SC1 had.
         var i: usize = 1;
         while (i < ord.len) : (i += 1) {
             const v = ord[i];
@@ -85,17 +67,14 @@ pub const Runtime = struct {
         }
     }
 
-    /// A foe of `k` died. SC1's Deaths is maintained by the engine, not by the author.
     pub fn died(self: *Runtime, k: wf.FoeKind) void {
         self.deaths[@intFromEnum(k)] += 1;
     }
 
-    /// A conversation ran to its end.
     pub fn finished(self: *Runtime, dlg: u16) void {
         if (dlg < wf.MAX_DIALOGS) self.talked[dlg] = true;
     }
 
-    /// …and whatever trigger opened one may carry on down its list.
     pub fn dialogClosed(self: *Runtime) void {
         self.inDialog = [_]bool{false} ** wf.MAX_TRIGGERS;
     }
@@ -120,7 +99,6 @@ pub const Runtime = struct {
         return if (slot < wf.MAX_COUNTERS) self.counters[slot] else 0;
     }
 
-    /// ONE PASS OVER THE LIST, in priority order, returning the dialog a `dialog` action asked for.
     pub fn tick(self: *Runtime, m: *const wf.Map, w: World, dt: f32, busy: bool) ?u16 {
         self.elapsed += dt;
         if (self.bannerLeft > 0) self.bannerLeft -= dt;
@@ -159,15 +137,12 @@ pub const Runtime = struct {
         return true;
     }
 
-    /// One condition, asked of the world as it stands this frame.
     pub fn holds(self: *const Runtime, c: *const wf.Cond, w: World) bool {
         return switch (c.kind) {
             .always => true,
             .never => false,
             .flag => self.flagOn(c.slot) == c.on,
             .counter => c.cmp.holds(self.counterAt(c.slot), c.n),
-            // Three states, two words: `done` is armed-and-expired (unstarted is NOT done), and
-            // `running` is armed-and-counting — NOT `!done`, or it holds for a timer nobody started.
             .timer => if (c.on)
                 c.slot < wf.MAX_TIMERS and self.armed[c.slot] and self.timers[c.slot] <= 0
             else
@@ -182,7 +157,6 @@ pub const Runtime = struct {
         };
     }
 
-    /// Walk one trigger's action list from where it stopped, until a `wait`, a `dialog`, or the end of it.
     fn advance(self: *Runtime, m: *const wf.Map, ti: usize, dt: f32, busy: bool) ?u16 {
         if (self.inDialog[ti]) return null;
         if (self.waitLeft[ti] > 0) {
@@ -193,7 +167,7 @@ pub const Runtime = struct {
         while (self.actAt[ti] < t.nacts) {
             const a = &t.acts[self.actAt[ti]];
             if (a.kind == .dialog) {
-                if (busy) return null; // one conversation at a time — try again next frame
+                if (busy) return null;
                 self.actAt[ti] += 1;
                 self.inDialog[ti] = true;
                 return a.slot;
@@ -216,8 +190,6 @@ pub const Runtime = struct {
         return null;
     }
 
-    /// ONE ACTION, APPLIED. `dialog`, `wait` and `preserve` are the list's own business and never reach here,
-    /// so a dialog node's action run (`act:` / `gets:`) can share this body outright.
     pub fn apply(self: *Runtime, m: *const wf.Map, a: *const wf.Act) void {
         switch (a.kind) {
             .dialog, .wait, .preserve => {},
@@ -233,20 +205,17 @@ pub const Runtime = struct {
                 const cur = self.counters[a.slot];
                 self.counters[a.slot] = switch (a.countop) {
                     .set => a.n,
-                    // Saturating: a counter is a story quantity, and a wrap is a silently different story.
                     .add => cur +| a.n,
                     .sub => cur -| a.n,
                 };
             },
             .timer => if (a.slot < wf.MAX_TIMERS) {
-                // A TIMED STATUS REFRESHES, IT DOES NOT STACK (combat.Root's law) — one clock per name.
                 self.timers[a.slot] = a.v;
                 self.armed[a.slot] = true;
             },
         }
     }
 
-    /// A run of a node's or a choice's actions, fired together.
     pub fn applyAll(self: *Runtime, m: *const wf.Map, acts: []const wf.Act) void {
         for (acts) |*a| self.apply(m, a);
     }
@@ -276,7 +245,7 @@ test "every condition must hold, and an empty when-list never fires" {
 
     rt.flags[m.findFlag("a").?] = true;
     _ = rt.tick(m, .{}, 1.0 / 60.0, false);
-    try std.testing.expectEqual(@as(i32, 0), rt.counters[hits]); // one of two is not both
+    try std.testing.expectEqual(@as(i32, 0), rt.counters[hits]);
 
     rt.flags[m.findFlag("b").?] = true;
     _ = rt.tick(m, .{}, 1.0 / 60.0, false);
@@ -303,7 +272,6 @@ test "a one-shot fires once; preserve puts it back on the guard" {
     var t: f32 = 0;
     while (t < 2.0) : (t += 1.0 / 60.0) _ = rt.tick(m, .{}, 1.0 / 60.0, false);
     try std.testing.expectEqual(@as(i32, 1), rt.counters[a]);
-    // Two seconds of a preserved trigger is FOUR firings at a half-second guard, not 120.
     try std.testing.expectEqual(@as(i32, 1 + @as(i32, @intFromFloat(2.0 / REPEAT_GUARD))), rt.counters[b]);
 }
 
@@ -320,7 +288,6 @@ test "priority decides who runs first, and file order breaks the tie" {
     defer alloc.destroy(m);
     var rt = Runtime{};
     rt.arm(m);
-    // `high` runs first, so the LOW one's `set` is what is left standing.
     try std.testing.expectEqual(@as(u8, 1), rt.order[0]);
     _ = rt.tick(m, .{}, 1.0 / 60.0, false);
     try std.testing.expectEqual(@as(i32, 1), rt.counters[m.findCounter("seq").?]);
@@ -345,7 +312,7 @@ test "a wait blocks its own trigger's list and nothing else" {
     const b = m.findCounter("b").?;
     _ = rt.tick(m, .{}, 1.0 / 60.0, false);
     try std.testing.expectEqual(@as(i32, 1), rt.counters[a]);
-    try std.testing.expectEqual(@as(i32, 1), rt.counters[b]); // not held up by the other's wait
+    try std.testing.expectEqual(@as(i32, 1), rt.counters[b]);
     var t: f32 = 0;
     while (t < 0.4) : (t += 1.0 / 60.0) _ = rt.tick(m, .{}, 1.0 / 60.0, false);
     try std.testing.expectEqual(@as(i32, 1), rt.counters[a]);
@@ -371,11 +338,10 @@ test "a dialog action holds its own list until the conversation closes" {
     const done = m.findFlag("done").?;
     try std.testing.expectEqual(@as(?u16, 0), rt.tick(m, .{}, 1.0 / 60.0, false));
     _ = rt.tick(m, .{}, 1.0 / 60.0, true);
-    try std.testing.expect(!rt.flags[done]); // still talking
+    try std.testing.expect(!rt.flags[done]);
     rt.dialogClosed();
     _ = rt.tick(m, .{}, 1.0 / 60.0, false);
     try std.testing.expect(rt.flags[done]);
-    // …and it does not ask for the same conversation twice.
     try std.testing.expect(rt.tick(m, .{}, 1.0 / 60.0, false) == null);
 }
 
@@ -413,9 +379,9 @@ test "a timer nobody started is not done, and one that ran out is" {
     const rang = m.findFlag("rang").?;
     var t: f32 = 0;
     while (t < 0.15) : (t += 1.0 / 60.0) _ = rt.tick(m, .{}, 1.0 / 60.0, false);
-    try std.testing.expect(!rt.flags[rang]); // unstarted is NOT done
+    try std.testing.expect(!rt.flags[rang]);
     while (t < 0.4) : (t += 1.0 / 60.0) _ = rt.tick(m, .{}, 1.0 / 60.0, false);
-    try std.testing.expect(!rt.flags[rang]); // armed and still running
+    try std.testing.expect(!rt.flags[rang]);
     while (t < 0.8) : (t += 1.0 / 60.0) _ = rt.tick(m, .{}, 1.0 / 60.0, false);
     try std.testing.expect(rt.flags[rang]);
 }
@@ -447,7 +413,6 @@ test "region is LIVE, and near measures from the npc it names" {
     try std.testing.expectEqual(@as(i32, 0), rt.counters[inbox]);
     _ = rt.tick(m, .{ .heroPos = v3(1, 0, 1), .npcs = &post }, 1.0 / 60.0, false);
     try std.testing.expectEqual(@as(i32, 1), rt.counters[inbox]);
-    // Out again and it stops being true — no latch.
     var t: f32 = 0;
     while (t < 1.0) : (t += 1.0 / 60.0) _ = rt.tick(m, .{ .heroPos = v3(30, 0, 30), .npcs = &post }, 1.0 / 60.0, false);
     try std.testing.expectEqual(@as(i32, 1), rt.counters[inbox]);
@@ -476,7 +441,7 @@ test "deaths counts what the engine reports and alive what the world says" {
     try std.testing.expect(!rt.flags[done]);
     rt.died(.toad);
     _ = rt.tick(m, w, 1.0 / 60.0, false);
-    try std.testing.expect(!rt.flags[done]); // the archer still stands
+    try std.testing.expect(!rt.flags[done]);
     w.alive[@intFromEnum(wf.FoeKind.archer)] = 0;
     _ = rt.tick(m, w, 1.0 / 60.0, false);
     try std.testing.expect(rt.flags[done]);

@@ -8,8 +8,8 @@ const foe = @import("foe.zig");
 const behave = @import("behave.zig");
 const wf = @import("worldfmt.zig");
 const sfx = @import("audio.zig");
-const archermod = @import("archer.zig"); // THE SAME DEAD MAN — his bones, his scale, his feet
-const propart = @import("propart.zig"); // the world's own iron, so his kit is the world's ironwork
+const archermod = @import("archer.zig");
+const propart = @import("propart.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -20,7 +20,7 @@ const IRON = propart.IRON;
 const IRON_LT = rgba(52, 50, 46, 255);
 const IRON_DK = rgba(19, 18, 17, 255);
 const RUST = rgba(66, 42, 24, 255);
-const STEEL = rgba(96, 100, 108, 190); // a kept edge — slightly self-lit, so the blade is the read
+const STEEL = rgba(96, 100, 108, 190);
 const STEEL_DK = rgba(38, 40, 45, 255);
 const HAFT = rgba(38, 27, 17, 255);
 const HAFT_LT = rgba(54, 39, 25, 255);
@@ -30,10 +30,8 @@ const BOARD_LT = rgba(70, 53, 37, 255);
 const BOARD_DK = rgba(30, 22, 16, 255);
 const BLAZON = rgba(74, 32, 30, 255);
 
-// FX palette. DUST is the WORLD's, not this creature's (see foe.zig); the gold motes are foe.zig's own.
 const DUST = foe.DUST;
-const CHIP = archermod.BONE_CHIP; // bone, knocked off in flakes — the archer's, because it is his body
-/// The knight's spray at a man's size: a shade tighter, shorter-lived and finer, on the same dry-bone shape.
+const CHIP = archermod.BONE_CHIP;
 const CHIP_SPRAY = foe.Spray{
     .fanLo = 0.2,   .fanHi = 1.1,
     .upLo = 0.9,    .upHi = 3.0,
@@ -44,14 +42,12 @@ const CHIP_SPRAY = foe.Spray{
 const SPARK = rgba(255, 208, 128, 240);
 const SPLINTER = rgba(86, 64, 44, 240);
 
-/// The LUNGE's ribbon only: a level thrust points down the camera and foreshortens to a dot, where the
-/// slam already crosses the frame.
 const TRAIL_N = 22;
 /// Outlasts the 0.26 s stroke on purpose — the whip curve spends the travel in its first third, so a
 /// tighter life leaves the ribbon gone by the frame the point arrives.
 const TRAIL_LIFE = 0.30;
-const TRAIL_ROOT = 0.24; // fraction down the blade the ribbon spans from → the point
-const TRAIL_PEAK = 158.0; // twice the hero's: his own swing he already knows about, this one he does not
+const TRAIL_ROOT = 0.24;
+const TRAIL_PEAK = 158.0;
 
 const N = heromod.N;
 const ROOT = heromod.ROOT;
@@ -65,13 +61,13 @@ const ANKL = heromod.ANKL;
 const HIPR = heromod.HIPR;
 const KNEER = heromod.KNEER;
 const ANKR = heromod.ANKR;
-const SHL = heromod.SHL; // shoulder L — the SHIELD arm (and the greatsword's second hand)
+const SHL = heromod.SHL;
 const ELL = heromod.ELL;
 const WRL = heromod.WRL;
-const SHR = heromod.SHR; // shoulder R — the WEAPON arm
+const SHR = heromod.SHR;
 const ELR = heromod.ELR;
 const WRR = heromod.WRR;
-const WPN = heromod.HELD; // mace or greatsword, in the shared weapon slot
+const WPN = heromod.HELD;
 
 const H: f32 = heromod.H;
 const REST = heromod.restHumanoid(heromod.HIP_HALF, heromod.SHOULDER_HALF, H);
@@ -91,7 +87,6 @@ const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 const setLocal = heromod.setHumanoid;
 
-/// The fist centre in the wrist frame — the archer's own grip anchor, because it is the same hand.
 const FIST_Y = -0.05 * H;
 const FIST_Z = 0.02 * H;
 
@@ -110,22 +105,17 @@ fn swingTilt(windAtt: f32, endAtt: f32, k: f32, armSh: f32) f32 {
     return lerpF(windAtt, endAtt, k) - armSh;
 }
 
-/// Kit lengths off the fist, in stature. The MESHES and the hurt segment below read the same numbers, or a
-/// blade lengthened in the modeller keeps its old reach.
-const MACE_HEAD = 0.30 * H; // fist → the drum's centre
-const MACE_CAP = 0.062 * H; // …and on past it to the spike over the drum
-const GS_GUARD = 0.115 * H; // fist → the crossguard
-const GS_BLADE = 0.76 * H; // guard → the point
-const MACE_FLANGE = 0.046 * H; // …and their WIDTHS: the flanges' stand-off off the drum…
-const GS_HALF_W = 0.049 * H; // …and the blade at its broadest, just above the guard
+const MACE_HEAD = 0.30 * H;
+const MACE_CAP = 0.062 * H;
+const GS_GUARD = 0.115 * H;
+const GS_BLADE = 0.76 * H;
+const MACE_FLANGE = 0.046 * H;
+const GS_HALF_W = 0.049 * H;
 
-/// Grip end → far end, in the mesh's own authored frame: ridden through `xf[WPN]` this is the weapon's
-/// world segment, and it is the only thing a warrior hits with.
 const KIT_SEG = [SPEC.len][2]rl.Vector3{
-    .{ v3(0, FIST_Y - 0.02 * H, FIST_Z), v3(0, FIST_Y + MACE_HEAD + MACE_CAP, FIST_Z) }, // fist → the head
-    .{ v3(0, FIST_Y + GS_GUARD, FIST_Z), v3(0, FIST_Y + GS_GUARD + GS_BLADE, FIST_Z) }, // guard → point
+    .{ v3(0, FIST_Y - 0.02 * H, FIST_Z), v3(0, FIST_Y + MACE_HEAD + MACE_CAP, FIST_Z) },
+    .{ v3(0, FIST_Y + GS_GUARD, FIST_Z), v3(0, FIST_Y + GS_GUARD + GS_BLADE, FIST_Z) },
 };
-/// The kit's widest part, off the same numbers. `foe.HERO_REACH` is added on top at the test.
 const KIT_R = [SPEC.len]f32{ MACE_FLANGE, GS_HALF_W };
 
 pub const Role = enum { shieldman, greatsword };
@@ -158,15 +148,11 @@ const Attack = struct {
     reachOut: f32,
     windDur: f32,
     swingDur: f32,
-    /// Fraction into the swing the kit goes live; only has to be early enough not to miss the arc's start.
     impactK: f32,
     recoverDur: f32,
     cd: f32,
     hit: combat.Hit,
-    /// Damage lands, stagger does not.
     hyper: bool = false,
-    /// Only the FIRST stroke carries the tell and the leap; the rest follow on `chainWind`, or a combo is
-    /// two attacks.
     strokes: u8 = 1,
     chainWind: f32 = 0,
     lunge: f32 = 0,
@@ -186,15 +172,13 @@ const MACE = Attack{
     .step = MACE_STEP,
 };
 
-// He is the hardest thing in the game to trade with (hyper-armour on the slam, 124 HP, 26 poise), so what
-// makes him FAIR is the size of the window either side of a blow, not a smaller number on it.
 
 const SLAM = Attack{
     .reachOut = 2.18, // MEASURED: near three metres of reach, cocked high and driven down through
     .windDur = 1.34,
     .swingDur = 0.30,
     .impactK = 0.24,
-    .recoverDur = 1.62, // the greatsword's own punish window, and the longest in the game
+    .recoverDur = 1.62,
     .cd = 3.10,
     .hit = .{ .dmg = 30, .poise = 40, .stance = 18 },
     .hyper = true,
@@ -212,7 +196,7 @@ const LUNGE = Attack{
     .cd = 3.90,
     .hit = .{ .dmg = 17, .poise = 22 },
     .strokes = 2,
-    .chainWind = 0.30, // the SECOND stab is the one that used to arrive unseen
+    .chainWind = 0.30,
     .lunge = 1.55,
     .hop = 0.40,
 };
@@ -229,7 +213,6 @@ const Spec = struct {
     hp: f32,
     poise: f32,
     stance: f32,
-    /// Ground speed, as a fraction of the hero's walk.
     speed: f32,
     bodyR: f32,
     hurtR: f32,
@@ -248,7 +231,7 @@ fn spec(r: Role) *const Spec {
 
 comptime {
     std.debug.assert(SPEC.len == @typeInfo(Role).@"enum".fields.len);
-    for (SPEC) |s| std.debug.assert(s.moves.len > 0); // a foe with no answer is scenery
+    for (SPEC) |s| std.debug.assert(s.moves.len > 0);
 }
 
 /// THE WIDEST MOVESET ANY ROLE HAS, off the table itself — the per-move cooldowns and the readiness
@@ -259,40 +242,31 @@ const MAX_MOVES = blk: {
     break :blk m;
 };
 
-pub const AGGRO_R = 20.0; // a sentry of the fallen city: it sees you well before it can reach you
-const TURN_RATE = 4.6; // rad/s — slower than the hero, quicker than the ogre
-const SWING_TURN = 3.0; // rad/s it keeps pivoting THROUGH the swing, so a stroll sideways is not enough
+pub const AGGRO_R = 20.0;
+const TURN_RATE = 4.6;
+const SWING_TURN = 3.0;
 const WALK_SPEED = heromod.WALK_SPEED;
-/// HE RUNS THE GAP DOWN AND WALKS THE LAST OF IT IN (owner's call): the run is for CLOSING only and drops
-/// back to a walk `WALK_IN` metres outside his own longest reach, so he is on foot for the whole exchange.
 const RUN_SPEED = heromod.RUN_SPEED;
 const WALK_IN = 3.2;
-const RUN_STALK = 1.2; // extra trunk lean at a full run vs a walk
-// How long a sidestep lasts is `behave.FLANK`'s own `orbit` leg now, not a constant here — a dead `CIRCLE_DUR`
-// sat beside `shade.CIRCLE_DUR`, which IS live, so the name read as shared when nothing shared it.
-const CRASH_LOW = 0.30; // m above his own feet the point must get down to before the earth answers
-/// Grit a tell drags up, by what kind of move is loading — the leap digs in hardest.
+const RUN_STALK = 1.2;
+const CRASH_LOW = 0.30;
 const GATHER_HEAVY = 1.4;
 const GATHER_LEAP = 1.7;
 const GATHER_PLAIN = 0.85;
-// THE ARCHER'S OWN, for `BONE_CHIP`/`DISSOLVE`'s reason: it is the same dead man, and a second copy of how
-// long he takes to fall is a second thing to retune.
 const DEATH_DUR = archermod.DEATH_DUR;
 const DISS_DUR = archermod.DISS_DUR;
 const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 7.0;
 const A_BOB = heromod.A_BOB;
-const A_PROT = 3.8; // deg of pelvic transverse rotation — a soldier walks squarer than a scavenger
+const A_PROT = 3.8;
 
 /// DRY BONE AND NOTHING ELSE — the archer's table, because it is the archer's body (see AGENTS.md's
 /// resistance table): it burns, and there is no flesh in it for cold to bite or a poison to find.
 const RESISTS = combat.resists(.{ .fire = -35, .cold = 60, .chaos = 45 });
 
-/// HIS BOARDS ARE THIN (owner's call): four of the hero's lights or two of his heavies empty this, and
-/// an emptied bar under a blow SHATTERS THE SHIELD — see `caught`.
 const SHIELD_STAM: f32 = 62.0;
 
-const PELVIS_SHARE: f32 = 0.15; // BIG BODIES HINGE AT THE WAIST: the pelvis takes only this much lean
+const PELVIS_SHARE: f32 = 0.15;
 
 const CARRY_SH = 6.0;
 const CARRY_EL = -18.0;
@@ -300,104 +274,93 @@ const CARRY_ABD = 12.0;
 /// `wpnTilt` is degrees the weapon leads FORWARD of the forearm line (0 = straight down it, away from the
 /// elbow), so a shouldered carry is a big number and a blow — the weapon out on the arm's end — is small.
 const MACE_CARRY_TILT = 142.0;
-const GS_CARRY_TILT = 118.0; // a greatsword rides point-back over the shoulder line, or it drags
-const GS_CARRY_SH = -22.0; // …which needs the arm up, not hanging
+const GS_CARRY_TILT = 118.0;
+const GS_CARRY_SH = -22.0;
 const GS_CARRY_ABD = 26.0;
 
-// THE GUARD. Sign is POSITIVE-IS-FORWARD — the inverse of the archer's shoulder channel, because
-// `poseUpper` negates on the way in. Authored the obvious way round the boards hang at his shin.
-const GUARD_OFF_SH = 58.0; // the shield arm comes UP and ACROSS…
+const GUARD_OFF_SH = 58.0;
 const GUARD_OFF_ABD = 26.0;
 const GUARD_OFF_EL = -78.0;
-const GUARD_TWIST = -22.0; // …and he turns his weapon side away, presenting the boards
+const GUARD_TWIST = -22.0;
 const GUARD_LEAN = 9.0;
-const GUARD_SH = 24.0; // the mace cocked back behind the shield, ready
+const GUARD_SH = 24.0;
 const GUARD_EL = -52.0;
 const NAKED_TWIST = -6.0;
 
 // THE MACE SWING, in four beats: gather, cock, step into it, follow through past his centre line. THE ARM
 // GOES LONG AT THE BLOW — a folded elbow at impact keeps the head inside his own silhouette, which is what
 // "the weapon barely moves but I get hit" was: 0.20 m of head travel behind a 2.8 m hurt box.
-const MACE_GATHER_SH = -22.0; // a small settle DOWN and back before the arm goes up (anticipation)
+const MACE_GATHER_SH = -22.0;
 const MACE_GATHER_EL = -38.0;
-const MACE_WIND_SH = -140.0; // …then hauled up and BACK, the head carried over his own skull
+const MACE_WIND_SH = -140.0;
 const MACE_WIND_EL = -22.0;
-const MACE_WIND_ABD = 52.0; // …and OUT, so the cock breaks his outline instead of hiding behind it
+const MACE_WIND_ABD = 52.0;
 const MACE_WIND_TWIST = -38.0;
-const MACE_WIND_LEAN = -14.0; // he stands UP into the cock, which is what sells the drop after it
+const MACE_WIND_LEAN = -14.0;
 const MACE_WIND_TILT = -104.0; // MEASURED: the head above the crown, which is the whole of the tell
-const MACE_HIT_SH = 82.0; // driven forward and down, the whole arm out ahead of him
-const MACE_HIT_EL = -14.0; // …and near STRAIGHT: this is where the reach comes from
+const MACE_HIT_SH = 82.0;
+const MACE_HIT_EL = -14.0;
 const MACE_HIT_ABD = -4.0;
 const MACE_HIT_TWIST = 34.0;
-const MACE_OVER_SH = 6.0; // deg the shoulder carries PAST the blow — the overswing
-const MACE_HIT_SWEEP = 14.0; // barely across him — an overarm blow lands in FRONT, not off his hip
-const MACE_HIT_LEAN = 30.0; // the trunk folds over the blow — the mace is heavy and it goes DOWN
-/// WHERE THE HEAD ENDS UP POINTING, as an ATTITUDE and not a wrist angle — see `swingTilt`. It comes
-/// over the top and finishes below the blow, which is what makes a heavy stroke land THROUGH a man.
+const MACE_OVER_SH = 6.0;
+const MACE_HIT_SWEEP = 14.0;
+const MACE_HIT_LEAN = 30.0;
 const MACE_END_ATT = 45.0;
-const MACE_WIND_ATT = MACE_WIND_SH + MACE_WIND_TILT + 360.0; // the cock's own attitude, wound forward
+const MACE_WIND_ATT = MACE_WIND_SH + MACE_WIND_TILT + 360.0;
 const MACE_STEP = 0.44; // metres of ground the swing carries him forward, pre-scale
 
-const GS_WIND_SH = -146.0; // hauled up and BACK, both hands, the blade behind the skull
+const GS_WIND_SH = -146.0;
 const GS_WIND_EL = -50.0;
 const GS_WIND_ABD = 34.0;
-const GS_WIND_TWIST = -48.0; // the whole trunk coils over the back hip
-const GS_WIND_LEAN = -18.0; // and arches back under the weight of it
+const GS_WIND_TWIST = -48.0;
+const GS_WIND_LEAN = -18.0;
 const GS_WIND_TILT = -56.0; // MEASURED: better than three metres up, point over his own skull — the tell
-const GS_HIT_SH = 74.0; // driven down and THROUGH, finishing past his off hip
+const GS_HIT_SH = 74.0;
 const GS_HIT_EL = -18.0;
 const GS_HIT_ABD = -12.0;
 const GS_HIT_TWIST = 44.0;
 const GS_HIT_SWEEP = 26.0;
-const GS_HIT_LEAN = 34.0; // the fold at the waist is what carries the point to the ground
+const GS_HIT_LEAN = 34.0;
 const GS_END_ATT = 38.0;
 const GS_WIND_ATT = GS_WIND_SH + GS_WIND_TILT + 360.0;
-/// The wrist angles those two attitudes leave the kit at, for the recoveries to pick the stroke up from.
 const MACE_END_TILT = MACE_END_ATT - (MACE_HIT_SH + MACE_OVER_SH);
 const GS_END_TILT = GS_END_ATT - GS_HIT_SH;
 
-const LUNGE_WIND_SH = -50.0; // chambered back at the hip, point forward: nothing overhead about it
+const LUNGE_WIND_SH = -50.0;
 const LUNGE_WIND_EL = -72.0;
 const LUNGE_WIND_ABD = 8.0;
 const LUNGE_WIND_TWIST = -30.0;
 const LUNGE_WIND_LEAN = -6.0;
 const LUNGE_WIND_TILT = 60.0; // MEASURED: cocked back level at his own ribs, point already at your chest
-const LUNGE_HIT_SH = 50.0; // driven straight out — the arms go LONG, which is what makes it read
+const LUNGE_HIT_SH = 50.0;
 const LUNGE_HIT_EL = -12.0;
 const LUNGE_HIT_ABD = -6.0;
 const LUNGE_HIT_TWIST = 24.0;
 const LUNGE_HIT_SWEEP = 12.0;
-const LUNGE_HIT_LEAN = 22.0; // out over the lead foot, committed
+const LUNGE_HIT_LEAN = 22.0;
 const LUNGE_HIT_TILT = 56.0; // MEASURED: the point stays LEVEL, at chest height — never over your head
-/// A LEAP IS ONE KNEE UP (kobold.zig's law, and it is the same law here): the lead knee is thrown to
-/// the chest with the trail leg left extended behind. Both legs tucked to one amount is a hop.
 const LEAP_LEAD_HIP = 68.0;
 const LEAP_LEAD_KNEE = 82.0;
 const LEAP_TRAIL_HIP = 26.0;
 const LEAP_TRAIL_KNEE = 22.0;
 const LEAP_TOE = 20.0;
 
-const BREAK_ARM = 104.0; // the shield arm thrown wide as the boards are smashed off it
-const BREAK_STEP = 2.4; // world/s he is driven back off the blow that emptied him
-const KNEEL_IN = 0.24; // seconds to go DOWN — fast, it is a collapse
-const KNEEL_OUT = 0.62; // …and to get back up, which is slow, and is the punish window
-const KNEEL_SINK = 0.315; // fraction of H the pelvis drops onto the knee
-const KNEEL_LEAD_HIP = 62.0; // the lead leg braced out in front, foot planted
+const BREAK_ARM = 104.0;
+const BREAK_STEP = 2.4;
+const KNEEL_IN = 0.24;
+const KNEEL_OUT = 0.62;
+const KNEEL_SINK = 0.315;
+const KNEEL_LEAD_HIP = 62.0;
 const KNEEL_LEAD_KNEE = 68.0;
-const KNEEL_TRAIL_HIP = 14.0; // …and the trail leg folded right under him, shin on the ground
+const KNEEL_TRAIL_HIP = 14.0;
 const KNEEL_TRAIL_KNEE = 122.0;
-const KNEEL_FOLD = 19.0; // deg the trunk folds over the planted knee — BEATEN, not face-down
-const KNEEL_HEAD = 40.0; // …and the skull hangs
+const KNEEL_FOLD = 19.0;
+const KNEEL_HEAD = 40.0;
 
-/// Per warrior (a muster can be 48), so it is a ring. Sized off the lunge's worst burst — at 30 the leap's
-/// landing overwrote the kick it had just made off the ground.
 const NPART = 56;
 
 const State = enum { idle, approach, circle, wind, swing, recover, stunlight, stunheavy, guardbreak, dead };
 
-/// Pure, so it is testable without a world. `wait` and `hold` ARE NOT THE SAME ANSWER: `wait` is in reach
-/// with nothing to throw, `hold` is out of my senses. Collapsed, a greatsword mid-exchange walks home.
 const Choice = enum { strike, circle, approach, wait, hold };
 fn classify(r: Role, dist: f32, scale: f32, ready: []const bool) Choice {
     if (dist > AGGRO_R) return .hold;
@@ -412,8 +375,6 @@ fn classify(r: Role, dist: f32, scale: f32, ready: []const bool) Choice {
     return if (r == .shieldman) .circle else .wait;
 }
 
-/// How far out a move may be STARTED from — a leap closes most of its own ground, so the lunge is thrown
-/// from outside the reach the blade has when it lands.
 fn triggerR(a: Attack, scale: f32) f32 {
     return a.reachOut * scale + a.lunge * 0.85 * scale + foe.HERO_REACH;
 }
@@ -442,8 +403,8 @@ pub fn moveClock(role: Role, mv: usize) Clock {
 }
 
 pub const Model = struct {
-    bone: [N]rl.Mesh, // the bare skeleton; `bone[WPN]` is UNDEFINED and never drawn (see archer.boneMeshes)
-    kit: [SPEC.len]rl.Mesh, // what is in the fist, by role
+    bone: [N]rl.Mesh,
+    kit: [SPEC.len]rl.Mesh,
     shield: rl.Mesh,
     mat: rl.Material,
 
@@ -451,8 +412,6 @@ pub const Model = struct {
         const mat = gfx.material(shader, "warrior");
         const kit = [_]rl.Mesh{ maceMesh(), greatswordMesh() };
         var bone = archermod.boneMeshes();
-        // `boneMeshes` leaves HELD undefined and the draw loop skips it, but this struct is COPIED out of
-        // here and reading undefined memory is illegal whether or not anybody draws it.
         bone[WPN] = kit[0];
         return .{ .bone = bone, .kit = kit, .shield = shieldMesh(), .mat = mat };
     }
@@ -461,11 +420,10 @@ pub const Model = struct {
     }
     pub fn draw(self: *const Model, w: *const Warrior) void {
         for (0..N) |i| {
-            if (i == WPN) continue; // the weapon slot is the ROLE's, not the skeleton's
+            if (i == WPN) continue;
             rl.drawMesh(self.bone[i], self.mat, w.xf[i]);
         }
         rl.drawMesh(self.kit[@intFromEnum(w.role)], self.mat, w.xf[WPN]);
-        // THE SHIELD IS NOT A BONE — it rides the left wrist, the pattern hero.zig set for its own.
         if (w.role == .shieldman and !w.shieldGone) rl.drawMesh(self.shield, self.mat, shieldXf(w));
     }
 };
@@ -475,12 +433,8 @@ pub const Warrior = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// THE WAND'S ROOTS, when they have hold of it (combat.Root) — stamped from outside, like the leash's eyes.
     root: combat.Root = .{},
-    /// THE RIME BREATH'S COLD (`combat.Chill`) — stamped from outside like the roots, and billed through the
-    /// same `foe.grip`. The field is what opts a creature into the cone at all (`game.rimeBreathe`).
     chill: combat.Chill = .{},
-    /// …and THE HERO'S SHIELD, stamped the same way (`game.markParry`). Read only inside his own parry windows.
     parry: foe.Parry = .{},
     facing: f32 = 0,
     scale: f32 = SCALE,
@@ -489,45 +443,32 @@ pub const Warrior = struct {
     state: State = .idle,
     t: f32 = 0,
     elapsed: f32 = 0,
-    /// WHICH MOVE is in progress, and how far into its combo — an index into `spec(role).moves`.
     atk: usize = 0,
     stroke: u8 = 0,
-    /// …and one cooldown PER MOVE, so a spent slam does not lock out the lunge.
     cds: [MAX_MOVES]f32 = [_]f32{0} ** MAX_MOVES,
-    dealt: bool = false, // one blow per stroke, latched
-    crashed: bool = false, // …and one crater per stroke
-    heroHit: ?combat.Hit = null, // this frame's blow ON the hero, read by the Muster
-    /// THE FLANK IS `behave`'s (`FLANK`: round to his side, then back in) — the orbit that holds its radius,
-    /// the arrival slop and the bail all live in the library rather than in this file's own tangent.
+    dealt: bool = false,
+    crashed: bool = false,
+    heroHit: ?combat.Hit = null,
     routine: behave.Routine = .{},
     homing: bool = false,
-    /// The committed leap: ground already covered (so travel integrates once) and height off the earth.
     leapDone: f32 = 0,
     hop: f32 = 0,
-    /// One-frame flag (`justDied`'s pattern), and the only thing about the lunge the camera may know.
     leapt: bool = false,
     /// THE SHIELD CAUGHT HIS STROKE THIS FRAME — the one-frame flag, reset at the top of `update` and read by
     /// the group after. A latch would bill the beat sixty times a second for the whole stumble.
     parried: bool = false,
-    /// Were the boards UP at the top of THIS frame — the state half of a block, settled with the pose. The
-    /// BEARING is not in it: that belongs to the blow and is asked of the blade itself (`shielded`).
     covered: bool = false,
-    /// A latch nothing clears (owner's call): the fight after a guard break is a different fight.
     shieldGone: bool = false,
-    /// HOW MANY BLOWS THE BOARDS HAVE EATEN. A block is not a `hits`, on purpose — but it IS a blow that
-    /// stopped here, and `foe.pierceGroup` has no other way to know a shaft was spent (see `blocksOf`).
     blocks: u32 = 0,
-    /// The shieldman's guard pool. The greatsword carries one and never spends it — a second struct would
-    /// fork the pose, the gait and the state machine with it.
     stam: combat.Stamina = combat.Stamina.initFoe(SHIELD_STAM),
-    blockT: f32 = mathx.LONG_AGO, // seconds since the boards last caught something (the recoil)
+    blockT: f32 = mathx.LONG_AGO,
 
     // posture channels (degrees), resolved by the state and read by pose()
     armSh: f32 = CARRY_SH,
     armEl: f32 = CARRY_EL,
     armAbd: f32 = CARRY_ABD,
-    armSweep: f32 = 0, // the weapon arm's HORIZONTAL swing across his front — what makes a diagonal
-    wpnTilt: f32 = MACE_CARRY_TILT, // the weapon's rake in the fist
+    armSweep: f32 = 0,
+    wpnTilt: f32 = MACE_CARRY_TILT,
     offSh: f32 = CARRY_SH,
     offEl: f32 = CARRY_EL,
     offAbd: f32 = -CARRY_ABD,
@@ -542,7 +483,7 @@ pub const Warrior = struct {
     fwdB: f32 = 1,
     latB: f32 = 0,
     speedS: f32 = 0,
-    prevPhase: f32 = 0, // footfall dust fires on the stride half-cycles
+    prevPhase: f32 = 0,
 
     vit: combat.Vitals = combat.Vitals.initFoe(SPEC[0].hp, SPEC[0].poise, SPEC[0].stance).withRes(RESISTS),
     hits: u32 = 0,
@@ -550,15 +491,8 @@ pub const Warrior = struct {
     flash: f32 = 0,
     shove: rl.Vector3 = mathx.zero3,
     justDied: bool = false,
-    /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law.
     threat: foe.Threat = .{},
-    /// …AND THE WAY ROUND WHAT IS IN FRONT OF IT (`foe.Nav`), stamped the same way and for the same reason.
     nav: foe.Nav = .{},
-    /// **SOMETHING IS STANDING OVER THIS CORPSE** (`game.markVigil`) — stamped from outside like everything
-    /// else on this list, and read by `foe.dissipate` alone: while it is set the body lies there instead of
-    /// going to gold, which is what makes a raise something the player can see coming. Named for what it does
-    /// to the BODY rather than for the creature doing it (`necro.Vigil` is that creature's own field, and one
-    /// name for both would have `dissipate`'s `@hasField` probe matching the caster too).
     heldOpen: bool = false,
     /// …AND A BODY MAY BE RAISED ONCE. A latch nothing clears, `shieldGone`'s arrangement: twice is a fight
     /// that cannot be won by killing things, which is the only thing the player is holding.
@@ -573,10 +507,8 @@ pub const Warrior = struct {
 
     xf: [N]rl.Matrix = undefined,
     rest: [N]rl.Vector3 = undefined,
-    /// Where the weapon was and is. `tryReach` tests BETWEEN them: a whipped head covers half a metre in a
-    /// frame, and an endpoint-only test passes clean through a body.
     wpnWas: [2]rl.Vector3 = .{ mathx.zero3, mathx.zero3 },
-    wpnIs: ?[2]rl.Vector3 = null, // null until the first pose: a foe's first frame sweeps from nowhere
+    wpnIs: ?[2]rl.Vector3 = null,
     /// Set by the swing, spent AFTER `pose()`: the hurt shape IS the posed weapon, so it cannot be tested
     /// before the pose it is measured off exists.
     live: bool = false,
@@ -595,7 +527,7 @@ pub const Warrior = struct {
         };
         w.rest = REST;
         w.fxRng = foe.fxStream(seed, 71237.0, 11);
-        for (&w.cds) |*c| c.* = 0.3 + seed * 0.9; // stagger a line of them out of lockstep
+        for (&w.cds) |*c| c.* = 0.3 + seed * 0.9;
         w.setCarryInstant();
         w.pose();
         return w;
@@ -606,8 +538,6 @@ pub const Warrior = struct {
         return moves[@min(self.atk, moves.len - 1)];
     }
 
-    // From `pos.y` PLUS `hop`: the lunge lifts the whole rig, and a hurt sphere pinned to the ground would
-    // sit at his feet for the leap.
     pub fn centerWorld(self: *const Warrior) rl.Vector3 {
         return foe.bodyPoint(self.pos, archermod.CENTER_F * H, self.scale, self.hop);
     }
@@ -617,8 +547,6 @@ pub const Warrior = struct {
     pub fn bodyR(self: *const Warrior) f32 {
         return spec(self.role).bodyR * self.scale;
     }
-    /// The archer's skull mark, because it is the archer's skull — and it goes DOWN ON ONE KNEE when the
-    /// boards are smashed off him, which is the exact moment a mark hanging at head height reads worst.
     pub fn lockPoint(self: *const Warrior) rl.Vector3 {
         return foe.markOn(self.xf[SKULL], archermod.LOCK_AT);
     }
@@ -649,7 +577,6 @@ pub const Warrior = struct {
     pub fn guardFrac(self: *const Warrior) f32 {
         return if (self.role == .shieldman and !self.shieldGone) self.stam.frac() else 0;
     }
-    /// A BLOW THE BOARDS ATE IS A BLOW THAT STOPPED HERE (`foe.blocksOf`) — what tells a shaft it is spent.
     pub fn blocksTaken(self: *const Warrior) u32 {
         return self.blocks;
     }
@@ -663,8 +590,6 @@ pub const Warrior = struct {
         };
     }
 
-    /// COMMITTED AND UNSTOPPABLE (owner's call) — a property of the MOVE, not of the creature, which is
-    /// what lets the greatsword also carry a quick combo you CAN interrupt.
     pub fn hyperArmor(self: *const Warrior) bool {
         if (self.state != .wind and self.state != .swing) return false;
         return self.move().hyper;
@@ -677,8 +602,6 @@ pub const Warrior = struct {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt);
     }
 
-    /// WHERE HE IS TRYING TO WALK, or null when he is not walking anywhere (`game.markWay`). The approach,
-    /// and the flank's own current step — a stroke or a leap is committed and gets no bend.
     pub fn navWant(self: *const Warrior, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state == .approach) return if (self.homing) self.home else hero;
         if (self.state != .circle) return null;
@@ -686,13 +609,11 @@ pub const Warrior = struct {
     }
     pub fn update(self: *Warrior, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
         if (self.gone) {
-            foe.tickParticles(&self.parts, dt, self.pos.y); // the last motes keep drifting out
+            foe.tickParticles(&self.parts, dt, self.pos.y);
             return null;
         }
         self.heroHit = null;
         self.justDied = false; // one-frame flag: re-set below only if this frame's blade kills it
-        // THE ROOTS HAVE THE FEET (foe.grip) — the slam still comes down on the spot, and dry bone shrugs most
-        // of the grip off. The LUNGE is a jump and is off the table entirely while it holds (`foe.canLeap`).
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
@@ -702,8 +623,6 @@ pub const Warrior = struct {
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);
-        // The guard refills only while it is DOWN — holding boards up is not a rest, and a shieldman
-        // who recovered behind his own shield could never be broken by pressure.
         self.stam.tick(dt, false, self.guardUp());
         self.blockT += dt;
         for (&self.cds) |*c| c.* = mathx.maxF(0, c.* - dt);
@@ -719,10 +638,8 @@ pub const Warrior = struct {
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         var movedDist: f32 = 0;
         var moveYaw: ?f32 = null;
-        var moveSpeed: f32 = 0; // …and how fast, which is what the GAIT is blended off (walk vs run)
+        var moveSpeed: f32 = 0;
 
-        // THE SHIELD, asked BEFORE the state machine runs this frame's stroke — a catch has to kill the swing
-        // it caught, and by the time `tryReach` has run the blow is already dealt.
         self.takeParry();
         switch (self.state) {
             .idle => {
@@ -732,8 +649,6 @@ pub const Warrior = struct {
             },
             .approach => {
                 const tgt = if (self.homing) self.home else hero;
-                // …ROUND WHAT IS IN THE WAY (`foe.Nav`): he walks where he is looking, so the way through is
-                // read at the FACING and the step below is untouched.
                 self.faceToward(self.nav.aim(self.pos, tgt), dt);
                 const f = self.fdir();
                 moveSpeed = self.approachSpeed(d);
@@ -750,8 +665,6 @@ pub const Warrior = struct {
                 } else if (d <= self.longestTrigger() or d > AGGRO_R) self.decide(d);
             },
             .circle => {
-                // `behave.FLANK` has the feet: round to his side behind the boards, then back in. The eyes
-                // stay on him the whole way (the Want's `look`), and the steering is passed in.
                 const w = self.routine.step(dt, .{ .at = self.pos, .facing = self.facing, .quarry = hero, .nav = self.nav });
                 self.faceToward(w.look orelse hero, dt);
                 if (w.go) |g| {
@@ -785,7 +698,7 @@ pub const Warrior = struct {
                     self.hop = 0;
                     if (self.stroke + 1 < a.strokes) {
                         self.stroke += 1;
-                        self.enter(.wind); // straight into the follow-up: no second tell
+                        self.enter(.wind);
                     } else {
                         self.cds[self.atk] = a.cd;
                         self.enter(.recover);
@@ -814,21 +727,18 @@ pub const Warrior = struct {
             },
         }
 
-        // Settled BEFORE the blade, so a hit this frame is judged against the guard he actually held.
         self.covered = self.guardUp();
 
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, moveSpeed, moveYaw, self.facing);
         self.footfalls();
         self.pose();
-        // THE BLOW IS JUDGED AFTER THE POSE, because the hurt shape IS the posed weapon: what the kit
-        // swept this frame, and where its point got to.
         if (self.live) self.tryReach(hero);
         if (self.state == .swing) self.crashIn();
         if (self.state == .swing and self.move().lunge > 0) {
             const seg = self.wpnHere();
             self.trail.push(seg[0], seg[1], self.wpnWas[1], TRAIL_ROOT);
         }
-        self.tryHit(blade); // the hero's blade LAST, so a kill flags justDied for this frame's beat
+        self.tryHit(blade);
         return self.heroHit;
     }
 
@@ -841,7 +751,6 @@ pub const Warrior = struct {
         for (spec(self.role).moves) |a| r = mathx.maxF(r, triggerR(a, self.scale));
         return r;
     }
-    /// Where the run ends: his longest reach plus a stride or three, whatever weapon he carries.
     fn walkInR(self: *const Warrior) f32 {
         return self.longestTrigger() + WALK_IN * self.scale;
     }
@@ -854,30 +763,27 @@ pub const Warrior = struct {
         if (self.homing or dist <= self.walkInR()) return WALK_SPEED * base;
         return RUN_SPEED * base;
     }
-    /// 0 at a walk, 1 at a full run — puts `hero.legChain` on its RUN curves rather than a fast walk.
     fn runBlend(self: *const Warrior) f32 {
         const base = spec(self.role).speed;
         return mathx.clampF((self.speedS - WALK_SPEED * base) / ((RUN_SPEED - WALK_SPEED) * base), 0, 1);
     }
 
-    /// The lunge's leap and the mace's step into its blow. INTEGRATED off a curve rather than added per
-    /// frame, so the ground covered is exact however the frame rate wobbles (the archer's backstep's law).
     fn flyStroke(self: *Warrior, k: f32, bounds: f32) void {
         const a = self.move();
-        const offEarth = a.lunge > 0 and self.stroke == 0; // …the other kind is a step, and stays down
+        const offEarth = a.lunge > 0 and self.stroke == 0;
         const dist = if (offEarth) a.lunge else a.step;
         if (dist <= 0) return;
-        const e = 1.0 - (1.0 - k) * (1.0 - k); // fast out of the gather, easing into the landing
+        const e = 1.0 - (1.0 - k) * (1.0 - k);
         const want = dist * self.scale * e;
         mathx.stepXZ(&self.pos, self.fdir(), want - self.leapDone, bounds);
         self.leapDone = want;
-        if (!offEarth) return; // …and the rest of this is the leap's own height and its two plumes
+        if (!offEarth) return;
         const wasUp = self.hop > foe.AIRBORNE_LIFT;
         self.hop = a.hop * self.scale * mathx.sinf(k * std.math.pi);
         if (!wasUp and self.hop > foe.AIRBORNE_LIFT) {
             self.kickBurst(-1.0, 34, 6.2);
             self.grit(self.pos, 12);
-            self.leapt = true; // the Muster hands this to the frame: a shake and a pulse in the grip
+            self.leapt = true;
         }
         if (wasUp and self.hop <= foe.AIRBORNE_LIFT) {
             self.kickBurst(1.0, 36, 5.0);
@@ -904,17 +810,15 @@ pub const Warrior = struct {
         }
     }
 
-    /// The crater at the end of a slam: the blade really does reach the earth, so the earth answers —
-    /// AT THE POSED POINT, which is where the steel actually is, and not a fraction of a reach number.
     fn crashIn(self: *Warrior) void {
         if (self.crashed or !self.move().crash) return;
         const tip = self.wpnHere()[1];
-        if (tip.y > self.pos.y + CRASH_LOW * self.scale) return; // the point has not got down there yet
+        if (tip.y > self.pos.y + CRASH_LOW * self.scale) return;
         self.crashed = true;
         const at = v3(tip.x, self.pos.y, tip.z);
         self.dustBurst(at, 34, 5.2, 0.40);
         self.grit(at, 14);
-        sfx.world(.ogre_slam, at); // the game's one "heavy thing meets earth" voice, at the crater
+        sfx.world(.ogre_slam, at);
     }
 
     fn enter(self: *Warrior, s: State) void {
@@ -922,26 +826,20 @@ pub const Warrior = struct {
         self.t = 0;
         self.dealt = false;
         self.crashed = false;
-        // …and the kit goes dead WITH the state, or a combo's follow-up lands its predecessor's stroke
-        // off one pose: `dealt` is re-armed here, and the hurt test runs after this in the same frame.
         self.live = false;
         if (s != .wind and s != .swing) {
             self.stroke = 0;
             self.leapDone = 0;
             self.hop = 0;
         }
-        // Zeroed by the state that INTEGRATES it (`.swing`, not `.wind`): `flyStroke` moves him by
-        // `want - leapDone`, so a move with `strokes > 1` and `step > 0` would drive him backward.
         if (s == .swing) self.leapDone = 0;
         switch (s) {
             .wind => {
-                if (self.stroke > 0) return; // a combo's follow-up does not re-announce itself
+                if (self.stroke > 0) return;
                 const a = self.move();
                 if (a.lunge > 0) {
-                    // THE LEAP GETS ITS OWN VOICE (owner: it does not look as dangerous as it is) — the
-                    // generic light whoosh it used to share with a mace was the whole problem.
                     sfx.world(.skel_lunge, self.pos);
-                    self.dustBurst(self.pos, 26, 3.4, 0.34); // …and he digs in HARD to jump
+                    self.dustBurst(self.pos, 26, 3.4, 0.34);
                     self.grit(self.pos, 10);
                 } else sfx.world(if (a.hyper) .swing_heavy else .swing_light, self.pos);
             },
@@ -960,7 +858,7 @@ pub const Warrior = struct {
         self.live = false;
         self.stroke = 0;
         self.leapDone = 0;
-        self.hop = 0; // caught in the air: he comes straight down
+        self.hop = 0;
         self.homing = false;
     }
     fn enterDeath(self: *Warrior) void {
@@ -976,9 +874,6 @@ pub const Warrior = struct {
         var ready: [MAX_MOVES]bool = [_]bool{false} ** MAX_MOVES;
         const moves = spec(self.role).moves;
         const n = moves.len;
-        // A MOVE THAT LEAVES THE EARTH IS NOT READY WHILE THE ROOTS HAVE THE FEET (`foe.canLeap`). Folded
-        // into `ready` rather than tested at the pick, since `classify` reads the same array — gated at the
-        // pick, a rooted greatsword falls through `orelse 0` onto a slam still cooling.
         const canLeap = foe.canLeap(&self.root);
         for (0..n) |i| ready[i] = self.cds[i] <= 0 and (canLeap or moves[i].hop <= 0);
         switch (classify(self.role, dist, self.scale, ready[0..n])) {
@@ -988,7 +883,6 @@ pub const Warrior = struct {
                 self.enter(.wind);
             },
             .circle => {
-                // Which way he goes round is HIS, and it is seeded — a pair must not orbit as one body.
                 self.routine.start(&behave.FLANK, self.seed - 0.5);
                 self.enter(.circle);
             },
@@ -1009,12 +903,10 @@ pub const Warrior = struct {
         }
     }
 
-    /// Off the stamp `pose()` already took — recomputing it is a second place for "where the weapon is".
     fn wpnHere(self: *const Warrior) [2]rl.Vector3 {
         return self.wpnIs orelse self.weaponSeg();
     }
 
-    /// Straight off the posed bone (the ogre's `clubLowWorld` law): nothing about a blow is guessed from yaw.
     pub fn weaponSeg(self: *const Warrior) [2]rl.Vector3 {
         const s = KIT_SEG[@intFromEnum(self.role)];
         return .{
@@ -1029,12 +921,9 @@ pub const Warrior = struct {
         return a.reachOut * self.scale + foe.HERO_REACH;
     }
 
-    /// SECONDS UNTIL THIS STROKE'S BLOW LANDS, counted ACROSS the wind→swing boundary so the tell and the
-    /// stroke are ONE continuous countdown — null when he is not swinging one. EXHAUSTIVE, so a state added
-    /// later has to say whether it carries a blow. `windDur()`, never `a.windDur`: a combo winds on `chainWind`.
     fn toImpact(self: *const Warrior) ?f32 {
         const a = self.move();
-        const live = a.swingDur * a.impactK; // where in the stroke the kit goes live — see `.swing`
+        const live = a.swingDur * a.impactK;
         return switch (self.state) {
             .wind => (self.windDur() - self.t) + live,
             .swing => live - self.t,
@@ -1058,22 +947,14 @@ pub const Warrior = struct {
         const reach = self.parryable() orelse return;
         if (!self.parry.catches(self.pos, reach)) return;
         self.parried = true;
-        // The whole body pops off the shared `hitFlash`, exactly as it does off the blade — a catch that took
-        // his footing away has earned the one piece of feedback impossible to miss.
         self.flash = FLASH_DUR;
         self.leash.noteCombat();
-        // The move goes on its own cooldown though it never finished: the kit has to be gathered again, or he
-        // walks out of the stumble straight into the stroke he was just denied.
         self.cds[self.atk] = self.move().cd;
-        // STRUCK IRON off the kit's own far end, thrown back the way it came (`sparks` negates what it is
-        // given, so this is the bearing to the boards). The shield throws its own — see `hero.noteParry`.
         self.sparks(self.wpnHere()[1], mathx.dirXZ(self.pos, self.parry.at), 16);
         sfx.world(.bone_hurt, self.pos);
         switch (self.vit.hit(combat.PARRY_HIT)) {
-            .death => self.enterDeath(), // a parry takes no HP today; the day one does, it kills like anything
+            .death => self.enterDeath(),
             .heavy => self.enterStun(.stunheavy),
-            // A stance that HELD is still a stroke knocked off its line: the swing dies either way, into the
-            // short stumble rather than the wide-open punish window.
             .light, .none => self.enterStun(.stunlight),
         }
     }
@@ -1086,13 +967,9 @@ pub const Warrior = struct {
         if (!foe.weaponReaches(self.wpnWas, self.wpnHere(), hero, r)) return;
         self.heroHit = self.move().hit;
         self.dealt = true;
-        self.leash.noteCombat(); // a blow landed is a fight in progress — the tether waits
+        self.leash.noteCombat();
     }
 
-    /// DID THE BOARDS STAND BETWEEN HIM AND *THIS* BLOW. **THERE IS NOTHING ON HIS BACK** (owner's call):
-    /// the shield is a DIRECTION, so what decides a block is where the blow CAME FROM, never where he is
-    /// looking. Asked of the BLADE's segment, not of `update`'s target — with a spirit on the field he is
-    /// squared up to the WOLF, and a sword in his spine lands inside a front arc pointed elsewhere.
     fn shielded(self: *const Warrior, blade: foe.Blade) bool {
         if (!self.covered) return false;
         const at = mathx.lerpV(blade.a, blade.b, 0.5);
@@ -1106,13 +983,11 @@ pub const Warrior = struct {
         const blocked = self.shielded(blade);
         var b = blade;
         if (blocked) {
-            b.hit = combat.guardChip(blade.hit, combat.GUARD_NEGATE); // no tree behind a foe's boards — the flat figure
+            b.hit = combat.guardChip(blade.hit, combat.GUARD_NEGATE);
 
         } else if (self.hyperArmor()) {
             b.hit = .{ .dmg = blade.hit.dmg, .elem = blade.hit.elem };
         }
-        // THE SPLIT IS HERE FOR THIS CREATURE: `reached` is what the blade did, `wounded` is what it cost —
-        // and the shieldman is the one body in the game with something in between the two.
         const s = foe.reached(self, b) orelse return;
         if (blocked) return self.caught(blade.hit, s);
         const heavyBlow = foe.wounded(self, s, blade, .{ .light = 1.2, .heavy = 1.9 });
@@ -1130,19 +1005,14 @@ pub const Warrior = struct {
         }
     }
 
-    /// THE BOARDS TOOK IT. Billed on the RAW blow (the arm behind a burning arrow does not know what
-    /// the bones resist), and the chip has already gone through `strike` above.
     fn caught(self: *Warrior, raw: combat.Hit, s: foe.Strike) void {
         self.blockT = 0;
         self.blocks += 1;
         self.stam.spend(combat.guardStamina(raw));
-        self.shove = mathx.scaleV(self.fdir(), -0.6); // he gives ground, he does not flinch
+        self.shove = mathx.scaleV(self.fdir(), -0.6);
         self.sparks(s.contact, s.dir, 14);
-        // THE REFUSAL HAS ITS OWN VOICE, and it is not the hero's `guard_block`: one is your swing achieving
-        // nothing, the other is your shield saving you, and they were the same sound.
         sfx.world(.foe_guarded, self.pos);
         if (s.reaction == .death) {
-            // Chipped to death behind his own shield — that is a death, not a block.
             self.hits += 1;
             self.flash = FLASH_DUR;
             sfx.world(.bone_die, self.pos);
@@ -1155,8 +1025,6 @@ pub const Warrior = struct {
         self.breakGuard(s.contact);
     }
 
-    /// A heavy stagger the vitals never returned — the chip that emptied him was a plain damage hit — so the
-    /// reaction and its poise immunity are armed here.
     fn breakGuard(self: *Warrior, at: rl.Vector3) void {
         sfx.world(.guard_break, self.pos);
         self.flash = FLASH_DUR;
@@ -1167,23 +1035,18 @@ pub const Warrior = struct {
         self.enterStun(.guardbreak);
     }
 
-    /// **IS THIS BODY SOMETHING A NECROMANCER COULD USE** — asked by `game.markVigil` and by nothing else.
     pub fn raisable(self: *const Warrior) bool {
         return self.state == .dead and !self.gone and !self.wasRaised and self.t >= DEATH_DUR;
     }
 
-    /// **IT GETS BACK UP.** The shared re-arm does the body (`foe.rekindle`) and this says what it does next:
-    /// the STUN, so there is a beat of it standing there before it swings — a corpse that came up already
-    /// deciding would land a blow out of the ground, which is the one thing no tell can cover.
     pub fn reraise(self: *Warrior, frac: f32) void {
         foe.rekindle(self, frac);
         self.wasRaised = true;
         self.enterStun(.stunlight);
-        self.leash.noteCombat(); // it comes up IN the fight, not waiting to notice one
+        self.leash.noteCombat();
         self.pose();
     }
 
-    // Debug hooks for the --shot harness (force a pose in isolation).
     pub fn debugSwing(self: *Warrior, which: usize) void {
         self.atk = @min(which, spec(self.role).moves.len - 1);
         self.stroke = 0;
@@ -1217,15 +1080,11 @@ pub const Warrior = struct {
         self.wpnTilt = self.carryTilt();
     }
 
-    /// The idle/walking carry, and for the shieldman the GUARD — one eased target set, so raising and
-    /// dropping the boards can never snap.
     fn setCarry(self: *Warrior, dt: f32) void {
         const e = dt * 7.0;
         const breathe = mathx.sinf(self.elapsed * 1.15 + self.seed * 6.28);
         const stalk = self.moving * (1.0 + RUN_STALK * self.runBlend());
         const up: f32 = if (self.guardUp()) 1 else 0;
-        // THE RECOIL OF A CAUGHT BLOW GOES INTO THE MAN, NOT THE ARM (hero.zig's own rule): a deep
-        // sink and a step back, so a blow he CAUGHT never looks like one that knocked his guard aside.
         const rec = mathx.maxF(0, 1.0 - self.blockT / 0.28);
 
         if (self.role == .greatsword) {
@@ -1279,23 +1138,21 @@ pub const Warrior = struct {
     }
 
     fn setWind(self: *Warrior, k: f32) void {
-        const kArm = k * @sqrt(k); // the loaded arm trails the body and arrives late
+        const kArm = k * @sqrt(k);
         const a = self.move();
         if (a.hyper) return self.setSlamWind(k, kArm);
         if (a.lunge > 0) return self.setLungeWind(k, kArm);
         self.setMaceWind(k, kArm);
     }
 
-    /// Three beats, not one lerp: a GATHER down and back, the arm up behind the shoulder, a held shiver at
-    /// the top. Without the gather an arm travels on frame one, which reads weightless whatever the clock.
     fn setMaceWind(self: *Warrior, k: f32, kArm: f32) void {
-        const gather = mathx.pulse(k, 0, 0.16, 0.30, 0.52); // peaks early, gone by the halfway mark
+        const gather = mathx.pulse(k, 0, 0.16, 0.30, 0.52);
         const raise = mathx.smoothstep(0.24, 1.0, kArm);
         const shiver = mathx.sinf(self.t * 34.0) * 1.5 * mathx.smoothstep(0.80, 1.0, k);
         self.armSh = lerpF(GUARD_SH, MACE_GATHER_SH, gather) + (MACE_WIND_SH - GUARD_SH) * raise + shiver;
         self.armEl = lerpF(GUARD_EL, MACE_GATHER_EL, gather) + (MACE_WIND_EL - GUARD_EL) * raise;
         self.armAbd = lerpF(CARRY_ABD, MACE_WIND_ABD, raise);
-        self.armSweep = lerpF(0, -24.0, raise); // taken round BEHIND his weapon side, not straight up
+        self.armSweep = lerpF(0, -24.0, raise);
         self.wpnTilt = lerpF(MACE_CARRY_TILT, MACE_WIND_TILT, raise) + shiver * 0.8;
         if (self.shieldGone) {
             self.offSh = lerpF(CARRY_SH - 8.0, -30.0, raise);
@@ -1317,9 +1174,9 @@ pub const Warrior = struct {
         self.armSh = lerpF(GS_CARRY_SH, GS_WIND_SH, kArm) + shiver;
         self.armEl = lerpF(CARRY_EL - 10.0, GS_WIND_EL, kArm);
         self.armAbd = lerpF(GS_CARRY_ABD, GS_WIND_ABD, kArm);
-        self.armSweep = lerpF(0, -26.0, kArm); // cocked round BEHIND his weapon side
+        self.armSweep = lerpF(0, -26.0, kArm);
         self.wpnTilt = lerpF(GS_CARRY_TILT, GS_WIND_TILT, kArm) + shiver * 0.7;
-        self.offSh = lerpF(GS_CARRY_SH - 16.0, GS_WIND_SH + 26.0, kArm); // the second hand stays on it
+        self.offSh = lerpF(GS_CARRY_SH - 16.0, GS_WIND_SH + 26.0, kArm);
         self.offEl = lerpF(-58.0, -80.0, kArm);
         self.offAbd = lerpF(-34.0, -12.0, kArm);
         self.bodyLean = lerpF(5.0, GS_WIND_LEAN, k);
@@ -1333,18 +1190,18 @@ pub const Warrior = struct {
         self.armEl = lerpF(CARRY_EL - 10.0, LUNGE_WIND_EL, kArm);
         self.armAbd = lerpF(GS_CARRY_ABD, LUNGE_WIND_ABD, kArm);
         self.armSweep = lerpF(0, -14.0, kArm);
-        self.wpnTilt = lerpF(GS_CARRY_TILT, LUNGE_WIND_TILT, kArm); // the point comes DOWN and level, at you
+        self.wpnTilt = lerpF(GS_CARRY_TILT, LUNGE_WIND_TILT, kArm);
         self.offSh = lerpF(GS_CARRY_SH - 16.0, LUNGE_WIND_SH - 20.0, kArm);
         self.offEl = lerpF(-58.0, -76.0, kArm);
         self.offAbd = lerpF(-34.0, -26.0, kArm);
         self.bodyLean = lerpF(5.0, LUNGE_WIND_LEAN, k);
         self.twist = lerpF(-8.0, LUNGE_WIND_TWIST, k);
         self.headPitch = lerpF(2.0, -4.0, k);
-        self.legBrace = lerpF(0, 0.86, k); // he crouches HARD — the leap has to come from somewhere
+        self.legBrace = lerpF(0, 0.86, k);
     }
 
     fn setSwing(self: *Warrior, k: f32) void {
-        const kW = 1.0 - (1.0 - k) * (1.0 - k) * (1.0 - k); // the whip: nearly all of it up front
+        const kW = 1.0 - (1.0 - k) * (1.0 - k) * (1.0 - k);
         const a = self.move();
         if (a.hyper) return self.setSlamSwing(kW, k);
         if (a.lunge > 0) return self.setLungeSwing(kW, k);
@@ -1352,7 +1209,7 @@ pub const Warrior = struct {
     }
 
     fn setMaceSwing(self: *Warrior, kW: f32, k: f32) void {
-        const over = mathx.smoothstep(0.72, 1.0, k); // the overswing, which carries him past the target
+        const over = mathx.smoothstep(0.72, 1.0, k);
         self.armSh = lerpF(MACE_WIND_SH, MACE_HIT_SH, kW) + MACE_OVER_SH * over;
         self.armEl = lerpF(MACE_WIND_EL, MACE_HIT_EL, kW);
         self.armAbd = lerpF(MACE_WIND_ABD, MACE_HIT_ABD, kW);
@@ -1368,25 +1225,21 @@ pub const Warrior = struct {
     }
 
     fn setSlamSwing(self: *Warrior, kW: f32, k: f32) void {
-        // THE POINT CROSSES CHEST HEIGHT AND THEN GOES ON INTO THE EARTH: the hit pose is the middle of
-        // the arc, not its end, and `over` is what carries the steel the rest of the way down.
         self.armSh = lerpF(GS_WIND_SH, GS_HIT_SH, kW);
         self.armEl = lerpF(GS_WIND_EL, GS_HIT_EL, kW);
         self.armAbd = lerpF(GS_WIND_ABD, GS_HIT_ABD, kW);
-        self.armSweep = lerpF(-26.0, GS_HIT_SWEEP, kW); // ACROSS him — this is the diagonal
+        self.armSweep = lerpF(-26.0, GS_HIT_SWEEP, kW);
         self.wpnTilt = swingTilt(GS_WIND_ATT, GS_END_ATT, k, self.armSh);
         self.offSh = lerpF(GS_WIND_SH + 26.0, GS_HIT_SH - 18.0, kW);
         self.offEl = lerpF(-80.0, -30.0, kW);
         self.offAbd = lerpF(-12.0, -44.0, kW);
-        self.bodyLean = lerpF(GS_WIND_LEAN, GS_HIT_LEAN, k); // the fold at the waist drives it down
+        self.bodyLean = lerpF(GS_WIND_LEAN, GS_HIT_LEAN, k);
         self.twist = lerpF(GS_WIND_TWIST, GS_HIT_TWIST, kW);
         self.headPitch = lerpF(-12.0, 26.0, kW);
         self.legBrace = lerpF(0.62, 0.9, k);
     }
 
     fn setLungeSwing(self: *Warrior, kW: f32, k: f32) void {
-        // Stroke 0 goes OUT (the thrust off the leap); stroke 1 comes back ACROSS (the return cut), so
-        // the pair reads as one combo and not as the same swing played twice.
         const back = self.stroke > 0;
         const sweepTo: f32 = if (back) -46.0 else LUNGE_HIT_SWEEP;
         const twistTo: f32 = if (back) -20.0 else LUNGE_HIT_TWIST;
@@ -1401,7 +1254,7 @@ pub const Warrior = struct {
         self.bodyLean = lerpF(LUNGE_WIND_LEAN, LUNGE_HIT_LEAN, k);
         self.twist = lerpF(LUNGE_WIND_TWIST, twistTo, kW);
         self.headPitch = lerpF(-4.0, 14.0, kW);
-        self.legBrace = lerpF(0.86, 0.34, k); // the crouch RELEASES: that release is the leap
+        self.legBrace = lerpF(0.86, 0.34, k);
     }
 
     fn setRecover(self: *Warrior, u: f32) void {
@@ -1428,7 +1281,7 @@ pub const Warrior = struct {
             self.armEl = lerpF(CARRY_EL - 10.0, -26.0, over);
             self.armAbd = lerpF(GS_CARRY_ABD, -8.0, over);
             self.armSweep = lerpF(0, -40.0, over);
-            self.wpnTilt = lerpF(GS_CARRY_TILT, 92.0, over); // the blade left lying across his front
+            self.wpnTilt = lerpF(GS_CARRY_TILT, 92.0, over);
             self.offSh = lerpF(GS_CARRY_SH - 16.0, -40.0, over);
             self.offEl = lerpF(-58.0, -24.0, over);
             self.offAbd = lerpF(-34.0, -28.0, over);
@@ -1456,29 +1309,24 @@ pub const Warrior = struct {
     fn stunAmount(self: *const Warrior) f32 {
         return switch (self.state) {
             .stunlight => foe.stunCurve(self.t, false),
-            // A GUARD BREAK IS A HEAVY, on the heavy's own clock — that is what `breakGuard` arms.
             .stunheavy, .guardbreak => foe.stunCurve(self.t, true),
             else => 0,
         };
     }
 
-    /// HOW FAR DOWN ON HIS KNEE HE IS, 0..1 — fast down, held, and slow back up, because the getting up
-    /// is the punish window and the going down is a collapse.
     fn kneelAmount(self: *const Warrior) f32 {
         if (self.state != .guardbreak) return 0;
         const d = combat.FOE_HEAVY_STUN_DUR;
         return mathx.smoothstep(0, KNEEL_IN, self.t) * (1.0 - mathx.smoothstep(d - KNEEL_OUT, d, self.t));
     }
 
-    /// The whole rig's scale, dissipation included. ONE definition: the shield is not a bone and has to arrive
-    /// at the same number `pose` did, or the boards shrink on a different curve to the man holding them.
     pub fn rigScale(self: *const Warrior) f32 {
         return self.scale * (1.0 - 0.7 * self.fade);
     }
 
     pub fn pose(self: *Warrior) void {
         const fs = self.rigScale();
-        const sink = -0.55 * self.scale * self.fade; // the corpse sinks as it dissipates
+        const sink = -0.55 * self.scale * self.fade;
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
 
@@ -1510,8 +1358,6 @@ pub const Warrior = struct {
             heromod.rootAt(self.pos),
         ));
 
-        // hero.legChain owns the legs whenever nothing else has taken them: the death crumple, the
-        // KNEEL and the LEAP each pose them outright, and they are mutually exclusive by construction.
         const legsTaken = dead or kn > 0.001 or self.leaping();
         if (!legsTaken) {
             heromod.legChain(&wx, &self.rest, self.phase, m, runB, self.fwdB, self.latB, 1.0, HIPL, KNEEL, solePatches[0]);
@@ -1519,7 +1365,6 @@ pub const Warrior = struct {
         }
         self.poseUpper(&wx, dk, stun, kn, dead, prot);
         self.xf = wx;
-        // …and the kit's own sweep is stamped LAST, off the pose that was just built.
         const seg = self.weaponSeg();
         self.wpnWas = self.wpnIs orelse seg;
         self.wpnIs = seg;
@@ -1531,10 +1376,8 @@ pub const Warrior = struct {
 
     fn poseUpper(self: *Warrior, wx: *[N]rl.Matrix, dk: f32, stun: f32, kn: f32, dead: bool, prot: f32) void {
         const rest = self.rest;
-        const wonk = (self.seed - 0.5) * 6.0; // each one stands its own crooked way (cosmetic only)
-        const brk = if (self.state == .guardbreak) stun else 0; // the break's own, bigger reaction
-        // The trunk carries the REST of the lean, split up the spine. ONCE HE IS DOWN THE KNEEL OWNS THE
-        // TRUNK: the stagger arches BACK and the kneel folds FORWARD, and together they cancel.
+        const wonk = (self.seed - 0.5) * 6.0;
+        const brk = if (self.state == .guardbreak) stun else 0;
         const spineX = self.bodyLean * (1.0 - PELVIS_SHARE) + 22.0 * dk - 22.0 * stun * (1.0 - kn) + KNEEL_FOLD * kn;
 
         setLocal(wx, SPINE, rest, mul3(rx(spineX * 0.45), ry(-0.35 * prot + self.twist * 0.4), rz(wonk * 0.5)));
@@ -1549,8 +1392,6 @@ pub const Warrior = struct {
         if (dead) {
             heromod.deadLegs(wx, rest, dk);
         } else if (kn > 0.001) {
-            // DOWN ON ONE KNEE: the LEAD leg braced out in front with the foot planted, the TRAIL leg
-            // folded right under him so the shin lies on the ground. Symmetric legs would be a squat.
             setLocal(wx, HIPL, rest, mul(rx(-KNEEL_LEAD_HIP * kn), rz(-4.0)));
             setLocal(wx, KNEEL, rest, rx(8.0 + KNEEL_LEAD_KNEE * kn));
             setLocal(wx, ANKL, rest, rx(-16.0 * kn));
@@ -1588,8 +1429,6 @@ pub const Warrior = struct {
         setLocal(wx, WRL, rest, rz(6.0));
     }
 
-    // A skeleton does not bleed, so every burst here is DUST, BONE or IRON. The shared pool, shape and
-    // integrator are foe.zig's; only the bursts are this creature's.
 
     fn emit(self: *Warrior, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
         foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
@@ -1697,11 +1536,8 @@ pub const Warrior = struct {
     }
 };
 
-// WHERE they stand is the MAP's business (`foe: shieldman …` / `foe: greatsword …` records).
 pub const CAP = SPEC.len * wf.MAX_PER_KIND;
 
-/// THE MUSTER — both roles in one array: one creature with two kits, so the body, the gait, the bones, the
-/// death and the reactions are shared and only the kit differs.
 pub const Muster = struct {
     model: Model,
     band: [CAP]Warrior = undefined,
@@ -1710,7 +1546,6 @@ pub const Muster = struct {
     pub fn init(shader: rl.Shader) Muster {
         return .{ .model = Model.init(shader) };
     }
-    /// The posted warriors — never iterate the whole array, the tail is `undefined`.
     pub fn live(self: *Muster) []Warrior {
         return self.band[0..self.n];
     }
@@ -1725,8 +1560,6 @@ pub const Muster = struct {
     pub fn setShader(self: *Muster, sh: rl.Shader) void {
         self.model.setShader(sh);
     }
-    /// THE HERO'S SHIELD, STAMPED ON EVERY MEMBER (`game.markParry`) — the leash's own pattern, and set before
-    /// `update` so a window is read on the frame it is open rather than the one after.
     pub fn setParry(self: *Muster, p: foe.Parry) void {
         foe.setParry(self.live(), p);
     }
@@ -1774,10 +1607,7 @@ pub const Muster = struct {
     }
 };
 
-// THE KIT. Bones come from `archer.boneMeshes`; everything below is what these two carry.
 
-/// THE MACE — a short haft in the fist, a flanged iron head over it. Authored in the RIGHT-WRIST frame
-/// about the fist, exactly as the archer's bow is, so the two armaments hang off one anchor.
 fn maceMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(5507);
@@ -1788,10 +1618,10 @@ fn maceMesh() rl.Mesh {
     b.setMat(.wood);
     b.addCylinder(v3(0, fy - 0.11 * H, fz), v3(0, headY + 0.008 * H, fz), 0.0135 * H, 0.0125 * H, 7, HAFT);
     b.setMat(.leather);
-    b.addCylinder(v3(0, fy + 0.062 * H, fz), v3(0, fy - 0.070 * H, fz), 0.0165 * H, 0.0165 * H, 7, WRAP); // the grip
+    b.addCylinder(v3(0, fy + 0.062 * H, fz), v3(0, fy - 0.070 * H, fz), 0.0165 * H, 0.0165 * H, 7, WRAP);
     b.setMat(.steel);
-    b.addCapsule(v3(0, fy - 0.118 * H, fz), v3(0, fy - 0.098 * H, fz), 0.020 * H, 0.018 * H, 8, IRON); // butt cap
-    b.addCylinder(v3(0, fy + 0.070 * H, fz), v3(0, fy + 0.082 * H, fz), 0.019 * H, 0.019 * H, 7, IRON_DK); // langet collar
+    b.addCapsule(v3(0, fy - 0.118 * H, fz), v3(0, fy - 0.098 * H, fz), 0.020 * H, 0.018 * H, 8, IRON);
+    b.addCylinder(v3(0, fy + 0.070 * H, fz), v3(0, fy + 0.082 * H, fz), 0.019 * H, 0.019 * H, 7, IRON_DK);
 
     b.addCapsule(v3(0, headY - 0.036 * H, fz), v3(0, headY + 0.034 * H, fz), 0.028 * H, 0.026 * H, 9, IRON);
     var i: i32 = 0;
@@ -1799,21 +1629,19 @@ fn maceMesh() rl.Mesh {
         const a = @as(f32, @floatFromInt(i)) * (std.math.tau / 5.0) + rng.range(-0.12, 0.12);
         const ca = mathx.cosf(a);
         const sa = mathx.sinf(a);
-        // RELIEF IS SUBTLE only for weathering — a flange is the WEAPON, and it stands proud on purpose;
-        // its ROOT is still sunk most of the way into the drum so it is not a plate glued to a barrel.
         const out = MACE_FLANGE * rng.range(0.88, 1.10);
         const half = 0.030 * H * rng.range(0.85, 1.12);
         const cx = ca * out * 0.62;
         const cz = sa * out * 0.62;
         b.addBox(
             v3(cx, headY + rng.range(-0.006, 0.006) * H, fz + cz),
-            v3(ca * out, 0, sa * out), // out along the radius
-            v3(0, half, 0), // up
-            v3(-sa * 0.0055 * H, 0, ca * 0.0055 * H), // and thin across it
+            v3(ca * out, 0, sa * out),
+            v3(0, half, 0),
+            v3(-sa * 0.0055 * H, 0, ca * 0.0055 * H),
             if (rng.float() < 0.3) RUST else IRON_LT,
         );
     }
-    b.addCapsule(v3(0, headY + 0.034 * H, fz), v3(0, FIST_Y + MACE_HEAD + MACE_CAP, fz), 0.014 * H, 0.006 * H, 7, IRON_LT); // the cap spike
+    b.addCapsule(v3(0, headY + 0.034 * H, fz), v3(0, FIST_Y + MACE_HEAD + MACE_CAP, fz), 0.014 * H, 0.006 * H, 7, IRON_LT);
     return b.toMesh();
 }
 
@@ -1830,12 +1658,12 @@ fn greatswordMesh() rl.Mesh {
     b.setMat(.wood);
     b.addCylinder(v3(0, fy - 0.155 * H, fz), v3(0, guardY, fz), 0.0125 * H, 0.0115 * H, 7, HAFT);
     b.setMat(.leather);
-    b.addCylinder(v3(0, fy + 0.080 * H, fz), v3(0, fy - 0.145 * H, fz), 0.0155 * H, 0.0155 * H, 7, WRAP); // the long grip
+    b.addCylinder(v3(0, fy + 0.080 * H, fz), v3(0, fy - 0.145 * H, fz), 0.0155 * H, 0.0155 * H, 7, WRAP);
     for ([_]f32{ -0.104, 0.020 }) |gy| {
         b.addCylinder(v3(0, fy + gy * H, fz), v3(0, fy + (gy + 0.011) * H, fz), 0.0172 * H, 0.0172 * H, 7, HAFT_LT);
     }
     b.setMat(.steel);
-    b.addCapsule(v3(0, fy - 0.170 * H, fz), v3(0, fy - 0.150 * H, fz), 0.0215 * H, 0.019 * H, 9, IRON); // the pommel
+    b.addCapsule(v3(0, fy - 0.170 * H, fz), v3(0, fy - 0.150 * H, fz), 0.0215 * H, 0.019 * H, 9, IRON);
 
     for ([_]f32{ 1, -1 }) |side| {
         const armLen = 0.088 * H * (if (side > 0) @as(f32, 1.0) else 0.90);
@@ -1853,11 +1681,11 @@ fn greatswordMesh() rl.Mesh {
             0.0065 * H,
             7,
             IRON_LT,
-        ); // the quillon tips turn down and blunt off
+        );
     }
-    b.addCylinder(v3(0, guardY, fz), v3(0, guardY + 0.030 * H, fz), 0.0165 * H, 0.0135 * H, 7, IRON_DK); // ricasso collar
+    b.addCylinder(v3(0, guardY, fz), v3(0, guardY + 0.030 * H, fz), 0.0165 * H, 0.0135 * H, 7, IRON_DK);
 
-    const seg = [_]f32{ 0.030, 0.300, 0.560, 0.700 }; // heights above the guard, in H
+    const seg = [_]f32{ 0.030, 0.300, 0.560, 0.700 };
     const halfW = [_]f32{ GS_HALF_W / H, 0.045, 0.036, 0.020 };
     const halfT = [_]f32{ 0.0068, 0.0060, 0.0048, 0.0032 };
     for (0..3) |s| {
@@ -1866,7 +1694,6 @@ fn greatswordMesh() rl.Mesh {
         const w0 = halfW[s] * H;
         const w1 = halfW[s + 1] * H;
         const t0 = halfT[s] * H;
-        // addBox is a parallelepiped, so a TAPER is two of them meeting at the mid-width.
         b.addBox(
             v3(0, (y0 + y1) * 0.5, fz),
             v3((w0 + w1) * 0.5, 0, 0),
@@ -1875,8 +1702,7 @@ fn greatswordMesh() rl.Mesh {
             if (s == 1) STEEL_DK else STEEL,
         );
     }
-    b.addCapsule(v3(0, guardY + seg[3] * H, fz), v3(0, tipY, fz), 0.014 * H, 0.003 * H, 7, STEEL); // the point
-    // THE FULLER IS SUNK, not stood off: only its edge breaks the flat (RELIEF IS SUBTLE).
+    b.addCapsule(v3(0, guardY + seg[3] * H, fz), v3(0, tipY, fz), 0.014 * H, 0.003 * H, 7, STEEL);
     b.addBox(
         v3(0, guardY + 0.30 * H, fz),
         v3(0.013 * H, 0, 0),
@@ -1910,18 +1736,13 @@ fn greatswordMesh() rl.Mesh {
     return b.toMesh();
 }
 
-// THE KITE SHIELD. Authored FACE-ON — its face along +Z, the grip at the origin, the top at +SH_TOP
-// and the point hanging at −SH_BOT — and turned onto the forearm by `shieldFit`.
 const SH_TOP = 0.215 * H;
 const SH_BOT = 0.415 * H;
-const SH_HALF = 0.135 * H; // half-width at the shoulders
+const SH_HALF = 0.135 * H;
 const SH_THICK = 0.017 * H;
 const SH_ROWS = 11;
-/// How far off the fist the boards ride. A kite shield is STRAPPED to the forearm, not centre-gripped
-/// like the hero's round one, so this is small — the arm is behind the boards, not behind a boss.
 const SH_STANDOFF = 0.085 * H;
 
-/// The kite profile: half-width at `t`, 0 at the top edge and 1 at the point.
 fn kiteHalf(t: f32) f32 {
     if (t <= 0.30) {
         const u = (0.30 - t) / 0.30;
@@ -1934,8 +1755,6 @@ fn kiteHalf(t: f32) f32 {
 fn shieldMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(7703);
-    // THE BOARDS: horizontal planks down the kite, each its own width and tone — the four obvious
-    // failures here are one slab, one colour, equal planks, and a rim that follows a perfect outline.
     b.setMat(.wood);
     var i: usize = 0;
     while (i < SH_ROWS) : (i += 1) {
@@ -1944,8 +1763,6 @@ fn shieldMesh() rl.Mesh {
         const y0 = mathx.lerpF(SH_TOP, -SH_BOT, t0);
         const y1 = mathx.lerpF(SH_TOP, -SH_BOT, t1);
         const w = mathx.maxF(kiteHalf((t0 + t1) * 0.5), 0.004 * H) * rng.range(0.97, 1.02);
-        // A DISH, not a flat door: the middle of the boards stands proud of the rim toward whatever is
-        // coming, and it is a couple of centimetres — the whole shield is only a hand thick.
         const dish = 0.020 * H * (1.0 - std.math.pow(f32, @abs((t0 + t1) - 0.62), 1.6));
         const col = switch (@mod(i, 3)) {
             0 => BOARD,
@@ -1955,7 +1772,7 @@ fn shieldMesh() rl.Mesh {
         b.addBox(
             v3(0, (y0 + y1) * 0.5, dish),
             v3(w, 0, 0),
-            v3(0, (y0 - y1) * 0.5 + 0.002 * H, 0), // planks overlap a hair, or the seams leak daylight
+            v3(0, (y0 - y1) * 0.5 + 0.002 * H, 0),
             v3(0, 0, SH_THICK * 0.5),
             col,
         );
@@ -1963,7 +1780,7 @@ fn shieldMesh() rl.Mesh {
     b.setMat(.steel);
     i = 0;
     while (i < SH_ROWS) : (i += 1) {
-        if (rng.float() < 0.12) continue; // a strap lost to the centuries
+        if (rng.float() < 0.12) continue;
         const t0 = @as(f32, @floatFromInt(i)) / SH_ROWS;
         const t1 = @as(f32, @floatFromInt(i + 1)) / SH_ROWS;
         const y0 = mathx.lerpF(SH_TOP, -SH_BOT, t0);
@@ -1981,7 +1798,7 @@ fn shieldMesh() rl.Mesh {
             );
         }
     }
-    b.addCapsule(v3(-SH_HALF * 0.94, SH_TOP - 0.004 * H, 0.004 * H), v3(SH_HALF * 0.94, SH_TOP - 0.004 * H, 0.004 * H), 0.0078 * H, 0.0072 * H, 7, IRON); // the top binding
+    b.addCapsule(v3(-SH_HALF * 0.94, SH_TOP - 0.004 * H, 0.004 * H), v3(SH_HALF * 0.94, SH_TOP - 0.004 * H, 0.004 * H), 0.0078 * H, 0.0072 * H, 7, IRON);
     b.addCapsule(v3(0, 0.012 * H, 0.020 * H), v3(0, 0.012 * H, 0.034 * H), 0.030 * H, 0.020 * H, 9, IRON_LT);
     b.addBox(v3(0, 0.012 * H, 0.026 * H), v3(SH_HALF * 0.82, 0, 0), v3(0, 0.0105 * H, 0), v3(0, 0, 0.005 * H), IRON_DK);
     b.setMat(.cloth);
@@ -1996,7 +1813,7 @@ fn shieldMesh() rl.Mesh {
         );
     }
     b.setMat(.leather);
-    b.addCylinder(v3(-0.052 * H, 0.012 * H, -0.012 * H), v3(0.052 * H, 0.012 * H, -0.012 * H), 0.0085 * H, 0.0085 * H, 6, WRAP); // the forearm strap
+    b.addCylinder(v3(-0.052 * H, 0.012 * H, -0.012 * H), v3(0.052 * H, 0.012 * H, -0.012 * H), 0.0085 * H, 0.0085 * H, 6, WRAP);
     return b.toMesh();
 }
 
@@ -2004,12 +1821,9 @@ fn shieldMesh() rl.Mesh {
 /// axis of a strapped kite shield runs DOWN the forearm — the wrist frame's own −Y — so the boards need no
 /// turning, only standing off the fist and raked a few degrees off the arm.
 const SH_HUB = v3(-0.028 * H, FIST_Y + 0.175 * H, FIST_Z + SH_STANDOFF);
-const SH_RAKE_X = -9.0; // the top edge tipped back off his chest…
-const SH_RAKE_Z = 4.0; // …and the point carried a little across him
+const SH_RAKE_X = -9.0;
+const SH_RAKE_Z = 4.0;
 
-/// THE BOARDS ARE SQUARE TO THE MAN, NOT TO HIS FOREARM: POSITION off the fist, ORIENTATION off his facing
-/// alone, so nothing in the arm chain or spine can roll their face off the hero — a stagger arches the
-/// trunk back 46°, and inherited whole that lays the shield out face-up.
 fn shieldXf(w: *const Warrior) rl.Matrix {
     const fs = w.rigScale();
     const hub = rl.math.vector3Transform(SH_HUB, w.xf[WRL]);
@@ -2023,7 +1837,7 @@ fn shieldXf(w: *const Warrior) rl.Matrix {
 test "the role table, the enum and the map's foe kinds agree" {
     try std.testing.expectEqual(Role.shieldman, roleOf(.shieldman).?);
     try std.testing.expectEqual(Role.greatsword, roleOf(.greatsword).?);
-    try std.testing.expect(roleOf(.archer) == null); // …and its own kin are not folded into a role
+    try std.testing.expect(roleOf(.archer) == null);
     try std.testing.expect(roleOf(.toad) == null);
     try std.testing.expect(roleOf(.berserker) == null);
     try std.testing.expect(roleOf(.brood_sac) == null);
@@ -2043,14 +1857,14 @@ test "THE WINDOW IS AN INSTANT BEFORE THE HIT, on every stroke a warrior throws"
             try std.testing.expect(PARRY_LEAD < a.windDur * 0.4);
             // MEASURED off the state machine rather than asserted about the constants: walk the move frame by
             // frame from the first of its windup and collect the span that is actually parryable.
-            const step = 1.0 / 600.0; // finer than a frame, so the edges are the rule's and not the sampler's
+            const step = 1.0 / 600.0;
             var open: f32 = -1;
             var shut: f32 = -1;
             var elapsed: f32 = 0;
             w.atk = mv;
             w.stroke = 0;
             while (elapsed <= a.windDur + impact) : (elapsed += step) {
-                if (elapsed > a.windDur) { // the stroke takes over, and its clock restarts
+                if (elapsed > a.windDur) {
                     w.state = .swing;
                     w.t = elapsed - a.windDur;
                 } else {
@@ -2062,16 +1876,11 @@ test "THE WINDOW IS AN INSTANT BEFORE THE HIT, on every stroke a warrior throws"
                     shut = elapsed;
                 }
             }
-            try std.testing.expect(open > 0); // there IS a window…
-            // …it is exactly the lead long, and it ENDS at the impact frame: a window outlasting its own impact
-            // is a blow "caught" after it hit you, and one opening earlier is a free catch on a still weapon.
+            try std.testing.expect(open > 0);
             try std.testing.expectApproxEqAbs(a.windDur + impact, shut, 2.0 * step);
             try std.testing.expectApproxEqAbs(PARRY_LEAD, shut - open, 3.0 * step);
-            // …and the reach it is offered at is where the kit ARRIVES, never the leap's whole run-up.
             try std.testing.expect(w.parryReach(a) <= triggerR(a, w.scale) + 1e-4);
         }
-        // A COMBO'S FOLLOW-UP IS CATCHABLE TOO, and it counts down the SHORT wind — the lunge's second stab is
-        // the stroke that used to arrive unseen, so it is the one that most needs a window at all.
         if (spec(role).moves.len > 1) {
             const a = spec(role).moves[1];
             try std.testing.expect(a.strokes > 1 and a.chainWind > 0);
@@ -2091,14 +1900,12 @@ test "THE WINDOW IS AN INSTANT BEFORE THE HIT, on every stroke a warrior throws"
             w.t = a.swingDur * a.impactK - PARRY_LEAD * 0.5;
             try std.testing.expect(w.parryable() != null);
         }
-        // Nothing outside a stroke is parryable at all.
         for ([_]State{ .idle, .approach, .circle, .recover, .stunlight, .stunheavy, .guardbreak, .dead }) |s| {
             w.state = s;
             w.t = 0;
             try std.testing.expect(w.parryable() == null);
         }
     }
-    // The LUNGE's reach is strictly inside its trigger radius, since it closes most of its own ground.
     var g = Warrior.spawnAs(.greatsword, mathx.ground(0, 0), 0, 1.0, 0.0);
     try std.testing.expect(g.parryReach(LUNGE) < triggerR(LUNGE, g.scale));
 }
@@ -2106,27 +1913,24 @@ test "THE WINDOW IS AN INSTANT BEFORE THE HIT, on every stroke a warrior throws"
 test "A CAUGHT STROKE NEVER LANDS, and HYPER ARMOUR is no defence against the boards" {
     // The slam cannot be TRADED with (`hyperArmor` refuses its poise), which is the whole reason it is worth
     // being able to refuse outright — the parry is the answer to the one move the sword has none for.
-    var w = Warrior.spawnAs(.greatsword, mathx.ground(0, 0), 0, 1.0, 0.0); // faces +Z
+    var w = Warrior.spawnAs(.greatsword, mathx.ground(0, 0), 0, 1.0, 0.0);
     const hero = mathx.v3(0, 0, 1.6);
     w.atk = 0;
     const a = w.move();
     try std.testing.expect(a.hyper);
     w.state = .swing;
     w.t = a.swingDur * a.impactK - PARRY_LEAD * 0.5;
-    try std.testing.expect(w.hyperArmor()); // …and it really is uninterruptible on this frame
-    // The boards up but pointed the WRONG WAY: nothing is caught (`foe.Parry` uses the block's own arc).
+    try std.testing.expect(w.hyperArmor());
     w.parry = .{ .live = true, .at = hero, .facing = 0 };
     w.takeParry();
-    try std.testing.expect(!w.parried and w.state == .swing); // the blade keeps coming down
-    // …and squared onto him it is caught. The stance HELD, so it is the short stumble, not the collapse.
-    w.parry = .{ .live = true, .at = hero, .facing = std.math.pi }; // hero faces -Z, i.e. at him
+    try std.testing.expect(!w.parried and w.state == .swing);
+    w.parry = .{ .live = true, .at = hero, .facing = std.math.pi };
     w.takeParry();
     try std.testing.expect(w.parried);
     try std.testing.expectEqual(State.stunlight, w.state);
-    try std.testing.expect(!w.live); // the kit is DEAD: nothing can reach him out of a stroke that was caught
-    try std.testing.expect(w.cds[0] > 0); // …and the move has to be gathered again before he throws it twice
-    try std.testing.expectEqual(@as(f32, 0), w.hop); // caught in the air, he comes straight down
-    // A SECOND clean catch breaks the stance — the "may heavy stun them", earned off the bar and not rolled.
+    try std.testing.expect(!w.live);
+    try std.testing.expect(w.cds[0] > 0);
+    try std.testing.expectEqual(@as(f32, 0), w.hop);
     w.state = .swing;
     w.t = a.swingDur * a.impactK - PARRY_LEAD * 0.5;
     w.parried = false;
@@ -2193,12 +1997,10 @@ test "range decides the action, and only the shieldman circles" {
 }
 
 test "A COOLDOWN IS NOT A RETREAT: in reach with nothing to throw he holds his ground" {
-    // He has chased the hero clear of his post and both answers are cooling. `.wait` and `.hold` sharing
-    // one arm turned that into `homing`, so he walked back to where the map put him mid-exchange.
     var g = Warrior.spawnAs(.greatsword, mathx.zero3, 0, 1.0, 0.4);
     g.pos = v3(0, 0, foe.LEASH_HOME_R + 12.0);
     for (&g.cds) |*c| c.* = 1.0;
-    g.decide(1.0); // hero on top of him
+    g.decide(1.0);
     try std.testing.expect(!g.homing);
     try std.testing.expectEqual(State.idle, g.state);
     g.decide(AGGRO_R + 5.0);
@@ -2244,7 +2046,7 @@ test "BREAK THE GUARD AND IT IS BROKEN FOR GOOD: he kneels, the boards go, he ne
     }
     try std.testing.expect(swings >= 3 and swings <= 5);
     try std.testing.expectEqual(State.guardbreak, w.state);
-    try std.testing.expect(w.vit.stunned()); // a REAL heavy reaction, poise immunity and all
+    try std.testing.expect(w.vit.stunned());
     w.t = KNEEL_IN;
     try std.testing.expect(w.kneelAmount() > 0.9);
     w.pose();
@@ -2265,15 +2067,15 @@ test "BREAK THE GUARD AND IT IS BROKEN FOR GOOD: he kneels, the boards go, he ne
 test "the kneel is a KNEEL: down fast, up slow, and gone by the end of the stagger" {
     var w = Warrior.spawnAs(.shieldman, mathx.zero3, 0, 1.0, 0.3);
     w.debugBreak();
-    try std.testing.expectApproxEqAbs(@as(f32, 0), w.kneelAmount(), 1e-4); // t = 0: still standing
+    try std.testing.expectApproxEqAbs(@as(f32, 0), w.kneelAmount(), 1e-4);
     w.t = KNEEL_IN;
     const down = w.kneelAmount();
-    try std.testing.expect(down > 0.9); // …on the knee within a quarter of a second
+    try std.testing.expect(down > 0.9);
     w.t = combat.FOE_HEAVY_STUN_DUR * 0.5;
-    try std.testing.expect(w.kneelAmount() > 0.9); // …and he STAYS there
+    try std.testing.expect(w.kneelAmount() > 0.9);
     w.t = combat.FOE_HEAVY_STUN_DUR;
-    try std.testing.expectApproxEqAbs(@as(f32, 0), w.kneelAmount(), 1e-4); // back up as the stagger ends
-    try std.testing.expect(KNEEL_OUT > KNEEL_IN * 2.0); // getting up is the slow half — that is the punish
+    try std.testing.expectApproxEqAbs(@as(f32, 0), w.kneelAmount(), 1e-4);
+    try std.testing.expect(KNEEL_OUT > KNEEL_IN * 2.0);
     try std.testing.expect(KNEEL_TRAIL_KNEE > KNEEL_LEAD_KNEE * 1.5);
 }
 
@@ -2288,7 +2090,7 @@ test "a blocked blow is not a hit: no hit-confirm, no flinch, no stance" {
         .b = w.centerWorld(),
         .a0 = w.centerWorld(),
         .b0 = w.centerWorld(),
-        .hit = heromod.ATK_HEAVY_HIT, // a heavy carries stance, and the boards must eat that too
+        .hit = heromod.ATK_HEAVY_HIT,
     });
     try std.testing.expectEqual(@as(u32, 0), w.hits);
     try std.testing.expectEqual(State.idle, w.state);
@@ -2298,9 +2100,9 @@ test "a blocked blow is not a hit: no hit-confirm, no flinch, no stance" {
 
 test "UNINTERRUPTIBLE: the diagonal takes the damage and keeps coming — the LUNGE does not" {
     var g = Warrior.spawnAs(.greatsword, mathx.zero3, 0, 1.0, 0.4);
-    g.debugSwing(0); // the slam
+    g.debugSwing(0);
     const hpBefore = g.vit.hp;
-    const HEAVIES: u32 = 4; // …kept short of lethal on purpose: this is about the stagger, not the kill
+    const HEAVIES: u32 = 4;
     std.debug.assert(@as(f32, HEAVIES) * heromod.ATK_HEAVY_HIT.dmg < spec(.greatsword).hp);
     var i: u32 = 0;
     while (i < HEAVIES) : (i += 1) {
@@ -2314,13 +2116,13 @@ test "UNINTERRUPTIBLE: the diagonal takes the damage and keeps coming — the LU
             .b0 = g.centerWorld(),
             .hit = heromod.ATK_HEAVY_HIT,
         });
-        try std.testing.expectEqual(State.wind, g.state); // never once flinched, at any point
+        try std.testing.expectEqual(State.wind, g.state);
     }
     try std.testing.expectApproxEqAbs(hpBefore - @as(f32, HEAVIES) * heromod.ATK_HEAVY_HIT.dmg, g.vit.hp, 0.01);
     try std.testing.expectEqual(@as(u32, HEAVIES), g.hits);
 
     var q = Warrior.spawnAs(.greatsword, mathx.zero3, 0, 1.0, 0.4);
-    q.debugSwing(1); // the lunge
+    q.debugSwing(1);
     try std.testing.expect(!q.hyperArmor());
     var j: u32 = 0;
     while (j < HEAVIES and q.state == .wind) : (j += 1) {
@@ -2354,7 +2156,7 @@ test "UNINTERRUPTIBLE: the diagonal takes the damage and keeps coming — the LU
 }
 
 test "THERE IS NOTHING ON HIS BACK — the boards answer for the BLOW'S bearing, not for what he is squared up to" {
-    var w = Warrior.spawnAs(.shieldman, mathx.zero3, 0, 1.0, 0.3); // facing +Z, boards up
+    var w = Warrior.spawnAs(.shieldman, mathx.zero3, 0, 1.0, 0.3);
     w.covered = w.guardUp();
     try std.testing.expect(w.covered);
     const c = w.centerWorld();
@@ -2363,16 +2165,13 @@ test "THERE IS NOTHING ON HIS BACK — the boards answer for the BLOW'S bearing,
             return .{ .active = true, .r = 0.5, .a = from, .b = to, .a0 = from, .b0 = to, .hit = heromod.ATK_HEAVY_HIT };
         }
     }.at;
-    // Square onto his front: caught, as it always was.
     try std.testing.expect(w.shielded(swing(v3(0, c.y, 1.4), c)));
-    // …and the SAME blow into his spine is not, though `covered` says the boards are up and he has not
-    // moved: with a spirit on the field the thing he is facing is the wolf, and this is the report.
     const back = swing(v3(0, c.y, -1.4), c);
     try std.testing.expect(!w.shielded(back));
     w.tryHit(back);
-    try std.testing.expectEqual(@as(u32, 1), w.hits); // it hurt…
-    try std.testing.expect(w.staggered()); // …and it stunned…
-    try std.testing.expectApproxEqAbs(w.stam.max, w.stam.cur, 1e-5); // …and the boards paid nothing: they were not there
+    try std.testing.expectEqual(@as(u32, 1), w.hits);
+    try std.testing.expect(w.staggered());
+    try std.testing.expectApproxEqAbs(w.stam.max, w.stam.cur, 1e-5);
 }
 
 test "A SHAFT THE BOARDS ATE IS SPENT — it does not fly on into whatever stood behind him" {
@@ -2383,13 +2182,12 @@ test "A SHAFT THE BOARDS ATE IS SPENT — it does not fly on into whatever stood
         .active = true,
         .pierce = true,
         .r = 0.16,
-        .a = v3(0, c.y, 1.4), // …coming in at his front, so the boards answer for it
+        .a = v3(0, c.y, 1.4),
         .b = c,
         .a0 = v3(0, c.y, 1.4),
         .b0 = c,
         .hit = .{ .dmg = 9 },
     };
-    // A BLOCK IS NOT A `hits` (the test above pins that), so this is the only thing that can say it stopped.
     try std.testing.expect(foe.pierceGroup(&w, shaft));
     try std.testing.expectEqual(@as(u32, 0), w[0].hits);
     try std.testing.expectEqual(@as(u32, 1), w[0].blocksTaken());
@@ -2398,7 +2196,7 @@ test "A SHAFT THE BOARDS ATE IS SPENT — it does not fly on into whatever stood
 
 test "a shieldman with his boards down takes a blow like anything else" {
     var w = Warrior.spawnAs(.shieldman, mathx.zero3, 0, 1.0, 0.3);
-    w.state = .recover; // the window his own swing opens
+    w.state = .recover;
     w.covered = false;
     w.tryHit(.{
         .active = true,
@@ -2411,7 +2209,7 @@ test "a shieldman with his boards down takes a blow like anything else" {
     });
     try std.testing.expectEqual(@as(u32, 1), w.hits);
     try std.testing.expect(w.staggered());
-    try std.testing.expectApproxEqAbs(w.stam.max, w.stam.cur, 1e-5); // the guard paid nothing: it was down
+    try std.testing.expectApproxEqAbs(w.stam.max, w.stam.cur, 1e-5);
 }
 
 /// Drive one whole stroke on the real clock and hand back what it did: whether it reached a hero
@@ -2485,7 +2283,7 @@ test "A TELL YOU CAN SEE: both kits are carried ABOVE THE SKULL at the top of th
     const slam = swung(.greatsword, 0, 0, 2.0);
     try std.testing.expect(mace.apex > shoulder * 1.30); // MEASURED 2.35 m: two thirds of a metre of daylight
     try std.testing.expect(slam.apex > shoulder * 1.60); // MEASURED 2.83 m — two metres of steel, stood on end
-    try std.testing.expect(slam.apex > mace.apex); // …and the big one is the bigger tell
+    try std.testing.expect(slam.apex > mace.apex);
 }
 
 test "NO STROKE PLOUGHS THE TURF BESIDE HIM, and the slam's point really does reach the earth" {
@@ -2501,7 +2299,7 @@ test "NO STROKE PLOUGHS THE TURF BESIDE HIM, and the slam's point really does re
         _ = g.update(1.0 / 60.0, v3(0, 0, 2.2), 500.0, .{});
         crashed = g.crashed;
     }
-    try std.testing.expect(crashed); // …and it fired off the POSED point, not off a fraction of a number
+    try std.testing.expect(crashed);
 }
 
 test "the stroke latches, so one swing lands once — and a COMBO gets one landing per stroke" {
@@ -2529,14 +2327,14 @@ test "HE STEPS INTO THE BLOW: the mace's stroke covers its own ground, and never
     // fly") and never read by anything — so the blow was thrown off planted feet. This is the guard.
     try std.testing.expect(MACE.step > 0.2);
     var m = Warrior.spawnAs(.shieldman, mathx.zero3, 0, 1.0, 0.3);
-    m.facing = 0; // +Z
+    m.facing = 0;
     m.debugSwing(0);
     m.enter(.swing);
     var k: f32 = 0;
     while (k <= 1.0) : (k += 1.0 / 90.0) m.flyStroke(mathx.minF(k, 1.0), 500.0);
     m.flyStroke(1.0, 500.0);
     try std.testing.expectApproxEqAbs(MACE.step * m.scale, m.pos.z, 0.02);
-    try std.testing.expectApproxEqAbs(@as(f32, 0), m.hop, 1e-4); // a STEP has no height in it
+    try std.testing.expectApproxEqAbs(@as(f32, 0), m.hop, 1e-4);
 }
 
 test "EVERY STROKE'S COMMITTED TRAVEL STARTS AT ZERO, whichever stroke of the combo it is" {
@@ -2547,27 +2345,24 @@ test "EVERY STROKE'S COMMITTED TRAVEL STARTS AT ZERO, whichever stroke of the co
     g.enter(.swing);
     var k: f32 = 0;
     while (k <= 1.0) : (k += 1.0 / 90.0) g.flyStroke(mathx.minF(k, 1.0), 500.0);
-    try std.testing.expect(g.leapDone > 0); // the leap really did bank its ground…
+    try std.testing.expect(g.leapDone > 0);
     g.stroke = 1;
     g.enter(.swing);
-    try std.testing.expectApproxEqAbs(@as(f32, 0), g.leapDone, 1e-6); // …and the next stroke starts clean
-    try std.testing.expectEqual(@as(u8, 1), g.stroke); // without losing where it is in the combo
+    try std.testing.expectApproxEqAbs(@as(f32, 0), g.leapDone, 1e-6);
+    try std.testing.expectEqual(@as(u8, 1), g.stroke);
 }
 
 test "ROOTED, THE GREATSWORD SLAMS RATHER THAN LUNGING — and never off cooldown" {
     var g = Warrior.spawnAs(.greatsword, mathx.zero3, 0, 1.0, 0.4);
     g.root.grab();
-    // Stood at the range the LUNGE is thrown from and the SLAM is not, which is where the two answers differ.
     const at = v3(0, 0, triggerR(LUNGE, g.scale) - 0.2);
     var t: f32 = 0;
     while (t < combat.ROOT_HOLD * 0.9) : (t += 1.0 / 60.0) {
         _ = g.update(1.0 / 60.0, at, 500.0, .{});
         try std.testing.expect(!g.airborne());
         try std.testing.expect(g.hop <= 0.0001);
-        // …and it did NOT fall back through `orelse 0` onto a slam whose clock is still running.
         if (g.state == .wind or g.state == .swing) try std.testing.expect(g.atk == 0 and g.cds[0] <= 0);
     }
-    // Let go and the lunge is on the table again.
     g.root.release();
     var left = false;
     t = 0;
@@ -2584,7 +2379,7 @@ test "a rooted berserker never dashes, and a rooted hatchling never pounces" {
     z.root.grab();
     var t: f32 = 0;
     while (t < combat.ROOT_HOLD * 0.9) : (t += 1.0 / 60.0) {
-        _ = z.update(1.0 / 60.0, v3(0, 0, 5.0), 500.0, .{}); // inside its dash band, out of chop reach
+        _ = z.update(1.0 / 60.0, v3(0, 0, 5.0), 500.0, .{});
         try std.testing.expect(!z.airborne());
     }
 
@@ -2600,7 +2395,7 @@ test "a rooted berserker never dashes, and a rooted hatchling never pounces" {
 
 test "THE LEAP TRAVELS EXACTLY ITS OWN DISTANCE, and comes back to earth" {
     var g = Warrior.spawnAs(.greatsword, mathx.zero3, 0, 1.0, 0.4);
-    g.facing = 0; // +Z
+    g.facing = 0;
     g.debugSwing(1);
     g.enter(.swing);
     var peak: f32 = 0;
@@ -2610,9 +2405,9 @@ test "THE LEAP TRAVELS EXACTLY ITS OWN DISTANCE, and comes back to earth" {
         peak = @max(peak, g.hop);
     }
     g.flyStroke(1.0, 500.0);
-    try std.testing.expectApproxEqAbs(LUNGE.lunge * g.scale, g.pos.z, 0.02); // …exactly, not approximately
-    try std.testing.expect(peak > LUNGE.hop * g.scale * 0.9); // it really left the ground…
-    try std.testing.expectApproxEqAbs(@as(f32, 0), g.hop, 1e-4); // …and it really came back down
+    try std.testing.expectApproxEqAbs(LUNGE.lunge * g.scale, g.pos.z, 0.02);
+    try std.testing.expect(peak > LUNGE.hop * g.scale * 0.9);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), g.hop, 1e-4);
     g.hop = LUNGE.hop * g.scale;
     try std.testing.expect(g.airborne());
     g.hop = 0;
@@ -2626,7 +2421,7 @@ test "MELEE SKELETONS RUN THE GAP DOWN, and walk the last of it in" {
         try std.testing.expect(w.approachSpeed(AGGRO_R) > walk * 1.5);
         try std.testing.expectApproxEqAbs(walk, w.approachSpeed(w.walkInR() - 0.01), 1e-4);
         try std.testing.expectApproxEqAbs(walk, w.approachSpeed(0), 1e-4);
-        try std.testing.expect(w.walkInR() > w.longestTrigger()); // he never arrives still running
+        try std.testing.expect(w.walkInR() > w.longestTrigger());
         try std.testing.expect(w.approachSpeed(AGGRO_R) < heromod.RUN_SPEED);
         w.homing = true;
         try std.testing.expectApproxEqAbs(walk, w.approachSpeed(AGGRO_R), 1e-4);
@@ -2666,7 +2461,7 @@ test "THE LEAP IS FELT ONCE: one launch flag per lunge, and only the lunge raise
     }
     try std.testing.expectEqual(@as(usize, 0), ribbonSamples(&m));
     var s = Warrior.spawnAs(.greatsword, mathx.zero3, 0, 1.0, 0.4);
-    s.debugSwing(0); // the slam
+    s.debugSwing(0);
     t = 0;
     while (t < SLAM.windDur + SLAM.swingDur + 0.1) : (t += 1.0 / 60.0) {
         _ = s.update(1.0 / 60.0, v3(0, 0, 2.2), 500.0, .{});
@@ -2684,13 +2479,13 @@ test "a skeleton burns and does not freeze, whatever is in its hands" {
 }
 
 test "the kite profile is a kite: widest at the shoulders, a point at the bottom" {
-    try std.testing.expect(kiteHalf(0.30) > kiteHalf(0.0)); // the top is domed, not square
-    try std.testing.expectApproxEqAbs(SH_HALF, kiteHalf(0.30), 1e-4); // …and widest at the shoulders
+    try std.testing.expect(kiteHalf(0.30) > kiteHalf(0.0));
+    try std.testing.expectApproxEqAbs(SH_HALF, kiteHalf(0.30), 1e-4);
     var t: f32 = 0.30;
     var prev = kiteHalf(t);
     while (t <= 1.0) : (t += 0.02) {
         const w = kiteHalf(t);
-        try std.testing.expect(w <= prev + 1e-5); // and narrows monotonically from there down
+        try std.testing.expect(w <= prev + 1e-5);
         prev = w;
     }
     try std.testing.expect(kiteHalf(1.0) < SH_HALF * 0.05);
@@ -2702,8 +2497,6 @@ test "the kite profile is a kite: widest at the shoulders, a point at the bottom
 test "NO ATTACK COMES OUT OF NOWHERE: every stroke of every moveset is visible first" {
     for (SPEC) |sp| {
         for (sp.moves) |a| {
-            // Stroke 0 gets the full tell; a combo's follow-up gets `chainWind` and then has to make the
-            // rest up out of its own swing, which is the law's second option.
             const first = a.windDur + a.swingDur * a.impactK;
             try std.testing.expect(first >= foe.TELL_MIN);
             if (a.strokes > 1) {

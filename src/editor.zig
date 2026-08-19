@@ -7,10 +7,10 @@ const ui = @import("ui.zig");
 const wf = @import("worldfmt.zig");
 const envmod = @import("env.zig");
 const gfx = @import("gfx.zig");
-const daynight = @import("daynight.zig"); // the world clock — `,`/`.` scrub the hour while authoring
+const daynight = @import("daynight.zig");
 const objview = @import("objview.zig");
-const item = @import("item.zig"); // the chest-contents dialog
-const sfx = @import("audio.zig"); // the jukebox
+const item = @import("item.zig");
+const sfx = @import("audio.zig");
 
 const Kind = props.Kind;
 const v3 = mathx.v3;
@@ -18,45 +18,34 @@ const v3 = mathx.v3;
 
 const LOOK_SENS: f32 = 0.0032;
 const UNDO_CAP: usize = 24;
-const DRAG_PX = ui.DRAG_PX; // the shared click-vs-drag threshold (see there)
-const SNAP: f32 = 1.0; // grid pitch when snap is on
-/// How long a held dial must go QUIET before the world re-expands.
+const DRAG_PX = ui.DRAG_PX;
+const SNAP: f32 = 1.0;
 const REBUILD_QUIET: f32 = 0.28;
 
-/// How often the held eraser may remove something — its own rate, not the rebuild's.
 const ERASE_HZ: f32 = 5.0;
-/// …and how far the cursor must travel between two removals.
 const ERASE_STEP: f32 = 0.6;
-/// Most instance markers drawn for one selected generator.
 const MAX_MARKERS: usize = 500;
 
-/// WHAT THE CURSOR IS OVER in SELECT mode — the thing a click would take, lit before you click it.
 const Hover = union(enum) { none, prop: usize, foe: usize };
 
-/// Most things one marquee can hold, and most one clipboard can carry.
 const MAX_MARKED: usize = 512;
 
-/// The one wording for a full map, said by every path that can hit the cap.
 const FULL_MSG = "map is full - worldfmt.MAX_OPS reached";
-/// …and the same for the spawn table, which three paths fill (a stamp, a paste and a duplicate).
 const FOES_FULL_MSG = "foe cap reached";
 
-/// How far east a Duplicate lands from its original, so the copy isn't hidden under it.
 const DUPE_OFFSET: f32 = 6.0;
 
-/// Ground a Focus frames around a single literal prop, which has no extent of its own to measure.
 const AT_SPAN: f32 = 6.0;
 
 const NEW_ZONE_DENSITY: f32 = 0.7;
 
-/// How near the cursor has to be to a foe spawn to count as ON it.
 const FOE_PICK_R: f32 = 1.6;
 
 // File scope: a Map is ~477 KB, so 24 of them is ~11.2 MB — BSS, not inside Game and not on an allocator.
 var undoRing: [UNDO_CAP]wf.Map = undefined;
-var undoBase: usize = 0; // ring slot of the OLDEST live snapshot
-var undoN: usize = 0; // how many snapshots are live
-var undoAt: usize = 0; // how far back we have stepped (0 = at the newest)
+var undoBase: usize = 0;
+var undoN: usize = 0;
+var undoAt: usize = 0;
 
 fn undoSlot(i: usize) *wf.Map {
     return &undoRing[(undoBase + i) % UNDO_CAP];
@@ -123,19 +112,16 @@ const layerTips = [Layer.N][:0]const u8{
 /// `wf.Sculpt`), then one row per `wf.Soil` past the first, then Water and the eraser. Laid out to SHOW the
 /// seam: the index arithmetic either side of it is why this list cannot simply be appended to.
 const groundBrushes = [_][:0]const u8{
-    // the sculpt tools — `wf.Sculpt`'s own order
     "Raise",
     "Lower",
     "Smooth",
     "Flat",
-    // …then the SOILS, tag for tag off `wf.Soil` from index 1 (GROUND_SOIL_0 starts here)
     "dirt",
     "turf",
     "stone",
     "silt",
     "ash",
     "moss",
-    // …and the two that are neither
     "Water",
     "Erase",
 };
@@ -143,7 +129,6 @@ const coverBrushes = [_][:0]const u8{ "Clearing", "Zone", "Erase" };
 const decorBrushes = [_][:0]const u8{ "Single", "Patch", "Scatter", "Erase" };
 const propBrushes = [_][:0]const u8{ "Stamp", "Row", "Ring", "Cluster", "Ivy", "Erase" };
 const interactBrushes = [_][:0]const u8{ "Stamp", "Erase" };
-// THE FOES' REAL NAMES, off `wf.foeName` — not their enum tags.
 const unitBrushes = blk: {
     const N = @typeInfo(wf.FoeKind).@"enum".fields.len;
     var out: [N + 1][:0]const u8 = undefined;
@@ -152,14 +137,10 @@ const unitBrushes = blk: {
     break :blk out;
 };
 
-/// Where the SOIL ids start in `groundBrushes`, since the sculpt tools now come first — DERIVED off the
-/// table it is the length of, not a literal an assertion has to keep honest.
 const GROUND_SOIL_0: usize = @typeInfo(wf.Sculpt).@"enum".fields.len;
 
-/// SMOOTH and FLATTEN take a 0..1 blend where raise/lower take metres, so they need their own scale off the one `sculptRate` dial.
 const SCULPT_EVEN: f32 = 0.5;
 
-/// How many brushes the number keys reach — 1..9.
 const DIGIT_KEYS: usize = 9;
 
 const RAISE_SWATCH = ui.col(126, 100, 62, 255);
@@ -243,9 +224,6 @@ const coverIcons = [_]ui.Icon{ .clearing, .zone, .erase };
 const decorIcons = [_]ui.Icon{ .single, .patch, .scatter, .erase };
 const propIcons = [_]ui.Icon{ .stamp, .row, .ring, .cluster, .ivy, .erase };
 const interactIcons = [_]ui.Icon{ .stamp, .erase };
-/// ONE PER LINE, in `UnitBrush`'s order — `wf.FoeKind`'s order plus the eraser. The three unit lists
-/// (`unitBrushes`, `unitTips`, this) are read ACROSS by anyone adding a creature; on one line the row you
-/// were checking is unfindable.
 const unitIcons = [_]ui.Icon{
     .toad,
     .archer,
@@ -272,8 +250,6 @@ const unitIcons = [_]ui.Icon{
 };
 
 comptime {
-    // BY NAME, not just by length: a length check passes two entries swapped, and the toolbar then draws an
-    // ogre on the toad brush.
     pinIcons(CoverBrush, &coverIcons);
     pinIcons(DecorBrush, &decorIcons);
     pinIcons(PropBrush, &propIcons);
@@ -286,7 +262,6 @@ comptime {
     std.debug.assert(unitIcons.len == unitBrushes.len);
 }
 
-/// A SECTION HEADING to draw above brush `i`, or null for "no break here".
 fn brushSectionFor(l: Layer, i: usize) ?[:0]const u8 {
     if (l != .ground) return null;
     if (i == 0) return "shape";
@@ -294,7 +269,6 @@ fn brushSectionFor(l: Layer, i: usize) ?[:0]const u8 {
     return null;
 }
 
-/// The icons for a layer's brush strip, or null for GROUND, whose caller draws swatches instead.
 fn brushIconsFor(l: Layer) ?[]const ui.Icon {
     return switch (l) {
         .ground => null,
@@ -384,15 +358,11 @@ const UnitBrush = enum {
 };
 
 comptime {
-    // Every brush enum pinned to the table it indexes, case-insensitively so "Erase"/"Zone" read the way a
-    // button should while the tag stays Zig-shaped.
     pinBrushes(CoverBrush, &coverBrushes);
     pinBrushes(DecorBrush, &decorBrushes);
     pinBrushes(PropBrush, &propBrushes);
     pinBrushes(InteractBrush, &interactBrushes);
     pinBrushes(GroundBrush, &groundBrushes);
-    // UNITS pin to `wf.FoeKind` itself: their labels are the foes' real NAMES, so a label-to-tag compare
-    // would only assert that "Giant Toad" is spelled "toad".
     const foeFields = @typeInfo(wf.FoeKind).@"enum".fields;
     const unitFields = @typeInfo(UnitBrush).@"enum".fields;
     if (unitFields.len != foeFields.len + 1) @compileError("editor: UnitBrush is not the foe kinds plus an eraser");
@@ -424,8 +394,6 @@ fn pinBrushes(comptime E: type, comptime names: []const [:0]const u8) void {
     if (!std.mem.eql(u8, fields[fields.len - 1].name, "erase")) @compileError("editor: " ++ @typeName(E) ++ " must end in `erase`");
 }
 
-// THE KIND PALETTES live in props.zig beside the INFO table they derive from — the object viewer needs the
-// same lists, and a second copy is how a fern ends up on two different shelves.
 const floraKinds = props.FLORA_KINDS;
 const solidKinds = props.SOLID_KINDS;
 const interactKinds = props.INTERACT_KINDS;
@@ -486,25 +454,19 @@ const VOICE_NAMES = blk: {
     break :blk out;
 };
 
-/// Wide enough for a THIRD column: the voice list, what that voice IS, and the family's FILTER RACK.
 const JUKE_W: i32 = 1010;
 const JUKE_H: i32 = 560;
 const JUKE_LIST_W: i32 = 300;
 const JUKE_LIST_H: i32 = JUKE_H - 150;
 
-/// DIALOG CHROME, one set for every modal: the inset from a box edge to its content, a footer button's
-/// height, and the drop from the box's own BOTTOM edge to that footer row. `ModalBox` carries `h` — read
-/// it rather than re-spelling a dialog's height at the footer.
 const DLG_PAD: i32 = 24;
 const DLG_BTN_H: i32 = 28;
 const DLG_FOOT: i32 = 44;
-/// The chest dialog's own row pitch, and where its first row sits under the header.
 const LOOT_ROW_H: i32 = 26;
 const LOOT_TOP: i32 = 84;
 
 pub const Pending = enum { none, new, open, leave };
 
-/// An axis-aligned XZ rect with its corners sorted.
 const Rect = struct {
     x0: f32,
     z0: f32,
@@ -561,9 +523,9 @@ fn eraseMiss(l: Layer) [:0]const u8 {
 
 const Wipe = struct {
     on: bool = false,
-    at: rl.Vector3 = mathx.zero3, // ground point of the last removal, for the travel gate
-    t: f32 = 0, // seconds since the last removal, for the rate gate
-    n: usize = 0, // things removed so far this stroke
+    at: rl.Vector3 = mathx.zero3,
+    t: f32 = 0,
+    n: usize = 0,
 };
 
 
@@ -571,13 +533,12 @@ pub const Editor = struct {
     on: bool = false,
     cam: rl.Camera3D = undefined,
     world: ?*const envmod.Env = null,
-    // ORBIT state: a focus point on the ground, and the eye swung around it.
     focus: rl.Vector3 = mathx.zero3,
     yaw: f32 = 0,
     pitch: f32 = -0.7,
     dist: f32 = 28,
     panning: bool = false,
-    panGrab: rl.Vector3 = mathx.zero3, // the ground point the pan grabbed
+    panGrab: rl.Vector3 = mathx.zero3,
 
     selecting: bool = false,
     layer: Layer = .props,
@@ -587,15 +548,12 @@ pub const Editor = struct {
     interactKind: Kind = .chest,
     groupSel: props.Group = .ruins,
     radius: f32 = 6.0,
-    /// HOW STRONGLY A SOIL STROKE COVERS.
     soilOpacity: f32 = 1.0,
-    /// …AND HOW IT ENDS. A brush setting beside the radius and the opacity, not a property of the material,
-    /// so the same stone lays a tiled courtyard in one stroke and a torn scree in the next.
     brushEdge: wf.Edge = .natural,
     snap: bool = false,
 
-    sel: ?usize = null, // selected op
-    selFoe: ?usize = null, // selected foe spawn (Units layer)
+    sel: ?usize = null,
+    selFoe: ?usize = null,
     dirty: bool = false,
     /// BUMPED WHENEVER THE MAP IS REPLACED WHOLESALE — entering, and every Open / New / Reload. What the game
     /// watches to know its copy of the tables the editor cannot author (the folk) has gone stale, without
@@ -604,46 +562,37 @@ pub const Editor = struct {
 
     kindScroll: i32 = 0,
 
-    /// The cursor's ground point for this frame — see `groundAt`. Null until a frame has resolved one.
     cursor: ?rl.Vector3 = null,
 
     dragging: bool = false,
     dragFrom: rl.Vector3 = mathx.zero3,
     dragTo: rl.Vector3 = mathx.zero3,
-    painting: bool = false, // a soil stroke in progress (one undo step for the whole stroke)
+    painting: bool = false,
     wetStroke: bool = false,
     heightStroke: bool = false,
-    /// How hard the sculpt brushes bite, in METRES A SECOND at the centre of the stroke.
     sculptRate: f32 = 3.0,
-    wipe: Wipe = .{}, // a held ERASE stroke, likewise one undo step
+    wipe: Wipe = .{},
     rmbDown: bool = false,
-    rmbTravel: f32 = 0, // pixels the right button has moved while held
+    rmbTravel: f32 = 0,
     menuOpen: bool = false,
     menuAt: rl.Vector2 = .{ .x = 0, .y = 0 },
-    rebuildDue: bool = false, // a coalesced rebuild is owed (see requestRebuild)
+    rebuildDue: bool = false,
     rebuildT: f32 = 0,
 
     marked: [MAX_MARKED]usize = undefined,
     nMarked: usize = 0,
-    marquee: bool = false, // Shift+drag box in progress
-    /// What the cursor is over THIS FRAME while Select is armed (see `Hover`).
+    marquee: bool = false,
     hover: Hover = .none,
-    /// …and whether `hover` was actually RESOLVED this frame, as opposed to left at `.none` because nothing
-    /// asked. A pick reuses a live one: the op-layer sweep is a ray against every prop in the world.
     hoverLive: bool = false,
-    moving: bool = false, // dragging the marked set bodily
+    moving: bool = false,
     moveFrom: rl.Vector3 = mathx.zero3,
 
     modal: Modal = .none,
     pending: Pending = .none,
-    /// THE OBJECT VIEWER's own state (gallery page, shelf, per-kind pose).
     objects: objview.State = .{},
     juke: usize = 0,
     jukeScroll: i32 = 0,
     jukeWorld: bool = false,
-    /// WHOSE FILTER RACK the jukebox's third column is turning. Defaults to the family whose voice is
-    /// selected, but it is a LATCH the chips set: you audition a combat voice against the ambience rack
-    /// often enough that following the selection would fight you.
     rackMix: sfx.Submix = .combat,
     /// WHICH ZONE the name field and the mix modal are editing. A zone is not an `Op`, so it cannot ride
     /// `sel` — and its mix was the one thing in the whole format the editor could only ever INHERIT.
@@ -659,11 +608,8 @@ pub const Editor = struct {
     fileScroll: i32 = 0,
     path: [wf.PATH_CAP]u8 = undefined,
     pathLen: usize = 0,
-    hotFrame: bool = false, // chrome owned the pointer LAST frame (gates world clicks)
-    editing: bool = false, // mid-gesture on a properties widget (one undo step per gesture)
-    /// How many INSTANCES the selected generator owns, and how many of them got a marker before `MAX_MARKERS`
-    /// ran out. COUNTED BY `draw3D` AND READ BY `drawProperties`, in that order — the 3D pass runs inside
-    /// `drawScene`, the panel after it in `drawOverlay`. Swap the two and the panel reports the previous frame.
+    hotFrame: bool = false,
+    editing: bool = false,
     selOwned: usize = 0,
     selMarked: usize = 0,
 
@@ -675,7 +621,6 @@ pub const Editor = struct {
         return self.modal == .jukebox;
     }
 
-    /// UP/DOWN walk the bank and audition as they go, SPACE replays.
     fn jukeKeys(self: *Editor) void {
         var moved = false;
         if (rl.isKeyPressed(.down) and self.juke + 1 < VOICE_NAMES.len) {
@@ -704,7 +649,6 @@ pub const Editor = struct {
         if (self.juke >= VOICE_NAMES.len) return;
         const id: sfx.Id = @enumFromInt(self.juke);
         if (self.jukeWorld) sfx.world(id, self.focus) else sfx.play(id);
-        // ASCII only — the HUD atlas has no glyph for a musical note and would draw tofu.
         self.sayFmt("played {s}", .{VOICE_NAMES[self.juke]});
     }
 
@@ -722,7 +666,7 @@ pub const Editor = struct {
             .projection = .perspective,
         };
         self.applyCam();
-        self.selecting = false; // a brush is armed on entry: left click paints
+        self.selecting = false;
         self.panning = false;
         self.dragging = false;
         self.painting = false;
@@ -734,14 +678,13 @@ pub const Editor = struct {
         self.menuOpen = false;
         self.marquee = false;
         self.moving = false;
-        self.dropSelection(); // last session's indices mean nothing against whatever map is loaded now
+        self.dropSelection();
         self.modal = .none;
         self.pending = .none;
         self.rmbDown = false;
         self.rmbTravel = 0;
         self.hotFrame = false;
         self.editing = false;
-        // The path is set ONCE and then belongs to Open / Save-As.
         if (self.pathLen == 0) self.setPath(wf.START_MAP);
         undoReset();
         self.mapGen +%= 1;
@@ -795,12 +738,8 @@ pub const Editor = struct {
         };
     }
 
-    /// THE ONE WAY TO CHANGE LAYER, and IT REFUSES MID-GESTURE (the armament law): a shape drag reads the
-    /// layer at its RELEASE (`commitDrag`), so Tab between press and release commits a Props drag as a
-    /// Decor op, or drops it silently. What starts is what lands.
     pub fn setLayer(self: *Editor, l: Layer) void {
         if (self.dragging or self.painting or self.wipe.on) return;
-        // THE MARKED SET DOES NOT CROSS LAYERS.
         if (self.layer != l) self.nMarked = 0;
         self.layer = l;
         if (l.opLayer() and !layerHasGroup(l, self.groupSel)) self.groupSel = firstGroup(l);
@@ -812,7 +751,6 @@ pub const Editor = struct {
         return v3(mathx.sinf(self.yaw) * cp, mathx.sinf(self.pitch), mathx.cosf(self.yaw) * cp);
     }
 
-    // Screen-right = cross(forward, up), which looking +Z at yaw 0 is world −X — `camera.rightXZ`'s invariant.
     fn right(self: *const Editor) rl.Vector3 {
         const f = self.forward();
         return mathx.normV(v3(-f.z, 0, f.x));
@@ -826,7 +764,6 @@ pub const Editor = struct {
     }
 
     fn orbitCam(self: *Editor, ctrl: bool) void {
-        // RIGHT-DRAG ROTATES, RIGHT-CLICK is the context menu / deselect.
         if (rl.isMouseButtonPressed(.right)) {
             self.rmbDown = true;
             self.rmbTravel = 0;
@@ -839,15 +776,12 @@ pub const Editor = struct {
                 self.pitch = mathx.clampF(self.pitch - d.y * LOOK_SENS, -1.45, -0.06);
             }
         }
-        // Release is handled by worldMouse, which knows whether the click hit anything.
 
         const wheel = rl.getMouseWheelMove();
         if (wheel != 0 and !self.hotFrame) {
             self.dist = mathx.clampF(self.dist * (1.0 - wheel * 0.12), 2.0, 420.0);
         }
 
-        // WASD and the ARROWS pan — but NOT under Ctrl, whose shortcuts share those letters, and not while
-        // the zone name field is focused: typing a name is not a request to drive.
         if (!ctrl and !self.textFocus) {
             const step = self.dist * 0.02;
             const gf = self.groundForward();
@@ -874,7 +808,7 @@ pub const Editor = struct {
         self.focus.z += self.panGrab.z - now.z;
         self.focusToGround();
         self.applyCam();
-        self.resolveCursor(); // the eye moved mid-frame; everything downstream wants the point under it NOW
+        self.resolveCursor();
     }
 
     /// Where the cursor meets the ground, as resolved for THIS frame. `env.rayGround` is a MARCH over the
@@ -884,7 +818,6 @@ pub const Editor = struct {
         return self.cursor;
     }
 
-    /// …and the trace itself, run ONCE wherever the camera has just been settled.
     fn resolveCursor(self: *Editor) void {
         self.cursor = self.traceGround();
     }
@@ -906,8 +839,6 @@ pub const Editor = struct {
         return p;
     }
 
-    /// A null world (a headless harness, a first frame) answers with the flat datum rather than needing a
-    /// check at every use.
     pub fn groundHeight(self: *const Editor, x: f32, z: f32) f32 {
         if (self.world) |w| return w.groundAt(x, z);
         return envmod.groundY();
@@ -918,9 +849,7 @@ pub const Editor = struct {
     }
 
 
-    /// Snapshot the map BEFORE a mutation.
     pub fn bank(self: *Editor, m: *const wf.Map) void {
-        // A new edit after stepping back discards the redo tail, like every other editor.
         if (undoAt > 0) {
             undoN -= undoAt;
             undoAt = 0;
@@ -933,7 +862,6 @@ pub const Editor = struct {
 
     fn undo(self: *Editor, m: *wf.Map) bool {
         if (undoN == 0 or undoAt >= undoN) return false;
-        // Step back one: keep the CURRENT state at the far end so redo has somewhere to go.
         if (undoAt == 0) {
             if (undoN == UNDO_CAP) undoDropOldest();
             undoSlot(undoN).* = m.*;
@@ -954,22 +882,18 @@ pub const Editor = struct {
         return true;
     }
 
-    /// DROP EVERY SELECTION. Called wherever indices shift under it — a removal, an undo, a redo — because an
-    /// op or spawn index that has moved names a different thing, not a stale one.
     fn dropSelection(self: *Editor) void {
         self.sel = null;
         self.selFoe = null;
         self.nMarked = 0;
-        self.zoneSel = null; // zone indices shift like op indices do, and a map swap re-homes them all
+        self.zoneSel = null;
     }
 
-    /// Re-derive the camera after the shot harness pokes the orbit state directly.
     pub fn applyCamForShot(self: *Editor) void {
         self.applyCam();
-        self.resolveCursor(); // the harness never runs `update`, and the overlay it draws reads this
+        self.resolveCursor();
     }
 
-    /// `focusOn` for the shot harness, which has no click to trigger it.
     pub fn focusOnForShot(self: *Editor, m: *const wf.Map, i: usize) void {
         self.focusOn(m, i);
     }
@@ -985,8 +909,6 @@ pub const Editor = struct {
         self.modal = .open_map;
     }
 
-    /// The harness's own way into the three panels that reach what no brush can. Real entry points, not a
-    /// poked `modal`: each one loads state the panel then reads.
     pub fn worldForShot(self: *Editor) void {
         self.menuOpen = false;
         self.modal = .world;
@@ -999,12 +921,9 @@ pub const Editor = struct {
     pub fn closeModalForShot(self: *Editor) void {
         self.modal = .none;
     }
-    /// …and the belt inspector with a gradient actually TURNED ON, since an `.none` axis draws only the chips.
     pub fn gradientForShot(self: *Editor, m: *wf.Map, i: usize) void {
         if (i >= m.nops) return;
         const o = &m.ops[i];
-        // THE LAYER FOLLOWS THE OP, not the other way about: the inspector refuses to show an op that is
-        // not on the live layer, and a harness guessing `.decor` gets "selection is on another layer".
         self.setLayer(layerOf(o));
         self.sel = i;
         o.gAxis = .x;
@@ -1014,7 +933,6 @@ pub const Editor = struct {
         o.gFloor = 0.25;
     }
 
-    /// Put the JUKEBOX up for the shot harness, parked on one voice.
     pub fn soundsForShot(self: *Editor, id: sfx.Id) void {
         self.modal = .jukebox;
         self.menuOpen = false;
@@ -1041,7 +959,6 @@ pub const Editor = struct {
             .at => AT_SPAN,
             .edge, .cover => m.half,
         };
-        // The world-wide ops have no place of their own, so they frame the map's middle; everything else is centred by the same anchor the marquee and a paste use.
         const c = if (isMovable(&o)) opAnchor(&o) else mathx.zero3;
         self.lookAtGround(c.x, c.z, span);
     }
@@ -1055,18 +972,17 @@ pub const Editor = struct {
         self.focus = mathx.ground(cx, cz);
         self.focusToGround();
         self.applyCam();
-        self.resolveCursor(); // …and the frame's cached cursor point belongs to the camera it was traced under
+        self.resolveCursor();
     }
 
 
     pub fn update(self: *Editor, m: *wf.Map, env: *envmod.Env, day: *daynight.Clock, dt: f32) Action {
         self.world = env;
         self.statusT = @max(0, self.statusT - dt);
-        self.wipe.t += dt; // the held eraser's rate gate
-        self.tickRebuild(m, env, dt); // service any rebuild a held widget coalesced
+        self.wipe.t += dt;
+        self.tickRebuild(m, env, dt);
 
         if (self.modal != .none) {
-            // …and it CANCELS any gesture in flight.
             self.rmbDown = false;
             self.rmbTravel = 0;
             self.panning = false;
@@ -1075,9 +991,8 @@ pub const Editor = struct {
             self.moving = false;
             self.hover = .none;
             self.hoverLive = false;
-            self.resolveCursor(); // the camera is frozen under a modal, but `draw3D` still rides this point
+            self.resolveCursor();
             if (self.wipe.on) self.wipeEnd();
-            // The jukebox is the one modal with a keyboard of its own (step + replay).
             if (self.modal == .jukebox) self.jukeKeys();
             if (rl.isKeyPressed(.escape)) {
                 if (!(self.modal == .objects and objview.back(&self.objects))) {
@@ -1090,10 +1005,8 @@ pub const Editor = struct {
         const ctrl = rl.isKeyDown(.left_control) or rl.isKeyDown(.right_control);
         const shift = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
         self.orbitCam(ctrl);
-        self.resolveCursor(); // the camera is settled: trace the cursor ONCE for the whole frame
-        // THE EARS ARE WHERE THE EDITOR'S CAMERA IS.
+        self.resolveCursor();
         sfx.listen(self.cam.position, self.right());
-        // Serviced here rather than in commitPending, because leaving is the game loop's call.
         if (self.pending == .leave) {
             self.pending = .none;
             return .leave;
@@ -1102,7 +1015,7 @@ pub const Editor = struct {
         if (ctrl and rl.isKeyPressed(.s)) {
             if (shift) {
                 self.nameLen = 0;
-                self.menuOpen = false; // a dialog never opens on top of a live context menu
+                self.menuOpen = false;
                 self.modal = .save_as;
             } else _ = self.saveNow(m);
             return .none;
@@ -1128,7 +1041,6 @@ pub const Editor = struct {
             return .none;
         }
         if (ctrl and rl.isKeyPressed(.a)) {
-            // Select everything in the ACTIVE layer — a marquee over the whole map.
             const far = m.half * 4;
             self.marqueeSelect(m, v3(-far, 0, -far), v3(far, 0, far));
             return .none;
@@ -1169,8 +1081,6 @@ pub const Editor = struct {
         }
         if (rl.isKeyPressed(.f5)) return .playtest;
 
-        // The letter/digit shortcuts stand down while the zone name field is focused — those keys are
-        // being TYPED. Ctrl-chords above keep working; Esc still deselects.
         if (!self.textFocus) {
             if (rl.isKeyPressed(.tab)) {
                 const back = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
@@ -1181,13 +1091,11 @@ pub const Editor = struct {
             }
             const digits = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine };
             for (digits, 0..) |k, i| {
-                // Refused mid-gesture for setLayer's reason: commitDrag reads the brush at RELEASE,
-                // so a digit between press and release committed a shape the preview never showed.
                 if (rl.isKeyPressed(k) and i < brushesFor(self.layer).len and
                     !self.dragging and !self.painting and !self.wipe.on)
                 {
                     self.setBrush(i);
-                    self.selecting = false; // arming a brush hands the left button to it
+                    self.selecting = false;
                 }
             }
             if (rl.isKeyPressed(.g)) {
@@ -1196,9 +1104,6 @@ pub const Editor = struct {
             }
             if (rl.isKeyPressed(.left_bracket)) self.radius = mathx.clampF(self.radius - 1, 1, 60);
             if (rl.isKeyPressed(.right_bracket)) self.radius = mathx.clampF(self.radius + 1, 1, 60);
-            // THE WORLD CLOCK, on `,` and `.`, Shift for whole hours: a belt of trees that reads at the
-            // golden hour can be a black wall at dusk. REPEATING (`isKeyDown`) — sweeping the day is the
-            // gesture. The clock is HELD in the editor, so this is the only thing that moves it.
             {
                 const fast = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
                 const rate: f32 = if (fast) EDIT_HOUR_FAST else EDIT_HOUR_RATE;
@@ -1215,8 +1120,6 @@ pub const Editor = struct {
             }
         }
 
-        // Every frame the shortcuts above did not claim. Those `return`s cost the mouse one frame, which a live
-        // gesture picks up on the next — the commit is keyed off the button being UP, not off the release edge.
         self.worldMouse(m, env, dt);
         return .none;
     }
@@ -1224,7 +1127,6 @@ pub const Editor = struct {
     fn rebuild(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
         self.rebuildDue = false;
         self.rebuildT = 0;
-        // THE PAINTED FIELDS FIRST, then the props.
         env.uploadSoil(m);
         env.uploadWater(m);
         env.uploadHeight(m);
@@ -1242,24 +1144,15 @@ pub const Editor = struct {
         if (self.rebuildT >= REBUILD_QUIET) self.rebuild(m, env);
     }
 
-    /// Deliberately does NOT rebuild — `tickRebuild`'s quiet window owns that, or one stepper click
-    /// re-materializes 17k props before the next can register. Paths needing the world NOW call
-    /// `flushRebuild`.
     fn endGesture(self: *Editor, _: *const wf.Map, _: *envmod.Env) void {
         self.editing = false;
     }
 
-    /// For the paths about to READ the materialized world (leaving, a playtest). NOT a save: the MAP is
-    /// written the moment a widget moves, and only `env` lags behind. A LIVE STROKE COUNTS — Esc and F5 are
-    /// read before the mouse, so a sculpt still under the button has had only its MESH rebuilt, and leaving
-    /// unsettled plays a world whose props stand at the old heights.
     pub fn flushRebuild(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
         if (self.painting) self.endPaint(m, env);
         if (self.rebuildDue) self.rebuild(m, env);
     }
 
-    /// Point the name field and the mix modal at one zone, loading its CURRENT name into the buffer — a
-    /// field that opened empty would rename the zone to nothing on the first frame.
     fn selectZone(self: *Editor, m: *const wf.Map, i: usize) void {
         self.zoneSel = i;
         self.zoneNameBuf = [_]u8{0} ** wf.NAME_CAP;
@@ -1295,7 +1188,6 @@ pub const Editor = struct {
     }
 
     fn worldMouse(self: *Editor, m: *wf.Map, env: *envmod.Env, dt: f32) void {
-        // CHROME OWNS THE POINTER — but only for STARTING something.
         const blocked = self.hotFrame or self.menuOpen;
         const ground = self.groundAt();
 
@@ -1335,7 +1227,7 @@ pub const Editor = struct {
             }
             return;
         }
-        if (self.rmbDown) return; // mid-rotate: the left button is not listened to
+        if (self.rmbDown) return;
 
         if (self.panning) {
             self.dragPan();
@@ -1343,7 +1235,6 @@ pub const Editor = struct {
             return;
         }
 
-        // GROUND is a true paint layer: hold and sweep, one undo step for the whole stroke.
         if (self.layer == .ground and !self.selecting) {
             if (rl.isMouseButtonDown(.left) and (self.painting or !blocked)) {
                 if (ground) |g| {
@@ -1360,14 +1251,11 @@ pub const Editor = struct {
                                 else => .flatten,
                             };
                             const amt: f32 = switch (mode) {
-                                // Metres a second for the two that move the ground…
                                 .raise, .lower => self.sculptRate * dt,
-                                // …and a 0..1 blend per second for the two that even it out.
                                 else => mathx.minF(self.sculptRate * dt * SCULPT_EVEN, 0.9),
                             };
                             var span: [4]usize = wf.EMPTY_SPAN;
                             if (m.sculpt(g.x, g.z, self.radius, mode, amt, &span)) {
-                                // The MESH now, the world ON it only on RELEASE: re-expanding 17k props every frame of a drag is a slideshow.
                                 env.sculptHeight(m, span);
                                 self.heightStroke = true;
                             }
@@ -1377,7 +1265,6 @@ pub const Editor = struct {
                             self.wetStroke = true;
                         },
                         .erase => {
-                            // Opacity is not passed: an eraser clears outright (see `paintSoil`).
                             if (m.paintSoil(g.x, g.z, self.radius, .none, 1, null)) env.uploadSoil(m);
                             if (m.paintWater(g.x, g.z, self.radius, false, null)) {
                                 env.uploadWater(m);
@@ -1404,7 +1291,6 @@ pub const Editor = struct {
         }
 
         if (self.erasing() and !self.selecting and !shift) {
-            // The release is handled above, so this only has to service the held button.
             if (rl.isMouseButtonDown(.left) and (self.wipe.on or !blocked)) {
                 if (ground) |g| self.wipeStep(m, env, g);
             }
@@ -1412,7 +1298,7 @@ pub const Editor = struct {
         }
 
         if (rl.isMouseButtonPressed(.left)) {
-            if (blocked) return; // a NEW gesture needs the pointer on the world, not on a panel
+            if (blocked) return;
             if (shift and self.layer != .ground) {
                 if (ground) |g| {
                     self.marquee = true;
@@ -1421,7 +1307,6 @@ pub const Editor = struct {
                 }
                 return;
             }
-            // SELECT MODE: a click takes what is under the cursor; a click on nothing starts a pan.
             if (self.selecting) {
                 if (self.nMarked > 0 and self.overMarked(m, env)) {
                     if (ground) |g| {
@@ -1438,7 +1323,6 @@ pub const Editor = struct {
                 }
                 return;
             }
-            // A BRUSH IS ARMED, SO THE BRUSH ACTS — always, wherever the cursor is.
             switch (self.layer) {
                 .units => {
                     if (ground) |g| self.addFoe(m, g);
@@ -1454,7 +1338,6 @@ pub const Editor = struct {
             }
             return;
         }
-        // A live drag just tracks the cursor; the COMMIT is at the top of this function.
         if (self.dragging) {
             if (ground) |g| self.dragTo = g;
         }
@@ -1469,7 +1352,6 @@ pub const Editor = struct {
         }
     }
 
-    /// The ray under the cursor, normalized — every pick starts here.
     fn cursorRay(self: *const Editor) rl.Ray {
         const ray = rl.getScreenToWorldRay(rl.getMousePosition(), self.cam);
         return .{ .position = ray.position, .direction = mathx.normV(ray.direction) };
@@ -1490,8 +1372,6 @@ pub const Editor = struct {
 
     fn overMarked(self: *Editor, m: *wf.Map, env: *envmod.Env) bool {
         if (self.layer == .units) {
-            // ANY marked spawn in reach, not the nearest: a marked set is dragged as a body, so brushing
-            // its edge takes hold even where an unmarked neighbour sits a hair closer.
             const g = self.groundAt() orelse return false;
             for (self.marked[0..self.nMarked]) |i| {
                 if (i >= m.nfoes) continue;
@@ -1500,15 +1380,12 @@ pub const Editor = struct {
             }
             return false;
         }
-        // The LAYER filter goes through the sweep, then membership is tested on the winner alone.
         return switch (self.underCursor(m, env)) {
             .prop => |pi| self.isMarked(env.props[pi].op),
             .foe, .none => false,
         };
     }
 
-    /// WHAT THE CURSOR IS OVER, off this frame's hover where there is one. Nothing `hoverInLayer` reads can move
-    /// inside a frame, so a second sweep of every prop in the world would only reach the same answer.
     fn underCursor(self: *Editor, m: *wf.Map, env: *envmod.Env) Hover {
         if (self.hoverLive) return self.hover;
         return self.hoverInLayer(m, env);
@@ -1521,7 +1398,6 @@ pub const Editor = struct {
             return .none;
         }
         if (self.layer == .units) {
-            // A spawn has no mesh for a ray to hit, so it is found by PROXIMITY on the ground
             const g = self.groundAt() orelse return .none;
             var near = mathx.Nearest.within(FOE_PICK_R);
             for (m.foes[0..m.nfoes], 0..) |f, i| near.offer(i, v3(f.x, 0, f.z), g);
@@ -1567,7 +1443,6 @@ pub const Editor = struct {
         const span = mathx.distXZ(a, b);
 
         if (self.layer == .cover) {
-            // BANK PER BRANCH, after its cap check.
             switch (@as(CoverBrush, @enumFromInt(self.brushIdx()))) {
                 .zone => {
                     if (m.nzones >= wf.MAX_ZONES) {
@@ -1588,12 +1463,10 @@ pub const Editor = struct {
                         z.mix = src.mix;
                         z.nmix = src.nmix;
                     }
-                    // AT THE FRONT, because the LAST one is the fallback (`wf.Map.isFallbackZone`): appended, a
-                    // new rect would become the ground everything not in a rect is governed by.
                     std.mem.copyBackwards(wf.Zone, m.zones[1 .. m.nzones + 1], m.zones[0..m.nzones]);
                     m.zones[0] = z;
                     m.nzones += 1;
-                    self.zoneSel = null; // every zone index just shifted up
+                    self.zoneSel = null;
                     self.say("+zone");
                 },
                 .clearing => {
@@ -1615,11 +1488,9 @@ pub const Editor = struct {
 
         var o = wf.defaults(.at);
         o.kind = self.kindForLayer();
-        // EXHAUSTIVE OVER THE LAYER, not an if/else whose tail means "props": the brush index is cast
-        // straight to that layer's brush enum, so a seventh layer falling through is an out-of-range cast.
         switch (self.layer) {
-            .ground, .units => return, // neither reaches commitDrag — see worldMouse
-            .cover => unreachable, // handled and returned above
+            .ground, .units => return,
+            .cover => unreachable,
             .decor => switch (@as(DecorBrush, @enumFromInt(self.brushIdx()))) {
                 .single => {
                     o.x = a.x;
@@ -1676,7 +1547,7 @@ pub const Editor = struct {
                 },
                 .ivy => {
                     o = wf.defaults(.ivy);
-                    o.kind = .ivy; // the ivy op sows the climber itself, not the palette's pick
+                    o.kind = .ivy;
                     const box = normRect(a, b);
                     o.x = box.x0;
                     o.z = box.z0;
@@ -1706,17 +1577,12 @@ pub const Editor = struct {
         self.sayFmt("+{s} {s} #{d}", .{ @tagName(o.op), @tagName(o.kind), at });
     }
 
-    /// Square metres of ground one scattered instance is worth, when a fresh belt or disc is sized from the
-    /// box you dragged.
     const AREA_PER_INSTANCE: f32 = 9.0;
-    /// Instance count a fresh belt or disc is clamped into.
     const FRESH_N_LO: f32 = 4;
     const FRESH_N_HI: f32 = 900;
     const MIN_CLEARING_R: f32 = 2.0;
     const MIN_BRUSH_R: f32 = 1.0;
 
-    /// COUNT FOLLOWS THE AREA — so a big box is not sparse and a small one is not a mat. The belt and the
-    /// disc differ in how they MEASURE their ground, never in what that ground is worth.
     fn countForArea(area: f32) i32 {
         return @intFromFloat(mathx.clampF(area / AREA_PER_INSTANCE, FRESH_N_LO, FRESH_N_HI));
     }
@@ -1747,7 +1613,6 @@ pub const Editor = struct {
         return o;
     }
 
-    // A seed no other op is using, so a new scatter never mirrors an existing one.
     fn freshSeed(self: *Editor, m: *const wf.Map) u64 {
         _ = self;
         var s: u64 = 1000;
@@ -1763,7 +1628,6 @@ pub const Editor = struct {
         }
         self.bank(m);
         const kind: wf.FoeKind = @enumFromInt(self.brushIdx());
-        // A varied seed per spawn, else a knot placed in one session breathes as one body.
         const seed = @as(f32, @floatFromInt((m.nfoes * 37) % 100)) / 100.0;
         m.foes[m.nfoes] = .{ .kind = kind, .x = at.x, .z = at.z, .yaw = 0, .scale = 1, .seed = seed };
         self.selFoe = m.nfoes;
@@ -1784,7 +1648,6 @@ pub const Editor = struct {
         if (self.eraseAt(m, env, g)) {
             self.wipe.n += 1;
         } else if (first) {
-            // The stroke's FIRST frame only, or a sweep across empty ground strobes the status line.
             self.say(eraseMiss(self.layer));
         }
     }
@@ -1794,15 +1657,13 @@ pub const Editor = struct {
         self.wipe.on = false;
     }
 
-    /// Bank the ONE undo step a held stroke gets, on the first thing it actually removes.
     fn bankStroke(self: *Editor, m: *wf.Map) void {
         if (self.wipe.n == 0) self.bank(m);
     }
 
-    /// The scoped eraser: it can only ever remove things belonging to the ACTIVE layer.
     fn eraseAt(self: *Editor, m: *wf.Map, env: *envmod.Env, g: rl.Vector3) bool {
         switch (self.layer) {
-            .ground => {}, // the soil brush erases by painting `.none`; nothing to remove here
+            .ground => {},
             .units => {
                 var i: usize = m.nfoes;
                 while (i > 0) : (i -= 1) {
@@ -1811,7 +1672,7 @@ pub const Editor = struct {
                     self.bankStroke(m);
                     std.mem.copyForwards(wf.Foe, m.foes[i - 1 .. m.nfoes - 1], m.foes[i..m.nfoes]);
                     m.nfoes -= 1;
-                    self.dropSelection(); // the spawn indices just shifted — see there
+                    self.dropSelection();
                     self.sayFmt("-foe ({d:.0}, {d:.0})", .{ f.x, f.z });
                     return true;
                 }
@@ -1828,12 +1689,12 @@ pub const Editor = struct {
                 }
                 var i: usize = 0;
                 while (i < m.nzones) : (i += 1) {
-                    if (m.isFallbackZone(i)) continue; // the world's own ground has to be governed by something
+                    if (m.isFallbackZone(i)) continue;
                     if (!m.zones[i].contains(g.x, g.z)) continue;
                     self.bankStroke(m);
                     std.mem.copyForwards(wf.Zone, m.zones[i .. m.nzones - 1], m.zones[i + 1 .. m.nzones]);
                     m.nzones -= 1;
-                    self.zoneSel = null; // the erased slot's successors all moved down
+                    self.zoneSel = null;
                     self.rebuild(m, env);
                     self.say("-zone");
                     return true;
@@ -1871,7 +1732,7 @@ pub const Editor = struct {
             self.bank(m);
             std.mem.copyForwards(wf.Foe, m.foes[f .. m.nfoes - 1], m.foes[f + 1 .. m.nfoes]);
             m.nfoes -= 1;
-            self.dropSelection(); // the spawn indices just shifted — see there
+            self.dropSelection();
             self.say("-foe");
             return;
         }
@@ -1904,7 +1765,7 @@ pub const Editor = struct {
         o.seed = self.freshSeed(m);
         translateOp(&o, DUPE_OFFSET, 0);
         var idx = m.add(o) catch return;
-        idx = self.sinkBeforeCover(m, idx); // every adding path sinks, or the copy replays after the carpet
+        idx = self.sinkBeforeCover(m, idx);
         self.sel = idx;
         self.rebuild(m, env);
         self.sayFmt("duplicated #{d} -> #{d}", .{ s, idx });
@@ -1932,7 +1793,7 @@ pub const Editor = struct {
                 if (box.holds(f.x, f.z)) self.mark(i);
             }
             self.selFoe = if (self.nMarked > 0) self.marked[0] else null;
-            self.sel = null; // the two selections are layer-exclusive; leaving the other set
+            self.sel = null;
             // would show a properties panel for something this marquee cannot touch
         } else if (self.layer.opLayer()) {
             for (m.ops[0..m.nops], 0..) |*o, i| {
@@ -1946,7 +1807,6 @@ pub const Editor = struct {
         self.sayFmt("{d} selected", .{self.nMarked});
     }
 
-    /// The centre of the marked set, which a copy is stored relative to and a move measures from.
     fn markedCentre(self: *const Editor, m: *const wf.Map) rl.Vector3 {
         if (self.nMarked == 0) return mathx.zero3;
         var sx: f32 = 0;
@@ -2029,8 +1889,6 @@ pub const Editor = struct {
             if (onUnits) self.say("clipboard holds ops - paste them on an object layer") else self.say("clipboard holds spawns - paste them on Units");
             return;
         }
-        // The CAP CHECK comes before the snapshot, like every other adding path: a paste into a full map that
-        // banked first cost an undo step and a dirty flag for nothing.
         if (nOps > 0 and m.nops >= wf.MAX_OPS) {
             self.say(FULL_MSG);
             return;
@@ -2046,7 +1904,6 @@ pub const Editor = struct {
         for (clipOps[0..nOps]) |src| {
             var o = src;
             translateOp(&o, at.x, at.z);
-            // A pasted generator gets its OWN seed.
             if (o.op != .at) {
                 o.seed = seed;
                 seed += 1;
@@ -2072,7 +1929,6 @@ pub const Editor = struct {
             landed += 1;
         }
         self.rebuild(m, env);
-        // WHAT LANDED, not what the clipboard held — a paste that hit a cap partway said it pasted all of it.
         const want = nOps + nFoes;
         if (landed == want) {
             self.sayFmt("pasted {d}", .{landed});
@@ -2104,7 +1960,6 @@ pub const Editor = struct {
         self.sayFmt("deleted {d}", .{removed});
     }
 
-    /// Sink a freshly added op back past the cover scatter and RETURN WHERE IT LANDED.
     fn sinkBeforeCover(self: *Editor, m: *wf.Map, idx: usize) usize {
         _ = self;
         var at = idx;
@@ -2113,9 +1968,8 @@ pub const Editor = struct {
     }
 
 
-    /// Route an action that would DISCARD unsaved work through a confirm first.
     fn request(self: *Editor, what: Pending) void {
-        self.menuOpen = false; // a keyboard shortcut can raise a dialog over an open menu
+        self.menuOpen = false;
         if (!self.dirty) {
             self.commitPending(what);
             return;
@@ -2199,14 +2053,13 @@ pub const Editor = struct {
 
 
     pub fn draw3D(self: *Editor, m: *const wf.Map, env: *const envmod.Env) void {
-        gizmoWorld = env; // every wireframe below rides the ground — see liftAt
+        gizmoWorld = env;
         const y: f32 = 0.05;
         rl.drawCubeWires(v3(0, envmod.groundY() + y, 0), m.half * 2, 0.02, m.half * 2, ui.alpha(ui.TRIM, 90));
         outline(m.runway.x, m.runway.z, m.runway.x1, m.runway.z1, y, ui.alpha(ui.HOT, 70));
 
         const coverA: u8 = if (self.layer == .cover) 200 else 45;
         for (m.zones[0..m.nzones]) |*z| {
-            // The world-spanning fallback zone has no meaningful outline to draw.
             if (z.x1 - z.x > m.half * 3) continue;
             outline(z.x, z.z, z.x1, z.z1, y, ui.alpha(ui.TRIM, coverA));
         }
@@ -2231,7 +2084,7 @@ pub const Editor = struct {
                 for (env.props[0..env.nprops]) |pr| {
                     if (pr.op != s) continue;
                     self.selOwned += 1;
-                    if (self.selMarked >= MAX_MARKERS) continue; // capped — reported, never silent
+                    if (self.selMarked >= MAX_MARKERS) continue;
                     self.selMarked += 1;
                     const nfo = props.info(pr.kind);
                     const h = @max(nfo.top * pr.scale, 0.4);
@@ -2316,7 +2169,6 @@ pub const Editor = struct {
                     .stamp, .erase => {},
                 }
             }
-            // INTERACTABLES place one thing at a point — there is no shape for a drag to preview.
         }
 
         if (self.groundAt()) |g| {
@@ -2346,19 +2198,19 @@ fn drawOpGizmo(o: *const wf.Op, y: f32) void {
         },
         .ring => ringXZ(o.x, o.z, o.r0, y, ui.HOT),
         .line => groundLine(o.x, o.z, o.x1, o.z1, y, ui.HOT),
-        .edge, .cover => {}, // world-wide: their gizmo would be the whole map border
+        .edge, .cover => {},
     }
 }
 
-const FOE_BOX_W: f32 = 0.9; // a posted spawn, roughly a body's footprint
+const FOE_BOX_W: f32 = 0.9;
 const FOE_BOX_H: f32 = 1.8;
-const MARK_BOX_W: f32 = 1.4; // the same spawn once it is in the marked set: a size bigger
+const MARK_BOX_W: f32 = 1.4;
 const MARK_BOX_H: f32 = 2.0;
-const MARK_RING_R: f32 = 1.8; // marked op anchors, and their ghosts while the set is dragged
-const MARK_RING_SEG: i32 = 12; // coarse on purpose — see ringSeg
-const GIZMO_R: f32 = 1.2; // one literal prop's own gizmo
+const MARK_RING_R: f32 = 1.8;
+const MARK_RING_SEG: i32 = 12;
+const GIZMO_R: f32 = 1.2;
 const GIZMO_SPOKE: f32 = GIZMO_R * 1.9;
-const CURSOR_R: f32 = 0.9; // the plain cursor ring, where no brush radius applies
+const CURSOR_R: f32 = 0.9;
 
 fn foeSwatch(k: wf.FoeKind) rl.Color {
     return switch (k) {
@@ -2373,43 +2225,26 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         .brood_sac => ui.col(190, 208, 130, 255),
         .shieldman => ui.col(176, 178, 190, 255),
         .greatsword => ui.col(214, 216, 232, 255),
-        // The only cold violet on the map — its own colour, and legible against the skeletons' greys.
         .shade => ui.col(138, 116, 208, 255),
-        // Blood on chitin — the one RED on the map, and nothing else on it is warm.
         .leechfly => ui.col(196, 66, 58, 255),
-        // Bark, with the ember's own warmth in it — the only brown on the map that is a creature.
         .rooted => ui.col(140, 96, 52, 255),
-        // Cap-brick over cream — dusty rose, nothing else on the map is this colour.
         .shroom => ui.col(214, 130, 118, 255),
-        // The visor's own ember over black iron — the one thing on the map that is orange.
         .bone_knight => ui.col(228, 132, 62, 255),
-        // Turned earth: the one thing on the map whose colour is the GROUND, because that is where it is.
         .delver => ui.col(150, 118, 78, 255),
-        // Its own frost — the one PALE BLUE, and it separates from the shade's cold violet as well as from
-        // the skeletons' greys, since all three stand in the same courtyards.
         .necromancer => ui.col(126, 196, 224, 255),
-        // The bloom itself — the one PINK on the map, and nothing near it in hue: the shroom's dusty rose
-        // is warmer and browner, and these two share a wood.
         .florid_ravager => ui.col(226, 138, 196, 255),
-        // The fire it throws — the one ORANGE on the map, and nothing near it: the sporeling it shares a
-        // wood with is a dusty rose and the ravager's bloom is pink, so the fungal three separate by hue.
         .mushroom_mage => ui.col(238, 152, 66, 255),
-        // The water it lives in — the one TEAL on the map, and the only cool green: the necromancer's frost
-        // is pale blue and the ravager's bloom is pink, so nothing this sits beside reads near it.
         .fen_lurker => ui.col(78, 200, 186, 255),
     };
 }
 
-// The `y` these take is a LIFT ABOVE THE GROUND, sampled per vertex — never an absolute height.
 var gizmoWorld: ?*const envmod.Env = null;
 
-/// A gizmo vertex: `lift` metres above the ground at (x, z).
 fn liftAt(x: f32, z: f32, lift: f32) rl.Vector3 {
     if (gizmoWorld) |w| return v3(x, w.groundAt(x, z) + lift, z);
     return v3(x, envmod.groundY() + lift, z);
 }
 
-/// A line whose ENDS ride the ground.
 fn groundLine(x0: f32, z0: f32, x1: f32, z1: f32, lift: f32, col: rl.Color) void {
     const SEG = 12;
     var i: i32 = 0;
@@ -2459,23 +2294,14 @@ const SIDE_W: i32 = 268;
 const PROP_W: i32 = 300;
 const STATUS_H: i32 = 28;
 const MINI_W: i32 = 190;
-/// Inset from a panel edge to the text inside it.
 const CHROME_PAD: i32 = 10;
-/// Clear space the status bar keeps between its left run and its right-aligned readout.
 const GUTTER: i32 = 30;
 const COORD_LIM: f32 = 400;
-/// Ceiling on a scatter's ATTEMPT count (belt, disc).
 const COUNT_MAX: i32 = 4000;
-/// Positions a `ring` may have.
 const RING_N_MAX: i32 = 64;
-/// How far off plumb a prop may be tipped.
 const LEAN_LIM: f32 = 40;
 
-/// WHAT EACH EDGE SHAPE IS FOR, said in the thing you hover. The names alone do not separate `frayed` from
-/// `natural` or `blend` from either, and a picker of eight words nobody can tell apart is one button.
 fn edgeTip(e: wf.Edge, wet: bool) [:0]const u8 {
-    // THE SAME EIGHT NAMES ANSWER TWO DIFFERENT QUESTIONS: the shape is real either way, but what it is FOR
-    // is not the same thing at all.
     if (wet) return switch (e) {
         .blend => "A margin you cannot find the edge of. Metres of ground that is neither",
         .natural => "What a lake does on its own. A slow wander either side of the line",
@@ -2499,13 +2325,10 @@ fn edgeTip(e: wf.Edge, wet: bool) [:0]const u8 {
 }
 
 const ROW_H: i32 = ui.ROW_H;
-/// Extra drop under a slider, which draws its bar BELOW its label and so is taller than a row.
 const SLIDER_DROP: i32 = 20;
 
 pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: *daynight.Clock, t: f32) void {
     ed.world = env;
-    // Once for the chrome, against the camera as it ended up — a pan or a minimap fly moved it after
-    // `update` traced. The panel, the status readout and a paste share this one answer.
     ed.resolveCursor();
     const sw = rl.getScreenWidth();
     const sh = rl.getScreenHeight();
@@ -2527,7 +2350,6 @@ pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene,
     }
     ui.drawTip(&ctx);
 
-    // The gate for NEXT frame's world clicks.
     ed.hotFrame = ctx.anyHot;
 }
 
@@ -2536,7 +2358,7 @@ const BarRow = struct {
     x: i32,
 
     const GAP: i32 = 4;
-    const PAD: i32 = 18; // label inset, so a button is never tight around its text
+    const PAD: i32 = 18;
 
     fn button(r: *BarRow, label: [:0]const u8, active: bool, tip: [:0]const u8) bool {
         const w = hud.monoW(label, hud.MONO) + PAD;
@@ -2570,7 +2392,7 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
         const l: Layer = @enumFromInt(f.value);
         if (row.layer(layerIcon(l), l.label(), ed.layer == l, layerTips[f.value])) ed.setLayer(l);
     }
-    row.gap(14); // the layer strip and the file buttons are different kinds of thing
+    row.gap(14);
     if (row.verb(.new, "New - start an empty map (Ctrl+N)")) ed.request(.new);
     if (row.verb(.open, "Open - a map from worlds/ (Ctrl+O)")) ed.request(.open);
     if (row.verb(.save, "Save - write the map to disk (Ctrl+S)")) _ = ed.saveNow(m);
@@ -2635,7 +2457,6 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
             y += hud.monoLineH(hud.MONO);
         }
         var lab: [40]u8 = undefined;
-        // The DIGIT ONLY WHERE THERE IS ONE.
         const s = if (i < DIGIT_KEYS) (std.fmt.bufPrintZ(&lab, "{d} {s}", .{ i + 1, b }) catch b) else b;
         const r = ui.rect(8, y, SIDE_W - 16, ROW_H - 4);
         ui.tipFor(ctx, r, tips[i]);
@@ -2643,7 +2464,6 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
         const hit = if (glyphs) |g|
             ui.iconButton(ctx, r, g[i], s, hud.MONO, on)
         else
-            // GROUND: the swatch IS the icon.
             (if (i + 1 == brushes.len)
                 ui.iconButton(ctx, r, .erase, s, hud.MONO, on)
             else switch (@as(GroundBrush, @enumFromInt(i))) {
@@ -2655,7 +2475,7 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
             });
         if (hit) {
             ed.setBrush(i);
-            ed.selecting = false; // arming a brush hands the left button to it
+            ed.selecting = false;
         }
         y += ROW_H;
     }
@@ -2664,7 +2484,6 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
     if (kindPool(ed.layer)) |pool| {
         hud.mono("GROUP", 10, y, hud.MONO, ui.alpha(ui.TRIM, 235));
         y += ROW_H;
-        // Only the groups this layer actually has stock in
         var chipX: i32 = 8;
         var chipY = y;
         inline for (@typeInfo(props.Group).@"enum".fields) |gf| {
@@ -2684,7 +2503,6 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
 
         hud.mono("KIND", 10, y, hud.MONO, ui.alpha(ui.TRIM, 235));
         y += ROW_H;
-        // Collapse to the visible shelf, keeping a map back to the real kind.
         var labels: [props.NK][:0]const u8 = undefined;
         var kinds: [props.NK]Kind = undefined;
         var n: usize = 0;
@@ -2700,7 +2518,6 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
             if (k == cur) selIdx = i;
         }
         const listH = @max(0, sh - y - STATUS_H - 8);
-        // THE PALETTE ARMS THE BRUSH and nothing else (owner's call): a chooser must not edit the document.
         if (ui.list(ctx, ui.rect(8, y, SIDE_W - 16, listH), labels[0..n], selIdx, &ed.kindScroll)) |i| {
             ed.kindSlot().* = kinds[i];
         }
@@ -2708,21 +2525,17 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
 }
 
 
-/// ONE WORLD-COORDINATE ROW: the stepper plus the row advance, so `COORD_LIM` is written once instead of at
-/// fourteen call sites that all have to agree.
 fn coordRow(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, label: [:0]const u8, v: *f32, step: f32) bool {
     defer y.* += ROW_H;
     return ui.stepperF(ctx, x, y.*, w, label, v, step, -COORD_LIM, COORD_LIM);
 }
 
-/// A CENTRE — what `at`, `disc` and `ring` open with.
 fn centreRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op, step: f32) bool {
     var ch = coordRow(ctx, x, y, w, "x", &o.x, step);
     ch = coordRow(ctx, x, y, w, "z", &o.z, step) or ch;
     return ch;
 }
 
-/// …and a SPAN — what `belt`, `ivy` and `line` open with.
 fn spanRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op) bool {
     var ch = coordRow(ctx, x, y, w, "x0", &o.x, 1);
     ch = coordRow(ctx, x, y, w, "z0", &o.z, 1) or ch;
@@ -2731,9 +2544,6 @@ fn spanRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op) bool {
     return ch;
 }
 
-/// THE DENSITY GRADIENT a scatter can carry (`Op.gAxis`/`gA`/`gB`/`gFloor`) — acceptance ramps from
-/// `gFloor` to 1 as the chosen axis runs `gA` → `gB`. The axis chips come FIRST and the rest appear only
-/// once one is picked: three numbers that do nothing are worse than no rows.
 fn gradientRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op) bool {
     var ch = false;
     hud.mono("density gradient", x, y.*, hud.MONO, ui.alpha(ui.TRIM, 220));
@@ -2749,8 +2559,6 @@ fn gradientRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op) bool {
         };
         if (ui.chip(ctx, cx, y.*, lab, o.gAxis == ax, &usedW) and o.gAxis != ax) {
             o.gAxis = ax;
-            // A FRESH GRADIENT SPANS THE OP ITSELF, so turning one on does something visible rather than
-            // ramping between two zeroes: the belt's own box on that axis, thin end first.
             if (ax != .none and o.gA == o.gB) {
                 o.gA = if (ax == .x) @min(o.x, o.x1) else @min(o.z, o.z1);
                 o.gB = if (ax == .x) @max(o.x, o.x1) else @max(o.z, o.z1);
@@ -2772,16 +2580,14 @@ fn gradientRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op) bool {
 }
 
 fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32, sh: i32) void {
-    ed.textFocus = false; // re-claimed below iff the zone name field draws focused this frame
+    ed.textFocus = false;
     const x0 = sw - PROP_W;
     ui.panel(ctx, ui.rect(x0, BAR_H, PROP_W, sh - BAR_H - STATUS_H), null);
     const x = x0 + 10;
     const w = PROP_W - 20;
     var y = BAR_H + 8;
 
-    // GROUND and UNITS have no op to edit — they get their own inspectors.
     if (ed.layer == .ground) {
-        // THE PANEL REPORTS THE GRID THE ARMED BRUSH ACTUALLY WORKS ON.
         const brush = @as(GroundBrush, @enumFromInt(ed.brushIdx()));
         const wet = brush == .water;
         const sculpting = switch (brush) {
@@ -2796,9 +2602,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             _ = ui.slider(ctx, x, y, w, "opacity", &ed.soilOpacity, 0, 1);
             y += ROW_H + SLIDER_DROP;
         }
-        // **HOW THE STROKE ENDS** — a brush setting, so one material lays a tiled courtyard and a torn
-        // scree. Two rows of four, since eight shapes pressed through one at a time is eight presses to
-        // compare two. SHARED BY BOTH BRUSHES; `env.coastWarp` is the shore's half.
         if (!sculpting) {
             hud.mono(if (wet) "coast" else "edge", x, y, hud.MONO, ui.LABEL);
             y += ROW_H;
@@ -2839,7 +2642,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             if (ui.buttonTip(ctx, ui.rect(x, y, w, 24), "level the map", hud.MONO, false, "Flatten the whole world back to zero. Undoable")) {
                 ed.bank(m);
                 m.height = [_]u8{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS;
-                ed.rebuild(m, env); // props are planted at the ground height, so levelling re-plants them
+                ed.rebuild(m, env);
                 ed.say("ground levelled");
             }
             return;
@@ -2881,7 +2684,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             ed.bank(m);
             if (wet) {
                 m.water = [_]u8{0} ** wf.WATER_CELLS;
-                ed.rebuild(m, env); // the flora scatter reads `inWater`, so draining re-sows the bed
+                ed.rebuild(m, env);
                 ed.say("water cleared");
             } else {
                 m.soil = [_]u8{0} ** wf.SOIL_CELLS;
@@ -2918,8 +2721,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         y += ROW_H;
         changed = ui.stepperF(ctx, x, y, w, "yaw", &fo.yaw, 15, -360, 720) or changed;
         y += ROW_H;
-        // THE FORMAT'S OWN BAND, not a second copy of it: `wf.FOE_SCALE_*` is documented as the parser's limit
-        // AND this stepper's, so a hand-edited file is the only way past it.
         changed = ui.stepperF(ctx, x, y, w, "scale", &fo.scale, 0.02, wf.FOE_SCALE_LO, wf.FOE_SCALE_HI) or changed;
         y += ROW_H;
         changed = ui.stepperF(ctx, x, y, w, "phase", &fo.seed, 0.05, 0, 1) or changed;
@@ -2938,7 +2739,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         hud.mono("ZONES", x, y, hud.MONO, ui.TITLE);
         y += ROW_H + 4;
         var changed = false;
-        // Snapshot BEFORE any slider runs, or the gesture banks post-edit densities and Ctrl+Z is a no-op.
         var before: [wf.MAX_ZONES]f32 = undefined;
         for (m.zones[0..m.nzones], 0..) |*z, i| before[i] = z.density;
         for (m.zones[0..m.nzones], 0..) |*z, i| {
@@ -2954,18 +2754,13 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             y += ROW_H + SLIDER_DROP;
         }
         y += 6;
-        // THE NAME, for whichever zone is picked.
         if (ed.zoneSel) |zi| {
             if (zi < m.nzones) {
                 hud.mono("name", x, y, hud.MONO, ui.LABEL);
                 y += hud.monoLineH(hud.MONO) + 2;
-                // Focused only with no modal up — getCharPressed is ONE shared queue, and this field
-                // drawing first would otherwise drain every keystroke meant for the Save-As dialog.
                 const focused = ed.modal == .none;
-                ed.textFocus = focused; // ...and while it IS focused, update()'s shortcuts stand down
+                ed.textFocus = focused;
                 ui.textField(ctx, ui.rect(x, y, w, 26), &ed.zoneNameBuf, &ed.zoneNameLen, focused);
-                // The saved grammar reads the name as ONE whitespace token and `#` starts a comment —
-                // a space or `#` here writes a map that can never load again.
                 for (ed.zoneNameBuf[0..ed.zoneNameLen]) |*ch| {
                     if (ch.* == ' ' or ch.* == '#') ch.* = '_';
                 }
@@ -3072,7 +2867,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             y += ROW_H;
             changed = ui.stepperI(ctx, x, y, w, "count", &o.n, 1, 2, RING_N_MAX) or changed;
             y += ROW_H;
-            // -1 is "no gap"; the top is the last position a ring of RING_N_MAX can have.
             changed = ui.stepperI(ctx, x, y, w, "gap at", &o.skip, 1, -1, RING_N_MAX - 1) or changed;
             y += ROW_H;
         },
@@ -3097,8 +2891,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         y += ROW_H;
         changed = ui.stepperF(ctx, x, y, w, "scale hi", &o.sHi, 0.05, 0.1, 3) or changed;
         y += ROW_H;
-        // Only once an edit has actually happened: unconditionally, merely SELECTING a hand-authored op with
-        // the band the wrong way round rewrote the map behind a clean dirty flag.
         if (changed and o.sHi < o.sLo) o.sHi = o.sLo;
         changed = ui.stepperF(ctx, x, y, w, "lean max", &o.lean, 1, 0, LEAN_LIM) or changed;
         y += ROW_H;
@@ -3128,7 +2920,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         }
     }
 
-    // Order matters (ivy climbs what came before it), so moving an op is a real operation.
     if (ui.buttonTip(ctx, ui.rect(x, y, 44, 24), "up", hud.MONO, false, "Run EARLIER - order decides what later ops can see")) {
         if (s > 0) {
             ed.bank(m);
@@ -3171,15 +2962,13 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.C
     rl.drawRectangle(px, py, MINI_W - 8, MINI_W - 8, ui.col(18, 20, 14, 255));
 
     blitField(m.soil[0..], wf.SOIL_N, px, py, inner, null);
-    // `env.heightAny` IS `m.anyHeight()`, cached where the lattice is uploaded. Asked of the map it is a
-    // 224x224 = 50 KB scan with no early-out on a flat world, twice a frame for as long as the editor is up.
     if (env.heightAny) {
         const rCellPx = inner / @as(f32, @floatFromInt(RELIEF_N));
         for (0..RELIEF_N) |cz| {
             for (0..RELIEF_N) |cx| {
                 const i = (cz * RELIEF_STRIDE) * wf.HEIGHT_N + cx * RELIEF_STRIDE;
                 const h = wf.heightOf(m.height[i]);
-                if (@abs(h) < wf.HEIGHT_STEP) continue; // ground at the datum: leave the soil showing
+                if (@abs(h) < wf.HEIGHT_STEP) continue;
                 // Saturating at ±12 m, which is a hill you would notice; past that it is just white.
                 const k = mathx.clampF(h / 12.0, -1, 1);
                 const a: u8 = mathx.u8f(@abs(k) * 150.0);
@@ -3204,8 +2993,6 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.C
         }
     }.f;
 
-    // OFF THE MAP IS OFF THE PANEL: a coordinate stepper reaches ±COORD_LIM and a marquee drag is unclamped,
-    // so a marker past ±half was drawn straight across the properties panel beside it.
     const onMap = struct {
         fn f(wx: f32, wz: f32, half: f32) bool {
             return @abs(wx) <= half and @abs(wz) <= half;
@@ -3225,8 +3012,6 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.C
         const p = toMini(f.x, f.z, m.half, px, py, inner);
         rl.drawCircleV(p, 2.5, ui.col(220, 120, 90, if (ed.layer == .units) 255 else 110));
     }
-    // The EYE is pinned to the rim instead of dropped — full zoom on a small map puts it well outside, and a
-    // "you are here" that disappears reads worse than one held against the edge it left by.
     const cp = toMini(
         mathx.clampF(ed.cam.position.x, -m.half, m.half),
         mathx.clampF(ed.cam.position.z, -m.half, m.half),
@@ -3240,7 +3025,6 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.C
     rl.drawCircleV(cp, 3, ui.HOT);
 
     if (ctx.pressed and rl.checkCollisionPointRec(ctx.mouse, r)) {
-        // Clamped because the hit rect is the PANEL and the projection is the inner square inside its border.
         const t = mathx.clampF((ctx.mouse.x - @as(f32, @floatFromInt(px))) / inner, 0, 1);
         const u = mathx.clampF((ctx.mouse.y - @as(f32, @floatFromInt(py))) / inner, 0, 1);
         ed.lookAtGround(-m.half + t * 2 * m.half, -m.half + u * 2 * m.half, 60);
@@ -3250,16 +3034,12 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.C
 
 const WATER_SWATCH = ui.col(32, 55, 62, 255);
 
-/// The minimap's RELIEF overlay: how many cells a side it samples the height lattice down to, and the step that
-/// takes. `HEIGHT_N` must divide by it exactly or the last column reads a row it does not mean.
 const RELIEF_N: usize = 56;
 const RELIEF_STRIDE: usize = wf.HEIGHT_N / RELIEF_N;
 comptime {
     std.debug.assert(RELIEF_N * RELIEF_STRIDE == wf.HEIGHT_N);
 }
 
-/// ONE RUN-LENGTH BLIT for both painted grids: skip 0, coalesce equal neighbours, one rect per run. `paint` is
-/// the single colour a MASK draws in (water); null means the byte is a material id and picks its own swatch.
 fn blitField(cells: []const u8, n: usize, px: i32, py: i32, inner: f32, paint: ?rl.Color) void {
     const cellPx = inner / @as(f32, @floatFromInt(n));
     for (0..n) |cz| {
@@ -3272,7 +3052,6 @@ fn blitField(cells: []const u8, n: usize, px: i32, py: i32, inner: f32, paint: ?
                 continue;
             }
             var run: usize = 1;
-            // A mask coalesces any non-zero together; a material grid only coalesces its OWN id.
             while (cx + run < n and (if (paint == null) row[cx + run] == id else row[cx + run] != 0)) run += 1;
             rl.drawRectangleRec(.{
                 .x = @as(f32, @floatFromInt(px)) + @as(f32, @floatFromInt(cx)) * cellPx,
@@ -3301,7 +3080,6 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
     ui.panel(ctx, ui.rect(0, sh - STATUS_H, sw, STATUS_H), null);
     const ty = sh - STATUS_H + 5;
 
-    // RIGHT FIRST, so the left side knows how much room is actually left.
     var buf: [200]u8 = undefined;
     const g = ed.groundAt() orelse mathx.zero3;
     var hbuf: [24]u8 = undefined;
@@ -3325,14 +3103,11 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
     const rightX = sw - hud.monoW(right, hud.MONO) - CHROME_PAD;
     hud.mono(right, rightX, ty, hud.MONO, if (ed.dirty) ui.HOT else ui.LABEL);
 
-    const room = rightX - GUTTER; // px the left side may use before it touches the readout
+    const room = rightX - GUTTER;
     if (ed.statusT > 0 and ed.statusLen > 0) {
         var msg: [ui.MSG_CAP]u8 = undefined;
         var len = @min(ed.statusLen, msg.len - 1);
         @memcpy(msg[0..len], ed.status[0..len]);
-        // THE FACE IS MONOSPACE, so the fit is one divide — shrinking a character at a time and re-measuring
-        // is O(n²) glyph work on a line that can be 120 characters long. The `4` floor keeps a very narrow
-        // window showing something.
         const adv = hud.monoW("M", hud.MONO);
         if (adv > 0) {
             const fits: usize = @intCast(@max(0, @divTrunc(room - CHROME_PAD, adv)));
@@ -3352,12 +3127,9 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
     }
 }
 
-/// HOW FAST `,`/`.` WALK THE CLOCK, in game hours a real second, plain and with Shift. The slow one is about
-/// four seconds a day — fast enough to sweep, slow enough to stop on a light you like.
 const EDIT_HOUR_RATE: f32 = 6.0;
 const EDIT_HOUR_FAST: f32 = 24.0;
 
-/// The keyboard crib, widest first — the status bar shows the longest one that fits.
 const CRIBS = [_][:0]const u8{
     "LMB brush   Shift+LMB drag marquee   RMB menu / deselect, drag rotates   wheel zoom   WASD+arrows pan   Tab layer   ,/. time   Esc back",
     "LMB brush   Shift+LMB marquee   RMB menu, drag rotates   wheel zoom   WASD pan   Tab layer   ,/. time",
@@ -3380,8 +3152,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             hud.mono(s, box.x + DLG_PAD, y, hud.MONO, ui.VALUE);
             const by = box.y + box.h - DLG_FOOT;
             if (ui.button(ctx, ui.rect(box.x + DLG_PAD, by, 120, DLG_BTN_H), "Save first", hud.MONO, false) or confirm) {
-                // A FAILED save may not proceed — the pending New/Open/Leave would discard the very
-                // edits this dialog exists to protect. The SAVE FAILED status line stays up instead.
                 if (ed.saveNow(m)) {
                     const what = ed.pending;
                     ed.modal = .none;
@@ -3391,7 +3161,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             }
             if (ui.button(ctx, ui.rect(box.x + 154, by, 120, DLG_BTN_H), "Discard", hud.MONO, false)) {
                 const what = ed.pending;
-                ed.dirty = false; // the discard IS the decision; don't ask twice
+                ed.dirty = false;
                 ed.modal = .none;
                 ed.commitPending(what);
                 return;
@@ -3403,10 +3173,8 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
         },
         .loot => {
             const rows: i32 = @intCast(item.NK);
-            // The heading names WHAT IS BEING FILLED: two kinds hold loot now, and a panel that always said
-            // "Chest" would be lying on half the things it opens over.
             const sPre = lootOp(ed, m) orelse {
-                ed.modal = .none; // the selection went away under it
+                ed.modal = .none;
                 return;
             };
             const title: [:0]const u8 = if (m.ops[sPre].kind == .chest) "Chest contents" else "Item contents";
@@ -3421,7 +3189,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 const k: item.Kind = @enumFromInt(i);
                 const y = box.y + LOOT_TOP + @as(i32, @intCast(i)) * LOOT_ROW_H;
                 hud.mono(item.displayName(k), box.x + DLG_PAD, y + 5, hud.MONO, ui.VALUE);
-                // **WHAT THE THING ACTUALLY DOES, on the row that puts it in the world** (owner's ask, twice).
                 var ebuf: [item.EFFECT_BUF]u8 = undefined;
                 var tbuf: [item.EFFECT_BUF + 32]u8 = undefined;
                 const tip = std.fmt.bufPrintZ(&tbuf, "{s}  -  {s}", .{ item.class(k).label(), item.effect(k, &ebuf) }) catch item.effect(k, &ebuf);
@@ -3430,7 +3197,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 var nbuf: [8]u8 = undefined;
                 const ns = std.fmt.bufPrintZ(&nbuf, "{d}", .{n}) catch "0";
                 hud.mono(ns, box.x + 340, y + 5, hud.MONO, if (n > 0) ui.VALUE else ui.LABEL);
-                // Guarded on the row actually changing, so a click on a full (or empty) row costs no undo step.
                 if (ui.button(ctx, ui.rect(box.x + 368, y, 24, 22), "-", hud.MONO, false) and n > 0) {
                     ed.bank(m);
                     lootRemove(o, k);
@@ -3444,8 +3210,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 ed.modal = .none;
             }
         },
-        // WHAT GROWS IN A ZONE. The loot modal's own shape and for its reason: a WEIGHTED mix is a kind
-        // repeated, so "how many of this kind" is the only control it needs.
         .zonemix => {
             const rows: i32 = @intCast(props.FLORA_KINDS.len);
             const box = ui.beginModal(ctx, 470, LOOT_TOP + rows * LOOT_ROW_H + 8 + DLG_FOOT, "What grows here");
@@ -3472,8 +3236,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 hud.mono(props.displayName(k), box.x + DLG_PAD, y + 5, hud.MONO, if (n > 0) ui.VALUE else ui.LABEL);
                 var nbuf: [8]u8 = undefined;
                 hud.mono(std.fmt.bufPrintZ(&nbuf, "{d}", .{n}) catch "0", box.x + 340, y + 5, hud.MONO, if (n > 0) ui.VALUE else ui.LABEL);
-                // MORE OF A KIND IS MORE WEIGHT — `Zone.pick` draws uniformly from the list, so a kind
-                // written twice comes up twice as often. That is the whole of the weighting the format has.
                 if (ui.button(ctx, ui.rect(box.x + 368, y, 24, 22), "-", hud.MONO, false) and n > 0) {
                     ed.bank(m);
                     mixRemove(z, k);
@@ -3489,8 +3251,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 ed.modal = .none;
             }
         },
-        // THE MAP ITSELF: how big the world is, where the runway lies, and the cliff rim (`edge`), which
-        // only `Map.blank` could otherwise create. Their own modal — none is a thing you place with a brush.
         .world => {
             const box = ui.beginModal(ctx, WORLD_W, WORLD_H, "World");
             const x = box.x + DLG_PAD;
@@ -3502,8 +3262,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
 
             hud.mono("SIZE", x, y, hud.MONO, ui.TITLE);
             y += ROW_H + 4;
-            // THE LOADER'S OWN BAND (`wf.MAX_DECLARED_HALF`), and the grid's floor under it: `env`'s cell
-            // index is sized off `MAX_HALF`, so a half past it would clamp cells together silently.
             changed = ui.stepperF(ctx, x, y, w, "half extent", &m.half, 5, 40, wf.MAX_DECLARED_HALF) or changed;
             y += ROW_H;
             var hb: [72]u8 = undefined;
@@ -3549,13 +3307,9 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 ui.alpha(ui.LABEL, 190),
             );
             y += hud.monoLineH(hud.MONO) + 4;
-            // A QUARTER HOUR A TAP, the debug row's own step: the finest move whose effect on the light you
-            // can actually see. It writes through `Clock.set`, which is the one thing that wraps the hour.
             var hourNow = day.hour;
             if (ui.stepperF(ctx, x, y, w, "hour", &hourNow, HOUR_STEP, 0, 24)) day.set(hourNow);
             y += ROW_H;
-            // …AND THE HOURS WORTH AUTHORING AT, as buttons. The ANCHOR is the one the whole game was
-            // photographed under (`daynight.SHOT_HOUR`), so it is the one a belt of trees must read at.
             {
                 const bw: i32 = @divTrunc(w - 3 * 6, 4);
                 for (HOUR_MARKS, 0..) |mk, i| {
@@ -3582,14 +3336,12 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             );
             y += hud.monoLineH(hud.MONO) + 6;
             if (ui.buttonTip(ctx, ui.rect(x, y, 190, 24), "Add cliff rim", hud.MONO, false, "A ring of cliffs round the world's edge - what a new map is given, and the one op no brush could make")) {
-                // THE CAP CHECK COMES BEFORE THE SNAPSHOT, like every other adding path: banking first
-                // costs an undo step and a dirty flag for an op that never landed.
                 if (m.nops >= wf.MAX_OPS) {
                     ed.say(FULL_MSG);
                 } else {
                     ed.bank(m);
                     if (m.add(freshRim(ed, m))) |idx| {
-                        _ = ed.sinkBeforeCover(m, idx); // `blank` puts the rim BEFORE the cover pass; so must this
+                        _ = ed.sinkBeforeCover(m, idx);
                         ed.rebuild(m, env);
                         ed.say("+rim");
                     } else |_| ed.say(FULL_MSG);
@@ -3611,7 +3363,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             const box = ui.beginModal(ctx, JUKE_W, JUKE_H, "Sounds");
             if (ui.list(ctx, ui.rect(box.x + 20, box.y + 56, JUKE_LIST_W, JUKE_LIST_H), &VOICE_NAMES, ed.juke, &ed.jukeScroll)) |i| {
                 ed.juke = i;
-                ed.jukePlay(); // a click IS the audition — this is a listen tool, not a chooser
+                ed.jukePlay();
             }
             const nfo = sfx.voiceInfo(@enumFromInt(@min(ed.juke, VOICE_NAMES.len - 1)));
             const cx = box.x + 40 + JUKE_LIST_W;
@@ -3642,14 +3394,11 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             else
                 "at the ear";
             hud.mono(ds, cx, cy, hud.MONO, ui.alpha(ui.LABEL, 170));
-            // THE FILTER RACK, third column.
             rackPanel(ed, ctx, box.x + JUKE_W - RACK_W - 20, box.y + 56);
 
             const by = box.y + box.h - DLG_FOOT;
             if (ui.button(ctx, ui.rect(box.x + 20, by, 150, DLG_BTN_H), "Play again", hud.MONO, false) or confirm) ed.jukePlay();
             if (ui.button(ctx, ui.rect(box.x + 180, by, 120, DLG_BTN_H), "Done", hud.MONO, false)) {
-                // The racks live in `settings.cfg` beside the levels, and are written when the panel closes
-                // rather than per nudge — the menu's own rule, kept now that the panel has moved here.
                 sfx.saveSettings();
                 ed.modal = .none;
             }
@@ -3709,12 +3458,10 @@ const menuRows = [_]struct { act: MenuItem, label: [:0]const u8 }{
     .{ .act = .close, .label = "Close" },
 };
 
-const MENU_W: i32 = 150; // the FLOOR; the menu grows to fit its widest row (see drawContextMenu)
-const MENU_EDGE: i32 = 4; // clear space kept between the menu and the screen edge
+const MENU_W: i32 = 150;
+const MENU_EDGE: i32 = 4;
 
 
-/// **WHICH SELECTION HAS CONTENTS TO EDIT.** Off `props.holdsLoot` rather than a kind named here, so a third
-/// thing that holds items is one row in that predicate and no edit in the editor at all.
 fn lootOp(ed: *const Editor, m: *const wf.Map) ?usize {
     const s = ed.sel orelse return null;
     if (s >= m.nops) return null;
@@ -3729,8 +3476,6 @@ fn lootCount(o: *const wf.Op, k: item.Kind) u8 {
     return n;
 }
 
-/// A ZONE'S MIX, counted / added / removed — `lootCount`/`lootAdd`/`lootRemove` for a different list, and
-/// kept beside them rather than folded into a generic: the only thing the two share is the swap-down trick.
 fn mixCount(z: *const wf.Zone, k: Kind) u8 {
     var n: u8 = 0;
     for (z.mix[0..z.nmix]) |it| {
@@ -3749,14 +3494,14 @@ fn mixRemove(z: *wf.Zone, k: Kind) void {
     var i: u8 = 0;
     while (i < z.nmix) : (i += 1) {
         if (z.mix[i] != k) continue;
-        z.mix[i] = z.mix[z.nmix - 1]; // order carries no meaning in a weighted draw
+        z.mix[i] = z.mix[z.nmix - 1];
         z.nmix -= 1;
         return;
     }
 }
 
 fn lootAdd(o: *wf.Op, k: item.Kind) void {
-    if (o.nloot >= wf.MAX_LOOT) return; // full: the counter above says so, so this needs no complaint
+    if (o.nloot >= wf.MAX_LOOT) return;
     o.loot[o.nloot] = k;
     o.nloot += 1;
 }
@@ -3765,7 +3510,7 @@ fn lootRemove(o: *wf.Op, k: item.Kind) void {
     var i: u8 = 0;
     while (i < o.nloot) : (i += 1) {
         if (o.loot[i] != k) continue;
-        o.loot[i] = o.loot[o.nloot - 1]; // swap the last one down — order carries no meaning here
+        o.loot[i] = o.loot[o.nloot - 1];
         o.nloot -= 1;
         return;
     }
@@ -3775,10 +3520,8 @@ const RACK_W: i32 = 356;
 const RACK_GAP: i32 = 14;
 
 const WORLD_W: i32 = 420;
-/// …and it grew by the LIGHT section (a readout, a stepper and the row of marks).
 const WORLD_H: i32 = 470 + 96;
 
-/// How far one tap of the world card's hour moves the clock — `menu.HOUR_TAP`'s own figure, for its reason.
 const HOUR_STEP: f32 = 0.25;
 /// THE HOURS WORTH AUTHORING AT. The anchor is not negotiable (every albedo in the game was measured under
 /// it); the other three are the lights a belt of flora has to survive.
@@ -3790,17 +3533,12 @@ const HOUR_MARKS = [_]HourMark{
     .{ .name = "Night", .at = 0.5, .tip = "Moonlight - what the fires have to carry" },
 };
 
-/// A CLIFF RIM — the ONE op no brush can make, because it is world-wide: nowhere to stamp it, no gizmo to
-/// drag it by. The numbers are `wf.Map.defaultRim`'s; this only adds the editor's own seed counter, which
-/// is the one thing `blank` has no access to.
 fn freshRim(ed: *Editor, m: *const wf.Map) wf.Op {
     var rim = wf.Map.defaultRim();
     rim.seed = ed.freshSeed(m);
     return rim;
 }
 
-/// THE SOUND FILTER RACK, one family at a time. It lives here rather than in the game's options because it
-/// is an authoring tool, and the one place a voice can be played on demand is the list to its left.
 fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32) void {
     var y = y0;
     hud.mono("FILTER RACK", x, y, hud.MONO, ui.TITLE);
@@ -3817,22 +3555,17 @@ fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32) void {
     }
     y += ROW_H + 8;
 
-    // TWO COLUMNS. Eleven sliders in one stack is taller than the box, and a rack is a thing you read across
-    // as much as down — the EQ pair lands at the foot of the second column, where a tone control belongs.
     const colW = (RACK_W - RACK_GAP) / 2;
     const perCol = (sfx.AFX_COUNT + 1) / 2;
     const vals = sfx.fxValues(ed.rackMix);
     for (0..sfx.AFX_COUNT) |i| {
         var v = vals[i];
-        // The NAME alone: `ui.slider` prints the value itself at the right of the same line, and a percentage
-        // beside it collided with that readout on a column this narrow.
         const lab = sfx.AFX_NAMES[i];
         const cxx = x + @as(i32, @intCast(i / perCol)) * (colW + RACK_GAP);
         const cyy = y + @as(i32, @intCast(i % perCol)) * RACK_ROW;
         if (ui.slider(ctx, cxx, cyy, colW, lab, &v, 0, 1)) sfx.setFx(ed.rackMix, i, v);
     }
     y += @as(i32, @intCast(perCol)) * RACK_ROW + 6;
-    // The presets, two to a row — the same five the menu offered, off `sfx`'s own tables.
     const PRESETS = [_]struct { n: [:0]const u8, p: []const sfx.FxPreset }{
         .{ .n = "Vinyl", .p = &sfx.FX_VINYL },
         .{ .n = "AM Radio", .p = &sfx.FX_RADIO },
@@ -3950,7 +3683,7 @@ test "a held eraser sweeps, and holding still erases exactly once" {
     ed.wipeStep(m, env, v3(0, 0, 0));
     try std.testing.expectEqual(@as(usize, 3), m.nfoes);
     for (0..30) |_| {
-        ed.wipe.t = 1.0; // rate gate wide open; only the travel gate is under test
+        ed.wipe.t = 1.0;
         ed.wipeStep(m, env, v3(0, 0, 0));
     }
     try std.testing.expectEqual(@as(usize, 3), m.nfoes);
@@ -3961,7 +3694,6 @@ test "a held eraser sweeps, and holding still erases exactly once" {
     }
     try std.testing.expectEqual(@as(usize, 0), m.nfoes);
 
-    // ONE undo step for the whole stroke, restoring every spawn.
     try std.testing.expectEqual(@as(usize, 1), undoN);
     ed.wipeEnd();
     try std.testing.expect(ed.undo(m));
@@ -3983,7 +3715,6 @@ test "the rate gate paces a sweep, and an empty sweep costs no undo step" {
     ed.radius = 1.5;
     undoReset();
 
-    // Travelled far enough but the rate gate has not elapsed: the second spawn survives.
     ed.wipeStep(m, env, v3(0, 0, 0));
     try std.testing.expectEqual(@as(usize, 1), m.nfoes);
     ed.wipe.t = 0;
@@ -3993,7 +3724,6 @@ test "the rate gate paces a sweep, and an empty sweep costs no undo step" {
     ed.wipeStep(m, env, v3(6, 0, 0));
     try std.testing.expectEqual(@as(usize, 0), m.nfoes);
 
-    // A stroke over empty ground banks nothing and leaves the map clean.
     undoReset();
     var idle = Editor{};
     idle.layer = .units;

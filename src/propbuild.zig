@@ -32,10 +32,10 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(5150);
     b.setMat(.stone);
-    const hw: f32 = 2.6; // wall centre-lines
+    const hw: f32 = 2.6;
     const hl: f32 = 3.6;
-    const wt: f32 = 0.42; // wall half-thickness
-    const wh: f32 = 4.4; // wall height
+    const wt: f32 = 0.42;
+    const wh: f32 = 4.4;
 
     b.addCube(v3(0, 0.06, 0), v3(2 * hw + 0.5, 0.12, 2 * hl + 0.5), STONE_DK);
     var fx: i32 = 0;
@@ -44,16 +44,15 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
         while (fz < 6) : (fz += 1) {
             const x = (@as(f32, @floatFromInt(fx)) - 1.5) * 1.28;
             const z = (@as(f32, @floatFromInt(fz)) - 2.5) * 1.20;
-            if (rng.float() < 0.18) continue; // stones lifted / lost
+            if (rng.float() < 0.18) continue;
             b.addCube(v3(x + rng.signed() * 0.05, 0.13, z + rng.signed() * 0.05), v3(rng.range(1.0, 1.2), 0.06, rng.range(0.95, 1.14)), if (rng.float() < 0.4) STONE else STONE_DK);
         }
     }
     courseInto(&b, &rng, -hw, -hl, hw, -hl, .{ .thick = wt, .height = wh, .gapLo = -1.15, .gapHi = 1.15, .sillY = -0.1, .headY = 2.9 });
-    b.addCube(v3(0, 3.05, -hl), v3(2.9, 0.30, 2 * wt + 0.06), STONE_LT); // door lintel
+    b.addCube(v3(0, 3.05, -hl), v3(2.9, 0.30, 2 * wt + 0.06), STONE_LT);
     courseInto(&b, &rng, -hw, hl, hw, hl, .{ .thick = wt, .height = wh, .gapLo = -0.45, .gapHi = 0.45, .sillY = 2.5, .headY = 3.7 });
     courseInto(&b, &rng, -hw, -hl, -hw, hl, .{ .thick = wt, .height = wh, .gapLo = -0.7, .gapHi = 0.8, .sillY = 1.5, .headY = 3.1 });
     courseInto(&b, &rng, hw, -hl, hw, hl, .{ .thick = wt, .height = wh, .gapLo = 0.2, .gapHi = 1.7, .sillY = 1.6, .headY = 3.2 });
-    // Corner quoins tie the runs together (four bare wall ends read as a flat-pack kit).
     for ([_]f32{ -hw, hw }) |cx| {
         for ([_]f32{ -hl, hl }) |cz| {
             var c: i32 = 0;
@@ -71,7 +70,7 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
         for ([_]f32{ -1, 1 }) |sgn| {
             b.addBox(v3(sgn * (hw + 0.15) * 0.5, wh + 0.55, z), v3(sgn * (hw + 0.15) * 0.5, -0.42, 0), v3(0, 0.10, 0), v3(0, 0, 0.10), TIMBER_DK);
         }
-        if (z < -1.3) continue; // the south end has lost its covering; the altar two thirds keeps it
+        if (z < -1.3) continue;
         b.setMat(.stone);
         for ([_]f32{ -1, 1 }) |sgn| {
             const run = (hw + 0.25) * 0.5;
@@ -88,7 +87,7 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
     b.addCube(v3(0, 0.55, 2.9), v3(2.5, 0.85, 1.0), STONE_DK);
     b.addCube(v3(0, 1.02, 2.9), v3(2.9, 0.20, 1.25), STONE_LT);
     b.addCylinder(v3(0.65, 1.12, 2.9), v3(0.65, 1.34, 2.9), 0.26, 0.30, 8, STONE);
-    b.addCube(v3(-0.75, 1.20, 2.86), v3(0.35, 0.16, 0.35), STONE_DK); // a fallen fragment on the mensa
+    b.addCube(v3(-0.75, 1.20, 2.86), v3(0.35, 0.16, 0.35), STONE_DK);
     for ([_]f32{ -1.55, 1.55 }) |cx| {
         var ci: i32 = 0;
         while (ci < 3) : (ci += 1) {
@@ -109,7 +108,7 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
         b.addBox(v3(x, 0.16 + s * 0.4, z), v3(s, 0, rng.signed() * 0.1), v3(rng.signed() * 0.08, s * 0.42, 0), v3(0, 0, s * rng.range(0.5, 1.0)), if (rng.float() < 0.4) STONE_MOSS else STONE_DK);
     }
     b.setMat(.plant);
-    tuftInto(&b, &rng, -1.9, -2.6, 0.8); // grass coming up through the floor
+    tuftInto(&b, &rng, -1.9, -2.6, 0.8);
     tuftInto(&b, &rng, 2.0, 0.4, 0.7);
     return b.toModel(shader);
 }
@@ -132,7 +131,6 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
             return v3(mathx.cosf(a) * len, 0, mathx.sinf(a) * len);
         }
     }.v;
-    // Splayed plinth — a tower that meets the ground at a right angle reads as pasted on.
     var p: i32 = 0;
     while (p < sides) : (p += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(p)) / @as(f32, @floatFromInt(sides));
@@ -143,7 +141,7 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
     while (cr < 12) : (cr += 1) {
         var ci: i32 = 0;
         while (ci < sides) : (ci += 1) {
-            if (cr < 4 and towerDoorway(ci)) continue; // the core dodges the doorway too
+            if (cr < 4 and towerDoorway(ci)) continue;
             const a = std.math.tau * (@as(f32, @floatFromInt(ci)) + 0.5) / @as(f32, @floatFromInt(sides));
             const at = radial(a, R);
             b.addBox(
@@ -168,7 +166,7 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
             if ((c == 7 or c == 8) and (i == 2 or i == 9)) continue;
             if (rng.float() < crumble) continue;
             const at = radial(a, R);
-            const bw = (std.math.tau * R / @as(f32, @floatFromInt(sides))) * rng.range(1.24, 1.52); // blocks OVERLAP their slot
+            const bw = (std.math.tau * R / @as(f32, @floatFromInt(sides))) * rng.range(1.24, 1.52);
             b.addBox(
                 v3(at.x, yc + rng.signed() * 0.02, at.z),
                 tangent(a, bw * 0.5),
@@ -186,10 +184,10 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
     while (pl < 8) : (pl += 1) {
         const x = (@as(f32, @floatFromInt(pl)) - 3.5) * 0.60;
         const halfSpan = @sqrt(@max(R * R - x * x, 0.04));
-        if (rng.float() < 0.16) continue; // planks fallen through
+        if (rng.float() < 0.16) continue;
         b.addCube(v3(x, 4.62, 0), v3(0.56, 0.14, halfSpan * 2.0), if (@mod(pl, 2) == 0) TIMBER else TIMBER_DK);
     }
-    b.addCylinder(v3(0, 4.42, 0), v3(0, 4.54, 0), R * 0.94, R * 0.94, sides, TIMBER_DK); // ring beam
+    b.addCylinder(v3(0, 4.42, 0), v3(0, 4.54, 0), R * 0.94, R * 0.94, sides, TIMBER_DK);
     b.setMat(.stone);
     var m: i32 = 0;
     while (m < sides) : (m += 1) {
@@ -262,16 +260,16 @@ pub fn cottageMesh(shader: rl.Shader) rl.Model {
                             if (r.float() < 0.3) STONE_LT else if (r.float() < 0.45) STONE_MOSS else STONE,
                         );
                     }
-                    t += w / L * 0.72; // stones OVERLAP; a butted row seams round each one
+                    t += w / L * 0.72;
                 }
                 y += ch * 0.78;
             }
         }
     }.go;
-    run(&b, &rng, -hw, hl, hw, hl, 2.55, 9, 9); // back wall, no opening
-    run(&b, &rng, -hw, -hl, -hw, hl, 2.55, -0.4, 0.7); // west wall, window
-    run(&b, &rng, hw, -hl, hw, hl, 2.55, 9, 9); // east wall
-    run(&b, &rng, -hw, -hl, hw, -hl, 1.15, -0.85, 0.85); // front wall, tumbled + a doorway gap
+    run(&b, &rng, -hw, hl, hw, hl, 2.55, 9, 9);
+    run(&b, &rng, -hw, -hl, -hw, hl, 2.55, -0.4, 0.7);
+    run(&b, &rng, hw, -hl, hw, hl, 2.55, 9, 9);
+    run(&b, &rng, -hw, -hl, hw, -hl, 1.15, -0.85, 0.85);
     var g: i32 = 0;
     while (g < 5) : (g += 1) {
         const t = @as(f32, @floatFromInt(g)) / 5.0;
@@ -279,7 +277,7 @@ pub fn cottageMesh(shader: rl.Shader) rl.Model {
     }
     b.addCube(v3(1.35, 1.7, hl + 0.34), v3(1.1, 3.4, 0.62), STONE_DK);
     b.addCube(v3(1.35, 3.55, hl + 0.34), v3(0.86, 0.5, 0.5), STONE);
-    b.addCube(v3(1.35, 0.55, hl - 0.1), v3(0.72, 1.1, 0.5), IRON); // the sooted hearth opening
+    b.addCube(v3(1.35, 0.55, hl - 0.1), v3(0.72, 1.1, 0.5), IRON);
     b.setMat(.wood);
     b.addCapsule(v3(0, 3.66, hl - 0.1), v3(0, 3.30, -hl + 0.6), 0.10, 0.08, 6, TIMBER_DK);
     var rf: i32 = 0;
@@ -318,8 +316,8 @@ pub fn causewayMesh(shader: rl.Shader) rl.Model {
     var i: i32 = 0;
     while (i < 14) : (i += 1) {
         const x = -5.0 + (@as(f32, @floatFromInt(i)) + 0.5) * (10.0 / 14.0);
-        if (i == 8 or i == 9) continue; // the collapsed span
-        const sink = if (i == 7 or i == 10) rng.range(0.02, 0.06) else 0.0; // slabs slumping toward the gap
+        if (i == 8 or i == 9) continue;
+        const sink = if (i == 7 or i == 10) rng.range(0.02, 0.06) else 0.0;
         b.addBox(
             v3(x, 0.14 - sink, rng.signed() * 0.05),
             v3(0.36 * rng.range(0.9, 1.1), rng.signed() * 0.012, 0),
@@ -342,7 +340,7 @@ pub fn causewayMesh(shader: rl.Shader) rl.Model {
         b.addBlob(v3(rng.range(-1.0, 2.4), r * 0.5, rng.range(-2.2, 2.2)), v3(r, r * 0.6, r * 1.1), 3, 5, STONE_DK);
     }
     b.setMat(.plant);
-    tuftInto(&b, &rng, rng.range(-4.5, 4.5), 1.75, 0.7); // weeds in the kerb joints
+    tuftInto(&b, &rng, rng.range(-4.5, 4.5), 1.75, 0.7);
     tuftInto(&b, &rng, rng.range(-4.5, 4.5), -1.75, 0.6);
     return b.toModel(shader);
 }
@@ -358,25 +356,24 @@ pub fn pavingMesh(shader: rl.Shader) rl.Model {
         const d = rng.range(0.4, 1.7);
         h.* = .{ mathx.cosf(a) * d, mathx.sinf(a) * d, rng.range(0.30, 0.62) };
     }
-    // A ROAD IS LAID, NOT SCATTERED.
     const PITCH: f32 = 0.30;
     const HALFN: i32 = 8; // cells each way from centre — covers the 2.2 m disc
     var gz: i32 = -HALFN;
     while (gz <= HALFN) : (gz += 1) {
-        const rowOff: f32 = if (@mod(gz, 2) == 0) 0 else PITCH * 0.5; // the running bond
+        const rowOff: f32 = if (@mod(gz, 2) == 0) 0 else PITCH * 0.5;
         var gx: i32 = -HALFN;
         while (gx <= HALFN) : (gx += 1) {
             const px = @as(f32, @floatFromInt(gx)) * PITCH + rowOff + rng.signed() * 0.035;
             const pz = @as(f32, @floatFromInt(gz)) * PITCH + rng.signed() * 0.035;
-            if (px * px + pz * pz > 2.2 * 2.2) continue; // keep the patch round
-            var lost = rng.float() < 0.07; // the odd sett prised out
+            if (px * px + pz * pz > 2.2 * 2.2) continue;
+            var lost = rng.float() < 0.07;
             for (holes) |h| {
                 const dx = px - h[0];
                 const dz = pz - h[1];
                 if (dx * dx + dz * dz < h[2] * h[2]) lost = true;
             }
             if (lost) continue;
-            const w = PITCH * rng.range(1.02, 1.20); // butted, then some — the joint is a shadow
+            const w = PITCH * rng.range(1.02, 1.20);
             const l = PITCH * rng.range(0.95, 1.25);
             const wob = rng.signed() * 0.09; // a few degrees of wander off the course line
             b.addBox(

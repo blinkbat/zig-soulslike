@@ -1,6 +1,5 @@
 const std = @import("std");
 
-// THE CHARACTER SHEET: seven attributes, and the curves that turn three of them into the bars.
 
 pub const Attr = enum(u8) {
     vitality,
@@ -14,9 +13,6 @@ pub const Attr = enum(u8) {
 
 pub const NA = @typeInfo(Attr).@"enum".fields.len;
 
-/// Every attribute starts here, and 15 is not arbitrary: it is the level at which each curve below yields
-/// exactly the HP / FP / stamina the game was already tuned around, so putting the bars behind attributes
-/// moved nothing.
 pub const START: u8 = 15;
 pub const MAX: u8 = 99;
 
@@ -32,15 +28,11 @@ pub fn displayName(a: Attr) [:0]const u8 {
     };
 }
 
-/// WHAT IT DOES — and for an attribute nothing reads, that nothing reads it. There is no such row today
-/// (`inert`), but a line that does not say so is a lie on the character sheet the day there is one again.
 pub fn governs(a: Attr) [:0]const u8 {
     return switch (a) {
         .vitality => "Governs HP.",
         .mind => "Governs FP.",
         .endurance => "Governs stamina.",
-        // **NO EM DASHES IN A LINE THE PLAYER READS.** The bundled face has no glyph for one and `hud` draws it
-        // as a question mark, so the repo's own prose uses " - " (`item.describe`'s thundercrock and scroll).
         .strength => "Skill with heavy arms - the club, and half of what the sword is worth.",
         .dexterity => "Skill with light arms - the dirk, the bow, and the sword's other half.",
         .intelligence => "Skill with sorcery - everything the rod throws.",
@@ -58,7 +50,6 @@ pub fn inert(a: Attr) bool {
     return false;
 }
 
-/// One leg of a curve: `per` a point, up to and including `upTo`.
 const Seg = struct { upTo: u8, per: f32 };
 
 /// `base` at one point, then each leg's rate until its cap. The caps are ER's documented SOFT CAPS (`docs/ELDEN_RING.md` §2) — the shape is ER's, the scale is this game's.
@@ -73,11 +64,9 @@ fn yield(pts: u8, base: f32, segs: []const Seg) f32 {
     return out;
 }
 
-// HP is deliberately shallow — 70 at the start, lowered from a flat 100 so a few solid blows kill (owner: raise the stakes). Vigor's caps are 40/60.
 const HP_BASE: f32 = 28.0;
 const HP_SEGS = [_]Seg{ .{ .upTo = 40, .per = 3.0 }, .{ .upTo = 60, .per = 1.6 }, .{ .upTo = MAX, .per = 0.6 } };
 
-// FP buys CASTS now (`combat.BOLT_FP`, off the wand), so Mind is how many of them a bonfire is worth — the curve was written for the day sorcery landed and this is that day. Mind's caps are ~35/50/60.
 const FP_BASE: f32 = 32.0;
 const FP_SEGS = [_]Seg{ .{ .upTo = 35, .per = 2.0 }, .{ .upTo = 60, .per = 1.0 }, .{ .upTo = MAX, .per = 0.4 } };
 
@@ -151,15 +140,10 @@ pub const Sheet = struct {
         self.pts[@intFromEnum(a)] = std.math.clamp(v, 1, MAX);
     }
 
-    /// POINTS ON TOP OF WHAT IS ALREADY THERE — a tree node hands them over (`passivetree.Bonus.sheet`) and so
-    /// does a piece of gear (`item.Boon`), and neither has to know the other exists. Saturating before the
-    /// clamp: `set` takes a `u8`, so a raw `at + n` would wrap to a LOW attribute rather than cap at 99.
     pub fn add(self: *Sheet, a: Attr, n: u8) void {
         self.set(a, self.at(a) +| n);
     }
 
-    /// WHAT THIS ATTRIBUTE'S SKILL MULTIPLIES A BLOW BY. Meaningless on the four that drive no damage, and
-    /// nothing asks it of them — the mapping from a weapon to its attribute is `hero.scaleOf`.
     pub fn scale(self: *const Sheet, a: Attr) f32 {
         return scaleFor(self.at(a));
     }
@@ -182,18 +166,12 @@ pub const Sheet = struct {
         return findFor(self.at(.luck));
     }
 
-    /// LEVEL IS NOT STORED, IT IS COUNTED: every point spent past the starting sheet, plus one. ER works
-    /// exactly this way, and storing it beside the points is how a sheet and its level drift apart.
     pub fn level(self: *const Sheet) u32 {
         var n: u32 = 1;
         for (self.pts) |p| n += @as(u32, p) -| START;
         return n;
     }
 
-    /// WHAT THIS ATTRIBUTE IS BUYING RIGHT NOW, or null for the four that feed no bar. THE one place the
-    /// attribute→bar binding is written: the character sheet asked the same question with a switch of its
-    /// own, so a fourth curve meant editing two files and forgetting the second showed a bare row. It is
-    /// EXHAUSTIVE, so a new attribute is a compile error until it has said whether it feeds a bar.
     pub fn barFor(self: *const Sheet, a: Attr) ?f32 {
         return switch (a) {
             .vitality => self.hp(),
@@ -236,7 +214,6 @@ test "THE SKILL CURVE IS 1.0 AT THE START, so wiring damage to an attribute move
     for ([_]Attr{ .strength, .dexterity, .intelligence }) |a| {
         try std.testing.expectApproxEqAbs(@as(f32, 1.0), s.scale(a), 1e-4);
     }
-    // Under-investment is a real penalty and a maxed skill is a real gain, but neither is a different game.
     try std.testing.expect(scaleFor(1) > 0.6 and scaleFor(1) < 0.8);
     try std.testing.expect(scaleFor(MAX) > 1.5 and scaleFor(MAX) < 2.0);
 }
@@ -245,21 +222,17 @@ test "NOTHING ON THE SHEET IS DEAD ANY MORE, and the page says so either way" {
     var dead: usize = 0;
     for (0..NA) |i| {
         const a: Attr = @enumFromInt(i);
-        // **THE LINE AND THE MECHANIC MAY NOT DISAGREE**, which is the whole reason `governs` is prose and not a
-        // number: an attribute something reads may not plead nothing-yet, and one nothing reads has to admit it.
         const pleads = std.mem.indexOf(u8, governs(a), " yet") != null;
         try std.testing.expectEqual(inert(a), pleads);
         if (inert(a)) dead += 1;
     }
     try std.testing.expectEqual(@as(usize, 0), dead);
-    // LUCK was the last one, and the drop tables are what it now reads (`drops.roll`).
     try std.testing.expect(!inert(.luck));
     try std.testing.expect(findFor(MAX) > findFor(START) and findFor(START) > findFor(1));
 }
 
 test "the FIND curve is 1.0 at the starting sheet, so adding drops moved none of them" {
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), findFor(START), 1e-4);
-    // Under-invested it BITES and maxed it is a real return, neither of them a different game.
     try std.testing.expect(findFor(1) > 0.55 and findFor(1) < 0.65);
     try std.testing.expect(findFor(MAX) > 2.3 and findFor(MAX) < 2.7);
     std.debug.print(
@@ -277,11 +250,11 @@ test "every curve rises, and rises SLOWER past each softcap" {
             const now = curve(pts);
             const gain = now - prev;
             try std.testing.expect(gain > 0);
-            try std.testing.expect(gain <= lastGain + 1e-4); // never STEEPENS with investment
+            try std.testing.expect(gain <= lastGain + 1e-4);
             prev = now;
             lastGain = gain;
         }
-        try std.testing.expect(curve(MAX) > 1.5 * curve(1)); // …and a maxed attribute is still worth having
+        try std.testing.expect(curve(MAX) > 1.5 * curve(1));
     }
 }
 
@@ -315,5 +288,5 @@ test "a sheet clamps rather than wrapping, at both ends" {
     s.set(.vitality, 200);
     try std.testing.expectEqual(MAX, s.at(.vitality));
     try std.testing.expectApproxEqAbs(hpFor(MAX), s.hp(), 1e-3);
-    try std.testing.expectEqual(START, s.at(.mind)); // …and moving one moves ONLY that one
+    try std.testing.expectEqual(START, s.at(.mind));
 }

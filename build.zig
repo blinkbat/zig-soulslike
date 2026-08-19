@@ -1,18 +1,16 @@
 const std = @import("std");
 
-// Consumer build for zig-soulslike: link the static raylib artifact built from C source by raylib-zig (Zig's bundled clang compiles it — no MSVC, no raylib.dll), and import the raylib + raygui Zig binding modules.
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // X11, NOT WAYLAND, on Linux — and this is what makes a Linux build possible from a Windows box at all. raylib's default there is `Both`, and Wayland means running `wayland-scanner` to generate protocol glue, which is a LINUX HOST BINARY: cross-compiling panics with "`wayland-scanner` not found" before it reaches a single line of this game's code.
     const raylib_dep = b.dependency("raylib_zig", .{
         .target = target,
         .optimize = optimize,
         .linux_display_backend = .X11,
     });
-    const raylib = raylib_dep.module("raylib"); // Zig bindings
-    const raylib_artifact = raylib_dep.artifact("raylib"); // static C library
+    const raylib = raylib_dep.module("raylib");
+    const raylib_artifact = raylib_dep.artifact("raylib");
 
     const exe = b.addExecutable(.{
         .name = "zig-soulslike",
@@ -24,7 +22,6 @@ pub fn build(b: *std.Build) void {
     });
     exe.linkLibrary(raylib_artifact);
     exe.root_module.addImport("raylib", raylib);
-    // The one recorded sound in the game, reachable from `@embedFile` — `assets/` is outside the root module's package path (src/), and Zig will not let a file cross that line without an import.
     exe.root_module.addAnonymousImport("campfire_wav", .{ .root_source_file = b.path("assets/campfire.wav") });
     b.installArtifact(exe);
 
@@ -72,7 +69,7 @@ fn checkTestRoster(b: *std.Build) void {
     var it = dir.iterate();
     while (it.next() catch null) |ent| {
         if (ent.kind != .file or !std.mem.endsWith(u8, ent.name, ".zig")) continue;
-        if (std.mem.eql(u8, ent.name, "main.zig")) continue; // the root itself is not imported by the root
+        if (std.mem.eql(u8, ent.name, "main.zig")) continue;
         const want = b.fmt("@import(\"{s}\")", .{ent.name});
         if (std.mem.indexOf(u8, root, want) == null) {
             std.debug.panic(

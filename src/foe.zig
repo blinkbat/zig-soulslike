@@ -8,19 +8,13 @@ const wf = @import("worldfmt.zig");
 const v3 = mathx.v3;
 
 
-pub const FLASH_DUR: f32 = 0.20; // seconds a struck foe pops on the shared gfx `hitFlash` uniform
+pub const FLASH_DUR: f32 = 0.20;
 pub const FLASH_GAIN: f32 = 0.85;
-/// How deep the rime coat goes at a full chill — under 1 so the body under it stays readable.
 pub const FROST_GAIN: f32 = 0.55;
 pub const HERO_R: f32 = 0.36;
 pub const HERO_REACH: f32 = 0.55;
-/// THE COLUMN A HERO STANDS IN, off his own feet. A swung weapon has to CROSS it, so a blow that went
-/// over his skull or into the dirt at his boots is a miss. Written out rather than derived off `hero.H`
-/// because foe.zig sits BELOW hero.zig in the import graph (hero → archer → foe) and it stays there.
 pub const HERO_LOW: f32 = -0.10;
 pub const HERO_HIGH: f32 = 1.71; // 0.95 of his 1.8 m stature
-/// …and where a LOOK at him lands: the middle of the chest. Taken at his boots instead, every kerb he
-/// happens to be standing behind hides him (see SIGHT).
 pub const HERO_EYE: f32 = 1.25;
 pub fn closestApproach(bodyR: f32) f32 {
     return bodyR + HERO_R;
@@ -40,8 +34,6 @@ pub const TELL_MIN: f32 = 0.30;
 /// a greatsword and a mother's fangs teach one rule. See `ogre.parryable` for the example.
 pub const PARRY_LEAD: f32 = 0.18;
 
-/// …AND THE TEST ITSELF, off one clock: `left` is seconds until the blow lands. The `left < 0` half IS the
-/// "shuts at the impact frame by construction" law.
 pub fn inParryWindow(left: f32) bool {
     return left >= 0 and left <= PARRY_LEAD;
 }
@@ -58,8 +50,6 @@ pub fn anyParried(foes: anytype) bool {
     return false;
 }
 
-/// A CORPSE IS NOT A COLLIDER (owner's call): `alive()` stays true through the whole death collapse and its
-/// dissipation, so every collision site has to ask this instead.
 pub fn corporeal(f: anytype) bool {
     return f.alive() and !f.dying();
 }
@@ -70,37 +60,26 @@ pub fn corporeal(f: anytype) bool {
 pub const LEASH_SLACK: f32 = 6.0;
 /// …and it is home again only this close — the hysteresis, so a foe at the boundary cannot flap.
 pub const LEASH_HOME_R: f32 = 3.0;
-/// …and only after this long with no blow given OR taken.
 pub const LEASH_CALM: f32 = 4.5;
 /// Walking back into a homing foe turns it round, and for this long it cannot try to leave again. MUST stay
 /// above `LEASH_CALM` (else standing still sheds it) and below `PROVOKE_HOLD` (what three blows buy); it is
 /// also the debounce that stops a hero at the ring's edge flipping a foe between chase and return.
 pub const REENGAGE_HOLD: f32 = 8.0;
 
-/// It loses its EYES, not its memory: it keeps on at the last known place this long. Above `LEASH_CALM`, or
-/// breaking sight sheds a foe faster than walking away does and every fight becomes peekaboo.
 pub const SIGHT_MEMORY: f32 = 6.0;
 
-/// WHAT ONE BLOW IS WORTH as provocation…
 pub const PROVOKE_PER_HIT: f32 = 1.0;
-/// …how long one makes a foe ignore its own aggro range and come for you wherever you are.
 pub const PROVOKE_ROUSE: f32 = 14.0;
-/// …and how much BREAKS it outright.
 pub const PROVOKE_BREAK: f32 = 2.5;
 pub const PROVOKE_HOLD: f32 = 14.0;
 pub const PROVOKE_DECAY: f32 = 0.35;
 
-/// Derived off the creature's own aggro so a tether can never come out SHORTER than the range the same
-/// creature notices you at — which would turn it for home mid-stare and yo-yo it in and out forever.
 pub fn leashR(aggroR: f32) f32 {
     return aggroR + LEASH_SLACK;
 }
 
 pub const Leash = struct {
     sinceCombat: f32 = mathx.LONG_AGO,
-    /// …and since it last had EYES on him. Stamped from outside (`game.markSight`): the prop grid a look is
-    /// tested against belongs to `env`. STARTS SEEN, so a hand-built creature (a test, a shot portrait) with
-    /// nothing but air in the way is not staring past him; `game.rehomeFoes` blinds the field on a fresh world.
     sinceSeen: f32 = 0,
     provoked: f32 = 0,
     rouseLeft: f32 = 0,
@@ -122,12 +101,10 @@ pub const Leash = struct {
         self.breakLeft = mathx.maxF(0, self.breakLeft - dt);
         self.engagedLeft = mathx.maxF(0, self.engagedLeft - dt);
         if (self.breakLeft > 0) {
-            self.returning = false; // committed to the fight; the tether does not exist for now
+            self.returning = false;
             return;
         }
         if (self.returning) {
-            // …and it only stops when it is actually HOME, not the moment it is back inside its tether —
-            // unless the hero puts himself back inside its notice ring, which ends the walk there and then.
             if (out <= LEASH_HOME_R) {
                 self.returning = false;
             } else if (heroOut <= aggroR) {
@@ -136,9 +113,6 @@ pub const Leash = struct {
             return;
         }
         if (self.engagedLeft > 0) return;
-        // It gives up only when it is past its tether AND he has left its patch: a foe with the hero still
-        // standing in the ground it guards has no business turning round, whoever happens not to have landed
-        // a blow this half-second. The two tests SHARE the ring, so what it gives up on is what it re-takes.
         if (out > leashR(aggroR) and heroOut > aggroR and self.sinceCombat >= LEASH_CALM) self.returning = true;
     }
 
@@ -146,19 +120,14 @@ pub const Leash = struct {
         self.sinceCombat = 0;
     }
 
-    /// It has eyes on him THIS FRAME.
     pub fn noteSeen(self: *Leash) void {
         self.sinceSeen = 0;
     }
 
-    /// …and it has never had them — a foe posted by a world that has only just loaded.
     pub fn blindNow(self: *Leash) void {
         self.sinceSeen = mathx.LONG_AGO;
     }
 
-    /// It has lost him: no sight for longer than its memory, and nothing has hit it lately. A blind foe
-    /// reads the hero as infinitely far (`sensedDist`), which every creature already knows what to do
-    /// about — it goes back to its post.
     pub fn blind(self: *const Leash) bool {
         return self.sinceSeen > SIGHT_MEMORY and !self.roused();
     }
@@ -167,8 +136,8 @@ pub const Leash = struct {
         self.noteCombat();
         self.rouseLeft = PROVOKE_ROUSE;
         self.provoked += PROVOKE_PER_HIT;
-        self.reengage(); // ONE BLOW TURNS A HOMING FOE ROUND…
-        if (self.provoked >= PROVOKE_BREAK) self.breakLeft = PROVOKE_HOLD; // …and keeping at it stops it leaving at all
+        self.reengage();
+        if (self.provoked >= PROVOKE_BREAK) self.breakLeft = PROVOKE_HOLD;
     }
 
     fn reengage(self: *Leash) void {
@@ -206,7 +175,6 @@ pub fn tickFixedLeash(l: *Leash, dt: f32, home: rl.Vector3, hero: rl.Vector3, ag
     l.tick(dt, 0, mathx.distXZ(home, hero), aggroR);
 }
 
-/// …and HOW FAR IT READS THE HERO AS BEING, from where it is standing.
 pub fn senseHero(l: *const Leash, at: rl.Vector3, hero: rl.Vector3, aggroR: f32) f32 {
     return sensedDist(l, mathx.distXZ(at, hero), aggroR);
 }
@@ -217,9 +185,7 @@ pub fn faceToward(pos: rl.Vector3, facing: *f32, target: rl.Vector3, rate: f32, 
     facing.* = mathx.approachAngle(facing.*, mathx.headingXZ(d), rate * dt);
 }
 
-/// THE WAY ROUND WHAT IS IN THE WAY, and the whole of what a creature here knows about pathfinding.
 pub const Nav = struct {
-    /// The tested heading, unit XZ. NULL is the ordinary case and it means "the straight line is fine".
     dir: ?rl.Vector3 = null,
     /// WHICH WAY ROUND IT WENT LAST TIME, and this is the whole of why it does not dither: with both sides of
     /// an obstacle equally open, the side it already committed to wins, so a creature at a corner keeps going
@@ -227,14 +193,11 @@ pub const Nav = struct {
     /// every time a detour is taken, so it cannot commit to a wrong one for good.
     side: f32 = 1,
 
-    /// THE POINT TO TURN TOWARD, given the one the creature actually wants.
     pub fn aim(self: *const Nav, from: rl.Vector3, want: rl.Vector3) rl.Vector3 {
         const d = self.dir orelse return want;
         return mathx.addV(from, d);
     }
 
-    /// …and the same answer as a HEADING, for a creature that steps along a vector of its own rather than
-    /// along its facing. `want` is already a unit direction.
     pub fn along(self: *const Nav, want: rl.Vector3) rl.Vector3 {
         return self.dir orelse want;
     }
@@ -244,13 +207,9 @@ test "AN UNSTAMPED WAY CHANGES NOTHING — steering is a bend on a refused headi
     const at = mathx.ground(0, 0);
     const want = mathx.ground(0, 10);
     var n = Nav{};
-    // Nothing stamped: both readings hand back exactly what the creature asked for, so a creature reading these
-    // in its walk walks the same line it walked before any of this existed.
     try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.distXZ(want, n.aim(at, want)), 1e-6);
     const straight = mathx.dirXZ(at, want);
     try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.distXZ(straight, n.along(straight)), 1e-6);
-    // …and stamped, BOTH readings turn — `aim` as a point one metre along the way and `along` as the way itself,
-    // which is the one thing the two shapes have to agree on.
     n.dir = v3(1, 0, 0);
     try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.distXZ(mathx.ground(1, 0), n.aim(at, want)), 1e-6);
     try std.testing.expectApproxEqAbs(mathx.headingXZ(n.dir.?), mathx.headingXZ(mathx.dirXZ(at, n.aim(at, want))), 1e-5);
@@ -259,8 +218,6 @@ test "AN UNSTAMPED WAY CHANGES NOTHING — steering is a bend on a refused headi
 
 /// How hard the bearing rate is smoothed — a creature answers a real orbit, never one frame of jitter.
 pub const SENSE_SMOOTH: f32 = 6.0;
-/// Seconds for "this spot is costing me" to fall by half. `Threat`'s own decay one purpose along, and much
-/// shorter: threat is who to fight, this is whether to stay, and the second question goes stale faster.
 pub const PRESSURE_HALFLIFE: f32 = 3.2;
 
 /// **WHAT A CREATURE KNOWS ABOUT HOW THE FIGHT IS GOING, and it is all WORLD STATE** — the bearing's own
@@ -277,9 +234,7 @@ pub const PRESSURE_HALFLIFE: f32 = 3.2;
 /// repositions once arrives already convinced it should reposition again, and that reads as panic.
 pub const Sense = struct {
     bearingWas: f32 = 0,
-    /// Radians a second the quarry's bearing is sweeping, smoothed. "It is walking round me."
     circleRate: f32 = 0,
-    /// Damage taken since it last moved somewhere else, decaying.
     hurtHere: f32 = 0,
     stood: rl.Vector3 = mathx.zero3,
 
@@ -301,19 +256,14 @@ pub const Sense = struct {
         self.hurtHere *= std.math.pow(f32, 0.5, dt / PRESSURE_HALFLIFE);
     }
 
-    /// A BLOW LANDED ON IT — the raw damage, whoever threw it. `Threat.hurtBy`'s twin, and they are separate
-    /// because they answer different questions off the same event: that one is WHO, this one is WHERE.
     pub fn hurt(self: *Sense, dmg: f32) void {
         self.hurtHere += mathx.maxF(dmg, 0);
     }
 
-    /// Is somebody walking round it fast enough that turning is a losing game.
     pub fn circling(self: *const Sense, rate: f32) bool {
         return self.circleRate > rate;
     }
 
-    /// **IS THIS SPOT COSTING IT** — the one question that earns a reposition. `share` is of its own MAX HP,
-    /// so the same rule sizes itself on a toad and on a boss.
     pub fn pressed(self: *const Sense, maxHp: f32, share: f32) bool {
         return self.hurtHere >= mathx.maxF(maxHp, 1) * share;
     }
@@ -326,11 +276,9 @@ test "PRESSURE IS PER SPOT: damage banked where it USED to stand is not a reason
     s.tick(dt, here, 0, 0.5, true);
     s.hurt(40);
     try std.testing.expect(s.pressed(100, 0.3));
-    // Still standing in it: the meter decays but it does not wipe.
     var k: i32 = 0;
     while (k < 30) : (k += 1) s.tick(dt, here, 0, 0.5, true);
     try std.testing.expect(s.hurtHere > 0);
-    // …and one step out of it is a different spot, so the ledger closes with it.
     s.tick(dt, mathx.ground(0, 3.0), 0, 0.5, true);
     try std.testing.expect(!s.pressed(100, 0.3));
     try std.testing.expectApproxEqAbs(@as(f32, 0), s.hurtHere, 1e-6);
@@ -340,7 +288,6 @@ test "IT DOES NOT READ ITS OWN TRAVEL AS AN ORBIT" {
     var s = Sense{};
     const dt = 1.0 / 60.0;
     const at = mathx.ground(0, 0);
-    // A bearing swinging hard while the creature is the thing moving: `settled` false, so nothing accrues.
     var k: i32 = 0;
     var b: f32 = 0;
     while (k < 40) : (k += 1) {
@@ -348,7 +295,6 @@ test "IT DOES NOT READ ITS OWN TRAVEL AS AN ORBIT" {
         s.tick(dt, at, b, 0.5, false);
     }
     try std.testing.expect(!s.circling(0.45));
-    // …and the same sweep with its feet on the ground is read for what it is.
     k = 0;
     while (k < 60) : (k += 1) {
         b += 0.05;
@@ -396,37 +342,24 @@ pub fn markOn(bone: rl.Matrix, at: rl.Vector3) rl.Vector3 {
     return rl.math.vector3Transform(at, bone);
 }
 
-/// HOW FAR THROUGH ITS ARC A SWING IS, 0..1 of the strike window — ONE CURVE for every creature, and it
-/// exists because you must be able to parry off what you SEE (owner: "should be all 3" — visuals, sound and
-/// timing, not the last two alone).
 pub fn swingCurve(u: f32) f32 {
     return std.math.pow(f32, mathx.smoothstep(0, 1, u), 1.35);
 }
 
-/// HOW HARD A REACTION IS PLAYING, 0..1, and it is ONE CURVE for every creature in the game. A light flinch
-/// is a single symmetric swell; a heavy one snaps to its peak, HOLDS there — that hold is the punish window
-/// and it has to be legible — and lets go slowly.
 pub fn stunCurve(t: f32, heavy: bool) f32 {
     const u = mathx.clampF(t / combat.foeStunDur(heavy), 0, 1);
     if (!heavy) return mathx.sinf(u * std.math.pi);
     return mathx.pulse(u, 0, 0.14, 0.74, 1.0);
 }
 
-/// How far a blow knocks a creature off its feet, by whether the blow was a heavy. A PAIR and not two
-/// loose numbers: the two are only ever chosen against each other.
 pub const Push = struct { light: f32, heavy: f32 };
 
-/// A MOVE'S CLOCK, for anything aiming at a beat inside it (`shots.zig` alone). NAMED rather than an
-/// anonymous struct per creature, whose return types could not be held in one variable.
 pub const Clock = struct { wind: f32, strike: f32, recover: f32 };
 
-/// …off the creature's OWN attack row, so a retuned window still photographs the beat it is named after.
 pub fn moveClock(row: anytype) Clock {
     return .{ .wind = row.windDur, .strike = row.strikeDur, .recover = row.recoverDur };
 }
 
-/// THE BLADE REACHED IT — the swept test, the anti-cheese rouse, and the one thing a shaft does that a
-/// swing does not. Duck-typed on the conventional field names.
 pub fn reached(self: anytype, blade: Blade) ?Strike {
     const s = strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return null;
     self.leash.provoke();
@@ -435,15 +368,10 @@ pub fn reached(self: anytype, blade: Blade) ?Strike {
     // same door, so "who has been hurting me" cannot end up as two rules that disagree. The blade says who it
     // belongs to (`Blade.by`) — nothing here has to know what a wolf is.
     self.threat.hurtBy(blade.by, blade.hit.raw());
-    // ONLY A `pierce` SNAPS THE FACING BACK DOWN ITS OWN LINE — being shot from somewhere it was not
-    // looking is exactly when a creature must turn round, and a swing already came from in front of it.
     if (blade.pierce) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
     return s;
 }
 
-/// …AND WHAT IT COSTS a creature that did not catch the blow on anything. Returns whether the BLOW was a
-/// heavy (it carried stance), which is what every creature sizes its own blood, chips and dust off — never
-/// the REACTION, since a heavy blow a high-poise creature shrugs off still hit it that hard.
 pub fn wounded(self: anytype, s: Strike, blade: Blade, push: Push) bool {
     self.hits += 1;
     self.flash = FLASH_DUR;
@@ -458,8 +386,6 @@ pub fn wounded(self: anytype, s: Strike, blade: Blade, push: Push) bool {
 pub const Grip = struct {
     was: rl.Vector3,
     on: bool,
-    /// Whether THIS frame's bite finished it. Reported rather than acted on, because only the creature knows
-    /// how to die.
     killed: bool,
 
     pub fn hold(self: Grip, pos: *rl.Vector3) void {
@@ -483,11 +409,6 @@ pub fn canLeap(root: *const combat.Root) bool {
     return !root.held();
 }
 
-/// **AND THE COLD IS BILLED THROUGH THE SAME DOOR** (`combat.Chill`). The rime breath is tested from OUTSIDE
-/// the creature — only `game.zig` can see the cone and the field at once — but a bite that KILLS has to
-/// arrive here, because entering a death is the one thing nothing outside a creature knows how to do. So the
-/// breath stamps what it owes on the body and the body collects it on its own next frame, which is `Leash`'s
-/// arrangement and `justDied`'s in the other direction.
 pub fn grip(root: *combat.Root, chill: *combat.Chill, vit: *combat.Vitals, dt: f32, at: rl.Vector3) Grip {
     const on = root.held();
     const bitten = if (root.tick(dt)) |bite| vit.drip(bite) == .death else false;
@@ -499,24 +420,16 @@ pub fn grip(root: *combat.Root, chill: *combat.Chill, vit: *combat.Vitals, dt: f
 /// from outside (`game.markParry`) rather than fetched, because the creature must never reach out for the
 /// hero and because the ARC belongs to the shield, not to whatever is being caught on it.
 pub const Parry = struct {
-    /// The catch window is open THIS frame. Every other field is meaningless while it is false.
     live: bool = false,
     at: rl.Vector3 = mathx.zero3,
     facing: f32 = 0,
-    /// **THE BOARDS HE IS ACTUALLY HOLDING** (`hero.guardArc`), stamped with the rest of them. It is the same
-    /// plank either way, so a door that covers half again the compass covers it for the CATCH as well as for
-    /// the block — read off the bare `combat.GUARD_ARC` here, a tower shield's own `arc` dial reached one of
-    /// the two things it is printed as doing.
     arc: f32 = combat.GUARD_ARC,
 
-    /// Would this move be batted aside? `reach` is the MOVE's own and not one number per creature: only the
-    /// move knows where its head is. THE BLOCK'S OWN ARC — a shield is a DIRECTION, and a parry that covered
-    /// the back would be a better block than the block.
     pub fn catches(self: *const Parry, at: rl.Vector3, reach: f32) bool {
         if (!self.live) return false;
         if (mathx.distXZ(self.at, at) > reach) return false;
         const to = mathx.dirXZ(self.at, at);
-        if (mathx.lenXZ(to) < 1e-4) return true; // standing inside him: there is no bearing to be wrong about
+        if (mathx.lenXZ(to) < 1e-4) return true;
         return combat.withinArc(mathx.headingXZ(to), self.facing, self.arc);
     }
 };
@@ -530,32 +443,23 @@ pub const Parry = struct {
 /// which is a fact about the ground — never about what he pressed. The NO INPUT READING law is kept by
 /// construction: a thing under the surface can feel someone wading and could feel a wolf wading just as well.
 pub const Wade = struct {
-    /// Metres of water over the creature's own post…
     here: f32 = 0,
-    /// …and over the HERO's feet. Named for the quarry because that is what it answers today: `groupBlow`
-    /// hands a creature its own target (`Threat.aim`), and a lurker pulled onto a SPIRIT is still reading the
-    /// hero's depth. It would take a per-body probe to say otherwise, and nothing yet needs one.
     quarry: f32 = 0,
 };
 
-/// Stamped on every member of a group that carries the field — `setParry`'s twin, and the opt-in is the
-/// FIELD (`markWays`' `@hasField` rule), so the fourteen creatures that never touch water pay nothing.
 pub fn setWade(foes: anytype, at: anytype, quarry: f32, comptime depthAt: anytype) void {
     for (foes) |*f| f.wade = .{ .here = depthAt(at, f.pos), .quarry = quarry };
 }
 
-// Carry a landed blow's KNOCKBACK for one frame and bleed it off — a jolt off the blade, not a slide.
 pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32, dt: f32) void {
     if (mathx.lenXZ(shove.*) <= 0.01) return;
-    mathx.stepXZ(pos, shove.*, dt, bounds); // the shared bounded step — shove is a velocity, so dist = dt
+    mathx.stepXZ(pos, shove.*, dt, bounds);
     shove.* = mathx.scaleV(shove.*, mathx.maxF(0, 1.0 - decay * dt));
 }
 
 
 pub const DUST = mathx.rgba(150, 132, 96, 175);
 pub const MOTE = mathx.rgba(252, 198, 92, 170);
-/// …and the pale flash a moving EDGE leaves (`Trail`). The world's, like the two above: steel is steel
-/// whoever is swinging it, and authored per creature it had already drifted into two near-identical greys.
 pub const WAKE = mathx.rgba(224, 230, 244, 255);
 
 pub fn fxStream(seed: f32, mul: f32, salt: u64) mathx.Rng {
@@ -565,23 +469,15 @@ pub fn fxStream(seed: f32, mul: f32, salt: u64) mathx.Rng {
 pub const Particle = struct {
     p: rl.Vector3 = mathx.zero3,
     v: rl.Vector3 = mathx.zero3,
-    life: f32 = 0, // seconds remaining (0 = dead slot)
-    max: f32 = 1, // life at spawn (for the fade fraction)
-    r0: f32 = 0.05, // radius at spawn
-    r1: f32 = 0.05, // radius at death (r1>r0 = an expanding puff; r1<r0 = a shrinking spark)
+    life: f32 = 0,
+    max: f32 = 1,
+    r0: f32 = 0.05,
+    r1: f32 = 0.05,
     col: rl.Color = mathx.rgba(255, 255, 255, 255),
-    grav: f32 = 0, // downward accel (world/s²); negative floats up
-    /// THE GROUND THIS ONE CAME OFF, when it is not the pool owner's own — `souls.fxFloor`'s rule, one layer
-    /// down and per particle, because one pool can hold two bursts off two different grounds. Null means the
-    /// owner's floor, which is every creature's whole pool: a creature's FX all come off its own feet.
+    grav: f32 = 0,
     floor: ?f32 = null,
 };
 
-/// **HOW MANY MOTES THIS FRAME OWES, AND THE HITCH THAT MAY NOT EMPTY THE RING.** An emitter authored in
-/// motes a second needs an ACCUMULATOR — a per-frame probability test tops out at the frame rate, so a ramp
-/// above it does nothing — and the accumulator needs a CEILING, because one long frame (a rebuild, an
-/// alt-tab, a shader compile) otherwise dumps the whole pool in a single go. Past the cap the arrears are
-/// DROPPED rather than banked: a frame that long is a hitch, not a debt.
 pub fn emitTicks(acc: *f32, dt: f32, rate: f32, cap: usize) usize {
     acc.* += dt * rate;
     var n: usize = 0;
@@ -607,12 +503,9 @@ pub fn emitCap(rate: f32) usize {
 }
 
 test "THE CAP CLEARS A REAL FRAME AND NEVER LANDS ON ZERO" {
-    // It has to sit ABOVE what an ordinary frame owes, or the emitter is in permanent hitch and quietly runs
-    // slower than its own rate — which is what a bare `8` did to the bench at 560/s.
     for ([_]f32{ 5, 26, 54, 82, 240, 560 }) |rate| {
         try std.testing.expect(@as(f32, @floatFromInt(emitCap(rate))) > rate / 60.0);
     }
-    // …and a rate of nothing still yields a usable cap: at 0 the accumulator would be clamped to nothing.
     try std.testing.expectEqual(@as(usize, 1), emitCap(0));
     var acc: f32 = 0;
     try std.testing.expectEqual(@as(usize, 1), emitTicks(&acc, 1.0, 1.0, emitCap(1.0)));
@@ -620,11 +513,9 @@ test "THE CAP CLEARS A REAL FRAME AND NEVER LANDS ON ZERO" {
 
 test "the accumulator carries a fraction across frames and DROPS a hitch's arrears" {
     var acc: f32 = 0;
-    // A tenth of a second at 100/s is ten, and the leftover carries rather than being lost.
     try std.testing.expectEqual(@as(usize, 10), emitTicks(&acc, 0.1, 100.0, 64));
-    try std.testing.expectEqual(@as(usize, 0), emitTicks(&acc, 0.005, 100.0, 64)); // half a mote owed…
-    try std.testing.expectEqual(@as(usize, 1), emitTicks(&acc, 0.005, 100.0, 64)); // …and it arrives
-    // A two-second frame at 560/s owes 1120: the cap takes what it may and the rest does not come later.
+    try std.testing.expectEqual(@as(usize, 0), emitTicks(&acc, 0.005, 100.0, 64));
+    try std.testing.expectEqual(@as(usize, 1), emitTicks(&acc, 0.005, 100.0, 64));
     acc = 0;
     try std.testing.expectEqual(@as(usize, 24), emitTicks(&acc, 2.0, 560.0, 24));
     try std.testing.expectEqual(@as(f32, 0), acc);
@@ -632,11 +523,8 @@ test "the accumulator carries a fraction across frames and DROPS a hitch's arrea
 }
 
 test "A SLOW EMITTER RUNS AT ITS OWN RATE — a cap of one is not a hitch every time" {
-    // THE BUG: `emitCap` floors at 1, so every rate under ~24/s got a cap of ONE — and `n == cap` then read
-    // each ordinary mote as a hitch and zeroed the remainder. What is lost is the fraction left over each
-    // time, which at the fenlurker's 16/s wake is a mote in every sixteen.
     for ([_]f32{ 5.0, 9.0, 16.0, 22.0 }) |rate| {
-        try std.testing.expectEqual(@as(usize, 1), emitCap(rate)); // …the case that used to bite
+        try std.testing.expectEqual(@as(usize, 1), emitCap(rate));
         var acc: f32 = 0;
         var n: usize = 0;
         var t: f32 = 0;
@@ -646,10 +534,9 @@ test "A SLOW EMITTER RUNS AT ITS OWN RATE — a cap of one is not a hitch every 
         std.debug.print("  emitter at {d:.0}/s actually emits {d:.1}/s\n", .{ rate, got });
         try std.testing.expectApproxEqAbs(rate, got, 0.2);
     }
-    // …AND A HITCH IS STILL DROPPED, which is the whole reason the ceiling exists.
     var slow: f32 = 0;
     try std.testing.expectEqual(@as(usize, 1), emitTicks(&slow, 3.0, 16.0, emitCap(16.0)));
-    try std.testing.expectEqual(@as(f32, 0), slow); // 48 owed, one taken, no debt carried
+    try std.testing.expectEqual(@as(f32, 0), slow);
 }
 
 pub fn emitParticle(pool: []Particle, head: *usize, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
@@ -657,24 +544,15 @@ pub fn emitParticle(pool: []Particle, head: *usize, p: rl.Vector3, vel: rl.Vecto
     head.* = (head.* + 1) % pool.len;
 }
 
-/// **WHAT A WOUND THROWS OFF A BODY** — blood, gore, bone chips: the cone of stuff a landed blow sprays back
-/// along its own line. Five creatures wrote this loop out (`frog`/`ogre`/`brood`'s `bloodBurst`,
-/// `knight`/`warrior`'s `chips`) with nothing differing but these dials, and the dials ARE the creature —
-/// a skeleton sheds chips where a toad sheds blood. So the numbers stay each creature's and the LOOP stops
-/// being five loops.
 pub const Spray = struct {
-    /// How far off the blow's own line a mote is thrown, either side of it.
     fanLo: f32,
     fanHi: f32,
-    /// …and how hard it goes UP, which is most of what says a body was STRUCK rather than brushed past.
     upLo: f32,
     upHi: f32,
     lifeLo: f32,
     lifeHi: f32,
-    /// Its radius at birth, in the creature's own scale…
     rLo: f32,
     rHi: f32,
-    /// …what it shrinks to, what colour it is, and how hard it falls.
     r1: f32,
     col: rl.Color,
     grav: f32,
@@ -684,7 +562,7 @@ pub const Spray = struct {
 /// radius. It is the order all five wrote by hand, and a helper that pulled the same numbers in another
 /// order would give every one of them a different-looking wound off the very same seed.
 pub fn spray(pool: []Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32, scale: f32, s: Spray) void {
-    const parts = hitParts(n); // the field's one dial (`HIT_PARTS`)
+    const parts = hitParts(n);
     var i: i32 = 0;
     while (i < parts) : (i += 1) {
         const a = rng.angle();
@@ -699,9 +577,6 @@ pub fn spray(pool: []Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3, di
 }
 
 test "THE SPRAY IS THE FIVE HAND-WRITTEN LOOPS, MOTE FOR MOTE — the draw order is the thing being pinned" {
-    // The five creatures each drew: angle, speed, fan-X, lift, fan-Z, life, radius. Pull the same numbers in
-    // any other order and every wound in the game changes shape off the same seed, silently and only on
-    // screen. This is the frog's row, run both ways against one seed.
     const S = Spray{
         .fanLo = 0.15, .fanHi = 0.8,
         .upLo = 0.7,   .upHi = 2.4,
@@ -734,7 +609,7 @@ test "THE SPRAY IS THE FIVE HAND-WRITTEN LOOPS, MOTE FOR MOTE — the draw order
     spray(&gotPool, &gotHead, &r2, at, dir, 9, 2.5, scale, S);
 
     try std.testing.expectEqual(wantHead, gotHead);
-    try std.testing.expect(gotHead > 0); // it emitted at all
+    try std.testing.expect(gotHead > 0);
     for (wantPool, gotPool) |w, g| {
         try std.testing.expectEqual(w.v.x, g.v.x);
         try std.testing.expectEqual(w.v.y, g.v.y);
@@ -745,32 +620,23 @@ test "THE SPRAY IS THE FIVE HAND-WRITTEN LOOPS, MOTE FOR MOTE — the draw order
     std.debug.print("\n  spray: {d} motes, identical to the hand-written loop mote for mote\n", .{gotHead});
 }
 
-/// EVERY SLOT A BURST JUST WROTE, floored on the ground THAT burst came off rather than the pool owner's.
 pub fn floorBurst(pool: []Particle, from: usize, to: usize, floor: f32) void {
     var i = from;
     while (i != to) : (i = (i + 1) % pool.len) pool[i].floor = floor;
 }
 
-/// WHAT ONE BODY BRINGS TO ITS OWN DISSOLVE, and all it brings: how thick the cloud is, how far out and how
-/// far up the body it comes off — both in the creature's own scale — and the colour of the flakes it SHEDS.
 pub const Dissolve = struct {
     rate: f32 = 54.0,
     spread: f32 = 0.85,
     rise: f32 = 0.70,
     flake: rl.Color = DUST,
 };
-/// The mix and the grain, which are the effect and not the creature: `spread` already carries the size.
 const DISS_MOTE_SHARE: f32 = 0.76;
 const DISS_MOTE_R: f32 = 0.094;
 const DISS_FLAKE_R: f32 = 0.129;
 
-/// THE BODY COMING APART — the one copy, for every creature on the field. Gold motes rising out of it and
-/// flakes of the body falling back, both thinning as the fade closes.
 pub fn dissolveMotes(self: anytype, dt: f32, d: Dissolve) void {
     const thinning = 1.0 - 0.6 * self.fade;
-    // THROUGH `emitTicks`, unlike the private per-creature emitters: this pool is filled by the shared pass
-    // AND by whatever that creature is still throwing, so one long frame here empties a ring two writers
-    // depend on. At every real frame rate the owed count is far under the cap and nothing changes.
     var n = emitTicks(&self.fxAccum, dt, d.rate * thinning, emitCap(d.rate));
     while (n > 0) : (n -= 1) {
         const a = self.fxRng.angle();
@@ -797,13 +663,8 @@ fn stayed(self: anytype) bool {
     return false;
 }
 
-/// THE CORPSE GOING. Past `still` the fall is over and the body dissipates over `diss`: `fade` is that ramp,
-/// the dissolve comes off it the whole way, and the creature leaves the field at the end of it. The two
-/// DURATIONS stay per-creature — a giant topples slower than a toad — but the shape does not.
 pub fn dissipate(self: anytype, dt: f32, still: f32, diss: f32, d: Dissolve) void {
     if (self.t < still) return;
-    // The fall is OVER either way — what is held is the going, so the body has already come to rest and lies
-    // there. Held from part-way through, `fade` simply stops where it is rather than snapping back.
     if (stayed(self)) return;
     self.fade = mathx.smoothstep(still, still + diss, self.t);
     dissolveMotes(self, dt, d);
@@ -822,14 +683,13 @@ pub fn rekindle(self: anytype, frac: f32) void {
     self.fade = 0;
     self.gone = false;
     self.hitLatch = false;
-    self.flash = FLASH_DUR; // it POPS on the shared flash: something just happened to this body
+    self.flash = FLASH_DUR;
     self.shove = mathx.zero3;
     self.justDied = false;
     self.heldOpen = false;
     self.t = 0;
 }
 
-/// `floor` is the pool owner's own ground; a particle that named its own (`floorBurst`) keeps that instead.
 pub fn tickParticles(pool: []Particle, dt: f32, floor: f32) void {
     for (pool) |*q| {
         if (q.life <= 0) continue;
@@ -843,7 +703,6 @@ pub fn tickParticles(pool: []Particle, dt: f32, floor: f32) void {
     }
 }
 
-/// A ring of the last N segments the edge occupied, drawn as a triangle strip between consecutive samples.
 const TrailSample = struct { a: rl.Vector3 = mathx.zero3, b: rl.Vector3 = mathx.zero3, age: f32 = mathx.LONG_AGO };
 
 /// Metres the point must travel in a frame to be worth a sample. A DEGENERACY GUARD, not a per-weapon dial:
@@ -870,16 +729,14 @@ pub fn Trail(comptime N: usize) type {
             for (&self.s) |*q| q.age = mathx.LONG_AGO;
         }
         pub fn draw(self: *const Self, life: f32, col: rl.Color, peak: f32) void {
-            // The early-out is BEFORE the GL state: two cull toggles around a draw that emits no triangles is
-            // the whole cost of an idle skeleton's trail, asked of every muster member every frame.
-            if (self.s[self.head].age >= life) return; // newest is stale → all of them are
-            rl.gl.rlDisableBackfaceCulling(); // the ribbon must read from both sides of the arc
+            if (self.s[self.head].age >= life) return;
+            rl.gl.rlDisableBackfaceCulling();
             defer rl.gl.rlEnableBackfaceCulling();
             var i: usize = 0;
             while (i + 1 < N) : (i += 1) {
                 const s0 = &self.s[(self.head + N - i) % N];
                 const s1 = &self.s[(self.head + N - i - 1) % N];
-                if (s0.age >= life or s1.age >= life) break; // the rest is older still
+                if (s0.age >= life or s1.age >= life) break;
                 const f = 1.0 - 0.5 * (s0.age + s1.age) / life;
                 const strip = [4]rl.Vector3{ s0.a, s0.b, s1.a, s1.b };
                 rl.drawTriangleStrip3D(&strip, mathx.withAlpha(col, mathx.u8f(peak * f * f)));
@@ -888,14 +745,13 @@ pub fn Trail(comptime N: usize) type {
     };
 }
 
-/// **THE BALL IS SUBDIVIDED BY HOW BIG IT IS, and that is the whole of what keeps this affordable.**
-const PART_FINE_R: f32 = 0.10; // over this, the full ball — dust gouts, smoke, the big soft puffs
-const PART_MID_R: f32 = 0.04; // …and under THIS is a grain: frost, sparks, chips
+const PART_FINE_R: f32 = 0.10;
+const PART_MID_R: f32 = 0.04;
 pub fn drawParticles(pool: []const Particle) void {
     for (pool) |*q| {
         if (q.life <= 0) continue;
         const frac = mathx.clampF(q.life / q.max, 0, 1);
-        const rad = mathx.lerpF(q.r1, q.r0, frac); // r0 at spawn (frac 1) → r1 at death (frac 0)
+        const rad = mathx.lerpF(q.r1, q.r0, frac);
         const a = mathx.u8f(@as(f32, @floatFromInt(q.col.a)) * frac);
         const rings: i32 = if (rad >= PART_FINE_R) 6 else if (rad >= PART_MID_R) 4 else 3;
         const slices: i32 = if (rad >= PART_FINE_R) 8 else if (rad >= PART_MID_R) 6 else 4;
@@ -915,8 +771,6 @@ pub fn resetGroup(comptime T: type, out: []T, n: *usize, m: *const wf.Map, want:
     }
 }
 
-/// …AND THE SAME RESET FOR A GROUP WHOSE MEMBERS ARE ROLES OF ONE CREATURE (the warband, the muster, the
-/// brood): its own `roleOf` says which role a map kind is, and `T.spawnAs` takes it.
 pub fn resetRoles(
     comptime T: type,
     comptime R: type,
@@ -929,18 +783,13 @@ pub fn resetRoles(
     for (m.foes[0..m.nfoes]) |h| {
         const role = roleOf(h.kind) orelse continue;
         if (n.* >= out.len) continue;
-        // ON THE GROUND, which the map's own height field decides — see `resetGroup`.
         out[n.*] = T.spawnAs(role, v3(h.x, m.heightAt(h.x, h.z), h.z), mathx.radians(h.yaw), h.scale, h.seed);
         n.* += 1;
     }
 }
 
 pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
-    // `setFlash` is a driver upload every time it is asked, and a group of 24 paid 24 per pass, twice a frame,
-    // for the same 0. Uploaded only on CHANGE; `lit` starts outside 0..1 so nothing is assumed about the
-    // uniform's state before this group.
     var lit: f32 = -1;
-    // …and the rime coat rides the same fold (`combat.Chill.frac`: "how heavily the body is drawn frosted").
     var iced: f32 = -1;
     for (foes) |*f| {
         if (!f.alive()) continue;
@@ -960,7 +809,6 @@ pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
         }
         f.draw(model);
     }
-    // …and a group never leaves its flash on for whatever draws next.
     if (scene) |sc| {
         if (lit > 0) sc.setFlash(0);
         if (iced > 0) sc.setFrost(0);
@@ -988,8 +836,6 @@ pub fn soulsDropped(foes: anytype, per: u32) u32 {
     return n;
 }
 
-/// …and the same for a group whose members are ROLES OF ONE CREATURE, where the payout is the MEMBER'S
-/// (`soulValue`) rather than one number for the kind.
 pub fn soulsEach(foes: anytype) u32 {
     var n: u32 = 0;
     for (foes) |*f| {
@@ -1006,9 +852,6 @@ pub fn aliveCount(foes: anytype) u32 {
     return n;
 }
 
-/// The segment a kit swept between frames (`was` → `now`, grip-end → far-end) against the hero's column, `r`
-/// being the weapon's fatness plus the creature's slack. SAMPLED along the weapon AND across the sweep, not
-/// solved: a whipped head covers half a metre in a frame and a two-endpoint test passes clean through a body.
 pub fn weaponReaches(was: [2]rl.Vector3, now: [2]rl.Vector3, hero: rl.Vector3, r: f32) bool {
     const lo = v3(hero.x, hero.y + HERO_LOW, hero.z);
     const hi = v3(hero.x, hero.y + HERO_HIGH, hero.z);
@@ -1033,81 +876,41 @@ pub const Blade = struct {
     b: rl.Vector3 = mathx.zero3,
     a0: rl.Vector3 = mathx.zero3,
     b0: rl.Vector3 = mathx.zero3,
-    hit: combat.Hit = .{}, // HP/poise/stance the swing deals (light vs heavy, set by game.zig)
-    /// A PROJECTILE, NOT A SWING: presented as the segment it crossed this frame so it goes through the
-    /// same `strike` and gets each creature's own reactions.
+    hit: combat.Hit = .{},
     pierce: bool = false,
-    /// **THE CULL** (`passivetree.Grant.cull`) — a body already under this share of its own HP when the blow
-    /// lands dies outright rather than being taken to a sliver. Carried on the BLADE and not read off the
-    /// hero, because a blade is the only thing every strike site already has: the sword, the shaft, the
-    /// spirit's jaws and a spell all arrive here, and a per-site lookup is a list to forget one from. Zero
-    /// is off, which is what every blade that is not his own leaves it at.
     cullAt: f32 = 0,
-    /// **IT DOES NOT STOP AT THE FIRST BODY.** Every other `pierce` in the game is SPENT on whoever it reaches
-    /// first — a shaft, a bolt, a spirit's jaws — and stopping there is what those are, so the default keeps
-    /// `pierceGroup`'s and `game.pierceFoes`' early exits exactly as they were. Set, the same blade is offered
-    /// to every body it crosses, which is `combat.LANCE_HIT`'s "PER BODY" actually happening.
     through: bool = false,
-    /// WHOSE BLADE THIS IS. Defaults to the hero, so every existing site — his sword, his shafts, his bolts —
-    /// says what it always said by saying nothing. A spirit's jaws set it (`wolf.blade`), and that is the
-    /// whole of how a summon earns aggro.
     by: Victim = .hero,
 };
 
-// THREAT — WHO A CREATURE IS ACTUALLY FIGHTING
-//
-// **ONE TABLE PER CREATURE, and it is the creature's own field** (`Leash`'s law, and `Root`'s: cross-cutting
-// state is EMBEDDED by the creature and STAMPED by the game).
 
-/// WHO a creature has its eye on. Two today; a second spirit does not add a case, it adds a body behind
-/// `spirit` — the pack is capped at one (`combat.SUMMON_MAX`) and this is the same decision one layer up.
 pub const Victim = enum { hero, spirit };
 
-/// Seconds for damage-threat to fall by half once you stop landing blows. Short enough that a player who
-/// disengages hands the fight back to the wolf inside a couple of exchanges, long enough that one missed
-/// swing does not.
 pub const THREAT_HALFLIFE: f32 = 5.0;
 /// How much threat a point of damage is worth. Only the RATIO between this and `THREAT_PROX` matters — this
 /// one is 1.0 so that damage numbers read directly as threat and the other dial is the one to turn.
 pub const THREAT_PER_DMG: f32 = 1.0;
-/// …and what standing in its face is worth, at nose-to-nose. Sized against a couple of light hits: presence
-/// alone should be able to hold a creature that nobody is hurting, and should lose to anybody who commits.
 pub const THREAT_PROX: f32 = 26.0;
-/// Past this the proximity term is nothing — beyond it you are not in the fight and only damage speaks.
 pub const THREAT_PROX_R: f32 = 9.0;
-/// The spirit's own pull. A wolf exists to be bitten instead of him, so it claims harder than its damage and
-/// its position earn — ER's target-priority boost, and the reason a summon tanks at all.
 pub const SPIRIT_TAUNT: f32 = 1.55;
-/// **THE ANTI-DITHER.** A challenger must beat the incumbent by this much to take it. One flat multiplier, so
-/// it behaves the same at every scale of threat.
 pub const THREAT_SWITCH: f32 = 1.30;
-/// …and it may not switch more often than this however the numbers move. Two creatures trading a target back
-/// and forth twice a second is legible as a bug; a beat between changes of mind is legible as one.
 pub const THREAT_DWELL: f32 = 0.65;
 
 pub const Threat = struct {
-    /// Damage-threat, per side, decaying. The proximity term is NOT stored — it is live, so a body that walks
-    /// away stops claiming on the frame it does rather than draining for five seconds first.
     dmgHero: f32 = 0,
     dmgSpirit: f32 = 0,
-    /// Who it is actually fighting. A LATCH: the scores propose and this disposes, which is the hysteresis.
     on: Victim = .hero,
     since: f32 = mathx.LONG_AGO,
     /// Where that victim is standing, stamped each frame by the game (`game.markThreat`). The creature reads
     /// this and never asks what a spirit is.
     at: rl.Vector3 = mathx.zero3,
-    /// …and whether there is a spirit at all. With none, every rule below collapses to "the hero", which is
-    /// exactly what the game was before any of this existed.
     hasSpirit: bool = false,
 
-    /// WHAT IT SHOULD BE GOING FOR. Falls back to the hero whenever there is no spirit standing, so a
-    /// creature whose `at` was never stamped behaves the way it always did.
     pub fn aim(self: *const Threat, heroPos: rl.Vector3) rl.Vector3 {
         if (!self.hasSpirit or self.on == .hero) return heroPos;
         return self.at;
     }
 
-    /// A BLOW LANDED ON THIS CREATURE, and by whom. The one thing that writes damage-threat.
     pub fn hurtBy(self: *Threat, who: Victim, dmg: f32) void {
         const t = mathx.maxF(dmg, 0) * THREAT_PER_DMG;
         switch (who) {
@@ -1116,17 +919,14 @@ pub const Threat = struct {
         }
     }
 
-    /// The whole claim one side has right now: what it has done, plus where it is standing.
     pub fn score(dmg: f32, dist: f32, taunt: f32) f32 {
         const prox = mathx.clampF((THREAT_PROX_R - dist) / THREAT_PROX_R, 0, 1);
         return (dmg + THREAT_PROX * prox * prox) * taunt;
     }
 
-    /// ONE FRAME. `distSpirit` is meaningless when `hasSpirit` is false and is not read.
     pub fn tick(self: *Threat, dt: f32, distHero: f32, distSpirit: f32, spirit: bool) void {
         self.hasSpirit = spirit;
         self.since += dt;
-        // Exponential decay on both, so neither claim is permanent and neither snaps to nothing.
         const k = std.math.pow(f32, 0.5, dt / THREAT_HALFLIFE);
         self.dmgHero *= k;
         self.dmgSpirit *= k;
@@ -1135,7 +935,7 @@ pub const Threat = struct {
             self.dmgSpirit = 0;
             return;
         }
-        if (self.since < THREAT_DWELL) return; // it has only just changed its mind — let it commit
+        if (self.since < THREAT_DWELL) return;
         // …and the scores are solved BELOW the dwell, not above it: they are pure, so every creature on the
         // field was computing a pair it then threw away for the whole 0.65 s after any change of mind.
         const h = score(self.dmgHero, distHero, 1.0);
@@ -1153,9 +953,7 @@ pub const Threat = struct {
 
 pub const Blow = struct {
     hit: combat.Hit,
-    from: rl.Vector3, // the attacker's own `pos`, in world space
-    /// WHO IT WAS SWUNG AT — a creature aiming at the spirit must not have its blow land on the hero
-    /// standing somewhere else.
+    from: rl.Vector3,
     on: Victim = .hero,
 };
 
@@ -1166,8 +964,6 @@ pub fn worseBlow(worst: *?Blow, h: combat.Hit, from: rl.Vector3, on: Victim) voi
 pub fn groupBlow(foes: anytype, dt: f32, hero: rl.Vector3, bounds: f32, blade: Blade) ?Blow {
     var worst: ?Blow = null;
     for (foes) |*f| {
-        // `aim` is the whole of the substitution: the creature is handed ITS OWN target in the argument it
-        // has always called `hero`, so nothing inside it changes and nothing inside it knows.
         if (f.update(dt, f.threat.aim(hero), bounds, blade)) |h| worseBlow(&worst, h, f.pos, f.threat.on);
     }
     return worst;
@@ -1175,15 +971,12 @@ pub fn groupBlow(foes: anytype, dt: f32, hero: rl.Vector3, bounds: f32, blade: B
 
 test "THREAT: hitting something takes its attention, and letting up hands it back" {
     var t = Threat{ .hasSpirit = true, .on = .spirit };
-    t.since = 100; // past the dwell, so it is free to change its mind
-    // Both standing at the same range, nobody has hit it: the SPIRIT holds it, because that is what a taunt is.
+    t.since = 100;
     t.tick(1.0 / 60.0, 3.0, 3.0, true);
     try std.testing.expectEqual(Victim.spirit, t.on);
-    // The hero commits. Damage is the loudest term, so it turns on him.
     t.hurtBy(.hero, 60);
     t.tick(1.0 / 60.0, 3.0, 3.0, true);
     try std.testing.expectEqual(Victim.hero, t.on);
-    // …and then he backs off and stops swinging. His claim decays and the wolf in its face takes it back.
     var s: f32 = 0;
     while (s < 14.0) : (s += 1.0 / 60.0) t.tick(1.0 / 60.0, 14.0, 2.0, true);
     try std.testing.expectEqual(Victim.spirit, t.on);
@@ -1192,45 +985,37 @@ test "THREAT: hitting something takes its attention, and letting up hands it bac
 test "THREAT: standing close is its own claim, with nobody hitting anything" {
     var t = Threat{ .hasSpirit = true, .on = .spirit };
     t.since = 100;
-    // The wolf is across the field and the hero is at its nose. Presence alone is enough to turn it.
     t.tick(1.0 / 60.0, 0.6, 12.0, true);
     try std.testing.expectEqual(Victim.hero, t.on);
 }
 
 test "THREAT DOES NOT DITHER — a near-tie holds whoever has it, whichever way round" {
-    // A tie has to be built out of the SCORES, not out of the raw damage: the spirit's taunt multiplies its
-    // whole claim, so equal damage is not a tie and testing it as one tests nothing. Solve for the spirit
-    // damage that puts its score just INSIDE the switch margin, and the incumbent must keep it both ways.
     const D: f32 = 5.0;
     const inside = THREAT_SWITCH - 0.05;
     const h = Threat.score(100, D, 1.0);
-    // (dS + prox) * TAUNT = h * inside  →  dS = h*inside/TAUNT - prox
     const prox = Threat.score(0, D, 1.0);
     const dS = h * inside / SPIRIT_TAUNT - prox;
 
     var t = Threat{ .hasSpirit = true, .on = .spirit, .dmgHero = 100, .dmgSpirit = dS };
     t.since = 100;
     t.tick(1.0 / 60.0, D, D, true);
-    try std.testing.expectEqual(Victim.spirit, t.on); // the spirit is ahead but not by enough to be taken off
+    try std.testing.expectEqual(Victim.spirit, t.on);
 
     var u = Threat{ .hasSpirit = true, .on = .hero, .dmgHero = 100, .dmgSpirit = dS };
     u.since = 100;
     u.tick(1.0 / 60.0, D, D, true);
-    try std.testing.expectEqual(Victim.hero, u.on); // …and the same numbers leave the hero holding it too
+    try std.testing.expectEqual(Victim.hero, u.on);
 }
 
 test "THREAT: it will not change its mind twice in a heartbeat" {
     var t = Threat{ .hasSpirit = true, .on = .hero };
     t.since = 100;
-    t.hurtBy(.spirit, 400); // an overwhelming claim…
+    t.hurtBy(.spirit, 400);
     t.tick(1.0 / 60.0, 5.0, 5.0, true);
     try std.testing.expectEqual(Victim.spirit, t.on);
-    // …and now an equally overwhelming one the other way, on the very next frame. The DWELL refuses it: a
-    // creature spinning between two targets twice a second reads as a bug, not as indecision.
     t.hurtBy(.hero, 4000);
     t.tick(1.0 / 60.0, 5.0, 5.0, true);
     try std.testing.expectEqual(Victim.spirit, t.on);
-    // Past the dwell it commits properly.
     var s: f32 = 0;
     while (s < THREAT_DWELL + 0.1) : (s += 1.0 / 60.0) t.tick(1.0 / 60.0, 5.0, 5.0, true);
     try std.testing.expectEqual(Victim.hero, t.on);
@@ -1238,17 +1023,14 @@ test "THREAT: it will not change its mind twice in a heartbeat" {
 
 test "WITH NO SPIRIT ON THE FIELD it is the hero, exactly as it always was" {
     var t = Threat{};
-    t.hurtBy(.spirit, 500); // …even with a claim from something that is no longer standing
+    t.hurtBy(.spirit, 500);
     t.tick(1.0 / 60.0, 30.0, 0.0, false);
     try std.testing.expectEqual(Victim.hero, t.on);
     try std.testing.expectApproxEqAbs(@as(f32, 0), t.dmgSpirit, 1e-6);
     const hero = v3(1, 0, 2);
-    try std.testing.expectEqual(hero.x, t.aim(hero).x); // and `aim` is a pass-through
+    try std.testing.expectEqual(hero.x, t.aim(hero).x);
 }
 
-/// HOW MANY BLOWS A CREATURE'S OWN BOARDS HAVE EATEN — zero for everything that carries none. `hits` counts
-/// a body that TOOK a blow and a block deliberately is not one, so without this a shaft stopped on a shield
-/// came back from `pierceGroup` as a MISS and flew on through the man who caught it.
 fn blocksOf(f: anytype) u32 {
     if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "blocksTaken")) return f.blocksTaken();
     return 0;
@@ -1263,7 +1045,7 @@ pub fn pierceGroup(foes: anytype, blade: Blade) bool {
         f.tryHit(blade);
         if (f.hits == before and blocksOf(f) == caught) continue;
         hit = true;
-        if (!blade.through) return true; // spent on the first body, which is what a shaft is
+        if (!blade.through) return true;
     }
     return hit;
 }
@@ -1279,22 +1061,18 @@ pub fn strike(vit: *combat.Vitals, hitLatch: *bool, center: rl.Vector3, hurtR: f
         if (!blade.active) return null;
     } else {
         if (!blade.active) {
-            hitLatch.* = false; // window closed → the next swing may land again
+            hitLatch.* = false;
             return null;
         }
         if (hitLatch.*) return null;
     }
     const reach = hurtR + blade.r;
-    // Swept: test THIS frame's blade segment AND last frame's, so a fast arc can't skip the foe.
     const q1 = mathx.closestOnSegV(center, blade.a, blade.b);
     const hit1 = mathx.lenV(mathx.subV(center, q1)) <= reach;
     const q0 = mathx.closestOnSegV(center, blade.a0, blade.b0);
     if (!(hit1 or mathx.lenV(mathx.subV(center, q0)) <= reach)) return null;
     if (!blade.pierce) hitLatch.* = true;
-    // The blow reads at the wound: blood/knockback fly along the blade's sweep at the contact.
     const contact = if (hit1) q1 else q0;
-    // A SHAFT'S OWN LENGTH *IS* ITS TRAVEL, where a swing's sweep is the difference between two FRAMES of
-    // blade — which for a shaft subtracts to zero and falls through to "contact toward centre".
     var sweep = if (blade.pierce)
         mathx.subV(blade.b, blade.a)
     else
@@ -1308,16 +1086,13 @@ pub fn strike(vit: *combat.Vitals, hitLatch: *bool, center: rl.Vector3, hurtR: f
     // souls and the drop are the blow's own — nothing here reaches past `vit`.
     if (blade.cullAt > 0 and !vit.dead and vit.hpFrac() <= blade.cullAt) {
         var out = blade.hit;
-        out.dmg += vit.hp; // …whatever is left, on top of what the swing was already worth
+        out.dmg += vit.hp;
         return .{ .contact = contact, .dir = dir, .reaction = vit.hit(out) };
     }
     return .{ .contact = contact, .dir = dir, .reaction = vit.hit(blade.hit) };
 }
 
 test "A SHAFT IS SPENT ON THE FIRST BODY AND A LANCE GOES THROUGH THE LINE" {
-    // THE BUG: `pierceGroup` returned on the first member it wounded and `game.pierceFoes` short-circuited on
-    // the first group that reported one, so the Ember Lance — priced at 21 FP for the SECOND body and the third
-    // (`combat.LANCE_HIT`) — landed on exactly one, and bought strictly less than the 12 FP bolt.
     const Dummy = struct {
         pos: rl.Vector3,
         hits: u32 = 0,
@@ -1329,19 +1104,17 @@ test "A SHAFT IS SPENT ON THE FIRST BODY AND A LANCE GOES THROUGH THE LINE" {
             return false;
         }
         fn tryHit(self: *@This(), b: Blade) void {
-            // Standing ON the segment, so the only thing under test is who is offered the blade.
             if (!b.active or mathx.lenV(mathx.subV(self.pos, mathx.closestOnSegV(self.pos, b.a, b.b))) > b.r) return;
             self.hits += 1;
             _ = self.vit.hit(b.hit);
         }
     };
-    // Three bodies shoulder to shoulder down +X, which is the muster this spell exists for.
     const line = [3]rl.Vector3{ v3(1, 1, 0), v3(2, 1, 0), v3(3, 1, 0) };
     const shaft = Blade{ .active = true, .pierce = true, .r = 0.5, .a = v3(0, 1, 0), .b = v3(9, 1, 0), .a0 = v3(0, 1, 0), .b0 = v3(9, 1, 0), .hit = .{ .dmg = 5 } };
 
     var spent = [3]Dummy{ .{ .pos = line[0] }, .{ .pos = line[1] }, .{ .pos = line[2] } };
     try std.testing.expect(pierceGroup(&spent, shaft));
-    try std.testing.expectEqual(@as(u32, 1), spent[0].hits); // the shaft stops in the first man…
+    try std.testing.expectEqual(@as(u32, 1), spent[0].hits);
     try std.testing.expectEqual(@as(u32, 0), spent[1].hits);
     try std.testing.expectEqual(@as(u32, 0), spent[2].hits);
 
@@ -1349,7 +1122,7 @@ test "A SHAFT IS SPENT ON THE FIRST BODY AND A LANCE GOES THROUGH THE LINE" {
     var lance = shaft;
     lance.through = true;
     try std.testing.expect(pierceGroup(&run, lance));
-    for (&run) |*d| { // …and the lance takes every one of them, once each
+    for (&run) |*d| {
         try std.testing.expectEqual(@as(u32, 1), d.hits);
         try std.testing.expect(d.vit.hp < d.vit.hpMax);
     }
@@ -1371,7 +1144,7 @@ test "a CORPSE is not a body in the way, from the frame it starts to fall" {
     };
     var d = Dummy{};
     try std.testing.expect(corporeal(&d));
-    d.down = true; // the collapse has begun, and `alive()` stays true for seconds yet
+    d.down = true;
     try std.testing.expect(!corporeal(&d));
     d.gone = true;
     try std.testing.expect(!corporeal(&d));
@@ -1379,12 +1152,11 @@ test "a CORPSE is not a body in the way, from the frame it starts to fall" {
 
 test "THE SHIELD IS A DIRECTION AND EACH MOVE ITS OWN REACH" {
     const hero = v3(0, 0, 0);
-    var p = Parry{ .live = false, .at = hero, .facing = 0 }; // facing +Z
+    var p = Parry{ .live = false, .at = hero, .facing = 0 };
     const ahead = v3(0, 0, 3);
-    try std.testing.expect(!p.catches(ahead, 4.0)); // window shut: nothing is caught, however square it is
+    try std.testing.expect(!p.catches(ahead, 4.0));
     p.live = true;
     try std.testing.expect(p.catches(ahead, 4.0));
-    // Out past the MOVE's own reach — a windup you rolled away from is not a thing you can bat aside.
     try std.testing.expect(!p.catches(ahead, 2.0));
     // Behind the arc. GUARD_ARC either side of facing, so a foe at 90 deg is out and one just inside is in.
     const flank = v3(3, 0, 0);
@@ -1393,7 +1165,6 @@ test "THE SHIELD IS A DIRECTION AND EACH MOVE ITS OWN REACH" {
     try std.testing.expect(p.catches(v3(3.0 * mathx.sinf(edge), 0, 3.0 * mathx.cosf(edge)), 4.0));
     const past = mathx.radians(combat.GUARD_ARC + 2.0);
     try std.testing.expect(!p.catches(v3(3.0 * mathx.sinf(past), 0, 3.0 * mathx.cosf(past)), 4.0));
-    // …and the arc turns with him rather than with the world.
     p.facing = std.math.pi;
     try std.testing.expect(!p.catches(ahead, 4.0));
     try std.testing.expect(p.catches(v3(0, 0, -3), 4.0));
@@ -1410,7 +1181,6 @@ test "THE LEASH: a foe drawn far from home walks back once the fight has gone qu
     var t: f32 = 0;
     while (t < LEASH_CALM + 0.1) : (t += 1.0 / 60.0) l.tick(1.0 / 60.0, far, gone, aggro);
     try std.testing.expect(l.goingHome());
-    // THE HYSTERESIS: back inside the tether is NOT "home" — it walks until it is actually there.
     l.tick(1.0 / 60.0, leashR(aggro) - 1.0, gone, aggro);
     try std.testing.expect(l.goingHome());
     l.tick(1.0 / 60.0, LEASH_HOME_R - 0.5, gone, aggro);
@@ -1424,18 +1194,16 @@ test "THE LEASH: a foe drawn far from home walks back once the fight has gone qu
 test "IT NEVER TURNS ROUND WHILE HE IS STILL IN ITS PATCH, and walking back in ends the walk home" {
     const aggro: f32 = 20.0;
     const far = leashR(aggro) + 8.0;
-    // The hero standing deep in the ground it guards, neither side having landed a blow: it fights on.
     var toe = Leash{};
     var t: f32 = 0;
     while (t < LEASH_CALM * 3.0) : (t += 1.0 / 60.0) toe.tick(1.0 / 60.0, far, 1.2, aggro);
     try std.testing.expect(!toe.goingHome());
 
-    // THE BUG: it was blind for the whole walk back — the hero could stand in front of it and be ignored.
     var l = Leash{};
     t = 0;
     while (t < LEASH_CALM + 0.1) : (t += 1.0 / 60.0) l.tick(1.0 / 60.0, far, aggro + 1.0, aggro);
     try std.testing.expect(l.goingHome());
-    l.tick(1.0 / 60.0, far, aggro - 0.5, aggro); // he steps back inside the ring, still nowhere near home
+    l.tick(1.0 / 60.0, far, aggro - 0.5, aggro);
     try std.testing.expect(!l.goingHome());
     // …and RE-ENGAGING COSTS HIM: it cannot try to leave again on the next quiet moment, only after the hold.
     t = 0;
@@ -1461,20 +1229,17 @@ test "ONE PLAYER HIT ROUSES IT FROM ANY RANGE, and KEEPING AT IT breaks the leas
 
     var c = Leash{};
     const far = leashR(aggro) + 8.0;
-    const sniped = aggro * 2.0; // hit from well outside its own ring — the walk home is all it can see
+    const sniped = aggro * 2.0;
     t = 0;
     while (t < LEASH_CALM + 0.1) : (t += 1.0 / 60.0) c.tick(1.0 / 60.0, far, sniped, aggro);
     try std.testing.expect(c.goingHome());
-    // ONE BLOW TURNS IT ROUND, and the hold is what stops one arrow a second flipping its mind every frame.
     c.provoke();
     c.tick(1.0 / 60.0, far, sniped, aggro);
     try std.testing.expect(!c.goingHome());
     try std.testing.expect(c.roused());
-    // A single hit's hold LAPSES and the tether takes over again…
     t = 0;
     while (t < REENGAGE_HOLD + LEASH_CALM + 0.2) : (t += 1.0 / 60.0) c.tick(1.0 / 60.0, far, sniped, aggro);
     try std.testing.expect(c.goingHome());
-    // …but KEEPING AT IT (PROVOKE_BREAK worth of blows) makes it stop trying to leave for far longer.
     c.provoke();
     c.provoke();
     c.provoke();
@@ -1492,17 +1257,12 @@ test "ONE PLAYER HIT ROUSES IT FROM ANY RANGE, and KEEPING AT IT breaks the leas
 test "NOTHING NOTICES WHAT IT CANNOT SEE, and it keeps at him a while after it loses him" {
     const aggro: f32 = 20.0;
     var l = Leash{};
-    // Never seen — a foe posted by a world that has just loaded: he might as well not be there, however
-    // close he is standing.
     l.blindNow();
     try std.testing.expect(l.blind());
     try std.testing.expect(sensedDist(&l, 1.0, aggro) > aggro);
-    // Seen: it reads his REAL distance again.
     l.noteSeen();
     try std.testing.expect(!l.blind());
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), sensedDist(&l, 1.0, aggro), 1e-4);
-    // …and it keeps coming for `SIGHT_MEMORY` after he breaks the line, which is what stops a pillar
-    // ending a fight.
     var t: f32 = 0;
     while (t < SIGHT_MEMORY - 0.5) : (t += 1.0 / 60.0) {
         l.tick(1.0 / 60.0, 0, 1.0, aggro);
@@ -1521,22 +1281,17 @@ test "NOTHING NOTICES WHAT IT CANNOT SEE, and it keeps at him a while after it l
 }
 
 test "the leash constants say what the rule is" {
-    // Start FAR, stop NEAR — the gap between them IS the debounce, and a zero gap is the flapping.
     try std.testing.expect(LEASH_HOME_R < LEASH_SLACK);
-    // …and the slack is POSITIVE whatever the creature, or a tether comes out shorter than its own ring.
     try std.testing.expect(LEASH_SLACK > 0 and leashR(11.0) > 11.0);
     try std.testing.expect(PROVOKE_BREAK > PROVOKE_PER_HIT);
     try std.testing.expect(PROVOKE_ROUSE > LEASH_CALM * 2.0);
     try std.testing.expect(PROVOKE_HOLD > LEASH_CALM * 2.0);
-    // Re-engaging has to cost MORE than simply waiting out the quiet window, and LESS than three blows buy.
     try std.testing.expect(REENGAGE_HOLD > LEASH_CALM and REENGAGE_HOLD < PROVOKE_HOLD);
-    // …and BREAKING SIGHT must not shed a foe faster than walking away from one does.
     try std.testing.expect(SIGHT_MEMORY > LEASH_CALM);
 }
 
 test "A SHAFT'S blood and shove run ALONG its flight, and it never touches the swing latch" {
-    // THE bug: a pierce passes one segment as BOTH `a`/`b` and `a0`/`b0`, so the swing's two-frame sweep subtracted to zero and `dir` came out square across the shaft — which is where blood and shove go.
-    var vit = combat.Vitals.init(100, 999, 999); // huge poise/stance: no reaction to muddy this
+    var vit = combat.Vitals.init(100, 999, 999);
     var latch = false;
     const shaft = mathx.v3(-1, 1, 0.3);
     const tip = mathx.v3(1, 1, 0.3);
@@ -1550,7 +1305,7 @@ test "A SHAFT'S blood and shove run ALONG its flight, and it never touches the s
         .b0 = tip,
         .hit = .{ .dmg = 5 },
     }).?;
-    try std.testing.expect(s.dir.x > 0.95); // down the TRAVEL (+X)…
+    try std.testing.expect(s.dir.x > 0.95);
     try std.testing.expect(@abs(s.dir.z) < 0.2);
     try std.testing.expect(!latch);
     const again = strike(&vit, &latch, mathx.v3(0, 1, 0), 0.5, .{
@@ -1567,7 +1322,7 @@ test "A SHAFT'S blood and shove run ALONG its flight, and it never touches the s
 }
 
 test "strike: latches one hit per swing, re-arms when the window closes, applies the reaction" {
-    var vit = combat.Vitals.init(100, 8, 100); // low poise → a hit flinches
+    var vit = combat.Vitals.init(100, 8, 100);
     var latch = false;
     const c = mathx.v3(0, 1, 0);
     const active = Blade{ .active = true, .r = 0.4, .a = mathx.v3(0, 1, -1), .b = mathx.v3(0, 1, 1), .a0 = mathx.v3(0, 1, -1), .b0 = mathx.v3(0, 1, 1), .hit = .{ .dmg = 10, .poise = 20 } };
@@ -1583,14 +1338,12 @@ test "strike: latches one hit per swing, re-arms when the window closes, applies
 
 test "A SWUNG WEAPON REACHES WHAT IT CROSSED, and nothing it went over" {
     const hero = v3(0, 0, 2.0);
-    const level = [2]rl.Vector3{ v3(0, 1.1, 0.4), v3(0, 1.1, 2.1) }; // a blade laid through his chest
+    const level = [2]rl.Vector3{ v3(0, 1.1, 0.4), v3(0, 1.1, 2.1) };
     try std.testing.expect(weaponReaches(level, level, hero, 0.6));
     const over = [2]rl.Vector3{ v3(0, 2.9, 0.4), v3(0, 2.9, 2.1) };
     try std.testing.expect(!weaponReaches(over, over, hero, 0.6));
     const short = [2]rl.Vector3{ v3(0, 1.1, -0.6), v3(0, 1.1, 0.8) };
     try std.testing.expect(!weaponReaches(short, short, hero, 0.6));
-    // THE SWEEP IS THE POINT: a head that was one side of him last frame and the other side this frame
-    // still hits, where a pair of endpoint tests would have it pass straight through.
     const a = [2]rl.Vector3{ v3(-1.4, 1.1, 2.0), v3(-0.2, 1.1, 2.0) };
     const b = [2]rl.Vector3{ v3(0.2, 1.1, 2.0), v3(1.4, 1.1, 2.0) };
     try std.testing.expect(!weaponReaches(a, a, hero, 0.15));
@@ -1601,12 +1354,10 @@ test "A SWUNG WEAPON REACHES WHAT IT CROSSED, and nothing it went over" {
 test "THE SWING RIBBON ONLY RECORDS A BLADE THAT MOVED, and it expires" {
     var t = Trail(4){};
     const base = v3(0, 1.1, 0.2);
-    // A blade sitting still lays nothing — samples of an unmoving edge stack into a quad that never fades.
     t.push(base, v3(0, 1.1, 1.4), v3(0, 1.1, 1.4 + TRAIL_SWEEP_MIN * 0.5), 0.3);
     try std.testing.expect(t.s[t.head].age >= mathx.LONG_AGO);
     t.push(base, v3(0, 1.1, 1.4), v3(0.9, 1.1, 1.4), 0.3);
     try std.testing.expectApproxEqAbs(@as(f32, 0), t.s[t.head].age, 1e-6);
-    // The ribbon's inner edge sits `root` of the way down the blade, and its outer edge IS the point.
     try std.testing.expectApproxEqAbs(@as(f32, 0.2 + 0.3 * 1.2), t.s[t.head].a.z, 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 1.4), t.s[t.head].b.z, 1e-6);
     t.age(0.4);
@@ -1621,9 +1372,7 @@ test "A SWING STARTS SLOW ENOUGH TO BE SEEN, then whips" {
     // The first quarter of the window moves the limb a TWELFTH of its arc. Front-loaded it moved 58% of it,
     // which is why a parry could only ever be timed off the sound and the clock.
     try std.testing.expect(swingCurve(0.25) < 0.10);
-    // …and the LAST quarter carries more than twice what the first did: that asymmetry is the whip.
     try std.testing.expect(1.0 - swingCurve(0.75) > 2.0 * swingCurve(0.25));
-    // …and it is monotone, so the arc never goes backwards mid-strike.
     var prev: f32 = -1;
     var u: f32 = 0;
     while (u <= 1.0001) : (u += 1.0 / 64.0) {
@@ -1631,7 +1380,6 @@ test "A SWING STARTS SLOW ENOUGH TO BE SEEN, then whips" {
         try std.testing.expect(now >= prev);
         prev = now;
     }
-    // …and it is BEHIND a symmetric smoothstep the whole way, which is what makes the start the slow part.
     try std.testing.expect(swingCurve(0.5) < 0.5);
 }
 

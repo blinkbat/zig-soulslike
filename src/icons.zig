@@ -52,10 +52,9 @@ pub const Icon = enum {
     redo,
 };
 
-/// Draw `ic` centred on (cx, cy), sized to fit a `size`-square box.
 pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
     const s = size;
-    const w = @max(1.4, s / 11.0); // ONE stroke weight for the whole set, scaled off the box
+    const w = @max(1.4, s / 11.0);
     const d = dim(col);
     switch (ic) {
         .ground => {
@@ -74,7 +73,7 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             }
         },
         .decor => {
-            line(cx + s * 0.10, cy + s * 0.40, cx - s * 0.04, cy - s * 0.34, w, col); // a leaning stem
+            line(cx + s * 0.10, cy + s * 0.40, cx - s * 0.04, cy - s * 0.34, w, col);
             var i: i32 = 0;
             while (i < 2) : (i += 1) {
                 const t = 0.30 + @as(f32, @floatFromInt(i)) * 0.36;
@@ -84,10 +83,10 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
                 line(x, y, x - l, y - l * 0.62, w, col);
                 line(x, y, x + l, y - l * 0.62, w, col);
             }
-            dot(cx - s * 0.04, cy - s * 0.34, w * 0.9, col); // the curled tip
+            dot(cx - s * 0.04, cy - s * 0.34, w * 0.9, col);
         },
         .props => {
-            hline(cx, cy - s * 0.34, s * 0.74, w * 1.3, col); // the abacus, proud of everything
+            hline(cx, cy - s * 0.34, s * 0.74, w * 1.3, col);
             hline(cx, cy - s * 0.25, s * 0.52, w, col);
             vline(cx - s * 0.10, cy + s * 0.02, s * 0.52, w, col);
             vline(cx + s * 0.10, cy + s * 0.02, s * 0.52, w, col);
@@ -95,10 +94,10 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             hline(cx, cy + s * 0.38, s * 0.74, w * 1.3, col);
         },
         .interact => {
-            box(cx, cy + s * 0.15, s * 0.72, s * 0.42, w, col); // the carcase
+            box(cx, cy + s * 0.15, s * 0.72, s * 0.42, w, col);
             arc(cx, cy - s * 0.06, s * 0.36, 180, 360, w, col);
             hline(cx, cy - s * 0.06, s * 0.72, w, col);
-            dot(cx, cy + s * 0.06, w * 1.2, col); // the hasp, over the joint
+            dot(cx, cy + s * 0.06, w * 1.2, col);
         },
         .units => {
             ring2(cx, cy - s * 0.20, s * 0.16, w, col);
@@ -125,12 +124,11 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             const b = rl.Vector2{ .x = cx + s * 0.18, .y = cy - s * 0.30 };
             rl.drawLineEx(a, b, w * 3.4, d);
             rl.drawLineEx(.{ .x = a.x, .y = a.y }, .{ .x = cx - s * 0.06, .y = cy - s * 0.02 }, w * 3.4, col);
-            hline(cx + s * 0.06, cy + s * 0.40, s * 0.62, w, d); // the surface it works on
+            hline(cx + s * 0.06, cy + s * 0.40, s * 0.62, w, d);
         },
 
         .zone => {
             box(cx, cy, s * 0.68, s * 0.56, w, col);
-            // A corner handle, so it reads as a draggable rect and not as a picture frame.
             dot(cx - s * 0.34, cy - s * 0.28, w * 1.5, col);
             dot(cx + s * 0.34, cy + s * 0.28, w * 1.5, col);
         },
@@ -149,7 +147,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
         },
         .single => {
             dot(cx, cy, w * 1.9, col);
-            // A crosshair, so "one, exactly there" reads as precision rather than as a full stop.
             hline(cx, cy, s * 0.66, w * 0.8, d);
             vline(cx, cy, s * 0.66, w * 0.8, d);
         },
@@ -173,7 +170,7 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             ring2(cx, cy, s * 0.34, w * 0.8, d);
             var i: i32 = 0;
             while (i < 7) : (i += 1) {
-                if (i == 5) continue; // THE GAP — a ring op leaves one out, and the icon says so
+                if (i == 5) continue;
                 const a = std.math.tau * @as(f32, @floatFromInt(i)) / 7.0;
                 dot(cx + mathx.cosf(a) * s * 0.34, cy + mathx.sinf(a) * s * 0.34, w * 1.5, col);
             }
@@ -188,50 +185,49 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             }
         },
         .ivy => {
-            vline(cx - s * 0.26, cy, s * 0.84, w * 2.6, d); // the wall face
+            vline(cx - s * 0.26, cy, s * 0.84, w * 2.6, d);
             var i: i32 = 0;
             while (i < 3) : (i += 1) {
                 const t = @as(f32, @floatFromInt(i)) / 2.0;
                 const y = cy + s * 0.30 - t * s * 0.62;
                 const side: f32 = if (@mod(i, 2) == 0) 1.0 else 0.45;
                 const x = cx - s * 0.10 + s * 0.22 * side;
-                line(cx - s * 0.14, y + s * 0.06, x, y, w, col); // a short stalk off the wall
+                line(cx - s * 0.14, y + s * 0.06, x, y, w, col);
                 dot(x, y, w * 2.0, col);
             }
-            vline(cx - s * 0.14, cy, s * 0.66, w * 0.9, col); // the runner itself, straight up
+            vline(cx - s * 0.14, cy, s * 0.66, w * 0.9, col);
         },
 
         .toad => {
-            arc(cx, cy + s * 0.22, s * 0.38, 180, 360, w, col); // squat and wide
+            arc(cx, cy + s * 0.22, s * 0.38, 180, 360, w, col);
             hline(cx, cy + s * 0.22, s * 0.72, w, col);
-            dot(cx - s * 0.15, cy - s * 0.02, w * 1.3, col); // two eyes
+            dot(cx - s * 0.15, cy - s * 0.02, w * 1.3, col);
             dot(cx + s * 0.15, cy - s * 0.02, w * 1.3, col);
         },
         .archer => {
-            arc(cx - s * 0.04, cy, s * 0.34, 300, 420, w, col); // the bow's limb…
+            arc(cx - s * 0.04, cy, s * 0.34, 300, 420, w, col);
             line(cx + s * 0.12, cy - s * 0.29, cx + s * 0.12, cy + s * 0.29, w * 0.7, col);
             line(cx - s * 0.26, cy, cx + s * 0.30, cy, w * 0.9, col);
         },
         .ogre => {
-            arc(cx, cy + s * 0.28, s * 0.42, 180, 360, w, col); // a great hunched mass
+            arc(cx, cy + s * 0.28, s * 0.42, 180, 360, w, col);
             hline(cx, cy + s * 0.28, s * 0.80, w, col);
-            dot(cx, cy - s * 0.04, w * 2.0, col); // ONE eye — the whole character in one dot
+            dot(cx, cy - s * 0.04, w * 2.0, col);
         },
         .berserker => {
             // TWO axes, crossed — the whole character, and it cannot be mistaken for one weapon.
             for ([_]f32{ -1, 1 }) |side| {
-                line(cx + side * s * 0.26, cy + s * 0.34, cx - side * s * 0.20, cy - s * 0.30, w, col); // the haft
+                line(cx + side * s * 0.26, cy + s * 0.34, cx - side * s * 0.20, cy - s * 0.30, w, col);
                 arc(cx - side * s * 0.20, cy - s * 0.30, s * 0.15, if (side < 0) 200 else 340, if (side < 0) 340 else 480, w, col);
             }
         },
         .priest => {
-            line(cx - s * 0.06, cy + s * 0.40, cx - s * 0.06, cy - s * 0.20, w, col); // a tall crooked staff
+            line(cx - s * 0.06, cy + s * 0.40, cx - s * 0.06, cy - s * 0.20, w, col);
             arc(cx - s * 0.06, cy - s * 0.26, s * 0.13, 180, 360, w, col);
             dot(cx - s * 0.06, cy - s * 0.28, w * 1.9, col);
-            line(cx + s * 0.14, cy + s * 0.06, cx + s * 0.14, cy + s * 0.26, w * 0.7, col); // a charm on a thong
+            line(cx + s * 0.14, cy + s * 0.06, cx + s * 0.14, cy + s * 0.26, w * 0.7, col);
         },
         .slinger => {
-            // The pouch at the bottom of two cords, mid-whirl: a V with a stone in it.
             line(cx - s * 0.24, cy - s * 0.32, cx - s * 0.05, cy + s * 0.26, w * 0.8, col);
             line(cx + s * 0.24, cy - s * 0.32, cx + s * 0.05, cy + s * 0.26, w * 0.8, col);
             arc(cx, cy + s * 0.26, s * 0.10, 0, 180, w, col);
@@ -239,7 +235,7 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
         },
 
         .brood_mother => {
-            arc(cx, cy + s * 0.10, s * 0.26, 180, 360, w, col); // the carapace
+            arc(cx, cy + s * 0.10, s * 0.26, 180, 360, w, col);
             hline(cx, cy + s * 0.10, s * 0.48, w, col);
             for ([_]f32{ -1, 1 }) |side| {
                 for ([_]f32{ -0.16, 0.02, 0.20 }) |dy| {
@@ -250,7 +246,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             }
         },
         .broodling => {
-            // The same animal, small and off the ground — a body, four legs, and the leap under it.
             arc(cx, cy - s * 0.04, s * 0.17, 180, 360, w, col);
             hline(cx, cy - s * 0.04, s * 0.32, w, col);
             for ([_]f32{ -1, 1 }) |side| {
@@ -258,11 +253,10 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
                     line(cx + side * s * 0.13, cy - s * 0.08 + s * dy, cx + side * s * 0.30, cy - s * 0.24 + s * dy, w * 0.7, col);
                 }
             }
-            hline(cx, cy + s * 0.32, s * 0.36, w * 0.6, d); // the ground it is above
+            hline(cx, cy + s * 0.32, s * 0.36, w * 0.6, d);
         },
 
         .brood_sac => {
-            // A lumpy bag on the ground with the eggs showing through, and a web guy either side.
             arc(cx, cy + s * 0.26, s * 0.34, 180, 360, w, col);
             hline(cx, cy + s * 0.26, s * 0.66, w, col);
             dot(cx - s * 0.12, cy + s * 0.10, w * 1.5, col);
@@ -273,32 +267,27 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
         },
 
         .shieldman => {
-            // The kite shield IS the character; the mace is behind it, which is where it lives.
             line(cx + s * 0.12, cy - s * 0.36, cx + s * 0.36, cy + s * 0.10, w * 0.8, d);
             dot(cx + s * 0.12, cy - s * 0.36, w * 2.1, d);
-            arc(cx - s * 0.06, cy - s * 0.12, s * 0.24, 180, 360, w, col); // the domed shoulders…
-            line(cx - s * 0.30, cy - s * 0.12, cx - s * 0.06, cy + s * 0.42, w, col); // …down to the point
+            arc(cx - s * 0.06, cy - s * 0.12, s * 0.24, 180, 360, w, col);
+            line(cx - s * 0.30, cy - s * 0.12, cx - s * 0.06, cy + s * 0.42, w, col);
             line(cx + s * 0.18, cy - s * 0.12, cx - s * 0.06, cy + s * 0.42, w, col);
-            dot(cx - s * 0.06, cy - s * 0.02, w * 1.6, col); // the boss
+            dot(cx - s * 0.06, cy - s * 0.02, w * 1.6, col);
         },
         .greatsword => {
-            // Point UP, and the length of it is the whole read — a long blade over a two-handed grip.
             vline(cx, cy - s * 0.06, s * 0.62, w, col);
-            line(cx, cy - s * 0.44, cx - s * 0.09, cy - s * 0.26, w * 0.8, col); // the point
+            line(cx, cy - s * 0.44, cx - s * 0.09, cy - s * 0.26, w * 0.8, col);
             line(cx, cy - s * 0.44, cx + s * 0.09, cy - s * 0.26, w * 0.8, col);
-            hline(cx, cy + s * 0.20, s * 0.56, w, col); // a crossguard nothing else in the set has
-            vline(cx, cy + s * 0.32, s * 0.20, w * 1.6, d); // the grip, long enough for both hands
-            dot(cx, cy + s * 0.43, w * 1.5, col); // and the pommel
+            hline(cx, cy + s * 0.20, s * 0.56, w, col);
+            vline(cx, cy + s * 0.32, s * 0.20, w * 1.6, d);
+            dot(cx, cy + s * 0.43, w * 1.5, col);
         },
 
         .shade => {
-            // A HOOD WITH NOTHING IN IT, over a hem that frays out — the two reads that are only this
-            // creature's. No legs: every other unit glyph in the set stands on something.
-            arc(cx, cy - s * 0.18, s * 0.20, 180, 360, w, col); // the cowl…
-            line(cx - s * 0.20, cy - s * 0.18, cx - s * 0.30, cy + s * 0.18, w, col); // …shouldering out
+            arc(cx, cy - s * 0.18, s * 0.20, 180, 360, w, col);
+            line(cx - s * 0.20, cy - s * 0.18, cx - s * 0.30, cy + s * 0.18, w, col);
             line(cx + s * 0.20, cy - s * 0.18, cx + s * 0.30, cy + s * 0.18, w, col);
-            dot(cx, cy - s * 0.17, w * 1.5, d); // the hollow where a face would be
-            // …and the tatters, uneven, none of them reaching as far as the next.
+            dot(cx, cy - s * 0.17, w * 1.5, d);
             line(cx - s * 0.30, cy + s * 0.18, cx - s * 0.22, cy + s * 0.42, w * 0.8, d);
             line(cx - s * 0.10, cy + s * 0.22, cx - s * 0.04, cy + s * 0.36, w * 0.8, d);
             line(cx + s * 0.10, cy + s * 0.22, cx + s * 0.16, cy + s * 0.44, w * 0.8, d);
@@ -306,13 +295,10 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
         },
 
         .rooted => {
-            // A TRUNK WITH TWO EYES IN IT and limbs that reach: the only unit glyph that is also a prop, and
-            // the eyes are what say which of the two it is.
-            vline(cx, cy + s * 0.10, s * 0.74, w * 2.4, col); // the bole
-            dot(cx - s * 0.09, cy - s * 0.06, w * 1.5, col); // …and the pair of knot-holes
+            vline(cx, cy + s * 0.10, s * 0.74, w * 2.4, col);
+            dot(cx - s * 0.09, cy - s * 0.06, w * 1.5, col);
             dot(cx + s * 0.09, cy - s * 0.06, w * 1.5, col);
             hline(cx, cy + s * 0.44, s * 0.44, w, d); // the roots it cannot leave
-            // Two limbs out and one over the top, each elbowing rather than running straight.
             line(cx - s * 0.02, cy - s * 0.18, cx - s * 0.26, cy - s * 0.30, w, col);
             line(cx - s * 0.26, cy - s * 0.30, cx - s * 0.38, cy - s * 0.14, w * 0.8, col);
             line(cx + s * 0.02, cy - s * 0.10, cx + s * 0.28, cy - s * 0.22, w, col);
@@ -321,84 +307,68 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
         },
 
         .shroom => {
-            // A CAP OVER A MOUTH (no eyes — the creature has none): the dome is the mushroom, the mouth is
-            // what makes it a unit and not a decor toadstool, and the puff beside it is what it does to you.
-            arc(cx, cy - s * 0.06, s * 0.34, 180, 360, w * 1.6, col); // the dome
-            hline(cx, cy - s * 0.06, s * 0.62, w * 1.2, col); // its rim
-            vline(cx - s * 0.10, cy + s * 0.14, s * 0.30, w * 1.6, col); // the squat stalk…
+            arc(cx, cy - s * 0.06, s * 0.34, 180, 360, w * 1.6, col);
+            hline(cx, cy - s * 0.06, s * 0.62, w * 1.2, col);
+            vline(cx - s * 0.10, cy + s * 0.14, s * 0.30, w * 1.6, col);
             vline(cx + s * 0.10, cy + s * 0.14, s * 0.30, w * 1.6, col);
-            hline(cx, cy + s * 0.12, s * 0.12, w * 1.3, d); // …and the small flat mouth under the rim
-            dot(cx + s * 0.36, cy - s * 0.34, w * 1.2, d); // the spore puff, drifting off the cap
+            hline(cx, cy + s * 0.12, s * 0.12, w * 1.3, d);
+            dot(cx + s * 0.36, cy - s * 0.34, w * 1.2, d);
             dot(cx + s * 0.44, cy - s * 0.24, w * 0.9, d);
         },
 
         .leechfly => {
-            // WINGS OUT AND A BEAK DOWN — the two reads that are only this creature's, and the only glyph
-            // in the set that is not standing on anything. The wings are what says it flies; the beak,
-            // pointing at where a floor would be, is what says what it does when it gets there.
-            arc(cx - s * 0.24, cy - s * 0.14, s * 0.22, 200, 340, w * 0.8, d); // the wings, swept back…
+            arc(cx - s * 0.24, cy - s * 0.14, s * 0.22, 200, 340, w * 0.8, d);
             arc(cx + s * 0.24, cy - s * 0.14, s * 0.22, 200, 340, w * 0.8, d);
-            dot(cx, cy - s * 0.02, w * 2.6, col); // the thorax
-            line(cx, cy + s * 0.04, cx - s * 0.06, cy + s * 0.30, w * 1.4, col); // the abdomen, hung back
-            dot(cx - s * 0.07, cy + s * 0.33, w * 1.1, d); //  …to a blunt end, never a point
-            dot(cx + s * 0.02, cy - s * 0.20, w * 1.8, col); // the head…
-            dot(cx - s * 0.06, cy - s * 0.24, w * 1.2, col); // …and the two bulged eyes
+            dot(cx, cy - s * 0.02, w * 2.6, col);
+            line(cx, cy + s * 0.04, cx - s * 0.06, cy + s * 0.30, w * 1.4, col);
+            dot(cx - s * 0.07, cy + s * 0.33, w * 1.1, d);
+            dot(cx + s * 0.02, cy - s * 0.20, w * 1.8, col);
+            dot(cx - s * 0.06, cy - s * 0.24, w * 1.2, col);
             dot(cx + s * 0.09, cy - s * 0.24, w * 1.2, col);
-            line(cx + s * 0.02, cy - s * 0.16, cx + s * 0.12, cy + s * 0.16, w * 0.8, col); // the beak
+            line(cx + s * 0.02, cy - s * 0.16, cx + s * 0.12, cy + s * 0.16, w * 0.8, col);
         },
 
         .bone_knight => {
-            // A SLAB OF A SHIELD, filling most of the box, with a helm over its rim and a blade behind it.
-            box(cx - s * 0.06, cy + s * 0.06, s * 0.50, s * 0.66, w * 1.6, col); // the door…
-            hline(cx - s * 0.06, cy + s * 0.06, s * 0.44, w, d); // …its brace
-            dot(cx - s * 0.06, cy - s * 0.10, w * 1.8, d); // …and the boss over the grip
-            arc(cx + s * 0.10, cy - s * 0.28, s * 0.16, 180, 360, w * 1.4, col); // the helm above it
-            hline(cx + s * 0.10, cy - s * 0.26, s * 0.24, w * 1.1, d); // the visor slit
-            line(cx + s * 0.34, cy - s * 0.12, cx + s * 0.34, cy + s * 0.40, w, col); // the blade behind
-            hline(cx + s * 0.34, cy + s * 0.02, s * 0.16, w * 0.8, d); // …and its crossguard
+            box(cx - s * 0.06, cy + s * 0.06, s * 0.50, s * 0.66, w * 1.6, col);
+            hline(cx - s * 0.06, cy + s * 0.06, s * 0.44, w, d);
+            dot(cx - s * 0.06, cy - s * 0.10, w * 1.8, d);
+            arc(cx + s * 0.10, cy - s * 0.28, s * 0.16, 180, 360, w * 1.4, col);
+            hline(cx + s * 0.10, cy - s * 0.26, s * 0.24, w * 1.1, d);
+            line(cx + s * 0.34, cy - s * 0.12, cx + s * 0.34, cy + s * 0.40, w, col);
+            hline(cx + s * 0.34, cy + s * 0.02, s * 0.16, w * 0.8, d);
         },
 
         .delver => {
-            // A GROUND LINE WITH A MOUND UNDER IT AND CLAWS COMING THROUGH. The only glyph in the set that
-            // is drawn half BELOW its own floor — which is the creature, and is why the surface has to be in
-            // the picture at all.
-            hline(cx, cy - s * 0.06, s * 0.80, w * 1.1, d); // the ground it is under
-            arc(cx, cy - s * 0.06, s * 0.32, 180, 360, w * 1.6, col); // …heaving over it
-            line(cx - s * 0.16, cy - s * 0.14, cx - s * 0.30, cy - s * 0.42, w * 1.2, col); // the claws through
+            hline(cx, cy - s * 0.06, s * 0.80, w * 1.1, d);
+            arc(cx, cy - s * 0.06, s * 0.32, 180, 360, w * 1.6, col);
+            line(cx - s * 0.16, cy - s * 0.14, cx - s * 0.30, cy - s * 0.42, w * 1.2, col);
             line(cx + s * 0.04, cy - s * 0.20, cx + s * 0.06, cy - s * 0.50, w * 1.2, col);
             line(cx + s * 0.22, cy - s * 0.14, cx + s * 0.34, cy - s * 0.38, w * 1.2, col);
-            dot(cx - s * 0.20, cy + s * 0.18, w * 1.3, d); // …and the clods it threw
+            dot(cx - s * 0.20, cy + s * 0.18, w * 1.3, d);
             dot(cx + s * 0.24, cy + s * 0.24, w * 1.1, d);
             dot(cx + s * 0.02, cy + s * 0.32, w * 1.2, d);
         },
 
         .necromancer => {
-            // A TALL NARROW COLUMN WITH A CROOKED STAFF BESIDE IT, and a ring drawn on the floor under it.
-            arc(cx - s * 0.08, cy - s * 0.34, s * 0.15, 180, 360, w * 1.4, col); // the helm
-            hline(cx - s * 0.08, cy - s * 0.32, s * 0.20, w, d); // …its brow
-            line(cx - s * 0.20, cy - s * 0.20, cx - s * 0.28, cy + s * 0.30, w * 1.3, col); // the robe, flaring
+            arc(cx - s * 0.08, cy - s * 0.34, s * 0.15, 180, 360, w * 1.4, col);
+            hline(cx - s * 0.08, cy - s * 0.32, s * 0.20, w, d);
+            line(cx - s * 0.20, cy - s * 0.20, cx - s * 0.28, cy + s * 0.30, w * 1.3, col);
             line(cx + s * 0.04, cy - s * 0.20, cx + s * 0.12, cy + s * 0.30, w * 1.3, col);
-            hline(cx - s * 0.08, cy + s * 0.30, s * 0.44, w * 1.1, col); // …and the hem on the ground
-            // The staff: two segments with a kink in them, which is the whole of "crooked" at this size.
+            hline(cx - s * 0.08, cy + s * 0.30, s * 0.44, w * 1.1, col);
             line(cx + s * 0.28, cy - s * 0.44, cx + s * 0.22, cy - s * 0.04, w * 1.2, col);
             line(cx + s * 0.22, cy - s * 0.04, cx + s * 0.30, cy + s * 0.34, w * 1.2, col);
-            dot(cx + s * 0.28, cy - s * 0.46, w * 1.6, col); // …the head on it
-            dot(cx - s * 0.30, cy + s * 0.42, w * 1.1, d); // the ring it laid
+            dot(cx + s * 0.28, cy - s * 0.46, w * 1.6, col);
+            dot(cx - s * 0.30, cy + s * 0.42, w * 1.1, d);
             dot(cx + s * 0.02, cy + s * 0.44, w * 1.1, d);
         },
 
         .florid_ravager => {
-            // A LOW FOUR-LEGGED BODY WITH AN OPEN RING FOR A HEAD. The read at this size is the RING: the
-            // hound under it is three lines, and the petals radiating off a hollow are what nothing else in
-            // the set has.
-            hline(cx - s * 0.30, cy + s * 0.04, s * 0.40, w * 1.4, col); // the back
-            line(cx - s * 0.28, cy + s * 0.04, cx - s * 0.34, cy + s * 0.36, w * 1.1, col); // hind legs
+            hline(cx - s * 0.30, cy + s * 0.04, s * 0.40, w * 1.4, col);
+            line(cx - s * 0.28, cy + s * 0.04, cx - s * 0.34, cy + s * 0.36, w * 1.1, col);
             line(cx - s * 0.14, cy + s * 0.04, cx - s * 0.10, cy + s * 0.36, w * 1.1, col);
-            line(cx + s * 0.06, cy + s * 0.06, cx + s * 0.02, cy + s * 0.36, w * 1.1, col); // fore legs
-            line(cx - s * 0.32, cy + s * 0.02, cx - s * 0.44, cy - s * 0.14, w * 1.0, d); // the tail, up
-            line(cx + s * 0.08, cy + s * 0.02, cx + s * 0.16, cy - s * 0.18, w * 1.2, col); // the neck
-            // THE BLOOM: a hollow with six blunt petals off it, and the hollow is drawn dim so it reads as a
-            // throat rather than as a ball.
+            line(cx + s * 0.06, cy + s * 0.06, cx + s * 0.02, cy + s * 0.36, w * 1.1, col);
+            line(cx - s * 0.32, cy + s * 0.02, cx - s * 0.44, cy - s * 0.14, w * 1.0, d);
+            line(cx + s * 0.08, cy + s * 0.02, cx + s * 0.16, cy - s * 0.18, w * 1.2, col);
             dot(cx + s * 0.19, cy - s * 0.24, w * 1.8, d);
             var k: u32 = 0;
             while (k < 6) : (k += 1) {
@@ -406,45 +376,34 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
                 const bx = cx + s * 0.19 + @cos(a) * s * 0.10;
                 const by = cy - s * 0.24 + @sin(a) * s * 0.10;
                 line(cx + s * 0.19, cy - s * 0.24, bx, by, w * 1.1, col);
-                dot(bx, by, w * 1.1, col); // blunt — nothing ends in a point
+                dot(bx, by, w * 1.1, col);
             }
         },
 
         .mushroom_mage => {
-            // A WIDE CAP OVER A NARROW CLOAK, AND AN ARC LEAVING IT. The read at this size is the
-            // proportion — a dome far wider than the body under it is a mushroom and nothing else in the
-            // set has it — and the dotted arc is what says this one throws.
-            hline(cx - s * 0.34, cy - s * 0.14, s * 0.68, w * 1.6, col); // the cap's brim, the widest line
-            line(cx - s * 0.30, cy - s * 0.14, cx - s * 0.06, cy - s * 0.40, w * 1.1, col); // …and its dome
+            hline(cx - s * 0.34, cy - s * 0.14, s * 0.68, w * 1.6, col);
+            line(cx - s * 0.30, cy - s * 0.14, cx - s * 0.06, cy - s * 0.40, w * 1.1, col);
             line(cx + s * 0.30, cy - s * 0.14, cx + s * 0.06, cy - s * 0.40, w * 1.1, col);
             hline(cx - s * 0.10, cy - s * 0.40, s * 0.20, w * 1.1, col);
-            dot(cx, cy - s * 0.04, w * 1.3, d); // the hollow of gills under the brim
-            // The cloak: two lines flaring to a hem, narrow at the shoulders.
+            dot(cx, cy - s * 0.04, w * 1.3, d);
             line(cx - s * 0.13, cy - s * 0.10, cx - s * 0.21, cy + s * 0.40, w * 1.2, col);
             line(cx + s * 0.13, cy - s * 0.10, cx + s * 0.21, cy + s * 0.40, w * 1.2, col);
             hline(cx - s * 0.21, cy + s * 0.40, s * 0.42, w * 1.2, col);
-            // …and the LOB, as three dots climbing away and falling — a ball on an arc, not a beam.
             dot(cx + s * 0.26, cy + s * 0.02, w * 1.1, col);
             dot(cx + s * 0.38, cy - s * 0.16, w * 1.3, col);
             dot(cx + s * 0.46, cy + s * 0.06, w * 1.6, col);
         },
 
         .fen_lurker => {
-            // **A WATERLINE WITH A NECK COMING OUT OF IT.** The read at this size is the LINE: nothing else
-            // in the set is drawn against a horizontal, and a body cut off by one is the whole creature.
-            hline(cx - s * 0.40, cy + s * 0.10, s * 0.80, w * 1.5, col); // the surface
-            // …and the ripples either side of where it broke, which is what says the line is water.
+            hline(cx - s * 0.40, cy + s * 0.10, s * 0.80, w * 1.5, col);
             hline(cx - s * 0.36, cy + s * 0.22, s * 0.18, w * 1.0, d);
             hline(cx + s * 0.14, cy + s * 0.22, s * 0.22, w * 1.0, d);
-            // THE NECK — an S, because a straight one is a post. Three strokes, each shorter than the last.
             line(cx - s * 0.10, cy + s * 0.10, cx + s * 0.04, cy - s * 0.10, w * 1.4, col);
             line(cx + s * 0.04, cy - s * 0.10, cx - s * 0.04, cy - s * 0.26, w * 1.3, col);
             line(cx - s * 0.04, cy - s * 0.26, cx + s * 0.10, cy - s * 0.36, w * 1.2, col);
-            // THE HEAD, and it is BROAD AND FLAT — a bar rather than a dot, which is the one thing that
-            // separates this silhouette from every other neck in the set.
             hline(cx + s * 0.04, cy - s * 0.38, s * 0.30, w * 1.8, col);
-            dot(cx + s * 0.30, cy - s * 0.34, w * 1.2, col); // the blunt snout
-            dot(cx + s * 0.12, cy - s * 0.42, w * 1.0, d); // …and the one eye high on the skull
+            dot(cx + s * 0.30, cy - s * 0.34, w * 1.2, col);
+            dot(cx + s * 0.12, cy - s * 0.42, w * 1.0, d);
         },
 
         .new => {
@@ -466,7 +425,6 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             dot(cx + s * 0.42, cy - s * 0.44, w * 1.1, col);
         },
         .reload => {
-            // A full circle would read as "loading"; three quarters plus a head reads as an ACT.
             arc(cx, cy, s * 0.32, 40, 330, w, col);
             arrowHead(cx + mathx.cosf(mathx.radians(40)) * s * 0.32, cy + mathx.sinf(mathx.radians(40)) * s * 0.32, s * 0.17, -60, col);
         },
@@ -520,11 +478,8 @@ fn arrowHead(cx: f32, cy: f32, r: f32, dirDeg: f32, c: rl.Color) void {
     const tip = rl.Vector2{ .x = cx + mathx.cosf(a) * r, .y = cy + mathx.sinf(a) * r };
     const l = rl.Vector2{ .x = cx + mathx.cosf(a + 2.5) * r, .y = cy + mathx.sinf(a + 2.5) * r };
     const rr = rl.Vector2{ .x = cx + mathx.cosf(a - 2.5) * r, .y = cy + mathx.sinf(a - 2.5) * r };
-    // Winding matters: raylib culls a back-facing 2D triangle, so the three go anticlockwise in SCREEN
-    // space (y down) or the head simply is not there.
     rl.drawTriangle(tip, l, rr, c);
 }
-/// Deterministically scattered dots — a fixed seed, so the icon is identical every frame.
 fn scatterDots(cx: f32, cy: f32, rx: f32, ry: f32, w: f32, c: rl.Color, n: u32) void {
     var rng = mathx.Rng.init(0xC0FFEE);
     var i: u32 = 0;
@@ -537,7 +492,7 @@ fn page(cx: f32, cy: f32, s: f32, w: f32, c: rl.Color) void {
     const y1 = cy + s * 0.38;
     const fold = s * 0.20;
     line(x0, y0, x1 - fold, y0, w, c);
-    line(x1 - fold, y0, x1, y0 + fold, w, c); // the corner turned down
+    line(x1 - fold, y0, x1, y0 + fold, w, c);
     line(x1, y0 + fold, x1, y1, w, c);
     line(x1, y1, x0, y1, w, c);
     line(x0, y1, x0, y0, w, c);

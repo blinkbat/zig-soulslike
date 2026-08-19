@@ -9,14 +9,11 @@ const sfx = @import("audio.zig");
 
 const v3 = mathx.v3;
 
-// A box in the map → a prompt in reach → a lid that swings → items in the bag.
 
-/// How many chests one world may hold.
 pub const CAP: usize = 64;
 
 /// How close you have to be for the prompt (metres, measured on XZ from the box's own origin).
 pub const REACH: f32 = 2.1;
-/// …and the lid takes this long to come up.
 pub const OPEN_DUR: f32 = 0.85;
 /// How far back the lid falls, in degrees about the hinge.
 pub const OPEN_DEG: f32 = 104.0;
@@ -25,14 +22,10 @@ pub const Chest = struct {
     pos: rl.Vector3 = mathx.zero3,
     yaw: f32 = 0, // degrees, the prop's own
     scale: f32 = 1,
-    /// The op that placed it — where the contents come from.
     op: u16 = 0,
-    /// 0 shut … 1 fully open.
     swing: f32 = 0,
     opened: bool = false,
 
-    /// Where the prompt hangs. NOT what `Chests.update` measures reach from — that is the box's own
-    /// origin, as `REACH` says.
     pub fn topWorld(self: *const Chest) rl.Vector3 {
         return v3(self.pos.x, self.pos.y + (village.CHEST_TOP + 0.20) * self.scale, self.pos.z);
     }
@@ -46,25 +39,18 @@ pub const Chest = struct {
         ), mathx.mul(mathx.ry(self.yaw), mathx.tr(self.pos.x, self.pos.y, self.pos.z)));
     }
 
-    /// The BODY's own frame — the carcase's placement with no hinge in it. The prop grid builds this itself for
-    /// the coffer; the GLOW is drawn from here, and it is authored in the same frame the carcase is.
     pub fn bodyXf(self: *const Chest) rl.Matrix {
         const s = self.scale;
         return mathx.mul(mathx.scaleM(s, s, s), mathx.mul(mathx.ry(self.yaw), mathx.tr(self.pos.x, self.pos.y, self.pos.z)));
     }
 
-    /// **HOW LIT THE SEAM IS — 1 shut, 0 once the light is out.** It goes out over the FIRST part of the swing
-    /// rather than across the whole of it: what the player sees is the light escaping as the lid breaks its
-    /// seal, and a glow still hanging on under a lid stood wide open is a box lit from inside for no reason.
     pub fn glowAmt(self: *const Chest) f32 {
         return 1.0 - mathx.clampF(self.swing / GLOW_OUT, 0, 1);
     }
 };
 
-/// What fraction of the swing the seam's light has to be gone by.
 const GLOW_OUT: f32 = 0.55;
 
-/// Ease-out on the swing: a lid is heavy, so it leaves fast and settles slow.
 fn ease(u: f32) f32 {
     const t = mathx.clampF(u, 0, 1);
     return 1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t);
@@ -111,7 +97,7 @@ pub const Chests = struct {
         var near = mathx.Nearest.within(REACH);
         for (self.live(), 0..) |*c, i| {
             if (c.opened and c.swing < 1.0) c.swing = @min(1.0, c.swing + dt / OPEN_DUR);
-            if (c.opened) continue; // an open chest is scenery again — no prompt, nothing to press
+            if (c.opened) continue;
             near.offer(i, c.pos, heroPos);
         }
         self.near = near.best;
@@ -129,21 +115,12 @@ pub const Chests = struct {
         return .{ .at = c.topWorld(), .loot = loot };
     }
 
-    /// The LIDS, drawn where the prop grid draws the bodies.
     pub fn draw(self: *const Chests) void {
         for (self.liveConst()) |*c| {
             rl.drawMesh(self.lid.meshes[0], self.lid.materials[0], c.lidXf());
         }
     }
 
-    /// **THE SEAM GLOW, LIT PASS ONLY** — it is light, so it casts nothing, and `setFade` lives on the scene
-    /// shader alone: pushed during the sun pass it would set a uniform on a program nothing is drawing with.
-    /// Kept out of `draw` for exactly that reason rather than guarded inside it.
-    ///
-    /// The depth mask goes down for it (`Scene.setFade`'s own rule) and the fade is handed BACK to 1, or the
-    /// next thing through the shader inherits a chest's transparency.
-    /// **THE FADE IS PUSHED ONLY WHEN IT CHANGES.** `setFade` is a `glUseProgram` plus a `glUniform` at the
-    /// driver, and a shut box sits at exactly 1 — which is what every other caller hands the shader back.
     pub fn drawGlow(self: *const Chests, scene: *gfx.Scene) void {
         var any = false;
         for (self.liveConst()) |*c| {
@@ -152,19 +129,19 @@ pub const Chests = struct {
                 break;
             }
         }
-        if (!any) return; // every box on the field is open: no mask to drop and no mesh to draw
+        if (!any) return;
         rl.gl.rlDisableDepthMask();
-        var pushed: f32 = 1.0; // the shader's resting value, which is also a shut chest's own
+        var pushed: f32 = 1.0;
         for (self.liveConst()) |*c| {
             const a = c.glowAmt();
-            if (a <= 0.001) continue; // an opened box is a brown box again — nothing to draw, not a clear one
+            if (a <= 0.001) continue;
             if (a != pushed) {
                 scene.setFade(a);
                 pushed = a;
             }
             rl.drawMesh(self.glow.meshes[0], self.glow.materials[0], c.bodyXf());
         }
-        if (pushed != 1.0) scene.setFade(1); // …handed back only if it was ever taken
+        if (pushed != 1.0) scene.setFade(1);
         rl.gl.rlEnableDepthMask();
     }
 };
@@ -178,7 +155,6 @@ pub const Site = struct {
 
 comptime {
     std.debug.assert(village.CHEST_HINGE_Z < 0);
-    // …and the hinge must be at the RIM, i.e. clear of the feet the carcase stands on.
     std.debug.assert(village.CHEST_HINGE_Y > village.CHEST_BODY_H);
     std.debug.assert(village.CHEST_TOP >= village.CHEST_HINGE_Y + village.CHEST_LID_R);
 }
@@ -194,7 +170,7 @@ test "the lid eases open and stops fully open" {
     }
     try std.testing.expectEqual(@as(f32, 1.0), c.swing);
     try std.testing.expect(ease(0) == 0 and ease(1) == 1);
-    try std.testing.expect(ease(0.5) > 0.5); // ease-OUT: most of the travel is early
+    try std.testing.expect(ease(0.5) > 0.5);
 }
 
 test "only a shut chest in reach is the one you can open" {

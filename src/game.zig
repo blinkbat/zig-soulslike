@@ -61,20 +61,19 @@ const SCREEN_H = 800;
 const WALK_SPEED = heromod.WALK_SPEED;
 const RUN_SPEED = heromod.RUN_SPEED;
 const SPRINT_SPEED = heromod.SPRINT_SPEED;
-const TURN_RATE = 12.0; // rad/sec
+const TURN_RATE = 12.0;
 const STRAFE_SPEED = heromod.STRAFE_SPEED;
 const STICK_DEADZONE = 0.16;
 const LOOK_DEADZONE = 0.14;
 const LOOK_CLAIM = 0.40;
-const MOUSE_WAKE: f32 = 2.0; // pixels of mouse travel in one frame
-const LOOK_RATE_YAW = 3.4; // rad/sec at full right-stick deflection
+const MOUSE_WAKE: f32 = 2.0;
+const LOOK_RATE_YAW = 3.4;
 const LOOK_RATE_PITCH = 2.0;
 const LOOK_CURVE = 1.7;
 const AIM_LOOK_SCALE = 0.42;
-const ROLL_TAP_MAX = 0.22; // REAL seconds: shorter = dodge tap, longer = sprint hold
+const ROLL_TAP_MAX = 0.22;
 // No run-unlock hold, ever (owner's law): tilt maps straight to ground speed every frame.
 
-// Impact shake fed to the camera rig; `camera.zig` responds trauma².
 const SHAKE_HIT_LIGHT = 0.09;
 const SHAKE_HIT_HEAVY = 0.15;
 const SHAKE_KILL = 0.26;
@@ -86,7 +85,6 @@ const SHAKE_HURT_HEAVY = 0.62;
 const SHAKE_BLOCK = 0.40;
 const SHAKE_PARRY = 0.56;
 const SHAKE_GUARD_BREAK = 0.72;
-/// THE HEAVIEST THING IN THE GAME, which is what a block's felt weight is graded against. A `@max` rather
 const BLOW_HEAVIEST = @max(ogremod.SLAM_HIT.raw(), knightmod.FALL_HIT.raw());
 const BLOCK_FELT_MIN = 0.25;
 const BLOCK_FELT_HEAVY = 0.5;
@@ -99,9 +97,8 @@ const SHAKE_SAC_BURST = 0.34;
 const SHAKE_SURGE = 0.26;
 const SHAKE_RAISE = 0.30;
 const SHAKE_SIGIL = 0.16;
-const RESPAWN_HOLD = 0.55; // seconds of FULL black after the respawn…
+const RESPAWN_HOLD = 0.55;
 const RESPAWN_FADE = 0.9;
-/// Fractions of screen height; the caption's centre is derived off these.
 const DEATH_BAND_TOP: f32 = 0.35;
 const DEATH_BAND_H: f32 = 0.30;
 
@@ -115,31 +112,24 @@ const HERO_R = foemod.HERO_R;
 
 const MAX_ARROWS = 24;
 const MAX_SHAFTS = 12;
-/// The hero's centre of mass ABOVE HIS OWN FEET — not a world height.
 pub const HERO_CENTER_Y = 1.0;
 
-const COLLIDE_RATE = 11.0; // world units / sec
+const COLLIDE_RATE = 11.0;
 
-const GROUND_RISE_RATE = 9.0; // m/s
+const GROUND_RISE_RATE = 9.0;
 const GROUND_FALL_RATE = 16.0;
-/// Past this the ease is abandoned and the actor planted — a teleport must not slide up out of the earth.
 const GROUND_SNAP: f32 = 2.5;
 
 const CLIP_NEAR = 0.55;
 const CLIP_FAR = 320.0;
 
 const MAX_LOCK_R = 17.0;
-/// How far PAST `MAX_LOCK_R` a HELD lock survives — without the gap a foe on the ring re-acquires every other frame.
 const LOCK_KEEP_SLACK: f32 = 2.0;
 const LOCK_CAM_EASE = 9.0;
-/// Fallback framing pitch, for when the geometry has nothing to say (he is standing inside the target).
 const LOCK_PITCH = 0.24;
-const LOCK_PITCH_NEAR: f32 = 0.5; // metres of horizontal separation
-/// Tilting UP is gated on reach off the creature's own feet (`topWorld`), so a kobold on a rise stays a kobold.
+const LOCK_PITCH_NEAR: f32 = 0.5;
 const LOCK_TILT_TALL: f32 = 3.2; // over the shade's 2.4 and under the ogre's 4.4
-/// A ramp, not a threshold: the leechfly climbs through this height, and a step here is one the rig's ease chases.
 const LOCK_TILT_TALLER: f32 = 3.6;
-/// …and closeness earns it too: past `FAR` a creature is framed whole from the default pitch anyway.
 const LOCK_TILT_NEAR: f32 = 7.0;
 const LOCK_TILT_FAR: f32 = 17.0;
 fn lockPitch(g: *const Game, r: FoeRef) f32 {
@@ -152,19 +142,16 @@ fn lockPitch(g: *const Game, r: FoeRef) f32 {
     return mathx.lerpF(LOCK_PITCH, want, lockTiltShare(g, r, flat));
 }
 
-/// How much of the up-tilt this target has earned, 0..1 — the PRODUCT, since either alone is a reason not to tilt.
 fn lockTiltShare(g: *const Game, r: FoeRef, flat: f32) f32 {
     const rise = foeTopWorld(g, r).y - foePos(g, r).y;
     const tall = mathx.smoothstep(LOCK_TILT_TALL, LOCK_TILT_TALLER, rise);
     const near = 1.0 - mathx.smoothstep(LOCK_TILT_NEAR, LOCK_TILT_FAR, flat);
     return tall * near;
 }
-const LOCK_FLICK = 0.65; // right-stick |x| past this cycles to the next target
-const LOCK_FLICK_MOUSE: f32 = 40.0; // pixels of travel in one frame
-/// Debounce: travel must come back under these before another flick is armed, or a held diagonal cycles every frame.
+const LOCK_FLICK = 0.65;
+const LOCK_FLICK_MOUSE: f32 = 40.0;
 const LOCK_REARM_MOUSE: f32 = 12.0;
 const LOCK_REARM_STICK: f32 = 0.3;
-/// Seconds a lock survives with no sight of its target — a fade, not a switch, or a pillar drops it.
 const LOCK_BLIND_HOLD: f32 = 1.1;
 
 const CLEAR = rgba(80, 76, 69, 255);
@@ -174,12 +161,11 @@ const LookProbe = struct {
     mdy: f32 = 0,
     rx: f32 = 0,
     ry: f32 = 0,
-    mag: f32 = 0, // RAW stick magnitude, 0..1
-    dyaw: f32 = 0, // DEGREES of yaw applied this frame, whichever device did it
+    mag: f32 = 0,
+    dyaw: f32 = 0,
     pad: bool = false,
 };
 
-/// A hook that landed this frame and has not been paid out yet (`noteYank` → `applyYank`).
 const Hook = struct { from: rl.Vector3, pull: f32 };
 
 const Enter = union(enum) {
@@ -187,7 +173,6 @@ const Enter = union(enum) {
     load: usize,
     map: struct { path: []const u8, at: rl.Vector3, facing: f32 },
 };
-/// How long the screen takes to go down over the menu…
 const ENTER_OUT: f32 = 0.40;
 const ENTER_IN: f32 = 0.85;
 
@@ -219,12 +204,9 @@ pub const Game = struct {
     haunt: shademod.Haunt,
     chests: chestmod.Chests,
     pickups: pickupmod.Pickups = .{},
-    /// …and HOW EITHER OF THEM SAYS WHAT YOU GOT — the first-time card and the toast stack.
     award: awardmod.Award = .{},
     folk: npcmod.Folk,
-    /// Deliberately NOT in `FOE_GROUPS`: everything folded over that list is about things trying to kill him.
     pack: wolfmod.Pack = .{},
-    /// Which `editor.mapGen` the folk were posted from, so an editor frame re-homes them only when the map changes.
     folkGen: u32 = 0,
     trig: trigmod.Runtime = .{},
     talk: dialogmod.Session = .{},
@@ -236,24 +218,15 @@ pub const Game = struct {
     bossFrac: f32 = 0,
     spiritK: f32 = 0,
     spiritHp: f32 = 0,
-    /// Survives a death AND a load — the hour is a fact about the world, not about the map file.
     day: daynight.Clock = .{},
     hourLit: f32 = std.math.nan(f32),
-    /// …and the STORM's share of it, and the debug fog dial — `hourLit`'s two companions, for its own reason:
-    /// the light is a function of all three now and the guard has to see every one of them.
     wetLit: f32 = std.math.nan(f32),
     fogLit: f32 = std.math.nan(f32),
     souls: soulsmod.Souls,
-    /// **WHAT THE SKY IS DOING** — the storm's own clock (`weather.Weather`), and the sheet of rain it draws
-    /// (`weather.Rain`, one mesh). Assigned in `init` like every other model-owning field.
     weather: weathermod.Weather,
     rainfall: weathermod.Rain,
-    /// …and the STRAY BANKS that stand in the field once the air is thick (`weather.Mist`) — the fog's SHAPE,
-    /// where the haze is only its density. Model-owning, so it is assigned in `init` like the rest.
     mist: weathermod.Mist,
-    /// Survives a death: what a death takes is the souls on the counter, never what they were spent on.
     tree: ptree.Tree = .{},
-    /// The player's own retro stack, parked while a rest borrows the screen for its VHS look.
     restRetro: [gfx.RETRO_COUNT]f32 = [_]f32{0} ** gfx.RETRO_COUNT,
     bag: item.Bag = .{},
     arrowModel: rl.Model,
@@ -268,16 +241,13 @@ pub const Game = struct {
     shafts: [MAX_SHAFTS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_SHAFTS,
     rig: cameramod.CamRig,
     lock: ?FoeRef = null,
-    lockBlind: f32 = 0, // seconds since he could last see it (see LOCK_BLIND_HOLD)
+    lockBlind: f32 = 0,
     hook: ?Hook = null,
     rumble: rumblemod.Rumble = .{},
-    deathFade: f32 = 0, // seconds of post-respawn fade-from-black remaining
+    deathFade: f32 = 0,
     probe: LookProbe = .{},
-    /// Cached rather than surveyed per frame; writing a file is the only thing that puts anything on it.
     shelf: savemod.Shelf = .{},
-    /// Decided once when the character is started; a fire writes over it without asking. There is no Save row.
     slot: usize = 0,
-    /// `rest.justEntered` fires where the screen is still black, so the grab waits for a frame with a picture.
     shotOwed: bool = false,
     enterOut: f32 = 0,
     enterIn: f32 = 0,
@@ -287,20 +257,10 @@ pub const Game = struct {
     /// that reloading a save does not put the sequence back to where it was — reload, kill the same
     /// sporeling, and a stream reset per character would hand you the same answer forever.
     dropRng: mathx.Rng = mathx.Rng.init(0),
-    /// **SECONDS LEFT ON THE SAVE MARK** (`hud.saveTree`) — the growing tree in the bottom-right corner that
-    /// says the disk was touched. Counted DOWN, so 0 is idle and every path that writes a slot arms it by naming
-    /// one clock (`saveNow`). Assigned in `init`: the defaulted-field law.
     saveT: f32 = 0,
-    /// **THE CHAOS BLOOM — WHAT HIS OWN BOLT LEAVES STANDING** (`passivetree.Grant.boltCloud`, the wizard
-    /// casting branch's keystone and the owner's own example). It is `knight.Gas`, the game's one chaos
-    /// cloud, read from the other side: the boss lays them to deny YOU ground, and this lays them to deny
-    /// ground to whatever the bolt landed among. Same type, same life, same dose clock — a second cloud
-    /// written here would be a second thing to tune and a second thing to get wrong.
     boltGas: [BOLT_GAS_CAP]knightmod.Gas = undefined,
     boltGasHead: usize = 0,
-    /// ONE dose clock for the whole field, `Vigil.gasT`'s own arrangement.
     boltGasT: f32 = 0,
-    /// The UNSCALED frame time the drawing layer needs — the occluder fade would crawl on a time-scaled dt.
     drawDt: f32 = 1.0 / 60.0,
 
     fn init(g: *Game) void {
@@ -317,7 +277,7 @@ pub const Game = struct {
         g.menu = .{};
         phase(&initTimer, "gfx");
         worldfmt.loadOrPanic(worldfmt.startMap(), &g.map);
-        PLAY_HALF = playHalfOf(g.map.half); // before anything spawns against it
+        PLAY_HALF = playHalfOf(g.map.half);
         phase(&initTimer, "map");
         g.env.build(&g.scene);
         g.env.uploadSoil(&g.map);
@@ -345,8 +305,6 @@ pub const Game = struct {
         g.haunt = shademod.Haunt.init(g.scene.shader);
         g.chests = chestmod.Chests.init(g.scene.shader);
         g.folk = npcmod.Folk.init(g.scene.shader);
-        // EVERY DEFAULTED FIELD ON `Game` MUST BE ASSIGNED HERE: it is built from `alloc.create`, so a struct
-        // default never runs and the field comes up as the fill byte. Silent, and it has bitten twice.
         g.pack = .{};
         g.pack.load(g.scene.shader);
         g.pickups = .{};
@@ -357,7 +315,7 @@ pub const Game = struct {
         g.bossFrac = 0;
         g.spiritK = 0;
         g.spiritHp = 0;
-        g.hourLit = std.math.nan(f32); // …and its guard, which as the fill byte would pin the light on frame one
+        g.hourLit = std.math.nan(f32);
         g.wetLit = std.math.nan(f32);
         g.fogLit = std.math.nan(f32);
         g.souls = soulsmod.Souls.init(g.scene.shader);
@@ -405,53 +363,30 @@ pub const Game = struct {
 
 const SHOT_CLEAR: f32 = 0.02;
 
-// THE BOOT SCREEN IS AN AERIAL PASS OVER THE WOOD (owner: aerial, scenic, trees, looking somewhat down,
-// swooping) — not a turntable on the hero's shoulder. Nothing has been started when this is on screen, so
-// there is no character to be looking at and no reason to be standing in a runway: what the title card wants
-// behind it is the WORLD.
-//
-// **THE WHOLE PATH IS A PURE FUNCTION OF ONE CLOCK** (`bootCam`), which is what lets the harness photograph
-// the exact framing the loop draws by handing it a time — where two copies of the arithmetic would be a shot
-// of a framing nobody ever sees.
 
 /// Where the pass is centred: deep in the WOOD (`zone: wood` runs west of x = -52 at 0.98 density), well off
 /// the runway and well off the village, so what is under the lens is canopy.
 const BOOT_AT_X: f32 = -104.0;
 const BOOT_AT_Z: f32 = 18.0;
-/// How far the look-at wanders about that centre. The drift is what makes it a PASS rather than a turntable:
-/// the ground under the camera changes, so new trees keep arriving instead of the same ring going by.
 const BOOT_DRIFT_R: f32 = 26.0;
-const BOOT_DRIFT_RATE: f32 = 0.036; // rad/s on the drift's own circle — slower than the turn
-/// …and how far above the ground the pass is AIMED. Off the terrain rather than a fixed Y, or the look-at
-/// sinks into a hillside and the horizon rolls.
+const BOOT_DRIFT_RATE: f32 = 0.036;
 const BOOT_LOOK_UP: f32 = 6.0;
 
-/// **THE PASS SWEEPS, IT DOES NOT ORBIT — AND THAT IS A LIGHTING DECISION, NOT A TASTE ONE.** `gfx.SUN_DIR`
-/// puts the sun over the shoulder of a camera at yaw 53 and INTO THE LENS of one at 233, so a turntable spends
-/// half its cycle looking at the shaded side of everything: the first pass came back at a mean background luma
-/// of 24 of 255, which is not scenery, it is murk. Swept about the lit bearing instead, the canopy is front-lit
-/// the whole way round and the motion is still a camera in flight.
 const BOOT_YAW_MID: f32 = 53.0; // degrees — the sun's own over-the-shoulder bearing
-const BOOT_YAW_SWEEP: f32 = 38.0; // …and how far either side of it the pass is allowed, which keeps 15..91
-const BOOT_YAW_T: f32 = 41.0; // seconds for the sweep to go and come back — the slowest clock in the move
+const BOOT_YAW_SWEEP: f32 = 38.0;
+const BOOT_YAW_T: f32 = 41.0;
 /// **LOOKING SOMEWHAT DOWN**, and this is the dial that says so: 0.44 rad is about 25 degrees under the
 /// horizon, which keeps the horizon and its sky in the upper third while the canopy fills the rest. At 35 the
 /// frame was all shaded crown and no distance — a map rather than a view.
 pub const BOOT_PITCH: f32 = 0.44;
 pub const BOOT_DIST: f32 = 46.0;
-/// **THE SWOOP.** The pass rises and falls and pushes in and out on clocks SLOWER than the turn and prime to
-/// each other, so the path never repeats on the beat the orbit does and the motion reads as flight rather
-/// than as a mechanism. Amplitudes, and the periods in seconds.
 const BOOT_SWOOP_PITCH: f32 = 0.17;
 const BOOT_SWOOP_DIST: f32 = 9.0;
 const BOOT_SWOOP_T: f32 = 17.0;
 const BOOT_PUSH_T: f32 = 26.0;
 
-/// WHERE THE PASS IS LOOKING at `t` seconds in — a slow drift about the wood's centre, laid on the ground it
-/// is actually over.
 fn bootLook(g: *const Game, t: f32) rl.Vector3 {
     const a = t * BOOT_DRIFT_RATE;
-    // The two axes on different multiples, so the drift is a slow figure rather than a second circle.
     const x = BOOT_AT_X + mathx.cosf(a) * BOOT_DRIFT_R;
     const z = BOOT_AT_Z + mathx.sinf(a * 1.7) * BOOT_DRIFT_R * 0.7;
     return v3(x, g.env.groundAt(x, z) + BOOT_LOOK_UP, z);
@@ -463,24 +398,22 @@ pub fn bootCam(g: *Game, t: f32) void {
     g.rig.yaw = mathx.radians(BOOT_YAW_MID + BOOT_YAW_SWEEP * mathx.sinf(t * std.math.tau / BOOT_YAW_T));
     g.rig.pitch = BOOT_PITCH + BOOT_SWOOP_PITCH * mathx.sinf(t * std.math.tau / BOOT_SWOOP_T);
     g.rig.dist = BOOT_DIST + BOOT_SWOOP_DIST * mathx.sinf(t * std.math.tau / BOOT_PUSH_T + 1.1);
-    // CENTRED, not `follow`: that one is the over-the-shoulder rig and its boom gives way to terrain, which
-    // on a camera this high is a hard zoom every time a bank passes under it.
     g.rig.followCentred(bootLook(g, t));
 }
 
 fn beginGame(g: *Game) void {
     var start = mathx.ground(0, 4);
     plantActor(g, &start);
-    g.hero.setSpawn(start, std.math.pi); // …and where a death returns him
+    g.hero.setSpawn(start, std.math.pi);
     g.hero.souls = .{};
     g.hero.arm = .sword;
-    g.hero.armAlt = .bell; // the BELL, not the bow: it is what the starting scroll is for
+    g.hero.armAlt = .bell;
     g.hero.off = .shield;
     g.hero.offAlt = .wand;
     g.hero.spell = .bolt;
     g.hero.quick = .{};
     g.hero.quiver = .{};
-    g.hero.worn = .{}; // A NEW GAME IS BARE-HANDED — an assigned field, the defaulted-field law
+    g.hero.worn = .{};
 
     g.hero.flasks = .{};
     g.day = .{};
@@ -495,17 +428,17 @@ fn beginGame(g: *Game) void {
         g.award.markKnown(k);
     }
     g.tree = .{};
-    applyTree(g); // the sheet and the perks FIRST: the respawn below sizes his bars off them
+    applyTree(g);
     g.hero.respawnNow();
     rehomeFoes(g, .blind);
     g.rest = .{};
     rehomeChests(g);
     armScript(g);
     clearQuivers(g);
-    g.pack.clear(); // NOT `= .{}` — that struct holds the wolf's meshes, and the reset made it invisible
-    hud_.dropSpiritFace(); // …and the still of whatever the last character had standing goes with it
+    g.pack.clear();
+    hud_.dropSpiritFace();
     g.deathFade = 0;
-    g.saveT = 0; // a mark left over from the character you just closed is not this one's
+    g.saveT = 0;
     g.restRetro = [_]f32{0} ** gfx.RETRO_COUNT;
     g.lock = null;
     g.lockBlind = 0;
@@ -546,21 +479,21 @@ fn enterNow(g: *Game, act: Enter) void {
 
 fn enterMap(g: *Game, path: []const u8, at: rl.Vector3, facing: f32) void {
     worldfmt.loadOrPanic(path, &g.map);
-    PLAY_HALF = playHalfOf(g.map.half); // before anything is placed against it
+    PLAY_HALF = playHalfOf(g.map.half);
     g.env.uploadSoil(&g.map);
     g.env.uploadWater(&g.map);
     g.env.uploadHeight(&g.map);
     g.env.materialize(&g.map);
     g.hero.pos = inBounds(mathx.ground(at.x, at.z));
     g.hero.facing = facing;
-    plantActor(g, &g.hero.pos); // …on the ground the NEW map sculpts under him, not the old one's
+    plantActor(g, &g.hero.pos);
     g.hero.pos = g.env.resolveActor(g.hero.pos, HERO_R, g.hero.pos.y);
     g.hero.setSpawn(g.hero.pos, facing);
     rehomeFoes(g, .blind);
     rehomeChests(g);
     armScript(g);
     clearQuivers(g);
-    g.pack.clear(); // a spirit does not follow him through a door — it is called again on the other side
+    g.pack.clear();
     g.lock = null;
     g.lockBlind = 0;
     g.hook = null;
@@ -571,14 +504,13 @@ fn enterMap(g: *Game, path: []const u8, at: rl.Vector3, facing: f32) void {
 
 fn drawEnterFade(g: *const Game) void {
     const k = if (g.enterAct != null)
-        1.0 - mathx.clampF(g.enterOut / ENTER_OUT, 0, 1) // going down…
+        1.0 - mathx.clampF(g.enterOut / ENTER_OUT, 0, 1)
     else
-        mathx.clampF(g.enterIn / ENTER_IN, 0, 1); // …and coming back up
+        mathx.clampF(g.enterIn / ENTER_IN, 0, 1);
     if (k <= 0.002) return;
     rl.drawRectangle(0, 0, rl.getScreenWidth(), rl.getScreenHeight(), rgba(0, 0, 0, mathx.u8f(255.0 * k)));
 }
 
-/// One frame of the cut, wherever the loop happens to be. Returns whether the world is still held behind it.
 fn tickEnter(g: *Game, dt: f32) void {
     if (g.enterAct) |act| {
         g.enterOut = mathx.maxF(0, g.enterOut - dt);
@@ -591,7 +523,7 @@ fn tickEnter(g: *Game, dt: f32) void {
 }
 
 fn saveMap(g: *const Game) []const u8 {
-    _ = g; // one map today; the parameter is where a per-`Game` current map goes when there is more than one
+    _ = g;
     return worldfmt.startMap();
 }
 
@@ -613,27 +545,20 @@ fn slotOf(g: *Game) savemod.Slot {
 fn loadGame(g: *Game, i: usize) bool {
     beginGame(g);
     if (!savemod.read(i, slotOf(g))) return false;
-    // **A GLOW YOU TOOK LAST SESSION IS ALREADY GONE ON THE FIRST FRAME, NOT AFTER IT.** `Pickups` carries the
-    // `taken` bits and the PROP carries the picture, and only `hidePickups` joins the two — which runs in the
-    // play branch, so between the read and that frame every collected glow was standing (and lighting the
-    // ground) in the world the fade comes up on.
     hidePickups(g);
     applyTree(g);
-    plantActor(g, &g.hero.pos); // …back onto the ground, in case the map has been sculpted under him
+    plantActor(g, &g.hero.pos);
     g.hero.pose();
     g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
-    applyHour(g); // into both shaders and the shadow camera, before anything draws
+    applyHour(g);
     return true;
 }
 
-/// The foe groups written down ONCE — everything folded over this list picks up a new group for free.
 const FoeGroup = struct {
     field: []const u8,
     kind: ?FoeKind,
     aggro: f32,
-    /// Shouldered by the HERO. The ogre is not: he is too big to be walked out of the way.
     vsHero: bool = true,
-    /// …and by these OTHER groups. DELIBERATELY ONE-WAY, or two bodies each half-correct and jitter.
     vs: []const []const u8 = &.{},
 };
 pub const FOE_GROUPS = [_]FoeGroup{
@@ -645,7 +570,6 @@ pub const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "muster", .kind = null, .aggro = warriormod.AGGRO_R, .vs = &.{"line"} },
     .{ .field = "haunt", .kind = .shade, .aggro = shademod.AGGRO_R, .vs = &.{ "warren", "line", "muster" } },
     .{ .field = "swarm", .kind = .leechfly, .aggro = leechmod.AGGRO_R },
-    // A fixture: nothing shoulders it off its spot and it shoulders nothing, because it never moves.
     .{ .field = "grove", .kind = .rooted, .aggro = rootedmod.AGGRO_R, .vsHero = false },
     .{ .field = "cluster", .kind = .shroom, .aggro = shroommod.AGGRO_R, .vs = &.{"thicket"} },
     .{ .field = "warrens", .kind = .delver, .aggro = delvermod.AGGRO_R },
@@ -654,10 +578,7 @@ pub const FOE_GROUPS = [_]FoeGroup{
     // ROW THAT YIELDS IS THE ROW THAT NAMES THE OTHER** — `vs` is who shoulders ME, so listed here the
     // 1.34 m hound was the one being shoved off its line by a knee-high mushroom.
     .{ .field = "thicket", .kind = .florid_ravager, .aggro = ravagermod.AGGRO_R },
-    // It is small and it is squishy: everything on this list walks through it, and it walks through nothing.
     .{ .field = "ring", .kind = .mushroom_mage, .aggro = magemod.AGGRO_R },
-    // A FIXTURE IN ITS POOL, and it is anchored the way the rooted is: nothing shoulders it off its bed and
-    // it shoulders nothing, because it never travels.
     .{ .field = "marsh", .kind = .fen_lurker, .aggro = fenmod.AGGRO_R, .vsHero = false },
     .{ .field = "vigil", .kind = .bone_knight, .aggro = knightmod.AGGRO_R, .vsHero = false, .vs = &.{ "line", "muster" } },
 };
@@ -669,8 +590,6 @@ const BLOW_GROUPS = [_][]const u8{
 };
 
 comptime {
-    // All three cross-checks below are O(groups^2) or worse over string compares — with sixteen groups the
-    // default thousand branches is not enough to finish them.
     @setEvalBranchQuota(30000);
     if (BLOW_GROUPS.len != FOE_GROUPS.len) @compileError("game: BLOW_GROUPS and FOE_GROUPS disagree on how many groups there are");
     for (FOE_GROUPS) |gr| {
@@ -688,10 +607,6 @@ comptime {
         }
         if (!seen) @compileError("game: BLOW_GROUPS names `" ++ b ++ "`, which is not a FOE_GROUPS field");
     }
-    // **`vs` IS WHO SHOULDERS ME, AND IT IS ONE-WAY** — `settleGroup` pushes MY members out of THEIRS, so the
-    // row that yields is the row that names the other. Written down in `FoeGroup.vs` and checked by nothing:
-    // a pair that names each other is the jitter the field doc forbids, and getting the direction backwards
-    // (the ravager listing the sporelings it was supposed to walk through) compiles and simply reads wrong.
     for (FOE_GROUPS) |gr| {
         for (gr.vs) |other| {
             if (std.mem.eql(u8, other, gr.field)) @compileError("game: `" ++ gr.field ++ "` shoulders itself");
@@ -734,7 +649,7 @@ test "A FIGHT IS ON while something is roused OR simply near, and is over when t
     try std.testing.expect(foeFights(&toad, far, frogmod.AGGRO_R));
 
     toad.debugKill();
-    try std.testing.expect(toad.alive()); // still dissipating
+    try std.testing.expect(toad.alive());
     try std.testing.expect(!foeFights(&toad, near, frogmod.AGGRO_R));
 }
 
@@ -749,8 +664,8 @@ test "A BUTTON IS NAMED ONCE — the press the loop reads IS the letter the crib
 }
 
 test "ONE BUTTON, ONE ORDER — and the enum's own order is what the press goes through" {
-    try std.testing.expectEqual(@as(u32, 0), @intFromEnum(Reach.souls)); // the walk back for souls outranks all
-    try std.testing.expect(@intFromEnum(Reach.pickup) < @intFromEnum(Reach.talk)); // TAKE BEATS TALK (owner's)
+    try std.testing.expectEqual(@as(u32, 0), @intFromEnum(Reach.souls));
+    try std.testing.expect(@intFromEnum(Reach.pickup) < @intFromEnum(Reach.talk));
     try std.testing.expect(@intFromEnum(Reach.pickup) < @intFromEnum(Reach.chest));
     inline for (@typeInfo(Reach).@"enum".fields) |f| _ = @as(Reach, @enumFromInt(f.value)).prompt();
 }
@@ -774,7 +689,6 @@ fn rehomeFoes(g: *Game, sighted: Sighted) void {
 fn eachTarget(g: *const Game, ctx: anytype, comptime visit: anytype) void {
     inline for (FOE_GROUPS) |gr| {
         visit(ctx, @field(g, gr.field).liveConst(), gr.kind);
-        // The extra list answers for its own members' kinds (`Sac.kind()`), so the row carries none.
         if (comptime @hasDecl(@FieldType(Game, gr.field), "liveExtraConst")) {
             visit(ctx, @field(g, gr.field).liveExtraConst(), @as(?FoeKind, null));
         }
@@ -804,7 +718,6 @@ const Stick = struct { x: f32 = 0, y: f32 = 0, mag: f32 = 0 };
 fn stickRadial(x: f32, y: f32, dz: f32, curve: f32) Stick {
     const m = @sqrt(x * x + y * y);
     if (m < dz) return .{};
-    // Clamped, because a real pad reports past 1 on the diagonals (a square gate on a round stick).
     const t = mathx.minF((m - dz) / (1.0 - dz), 1.0);
     return .{ .x = x / m, .y = y / m, .mag = std.math.pow(f32, t, curve) };
 }
@@ -848,7 +761,7 @@ fn gatherMove() Move {
         );
         if (s.mag > 0.001) {
             const sp = if (sprint) SPRINT_SPEED else s.mag * RUN_SPEED;
-            return .{ .fx = s.x, .fz = -s.y, .speed = sp }; // stick up (−y) = forward
+            return .{ .fx = s.x, .fz = -s.y, .speed = sp };
         }
     }
     var kx: f32 = 0;
@@ -908,10 +821,9 @@ fn markSwing(f: anytype, hero: rl.Vector3) f32 {
     return worst;
 }
 
-// The egg sac is deliberately absent: one membrane on the ground with no part that moves on its own.
 test "THE MARK RIDES THE BODY, on every creature that has one" {
-    const hero = v3(0, 0, 1.7); // inside every notice ring in the game
-    const MIN: f32 = 0.02; // metres off the axis — a fixed mark gives zero
+    const hero = v3(0, 0, 1.7);
+    const MIN: f32 = 0.02;
 
     var toad = frogmod.Frog.spawn(mathx.zero3, 0, 1.0, 0.3);
     try std.testing.expect(markSwing(&toad, hero) > MIN);
@@ -952,11 +864,7 @@ fn chase(f: anytype, lead: f32, secs: f32) Chase {
 test "A SPIRIT'S JAWS MUST REACH INTO WHAT IT IS SET ON — the BOTTOM of a giant's sphere is a window she keeps falling out of" {
     var w = wolfmod.Wolf.spawn(mathx.zero3, 0);
     w.pose();
-    const rest = w.jawPoint().y - w.pos.y + 0.20 * w.scale; // the teeth, plus the blade's own radius
-    // …AND THE SAME MEASUREMENT AT THE TOP OF THE POUNCE, which is the one that has to clear anything: the
-    // blade is only live across the strike, and the leap is what the strike is thrown off (owner: she has to
-    // jump and reach higher). Posed rather than derived — the lift and the nose-up are two contributions and
-    // solving them by hand is how the number and the animation part company.
+    const rest = w.jawPoint().y - w.pos.y + 0.20 * w.scale;
     w.stagePounce(1.0);
     const full = w.jawPoint().y - w.pos.y + 0.20 * w.scale;
     // …AND THE THIRD END OF THE SAME DIAL: the nose on the DIRT (owner: she has trouble hitting floorbound
@@ -971,10 +879,7 @@ test "A SPIRIT'S JAWS MUST REACH INTO WHAT IT IS SET ON — the BOTTOM of a gian
     var hatch = broodmod.Spider.spawnAs(.broodling, mathx.zero3, 0, 1.0, 0.3);
     var toad = frogmod.Frog.spawn(mathx.zero3, 0, 1.0, 0.3);
     std.debug.print("\n  wolf teeth reach {d:.2} m standing, {d:.2} m at a full pounce, {d:.2} m at a full stoop\n", .{ rest, full, down });
-    try std.testing.expect(full > rest + 0.4); // the leap is a LEAP, not a hop with a new name
-    // THE TWO ENDS OF THE DIAL ARE WHAT `pounceFor` INTERPOLATES, and they are written down in `wolf.zig` where
-    // it can read them. Measured here, because both come out of the posed rig and adding the lift and the
-    // nose-up together by hand is exactly how a number and an animation part company.
+    try std.testing.expect(full > rest + 0.4);
     try std.testing.expectApproxEqAbs(wolfmod.TEETH_REST, rest, 0.04);
     try std.testing.expectApproxEqAbs(wolfmod.TEETH_POUNCE, full, 0.04);
 
@@ -993,22 +898,15 @@ test "A SPIRIT'S JAWS MUST REACH INTO WHAT IT IS SET ON — the BOTTOM of a gian
         const r = f.hurtRadius();
         const floor = mid - r;
         const held = f.bodyR() + w.bodyR();
-        const trigger = wolfmod.triggerR(f.bodyR()); // the gate as `update` actually asks it
-        // …AND THE LEAP THIS BODY IS ACTUALLY WORTH (`wolf.pounceFor`), never the full one: a pounce sized for
-        // a giant's chest sails clean over a snag, which is the same complaint one creature along.
+        const trigger = wolfmod.triggerR(f.bodyR());
         w.stageBiteAt(mid);
         const jaw = w.jawPoint().y - w.pos.y + 0.20 * w.scale;
-        // HOW WIDE THE SPHERE IS AT THE HEIGHT SHE ACTUALLY BITES AT — the window her snout has to find, and
-        // the number that says whether "reachable" means anything. Grazing the floor it is nearly zero.
         const dy = @abs(mid - jaw);
         const window: f32 = if (dy >= r) 0 else @sqrt(r * r - dy * dy);
         std.debug.print("  {s}: sphere {d:.2}..{d:.2} centre {d:.2} | pounce {d:.2} stoop {d:.2}, teeth at {d:.2} ({d:.2} into it), window {d:.2} m against a hold of {d:.2}\n", .{
             row[0], floor, mid + r, mid, wolfmod.pounceFor(mid), wolfmod.stoopFor(mid), jaw, jaw - floor, window, held,
         });
         try std.testing.expect(held < trigger);
-        // **NOT MERELY REACHABLE — REACHABLE WITH ROOM, ON BOTH SIDES.** `floor < jaw` was the old bar and every
-        // one of them passed it while she bit air, because a sphere is a point at its floor; and a leap that
-        // clears the top of a low one fails the same way from above.
         try std.testing.expect(@abs(mid - jaw) <= (1.0 - wolfmod.POUNCE_INTO) * r);
         // …and the window she has to find has to be worth more than the collider holding her out of it.
         //
@@ -1030,7 +928,7 @@ test "A SPIRIT'S JAWS MUST REACH INTO WHAT IT IS SET ON — the BOTTOM of a gian
 
 test "THE BERSERKER IS THE FASTEST THING ON FOOT — and he closes at a RUN, not a stroll" {
     const zerk = koboldmod.Kobold.spawnAs(.berserker, mathx.zero3, 0, 1.0, 0.3);
-    const far = koboldmod.AGGRO_R * 0.9; // inside his world: past it he is drifting home, not charging
+    const far = koboldmod.AGGRO_R * 0.9;
     const charge = zerk.approachSpeed(far);
     std.debug.print("\n  berserker charges at {d:.2} m/s (hero runs {d:.2}, sprints {d:.2})\n", .{
         charge, heromod.RUN_SPEED, heromod.SPRINT_SPEED,
@@ -1084,7 +982,6 @@ test "NOTHING CHASES FOREVER — every creature turns round at its own tether, n
     try std.testing.expect(f.turned != null);
     try std.testing.expect(f.turned.? < 45.0 + LEASH_LETGO);
 }
-/// The sprint in `chase` starts at the halfway mark; this is how long after it a creature may still be coming.
 const LEASH_LETGO: f32 = foemod.LEASH_CALM + 1.5;
 
 test "STEERING IS ALL-OR-NOTHING PER CREATURE — the field and the question that stamps it cannot part company" {
@@ -1142,7 +1039,7 @@ test "ONLY SOMETHING THAT TOWERS TILTS THE LENS UP — everything else is framed
 }
 
 test "A GIANT ONLY BRINGS THE LENS DOWN WHEN IT IS ON TOP OF YOU, and it arrives smoothly" {
-    const OGRE: f32 = 4.4; // comfortably past LOCK_TILT_TALLER
+    const OGRE: f32 = 4.4;
     const share = struct {
         fn at(rise: f32, flat: f32) f32 {
             const tall = mathx.smoothstep(LOCK_TILT_TALL, LOCK_TILT_TALLER, rise);
@@ -1159,7 +1056,7 @@ test "A GIANT ONLY BRINGS THE LENS DOWN WHEN IT IS ON TOP OF YOU, and it arrives
     var d = LOCK_TILT_FAR + 4;
     while (d > 0) : (d -= 0.05) {
         const s = share(OGRE, d);
-        try std.testing.expect(s >= prev - 1e-4); // monotone: closing never gives the tilt BACK
+        try std.testing.expect(s >= prev - 1e-4);
         try std.testing.expect(s - prev < 0.05);
         prev = s;
     }
@@ -1170,7 +1067,7 @@ fn groundActor(g: *const Game, pos: *rl.Vector3, dt: f32) void {
     const want = g.env.groundAt(pos.x, pos.z);
     const d = want - pos.y;
     if (@abs(d) > GROUND_SNAP) {
-        pos.y = want; // a teleport, not a step
+        pos.y = want;
         return;
     }
     const rate: f32 = if (d > 0) GROUND_RISE_RATE else GROUND_FALL_RATE;
@@ -1229,7 +1126,6 @@ fn gateHeroTerrain(g: *Game, was: rl.Vector3) void {
     g.hero.pos.z = out.z;
 }
 
-/// …and the rule itself, off the `Env` alone so it can be asked of a cliff without a window.
 fn gatedXZ(e: *const envmod.Env, was: rl.Vector3, to: rl.Vector3, airborne: bool) rl.Vector3 {
     const dx = to.x - was.x;
     const dz = to.z - was.z;
@@ -1263,18 +1159,15 @@ test "THE ROLL OBEYS THE GROUND — a committed move may not take him up what a 
         }
     }
     const rise = e.groundAt(2.0, 0) - e.groundAt(-2.0, 0);
-    try std.testing.expect(rise > 4.0); // the wall is real
+    try std.testing.expect(rise > 4.0);
 
     // ONE FRAME OF A ROLL at its peak — `hero.ROLL_DIST` over its own duration, braked, is about 7 m/s.
     const was = v3(-0.30, 0, 0);
     const step = heromod.ROLL_DIST / (0.70 * 0.5 * 1.42) / 60.0;
     const raw = v3(was.x + step, 0, was.z);
-    // Ungated, the roll simply arrives on the far side of the riser…
     try std.testing.expect(raw.x > was.x);
-    // …and gated it is held, exactly as a walk into the same wall is.
     const walked = gatedXZ(e, was, raw, false);
     try std.testing.expectApproxEqAbs(was.x, walked.x, 1e-4);
-    // A JUMP IS EXEMT-BY-DESIGN: clearing ground the walk refuses is what it is for (`env.flyStep`).
     const flown = gatedXZ(e, was, raw, true);
     try std.testing.expectApproxEqAbs(raw.x, flown.x, 1e-4);
     std.debug.print(
@@ -1292,17 +1185,11 @@ fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
     var moved: f32 = 0;
     var speed: f32 = 0;
     var moveYaw: ?f32 = null;
-    // ER exception below: a hold-B SPRINT while locked faces TRAVEL, so it is not a strafe at all.
     const sprinting = isMoving and sprintingMove(mv);
     if (isMoving) {
         dir = v3(dir.x / l, 0, dir.z / l);
-        // **THE ROGUE'S FEET** (`passivetree.Grant.moveSpeed`). Applied HERE and not in `gatherMove`, which
-        // is pure input: `sprintingMove` decides off `mv.speed` against `RUN_SPEED`, so a walk scaled at the
-        // source would read as a sprint and face travel instead of the lock. The gait is safe either way —
-        // its phase is driven by DISTANCE TRAVELLED, never by time, so faster feet simply stride sooner.
         speed = mv.speed * g.hero.perk.moveSpeed;
         moveYaw = mathx.headingXZ(dir);
-        // Locked-on ANISOTROPY (ER's too): sideways travel runs slower than forward.
         if (faceYaw != null and !sprinting) {
             const latAmt = @abs(mathx.sinf(mathx.wrapPi(moveYaw.? - g.hero.facing)));
             speed *= mathx.lerpF(1.0, STRAFE_SPEED, latAmt);
@@ -1349,9 +1236,7 @@ fn heroFade(g: *const Game) f32 {
 fn drawCasters(g: *Game, cull: envmod.Cull) void {
     g.env.drawProps(cull);
     g.chests.draw();
-    // The seam light is not a caster and `setFade` is the scene shader's — lit pass only (`drawGlow`'s own note).
     if (cull == .view) g.chests.drawGlow(&g.scene);
-    // The roots are opaque WOOD, not FX — through here so they go through both passes and cast.
     g.hero.drawRoots();
     const fade = heroFade(g);
     const seeThrough = cull == .view and fade < 0.999;
@@ -1371,7 +1256,6 @@ fn drawCasters(g: *Game, cull: envmod.Cull) void {
     const flashPass: ?*gfx.Scene = if (cull == .view) &g.scene else null;
     inline for (FOE_GROUPS) |f| @field(g, f.field).draw(flashPass);
     g.folk.draw();
-    // The spirit is thinned in the LIT pass only, so the sun pass still draws it solid and it CASTS.
     if (cull == .view) {
         g.scene.setFade(wolfmod.SPIRIT_FADE);
         g.pack.draw();
@@ -1419,9 +1303,6 @@ pub fn spawnWisp(g: *Game, from: rl.Vector3) void {
     poolPut(g, archermod.launchShaft(from, heroAimPoint(g), shademod.WISP_SPEED, shademod.WISP_HIT, true, .wisp));
 }
 
-/// **THE FIREBALL, LOBBED** — `loft` is the whole point of it: aimed flat a slow ball is a thing you sidestep
-/// once and forget, and lobbed it arrives on a tall arc you have to read the LANDING of. Where it goes after
-/// that is `archer.bouncesOf`'s business and nothing here has an opinion about it.
 fn spawnEmber(g: *Game, from: rl.Vector3) void {
     poolPut(g, archermod.launchShaft(from, heroAimPoint(g), magemod.EMBER_SPEED, magemod.EMBER_HIT, true, .emberball));
 }
@@ -1453,7 +1334,6 @@ fn armScript(g: *Game) void {
     g.folk.reset(&g.map);
     g.trig.arm(&g.map);
     g.talk = .{};
-    // The drop goes too: where it is standing means nothing in a map it was not left in.
     g.souls.clear();
 }
 
@@ -1476,7 +1356,6 @@ pub fn stepPickupsForShot(g: *Game) void {
     hidePickups(g);
 }
 
-/// `first` shows the card (an undiscovered kind), `again` toasts one (a known kind), `clear` takes it away.
 pub const AwardShot = enum { first, again, clear };
 pub fn awardForShot(g: *Game, k: item.Kind, how: AwardShot) void {
     switch (how) {
@@ -1523,8 +1402,6 @@ pub fn shootShaftForShot(g: *Game, at: rl.Vector3, kind: combat.ArrowKind) void 
     putIn(&g.shafts, archermod.launchShaft(g.hero.nockWorld(), at, heromod.BOW_AIMED_SPEED, blow, false, heromod.arrowShot(kind)));
 }
 pub fn throwBoltForShot(g: *Game, at: rl.Vector3) void {
-    // The BOLT'S blow, whatever the rod is currently turned to — the harness photographs this one spell and a
-    // `castBlow` read here would come back null the moment a shot set the rod to the roots.
     launchBolt(g, at, false, combat.BOLT_HIT);
 }
 
@@ -1536,7 +1413,6 @@ pub fn tickPoisonForShot(g: *Game, dt: f32) void {
     g.hero.poisonBy(g.cluster.spores(dt, g.hero.pos));
     _ = g.hero.tickPoison(dt);
 }
-/// Both quivers: the hero's shafts are in one and everything thrown AT him is in the other.
 pub fn flyingPointForShot(g: *Game, kind: archermod.Shot) ?rl.Vector3 {
     for (quivers(g)) |pool| {
         for (pool) |*ar| {
@@ -1546,7 +1422,6 @@ pub fn flyingPointForShot(g: *Game, kind: archermod.Shot) ?rl.Vector3 {
     return null;
 }
 
-/// The ONE place `stepArrow`'s six arguments are gathered.
 fn flyArrow(g: *Game, ar: *archermod.Arrow, dt: f32) void {
     ar.hit = false;
     archermod.stepArrow(ar, g.hero.pos, heroCenterY(g), g.env.groundAt(ar.pos.x, ar.pos.z), g.hero.iFramed(), arrowCover(g, ar, dt), dt);
@@ -1571,7 +1446,6 @@ pub fn clearShaftsForShot(g: *Game) void {
     clearQuivers(g);
 }
 
-/// Stage a ringing at a point through it, `u` in 0..1 — the harness has no frame loop to press a button across.
 pub fn ringForShot(g: *Game, u: f32) void {
     g.hero.stageRing(u);
 }
@@ -1581,7 +1455,6 @@ pub fn callWolfForShot(g: *Game, at: rl.Vector3, facing: f32) void {
     _ = g.pack.call(at, facing);
 }
 
-/// Speed and phase are what the pose is a function of, so setting the two and posing IS the frame.
 pub fn poseWolfForShot(g: *Game, speed: f32, phase: f32) void {
     for (g.pack.live()) |*w| {
         w.speed = speed;
@@ -1600,7 +1473,6 @@ pub fn poseWolfGatherForShot(g: *Game, u: f32) void {
     }
 }
 
-/// …and the LEAP at its top, which is the frame the whole move is for.
 pub fn poseWolfPounceForShot(g: *Game, amt: f32) void {
     for (g.pack.live()) |*w| {
         plantActor(g, &w.pos);
@@ -1641,21 +1513,15 @@ pub fn drawSaveMarkForShot(left: f32) void {
     hud_.saveTree(left);
 }
 
-/// **THE WEATHER, STAGED** — the shot harness's own hook (`pinHourForShot`'s arrangement). A storm that
-/// arrives every few minutes is a storm no photograph ever catches, so the harness asks for one and says how
-/// far into the flash it wants to be standing.
 pub fn forceWeatherForShot(g: *Game, k: weathermod.Kind, flashAt: f32) void {
     g.weather.force(k, 600.0);
     g.weather.flashT = flashAt;
-    g.weather.nextFlash = 1e9; // …and no NEW strike lands under the one being photographed
+    g.weather.nextFlash = 1e9;
 }
 pub fn clearWeatherForShot(g: *Game) void {
     g.weather = weathermod.Weather.init(0x5701_A17E);
 }
 
-/// **FOG WITHOUT A STORM, AND ONE BANK IN FRAME** — the harness's own pair. The banks key off how foggy it is
-/// (`fogAmt`), which in the game is the storm; forced through the debug row instead, the fog and the rain can be
-/// photographed apart, which is the only way to judge either.
 pub fn forceFogForShot(g: *Game, on: bool) void {
     g.menu.forceFog(on);
 }
@@ -1669,7 +1535,6 @@ pub fn openChestForShot(g: *Game) bool {
     return had;
 }
 
-/// The harness drives the panel itself: `tickTalk` reads live buttons and `triggerWorld` is private.
 pub fn openTalkForShot(g: *Game, name: []const u8) bool {
     const dlg = g.map.findDialog(name) orelse return false;
     g.folk.update(SHOT_STEP, g.hero.pos, PLAY_HALF);
@@ -1704,7 +1569,6 @@ fn spiritPortrait(g: *Game) ?hud_.LivePortrait {
     return .{
         .scene = &g.scene,
         .focus = w.facePoint(),
-        // Off ITS OWN facing, the speaker's rule — three-quarters from the front wherever it is standing.
         .yaw = w.facing + mathx.radians(hud_.PORTRAIT_YAW),
         .pitch = hud_.PORTRAIT_PITCH,
         .dist = wolfmod.PORTRAIT_DIST,
@@ -1713,16 +1577,11 @@ fn spiritPortrait(g: *Game) ?hud_.LivePortrait {
         .drawFn = drawSpiritHead,
     };
 }
-/// **THE FACE IS TAKEN ONCE AND KEPT** (`hud.takeSpiritFace`, owner: make the portrait static) — where the
-/// conversation panel's speaker is re-photographed every frame. It outlives the body on purpose: the toast
-/// takes over two seconds to leave and the animal is gone well before it has.
 fn spiritFaceFor(g: *Game) bool {
     if (spiritPortrait(g)) |lp| {
         if (!hud_.hasSpiritFace()) _ = hud_.takeSpiritFace(lp);
         return hud_.hasSpiritFace();
     }
-    // NOTHING STANDING — the still is kept while the panel is still leaving and forgotten once it has gone,
-    // so the next thing called is photographed rather than wearing the last one's head.
     if (g.spiritK <= 0.004) hud_.dropSpiritFace();
     return hud_.hasSpiritFace();
 }
@@ -1756,7 +1615,6 @@ const Reach = enum {
     talk,
     chest,
 
-    /// Off `hud.BTN_INTERACT` rather than a letter, so a rebind moves the press and the glyph at once.
     fn prompt(self: Reach) hud_.Hint {
         return .{ .glyph = .{ .face = hud_.BTN_INTERACT }, .label = switch (self) {
             .souls => "Reclaim",
@@ -1798,7 +1656,6 @@ fn interact(g: *Game) void {
 
 fn ringBell(g: *Game) void {
     if (!g.hero.canRing()) return;
-    // What he can call is what he is CARRYING — no second state that could disagree with the bag.
     if (g.bag.count(combat.scrollFor(g.hero.spirit)) == 0) {
         g.trig.say("The bell rings on nothing. You carry no scroll for it.");
         sfx.play(.refused);
@@ -1815,7 +1672,6 @@ fn ringBell(g: *Game) void {
 fn summonSpirit(g: *Game) void {
     const at = spiritSpot(g);
     if (!g.pack.call(at, g.hero.facing)) return;
-    // At the SPIRIT rather than on the camera, so it tells him which shoulder to look over.
     sfx.world(.wolf_howl, at);
     g.rig.addShake(SHAKE_LAND);
     g.rumble.play(rumblemod.cast_throw);
@@ -1828,7 +1684,7 @@ fn spiritSpot(g: *Game) rl.Vector3 {
     const back = mathx.headingDir(g.hero.facing + SUMMON_BEARING);
     var at = mathx.addV(g.hero.pos, mathx.scaleV(back, SUMMON_R));
     at = inBounds(g.env.resolveActor(at, wolfmod.BODY_R, at.y));
-    plantActor(g, &at); // …standing on the ground it arrived over, not on the datum
+    plantActor(g, &at);
     return at;
 }
 
@@ -1851,7 +1707,7 @@ fn tickPack(g: *Game, dt: f32) void {
     }
     g.pack.update(dt, g.hero.pos, PLAY_HALF);
     var was: [combat.SUMMON_MAX]rl.Vector3 = undefined;
-    for (g.pack.liveConst(), 0..) |*w, i| was[i] = w.wasAt; // …read off the creature, so the indices align
+    for (g.pack.liveConst(), 0..) |*w, i| was[i] = w.wasAt;
     gateTerrain(g, g.pack.live(), was[0..g.pack.n]);
     for (g.pack.live()) |*w| {
         if (w.bit) sfx.world(.wolf_bite, w.pos);
@@ -1859,7 +1715,7 @@ fn tickPack(g: *Game, dt: f32) void {
         w.jaw1 = w.jawPoint();
         const b = w.blade();
         if (b.active and !w.hitLatch and pierceFoes(g, b)) {
-            w.hitLatch = true; // one bite, one body
+            w.hitLatch = true;
             sfx.play(.hit_light);
         }
     }
@@ -1869,9 +1725,6 @@ fn quarryKey(kind: FoeKind, idx: usize) u32 {
     return (@as(u32, @intFromEnum(kind)) << 16) | @as(u32, @intCast(@min(idx, 0xFFFF)));
 }
 
-/// **HOW HIGH UP A BODY ITS MASS ACTUALLY IS**, off its own feet — what a spirit aims its leap at
-/// (`wolf.Quarry.aim`). The hurt sphere's CENTRE and not its top: the top of an ogre is above anything with
-/// four legs, and biting the middle of a thing is what a wolf does anyway.
 fn aimOf(f: anytype) f32 {
     return f.centerWorld().y - f.pos.y;
 }
@@ -1882,7 +1735,6 @@ fn huntFor(g: *const Game, w: *const wolfmod.Wolf) ?wolfmod.Quarry {
     const Ctx = struct {
         from: rl.Vector3,
         hero: rl.Vector3,
-        /// What it walked in already committed to, and the answer if that body is still worth holding.
         held: u32,
         keep: ?wolfmod.Quarry = null,
         best: f32 = wolfmod.HUNT_R,
@@ -1917,9 +1769,6 @@ fn huntFor(g: *const Game, w: *const wolfmod.Wolf) ?wolfmod.Quarry {
 fn spillSouls(g: *Game) void {
     if (bindingWorn(g.hero.worn)) |w| {
         const ring = g.hero.worn.at(w).?;
-        // THE FINGER AND THE BAG BOTH: the socket only NAMES a kind the bag is holding (`hero.wear`), so
-        // clearing the socket alone leaves the ring on the shelf to be put straight back on — a death that
-        // costs nothing at all. It snaps; it does not come off.
         _ = g.hero.wear(w, null);
         _ = g.bag.take(ring, 1);
         sfx.play(.ring_snap);
@@ -1931,9 +1780,6 @@ fn spillSouls(g: *Game) void {
     if (had > 0) sfx.play(.souls_spill);
 }
 
-/// **WHICH FINGER IS WEARING ONE**, or null. Asked of the ITEM rather than by kind (`item.bindsSouls`), and of
-/// every socket rather than the two rings by name — a second binding band is a row in `item.zig` and nothing
-/// here. It is the SOCKET that is returned, because the snap has to empty the one it came out of.
 fn bindingWorn(worn: heromod.Worn) ?item.Wear {
     inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
         const w: item.Wear = @enumFromInt(f.value);
@@ -1958,7 +1804,6 @@ fn openChest(g: *Game) void {
     g.rumble.play(rumblemod.hit_light);
 }
 
-/// …AND THE GLOW, which is the box's own body of code with no lid on it.
 fn takePickup(g: *Game) void {
     const got = g.pickups.takeNear(&g.map) orelse return;
     awardLoot(g, got.loot, got.at);
@@ -1966,9 +1811,6 @@ fn takePickup(g: *Game) void {
     g.rumble.play(rumblemod.hit_light);
 }
 
-/// **ONLY THE MAP'S OWN GLOWS HAVE A PROP TO HIDE.** `setPickupDraw` is indexed by `env.pickupItems`, which is
-/// the placing order `Pickups.reset` was handed — a DROPPED one is past the end of that list and is drawn by
-/// `drawDrops` off its own model instead, so feeding it here would be shrinking somebody else's prop.
 fn hidePickups(g: *Game) void {
     for (g.pickups.mappedOnes(), 0..) |*p, i| g.env.setPickupDraw(i, p.sizeLeft(), p.spent());
 }
@@ -2132,7 +1974,6 @@ fn tickRest(g: *Game, dt: f32) void {
         clearFoes(g);
         clearQuivers(g);
         g.lock = null;
-        // The player's own filters stay (owner: amp up warmth only).
         g.restRetro = g.retro.values;
         g.retro.values[gfx.RF_SEPIA] = mathx.maxF(g.retro.values[gfx.RF_SEPIA], REST_WARMTH);
         const s = g.rest.seat();
@@ -2145,8 +1986,6 @@ fn tickRest(g: *Game, dt: f32) void {
         g.retro.values = g.restRetro;
         g.hero.sit(false, g.hero.pos, g.hero.facing);
         rehomeFoes(g, .blind);
-        // **AND STANDING UP WRITES TOO** (owner's call). Sitting down was the only write there was, so a level
-        // bought or a night waited out at the fire reached the disk only if you happened to sit at another one.
         saveNow(g, .noShot);
     }
     if (g.rest.listening()) bonfireInput(g, dt);
@@ -2167,16 +2006,13 @@ fn bonfireInput(g: *Game, dt: f32) void {
     if (nav(.down)) restmod.navigate(&g.rest, 0, 1);
     if (nav(.left)) restmod.navigate(&g.rest, -1, 0);
     if (nav(.right)) restmod.navigate(&g.rest, 1, 0);
-    // On the WHEEL the left stick is the thumb's own bearing rather than one of four — see `menu.stickPush`.
     if (menumod.stickPush(dt, onWheel)) |d| restmod.navigate(&g.rest, d.x, d.y);
     restmod.pan(&g.rest, menumod.stickPan(), dt);
     restmod.zoom(&g.rest, menumod.dpadZoom(), dt);
     if (menumod.confirmPressed()) bonfirePick(g, restmod.confirm(&g.rest, &g.tree, g.hero.souls.total));
-    // Esc is routed by the loop rather than by `backPressed`, and at a fire the loop leaves it free.
     if (menumod.backPressed() or rl.isKeyPressed(.escape)) restmod.back(&g.rest);
 }
 
-/// The bonfire holds neither the souls nor the tree, so this is the one place either is moved by it.
 fn bonfirePick(g: *Game, pick: restmod.Pick) void {
     switch (pick) {
         .none => {},
@@ -2184,7 +2020,7 @@ fn bonfirePick(g: *Game, pick: restmod.Pick) void {
         .take => |i| {
             const paid = g.tree.take(i, g.hero.souls.total) orelse return;
             g.hero.souls.total -= paid;
-            g.hero.souls.shown = @floatFromInt(g.hero.souls.total); // it went DOWN: nothing rolls to a smaller number
+            g.hero.souls.shown = @floatFromInt(g.hero.souls.total);
             applyTree(g);
             sfx.play(.souls_take);
         },
@@ -2195,30 +2031,11 @@ fn bonfirePick(g: *Game, pick: restmod.Pick) void {
             g.rest.leave();
         },
     }
-    // **ANYTHING SPENT AT THE FIRE IS ON DISK BEFORE YOU STAND UP**, and it is ONE line after the switch rather
-    // than one per arm — a row added to the fire's list is saved without an edit here (owner: adjust time, level
-    // up, future things). A pick that CLOSED the fire is left to `justLeft`, which is the same write one frame
-    // along; writing here as well would be two files for one press.
-    //
-    // **AND `listening` IS WHAT "STILL SAT DOWN" MEANS, NOT `active`.** `Rest.leave` moves the phase to `.out`
-    // and `active()` is `phase != .off`, so it stays TRUE through the whole fade out — which meant Leave and
-    // Wait both wrote here AND again on `justLeft`: two full slot writes and two `survey` walks for one press,
-    // with the save mark restarting on the second. `listening()` is the condition the input was taken under,
-    // and `.take` leaves it exactly as it found it.
     if (std.meta.activeTag(pick) != .none and g.rest.listening()) saveNow(g, .noShot);
 }
 
-/// Whether this write also owes the picker its PICTURE. Named rather than a bare bool at three call sites: the
-/// argument is which of two things is happening, and `saveNow(g, false)` says neither of them.
 const SaveShot = enum { withShot, noShot };
 
-/// **THE ONE PLACE A SLOT IS WRITTEN.** Every write is a bonfire — sitting down at it, spending at it, standing
-/// up from it — and each of those was its own call or, for two of the three, no call at all. It also arms the
-/// SAVE MARK (`hud.saveTree`), so there is no path that touches the disk silently.
-///
-/// The PICTURE is the FIRST one's alone: `save.writeShot` is a full-framebuffer readback taken at the fire's own
-/// arrival (`shotOwed`, spent once the fade is back up). Re-grabbing it on the way out would photograph the world
-/// coming back rather than the fire you were sitting at.
 fn saveNow(g: *Game, shot: SaveShot) void {
     if (!savemod.write(g.slot, slotOf(g))) {
         std.debug.print("SAVE FAILED: could not write {s}\n", .{savemod.path(g.slot)});
@@ -2229,10 +2046,6 @@ fn saveNow(g: *Game, shot: SaveShot) void {
     g.saveT = hud_.SAVE_SHOW;
 }
 
-/// **THE SAVE MARK, TICKED AND DRAWN IN ONE CALL, AND IT IS NOT CHROME.** It does not go out with the bars on a
-/// death, and it is not the fire's furniture either: two of the three writes happen with the FIRE'S OWN SCREEN
-/// up, which is exactly what `hud`'s early return hides the HUD for, and the third happens as that screen
-/// closes. So it is its own line at the end of the two branches that can be holding a live clock.
 fn saveMark(g: *Game, dt: f32) void {
     if (g.saveT <= 0) return;
     g.saveT = mathx.maxF(0, g.saveT - dt);
@@ -2268,7 +2081,6 @@ fn applyHour(g: *Game) void {
     sfx.setDaylight(daynight.dayAmt(g.day.hour));
 }
 
-/// How finely the storm's own share of the light is stepped — see `applyHour`.
 const WET_STEPS: f32 = 64.0;
 
 pub fn bootCamForShot(g: *Game, t: f32) void {
@@ -2287,7 +2099,7 @@ const REST_PAN: f32 = 0.70;
 
 fn restCamera(g: *Game) void {
     const s = g.rest.seat();
-    const axis = mathx.headingDir(s.axis); // seat → fire, which is NOT quite his facing
+    const axis = mathx.headingDir(s.axis);
     const side = mathx.perpXZ(axis);
     const drift = mathx.sinf(g.hero.restT * 0.18) * 0.30;
     g.rig.cam.position = v3(
@@ -2328,7 +2140,6 @@ fn looseShaft(g: *Game) void {
     const target = locked orelse if (aimed) camAimPoint(g) else forwardPoint(g, heromod.BOW_AIM_REACH);
     const loft = locked != null or aimed;
     const speed: f32 = if (aimed) heromod.BOW_AIMED_SPEED else heromod.BOW_QUICK_SPEED;
-    // The blow AND the shaft that carries it both come off what he actually drew (see `Hero.shotArrow`).
     putIn(&g.shafts, archermod.launchShaft(from, target, speed, g.hero.shotBlow(), loft, g.hero.shotShaft()));
     sfx.play(.bow_loose);
     g.rumble.play(rumblemod.swing_light);
@@ -2346,17 +2157,10 @@ fn releaseSpell(g: *Game) void {
     }
 }
 
-/// **THE LANCE GOES THROUGH.** One segment out of the rod along his facing (or at the lock), handed to every
-/// group ONCE as a `pierce` blade — the same door an arrow already comes through (`pierceFoes`), so every body
-/// standing on the line earns its own flinch, flash, blood, threat and death without this knowing what any of
-/// them is. A `pierce` blade sets no swing latch (`foe.strike`), so one cast is one blow per body by
-/// construction rather than by a list of who has been hit.
 fn throwLance(g: *Game) void {
     const blow = g.hero.castBlow() orelse return;
     const reach = combat.spellReach(g.hero.spell) orelse return;
     const from = g.hero.wandTipWorld();
-    // AIMED AT THE LOCK IF THERE IS ONE, and the line runs THROUGH that mark rather than stopping on it — a
-    // lance that ended at its target would be the levin with a longer arm.
     var dir = mathx.headingDir(g.hero.facing);
     if (activeLock(g)) |li| {
         const to_lock = mathx.dirXZ(from, foeLockPoint(g, li));
@@ -2369,7 +2173,6 @@ fn throwLance(g: *Game) void {
     _ = pierceFoes(g, .{
         .active = true,
         .pierce = true,
-        // …AND IT IS THE ONE BLADE IN THE GAME THAT IS NOT SPENT ON WHAT IT FIRST REACHES (`foe.Blade.through`).
         .through = true,
         .r = combat.LANCE_R,
         .a = from,
@@ -2389,7 +2192,6 @@ fn strikeSunder(g: *Game) void {
     const reach = combat.spellReach(g.hero.spell) orelse return;
     sfx.play(.wand_cast);
     const pick = strikeVictim(g, reach) orelse {
-        // NOTHING THERE, AND HE STILL PAID FOR IT — the levin's own courtesy, on the same mark in front of him.
         g.hero.sunderBurst(strikeMissAt(g, reach), false, g.hero.casts);
         g.rumble.play(rumblemod.cast_throw);
         g.rig.addShake(SHAKE_CAST);
@@ -2397,8 +2199,6 @@ fn strikeSunder(g: *Game) void {
     };
     const hit = strikeOne(g, pick, blow) orelse return;
     g.hero.sunderBurst(v3(hit.at.x, g.env.groundAt(hit.at.x, hit.at.z), hit.at.z), true, g.hero.casts);
-    // THE HEAVIEST STANCE THE ROD THROWS lands as the heaviest beat it throws — the levin's own pairing, and
-    // this one arrives INSIDE reach rather than from across the room.
     g.rumble.play(rumblemod.hit_heavy);
     g.rig.addShake(SHAKE_ROOTS_BITE);
 }
@@ -2406,7 +2206,6 @@ fn strikeSunder(g: *Game) void {
 fn throwBolt(g: *Game) void {
     const blow = g.hero.castBlow() orelse return;
     const locked: ?rl.Vector3 = if (activeLock(g)) |li| foeLockPoint(g, li) else null;
-    // Loft only against a REAL point, `looseShaft`'s rule: it is solved against the distance to the target.
     launchBolt(g, locked orelse forwardPoint(g, heromod.BOLT_REACH), locked != null, blow);
     sfx.play(.wand_cast);
     g.rumble.play(rumblemod.cast_throw);
@@ -2426,13 +2225,9 @@ fn rootMark(g: *const Game) rl.Vector3 {
 }
 
 comptime {
-    // **THE GLOW HAS TO HOLD WHATEVER A BODY HANDS IT.** `drops.MAX_PER_BODY` is the table's arithmetic (one
-    // common, at most one rare) and `pickup.DROP_MAX` is how much a glow can carry — two names for one fact,
-    // in two files neither of which can see the other. This is the file that can (`env.HERO_R_PIN`'s rule).
     std.debug.assert(dropsmod.MAX_PER_BODY == pickupmod.DROP_MAX);
 }
 
-/// A row of `FOE_GROUPS` and an index, not a `FoeRef`: a ref only answers questions.
 const RootPick = struct { group: usize, idx: usize };
 fn rootVictim(g: *const Game, at: rl.Vector3) ?RootPick {
     const locked = activeLock(g);
@@ -2498,7 +2293,7 @@ fn rimeBreathe(g: *Game, dt: f32) void {
                 if (!combat.withinArc(mathx.headingXZ(to), facing, combat.RIME_ARC + spread)) continue;
             }
             a.chill.breathe(dt);
-            a.leash.provoke(); // breathed on IS being fought, whatever it was doing before
+            a.leash.provoke();
         }
     }
 }
@@ -2521,8 +2316,6 @@ const STRIKE_LEAN: f32 = 0.9;
 /// is not allowed to reach a neighbour instead.
 const STRIKE_R: f32 = 0.30;
 
-/// THE ONE PLACE THE STROKE'S GEOMETRY IS WORKED OUT: the blow's swept segment AND the flash down it are these
-/// same two points, handed to both.
 fn strikeSegment(g: *const Game, at: rl.Vector3, topY: f32) [2]rl.Vector3 {
     var away = mathx.dirXZ(g.hero.pos, at);
     if (mathx.lenXZ(away) < 1e-4) away = mathx.headingDir(g.hero.facing);
@@ -2542,16 +2335,13 @@ fn strikeVictim(g: *const Game, reach: f32) ?RootPick {
     inline for (FOE_GROUPS, 0..) |f, gi| {
         for (@field(g, f.field).liveConst(), 0..) |*a, i| {
             if (!foemod.corporeal(a)) continue;
-            // …AND NOT AT SOMETHING THAT IS NOT THERE (`disguised`, the reticle's and the melee aim's own
-            // question). A sunk lurker or a burrowed delver inside the reach took the pick off a real target
-            // and then refused the blow in its own `tryHit`, so the cast was spent on water.
             if (disguised(a)) continue;
             const d = mathx.distXZ(a.pos, g.hero.pos) - a.bodyR();
             if (d > reach) continue;
             if (!g.env.sees(eye, a.lockPoint())) continue;
             if (locked) |l| {
                 if (l.idx == i and l.kind == memberKind(a, f.kind)) return .{ .group = gi, .idx = i };
-                continue; // …and with a lock UP, nothing else is a candidate: he is pointing at somebody
+                continue;
             }
             const to = mathx.dirXZ(g.hero.pos, a.pos);
             if (mathx.lenXZ(to) > 1e-4) {
@@ -2567,13 +2357,8 @@ fn strikeVictim(g: *const Game, reach: f32) ?RootPick {
     return pick;
 }
 
-/// What one landed: where it struck, the segment it struck down, and the HP THE BODY ACTUALLY LOST — which is
-/// the only figure the siphon may feed off, since it is what the creature's own resistances left of the blow.
 const Struck = struct { at: rl.Vector3, from: rl.Vector3, took: f32 };
 
-/// **DELIVERED THROUGH THE CREATURE'S OWN `tryHit`** (`seedRoots`' shape), so a strike earns every reaction a
-/// swing does — the flinch, the flash, the blood, the threat, the shield that might stop it, and a death only
-/// the creature knows how to enter. Nothing here reaches inside a body except to read what it had before.
 fn strikeOne(g: *Game, pick: RootPick, blow: combat.Hit) ?Struck {
     var out: ?Struck = null;
     inline for (FOE_GROUPS, 0..) |f, gi| {
@@ -2583,7 +2368,7 @@ fn strikeOne(g: *Game, pick: RootPick, blow: combat.Hit) ?Struck {
             const before = a.vit.hp;
             a.tryHit(.{
                 .active = true,
-                .pierce = true, // A PROJECTILE'S DOOR: no swing latch to set, and the facing snaps down the line
+                .pierce = true,
                 .r = STRIKE_R,
                 .a = seg[0],
                 .b = seg[1],
@@ -2597,9 +2382,6 @@ fn strikeOne(g: *Game, pick: RootPick, blow: combat.Hit) ?Struck {
     return out;
 }
 
-/// **WHERE A STRIKE THAT FOUND NOBODY IS DRAWN** — on the ground in front of him, half the spell's own reach out.
-/// Both strikes owe the player this (a cast that shows nothing reads as the button not having worked) and both
-/// were spelling the same three lines of arithmetic out at their own miss.
 fn strikeMissAt(g: *const Game, reach: f32) rl.Vector3 {
     const d = mathx.headingDir(g.hero.facing);
     const x = g.hero.pos.x + d.x * reach * 0.5;
@@ -2609,13 +2391,9 @@ fn strikeMissAt(g: *const Game, reach: f32) rl.Vector3 {
 
 fn strikeLevin(g: *Game) void {
     const blow = g.hero.castBlow() orelse return;
-    // THE SPELL'S OWN REACH, off `combat.spellReach` rather than named here: with the constant written at the
-    // call site there are two places that decide how far a strike carries, and the second one to be retuned wins.
     const reach = combat.spellReach(g.hero.spell) orelse return;
     sfx.play(.wand_cast);
     const pick = strikeVictim(g, reach) orelse {
-        // NOTHING THERE, AND HE STILL PAID FOR IT. The stroke is drawn on the air in front of him at the reach
-        // it would have had, because a cast that shows nothing at all reads as the button not having worked.
         const on = strikeMissAt(g, reach);
         const seg = strikeSegment(g, on, on.y);
         g.hero.levinStroke(seg[0], seg[1], on.y, g.hero.casts);
@@ -2625,8 +2403,6 @@ fn strikeLevin(g: *Game) void {
     };
     const hit = strikeOne(g, pick, blow) orelse return;
     g.hero.levinStroke(hit.from, hit.at, g.env.groundAt(hit.at.x, hit.at.z), g.hero.casts);
-    // The heaviest poise the rod throws lands as the heaviest beat it throws: `SHAKE_ROOTS_BITE` is what the
-    // grip closing already earns, and this arrives on a body rather than under one.
     g.rumble.play(rumblemod.hit_heavy);
     g.rig.addShake(SHAKE_ROOTS_BITE);
 }
@@ -2638,10 +2414,6 @@ fn drawSiphon(g: *Game) void {
     g.rumble.play(rumblemod.cast_throw);
     g.rig.addShake(SHAKE_CAST);
     const pick = strikeVictim(g, reach) orelse {
-        // DREW ON NOTHING, AND HE STILL PAID FOR IT — the levin's own courtesy, because a spell that shows
-        // literally nothing on a miss reads as the button not having worked. Off empty air at half the reach (the
-        // stroke's own mark, lifted to where a chest would have been): the motes still arrive at the stone, and
-        // what says it failed is that none of them came off a body.
         const on = strikeMissAt(g, reach);
         g.hero.siphonDrain(v3(on.x, on.y + heromod.H * 0.55, on.z), g.hero.casts);
         return;
@@ -2667,15 +2439,11 @@ fn gateChill(foes: anytype, was: []const rl.Vector3) void {
     }
 }
 
-/// `throwBoltForShot`'s twin: the pose is driven past the `thrown` edge without going through `releaseSpell`.
 pub fn castRootsForShot(g: *Game) rl.Vector3 {
     const at = rootMark(g);
     return seedRoots(g, at) orelse at;
 }
 
-/// …AND THE SAME DOOR FOR THE TWO STRIKES (`throwBoltForShot`'s reason, written at `castToThrow`): the harness
-/// drives the POSE past the throw without going through `releaseSpell`, so the mechanic — and every spark that
-/// fires on that exact frame — has to be fired by hand or the picture is a pose with the spell missing from it.
 pub fn releaseSpellForShot(g: *Game) void {
     releaseSpell(g);
 }
@@ -2694,10 +2462,8 @@ fn camAimPoint(g: *const Game) rl.Vector3 {
     if (rayFoeDist(g, ray.origin, ray.dir)) |d| {
         reach = d;
     } else if (g.env.rayGround(ray.origin, ray.dir)) |hitPoint| {
-        // …else the ground it would land on, so a shot at the earth in front of you lands there.
         reach = mathx.minF(reach, mathx.lenV(mathx.subV(hitPoint, ray.origin)));
     }
-    // Never converge INSIDE him: a target closer than the bow is a shaft aimed backwards.
     reach = mathx.maxF(reach, AIM_CONVERGE_MIN);
     return mathx.addV(ray.origin, mathx.scaleV(ray.dir, reach));
 }
@@ -2714,9 +2480,8 @@ const RayCtx = struct {
             if (!foemod.corporeal(f)) continue;
             const oc = mathx.subV(f.centerWorld(), self.origin);
             const along = oc.x * self.dir.x + oc.y * self.dir.y + oc.z * self.dir.z;
-            if (along <= 0) continue; // behind the eye
+            if (along <= 0) continue;
             const r = f.hurtRadius();
-            // The perpendicular gap, SQUARED throughout — no square roots.
             const oc2 = oc.x * oc.x + oc.y * oc.y + oc.z * oc.z;
             if (oc2 - along * along > r * r) continue;
             if (self.best == null or along < self.best.?) self.best = along;
@@ -2756,8 +2521,6 @@ fn stepShafts(g: *Game, dt: f32) void {
     }
 }
 
-/// Past the widest notice ring in the game. Folded over `FOE_GROUPS` rather than hand-written, or a creature
-/// given a wider ring later quietly stops being asked and sees through walls again.
 const SIGHT_R: f32 = blk: {
     var widest: f32 = 0;
     for (FOE_GROUPS) |f| widest = @max(widest, f.aggro);
@@ -2779,7 +2542,6 @@ fn markSight(g: *Game) void {
     }
 }
 
-/// Metres ahead a creature looks for something in the way, past its own radius — about a walking second.
 const WAY_PROBE: f32 = 2.0;
 const WAY_FAN = [_]f32{ 0.45, 0.90, 1.40, 1.95, 2.50 };
 const WAY_TRUE: f32 = 0.98;
@@ -2787,8 +2549,8 @@ const WAY_TRUE: f32 = 0.98;
 fn wayClear(g: *const Game, at: rl.Vector3, r: f32, dir: rl.Vector3) bool {
     const reach = WAY_PROBE + r;
     const went = mathx.dirXZ(at, g.env.walkStep(at, dir, reach));
-    if (mathx.lenXZ(went) < 1e-4) return false; // the terrain (or the deep) refused it outright…
-    if (went.x * dir.x + went.z * dir.z < WAY_TRUE) return false; // …or slid it somewhere it did not ask for
+    if (mathx.lenXZ(went) < 1e-4) return false;
+    if (went.x * dir.x + went.z * dir.z < WAY_TRUE) return false;
     for ([2]f32{ 0.5, 1.0 }) |u| {
         const p = v3(at.x + dir.x * reach * u, at.y, at.z + dir.z * reach * u);
         if (mathx.distXZ(g.env.resolveActor(p, r, at.y), p) > 1e-3) return false;
@@ -2803,8 +2565,6 @@ fn markWay(g: *const Game, nav: *foemod.Nav, at: rl.Vector3, r: f32, want: rl.Ve
         return;
     }
     const yaw = mathx.headingXZ(straight);
-    // Width OUTSIDE, side INSIDE: the narrowest angle that works wins whichever side it is on, and the side
-    // only settles a TIE — which is the anti-dither `Nav.side` is for.
     for (WAY_FAN) |off| {
         for ([2]f32{ nav.side, -nav.side }) |s| {
             const d = mathx.headingDir(yaw + off * s);
@@ -2814,7 +2574,7 @@ fn markWay(g: *const Game, nav: *foemod.Nav, at: rl.Vector3, r: f32, want: rl.Ve
             return;
         }
     }
-    nav.dir = null; // BOXED IN: nowhere to go, so it presses on into the thing and the gate holds its feet
+    nav.dir = null;
 }
 
 fn markWays(g: *Game) void {
@@ -2854,7 +2614,6 @@ fn markThreat(g: *Game, dt: f32) void {
             f.threat.tick(
                 dt,
                 mathx.distXZ(f.pos, g.hero.pos),
-                // …and with no spirit to measure, INFINITELY FAR (`mathx.LONG_AGO`).
                 if (mine) |s| mathx.distXZ(f.pos, s) else mathx.LONG_AGO,
                 mine != null,
             );
@@ -2862,12 +2621,6 @@ fn markThreat(g: *Game, dt: f32) void {
     }
 }
 
-/// **HOW DEEP THE WATER IS, STAMPED ONTO WHATEVER LIVES IN IT** (`foe.Wade`) — `markParry`'s arrangement, and
-/// the reason it is a pass rather than a lookup inside the creature: `env`'s water field belongs to `env`, and
-/// a creature that reached for it would be a creature that knows what an `Env` is.
-///
-/// **THE FIELD IS THE OPT-IN** (`markWays`' `@hasField` rule), so the fifteen groups that never touch water
-/// compile to nothing here and pay nothing for a creature they have no relationship with.
 fn markWade(g: *Game) void {
     const quarry = g.env.wadeDepth(g.hero.pos.x, g.hero.pos.z);
     const Depth = struct {
@@ -2890,7 +2643,6 @@ fn markParry(g: *Game) void {
     }
 }
 
-/// One answer for the whole field: two creatures caught on one frame is still one shield and one recoil.
 fn anyParried(g: *const Game) bool {
     inline for (FOE_GROUPS) |f| {
         if (comptime @hasDecl(@FieldType(Game, f.field), "anyParried")) {
@@ -2900,7 +2652,6 @@ fn anyParried(g: *const Game) bool {
     return false;
 }
 
-/// Deliberately over the block's beat: a block is a cost paid, this is a blow REFUSED.
 fn parryBeat(g: *Game) void {
     g.hero.noteParry();
     g.rumble.play(rumblemod.parry);
@@ -2909,7 +2660,6 @@ fn parryBeat(g: *Game) void {
 }
 
 fn markVigil(g: *Game) void {
-    // Nothing on the field is held until something earns it this frame.
     eachRaisable(g, {}, struct {
         fn v(_: void, f: anytype) void {
             f.heldOpen = false;
@@ -3015,10 +2765,8 @@ fn quivers(g: *Game) [2][]archermod.Arrow {
     return .{ &g.arrows, &g.shafts };
 }
 
-/// One body for BOTH quivers.
 fn planted(g: *Game, ar: *const archermod.Arrow) void {
     if (!ar.stuck or ar.age != 0) return;
-    // Only the glob is silent, because `brood.splash` carries the voice for that one.
     if (ar.shot != .venom) sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
     splashOf(g, ar);
 }
@@ -3027,30 +2775,19 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
     const ground = v3(ar.pos.x, g.env.groundAt(ar.pos.x, ar.pos.z), ar.pos.z);
     switch (ar.shot) {
         .venom => g.brood.splash(ground),
-        .clump => g.band.splash(ar.pos), // at the CONTACT, not the floor: it can burst against a chest
+        .clump => g.band.splash(ar.pos),
         .bolt => {
             g.hero.boltBurst(ar.pos, ground.y, g.hero.casts);
-            // **AND THE KEYSTONE TURNS THE BURST INTO GROUND** (`passivetree.Grant.boltCloud`). At the
-            // IMPACT frame rather than at the cast, the knight's own rule: a bolt that MISSED still denies
-            // the floor it landed on, which is what makes the spell a placement instead of a projectile.
             if (g.hero.perk.boltCloud) layBoltGas(g, ground);
         },
-        // THE FIREBALL GOING OUT — this is the LAST touch only, because `planted` is what calls this and a
-        // ball with budget left never plants (`archer.plantGround`). The bounces get their own, smaller
-        // voice and puff below.
         .emberball => {
             sfx.world(.ember_burst, ar.pos);
             g.ring.splash(ar.pos);
         },
-        // The crock's gap is deliberate, until the owner picks what lightning landing looks like.
         .arrow, .firearrow, .wisp, .crock => {},
     }
 }
 
-/// **AND THE BOUNCES, WHICH ARE THE MOVE.** Walked over both quivers after they have flown, because the flag
-/// is one frame wide and set inside `archer`'s own step — the creature that threw it is long out of the
-/// conversation and may well be dead. The RHYTHM is the cue: one thud per touch, so a player who has heard
-/// the pattern once knows where the next one is landing without looking down at it.
 fn emberBounces(g: *Game) void {
     for (quivers(g)) |pool| {
         for (pool) |*ar| {
@@ -3092,10 +2829,6 @@ fn sceneCam(g: *const Game) rl.Camera3D {
 }
 
 fn sunFocus(g: *const Game) rl.Vector3 {
-    // **THE SHADOW BOX FOLLOWS THE LENS WHEREVER THE LENS IS NOT ON HIM.** It tracks the hero because that is
-    // where the fight is; on the boot screen there is no fight and the camera is a hundred metres away over
-    // the wood, so anchored to him the whole pass renders with no cast shadow in frame at all — which on a
-    // canopy is most of what there is to look at. The editor's branch below is the same rule, older.
     if (g.menu.booting()) {
         const at = bootLook(g, g.bootT);
         return v3(at.x, g.env.groundAt(at.x, at.z), at.z);
@@ -3124,32 +2857,22 @@ fn tickWeather(g: *Game, dt: f32) void {
     g.weather.tick(dt);
     sfx.setRain(g.weather.rain());
     if (g.weather.thunder()) |gain| sfx.playAt(.thunder, gain);
-    // …AND THE BANKS DRIFT ON THE SAME CLOCK, around the MAN and not the lens: they are things standing in the
-    // world, so the camera turning may not move one of them.
     g.mist.tick(dt, g.hero.pos, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), fogAmt(g));
 }
 
-/// **HOW FOGGY IT IS, 0..1 — ONE ANSWER WITH ONE OVERRIDE.** The storm's own level, unless the debug row has
-/// taken the dial over (`menu.fogAmt`). Read by the banks and by nothing else: the haze DENSITY is the same row
-/// asked the other question (`menu.fogK`, a distance).
 fn fogAmt(g: *const Game) f32 {
     return g.menu.fogAmt(g.weather.rain());
 }
 
-/// **THE CLOUD'S OWN LIGHT, OVER THE WHOLE FRAME** — drawn INSIDE the retro pass (before `retro.end`), because
-/// the dimming and the flash are things happening to the world's light. After the filter they would be a
-/// notification sitting on top of the picture, which is what the HUD layer is for.
 fn drawWeatherOverlay(g: *Game) void {
-    if (g.editor.on) return; // the editor is a TOOL: it is not standing in the weather
+    if (g.editor.on) return;
     weathermod.drawOverlay(rl.getScreenWidth(), rl.getScreenHeight(), g.weather.dim(), g.weather.flash());
 }
 
 pub fn drawScene(g: *Game) void {
     g.env.resetStats();
-    applyStow(g); // before the depth pass: what is stowed is not a caster
+    applyStow(g);
     const cam = sceneCam(g);
-    // **WHERE THE LENS IS, FOR THE PARTICLE POOLS THAT ASK** (`foe.motesVisible`). Set here and nowhere else,
-    // before a single pool is drawn: it is the same one-source rule `gfx.sun` is held to.
     foemod.setLens(cam.position, mathx.normV(mathx.subV(cam.target, cam.position)));
     g.env.markOccluders(cam.position, if (g.editor.on) cam.position else heroAimPoint(g), g.drawDt);
     const focus = sunFocus(g);
@@ -3181,19 +2904,15 @@ pub fn drawScene(g: *Game) void {
     g.env.drawFlora(&view);
     g.scene.setWind(false);
     drawArrows(g);
-    // The drop is made of light and lays no shadow, so it stays off `drawCasters` entirely.
     g.souls.draw();
-    drawDrops(g); // …and what a body left, on exactly those terms
-    for (&g.boltGas) |*c| c.drawFx(); // …and his own chaos standing where a bolt landed
-    // …and the thinned occluders LAST, so their alpha mattes the hero standing behind them (`Env.drawThinned`).
+    drawDrops(g);
+    for (&g.boltGas) |*c| c.drawFx();
     g.env.drawThinned(&view);
     if (g.menu.wireframe) rl.gl.rlDisableWireMode();
     g.env.drawVeils(&view);
-    // Unlit spheres over the opaque geometry.
     inline for (FOE_GROUPS) |f| {
         if (comptime @hasDecl(@FieldType(Game, f.field), "drawFx")) @field(g, f.field).drawFx();
     }
-    // …and the spirit's own, which needs its own line because it is not in `FOE_GROUPS`.
     g.pack.drawFx();
     g.souls.drawFx();
     g.hero.drawTrail();
@@ -3212,13 +2931,7 @@ pub fn drawScene(g: *Game) void {
         }
     }
     if (g.editor.on) g.editor.draw3D(&g.map, &g.env);
-    // **THE RAIN LAST OF ALL** — it is a half-there surface in front of everything, so it composites over the
-    // world (and over the FX) rather than being sorted against it. It writes no depth (`Scene.beginFade`) and
-    // is still depth TESTED, which is what puts it behind the wall you are standing under.
-    // …OFF THE CAMERA THIS PASS IS ACTUALLY DRAWN WITH (`cam`), not off the rig: the sheet is a column stacked
-    // on the EYE, so a second answer to "where is the lens" is a storm centred somewhere the frame is not.
     if (!g.editor.on) g.rainfall.draw(&g.scene, cam.position, g.hero.pos, g.weather.rain(), g.weather.t);
-    // …and the banks with it, on the same terms and for the same reason: a half-there mass in front of the world.
     if (!g.editor.on) g.mist.draw(&g.scene, cam.position, fogAmt(g));
     rl.endMode3D();
 
@@ -3264,7 +2977,7 @@ fn drawDeathOverlay(g: *Game) void {
             const size = 0.115 * hf * (0.97 + 0.06 * u);
             const spacing = 0.22 * size; // ER's wide tracking (between glyphs only — measured exactly)
             const cx = 0.5 * wf;
-            const cy = bandTop + bandH * 0.5; // band centre, DERIVED
+            const cy = bandTop + bandH * 0.5;
             const glow = rgba(120, 14, 10, mathx.u8f(44.0 * ta));
             hud_.bigCentered("YOU DIED", cx - 3, cy, size, spacing, glow);
             hud_.bigCentered("YOU DIED", cx + 3, cy, size, spacing, glow);
@@ -3272,7 +2985,6 @@ fn drawDeathOverlay(g: *Game) void {
             hud_.bigCentered("YOU DIED", cx, cy + 3, size, spacing, glow);
             hud_.bigCentered("YOU DIED", cx, cy, size, spacing, rgba(156, 22, 16, mathx.u8f(232.0 * ta)));
         }
-        // Full black a little BEFORE the respawn, so the cut is buried inside the card.
         const blackK = mathx.smoothstep(0.82, 0.94, u);
         if (blackK > 0.001) rl.drawRectangle(0, 0, w, h, rgba(0, 0, 0, mathx.u8f(255.0 * blackK)));
     } else if (g.deathFade > 0) {
@@ -3298,26 +3010,16 @@ fn drawHurtFlash(g: *Game) void {
 
 pub const HUD_FADE_DUR: f32 = 0.55;
 
-/// …and what the chrome is worth this frame: 1 alive, easing to 0 across the fade once he is down.
 fn chromeFade(g: *const Game) f32 {
     if (!g.hero.dead) return 1;
     return 1.0 - mathx.smoothstep(0, HUD_FADE_DUR, g.hero.deathT);
 }
 
 pub fn hud(g: *Game, dt: f32) void {
-    // A conversation takes the bottom of the screen, which is where the cross and the prompt live.
     if (g.rest.active() or g.talk.active()) return;
     const chrome = chromeFade(g);
     const wantChrome = !g.menu.isOpen() and chrome > 0.001;
-    // **THE SPIRIT'S FACE IS TAKEN BEFORE THE CHROME TARGET OPENS.** `endTextureMode` restores the DEFAULT
-    // framebuffer rather than the target that was bound before it, so rendering a portrait inside the chrome
-    // scope would send every HUD draw after it at the backbuffer, to be overwritten by the chrome's own blit.
-    // Taken here, the toast below only has a quad to mount (`hud.renderPortrait`).
     const spiritFace = wantChrome and spiritFaceFor(g);
-    // **THE CLOSE IS A `defer` IN ITS OWN SCOPE, NOT A LINE AT THE BOTTOM.** An open `beginTextureMode` that
-    // never closes does not lose the chrome, it eats the WHOLE REST OF THE FRAME into an offscreen buffer —
-    // so a `return` added anywhere in the block below would blank the screen, and nothing about the edit
-    // would look wrong. The scope also ends BEFORE the banner, which is not chrome.
     {
         const veiled = wantChrome and hud_.beginChrome(chrome);
         defer if (veiled) hud_.endChrome(chrome);
@@ -3336,11 +3038,8 @@ pub fn hud(g: *Game, dt: f32) void {
             const bowUp = g.hero.bowOut();
             const wandUp = g.hero.wandOut();
             hud_.equipment(
-                // LEFT: what that hand actually has — boards, the rod, or nothing at all behind a bow.
                 if (!g.hero.offInHand()) .empty else armSlot(g.hero.off),
                 armSlot(g.hero.armInHand()),
-                // UP fills only while something in his hands could cast; behind a bow or a shield, empty. The
-                // CELL CARRIES THE SPELL (`hud.Slot.sorcery`), so which picture it is stays `itemart`'s one answer.
                 if (wandUp) hud_.Slot{ .sorcery = g.hero.spell } else .empty,
                 g.hero.fp.cur >= g.hero.castCost(),
                 g.hero.quick.selected(),
@@ -3355,7 +3054,7 @@ pub fn hud(g: *Game, dt: f32) void {
             }
             hud_.spiritPanel(spiritFace, combat.spiritName(g.hero.spirit), g.spiritHp, g.spiritK);
             hud_.reticle(g.hero.aimB);
-            hud_.souls(g.hero.souls.display()); // the ROLLING value, not the banked total
+            hud_.souls(g.hero.souls.display());
             if (g.vigil.boss(g.hero.pos)) |bi| {
                 const b = &g.vigil.liveConst()[bi];
                 g.bossFrac = b.vit.hpFrac();
@@ -3365,7 +3064,6 @@ pub fn hud(g: *Game, dt: f32) void {
                 g.bossK = mathx.approach(g.bossK, 0, dt * 1.4);
                 hud_.bossBar(dt, worldfmt.foeName(.bone_knight), g.bossFrac, false, g.bossK);
             }
-            // The same `reachable` the PRESS goes through: a prompt naming a different thing is worse than none.
             if (reachable(g)) |r| hud_.prompt(r.prompt());
         }
     }
@@ -3378,7 +3076,6 @@ pub fn hud(g: *Game, dt: f32) void {
 const DBG_ROW = 200;
 
 fn debugCorner(g: *Game) void {
-    // ASCII only — the Balthazar atlas is the default (ASCII) glyph set, so a "·" or "—" is tofu.
     var buf: [DBG_ROW]u8 = undefined;
     const step = hud_.lineH(hud_.SMALL);
     var y: i32 = 18;
@@ -3425,7 +3122,6 @@ fn debugCorner(g: *Game) void {
     }) catch "", y, hud_.SMALL, rgba(150, 180, 190, 255));
     y += step;
 
-    // The four resistances are only legible against a named target, so the row reads the LOCK, not the hero.
     const sel = h.quiver.sel;
     const rider: [:0]const u8 = if (sel == .fire) "  +fire" else "";
     if (g.lock) |li| {
@@ -3478,7 +3174,6 @@ fn gaitLabel(moving: f32, speed: f32) [:0]const u8 {
     };
 }
 
-/// How the process runs: the game, or one of the two headless capture modes in `shots.zig`.
 pub const Mode = enum { play, shots, props };
 
 pub fn run(mode: Mode) void {
@@ -3509,7 +3204,7 @@ pub fn run(mode: Mode) void {
     defer if (!shot) sfx.deinit();
     defer objviewmod.unload();
     defer bookmod.unload();
-    defer hud_.unloadPortrait(); // the one live-portrait target: the panel's speaker AND the spirit toast
+    defer hud_.unloadPortrait();
     defer menumod.unload();
 
     const alloc = std.heap.c_allocator;
@@ -3520,8 +3215,6 @@ pub fn run(mode: Mode) void {
     rl.gl.rlSetClipPlanes(CLIP_NEAR, CLIP_FAR);
 
     if (mode == .shots) {
-        // A MAP THAT IS NOT THE AUTHORED ONE GETS THE DEV PASS. `runShots` photographs a fixed sequence and
-        // needs that world's exact cast; a test map posts whatever it posts.
         if (std.mem.eql(u8, worldfmt.startMap(), worldfmt.START_MAP)) {
             @import("shots.zig").runShots(g);
         } else {
@@ -3536,11 +3229,10 @@ pub fn run(mode: Mode) void {
 
     rl.hideCursor();
     var wasInside = false;
-    var bWasDown = false; // gamepad Circle/B: a TAP rolls, a HOLD sprints
+    var bWasDown = false;
     var bHeldT: f32 = 0;
-    var lockCycleReady = true; // debounce so one flick cycles the lock-on target once
+    var lockCycleReady = true;
     var lookPad = false;
-    // Rising-edge trackers for rumble: pulse the frame an action BEGINS.
     var wasRolls: u32 = 0;
     var wasSwings: u32 = 0;
     var wasDead = false;
@@ -3548,19 +3240,15 @@ pub fn run(mode: Mode) void {
     var wasAiming = false;
     var wasStun: combat.StunKind = .none;
     var lastPhase: f32 = 0.75;
-    var bankT: f32 = 0; // seconds finishing the bank behind the menu; -1 once reported
+    var bankT: f32 = 0;
     defer g.rumble.stop();
     while (!rl.windowShouldClose()) {
-        const rawDt = rl.getFrameTime(); // wall-clock dt: feel systems (shake, rumble, fades, tap windows)
+        const rawDt = rl.getFrameTime();
         const dt = rawDt * g.menu.timeScale;
-        g.drawDt = rawDt; // …including the occluder fade, which every branch below draws through
+        g.drawDt = rawDt;
         PLAY_HALF = playHalfOf(g.map.half);
-        // The clock runs on `dt`, not `rawDt`, so the debug time scale slows the sun with everything else.
         if (!g.editor.on and !g.menu.isOpen() and !g.rest.active() and !g.talk.active() and !g.award.carding()) {
             g.day.tick(dt);
-            // **THE SKY IS ON THE SAME CLOCK AS THE SUN** — the world's, not the wall's, so a slowed hour is a
-            // slowed storm and the two never argue about what time it is. Ticked here rather than in the play
-            // branch because weather happens whether or not he is fighting.
             tickWeather(g, dt);
         }
         applyHour(g);
@@ -3594,21 +3282,21 @@ pub fn run(mode: Mode) void {
                     g.editor.flushRebuild(&g.map, &g.env);
                     g.editor.on = false;
                     g.menu.screen = g.menu.home;
-                    rl.hideCursor(); // the mouse IS the camera again
+                    rl.hideCursor();
                     armScript(g);
                 },
                 .playtest => {
                     g.editor.flushRebuild(&g.map, &g.env);
                     g.editor.on = false;
-                    g.menu.started(); // F5 IS a started world, whichever card the editor was opened from
+                    g.menu.started();
                     rl.hideCursor();
-                    armScript(g); // the world he is about to test is a FRESH one: no switch already thrown
+                    armScript(g);
                     g.hero.pos = mathx.ground(g.editor.cam.target.x, g.editor.cam.target.z);
                     plantActor(g, &g.hero.pos);
                     g.hero.pos = g.env.resolveActor(g.hero.pos, HERO_R, g.hero.pos.y);
                     g.hero.setSpawn(g.hero.pos, g.hero.facing);
                     g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
-                    wasInside = false; // swallow the mouse delta the editor's look accumulated
+                    wasInside = false;
                 },
             }
             g.hero.held = true;
@@ -3636,7 +3324,6 @@ pub fn run(mode: Mode) void {
                     g.lock = null;
                     g.editor.enter(g.hero.pos);
                 },
-                // Nothing torn down and nothing written: the character is saved as of the last fire.
                 .toTitle => g.menu.toTitle(),
                 .newGame => |i| beginEnter(g, .{ .fresh = i }),
                 .loadGame => |i| beginEnter(g, .{ .load = i }),
@@ -3652,7 +3339,7 @@ pub fn run(mode: Mode) void {
             }
             bWasDown = true;
             bHeldT = ROLL_TAP_MAX;
-            wasInside = false; // swallow the mouse delta accumulated while in the menu
+            wasInside = false;
             g.hero.update(rawDt, 0, 0, null);
             g.hero.pose();
             g.rig.tickShake(rawDt);
@@ -3661,13 +3348,11 @@ pub fn run(mode: Mode) void {
                 g.bootT += rawDt;
                 bootCam(g, g.bootT);
             } else g.rig.follow(g.hero.shoulderPoint());
-            g.rumble.update(rawDt, false); // motors silent while paused (envelopes still decay)
+            g.rumble.update(rawDt, false);
             sfx.ambience(rawDt);
             drawScene(g);
-            // No HUD behind the BOOT screen: there is no character yet whose bars those would be.
             if (!booting) hud(g, rawDt);
             g.menu.draw(&g.retro, &g.day, &g.weather, bookView(g), .{ .hero = &g.hero, .scene = &g.scene }, &g.shelf);
-            // LAST, over the menu itself: the cut has to cover the card the press came off.
             tickEnter(g, rawDt);
             drawEnterFade(g);
             rl.endDrawing();
@@ -3697,7 +3382,7 @@ pub fn run(mode: Mode) void {
 
         if (g.rest.active()) {
             tickRest(g, rawDt);
-            bWasDown = true; // poison the pad-B tap window, exactly as the menu branch does
+            bWasDown = true;
             bHeldT = ROLL_TAP_MAX;
             wasInside = false;
             sfx.ambience(rawDt);
@@ -3706,11 +3391,10 @@ pub fn run(mode: Mode) void {
             takeSlotShot(g);
             hud(g, rawDt);
             restmod.drawScreen(&g.rest, &g.tree, g.hero.souls.total);
-            saveMark(g, rawDt); // over the fire's own screen: two of the three writes happen behind it
+            saveMark(g, rawDt);
             rl.endDrawing();
             continue;
         }
-        // A conversation holds the world as the pause card does, at WALL-CLOCK time.
         if (g.talk.active()) {
             tickTalk(g, rawDt);
             bWasDown = true;
@@ -3759,9 +3443,7 @@ pub fn run(mode: Mode) void {
         const padRX: f32 = if (rl.isGamepadAvailable(PAD)) rl.getGamepadAxisMovement(PAD, .right_x) else @as(f32, 0);
         const padRY: f32 = if (rl.isGamepadAvailable(PAD)) rl.getGamepadAxisMovement(PAD, .right_y) else @as(f32, 0);
         const yawBefore = g.rig.yaw;
-        // RAW stick magnitude, before any deadzone.
         const padMag = @sqrt(padRX * padRX + padRY * padRY);
-        // …and the whole look SLOWS as the bow comes up, eased on the same blend the view rides in on.
         const lookScale = mathx.lerpF(1.0, AIM_LOOK_SCALE, mathx.clampF(g.rig.aimB, 0, 1));
         if (activeLock(g)) |li| {
             const dir = mathx.dirXZ(g.hero.pos, foePos(g, li));
@@ -3778,12 +3460,9 @@ pub fn run(mode: Mode) void {
                 lockCycleReady = true;
             }
         } else {
-            // …and the two devices are latched apart: a mouse-emulation layer can put a stick on the OS cursor.
             const look = stickRadial(padRX, padRY, LOOK_DEADZONE, LOOK_CURVE);
             const mouseLook = inside and wasInside and (@abs(md.x) + @abs(md.y)) > MOUSE_WAKE;
-            // …and CLAIMING needs more than merely clearing the deadzone, or a worn stick pins the latch to PAD.
             const padClaim = padMag > LOOK_CLAIM;
-            // …and LAST DEVICE WINS has to be resolved as a TIE, not by statement order.
             if (padClaim and !mouseLook) lookPad = true;
             if (mouseLook and !padClaim) lookPad = false;
             if (lookPad) {
@@ -3801,18 +3480,15 @@ pub fn run(mode: Mode) void {
             .rx = padRX,
             .ry = padRY,
             .mag = padMag,
-            // Wrapped: yaw lives in (−pi, pi] so a turn across the seam is a small delta, not a full circle.
             .dyaw = mathx.degrees(mathx.wrapPi(g.rig.yaw - yawBefore)),
             .pad = lookPad,
         };
         wasInside = inside;
         if (wheel != 0) g.rig.zoom(wheel);
 
-        // D-PAD RIGHT / Q: cycle the right-hand armament.
         const swapReq = rl.isKeyPressed(.q) or padPressed(.left_face_right);
         if (swapReq and g.hero.swapArm()) sfx.play(.flask_cycle);
 
-        // D-PAD LEFT / F: cycle the LEFT-hand armament — shield or wand.
         const offReq = rl.isKeyPressed(.f) or padPressed(.left_face_left);
         if (offReq and g.hero.swapOff()) sfx.play(.flask_cycle);
 
@@ -3823,7 +3499,6 @@ pub fn run(mode: Mode) void {
             sfx.play(.flask_cycle);
         }
 
-        // D-PAD UP / G: cycle the SPELL — every cross direction changes the slot it is shown in.
         const spellReq = rl.isKeyPressed(.g) or padPressed(.left_face_up);
         if (spellReq and g.hero.cycleSpell()) sfx.play(.flask_cycle);
 
@@ -3833,11 +3508,10 @@ pub fn run(mode: Mode) void {
         const useReq = rl.isKeyPressed(INTERACT_KEY) or padPressed(INTERACT_PAD);
         if (useReq and !g.hero.dead) interact(g);
 
-        // Dodge roll: Space, or a short TAP of Circle/B (holding B sprints instead).
         var rollReq = rl.isKeyPressed(.space);
-        const bDown = padDown(hud_.padOf(hud_.BTN_BACK)); // B is the roll/sprint button, named once in hud
+        const bDown = padDown(hud_.padOf(hud_.BTN_BACK));
         if (bDown) {
-            bHeldT += rawDt; // REAL time: tap-vs-hold is a wall-clock decision, unaffected by debug time-scale
+            bHeldT += rawDt;
         } else {
             if (bWasDown and bHeldT < ROLL_TAP_MAX) rollReq = true;
             bHeldT = 0;
@@ -3872,7 +3546,6 @@ pub fn run(mode: Mode) void {
         const aimHeld = acts.aim;
         const parryReq = acts.parry;
 
-        // Stamina gates the sprint at the SOURCE, so `sprintingMove` stays the one definition of a sprint.
         var mv = gatherMove();
         if (!g.hero.stam.canSprint()) mv.speed = @min(mv.speed, RUN_SPEED);
         const wade = wadeDrag(g);
@@ -3881,10 +3554,8 @@ pub fn run(mode: Mode) void {
         g.hero.regen.tick(dt, &g.hero.vit);
         g.hero.tickTimed(dt);
         g.hero.tickFlash(dt);
-        // Once a frame rather than at each site that can empty the bag: a per-site list is one to forget from.
         g.hero.quick.dropEmpty(&g.bag);
         const jumpReq = rl.isKeyPressed(JUMP_KEY) or padPressed(JUMP_PAD);
-        // Action input is dead while staggered or dead (a reaction is committed).
         if (!g.hero.dead and !g.hero.staggered()) {
             if (rollReq) {
                 g.hero.requestRoll(rollDir(g, mv));
@@ -3901,7 +3572,6 @@ pub fn run(mode: Mode) void {
             } else if (quickReq) {
                 g.hero.requestShot(false);
             } else if (castReq) {
-                // At the RAISE, not the throw: `wand_charge` climbs, and resolves about where the bolt goes.
                 if (g.hero.requestCast()) sfx.play(.wand_charge);
             } else if (ringReq) {
                 ringBell(g);
@@ -3910,16 +3580,12 @@ pub fn run(mode: Mode) void {
             if (drinkReq) quickUse(g);
         }
         g.hero.sprinting = sprintingMove(mv) and !g.hero.committed() and !g.hero.dead and !g.hero.staggered();
-        // …and the shield AFTER the sprint (there is no running block — see `hero.setGuard`).
         g.hero.setGuard(guardHeld);
         g.hero.setAim(aimHeld);
-        // Shield, bow and draught are each a SHUFFLE rather than a stop, denied at the SOURCE like the sprint.
-        // …and a DOOR is slower to walk behind than a small shield (`item.Arm.walk`).
         if (g.hero.guarding) mv.speed = @min(mv.speed, WALK_SPEED * heromod.GUARD_SPEED * g.hero.guardWalk());
         if (g.hero.aiming) mv.speed = @min(mv.speed, WALK_SPEED * heromod.BOW_AIM_SPEED);
         if (g.hero.drinking) mv.speed = @min(mv.speed, WALK_SPEED * heromod.DRINK_SPEED);
 
-        // While locked the hero faces the foe (so it strafes/backpedals around it), ER-style.
         const lockYaw: ?f32 = if (g.lock) |li| blk: {
             const d = mathx.dirXZ(g.hero.pos, foePos(g, li));
             break :blk if (mathx.lenXZ(d) > 0.001) mathx.headingXZ(d) else null;
@@ -3931,33 +3597,30 @@ pub fn run(mode: Mode) void {
         const heroAfoot = !g.hero.dead;
         if (g.hero.dead) {
             g.hero.updateDeath(dt);
-            // The frame he returns, the WORLD reloads with him (ER-style).
             if (!g.hero.dead) resetFoes(g);
         } else if (g.hero.staggered()) {
             g.hero.updateStun(dt);
         } else if (g.hero.airborne()) {
             moveHeroAir(g, dt, mv, faceYaw);
         } else if (g.hero.rolling) {
-            g.hero.updateRoll(dt, PLAY_HALF); // committed — ignores move input
+            g.hero.updateRoll(dt, PLAY_HALF);
         } else if (g.hero.drinking) {
             g.hero.tickDrink(dt);
             moveHero(g, dt, if (g.hero.drinking) mv else .{}, faceYaw);
         } else if (g.hero.attacking) {
             g.hero.updateAttack(dt, PLAY_HALF, faceYaw);
         } else if (g.hero.parrying) {
-            g.hero.updateParry(dt, faceYaw); // PLANTED, like the cast — catching a blow is a standing job
+            g.hero.updateParry(dt, faceYaw);
         } else if (g.hero.shooting) {
             g.hero.updateShot(dt, faceYaw);
         } else if (g.hero.ringing) {
-            g.hero.updateRing(dt, faceYaw); // PLANTED, like the cast — calling something is a standing job
+            g.hero.updateRing(dt, faceYaw);
         } else if (g.hero.casting) {
-            g.hero.updateCast(dt, faceYaw); // PLANTED, like a quick shot — both hands are busy
-            // Pulsed EVERY frame, since a `rumble.Event` can only decay from its peak (`rumble.castCharge`).
+            g.hero.updateCast(dt, faceYaw);
             g.rumble.play(rumblemod.castCharge(g.hero.chargeFill()));
         } else {
             moveHero(g, dt, mv, faceYaw);
         }
-        // The traversal rule, taken ONCE here rather than at each of the eight branches above.
         if (heroAfoot) gateHeroTerrain(g, heroWas);
         var wasPos: [FOE_GROUPS.len][FOE_CAP]rl.Vector3 = undefined;
         var wasN: [FOE_GROUPS.len]usize = undefined;
@@ -3966,7 +3629,6 @@ pub fn run(mode: Mode) void {
             wasN[gi] = row.len;
             snapshotPos(row, &wasPos[gi]);
         }
-        // Each on the ONE frame its own edge says so. The bell's is the NOTE, not the arm coming down.
         if (g.hero.loosed) looseShaft(g);
         if (g.hero.thrown) releaseSpell(g);
         if (g.hero.rang) summonSpirit(g);
@@ -3977,10 +3639,8 @@ pub fn run(mode: Mode) void {
         markWade(g);
         markParry(g);
         markVigil(g);
-        // ONE snapshot of the blade for every group this frame — re-derived per group, the three disagree.
         const bladeNow = heroBlade(g);
         if (g.warren.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            // The lunge carries stance damage; the chomp doesn't — split the felt blow by that.
             _ = heroTakes(g, b, b.hit.heavy(), true);
         }
         if (g.grief.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
@@ -3994,11 +3654,9 @@ pub fn run(mode: Mode) void {
         if (g.band.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnClump)) |b| {
             _ = heroTakes(g, b, b.hit.poise >= koboldmod.ZERK_HIT.poise, true);
         }
-        // The skeletal warriors. Only the greatsword's diagonal carries stance, so that is the split.
         if (g.muster.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.heavy(), true);
         }
-        // The shade's touch is the only blow it deals in person — the wisp goes through the quiver.
         if (g.haunt.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnWisp)) |b| {
             _ = heroTakes(g, b, b.hit.heavy(), true);
         }
@@ -4009,7 +3667,6 @@ pub fn run(mode: Mode) void {
         if (g.grove.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, noteYank)) |b| {
             applyYank(g, heroTakes(g, b, b.hit.heavy(), true));
         }
-        // The sporeling's bonk is a blow; its cloud is a HOLD, billed further down beside the mother's acid.
         if (g.cluster.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.heavy(), true);
         }
@@ -4039,9 +3696,6 @@ pub fn run(mode: Mode) void {
         if (g.ring.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.heavy(), true);
         }
-        // **THE MAGE'S BLOW IS NOT ITS OWN** — the ball goes into the shared pool and arrives seconds later,
-        // so the creature's `update` above can only ever return null. What it hands over here is the FLAG and
-        // the point it left from; everything after that belongs to `archer`.
         for (g.ring.live()) |*k| {
             if (k.kindled) sfx.world(.mage_kindle, k.pos);
             if (k.yelped) sfx.world(.mage_hurt, k.pos);
@@ -4070,7 +3724,7 @@ pub fn run(mode: Mode) void {
         if (g.vigil.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.stance >= knightmod.CHARGE_HIT.stance, true);
         }
-        tickBoltGas(g, dt); // …and his own clouds, which bill the other side of the field
+        tickBoltGas(g, dt);
         if (g.vigil.gasDose(dt, g.hero.pos)) |b| {
             _ = heroTakes(g, b, false, false);
             sfx.play(.acid_burn);
@@ -4082,7 +3736,6 @@ pub fn run(mode: Mode) void {
                 g.rig.addShake(q);
             }
         }
-        // …and the one moment of theirs the frame should feel BEFORE it is hit by it.
         if (g.muster.anyLeapt()) {
             g.rumble.play(rumblemod.swing_heavy);
             g.rig.addShake(SHAKE_SKEL_LEAP);
@@ -4099,13 +3752,10 @@ pub fn run(mode: Mode) void {
         if (g.brood.bursts != burstsBefore) {
             g.rumble.play(rumblemod.kill);
             g.rig.addShake(SHAKE_SAC_BURST);
-            // A sac carries no `justDied` edge for `billDeaths` to read; her counter is the edge.
             var burst = burstsBefore;
             while (burst < g.brood.bursts) : (burst += 1) g.trig.died(.brood_sac);
         }
-        // Read AFTER every group has updated, so one beat covers the whole field.
         if (anyParried(g)) parryBeat(g);
-        // Two `add` calls and not a max: standing in spores and acid at once is two bad decisions.
         g.hero.poisonBy(g.brood.burn(dt, g.hero.pos));
         g.hero.poisonBy(g.cluster.spores(dt, g.hero.pos));
         _ = g.hero.tickPoison(dt);
@@ -4113,14 +3763,13 @@ pub fn run(mode: Mode) void {
             sfx.play(.acid_burn);
             g.rig.addShake(SHAKE_HURT);
             g.rumble.play(rumblemod.hurt);
-            g.hero.hurtFlash = mathx.maxF(g.hero.hurtFlash, 0.7); // the ONE flash the poison gets
+            g.hero.hurtFlash = mathx.maxF(g.hero.hurtFlash, 0.7);
         }
         tickPack(g, dt);
         g.chests.update(dt, g.hero.pos);
         g.pickups.update(dt, g.hero.pos);
-        hidePickups(g); // …and a taken glow stops being drawn as it shrinks out
+        hidePickups(g);
         g.award.update(dt);
-        // The folk take the same terrain gate the foes do.
         var wasFolk: [npcmod.CAP]rl.Vector3 = undefined;
         const nFolk = g.folk.n;
         snapshotPos(g.folk.live(), &wasFolk);
@@ -4138,35 +3787,24 @@ pub fn run(mode: Mode) void {
                     .from = mathx.addV(g.hero.pos, mathx.scaleV(ar.vel, -1)),
                 };
                 const out: combat.HitOutcome = if (g.hero.dead) .ignored else heroTakes(g, blow, blow.hit.heavy(), false);
-                // …and WHAT IT STRUCK picks that voice: boards if the shield caught it, flesh if not.
                 if (out == .taken or out == .ignored) sfx.play(.arrow_hit);
                 splashOf(g, ar);
             } else planted(g, ar);
         }
-        // Blade connected this frame (a foe's hit count climbed) → pulse + frame crack sized to the swing.
         if (allHits(g) > hitsBefore) {
             g.rumble.play(if (g.hero.atkHeavy) rumblemod.hit_heavy else rumblemod.hit_light);
             g.rig.addShake(if (g.hero.atkHeavy) SHAKE_HIT_HEAVY else SHAKE_HIT_LIGHT);
             sfx.play(if (g.hero.atkHeavy) .hit_heavy else .hit_light);
-            // **THE SIGNET FEEDS OFF A SWING OF HIS, AND `attacking` IS WHAT SAYS IT WAS HIS.** This edge is a
-            // SUM over every foe's hit count, and inside this window exactly two things can move it: his own
-            // blade and the WOLF'S JAWS (a shaft's hit lands after `stepShafts`, below, so it is never in here).
-            // Ungated, the signet healed him every time his spirit bit something while he stood still.
             if (g.hero.attacking) _ = g.hero.drinkLeech();
         }
         stepShafts(g, dt);
-        // **AFTER BOTH QUIVERS HAVE FLOWN**, so one pass covers every ball in the sky whoever threw it — the
-        // flag is one frame wide and set inside `archer`'s own step, so a pass that ran before `stepShafts`
-        // would silently miss anything bouncing out of HIS hands the day he gets one.
         emberBounces(g);
         if (anyFoeDied(g)) {
             g.rumble.play(rumblemod.kill);
             g.rig.addShake(SHAKE_KILL);
-            // A THUD, and nothing else (owner's call — no bell, no jingle).
             sfx.play(.kill);
         }
         g.hero.souls.gain(allSouls(g));
-        // The lock leaves a corpse the FRAME it dies, snapping to the next valid target.
         if (g.lock) |li| {
             if (!foeLockable(g, li)) g.lock = acquireLock(g);
         }
@@ -4177,10 +3815,8 @@ pub fn run(mode: Mode) void {
         }
         for (g.folk.live()) |*p| groundActor(g, &p.pos, dt);
         for (g.pack.live()) |*w| groundActor(g, &w.pos, dt);
-        // THE SCRIPT LAYER LAST, so `deaths` and `alive` are this frame's answers and not the previous one's.
         tickTriggers(g, dt);
         g.rig.tickShake(rawDt);
-        // Both BEFORE the follow, or the eye is a frame behind the man it is pointed at.
         g.rig.aimB = g.hero.aimB;
         g.rig.tickLift(g.hero.lift, dt);
         g.rig.followClear(g.hero.shoulderPoint(), &g.env, envGroundAt);
@@ -4188,7 +3824,6 @@ pub fn run(mode: Mode) void {
         sfx.ambience(rawDt);
         footsteps(g, &lastPhase);
 
-        // Rising-edge action pulses: roll whump, swing effort (heavy > light), death swell.
         if (g.hero.rolls != wasRolls) {
             g.rumble.play(rumblemod.roll);
             sfx.play(.roll);
@@ -4209,18 +3844,15 @@ pub fn run(mode: Mode) void {
         wasAiming = g.hero.aiming;
         if (g.hero.stamRefused > wasRefused) sfx.play(.refused);
         wasRefused = g.hero.stamRefused;
-        // The stagger is its own beat: the blow that caused it already played, this is his footing going.
         if (g.hero.stun == .heavy and wasStun != .heavy) sfx.play(.stagger);
         wasStun = g.hero.stun;
         if (g.hero.dead and !wasDead) {
             g.rumble.play(rumblemod.death);
             g.rig.addShake(SHAKE_DEATH);
             sfx.play(.death);
-            // On the frame he DIES rather than on the respawn, so the spill plays under the YOU DIED card.
             spillSouls(g);
         }
         if (!g.hero.dead and wasDead) sfx.play(.respawn);
-        // The YOU DIED tail: armed while dead, drains after the respawn (fade from black).
         if (g.hero.dead) {
             g.deathFade = RESPAWN_HOLD + RESPAWN_FADE;
         } else if (g.deathFade > 0) {
@@ -4231,7 +3863,7 @@ pub fn run(mode: Mode) void {
 
         drawScene(g);
         hud(g, rawDt);
-        saveMark(g, rawDt); // …and on the field, which is where standing up from the fire leaves you
+        saveMark(g, rawDt);
         tickEnter(g, rawDt);
         drawEnterFade(g);
         rl.endDrawing();
@@ -4279,7 +3911,6 @@ fn footsteps(g: *Game, last: *f32) void {
     if (stepOverlay(g, h.pos.x, h.pos.z)) |over| sfx.playAt(over, vol);
 }
 
-/// WHAT HE IS STANDING ON, as an extra voice STACKED on the boot rather than a boot of its own.
 fn stepOverlay(g: *const Game, x: f32, z: f32) ?sfx.Id {
     if (g.env.inWater(x, z, 1.0)) return .step_water;
     const i = g.map.soilIndex(x, z) orelse return null;
@@ -4287,7 +3918,7 @@ fn stepOverlay(g: *const Game, x: f32, z: f32) ?sfx.Id {
     if (v >= worldfmt.Soil.N) return null;
     return switch (@as(worldfmt.Soil, @enumFromInt(v))) {
         .stone => .step_stone,
-        .none, .dirt, .turf, .silt, .ash, .moss => null, // the plain boot carries all of these
+        .none, .dirt, .turf, .silt, .ash, .moss => null,
     };
 }
 
@@ -4297,7 +3928,6 @@ fn heroHurtBeat(g: *Game, heavy: bool, voice: bool) void {
     if (voice) sfx.play(if (heavy) .hurt_heavy else .hurt);
 }
 
-/// Borrows the live state rather than a copy, so nothing on those pages can be a frame behind.
 pub fn bookView(g: *Game) bookmod.View {
     return .{
         .bag = &g.bag,
@@ -4319,10 +3949,6 @@ pub fn bookView(g: *Game) bookmod.View {
     };
 }
 
-/// **A HAND ROW IS TWO DECISIONS AND BOTH ARE TAKEN HERE** — what kind of thing is in that fist, and which one
-/// of it he owns (`book.Hand`). The armament may be REFUSED (`hero.equip` says no mid-swing); the variant is not
-/// a thing in his hands changing, so it goes through regardless — otherwise picking the club while committed
-/// would leave the socket saying club and the fist swinging a sword.
 fn takeHand(g: *Game, hand: usize, slot: usize, h: bookmod.Hand) void {
     _ = g.hero.equip(hand, slot, h.a);
     if (heromod.wearFor(h.a)) |w| _ = g.hero.wear(w, h.kind);
@@ -4351,7 +3977,6 @@ pub fn applyTree(g: *Game) void {
     g.hero.applyPerks(g.tree.bonus());
 }
 
-/// ONE HAND'S TWO BUTTONS, as levels and edges — the pair is the same shape whichever hand it is.
 const HandIn = struct { press1: bool, press2: bool, held1: bool, held2: bool };
 
 const Acts = struct {
@@ -4377,7 +4002,6 @@ fn handActs(a: heromod.Armament, in: HandIn, out: *Acts) void {
             out.aimed = out.aimed or in.press2;
             out.aim = out.aim or in.held2;
         },
-        // R2 IS DELIBERATELY DEAD ON THE BELL (owner's call): not having an attack IS what it costs to carry.
         .bell => out.ring = out.ring or in.press1,
         .shield => {
             out.guard = out.guard or in.held1;
@@ -4416,7 +4040,6 @@ fn useItem(g: *Game, k: item.Kind) void {
     if (g.hero.dead) return;
     switch (item.use(k)) {
         .none => {},
-        // The POTENCY comes off the effect, so a second edible brings its own (see `item.Use`).
         .regen => |r| {
             if (g.bag.take(k, 1) == 0) return;
             g.hero.regen.start(g.hero.vit.hpMax * r.frac, r.secs);
@@ -4425,9 +4048,6 @@ fn useItem(g: *Game, k: item.Kind) void {
         .lob => |l| {
             if (g.bag.take(k, 1) == 0) return;
             const from = mathx.addV(heroAimPoint(g), mathx.scaleV(mathx.headingDir(g.hero.facing), 0.4));
-            // **THE ROGUE'S RANGED BRANCH IS THE JAR'S OWN DIAL** (`passivetree.Grant.thrownDmg`), with the
-            // berserker's bargain over it — `Hit.scaled` takes the whole blow, so a thrown crock gains its
-            // poise with its damage rather than hitting harder without hitting heavier.
             const hit = (combat.Hit{ .dmg = l.dmg, .poise = l.poise, .elem = combat.elems(.{ .fire = l.fire, .lightning = l.lightning }) }).scaled(g.hero.perk.thrownDmg * g.hero.perk.dmg);
             const shot: archermod.Shot = if (l.lightning > 0) .crock else .clump;
             putIn(&g.shafts, archermod.launchShaft(from, camAimPoint(g), koboldmod.CLUMP_SPEED, hit, true, shot));
@@ -4458,9 +4078,6 @@ fn useItem(g: *Game, k: item.Kind) void {
             g.hero.stam.startBrew(b.mult, b.secs);
             sfx.play(.flask_drink);
         },
-        // **SPENT EVEN ON A CLEAN MAN**, which is the flask's own rule and not an oversight: a leaf that
-        // refused unless you were already poisoned would be a leaf you can only ever use too late, since the
-        // meter you want to answer is the one that is still filling.
         .purge => {
             if (g.bag.take(k, 1) == 0) return;
             g.hero.purgePoison();
@@ -4478,7 +4095,7 @@ fn heroTakes(g: *Game, b: foemod.Blow, heavy: bool, voice: bool) combat.HitOutco
     if (b.on == .spirit) return spiritTakes(g, b, heavy);
     const out = g.hero.takeHit(b.hit, mathx.dirXZ(g.hero.pos, b.from));
     switch (out) {
-        .ignored => {}, // rolled through it, or he was already gone
+        .ignored => {},
         .taken => heroHurtBeat(g, heavy, voice),
         .blocked => heroBlockBeat(g, b.hit),
         .guardBroken => {
@@ -4501,7 +4118,7 @@ fn spiritTakes(g: *Game, b: foemod.Blow, heavy: bool) combat.HitOutcome {
                 w.shove = mathx.scaleV(mathx.normV(dir), if (heavy) wolfmod.SHOVE.heavy else wolfmod.SHOVE.light);
             }
         }
-        break; // one spirit, and `SUMMON_MAX` is what says so
+        break;
     }
     return .ignored;
 }
@@ -4513,7 +4130,6 @@ fn heroBlockBeat(g: *Game, h: combat.Hit) void {
     g.hero.blockSparks(w);
     sfx.playAt(.guard_block, mathx.lerpF(BLOCK_VOICE_MIN, 1.0, w));
 }
-/// How quiet the lightest thing the boards ever stop is, against the heaviest.
 const BLOCK_VOICE_MIN: f32 = 0.55;
 
 fn allHits(g: *const Game) u32 {
@@ -4538,11 +4154,8 @@ fn allSouls(g: *const Game) u32 {
     return n;
 }
 
-/// Metres: how far out something is still worth folding a flat cut down onto.
 const MELEE_AIM_R: f32 = 3.6;
-/// A FIXED target is worth stooping for from further out than a swept one: he has SAID which body he means.
 const MELEE_AIM_LOCKED: f32 = 2.0 * MELEE_AIM_R;
-/// …and it must be in FRONT: cos of the half-angle off his facing.
 const MELEE_AIM_DOT: f32 = 0.35;
 /// The eye line the pitch is measured FROM — his shoulders, which is roughly where the flat arc lives.
 const MELEE_AIM_EYE: f32 = 1.35;
@@ -4583,10 +4196,7 @@ fn meleePitch(g: *const Game) ?f32 {
     return mathx.degrees(std.math.atan2(g.hero.pos.y + MELEE_AIM_EYE - mark.y, flat));
 }
 
-/// **HOW MANY OF HIS OWN CLOUDS MAY STAND AT ONCE.** Arithmetic over what feeds it (the ring law): a cast
-/// costs 12 of a 60 pool and a cloud lives `knight.GAS_LIFE`, so five bolts is the most a full bar can put
-/// on the floor before the first has gone out. A ring that overwrites its oldest does it silently.
-const BOLT_GAS_CAP: usize = 5;
+const BOLT_GAS_CAP: usize = 8;
 comptime {
     const casts = combat.FP_MAX / combat.BOLT_FP;
     std.debug.assert(@as(f32, @floatFromInt(BOLT_GAS_CAP)) >= casts * 0.9);
@@ -4594,13 +4204,9 @@ comptime {
 /// WHAT STANDING IN HIS CLOUD COSTS A BODY, per dose. **ALL CHAOS, and NO POISE AND NO STANCE** — the
 /// knight's own gas law read from the other side: a hazard that staggers can kill something while it is not
 /// allowed to walk out, and the counter to a cloud has to be leaving it. Deliberately small against the
-/// bolt's own 24: what the keystone sells is GROUND, never a bigger bolt.
+/// bolt's own 25: what the keystone sells is GROUND, never a bigger bolt.
 const BOLT_GAS_HIT = combat.Hit{ .elem = combat.elems(.{ .chaos = 7 }) };
 
-/// **THE BLOOM, TICKED AND BILLED.** The clouds run on their own clock and dose whatever is standing in them
-/// through `pierceFoes` — the same door the lance goes through, so every body earns its own flinch, flash,
-/// blood, threat and death without this knowing what any of them is. A `pierce` blade sets no swing latch,
-/// so one dose is one blow per body by construction rather than by a list of who has been hit.
 fn tickBoltGas(g: *Game, dt: f32) void {
     var any = false;
     for (&g.boltGas) |*c| {
@@ -4608,7 +4214,7 @@ fn tickBoltGas(g: *Game, dt: f32) void {
         if (c.live) any = true;
     }
     if (!any) {
-        g.boltGasT = 0; // nothing standing: the next cloud bites on its own schedule, not the last one's
+        g.boltGasT = 0;
         return;
     }
     g.boltGasT += dt;
@@ -4616,12 +4222,10 @@ fn tickBoltGas(g: *Game, dt: f32) void {
     g.boltGasT -= knightmod.GAS_DOSE_EVERY;
     for (&g.boltGas) |*c| {
         if (!c.live) continue;
-        // A DISC, WRITTEN AS A BLADE: a zero-length segment at the cloud's centre with the cloud's own
-        // radius is exactly the area, and it arrives through the one strike path everything else uses.
         _ = pierceFoes(g, .{
             .active = true,
             .pierce = true,
-            .through = true, // it does not stop at the first body: a cloud is not a projectile
+            .through = true,
             .r = c.radius(),
             .a = c.pos,
             .b = c.pos,
@@ -4632,7 +4236,6 @@ fn tickBoltGas(g: *Game, dt: f32) void {
     }
 }
 
-/// …AND ONE LAID WHERE A BOLT LANDED. The ring is walked head-first, `Vigil.spawnGas`'s own arrangement.
 fn layBoltGas(g: *Game, at: rl.Vector3) void {
     g.boltGas[g.boltGasHead] = .{
         .pos = v3(at.x, g.env.groundAt(at.x, at.z), at.z),
@@ -4651,9 +4254,7 @@ pub fn heroBlade(g: *const Game) foemod.Blade {
         .b = g.hero.bladeB,
         .a0 = g.hero.bladeA0,
         .b0 = g.hero.bladeB0,
-        .hit = g.hero.attackHit(), // HP/poise/stance for THIS swing (light vs heavy)
-        // **HIS BLADE IS THE ONLY ONE THAT CULLS** (`passivetree.Grant.cull`) — stamped here, where his own
-        // swing is built, so nothing in the world can inherit it by accident.
+        .hit = g.hero.attackHit(),
         .cullAt = g.hero.perk.cull,
     };
 }
@@ -4663,7 +4264,7 @@ fn inBounds(p: rl.Vector3) rl.Vector3 {
 }
 
 fn collideActors(g: *Game, dt: f32) void {
-    const step = COLLIDE_RATE * dt; // max correction this frame — bigger pushes ease in (no warp)
+    const step = COLLIDE_RATE * dt;
     var hp = g.env.resolveActor(g.hero.pos, HERO_R, g.hero.footY());
     inline for (FOE_GROUPS) |gr| {
         for (@field(g, gr.field).live()) |*a| {
@@ -4672,9 +4273,7 @@ fn collideActors(g: *Game, dt: f32) void {
             }
         }
     }
-    // A person is a BODY: you walk into a wanderer, never through one, and no jump in this game clears a man.
     for (g.folk.liveConst()) |*p| hp = collision.pushOutCircle(hp, HERO_R, p.pos, p.bodyR());
-    // …and so is a spirit: one you can stand inside reads as a projection rather than as a body.
     for (g.pack.liveConst()) |*w| {
         if (foemod.corporeal(w)) hp = collision.pushOutCircle(hp, HERO_R, w.pos, w.bodyR());
     }
@@ -4684,7 +4283,7 @@ fn collideActors(g: *Game, dt: f32) void {
 
     for (g.folk.live()) |*p| {
         const r = p.bodyR();
-        var q = g.env.resolveActor(p.pos, r, p.pos.y); // a wanderer never leaves the ground
+        var q = g.env.resolveActor(p.pos, r, p.pos.y);
         q = collision.pushOutCircle(q, r, g.hero.pos, HERO_R);
         p.pos = mathx.approachV(p.pos, inBounds(q), step);
     }
@@ -4700,7 +4299,6 @@ fn collideActors(g: *Game, dt: f32) void {
 fn settleGroup(g: *Game, comptime gr: FoeGroup, step: f32) void {
     const foes = @field(g, gr.field).live();
     for (foes, 0..) |*a, i| {
-        // …AND A BODY UNDER THE WATER IS NOT ONE EITHER (`phased`): it is not pushed and it pushes nothing.
         if (!foemod.corporeal(a) or phased(a)) continue;
         const r = a.bodyR();
         if (a.airborne()) {
@@ -4780,7 +4378,6 @@ comptime {
     }
 }
 
-/// Through `liveConst()` rather than the raw storage array: the tail past `n` is undefined memory.
 fn askFoe(comptime T: type, g: *const Game, r: FoeRef, comptime ask: anytype) T {
     inline for (ROLE_GROUPS) |rg| {
         if (roleIdx(rg[1], r)) |i| return ask(&@field(g, rg[0]).liveConst()[i]);
@@ -4819,8 +4416,6 @@ fn foeTopWorld(g: *const Game, r: FoeRef) rl.Vector3 {
         }
     }.ask);
 }
-// A live, non-dissipating foe (both a fresh acquire and a held lock require this) — `foe.corporeal`'s own
-// question, asked of one named body rather than of a list.
 fn foeLockable(g: *const Game, r: FoeRef) bool {
     return askFoe(bool, g, r, struct {
         fn ask(f: anytype) bool {
@@ -4828,7 +4423,6 @@ fn foeLockable(g: *const Game, r: FoeRef) bool {
         }
     }.ask);
 }
-/// A Rooted that FOLDS BACK is scenery again, and a lock surviving the fold sits the reticle on a dead tree.
 fn foeDisguised(g: *const Game, r: FoeRef) bool {
     return askFoe(bool, g, r, struct {
         fn ask(f: anytype) bool {
@@ -4852,21 +4446,19 @@ fn lockValid(g: *const Game, r: FoeRef) bool {
     return foeLockable(g, r) and mathx.distXZ(g.hero.pos, foePos(g, r)) <= MAX_LOCK_R + LOCK_KEEP_SLACK;
 }
 
-/// THE LOCK THE GAME IS ACTING ON — none of it while the bow is up.
 fn activeLock(g: *const Game) ?FoeRef {
     return if (g.hero.aiming) null else g.lock;
 }
 
-const PROJECT_NEAR = CLIP_NEAR; // must equal the near clip plane set in run()
+const PROJECT_NEAR = CLIP_NEAR;
 fn projectToScreen(cam: rl.Camera3D, p: rl.Vector3) ?rl.Vector2 {
     const to = mathx.subV(p, cam.position);
-    const fwd = mathx.normV(mathx.subV(cam.target, cam.position)); // camera forward (unit)
-    const depth = to.x * fwd.x + to.y * fwd.y + to.z * fwd.z; // signed distance along the view axis
+    const fwd = mathx.normV(mathx.subV(cam.target, cam.position));
+    const depth = to.x * fwd.x + to.y * fwd.y + to.z * fwd.z;
     if (depth < PROJECT_NEAR) return null;
     return rl.getWorldToScreen(p, cam);
 }
 
-// Screen-x of a foe's lock point (null if it's behind the camera).
 fn lockScreenX(g: *const Game, r: FoeRef) ?f32 {
     const s = projectToScreen(g.rig.cam, foeLockPoint(g, r)) orelse return null;
     return s.x;
@@ -4897,7 +4489,6 @@ fn phased(f: anytype) bool {
     return false;
 }
 
-/// How chilled a target is, for its bar — a body opts into the cold by carrying the field (`markWays`' rule).
 fn chillOf(f: anytype) f32 {
     if (comptime @hasField(std.meta.Child(@TypeOf(f)), "chill")) return f.chill.frac();
     return 0;
@@ -4905,8 +4496,8 @@ fn chillOf(f: anytype) f32 {
 
 test "THE BURROW TAKES THE LOCK OFF YOU, and gives it back when it surfaces" {
     var d = delvermod.Delver.spawn(mathx.zero3, 0, 1.0, 0.3);
-    const hero = v3(0, 0, 1.2); // stood right over him, so the surge commits at `UNDER_MIN` rather than waiting out
-    try std.testing.expect(!disguised(&d)); // on the surface he is an ordinary target
+    const hero = v3(0, 0, 1.2);
+    try std.testing.expect(!disguised(&d));
 
     d.debugDive();
     var t: f32 = 0;
@@ -4917,18 +4508,16 @@ test "THE BURROW TAKES THE LOCK OFF YOU, and gives it back when it surfaces" {
         try std.testing.expectEqual(d.deep(), disguised(&d));
         if (disguised(&d)) {
             wasHidden = true;
-            // …and it is not a creature that has left the field: the ridge of earth is still there to read.
             if (d.mounded()) sawMound = true;
         }
         if (wasHidden and !disguised(&d)) break;
     }
-    try std.testing.expect(wasHidden); // it did go under…
-    try std.testing.expect(sawMound); // …and it was never invisible, only untargetable
-    try std.testing.expect(!disguised(&d)); // …and it came back up a target again
-    try std.testing.expect(t < 12.0); // it does not stay down forever (`UNDER_MAX`)
+    try std.testing.expect(wasHidden);
+    try std.testing.expect(sawMound);
+    try std.testing.expect(!disguised(&d));
+    try std.testing.expect(t < 12.0);
 }
 
-// A fresh acquire: nearest to screen-centre, across every target list.
 const LockCtx = struct {
     g: *const Game,
     cx: f32,
@@ -4938,9 +4527,9 @@ const LockCtx = struct {
     fn visit(self: *LockCtx, foes: anytype, kind: ?FoeKind) void {
         for (foes, 0..) |*f, i| {
             if (!foemod.corporeal(f) or mathx.distXZ(self.g.hero.pos, f.pos) > MAX_LOCK_R) continue;
-            if (disguised(f)) continue; // a tree is not a target until it stops being a tree
+            if (disguised(f)) continue;
             const r = FoeRef{ .kind = memberKind(f, kind), .idx = i };
-            if (!canSee(self.g, r)) continue; // no fixing on a shape behind a wall
+            if (!canSee(self.g, r)) continue;
             const sx = lockScreenX(self.g, r) orelse continue;
             const score = @abs(sx - self.cx);
             if (score < self.bestScore) {
@@ -4951,7 +4540,6 @@ const LockCtx = struct {
     }
 };
 
-// …and the flick: the nearest target PAST the current one, in the flicked direction.
 const CycleCtx = struct {
     g: *const Game,
     cur: FoeRef,
@@ -4964,7 +4552,7 @@ const CycleCtx = struct {
         for (foes, 0..) |*f, i| {
             const r = FoeRef{ .kind = memberKind(f, kind), .idx = i };
             if ((self.cur.kind == r.kind and self.cur.idx == i) or !foemod.corporeal(f)) continue;
-            if (disguised(f)) continue; // the flick skips what the acquire would not have taken
+            if (disguised(f)) continue;
             if (mathx.distXZ(self.g.hero.pos, f.pos) > MAX_LOCK_R) continue;
             if (!canSee(self.g, r)) continue;
             const sx = lockScreenX(self.g, r) orelse continue;
@@ -4977,7 +4565,6 @@ const CycleCtx = struct {
     }
 };
 
-/// Screen pixels a candidate must sit PAST the current target to count as "the next one".
 const CYCLE_MIN_GAP: f32 = 5.0;
 
 fn cycleLock(g: *Game, dir: f32) void {
@@ -4988,7 +4575,6 @@ fn cycleLock(g: *Game, dir: f32) void {
     if (ctx.best) |b| g.lock = b;
 }
 
-// The world-reload half of a hero death (ER: dying resets the field).
 fn resetFoes(g: *Game) void {
     rehomeFoes(g, .blind);
     clearQuivers(g);
@@ -4998,16 +4584,14 @@ fn resetFoes(g: *Game) void {
 
 const HURT_BAR_WINDOW = 5.0;
 
-// Floating HP bars over EVERY target (shared foe contract, one walk for all).
 const BarCtx = struct {
     cam: rl.Camera3D,
-    /// Goes with the RETICLE rather than with `g.lock`, so a suspended lock takes the bar down with the dot.
     lock: ?FoeRef,
     boss: ?usize,
 
     fn visit(self: *const BarCtx, foes: anytype, kind: ?FoeKind) void {
         for (foes, 0..) |*f, i| {
-            if (!foemod.corporeal(f)) continue; // no bar over a corpse dissolving out
+            if (!foemod.corporeal(f)) continue;
             if (self.boss) |bi| {
                 if (bi == i and memberKind(f, kind) == .bone_knight) continue;
             }
@@ -5016,7 +4600,7 @@ const BarCtx = struct {
             if (!fixed and f.vit.sinceHurt > HURT_BAR_WINDOW) continue;
             const s = projectToScreen(self.cam, f.topWorld()) orelse
                 projectToScreen(self.cam, f.centerWorld()) orelse continue;
-            hud_.foeBar(s.x, s.y, f.vit.hpFrac(), f.staggered(), chillOf(f)); // size/colour/lift/CEILING all live in hud
+            hud_.foeBar(s.x, s.y, f.vit.hpFrac(), f.staggered(), chillOf(f));
         }
     }
 };
@@ -5026,7 +4610,6 @@ fn drawFoeBars(g: *const Game) void {
     eachTarget(g, &ctx, BarCtx.visit);
 }
 
-// The glowing white reticle on the locked foe (ER's dot) — 2D + crisp, drawn after the 3D pass.
 fn drawLockDot(g: *Game) void {
     const li = activeLock(g) orelse return;
     const s = projectToScreen(g.rig.cam, foeLockPoint(g, li)) orelse return;
@@ -5038,12 +4621,11 @@ fn drawLockDot(g: *Game) void {
 
 test "A RING IN THE BAG SAVES NOTHING — the snap is asked of the FINGER" {
     var worn = heromod.Worn{};
-    try std.testing.expect(bindingWorn(worn) == null); // an empty hand, and a bag full of them is the same hand
+    try std.testing.expect(bindingWorn(worn) == null);
     worn.put(.ring, .leech_signet);
-    try std.testing.expect(bindingWorn(worn) == null); // the other band in the same socket binds nothing
+    try std.testing.expect(bindingWorn(worn) == null);
     worn.put(.ring, .soul_binding_ring);
     try std.testing.expectEqual(item.Wear.ring, bindingWorn(worn).?);
-    // …and it is the SOCKET that comes back, because the snap has to empty the one it was in.
     worn.put(.ring, null);
     try std.testing.expect(bindingWorn(worn) == null);
 }

@@ -1,25 +1,13 @@
-// KEYED POSE TRACKS — the general form of `hero.sampleCurve`, and the thing every ATTACK in this
-// game was missing.
 
 const std = @import("std");
 const mathx = @import("mathx.zig");
 
-/// How a segment approaches ITS OWN key — the ease belongs to the key it arrives at, which is the way
-/// an animator reads a track ("slow into the top, snap out of it").
 pub const Ease = enum {
-    /// Constant rate. Correct for something genuinely mechanical, wrong for a body.
     linear,
-    /// Ease in and out. The default, and what a limb changing direction actually does.
     smooth,
-    /// Slow to leave, fast to arrive — a gather loading.
     accel,
-    /// Fast to leave, slow to arrive — a mass running out of momentum.
     decel,
-    /// Almost all of the travel in the first fifth. The STRIKE: a FromSoft attack's active window is
-    /// two to four frames, and a strike that eases into its target is a strike with no snap.
     snap,
-    /// Hold the previous value outright until this key's time, then jump. For a HANG — the delayed
-    /// downswing that baits a roll — where the pose must not creep while it waits.
     hold,
 };
 
@@ -38,9 +26,6 @@ pub fn easeAt(e: Ease, f: f32) f32 {
     };
 }
 
-/// SAMPLE A KEYED CHANNEL at `u` (0..1 through the move). Outside the key range it CLAMPS, so a track
-/// that stops early simply holds its last pose — which is the held End Pose the whole punish-window
-/// contract is built on, gained by writing no key rather than by remembering to.
 pub fn keyAt(keys: []const Key, u: f32) f32 {
     if (keys.len == 0) return 0;
     if (u <= keys[0].t) return keys[0].v;
@@ -58,11 +43,6 @@ pub fn keyAt(keys: []const Key, u: f32) f32 {
     return last.v;
 }
 
-/// A CREATURE'S MOVES AS WHOLE-POSE TRACKS. `P` is the creature's own pose struct: every field
-/// defaulted to its carry, and a `chan()` that flattens it ROOT-most to TIP-most (the order is the
-/// spring bank's lag, so it is load-bearing). A key says only what MOVES off the carry — which is how
-/// a pose reads as a pose rather than as a dozen numbers. Sampling clamps at both ends like `keyAt`,
-/// so a track that stops early holds its last pose: the held End Pose, gained by writing no key.
 pub fn Pose(comptime P: type) type {
     return struct {
         pub const Chan = @TypeOf((P{}).chan());
@@ -119,21 +99,17 @@ pub const Spring = struct {
         }
         return self.v;
     }
-    /// Put it AT a value with no motion — a spawn, a teleport, a body that has just been re-seated.
     pub fn set(self: *Spring, value: f32) void {
         self.v = value;
         self.vel = 0;
     }
 };
 
-/// A BANK OF SPRINGS over a creature's posture channels, with the CHAIN LAG built in.
 pub fn SpringBank(comptime CH: usize) type {
     return struct {
         const Self = @This();
         s: [CH]Spring = [_]Spring{.{}} ** CH,
 
-        /// Chase `target`, writing the settled values back over it. The channel array is ordered
-        /// ROOT-most to TIP-most; a channel's INDEX in it is what decides its lag.
         pub fn chase(self: *Self, target: *[CH]f32, stiff: f32, zeta: f32, falloff: f32, dt: f32) void {
             for (&self.s, 0..) |*sp, i| {
                 const k = stiff * std.math.pow(f32, falloff, @floatFromInt(i));
@@ -153,21 +129,15 @@ test "A KEYED TRACK HOLDS AT BOTH ENDS, and a track that stops early holds its l
         .{ .t = 0.6, .v = 90, .ease = .hold },
         .{ .t = 0.7, .v = -40, .ease = .snap },
     };
-    try std.testing.expectApproxEqAbs(@as(f32, 10), keyAt(&k, -1.0), 1e-5); // clamped before the first
+    try std.testing.expectApproxEqAbs(@as(f32, 10), keyAt(&k, -1.0), 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 10), keyAt(&k, 0.0), 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 90), keyAt(&k, 0.4), 1e-5);
-    // THE HANG DOES NOT CREEP. `.hold` is what a delayed downswing needs: the pose must sit dead still
-    // while it waits, or the bait is a slow drift and the player reads it as the swing already coming.
     try std.testing.expectApproxEqAbs(@as(f32, 90), keyAt(&k, 0.55), 1e-5);
-    // …and past the last key it HOLDS — the End Pose, gained by writing no key rather than remembering.
     try std.testing.expectApproxEqAbs(@as(f32, -40), keyAt(&k, 0.7), 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, -40), keyAt(&k, 1.0), 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, -40), keyAt(&k, 9.0), 1e-5);
-    // THE SNAP IS FRONT-LOADED: a strike's travel is nearly over by the fifth of the way in, which is
-    // what makes it an attack rather than a reach.
     const quarter = keyAt(&k, 0.6 + (0.7 - 0.6) * 0.25);
     try std.testing.expect(quarter < 90 - (90 - -40) * 0.6);
-    // Monotone in u across a rising segment — no key ordering bug can put a limb somewhere it never was.
     var prev = keyAt(&k, 0.0);
     var u: f32 = 0;
     while (u <= 0.4) : (u += 0.01) {
@@ -178,16 +148,15 @@ test "A KEYED TRACK HOLDS AT BOTH ENDS, and a track that stops early holds its l
 }
 
 test "A SPRING ARRIVES, OVERSHOOTS AND SETTLES — the weight law, as a type rather than a reminder" {
-    // Underdamped: it must go PAST the target and come back. A mass in motion overshoots its rest.
     var s = Spring{};
     s.set(0);
     var peak: f32 = 0;
     var t: f32 = 0;
     const dt = 1.0 / 60.0;
     while (t < 2.0) : (t += dt) peak = @max(peak, s.step(100, 220, 0.55, dt));
-    try std.testing.expect(peak > 104); // it carried past
-    try std.testing.expect(peak < 160); // …but it is a body, not a trampoline
-    try std.testing.expectApproxEqAbs(@as(f32, 100), s.v, 2.0); // and it settled onto its rest
+    try std.testing.expect(peak > 104);
+    try std.testing.expect(peak < 160);
+    try std.testing.expectApproxEqAbs(@as(f32, 100), s.v, 2.0);
 
     // Critically damped: arrives fast and NEVER overshoots — for anything that must not wobble.
     var c = Spring{};
@@ -197,7 +166,6 @@ test "A SPRING ARRIVES, OVERSHOOTS AND SETTLES — the weight law, as a type rat
     while (t < 2.0) : (t += dt) cpeak = @max(cpeak, c.step(100, 220, 1.0, dt));
     try std.testing.expect(cpeak <= 100.5);
 
-    // A HITCH MUST NOT DETONATE IT. `dt` is clamped inside `step`, so a half-second frame is survivable.
     var h = Spring{};
     h.set(0);
     _ = h.step(100, 900, 0.5, 0.5);
@@ -205,11 +173,9 @@ test "A SPRING ARRIVES, OVERSHOOTS AND SETTLES — the weight law, as a type rat
 }
 
 test "THE CHAIN LAGS OUTWARD — the tip arrives after the root, without anyone authoring the stagger" {
-    // This is what `knight.setStrike` and `ogre.setSwipe` hand-approximate with sqrt/linear/squared
-    // curves off one clock, re-derived per creature. As a property of the bank it is free and uniform.
     var bank = SpringBank(3){};
     bank.seat(.{ 0, 0, 0 });
-    const dt = 1.0 / 240.0; // a stiff spring needs a step short enough to integrate it honestly
+    const dt = 1.0 / 240.0;
     var reached = [_]f32{ -1, -1, -1 };
     var t: f32 = 0;
     while (t < 1.5) : (t += dt) {
@@ -219,7 +185,7 @@ test "THE CHAIN LAGS OUTWARD — the tip arrives after the root, without anyone 
             if (reached[i] < 0 and v >= 60) reached[i] = t;
         }
     }
-    for (reached) |r| try std.testing.expect(r > 0); // they all get there…
-    try std.testing.expect(reached[0] < reached[1]); // …root first
-    try std.testing.expect(reached[1] < reached[2]); // …tip last
+    for (reached) |r| try std.testing.expect(r > 0);
+    try std.testing.expect(reached[0] < reached[1]);
+    try std.testing.expect(reached[1] < reached[2]);
 }

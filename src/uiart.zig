@@ -1,8 +1,6 @@
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
 
-// The chrome's dressing — stone plates, gilt frames, jewels — shared by the HUD,
-// the menu and the editor, the way propart.zig is shared by the props.
 
 const rgba = mathx.rgba;
 const withAlpha = mathx.withAlpha;
@@ -15,20 +13,13 @@ pub const IRON = rgba(62, 55, 46, 255);
 pub const GILT_DIM = rgba(146, 124, 82, 255);
 pub const GILT = rgba(198, 162, 98, 255);
 pub const GILT_BRIGHT = rgba(240, 212, 146, 255);
-/// THE CATCHLIGHT — the near-white every lit leading edge and fill tip is struck with. One tone,
-/// carried at whatever alpha the surface wants, so a bar, a foe bar and a menu gauge agree.
 pub const CATCH = rgba(255, 244, 226, 255);
-/// THE HIGHLIGHTED ROW'S INK, wherever a cursor sits — the game menu and the editor's widgets each
-/// held their own copy of it, which is two highlights one repaint apart.
 pub const HOT = rgba(236, 210, 150, 255);
 
-// THE INK, in four weights: a heading, a number, the label beside it, and the crib line nobody reads
-// twice. The menu card and the character book are the same chrome and must not drift into two greys.
 pub const TEXT_TITLE = rgba(232, 222, 198, 255);
 pub const TEXT_VALUE = rgba(216, 206, 184, 255);
 pub const TEXT_DIM = rgba(150, 146, 138, 255);
 pub const TEXT_HINT = rgba(128, 122, 110, 255);
-/// A CHANGE IN YOUR FAVOUR, and one against it — the equipment screen's deltas, and nothing else yet.
 pub const GOOD = rgba(146, 194, 118, 255);
 pub const BAD = rgba(206, 96, 78, 255);
 
@@ -36,7 +27,6 @@ pub fn fi(v: i32) f32 {
     return @floatFromInt(v);
 }
 
-/// Candle-breathing alpha, phase-keyed by x so surfaces never pulse in lockstep.
 pub fn flick(base: u8, x: i32) u8 {
     const t: f32 = @floatCast(rl.getTime());
     return u8f(fi(base) * (0.88 + 0.12 * mathx.sinf(t * 1.9 + fi(x) * 0.31)));
@@ -52,14 +42,12 @@ pub fn finial(cx: f32, cy: f32, r: f32, col: rl.Color) void {
     if (r >= 3) diamond(cx, cy, r * 0.42, withAlpha(GILT_BRIGHT, col.a));
 }
 
-/// A jewel at each of a rect's four corners — the chrome's way of saying "this panel is mounted".
 pub fn cornerJewels(x: i32, y: i32, w: i32, h: i32, r: f32, col: rl.Color) void {
     for ([_][2]i32{ .{ x, y }, .{ x + w, y }, .{ x, y + h }, .{ x + w, y + h } }) |c| {
         diamond(fi(c[0]), fi(c[1]), r, col);
     }
 }
 
-/// Stacked offset shadows, widest and faintest first — lifts a card off the scene.
 pub fn seat(x: i32, y: i32, w: i32, h: i32) void {
     rl.drawRectangle(x + 8, y + 11, w, h, withAlpha(rl.Color.black, 34));
     rl.drawRectangle(x + 4, y + 6, w, h, withAlpha(rl.Color.black, 56));
@@ -95,8 +83,6 @@ pub fn rect(x: i32, y: i32, w: i32, h: i32) rl.Rectangle {
     return .{ .x = fi(x), .y = fi(y), .width = fi(w), .height = fi(h) };
 }
 
-/// The gilt frame: hard outer edge, tarnished band, inner hairline, jewelled
-/// corners — with the corner brackets gated off small surfaces.
 pub fn frame(x: i32, y: i32, w: i32, h: i32, a: u8) void {
     rl.drawRectangleLinesEx(rect(x, y, w, h), 1, withAlpha(INK, 235));
     rl.drawRectangleLinesEx(rect(x + 2, y + 2, w - 4, h - 4), 2, withAlpha(GILT_DIM, a));
@@ -142,7 +128,6 @@ pub fn divider(cx: i32, y: i32, halfW: i32, a: u8) void {
     diamond(fi(cx + 20), fi(y), 2.1, withAlpha(GILT_DIM, a));
 }
 
-/// A gilt band sweeping across `r` on a slow clock — scissored, so only the row lights.
 pub fn sheen(r: rl.Rectangle, period: f32, peakA: u8) void {
     if (r.width < 48) return;
     const band = mathx.clampF(r.width * 0.30, 36, 110);
@@ -157,7 +142,6 @@ pub fn sheen(r: rl.Rectangle, period: f32, peakA: u8) void {
     rl.endScissorMode();
 }
 
-/// The recessed well behind an icon or a fill: sunk fill, top-lip shadow, bottom catch.
 pub fn well(x: i32, y: i32, w: i32, h: i32, a: u8) void {
     rl.drawRectangleGradientV(x, y, w, h, withAlpha(rgba(13, 11, 9, 255), a), withAlpha(rgba(6, 5, 4, 255), a));
     const lip = @min(@divTrunc(h, 5), 9);
@@ -170,13 +154,10 @@ pub fn candle(cx: i32, cy: i32, r: f32, a: u8) void {
     rl.drawCircleGradient(cx, cy, r, withAlpha(CANDLE, a), withAlpha(CANDLE, 0));
 }
 
-// THE ONE SOCKET. The HUD's equipment cross and the character book's grids are the same fitting at two
-// sizes, and they were two copies until the book wanted one: a hard black seat, a sunk well, a rim that
-// brightens when something is IN it, and jewelled corners on the occupied ones.
 
 const WELL_ON: u8 = 148;
 const WELL_OFF: u8 = 68;
-const SLOT_ON = rgba(180, 168, 140, 240); // an occupied slot's brighter rim
+const SLOT_ON = rgba(180, 168, 140, 240);
 const SLOT_OFF = rgba(124, 115, 98, 122);
 
 pub fn socket(x: i32, y: i32, w: i32, h: i32, on: bool) void {
@@ -188,7 +169,6 @@ pub fn socketRim(x: i32, y: i32, w: i32, h: i32, on: bool) void {
     rl.drawRectangleLinesEx(rect(x, y, w, h), 1, if (on) SLOT_ON else SLOT_OFF);
 }
 
-/// A socket with its warm inner glow and jewels — the whole fitting, for callers with nothing to add.
 pub fn slot(x: i32, y: i32, w: i32, h: i32, on: bool) void {
     socket(x, y, w, h, on);
     if (on) candle(x + @divTrunc(w, 2), y + @divTrunc(h, 2), fi(@min(w, h)) * 0.55, 16);
@@ -196,9 +176,6 @@ pub fn slot(x: i32, y: i32, w: i32, h: i32, on: bool) void {
     if (on) cornerJewels(x, y, w, h, 2.4, withAlpha(GILT_DIM, 220));
 }
 
-/// Four brackets standing OFF the slot they name, drawn outside the socket rather than as a border on it — a
-/// cursor that replaces the rim reads as "this slot changed", not "you are here". `press` is 0…1 of the
-/// held-button squeeze; `travel` fades the whole thing while it is still flying in.
 pub fn slotCursor(x: i32, y: i32, w: i32, h: i32, press: f32, travel: f32) void {
     const a: u8 = u8f(255.0 * mathx.clampF(travel, 0, 1));
     if (a == 0) return;
@@ -242,12 +219,7 @@ pub fn caret(x: i32, y: i32, h: i32, a: u8) void {
     rl.drawRectangle(x, y, CARET_W, h, withAlpha(GILT_BRIGHT, a));
 }
 
-/// The row the cursor is on, wherever a list has one. The menu card, the book's picker and its attribute list
-/// each struck their own — three washes one repaint apart is how a menu ends up with two highlights.
 const ROW_WASH = rgba(255, 232, 170, 23);
-/// …and what the bar is worth on a row too dim to take a wash — an empty slot, a refused option. The cursor
-/// may never be INVISIBLE on the one row it is standing on, which is exactly the row whose reason you are
-/// trying to read.
 pub const CARET_DIM: u8 = 120;
 
 pub fn rowHilite(x: i32, y: i32, w: i32, h: i32) void {
@@ -256,7 +228,6 @@ pub fn rowHilite(x: i32, y: i32, w: i32, h: i32) void {
     sheen(rect(x, y, w, h), 3.8, 24);
 }
 
-/// The scroll rail beside a grid or a list — a track and a nub, so a page that continues says so.
 pub fn rail(x: i32, y: i32, h: i32, shown: f32, at: f32) void {
     if (shown >= 0.999) return;
     rl.drawRectangle(x, y, 3, h, withAlpha(rl.Color.black, 150));
@@ -266,8 +237,6 @@ pub fn rail(x: i32, y: i32, h: i32, shown: f32, at: f32) void {
     rl.drawRectangle(x, y + top, 3, 1, withAlpha(CATCH, 160));
 }
 
-/// A COUNT IN THE CORNER OF A SLOT — the bag's stack sizes and the quiver's tally. Right-aligned into a
-/// dark shelf so a two-digit number never smears into the picture behind it.
 pub fn tallyShelf(x: i32, y: i32, w: i32, h: i32) void {
     rl.drawRectangle(x, y, w, h, withAlpha(rl.Color.black, 170));
     rl.drawRectangle(x, y, w, 1, withAlpha(GILT_DIM, 70));

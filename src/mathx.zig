@@ -1,7 +1,6 @@
 const std = @import("std");
 const rl = @import("raylib");
 
-// Gameplay math on the XZ ground plane (Y up); the *XZ helpers ignore Y.
 
 pub const v3 = rl.Vector3.init;
 pub const rgba = rl.Color.init;
@@ -25,9 +24,6 @@ pub fn clampI(v: i32, lo: i32, hi: i32) i32 {
     return @max(lo, @min(hi, v));
 }
 
-/// A FLOAT'S DIRECTION AS ONE STEP: -1, 0 or +1 — what a cursor on a ROW LIST or a GRID wants out of an axis
-/// that arrived as a heading (`menu.stickPush`). Zero for a zero and for a NaN, which is what stops a poisoned
-/// axis walking a cursor: `std.math.sign` hands a NaN straight back and `@intFromFloat` on one is illegal.
 pub fn signI(v: f32) i32 {
     if (v > 0) return 1;
     if (v < 0) return -1;
@@ -42,21 +38,18 @@ pub fn ground(x: f32, z: f32) rl.Vector3 {
     return v3(x, 0, z);
 }
 
-/// Horizontal distance between two points (Y ignored).
 pub fn distXZ(a: rl.Vector3, b: rl.Vector3) f32 {
     const dx = a.x - b.x;
     const dz = a.z - b.z;
     return @sqrt(dx * dx + dz * dz);
 }
 
-/// Squared horizontal distance (Y ignored).
 pub fn dist2XZ(a: rl.Vector3, b: rl.Vector3) f32 {
     const dx = a.x - b.x;
     const dz = a.z - b.z;
     return dx * dx + dz * dz;
 }
 
-/// Unit direction from a to b in the XZ plane (zero if coincident).
 pub fn dirXZ(from: rl.Vector3, to: rl.Vector3) rl.Vector3 {
     const dx = to.x - from.x;
     const dz = to.z - from.z;
@@ -69,19 +62,14 @@ pub fn lenXZ(v: rl.Vector3) f32 {
     return @sqrt(v.x * v.x + v.z * v.z);
 }
 
-/// THE NEAREST OF SOMETHING, WITHIN REACH — "who is close enough for a prompt", which the bonfires, the
-/// boxes and the folk each asked with their own six-line loop over the same squared comparison. Squared
-/// throughout, and `best` stays null when nothing is inside the ring.
 pub const Nearest = struct {
     best: ?usize = null,
-    /// The bar to beat: the reach squared to start with, then whatever the closest so far is.
     d2: f32,
 
     pub fn within(reach: f32) Nearest {
         return .{ .d2 = reach * reach };
     }
 
-    /// Item `i`, standing at `at`. STRICTLY closer wins, so a tie keeps the earlier index.
     pub fn offer(self: *Nearest, i: usize, at: rl.Vector3, from: rl.Vector3) void {
         const d = dist2XZ(at, from);
         if (d >= self.d2) return;
@@ -90,9 +78,6 @@ pub const Nearest = struct {
     }
 };
 
-/// A POINT HELD INSIDE THE PLAY SQUARE, Y untouched — `stepXZ`'s own clamp with the step taken out, for the
-/// callers that have already worked out where they are going. As a hand-written pair of `clampF` lines it sat
-/// in four files, and the one in `game` had a name (`inBounds`) two of its own callers walked past.
 pub fn clampXZ(p: rl.Vector3, bounds: f32) rl.Vector3 {
     return v3(clampF(p.x, -bounds, bounds), p.y, clampF(p.z, -bounds, bounds));
 }
@@ -101,22 +86,18 @@ pub fn stepXZ(pos: *rl.Vector3, dir: rl.Vector3, dist: f32, bounds: f32) void {
     pos.* = clampXZ(v3(pos.x + dir.x * dist, pos.y, pos.z + dir.z * dist), bounds);
 }
 
-/// …and the same clamp taken IN PLACE, which is what a state machine holding its own `pos` wants.
 pub fn holdXZ(pos: *rl.Vector3, bounds: f32) void {
     pos.* = clampXZ(pos.*, bounds);
 }
 
-/// Right-hand perpendicular of a facing direction in the XZ plane.
 pub fn perpXZ(f: rl.Vector3) rl.Vector3 {
     return v3(f.z, 0, -f.x);
 }
 
-/// Unit forward direction on the ground for a yaw angle (yaw 0 → +Z) — the single source for the `v3(sinf, 0, cosf)` idiom, and the inverse of headingXZ.
 pub fn headingDir(yaw: f32) rl.Vector3 {
     return v3(sinf(yaw), 0, cosf(yaw));
 }
 
-/// Yaw angle of a ground direction (`atan2(x, z)`); the inverse of headingDir, Y ignored.
 pub fn headingXZ(v: rl.Vector3) f32 {
     return std.math.atan2(v.x, v.z);
 }
@@ -131,7 +112,6 @@ pub fn closestOnSegXZ(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
     return v3(a.x + abx * t, 0, a.z + abz * t);
 }
 
-/// Closest point on segment a-b to p in full 3D (the swept-blade hit test rides this).
 pub fn closestOnSegV(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
     const ab = subV(b, a);
     const denom = ab.x * ab.x + ab.y * ab.y + ab.z * ab.z;
@@ -158,7 +138,6 @@ pub fn normV(a: rl.Vector3) rl.Vector3 {
     if (l < 1e-6) return v3(0, 0, 0);
     return v3(a.x / l, a.y / l, a.z / l);
 }
-/// Cross product — the ONE copy, frustum planes and axis frames included.
 pub fn crossV(a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
     return v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
 }
@@ -191,20 +170,15 @@ pub fn mul3(a: rl.Matrix, b: rl.Matrix, c: rl.Matrix) rl.Matrix {
     return mul(mul(a, b), c);
 }
 
-/// Place a part authored at its own joint origin: rotate/scale (`anim`) about that origin, shift to the
-/// joint's rest offset in the parent frame, then into the parent's world. The non-bone rigs' counterpart
-/// to `hero.setJoint`.
 pub fn placeAt(off: rl.Vector3, anim: rl.Matrix, parent: rl.Matrix) rl.Matrix {
     return mul3(anim, tr(off.x, off.y, off.z), parent);
 }
 
-/// Hermite smoothstep of x across [a, b] → 0..1 (clamped; the GLSL smoothstep).
 pub fn smoothstep(a: f32, b: f32, x: f32) f32 {
     const t = clampF((x - a) / (b - a), 0, 1);
     return t * t * (3.0 - 2.0 * t);
 }
 
-/// A RISE-HOLD-FALL PULSE, 0 → 1 → 0: in across [a, b], held to `c`, out across [c, d].
 pub fn pulse(x: f32, a: f32, b: f32, c: f32, d: f32) f32 {
     return smoothstep(a, b, x) * (1.0 - smoothstep(c, d, x));
 }
@@ -212,11 +186,10 @@ pub fn pulse(x: f32, a: f32, b: f32, c: f32, d: f32) f32 {
 test "pulse rises, holds and falls, and is flat outside its span" {
     try std.testing.expectApproxEqAbs(@as(f32, 0), pulse(-1, 0, 0.2, 0.8, 1.0), 1e-6);
     try std.testing.expectApproxEqAbs(@as(f32, 0), pulse(0, 0, 0.2, 0.8, 1.0), 1e-6);
-    try std.testing.expectApproxEqAbs(@as(f32, 1), pulse(0.5, 0, 0.2, 0.8, 1.0), 1e-6); // the HOLD
+    try std.testing.expectApproxEqAbs(@as(f32, 1), pulse(0.5, 0, 0.2, 0.8, 1.0), 1e-6);
     try std.testing.expectApproxEqAbs(@as(f32, 1), pulse(0.3, 0, 0.2, 0.8, 1.0), 1e-6);
     try std.testing.expectApproxEqAbs(@as(f32, 0), pulse(1.0, 0, 0.2, 0.8, 1.0), 1e-6);
     try std.testing.expectApproxEqAbs(@as(f32, 0), pulse(9, 0, 0.2, 0.8, 1.0), 1e-6);
-    // …and b == c is a SPIKE: it peaks exactly at the knot and holds nowhere.
     try std.testing.expectApproxEqAbs(@as(f32, 1), pulse(0.5, 0, 0.5, 0.5, 1.0), 1e-6);
     try std.testing.expect(pulse(0.4, 0, 0.5, 0.5, 1.0) < 1.0);
     try std.testing.expect(pulse(0.6, 0, 0.5, 0.5, 1.0) < 1.0);
@@ -257,7 +230,6 @@ pub fn wrapPi(a: f32) f32 {
     return x;
 }
 
-/// Wrap a DEGREE angle into (-180, 180]
 pub fn wrapDeg(a: f32) f32 {
     return degrees(wrapPi(radians(a)));
 }
@@ -278,20 +250,16 @@ pub fn tiltDeg(a: rl.Vector3, b: rl.Vector3) f32 {
     return degrees(std.math.atan2(lenXZ(d), d.y));
 }
 
-/// A copy of col with the given alpha (0..255).
 pub fn withAlpha(col: rl.Color, a: u8) rl.Color {
     var out = col;
     out.a = a;
     return out;
 }
 
-/// Clamp a float to [0,255] and narrow to u8 (channel/alpha math).
 pub fn u8f(v: f32) u8 {
     return @intFromFloat(clampF(v, 0, 255));
 }
 
-/// An authored `Color` as the 0..1 vec3 the shader uniforms take (`gfx.Light.col`, water tones) — the one
-/// conversion, so a colour that must match between a mesh and a light is written once, not transcribed.
 pub fn colVec(c: rl.Color) rl.Vector3 {
     const f = 1.0 / 255.0;
     return v3(@as(f32, @floatFromInt(c.r)) * f, @as(f32, @floatFromInt(c.g)) * f, @as(f32, @floatFromInt(c.b)) * f);
@@ -320,7 +288,6 @@ pub fn lerpColor(a: rl.Color, b: rl.Color, t: f32) rl.Color {
     );
 }
 
-/// Seeded RNG wrapper (subset of Go's math/rand the sibling games used).
 pub const Rng = struct {
     prng: std.Random.DefaultPrng,
 
@@ -361,8 +328,6 @@ test "signI is one step, and a NaN axis walks no cursor" {
     try std.testing.expectEqual(@as(i32, 1), signI(0.0001));
     try std.testing.expectEqual(@as(i32, -1), signI(-40.0));
     try std.testing.expectEqual(@as(i32, 0), signI(0));
-    // The reason it is not `std.math.sign`: that hands a NaN straight back, and `@intFromFloat` on one is
-    // illegal behaviour rather than a wrong row.
     try std.testing.expectEqual(@as(i32, 0), signI(std.math.nan(f32)));
 }
 
@@ -394,11 +359,10 @@ test "closestOnSegV clamps to the ENDS, which is what makes the swept blade test
             return lenV(subV(p, closestOnSegV(p, aa, bb)));
         }
     }.to;
-    try std.testing.expectApproxEqAbs(@as(f32, 1), d(v3(1, 1, 0), a, b), 1e-5); // perpendicular
-    try std.testing.expectApproxEqAbs(@as(f32, 1), d(v3(-1, 0, 0), a, b), 1e-5); // past the end → to the endpoint
-    try std.testing.expectApproxEqAbs(@as(f32, 0), d(v3(1, 0, 0), a, b), 1e-5); // on the segment
+    try std.testing.expectApproxEqAbs(@as(f32, 1), d(v3(1, 1, 0), a, b), 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), d(v3(-1, 0, 0), a, b), 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), d(v3(1, 0, 0), a, b), 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 3), d(v3(5, 0, 0), a, b), 1e-5);
-    // A degenerate segment is a point, not a divide-by-zero.
     try std.testing.expectApproxEqAbs(@as(f32, 5), d(v3(5, 0, 0), a, a), 1e-5);
 }
 
@@ -406,19 +370,17 @@ test "Nearest takes the closest inside its ring and nothing outside it" {
     const at = zero3;
     var n = Nearest.within(3.0);
     try std.testing.expect(n.best == null);
-    n.offer(0, v3(9, 0, 0), at); // well outside
+    n.offer(0, v3(9, 0, 0), at);
     try std.testing.expect(n.best == null);
     n.offer(1, v3(2.5, 0, 0), at);
     try std.testing.expectEqual(@as(usize, 1), n.best.?);
-    n.offer(2, v3(0, 0, 1.0), at); // closer
+    n.offer(2, v3(0, 0, 1.0), at);
     try std.testing.expectEqual(@as(usize, 2), n.best.?);
-    n.offer(3, v3(0, 0, 1.0), at); // a TIE keeps the earlier one
+    n.offer(3, v3(0, 0, 1.0), at);
     try std.testing.expectEqual(@as(usize, 2), n.best.?);
-    // Exactly ON the ring is out, which is what `d < reach*reach` always meant.
     var edge = Nearest.within(3.0);
     edge.offer(0, v3(3, 0, 0), at);
     try std.testing.expect(edge.best == null);
-    // …and Y is ignored, like every other *XZ helper here.
     var high = Nearest.within(3.0);
     high.offer(0, v3(1, 40, 0), at);
     try std.testing.expectEqual(@as(usize, 0), high.best.?);

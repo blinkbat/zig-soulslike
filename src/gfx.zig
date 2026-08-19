@@ -1,8 +1,8 @@
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("mathx.zig");
-const glsl = @import("shaders.zig"); // the GLSL source text — see there for the contract between the two
-const daynight = @import("daynight.zig"); // THE CLOCK — where the sun is and what colour the hour is
+const glsl = @import("shaders.zig");
+const daynight = @import("daynight.zig");
 
 const v3 = mathx.v3;
 
@@ -26,7 +26,6 @@ pub const WATER_N: i32 = 224;
 pub const HEIGHT_N: i32 = 224;
 
 pub const WATER_SHORE: u8 = 128;
-/// Metres from the shore at which the water reads FULLY DEEP, and metres of soaked sand outside it.
 pub const WATER_DEEP_AT: f32 = 11.0;
 pub const WATER_WET_OUT: f32 = 3.4;
 
@@ -41,30 +40,19 @@ pub const SUN_DIR = daynight.ANCHOR_DIR;
 /// camera's position and `env`'s shadow-reach cull all read this and nothing else. Written once a frame by
 /// `Scene.setHour` — never by hand, which is what keeps the three from drifting apart mid-frame.
 pub var sun: rl.Vector3 = SUN_DIR;
-/// …and how far sideways a caster throws its shadow per metre of its own height, which is cot(altitude) of
-/// whatever is up. `env.castsInto` culls the depth pass on it, so it MOVES WITH THE SUN: pinned at the
-/// anchor's value a low evening sun's real shadows were culled away, and pinned at the worst case the pass
-/// accepted the whole world at noon. Bounded by `daynight`'s altitude floor, and a test there says so.
 pub var sunReach: f32 = daynight.reachOf(SUN_DIR);
 
 pub const SHADOWMAP_RES = 8192;
 pub const SHADOW_ORTHO = 108.0;
-const SUN_DIST = 120.0; // shadow camera distance along the casting direction
-// Depth slab around the casters, kept as TIGHT as the box allows.
+const SUN_DIST = 120.0;
 const SHADOW_CLIP_NEAR = SUN_DIST - SHADOW_ORTHO * 0.78;
 const SHADOW_CLIP_FAR = SUN_DIST + SHADOW_ORTHO * 0.78;
 
-// Haze falloff: 1-exp(-density*dist). The COLOUR is the clock's (`daynight.Palette.haze`); only how far you
-// can see through it is fixed, because that is a property of the air and not of the hour.
 const HAZE_DENSITY: f32 = 0.013;
-/// …and what a full storm multiplies it by. The COLOUR of the closing distance is the palette's
-/// (`daynight.overcast`); this is the only half that is a distance, and it is what makes the far field
-/// genuinely unreadable in the rain rather than merely grey.
-const HAZE_STORM: f32 = 2.40;
+const HAZE_STORM: f32 = 3.10;
 
 pub const MAX_LIGHTS = 16;
 comptime {
-    // The scene FS declares `lightPos/lightCol/lightRad[16]` as literals
     @setEvalBranchQuota(200_000); // scanning a ~9 KB shader source three times at comptime
     std.debug.assert(MAX_LIGHTS == 16);
     std.debug.assert(std.mem.indexOf(u8, glsl.sceneFS, "lightPos[16]") != null);
@@ -73,8 +61,8 @@ comptime {
 }
 pub const Light = struct {
     pos: rl.Vector3,
-    col: rl.Vector3, // colour PRE-MULTIPLIED by intensity (pre-gamma, like every other colour here)
-    radius: f32, // falloff reaches exactly zero here, so a light can never leak past its room
+    col: rl.Vector3,
+    radius: f32,
 };
 
 pub const Sky = struct {
@@ -124,11 +112,6 @@ pub const Sky = struct {
         return out;
     }
 
-    /// THE HOUR, PUSHED. The two directions are the TRUE ones — the disc has to sit where the light actually
-    /// is, which is the one place the sky and the shadows are allowed to disagree (see `daynight`'s own note).
-    ///
-    /// **AND THE STORM OVER IT** (`daynight.overcast`) — the dome takes the same layer the world does, off the
-    /// same one number, or the field goes flat grey under a sky still showing its aureole.
     pub fn setHour(self: *Sky, hour: f32, wet: f32) void {
         const p = daynight.overcast(daynight.paletteAt(hour), wet);
         var s = daynight.sunDir(hour);
@@ -146,8 +129,6 @@ pub const Sky = struct {
     pub fn draw(self: *Sky, cam: rl.Camera3D) void {
         const w = rl.getScreenWidth();
         const h = rl.getScreenHeight();
-        // …and the clock the STARS twinkle on, which is wall time and not the world's hour: a star's
-        // scintillation is atmosphere, so it keeps its own rate whatever the sun is doing.
         var t: f32 = @floatCast(rl.getTime());
         rl.setShaderValue(self.shader, self.loc_time, &t, .float);
         const fwd = norm3(v3(cam.target.x - cam.position.x, cam.target.y - cam.position.y, cam.target.z - cam.position.z));
@@ -177,7 +158,7 @@ pub const Vignette = struct {
         const H = 256;
         const START = 0.62; // radius (0=centre, 1=edge-midpoint, ~1.41=corner) where the fade BEGINS — big clean centre
         const ENDR = 1.34;
-        const MAX_A: f32 = 120.0; // corner darkness (0..255)
+        const MAX_A: f32 = 120.0;
         var img = rl.genImageColor(W, H, rl.Color.init(0, 0, 0, 0));
         var y: i32 = 0;
         while (y < H) : (y += 1) {
@@ -186,7 +167,7 @@ pub const Vignette = struct {
                 const nx = (@as(f32, @floatFromInt(x)) / (W - 1)) * 2.0 - 1.0;
                 const ny = (@as(f32, @floatFromInt(y)) / (H - 1)) * 2.0 - 1.0;
                 const r = @sqrt(nx * nx + ny * ny);
-                const t = mathx.smoothstep(START, ENDR, r); // 0 in the clean centre → 1 at the corners
+                const t = mathx.smoothstep(START, ENDR, r);
                 const a = mathx.u8f(t * MAX_A);
                 rl.imageDrawPixel(&img, x, y, rl.Color.init(10, 16, 28, a));
             }
@@ -204,7 +185,7 @@ pub const Vignette = struct {
     }
 };
 
-pub const RETRO_COUNT = RETRO_FILTERS.len; // the table's own length, not a literal beside it
+pub const RETRO_COUNT = RETRO_FILTERS.len;
 pub const RETRO_EPS: f32 = 0.001;
 pub const RF_PIXELATE = 0;
 pub const RF_CHROMA = 1;
@@ -257,7 +238,6 @@ pub const RETRO_DEFAULTS = blk: {
     break :blk out;
 };
 
-// The RF_* index constants must line up with RETRO_FILTERS' rows
 comptime {
     const PINS = [_]struct { i: usize, u: [:0]const u8 }{
         .{ .i = RF_PIXELATE, .u = "fPixelate" },
@@ -334,7 +314,6 @@ pub const Retro = struct {
         for (preset) |p| self.values[p.idx] = p.val;
     }
 
-    // Redirect the frame into the capture RT when any filter is on. true => the caller MUST call end() after its 3D pass; false => draw straight to the backbuffer.
     pub fn begin(self: *Retro) bool {
         if (!self.anyActive()) return false;
         rl.beginTextureMode(self.rt);
@@ -364,7 +343,6 @@ pub const Retro = struct {
     }
 };
 
-/// A blank n x n single-byte texture, updated in place by the setters above.
 fn loadFieldTexture(n: i32, filter: rl.TextureFilter) rl.Texture2D {
     const cells: usize = @intCast(n * n);
     const blank = std.heap.c_allocator.alloc(u8, cells) catch @panic("field texture");
@@ -399,11 +377,8 @@ fn dot3(a: rl.Vector3, b: rl.Vector3) f32 {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
-/// AN ORTHONORMAL FRAME FOR WHATEVER IS CASTING — the shadow camera's own axes, and the two the texel snap is
-/// rounded along. The hint is world −Z because that is the `up` the box was always built with; it is only a
-/// HINT, and it is re-crossed rather than used directly so the frame stays orthonormal at any sun bearing.
 fn lightBasis() struct { fwd: rl.Vector3, right: rl.Vector3, up: rl.Vector3 } {
-    const fwd = mathx.normV(mathx.scaleV(sun, -1)); // the light looks DOWN its own direction
+    const fwd = mathx.normV(mathx.scaleV(sun, -1));
     var right = mathx.crossV(v3(0, 0, -1), fwd);
     if (mathx.lenV(right) < 1e-4) right = mathx.crossV(v3(1, 0, 0), fwd);
     right = mathx.normV(right);
@@ -427,8 +402,6 @@ pub const Scene = struct {
     loc_lightCol: i32,
     loc_lightRad: i32,
     loc_nLights: i32,
-    /// The hour's own uniforms — the casting direction, the key, the hemisphere pair, the haze and its bank,
-    /// and how bright the key is against the hour the speculars were authored at (`daynight.keyAmt`).
     loc_sun: i32,
     loc_key: i32,
     loc_ambGround: i32,
@@ -436,7 +409,6 @@ pub const Scene = struct {
     loc_haze: i32,
     loc_hazeBank: i32,
     loc_keyAmt: i32,
-    /// …and HOW FAR you can see through the haze, which the weather moves and the debug row overrides.
     loc_hazeD: i32,
     soilTex: rl.Texture2D,
     soilCovTex: rl.Texture2D,
@@ -485,8 +457,6 @@ pub const Scene = struct {
             .shadowMap = loadShadowmap(SHADOWMAP_RES),
             .soilTex = loadFieldTexture(SOIL_N, .point),
             .soilCovTex = loadFieldTexture(SOIL_N, .bilinear),
-            // POINT, like the id map and for its reason: an edge is a CHOICE, and a bilinear read halfway
-            // between `tiled` and `jagged` is an ordinal nobody authored pointing at a shape nobody picked.
             .soilEdgeTex = loadFieldTexture(SOIL_N, .point),
             .loc_soilOn = rl.getShaderLocation(shader, "soilOn"),
             .loc_soilHalf = rl.getShaderLocation(shader, "soilHalf"),
@@ -518,8 +488,6 @@ pub const Scene = struct {
             .loc_keyAmt = rl.getShaderLocation(shader, "keyAmt"),
             .loc_hazeD = rl.getShaderLocation(shader, "hazeDensity"),
         };
-        // ARMED AT THE ANCHOR before a frame has run, the sky's reason: a scene with no hour pushed into it is
-        // a world lit by an all-zero key, and the object viewer and the menu both draw one before the loop does.
         out.setHour(daynight.SHOT_HOUR, 0, 1.0);
         return out;
     }
@@ -549,30 +517,22 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_hazeBank, &hb, .vec3);
         var ka = daynight.keyAmt(p);
         rl.setShaderValue(self.shader, self.loc_keyAmt, &ka, .float);
-        // …AND HOW FAR YOU CAN SEE THROUGH IT, which is the one part of the haze that is not a colour. It was
-        // a constant pushed once at startup, on the reasoning that visibility is a property of the AIR and not
-        // of the hour — which is still true, and is exactly why rain moves it: the air has water in it.
         var density: f32 = HAZE_DENSITY * (1.0 + (HAZE_STORM - 1.0) * mathx.clampF(wet, 0, 1)) * mathx.maxF(fogK, 0);
         rl.setShaderValue(self.shader, self.loc_hazeD, &density, .float);
     }
 
-    // Sun depth pass: call, draw casters (materials swapped to depthShader — drawMesh uses the MATERIAL's shader, beginShaderMode won't reach it), then endShadowPass; must run BEFORE beginDrawing.
     pub fn beginShadowPass(self: *Scene, focus: rl.Vector3) void {
         const t = SHADOW_ORTHO / @as(f32, SHADOWMAP_RES);
-        // THE SNAP IS TAKEN IN THE LIGHT'S OWN BASIS. Rounding world x/y/z to the texel pitch only lands on a
-        // texel while the light looks down a world axis — which it did, when the sun was a constant. With one
-        // that sweeps, the texel grid turns under the world and a world-axis snap stops snapping at all: the
-        // edges crawl as the camera moves, which is the exact artefact the snap exists to kill.
         const b = lightBasis();
         const a0 = @round(dot3(focus, b.right) / t) * t;
         const a1 = @round(dot3(focus, b.up) / t) * t;
-        const a2 = dot3(focus, b.fwd); // depth along the light — a texel has no size in this direction
+        const a2 = dot3(focus, b.fwd);
         const f = mathx.addV(mathx.addV(mathx.scaleV(b.right, a0), mathx.scaleV(b.up, a1)), mathx.scaleV(b.fwd, a2));
         const cam = rl.Camera3D{
             .position = v3(f.x + sun.x * SUN_DIST, f.y + sun.y * SUN_DIST, f.z + sun.z * SUN_DIST),
             .target = f,
             .up = b.up,
-            .fovy = SHADOW_ORTHO, // orthographic: fovy is the box height in world units
+            .fovy = SHADOW_ORTHO,
             .projection = .orthographic,
         };
         self.saved_near = rl.gl.rlGetCullDistanceNear();
@@ -590,7 +550,6 @@ pub const Scene = struct {
         rl.gl.rlSetClipPlanes(self.saved_near, self.saved_far);
     }
 
-    // Bind the shadow texture on its slot and push this frame's sun VP + camera position.
     pub fn bind(self: *Scene, camPos: rl.Vector3) void {
         rl.gl.rlActiveTextureSlot(SLOT_SHADOW);
         rl.gl.rlEnableTexture(self.shadowMap.depth.id);
@@ -611,7 +570,6 @@ pub const Scene = struct {
         rl.setShaderValueMatrix(self.shader, self.loc_lightVP, kill);
     }
 
-    /// Upload this frame's point lights (torches/fires).
     pub fn setLights(self: *Scene, lights: []const Light) void {
         var pos: [MAX_LIGHTS * 3]f32 = undefined;
         var col: [MAX_LIGHTS * 3]f32 = undefined;
@@ -628,7 +586,7 @@ pub const Scene = struct {
         }
         var ni: i32 = @intCast(n);
         rl.setShaderValue(self.shader, self.loc_nLights, &ni, .int);
-        if (n == 0) return; // nothing to push; the count alone switches the loop off
+        if (n == 0) return;
         rl.setShaderValueV(self.shader, self.loc_lightPos, &pos, .vec3, ni);
         rl.setShaderValueV(self.shader, self.loc_lightCol, &col, .vec3, ni);
         rl.setShaderValueV(self.shader, self.loc_lightRad, &rad, .float, ni);
@@ -639,7 +597,6 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_ground, &m, .int);
     }
 
-    /// Push the WATER FIELD: WATER_N² bytes of signed distance around the shore (see WATER_SHORE).
     pub fn setWater(self: *Scene, field: []const u8, half: f32, any: bool) void {
         const n: usize = @intCast(WATER_N);
         std.debug.assert(field.len == n * n);
@@ -658,9 +615,6 @@ pub const Scene = struct {
         rl.setShaderValueV(self.shader, self.loc_waterTone, &t, .vec3, 3);
     }
 
-/// **THE EDGE MAP, GROWN ONE CELL INTO THE BARE GROUND AROUND EACH PATCH.** A boundary is drawn from both
-/// sides — the pixel deciding it may be standing on the painted cell or on the empty one next to it — and the
-/// shader has to read the same policy either way, because the policy is what picks the lookup's own warp.
 var edgeDilated: [@as(usize, @intCast(SOIL_N)) * @as(usize, @intCast(SOIL_N))]u8 = undefined;
 
 fn dilateEdges(ids: []const u8, edge: []const u8) []const u8 {
@@ -669,9 +623,7 @@ fn dilateEdges(ids: []const u8, edge: []const u8) []const u8 {
     for (0..n) |z| {
         for (0..n) |x| {
             const i = z * n + x;
-            if (ids[i] != 0) continue; // a painted cell already carries its own stroke's shape
-            // The first painted neighbour wins, in a fixed order, so the result is deterministic and a
-            // corner between two patches does not flicker on which one was scanned first.
+            if (ids[i] != 0) continue;
             const nb = [4]?usize{
                 if (x > 0) i - 1 else null,
                 if (x + 1 < n) i + 1 else null,
@@ -689,7 +641,6 @@ fn dilateEdges(ids: []const u8, edge: []const u8) []const u8 {
     return &edgeDilated;
 }
 
-/// Push the painted soil grid: SOIL_N x SOIL_N material ids, one byte each, 0 = unpainted.
     pub fn setSoil(self: *Scene, ids: []const u8, cov: []const u8, edge: []const u8, half: f32) void {
         const n: usize = @intCast(SOIL_N);
         std.debug.assert(ids.len == n * n);
@@ -712,7 +663,6 @@ fn dilateEdges(ids: []const u8, edge: []const u8) []const u8 {
         rl.setShaderValue(self.shader, self.loc_soilCell, &cell, .float);
     }
 
-    // The soil and water fields ride their own slots alongside the shadow map, bound once per frame.
     fn bindSoil(self: *Scene) void {
         rl.gl.rlActiveTextureSlot(SLOT_SOIL);
         rl.gl.rlEnableTexture(self.soilTex.id);
@@ -725,36 +675,26 @@ fn dilateEdges(ids: []const u8, edge: []const u8) []const u8 {
         rl.gl.rlActiveTextureSlot(0);
     }
 
-    // Flora opt into vertex-shader sway; everything else (terrain, props, hero) draws rigid.
     pub fn setWind(self: *Scene, on: bool) void {
         var a: f32 = if (on) 1.0 else 0.0;
         rl.setShaderValue(self.shader, self.loc_windAmt, &a, .float);
     }
 
-    // The blood-red combat flash on whatever draws NEXT (0 = none).
     pub fn setFlash(self: *Scene, amt: f32) void {
         var a = mathx.clampF(amt, 0, 1);
         rl.setShaderValue(self.shader, self.loc_flash, &a, .float);
     }
 
-    // …and the rime coat on whatever draws NEXT (0 = none) — a chilled body, drawn frosted.
     pub fn setFrost(self: *Scene, amt: f32) void {
         var a = mathx.clampF(amt, 0, 1);
         rl.setShaderValue(self.shader, self.loc_frost, &a, .float);
     }
 
-    /// HOW SOLID WHATEVER DRAWS NEXT IS — 1 opaque, 0 gone. Plain alpha, so a caller thinning
-    /// something has to drop the depth mask for it (see drawCasters and Env.drawIndexed).
     pub fn setFade(self: *Scene, amt: f32) void {
         var a = mathx.clampF(amt, 0, 1);
         rl.setShaderValue(self.shader, self.loc_fade, &a, .float);
     }
 
-    /// **HOW A THING ON ITS WAY OUT IS DRAWN** — the fade factor and the DEPTH MASK OFF, because a half-there
-    /// surface may not write depth over what is behind it. One sequence with two callers (`env.drawIndexed`'s
-    /// shrink branch for the map's own glows, `game.drawDrops` for the ones a body left), and it lives here
-    /// because the fade is the scene shader's own uniform. Written out twice it was two places to leave a
-    /// depth mask off. ALWAYS PAIRED with `endFade` — the mask is global state until it is put back.
     pub fn beginFade(self: *Scene, amt: f32) void {
         self.setFade(amt);
         rl.gl.rlDisableDepthMask();
@@ -765,7 +705,6 @@ fn dilateEdges(ids: []const u8, edge: []const u8) []const u8 {
     }
 };
 
-// Per-fragment surface material for the scene shader's texturing pass (see matAlbedo).
 pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble, flame, smoke, ember, bark };
 comptime {
     std.debug.assert(@intFromEnum(Mat.water) == 9);
@@ -780,9 +719,6 @@ pub fn smokeAnim(originY: f32, phase01: f32) f32 {
     return @floor(originY) + std.math.clamp(phase01, 0, 0.999);
 }
 
-/// ONE BODY'S MATERIAL — raylib's default pointed at the scene shader. Twenty `Model.init`s wrote these two
-/// lines out with nothing differing but the word in the panic, which is a thing to forget the day a material
-/// needs a second setting.
 pub fn material(shader: rl.Shader, comptime what: []const u8) rl.Material {
     var mat = rl.loadMaterialDefault() catch @panic(what ++ " material");
     mat.shader = shader;
@@ -795,10 +731,9 @@ pub const Builder = struct {
     uv: std.ArrayList(f32),
     uv2: std.ArrayList(f32),
     col: std.ArrayList(u8),
-    matf: f32 = 0, // current Mat id, written per vertex into texcoords2.x
-    /// The local Y a shape's VERTEX ANIMATION measures from, written per vertex into texcoords2.y.
+    matf: f32 = 0,
     animY: f32 = 0,
-    shapeN: f32 = 0, // per-shape counter driving the UV decorrelation offset
+    shapeN: f32 = 0,
 
     pub fn init() Builder {
         return .{
@@ -810,7 +745,6 @@ pub const Builder = struct {
         };
     }
 
-    // Material for every shape added AFTER this call (until the next one).
     pub fn setMat(self: *Builder, m: Mat) void {
         self.matf = @floatFromInt(@intFromEnum(m));
     }
@@ -841,7 +775,6 @@ pub const Builder = struct {
         self.vert(d, n, col, td.x, td.y);
     }
 
-    /// A quad with a normal PER CORNER, and world-XZ UVs.
     pub fn quadSmooth(self: *Builder, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3, na: rl.Vector3, nb: rl.Vector3, nc: rl.Vector3, nd: rl.Vector3, col: rl.Color) void {
         self.vert(a, na, col, a.x, a.z);
         self.vert(b, nb, col, b.x, b.z);
@@ -851,10 +784,6 @@ pub const Builder = struct {
         self.vert(d, nd, col, d.x, d.z);
     }
 
-    /// **A QUAD THAT IS TWO COLOURS, END TO END** — `ab` on the a/b edge and `cd` on the c/d one. Vertex alpha
-    /// is the EMISSIVE channel here, so this is also how a shape fades OUT along its own length rather than
-    /// stopping: `weather`'s rain streaks and anything else built as a run of segments. Written as a primitive
-    /// because doing it by hand means reaching for `vert`, which is where a caller starts inventing its own UVs.
     pub fn quadFade(self: *Builder, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3, n: rl.Vector3, ab: rl.Color, cd: rl.Color) void {
         self.vert(a, n, ab, a.x, a.z);
         self.vert(b, n, ab, b.x, b.z);
@@ -864,7 +793,6 @@ pub const Builder = struct {
         self.vert(d, n, cd, d.x, d.z);
     }
 
-    // Planar-mapped quad: UVs are in-plane world-unit coordinates (u along a->b, v across), shifted by the shape offset — any face textures itself with zero caller effort.
     pub fn quad(self: *Builder, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3, n: rl.Vector3, col: rl.Color) void {
         const ue = norm3(v3(b.x - a.x, b.y - a.y, b.z - a.z));
         const ve = cross(n, ue);
@@ -880,7 +808,6 @@ pub const Builder = struct {
         self.quadUV(a, b, c, d, n, col, t(a, a, ue, ve, o), t(b, a, ue, ve, o), t(c, a, ue, ve, o), t(d, a, ue, ve, o));
     }
 
-    // Axis-aligned box centered at `c` with full `size`.
     pub fn addCube(self: *Builder, c: rl.Vector3, size: rl.Vector3, col: rl.Color) void {
         const hx = size.x / 2;
         const hy = size.y / 2;
@@ -896,7 +823,6 @@ pub const Builder = struct {
         self.quad(v3(x + hx, y - hy, z - hz), v3(x - hx, y - hy, z - hz), v3(x - hx, y + hy, z - hz), v3(x + hx, y + hy, z - hz), v3(0, 0, -1), col);
     }
 
-    // Parallelepiped from a center and three half-axis vectors — the oriented cousin of addCube.
     pub fn addBox(self: *Builder, c: rl.Vector3, ax: rl.Vector3, ay: rl.Vector3, azIn: rl.Vector3, col: rl.Color) void {
         const x = cross(ax, ay);
         const az = if (x.x * azIn.x + x.y * azIn.y + x.z * azIn.z < 0) neg(azIn) else azIn;
@@ -913,17 +839,13 @@ pub const Builder = struct {
         self.quad(corner(c, ax, ay, az, 1, -1, -1), corner(c, ax, ay, az, -1, -1, -1), corner(c, ax, ay, az, -1, 1, -1), corner(c, ax, ay, az, 1, 1, -1), norm3(neg(az)), col);
     }
 
-    // Tapered cylinder (no caps) a(radius ra) -> b(radius rb); rb≈0 for spikes.
     pub fn addCylinder(self: *Builder, a: rl.Vector3, b: rl.Vector3, ra: f32, rb: f32, sides: i32, col: rl.Color) void {
         const f = axisFrame(a, b);
         const o = self.shapeOff();
-        const rmid = @max(0.5 * (ra + rb), 0.02); // arc-length radius (floor keeps spike UVs sane)
+        const rmid = @max(0.5 * (ra + rb), 0.02);
         self.ringBand(a, b, f.u, f.w, ra, rb, sides, col, o, rmid, o.y, o.y + f.len);
     }
 
-    // ONE band of a revolved surface: the quad ring between circle (a, ra) and circle (b, rb) in the (u, w)
-    // frame. The caller supplies the UV offset / arc radius / v-range, so a multi-band surface keeps ONE
-    // continuous texture rather than a decorrelated patch per band — which reads as rings of noise.
     fn ringBand(self: *Builder, a: rl.Vector3, b: rl.Vector3, u: rl.Vector3, w: rl.Vector3, ra: f32, rb: f32, sides: i32, col: rl.Color, o: rl.Vector2, rmid: f32, va: f32, vb: f32) void {
         const sf: f32 = @floatFromInt(sides);
         var s: i32 = 0;
@@ -943,7 +865,6 @@ pub const Builder = struct {
         }
     }
 
-    // A CAPSULE: the tapered barrel a→b plus real DOMED ends (radius ra behind a, rb past b).
     pub fn addCapsule(self: *Builder, a: rl.Vector3, b: rl.Vector3, ra: f32, rb: f32, sides: i32, col: rl.Color) void {
         const f = axisFrame(a, b);
         const o = self.shapeOff();
@@ -953,26 +874,23 @@ pub const Builder = struct {
         self.dome(b, f.axis, f.u, f.w, rb, sides, col, o, rmid, o.y + f.len, 1);
     }
 
-    // A standalone domed cap — a rounded stump wherever a bare cylinder would show its open end.
     pub fn addDome(self: *Builder, c: rl.Vector3, dir: rl.Vector3, r: f32, sides: i32, col: rl.Color) void {
         const f = axisFrame(c, scaleAdd(c, norm3(dir), @max(r, 1e-3)));
         const o = self.shapeOff();
         self.dome(c, f.axis, f.u, f.w, r, sides, col, o, @max(r, 0.02), o.y, 1);
     }
 
-    // A hemispherical cap of radius r on `c`, bulging along `dir`.
     fn dome(self: *Builder, c: rl.Vector3, dir: rl.Vector3, u: rl.Vector3, w: rl.Vector3, r: f32, sides: i32, col: rl.Color, o: rl.Vector2, rmid: f32, vAt: f32, vSign: f32) void {
         if (r < 1e-4) return;
         const BANDS = 3;
         var k: i32 = BANDS;
         while (k > 0) : (k -= 1) {
-            const t0 = std.math.pi * 0.5 * @as(f32, @floatFromInt(k)) / @as(f32, BANDS); // far pole side
-            const t1 = std.math.pi * 0.5 * @as(f32, @floatFromInt(k - 1)) / @as(f32, BANDS); // toward the seam
+            const t0 = std.math.pi * 0.5 * @as(f32, @floatFromInt(k)) / @as(f32, BANDS);
+            const t1 = std.math.pi * 0.5 * @as(f32, @floatFromInt(k - 1)) / @as(f32, BANDS);
             const c0 = scaleAdd(c, dir, r * mathx.sinf(t0));
             const c1 = scaleAdd(c, dir, r * mathx.sinf(t1));
             const v0 = vAt + vSign * r * t0;
             const v1 = vAt + vSign * r * t1;
-            // vSign flips which ring is "first" so the winding stays CCW-from-outside on both ends.
             if (vSign > 0) {
                 self.ringBand(c1, c0, u, w, r * mathx.cosf(t1), r * mathx.cosf(t0), sides, col, o, rmid, v1, v0);
             } else {
@@ -981,7 +899,6 @@ pub const Builder = struct {
         }
     }
 
-    // A rounded ELLIPSOID mass centred on `c` with half-extents `r` — the anti-blockiness primitive.
     pub fn addBlob(self: *Builder, c: rl.Vector3, r: rl.Vector3, segs: i32, sides: i32, col: rl.Color) void {
         const o = self.shapeOff();
         const sf: f32 = @floatFromInt(sides);
@@ -990,7 +907,7 @@ pub const Builder = struct {
         const inv = v3(1.0 / @max(r.x, 1e-4), 1.0 / @max(r.y, 1e-4), 1.0 / @max(r.z, 1e-4));
         var j: i32 = 0;
         while (j < segs) : (j += 1) {
-            const t0 = std.math.pi * @as(f32, @floatFromInt(j)) / gf; // 0 = bottom pole, pi = top
+            const t0 = std.math.pi * @as(f32, @floatFromInt(j)) / gf;
             const t1 = std.math.pi * @as(f32, @floatFromInt(j + 1)) / gf;
             var s: i32 = 0;
             while (s < sides) : (s += 1) {
@@ -1021,7 +938,7 @@ pub const Builder = struct {
         const nside = @max(sides, 4);
         var j: i32 = 0;
         while (j < nseg) : (j += 1) {
-            const t0 = std.math.pi * @as(f32, @floatFromInt(j)) / gf; // 0 = bottom pole, pi = top — addBlob's own sweep, so the winding matches
+            const t0 = std.math.pi * @as(f32, @floatFromInt(j)) / gf;
             const t1 = std.math.pi * @as(f32, @floatFromInt(j + 1)) / gf;
             var s: i32 = 0;
             while (s < nside) : (s += 1) {
@@ -1031,22 +948,17 @@ pub const Builder = struct {
                 const p1 = onSquircle(c, h, e, t0, a1);
                 const p2 = onSquircle(c, h, e, t1, a1);
                 const p3 = onSquircle(c, h, e, t1, a0);
-                // The IMPLICIT gradient at the patch centre, which is outward by construction — deriving
-                // the parametric normal by hand is where a superquadric gets its faces inside out.
                 const mid = v3(
                     0.25 * (p0.x + p1.x + p2.x + p3.x) - c.x,
                     0.25 * (p0.y + p1.y + p2.y + p3.y) - c.y,
                     0.25 * (p0.z + p1.z + p2.z + p3.z) - c.z,
                 );
                 const n = squircleNormal(h, e, mid);
-                // BOX-PROJECTED UVs, not a sphere's arc walk: materials are read in world units off the uv, and
-                // a spherical walk pinches at the poles — smeared hatchy grain across the hero's chest.
                 self.quadUV(p0, p1, p2, p3, n, col, boxUV(p0, c, n, o), boxUV(p1, c, n, o), boxUV(p2, c, n, o), boxUV(p3, c, n, o));
             }
         }
     }
 
-    // Upload to the GPU as a bare Mesh (CPU arrays stay attached; the mesh lives the whole program).
     pub fn toMesh(self: *Builder) rl.Mesh {
         const pos = self.pos.toOwnedSlice() catch @panic("oom");
         const nrm = self.nrm.toOwnedSlice() catch @panic("oom");
@@ -1059,13 +971,12 @@ pub const Builder = struct {
         mesh.vertices = pos.ptr;
         mesh.normals = nrm.ptr;
         mesh.texcoords = uv.ptr;
-        mesh.texcoords2 = uv2.ptr; // material channel (gfx.Mat per vertex)
+        mesh.texcoords2 = uv2.ptr;
         mesh.colors = col.ptr;
         rl.uploadMesh(&mesh, false);
         return mesh;
     }
 
-    // Upload and wrap in a Model bound to `shader` (props/terrain drawn with drawModel).
     pub fn toModel(self: *Builder, shader: rl.Shader) rl.Model {
         const mesh = self.toMesh();
         var model = rl.loadModelFromMesh(mesh) catch @panic("model");
@@ -1077,7 +988,6 @@ pub const Builder = struct {
 fn scaleAdd(base: rl.Vector3, dir: rl.Vector3, s: f32) rl.Vector3 {
     return v3(base.x + dir.x * s, base.y + dir.y * s, base.z + dir.z * s);
 }
-// The revolution frame for the segment a→b: unit axis, its two perpendiculars, and the length.
 const AxisFrame = struct { axis: rl.Vector3, u: rl.Vector3, w: rl.Vector3, len: f32 };
 fn axisFrame(a: rl.Vector3, b: rl.Vector3) AxisFrame {
     const d = v3(b.x - a.x, b.y - a.y, b.z - a.z);
@@ -1086,13 +996,11 @@ fn axisFrame(a: rl.Vector3, b: rl.Vector3) AxisFrame {
     const u = norm3(cross(axis, seed));
     return .{ .axis = axis, .u = u, .w = norm3(cross(axis, u)), .len = @sqrt(d.x * d.x + d.y * d.y + d.z * d.z) };
 }
-// A point on the ellipsoid (c, r): `t` = polar angle (0 = bottom pole), `ang` = angle around.
 fn onBlob(c: rl.Vector3, r: rl.Vector3, t: f32, ang: f32) rl.Vector3 {
     const st = mathx.sinf(t);
     return v3(c.x - r.x * mathx.sinf(ang) * st, c.y - r.y * mathx.cosf(t), c.z - r.z * mathx.cosf(ang) * st);
 }
 
-/// |t|^p carrying t's sign — the superquadric's whole trick, and 0 at the seams rather than a NaN.
 fn sgnPow(t: f32, p: f32) f32 {
     const a = @abs(t);
     if (a < 1e-6) return 0;
@@ -1100,9 +1008,6 @@ fn sgnPow(t: f32, p: f32) f32 {
     return if (t < 0) -m else m;
 }
 
-/// `onBlob`'s superquadric twin: the SAME (t, ang) sweep, with each trig term raised to `e`, so the
-/// winding and the UV walk carry over unchanged. e = 1 is exactly `onBlob`; smaller pushes the surface
-/// out toward the box's own faces and corners.
 fn onSquircle(c: rl.Vector3, h: rl.Vector3, e: f32, t: f32, ang: f32) rl.Vector3 {
     const ring = sgnPow(mathx.sinf(t), e);
     return v3(
@@ -1112,22 +1017,16 @@ fn onSquircle(c: rl.Vector3, h: rl.Vector3, e: f32, t: f32, ang: f32) rl.Vector3
     );
 }
 
-/// Triplanar UV off the face the normal points at, in the world units `quad` uses. Picking the plane off the
-/// QUAD's normal rather than the vertex's keeps all four corners on one projection — otherwise a seam appears
-/// along every fillet.
 fn boxUV(p: rl.Vector3, c: rl.Vector3, n: rl.Vector3, o: rl.Vector2) rl.Vector2 {
     const d = v3(p.x - c.x, p.y - c.y, p.z - c.z);
     const ax = @abs(n.x);
     const ay = @abs(n.y);
     const az = @abs(n.z);
-    if (ax >= ay and ax >= az) return .{ .x = d.z + o.x, .y = d.y + o.y }; // facing ±X → the ZY plane
-    if (ay >= az) return .{ .x = d.x + o.x, .y = d.z + o.y }; // facing ±Y → the XZ plane
-    return .{ .x = d.x + o.x, .y = d.y + o.y }; // facing ±Z → the XY plane
+    if (ax >= ay and ax >= az) return .{ .x = d.z + o.x, .y = d.y + o.y };
+    if (ay >= az) return .{ .x = d.x + o.x, .y = d.z + o.y };
+    return .{ .x = d.x + o.x, .y = d.y + o.y };
 }
 
-/// The outward normal of the superquadric (h, e) at an offset `d` from its centre, taken off the implicit
-/// form's gradient — outward BY CONSTRUCTION, which is what keeps the faces from coming out inside out
-/// (deriving the parametric normal by hand is where that happens, and a black hero is the symptom).
 fn squircleNormal(h: rl.Vector3, e: f32, d: rl.Vector3) rl.Vector3 {
     const k = 2.0 / e - 1.0;
     return norm3(v3(
@@ -1152,8 +1051,6 @@ fn norm3(a: rl.Vector3) rl.Vector3 {
 const cross = mathx.crossV;
 
 test "a FILLETED BOX stays inside the cube it replaces, and its normals point out" {
-    // The substitution's whole safety property: swapping addCube for addRoundBox may round a part's
-    // edges off, and must never grow it — the hero's proportions are anthropometry, not styling.
     const size = v3(0.4, 0.9, 0.3);
     const c = v3(1, 2, -3);
     var b = Builder.init();
@@ -1170,8 +1067,6 @@ test "a FILLETED BOX stays inside the cube it replaces, and its normals point ou
         reachX = @max(reachX, @abs(d.x));
         const n = v3(b.nrm.items[i], b.nrm.items[i + 1], b.nrm.items[i + 2]);
         try std.testing.expectApproxEqAbs(@as(f32, 1), @sqrt(n.x * n.x + n.y * n.y + n.z * n.z), 1e-3);
-        // OUTWARD: a superquadric whose parametric normal was derived by hand is how a mesh comes back
-        // inside out, and the symptom is a black hero rather than a compile error.
         try std.testing.expect(n.x * d.x + n.y * d.y + n.z * d.z > -1e-3);
     }
     try std.testing.expect(reachX > size.x * 0.5 * 0.93);
@@ -1179,8 +1074,6 @@ test "a FILLETED BOX stays inside the cube it replaces, and its normals point ou
 
 test "the fillet dial spans ellipsoid to hard box" {
     const h = v3(1, 1, 1);
-    // A corner direction: round = 1 is a sphere (radius 1), and a small round reaches for the cube's
-    // own corner at sqrt(3). The dial has to actually move that distance.
     const t = std.math.pi * 0.25;
     const soft = onSquircle(mathx.zero3, h, 1.0, t, std.math.pi * 0.25);
     const hard = onSquircle(mathx.zero3, h, 0.08, t, std.math.pi * 0.25);

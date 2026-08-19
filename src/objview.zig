@@ -29,13 +29,12 @@ const magemod = @import("shroommage.zig");
 const fenmod = @import("fenlurker.zig");
 const combat = @import("combat.zig");
 const foemod = @import("foe.zig");
-const elemfx = @import("elemfx.zig"); // the elements' particle LANGUAGE — the bench is where it is TUNED
+const elemfx = @import("elemfx.zig");
 
 const v3 = mathx.v3;
 const Kind = props.Kind;
 
 
-/// The layer shelves the gallery offers — one per layer that places props, off `props.Stock`.
 pub const Shelf = enum {
     decor,
     props,
@@ -72,24 +71,20 @@ const Pose = struct {
     zoom: f32 = 1.0,
 };
 
-// The default three-quarter view, and the pitch rails.
 const BASE_YAW: f32 = 0.62;
 const BASE_PITCH: f32 = 0.34;
-const MIN_PITCH: f32 = -0.12; // a hair below level — enough to check that a base is planted
+const MIN_PITCH: f32 = -0.12;
 const MAX_PITCH: f32 = 1.35;
 const MIN_ZOOM: f32 = 0.45;
 const MAX_ZOOM: f32 = 4.0;
 const ROT_RATE: f32 = 0.008; // radians per pixel of drag
 const CLICK_SLOP = ui.DRAG_PX;
-const ZOOM_RATE: f32 = 0.12; // per wheel notch
+const ZOOM_RATE: f32 = 0.12;
 
-/// How far back "fit" is, as a multiple of the kind's own bounding radius.
 const FIT: f32 = 2.05;
 
 const BACKDROP = mathx.rgba(52, 48, 40, 255);
 
-// The off-screen targets, at FIXED sizes and shared by every cell: a fixed size keeps a window resize from
-// unloading and reloading a render texture mid-frame, which is a crash and not a hiccup.
 const THUMB_W: i32 = 236;
 const THUMB_H: i32 = 198;
 const BIG_W: i32 = 1000;
@@ -110,8 +105,6 @@ pub fn unload() void {
     bigRT = null;
 }
 
-/// WHICH GALLERY IS UP: the props it always showed, the editor's whole 2D glyph set (unit icons and the
-/// bag's item pictures), or the CHARACTERS — every creature the map can post, posed at the origin.
 pub const Mode = enum {
     objects,
     icons,
@@ -144,8 +137,6 @@ const Verb = enum {
             .pour => "Pour",
         };
     }
-    /// Seconds between re-fires. The POUR does not loop — it is a stream, so it runs for as long as you are
-    /// looking at it, which is also the only way to judge whether it holds together.
     fn loop(v: Verb) f32 {
         return switch (v) {
             .gather => 0.9,
@@ -155,9 +146,6 @@ const Verb = enum {
     }
 };
 
-/// Enough for the worst cell — the POUR, which is resident for its whole span where the other two are
-/// bursts already dying. `elemfx`'s longest life against its own rate, and then some headroom, because a
-/// bench that silently drops motes is a bench that lies about the thing being tuned.
 const BENCH_FX_N = blk: {
     var life: f32 = 0;
     for (std.meta.tags(combat.Elem)) |e| life = @max(life, elemfx.sig(e).lifeHi);
@@ -169,13 +157,9 @@ const BENCH_FX_N = blk: {
 /// what a 60 fps frame owes at `POUR_RATE` (9.3), so it was in permanent hitch: dropping arrears every frame
 /// and drawing a stream at 480 motes a second against the fight's 560.
 const BENCH_POUR_CAP: usize = elemfx.POUR_CAP;
-/// Where it fires from and which way it goes: chest height on the world's own forward, so the pour lies
-/// along the same axis the hero breathes down.
 const BENCH_AT = v3(0, 1.05, 0);
 const BENCH_DIR = v3(0, 0, -1);
 
-/// Every character, minus the egg sac — one membrane on the ground is not a character (the mark test's
-/// own exemption, for the mark test's own reason).
 const CHAR_KINDS = blk: {
     const all = @typeInfo(wf.FoeKind).@"enum".fields;
     var out: [all.len - 1]wf.FoeKind = undefined;
@@ -198,26 +182,19 @@ pub const State = struct {
     mode: Mode = .objects,
     shelf: Shelf = .props,
     page: i32 = 0,
-    /// The object the big viewer is showing; `null` = the gallery is up.
     open: ?Kind = null,
-    /// …and its counterparts on the other two galleries.
     openIcon: ?usize = null,
     openChar: ?usize = null,
-    /// Per-kind pose, so turning something over and coming back to it later finds it as you left it.
     pose: [props.NK]Pose = [_]Pose{.{}} ** props.NK,
     charPose: [CHAR_N]Pose = [_]Pose{.{}} ** CHAR_N,
     grabbed: ?usize = null,
     travel: f32 = 0,
-    /// THE FX BENCH's own state — which cell of `elemfx`'s grid is playing, and the pool it plays into.
     elem: combat.Elem = .cold,
     verb: Verb = .pour,
     fxPose: Pose = .{},
     fx: [BENCH_FX_N]foemod.Particle = [_]foemod.Particle{.{}} ** BENCH_FX_N,
     fxHead: usize = 0,
-    /// Seconds since this cell last fired — the loop's clock, and the emitter's seed.
     fxT: f32 = 0,
-    /// …and the pour's emission arrears, `hero.breathAcc`'s twin: the rate has to be independent of the
-    /// frame rate here too, or the bench shows a different stream than the game does.
     fxAcc: f32 = 0,
 
     pub fn poseOf(self: *State, k: Kind) *Pose {
@@ -244,7 +221,6 @@ fn camFor(nfo: *const props.Info, pose: Pose, aspect: f32) rl.Camera3D {
 }
 
 fn fitCam(top: f32, bound: f32, pose: Pose, aspect: f32) rl.Camera3D {
-    // Framed off the kind's HEIGHT as well as its bound.
     const reach = mathx.maxF(mathx.maxF(top * 0.8, bound * 0.5), 0.45);
     const fit = reach * FIT / mathx.maxF(mathx.minF(aspect, 1.0), 0.55);
     const dist = fit / mathx.clampF(pose.zoom, MIN_ZOOM, MAX_ZOOM);
@@ -274,11 +250,9 @@ fn render(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, kind: Kin
     scene.shadowsOff();
     scene.setLights(&.{});
     scene.setGround(true);
-    // CULLED AGAINST THIS PREVIEW'S OWN FRUSTUM.
     const view = envmod.View.fromCamera(cam, aspect);
     env.drawGround(&view);
     scene.setGround(false);
-    // FLORA SWAYS in the world, so it sways here — a fern judged rigid is a fern judged wrong.
     scene.setWind(nfo.flora);
     rl.drawModel(env.model(kind), mathx.zero3, 1.0, rl.Color.white);
     if (env.veil(kind)) |v| rl.drawModel(v, mathx.zero3, 1.0, rl.Color.white);
@@ -349,7 +323,6 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
     return &charSet.?;
 }
 
-/// The framing box a creature stands in — its crown and its spread, the two numbers `fitCam` frames off.
 fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
     return switch (k) {
         .toad => .{ .top = 1.7, .bound = 1.6 },
@@ -358,7 +331,7 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         .berserker, .priest, .slinger => .{ .top = 1.7, .bound = 1.0 },
         .brood_mother => .{ .top = 2.8, .bound = 2.9 },
         .broodling => .{ .top = 1.2, .bound = 1.1 },
-        .brood_sac => .{ .top = 1.2, .bound = 1.0 }, // never listed; a sane box if it ever is
+        .brood_sac => .{ .top = 1.2, .bound = 1.0 },
         .shieldman, .greatsword => .{ .top = 2.1, .bound = 1.2 },
         .shade => .{ .top = 2.4, .bound = 1.2 },
         .leechfly => .{ .top = 2.9, .bound = 1.8 },
@@ -366,23 +339,13 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         .shroom => .{ .top = 1.2, .bound = 1.0 },
         .bone_knight => .{ .top = 5.4, .bound = 3.2 },
         .delver => .{ .top = 1.9, .bound = 2.0 },
-        // TALL AND NARROW, and the box says so: nothing else on this list is more than twice as high as it
-        // is wide. The bound has to hold the dragging hem, which is wider than the body above it.
         .necromancer => .{ .top = 2.8, .bound = 1.3 },
-        // LOW AND LONG, which is the one shape on this list that is WIDER than it is tall — a quadruped.
-        // The bound holds the body nose to tail, not the withers.
         .florid_ravager => .{ .top = 1.9, .bound = 2.2 },
-        // SHORT AND WIDE AT THE TOP — the cap is the broadest thing on it and the whole reason to look, so
-        // the bound is the CAP's span and not the body's, or the brim runs out of both sides of the plate.
         .mushroom_mage => .{ .top = 1.6, .bound = 1.4 },
-        // TALL AND VERY NARROW — a neck and a head, with no body above the waterline at all. The bound is
-        // the HEAD's span, which is the widest thing on it and about a third of its height.
         .fen_lurker => .{ .top = 2.9, .bound = 1.1 },
     };
 }
 
-/// Put ONE of `k` at the origin of its own group and draw that group. The rooted is woken by hand — the
-/// whole point of its dormant pose is to be indistinguishable from a snag, which is a useless portrait.
 fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
     const seed = 0.35;
     switch (k) {
@@ -461,25 +424,18 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
             cs.rite.live()[0] = necromod.Necro.spawn(mathx.zero3, 0, 1.0, seed);
             cs.rite.draw(scene);
         },
-        // POSED WITH THE BLOOM OPEN — the rooted's rule (a dormant snag is a useless portrait): shut, this
-        // creature is a dog, and the whole reason to look at it is the flower.
         .florid_ravager => {
             cs.thicket.n = 1;
             cs.thicket.live()[0] = ravagermod.Ravager.spawn(mathx.zero3, 0, 1.0, seed);
             cs.thicket.live()[0].stageGather(1.0);
             cs.thicket.draw(scene);
         },
-        // POSED AT THE TOP OF THE GATHER — the rooted's rule, and this creature's most of all: standing
-        // idle it is a cloak with a mushroom on it, and the fire cupped in its hands is the whole subject.
         .mushroom_mage => {
             cs.ring.n = 1;
             cs.ring.live()[0] = magemod.Mage.spawn(mathx.zero3, 0, 1.0, seed);
             cs.ring.live()[0].stageGather(1.0);
             cs.ring.draw(scene);
         },
-        // POSED AT THE TOP OF THE SURGE — the rooted's rule taken to its limit: sunk, this creature is not
-        // drawn AT ALL (`Lurker.draw` refuses while `hidden`), so an unstaged portrait would be an empty
-        // plate. Up and reared is the only frame there is anything to photograph.
         .fen_lurker => {
             cs.marsh.n = 1;
             cs.marsh.live()[0] = fenmod.Lurker.spawn(mathx.zero3, 0, 1.0, seed);
@@ -515,7 +471,6 @@ fn iconLabel(i: usize) [:0]const u8 {
     return item.displayName(@enumFromInt(i - GLYPH_N));
 }
 
-/// One cell of the 2D set: the editor glyph in the set's own line colour, or the bag picture.
 fn drawIconAt(i: usize, cx: f32, cy: f32, size: f32) void {
     if (i < GLYPH_N) {
         icons.draw(@enumFromInt(i), cx, cy, size, ui.VALUE);
@@ -542,9 +497,8 @@ const COLS: i32 = 4;
 const ROWS: i32 = 3;
 const CELL_GAP: i32 = 10;
 const LABEL_H: i32 = 18;
-const HEADER: i32 = 78; // title band + the shelf tabs under it
+const HEADER: i32 = 78;
 const FOOTER: i32 = 44;
-/// Drop from a panel's BOTTOM edge to its footer row — the gallery and the big viewer share it.
 const FOOT_DROP: i32 = 34;
 
 fn perPage() i32 {
@@ -572,15 +526,12 @@ fn pageCount(n: usize) i32 {
     return @max(1, @divTrunc(total + perPage() - 1, perPage()));
 }
 
-/// One row pitch for the readout column
 fn lineH() i32 {
     return ui.ROW_H;
 }
 
 const clampI = mathx.clampI;
 
-/// The SET pickers, one row on every gallery: which of the three collections is up. Returns where the
-/// row got to, so the objects gallery can hang its shelf chips off the end of it.
 fn modeTabs(st: *State, ctx: *ui.Ctx, x0: i32, y: i32) struct { changed: bool, x: i32 } {
     var tx = x0;
     var changed = false;
@@ -653,12 +604,10 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
         }
     }
 
-    // GRAB → DRAG SPINS, RELEASE WITHOUT TRAVEL OPENS.
     if (ctx.pressed) {
         st.grabbed = hover;
         st.travel = 0;
     }
-    // BOUNDS-CHECKED ON BOTH ARMS.
     if (st.grabbed) |g| {
         if (g >= list.len) {
             st.grabbed = null;
@@ -671,12 +620,11 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
                 p.pitch = mathx.clampF(p.pitch - d.y * ROT_RATE, MIN_PITCH, MAX_PITCH);
             }
         } else {
-            if (st.travel <= CLICK_SLOP) st.open = list[g]; // in range: the arm above just checked it
+            if (st.travel <= CLICK_SLOP) st.open = list[g];
             st.grabbed = null;
         }
     }
 
-    // A render/blit pair per cell — twelve off-screen passes a frame, one model over a ground quad at 236x198.
     i = start;
     while (i < end) : (i += 1) {
         const kind = list[i];
@@ -702,7 +650,6 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
         );
     }
 
-    // Off the box's OWN extent, not a second call to the size functions it was built from.
     const by = box.y + box.h - FOOT_DROP;
     if (ui.button(ctx, ui.rect(box.x + 16, by, 44, 24), "<", hud.MONO, false)) st.page = @max(0, st.page - 1);
     if (ui.button(ctx, ui.rect(box.x + 64, by, 44, 24), ">", hud.MONO, false)) st.page = @min(pages - 1, st.page + 1);
@@ -715,7 +662,7 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
 
 
 const BIG_PAD: i32 = 16;
-const INFO_W: i32 = 250; // the readout column beside the object
+const INFO_W: i32 = 250;
 
 fn big(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, kind: Kind) bool {
     const sw = rl.getScreenWidth();
@@ -734,7 +681,7 @@ fn big(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, kind: Kind
 
     const overView = rl.checkCollisionPointRec(ctx.mouse, viewR);
     if (overView and ctx.wheel != 0) p.zoom = mathx.clampF(p.zoom * (1.0 + ZOOM_RATE * ctx.wheel), MIN_ZOOM, MAX_ZOOM);
-    if (ctx.pressed and overView) st.grabbed = 0; // any non-null: this panel has one object
+    if (ctx.pressed and overView) st.grabbed = 0;
     if (st.grabbed != null) {
         if (rl.isMouseButtonDown(.left)) {
             const d = rl.getMouseDelta();
@@ -747,7 +694,6 @@ fn big(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, kind: Kind
     blit(bigRT.?, viewR);
     rl.drawRectangleLinesEx(viewR, 1, ui.alpha(ui.TRIM, 110));
 
-    // THE INFO COLUMN — every number the engine actually reads off this kind.
     const nfo = props.info(kind);
     const x = box.x + w - INFO_W - BIG_PAD;
     var y = box.y + 52;
@@ -949,7 +895,6 @@ fn galleryIcons(st: *State, ctx: *ui.Ctx) bool {
         const on = rl.checkCollisionPointRec(ctx.mouse, r);
         if (on) hover = i;
         rl.drawRectangleRec(r, BACKDROP);
-        // The glyphs draw in the set's own line colour at gallery size; the pictures at their own scale.
         drawIconAt(i, r.x + r.width * 0.5, r.y + r.height * 0.5, @min(r.width, r.height) * 0.62);
         rl.drawRectangleLinesEx(r, 1, ui.alpha(if (on) ui.HOT else ui.TRIM, if (on) 220 else 70));
         const name = iconLabel(i);
@@ -986,14 +931,10 @@ fn bigIcon(st: *State, ctx: *ui.Ctx, at: usize) bool {
     return true;
 }
 
-/// Where the cell fires from. The POUR is started half its own reach UPWIND so the whole stream sits in
-/// frame — a bench framed on the nozzle photographs the first metre of a six-metre effect.
 fn benchAt(v: Verb) rl.Vector3 {
     return if (v == .pour) v3(0, 1.05, combat.RIME_REACH * 0.5) else BENCH_AT;
 }
 
-/// A STREAM THAT VARIES: seeded off the ring's own head, which advances with every mote emitted. Seeded off
-/// the loop clock instead, every re-fire came out as the same burst replayed.
 fn benchRng(st: *const State) mathx.Rng {
     return mathx.Rng.init(@as(u64, st.fxHead) *% 2654435761 +% 0x8BEF);
 }
@@ -1003,7 +944,7 @@ fn benchFire(st: *State) void {
     switch (st.verb) {
         .gather => elemfx.gather(&st.fx, &st.fxHead, &rng, benchAt(.gather), st.elem, 26, 0.55, 1.0),
         .burst => elemfx.burst(&st.fx, &st.fxHead, &rng, benchAt(.burst), BENCH_DIR, st.elem, 24, 1.0),
-        .pour => {}, // a stream is not fired, it runs — see `benchStep`
+        .pour => {},
     }
 }
 
@@ -1014,8 +955,6 @@ fn benchClear(st: *State) void {
     st.fxAcc = 0;
 }
 
-/// One frame of the bench. THROUGH `elemfx` AND `foe.tickParticles`, the same two calls the game makes —
-/// a bench with its own integrator would be tuning something the game does not draw.
 fn benchStep(st: *State, dt: f32) void {
     st.fxT += dt;
     if (st.verb == .pour) {
@@ -1028,7 +967,6 @@ fn benchStep(st: *State, dt: f32) void {
         st.fxT = 0;
         benchFire(st);
     }
-    // Floored at 0 — which is most of what says COLD, since it is the one that lies about on the ground.
     foemod.tickParticles(&st.fx, dt, 0);
 }
 
@@ -1046,7 +984,6 @@ fn renderBench(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, st: 
     const view = envmod.View.fromCamera(cam, aspect);
     env.drawGround(&view);
     scene.setGround(false);
-    // …and the particles LAST and unlit, which is where they come in the world's own frame too.
     foemod.drawParticles(&st.fx);
     rl.endMode3D();
     rl.endTextureMode();
@@ -1069,7 +1006,7 @@ fn benchPanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) boo
         var usedW: i32 = 0;
         if (ui.chip(ctx, tx, ey, combat.elemName(e), st.elem == e, &usedW) and st.elem != e) {
             st.elem = e;
-            benchClear(st); // the old element's motes must not hang in the new one's picture
+            benchClear(st);
         }
         tx += usedW;
     }
@@ -1098,14 +1035,11 @@ fn benchPanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) boo
         } else st.grabbed = null;
     }
 
-    // THE BENCH RUNS ON THE WALL CLOCK, which is the whole point of it: this is the editor, it is never in
-    // `--shot`, and an effect stepped by anything but real time is not the effect being judged.
     benchStep(st, mathx.minF(rl.getFrameTime(), 0.05));
     renderBench(target(&bigRT, BIG_W, BIG_H), env, scene, st);
     blit(bigRT.?, viewR);
     rl.drawRectangleLinesEx(viewR, 1, ui.alpha(ui.TRIM, 110));
 
-    // THE NUMBERS BEING TUNED, beside the thing they make. Every one of them is a field of `elemfx.Sig`.
     const sig = elemfx.sig(st.elem);
     const x = box.x + w - INFO_W - BIG_PAD;
     var y = box.y + 52;
@@ -1127,14 +1061,12 @@ fn benchPanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) boo
         y += line;
     }
     y += 4;
-    // The two swatches, drawn rather than printed: a colour is not a number anybody reads.
     inline for (.{ .{ "core", sig.core }, .{ "edge", sig.edge } }) |row| {
         hud.mono(row[0], x, y, hud.MONO, ui.alpha(ui.LABEL, 210));
         rl.drawRectangleRec(ui.rect(x + 56, y + 2, 46, line - 6), row[1]);
         y += line;
     }
     y += 4;
-    // …and the two facts that are a YES or a NO rather than a dial, which are half of what tells the four apart.
     const marks = std.fmt.bufPrintZ(&buf, "inward {s}  ash {s}", .{
         if (sig.inward) "yes" else "no",
         if (sig.ash != null) "yes" else "no",
@@ -1158,7 +1090,6 @@ fn benchPanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) boo
     return true;
 }
 
-/// What is actually in the air — the one number that says whether the pool is big enough for this cell.
 fn liveParts(st: *const State) usize {
     var n: usize = 0;
     for (st.fx) |q| {
@@ -1199,7 +1130,6 @@ pub fn draw(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool 
     }
 }
 
-/// ESC / right-click backs out ONE level: the big viewer to the gallery, the gallery to the map.
 pub fn back(st: *State) bool {
     if (st.openIcon != null) {
         st.openIcon = null;

@@ -23,8 +23,6 @@ const v3 = mathx.v3;
 // test pins both. Retuning the path without moving the anchor is what silently re-lights 362 photographs.
 
 pub const HOURS: f32 = 24.0;
-/// When the sun clears the horizon and when it goes back under it. A LONG day (14 h) and a shorter night, so
-/// "morning" and "evening" are places you can actually be sent to rest until.
 pub const SUNRISE: f32 = 6.0;
 pub const SUNSET: f32 = 20.0;
 pub const DAY_SPAN: f32 = SUNSET - SUNRISE;
@@ -42,7 +40,6 @@ const AZ_SET: f32 = 262.0;
 /// **MOVE `AZ_RISE`/`AZ_SET` AND BOTH OF THESE MOVE WITH THEM** — solve them again, do not nudge them. The
 /// first test below is what fails if you don't, and what it is protecting is 362 photographs.
 pub const SUN_ALT_MAX: f32 = 61.8895;
-/// The one hour `--shot` runs at, and the light every reference frame in `shots/` was judged under.
 pub const SHOT_HOUR: f32 = 17.45283;
 
 /// WHERE A BONFIRE'S "REST UNTIL EVENING" PUTS YOU — 9 pm, and **the sun is DOWN there** (owner's call). It is
@@ -55,8 +52,6 @@ comptime {
     std.debug.assert(EVENING_HOUR > SUNSET);
 }
 
-/// The lowest altitude the CASTING direction is allowed to reach — see the note above. About the sun at
-/// half past six on a summer evening, which is as long as a shadow the box can hold.
 const KEY_ALT_MIN: f32 = 15.0;
 
 /// **WHEN THE CASTER CHANGES HANDS, AND IT IS NOT SUNRISE AND SUNSET.**
@@ -73,7 +68,6 @@ const KEY_SWAP_DAWN: f32 = 5.0;
 const KEY_SWAP_DUSK: f32 = 20.8;
 
 comptime {
-    // Inside the night on both sides, or the swap is happening while the sun is genuinely up.
     std.debug.assert(KEY_SWAP_DAWN < SUNRISE);
     std.debug.assert(KEY_SWAP_DUSK > SUNSET);
 }
@@ -83,43 +77,30 @@ comptime {
 /// being somewhere else next frame. Kept inside the dim band, so the sweep never runs during sunset.
 const KEY_SWAP_FADE: f32 = 0.45;
 
-/// HOW MUCH OF THE KEY IS THE MOON'S, 0..1 — the sun's alone by day, the moon's alone by night, and a smooth
-/// crossing at each end. Its own function because both the direction and every question about which body is
-/// casting are answers to this one number.
 fn moonShare(hour: f32) f32 {
     const h = wrapHour(hour);
     // The dusk crossing, and the dawn one measured the same way on the other side of midnight. `hoursUntil`-style
     // wrapping is not needed: both windows are well inside the night, which the comptime block above pins.
     if (h > SUNSET) return mathx.smoothstep(KEY_SWAP_DUSK - KEY_SWAP_FADE, KEY_SWAP_DUSK + KEY_SWAP_FADE, h);
     if (h < SUNRISE) return 1.0 - mathx.smoothstep(KEY_SWAP_DAWN - KEY_SWAP_FADE, KEY_SWAP_DAWN + KEY_SWAP_FADE, h);
-    return 0; // broad daylight
+    return 0;
 }
 
-/// WHICH WAY ROUND THE HANDOVER TURNS. The sun's own azimuth sweeps from `AZ_RISE` toward `AZ_SET`, so the key
-/// carries on the same way rather than doubling back — a light that reversed its travel to change hands would be
-/// a second thing to notice at the one moment this whole window exists to make unremarkable.
 const KEY_SWEEP: f32 = if (AZ_SET > AZ_RISE) 1.0 else -1.0;
 
-/// A DAY IN REAL MINUTES at the default rate. Twenty is slow enough that an hour of light is a minute of
-/// play — you notice the shadows have moved, you never watch them move.
 pub const DAY_MINUTES: f32 = 20.0;
 pub const RATE_DEFAULT: f32 = HOURS / (DAY_MINUTES * 60.0);
 
-/// Wrap an hour into [0, 24).
 pub fn wrapHour(h: f32) f32 {
     if (!std.math.isFinite(h)) return SHOT_HOUR;
     const r = @rem(h, HOURS);
     return if (r < 0) r + HOURS else r;
 }
 
-/// THE DEBUG SPEEDS, as multiples of the standard day — what the pause menu's Day Speed row walks. The top of
-/// the range is a day in TEN SECONDS, which is the point of the row: at 1x the sky moving is something you
-/// notice having happened, and to check the clock runs at all you need to be able to WATCH it.
 pub const RATE_MULTS = [_]f32{ 1, 4, 20, 120 };
 
 pub const Clock = struct {
     hour: f32 = SHOT_HOUR,
-    /// Game hours a real second. Zero is a held clock, which is what the editor and `--shot` want.
     rate: f32 = RATE_DEFAULT,
     /// THE RATE A HOLD COMES BACK TO, so the two debug rows cannot fight: pick a speed, hold the clock to look
     /// at something, let it go, and it runs at the speed you picked rather than silently back at the default.
@@ -132,15 +113,12 @@ pub const Clock = struct {
     pub fn set(self: *Clock, h: f32) void {
         self.hour = wrapHour(h);
     }
-    /// SCRUBBED BY HAND — the debug menu's and the editor's one control. Hours, signed.
     pub fn nudge(self: *Clock, dh: f32) void {
         self.set(self.hour + dh);
     }
     pub fn frozen(self: *const Clock) bool {
         return self.rate == 0;
     }
-    /// …and the toggle behind it. It REMEMBERS the speed (`resumeRate`) rather than snapping back to the
-    /// standard one, or holding the clock for a moment would quietly undo the Day Speed row every time.
     pub fn freeze(self: *Clock, on: bool) void {
         if (!on) {
             self.rate = self.resumeRate;
@@ -150,9 +128,6 @@ pub const Clock = struct {
         self.rate = 0;
     }
 
-    /// HOW MANY TIMES THE STANDARD DAY it is set to run at — the SETTING, so a held clock still reports the speed
-    /// it will start at rather than zero. Whether it is running at all is `frozen()`, which is a separate
-    /// question and is asked separately.
     pub fn speed(self: *const Clock) f32 {
         return (if (self.rate == 0) self.resumeRate else self.rate) / RATE_DEFAULT;
     }
@@ -163,8 +138,6 @@ pub const Clock = struct {
         return HOURS / mathx.maxF(self.speed() * RATE_DEFAULT, 1e-6);
     }
 
-    /// THE NEXT SPEED UP, wrapping. Setting the speed of a HELD clock sets the speed it will start at and leaves
-    /// it held: one row says how fast and the other says whether, and neither reaches into the other's answer.
     pub fn cycleSpeed(self: *Clock) void {
         const cur = self.speed();
         var at: usize = 0;
@@ -180,8 +153,6 @@ pub const Clock = struct {
     }
 };
 
-/// A DAY'S LENGTH IN WORDS, for the row that sets it — minutes while there are minutes in it, seconds once the
-/// whole day is shorter than the pause it takes to read the label.
 pub fn dayLenText(c: *const Clock, buf: []u8) [:0]const u8 {
     const s = c.dayLen();
     if (s >= 90.0) return std.fmt.bufPrintZ(buf, "{d:.0} min", .{s / 60.0}) catch "?";
@@ -189,14 +160,12 @@ pub fn dayLenText(c: *const Clock, buf: []u8) [:0]const u8 {
 }
 
 
-/// 0..1 through the DAY for an hour inside it; outside it, the value runs on past the ends, which is what
-/// makes the azimuth sweep continuous across both knots.
 fn dayU(hour: f32) f32 {
     const h = wrapHour(hour);
     if (h >= SUNRISE and h <= SUNSET) return (h - SUNRISE) / DAY_SPAN;
     // Night: measured FORWARD from sunset, wrapping through midnight, so 24:00 and 00:00 are the same point.
     const past = if (h > SUNSET) h - SUNSET else h + (HOURS - SUNSET);
-    return 1.0 + past / NIGHT_SPAN; // 1 at sunset → 2 at sunrise
+    return 1.0 + past / NIGHT_SPAN;
 }
 
 pub fn isDay(hour: f32) bool {
@@ -213,7 +182,6 @@ pub fn spanU(hour: f32) f32 {
     return if (u <= 1.0) u else u - 1.0;
 }
 
-/// 0 at both horizons, 1 at noon — the daylight dial every palette key is really about.
 pub fn dayAmt(hour: f32) f32 {
     if (!isDay(hour)) return 0;
     return mathx.sinf(std.math.pi * dayU(hour));
@@ -226,11 +194,8 @@ fn dirFrom(azDeg: f32, altDeg: f32) rl.Vector3 {
     return v3(mathx.sinf(az) * c, mathx.sinf(alt), mathx.cosf(az) * c);
 }
 
-/// The sun's TRUE direction (surface → sun). Below the horizon at night, which is the point of it.
 pub fn sunDir(hour: f32) rl.Vector3 {
     const u = dayU(hour);
-    // One sine over the whole run: positive through the day, negative through the night, and zero at both
-    // knots — so nothing pops at sunrise or sunset and midnight is the deepest point under the world.
     const alt = SUN_ALT_MAX * mathx.sinf(std.math.pi * u);
     // **THE BEARING GOES ALL THE WAY ROUND ONCE A DAY, AND THE NIGHT CARRIES THE PART OF THE CIRCLE THE DAY
     // DOES NOT.** Swept at the day's own rate through the night, `u = 2` lands 36 degrees short of a full
@@ -242,20 +207,14 @@ pub fn sunDir(hour: f32) rl.Vector3 {
     return dirFrom(az, alt);
 }
 
-/// …and the MOON, which is the anti-sun: one of the two is always up, so the world is never unlit.
 pub fn moonDir(hour: f32) rl.Vector3 {
     const s = sunDir(hour);
     return v3(-s.x, -s.y, -s.z);
 }
 
-/// WHAT CASTS THIS HOUR — the sun while it is up, the moon once it is not, with the altitude floored so the
-/// shadow map stays a shadow map (see the note at the top). The bearing is never floored: a low sun's
-/// shadows must still point the right way, and that is the half the eye actually reads.
 pub fn keyDir(hour: f32) rl.Vector3 {
     const s = sunDir(hour);
     const share = moonShare(hour);
-    // **THE HANDOVER IS A SWEEP, NOT A PICK.** The moon is the anti-sun, so "which of the two is casting" is
-    // exactly a HALF TURN of the bearing and a SIGN on the altitude — and both of those can be crossed gradually.
     const az = std.math.atan2(s.x, s.z) + std.math.pi * share * KEY_SWEEP;
     const alt = std.math.asin(mathx.clampF(s.y, -1, 1)) * (1.0 - 2.0 * share);
     // …AND THE FLOOR, which is what makes a caster under the horizon usable at all (see the note at the top): the
@@ -267,54 +226,33 @@ pub fn keyDir(hour: f32) rl.Vector3 {
     return v3(mathx.sinf(az) * c, y, mathx.cosf(az) * c);
 }
 
-/// HOW FAR SIDEWAYS A CASTER THROWS ITS SHADOW, per metre of its own height — this is what `gfx.sunReach`
-/// holds, written once a frame by `gfx.Scene.setHour` and read by `env`'s shadow box. It is
-/// cot(altitude) of whatever is casting, so it grows as the light drops — read off `keyDir`, which is what
-/// floors it, and therefore bounded by construction rather than by hope.
 pub fn shadowReach(hour: f32) f32 {
     return reachOf(keyDir(hour));
 }
 
-/// …off a DIRECTION rather than an hour, for the one caller that has the vector and not the clock (`gfx`'s
-/// own starting `sunReach`, at the anchor). The arithmetic sits here and not there: inlined at that
-/// initializer it was a second copy of this line, and it had lost the altitude floor on the way over.
 pub fn reachOf(d: rl.Vector3) f32 {
     return mathx.lenXZ(d) / mathx.maxF(d.y, 1e-3);
 }
 
 
-/// EVERY COLOUR THE HOUR DECIDES, in one struct so the whole look of a time of day is ONE row of a table and
-/// never a set of numbers scattered over two shaders.
 pub const Palette = struct {
     /// The KEY, colour and strength in one: the shader multiplies it by the hot 1.72 and the wrap term, so
     /// dropping this toward black IS nightfall. The moon's is cold and about a tenth of noon's.
     key: rl.Vector3,
-    /// The hemisphere ambient — what faces the ground, and what faces the sky.
     ambGround: rl.Vector3,
     ambSky: rl.Vector3,
-    /// Distance haze, and the warm bank it takes on looking into the light's own quarter. **AT THE DARK HOURS
-    /// IT MUST SIT UNDER WHAT THE GROUND IS LIT TO**, or the distance comes out brighter than the foreground and
-    /// reads as FOG rather than as nightfall — the first pass carried the anchor's daylight haze into dusk and
-    /// the cliffs forty metres out glowed pale lavender over a black field.
     haze: rl.Vector3,
     hazeBank: rl.Vector3,
-    /// The sky's three stops, horizon → middle → zenith.
     skyLow: rl.Vector3,
     skyMid: rl.Vector3,
     skyHigh: rl.Vector3,
-    /// The bank of colour laid along the horizon under the light, the aureole around it, and the disc itself.
     skyBank: rl.Vector3,
     skyGlow: rl.Vector3,
     skyDisc: rl.Vector3,
-    /// The cloud deck, shadowed side and lit side.
     cloudDark: rl.Vector3,
     cloudLit: rl.Vector3,
-    /// How much of the star field is out, 0..1 — and it is its OWN dial rather than `1 - dayAmt` because the
-    /// stars have to be gone well before the sky finishes brightening or dawn reads as a switch being thrown.
     stars: f32,
 
-    /// FIELD BY FIELD OFF THE STRUCT ITSELF, so a colour added to the palette is blended by existing;
-    /// written out by hand it is one more place for a new key to be carried by the first row all day.
     fn lerp(a: Palette, b: Palette, t: f32) Palette {
         var out: Palette = a;
         inline for (@typeInfo(Palette).@"struct".fields) |f| {
@@ -346,15 +284,10 @@ pub const Palette = struct {
 // **AND EVERY TERM IS A FACTOR ON THE HOUR'S OWN VALUE, NEVER A CONSTANT.** An overcast midnight has to stay
 // midnight: a storm palette written as absolute colours would light the world at 3 a.m.
 
-/// What is left of the key under a full storm — the sun, behind a deck.
 const STORM_KEY: f32 = 0.34;
-/// …and how far the distance closes in on you. The COLOUR moves with it; the DENSITY is `gfx.HAZE_STORM`.
 const STORM_HAZE: f32 = 1.70;
-/// The ambient barely moves: a cloud deck is a light, not a lid. It is the TINT that changes.
 const STORM_AMB: f32 = 1.06;
 
-/// DESATURATED AND COLD — what cloud light is. Luma-preserving, so this changes the hue of a colour and not
-/// its level, which is what keeps every term below honest at every hour.
 fn slate(c: rl.Vector3) rl.Vector3 {
     const l = 0.299 * c.x + 0.587 * c.y + 0.114 * c.z;
     return v3(l * 0.86, l * 0.96, l * 1.14);
@@ -364,62 +297,38 @@ fn toward(c: rl.Vector3, target: rl.Vector3, k: f32) rl.Vector3 {
     return mathx.lerpV(c, target, k);
 }
 
-/// **THE HOUR AS THE STORM LEAVES IT.** `wet` is `weather.Weather.rain()`, 0..1 — and at 0 this is the
-/// identity, which is what lets the whole system be one multiply at the top of `Scene.setHour`.
 pub fn overcast(p: Palette, wet: f32) Palette {
     const k = mathx.clampF(wet, 0, 1);
     if (k <= 0) return p;
     var o = p;
-    // THE KEY GOES OUT. This is the whole of it: the shadows soften away with it, every specular in the
-    // scene dims through `keyAmt`, and the world stops having a direction its light comes from.
     o.key = toward(p.key, mathx.scaleV(slate(p.key), STORM_KEY), k);
-    // …AND THE AMBIENT DOES NOT. What arrives instead of the sun is the whole sky at once.
     o.ambSky = toward(p.ambSky, mathx.scaleV(slate(p.ambSky), STORM_AMB), k);
     o.ambGround = toward(p.ambGround, mathx.scaleV(slate(p.ambGround), STORM_AMB), k);
-    // THE DISTANCE CLOSES. Lifted as well as greyed, which is what makes it read as air with water in it
-    // rather than as the far field simply going dark.
     o.haze = toward(p.haze, mathx.scaleV(slate(p.haze), STORM_HAZE), k);
-    // …and the WARM BANK looking into the light goes with the light. There is nothing to look into.
     o.hazeBank = toward(p.hazeBank, mathx.scaleV(slate(p.hazeBank), 0.15), k);
-    // THE SKY IS ONE LID. Three stops blended onto the middle one's slate, so the gradient flattens instead
-    // of the dome going grey in three separate places.
     const lid = mathx.scaleV(slate(p.skyMid), 0.82);
-    o.skyLow = toward(p.skyLow, mathx.scaleV(lid, 1.10), k); // …a hair brighter at the horizon, as a deck is
+    o.skyLow = toward(p.skyLow, mathx.scaleV(lid, 1.10), k);
     o.skyMid = toward(p.skyMid, lid, k);
     o.skyHigh = toward(p.skyHigh, mathx.scaleV(lid, 0.86), k);
     // NO DISC AND NO AUREOLE: you cannot see the sun through this.
     o.skyBank = toward(p.skyBank, mathx.scaleV(slate(p.skyBank), 0.20), k);
     o.skyGlow = toward(p.skyGlow, mathx.scaleV(slate(p.skyGlow), 0.14), k);
     o.skyDisc = toward(p.skyDisc, mathx.scaleV(slate(p.skyDisc), 0.10), k);
-    // …and the deck itself is dark and even, which is what a storm cloud is from underneath.
     o.cloudDark = toward(p.cloudDark, mathx.scaleV(slate(p.cloudDark), 0.52), k);
     o.cloudLit = toward(p.cloudLit, mathx.scaleV(slate(p.cloudLit), 0.60), k);
-    o.stars = mathx.lerpF(p.stars, 0, k); // blotted out
+    o.stars = mathx.lerpF(p.stars, 0, k);
     return o;
 }
 
-/// HOW BRIGHT THIS HOUR'S KEY IS AGAINST THE HOUR THE SPECULARS WERE AUTHORED AT — 1 at the anchor. Every
-/// highlight in the scene shader (steel's glint, marble's sheen, the water's glitter path) is a mirror of the
-/// key, and mirrors do not stay bright when the thing they reflect goes out: left at full, a drawn blade blazed
-/// like noon under a half moon. Luma-weighted, because what a highlight borrows is the key's BRIGHTNESS.
 pub fn keyAmt(p: Palette) f32 {
     const luma = 0.299 * p.key.x + 0.587 * p.key.y + 0.114 * p.key.z;
     return mathx.clampF(luma / ANCHOR_KEY_LUMA, 0, 4);
 }
-/// …the anchor's own, written out rather than computed off the table so this is a CONSTANT and not a lookup
-/// (`paletteAt(SHOT_HOUR)` would be a walk of the keys on every frame). A test pins the two together.
 const ANCHOR_KEY_LUMA: f32 = 1.13158; // luma(1.32, 1.10, 0.80)
 
 const Key = struct { at: f32, p: Palette };
 
-/// MIDNIGHT — moonlight, and it is nearly monochrome: a cold key, a cold ambient, and the only warmth in the
-/// world coming off the fires themselves (the point lights are untouched by any of this). Hoisted out of the
-/// table below because it is THREE of its rows — hour 0, the small hours, and hour 24 — which is what makes
-/// the wrap through midnight a blend rather than a seam.
 const NIGHT_P = Palette{
-    // MOONLIGHT DESATURATES, it does not merely dim: a night whose key keeps the sun's warmth is an overcast
-    // afternoon with the brightness turned down, which is exactly how the first pass read. So the red channel
-    // goes furthest down and the blue leads — and the level is low enough that the FIRES are what you steer by.
     .key = v3(0.048, 0.064, 0.118),
     .ambGround = v3(0.010, 0.012, 0.020),
     .ambSky = v3(0.026, 0.034, 0.058),
@@ -430,7 +339,7 @@ const NIGHT_P = Palette{
     .skyHigh = v3(0.012, 0.016, 0.036),
     .skyBank = v3(0.060, 0.074, 0.115),
     .skyGlow = v3(0.220, 0.240, 0.300),
-    .skyDisc = v3(0.860, 0.885, 0.940), // the MOON: pale, and the brightest thing in the sky
+    .skyDisc = v3(0.860, 0.885, 0.940),
     .cloudDark = v3(0.022, 0.026, 0.042),
     .cloudLit = v3(0.090, 0.100, 0.130),
     .stars = 1.0,
@@ -444,8 +353,6 @@ const NIGHT_P = Palette{
 /// reference frame in `shots/` is that row. Everything else in this table is free.
 const KEYS = [_]Key{
     .{ .at = 0.0, .p = NIGHT_P },
-    // THE LAST OF THE DARK, an hour before the sun. The east has begun to go grey-blue and the stars are
-    // going out from the bottom up.
     .{ .at = 5.0, .p = .{
         .key = v3(0.088, 0.104, 0.168),
         .ambGround = v3(0.019, 0.021, 0.031),
@@ -462,8 +369,6 @@ const KEYS = [_]Key{
         .cloudLit = v3(0.260, 0.190, 0.200),
         .stars = 0.42,
     } },
-    // SUNRISE. The one moment the light comes in flat along the ground: a deep red key, the longest shadows
-    // the box will hold, and a horizon bank that reaches most of the way up the sky.
     .{ .at = 6.0, .p = .{
         .key = v3(0.940, 0.395, 0.180),
         .ambGround = v3(0.046, 0.038, 0.038),
@@ -483,8 +388,6 @@ const KEYS = [_]Key{
         .cloudLit = v3(0.800, 0.390, 0.210),
         .stars = 0.0,
     } },
-    // MORNING — the warmth burning off, the sky opening up cool and clean. The hour "rest until morning"
-    // puts you in, and it is deliberately the CLEAREST light in the day: the fight reads best here.
     .{ .at = 8.5, .p = .{
         .key = v3(1.250, 1.070, 0.860),
         .ambGround = v3(0.076, 0.076, 0.070),
@@ -501,8 +404,6 @@ const KEYS = [_]Key{
         .cloudLit = v3(0.560, 0.560, 0.540),
         .stars = 0.0,
     } },
-    // NOON. The flattest, least interesting light there is, and it is meant to be: a world with no golden
-    // hour in it has nothing to lose when one arrives. Pale key, high cold sky, almost no bank.
     .{ .at = 12.0, .p = .{
         // NOT HOTTER THAN THE ANCHOR, just WHITER. The anchor's key was measured against real renders to sit
         // just under the clip (AGENTS.md's albedo rule), so a noon that pushed every channel past it blew the
@@ -522,8 +423,6 @@ const KEYS = [_]Key{
         .cloudLit = v3(0.660, 0.680, 0.680),
         .stars = 0.0,
     } },
-    // THE ANCHOR — the golden hour the whole game was authored and photographed under. Every number in this
-    // row came out of the two shaders; see the note above the table before touching one.
     .{ .at = SHOT_HOUR, .p = .{
         .key = v3(1.320, 1.100, 0.800),
         .ambGround = v3(0.090, 0.076, 0.054),
@@ -540,14 +439,12 @@ const KEYS = [_]Key{
         .cloudLit = v3(0.400, 0.310, 0.200),
         .stars = 0.0,
     } },
-    // SUNSET, and it is the loudest the sky ever gets: the whole west banked over, the key gone to blood, and
-    // the cloud deck lit from underneath.
     .{ .at = 19.4, .p = .{
         .key = v3(1.020, 0.430, 0.185),
         .ambGround = v3(0.052, 0.042, 0.040),
         .ambSky = v3(0.132, 0.136, 0.186),
         .haze = v3(0.066, 0.050, 0.048),
-        .hazeBank = v3(0.310, 0.135, 0.050), // the sunrise's reason, one notch louder: this is the LAST of it
+        .hazeBank = v3(0.310, 0.135, 0.050),
         .skyLow = v3(0.740, 0.320, 0.150),
         .skyMid = v3(0.380, 0.250, 0.265),
         .skyHigh = v3(0.120, 0.145, 0.245),
@@ -558,11 +455,6 @@ const KEYS = [_]Key{
         .cloudLit = v3(0.940, 0.400, 0.170),
         .stars = 0.0,
     } },
-    // DUSK — the sun gone, the west still holding a band of it, and the first stars out overhead, and it is
-    // already cool because there is no sun left in it. **THIS ROW IS ALSO WHERE THE CASTER CHANGES HANDS**
-    // (`KEY_SWAP_DUSK`): its key is the dimmest of the ramp, which is the only place a 180-degree flip of the one
-    // shadow-casting light can happen without reading as a switch being thrown. Lowering this key makes that
-    // moment quieter still; raising it makes the swap visible again.
     .{ .at = 20.8, .p = .{
         .key = v3(0.130, 0.150, 0.230),
         .ambGround = v3(0.020, 0.022, 0.032),
@@ -579,23 +471,16 @@ const KEYS = [_]Key{
         .cloudLit = v3(0.290, 0.180, 0.170),
         .stars = 0.55,
     } },
-    // NIGHT PROPER, and the wrap.
     .{ .at = 22.5, .p = NIGHT_P },
     .{ .at = HOURS, .p = NIGHT_P },
 };
 
 comptime {
-    // Ordered, and it spans the whole clock — `paletteAt` walks it forward and interpolates between
-    // neighbours, so an out-of-order row is a look that jumps backwards at one hour of the day.
     std.debug.assert(KEYS[0].at == 0);
     std.debug.assert(KEYS[KEYS.len - 1].at == HOURS);
     for (KEYS[1..], 0..) |k, i| std.debug.assert(k.at > KEYS[i].at);
 }
 
-/// THE LOOK AT AN HOUR — the two keys either side of it, blended with the ease taken off both ends. A linear
-/// walk between keys puts a CORNER in the light at every row (the eye reads a rate change in a sky's colour
-/// far more readily than it reads the colour), and dawn arriving as a ramp that stops dead is the whole
-/// difference between a cycle and a slideshow.
 pub fn paletteAt(hour: f32) Palette {
     const h = wrapHour(hour);
     var i: usize = 0;
@@ -609,16 +494,13 @@ pub fn paletteAt(hour: f32) Palette {
 }
 
 
-/// THE HOURS A BONFIRE WILL HOLD YOU UNTIL, and the only times in the day with names. Two, because two is
-/// what the owner asked for and because they are the two that change how a fight goes: the clearest light in
-/// the day, and the dark after it.
 pub const Until = enum {
     morning,
     evening,
 
     pub fn hour(u: Until) f32 {
         return switch (u) {
-            .morning => 8.5, // the MORNING key — the clean, cold light
+            .morning => 8.5,
             .evening => EVENING_HOUR,
         };
     }
@@ -637,12 +519,10 @@ pub fn hoursUntil(from: f32, to: f32) f32 {
     return if (d <= 1e-4) HOURS else d;
 }
 
-/// The clock as a 24-hour readout, for the debug corner and the editor's status line.
 pub fn clockText(hour: f32, buf: []u8) []const u8 {
     return clockTextZ(hour, buf);
 }
 
-/// …and the same readout NUL-terminated, which is what every text path in this codebase takes (`hud.text`).
 pub fn clockTextZ(hour: f32, buf: []u8) [:0]const u8 {
     const h = wrapHour(hour);
     const hh: u32 = @intFromFloat(@floor(h));
@@ -650,7 +530,6 @@ pub fn clockTextZ(hour: f32, buf: []u8) [:0]const u8 {
     return std.fmt.bufPrintZ(buf, "{d:0>2}:{d:0>2}", .{ hh % 24, mm % 60 }) catch "--:--";
 }
 
-/// …and the PHASE it is in, which is what a one-line readout actually wants to say.
 pub fn phaseName(hour: f32) [:0]const u8 {
     const h = wrapHour(hour);
     if (h < 5.0) return "night";
@@ -681,14 +560,13 @@ test "SHOT_HOUR REPRODUCES THE SUN THE GAME WAS PHOTOGRAPHED UNDER — 362 refer
     try std.testing.expectApproxEqAbs(ANCHOR_DIR.x, d.x, TOL);
     try std.testing.expectApproxEqAbs(ANCHOR_DIR.y, d.y, TOL);
     try std.testing.expectApproxEqAbs(ANCHOR_DIR.z, d.z, TOL);
-    // …and the anchor is the SUN and not the floored key: the golden hour is well above the floor.
     const s = sunDir(SHOT_HOUR);
     try std.testing.expectApproxEqAbs(ANCHOR_DIR.y, s.y, TOL);
 }
 
 test "keyAmt is exactly 1 at the anchor, and the specular dims with the light everywhere else" {
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), keyAmt(paletteAt(SHOT_HOUR)), 1e-4);
-    try std.testing.expect(keyAmt(paletteAt(0)) < 0.15); // a blade under a half moon is not a blade at noon
+    try std.testing.expect(keyAmt(paletteAt(0)) < 0.15);
     try std.testing.expect(keyAmt(paletteAt(12)) > 1.0);
     var h: f32 = 0;
     while (h < HOURS) : (h += 0.05) try std.testing.expect(keyAmt(paletteAt(h)) >= 0);
@@ -699,20 +577,19 @@ test "the palette's anchor row IS the numbers the two shaders carried" {
     try std.testing.expectApproxEqAbs(@as(f32, 1.32), p.key.x, 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 1.10), p.key.y, 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 0.80), p.key.z, 1e-5);
-    try std.testing.expectApproxEqAbs(@as(f32, 0.078), p.haze.x, 1e-5); // gfx.HAZE
+    try std.testing.expectApproxEqAbs(@as(f32, 0.078), p.haze.x, 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 0.070), p.haze.y, 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 0.056), p.haze.z, 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 0.168), p.ambSky.x, 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 0.325), p.skyLow.x, 1e-5);
-    try std.testing.expectApproxEqAbs(@as(f32, 0.0), p.stars, 1e-6); // no stars in the golden hour
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), p.stars, 1e-6);
 }
 
 test "the sun rises in the east, sets in the west, and is under the world at midnight" {
     try std.testing.expect(sunDir(SUNRISE).y < 1e-4 and sunDir(SUNRISE).y > -1e-4);
     try std.testing.expect(sunDir(SUNSET).y < 1e-4 and sunDir(SUNSET).y > -1e-4);
-    try std.testing.expect(sunDir(12.0).y > 0.8); // high at noon
-    try std.testing.expect(sunDir(0.0).y < -0.5); // and well under it at midnight
-    // The bearing sweeps ONE WAY through the day — never doubles back, which would swing the shadows.
+    try std.testing.expect(sunDir(12.0).y > 0.8);
+    try std.testing.expect(sunDir(0.0).y < -0.5);
     var prev = mathx.headingXZ(sunDir(SUNRISE));
     var h: f32 = SUNRISE + 0.25;
     while (h <= SUNSET) : (h += 0.25) {
@@ -727,12 +604,11 @@ test "ONE DIRECTION ALWAYS CASTS, AND ITS ALTITUDE IS FLOORED — the shadow box
     var h: f32 = 0;
     while (h < HOURS) : (h += 0.05) {
         const d = keyDir(h);
-        try std.testing.expectApproxEqAbs(@as(f32, 1.0), mathx.lenV(d), 1e-4); // always a unit vector…
-        try std.testing.expect(d.y >= floorY - 1e-4); // …and never grazing
+        try std.testing.expectApproxEqAbs(@as(f32, 1.0), mathx.lenV(d), 1e-4);
+        try std.testing.expect(d.y >= floorY - 1e-4);
         try std.testing.expect(std.math.isFinite(shadowReach(h)));
-        try std.testing.expect(shadowReach(h) <= 1.0 / floorY); // bounded, which is what the cull needs
+        try std.testing.expect(shadowReach(h) <= 1.0 / floorY);
     }
-    // …and at night it is the MOON that casts, from the opposite quarter of the sky.
     const night = keyDir(1.0);
     const sunAt1 = sunDir(1.0);
     try std.testing.expect(night.x * sunAt1.x + night.z * sunAt1.z < 0);
@@ -743,7 +619,6 @@ test "MIDNIGHT IS A BLEND AND NOT A SEAM — the palette is continuous across th
     const after = paletteAt(0.001);
     try std.testing.expectApproxEqAbs(before.key.x, after.key.x, 2e-3);
     try std.testing.expectApproxEqAbs(before.skyHigh.z, after.skyHigh.z, 2e-3);
-    // …and so is every other hour: no step between neighbouring samples anywhere on the clock.
     var h: f32 = 0;
     var prev = paletteAt(0);
     while (h < HOURS) : (h += 0.02) {
@@ -755,10 +630,9 @@ test "MIDNIGHT IS A BLEND AND NOT A SEAM — the palette is continuous across th
 }
 
 test "NIGHT IS DARK AND DAY IS NOT — the key is what carries it, so the bars can be read either way" {
-    try std.testing.expect(paletteAt(0).key.x < 0.2); // moonlight
-    try std.testing.expect(paletteAt(12).key.x > 1.2); // noon
+    try std.testing.expect(paletteAt(0).key.x < 0.2);
+    try std.testing.expect(paletteAt(12).key.x > 1.2);
     try std.testing.expect(paletteAt(0).stars > 0.9 and paletteAt(12).stars == 0);
-    // The MOON is the pale thing in the sky and the sun is the warm one, which is the whole read at a glance.
     try std.testing.expect(paletteAt(0).skyDisc.z > paletteAt(0).skyDisc.x);
     try std.testing.expect(paletteAt(SHOT_HOUR).skyDisc.x > paletteAt(SHOT_HOUR).skyDisc.z);
 }
@@ -767,17 +641,15 @@ test "the clock wraps, holds when frozen, and scrubs both ways" {
     var c = Clock{};
     try std.testing.expectApproxEqAbs(SHOT_HOUR, c.hour, 1e-6);
     c.set(23.5);
-    c.rate = 1.0; // an hour a second, for the test
+    c.rate = 1.0;
     c.tick(1.0);
-    try std.testing.expectApproxEqAbs(@as(f32, 0.5), c.hour, 1e-5); // straight through midnight
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), c.hour, 1e-5);
     c.freeze(true);
     try std.testing.expect(c.frozen());
     c.tick(100.0);
-    try std.testing.expectApproxEqAbs(@as(f32, 0.5), c.hour, 1e-5); // a held clock holds
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), c.hour, 1e-5);
     c.nudge(-1.0);
-    try std.testing.expectApproxEqAbs(@as(f32, 23.5), c.hour, 1e-5); // …and scrubs backwards past 0
-    // …AND LETTING IT GO GIVES BACK THE SPEED IT WAS ON, not the default. A hold is a look at one moment; it may
-    // not quietly undo the Day Speed row, which is what a snap back to `RATE_DEFAULT` did.
+    try std.testing.expectApproxEqAbs(@as(f32, 23.5), c.hour, 1e-5);
     c.freeze(false);
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), c.rate, 1e-9);
     c.set(std.math.nan(f32)); // a NaN cannot be allowed to poison the light for the rest of the session
@@ -796,18 +668,15 @@ test "THE DAY SPEED AND THE HOLD ARE TWO QUESTIONS — neither row reaches into 
     c.cycleSpeed();
     try std.testing.expectApproxEqAbs(RATE_MULTS[0], c.speed(), 1e-4);
 
-    // A HELD CLOCK STAYS HELD while its speed is set — the row says how fast, never whether.
-    c.cycleSpeed(); // 4x
+    c.cycleSpeed();
     c.freeze(true);
     try std.testing.expect(c.frozen());
     c.cycleSpeed();
     try std.testing.expect(c.frozen());
-    try std.testing.expectApproxEqAbs(@as(f32, 20), c.speed(), 1e-4); // …and it reports the speed it will START at
+    try std.testing.expectApproxEqAbs(@as(f32, 20), c.speed(), 1e-4);
     c.freeze(false);
     try std.testing.expect(!c.frozen());
     try std.testing.expectApproxEqAbs(@as(f32, 20), c.speed(), 1e-4);
-    // …and the fastest step really is a day you can sit and watch, which is the whole reason the row exists. Set
-    // rather than cycled to: the cycle WRAPS, so "keep pressing until it is at the top" is a loop with no end.
     c.resumeRate = RATE_DEFAULT * RATE_MULTS[RATE_MULTS.len - 1];
     c.rate = c.resumeRate;
     try std.testing.expect(c.dayLen() < 15.0);
@@ -835,39 +704,27 @@ test "THE CASTER MAY ONLY CHANGE HANDS IN THE DARK — the moonrise light switch
     // standard day: the key may turn, and it may not teleport.
     try std.testing.expect(worst < 6.0);
 
-    // THE ENDS OF A HANDOVER ARE THE TRUE BODIES, to the last bit — the sweep is what happens BETWEEN them, and if
-    // the ends drifted then noon would be lit by something that is not the sun.
     try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.distXZ(keyDir(12.0), mathx.normV(sunDir(12.0))), 1e-4);
     try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.distXZ(keyDir(0.0), mathx.normV(moonDir(0.0))), 1e-4);
 
-    // …AND THE HANDOVERS HAPPEN IN THE DIM HOURS, which is the whole of why those numbers are what they are. A
-    // tenth of the anchor: the fires are what you steer by there, and this is the light they are steering you by.
     try std.testing.expect(keyAmt(paletteAt(KEY_SWAP_DAWN)) < 0.20);
     try std.testing.expect(keyAmt(paletteAt(KEY_SWAP_DUSK)) < 0.20);
-    // Each is HALF DONE at its own hour — which is what makes that hour the middle of it and not the start…
     try std.testing.expectApproxEqAbs(@as(f32, 0.5), moonShare(KEY_SWAP_DAWN), 1e-3);
     try std.testing.expectApproxEqAbs(@as(f32, 0.5), moonShare(KEY_SWAP_DUSK), 1e-3);
-    // …and FINISHED at the window's edges, so the day is lit by a whole sun and the small hours by a whole moon
-    // rather than by a permanent blend of the two.
     try std.testing.expectApproxEqAbs(@as(f32, 1), moonShare(KEY_SWAP_DAWN - KEY_SWAP_FADE), 1e-4);
     try std.testing.expectApproxEqAbs(@as(f32, 0), moonShare(KEY_SWAP_DAWN + KEY_SWAP_FADE), 1e-4);
     try std.testing.expectApproxEqAbs(@as(f32, 0), moonShare(KEY_SWAP_DUSK - KEY_SWAP_FADE), 1e-4);
     try std.testing.expectApproxEqAbs(@as(f32, 1), moonShare(KEY_SWAP_DUSK + KEY_SWAP_FADE), 1e-4);
-    // THE BRIGHT TERMINATOR HOURS CARRY NO HANDOVER AT ALL. The sunrise and sunset rows are the loudest
-    // directional light in the day, and they are the two hours a turning key may never land on.
     try std.testing.expectApproxEqAbs(@as(f32, 0), moonShare(SUNRISE), 1e-4);
     try std.testing.expectApproxEqAbs(@as(f32, 0), moonShare(SUNSET), 1e-4);
-    // …so through the hour on each side of one, the SUN is still what casts — from under the horizon, which is
-    // what puts dusk's long shadows away from where it actually went down rather than from the opposite sky.
     try std.testing.expect(sunDir(SUNSET + 0.4).y < 0 and moonShare(SUNSET + 0.4) < 0.05);
     try std.testing.expect(sunDir(SUNRISE - 0.4).y < 0 and moonShare(SUNRISE - 0.4) < 0.05);
-    // The floor is what makes that usable: a caster under the horizon still casts from ABOVE it.
     try std.testing.expect(keyDir(SUNSET + 0.4).y > 0);
 }
 
 test "a rest always carries the clock FORWARD, and asking for the hour you are on is a full day" {
     try std.testing.expectApproxEqAbs(@as(f32, 2.5), hoursUntil(6.0, 8.5), 1e-5);
-    try std.testing.expectApproxEqAbs(@as(f32, 15.0), hoursUntil(17.5, 8.5), 1e-5); // round through the night
+    try std.testing.expectApproxEqAbs(@as(f32, 15.0), hoursUntil(17.5, 8.5), 1e-5);
     try std.testing.expectApproxEqAbs(HOURS, hoursUntil(8.5, 8.5), 1e-4);
     inline for (@typeInfo(Until).@"enum".fields) |f| {
         const u: Until = @enumFromInt(f.value);
@@ -879,8 +736,8 @@ test "a rest always carries the clock FORWARD, and asking for the hour you are o
     // that landed before `SUNSET` is a row whose whole effect you cannot see.
     try std.testing.expect(isDay(Until.morning.hour()));
     try std.testing.expect(!isDay(Until.evening.hour()));
-    try std.testing.expect(sunDir(Until.evening.hour()).y < 0); // …and the disc is genuinely under the world
-    try std.testing.expect(keyAmt(paletteAt(Until.evening.hour())) < 0.25); // …and it is DARK when you stand up
+    try std.testing.expect(sunDir(Until.evening.hour()).y < 0);
+    try std.testing.expect(keyAmt(paletteAt(Until.evening.hour())) < 0.25);
 }
 
 test "the readout says the hour and names the phase" {

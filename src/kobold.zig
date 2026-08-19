@@ -7,25 +7,23 @@ const heromod = @import("hero.zig");
 const foe = @import("foe.zig");
 const wf = @import("worldfmt.zig");
 const sfx = @import("audio.zig");
-const propart = @import("propart.zig"); // the WORLD's palette — its iron is this creature's iron too
+const propart = @import("propart.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
-// A WARBAND, not a fourth monster: three ROLES of one doglike creature, only dangerous together.
 
-const FUR = rgba(29, 24, 17, 255); // dust-brown pelt
+const FUR = rgba(29, 24, 17, 255);
 const FUR_DK = rgba(14, 11, 8, 255);
 const FUR_LT = rgba(46, 38, 26, 255);
-const MUZZLE = rgba(18, 15, 12, 255); // the darker mask over the snout
+const MUZZLE = rgba(18, 15, 12, 255);
 const NOSE = rgba(10, 9, 8, 255);
-const EAR_IN = rgba(74, 44, 37, 255); // the pink-grey inside of a pricked ear
+const EAR_IN = rgba(74, 44, 37, 255);
 const EYE = rgba(250, 196, 74, 105);
 const TOOTH = rgba(150, 143, 126, 255);
-const HIDE = rgba(24, 18, 14, 255); // scraps of cured hide — belt, harness, wraps
+const HIDE = rgba(24, 18, 14, 255);
 const HIDE_LT = rgba(36, 28, 20, 255);
-/// Filthy sacking — a shade lighter than the pelt, or a garment reads as more animal.
 const CLOTH = rgba(52, 45, 33, 255);
 const CLOTH_DK = rgba(33, 28, 21, 255);
 
@@ -45,17 +43,14 @@ fn fabric(r: Role) [2]rl.Color {
 }
 const IRON = propart.IRON;
 const IRON_LT = rgba(46, 44, 41, 255);
-const HAFT = rgba(46, 33, 21, 255); // dark wood
+const HAFT = rgba(46, 33, 21, 255);
 const CLAW = rgba(150, 142, 122, 255);
 const BONE_CHARM = rgba(140, 130, 106, 255);
-const HEAL_GLOW = rgba(196, 156, 60, 150); // self-lit: the cast's tell has to read from across a plaza
+const HEAL_GLOW = rgba(196, 156, 60, 150);
 const SLING_CORD = rgba(92, 78, 58, 255);
-/// What the sling throws: a charred lump of pitch-soaked rag. DARK, so the fire on it is the read.
 const CLUMP_CHAR = rgba(38, 32, 28, 255);
-/// Its embers — self-lit, and hot enough to carry against golden-hour grass (see AGENTS: albedo is arithmetic).
 const EMBER = rgba(238, 122, 30, 205);
 const EMBER_HOT = rgba(255, 214, 132, 225);
-/// …and the OPAQUE hot core, for the places a `.flame` tongue is too small to read (see `slingMesh`).
 const EMBER_CORE = rgba(255, 168, 52, 255);
 
 const N = heromod.N;
@@ -76,7 +71,7 @@ const WRL = heromod.WRL;
 const SHR = heromod.SHR;
 const ELR = heromod.ELR;
 const WRR = heromod.WRR;
-const KIT = heromod.HELD; // the right hand's weapon: an axe, a staff, or a sling
+const KIT = heromod.HELD;
 
 
 const H: f32 = heromod.H;
@@ -88,12 +83,10 @@ const SEG_UPARM = heromod.SEG_UPARM;
 const SEG_FOREARM = heromod.SEG_FOREARM;
 
 pub const SCALE: f32 = 1.12;
-/// BROADER than the hero — the muzzle, hunch and ruff carry "different animal" without a narrow frame.
 const HIP_HALF = 0.096;
 const SHOULDER_HALF = 0.168;
 const RIB_HALF = SHOULDER_HALF - 0.018;
 
-// COMPTIME, like the archer's: `spawnAs` runs per instance and the editor re-homes the whole band on every frame it is up.
 const REST = heromod.restHumanoid(HIP_HALF, SHOULDER_HALF, H);
 
 const rx = mathx.rx;
@@ -104,10 +97,8 @@ const mul = mathx.mul;
 const mul3 = mathx.mul3;
 const scaleM = mathx.scaleM;
 
-const setLocal = heromod.setHumanoid; // the shared scaffold's own setter — see there
+const setLocal = heromod.setHumanoid;
 
-/// Where the reticle sits in the SKULL's own frame: forward of the joint, because a kobold's snout carries
-/// its head out in front of the neck rather than up above it.
 const LOCK_AT = v3(0, 0.02 * H, 0.05 * H);
 
 /// The kobold's PAW footprint, measured off `footMesh` below: the pad spans z −0.041·H…+0.206·H and
@@ -117,7 +108,7 @@ const solePatches = [_]heromod.SolePatch{
     .{ .bone = ANKR, .heel = 0.041 * H, .toe = 0.206 * H, .halfW = 0.052 * H, .drop = 0.042 * H },
 };
 
-const A_PROT = 4.6; // deg of pelvic transverse rotation: a scavenger's walk is loose in the hips
+const A_PROT = 4.6;
 
 pub const Role = enum { berserker, priest, slinger };
 
@@ -125,7 +116,6 @@ const Spec = struct {
     hp: f32,
     poise: f32,
     stance: f32,
-    /// Ground speed, as a fraction of the hero's walk.
     speed: f32,
     bodyR: f32,
     hurtR: f32,
@@ -136,9 +126,7 @@ const Spec = struct {
 
 const SPEC = [_]Spec{
     .{ .hp = 76, .poise = 11, .stance = 34, .speed = 1.22, .bodyR = 0.40, .hurtR = 0.60, .souls = 120, .wantMin = 0.0, .wantMax = 1.5 },
-    // priest — frail, and the only one with no attack at all.
     .{ .hp = 54, .poise = 10, .stance = 24, .speed = 0.86, .bodyR = 0.38, .hurtR = 0.58, .souls = 210, .wantMin = 7.5, .wantMax = 12.0 },
-    // slinger — middling everything, dangerous only at the range it chooses.
     .{ .hp = 62, .poise = 12, .stance = 28, .speed = 1.0, .bodyR = 0.38, .hurtR = 0.58, .souls = 140, .wantMin = 5.0, .wantMax = 10.5 },
 };
 
@@ -147,7 +135,6 @@ fn spec(r: Role) *const Spec {
 }
 
 comptime {
-    // The spec table IS the role enum, in order…
     if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("kobold: a Role with no spec row");
     // …and the kinds are a CONTIGUOUS RUN off `berserker` in role order, since `roleOf`/`kindOf` are an ordinal
     // shift (warrior.zig and brood.zig pin theirs the same way). Unpinned, a kind inserted mid-run silently
@@ -171,148 +158,121 @@ pub fn kindOf(r: Role) wf.FoeKind {
     return @enumFromInt(@intFromEnum(wf.FoeKind.berserker) + @intFromEnum(r));
 }
 
-pub const AGGRO_R = 16.0; // it notices you from here
-/// …and how near its post counts as back at it — tighter than the tether's own `foe.LEASH_HOME_R` on
-/// purpose (see frog.HOME_R), and named because a bare literal inside `decide` is where this drifted.
+pub const AGGRO_R = 16.0;
 const HOME_R = 1.5;
-const TURN_RATE = 5.2; // rad/s — quicker than the ogre, slower than the hero
+const TURN_RATE = 5.2;
 const WALK_SPEED = heromod.WALK_SPEED;
 /// …and what the BERSERKER closes at, which is the hero's own run scaled by his spec (`approachSpeed`). At
 /// 1.22 of it that is 4.15 m/s: past the hero's run (3.4) so backing off on foot does not shake him, and well
 /// under the sprint (5.1) so the sprint still does. The escape stays real; the stroll does not.
 const RUN_SPEED = heromod.RUN_SPEED;
-/// Metres outside his own reach the charge drops back to a walk — one stride, against the warrior's three.
 const ZERK_WALK_IN = 0.9;
-const DEATH_DUR = 1.0; // yelp and fold
+const DEATH_DUR = 1.0;
 const DISS_DUR = 0.85;
-/// …and the cloud, thin and close: the smallest body on the field, and up to 72 of them can be dying at once.
 const DISSOLVE = foe.Dissolve{ .rate = 26.0, .spread = 0.42, .rise = 0.55 };
 const SHOVE_DECAY = 8.0;
 
 const ZERK_SWINGS_LO: u32 = 3;
 const ZERK_SWINGS_HI: u32 = 5;
-/// One chop. `CHOP_DUR * CHOP_HIT_A` is the raise you get to see, and it must clear `foe.TELL_MIN`: the
-/// flurry stays fast, so the read comes from the SWING rather than a tell in front of it.
 pub const CHOP_DUR = 0.58;
 pub const CHOP_HIT_A = 0.53;
 const ZERK_CHOP = CHOP_DUR;
 const ZERK_HIT_A = CHOP_HIT_A;
 const ZERK_HIT_B = 0.78;
-const ZERK_STEP = 0.42; // ground he carries himself forward per chop
+const ZERK_STEP = 0.42;
 
 const DASH_CD = 6.5;
 const DASH_R_MIN = 2.3;
 const DASH_R_MAX = 7.5;
-const DASH_GATHER = 0.14; // the coil.
+const DASH_GATHER = 0.14;
 const DASH_FLIGHT = 0.30;
 const DASH_LAND = 0.22;
 const DASH_DIST = 3.9;
-const DASH_RISE = 0.28; // peak height off the earth, so it reads as a leap
+const DASH_RISE = 0.28;
 
-/// How far through the lunge: 0 at the coil, 1 the instant he lands.
 fn dashU(t: f32) f32 {
     return mathx.clampF((t - DASH_GATHER) / DASH_FLIGHT, 0, 1);
 }
-/// Front-loaded, so he explodes off the coil and coasts in rather than ending on a hard stop.
 fn dashTravel(t: f32) f32 {
     const u = dashU(t);
     return DASH_DIST * (1.0 - (1.0 - u) * (1.0 - u));
 }
-const ZERK_RECOVER = 1.75; // THE OPENING: doubled over, heaving, wide open
+const ZERK_RECOVER = 1.75;
 const ZERK_REACH = 1.9;
 pub const ZERK_HIT = combat.Hit{ .dmg = 11, .poise = 9 };
 
-// Owner's call: an INTERRUPTIBLE cast with a tell.
-const CAST_DUR = 1.25; // the tell, and it is deliberately long enough to cross a plaza for
+const CAST_DUR = 1.25;
 const CAST_CD = 9.0;
 const HEAL_AMT = 30.0;
-const HEAL_SLACK = 4.0; // don't cast for a scratch
-const HEAL_RANGE = 14.0; // how far its blessing reaches
-/// Motes per BLOOM, and there are two blooms a cast (the staff and the body).
+const HEAL_SLACK = 4.0;
+const HEAL_RANGE = 14.0;
 const HEAL_BLOOM: u32 = 34;
 
-const WHIRL_DUR = 0.70; // the sling goes round — the tell
+const WHIRL_DUR = 0.70;
 const SLING_CD = 1.9;
-const BITE_R = 1.45; // inside this it stops slinging and snaps at you
+const BITE_R = 1.45;
 const BITE_PREFER_R = 5.0;
 const BITE_DUR = 0.52;
 const BITE_HIT_A = 0.30;
 const BITE_HIT_B = 0.52;
 const BITE_CD = 1.15;
-const BITE_COIL_AT = 0.42; // fraction of the pre-hit window spent chambering before the snap fires
+const BITE_COIL_AT = 0.42;
 const BITE_ARCH = 14.0;
 // The snap: the waist throwing the whole head at you (degrees through the lumbar; the chest adds 0.65 of
 // it again and the pelvis its small share).
 const BITE_FOLD = 18.0;
 const BITE_GAZE = 26.0;
-const BITE_ARM_BACK = 30.0; // the forelimbs drawn back…
+const BITE_ARM_BACK = 30.0;
 const BITE_ARM_TUCK = 14.0;
 pub const BITE_HIT = combat.Hit{ .dmg = 9, .poise = 7 };
-/// ONE TABLE FOR ALL THREE ROLES, because they are one creature (see the file header): a dry-furred
-/// scavenger, and fur GOES UP. That is what makes the fire arrow the answer to a warband, and it is the
-/// only one of the four anything deals today — see `frog.RESISTS`.
 const RESISTS = combat.resists(.{ .fire = -45, .cold = 20 });
 pub const CLUMP_SPEED = 11.0;
-/// Embers off the release, and off wherever it lands. The IMPACT is the bigger on purpose: the throw is a
-/// tell you are meant to read, the landing is a thing that just happened to you.
 const SLING_SPARKS: u32 = 12;
 const CLUMP_SPARKS: u32 = 18;
-/// A BURNING CLUMP, NOT A STONE (owner's call): the sling throws a lump of pitch-soaked rag, so all of
-/// its damage is FIRE. The total is the stone's own 10 and the poise is unchanged, so nothing about the
-/// slinger's threat moved — what moved is what answers it.
 pub const CLUMP_HIT = combat.Hit{ .poise = 8, .elem = combat.elems(.{ .fire = 10 }) };
 
 const REPOSITION_DUR = 1.3;
 
 const PELVIS_SHARE: f32 = 0.12;
 
-/// How far the knees fold on the two beats that are not a gait.
 const CROUCH_HEAVE: f32 = 32.0;
 const CROUCH_STUN: f32 = 20.0;
 
-const DASH_COIL: f32 = 30.0; // the gather — both legs, and the pelvis pays for it through `legSink`
+const DASH_COIL: f32 = 30.0;
 const DASH_ABSORB: f32 = 24.0;
-const DASH_LEAD_HIP: f32 = 76.0; // the lead knee driven up under the chest…
+const DASH_LEAD_HIP: f32 = 76.0;
 const DASH_LEAD_KNEE: f32 = 88.0;
-const DASH_TRAIL_HIP: f32 = 32.0; // the trail leg swept BACK — the half that makes it a leap…
+const DASH_TRAIL_HIP: f32 = 32.0;
 const DASH_TRAIL_KNEE: f32 = 26.0;
-const DASH_TOE: f32 = 24.0; // toes pointed in the air, both legs.
+const DASH_TOE: f32 = 24.0;
 const DASH_LEAN: f32 = 20.0;
-const DASH_ARM_BACK: f32 = 44.0; // the axes drawn back through the flight, ready to arrive swinging
+const DASH_ARM_BACK: f32 = 44.0;
 
-/// The pelvis drop a `crouch` of hip flexion costs.
 fn legSink(crouch: f32) f32 {
     return (SEG_THIGH + SEG_SHANK) * H * (1.0 - mathx.cosf(mathx.radians(crouch)));
 }
 
-// PERF: the sling FX changed how FULL this stays, not how big it is — ~16 of the 22 are live most of a fight
-// now, where a slinger used to hold particles only while hurt. Each is a `drawSphereEx` (6×8 ≈ 96 tris,
-// immediate mode), so the worst case is still what a blood burst cost. Bound the FX at the emitters' counts.
-const NPART = 22; // a modest per-kobold pool: a warband is up to 72 of these
-const BLOOD = rgba(104, 26, 22, 200); // a kobold bleeds thin and dark
+const NPART = 22;
+const BLOOD = rgba(104, 26, 22, 200);
 
-// One machine, and which arms of it are reachable is the ROLE's business (`decide`).
 const State = enum {
     idle,
-    approach, // walking toward its wanted range
+    approach,
     reposition,
-    chop, // berserker: one swing of the flurry
-    dash, // berserker: the committed gap-closer
-    heave, // berserker: the long recovery
-    cast, // priest: the heal tell
-    whirl, // slinger: the sling goes round
-    bite, // slinger: teeth
+    chop,
+    dash,
+    heave,
+    cast,
+    whirl,
+    bite,
     stunlight,
     stunheavy,
     dead,
 };
 
-/// What the band has to do about this kobold THIS FRAME.
 pub const Act = union(enum) {
     none: void,
-    /// A burning clump left the sling, from this point.
     sling: rl.Vector3,
-    /// A cast completed.
     healed: void,
 };
 
@@ -320,10 +280,7 @@ pub const Kobold = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// THE WAND'S ROOTS, when they have hold of it (combat.Root) — stamped from outside, like the leash's eyes.
     root: combat.Root = .{},
-    /// THE RIME BREATH'S COLD (`combat.Chill`) — stamped from outside like the roots, and billed through the
-    /// same `foe.grip`. The field is what opts a creature into the cone at all (`game.rimeBreathe`).
     chill: combat.Chill = .{},
     facing: f32 = 0,
     scale: f32 = 1.0,
@@ -333,30 +290,24 @@ pub const Kobold = struct {
     state: State = .idle,
     t: f32 = 0,
     elapsed: f32 = 0,
-    /// The flurry's remaining chops, and which hand the next one comes from.
     chopsLeft: u32 = 0,
     chopLeftHand: bool = false,
     castCd: f32 = 0,
     slingCd: f32 = 0,
     biteCd: f32 = 0,
     dashCd: f32 = 0,
-    dashDone: f32 = 0, // ground the current lunge has already covered (travel is a curve, not a speed)
+    dashDone: f32 = 0,
     dashPhase: f32 = 0,
     hop: f32 = 0,
-    /// Set by the Warband before `update`: is there anybody worth healing in reach?
     healWanted: bool = false,
-    /// 0..1 how hot the cast's glow is (the tell).
     castGlow: f32 = 0,
-    /// Sling whirl phase, in turns — the pouch really does go round the head.
     whirlPh: f32 = 0,
     moveDir: rl.Vector3 = mathx.zero3,
 
     vit: combat.Vitals = combat.Vitals.initFoe(76, 13, 34).withRes(RESISTS),
     hits: u32 = 0,
     justDied: bool = false,
-    /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law.
     threat: foe.Threat = .{},
-    /// …AND THE WAY ROUND WHAT IS IN FRONT OF IT (`foe.Nav`), stamped the same way and for the same reason.
     nav: foe.Nav = .{},
     hitLatch: bool = false,
     flash: f32 = 0,
@@ -365,7 +316,6 @@ pub const Kobold = struct {
     gone: bool = false,
     dealt: bool = false,
 
-    // the shared humanoid gait state (hero.advanceGait drives all five)
     phase: f32 = 0,
     moving: f32 = 0,
     fwdB: f32 = 1,
@@ -401,7 +351,7 @@ pub const Kobold = struct {
         };
         k.rest = REST;
         k.fxRng = foe.fxStream(seed, 96337.0, 11);
-        k.slingCd = 0.3 + seed; // stagger the volley so a pack doesn't loose in lockstep
+        k.slingCd = 0.3 + seed;
         k.castCd = seed * 2.0;
         k.whirlPh = seed;
         k.pose();
@@ -455,9 +405,6 @@ pub const Kobold = struct {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt);
     }
 
-    /// WHERE IT IS TRYING TO WALK, or null when it is not walking anywhere (`game.markWay`). Read off the
-    /// COMMITTED VECTOR rather than off the hero, because that vector is the whole of the errand: closing,
-    /// backing off to a priest's range, or drifting home are three different targets and one direction.
     pub fn navWant(self: *const Kobold, hero: rl.Vector3) ?rl.Vector3 {
         _ = hero;
         return switch (self.state) {
@@ -466,8 +413,6 @@ pub const Kobold = struct {
         };
     }
 
-    /// Where the clump leaves the sling: the pouch, out at arm's length past the head. Also where the whirl
-    /// sheds its embers, so it is read every frame of the tell and not just at the release.
     pub fn slingPoint(self: *const Kobold) rl.Vector3 {
         return rl.math.vector3Transform(v3(0, 0, SLING_LEN * H), self.xf[KIT]);
     }
@@ -499,22 +444,17 @@ pub const Kobold = struct {
             else => BITE_HIT,
         };
     }
-    /// Mark this window spent (the caller landed it) — the latch that stops one swing hitting twice.
     pub fn markDealt(self: *Kobold) void {
         self.dealt = true;
-        self.leash.noteCombat(); // a blow landed is a fight in progress — the tether waits
+        self.leash.noteCombat();
     }
 
-    // Returns what the BAND must do about this frame (a clump loosed, a heal completed).
     pub fn update(self: *Kobold, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) Act {
         if (self.gone) {
-            // A removed corpse's last motes keep drifting out
             foe.tickParticles(&self.parts, dt, self.pos.y);
             return .none;
         }
         self.justDied = false;
-        // THE ROOTS HAVE THE FEET (foe.grip) — the flurry still plays out on the spot, which is what makes this
-        // the answer to a warband. The DASH is a jump and is refused outright at the choose site (`foe.canLeap`).
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
@@ -531,7 +471,7 @@ pub const Kobold = struct {
         var act: Act = .none;
         var movedDist: f32 = 0;
         var moveYaw: ?f32 = null;
-        var moveSpeed: f32 = 0; // …and the speed it moved AT, so the legs are told one number, not a second call
+        var moveSpeed: f32 = 0;
 
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
         foe.tickParticles(&self.parts, dt, self.pos.y);
@@ -539,8 +479,6 @@ pub const Kobold = struct {
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         switch (self.state) {
             .idle => {
-                // Gated on the SENSED range (the frog's idiom) — a posted kobold must not track a hero
-                // across the map, and one walking home blind must not stare back the whole way.
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
                 if (self.t >= 0.25) self.decide(d);
             },
@@ -548,9 +486,6 @@ pub const Kobold = struct {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
                 moveSpeed = self.approachSpeed(d);
                 const moved = moveSpeed * dt;
-                // …ROUND WHAT IS IN THE WAY (`foe.Nav`), and at the STEP rather than the facing: this one
-                // already travels on a committed vector while it keeps its eyes on the hero, so the detour is
-                // one more direction its own gait reads off `moveYaw`.
                 const go = self.nav.along(self.moveDir);
                 mathx.stepXZ(&self.pos, go, moved, bounds);
                 movedDist = moved;
@@ -592,7 +527,7 @@ pub const Kobold = struct {
                 self.castGlow = mathx.smoothstep(0, 0.85, self.t / CAST_DUR);
                 self.emitCastMotes(dt);
                 if (self.t >= CAST_DUR) {
-                    act = .healed; // the band applies it — see Warband.update
+                    act = .healed;
                     self.castCd = CAST_CD;
                     self.castGlow = 0;
                     self.decide(d);
@@ -600,13 +535,13 @@ pub const Kobold = struct {
             },
             .whirl => {
                 self.faceToward(hero, dt);
-                self.whirlPh += dt * 3.4; // the pouch really goes round: the tell is the motion
+                self.whirlPh += dt * 3.4;
                 self.emitWhirlEmbers(dt);
                 if (self.t >= WHIRL_DUR) {
                     act = .{ .sling = self.slingPoint() };
                     self.slingCd = SLING_CD;
                     sfx.world(.kobold_sling, self.pos);
-                    self.releaseSparks(); // the clump goes, and it leaves half its fire behind
+                    self.releaseSparks();
                     self.decide(d);
                 }
             },
@@ -622,9 +557,6 @@ pub const Kobold = struct {
             .dead => foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE),
         }
 
-        // …AND THE LEGS ARE TOLD THE SAME NUMBER THE BODY MOVED AT. `advanceGait` picks walk/run/sprint off
-        // this, so a berserker carried across the ground at his charge while the gait was handed a walk is a
-        // creature skating — the one thing the distance-driven phase exists to prevent.
         const gaitSpeed: f32 = if (movedDist > 0) moveSpeed else 0;
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, gaitSpeed, moveYaw, self.facing);
         self.pose();
@@ -640,13 +572,9 @@ pub const Kobold = struct {
     /// distance, walk the last stride in.
     pub fn approachSpeed(self: *const Kobold, dist: f32) f32 {
         const base = spec(self.role).speed;
-        // Out past his own world he is drifting HOME rather than charging, and `decide` branches on exactly
-        // this number to send him there — so the walk is asked of the same `AGGRO_R` and not a second copy.
         if (self.role != .berserker or dist > AGGRO_R or dist <= self.walkInR()) return WALK_SPEED * base;
         return RUN_SPEED * base;
     }
-    /// Where the charge ends. TIGHT, because "very close" is the owner's own word for it and this creature's
-    /// reach is a hand's length: his own chop plus a stride, not the warrior's three.
     fn walkInR(self: *const Kobold) f32 {
         return ZERK_REACH * self.scale + foe.HERO_REACH + ZERK_WALK_IN * self.scale;
     }
@@ -665,7 +593,6 @@ pub const Kobold = struct {
                 sfx.world(.kobold_chop, self.pos);
                 self.tailWhip = TAIL_WHIP_CHOP * (if (self.chopLeftHand) @as(f32, -1.0) else 1.0);
             },
-            // The lunge SNARLS — it is a commitment and it gets a voice, or a creature crossing four metres in a third of a second arrives with no warning at all.
             .dash => {
                 self.dashDone = 0;
                 self.dashCd = DASH_CD;
@@ -677,10 +604,8 @@ pub const Kobold = struct {
         }
     }
 
-    /// PICK THE NEXT ACTION — and this is where the three roles actually part company.
     fn decide(self: *Kobold, d: f32) void {
         if (d > AGGRO_R) {
-            // Out of range: drift home rather than freeze mid-field.
             const back = mathx.distXZ(self.pos, self.home);
             if (back > HOME_R) {
                 self.moveDir = mathx.dirXZ(self.pos, self.home);
@@ -694,14 +619,11 @@ pub const Kobold = struct {
                 if (d <= ZERK_REACH * self.scale + foe.HERO_REACH) {
                     self.chopsLeft = ZERK_SWINGS_LO + @as(u32, @intCast(self.fxRng.intn(@intCast(ZERK_SWINGS_HI - ZERK_SWINGS_LO + 1))));
                     self.chopLeftHand = false;
-                    // THE SNARL IS THE COMMIT, once per flurry — not per swing.
                     sfx.world(.kobold_snarl, self.pos);
                     self.enter(.chop);
                     return;
                 }
                 self.moveDir = mathx.dirXZ(self.pos, heroAt(self));
-                // …and if the hero is out of reach but not far, CLOSE IT IN ONE JUMP, off the long cooldown —
-                // unless the roots have its feet, because a jump is the one thing they refuse (`foe.canLeap`).
                 if (self.dashCd <= 0 and foe.canLeap(&self.root) and d > DASH_R_MIN * self.scale and d <= DASH_R_MAX) return self.enter(.dash);
                 return self.enter(.approach);
             },
@@ -718,7 +640,6 @@ pub const Kobold = struct {
                 return self.enter(.idle);
             },
             .slinger => {
-                // CROWDED MEANS TEETH (owner's call).
                 if (d <= BITE_PREFER_R * self.scale + foe.HERO_REACH and self.biteCd <= 0) return self.enter(.bite);
                 if (d < s.wantMin) {
                     self.moveDir = self.awayDir();
@@ -734,13 +655,11 @@ pub const Kobold = struct {
         }
     }
 
-    /// The hero's position, recovered from the facing this creature has just been turning toward.
     fn heroAt(self: *const Kobold) rl.Vector3 {
         const f = mathx.headingDir(self.facing);
         return v3(self.pos.x + f.x * 4.0, self.pos.y, self.pos.z + f.z * 4.0);
     }
 
-    /// Straight away from the hero, with a little seeded skew so a pack does not retreat as one body.
     fn awayDir(self: *const Kobold) rl.Vector3 {
         return mathx.headingDir(self.facing + std.math.pi + (self.seed - 0.5) * 0.8);
     }
@@ -759,19 +678,15 @@ pub const Kobold = struct {
             0.028,
             0.006,
             HEAL_GLOW,
-            -0.4, // negative gravity: they float UP into the staff
+            -0.4,
         );
     }
 
-    /// THE WHIRL IS THE TELL, AND FIRE IS WHAT MAKES IT ONE: a lit clump going round overhead sheds embers the
-    /// whole time it is winding up, so the read arrives before the throw does. They DROP (real gravity, unlike
-    /// the priest's motes) and are thrown OFF the circle — tangentially, at the speed the pouch is travelling.
     fn emitWhirlEmbers(self: *Kobold, dt: f32) void {
-        // Both hoisted out of the loop: they are the same for either ember, and `slingPoint` is a matrix transform.
         const at = self.slingPoint();
         const tangent = mathx.headingDir(self.facing + std.math.pi * 0.5 + self.whirlPh);
         var n: u32 = 0;
-        while (n < 2) : (n += 1) { // two chances a frame: one gave a dotted line at 60 fps
+        while (n < 2) : (n += 1) {
             if (self.fxRng.float() > dt * 26.0) continue;
             const sp = self.fxRng.range(1.4, 3.2);
             foe.emitParticle(
@@ -813,8 +728,6 @@ pub const Kobold = struct {
         }
     }
 
-    /// WHERE IT LANDED, whether that was the hero, a wall or the dirt — the burst is the same, because
-    /// what burst is the clump. Driven from `game.zig`'s arrow loop through `Warband.splash`.
     pub fn impactSparks(self: *Kobold, at: rl.Vector3) void {
         var i: u32 = 0;
         while (i < CLUMP_SPARKS) : (i += 1) {
@@ -834,7 +747,6 @@ pub const Kobold = struct {
         }
     }
 
-    /// Where the priest's magic gathers, and where it leaves from.
     pub fn staffTop(self: *const Kobold) rl.Vector3 {
         return rl.math.vector3Transform(v3(0, STAFF_TOP * H, 0), self.xf[KIT]);
     }
@@ -860,7 +772,7 @@ pub const Kobold = struct {
 
 
     fn emitBlood(self: *Kobold, at: rl.Vector3, dir: rl.Vector3) void {
-        const parts: u32 = @intCast(@max(0, foe.hitParts(7))); // the field's one dial (`foe.HIT_PARTS`)
+        const parts: u32 = @intCast(@max(0, foe.hitParts(7)));
         var i: u32 = 0;
         while (i < parts) : (i += 1) {
             foe.emitParticle(&self.parts, &self.fxHead, at, v3(dir.x * self.fxRng.range(1.0, 2.6) + self.fxRng.signed() * 0.7, self.fxRng.range(0.7, 2.1), dir.z * self.fxRng.range(1.0, 2.6) + self.fxRng.signed() * 0.7), self.fxRng.range(0.28, 0.5), 0.036, 0.012, BLOOD, 7.0);
@@ -875,7 +787,6 @@ pub const Kobold = struct {
         if (self.state == .dead) return;
         const s = foe.reached(self, blade) orelse return;
         _ = foe.wounded(self, s, blade, .{ .light = 1.35, .heavy = 2.1 });
-        // The tail snaps sideways off the blow before it clamps under — the first frame of a flinch, and visible from behind, where the body's own reaction mostly is not.
         self.tailWhip = TAIL_WHIP_HURT * (if (self.fxRng.float() < 0.5) @as(f32, -1.0) else 1.0);
         self.emitBlood(s.contact, s.dir);
         sfx.world(.kobold_hurt, self.pos);
@@ -891,17 +802,15 @@ pub const Kobold = struct {
     }
 
     fn enterStun(self: *Kobold, s: State) void {
-        // A BROKEN CAST COSTS THE COOLDOWN TOO, and this has to be read BEFORE `state` is overwritten.
         if (self.state == .cast) self.castCd = CAST_CD;
         self.state = s;
         self.t = 0;
-        self.dealt = true; // an interrupted swing lands nothing
+        self.dealt = true;
         self.chopsLeft = 0;
         self.castGlow = 0;
-        self.hop = 0; // struck mid-dash, or the body keeps the flight's height forever
+        self.hop = 0;
     }
 
-    /// Stage a reaction for the shot harness, `ogre.debugStagger`/`debugKill` verbatim.
     pub fn debugStagger(self: *Kobold, heavy: bool) void {
         self.enterStun(if (heavy) .stunheavy else .stunlight);
     }
@@ -915,7 +824,7 @@ pub const Kobold = struct {
         self.dealt = true;
         self.chopsLeft = 0;
         self.castGlow = 0;
-        self.hop = 0; // killed mid-dash, the corpse collapses on the ground and not in the air
+        self.hop = 0;
         self.justDied = true;
     }
 
@@ -931,8 +840,6 @@ pub const Kobold = struct {
             .br = mathx.sinf(arg) * amt,
             .brLag = mathx.sinf(arg - 0.7) * amt,
             .rock = mathx.sinf(self.elapsed * (0.42 + 0.2 * s2) + self.seed * 9.4) * amt,
-            // The same die the rates were cast with, for anything else dealt per instance (the skulk
-            // base) — recomputed at a call site it eventually disagrees with the rates it was dealt with.
             .deal = s1,
         };
     }
@@ -957,7 +864,6 @@ pub const Kobold = struct {
         var wx: [N]rl.Matrix = undefined;
         const collapse = mathx.lerpF(hipY, 0.16 * H, dk);
         const heave = self.heaveAmt();
-        // THE CROUCH — how far the knees are folded, and therefore how far the pelvis drops.
         const gather = self.dashGather();
         const fly = self.dashFly();
         const landAbs = self.dashLand();
@@ -969,14 +875,12 @@ pub const Kobold = struct {
             16.0 * dk - 14.0 * stunAmt;
         const sag = legSink(crouch);
         const pelvY = if (dead) collapse else hipY + bob + 0.006 * H * o.br - dip - sag;
-        // scaleM FIRST → the whole rig scales about its pelvis; the world placement stays unscaled.
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
             mul3(rz(8.0 * dk + 1.6 * o.rock), rx(slouch), ry(prot)),
             mul(tr(sway * fs, pelvY * fs + sink + self.hop, 0), ry(facingDeg)),
             heromod.rootAt(self.pos),
         ));
 
-        // EVERY BONE GETS A MATRIX EVERY FRAME (the ogre's rule, and the kobold was breaking it): the six leg bones were posed only `if (!dead)`, and `wx` starts UNDEFINED — so a dying kobold handed six garbage matrices straight to `drawMesh`.
         if (dead) {
             self.legCrumple(&wx, dk);
         } else if (self.state == .dash) {
@@ -996,13 +900,11 @@ pub const Kobold = struct {
         self.poseTail(dk, stunAmt);
     }
 
-    /// ONE LEG, FOLDED — the standing beats (the heave, a stagger), not the walk.
     fn legCrouch(self: *Kobold, wx: *[N]rl.Matrix, crouch: f32, side: f32, hip: usize, knee: usize, ank: usize) void {
         self.legDash(wx, crouch, 0, false, side, hip, knee, ank);
     }
 
     fn legDash(self: *Kobold, wx: *[N]rl.Matrix, load: f32, fly: f32, lead: bool, side: f32, hip: usize, knee: usize, ank: usize) void {
-        // The lead leg FLEXES (knee toward the chest); the trail leg EXTENDS (swept back).
         const hipA = if (lead) DASH_LEAD_HIP * fly else -DASH_TRAIL_HIP * fly;
         const kneeA = if (lead) DASH_LEAD_KNEE * fly else DASH_TRAIL_KNEE * fly;
         setLocal(wx, hip, self.rest, mul(rx(-(load + hipA)), rz(-side * heromod.HIP_ADDUCT)));
@@ -1019,7 +921,6 @@ pub const Kobold = struct {
         setLocal(wx, ANKR, self.rest, mul(rx(10.0 * dk), ry(-heromod.FOOT_TOEOUT)));
     }
 
-    /// THE JAW, hinged about `JAW_PIVOT` in the skull's frame.
     fn poseJaw(self: *Kobold) void {
         const a = GAPE_DEG * self.gape();
         self.jawXf = mul(mul3(
@@ -1029,12 +930,10 @@ pub const Kobold = struct {
         ), self.xf[SKULL]);
     }
 
-    /// THE TAIL, chained off the pelvis.
     fn poseTail(self: *Kobold, dk: f32, stunAmt: f32) void {
         const twoPi = std.math.tau;
         const m = self.moving * (1.0 - dk);
         const clamp = (34.0 * stunAmt + 26.0 * dk + 22.0 * self.heaveAmt()) / TAIL_N;
-        // The sway lags one link behind the next, so the tail follows rather than swinging as one bar.
         const swayAmp = (6.0 + 12.0 * m) + self.tailWhip;
         var acc = mul(tr(TAIL_ROOT.x, TAIL_ROOT.y, TAIL_ROOT.z), self.xf[ROOT]);
         for (0..TAIL_N) |i| {
@@ -1042,7 +941,6 @@ pub const Kobold = struct {
             const lagPh = self.phase - fi * 0.085;
             const yaw = swayAmp * mathx.sinf(twoPi * lagPh) * (0.45 + 0.16 * fi);
             const pitch = (if (i == 0) TAIL_SET else TAIL_CURL) + clamp + 3.0 * mathx.sinf(twoPi * 2.0 * lagPh) * m;
-            // -rx tips the link's -Z end DOWN, which is a tail hanging; +rx lifts it.
             acc = mul(mul(rx(-pitch), ry(yaw)), acc);
             self.tailXf[i] = acc;
             acc = mul(tr(0, 0, -TAIL_SEG * H), acc);
@@ -1057,7 +955,6 @@ pub const Kobold = struct {
         };
     }
 
-    /// How doubled-over the berserker's recovery is right now (0..1).
     fn heaveAmt(self: *const Kobold) f32 {
         if (self.state != .heave) return 0;
         const u = mathx.clampF(self.t / ZERK_RECOVER, 0, 1);
@@ -1068,13 +965,12 @@ pub const Kobold = struct {
     fn chopTwist(self: *const Kobold) f32 {
         if (self.state != .chop) return 0;
         const u = mathx.clampF(self.t / ZERK_CHOP, 0, 1);
-        const coil = 1.0 - mathx.smoothstep(0, ZERK_HIT_A, u); // wound up through the raise
+        const coil = 1.0 - mathx.smoothstep(0, ZERK_HIT_A, u);
         const thru = mathx.smoothstep(ZERK_HIT_A, ZERK_HIT_B, u);
         const sgn: f32 = if (self.chopLeftHand) -1.0 else 1.0;
         return sgn * (28.0 * coil - 22.0 * thru);
     }
 
-    /// …and the FOLD that comes with it: he drops his weight into the blow and stands back out of it.
     fn chopThrow(self: *const Kobold) f32 {
         if (self.state != .chop) return 0;
         const u = mathx.clampF(self.t / ZERK_CHOP, 0, 1);
@@ -1082,24 +978,20 @@ pub const Kobold = struct {
             9.0 * (1.0 - mathx.smoothstep(0, ZERK_HIT_A, u));
     }
 
-    /// THE BITE'S HEAD DRIVE (0..1).
     fn biteLunge(self: *const Kobold) f32 {
         if (self.state != .bite) return 0;
         const u = mathx.clampF(self.t / BITE_DUR, 0, 1);
         return mathx.pulse(u, 0, BITE_HIT_A, BITE_HIT_B, 1.0);
     }
 
-    // THE COIL, 0..1.
     fn dashGather(self: *const Kobold) f32 {
         if (self.state != .dash) return 0;
         return mathx.pulse(self.t, 0, DASH_GATHER * 0.8, DASH_GATHER, DASH_GATHER + DASH_FLIGHT * 0.22);
     }
-    /// THE FLIGHT, 0..1 — where the legs are asymmetric.
     fn dashFly(self: *const Kobold) f32 {
         if (self.state != .dash) return 0;
         return mathx.pulse(dashU(self.t), 0, 0.22, 0.74, 1.0);
     }
-    /// THE ABSORB, 0..1 — the knees giving as he arrives, over the DASH_LAND window he is open for.
     fn dashLand(self: *const Kobold) f32 {
         if (self.state != .dash) return 0;
         const a = DASH_GATHER + DASH_FLIGHT;
@@ -1110,12 +1002,11 @@ pub const Kobold = struct {
             heromod.sampleCurve(heromod.HIP_FLEX, self.dashPhase + 0.5);
     }
 
-    /// …and its CHAMBER (0..1), the head and trunk rocking back over the front of the wind-up.
     fn biteCoil(self: *const Kobold) f32 {
         if (self.state != .bite) return 0;
         const u = mathx.clampF(self.t / BITE_DUR, 0, 1);
         const knee = BITE_HIT_A * BITE_COIL_AT;
-        return mathx.pulse(u, 0, knee, knee, BITE_HIT_A); // b == c: a spike, no hold
+        return mathx.pulse(u, 0, knee, knee, BITE_HIT_A);
     }
 
     // AGENTS.md: legs alone are NOT a gait. `o` is pose()'s own idleSway, handed down rather than recomputed.
@@ -1135,7 +1026,6 @@ pub const Kobold = struct {
         const spineExtra = 14.0 * dk - 16.0 * stunAmt;
         const twist = self.chopTwist();
         const throwF = self.chopThrow();
-        // `o`: breath through the spine, its ECHO through the chest — staggered lags, computed once in pose().
         setLocal(wx, SPINE, self.rest, mul3(
             rx(nod + fold + gasp + 1.7 * o.br + spineExtra * 0.5 + throwF * 0.45),
             ry(counter * 0.45 + twist * 0.40),
@@ -1154,8 +1044,6 @@ pub const Kobold = struct {
 
         const swing = 22.0 * m;
         const lag = 0.125;
-        // The hanging arms ride the breath UNEVENLY — one gathers on the in-breath, the other trails the
-        // rock. Symmetric hanging arms at zero were most of the mannequin.
         const shL = -swing * mathx.cosf(twoPi * ph) + 3.0 * o.brLag + 1.2 * o.rock;
         const shR = -swing * mathx.cosf(twoPi * (ph + 0.5)) - 2.4 * o.brLag + 1.5 * o.rock;
         const elL = 24.0 + 24.0 * mathx.maxF(0, -mathx.cosf(twoPi * (ph - lag))) * m + 4.5 * mathx.maxF(0, o.br);
@@ -1169,7 +1057,6 @@ pub const Kobold = struct {
         }
     }
 
-    /// TWO AXES, ALTERNATING.
     fn poseZerk(self: *Kobold, wx: *[N]rl.Matrix, shL: f32, shR: f32, elL: f32, elR: f32, abd: f32, heave: f32, dk: f32, stunAmt: f32) void {
         var aL = shL;
         var aR = shR;
@@ -1180,7 +1067,7 @@ pub const Kobold = struct {
             const raise = 1.0 - mathx.smoothstep(0, ZERK_HIT_A, u);
             const fall = mathx.smoothstep(ZERK_HIT_A, ZERK_HIT_B, u);
             const live = -150.0 * raise + 55.0 * fall;
-            const idleArm = 34.0 * mathx.smoothstep(ZERK_HIT_B, 1.0, u); // the other one re-chambers
+            const idleArm = 34.0 * mathx.smoothstep(ZERK_HIT_B, 1.0, u);
             if (self.chopLeftHand) {
                 aL = live;
                 eL = 96.0 * raise + 12.0 * fall;
@@ -1193,7 +1080,6 @@ pub const Kobold = struct {
                 eL = 74.0;
             }
         } else if (heave > 0.01) {
-            // Hanging off his own arms, axes dragging in the dirt — and SWINGING, loose, on the breath.
             const swingLoose = 9.0 * heave * mathx.sinf(std.math.tau * 1.2 * self.t);
             aL = 30.0 * heave + swingLoose;
             aR = 30.0 * heave - swingLoose;
@@ -1217,7 +1103,6 @@ pub const Kobold = struct {
         setLocal(wx, KIT, self.rest, rl.math.matrixIdentity());
     }
 
-    /// THE STAFF, two-handed on the cast: it comes up over the head and the off hand steadies it.
     fn posePriest(self: *Kobold, wx: *[N]rl.Matrix, shL: f32, shR: f32, elL: f32, elR: f32, abd: f32, dk: f32, stunAmt: f32) void {
         const c = if (self.state == .cast) mathx.smoothstep(0, 0.55, self.t / CAST_DUR) else 0;
         const flail = 28.0 * stunAmt + 20.0 * dk;
@@ -1263,7 +1148,6 @@ pub const Kobold = struct {
         setLocal(wx, KIT, self.rest, rx(if (self.state == .whirl) -40.0 else 10.0));
     }
 
-    /// HOW WIDE THE MOUTH IS (0..1).
     pub fn gape(self: *const Kobold) f32 {
         if (self.state == .bite) return self.biteLunge();
         if (self.state == .chop) {
@@ -1283,11 +1167,9 @@ pub const Kobold = struct {
 };
 
 
-/// How far a tuft's TIP stands proud, as a fraction of the mass's radius.
 const STAND_PELT: f32 = 0.20;
 const STAND_MANE: f32 = 0.34;
 
-/// Sow `n` tufts around the segment a→b of radius `r`, tips standing `stand`Â·r proud.
 fn furInto(b: *Builder, a: rl.Vector3, bb: rl.Vector3, r: f32, n: i32, rng: *mathx.Rng, col: rl.Color, stand: f32) void {
     const axis = mathx.normV(mathx.subV(bb, a));
     const seed = if (@abs(axis.y) < 0.99) v3(0, 1, 0) else v3(1, 0, 0);
@@ -1314,11 +1196,9 @@ fn furInto(b: *Builder, a: rl.Vector3, bb: rl.Vector3, r: f32, n: i32, rng: *mat
     }
 }
 
-const SNOUT_LEN = 0.070; // fractions of H, the head being the one place they are worth naming
+const SNOUT_LEN = 0.070;
 const SNOUT_DROP = 0.014;
-/// Where the jaw hinges, in the skull bone's frame — the mesh is split at this line so `gape` can open it (see `jawMesh`).
 const JAW_PIVOT = v3(0, 0.020 * H, -0.006 * H);
-/// How far the jaw drops at a full gape.
 const GAPE_DEG: f32 = 34.0;
 
 fn skullMesh() rl.Mesh {
@@ -1342,13 +1222,12 @@ fn skullMesh() rl.Mesh {
     for ([_]f32{ -1, 1 }) |side| {
         b.addBlob(v3(side * 0.034 * s, 0.038 * s, 0.050 * s), v3(0.0210 * s, 0.0200 * s, 0.0140 * s), 3, 7, EYE);
     }
-    // EARS: pricked, TALL, ASYMMETRIC — the read at distance, when the muzzle is a few pixels.
     for ([_]f32{ -1, 1 }) |side| {
         const lean: f32 = if (side < 0) 14.0 else -22.0;
         const hgt: f32 = if (side < 0) 0.092 else 0.080;
         const baseX = side * 0.036 * s;
         const tipX = baseX + side * 0.024 * s + mathx.sinf(mathx.radians(lean)) * 0.016 * s;
-        const baseY = 0.036; // sunk well into the crown, so the ear GROWS from it
+        const baseY = 0.036;
         b.addBlob(v3((baseX + tipX) * 0.5, (baseY + hgt * 0.5) * s, -0.018 * s), v3(0.026 * s, hgt * 0.5 * s, 0.013 * s), 4, 7, FUR);
         b.addBlob(v3((baseX + tipX) * 0.5, (baseY + hgt * 0.48) * s, -0.012 * s), v3(0.015 * s, hgt * 0.38 * s, 0.006 * s), 3, 6, EAR_IN);
     }
@@ -1359,14 +1238,13 @@ fn skullMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// Its own mesh so `gape` can open it — one more mesh on a pivot, no nineteenth bone.
 fn jawMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x9A4);
     const s = H;
     const noseZ = (0.040 + SNOUT_LEN) * s;
     b.addCapsule(v3(0, 0.004 * s, 0.036 * s), v3(0, 0.002 * s - SNOUT_DROP * s * 0.7, noseZ - 0.018 * s), 0.028 * s, 0.019 * s, 8, MUZZLE);
-    b.addBlob(v3(0, 0.010 * s, 0.006 * s), v3(0.030 * s, 0.020 * s, 0.026 * s), 4, 7, FUR_DK); // the ramus, back at the hinge
+    b.addBlob(v3(0, 0.010 * s, 0.006 * s), v3(0.030 * s, 0.020 * s, 0.026 * s), 4, 7, FUR_DK);
     for ([_]f32{ -1, 1 }) |side| {
         b.addBlob(v3(side * 0.018 * s, 0.016 * s, noseZ - 0.034 * s), v3(0.0058 * s, 0.014 * s, 0.0058 * s), 2, 5, TOOTH);
         b.addBlob(v3(side * 0.013 * s, 0.014 * s, noseZ - 0.020 * s), v3(0.0040 * s, 0.008 * s, 0.0040 * s), 2, 4, TOOTH);
@@ -1391,10 +1269,8 @@ fn pelvisMesh() rl.Mesh {
     var rng = mathx.Rng.init(0xBE17);
     const s = H;
     b.addBlob(v3(0, 0.014 * s, 0), v3(0.092 * s, 0.066 * s, 0.076 * s), 5, 9, FUR);
-    // A filthy hide belt — cloth and leather are the one place a BOX is right.
     b.addCube(v3(0, 0.030 * s, 0), v3(0.170 * s, 0.026 * s, 0.132 * s), HIDE);
-    b.addCube(v3(0, 0.030 * s, 0.070 * s), v3(0.044 * s, 0.034 * s, 0.014 * s), HIDE_LT); // the buckle plate
-    // THE TAIL IS NOT HERE ANY MORE — see `tailMesh`.
+    b.addCube(v3(0, 0.030 * s, 0.070 * s), v3(0.044 * s, 0.034 * s, 0.014 * s), HIDE_LT);
     furInto(&b, v3(-0.062 * s, 0.006 * s, -0.028 * s), v3(0.062 * s, 0.006 * s, -0.028 * s), 0.050 * s, 14, &rng, FUR_DK, STAND_PELT);
     return b.toMesh();
 }
@@ -1433,7 +1309,7 @@ fn hatMesh() rl.Mesh {
     const TIERS = 7;
     var i: i32 = 0;
     while (i < TIERS) : (i += 1) {
-        const t = @as(f32, @floatFromInt(i)) / @as(f32, TIERS - 1); // 0 at the brim, 1 at the point
+        const t = @as(f32, @floatFromInt(i)) / @as(f32, TIERS - 1);
         const leanX = 0.084 * t * t * s;
         const leanZ = 0.030 * t * t * s;
         const y = (0.058 + 0.106 * t) * s;
@@ -1460,7 +1336,7 @@ fn robeMesh() rl.Mesh {
     while (i < 7) : (i += 1) {
         const k = @as(f32, @floatFromInt(i)) / 6.0;
         const y = (0.10 - 0.34 * k) * s;
-        const wide = (0.098 + 0.052 * k) * s; // flares as it falls
+        const wide = (0.098 + 0.052 * k) * s;
         b.addCube(
             v3(rng.signed() * 0.006 * s, y, rng.signed() * 0.005 * s),
             v3(wide * 2.0, 0.062 * s, (0.086 + 0.030 * k) * s),
@@ -1507,12 +1383,11 @@ fn ribcageMesh() rl.Mesh {
 }
 
 const TAIL_N = 5;
-const TAIL_SEG = 0.062; // fractions of H per link — ~56 cm of tail all told, a real counterweight
-/// HIGH on the rump and well back — a tail sets on TOP of the pelvis.
+const TAIL_SEG = 0.062;
 const TAIL_ROOT = v3(0, 0.026 * H, -0.062 * H);
 const TAIL_SET: f32 = 20.0;
 const TAIL_CURL: f32 = 15.0;
-const TAIL_R0 = 0.034; // thick where it leaves the body…
+const TAIL_R0 = 0.034;
 const TAIL_R1 = 0.011;
 const TAIL_WHIP_DECAY = 90.0;
 const TAIL_WHIP_CHOP = 34.0;
@@ -1579,9 +1454,8 @@ fn footMesh(seed: u64) rl.Mesh {
     return b.toMesh();
 }
 
-// Each is authored in the RIGHT WRIST's frame, like the hero's sword and the archer's bow, and hangs off `hero.HELD`.
 
-const AXE_HAFT = 0.250; // fractions of H
+const AXE_HAFT = 0.250;
 const STAFF_TOP = 0.340;
 const SLING_LEN = 0.190;
 
@@ -1589,15 +1463,14 @@ fn axeMesh(seed: u64) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(seed);
     const s = H;
-    const grip = v3(0, -0.05 * s, 0.006 * s); // the fist centre, matching the other rigs' convention
+    const grip = v3(0, -0.05 * s, 0.006 * s);
     const headY = grip.y + AXE_HAFT * s;
     b.addCylinder(v3(grip.x, grip.y - 0.048 * s, grip.z), v3(grip.x, headY, grip.z + 0.020 * s), 0.0145 * s, 0.0120 * s, 8, HAFT);
-    // …capped, because a cylinder is CAPLESS and an open end shows its culled interior.
     b.addDome(v3(grip.x, grip.y - 0.048 * s, grip.z), v3(0, -1, 0), 0.0145 * s, 8, HAFT);
-    b.addCube(v3(grip.x, grip.y - 0.006 * s, grip.z), v3(0.032 * s, 0.042 * s, 0.032 * s), HIDE); // grip wrap
+    b.addCube(v3(grip.x, grip.y - 0.006 * s, grip.z), v3(0.032 * s, 0.042 * s, 0.032 * s), HIDE);
     const bx = 0.056 * s * rng.range(0.9, 1.1);
     b.addBox(v3(grip.x + bx * 0.5, headY - 0.006 * s, grip.z + 0.022 * s), v3(bx, 0.010 * s, 0), v3(0, 0.082 * s, 0.006 * s), v3(0, 0, 0.020 * s), IRON);
-    b.addBox(v3(grip.x + bx * 1.0, headY - 0.006 * s, grip.z + 0.022 * s), v3(0.018 * s, 0.005 * s, 0), v3(0, 0.068 * s, 0), v3(0, 0, 0.014 * s), IRON_LT); // the ground edge
+    b.addBox(v3(grip.x + bx * 1.0, headY - 0.006 * s, grip.z + 0.022 * s), v3(0.018 * s, 0.005 * s, 0), v3(0, 0.068 * s, 0), v3(0, 0, 0.014 * s), IRON_LT);
     b.addCapsule(v3(grip.x - 0.006 * s, headY - 0.024 * s, grip.z + 0.014 * s), v3(grip.x + 0.010 * s, headY + 0.034 * s, grip.z + 0.026 * s), 0.0115 * s, 0.0115 * s, 7, HIDE_LT);
     return b.toMesh();
 }
@@ -1631,7 +1504,7 @@ fn staffMesh() rl.Mesh {
         b.addCapsule(v3(hx, hy, prev.z), v3(hx + rng.signed() * 0.008 * s, hy - 0.030 * s, prev.z + rng.signed() * 0.006 * s), 0.0026 * s, 0.0022 * s, 4, HIDE_LT);
         b.addBlob(v3(hx, hy - 0.036 * s, prev.z), v3(0.0078 * s, 0.0135 * s, 0.0058 * s), 2, 5, BONE_CHARM);
     }
-    b.addCube(v3(grip.x, grip.y, grip.z), v3(0.030 * s, 0.044 * s, 0.030 * s), HIDE); // the grip wrap
+    b.addCube(v3(grip.x, grip.y, grip.z), v3(0.030 * s, 0.044 * s, 0.030 * s), HIDE);
     return b.toMesh();
 }
 
@@ -1650,38 +1523,31 @@ fn slingMesh() rl.Mesh {
             SLING_CORD,
         );
     }
-    // The pouch, and the CLUMP sitting in it, ALREADY ALIGHT — the loaded sling is the readable one, and
-    // what it is loaded with is the whole tell now (a grey pebble here promised a rock and threw a fire).
     b.addBlob(pouch, v3(0.024 * s, 0.015 * s, 0.021 * s), 4, 7, HIDE);
     const lump = v3(pouch.x, pouch.y + 0.008 * s, pouch.z);
     b.addBlob(lump, v3(0.014 * s, 0.013 * s, 0.014 * s), 3, 6, CLUMP_CHAR);
-    // THE CORE IS OPAQUE, NOT `.flame`. A torch's tongues read because they are 20 cm of layered
-    // translucency; this is THREE, and at that size `.flame` (alpha 90, halved again by the shader) is a
-    // tint on the leather. So the hot part is a solid self-lit blob and only the tongue over it burns.
     b.addBlob(lump, v3(0.017 * s, 0.017 * s, 0.017 * s), 3, 8, EMBER_CORE);
     b.setMat(.flame);
     b.setAnimY(lump.y);
     b.addBlob(v3(lump.x, lump.y + 0.016 * s, lump.z), v3(0.014 * s, 0.026 * s, 0.014 * s), 3, 7, propart.FLAME_MID);
-    b.setMat(.plain); // …and OFF it again: the fist below is leather, and left on `.flame` it gutters
+    b.setMat(.plain);
     b.addCube(grip, v3(0.030 * s, 0.038 * s, 0.030 * s), HIDE_LT);
     return b.toMesh();
 }
 
-/// The sling's BURNING CLUMP, as a projectile mesh. The core is a charred lump and the fire is `propart`'s own
-/// (see `archer.fireArrowMesh`), because a second kind of fire in one world reads as a different substance.
 const CLUMP_TONGUES = 8;
 pub fn clumpMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x570E);
     b.addBlob(mathx.zero3, v3(0.055 * rng.range(0.9, 1.2), 0.050 * rng.range(0.9, 1.2), 0.058), 4, 7, CLUMP_CHAR);
-    b.addBlob(mathx.zero3, v3(0.062, 0.058, 0.065), 3, 8, EMBER_CORE); // the opaque hot heart — see slingMesh
+    b.addBlob(mathx.zero3, v3(0.062, 0.058, 0.065), 3, 8, EMBER_CORE);
     b.setMat(.flame);
     b.setAnimY(0);
     b.addBlob(mathx.zero3, v3(0.082, 0.078, 0.086), 3, 9, propart.COAL);
     var t: i32 = 0;
     while (t < CLUMP_TONGUES) : (t += 1) {
         const a = rng.angle();
-        const p = rng.range(-0.9, 0.9); // …and out of the whole ball, not a ring round its equator
+        const p = rng.range(-0.9, 0.9);
         const len = rng.range(0.055, 0.135);
         const w = rng.range(0.016, 0.028);
         const dir = v3(mathx.cosf(a) * (1.0 - @abs(p)), p, mathx.sinf(a) * (1.0 - @abs(p)));
@@ -1711,7 +1577,6 @@ fn buildMeshes() [N]rl.Mesh {
     mesh[SHR] = limbMesh(0x740A, SEG_UPARM, 0.055, 0.044, FUR, 19);
     mesh[ELR] = limbMesh(0x740B, SEG_FOREARM, 0.044, 0.033, FUR, 20);
     mesh[WRR] = handMesh(0x740C);
-    // Bone 17 draws nothing shared — the KIT is per role (see Model.kit).
     var empty = Builder.init();
     empty.addBlob(mathx.zero3, v3(0.0001, 0.0001, 0.0001), 2, 3, FUR);
     mesh[KIT] = empty.toMesh();
@@ -1720,13 +1585,12 @@ fn buildMeshes() [N]rl.Mesh {
 
 pub const Model = struct {
     mesh: [N]rl.Mesh,
-    kit: [3]rl.Mesh, // indexed by Role
+    kit: [3]rl.Mesh,
     offAxe: rl.Mesh,
     jaw: rl.Mesh,
-    robe: rl.Mesh, // the PRIEST's alone
+    robe: rl.Mesh,
     hat: rl.Mesh,
-    /// THE LOINCLOTH, one per ROLE, because the fabric is dyed by role (see `fabric`).
-    loin: [SPEC.len]rl.Mesh, // one per ROLE, off the table `Role` is already pinned against
+    loin: [SPEC.len]rl.Mesh,
     tail: [TAIL_N]rl.Mesh,
     mat: rl.Material,
 
@@ -1762,17 +1626,13 @@ pub const Model = struct {
             rl.drawMesh(self.hat, self.mat, k.xf[SKULL]);
         }
         rl.drawMesh(self.kit[@intFromEnum(k.role)], self.mat, k.xf[KIT]);
-        // The off-hand axe rides the LEFT wrist, mirrored across X so its blade faces outward.
         if (k.role == .berserker) {
             rl.drawMesh(self.offAxe, self.mat, mul(mathx.scaleM(-1, 1, 1), k.xf[WRL]));
         }
     }
 };
 
-// ALL THREE ROLES IN ONE ARRAY because the PRIEST heals a friend, so something has to see the whole band; split per FoeKind that something would be game.zig threading two groups into a third's update.
 
-/// Room for a full posting of every role (`wf.MAX_PER_KIND` each) — off the SPEC table, so a fourth role
-/// widens the array with it rather than overflowing a hand-written 3.
 pub const CAP = SPEC.len * wf.MAX_PER_KIND;
 
 pub const Warband = struct {
@@ -1783,7 +1643,6 @@ pub const Warband = struct {
     pub fn init(shader: rl.Shader) Warband {
         return .{ .model = Model.init(shader) };
     }
-    /// The posted kobolds — never iterate the whole array, the tail is `undefined`.
     pub fn live(self: *Warband) []Kobold {
         return self.band[0..self.n];
     }
@@ -1817,9 +1676,6 @@ pub const Warband = struct {
     pub fn aliveCount(self: *const Warband) u32 {
         return foe.aliveCount(self.liveConst());
     }
-    /// A CLUMP BURST HERE — the band's answer to `brood.splash`: the thing that landed belongs to the group,
-    /// not to the arrow pool that flew it. The embers go in the pool of whichever member is NEAREST the impact,
-    /// because a pool is only drawn while its owner is — a dead slinger's last clump would land silently.
     pub fn splash(self: *Warband, at: rl.Vector3) void {
         var best: ?*Kobold = null;
         var bestD: f32 = 1e9;
@@ -1847,7 +1703,6 @@ pub const Warband = struct {
         ctx: anytype,
         comptime loose: fn (@TypeOf(ctx), rl.Vector3) void,
     ) ?foe.Blow {
-        // Tell each priest whether there is anything worth casting for, BEFORE any of them decides.
         for (self.live()) |*k| {
             if (k.role != .priest) continue;
             k.healWanted = self.neediest(k.pos) != null;
@@ -1867,7 +1722,6 @@ pub const Warband = struct {
                     }
                 },
             }
-            // A live hurt window that reaches the hero: one blow per swing, latched.
             if (k.hurtOpen() and mathx.distXZ(k.pos, hero) <= k.hurtReach()) {
                 k.markDealt();
                 foe.worseBlow(&blow, k.hurtBlow(), k.pos, k.threat.on);
@@ -1876,7 +1730,6 @@ pub const Warband = struct {
         return blow;
     }
 
-    /// The living member most in need of a heal within `HEAL_RANGE` of `from`, or null.
     fn neediestIdx(self: *const Warband, from: rl.Vector3) ?usize {
         var best: ?usize = null;
         var worst: f32 = 1.0;
@@ -1931,26 +1784,23 @@ test "the priest is the priority target, and the numbers say so" {
     try std.testing.expect(spec(.priest).hp < spec(.berserker).hp);
     try std.testing.expect(spec(.priest).souls > spec(.berserker).souls);
     try std.testing.expect(spec(.priest).souls > spec(.slinger).souls);
-    // It stands FURTHER out than the slinger does — the back line is behind the skirmish line.
     try std.testing.expect(spec(.priest).wantMin > spec(.slinger).wantMin);
     try std.testing.expect(CAST_DUR > 1.0 and CAST_CD > 6.0);
-    try std.testing.expect(HEAL_AMT > spec(.priest).hp * 0.4); // a real save, not a top-up
+    try std.testing.expect(HEAL_AMT > spec(.priest).hp * 0.4);
 }
 
 test "the slinger has exactly two answers, and they do not overlap" {
-    // Bite range must sit INSIDE the band it wants to hold, or there is a ring where it does nothing.
     try std.testing.expect(BITE_R < spec(.slinger).wantMin);
     try std.testing.expect(CLUMP_SPEED < 15.0);
-    // IT BURNS, and all of it burns: the slinger is the one foe a fire resistance would answer.
     try std.testing.expectApproxEqAbs(@as(f32, 0), CLUMP_HIT.dmg, 1e-6);
     try std.testing.expectApproxEqAbs(CLUMP_HIT.raw(), CLUMP_HIT.elem.at(.fire), 1e-6);
-    try std.testing.expect(CLUMP_HIT.raw() < ZERK_HIT.raw() + BITE_HIT.raw()); // still the weakest of the three
+    try std.testing.expect(CLUMP_HIT.raw() < ZERK_HIT.raw() + BITE_HIT.raw());
 }
 
 test "a hurt window latches, so one swing lands once" {
     var k = Kobold.spawnAs(.berserker, mathx.zero3, 0, 1.0, 0.5);
     k.state = .chop;
-    k.t = ZERK_CHOP * (ZERK_HIT_A + ZERK_HIT_B) * 0.5; // mid-window
+    k.t = ZERK_CHOP * (ZERK_HIT_A + ZERK_HIT_B) * 0.5;
     k.dealt = false;
     try std.testing.expect(k.hurtOpen());
     k.markDealt();
@@ -1962,7 +1812,6 @@ test "a hurt window latches, so one swing lands once" {
 }
 
 test "the priest never reaches for an attack window" {
-    // It has no attack, and `hurtOpen` is what would give it one by accident.
     var p = Kobold.spawnAs(.priest, mathx.zero3, 0, 1.0, 0.2);
     for ([_]State{ .idle, .approach, .cast, .heave, .whirl, .bite }) |s| {
         p.state = s;
@@ -1974,16 +1823,10 @@ test "the priest never reaches for an attack window" {
 }
 
 test "NO ATTACK COMES OUT OF NOWHERE: every kobold move is visible before it can hurt" {
-    // The berserker's chop reads off its own SWING (the law's second option) — `ZERK_HIT_A` is where the
-    // axe starts to bite, so what precedes it is the raise you get to watch.
     try std.testing.expect(ZERK_CHOP * ZERK_HIT_A >= foe.TELL_MIN);
-    // …and it still bites for a real window afterwards, or the fix has only made it a mime.
     try std.testing.expect(ZERK_CHOP * (ZERK_HIT_B - ZERK_HIT_A) > 0.10);
-    // The bite chambers before it snaps.
     try std.testing.expect(BITE_HIT_A >= foe.TELL_MIN);
-    // The slinger's whirl and the priest's cast are tells by construction, and long ones.
     try std.testing.expect(WHIRL_DUR >= foe.TELL_MIN);
     try std.testing.expect(CAST_DUR >= foe.TELL_MIN);
-    // …and the lunge coils on the ground before it leaves it.
     try std.testing.expect(DASH_GATHER + DASH_FLIGHT >= foe.TELL_MIN);
 }

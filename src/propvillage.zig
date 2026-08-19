@@ -44,21 +44,21 @@ pub fn cartMesh(shader: rl.Shader) rl.Model {
         if (rng.float() < 0.15) continue;
         b.addBox(v3(0, 0.72 + rng.signed() * 0.02, z), v3(1.05, -0.20, 0), v3(0, 0.055, 0), v3(0, 0, 0.13), if (@mod(pl, 2) == 0) TIMBER else TIMBER_DK);
     }
-    b.addCapsule(v3(-1.05, 0.60, 0), v3(1.05, 0.44, 0), 0.09, 0.08, 6, TIMBER_DK); // axle beam
-    b.addCapsule(v3(1.0, 0.50, 0.1), v3(2.15, 0.95, 0.25), 0.075, 0.05, 5, TIMBER_DK); // shaft, snapped upward
+    b.addCapsule(v3(-1.05, 0.60, 0), v3(1.05, 0.44, 0), 0.09, 0.08, 6, TIMBER_DK);
+    b.addCapsule(v3(1.0, 0.50, 0.1), v3(2.15, 0.95, 0.25), 0.075, 0.05, 5, TIMBER_DK);
     for ([_]f32{ -1, 1 }) |sz| {
         const zr = sz * 0.80;
         var st: i32 = 0;
         while (st < 3) : (st += 1) {
             const sx = -0.85 + @as(f32, @floatFromInt(st)) * 0.85 + rng.signed() * 0.06;
             const by = 0.72 - 0.20 * (sx / 1.05);
-            b.addCapsule(v3(sx, by - 0.06, zr), v3(sx + rng.signed() * 0.04, by + 0.34, zr + rng.signed() * 0.04), 0.042, 0.034, 4, TIMBER_DK); // stake
+            b.addCapsule(v3(sx, by - 0.06, zr), v3(sx + rng.signed() * 0.04, by + 0.34, zr + rng.signed() * 0.04), 0.042, 0.034, 4, TIMBER_DK);
         }
         if (sz > 0) {
-            b.addBox(v3(0.0, 0.72 + 0.36, zr), v3(1.02, -0.195, 0), v3(0, 0.045, 0), v3(0, 0, 0.035), TIMBER); // full rail
+            b.addBox(v3(0.0, 0.72 + 0.36, zr), v3(1.02, -0.195, 0), v3(0, 0.045, 0), v3(0, 0, 0.035), TIMBER);
         } else {
-            b.addBox(v3(-0.55, 0.72 + 0.105 + 0.36, zr), v3(0.48, -0.09, 0), v3(0, 0.045, 0), v3(0, 0, 0.035), TIMBER); // the surviving length
-            b.addBox(v3(0.42, 0.60, zr + 0.10), v3(0.34, -0.16, 0.05), v3(0, 0.04, 0.02), v3(0, 0.015, 0.032), TIMBER_DK); // …and the rest, dropped and askew
+            b.addBox(v3(-0.55, 0.72 + 0.105 + 0.36, zr), v3(0.48, -0.09, 0), v3(0, 0.045, 0), v3(0, 0, 0.035), TIMBER);
+            b.addBox(v3(0.42, 0.60, zr + 0.10), v3(0.34, -0.16, 0.05), v3(0, 0.04, 0.02), v3(0, 0.015, 0.032), TIMBER_DK);
         }
     }
     const wheel = struct {
@@ -68,15 +68,15 @@ pub fn cartMesh(shader: rl.Shader) rl.Model {
             while (i < seg) : (i += 1) {
                 const a0 = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(seg));
                 const a1 = std.math.tau * @as(f32, @floatFromInt(i + 1)) / @as(f32, @floatFromInt(seg));
-                if (r.float() < 0.12) continue; // a missing felloe
+                if (r.float() < 0.12) continue;
                 const p0 = if (flat) v3(cx + mathx.cosf(a0) * rad, cy, cz + mathx.sinf(a0) * rad) else v3(cx + mathx.cosf(a0) * rad, cy + mathx.sinf(a0) * rad, cz);
                 const p1 = if (flat) v3(cx + mathx.cosf(a1) * rad, cy, cz + mathx.sinf(a1) * rad) else v3(cx + mathx.cosf(a1) * rad, cy + mathx.sinf(a1) * rad, cz);
                 bb.addCapsule(p0, p1, 0.075, 0.075, 5, BARK_DK);
-                if (@mod(i, 2) == 0) bb.addCapsule(v3(cx, cy, cz), p0, 0.035, 0.028, 4, TIMBER_DK); // spoke
+                if (@mod(i, 2) == 0) bb.addCapsule(v3(cx, cy, cz), p0, 0.035, 0.028, 4, TIMBER_DK);
             }
             bb.setMat(.steel);
             i = 0;
-            while (i < seg) : (i += 1) { // the tyre runs the FULL circle — iron outlasts the felloes it was shrunk onto
+            while (i < seg) : (i += 1) {
                 const a0 = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(seg));
                 const a1 = std.math.tau * @as(f32, @floatFromInt(i + 1)) / @as(f32, @floatFromInt(seg));
                 const tr2 = rad + 0.075;
@@ -97,10 +97,10 @@ pub fn cartMesh(shader: rl.Shader) rl.Model {
     b.addBox(v3(0.0, 0.79, 0.02), v3(0.05, -0.01, 0), v3(0, 0.014, 0), v3(0, 0, 0.72), IRON);
     b.setMat(.cloth);
     b.addBlob(v3(0.2, 0.84, 0.2), v3(0.45, 0.10, 0.36), 4, 7, CLOTH_DK);
-    b.addBlob(v3(0.52, 0.72, 0.42), v3(0.24, 0.07, 0.20), 3, 6, CANVAS); // where it spills over the rail
+    b.addBlob(v3(0.52, 0.72, 0.42), v3(0.24, 0.07, 0.20), 3, 6, CANVAS);
     b.addBlob(v3(0.42, 0.78, -0.04), v3(0.17, 0.045, 0.14), 3, 5, CLOTH_DK);
     b.setMat(.leather);
-    b.addCapsule(v3(0.55, 0.80, 0.35), v3(0.86, 0.52, 0.78), 0.016, 0.014, 4, BARK_DK); // the lashing rope, gone slack
+    b.addCapsule(v3(0.55, 0.80, 0.35), v3(0.86, 0.52, 0.78), 0.016, 0.014, 4, BARK_DK);
     b.setMat(.plant);
     tuftInto(&b, &rng, rng.signed() * 1.2, rng.signed() * 1.2, 0.7);
     return b.toModel(shader);
@@ -119,16 +119,16 @@ pub fn wellMesh(shader: rl.Shader) rl.Model {
         var a = rng.angle();
         const stop = a + std.math.tau;
         while (a < stop) {
-            const halfArc = rng.range(0.09, 0.19); // metres along the face
+            const halfArc = rng.range(0.09, 0.19);
             const dHalf = halfArc / R;
             const am = a + dHalf;
             const cs = mathx.cosf(am);
             const sn = mathx.sinf(am);
             const hh = rng.range(0.085, 0.125);
-            const depth = rng.range(0.045, 0.085); // how far out of the core it stands
+            const depth = rng.range(0.045, 0.085);
             b.addBox(
                 v3(cs * R, y0 + hh + rng.signed() * 0.012, sn * R),
-                v3(-sn * halfArc, rng.signed() * 0.022, cs * halfArc), // along the face, a little out of level
+                v3(-sn * halfArc, rng.signed() * 0.022, cs * halfArc),
                 v3(0, hh, 0),
                 v3(cs * depth, 0, sn * depth),
                 // Mostly ONE stone: 30% pale and 35% mossy was a checkerboard.
@@ -145,7 +145,7 @@ pub fn wellMesh(shader: rl.Shader) rl.Model {
     const nc: i32 = 11;
     var k: i32 = 0;
     while (k < nc) : (k += 1) {
-        if (k == 7) continue; // the missing slab
+        if (k == 7) continue;
         const am = std.math.tau * (@as(f32, @floatFromInt(k)) + 0.5) / @as(f32, @floatFromInt(nc));
         const shove: f32 = if (k == 3) rng.range(0.04, 0.07) else 0.0;
         const cs = mathx.cosf(am);
@@ -164,9 +164,9 @@ pub fn wellMesh(shader: rl.Shader) rl.Model {
     for ([_]f32{ -0.78, 0.78 }) |px| {
         b.addCapsule(v3(px, 1.0, 0), v3(px + rng.signed() * 0.05, 2.05, rng.signed() * 0.05), 0.085, 0.07, 6, TIMBER_DK);
     }
-    b.addCapsule(v3(-0.9, 2.02, 0), v3(0.9, 2.06, 0), 0.075, 0.075, 6, TIMBER); // the windlass barrel
-    b.addBox(v3(0.95, 2.04, 0.16), v3(0.03, 0, 0), v3(0, 0.02, 0.18), v3(0, 0.16, 0), TIMBER_DK); // crank handle
-    b.addCapsule(v3(0.2, 2.0, 0), v3(0.2, 1.25, 0.02), 0.018, 0.018, 4, BARK_DK); // rope
+    b.addCapsule(v3(-0.9, 2.02, 0), v3(0.9, 2.06, 0), 0.075, 0.075, 6, TIMBER);
+    b.addBox(v3(0.95, 2.04, 0.16), v3(0.03, 0, 0), v3(0, 0.02, 0.18), v3(0, 0.16, 0), TIMBER_DK);
+    b.addCapsule(v3(0.2, 2.0, 0), v3(0.2, 1.25, 0.02), 0.018, 0.018, 4, BARK_DK);
     b.addCylinder(v3(0.55, 1.10, 0.55), v3(0.55, 1.38, 0.55), 0.17, 0.19, 8, TIMBER);
     b.addDome(v3(0.55, 1.10, 0.55), v3(0, -1, 0), 0.17, 8, TIMBER_DK);
     b.setMat(.plant);
@@ -179,7 +179,7 @@ pub fn shrineMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2102);
     b.setMat(.stone);
-    b.addCube(v3(0, 0.14, 0), v3(1.5, 0.28, 1.2), STONE_DK); // plinth
+    b.addCube(v3(0, 0.14, 0), v3(1.5, 0.28, 1.2), STONE_DK);
     b.addCube(v3(0, 0.36, 0), v3(1.2, 0.18, 0.95), STONE);
     for ([_]f32{ -0.44, 0.44 }) |sx| b.addCube(v3(sx, 1.05, 0.06), v3(0.22, 1.2, 0.82), STONE);
     b.addCube(v3(0, 1.05, 0.42), v3(1.1, 1.2, 0.2), STONE_DK);
@@ -188,15 +188,15 @@ pub fn shrineMesh(shader: rl.Shader) rl.Model {
         b.addBox(
             v3(sgn * 0.35, 1.97, 0.06),
             v3(sgn * 0.35, -0.195, 0),
-            v3(0, 0.065, 0), // slab thickness
+            v3(0, 0.065, 0),
             v3(0, 0, 0.47 * rng.range(0.96, 1.04)),
-            if (sgn < 0) STONE else STONE_LT, // one pitch takes the low sun, the other doesn't
+            if (sgn < 0) STONE else STONE_LT,
         );
     }
-    b.addBox(v3(rng.signed() * 0.02, 2.20, 0.06), v3(0.125, 0.008, 0), v3(0, 0.05, 0), v3(0, 0, 0.45), STONE_LT); // ridge stone, straddling the joint
+    b.addBox(v3(rng.signed() * 0.02, 2.20, 0.06), v3(0.125, 0.008, 0), v3(0, 0.05, 0), v3(0, 0, 0.45), STONE_LT);
     b.addBox(v3(-0.58, 1.72, -0.30), v3(0.15, -0.05, 0), v3(0, 0.04, 0), v3(0, 0, 0.13), STONE_DK);
     b.addBlob(v3(0.40, 0.47, -0.30), v3(0.13, 0.05, 0.10), 3, 5, STONE_LT);
-    lichenInto(&b, &rng, v3(-0.20, 2.02, -0.02), v3(0.15, 0.05, 0.13), 3); // where the rain sits on the pitch
+    lichenInto(&b, &rng, v3(-0.20, 2.02, -0.02), v3(0.15, 0.05, 0.13), 3);
     b.setMat(.stone);
     b.addCylinder(v3(0, 0.46, 0.06), v3(rng.signed() * 0.03, 1.24, 0.06), 0.26, 0.17, 8, STONE_LT);
     b.addBlob(v3(0, 1.34, 0.06), v3(0.17, 0.19, 0.17), 4, 7, STONE);
@@ -207,7 +207,6 @@ pub fn shrineMesh(shader: rl.Shader) rl.Model {
         const h = rng.range(0.09, 0.17);
         b.setMat(.cloth);
         b.addCylinder(v3(x, 0.45, -0.34), v3(x, 0.45 + h, -0.34), 0.035, 0.032, 6, PETAL_WHITE);
-        // A candle flame is a teardrop and already the right shape — it only wanted to MOVE.
         b.setMat(.flame);
         b.setAnimY(0.45 + h);
         b.addBlob(v3(x, 0.45 + h + 0.035, -0.34), v3(0.022, 0.045, 0.022), 3, 5, FLAME_CORE);
@@ -224,11 +223,11 @@ pub fn lanternMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2103);
     b.setMat(.stone);
-    b.addBlob(v3(0, 0.12, 0), v3(0.34, 0.13, 0.32), 3, 6, STONE_DK); // a stone pad at the foot
+    b.addBlob(v3(0, 0.12, 0), v3(0.34, 0.13, 0.32), 3, 6, STONE_DK);
     b.setMat(.wood);
     b.addCapsule(v3(0, 0.06, 0), v3(rng.signed() * 0.08, 2.78, rng.signed() * 0.08), 0.075, 0.055, 6, TIMBER_DK);
     b.setMat(.steel);
-    b.addCapsule(v3(0.02, 2.76, 0), v3(0.30, 2.86, 0), 0.03, 0.024, 5, IRON); // the hook arm
+    b.addCapsule(v3(0.02, 2.76, 0), v3(0.30, 2.86, 0), 0.03, 0.024, 5, IRON);
     b.addCapsule(v3(0.30, 2.86, 0), v3(0.30, 2.74, 0), 0.02, 0.02, 4, IRON);
     var u: i32 = 0;
     while (u < 4) : (u += 1) {
@@ -236,11 +235,11 @@ pub fn lanternMesh(shader: rl.Shader) rl.Model {
         b.addCapsule(v3(0.30 + mathx.cosf(a) * 0.12, 2.44, mathx.sinf(a) * 0.12), v3(0.30 + mathx.cosf(a) * 0.12, 2.74, mathx.sinf(a) * 0.12), 0.017, 0.017, 4, IRON);
     }
     b.addCylinder(v3(0.30, 2.42, 0), v3(0.30, 2.47, 0), 0.14, 0.14, 8, IRON);
-    b.addDome(v3(0.30, 2.42, 0), v3(0, -1, 0), 0.14, 8, IRON); // it hangs overhead: the FLOOR of the collar is what you see
+    b.addDome(v3(0.30, 2.42, 0), v3(0, -1, 0), 0.14, 8, IRON);
     b.addCylinder(v3(0.30, 2.74, 0), v3(0.30, 2.80, 0), 0.16, 0.11, 8, IRON);
     b.addDome(v3(0.30, 2.80, 0), v3(0, 1, 0), 0.11, 8, IRON);
     b.setMat(.flame);
-    b.setAnimY(2.48); // the wick, not the prop's base — the datum the writhe measures from
+    b.setAnimY(2.48);
     b.addBlob(v3(0.30, 2.56, 0), v3(0.075, 0.10, 0.075), 4, 7, FLAME_CORE);
     b.addBlob(v3(0.30, 2.66, 0), v3(0.045, 0.07, 0.045), 3, 6, FLAME_MID);
     b.setAnimY(0);
@@ -256,7 +255,7 @@ pub fn fenceMesh(shader: rl.Shader) rl.Model {
     var i: i32 = 0;
     while (i < 7) : (i += 1) {
         const x = -3.0 + @as(f32, @floatFromInt(i)) * 1.0;
-        if (rng.float() < 0.14) continue; // a post pulled out or rotted away
+        if (rng.float() < 0.14) continue;
         const h = rng.range(0.85, 1.22);
         b.addCapsule(v3(x, 0, rng.signed() * 0.05), v3(x + rng.signed() * 0.16, h, rng.signed() * 0.14), 0.075, 0.06, 5, TIMBER_DK);
     }
@@ -306,11 +305,11 @@ pub fn barrelsMesh(shader: rl.Shader) rl.Model {
             }
             bb.setMat(.wood);
             if (!open) {
-                bb.addBlob(v3(cx + tilt, h - 0.02, cz), v3(0.27, 0.035, 0.27), 3, 10, TIMBER_DK); // the head
+                bb.addBlob(v3(cx + tilt, h - 0.02, cz), v3(0.27, 0.035, 0.27), 3, 10, TIMBER_DK);
                 return;
             }
             bb.addCylinder(v3(cx + tilt * 0.42, h * 0.42, cz), v3(cx + tilt, h + 0.006, cz), 0.235, 0.256, 10, BARK_OLD);
-            bb.addBlob(v3(cx + tilt * 0.42, h * 0.42, cz), v3(0.235, 0.025, 0.235), 3, 10, BARK_OLD); // the bottom head, seen from above
+            bb.addBlob(v3(cx + tilt * 0.42, h * 0.42, cz), v3(0.235, 0.025, 0.235), 3, 10, BARK_OLD);
             bb.setMat(.steel);
             bb.addCylinder(v3(cx + tilt, h - 0.045, cz), v3(cx + tilt, h + 0.012, cz), 0.305, 0.305, 10, RUST);
         }
@@ -318,38 +317,34 @@ pub fn barrelsMesh(shader: rl.Shader) rl.Model {
     barrel(&b, &rng, 0, 0, 0.02, 0.82, false);
     barrel(&b, &rng, 0.62, 0.28, -0.04, 0.76, true);
     barrel(&b, &rng, -0.35, 0.66, 0.05, 0.70, true);
-    // A crate of BOARDS — a dark carcase behind slats with daylight in the gaps, corner posts,
-    // the lid loose and skewed. The naked cube read as a die.
     b.setMat(.wood);
-    b.addCube(v3(-0.75, 0.25, -0.45), v3(0.56, 0.48, 0.52), BARK_OLD); // the shadowed carcase the slats hang on
+    b.addCube(v3(-0.75, 0.25, -0.45), v3(0.56, 0.48, 0.52), BARK_OLD);
     for ([_]f32{ -1, 1 }) |sx| {
         for ([_]f32{ -1, 1 }) |sz| {
-            b.addCube(v3(-0.75 + sx * 0.29, 0.27 + rng.signed() * 0.015, -0.45 + sz * 0.27), v3(0.06, 0.54, 0.06), TIMBER_DK); // corner post
+            b.addCube(v3(-0.75 + sx * 0.29, 0.27 + rng.signed() * 0.015, -0.45 + sz * 0.27), v3(0.06, 0.54, 0.06), TIMBER_DK);
         }
     }
     var p: i32 = 0;
     while (p < 3) : (p += 1) {
         const y = 0.11 + @as(f32, @floatFromInt(p)) * 0.16 + rng.signed() * 0.012;
-        if (p == 1 and rng.float() < 0.6) { // the sprung slat, nosed out of its nails
+        if (p == 1 and rng.float() < 0.6) {
             b.addBox(v3(-0.75, y, -0.76), v3(0.31, 0.02, 0.03), v3(0.02, 0.06, 0.015), v3(0.01, 0, 0.024), TIMBER);
         } else {
             b.addCube(v3(-0.75 + rng.signed() * 0.01, y, -0.76), v3(0.62, 0.115, 0.045), if (@mod(p, 2) == 0) TIMBER else TIMBER_DK);
         }
-        b.addCube(v3(-0.44, y + rng.signed() * 0.01, -0.45), v3(0.045, 0.115, 0.56), if (@mod(p, 2) == 0) TIMBER_DK else TIMBER); // the end face's slats
+        b.addCube(v3(-0.44, y + rng.signed() * 0.01, -0.45), v3(0.045, 0.115, 0.56), if (@mod(p, 2) == 0) TIMBER_DK else TIMBER);
     }
-    b.addBox(v3(-0.72, 0.545, -0.42), v3(0.33, 0.015, 0.03), v3(0.02, 0.035, 0), v3(-0.05, 0, 0.31), TIMBER); // the lid, resting skewed
-    b.addBox(v3(0.55, 0.10, -0.72), v3(0.34, 0.06, 0), v3(0, 0.05, 0), v3(0, 0, 0.28), TIMBER); // a lid slid clean off
+    b.addBox(v3(-0.72, 0.545, -0.42), v3(0.33, 0.015, 0.03), v3(0.02, 0.035, 0), v3(-0.05, 0, 0.31), TIMBER);
+    b.addBox(v3(0.55, 0.10, -0.72), v3(0.34, 0.06, 0), v3(0, 0.05, 0), v3(0, 0, 0.28), TIMBER);
     b.setMat(.cloth);
     b.addBlob(v3(-0.20, 0.15, -0.92), v3(0.27, 0.16, 0.21), 5, 9, THATCH_DK);
     b.addBlob(v3(-0.06, 0.10, -0.76), v3(0.18, 0.11, 0.15), 4, 8, THATCH_DK);
-    // The neck is the SAME SACKCLOTH, cinched with a cord: in the banner crimson it read as a spike of
-    // meat standing out of the grain.
     b.addCapsule(v3(-0.36, 0.22, -1.05), v3(-0.46, 0.10, -1.13), 0.065, 0.035, 5, THATCH_DK);
     b.setMat(.leather);
-    b.addCapsule(v3(-0.39, 0.195, -1.07), v3(-0.42, 0.165, -1.10), 0.056, 0.056, 5, BARK_DK); // the cinch
+    b.addCapsule(v3(-0.39, 0.195, -1.07), v3(-0.42, 0.165, -1.10), 0.056, 0.056, 5, BARK_DK);
     b.setMat(.plant);
-    b.addBlob(v3(-0.52, 0.022, -1.18), v3(0.10, 0.024, 0.085), 3, 6, THATCH); // the grain it bled…
-    b.addBlob(v3(-0.61, 0.018, -1.26), v3(0.055, 0.018, 0.05), 3, 5, THATCH); // …thinning out away from the mouth
+    b.addBlob(v3(-0.52, 0.022, -1.18), v3(0.10, 0.024, 0.085), 3, 6, THATCH);
+    b.addBlob(v3(-0.61, 0.018, -1.26), v3(0.055, 0.018, 0.05), 3, 5, THATCH);
     b.addBlob(v3(-0.44, 0.016, -1.24), v3(0.04, 0.014, 0.045), 3, 5, THATCH);
     tuftInto(&b, &rng, rng.signed() * 1.1, rng.signed() * 1.1, 0.7);
     return b.toModel(shader);
@@ -403,7 +398,7 @@ pub fn bonesMesh(shader: rl.Shader) rl.Model {
         b.addCapsule(v3(0, 0.06, z), v3(sgn * w, 0.13, z + rng.signed() * 0.04), 0.022, 0.018, 4, BONE);
         b.addCapsule(v3(sgn * w, 0.13, z), v3(sgn * w * 1.35, 0.05, z + rng.signed() * 0.06), 0.018, 0.014, 4, BONE);
     }
-    b.addCapsule(v3(0, 0.05, 0.28), v3(0, 0.05, 1.12), 0.035, 0.028, 5, BONE); // spine
+    b.addCapsule(v3(0, 0.05, 0.28), v3(0, 0.05, 1.12), 0.035, 0.028, 5, BONE);
     var l: i32 = 0;
     while (l < 4) : (l += 1) {
         const a = rng.angle();
@@ -427,28 +422,26 @@ pub fn sarcophagusMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2108);
     b.setMat(.stone);
-    b.addCube(v3(0, 0.10, 0), v3(2.1, 0.20, 1.05), STONE_DK); // base slab
+    b.addCube(v3(0, 0.10, 0), v3(2.1, 0.20, 1.05), STONE_DK);
     b.addCube(v3(0, 0.52, 0.44), v3(1.9, 0.64, 0.16), STONE);
     b.addCube(v3(0, 0.52, -0.44), v3(1.9, 0.64, 0.16), STONE);
     b.addCube(v3(0.87, 0.52, 0), v3(0.16, 0.64, 0.75), STONE);
     b.addCube(v3(-0.87, 0.52, 0), v3(0.16, 0.64, 0.75), STONE);
     b.addCube(v3(0, 0.36, 0), v3(1.6, 0.34, 0.6), MORTAR);
     b.addCube(v3(0, 0.245, 0), v3(1.98, 0.09, 1.13), STONE_DK);
-    b.addCube(v3(0.10, 0.80, 0), v3(1.80, 0.075, 1.11), STONE); // the cornice, its broken WEST end simply missing
+    b.addCube(v3(0.10, 0.80, 0), v3(1.80, 0.075, 1.11), STONE);
     for ([_]f32{ -1, 1 }) |sz| {
         b.addCube(v3(-0.08, 0.50, sz * 0.525), v3(1.35, 0.34, 0.045), STONE_LT);
-        b.addCube(v3(-0.08, 0.50, sz * 0.5365), v3(1.05, 0.22, 0.03), STONE_DK); // the field, weathered back
+        b.addCube(v3(-0.08, 0.50, sz * 0.5365), v3(1.05, 0.22, 0.03), STONE_DK);
     }
     b.setMat(.marble);
     b.addBox(v3(-0.35, 0.92, 0.30), v3(1.0, 0.10, 0), v3(-0.04, 0.11, 0), v3(0, 0, 0.5), MARBLE);
     b.addBox(v3(1.35, 0.30, 0.5), v3(0.55, 0.42, 0), v3(0.16, 0.20, 0), v3(0, 0, 0.42), MARBLE_DK);
-    b.addBlob(v3(-0.55, 1.09, 0.28), v3(0.24, 0.12, 0.20), 4, 8, MARBLE_LT); // the head end's pillow swell
-    b.addCapsule(v3(-0.45, 1.09, 0.29), v3(0.30, 1.01, 0.335), 0.175, 0.125, 8, MARBLE); // the body's long swell
-    b.addBlob(v3(-0.02, 1.13, 0.30), v3(0.10, 0.055, 0.09), 3, 6, MARBLE_LT); // the folded hands
-    b.addBlob(v3(0.38, 1.02, 0.34), v3(0.09, 0.06, 0.11), 3, 6, MARBLE_DK); // the feet, almost gone
+    b.addBlob(v3(-0.55, 1.09, 0.28), v3(0.24, 0.12, 0.20), 4, 8, MARBLE_LT);
+    b.addCapsule(v3(-0.45, 1.09, 0.29), v3(0.30, 1.01, 0.335), 0.175, 0.125, 8, MARBLE);
+    b.addBlob(v3(-0.02, 1.13, 0.30), v3(0.10, 0.055, 0.09), 3, 6, MARBLE_LT);
+    b.addBlob(v3(0.38, 1.02, 0.34), v3(0.09, 0.06, 0.11), 3, 6, MARBLE_DK);
     b.setMat(.stone);
-    // …and moss where the rain sits along it — BESIDE the figure and hugging the slab. A pad standing
-    // proud of the lid beside the effigy reads as a cushion, and it was the only thing on it you saw.
     b.addBox(v3(-0.30, 0.995, 0.62), v3(0.62, 0.055, 0), v3(0, 0.018, 0), v3(0, 0, 0.09), STONE_MOSS);
     b.setMat(.plant);
     b.addBlob(v3(0.10 + rng.signed() * 0.3, 1.055, 0.70), v3(0.26, 0.035, 0.13), 3, 6, MOSS_SOFT);
@@ -466,7 +459,7 @@ pub fn stairsMesh(shader: rl.Shader) rl.Model {
         const y = 0.14 + t * 0.24;
         const x = -1.1 + t * 0.42;
         const w = 1.5 - t * 0.10;
-        if (i == 5 and rng.float() < 0.5) continue; // the top tread often gone
+        if (i == 5 and rng.float() < 0.5) continue;
         b.addBox(
             v3(x, y, rng.signed() * 0.03),
             v3(0.28, rng.signed() * 0.012, 0),
@@ -476,7 +469,7 @@ pub fn stairsMesh(shader: rl.Shader) rl.Model {
         );
     }
     b.addCube(v3(-0.2, 0.55, 0.86), v3(2.6, 1.1, 0.34), STONE_DK);
-    b.addCube(v3(0.9, 1.25, 0.86), v3(0.7, 0.4, 0.30), STONE); // a surviving upstand
+    b.addCube(v3(0.9, 1.25, 0.86), v3(0.7, 0.4, 0.30), STONE);
     var d: i32 = 0;
     while (d < 5) : (d += 1) {
         const r = rng.range(0.14, 0.30);
@@ -495,9 +488,9 @@ pub fn gibbetMesh(shader: rl.Shader) rl.Model {
     b.addBlob(v3(0, 0.14, 0), v3(0.44, 0.15, 0.40), 3, 6, STONE_DK);
     b.setMat(.wood);
     const lean = rng.signed() * 0.22;
-    b.addCapsule(v3(0, 0.05, 0), v3(lean, 3.85, lean * 0.4), 0.115, 0.085, 6, TIMBER_DK); // post
-    b.addCapsule(v3(lean, 3.78, lean * 0.4), v3(lean + 1.05, 3.92, lean * 0.4), 0.075, 0.055, 5, TIMBER_DK); // arm
-    b.addCapsule(v3(lean + 0.1, 3.30, lean * 0.4), v3(lean + 0.62, 3.86, lean * 0.4), 0.05, 0.04, 4, TIMBER_DK); // brace
+    b.addCapsule(v3(0, 0.05, 0), v3(lean, 3.85, lean * 0.4), 0.115, 0.085, 6, TIMBER_DK);
+    b.addCapsule(v3(lean, 3.78, lean * 0.4), v3(lean + 1.05, 3.92, lean * 0.4), 0.075, 0.055, 5, TIMBER_DK);
+    b.addCapsule(v3(lean + 0.1, 3.30, lean * 0.4), v3(lean + 0.62, 3.86, lean * 0.4), 0.05, 0.04, 4, TIMBER_DK);
     b.setMat(.steel);
     var k: i32 = 0;
     while (k < 4) : (k += 1) {
@@ -524,22 +517,18 @@ pub fn gibbetMesh(shader: rl.Shader) rl.Model {
 }
 
 
-pub const CHEST_HALF_X: f32 = 0.52; // half-width across the front
-pub const CHEST_HALF_Z: f32 = 0.34; // half-depth
-/// THE FEET the coffer stands on, so the box does not sit flush in the dirt.
+pub const CHEST_HALF_X: f32 = 0.52;
+pub const CHEST_HALF_Z: f32 = 0.34;
 pub const CHEST_FOOT_H: f32 = 0.09;
-pub const CHEST_BODY_H: f32 = 0.52; // the carcase's own height, feet excluded
+pub const CHEST_BODY_H: f32 = 0.52;
 pub const CHEST_HINGE_Y: f32 = CHEST_FOOT_H + CHEST_BODY_H;
 pub const CHEST_HINGE_Z: f32 = -CHEST_HALF_Z;
-/// The lid's DOME — a half-round drum lying along X, radius as a fraction of the coffer's depth.
 pub const CHEST_LID_R: f32 = CHEST_HALF_Z * 0.84;
 const CHEST_LID_SLAB: f32 = 0.10;
 const CHEST_INSIDE = mathx.rgba(9, 7, 5, 255);
 const CHEST_RELIEF_PROUD: f32 = 0.065;
-/// The closed lid's crown
 pub const CHEST_TOP: f32 = CHEST_HINGE_Y + CHEST_LID_SLAB + CHEST_LID_R + CHEST_RELIEF_PROUD;
 
-/// The coffer: oak boards, iron bands, a lock plate.
 pub fn chestMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2112);
@@ -553,9 +542,9 @@ pub fn chestMesh(shader: rl.Shader) rl.Model {
     }
     const mid = CHEST_FOOT_H + CHEST_BODY_H * 0.5;
     const wall = 0.075;
-    const inX = hx - 0.015; // the carcase's own outer faces, unchanged from the solid version
+    const inX = hx - 0.015;
     const inZ = hz - 0.015;
-    for ([_]f32{ -1, 1 }) |sz| { // front and back…
+    for ([_]f32{ -1, 1 }) |sz| {
         b.addCube(v3(0, mid, sz * (inZ - wall * 0.5)), v3(inX * 2.0, CHEST_BODY_H, wall), TIMBER_DK);
     }
     for ([_]f32{ -1, 1 }) |sx2| {
@@ -564,8 +553,6 @@ pub fn chestMesh(shader: rl.Shader) rl.Model {
     b.addCube(v3(0, CHEST_FOOT_H + 0.055, 0), v3(inX * 2.0, 0.11, inZ * 2.0), CHEST_INSIDE);
     var x = -hx + 0.04;
     while (x < hx - 0.06) {
-        // CLAMPED to what is left: `w` is drawn after the loop test, so the last board could run up to
-        // 15 cm past the carcase's end and stick out sideways off the corner.
         const w = @min(rng.range(0.13, 0.22), hx - 0.04 - x);
         const cx = x + w * 0.5;
         for ([_]f32{ -1, 1 }) |sz| {
@@ -584,49 +571,33 @@ pub fn chestMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// ── WHAT IS INSIDE A SHUT CHEST ───────────────────────────────────────────────────────────────────────
-//
-// **A CLOSED CHEST GLOWS OUT OF ITS OWN SEAM** (owner's call). A coffer with the lid down is a brown box among
-// brown boxes; the hairline of light round the lid is the whole difference between scenery and something worth
-// walking to, and it is the same promise the pickup's wisp makes at a distance.
 const CHEST_GLOW_EMISSIVE: u8 = 26;
 const CHEST_GLOW = mathx.rgba(226, 170, 78, CHEST_GLOW_EMISSIVE);
 const CHEST_GLOW_HOT = mathx.rgba(244, 216, 152, CHEST_GLOW_EMISSIVE);
 /// How far the seam plate stands PROUD of the carcase's outer face. The iron bands' own 0.010 — this has to
 /// clear the wood to be seen at all, and any more is a lit flange round a box rather than a leaking joint.
 const CHEST_SEAM_PROUD: f32 = 0.010;
-/// …and how thick the lit line is. It straddles the seam, so half of it is above the rim and half below.
 const CHEST_SEAM_H: f32 = 0.034;
 
-/// **THE GLOW IS ITS OWN MESH, because it is the one part of the chest that goes away.** The carcase is a prop
-/// on the grid and the lid is drawn by `chest.zig`; neither carries a per-draw alpha, and this needs one — the
-/// light dies as the lid comes up (`chest.Chests.drawGlow`). Authored in the BODY's frame, not the lid's.
 pub fn chestGlowMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     const hx = CHEST_HALF_X + CHEST_SEAM_PROUD;
     const hz = CHEST_HALF_Z + CHEST_SEAM_PROUD;
     b.setMat(.plain);
-    // THE SEAM ITSELF: a thin lit slab straddling the line the lid sits on, proud of the wood all round so the
-    // hairline reads from any bearing rather than only off the front.
     b.addCube(v3(0, CHEST_HINGE_Y, 0), v3(hx * 2.0, CHEST_SEAM_H, hz * 2.0), CHEST_GLOW);
-    // …and the INSIDE lit under it, which is what the seam is a leak FROM. Visible for the moment the lid is
-    // rising and gone with the rest of it — without this the box opens on an unlit hole and the glow reads as
-    // paint on the joint rather than as something in there.
     const inX = CHEST_HALF_X - 0.09;
     const inZ = CHEST_HALF_Z - 0.09;
     b.addBlob(v3(0, CHEST_HINGE_Y - 0.13, 0), v3(inX, 0.10, inZ), 3, 8, CHEST_GLOW_HOT);
     return b.toModel(shader);
 }
 
-/// THE LID, authored about its HINGE — origin at the back edge of the rim, so `chest.zig` opens it with
-/// one `rx` and no offset arithmetic.
 pub fn chestLidMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(2113);
     b.setMat(.wood);
     const hx = CHEST_HALF_X;
     const d = CHEST_HALF_Z * 2.0;
-    const axis = CHEST_LID_SLAB; // the drum's axis height above the hinge
+    const axis = CHEST_LID_SLAB;
     const R = CHEST_LID_R;
     b.addCube(v3(0, axis * 0.5, d * 0.5), v3(hx * 2.0 - 0.02, axis, d - 0.02), TIMBER_DK);
     const ex = hx - 0.01;

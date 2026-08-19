@@ -6,14 +6,13 @@ const Kind = props.Kind;
 const Op = wf.Op;
 
 
-const BASE_SEED: u64 = 20260728; // the world seed the old env.zig ran its single stream on
+const BASE_SEED: u64 = 20260728;
 
 pub const Emit = struct {
     m: *wf.Map,
     rng: mathx.Rng,
     counter: u64 = 0,
 
-    // Per-op seeds, handed out SEQUENTIALLY.
     fn nextSeed(self: *Emit) u64 {
         self.counter += 1;
         return 1000 + self.counter;
@@ -35,7 +34,7 @@ pub const Emit = struct {
         o.z = z;
         o.yaw = yaw;
         o.scale = scale;
-        o.r1 = y; // `at` has no y positional; r1 is free on this kind and carries it
+        o.r1 = y;
         self.push(o);
     }
 
@@ -183,9 +182,8 @@ pub fn build(m: *wf.Map) void {
 
     var p = Emit{ .m = m, .rng = mathx.Rng.init(BASE_SEED) };
 
-    // The clearings the canopy and the ground cover keep out of.
-    p.clearing(-98, -16, 18.0); // the stone circle's glade
-    p.clearing(-74, 30, 15.0); // the woodcutter's yard
+    p.clearing(-98, -16, 18.0);
+    p.clearing(-74, 30, 15.0);
 
     avenue(&p);
     fallenCity(&p);
@@ -202,10 +200,8 @@ fn foes(p: *Emit) void {
     p.foe(.toad, -13.0, -20.0, 70, 0.94, 0.37);
     p.foe(.toad, 14.5, -8.0, 250, 1.0, 0.61);
     p.foe(.toad, -12.5, -27.0, 120, 1.14, 0.83);
-    // THE LINE — set among the columns and graves off the avenue, flanking the knot's ground.
     p.foe(.archer, -16.0, -22.0, 60, 1.0, 0.2);
     p.foe(.archer, 17.5, -34.0, 210, 1.04, 0.7);
-    // THE GRIEF — deep down the avenue past the toads and archers, the climax of the approach.
     p.foe(.ogre, 3.0, -50.0, 0, 1.0, 0.4);
 }
 
@@ -222,47 +218,37 @@ const avenue_layout = [_]P{
     .{ .x = -6, .z = -36, .yaw = -6, .s = 1.05, .kind = .pillar },
     .{ .x = 6, .z = -36, .yaw = 20, .s = 0.95, .kind = .broken },
     .{ .x = 0, .z = -31, .yaw = 0, .s = 1.0, .kind = .arch },
-    // the bonfire ember, just off the path by the start
     .{ .x = 3.0, .z = 6.5, .yaw = 0, .s = 1.0, .kind = .bonfire },
-    // ruined walls
     .{ .x = -14, .z = -14, .yaw = 78, .s = 1.1, .kind = .wall },
     .{ .x = 15, .z = -40, .yaw = -12, .s = 1.2, .kind = .wall },
     .{ .x = -24, .z = -28, .yaw = 100, .s = 0.9, .kind = .wall },
-    // dead trees
     .{ .x = -12, .z = -2, .yaw = 0, .s = 1.1, .kind = .tree },
     .{ .x = 16, .z = -31, .yaw = 140, .s = 1.3, .kind = .tree },
     .{ .x = -20, .z = -38, .yaw = 70, .s = 0.9, .kind = .tree },
     .{ .x = 24, .z = 6, .yaw = 200, .s = 1.0, .kind = .tree },
-    // graveyard cluster + a stray marker
     .{ .x = -11, .z = -29, .yaw = 15, .s = 1.0, .kind = .graves },
     .{ .x = -14, .z = -33, .yaw = -40, .s = 0.9, .kind = .graves },
     .{ .x = 13, .z = -26, .yaw = 60, .s = 0.8, .kind = .graves },
-    // swords left standing in the earth
     .{ .x = -2.8, .z = -21, .yaw = 30, .s = 1.0, .kind = .sword },
     .{ .x = 10, .z = -8, .yaw = -70, .s = 0.9, .kind = .sword },
     .{ .x = -12.5, .z = -31, .yaw = 120, .s = 1.1, .kind = .sword },
-    // ruin blocks
     .{ .x = 15, .z = -3, .yaw = -25, .s = 1.3, .kind = .block },
     .{ .x = 13, .z = -22, .yaw = 70, .s = 1.0, .kind = .block },
     .{ .x = -9, .z = -44, .yaw = 30, .s = 1.0, .kind = .block },
     .{ .x = 20, .z = -18, .yaw = 55, .s = 1.0, .kind = .block },
     .{ .x = -22, .z = -6, .yaw = -35, .s = 0.9, .kind = .block },
-    // war banners flanking the avenue + a headless sentinel by the bonfire
     .{ .x = 7.5, .z = -11, .yaw = -18, .s = 1.0, .kind = .banner },
     .{ .x = -7.5, .z = -33, .yaw = 155, .s = 1.1, .kind = .banner },
     .{ .x = -8.5, .z = 7, .yaw = 155, .s = 1.0, .kind = .statue },
-    // rubble scatter near the path
     .{ .x = 2.5, .z = -13, .yaw = 45, .s = 1.0, .kind = .rubble },
     .{ .x = -4, .z = -34, .yaw = 10, .s = 1.0, .kind = .rubble },
     .{ .x = 8, .z = 2, .yaw = 70, .s = 0.8, .kind = .rubble },
     .{ .x = -8, .z = -20, .yaw = 0, .s = 1.0, .kind = .rubble },
-    // hand-placed flora accents: glowing blooms hug the bonfire; flowers among the graves
     .{ .x = 2.1, .z = 5.5, .yaw = 40, .s = 1.0, .kind = .glow },
     .{ .x = 4.2, .z = 7.6, .yaw = 210, .s = 0.85, .kind = .glow },
     .{ .x = -11.8, .z = -30.6, .yaw = 75, .s = 1.0, .kind = .flowers },
     .{ .x = 12.4, .z = -27.2, .yaw = 150, .s = 0.9, .kind = .flowers },
     .{ .x = -13.2, .z = -15.7, .yaw = 25, .s = 1.15, .kind = .reeds },
-    // denser flowers ringing the graveyard — mourning blooms clustered on the graves
     .{ .x = -9.6, .z = -28.2, .yaw = 20, .s = 0.95, .kind = .flowers },
     .{ .x = -13.5, .z = -27.8, .yaw = 130, .s = 1.05, .kind = .flowers },
     .{ .x = -15.4, .z = -31.4, .yaw = 250, .s = 0.9, .kind = .flowers },
@@ -270,9 +256,7 @@ const avenue_layout = [_]P{
     .{ .x = -9.4, .z = -32.6, .yaw = 60, .s = 0.85, .kind = .flowers },
     .{ .x = 11.0, .z = -24.2, .yaw = 200, .s = 0.9, .kind = .flowers },
     .{ .x = 14.6, .z = -24.8, .yaw = 20, .s = 0.95, .kind = .flowers },
-    // a brazier at the arch, so the threshold reads at dusk and the piers catch firelight
     .{ .x = -3.5, .z = -30.2, .yaw = 0, .s = 1.0, .kind = .brazier },
-    // the paving of the old road surfacing through the grass
     .{ .x = 0, .z = -4, .yaw = 0, .s = 1.2, .kind = .paving },
     .{ .x = 0.6, .z = -19, .yaw = 40, .s = 1.1, .kind = .paving },
     .{ .x = -0.8, .z = -38, .yaw = 15, .s = 1.0, .kind = .paving },
@@ -287,7 +271,6 @@ fn avenue(p: *Emit) void {
     p.at(.shrine, 6.8, -3.5, 200, 1.0);
     p.at(.cairn, -5.2, 18.0, 0, 1.1);
     p.at(.barrels, 9.5, -16.0, 50, 0.95);
-    // A dense flowering meadow around the bonfire — the first thing the player ever looks at.
     p.belt(.wildflowers, -18, -6, 18, 24, 60, 0.85, 1.35);
     p.belt(.grasstall, -20, -8, 20, 26, 80, 0.85, 1.4);
     p.belt(.clover, -20, -8, 20, 26, 60, 0.9, 1.5);
@@ -301,14 +284,12 @@ fn avenue(p: *Emit) void {
 }
 
 fn fallenCity(p: *Emit) void {
-    // The processional way carries on north.
     const COLONNADE = [_]Kind{ .pillar, .broken, .broken };
     p.line(&COLONNADE, -6.5, -48, -6.5, -112, 11.0, 1.0, 0.85, 1.15);
     p.line(&COLONNADE, 6.5, -48, 6.5, -112, 11.0, 1.0, 0.85, 1.15);
     p.belt(.paving, -3.2, -112, 3.2, -48, 6, 0.9, 1.4);
     p.belt(.rubble, -5, -112, 5, -48, 5, 0.8, 1.3);
 
-    // The PLAZA at (0, -80).
     _ = p.disc(&.{.paving}, 0, -80, 0, 13.0, 14, 1.0, 1.5);
     p.at(.statue, -9.5, -74, 150, 1.25);
     p.at(.statue, 9.0, -86, 20, 1.15);
@@ -334,10 +315,9 @@ fn fallenCity(p: *Emit) void {
     towerSite(p, 36.0, -88.0, 20);
     towerSite(p, -52.0, -104.0, 200);
 
-    // The perimeter: broken wall runs on three sides, laid end to end with gaps.
-    p.line(&.{.wall}, -46, -120, 46, -120, 7.4, 0.78, 0.9, 1.25); // north face
-    p.line(&.{.wall}, -46, -120, -46, -58, 7.4, 0.78, 0.9, 1.25); // west face
-    p.line(&.{.wall}, 46, -120, 46, -62, 7.4, 0.78, 0.9, 1.25); // east face
+    p.line(&.{.wall}, -46, -120, 46, -120, 7.4, 0.78, 0.9, 1.25);
+    p.line(&.{.wall}, -46, -120, -46, -58, 7.4, 0.78, 0.9, 1.25);
+    p.line(&.{.wall}, 46, -120, 46, -62, 7.4, 0.78, 0.9, 1.25);
 
     const quarter = [_][3]f32{
         .{ 20, -58, 84 },   .{ 27, -64, 12 },   .{ 19, -70, 96 },  .{ 28, -76, 4 },
@@ -361,7 +341,7 @@ fn fallenCity(p: *Emit) void {
     p.at(.gibbet, -8.5, -54.0, 200, 1.05);
     p.at(.gibbet, 11.0, -110.0, 20, 0.95);
     var ln: i32 = 0;
-    while (ln < 8) : (ln += 1) { // lanterns down the processional way, alternating sides
+    while (ln < 8) : (ln += 1) {
         const lz = -52.0 - @as(f32, @floatFromInt(ln)) * 8.5;
         p.at(.lantern, if (@mod(ln, 2) == 0) @as(f32, 4.2) else -4.2, lz, 0, p.rng.range(0.9, 1.1));
     }
@@ -376,7 +356,6 @@ fn fallenCity(p: *Emit) void {
     p.belt(.nettles, -44, -120, 44, -48, 120, 0.85, 1.35);
     p.belt(.sapling, -44, -120, 44, -48, 70, 0.8, 1.2);
     p.belt(.thicket, -44, -120, 44, -48, 40, 0.85, 1.3);
-    // The horizon giants, dissolved by haze.
     p.at(.gate, 2, -124, 4, 1.35);
     p.at(.tower, -34, -132, 10, 1.4);
     p.at(.tower, 44, -126, -25, 1.15);
@@ -386,7 +365,6 @@ fn fallenCity(p: *Emit) void {
     p.at(.tower, 132, -78, -30, 1.0);
 }
 
-// A watchtower and its dressing: a torch inside the dark room, a brazier at the door, spill.
 fn towerSite(p: *Emit, x: f32, z: f32, yaw: f32) void {
     p.at(.watchtower, x, z, yaw, 1.0);
     p.at(.torch, x + p.rng.signed() * 0.9, z + p.rng.signed() * 0.9, p.rng.range(0, 360), 0.9);
@@ -400,7 +378,7 @@ fn theTarn(p: *Emit) void {
     const lx: f32 = 104.0;
     const lz: f32 = 6.0;
     p.atY(.water, lx, 0, lz, 0, 3.1); // ~40 m across
-    p.atY(.water, 62.0, 0.004, -52.0, 40, 1.05); // 4 mm of offset keeps two sheets out of z-fight
+    p.atY(.water, 62.0, 0.004, -52.0, 40, 1.05);
 
     p.at(.causeway, 74.0, 8.0, 6, 1.35);
     p.at(.causeway, 86.5, 9.4, 10, 1.35);
@@ -410,8 +388,6 @@ fn theTarn(p: *Emit) void {
     _ = p.disc(&.{.willow}, lx, lz, 36.0, 46.0, 11, 0.85, 1.3);
     _ = p.disc(&.{ .reeds, .reeds, .cattails, .cattails }, lx, lz, 26.0, 54.0, 420, 0.9, 1.55);
 
-    // LILY PADS float ON the water, so they are the one scatter that must NOT avoid it. They come in RAFTS
-    // off a rootstock rather than sown evenly, so each raft is its own disc with an area-uniform bias.
     var raft: i32 = 0;
     while (raft < 14) : (raft += 1) {
         const ra = p.rng.angle();
@@ -426,14 +402,13 @@ fn theTarn(p: *Emit) void {
     p.belt(.bush, 60, -55, 152, 62, 60, 0.8, 1.3);
     p.belt(.thicket, 58, -58, 152, 62, 40, 0.85, 1.4);
     p.belt(.nettles, 56, -60, 152, 62, 70, 0.85, 1.3);
-    p.belt(.reeds, 52, -66, 78, -34, 90, 0.9, 1.4); // the north-western pool's own bed
+    p.belt(.reeds, 52, -66, 78, -34, 90, 0.9, 1.4);
     p.belt(.cattails, 52, -66, 78, -34, 60, 0.9, 1.4);
     p.belt(.willow, 52, -62, 74, -40, 8, 0.8, 1.1);
     p.belt(.log, 62, -30, 148, 50, 14, 0.8, 1.2);
     p.belt(.outcrop, 60, -50, 150, 58, 16, 0.85, 1.3);
     p.belt(.sapling, 58, -55, 152, 60, 45, 0.8, 1.2);
-    p.belt(.birch, 56, -56, 152, 60, 16, 0.8, 1.15); // birches like wet ground
-    // A camp on the shore, long cold.
+    p.belt(.birch, 56, -56, 152, 60, 16, 0.8, 1.15);
     p.at(.campfire, 88.0, 34.0, 0, 1.0);
     p.at(.log, 90.6, 35.4, 20, 1.0);
     p.at(.cart, 85.0, 37.5, 130, 0.9);
@@ -452,7 +427,7 @@ fn oldWood(p: *Emit) void {
         .birch,    .birch,    .birch,    .snag,     .snag,     .tree,
     };
     const canopy = p.beltMix(&CANOPY, -152, -120, -54, 130, 260, 0.68, 1.24);
-    canopy.gAxis = .x; // thin out on the eastern margin — a hard tree line reads as a wall
+    canopy.gAxis = .x;
     canopy.gA = -54;
     canopy.gB = -84;
     canopy.gFloor = 0.18;
@@ -477,23 +452,21 @@ fn oldWood(p: *Emit) void {
     p.belt(.cairn, -145, -110, -60, 120, 7, 0.9, 1.2);
     p.belt(.bones, -148, -118, -58, 128, 9, 0.85, 1.2);
 
-    // THE STONE CIRCLE, in a clearing the trees keep out of (see the `clear` records).
     p.ring(.monolith, -98, -16, 8.5, 9, 6, 0.9, 1.25);
-    p.at(.monolith, -98, -16, 30, 0.7); // a small altar stone at the centre
+    p.at(.monolith, -98, -16, 30, 0.7);
     p.belt(.flowers, -106, -24, -90, -8, 12, 0.8, 1.2);
-    p.belt(.glow, -104, -22, -92, -10, 5, 0.9, 1.2); // only here and at the bonfire
+    p.belt(.glow, -104, -22, -92, -10, 5, 0.9, 1.2);
     p.at(.brazier, -93.0, -11.0, 0, 1.0);
 
-    // THE WOODCUTTER'S COTTAGE — doorway on local −Z, turned to open east onto the wood.
     const hx: f32 = -74.0;
     const hz: f32 = 30.0;
     p.at(.cottage, hx, hz, 270, 1.05);
     const door = localToWorld(0, -4.6, 270, 1.05);
     p.at(.campfire, hx + door[0], hz + door[1], 0, 1.1);
     p.at(.log, hx + 4.4, hz + 3.0, 70, 1.0);
-    p.at(.stump, hx + 3.2, hz - 3.4, 0, 1.15); // the chopping block
+    p.at(.stump, hx + 3.2, hz - 3.4, 0, 1.15);
     p.at(.cart, hx + 6.5, hz - 1.0, 190, 0.95);
-    p.at(.torch, hx + 1.6, hz + 0.4, 0, 0.9); // one still burning inside the shell
+    p.at(.torch, hx + 1.6, hz + 0.4, 0, 0.9);
     p.at(.woodpile, hx - 3.6, hz + 2.6, 12, 1.05);
     p.at(.well, hx + 7.5, hz + 4.5, 0, 1.0);
     p.at(.fence, hx + 2.0, hz + 8.0, 6, 1.1);
@@ -528,7 +501,6 @@ fn theDowns(p: *Emit) void {
     towerSite(p, 22.0, 98.0, 350);
     p.at(.tower, -74, 138, 25, 1.0);
     p.at(.tower, 96, 132, -15, 1.15);
-    // A lonely fire out on the downs — the one warm thing in the region.
     p.at(.campfire, -34.0, 74.0, 0, 1.0);
     p.at(.log, -32.0, 76.2, 30, 1.0);
     p.at(.cairn, -30.5, 71.0, 0, 1.15);
@@ -537,12 +509,11 @@ fn theDowns(p: *Emit) void {
     p.at(.lantern, 3.0, 104.0, 0, 1.0);
 }
 
-// One op now: four walls of overlapping cliff segments plus the talus spilling off their feet.
 fn cliffRing(p: *Emit) void {
     var o = wf.defaults(.edge);
     o.kind = .cliff;
-    o.r0 = 6.5; // step along the wall
-    o.n = 90; // talus + scrub pieces spilling inside the feet
+    o.r0 = 6.5;
+    o.n = 90;
     o.sLo = 0.92;
     o.sHi = 1.24;
     o.seed = p.nextSeed();
@@ -551,7 +522,7 @@ fn cliffRing(p: *Emit) void {
 }
 
 fn groundCover(p: *Emit) void {
-    const F: f32 = 400; // past the world's own extent — these are half-planes, not boxes
+    const F: f32 = 400;
     p.zone("wood", -F, -F, -52, F, 0.98, &.{
         .fern,    .fern,    .fern,   .bramble, .bramble,   .thicket,
         .bush,    .moss,    .moss,   .moss,    .mushrooms, .mushrooms,
@@ -576,7 +547,7 @@ fn groundCover(p: *Emit) void {
     });
 
     var o = wf.defaults(.cover);
-    o.r0 = 3.3; // lattice pitch: ONE candidate per cell of this size, jittered inside it
+    o.r0 = 3.3;
     o.sLo = 0.72;
     o.sHi = 1.38;
     o.seed = p.nextSeed();

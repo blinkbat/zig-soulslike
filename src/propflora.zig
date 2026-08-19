@@ -74,22 +74,21 @@ pub fn shrubMesh(shader: rl.Shader) rl.Model {
         const x = mathx.cosf(a) * rr;
         const z = mathx.sinf(a) * rr;
         const base = rng.range(0.02, 0.14);
-        const lobeR = rng.range(0.11, 0.20) * (1.0 - 0.5 * rr / 0.36); // fuller toward the centre
-        const top = base + lobeR * rng.range(1.5, 2.4) * (1.0 - 0.4 * rr / 0.36); // domed profile
+        const lobeR = rng.range(0.11, 0.20) * (1.0 - 0.5 * rr / 0.36);
+        const top = base + lobeR * rng.range(1.5, 2.4) * (1.0 - 0.4 * rr / 0.36);
         const col = if (rng.float() < 0.5) SCRUB else SCRUB_DK;
-        // a fat, short, slightly-leaning capsule = one rounded leafy lobe (a cylinder leaves an open rim at the top)
         b.addCapsule(v3(x, base, z), v3(x + rng.signed() * 0.05, top, z + rng.signed() * 0.05), lobeR, lobeR * 0.45, 6, col);
     }
     var f: i32 = 0;
-    while (f < 8) : (f += 1) { // small leaf clusters breaking the domed profile
+    while (f < 8) : (f += 1) {
         const a = rng.angle();
         const d = rng.range(0.18, 0.42);
         const r = rng.range(0.055, 0.10);
         b.addBlob(v3(mathx.cosf(a) * d, rng.range(0.12, 0.44) * (1.0 - 0.5 * d / 0.42), mathx.sinf(a) * d), v3(r, r * 0.7, r * 1.1), 3, 6, if (rng.float() < 0.5) SCRUB_DK else SCRUB);
     }
-    b.addCylinder(v3(0.06, 0.0, 0.03), v3(0.20, 0.54, 0.12), 0.018, 0.004, 4, BARK_DK); // bare twigs poking through
+    b.addCylinder(v3(0.06, 0.0, 0.03), v3(0.20, 0.54, 0.12), 0.018, 0.004, 4, BARK_DK);
     b.addCylinder(v3(-0.05, 0.0, -0.02), v3(-0.24, 0.48, -0.20), 0.018, 0.004, 4, BARK_DK);
-    tuftInto(&b, &rng, 0.30, -0.30, 0.7); // grass at the skirt
+    tuftInto(&b, &rng, 0.30, -0.30, 0.7);
     return b.toModel(shader);
 }
 
@@ -106,7 +105,7 @@ pub fn flowersMesh(shader: rl.Shader) rl.Model {
         const z = mathx.sinf(a) * d;
         const h = rng.range(0.26, 0.44);
         b.addCylinder(v3(x, 0, z), v3(x, h, z), 0.009, 0.005, 4, STEM);
-        b.addCube(v3(x, h + 0.02, z), v3(0.07, 0.05, 0.07), PETAL); // fatter bloom — reads at distance
+        b.addCube(v3(x, h + 0.02, z), v3(0.07, 0.05, 0.07), PETAL);
     }
     return b.toModel(shader);
 }
@@ -127,7 +126,7 @@ pub fn reedsMesh(shader: rl.Shader) rl.Model {
         const lx = mathx.cosf(la) * lean;
         const lz = mathx.sinf(la) * lean;
         blade(&b, x, z, h, lx, lz, 0.016, if (rng.float() < 0.7) GRASS_DRY else GRASS_GOLD);
-        b.addCube(v3(x + lx, h + 0.03, z + lz), v3(0.038, 0.13, 0.038), SEED); // fuller seed head
+        b.addCube(v3(x + lx, h + 0.03, z + lz), v3(0.038, 0.13, 0.038), SEED);
     }
     return b.toModel(shader);
 }
@@ -165,13 +164,13 @@ pub fn bushMesh(shader: rl.Shader) rl.Model {
         const a = rng.angle();
         const d = rng.range(0.0, 0.62);
         const t = d / 0.62;
-        const r = rng.range(0.20, 0.34) * (1.0 - 0.30 * t); // fuller in the middle, thinning at the edge
+        const r = rng.range(0.20, 0.34) * (1.0 - 0.30 * t);
         const y = rng.range(0.30, 0.88) * (1.0 - 0.30 * t);
         const col = if (i == 0 or rng.float() < 0.22) LEAF_GOLD else if (rng.float() < 0.5) LEAF else LEAF_DK;
         b.addBlob(v3(mathx.cosf(a) * d, y, mathx.sinf(a) * d), v3(r, r * rng.range(0.62, 0.9), r * rng.range(0.85, 1.15)), 4, 7, col);
     }
     var f: i32 = 0;
-    while (f < 10) : (f += 1) { // small leaf clusters over the shell — the silhouette stops being balls
+    while (f < 10) : (f += 1) {
         const a = rng.angle();
         const d = rng.range(0.32, 0.60);
         const r = rng.range(0.07, 0.13);
@@ -302,7 +301,7 @@ pub fn cloverMesh(shader: rl.Shader) rl.Model {
     while (f < 3) : (f += 1) {
         const a = rng.angle();
         const d = rng.range(0.1, 0.6);
-        b.addBlob(v3(mathx.cosf(a) * d, 0.155, mathx.sinf(a) * d), v3(0.032, 0.030, 0.032), 3, 5, PETAL_WHITE); // clover heads
+        b.addBlob(v3(mathx.cosf(a) * d, 0.155, mathx.sinf(a) * d), v3(0.032, 0.030, 0.032), 3, 5, PETAL_WHITE);
     }
     return b.toModel(shader);
 }
@@ -338,11 +337,11 @@ pub fn mushroomsMesh(shader: rl.Shader) rl.Model {
         const x = mathx.cosf(a) * d;
         const z = mathx.sinf(a) * d;
         const h = rng.range(0.07, 0.28);
-        const capR = rng.range(0.045, 0.135) * (0.5 + 0.6 * h / 0.28); // older = taller AND broader
+        const capR = rng.range(0.045, 0.135) * (0.5 + 0.6 * h / 0.28);
         b.addCylinder(v3(x, 0, z), v3(x + rng.signed() * 0.02, h, z + rng.signed() * 0.02), capR * 0.30, capR * 0.24, 5, CAP_PALE);
         b.addBlob(v3(x + rng.signed() * 0.02, h + capR * 0.22, z + rng.signed() * 0.02), v3(capR, capR * rng.range(0.42, 0.72), capR), 3, 6, if (rng.float() < 0.6) CAP_BROWN else CAP_PALE);
     }
-    b.addBlob(v3(0, 0.02, 0), v3(0.36, 0.035, 0.32), 3, 6, MOSS_DK); // the damp patch they came up in
+    b.addBlob(v3(0, 0.02, 0), v3(0.36, 0.035, 0.32), 3, 6, MOSS_DK);
     return b.toModel(shader);
 }
 
@@ -363,7 +362,7 @@ pub fn nettlesMesh(shader: rl.Shader) rl.Model {
         while (p < pairs) : (p += 1) {
             const t = (@as(f32, @floatFromInt(p)) + 0.8) / (@as(f32, @floatFromInt(pairs)) + 0.4);
             const y = h * t;
-            const la = a + rng.signed() * 0.8 + @as(f32, @floatFromInt(p)) * 1.1; // leaves spiral up the stem
+            const la = a + rng.signed() * 0.8 + @as(f32, @floatFromInt(p)) * 1.1;
             const ll = rng.range(0.085, 0.145) * (1.0 - 0.35 * t);
             for ([_]f32{ -1, 1 }) |sgn| {
                 b.addBlob(v3(x + mathx.cosf(la) * sgn * ll, y, z + mathx.sinf(la) * sgn * ll), v3(ll * 0.9, 0.032, ll * 0.72), 3, 6, if (rng.float() < 0.4) LEAF_DAMP else NETTLE);
@@ -468,7 +467,7 @@ pub fn gorseMesh(shader: rl.Shader) rl.Model {
         const a = rng.angle();
         const d = rng.range(0.0, 0.5);
         const h = rng.range(0.35, 0.95) * (1.0 - 0.4 * d);
-        b.addCylinder(v3(mathx.cosf(a) * d, 0.0, mathx.sinf(a) * d), v3(mathx.cosf(a) * d * 1.5, h, mathx.sinf(a) * d * 1.5), 0.022, 0.004, 4, SCRUB_DK); // a thorn
+        b.addCylinder(v3(mathx.cosf(a) * d, 0.0, mathx.sinf(a) * d), v3(mathx.cosf(a) * d * 1.5, h, mathx.sinf(a) * d * 1.5), 0.022, 0.004, 4, SCRUB_DK);
     }
     b.setMat(.plant);
     var i: i32 = 0;
@@ -502,7 +501,7 @@ pub fn cattailsMesh(shader: rl.Shader) rl.Model {
             const sh = h * rng.range(0.85, 1.05);
             b.addCylinder(v3(x, 0, z), v3(sx, sh, sz), 0.014, 0.012, 4, STEM);
             b.addBlob(v3(sx, sh + 0.10, sz), v3(0.032, 0.115, 0.032), 3, 6, CAP_BROWN);
-            b.addCylinder(v3(sx, sh + 0.21, sz), v3(sx, sh + 0.30, sz), 0.010, 0.003, 4, STEM); // the spike above it
+            b.addCylinder(v3(sx, sh + 0.21, sz), v3(sx, sh + 0.30, sz), 0.010, 0.003, 4, STEM);
         }
     }
     return b.toModel(shader);
@@ -591,7 +590,7 @@ pub fn thicketMesh(shader: rl.Shader) rl.Model {
         b.addBlob(v3(mathx.cosf(a) * d, y, mathx.sinf(a) * d), v3(r, r * rng.range(0.78, 1.0), r * rng.range(0.9, 1.15)), 4, 7, col);
     }
     for (tips) |t| {
-        if (rng.float() < 0.3) continue; // a couple stay bare and dead — that is the wabi-sabi
+        if (rng.float() < 0.3) continue;
         const r = rng.range(0.075, 0.135);
         b.addBlob(v3(t[0], t[1], t[2]), v3(r, r * rng.range(0.8, 1.0), r * rng.range(0.9, 1.1)), 3, 6, if (rng.float() < 0.35) LEAF_DK else if (rng.float() < 0.7) LEAF else LEAF_DAMP);
     }

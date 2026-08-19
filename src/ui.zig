@@ -10,18 +10,14 @@ pub const Icon = icons.Icon;
 const rgba = mathx.rgba;
 
 
-pub const MSG_CAP = 120; // shared cap for short UI strings (tips, toasts, prompts)
+pub const MSG_CAP = 120;
 
-/// ONE ROW PITCH for every stacked row of editor chrome.
 pub const ROW_H: i32 = hud.monoLineH(hud.MONO) + 6;
 
-/// POINTER TRAVEL that separates a CLICK from a DRAG, in pixels.
 pub const DRAG_PX: f32 = 4.0;
 
 pub const INK = rgba(10, 9, 8, 232);
 pub const PANEL_FILL = rgba(16, 15, 13, 235);
-// …and the two the editor shares with the game's own chrome, taken from `uiart` like `HOT` below rather
-// than restated — the drift that file exists to stop.
 pub const TRIM = uiart.GILT_DIM;
 pub const LABEL = uiart.TEXT_DIM;
 pub const VALUE = rgba(228, 216, 194, 255);
@@ -33,21 +29,18 @@ pub const HOVER_FILL = rgba(42, 34, 26, 235);
 
 pub const alpha = mathx.withAlpha;
 
-/// Literal screen colour, for the one-off swatches the editor mixes (minimap soil, op dots).
 pub const col = rgba;
 
-// The rect the live left-drag STARTED on, at file scope because a Ctx is rebuilt every frame.
 var dragOwner: ?rl.Rectangle = null;
 
 pub const Ctx = struct {
     mouse: rl.Vector2,
-    pressed: bool, // LMB went down this frame
-    down: bool, // LMB held
+    pressed: bool,
+    down: bool,
     wheel: f32, // wheel notches this frame (read ONCE — widgets must not poll raylib again)
-    anyHot: bool = false, // pointer over any widget (accumulated)
-    t: f32 = 0, // seconds, for the caret blink
+    anyHot: bool = false,
+    t: f32 = 0,
 
-    // Deferred tooltip: the last hover this frame wins and is drawn on top by drawTip.
     tipBuf: [MSG_CAP]u8 = undefined,
     tipLen: usize = 0,
 
@@ -58,14 +51,12 @@ pub const Ctx = struct {
         return c;
     }
 
-    /// Turn widget INPUT off while leaving hit-testing (and so `anyHot`) alive.
     pub fn setLive(ctx: *Ctx, live: bool) void {
         ctx.pressed = live and rl.isMouseButtonPressed(.left);
         ctx.down = live and rl.isMouseButtonDown(.left);
         ctx.wheel = if (live) rl.getMouseWheelMove() else 0;
     }
 
-    /// Does the live drag belong to this rect?
     fn owns(ctx: *Ctx, r: rl.Rectangle) bool {
         if (ctx.pressed and rl.checkCollisionPointRec(ctx.mouse, r)) dragOwner = r;
         const o = dragOwner orelse return false;
@@ -91,14 +82,11 @@ pub fn tipFor(ctx: *Ctx, r: rl.Rectangle, text: [:0]const u8) void {
     if (rl.checkCollisionPointRec(ctx.mouse, r)) ctx.setTip(text);
 }
 
-/// **HOW WIDE A TOOLTIP MAY GET BEFORE IT WRAPS.** Sized so a full item description is three or four readable
-/// lines rather than one that runs off the screen.
 const TIP_MAX_W: i32 = 420;
 const TIP_LINES = 6;
 var tipWrapBuf: [MSG_CAP + TIP_LINES]u8 = undefined;
 var tipWrapLines: [TIP_LINES][:0]const u8 = undefined;
 
-/// Draw the pending tooltip at the cursor, clamped on-screen.
 pub fn drawTip(ctx: *Ctx) void {
     if (ctx.tipLen == 0) return;
     const lines = hud.wrapMono(ctx.tipBuf[0..ctx.tipLen], hud.MONO, TIP_MAX_W, &tipWrapBuf, &tipWrapLines);
@@ -109,8 +97,6 @@ pub fn drawTip(ctx: *Ctx) void {
     const h = lh * @as(i32, @intCast(lines.len));
     var x: i32 = @as(i32, @intFromFloat(ctx.mouse.x)) + 16;
     var y: i32 = @as(i32, @intFromFloat(ctx.mouse.y)) + 22;
-    // Clamped to the screen and then to ZERO: on a window narrower than the box the `min` alone goes negative,
-    // which is the very failure the wrap is here to fix, one step further along.
     x = @max(0, @min(x, rl.getScreenWidth() - w - 22));
     y = @max(0, @min(y, rl.getScreenHeight() - h - 14));
     rl.drawRectangle(x - 8, y - 5, w + 16, h + 10, INK);
@@ -118,18 +104,16 @@ pub fn drawTip(ctx: *Ctx) void {
     for (lines, 0..) |ln, i| hud.mono(ln, x, y + lh * @as(i32, @intCast(i)), hud.MONO, VALUE);
 }
 
-/// A panel that also CLAIMS its rect as chrome.
 pub fn panel(ctx: *Ctx, r: rl.Rectangle, title: ?[:0]const u8) void {
     _ = ctx.hot(r);
     uiart.plate(@intFromFloat(r.x), @intFromFloat(r.y), @intFromFloat(r.width), @intFromFloat(r.height), PANEL_FILL.a);
     rl.drawRectangleLinesEx(r, 1, alpha(TRIM, 110));
-    rl.drawRectangle(@intFromFloat(r.x + 1), @intFromFloat(r.y + 1), @intFromFloat(r.width - 2), 1, alpha(TRIM, 60)); // lit top rim
+    rl.drawRectangle(@intFromFloat(r.x + 1), @intFromFloat(r.y + 1), @intFromFloat(r.width - 2), 1, alpha(TRIM, 60));
     if (title) |t| {
         hud.mono(t, @intFromFloat(r.x + 10), @intFromFloat(r.y + 6), hud.MONO, alpha(TRIM, 235));
     }
 }
 
-/// Clickable text button; `active` latches it (brass fill) for palettes and tabs.
 pub fn button(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32, active: bool) bool {
     const h = ctx.hot(r);
     const face = if (active) ACTIVE_FILL else if (h) HOVER_FILL else IDLE_FILL;
@@ -173,7 +157,6 @@ pub fn iconOnly(ctx: *Ctx, r: rl.Rectangle, ic: Icon, active: bool, tip: [:0]con
     return h and ctx.pressed;
 }
 
-/// A colour SWATCH button — the soil brushes, where the paint itself is the only honest icon.
 pub fn swatchButton(ctx: *Ctx, r: rl.Rectangle, paint: rl.Color, label: [:0]const u8, size: i32, active: bool) bool {
     const h = ctx.hot(r);
     const face = if (active) ACTIVE_FILL else if (h) HOVER_FILL else IDLE_FILL;
@@ -205,7 +188,6 @@ pub fn buttonTip(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32, act
     return button(ctx, r, label, size, active);
 }
 
-/// Auto-width chip for variant pickers; writes the width it used so callers can flow a row.
 pub fn chip(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, active: bool, usedW: *i32) bool {
     const w = hud.monoW(label, hud.MONO) + 16;
     usedW.* = w + 5;
@@ -295,7 +277,6 @@ pub fn textField(ctx: *Ctx, r: rl.Rectangle, buf: []u8, len: *usize, focused: bo
     if (focused) {
         var ch = rl.getCharPressed();
         while (ch != 0) : (ch = rl.getCharPressed()) {
-            // The atlas is ASCII-ONLY — a typed 'é' renders as tofu, so it never enters the buffer.
             if (ch >= 32 and ch < 127 and len.* < buf.len - 1) {
                 buf[len.*] = @intCast(ch);
                 len.* += 1;
@@ -312,7 +293,6 @@ pub fn textField(ctx: *Ctx, r: rl.Rectangle, buf: []u8, len: *usize, focused: bo
     }
 }
 
-/// A scrolling list of labels; returns the index clicked, if any.
 pub fn listRows(heightPx: i32) i32 {
     return @divTrunc(heightPx - 6, ROW_H);
 }
@@ -344,7 +324,6 @@ pub fn list(ctx: *Ctx, r: rl.Rectangle, labels: []const [:0]const u8, sel: usize
         hud.mono(labels[idx], @as(i32, @intFromFloat(rowR.x)) + 6, @as(i32, @intFromFloat(rowR.y)) + 2, hud.MONO, if (idx == sel) HOT else VALUE);
         if (h and ctx.pressed) clicked = idx;
     }
-    // A nub, so a long list looks scrollable instead of truncated.
     if (maxScroll > 0) {
         const trackH = r.height - 6;
         const nubH = @max(18.0, trackH * @as(f32, @floatFromInt(rows)) / @as(f32, @floatFromInt(labels.len)));
@@ -360,7 +339,6 @@ pub fn list(ctx: *Ctx, r: rl.Rectangle, labels: []const [:0]const u8, sel: usize
     return clicked;
 }
 
-/// Dim the screen, centre a panel, return its top-left.
 pub const ModalBox = struct { x: i32, y: i32, w: i32, h: i32 };
 
 pub fn beginModal(ctx: *Ctx, w: i32, h: i32, title: [:0]const u8) ModalBox {

@@ -6,20 +6,7 @@ const mathx = @import("mathx.zig");
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
 
-// **THE WEATHER — INTERMITTENT RAIN, TWO STRENGTHS, AND THE STORM'S OWN LIGHTNING** (owner's ask). It is a
-// CLOCK and a PICTURE, and they are deliberately separate: `Weather` is pure numbers that a test can run for
-// an hour of game time in a millisecond, and `Rain` is one mesh drawn a few times over the top of it.
-//
-// **IT IS SPACED OUT, NOT WEATHER-SYSTEM SIMULATION.** Rain arrives, stays a while, and goes; between storms
-// there are minutes of nothing. A world where it is always about to rain reads as a weather TOGGLE, and one
-// where it rains constantly is a filter over the game rather than an event in it.
-//
-// **AND IT COSTS ONE MESH.** The streaks are a single cell of rain — a disc of them one `CELL_H` tall — drawn
-// STACKED up the camera's own column and scrolled by a wrapping phase, so a downpour is a handful of draw
-// calls of the same buffer rather than a particle system with thousands of live motes. `drawParticles` is
-// what rain must NOT be: at one immediate-mode sphere per drop this would cost more than the whole world.
 
-// ── THE CLOCK ───────────────────────────────────────────────────────────────────────────────────────────
 
 /// How long the sky stays clear between storms. Long, and RANGED, because the thing that makes weather read
 /// as weather is that you cannot tell when it is coming — at a fixed gap it is a metronome.
@@ -33,7 +20,6 @@ pub const DRY_HI: f32 = 420.0;
 /// storm has to land inside a session or nobody ever learns the sky does this.
 pub const OPEN_LO: f32 = 45.0;
 pub const OPEN_HI: f32 = 110.0;
-/// …and how long one lasts. Under a minute is a shower nobody registers; past three it stops being an event.
 pub const WET_LO: f32 = 55.0;
 pub const WET_HI: f32 = 145.0;
 /// **IT ARRIVES AND LEAVES OVER A REAL SPAN.** Weather that snaps on is a switch being thrown; the ramp is
@@ -65,36 +51,22 @@ pub fn gustAt(t: f32) f32 {
     return 1.0 - GUST_DEEP * (1.0 - (a * 0.6 + b * 0.4));
 }
 
-/// The two strengths, and what each tops out at (`Weather.rain`). GENTLE is a wash you can see through;
-/// MODERATE is the one with the sky in it.
 pub const Kind = enum { gentle, moderate };
 pub const GENTLE_TOP: f32 = 0.52;
 pub const MODERATE_TOP: f32 = 1.0;
-/// How often the storm that arrives is the heavier one. Under half on purpose: the moderate one carries the
-/// lightning, and the thing that makes a flash worth anything is that most rain does not have one.
 pub const MODERATE_ODDS: f32 = 0.38;
 
-/// **LIGHTNING IS THE MODERATE STORM'S ALONE, AND ONLY ONCE IT HAS ARRIVED.** Under this the sky is not yet
-/// dark enough for a flash to read as anything but a bug.
 pub const FLASH_AT: f32 = 0.62;
 pub const FLASH_GAP_LO: f32 = 7.0;
 pub const FLASH_GAP_HI: f32 = 26.0;
-/// The strike itself: a hard spike, a dark beat, and a second lower flicker — a single ramp reads as a lamp
-/// being switched, and the double is what says ELECTRICITY.
 pub const FLASH_DUR: f32 = 0.42;
 
-/// HOW FAR OFF THE STRIKE IS, in metres — and it is the honest reason the thunder is late (`SOUND_MPS`).
-/// Nothing is closer than `STRIKE_LO`: a strike on top of you wants a crack, a lit sky and a shaken camera,
-/// which is a different move than this one and belongs to whatever asks for it.
 pub const STRIKE_LO: f32 = 380.0;
 pub const STRIKE_HI: f32 = 2600.0;
 pub const SOUND_MPS: f32 = 343.0;
-/// …and how loud it comes back, near against far. Not an inverse square: thunder at two kilometres is quieter
-/// AND duller, and the dullness is the voice's own (`audio.mkThunder`); this is only the level.
 pub const BOOM_NEAR: f32 = 1.0;
 pub const BOOM_FAR: f32 = 0.34;
 
-/// ONE STRIKE STILL ON ITS WAY — how long until the roll lands and how loud it is when it does.
 pub const Peal = struct { in: f32 = 0, gain: f32 = 0 };
 /// **HOW MANY CAN BE IN THE AIR AT ONCE, AND IT IS ARITHMETIC OVER WHAT FEEDS IT** (the ring law): the
 /// longest travel is `STRIKE_HI / SOUND_MPS` = 7.58 s and the soonest a second strike can follow is
@@ -103,54 +75,32 @@ pub const Peal = struct { in: f32 = 0, gain: f32 = 0 };
 pub const PEALS: usize = @intFromFloat(@ceil(STRIKE_HI / SOUND_MPS / FLASH_GAP_LO) + 1);
 
 comptime {
-    // …and the size is checked against the thing it is sized off, or it is a round number after all.
     std.debug.assert(@as(f32, @floatFromInt(PEALS)) * FLASH_GAP_LO > STRIKE_HI / SOUND_MPS);
 }
 
-/// **HOW MUCH OF THE LIGHT THE CLOUD TAKES** — the overcast wash, at full rain. Subtle: this sits over the
-/// whole frame, and a storm that dims the world past this reads as dusk arriving rather than as cloud.
 pub const DIM_MAX: f32 = 0.17;
 
-/// ONE STORM'S WHOLE STATE, and every number in it is seconds or 0..1. Pure: no raylib, no audio, no clock but
-/// the `dt` it is handed — which is what lets a test run a day of weather without a window.
 pub const Weather = struct {
     rng: mathx.Rng,
     kind: Kind = .gentle,
-    /// Is a storm ON — its own clock running down. The LEVEL lags this by the ramp, which is the whole point.
     wet: bool = false,
-    /// Seconds left in whichever half of the cycle is running.
     left: f32 = 0,
-    /// 0..1, eased. **THE ONE NUMBER EVERYTHING ELSE READS** — the mesh's opacity, the bed's level, the wash.
     level: f32 = 0,
-    /// Seconds since the last strike, or negative for none in flight.
     flashT: f32 = -1,
-    /// …and until the next one.
     nextFlash: f32 = 0,
-    /// **EVERY STRIKE STILL ON ITS WAY** — a strike's SOUND is late by its own distance, which is the one
-    /// piece of physics this file keeps. A RING rather than one slot (`PEALS`), because the travel outlasts
-    /// the gap between strikes and a single slot dropped the older roll without a word.
     peals: [PEALS]Peal = [_]Peal{.{}} ** PEALS,
     npeals: usize = 0,
     boomGain: f32 = 0,
-    /// One-frame edge, read and cleared through `thunder()` — `justDied`'s rule.
     boomNow: bool = false,
-    /// The rain's own running time, so the fall phase does not read a wall clock: `--shot` steps a fixed dt
-    /// and has to draw the same frame twice.
     t: f32 = 0,
-    /// …and the SWELL's own, which is a separate clock for the same reason `t` is one at all: that one wraps
-    /// on a cell of fall (a fifth of a second) and this one on the two gusts' common period (`GUST_WRAP`).
-    /// FREE-RUNNING through the dry spells, so consecutive storms do not all open on the same swell.
     gustT: f32 = 0,
 
     pub fn init(seed: u64) Weather {
         var w = Weather{ .rng = mathx.Rng.init(seed) };
-        // IT DOES NOT OPEN IN THE RAIN — but it opens on the SHORT gap (`OPEN_LO`), not the long one, so the
-        // first storm of a session is something you actually see. After that it settles into the real rhythm.
         w.left = w.rng.range(OPEN_LO, OPEN_HI);
         return w;
     }
 
-    /// What a storm of this kind tops out at.
     pub fn topFor(k: Kind) f32 {
         return switch (k) {
             .gentle => GENTLE_TOP,
@@ -184,7 +134,6 @@ pub const Weather = struct {
         const secs = if (want > self.level) RAMP_IN else RAMP_OUT;
         self.level = mathx.approach(self.level, want, dt / secs);
 
-        // …AND THE STORM'S OWN LIGHTNING, which is the moderate one's and only once it has really arrived.
         if (self.flashT >= 0) {
             self.flashT += dt;
             if (self.flashT > FLASH_DUR) self.flashT = -1;
@@ -212,7 +161,7 @@ pub const Weather = struct {
         var due: ?usize = null;
         for (self.peals[0..self.npeals], 0..) |p, k| {
             if (p.in > 0) continue;
-            if (due == null or p.in < self.peals[due.?].in) due = k; // the one that has waited longest
+            if (due == null or p.in < self.peals[due.?].in) due = k;
         }
         if (due) |k| {
             self.boomGain = self.peals[k].gain;
@@ -222,20 +171,17 @@ pub const Weather = struct {
         }
     }
 
-    /// 0..1 — what the mesh, the bed and the wash all read.
     pub fn rain(self: *const Weather) f32 {
         return self.level;
     }
 
-    /// **THE WHITE, 0..1** — a hard spike, a dark beat, then a lower second flicker. Shaped here rather than at
-    /// the draw so the overlay and any test are reading one curve.
     pub fn flash(self: *const Weather) f32 {
         if (self.flashT < 0) return 0;
         const u = self.flashT / FLASH_DUR;
-        if (u < 0.16) return 1.0 - u / 0.16 * 0.35; // the strike itself, barely off full
-        if (u < 0.34) return 0.10; // the dark beat between the two — what makes it read as a flicker
-        if (u < 0.52) return 0.62 * (1.0 - (u - 0.34) / 0.18); // …and the second, lower
-        return 0.10 * (1.0 - (u - 0.52) / 0.48); // the afterglow going out
+        if (u < 0.16) return 1.0 - u / 0.16 * 0.35;
+        if (u < 0.34) return 0.10;
+        if (u < 0.52) return 0.62 * (1.0 - (u - 0.34) / 0.18);
+        return 0.10 * (1.0 - (u - 0.52) / 0.48);
     }
 
     /// The thunder that just arrived, as a gain — a ONE-FRAME edge, null on every other frame.
@@ -243,7 +189,6 @@ pub const Weather = struct {
         return if (self.boomNow) self.boomGain else null;
     }
 
-    /// How much of the light the cloud is taking, 0..1 of `DIM_MAX`.
     pub fn dim(self: *const Weather) f32 {
         return self.level * DIM_MAX;
     }
@@ -257,12 +202,8 @@ pub const Weather = struct {
         self.clear();
     }
 
-    /// How long a FORCED storm runs before the ordinary cycle has it back. Long enough to walk somewhere and
-    /// look at it, short enough that leaving it on is not a decision.
     pub const FORCE_DUR: f32 = 180.0;
 
-    /// BACK TO THE SKY'S OWN BUSINESS — the level ramps out on its own (`RAMP_OUT`), which is the point: this
-    /// is the storm ENDING, not the storm being deleted.
     pub fn clear(self: *Weather) void {
         self.wet = false;
         self.left = self.rng.range(OPEN_LO, OPEN_HI);
@@ -270,8 +211,6 @@ pub const Weather = struct {
         self.nextFlash = 0;
     }
 
-    /// What the debug row says it is doing. The LEVEL rather than `wet`, because the ramp is most of what
-    /// there is to watch and a row reading "Dry" over a sky still emptying itself would be lying.
     pub fn says(self: *const Weather) [:0]const u8 {
         if (self.level <= 0.02) return "Weather: Dry";
         return switch (self.kind) {
@@ -280,7 +219,6 @@ pub const Weather = struct {
         };
     }
 
-    /// **FORCE ONE ON** — the shot harness and the debug row, never the fight. `secs` is how long it runs.
     pub fn force(self: *Weather, k: Kind, secs: f32) void {
         self.kind = k;
         self.wet = true;
@@ -290,38 +228,33 @@ pub const Weather = struct {
     }
 };
 
-// ── THE PICTURE ─────────────────────────────────────────────────────────────────────────────────────────
 
-/// ONE CELL of rain: a disc of streaks `CELL_H` tall, drawn stacked and scrolled. The height is what the fall
-/// phase wraps on, so it may never be changed without the draw agreeing — they are one number.
 pub const CELL_H: f32 = 5.0;
-/// …and how far out it reaches (owner: spread rain out into the distance). At 11.5 m the sheet ENDED — a wall
-/// of rain a stone's throw off with clear air behind it, which is why the storm read as something happening to
-/// the lens rather than to the field. **AND THE SPREAD IS ALSO THE THINNING**: the streaks are distributed by
-/// area (`@sqrt`), so trebling the disc drops the density in front of his face by the same factor while the
-/// count barely moves — the near field is what "too heavy" was made of, and the far field costs almost no fill
-/// because a streak twenty metres out covers a few pixels. The haze is what finally eats it.
-pub const CELL_R: f32 = 24.0;
-/// **AND THE RIM FADES OUT RATHER THAN STOPPING** (owner: if you look around the rain ends abruptly). Density
-/// was flat right up to `CELL_R` and then nothing at all, so the sheet had a WALL at its own edge — you were
-/// standing in a cylinder of rain and could see the far side of it. Past this share of the radius the streaks
-/// thin toward nothing: the WIDTH goes out (which is what screen coverage is made of) and the length only
-/// part-way, so the last legible ones are still streak-shaped rather than grains.
-const TAPER_FROM: f32 = 0.58;
+/// …and how far out it reaches (owner: spread rain out into the distance). **AND IT HAS TO REACH AS FAR AS
+/// THE STORM'S OWN AIR HIDES, WHICH IS THE WHOLE OF THIS NUMBER.** At 24 m it still read as a puddle round the
+/// hero, and the arithmetic says why rather than the eye: the haze is `1 - exp(-density * dist)`, so at the
+/// old rim a full storm was only 53% thick — half the far field's detail still legible, with no rain anywhere
+/// on it. Solved the other way round, against `gfx.HAZE_STORM`: the rim now stands where the air is 80% thick
+/// and the taper starts where it is 70%, so the sheet dissolves into murk instead of ending at a wall.
+/// **AND THE SPREAD IS ALSO THE THINNING**: streaks are distributed by area (`@sqrt`), so the near field
+/// thins as the disc grows, and the far field costs almost no fill because a streak thirty metres out covers
+/// a few pixels.
+pub const CELL_R: f32 = 40.0;
+const TAPER_FROM: f32 = 0.74;
 /// How many cells are stacked up the camera's column. Four puts the top of the rain 15 m up, which is over
 /// the tallest thing a player stands next to.
 pub const STACKS: usize = 4;
-/// …and one below him, so looking DOWN a slope still has rain in front of the ground.
 pub const STACK_UNDER: f32 = 1.0;
 
 /// Streaks in one cell. **THE ONE PERFORMANCE DIAL, AND THE ONE DENSITY DIAL** — it is what "how hard it is
 /// raining" is actually made of, and it moves BOTH strengths together (owner: all forms of rain too heavy).
 /// At 820 in an 11.5 m disc the gentle shower was a curtain and the storm was a wall; a test prints the
 /// triangles it buys, and the DENSITY it works out to against `CELL_R` — which is the number that reads.
-pub const STREAKS: usize = 1000;
+/// **RAISED WITH THE RADIUS, AND BY LESS THAN IT**: at 1000 in the 40 m disc the near field came out at
+/// 0.20/m2, a third of what it was, which is drizzle. 2000 lands it at 0.40 — under the old 0.55, since the
+/// near field is what "too heavy" was made of, and far enough over drizzle to still be a storm.
+pub const STREAKS: usize = 2000;
 
-/// A drop's own shape. Long and thin: what says rain is the STREAK, not the drop, and a short mark reads as
-/// snow or grain. The pair is a range, because uniform lengths read as a screen effect.
 const LEN_LO: f32 = 0.40;
 const LEN_HI: f32 = 0.92;
 const WIDE_LO: f32 = 0.008;
@@ -341,22 +274,11 @@ const SLANT_Z: f32 = -0.12;
 /// SMEAR: the sheet read as vertical scan lines with the individual drops gone.
 pub const FALL_MPS: f32 = 13.0;
 
-/// The colour of the water itself. Cold and pale, and the ALPHA is the EMISSIVE channel (`gfx` law, `emis =
-/// 1 - a/255`): well under half, so a streak carries its own light and stays legible against a dark hillside
-/// as well as against the sky. It is not white — white rain reads as sparks.
 const DROP_HEAD = rgba(176, 190, 205, 96);
-/// …and the TAIL is fainter, which is what makes it a streak rather than a stick. Built as two segments so
-/// the fade is in the geometry (`propfx`'s pillar, one system along).
 const DROP_TAIL = rgba(150, 166, 186, 150);
 
-/// How see-through the whole sheet is at full rain — the `fade` uniform, which is the only opacity the scene
-/// shader has for a solid material. Low: rain is a hundred faint marks, never a curtain.
 pub const OPACITY: f32 = 0.26;
-/// Where the SECOND copy of the cell comes in — the heavier storm is the same mesh again, offset in XZ and
-/// half a cell in Y, which thickens the density for a few more draw calls and no more memory.
 pub const DOUBLE_AT: f32 = 0.60;
-/// …and how solid it ever gets. **UNDER ONE ON PURPOSE**: a full second sheet is twice the blended fill of
-/// the storm below it for a density step the eye reads as "more rain", not as double.
 pub const COPY_TOP: f32 = 0.72;
 /// The copy is a cell SHORTER than the column under it — it already starts half a cell up, so its top stack
 /// sits 17 m over the eye, which is sky nobody is looking at.
@@ -367,10 +289,6 @@ pub const COPY_STACKS: usize = STACKS - 1;
 /// of HEIGHT is what actually decorrelates the two, and it moves nothing sideways at all.
 const COPY_OFF = v3(1.6, CELL_H * 0.5, -1.1);
 
-/// **HOW MUCH OF THE SECOND SHEET IS THERE**, 0 at `DOUBLE_AT` and `COPY_TOP` at a full storm. It is a RAMP
-/// and not a threshold, and it is out here rather than inside the draw so a test can step it: switched at
-/// `DOUBLE_AT` the heavy storm's second sheet arrived and left between two frames — a cell of rain appearing
-/// whole while the level either side of it was still easing (owner: "starts/stops too suddenly").
 pub fn copyFade(level: f32) f32 {
     if (level <= DOUBLE_AT) return 0;
     return mathx.clampF((level - DOUBLE_AT) / (MODERATE_TOP - DOUBLE_AT), 0, 1) * COPY_TOP;
@@ -384,14 +302,11 @@ pub const Rain = struct {
 
     pub fn build(shader: rl.Shader) Rain {
         var b = gfx.Builder.init();
-        // `.plain`, the emissive path a glow already uses — see `propfx.pickupMesh`'s note. Rain is water, but
-        // `.water` is the SHEET's material (its own ripple and tone) and a streak is not a surface.
         b.setMat(.plain);
-        b.setAnimY(0); // rain does not sway: `windAmt` is the flora path and this is not flora
+        b.setAnimY(0);
         var rng = mathx.Rng.init(0x2A11_D40D);
         for (0..STREAKS) |_| {
             const a = rng.angle();
-            // `@sqrt` for a UNIFORM disc — without it every cell is a column of rain with a bare rim.
             const rr = CELL_R * @sqrt(rng.float());
             const x = mathx.cosf(a) * rr;
             const z = mathx.sinf(a) * rr;
@@ -427,8 +342,6 @@ pub const Rain = struct {
         const baseY = @floor(eye.y) - STACK_UNDER * CELL_H - phase;
         scene.beginFade(OPACITY * lv);
         self.column(v3(at.x, baseY, at.z), STACKS);
-        // THE HEAVIER STORM IS THE SAME CELL AGAIN, offset so the two do not pair up into visible twins —
-        // and FADED UP over the top of the ramp (`copyFade`) rather than switched on at a level.
         const cf = copyFade(lv);
         if (cf > 0.004) {
             scene.setFade(OPACITY * lv * cf);
@@ -445,28 +358,23 @@ pub const Rain = struct {
     }
 };
 
-/// ONE STREAK — two crossed cards, in two segments each, leaning down the wind. **CROSSED, because a single
-/// card is INVISIBLE edge-on**: rain seen from the side of its own quad is rain that disappears when you turn.
-/// Two segments, because the tail has to fade — one flat card reads as a dropped matchstick.
 fn streak(b: *gfx.Builder, foot: rl.Vector3, len: f32, wide: f32) void {
     const half = len * 0.5;
     const mid = v3(foot.x + SLANT_X * half, foot.y + half, foot.z + SLANT_Z * half);
     const top = v3(foot.x + SLANT_X * len, foot.y + len, foot.z + SLANT_Z * len);
     const w = wide * 0.5;
-    // The HEAD is the bottom (a drop falls head-down), so the bright end is the low one.
     for ([_]rl.Vector3{ v3(w, 0, 0), v3(0, 0, w) }) |off| {
         card(b, foot, mid, off, DROP_HEAD, DROP_TAIL);
         card(b, mid, top, off, DROP_TAIL, fade(DROP_TAIL));
     }
 }
 
-/// …and its far end goes out entirely, so the streak ENDS instead of stopping.
 fn fade(c: rl.Color) rl.Color {
     return rgba(c.r, c.g, c.b, 205);
 }
 
 fn card(b: *gfx.Builder, a: rl.Vector3, c: rl.Vector3, off: rl.Vector3, ca: rl.Color, cc: rl.Color) void {
-    const n = v3(0, 1, 0); // the normal barely matters at this emissive — the streak is nearly self-lit
+    const n = v3(0, 1, 0);
     b.quadFade(
         v3(a.x - off.x, a.y, a.z - off.z),
         v3(a.x + off.x, a.y, a.z + off.z),
@@ -478,12 +386,8 @@ fn card(b: *gfx.Builder, a: rl.Vector3, c: rl.Vector3, off: rl.Vector3, ca: rl.C
     );
 }
 
-/// **THE STORM OVER THE WHOLE FRAME** — the cloud's own dimming and the lightning, as two rectangles. Drawn
-/// inside the retro pass (`game.drawScene`), because both are things happening to the WORLD's light: put after
-/// the filter they read as a UI flash sitting on top of the picture.
 pub fn drawOverlay(w: i32, h: i32, dimAmt: f32, flashAmt: f32) void {
     if (dimAmt > 0.004) {
-        // A cold slate, not black: cloud takes the warmth out of the light before it takes the light.
         rl.drawRectangle(0, 0, w, h, rgba(26, 32, 44, mathx.u8f(255.0 * mathx.clampF(dimAmt, 0, 1))));
     }
     if (flashAmt > 0.004) {
@@ -508,7 +412,7 @@ test "IT RAINS SOMETIMES, NOT OFTEN AND NOT NEVER — and never twice on the sam
     var gapHi: f32 = 0;
     var gap: f32 = 0;
     var t: f32 = 0;
-    while (t < 3600.0) : (t += dt) { // an hour of it
+    while (t < 3600.0) : (t += dt) {
         w.tick(dt);
         if (w.wet) {
             wet += dt;
@@ -525,10 +429,8 @@ test "IT RAINS SOMETIMES, NOT OFTEN AND NOT NEVER — and never twice on the sam
     }
     const share = wet / 3600.0;
     std.debug.print("\n  weather: {d} storms an hour, raining {d:.0}% of the time, dry gaps {d:.0}..{d:.0} s\n", .{ storms, share * 100, gapLo, gapHi });
-    // INTERMITTENT: it happens, and it is not the weather most of the time.
     try std.testing.expect(storms >= 4 and storms <= 20);
     try std.testing.expect(share > 0.10 and share < 0.45);
-    // …and the gaps are SPACED and VARIED — a fixed gap is a metronome, which is the one thing weather is not.
     try std.testing.expect(gapLo >= DRY_LO - 1.0);
     try std.testing.expect(gapHi <= DRY_HI + 1.0);
     try std.testing.expect(gapHi - gapLo > 30.0);
@@ -550,8 +452,6 @@ test "IT ARRIVES AND LEAVES OVER A SPAN — the level never steps, and it always
     }
     // No step: the biggest one-frame move is under what the ramp allows, with a frame of slack.
     try std.testing.expect(biggest <= dt / RAMP_IN * 1.2);
-    // …and it really did rain: at LEAST what the deepest lull of a gentle storm is worth (`GUST_DEEP`), since
-    // a storm's top is now what the swell is riding on rather than a level it sits at.
     try std.testing.expect(peak >= GENTLE_TOP * (1.0 - GUST_DEEP) - 0.02);
 }
 
@@ -564,22 +464,19 @@ test "A STORM BREATHES — the level moves under its own top, and never over it 
     var prev = w.level;
     var biggest: f32 = 0;
     var t: f32 = 0;
-    // Past one full beat of the two swells, so both ends of the breath are in the sample.
     while (t < GUST_WRAP) : (t += dt) {
         w.tick(dt);
-        if (t > RAMP_OUT) { // …after the forced top has settled onto the swell it is riding
+        if (t > RAMP_OUT) {
             lo = @min(lo, w.level);
             hi = @max(hi, w.level);
         }
         biggest = @max(biggest, @abs(w.level - prev));
         prev = w.level;
-        try std.testing.expect(w.level <= MODERATE_TOP + 1e-4); // the top is a CEILING, never a mid-point
+        try std.testing.expect(w.level <= MODERATE_TOP + 1e-4);
     }
     std.debug.print("\n  weather: a moderate storm breathes {d:.2}..{d:.2} of full\n", .{ lo, hi });
-    try std.testing.expect(hi - lo > 0.12); // it is a swell you can see…
-    try std.testing.expect(biggest <= dt / RAMP_IN * 1.2); // …and never a step: the ramp still owns the move
-    // **THE LULL MAY NOT REACH DOWN TO WHAT ELSE KEYS OFF THE LEVEL.** Lightning gates on `FLASH_AT`, so a
-    // breath that dipped under it would switch the storm's own sky off and on again.
+    try std.testing.expect(hi - lo > 0.12);
+    try std.testing.expect(biggest <= dt / RAMP_IN * 1.2);
     try std.testing.expect(MODERATE_TOP * (1.0 - GUST_DEEP) > FLASH_AT);
     // …and the gust is a multiplier DOWN from the top, never up: 1 is its ceiling.
     var u: f32 = 0;
@@ -590,7 +487,6 @@ test "A STORM BREATHES — the level moves under its own top, and never over it 
 }
 
 test "THE FLASH IS THE MODERATE STORM'S ALONE, and the thunder is LATE by its own distance" {
-    // A gentle storm, forced, never flashes however long it runs.
     var g = Weather.init(11);
     g.force(.gentle, 600.0);
     const dt = 1.0 / 60.0;
@@ -601,7 +497,6 @@ test "THE FLASH IS THE MODERATE STORM'S ALONE, and the thunder is LATE by its ow
         try std.testing.expect(g.thunder() == null);
     }
 
-    // …and a moderate one does, with the sound arriving after the light and never before it.
     var m = Weather.init(12);
     m.force(.moderate, 600.0);
     var flashes: usize = 0;
@@ -620,38 +515,32 @@ test "THE FLASH IS THE MODERATE STORM'S ALONE, and the thunder is LATE by its ow
         if (m.thunder()) |gain| {
             booms += 1;
             try std.testing.expect(gain > 0 and gain <= BOOM_NEAR);
-            try std.testing.expect(sinceFlash > STRIKE_LO / SOUND_MPS - 0.05); // light first, always
+            try std.testing.expect(sinceFlash > STRIKE_LO / SOUND_MPS - 0.05);
             lagLo = @min(lagLo, sinceFlash);
             lagHi = @max(lagHi, sinceFlash);
         }
     }
-    // …and the one still in the air when the loop ended gets to land: a strike is heard EVENTUALLY.
     t = 0;
     while (t < STRIKE_HI / SOUND_MPS + 1.0) : (t += dt) {
-        m.nextFlash = 1e9; // no new ones — this is the drain, not more weather
+        m.nextFlash = 1e9;
         m.tick(dt);
         if (m.thunder()) |_| booms += 1;
     }
     std.debug.print("  lightning: {d} strikes in 5 min, thunder {d:.1}..{d:.1} s behind the light\n", .{ flashes, lagLo, lagHi });
     try std.testing.expect(flashes > 5);
-    try std.testing.expectEqual(flashes, booms); // every strike is heard, eventually
+    try std.testing.expectEqual(flashes, booms);
     try std.testing.expect(lagHi <= STRIKE_HI / SOUND_MPS + 0.1);
 }
 
 test "TWO STRIKES CAN BE IN THE AIR AT ONCE, and NEITHER roll is lost" {
-    // THE BUG: one `boomIn` slot. The longest travel outlasts the shortest gap between strikes, so a strike
-    // fired while a roll was still on its way silently replaced it — a flash you saw and never heard, at a
-    // rate no fixed-seed test was ever going to catch.
     try std.testing.expect(STRIKE_HI / SOUND_MPS > FLASH_GAP_LO);
     const dt = 1.0 / 60.0;
 
-    // The overlap MADE TO HAPPEN rather than waited for: it is under a percent of strikes, which is why no
-    // fixed seed caught it and why `flashes == booms` passed for as long as it did.
     var w = Weather.init(1);
     w.force(.moderate, 600.0);
-    w.nextFlash = 1e9; // no NEW strike under the two being watched
-    w.peals[0] = .{ .in = STRIKE_HI / SOUND_MPS, .gain = BOOM_FAR }; // the far one, seen first…
-    w.peals[1] = .{ .in = 0.40, .gain = BOOM_NEAR }; // …and a near one seen a gap later
+    w.nextFlash = 1e9;
+    w.peals[0] = .{ .in = STRIKE_HI / SOUND_MPS, .gain = BOOM_FAR };
+    w.peals[1] = .{ .in = 0.40, .gain = BOOM_NEAR };
     w.npeals = 2;
     var heard: [PEALS]f32 = undefined;
     var n: usize = 0;
@@ -664,12 +553,10 @@ test "TWO STRIKES CAN BE IN THE AIR AT ONCE, and NEITHER roll is lost" {
             n += 1;
         }
     }
-    try std.testing.expectEqual(@as(usize, 2), n); // BOTH — one slot heard exactly one of them
-    try std.testing.expectEqual(BOOM_NEAR, heard[0]); // the near one lands first…
-    try std.testing.expectEqual(BOOM_FAR, heard[1]); // …and the far one is still on its way
+    try std.testing.expectEqual(@as(usize, 2), n);
+    try std.testing.expectEqual(BOOM_NEAR, heard[0]);
+    try std.testing.expectEqual(BOOM_FAR, heard[1]);
 
-    // …AND TWO DUE ON ONE FRAME LAND ON CONSECUTIVE FRAMES rather than one being dropped: `thunder` is a
-    // single edge, and a sixtieth of a second is nothing against a seven-second travel.
     w.peals[0] = .{ .in = 0.001, .gain = BOOM_NEAR };
     w.peals[1] = .{ .in = 0.001, .gain = BOOM_FAR };
     w.npeals = 2;
@@ -696,43 +583,37 @@ test "THE STRIKE IS A DOUBLE, NOT A LAMP — and it is over inside half a second
         if (u > 0.18 and u < 0.32) dip = @min(dip, f);
         if (u > 0.36 and u < 0.50) peakLate = @max(peakLate, f);
     }
-    try std.testing.expect(peakEarly > 0.9); // the strike
-    try std.testing.expect(dip < 0.2); // the dark beat, which is what makes it a flicker
-    try std.testing.expect(peakLate > 0.3 and peakLate < peakEarly); // …and the second, lower
+    try std.testing.expect(peakEarly > 0.9);
+    try std.testing.expect(dip < 0.2);
+    try std.testing.expect(peakLate > 0.3 and peakLate < peakEarly);
     w.flashT = FLASH_DUR + 0.001;
-    w.nextFlash = 1e9; // …and NOT because a new one started: the strike under test is the one that ended
+    w.nextFlash = 1e9;
     w.tick(1.0 / 60.0);
     try std.testing.expectEqual(@as(f32, 0), w.flash());
 }
 
 test "THE SHEET IS A HANDFUL OF DRAW CALLS, and its cost is written down" {
-    // ONE MESH, drawn stacked. This is the whole performance argument for the system, so it is a number here
-    // rather than a claim in a comment: a particle rain of this density would be thousands of live motes and
-    // one immediate-mode sphere each (`foe.drawParticles`), which is more than the world costs.
-    const tris = STREAKS * 2 * 2 * 2; // two crossed cards, two segments each, two triangles a quad
+    const tris = STREAKS * 2 * 2 * 2;
     const gentleDraws = STACKS;
     const heavyDraws = STACKS + COPY_STACKS;
-    // …and what it actually COSTS is the blended fill, which the copy pays only `COPY_TOP` of.
     const heavyFill = @as(f32, @floatFromInt(STACKS)) + @as(f32, @floatFromInt(COPY_STACKS)) * COPY_TOP;
-    // …and the number that actually READS: streaks per square metre of ground the cell covers.
     const density = @as(f32, @floatFromInt(STREAKS)) / (std.math.pi * CELL_R * CELL_R);
     std.debug.print("  rain: {d} tris in the cell, {d} draws gentle / {d} moderate ({d} tris on screen, {d:.2} columns of fill), {d:.2} streaks/m2 out to {d:.0} m\n", .{ tris, gentleDraws, heavyDraws, tris * heavyDraws, heavyFill, density, CELL_R });
     // A SHEET YOU CAN SEE THROUGH. At 820 streaks in an 11.5 m disc this was 1.97/m2 — a curtain up against
     // the lens (owner: all forms of rain too heavy), and the near field is where every one of those pixels was.
     try std.testing.expect(density < 1.0);
-    try std.testing.expect(heavyDraws <= 8); // the storm is a rounding error in the draw-call budget
-    try std.testing.expect(tris * heavyDraws < 60_000); // …and in the triangle one
-    try std.testing.expect(heavyFill < @as(f32, @floatFromInt(STACKS)) * 1.6); // …and the peak is not double
-    // …and the mesh is built ONCE: the level changes what is drawn, never what is built.
-    try std.testing.expect(DOUBLE_AT > GENTLE_TOP); // so the gentle storm never pays for the second column
+    try std.testing.expect(heavyDraws <= 8);
+    // …and in the triangle one. RAISED WITH THE DISC: reaching 40 m instead of 24 is what stops the sheet
+    // reading as a puddle round the hero, and the streaks that buy it are far-field ones a few pixels wide.
+    // The DRAW count did not move, which is the half of this that costs state changes.
+    try std.testing.expect(tris * heavyDraws < 120_000);
+    try std.testing.expect(heavyFill < @as(f32, @floatFromInt(STACKS)) * 1.6);
+    try std.testing.expect(DOUBLE_AT > GENTLE_TOP);
 }
 
 test "THE HEAVY SHEET FADES, IT DOES NOT ARRIVE — no step anywhere on the ramp" {
-    // THE BUG: the second sheet was `if (level >= DOUBLE_AT)`. A whole cell of rain appeared between two
-    // frames on the way up and vanished the same way on the way down, while the level either side of it was
-    // easing over nine seconds — the one visible step in a system whose whole point is that it has none.
     try std.testing.expectEqual(@as(f32, 0), copyFade(0));
-    try std.testing.expectEqual(@as(f32, 0), copyFade(GENTLE_TOP)); // the gentle storm never draws it at all
+    try std.testing.expectEqual(@as(f32, 0), copyFade(GENTLE_TOP));
     try std.testing.expectEqual(@as(f32, 0), copyFade(DOUBLE_AT));
     try std.testing.expectEqual(COPY_TOP, copyFade(MODERATE_TOP));
 
@@ -744,10 +625,8 @@ test "THE HEAVY SHEET FADES, IT DOES NOT ARRIVE — no step anywhere on the ramp
         biggest = @max(biggest, @abs(c - prev));
         prev = c;
     }
-    // A thousandth of level moves the sheet by about a thousandth of its top — no edge anywhere in the range.
     try std.testing.expect(biggest < COPY_TOP * 0.01);
 
-    // …and the WHOLE ramp is what it fades over, which is seconds and not a frame.
     const secs = (MODERATE_TOP - DOUBLE_AT) * RAMP_IN;
     try std.testing.expect(secs > 3.0);
     std.debug.print("  rain: the heavy sheet fades up over {d:.1}s and out over {d:.1}s\n", .{ secs, (MODERATE_TOP - DOUBLE_AT) * RAMP_OUT });
@@ -764,8 +643,6 @@ test "THE FALL WRAPS ON THE CELL, so the sheet has no seam and no end" {
     // …and the column reaches over the tallest thing a player stands beside (the knight's 5.2 m crown).
     const tall = @as(f32, @floatFromInt(STACKS)) * CELL_H - STACK_UNDER * CELL_H;
     try std.testing.expect(tall > 5.5);
-    // It also has to fall FASTER than it is long, or a streak crosses less than its own body in a frame and
-    // the sheet reads as hanging string.
     try std.testing.expect(FALL_MPS > LEN_HI * 10.0);
 }
 
@@ -775,25 +652,22 @@ test "THE FIRST STORM LANDS INSIDE A SESSION, at the seed the game actually ship
     // feature was invisible unless you played six and a half minutes without opening a menu. Pinned at the
     // REAL seed, not a test one, because the whole failure was that one particular draw is the only draw
     // that ever happens.
-    const SEED: u64 = 0x5701_A17E; // `game.init`'s own
+    const SEED: u64 = 0x5701_A17E;
     var w = Weather.init(SEED);
     const dt = 1.0 / 60.0;
     var t: f32 = 0;
     var seen: f32 = -1;
     while (t < 600.0 and seen < 0) : (t += dt) {
         w.tick(dt);
-        if (w.level > 0.02) seen = t; // …when it is actually ON SCREEN (`Rain.draw`'s own floor), not merely wet
+        if (w.level > 0.02) seen = t;
     }
     std.debug.print("\n  weather: first rain visible {d:.0}s into a session (opening gap {d:.0}..{d:.0}s)\n", .{ seen, OPEN_LO, OPEN_HI });
     try std.testing.expect(seen > 0);
     try std.testing.expect(seen < OPEN_HI + RAMP_IN);
-    // …AND IT STILL IS NOT RAINING WHEN YOU ARRIVE. The opening is short, not absent: walking out of the
-    // boot screen into a downpour makes it the weather rather than an event in it.
     var fresh = Weather.init(SEED);
     fresh.tick(dt);
     try std.testing.expectEqual(@as(f32, 0), fresh.rain());
 
-    // …AND EVERY SEED OPENS INSIDE THE SAME WINDOW, so this is the rule and not one lucky number.
     for ([_]u64{ 1, 2, 7, 0xBEEF, 0xD0D0, 0x5701_A17E }) |sd| {
         var g = Weather.init(sd);
         var u: f32 = 0;
@@ -823,29 +697,18 @@ test "THE FIRST STORM LANDS INSIDE A SESSION, at the seed the game actually ship
 // to cross its own width. Anything you can watch moving reads as a prop being slid; the whole point of this is
 // that you never catch it moving, you only notice it has moved.
 
-/// How many may stand at once. STRAY, so it is a handful — a field evenly filled with them is the haze again
-/// with more draw calls.
 pub const MIST_CAP: usize = 7;
-/// **AND THREE SHAPES OF ONE**, the repeated-big-prop law: one cluster placed seven times is a periodic
-/// pattern, and yaw does not hide it.
 pub const MIST_KINDS: usize = 3;
-/// Lumps in one bank, and how big each is against the bank's own radius. Many and small: the overlap IS the
-/// gradient, and a cluster of four reads as four balls.
 const LUMPS: usize = 22;
 const LUMP_LO: f32 = 0.30;
 const LUMP_HI: f32 = 0.52;
-/// A bank is WIDE AND LOW — mist lies in a field, it does not hang in the air like a cloud.
 const MIST_FLAT: f32 = 0.34;
-/// Sides and segments on one lump. Cheap on purpose: at this opacity nothing here has a silhouette anybody can
-/// count the facets of, and there are `LUMPS` of them in every bank.
 const LUMP_SEGS: i32 = 5;
 const LUMP_SIDES: i32 = 7;
 
-/// How far out from the man a bank may stand, and how big one is ACROSS.
 pub const MIST_R: f32 = 46.0;
 const SIZE_LO: f32 = 7.0;
 const SIZE_HI: f32 = 15.0;
-/// …and how high its centre sits off the ground under it.
 const RISE_LO: f32 = 0.5;
 const RISE_HI: f32 = 2.4;
 
@@ -860,12 +723,6 @@ const BOB_SECS_HI: f32 = 48.0;
 const SPIN_LO: f32 = 0.6; // degrees a second
 const SPIN_HI: f32 = 2.4;
 
-/// How long one stands before it is re-seeded somewhere else, and the ramp at both ends. Banks do not pop: the
-/// one thing a player may never see is one arriving.
-/// How long one stands before it is re-seeded somewhere else, and the ramp at both ends. **THE RAMP IS VERY
-/// SLOW** (owner: fade in and out very slowly) — nearly half a minute at each end, so a bank is never seen to
-/// arrive or to go: what you notice is that the field has changed, never the change. The lives are long enough
-/// that the ramp is a fraction of one rather than most of it (a test pins that).
 const LIFE_LO: f32 = 110.0;
 const LIFE_HI: f32 = 260.0;
 const MIST_FADE: f32 = 26.0;
@@ -874,28 +731,16 @@ const MIST_FADE: f32 = 26.0;
 /// bank you cannot see the world through is a wall standing in the field (owner: should be less opaque).
 pub const MIST_TOP: f32 = 0.10;
 
-/// **AND IT THINS AS YOU WALK INTO IT, AND COMES BACK AS YOU LEAVE** (owner's own words). This is the one thing
-/// that separates a VOLUME from a painted blob: real mist has no surface, so the moment a lens is inside it
-/// there is nothing left to see — where a mesh gets bigger and more solid until it is a grey wall across the
-/// frame. Measured against the BANK'S OWN RADIUS, so a big one starts giving way from further out; and off the
-/// LENS rather than the man, because it is the camera that ends up inside it.
 const NEAR_GONE: f32 = 0.80;
 const NEAR_FULL: f32 = 2.30;
-/// Under this the whole system ticks nothing and draws nothing. A clear day costs it one comparison.
 pub const MIST_MIN: f32 = 0.02;
 
-/// Cold, pale, and MOSTLY SELF-LIT (alpha is the emissive channel, `emis = 1 - a/255`): a smooth mass this big
-/// taking the full key would read as a ball with a lit side, which is the one thing mist is not. It still takes
-/// some of the hour, so a bank at night is a dark one.
 const MIST_COL = rgba(196, 204, 214, 96);
 
-/// ONE BANK.
 const Bank = struct {
     pos: rl.Vector3 = mathx.zero3,
-    /// Its own radius, and which of the three shapes it is.
     r: f32 = 0,
     kind: usize = 0,
-    /// Metres a second on the ground plane, set once when it is seeded: a bank does not change its mind.
     vx: f32 = 0,
     vz: f32 = 0,
     yaw: f32 = 0,
@@ -906,21 +751,15 @@ const Bank = struct {
     bobSecs: f32 = 0,
 };
 
-/// **HOW MUCH OF A BANK IS LEFT AT THIS RANGE** — 0 with the lens inside it, 1 out past `NEAR_FULL` of its own
-/// radius. Its own function because two things read it: the draw, and the test that pins the shape.
 fn nearFade(bk: Bank, eye: rl.Vector3) f32 {
     const d = mathx.lenV(mathx.subV(bk.pos, eye));
     return mathx.smoothstep(NEAR_GONE * bk.r, NEAR_FULL * bk.r, d);
 }
 
-/// **THE BANKS, AND THEIR THREE MESHES.** Permanent like every other model in this file (`Rain`'s own note):
-/// the material holds the scene shader and `rl.unloadModel` would take it with it.
 pub const Mist = struct {
     models: [MIST_KINDS]rl.Model,
     banks: [MIST_CAP]Bank = [_]Bank{.{}} ** MIST_CAP,
     rng: mathx.Rng = mathx.Rng.init(0x511F_7A11),
-    /// Have they been placed yet — the first foggy frame seeds them AROUND him rather than drifting them in
-    /// from wherever the last spell left them standing.
     seeded: bool = false,
 
     pub fn build(shader: rl.Shader) Mist {
@@ -930,16 +769,12 @@ pub const Mist = struct {
         return out;
     }
 
-    /// ONE BANK'S MESH — lumps through a flattened disc, with the density falling off outward. Unit radius, so
-    /// a bank is placed entirely by its own scale.
     fn clusterMesh(shader: rl.Shader, rng: *mathx.Rng) rl.Model {
         var b = gfx.Builder.init();
-        b.setMat(.plain); // the emissive path, `Rain`'s own: mist is not a surface either
-        b.setAnimY(0); // …and it does not sway: `windAmt` is the flora path and this is not flora
+        b.setMat(.plain);
+        b.setAnimY(0);
         for (0..LUMPS) |_| {
             const a = rng.angle();
-            // `@sqrt` is the uniform disc; multiplying by `u` again pulls them BACK toward the middle, which
-            // is what gives the cluster a falling-off rim instead of an edge.
             const u = rng.float();
             const rr = @sqrt(u) * u * 0.92;
             const lr = rng.range(LUMP_LO, LUMP_HI);
@@ -954,8 +789,6 @@ pub const Mist = struct {
         return b.toModel(shader);
     }
 
-    /// **HOW SOLID ONE BANK IS RIGHT NOW** — its own ramp in and out, how foggy it is at all, and HOW CLOSE THE
-    /// LENS HAS COME (`NEAR_GONE`). Three factors that multiply, so none of them can be reached round.
     fn alphaOf(self: *const Mist, i: usize, fog: f32, eye: rl.Vector3) f32 {
         const bk = self.banks[i];
         if (bk.life <= 0) return 0;
@@ -964,8 +797,6 @@ pub const Mist = struct {
         return MIST_TOP * mathx.clampF(fog, 0, 1) * inK * outK * nearFade(bk, eye);
     }
 
-    /// Put one somewhere new. `first` may seed it anywhere in the ring; otherwise it comes in from the OUTER
-    /// band, so a bank that has just gone out is replaced by one that still has to drift to you.
     fn seed(self: *Mist, i: usize, at: rl.Vector3, groundY: f32, first: bool) void {
         const a = self.rng.angle();
         const rr = if (first) MIST_R * @sqrt(self.rng.float()) else MIST_R * self.rng.range(0.72, 1.0);
@@ -979,8 +810,6 @@ pub const Mist = struct {
             .vz = mathx.sinf(heading) * spd,
             .yaw = mathx.degrees(self.rng.angle()),
             .spin = self.rng.range(SPIN_LO, SPIN_HI) * (if (self.rng.float() < 0.5) @as(f32, -1) else 1),
-            // …AND THEY ARE NOT ALL BORN TOGETHER: seeded mid-life, so the first foggy minute is not seven
-            // banks fading up on one clock.
             .age = if (first) self.rng.range(0, LIFE_LO * 0.5) else 0,
             .life = self.rng.range(LIFE_LO, LIFE_HI),
             .bobT = self.rng.range(0, 60),
@@ -995,7 +824,7 @@ pub const Mist = struct {
     /// heightfield per bank per frame cannot be justified by a picture nobody can see.
     pub fn tick(self: *Mist, dt: f32, at: rl.Vector3, groundY: f32, fog: f32) void {
         if (fog <= MIST_MIN) {
-            self.seeded = false; // the next foggy spell places them around him rather than resuming
+            self.seeded = false;
             return;
         }
         if (!self.seeded) {
@@ -1010,8 +839,6 @@ pub const Mist = struct {
             bk.pos.x += bk.vx * dt;
             bk.pos.z += bk.vz * dt;
             bk.yaw += bk.spin * dt;
-            // RE-SEEDED WHEN ITS TIME IS UP OR IT HAS WANDERED OFF, and never where you can watch it happen: a
-            // bank past `MIST_R` is out beyond what the haze itself hides.
             if (bk.age >= bk.life or mathx.distXZ(bk.pos, at) > MIST_R * 1.35) self.seed(i, at, groundY, false);
         }
     }
@@ -1027,22 +854,17 @@ pub const Mist = struct {
             .pos = v3(at.x + d.x * ahead, at.y + RISE_HI, at.z + d.z * ahead),
             .r = SIZE_HI * 0.5,
             .life = LIFE_HI,
-            .age = LIFE_HI * 0.5, // mid-life: clear of the ramp in and well short of the ramp out
+            .age = LIFE_HI * 0.5,
             .bobSecs = BOB_SECS_LO,
         };
     }
 
-    /// **DRAWN WITH THE RAIN AND ON ITS TERMS** — last, no depth written, still depth TESTED, so a bank sits
-    /// behind the tree it is behind. One draw each and no sort: at this opacity which of two banks is in front
-    /// is not something anybody can see, and the alternative is a sort every frame for no picture.
     pub fn draw(self: *const Mist, scene: *gfx.Scene, eye: rl.Vector3, fog: f32) void {
         if (fog <= MIST_MIN) return;
         var any = false;
         for (0..MIST_CAP) |i| {
             const a = self.alphaOf(i, fog, eye);
             if (a <= 0.004) continue;
-            // ONE begin/end for the whole field — the depth mask is global state, and toggling it seven times
-            // is seven chances to leave it off (`Scene.beginFade`'s own law).
             if (!any) {
                 scene.beginFade(a);
                 any = true;
@@ -1064,18 +886,12 @@ pub const Mist = struct {
 };
 
 test "A BANK IS SLOWER THAN ANYTHING ELSE IN THE WORLD, and you never catch it arriving" {
-    // VERY SLOW is the whole brief: the fast end has to take over a minute to cross its own body, or it reads
-    // as a prop being slid across the field.
     const crossing = SIZE_HI / DRIFT_HI;
     std.debug.print("\n  mist: a {d:.0} m bank crosses its own width in {d:.0} s ({d:.3}..{d:.3} m/s), {d} banks of {d} lumps\n", .{ SIZE_HI, crossing, DRIFT_LO, DRIFT_HI, MIST_CAP, LUMPS });
     try std.testing.expect(crossing > 60.0);
-    // …and it is orders under the rain's own fall, which is the other thing moving in the same frame.
     try std.testing.expect(DRIFT_HI < FALL_MPS * 0.02);
-    // THE RAMP IS A REAL FRACTION OF A LIFE, or a re-seed is a pop somewhere in the field.
     try std.testing.expect(MIST_FADE * 2.0 < LIFE_LO);
-    // …and a bank is TRANSLUCENT: two of them in a line is still a world you can see through.
     try std.testing.expect(MIST_TOP < 0.25);
-    // …AND THE WHOLE FIELD IS CHEAPER THAN THE RAIN IT STANDS IN.
     const tris = MIST_CAP * LUMPS * @as(usize, @intCast(LUMP_SEGS * LUMP_SIDES * 2));
     std.debug.print("  ...and the whole field is {d} draws, {d} tris\n", .{ MIST_CAP, tris });
     try std.testing.expect(MIST_CAP <= STACKS + COPY_STACKS);
@@ -1083,7 +899,6 @@ test "A BANK IS SLOWER THAN ANYTHING ELSE IN THE WORLD, and you never catch it a
 
 test "THE BANKS COST NOTHING ON A CLEAR DAY, and the first foggy frame places them around him" {
     var m = Mist{ .models = undefined };
-    // Dry: it does not tick, does not seed, and draws nothing.
     m.tick(1.0 / 60.0, mathx.zero3, 0, 0);
     try std.testing.expect(!m.seeded);
     try std.testing.expectEqual(@as(f32, 0), m.alphaOf(0, 0, mathx.zero3));
@@ -1102,27 +917,20 @@ test "THE BANKS COST NOTHING ON A CLEAR DAY, and the first foggy frame places th
         try std.testing.expect(bk.r >= SIZE_LO * 0.5 and bk.r <= SIZE_HI * 0.5);
     }
 
-    // …AND THEY ARE RE-SEEDED RATHER THAN LOST: an hour of drift leaves the same seven standing, every one of
-    // them still inside the ring, and none of it reads a wall clock.
     var t: f32 = 0;
     while (t < 3600.0) : (t += 1.0 / 30.0) {
         m.tick(1.0 / 30.0, mathx.zero3, 0, 1.0);
         for (0..MIST_CAP) |i| try std.testing.expect(mathx.distXZ(m.banks[i].pos, mathx.zero3) <= MIST_R * 1.36);
     }
-    // …and a clear spell puts them away, so the next one does not resume from where the last left off.
     m.tick(1.0 / 60.0, mathx.zero3, 0, 0);
     try std.testing.expect(!m.seeded);
 }
 
 test "A BANK GIVES WAY AS YOU WALK INTO IT, AND COMES BACK AS YOU LEAVE" {
-    // **THE THING THAT SEPARATES A VOLUME FROM A PAINTED BLOB** (owner: fade out as you near it and back in
-    // when you step away). Mist has no surface, so a lens inside it has nothing left to look at — where a mesh
-    // simply gets bigger and more solid until it is a grey wall across the frame.
     const bk = Bank{ .pos = mathx.zero3, .r = 6.0, .life = LIFE_HI, .age = LIFE_HI * 0.5 };
-    try std.testing.expectEqual(@as(f32, 0), nearFade(bk, mathx.zero3)); // dead inside: nothing at all
+    try std.testing.expectEqual(@as(f32, 0), nearFade(bk, mathx.zero3));
     try std.testing.expectEqual(@as(f32, 0), nearFade(bk, v3(NEAR_GONE * bk.r * 0.99, 0, 0)));
     try std.testing.expectEqual(@as(f32, 1), nearFade(bk, v3(NEAR_FULL * bk.r + 0.01, 0, 0)));
-    // …and MONOTONE across the whole approach, so walking in never brightens it for a step.
     var prev: f32 = 1.0;
     var d: f32 = NEAR_FULL * bk.r + 2.0;
     while (d >= 0) : (d -= 0.05) {
@@ -1130,18 +938,13 @@ test "A BANK GIVES WAY AS YOU WALK INTO IT, AND COMES BACK AS YOU LEAVE" {
         try std.testing.expect(got <= prev + 1e-6);
         prev = got;
     }
-    // IT IS THE LENS, NOT THE MAN: the camera is what ends up inside one, and it sits metres off him.
-    try std.testing.expect(nearFade(bk, v3(0, 12.0, 0)) > 0.5); // …so height counts too, looking down on it
+    try std.testing.expect(nearFade(bk, v3(0, 12.0, 0)) > 0.5);
 
-    // A BIG BANK STARTS GIVING WAY FROM FURTHER OUT, which is what makes it read as a volume of a size rather
-    // than a sprite with one fade distance.
     var small = bk;
     small.r = 3.5;
     const at: f32 = 8.0;
     try std.testing.expect(nearFade(small, v3(at, 0, 0)) > nearFade(bk, v3(at, 0, 0)));
 
-    // …AND THE SLOW RAMP IS A FRACTION OF A LIFE, not most of one: a bank has to STAND for a while between
-    // arriving and going, or the field is nothing but ramps.
     try std.testing.expect(MIST_FADE * 3.0 < LIFE_LO);
     std.debug.print("  mist: {d:.0}s ramps inside a {d:.0}..{d:.0}s life, gone within {d:.1}x its radius, full past {d:.1}x\n", .{ MIST_FADE, LIFE_LO, LIFE_HI, NEAR_GONE, NEAR_FULL });
 }

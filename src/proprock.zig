@@ -21,18 +21,12 @@ const tuftInto = art.tuftInto;
 
 pub const CliffKind = struct {
     H: f32,
-    /// Body half-width band.
     wLo: f32,
     wHi: f32,
-    /// How far bodies wander in and out of the face.
     cleft: f32,
-    /// 0 = rounded and weathered, 1 = angular and freshly broken.
     blocky: f32,
-    /// Bedding bands across the face, and how much their relief VARIES.
     bands: i32,
-    /// OVERGROWTH.
     ivy: f32 = 0,
-    /// COLLAPSE.
     broken: f32 = 0,
 };
 
@@ -62,7 +56,6 @@ pub fn cliff6(shader: rl.Shader) rl.Model {
     return cliffMesh(shader, 90539, CLIFF_OVERGROWN);
 }
 
-/// One rock body of a cliff segment — an ellipsoid, as `addBlob` builds it.
 pub const CliffBody = struct { x: f32, y: f32, z: f32, rx: f32, ry: f32, rz: f32 };
 
 pub fn cliffFaceZ(bs: []const CliffBody, x: f32, y: f32) ?f32 {
@@ -93,7 +86,6 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
     const H = k.H;
     var b = Builder.init();
     var rng = mathx.Rng.init(seed);
-    // The COLLAPSE and OVERGROWTH blocks below draw from their own stream.
     var frng = mathx.Rng.init(seed ^ 0x5C1FF00D);
     b.setMat(.stone);
     const NM = 5;
@@ -103,17 +95,14 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
     var nbody: usize = 0;
     var m: i32 = 0;
     while (m < NM) : (m += 1) {
-        const u = @as(f32, @floatFromInt(m)) / @as(f32, NM - 1); // 0..1 across the segment
+        const u = @as(f32, @floatFromInt(m)) / @as(f32, NM - 1);
         const cx = (u * 2.0 - 1.0) * 5.2;
         const hgt = H * (0.93 + 0.07 * mathx.sinf(u * std.math.pi)) * rng.range(0.88, 1.12);
         const rx = rng.range(k.wLo, k.wHi);
         const rz = rng.range(2.0, 3.4);
-        // …and this is the CLEFT: how far this body sits in or out of the face.
         const inOut = rng.signed() * k.cleft;
         const sides: i32 = @intFromFloat(@round(10.0 - 4.0 * k.blocky + rng.signed() * 1.4));
         const rings: i32 = @intFromFloat(@round(6.0 - 2.0 * k.blocky + rng.signed() * 0.8));
-        // Two stacked bodies per position — a broad foot and a narrower shoulder, so the profile tapers the
-        // way weathered rock does instead of standing up like a column.
         const fz = inOut + rng.signed() * 0.4;
         b.addBlob(v3(cx, hgt * 0.34, fz), v3(rx, hgt * 0.42, rz), rings, sides, if (@mod(m, 2) == 0) CLIFF_ROCK else CLIFF_DK);
         bodies[nbody] = .{ .x = cx, .y = hgt * 0.34, .z = fz, .rx = rx, .ry = hgt * 0.42, .rz = rz };
@@ -139,11 +128,10 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
     var course: i32 = 0;
     while (course < k.bands) : (course += 1) {
         const t = @as(f32, @floatFromInt(course)) / @as(f32, @floatFromInt(k.bands - 1));
-        const y = H * (0.07 + 0.86 * t) * rng.range(0.96, 1.04); // bands are not evenly spaced either
+        const y = H * (0.07 + 0.86 * t) * rng.range(0.96, 1.04);
         const halfW = (5.4 - 2.0 * t) * rng.range(0.85, 1.15);
-        const back = 1.1 * t; // the face rakes back as it rises
+        const back = 1.1 * t;
         const nb = 2 + rng.intn(3);
-        // This band's own prominence: mostly a seam, occasionally a real ledge.
         const bold = rng.float() < 0.22;
         const depth: f32 = if (bold) rng.range(0.34, 0.50) else rng.range(0.16, 0.28);
         const rise: f32 = if (bold) rng.range(0.20, 0.32) else rng.range(0.09, 0.18);
@@ -151,10 +139,10 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
         while (i < nb) : (i += 1) {
             const fi = (@as(f32, @floatFromInt(i)) + 0.5) / @as(f32, @floatFromInt(nb));
             const cx = (fi * 2.0 - 1.0) * halfW;
-            const w = (2.0 * halfW / @as(f32, @floatFromInt(nb))) * rng.range(0.95, 1.35); // bands RUN
+            const w = (2.0 * halfW / @as(f32, @floatFromInt(nb))) * rng.range(0.95, 1.35);
             b.addBox(
                 v3(cx + rng.signed() * 0.22, y, back - 1.20 + rng.signed() * 0.16),
-                v3(w * 0.5, rng.signed() * 0.045, rng.signed() * 0.03), // slabs still TILT, a little
+                v3(w * 0.5, rng.signed() * 0.045, rng.signed() * 0.03),
                 v3(rng.signed() * 0.05, rise, rng.signed() * 0.04),
                 v3(rng.signed() * 0.04, 0, depth),
                 if (rng.float() < 0.24) CLIFF_LT else if (rng.float() < 0.46) CLIFF_DK else CLIFF_ROCK,
@@ -177,21 +165,17 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
             CLIFF_DK,
         );
     }
-    // FALLEN ROCK AT THE FOOT, and it stays AT the foot (owner's call): fewer of them, tucked against the
-    // wall. Fanned four metres out they stopped reading as debris off this cliff and started reading as a
-    // boulder field the cliff happens to stand in — and they were the things you kept catching a boot on
-    // while walking the base.
     var t: i32 = 0;
     while (t < 9) : (t += 1) {
         const cx = rng.range(-6.4, 6.4);
         const cz = rng.range(-2.1, -0.7);
-        const r = rng.range(0.35, 1.25) * (1.0 - 0.4 * @abs(cz + 0.7) / 1.4); // biggest against the wall
+        const r = rng.range(0.35, 1.25) * (1.0 - 0.4 * @abs(cz + 0.7) / 1.4);
         b.addBlob(v3(cx, r * 0.55, cz), v3(r, r * 0.7, r * rng.range(0.8, 1.2)), 4, 6, if (rng.float() < 0.3) CLIFF_LT else CLIFF_ROCK);
     }
     if (k.broken > 0) {
-        const gx = frng.range(-3.0, 3.0); // where the gully comes down
+        const gx = frng.range(-3.0, 3.0);
         const gTop = H * frng.range(0.58, 0.84);
-        const gW = frng.range(0.75, 1.25) * (0.6 + 0.4 * k.broken); // half-width of the GAP itself
+        const gW = frng.range(0.75, 1.25) * (0.6 + 0.4 * k.broken);
         b.setMat(.stone);
         for ([_]f32{ 1, -1 }) |sgn| {
             const rTop = gTop * frng.range(0.62, 1.0);
@@ -232,11 +216,10 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
                 CLIFF_LT,
             );
         }
-        // THE APRON: the volume that left the face, fanned out from under the gully.
         const nApron: i32 = @intFromFloat(@round(8.0 + 6.0 * k.broken));
         var ap: i32 = 0;
         while (ap < nApron) : (ap += 1) {
-            const out = frng.float(); // 0 = against the wall, 1 = the toe of the fan
+            const out = frng.float();
             const cx = gx + frng.signed() * (1.3 + 2.6 * out);
             const cz = -1.0 - out * frng.range(1.2, 2.8);
             const r = frng.range(0.30, 1.15) * (1.0 - 0.45 * out);
@@ -294,16 +277,15 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
             while (st <= steps) : (st += 1) {
                 const s = @as(f32, @floatFromInt(st)) / @as(f32, @floatFromInt(steps));
                 const y = y0 - drop * s;
-                cx += frng.signed() * 0.18; // the runner WANDERS as it descends — it isn't a plumb line
-                // Off the rock at this height → this length of runner simply does not exist.
+                cx += frng.signed() * 0.18;
                 const fz = cliffFaceZ(face, cx, y) orelse {
                     prev = null;
                     continue;
                 };
-                const p = v3(cx, y, fz - 0.06); // a hair proud: it clings, it does not hang
+                const p = v3(cx, y, fz - 0.06);
                 if (prev) |q| {
                     b.setMat(.wood);
-                    b.addCapsule(q, p, 0.030, 0.045, 5, BARK_DK); // thickening downward, toward the root
+                    b.addCapsule(q, p, 0.030, 0.045, 5, BARK_DK);
                 }
                 prev = p;
                 b.setMat(.plant);
@@ -319,7 +301,7 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
                         v3(lx, ly, lz + rz2 - r * 0.15),
                         v3(r, r * frng.range(0.7, 1.15), rz2),
                         3,
-                        7, // rounder than the old 6: at this size the facets ARE the silhouette
+                        7,
                         if (frng.float() < 0.35) SCRUB_DK else IVY_GRN,
                     );
                 }
@@ -335,14 +317,13 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
             const hh = w * frng.range(0.30, 0.60);
             const fz = cliffSeatZ(face, mx, my, w, hh) orelse continue;
             b.addBlob(
-                v3(mx, my, fz + 0.22), // ~4 cm of it shows: a tonal patch, not a cushion
+                v3(mx, my, fz + 0.22),
                 v3(w, hh, 0.26),
                 3,
                 7,
                 if (frng.float() < 0.5) MOSS_DK else STONE_MOSS,
             );
         }
-        // …and a fuller crest on top of the shared scrub.
         var cs: i32 = 0;
         while (cs < 5) : (cs += 1) {
             const s = top[@intCast(frng.intn(NM))];
@@ -381,7 +362,7 @@ pub fn boulderMesh(shader: rl.Shader) rl.Model {
         b.addBlob(v3(rng.signed() * 1.35, r * 0.55, rng.signed() * 1.3), v3(r, r * 0.7, r), 3, 5, CLIFF_LT);
     }
     b.setMat(.plant);
-    b.addBlob(v3(rng.signed() * 0.3, 1.62, rng.signed() * 0.3), v3(0.62, 0.14, 0.55), 3, 6, STONE_MOSS); // moss cap
+    b.addBlob(v3(rng.signed() * 0.3, 1.62, rng.signed() * 0.3), v3(0.62, 0.14, 0.55), 3, 6, STONE_MOSS);
     return b.toModel(shader);
 }
 
@@ -395,7 +376,7 @@ pub fn rocksMesh(shader: rl.Shader) rl.Model {
         const d = rng.range(0.1, 1.35);
         const r = rng.range(0.16, 0.46);
         b.addBlob(
-            v3(mathx.cosf(a) * d, r * rng.range(0.42, 0.78), mathx.sinf(a) * d), // sunk to varying depths
+            v3(mathx.cosf(a) * d, r * rng.range(0.42, 0.78), mathx.sinf(a) * d),
             v3(r * rng.range(0.9, 1.3), r * rng.range(0.6, 0.9), r * rng.range(0.9, 1.2)),
             3,
             6,
@@ -403,7 +384,7 @@ pub fn rocksMesh(shader: rl.Shader) rl.Model {
         );
     }
     b.setMat(.plant);
-    tuftInto(&b, &rng, rng.signed() * 0.8, rng.signed() * 0.8, 0.6); // grass creeping between them
+    tuftInto(&b, &rng, rng.signed() * 0.8, rng.signed() * 0.8, 0.6);
     return b.toModel(shader);
 }
 
@@ -435,8 +416,8 @@ pub fn monolithMesh(shader: rl.Shader) rl.Model {
         );
     }
     b.setMat(.plant);
-    b.addBlob(v3(lean.x * 0.25 - 0.42, 0.75, lean.z * 0.25), v3(0.16, 0.55, 0.30), 3, 5, STONE_MOSS); // lichen streak
-    b.addBlob(v3(0, 0.10, 0), v3(0.85, 0.10, 0.75), 3, 6, SCRUB_DK); // grass swallowing the base
+    b.addBlob(v3(lean.x * 0.25 - 0.42, 0.75, lean.z * 0.25), v3(0.16, 0.55, 0.30), 3, 5, STONE_MOSS);
+    b.addBlob(v3(0, 0.10, 0), v3(0.85, 0.10, 0.75), 3, 6, SCRUB_DK);
     return b.toModel(shader);
 }
 
@@ -452,9 +433,8 @@ pub fn cairnMesh(shader: rl.Shader) rl.Model {
         const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(n));
         const r = (0.46 - 0.30 * t) * rng.range(0.85, 1.15);
         const hh = r * rng.range(0.42, 0.7);
-        // Each stone sits a little off the axis, so the stack leans and reads as hand-built.
         b.addBlob(v3(rng.signed() * 0.09 * (1.0 + t), y + hh, rng.signed() * 0.09 * (1.0 + t)), v3(r, hh, r * rng.range(0.82, 1.18)), 3, 6, if (rng.float() < 0.3) CLIFF_LT else if (rng.float() < 0.55) CLIFF_DK else CLIFF_ROCK);
-        y += hh * 1.55; // stones sit DOWN onto each other rather than balancing on a point
+        y += hh * 1.55;
     }
     var f: i32 = 0;
     while (f < 3) : (f += 1) {
@@ -508,7 +488,7 @@ pub fn screeMesh(shader: rl.Shader) rl.Model {
     var i: i32 = 0;
     while (i < 42) : (i += 1) {
         const a = rng.angle();
-        const d = rng.range(0, 1.9) * @sqrt(rng.float()); // area-even
+        const d = rng.range(0, 1.9) * @sqrt(rng.float());
         const r = rng.range(0.05, 0.19);
         b.addBlob(
             v3(mathx.cosf(a) * d, r * rng.range(0.28, 0.6), mathx.sinf(a) * d * rng.range(0.7, 1.0)),

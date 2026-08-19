@@ -32,37 +32,27 @@ const crackInto = art.crackInto;
 const lichenInto = art.lichenInto;
 const tuftInto = art.tuftInto;
 
-/// Nothing dead is straight and nothing ends in a point: one straight capsule to a needle tip is a SPEAR, and a
-/// rosette of them is a hub of spokes. So leave the bole on the bole's own AXIS, rise to an elbow, then droop
-/// off the line to a blunt snap of pale heartwood. Twigs root on that OUTER half and carry on outward — struck
-/// across the limb instead, a twig crosses its parent and reads as a needle lying near a branch.
 pub fn deadLimbInto(b: *Builder, rng: *mathx.Rng, root: rl.Vector3, a: f32, reach: f32, rise: f32, r0: f32, twigs: i32) void {
     deadLimbTinted(b, rng, root, a, reach, rise, r0, twigs, BARK_DK, TIMBER);
 }
 
-/// THE SAME LIMB IN SOMEBODY ELSE'S TWO COLOURS — the souls bloom is a dead tree made of gold (`souls.zig`),
-/// and the law it has to obey is the SHAPE. As its own transcription of this it came out a rosette of
-/// needles, which is precisely what the law forbids.
 pub fn deadLimbTinted(b: *Builder, rng: *mathx.Rng, root: rl.Vector3, a: f32, reach: f32, rise: f32, r0: f32, twigs: i32, bark: rl.Color, heart: rl.Color) void {
     const elbow = v3(root.x + mathx.cosf(a) * reach * 0.58, root.y + rise, root.z + mathx.sinf(a) * reach * 0.58);
     const r1 = r0 * 0.52;
     b.addCapsule(root, elbow, r0, r1, 5, bark);
     const oa = a + rng.signed() * 0.55;
-    const drop = rise * rng.range(-0.7, 0.05); // its own weight has taken it back down
+    const drop = rise * rng.range(-0.7, 0.05);
     const tip = v3(elbow.x + mathx.cosf(oa) * reach * 0.42, elbow.y + drop, elbow.z + mathx.sinf(oa) * reach * 0.42);
     const r2 = r1 * 0.5;
     b.addCapsule(elbow, tip, r1, r2, 5, bark);
-    b.addBlob(tip, v3(r2 * 1.7, r2 * 1.3, r2 * 1.7), 3, 5, heart); // where it broke off
+    b.addBlob(tip, v3(r2 * 1.7, r2 * 1.3, r2 * 1.7), 3, 5, heart);
     var t: i32 = 0;
     while (t < twigs) : (t += 1) {
         const u = rng.range(0.05, 0.6);
         const from = mathx.lerpV(elbow, tip, u);
-        // Sized off the PARENT's radius where it leaves it, or the fork bulges out of the branch growing it.
         const tr = mathx.lerpF(r1, r2, u) * 0.75;
         const ta = oa + rng.signed() * 0.85;
         const tl = reach * rng.range(0.24, 0.44);
-        // Its droop is capped against its own REACH, or a twig off a steeply-drooping limb hangs plumb
-        // and reads as something suspended from the tree rather than a part of it.
         const dy = mathx.clampF(rise * 0.12 + drop * rng.range(0.2, 0.7), -tl * 0.6, tl * 0.6);
         b.addCapsule(from, v3(from.x + mathx.cosf(ta) * tl, from.y + dy, from.z + mathx.sinf(ta) * tl), tr, tr * 0.4, 5, BARK_DK);
     }
@@ -84,8 +74,8 @@ pub fn treeMesh(shader: rl.Shader) rl.Model {
     const j3 = v3(j2.x + rng.signed() * 0.3, 4.05, j2.z + rng.signed() * 0.25);
     b.addCapsule(v3(0, 0, 0), j1, 0.26, 0.165, 8, BARK_OLD);
     b.addCapsule(j1, j2, 0.165, 0.095, 7, BARK_OLD);
-    b.addCapsule(j2, j3, 0.095, 0.035, 6, BARK_DK); // the snapped leader — SNAPPED, so blunt…
-    b.addBlob(j3, v3(0.045, 0.030, 0.045), 3, 5, TIMBER); // …and showing its heartwood
+    b.addCapsule(j2, j3, 0.095, 0.035, 6, BARK_DK);
+    b.addBlob(j3, v3(0.045, 0.030, 0.045), 3, 5, TIMBER);
     // Peeling bark: strips SUNK so only an edge breaks the surface, and the loose one curls off at its TOP
     // only. Stood clear along its whole length (0.16 off a bole of radius 0.2) a strip is a dark floating tube.
     var s: i32 = 0;
@@ -106,10 +96,7 @@ pub fn treeMesh(shader: rl.Shader) rl.Model {
     }
     crackInto(&b, v3(mathx.cosf(1.9) * 0.22, 0.30, mathx.sinf(1.9) * 0.22), v3(0.06, 0.99, 0.02), v3(-mathx.sinf(1.9), 0, mathx.cosf(1.9)), rng.range(0.9, 1.5), 0.026, 0.05);
     b.setMat(.bark);
-    b.addBlob(v3(bend.x * 0.7 + 0.20, 1.25, bend.z * 0.7 - 0.06), v3(0.09, 0.14, 0.09), 3, 6, IRON); // the rot hollow, dark
-    // BRANCHES: six, each rooted at its OWN height on the real bole (j1→j2 low, j2→j3 above, alternating
-    // so the low ones are not all on one side) and thinner than the bole it leaves — a limb fatter than
-    // the stem above it is a thing no tree does. Six off two exact joints was two rosettes of spokes.
+    b.addBlob(v3(bend.x * 0.7 + 0.20, 1.25, bend.z * 0.7 - 0.06), v3(0.09, 0.14, 0.09), 3, 6, IRON);
     var br: i32 = 0;
     while (br < 6) : (br += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(br)) / 6.0 + rng.signed() * 0.6;
@@ -185,7 +172,6 @@ pub fn logMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(818);
     b.setMat(.bark);
-    // BARK_OLD + ridges run ALONG the barrel — same plastic-loaf correction as the stump.
     b.addCapsule(v3(-1.85, 0.36, rng.signed() * 0.1), v3(1.9, 0.30, rng.signed() * 0.12), 0.36, 0.25, 8, BARK_OLD);
     var rb: i32 = 0;
     while (rb < 6) : (rb += 1) {
@@ -222,20 +208,20 @@ pub fn logMesh(shader: rl.Shader) rl.Model {
 
 pub const TreeSpec = struct {
     seed: u64,
-    trunk: f32, // height of the fork — the shorter this is, the more the canopy sits ON the tree
-    spread: f32, // bough reach multiplier
-    lift: f32, // how much the boughs climb as they reach out (low = a spreading oak, high = a poplar)
-    gold: f32, // fraction of canopy masses that catch the sun
+    trunk: f32,
+    spread: f32,
+    lift: f32,
+    gold: f32,
 };
 
 pub fn bigTree1(shader: rl.Shader) rl.Model {
     return bigTreeMesh(shader, .{ .seed = 7001, .trunk = 4.5, .spread = 1.0, .lift = 0.55, .gold = 0.30 });
 }
 pub fn bigTree2(shader: rl.Shader) rl.Model {
-    return bigTreeMesh(shader, .{ .seed = 7011, .trunk = 3.4, .spread = 1.22, .lift = 0.30, .gold = 0.42 }); // squat + broad
+    return bigTreeMesh(shader, .{ .seed = 7011, .trunk = 3.4, .spread = 1.22, .lift = 0.30, .gold = 0.42 });
 }
 pub fn bigTree3(shader: rl.Shader) rl.Model {
-    return bigTreeMesh(shader, .{ .seed = 7023, .trunk = 5.6, .spread = 0.82, .lift = 0.85, .gold = 0.22 }); // tall + narrow
+    return bigTreeMesh(shader, .{ .seed = 7023, .trunk = 5.6, .spread = 0.82, .lift = 0.85, .gold = 0.22 });
 }
 
 pub fn canopyInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, rx: f32, ry: f32, gold: f32, n: i32) void {
@@ -243,7 +229,7 @@ pub fn canopyInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, rx: f
     while (i < n) : (i += 1) {
         const a = rng.angle();
         const t = rng.range(0.30, 0.88);
-        const yt = rng.signed(); // -1 = underside, +1 = crown
+        const yt = rng.signed();
         const rr = rx * t;
         const px = cx + mathx.cosf(a) * rr;
         const pz = cz + mathx.sinf(a) * rr;
@@ -259,7 +245,7 @@ pub fn canopyInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, rx: f
         const a = rng.angle();
         const yt = rng.signed();
         const t = rng.range(0.86, 1.04);
-        const flat = 1.0 - 0.55 * @abs(yt); // shell radius pinches toward the poles
+        const flat = 1.0 - 0.55 * @abs(yt);
         const rr = rx * t * flat;
         const px = cx + mathx.cosf(a) * rr;
         const pz = cz + mathx.sinf(a) * rr;
@@ -393,9 +379,9 @@ pub fn willowMesh(shader: rl.Shader) rl.Model {
         b.setMat(.bark);
     }
     b.setMat(.plant);
-    b.addBlob(crown, v3(1.9, 1.15, 1.85), 5, 8, LEAF_DK); // the dense heart of the crown
+    b.addBlob(crown, v3(1.9, 1.15, 1.85), 5, 8, LEAF_DK);
     var fh: i32 = 0;
-    while (fh < 8) : (fh += 1) { // leaf clusters breaking the heart's shell
+    while (fh < 8) : (fh += 1) {
         const a = rng.angle();
         const rr = rng.range(0.16, 0.30);
         b.addBlob(v3(crown.x + mathx.cosf(a) * 1.75, crown.y + rng.signed() * 0.8, crown.z + mathx.sinf(a) * 1.70), v3(rr, rr * 0.7, rr), 4, 6, if (rng.float() < 0.4) LEAF_PALE else LEAF);
@@ -436,15 +422,13 @@ pub fn coniferMesh(shader: rl.Shader) rl.Model {
             b.setMat(.bark);
             b.addCapsule(v3(0, y, 0), v3(px, y - reach * 0.22, pz), 0.055, 0.02, 4, BARK_DK);
             b.setMat(.plant);
-            // The tone follows the LIGHT the whorl grows in: lit tips toward the crown, its own shade in
-            // the low inner tiers — one flat needle green per whorl is what stacked the pagoda roofs.
             const shadeT = 1.0 - t;
             const inner: rl.Color = if (rng.float() < 0.55 * shadeT) NEEDLE_DK else NEEDLE;
             b.addBlob(v3(px * 0.55, y - reach * 0.08, pz * 0.55), v3(reach * 0.42, reach * 0.22, reach * 0.42), 3, 7, if (rng.float() < 0.20 + 0.30 * t) NEEDLE_LT else inner);
             b.addBlob(v3(px * 0.92, y - reach * 0.20, pz * 0.92), v3(reach * 0.32, reach * 0.17, reach * 0.32), 3, 7, inner);
         }
     }
-    b.addBlob(v3(0, H * 0.99, 0), v3(0.34, 0.65, 0.34), 3, 6, NEEDLE); // the leader
+    b.addBlob(v3(0, H * 0.99, 0), v3(0.34, 0.65, 0.34), 3, 6, NEEDLE);
     var g: i32 = 0;
     while (g < 3) : (g += 1) {
         const a = rng.angle();
@@ -456,7 +440,7 @@ pub fn coniferMesh(shader: rl.Shader) rl.Model {
 pub fn birchMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(7102);
-    b.setMat(.wood); // birch bark is SMOOTH — the fissures belong to the oaks
+    b.setMat(.wood);
     const H: f32 = rng.range(7.0, 8.6);
     const lean = rng.signed() * 0.5;
     const mid = v3(lean * 0.4, H * 0.5, rng.signed() * 0.3);
@@ -504,7 +488,7 @@ pub fn birchMesh(shader: rl.Shader) rl.Model {
 pub fn snagMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(7103);
-    b.setMat(.wood); // stripped of its bark, by its own description
+    b.setMat(.wood);
     const H: f32 = rng.range(6.0, 7.6);
     const lean = rng.signed() * 0.4;
     b.addCapsule(v3(0, 0, 0), v3(lean * 0.5, H * 0.6, lean * 0.3), 0.55, 0.36, 8, BARK_OLD);

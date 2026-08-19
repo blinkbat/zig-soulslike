@@ -18,27 +18,27 @@ const v3 = mathx.v3;
 
 pub const Kind = enum(u8) {
     pillar,
-    broken, // a snapped column
+    broken,
     block,
     arch,
     wall,
-    tree, // dead tree
+    tree,
     graves,
     sword,
-    bonfire, // the BONFIRE CAMP — the tag is the world files' word, not a description (see ruins.bonfireMesh)
-    tower, // colossal horizon keep
-    gate, // colossal horizon gate
+    bonfire,
+    tower,
+    gate,
     rubble,
     banner,
     statue,
-    chapel, // ROOFED + enterable: the torchlit interior
-    watchtower, // ROOFED + enterable: masonry drum with a door
-    cottage, // ruined shell, open to the sky
-    causeway, // low stone crossing over the tarn's shallows
-    paving, // a worn flagstone patch
-    cart, // a broken wagon
-    monolith, // standing stone
-    cliff, // the world's rock wall (six variants — see CLIFFS)
+    chapel,
+    watchtower,
+    cottage,
+    causeway,
+    paving,
+    cart,
+    monolith,
+    cliff,
     cliff2,
     cliff3,
     cliff4,
@@ -49,25 +49,24 @@ pub const Kind = enum(u8) {
     stump,
     log,
     well,
-    shrine, // a wayside shrine, candles still lit (carries a light)
-    lantern, // a post lantern (carries a light)
+    shrine,
+    lantern,
     fence,
     barrels,
     woodpile,
     bones,
     sarcophagus,
-    stairs, // a fragment of stone stair going nowhere
-    gibbet, // a hanging cage on a post
+    stairs,
+    gibbet,
     cairn,
-    /// THE TREASURE CHEST — the one prop with a moving part and the only one that HOLDS anything.
     chest,
-    outcrop, // a low shelf of bedrock breaking the turf
+    outcrop,
     scree,
-    torch, // standing iron torch — interiors
-    brazier, // wide fire bowl on a tripod
-    campfire, // stone ring + crossed logs, BURNT OUT — dressing, no flame and no light
-    campfire_lit, // …and the one still going, which you can sit at (see rest.isRestKind)
-    water, // the tarn surface
+    torch,
+    brazier,
+    campfire,
+    campfire_lit,
+    water,
     tuft,
     patch,
     shrub,
@@ -77,37 +76,33 @@ pub const Kind = enum(u8) {
     bush,
     bramble,
     fern,
-    grasstall, // a tall, full clump — the workhorse of a lush meadow
-    clover, // a low broad-leaf mat
-    moss, // a damp patch creeping over the ground
+    grasstall,
+    clover,
+    moss,
     mushrooms,
     nettles,
     thistle,
-    foxglove, // tall flowering spires
-    heather, // low purple heath — the downs
-    gorse, // spiny, yellow-flowered
-    cattails, // bulrushes with brown heads — the water margin
-    lilypads, // floating, on the tarn
-    bracken, // dead brown fern, collapsed
-    thicket, // a dense tangle of brush, chest high
-    wildflowers, // a mixed-colour drift
-    ivy, // a creeper mound, for the feet of ruins
+    foxglove,
+    heather,
+    gorse,
+    cattails,
+    lilypads,
+    bracken,
+    thicket,
+    wildflowers,
+    ivy,
     bigtree,
     bigtree2,
     bigtree3,
     willow,
-    conifer, // a dark spire — the skyline's punctuation
-    birch, // pale slender trunk, light airy crown
-    snag, // a tall dead trunk, stripped bare
+    conifer,
+    birch,
+    snag,
     sapling,
-    /// **THE ITEM PICKUP** — ER's glowing thing on the ground, and the second prop that HOLDS anything (the
-    /// chest is the first). APPENDED, like every kind: `INFO` is index-pinned to this enum and the three
-    /// stock lists are derived off it, so a kind inserted anywhere above silently re-points every row.
     pickup,
 };
 
 
-/// The shelves the editor's palette is divided into.
 pub const Group = enum {
     ruins,
     buildings,
@@ -234,9 +229,6 @@ pub fn displayName(k: Kind) [:0]const u8 {
     };
 }
 
-/// **WHICH SHELF OF THE EDITOR'S PALETTE A KIND SITS ON.** One arm per shelf, and the arms are wrapped rather
-/// than run out to the margin: this is the table an author reads to find where a kind will appear, and a
-/// 250-column line is one you scroll past instead of reading.
 pub fn group(k: Kind) Group {
     return switch (k) {
         .pillar, .broken, .block, .arch, .wall,
@@ -246,8 +238,6 @@ pub fn group(k: Kind) Group {
         => .ruins,
         .chapel, .watchtower, .cottage, .tower, .gate, .causeway => .buildings,
         .well, .shrine, .lantern, .fence, .barrels, .woodpile, .cart, .bonfire => .village,
-        // …AND THE GLOW SHELVES WITH THE BOX. Both hold loot and nothing else does, so the one shelf an author
-        // looks on for "a thing with items in it" has both of them on it.
         .chest, .pickup => .treasure,
         .boulder, .rocks, .outcrop, .scree, .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6, .stump, .log => .rock,
         .tree, .bigtree, .bigtree2, .bigtree3, .willow, .conifer, .birch, .snag, .sapling => .trees,
@@ -268,9 +258,6 @@ pub const NK = @typeInfo(Kind).@"enum".fields.len;
 
 pub const Stock = enum { decor, props, interact };
 
-/// **WHAT CAN HOLD ITEMS** — the chest and the glow, and the ONE place that is written down. The editor's
-/// contents panel, the map writer's `loot=` column and anything else that asks all read this, so a third
-/// container is one row here rather than a kind test in each of them.
 pub fn holdsLoot(k: Kind) bool {
     return switch (k) {
         .chest, .pickup => true,
@@ -312,23 +299,15 @@ fn countOn(comptime s: Stock) usize {
 
 comptime {
     std.debug.assert(FLORA_KINDS.len + SOLID_KINDS.len + INTERACT_KINDS.len == NK);
-    // …and the two flags must not both be set: `stock` resolves flora first, so the kind would silently
-    // shelve as Decor.
     for (INFO) |row| std.debug.assert(!(row.interact and row.flora));
 }
 pub const Part = art.Part;
 
-/// A MASS THE OCCLUDER FADE TESTS THE SIGHT LINE AGAINST — a cylinder of radius `r` spanning `y0`..`y1`
-/// off the prop's foot, offset `x`/`z` in the prop's own yaw frame. It gets its own list because A COLLIDER
-/// IS SIZED FOR WHAT YOU WALK INTO AND THIS FOR WHAT YOU SEE THROUGH, and on a tree those differ by metres:
-/// a conifer's boughs hide the hero three metres outside the trunk you can bump into. Empty falls back to
-/// the colliders plus `OCCL_SKIRT`, which is right whenever the two shapes DO agree (a pillar, an arch).
 pub const Blocker = struct { r: f32, y0: f32 = 0, y1: f32, x: f32 = 0, z: f32 = 0 };
 
-/// A fire this kind carries: a gfx.Light at a local offset.
 pub const LightSpec = struct {
     y: f32, // height of the flame above the prop's base (fires sit on the prop axis, so x/z are 0)
-    col: rl.Vector3, // colour * intensity, pre-gamma like every other colour here
+    col: rl.Vector3,
     radius: f32,
     flicker: f32 = 0.18,
 };
@@ -337,7 +316,6 @@ pub const Info = struct {
     kind: Kind, // self-check: must equal its own row index (see the comptime block below)
     build: *const fn (rl.Shader) rl.Model,
     veil: ?*const fn (rl.Shader) rl.Model = null,
-    /// A STOWABLE PART: an ordinary caster in its own model, so the game can take it away.
     stow: ?*const fn (rl.Shader) rl.Model = null,
     bound: f32,
     top: f32,
@@ -347,7 +325,6 @@ pub const Info = struct {
     /// NEVER THINS WHEN IT STANDS IN THE CAMERA'S WAY — architecture, cliffs, the water sheet. Losing
     /// sight of the hero behind a wall is the geometry doing its job, and ER keeps those solid too.
     solid: bool = false,
-    /// What the fade tests the sight line against when the colliders are the wrong shape for it (trees).
     occl: []const Blocker = &.{},
     casts: bool = true,
     parts: []const Part = &.{},
@@ -370,19 +347,14 @@ pub const INFO = [NK]Info{
     .{ .kind = .pillar, .build = ruins.pillarWhole, .bound = 6.2, .top = 5.8, .view = 240, .parts = circleParts(0.80, 5.8) },
     .{ .kind = .broken, .build = ruins.pillarBroken, .bound = 3.6, .top = 3.3, .view = 200, .parts = circleParts(0.80, 2.9) },
     .{ .kind = .block, .build = ruins.blockMesh, .bound = 2.6, .top = 1.85, .view = 180, .solid = true, .parts = &.{.{ .ax = -0.35, .bx = 0.35, .r = 0.80, .h = 1.65 }} },
-    // The colliders ARE the occluder here, and that is the point of the fallback: the opening between the
-    // piers is see-through geometry, and one fat cylinder over the whole arch would thin it looking through it.
     .{ .kind = .arch, .build = ruins.archMesh, .bound = 7.9, .top = 7.2, .view = 260, .parts = &.{
         .{ .ax = -2.7, .bx = -2.7, .r = 0.78, .h = 4.8 },
         .{ .ax = 2.7, .bx = 2.7, .r = 0.78, .h = 4.8 },
     } },
     .{ .kind = .wall, .build = ruins.wallMesh, .bound = 5.0, .top = 3.6, .view = 220, .solid = true, .parts = &.{.{ .ax = -2.8, .bx = 2.8, .r = 0.60, .h = 3.0 }} },
-    // Dead and bare (`treeMesh` is all rot hollow and stripped limbs) — the bole is the only mass that hides him.
     .{ .kind = .tree, .build = wood.treeMesh, .bound = 5.3, .top = 4.9, .view = 240, .parts = circleParts(0.38, 3.6), .occl = &.{.{ .r = 0.90, .y1 = 4.3 }}, .surf = .wood },
     .{ .kind = .graves, .build = ruins.gravesMesh, .bound = 2.3, .top = 1.05, .view = 150, .parts = circleParts(0.80, 0.9) },
     .{ .kind = .sword, .build = ruins.swordMesh, .bound = 1.6, .top = 1.35, .view = 120 },
-    // SOLID because its veil is not: the smoke column draws down a separate path (`drawVeils`) that carries
-    // no fade, so a thinned bonfire under a solid plume reads as a bug. It is a landmark you want to see anyway.
     .{ .kind = .bonfire, .build = ruins.bonfireMesh, .veil = ruins.bonfireVeilMesh, .stow = ruins.bonfireGuitarMesh, .bound = 7.2, .top = 5.4, .view = 300, .solid = true, .light = .{ .y = 0.45, .col = v3(0.86, 0.48, 0.18), .radius = 11.0, .flicker = 0.17 } },
     .{ .kind = .tower, .build = ruins.towerMesh, .bound = 17.5, .top = 17.2, .view = FAR, .solid = true, .parts = circleParts(3.40, 14.0) },
     .{ .kind = .gate, .build = ruins.gateMesh, .bound = 19.6, .top = 16.4, .view = FAR, .solid = true, .parts = &.{
@@ -393,21 +365,20 @@ pub const INFO = [NK]Info{
     .{ .kind = .banner, .build = ruins.bannerMesh, .bound = 3.4, .top = 3.2, .view = 190 },
     .{ .kind = .statue, .build = ruins.statueMesh, .bound = 3.0, .top = 2.7, .view = 230, .parts = circleParts(0.90, 2.7) },
     .{ .kind = .chapel, .build = build.chapelMesh, .bound = 9.5, .top = 6.6, .view = FAR, .solid = true, .parts = &.{
-        .{ .ax = -2.6, .az = -3.6, .bx = -2.6, .bz = 3.6, .r = 0.42, .h = 4.4 }, // west wall
-        .{ .ax = 2.6, .az = -3.6, .bx = 2.6, .bz = 3.6, .r = 0.42, .h = 4.4 }, // east wall
-        .{ .ax = -2.6, .az = 3.6, .bx = 2.6, .bz = 3.6, .r = 0.42, .h = 4.4 }, // north (altar) wall
-        .{ .ax = -2.6, .az = -3.6, .bx = -1.15, .bz = -3.6, .r = 0.42, .h = 4.4 }, // south wall, west of the door
+        .{ .ax = -2.6, .az = -3.6, .bx = -2.6, .bz = 3.6, .r = 0.42, .h = 4.4 },
+        .{ .ax = 2.6, .az = -3.6, .bx = 2.6, .bz = 3.6, .r = 0.42, .h = 4.4 },
+        .{ .ax = -2.6, .az = 3.6, .bx = 2.6, .bz = 3.6, .r = 0.42, .h = 4.4 },
+        .{ .ax = -2.6, .az = -3.6, .bx = -1.15, .bz = -3.6, .r = 0.42, .h = 4.4 },
         .{ .ax = 1.15, .az = -3.6, .bx = 2.6, .bz = -3.6, .r = 0.42, .h = 4.4 },
-        .{ .ax = -1.5, .az = 2.9, .bx = 1.5, .bz = 2.9, .r = 0.55, .h = 1.1 }, // the altar
+        .{ .ax = -1.5, .az = 2.9, .bx = 1.5, .bz = 2.9, .r = 0.55, .h = 1.1 },
     } },
     .{ .kind = .watchtower, .build = build.watchtowerMesh, .bound = 13.0, .top = 12.4, .view = FAR, .solid = true, .parts = &art.towerRing },
     .{ .kind = .cottage, .build = build.cottageMesh, .bound = 5.6, .top = 4.0, .view = 280, .solid = true, .parts = &.{
         .{ .ax = -2.3, .az = -1.9, .bx = -2.3, .bz = 1.9, .r = 0.34, .h = 2.6 },
         .{ .ax = 2.3, .az = -1.9, .bx = 2.3, .bz = 1.9, .r = 0.34, .h = 2.6 },
         .{ .ax = -2.3, .az = 1.9, .bx = 2.3, .bz = 1.9, .r = 0.34, .h = 3.4 },
-        .{ .ax = -2.3, .az = -1.9, .bx = -0.95, .bz = -1.9, .r = 0.34, .h = 1.2 }, // collapsed to knee height
+        .{ .ax = -2.3, .az = -1.9, .bx = -0.95, .bz = -1.9, .r = 0.34, .h = 1.2 },
     }, .surf = .wood },
-    // The causeway: you WALK it, so only its kerbs are solid — low enough that arrows arc over.
     .{ .kind = .causeway, .build = build.causewayMesh, .bound = 6.5, .top = 0.5, .view = 240, .solid = true, .parts = &.{
         .{ .ax = -5.0, .az = -1.45, .bx = 5.0, .bz = -1.45, .r = 0.20, .h = 0.5 },
         .{ .ax = -5.0, .az = 1.45, .bx = 5.0, .bz = 1.45, .r = 0.20, .h = 0.5 },
@@ -436,14 +407,11 @@ pub const INFO = [NK]Info{
     .{ .kind = .stairs, .build = village.stairsMesh, .bound = 2.8, .top = 1.5, .view = 190, .parts = &.{.{ .ax = -1.3, .bx = 1.3, .r = 0.95, .h = 1.4 }} },
     .{ .kind = .gibbet, .build = village.gibbetMesh, .bound = 4.4, .top = 4.1, .view = 220, .parts = circleParts(0.24, 4.0), .surf = .wood },
     .{ .kind = .cairn, .build = rock.cairnMesh, .bound = 1.8, .top = 1.5, .view = 180, .parts = circleParts(0.52, 1.4) },
-    // SOLID for the bonfire's reason: its LID is not part of this model. `chest.Chests.draw` draws it off the
-    // box's own swing through a path that carries no fade, so a thinned carcase under an opaque lid is a bug.
     .{ .kind = .chest, .build = village.chestMesh, .bound = 1.6, .top = village.CHEST_TOP + 0.34, .view = 150, .solid = true, .interact = true, .parts = &.{.{ .r = 0.56, .h = village.CHEST_HINGE_Y }}, .surf = .wood },
     .{ .kind = .outcrop, .build = rock.outcropMesh, .bound = 3.4, .top = 1.1, .view = 200, .parts = &.{.{ .ax = -1.4, .bx = 1.4, .r = 1.1, .h = 1.05 }} },
     .{ .kind = .scree, .build = rock.screeMesh, .bound = 2.6, .top = 0.35, .view = 160 },
     .{ .kind = .torch, .build = fx.torchMesh, .bound = 2.6, .top = 2.35, .view = 200, .parts = circleParts(0.18, 2.0), .light = .{ .y = 1.98, .col = v3(0.64, 0.34, 0.13), .radius = 6.0, .flicker = 0.15 }, .surf = .metal },
     .{ .kind = .brazier, .build = fx.brazierMesh, .bound = 1.9, .top = 1.55, .view = 210, .parts = circleParts(0.50, 1.2), .light = .{ .y = 1.14, .col = v3(1.55, 0.84, 0.29), .radius = 16.0, .flicker = 0.13 }, .surf = .metal },
-    // BURNT OUT: no `light`, and that absence is the whole difference between these two rows.
     .{ .kind = .campfire, .build = fx.deadCampfireMesh, .bound = 1.5, .top = 0.6, .view = 200, .parts = circleParts(0.45, 0.5), .surf = .stone },
     // …AND ONE YOU CAN SIT AT. `interact` shelves it under the editor's Interactables layer; `rest.isRestKind`
     // is what makes it a bonfire. `stow` for the bonfire's reason: every fire you can sit at has the guitar
@@ -488,14 +456,10 @@ pub const INFO = [NK]Info{
     // A CONE, in three steps: `coniferMesh` whorls from y 0.16H with `reach` 3.1 falling to a spire.
     .{ .kind = .conifer, .build = wood.coniferMesh, .bound = 12.5, .top = 12.0, .view = FAR, .parts = circleParts(0.58, 5.0), .occl = &.{ .{ .r = 0.70, .y1 = 1.6 }, .{ .r = 3.40, .y0 = 1.4, .y1 = 5.0 }, .{ .r = 1.80, .y0 = 5.0, .y1 = 9.0 } }, .surf = .wood },
     .{ .kind = .birch, .build = wood.birchMesh, .bound = 10.0, .top = 9.4, .view = 340, .parts = circleParts(0.44, 5.0), .occl = &.{ .{ .r = 0.55, .y1 = 3.9 }, .{ .r = 3.00, .y0 = 3.5, .y1 = 9.4 } }, .surf = .wood },
-    // Barkless and bare to the top — the trunk is the whole of it.
     .{ .kind = .snag, .build = wood.snagMesh, .bound = 8.2, .top = 7.8, .view = 320, .parts = circleParts(0.42, 6.0), .occl = &.{.{ .r = 0.75, .y1 = 7.0 }}, .surf = .wood },
     // A sapling CASTS (3 m of tree with no shadow reads as a decal) and so must not sway — the depth pass
     // has no wind term.
     .{ .kind = .sapling, .build = wood.saplingMesh, .bound = 3.8, .top = 3.4, .view = 220, .parts = circleParts(0.16, 2.2), .surf = .wood },
-    // **THE ITEM PICKUP.** `interact` shelves it under the editor's Interactables layer beside the chest, which
-    // is where the things the player USES belong — and `INTERACT_KINDS` is DERIVED off that flag, so the
-    // palette picks it up with no edit in `editor.zig` at all.
     .{ .kind = .pickup, .build = fx.pickupMesh, .bound = 1.9, .top = fx.PICKUP_TOP, .view = 190, .interact = true, .casts = false, .light = .{ .y = 0.30, .col = v3(0.86, 0.82, 0.58), .radius = 5.4, .flicker = 0.03 } },
 };
 
@@ -505,17 +469,14 @@ pub fn info(k: Kind) *const Info {
 
 comptime {
     for (INFO, 0..) |row, i| std.debug.assert(@intFromEnum(row.kind) == i);
-    // A bound smaller than the mesh pops geometry at the frustum edge; catch the obvious cases.
     for (INFO) |row| std.debug.assert(row.bound >= row.top);
-    for (INFO) |row| std.debug.assert(!(row.flora and row.casts)); // flora must stay out of the shadow map
+    for (INFO) |row| std.debug.assert(!(row.flora and row.casts));
     for (INFO) |row| {
-        // A SECOND MESH IS A SECOND DRAW PATH, and neither `drawVeils` nor `drawStows` carries the fade — so a
-        // kind whose model is not the whole prop has to stay solid or it thins under an opaque half of itself.
         if (row.veil != null or row.stow != null) std.debug.assert(row.solid);
-        std.debug.assert(!(row.solid and row.occl.len > 0)); // a kind that never thins has nothing to test
+        std.debug.assert(!(row.solid and row.occl.len > 0));
         for (row.occl) |bl| {
             std.debug.assert(bl.y1 > bl.y0);
-            std.debug.assert(bl.y1 <= row.top + 0.001); // an occluder taller than the mesh thins on empty air
+            std.debug.assert(bl.y1 <= row.top + 0.001);
             std.debug.assert(@sqrt(bl.x * bl.x + bl.z * bl.z) + bl.r <= row.bound + 0.001);
         }
     }

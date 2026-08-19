@@ -279,6 +279,13 @@ whose contents change together is fine. Splits go where concerns genuinely part 
   `setFlash(0)` tail is what a fourth copy would forget.
 - **CROSS-CUTTING STATE IS EMBEDDED BY THE CREATURE AND STAMPED BY THE GAME** — its eyes (`Leash`), a
   hold on its feet (`combat.Root`). The creature reads the field; it never reaches out for the state.
+- **WHAT A CREATURE IS, AND HOW IT TRAVELS, ARE TWO AXES AND ONE TABLE** (`foe.Nature`, `foe.Gait`,
+  `foe.traitsOf` — an exhaustive switch, so a new creature cannot be added unclassified). Twenty-one creatures
+  had no vocabulary between them, and every question about a whole family was answered per creature, in that
+  creature's file, by name. `Nature` is beast/demon/undead/humanoid/plant/construct; `Gait` is
+  walking/waterfaring/flying/rooted and is what the water gate reads. **`Gait.flying` IS NOT `airborne()`** —
+  that one is whether a body is off the ground THIS FRAME (a toad mid-hop) and it is what collision asks; this
+  is what the creature is on every frame of its life.
 - **DENYING MOVEMENT IS A POST-STEP GATE, NOT A GUARD AT EACH MOVER** (`foe.grip` + `defer grip.hold`,
   `game.gateTerrain`) — taken once at the end of `update`, because a creature grows movements (a dash, a
   leap, a shove off a blade, the next one nobody has written) and a per-site list is a list to forget
@@ -1590,6 +1597,19 @@ and means nothing. A new game is bare-handed (`STARTING_KIT` is still the wolf s
   `combat.STAM_*` and `combat.GUARD_*` stay the one place a swing, a block and their bills are written down; a
   weapon says only how it DIFFERS. **AND THE DIALS ARE NOT ALL THE SAME WAY UP** — `dur` and `stam` are BILLS, so
   under 1 is the gain there, which is the whole of what the dirk is.
+- **A WEAPON SAYS WHAT KIND OF WEAPON IT IS, ON TWO AXES** (`item.Heft`, `item.Reach`). REACH is pinned to the
+  socket at comptime — the bow hand IS the ranged one and there is no third answer — and HEFT is how much of the
+  body goes into it. The multipliers already say a club is slower and hits harder; only this says it is SWUNG
+  like a club, and it is what the page prints on the row ("Heavy melee: 148% damage…").
+- **AND THE STROKE IS ONE STROKE, SCALED** (`hero.SwingShape`/`swingOf`, three multipliers over the `AL_*`/`AH_*`
+  constants). A club gathers further back, drops lower in the hips and carries further through; a dirk is the
+  same stroke shut down to the elbow. **THE PLAIN SWORD IS 1 ON EVERY DIAL**, which is `item.bareArm`'s law on
+  the other side of the same weapon: the starting kit is the game exactly as it was. A test pins the table
+  against `heft`, so what the page calls Heavy is what the body swings heavy.
+- **THREE SHAPES ON ONE GRIP** (`hero.Blade`, `BLADES`, `bladeFor`). The dirk and the club are the SWORD bone
+  with another mesh and another capsule on it — 0.67 m and 1.44 m of reach against the sword's 1.15 — so the
+  pose, the trail, the sparks and every window are written once. **THE SHAPE IS LATCHED AT `startAttack`** with
+  the row, `swingRow`'s law: a club taken up mid-swing may not lend its reach to the sword that started it.
 - **WHAT A ROW DOES TO A BLOW IS ONE FUNCTION** (`hero.weigh`), asked by the sword, the bow AND the character
   book. The ELEMENTAL half rides the damage dial (a fire arrow's fire is a share of the shaft's own physical) and
   the STANCE rides the poise dial: a row that moved one without the other is a weapon that hits harder without
@@ -1614,6 +1634,13 @@ and means nothing. A new game is bare-handed (`STARTING_KIT` is still the wolf s
   swings whatever sword he owns.
 - **THE VARIANT IS NOT REFUSED WHEN THE HAND IS** (`game.takeHand`) — `hero.equip` says no mid-swing, and a
   socket left saying "club" over a fist still swinging a sword is the page lying about what he is carrying.
+- **THERE IS ONE OF EACH, AND THE RACK IS FOUR CELLS** (`hero.equip`). He owns one sword, one board, one rod:
+  both hands holding the same armament is the same object drawn twice, blocked with and swung with. Taking a
+  thing that is already racked SWAPS the two cells rather than refusing, so the four stay distinct without a
+  press ever being eaten, and `hero.tidyHands` fixes a save written before the rule (`save.scatter`).
+- **THE CELL DRAWS WHAT IS IN IT, NOT WHICH ARM IT IS** (`hero.heldGear`, asked by `hud.Slot` and
+  `book.handArt`). The HUD drew the armament's glyph while the book two menus away drew the gear, so a dirk was
+  a sword down there and a dirk up here.
 - Saved as one `worn:` line in the map grammar, ABSENT from an older file, which loads as bare — honestly what
   that character was wearing (`hands:`' own rule for its optional alternates).
 
@@ -1712,6 +1739,10 @@ to intercept, and SIGHT stands in for one (`env.sees`): a wall is still a wall.
 them. Nothing about the world is authored in Zig. Ops: `at`, `belt`, `disc`, `ring`, `line`, `ivy`,
 `edge`, `cover`, plus `zone`/`clear`/`runway`/`foe` tables. Beside the shipped map,
 `02_brood_arena` and `03_bone_court` hold one fight each; a test loads and replays all of them.
+**`worlds/test_*.world` are BENCHES, not content** — one per thing being built, loaded with
+`--map worlds/test_x.world` (and `--shot` with it for the map-shot pass). Nothing under test goes into the
+shipped map to be looked at. `test_foggate` is the gate at three sizes and yaws plus a channel dug to 1.31 m,
+which is the one depth the hero can cross and nothing on foot will follow him into.
 
 - **THE MAP STORES THE AUTHORING, NOT ITS OUTPUT.** A wood is one `belt` of 260 attempts, not 260
   coordinates — readable in a diff, and a density dial re-expands it.
@@ -1956,6 +1987,13 @@ The mesh is TILED (`TCHUNK`), with normals from the FIELD so two tiles agree at 
 - **FOES GET THE SAME RULES** as a POST-STEP GATE (`game.gateTerrain`). Airborne foes are exempt from
   the terrain rule and from being shouldered — never from `env.resolveActor`, or a pounce crosses a
   wall. That push-out is NOT rate-limited.
+- **BUT NOT AT HIS WATERLINE — AT THEIR OWN** (`foe.wadeLimit`, `env.walkStepPast`). `WADE_MAX` is 1.37 m,
+  CHEST height on the 1.8 m rig and HIS choice to be in there; held to that same figure a kobold followed him
+  into water over its own head. A creature turns back at `foe.WADE_FRAC` (0.45) of its own stature — 0.81 m
+  for a 1.8 m body, read off `topWorld` so a cyclops and a kobold are refused at their own lines. **AND THE
+  WATER IS A DOOR FOR EXACTLY TWO THINGS**: the gait table hands `.waterfaring` an infinite limit, which is the
+  toad and the fen lurker and nothing else. The gate only ever refuses a step that goes DEEPER, so a thing
+  standing in the deep can always walk out of it.
 - **`pos.y` IS THE GROUND UNDER AN ACTOR**, written in ONE place (`game.groundActor`), EASED not
   snapped (`GROUND_RISE_RATE`/`GROUND_FALL_RATE`) — the camera rides the shoulder, so snapping kicks
   the frame. Past `GROUND_SNAP` it plants instead.
@@ -2329,12 +2367,28 @@ not the stick-speed `runB`.
 - **TWO STONE MATERIALS.** `.stone` is rubble masonry, matte; `.marble` is dressed stone, veined, with
   the only real gloss besides steel and water — kept LOW, or it lays a wash over every sunward face
   and undoes the dark-albedo rule. Marble = columns/arches/statues; stone = walls/towers/rubble.
-- **`gfx.Mat` is APPEND-ONLY** — the shader branches on the raw ordinal the whole way from 1 to 14, and the
-  comptime asserts pin the TAIL (water 9 through bark 14). Pinning `water == 9` is what catches an insert
-  anywhere below it, which is why the head needs no assert of its own.
+- **`gfx.Mat` is APPEND-ONLY** — the shader branches on the raw ordinal the whole way from 1 to 15, and the
+  comptime asserts pin the TAIL (water 9 through fog 15). Pinning `water == 9` is what catches an insert
+  anywhere below it, which is why the head needs no assert of its own. **The VERTEX-ANIMATED ids are bounded
+  at BOTH ends** (`> 11.5 && < 13.5`, and fog's own `> 14.5 && < 15.5`): an open-ended test claims every id
+  added after it, which is how `bark` went in and every trunk in the wood started climbing like an ember.
 - **THE FLAME MATERIAL IS THE ONE THING DRAWN SEMI-TRANSPARENT BY ITS MATERIAL** (the faded hero under
   an aim is the one drawn so by a per-draw uniform). Opacity is graded off the emissive
   (`FLAME_A_CORE`→`FLAME_A_TIP`); depth WRITE stays on so tongues don't stack into a brighter core.
+- **THE FOG GATE IS A VEIL, AND THAT IS WHY IT IS ONE** (`props.foggate`, `propfx.fogGateMesh`, `Mat.fog`). Laid
+  down in `env.drawVeils` AFTER everything opaque, because its own depth write at the head of the sheet — where
+  it has faded to nothing — is a rectangle of missing world behind it. `build` is the two threshold stones and
+  the sheet is the veil; `solid` is TRUE, since a fog wall is exactly the thing that must not thin when it
+  stands between the lens and him.
+- **ITS HEIGHT FRACTION RIDES `animY` AND IS READ TWICE** — the vertex billow in the VS and the fade in the FS —
+  so the two cannot disagree about which end is the top. It has to INTERPOLATE across a cell
+  (`gfx.Builder.quadFadeAnim`): constant per cell it steps, and a sheet that fades in stripes is a sheet with
+  nine edges in it. **And the height the fade dies at WANDERS** (per world column, over time): a fade that ran
+  on height alone reached zero at the last row and drew a ruled horizontal line on the way there, because a few
+  percent of alpha over something this bright is still a straight edge.
+- **ITS VERTEX ALPHA IS LEFT NEAR-SOLID ON PURPOSE.** The scene shader reads `1 - fragColor.a` as EMISSIVE, so
+  fading a translucent thing through the vertex colour makes it GLOW as it goes — the fog's opacity is the
+  output alpha and nothing else.
 - **BUILDER WINDING IS NOT CHECKED, AND FACE-DOWN GEOMETRY IS INVISIBLE.** A flat annulus swept
   outward-first points DOWN and raylib culls it. Sweep inner@a0 → inner@a1 → outer@a1 → outer@a0. For
   a ring, radial is the position direction and tangent is `(cos a, 0, sin a)`; for an arch ring at
@@ -2482,17 +2536,17 @@ last, and the drop tables (`drops.zig`) are the job its own line always promised
 all seven, because the next attribute arrives dead the way that one did. POISON is the only status effect and it is the HERO's alone (nothing applies one to a foe, and no foe
 reads one) — but it is CHAOS DAMAGE now (PoE2's, `combat.poisonPulse`), so the sporeling cap's ward and the
 tree's Veil both answer it and it is no longer the one thing in the game nothing could mitigate. THE EQUIP SYSTEM EXISTS AND EVERY REGISTERED PIECE
-IS LIVE, but **the HELD MESH is still the plain armament's**: the dirk, the club, the warbow and the door swing,
-block and photograph as the sword, the bow and the small shield, so the fight and the page know which one is in
-his fist and his hand does not. The club and the door have meshes to borrow (`ogre`'s club, `knight`'s bowed
-wall — hero→archer's bow is the precedent); the dirk and the warbow are the sword and the bow at another scale.
+IS LIVE, and **the SWORD HAND now draws what is in it** (`hero.Blade`/`bladeFor`, three shapes on one bone) —
+but **the WARBOW and the DOOR are still the plain bow and the small shield**, so those two the fight and the
+page know and the hand does not. The door has a mesh to borrow (`knight`'s bowed wall); the warbow is the bow
+at another scale.
 **AND NOTHING WORN SHOWS ON HIS BODY AT ALL** — the helm, the coat, the belt, the boots and both rings are a
 number, a bag picture and a socket caption, and the hero rig draws exactly the same man wearing all of them as
 wearing none. The paper doll is the only place a suit is visible.
-The HUD's hand slots still draw the armament's glyph rather than the gear's, where the character book draws the
-gear. Four doll sockets (helm, amulet, belt, boots) have nothing in the world to put in them, and there is one
-ring socket for one ring. Nothing PLACES the thundercrock, the cracked rune, the warbow, the candle, the second
-wind, the fang, the key or the seed — no chest holds one and no map op drops one. The crock
+Four doll sockets (helm, amulet, belt, boots) have nothing in the world to put in them, and there is one
+ring socket for one ring. Nothing PLACES the ember candle, the leech signet or the grave warbow — no chest
+holds one, no map op drops one and no body leaves one, which is three registered pieces the player cannot
+reach. (The cracked rune, the golden seed and both flasks are `award`'s, not the world's.) The crock
 lands with no burst FX yet, and the tallowed blade shows nothing on the sword while it runs. The parry exists but has no RIPOSTE behind it — a caught blow buys a stagger and the ordinary punish,
 not a critical. Four creatures carry parry windows; the archers, the kobolds and the shades have none yet, and
 the broodlings are out on purpose. No foot IK — `rx(bodyPitch)` rotates about the WORLD ORIGIN, so a deep lean levers a
@@ -2508,3 +2562,14 @@ second person in this world is a second head variant away rather than a new crea
 journal: what a trigger has to say it says through `text` or through a conversation. A roamer wanders inside a
 radius about its post; there are no authored patrol points. `deaths brood_sac` is billed off the brood's own
 `bursts` rather than a `justDied` edge on the sac.
+
+**And three smaller holes in the editor, all of them fields the FORMAT has and the panels do not.** `Op.r1` on
+an `at` is HOW FAR OFF THE GROUND that one prop is lifted (`env.Placer.expand`) and no panel exposes it, so a
+lifted prop is a hand-written `r1=` tail and nothing in `worlds/` has ever used one. `Op.field` thins a scatter
+by the ground-cover noise (`env.accepts`) and is ON by default for a `belt` — there is no control for it either
+way, so turning it off means editing the file. And **NO MAP CAN SAY WHERE THE PLAYER STARTS**: `game.beginGame`
+plants him at (0, 4) facing south in every world there is, which is why a test map has to be built around that
+spot rather than around its own bonfire. Everything else the writer emits — the map's name, size and runway,
+zones and their mixes, clearings, soil with its coverage and its eight edge shapes, water and its edges, the
+sculpted height, every op field including the gradient and the avoid set, chest and pickup loot, and every foe's
+yaw/scale/seed — has a panel, plus undo/redo, cut/copy/paste and grid snap.

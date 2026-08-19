@@ -940,9 +940,13 @@ pub const Env = struct {
     }
 
     pub fn walkStep(self: *const Env, from: rl.Vector3, dir: rl.Vector3, dist: f32) rl.Vector3 {
+        return self.walkStepPast(from, dir, dist, WADE_MAX);
+    }
+
+    pub fn walkStepPast(self: *const Env, from: rl.Vector3, dir: rl.Vector3, dist: f32, wade: f32) rl.Vector3 {
         const to = v3(from.x + dir.x * dist, from.y, from.z + dir.z * dist);
         if (!self.heightAny or dist <= 0) return to;
-        if (self.deepRefused(from.x, from.z, to.x, to.z)) return v3(from.x, from.y, from.z);
+        if (self.deepRefusedPast(from.x, from.z, to.x, to.z, wade)) return v3(from.x, from.y, from.z);
         if (self.stepOk(from, dir, dist)) return to;
         const g = self.gradAt(from.x, from.z);
         const gl = @sqrt(g[0] * g[0] + g[1] * g[1]);
@@ -1036,8 +1040,15 @@ pub const Env = struct {
     }
 
     pub fn deepRefused(self: *const Env, fromX: f32, fromZ: f32, toX: f32, toZ: f32) bool {
+        return self.deepRefusedPast(fromX, fromZ, toX, toZ, WADE_MAX);
+    }
+
+    /// …AND THE SAME RULE AT A WATERLINE THE CALLER CHOOSES. The hero's is chest height and he picked it; a
+    /// creature turns back at its own hips (`foe.wadeLimit`), and a thing the water is no obstacle to is
+    /// handed an infinite one rather than a second code path.
+    pub fn deepRefusedPast(self: *const Env, fromX: f32, fromZ: f32, toX: f32, toZ: f32, limit: f32) bool {
         const deep = self.wadeDepth(toX, toZ);
-        return deep > WADE_MAX and deep > self.wadeDepth(fromX, fromZ);
+        return deep > limit and deep > self.wadeDepth(fromX, fromZ);
     }
 
 
@@ -2423,6 +2434,26 @@ test "DEEP WATER IS A WALL — waist-deep is waded, over the waist is refused, a
     i = 0;
     while (i < 600) : (i += 1) r = e.walkStep(r, v3(-1, 0, 0), 6.0 / 60.0);
     try std.testing.expect(e.wadeDepth(r.x, r.z) <= WADE_MAX);
+}
+
+test "A SHALLOWER WATERLINE STOPS A THING SOONER — one gate, a limit per body" {
+    const e = try envWithBeach(0.25);
+    defer std.testing.allocator.destroy(e);
+
+    const KNEE: f32 = 0.55;
+    var shallow = v3(-2.0, 0, 0);
+    var deep = v3(-2.0, 0, 0);
+    var i: usize = 0;
+    while (i < 600) : (i += 1) {
+        shallow = e.walkStepPast(shallow, v3(1, 0, 0), 6.0 / 60.0, KNEE);
+        deep = e.walkStepPast(deep, v3(1, 0, 0), 6.0 / 60.0, std.math.floatMax(f32));
+    }
+    try std.testing.expect(e.wadeDepth(shallow.x, shallow.z) <= KNEE);
+    try std.testing.expect(deep.x > shallow.x + 2.0);
+    std.debug.print("\n  wade: a knee-deep walker stops at {d:.2} m of water, a waterfaring one crosses to {d:.1} m in\n", .{
+        e.wadeDepth(shallow.x, shallow.z),
+        deep.x,
+    });
 }
 
 test "DEEP WATER READS DEEP — the sheet is darkened by the DIG, not by the shore alone" {

@@ -319,6 +319,7 @@ pub fn scatter(d: *const Data, s: Slot) void {
     h.off = d.off;
     h.armAlt = d.armAlt;
     h.offAlt = d.offAlt;
+    h.tidyHands();
     h.spell = d.spell;
     h.quiver.sel = d.arrow;
     h.flasks.sel = d.flask;
@@ -623,6 +624,8 @@ fn sample() Data {
     d.souls = 12345;
     d.arm = .bow;
     d.off = .wand;
+    d.armAlt = .sword;
+    d.offAlt = .shield;
     d.spell = .roots;
     d.arrow = .fire;
     d.flask = .cerulean;
@@ -838,6 +841,7 @@ test "THE SLOT CARRIES EVERY FIELD IT NAMES — live game out, text, live game b
     a.hero.souls.total = 4321;
     a.hero.arm = .bell;
     a.hero.off = .wand;
+    a.hero.offAlt = .shield; // the rack is four DISTINCT armaments (`hero.equip`), and `scatter` tidies one that is not
     a.hero.spell = .roots;
     a.hero.quiver.sel = .fire;
     a.hero.flasks.sel = .cerulean;

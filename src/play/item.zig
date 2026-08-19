@@ -255,8 +255,38 @@ pub const Wear = enum {
 /// `stats.scaleFor` — one place each.
 pub const Scaling = enum { strength, dexterity, quality };
 
+/// **WHAT KIND OF WEAPON IT IS, ON THE TWO AXES A FIGHT ACTUALLY ASKS ABOUT.** `reach` is where the blow
+/// lands from and is pinned to the socket below — a thing in the bow hand is the ranged one, and there is no
+/// third answer. `heft` is how much of the body goes into it: the multipliers say a club is slower and hits
+/// harder, but only this says it is swung like a club, and `hero.swingOf` reads it for the pose.
+pub const Heft = enum {
+    light,
+    heavy,
+
+    pub fn label(h: Heft) [:0]const u8 {
+        return switch (h) {
+            .light => "Light",
+            .heavy => "Heavy",
+        };
+    }
+};
+
+pub const Reach = enum {
+    melee,
+    ranged,
+
+    pub fn label(r: Reach) [:0]const u8 {
+        return switch (r) {
+            .melee => "melee",
+            .ranged => "ranged",
+        };
+    }
+};
+
 pub const Arm = struct {
     slot: Wear,
+    heft: Heft = .light,
+    reach: Reach = .melee,
     dmg: f32 = 1,
     poise: f32 = 1,
     scales: Scaling = .quality,
@@ -294,7 +324,11 @@ pub const Equip = union(enum) {
 /// **THE BARE ARMAMENT'S ROW** — every dial 1, and the skill that drives the thing he was born holding. An empty
 /// socket may not inherit the sword's `quality` default and quietly pay a bowman for his strength.
 pub fn bareArm(w: Wear) Arm {
-    return .{ .slot = w, .scales = if (w == .hand_bow) .dexterity else .quality };
+    return .{
+        .slot = w,
+        .scales = if (w == .hand_bow) .dexterity else .quality,
+        .reach = if (w == .hand_bow) .ranged else .melee,
+    };
 }
 
 pub const Gear = struct {
@@ -304,9 +338,9 @@ pub const Gear = struct {
 };
 
 pub const GEAR = [_]Gear{
-    .{ .kind = .fang_dirk, .equip = .{ .arm = .{ .slot = .hand_sword, .dmg = 0.74, .poise = 0.72, .dur = 0.78, .stam = 0.76, .scales = .dexterity } } },
-    .{ .kind = .greatclub, .equip = .{ .arm = .{ .slot = .hand_sword, .dmg = 1.48, .poise = 1.60, .dur = 1.34, .stam = 1.48, .scales = .strength } } },
-    .{ .kind = .grave_warbow, .equip = .{ .arm = .{ .slot = .hand_bow, .dmg = 1.62, .poise = 1.45, .dur = 1.28, .stam = 1.34, .scales = .dexterity } } },
+    .{ .kind = .fang_dirk, .equip = .{ .arm = .{ .slot = .hand_sword, .heft = .light, .dmg = 0.74, .poise = 0.72, .dur = 0.78, .stam = 0.76, .scales = .dexterity } } },
+    .{ .kind = .greatclub, .equip = .{ .arm = .{ .slot = .hand_sword, .heft = .heavy, .dmg = 1.48, .poise = 1.60, .dur = 1.34, .stam = 1.48, .scales = .strength } } },
+    .{ .kind = .grave_warbow, .equip = .{ .arm = .{ .slot = .hand_bow, .heft = .heavy, .reach = .ranged, .dmg = 1.62, .poise = 1.45, .dur = 1.28, .stam = 1.34, .scales = .dexterity } } },
     // A DOOR. It stops nearly everything and covers half again the compass the small shield does — and the
     // three metres of it are why he walks behind it at four fifths of the speed and pays more per blow eaten.
     // **THE NEGATION DIAL STOPS UNDER THE CAP ON PURPOSE.** `combat.GUARD_NEGATE_CAP` is 0.95 and the base is
@@ -314,7 +348,7 @@ pub const GEAR = [_]Gear{
     // clamped dial is a number on the panel that the fight does not honour. At 1.10 the door is worth every
     // point of it, and the cap goes back to being what it is for: stopping a shield PLUS a tree node from
     // making a block free.
-    .{ .kind = .tower_shield, .equip = .{ .arm = .{ .slot = .hand_shield, .negate = 1.10, .arc = 1.45, .walk = 0.80, .stam = 1.30 } } },
+    .{ .kind = .tower_shield, .equip = .{ .arm = .{ .slot = .hand_shield, .heft = .heavy, .negate = 1.10, .arc = 1.45, .walk = 0.80, .stam = 1.30 } } },
     .{ .kind = .quilted_gambeson, .equip = .{ .plate = .{ .slot = .chest, .a = 22.0 } } },
     .{ .kind = .leech_signet, .equip = .{ .charm = .{ .slot = .ring, .leech = 2.0, .hpFrac = 0.06 } } },
     .{ .kind = .pitted_helm, .equip = .{ .plate = .{ .slot = .helm, .a = 14.0 } } },
@@ -406,6 +440,9 @@ comptime {
                 if (a.slot != .hand_shield and guardDials) @compileError("item: " ++ @tagName(k) ++
                     " sets shield dials but is not a shield — `negate`/`arc`/`walk` are only read of the guard");
                 if (!a.slot.held()) @compileError("item: " ++ @tagName(k) ++ " is an armament in a worn socket");
+                if ((a.slot == .hand_bow) != (a.reach == .ranged)) @compileError("item: " ++ @tagName(k) ++
+                    " disagrees with its own socket about reach — the bow hand IS the ranged one, and a melee " ++
+                    "row in it (or a ranged row out of it) is a weapon the fight would swing and shoot both");
             },
             .plate => |p| if (p.slot.held()) @compileError("item: " ++ @tagName(k) ++ " is armour in a hand"),
             .charm => |c| if (c.slot.held()) @compileError("item: " ++ @tagName(k) ++ " is a charm in a hand"),
@@ -466,15 +503,20 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
     switch (equip(k)) {
         .none => {},
         .arm => |a| return switch (a.slot) {
-            .hand_shield => std.fmt.bufPrintZ(buf, "Held: blocks {d:.0}% more, covers {d:.0}% wider, walks at {d:.0}%.", .{
+            .hand_shield => std.fmt.bufPrintZ(buf, "{s} {s}: blocks {d:.0}% more, covers {d:.0}% wider, walks at {d:.0}%.", .{
+                a.heft.label(),
+                a.reach.label(),
                 (a.negate - 1) * 100,
                 (a.arc - 1) * 100,
                 a.walk * 100,
             }) catch "Held: a bigger shield.",
-            else => std.fmt.bufPrintZ(buf, "Held: {d:.0}% damage, {d:.0}% poise, {d:.0}% swing time.", .{
+            else => std.fmt.bufPrintZ(buf, "{s} {s}: {d:.0}% damage, {d:.0}% poise, {d:.0}% {s} time.", .{
+                a.heft.label(),
+                a.reach.label(),
                 a.dmg * 100,
                 a.poise * 100,
                 a.dur * 100,
+                if (a.reach == .ranged) @as([]const u8, "draw") else "swing",
             }) catch "Held: its own weight and speed.",
         },
         // **THE ROW PRINTS WHAT IT ACTUALLY CARRIES, NOT ALL FOUR COLUMNS.** A coat that turns no cold has no

@@ -718,6 +718,13 @@ pub fn wearFor(a: Armament) ?item.Wear {
     };
 }
 
+/// **WHICH PIECE OF GEAR IS IN THAT HAND, IF ANY** — the one answer the HUD's cell, the book's socket and the
+/// held mesh all ask, so a dirk cannot be drawn in one picture and a sword in the other.
+pub fn heldGear(a: Armament, worn: Worn) ?item.Kind {
+    const w = wearFor(a) orelse return null;
+    return worn.at(w);
+}
+
 /// **WHAT A WEAPON'S ROW DOES TO A BLOW, AND THE ONE PLACE IT IS DONE** — the sword's swing and the bow's shaft
 /// both come through here, so "heavier" cannot come to mean two different things one hand apart. The ELEMENTAL
 /// half rides the DAMAGE dial (a fire arrow's fire is a share of the shaft's own physical, `arrowBlow`) and the
@@ -877,6 +884,51 @@ fn bladeAt(t: f32) rl.Vector3 {
 }
 const BLADE_BASE = bladeAt(-0.06);
 const BLADE_TIP = bladeAt(0.64);
+
+/// **WHAT IS ACTUALLY IN HIS FIST — THREE SHAPES ON ONE GRIP.** Same bone (`SWORD`), same grip frame, same
+/// stroke: the pose, the trail, the sparks and every window are written once and only the STEEL changes. `t`
+/// is the fraction of stature out along the grip axis (`bladeAt`), so a reach here is metres the moment `H` is
+/// fixed, and `r` is the capsule the fight is fought with rather than anything you can see.
+pub const Blade = enum { sword, dirk, club };
+
+const BladeSpec = struct { base: f32, tip: f32, r: f32 };
+
+const BLADES = [_]BladeSpec{
+    .{ .base = -0.06, .tip = 0.64, .r = BLADE_R }, // sword: 1.15 m past the fist
+    .{ .base = -0.05, .tip = 0.37, .r = 0.25 }, // dirk: 0.67 m, and a hand's width of it is edge
+    .{ .base = -0.06, .tip = 0.80, .r = 0.42 }, // club: 1.44 m of bog-oak, swung with the whole body
+};
+
+fn bladeSpec(b: Blade) BladeSpec {
+    return BLADES[@intFromEnum(b)];
+}
+
+/// WHICH SHAPE A PIECE OF GEAR IS. The socket is `hand_sword` for all three — this is the one place a kind
+/// becomes a shape, exactly as `hero.wearFor` is the one place an armament becomes a socket.
+pub fn bladeFor(k: ?item.Kind) Blade {
+    return switch (k orelse return .sword) {
+        .fang_dirk => .dirk,
+        .greatclub => .club,
+        else => .sword,
+    };
+}
+
+/// …AND HOW THE BODY GOES INTO IT. A club is not a sword with bigger numbers: it is gathered further back,
+/// dropped from lower in the hips and carried further through, and a dirk is the same stroke shut down to the
+/// elbow. Multipliers on the ONE set of pose constants (`AL_*`, `AH_*`), so a retune of the swing still moves
+/// all three together and there is no second stroke to keep in step.
+/// **THE PLAIN SWORD IS 1 ON EVERY DIAL** — the starting kit is the game exactly as it was, which is the law
+/// `item.bareArm` keeps on the other side of the same weapon. A test pins the table against `item.Heft`: what
+/// the page calls Heavy is what the body swings heavy, and the two cannot drift.
+pub const SwingShape = struct { arc: f32 = 1, wind: f32 = 1, dip: f32 = 1 };
+
+pub fn swingOf(b: Blade) SwingShape {
+    return switch (b) {
+        .sword => .{},
+        .dirk => .{ .arc = 0.82, .wind = 0.84, .dip = 0.86 },
+        .club => .{ .arc = 1.22, .wind = 1.30, .dip = 1.40 },
+    };
+}
 
 const CARRY_DAMP = 0.45;
 const CARRY_ELBOW = 14.0;
@@ -1097,6 +1149,8 @@ pub const Hero = struct {
     shield: rl.Mesh,
     wand: rl.Mesh,
     bell: rl.Mesh,
+    dirk: rl.Mesh,
+    club: rl.Mesh,
     roots: [ROOT_KINDS]rl.Mesh,
     guitar: rl.Mesh,
     mat: rl.Material,
@@ -1180,6 +1234,7 @@ pub const Hero = struct {
     shotAimed: bool = false,
     shotArrow: combat.ArrowKind = .plain,
     atkRow: item.Arm = item.bareArm(.hand_sword),
+    atkBlade: Blade = .sword,
     shotRow: item.Arm = item.bareArm(.hand_bow),
     loosed: bool = false,
     shots: u32 = 0,
@@ -1237,6 +1292,8 @@ pub const Hero = struct {
             .shield = shieldMesh(),
             .wand = wandMesh(),
             .bell = bellMesh(),
+            .dirk = dirkMesh(),
+            .club = clubMesh(),
             .roots = blk: {
                 var out: [ROOT_KINDS]rl.Mesh = undefined;
                 for (&out, 0..) |*m, i| m.* = rootTendrilMesh(@intCast(i));
@@ -1526,18 +1583,53 @@ pub const Hero = struct {
         return self.swapHand(&self.arm, &self.armAlt);
     }
 
+    fn cell(self: *Hero, hand: usize, slot: usize) *Armament {
+        if (hand == RIGHT) return if (slot == 0) &self.arm else &self.armAlt;
+        return if (slot == 0) &self.off else &self.offAlt;
+    }
+
+    fn rack(self: *Hero) [4]*Armament {
+        return .{ &self.arm, &self.armAlt, &self.off, &self.offAlt };
+    }
+
+    /// **THERE IS ONE OF EACH, AND THE RACK IS FOUR CELLS.** He carried one sword, and both hands could hold
+    /// it: the same blade drawn twice, blocked with, swung with, and swapped between. Taking a thing that is
+    /// already in another cell SWAPS the two rather than refusing — what stood here goes where it came from —
+    /// so the four stay distinct without a press ever being eaten.
     pub fn equip(self: *Hero, hand: usize, slot: usize, a: Armament) bool {
         if (self.committed() or self.staggered() or self.dead or self.resting) return false;
-        const live = if (hand == RIGHT) &self.arm else &self.off;
-        const alt = if (hand == RIGHT) &self.armAlt else &self.offAlt;
-        const into = if (slot == 0) live else alt;
+        const into = self.cell(hand, slot);
         if (into.* == a) return false;
+        const wasArm = self.arm;
+        const wasOff = self.off;
+        const displaced = into.*;
         into.* = a;
-        if (into == live) {
+        for (self.rack()) |c| {
+            if (c != into and c.* == a) c.* = displaced;
+        }
+        if (self.arm != wasArm or self.off != wasOff) {
             self.drawAmt = 0;
             self.startXfade();
         }
         return true;
+    }
+
+    /// A save written before the rack was distinct can hold the same armament twice; the first cell keeps it
+    /// and the later one takes whatever nothing else is holding.
+    pub fn tidyHands(self: *Hero) void {
+        var seen = std.EnumSet(Armament).initEmpty();
+        for (self.rack()) |c| {
+            if (!seen.contains(c.*)) {
+                seen.insert(c.*);
+                continue;
+            }
+            for (std.enums.values(Armament)) |a| {
+                if (seen.contains(a)) continue;
+                c.* = a;
+                seen.insert(a);
+                break;
+            }
+        }
     }
 
     pub fn slotAt(self: *const Hero, hand: usize, slot: usize) Armament {
@@ -2021,6 +2113,7 @@ pub const Hero = struct {
     pub fn startAttack(self: *Hero, kind: Attack) void {
         if (self.committed() or self.dead or self.staggered() or self.resting) return;
         self.atkRow = self.armOf(.hand_sword);
+        self.atkBlade = bladeFor(self.worn.at(.hand_sword));
         const cost: f32 = @as(f32, if (kind == .heavy) combat.STAM_HEAVY else combat.STAM_LIGHT) * self.atkRow.stam;
         if (!self.stam.canAct()) {
             self.refuse();
@@ -2161,8 +2254,9 @@ pub const Hero = struct {
     fn updateBlade(self: *Hero) void {
         self.bladeA0 = self.bladeA;
         self.bladeB0 = self.bladeB;
-        self.bladeA = rl.math.vector3Transform(BLADE_BASE, self.xf[SWORD]);
-        self.bladeB = rl.math.vector3Transform(BLADE_TIP, self.xf[SWORD]);
+        const spec = bladeSpec(self.heldBlade());
+        self.bladeA = rl.math.vector3Transform(bladeAt(spec.base), self.xf[SWORD]);
+        self.bladeB = rl.math.vector3Transform(bladeAt(spec.tip), self.xf[SWORD]);
         const act = self.hitActive();
         if (act) self.trail.push(self.bladeA, self.bladeB, self.bladeB0, TRAIL_ROOT);
         if (act and !self.hitWasActive) {
@@ -2438,6 +2532,28 @@ pub const Hero = struct {
 
     fn swingRow(self: *const Hero) item.Arm {
         return if (self.attacking) self.atkRow else self.armOf(.hand_sword);
+    }
+
+    /// WHICH SHAPE IS IN THE FIST — latched for the stroke in flight, `swingRow`'s own law: a club taken up
+    /// mid-swing may not lend its reach to the sword that started it.
+    pub fn heldBlade(self: *const Hero) Blade {
+        return if (self.attacking) self.atkBlade else bladeFor(self.worn.at(.hand_sword));
+    }
+
+    pub fn bladeR(self: *const Hero) f32 {
+        return bladeSpec(self.heldBlade()).r;
+    }
+
+    fn bladeMesh(self: *const Hero) rl.Mesh {
+        return switch (self.heldBlade()) {
+            .sword => self.mesh[SWORD],
+            .dirk => self.dirk,
+            .club => self.club,
+        };
+    }
+
+    fn swingShape(self: *const Hero) SwingShape {
+        return swingOf(self.heldBlade());
     }
     fn drawRow(self: *const Hero) item.Arm {
         return if (self.shooting) self.shotRow else self.armOf(.hand_bow);
@@ -3044,9 +3160,10 @@ pub const Hero = struct {
         const elF: usize = if (sd < 0) ELR else ELL;
         const wrF: usize = if (sd < 0) WRR else WRL;
 
+        const shape = self.swingShape();
         const os = AL_OVER * bump(u, AL_STRIKE_B + 2 * AL_LAG, AL_RECOV_A + 0.15);
-        const yawP = sd * sw * (-AL_BODY_YAW * wind + (AL_BODY_YAW_THRU + AL_BODY_YAW) * sPelv);
-        const yawC = sd * sw * (1.35 * (-AL_BODY_YAW * wind + (AL_BODY_YAW_THRU + AL_BODY_YAW) * sChest) + os);
+        const yawP = sd * sw * shape.arc * (-AL_BODY_YAW * wind + (AL_BODY_YAW_THRU + AL_BODY_YAW) * sPelv);
+        const yawC = sd * sw * (1.35 * shape.arc * (-AL_BODY_YAW * wind + (AL_BODY_YAW_THRU + AL_BODY_YAW) * sChest) + os);
         const crunch = AL_SPINE_CRUNCH * sChest;
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
@@ -3054,7 +3171,7 @@ pub const Hero = struct {
         var wx: [N]rl.Matrix = undefined;
         wx[ROOT] = mul3(
             ry(yawP),
-            mul(tr(0, hipY - AL_LOAD * wind - AL_DIP * sPelv, 0), mul(rx(1.5 * sChest), ry(facingDeg))),
+            mul(tr(0, hipY - shape.dip * (AL_LOAD * wind + AL_DIP * sPelv), 0), mul(rx(1.5 * sChest), ry(facingDeg))),
             rootAt(self.footPos()),
         );
         setLocal(&wx, SPINE, self.rest, mul(rx(crunch + self.aimLean * 0.5), ry(0.35 * yawC)));
@@ -3078,7 +3195,8 @@ pub const Hero = struct {
         const sRaise = mathx.smoothstep(AL_WIND_B - 0.06, AL_HIT_A - 0.02, u) * rec;
         const elev = AL_SH_ELEV_WIND * wind + (AL_SH_ELEV - AL_SH_ELEV_WIND) * sRaise;
         const sSweep = mathx.smoothstep(AL_STRIKE_A + AL_LAG, AL_HIT_B - 0.01, u) * rec;
-        const sweep = sw * (-AL_SWEEP_WIND * windAmp * wind + (AL_SWEEP_WIND * windAmp + AL_SWEEP_END) * sSweep + 0.9 * os);
+        const back = AL_SWEEP_WIND * windAmp * shape.wind;
+        const sweep = sw * (-back * wind + (back + AL_SWEEP_END * shape.arc) * sSweep + 0.9 * os);
         setLocal(&wx, shS, self.rest, mul3(rx(-elev), ry(sd * sweep), rz(sd * (-ARM_ABD - 10.0 * amp * wind))));
         const elb = IDLE_ELBOW + (AL_ELBOW_WIND - IDLE_ELBOW) * wind - (AL_ELBOW_WIND - AL_ELBOW_STRIKE) * sElb;
         setLocal(&wx, elS, self.rest, rx(-elb));
@@ -3110,10 +3228,11 @@ pub const Hero = struct {
         const elF: usize = if (sd < 0) ELR else ELL;
         const wrF: usize = if (sd < 0) WRR else WRL;
 
-        const yaw = sd * (-AH_BODY_YAW * wind + 2.0 * AH_BODY_YAW * sPelv);
-        const spineX = -AH_LEAN_BACK * wind + (AH_LEAN_BACK + AH_SPINE_CRUNCH) * sChest;
+        const shape = self.swingShape();
+        const yaw = sd * shape.arc * (-AH_BODY_YAW * wind + 2.0 * AH_BODY_YAW * sPelv);
+        const spineX = -AH_LEAN_BACK * shape.wind * wind + (AH_LEAN_BACK + AH_SPINE_CRUNCH) * sChest;
         const tilt = -AH_SPINE_TILT * wind + 1.5 * AH_SPINE_TILT * sChest;
-        const dip = AH_LOAD * wind + (AH_DIP - AH_LOAD) * sPelv - 0.008 * H * rcl;
+        const dip = shape.dip * (AH_LOAD * wind + (AH_DIP - AH_LOAD) * sPelv) - 0.008 * H * rcl;
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
 
@@ -3136,7 +3255,8 @@ pub const Hero = struct {
         setLocal(&wx, shF, self.rest, mul(rx(-22.0 * wind + 30.0 * sChest), rz(sd * (ARM_ABD + 6.0 * wind))));
         setLocal(&wx, elF, self.rest, rx(-(IDLE_ELBOW + 16.0 * wind)));
         setLocal(&wx, wrF, self.rest, rl.math.matrixIdentity());
-        const shX = -AH_SH_UP * wind - AH_GATHER * gather + (AH_SH_UP - AH_SH_DOWN) * sSh + AH_RECOIL * rcl;
+        const up = AH_SH_UP * shape.wind;
+        const shX = -up * wind - AH_GATHER * shape.wind * gather + (up - AH_SH_DOWN * shape.arc) * sSh + AH_RECOIL * rcl;
         setLocal(&wx, shS, self.rest, mul(rx(shX), rz(sd * (-ARM_ABD - 8.0 * wind))));
         const elb = IDLE_ELBOW + (AH_ELBOW_WIND - IDLE_ELBOW) * wind + 5.0 * gather - (AH_ELBOW_WIND - AH_ELBOW_STRIKE) * sElb;
         setLocal(&wx, elS, self.rest, rx(-elb));
@@ -3368,9 +3488,10 @@ pub const Hero = struct {
     pub fn draw(self: *const Hero) void {
         const stowSword = self.resting or !self.holds(.sword);
         for (0..N) |i| {
-            if (stowSword and i == SWORD) continue;
+            if (i == SWORD) continue;
             rl.drawMesh(self.mesh[i], self.mat, self.xf[i]);
         }
+        if (!stowSword) rl.drawMesh(self.bladeMesh(), self.mat, self.xf[SWORD]);
         if (self.resting) {
             rl.drawMesh(self.guitar, self.mat, self.xf[ROOT]);
             return;
@@ -3614,6 +3735,44 @@ fn swordMesh() rl.Mesh {
     b.addBox(bladeAt(0.036), scaleV(n, 0.115 * H), scaleV(a, 0.02 * H), scaleV(s, 0.03 * H), STEEL);
     b.addBox(bladeAt(0.231), scaleV(n, 0.048 * H), scaleV(a, 0.37 * H), scaleV(s, 0.012 * H), STEEL);
     b.addCylinder(bladeAt(0.416), bladeAt(0.481), 0.020 * H, 0.001, 4, STEEL_DK);
+    return b.toMesh();
+}
+
+/// A FANG, HAFTED. Ground out of a kobold's tooth (`item.describe`), so the blade is BONE and tapers the whole
+/// way instead of running parallel and stopping: no fuller, no crossguard worth the name, and the cord wrap
+/// stands in for a grip. The visible point is at t 0.28 where the capsule reaches 0.37 — the sword's own
+/// proportion, which is the room a stroke needs over what it looks like.
+fn dirkMesh() rl.Mesh {
+    var b = Builder.init();
+    const s = v3(0.5 * OUT_CA, 0, 0.5 * OUT_SA);
+    const n = v3(-0.5 * GRIP_CA * OUT_SA, 0.5 * GRIP_SA, 0.5 * GRIP_CA * OUT_CA);
+    const a = v3(-0.5 * GRIP_SA * OUT_SA, -0.5 * GRIP_CA, 0.5 * GRIP_SA * OUT_CA);
+    b.setMat(.leather);
+    b.addCylinder(bladeAt(0.020), bladeAt(-0.042), 0.0135 * H, 0.0115 * H, 6, BELT);
+    b.addCylinder(bladeAt(0.006), bladeAt(0.018), 0.0150 * H, 0.0150 * H, 6, LEATHER);
+    b.setMat(.steel);
+    b.addBox(bladeAt(-0.048), scaleV(s, 0.020 * H), scaleV(a, 0.018 * H), scaleV(n, 0.020 * H), BRASS);
+    b.addBox(bladeAt(0.030), scaleV(n, 0.052 * H), scaleV(a, 0.013 * H), scaleV(s, 0.022 * H), STEEL_DK);
+    b.setMat(.plain); // bone, which is what the skeletons are cut from too
+    b.addCylinder(bladeAt(0.040), bladeAt(0.170), 0.0185 * H, 0.0125 * H, 5, art.BONE);
+    b.addCylinder(bladeAt(0.170), bladeAt(0.280), 0.0125 * H, 0.0008 * H, 5, art.BONE);
+    return b.toMesh();
+}
+
+/// BOG-OAK SHOD WITH IRON, and the mass is at the END of it — a haft that swells into a head, three bands
+/// round the swell and an iron cap over the top. It reaches half again what the dirk does and the head is
+/// three times the wrist, which is the whole of why it costs what it costs to swing.
+fn clubMesh() rl.Mesh {
+    var b = Builder.init();
+    b.setMat(.wood);
+    b.addCylinder(bladeAt(-0.055), bladeAt(0.360), 0.0175 * H, 0.0245 * H, 7, art.BARK);
+    b.addCapsule(bladeAt(0.360), bladeAt(0.610), 0.0470 * H, 0.0520 * H, 8, art.BARK_LIVE);
+    b.setMat(.steel);
+    b.addCylinder(bladeAt(-0.062), bladeAt(-0.048), 0.0205 * H, 0.0205 * H, 7, art.IRON);
+    b.addCylinder(bladeAt(0.395), bladeAt(0.415), 0.0500 * H, 0.0505 * H, 8, art.IRON);
+    b.addCylinder(bladeAt(0.480), bladeAt(0.500), 0.0530 * H, 0.0535 * H, 8, art.IRON);
+    b.addCylinder(bladeAt(0.565), bladeAt(0.585), 0.0545 * H, 0.0550 * H, 8, art.IRON);
+    b.addCapsule(bladeAt(0.610), bladeAt(0.640), 0.0520 * H, 0.0300 * H, 8, art.IRON);
     return b.toMesh();
 }
 
@@ -3973,6 +4132,8 @@ fn testHero() Hero {
         .shield = undefined,
         .wand = undefined,
         .bell = undefined,
+        .dirk = undefined,
+        .club = undefined,
         .roots = undefined,
         .guitar = undefined,
         .mat = undefined,
@@ -4970,6 +5131,78 @@ test "THE BLADE IS IN WHICHEVER HAND HOLDS IT — bone, capsule and swing, all m
     try std.testing.expect(!h.swordLeft() and !h.holds(.sword));
 }
 
+test "A DIRK IS SHORTER THAN A SWORD AND A CLUB IS LONGER — the reach is the weapon's, not the rig's" {
+    const fist = bladeAt(0);
+    var reach: [3]f32 = undefined;
+    for (BLADES, 0..) |spec, i| reach[i] = mathx.lenV(mathx.subV(bladeAt(spec.tip), fist));
+    // Printed so a retune is a number to read rather than a picture to squint at.
+    std.debug.print("\n  blade reach: sword {d:.2} m, dirk {d:.2} m, club {d:.2} m\n", .{ reach[0], reach[1], reach[2] });
+    try std.testing.expect(reach[@intFromEnum(Blade.dirk)] < reach[@intFromEnum(Blade.sword)]);
+    try std.testing.expect(reach[@intFromEnum(Blade.club)] > reach[@intFromEnum(Blade.sword)]);
+    try std.testing.expect(bladeSpec(.dirk).r < BLADE_R and bladeSpec(.club).r > BLADE_R);
+
+    var h = testHero();
+    try std.testing.expectEqual(Blade.sword, h.heldBlade());
+    try std.testing.expect(h.wear(.hand_sword, .fang_dirk));
+    try std.testing.expectEqual(Blade.dirk, h.heldBlade());
+    try std.testing.expect(h.wear(.hand_sword, .greatclub));
+    try std.testing.expectEqual(Blade.club, h.heldBlade());
+
+    h.pose();
+    h.updateBlade();
+    const clubTip = mathx.distXZ(h.pos, h.bladeB);
+    var s = testHero();
+    s.pose();
+    s.updateBlade();
+    try std.testing.expect(clubTip > mathx.distXZ(s.pos, s.bladeB));
+}
+
+test "THE SWING IN FLIGHT KEEPS ITS OWN CAPSULE — a club taken up mid-stroke lends the sword nothing" {
+    var h = testHero();
+    h.startAttack(.light);
+    const r = h.bladeR();
+    try std.testing.expectApproxEqAbs(BLADE_R, r, 1e-6);
+    try std.testing.expect(h.wear(.hand_sword, .greatclub));
+    try std.testing.expectApproxEqAbs(r, h.bladeR(), 1e-6);
+    try std.testing.expectEqual(Blade.sword, h.heldBlade());
+    h.attacking = false;
+    try std.testing.expectEqual(Blade.club, h.heldBlade());
+    h.startAttack(.light);
+    try std.testing.expect(h.bladeR() > r);
+}
+
+test "A HEAVY WEAPON IS SWUNG LIKE ONE — the same stroke, wider and lower on the hips" {
+    // THE STARTING KIT IS UNMOVED, and what the page calls Heavy is what the body swings heavy.
+    try std.testing.expectEqual(SwingShape{}, swingOf(.sword));
+    for ([_]item.Kind{ .fang_dirk, .greatclub }) |k| {
+        const shape = swingOf(bladeFor(k));
+        const heavy = item.equip(k).arm.heft == .heavy;
+        try std.testing.expect((shape.arc > 1) == heavy);
+        try std.testing.expect((shape.wind > 1) == heavy);
+        try std.testing.expect((shape.dip > 1) == heavy);
+    }
+
+    var bare = testHero();
+    var club = testHero();
+    try std.testing.expect(club.wear(.hand_sword, .greatclub));
+    var dirk = testHero();
+    try std.testing.expect(dirk.wear(.hand_sword, .fang_dirk));
+
+    for ([_]Attack{ .light, .heavy }) |kind| {
+        const heavy = kind == .heavy;
+        for ([_]*Hero{ &bare, &club, &dirk }) |h| {
+            h.startAttack(kind);
+            h.blendT = POSE_XFADE; // past the cross-fade: the stroke's own pose, not a blend with an unset one
+            h.atkT = 0.5 * h.atkDur(heavy); // the same POINT in each stroke, which is not the same second
+            h.pose();
+        }
+        // The pelvis is the one bone both strokes drop, and `dip` is the whole of what the weapon moves there.
+        try std.testing.expect(club.xf[ROOT].m13 < bare.xf[ROOT].m13);
+        try std.testing.expect(dirk.xf[ROOT].m13 > bare.xf[ROOT].m13);
+        for ([_]*Hero{ &bare, &club, &dirk }) |h| h.attacking = false;
+    }
+}
+
 test "THE ROD LEAVES THE HAND IT IS IN — the tip is where every spell comes out of" {
     var h = testHero();
     h.arm = .sword;
@@ -5059,6 +5292,33 @@ test "A TWO-HANDER CLAIMS BOTH HANDS FROM EITHER SLOT" {
     h.off = .shield;
     try std.testing.expect(h.offInHand() and h.holds(.sword) and h.holds(.shield));
     try std.testing.expectEqual(Armament.sword, h.armInHand());
+}
+
+test "ONE OF EACH ACROSS THE FOUR CELLS — taking a thing that is already racked swaps the two" {
+    var h = testHero();
+    try std.testing.expect(h.equip(LEFT, 0, .sword));
+    try std.testing.expectEqual(Armament.sword, h.off);
+    try std.testing.expectEqual(Armament.shield, h.arm); // what the left hand held went where the sword was
+    try std.testing.expect(h.equip(RIGHT, 1, .wand));
+    try std.testing.expectEqual(Armament.wand, h.armAlt);
+    try std.testing.expectEqual(Armament.bow, h.offAlt);
+
+    var seen = std.EnumSet(Armament).initEmpty();
+    for (h.rack()) |c| {
+        try std.testing.expect(!seen.contains(c.*));
+        seen.insert(c.*);
+    }
+
+    var stale = testHero();
+    stale.arm = .sword;
+    stale.armAlt = .sword;
+    stale.off = .sword;
+    stale.offAlt = .shield;
+    stale.tidyHands();
+    try std.testing.expectEqual(Armament.sword, stale.arm);
+    try std.testing.expect(stale.armAlt != .sword and stale.off != .sword);
+    try std.testing.expect(stale.armAlt != stale.off);
+    try std.testing.expectEqual(Armament.shield, stale.offAlt);
 }
 
 test "A SKILL REACHES THE BLOW IT GOVERNS AND NOTHING ELSE" {

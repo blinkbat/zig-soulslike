@@ -22,6 +22,88 @@ pub fn closestApproach(bodyR: f32) f32 {
 
 pub const AIRBORNE_LIFT: f32 = 0.04;
 
+/// **WHAT A CREATURE IS, AND HOW IT GETS ABOUT — ONE ROW PER KIND, HERE.** Twenty-one creatures had no
+/// vocabulary between them: every question about a whole family (does this thing swim, does it move at all,
+/// is it a body a necromancer could raise) was answered per creature, in that creature's file, by name.
+///
+/// `Nature` is WHAT IT IS and `Gait` is HOW IT TRAVELS, and they are two axes on purpose — a shade and a
+/// leechfly both leave the ground and are nothing else alike.
+pub const Nature = enum {
+    beast,
+    demon,
+    undead,
+    humanoid,
+    plant,
+    /// Nothing in this world is one yet. It is named because the row it would fill is a row somebody would
+    /// otherwise call `construct` in a comment and file under `beast`.
+    construct,
+
+    pub fn label(n: Nature) [:0]const u8 {
+        return switch (n) {
+            .beast => "Beast",
+            .demon => "Demon",
+            .undead => "Undead",
+            .humanoid => "Humanoid",
+            .plant => "Plant",
+            .construct => "Construct",
+        };
+    }
+};
+
+/// **NOT `airborne()`, WHICH IS A DIFFERENT QUESTION.** That one is whether a body is off the ground THIS
+/// FRAME (a toad mid-hop, a shade mid-blink) and it is what collision asks. This is what the creature IS:
+/// a leechfly is `.flying` on every frame of its life, and a hopping toad is not.
+pub const Gait = enum {
+    /// On foot, and the water gate holds it (`game.gateTerrain`).
+    walking,
+    /// At home in it — the water gate does not apply at any depth.
+    waterfaring,
+    /// Over it.
+    flying,
+    /// Does not travel at all, so no gate has anything to say to it.
+    rooted,
+
+    pub fn label(g: Gait) [:0]const u8 {
+        return switch (g) {
+            .walking => "Walking",
+            .waterfaring => "Waterfaring",
+            .flying => "Flying",
+            .rooted => "Rooted",
+        };
+    }
+};
+
+pub const Traits = struct { nature: Nature, gait: Gait = .walking };
+
+pub fn traitsOf(k: wf.FoeKind) Traits {
+    return switch (k) {
+        .toad => .{ .nature = .beast, .gait = .waterfaring },
+        .fen_lurker => .{ .nature = .demon, .gait = .waterfaring },
+        .leechfly => .{ .nature = .beast, .gait = .flying },
+        .shade => .{ .nature = .undead, .gait = .flying },
+        .rooted => .{ .nature = .plant, .gait = .rooted },
+        .brood_sac => .{ .nature = .beast, .gait = .rooted },
+        .archer, .shieldman, .greatsword, .bone_knight, .necromancer => .{ .nature = .undead },
+        .berserker, .priest, .slinger, .ogre => .{ .nature = .humanoid },
+        .brood_mother, .broodling, .delver, .florid_ravager => .{ .nature = .beast },
+        .shroom, .mushroom_mage => .{ .nature = .plant },
+    };
+}
+
+/// **HOW DEEP A THING WILL GO IN, AS A SHARE OF ITS OWN STATURE.** The hero's own limit is 0.76 of his
+/// (`env.WADE_MAX`) and he is the one who chose to be in there; a creature turns back at the hips. Read of
+/// the body rather than a flat metre so a kobold and a cyclops are refused at their own waterlines.
+pub const WADE_FRAC: f32 = 0.45;
+
+/// The depth past which a creature will not follow. Infinite for anything the water is not an obstacle to,
+/// which is what `Gait` is for — a fen demon lives down there and a leechfly is over it.
+pub fn wadeLimit(k: wf.FoeKind, stature: f32) f32 {
+    return switch (traitsOf(k).gait) {
+        .walking => WADE_FRAC * mathx.maxF(stature, 0.2),
+        .waterfaring, .flying, .rooted => std.math.floatMax(f32),
+    };
+}
+
 /// **NO ATTACK COMES OUT OF NOWHERE** (owner's law): seconds a creature's kit must be VISIBLY MOVING before
 /// it can deal damage. Derived from what already reads — the ogre's swipe, the brood's bite, the toad's gape,
 /// all half a second and up — against the berserker's chop at 0.14 and the broodling's at 0.20, which read as
@@ -1446,4 +1528,37 @@ test "THE MOTE GATE NEVER DROPS SOMETHING YOU COULD SEE" {
     // you are in fills the frame, and dropping that one is the one failure nobody could miss.
     try std.testing.expect(motesVisible(v3(0, 0, -1.0), 6.0));
     try std.testing.expect(motesVisible(mathx.zero3, 6.0));
+}
+
+test "EVERY CREATURE IS CLASSIFIED, and the water is only home to the two it belongs to" {
+    // The hero's own waterline, read where it is written rather than copied: this file sits below `env` in
+    // the import graph, so it borrows it the way `env`'s own tests borrow a creature.
+    const envWadePin = @import("../world/env.zig").WADE_MAX;
+    var waterfaring: usize = 0;
+    var still: usize = 0;
+    for (std.enums.values(wf.FoeKind)) |k| {
+        const t = traitsOf(k);
+        // A stature of 1.8 m: the limit is a share of the body, so it can never be zero or the whole depth.
+        const lim = wadeLimit(k, 1.8);
+        switch (t.gait) {
+            .walking => {
+                try std.testing.expect(lim > 0.2 and lim < 1.8);
+                try std.testing.expect(lim < envWadePin);
+            },
+            .waterfaring => {
+                waterfaring += 1;
+                try std.testing.expect(lim > 100.0);
+            },
+            .flying, .rooted => {
+                still += 1;
+                try std.testing.expect(lim > 100.0);
+            },
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 2), waterfaring);
+    try std.testing.expectEqual(Gait.waterfaring, traitsOf(.toad).gait);
+    try std.testing.expectEqual(Gait.waterfaring, traitsOf(.fen_lurker).gait);
+    try std.testing.expectEqual(Nature.demon, traitsOf(.fen_lurker).nature);
+    try std.testing.expect(still >= 4);
+    std.debug.print("\n  wade: a 1.8 m walker turns back at {d:.2} m, where the hero goes to {d:.2} m\n", .{ wadeLimit(.archer, 1.8), envWadePin });
 }

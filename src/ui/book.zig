@@ -1286,9 +1286,7 @@ fn drawSlotArt(s: SlotId, v: View, cx: f32, cy: f32, px: f32) void {
 }
 
 fn handArt(a: heromod.Armament, worn: heromod.Worn, cx: f32, cy: f32, px: f32) void {
-    if (heromod.wearFor(a)) |w| {
-        if (worn.at(w)) |k| return itemart.drawHeld(k, cx, cy, px, true);
-    }
+    if (heromod.heldGear(a, worn)) |k| return itemart.drawHeld(k, cx, cy, px, true);
     armArt(a, cx, cy, px);
 }
 

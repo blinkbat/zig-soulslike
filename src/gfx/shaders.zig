@@ -80,6 +80,22 @@ pub const sceneVS =
     \\        float pinch = 1.0 + 0.17*hh*sin(ph*1.37 + 0.7);
     \\        p.x *= pinch;
     \\        p.z *= pinch;
+    \\    } else if (vertexTexCoord2.x > 14.5 && vertexTexCoord2.x < 15.5) {
+    \\        // THE FOG GATE. `animY` is the sheet's own height fraction (0 at the threshold, 1 at the head),
+    \\        // authored per row by propfx.fogGateMesh — it drives the billow HERE and the fade in the FS, so
+    \\        // the two cannot disagree about which end is the top.
+    \\        vec3 baseW = vec3(matModel*vec4(0.0, 0.0, 0.0, 1.0));
+    \\        float h = clamp(vertexTexCoord2.y, 0.0, 1.0);
+    \\        fragLife = h;
+    \\        // No two gates in a world breathe together, and none of them breathes fast: a fog wall is the
+    \\        // one thing in this game that is standing still on purpose.
+    \\        float ph = uTime*0.42 + baseW.x*0.29 + baseW.z*0.23;
+    \\        float roll = sin(ph + p.x*1.30 + h*2.7) + 0.42*sin(ph*1.87 - p.x*2.10 + h*4.9) + 0.16*sin(ph*3.10 + h*8.0);
+    \\        // OUT OF ITS OWN FACE, and further out the higher up it is: the foot of a fog wall is held by
+    \\        // the doorway and the head of it is not held by anything.
+    \\        p.z += (0.035 + 0.150*h)*roll;
+    \\        p.x += 0.055*h*sin(ph*0.71 + p.y*1.7);
+    \\        p.y += 0.070*h*sin(ph*1.23 + p.x*0.90);
     \\    }
     \\    fragPosition = vec3(matModel*vec4(p, 1.0));
     \\    fragColor = vertexColor;
@@ -129,6 +145,7 @@ pub const sceneFS =
     \\const float FLAME_A_TIP = 0.42;
     \\const float SMOKE_A = 0.34;   // the ceiling on a puff — see the fade at the bottom of main()
     \\const float EMBER_A = 0.85;   // …and on a mote, which is nearly solid: it is a lit coal, not vapour
+    \\const float FOG_A = 0.80;     // a fog gate at the THRESHOLD, where it is thickest — it is a door, not a haze
     \\float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
     \\float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
     \\  return mix(mix(hash21(i),hash21(i+vec2(1,0)),f.x), mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)),f.x),f.y); }
@@ -397,6 +414,11 @@ pub const sceneFS =
     \\  } else if (m == 12){ // SMOKE: no surface texture either, for the flame's reason — the generic
     \\    // grain mottles the one thing here that is supposed to have no surface at all.
     \\    base *= 0.90 + 0.16*fvn(q, 0.9, vec2(31.0), px) + 0.05*sin(uTime*1.7 + q.x*1.3 + q.y*0.9);
+    \\  } else if (m == 15){ // FOG GATE: no surface either, and what it has instead is a slow CURDLE — two
+    \\    // noise octaves crawling across the sheet at different speeds, which is what keeps a flat quad from
+    \\    // reading as a flat quad once the vertex billow has moved it.
+    \\    base *= 0.82 + 0.26*fvn(q, 0.55, vec2(17.0), px) + 0.14*fvn(q, 1.90, vec2(5.3), px)
+    \\          + 0.07*sin(uTime*0.83 + q.x*0.90 + q.y*0.60);
     \\  } else if (m == 11 || m == 13){ // FLAME and EMBER: no surface texture at all — but they GUTTER.
     \\    // A fire has no SURFACE to weather, and the generic grain the default branch applies was mottling the one thing in the scene that is pure emitted light (flameInto's own comment, "no surface mottle over a glow", asked for this and could not get it — `.plain` IS the grain).
     \\    float fl = sin(uTime*11.0 + q.x*2.1 + q.y*1.7)*0.5
@@ -561,6 +583,20 @@ pub const sceneFS =
     \\  // SMOKE IS THIN, AND IT THINS OUT.
     \\  if (mi == 12) outA = SMOKE_A*smoothstep(0.0, 0.10, fragLife)*(1.0 - smoothstep(0.22, 0.90, fragLife));
     \\  // AN EMBER IS THE OPPOSITE OF SMOKE: nearly solid, and it does not dissolve — it WINKS OUT.
+    \\  // A FOG GATE IS THICKEST AT THE THRESHOLD AND GONE BEFORE THE LINTEL — the fade is the whole read of
+    \\  // it, and it goes to EXACTLY zero at the head so the sheet has no edge to see. `fragLife` is the
+    \\  // height fraction the VS put there, so the fade and the billow are the same number.
+    \\  if (mi == 15){
+    \\    // THE TOP OF IT IS TORN AND IT MOVES. A fade that only ran on height reached zero at the head of the
+    \\    // sheet and drew a ruled horizontal line on the way there — a few percent of alpha over something
+    \\    // this bright is still a straight edge. So the height the fade DIES AT wanders, per world column and
+    \\    // over time, and the sheet is gone well below its own last row.
+    \\    float tear = 0.60 + 0.16*sin(uTime*0.37 + fragPosition.x*1.10 + fragPosition.z*0.70)
+    \\                     + 0.10*sin(uTime*0.83 - fragPosition.x*2.30)
+    \\                     + 0.08*vnoise(vec2(fragPosition.x*1.7 + uTime*0.11, fragPosition.z*1.3));
+    \\    outA = FOG_A*(1.0 - smoothstep(0.05, tear, fragLife))
+    \\         *(0.90 + 0.10*sin(uTime*0.71 + fragPosition.x*0.8 + fragPosition.z*0.6));
+    \\  }
     \\  if (mi == 13) outA = EMBER_A*smoothstep(0.0, 0.05, fragLife)*(1.0 - smoothstep(0.55, 1.0, fragLife))
     \\                     *(0.55 + 0.45*sin(uTime*17.0 + fragLife*29.0));
     \\  // …and the CURRENT DRAW may be asked to go see-through on top of all that (the hero under an aim

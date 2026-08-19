@@ -1391,8 +1391,8 @@ foe: toad 51.93 -19.78 0.0 1.00 0.49
 foe: fen_lurker 45.73 -40.99 0.0 1.00 0.86
 foe: fen_lurker 50.64 -36.98 0.0 1.00 0.23
 foe: fen_lurker -33.11 30.88 0.0 1.00 0.60
-foe: fen_lurker -36.43 35.66 0.0 1.00 0.97
-foe: fen_lurker -40.72 51.11 0.0 1.00 0.34
+foe: fen_lurker -39.93 37.66 0.0 1.00 0.97
+foe: fen_lurker -43.72 50.11 0.0 1.00 0.34
 
 flags: met_wanderer heard_of_gate
 

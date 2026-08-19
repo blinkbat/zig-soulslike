@@ -100,6 +100,7 @@ pub const Kind = enum(u8) {
     snag,
     sapling,
     pickup,
+    foggate,
 };
 
 
@@ -226,6 +227,7 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .snag => "Dead Snag",
         .sapling => "Sapling",
         .pickup => "Item",
+        .foggate => "Fog Gate",
     };
 }
 
@@ -236,7 +238,7 @@ pub fn group(k: Kind) Group {
         .banner, .sword, .graves, .sarcophagus, .bones,
         .gibbet, .cairn,
         => .ruins,
-        .chapel, .watchtower, .cottage, .tower, .gate, .causeway => .buildings,
+        .chapel, .watchtower, .cottage, .tower, .gate, .causeway, .foggate => .buildings,
         .well, .shrine, .lantern, .fence, .barrels, .woodpile, .cart, .bonfire => .village,
         .chest, .pickup => .treasure,
         .boulder, .rocks, .outcrop, .scree, .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6, .stump, .log => .rock,
@@ -461,6 +463,11 @@ pub const INFO = [NK]Info{
     // has no wind term.
     .{ .kind = .sapling, .build = wood.saplingMesh, .bound = 3.8, .top = 3.4, .view = 220, .parts = circleParts(0.16, 2.2), .surf = .wood },
     .{ .kind = .pickup, .build = fx.pickupMesh, .bound = 1.9, .top = fx.PICKUP_TOP, .view = 190, .interact = true, .casts = false, .light = .{ .y = 0.30, .col = v3(0.86, 0.82, 0.58), .radius = 5.4, .flicker = 0.03 } },
+    // THE FOG GATE. `build` is the two threshold stones; the sheet itself is the VEIL, which is what puts it
+    // in the late pass (`env.drawVeils`) where a translucent thing belongs. `solid` because a fog wall is
+    // exactly the thing that must NOT thin when it stands between the lens and him — that is its whole job —
+    // and it casts nothing, since a shadow of a fog wall is a shadow of nothing.
+    .{ .kind = .foggate, .build = fx.fogGateStoneMesh, .veil = fx.fogGateMesh, .bound = 5.4, .top = fx.FOG_H, .view = 320, .solid = true, .casts = false },
 };
 
 pub fn info(k: Kind) *const Info {

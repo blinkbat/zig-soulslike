@@ -308,3 +308,69 @@ pub fn waterMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
+
+// THE FOG GATE — a doorway you can see is a doorway, and cannot see through. Authored at the size of a real
+// one (`FOG_W` x `FOG_H`) so the editor's `scale` reads as a multiple of a door rather than of nothing.
+//
+// **IT IS A VEIL, NOT A PROP MESH** (`props.INFO`): the sheet has to be laid down AFTER everything opaque or
+// its own depth would punch a hole in whatever is standing behind it, which at the head of the gate — where
+// it has faded to nothing — is a rectangle of missing world.
+pub const FOG_W: f32 = 3.4;
+pub const FOG_H: f32 = 4.2;
+const FOG_COLS: i32 = 10;
+const FOG_ROWS: i32 = 9;
+const FOG_SHEETS: i32 = 3; // depth: three curtains a hand apart, so the billow has something to move THROUGH
+const FOG_PALE = mathx.rgba(190, 198, 210, 206);
+const FOG_DEEP = mathx.rgba(126, 140, 162, 206);
+
+/// The curtain. Vertex ALPHA is left near-solid on purpose — the scene shader reads `1 - alpha` as emissive
+/// (`shaders.sceneFS`), and a fog wall lit only by the sun goes black at night. What actually fades is the
+/// OUTPUT alpha, off the height fraction this mesh writes into `animY`.
+pub fn fogGateMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    b.setMat(.fog);
+    var s: i32 = 0;
+    while (s < FOG_SHEETS) : (s += 1) {
+        const z = (@as(f32, @floatFromInt(s)) - 0.5 * @as(f32, @floatFromInt(FOG_SHEETS - 1))) * 0.11;
+        var r: i32 = 0;
+        while (r < FOG_ROWS) : (r += 1) {
+            const t0 = @as(f32, @floatFromInt(r)) / @as(f32, FOG_ROWS);
+            const t1 = @as(f32, @floatFromInt(r + 1)) / @as(f32, FOG_ROWS);
+            const y0 = t0 * FOG_H;
+            const y1 = t1 * FOG_H;
+            const c0 = mathx.lerpColor(FOG_PALE, FOG_DEEP, t0);
+            const c1 = mathx.lerpColor(FOG_PALE, FOG_DEEP, t1);
+            var c: i32 = 0;
+            while (c < FOG_COLS) : (c += 1) {
+                const x0 = (@as(f32, @floatFromInt(c)) / @as(f32, FOG_COLS) - 0.5) * FOG_W;
+                const x1 = (@as(f32, @floatFromInt(c + 1)) / @as(f32, FOG_COLS) - 0.5) * FOG_W;
+                // BOTH FACES, because a gate is walked at from both sides and a one-sided sheet vanishes
+                // the moment you turn round inside it.
+                b.quadFadeAnim(v3(x0, y0, z), v3(x1, y0, z), v3(x1, y1, z), v3(x0, y1, z), v3(0, 0, 1), c0, c1, t0, t1);
+                b.quadFadeAnim(v3(x1, y0, z), v3(x0, y0, z), v3(x0, y1, z), v3(x1, y1, z), v3(0, 0, -1), c0, c1, t0, t1);
+            }
+        }
+    }
+    b.setAnimY(0);
+    return b.toModel(shader);
+}
+
+/// …AND THE THRESHOLD IT HANGS IN. Two worn stones at the jambs and nothing overhead: a fog gate is dropped
+/// into somebody else's archway as often as it stands on its own, and a lintel of mine would fight theirs.
+pub fn fogGateStoneMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0xF0A7E);
+    b.setMat(.stone);
+    for ([_]f32{ -1, 1 }) |side| {
+        const x = side * FOG_W * 0.5;
+        b.addBox(
+            v3(x, 0.26, 0),
+            v3(0.19, 0, 0),
+            v3(0, 0.26, 0),
+            v3(0, 0, 0.21),
+            CLIFF_ROCK,
+        );
+        b.addBlob(v3(x, 0.52, rng.signed() * 0.03), v3(0.17, 0.10, 0.19), 3, 7, CLIFF_LT);
+    }
+    return b.toModel(shader);
+}

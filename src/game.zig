@@ -1090,7 +1090,11 @@ fn snapshotPos(foes: anytype, out: []rl.Vector3) void {
     }
 }
 
-fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3) void {
+/// **AND NOTHING ON FOOT WALKS INTO THE DEEP AFTER HIM** (`foe.wadeLimit`). The gate has always carried the
+/// water half — but at the HERO's waterline, chest height on a man, which is over the head of half the
+/// bestiary. A creature turns back at its own hips, and the ones the water belongs to (the toad, the fen
+/// lurker) are handed no limit at all rather than a branch of their own.
+fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?FoeKind) void {
     const T = @typeInfo(@TypeOf(foes)).pointer.child;
     for (foes, 0..) |*f, i| {
         if (i >= was.len) continue;
@@ -1104,10 +1108,23 @@ fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3) void {
         const dz = f.pos.z - was[i].z;
         const d = @sqrt(dx * dx + dz * dz);
         if (d < 1e-5) continue;
-        const stepped = g.env.walkStep(was[i], v3(dx / d, 0, dz / d), d);
+        // The wolf and the wanderers are in no group and are ordinary walkers; everything else answers for
+        // its own kind, the multi-role bands through their own `kind()`.
+        const wade = if (comptime @hasDecl(T, "kind"))
+            foemod.wadeLimit(f.kind(), statureOf(f))
+        else if (group) |k|
+            foemod.wadeLimit(k, statureOf(f))
+        else
+            foemod.WADE_FRAC * statureOf(f);
+        const stepped = g.env.walkStepPast(was[i], v3(dx / d, 0, dz / d), d, wade);
         f.pos.x = stepped.x;
         f.pos.z = stepped.z;
     }
+}
+
+/// HOW TALL THE THING IS, off the body point every creature already reports for its own bar.
+fn statureOf(f: anytype) f32 {
+    return @max(f.topWorld().y - f.pos.y, 0.2);
 }
 
 /// **THE TRAVERSAL RULE ON THE HERO, AS ONE POST-STEP GATE** — `gateTerrain`'s arrangement one actor along,
@@ -1709,7 +1726,7 @@ fn tickPack(g: *Game, dt: f32) void {
     g.pack.update(dt, g.hero.pos, PLAY_HALF);
     var was: [combat.SUMMON_MAX]rl.Vector3 = undefined;
     for (g.pack.liveConst(), 0..) |*w, i| was[i] = w.wasAt;
-    gateTerrain(g, g.pack.live(), was[0..g.pack.n]);
+    gateTerrain(g, g.pack.live(), was[0..g.pack.n], null);
     for (g.pack.live()) |*w| {
         if (w.bit) sfx.world(.wolf_bite, w.pos);
         if (w.growled) sfx.world(.wolf_growl, w.pos);
@@ -2920,7 +2937,7 @@ pub fn drawScene(g: *Game) void {
     for (quivers(g)) |pool| archermod.drawArrowTrails(pool);
     if (g.menu.hitboxes and g.hero.attacking) {
         const col = if (g.hero.hitActive()) rl.Color.red else mathx.withAlpha(rl.Color.red, 90);
-        rl.drawCapsuleWires(g.hero.bladeA, g.hero.bladeB, heromod.BLADE_R, 6, 3, col);
+        rl.drawCapsuleWires(g.hero.bladeA, g.hero.bladeB, g.hero.bladeR(), 6, 3, col);
     }
     if (g.menu.hitboxes) {
         inline for (FOE_GROUPS) |gr| {
@@ -3039,8 +3056,8 @@ pub fn hud(g: *Game, dt: f32) void {
             const bowUp = g.hero.bowOut();
             const wandUp = g.hero.wandOut();
             hud_.equipment(
-                if (!g.hero.offInHand()) .empty else armSlot(g.hero.off),
-                armSlot(g.hero.armInHand()),
+                if (!g.hero.offInHand()) .empty else armSlot(g, g.hero.off),
+                armSlot(g, g.hero.armInHand()),
                 if (wandUp) hud_.Slot{ .sorcery = g.hero.spell } else .empty,
                 g.hero.fp.cur >= g.hero.castCost(),
                 g.hero.quick.selected(),
@@ -3775,8 +3792,8 @@ pub fn run(mode: Mode) void {
         const nFolk = g.folk.n;
         snapshotPos(g.folk.live(), &wasFolk);
         g.folk.update(dt, g.hero.pos, PLAY_HALF);
-        gateTerrain(g, g.folk.live(), wasFolk[0..nFolk]);
-        inline for (FOE_GROUPS, 0..) |f, gi| gateTerrain(g, @field(g, f.field).live(), wasPos[gi][0..wasN[gi]]);
+        gateTerrain(g, g.folk.live(), wasFolk[0..nFolk], null);
+        inline for (FOE_GROUPS, 0..) |f, gi| gateTerrain(g, @field(g, f.field).live(), wasPos[gi][0..wasN[gi]], f.kind);
         inline for (FOE_GROUPS, 0..) |f, gi| gateChill(@field(g, f.field).live(), wasPos[gi][0..wasN[gi]]);
         if (g.hero.breathLive()) rimeBreathe(g, dt);
         for (&g.arrows) |*ar| {
@@ -4012,14 +4029,17 @@ fn handActs(a: heromod.Armament, in: HandIn, out: *Acts) void {
     }
 }
 
-fn armSlot(a: heromod.Armament) hud_.Slot {
-    return switch (a) {
-        .sword => .sword,
-        .bow => .bow,
-        .bell => .bell,
-        .shield => .shield,
-        .wand => .wand,
-    };
+fn armSlot(g: *const Game, a: heromod.Armament) hud_.Slot {
+    return .{ .held = .{
+        .arm = switch (a) {
+            .sword => .sword,
+            .bow => .bow,
+            .bell => .bell,
+            .shield => .shield,
+            .wand => .wand,
+        },
+        .gear = heromod.heldGear(a, g.hero.worn),
+    } };
 }
 
 fn quickLeft(g: *const Game) u8 {
@@ -4250,7 +4270,7 @@ fn layBoltGas(g: *Game, at: rl.Vector3) void {
 pub fn heroBlade(g: *const Game) foemod.Blade {
     return .{
         .active = g.hero.hitActive(),
-        .r = heromod.BLADE_R,
+        .r = g.hero.bladeR(),
         .a = g.hero.bladeA,
         .b = g.hero.bladeB,
         .a0 = g.hero.bladeA0,

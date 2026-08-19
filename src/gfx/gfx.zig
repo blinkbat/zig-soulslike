@@ -705,7 +705,7 @@ fn dilateEdges(ids: []const u8, edge: []const u8) []const u8 {
     }
 };
 
-pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble, flame, smoke, ember, bark };
+pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble, flame, smoke, ember, bark, fog };
 comptime {
     std.debug.assert(@intFromEnum(Mat.water) == 9);
     std.debug.assert(@intFromEnum(Mat.marble) == 10);
@@ -713,6 +713,7 @@ comptime {
     std.debug.assert(@intFromEnum(Mat.smoke) == 12);
     std.debug.assert(@intFromEnum(Mat.ember) == 13);
     std.debug.assert(@intFromEnum(Mat.bark) == 14);
+    std.debug.assert(@intFromEnum(Mat.fog) == 15);
 }
 
 pub fn smokeAnim(originY: f32, phase01: f32) f32 {
@@ -791,6 +792,24 @@ pub const Builder = struct {
         self.vert(a, n, ab, a.x, a.z);
         self.vert(c, n, cd, c.x, c.z);
         self.vert(d, n, cd, d.x, d.z);
+    }
+
+    /// `quadFade` with the ANIM channel graded across the cell as well. The fog gate's height fraction rides
+    /// `animY` and is read by both the vertex billow and the fade — constant per cell it steps, and a sheet
+    /// that fades in stripes is a sheet with nine edges in it.
+    pub fn quadFadeAnim(self: *Builder, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3, n: rl.Vector3, ab: rl.Color, cd: rl.Color, animAB: f32, animCD: f32) void {
+        const keep = self.animY;
+        self.animY = animAB;
+        self.vert(a, n, ab, a.x, a.z);
+        self.vert(b, n, ab, b.x, b.z);
+        self.animY = animCD;
+        self.vert(c, n, cd, c.x, c.z);
+        self.animY = animAB;
+        self.vert(a, n, ab, a.x, a.z);
+        self.animY = animCD;
+        self.vert(c, n, cd, c.x, c.z);
+        self.vert(d, n, cd, d.x, d.z);
+        self.animY = keep;
     }
 
     pub fn quad(self: *Builder, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3, n: rl.Vector3, col: rl.Color) void {

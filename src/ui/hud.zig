@@ -994,7 +994,12 @@ const SLOT_GAP: i32 = eq(8);
 const PITCH_Y: i32 = eq(48);
 const BOTTOM: i32 = 26;
 
-pub const Slot = union(enum) { empty, sword, bow, bell, shield, wand, sorcery: combat.Spell };
+pub const Held = enum { sword, bow, bell, shield, wand };
+
+/// **A HAND'S CELL KNOWS WHICH WEAPON IS IN IT, NOT JUST WHICH ARM.** The glyph was the armament's, so a dirk,
+/// a club and a warbow all drew as the plain sword and bow down here while the character book — which asks
+/// `hero.heldGear` — drew the gear. One question, one answer, both pages.
+pub const Slot = union(enum) { empty, held: struct { arm: Held, gear: ?item.Kind = null }, sorcery: combat.Spell };
 
 pub fn equipment(left_hand: Slot, right_hand: Slot, up: Slot, castable: bool, quick: ?item.Kind, charges: u8, ammo: ?Ammo) void {
     const stepX = SLOT_W + SLOT_GAP;
@@ -1058,11 +1063,16 @@ fn slot(x: i32, y: i32, holds: Slot, charges: u8) void {
     const px: f32 = @floatFromInt(ICON);
     switch (holds) {
         .empty => {},
-        .sword => itemart.sword(cx, cy, px),
-        .bow => itemart.bow(cx, cy, px),
-        .bell => itemart.bell(cx, cy, px),
-        .shield => itemart.shield(cx, cy, px),
-        .wand => itemart.wand(cx, cy, px),
+        .held => |h| {
+            if (h.gear) |k| return itemart.drawHeld(k, cx, cy, px, true);
+            switch (h.arm) {
+                .sword => itemart.sword(cx, cy, px),
+                .bow => itemart.bow(cx, cy, px),
+                .bell => itemart.bell(cx, cy, px),
+                .shield => itemart.shield(cx, cy, px),
+                .wand => itemart.wand(cx, cy, px),
+            }
+        },
         // The sorcery cell's picture greys out when the FP will not cover a cast, which is the ammo box's own
         // rule: a thing you cannot use has to LOOK like a thing you cannot use. WHICH picture is `itemart`'s
         // one answer, shared with the character book's own socket.

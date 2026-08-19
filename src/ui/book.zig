@@ -1051,7 +1051,9 @@ fn panel(b: Box, title: [:0]const u8) Box {
 /// straight through the last row.
 fn rowStep(space: i32, n: usize) i32 {
     const natural = hud.lineH(hud.SMALL) + 7;
-    return mathx.clampI(@divTrunc(space, @as(i32, @intCast(n))), rowFloor(), natural);
+    // A picker CAN be open on a slot with nothing to offer (`candidates` returns an empty slice for a locked
+    // one), and that reaches here through `pickStep` as a divide by zero.
+    return mathx.clampI(@divTrunc(space, @as(i32, @intCast(@max(n, 1)))), rowFloor(), natural);
 }
 
 fn rowFloor() i32 {

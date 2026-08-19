@@ -516,6 +516,18 @@ pub const Parry = struct {
     }
 };
 
+/// **WHAT EVERY CATCH OWES, WHOEVER IS CAUGHT** — the reach test, the one-frame edge, the flash and the combat
+/// clock, transcribed once per creature until now. FIELDS ONLY (`parry`, `pos`, `parried`, `flash`, `leash`),
+/// `dissipate`'s rule: what a creature does NEXT — its cooldown, its sparks, its voice, its stun — is the half
+/// that is honestly its own and stays in its own file.
+pub fn caught(self: anytype, reach: f32) bool {
+    if (!self.parry.catches(self.pos, reach)) return false;
+    self.parried = true;
+    self.flash = FLASH_DUR;
+    self.leash.noteCombat();
+    return true;
+}
+
 /// **HOW DEEP THE WATER IS, AS A CREATURE STANDING IN IT SEES IT** — `Leash`'s and `Parry`'s arrangement
 /// exactly, and for their reason: only `game.zig` can see the creature and `env`'s water field at once, and a
 /// creature that reached out for the world would be a creature that knows about `Env`. Stamped every frame
@@ -1156,9 +1168,9 @@ pub fn pierceGroup(foes: anytype, blade: Blade) bool {
     for (foes) |*f| {
         if (!corporeal(f)) continue;
         const before = f.hits;
-        const caught = blocksOf(f);
+        const blocksBefore = blocksOf(f);
         f.tryHit(blade);
-        if (f.hits == before and blocksOf(f) == caught) continue;
+        if (f.hits == before and blocksOf(f) == blocksBefore) continue;
         hit = true;
         if (!blade.through) return true;
     }

@@ -945,10 +945,7 @@ pub const Warrior = struct {
     /// still stop outright. `enterStun` drops the stroke, clears `live` and puts a leap back on the ground.
     fn takeParry(self: *Warrior) void {
         const reach = self.parryable() orelse return;
-        if (!self.parry.catches(self.pos, reach)) return;
-        self.parried = true;
-        self.flash = FLASH_DUR;
-        self.leash.noteCombat();
+        if (!foe.caught(self, reach)) return;
         self.cds[self.atk] = self.move().cd;
         self.sparks(self.wpnHere()[1], mathx.dirXZ(self.pos, self.parry.at), 16);
         sfx.world(.bone_hurt, self.pos);

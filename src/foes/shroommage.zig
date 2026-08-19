@@ -590,11 +590,9 @@ pub const Mage = struct {
 
     fn kindle(self: *Mage, dt: f32, u: f32) void {
         const rate = lerpF(KINDLE_RATE_0, KINDLE_RATE_1, u * u);
-        self.fxAccum += rate * dt;
-        const n: usize = @intFromFloat(@floor(self.fxAccum));
+        const n = foe.emitTicks(&self.fxAccum, dt, rate, KINDLE_CAP);
         if (n == 0) return;
-        self.fxAccum -= @floatFromInt(n);
-        elemfx.gather(&self.parts, &self.fxHead, &self.fxRng, self.cupWorld(), .fire, @min(n, KINDLE_CAP), BALL_R * (0.4 + 0.6 * u) * self.scale, self.scale);
+        elemfx.gather(&self.parts, &self.fxHead, &self.fxRng, self.cupWorld(), .fire, n, BALL_R * (0.4 + 0.6 * u) * self.scale, self.scale);
     }
 
     fn burstCup(self: *Mage) void {

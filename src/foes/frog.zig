@@ -308,10 +308,7 @@ pub const Frog = struct {
     /// `lift` from scratch, so a body caught mid-air is on the ground on the frame it is caught.
     fn takeParry(self: *Frog) void {
         const reach = self.parryable() orelse return;
-        if (!self.parry.catches(self.pos, reach)) return;
-        self.parried = true;
-        self.flash = FLASH_DUR;
-        self.leash.noteCombat();
+        if (!foe.caught(self, reach)) return;
         self.lungeCd = LUNGE_CD;
         self.dustBurst(self.pos, 14, 2.2, 0.20);
         sfx.world(.toad_hurt, self.pos);

@@ -481,15 +481,6 @@ pub const Focus = struct {
 
 pub const SpiritKind = enum { wolf };
 
-/// The spirit a scroll IS, or null. `item.zig` cannot answer this — it imports nothing but std, and this is
-/// the same split `flaskOf` keeps: the ITEM is a fact about the bag, the KIND is a fact about the mechanic.
-pub fn spiritOf(k: item.Kind) ?SpiritKind {
-    return switch (k) {
-        .spirit_scroll_wolf => .wolf,
-        else => null,
-    };
-}
-
 pub fn scrollFor(s: SpiritKind) item.Kind {
     return switch (s) {
         .wolf => .spirit_scroll_wolf,

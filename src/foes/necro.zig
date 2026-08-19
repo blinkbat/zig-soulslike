@@ -1030,9 +1030,9 @@ pub const Necro = struct {
     }
 
     fn creep(self: *Necro, dt: f32) void {
-        self.sigAccum += 22.0 * dt;
-        while (self.sigAccum >= 1.0) {
-            self.sigAccum -= 1.0;
+        const emitRate = 22.0;
+        var owed = foe.emitTicks(&self.sigAccum, dt, emitRate, foe.emitCap(emitRate));
+        while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.80, 1.04) * FROST_R * self.scale;
             const from = self.fxHead;

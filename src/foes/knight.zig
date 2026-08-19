@@ -2526,10 +2526,7 @@ pub const Knight = struct {
 
     fn takeParry(self: *Knight) void {
         const reach = self.parryable() orelse return;
-        if (!self.parry.catches(self.pos, reach)) return;
-        self.parried = true;
-        self.flash = FLASH_DUR;
-        self.leash.noteCombat();
+        if (!foe.caught(self, reach)) return;
         self.cds[self.cdSlot()] = self.move().cd;
         switch (self.state) {
             .bashwind, .thrustwind => self.setStrike(0.32),
@@ -2824,9 +2821,9 @@ pub const Knight = struct {
     fn emitAwaken(self: *Knight, dt: f32) void {
         const seg = self.wpnHere();
         const k = mathx.clampF(self.t / (AWAKEN.liftDur + AWAKEN.holdDur), 0, 1);
-        self.emberAccum += (30.0 + 210.0 * k) * dt;
-        while (self.emberAccum >= 1.0) {
-            self.emberAccum -= 1.0;
+        const emitRate = 30.0 + 210.0 * k;
+        var owed = foe.emitTicks(&self.emberAccum, dt, emitRate, foe.emitCap(emitRate));
+        while (owed > 0) : (owed -= 1) {
             const at = mathx.lerpV(seg[0], seg[1], self.fxRng.float());
             elemfx.gather(&self.parts, &self.fxHead, &self.fxRng, at, .chaos, 1, 0.22 + 0.26 * k, self.scale * 0.5);
         }
@@ -3154,11 +3151,11 @@ pub const Knight = struct {
     }
     fn slamRingTell(self: *Knight, dt: f32) void {
         const k = mathx.clampF(self.t / SLAM.windDur, 0, 1);
-        self.ringAccum += (10.0 + 52.0 * k) * dt;
+        const emitRate = 10.0 + 52.0 * k;
+        var owed = foe.emitTicks(&self.ringAccum, dt, emitRate, foe.emitCap(emitRate));
         const at = self.slamMark();
         const reach = SLAM.r * self.scale;
-        while (self.ringAccum >= 1.0) {
-            self.ringAccum -= 1.0;
+        while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = reach * self.fxRng.range(0.94, 1.04);
             self.emit(
@@ -3247,9 +3244,9 @@ pub const Knight = struct {
         }
         const fire = w.ember();
         if (fire <= 0) return;
-        self.emberAccum += (14.0 + 78.0 * k) * fire * dt;
-        while (self.emberAccum >= 1.0) {
-            self.emberAccum -= 1.0;
+        const emberRate = (14.0 + 78.0 * k) * fire;
+        var emberOwed = foe.emitTicks(&self.emberAccum, dt, emberRate, foe.emitCap(emberRate));
+        while (emberOwed > 0) : (emberOwed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.52, 1.18) * self.scale;
             self.emit(

@@ -1353,10 +1353,7 @@ pub const Spider = struct {
 
     fn takeParry(self: *Spider) void {
         const reach = self.parryable() orelse return;
-        if (!self.parry.catches(self.pos, reach)) return;
-        self.parried = true;
-        self.flash = FLASH_DUR;
-        self.leash.noteCombat();
+        if (!foe.caught(self, reach)) return;
         self.biteCd = BITE_CD;
         sfx.world(.spider_hurt, self.pos);
         switch (self.vit.hit(combat.PARRY_HIT)) {

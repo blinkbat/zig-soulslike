@@ -454,16 +454,7 @@ pub const Frog = struct {
             self.resolveCoil(k, self.isLunge);
             if (self.isLunge) self.emitCoil(dt, k);
         } else if (self.t < coil + flight) {
-            if (!self.launched) {
-                self.launched = true;
-                self.hopFrom = self.pos;
-                const f = self.fdir();
-                self.hopTo = mathx.clampXZ(v3(self.pos.x + f.x * self.hopReach, 0, self.pos.z + f.z * self.hopReach), bounds);
-            }
-            const s = (self.t - coil) / flight;
-            const inv = 1.0 / flight;
-            self.pos.x += (self.hopTo.x - self.hopFrom.x) * inv * dt;
-            self.pos.z += (self.hopTo.z - self.hopFrom.z) * inv * dt;
+            const s = foe.hopStep(self, dt, bounds, self.fdir(), coil, flight);
             self.resolveFlight(s);
             if (self.isLunge) self.emitLungeTrail(dt, s);
         } else {

@@ -132,21 +132,35 @@ const LOCK_TILT_TALL: f32 = 3.2; // over the shade's 2.4 and under the ogre's 4.
 const LOCK_TILT_TALLER: f32 = 3.6;
 const LOCK_TILT_NEAR: f32 = 7.0;
 const LOCK_TILT_FAR: f32 = 17.0;
+/// **HOW FAR DOWN AN EYE AT `eyeY` HAS TO LOOK TO BE ON `mark`, `flat` metres away** — radians, 0 is level and
+/// positive is down. `mathx.tiltDeg`'s companion and its complement: that one asks how far a segment leans off
+/// world UP, this one how far a look leans off the HORIZON. The camera's lock pitch and the head's melee pitch
+/// are one triangle, and they had it written out twice — in different units, which is how the second one gets
+/// retuned alone.
+fn depression(eyeY: f32, mark: rl.Vector3, flat: f32) f32 {
+    return std.math.atan2(eyeY - mark.y, flat);
+}
+
 fn lockPitch(g: *const Game, r: FoeRef) f32 {
     const mark = foeLockPoint(g, r);
     const eye = g.rig.cam.position;
     const flat = mathx.distXZ(eye, mark);
     if (flat < LOCK_PITCH_NEAR) return LOCK_PITCH;
-    const want = std.math.atan2(eye.y - mark.y, flat);
+    const want = depression(eye.y, mark, flat);
     if (want >= LOCK_PITCH) return want;
     return mathx.lerpF(LOCK_PITCH, want, lockTiltShare(g, r, flat));
 }
 
-fn lockTiltShare(g: *const Game, r: FoeRef, flat: f32) f32 {
-    const rise = foeTopWorld(g, r).y - foePos(g, r).y;
+/// HOW MUCH OF THE FULL DOWN-TILT A BODY THAT TALL, THAT FAR OFF, IS WORTH — pure, so the test below can pin
+/// THIS and not a transcription of it. Written out twice, a retune here left the test agreeing with itself.
+fn tiltShare(rise: f32, flat: f32) f32 {
     const tall = mathx.smoothstep(LOCK_TILT_TALL, LOCK_TILT_TALLER, rise);
     const near = 1.0 - mathx.smoothstep(LOCK_TILT_NEAR, LOCK_TILT_FAR, flat);
     return tall * near;
+}
+
+fn lockTiltShare(g: *const Game, r: FoeRef, flat: f32) f32 {
+    return tiltShare(foeTopWorld(g, r).y - foePos(g, r).y, flat);
 }
 const LOCK_FLICK = 0.65;
 const LOCK_FLICK_MOUSE: f32 = 40.0;
@@ -1049,13 +1063,7 @@ test "ONLY SOMETHING THAT TOWERS TILTS THE LENS UP — everything else is framed
 
 test "A GIANT ONLY BRINGS THE LENS DOWN WHEN IT IS ON TOP OF YOU, and it arrives smoothly" {
     const OGRE: f32 = 4.4;
-    const share = struct {
-        fn at(rise: f32, flat: f32) f32 {
-            const tall = mathx.smoothstep(LOCK_TILT_TALL, LOCK_TILT_TALLER, rise);
-            const near = 1.0 - mathx.smoothstep(LOCK_TILT_NEAR, LOCK_TILT_FAR, flat);
-            return tall * near;
-        }
-    }.at;
+    const share = tiltShare;
 
     try std.testing.expectApproxEqAbs(@as(f32, 1), share(OGRE, LOCK_TILT_NEAR - 1), 1e-4);
     try std.testing.expectApproxEqAbs(@as(f32, 0), share(OGRE, LOCK_TILT_FAR + 1), 1e-4);
@@ -1773,6 +1781,9 @@ fn updateGateWalk(g: *Game, dt: f32) void {
     const face = mathx.headingXZ(gw.dir);
     g.hero.facing = face;
     g.hero.update(dt, moved, if (dt > 0) moved / dt else 0, face);
+    // The rig is replayed HERE like every other branch of the loop's state chain: `hero.update` only advances
+    // the clocks and the gait phase, and the crossing was the one path that never chained the bones after it.
+    g.hero.pose();
     gw.motes += dt * GATE_MOTES_PER_S;
     var n: u32 = 0;
     while (gw.motes >= 1.0 and n < GATE_MOTE_CAP) : (n += 1) gw.motes -= 1.0;
@@ -2400,6 +2411,11 @@ fn rootVictim(g: *const Game, at: rl.Vector3) ?RootPick {
     inline for (FOE_GROUPS, 0..) |f, gi| {
         for (@field(g, f.field).liveConst(), 0..) |*a, i| {
             if (!foemod.corporeal(a)) continue;
+            // A BODY THAT IS NOT ON THE FIELD IS NOT A TARGET — `strikeVictim`'s own line, and the two pickers
+            // in this file that lacked it are the two that work in XZ off `pos` rather than off a swept
+            // capsule, so nothing else was refusing them: a burrowed delver, a sunk lurker and a dormant snag
+            // were all grippable through the ground you cannot even see them under.
+            if (disguised(a)) continue;
             if (locked) |l| if (l.idx == i and l.kind == memberKind(a, f.kind)) return .{ .group = gi, .idx = i };
             const d = mathx.distXZ(a.pos, at);
             if (d < near) {
@@ -2448,6 +2464,7 @@ fn rimeBreathe(g: *Game, dt: f32) void {
     inline for (FOE_GROUPS) |f| {
         for (@field(g, f.field).live()) |*a| {
             if (!foemod.corporeal(a)) continue;
+            if (disguised(a)) continue; // `rootVictim`'s rule: the cone is poured over the field, not under it
             const d = mathx.distXZ(a.pos, apex);
             const r = a.bodyR();
             if (d - r > combat.RIME_REACH) continue;
@@ -2709,7 +2726,18 @@ fn markSight(g: *Game) void {
 const WAY_PROBE: f32 = 2.0;
 const WAY_FAN = [_]f32{ 0.45, 0.90, 1.40, 1.95, 2.50 };
 const WAY_TRUE: f32 = 0.98;
+/// How much overlap the probe forgives, in metres. It used to be the slack on a MEASURED displacement; it is
+/// now taken off the margin instead, which is the same predicate — blocked iff the gap closes past
+/// `r + s.r - WAY_SLACK` — asked without solving for where the body would end up.
+const WAY_SLACK: f32 = 1e-3;
 
+/// **A PROBE ASKS WHETHER A POINT IS BLOCKED, SO IT ASKS THAT** (`env.blockedNear`) — it used to push a body
+/// out of everything in the cells and then measure whether it had moved. `resolveActor` is a SOLVER: on a
+/// point that overlaps it runs its whole second settling pass, so every blocked probe cost two full visits of
+/// every solid nearby plus the push arithmetic, to produce one bit. `blockedNear` stops at the first blocker.
+/// It is the fan-out that makes this worth saying: `markWay` gives up on the straight line and then tries ten
+/// more headings, two probes each, so a foe steering round a wall was spending twenty of these a frame — and
+/// the blocked answer, the expensive one, is the answer the fan-out is built to keep getting.
 fn wayClear(g: *const Game, at: rl.Vector3, r: f32, dir: rl.Vector3) bool {
     const reach = WAY_PROBE + r;
     const went = mathx.dirXZ(at, g.env.walkStep(at, dir, reach));
@@ -2717,7 +2745,7 @@ fn wayClear(g: *const Game, at: rl.Vector3, r: f32, dir: rl.Vector3) bool {
     if (went.x * dir.x + went.z * dir.z < WAY_TRUE) return false;
     for ([2]f32{ 0.5, 1.0 }) |u| {
         const p = v3(at.x + dir.x * reach * u, at.y, at.z + dir.z * reach * u);
-        if (mathx.distXZ(g.env.resolveActor(p, r, at.y), p) > 1e-3) return false;
+        if (g.env.blockedNear(p, r - WAY_SLACK, r + 1.0)) return false;
     }
     return true;
 }
@@ -4374,7 +4402,7 @@ fn meleePitch(g: *const Game) ?f32 {
     const mark = meleeMark(g) orelse return null;
     const flat = mathx.distXZ(g.hero.pos, mark);
     if (flat < 0.35) return null;
-    return mathx.degrees(std.math.atan2(g.hero.pos.y + MELEE_AIM_EYE - mark.y, flat));
+    return mathx.degrees(depression(g.hero.pos.y + MELEE_AIM_EYE, mark, flat));
 }
 
 const BOLT_GAS_CAP: usize = 8;

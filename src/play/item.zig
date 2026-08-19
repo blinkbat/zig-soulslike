@@ -586,11 +586,24 @@ pub fn quickable(k: Kind) bool {
     return isFlask(k) or usable(k);
 }
 
-pub const TAG_MAX: usize = blk: {
-    var m: usize = 0;
-    for (@typeInfo(Kind).@"enum".fields) |f| m = @max(m, f.name.len);
-    break :blk m;
+pub const TAG_MAX: usize = @tagName(LONGEST_TAG).len;
+
+/// The kind whose tag IS `TAG_MAX`. `save.CAP`'s worst case is sized off the longest tag, so the test that
+/// proves the buffer holds it has to WRITE that tag — hand-picking a plausible one understated the row by two
+/// characters a slot, silently, and every new item is a chance to understate it again.
+pub const LONGEST_TAG: Kind = blk: {
+    var worst: Kind = @enumFromInt(0);
+    for (@typeInfo(Kind).@"enum".fields) |f| {
+        if (f.name.len > @tagName(worst).len) worst = @enumFromInt(f.value);
+    }
+    break :blk worst;
 };
+
+comptime {
+    // `TAG_MAX` is now DERIVED from `LONGEST_TAG`, so the two cannot disagree — which also means a wrong
+    // argmax would go unnoticed. This is the independent pass the derivation replaced.
+    for (@typeInfo(Kind).@"enum".fields) |f| std.debug.assert(f.name.len <= TAG_MAX);
+}
 
 pub fn tag(k: Kind) []const u8 {
     return @tagName(k);

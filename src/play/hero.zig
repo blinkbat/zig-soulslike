@@ -1650,12 +1650,6 @@ pub const Hero = struct {
         }
     }
 
-    pub fn slotAt(self: *const Hero, hand: usize, slot: usize) Armament {
-        const live = if (hand == RIGHT) self.arm else self.off;
-        const alt = if (hand == RIGHT) self.armAlt else self.offAlt;
-        return if (slot == 0) live else alt;
-    }
-
     pub fn setAim(self: *Hero, want: bool) void {
         self.aiming = want and self.canAim();
     }
@@ -3190,13 +3184,11 @@ pub const Hero = struct {
         const sWr = mathx.smoothstep(AL_STRIKE_A + 2 * AL_LAG, AL_STRIKE_B + 2 * AL_LAG, u) * rec;
         const sw: f32 = if (self.atkAlt) -1.0 else 1.0;
         const amp: f32 = if (self.atkAlt) 0.8 else 1.0;
-        const sd: f32 = if (self.swordLeft()) -1.0 else 1.0;
-        const shS: usize = if (sd < 0) SHL else SHR;
-        const elS: usize = if (sd < 0) ELL else ELR;
-        const wrS: usize = if (sd < 0) WRL else WRR;
-        const shF: usize = if (sd < 0) SHR else SHL;
-        const elF: usize = if (sd < 0) ELR else ELL;
-        const wrF: usize = if (sd < 0) WRR else WRL;
+        // THE SWORD ARM AND THE FREE ONE, THROUGH `armSide` — both attack poses transcribed its body instead,
+        // which is the six-index-by-hand failure that helper exists to stop. `sd` is the sword side's own mirror.
+        const sA = armSide(self.swordLeft(), false);
+        const fA = armSide(!self.swordLeft(), false);
+        const sd = sA.mirror;
 
         const shape = self.swingShape();
         const os = AL_OVER * bump(u, AL_STRIKE_B + 2 * AL_LAG, AL_RECOV_A + 0.15);
@@ -3226,21 +3218,21 @@ pub const Hero = struct {
         setLocal(&wx, HIPR, self.rest, mul(rx(braceR * sPelv), rz(HIP_ADDUCT)));
         setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + kneeR * sPelv + 6.0 * wind));
         setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
-        setLocal(&wx, shF, self.rest, mul(rx(-10.0 * wind + 24.0 * sChest), rz(sd * ARM_ABD)));
-        setLocal(&wx, elF, self.rest, rx(-(IDLE_ELBOW + 12.0 * wind)));
-        setLocal(&wx, wrF, self.rest, rl.math.matrixIdentity());
+        setLocal(&wx, fA.sh, self.rest, mul(rx(-10.0 * wind + 24.0 * sChest), rz(sd * ARM_ABD)));
+        setLocal(&wx, fA.el, self.rest, rx(-(IDLE_ELBOW + 12.0 * wind)));
+        setLocal(&wx, fA.wr, self.rest, rl.math.matrixIdentity());
         const windAmp: f32 = if (self.atkAlt) AL_ALT_WIND else 1.0;
         const sRaise = mathx.smoothstep(AL_WIND_B - 0.06, AL_HIT_A - 0.02, u) * rec;
         const elev = AL_SH_ELEV_WIND * wind + (AL_SH_ELEV - AL_SH_ELEV_WIND) * sRaise;
         const sSweep = mathx.smoothstep(AL_STRIKE_A + AL_LAG, AL_HIT_B - 0.01, u) * rec;
         const back = AL_SWEEP_WIND * windAmp * shape.wind;
         const sweep = sw * (-back * wind + (back + AL_SWEEP_END * shape.arc) * sSweep + 0.9 * os);
-        setLocal(&wx, shS, self.rest, mul3(rx(-elev), ry(sd * sweep), rz(sd * (-ARM_ABD - 10.0 * amp * wind))));
+        setLocal(&wx, sA.sh, self.rest, mul3(rx(-elev), ry(sd * sweep), rz(sd * (-ARM_ABD - 10.0 * amp * wind))));
         const elb = IDLE_ELBOW + (AL_ELBOW_WIND - IDLE_ELBOW) * wind - (AL_ELBOW_WIND - AL_ELBOW_STRIKE) * sElb;
-        setLocal(&wx, elS, self.rest, rx(-elb));
+        setLocal(&wx, sA.el, self.rest, rx(-elb));
         const lvl = mathx.smoothstep(0.05, AL_STRIKE_A, u) * rec;
         const lay = sw * (AL_WRIST_LAY * wind - (AL_WRIST_LAY + AL_WRIST_WHIP) * sWr);
-        setLocal(&wx, wrS, self.rest, mul3(ry(sd * sw * AL_EDGE_ROLL * lvl), rx(-AL_TIP_UP * lvl), rz(sd * lay)));
+        setLocal(&wx, sA.wr, self.rest, mul3(ry(sd * sw * AL_EDGE_ROLL * lvl), rx(-AL_TIP_UP * lvl), rz(sd * lay)));
         placeSword(&wx, self.rest, rx(GRIP_PITCH * lvl), sd < 0);
         self.applyXfade(&wx);
         self.xf = wx;
@@ -3258,13 +3250,11 @@ pub const Hero = struct {
 
         const gather = mathx.smoothstep(AH_WIND_B - 0.05, AH_STRIKE_A + 2 * AH_LAG, u) * (1.0 - sSh) * rec;
         const rcl = bump(u, AH_STRIKE_B + 2 * AH_LAG, AH_RECOV_A) * rec;
-        const sd: f32 = if (self.swordLeft()) -1.0 else 1.0;
-        const shS: usize = if (sd < 0) SHL else SHR;
-        const elS: usize = if (sd < 0) ELL else ELR;
-        const wrS: usize = if (sd < 0) WRL else WRR;
-        const shF: usize = if (sd < 0) SHR else SHL;
-        const elF: usize = if (sd < 0) ELR else ELL;
-        const wrF: usize = if (sd < 0) WRR else WRL;
+        // THE SWORD ARM AND THE FREE ONE, THROUGH `armSide` — both attack poses transcribed its body instead,
+        // which is the six-index-by-hand failure that helper exists to stop. `sd` is the sword side's own mirror.
+        const sA = armSide(self.swordLeft(), false);
+        const fA = armSide(!self.swordLeft(), false);
+        const sd = sA.mirror;
 
         const shape = self.swingShape();
         const yaw = sd * shape.arc * (-AH_BODY_YAW * wind + 2.0 * AH_BODY_YAW * sPelv);
@@ -3290,15 +3280,15 @@ pub const Hero = struct {
         setLocal(&wx, HIPR, self.rest, mul(rx(2.0 * wind + 5.0 * sPelv), rz(HIP_ADDUCT)));
         setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + 17.0 * wind + 4.0 * sPelv));
         setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
-        setLocal(&wx, shF, self.rest, mul(rx(-22.0 * wind + 30.0 * sChest), rz(sd * (ARM_ABD + 6.0 * wind))));
-        setLocal(&wx, elF, self.rest, rx(-(IDLE_ELBOW + 16.0 * wind)));
-        setLocal(&wx, wrF, self.rest, rl.math.matrixIdentity());
+        setLocal(&wx, fA.sh, self.rest, mul(rx(-22.0 * wind + 30.0 * sChest), rz(sd * (ARM_ABD + 6.0 * wind))));
+        setLocal(&wx, fA.el, self.rest, rx(-(IDLE_ELBOW + 16.0 * wind)));
+        setLocal(&wx, fA.wr, self.rest, rl.math.matrixIdentity());
         const up = AH_SH_UP * shape.wind;
         const shX = -up * wind - AH_GATHER * shape.wind * gather + (up - AH_SH_DOWN * shape.arc) * sSh + AH_RECOIL * rcl;
-        setLocal(&wx, shS, self.rest, mul(rx(shX), rz(sd * (-ARM_ABD - 8.0 * wind))));
+        setLocal(&wx, sA.sh, self.rest, mul(rx(shX), rz(sd * (-ARM_ABD - 8.0 * wind))));
         const elb = IDLE_ELBOW + (AH_ELBOW_WIND - IDLE_ELBOW) * wind + 5.0 * gather - (AH_ELBOW_WIND - AH_ELBOW_STRIKE) * sElb;
-        setLocal(&wx, elS, self.rest, rx(-elb));
-        setLocal(&wx, wrS, self.rest, rx(AH_WRIST_COCK * wind - (AH_WRIST_COCK + AH_WRIST_SNAP) * sWr + 8.0 * rcl));
+        setLocal(&wx, sA.el, self.rest, rx(-elb));
+        setLocal(&wx, sA.wr, self.rest, rx(AH_WRIST_COCK * wind - (AH_WRIST_COCK + AH_WRIST_SNAP) * sWr + 8.0 * rcl));
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), sd < 0);
         self.applyXfade(&wx);
         self.xf = wx;

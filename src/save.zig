@@ -727,7 +727,10 @@ test "a save round-trips through its own text" {
 test "the buffer holds the biggest save this build can write" {
     var d = sample();
     for (&d.bag) |*c| c.* = item.CAP;
-    for (&d.quick) |*q| q.* = .quilted_gambeson;
+    // THE LONGEST TAG, ASKED FOR RATHER THAN NAMED. `CAP` sizes both these rows off `item.TAG_MAX`, so a
+    // hand-picked kind understates them by however far it is off the longest — silently, and again on the
+    // next item added.
+    for (&d.quick) |*q| q.* = item.LONGEST_TAG;
     for (&d.counters) |*c| c.* = std.math.minInt(i32);
     for (&d.waitLeft) |*v| v.* = -99999.5;
     for (&d.actAt) |*v| v.* = 255;
@@ -737,7 +740,7 @@ test "the buffer holds the biggest save this build can write" {
     for (&d.ground) |*g| g.* = .{
         .at = .{ .x = -99999.5, .y = -99999.5, .z = -99999.5 },
         .n = pickupmod.DROP_MAX,
-        .loot = [_]item.Kind{.quilted_gambeson} ** pickupmod.DROP_MAX,
+        .loot = [_]item.Kind{item.LONGEST_TAG} ** pickupmod.DROP_MAX,
     };
     var buf: [CAP]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&buf);

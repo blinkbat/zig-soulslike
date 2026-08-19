@@ -49,6 +49,15 @@ const SPRINT_SPEED = heromod.SPRINT_SPEED;
 
 const BOOT_SHOT_T: f32 = 11.0;
 
+/// **THE TREE THIS FILE CREATES, NAMED ONCE** — the `makePath` calls, the two generated prefixes and the
+/// closing print, which were the places a move of `shots\` had to be tracked down in. The SHOT NAMES below —
+/// the row tables and the several hundred `shoot`/`shootAt` literals — carry their own `shots/`: those are
+/// data, and a `DIR ++` on every one of them is noise. So this names the directory the harness MAKES, not
+/// every path it writes; moving the tree means a find-and-replace over the names either way.
+pub const DIR = "shots";
+const DIR_PROPS = DIR ++ "/props";
+const DIR_MAP = DIR ++ "/map";
+
 pub const SHOT_DT: f32 = 1.0 / 60.0;
 /// The DRAWING clock, one shot at a time: every camera here TELEPORTS, and a still frame cannot show a
 /// fade — so the occluder fade is handed a step big enough to arrive within the one frame we capture.
@@ -272,7 +281,7 @@ fn castToThrow(g: *Game, dt: f32) void {
 }
 
 pub fn runPropShots(g: *Game) void {
-    std.fs.cwd().makePath("shots/props") catch {};
+    std.fs.cwd().makePath(DIR_PROPS) catch {};
     g.drawDt = SETTLE_DT;
     g.menu.screen = .closed;
     g.retro.allOff();
@@ -284,13 +293,13 @@ pub fn runPropShots(g: *Game) void {
         const aim = v3(0, mathx.clampF(row.top * 0.45, 0.4, 9.0), 0);
         const dist = mathx.clampF(mathx.maxF(r * 2.1, row.top * 1.7), 3.2, 60.0);
         var buf: [96]u8 = undefined;
-        const name = std.fmt.bufPrintZ(&buf, "shots/props/{d:0>2}_{s}.png", .{ i, @tagName(row.kind) }) catch unreachable;
+        const name = std.fmt.bufPrintZ(&buf, DIR_PROPS ++ "/{d:0>2}_{s}.png", .{ i, @tagName(row.kind) }) catch unreachable;
         shootAt(g, name, aim, 35, 0.30, dist);
     }
 }
 
 pub fn runMapShots(g: *Game) void {
-    std.fs.cwd().makePath("shots/map") catch {};
+    std.fs.cwd().makePath(DIR_MAP) catch {};
     g.drawDt = SETTLE_DT;
     g.menu.screen = .closed;
     g.retro.allOff();
@@ -311,27 +320,28 @@ pub fn runMapShots(g: *Game) void {
             const aim = v3(f.pos.x, f.pos.y + top * 0.55, f.pos.z);
             const dist = mathx.clampF(mathx.maxF(r * 7.0, top * 4.2), 4.0, 34.0);
             var buf: [96]u8 = undefined;
-            const stand = std.fmt.bufPrintZ(&buf, "shots/map/{d:0>2}_{s}_stand.png", .{ n, @tagName(kindOf) }) catch unreachable;
+            const stand = std.fmt.bufPrintZ(&buf, DIR_MAP ++ "/{d:0>2}_{s}_stand.png", .{ n, @tagName(kindOf) }) catch unreachable;
             shootAt(g, stand, aim, 53, 0.16, dist);
+            // ONE NAME FOR THE MOVE, WHICHEVER MOVE IT IS. A pounce and a gather are the same slot — the
+            // creature has one or the other — and the two branches spelled the filename out separately, so a
+            // rename of one left the other writing the old path.
+            var b2: [96]u8 = undefined;
+            const move = std.fmt.bufPrintZ(&b2, DIR_MAP ++ "/{d:0>2}_{s}_move.png", .{ n, @tagName(kindOf) }) catch unreachable;
             if (comptime @hasDecl(T, "stagePounce")) {
                 f.stagePounce(1.0);
-                var b2: [96]u8 = undefined;
-                const leap = std.fmt.bufPrintZ(&b2, "shots/map/{d:0>2}_{s}_move.png", .{ n, @tagName(kindOf) }) catch unreachable;
-                shootAt(g, leap, aim, 90, 0.10, dist * 1.1);
+                shootAt(g, move, aim, 90, 0.10, dist * 1.1);
             } else if (comptime @hasDecl(T, "stageGather")) {
                 f.stageGather(1.0);
-                var b2: [96]u8 = undefined;
-                const tell = std.fmt.bufPrintZ(&b2, "shots/map/{d:0>2}_{s}_move.png", .{ n, @tagName(kindOf) }) catch unreachable;
-                shootAt(g, tell, aim, 53, 0.16, dist);
+                shootAt(g, move, aim, 53, 0.16, dist);
             }
             n += 1;
         }
     }
-    std.debug.print("MAP SHOTS: {d} creature(s) into shots/map/\n", .{n});
+    std.debug.print("MAP SHOTS: {d} creature(s) into " ++ DIR_MAP ++ "/\n", .{n});
 }
 
 pub fn runShots(g: *Game) void {
-    std.fs.cwd().makePath("shots") catch {};
+    std.fs.cwd().makePath(DIR) catch {};
     if (g.warren.n == 0 or g.line.n == 0 or g.grief.n == 0) {
         std.debug.print(
             "--shot needs at least one of each foe in {s} (have {d} toads, {d} archers, {d} ogres)\n",

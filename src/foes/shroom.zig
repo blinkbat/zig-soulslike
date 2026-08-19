@@ -399,16 +399,7 @@ pub const Shroom = struct {
             const k = mathx.smoothstep(0, coil, self.t);
             self.squash = lerpF(1.0, 0.78, k);
         } else if (self.t < coil + flight) {
-            if (!self.launched) {
-                self.launched = true;
-                self.hopFrom = self.pos;
-                const f = self.fdir();
-                self.hopTo = mathx.clampXZ(v3(self.pos.x + f.x * self.hopReach, 0, self.pos.z + f.z * self.hopReach), bounds);
-            }
-            const s = (self.t - coil) / flight;
-            const inv = 1.0 / flight;
-            self.pos.x += (self.hopTo.x - self.hopFrom.x) * inv * dt;
-            self.pos.z += (self.hopTo.z - self.hopFrom.z) * inv * dt;
+            const s = foe.hopStep(self, dt, bounds, self.fdir(), coil, flight);
             self.lift = self.hopApex * mathx.sinf(std.math.pi * mathx.clampF(s, 0, 1)) * self.scale;
             self.squash = 1.0 + @as(f32, if (fling) 0.18 else 0.10) * mathx.sinf(std.math.pi * s);
             self.pitch = if (fling) lerpF(-14.0, 42.0, s) else lerpF(-6.0, 18.0, s);

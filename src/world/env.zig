@@ -165,11 +165,41 @@ fn coastBand(e: wf.Edge) f32 {
     };
 }
 
+/// **THE FACET CORNERS, SAMPLED ONCE EACH.** `sampleField` is a pure function of the lattice coordinate, and
+/// the three corners a cell reads are shared with its neighbours: the facet is at least 1.2 cells wide, so
+/// every corner was being bilinearly resampled about six times across the field. MEASURED on the shipped map,
+/// this pass was 4.85 ms of `uploadWater`'s 9.40 — and the editor's water brush pays the whole call on every
+/// frame of a drag. Sized off `MAX_DECLARED_HALF` over the narrowest facet there can be (`WATER_FACET`), plus
+/// the far corner and a row of slack; a map somehow wider than that falls back to sampling in place.
+const FACET_LAT: usize = @as(usize, @intFromFloat(@ceil(2.0 * wf.MAX_DECLARED_HALF / WATER_FACET))) + 4;
+var facetLat: [FACET_LAT * FACET_LAT]f32 = undefined;
+
 fn facetWater(field: *[wf.WATER_CELLS]u8, half: f32) void {
     const N = wf.WATER_N;
     if (!(half > 0)) return;
     const cell = 2 * half / @as(f32, @floatFromInt(N));
     const facet = @max(WATER_FACET, cell * 1.2);
+
+    // The lattice the sweep will touch: the field is square, so one range answers both axes.
+    const lo = -half + 0.5 * cell;
+    const b0 = @floor(lo / facet);
+    const need: usize = @intFromFloat(@floor(-lo / facet) - b0 + 2.0);
+    const cached = need <= FACET_LAT;
+    const base: i32 = @intFromFloat(b0);
+    if (cached) {
+        for (0..need) |jz| {
+            const gz = (b0 + @as(f32, @floatFromInt(jz))) * facet;
+            for (0..need) |jx| {
+                facetLat[jz * FACET_LAT + jx] = sampleField(field, half, cell, (b0 + @as(f32, @floatFromInt(jx))) * facet, gz);
+            }
+        }
+    }
+    const corner = struct {
+        fn at(f: *const [wf.WATER_CELLS]u8, hf: f32, cl: f32, fc: f32, on: bool, from: i32, gx: i32, gz: i32) f32 {
+            if (on) return facetLat[@as(usize, @intCast(gz - from)) * FACET_LAT + @as(usize, @intCast(gx - from))];
+            return sampleField(f, hf, cl, @as(f32, @floatFromInt(gx)) * fc, @as(f32, @floatFromInt(gz)) * fc);
+        }
+    }.at;
 
     const out = &scratchIn;
     for (0..N) |cz| {
@@ -182,12 +212,14 @@ fn facetWater(field: *[wf.WATER_CELLS]u8, half: f32) void {
             const bz = @floor(sz);
             const fx = sx - bx;
             const fz = sz - bz;
+            const ix: i32 = @intFromFloat(bx);
+            const iz: i32 = @intFromFloat(bz);
             var wa: f32 = undefined;
             var wb: f32 = undefined;
             var wc: f32 = undefined;
-            var c0: [2]f32 = undefined;
-            var c1: [2]f32 = undefined;
-            var c2: [2]f32 = undefined;
+            var c0: [2]i32 = undefined;
+            var c1: [2]i32 = undefined;
+            var c2: [2]i32 = undefined;
             if (fx + fz > 1.0) {
                 c0 = .{ 1, 0 };
                 c1 = .{ 0, 1 };
@@ -203,9 +235,9 @@ fn facetWater(field: *[wf.WATER_CELLS]u8, half: f32) void {
                 wb = fx;
                 wc = fz;
             }
-            const va = sampleField(field, half, cell, (bx + c0[0]) * facet, (bz + c0[1]) * facet);
-            const vb = sampleField(field, half, cell, (bx + c1[0]) * facet, (bz + c1[1]) * facet);
-            const vc = sampleField(field, half, cell, (bx + c2[0]) * facet, (bz + c2[1]) * facet);
+            const va = corner(field, half, cell, facet, cached, base, ix + c0[0], iz + c0[1]);
+            const vb = corner(field, half, cell, facet, cached, base, ix + c1[0], iz + c1[1]);
+            const vc = corner(field, half, cell, facet, cached, base, ix + c2[0], iz + c2[1]);
             out[cz * N + cx] = wa * va + wb * vb + wc * vc;
         }
     }
@@ -685,22 +717,32 @@ pub const Env = struct {
             }
         }
         const shoreF: f32 = @floatFromInt(gfx.WATER_SHORE);
-        for (m.water, 0..) |wet, i| {
-            const wx = edge(i % N, m.half, cell) + cell * 0.5;
-            const wz = edge(i / N, m.half, cell) + cell * 0.5;
-            const shape: wf.Edge = @enumFromInt(@min(m.waterEdge[i], wf.Edge.N - 1));
-            const sd = coastWarp(shape, wx, wz) + if (wet != 0)
-                @max(0.0, (dIn[i] - 0.5) * cell)
-            else
-                -@max(0.0, (dOut[i] - 0.5) * cell);
-            const enc: f32 = if (sd >= 0) blk: {
-                const byShore = mathx.clampF(sd / gfx.WATER_DEEP_AT, 0, 1);
-                const dug = WATER_Y - (GROUND_Y + m.heightAt(edge(i % N, m.half, cell), edge(i / N, m.half, cell)));
-                break :blk shoreF + @max(byShore, digTone(dug)) * (255.0 - shoreF);
-            } else blk: {
-                break :blk shoreF * (1.0 - mathx.clampF(-sd / (gfx.WATER_WET_OUT * coastBand(shape)), 0, 1));
-            };
-            self.waterField[i] = mathx.u8f(enc);
+        // WALKED AS ROWS AND COLUMNS, not as a flat index divided back apart: the cell's own world x and z
+        // were solved with an `i % N` and an `i / N` EACH, twice over (the warp reads the centre, the dig
+        // reads the corner), so every one of the 50,176 cells paid four integer divisions to recover
+        // coordinates the loop already knows. Same expressions, same order, same bytes out.
+        for (0..N) |cz| {
+            const ez = edge(cz, m.half, cell);
+            for (0..N) |cx| {
+                const i = cz * N + cx;
+                const ex = edge(cx, m.half, cell);
+                const wet = m.water[i];
+                const wx = ex + cell * 0.5;
+                const wz = ez + cell * 0.5;
+                const shape: wf.Edge = @enumFromInt(@min(m.waterEdge[i], wf.Edge.N - 1));
+                const sd = coastWarp(shape, wx, wz) + if (wet != 0)
+                    @max(0.0, (dIn[i] - 0.5) * cell)
+                else
+                    -@max(0.0, (dOut[i] - 0.5) * cell);
+                const enc: f32 = if (sd >= 0) blk: {
+                    const byShore = mathx.clampF(sd / gfx.WATER_DEEP_AT, 0, 1);
+                    const dug = WATER_Y - (GROUND_Y + m.heightAt(ex, ez));
+                    break :blk shoreF + @max(byShore, digTone(dug)) * (255.0 - shoreF);
+                } else blk: {
+                    break :blk shoreF * (1.0 - mathx.clampF(-sd / (gfx.WATER_WET_OUT * coastBand(shape)), 0, 1));
+                };
+                self.waterField[i] = mathx.u8f(enc);
+            }
         }
         facetWater(&self.waterField, m.half);
         if (self.scene) |sc| sc.setWater(&self.waterField, m.half, true);
@@ -760,6 +802,9 @@ pub const Env = struct {
             self.nlights = 1;
         }
         buildSolids(self);
+        // `buildSolids` rebuilds `nwards` and `wardProps`; the LATCHES those index are a separate array and
+        // a staged prop inherited the last map's. A gate whose `wardLife` had run out photographs as absent.
+        self.openWards();
         indexProps(self);
     }
 
@@ -1004,10 +1049,6 @@ pub const Env = struct {
             self.props[pi].shrink = 1;
             self.props[pi].gone = false;
         }
-    }
-
-    pub fn wardAt(self: *const Env, i: u8) rl.Vector3 {
-        return self.props[self.wardProps[i]].pos;
     }
 
     pub fn blockedNear(self: *const Env, p: rl.Vector3, margin: f32, r: f32) bool {
@@ -3063,3 +3104,113 @@ test "the map's half drives the world, not a constant in this file" {
     try std.testing.expectApproxEqAbs(@as(f32, 118), m.half - PLAY_INSET, 1e-4);
 }
 
+
+test "A BLOCKED PROBE AND A MOVED PUSH-OUT ARE ONE PREDICATE — what `game.wayClear` swapped to" {
+    // `wayClear` asked "is this point blocked" by running `resolveActor` and measuring whether the body had
+    // moved more than a millimetre. `blockedNear` answers it directly and stops at the first blocker; this
+    // pins that the two agree, which is the whole licence for the swap. The slack comes off the MARGIN
+    // (`game.WAY_SLACK`) rather than off a measured displacement: blocked iff the gap closes past
+    // `r + s.r - slack`, which is the same inequality the distance compare was making.
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.props[0] = .{ .kind = .wall, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
+    e.props[1] = .{ .kind = .pillar, .pos = v3(7.5, 0, -3.0), .yaw = 0, .scale = 1, .op = 0 };
+    e.nprops = 2;
+    buildSolids(e);
+    e.openWards();
+
+    const SLACK: f32 = 1e-3;
+    var agreed: usize = 0;
+    var blocked: usize = 0;
+    for (0..61) |ix| {
+        for (0..61) |iz| {
+            const p = v3(-10.0 + @as(f32, @floatFromInt(ix)) * (20.0 / 60.0), 0, -10.0 + @as(f32, @floatFromInt(iz)) * (20.0 / 60.0));
+            for ([_]f32{ 0.34, 0.55, 1.10 }) |r| {
+                const moved = mathx.distXZ(e.resolveActor(p, r, p.y), p) > SLACK;
+                const near = e.blockedNear(p, r - SLACK, r + 1.0);
+                if (moved) blocked += 1;
+                if (moved == near) agreed += 1 else std.debug.print(
+                    "\nDISAGREE at ({d:.3},{d:.3}) r={d:.2}: pushOut moved={} blockedNear={}\n",
+                    .{ p.x, p.z, r, moved, near },
+                );
+            }
+        }
+    }
+    // The sweep has to actually straddle the wall, or two predicates agreeing on "clear" everywhere proves
+    // nothing about the one answer that costs anything.
+    try std.testing.expect(blocked > 200);
+    try std.testing.expectEqual(@as(usize, 61 * 61 * 3), agreed);
+}
+
+test "THE FACET MEMO IS THE SAME ARITHMETIC — corner for corner, byte for byte" {
+    // `facetWater` caches the lattice `sampleField` is read at, which is only licensed if it is a MEMO and
+    // not an approximation. The direct version is written out here, as the spray's own test does, so the
+    // thing being pinned is the loop this replaced rather than a paraphrase of it.
+    const direct = struct {
+        fn go(field: *[wf.WATER_CELLS]u8, half: f32) void {
+            const N = wf.WATER_N;
+            if (!(half > 0)) return;
+            const cell = 2 * half / @as(f32, @floatFromInt(N));
+            const facet = @max(WATER_FACET, cell * 1.2);
+            const out = &scratchOut;
+            for (0..N) |cz| {
+                for (0..N) |cx| {
+                    const wx = -half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell;
+                    const wz = -half + (@as(f32, @floatFromInt(cz)) + 0.5) * cell;
+                    const sx = wx / facet;
+                    const sz = wz / facet;
+                    const bx = @floor(sx);
+                    const bz = @floor(sz);
+                    const fx = sx - bx;
+                    const fz = sz - bz;
+                    var wa: f32 = undefined;
+                    var wb: f32 = undefined;
+                    var wc: f32 = undefined;
+                    var c0: [2]f32 = undefined;
+                    var c1: [2]f32 = undefined;
+                    var c2: [2]f32 = undefined;
+                    if (fx + fz > 1.0) {
+                        c0 = .{ 1, 0 };
+                        c1 = .{ 0, 1 };
+                        c2 = .{ 1, 1 };
+                        wa = 1 - fz;
+                        wb = 1 - fx;
+                        wc = fx + fz - 1;
+                    } else {
+                        c0 = .{ 0, 0 };
+                        c1 = .{ 1, 0 };
+                        c2 = .{ 0, 1 };
+                        wa = 1 - fx - fz;
+                        wb = fx;
+                        wc = fz;
+                    }
+                    const va = sampleField(field, half, cell, (bx + c0[0]) * facet, (bz + c0[1]) * facet);
+                    const vb = sampleField(field, half, cell, (bx + c1[0]) * facet, (bz + c1[1]) * facet);
+                    const vc = sampleField(field, half, cell, (bx + c2[0]) * facet, (bz + c2[1]) * facet);
+                    out[cz * N + cx] = wa * va + wb * vb + wc * vc;
+                }
+            }
+            for (field, out) |*dst, v| dst.* = mathx.u8f(v);
+        }
+    }.go;
+
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    var line: usize = 0;
+    const txt = try std.fs.cwd().readFileAlloc(std.testing.allocator, wf.START_MAP, 1 << 22);
+    defer std.testing.allocator.free(txt);
+    try wf.parse(txt, m, &line);
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.uploadWater(m);
+
+    for ([_]f32{ m.half, 40.0, wf.MAX_DECLARED_HALF }) |half| {
+        var a: [wf.WATER_CELLS]u8 = e.waterField;
+        var b: [wf.WATER_CELLS]u8 = e.waterField;
+        facetWater(&a, half);
+        direct(&b, half);
+        try std.testing.expectEqualSlices(u8, &b, &a);
+    }
+}

@@ -2389,10 +2389,6 @@ fn bakeTake(id: Id, idx: usize) void {
     slots[idx].next = 0;
 }
 
-fn bakeRow(id: Id, idx: usize) void {
-    while (slots[idx].varsReady < BANK[idx].vars) bakeTake(id, idx);
-}
-
 /// Walks the rest of the bank in behind the menu, a few ms a frame; returns whether work remains. Whole,
 /// it was 4.4 s of synthesis on the main thread in front of an already-blank window.
 ///

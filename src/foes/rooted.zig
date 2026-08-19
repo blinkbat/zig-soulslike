@@ -287,10 +287,6 @@ pub const Rooted = struct {
     pub fn hidden(self: *const Rooted) bool {
         return self.state == .dormant;
     }
-    pub fn watching(self: *const Rooted) bool {
-        return self.eyes > 0.5;
-    }
-
     /// Where the live move's limb tip is — what the reach is measured from and where its splinters fly off.
     pub fn tipWorld(self: *const Rooted) rl.Vector3 {
         const b = MOVES[@min(self.atk, MOVES.len - 1)].limb;

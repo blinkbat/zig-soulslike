@@ -664,6 +664,23 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
 const BIG_PAD: i32 = 16;
 const INFO_W: i32 = 250;
 
+/// **DRAG SPINS, WHEEL ZOOMS — ONE COPY.** The three modals (a prop, a creature, the FX bench) each had this
+/// nine-line block written out, so a rate or a clamp retuned in one of them left the other two turning
+/// differently.
+fn spinView(st: *State, ctx: *ui.Ctx, p: *Pose, viewR: rl.Rectangle) void {
+    const overView = rl.checkCollisionPointRec(ctx.mouse, viewR);
+    if (overView and ctx.wheel != 0) p.zoom = mathx.clampF(p.zoom * (1.0 + ZOOM_RATE * ctx.wheel), MIN_ZOOM, MAX_ZOOM);
+    if (ctx.pressed and overView) st.grabbed = 0;
+    if (st.grabbed == null) return;
+    if (!rl.isMouseButtonDown(.left)) {
+        st.grabbed = null;
+        return;
+    }
+    const d = rl.getMouseDelta();
+    p.yaw += d.x * ROT_RATE;
+    p.pitch = mathx.clampF(p.pitch - d.y * ROT_RATE, MIN_PITCH, MAX_PITCH);
+}
+
 fn big(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, kind: Kind) bool {
     const sw = rl.getScreenWidth();
     const sh = rl.getScreenHeight();
@@ -679,16 +696,7 @@ fn big(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, kind: Kind
     );
     const p = st.poseOf(kind);
 
-    const overView = rl.checkCollisionPointRec(ctx.mouse, viewR);
-    if (overView and ctx.wheel != 0) p.zoom = mathx.clampF(p.zoom * (1.0 + ZOOM_RATE * ctx.wheel), MIN_ZOOM, MAX_ZOOM);
-    if (ctx.pressed and overView) st.grabbed = 0;
-    if (st.grabbed != null) {
-        if (rl.isMouseButtonDown(.left)) {
-            const d = rl.getMouseDelta();
-            p.yaw += d.x * ROT_RATE;
-            p.pitch = mathx.clampF(p.pitch - d.y * ROT_RATE, MIN_PITCH, MAX_PITCH);
-        } else st.grabbed = null;
-    }
+    spinView(st, ctx, p, viewR);
 
     render(target(&bigRT, BIG_W, BIG_H), env, scene, kind, p.*);
     blit(bigRT.?, viewR);
@@ -834,16 +842,7 @@ fn bigChar(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, at: us
     const viewR = ui.rect(box.x + BIG_PAD, box.y + 46, w - INFO_W - 3 * BIG_PAD, h - 46 - 44);
     const p = &st.charPose[at];
 
-    const overView = rl.checkCollisionPointRec(ctx.mouse, viewR);
-    if (overView and ctx.wheel != 0) p.zoom = mathx.clampF(p.zoom * (1.0 + ZOOM_RATE * ctx.wheel), MIN_ZOOM, MAX_ZOOM);
-    if (ctx.pressed and overView) st.grabbed = 0;
-    if (st.grabbed != null) {
-        if (rl.isMouseButtonDown(.left)) {
-            const d = rl.getMouseDelta();
-            p.yaw += d.x * ROT_RATE;
-            p.pitch = mathx.clampF(p.pitch - d.y * ROT_RATE, MIN_PITCH, MAX_PITCH);
-        } else st.grabbed = null;
-    }
+    spinView(st, ctx, p, viewR);
 
     renderChar(target(&bigRT, BIG_W, BIG_H), env, scene, k, p.*);
     blit(bigRT.?, viewR);
@@ -1023,17 +1022,7 @@ fn benchPanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) boo
     }
 
     const viewR = ui.rect(box.x + BIG_PAD, vy + ui.ROW_H + 10, w - INFO_W - 3 * BIG_PAD, h - (vy - box.y) - ui.ROW_H - 56);
-    const overView = rl.checkCollisionPointRec(ctx.mouse, viewR);
-    const p = &st.fxPose;
-    if (overView and ctx.wheel != 0) p.zoom = mathx.clampF(p.zoom * (1.0 + ZOOM_RATE * ctx.wheel), MIN_ZOOM, MAX_ZOOM);
-    if (ctx.pressed and overView) st.grabbed = 0;
-    if (st.grabbed != null) {
-        if (rl.isMouseButtonDown(.left)) {
-            const d = rl.getMouseDelta();
-            p.yaw += d.x * ROT_RATE;
-            p.pitch = mathx.clampF(p.pitch - d.y * ROT_RATE, MIN_PITCH, MAX_PITCH);
-        } else st.grabbed = null;
-    }
+    spinView(st, ctx, &st.fxPose, viewR);
 
     benchStep(st, mathx.minF(rl.getFrameTime(), 0.05));
     renderBench(target(&bigRT, BIG_W, BIG_H), env, scene, st);

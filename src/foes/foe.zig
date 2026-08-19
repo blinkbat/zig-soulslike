@@ -533,6 +533,24 @@ pub fn setWade(foes: anytype, at: anytype, quarry: f32, comptime depthAt: anytyp
     for (foes) |*f| f.wade = .{ .here = depthAt(at, f.pos), .quarry = quarry };
 }
 
+/// **A HOP'S OWN TRAVEL — ONE COPY.** The toad's hop/lunge and the sporeling's fling/trip are four moves on
+/// two creatures and one piece of arithmetic: the landing spot is solved ONCE at the launch (clamped into the
+/// play square THERE, not every frame, or a hop into the rim shortens under you), and the body then walks the
+/// straight line to it at a constant rate. Returns how far through the flight it is — what both rigs draw the
+/// arc, the squash and the pitch off. `dir` is handed in rather than taken off the body, so the creature's own
+/// `fdir` stays private to its file. FIELDS ONLY, `dissipate`'s rule: `launched`/`hopFrom`/`hopTo`/`hopReach`.
+pub fn hopStep(self: anytype, dt: f32, bounds: f32, dir: rl.Vector3, coil: f32, flight: f32) f32 {
+    if (!self.launched) {
+        self.launched = true;
+        self.hopFrom = self.pos;
+        self.hopTo = mathx.clampXZ(v3(self.pos.x + dir.x * self.hopReach, 0, self.pos.z + dir.z * self.hopReach), bounds);
+    }
+    const inv = 1.0 / flight;
+    self.pos.x += (self.hopTo.x - self.hopFrom.x) * inv * dt;
+    self.pos.z += (self.hopTo.z - self.hopFrom.z) * inv * dt;
+    return (self.t - coil) / flight;
+}
+
 pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32, dt: f32) void {
     if (mathx.lenXZ(shove.*) <= 0.01) return;
     mathx.stepXZ(pos, shove.*, dt, bounds);

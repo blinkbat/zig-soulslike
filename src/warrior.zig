@@ -1658,9 +1658,9 @@ pub const Warrior = struct {
         self.sparks(at, self.fdir(), 12);
     }
     fn emitGather(self: *Warrior, dt: f32, k: f32) void {
-        self.fxAccum += (5.0 + 26.0 * k) * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
+        const emitRate = (5.0 + 26.0 * k);
+        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.2, 0.7) * self.scale;
             self.emit(

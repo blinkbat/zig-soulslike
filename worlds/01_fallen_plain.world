@@ -1096,6 +1096,17 @@ at: pickup -70.48561 -127.43801 0 1 loot=toadflesh_broth,thundercrock
 at: pickup 32.58292 -36.324352 0 1 loot=gravebell_amulet,pilgrims_salt
 at: pickup 75.70958 -18.9836 0 1 loot=pilgrims_salt,ironwort_tea
 at: pickup 53.78853 -21.032747 0 1 loot=mushroom_jerky,mushroom_jerky,nameless_soul
+at: torch -10.840383 14.158059 0 1
+at: torch -65.46792 -73.11904 0 1
+at: torch -66.3933 -103.00027 0 1
+at: torch -87.280785 -112.04779 0 1
+at: torch -112.3709 -117.65149 0 1
+at: torch -39.8771 16.863344 0 1
+at: torch -52.823444 -1.3819351 0 1
+at: torch -101.55149 -9.716913 0 1
+at: torch -92.53743 -20.624458 0 1
+at: torch -17.196577 17.519669 0 1
+at: torch 32.14083 27.620802 0 1
 cover: 3.3 0.72 1.38 seed=1131
 
 soil: 0x1887 1x2 0x62 1x2 0x59 1x2 0x1 1x3 0x58 1x6 0x60 2x2 1x1 0x61 2x2 1x2

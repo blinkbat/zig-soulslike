@@ -2502,7 +2502,7 @@ const ROW_H: i32 = ui.ROW_H;
 /// Extra drop under a slider, which draws its bar BELOW its label and so is taller than a row.
 const SLIDER_DROP: i32 = 20;
 
-pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, t: f32) void {
+pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: *daynight.Clock, t: f32) void {
     ed.world = env;
     // Once for the chrome, against the camera as it ended up — a pan or a minimap fly moved it after
     // `update` traced. The panel, the status readout and a paste share this one answer.
@@ -2521,7 +2521,7 @@ pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene,
     drawStatus(ed, m, env, &ctx, sw, sh);
     if (overlaid) ctx.setLive(true);
     if (ed.modal != .none) {
-        drawModal(ed, m, env, scene, &ctx);
+        drawModal(ed, m, env, scene, day, &ctx);
     } else if (ed.menuOpen) {
         drawContextMenu(ed, m, env, &ctx);
     }
@@ -3367,7 +3367,7 @@ const CRIBS = [_][:0]const u8{
 var cribW = [_]i32{-1} ** CRIBS.len;
 
 
-fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) void {
+fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: *daynight.Clock, ctx: *ui.Ctx) void {
     const alt = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
     const confirm = rl.isKeyPressed(.enter) and !alt;
     switch (ed.modal) {
@@ -3528,6 +3528,43 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, ctx: 
             y += ROW_H;
             changed = ui.stepperF(ctx, x, y, w, "z1", &m.runway.z1, 0.5, -COORD_LIM, COORD_LIM) or changed;
             y += ROW_H + 10;
+
+            // **THE HOUR, WHERE YOU CAN FIND IT** (owner: add way to change time of day in editor — world menu).
+            // `,`/`.` have scrubbed it since the editor had a clock, and a shortcut nobody is told about is a
+            // feature nobody has: the world's LIGHT is a property of the world, so it belongs on this card
+            // beside its size. The keys stay, and the crib names them — the editor is AGENTS.md's one
+            // keyboard exception, and sweeping the day is still the gesture the stepper cannot be.
+            hud.mono("LIGHT", x, y, hud.MONO, ui.TITLE);
+            y += ROW_H + 4;
+            var cb: [10]u8 = undefined;
+            var lb: [80]u8 = undefined;
+            hud.mono(
+                std.fmt.bufPrintZ(&lb, "{s}  {s}  -  ',' '.' scrub, Shift for hours", .{
+                    daynight.clockTextZ(day.hour, &cb),
+                    daynight.phaseName(day.hour),
+                }) catch "",
+                x,
+                y,
+                hud.MONO,
+                ui.alpha(ui.LABEL, 190),
+            );
+            y += hud.monoLineH(hud.MONO) + 4;
+            // A QUARTER HOUR A TAP, the debug row's own step: the finest move whose effect on the light you
+            // can actually see. It writes through `Clock.set`, which is the one thing that wraps the hour.
+            var hourNow = day.hour;
+            if (ui.stepperF(ctx, x, y, w, "hour", &hourNow, HOUR_STEP, 0, 24)) day.set(hourNow);
+            y += ROW_H;
+            // …AND THE HOURS WORTH AUTHORING AT, as buttons. The ANCHOR is the one the whole game was
+            // photographed under (`daynight.SHOT_HOUR`), so it is the one a belt of trees must read at.
+            {
+                const bw: i32 = @divTrunc(w - 3 * 6, 4);
+                for (HOUR_MARKS, 0..) |mk, i| {
+                    const bx = x + @as(i32, @intCast(i)) * (bw + 6);
+                    const on = @abs(day.hour - mk.at) < HOUR_STEP * 0.5;
+                    if (ui.buttonTip(ctx, ui.rect(bx, y, bw, 24), mk.name, hud.MONO, on, mk.tip)) day.set(mk.at);
+                }
+                y += ROW_H + 10;
+            }
 
             hud.mono("RIM", x, y, hud.MONO, ui.TITLE);
             y += ROW_H + 4;
@@ -3738,7 +3775,20 @@ const RACK_W: i32 = 356;
 const RACK_GAP: i32 = 14;
 
 const WORLD_W: i32 = 420;
-const WORLD_H: i32 = 470;
+/// …and it grew by the LIGHT section (a readout, a stepper and the row of marks).
+const WORLD_H: i32 = 470 + 96;
+
+/// How far one tap of the world card's hour moves the clock — `menu.HOUR_TAP`'s own figure, for its reason.
+const HOUR_STEP: f32 = 0.25;
+/// THE HOURS WORTH AUTHORING AT. The anchor is not negotiable (every albedo in the game was measured under
+/// it); the other three are the lights a belt of flora has to survive.
+const HourMark = struct { name: [:0]const u8, at: f32, tip: [:0]const u8 };
+const HOUR_MARKS = [_]HourMark{
+    .{ .name = "Dawn", .at = 6.5, .tip = "First light - the coldest key in the day" },
+    .{ .name = "Noon", .at = 12.0, .tip = "Overhead and white: the hour with no long shadows to hide a gap" },
+    .{ .name = "Anchor", .at = daynight.SHOT_HOUR, .tip = "The golden hour every albedo in the game was measured under (--shot pins it)" },
+    .{ .name = "Night", .at = 0.5, .tip = "Moonlight - what the fires have to carry" },
+};
 
 /// A CLIFF RIM — the ONE op no brush can make, because it is world-wide: nowhere to stamp it, no gizmo to
 /// drag it by. The numbers are `wf.Map.defaultRim`'s; this only adds the editor's own seed counter, which

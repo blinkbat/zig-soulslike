@@ -206,9 +206,9 @@ pub const Souls = struct {
         }
         // The motes climb out of it the whole time it stands — the only thing that says it is still there
         // when the bloom itself is behind a rise.
-        self.fxAccum += MOTE_RATE * self.drop.grown() * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
+        const emitRate = MOTE_RATE * self.drop.grown();
+        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.05, 0.42);
             const from = v3(

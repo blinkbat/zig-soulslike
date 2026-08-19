@@ -9,6 +9,7 @@ const item = @import("item.zig");
 const uiart = @import("uiart.zig");
 const bookmod = @import("book.zig"); // pad START opens the CHARACTER BOOK, which is its own three pages
 const daynight = @import("daynight.zig"); // …and Debug carries the world clock's one scrub row
+const weathermod = @import("weather.zig"); // …and the sky's own events, on the same row's terms
 const savemod = @import("save.zig"); // …and the boot screen carries the three slots
 
 const rgba = mathx.rgba;
@@ -81,8 +82,30 @@ const DBG_HOUR = 4;
 /// thing you can sit and watch — this is the row that makes it one.
 const DBG_DAYRATE = 5;
 const DBG_TIMESCALE = 6;
-const DBG_CLOSE = 7;
+/// **THE SKY'S OWN EVENTS, ON DEMAND** — `DBG_HOUR`'s arrangement one system along, and for its exact reason.
+/// Weather arrives on a clock measured in MINUTES, so "is the rain working" is not a question anybody can sit
+/// and answer; Confirm cycles dry → gentle → moderate → dry (`weather.Weather.cycleForce`). A row and not a
+/// submenu, because the whole point is to watch the sky while you turn it.
+const DBG_WEATHER = 7;
+/// **THE DISTANCE HAZE, FORCED** (owner: add fog opt to debug). The storm moves it on its own
+/// (`gfx.HAZE_STORM`) and that is the thing being tuned, so what this row is for is looking at the dial ALONE:
+/// Off says what the world looks like with the far field wide open, and the thick settings say what the rain
+/// is asking for without waiting for a storm. AUTO is the game — the row is an override, never a setting.
+const DBG_FOG = 8;
+const DBG_CLOSE = 9;
 const DBG_COUNT = DBG_CLOSE + 1;
+
+/// What each stop on that row multiplies the haze distance by. `auto` is the one that is not a number: it
+/// leaves the weather in charge.
+const Fog = enum { auto, off, thick, soup };
+fn fogMulOf(f: Fog) f32 {
+    return switch (f) {
+        .auto => 1.0,
+        .off => 0.0,
+        .thick => 2.5,
+        .soup => 6.0,
+    };
+}
 
 /// How far one tap of the hour row moves the clock, fine and coarse. A quarter hour is about the finest step
 /// whose effect on the light you can actually see; an hour is the step for getting somewhere.
@@ -176,6 +199,8 @@ pub const Menu = struct {
     wireframe: bool = false,
     hitboxes: bool = false, // draw the blade hit capsule during attacks
     timeScale: f32 = 1.0,
+    /// The haze override (`DBG_FOG`). `.auto` is the game's own, which is the weather's.
+    fog: Fog = .auto,
     adjHoldT: f32 = 0, // seconds an adjust direction has been held (glide timer)
     /// The CHARACTER BOOK, which keeps its own cursor per page and its own animation.
     book: bookmod.Book = .{},
@@ -302,7 +327,7 @@ pub const Menu = struct {
     }
 
     // dt is the REAL frame time (not time-scaled) so the glide speed never changes.
-    pub fn update(self: *Menu, retro: *gfx.Retro, day: *daynight.Clock, dt: f32, v: bookmod.View, shelf: *const savemod.Shelf) Action {
+    pub fn update(self: *Menu, retro: *gfx.Retro, day: *daynight.Clock, sky: *weathermod.Weather, dt: f32, v: bookmod.View, shelf: *const savemod.Shelf) Action {
         if (self.screen == .closed) return .none;
         if (self.screen == .character) return self.updateBook(dt, v);
         const rows = self.rowCount();
@@ -365,6 +390,9 @@ pub const Menu = struct {
         if (self.screen == .debug and self.cursor == DBG_DAYRATE) {
             if (adjTapped(.left) or adjTapped(.right)) day.cycleSpeed();
         }
+        if (self.screen == .debug and self.cursor == DBG_FOG) {
+            if (adjTapped(.left) or adjTapped(.right)) self.cycleFog();
+        }
         // THE HOUR. Its own delta rather than `adjustDelta`'s, which is scaled for a 0..1 dial: an hour is not
         // a hundredth of anything, and a tap of 0.01 h is nine game seconds — a control that does nothing.
         if (self.screen == .debug and self.cursor == DBG_HOUR) {
@@ -384,7 +412,7 @@ pub const Menu = struct {
                 return .none;
             }
             sfx.play(.menu_pick);
-            return self.confirm(retro, day);
+            return self.confirm(retro, day, sky);
         }
         if (backPressed()) {
             sfx.play(.menu_back);
@@ -459,7 +487,7 @@ pub const Menu = struct {
     /// The SHELF is not a parameter here any more: the only row that read it was New Game's first-free
     /// shortcut, and both boot rows now ask which slot instead. `rowLive` is where the shelf still decides
     /// anything, and that is asked before this is ever reached.
-    fn confirm(self: *Menu, retro: *gfx.Retro, day: *daynight.Clock) Action {
+    fn confirm(self: *Menu, retro: *gfx.Retro, day: *daynight.Clock, sky: *weathermod.Weather) Action {
         switch (self.screen) {
             .closed => {},
             // THE BOOT ROWS HAND BACK AN ACTION AND CHANGE NOTHING. Starting a world is `game.zig`'s, and
@@ -529,6 +557,8 @@ pub const Menu = struct {
                 DBG_HOUR => day.freeze(!day.frozen()),
                 DBG_DAYRATE => day.cycleSpeed(),
                 DBG_TIMESCALE => self.cycleTimeScale(),
+                DBG_WEATHER => sky.cycleForce(),
+                DBG_FOG => self.cycleFog(),
                 DBG_CLOSE => {
                     self.screen = .main;
                     self.cursor = 0;
@@ -573,7 +603,40 @@ pub const Menu = struct {
         self.timeScale = if (self.timeScale > 0.75) 0.5 else if (self.timeScale > 0.35) 0.25 else 1.0;
     }
 
-    fn debugLabels(self: *const Menu, day: *const daynight.Clock) [DBG_COUNT][:0]const u8 {
+    /// **THE FOG ROW, FORCED** — the shot harness's alone (`game.forceFogForShot`). `Fog` is this file's own
+    /// type and stays that way: a caller that could name the stops is a second place deciding what they are.
+    pub fn forceFog(self: *Menu, on: bool) void {
+        self.fog = if (on) .soup else .auto;
+    }
+
+    fn cycleFog(self: *Menu) void {
+        self.fog = switch (self.fog) {
+            .auto => .off,
+            .off => .thick,
+            .thick => .soup,
+            .soup => .auto,
+        };
+    }
+
+    /// WHAT THE HAZE DISTANCE IS MULTIPLIED BY — 1 unless the debug row has taken it over (`gfx.Scene.setHour`).
+    pub fn fogK(self: *const Menu) f32 {
+        return fogMulOf(self.fog);
+    }
+
+    /// …AND HOW FOGGY IT ACTUALLY IS, 0..1, which is a different question from how far you can see through it:
+    /// the haze is a DISTANCE and the mist banks are a QUANTITY (`weather.Mist`). One row answers both because
+    /// it is one dial, and each half reads the half it needs — Off is no fog of either kind, and the two thick
+    /// settings are what let the banks be looked at without waiting for a storm.
+    pub fn fogAmt(self: *const Menu, wet: f32) f32 {
+        return switch (self.fog) {
+            .auto => wet,
+            .off => 0,
+            .thick => 0.65,
+            .soup => 1.0,
+        };
+    }
+
+    fn debugLabels(self: *const Menu, day: *const daynight.Clock, sky: *const weathermod.Weather) [DBG_COUNT][:0]const u8 {
         var out: [DBG_COUNT][:0]const u8 = undefined;
         out[DBG_RETRO] = "Retro Filters >";
         out[DBG_STATS] = if (self.stats) "Stats: On" else "Stats: Off";
@@ -596,11 +659,20 @@ pub const Menu = struct {
             if (day.frozen()) " (held)" else "",
         }) catch "?";
         out[DBG_TIMESCALE] = std.fmt.bufPrintZ(&dbgTimeBuf, "Time Scale: {d:.0}%", .{self.timeScale * 100}) catch "?";
+        // Read off the STORM itself rather than a flag kept here, so the row cannot say one thing while the
+        // sky does another — `DBG_HOUR`'s own rule, which reads the clock rather than remembering it.
+        out[DBG_WEATHER] = sky.says();
+        out[DBG_FOG] = switch (self.fog) {
+            .auto => "Fog: Auto (weather)",
+            .off => "Fog: Off",
+            .thick => "Fog: Thick",
+            .soup => "Fog: Soup",
+        };
         out[DBG_CLOSE] = "Back";
         return out;
     }
 
-    pub fn draw(self: *const Menu, retro: *const gfx.Retro, day: *const daynight.Clock, v: bookmod.View, portrait: ?bookmod.Portrait, shelf: *const savemod.Shelf) void {
+    pub fn draw(self: *const Menu, retro: *const gfx.Retro, day: *const daynight.Clock, sky: *const weathermod.Weather, v: bookmod.View, portrait: ?bookmod.Portrait, shelf: *const savemod.Shelf) void {
         if (self.screen == .closed) return;
         const sw = rl.getScreenWidth();
         const sh = rl.getScreenHeight();
@@ -631,7 +703,7 @@ pub const Menu = struct {
             .slots => self.drawSlots(shelf),
             .main => self.drawCard("SOULSLIKE", &mainLabels(), .{}),
             .options => self.drawCard("SOUND", &optionLabels(), .{ .gauges = &soundLevels() }),
-            .debug => self.drawCard("DEBUG", &self.debugLabels(day), .{}),
+            .debug => self.drawCard("DEBUG", &self.debugLabels(day, sky), .{}),
             .retro => self.drawCard("RETRO FILTERS", &retroLabels(retro), .{ .gauges = retro.values[0..gfx.RETRO_COUNT] }),
         }
         // THE CRIB NAMES BUTTONS AND NOTHING ELSE (owner's call) — one strip, whether a pad is plugged in or

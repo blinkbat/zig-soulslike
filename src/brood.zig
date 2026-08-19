@@ -771,9 +771,9 @@ pub const Pool = struct {
             self.live = false;
             return;
         }
-        self.fxAccum += (26.0 * self.strength() + 4.0) * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
+        const emitRate = (26.0 * self.strength() + 4.0);
+        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.float() * self.radius();
             foe.emitParticle(
@@ -1540,9 +1540,9 @@ pub const Spider = struct {
         if (self.role != .mother) return;
         const back = mathx.scaleV(self.fdir(), -1);
         const at = v3(self.pos.x + back.x * 0.9 * self.scale, self.pos.y + 0.03, self.pos.z + back.z * 0.9 * self.scale);
-        self.fxAccum += 26.0 * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
+        const emitRate = 26.0;
+        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             self.emit(
                 v3(at.x + mathx.cosf(a) * 0.3 * self.scale, at.y, at.z + mathx.sinf(a) * 0.3 * self.scale),
@@ -1575,9 +1575,9 @@ pub const Spider = struct {
 
     /// Venom gathering at the fangs through the wind-up — the tell you can see from outside her range.
     fn emitDrool(self: *Spider, dt: f32, k: f32) void {
-        self.fxAccum += (8.0 + 26.0 * k) * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
+        const emitRate = (8.0 + 26.0 * k);
+        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        while (owed > 0) : (owed -= 1) {
             const m = self.mouthWorld();
             self.emit(
                 v3(m.x + self.fxRng.signed() * 0.14 * self.scale, m.y + self.fxRng.range(-0.06, 0.16) * self.scale, m.z + self.fxRng.signed() * 0.14 * self.scale),

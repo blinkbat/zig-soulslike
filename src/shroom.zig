@@ -586,9 +586,9 @@ pub const Shroom = struct {
         }
     }
     fn emitTremble(self: *Shroom, dt: f32) void {
-        self.fxAccum += 9.0 * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
+        const emitRate = 9.0;
+        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = 0.4 * self.scale;
             self.emit(
@@ -603,9 +603,9 @@ pub const Shroom = struct {
         }
     }
     fn emitTrail(self: *Shroom, dt: f32) void {
-        self.fxAccum += 26.0 * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
+        const emitRate = 26.0;
+        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        while (owed > 0) : (owed -= 1) {
             const c = self.centerWorld();
             self.emit(c, v3(self.fxRng.signed() * 0.4, self.fxRng.range(-0.2, 0.4), self.fxRng.signed() * 0.4), self.fxRng.range(0.3, 0.55), 0.06, 0.14, SPORE, 0.8);
         }
@@ -709,9 +709,9 @@ pub const Cloud = struct {
         //      you step over, and this is something you are IN.
         //   2. **A RIM.** One puff in three is laid on the boundary rather than spread through the disc, so
         //      the cloud says where it STOPS. A gradient has no line to be on the safe side of.
-        self.fxAccum += (CLOUD_RATE + CLOUD_RATE_FRESH * (1.0 - self.t / CLOUD_LIFE)) * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
+        const emitRate = (CLOUD_RATE + CLOUD_RATE_FRESH * (1.0 - self.t / CLOUD_LIFE));
+        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        while (owed > 0) : (owed -= 1) {
             self.rimTick +%= 1;
             const a = self.fxRng.angle();
             const rim = self.rimTick % 3 == 0;
@@ -732,6 +732,9 @@ pub const Cloud = struct {
         }
     }
     pub fn drawFx(self: *const Cloud) void {
+        // The gas cloud's own gate one creature along (`foe.motesVisible`): a spore cloud is the other big pool
+        // of CPU-transformed spheres in the game, and a cluster of sporelings lays several of them.
+        if (!foe.motesVisible(self.pos, self.radius() + CLOUD_PUFF_MAX)) return;
         foe.drawParticles(&self.parts);
     }
 };

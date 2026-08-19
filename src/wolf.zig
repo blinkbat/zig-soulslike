@@ -596,6 +596,50 @@ pub const TEETH_POUNCE: f32 = 1.97;
 pub fn pounceFor(aim: f32) f32 {
     return mathx.clampF((aim - TEETH_REST) / (TEETH_POUNCE - TEETH_REST), 0, 1);
 }
+
+/// **AND SHE PUTS HER NOSE DOWN FOR WHAT IS ON THE FLOOR, which is the same complaint upside down** (owner: she
+/// has trouble hitting floorbound short foes). `pounceFor` only ever asked for HEIGHT: under her resting teeth
+/// it clamps to 0 and the jaws shut at `TEETH_REST`, which on a sporeling, a broodling or a toad is over the
+/// top of the whole animal — the swept blade never crosses the mass, so the bite could not land however close
+/// she stood. The dial runs BOTH ways now: above her reach she leaps, below it she stoops.
+///
+/// **AND IT IS THE NECK THAT GOES DOWN, NOT THE BODY.** A canid reaching the ground lowers its head; dropping
+/// the root would sink the legs, which is the one thing this rig may not do (FEET DO NOT SINK). So the stoop is
+/// degrees through NECK and HEAD, and the two share it — a head-only stoop is a chin tucked onto a chest.
+pub const STOOP_MAX: f32 = 62.0;
+/// **AND THE FOREQUARTERS COME DOWN WITH IT — A PLAY-BOW.** The neck alone is worth 0.20 m on this animal (a
+/// canid's neck reaches FORWARD, so rotating it swings the skull down AND back), and the gap to a sporeling was
+/// 0.65 m. So the stoop also sinks the body, in W units, through the SAME `crouch` the gather already uses —
+/// which is the dial `legs` folds the limbs against with the paws WORLD-FIXED, so this costs no new solver and
+/// cannot slide her feet (the gather's own test pins that).
+pub const STOOP_SINK: f32 = 0.26;
+/// …AND THE NECK TAKES THE LARGER SHARE, because it is the LONG LINK: swinging it down carries the whole skull
+/// with it, where rotating the head only points the muzzle. The head's share is the last of the reach — what
+/// puts the teeth ON the dirt rather than aimed at it (`ogre.PELVIS_SHARE`'s idea, one joint pair along).
+pub const STOOP_NECK_SHARE: f32 = 0.62;
+/// How far under her resting teeth a mass has to sit for the FULL stoop. It is the floor of everything she is
+/// asked to bite — a sporeling's hurt centre — rather than a round number.
+pub const STOOP_LOW: f32 = 0.34;
+/// WHERE HER TEETH ARE AT A FULL STOOP, the third end of the same dial. MEASURED off the posed rig by the
+/// same test as the other two, never written down from the pose's arithmetic.
+pub const TEETH_STOOP: f32 = 0.39;
+
+pub fn stoopFor(aim: f32) f32 {
+    if (aim <= 0) return 0; // 0 is "no idea" (`Quarry.aim`), which stays the flat-footed snap
+    return mathx.clampF((TEETH_REST - aim) / (TEETH_REST - STOOP_LOW), 0, 1);
+}
+
+comptime {
+    // THE TWO HALVES OF ONE DIAL, AND THEY MAY NOT BOTH BE OPEN. A body at her resting reach asks for neither;
+    // anything else asks for exactly one of them, or she is leaping and stooping at the same creature.
+    std.debug.assert(STOOP_LOW < TEETH_REST and TEETH_REST < TEETH_POUNCE);
+    // WHAT THE STOOP ACTUALLY REACHES IS NOT ASSERTABLE HERE — it comes out of the posed rig off three
+    // contributions (the neck, the bow, and the hop it gives up), and adding them up by hand is the drift
+    // `TEETH_REST`/`TEETH_POUNCE` are measured rather than written for. The bar it has to clear is
+    // `POUNCE_INTO` against the smallest sphere she is asked to bite, and the test is where that lives.
+    std.debug.assert(TEETH_STOOP < TEETH_REST);
+    std.debug.assert(STOOP_NECK_SHARE > 0.5 and STOOP_NECK_SHARE < 1.0);
+}
 /// The gather: it SINKS before it goes, which is the wind-up you read the hop off.
 const BITE_CROUCH: f32 = 0.09;
 /// THE JAWS. Real damage — it is a wolf, and a summon that tickles is a summon nobody rings for — but almost
@@ -677,6 +721,9 @@ pub const Wolf = struct {
     /// on (`pounceFor`) — the ROW's rule, one creature along: what a committed move is worth is decided at the
     /// commit, so a body that walks away mid-leap does not shrink the leap already in the air.
     pounce: f32 = 0,
+    /// …and the same latch for the OTHER half of the dial (`stoopFor`): how far she has her nose down. Latched
+    /// at the commit for `pounce`'s reason, and never both at once (the comptime assert up there).
+    stoop: f32 = 0,
     /// Last frame's jaw, for the swept bite — `foe.Blade`'s `a0`/`b0`.
     jaw0: rl.Vector3 = mathx.zero3,
     jaw1: rl.Vector3 = mathx.zero3,
@@ -852,6 +899,7 @@ pub const Wolf = struct {
             self.hitLatch = false;
             self.speed = 0;
             self.pounce = pounceFor(self.quarry.?.aim);
+            self.stoop = stoopFor(self.quarry.?.aim);
             self.bit = true; // ON THE GATHER, not the impact: the snarl is the tell, and it leads the jaws
         } else if (gap > stop) {
             // …and it warns whatever it is running at, now and then.
@@ -993,6 +1041,19 @@ pub const Wolf = struct {
     pub fn stagePounce(self: *Wolf, amt: f32) void {
         self.state = .bite;
         self.pounce = mathx.clampF(amt, 0, 1);
+        self.stoop = 0; // this hook is the LEAP's picture; the other end of the dial has its own
+        self.t = pounceApexT();
+        self.pose();
+    }
+
+    /// **THE BITE AS IT WOULD ACTUALLY ARRIVE AT A BODY OF THAT MASS HEIGHT**, both halves of the dial latched
+    /// off ONE number exactly as `update` latches them. The hook is `aim` and not the pair, because a leap and a
+    /// stoop set by hand can be given values the fight can never produce — and it is the pair that the reach is
+    /// measured against.
+    pub fn stageBiteAt(self: *Wolf, aim: f32) void {
+        self.state = .bite;
+        self.pounce = pounceFor(aim);
+        self.stoop = stoopFor(aim);
         self.t = pounceApexT();
         self.pose();
     }
@@ -1019,6 +1080,9 @@ pub const Wolf = struct {
         // …AND THE NOSE-UP THAT RIDES THE SAME ARC. One curve drives both, so the pitch cannot peak on a frame
         // the animal is already coming down on and the jaws cannot be highest while the body is not.
         var pitch: f32 = 0;
+        // …AND THE NOSE-DOWN, WHICH IS THE SAME ARC AT THE OTHER END OF THE SAME DIAL (`stoopFor`). Degrees
+        // through the neck and the skull, so the teeth come to the floor without the body leaving it.
+        var duckN: f32 = 0;
         if (self.state == .bite) {
             const hopEnd = BITE_WIND + BITE_STRIKE;
             crouch = BITE_CROUCH * mathx.smoothstep(0, BITE_WIND * 0.8, self.t) * (1.0 - mathx.smoothstep(BITE_WIND, hopEnd, self.t));
@@ -1026,9 +1090,19 @@ pub const Wolf = struct {
                 const u = (self.t - BITE_WIND * 0.55) / (hopEnd - BITE_WIND * 0.55);
                 // …TIMES WHAT THIS BODY IS WORTH LEAPING AT (`pounce`). A snap at something on the ground keeps
                 // the old hop; a giant's chest gets the whole animal in the air.
-                const arc = mathx.sinf(u * std.math.pi) * mathx.lerpF(HOP_FLOOR, 1.0, self.pounce);
+                const bell = mathx.sinf(u * std.math.pi);
+                // **AND SHE GIVES UP THE HOP TO STOOP.** `HOP_FLOOR` is the flat-footed snap and it lifts the
+                // teeth 0.16 m — the wrong way for a mouthful of dirt, and a sixth of the whole gap to a
+                // sporeling. A nose to the floor IS the movement, so it does not need a hop under it too.
+                const arc = bell * mathx.lerpF(HOP_FLOOR * (1.0 - self.stoop), 1.0, self.pounce);
                 hop = BITE_HOP_UP * arc;
                 pitch = BITE_PITCH * arc;
+                // THROUGH `crouch` AND NOT A NEGATIVE `hop`: that one also feeds `tuck`, which is how far the
+                // limbs are drawn up for a body IN THE AIR. This body is pressing into the ground.
+                crouch += STOOP_SINK * bell * self.stoop;
+                // The stoop rides the SAME curve, so the muzzle is lowest on the frame the jaws are shutting
+                // — one clock, `pitch`'s own reason.
+                duckN = STOOP_MAX * bell * self.stoop;
             }
         }
         var wx: [N]rl.Matrix = undefined;
@@ -1048,8 +1122,8 @@ pub const Wolf = struct {
         heromod.setJoint(&wx, &self.rest, SPINE, ROOT, rx(-flex * 0.5 - duck * 0.3));
         heromod.setJoint(&wx, &self.rest, CHEST, SPINE, rx(-flex * 0.5 - duck * 0.3));
         // The neck carries the head LEVEL through the bow — a wolf's eyes stay on what it is running at.
-        heromod.setJoint(&wx, &self.rest, NECK, CHEST, rx(flex * 0.7 + 6.0 * m - duck));
-        heromod.setJoint(&wx, &self.rest, HEAD, NECK, rx(flex * 0.3 - 4.0 * m - duck * 0.6));
+        heromod.setJoint(&wx, &self.rest, NECK, CHEST, rx(flex * 0.7 + 6.0 * m - duck + duckN * STOOP_NECK_SHARE));
+        heromod.setJoint(&wx, &self.rest, HEAD, NECK, rx(flex * 0.3 - 4.0 * m - duck * 0.6 + duckN * (1.0 - STOOP_NECK_SHARE)));
         // THE JAWS open through the wind and SNAP shut on the strike.
         const gape: f32 = if (self.state == .bite) blk: {
             if (self.t < BITE_WIND) break :blk 34.0 * mathx.smoothstep(0, BITE_WIND, self.t);

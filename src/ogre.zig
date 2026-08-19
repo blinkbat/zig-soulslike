@@ -1470,9 +1470,9 @@ pub const Ogre = struct {
     }
 
     fn emitStrain(self: *Ogre, dt: f32, k: f32) void {
-        self.fxAccum += (6.0 + 22.0 * k) * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
+        const emitRate = (6.0 + 22.0 * k);
+        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.3, 0.9) * self.scale;
             const bp = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + 0.05, self.pos.z + mathx.sinf(a) * rr);

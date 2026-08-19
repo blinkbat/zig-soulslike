@@ -353,7 +353,10 @@ pub fn gather(s: Slot) Data {
     d.elapsed = t.elapsed;
 
     for (s.chests.liveConst(), 0..) |c, i| d.chestOpen[i] = c.opened;
-    for (s.pickups.liveConst(), 0..) |p, i| d.pickupTaken[i] = p.taken;
+    // THE MAP'S HALF, NOT THE WHOLE LIST: these bits are keyed to the PLACING order, and a body's drop sits
+    // past the end of it (`pickup.mappedConst`). A save written with drops on the ground was stamping their
+    // `taken` into slots the file reads as somebody else's glow.
+    for (s.pickups.mappedConst(), 0..) |p, i| d.pickupTaken[i] = p.taken;
     d.seen = s.award.seen;
     return d;
 }
@@ -413,7 +416,10 @@ pub fn scatter(d: *const Data, s: Slot) void {
         c.opened = d.chestOpen[i];
         c.swing = if (c.opened) 1 else 0; // a lid you opened last session is not one caught mid-swing
     }
-    for (s.pickups.live(), 0..) |*p, i| {
+    // THE MAP'S HALF, on `gather`'s own terms — the two ends of one file have to mean the same range. A load
+    // rehomes the world first, so today there is nothing past `mapped` to mis-stamp; written the other way
+    // round it is a bug waiting for the first caller that reads a slot without rebuilding the ground.
+    for (s.pickups.mappedOnes(), 0..) |*p, i| {
         p.taken = d.pickupTaken[i];
         p.fade = if (p.taken) 1 else 0; // …and a glow you took is gone, not one caught mid-shrink
     }

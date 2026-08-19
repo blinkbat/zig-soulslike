@@ -218,8 +218,8 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     // BOTH SHOTS THROUGH `hero.arrowBlow`, the door the loose goes through — that function is exhaustive over
     // the arrow "rather than `== .fire` tests in the loose, the shot harness and the HUD", and the quick row
     // naming `BOW_QUICK_HIT` was a fourth place deciding what a fire arrow is worth.
-    const light = heromod.weigh(if (bow) heromod.arrowBlow(l.ammo, false) else heromod.ATK_LIGHT_HIT, row, sheet);
-    const heavy = heromod.weigh(if (bow) heromod.arrowBlow(l.ammo, true) else heromod.ATK_HEAVY_HIT, row, sheet);
+    const light = heromod.weigh(if (bow) heromod.arrowBlow(l.ammo, false, perk) else heromod.ATK_LIGHT_HIT, row, sheet);
+    const heavy = heromod.weigh(if (bow) heromod.arrowBlow(l.ammo, true, perk) else heromod.ATK_HEAVY_HIT, row, sheet);
     var d: [ND]f32 = undefined;
     d[@intFromEnum(Der.light)] = if (attacks) light.dmg else 0;
     d[@intFromEnum(Der.heavy)] = if (attacks) heavy.dmg else 0;
@@ -254,7 +254,7 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     const spellK: f32 = if (combat.spellBlow(l.spell) != null) perk.spellDmg * sheet.scale(.intelligence) else 1.0;
     d[@intFromEnum(Der.spell)] = if (casts) combat.spellDamage(l.spell) * spellK else 0;
     d[@intFromEnum(Der.spell_fp)] = if (casts) castFp(l.spell, perk) else 0;
-    d[@intFromEnum(Der.quick)] = quickWorth(l.quick, l.worn, sheet);
+    d[@intFromEnum(Der.quick)] = quickWorth(l.quick, l.worn, sheet, perk);
     d[@intFromEnum(Der.ammo)] = @floatFromInt(v.quiver.count(l.ammo));
     return d;
 }
@@ -511,15 +511,15 @@ fn slotTally(s: SlotId, v: View) ?u8 {
 /// boon moves the attribute — and off the RED BAR rather than off the sheet's raw HP, because that is what the
 /// flask and the jerky are both a fraction of (`hero.startDrink`, `game.useItem`). Priced off `sheet.hp()` it
 /// promised a man wearing the leech signet a bigger swallow than the ring leaves room for.
-fn quickWorth(kind: ?item.Kind, worn: heromod.Worn, sheet: stats.Sheet) f32 {
+fn quickWorth(kind: ?item.Kind, worn: heromod.Worn, sheet: stats.Sheet, perk: ptree.Bonus) f32 {
     const k = kind orelse return 0;
-    const hpMax = heromod.hpMaxOf(sheet, worn);
+    const hpMax = heromod.hpMaxOf(sheet, worn, perk);
     if (combat.flaskOf(k)) |f| return switch (f) {
         .crimson => hpMax * combat.FLASK_HP_FRAC,
         // …AND THE BLUE ONE OFF THE BLUE BAR, for the red one's exact reason: `hero.tickDrink` pours
         // `fp.max * FLASK_FP_FRAC`, and `fp.max` is `fpMaxOf`. Priced off `sheet.fp()` the row promised a
         // man wearing the gravebell a bigger swallow than the amulet leaves room for.
-        .cerulean => heromod.fpMaxOf(sheet, worn) * combat.FLASK_FP_FRAC,
+        .cerulean => heromod.fpMaxOf(sheet, worn, perk) * combat.FLASK_FP_FRAC,
     };
     return switch (item.use(k)) {
         .none => 0,
@@ -1868,8 +1868,8 @@ fn drawBody(col: Box, v: View) void {
     // THE POOLS AS THE SUIT LEAVES THEM, not as the sheet alone would have them: a charm eats into both bars
     // (`hero.hpMaxOf`/`fpMaxOf`) and read off `sheet` this panel contradicted the bars on screen behind it.
     const pools = [_]struct { [:0]const u8, f32 }{
-        .{ "HP", heromod.hpMaxOf(v.sheet.*, v.worn) },
-        .{ "FP", heromod.fpMaxOf(v.sheet.*, v.worn) },
+        .{ "HP", heromod.hpMaxOf(v.sheet.*, v.worn, v.tree.bonus()) },
+        .{ "FP", heromod.fpMaxOf(v.sheet.*, v.worn, v.tree.bonus()) },
         .{ "Stamina", v.sheet.stamina() },
         .{ "Poise", heromod.POISE_MAX },
         .{ "Stance", heromod.STANCE_MAX },
@@ -2431,15 +2431,15 @@ test "the quick row prices whatever the bar holds, flask or not" {
     const v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
     _ = v;
     const bare = heromod.Worn{};
-    try std.testing.expectApproxEqAbs(sheet.hp() * combat.FLASK_HP_FRAC, quickWorth(.crimson_flask, bare, sheet), 1e-3);
-    try std.testing.expectApproxEqAbs(sheet.fp() * combat.FLASK_FP_FRAC, quickWorth(.cerulean_flask, bare, sheet), 1e-3);
+    try std.testing.expectApproxEqAbs(sheet.hp() * combat.FLASK_HP_FRAC, quickWorth(.crimson_flask, bare, sheet, .{}), 1e-3);
+    try std.testing.expectApproxEqAbs(sheet.fp() * combat.FLASK_FP_FRAC, quickWorth(.cerulean_flask, bare, sheet, .{}), 1e-3);
     const jerky = item.use(.mushroom_jerky).regen;
-    try std.testing.expectApproxEqAbs(sheet.hp() * jerky.frac, quickWorth(.mushroom_jerky, bare, sheet), 1e-3);
+    try std.testing.expectApproxEqAbs(sheet.hp() * jerky.frac, quickWorth(.mushroom_jerky, bare, sheet, .{}), 1e-3);
     // **AND A CHARM SHORTENS THE BAR THE SWALLOW IS A FRACTION OF** (`hero.hpMaxOf`): priced off the raw sheet
     // this row promised a man wearing the signet a mouthful the ring has already taken the room for.
     var ringed = heromod.Worn{};
     ringed.put(.ring, .leech_signet);
-    try std.testing.expect(quickWorth(.crimson_flask, ringed, sheet) < quickWorth(.crimson_flask, bare, sheet));
+    try std.testing.expect(quickWorth(.crimson_flask, ringed, sheet, .{}) < quickWorth(.crimson_flask, bare, sheet, .{}));
 }
 
 test "the sockets are fitted to the panel, and never off the end of it" {

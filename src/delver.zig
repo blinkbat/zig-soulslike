@@ -84,7 +84,14 @@ const CLAW_REACH: f32 = 1.75;
 const CLAW_SWEEP_R: f32 = 0.34;
 /// **THE DECISION IS TAKEN AT THE RANGE THE BLOW LANDS AT**, never at a number beside it, or it spends half a
 /// second on a guaranteed miss (the ogre's swipe-inner lesson).
-const CLAW_BAND: f32 = CLAW_REACH + CLAW_SWEEP_R;
+///
+/// **AND WHAT THAT RANGE IS, IS WHERE THE ARC CROSSES HIM — NOT HOW FAR THE TIP GETS** (owner: the moles
+/// cannot hit me with their regular attacks). `CLAW_REACH + CLAW_SWEEP_R` is the tip's RADIAL reach, which it
+/// achieves out to the SIDE at the end of the sweep; a man standing in front is only ever struck where the
+/// arc passes through the body's own forward line, and that is nearer. At 2.09 the outer fifth of its own
+/// trigger band was a committed stroke that could not land by construction, on top of the missing lateral
+/// channel (`SWING_YAW`) that meant none of the band could. MEASURED by the band test below.
+const CLAW_BAND: f32 = 1.65;
 const CLAW_KEEP: f32 = CLAW_BAND - 0.5; // …and inside this it stops closing
 pub const CLAW_WIND: f32 = 0.48; // >= foe.TELL_MIN, and the shoulder travels the whole of it
 const CLAW_STRIKE: f32 = 0.20;
@@ -278,6 +285,13 @@ const REST = [N]rl.Vector3{
 /// The far end of the middle digging claw, in the claw bone's own frame — what the stroke actually swings,
 /// and what `parryable` hands over as its reach. MEASURED off the mesh, never argued (the ogre's club law).
 const CLAW_TIP = v3(0, -0.16, 0.78);
+
+/// **HOW FAR ACROSS ITS OWN FRONT THE STROKE CARRIES, in degrees at the shoulder** — the lateral half of
+/// `swing`, and the half that was missing. The shoulder sits 0.34 m off the axis and the claw rides about
+/// 1.2 m out in front of it, so this is solved against the crossing rather than picked: the tip has to pass
+/// THROUGH the body's own forward line inside the strike window, or a man standing where the creature is
+/// looking is never crossed by anything. MEASURED by the reach test below, never argued.
+const SWING_YAW: f32 = 46.0;
 
 const State = enum { idle, walk, claw, rake, recover, dive, under, surge, plough, burst, heave, stunlight, stunheavy, dead };
 
@@ -1085,9 +1099,9 @@ pub const Delver = struct {
     /// The ridge of earth it pushes ahead of itself — laid at the SURFACE, since that is the only place any
     /// of this is visible from.
     fn emitWake(self: *Delver, dt: f32) void {
-        self.fxAccum += 22.0 * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
+        const emitRate = 22.0;
+        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.3, 1.0) * self.moundR * self.scale;
             const back = mathx.scaleV(self.fdir(), -self.fxRng.range(0.1, 0.7));
@@ -1106,9 +1120,9 @@ pub const Delver = struct {
     fn emitSpray(self: *Delver, dt: f32, rate: f32) void {
         if (rate <= 0) return;
         const kick = 1.0 + (SURGE_SPRAY_LIFT - 1.0) * self.surgeK;
-        self.fxAccum += rate * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
+        const emitRate = rate;
+        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.2, 1.0) * mathx.maxF(0.5, self.moundR) * self.scale;
             self.emit(
@@ -1127,9 +1141,9 @@ pub const Delver = struct {
     /// Its claws raking the ground as it loads the dive — small, at its feet, and the one cue that says the
     /// rear is going somewhere.
     fn emitScrape(self: *Delver, dt: f32) void {
-        self.fxAccum += 14.0 * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
+        const emitRate = 14.0;
+        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        while (owed > 0) : (owed -= 1) {
             const f = self.fdir();
             const a = self.fxRng.angle();
             self.emit(
@@ -1144,9 +1158,9 @@ pub const Delver = struct {
         }
     }
     fn emitScuff(self: *Delver, dt: f32) void {
-        self.fxAccum += 5.0 * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
+        const emitRate = 5.0;
+        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             self.emit(
                 v3(self.pos.x + mathx.cosf(a) * 0.4, self.pos.y + 0.03, self.pos.z + mathx.sinf(a) * 0.4),
@@ -1198,7 +1212,15 @@ pub const Delver = struct {
             const shoulder = -74.0 * self.rear - 34.0 * own;
             const abd = 16.0 + 26.0 * self.rear + 10.0 * @abs(own);
             const hip = v3(REST[ai].x, REST[ai].y - 0.12 * self.crouch, REST[ai].z);
-            self.xf[ai] = mul(mul3(rz(sgn * abd), rx(shoulder), tr(hip.x, hip.y, hip.z)), root);
+            // **AND THE STROKE HAS TO GO ACROSS HIM, WHICH MEANS IT NEEDS A LATERAL CHANNEL** (owner: the
+            // moles cannot hit me with their regular attacks). `swing` was spent entirely on `rx` — a
+            // SAGITTAL rake — while `abd` used `@abs(own)`, so the limb was pushed FURTHER OUT at both ends
+            // of the arc. Measured, the claw ran from x −0.51 to −1.07 and back and never once crossed the
+            // body's own axis: the whole stroke happened down its flank while the man it was aimed at stood
+            // dead ahead. The reach test passed the whole time because it measured RADIAL distance from the
+            // body centre, which a swipe out to the side satisfies perfectly.
+            const cross = SWING_YAW * own * -sgn;
+            self.xf[ai] = mul(mul(mul3(rz(sgn * abd), rx(shoulder), ry(cross)), tr(hip.x, hip.y, hip.z)), root);
             // THE ARM GOES LONG AT THE STRIKE (the warriors' law): a folded elbow keeps the claws inside its
             // own silhouette however far the numbers say they reach.
             const elbow = 40.0 - 46.0 * own - 26.0 * self.rear;
@@ -1828,4 +1850,54 @@ test "IT IS VICIOUS ON ITS FEET TOO — it runs him down and its stroke comes ro
     std.debug.print("  delver surface: chases {d:.2} m/s (hero runs {d:.2}, sprints {d:.2}), claw cycle {d:.2} s\n", .{
         CHASE_SPEED, heromod.RUN_SPEED, heromod.SPRINT_SPEED, cycle,
     });
+}
+
+test "THE STROKE CROSSES A MAN STANDING IN FRONT — every range inside its own band lands" {
+    // **THE BUG THE REACH TEST COULD NOT SEE.** That one measures the tip's RADIAL distance from the body
+    // centre and its HEIGHT, and a swipe raked down the creature's own flank satisfies both perfectly. The
+    // question it never asked is the only one that matters: does the swept claw actually cross the man it is
+    // aimed at. Measured, it did not — at ANY range. The claw ran from x -0.51 to -1.07 and back, so the
+    // closest it ever came to a hero on the creature's own facing line was 0.50 m against a 0.34 m blade.
+    var dist: f32 = BODY_R + foe.HERO_R;
+    var worst: f32 = 0;
+    while (dist <= CLAW_BAND + 1e-3) : (dist += 0.05) {
+        var d = Delver.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+        const hero = v3(0, 0, dist);
+        d.clawCd = 0;
+        d.decide(dist);
+        try std.testing.expectEqual(State.claw, d.state); // …and the band really is the claw's
+        var landed = false;
+        var closest: f32 = 1e9;
+        var el: f32 = 0;
+        while (el < CLAW_WIND + CLAW_STRIKE + RAKE_WIND + RAKE_STRIKE) : (el += 1.0 / 60.0) {
+            if (d.update(1.0 / 60.0, hero, 400, .{}) != null) landed = true;
+            for (d.clawSeg()) |q| {
+                const lo = v3(hero.x, hero.y + foe.HERO_LOW, hero.z);
+                const hi = v3(hero.x, hero.y + foe.HERO_HIGH, hero.z);
+                closest = @min(closest, mathx.lenV(mathx.subV(q, mathx.closestOnSegV(q, lo, hi))));
+            }
+        }
+        worst = mathx.maxF(worst, closest);
+        try std.testing.expect(landed);
+    }
+    std.debug.print("\n  delver claw crosses him at every range out to {d:.2} m (worst pass {d:.2} against a {d:.2} m blade)\n", .{ CLAW_BAND, worst, CLAW_SWEEP_R });
+    try std.testing.expect(worst <= CLAW_SWEEP_R);
+
+    // …AND THE ARC REALLY DOES GO ACROSS ITS OWN FRONT, which is the picture the mechanic is riding on: the
+    // tip has to pass THROUGH the body's forward line inside the strike window, not merely near it.
+    var d = Delver.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    d.state = .claw;
+    var lo: f32 = 1e9;
+    var hi: f32 = -1e9;
+    var t: f32 = CLAW_WIND;
+    while (t <= CLAW_WIND + CLAW_STRIKE) : (t += 1.0 / 240.0) {
+        d.t = t;
+        d.updateClaw(1.0 / 240.0, v3(0, 0, 3));
+        d.pose();
+        const tip = d.clawSeg()[1];
+        lo = @min(lo, tip.x);
+        hi = @max(hi, tip.x);
+    }
+    std.debug.print("  ...and the tip sweeps x {d:.2} -> {d:.2}, through its own axis\n", .{ lo, hi });
+    try std.testing.expect(lo < 0 and hi > 0);
 }

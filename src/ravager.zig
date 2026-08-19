@@ -177,6 +177,11 @@ const EARR = wolf.EARR;
 /// onto `HEAD`. A bloom authored as eight new bones would have been eight bones for a mesh that turns as one.
 const PETALS_PER_SIDE = 3;
 
+/// WHERE ON THE BARREL THE LOCK-ON MARK SITS, in the `SPINE` bone's OWN frame (the ogre's and the knight's
+/// `LOCK_AT` idiom): up onto the body's centre line and forward onto its axis, so at rest it lands on the hurt
+/// sphere's own centre and through a strike it rides the back instead of the flower.
+const LOCK_AT = v3(0, 0.335 * W, 0.15 * W);
+
 // **THE NECK IS THE ONE THING IT DOES NOT TAKE FROM THE CANID** (owner: a long neck that is upright and can
 // stretch a bit — a giraffe flower). `wolf.restPose` carries a wolf's: short, thick, and reaching FORWARD, so
 // the skull sits at the withers and level with the back. That is a dog. A bloom on a stalk is the opposite
@@ -363,9 +368,13 @@ pub const Ravager = struct {
     pub fn centerWorld(self: *const Ravager) rl.Vector3 {
         return foe.bodyPoint(self.pos, CENTER_F * W, self.scale, 0);
     }
-    /// THE MARK RIDES THE BLOOM — the part of it you are watching anyway.
+    /// **THE MARK RIDES THE BODY, NOT THE BLOOM** (owner's call). On the head it rode a stalk that rears
+    /// 1.6 `W` over the withers, stretches another quarter and then DIVES 152 degrees — so the reticle
+    /// travelled a metre and a half every strike and the camera chased a flower round the field. The barrel is
+    /// the part of this animal that is where the animal is. Off `CHEST` and not `centerWorld`, so it still
+    /// rides the POSE (`foe.markOn`'s whole reason) rather than sitting on the pelvis's bare height.
     pub fn lockPoint(self: *const Ravager) rl.Vector3 {
-        return foe.markOn(self.xf[HEAD], v3(0, 0.06 * W, 0.04 * W));
+        return foe.markOn(self.xf[SPINE], LOCK_AT);
     }
     pub fn topWorld(self: *const Ravager) rl.Vector3 {
         return foe.bodyPoint(self.pos, TOP_F * W, self.scale, 0);
@@ -1111,11 +1120,17 @@ test "IT IS A FOE, NOT A SPIRIT — its own tether, its own souls, and it answer
     // cannot drift: the hurt sphere has to contain the mark.
     try std.testing.expect(r.hurtRadius() > r.bodyR());
     try std.testing.expect(r.topWorld().y > r.centerWorld().y);
-    // The MARK rides the bloom, which on a quadruped is out at the end of a neck rather than over the body's
-    // own centre — so it is allowed to sit outside the hurt sphere, but not by more than the body is long.
+    // **THE MARK IS ON THE BARREL AND IT STAYS THERE THROUGH THE STRIKE** (owner's call). On the bloom it rode
+    // a stalk that rears, stretches and dives, so the one thing pinned here is that the reticle sits INSIDE the
+    // hurt sphere — and goes on sitting there with the neck at full extension, which is where a head-mounted
+    // mark left it a metre and a half out.
     const markOut = mathx.lenV(mathx.subV(r.centerWorld(), r.lockPoint()));
     std.debug.print("\n  ravager mark stands {d:.2} m off the hurt centre (sphere r {d:.2}, body r {d:.2})\n", .{ markOut, r.hurtRadius(), r.bodyR() });
-    try std.testing.expect(markOut < r.hurtRadius() + r.bodyR() * 2.0);
+    try std.testing.expect(markOut < r.hurtRadius());
+    r.stageGather(1.0); // reared, stretched, bloom wide — the frame the old mark was furthest out on
+    const reared = mathx.lenV(mathx.subV(r.centerWorld(), r.lockPoint()));
+    try std.testing.expect(reared < r.hurtRadius());
+    std.debug.print("  …and {d:.2} m reared, where the bloom's own mark stood {d:.2} m out\n", .{ reared, mathx.lenV(mathx.subV(r.centerWorld(), foe.markOn(r.xf[HEAD], v3(0, 0.06 * W, 0.04 * W)))) });
     // …and a blow flinches it and a death ends it, through the shared reaction and nothing private.
     _ = r.vit.hit(.{ .dmg = 5, .poise = POISE_MAX + 1 });
     r.debugStagger(true);

@@ -12,7 +12,8 @@ pub const HitOutcome = enum { ignored, taken, blocked, guardBroken };
 
 
 /// THE FOUR NON-PHYSICAL DAMAGE TYPES, PoE2's. Physical is deliberately NOT one: it is what everything
-/// already deals, nothing resists it, and what mitigates it there is ARMOUR, which does not exist here yet.
+/// already deals, no RESISTANCE touches it, and what mitigates it is ARMOUR — its own curve (`armourTaken`)
+/// rather than a fifth row here, which is the whole reason it is not one.
 pub const Elem = enum(u8) { fire, cold, lightning, chaos };
 
 pub const NELEM = @typeInfo(Elem).@"enum".fields.len;
@@ -589,13 +590,11 @@ pub const SUMMON_MAX: usize = 1;
 /// WHAT THE BOLT COSTS, and the pool is the only thing rationing it — a cast bills NO stamina (owner's call),
 /// so the wand competes with the flask rather than with the roll. NAMED FOR ITS SPELL: a bare `CAST_FP` reads
 /// as "what a cast costs", and one constant per spell is what keeps `spellFp` the only thing that picks.
-pub const BOLT_FP: f32 = 12.0; // five casts of a 60-point pool
 /// THE BOLT, and it is ALL CHAOS — no physical at all, the brood mother's rule: one substance, one element.
 pub const BOLT_HIT = Hit{ .poise = 14, .stance = 6, .elem = elems(.{ .chaos = 24 }) };
 
 /// THE ROOTS — the wand's second spell, and the first thing in the game that takes a foe's FEET rather than
 /// its health. It costs MORE than the bolt and deals LESS: you cast it to buy the ground back, not to kill.
-pub const ROOT_FP: f32 = 18.0; // dearer than the bolt's 12 — three casts to a bonfire, not five
 pub const ROOT_HOLD: f32 = 3.5; // seconds the feet are held
 pub const ROOT_DPS: f32 = 4.0; // chaos a second while they hold (~14 over a full grip)
 /// How far from the mark the ground is SEARCHED for feet to take, which is the reach of a cast with nothing
@@ -636,7 +635,6 @@ pub const Root = struct {
 /// BODY WITHOUT BEING A SWING** (owner's call; it overturns the no-area-spells law — see AGENTS.md). A CONE
 /// poured out of him for `RIME_DUR`, not a blast at a mark, so its area is a thing he aims and holds and a
 /// body walks out of it the way a body walks out of a swing.
-pub const RIME_FP: f32 = 22.0; // dearer than the roots' 18: that one takes ONE pair of feet, this takes every pair in front of him
 pub const RIME_DUR: f32 = 0.85; // how long he pours, and a body may walk out of it while he does
 pub const RIME_REACH: f32 = 6.0; // …and how far it arrives. SHORTER than the roots are thrown: this is the close answer
 /// The cone's HALF-ANGLE, in DEGREES either side of his facing — `GUARD_ARC`'s and `knight.TOWER_ARC`'s unit,
@@ -656,8 +654,9 @@ pub const CHILL_TRAVEL: f32 = 0.55;
 
 comptime {
     // IT COSTS MORE THAN THE ROOTS AND DEALS LESS, which is the whole shape of it: reach across a field is
-    // what it sells, and it may not also be the better single-target spell.
-    std.debug.assert(RIME_FP > ROOT_FP);
+    // what it sells, and it may not also be the better single-target spell. The PRICE half of that pair now
+    // lives in the `SPELLS` ladder's own monotonicity assert; this is the half about the two DRIPS, which is
+    // the comparison that table cannot make for itself.
     std.debug.assert(RIME_DUR * RIME_DPS < ROOT_HOLD * ROOT_DPS);
     // THE SLOW MUST OUTLIVE THE BREATH BY A CLEAR MARGIN or the spell is only its damage, which is the one
     // thing it is deliberately bad at.
@@ -732,7 +731,6 @@ pub const STRIKE_ARC: f32 = 22.0;
 /// it sailing across six metres of field as a thrown stone would be the one spell whose picture argues with
 /// its element. What it sells is the INTERRUPT: the heaviest poise anything the hero owns carries, bought with
 /// damage that is deliberately middling.
-pub const LEVIN_FP: f32 = 16.0; // over the bolt's 12, under the roots' 18 — the middle rung of the rod's five
 /// POISE PAST EVERY CREATURE'S OWN `POISE_MAX` BAR THE BONE KNIGHT'S 78 (the ogre's 30 is the highest of the
 /// rest), so one cast flinches anything that is not a boss — where his own heavy swing at 22 flinches the
 /// toads and leaves the giants standing. The STANCE is deliberately UNDER that swing's 14: a spell thrown from
@@ -746,7 +744,6 @@ pub const LEVIN_REACH: f32 = 16.0;
 /// share of it back, which is the leechfly's beak read off the other side of the fight. All chaos and NO POISE
 /// AND NO STANCE (`Root.tick`'s law): it is a drain, not a blow, and a spell that healed him AND staggered
 /// what it drank from would be strictly better than the two rungs under it.
-pub const SIPHON_FP: f32 = 20.0;
 pub const SIPHON_HIT = Hit{ .elem = elems(.{ .chaos = 13 }) };
 /// WHAT COMES BACK, as a share of the HP THE BODY ACTUALLY LOST — never of what was thrown at it. Resisted
 /// damage is therefore resisted healing, so a skeleton (which shrugs chaos off) is a bad meal and the wand's
@@ -760,7 +757,6 @@ pub const SIPHON_REACH: f32 = 12.0;
 /// he had to have fletched or a candle he had to have found, while the newest creature in the wood throws it
 /// at him. And it is the only one that does not stop at the first body — a LANCE goes THROUGH, so what it is
 /// for is a line of them: the muster shoulder to shoulder, a warband, a ring of mages.
-pub const LANCE_FP: f32 = 21.0;
 /// PER BODY, and deliberately small — it is priced where the rime is, because it is the rime's kind of spell:
 /// what the focus buys is the SECOND body and the third, never the number on the first. Poise under the
 /// levin's 34 (that spell's whole sale is the interrupt) and over a hero light's, so a line of small things
@@ -780,7 +776,6 @@ pub const LANCE_R: f32 = 0.55;
 /// **AND IT IS CAST IN MELEE RANGE ON PURPOSE** (`SUNDER_REACH`, inside a sword's own). `LEVIN_HIT`'s note is
 /// the law it keeps: a spell thrown from across the room may not be the better guard-breaker than a stroke
 /// committed inside reach. So it carries a parry's worth of stance and you have to be standing there to spend it.
-pub const SUNDER_FP: f32 = 24.0;
 /// PHYSICAL, and NO ELEMENT — a sundering blow is a mass arriving, and every element in the table already has
 /// a spell. The damage is the lowest of the seven, which is the ladder's own rule paying for the stance.
 pub const SUNDER_HIT = Hit{ .dmg = 8, .poise = 12, .stance = 40 };
@@ -794,79 +789,86 @@ pub const SUNDER_REACH: f32 = 4.0;
 /// to change and a RENAME is what breaks an old file. `wf.FoeKind` is the enum that is pinned by ordinal.
 pub const Spell = enum { bolt, roots, rime, levin, siphon, lance, sunder };
 
+/// ONE SPELL'S WHOLE PRICE LIST. `blow` is what it lands AT ONCE and is null for the two that bill over time
+/// (`Root.tick`, `Chill.tick`) — asked "what is one hit of this worth" those two have no answer, and a zeroed
+/// `Hit` would be an answer that lies. `reach` is null for the three that carry their own already: the bolt
+/// FLIES (`hero.BOLT_REACH`), the roots are thrown at a mark, and the cone has a mouth and a length of its own.
+/// `drip` is what the SHEET prints for those two, since there is no single blow to read it off.
+pub const SpellRow = struct {
+    spell: Spell,
+    name: [:0]const u8,
+    fp: f32,
+    blow: ?Hit = null,
+    reach: ?f32 = null,
+    drip: f32 = 0,
+};
+
+/// **THE ROD'S SEVEN, AS ONE TABLE YOU CAN READ DOWN.** It was five switches over `Spell` and seven loose
+/// `*_FP` constants scattered through the file, so retuning one spell meant five edits in four places and a
+/// missed one still compiled. The FP column is the LADDER — read it top to bottom and the price list is the
+/// whole design, which is what the monotonicity assert below is checking.
+///
+/// **ROW ORDER IS `Spell`'S OWN**, pinned at comptime: an eighth spell is a compile error here until it has
+/// said what it costs and what it does. The MECHANICS each one is made of (`ROOT_HOLD`, `RIME_ARC`, `LANCE_R`,
+/// `SIPHON_SHARE`…) stay up beside their own spell — this is the price, not the physics.
+pub const SPELLS = [_]SpellRow{
+    // five casts of a 60-point pool, and the pool is the only thing rationing it — a cast bills NO stamina
+    .{ .spell = .bolt,   .name = "Chaos Bolt",   .fp = 12, .blow = BOLT_HIT },
+    // dearer than the bolt's 12 — three casts to a bonfire, not five
+    .{ .spell = .roots,  .name = "Roots",        .fp = 18, .drip = ROOT_HOLD * ROOT_DPS },
+    // dearer than the roots' 18: that one takes ONE pair of feet, this takes every pair in front of him. The
+    // drip is what ONE body standing in the whole pour takes, which is the only honest number for a cone.
+    .{ .spell = .rime,   .name = "Rime Breath",  .fp = 22, .drip = RIME_DUR * RIME_DPS },
+    // over the bolt's 12, under the roots' 18 — the middle rung of the rod's seven
+    .{ .spell = .levin,  .name = "Levin Strike", .fp = 16, .blow = LEVIN_HIT,  .reach = LEVIN_REACH },
+    // what it TAKES. What it gives back is `SIPHON_SHARE` of what a body actually lost, which is that body's
+    // business and not a number the sheet can print.
+    .{ .spell = .siphon, .name = "Siphon",       .fp = 20, .blow = SIPHON_HIT, .reach = SIPHON_REACH },
+    // PER BODY — what the lance is worth is this times however many stood on the line, the rime's own limit
+    .{ .spell = .lance,  .name = "Ember Lance",  .fp = 21, .blow = LANCE_HIT,  .reach = LANCE_REACH },
+    // the dearest and the weakest: what 24 buys is a parry's worth of STANCE, cast inside a sword's own reach
+    .{ .spell = .sunder, .name = "Sunder",       .fp = 24, .blow = SUNDER_HIT, .reach = SUNDER_REACH },
+};
+
+comptime {
+    if (SPELLS.len != @typeInfo(Spell).@"enum".fields.len) @compileError("combat: SPELLS is not one row per Spell");
+    for (SPELLS, 0..) |row, i| {
+        if (@intFromEnum(row.spell) != i) @compileError("combat: SPELLS row " ++ row.name ++ " is out of `Spell` order");
+        // A spell bills over time or it lands a blow. Neither is both, and neither is neither.
+        if ((row.blow == null) != (row.drip > 0)) @compileError("combat: " ++ row.name ++ " has no worth, or two");
+    }
+}
+
+pub fn rowFor(s: Spell) SpellRow {
+    return SPELLS[@intFromEnum(s)];
+}
+
 pub fn spellName(s: Spell) [:0]const u8 {
-    return switch (s) {
-        .bolt => "Chaos Bolt",
-        .roots => "Roots",
-        .rime => "Rime Breath",
-        .levin => "Levin Strike",
-        .siphon => "Siphon",
-        .lance => "Ember Lance",
-        .sunder => "Sunder",
-    };
+    return rowFor(s).name;
 }
 
 /// WHAT EACH ONE BILLS. One place, so the HUD's "could he cast?" and the cast itself cannot disagree.
 pub fn spellFp(s: Spell) f32 {
-    return switch (s) {
-        .bolt => BOLT_FP,
-        .roots => ROOT_FP,
-        .rime => RIME_FP,
-        .levin => LEVIN_FP,
-        .siphon => SIPHON_FP,
-        .lance => LANCE_FP,
-        .sunder => SUNDER_FP,
-    };
+    return rowFor(s).fp;
 }
 
-/// THE BLOW ONE LANDS AT ONCE, or null for the two that bill over time (`Root.tick`, `Chill.tick`) — asked "what
-/// is one hit of this worth", those two have no answer, and a zeroed `Hit` would be an answer that lies. The
-/// three that DO strike a body all read their numbers from here, so nothing outside this file picks them.
 pub fn spellBlow(s: Spell) ?Hit {
-    return switch (s) {
-        .bolt => BOLT_HIT,
-        .levin => LEVIN_HIT,
-        .siphon => SIPHON_HIT,
-        .lance => LANCE_HIT,
-        .sunder => SUNDER_HIT,
-        .roots, .rime => null,
-    };
+    return rowFor(s).blow;
 }
 
-/// …AND HOW FAR IT REACHES, for the two that arrive without crossing the ground. Null for the three that carry
-/// their own answer already: the bolt flies (`hero.BOLT_REACH`), the roots are thrown at a mark, the cone has a
-/// mouth and a length of its own.
 pub fn spellReach(s: Spell) ?f32 {
-    return switch (s) {
-        .levin => LEVIN_REACH,
-        .siphon => SIPHON_REACH,
-        // …AND THE TWO NEWEST, for their own reasons: the lance is a LINE with a length, and Sunder is cast
-        // inside a sword's own reach — so both are a distance rather than a flight.
-        .lance => LANCE_REACH,
-        .sunder => SUNDER_REACH,
-        .bolt, .roots, .rime => null,
-    };
+    return rowFor(s).reach;
 }
 
-/// …and WHAT EACH ONE IS WORTH, before anybody's resistances — the character sheet's own row. The grip bills
-/// its chaos a frame at a time, so its whole span is what compares with a blow that lands at once.
+/// …and WHAT EACH ONE IS WORTH, before anybody's resistances — the character sheet's own row. The two that
+/// bill a frame at a time carry their whole span, so it compares with a blow that lands at once.
 pub fn spellDamage(s: Spell) f32 {
-    return switch (s) {
-        .bolt => BOLT_HIT.raw(),
-        .roots => ROOT_HOLD * ROOT_DPS,
-        // …to ONE body standing in the whole pour, which is the only comparison the sheet can honestly make:
-        // what the breath is actually worth is that number times however many were in front of him.
-        .rime => RIME_DUR * RIME_DPS,
-        .levin => LEVIN_HIT.raw(),
-        // What it TAKES. What it gives back is `SIPHON_SHARE` of what a particular body actually lost, which is
-        // that body's business and not a number the sheet can print.
-        .siphon => SIPHON_HIT.raw(),
-        // PER BODY for the lance — what it is actually worth is this times however many stood on the line,
-        // which is the rime's own honest limit and the same one the sheet has.
-        .lance => LANCE_HIT.raw(),
-        .sunder => SUNDER_HIT.raw(),
-    };
+    const row = rowFor(s);
+    return if (row.blow) |b| b.raw() else row.drip;
 }
+
+/// The bolt's price, named — the one row anything outside this file reaches for by name.
+pub const BOLT_FP: f32 = spellFp(.bolt);
 
 comptime {
     // **THE LADDER IS MONOTONE, AND THAT IS THE WHOLE PRICE LIST**: 12→24, 16→16, 18→14, 20→13, 22→10.2. Every
@@ -1222,10 +1224,38 @@ pub const Status = struct {
     }
 };
 
-/// WHAT THE POISON TAKES, as a blow — no element (`Elem` has no poison and ER has no poison damage type
-/// either: it ticks HP and nothing absorbs it) and NO POISE, because a status is not a stagger.
+/// **WHAT THE POISON TAKES, AND IT IS CHAOS** (owner's call, PoE2's) — not physical, and not a fifth element
+/// of its own. Poison is the shape chaos damage arrives in over there, and the four here are PoE2's four; it
+/// was billed as raw unresisted HP on ER's reading (that game has no poison damage type), which left the one
+/// status in the game as the one thing in the game nothing could answer.
+///
+/// **SO THE WARD AND THE NODE THAT NAME CHAOS NOW MEAN IT** — `item.sporeling_cap`'s 40 and the tree's Veil.
+/// A sporeling's own cap warding against what sporelings do is what that item was always drawn as.
+/// NO POISE, because a status is not a stagger.
 pub fn poisonPulse(amt: f32) Hit {
-    return .{ .dmg = amt };
+    return .{ .elem = elems(.{ .chaos = amt }) };
+}
+
+test "POISON IS CHAOS — the ward and the node that name it actually answer it" {
+    // THE BUG: `poisonPulse` handed back `.dmg`, which nothing in the game mitigates, so the sporeling cap's
+    // `.ward = { .chaos = 40 }` and the tree's Veil were both printed on the sheet and both worth nothing
+    // against the one status there is.
+    const pulse = poisonPulse(10);
+    try std.testing.expectEqual(@as(f32, 0), pulse.dmg); // no physical share at all
+    try std.testing.expectApproxEqAbs(@as(f32, 10), pulse.elem.at(.chaos), 1e-5);
+    try std.testing.expectEqual(@as(f32, 0), pulse.poise); // a status is not a stagger
+    try std.testing.expectEqual(@as(f32, 0), pulse.stance);
+
+    // A BARE BODY PAYS THE WHOLE TICK, which is what every number the proc is tuned against assumes.
+    var bare = Vitals.init(200, 99, 999);
+    try std.testing.expectApproxEqAbs(@as(f32, 10), bare.damageFrom(pulse), 1e-4);
+    // …and the cap takes its 40 off it.
+    var warded = Vitals.init(200, 99, 999).withRes(resists(.{ .chaos = 40 }));
+    try std.testing.expectApproxEqAbs(@as(f32, 6), warded.damageFrom(pulse), 1e-4);
+    // …and it can never be shrugged off outright, `RES_CAP`'s whole reason.
+    var stacked = Vitals.init(200, 99, 999).withRes(resists(.{ .chaos = 400 }));
+    try std.testing.expectApproxEqAbs(10.0 * (1.0 - RES_CAP / 100.0), stacked.damageFrom(pulse), 1e-4);
+    try std.testing.expect(stacked.damageFrom(pulse) > 0);
 }
 
 /// **A TIMED EFFECT, AND EVERY ONE OF THEM IS THIS SHAPE** — a magnitude and a clock: the sporeling cap's

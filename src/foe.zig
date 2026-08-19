@@ -586,15 +586,21 @@ pub fn emitTicks(acc: *f32, dt: f32, rate: f32, cap: usize) usize {
     acc.* += dt * rate;
     var n: usize = 0;
     while (acc.* >= 1.0 and n < cap) : (n += 1) acc.* -= 1.0;
-    if (n == cap) acc.* = 0;
+    // **A HITCH IS A WHOLE MOTE STILL OWED AFTER THE CAP — NOT MERELY REACHING IT.** `n == cap` read a full
+    // frame as a hitch, and `emitCap` FLOORS AT ONE, so at any rate under ~24/s the cap *is* one and every
+    // ordinary mote tripped it: the leftover fraction was thrown away each time and the fenlurker's 16/s
+    // wake ran at 15. What is dropped now is only what could not be paid, never the fraction that has simply
+    // not become a mote yet — which is the one thing an accumulator exists to carry.
+    if (acc.* >= 1.0) acc.* = 0;
     return n;
 }
 
 /// …AND THE CEILING ITSELF, off the rate — the ONE place "a couple of frames' arrears at 60 fps" is written
 /// down. Below that a frame is a frame; above it, it is a hitch and the arrears are dropped. Every live
 /// emitter owes far less than this per real frame, so it only ever bites on the stall it exists for.
-/// Floored at ONE: `emitTicks` reads `n == cap` as "the frame was a hitch", so a cap of 0 would zero the
-/// accumulator every frame and the emitter would never fire at all.
+/// Floored at ONE, or an emitter could never pay a single mote. **AND A CAP OF ONE IS THE NORMAL CASE, NOT
+/// AN EDGE ONE** — every rate under ~24/s lands there, which is why `emitTicks` may not read reaching the cap
+/// as a hitch (see the note at its own drop).
 const EMIT_CAP_FRAMES: f32 = 2.5;
 pub fn emitCap(rate: f32) usize {
     return @max(1, @as(usize, @intFromFloat(@ceil(mathx.maxF(rate, 0) / 60.0 * EMIT_CAP_FRAMES))));
@@ -606,7 +612,7 @@ test "THE CAP CLEARS A REAL FRAME AND NEVER LANDS ON ZERO" {
     for ([_]f32{ 5, 26, 54, 82, 240, 560 }) |rate| {
         try std.testing.expect(@as(f32, @floatFromInt(emitCap(rate))) > rate / 60.0);
     }
-    // …and a rate of nothing still yields a usable cap: at 0 the `n == cap` test reads every frame as a hitch.
+    // …and a rate of nothing still yields a usable cap: at 0 the accumulator would be clamped to nothing.
     try std.testing.expectEqual(@as(usize, 1), emitCap(0));
     var acc: f32 = 0;
     try std.testing.expectEqual(@as(usize, 1), emitTicks(&acc, 1.0, 1.0, emitCap(1.0)));
@@ -623,6 +629,27 @@ test "the accumulator carries a fraction across frames and DROPS a hitch's arrea
     try std.testing.expectEqual(@as(usize, 24), emitTicks(&acc, 2.0, 560.0, 24));
     try std.testing.expectEqual(@as(f32, 0), acc);
     try std.testing.expectEqual(@as(usize, 0), emitTicks(&acc, 0, 560.0, 24));
+}
+
+test "A SLOW EMITTER RUNS AT ITS OWN RATE — a cap of one is not a hitch every time" {
+    // THE BUG: `emitCap` floors at 1, so every rate under ~24/s got a cap of ONE — and `n == cap` then read
+    // each ordinary mote as a hitch and zeroed the remainder. What is lost is the fraction left over each
+    // time, which at the fenlurker's 16/s wake is a mote in every sixteen.
+    for ([_]f32{ 5.0, 9.0, 16.0, 22.0 }) |rate| {
+        try std.testing.expectEqual(@as(usize, 1), emitCap(rate)); // …the case that used to bite
+        var acc: f32 = 0;
+        var n: usize = 0;
+        var t: f32 = 0;
+        const dt = 1.0 / 60.0;
+        while (t < 10.0) : (t += dt) n += emitTicks(&acc, dt, rate, emitCap(rate));
+        const got = @as(f32, @floatFromInt(n)) / 10.0;
+        std.debug.print("  emitter at {d:.0}/s actually emits {d:.1}/s\n", .{ rate, got });
+        try std.testing.expectApproxEqAbs(rate, got, 0.2);
+    }
+    // …AND A HITCH IS STILL DROPPED, which is the whole reason the ceiling exists.
+    var slow: f32 = 0;
+    try std.testing.expectEqual(@as(usize, 1), emitTicks(&slow, 3.0, 16.0, emitCap(16.0)));
+    try std.testing.expectEqual(@as(f32, 0), slow); // 48 owed, one taken, no debt carried
 }
 
 pub fn emitParticle(pool: []Particle, head: *usize, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
@@ -1010,6 +1037,12 @@ pub const Blade = struct {
     /// A PROJECTILE, NOT A SWING: presented as the segment it crossed this frame so it goes through the
     /// same `strike` and gets each creature's own reactions.
     pierce: bool = false,
+    /// **THE CULL** (`passivetree.Grant.cull`) — a body already under this share of its own HP when the blow
+    /// lands dies outright rather than being taken to a sliver. Carried on the BLADE and not read off the
+    /// hero, because a blade is the only thing every strike site already has: the sword, the shaft, the
+    /// spirit's jaws and a spell all arrive here, and a per-site lookup is a list to forget one from. Zero
+    /// is off, which is what every blade that is not his own leaves it at.
+    cullAt: f32 = 0,
     /// **IT DOES NOT STOP AT THE FIRST BODY.** Every other `pierce` in the game is SPENT on whoever it reaches
     /// first — a shaft, a bolt, a spirit's jaws — and stopping there is what those are, so the default keeps
     /// `pierceGroup`'s and `game.pierceFoes`' early exits exactly as they were. Set, the same blade is offered
@@ -1268,6 +1301,16 @@ pub fn strike(vit: *combat.Vitals, hitLatch: *bool, center: rl.Vector3, hurtR: f
         mathx.subV(mathx.lerpV(blade.a, blade.b, 0.7), mathx.lerpV(blade.a0, blade.b0, 0.7));
     sweep.y = 0;
     const dir = if (mathx.lenXZ(sweep) > 0.03) mathx.normV(sweep) else mathx.dirXZ(contact, center);
+    // **THE CULL IS READ BEFORE THE BLOW, NEVER AFTER IT.** Asked of the HP the body walked into the swing
+    // with, so it is a threshold a player can see on the bar and aim for; asked afterwards it would just be
+    // "anything the blow nearly killed", which is a different mechanic wearing the same name. It kills
+    // through the ordinary path (`Vitals.hit` with the rest of its health) so the death, the reaction, the
+    // souls and the drop are the blow's own — nothing here reaches past `vit`.
+    if (blade.cullAt > 0 and !vit.dead and vit.hpFrac() <= blade.cullAt) {
+        var out = blade.hit;
+        out.dmg += vit.hp; // …whatever is left, on top of what the swing was already worth
+        return .{ .contact = contact, .dir = dir, .reaction = vit.hit(out) };
+    }
     return .{ .contact = contact, .dir = dir, .reaction = vit.hit(blade.hit) };
 }
 
@@ -1590,4 +1633,69 @@ test "A SWING STARTS SLOW ENOUGH TO BE SEEN, then whips" {
     }
     // …and it is BEHIND a symmetric smoothstep the whole way, which is what makes the start the slow part.
     try std.testing.expect(swingCurve(0.5) < 0.5);
+}
+
+// ── WHERE THE LENS IS, FOR THE POOLS THAT CAN ASK ───────────────────────────────────────────────────────
+//
+// **A MOTE IS A CPU-TRANSFORMED SPHERE, AND THAT IS THE WHOLE REASON THIS EXISTS.** `drawParticles` puts every
+// live mote through `rl.drawSphereEx`, which generates its vertices on the CPU with trig per vertex — the
+// necromancer's sigil writes the measurement down beside itself: 157 of them at 4x6 is ~7.5k transformed
+// triangles a frame. A boss in phase two now stands in a LANE of chaos (`knight.GAS_CAP` went from three
+// clouds to twelve for the charge trail), and twelve pools of `GAS_PARTS` is an order of magnitude past that.
+// Most of that lane is behind you or across the arena while you fight the thing that laid it.
+//
+// **IT IS NOT THE FRUSTUM AND MUST NEVER BECOME ONE.** `env.View` is the frustum, there is exactly one of them,
+// and a second culler is the bug AGENTS.md names outright (a culler bug looks like an empty world). This is the
+// coarse question a pool can answer about ITSELF: a reach, and a HEMISPHERE behind the lens. Nothing inside any
+// field of view this game uses can fail either test, which is what makes it safe to be approximate.
+
+var lensAt: rl.Vector3 = mathx.zero3;
+var lensFwd: rl.Vector3 = v3(0, 0, 1);
+
+/// Set ONCE a frame, before anything draws its motes (`game.drawScene`).
+pub fn setLens(at: rl.Vector3, fwd: rl.Vector3) void {
+    lensAt = at;
+    lensFwd = fwd;
+}
+
+/// How far out a pool of motes is still worth the vertices. Past this a mote of any size in the game is under a
+/// pixel and the haze has most of it (`gfx.HAZE_DENSITY` at 60 m is over half, and more in a storm).
+pub const MOTE_REACH: f32 = 60.0;
+/// …and how far off the view axis a pool has to be before it is dropped, as a cosine. -0.45 is 117 degrees off
+/// the lens: past the corner of any frustum this game can produce, with room to spare.
+const MOTE_BEHIND: f32 = -0.45;
+
+/// **IS THIS WHOLE CLOUD OF MOTES WORTH DRAWING** — `at` its centre, `r` how far its motes reach from it.
+pub fn motesVisible(at: rl.Vector3, r: f32) bool {
+    const d = mathx.subV(at, lensAt);
+    const dist2 = d.x * d.x + d.y * d.y + d.z * d.z;
+    const reach = MOTE_REACH + r;
+    if (dist2 > reach * reach) return false;
+    // THE LENS IS IN IT, or close enough that its near edge is behind the camera and its far edge is not: the
+    // angle test is meaningless there, so it draws. This is the branch that keeps the gate honest.
+    if (dist2 <= r * r * 2.25) return true;
+    const dist = @sqrt(@max(dist2, 1e-6));
+    return (d.x * lensFwd.x + d.y * lensFwd.y + d.z * lensFwd.z) / dist > MOTE_BEHIND;
+}
+
+test "THE MOTE GATE NEVER DROPS SOMETHING YOU COULD SEE" {
+    setLens(mathx.zero3, v3(0, 0, 1));
+    // Dead ahead, at every range inside the reach.
+    var d: f32 = 1.0;
+    while (d < MOTE_REACH) : (d += 1.0) try std.testing.expect(motesVisible(v3(0, 0, d), 1.5));
+    // …and off to the side as far as any frustum corner reaches — 60 degrees off axis is well past the widest
+    // half-angle this game renders at, and it still draws.
+    var deg: f32 = 0;
+    while (deg <= 90.0) : (deg += 5.0) {
+        const a = mathx.radians(deg);
+        try std.testing.expect(motesVisible(v3(mathx.sinf(a) * 20.0, 0, mathx.cosf(a) * 20.0), 1.5));
+    }
+    // DIRECTLY BEHIND is the case it exists for…
+    try std.testing.expect(!motesVisible(v3(0, 0, -20.0), 1.5));
+    // …and so is the far side of the world.
+    try std.testing.expect(!motesVisible(v3(0, 0, MOTE_REACH + 10.0), 1.5));
+    // **AND A POOL THE LENS IS STANDING INSIDE ALWAYS DRAWS**, whichever way it happens to be pointed: a cloud
+    // you are in fills the frame, and dropping that one is the one failure nobody could miss.
+    try std.testing.expect(motesVisible(v3(0, 0, -1.0), 6.0));
+    try std.testing.expect(motesVisible(mathx.zero3, 6.0));
 }

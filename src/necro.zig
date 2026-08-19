@@ -1169,10 +1169,10 @@ pub const Necro = struct {
     /// The gather's drip: motes falling INTO the hand rather than out of it, which is what a thing being
     /// taken up looks like (the souls drop's construction). Rate rises through the tell.
     fn gather(self: *Necro, dt: f32, u: f32) void {
-        self.fxAccum += (10.0 + 26.0 * u) * dt;
+        const emitRate = (10.0 + 26.0 * u);
         const at = self.castPoint();
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
+        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.35, 1.0) * 0.55 * self.scale;
             const p = v3(at.x + mathx.cosf(a) * rr, at.y + self.fxRng.range(-0.2, 0.5) * self.scale, at.z + mathx.sinf(a) * rr);

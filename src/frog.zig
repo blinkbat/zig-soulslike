@@ -809,9 +809,9 @@ pub const Frog = struct {
         }
     }
     fn emitCoil(self: *Frog, dt: f32, k: f32) void {
-        self.fxAccum += (12.0 + 40.0 * k) * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
+        const emitRate = (12.0 + 40.0 * k);
+        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.18, 0.5) * self.scale;
             const bp = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + 0.04, self.pos.z + mathx.sinf(a) * rr);
@@ -824,9 +824,9 @@ pub const Frog = struct {
     }
     // Chomp GAPE trickle: charge embers gather at the yawning maw + heavy drool strings drip.
     fn emitGape(self: *Frog, dt: f32, k: f32) void {
-        self.fxAccum += (10.0 + 30.0 * k) * dt;
-        while (self.fxAccum >= 1.0) {
-            self.fxAccum -= 1.0;
+        const emitRate = (10.0 + 30.0 * k);
+        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        while (owed > 0) : (owed -= 1) {
             const m = self.mouthWorld();
             self.emit(v3(m.x + self.fxRng.signed() * 0.22, m.y + self.fxRng.range(-0.05, 0.22), m.z + self.fxRng.signed() * 0.22), v3(self.fxRng.signed() * 0.2, self.fxRng.range(0.3, 0.8), self.fxRng.signed() * 0.2), self.fxRng.range(0.3, 0.55), self.fxRng.range(0.03, 0.06) * self.scale, 0.004, EMBER, -0.5);
             if (self.fxRng.float() < 0.5) { // a drool droplet, slung down + a touch forward

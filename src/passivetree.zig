@@ -30,34 +30,98 @@ pub const Arm = enum {
             .wizard => rgba(120, 154, 214, 255),
         };
     }
+
+    /// **THE ONE CLASS NODE THE WHOLE ARM RADIATES OUT OF** (owner: you start each branch from one classlike
+    /// node — strength, dexterity, int — and radiate out from there). It is the arm said in one attribute,
+    /// and it is what both of that arm's branches hang off, so committing to an arm is ONE purchase and
+    /// choosing between its two ideas is the next one.
+    pub fn stat(a: Arm) stats.Attr {
+        return switch (a) {
+            .warrior => .strength,
+            .rogue => .dexterity,
+            .wizard => .intelligence,
+        };
+    }
 };
 
 pub const NARM = @typeInfo(Arm).@"enum".fields.len;
-pub const RINGS: u8 = 4;
 
-/// How many nodes each ring of an arm fans into. The last ring is ONE — the arm's keystone, which is what
-/// makes the tip of a branch a destination rather than another pair of choices.
-const RING_SLOTS = [RINGS]u8{ 2, 2, 2, 1 };
+/// **TWO BRANCHES PER ARM, AND THE BRANCH IS THE THING YOU ACTUALLY CLIMB** (owner: 2 "branches" per
+/// "class" now, with bespoke ideas and stat boosts alike). An arm used to be one fan of seven whose two
+/// strands met at a single tip, so "warrior" was one destination wearing two routes. Each arm now opens on
+/// its own class node and RADIATES from it into two SEPARATE climbs, each ending in its OWN keystone —
+/// which is what lets one arm hold two ideas that do not belong together.
+///
+/// **IN ARM ORDER, TWO AT A TIME** — a comptime walk below pins that, so `Branch.arm` is arithmetic and
+/// never a table somebody has to keep in step.
+pub const Branch = enum {
+    /// WARRIOR — what keeps him standing: armour, the slow refill, and blood taken back off the blade.
+    warrior_life,
+    /// …and what spends him: the bargain, the cull, and what a body is worth the moment it drops.
+    warrior_berserk,
+    /// ROGUE — the roll, the bar behind it, and ground covered.
+    rogue_evade,
+    /// …and everything that leaves his hand rather than staying in it.
+    rogue_ranged,
+    /// WIZARD — the pool itself: how deep, how fast it comes back, and what it wards.
+    wizard_well,
+    /// …and what he does with it: how fast, how hard, and what the bolt leaves standing.
+    wizard_cast,
 
-pub const PER_ARM: usize = blk: {
+    pub fn arm(b: Branch) Arm {
+        return @enumFromInt(@intFromEnum(b) / 2);
+    }
+    /// Which of its arm's two it is — 0 takes the anticlockwise lane, 1 the clockwise (`angleOf`).
+    pub fn lane(b: Branch) usize {
+        return @intFromEnum(b) % 2;
+    }
+};
+
+pub const NBRANCH = @typeInfo(Branch).@"enum".fields.len;
+
+/// How many nodes each ring of a BRANCH fans into, counting outward from the arm's class node. It opens on
+/// ONE — the branch has a mouth, and it is what the root radiates INTO — widens to a real choice through the
+/// middle, and closes on the keystone both strands climb to. A tip only one strand could reach would make
+/// the other a dead end nobody would ever walk.
+const BRANCH_RINGS = [_]u8{ 1, 2, 2, 1 };
+
+pub const PER_BRANCH: usize = blk: {
     var n: usize = 0;
-    for (RING_SLOTS) |s| n += s;
+    for (BRANCH_RINGS) |s| n += s;
     break :blk n;
 };
+/// The class node, then both of its branches.
+pub const PER_ARM: usize = 1 + PER_BRANCH * 2;
 pub const N: usize = NARM * PER_ARM;
+/// Rings out from the hub, the class node being the first — what the wheel is framed on.
+pub const RINGS: u8 = @intCast(1 + BRANCH_RINGS.len);
 
-/// WHAT A NODE HANGS OFF — the node or nodes its own link runs back to, one ring in on its own arm. Ring 0
-/// hangs off the hub, which you are always standing on, so the three arms are open from the first souls you
-/// spend. THE CAPSTONE IS THE ONE NODE WITH TWO: both strands of an arm climb to it, and a tip only one of
-/// them could reach would make the other a dead end nobody would ever walk.
+pub fn armFirst(a: Arm) usize {
+    return @intFromEnum(a) * PER_ARM;
+}
+/// A branch's first node — past its arm's class node, and past the other branch if it is the second.
+pub fn branchFirst(b: Branch) usize {
+    return armFirst(b.arm()) + 1 + b.lane() * PER_BRANCH;
+}
+
+/// WHAT A NODE HANGS OFF — the node or nodes its own link runs back to, one ring in. THE ARM'S CLASS NODE
+/// hangs off the hub, which you are always standing on, so all three arms are open from the first souls you
+/// spend; a branch's first node hangs off that class node, which is what "radiate out from there" means in
+/// links. THE KEYSTONE IS THE ONE NODE WITH TWO: both strands of a branch climb to it.
 pub fn feeders(i: usize, out: *[2]usize) []const usize {
     const n = NODES[i];
-    if (n.ring == 0) return out[0..0]; // the hub, and the hub is always yours
-    const base = armFirst(n.arm);
+    if (n.ring == 0) return out[0..0]; // the class node, and the hub is always yours
+    const br = n.ring - 1; // its index into the BRANCH's own rings
+    const b = n.branch.?;
+    if (br == 0) { // the mouth of the branch: it radiates out of its arm's class node
+        out[0] = armFirst(b.arm());
+        return out[0..1];
+    }
+    const base = branchFirst(b);
     var at: usize = 0;
-    for (0..n.ring - 1) |r| at += RING_SLOTS[r];
-    const prev = RING_SLOTS[n.ring - 1];
-    if (RING_SLOTS[n.ring] == 1) {
+    for (0..br - 1) |r| at += BRANCH_RINGS[r];
+    const prev = BRANCH_RINGS[br - 1];
+    if (BRANCH_RINGS[br] == 1) {
         out[0] = base + at;
         if (prev > 1) {
             out[1] = base + at + 1;
@@ -69,8 +133,9 @@ pub fn feeders(i: usize, out: *[2]usize) []const usize {
     return out[0..1];
 }
 
-/// WHAT ONE NODE HANDS OVER. One grant per node: a node that did two things could never be named on the
-/// row that names it, and this whole page is read at a glance.
+/// WHAT ONE NODE HANDS OVER. One grant per node: a node that did two things could never be named on the row
+/// that names it, and this whole page is read at a glance. A BARGAIN is still ONE grant — `sacrifice` is a
+/// single decision with a price attached, not two grants stapled together.
 pub const Grant = union(enum) {
     attr: struct { a: stats.Attr, n: u8 },
     res: combat.Resists,
@@ -84,15 +149,56 @@ pub const Grant = union(enum) {
     rollStam: f32,
     spellCost: f32,
     spellDmg: f32,
+
+    // ── WARRIOR, THE LIFE BRANCH ────────────────────────────────────────────────────────────────────────
+    /// Added to the suit's own `A` (`combat.armourTaken`), so a node and a coat are one number and one curve.
+    armour: f32,
+    /// HP a second, always — the first thing in the game that gives health back without an item.
+    hpRegen: f32,
+    /// HP back on every blow of his that lands — the leech signet's own dial, added to it.
+    leech: f32,
+
+    // ── WARRIOR, THE BERSERKER BRANCH ───────────────────────────────────────────────────────────────────
+    /// **THE BARGAIN**, and it is ONE grant because it is one decision: a share of his max HP given up for a
+    /// share more damage on everything he owns.
+    sacrifice: struct { hpFrac: f32, dmg: f32 },
+    /// A body struck under this share of its own HP dies outright.
+    cull: f32,
+    /// …and what a body is WORTH the moment it drops: HP straight back.
+    onKill: f32,
+
+    // ── ROGUE ───────────────────────────────────────────────────────────────────────────────────────────
+    /// Multiplier on ground speed. Small numbers: this one is spent every frame of the game.
+    moveSpeed: f32,
+    /// Multiplier on the stamina refill.
+    stamRegen: f32,
+    /// Multipliers on what leaves the string and what leaves the hand.
+    bowDmg: f32,
+    thrownDmg: f32,
+
+    // ── WIZARD ──────────────────────────────────────────────────────────────────────────────────────────
+    /// FP a second, always — the blue bar's own answer to `hpRegen`.
+    fpRegen: f32,
+    /// Multiplier on the pool itself.
+    fpMax: f32,
+    /// Multiplier on how fast a cast comes out.
+    castSpeed: f32,
+    /// **THE ONE SPELL-SPECIFIC GRANT** (owner's own example): the chaos bolt leaves a cloud where it lands.
+    /// A FLAG rather than a number, because what it buys is a MECHANIC and not a dial — which is what a
+    /// keystone is for.
+    boltCloud,
 };
 
 pub const Node = struct {
     arm: Arm,
+    /// **NULL FOR THE ARM'S OWN CLASS NODE** — the one thing on an arm that belongs to both its branches.
+    branch: ?Branch = null,
+    /// 0 is the class node; 1 and up are the branch's own rings, counting outward.
     ring: u8,
-    slot: u8,
+    slot: u8 = 0,
     name: [:0]const u8,
     grant: Grant,
-    /// The tip of the arm. Drawn bigger, and the only node worth walking a whole branch for.
+    /// The tip of a branch. Drawn bigger, and the only node worth walking a whole branch for.
     key: bool = false,
 };
 
@@ -100,56 +206,131 @@ fn attr(a: stats.Attr, n: u8) Grant {
     return .{ .attr = .{ .a = a, .n = n } };
 }
 
-/// IN ARM, RING, SLOT ORDER — `armFirst` indexes straight into it and a comptime walk below pins the order,
-/// so a node inserted in the wrong place is a compile error rather than a wheel with a hole in it.
+/// **THE ARM'S OWN NODE**, written once rather than three times — it is the arm said in one attribute.
+fn classNode(a: Arm, name: [:0]const u8) Node {
+    return .{ .arm = a, .ring = 0, .name = name, .grant = attr(a.stat(), 3) };
+}
+
+/// IN ARM ORDER — the class node, then its first branch, then its second, each in ring/slot order. A
+/// comptime walk below pins every one of those, so a node in the wrong place is a compile error rather than
+/// a wheel with a hole in it.
 pub const NODES = [N]Node{
-    // WARRIOR — heavy arms, HP, what a guard turns aside, and the resistances under it.
-    .{ .arm = .warrior, .ring = 0, .slot = 0, .name = "Warrior's Blood", .grant = attr(.vitality, 2) },
-    .{ .arm = .warrior, .ring = 0, .slot = 1, .name = "Deep Lungs", .grant = attr(.endurance, 2) },
-    .{ .arm = .warrior, .ring = 1, .slot = 0, .name = "Heavy Hand", .grant = attr(.strength, 2) },
-    .{ .arm = .warrior, .ring = 1, .slot = 1, .name = "Stalwart", .grant = .{ .guard = 0.05 } },
-    .{ .arm = .warrior, .ring = 2, .slot = 0, .name = "Warrior's Blood", .grant = attr(.vitality, 2) },
-    .{ .arm = .warrior, .ring = 2, .slot = 1, .name = "Fireproof", .grant = .{ .res = combat.resists(.{ .fire = 15, .cold = 15 }) } },
-    .{ .arm = .warrior, .ring = 3, .slot = 0, .name = "Bulwark", .grant = .{ .guard = 0.08 }, .key = true },
+    // ══ WARRIOR ════════════════════════════════════════════════════════════════════════════════════════
+    classNode(.warrior, "Iron Thews"),
 
-    // ROGUE — the roll, the boards, a light edge, luck, and poison.
-    .{ .arm = .rogue, .ring = 0, .slot = 0, .name = "Deft", .grant = attr(.dexterity, 2) },
-    .{ .arm = .rogue, .ring = 0, .slot = 1, .name = "Wayfinder", .grant = attr(.luck, 2) },
-    .{ .arm = .rogue, .ring = 1, .slot = 0, .name = "Second Wind", .grant = attr(.endurance, 2) },
-    .{ .arm = .rogue, .ring = 1, .slot = 1, .name = "Fleet", .grant = .{ .iframe = 0.05 } },
-    .{ .arm = .rogue, .ring = 2, .slot = 0, .name = "Deft", .grant = attr(.dexterity, 2) },
-    .{ .arm = .rogue, .ring = 2, .slot = 1, .name = "Warded Blood", .grant = .{ .poison = 0.70 } },
-    .{ .arm = .rogue, .ring = 3, .slot = 0, .name = "Misty Step", .grant = .{ .rollStam = 0.65 }, .key = true },
+    // ── LIFE — the refill, the blood off the blade, and what a blow does not get through ────────────────
+    .{ .arm = .warrior, .branch = .warrior_life, .ring = 1, .name = "Warrior's Blood", .grant = attr(.vitality, 2) },
+    .{ .arm = .warrior, .branch = .warrior_life, .ring = 2, .slot = 0, .name = "Thick Hide", .grant = .{ .armour = 10.0 } },
+    .{ .arm = .warrior, .branch = .warrior_life, .ring = 2, .slot = 1, .name = "Slow Mending", .grant = .{ .hpRegen = 0.6 } },
+    .{ .arm = .warrior, .branch = .warrior_life, .ring = 3, .slot = 0, .name = "Stalwart", .grant = .{ .guard = 0.05 } },
+    .{ .arm = .warrior, .branch = .warrior_life, .ring = 3, .slot = 1, .name = "Bloodfeast", .grant = .{ .leech = 0.6 } },
+    // **THE KEYSTONE, AND THE WHOLE BRANCH IS WORTH THE RING — NOT TWICE IT** (owner: HP on hit nodes are super
+    // OP). It WAS 4.0 on top of Bloodfeast's 1.5, and the number that indicts that is the FLASK: the red bar is
+    // 70 at the start (`stats.HP_BASE`) and two crimson charges of `FLASK_HP_FRAC` are the entire 63 HP a man
+    // has between bonfires. At 5.5 a hit that was a flask charge every SIX blows, without limit and without a
+    // sip — which does not make the flask weak, it retires it. The branch now sums to the leech signet's own
+    // 2.0, and the RING is the bigger dial for one hit because it charges a permanent 6% of the bar to be it:
+    // points buy the trickle, health buys the size. A flask charge is ~16 blows on the branch alone.
+    .{ .arm = .warrior, .branch = .warrior_life, .ring = 4, .name = "Sanguine Pact", .grant = .{ .leech = 1.4 }, .key = true },
 
-    // WIZARD — FP, what a cast costs, what it deals, and the two elements the rod lives among.
-    .{ .arm = .wizard, .ring = 0, .slot = 0, .name = "Open Mind", .grant = attr(.mind, 2) },
-    .{ .arm = .wizard, .ring = 0, .slot = 1, .name = "Lore", .grant = attr(.intelligence, 2) },
-    .{ .arm = .wizard, .ring = 1, .slot = 0, .name = "Deep Well", .grant = attr(.mind, 2) },
-    .{ .arm = .wizard, .ring = 1, .slot = 1, .name = "Attuned", .grant = .{ .spellCost = 0.80 } },
-    .{ .arm = .wizard, .ring = 2, .slot = 0, .name = "Lore", .grant = attr(.intelligence, 2) },
-    .{ .arm = .wizard, .ring = 2, .slot = 1, .name = "Veil", .grant = .{ .res = combat.resists(.{ .chaos = 20, .lightning = 10 }) } },
-    .{ .arm = .wizard, .ring = 3, .slot = 0, .name = "Arcana", .grant = .{ .spellDmg = 1.25 }, .key = true },
+    // ── BERSERKER — what he spends, what he finishes, and what a body is worth ──────────────────────────
+    .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 1, .name = "Reaver", .grant = .{ .onKill = 2.0 } },
+    // THE BARGAIN, small enough to take early: a twelfth of the bar for a tenth more on every blow.
+    .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 2, .slot = 0, .name = "Blood Price", .grant = .{ .sacrifice = .{ .hpFrac = 0.08, .dmg = 1.10 } } },
+    .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 2, .slot = 1, .name = "Culling Blow", .grant = .{ .cull = 0.10 } },
+    // **A BODY IS WORTH A FIFTH OF A FLASK CHARGE, NOT TWO THIRDS OF ONE** (owner: HP on death nodes are too
+    // strong too). Reaver's 6 and this row's 14 summed to 20 a kill against a 70 HP bar — so a six-body fight
+    // handed back 120 HP, which is nearly TWICE the 63 a man carries between bonfires, off one fight. At 2 and
+    // 4 the pair is 6 a body: a fight is worth about one charge, which is a branch paying out and not a branch
+    // replacing the flask. It only ever pays when something actually dies, which is the honest half of it.
+    .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 3, .slot = 0, .name = "Red Harvest", .grant = .{ .onKill = 4.0 } },
+    .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 3, .slot = 1, .name = "Reckless", .grant = .{ .sacrifice = .{ .hpFrac = 0.06, .dmg = 1.08 } } },
+    // THE KEYSTONE: a fifth of his health, permanently, for a third more on everything he owns.
+    .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 4, .name = "Berserk", .grant = .{ .sacrifice = .{ .hpFrac = 0.20, .dmg = 1.34 } }, .key = true },
+
+    // ══ ROGUE ══════════════════════════════════════════════════════════════════════════════════════════
+    classNode(.rogue, "Quick Hands"),
+
+    // ── EVASION — the roll, the bar behind it, and ground covered ───────────────────────────────────────
+    .{ .arm = .rogue, .branch = .rogue_evade, .ring = 1, .name = "Fleet", .grant = .{ .iframe = 0.05 } },
+    .{ .arm = .rogue, .branch = .rogue_evade, .ring = 2, .slot = 0, .name = "Second Wind", .grant = attr(.endurance, 2) },
+    .{ .arm = .rogue, .branch = .rogue_evade, .ring = 2, .slot = 1, .name = "Light Step", .grant = .{ .moveSpeed = 1.06 } },
+    .{ .arm = .rogue, .branch = .rogue_evade, .ring = 3, .slot = 0, .name = "Wind at Heel", .grant = .{ .stamRegen = 1.25 } },
+    // POISON IS THE ONE STATUS AND IT IS HIS ALONE, so the branch about not being hurt is where it answers.
+    // (It was a second  node here, a hair off the one beside it — which is a duplicate wearing a
+    // different name, not a choice.)
+    .{ .arm = .rogue, .branch = .rogue_evade, .ring = 3, .slot = 1, .name = "Warded Blood", .grant = .{ .poison = 0.70 } },
+    .{ .arm = .rogue, .branch = .rogue_evade, .ring = 4, .name = "Misty Step", .grant = .{ .rollStam = 0.65 }, .key = true },
+
+    // ── RANGED — everything that leaves his hand rather than staying in it ──────────────────────────────
+    .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 1, .name = "Keen Eye", .grant = .{ .bowDmg = 1.16 } },
+    .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 2, .slot = 0, .name = "Practised Arm", .grant = .{ .thrownDmg = 1.20 } },
+    .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 2, .slot = 1, .name = "Wayfinder", .grant = attr(.luck, 2) },
+    .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 3, .slot = 0, .name = "Broadhead", .grant = .{ .bowDmg = 1.18 } },
+    .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 3, .slot = 1, .name = "Steady Hand", .grant = attr(.dexterity, 2) },
+    // THE KEYSTONE: the jars, which are the one thing he throws that he cannot make more of.
+    .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 4, .name = "Hail", .grant = .{ .thrownDmg = 1.55 }, .key = true },
+
+    // ══ WIZARD ═════════════════════════════════════════════════════════════════════════════════════════
+    classNode(.wizard, "Lore"),
+
+    // ── THE WELL — how deep the pool is, how fast it fills, and what it wards ───────────────────────────
+    .{ .arm = .wizard, .branch = .wizard_well, .ring = 1, .name = "Open Mind", .grant = attr(.mind, 2) },
+    .{ .arm = .wizard, .branch = .wizard_well, .ring = 2, .slot = 0, .name = "Deep Well", .grant = .{ .fpMax = 1.15 } },
+    .{ .arm = .wizard, .branch = .wizard_well, .ring = 2, .slot = 1, .name = "Slow Tide", .grant = .{ .fpRegen = 0.9 } },
+    .{ .arm = .wizard, .branch = .wizard_well, .ring = 3, .slot = 0, .name = "Veil", .grant = .{ .res = combat.resists(.{ .chaos = 20, .lightning = 10 }) } },
+    .{ .arm = .wizard, .branch = .wizard_well, .ring = 3, .slot = 1, .name = "Warded", .grant = .{ .res = combat.resists(.{ .fire = 15, .cold = 15 }) } },
+    .{ .arm = .wizard, .branch = .wizard_well, .ring = 4, .name = "Wellspring", .grant = .{ .fpRegen = 2.4 }, .key = true },
+
+    // ── CASTING — how fast, how hard, and what the bolt leaves standing ─────────────────────────────────
+    .{ .arm = .wizard, .branch = .wizard_cast, .ring = 1, .name = "Attuned", .grant = .{ .spellCost = 0.80 } },
+    .{ .arm = .wizard, .branch = .wizard_cast, .ring = 2, .slot = 0, .name = "Quick Tongue", .grant = .{ .castSpeed = 1.18 } },
+    .{ .arm = .wizard, .branch = .wizard_cast, .ring = 2, .slot = 1, .name = "Arcana", .grant = .{ .spellDmg = 1.25 } },
+    .{ .arm = .wizard, .branch = .wizard_cast, .ring = 3, .slot = 0, .name = "Deeper Lore", .grant = attr(.intelligence, 2) },
+    .{ .arm = .wizard, .branch = .wizard_cast, .ring = 3, .slot = 1, .name = "Inner Quiet", .grant = .{ .spellCost = 0.88 } },
+    // THE KEYSTONE, and the only grant in the tree that is a MECHANIC rather than a dial (owner's own
+    // example): the bolt stops being a projectile that lands and becomes ground you have denied.
+    .{ .arm = .wizard, .branch = .wizard_cast, .ring = 4, .name = "Chaos Bloom", .grant = .boltCloud, .key = true },
 };
 
 comptime {
+    // THE TABLE IS THE ORDER, and every index the geometry and the links use is arithmetic off it.
     var i: usize = 0;
     for (0..NARM) |a| {
-        for (RING_SLOTS, 0..) |slots, ring| {
-            for (0..slots) |slot| {
-                const n = NODES[i];
-                std.debug.assert(@intFromEnum(n.arm) == a);
-                std.debug.assert(n.ring == ring);
-                std.debug.assert(n.slot == slot);
-                std.debug.assert(n.key == (ring == RINGS - 1));
-                i += 1;
+        const arm: Arm = @as(Arm, @enumFromInt(a));
+        // THE CLASS NODE FIRST, and it belongs to no branch: it is what both of them radiate out of.
+        std.debug.assert(i == armFirst(arm));
+        std.debug.assert(NODES[i].arm == arm and NODES[i].branch == null and NODES[i].ring == 0);
+        std.debug.assert(!NODES[i].key);
+        switch (NODES[i].grant) {
+            .attr => |x| std.debug.assert(x.a == arm.stat()),
+            else => @compileError("passivetree: an arm's class node must be its own attribute"),
+        }
+        i += 1;
+        for (0..2) |lane| {
+            const b: Branch = @as(Branch, @enumFromInt(a * 2 + lane));
+            std.debug.assert(b.arm() == arm and b.lane() == lane);
+            std.debug.assert(i == branchFirst(b));
+            for (BRANCH_RINGS, 0..) |slots, br| {
+                for (0..slots) |slot| {
+                    const n = NODES[i];
+                    std.debug.assert(n.arm == arm);
+                    std.debug.assert(n.branch.? == b);
+                    std.debug.assert(n.ring == br + 1);
+                    std.debug.assert(n.slot == slot);
+                    std.debug.assert(n.key == (br == BRANCH_RINGS.len - 1));
+                    i += 1;
+                }
             }
         }
     }
     std.debug.assert(i == N);
-}
-
-pub fn armFirst(a: Arm) usize {
-    return @intFromEnum(a) * PER_ARM;
+    // EVERY BRANCH ENDS IN EXACTLY ONE KEYSTONE, which is the whole of what two branches per class buys.
+    var keys: usize = 0;
+    for (NODES) |n| {
+        if (n.key) keys += 1;
+    }
+    std.debug.assert(keys == NBRANCH);
 }
 
 /// WHAT A NODE IS WORTH, said the way the panel wants to read it.
@@ -173,11 +354,28 @@ pub fn grantSays(g: Grant) [:0]const u8 {
         .rollStam => |x| fmt("The roll costs {d:.0}% less stamina", .{(1.0 - x) * 100.0}),
         .spellCost => |x| fmt("A cast costs {d:.0}% less FP", .{(1.0 - x) * 100.0}),
         .spellDmg => |x| fmt("Sorcery deals {d:.0}% more", .{(x - 1.0) * 100.0}),
+        .armour => |x| fmt("+{d:.0} armour", .{x}),
+        .hpRegen => |x| fmt("Recover {d:.1} HP a second", .{x}),
+        .leech => |x| fmt("+{d:.1} HP back on every blow that lands", .{x}),
+        .sacrifice => |x| fmt("{d:.0}% less max HP; every blow deals {d:.0}% more", .{ x.hpFrac * 100.0, (x.dmg - 1.0) * 100.0 }),
+        .cull => |x| fmt("A body struck under {d:.0}% HP dies outright", .{x * 100.0}),
+        .onKill => |x| fmt("+{d:.0} HP whenever something dies to you", .{x}),
+        .moveSpeed => |x| fmt("Move {d:.0}% faster", .{(x - 1.0) * 100.0}),
+        .stamRegen => |x| fmt("Stamina returns {d:.0}% faster", .{(x - 1.0) * 100.0}),
+        .bowDmg => |x| fmt("The bow deals {d:.0}% more", .{(x - 1.0) * 100.0}),
+        .thrownDmg => |x| fmt("Thrown things deal {d:.0}% more", .{(x - 1.0) * 100.0}),
+        .fpRegen => |x| fmt("Recover {d:.1} FP a second", .{x}),
+        .fpMax => |x| fmt("+{d:.0}% Focus", .{(x - 1.0) * 100.0}),
+        .castSpeed => |x| fmt("Casts come out {d:.0}% faster", .{(x - 1.0) * 100.0}),
+        .boltCloud => "The Chaos Bolt bursts into a lingering cloud",
     };
 }
 
 /// EVERYTHING THE TREE IS WORTH, folded into one value the rest of the game reads FIELDS off. Nothing
 /// outside here walks the node list: a perk is a number on this struct or it does not exist.
+///
+/// **THE IDENTITY IS THE FIELD'S OWN** — 0 for anything ADDED, 1 for anything MULTIPLIED, false for a flag.
+/// Get one wrong and every hero starts the game either wearing the keystone or unable to move at all.
 pub const Bonus = struct {
     attrs: [stats.NA]u8 = [_]u8{0} ** stats.NA,
     res: combat.Resists = .{},
@@ -187,6 +385,25 @@ pub const Bonus = struct {
     rollStam: f32 = 1,
     spellCost: f32 = 1,
     spellDmg: f32 = 1,
+
+    armour: f32 = 0,
+    hpRegen: f32 = 0,
+    leech: f32 = 0,
+    /// The bargain, folded: how much of the bar is gone, and what every blow is multiplied by for it.
+    hpFrac: f32 = 0,
+    dmg: f32 = 1,
+    cull: f32 = 0,
+    onKill: f32 = 0,
+
+    moveSpeed: f32 = 1,
+    stamRegen: f32 = 1,
+    bowDmg: f32 = 1,
+    thrownDmg: f32 = 1,
+
+    fpRegen: f32 = 0,
+    fpMax: f32 = 1,
+    castSpeed: f32 = 1,
+    boltCloud: bool = false,
 
     /// THE LIVE CHARACTER SHEET — the starting sheet plus every attribute node taken, and the ONLY way an
     /// attribute here ever moves. `stats.Sheet.set` clamps, so a maxed attribute cannot be pushed past 99.
@@ -202,9 +419,8 @@ pub const Bonus = struct {
 /// SOULS FOR THE NEXT NODE, off the level you are standing on. Quadratic, ER's shape.
 ///
 /// MEASURED AGAINST WHAT A BODY IS WORTH, not picked for looking like money: a toad is 60, an archer 130, a
-/// brood mother 240. The first pass ran 105 for a level — two toads — and the whole tree came to under
-/// 20,000, which is an afternoon. At these figures the first node is three archers, the tenth is most of a
-/// long session, and the full one-and-twenty is a game's worth of killing.
+/// brood mother 240. **THE FIRST NODE COSTS `costAt(1)`, WHICH IS 360** — never `costAt(0)`: `Tree.cost`
+/// prices the LEVEL you are standing on, and you stand on level 1 before you have spent anything at all.
 pub fn costAt(level: u32) u32 {
     return 280 + 62 * level + 18 * level * level;
 }
@@ -259,6 +475,16 @@ pub const Tree = struct {
     /// WHY YOU CANNOT TAKE THIS ONE, or null if you can. A sentence rather than a bool: a node that refuses
     /// silently is one the player presses again. An EMPTY string refuses without printing — for the reasons
     /// the page is already showing somewhere better.
+    /// **CAN HE TAKE THIS ONE — THE QUESTION WITHOUT THE SENTENCE.** The wheel asks it of EVERY node every
+    /// frame to decide open-or-shut (`draw`), and `locked` answers by FORMATTING a string, so a page nobody
+    /// is reading spent 39 `bufPrintZ`s a frame and cycled the shared `scratch` ring under any caller still
+    /// holding a line off it. The reason is wanted at ONE node — the one the cursor is on.
+    pub fn canTake(self: *const Tree, i: usize, souls: u32) bool {
+        return !self.taken[i] and self.reached(i) and souls >= self.cost();
+    }
+
+    /// WHY YOU CANNOT TAKE THIS ONE, or null if you can — the same rule as `canTake`, said out loud. Asked of
+    /// the ONE node being read, never of the board.
     pub fn locked(self: *const Tree, i: usize, souls: u32) ?[:0]const u8 {
         if (self.taken[i]) return ""; // the page marks it TAKEN in its own words
         if (!self.reached(i)) return "Take the one before it first.";
@@ -270,7 +496,7 @@ pub const Tree = struct {
     /// TAKE IT, AND THAT IS THE LEVEL. Hands back the souls it cost, or null if it refused — the caller holds
     /// the counter, so the tree never reaches into it (`souls.take`'s shape).
     pub fn take(self: *Tree, i: usize, souls: u32) ?u32 {
-        if (self.locked(i, souls) != null) return null;
+        if (!self.canTake(i, souls)) return null;
         const c = self.cost();
         self.taken[i] = true;
         return c;
@@ -291,6 +517,31 @@ pub const Tree = struct {
                 .rollStam => |x| b.rollStam *= x,
                 .spellCost => |x| b.spellCost *= x,
                 .spellDmg => |x| b.spellDmg *= x,
+                // **THE FOLD IS THE FIELD'S OWN ARITHMETIC** — added, multiplied or latched, and which one
+                // each is, is written at `Bonus`. An exhaustive switch is what makes a new grant a compile
+                // error here rather than a node that quietly does nothing.
+                .armour => |x| b.armour += x,
+                .hpRegen => |x| b.hpRegen += x,
+                .leech => |x| b.leech += x,
+                // A BARGAIN FOLDS AS BOTH ITS HALVES: the costs ADD (two of them take a quarter of the bar
+                // between them) and the gains MULTIPLY, which is what keeps stacking them a real decision
+                // rather than a straight line.
+                .sacrifice => |x| {
+                    b.hpFrac += x.hpFrac;
+                    b.dmg *= x.dmg;
+                },
+                // THE CULL TAKES THE BEST, never the sum: two thresholds are one threshold, and adding them
+                // would make a pair of small nodes an execute on half health.
+                .cull => |x| b.cull = mathx.maxF(b.cull, x),
+                .onKill => |x| b.onKill += x,
+                .moveSpeed => |x| b.moveSpeed *= x,
+                .stamRegen => |x| b.stamRegen *= x,
+                .bowDmg => |x| b.bowDmg *= x,
+                .thrownDmg => |x| b.thrownDmg *= x,
+                .fpRegen => |x| b.fpRegen += x,
+                .fpMax => |x| b.fpMax *= x,
+                .castSpeed => |x| b.castSpeed *= x,
+                .boltCloud => b.boltCloud = true,
             }
         }
         return b;
@@ -309,18 +560,41 @@ fn armAngle(a: Arm) f32 {
     };
 }
 
-/// How wide a ring's fan opens. It WIDENS outward — a constant spread draws three parallel rails, which is a
-/// ladder and not a branch. THE BASE IS SET BY RING 0, where the arc is shortest: at 0.17 the innermost pair
-/// came out 0.34 units apart against discs 0.30 across and read as one smudged figure-of-eight.
+/// **HOW FAR OFF ITS ARM'S OWN BEARING EACH OF THE TWO BRANCHES SITS.** The three arms are 120° apart, so
+/// each has 60° either side to itself before it starts arguing with its neighbour; the two branches take
+/// half of that and leave the rest as the gap that says WHICH ARM you are looking at. Wider and the six
+/// read as six unrelated spokes with no arms at all; narrower and an arm's two branches smear into one fan.
+const BRANCH_SPLIT: f32 = 0.42;
+
+/// A BRANCH'S OWN BEARING — its arm's, stepped off it by `BRANCH_SPLIT`, lane 0 anticlockwise.
+fn branchAngle(b: Branch) f32 {
+    const side: f32 = if (b.lane() == 0) -1.0 else 1.0;
+    return armAngle(b.arm()) + side * BRANCH_SPLIT;
+}
+
+/// How wide a ring's fan opens. It WIDENS outward — a constant spread draws parallel rails, which is a
+/// ladder and not a branch. **AND IT IS NARROWER THAN IT WAS**: a branch now has half an arm's lane rather
+/// than the whole of it, so a fan sized for the old three would put one branch's ring-2 pair on top of its
+/// neighbour's. Solved against `BRANCH_SPLIT` rather than picked — the widest fan may not reach the lane's
+/// own half-width, or the two branches of an arm cross.
 fn spreadAt(ring: u8) f32 {
-    return 0.26 + 0.075 * @as(f32, @floatFromInt(ring));
+    return 0.155 + 0.045 * @as(f32, @floatFromInt(ring));
+}
+
+comptime {
+    // THE TWO BRANCHES OF AN ARM MAY NOT TOUCH. The outermost fan is the widest, and it has to stay inside
+    // the gap the split bought it or a keystone sits in its own twin's lane.
+    std.debug.assert(spreadAt(RINGS - 1) < BRANCH_SPLIT);
 }
 
 fn angleOf(n: Node) f32 {
-    const slots = RING_SLOTS[n.ring];
-    if (slots == 1) return armAngle(n.arm);
+    // THE CLASS NODE SITS ON ITS ARM'S OWN BEARING — it is what both branches radiate out of, so it may not
+    // lean toward either of them.
+    const b = n.branch orelse return armAngle(n.arm);
+    const slots = BRANCH_RINGS[n.ring - 1];
+    if (slots == 1) return branchAngle(b);
     const t = @as(f32, @floatFromInt(n.slot)) / @as(f32, @floatFromInt(slots - 1)); // 0..1 across the fan
-    return armAngle(n.arm) + (t * 2.0 - 1.0) * spreadAt(n.ring);
+    return branchAngle(b) + (t * 2.0 - 1.0) * spreadAt(n.ring);
 }
 
 /// In RINGS from the hub.
@@ -554,7 +828,7 @@ pub fn draw(t: *const Tree, wh: Wheel, x: i32, y: i32, w: i32, h: i32, spendable
         const p = place(l, i);
         const r = radiusPx(l, i);
         const ink = n.arm.ink();
-        const open = spendable and t.locked(i, souls) == null;
+        const open = spendable and t.canTake(i, souls);
         // THREE STATES AND THEY SEPARATE ON FILL, not on hue: taken is solid, open is a lit rim over the
         // seat, and locked is the rim gone to nothing. Read at arm's length, a hue shift is one state.
         rl.drawCircleV(p, r + 2.0, mathx.withAlpha(uiart.INK, 210));
@@ -709,45 +983,128 @@ fn fmt(comptime f: []const u8, args: anytype) [:0]const u8 {
 
 const RICH: u32 = 1_000_000; // enough souls that the tests are never about the purse
 
-test "you start in the MIDDLE: every arm's first ring hangs off the hub and is open at once" {
-    var t = Tree{};
-    for (0..NARM) |arm| {
-        const base = armFirst(@enumFromInt(arm));
-        try std.testing.expect(t.locked(base, RICH) == null);
-        try std.testing.expect(t.locked(base + 1, RICH) == null);
-        try std.testing.expect(t.locked(base + 2, RICH) != null); // nothing behind it yet
+test "EVERY GRANT IS ON THE BOARD, and an EMPTY bonus changes nothing" {
+    // **NO DEAD VARIANT.** A `Grant` nobody grants is a mechanic wired into the game that no node can ever
+    // reach — which is exactly what a half-landed tree looks like from the outside.
+    inline for (@typeInfo(Grant).@"union".fields) |f| {
+        var seen = false;
+        for (NODES) |n| {
+            if (std.mem.eql(u8, @tagName(n.grant), f.name)) seen = true;
+        }
+        if (!seen) {
+            std.debug.print("  passive tree: nothing grants {s}\n", .{f.name});
+            try std.testing.expect(false);
+        }
     }
-}
 
-test "YOU CLIMB: a node opens the moment something it hangs off is yours, and never before" {
+    // **THE IDENTITY.** Get one of these backwards and every hero starts the game either wearing a keystone
+    // or unable to move: a multiplier defaulted to 0 is a man with no speed, no damage and no pool at all.
+    const none = Bonus{};
+    try std.testing.expectEqual(@as(f32, 0), none.guard + none.iframe + none.armour + none.hpRegen +
+        none.leech + none.hpFrac + none.cull + none.onKill + none.fpRegen);
+    inline for (.{ none.poison, none.rollStam, none.spellCost, none.spellDmg, none.dmg, none.moveSpeed, none.stamRegen, none.bowDmg, none.thrownDmg, none.fpMax, none.castSpeed }) |m| {
+        try std.testing.expectEqual(@as(f32, 1), m);
+    }
+    try std.testing.expect(!none.boltCloud);
+    try std.testing.expectEqual(stats.Sheet{}, none.sheet()); // …and it is the starting sheet, exactly
+
+    // …AND THE WHOLE TREE MOVES EVERY ONE OF THEM OFF IT, which is what says each is actually granted.
     var t = Tree{};
-    const r = armFirst(.rogue);
-    // One strand up. Each step opens only the next thing on ITS OWN strand.
-    try std.testing.expect(t.take(r, RICH) != null);
-    try std.testing.expect(t.locked(r + 2, RICH) == null); // ring 1 slot 0 hangs off ring 0 slot 0
-    try std.testing.expect(t.locked(r + 3, RICH) != null); // …the other strand's is untouched
-    try std.testing.expect(t.locked(r + 4, RICH) != null); // …and ring 2 is still two links away
-    // …and nothing on this arm reaches into another one.
-    try std.testing.expect(t.locked(armFirst(.warrior) + 2, RICH) != null);
+    for (0..N) |i| _ = t.take(i, RICH);
+    const all = t.bonus();
+    try std.testing.expect(all.guard > 0 and all.iframe > 0 and all.armour > 0 and all.hpRegen > 0);
+    try std.testing.expect(all.leech > 0 and all.hpFrac > 0 and all.cull > 0 and all.onKill > 0 and all.fpRegen > 0);
+    try std.testing.expect(all.rollStam < 1 and all.spellCost < 1); // the two that buy CHEAPNESS
+    try std.testing.expect(all.spellDmg > 1 and all.dmg > 1 and all.moveSpeed > 1 and all.stamRegen > 1);
+    try std.testing.expect(all.bowDmg > 1 and all.thrownDmg > 1 and all.fpMax > 1 and all.castSpeed > 1);
+    try std.testing.expect(all.boltCloud);
+    // THE BARGAIN MAY NEVER EAT THE WHOLE BAR — both sacrifices taken together, against `hero.hpMaxOf`'s floor.
+    try std.testing.expect(all.hpFrac < 0.9);
+    std.debug.print("  every branch taken: {d:.0}% of the red bar sold for {d:.2}x damage, cull at {d:.0}%\n", .{ all.hpFrac * 100, all.dmg, all.cull * 100 });
 }
 
-test "EITHER STRAND CLIMBS TO THE CAPSTONE — the tip is the one node with two ways in" {
-    for ([_]u8{ 0, 1 }) |strand| {
-        var t = Tree{};
-        const w = armFirst(.wizard);
-        const key = w + PER_ARM - 1;
+test "you start in the MIDDLE: every arm's CLASS NODE hangs off the hub, and nothing else does" {
+    var t = Tree{};
+    for (0..NARM) |ai| {
+        const a: Arm = @enumFromInt(ai);
+        const root = armFirst(a);
+        try std.testing.expect(t.locked(root, RICH) == null); // the one thing open from a standing start
+        try std.testing.expect(NODES[root].branch == null);
+        // …and BOTH of its branches are shut until it is taken. That is what "radiate out from there" means.
+        for (0..2) |lane| {
+            const b: Branch = @enumFromInt(ai * 2 + lane);
+            try std.testing.expect(t.locked(branchFirst(b), RICH) != null);
+        }
+    }
+    // EXACTLY THREE WAYS IN, one per arm — six branches behind three doors.
+    var open: usize = 0;
+    for (0..N) |i| {
+        if (t.locked(i, RICH) == null) open += 1;
+    }
+    try std.testing.expectEqual(NARM, open);
+}
+
+test "YOU CLIMB: the class node opens BOTH branches, and each rung opens only its own" {
+    var t = Tree{};
+    const root = armFirst(.rogue);
+    const ev = branchFirst(.rogue_evade);
+    const rg = branchFirst(.rogue_ranged);
+    try std.testing.expect(t.locked(ev, RICH) != null);
+    // THE CLASS NODE IS THE ONE PURCHASE THAT BUYS THE ARM — after it, both branches are a live choice.
+    try std.testing.expect(t.take(root, RICH) != null);
+    try std.testing.expect(t.locked(ev, RICH) == null);
+    try std.testing.expect(t.locked(rg, RICH) == null);
+    // …and nothing past each branch's mouth is open yet.
+    try std.testing.expect(t.locked(ev + 1, RICH) != null);
+    try std.testing.expect(t.locked(rg + 1, RICH) != null);
+    // One rung up the evasion branch opens ITS ring-2 pair and nothing on the other branch.
+    try std.testing.expect(t.take(ev, RICH) != null);
+    try std.testing.expect(t.locked(ev + 1, RICH) == null);
+    try std.testing.expect(t.locked(ev + 2, RICH) == null);
+    try std.testing.expect(t.locked(ev + 3, RICH) != null); // …ring 3 is still a link away
+    try std.testing.expect(t.locked(rg + 1, RICH) != null);
+    // …and no arm reaches into another one.
+    try std.testing.expect(t.locked(branchFirst(.warrior_life), RICH) != null);
+}
+
+test "EVERY BRANCH HAS ITS OWN KEYSTONE, and either strand climbs to it" {
+    for (0..NBRANCH) |bi| {
+        const b: Branch = @enumFromInt(bi);
+        const base = branchFirst(b);
+        const key = base + PER_BRANCH - 1;
         try std.testing.expect(NODES[key].key);
-        // Walk ONE side of the arm to the top: ring 0, ring 1, ring 2, all on the same slot.
-        try std.testing.expect(t.take(w + strand, RICH) != null);
-        try std.testing.expect(t.locked(key, RICH) != null);
-        try std.testing.expect(t.take(w + 2 + strand, RICH) != null);
-        try std.testing.expect(t.locked(key, RICH) != null);
-        try std.testing.expect(t.take(w + 4 + strand, RICH) != null);
-        // …and from either ring-2 node the capstone is open. Three nodes, not six.
-        try std.testing.expect(t.locked(key, RICH) == null);
-        try std.testing.expect(t.take(key, RICH) != null);
-        try std.testing.expectEqual(@as(u32, 4), t.spentIn(.wizard));
+        try std.testing.expectEqual(b, NODES[key].branch.?);
+        for ([_]usize{ 0, 1 }) |strand| {
+            var t = Tree{};
+            // The arm's class node, the branch's mouth, then ONE side of its fan to the top.
+            try std.testing.expect(t.take(armFirst(b.arm()), RICH) != null);
+            try std.testing.expect(t.take(base, RICH) != null);
+            try std.testing.expect(t.locked(key, RICH) != null);
+            try std.testing.expect(t.take(base + 1 + strand, RICH) != null);
+            try std.testing.expect(t.locked(key, RICH) != null);
+            try std.testing.expect(t.take(base + 3 + strand, RICH) != null);
+            // …and from EITHER ring-3 node the keystone is open. Five nodes, not nine.
+            try std.testing.expect(t.locked(key, RICH) == null);
+            try std.testing.expect(t.take(key, RICH) != null);
+            try std.testing.expectEqual(@as(u32, 5), t.spentIn(b.arm()));
+        }
     }
+}
+
+test "SIX BRANCHES, TWO PER CLASS — and each one is its own idea end to end" {
+    try std.testing.expectEqual(@as(usize, 2), NBRANCH / NARM);
+    for (0..NBRANCH) |bi| {
+        const b: Branch = @enumFromInt(bi);
+        // Every node of a branch belongs to that branch's arm, and the branch is contiguous in the table.
+        for (branchFirst(b)..branchFirst(b) + PER_BRANCH) |i| {
+            try std.testing.expectEqual(b, NODES[i].branch.?);
+            try std.testing.expectEqual(b.arm(), NODES[i].arm);
+        }
+    }
+    // …and an ARM is its class node plus both of its branches, with nothing left over.
+    try std.testing.expectEqual(PER_ARM, 1 + PER_BRANCH * 2);
+    try std.testing.expectEqual(N, NARM * PER_ARM);
+    std.debug.print("\n  passive tree: {d} nodes - {d} arms x (1 class node + 2 branches of {d})\n", .{ N, NARM, PER_BRANCH });
 }
 
 test "THE LINK IS THE RULE — every feeder is its own arm's, one ring in, and the tip alone has two" {
@@ -798,6 +1155,14 @@ test "IT IS PAID FOR IN SOULS, and one short buys nothing" {
     var t = Tree{};
     const c = t.cost();
     try std.testing.expect(t.locked(0, c - 1) != null); // …and it says so rather than refusing in silence
+    // **AND THE PREDICATE AND THE SENTENCE MAY NEVER DISAGREE** — `canTake` is what the board is drawn from
+    // and `locked` is what the one node under the cursor says, so a node drawn open that refuses a press (or
+    // the reverse) is the page and the rule contradicting each other on screen.
+    for (0..N) |i| {
+        for ([_]u32{ 0, 100, 359, 360, 1000, RICH }) |purse| {
+            try std.testing.expectEqual(t.canTake(i, purse), t.locked(i, purse) == null);
+        }
+    }
     try std.testing.expect(t.take(0, c - 1) == null);
     try std.testing.expectEqual(@as(u32, 0), t.spent()); // nothing moved
     try std.testing.expectEqual(c, t.take(0, c).?); // exactly the price is enough, and it hands back what it took
@@ -826,15 +1191,19 @@ test "EVERY ATTRIBUTE PAST THE STARTING SHEET CAME OFF A NODE" {
     var t = Tree{};
     for (0..N) |i| _ = t.take(i, 1_000_000);
     const s = t.bonus().sheet();
-    // The whole tree taken: four Vitality, four Endurance… and the level counted off the sheet is the
-    // attribute nodes alone, which is why the TREE owns the level and `Sheet.level` is no longer asked it.
-    try std.testing.expectEqual(stats.START + 4, s.at(.vitality));
-    try std.testing.expectEqual(stats.START + 4, s.at(.endurance));
-    try std.testing.expectEqual(stats.START + 4, s.at(.mind));
-    try std.testing.expectEqual(stats.START + 2, s.at(.strength));
-    try std.testing.expectEqual(stats.START + 4, s.at(.dexterity));
-    try std.testing.expectEqual(stats.START + 4, s.at(.intelligence));
-    try std.testing.expectEqual(stats.START + 2, s.at(.luck));
+    // THE WHOLE TREE TAKEN, counted off the table rather than transcribed — a node retuned or moved must
+    // not need this test edited, and a hand-written figure here is a second copy of `NODES` to keep in step.
+    var want = [_]u32{0} ** stats.NA;
+    for (NODES) |n| switch (n.grant) {
+        .attr => |x| want[@intFromEnum(x.a)] += x.n,
+        else => {},
+    };
+    for (0..stats.NA) |i| {
+        const a: stats.Attr = @enumFromInt(i);
+        try std.testing.expectEqual(@as(u8, @intCast(stats.START + want[i])), s.at(a));
+        // …AND NO ATTRIBUTE IS LEFT OUT OF THE TREE ENTIRELY: a row nothing can raise is a dead row.
+        try std.testing.expect(want[i] > 0);
+    }
     try std.testing.expect(s.hp() > (stats.Sheet{}).hp());
 }
 
@@ -1045,9 +1414,50 @@ test "the wheel's geometry cannot collide two nodes, and every node hangs off it
         }
         // …and it hangs off its OWN arm's spine and nobody else's. The spine is the only line drawn now, so
         // a node that strayed past halfway to the neighbouring arm would read as belonging to that one.
-        const off = @abs(mathx.wrapPi(angleOf(NODES[i]) - armAngle(NODES[i].arm)));
-        try std.testing.expect(off <= spreadAt(NODES[i].ring) + 1e-5);
+        // A BRANCH NODE LEANS OFF ITS BRANCH'S bearing, never off its arm's — the split is the whole point.
+        const n = NODES[i];
+        const own = if (n.branch) |b| branchAngle(b) else armAngle(n.arm);
+        const off = @abs(mathx.wrapPi(angleOf(n) - own));
+        try std.testing.expect(off <= (if (n.branch == null) 1e-5 else spreadAt(n.ring)) + 1e-5);
+        // …and it never strays past its arm's own half-lane, or two arms share a node.
+        const fromArm = @abs(mathx.wrapPi(angleOf(n) - armAngle(n.arm)));
+        try std.testing.expect(fromArm < std.math.tau / 6.0);
         try std.testing.expect(off < std.math.tau / @as(f32, NARM) * 0.5);
     }
 }
 
+
+test "SUSTAIN IS PRICED AGAINST THE FLASK, WHICH IS THE ONLY OTHER HEALING IN THE GAME" {
+    // **THE BUG WAS A NUMBER WITH NO ANCHOR** (owner: HP on hit nodes are super OP; HP on death nodes are too
+    // strong too). A flat "+4 HP a hit" reads as small next to a damage number; against the BAR it is enormous,
+    // because the red bar is 70 at the start and TWO crimson charges are every point of healing a man carries
+    // out of a bonfire. So the rule is written down here in the unit that matters: how many blows, and how many
+    // bodies, one flask charge is worth.
+    const bar = stats.hpFor(stats.START);
+    const charge = bar * combat.FLASK_HP_FRAC;
+    const budget = charge * @as(f32, @floatFromInt(combat.FLASK_CRIMSON));
+
+    var tree = Tree{};
+    for (&tree.taken) |*t| t.* = true; // every node, which is the ceiling nobody actually reaches
+    const all = tree.bonus();
+    const hitsPerCharge = charge / all.leech;
+    const killsPerCharge = charge / all.onKill;
+    std.debug.print(
+        "\n  sustain: bar {d:.0}, flask charge {d:.0} ({d:.0} HP between fires) | leech {d:.1}/hit = {d:.0} blows a charge, onKill {d:.1} = {d:.1} bodies\n",
+        .{ bar, charge, budget, all.leech, hitsPerCharge, all.onKill, killsPerCharge },
+    );
+
+    // **A BLOW MAY NOT BE A SIP.** At the old 5.5 this was six blows a charge — unlimited healing that did not
+    // make the flask weak, it retired it. A dozen at the very least, with every node in the tree taken.
+    try std.testing.expect(hitsPerCharge >= 12.0);
+    // …AND A BODY IS NOT A FLASK EITHER. The old 20 a kill made a six-body fight worth nearly twice the whole
+    // between-bonfires budget, off one fight.
+    try std.testing.expect(killsPerCharge >= 4.0);
+    const sixBodies = all.onKill * 6.0;
+    try std.testing.expect(sixBodies < budget); // a fight pays out; it does not out-earn the flask itself
+    // …and the RING is still the bigger dial for one hit, because it is the one that charges health to be it
+    // (`item.leech_signet`: 2.0 and a permanent 6% of the bar). Points buy the trickle, health buys the size.
+    try std.testing.expect(all.leech <= 2.0);
+    // Both still WORTH taking, or the fix is a deletion wearing a retune's clothes.
+    try std.testing.expect(all.leech > 0.5 and all.onKill >= 4.0);
+}

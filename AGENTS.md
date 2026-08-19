@@ -108,6 +108,7 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `camera.zig` | over-the-shoulder orbit rig, ground basis, trauma shake (live-loop only, so `--shot` stays deterministic) |
 | `gfx.zig` | mesh `Builder`, scene shader, shadow depth pass, `Sky`, `Vignette`, `Mat` surface materials |
 | `daynight.zig` | THE WORLD CLOCK — the sun/moon path, the hour's whole palette, and the anchor hour `--shot` pins |
+| `weather.zig` | THE SKY'S OWN EVENTS — intermittent rain in two strengths, the moderate one's lightning and its late thunder, the ONE MESH the whole sheet is drawn from (stacked and wrapped, 4–7 draw calls), and the stray MIST BANKS that stand in the field once the air is thick |
 | `shaders.zig` | every line of GLSL and nothing else; the contract with `gfx.zig` is written at its top |
 | `worldfmt.zig` | THE MAP FORMAT — op vocabulary, zone/foe/**npc/trigger/dialog** tables, one comptime field table driving writer and parser |
 | `trigger.zig` | THE TRIGGER MACHINE — SC1's conditions + actions, and the switches / counters / timers they compose through |
@@ -141,6 +142,7 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `chest.zig` | openable boxes; contents read off the placing op (`Op.loot`) |
 | `rest.zig` | bonfire + campfire bonfire — the phase machine, the seat, and THE FIRE'S OWN SCREEN (its list, and the wheel behind Level Up); `isRestKind` is the one predicate |
 | `souls.zig` | THE DROP — what a death leaves on the ground, the gold bloom it stands as, and the walk back for it |
+| `drops.zig` | THE DROP TABLE — one row per `FoeKind`, the GUARANTEED item every body leaves and the rare it might, and **the one thing LUCK reads** (`stats.findFor`, rare weight only — scale the guaranteed row too and the attribute does nothing). It goes ON THE GROUND as a glow you walk to (`pickup.Pickups.spawn`), not into his hands, and it is rolled off a seeded stream (`game.dropRng`) so `--shot` stays reproducible |
 | `hud.zig` | ER HUD, the PAD-GLYPH kit every prompt and crib is drawn with, and the ONLY path to draw/measure text. The three bars start at `BARS_X`, not `MARGIN` — the WORLD CLOCK'S dial has the corner (`dayDial`, drawn off `daynight.spanU`/`isDay`, so it cannot tell a different time than the light). The BOSS BAR (`bossBar`) is the named bar across the bottom: `game.zig` owns when it shows and suppresses the same body's floating bar |
 | `ui.zig` | editor widget kit; `Ctx.anyHot` gates world clicks next frame |
 | — | **THE LIVE PORTRAIT** (`hud.renderPortrait`/`blitPortrait`/`livePortrait`) is the one way a body is photographed into the UI — the book's doll, the conversation's speaker, the spirit panel. **TAKING IT AND MOUNTING IT ARE TWO CALLS AND THE SPLIT IS LOAD-BEARING**: `endTextureMode` restores the DEFAULT framebuffer, not the target bound before it, so a render nested inside `hud.beginChrome`'s target silently sends the whole rest of the frame at the backbuffer. Render BEFORE the chrome opens, blit inside. The ANGLE is the house's (`hud.PORTRAIT_*`), the DISTANCE the subject's (`npc.PORTRAIT_DIST`, `wolf.PORTRAIT_DIST`) |
@@ -349,8 +351,15 @@ the hop → nothing, it is HIS answer to you), against 640 HP that only comes of
   where it landed — the heavy/crushing sword strokes and the SLAM's crater, and the `Weight` rule decides, not
   a list. It is laid at the IMPACT FRAME rather than in `tryReach`, so a stroke that MISSED still denies that
   ground: the blast taxes where you were, the cloud taxes where you may stand. The FALL and the CHARGE are
-  excluded though both show fire — each is already a position-denial move whose counter is ground, and fouling
-  where it ends taxes the answer the move itself demands. The cloud is the GROUP's, not the knight's, because
+  excluded from the IMPACT rule though both show fire — each is already a position-denial move whose counter is
+  ground, and fouling where it ends taxes the answer the move itself demands.
+  **THE LIT CHARGE IS THE EXCEPTION, AND IT FOULS THE LINE RATHER THAN THE END OF IT** (owner: phase-two charge
+  should leave a chaos trail). `chaosTrail` drops a cloud every `CHAOS_TRAIL_EVERY` (1.5 pre-scale, 4.4 m at his
+  size) of GROUND COVERED — never on a clock, or at 12.4 m/s it would lay twenty a second — at his heels, at a
+  wake's width rather than a blow's (`CHAOS_TRAIL_SCALE` 0.58). The spacing is wider than a trail cloud's own
+  3.4 m, so the lane has crossings in it: the answer to a charge stays the SIDESTEP, and the lane is what makes
+  where you land a decision. `GAS_CAP` went 3→12 to hold a lane; and in phase two he reaches for the move sooner
+  (`CHARGE_LIT_FUSE`), because it now re-draws the floor as well as arriving. The cloud is the GROUP's, not the knight's, because
   it must keep burning after the body that laid it has fallen over. It doses on its own clock and carries NO
   poise and NO stance: a hazard that staggers can kill you while you are not allowed to walk out of it.
 - **THE BOSS FURNITURE EXISTS NOW: THE BAR.** `hud.bossBar` is the named bar across the bottom (ER's own
@@ -371,8 +380,14 @@ the hop → nothing, it is HIS answer to you), against 640 HP that only comes of
   that (owner: the swings don't often hit). The RAM subtends 26 deg at the range it arrives, so: the DRIFT a
   commit sheds may not by itself carry the kit off a squared-up man — it was 32 deg against a 25 deg door,
   which missed a player who did nothing but walk — and `SWING_BEARING` may never exceed the kit's own
-  subtended half-angle, or he throws a stroke at a place the door was never going to reach. `SWING_TURN` is
-  still under `TURN_RATE`, because commitment has to cost him tracking or there is no window at all.
+  subtended half-angle, or he throws a stroke at a place the door was never going to reach.
+  **HOW HARD A STROKE FOLLOWS YOU IS A PROPERTY OF THE STROKE** (`Attack.track`; owner: all his forward sword
+  slashes should track you and be able to hit you from more areas). One global rate said the same thing about a
+  flick and a falling greatsword. The HEAVY rows stay under `TURN_RATE` — commitment has to cost him tracking or
+  there is no window at all, and a test pins that half — while the quick rows (the flick 1.25, the point 1.05,
+  the ram 0.95) may go where you are going, because they are cheap and short and the answer to them is DISTANCE.
+  The OVERHEAD alone tracks at ZERO: "very poor tracking" is the read on the biggest blow he owns. Their arcs
+  widened with them (overhead 42→56, thrust 38→54); the BASH stays at 26, because its ram genuinely is that wide.
   **AND THE SWEEP IS DELIBERATELY HELD TO NEITHER**: over a second of commit on a blade's edge is the stroke
   you step out of, and the BASH is the punish for standing in front. A test pins the pair so they cannot
   become one move twice.
@@ -381,7 +396,11 @@ the hop → nothing, it is HIS answer to you), against 640 HP that only comes of
   NOT IN AN ATTACK ANIMATION" (GIANT_KNIGHTS.md) — so the sweep, the second sweep and the overhead are the
   player's frontal window, and it stays open through the head of the recovery. Held through every stroke
   instead, reading a tell bought nothing but survival and the front had no answer at all. The THRUST (past
-  the door's edge) and the BASH (the door IS the blow) keep it.
+  the door's edge) and the BASH (the door IS the blow) keep it. **AND THE SWORD-SIDE FLICK PAYS THE SAME PRICE**
+  (owner: move the shield to the side to give more slash room): the swat on that side is a long arm crossing his
+  own front and the door was square in front of it, so it now hauls out of the lane and the guard goes with it —
+  the shield-side flick does not, because there the door IS the flick. The haul itself is wider than it was
+  (`SWIPE_SH/ABD/YAW` 34/44/58), which is what "more slash room" actually looks like on the arm.
 - **AND A FLANK BLOW HE SHRUGS OFF IS ANSWERED, NOT ABSORBED** (`counterFlank`; owner: react very strongly
   to side attacks, more countering, less slow rotating). A hit that failed to stagger him used to mean
   literally nothing happened — he carried on rotating at 33 deg/s while you hit him again, which was the
@@ -456,14 +475,24 @@ the hop → nothing, it is HIS answer to you), against 640 HP that only comes of
   clocked (`riposteCd`) and only from idle/approach, never out of a committed stroke or a stagger, and a test
   sweeps the seeds for both halves. It reads a blow that already struck HIS OWN body — world state — which is
   the NO INPUT READING law observed, not skirted. The front now TRADES instead of being merely inefficient.
+- **HIS FEET ARE THE ANSWER OF LAST RESORT** (owner: he should jump less often). The leap's clock went to 6.5 s
+  and the hop's to 7.5, because the KIT holds his ground now: every forward stroke follows you (`Attack.track`)
+  and the flick reaches either shoulder, so bounding out of a fight he can answer with a swing is the tic the
+  earlier "more inclined to jump" retune was reaching for and overshot.
 - **THE HOP IS HIS ANSWER TO BEING ORBITED** (the Sentinel's own liveliness: "surprisingly quick to respond
   to your movements, often jumping out of the way"). One discrete sideways bound — dip, shift, heavy settle,
   banked a few degrees — with his turn allowed 3.4× ONLY across it: the hop IS the re-face, and between hops
   he is as out-turned as ever, so the flank the whole creature is built round still exists. Triggered off
   `circleRate` — the bearing's own measured rate, never the stick — gated by `foe.canLeap`, and clocked.
-- **THE CHARGE ANSWERS STAYING AWAY** (owner's ask). Keep out past `CHARGE.far` while the fight is on and
-  his patience fuse fills (`farT` — it drains double when you close, so ducking in and out banks nothing);
-  burnt, he lowers behind the door and comes THROUGH where you stood at twice a sprint. **THE LINE IS
+- **THE CHARGE ANSWERS STAYING AWAY, AND "AWAY" IS ONE STEP OUTSIDE HIS SWORD** (owner: charge from a shorter
+  distance, and charge much faster). `CHARGE.far` is the floor of the band he cannot reach into (7.4 m against a
+  thrust band of 7.3), so keeping your distance AT ALL fills the fuse (`farT` — it drains double when you close,
+  so ducking in and out banks nothing); at 10.5 it only filled from further off than the fight is ever held at,
+  and the move was a thing you saw across an arena. Burnt, he lowers behind the door and comes THROUGH where you
+  stood at 12.4 m/s — **two and a half times a sprint**, covering 4.8 m in its first half second against the
+  2.6 a sprinting hero manages. The travel is where the speed went: `windDur` came down to 0.62 and no further,
+  because the tell is what makes the line fair. THE SKID IS RE-SOLVED WITH IT — `brakeDist` integrates to
+  `speed × brakeDur / 2`, so the old 0.85 s would have overshot by 5.3 m. **THE LINE IS
   COMMITTED AT THE LAUNCH** (the delver's plough): the wind aims — the one wind allowed 1.4× his turn,
   because what you dodge is the TRAVEL — and the travel steers not at all, a test pinning the facing to the
   launch heading frame by frame. It runs to where you STOOD plus an overrun a wall cannot help, then pays
@@ -478,8 +507,21 @@ the hop → nothing, it is HIS answer to you), against 640 HP that only comes of
     you can recite what is coming; move and you get the other pattern, mid-rotation. **The variety comes
     from the player's own feet**, which is the only place variety is worth having.
   - A move on cooldown is SKIPPED, never waited for — and the player just watched him spend it.
-  - `classify` is pure and its only varying input is the cursor, so a test can pin that the same place
-    twice gives the same answer twice. That test IS the design.
+  - `classify` is pure and takes one `Sit` — everything he knows about the moment — so a test can pin that the
+    same place twice gives the same answer twice. That test IS the design.
+- **AND INSIDE A BAND HE WEIGHS, HE DOES NOT WALK A LIST** (`weigh`; owner: weight this all in his bespoke AI so
+  he makes interesting choices for the situation). The pattern used to hand him the first entry that was ready,
+  so the only thing the moment could say was "that one is on cooldown". Now every available entry is SCORED and
+  the best is taken — and it is a score, never a die, so the same moment always answers the same way:
+  - `W_ROTATION` is the biggest single term and decays down the pattern from the cursor: the rotation is still
+    the spine, and it breaks its own ties (a tie goes to the entry nearer the cursor).
+  - `W_FIT` is how well the range suits that arm (peaking at 0.72 of its own trigger), `W_SQUARE` how squarely
+    it is aimed inside its arc, `W_SIDE` the shield-side/sword-side grammar read off the row's own `Weight`.
+  - `W_PRESS` prefers the two strokes with GROUND in them (the lunge, the shove) when the spot is costing him;
+    `W_CIRCLE` prefers whatever follows a moving man best (`Attack.track`); `W_LIT` prefers the strokes that
+    leave chaos standing once the sword is lit.
+  - A bearing the arc cannot reach stays a HARD gate, not a weight: that stroke is not a worse choice, it is a
+    second and a half spent on a guaranteed miss.
 - **A COMBO IS A FIXED ROUTE HE WALKS** (`routeFor`; owner: longer combos). Rolled continuation meant one
   opener ran two hits sometimes and four others, so the player could never learn where a string ENDS — and
   the end is the punish window, which is the only thing a string is for. Each opener has one route, up to
@@ -558,9 +600,15 @@ the hop → nothing, it is HIS answer to you), against 640 HP that only comes of
   on every state change — and `.fall`→`.downed` lands inside the ring, snapping the whole body a quarter of a
   metre down its own length. Driven off `thud` itself it starts at 0, rings out over three half-cycles and ends
   at 0, blind to which state is holding it.
-- **THE SAFE POCKET IS HIS QUARTER, NOT HIS BACK.** `FALL_SECTOR` (44 deg either side of dead-behind) is
-  strictly outside `TOWER_ARC`, and the gap between them is where neither the door nor the strip reaches.
-  A MOVE THAT CANNOT LAND IS NOT A DECISION: the strip is a strip, so it does not cover the whole flank.
+- **THE SAFE POCKET IS HIS QUARTER, NOT HIS BACK.** `FALL_SECTOR` is strictly outside `TOWER_ARC`, and the gap
+  between them is where neither the door nor the strip reaches. A MOVE THAT CANNOT LAND IS NOT A DECISION: the
+  strip is a strip, so it does not cover the whole flank.
+  **BUT HE NO LONGER NEEDS YOU ON HIS SPINE** (owner: he should fall back onto you even if you aren't completely
+  behind him). At 44 deg the sector was an 88-deg cone and the aim could not close a quarter of it, so quartering
+  off his back beat the move outright. It is 70 now, and **the widening is paid for with the AIM** (`FALL_AIM`
+  0.34→0.62 rad/s): over the 1.45 s tell that is 51 deg of correction, which is what actually brings the strip
+  round onto a man standing off to one side. Still under `TURN_RATE` — a wall cannot spin — and both brackets
+  (outside the door's arc, with a pocket over 20 deg wide between them) are test-pinned.
 - **THE FALL IS NOT PARRYABLE, AND THAT IS A DECISION** written at `parryable`. There is nothing to catch in
   five metres of armour going over, and boards that stopped one would be the answer to the move this creature
   is built round. Its counter is the ROLL and the read — which is why the tell is the longest in the game.
@@ -1197,14 +1245,19 @@ respawn, so the spill plays under the YOU DIED card, which is the one moment not
   in `souls.zig` — because you come back for this under pressure and fumbling the reach is not the tension.
 
 **AND THE SOUL BINDING RING REFUSES THE WHOLE THING** (`item.soul_binding_ring`, DS's Ring of Sacrifice).
-Carried, a death takes the RING instead of the souls: it snaps, he keeps the lot, and nothing is left standing.
+WORN, a death takes the RING instead of the souls: it snaps, he keeps the lot, and nothing is left standing.
 
-- **CARRYING IT IS ENOUGH, AND THAT IS NOW A CHOICE RATHER THAN A LIMIT.** There is a ring socket (the signet is
-  in it), and this one still works out of the BAG: what it does, it does by being carried, so it costs no socket.
+- **IT HAS TO BE ON A FINGER** (owner's call), and it is the FIRST ring socket — the leech signet's own, so the
+  choice is HP back on every landed blow against keeping what you carry the once. Carried, nothing was ever
+  decided: picking it up bought the insurance, and the socket was free. `item.Bind` is the `Equip` variant that
+  says so and it holds a socket and nothing else — there is no dial on a thing that is spent or is not.
+- **THE SNAP EMPTIES THE FINGER AND THE BAG** (`game.spillSouls`). A worn socket only NAMES a kind the bag is
+  holding (`hero.wear`), so clearing the socket alone left the ring on the shelf to be put straight back on.
 - **IT IS NOT A TOOL.** `usable` is false and it is off the quick bar: a Confirm on it would promise something
-  the mechanic never does. It is the one thing in the bag spent by DYING.
-- **ASKED OF THE ITEM, NOT THE KIND** (`item.bindsSouls`, `isFlask`'s shape) — a second binding charm is one
-  row in `item.zig` and no edit at the death site.
+  the mechanic never does. It is the one piece of gear spent by DYING.
+- **ASKED OF THE ITEM, NOT THE KIND** (`item.bindsSouls`, read off the `Bind` payload) — a second binding band
+  is one row in `item.zig` and no edit at the death site, which is why `game.bindingWorn` walks every socket
+  rather than the two rings by name.
 - **ONE IN THE WORLD**, in a chest, and a test pins that. A box that refilled with them is a death you never
   have to take.
 
@@ -1223,6 +1276,11 @@ number, so a readout and a mechanic cannot disagree.
 - **THE PROC IS BILLED AS A DRIP** (`Vitals.drip`): it carries no poise, and stamped through `hit` it would
   deny him a whole poise bar it has no business touching. It takes `POISON_HP_FRAC` of MAX HP over its span,
   a fraction so it is worth the same on a Vitality build as on a fresh sheet.
+- **AND IT IS BILLED AS CHAOS** (`combat.poisonPulse`, PoE2's — poison is chaos over time there). It was raw
+  unresisted HP on ER's reading, which made the one status in the game the one thing nothing could answer.
+  **BUILDUP AND RESISTANCE ARE TWO DIALS AND BOTH ARE LIVE**: the tree's Warded Blood slows the METER filling
+  (`hero.perk.poison`, and `item.sporecrown` does the same) while chaos resistance cuts each TICK — different
+  axes on purpose, so a wizard carrying both is buying "harder to poison" and "poison hurts less" separately.
 - **THE DRAIN IS SILENT AND UNFLASHED.** The red edge and the beat belong to a BLOW; a status running
   fourteen seconds cannot own the frame, and a flash re-armed every tick would never go out. **The PROC gets
   the whole of the feedback, once** — one shake, one voice, one flash. The bar is the cue for the rest.
@@ -1247,12 +1305,14 @@ number, so a readout and a mechanic cannot disagree.
 - **POISE AND STANCE BELONG TO THE BLOW, NOT THE BODY.** `guardChip` is damage only for the same
   reason. **A shield is billed on the RAW blow** (`Hit.raw`).
 - **THREE AND A HALF OF THE FOUR ARE LIVE** — FIRE (hero's fire arrow, the tallowed sword, kobold sling
-  clump), LIGHTNING (the thundercrock's alone — nothing deals it AT the hero), CHAOS, which is the WAND'S
-  ALONE (the bolt and the roots' grip), and **COLD, which is now the one element BOTH SIDES deal**: the
-  necromancer's rune ring throws it at him and the rod's rime breath throws it back. Both carry it neat, with
-  no physical at all (`necro.FROST_HIT`, `combat.Chill`'s bite; a comptime assert pins the necromancer's).
-  Nothing in the world deals chaos AT the hero since the brood's venom and the sporeling's spores became
-  POISON, so cold is still the only element he actually meets.
+  clump), LIGHTNING (the thundercrock's alone — nothing deals it AT the hero), **COLD, which BOTH SIDES
+  deal**: the necromancer's rune ring throws it at him and the rod's rime breath throws it back, both neat
+  with no physical at all (`necro.FROST_HIT`, `combat.Chill`'s bite; a comptime assert pins the
+  necromancer's) — and **CHAOS, which is now the one he meets most**. It is the wand's (the bolt and the
+  roots' grip), the Bone Knight's (his lit blow and the GAS cloud), and **it is what POISON bills in**
+  (`combat.poisonPulse`, PoE2's reading: over there poison IS chaos over time). So the two things that carry
+  chaos resistance — the sporeling cap's ward and the tree's Veil — are the answer to the sporelings, the
+  brood and the boss alike, which is the reading that makes a sporeling's own cap worth wearing.
 - **AND COLD IS THE ONLY ONE THAT DOES SOMETHING BESIDES DAMAGE** (`combat.Chill`). It is a hold on the
   FEET — travel multiplied by `CHILL_TRAVEL`, taken as a post-step gate (`game.gateChill`), which is the
   roots' own law by fractions: the state machine still runs, the kit still swings at its own speed and the
@@ -1299,6 +1359,40 @@ their own row.
 **YOU START IN THE MIDDLE AND THREE ARMS RUN OUT OF IT.** The arms are never NAMED on screen — colour and
 direction carry which is which (`Arm.ink` is all that is left of them). Nothing here is a class: all three
 hang off the hub, so all three are open from the first souls you spend.
+
+**AND EACH ARM OPENS ON ONE CLASS NODE AND RADIATES FROM IT INTO TWO BRANCHES** (owner: you start each branch
+from one classlike node — strength, dexterity, int — and radiate out from there; 2 "branches" per "class"
+now, with bespoke ideas and stat boosts alike). `Arm.stat` is that node and it is the arm said in one
+attribute, so committing to an arm is ONE purchase and choosing between its two ideas is the next. Six
+`Branch`es, two per arm in arm order (`Branch.arm` is arithmetic, pinned at comptime), each a climb of six
+ending in **its own keystone** — 39 nodes against the old 21. What each branch is:
+
+| branch | what it is |
+| --- | --- |
+| `warrior_life` | armour, the slow refill, and blood off the blade — keystone `Sanguine Pact` (leech 4.0) |
+| `warrior_berserk` | the bargain, the cull, and what a body is worth as it drops — keystone `Berserk` (a fifth of the bar for 1.34x) |
+| `rogue_evade` | the roll, the bar behind it, poison, and ground covered — keystone `Misty Step` |
+| `rogue_ranged` | everything that leaves his hand — keystone `Hail` (thrown 1.55x) |
+| `wizard_well` | the pool: how deep, how fast it fills, what it wards — keystone `Wellspring` |
+| `wizard_cast` | how fast, how hard, and **`Chaos Bloom`** — the one keystone that is a MECHANIC and not a dial |
+
+- **A GRANT IS A NUMBER ON `Bonus` OR IT DOES NOT EXIST**, and **THE IDENTITY IS THE FIELD'S OWN** — 0 for
+  anything added, 1 for anything multiplied, false for a flag. A multiplier defaulted to 0 is a man with no
+  speed, no damage and no pool at all. A test pins every identity, pins that the whole tree moves every one
+  of them, and pins that **no `Grant` variant is unreachable** — a mechanic wired into the game that no node
+  can grant is what a half-landed tree looks like from outside, and that test caught exactly one.
+- **A BARGAIN IS STILL ONE GRANT** (`Grant.sacrifice`) — one decision with a price attached, not two grants
+  stapled together. The costs ADD and the gains MULTIPLY, so stacking them stays a decision; `hero.hpMaxOf`
+  clamps the pair with the charms at 0.9 of the bar, so a build that took both is still alive.
+- **THE CULL IS READ BEFORE THE BLOW, NEVER AFTER IT** (`foe.Blade.cullAt`, applied in `foe.strike`) — asked
+  of the HP the body walked into the swing with, so it is a threshold on a bar a player can aim for rather
+  than "anything the blow nearly killed". Carried on the BLADE because that is the one thing every strike
+  site already has, and stamped only on `game.heroBlade`.
+- **THE CHAOS BLOOM IS `knight.Gas` READ FROM THE OTHER SIDE.** The boss lays clouds to deny you ground; this
+  lays them where the bolt landed. Same type, same life, same `knight.GAS_DOSE_EVERY` — and it doses through
+  `pierceFoes` as a zero-length `through` blade at the cloud's own radius, which is the lance's own door, so
+  every body earns its flinch, blood, threat and death without this knowing what any of them is. Laid at the
+  IMPACT frame, the knight's rule: a bolt that MISSED still denies the floor it landed on.
 
 - **YOU CLIMB, AND THE LINK IS THE RULE** (`feeders` / `Tree.reached`). A node opens the moment ANY ONE of
   the things it hangs off is yours — no counts, no tolls, just a path walked a node at a time to the capstone
@@ -1724,7 +1818,10 @@ One number — `Game.day.hour` — and every colour and every shadow in the worl
   tests pin the direction and the palette row. `--shot` pins and FREEZES that hour (`game.pinHourForShot`) — a
   clock running through a 362-frame harness re-lights the sequence as it goes.
 - **The controls.** Menu > Debug > `Hour` (Left/Right scrub, Shift coarse, hold to sweep, Confirm holds it); in the
-  EDITOR, `,` and `.` sweep it and Shift runs (the clock is held in the editor, so those are the only writers).
+  EDITOR, `,` and `.` sweep it and Shift runs (the clock is held in the editor, so those are the only writers)
+  — **and the same hour is on the World card** (owner: add way to change time of day in editor, world menu),
+  as a readout, a quarter-hour stepper and the four marks worth authoring at, `Anchor` among them. A shortcut
+  nobody is told about is a feature nobody has; the world's LIGHT belongs on the card beside its size.
   A BONFIRE offers `Rest until morning` / `Rest until evening` — always FORWARD (`hoursUntil`), and asking for the
   hour you are on costs a whole day. Nothing is restocked there: `hero.sit` made him whole when he sat down.
   **THE TWO ROWS ARE THE TWO HALVES OF THE CLOCK, AND EVENING IS AFTER DARK** (owner's call): morning is 8:30 in
@@ -1740,6 +1837,93 @@ One number — `Game.day.hour` — and every colour and every shadow in the worl
 - Verify with the strip: `shots/140`–`147` are eight hours of ONE view shot into the light's own quarter, and
   `148*` three overheads of the same ground. The arc is the test — a frame that reads like its neighbour is an
   hour the palette is not earning.
+
+### The weather (`weather.zig`) — intermittent rain, and the storm's own lightning
+
+**IT IS AN EVENT, NOT A SETTING** (owner: rain, spaced out so it is intermittent). A storm arrives every
+`DRY_LO`..`DRY_HI` (150–420 s), runs `WET_LO`..`WET_HI` (55–145 s), and ramps at both ends — 9 s in, 14 s out,
+because weather that snaps on is a switch being thrown. Measured over an hour: **9 storms, raining 26% of the
+time, dry gaps of 162–405 s**, which is the shape "intermittent" has to mean. The clock is PURE (`Weather` is
+seconds and 0..1 and nothing else), so a test runs a day of it without a window.
+
+- **TWO STRENGTHS, AND ONLY THE HEAVIER ONE HAS A SKY** (owner: gentle to moderate, moderate has flashes of
+  lightning). `GENTLE_TOP` 0.52 against `MODERATE_TOP` 1.0, and the moderate storm is the minority
+  (`MODERATE_ODDS` 0.38) — a flash is worth something because most rain does not have one. Lightning waits for
+  the storm to actually arrive (`FLASH_AT`), so it never strikes out of a clearing sky.
+- **AND A STORM BREATHES WHILE IT IS THERE** (owner: vary the heaviness a bit as it storms). `gustAt` is two
+  slow swells on periods that do not divide (17.5 s and 30), riding the top DOWN by at most `GUST_DEEP` — a
+  moderate storm measures 0.70–1.00 of full. It rides the TOP and not the level, so the ramp still owns how
+  fast the sheet may move and a gust can never be a step. The lull bottoms out over `FLASH_AT` on purpose:
+  a breath that dipped under it would switch the storm's own lightning off and on again.
+- **THE STRIKE IS A DOUBLE AND THE THUNDER IS LATE.** `flash()` is a spike, a dark beat, then a lower second
+  flicker — one ramp reads as a lamp being switched. The sound is behind the light by the strike's own
+  distance (`STRIKE_LO`..`STRIKE_HI` over `SOUND_MPS`, 1.7–7.5 s measured), and it arrives even if the rain has
+  stopped: a strike you saw is a strike you hear.
+- **THE PICTURE IS ONE MESH** (`Rain`), and this is the whole performance argument. A cell of `STREAKS` streaks
+  one `CELL_H` tall is drawn STACKED up the camera's column and slid by a phase that WRAPS on the cell, so
+  there is no seam to arrive; the heavier storm draws the same cell a second time, offset. **7,200 triangles in
+  the cell, 4 draw calls gentle and 7 moderate**, and a test pins both. Rain as PARTICLES would be thousands of
+  live motes at one immediate-mode sphere each (`foe.drawParticles`) — more than the world costs.
+  - **WHAT COSTS IS FILL, AND WHAT FILL IS MADE OF IS DENSITY** — streaks per square metre, which a test
+    prints. At 820 streaks in an 11.5 m disc it was 1.97/m², a curtain up against the lens (owner: all forms of
+    rain too heavy); it is now **0.55/m² out to 24 m**, at `OPACITY` 0.26 rather than 0.44 (owner: all rain is
+    too opaque). Spreading the disc IS the thinning: the streaks are laid by area, so trebling it drops the near
+    field by the same factor while the count barely moves — and a streak twenty metres out costs almost no fill
+    (owner: spread rain out into the distance).
+  - **THE COLUMN STANDS ON THE MAN, NOT ON THE LENS, AND ITS RIM FADES** (owner: rain must project on all sides
+    of the hero; if you look around it ends abruptly). Centred on the camera the disc reached 24 m behind the
+    lens and 19 ahead of the hero — the short side being the side the frame looks at; and it must be a point
+    the camera does not ROTATE, since a lead taken off the camera's forward slides the whole sheet sideways at
+    40 m/s when you turn. The rim thins to nothing past `TAPER_FROM` (width goes out, length only part way, so
+    the last legible ones are still streaks), baked into the geometry because a per-streak opacity is the one
+    thing this renderer has no channel for. And the heavy sheet's second copy is offset in Y, barely in XZ: a
+    5 m sideways shift put its doubled density off in one quarter and left the storm visibly lopsided.
+  - **THE HEAVY SHEET FADES IN, IT DOES NOT ARRIVE** (`copyFade`, owner: heavy rain starts/stops too
+    suddenly). The second copy was `if (level >= DOUBLE_AT)` — a whole cell of rain appearing between two
+    frames while the level either side of it eased over nine seconds. It now ramps over the top of the ramp
+    (3.6 s up, 5.6 s out) and tops out at `COPY_TOP` 0.72 of full, so the peak storm is 6.16 columns of
+    blended fill rather than 8.
+  - `FALL_MPS` is 13, just over real rain's 7–9 (owner: all rain falls too quickly). At 21 a streak crossed
+    twenty-three times its own body in a second, which is not fall — it is a smear, and the drops go with it.
+  - **A STREAK IS TWO CROSSED CARDS**, because a single card is invisible edge-on: rain that vanishes when you
+    turn is worse than no rain. Two segments each, so the tail fades in the GEOMETRY (`propfx`'s pillar law).
+  - **THE SLANT IS WORLD-FIXED** (0.30 across the fall) so turning the camera turns the rain rather than the
+    weather following the lens — and it was MEASURED off the first shot, where 0.17 read as vertical.
+  - It draws LAST, through `Scene.beginFade`: no depth written (a half-there surface may not), still depth
+    TESTED, which is what puts it behind the wall you are standing under.
+- **THE CLOUD TAKES THE LIGHT, AND THE STRIKE GIVES IT BACK** — two rectangles over the frame, INSIDE the retro
+  pass, because both are things happening to the world's light and not to the HUD. `DIM_MAX` 0.17 of a cold
+  slate; the flash at 74/46 alpha, which is where it went after the first pass whited the frame out entirely.
+- **BUT THE STORM IS A LAYER ON THE PALETTE, NOT A RECTANGLE** (`daynight.overcast`, owner: affect lighting
+  depending on weather — different filters/layers). A rectangle over the picture cannot touch a shadow, a
+  specular or the far distance. Cloud does four things it cannot: it puts the KEY out (`STORM_KEY` 0.34, so the
+  shadows and every `keyAmt` specular go with it), it leaves the AMBIENT alone because an overcast sky is one
+  enormous soft source, it takes the WARMTH out of everything (`slate` is luma-preserving, so this is a hue
+  change and not a dimmer), and it CLOSES THE DISTANCE — the haze colour lifts and `gfx.HAZE_STORM` multiplies
+  its density by 2.4. Every term is a factor on the HOUR'S own value, never a constant: an overcast midnight
+  has to stay midnight. `Scene.setHour`/`Sky.setHour` take the level, so the dome and the world agree.
+  - The fog distance has a DEBUG override beside the weather row (`menu.DBG_FOG`: Auto / Off / Thick / Soup) —
+    the dial is what is being tuned, so there has to be a way to look at it without waiting for a storm. The row
+    answers TWO questions and each half reads its own: `fogK` is the haze DISTANCE, `fogAmt` is how foggy it IS.
+- **AND THE FOG HAS A SHAPE: THE STRAY BANKS** (`weather.Mist`, owner: stray volumetric clouds, very
+  translucent, gradient-based, flit around softly and slowly during foggy times — VERY slow). The haze is the
+  air and has no shape at all; these are seven banks of it standing in the field, so fog is somewhere you walk
+  through rather than a value. **THE GRADIENT IS IN THE GEOMETRY**: one bank is a cluster of 22 lumps scattered
+  with the density falling off outward, so the alpha compounds in the middle and thins at the rim — there is no
+  per-vertex opacity to be had here (vertex alpha is the EMISSIVE channel) and three concentric shells would
+  read as three rings. One draw per bank, 7 draws and ~10.8k tris for the whole field, `MIST_TOP` 0.17 at full
+  fog. **AND IT IS THE SLOWEST THING IN THE GAME** — 0.045–0.16 m/s, 94 s for a bank to cross its own width;
+  anything you can watch moving is a prop being slid. Banks ramp in and out over 9 s and are re-seeded out past
+  `MIST_R`, never in view. Three mesh variants, the repeated-big-prop law.
+- **THE BED IS THE STORM'S, NOT THE HOUR'S** (`audio.setRain`, `audio.mkRain`) — three bands with a granular
+  patter, since a hiss alone is tape noise and a low roar alone is a motorway. It does not retrigger while it
+  is dry, so a clear world costs a comparison. Thunder (`mkThunder`) is a ROLL with no transient at its head —
+  a click there says "sample" instead of "sky" — and it is the third kind of ambient voice
+  (`AMBIENT_EVENTS`): not a bed, not a call, fired by the world.
+- The weather does not run in the EDITOR (it is a tool), and `--shot` forces one: `shots/150`–`153` are dry,
+  gentle, moderate and the strike, and `154`–`155` are the fog and one mist bank — forced through the debug row
+  (`game.forceFogForShot`) so the air and its banks are photographed APART from the rain, which is the only way
+  either can be judged.
 
 ### Elevation
 
@@ -1808,7 +1992,25 @@ The mesh is TILED (`TCHUNK`), with normals from the FIELD so two tiles agree at 
 - **EVERYTHING THINS EXCEPT WHAT SAYS `solid`** — architecture, cliffs, the water sheet, the bonfire (its
   smoke draws down `drawVeils`, which carries no fade). The flag is that way round because as an opt-in
   `fades` every kind added afterwards opted out by silence, and boulders, statues, lanterns and saplings
-  blotted the hero out solid. Flora is exempt structurally: `markOccluders` walks `stx` only.
+  blotted the hero out solid.
+- **GROUND COVER THINS FROM HIS WAIST UP** (`OCCL_TALL` 1.15 m, the rig's SPINE at 0.640·H).
+  `markOccluders` walks BOTH indices — `scanCell` over `stx` then `flx` — and the height gate is what keeps
+  the grass out of it. Coverage will not do that job: a tuft up against the lens scores 0.54, over three
+  times `OCCL_MIN`, so ungated the commonest thing in the world ghosts round his boots every time the lens
+  dips. **The gate is the INSTANCE'S height, `top * scale`, not the kind** — the scatter stamps 0.72..1.38,
+  and a bramble is knee-high nominal and a waist-high mass at the top of that range. On the shipped map it
+  passes 5,095 of 15,826: all the cattails, thicket and ivy, most of the reeds, bush, grasstall, gorse and
+  foxglove, and NOT ONE tuft, patch, fern, shrub, bracken, moss, clover, heather or mushroom. At his HIP
+  instead (0.95) it let 316 scaled patches and 303 ferns in, which is the grass it exists to keep out.
+- **AND IT COSTS NOTHING TO HAVE.** Flora is 15,826 of the map's 17,524 props; the gate leaves 45..52 of them
+  reaching `thinFor` a frame beside the 22 the props index does (one `coverFrac` each — flora has no `occl`
+  list and no colliders). Measured over the whole map at 2.4/4.6/9.0 m of boom, what actually enlists is
+  0.11..0.15 instances a frame, worst spot 10, and the whole list peaks at 12 of `OCCL_MAX` 64 — against a
+  lit pass already issuing 865 draws and peaking near 1875. It was never a frame problem; it was shimmer.
+- **A THINNED PLANT KEEPS ITS WIND** (`drawThinned`). `drawFlora` draws inside `Scene.setWind(true)` and this
+  path is outside it, so ground cover snapped out of its own sway on the frame it started to thin and back on
+  the frame it went solid. It goes on for BOTH of the pass's draws, never one: the depth prepass has to lay
+  down the same geometry the colour pass draws, or LEQUAL throws the surface away.
 - **THE OCCLUDER VOLUME IS NOT THE COLLIDER** (`props.Blocker`, `Info.occl`). A collider is sized for what
   you WALK INTO, an occluder for what you SEE THROUGH, and on a tree those differ by metres — a conifer's
   collider is a 0.58 m pole against boughs that block the view at 3.4 m, so looking through the canopy
@@ -2135,6 +2337,15 @@ not the stick-speed `runB`.
   instead, and a wander made of straight capsules is a chain of elbows. The total arc is the per-segment
   curl TIMES the segment count, so moving either the length or the count re-brackets the curl — the same
   bend spread over a longer run straightens into a stake.
+- **A MOTE IS A CPU-TRANSFORMED SPHERE, SO A POOL NOBODY CAN SEE MAY NOT BE DRAWN** (`foe.motesVisible`,
+  `foe.setLens`). `drawParticles` puts every live mote through `rl.drawSphereEx`, which generates its vertices
+  on the CPU with trig per vertex — `necro`'s sigil writes the measurement down beside itself (157 spheres at
+  4×6 ≈ 7.5k transformed triangles a frame), and twelve chaos clouds (`knight.GAS_CAP`, the charge's lane) is an
+  order of magnitude past it, most of it behind you while you fight the thing that laid it. The gate is a REACH
+  and a HEMISPHERE and **it is not the frustum and may never become one** — `env.View` is the frustum, there is
+  one of them, and a second culler is the empty-world bug. A pool the lens is standing INSIDE always draws.
+  - **AND IT IS NOT GATED ON THE EMITTER BEING ALIVE.** A cloud ticks its motes past its own death on purpose,
+    so a puff laid on the last frame still fades out; `shroom`'s own test pins that, and it is the same trap.
 - **A RING THAT OVERWRITES ITS OLDEST DOES IT SILENTLY**, so its size is arithmetic over what feeds it
   (every emitter's worst frame), asserted at comptime — never a round number that looked big enough.
 - **A cylinder is CAPLESS** — an open end shows its culled interior. Cap with `addDome` or an
@@ -2257,12 +2468,13 @@ And nothing raises a body but this creature, so `foe.rekindle` has exactly two c
 No criticals, guard counter, or AR × motion-value damage (flat constants
 today). THE JUMP EXISTS but nothing hangs off it yet: no jump ATTACK (the one thing ER bills stamina for), no
 fall damage at any height, and no creature's move misses him for being over it — a sweep you jump is a sweep
-that still lands, because a per-move height is authored at each `toImpact` the way a parry window is. SOULS BUY LEVELS AND NOTHING ELSE — there is no merchant. The PASSIVE TREE is the basic version: 21
-nodes, three arms of seven, no respec, no jewel sockets, and no second grant on a node. Twelve of the
-twenty-one are attribute nodes — four an arm — and ONE of the seven attributes is still inert: LUCK, which no
-drop and no rare find reads (`stats.inert`, and the sheet says so). POISON is the only status effect, it is the HERO's alone (nothing applies one to a foe, and no foe
-reads one), and nothing RESISTS it yet — the sporeling cap's ward still grants CHAOS resistance, which since
-the venom became poison protects against nothing in the world. THE EQUIP SYSTEM EXISTS AND EVERY REGISTERED PIECE
+that still lands, because a per-move height is authored at each `toImpact` the way a parry window is. SOULS BUY LEVELS AND NOTHING ELSE — there is no merchant. The PASSIVE TREE is 39 nodes — three arms of a
+class node plus two branches of six — with no respec, no jewel sockets, and no second grant on a node. Every
+attribute is raised by at least one node (a test pins that), and NO attribute is inert any more: LUCK was the
+last, and the drop tables (`drops.zig`) are the job its own line always promised. `stats.inert` stays and answers false for
+all seven, because the next attribute arrives dead the way that one did. POISON is the only status effect and it is the HERO's alone (nothing applies one to a foe, and no foe
+reads one) — but it is CHAOS DAMAGE now (PoE2's, `combat.poisonPulse`), so the sporeling cap's ward and the
+tree's Veil both answer it and it is no longer the one thing in the game nothing could mitigate. THE EQUIP SYSTEM EXISTS AND EVERY REGISTERED PIECE
 IS LIVE, but **the HELD MESH is still the plain armament's**: the dirk, the club, the warbow and the door swing,
 block and photograph as the sword, the bow and the small shield, so the fight and the page know which one is in
 his fist and his hand does not. The club and the door have meshes to borrow (`ogre`'s club, `knight`'s bowed

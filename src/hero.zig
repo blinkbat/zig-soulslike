@@ -289,8 +289,12 @@ pub fn fireTipped(h: combat.Hit) combat.Hit {
 }
 
 /// EXHAUSTIVE here rather than `== .fire` tests in the loose, the shot harness and the HUD.
-pub fn arrowBlow(k: combat.ArrowKind, aimed: bool) combat.Hit {
-    const base = if (aimed) BOW_AIMED_HIT else BOW_QUICK_HIT;
+/// **AND THE ROGUE'S RANGED BRANCH IS A DIAL ON THE SHAFT ITSELF** (`passivetree.Grant.bowDmg`), with the
+/// berserker's bargain over the top of it — a blow is a blow whichever hand threw it. Taken BEFORE the fire
+/// tip, so a burning arrow's fire is a share of the shaft as it actually leaves the string (`fireTipped`'s
+/// own rule) rather than of the bare constant.
+pub fn arrowBlow(k: combat.ArrowKind, aimed: bool, perk: ptree.Bonus) combat.Hit {
+    const base = (if (aimed) BOW_AIMED_HIT else BOW_QUICK_HIT).scaled(perk.bowDmg * perk.dmg);
     return switch (k) {
         .plain => base,
         .fire => fireTipped(base),
@@ -786,15 +790,21 @@ pub fn charmOf(worn: Worn) item.Charm {
 
 /// THE RED BAR'S LENGTH FOR A SHEET AND A SUIT — the sheet's own figure less whatever a charm is eating.
 /// `Hero.refitHp` is this same expression on the live man; the page needs it off a loadout.
-pub fn hpMaxOf(sheet: statsmod.Sheet, worn: Worn) f32 {
-    return sheet.hp() * (1.0 - mathx.clampF(charmOf(worn).hpFrac, 0, 0.9));
+pub fn hpMaxOf(sheet: statsmod.Sheet, worn: Worn, perk: ptree.Bonus) f32 {
+    // **AND THE BERSERKER'S BARGAIN EATS THE SAME BAR A CHARM DOES** (`passivetree.Grant.sacrifice`) — the two
+    // costs ADD before the clamp, so a leech signet worn under Berserk cannot take more than the floor allows
+    // and a build that stacked both can still be alive.
+    const eaten = charmOf(worn).hpFrac + perk.hpFrac;
+    return sheet.hp() * (1.0 - mathx.clampF(eaten, 0, 0.9));
 }
 
 /// …AND THE BLUE BAR'S, on exactly the same terms. Its own function rather than a flag on the red one's:
 /// `refitBars` writes three pools and the page prices all three, so the two bars a charm can eat into have to
 /// answer the same shape of question.
-pub fn fpMaxOf(sheet: statsmod.Sheet, worn: Worn) f32 {
-    return sheet.fp() * (1.0 - mathx.clampF(charmOf(worn).fpFrac, 0, 0.9));
+pub fn fpMaxOf(sheet: statsmod.Sheet, worn: Worn, perk: ptree.Bonus) f32 {
+    // …and the WELL branch lengthens it (`passivetree.Grant.fpMax`), which is the one thing on either bar
+    // that pushes the other way — applied after the charm's bite, so a deeper pool is deeper for real.
+    return sheet.fp() * (1.0 - mathx.clampF(charmOf(worn).fpFrac, 0, 0.9)) * perk.fpMax;
 }
 
 /// …AND WHAT IT IS WORTH IN POINTS OF SKILL, folded onto a sheet that already carries the tree's (`item.Boon`).
@@ -1546,7 +1556,7 @@ pub const Hero = struct {
         self.vit = freshVitals(self.sheet);
         self.refitHp(); // …and what a charm is eating out of the red bar (`refitHp` keeps the fraction: it is full here)
         self.stam.max = self.sheet.stamina();
-        self.fp.max = fpMaxOf(self.sheet, self.worn);
+        self.fp.max = fpMaxOf(self.sheet, self.worn, self.perk);
         self.stam.reset();
         self.fp.reset();
         self.regen.reset();
@@ -1574,7 +1584,19 @@ pub const Hero = struct {
         self.blendT = @min(self.blendT + dt, mathx.LONG_AGO);
         // Stamina must advance exactly ONCE per frame whichever path runs, or `--shot` drains every swing it
         // takes and never refills. The cast is in the PAUSE list but not the DRAIN argument: it bills FP.
+        // **THE ROGUE'S BAR REFILLS FASTER** (`passivetree.Grant.stamRegen`) — stamped on the pool rather
+        // than multiplied into the tick, because `Stamina.regenRate` is the dial that already exists and the
+        // brew rides beside it.
+        self.stam.regenRate = self.perk.stamRegen;
         if (!self.held) self.stam.tick(dt, self.sprinting, self.attacking or self.rolling or self.guarding or self.casting or self.parrying);
+        // **THE TWO SLOW REFILLS THE TREE BUYS**, and they run on the same one-a-frame rule the stamina does.
+        // HP is the first thing in the game that comes back without an item; FP the blue bar's own answer.
+        // NOT gated on the poise clock — this is a trickle, not the stagger refill, and a warrior who cannot
+        // heal while being hit has bought nothing at all. Neither can exceed its pool: `heal`/`restore` clamp.
+        if (!self.held and !self.dead) {
+            if (self.perk.hpRegen > 0) _ = self.vit.heal(self.perk.hpRegen * dt);
+            if (self.perk.fpRegen > 0) _ = self.fp.restore(self.perk.fpRegen * dt);
+        }
         self.stamRefused = @max(0, self.stamRefused - dt);
         self.fpRefused = @max(0, self.fpRefused - dt);
         // Both have to move under every advance path, or the shield hangs mid-raise through a stagger and the
@@ -2166,7 +2188,10 @@ pub const Hero = struct {
         self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
         if (faceYaw) |ty| self.facing = mathx.approachAngle(self.facing, ty, TURN_TO_SHOT * dt);
         const was = self.castT / CAST_DUR;
-        self.castT += dt;
+        // **THE WHOLE CAST IS ONE CLOCK, so speeding it up is speeding THAT** (`passivetree.Grant.castSpeed`).
+        // Every window on the cast — the throw, the gather, the rime's own pour — is a fraction of `castT`,
+        // so the tell shortens with the recovery and nothing can come out before its own picture does.
+        self.castT += dt * self.perk.castSpeed;
         // A one-frame EDGE, `updateShot`'s: a long frame cannot throw twice, a short one cannot miss it.
         if (was < CAST_AT and self.castT / CAST_DUR >= CAST_AT) self.thrown = true;
         self.pose();
@@ -2457,7 +2482,7 @@ pub const Hero = struct {
     }
 
     pub fn shotBlow(self: *const Hero) combat.Hit {
-        return weigh(arrowBlow(self.shotArrow, self.shotAimed), self.drawRow(), self.sheet);
+        return weigh(arrowBlow(self.shotArrow, self.shotAimed, self.perk), self.drawRow(), self.sheet);
     }
     pub fn shotShaft(self: *const Hero) archer.Shot {
         return arrowShot(self.shotArrow);
@@ -2782,7 +2807,10 @@ pub const Hero = struct {
         // THE WEAPON FIRST, THE TALLOW SECOND. The grease is a share of the blade's OWN physical, so a greased
         // club burns hotter than a greased dirk — read off the bare constant it would be one flat number for
         // every weapon in the game, which is the same bug as a fire arrow that ignores the bow.
-        const base = weigh(if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT, self.swingRow(), self.sheet);
+        // …AND THE BARGAIN RIDES THE WHOLE BLOW (`passivetree.Grant.sacrifice`): what he gave health for is
+        // WEIGHT, not just damage, so poise and stance come with it — `combat.Hit.scaled`'s own law, and the
+        // reason Berserk staggers things a bare swing bounces off.
+        const base = weigh(if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT, self.swingRow(), self.sheet).scaled(self.perk.dmg);
         if (!self.grease.on()) return base;
         // Fire ON TOP, the physical untouched — the fire arrow's own construction (`fireTipped`).
         var out = base;
@@ -2823,7 +2851,10 @@ pub const Hero = struct {
 
     /// …and the two WORN rows, on the same rule: nothing on is a zero that changes nothing.
     pub fn armourA(self: *const Hero) f32 {
-        return armourOf(self.worn);
+        // **THE TREE'S PLATE IS THE SUIT'S** (`passivetree.Grant.armour`) — added to `A` rather than given a
+        // curve of its own, so a node and a coat are one number through `combat.armourTaken` and stacking
+        // them can never become immunity.
+        return armourOf(self.worn) + self.perk.armour;
     }
     /// EVERY CHARM HE HAS ON, ADDED UP — walked over the sockets because there are two fingers now, and a second
     /// band read off the first socket's name would have been a piece of gear silently doing nothing.
@@ -2863,7 +2894,7 @@ pub const Hero = struct {
         // …AND THE BLUE ONE THROUGH `fpMaxOf`, not off the bare sheet: the gravebell eats into it exactly the
         // way the leech signet eats into the red one, and read straight off `sheet.fp()` the charm would be a
         // discount that cost nothing.
-        refitPool(&self.fp.cur, &self.fp.max, fpMaxOf(self.sheet, self.worn));
+        refitPool(&self.fp.cur, &self.fp.max, fpMaxOf(self.sheet, self.worn, self.perk));
     }
 
     /// THE RED BAR'S LENGTH — the sheet's own figure less whatever a charm is eating. **THE FRACTION IS KEPT
@@ -2871,7 +2902,7 @@ pub const Hero = struct {
     /// that jumped either way would be the one number on screen the player cannot trust.
     fn refitHp(self: *Hero) void {
         const frac = if (self.vit.hpMax > 1e-4) self.vit.hp / self.vit.hpMax else 1.0;
-        self.vit.hpMax = hpMaxOf(self.sheet, self.worn);
+        self.vit.hpMax = hpMaxOf(self.sheet, self.worn, self.perk);
         self.vit.hp = mathx.minF(self.vit.hpMax, self.vit.hpMax * frac);
     }
 
@@ -2879,7 +2910,9 @@ pub const Hero = struct {
     /// the hit's own beat comes off (a foe's hit count climbing) and gates it on his own swing, since that edge is
     /// a SUM and a spirit's jaws move it too. A swing that achieved nothing feeds nothing.
     pub fn drinkLeech(self: *Hero) f32 {
-        const back = self.charm().leech;
+        // THE SIGNET AND THE TREE ARE ONE DIAL (`passivetree.Grant.leech`): the warrior's life branch is the
+        // same bargain the ring is, at the same site, so a build wearing both drinks once for the sum.
+        const back = self.charm().leech + self.perk.leech;
         return if (back > 0) self.vit.heal(back) else 0;
     }
 

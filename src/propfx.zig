@@ -160,9 +160,34 @@ const PILLAR_R0: f32 = 0.105;
 const PILLAR_R1: f32 = 0.048;
 /// **THE ALPHA IS SOLVED AGAINST THE SHADER'S OWN STEP, NOT CHOSEN.** `outA` lerps TIP→CORE across
 /// `smoothstep(0.62, 0.90, emis)` and `emis = 1 - a/255`, so the translucent end wants `emis <= 0.62`, i.e.
-const PILLAR_A: u8 = 104;
-const PILLAR = mathx.rgba(212, 208, 176, PILLAR_A);
-const PILLAR_TOP = mathx.rgba(150, 148, 118, PILLAR_A); // it dies out upward rather than ending on a rim
+/// any `a >= 97`.
+///
+/// **AND IT FADES OUT AS IT GOES UP** (owner's call). Both ends used to sit on one alpha, so only the COLOUR
+/// dimmed and the shaft was uniformly `FLAME_A_TIP` from foot to head — a column of even translucency, which
+/// reads as a cut-off cylinder rather than as light dispersing. Since the shader FLOORS opacity at the tip
+/// value, the only way to get a gradient is to make the FOOT more solid, so the foot is solved and the head
+/// is left on the floor: `a = 63` → `emis = 0.753` → `outA ≈ 0.62`, easing to the tip's 0.42 by the top. It
+/// is deliberately short of `FLAME_A_CORE` (0.86) — you still see THROUGH the thing, which is the whole of
+/// what makes it a shaft of light and not a post.
+const PILLAR_A_FOOT: u8 = 63;
+const PILLAR_A_HEAD: u8 = 104;
+const PILLAR = mathx.rgba(212, 208, 176, PILLAR_A_FOOT);
+const PILLAR_TOP = mathx.rgba(150, 148, 118, PILLAR_A_HEAD); // it dies out upward rather than ending on a rim
+
+/// The `a` at which `emis` reaches the shader's own translucent floor — `emis = 1 - a/255 <= 0.62`.
+const FLAME_TIP_A: u8 = 97;
+comptime {
+    // **THE FADE'S DIRECTION IS THE ONE THING THAT CAN BE WRITTEN BACKWARDS AND STILL COMPILE.** Alpha is the
+    // EMISSIVE channel and LOWER is more self-lit, so the SOLID end of a shaft of light is the SMALLER number
+    // — put these two the other way round and the pillar fades out at the bottom, which reads as a column
+    // hanging in the air off nothing.
+    std.debug.assert(PILLAR_A_FOOT < PILLAR_A_HEAD);
+    // …and the head has to actually REACH the floor, or the top is merely dimmer rather than thinner.
+    std.debug.assert(PILLAR_A_HEAD >= FLAME_TIP_A);
+    // …while the foot stays clear of it, or there is no gradient at all — which is what both ends sharing one
+    // alpha was.
+    std.debug.assert(PILLAR_A_FOOT < FLAME_TIP_A);
+}
 /// How far above the ground the whole thing reaches — what `props.INFO` has to declare as its `top`, or the
 /// culler measures the prop by its wisp and pops the pillar out at the screen edge.
 pub const PICKUP_TOP: f32 = PILLAR_H + 0.10;
@@ -222,7 +247,9 @@ pub fn pickupMesh(shader: rl.Shader) rl.Model {
     b.setAnimY(0);
     var prevP = v3(0, 0.06, 0);
     var s: i32 = 0;
-    const PSEGS: i32 = 5;
+    // **NINE, NOT FIVE.** A capsule carries ONE colour, so the segment count IS the resolution of the fade —
+    // at five the shaft went up in five flat BANDS, which is a stack of tubes rather than light thinning out.
+    const PSEGS: i32 = 9;
     const PSEGF: f32 = @floatFromInt(PSEGS);
     while (s < PSEGS) : (s += 1) {
         const f = @as(f32, @floatFromInt(s)) / PSEGF;
@@ -233,13 +260,20 @@ pub fn pickupMesh(shader: rl.Shader) rl.Model {
             prevP.y + PILLAR_H / PSEGF,
             prevP.z + rng.signed() * 0.016,
         );
+        // **THE COLOUR IS THE SEGMENT'S MIDDLE, EASED.** Taken at its FOOT the last segment sampled 0.8 and the
+        // head never reached the top colour at all — the shaft simply stopped, one band short of gone. And the
+        // ease is what makes it a DISPERSAL rather than a ramp: it holds near full through the lower third,
+        // where a shaft of light is still a shaft, then gives out over the top — reaching the shader's own
+        // translucent floor a little before the tip, so the head goes to nothing instead of ending on a rim.
+        const fm = (f + 0.5 / PSEGF);
+        const t = fm * @sqrt(fm);
         b.addCapsule(
             prevP,
             nextP,
             mathx.lerpF(PILLAR_R0, PILLAR_R1, f),
             mathx.lerpF(PILLAR_R0, PILLAR_R1, f + 1.0 / PSEGF),
             7,
-            mathx.lerpColor(PILLAR, PILLAR_TOP, f),
+            mathx.lerpColor(PILLAR, PILLAR_TOP, t),
         );
         prevP = nextP;
     }

@@ -118,6 +118,8 @@ test {
     _ = @import("bake.zig");
     _ = @import("chest.zig");
     _ = @import("rest.zig");
+    _ = @import("drops.zig"); // WHAT A BODY LEAVES — the table, and the one thing LUCK reads
+    _ = @import("weather.zig"); // …and what the sky is doing: intermittent rain, and the storm's own lightning
     _ = @import("souls.zig"); // THE DROP — one, and everything about it is that there is only one
     _ = @import("passivetree.zig"); // …and the one thing that spends it: the radial passive tree
     _ = @import("rumble.zig");

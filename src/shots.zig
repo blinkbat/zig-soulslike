@@ -98,6 +98,9 @@ fn bonfireShoot(g: *Game, name: [:0]const u8) void {
     game.takeSlotShot(g); // the loop's own order: the slot's thumbnail comes off the BARE frame
     hud(g, SHOT_DT);
     game.drawBonfireForShot(g);
+    // …AND THE SAVE MARK OVER IT, which is where it actually sits: sitting down writes the file, and the fire's
+    // own screen is up while it does. Pinned mid-growth, at full alpha — the one frame the tree can be judged on.
+    game.drawSaveMarkForShot(hudmod.SAVE_SHOW - hudmod.SAVE_GROW * 0.78);
     snap(name);
 }
 
@@ -1715,6 +1718,34 @@ pub fn runShots(g: *Game) void {
         // …and the same tree with the line clear of it, which is what proves it goes back to solid.
         standHero(g, tp.x + 7.0, tp.z + 7.0, mathx.radians(LIT_YAW + 180.0));
         shootAt(g, "shots/94_occlude_clear.png", g.hero.shoulderPoint(), LIT_YAW, 0.06, 7.0);
+
+        // **THE WEATHER**, which no unforced run would ever catch: it arrives every few minutes and the
+        // harness photographs one frame. Three, because the thing to judge is the LADDER — dry, the gentle
+        // wash, the moderate sheet — and then the strike, which is the only frame the flash exists on.
+        standHero(g, 2.0, -18.0, std.math.pi);
+        game.clearWeatherForShot(g);
+        shootAt(g, "shots/150_weather_dry.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
+        game.forceWeatherForShot(g, .gentle, -1);
+        stepWorld(g, dt, 0); // one frame, so the level and the fall phase are the ones being drawn
+        shootAt(g, "shots/151_rain_gentle.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
+        game.forceWeatherForShot(g, .moderate, -1);
+        stepWorld(g, dt, 0);
+        shootAt(g, "shots/152_rain_moderate.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
+        // …and the strike itself, at the spike rather than at whatever the clock happened to be on.
+        game.forceWeatherForShot(g, .moderate, 0.02);
+        shootAt(g, "shots/153_lightning.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
+        game.clearWeatherForShot(g);
+
+        // **THE FOG AND ITS BANKS, PHOTOGRAPHED APART FROM THE RAIN.** The haze is the AIR and a bank is its
+        // SHAPE, and neither can be judged through a sheet of rain in front of it. Forced through the debug
+        // row (`forceFogForShot`), which is the same override the row exists to give.
+        game.forceFogForShot(g, true);
+        game.forceMistForShot(g, 16.0);
+        stepWorld(g, dt, 0);
+        shootAt(g, "shots/154_fog.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
+        // …and the same bank from further back, where the thing to judge is whether it has an EDGE.
+        shootAt(g, "shots/155_mist_bank.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 22.0);
+        game.forceFogForShot(g, false);
     }
 
     // Restore the idle-hold framing for the filter/menu verification shots below.
@@ -1751,7 +1782,7 @@ pub fn runShots(g: *Game) void {
     g.menu.cursor = 0;
     drawScene(g);
     hud(g, SHOT_DT);
-    g.menu.draw(&g.retro, &g.day, game.bookView(g), null, &shelf);
+    g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), null, &shelf);
     snap("shots/12_menu_main.png");
 
     // THE BOOT SCREEN, framed the way the LOOP frames it (`game.BOOT_*`) — the card is only half of what is
@@ -1765,25 +1796,25 @@ pub fn runShots(g: *Game) void {
     g.menu.home = .boot;
     g.menu.cursor = 1; // ON Load, which is the only row whose two states differ
     drawScene(g);
-    g.menu.draw(&g.retro, &g.day, game.bookView(g), null, &bare);
+    g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), null, &bare);
     snap("shots/12a_menu_boot.png");
 
     drawScene(g);
-    g.menu.draw(&g.retro, &g.day, game.bookView(g), null, &shelf);
+    g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), null, &shelf);
     snap("shots/12b_menu_boot_save.png");
 
     // …AND THE PICKER. Two slots filled and one empty, which is the one staging that shows all three of a
     // row's states at once: taken, taken, and the greyed Empty a Load may not press.
     g.menu.showSlotsForShot(.load, 1);
     drawScene(g);
-    g.menu.draw(&g.retro, &g.day, game.bookView(g), null, &shelf);
+    g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), null, &shelf);
     snap("shots/12c_menu_slots.png");
 
     // The same three under NEW, and the greying is the exact INVERSE of Load's: a new character needs an
     // EMPTY slot, so the two taken rows are the refused ones and the empty one is the only press.
     g.menu.showSlotsForShot(.new, 1);
     drawScene(g);
-    g.menu.draw(&g.retro, &g.day, game.bookView(g), null, &shelf);
+    g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), null, &shelf);
     snap("shots/12d_menu_slots_new.png");
 
     // …AND THE BOOT ROW ITSELF, greyed, when there is nowhere to put one: with all three written there is no
@@ -1792,7 +1823,7 @@ pub fn runShots(g: *Game) void {
     g.menu.screen = .boot;
     g.menu.cursor = 0; // ON New Game, which is the row whose two states differ here
     drawScene(g);
-    g.menu.draw(&g.retro, &g.day, game.bookView(g), null, &packed_);
+    g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), null, &packed_);
     snap("shots/12ca_menu_boot_full.png");
     g.menu.showSlotsForShot(.load, 1);
 
@@ -1802,7 +1833,7 @@ pub fn runShots(g: *Game) void {
     g.menu.showSlotsForShot(.load, 0);
     g.menu.armDeleteForShot();
     drawScene(g);
-    g.menu.draw(&g.retro, &g.day, game.bookView(g), null, &shelf);
+    g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), null, &shelf);
     snap("shots/12e_menu_slot_delete.png");
 
     g.menu.onEscape(); // …and OUT through the picker's own door, which is what drops its three textures
@@ -1817,7 +1848,7 @@ pub fn runShots(g: *Game) void {
     g.menu.cursor = gfx.RF_GAMEBOY;
     drawScene(g);
     hud(g, SHOT_DT);
-    g.menu.draw(&g.retro, &g.day, game.bookView(g), null, &shelf);
+    g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), null, &shelf);
     snap("shots/13_menu_retro.png");
     g.menu.screen = .closed;
 
@@ -3360,7 +3391,7 @@ fn talkShot(g: *Game, name: [:0]const u8, at: rl.Vector3, frames: i32, in: dialo
 // THE EDITOR — its whole job is legibility, and none of that can be judged from the game shots.
 fn editorSnap(g: *Game, name: [:0]const u8) void {
     drawScene(g);
-    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, SHOT_DT);
+    editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, &g.day, SHOT_DT);
     snap(name);
 }
 
@@ -3632,9 +3663,9 @@ fn elevationShots(g: *Game) void {
 fn bookShot(g: *Game, name: [:0]const u8, page: bookmod.Page, cursor: usize, pickSlot: ?usize, row: usize) void {
     g.menu.book.debugShow(page, cursor, pickSlot, row);
     const shelf = savemod.Shelf{}; // the book knows nothing about slots; it is the same card either way
-    _ = g.menu.update(&g.retro, &g.day, SHOT_DT, game.bookView(g), &shelf);
+    _ = g.menu.update(&g.retro, &g.day, &g.weather, SHOT_DT, game.bookView(g), &shelf);
     drawScene(g);
-    g.menu.draw(&g.retro, &g.day, game.bookView(g), .{ .hero = &g.hero, .scene = &g.scene }, &shelf);
+    g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), .{ .hero = &g.hero, .scene = &g.scene }, &shelf);
     snap(name);
 }
 

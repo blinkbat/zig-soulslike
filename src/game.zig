@@ -43,6 +43,8 @@ const wolfmod = @import("wolf.zig");
 const trigmod = @import("trigger.zig");
 const dialogmod = @import("dialog.zig");
 const item = @import("item.zig");
+const dropsmod = @import("drops.zig");
+const weathermod = @import("weather.zig");
 const savemod = @import("save.zig");
 const sfx = @import("audio.zig");
 
@@ -237,7 +239,18 @@ pub const Game = struct {
     /// Survives a death AND a load — the hour is a fact about the world, not about the map file.
     day: daynight.Clock = .{},
     hourLit: f32 = std.math.nan(f32),
+    /// …and the STORM's share of it, and the debug fog dial — `hourLit`'s two companions, for its own reason:
+    /// the light is a function of all three now and the guard has to see every one of them.
+    wetLit: f32 = std.math.nan(f32),
+    fogLit: f32 = std.math.nan(f32),
     souls: soulsmod.Souls,
+    /// **WHAT THE SKY IS DOING** — the storm's own clock (`weather.Weather`), and the sheet of rain it draws
+    /// (`weather.Rain`, one mesh). Assigned in `init` like every other model-owning field.
+    weather: weathermod.Weather,
+    rainfall: weathermod.Rain,
+    /// …and the STRAY BANKS that stand in the field once the air is thick (`weather.Mist`) — the fog's SHAPE,
+    /// where the haze is only its density. Model-owning, so it is assigned in `init` like the rest.
+    mist: weathermod.Mist,
     /// Survives a death: what a death takes is the souls on the counter, never what they were spent on.
     tree: ptree.Tree = .{},
     /// The player's own retro stack, parked while a rest borrows the screen for its VHS look.
@@ -269,6 +282,24 @@ pub const Game = struct {
     enterOut: f32 = 0,
     enterIn: f32 = 0,
     enterAct: ?Enter = null,
+    /// **THE DROP STREAM, SEEDED ONCE AT STARTUP AND NEVER REWOUND.** Off a seeded `Rng` rather than wall
+    /// time because `--shot` has to stay reproducible; and seeded in `init` rather than in `beginGame` so
+    /// that reloading a save does not put the sequence back to where it was — reload, kill the same
+    /// sporeling, and a stream reset per character would hand you the same answer forever.
+    dropRng: mathx.Rng = mathx.Rng.init(0),
+    /// **SECONDS LEFT ON THE SAVE MARK** (`hud.saveTree`) — the growing tree in the bottom-right corner that
+    /// says the disk was touched. Counted DOWN, so 0 is idle and every path that writes a slot arms it by naming
+    /// one clock (`saveNow`). Assigned in `init`: the defaulted-field law.
+    saveT: f32 = 0,
+    /// **THE CHAOS BLOOM — WHAT HIS OWN BOLT LEAVES STANDING** (`passivetree.Grant.boltCloud`, the wizard
+    /// casting branch's keystone and the owner's own example). It is `knight.Gas`, the game's one chaos
+    /// cloud, read from the other side: the boss lays them to deny YOU ground, and this lays them to deny
+    /// ground to whatever the bolt landed among. Same type, same life, same dose clock — a second cloud
+    /// written here would be a second thing to tune and a second thing to get wrong.
+    boltGas: [BOLT_GAS_CAP]knightmod.Gas = undefined,
+    boltGasHead: usize = 0,
+    /// ONE dose clock for the whole field, `Vigil.gasT`'s own arrangement.
+    boltGasT: f32 = 0,
     /// The UNSCALED frame time the drawing layer needs — the occluder fade would crawl on a time-scaled dt.
     drawDt: f32 = 1.0 / 60.0,
 
@@ -327,7 +358,14 @@ pub const Game = struct {
         g.spiritK = 0;
         g.spiritHp = 0;
         g.hourLit = std.math.nan(f32); // …and its guard, which as the fill byte would pin the light on frame one
+        g.wetLit = std.math.nan(f32);
+        g.fogLit = std.math.nan(f32);
         g.souls = soulsmod.Souls.init(g.scene.shader);
+        // **THE WEATHER IS SEEDED ONCE AND NEVER REWOUND** (`dropRng`'s reason): a storm clock reset per
+        // character would put the same shower at the same minute of every run.
+        g.weather = weathermod.Weather.init(0x5701_A17E);
+        g.rainfall = weathermod.Rain.build(g.scene.shader);
+        g.mist = weathermod.Mist.build(g.scene.shader);
         phase(&initTimer, "foes");
         g.arrowModel = archermod.arrowMesh(g.scene.shader);
         g.clumpModel = koboldmod.clumpMesh(g.scene.shader);
@@ -350,6 +388,11 @@ pub const Game = struct {
         g.npcPos = [_]rl.Vector3{mathx.zero3} ** npcmod.CAP;
         g.nNpcPos = 0;
         g.drawDt = 1.0 / 60.0;
+        g.saveT = 0;
+        g.boltGas = [_]knightmod.Gas{.{}} ** BOLT_GAS_CAP;
+        g.boltGasHead = 0;
+        g.boltGasT = 0;
+        g.dropRng = mathx.Rng.init(0xD0DEC0DE);
         g.shelf = savemod.survey(saveMap(g));
         g.slot = 0;
         g.shotOwed = false;
@@ -460,7 +503,9 @@ fn beginGame(g: *Game) void {
     armScript(g);
     clearQuivers(g);
     g.pack.clear(); // NOT `= .{}` — that struct holds the wolf's meshes, and the reset made it invisible
+    hud_.dropSpiritFace(); // …and the still of whatever the last character had standing goes with it
     g.deathFade = 0;
+    g.saveT = 0; // a mark left over from the character you just closed is not this one's
     g.restRetro = [_]f32{0} ** gfx.RETRO_COUNT;
     g.lock = null;
     g.lockBlind = 0;
@@ -568,6 +613,11 @@ fn slotOf(g: *Game) savemod.Slot {
 fn loadGame(g: *Game, i: usize) bool {
     beginGame(g);
     if (!savemod.read(i, slotOf(g))) return false;
+    // **A GLOW YOU TOOK LAST SESSION IS ALREADY GONE ON THE FIRST FRAME, NOT AFTER IT.** `Pickups` carries the
+    // `taken` bits and the PROP carries the picture, and only `hidePickups` joins the two — which runs in the
+    // play branch, so between the read and that frame every collected glow was standing (and lighting the
+    // ground) in the world the fade comes up on.
+    hidePickups(g);
     applyTree(g);
     plantActor(g, &g.hero.pos); // …back onto the ground, in case the map has been sculpted under him
     g.hero.pose();
@@ -909,10 +959,18 @@ test "A SPIRIT'S JAWS MUST REACH INTO WHAT IT IS SET ON — the BOTTOM of a gian
     // solving them by hand is how the number and the animation part company.
     w.stagePounce(1.0);
     const full = w.jawPoint().y - w.pos.y + 0.20 * w.scale;
+    // …AND THE THIRD END OF THE SAME DIAL: the nose on the DIRT (owner: she has trouble hitting floorbound
+    // short foes). Under her resting reach the leap clamps to nothing and the jaws shut at `TEETH_REST`, which
+    // is over the top of the small things entirely — so the stoop is measured here beside the other two.
+    w.stageBiteAt(wolfmod.STOOP_LOW * 0.5);
+    const down = w.jawPoint().y - w.pos.y + 0.20 * w.scale;
     var giant = ogremod.Ogre.spawn(mathx.zero3, 0, 1.0, 0.3);
     var snag = rootedmod.Rooted.spawn(mathx.zero3, 0, 1.0, 0.3);
     var plate = knightmod.Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
-    std.debug.print("\n  wolf teeth reach {d:.2} m standing, {d:.2} m at a full pounce\n", .{ rest, full });
+    var spore = shroommod.Shroom.spawn(mathx.zero3, 0, 1.0, 0.3);
+    var hatch = broodmod.Spider.spawnAs(.broodling, mathx.zero3, 0, 1.0, 0.3);
+    var toad = frogmod.Frog.spawn(mathx.zero3, 0, 1.0, 0.3);
+    std.debug.print("\n  wolf teeth reach {d:.2} m standing, {d:.2} m at a full pounce, {d:.2} m at a full stoop\n", .{ rest, full, down });
     try std.testing.expect(full > rest + 0.4); // the leap is a LEAP, not a hop with a new name
     // THE TWO ENDS OF THE DIAL ARE WHAT `pounceFor` INTERPOLATES, and they are written down in `wolf.zig` where
     // it can read them. Measured here, because both come out of the posed rig and adding the lift and the
@@ -920,7 +978,16 @@ test "A SPIRIT'S JAWS MUST REACH INTO WHAT IT IS SET ON — the BOTTOM of a gian
     try std.testing.expectApproxEqAbs(wolfmod.TEETH_REST, rest, 0.04);
     try std.testing.expectApproxEqAbs(wolfmod.TEETH_POUNCE, full, 0.04);
 
-    inline for (.{ .{ "ogre", &giant }, .{ "rooted", &snag }, .{ "knight", &plate } }) |row| {
+    // **EVERY SIZE SHE IS ASKED TO BITE, THE SMALL ONES INCLUDED.** Three tall creatures is what let a bite
+    // that cannot reach a sporeling pass this test for as long as it did.
+    inline for (.{
+        .{ "ogre", &giant },
+        .{ "rooted", &snag },
+        .{ "knight", &plate },
+        .{ "sporeling", &spore },
+        .{ "broodling", &hatch },
+        .{ "toad", &toad },
+    }) |row| {
         const f = row[1];
         const mid = f.centerWorld().y - f.pos.y;
         const r = f.hurtRadius();
@@ -929,14 +996,14 @@ test "A SPIRIT'S JAWS MUST REACH INTO WHAT IT IS SET ON — the BOTTOM of a gian
         const trigger = wolfmod.triggerR(f.bodyR()); // the gate as `update` actually asks it
         // …AND THE LEAP THIS BODY IS ACTUALLY WORTH (`wolf.pounceFor`), never the full one: a pounce sized for
         // a giant's chest sails clean over a snag, which is the same complaint one creature along.
-        w.stagePounce(wolfmod.pounceFor(mid));
+        w.stageBiteAt(mid);
         const jaw = w.jawPoint().y - w.pos.y + 0.20 * w.scale;
         // HOW WIDE THE SPHERE IS AT THE HEIGHT SHE ACTUALLY BITES AT — the window her snout has to find, and
         // the number that says whether "reachable" means anything. Grazing the floor it is nearly zero.
         const dy = @abs(mid - jaw);
         const window: f32 = if (dy >= r) 0 else @sqrt(r * r - dy * dy);
-        std.debug.print("  {s}: sphere {d:.2}..{d:.2} centre {d:.2} | pounce {d:.2}, teeth at {d:.2} ({d:.2} into it), window {d:.2} m against a hold of {d:.2}\n", .{
-            row[0], floor, mid + r, mid, wolfmod.pounceFor(mid), jaw, jaw - floor, window, held,
+        std.debug.print("  {s}: sphere {d:.2}..{d:.2} centre {d:.2} | pounce {d:.2} stoop {d:.2}, teeth at {d:.2} ({d:.2} into it), window {d:.2} m against a hold of {d:.2}\n", .{
+            row[0], floor, mid + r, mid, wolfmod.pounceFor(mid), wolfmod.stoopFor(mid), jaw, jaw - floor, window, held,
         });
         try std.testing.expect(held < trigger);
         // **NOT MERELY REACHABLE — REACHABLE WITH ROOM, ON BOTH SIDES.** `floor < jaw` was the old bar and every
@@ -944,8 +1011,21 @@ test "A SPIRIT'S JAWS MUST REACH INTO WHAT IT IS SET ON — the BOTTOM of a gian
         // clears the top of a low one fails the same way from above.
         try std.testing.expect(@abs(mid - jaw) <= (1.0 - wolfmod.POUNCE_INTO) * r);
         // …and the window she has to find has to be worth more than the collider holding her out of it.
-        try std.testing.expect(window > held * 0.55);
+        //
+        // **BUT A TARGET SMALLER THAN SHE IS HAS NO CHORD TO SPARE, so it answers the other bar.** A
+        // broodling's whole hurt sphere is 0.38 m wide against colliders that hold her 0.79 m off its centre:
+        // no bite height makes a chord of it beat that, because the sphere is narrower than the number. On a
+        // giant the sphere is the wide thing and the chord IS the question; on something the size of her own
+        // head the question is whether her head gets there, which is the MUZZLE'S own forward reach.
+        const snout = w.jawPoint().z - w.pos.z;
+        if (r >= held * 0.55) {
+            try std.testing.expect(window > held * 0.55);
+        } else {
+            std.debug.print("    …and it is smaller than she is: snout reaches {d:.2} m forward against a hold of {d:.2}\n", .{ snout, held });
+            try std.testing.expect(snout + r > held);
+        }
     }
+    try std.testing.expectApproxEqAbs(wolfmod.TEETH_STOOP, down, 0.06);
 }
 
 test "THE BERSERKER IS THE FASTEST THING ON FOOT — and he closes at a RUN, not a stroll" {
@@ -1216,7 +1296,11 @@ fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
     const sprinting = isMoving and sprintingMove(mv);
     if (isMoving) {
         dir = v3(dir.x / l, 0, dir.z / l);
-        speed = mv.speed;
+        // **THE ROGUE'S FEET** (`passivetree.Grant.moveSpeed`). Applied HERE and not in `gatherMove`, which
+        // is pure input: `sprintingMove` decides off `mv.speed` against `RUN_SPEED`, so a walk scaled at the
+        // source would read as a sprint and face travel instead of the lock. The gait is safe either way —
+        // its phase is driven by DISTANCE TRAVELLED, never by time, so faster feet simply stride sooner.
+        speed = mv.speed * g.hero.perk.moveSpeed;
         moveYaw = mathx.headingXZ(dir);
         // Locked-on ANISOTROPY (ER's too): sideways travel runs slower than forward.
         if (faceYaw != null and !sprinting) {
@@ -1435,7 +1519,7 @@ pub fn rehomeFoesForShot(g: *Game) void {
 }
 
 pub fn shootShaftForShot(g: *Game, at: rl.Vector3, kind: combat.ArrowKind) void {
-    const blow = heromod.arrowBlow(kind, true);
+    const blow = heromod.arrowBlow(kind, true, g.hero.perk);
     putIn(&g.shafts, archermod.launchShaft(g.hero.nockWorld(), at, heromod.BOW_AIMED_SPEED, blow, false, heromod.arrowShot(kind)));
 }
 pub fn throwBoltForShot(g: *Game, at: rl.Vector3) void {
@@ -1549,6 +1633,36 @@ pub fn takeSlotShot(g: *Game) void {
 pub fn drawBonfireForShot(g: *Game) void {
     restmod.drawScreen(&g.rest, &g.tree, g.hero.souls.total);
 }
+
+/// THE SAVE MARK AT A FIXED POINT IN ITS GROWTH. `saveMark` ticks a clock the shot loop never runs, and the
+/// frame worth photographing is a chosen one rather than whatever a clock happened to be on — `pinHourForShot`'s
+/// arrangement. Takes no `Game`: the mark is a pure function of one number.
+pub fn drawSaveMarkForShot(left: f32) void {
+    hud_.saveTree(left);
+}
+
+/// **THE WEATHER, STAGED** — the shot harness's own hook (`pinHourForShot`'s arrangement). A storm that
+/// arrives every few minutes is a storm no photograph ever catches, so the harness asks for one and says how
+/// far into the flash it wants to be standing.
+pub fn forceWeatherForShot(g: *Game, k: weathermod.Kind, flashAt: f32) void {
+    g.weather.force(k, 600.0);
+    g.weather.flashT = flashAt;
+    g.weather.nextFlash = 1e9; // …and no NEW strike lands under the one being photographed
+}
+pub fn clearWeatherForShot(g: *Game) void {
+    g.weather = weathermod.Weather.init(0x5701_A17E);
+}
+
+/// **FOG WITHOUT A STORM, AND ONE BANK IN FRAME** — the harness's own pair. The banks key off how foggy it is
+/// (`fogAmt`), which in the game is the storm; forced through the debug row instead, the fog and the rain can be
+/// photographed apart, which is the only way to judge either.
+pub fn forceFogForShot(g: *Game, on: bool) void {
+    g.menu.forceFog(on);
+}
+pub fn forceMistForShot(g: *Game, ahead: f32) void {
+    const p = v3(g.hero.pos.x, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), g.hero.pos.z);
+    g.mist.stageOne(p, ahead, g.hero.facing);
+}
 pub fn openChestForShot(g: *Game) bool {
     const had = g.chests.near != null;
     interact(g);
@@ -1599,6 +1713,20 @@ fn spiritPortrait(g: *Game) ?hud_.LivePortrait {
         .drawFn = drawSpiritHead,
     };
 }
+/// **THE FACE IS TAKEN ONCE AND KEPT** (`hud.takeSpiritFace`, owner: make the portrait static) — where the
+/// conversation panel's speaker is re-photographed every frame. It outlives the body on purpose: the toast
+/// takes over two seconds to leave and the animal is gone well before it has.
+fn spiritFaceFor(g: *Game) bool {
+    if (spiritPortrait(g)) |lp| {
+        if (!hud_.hasSpiritFace()) _ = hud_.takeSpiritFace(lp);
+        return hud_.hasSpiritFace();
+    }
+    // NOTHING STANDING — the still is kept while the panel is still leaving and forgotten once it has gone,
+    // so the next thing called is photographed rather than wearing the last one's head.
+    if (g.spiritK <= 0.004) hud_.dropSpiritFace();
+    return hud_.hasSpiritFace();
+}
+
 fn drawSpiritHead(ctx: *const anyopaque) void {
     const g: *const Game = @ptrCast(@alignCast(ctx));
     g.pack.drawFirst();
@@ -1787,9 +1915,13 @@ fn huntFor(g: *const Game, w: *const wolfmod.Wolf) ?wolfmod.Quarry {
 }
 
 fn spillSouls(g: *Game) void {
-    if (bindingInBag(&g.bag)) |ring| {
+    if (bindingWorn(g.hero.worn)) |w| {
+        const ring = g.hero.worn.at(w).?;
+        // THE FINGER AND THE BAG BOTH: the socket only NAMES a kind the bag is holding (`hero.wear`), so
+        // clearing the socket alone leaves the ring on the shelf to be put straight back on — a death that
+        // costs nothing at all. It snaps; it does not come off.
+        _ = g.hero.wear(w, null);
         _ = g.bag.take(ring, 1);
-        g.hero.quick.dropEmpty(&g.bag);
         sfx.play(.ring_snap);
         g.trig.say("The Soul Binding Ring snaps.");
         return;
@@ -1799,11 +1931,15 @@ fn spillSouls(g: *Game) void {
     if (had > 0) sfx.play(.souls_spill);
 }
 
-/// Asked of the ITEM rather than by kind (`item.bindsSouls`) — a second charm is a row in `item.zig`.
-fn bindingInBag(bag: *const item.Bag) ?item.Kind {
-    for (0..item.NK) |i| {
-        const k: item.Kind = @enumFromInt(i);
-        if (item.bindsSouls(k) and bag.count(k) > 0) return k;
+/// **WHICH FINGER IS WEARING ONE**, or null. Asked of the ITEM rather than by kind (`item.bindsSouls`), and of
+/// every socket rather than the two rings by name — a second binding band is a row in `item.zig` and nothing
+/// here. It is the SOCKET that is returned, because the snap has to empty the one it came out of.
+fn bindingWorn(worn: heromod.Worn) ?item.Wear {
+    inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
+        const w: item.Wear = @enumFromInt(f.value);
+        if (worn.at(w)) |k| {
+            if (item.bindsSouls(k)) return w;
+        }
     }
     return null;
 }
@@ -1830,8 +1966,34 @@ fn takePickup(g: *Game) void {
     g.rumble.play(rumblemod.hit_light);
 }
 
+/// **ONLY THE MAP'S OWN GLOWS HAVE A PROP TO HIDE.** `setPickupDraw` is indexed by `env.pickupItems`, which is
+/// the placing order `Pickups.reset` was handed — a DROPPED one is past the end of that list and is drawn by
+/// `drawDrops` off its own model instead, so feeding it here would be shrinking somebody else's prop.
 fn hidePickups(g: *Game) void {
-    for (g.pickups.live(), 0..) |*p, i| g.env.setPickupDraw(i, p.sizeLeft(), p.spent());
+    for (g.pickups.mappedOnes(), 0..) |*p, i| g.env.setPickupDraw(i, p.sizeLeft(), p.spent());
+}
+
+/// **WHAT A BODY LEFT, DRAWN.** The map's glows are props in the world grid; these have no prop behind them,
+/// so the loop draws them — off `env`'s OWN pickup model, and **NOT DRAWN AT ALL once it is spent**, which is
+/// what takes a picked-up glow off the ground rather than leaving a zero-sized one standing in it. Off
+/// `drawCasters` entirely, `souls.draw`'s reason: a thing made of light lays no shadow.
+///
+/// **AND IT THINS AS WELL AS SHRINKING** — `env.drawIndexed`'s branch for the map's own, on the same owner's
+/// call: the shrink alone is a glow getting SMALLER at full brightness, which reads as one moving away rather
+/// than one going out. Through `Scene.beginFade`/`endFade`, which is that branch's own pair — one definition of
+/// how a thing going out is drawn, so a dropped glow and a placed one cannot go out differently.
+fn drawDrops(g: *Game) void {
+    const mdl = g.env.pickupModel();
+    for (g.pickups.droppedOnes()) |*p| {
+        if (p.spent()) continue;
+        const left = p.sizeLeft();
+        const s = p.scale * left;
+        if (s <= 0.001) continue;
+        const thin = left < 1.0;
+        if (thin) g.scene.beginFade(left);
+        rl.drawModelEx(mdl, p.pos, v3(0, 1, 0), p.yaw, v3(s, s, s), rl.Color.white);
+        if (thin) g.scene.endFade();
+    }
 }
 
 fn awardLoot(g: *Game, loot: []const item.Kind, at: rl.Vector3) void {
@@ -1858,18 +2020,35 @@ fn triggerWorld(g: *const Game) trigmod.World {
     return w;
 }
 
+/// **WHAT A DEATH IS WORTH TO THE SCRIPT AND TO THE BAG, IN ONE WALK.** The trigger tally and the drop are the
+/// same event asked twice, and read off two passes they would be two lists of who died — which the day a
+/// creature is added is one list to forget. `justDied` is a one-frame edge, so this must run exactly once a
+/// frame (`tickTriggers`).
 fn billDeaths(g: *Game) void {
     const Ctx = struct {
-        rt: *trigmod.Runtime,
+        g: *Game,
         fn visit(self: *const @This(), foes: anytype, kind: ?FoeKind) void {
             const T = @typeInfo(@TypeOf(foes)).pointer.child;
             if (comptime !@hasField(T, "justDied")) return;
             for (foes) |*f| {
-                if (f.justDied) self.rt.died(memberKind(f, kind));
+                if (!f.justDied) continue;
+                const k = memberKind(f, kind);
+                self.g.trig.died(k);
+                // **IT GOES ON THE GROUND WHERE IT FELL** (owner's call), not into his hands: a body leaves a
+                // glow you have to walk to, exactly as the map's own do and exactly as his souls do. The roll
+                // is spent whatever died, so the stream cannot become a function of what you chose to fight.
+                var buf: [pickupmod.DROP_MAX]item.Kind = undefined;
+                self.g.pickups.spawn(f.pos, dropsmod.roll(k, self.g.hero.sheet.at(.luck), &self.g.dropRng, &buf));
+                // **AND WHAT A BODY IS WORTH THE MOMENT IT DROPS** (`passivetree.Grant.onKill`). Billed on
+                // the SAME `justDied` edge the drop and the trigger tally are — one walk, one list of who
+                // died, so a creature added cannot be worth souls and a glow but not this.
+                if (self.g.hero.perk.onKill > 0 and !self.g.hero.dead) {
+                    _ = self.g.hero.vit.heal(self.g.hero.perk.onKill);
+                }
             }
         }
     };
-    var ctx = Ctx{ .rt = &g.trig };
+    var ctx = Ctx{ .g = g };
     eachTarget(g, &ctx, Ctx.visit);
 }
 
@@ -1960,17 +2139,15 @@ fn tickRest(g: *Game, dt: f32) void {
         var at = s.pos;
         plantActor(g, &at);
         g.hero.sit(true, at, s.facing);
-        if (savemod.write(g.slot, slotOf(g))) {
-            g.shelf = savemod.survey(saveMap(g));
-            g.shotOwed = true;
-        } else {
-            std.debug.print("SAVE FAILED: could not write {s}\n", .{savemod.path(g.slot)});
-        }
+        saveNow(g, .withShot);
     }
     if (g.rest.justLeft) {
         g.retro.values = g.restRetro;
         g.hero.sit(false, g.hero.pos, g.hero.facing);
         rehomeFoes(g, .blind);
+        // **AND STANDING UP WRITES TOO** (owner's call). Sitting down was the only write there was, so a level
+        // bought or a night waited out at the fire reached the disk only if you happened to sit at another one.
+        saveNow(g, .noShot);
     }
     if (g.rest.listening()) bonfireInput(g, dt);
     if (g.rest.scene()) {
@@ -2018,6 +2195,48 @@ fn bonfirePick(g: *Game, pick: restmod.Pick) void {
             g.rest.leave();
         },
     }
+    // **ANYTHING SPENT AT THE FIRE IS ON DISK BEFORE YOU STAND UP**, and it is ONE line after the switch rather
+    // than one per arm — a row added to the fire's list is saved without an edit here (owner: adjust time, level
+    // up, future things). A pick that CLOSED the fire is left to `justLeft`, which is the same write one frame
+    // along; writing here as well would be two files for one press.
+    //
+    // **AND `listening` IS WHAT "STILL SAT DOWN" MEANS, NOT `active`.** `Rest.leave` moves the phase to `.out`
+    // and `active()` is `phase != .off`, so it stays TRUE through the whole fade out — which meant Leave and
+    // Wait both wrote here AND again on `justLeft`: two full slot writes and two `survey` walks for one press,
+    // with the save mark restarting on the second. `listening()` is the condition the input was taken under,
+    // and `.take` leaves it exactly as it found it.
+    if (std.meta.activeTag(pick) != .none and g.rest.listening()) saveNow(g, .noShot);
+}
+
+/// Whether this write also owes the picker its PICTURE. Named rather than a bare bool at three call sites: the
+/// argument is which of two things is happening, and `saveNow(g, false)` says neither of them.
+const SaveShot = enum { withShot, noShot };
+
+/// **THE ONE PLACE A SLOT IS WRITTEN.** Every write is a bonfire — sitting down at it, spending at it, standing
+/// up from it — and each of those was its own call or, for two of the three, no call at all. It also arms the
+/// SAVE MARK (`hud.saveTree`), so there is no path that touches the disk silently.
+///
+/// The PICTURE is the FIRST one's alone: `save.writeShot` is a full-framebuffer readback taken at the fire's own
+/// arrival (`shotOwed`, spent once the fade is back up). Re-grabbing it on the way out would photograph the world
+/// coming back rather than the fire you were sitting at.
+fn saveNow(g: *Game, shot: SaveShot) void {
+    if (!savemod.write(g.slot, slotOf(g))) {
+        std.debug.print("SAVE FAILED: could not write {s}\n", .{savemod.path(g.slot)});
+        return;
+    }
+    g.shelf = savemod.survey(saveMap(g));
+    if (shot == .withShot) g.shotOwed = true;
+    g.saveT = hud_.SAVE_SHOW;
+}
+
+/// **THE SAVE MARK, TICKED AND DRAWN IN ONE CALL, AND IT IS NOT CHROME.** It does not go out with the bars on a
+/// death, and it is not the fire's furniture either: two of the three writes happen with the FIRE'S OWN SCREEN
+/// up, which is exactly what `hud`'s early return hides the HUD for, and the third happens as that screen
+/// closes. So it is its own line at the end of the two branches that can be holding a live clock.
+fn saveMark(g: *Game, dt: f32) void {
+    if (g.saveT <= 0) return;
+    g.saveT = mathx.maxF(0, g.saveT - dt);
+    hud_.saveTree(g.saveT);
 }
 
 fn applyStow(g: *Game) void {
@@ -2032,12 +2251,25 @@ fn applyHour(g: *Game) void {
     // menu, at a bonfire, inside a conversation, in the editor and under a frozen clock (`--shot`) the
     // answer cannot have changed, and the guard is the value itself rather than a flag anybody has to
     // remember to raise. Nothing else writes these uniforms, so a skipped frame leaves them exactly right.
-    if (g.day.hour == g.hourLit) return;
+    //
+    // **AND THE STORM IS PART OF THE ANSWER NOW** (`daynight.overcast`), so it is part of the guard: the sheet
+    // ramps over seconds and the light has to come with it. QUANTIZED, because the level moves every frame of
+    // a ramp and re-uploading eighteen uniforms sixty times a second is the exact cost this guard exists to
+    // refuse — a sixty-fourth of the range is finer than the eye reads and lands on ~7 uploads a second
+    // through the fastest ramp there is.
+    const wet = @round(g.weather.rain() * WET_STEPS) / WET_STEPS;
+    const fog = g.menu.fogK();
+    if (g.day.hour == g.hourLit and wet == g.wetLit and fog == g.fogLit) return;
     g.hourLit = g.day.hour;
-    g.scene.setHour(g.day.hour);
-    g.sky.setHour(g.day.hour);
+    g.wetLit = wet;
+    g.fogLit = fog;
+    g.scene.setHour(g.day.hour, wet, fog);
+    g.sky.setHour(g.day.hour, wet);
     sfx.setDaylight(daynight.dayAmt(g.day.hour));
 }
+
+/// How finely the storm's own share of the light is stepped — see `applyHour`.
+const WET_STEPS: f32 = 64.0;
 
 pub fn bootCamForShot(g: *Game, t: f32) void {
     g.bootT = t;
@@ -2191,6 +2423,13 @@ fn rootMark(g: *const Game) rl.Vector3 {
     const x = g.hero.pos.x + d.x * ROOT_THROW;
     const z = g.hero.pos.z + d.z * ROOT_THROW;
     return v3(x, g.env.groundAt(x, z), z);
+}
+
+comptime {
+    // **THE GLOW HAS TO HOLD WHATEVER A BODY HANDS IT.** `drops.MAX_PER_BODY` is the table's arithmetic (one
+    // common, at most one rare) and `pickup.DROP_MAX` is how much a glow can carry — two names for one fact,
+    // in two files neither of which can see the other. This is the file that can (`env.HERO_R_PIN`'s rule).
+    std.debug.assert(dropsmod.MAX_PER_BODY == pickupmod.DROP_MAX);
 }
 
 /// A row of `FOE_GROUPS` and an index, not a `FoeRef`: a ref only answers questions.
@@ -2789,7 +3028,13 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
     switch (ar.shot) {
         .venom => g.brood.splash(ground),
         .clump => g.band.splash(ar.pos), // at the CONTACT, not the floor: it can burst against a chest
-        .bolt => g.hero.boltBurst(ar.pos, ground.y, g.hero.casts),
+        .bolt => {
+            g.hero.boltBurst(ar.pos, ground.y, g.hero.casts);
+            // **AND THE KEYSTONE TURNS THE BURST INTO GROUND** (`passivetree.Grant.boltCloud`). At the
+            // IMPACT frame rather than at the cast, the knight's own rule: a bolt that MISSED still denies
+            // the floor it landed on, which is what makes the spell a placement instead of a projectile.
+            if (g.hero.perk.boltCloud) layBoltGas(g, ground);
+        },
         // THE FIREBALL GOING OUT — this is the LAST touch only, because `planted` is what calls this and a
         // ball with budget left never plants (`archer.plantGround`). The bounces get their own, smaller
         // voice and puff below.
@@ -2872,10 +3117,40 @@ fn reservedLights(g: *const Game, out: *[RESERVED_LIGHTS]gfx.Light) []const gfx.
     return out[0..n];
 }
 
+/// **THE STORM, AND THE TWO THINGS IT TELLS.** The clock is the module's; what lives here is the wiring — the
+/// bed's level, which is a world state pushed at the mixer exactly as the hour is (`sfx.setDaylight`), and the
+/// thunder, which arrives as a one-frame edge seconds after the light did.
+fn tickWeather(g: *Game, dt: f32) void {
+    g.weather.tick(dt);
+    sfx.setRain(g.weather.rain());
+    if (g.weather.thunder()) |gain| sfx.playAt(.thunder, gain);
+    // …AND THE BANKS DRIFT ON THE SAME CLOCK, around the MAN and not the lens: they are things standing in the
+    // world, so the camera turning may not move one of them.
+    g.mist.tick(dt, g.hero.pos, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), fogAmt(g));
+}
+
+/// **HOW FOGGY IT IS, 0..1 — ONE ANSWER WITH ONE OVERRIDE.** The storm's own level, unless the debug row has
+/// taken the dial over (`menu.fogAmt`). Read by the banks and by nothing else: the haze DENSITY is the same row
+/// asked the other question (`menu.fogK`, a distance).
+fn fogAmt(g: *const Game) f32 {
+    return g.menu.fogAmt(g.weather.rain());
+}
+
+/// **THE CLOUD'S OWN LIGHT, OVER THE WHOLE FRAME** — drawn INSIDE the retro pass (before `retro.end`), because
+/// the dimming and the flash are things happening to the world's light. After the filter they would be a
+/// notification sitting on top of the picture, which is what the HUD layer is for.
+fn drawWeatherOverlay(g: *Game) void {
+    if (g.editor.on) return; // the editor is a TOOL: it is not standing in the weather
+    weathermod.drawOverlay(rl.getScreenWidth(), rl.getScreenHeight(), g.weather.dim(), g.weather.flash());
+}
+
 pub fn drawScene(g: *Game) void {
     g.env.resetStats();
     applyStow(g); // before the depth pass: what is stowed is not a caster
     const cam = sceneCam(g);
+    // **WHERE THE LENS IS, FOR THE PARTICLE POOLS THAT ASK** (`foe.motesVisible`). Set here and nowhere else,
+    // before a single pool is drawn: it is the same one-source rule `gfx.sun` is held to.
+    foemod.setLens(cam.position, mathx.normV(mathx.subV(cam.target, cam.position)));
     g.env.markOccluders(cam.position, if (g.editor.on) cam.position else heroAimPoint(g), g.drawDt);
     const focus = sunFocus(g);
     g.scene.beginShadowPass(focus);
@@ -2908,6 +3183,8 @@ pub fn drawScene(g: *Game) void {
     drawArrows(g);
     // The drop is made of light and lays no shadow, so it stays off `drawCasters` entirely.
     g.souls.draw();
+    drawDrops(g); // …and what a body left, on exactly those terms
+    for (&g.boltGas) |*c| c.drawFx(); // …and his own chaos standing where a bolt landed
     // …and the thinned occluders LAST, so their alpha mattes the hero standing behind them (`Env.drawThinned`).
     g.env.drawThinned(&view);
     if (g.menu.wireframe) rl.gl.rlDisableWireMode();
@@ -2935,8 +3212,17 @@ pub fn drawScene(g: *Game) void {
         }
     }
     if (g.editor.on) g.editor.draw3D(&g.map, &g.env);
+    // **THE RAIN LAST OF ALL** — it is a half-there surface in front of everything, so it composites over the
+    // world (and over the FX) rather than being sorted against it. It writes no depth (`Scene.beginFade`) and
+    // is still depth TESTED, which is what puts it behind the wall you are standing under.
+    // …OFF THE CAMERA THIS PASS IS ACTUALLY DRAWN WITH (`cam`), not off the rig: the sheet is a column stacked
+    // on the EYE, so a second answer to "where is the lens" is a storm centred somewhere the frame is not.
+    if (!g.editor.on) g.rainfall.draw(&g.scene, cam.position, g.hero.pos, g.weather.rain(), g.weather.t);
+    // …and the banks with it, on the same terms and for the same reason: a half-there mass in front of the world.
+    if (!g.editor.on) g.mist.draw(&g.scene, cam.position, fogAmt(g));
     rl.endMode3D();
 
+    drawWeatherOverlay(g);
     if (filtered) g.retro.end();
     if (g.editor.on) return;
     g.vignette.draw();
@@ -3027,7 +3313,7 @@ pub fn hud(g: *Game, dt: f32) void {
     // framebuffer rather than the target that was bound before it, so rendering a portrait inside the chrome
     // scope would send every HUD draw after it at the backbuffer, to be overwritten by the chrome's own blit.
     // Taken here, the toast below only has a quad to mount (`hud.renderPortrait`).
-    const spiritFace = wantChrome and if (spiritPortrait(g)) |lp| hud_.renderPortrait(lp) else false;
+    const spiritFace = wantChrome and spiritFaceFor(g);
     // **THE CLOSE IS A `defer` IN ITS OWN SCOPE, NOT A LINE AT THE BOTTOM.** An open `beginTextureMode` that
     // never closes does not lose the chrome, it eats the WHOLE REST OF THE FRAME into an offscreen buffer —
     // so a `return` added anywhere in the block below would blank the screen, and nothing about the edit
@@ -3270,7 +3556,13 @@ pub fn run(mode: Mode) void {
         g.drawDt = rawDt; // …including the occluder fade, which every branch below draws through
         PLAY_HALF = playHalfOf(g.map.half);
         // The clock runs on `dt`, not `rawDt`, so the debug time scale slows the sun with everything else.
-        if (!g.editor.on and !g.menu.isOpen() and !g.rest.active() and !g.talk.active() and !g.award.carding()) g.day.tick(dt);
+        if (!g.editor.on and !g.menu.isOpen() and !g.rest.active() and !g.talk.active() and !g.award.carding()) {
+            g.day.tick(dt);
+            // **THE SKY IS ON THE SAME CLOCK AS THE SUN** — the world's, not the wall's, so a slowed hour is a
+            // slowed storm and the two never argue about what time it is. Ticked here rather than in the play
+            // branch because weather happens whether or not he is fighting.
+            tickWeather(g, dt);
+        }
         applyHour(g);
         sfx.mute(g.editor.on and !g.editor.auditioning());
         sfx.tickFx(rawDt);
@@ -3331,14 +3623,14 @@ pub fn run(mode: Mode) void {
             g.folk.update(rawDt, g.hero.pos, PLAY_HALF);
             g.rumble.update(rawDt, false);
             drawScene(g);
-            editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, rawDt);
+            editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, &g.day, rawDt);
             rl.endDrawing();
             continue;
         }
 
         g.hero.held = g.menu.isOpen();
         if (g.menu.isOpen()) {
-            switch (g.menu.update(&g.retro, &g.day, rawDt, bookView(g), &g.shelf)) {
+            switch (g.menu.update(&g.retro, &g.day, &g.weather, rawDt, bookView(g), &g.shelf)) {
                 .quit => break,
                 .editor => {
                     g.lock = null;
@@ -3374,7 +3666,7 @@ pub fn run(mode: Mode) void {
             drawScene(g);
             // No HUD behind the BOOT screen: there is no character yet whose bars those would be.
             if (!booting) hud(g, rawDt);
-            g.menu.draw(&g.retro, &g.day, bookView(g), .{ .hero = &g.hero, .scene = &g.scene }, &g.shelf);
+            g.menu.draw(&g.retro, &g.day, &g.weather, bookView(g), .{ .hero = &g.hero, .scene = &g.scene }, &g.shelf);
             // LAST, over the menu itself: the cut has to cover the card the press came off.
             tickEnter(g, rawDt);
             drawEnterFade(g);
@@ -3414,6 +3706,7 @@ pub fn run(mode: Mode) void {
             takeSlotShot(g);
             hud(g, rawDt);
             restmod.drawScreen(&g.rest, &g.tree, g.hero.souls.total);
+            saveMark(g, rawDt); // over the fire's own screen: two of the three writes happen behind it
             rl.endDrawing();
             continue;
         }
@@ -3777,6 +4070,7 @@ pub fn run(mode: Mode) void {
         if (g.vigil.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.stance >= knightmod.CHARGE_HIT.stance, true);
         }
+        tickBoltGas(g, dt); // …and his own clouds, which bill the other side of the field
         if (g.vigil.gasDose(dt, g.hero.pos)) |b| {
             _ = heroTakes(g, b, false, false);
             sfx.play(.acid_burn);
@@ -3937,6 +4231,7 @@ pub fn run(mode: Mode) void {
 
         drawScene(g);
         hud(g, rawDt);
+        saveMark(g, rawDt); // …and on the field, which is where standing up from the fire leaves you
         tickEnter(g, rawDt);
         drawEnterFade(g);
         rl.endDrawing();
@@ -4130,7 +4425,10 @@ fn useItem(g: *Game, k: item.Kind) void {
         .lob => |l| {
             if (g.bag.take(k, 1) == 0) return;
             const from = mathx.addV(heroAimPoint(g), mathx.scaleV(mathx.headingDir(g.hero.facing), 0.4));
-            const hit = combat.Hit{ .dmg = l.dmg, .poise = l.poise, .elem = combat.elems(.{ .fire = l.fire, .lightning = l.lightning }) };
+            // **THE ROGUE'S RANGED BRANCH IS THE JAR'S OWN DIAL** (`passivetree.Grant.thrownDmg`), with the
+            // berserker's bargain over it — `Hit.scaled` takes the whole blow, so a thrown crock gains its
+            // poise with its damage rather than hitting harder without hitting heavier.
+            const hit = (combat.Hit{ .dmg = l.dmg, .poise = l.poise, .elem = combat.elems(.{ .fire = l.fire, .lightning = l.lightning }) }).scaled(g.hero.perk.thrownDmg * g.hero.perk.dmg);
             const shot: archermod.Shot = if (l.lightning > 0) .crock else .clump;
             putIn(&g.shafts, archermod.launchShaft(from, camAimPoint(g), koboldmod.CLUMP_SPEED, hit, true, shot));
             sfx.play(.wand_cast);
@@ -4285,6 +4583,66 @@ fn meleePitch(g: *const Game) ?f32 {
     return mathx.degrees(std.math.atan2(g.hero.pos.y + MELEE_AIM_EYE - mark.y, flat));
 }
 
+/// **HOW MANY OF HIS OWN CLOUDS MAY STAND AT ONCE.** Arithmetic over what feeds it (the ring law): a cast
+/// costs 12 of a 60 pool and a cloud lives `knight.GAS_LIFE`, so five bolts is the most a full bar can put
+/// on the floor before the first has gone out. A ring that overwrites its oldest does it silently.
+const BOLT_GAS_CAP: usize = 5;
+comptime {
+    const casts = combat.FP_MAX / combat.BOLT_FP;
+    std.debug.assert(@as(f32, @floatFromInt(BOLT_GAS_CAP)) >= casts * 0.9);
+}
+/// WHAT STANDING IN HIS CLOUD COSTS A BODY, per dose. **ALL CHAOS, and NO POISE AND NO STANCE** — the
+/// knight's own gas law read from the other side: a hazard that staggers can kill something while it is not
+/// allowed to walk out, and the counter to a cloud has to be leaving it. Deliberately small against the
+/// bolt's own 24: what the keystone sells is GROUND, never a bigger bolt.
+const BOLT_GAS_HIT = combat.Hit{ .elem = combat.elems(.{ .chaos = 7 }) };
+
+/// **THE BLOOM, TICKED AND BILLED.** The clouds run on their own clock and dose whatever is standing in them
+/// through `pierceFoes` — the same door the lance goes through, so every body earns its own flinch, flash,
+/// blood, threat and death without this knowing what any of them is. A `pierce` blade sets no swing latch,
+/// so one dose is one blow per body by construction rather than by a list of who has been hit.
+fn tickBoltGas(g: *Game, dt: f32) void {
+    var any = false;
+    for (&g.boltGas) |*c| {
+        c.update(dt);
+        if (c.live) any = true;
+    }
+    if (!any) {
+        g.boltGasT = 0; // nothing standing: the next cloud bites on its own schedule, not the last one's
+        return;
+    }
+    g.boltGasT += dt;
+    if (g.boltGasT < knightmod.GAS_DOSE_EVERY) return;
+    g.boltGasT -= knightmod.GAS_DOSE_EVERY;
+    for (&g.boltGas) |*c| {
+        if (!c.live) continue;
+        // A DISC, WRITTEN AS A BLADE: a zero-length segment at the cloud's centre with the cloud's own
+        // radius is exactly the area, and it arrives through the one strike path everything else uses.
+        _ = pierceFoes(g, .{
+            .active = true,
+            .pierce = true,
+            .through = true, // it does not stop at the first body: a cloud is not a projectile
+            .r = c.radius(),
+            .a = c.pos,
+            .b = c.pos,
+            .a0 = c.pos,
+            .b0 = c.pos,
+            .hit = BOLT_GAS_HIT,
+        });
+    }
+}
+
+/// …AND ONE LAID WHERE A BOLT LANDED. The ring is walked head-first, `Vigil.spawnGas`'s own arrangement.
+fn layBoltGas(g: *Game, at: rl.Vector3) void {
+    g.boltGas[g.boltGasHead] = .{
+        .pos = v3(at.x, g.env.groundAt(at.x, at.z), at.z),
+        .scale = 1.0,
+        .live = true,
+        .fxRng = foemod.fxStream(at.x + at.z, 641.0, 0x8017),
+    };
+    g.boltGasHead = (g.boltGasHead + 1) % BOLT_GAS_CAP;
+}
+
 pub fn heroBlade(g: *const Game) foemod.Blade {
     return .{
         .active = g.hero.hitActive(),
@@ -4294,6 +4652,9 @@ pub fn heroBlade(g: *const Game) foemod.Blade {
         .a0 = g.hero.bladeA0,
         .b0 = g.hero.bladeB0,
         .hit = g.hero.attackHit(), // HP/poise/stance for THIS swing (light vs heavy)
+        // **HIS BLADE IS THE ONLY ONE THAT CULLS** (`passivetree.Grant.cull`) — stamped here, where his own
+        // swing is built, so nothing in the world can inherit it by accident.
+        .cullAt = g.hero.perk.cull,
     };
 }
 
@@ -4673,4 +5034,16 @@ fn drawLockDot(g: *Game) void {
     const y: i32 = @intFromFloat(s.y);
     rl.drawCircleGradient(x, y, 15, rgba(255, 255, 255, 175), rgba(255, 255, 255, 0));
     rl.drawCircle(x, y, 2, rl.Color.white);
+}
+
+test "A RING IN THE BAG SAVES NOTHING — the snap is asked of the FINGER" {
+    var worn = heromod.Worn{};
+    try std.testing.expect(bindingWorn(worn) == null); // an empty hand, and a bag full of them is the same hand
+    worn.put(.ring, .leech_signet);
+    try std.testing.expect(bindingWorn(worn) == null); // the other band in the same socket binds nothing
+    worn.put(.ring, .soul_binding_ring);
+    try std.testing.expectEqual(item.Wear.ring, bindingWorn(worn).?);
+    // …and it is the SOCKET that comes back, because the snap has to empty the one it was in.
+    worn.put(.ring, null);
+    try std.testing.expect(bindingWorn(worn) == null);
 }

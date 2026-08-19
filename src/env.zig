@@ -95,6 +95,14 @@ const OCCL_SKIRT: f32 = 0.9;
 /// …and the fallback for a fadeable kind with NO colliders: a share of its bound, since the bound is a
 /// canopy's whole spread and a leaf nine metres off the sight line is in nobody's way.
 const OCCL_GIRTH: f32 = 0.55;
+/// **HOW TALL GROUND COVER HAS TO STAND BEFORE IT THINS AT ALL, in metres** — HIS WAIST, the rig's SPINE at
+/// 0.640·H on the 1.8 m stature, written out for `WADE_MAX`'s reason. Flora is in the scan, but a tuft is
+/// not, and coverage will not draw that line: a tuft up against the lens scores 0.54, over three times
+/// `OCCL_MIN`, so ungated the commonest thing in the world ghosts round his boots every time the lens dips.
+/// TESTED ON THE INSTANCE (`top * scale`), not the kind — the cover scatter stamps 0.72..1.38, and how tall
+/// the thing standing there actually is the only question worth asking. At his HIP instead this let 316
+/// scaled patches and 303 ferns back in, which is the grass it is here to keep out.
+const OCCL_TALL: f32 = 1.15;
 /// How far outside the sight line's own box an occluder's centre can sit — one cell covers the widest
 /// canopy in the table at any scale the editor is likely to stamp.
 const OCCL_REACH: f32 = CELL;
@@ -327,7 +335,11 @@ pub fn groundY() f32 {
 }
 
 // A fire's static description; the per-frame guttering is applied in uploadLights.
-const WorldLight = struct { base: gfx.Light, flicker: f32, phase: f32 };
+/// **A LIGHT BELONGS TO THE PROP THAT PLACED IT** (`prop`, an index into `props`). Placed at materialize time
+/// with no back-reference, a pickup glow's own 5.4 m pool went on lighting the ground for the rest of the
+/// session after the glow had been taken — the occluder's bug one pass along, and visible from every angle
+/// rather than one. `lightOf` is where the ownership is read.
+const WorldLight = struct { base: gfx.Light, flicker: f32, phase: f32, prop: u32 };
 
 const Pool = struct { pos: rl.Vector3, radius: f32 };
 
@@ -809,7 +821,7 @@ pub const Env = struct {
         self.props[0] = .{ .kind = kind, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1.0, .op = 0 };
         self.nprops = 1;
         if (props.info(kind).light) |ls| {
-            self.lights[0] = .{ .base = .{ .pos = v3(0, ls.y, 0), .col = ls.col, .radius = ls.radius }, .flicker = ls.flicker, .phase = 0 };
+            self.lights[0] = .{ .base = .{ .pos = v3(0, ls.y, 0), .col = ls.col, .radius = ls.radius }, .flicker = ls.flicker, .phase = 0, .prop = 0 };
             self.nlights = 1;
         }
         buildSolids(self);
@@ -833,19 +845,31 @@ pub const Env = struct {
             var cx = x0;
             while (cx <= x1) : (cx += 1) {
                 const c = cz * GRID_N + cx;
-                var k = self.stx.start[c];
-                while (k < self.stx.start[c + 1]) : (k += 1) {
-                    const pi = self.stx.items[k];
-                    const pr = &self.props[pi];
-                    const nfo = props.info(pr.kind);
-                    if (nfo.solid) continue;
-                    const thin = thinFor(pr, nfo, eye, at);
-                    if (thin <= 0) continue;
-                    self.wantFade(pi, mathx.lerpF(1.0, OCCL_FLOOR, thin));
-                }
+                self.scanCell(&self.stx, c, eye, at);
+                self.scanCell(&self.flx, c, eye, at);
             }
         }
         self.easeFades(dt);
+    }
+
+    /// One cell of one index against the sight line.
+    fn scanCell(self: *Env, idx: *const Index, c: usize, eye: rl.Vector3, at: rl.Vector3) void {
+        var k = idx.start[c];
+        while (k < idx.start[c + 1]) : (k += 1) {
+            const pi = idx.items[k];
+            const pr = &self.props[pi];
+            // **AND IT IS REFUSED A SLOT, NOT JUST A DRAW.** `drawThinned` skipping a `gone` prop stops
+            // the wisp being visible; it does not stop it being ENLISTED here, and the list is capped
+            // (`OCCL_MAX`) with `wantFade` evicting a real occluder to make room. A glow nobody can see
+            // was buying a fade slot off a tree that is genuinely in the way.
+            if (pr.gone) continue;
+            const nfo = props.info(pr.kind);
+            if (nfo.solid) continue;
+            if (nfo.flora and nfo.top * pr.scale < OCCL_TALL) continue;
+            const thin = thinFor(pr, nfo, eye, at);
+            if (thin <= 0) continue;
+            self.wantFade(pi, mathx.lerpF(1.0, OCCL_FLOOR, thin));
+        }
     }
 
     /// Ask one instance to be `to` solid, enlisting it if it is not in flight already. Two parts of the same
@@ -1154,7 +1178,7 @@ pub const Env = struct {
         return mathx.maxF(0, WATER_Y - self.groundAt(x, z));
     }
 
-    /// DEEP WATER IS A WALL — ONE rule with two callers, `walkStep` and `game.gateHeroWater`.
+    /// DEEP WATER IS A WALL — ONE rule with two callers, `walkStep` and `game.gateHeroTerrain`.
     pub fn deepRefused(self: *const Env, fromX: f32, fromZ: f32, toX: f32, toZ: f32) bool {
         const deep = self.wadeDepth(toX, toZ);
         return deep > WADE_MAX and deep > self.wadeDepth(fromX, fromZ);
@@ -1193,6 +1217,13 @@ pub const Env = struct {
 
     pub fn model(self: *const Env, kind: Kind) rl.Model {
         return self.models[@intFromEnum(kind)];
+    }
+
+    /// **THE GLOW'S OWN MESH, for the one caller holding a glow with no prop behind it** (`game.drawDrops` — a
+    /// body's drop rather than the map's). It is THIS mesh and not a second build of it: `props.INFO` already
+    /// names `propfx.pickupMesh` for the `.pickup` kind and `build` has already uploaded it.
+    pub fn pickupModel(self: *const Env) rl.Model {
+        return self.model(.pickup);
     }
 
     pub fn veil(self: *const Env, kind: Kind) ?rl.Model {
@@ -1370,11 +1401,9 @@ pub const Env = struct {
                 // moving away rather than going out. `setFade` is the scene shader's alone — the sun pass
                 // must not push it.
                 if (!casters_only and pr.shrink < 1.0) {
-                    if (self.scene) |s| s.setFade(pr.shrink);
-                    rl.gl.rlDisableDepthMask();
+                    if (self.scene) |s| s.beginFade(pr.shrink);
                     self.drawProp(pr);
-                    rl.gl.rlEnableDepthMask();
-                    if (self.scene) |s| s.setFade(1);
+                    if (self.scene) |s| s.endFade();
                 } else {
                     self.drawProp(pr);
                 }
@@ -1403,6 +1432,11 @@ pub const Env = struct {
         var n: usize = 0;
         for (self.occl[0..self.noccl]) |pi| {
             const pr = &self.props[pi];
+            // **TAKEN OUT OF THE WORLD IS TAKEN OUT OF BOTH PASSES.** `drawIndexed` has always skipped a `gone`
+            // prop and this one did not, so a PICKUP GLOW picked up while it stood between the lens and the
+            // hero was enlisted as an occluder and went on being drawn here after the world had stopped
+            // drawing it — a wisp of light hanging over the spot you just cleared, and only from that angle.
+            if (pr.gone) continue;
             if (pr.fade >= FADE_SOLID) continue; // it drew solid with everything else
             const nfo = props.info(pr.kind);
             if (!view.visible(pr.pos, nfo.bound * pr.scale, nfo.view)) continue;
@@ -1420,6 +1454,14 @@ pub const Env = struct {
         rl.gl.rlSetBlendFactors(GL_ZERO, GL_ONE, GL_FUNC_ADD);
         for (order[0..n]) |pi| {
             const pr = &self.props[pi];
+            // **THE WIND STAYS ON FOR GROUND COVER, ACROSS BOTH PASSES.** `drawFlora` draws inside
+            // `setWind(true)` and this path is outside it, so a thinning bush snapped out of its own sway and
+            // back on the frame it went solid. Both passes or neither: the depth prepass has to lay down the
+            // SAME geometry the colour pass draws, or LEQUAL throws the whole surface away.
+            const windy = props.info(pr.kind).flora;
+            if (windy) {
+                if (self.scene) |s| s.setWind(true);
+            }
             self.stat_draws += 2;
             // ONE LAYER PER PIXEL: roots, boughs and the far side of a bole stack three or four surfaces
             // along the ray and the alpha COMPOUNDS. Each prop lays down its own depth first with the
@@ -1427,12 +1469,29 @@ pub const Env = struct {
             rl.gl.rlSetBlendMode(@intFromEnum(rl.gl.rlBlendMode.rl_blend_custom));
             self.drawProp(pr);
             rl.gl.rlSetBlendMode(@intFromEnum(rl.gl.rlBlendMode.rl_blend_alpha));
-            rl.gl.rlDisableDepthMask();
-            if (self.scene) |s| s.setFade(pr.fade);
+            // …and the colour pass goes down `Scene.beginFade`/`endFade` like every other half-there surface:
+            // the mask off and the factor set is ONE thing, and this was the third place writing it out.
+            if (self.scene) |s| s.beginFade(pr.fade);
             self.drawProp(pr);
-            rl.gl.rlEnableDepthMask();
+            if (self.scene) |s| s.endFade();
+            if (windy) {
+                if (self.scene) |s| s.setWind(false);
+            }
         }
-        if (self.scene) |s| s.setFade(1);
+    }
+
+    /// ONE LIGHT AS IT STANDS THIS FRAME — its gutter, and its OWNER'S say. Null once the prop that placed it
+    /// has left the world, and dimmed on the same ramp the prop shrinks out on (`Prop.shrink`), so a glow being
+    /// taken takes its pool with it instead of blinking off a frame after the mesh has gone.
+    fn lightOf(self: *const Env, wl: WorldLight, t: f32) ?gfx.Light {
+        const owner = &self.props[wl.prop];
+        if (owner.gone) return null;
+        const k = 1.0 + wl.flicker * gutter(t, wl.phase);
+        return .{
+            .pos = wl.base.pos,
+            .col = mathx.scaleV(wl.base.col, mathx.maxF(k, 0.05) * owner.shrink),
+            .radius = wl.base.radius,
+        };
     }
 
     /// This frame's torch/fire lights: the gfx.MAX_LIGHTS nearest the camera whose pool is actually ON SCREEN.
@@ -1445,13 +1504,8 @@ pub const Env = struct {
         var n: usize = 0;
         for (self.lights[0..self.nlights]) |wl| {
             if (!view.visible(wl.base.pos, wl.base.radius, LIGHT_REACH)) continue;
+            const lit = self.lightOf(wl, t) orelse continue;
             const d2 = mathx.dist2XZ(wl.base.pos, view.pos);
-            const k = 1.0 + wl.flicker * gutter(t, wl.phase);
-            const lit = gfx.Light{
-                .pos = wl.base.pos,
-                .col = mathx.scaleV(wl.base.col, mathx.maxF(k, 0.05)),
-                .radius = wl.base.radius,
-            };
             if (n < cap) {
                 picked[n] = lit;
                 dist[n] = d2;
@@ -1685,7 +1739,7 @@ const Placer = struct {
         }
         self.e.props[self.e.nprops] = .{ .kind = kind, .pos = v3(x, y, z), .yaw = yaw, .scale = scale, .lean = lean, .leanDir = leanDir, .op = self.cur };
         self.e.nprops += 1;
-        if (props.info(kind).light) |ls| self.addLight(x, y, z, scale, ls, rng);
+        if (props.info(kind).light) |ls| self.addLight(@intCast(self.e.nprops - 1), x, y, z, scale, ls, rng);
         if (kind == .water) {
             // An init-time PANIC, like MAX_PROPS/MAX_SOLIDS — never a silent drop.
             if (self.e.npools >= self.e.pools.len) @panic("env: water pool cap exceeded — raise Env.pools");
@@ -1694,12 +1748,13 @@ const Placer = struct {
         }
     }
 
-    fn addLight(self: *Placer, x: f32, y: f32, z: f32, scale: f32, ls: props.LightSpec, rng: *mathx.Rng) void {
+    fn addLight(self: *Placer, pi: u32, x: f32, y: f32, z: f32, scale: f32, ls: props.LightSpec, rng: *mathx.Rng) void {
         if (self.e.nlights >= MAX_LIGHTS) return; // fires past the cap simply don't light — never a crash
         self.e.lights[self.e.nlights] = .{
             .base = .{ .pos = v3(x, y + ls.y * scale, z), .col = ls.col, .radius = ls.radius * mathx.maxF(scale, 0.6) },
             .flicker = ls.flicker,
             .phase = rng.range(0, 60), // every flame guttering on its own beat
+            .prop = pi,
         };
         self.e.nlights += 1;
     }
@@ -2157,6 +2212,37 @@ test "architecture never thins, and a kind added to the table cannot opt out by 
     }
 }
 
+test "GROUND COVER THINS FROM HIS WAIST UP — a thicket in the way does, a tuft round his boots never" {
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    const at = v3(0, 1.0, 0);
+    const eye = v3(0, 2.27, -4.42); // the default rig: 4.6 m of boom at 0.28 rad
+    for ([_]struct { k: Kind, sc: f32, thins: bool }{
+        .{ .k = .thicket, .sc = 1.0, .thins = true },
+        .{ .k = .bush, .sc = 1.0, .thins = true },
+        .{ .k = .cattails, .sc = 1.0, .thins = true },
+        .{ .k = .tuft, .sc = 1.0, .thins = false },
+        .{ .k = .fern, .sc = 1.0, .thins = false },
+        .{ .k = .tuft, .sc = 1.38, .thins = false }, // …and a tuft is still a tuft at the top of the scatter's range
+        // …BUT THE GATE IS ON THE INSTANCE, NOT THE KIND: a bramble is knee-high at nominal scale and a
+        // waist-high mass at 1.38, and what the player has to see past is the second one.
+        .{ .k = .bramble, .sc = 1.0, .thins = false },
+        .{ .k = .bramble, .sc = 1.38, .thins = true },
+    }) |row| {
+        var any = false;
+        var t: f32 = 0.05;
+        while (t < 1.0) : (t += 0.05) {
+            e.* = .{ .ground = undefined, .models = undefined };
+            e.props[0] = .{ .kind = row.k, .pos = v3(0, 0, mathx.lerpF(eye.z, at.z, t)), .yaw = 0, .scale = row.sc };
+            e.nprops = 1;
+            indexProps(e);
+            e.markOccluders(eye, at, 10.0);
+            if (e.props[0].fade < 1.0) any = true;
+        }
+        try std.testing.expectEqual(row.thins, any);
+    }
+}
+
 test "a FULL occluder list gives its slots to what hides him most, not to what the cell walk reached first" {
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
@@ -2198,6 +2284,36 @@ test "NOTHING MID-TRAVEL IS DROPPED — a full list refuses the ask rather than 
     try std.testing.expectEqual(@as(f32, 1), e.props[OCCL_MAX].fadeTo); // the deepest ask there is, refused…
     try std.testing.expectEqual(OCCL_MAX, e.noccl);
     for (e.occl[0..e.noccl]) |pi| try std.testing.expect(e.props[pi].fade < FADE_SOLID); // …and nobody jumped
+}
+
+test "A GLOW TAKEN OUT OF THE WORLD TAKES ITS FADE SLOT AND ITS LIGHT WITH IT" {
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.stageOne(.pickup); // one glow at the origin, indexed, with its own pool of light
+    try std.testing.expectEqual(@as(usize, 1), e.lightCount());
+
+    // Standing between the lens and the hero it thins, which is what enlists it.
+    const eye = v3(0, 2.2, -4);
+    const hero = v3(0, 1.0, 2);
+    e.markOccluders(eye, hero, 1.0 / 60.0);
+    try std.testing.expectEqual(@as(usize, 1), e.noccl);
+    try std.testing.expect(e.lightOf(e.lights[0], 0) != null);
+
+    // PICKED UP: `setPickupDraw` shrinks it out and then takes it off the world…
+    e.setPickupDraw(0, 0.5, false);
+    const half = e.lightOf(e.lights[0], 0).?;
+    try std.testing.expectApproxEqAbs(e.lights[0].base.col.x * 0.5, half.col.x, 1e-4); // the pool goes with the mesh
+    e.setPickupDraw(0, 0, true);
+    try std.testing.expect(e.lightOf(e.lights[0], 0) == null);
+
+    // …and it is refused the SLOT as well as the draw: the list is capped and `wantFade` evicts a real
+    // occluder to make room, so a wisp nobody can see may not be holding one.
+    e.noccl = 0;
+    e.props[0].fade = 1;
+    e.props[0].fadeTo = 1;
+    e.markOccluders(eye, hero, 1.0 / 60.0);
+    try std.testing.expectEqual(@as(usize, 0), e.noccl);
 }
 
 test "the shadow cull keeps a distant TALL caster whose shadow still reaches the box" {
@@ -2730,9 +2846,9 @@ test "THE BROOD ARENA LOADS — a scratch map is only useful if it is known to s
 /// WHAT THE SHIPPED WORLD CURRENTLY REPLAYS TO. THREE FACTS, NOT SIX LITERALS: written out at the re-pin
 /// print AND at the assertions, a re-pin that moved one pair and forgot the other left the print silent on
 /// the very run the assertion failed.
-const PIN_PROPS: usize = 17524;
-const PIN_SOLIDS: usize = 1787;
-const PIN_LIGHTS: usize = 60;
+const PIN_PROPS: usize = 17535;
+const PIN_SOLIDS: usize = 1798;
+const PIN_LIGHTS: usize = 71;
 const PIN_JERKY: usize = 2;
 
 test "replaying the SHIPPED map produces a stable world" {

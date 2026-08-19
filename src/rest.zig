@@ -289,7 +289,7 @@ pub fn confirm(self: *Rest, t: *const Tree, souls: u32) Pick {
             const i = self.wheel.cursor;
             // THE MIDDLE TAKES NO PRESS. It is a place to stand, not a thing to buy, and `locked` is only
             // ever asked about a real node.
-            if (i >= ptree.N or t.locked(i, souls) != null) {
+            if (i >= ptree.N or !t.canTake(i, souls)) {
                 sfx.play(.menu_back); // refused, and the column beside it already says why
                 return .none;
             }

@@ -177,9 +177,9 @@ pub fn class(k: Kind) Class {
         .sporecrown,
         .gravebell_amulet,
         => .gear,
-        // NOT a tool, though it is the one carried thing that DOES something: a tool is spent by pressing
-        // Confirm on it, and this one is spent by dying. `usable` stays false and the shelf says so.
-        .soul_binding_ring => .treasure,
+        // …and the band that breaks for you shelves with the gear it competes with, because that is where the
+        // decision is now taken. NOT a tool either way: a tool is spent by pressing Confirm, this by dying.
+        .soul_binding_ring => .gear,
         // …and the scroll for the ring's reason, read the other way: finding it is a PERMANENT gain (the bell
         // knows the wolf from here on), which is what this shelf means. Nothing is spent by pressing Confirm.
         .spirit_scroll_wolf => .treasure,
@@ -348,6 +348,12 @@ pub const Charm = struct { slot: Wear, leech: f32 = 0, hpFrac: f32 = 0, spiritFp
 /// reason to leave the socket empty, which is the one thing a piece of gear may never be.
 pub const Boon = struct { slot: Wear, attr: stats.Attr, n: u8 };
 
+/// **WORN, AND IT DOES NOTHING UNTIL THE ONE MOMENT IT DOES EVERYTHING** — a band that breaks in place of you.
+/// It carries no numbers because there is nothing to tune: it is spent or it is not. A socket is the whole
+/// price, and that is the point of putting it here rather than leaving it a thing in the bag — insurance you
+/// pay for in the finger a leech signet wanted, decided BEFORE the fight instead of by having packed it.
+pub const Bind = struct { slot: Wear };
+
 pub const Equip = union(enum) {
     /// Not a thing you can put on.
     none,
@@ -355,6 +361,7 @@ pub const Equip = union(enum) {
     plate: Plate,
     charm: Charm,
     boon: Boon,
+    bind: Bind,
 };
 
 /// **THE BARE ARMAMENT'S ROW** — every dial 1, and the skill that drives the thing he was born holding. An empty
@@ -364,62 +371,139 @@ pub fn bareArm(w: Wear) Arm {
 }
 
 /// THE GEAR TABLE — one row per thing, and the numbers are all any of them is.
-pub fn equip(k: Kind) Equip {
-    return switch (k) {
-        // A LONG KNIFE. Quicker than the sword by a fifth and cheaper to swing, at three quarters of the damage
-        // and less poise than a hero light already carries: it is the weapon for a fight you win on openings.
-        .fang_dirk => .{ .arm = .{ .slot = .hand_sword, .dmg = 0.74, .poise = 0.72, .dur = 0.78, .stam = 0.76, .scales = .dexterity } },
+/// ONE ITEM'S WHOLE BEHAVIOUR. What it does WORN and what it does USED were two switches in two halves of
+/// this file, so what a thing is worth took two lookups and adding one took two edits — with the second one
+/// a 24-line `=> .none` tail nobody could read.
+pub const Gear = struct {
+    kind: Kind,
+    equip: Equip = .none,
+    use: Use = .none,
+};
+
+/// **WHAT EVERYTHING DOES, AS ONE TABLE YOU CAN READ DOWN.** Sparse on purpose: a kind absent from here does
+/// nothing at all, and `INERT` below names every one of those so an absence is a DECISION and not an
+/// omission — a new `Kind` is a compile error until it has appeared in one list or the other.
+pub const GEAR = [_]Gear{
+    // ── WORN ────────────────────────────────────────────────────────────────────────────────────────────
+    // A LONG KNIFE. Quicker than the sword by a fifth and cheaper to swing, at three quarters of the damage
+    // and less poise than a hero light already carries: it is the weapon for a fight you win on openings.
+    .{ .kind = .fang_dirk, .equip = .{ .arm = .{ .slot = .hand_sword, .dmg = 0.74, .poise = 0.72, .dur = 0.78, .stam = 0.76, .scales = .dexterity } } },
         // …AND THE OTHER END OF THE SAME DIAL. Half again the damage and the poise — enough that a light swing
-        // of it flinches what a sword's light bounces off — bought with a third more commitment on every stroke
-        // and half again the stamina. This is the thing that staggers the ogre without a spell.
-        .greatclub => .{ .arm = .{ .slot = .hand_sword, .dmg = 1.48, .poise = 1.60, .dur = 1.34, .stam = 1.48, .scales = .strength } },
-        // A DRAW TWICE THE SKELETONS' (its own description) — but a bow CHIPS, it does not win, so the multiple
-        // is on the shaft and not on the archer: slower to bring up and dearer to hold.
-        .grave_warbow => .{ .arm = .{ .slot = .hand_bow, .dmg = 1.62, .poise = 1.45, .dur = 1.28, .stam = 1.34, .scales = .dexterity } },
-        // A DOOR. It stops nearly everything and covers half again the compass the small shield does — and the
-        // three metres of it are why he walks behind it at four fifths of the speed and pays more per blow eaten.
-        // **THE NEGATION DIAL STOPS UNDER THE CAP ON PURPOSE.** `combat.GUARD_NEGATE_CAP` is 0.95 and the base is
-        // 0.85, so anything past ~1.118 here is silently clamped — and `effect` below PRINTS this figure, so a
-        // clamped dial is a number on the panel that the fight does not honour. At 1.10 the door is worth every
-        // point of it, and the cap goes back to being what it is for: stopping a shield PLUS a tree node from
-        // making a block free.
-        .tower_shield => .{ .arm = .{ .slot = .hand_shield, .negate = 1.10, .arc = 1.45, .walk = 0.80, .stam = 1.30 } },
-        // THE FIRST ARMOUR IN THE WORLD. `a` is sized to take about a fifth off a middling blow and less off a
-        // big one — `A/(A + 5*dmg)` is the curve, so it is worth most against the pokes and least against the
-        // thing that was going to kill you, which is what a rag coat should be.
-        .quilted_gambeson => .{ .plate = .{ .slot = .chest, .a = 22.0 } },
-        // THE BARGAIN. Two HP back on every blow of his that lands, paid for with a permanent bite out of the
-        // bar it fills — so it is a trade for somebody who lands a lot of blows and a straight loss otherwise.
-        .leech_signet => .{ .charm = .{ .slot = .ring, .leech = 2.0, .hpFrac = 0.06 } },
-        // THE REST OF THE SUIT. Head and feet answer PHYSICAL like the coat does, and they are sized by how much
-        // of him each actually covers — the coat is the body, a helm is one head, boots are two feet. All three
-        // on, `A/(A+5*dmg)` turns aside about a third of a middling blow and a fifth of the one that would have
-        // killed him, which is the curve doing exactly what it is for.
-        .pitted_helm => .{ .plate = .{ .slot = .helm, .a = 14.0 } },
-        .marchboots => .{ .plate = .{ .slot = .feet, .a = 9.0 } },
-        // …AND THE THREE THAT BUY A SKILL, one per socket and one per weapon that reads it: the belt braces the
-        // hips a club is swung out of, the signet steadies the wrist a point goes out on, the bead answers the
-        // rod. Three points each — a fifth of the way to the first softcap, so it is a real gain and not a level.
-        .banded_warbelt => .{ .boon = .{ .slot = .belt, .attr = .strength, .n = 3 } },
-        .deft_signet => .{ .boon = .{ .slot = .ring2, .attr = .dexterity, .n = 3 } },
-        .ashen_amulet => .{ .boon = .{ .slot = .neck, .attr = .intelligence, .n = 3 } },
-        // **THE FIRST COLD RESISTANCE ANYWHERE ON HIS SIDE.** The necromancer's rune ring is the game's one
-        // source of cold and the sheet showed 0% with nothing in the world able to move it, so this coat is a
-        // real answer to a real creature rather than a number. Its PHYSICAL is under the gambeson's on purpose:
-        // fleece and hide turn a chill, not an edge, and a chest socket that was strictly better than the coat
-        // already in it would retire that coat instead of competing with it.
-        .rimeward_mantle => .{ .plate = .{ .slot = .chest, .a = 13.0, .res = .{ .cold = 35 } } },
-        // …AND THE FIRST THING THAT SLOWS A METER FILLING. Poison is the only status, it is his alone, and
-        // nothing resisted it: the sporeling's cloud filled the bar at one rate whatever he had on. Just over
-        // half, so a cloud is still something you walk out of and not something you stand in.
-        .sporecrown => .{ .plate = .{ .slot = .helm, .a = 8.0, .poison = 0.55 } },
-        // THE BELL'S OWN BARGAIN, and the leech signet's shape on the blue bar: a call is the single biggest
-        // bill in the game (30 of a 60 pool), so two fifths off it is most of a second ringing — bought with a
-        // tenth of the pool the ringing comes out of, which is what stops it being free depth.
-        .gravebell_amulet => .{ .charm = .{ .slot = .neck, .spiritFp = 0.60, .fpFrac = 0.10 } },
-        else => .none,
-    };
+    // of it flinches what a sword's light bounces off — bought with a third more commitment on every stroke
+    // and half again the stamina. This is the thing that staggers the ogre without a spell.
+    .{ .kind = .greatclub, .equip = .{ .arm = .{ .slot = .hand_sword, .dmg = 1.48, .poise = 1.60, .dur = 1.34, .stam = 1.48, .scales = .strength } } },
+    // A DRAW TWICE THE SKELETONS' (its own description) — but a bow CHIPS, it does not win, so the multiple
+    // is on the shaft and not on the archer: slower to bring up and dearer to hold.
+    .{ .kind = .grave_warbow, .equip = .{ .arm = .{ .slot = .hand_bow, .dmg = 1.62, .poise = 1.45, .dur = 1.28, .stam = 1.34, .scales = .dexterity } } },
+    // A DOOR. It stops nearly everything and covers half again the compass the small shield does — and the
+    // three metres of it are why he walks behind it at four fifths of the speed and pays more per blow eaten.
+    // **THE NEGATION DIAL STOPS UNDER THE CAP ON PURPOSE.** `combat.GUARD_NEGATE_CAP` is 0.95 and the base is
+    // 0.85, so anything past ~1.118 here is silently clamped — and `effect` below PRINTS this figure, so a
+    // clamped dial is a number on the panel that the fight does not honour. At 1.10 the door is worth every
+    // point of it, and the cap goes back to being what it is for: stopping a shield PLUS a tree node from
+    // making a block free.
+    .{ .kind = .tower_shield, .equip = .{ .arm = .{ .slot = .hand_shield, .negate = 1.10, .arc = 1.45, .walk = 0.80, .stam = 1.30 } } },
+    // THE FIRST ARMOUR IN THE WORLD. `a` is sized to take about a fifth off a middling blow and less off a
+    // big one — `A/(A + 5*dmg)` is the curve, so it is worth most against the pokes and least against the
+    // thing that was going to kill you, which is what a rag coat should be.
+    .{ .kind = .quilted_gambeson, .equip = .{ .plate = .{ .slot = .chest, .a = 22.0 } } },
+    // THE BARGAIN. Two HP back on every blow of his that lands, paid for with a permanent bite out of the
+    // bar it fills — so it is a trade for somebody who lands a lot of blows and a straight loss otherwise.
+    .{ .kind = .leech_signet, .equip = .{ .charm = .{ .slot = .ring, .leech = 2.0, .hpFrac = 0.06 } } },
+    // THE REST OF THE SUIT. Head and feet answer PHYSICAL like the coat does, and they are sized by how much
+    // of him each actually covers — the coat is the body, a helm is one head, boots are two feet. All three
+    // on, `A/(A+5*dmg)` turns aside about a third of a middling blow and a fifth of the one that would have
+    // killed him, which is the curve doing exactly what it is for.
+    .{ .kind = .pitted_helm, .equip = .{ .plate = .{ .slot = .helm, .a = 14.0 } } },
+    .{ .kind = .marchboots, .equip = .{ .plate = .{ .slot = .feet, .a = 9.0 } } },
+    // …AND THE THREE THAT BUY A SKILL, one per socket and one per weapon that reads it: the belt braces the
+    // hips a club is swung out of, the signet steadies the wrist a point goes out on, the bead answers the
+    // rod. Three points each — a fifth of the way to the first softcap, so it is a real gain and not a level.
+    .{ .kind = .banded_warbelt, .equip = .{ .boon = .{ .slot = .belt, .attr = .strength, .n = 3 } } },
+    .{ .kind = .deft_signet, .equip = .{ .boon = .{ .slot = .ring2, .attr = .dexterity, .n = 3 } } },
+    .{ .kind = .ashen_amulet, .equip = .{ .boon = .{ .slot = .neck, .attr = .intelligence, .n = 3 } } },
+    // **THE FIRST COLD RESISTANCE ANYWHERE ON HIS SIDE.** The necromancer's rune ring is the game's one
+    // source of cold and the sheet showed 0% with nothing in the world able to move it, so this coat is a
+    // real answer to a real creature rather than a number. Its PHYSICAL is under the gambeson's on purpose:
+    // fleece and hide turn a chill, not an edge, and a chest socket that was strictly better than the coat
+    // already in it would retire that coat instead of competing with it.
+    .{ .kind = .rimeward_mantle, .equip = .{ .plate = .{ .slot = .chest, .a = 13.0, .res = .{ .cold = 35 } } } },
+    // …AND THE FIRST THING THAT SLOWS A METER FILLING. Poison is the only status, it is his alone, and
+    // nothing resisted it: the sporeling's cloud filled the bar at one rate whatever he had on. Just over
+    // half, so a cloud is still something you walk out of and not something you stand in.
+    .{ .kind = .sporecrown, .equip = .{ .plate = .{ .slot = .helm, .a = 8.0, .poison = 0.55 } } },
+    // THE BELL'S OWN BARGAIN, and the leech signet's shape on the blue bar: a call is the single biggest
+    // bill in the game (30 of a 60 pool), so two fifths off it is most of a second ringing — bought with a
+    // tenth of the pool the ringing comes out of, which is what stops it being free depth.
+    .{ .kind = .gravebell_amulet, .equip = .{ .charm = .{ .slot = .neck, .spiritFp = 0.60, .fpFrac = 0.10 } } },
+    // **IT HAS TO BE ON YOUR HAND TO BREAK FOR YOU** (owner's call). Carried, it was insurance already bought
+    // by having picked it up, and nothing was ever decided; in the leech signet's own finger it is a choice
+    // taken before the fight — HP back on every blow that lands, against keeping what you carry the once.
+    .{ .kind = .soul_binding_ring, .equip = .{ .bind = .{ .slot = .ring } } },
+    // ── USED ────────────────────────────────────────────────────────────────────────────────────────────
+    .{ .kind = .mushroom_jerky, .use = .{ .regen = .{ .frac = 0.60, .secs = 20.0 } } },
+    // Under both melee swings in damage (the bow's own restraint), but it is fire, and fire is the answer to
+    // half the wood.
+    .{ .kind = .ember_candle, .use = .{ .lob = .{ .dmg = 8, .fire = 22, .poise = 12 } } },
+    .{ .kind = .sporeling_cap, .use = .{ .ward = .{ .chaos = 40, .secs = 60 } } },
+    .{ .kind = .second_wind, .use = .{ .wind = .{ .share = 0.5 } } },
+    // The fire arrow's own fraction: the tallow makes a sword of the burning shaft, not a bigger one.
+    .{ .kind = .fire_tallow, .use = .{ .grease = .{ .frac = 0.5, .secs = 60 } } },
+    // The candle's weights with the element swapped — the pair teach one throw.
+    .{ .kind = .thundercrock, .use = .{ .lob = .{ .dmg = 8, .lightning = 22, .poise = 12 } } },
+    // A middling foe's worth (the Rooted's own figure) — found money, not a farm.
+    .{ .kind = .nameless_soul, .use = .{ .souls = .{ .n = 150 } } },
+    .{ .kind = .toadflesh_broth, .use = .{ .brew = .{ .mult = 1.5, .secs = 60 } } },
+    .{ .kind = .purgeleaf, .use = .purge },
+    // FOUR TIMES the nameless soul's 150 — that one is "found money" off a middling body, and this is the
+    // thing at the bottom of a chest. Still nowhere near a level (`passivetree.costAt(0)` is 280).
+    .{ .kind = .pilgrims_salt, .use = .{ .souls = .{ .n = 600 } } },
+    // The broth's own multiple and a shorter clock: poise is what decides whether the next blow flinches him,
+    // so a minute of it would be a minute of not being staggered.
+    .{ .kind = .ironwort_tea, .use = .{ .steady = .{ .mult = 2.2, .secs = 40 } } },
+};
+
+/// **THE KINDS THAT DELIBERATELY DO NOTHING**, named so that an absence from `GEAR` is a decision. Some are
+/// carried rather than used (the scroll the bell reads), some are the HUD's own two flasks, and some are
+/// treasure the game has not built a door for yet.
+pub const INERT = [_]Kind{
+    .crimson_flask,  .cerulean_flask, .rune_arc,    .golden_seed,
+    .smithing_stone, .bloodgrass,     .kobold_fang, .iron_key,
+    .spirit_scroll_wolf,
+};
+
+comptime {
+    // EVERY KIND SAYS SOMETHING, ONCE. This is what the two exhaustive switches used to buy: a new `Kind` is a
+    // compile error until it has appeared in `GEAR` or admitted it does nothing.
+    if (GEAR.len + INERT.len != NK) @compileError("item: every Kind must be in GEAR or named in INERT, exactly once");
+    var seen = [_]bool{false} ** NK;
+    for (GEAR) |g| {
+        if (seen[@intFromEnum(g.kind)]) @compileError("item: " ++ @tagName(g.kind) ++ " has two rows in GEAR");
+        seen[@intFromEnum(g.kind)] = true;
+    }
+    for (INERT) |k| {
+        if (seen[@intFromEnum(k)]) @compileError("item: " ++ @tagName(k) ++ " is both in GEAR and named INERT");
+        seen[@intFromEnum(k)] = true;
+    }
 }
+
+/// The table scattered by kind, so a lookup is an index rather than a walk — `GEAR` stays the hand-edited
+/// thing and this is what the fight reads.
+const BY_KIND: [NK]Gear = blk: {
+    var out: [NK]Gear = undefined;
+    for (0..NK) |i| out[i] = .{ .kind = @enumFromInt(i) };
+    for (GEAR) |g| out[@intFromEnum(g.kind)] = g;
+    break :blk out;
+};
+
+pub fn equip(k: Kind) Equip {
+    return BY_KIND[@intFromEnum(k)].equip;
+}
+
+pub fn use(k: Kind) Use {
+    return BY_KIND[@intFromEnum(k)].use;
+}
+
 
 /// Can this be put on at all? `usable`'s twin one shelf along.
 pub fn wearable(k: Kind) bool {
@@ -435,6 +519,7 @@ pub fn wearSlot(k: Kind) ?Wear {
         .plate => |p| p.slot,
         .charm => |c| c.slot,
         .boon => |b| b.slot,
+        .bind => |b| b.slot,
     };
 }
 
@@ -458,6 +543,11 @@ comptime {
             },
             .plate => |p| if (p.slot.held()) @compileError("item: " ++ @tagName(k) ++ " is armour in a hand"),
             .charm => |c| if (c.slot.held()) @compileError("item: " ++ @tagName(k) ++ " is a charm in a hand"),
+            // A BAND IS NOT SOMETHING YOU HOLD, and it may not sit where the armour and the boons do either:
+            // `bindsSouls` reads the payload, so a bind row in a plate's socket would be a coat that quietly
+            // eats a death — and the one thing the mechanic must be is legible from the socket it is in.
+            .bind => |b| if (b.slot != .ring and b.slot != .ring2) @compileError("item: " ++ @tagName(k) ++
+                " binds souls from a socket that is not a finger — the ring is the mechanic's whole tell"),
             .boon => |b| {
                 if (b.slot.held()) @compileError("item: " ++ @tagName(k) ++ " is a boon in a hand");
                 if (b.n == 0) @compileError("item: " ++ @tagName(k) ++ " grants zero points — a boon of nothing");
@@ -495,57 +585,6 @@ fn plateElem(r: Res) ?struct { name: []const u8, amount: f32 } {
     return null;
 }
 
-pub fn use(k: Kind) Use {
-    return switch (k) {
-        .mushroom_jerky => .{ .regen = .{ .frac = 0.60, .secs = 20.0 } },
-        // Under both melee swings in damage (the bow's own restraint), but it is fire, and fire is the
-        // answer to half the wood.
-        .ember_candle => .{ .lob = .{ .dmg = 8, .fire = 22, .poise = 12 } },
-        .sporeling_cap => .{ .ward = .{ .chaos = 40, .secs = 60 } },
-        .second_wind => .{ .wind = .{ .share = 0.5 } },
-        // The fire arrow's own fraction: the tallow makes a sword of the burning shaft, not a bigger one.
-        .fire_tallow => .{ .grease = .{ .frac = 0.5, .secs = 60 } },
-        // The candle's weights with the element swapped — the pair teach one throw, and the tables in
-        // `combat` decide which jar answers which creature.
-        .thundercrock => .{ .lob = .{ .dmg = 8, .lightning = 22, .poise = 12 } },
-        // A middling foe's worth (the Rooted's own figure) — found money, not a farm.
-        .nameless_soul => .{ .souls = .{ .n = 150 } },
-        .toadflesh_broth => .{ .brew = .{ .mult = 1.5, .secs = 60 } },
-        .purgeleaf => .purge,
-        // FOUR TIMES the nameless soul's 150 — that one is "found money" off a middling body, and this is the
-        // thing at the bottom of a chest. Still nowhere near a level (`passivetree.costAt(0)` is 280).
-        .pilgrims_salt => .{ .souls = .{ .n = 600 } },
-        // The broth's own multiple and a shorter clock: poise is what decides whether the next blow flinches
-        // him, so a minute of it would be a minute of not being staggered.
-        .ironwort_tea => .{ .steady = .{ .mult = 2.2, .secs = 40 } },
-        .crimson_flask,
-        .cerulean_flask,
-        .rune_arc,
-        .golden_seed,
-        .smithing_stone,
-        .bloodgrass,
-        .kobold_fang,
-        .iron_key,
-        .tower_shield,
-        .greatclub,
-        .leech_signet,
-        .soul_binding_ring,
-        .fang_dirk,
-        .grave_warbow,
-        .quilted_gambeson,
-        // CARRIED, NOT USED — the `soul_binding_ring`'s shape: what it does, it does by being in the bag.
-        .spirit_scroll_wolf,
-        .pitted_helm,
-        .ashen_amulet,
-        .banded_warbelt,
-        .marchboots,
-        .deft_signet,
-        .rimeward_mantle,
-        .sporecrown,
-        .gravebell_amulet,
-        => .none,
-    };
-}
 
 /// Is this row worth pressing Confirm on?
 pub fn usable(k: Kind) bool {
@@ -569,7 +608,6 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
         .crimson_flask => "Heals. Charges refill at a bonfire, not from the bag.",
         else => "Restores Focus. Charges refill at a bonfire, not from the bag.",
     };
-    if (bindsSouls(k)) return "Carried: a death spills no souls. The ring breaks instead.";
     if (k == .spirit_scroll_wolf) return "Carried: the bell can call Hildebrand.";
     if (k == .iron_key) return "Opens the one lock it was cut for.";
     // GEAR SAYS WHAT IT DOES IN THE SAME PLACE A TOOL DOES, off `equip` for the same reason the tools read
@@ -616,6 +654,9 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
             b.n,
             stats.displayName(b.attr),
         }) catch "Worn: a point of skill.",
+        // No numbers, and no buffer: the whole row is the one thing it does. It reads WORN because that is now
+        // the condition — the same line said "Carried" while a ring in the bag was enough.
+        .bind => return "Worn: a death spills no souls. The ring breaks instead.",
     }
     return switch (use(k)) {
         .none => "No effect yet.",
@@ -648,12 +689,13 @@ pub fn isFlask(k: Kind) bool {
     return k == .crimson_flask or k == .cerulean_flask;
 }
 
-/// THE ONE THING IN THE BAG THAT SPENDS ITSELF WITHOUT BEING USED — DS's Ring of Sacrifice. A death takes
-/// the RING instead of the souls, so what you were carrying stays carried and nothing is left on the ground
-/// to walk back for. Named here rather than tested for by kind at the death site, exactly as `isFlask` is:
-/// it is a fact about the ITEM, and a second binding charm should be one row here and no edit at all there.
+/// THE ONE THING THAT SPENDS ITSELF WITHOUT BEING USED — DS's Ring of Sacrifice. A death takes the RING
+/// instead of the souls, so what you were carrying stays carried and nothing is left on the ground to walk
+/// back for. **IT MUST BE WORN**, which is `Bind`'s whole reason for being an `Equip` variant: the question is
+/// asked of the SOCKET at the death site (`game.bindingWorn`) and a ring in the bag protects nothing.
+/// Read off the payload rather than by kind, so a second binding band is one row in `GEAR` and no edit here.
 pub fn bindsSouls(k: Kind) bool {
-    return k == .soul_binding_ring;
+    return std.meta.activeTag(equip(k)) == .bind;
 }
 
 /// …and WHAT MAY GO ON THE QUICK BAR: a flask, or anything with an effect. There is no point carrying a
@@ -841,7 +883,7 @@ test "every usable kind carries its OWN dose, and the rest do nothing" {
     try std.testing.expect(found >= 1);
 }
 
-test "THE BINDING RING IS NOT A TOOL — it is spent by DYING, and nothing else in the bag is" {
+test "THE BINDING RING IS NOT A TOOL — it is spent by DYING, and it has to be ON A FINGER to be" {
     var n: usize = 0;
     for (0..NK) |i| {
         const k: Kind = @enumFromInt(i);
@@ -851,10 +893,17 @@ test "THE BINDING RING IS NOT A TOOL — it is spent by DYING, and nothing else 
         try std.testing.expect(!usable(k));
         try std.testing.expect(!quickable(k)); // …nor a socket on the bar it can never be spent from
         try std.testing.expectEqual(Use.none, use(k));
+        // …AND IT IS WORN, which is the whole of the rule: carrying one protects nothing now.
+        try std.testing.expect(wearable(k));
+        const w = wearSlot(k).?;
+        try std.testing.expect(w == .ring or w == .ring2);
+        try std.testing.expect(!w.held());
     }
     try std.testing.expectEqual(@as(usize, 1), n);
     try std.testing.expect(bindsSouls(.soul_binding_ring));
     try std.testing.expect(!bindsSouls(.leech_signet)); // the other ring binds nothing
+    // …and it competes for a finger with something, or the choice it exists to be is not one.
+    try std.testing.expectEqual(wearSlot(.soul_binding_ring), wearSlot(.leech_signet));
 }
 
 test "the bag counts, caps, and never wraps" {
@@ -900,19 +949,23 @@ test "EVERY PIECE OF GEAR GOES IN A SOCKET, SAYS WHAT IT DOES IN NUMBERS, AND SH
         try std.testing.expectEqual(Class.gear, class(k));
         try std.testing.expect(wearSlot(k) != null);
         // …and its line carries a NUMBER, which is what makes it a piece of gear rather than a promise.
+        // **EXCEPT A BIND, WHICH HAS NOTHING TO PUT A DIGIT IN**: `Bind` is a socket and nothing else, so the
+        // rule is asked of the payload the way `dosed` asks it of a `Use` — not of a list of tags.
         const said = effect(k, &buf);
         try std.testing.expect(said.len > 0);
-        var digits = false;
-        for (said) |c| {
-            if (c >= '0' and c <= '9') digits = true;
+        if (equip(k) != .bind) {
+            var digits = false;
+            for (said) |c| {
+                if (c >= '0' and c <= '9') digits = true;
+            }
+            try std.testing.expect(digits);
         }
-        try std.testing.expect(digits);
         // AND ITS DESCRIPTION MAY NO LONGER PLEAD THE FIFTH. Every one of these used to end in some version of
         // "no hand here knows it yet", which was honest then and is a lie now.
         try std.testing.expect(std.mem.indexOf(u8, describe(k), " yet.") == null);
     }
     // A CENSUS, NOT A RULE — it says "somebody added a piece of gear" loudly enough to be noticed in review.
-    try std.testing.expectEqual(@as(usize, 14), worn);
+    try std.testing.expectEqual(@as(usize, 15), worn);
 }
 
 test "EVERY SOCKET HAS SOMETHING THAT GOES IN IT, and no worn socket is a hand" {
@@ -992,6 +1045,9 @@ test "A WEAPON ROW TRADES: nothing is better than the plain thing on every dial 
             // A BOON IS DELIBERATELY NOT A BARGAIN (`Boon`'s own note): with one piece per socket a cost would
             // only make the socket worse than empty. What it owes instead is a grant worth having.
             .boon => |b| try std.testing.expect(b.n > 0),
+            // A BIND HAS NO DIALS TO TRADE — the socket is the price, and it is spent by dying. What it owes
+            // instead is a finger, which the comptime block over `GEAR` already refuses to let it skip.
+            .bind => {},
             .none => {},
         }
     }

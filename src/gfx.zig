@@ -57,6 +57,10 @@ const SHADOW_CLIP_FAR = SUN_DIST + SHADOW_ORTHO * 0.78;
 // Haze falloff: 1-exp(-density*dist). The COLOUR is the clock's (`daynight.Palette.haze`); only how far you
 // can see through it is fixed, because that is a property of the air and not of the hour.
 const HAZE_DENSITY: f32 = 0.013;
+/// …and what a full storm multiplies it by. The COLOUR of the closing distance is the palette's
+/// (`daynight.overcast`); this is the only half that is a distance, and it is what makes the far field
+/// genuinely unreadable in the rain rather than merely grey.
+const HAZE_STORM: f32 = 2.40;
 
 pub const MAX_LIGHTS = 16;
 comptime {
@@ -116,14 +120,17 @@ pub const Sky = struct {
         };
         // A SKY WITH NO HOUR IN IT IS BLACK, so it is armed at the anchor here rather than left to the first
         // frame: the menu draws over a live sky before the loop has ticked anything.
-        out.setHour(daynight.SHOT_HOUR);
+        out.setHour(daynight.SHOT_HOUR, 0);
         return out;
     }
 
     /// THE HOUR, PUSHED. The two directions are the TRUE ones — the disc has to sit where the light actually
     /// is, which is the one place the sky and the shadows are allowed to disagree (see `daynight`'s own note).
-    pub fn setHour(self: *Sky, hour: f32) void {
-        const p = daynight.paletteAt(hour);
+    ///
+    /// **AND THE STORM OVER IT** (`daynight.overcast`) — the dome takes the same layer the world does, off the
+    /// same one number, or the field goes flat grey under a sky still showing its aureole.
+    pub fn setHour(self: *Sky, hour: f32, wet: f32) void {
+        const p = daynight.overcast(daynight.paletteAt(hour), wet);
         var s = daynight.sunDir(hour);
         var m = daynight.moonDir(hour);
         rl.setShaderValue(self.shader, self.loc_sun, &s, .vec3);
@@ -429,6 +436,8 @@ pub const Scene = struct {
     loc_haze: i32,
     loc_hazeBank: i32,
     loc_keyAmt: i32,
+    /// …and HOW FAR you can see through the haze, which the weather moves and the debug row overrides.
+    loc_hazeD: i32,
     soilTex: rl.Texture2D,
     soilCovTex: rl.Texture2D,
     soilEdgeTex: rl.Texture2D,
@@ -461,8 +470,6 @@ pub const Scene = struct {
         var waterOff: i32 = 0;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterOn"), &waterOff, .int);
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterSheet"), &waterOff, .int);
-        var density: f32 = HAZE_DENSITY;
-        rl.setShaderValue(shader, rl.getShaderLocation(shader, "hazeDensity"), &density, .float);
         var windOff: f32 = 0;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "windAmt"), &windOff, .float);
         var flashOff: f32 = 0;
@@ -509,18 +516,23 @@ pub const Scene = struct {
             .loc_haze = rl.getShaderLocation(shader, "hazeColor"),
             .loc_hazeBank = rl.getShaderLocation(shader, "hazeBank"),
             .loc_keyAmt = rl.getShaderLocation(shader, "keyAmt"),
+            .loc_hazeD = rl.getShaderLocation(shader, "hazeDensity"),
         };
         // ARMED AT THE ANCHOR before a frame has run, the sky's reason: a scene with no hour pushed into it is
         // a world lit by an all-zero key, and the object viewer and the menu both draw one before the loop does.
-        out.setHour(daynight.SHOT_HOUR);
+        out.setHour(daynight.SHOT_HOUR, 0, 1.0);
         return out;
     }
 
     /// THE HOUR, PUSHED — and this is the ONE writer of `gfx.sun`/`gfx.sunReach`, which is what keeps the
     /// shader's key, the shadow camera's position and `env`'s depth-pass cull the single source AGENTS.md says
     /// they are. Called once a frame, before either pass.
-    pub fn setHour(self: *Scene, hour: f32) void {
-        const p = daynight.paletteAt(hour);
+    ///
+    /// **AND THE STORM IS A LAYER ON TOP OF IT** (`daynight.overcast`, owner: affect lighting depending on
+    /// weather). `wet` is `weather.Weather.rain()`; at 0 the palette is the hour's own, untouched. `fogK` is
+    /// the DEBUG override on the haze distance and is 1 in the game (`menu.fogK`).
+    pub fn setHour(self: *Scene, hour: f32, wet: f32, fogK: f32) void {
+        const p = daynight.overcast(daynight.paletteAt(hour), wet);
         sun = daynight.keyDir(hour);
         sunReach = daynight.shadowReach(hour);
         var d = sun;
@@ -537,6 +549,11 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_hazeBank, &hb, .vec3);
         var ka = daynight.keyAmt(p);
         rl.setShaderValue(self.shader, self.loc_keyAmt, &ka, .float);
+        // …AND HOW FAR YOU CAN SEE THROUGH IT, which is the one part of the haze that is not a colour. It was
+        // a constant pushed once at startup, on the reasoning that visibility is a property of the AIR and not
+        // of the hour — which is still true, and is exactly why rain moves it: the air has water in it.
+        var density: f32 = HAZE_DENSITY * (1.0 + (HAZE_STORM - 1.0) * mathx.clampF(wet, 0, 1)) * mathx.maxF(fogK, 0);
+        rl.setShaderValue(self.shader, self.loc_hazeD, &density, .float);
     }
 
     // Sun depth pass: call, draw casters (materials swapped to depthShader — drawMesh uses the MATERIAL's shader, beginShaderMode won't reach it), then endShadowPass; must run BEFORE beginDrawing.
@@ -732,6 +749,20 @@ fn dilateEdges(ids: []const u8, edge: []const u8) []const u8 {
         var a = mathx.clampF(amt, 0, 1);
         rl.setShaderValue(self.shader, self.loc_fade, &a, .float);
     }
+
+    /// **HOW A THING ON ITS WAY OUT IS DRAWN** — the fade factor and the DEPTH MASK OFF, because a half-there
+    /// surface may not write depth over what is behind it. One sequence with two callers (`env.drawIndexed`'s
+    /// shrink branch for the map's own glows, `game.drawDrops` for the ones a body left), and it lives here
+    /// because the fade is the scene shader's own uniform. Written out twice it was two places to leave a
+    /// depth mask off. ALWAYS PAIRED with `endFade` — the mask is global state until it is put back.
+    pub fn beginFade(self: *Scene, amt: f32) void {
+        self.setFade(amt);
+        rl.gl.rlDisableDepthMask();
+    }
+    pub fn endFade(self: *Scene) void {
+        rl.gl.rlEnableDepthMask();
+        self.setFade(1);
+    }
 };
 
 // Per-fragment surface material for the scene shader's texturing pass (see matAlbedo).
@@ -818,6 +849,19 @@ pub const Builder = struct {
         self.vert(a, na, col, a.x, a.z);
         self.vert(c, nc, col, c.x, c.z);
         self.vert(d, nd, col, d.x, d.z);
+    }
+
+    /// **A QUAD THAT IS TWO COLOURS, END TO END** — `ab` on the a/b edge and `cd` on the c/d one. Vertex alpha
+    /// is the EMISSIVE channel here, so this is also how a shape fades OUT along its own length rather than
+    /// stopping: `weather`'s rain streaks and anything else built as a run of segments. Written as a primitive
+    /// because doing it by hand means reaching for `vert`, which is where a caller starts inventing its own UVs.
+    pub fn quadFade(self: *Builder, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3, n: rl.Vector3, ab: rl.Color, cd: rl.Color) void {
+        self.vert(a, n, ab, a.x, a.z);
+        self.vert(b, n, ab, b.x, b.z);
+        self.vert(c, n, cd, c.x, c.z);
+        self.vert(a, n, ab, a.x, a.z);
+        self.vert(c, n, cd, c.x, c.z);
+        self.vert(d, n, cd, d.x, d.z);
     }
 
     // Planar-mapped quad: UVs are in-plane world-unit coordinates (u along a->b, v across), shifted by the shape offset — any face textures itself with zero caller effort.

@@ -32,8 +32,8 @@ pub fn displayName(a: Attr) [:0]const u8 {
     };
 }
 
-/// WHAT IT DOES — and for the one nothing reads yet, that nothing reads it yet. An inert attribute the
-/// player cannot tell is inert is a lie on the character sheet.
+/// WHAT IT DOES — and for an attribute nothing reads, that nothing reads it. There is no such row today
+/// (`inert`), but a line that does not say so is a lie on the character sheet the day there is one again.
 pub fn governs(a: Attr) [:0]const u8 {
     return switch (a) {
         .vitality => "Governs HP.",
@@ -44,16 +44,18 @@ pub fn governs(a: Attr) [:0]const u8 {
         .strength => "Skill with heavy arms - the club, and half of what the sword is worth.",
         .dexterity => "Skill with light arms - the dirk, the bow, and the sword's other half.",
         .intelligence => "Skill with sorcery - everything the rod throws.",
-        .luck => "Drops, and rare finds. Nothing reads it yet.",
+        .luck => "Rare finds. What a body drops on top of the thing it always drops.",
     };
 }
 
-/// **THE ONE ATTRIBUTE NOTHING READS.** `barFor(a) == null` used to be the whole test for "is this row dead",
-/// and the day three of the four dead attributes gained a damage curve that test went on calling them dead —
-/// a page greying out the attribute that now scales every swing he takes. Asked as its own question because
+/// **AN ATTRIBUTE NOTHING READS, AND TODAY THERE IS NONE.** It was LUCK, right up until the drop tables gave
+/// it the one job its own line always promised (`findFor`, `drops.roll`). The predicate STAYS because the next
+/// attribute arrives dead the way that one did, and a row nothing reads has to be greyed and has to say so
+/// (`book.drawAttributes`, and `item`'s comptime refusal to write a boon of one). Asked as its own question because
 /// feeding a BAR and being worth something are two different facts, and only one of them is about bars.
 pub fn inert(a: Attr) bool {
-    return a == .luck;
+    _ = a;
+    return false;
 }
 
 /// One leg of a curve: `per` a point, up to and including `upTo`.
@@ -106,6 +108,26 @@ pub fn scaleFor(pts: u8) f32 {
     return yield(pts, SCALE_BASE, &SCALE_SEGS);
 }
 
+// **WHAT A POINT OF LUCK IS WORTH TO A DROP** — the seventh attribute's job, and until this curve it had none.
+// It multiplies a RARE row's weight and NOTHING ELSE: scale every row and luck does literally nothing, since
+// the weights are relative to each other. 1.0 at `START` for the same reason every other curve here is —
+// putting the drops behind an attribute may not move the drops the game already has. Under-invested it takes
+// nearly half your rare chance away; maxed it is about two and a half times, which is a build's worth of
+// levels for a real return rather than a lottery.
+const FIND_BASE: f32 = 0.60;
+const FIND_SEGS = [_]Seg{
+    // WRITTEN AS THE DIVISION IT IS (`STAM_SEGS`' idiom): the RATE is what carries 0.60 → 1.00 across the
+    // fourteen points from 1 to `START`, and a rounded decimal lands at 1.0004 — a curve that moved the drops
+    // it promised not to, by four ten-thousandths. The leg itself runs on to the softcap at 30.
+    .{ .upTo = 30, .per = 0.40 / 14.0 },
+    .{ .upTo = 60, .per = 0.020 },
+    .{ .upTo = MAX, .per = 0.0125 },
+};
+
+pub fn findFor(luck: u8) f32 {
+    return yield(luck, FIND_BASE, &FIND_SEGS);
+}
+
 pub fn hpFor(vitality: u8) f32 {
     return yield(vitality, HP_BASE, &HP_SEGS);
 }
@@ -152,6 +174,12 @@ pub const Sheet = struct {
 
     pub fn stamina(self: *const Sheet) f32 {
         return staminaFor(self.at(.endurance));
+    }
+
+    /// WHAT HIS LUCK IS MULTIPLYING A RARE ROW BY right now — the sheet's own read of `findFor`, so the page
+    /// and `drops.roll` cannot print and roll two different numbers.
+    pub fn finds(self: *const Sheet) f32 {
+        return findFor(self.at(.luck));
     }
 
     /// LEVEL IS NOT STORED, IT IS COUNTED: every point spent past the starting sheet, plus one. ER works
@@ -213,7 +241,7 @@ test "THE SKILL CURVE IS 1.0 AT THE START, so wiring damage to an attribute move
     try std.testing.expect(scaleFor(MAX) > 1.5 and scaleFor(MAX) < 2.0);
 }
 
-test "the four that feed no bar are not all inert — only LUCK is, and the page says so either way" {
+test "NOTHING ON THE SHEET IS DEAD ANY MORE, and the page says so either way" {
     var dead: usize = 0;
     for (0..NA) |i| {
         const a: Attr = @enumFromInt(i);
@@ -223,8 +251,21 @@ test "the four that feed no bar are not all inert — only LUCK is, and the page
         try std.testing.expectEqual(inert(a), pleads);
         if (inert(a)) dead += 1;
     }
-    try std.testing.expectEqual(@as(usize, 1), dead);
-    try std.testing.expect(inert(.luck));
+    try std.testing.expectEqual(@as(usize, 0), dead);
+    // LUCK was the last one, and the drop tables are what it now reads (`drops.roll`).
+    try std.testing.expect(!inert(.luck));
+    try std.testing.expect(findFor(MAX) > findFor(START) and findFor(START) > findFor(1));
+}
+
+test "the FIND curve is 1.0 at the starting sheet, so adding drops moved none of them" {
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), findFor(START), 1e-4);
+    // Under-invested it BITES and maxed it is a real return, neither of them a different game.
+    try std.testing.expect(findFor(1) > 0.55 and findFor(1) < 0.65);
+    try std.testing.expect(findFor(MAX) > 2.3 and findFor(MAX) < 2.7);
+    std.debug.print(
+        "\n  find curve: 1 -> {d:.2}x, {d} -> {d:.2}x, 60 -> {d:.2}x, {d} -> {d:.2}x\n",
+        .{ findFor(1), START, findFor(START), findFor(60), MAX, findFor(MAX) },
+    );
 }
 
 test "every curve rises, and rises SLOWER past each softcap" {

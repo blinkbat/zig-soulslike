@@ -535,6 +535,9 @@ pub const PORTRAIT_FOV: f32 = 34.0;
 pub fn unloadPortrait() void {
     if (portRT) |t| rl.unloadRenderTexture(t);
     portRT = null;
+    if (spiritRT) |t| rl.unloadRenderTexture(t);
+    spiritRT = null;
+    spiritHeld = false;
 }
 
 /// WHAT IT TAKES TO PHOTOGRAPH A BODY: the scene to draw it through, the point to frame on, where the camera
@@ -572,6 +575,14 @@ pub const LivePortrait = struct {
 pub fn renderPortrait(p: LivePortrait) bool {
     if (portRT == null) portRT = rl.loadRenderTexture(PORT_RT_W, PORT_RT_H) catch null;
     const rt = portRT orelse return false;
+    renderInto(rt, p);
+    return true;
+}
+
+/// THE PICTURE ITSELF, into whichever target was handed in. Split out because there are two of them now — the
+/// shared live one and the spirit's own still (`takeSpiritFace`) — and the camera solve may not be written
+/// twice: an angle that drifted between them is a face framed two ways in one HUD.
+fn renderInto(rt: rl.RenderTexture2D, p: LivePortrait) void {
     const cp = mathx.cosf(p.pitch);
     const cam = rl.Camera3D{
         .position = mathx.v3(
@@ -594,7 +605,44 @@ pub fn renderPortrait(p: LivePortrait) bool {
     p.drawFn(p.ctx);
     rl.endMode3D();
     rl.endTextureMode();
+}
+
+// ── THE SPIRIT'S FACE, TAKEN ONCE ───────────────────────────────────────────────────────────────────────
+//
+// **IT IS A STILL, NOT A LIVE PICTURE** (owner: make the portrait static). The shared target above is
+// re-photographed every frame and is handed round three callers — which is precisely why the toast used to
+// drop its frame the moment the body was gone: with ONE target the alternative to a live picture was somebody
+// else's head sitting in the spirit's box. Its own target answers both halves. Nothing renders per frame for
+// it, and the face OUTLIVES the animal, so the panel now fades out whole instead of losing its portrait a
+// beat early while the name and the bar are still going.
+const SPIRIT_RT: i32 = 128;
+var spiritRT: ?rl.RenderTexture2D = null;
+var spiritHeld = false;
+
+/// Take it — once, on the frame the animal arrives (`game.spiritFaceFor`).
+pub fn takeSpiritFace(p: LivePortrait) bool {
+    if (spiritRT == null) spiritRT = rl.loadRenderTexture(SPIRIT_RT, SPIRIT_RT) catch null;
+    const rt = spiritRT orelse return false;
+    renderInto(rt, p);
+    spiritHeld = true;
     return true;
+}
+
+pub fn hasSpiritFace() bool {
+    return spiritHeld;
+}
+
+/// **FORGET IT**, once the panel has finished leaving — so the next thing called is photographed rather than
+/// inheriting the last one's head. Also on a new character (`game.beginGame`).
+pub fn dropSpiritFace() void {
+    spiritHeld = false;
+}
+
+fn blitSpiritFace(dst: rl.Rectangle, tint: rl.Color) void {
+    const rt = spiritRT orelse return;
+    // NEGATIVE HEIGHT: a render target is bottom-up (`blitPortrait`'s own note).
+    const w: f32 = @floatFromInt(SPIRIT_RT);
+    rl.drawTexturePro(rt.texture, .{ .x = 0, .y = 0, .width = w, .height = -w }, dst, .{ .x = 0, .y = 0 }, 0, tint);
 }
 
 /// Mount what `renderPortrait` last took. Safe inside any target — it is one textured quad.
@@ -622,8 +670,15 @@ pub fn livePortrait(p: LivePortrait, dst: rl.Rectangle, tint: rl.Color) void {
 // HP). It is not a slot and not part of the cross: the cross is the four things the pad's directions do,
 // and a companion is not something you press.
 
-const SP_FACE: i32 = 52; // the portrait square…
+/// The portrait square (owner: shrink the summon's portrait and bar). It was 52 against a 268 px HP bar — a
+/// companion taking a third of the width of the thing keeping you alive. A summon is a thing standing WITH
+/// you; the four bars above it are you, and the chrome has to say which is which at a glance.
+const SP_FACE: i32 = 34;
 const SP_BAR_H: i32 = 9; // …and its life, the status meter's own height so the stack reads as one column
+/// **AND ITS BAR IS HALF HIS, DERIVED RATHER THAN PICKED** (owner: hp bar length). It was "whatever is left of
+/// the hero's after the portrait" — 210 of his 268, near enough the same length that the two read as a pair of
+/// equals. Half says subordinate, and it moves when his does.
+const SP_BAR_W: i32 = @divTrunc(HP_W, 2);
 const SP_GAP: i32 = 6;
 const SP_TOP: i32 = 12; // clear of the status meter above it
 const SP_SLIDE: f32 = 14.0; // px it rises through on the way in — it ARRIVES, it does not appear
@@ -644,7 +699,7 @@ pub fn spiritPanel(hasFace: bool, name: [:0]const u8, hp: f32, k: f32) void {
     const kk = mathx.clampF(k, 0, 1);
     const a: u8 = @intFromFloat(255.0 * kk);
     const lift: i32 = @intFromFloat((1.0 - kk) * SP_SLIDE);
-    const x = BARS_X;
+    const x = MARGIN; // the dial's margin, not the bars' — the panel hangs off the screen edge under it
     const y = BARS_BOTTOM + SP_TOP + lift;
     const dst = rl.Rectangle{
         .x = @floatFromInt(x),
@@ -652,20 +707,19 @@ pub fn spiritPanel(hasFace: bool, name: [:0]const u8, hp: f32, k: f32) void {
         .width = @floatFromInt(SP_FACE),
         .height = @floatFromInt(SP_FACE),
     };
-    // THE FRAME FOLLOWS THE FACE. On the way out the body is gone, so there is no picture to take and the
-    // shared target holds whoever was photographed last — an empty well, or worse a wanderer's head in the
-    // spirit's box. So the mount is drawn only while there is something to mount, and what fades is the
-    // NAME and the LIFE, which is the part that was ever about the animal rather than of it.
+    // **THE WHOLE PANEL FADES AS ONE NOW, PORTRAIT INCLUDED.** It used to drop the frame the instant the body
+    // was gone, because the picture came off a target shared with two other callers and what it held a frame
+    // later was an empty well or a wanderer's head. The still (`takeSpiritFace`) outlives the animal, so the
+    // face goes out with the name and the bar instead of vanishing a beat before them.
     const tx = if (hasFace) x + SP_FACE + SP_GAP else x;
-    const tw = if (hasFace) HP_W - SP_FACE - SP_GAP else HP_W;
     if (hasFace) {
         uiart.well(x, y, SP_FACE, SP_FACE, a);
-        blitPortrait(dst, mathx.withAlpha(rl.Color.white, a));
+        blitSpiritFace(dst, mathx.withAlpha(rl.Color.white, a));
         rl.drawRectangleLinesEx(dst, 1, mathx.withAlpha(uiart.GILT_DIM, @min(a, 110)));
     }
     text(name, tx, y + 2, TINY, mathx.withAlpha(uiart.GILT, a));
     const by = y + SP_FACE - SP_BAR_H;
-    bar(tx, by, tw, SP_BAR_H, mathx.clampF(hp, 0, 1), 0, SP_LIFE_HI, SP_LIFE_LO, SP_LIFE_TP);
+    bar(tx, by, SP_BAR_W, SP_BAR_H, mathx.clampF(hp, 0, 1), 0, SP_LIFE_HI, SP_LIFE_LO, SP_LIFE_TP);
 }
 
 pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, fpRefused: f32, windedTo: f32, psn: Status) void {
@@ -847,11 +901,6 @@ pub fn bossBar(dt: f32, name: [:0]const u8, frac: f32, staggered: bool, k: f32) 
     }
     bossLast = frac;
     const a = mathx.clampF(k, 0, 1);
-    const au8 = struct {
-        fn of(base: u16, kk: f32) u8 {
-            return @intFromFloat(@as(f32, @floatFromInt(base)) * kk);
-        }
-    }.of;
     // The seat, the frame and the track — the vitals bars' chrome at the boss's width.
     rl.drawRectangle(x - 3, y - 3, w + 6, BOSS_H + 6, rgba(0, 0, 0, au8(60, a)));
     rl.drawRectangle(x - 2, y - 2, w + 4, BOSS_H + 4, rgba(0, 0, 0, au8(165, a)));
@@ -882,6 +931,13 @@ pub fn bossBar(dt: f32, name: [:0]const u8, frac: f32, staggered: bool, k: f32) 
     engraved(name, x, y - lineH(SMALL) - 3, SMALL, rgba(230, 218, 190, au8(244, a)));
 }
 
+/// A LITERAL ALPHA THROUGH A FADE FACTOR — the one arithmetic every fading chrome element here does. It was a
+/// `struct { fn of }` local to `bossBar`; the save mark needed the same thing and a second copy of "how a
+/// literal alpha is scaled" is a second thing to get wrong.
+fn au8(base: u8, k: f32) u8 {
+    return @intFromFloat(@as(f32, @floatFromInt(base)) * mathx.clampF(k, 0, 1));
+}
+
 const SOUL_W: i32 = 122;
 const SOUL_H: i32 = 32;
 const SOUL_FILL_A: u8 = 170;
@@ -899,6 +955,143 @@ pub fn souls(n: u32) void {
     uiart.cornerJewels(x + 1, y + 1, SOUL_W - 2, SOUL_H - 2, 2.0, mathx.withAlpha(uiart.GILT_DIM, 200));
     uiart.diamond(@floatFromInt(x + 12), @floatFromInt(y + @divTrunc(SOUL_H, 2)), 2.8, mathx.withAlpha(uiart.GILT_DIM, 220));
     text(s, x + SOUL_W - textW(s, BODY) - 11, y + @divTrunc(SOUL_H - lineH(BODY), 2) + 1, BODY, SOUL_TEXT);
+}
+
+// ── THE SAVE MARK: A DEAD TREE THAT GROWS ───────────────────────────────────────────────────────────────
+//
+// **THE ONE THING THAT SAYS THE DISK WAS TOUCHED** (owner: a save spinner, bottom right — a tree that grows; a
+// DEAD one). Not a spinner and not a word. A spinner says WAIT, and nothing here is waiting: the file is on disk
+// before the first frame of this draws, so what it has to say is "that happened", which is a thing that finishes.
+//
+// **IT IS FORLORN AND IT DOES NOT BOUNCE** (owner's call, and the one place in this codebase where **A MASS IN
+// MOTION OVERSHOOTS ITS REST** does NOT apply — do not put the overshoot back). A spring in it reads as a chirpy
+// little notification; this is a snag putting itself up out of poor ground.
+//
+// **AND IT IS BUILT TO THE DEAD-GROWTH LAW** (`propwood.deadLimbInto`, at HUD scale and in two dimensions):
+// NOTHING DEAD IS STRAIGHT AND NOTHING ENDS IN A POINT. A limb leaves the bole ON ITS OWN AXIS, rises to an
+// elbow, DROOPS off that line, and ends in a BLUNT SNAP of pale heartwood; the twigs root on the OUTER half and
+// carry on outward. Drawn as one stroke to a needle tip it is a spear, and four of those is a hub of spokes.
+// There is no crown and no leaf on it anywhere — the fork at the top is finer limbs, not foliage.
+
+pub const SAVE_GROW: f32 = 0.92;
+pub const SAVE_HOLD: f32 = 0.50;
+pub const SAVE_OUT: f32 = 0.62;
+pub const SAVE_SHOW: f32 = SAVE_GROW + SAVE_HOLD + SAVE_OUT;
+
+const SAVE_W: i32 = 46;
+const SAVE_H: i32 = 58;
+/// …above the souls plate, which owns the corner itself.
+const SAVE_GAP: i32 = 10;
+/// Four off the bole, alternating sides and thinning upward.
+const SAVE_LIMBS: usize = 4;
+/// LITERAL screen values — the HUD draws after the retro blit, so the author-dark rule does not reach here.
+const SAVE_BARK = rgba(58, 47, 38, 255);
+const SAVE_BARK_LT = rgba(92, 76, 58, 255);
+/// **THE SNAP, AND IT IS PALE.** Where a dead limb has come off, the heartwood under the bark is the one bright
+/// note on the whole thing — and it is what makes each end read as BROKEN rather than as tapering to nothing.
+const SAVE_HEART = rgba(142, 126, 100, 255);
+
+/// **NO OVERSHOOT** (see above — the owner's exemption from the house law). Slow off the mark, slow onto its
+/// rest, and it never goes past it: what this says is "that happened", not "look at me".
+fn saveEase(p: f32) f32 {
+    return mathx.smoothstep(0, 1, p);
+}
+
+const v2 = rl.Vector2.init;
+
+/// `left` is seconds still to run (`SAVE_SHOW` down to 0); 0 or less draws nothing.
+pub fn saveTree(left: f32) void {
+    if (left <= 0) return;
+    const t = SAVE_SHOW - left; // seconds since the write
+    const grow = saveEase(mathx.clampF(t / SAVE_GROW, 0, 1));
+    const a = 1.0 - mathx.smoothstep(SAVE_GROW + SAVE_HOLD, SAVE_SHOW, t);
+    if (a <= 0.004 or grow <= 0.001) return;
+
+    const x = rl.getScreenWidth() - MARGIN - SAVE_W;
+    const baseY = rl.getScreenHeight() - BOTTOM - SOUL_H - SAVE_GAP;
+    const bx = uiart.fi(x + @divTrunc(SAVE_W, 2));
+    const by = uiart.fi(baseY);
+    const h = uiart.fi(SAVE_H);
+
+    // ONE SEED, so the crookedness is the same snag every save rather than a different one each time — the
+    // wabi-sabi law is about the SHAPE being uneven, not about it flickering.
+    var rng = mathx.Rng.init(0x54EED);
+    // AND IT LEANS, one way and properly. A plumb snag is a diagram of a snag.
+    const lean: f32 = -0.19;
+
+    // The ground it stands in, so it is planted rather than floating.
+    rl.drawEllipse(x + @divTrunc(SAVE_W, 2), baseY, 10.0 * grow, 2.4 * grow, rgba(0, 0, 0, au8(88, a)));
+
+    // THE BOLE, IN FOUR, so it tapers and can crook: one stroke of one width is a dowel.
+    const boleH = h * 0.62 * grow;
+    const topY = by - boleH;
+    const topX = bx + boleH * lean;
+    var seg: usize = 0;
+    while (seg < 4) : (seg += 1) {
+        const f0 = uiart.fi(@intCast(seg)) / 4.0;
+        const f1 = uiart.fi(@intCast(seg + 1)) / 4.0;
+        const wob = rng.range(-1.0, 1.0) * grow;
+        rl.drawLineEx(
+            v2(mathx.lerpF(bx, topX, f0), mathx.lerpF(by, topY, f0)),
+            v2(mathx.lerpF(bx, topX, f1) + wob, mathx.lerpF(by, topY, f1)),
+            mathx.lerpF(5.6, 2.4, f0) * grow,
+            mathx.lerpColor(SAVE_BARK, SAVE_BARK_LT, f0 * 0.7),
+        );
+    }
+    // THE ROOT FLARE. A bole that meets the dirt at one width is a post stuck in it.
+    inline for (.{ -1.0, 1.0 }) |sx| {
+        rl.drawLineEx(v2(bx + 4.4 * sx * grow, by), v2(bx, by - 5.0 * grow), 2.2 * grow, SAVE_BARK);
+    }
+
+    // THE LIMBS, EACH ON ITS OWN LAG, and every one of them takes the same three-part run: ON THE AXIS, up to
+    // an elbow, then DROOPING off that line to a blunt snap.
+    var i: usize = 0;
+    while (i < SAVE_LIMBS) : (i += 1) {
+        const fi_ = uiart.fi(@intCast(i));
+        const thr = 0.26 + 0.15 * fi_;
+        const bg = saveEase(mathx.clampF((grow - thr) / (1.0 - thr), 0, 1));
+        if (bg <= 0.001) continue;
+        const up = 0.34 + 0.21 * fi_;
+        const sx: f32 = if (i % 2 == 0) 1.0 else -1.0;
+        const root = v2(mathx.lerpF(bx, topX, up), mathx.lerpF(by, topY, up));
+        const len = h * rng.range(0.19, 0.29) * bg * (1.0 - 0.22 * fi_);
+        const wide = 3.0 - 0.45 * fi_;
+
+        // ON ITS OWN AXIS first — a short run out and UP, which is the half that still has living wood's shape.
+        const elbow = v2(root.x + len * 0.44 * sx, root.y - len * 0.44);
+        rl.drawLineEx(root, elbow, wide * bg, SAVE_BARK);
+        // …THEN OFF THE LINE, DROOPING. This is the half that says the thing is dead.
+        const snap = v2(elbow.x + len * 0.58 * sx, elbow.y + len * 0.30);
+        rl.drawLineEx(elbow, snap, wide * 0.68 * bg, mathx.lerpColor(SAVE_BARK, SAVE_BARK_LT, 0.45));
+        // …AND IT ENDS IN A BLUNT SNAP OF PALE HEARTWOOD, never a point.
+        rl.drawCircleV(snap, wide * 0.34 * bg, mathx.withAlpha(SAVE_HEART, au8(228, a)));
+
+        // TWIGS ROOT ON THE OUTER HALF AND CARRY ON OUTWARD — never off the elbow, which would make that a
+        // junction of three and read as a crow's foot.
+        const twigs: usize = if (i < 2) 2 else 1;
+        var k: usize = 0;
+        while (k < twigs) : (k += 1) {
+            const at = 0.45 + 0.32 * uiart.fi(@intCast(k));
+            const from = v2(mathx.lerpF(elbow.x, snap.x, at), mathx.lerpF(elbow.y, snap.y, at));
+            const tl = len * rng.range(0.22, 0.36) * bg;
+            const to = v2(from.x + tl * sx * rng.range(0.7, 1.1), from.y - tl * rng.range(0.1, 0.6));
+            rl.drawLineEx(from, to, mathx.maxF(1.0, wide * 0.30 * bg), SAVE_BARK);
+        }
+    }
+
+    // THE FORK. The bole does not simply stop: it breaks into two finer limbs, each ending in its own snap.
+    // Last to arrive, so the thing reads as growing UP rather than filling in.
+    const cg = saveEase(mathx.clampF((grow - 0.58) / 0.42, 0, 1));
+    if (cg > 0.001) {
+        inline for (.{ -1.0, 1.0 }, .{ 0.86, 0.62 }) |sx, share| {
+            const len = h * 0.20 * cg * share;
+            const el = v2(topX + len * 0.42 * sx, topY - len * 0.62);
+            const snap = v2(el.x + len * 0.52 * sx, el.y - len * 0.10);
+            rl.drawLineEx(v2(topX, topY), el, 2.1 * cg, SAVE_BARK);
+            rl.drawLineEx(el, snap, 1.5 * cg, mathx.lerpColor(SAVE_BARK, SAVE_BARK_LT, 0.45));
+            rl.drawCircleV(snap, 1.15 * cg, mathx.withAlpha(SAVE_HEART, au8(222, a)));
+        }
+    }
 }
 
 const PROMPT_LIFT: i32 = 76;

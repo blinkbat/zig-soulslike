@@ -332,6 +332,72 @@ pub const Palette = struct {
     }
 };
 
+// ── THE STORM'S OWN LAYER, OVER THE HOUR'S ──────────────────────────────────────────────────────────────
+//
+// **WEATHER CHANGES THE LIGHT, NOT JUST THE FRAME** (owner: affect lighting depending on weather; different
+// filters/layers). A slate rectangle over the picture (`weather.drawOverlay`) is a filter — it dims the HUD-
+// side of the image and cannot touch a shadow, a specular or the far distance. Cloud does four things a
+// rectangle cannot: it puts the KEY out, so the shadows go with it; it leaves the AMBIENT alone, because an
+// overcast sky is one enormous soft source; it takes the WARMTH out of everything; and it closes the DISTANCE.
+//
+// **IT LIVES HERE AND NOT IN `weather.zig` BECAUSE IT IS A PALETTE OPERATION** — this file owns the hour's
+// whole palette, and `gfx` already reads it. `weather` owns the CLOCK and hands over one number.
+//
+// **AND EVERY TERM IS A FACTOR ON THE HOUR'S OWN VALUE, NEVER A CONSTANT.** An overcast midnight has to stay
+// midnight: a storm palette written as absolute colours would light the world at 3 a.m.
+
+/// What is left of the key under a full storm — the sun, behind a deck.
+const STORM_KEY: f32 = 0.34;
+/// …and how far the distance closes in on you. The COLOUR moves with it; the DENSITY is `gfx.HAZE_STORM`.
+const STORM_HAZE: f32 = 1.70;
+/// The ambient barely moves: a cloud deck is a light, not a lid. It is the TINT that changes.
+const STORM_AMB: f32 = 1.06;
+
+/// DESATURATED AND COLD — what cloud light is. Luma-preserving, so this changes the hue of a colour and not
+/// its level, which is what keeps every term below honest at every hour.
+fn slate(c: rl.Vector3) rl.Vector3 {
+    const l = 0.299 * c.x + 0.587 * c.y + 0.114 * c.z;
+    return v3(l * 0.86, l * 0.96, l * 1.14);
+}
+
+fn toward(c: rl.Vector3, target: rl.Vector3, k: f32) rl.Vector3 {
+    return mathx.lerpV(c, target, k);
+}
+
+/// **THE HOUR AS THE STORM LEAVES IT.** `wet` is `weather.Weather.rain()`, 0..1 — and at 0 this is the
+/// identity, which is what lets the whole system be one multiply at the top of `Scene.setHour`.
+pub fn overcast(p: Palette, wet: f32) Palette {
+    const k = mathx.clampF(wet, 0, 1);
+    if (k <= 0) return p;
+    var o = p;
+    // THE KEY GOES OUT. This is the whole of it: the shadows soften away with it, every specular in the
+    // scene dims through `keyAmt`, and the world stops having a direction its light comes from.
+    o.key = toward(p.key, mathx.scaleV(slate(p.key), STORM_KEY), k);
+    // …AND THE AMBIENT DOES NOT. What arrives instead of the sun is the whole sky at once.
+    o.ambSky = toward(p.ambSky, mathx.scaleV(slate(p.ambSky), STORM_AMB), k);
+    o.ambGround = toward(p.ambGround, mathx.scaleV(slate(p.ambGround), STORM_AMB), k);
+    // THE DISTANCE CLOSES. Lifted as well as greyed, which is what makes it read as air with water in it
+    // rather than as the far field simply going dark.
+    o.haze = toward(p.haze, mathx.scaleV(slate(p.haze), STORM_HAZE), k);
+    // …and the WARM BANK looking into the light goes with the light. There is nothing to look into.
+    o.hazeBank = toward(p.hazeBank, mathx.scaleV(slate(p.hazeBank), 0.15), k);
+    // THE SKY IS ONE LID. Three stops blended onto the middle one's slate, so the gradient flattens instead
+    // of the dome going grey in three separate places.
+    const lid = mathx.scaleV(slate(p.skyMid), 0.82);
+    o.skyLow = toward(p.skyLow, mathx.scaleV(lid, 1.10), k); // …a hair brighter at the horizon, as a deck is
+    o.skyMid = toward(p.skyMid, lid, k);
+    o.skyHigh = toward(p.skyHigh, mathx.scaleV(lid, 0.86), k);
+    // NO DISC AND NO AUREOLE: you cannot see the sun through this.
+    o.skyBank = toward(p.skyBank, mathx.scaleV(slate(p.skyBank), 0.20), k);
+    o.skyGlow = toward(p.skyGlow, mathx.scaleV(slate(p.skyGlow), 0.14), k);
+    o.skyDisc = toward(p.skyDisc, mathx.scaleV(slate(p.skyDisc), 0.10), k);
+    // …and the deck itself is dark and even, which is what a storm cloud is from underneath.
+    o.cloudDark = toward(p.cloudDark, mathx.scaleV(slate(p.cloudDark), 0.52), k);
+    o.cloudLit = toward(p.cloudLit, mathx.scaleV(slate(p.cloudLit), 0.60), k);
+    o.stars = mathx.lerpF(p.stars, 0, k); // blotted out
+    return o;
+}
+
 /// HOW BRIGHT THIS HOUR'S KEY IS AGAINST THE HOUR THE SPECULARS WERE AUTHORED AT — 1 at the anchor. Every
 /// highlight in the scene shader (steel's glint, marble's sheen, the water's glitter path) is a mirror of the
 /// key, and mirrors do not stay bright when the thing they reflect goes out: left at full, a drawn blade blazed

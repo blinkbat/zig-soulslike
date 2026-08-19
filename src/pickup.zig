@@ -28,12 +28,21 @@ pub const REACH: f32 = 2.4;
 /// How long the glow takes to go once it is taken — it does not vanish on the frame you press.
 pub const FADE_DUR: f32 = 0.42;
 
+/// **HOW MANY KINDS ONE DROPPED GLOW CAN CARRY** — a body leaves its guaranteed row and at most one rare
+/// (`drops.roll`), so this is that arithmetic and not a round number.
+pub const DROP_MAX: usize = 2;
+
 pub const Pickup = struct {
     pos: rl.Vector3 = mathx.zero3,
     yaw: f32 = 0, // degrees, the prop's own
     scale: f32 = 1,
     /// The op that placed it — where the contents come from, the chest's own arrangement.
     op: u16 = 0,
+    /// **WHAT A DROPPED ONE IS CARRYING, INLINE.** A glow the MAP placed reads its contents back off the op
+    /// that placed it; one a BODY left has no op to read, so it carries the list itself. `nloot > 0` is the
+    /// whole of the distinction, and it is also what says this glow has no prop in `env` behind it.
+    loot: [DROP_MAX]item.Kind = undefined,
+    nloot: u8 = 0,
     taken: bool = false,
     /// 0 standing … 1 gone. The mesh is scaled off this, so a taken glow shrinks out rather than blinking.
     fade: f32 = 0,
@@ -56,6 +65,12 @@ pub const Pickup = struct {
     pub fn sizeLeft(self: *const Pickup) f32 {
         return 1.0 - self.fade;
     }
+
+    /// **IS THIS ONE A BODY'S, RATHER THAN THE MAP'S.** The map's have a prop in `env` drawing them and take
+    /// their contents off an op; a dropped one is drawn by the loop off its own model and carries its list.
+    pub fn dropped(self: *const Pickup) bool {
+        return self.nloot > 0;
+    }
 };
 
 pub const Taken = struct {
@@ -67,6 +82,11 @@ pub const Pickups = struct {
     list: [CAP]Pickup = undefined,
     n: usize = 0,
     near: ?usize = null,
+    /// **HOW MANY OF THE LIST THE MAP PLACED.** Everything below it has a prop in `env` drawing it (and is fed
+    /// `sizeLeft`/`spent` through `env.setPickupDraw`, which is indexed by exactly this order); everything at
+    /// or above it was dropped by a body and is drawn by the loop instead. Written by `reset` and by nothing
+    /// else, so the two halves cannot get interleaved.
+    mapped: usize = 0,
 
     pub fn live(self: *Pickups) []Pickup {
         return self.list[0..self.n];
@@ -83,6 +103,50 @@ pub const Pickups = struct {
             self.list[self.n] = .{ .pos = s.pos, .yaw = s.yaw, .scale = s.scale, .op = s.op };
             self.n += 1;
         }
+        // A WORLD RELOAD CLEARS THE GROUND, drops included: they belong to the world that was standing.
+        self.mapped = self.n;
+    }
+
+    /// **THE MAP'S HALF ALONE, AND IT IS ONE ACCESSOR BECAUSE TWO CALLERS NEED EXACTLY IT.** Its ORDER is the
+    /// placing order — which is what `env.setPickupDraw` is indexed by (`game.hidePickups`) and what a save
+    /// slot's `pickups` bits are keyed to (`save.gather`/`scatter`). Handed the whole list, both of those walk
+    /// off the end of the thing they mean and start reading body drops as map glows.
+    pub fn mappedOnes(self: *Pickups) []Pickup {
+        return self.list[0..@min(self.mapped, self.n)];
+    }
+    pub fn mappedConst(self: *const Pickups) []const Pickup {
+        return self.list[0..@min(self.mapped, self.n)];
+    }
+
+    /// The dropped half alone, for the loop that has to draw them itself.
+    pub fn droppedOnes(self: *Pickups) []Pickup {
+        return self.list[@min(self.mapped, self.n)..self.n];
+    }
+
+    /// **A BODY LEFT SOMETHING ON THE GROUND** (`drops.roll` → `game.billDeaths`). Refuses an empty list, so
+    /// `nloot > 0` stays the honest test for "this one is a drop".
+    ///
+    /// **A FULL LIST RECYCLES A SPENT SLOT BEFORE IT REFUSES.** The cap is shared with the map's own glows and
+    /// a long session kills far more than 96 things — but a glow that has been picked up is a slot nobody can
+    /// see, so the ground never silently loses something you could still walk to. With none spendable the
+    /// drop is DROPPED, which is the honest failure: better than overwriting a glow standing in front of you.
+    pub fn spawn(self: *Pickups, at: rl.Vector3, kinds: []const item.Kind) void {
+        if (kinds.len == 0) return;
+        const n = @min(kinds.len, DROP_MAX);
+        var p: *Pickup = undefined;
+        if (self.n < CAP) {
+            p = &self.list[self.n];
+            self.n += 1;
+        } else {
+            p = blk: {
+                for (self.list[self.mapped..self.n]) |*q| {
+                    if (q.spent()) break :blk q;
+                }
+                return; // every slot is a glow somebody can still see
+            };
+        }
+        p.* = .{ .pos = at, .yaw = 0, .scale = 1, .op = 0, .nloot = @intCast(n) };
+        for (kinds[0..n], 0..) |k, i| p.loot[i] = k;
     }
 
     pub fn update(self: *Pickups, dt: f32, heroPos: rl.Vector3) void {
@@ -101,6 +165,8 @@ pub const Pickups = struct {
         if (p.taken) return null;
         p.taken = true;
         self.near = null;
+        // A DROPPED ONE CARRIES ITS OWN LIST; only a map-placed glow has an op to read it off.
+        if (p.dropped()) return .{ .at = p.topWorld(), .loot = p.loot[0..p.nloot] };
         const op = p.op;
         // An out-of-range op yields NO loot rather than reading past the map — the chest's own guard.
         const loot: []const item.Kind = if (op < m.nops) m.ops[op].loot[0..m.ops[op].nloot] else &.{};
@@ -203,4 +269,63 @@ test "THE FADE IS A FACTOR, NOT A SCALE — an oversized glow keeps its own size
     while (t < FADE_DUR * 2.0) : (t += 1.0 / 60.0) ps.update(1.0 / 60.0, mathx.zero3);
     try std.testing.expectApproxEqAbs(@as(f32, 0), p.sizeLeft(), 1e-6);
     try std.testing.expectApproxEqAbs(@as(f32, 2.5), p.scale, 1e-6);
+}
+
+test "A DROPPED GLOW IS A GLOW — it stands where the body fell, hands back its own list, and goes out" {
+    var ps = Pickups{};
+    // One placed by the MAP first, so the two halves are actually mixed rather than tested apart.
+    ps.reset(&.{.{ .pos = v3(50, 0, 0), .yaw = 0, .scale = 1, .op = 0 }});
+    try std.testing.expectEqual(@as(usize, 1), ps.mapped);
+    try std.testing.expectEqual(@as(usize, 0), ps.droppedOnes().len);
+
+    ps.spawn(v3(0, 0, 0), &.{ .bloodgrass, .toadflesh_broth });
+    try std.testing.expectEqual(@as(usize, 2), ps.n);
+    try std.testing.expectEqual(@as(usize, 1), ps.mapped); // the map's half did not move
+    try std.testing.expectEqual(@as(usize, 1), ps.droppedOnes().len);
+    try std.testing.expect(ps.droppedOnes()[0].dropped());
+    try std.testing.expect(!ps.liveConst()[0].dropped()); // …and the map's one still reads its op
+
+    // AN EMPTY HANDFUL IS NOT A GLOW: `nloot > 0` has to stay the honest test for "this one is a drop".
+    ps.spawn(v3(9, 0, 9), &.{});
+    try std.testing.expectEqual(@as(usize, 2), ps.n);
+
+    // Walk to it and take it — the loot is the drop's OWN list, with no map to read it off.
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    m.blank("drop");
+    m.nops = 0;
+    ps.update(1.0 / 60.0, v3(0.4, 0, 0));
+    const got = ps.takeNear(m).?;
+    try std.testing.expectEqual(@as(usize, 2), got.loot.len);
+    try std.testing.expectEqual(item.Kind.bloodgrass, got.loot[0]);
+    try std.testing.expectEqual(item.Kind.toadflesh_broth, got.loot[1]);
+    // …and it is spent exactly once, whatever else is standing about.
+    ps.update(1.0 / 60.0, v3(0.4, 0, 0));
+    try std.testing.expect(ps.takeNear(m) == null);
+
+    // THE GLOW GOES OUT AND STOPS BEING DRAWN — `game.drawDrops` skips a spent one, which is what takes it
+    // off the ground rather than leaving a zero-sized wisp standing in it.
+    var t: f32 = 0;
+    while (t < FADE_DUR * 2.0) : (t += 1.0 / 60.0) ps.update(1.0 / 60.0, v3(0.4, 0, 0));
+    try std.testing.expect(ps.droppedOnes()[0].spent());
+    try std.testing.expectApproxEqAbs(@as(f32, 0), ps.droppedOnes()[0].sizeLeft(), 1e-6);
+}
+
+test "A FULL LIST RECYCLES A SPENT SLOT AND NEVER OVERWRITES ONE YOU CAN STILL SEE" {
+    var ps = Pickups{};
+    ps.reset(&.{});
+    for (0..CAP) |_| ps.spawn(v3(0, 0, 0), &.{.bloodgrass});
+    try std.testing.expectEqual(CAP, ps.n);
+    // Full, and every one of them still standing: the drop is DROPPED rather than eating a live glow.
+    ps.spawn(v3(1, 0, 1), &.{.kobold_fang});
+    for (ps.liveConst()) |p| try std.testing.expectEqual(item.Kind.bloodgrass, p.loot[0]);
+    // …and once one has been taken and faded out, its slot is what the next drop lands in.
+    ps.list[7].taken = true;
+    var t: f32 = 0;
+    while (t < FADE_DUR * 2.0) : (t += 1.0 / 60.0) ps.update(1.0 / 60.0, v3(900, 0, 900));
+    try std.testing.expect(ps.list[7].spent());
+    ps.spawn(v3(1, 0, 1), &.{.kobold_fang});
+    try std.testing.expectEqual(item.Kind.kobold_fang, ps.list[7].loot[0]);
+    try std.testing.expect(!ps.list[7].taken); // a fresh glow, not a spent one wearing new loot
+    try std.testing.expectEqual(CAP, ps.n);
 }

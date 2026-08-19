@@ -573,6 +573,11 @@ pub const Id = enum {
     birdsong,
     owl,
     crickets, // a BED, and the only ambient voice rendered bright
+    /// THE RAIN — a BED like the wind, and the only one whose level is a WORLD state rather than an hour
+    /// (`setRain`): it is silent until it is raining, and it swells with the storm.
+    rain,
+    /// …and the storm's own voice, one-shot: the roll that arrives seconds after the light did.
+    thunder,
     // THE SUMMONED WOLF has a throat, unlike the shade. What says it is a spirit is the TAIL on every voice
     // — author the larynx honestly and let the reverb be the only unearthly thing.
     wolf_howl,
@@ -1938,6 +1943,77 @@ fn mkOwl(r: *Rack) void {
 const CRICKETS = 7; // individuals near enough to be heard APART; past that it is a chirr, not a field
 const CRICKET_SING: f32 = 0.22; // fraction of its own cycle one cricket is actually singing
 
+/// **RAIN IS THREE BANDS AND NO EVENT.** A hiss alone is tape noise and a low roar alone is a motorway; what
+/// says water is the PATTER between them — a mid band chopped by its own granular amplitude, so drops arrive
+/// rather than a spectrum sitting there. Gusts on the same slow clocks as `mkWind`, because it is the same
+/// weather moving both. Rendered flat and wide: the level is the STORM's (`setRain`), not this voice's.
+fn mkRain(r: *Rack) void {
+    var sheet = Svf{}; // the far-off roar, the whole field of it at once
+    var patter = Svf{}; // …the drops you can nearly count
+    var fine = Pole{}; // …and the mist on top
+    var drop = Pole{};
+    const q1 = r.rng.angle();
+    const q2 = r.rng.angle();
+    var hold: f32 = 0;
+    var left: i32 = 0;
+    var i: usize = 0;
+    while (i < r.n) : (i += 1) {
+        const t = @as(f32, @floatFromInt(i)) / SRF;
+        const g1 = 0.5 + 0.5 * mathx.sinf(std.math.tau * 0.047 * t + q1);
+        const g2 = 0.5 + 0.5 * mathx.sinf(std.math.tau * 0.113 * t + 1.7 + q2);
+        const nz = r.rng.signed();
+        // THE PATTER IS GRANULAR, `grit`'s trick at a bed's length: the amplitude is held for a few samples at
+        // a time, which is what turns a smooth band into individual arrivals.
+        if (left <= 0) {
+            hold = @abs(r.rng.signed());
+            left = 5 + @as(i32, @intFromFloat(@abs(r.rng.signed()) * 9.0));
+        }
+        left -= 1;
+        const sh = sheet.step(nz, 320.0 + 210.0 * g1, 0.30).bp;
+        const pa = patter.step(nz, 1900.0 + 900.0 * g2, 0.55).bp * (0.35 + 0.65 * hold);
+        const fi = fine.step(nz, 6400) * 0.5;
+        const dr = drop.step(nz, 140) * 0.8; // the gutter under it all
+        work[i] = sh * (0.42 + 0.38 * g1) + pa * 0.44 + fi * 0.16 + dr * 0.30;
+    }
+    r.norm(0.40);
+    r.sat(1.1);
+    r.crush(CRUSH_BITS + 1.5, CRUSH_HOLD);
+    r.warm(AIR_FAR_BED);
+    r.wow(0.002, 0.5);
+    r.hiss(0.030);
+    r.norm(0.60);
+    // A BED'S ENDS ARE LONG (the wind's own 0.9 s): a short one is a click, and a bed clicks every loop.
+    r.ends(0.9, 0.9);
+}
+
+/// **THUNDER IS A ROLL, NOT A BANG** — everything near enough to crack is closer than `weather.STRIKE_LO`.
+/// It SWELLS (the front of the wavefront arrives spread by its own travel), rumbles through two low bodies
+/// beating against each other, and goes out over a long tail. No transient at the head at all: a click here
+/// is the one thing that would say "sample" instead of "sky".
+fn mkThunder(r: *Rack) void {
+    var lo = Svf{};
+    var mid = Pole{};
+    var rollA = Pole{};
+    const q = r.rng.angle();
+    var i: usize = 0;
+    while (i < r.n) : (i += 1) {
+        const t = @as(f32, @floatFromInt(i)) / SRF;
+        const u = t / (@as(f32, @floatFromInt(r.n)) / SRF);
+        // The swell in, and the long fall out. Peaks a fifth of the way through — a roll is mostly its tail.
+        const env = mathx.smoothstep(0, 0.18, u) * (1.0 - mathx.smoothstep(0.20, 1.0, u));
+        const beat = 0.72 + 0.28 * mathx.sinf(std.math.tau * 1.9 * t + q) * mathx.sinf(std.math.tau * 0.7 * t);
+        const nz = r.rng.signed();
+        const body = lo.step(nz, 46.0 + 26.0 * beat, 0.42).bp;
+        const air = mid.step(nz, 260.0) * 0.5;
+        const roll = rollA.step(nz, 90.0) * 0.9;
+        work[i] = (body * 1.15 + roll * 0.55 + air * 0.22) * env * beat;
+    }
+    r.norm(0.62);
+    r.sat(1.35);
+    r.master(1.8, 900); // DULL: distance eats the top, and this one is always far
+    r.ends(0.25, 0.5); // …and it does not start on an edge: a roll has no front, that is what a CRACK is
+}
+
 fn mkCrickets(r: *Rack) void {
     var hz: [CRICKETS]f32 = undefined; // stridulation pitch — species and body size
     var rate: [CRICKETS]f32 = undefined; // chirps per second
@@ -2348,6 +2424,11 @@ const BANK = [NV]Row{
     .{ .id = .owl, .make = mkOwl, .gain = 0.24, .mix = .ambience, .jit = 0.08, .vjit = 0.14, .vars = 3, .poly = 2, .reach = 170 },
     // Its NIGHT figure (owner: crickets louder at night); `BEDS` thins it through the middle of the day.
     .{ .id = .crickets, .make = mkCrickets, .gain = 0.015, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
+    // THE RAIN BED, on the wind's own terms — two takes for width, no pitch jitter (a detuned sheet of rain
+    // is a sheet of rain played on a warped record), and its LEVEL comes from the storm rather than the hour.
+    .{ .id = .rain, .make = mkRain, .gain = 0.052, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
+    // …and the roll over it. AMBIENCE, not combat: it is weather, and it pays the same dial the rain does.
+    .{ .id = .thunder, .make = mkThunder, .gain = 0.30, .mix = .ambience, .jit = 0.04, .vjit = 0.10, .vars = 2, .poly = 2 },
     // Quieter up close than a kobold: a thing on YOUR side must never fight the creature it is biting for
     // the frame. The HOWL is the exception — thirty focus spent, and the player has to know it landed.
     .{ .id = .wolf_howl, .make = mkWolfHowl, .gain = battle(0.44), .mix = .combat, .jit = 0.05, .vjit = 0.09, .vars = 3, .poly = 1, .reach = 110 },
@@ -2361,6 +2442,11 @@ fn seconds(id: Id) f32 {
     return switch (id) {
         .wind => 8.0,
         .crickets => 7.3,
+        // A BED HAS TO OUTLAST ITS OWN PATTERN or the loop point is the thing you hear. The longest take here —
+        // and it may not equal another bed's, or the two retrigger on one frame forever (`BEDS`' own test).
+        .rain => 8.6,
+        // …and the roll is long because that is what a roll IS: the tail is the distance.
+        .thunder => 3.4,
         .death => 3.2,
         .owl => 1.6,
         .ogre_die => 2.2,
@@ -2784,6 +2870,15 @@ pub fn setDaylight(k: f32) void {
     daylight = mathx.clampF(k, 0, 1);
 }
 
+/// **HOW HARD IT IS RAINING, 0..1** — pushed in by `weather.Weather.rain()` every frame, exactly as the hour
+/// is. Nothing in this file knows what a storm is; it is handed the one number it can use, and the bed simply
+/// does not retrigger while that number is at nothing (`ambience`), so a dry world costs a comparison.
+var rainLevel: f32 = 0;
+
+pub fn setRain(k: f32) void {
+    rainLevel = mathx.clampF(k, 0, 1);
+}
+
 /// WHAT THE HOUR IS WORTH TO AN AMBIENT VOICE. LERPED on `daylight` rather than switched at sunset, so a
 /// bird's last call and a cricket's first are both simply quiet rather than cut off.
 const Hour = struct { atNoon: f32 = 1.0, atNight: f32 = 1.0 };
@@ -2950,7 +3045,14 @@ const BEDS = [_]Bed{
     // rather than stopping — there are crickets in a hot field too.
     .{ .id = .wind },
     .{ .id = .crickets, .hour = .{ .atNoon = 0.34, .atNight = 1.0 } },
+    // …and the rain, which is the same all day and nothing at all most of it (`setRain`).
+    .{ .id = .rain },
 };
+
+/// **AND THE THIRD KIND OF AMBIENT VOICE: THE WORLD'S OWN EVENTS.** Not a bed (it does not run) and not a call
+/// (nothing here decides when it happens) — the storm fires it (`game`, off `weather.Weather.thunder`). Named
+/// so the ambience trim's own test still has a complete list of what sits on that dial.
+pub const AMBIENT_EVENTS = [_]Id{.thunder};
 
 /// A TABLE, because there are three of these now and they differ in nothing but those numbers.
 const Call = struct {
@@ -2985,9 +3087,14 @@ pub fn ambience(dt: f32) void {
     for (BEDS) |b| {
         const s = &slots[@intFromEnum(b.id)];
         if (s.varsReady == 0) continue; // not baked yet: `pump` is still walking the bank in
+        // **THE RAIN'S BED IS THE STORM'S, NOT THE HOUR'S.** Silent when it is dry, and it takes its level at
+        // the retrigger like every other bed — so a storm that arrives mid-take swells in over the NEXT loop
+        // rather than jumping, which is the same lag the ramp already has.
+        const lvl = if (b.id == .rain) hourGain(b.hour) * rainLevel else hourGain(b.hour);
+        if (lvl <= 0.004) continue;
         // The hour is read at the RETRIGGER — seconds against a twenty-minute day, so nothing has to slide
         // a volume under a playing sound.
-        if (!rl.isSoundPlaying(s.snd[0][0])) bed(b.id, hourGain(b.hour));
+        if (!rl.isSoundPlaying(s.snd[0][0])) bed(b.id, lvl);
     }
     for (CALLS, 0..) |c, i| {
         callWait[i] -= dt;
@@ -3285,7 +3392,8 @@ test "THE BACKGROUND IS BACKGROUND — the ambience trim, and only the ambience"
     for (BANK) |row| {
         if (row.mix == .ambience) trimmed += 1;
     }
-    try std.testing.expectEqual(BEDS.len + CALLS.len, trimmed);
+    try std.testing.expectEqual(BEDS.len + CALLS.len + AMBIENT_EVENTS.len, trimmed);
+    for (AMBIENT_EVENTS) |id| try std.testing.expectEqual(Submix.ambience, BANK[@intFromEnum(id)].mix);
     for ([_]Id{ .toad_chomp, .toad_die, .ogre_slam, .ogre_roar, .bone_die, .hit_heavy, .hurt }) |id| {
         try std.testing.expect(BANK[@intFromEnum(id)].mix != .ambience);
         try std.testing.expectEqual(TRIM_COMBAT, submixTrim(BANK[@intFromEnum(id)].mix));
@@ -3294,6 +3402,8 @@ test "THE BACKGROUND IS BACKGROUND — the ambience trim, and only the ambience"
     var loudBed: f32 = 0;
     for (BEDS) |b| loudBed = mathx.maxF(loudBed, BANK[@intFromEnum(b.id)].gain);
     for (CALLS) |c| try std.testing.expect(BANK[@intFromEnum(c.id)].gain > loudBed);
+    // …and an EVENT is louder still: a bed is the room, a call is something in it, and thunder is the sky.
+    for (AMBIENT_EVENTS) |id| try std.testing.expect(BANK[@intFromEnum(id)].gain > loudBed);
 }
 
 const Rendered = struct {

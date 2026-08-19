@@ -1,18 +1,19 @@
 const std = @import("std");
 const rl = @import("raylib");
 
-const chestmod = @import("chest.zig");
-const pickupmod = @import("pickup.zig");
-const awardmod = @import("award.zig");
-const combat = @import("combat.zig");
-const daynight = @import("daynight.zig");
-const heromod = @import("hero.zig");
-const item = @import("item.zig");
-const mathx = @import("mathx.zig");
-const ptree = @import("passivetree.zig");
-const soulsmod = @import("souls.zig");
-const trigmod = @import("trigger.zig");
-const wf = @import("worldfmt.zig");
+const chestmod = @import("play/chest.zig");
+const pickupmod = @import("play/pickup.zig");
+const awardmod = @import("play/award.zig");
+const combat = @import("play/combat.zig");
+const daynight = @import("world/daynight.zig");
+const heromod = @import("play/hero.zig");
+const item = @import("play/item.zig");
+const knightmod = @import("foes/knight.zig");
+const mathx = @import("core/mathx.zig");
+const ptree = @import("play/passivetree.zig");
+const soulsmod = @import("play/souls.zig");
+const trigmod = @import("world/trigger.zig");
+const wf = @import("world/worldfmt.zig");
 
 pub const VERSION: u32 = 1;
 
@@ -39,6 +40,10 @@ pub const Slot = struct {
     trig: *trigmod.Runtime,
     chests: *chestmod.Chests,
     pickups: *pickupmod.Pickups,
+    /// **THE BOSS STAYS DEAD** (owner's call). The GROUP'S MEMBERS, not the group: its meshes want a shader
+    /// and this has to run headless. Keyed to placing order, which `foe.resetGroup` fills in the map's own
+    /// foe-table order — the same stable index the chest and pickup bits use.
+    bosses: []knightmod.Knight,
     award: *awardmod.Award,
     map: []const u8,
 };
@@ -100,6 +105,9 @@ pub const Data = struct {
     pickupTaken: [pickupmod.CAP]bool = [_]bool{false} ** pickupmod.CAP,
     ground: [pickupmod.CAP]Drop = [_]Drop{.{}} ** pickupmod.CAP,
     groundN: usize = 0,
+    /// One bit per boss the map placed, in placing order. A missing row leaves them all standing, which is
+    /// honestly what a save written before bosses stayed dead describes.
+    bossDead: [wf.MAX_PER_KIND]bool = [_]bool{false} ** wf.MAX_PER_KIND,
     seen: [item.NK]bool = [_]bool{false} ** item.NK,
 
     pub fn mapName(self: *const Data) []const u8 {
@@ -129,6 +137,7 @@ const CAP: usize =
     NFOE * 12 + 10 +
     chestmod.CAP + 10 +
     pickupmod.CAP + 10 +
+    wf.MAX_PER_KIND + 10 +
     pickupmod.CAP * (3 * 11 + 3 + pickupmod.DROP_MAX * (item.TAG_MAX + 1)) + 10 +
     item.NK + 8;
 
@@ -292,6 +301,9 @@ pub fn gather(s: Slot) Data {
         d.ground[d.groundN] = .{ .at = p.pos, .n = p.nloot, .loot = p.loot };
         d.groundN += 1;
     }
+    // From the frame the killing blow lands, not the frame the body finishes dissolving: `vit.dead` is the
+    // mechanic and `gone` is only the picture catching up with it.
+    for (s.bosses, 0..) |k, i| d.bossDead[i] = k.vit.dead;
     d.seen = s.award.seen;
     return d;
 }
@@ -348,6 +360,9 @@ pub fn scatter(d: *const Data, s: Slot) void {
     }
     s.pickups.clearDropped();
     for (d.ground[0..d.groundN]) |g| s.pickups.spawn(g.at, g.loot[0..g.n]);
+    for (s.bosses, 0..) |*k, i| {
+        if (d.bossDead[i]) k.markSlain();
+    }
     s.award.seen = d.seen;
     s.award.clearPending();
 }
@@ -401,6 +416,7 @@ pub fn render(w: anytype, d: *const Data) !void {
         for (g.loot[0..g.n]) |k| try w.print(" {s}", .{item.tag(k)});
     }
     try w.writeByte('\n');
+    try bits(w, "bosses", &d.bossDead);
     try bits(w, "seen", &d.seen);
 }
 
@@ -514,6 +530,8 @@ pub fn parse(text: []const u8, d: *Data) !void {
                 d.ground[d.groundN] = g;
                 d.groundN += 1;
             }
+        } else if (std.mem.eql(u8, key, "bosses:")) {
+            try readBits(&it, &d.bossDead);
         } else if (std.mem.eql(u8, key, "seen:")) {
             try readBits(&it, &d.seen);
         } else {
@@ -638,6 +656,7 @@ fn sample() Data {
     d.ground[0] = .{ .at = .{ .x = -12.5, .y = 0.75, .z = 4.25 }, .n = 1, .loot = .{ .kobold_fang, .kobold_fang } };
     d.ground[1] = .{ .at = .{ .x = 3.0, .y = 0.0, .z = -8.5 }, .n = 2, .loot = .{ .mushroom_jerky, .quilted_gambeson } };
     d.groundN = 2;
+    d.bossDead[0] = true;
     d.seen[@intFromEnum(item.Kind.mushroom_jerky)] = true;
     d.seen[item.NK - 1] = true;
     return d;
@@ -683,6 +702,8 @@ test "a save round-trips through its own text" {
         try testing.expectEqual(a.n, b.n);
         try testing.expectEqualSlices(item.Kind, a.loot[0..a.n], b.loot[0..b.n]);
     }
+    // A boss you killed stays killed, which is the whole reason the row is in the file.
+    try testing.expectEqual(d.bossDead, back.bossDead);
     try testing.expectEqual(d.seen, back.seen);
 }
 
@@ -767,6 +788,7 @@ const Live = struct {
     trig: trigmod.Runtime = .{},
     chests: chestmod.Chests = undefined,
     pickups: pickupmod.Pickups = .{},
+    bosses: [2]knightmod.Knight = undefined,
     award: awardmod.Award = .{},
 
     fn blank(nChests: usize) Live {
@@ -783,6 +805,7 @@ const Live = struct {
         l.hero.flasks = .{};
         l.hero.quick = .{};
         l.souls.drop = .{};
+        for (&l.bosses) |*k| k.* = knightmod.Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
         l.chests.n = nChests;
         for (0..nChests) |i| l.chests.list[i] = .{};
         return l;
@@ -798,6 +821,7 @@ const Live = struct {
             .trig = &self.trig,
             .chests = &self.chests,
             .pickups = &self.pickups,
+            .bosses = &self.bosses,
             .award = &self.award,
             .map = wf.START_MAP,
         };
@@ -837,6 +861,7 @@ test "THE SLOT CARRIES EVERY FIELD IT NAMES — live game out, text, live game b
     a.trig.deaths[1] = 11;
     a.trig.elapsed = 300.5;
     a.chests.list[2].opened = true;
+    a.bosses[1].vit.dead = true; // …and one of the two bosses is down
 
     const out = gather(a.slot());
     const back = try roundTrip(&out);
@@ -845,9 +870,13 @@ test "THE SLOT CARRIES EVERY FIELD IT NAMES — live game out, text, live game b
     scatter(&back, b.slot());
     try testing.expectEqual(out, gather(b.slot()));
 
-    // …and the two things `scatter` derives rather than copies, which a re-gather cannot see.
+    // …and the things `scatter` derives rather than copies, which a re-gather cannot see.
     try testing.expectEqual(@as(f32, 4321), b.hero.souls.shown);
     try testing.expect(b.chests.list[2].swing == 1 and b.chests.list[0].swing == 0);
+    // **THE BOSS COMES BACK ALREADY GONE, NOT DYING.** A load that re-played the collapse would pay the
+    // souls, the quake and the dissolve a second time, and leave a body standing in the arena while it did.
+    try testing.expect(!b.bosses[1].alive() and b.bosses[1].vit.dead);
+    try testing.expect(b.bosses[0].alive());
 }
 
 test "the file itself round-trips, and one written for another map is refused" {

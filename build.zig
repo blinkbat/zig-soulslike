@@ -53,7 +53,8 @@ pub fn build(b: *std.Build) void {
 /// them and the suite total did not move; two were failing.
 ///
 /// A comptime assert cannot see the filesystem, so the check lives HERE, where the build runs on the host
-/// and can simply read the directory. Every `src/*.zig` must be named in that block or the build fails with
+/// and can simply read the directory. Every `src/**/*.zig` must be named in that block, by the path
+/// `main.zig` imports it as (`foes/knight.zig`), or the build fails with
 /// the name of the one that is not.
 ///
 /// **AND IT IS SCOPED TO THE BLOCK, NOT TO THE FILE.** Searching the whole of `main.zig` counted the
@@ -66,16 +67,23 @@ fn checkTestRoster(b: *std.Build) void {
     const root = file[at..];
     var dir = b.build_root.handle.openDir("src", .{ .iterate = true }) catch return;
     defer dir.close();
-    var it = dir.iterate();
+    // WALKED, not iterated: `src` is in subdirectories now, and a flat `iterate` sees four files and passes
+    // every module in them silently unrun — the exact failure this check exists for.
+    var it = dir.walk(b.allocator) catch return;
+    defer it.deinit();
     while (it.next() catch null) |ent| {
-        if (ent.kind != .file or !std.mem.endsWith(u8, ent.name, ".zig")) continue;
-        if (std.mem.eql(u8, ent.name, "main.zig")) continue;
-        const want = b.fmt("@import(\"{s}\")", .{ent.name});
+        if (ent.kind != .file or !std.mem.endsWith(u8, ent.path, ".zig")) continue;
+        if (std.mem.eql(u8, ent.path, "main.zig")) continue;
+        // The roster names a module by the path `main.zig` imports it as, which on Windows comes back off
+        // the walker with backslashes.
+        const slashed = b.allocator.dupe(u8, ent.path) catch return;
+        std.mem.replaceScalar(u8, slashed, '\\', '/');
+        const want = b.fmt("@import(\"{s}\")", .{slashed});
         if (std.mem.indexOf(u8, root, want) == null) {
             std.debug.panic(
                 "src/main.zig's test block does not name {s} — every module carrying tests must be there, " ++
                     "or its tests are silently never compiled. Add `_ = {s};`.",
-                .{ ent.name, want },
+                .{ slashed, want },
             );
         }
     }

@@ -95,6 +95,13 @@ Don't commit, push, or create branches unless explicitly asked.
 
 ## Module map
 
+`src/` is in directories: `core/` (maths, collision, the pose kernel, the camera, audio, rumble, the bake
+door), `gfx/` (builder + scene + GLSL + the element particle language), `world/` (terrain, the map format,
+the clock, the weather, triggers, dialog), `props/`, `foes/`, `play/` (the hero and everything his sheet is
+made of), `ui/`. The loop, the entry, the slot and the shot harness stay at `src/` itself. An `@import` is a
+path from the importing file — `../core/mathx.zig` — and `main.zig`'s test block names each module by that
+same path, which `build.zig`'s roster check walks the tree to enforce.
+
 **How files are divided:** minimise TOKENS TO MAKE A CORRECT CHANGE, not file size. A 900-line file
 whose contents change together is fine. Splits go where concerns genuinely part company.
 
@@ -102,62 +109,62 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | --- | --- |
 | `main.zig` | entry; `--shot` headless harness |
 | `game.zig` | window/loop, input, camera-relative movement, render orchestration, combat-beat feedback, YOU DIED. **A DEFAULTED FIELD ON `Game` MUST BE ASSIGNED IN `init`** — it is built from `alloc.create`, so `= .{}` on the field never runs and the field comes up as the fill byte. Silent, and it has bitten twice: `pack.n` as garbage, and the WHOLE DAY/NIGHT CYCLE dead because `g.day` was never assigned (rate 0 is a held clock; a NaN hour renders as the anchor) |
-| `hero.zig` | THE HERO — FK skeleton, every animation, swept blade capsule, the guard, the bow, the wand. Start here |
-| `anim.zig` | THE KEYED-POSE KERNEL — `Ease`/`Key`/`keyAt`, `Spring`/`SpringBank`, and `anim.Pose(P)` whole-pose tracks; every rig's attacks run on it |
-| `behave.zig` | THE BEHAVIOUR LIBRARY — `Routine` (close/open/orbit/dwell/shift) + the named scripts (`DISENGAGE`/`FLANK`/`KITE`); the archer's kite and the warrior's circle run on it |
-| `camera.zig` | over-the-shoulder orbit rig, ground basis, trauma shake (live-loop only, so `--shot` stays deterministic) |
-| `gfx.zig` | mesh `Builder`, scene shader, shadow depth pass, `Sky`, `Vignette`, `Mat` surface materials |
-| `daynight.zig` | THE WORLD CLOCK — the sun/moon path, the hour's whole palette, and the anchor hour `--shot` pins |
-| `weather.zig` | THE SKY'S OWN EVENTS — intermittent rain in two strengths, the moderate one's lightning and its late thunder, the ONE MESH the whole sheet is drawn from (stacked and wrapped, 4–7 draw calls), and the stray MIST BANKS that stand in the field once the air is thick |
-| `shaders.zig` | every line of GLSL and nothing else; the contract with `gfx.zig` is written at its top |
-| `worldfmt.zig` | THE MAP FORMAT — op vocabulary, zone/foe/**npc/trigger/dialog** tables, one comptime field table driving writer and parser |
-| `trigger.zig` | THE TRIGGER MACHINE — SC1's conditions + actions, and the switches / counters / timers they compose through |
-| `dialog.zig` | a conversation: the walk through one node tree, and the BG2-style panel it is read off — including the SPEAKER'S PORTRAIT, which is the actual rig rendered live (`hud.livePortrait`), zoomed to the head and three-quarters off HIS OWN facing. Dropped rather than allowed to starve the prose on a narrow window |
-| `npc.zig` | THE FOLK — the wanderer, on the hero's scaffold; idle set, gestures, roam, and the staff that plants with the far foot |
-| `env.zig` | THE WORLD — terrain, op replay, `coverField`, uniform grid, cullers, occluder fade, lights |
-| `editor.zig` | THE EDITOR (Menu > Editor), layered StarEdit-style; biggest file, next split candidate |
-| `objview.zig` | object viewer + the JUKEBOX (sound auditioning) + the FX BENCH (`elemfx`'s twelve cells, playing on a loop with the numbers being tuned printed beside them — the jukebox's argument, one system along: `lifeHi 1.15` is not a thing anybody can picture) |
-| `props.zig` | prop VOCABULARY + the `INFO` table (one row per kind); `displayName`/`group`/`stock` are exhaustive switches |
+| `play/hero.zig` | THE HERO — FK skeleton, every animation, swept blade capsule, the guard, the bow, the wand. Start here |
+| `core/anim.zig` | THE KEYED-POSE KERNEL — `Ease`/`Key`/`keyAt`, `Spring`/`SpringBank`, and `anim.Pose(P)` whole-pose tracks; every rig's attacks run on it |
+| `foes/behave.zig` | THE BEHAVIOUR LIBRARY — `Routine` (close/open/orbit/dwell/shift) + the named scripts (`DISENGAGE`/`FLANK`/`KITE`); the archer's kite and the warrior's circle run on it |
+| `core/camera.zig` | over-the-shoulder orbit rig, ground basis, trauma shake (live-loop only, so `--shot` stays deterministic) |
+| `gfx/gfx.zig` | mesh `Builder`, scene shader, shadow depth pass, `Sky`, `Vignette`, `Mat` surface materials |
+| `world/daynight.zig` | THE WORLD CLOCK — the sun/moon path, the hour's whole palette, and the anchor hour `--shot` pins |
+| `world/weather.zig` | THE SKY'S OWN EVENTS — intermittent rain in two strengths, the moderate one's lightning and its late thunder, the ONE MESH the whole sheet is drawn from (stacked and wrapped, 4–7 draw calls), and the stray MIST BANKS that stand in the field once the air is thick |
+| `gfx/shaders.zig` | every line of GLSL and nothing else; the contract with `gfx.zig` is written at its top |
+| `world/worldfmt.zig` | THE MAP FORMAT — op vocabulary, zone/foe/**npc/trigger/dialog** tables, one comptime field table driving writer and parser |
+| `world/trigger.zig` | THE TRIGGER MACHINE — SC1's conditions + actions, and the switches / counters / timers they compose through |
+| `world/dialog.zig` | a conversation: the walk through one node tree, and the BG2-style panel it is read off — including the SPEAKER'S PORTRAIT, which is the actual rig rendered live (`hud.livePortrait`), zoomed to the head and three-quarters off HIS OWN facing. Dropped rather than allowed to starve the prose on a narrow window |
+| `foes/npc.zig` | THE FOLK — the wanderer, on the hero's scaffold; idle set, gestures, roam, and the staff that plants with the far foot |
+| `world/env.zig` | THE WORLD — terrain, op replay, `coverField`, uniform grid, cullers, occluder fade, lights |
+| `ui/editor.zig` | THE EDITOR (Menu > Editor), layered StarEdit-style; biggest file, next split candidate |
+| `ui/objview.zig` | object viewer + the JUKEBOX (sound auditioning) + the FX BENCH (`elemfx`'s twelve cells, playing on a loop with the numbers being tuned printed beside them — the jukebox's argument, one system along: `lifeHi 1.15` is not a thing anybody can picture) |
+| `props/props.zig` | prop VOCABULARY + the `INFO` table (one row per kind); `displayName`/`group`/`stock` are exhaustive switches |
 | `prop*.zig` | the meshes by family — `propart` (palette + weathering), `propruins`, `propbuild`, `propvillage`, `proprock`, `propwood`, `propflora`, `propfx` |
-| `foe.zig` | THE FOE STANDARD — shared contract, `Blade`/`strike`/`weaponReaches`/`Blow`, `Trail` ribbon, particles, `Leash`, group plumbing |
-| `elemfx.zig` | THE ELEMENTS' PARTICLE LANGUAGE — one signature per `combat.Elem` and three verbs (`gather`/`burst`/`pour`) to render it in. **THE SIGNATURE IS THE MOTION**: fire RISES and is the only one that leaves a residue, cold FALLS and lies about (the longest life by 2×), lightning DOES NOT TRAVEL (the shortest by 3×, and the only colourless one), chaos GOES THE WRONG WAY (inward, the only one). A test tells the four apart with the colour taken away, and a second one on hue alone — that one caught three of the four cores authored near-white, and a cold and a lightning nobody could have separated. TUNED IN THE EDITOR (`objview` > Effects) |
-| `frog.zig` | gaping toad + `Knot` |
-| `archer.zig` | skeletal archer + `Line`; kite-only, arrows that stick and fade |
-| `ogre.zig` | one-eyed ogre + `Grief`; 24 bones, high poise; slam (sometimes HELD at the top), side swipe (sometimes a RETURN chained off it), mid-range lunging DRIVE, jittered cooldowns; never strafes |
-| `kobold.zig` | kobold warband + `Warband` — three roles of one creature (berserker/priest/slinger); the priest is why they are one group |
-| `brood.zig` | brood mother, sacs, broodlings + `Brood`; guard not hunter, venom POOLS are the weapon — they POISON rather than burn |
-| `warrior.zig` | skeletal warriors + `Muster` — shieldman (blocks, guard-breaks to one knee) and greatsword (uninterruptible slam) |
-| `knight.zig` | THE BONE KNIGHT + `Vigil` — THE FIRST BOSS, with the game's first BOSS BAR: this world's ANOR LONDO SENTINEL (docs/GIANT_KNIGHTS.md) on the ER knight brain (docs/ELDEN_RING.md §7). A sealed statue behind a FULL-HEIGHT bowed wall that does not break and never leaves his front except for the SLAM; sweep + delayed second sweep, hanging overhead, lunging thrust (also his guard counter), bash, the backward FALL, a sideways HOP when orbited, and a committed CHARGE at whoever stays away |
-| `shade.zig` | shades + `Haunt`; legless, hovers, 17 bones of its own. The one thing that drains FOCUS, the one thing that TELEPORTS |
-| `leechfly.zig` | THE FIRST FLYER + `Swarm`; 15 bones, never lands. Drinks his HP through a beak and heals off what it takes, and ZOOMS out of sword reach |
-| `rooted.zig` | THE TREE THAT ISN'T + `Grove`; a snag-mimic fixture — eyes open outside its reach, three limb strikes (slam/sweep/hook-drag), never moves |
-| `shroom.zig` | the sporeling + `Cluster`; a squat mushroom that FLINGS itself and bursts a lingering spore cloud that POISONS (buildup, never damage). Sometimes it TRIPS instead — same gather, longer opening |
-| `delver.zig` | THE DELVER + `Warrens` — the first thing that goes UNDER the world. It burrows, travels as a ridge of moving earth, and comes out TWO ways: BURSTING up through the ground under his feet with a small ring of a blow, or PLOUGHING a furrow down the line he is running along. On the surface, a claw that RETURNS. You cannot lock on to it while it is down |
-| `necro.zig` | THE NECROMANCER + `Rite` — TALL, SKINNY, a dragging robe, a bone helm and a crooked staff. It never melees. A skeleton corpse inside its reach **STOPS DISSIPATING** (`heldOpen`) and it puts that body back up at part HP, once each; and it lays a **DELAYED ICE RUNE RING** on the ground where he is standing, which is the game's first and only source of COLD |
-| `wolf.zig` | THE FIRST SPIRIT + `Pack` — what the BELL calls, and the one thing that fights ON HIS SIDE. NOT a foe (no `Leash`, its own `takeHit`, not in `FOE_GROUPS`) and the first QUADRUPED: 27 bones, and the gait is Hildebrand's two dials. Out past `RECALL_R` for `LOST_DWELL` and the BOND MOVES IT (`reappear` + `game.rematerialize`, the bell's own spot) — running home is what it tries first, and this is for when running cannot work |
-| `combat.zig` | `Vitals` (HP + two-tier stagger + regen + death), `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`, `SpiritKind`/`SUMMON_MAX`. THE place to retune feel |
-| `stats.zig` | the character sheet — seven attributes, the curves that make the bars, and the ONE skill curve (`scaleFor`) that three of the other four multiply a blow by. `inert` is the predicate for the row nothing reads, and it is LUCK alone |
-| `passivetree.zig` | THE PASSIVE TREE — PoE2's, radially: three arms out of one hub, the gates, the `Bonus`, and the wheel it is drawn as |
-| `item.zig` | item vocabulary, `Use`, **`Equip`/`Wear` (the GEAR table — what a thing does when he puts it on)**, the `Bag` |
-| `chest.zig` | openable boxes; contents read off the placing op (`Op.loot`) |
-| `rest.zig` | bonfire + campfire bonfire — the phase machine, the seat, and THE FIRE'S OWN SCREEN (its list, and the wheel behind Level Up); `isRestKind` is the one predicate |
-| `souls.zig` | THE DROP — what a death leaves on the ground, the gold bloom it stands as, and the walk back for it |
-| `drops.zig` | THE DROP TABLE — one row per `FoeKind`, the GUARANTEED item every body leaves and the rare it might, and **the one thing LUCK reads** (`stats.findFor`, rare weight only — scale the guaranteed row too and the attribute does nothing). It goes ON THE GROUND as a glow you walk to (`pickup.Pickups.spawn`), not into his hands, and it is rolled off a seeded stream (`game.dropRng`) so `--shot` stays reproducible |
-| `hud.zig` | ER HUD, the PAD-GLYPH kit every prompt and crib is drawn with, and the ONLY path to draw/measure text. The three bars start at `BARS_X`, not `MARGIN` — the WORLD CLOCK'S dial has the corner (`dayDial`, drawn off `daynight.spanU`/`isDay`, so it cannot tell a different time than the light). The BOSS BAR (`bossBar`) is the named bar across the bottom: `game.zig` owns when it shows and suppresses the same body's floating bar |
-| `ui.zig` | editor widget kit; `Ctx.anyHot` gates world clicks next frame |
+| `foes/foe.zig` | THE FOE STANDARD — shared contract, `Blade`/`strike`/`weaponReaches`/`Blow`, `Trail` ribbon, particles, `Leash`, group plumbing |
+| `gfx/elemfx.zig` | THE ELEMENTS' PARTICLE LANGUAGE — one signature per `combat.Elem` and three verbs (`gather`/`burst`/`pour`) to render it in. **THE SIGNATURE IS THE MOTION**: fire RISES and is the only one that leaves a residue, cold FALLS and lies about (the longest life by 2×), lightning DOES NOT TRAVEL (the shortest by 3×, and the only colourless one), chaos GOES THE WRONG WAY (inward, the only one). A test tells the four apart with the colour taken away, and a second one on hue alone — that one caught three of the four cores authored near-white, and a cold and a lightning nobody could have separated. TUNED IN THE EDITOR (`objview` > Effects) |
+| `foes/frog.zig` | gaping toad + `Knot` |
+| `foes/archer.zig` | skeletal archer + `Line`; kite-only, arrows that stick and fade |
+| `foes/ogre.zig` | one-eyed ogre + `Grief`; 24 bones, high poise; slam (sometimes HELD at the top), side swipe (sometimes a RETURN chained off it), mid-range lunging DRIVE, jittered cooldowns; never strafes |
+| `foes/kobold.zig` | kobold warband + `Warband` — three roles of one creature (berserker/priest/slinger); the priest is why they are one group |
+| `foes/brood.zig` | brood mother, sacs, broodlings + `Brood`; guard not hunter, venom POOLS are the weapon — they POISON rather than burn |
+| `foes/warrior.zig` | skeletal warriors + `Muster` — shieldman (blocks, guard-breaks to one knee) and greatsword (uninterruptible slam) |
+| `foes/knight.zig` | THE BONE KNIGHT + `Vigil` — THE FIRST BOSS, with the game's first BOSS BAR: this world's ANOR LONDO SENTINEL (docs/GIANT_KNIGHTS.md) on the ER knight brain (docs/ELDEN_RING.md §7). A sealed statue behind a FULL-HEIGHT bowed wall that does not break and never leaves his front except for the SLAM; sweep + delayed second sweep, hanging overhead, lunging thrust (also his guard counter), bash, the backward FALL, a sideways HOP when orbited, and a committed CHARGE at whoever stays away |
+| `foes/shade.zig` | shades + `Haunt`; legless, hovers, 17 bones of its own. The one thing that drains FOCUS, the one thing that TELEPORTS |
+| `foes/leechfly.zig` | THE FIRST FLYER + `Swarm`; 15 bones, never lands. Drinks his HP through a beak and heals off what it takes, and ZOOMS out of sword reach |
+| `foes/rooted.zig` | THE TREE THAT ISN'T + `Grove`; a snag-mimic fixture — eyes open outside its reach, three limb strikes (slam/sweep/hook-drag), never moves |
+| `foes/shroom.zig` | the sporeling + `Cluster`; a squat mushroom that FLINGS itself and bursts a lingering spore cloud that POISONS (buildup, never damage). Sometimes it TRIPS instead — same gather, longer opening |
+| `foes/delver.zig` | THE DELVER + `Warrens` — the first thing that goes UNDER the world. It burrows, travels as a ridge of moving earth, and comes out TWO ways: BURSTING up through the ground under his feet with a small ring of a blow, or PLOUGHING a furrow down the line he is running along. On the surface, a claw that RETURNS. You cannot lock on to it while it is down |
+| `foes/necro.zig` | THE NECROMANCER + `Rite` — TALL, SKINNY, a dragging robe, a bone helm and a crooked staff. It never melees. A skeleton corpse inside its reach **STOPS DISSIPATING** (`heldOpen`) and it puts that body back up at part HP, once each; and it lays a **DELAYED ICE RUNE RING** on the ground where he is standing, which is the game's first and only source of COLD |
+| `foes/wolf.zig` | THE FIRST SPIRIT + `Pack` — what the BELL calls, and the one thing that fights ON HIS SIDE. NOT a foe (no `Leash`, its own `takeHit`, not in `FOE_GROUPS`) and the first QUADRUPED: 27 bones, and the gait is Hildebrand's two dials. Out past `RECALL_R` for `LOST_DWELL` and the BOND MOVES IT (`reappear` + `game.rematerialize`, the bell's own spot) — running home is what it tries first, and this is for when running cannot work |
+| `play/combat.zig` | `Vitals` (HP + two-tier stagger + regen + death), `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`, `SpiritKind`/`SUMMON_MAX`. THE place to retune feel |
+| `play/stats.zig` | the character sheet — seven attributes, the curves that make the bars, and the ONE skill curve (`scaleFor`) that three of the other four multiply a blow by. `inert` is the predicate for the row nothing reads, and it is LUCK alone |
+| `play/passivetree.zig` | THE PASSIVE TREE — PoE2's, radially: three arms out of one hub, the gates, the `Bonus`, and the wheel it is drawn as |
+| `play/item.zig` | item vocabulary, `Use`, **`Equip`/`Wear` (the GEAR table — what a thing does when he puts it on)**, the `Bag` |
+| `play/chest.zig` | openable boxes; contents read off the placing op (`Op.loot`) |
+| `play/rest.zig` | bonfire + campfire bonfire — the phase machine, the seat, and THE FIRE'S OWN SCREEN (its list, and the wheel behind Level Up); `isRestKind` is the one predicate |
+| `play/souls.zig` | THE DROP — what a death leaves on the ground, the gold bloom it stands as, and the walk back for it |
+| `play/drops.zig` | THE DROP TABLE — one row per `FoeKind`, the GUARANTEED item every body leaves and the rare it might, and **the one thing LUCK reads** (`stats.findFor`, rare weight only — scale the guaranteed row too and the attribute does nothing). It goes ON THE GROUND as a glow you walk to (`pickup.Pickups.spawn`), not into his hands, and it is rolled off a seeded stream (`game.dropRng`) so `--shot` stays reproducible |
+| `ui/hud.zig` | ER HUD, the PAD-GLYPH kit every prompt and crib is drawn with, and the ONLY path to draw/measure text. The three bars start at `BARS_X`, not `MARGIN` — the WORLD CLOCK'S dial has the corner (`dayDial`, drawn off `daynight.spanU`/`isDay`, so it cannot tell a different time than the light). The BOSS BAR (`bossBar`) is the named bar across the bottom: `game.zig` owns when it shows and suppresses the same body's floating bar |
+| `ui/ui.zig` | editor widget kit; `Ctx.anyHot` gates world clicks next frame |
 | — | **THE LIVE PORTRAIT** (`hud.renderPortrait`/`blitPortrait`/`livePortrait`) is the one way a body is photographed into the UI — the book's doll, the conversation's speaker, the spirit panel. **TAKING IT AND MOUNTING IT ARE TWO CALLS AND THE SPLIT IS LOAD-BEARING**: `endTextureMode` restores the DEFAULT framebuffer, not the target bound before it, so a render nested inside `hud.beginChrome`'s target silently sends the whole rest of the frame at the backbuffer. Render BEFORE the chrome opens, blit inside. The ANGLE is the house's (`hud.PORTRAIT_*`), the DISTANCE the subject's (`npc.PORTRAIT_DIST`, `wolf.PORTRAIT_DIST`) |
-| `uiart.zig` | chrome DRESSING shared by hud/menu/book/ui |
-| `itemart.zig` | pictures of things — armaments and bag items as objects, sized by the caller |
-| `icons.zig` | editor glyph set, drawn from primitives (vector, not an atlas) |
-| `book.zig` | THE CHARACTER BOOK (pad START) — a Diablo paper doll + ten quick sockets, the bag, the sheet |
-| `menu.zig` | THE BOOT SCREEN, the pause/debug menu, sound LEVELS, and the retro filter rack. The SOUND filter rack is not here — it is the editor's (`editor.rackPanel`) |
+| `ui/uiart.zig` | chrome DRESSING shared by hud/menu/book/ui |
+| `ui/itemart.zig` | pictures of things — armaments and bag items as objects, sized by the caller |
+| `ui/icons.zig` | editor glyph set, drawn from primitives (vector, not an atlas) |
+| `ui/book.zig` | THE CHARACTER BOOK (pad START) — a Diablo paper doll + ten quick sockets, the bag, the sheet |
+| `ui/menu.zig` | THE BOOT SCREEN, the pause/debug menu, sound LEVELS, and the retro filter rack. The SOUND filter rack is not here — it is the editor's (`editor.rackPanel`) |
 | `save.zig` | THE SLOTS — three files in the map's own `key: value` grammar, each with the picture the picker shows it by; written by sitting down at a fire and by nothing else |
-| `audio.zig` | ~80 synthesized voices through one tape-style `master`; three submixes; read it as recipes. **A BLOW STOPPED ON A FOE'S SHIELD HAS ITS OWN VOICE** (`foe_guarded`, and `knight_repel` one size up for the wall) — `guard_block` is the HERO's shield eating a blow, the opposite event, and hearing one sound for both meant a swing that achieved nothing sounded exactly like a swing that saved you |
-| `rumble.zig` | XInput directly (raylib's GLFW backend stubs `SetGamepadVibration`); holds `PAD` |
+| `core/audio.zig` | ~80 synthesized voices through one tape-style `master`; three submixes; read it as recipes. **A BLOW STOPPED ON A FOE'S SHIELD HAS ITS OWN VOICE** (`foe_guarded`, and `knight_repel` one size up for the wall) — `guard_block` is the HERO's shield eating a blow, the opposite event, and hearing one sound for both meant a swing that achieved nothing sounded exactly like a swing that saved you |
+| `core/rumble.zig` | XInput directly (raylib's GLFW backend stubs `SetGamepadVibration`); holds `PAD` |
 | `shots.zig` | the headless harness — never in context while working on the loop |
-| `collision.zig` | 2D XZ capsule/circle push-out, `blocksSight` |
-| `mathx.zig` | ground-plane + vector/angle helpers, seeded `Rng` |
-| `bake.zig` | one-way door that emitted the first map from the old code-authored regions |
+| `core/collision.zig` | 2D XZ capsule/circle push-out, `blocksSight` |
+| `core/mathx.zig` | ground-plane + vector/angle helpers, seeded `Rng` |
+| `core/bake.zig` | one-way door that emitted the first map from the old code-authored regions |
 
 ## The hero rig (`hero.zig`)
 

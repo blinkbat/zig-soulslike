@@ -447,17 +447,18 @@ pub const Action = enum { none, leave, playtest };
 
 pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot, boss, jukebox, world, zonemix };
 
-const VOICE_NAMES = blk: {
-    const fields = @typeInfo(sfx.Id).@"enum".fields;
-    var out: [fields.len][:0]const u8 = undefined;
-    for (fields, 0..) |f, i| out[i] = f.name;
-    break :blk out;
-};
+/// The bench lists off the AUDIO module's own table (`sfx.NAMES`), which `settings.cfg` is already keyed on.
+/// A second comptime walk over `sfx.Id` here was the same list built twice, and the one it has to agree with
+/// is the one the save writes.
+const VOICE_NAMES = sfx.NAMES;
 
 const JUKE_W: i32 = 1010;
 const JUKE_H: i32 = 560;
 const JUKE_LIST_W: i32 = 300;
 const JUKE_LIST_H: i32 = JUKE_H - 150;
+/// The bench column between the list and the rack, MEASURED off the modal rather than picked: the rack is
+/// pinned to the right edge, so this is whatever is left after both gutters.
+const JUKE_COL_W: i32 = JUKE_W - JUKE_LIST_W - RACK_W - 80;
 
 const DLG_PAD: i32 = 24;
 const DLG_BTN_H: i32 = 28;
@@ -594,6 +595,7 @@ pub const Editor = struct {
     jukeScroll: i32 = 0,
     jukeWorld: bool = false,
     rackMix: sfx.Submix = .combat,
+    rackOnVoice: bool = false,
     /// WHICH ZONE the name field and the mix modal are editing. A zone is not an `Op`, so it cannot ride
     /// `sel` — and its mix was the one thing in the whole format the editor could only ever INHERIT.
     zoneSel: ?usize = null,
@@ -3399,28 +3401,30 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 ed.juke = i;
                 ed.jukePlay();
             }
-            const nfo = sfx.voiceInfo(@enumFromInt(@min(ed.juke, VOICE_NAMES.len - 1)));
+            const vid: sfx.Id = @enumFromInt(@min(ed.juke, VOICE_NAMES.len - 1));
+            const nfo = sfx.voiceInfo(vid);
             const cx = box.x + 40 + JUKE_LIST_W;
             var cy = box.y + 56;
             var buf: [96]u8 = undefined;
             hud.mono(VOICE_NAMES[@min(ed.juke, VOICE_NAMES.len - 1)], cx, cy, hud.MONO, ui.TITLE);
+            const edited = sfx.voiceEdited(vid);
+            if (edited) hud.mono("EDITED", cx + JUKE_COL_W - 60, cy, hud.MONO, ui.HOT);
             cy += ROW_H + 6;
-            const rows = [_][:0]const u8{ "gain", "reach", "takes", "poly", "pitch jit", "level jit", "submix" };
-            inline for (rows, 0..) |label, ri| {
-                const val: [:0]const u8 = switch (ri) {
-                    0 => std.fmt.bufPrintZ(&buf, "{d:.2}", .{nfo.gain}) catch "",
-                    1 => std.fmt.bufPrintZ(&buf, "{d:.0} m", .{nfo.reach}) catch "",
-                    2 => std.fmt.bufPrintZ(&buf, "{d}", .{nfo.vars}) catch "",
-                    3 => std.fmt.bufPrintZ(&buf, "{d}", .{nfo.poly}) catch "",
-                    4 => std.fmt.bufPrintZ(&buf, "{d:.2}", .{nfo.jit}) catch "",
-                    5 => std.fmt.bufPrintZ(&buf, "{d:.2}", .{nfo.vjit}) catch "",
-                    else => @tagName(nfo.mix),
-                };
-                hud.mono(label, cx, cy, hud.MONO, ui.LABEL);
-                hud.mono(val, cx + 130, cy, hud.MONO, ui.VALUE);
-                cy += ROW_H;
+            // THE DIALS THEMSELVES, not a readout of them. Each answers under the finger — none of these
+            // re-renders the take, which is what separates them from the rack below.
+            inline for (@typeInfo(sfx.Dial).@"enum".fields) |dfld| {
+                const d: sfx.Dial = @enumFromInt(dfld.value);
+                const spec = sfx.dialSpec(d);
+                var v = sfx.dialOf(vid, d);
+                if (ui.slider(ctx, cx, cy, JUKE_COL_W, spec.name, &v, spec.lo, spec.hi)) sfx.setDial(vid, d, v);
+                cy += RACK_ROW;
             }
-            cy += 10;
+            cy += 4;
+            // …and what a row IS rather than how it sounds: `vars` and `poly` size the alias table that
+            // frees it, so they are not on the bench at all (`audio.live`).
+            const shape = std.fmt.bufPrintZ(&buf, "{d} takes x {d} voices, {s}", .{ nfo.vars, nfo.poly, @tagName(nfo.mix) }) catch "";
+            hud.mono(shape, cx, cy, hud.MONO, ui.alpha(ui.LABEL, 170));
+            cy += ROW_H + 6;
             _ = ui.checkbox(ctx, cx, cy, "play out in the world", &ed.jukeWorld);
             cy += ROW_H;
             const ds = if (ed.jukeWorld)
@@ -3428,15 +3432,25 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             else
                 "at the ear";
             hud.mono(ds, cx, cy, hud.MONO, ui.alpha(ui.LABEL, 170));
-            rackPanel(ed, ctx, box.x + JUKE_W - RACK_W - 20, box.y + 56);
+            cy += ROW_H + 8;
+            if (ui.buttonTip(ctx, ui.rect(cx, cy, 150, 22), "Revert voice", hud.MONO, !edited, "Back to the numbers in the code - the originals are never overwritten")) {
+                sfx.revertVoice(vid);
+                ed.jukePlay();
+            }
+            if (ui.buttonTip(ctx, ui.rect(cx + 158, cy, 130, 22), "Revert all", hud.MONO, !sfx.anyVoiceEdited(), "Every voice in the game back to the code")) sfx.revertAllVoices();
+            rackPanel(ed, ctx, box.x + JUKE_W - RACK_W - 20, box.y + 56, vid);
 
             const by = box.y + box.h - DLG_FOOT;
             if (ui.button(ctx, ui.rect(box.x + 20, by, 150, DLG_BTN_H), "Play again", hud.MONO, false) or confirm) ed.jukePlay();
-            if (ui.button(ctx, ui.rect(box.x + 180, by, 120, DLG_BTN_H), "Done", hud.MONO, false)) {
+            if (ui.buttonTip(ctx, ui.rect(box.x + 180, by, 120, DLG_BTN_H), "Save", hud.MONO, false, "Write the edited voices over settings.cfg")) {
+                sfx.saveSettings();
+                ed.say("sounds saved");
+            }
+            if (ui.button(ctx, ui.rect(box.x + 310, by, 120, DLG_BTN_H), "Done", hud.MONO, false)) {
                 sfx.saveSettings();
                 ed.modal = .none;
             }
-            hud.mono("up / down step and play, space replays", box.x + 320, by + 6, hud.MONO, ui.alpha(ui.LABEL, 150));
+            hud.mono("up / down step and play, space replays", box.x + 450, by + 6, hud.MONO, ui.alpha(ui.LABEL, 150));
         },
         .new_map, .save_as => {
             const isNew = ed.modal == .new_map;
@@ -3582,31 +3596,45 @@ fn freshRim(ed: *Editor, m: *const wf.Map) wf.Op {
     return rim;
 }
 
-fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32) void {
+/// The eleven dials, over either a FAMILY or the ONE VOICE the bench has selected. Same rack both ways on
+/// purpose: a filter that behaved differently depending on whose it was would be two things sharing a name.
+fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32, voice: ?sfx.Id) void {
     var y = y0;
     hud.mono("FILTER RACK", x, y, hud.MONO, ui.TITLE);
     y += ROW_H + 4;
 
     // WHOSE rack. The same three families, in the same order, as the volume sliders in the game's options —
-    // "which slider moves this" and "which rack filters it" must never disagree.
+    // "which slider moves this" and "which rack filters it" must never disagree — plus, on the bench, the
+    // selected voice itself, which is filtered on TOP of its family.
     var cx = x;
     inline for (@typeInfo(sfx.Submix).@"enum".fields) |fld| {
         const mx: sfx.Submix = @enumFromInt(fld.value);
         var usedW: i32 = 0;
-        if (ui.chip(ctx, cx, y, @tagName(mx), ed.rackMix == mx, &usedW)) ed.rackMix = mx;
+        if (ui.chip(ctx, cx, y, @tagName(mx), !ed.rackOnVoice and ed.rackMix == mx, &usedW)) {
+            ed.rackMix = mx;
+            ed.rackOnVoice = false;
+        }
         cx += usedW;
     }
+    if (voice != null) {
+        var usedW: i32 = 0;
+        if (ui.chip(ctx, cx, y, "this voice", ed.rackOnVoice, &usedW)) ed.rackOnVoice = true;
+    } else ed.rackOnVoice = false;
     y += ROW_H + 8;
 
+    const onVoice = ed.rackOnVoice and voice != null;
+    const vid = voice orelse sfx.Id.menu_move;
     const colW = (RACK_W - RACK_GAP) / 2;
     const perCol = (sfx.AFX_COUNT + 1) / 2;
-    const vals = sfx.fxValues(ed.rackMix);
+    const vals = if (onVoice) sfx.voiceFxValues(vid) else sfx.fxValues(ed.rackMix);
     for (0..sfx.AFX_COUNT) |i| {
         var v = vals[i];
         const lab = sfx.AFX_NAMES[i];
         const cxx = x + @as(i32, @intCast(i / perCol)) * (colW + RACK_GAP);
         const cyy = y + @as(i32, @intCast(i % perCol)) * RACK_ROW;
-        if (ui.slider(ctx, cxx, cyy, colW, lab, &v, 0, 1)) sfx.setFx(ed.rackMix, i, v);
+        if (ui.slider(ctx, cxx, cyy, colW, lab, &v, 0, 1)) {
+            if (onVoice) sfx.setVoiceFx(vid, i, v) else sfx.setFx(ed.rackMix, i, v);
+        }
     }
     y += @as(i32, @intCast(perCol)) * RACK_ROW + 6;
     const PRESETS = [_]struct { n: [:0]const u8, p: []const sfx.FxPreset }{
@@ -3620,15 +3648,26 @@ fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32) void {
         const bx = x + @as(i32, @intCast(i % 2)) * (RACK_W / 2 + 4);
         const by = y + @as(i32, @intCast(i / 2)) * 26;
         if (ui.button(ctx, ui.rect(bx, by, RACK_W / 2 - 4, 22), pre.n, hud.MONO, false)) {
-            sfx.applyFxPreset(ed.rackMix, pre.p);
+            if (onVoice) sfx.applyVoiceFxPreset(vid, pre.p) else sfx.applyFxPreset(ed.rackMix, pre.p);
         }
     }
     y += 26 * 3 + 4;
-    if (ui.buttonTip(ctx, ui.rect(x, y, RACK_W / 2 - 4, 22), "Default", hud.MONO, false, "Back to the house sound (worn tape)")) sfx.resetFx(ed.rackMix);
-    if (ui.buttonTip(ctx, ui.rect(x + RACK_W / 2 + 4, y, RACK_W / 2 - 4, 22), "All Off", hud.MONO, false, "Every dial to zero - drier than the game ships")) sfx.allFxOff(ed.rackMix);
+    // A VOICE'S OWN DEFAULT IS OFF, and the caption has to say so. Its rack is applied ON TOP of the
+    // family's, so "the house sound" is what the family is already giving it — the two buttons genuinely do
+    // one thing here, and a tip promising a preset the press does not apply is the lie worth fixing.
+    const dflt: [:0]const u8 = if (onVoice)
+        "This voice adds nothing of its own - the family's rack still applies"
+    else
+        "Back to the house sound (worn tape)";
+    if (ui.buttonTip(ctx, ui.rect(x, y, RACK_W / 2 - 4, 22), "Default", hud.MONO, false, dflt)) {
+        if (onVoice) sfx.voiceFxOff(vid) else sfx.resetFx(ed.rackMix);
+    }
+    if (ui.buttonTip(ctx, ui.rect(x + RACK_W / 2 + 4, y, RACK_W / 2 - 4, 22), "All Off", hud.MONO, false, "Every dial to zero - drier than the game ships")) {
+        if (onVoice) sfx.voiceFxOff(vid) else sfx.allFxOff(ed.rackMix);
+    }
     y += ROW_H + 4;
     hud.mono(
-        if (sfx.fxPending()) "re-rendering..." else "baked, not mixed - a dial re-renders the family",
+        if (sfx.fxPending()) "re-rendering..." else if (onVoice) "baked, not mixed - a dial re-renders this voice" else "baked, not mixed - a dial re-renders the family",
         x,
         y,
         hud.MONO,

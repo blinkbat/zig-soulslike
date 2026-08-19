@@ -1321,7 +1321,7 @@ pub const Warrior = struct {
     }
 
     pub fn rigScale(self: *const Warrior) f32 {
-        return self.scale * (1.0 - 0.7 * self.fade);
+        return foe.rigScale(self.scale, self.fade);
     }
 
     pub fn pose(self: *Warrior) void {

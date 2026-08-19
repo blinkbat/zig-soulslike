@@ -482,6 +482,15 @@ pub const Id = enum {
     ogre_heave,
     ogre_hurt,
     ogre_die,
+    knight_step,
+    knight_plant,
+    knight_roar,
+    knight_slam,
+    knight_heave,
+    knight_swipe,
+    knight_lunge,
+    knight_hurt,
+    knight_die,
     kobold_snarl,
     kobold_chop,
     kobold_heave,
@@ -552,6 +561,7 @@ pub const Id = enum {
     wolf_hurt,
     wolf_die,
     fog_seal,
+    fog_felled,
     fog_pass,
 };
 const NV = @typeInfo(Id).@"enum".fields.len;
@@ -689,7 +699,10 @@ pub fn applyFxPreset(m: Submix, preset: []const FxPreset) void {
 
 fn applyFx(r: *Rack, m: Submix) void {
     if (!anyFxIn(m)) return;
-    const v = fxVals[@intFromEnum(m)];
+    applyRack(r, fxVals[@intFromEnum(m)]);
+}
+
+fn applyRack(r: *Rack, v: [AFX_COUNT]f32) void {
     if (v[AF_DRIVE] > AFX_EPS) r.sat(1.0 + 7.0 * v[AF_DRIVE]);
     if (v[AF_CRUSH] > AFX_EPS) r.crush(mathx.lerpF(CRUSH_BITS, 2.0, v[AF_CRUSH]), 1);
     if (v[AF_ALIAS] > AFX_EPS) r.crush(16, 1 + @as(u32, @intFromFloat(v[AF_ALIAS] * 15.0)));
@@ -728,6 +741,16 @@ pub fn tickFx(dt: f32) void {
         d.* = false;
         rebakeMix(@enumFromInt(mi));
     }
+    // THE FLAG IS SPENT BY THE REBAKE, NEVER BEFORE IT. Cleared above the `ready` gate it was the
+    // silent-failure `justDied` warns about: an edit queued while the bank is not up is dropped and the
+    // voice plays on with the old take, with nothing anywhere looking wrong.
+    if (!ready) return;
+    for (&voiceDirty, 0..) |*d, idx| {
+        if (!d.*) continue;
+        d.* = false;
+        dropRow(idx);
+        bakeTake(BANK[idx].id, idx);
+    }
 }
 
 const Row = struct {
@@ -740,6 +763,8 @@ const Row = struct {
     vars: u8 = 1,
     poly: u8 = 2,
     reach: f32 = FALLOFF,
+    /// Where the take SITS, against the `jit` that scatters it. A dial for the bench; nothing authors it.
+    pitch: f32 = 1.0,
 };
 
 
@@ -1385,8 +1410,102 @@ fn mkOgreDie(r: *Rack) void {
     r.ends(0.006, 0.20);
 }
 
+// **THE BOSS'S OWN THROAT — IRON OVER BONE, AND NOTHING ALIVE INSIDE IT.** He borrowed the ogre's whole
+// voice, and the ogre is FLESH: `growl`'s saw under a lowpass riding its own pitch is a CHEST. What tells a
+// sealed suit apart is that every cue here carries a `ring` — struck plate, and the one layer the ogre never
+// uses — over `grit` that is dry bone rather than a wet thump, and that the voice comes out of a HELM, so it
+// is air in a box with a room behind it, never a windpipe.
 
+fn mkKnightStep(r: *Rack) void {
+    r.body(0.0, 0.46, 70, 25, 1.15, 2.3);
+    r.body(0.0, 0.13, 146, 62, 0.34, 4.8);
+    r.grit(0.004, 0.20, 0.30, 2800, 0.7, 3.6);
+    r.ring(0.006, 0.34, 380, 0.15, 4.4, 3);
+    r.master(2.5, 2600);
+}
 
+fn mkKnightPlant(r: *Rack) void {
+    r.tick(0.0, 0.55, 2600);
+    r.body(0.0, 0.60, 84, 21, 1.35, 2.0);
+    r.body(0.0, 0.17, 190, 58, 0.55, 3.9);
+    r.grit(0.0, 0.34, 0.55, 2200, 0.85, 2.8);
+    r.ring(0.004, 0.44, 340, 0.22, 3.6, 4);
+    r.air(0.0, 0.26, 0.26, 2000, 260, 0.38, 2.8);
+    r.master(2.8, 2500);
+}
+
+fn mkKnightRoar(r: *Rack) void {
+    r.growl(0.0, 0.95, 58, 88, 0.95, 0.20, 0.30);
+    r.growl(0.03, 0.88, 116, 84, 0.42, 0.55, 0.42);
+    r.ring(0.0, 0.80, 132, 0.26, 1.9, 4);
+    r.body(0.0, 0.85, 66, 48, 0.45, 1.2);
+    r.air(0.06, 0.90, 0.20, 520, 1700, 0.42, 1.3);
+    r.hall(0.55, 1500);
+    r.master(2.3, 2400);
+}
+
+fn mkKnightSlam(r: *Rack) void {
+    r.tick(0.0, 0.85, 3400);
+    r.body(0.0, 0.66, 92, 20, 1.45, 1.9);
+    r.body(0.0, 0.19, 230, 60, 0.62, 3.7);
+    r.grit(0.0, 0.42, 0.80, 2600, 0.9, 2.4);
+    r.ring(0.003, 0.60, 520, 0.30, 3.0, 5);
+    r.grit(0.16, 0.36, 0.30, 3400, 0.95, 2.2);
+    r.air(0.0, 0.30, 0.32, 2400, 280, 0.42, 2.6);
+    r.master(2.9, 2600);
+}
+
+fn mkKnightHeave(r: *Rack) void {
+    r.growl(0.0, 0.28, 132, 70, 0.58, 0.30, 3.2);
+    r.ring(0.0, 0.34, 300, 0.14, 3.4, 3);
+    r.air(0.0, 0.32, 0.30, 820, 300, 0.44, 2.6);
+    r.body(0.0, 0.14, 86, 42, 0.36, 3.0);
+    r.grit(0.02, 0.18, 0.20, 2600, 0.75, 2.6);
+    r.master(2.2, 3000);
+}
+
+fn mkKnightSwipe(r: *Rack) void {
+    r.air(0.0, 0.46, 1.0, 1800, 190, 0.58, 1.7);
+    r.air(0.05, 0.36, 0.38, 850, 3200, 0.34, 2.1);
+    r.ring(0.10, 0.34, 660, 0.14, 3.2, 3);
+    r.body(0.08, 0.24, 112, 48, 0.36, 2.8);
+    r.master(2.2, 3000);
+}
+
+fn mkKnightLunge(r: *Rack) void {
+    r.grit(0.0, 0.20, 0.70, 3000, 0.9, 4.2);
+    r.ring(0.0, 0.28, 560, 0.20, 4.2, 4);
+    r.body(0.01, 0.18, 104, 44, 0.70, 3.8);
+    r.air(0.08, 0.40, 0.90, 1500, 260, 0.44, 1.8);
+    r.master(2.3, 3200);
+}
+
+fn mkKnightHurt(r: *Rack) void {
+    r.tick(0.0, 0.50, 5200);
+    r.ring(0.0, 0.30, 720, 0.34, 4.2, 5);
+    r.grit(0.0, 0.18, 0.66, 3400, 0.85, 4.2);
+    r.body(0.0, 0.11, 210, 84, 0.46, 5.4);
+    r.master(2.4, 4200);
+}
+
+fn mkKnightDie(r: *Rack) void {
+    r.growl(0.0, 0.90, 84, 30, 0.90, 0.26, 0.08);
+    r.ring(0.0, 0.70, 150, 0.22, 2.2, 4);
+    r.body(0.0, 1.10, 72, 44, 0.42, 1.2);
+    // The topple lands at `knight.DEATH_LAND` = 1.36 s, and the crash is written to arrive with it.
+    r.tick(1.36, 0.60, 2600);
+    r.body(1.36, 0.80, 88, 18, 1.35, 1.6);
+    r.grit(1.36, 0.66, 0.70, 2400, 0.92, 1.9);
+    r.ring(1.37, 0.80, 400, 0.28, 2.4, 5);
+    r.air(1.36, 0.40, 0.30, 2100, 240, 0.40, 2.4);
+    r.hall(0.50, 1400);
+    r.sat(2.6);
+    r.warm(2300);
+    r.wow(0.0035, 1.2);
+    r.hiss(0.014);
+    r.norm(0.94);
+    r.ends(0.006, 0.22);
+}
 
 fn mkKoboldSnarl(r: *Rack) void {
     r.body(0.0, 0.12, 132, 84, 0.75, 4.0);
@@ -1760,6 +1879,27 @@ fn mkFogSeal(r: *Rack) void {
     r.hall(2.40, 1500);
     r.master(1.5, 1100);
     r.ends(0.03, 1.10);
+}
+
+/// THE BOSS DOWN AND THE DOOR SPENT (owner: like the entry sting, still deep and dark but MORE HOPEFUL, not
+/// scary). Same architecture as `mkFogSeal`, opposite interval. The root stays A1 at 55 Hz and the register
+/// stays where it was — DARK is not the same dial as FRIGHTENING. What arrives a beat late is the PERFECT
+/// FIFTH (E2, 82.41) instead of the tritone, the MAJOR THIRD (C#2, 69.30) lands last, and the three together
+/// are an A major triad where the seal is the one interval nobody hears as resolved. The sub RISES the
+/// semitone the seal's sags, the choir opens upward instead of sitting, and the air brightens across the take
+/// where the seal's closes down.
+fn mkFogFelled(r: *Rack) void {
+    r.body(0.00, 1.40, 82, 55, 0.42, 2.0);      // the weight coming off — not a stone finding its seat
+    r.body(0.05, 4.90, 38.9, 41.2, 0.60, 0.8);  // the sub, rising the semitone
+    r.ring(0.06, 4.60, 55.0, 0.34, 1.0, 3);     // A1
+    r.ring(0.85, 3.90, 82.4, 0.26, 1.1, 3);     // …the fifth above it, a beat late
+    r.ring(1.70, 3.10, 69.3, 0.18, 1.2, 2);     // …and the third last, which is the whole of the hope
+    r.choir(0.50, 4.40, 110.0, 0.26, 4, 0.50);
+    r.choir(1.80, 3.30, 164.8, 0.18, 3, 0.62);
+    r.air(0.00, 5.00, 0.09, 300, 900, 0.28, 0.7);
+    r.hall(2.60, 2400);
+    r.master(1.5, 1700);
+    r.ends(0.05, 1.30);
 }
 
 fn mkRingSnap(r: *Rack) void {
@@ -2196,6 +2336,15 @@ const BANK = [NV]Row{
     .{ .id = .ogre_heave, .make = mkOgreHeave, .gain = battle(0.70), .mix = .combat, .jit = 0.07, .vjit = 0.11, .vars = 3, .reach = 85 },
     .{ .id = .ogre_hurt, .make = mkOgreHurt, .gain = battle(0.66), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 80 },
     .{ .id = .ogre_die, .make = mkOgreDie, .gain = battle(0.92), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1, .reach = 135 },
+    .{ .id = .knight_step, .make = mkKnightStep, .gain = battle(0.46), .mix = .combat, .jit = 0.08, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 125 },
+    .{ .id = .knight_plant, .make = mkKnightPlant, .gain = battle(0.72), .mix = .combat, .jit = 0.07, .vjit = 0.13, .vars = 4, .poly = 3, .reach = 140 },
+    .{ .id = .knight_roar, .make = mkKnightRoar, .gain = battle(0.94), .mix = .combat, .jit = 0.05, .vjit = 0.09, .vars = 3, .poly = 2, .reach = 150 },
+    .{ .id = .knight_slam, .make = mkKnightSlam, .gain = battle(1.00), .mix = .combat, .jit = 0.06, .vjit = 0.08, .vars = 3, .poly = 3, .reach = 150 },
+    .{ .id = .knight_heave, .make = mkKnightHeave, .gain = battle(0.70), .mix = .combat, .jit = 0.07, .vjit = 0.11, .vars = 4, .poly = 3, .reach = 95 },
+    .{ .id = .knight_swipe, .make = mkKnightSwipe, .gain = battle(0.74), .mix = .combat, .jit = 0.07, .vjit = 0.12, .vars = 3, .poly = 3, .reach = 95 },
+    .{ .id = .knight_lunge, .make = mkKnightLunge, .gain = battle(0.88), .mix = .combat, .jit = 0.08, .vjit = 0.13, .vars = 3, .poly = 3, .reach = 105 },
+    .{ .id = .knight_hurt, .make = mkKnightHurt, .gain = battle(0.64), .mix = .combat, .jit = 0.11, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 90 },
+    .{ .id = .knight_die, .make = mkKnightDie, .gain = battle(0.96), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1, .reach = 150 },
     .{ .id = .kobold_snarl, .make = mkKoboldSnarl, .gain = battle(0.62), .mix = .combat, .jit = 0.22, .vjit = 0.24, .vars = 6, .poly = 3, .reach = 58 },
     .{ .id = .kobold_chop, .make = mkKoboldChop, .gain = battle(0.38), .mix = .combat, .jit = 0.22, .vjit = 0.28, .vars = 6, .poly = 4, .reach = 40 },
     .{ .id = .kobold_heave, .make = mkKoboldHeave, .gain = battle(0.78), .mix = .combat, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 2, .reach = 62 },
@@ -2272,6 +2421,7 @@ const BANK = [NV]Row{
     // On `.sfx` with `ring_snap`, NOT in the fight's own band: a stinger that announces a fight has to sit
     // ABOVE it, and the combat submix is deliberately compressed flat (`battle`).
     .{ .id = .fog_seal, .make = mkFogSeal, .gain = 0.60, .jit = 0.0, .vjit = 0.0, .vars = 1, .poly = 1 },
+    .{ .id = .fog_felled, .make = mkFogFelled, .gain = 0.60, .jit = 0.0, .vjit = 0.0, .vars = 1, .poly = 1 },
     .{ .id = .fog_pass, .make = mkFogPass, .gain = 0.44, .jit = 0.04, .vjit = 0.08, .vars = 2, .poly = 1 },
 };
 
@@ -2279,6 +2429,8 @@ fn seconds(id: Id) f32 {
     return switch (id) {
         // The door shutting on a boss fight, at the length the owner asked for.
         .fog_seal => 5.0,
+        // …and the answer to it outlasts it, because the last thing it does is let go.
+        .fog_felled => 5.2,
         // …and it has to cover the WALK it plays under (`game.GATE_SPEED` over a gate-and-a-bit of ground).
         .fog_pass => 1.7,
         .wind => 8.0,
@@ -2290,6 +2442,13 @@ fn seconds(id: Id) f32 {
         .death => 3.2,
         .owl => 1.6,
         .ogre_die => 2.2,
+        // The boss falls for DEATH_DUR (2.20 s, `knight.zig`) and the crash is written at 1.30.
+        .knight_die => 2.45,
+        .knight_roar => 1.35,
+        .knight_slam => 1.15,
+        .knight_plant => 0.8,
+        .knight_step, .knight_swipe => 0.7,
+        .knight_heave, .knight_lunge => 0.6,
         .respawn => 1.4,
         .bone_die, .toad_die, .ogre_roar => 1.1,
         .wolf_howl => 1.7,
@@ -2381,6 +2540,12 @@ fn bakeTake(id: Id, idx: usize) void {
     row.make(&r);
     if (row.mix == .combat) r.warm(COMBAT_TREBLE);
     applyFx(&r, row.mix);
+    for (voiceFx[idx]) |k| {
+        if (k > AFX_EPS) {
+            applyRack(&r, voiceFx[idx]);
+            break;
+        }
+    }
     slots[idx].snd[v][0] = bake(&r);
     slots[idx].owned[v] = slots[idx].snd[v][0];
     var p: u8 = 1;
@@ -2634,8 +2799,134 @@ pub const VoiceInfo = struct {
 };
 
 pub fn voiceInfo(id: Id) VoiceInfo {
-    const r = BANK[@intFromEnum(id)];
+    const r = live[@intFromEnum(id)];
     return .{ .gain = r.gain, .mix = r.mix, .jit = r.jit, .vjit = r.vjit, .vars = r.vars, .poly = r.poly, .reach = r.reach };
+}
+
+// **THE BENCH — A VOICE AS IT IS PLAYING, WHICH IS NOT ALWAYS THE VOICE AS IT WAS AUTHORED** (owner: let me
+// edit basic things on sound fx and save over them, keep your originals for a revert). `BANK` is the
+// original and NEVER moves — that IS the revert, and it is why nothing here needs a backup file to be
+// correct. `live` is what every play path reads and the only thing the editor writes; `settings.cfg` carries
+// the DIFFERENCE and nothing else, so a voice re-authored in code flows straight through to a save that
+// never mentioned it.
+//
+// **THE SHAPE OF A ROW IS NOT ON THE BENCH.** `vars` and `poly` size the alias table `freeRow` walks to
+// unload it, so a dial that moved either between a bake and its free would leak or double-free; those two,
+// `mix`, `id` and `make` are read from `BANK` everywhere and have no setter.
+var live: [NV]Row = BANK;
+var voiceFx: [NV][AFX_COUNT]f32 = [_][AFX_COUNT]f32{[_]f32{0} ** AFX_COUNT} ** NV;
+var voiceDirty: [NV]bool = [_]bool{false} ** NV;
+
+/// The dials the bench exposes. Each is a plain multiplier or an angle on the take — none of them re-bakes,
+/// which is why they answer under the finger while the filters take `FX_SETTLE`.
+pub const Dial = enum { gain, pitch, reach, jit, vjit };
+
+/// Every voice's name, once, as a runtime table — the bench lists off it and `settings.cfg` is keyed on it.
+/// An `inline for` over the enum instead unrolls its whole body ~190 times per call site and blows the
+/// comptime branch quota doing it.
+pub const NAMES: [NV][:0]const u8 = blk: {
+    var out: [NV][:0]const u8 = undefined;
+    for (@typeInfo(Id).@"enum".fields, 0..) |f, i| out[i] = f.name;
+    break :blk out;
+};
+
+pub const DialSpec = struct { name: [:0]const u8, lo: f32, hi: f32, tip: [:0]const u8 };
+
+pub fn dialSpec(d: Dial) DialSpec {
+    return switch (d) {
+        .gain => .{ .name = "vol", .lo = 0, .hi = 1, .tip = "How loud, before the family's own trim and the player's slider" },
+        .pitch => .{ .name = "pitch", .lo = 0.5, .hi = 2.0, .tip = "Where the take sits - 1.0 is as it was baked" },
+        .reach => .{ .name = "reach", .lo = 4, .hi = 220, .tip = "Metres it carries; past this it is not played at all" },
+        .jit => .{ .name = "pitch jit", .lo = 0, .hi = 0.30, .tip = "How far each firing wanders off the pitch" },
+        .vjit => .{ .name = "level jit", .lo = 0, .hi = 0.40, .tip = "How far each firing wanders off the level" },
+    };
+}
+
+pub fn dialOf(id: Id, d: Dial) f32 {
+    const r = live[@intFromEnum(id)];
+    return switch (d) {
+        .gain => r.gain,
+        .pitch => r.pitch,
+        .reach => r.reach,
+        .jit => r.jit,
+        .vjit => r.vjit,
+    };
+}
+
+pub fn setDial(id: Id, d: Dial, v: f32) void {
+    const s = dialSpec(d);
+    const k = mathx.clampF(v, s.lo, s.hi);
+    const r = &live[@intFromEnum(id)];
+    switch (d) {
+        .gain => r.gain = k,
+        .pitch => r.pitch = k,
+        .reach => r.reach = k,
+        .jit => r.jit = k,
+        .vjit => r.vjit = k,
+    }
+}
+
+pub fn voiceFxValues(id: Id) []const f32 {
+    return &voiceFx[@intFromEnum(id)];
+}
+
+pub fn setVoiceFx(id: Id, i: usize, v: f32) void {
+    if (i >= AFX_COUNT) return;
+    const idx: usize = @intFromEnum(id);
+    const k = mathx.clampF(v, 0, 1);
+    if (voiceFx[idx][i] == k) return;
+    voiceFx[idx][i] = k;
+    voiceDirty[idx] = true;
+    fxSettle = FX_SETTLE;
+}
+
+pub fn voiceFxOff(id: Id) void {
+    for (0..AFX_COUNT) |i| setVoiceFx(id, i, 0);
+}
+
+pub fn applyVoiceFxPreset(id: Id, preset: []const FxPreset) void {
+    voiceFxOff(id);
+    for (preset) |p| setVoiceFx(id, p.idx, p.val);
+}
+
+/// Has this one been moved off what the code says? What the Revert button lights on, and the whole of what
+/// `saveSettings` writes down.
+pub fn voiceEdited(id: Id) bool {
+    const idx: usize = @intFromEnum(id);
+    const a = live[idx];
+    const b = BANK[idx];
+    if (a.gain != b.gain or a.pitch != b.pitch or a.reach != b.reach or a.jit != b.jit or a.vjit != b.vjit) return true;
+    for (voiceFx[idx]) |v| {
+        if (v > 0) return true;
+    }
+    return false;
+}
+
+pub fn anyVoiceEdited() bool {
+    for (0..NV) |i| {
+        if (voiceEdited(@enumFromInt(i))) return true;
+    }
+    return false;
+}
+
+pub fn revertVoice(id: Id) void {
+    const idx: usize = @intFromEnum(id);
+    const hadFx = blk: {
+        for (voiceFx[idx]) |v| {
+            if (v > 0) break :blk true;
+        }
+        break :blk false;
+    };
+    live[idx] = BANK[idx];
+    voiceFx[idx] = [_]f32{0} ** AFX_COUNT;
+    if (hadFx) {
+        voiceDirty[idx] = true;
+        fxSettle = FX_SETTLE;
+    }
+}
+
+pub fn revertAllVoices() void {
+    for (0..NV) |i| revertVoice(@enumFromInt(i));
 }
 
 const DEFAULT_VOL = blk: {
@@ -2678,7 +2969,7 @@ pub fn setVolume(m: Submix, v: f32) void {
     if (ready and m == .ambience) {
         for (BEDS) |b| {
             const s = &slots[@intFromEnum(b.id)];
-            const lvl = bedLevel(BANK[@intFromEnum(b.id)], b.hour);
+            const lvl = bedLevel(live[@intFromEnum(b.id)], b.hour);
             if (s.varsReady > 0) rl.setSoundVolume(s.snd[0][0], lvl);
             if (s.varsReady > 1) rl.setSoundVolume(s.snd[1][0], lvl);
         }
@@ -2692,8 +2983,9 @@ fn bedLevel(row: Row, h: Hour) f32 {
 pub const SETTINGS_PATH = "settings.cfg";
 
 const FX_KEY = "fx.";
+const VOICE_KEY = "voice.";
 
-const SETTINGS_CAP = NMIX * (32 + AFX_COUNT * 8) + 64;
+const SETTINGS_CAP = NMIX * (32 + AFX_COUNT * 8) + NV * (40 + 5 * 10 + AFX_COUNT * 6) + 64;
 
 pub fn loadSettings() void {
     var buf: [SETTINGS_CAP]u8 = undefined;
@@ -2720,12 +3012,39 @@ pub fn loadSettings() void {
             }
             continue;
         }
+        if (std.mem.startsWith(u8, key, VOICE_KEY)) {
+            const name = key[VOICE_KEY.len..];
+            for (NAMES, 0..) |nm, vi| {
+                if (!std.mem.eql(u8, name, nm)) continue;
+                const id: Id = @enumFromInt(vi);
+                // Read against the AUTHORED row, so a short or damaged line leaves the rest of the voice
+                // exactly where the code has it rather than at zero.
+                live[vi] = BANK[vi];
+                inline for (@typeInfo(Dial).@"enum".fields) |dfld| {
+                    if (it.next()) |tok| {
+                        if (std.fmt.parseFloat(f32, tok) catch null) |x| setDial(id, @enumFromInt(dfld.value), x);
+                    }
+                }
+                var i: usize = 0;
+                while (i < AFX_COUNT) : (i += 1) {
+                    const tok = it.next() orelse break;
+                    setVoiceFx(id, i, std.fmt.parseFloat(f32, tok) catch 0);
+                }
+                break;
+            }
+            continue;
+        }
         const val = it.next() orelse continue;
         const v = std.fmt.parseFloat(f32, val) catch continue;
         inline for (@typeInfo(Submix).@"enum".fields) |fld| {
             if (std.mem.eql(u8, key, fld.name)) setVolume(@enumFromInt(fld.value), v);
         }
     }
+    // LOADING IS NOT EDITING. `setVoiceFx` arms the settle clock so a dial under the finger coalesces, but
+    // this runs BEFORE the first bake and `bakeTake` reads `voiceFx` itself — so every edited voice would be
+    // dropped and re-synthesized a fifth of a second into the run for a take it already had.
+    voiceDirty = [_]bool{false} ** NV;
+    fxSettle = 0;
 }
 
 pub fn saveSettings() void {
@@ -2738,6 +3057,15 @@ pub fn saveSettings() void {
     inline for (@typeInfo(Submix).@"enum".fields) |fld| {
         w.print(FX_KEY ++ "{s}", .{fld.name}) catch return;
         for (fxVals[fld.value]) |v| w.print(" {d:.3}", .{v}) catch return;
+        w.writeAll("\n") catch return;
+    }
+    // THE DIFFERENCE AND NOTHING ELSE. A voice left where the code put it writes no line, so re-authoring one
+    // reaches a save that never mentioned it — which is the same reason `BANK` is the revert.
+    for (0..NV) |i| {
+        if (!voiceEdited(@enumFromInt(i))) continue;
+        const r = live[i];
+        w.print(VOICE_KEY ++ "{s} {d:.4} {d:.4} {d:.2} {d:.4} {d:.4}", .{ NAMES[i], r.gain, r.pitch, r.reach, r.jit, r.vjit }) catch return;
+        for (voiceFx[i]) |v| w.print(" {d:.3}", .{v}) catch return;
         w.writeAll("\n") catch return;
     }
 }
@@ -2762,7 +3090,7 @@ pub fn world(id: Id, at: rl.Vector3) void {
 
 pub fn worldAt(id: Id, at: rl.Vector3, gain: f32) void {
     if (!ready) return;
-    const row = BANK[@intFromEnum(id)];
+    const row = live[@intFromEnum(id)];
     const d2 = mathx.dist2XZ(at, lisPos);
     if (d2 > row.reach * row.reach) return;
     const d = @sqrt(d2);
@@ -2780,7 +3108,7 @@ pub fn worldAt(id: Id, at: rl.Vector3, gain: f32) void {
 fn emit(id: Id, vol: f32, pan: f32, pitchScale: f32) void {
     if (!ready or muted or vol <= 0.01) return;
     const idx = @intFromEnum(id);
-    const row = BANK[idx];
+    const row = live[idx];
     const s = &slots[idx];
     if (s.varsReady == 0) return;
     const pick = s.next;
@@ -2791,7 +3119,7 @@ fn emit(id: Id, vol: f32, pan: f32, pitchScale: f32) void {
 fn trigger(snd: rl.Sound, row: Row, vol: f32, pan: f32, pitchScale: f32) void {
     const vj = 1.0 - @abs(rng.signed()) * row.vjit;
     rl.setSoundVolume(snd, levelFor(row, vol, vj));
-    rl.setSoundPitch(snd, (1.0 + rng.signed() * row.jit) * pitchScale);
+    rl.setSoundPitch(snd, row.pitch * (1.0 + rng.signed() * row.jit) * pitchScale);
     rl.setSoundPan(snd, pan);
     rl.playSound(snd);
 }
@@ -2799,7 +3127,7 @@ fn trigger(snd: rl.Sound, row: Row, vol: f32, pan: f32, pitchScale: f32) void {
 fn bed(id: Id, vol: f32) void {
     if (!ready or muted) return;
     const idx = @intFromEnum(id);
-    const row = BANK[idx];
+    const row = live[idx];
     const s = &slots[idx];
     if (s.varsReady == 0) return;
     if (s.varsReady == 1) {
@@ -3429,4 +3757,108 @@ test "THE NOISE FLOOR IS THE CRUSH'S, and it has to stay down" {
     const tailDb = 20.0 * std.math.log10(@max(@sqrt(e / @as(f32, @floatFromInt(n))), 1e-9));
     // MEASURED: −34.7 dBFS at 5.5 bits with ±1 LSB dither, −50.8 dBFS as it stands.
     try std.testing.expect(tailDb < -44.0);
+}
+
+fn crossingsPerSec(id: Id) f32 {
+    const idx: usize = @intFromEnum(id);
+    var r = Rack.init(0x9E3779B9 *% (idx + 1), seconds(id));
+    BANK[idx].make(&r);
+    var n: f32 = 0;
+    var i: usize = 1;
+    while (i < r.n) : (i += 1) {
+        if ((work[i] >= 0) != (work[i - 1] >= 0)) n += 1;
+    }
+    return n / (@as(f32, @floatFromInt(r.n)) / SRF);
+}
+
+test "THE BOSS HAS HIS OWN THROAT — no cue of his measures as the ogre's, and each one differs the right way" {
+    // He borrowed the ogre's step, slam, heave, roar, swipe, hurt and die outright. The ogre is FLESH —
+    // `growl` and `body` and nothing over them — and what tells a sealed suit apart is struck PLATE, which is
+    // `ring`, the layer the ogre never uses. Judged with the timbre taken away, on the zero-crossing rate the
+    // ambient bed is judged by: IRON RINGS, so every struck cue of his sits ABOVE the one it replaced, and a
+    // dead thing inside a helm is LOWER than a living throat, so both voiced ones sit below.
+    const pairs = [_][2]Id{
+        .{ .knight_step, .ogre_step },
+        .{ .knight_roar, .ogre_roar },
+        .{ .knight_slam, .ogre_slam },
+        .{ .knight_heave, .ogre_heave },
+        .{ .knight_swipe, .ogre_swipe },
+        .{ .knight_hurt, .ogre_hurt },
+        .{ .knight_die, .ogre_die },
+    };
+    std.debug.print("\n  knight vs ogre, zero crossings per second:\n", .{});
+    for (pairs) |p| {
+        const k = crossingsPerSec(p[0]);
+        const o = crossingsPerSec(p[1]);
+        std.debug.print("    {s:<13}{d:7.0}  vs  {s:<11}{d:7.0}   ({d:.0}%)\n", .{ @tagName(p[0]), k, @tagName(p[1]), o, 100.0 * (k - o) / o });
+        // NOT A COPY, cue for cue: a family that measured the same as what it replaced would be a rename.
+        try std.testing.expect(@abs(k - o) > 0.03 * o);
+    }
+    for ([_][2]Id{ .{ .knight_slam, .ogre_slam }, .{ .knight_heave, .ogre_heave }, .{ .knight_hurt, .ogre_hurt } }) |p| {
+        try std.testing.expect(crossingsPerSec(p[0]) > crossingsPerSec(p[1]));
+    }
+    for ([_][2]Id{ .{ .knight_roar, .ogre_roar }, .{ .knight_die, .ogre_die } }) |p| {
+        try std.testing.expect(crossingsPerSec(p[0]) < crossingsPerSec(p[1]));
+    }
+    // …AND NONE OF IT IS SPENT WHERE IT CANNOT BE HEARD. A fundamental under ~45 Hz is below most of what
+    // this will be played on, and amplitude down there is amplitude taken off everything audible by `norm`.
+    // It cost the roar and the die a third of their brightness before the sub was lifted out of it.
+    for ([_]Id{ .knight_step, .knight_plant, .knight_roar, .knight_slam, .knight_heave, .knight_swipe, .knight_lunge, .knight_hurt, .knight_die }) |id| {
+        try std.testing.expect(crossingsPerSec(id) > 90.0);
+        try std.testing.expectEqual(Submix.combat, BANK[@intFromEnum(id)].mix);
+        try std.testing.expect(BANK[@intFromEnum(id)].reach >= BANK[@intFromEnum(Id.ogre_swipe)].reach);
+    }
+}
+
+test "THE ANSWER TO THE SEAL IS THE SAME DEPTH AND NOT THE SAME MOOD" {
+    // Owner: like the entry sting, still deep and dark, but MORE HOPEFUL — not scary. Dark is a REGISTER and
+    // frightening is an INTERVAL, so the two are separable and both halves are checkable: the answer sits in
+    // the same subterranean band as the seal (nowhere near a combat cue), and it is the brighter of the two.
+    const seal = crossingsPerSec(.fog_seal);
+    const felled = crossingsPerSec(.fog_felled);
+    std.debug.print("\n  fog gate: seal {d:.0} crossings/s, felled {d:.0} — both under a struck helm at {d:.0}\n", .{ seal, felled, crossingsPerSec(.knight_hurt) });
+    try std.testing.expect(felled > seal * 1.5);
+    try std.testing.expect(felled < 0.25 * crossingsPerSec(.knight_hurt));
+    // The last thing it does is let go, so it outlasts the door shutting.
+    try std.testing.expect(seconds(.fog_felled) > seconds(.fog_seal));
+    try std.testing.expectEqual(BANK[@intFromEnum(Id.fog_seal)].gain, BANK[@intFromEnum(Id.fog_felled)].gain);
+}
+
+test "THE BENCH NEVER OVERWRITES THE ORIGINAL — that is what makes revert free" {
+    // Owner: let me edit basic things on sound fx and save over them, and keep your originals for a revert.
+    // The original is `BANK`, which is const data in the binary — so revert cannot fail, cannot be lost with
+    // a settings file, and nothing has to be backed up before an edit.
+    const id: Id = .knight_roar;
+    const i: usize = @intFromEnum(id);
+    const was = BANK[i];
+    try std.testing.expect(!voiceEdited(id));
+    setDial(id, .gain, 0.11);
+    setDial(id, .pitch, 1.44);
+    setVoiceFx(id, AF_MUFFLE, 0.5);
+    try std.testing.expect(voiceEdited(id) and anyVoiceEdited());
+    try std.testing.expectApproxEqAbs(@as(f32, 0.11), dialOf(id, .gain), 1e-6);
+    // …AND THE AUTHORED ROW HAS NOT MOVED A BIT.
+    try std.testing.expectEqual(was.gain, BANK[i].gain);
+    try std.testing.expectEqual(was.pitch, BANK[i].pitch);
+    // Out-of-range is CLAMPED, not refused: a dial dragged to its end is a value, and a settings file that
+    // arrived with a silly number in it must still leave the game playable.
+    setDial(id, .reach, -50);
+    try std.testing.expectApproxEqAbs(dialSpec(.reach).lo, dialOf(id, .reach), 1e-6);
+    setDial(id, .reach, 1e9);
+    try std.testing.expectApproxEqAbs(dialSpec(.reach).hi, dialOf(id, .reach), 1e-6);
+    revertVoice(id);
+    try std.testing.expect(!voiceEdited(id) and !anyVoiceEdited());
+    try std.testing.expectEqual(was.gain, dialOf(id, .gain));
+    try std.testing.expectEqual(was.reach, dialOf(id, .reach));
+    for (voiceFxValues(id)) |v| try std.testing.expectEqual(@as(f32, 0), v);
+    // THE SHAPE OF A ROW IS NOT ON THE BENCH: `vars`/`poly` size the alias table `freeRow` walks, so a dial
+    // that moved either between a bake and its free would leak or double-free. No setter reaches them.
+    for (0..NV) |k| {
+        try std.testing.expectEqual(BANK[k].vars, live[k].vars);
+        try std.testing.expectEqual(BANK[k].poly, live[k].poly);
+        try std.testing.expectEqual(BANK[k].mix, live[k].mix);
+        try std.testing.expectEqual(BANK[k].id, live[k].id);
+    }
+    try std.testing.expectEqual(NV, NAMES.len);
+    try std.testing.expect(std.mem.eql(u8, NAMES[@intFromEnum(Id.knight_die)], "knight_die"));
 }

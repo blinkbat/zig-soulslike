@@ -610,6 +610,11 @@ const STANCE_MAX = 138.0;
 const RESISTS = combat.resists(.{ .fire = -35, .cold = 60, .chaos = 45 });
 pub const SOULS: u32 = 2400;
 const DEATH_DUR = 2.20;
+/// WHEN THE BODY ARRIVES. `audio.mkKnightDie` writes its crash to this same number, and so does the dust.
+const DEATH_LAND = DEATH_DUR * 0.62;
+const DEATH_SETTLE = 0.46;
+/// How far back past flat the armour rocks before it lies still, in `TOPPLE_DEG` (so 0.06 is ~5.5 deg).
+const DEATH_BOUNCE = 0.06;
 const DISS_DUR = 1.40;
 const DISSOLVE = foe.Dissolve{ .rate = 82.0, .spread = 1.15, .rise = 0.72, .flake = CHIP };
 
@@ -1493,6 +1498,17 @@ pub const Knight = struct {
     pub fn bodyR(self: *const Knight) f32 {
         return BODY_R * self.scale;
     }
+    /// **ON THE GROUND HE IS A CAPSULE, NOT THE RING UNDER HIS BOOTS** (`game.bodyOf`). Standing, every
+    /// creature here is a post and that ring is the whole of it; floored, there are metres of armour lying
+    /// behind the boots and the ring left every inch of it walkable — through the chest, during the one
+    /// window the fall exists to sell. Taken off the SKULL's own mark rather than a length constant, so the
+    /// fall, the roll-over and the rise each hold the ground the body is on THAT frame. The topple pivots on
+    /// the ground point at `pos` (`pose`), which is why the near cap is exactly the standing ring.
+    pub fn bodySeg(self: *const Knight) ?[2]rl.Vector3 {
+        if (!self.floored()) return null;
+        const head = self.topWorld();
+        return .{ self.pos, v3(head.x, self.pos.y, head.z) };
+    }
     pub fn lockPoint(self: *const Knight) rl.Vector3 {
         return foe.markOn(self.xf[CHEST], LOCK_AT);
     }
@@ -1594,13 +1610,25 @@ pub const Knight = struct {
             .downed, .rollover => 1.0,
             .rise => -(1.0 - mathx.smoothstep(RISE_DUR * 0.30, RISE_DUR * 0.84, self.t)) +
                 RISE_OVERSHOOT * mathx.pulse(self.t / RISE_DUR, 0.74, 0.86, 0.90, 1.0),
-            .dead => if (@abs(self.deathFrom) > 0.5)
-                self.deathFrom
-            else
-                lerpF(self.deathFrom, -1.0, mathx.smoothstep(0, DEATH_DUR * 0.62, self.t)),
+            .dead => if (@abs(self.deathFrom) > 0.5) self.deathFrom else deathTopple(self.deathFrom, self.t),
             else => 0,
         };
     }
+    /// **HE FALLS, HE IS NOT LOWERED.** The topple was a smoothstep to flat: constant at both ends, fastest in
+    /// the middle, which is a body on a wire and the exact thing the owner's law calls weightless. A mass on a
+    /// hinge ACCELERATES the whole way down and is going its fastest at the floor, so it is quadratic to
+    /// `DEATH_LAND` — and then it OVERSHOOTS its rest and settles back onto it, `DEATH_BOUNCE` of rock that is
+    /// gone inside half a second.
+    fn deathTopple(from: f32, t: f32) f32 {
+        if (t < DEATH_LAND) {
+            const u = t / DEATH_LAND;
+            return lerpF(from, -1.0, u * u);
+        }
+        const s = (t - DEATH_LAND) / DEATH_SETTLE;
+        if (s >= 1.0) return -1.0;
+        return -1.0 + DEATH_BOUNCE * mathx.sinf(std.math.pi * s) * (1.0 - s);
+    }
+
     fn rollAmt(self: *const Knight) f32 {
         return switch (self.state) {
             .rollover => mathx.smoothstep(ROLL_DUR * 0.12, ROLL_DUR * 0.92, self.t),
@@ -1787,7 +1815,7 @@ pub const Knight = struct {
                 if (!self.dealt and self.t >= t1) {
                     self.dealt = true;
                     self.plantBurst();
-                    sfx.world(.step_hard, self.pos);
+                    sfx.world(.knight_plant, self.pos);
                 }
                 if (self.t >= t1 + HOP.settleDur) self.enterIdle();
             },
@@ -1797,7 +1825,7 @@ pub const Knight = struct {
                 if (self.t >= AWAKEN.liftDur + AWAKEN.holdDur + AWAKEN.settleDur) {
                     self.lit = true;
                     self.quake = mathx.maxF(self.quake, QUAKE_CRATER);
-                    sfx.world(.ogre_roar, self.pos);
+                    sfx.world(.knight_roar, self.pos);
                     self.chaosBurst(self.centerWorld(), 30);
                     self.decide(d, bearing);
                 }
@@ -1825,7 +1853,7 @@ pub const Knight = struct {
                     self.plantBurst();
                     self.dustBurst(self.pos, 14, 2.6, 0.26);
                     self.quake = mathx.maxF(self.quake, QUAKE_BRAKE);
-                    sfx.world(.step_hard, self.pos);
+                    sfx.world(.knight_plant, self.pos);
                 }
                 if (self.t >= LEAP.flightDur) self.air = 0;
                 if (self.t >= LEAP.flightDur + LEAP.landDur) self.decide(d, bearing);
@@ -1842,7 +1870,7 @@ pub const Knight = struct {
                     self.dealt = true;
                     self.plantBurst();
                     self.quake = mathx.maxF(self.quake, QUAKE_STEP * 2.2);
-                    sfx.world(.step_hard, self.pos);
+                    sfx.world(.knight_plant, self.pos);
                 }
                 if (self.t >= t1 + STEPTURN.settleDur) {
                     if (self.stepThen) |mv| {
@@ -1895,7 +1923,7 @@ pub const Knight = struct {
                     if (self.state == .over) {
                         self.dustBurst(seg[1], 20, 3.4, 0.34);
                         self.grit(seg[1], 12);
-                        sfx.world(.ogre_slam, seg[1]);
+                        sfx.world(.knight_slam, seg[1]);
                     } else {
                         self.dustBurst(v3(seg[1].x, self.pos.y, seg[1].z), 9, 2.2, 0.20);
                     }
@@ -2049,6 +2077,13 @@ pub const Knight = struct {
             },
             .dead => {
                 self.easeNeutral(dt);
+                // AND THE BODY ARRIVING IS AN EVENT. Five metres of armour landing was silent and still —
+                // the fall had no bottom to it. `knight_die`'s crash is written to this same instant.
+                if (!self.dealt and self.t >= DEATH_LAND) {
+                    self.dealt = true;
+                    self.quake = mathx.maxF(self.quake, QUAKE_BRAKE);
+                    self.dustBurst(mathx.lerpV(self.pos, self.centerWorld(), 0.6), 22, 3.0, 0.34);
+                }
                 foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE);
             },
         }
@@ -2248,59 +2283,59 @@ pub const Knight = struct {
             },
             .slamwind => {
                 self.blow = .slam;
-                sfx.world(.ogre_heave, self.pos);
+                sfx.world(.knight_heave, self.pos);
             },
             .hop => {
                 self.dealt = false;
-                sfx.world(.ogre_step, self.pos);
+                sfx.world(.knight_step, self.pos);
             },
             // **EVERY COMMITTED MOVE SAYS SO OUT LOUD** (owner: give him audio cues). The three newest were
             // silent, which on a creature whose whole design is "watch him and answer" is a tell deleted: the
             // pad and the lens can be pointed anywhere, and sound is the one channel that cannot miss.
             .stepturn => {
                 self.leapChained = false;
-                sfx.world(.ogre_step, self.pos);
+                sfx.world(.knight_step, self.pos);
             },
             .leapwind => {
-                sfx.world(.ogre_heave, self.pos);
+                sfx.world(.knight_heave, self.pos);
             },
-            .leap => sfx.world(.skel_lunge, self.pos),
+            .leap => sfx.world(.knight_lunge, self.pos),
             .swatwind => {
                 self.windHold = if (self.aiRng.float() < 0.5) 0 else self.aiRng.range(0.10, SWAT_HANG);
                 sfx.world(.swing_light, self.pos);
             },
             .awaken => {
                 self.leapChained = false;
-                sfx.world(.ogre_roar, self.pos);
+                sfx.world(.knight_roar, self.pos);
             },
             .chargewind => {
                 self.blow = .charge;
-                sfx.world(.ogre_roar, self.pos);
+                sfx.world(.knight_roar, self.pos);
                 self.plantBurst();
             },
             .charge => {
-                sfx.world(.ogre_heave, self.pos);
+                sfx.world(.knight_heave, self.pos);
                 self.plantBurst();
             },
             .brake => {
                 self.quake = QUAKE_BRAKE;
-                sfx.world(.step_hard, self.pos);
+                sfx.world(.knight_plant, self.pos);
             },
             .fallwind => {
                 self.blow = .fall;
-                sfx.world(.ogre_roar, self.pos);
+                sfx.world(.knight_roar, self.pos);
                 self.plantBurst();
             },
             .sweep, .sweep2, .over, .thrust, .bash => {
-                sfx.world(.ogre_heave, self.pos);
+                sfx.world(.knight_heave, self.pos);
                 self.plantBurst();
             },
-            .swat => sfx.world(.ogre_swipe, self.pos),
-            .slam => sfx.world(.ogre_heave, self.pos),
-            .rollover => sfx.world(.step_hard, self.pos),
+            .swat => sfx.world(.knight_swipe, self.pos),
+            .slam => sfx.world(.knight_heave, self.pos),
+            .rollover => sfx.world(.knight_plant, self.pos),
             .rise => {
                 self.turnAbout();
-                sfx.world(.ogre_step, self.pos);
+                sfx.world(.knight_step, self.pos);
             },
             else => {},
         }
@@ -2503,7 +2538,7 @@ pub const Knight = struct {
         }
         const far = if (self.state == .bash or self.state == .bashwind) self.shieldHere()[1] else self.wpnHere()[1];
         self.sparks(far, mathx.dirXZ(self.parry.at, self.pos), 18);
-        sfx.world(.bone_hurt, self.pos);
+        sfx.world(.knight_hurt, self.pos);
         switch (self.vit.hit(combat.PARRY_HIT)) {
             .death => self.enterDeath(),
             .heavy => self.enterStun(.stunheavy),
@@ -2532,11 +2567,11 @@ pub const Knight = struct {
         const heavyBlow = foe.wounded(self, s, blade, .{ .light = 0.30, .heavy = 0.55 });
         self.sense.hurt(b.hit.dmg);
         self.chips(s.contact, s.dir, if (heavyBlow) 22 else 13, if (heavyBlow) 3.6 else 2.5);
-        sfx.world(.bone_hurt, self.pos);
+        sfx.world(.knight_hurt, self.pos);
         switch (s.reaction) {
             .death => {
                 self.chips(s.contact, s.dir, 26, 3.2);
-                sfx.world(.bone_die, self.pos);
+                sfx.world(.knight_die, self.pos);
                 self.enterDeath();
             },
             .heavy => if (!self.floored()) self.enterStun(.stunheavy),
@@ -2578,7 +2613,7 @@ pub const Knight = struct {
         if (s.reaction == .death) {
             self.hits += 1;
             self.flash = FLASH_DUR;
-            sfx.world(.bone_die, self.pos);
+            sfx.world(.knight_die, self.pos);
             return self.enterDeath();
         }
         sfx.world(.knight_repel, self.pos);
@@ -2591,7 +2626,7 @@ pub const Knight = struct {
             self.hits += 1;
             self.flash = FLASH_DUR;
             self.grit(s.contact, 14);
-            sfx.world(.bone_hurt, self.pos);
+            sfx.world(.knight_hurt, self.pos);
             if (!self.floored()) self.enterStun(.stunheavy);
             return;
         }
@@ -2928,7 +2963,7 @@ pub const Knight = struct {
     }
 
     pub fn rigScale(self: *const Knight) f32 {
-        return self.scale * (1.0 - 0.62 * self.fade);
+        return foe.rigScale(self.scale, self.fade);
     }
 
     pub fn pose(self: *Knight) void {
@@ -2997,12 +3032,17 @@ pub const Knight = struct {
         ));
 
         if (dead) {
-            setLocal(wx, HIPL, rest, mul(rx(34.0 * dk), rz(-4.0)));
-            setLocal(wx, KNEEL, rest, rx(8.0 + 74.0 * dk));
-            setLocal(wx, ANKL, rest, rx(18.0 * dk));
-            setLocal(wx, HIPR, rest, mul(rx(28.0 * dk), rz(4.0)));
-            setLocal(wx, KNEER, rest, rx(8.0 + 62.0 * dk));
-            setLocal(wx, ANKR, rest, rx(14.0 * dk));
+            // **A FELLED STATUE DOES NOT CURL** (owner: don't put his legs up). This bent 34/28 deg of hip
+            // and 74/62 of knee into `dk`, and on a body going over FORWARD that threw both boots 3.30 m in
+            // the air behind him — twice his own knee, the dead-bug read. It is the law the floored branch
+            // below already states: flat, both legs are STRAIGHT, and the only thing between them is the few
+            // degrees that keep a pair of legs from reading as one mannequin's.
+            setLocal(wx, HIPL, rest, mul(rx(-5.0 * dk), rz(-6.0)));
+            setLocal(wx, KNEEL, rest, rx(6.0 + 5.0 * dk));
+            setLocal(wx, ANKL, rest, rx(-9.0 * dk));
+            setLocal(wx, HIPR, rest, mul(rx(-2.0 * dk), rz(5.0)));
+            setLocal(wx, KNEER, rest, rx(6.0 + 3.0 * dk));
+            setLocal(wx, ANKR, rest, rx(-5.0 * dk));
         } else if (self.floored()) {
             // ONE KNEE COMES UNDER HIM on the rise and the other stays out — symmetric legs would be a
             // sit-up. Flat, both are straight: a felled statue does not bend. …and the TOP LEG is thrown
@@ -3110,7 +3150,7 @@ pub const Knight = struct {
         self.dustBurst(mid, 48, 5.8, 0.52);
         self.grit(mid, 20);
         foe.floorBurst(&self.parts, from, self.fxHead, self.pos.y);
-        sfx.world(.ogre_slam, mid);
+        sfx.world(.knight_slam, mid);
     }
     fn slamRingTell(self: *Knight, dt: f32) void {
         const k = mathx.clampF(self.t / SLAM.windDur, 0, 1);
@@ -3155,7 +3195,7 @@ pub const Knight = struct {
             );
         }
         self.grit(at, 18);
-        sfx.world(.ogre_slam, at);
+        sfx.world(.knight_slam, at);
     }
     fn chaosTrail(self: *Knight) void {
         if (!self.lit) return;
@@ -3237,7 +3277,7 @@ pub const Knight = struct {
         const at = v3(self.pos.x - f.z * side * rr, self.pos.y + 0.05, self.pos.z + f.x * side * rr);
         self.dustBurst(at, 9, 1.7, 0.19);
         self.quake = mathx.maxF(self.quake, QUAKE_STEP);
-        sfx.world(.ogre_step, at);
+        sfx.world(.knight_step, at);
     }
     pub fn drawFx(self: *const Knight) void {
         foe.drawParticles(&self.parts);
@@ -5437,4 +5477,63 @@ test "THE CHARGE COMES FROM A STEP OUTSIDE HIS SWORD — not only from across th
     std.debug.print("  charge: {d:.1} m in the first half second, hero sprints {d:.1} m\n", .{ half, heromod.SPRINT_SPEED * 0.5 });
     try std.testing.expect(half > heromod.SPRINT_SPEED * 0.5 * 1.6);
     try std.testing.expect(Knight.brakeDist(CHARGE.brakeDur) < 4.2);
+}
+
+test "A FELLED STATUE DOES NOT CURL — the death keeps his legs on the ground and puts his head there" {
+    // Owner: the death anim is terrible, don't put his legs up for one. It DID: the dead pose bent 34/28 deg
+    // of hip and 74/62 of knee into `dk`, and on a body going over FORWARD that threw both boots in the air
+    // behind him — the dead-bug read. Measured on the ANKLES, in metres off the ground he died on, against
+    // his own knee, which is the highest a straight leg can ever put a foot while the body lies flat.
+    var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const kneeY = k.rest[KNEEL].y * k.scale;
+    k.debugKill();
+    var t: f32 = 0;
+    var foot: f32 = 0;
+    var head: f32 = 1e9;
+    var far: f32 = 0;
+    while (t <= DEATH_DUR) : (t += 1.0 / 120.0) {
+        k.t = t;
+        k.easeFloored(1.0);
+        k.pose();
+        foot = mathx.maxF(foot, mathx.maxF(k.xf[ANKL].m13, k.xf[ANKR].m13));
+        if (t > DEATH_DUR * 0.75) {
+            head = mathx.minF(head, k.topWorld().y);
+            far = mathx.maxF(far, mathx.distXZ(k.pos, k.topWorld()));
+        }
+    }
+    std.debug.print("\n  death: highest boot {d:.2} m (knee sits at {d:.2}), helm settles {d:.2} m up and {d:.2} m out\n", .{ foot, kneeY, head, far });
+    try std.testing.expect(foot < kneeY);
+    try std.testing.expect(head < kneeY);
+    try std.testing.expect(far > 2.5);
+}
+
+test "A FLOORED BODY HOLDS THE GROUND IT IS LYING ON — the capsule, not the ring at his boots" {
+    const collision = @import("../core/collision.zig");
+    var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    k.pose();
+    // Standing he is a post, and the ring under it is the whole of him — no capsule, and nothing changes.
+    try std.testing.expect(k.bodySeg() == null);
+    k.state = .downed;
+    k.t = DOWN_DUR * 0.5;
+    k.easeFloored(1.0);
+    k.pose();
+    const seg = k.bodySeg().?;
+    const len = mathx.distXZ(seg[0], seg[1]);
+    const cap = collision.capsule(seg[0].x, seg[0].z, seg[1].x, seg[1].z, k.bodyR());
+    const ring = collision.circle(k.pos.x, k.pos.z, k.bodyR());
+    // Every step of the way down his body, from the ring's edge to the helm, is now held.
+    var u: f32 = 0.25;
+    var walked: f32 = 0;
+    while (u <= 1.0) : (u += 0.05) {
+        const p = mathx.lerpV(seg[0], seg[1], u);
+        try std.testing.expect(collision.blocksPoint(p, foe.HERO_R * 0.5, cap));
+        if (!collision.blocksPoint(p, foe.HERO_R * 0.5, ring)) walked = mathx.maxF(walked, mathx.distXZ(k.pos, p));
+    }
+    std.debug.print("\n  floored: {d:.2} m of body behind a {d:.2} m ring — {d:.2} m of it was walk-through\n", .{ len, k.bodyR(), walked });
+    try std.testing.expect(len > 2.5);
+    try std.testing.expect(walked > len * 0.5);
+    // …and it goes back to the ring the moment he is on his feet.
+    k.state = .idle;
+    k.t = 0;
+    try std.testing.expect(k.bodySeg() == null);
 }

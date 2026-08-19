@@ -2531,11 +2531,17 @@ fn knightStrokeStrips(
             else
                 cl.wind + cl.strike * (@as(f32, @floatFromInt(f - NW)) + 0.5) / @as(f32, @floatFromInt(NS));
             spawn(k, sc, mathx.headingXZ(mathx.dirXZ(sc, side)));
+            // EVERY INDEX THE TABLE CAN HAND IT IS NAMED. As `else => debugBash()` the two rows not in
+            // `strokes` today (the chained sweep, the swat) would photograph a BASH under their own caption
+            // the day one is added, which is the silent kind of wrong a shot cannot show you.
             switch (st.i) {
                 knightmod.SWEEP_I => k.debugSweep(),
+                knightmod.SWEEP2_I => k.debugSweep2(),
                 knightmod.OVER_I => k.debugOverhead(),
                 knightmod.THRUST_I => k.debugThrust(),
-                else => k.debugBash(),
+                knightmod.BASH_I => k.debugBash(),
+                knightmod.SWAT_I => k.debugSwat(true),
+                else => unreachable,
             }
             run(k, at, side);
             var name: [64]u8 = undefined;

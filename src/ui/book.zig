@@ -424,7 +424,7 @@ fn quickTally(k: item.Kind, v: View) u8 {
 fn castsLeft(fp: f32, s: combat.Spell, v: View) u8 {
     const cost = castFp(s, v.tree.bonus());
     if (cost <= 0) return 0;
-    return @intFromFloat(@max(0, @floor(fp / cost)));
+    return @intFromFloat(mathx.clampF(@floor(fp / cost), 0, 255));
 }
 
 const Cand = struct { name: [:0]const u8, tally: ?u8 = null, act: Action };
@@ -1620,6 +1620,18 @@ const PORT_W: i32 = 460;
 const PORT_H: i32 = 760;
 var portRT: ?rl.RenderTexture2D = null;
 
+/// The doll's own framing — head-to-boots at arm's length, where `hud.PORTRAIT_*` is a face.
+const DOLL_EYE: f32 = 0.94;
+const DOLL_DIST: f32 = 3.5;
+const DOLL_PITCH: f32 = 0.14;
+const DOLL_FOV: f32 = 40.0;
+const DOLL_CLEAR = rgba(14, 12, 10, 255);
+
+fn drawDoll(ctx: *const anyopaque) void {
+    const h: *const heromod.Hero = @ptrCast(@alignCast(ctx));
+    h.draw();
+}
+
 pub fn unload() void {
     if (portRT) |t| rl.unloadRenderTexture(t);
     portRT = null;
@@ -1644,32 +1656,20 @@ fn drawPortrait(self: *const Book, col: Box, portrait: ?Portrait, caption: [:0]c
     if (portRT == null) portRT = rl.loadRenderTexture(PORT_W, PORT_H) catch null;
     const rt = portRT orelse return;
 
-    const focus = v3(p.hero.pos.x, p.hero.pos.y + 0.94, p.hero.pos.z);
-    const dist: f32 = 3.5;
-    const pitch: f32 = 0.14;
-    const cp = mathx.cosf(pitch);
-    const yaw = p.hero.facing + self.spin;
-    const cam = rl.Camera3D{
-        .position = v3(
-            focus.x + mathx.sinf(yaw) * cp * dist,
-            focus.y + mathx.sinf(pitch) * dist,
-            focus.z + mathx.cosf(yaw) * cp * dist,
-        ),
-        .target = focus,
-        .up = v3(0, 1, 0),
-        .fovy = 40,
-        .projection = .perspective,
-    };
-    rl.beginTextureMode(rt);
-    rl.clearBackground(rgba(14, 12, 10, 255));
-    rl.beginMode3D(cam);
-    p.scene.bind(cam.position);
-    p.scene.shadowsOff();
-    p.scene.setLights(&.{});
-    p.scene.setGround(false);
-    p.hero.draw();
-    rl.endMode3D();
-    rl.endTextureMode();
+    // THROUGH THE ONE PATH (`hud.renderIntoTarget`), which is the law AGENTS.md already states — the book's
+    // doll, the conversation's speaker and the spirit panel are one way of photographing a body. Only the
+    // TARGET is the book's, because a full-length doll is not a head shot's aspect.
+    hud.renderIntoTarget(rt, .{
+        .scene = p.scene,
+        .focus = v3(p.hero.pos.x, p.hero.pos.y + DOLL_EYE, p.hero.pos.z),
+        .yaw = p.hero.facing + self.spin,
+        .pitch = DOLL_PITCH,
+        .dist = DOLL_DIST,
+        .fov = DOLL_FOV,
+        .clear = DOLL_CLEAR,
+        .ctx = @ptrCast(p.hero),
+        .drawFn = drawDoll,
+    });
 
     rl.drawTexturePro(rt.texture, .{ .x = 0, .y = 0, .width = fi(PORT_W), .height = -fi(PORT_H) }, dst, .{ .x = 0, .y = 0 }, 0, rl.Color.white);
     uiart.candle(dx + @divTrunc(dw, 2), dy + dh - @divTrunc(dh, 7), fi(dw) * 0.44, 30);

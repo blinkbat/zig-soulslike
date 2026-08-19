@@ -725,6 +725,15 @@ pub fn floorBurst(pool: []Particle, from: usize, to: usize, floor: f32) void {
     while (i != to) : (i = (i + 1) % pool.len) pool[i].floor = floor;
 }
 
+/// **A BODY GOES BY GOING TRANSPARENT, NOT BY GETTING SMALL** (owner: don't shrink them so much, fade them
+/// out opacity-wise). Every creature shrank 55-85% on the way out, which at any distance is a corpse walking
+/// off into the ground rather than one leaving. What is left here is a SETTLE — a tenth, which you would not
+/// name unless you were looking for it — and the vanish itself is the alpha `drawGroup` hands the shader.
+pub const DEATH_SHRINK: f32 = 0.10;
+pub fn rigScale(scale: f32, fade: f32) f32 {
+    return scale * (1.0 - DEATH_SHRINK * fade);
+}
+
 pub const Dissolve = struct {
     rate: f32 = 54.0,
     spread: f32 = 0.85,
@@ -893,6 +902,7 @@ pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
     var iced: f32 = -1;
     for (foes) |*f| {
         if (!f.alive()) continue;
+        var thin: f32 = 1;
         if (scene) |sc| {
             const want = FLASH_GAIN * f.flashFrac();
             if (want != lit) {
@@ -906,8 +916,13 @@ pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
                     iced = cold;
                 }
             }
+            // …AND THE DISSOLVE IS AN ALPHA (`DEATH_SHRINK`). Only ever on the view pass: the depth pass has
+            // no fade uniform to answer, and a body still has its shadow while any of it is left.
+            if (comptime @hasField(@TypeOf(f.*), "fade")) thin = 1.0 - f.fade;
+            if (thin < 0.999) sc.beginFade(thin);
         }
         f.draw(model);
+        if (thin < 0.999) scene.?.endFade();
     }
     if (scene) |sc| {
         if (lit > 0) sc.setFlash(0);

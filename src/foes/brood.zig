@@ -1636,7 +1636,7 @@ pub const Spider = struct {
 
 
     pub fn pose(self: *Spider) void {
-        const fs = self.scale * (1.0 - 0.8 * self.fade);
+        const fs = foe.rigScale(self.scale, self.fade);
         const sink = -0.24 * self.scale * self.fade;
         const bodyDrop = -self.crouch * 0.30;
         const ride = self.pos.y + self.lift + sink + self.settle - rideDrop(self.role) * fs;

@@ -1930,17 +1930,13 @@ pub const Hero = struct {
         return combat.spellFp(self.spell) * self.perk.spellCost;
     }
 
+    /// **THE RING IS THE TABLE'S OWN ORDER** (`combat.SPELLS`, pinned to `combat.Spell` at comptime).
+    /// Written out as a switch it was that order stated a second time, and the failure was silent: an eighth
+    /// spell added with its own arm but the row before it left pointing at `.bolt` compiles, and the spell
+    /// the player paid for is simply not on the rod.
     pub fn cycleSpell(self: *Hero) bool {
         if (self.dead or self.casting) return false;
-        self.spell = switch (self.spell) {
-            .bolt => .roots,
-            .roots => .rime,
-            .rime => .levin,
-            .levin => .siphon,
-            .siphon => .lance,
-            .lance => .sunder,
-            .sunder => .bolt,
-        };
+        self.spell = @enumFromInt((@intFromEnum(self.spell) + 1) % combat.SPELLS.len);
         return true;
     }
 
@@ -4969,6 +4965,20 @@ test "REPEATED CASTS SWEEP OPPOSITE WAYS, and the bolt leaves ONCE, from over hi
     }
     try std.testing.expect(sides[0] != sides[1]);
     try std.testing.expect(peak > 0);
+}
+
+test "THE ROD'S RING VISITS EVERY SPELL ONCE AND COMES BACK — off the table's order, not a second copy of it" {
+    var h = testHero();
+    var seen = [_]bool{false} ** combat.SPELLS.len;
+    const from = h.spell;
+    for (0..combat.SPELLS.len) |_| {
+        const i = @intFromEnum(h.spell);
+        try std.testing.expect(!seen[i]);
+        seen[i] = true;
+        try std.testing.expect(h.cycleSpell());
+    }
+    try std.testing.expectEqual(from, h.spell);
+    for (seen) |v| try std.testing.expect(v);
 }
 
 test "THE BOLT IS ALL CHAOS, and it is worth more than a light slash before anything resists it" {

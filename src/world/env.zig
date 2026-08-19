@@ -987,6 +987,19 @@ pub const Env = struct {
         return self.solid_buf[a .. a + self.wardSolidN[i]];
     }
 
+    /// **A FOG GATE IS A WALL UNTIL HE ASKS TO PASS IT** (owner) — which ward, if any, refuses this step of
+    /// his, whether or not it is shut. A gate standing open to anyone who walked at it made the prompt, the
+    /// committed walk and the sting all optional, so a boss's door was a curtain. `walking` is the ward the
+    /// scripted crossing (`game.enterGate`) is on, and it is the only exemption there is. A SPENT gate never
+    /// answers: `eachSolid` retires it at `wardLife` 0, so `wardCrossed` cannot see one.
+    pub fn wardRefusing(self: *const Env, a: rl.Vector3, b: rl.Vector3, walking: ?u8) ?u8 {
+        const w = self.wardCrossed(a, b) orelse return null;
+        if (walking) |on| {
+            if (on == w) return null;
+        }
+        return w;
+    }
+
     /// Standing, and passable: the one predicate for "is this a door he could use".
     pub fn wardOpen(self: *const Env, i: u8) bool {
         return i < self.nwards and !self.wardShut[i] and self.wardLife[i] > 0;
@@ -1134,6 +1147,23 @@ pub const Env = struct {
 
     pub fn walkStep(self: *const Env, from: rl.Vector3, dir: rl.Vector3, dist: f32) rl.Vector3 {
         return self.walkStepPast(from, dir, dist, WADE_MAX);
+    }
+
+    /// **THE STEP A BODY HAS ALREADY TAKEN, ASKED OF THE GROUND** — `walkStepPast` put as the SEGMENT its
+    /// callers actually hold. Both post-step gates (`game.gateTerrain` for every creature, `game.gatedXZ`
+    /// for the hero) had the same four lines solving a heading and a length out of `was`→`now` before they
+    /// could ask, which is one piece of arithmetic written twice on either side of one law. A move too small
+    /// to have a direction is handed straight back.
+    pub fn walkSegmentPast(self: *const Env, from: rl.Vector3, to: rl.Vector3, wade: f32) rl.Vector3 {
+        const dx = to.x - from.x;
+        const dz = to.z - from.z;
+        const d = @sqrt(dx * dx + dz * dz);
+        if (d < 1e-5) return to;
+        return self.walkStepPast(from, v3(dx / d, 0, dz / d), d, wade);
+    }
+
+    pub fn walkSegment(self: *const Env, from: rl.Vector3, to: rl.Vector3) rl.Vector3 {
+        return self.walkSegmentPast(from, to, WADE_MAX);
     }
 
     pub fn walkStepPast(self: *const Env, from: rl.Vector3, dir: rl.Vector3, dist: f32, wade: f32) rl.Vector3 {
@@ -2542,6 +2572,23 @@ test "A CROSSING CLEARS THE SHEET WHEREVER HE STARTED FROM" {
     const back = e.wardCross(0, v3(0, 0, 1.4), R).?;
     try std.testing.expect(back.dir.z < -0.9);
     try std.testing.expect(back.to.z < 0);
+}
+
+test "A FOG GATE BLOCKS HIM UNTIL HE ASKS TO PASS IT — the walk is the only way through" {
+    // Owner: it should block you until you Enter. It did NOT — the sheet was open to anyone who walked at it
+    // and only became solid once he was through with the boss still up, so the prompt, the slow committed
+    // walk and the sting were all a ceremony you could stroll straight past.
+    const e = try envWithFogGate();
+    defer std.testing.allocator.destroy(e);
+    const there = v3(0, 0, -5);
+    const back = v3(0, 0, 5);
+    try std.testing.expectEqual(@as(?u8, 0), e.wardRefusing(there, back, null));
+    try std.testing.expectEqual(@as(?u8, 0), e.wardRefusing(back, there, null)); // …and leaving, the same
+    // THE ONE EXEMPTION is the walk `enterGate` started, and only through the ward that walk is on.
+    try std.testing.expectEqual(@as(?u8, null), e.wardRefusing(there, back, 0));
+    try std.testing.expectEqual(@as(?u8, 0), e.wardRefusing(there, back, 1)); // a walk at another door is not this one
+    // Round the end of the sheet is not a crossing and never was.
+    try std.testing.expectEqual(@as(?u8, null), e.wardRefusing(v3(6, 0, -5), v3(6, 0, 5), null));
 }
 
 test "A SHUT GATE IS A WALL TO HIM TOO, and an open one is not" {

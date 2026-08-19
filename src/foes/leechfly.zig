@@ -680,7 +680,7 @@ pub const Leechfly = struct {
     /// ONE WORLD MATRIX PER BONE, once a frame. `draw` only replays them, so the silhouette and the shadow
     /// can never disagree (the hero's law, and it holds for everything with a rig).
     pub fn pose(self: *Leechfly) void {
-        const fs = self.scale * (1.0 - 0.7 * self.fade);
+        const fs = foe.rigScale(self.scale, self.fade);
         const bob = mathx.sinf((self.elapsed + self.seed) * BOB_HZ * std.math.tau) * BOB_AMP * self.scale;
         const root = mul3(
             scaleM(fs, fs, fs),

@@ -845,7 +845,7 @@ pub const Kobold = struct {
     }
 
     pub fn pose(self: *Kobold) void {
-        const fs = self.scale * (1.0 - 0.55 * self.fade);
+        const fs = foe.rigScale(self.scale, self.fade);
         const sink = -0.4 * self.scale * self.fade;
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;

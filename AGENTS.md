@@ -272,8 +272,22 @@ whose contents change together is fine. Splits go where concerns genuinely part 
   live in `foe.zig` at all: a creature's own emitter is private and nothing outside its file can call one.
   **The SHADE is the one exemption and it is written at its own `.dead`:** no collapse to be still after and
   nothing to shed, so it thins from the first frame instead.
+- **AND A BODY GOES BY GOING TRANSPARENT, NOT BY GETTING SMALL** (owner: don't shrink them so much on death,
+  fade them out opacity-wise). Every creature shrank 55–85 % on the way out, which at any distance is a corpse
+  walking off into the ground rather than one leaving. `foe.rigScale(scale, fade)` is the ONE dial now and it
+  is a tenth (`DEATH_SHRINK`) — a settle you would not name unless you were looking for it. The vanish itself
+  is an ALPHA: `drawGroup` hands the shader `1 − fade` through `Scene.beginFade`, which is the fog gate's and
+  the spirit wolf's own path (depth-mask off while it draws). VIEW PASS ONLY — the depth pass has no fade
+  uniform to answer, and a body keeps its shadow while any of it is left.
 - **A CORPSE IS NOT A COLLIDER.** `alive()` stays true through the collapse and dissipation, so every
   collision site asks `foe.corporeal` (`alive() and !dying()`) instead.
+- **…BUT A BODY ON THE GROUND IS A CAPSULE, NOT THE RING AT ITS FEET** (`game.bodyOf`). Standing, every
+  creature here is a post and that ring is the whole of it. Floored, the knight is 5.15 m of armour lying
+  behind his boots and the ring held 1.77 of it — 4.89 m of body you could walk straight through, during the
+  one window the fall exists to sell. A creature that can lie down answers `bodySeg` (`?[2]rl.Vector3`, taken
+  off its own posed SKULL so the fall, the roll-over and the rise each hold the ground the body is on THAT
+  frame); everything else has no such state and `pushOut` on a degenerate segment IS `pushOutCircle`, so
+  nothing else changes by a bit.
 - **Group + register.** Wrap instances in a `Group` exposing `anyDied`/`totalHits`/`aliveCount`; its
   `reset` and `draw` are ONE-LINE DELEGATES to `foe.resetGroup`/`foe.drawGroup`. The draw's
   `setFlash(0)` tail is what a fourth copy would forget.
@@ -633,6 +647,17 @@ the hop → nothing, it is HIS answer to you), against 640 HP that only comes of
   barrel roll lying down. **So every world point on him comes off a POSED BONE, not a height off his feet**:
   `centerWorld` rides the pelvis, `lockPoint` the chest, `topWorld` the helm. A hurt sphere pinned to 2.9 m
   would hang in the air over a body lying on the ground.
+- **HE FALLS, HE IS NOT LOWERED** (`deathTopple`). The death was a smoothstep to flat — slowest at both ends,
+  which is a body on a wire and the exact thing the weight law calls weightless. A mass on a hinge
+  ACCELERATES the whole way down, so it is quadratic to `DEATH_LAND` (0.62 × `DEATH_DUR`) and then OVERSHOOTS
+  its rest and settles back onto it (`DEATH_BOUNCE`, 5.5 deg, gone inside half a second). **And the body
+  arriving is an EVENT** — dust, `QUAKE_BRAKE`, and `audio.mkKnightDie`'s crash all written to that same
+  instant; five metres of armour used to land in silence with nothing moving.
+- **A FELLED STATUE DOES NOT CURL** (owner: don't put his legs up). The dead pose bent 34/28 deg of hip and
+  74/62 of knee into `dk`, and on a body going over FORWARD that threw both boots to 3.30 m — twice his own
+  knee, the dead-bug read. It is the law the FLOORED branch beside it already states: flat, both legs are
+  straight, and the only thing between them is the few degrees that stop a pair of legs reading as one
+  mannequin's. Measured at the ankles against the knee, and pinned (1.11 m against a 1.51 m knee).
 - **AND THE DOOR MUST BE SEEN TO LEAVE** (`swipeOpen`, the picture of `guardUp`, and a test pins them together).
   The shield arm swings out to pay for a SWIPE, so the door turns edge-on and off his front — which is the
   other way in. The first pass of this law had `guardUp` false through a whole stroke while the shield still
@@ -710,11 +735,42 @@ the hop → nothing, it is HIS answer to you), against 640 HP that only comes of
   creature whose whole design is "watch him and answer". Each cue is the voice that matches the MASS
   involved rather than a generic whoosh — and the SWAT gets the light one, because a flick that grunts like
   a committed stroke lies about its weight exactly the way its gather would.
-- **HE HAS ONE VOICE OF HIS OWN: `knight_repel`** (owner: it needs a better shield repel sound).
-  `guard_block` is a MAN's boards — a bright tick and a short high ring — and on four and a half metres of
-  plank it read as a coin dropped on a table. His is almost no tick, a deep body that takes its time, and
-  the ring dropped two octaves: what comes back is the mass, not the edge. The rest
-  (`ogre_step`/`ogre_slam`/`ogre_heave`/`ogre_roar`, `bone_hurt`/`bone_die`) are still borrowed.
+- **AND HE HAS HIS OWN THROAT** — ten `knight_*` voices, and the only shared cues left on him are
+  `swing_light`/`swing_heavy`, which are a blade through air and belong to every blade in the game. He was
+  playing eighteen borrowed lines: the ogre's step, slam, swipe, heave and roar, the skeletons' hurt and die,
+  the skeleton's lunge, and the HERO's own footstep (gain 0.100, reach 46) under five metres of armour
+  landing. **IRON OVER BONE, AND NOTHING ALIVE INSIDE IT:** the ogre is FLESH — `growl` and `body` and
+  nothing over them — so every cue here carries a `ring`, which is struck plate and the one layer the ogre
+  never uses, over `grit` that is dry bone rather than a wet thump. Checkable with the timbre taken away, on
+  the zero-crossing rate the ambient bed is judged by: the STRUCK cues (slam, heave, hurt) sit 5–7 % above the
+  ones they replaced and the VOICED ones sit below, because a dead thing in a helm is lower than a living
+  throat. `knight_repel` was the first of them (owner: it needs a better shield repel sound) — `guard_block`
+  is a MAN's boards, a bright tick and a short high ring, and on four and a half metres of plank it read as a
+  coin dropped on a table.
+- **AND NOTHING IS SPENT WHERE IT CANNOT BE HEARD.** The roar and the die each carried a fundamental at
+  26–41 Hz, which is under most of what this gets played on — and `norm` scales by PEAK, so amplitude down
+  there is amplitude taken off everything audible. Lifting both out of it bought the roar 70 % of its
+  brightness back. A test floors every voice of his at 90 crossings/s.
+
+#### His door (`props.Info.ward`, `env.ward*`, `game.markWards`)
+
+- **A FOG GATE IS A WALL UNTIL HE ASKS TO PASS IT** (owner: it should block you until you Enter). It stood
+  open to anyone who walked at it and only turned solid once he was through with the boss still up, which
+  made the prompt, the slow committed walk and the sting a ceremony you could stroll straight past. The ONE
+  crossing allowed is `enterGate`'s walk and only through the ward that walk is on (`env.wardRefusing`);
+  refused on the SEGMENT, not left to the push-out, because a roll is 3.5 m in one step and the sheet is
+  0.8 m thick. A SPENT gate never answers — `eachSolid` retires it at `wardLife` 0.
+- **THE LATCH AND THE DOOR ARE DELIBERATELY APART.** The latch is his own step crossing the sheet
+  (`markWardStep`); the door is only SHUT while the creature `Op.boss` names is still standing, so a gate
+  whose boss is already dead is a doorway you walk both ways, and killing it is what lets you back out. A
+  gate may not shut on the man in it (`wardClear`). It is a wall to every FOE and every LOOK regardless.
+- **AND THE SEAL IS OWED AN ANSWER** (`fog_felled`; owner: like the entry sting, still deep and dark but more
+  hopeful, not scary). **DARK is a REGISTER and FRIGHTENING is an INTERVAL**, so the two come apart: the
+  answer keeps the seal's root (A1, 55 Hz) and its whole subterranean band, and swaps the TRITONE that
+  arrives a beat late for the perfect FIFTH, with the major third landing last — an A major triad where the
+  seal is the one interval nobody hears as resolved. The sub RISES the semitone the seal's sags, the choir
+  opens upward, and the air brightens across the take where the seal's closes down. One shot, off the first
+  frame of `wardLife` leaving 1.
 
 ### The delver (`delver.zig`) — the first thing that goes UNDER the world
 
@@ -1629,7 +1685,7 @@ and means nothing. A new game is bare-handed (`STARTING_KIT` is still the wolf s
   leaves no trace.
 - **THE PICKER OFFERS BOTH AXES AS ONE LIST** (`book.Hand`): every armament, and under each the gear he is
   CARRYING that fills it. "What is in this hand" is one question, and a second picker over the same socket is it
-  asked twice. So the row has to be COUNTED rather than taken as an ordinal (`book.handRowOf`) — the quick bar's
+  asked twice. So the row has to be COUNTED rather than taken as an ordinal (`book.pickIndexOf`) — the quick bar's
   own lesson one socket along. The VARIANT is the ARMAMENT'S, not the hand's: whichever fist holds `.sword`
   swings whatever sword he owns.
 - **THE VARIANT IS NOT REFUSED WHEN THE HAND IS** (`game.takeHand`) — `hero.equip` says no mid-swing, and a
@@ -2503,6 +2559,16 @@ not the stick-speed `runB`.
   the one place a voice can be played on demand is the list next to it. Its eleven dials end in the EQ pair
   (`AF_BASS`, `AF_PRESENCE`), which are applied LAST — the tone of the result, not another thing to distort.
   The RETRO rack stays in the menu; that one is a LOOK the player picks.
+- **AND THE BENCH EDITS ONE VOICE, NOT JUST A FAMILY** (owner: let me edit basic things on sound fx —
+  filters, EQ, vol — and save over them, keep your originals for a revert). `BANK` is the ORIGINAL and never
+  moves; `live` is the copy every play path reads and the only thing the editor writes, so **revert is free
+  and cannot be lost** — it needs no backup file, and a voice re-authored in code reaches a save that never
+  mentioned it. `settings.cfg` carries the DIFFERENCE only, one `voice.<name>` line per edited voice.
+  Five dials (`Dial`: vol, pitch, reach, and the two jitters) answer under the finger; the eleven filters are
+  bake-time like the family's and ride the same `FX_SETTLE`, applied ON TOP of it. **`vars` and `poly` are
+  NOT on the bench**: they size the alias table `freeRow` walks to unload a row, so a dial that moved either
+  between a bake and its free would leak or double-free — they, `mix`, `id` and `make` are read from `BANK`
+  everywhere and have no setter. A test pins all four against `live` for every voice in the game.
 - **Never bulk-edit source through PowerShell** `Get-Content`/`Set-Content`: em dashes mojibake and a
   BOM appears. Use the Edit tool.
 
@@ -2515,14 +2581,15 @@ cannot be bolted on AFTER `legChain` — that is the hand that levels the ankle 
 override there un-levels the foot (FEET DO NOT SINK) — and a bespoke walk is forbidden outright. The stance
 has to go THROUGH `legChain`, which is the shared humanoid one, so it is every creature's change, not his.
 
-THE BONE KNIGHT HAS HIS BAR BUT NOT HIS ROOM: no arena, no fog gate, no `worldfmt` boss record (see
-`inCombat`'s note), and **no `knight_*` voice family** — he borrows the ogre's step, slam, heave and roar and
-the skeletons' hurt and die, and every new move (the stomp, the charge, the brake) borrows too. And a DOWNED
-knight's collider is still the circle at his feet, so the three metres of body lying behind them can be
-walked through — a capsule for a floored creature is the fix, and nothing else in the game needs one yet.
+THE BONE KNIGHT HAS HIS ROOM NOW — a cliff-ringed bowl of torches in the shipped map, a fog gate on
+`Op.boss`, his own ten-voice family, and a capsule under him while he is floored. WHAT HE STILL HAS NO
+ANSWER TO IS THE PUNISH: the parry buys a stagger and nothing behind it, so the one boss in the game is also
+the one creature a riposte would most obviously belong to. His arena is authored by HAND in the `.world`
+file like every other structure — there is no arena brush, and the editor has no way to say "these props are
+a room".
 
-THE NECROMANCER HAS NO `necro_*` VOICE FAMILY — it borrows the shade's, the wand's and the skeletons', the Bone
-Knight's own gap one creature along. Nothing RESISTS cold on the hero's side either: the sheet shows all four at
+THE NECROMANCER HAS NO `necro_*` VOICE FAMILY — it borrows the shade's, the wand's and the skeletons', which is
+the gap the Bone Knight just came out of and the pattern for filling it. Nothing RESISTS cold on the hero's side either: the sheet shows all four at
 0% and there is no cold-warding item, so the game's one cold source lands on him unmitigated by construction.
 And nothing raises a body but this creature, so `foe.rekindle` has exactly two callers.
 

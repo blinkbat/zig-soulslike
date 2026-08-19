@@ -550,7 +550,7 @@ pub const Rooted = struct {
     }
 
     pub fn pose(self: *Rooted) void {
-        const fs = self.scale * (1.0 - 0.55 * self.fade);
+        const fs = foe.rigScale(self.scale, self.fade);
         const root = mul3(
             scaleM(fs, fs, fs),
             ry(mathx.degrees(self.facing)),

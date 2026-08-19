@@ -990,7 +990,7 @@ pub const Delver = struct {
     }
 
     pub fn pose(self: *Delver) void {
-        const fs = self.scale * (1.0 - 0.5 * self.fade);
+        const fs = foe.rigScale(self.scale, self.fade);
         const sink = mathx.sinf(mathx.radians(@abs(self.drill))) * BODY_HALF;
         const clear = sink * (1.0 - mathx.clampF(self.depth / UNDER_DEPTH, 0, 1)) * fs;
         const root = mul3(

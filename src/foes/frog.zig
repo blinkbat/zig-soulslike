@@ -752,7 +752,7 @@ pub const Frog = struct {
     }
 
     pub fn pose(self: *Frog) void {
-        const fs = self.scale * (1.0 - 0.85 * self.fade);
+        const fs = foe.rigScale(self.scale, self.fade);
         const sink = -0.30 * self.scale * self.fade;
         const bframe = mul(
             scaleM(fs, fs, fs),

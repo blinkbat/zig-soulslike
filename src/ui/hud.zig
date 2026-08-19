@@ -478,9 +478,15 @@ pub const LivePortrait = struct {
     pitch: f32,
     dist: f32,
     fov: f32 = 34.0,
+    /// What the target is wiped to before the subject goes in. A FIELD because the book's doll stands
+    /// against its own near-black and the head shots against theirs, and one path photographing both may
+    /// not quietly change either.
+    clear: rl.Color = PORT_CLEAR,
     ctx: *const anyopaque,
     drawFn: *const fn (*const anyopaque) void,
 };
+
+const PORT_CLEAR = rgba(13, 12, 11, 255);
 
 /// **TAKING THE PICTURE AND MOUNTING IT ARE TWO CALLS, AND THE SPLIT IS LOAD-BEARING.** `endTextureMode`
 /// restores the DEFAULT framebuffer — not whatever target was bound before it — so a render nested inside
@@ -504,6 +510,14 @@ pub fn renderPortrait(p: LivePortrait) bool {
     return true;
 }
 
+/// **THE PHOTOGRAPH ITSELF, INTO WHATEVER TARGET THE CALLER OWNS.** `renderPortrait` and `takeSpiritFace`
+/// are this plus a target of their own size; the character book's doll is 460x760 against their 320x360 and
+/// so has to keep its own, but it may not keep its own COPY of the nine calls — as one it had already
+/// drifted a value on the wipe colour, and the `endTextureMode` law above is stated in exactly one place.
+pub fn renderIntoTarget(rt: rl.RenderTexture2D, p: LivePortrait) void {
+    renderInto(rt, p);
+}
+
 fn renderInto(rt: rl.RenderTexture2D, p: LivePortrait) void {
     const cp = mathx.cosf(p.pitch);
     const cam = rl.Camera3D{
@@ -518,7 +532,7 @@ fn renderInto(rt: rl.RenderTexture2D, p: LivePortrait) void {
         .projection = .perspective,
     };
     rl.beginTextureMode(rt);
-    rl.clearBackground(rgba(13, 12, 11, 255));
+    rl.clearBackground(p.clear);
     rl.beginMode3D(cam);
     p.scene.bind(cam.position);
     p.scene.shadowsOff();

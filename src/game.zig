@@ -1117,10 +1117,7 @@ fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?F
         if (comptime @hasDecl(T, "alive")) {
             if (!f.alive()) continue;
         }
-        const dx = f.pos.x - was[i].x;
-        const dz = f.pos.z - was[i].z;
-        const d = @sqrt(dx * dx + dz * dz);
-        if (d < 1e-5) continue;
+        if (mathx.distXZ(was[i], f.pos) < 1e-5) continue;
         // …AND THE FOG GATE IS THE ONE REFUSAL A FLYER AND A BLINK ANSWER TO. The push-out in
         // `collideActors` holds a body that WALKS at the door; it cannot hold one that arrives on the far
         // side without ever standing in it, so the whole travelled segment is asked here and the step is
@@ -1141,7 +1138,7 @@ fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?F
             foemod.wadeLimit(k, statureOf(f))
         else
             foemod.WADE_FRAC * statureOf(f);
-        const stepped = g.env.walkStepPast(was[i], v3(dx / d, 0, dz / d), d, wade);
+        const stepped = g.env.walkSegmentPast(was[i], f.pos, wade);
         f.pos.x = stepped.x;
         f.pos.z = stepped.z;
     }
@@ -1164,14 +1161,12 @@ fn statureOf(f: anytype) f32 {
 /// walk refuses is what it is FOR — but no arc of it may end in the deep, which is what this gate was
 /// originally hoisted out of the eight branches to say.
 fn gateHeroTerrain(g: *Game, was: rl.Vector3) void {
-    // A SHUT GATE IS A WALL TO HIM TOO, and it is refused on the SEGMENT rather than left to the push-out:
-    // a roll is 3.5 m in one step and the sheet is 0.8 m thick.
-    if (g.env.wardCrossed(was, g.hero.pos)) |w| {
-        if (g.env.wardShut[w]) {
-            g.hero.pos.x = was.x;
-            g.hero.pos.z = was.z;
-            return;
-        }
+    // Refused on the SEGMENT (`env.wardRefusing`) rather than left to the push-out: a roll is 3.5 m in one
+    // step and the sheet is 0.8 m thick.
+    if (g.env.wardRefusing(was, g.hero.pos, if (g.gateWalk) |gw| gw.ward else null) != null) {
+        g.hero.pos.x = was.x;
+        g.hero.pos.z = was.z;
+        return;
     }
     const out = gatedXZ(&g.env, was, g.hero.pos, g.hero.airborne());
     g.hero.pos.x = out.x;
@@ -1180,15 +1175,12 @@ fn gateHeroTerrain(g: *Game, was: rl.Vector3) void {
 }
 
 fn gatedXZ(e: *const envmod.Env, was: rl.Vector3, to: rl.Vector3, airborne: bool) rl.Vector3 {
-    const dx = to.x - was.x;
-    const dz = to.z - was.z;
-    const d = @sqrt(dx * dx + dz * dz);
-    if (d < 1e-5) return to;
+    if (mathx.distXZ(was, to) < 1e-5) return to;
     if (airborne) {
         if (e.deepRefused(was.x, was.z, to.x, to.z)) return v3(was.x, to.y, was.z);
         return to;
     }
-    const stepped = e.walkStep(was, v3(dx / d, 0, dz / d), d);
+    const stepped = e.walkSegment(was, to);
     return v3(stepped.x, to.y, stepped.z);
 }
 
@@ -2062,6 +2054,10 @@ fn markWards(g: *Game, alive: [@typeInfo(FoeKind).@"enum".fields.len]u32, dt: f3
         // …AND IT IS SPENT BY THE FIGHT IT SEALED, never by a death somewhere else: only a gate he actually
         // went through, whose named boss has since gone down, goes away.
         if (g.env.wardIn[i] and boss != null and !standing) {
+            // **AND THE SEAL IS OWED AN ANSWER** (owner: a tone arrangement for victory, still deep and dark
+            // but hopeful). One shot off the first frame of the door letting go — past it `wardLife` is
+            // already under 1, so the edge cannot come round twice.
+            if (g.env.wardLife[i] >= 1.0) sfx.play(.fog_felled);
             g.env.wardLife[i] = mathx.maxF(0, g.env.wardLife[i] - dt / WARD_FADE);
         }
         pr.shrink = g.env.wardLife[i];
@@ -4478,7 +4474,7 @@ fn collideActors(g: *Game, dt: f32) void {
     inline for (FOE_GROUPS) |gr| {
         for (@field(g, gr.field).live()) |*a| {
             if (foemod.corporeal(a) and !a.airborne() and !phased(a) and g.hero.footY() < a.topWorld().y) {
-                hp = collision.pushOutCircle(hp, HERO_R, a.pos, a.bodyR());
+                hp = collision.pushOut(hp, HERO_R, bodyOf(a));
             }
         }
     }
@@ -4518,11 +4514,11 @@ fn settleGroup(g: *Game, comptime gr: FoeGroup, step: f32) void {
         if (gr.vsHero) p = collision.pushOutCircle(p, r, g.hero.pos, HERO_R);
         for (foes, 0..) |*o, j| {
             if (i == j or !foemod.corporeal(o) or o.airborne() or phased(o)) continue;
-            p = collision.pushOutCircle(p, r, o.pos, o.bodyR());
+            p = collision.pushOut(p, r, bodyOf(o));
         }
         inline for (gr.vs) |other| {
             for (@field(g, other).live()) |*o| {
-                if (foemod.corporeal(o) and !o.airborne() and !phased(o)) p = collision.pushOutCircle(p, r, o.pos, o.bodyR());
+                if (foemod.corporeal(o) and !o.airborne() and !phased(o)) p = collision.pushOut(p, r, bodyOf(o));
             }
         }
         a.pos = mathx.approachV(a.pos, inBounds(p), step);
@@ -4696,6 +4692,16 @@ fn disguised(f: anytype) bool {
 fn phased(f: anytype) bool {
     if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "phased")) return f.phased();
     return false;
+}
+
+/// **WHAT A BODY HOLDS ON THE GROUND.** A circle at the feet is the whole of a creature that STANDS; one that
+/// can be put on its back is metres of it lying behind them, and only the creature knows where (`knight.bodySeg`).
+/// Everything else answers the same ring it always did — `pushOut` on a degenerate segment IS `pushOutCircle`.
+fn bodyOf(f: anytype) collision.Solid {
+    if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "bodySeg")) {
+        if (f.bodySeg()) |s| return collision.capsule(s[0].x, s[0].z, s[1].x, s[1].z, f.bodyR());
+    }
+    return collision.circle(f.pos.x, f.pos.z, f.bodyR());
 }
 
 fn chillOf(f: anytype) f32 {

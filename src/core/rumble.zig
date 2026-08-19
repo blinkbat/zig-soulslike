@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const rl = @import("raylib");
+const mathx = @import("mathx.zig");
 
 
 pub const PAD = 0;
@@ -81,8 +82,9 @@ pub const Rumble = struct {
 };
 
 fn setMotors(low: f32, high: f32) void {
-    const l = std.math.clamp(low, 0, 1);
-    const h = std.math.clamp(high, 0, 1);
+    // `clampF` and not `std.math.clamp`: a NaN through the latter reaches `@intFromFloat` on a `u16`.
+    const l = mathx.clampF(low, 0, 1);
+    const h = mathx.clampF(high, 0, 1);
     if (builtin.os.tag == .windows) {
         win.set(l, h);
     } else {

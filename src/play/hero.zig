@@ -107,13 +107,18 @@ const STEEL = rgba(98, 104, 114, 255);
 const STEEL_DK = rgba(58, 62, 70, 255);
 const BRASS = art.BRASS;
 
-pub const HIP_FLEX = [8]f32{ 25, 13, 3, -5, -10, -3, 12, 22 };
-pub const KNEE_FLEX = [8]f32{ 5, 18, 10, 4, 10, 38, 62, 30 };
-pub const ANK_DORSI = [8]f32{ -2, -6, 2, 9, 6, -14, -6, -1 };
+/// HOW MANY SAMPLES ONE STRIDE IS WRITTEN IN. Six tables and `sampleCurve`'s own wrap all counted it
+/// separately; a table given a finer resolution than the sampler's modulus reads the first eight entries and
+/// silently drops the rest, and the seam test still passes because both ends of the truncation match.
+pub const GAIT_N = 8;
 
-pub const RUN_HIP = [8]f32{ 42, 25, 8, -8, 5, 35, 60, 55 };
-pub const RUN_KNEE = [8]f32{ 26, 48, 40, 28, 62, 98, 80, 44 };
-pub const RUN_ANK = [8]f32{ -3, 10, 22, 2, -18, -6, 0, -2 };
+pub const HIP_FLEX = [GAIT_N]f32{ 25, 13, 3, -5, -10, -3, 12, 22 };
+pub const KNEE_FLEX = [GAIT_N]f32{ 5, 18, 10, 4, 10, 38, 62, 30 };
+pub const ANK_DORSI = [GAIT_N]f32{ -2, -6, 2, 9, 6, -14, -6, -1 };
+
+pub const RUN_HIP = [GAIT_N]f32{ 42, 25, 8, -8, 5, 35, 60, 55 };
+pub const RUN_KNEE = [GAIT_N]f32{ 26, 48, 40, 28, 62, 98, 80, 44 };
+pub const RUN_ANK = [GAIT_N]f32{ -3, 10, 22, 2, -18, -6, 0, -2 };
 const RUN_LEAN = 24.0;
 const RUN_ARM_SWING = 30.0;
 const RUN_ELBOW = 85.0;
@@ -898,9 +903,6 @@ const FIST_Z = 0.005 * H;
 fn bladeAt(t: f32) rl.Vector3 {
     return v3(-GRIP_SA * OUT_SA * t * H, FIST_Y - GRIP_CA * t * H, FIST_Z + GRIP_SA * OUT_CA * t * H);
 }
-const BLADE_BASE = bladeAt(-0.06);
-const BLADE_TIP = bladeAt(0.64);
-
 /// **WHAT IS ACTUALLY IN HIS FIST — THREE SHAPES ON ONE GRIP.** Same bone (`SWORD`), same grip frame, same
 /// stroke: the pose, the trail, the sparks and every window are written once and only the STEEL changes. `t`
 /// is the fraction of stature out along the grip axis (`bladeAt`), so a reach here is metres the moment `H` is
@@ -999,12 +1001,12 @@ const SIT_ANKLE = 6.0;
 const IDLE_ELBOW = 6.0;
 const MOVING_EASE = 10.0;
 
-pub fn sampleCurve(tbl: [8]f32, phase: f32) f32 {
+pub fn sampleCurve(tbl: [GAIT_N]f32, phase: f32) f32 {
     const ph = phase - @floor(phase);
-    const t = ph * 8.0;
+    const t = ph * @as(f32, GAIT_N);
     const base: usize = @intFromFloat(@floor(t));
-    const a = base % 8;
-    const b = (base + 1) % 8;
+    const a = base % GAIT_N;
+    const b = (base + 1) % GAIT_N;
     const f = t - @floor(t);
     return tbl[a] + (tbl[b] - tbl[a]) * f;
 }

@@ -539,8 +539,10 @@ pub fn covF(v: u8) f32 {
     return @as(f32, @floatFromInt(v)) / 255.0;
 }
 
+/// `mathx.clampF` and not `std.math.clamp`: that one PROPAGATES a NaN, and a NaN reaching `@intFromFloat` on
+/// a `u8` is illegal behaviour rather than a bad byte.
 pub fn covByte(v: f32) u8 {
-    return @intFromFloat(std.math.clamp(v, 0, 1) * 255.0 + 0.5);
+    return @intFromFloat(mathx.clampF(v, 0, 1) * 255.0 + 0.5);
 }
 
 const BRUSH_CORE: f32 = 0.55;
@@ -549,7 +551,7 @@ fn brushFalloff(d: f32, radius: f32) f32 {
     if (radius <= 0) return 1;
     const core = radius * BRUSH_CORE;
     if (d <= core) return 1;
-    const u = std.math.clamp((radius - d) / (radius - core), 0, 1);
+    const u = mathx.clampF((radius - d) / (radius - core), 0, 1);
     return u * u * (3.0 - 2.0 * u);
 }
 
@@ -868,7 +870,7 @@ pub const Map = struct {
         const ev: u8 = @intFromEnum(edge orelse id.defaultEdge());
         const cell = self.cellSize(SOIL_N);
         const r2 = radius * radius;
-        const want = std.math.clamp(opacity, 0, 1);
+        const want = mathx.clampF(opacity, 0, 1);
         var changed = false;
         var cz: usize = 0;
         while (cz < SOIL_N) : (cz += 1) {

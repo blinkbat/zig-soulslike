@@ -3340,6 +3340,14 @@ fn gaitLabel(moving: f32, speed: f32) [:0]const u8 {
 
 pub const Mode = enum { play, shots, props };
 
+/// **A HITCH IS NOT SIMULATED IN FULL** — `anim.Spring` already clamps to this and says why; the whole
+/// simulation owes the same cap, because a raw `getFrameTime` is the one unbounded number in the loop and
+/// several things downstream are only PROVEN safe for a frame-sized step. `arrowCover` queries a radius of
+/// `speed * dt`, and the cap that query cannot overflow (`MAX_NEAR`) is pinned by a test over a 2x2 cell
+/// window; at 40 m/s a 0.35 s stall asks for a 3-wide one and the overflow DROPS SILENTLY, which is an arrow
+/// through a wall. `drawDt`, the editor and the audio pump keep the raw figure — they are not the sim.
+const DT_MAX: f32 = 1.0 / 30.0;
+
 pub fn run(mode: Mode) void {
     const shot = mode != .play;
     var runTimer = std.time.Timer.start() catch unreachable;
@@ -3408,7 +3416,7 @@ pub fn run(mode: Mode) void {
     defer g.rumble.stop();
     while (!rl.windowShouldClose()) {
         const rawDt = rl.getFrameTime();
-        const dt = rawDt * g.menu.timeScale;
+        const dt = mathx.minF(rawDt, DT_MAX) * g.menu.timeScale;
         g.drawDt = rawDt;
         PLAY_HALF = playHalfOf(g.map.half);
         if (!g.editor.on and !g.menu.isOpen() and !g.rest.active() and !g.talk.active() and !g.award.carding()) {

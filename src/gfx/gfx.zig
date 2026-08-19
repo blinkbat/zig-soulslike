@@ -717,7 +717,7 @@ comptime {
 }
 
 pub fn smokeAnim(originY: f32, phase01: f32) f32 {
-    return @floor(originY) + std.math.clamp(phase01, 0, 0.999);
+    return @floor(originY) + mathx.clampF(phase01, 0, 0.999);
 }
 
 pub fn material(shader: rl.Shader, comptime what: []const u8) rl.Material {

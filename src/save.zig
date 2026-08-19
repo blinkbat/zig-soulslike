@@ -19,8 +19,22 @@ pub const VERSION: u32 = 1;
 
 pub const SLOTS: usize = 3;
 
-const PATHS = [SLOTS][:0]const u8{ "save1.dat", "save2.dat", "save3.dat" };
-const SHOTS = [SLOTS][:0]const u8{ "save1.png", "save2.png", "save3.png" };
+/// **THE FILE AND ITS PICTURE ARE ONE NAME AND ONE EXTENSION APART, so they are not two lists.** Written out
+/// they were three stems typed twice in lockstep, and a slot whose `.png` row disagreed with its `.dat` row
+/// shows the picker the WRONG SAVE'S picture — a mislabel with nothing to catch it, since both files exist.
+fn slotNames(comptime ext: []const u8) [SLOTS][:0]const u8 {
+    var out: [SLOTS][:0]const u8 = undefined;
+    for (&out, 0..) |*p, i| p.* = std.fmt.comptimePrint("save{d}." ++ ext, .{i + 1});
+    return out;
+}
+
+const PATHS = slotNames("dat");
+const SHOTS = slotNames("png");
+
+comptime {
+    std.debug.assert(std.mem.eql(u8, PATHS[0], "save1.dat"));
+    std.debug.assert(std.mem.eql(u8, SHOTS[SLOTS - 1], "save3.png"));
+}
 
 pub fn path(i: usize) [:0]const u8 {
     return PATHS[i];

@@ -977,17 +977,20 @@ pub const Env = struct {
     /// never assumed, or a man who triggered it from a metre back stops inside the door.
     pub const Crossing = struct { dir: rl.Vector3, to: rl.Vector3 };
 
+    /// **THE SHEET IS THE GATE'S FIRST PART AND THE LINE COMES OFF THAT ONE.** Written as a loop over
+    /// `wardSolids` whose body returned on the first iteration either way, every part after it was dead and
+    /// silently so: a gate given a second capsule would have kept crossing on the first. Say it once.
     pub fn wardCross(self: *const Env, i: u8, p: rl.Vector3, r: f32) ?Crossing {
-        for (self.wardSolids(i)) |s| {
-            const n = mathx.perpXZ(mathx.dirXZ(s.a, s.b));
-            if (mathx.lenXZ(n) < 0.5) return null;
-            const q = mathx.closestOnSegXZ(p, s.a, s.b);
-            const away = v3(q.x - p.x, 0, q.z - p.z);
-            const dir = if (n.x * away.x + n.z * away.z >= 0) n else mathx.scaleV(n, -1);
-            const span = mathx.lenXZ(away) + s.r + r + WARD_CLEAR;
-            return .{ .dir = dir, .to = mathx.addV(p, mathx.scaleV(dir, span)) };
-        }
-        return null;
+        const parts = self.wardSolids(i);
+        if (parts.len == 0) return null;
+        const s = parts[0];
+        const n = mathx.perpXZ(mathx.dirXZ(s.a, s.b));
+        if (mathx.lenXZ(n) < 0.5) return null;
+        const q = mathx.closestOnSegXZ(p, s.a, s.b);
+        const away = v3(q.x - p.x, 0, q.z - p.z);
+        const dir = if (n.x * away.x + n.z * away.z >= 0) n else mathx.scaleV(n, -1);
+        const span = mathx.lenXZ(away) + s.r + r + WARD_CLEAR;
+        return .{ .dir = dir, .to = mathx.addV(p, mathx.scaleV(dir, span)) };
     }
 
     /// PUT THE DOORS BACK. Called wherever the bestiary is (`game.rehomeFoes`), because a fire that stands

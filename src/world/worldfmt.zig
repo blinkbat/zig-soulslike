@@ -81,6 +81,10 @@ pub const Op = struct {
     /// parsed on `nloot > 0` alone and never on the kind, which is why the glow needed no format change.
     loot: [MAX_LOOT]item.Kind = undefined,
     nloot: u8 = 0,
+    /// WHAT MUST DIE BEFORE A FOG GATE OPENS AGAIN — read by `ward` kinds alone (`props.Info.ward`), the way
+    /// `loot` is read by containers alone. `-` in the file is a gate that never shuts: a doorway, not an
+    /// arena. The default is the only boss in the game, so a stamped gate works with nothing typed.
+    boss: ?FoeKind = .bone_knight,
 
     pub fn pick(self: *const Op, r: *mathx.Rng) Kind {
         if (self.nmix == 0) return self.kind;
@@ -207,6 +211,12 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
         .mushroom_mage => "Mushroom Mage",
         .fen_lurker => "Fen Lurker",
     };
+}
+
+/// Optionals do not compare with `==` in every Zig version this has been built on, and the editor asks this
+/// once per row per frame; one spelling of it beats three.
+pub fn eqlBoss(a: ?FoeKind, b: ?FoeKind) bool {
+    return std.meta.eql(a, b);
 }
 
 pub const Foe = struct {
@@ -1266,6 +1276,7 @@ fn writeMix(w: anytype, mix: []const Kind) !void {
 fn writeTail(w: anytype, v: anytype) !void {
     const T = @TypeOf(v);
     switch (@typeInfo(T)) {
+        .optional => if (v) |x| try writeTail(w, x) else try w.writeAll("-"),
         .@"enum" => try w.print("{s}", .{@tagName(v)}),
         .float => try w.print("{d}", .{v}),
         .int => try w.print("{d}", .{v}),
@@ -1804,6 +1815,7 @@ fn parseMix(s: []const u8, out: *[MAX_MIX]Kind) !u8 {
 
 fn parseVal(comptime T: type, tok: []const u8) !T {
     return switch (@typeInfo(T)) {
+        .optional => |o| if (std.mem.eql(u8, tok, "-")) null else try parseVal(o.child, tok),
         .@"enum" => try enumFromName(T, tok),
         .float => try finiteFloat(T, tok),
         .int => std.fmt.parseInt(T, tok, 10) catch ParseError.BadNumber,
@@ -1972,7 +1984,7 @@ fn canTail(comptime k: OpKind, comptime name: []const u8) bool {
 
 fn eqlVal(a: anytype, b: @TypeOf(a)) bool {
     return switch (@typeInfo(@TypeOf(a))) {
-        .@"struct" => std.meta.eql(a, b),
+        .@"struct", .optional => std.meta.eql(a, b),
         else => a == b,
     };
 }
@@ -2263,6 +2275,40 @@ test "an op round-trips through write and parse" {
     try std.testing.expectEqual(@as(u8, 3), b.nmix);
     try std.testing.expectEqual(Kind.conifer, b.mix[1]);
     try std.testing.expect(b.avoid.runway and b.avoid.water and !b.avoid.solid);
+}
+
+test "A FOG GATE'S BOSS ROUND-TRIPS, and the default costs the file nothing" {
+    var m = Map{};
+    m.setName("Seals");
+    var plain = defaults(.at);
+    plain.kind = .foggate;
+    _ = try m.add(plain);
+    var named = defaults(.at);
+    named.kind = .foggate;
+    named.boss = .ogre;
+    _ = try m.add(named);
+    var never = defaults(.at);
+    never.kind = .foggate;
+    never.boss = null;
+    _ = try m.add(never);
+    _ = try m.add(defaults(.cover));
+
+    var buf: [8192]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(&m, fbs.writer());
+    const text = fbs.getWritten();
+    // The default is the only boss in the game, so an untouched gate writes no tail at all.
+    try std.testing.expectEqual(@as(usize, 0), std.mem.count(u8, text, "boss=bone_knight"));
+    try std.testing.expect(std.mem.indexOf(u8, text, "boss=ogre") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "boss=-") != null);
+
+    var back = Map{};
+    var ln: usize = 0;
+    try parse(text, &back, &ln);
+    try std.testing.expectEqual(@as(usize, 4), back.nops);
+    try std.testing.expect(eqlBoss(back.ops[0].boss, .bone_knight));
+    try std.testing.expect(eqlBoss(back.ops[1].boss, .ogre));
+    try std.testing.expect(eqlBoss(back.ops[2].boss, null));
 }
 
 test "A MAP OLDER THAN THE EDGE GRID COMES UP LOOKING THE SAME" {

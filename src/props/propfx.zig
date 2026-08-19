@@ -317,11 +317,50 @@ pub fn waterMesh(shader: rl.Shader) rl.Model {
 // it has faded to nothing — is a rectangle of missing world.
 pub const FOG_W: f32 = 3.4;
 pub const FOG_H: f32 = 4.2;
-const FOG_COLS: i32 = 10;
-const FOG_ROWS: i32 = 9;
-const FOG_SHEETS: i32 = 3; // depth: three curtains a hand apart, so the billow has something to move THROUGH
-const FOG_PALE = mathx.rgba(190, 198, 210, 206);
-const FOG_DEEP = mathx.rgba(126, 140, 162, 206);
+/// Half-thickness of the WARD behind the sheet (`props.Info.ward`) — not of the curtain, whose three
+/// panes span 0.22 m. A push-out is a position test, so a wall thinner than one frame of travel is one a
+/// charge steps clean through: the knight's 12.4 m/s covers 0.21 m at 60 fps and 0.41 m at 30.
+pub const FOG_WARD_R: f32 = 0.40;
+// THE UNDULATION IS PER-VERTEX, so the grid IS the amplitude it can carry: at 10x9 the roll had two and a
+// half cells to bend through and read as a flag rather than as a body of vapour.
+//
+// **AND THIS IS THE EXPENSIVE PROP IN THE GAME, ON PURPOSE.** 16x14x5x2 = 2240 quads, 4480 tris (it was 1080),
+// and five ALPHA-BLENDED layers of a fragment shader that runs three value-noise octaves — over a sheet that
+// fills most of the frame when you are standing at it. It is the price of "opaque and undulating" and it is
+// paid only on frames a gate is on screen; if it ever needs to come down, the sheet COUNT is the dial, since
+// it multiplies fill directly while the grid only costs vertices.
+const FOG_COLS: i32 = 16;
+const FOG_ROWS: i32 = 14;
+const FOG_SHEETS: i32 = 5; // depth: five curtains a hand apart, so the billow has something to move THROUGH
+// COLD AND HEAVY, not the pale grey it was — everything outdoors here is warm, so the one thing standing
+// between you and a boss is the one thing that is not.
+//
+// **SOLVED AGAINST THE RENDER, NOT PICKED.** At (190,198,210) the sheet measured 220,209,201 on screen beside
+// a cliff at 151,137,105: the brightest thing in the frame, warm, and so far up the curve that the curdle and
+// the billow were both clipped flat out of it. Screen goes as albedo^(1/2.2), so 220 → 130 wants a factor of
+// (130/220)^2.2 = 0.314 on the albedo. The BLUE is then pushed well past neutral on top of that, because the
+// warm key and the haze bank drag it back: an albedo B/R of 1.18 came out at 0.91.
+// Alpha is EMISSIVE, not opacity (the shader reads `1 - alpha`), and it rises with the darkening — the
+// emissive floor is proportional to the albedo, so a sheet this dark needs more of it to survive nightfall.
+const FOG_PALE = mathx.rgba(38, 44, 58, 176);
+const FOG_DEEP = mathx.rgba(20, 24, 36, 176);
+/// **THE MOTES THE SHEET SHEDS AS HE CROSSES** (`hero.fogWake`). DERIVED from the curtain's own colours
+/// rather than picked beside them, or a retune of the wall leaves the fog it throws off the wrong colour and
+/// nothing says so: a mote is drawn as a lit SPHERE and the sheet as a translucent emissive plane, so the
+/// same albedo reads several times darker on the mote and the lift is what puts the two back on one value.
+/// The ALPHA is the mote's own opacity (`foe.drawParticles`) and NOT the sheet's emissive channel, so it is
+/// the one number here that is set rather than carried over.
+const WAKE_LIFT: f32 = 0.40;
+const WHITE = mathx.rgba(255, 255, 255, 255);
+pub const FOG_WAKE_PALE = mathx.withAlpha(mathx.lerpColor(FOG_PALE, WHITE, WAKE_LIFT), 168);
+pub const FOG_WAKE_DEEP = mathx.withAlpha(mathx.lerpColor(FOG_DEEP, WHITE, WAKE_LIFT), 148);
+
+/// **WHAT A SHUT GATE IS TINTED** (owner: gate changes colour to signify it's closed). A per-draw multiply on
+/// the sheet's own albedo (`shaders.sceneVS`'s `colDiffuse`), so the curdle, the billow and the torn head are
+/// all still there — it is the same wall in a different light, not a second material. It goes the ONE way
+/// nothing else outdoors here goes cold: red stays, blue is cut to a third, and alpha MUST be 255 because the
+/// shader reads that channel as emissive.
+pub const FOG_SHUT_TINT = mathx.rgba(255, 132, 58, 255);
 
 /// The curtain. Vertex ALPHA is left near-solid on purpose — the scene shader reads `1 - alpha` as emissive
 /// (`shaders.sceneFS`), and a fog wall lit only by the sun goes black at night. What actually fades is the
@@ -331,7 +370,7 @@ pub fn fogGateMesh(shader: rl.Shader) rl.Model {
     b.setMat(.fog);
     var s: i32 = 0;
     while (s < FOG_SHEETS) : (s += 1) {
-        const z = (@as(f32, @floatFromInt(s)) - 0.5 * @as(f32, @floatFromInt(FOG_SHEETS - 1))) * 0.11;
+        const z = (@as(f32, @floatFromInt(s)) - 0.5 * @as(f32, @floatFromInt(FOG_SHEETS - 1))) * 0.105;
         var r: i32 = 0;
         while (r < FOG_ROWS) : (r += 1) {
             const t0 = @as(f32, @floatFromInt(r)) / @as(f32, FOG_ROWS);

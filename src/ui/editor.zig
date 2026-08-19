@@ -104,7 +104,7 @@ const layerTips = [Layer.N][:0]const u8{
     "The flora carpet: zone density and the clearings it keeps out of",
     "Growing things - ferns, grass, bramble, reeds",
     "Standing things - stone, timber, fire, water",
-    "Things the player OPENS - chests, and what is in them (right-click > Items...)",
+    "Things only the player gets through - chests and what is in them (right-click > Items...), and the fog gate",
     "Foe spawns",
 };
 
@@ -445,7 +445,7 @@ fn layerOf(o: *const wf.Op) Layer {
 
 pub const Action = enum { none, leave, playtest };
 
-pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot, jukebox, world, zonemix };
+pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot, boss, jukebox, world, zonemix };
 
 const VOICE_NAMES = blk: {
     const fields = @typeInfo(sfx.Id).@"enum".fields;
@@ -3210,6 +3210,40 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 ed.modal = .none;
             }
         },
+        .boss => {
+            const NF = @typeInfo(wf.FoeKind).@"enum".fields.len;
+            const rows: i32 = NF + 1;
+            const sPre = bossOp(ed, m) orelse {
+                ed.modal = .none;
+                return;
+            };
+            const box = ui.beginModal(ctx, 470, LOOT_TOP + rows * LOOT_ROW_H + 8 + DLG_FOOT, "Sealed until this dies");
+            const o = &m.ops[sPre];
+            hud.mono(
+                "He walks through it once, then nothing does until this is dead",
+                box.x + DLG_PAD,
+                box.y + 58,
+                hud.MONO,
+                ui.LABEL,
+            );
+            // Row 0 is the OPT-OUT, and it has to exist: a gate with no boss is an ordinary doorway, which is
+            // what a gate hung anywhere but an arena mouth needs to be.
+            var i: usize = 0;
+            while (i < rows) : (i += 1) {
+                const pick: ?wf.FoeKind = if (i == 0) null else @enumFromInt(i - 1);
+                const y = box.y + LOOT_TOP + @as(i32, @intCast(i)) * LOOT_ROW_H;
+                const label: [:0]const u8 = if (pick) |k| wf.foeName(k) else "Never shuts";
+                const on = wf.eqlBoss(o.boss, pick);
+                hud.mono(label, box.x + DLG_PAD, y + 5, hud.MONO, if (on) ui.VALUE else ui.LABEL);
+                if (ui.button(ctx, ui.rect(box.x + 368, y, 52, 22), if (on) "set" else "pick", hud.MONO, on) and !on) {
+                    ed.bank(m);
+                    o.boss = pick;
+                }
+            }
+            if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false) or confirm) {
+                ed.modal = .none;
+            }
+        },
         .zonemix => {
             const rows: i32 = @intCast(props.FLORA_KINDS.len);
             const box = ui.beginModal(ctx, 470, LOOT_TOP + rows * LOOT_ROW_H + 8 + DLG_FOOT, "What grows here");
@@ -3446,11 +3480,12 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
     }
 }
 
-const MenuItem = enum { view, loot, focus, reroll, duplicate, delete, close };
+const MenuItem = enum { view, loot, boss, focus, reroll, duplicate, delete, close };
 
 const menuRows = [_]struct { act: MenuItem, label: [:0]const u8 }{
     .{ .act = .view, .label = "View..." },
     .{ .act = .loot, .label = "Items..." },
+    .{ .act = .boss, .label = "Sealed by..." },
     .{ .act = .focus, .label = "Focus" },
     .{ .act = .reroll, .label = "Re-roll" },
     .{ .act = .duplicate, .label = "Duplicate" },
@@ -3466,6 +3501,14 @@ fn lootOp(ed: *const Editor, m: *const wf.Map) ?usize {
     const s = ed.sel orelse return null;
     if (s >= m.nops) return null;
     return if (m.ops[s].op == .at and props.holdsLoot(m.ops[s].kind)) s else null;
+}
+
+/// A GATE'S SEAL IS EDITED WHERE ITS LOOT WOULD BE, and it is offered on the same test the mechanic reads
+/// (`props.Info.ward`) rather than on the kind by name, so a second ward kind gets the panel for free.
+fn bossOp(ed: *const Editor, m: *const wf.Map) ?usize {
+    const s = ed.sel orelse return null;
+    if (s >= m.nops) return null;
+    return if (m.ops[s].op == .at and props.info(m.ops[s].kind).ward) s else null;
 }
 
 fn lootCount(o: *const wf.Op, k: item.Kind) u8 {
@@ -3604,6 +3647,7 @@ fn menuEnabled(ed: *const Editor, m: *const wf.Map, act: MenuItem) bool {
         .focus => op != null,
         .view => if (op) |s| m.ops[s].op != .cover else false,
         .loot => lootOp(ed, m) != null,
+        .boss => bossOp(ed, m) != null,
         .reroll, .duplicate => if (op) |s| isMovable(&m.ops[s]) else false,
         .delete => op != null or (ed.layer == .units and ed.selFoe != null),
     };
@@ -3645,6 +3689,7 @@ fn drawContextMenu(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx) void
                 }
             },
             .loot => ed.modal = .loot,
+            .boss => ed.modal = .boss,
             .focus => if (ed.sel) |s| ed.focusOn(m, s),
             .reroll => ed.rerollSel(m, env),
             .duplicate => ed.duplicateSel(m, env),

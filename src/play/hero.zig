@@ -6,6 +6,7 @@ const combat = @import("combat.zig");
 const item = @import("item.zig");
 const statsmod = @import("stats.zig");
 const art = @import("../props/propart.zig");
+const propfx = @import("../props/propfx.zig");
 const archer = @import("../foes/archer.zig");
 const foemod = @import("../foes/foe.zig");
 const elemfx = @import("../gfx/elemfx.zig");
@@ -838,6 +839,21 @@ const BLOCK_GRIT_LIFE_LO = 0.10;
 const BLOCK_GRIT_LIFE_HI = 0.30;
 const BLOCK_PUFF_R = 0.11;
 const BLOCK_PUFF_LIFE = 0.16;
+
+/// **THE FOG GATE'S WAKE** (`fogWake`). The exact opposite dial-for-dial of the block's grit, which is what
+/// makes it read as vapour rather than as debris: it goes SIDEWAYS and UP instead of out and down, it lives
+/// four times as long, it is a hand wide instead of a fingernail, and its gravity is NEGATIVE — the one
+/// emitter in the hero's kit that rises. The COLOURS are the gate's own and are taken from it
+/// (`propfx.FOG_WAKE_*`), so retuning the wall retunes what it sheds.
+const FOG_WAKE_OUT_LO = 0.35;
+const FOG_WAKE_OUT_HI = 1.05;
+const FOG_WAKE_RISE = 0.28;
+const FOG_WAKE_GRAV = -0.55;
+const FOG_WAKE_LIFE_LO = 0.55;
+const FOG_WAKE_LIFE_HI = 1.25;
+const FOG_WAKE_R0_LO = 0.055;
+const FOG_WAKE_R0_HI = 0.115;
+const FOG_WAKE_R1 = 0.20;
 /// **AND IRON STRUCK IRON THROWS LIGHT** (owner: sparks fly). The block was grit alone — pale, heavy, and
 /// dropping — which is the dust off the facing and nothing else, so a blow caught on a bound rim looked like
 /// one caught on a plank. Deliberately UNDER the parry's shower (`PARRY_SPARKS`, 34): the catch is the
@@ -1824,6 +1840,26 @@ pub const Hero = struct {
             foemod.emitParticle(&self.fx, &self.fxHead, at, v, rng.range(0.16, 0.72), rng.range(PARRY_SPARK_R0_LO, PARRY_SPARK_R0_HI), 0.003, if (rng.float() < 0.45) PARRY_SPARK_HOT else PARRY_SPARK, PARRY_SPARK_GRAV);
         }
         foemod.emitParticle(&self.fx, &self.fxHead, at, mathx.scaleV(f.n, 0.8), PARRY_FLASH_LIFE, PARRY_FLASH_R, PARRY_FLASH_R * 0.25, PARRY_SPARK_HOT, 0);
+    }
+
+    /// **THE FOG PARTING ROUND HIM AS HE CROSSES A GATE.** Off the hero's OWN pool, so it ticks, fades and
+    /// draws with everything else he sheds and needs no second pool anywhere. The motes are the sheet's own
+    /// colour, they drift OUTWARD and UPWARD off his chest rather than falling, and they are long-lived and
+    /// wide — vapour torn open, not grit.
+    pub fn fogWake(self: *Hero, at: rl.Vector3, along: rl.Vector3, n: u32) void {
+        const side = mathx.perpXZ(along);
+        var rng = foemod.fxStream(self.elapsed, 733.0, 0xF06);
+        var i: u32 = 0;
+        while (i < n) : (i += 1) {
+            const a = rng.angle();
+            const out = rng.range(FOG_WAKE_OUT_LO, FOG_WAKE_OUT_HI);
+            const v = mathx.addV(
+                mathx.scaleV(side, mathx.cosf(a) * out),
+                v3(0, @abs(mathx.sinf(a)) * out * 0.8 + FOG_WAKE_RISE, 0),
+            );
+            const p = mathx.addV(at, v3(rng.signed() * 0.34, rng.signed() * 0.42, rng.signed() * 0.18));
+            foemod.emitParticle(&self.fx, &self.fxHead, p, v, rng.range(FOG_WAKE_LIFE_LO, FOG_WAKE_LIFE_HI), rng.range(FOG_WAKE_R0_LO, FOG_WAKE_R0_HI), FOG_WAKE_R1, if (rng.float() < 0.45) propfx.FOG_WAKE_PALE else propfx.FOG_WAKE_DEEP, FOG_WAKE_GRAV);
+        }
     }
 
     pub fn blockSparks(self: *Hero, weight: f32) void {

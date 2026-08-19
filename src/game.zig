@@ -216,6 +216,9 @@ pub const Game = struct {
     bootT: f32 = 0,
     bossK: f32 = 0,
     bossFrac: f32 = 0,
+    /// THE CROSSING HE IS PART-WAY THROUGH, or null. A DEFAULTED FIELD, so it is assigned in `init` and in
+    /// `beginGame` — `Game` comes off `alloc.create` and `= null` here never runs.
+    gateWalk: ?GateWalk = null,
     spiritK: f32 = 0,
     spiritHp: f32 = 0,
     day: daynight.Clock = .{},
@@ -313,6 +316,7 @@ pub const Game = struct {
         g.bootT = 0;
         g.bossK = 0;
         g.bossFrac = 0;
+        g.gateWalk = null;
         g.spiritK = 0;
         g.spiritHp = 0;
         g.hourLit = std.math.nan(f32);
@@ -419,6 +423,7 @@ fn beginGame(g: *Game) void {
     g.day = .{};
     g.bossK = 0;
     g.bossFrac = 0;
+    g.gateWalk = null;
     g.spiritK = 0;
     g.spiritHp = 0;
     g.bag = .{};
@@ -487,7 +492,7 @@ fn enterMap(g: *Game, path: []const u8, at: rl.Vector3, facing: f32) void {
     g.hero.pos = inBounds(mathx.ground(at.x, at.z));
     g.hero.facing = facing;
     plantActor(g, &g.hero.pos);
-    g.hero.pos = g.env.resolveActor(g.hero.pos, HERO_R, g.hero.pos.y);
+    g.hero.pos = g.env.resolveHeroSide(g.hero.pos, HERO_R, g.hero.pos.y);
     g.hero.setSpawn(g.hero.pos, facing);
     rehomeFoes(g, .blind);
     rehomeChests(g);
@@ -679,6 +684,9 @@ test "the ranges the fight is judged at are each GROUP'S OWN, never one figure f
 const Sighted = enum { blind, seen };
 
 fn rehomeFoes(g: *Game, sighted: Sighted) void {
+    // A RESPAWNED BOSS MAY NOT SHUT A DOOR HE IS STANDING OUTSIDE OF — the latch is per visit, and the fire
+    // putting the bestiary back is the end of the visit.
+    g.env.openWards();
     inline for (FOE_GROUPS) |f| {
         @field(g, f.field).reset(&g.map);
         if (sighted == .blind) {
@@ -1094,20 +1102,29 @@ fn snapshotPos(foes: anytype, out: []rl.Vector3) void {
 /// water half — but at the HERO's waterline, chest height on a man, which is over the head of half the
 /// bestiary. A creature turns back at its own hips, and the ones the water belongs to (the toad, the fen
 /// lurker) are handed no limit at all rather than a branch of their own.
-fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?FoeKind) void {
+fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?FoeKind, crossesWards: bool) void {
     const T = @typeInfo(@TypeOf(foes)).pointer.child;
     for (foes, 0..) |*f, i| {
         if (i >= was.len) continue;
         if (comptime @hasDecl(T, "alive")) {
             if (!f.alive()) continue;
         }
-        if (comptime @hasDecl(T, "airborne")) {
-            if (f.airborne()) continue;
-        }
         const dx = f.pos.x - was[i].x;
         const dz = f.pos.z - was[i].z;
         const d = @sqrt(dx * dx + dz * dz);
         if (d < 1e-5) continue;
+        // …AND THE FOG GATE IS THE ONE REFUSAL A FLYER AND A BLINK ANSWER TO. The push-out in
+        // `collideActors` holds a body that WALKS at the door; it cannot hold one that arrives on the far
+        // side without ever standing in it, so the whole travelled segment is asked here and the step is
+        // handed straight back. Above the terrain skip, because a ward is not ground.
+        if (!crossesWards and g.env.wardCrossed(was[i], f.pos) != null) {
+            f.pos.x = was[i].x;
+            f.pos.z = was[i].z;
+            continue;
+        }
+        if (comptime @hasDecl(T, "airborne")) {
+            if (f.airborne()) continue;
+        }
         // The wolf and the wanderers are in no group and are ordinary walkers; everything else answers for
         // its own kind, the multi-role bands through their own `kind()`.
         const wade = if (comptime @hasDecl(T, "kind"))
@@ -1139,9 +1156,19 @@ fn statureOf(f: anytype) f32 {
 /// walk refuses is what it is FOR — but no arc of it may end in the deep, which is what this gate was
 /// originally hoisted out of the eight branches to say.
 fn gateHeroTerrain(g: *Game, was: rl.Vector3) void {
+    // A SHUT GATE IS A WALL TO HIM TOO, and it is refused on the SEGMENT rather than left to the push-out:
+    // a roll is 3.5 m in one step and the sheet is 0.8 m thick.
+    if (g.env.wardCrossed(was, g.hero.pos)) |w| {
+        if (g.env.wardShut[w]) {
+            g.hero.pos.x = was.x;
+            g.hero.pos.z = was.z;
+            return;
+        }
+    }
     const out = gatedXZ(&g.env, was, g.hero.pos, g.hero.airborne());
     g.hero.pos.x = out.x;
     g.hero.pos.z = out.z;
+    markWardStep(g, was);
 }
 
 fn gatedXZ(e: *const envmod.Env, was: rl.Vector3, to: rl.Vector3, airborne: bool) rl.Vector3 {
@@ -1632,6 +1659,7 @@ const Reach = enum {
     pickup,
     talk,
     chest,
+    gate,
 
     fn prompt(self: Reach) hud_.Hint {
         return .{ .glyph = .{ .face = hud_.BTN_INTERACT }, .label = switch (self) {
@@ -1640,6 +1668,7 @@ const Reach = enum {
             .pickup => "Take",
             .talk => "Speak",
             .chest => "Open",
+            .gate => "Enter",
         } };
     }
 };
@@ -1651,7 +1680,24 @@ fn inReach(g: *const Game, r: Reach) bool {
         .pickup => g.pickups.near != null,
         .talk => talkable(g),
         .chest => g.chests.near != null,
+        .gate => gateAt(g) != null,
     };
+}
+
+/// **A FOG GATE IS A DOOR, AND A DOOR IS ASKED FOR** (owner: prompt to enter with Y). Offered only on the one
+/// he is close enough to touch, and only while it is still OPEN — a shut gate has no prompt, because the
+/// answer to it is the boss and not the button.
+const GATE_MARGIN: f32 = 1.15;
+comptime {
+    // HE MAY NOT STEP OUT OF A GATE INTO ITS OWN PROMPT. The crossing lands him `WARD_CLEAR` past the sheet
+    // and the prompt reaches `GATE_MARGIN`, both measured off the same capsule, so the one has to clear the
+    // other or every crossing ends with "Enter" already lit behind him.
+    std.debug.assert(envmod.WARD_CLEAR > GATE_MARGIN);
+}
+
+fn gateAt(g: *const Game) ?u8 {
+    if (g.gateWalk != null or g.hero.committed() or g.hero.dead) return null;
+    return g.env.nearWard(g.hero.pos, GATE_MARGIN + HERO_R);
 }
 
 fn reachable(g: *const Game) ?Reach {
@@ -1669,7 +1715,69 @@ fn interact(g: *Game) void {
         .pickup => takePickup(g),
         .talk => _ = startTalk(g),
         .chest => openChest(g),
+        .gate => enterGate(g),
     }
+}
+
+/// **HE WALKS IT, HE IS NOT TELEPORTED THROUGH IT** (owner: char walks thru slowly with sound fx and
+/// particles). The whole line comes off the sheet (`env.wardCross`) and not off his facing: entering at an
+/// angle still puts him out square on the far side, and it ends far enough past the sheet that he cannot come
+/// to rest inside the door he just opened.
+///
+/// **SLOWLY** (owner), and that is a SPEED and not a duration: he may trigger the walk from anywhere inside
+/// the prompt's reach, and a fixed clock over a distance that varies by metres is a walk that is sometimes a
+/// run. Two thirds of his own walk, which is the pace of somebody committing to something.
+pub const GATE_SPEED: f32 = heromod.WALK_SPEED * 0.66;
+const GATE_MOTES_PER_S: f32 = 26.0;
+const GATE_MOTE_CAP: u32 = 8;
+
+const GateWalk = struct {
+    ward: u8,
+    from: rl.Vector3,
+    to: rl.Vector3,
+    dir: rl.Vector3,
+    dur: f32,
+    t: f32 = 0,
+    motes: f32 = 0,
+};
+
+fn enterGate(g: *Game) void {
+    const w = gateAt(g) orelse return;
+    // FROM WHERE HE IS STANDING, never from a lead-in behind him: the walk's first frame IS his own position,
+    // so pressing the button cannot snap him backwards before he sets off.
+    const x = g.env.wardCross(w, g.hero.pos, HERO_R) orelse return;
+    g.gateWalk = .{
+        .ward = w,
+        .from = g.hero.pos,
+        .to = x.to,
+        .dir = x.dir,
+        .dur = mathx.maxF(mathx.distXZ(g.hero.pos, x.to) / GATE_SPEED, 0.35),
+    };
+    g.hero.sprinting = false;
+    g.hero.setGuard(false);
+    g.hero.setAim(false);
+    g.lock = null;
+    sfx.play(.fog_pass);
+}
+
+/// The traversal itself: a slow, even walk on the committed line, with the gait driven by the distance he is
+/// actually covering rather than by a speed handed in, so the feet cannot skate (the rig's own law).
+fn updateGateWalk(g: *Game, dt: f32) void {
+    const gw = &(g.gateWalk orelse return);
+    const was = g.hero.pos;
+    gw.t = mathx.minF(gw.t + dt / gw.dur, 1.0);
+    const at = mathx.lerpV(gw.from, gw.to, mathx.smoothstep(0, 1, gw.t));
+    g.hero.pos.x = at.x;
+    g.hero.pos.z = at.z;
+    const moved = mathx.distXZ(was, g.hero.pos);
+    const face = mathx.headingXZ(gw.dir);
+    g.hero.facing = face;
+    g.hero.update(dt, moved, if (dt > 0) moved / dt else 0, face);
+    gw.motes += dt * GATE_MOTES_PER_S;
+    var n: u32 = 0;
+    while (gw.motes >= 1.0 and n < GATE_MOTE_CAP) : (n += 1) gw.motes -= 1.0;
+    if (n > 0) g.hero.fogWake(g.hero.shoulderPoint(), gw.dir, n);
+    if (gw.t >= 1.0) g.gateWalk = null;
 }
 
 fn ringBell(g: *Game) void {
@@ -1701,7 +1809,7 @@ const SUMMON_R: f32 = 1.9;
 fn spiritSpot(g: *Game) rl.Vector3 {
     const back = mathx.headingDir(g.hero.facing + SUMMON_BEARING);
     var at = mathx.addV(g.hero.pos, mathx.scaleV(back, SUMMON_R));
-    at = inBounds(g.env.resolveActor(at, wolfmod.BODY_R, at.y));
+    at = inBounds(g.env.resolveHeroSide(at, wolfmod.BODY_R, at.y));
     plantActor(g, &at);
     return at;
 }
@@ -1726,7 +1834,7 @@ fn tickPack(g: *Game, dt: f32) void {
     g.pack.update(dt, g.hero.pos, PLAY_HALF);
     var was: [combat.SUMMON_MAX]rl.Vector3 = undefined;
     for (g.pack.liveConst(), 0..) |*w, i| was[i] = w.wasAt;
-    gateTerrain(g, g.pack.live(), was[0..g.pack.n], null);
+    gateTerrain(g, g.pack.live(), was[0..g.pack.n], null, true);
     for (g.pack.live()) |*w| {
         if (w.bit) sfx.world(.wolf_bite, w.pos);
         if (w.growled) sfx.world(.wolf_growl, w.pos);
@@ -1915,8 +2023,46 @@ fn billDeaths(g: *Game) void {
 fn tickTriggers(g: *Game, dt: f32) void {
     g.nNpcPos = g.folk.positions(&g.map, &g.npcPos).len;
     billDeaths(g);
-    const want = g.trig.tick(&g.map, triggerWorld(g), dt, g.talk.active() or g.rest.active()) orelse return;
+    const world = triggerWorld(g);
+    markWards(g, world.alive, dt);
+    const want = g.trig.tick(&g.map, world, dt, g.talk.active() or g.rest.active()) orelse return;
     if (!g.talk.open(&g.map, &g.trig, want, "", null)) g.trig.dialogClosed();
+}
+
+/// **THE FOG GATE SHUTS BEHIND HIM AND THE BOSS IS THE KEY** (owner: once you enter a fog gate it becomes
+/// impassable til you kill a boss). Two halves, and they are deliberately apart: the LATCH is his own step
+/// crossing the sheet (`markWardStep`), and the DOOR is only actually shut while the creature the op names
+/// is still standing — so a gate whose boss is already dead is a doorway you walk both ways, and killing it
+/// is what lets you back out. A gate may not shut on the man IN it (`wardClear`), or a push-out could land
+/// him on the outside of a fight he already started with nothing left able to open it.
+/// How long a spent gate takes to go (owner: fade it out when the boss is killed, and then remove it).
+const WARD_FADE: f32 = 2.6;
+
+fn markWards(g: *Game, alive: [@typeInfo(FoeKind).@"enum".fields.len]u32, dt: f32) void {
+    for (0..g.env.nwards) |i| {
+        const pr = &g.env.props[g.env.wardProps[i]];
+        const boss = if (pr.op < g.map.nops) g.map.ops[pr.op].boss else null;
+        const standing = if (boss) |b| alive[@intFromEnum(b)] > 0 else false;
+        const shut = g.env.wardIn[i] and standing and g.env.wardClear(@intCast(i), g.hero.pos, HERO_R);
+        // THE STING IS THE DOOR SHUTTING, not the sheet being touched: walk through a gate whose boss is
+        // already down and nothing sounds, because nothing happened.
+        if (shut and !g.env.wardShut[i]) sfx.play(.fog_seal);
+        g.env.wardShut[i] = shut;
+        // …AND IT IS SPENT BY THE FIGHT IT SEALED, never by a death somewhere else: only a gate he actually
+        // went through, whose named boss has since gone down, goes away.
+        if (g.env.wardIn[i] and boss != null and !standing) {
+            g.env.wardLife[i] = mathx.maxF(0, g.env.wardLife[i] - dt / WARD_FADE);
+        }
+        pr.shrink = g.env.wardLife[i];
+        pr.gone = g.env.wardLife[i] <= 0;
+    }
+}
+
+/// The latch, taken off the step he actually travelled — the same segment question `gateTerrain` asks on a
+/// foe's behalf, so a roll through a gate counts exactly as a walk through it does.
+fn markWardStep(g: *Game, was: rl.Vector3) void {
+    const w = g.env.wardCrossed(was, g.hero.pos) orelse return;
+    g.env.wardIn[w] = true;
 }
 
 fn startTalk(g: *Game) bool {
@@ -3311,7 +3457,7 @@ pub fn run(mode: Mode) void {
                     armScript(g);
                     g.hero.pos = mathx.ground(g.editor.cam.target.x, g.editor.cam.target.z);
                     plantActor(g, &g.hero.pos);
-                    g.hero.pos = g.env.resolveActor(g.hero.pos, HERO_R, g.hero.pos.y);
+                    g.hero.pos = g.env.resolveHeroSide(g.hero.pos, HERO_R, g.hero.pos.y);
                     g.hero.setSpawn(g.hero.pos, g.hero.facing);
                     g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
                     wasInside = false;
@@ -3574,7 +3720,7 @@ pub fn run(mode: Mode) void {
         g.hero.tickFlash(dt);
         g.hero.quick.dropEmpty(&g.bag);
         const jumpReq = rl.isKeyPressed(JUMP_KEY) or padPressed(JUMP_PAD);
-        if (!g.hero.dead and !g.hero.staggered()) {
+        if (!g.hero.dead and !g.hero.staggered() and g.gateWalk == null) {
             if (rollReq) {
                 g.hero.requestRoll(rollDir(g, mv));
             } else if (jumpReq) {
@@ -3613,11 +3759,17 @@ pub fn run(mode: Mode) void {
         leanToGround(g, dt);
         const heroWas = g.hero.pos;
         const heroAfoot = !g.hero.dead;
+        // **A CROSSING IS ABANDONED, NOT SUSPENDED.** Both branches below outrank it, and a walk left standing
+        // through one of them resumes against a line drawn before the interruption — from wherever he was
+        // knocked to, or from a respawn on the other side of the map, which is a teleport either way.
+        if (g.hero.dead or g.hero.staggered()) g.gateWalk = null;
         if (g.hero.dead) {
             g.hero.updateDeath(dt);
             if (!g.hero.dead) resetFoes(g);
         } else if (g.hero.staggered()) {
             g.hero.updateStun(dt);
+        } else if (g.gateWalk != null) {
+            updateGateWalk(g, dt);
         } else if (g.hero.airborne()) {
             moveHeroAir(g, dt, mv, faceYaw);
         } else if (g.hero.rolling) {
@@ -3792,8 +3944,8 @@ pub fn run(mode: Mode) void {
         const nFolk = g.folk.n;
         snapshotPos(g.folk.live(), &wasFolk);
         g.folk.update(dt, g.hero.pos, PLAY_HALF);
-        gateTerrain(g, g.folk.live(), wasFolk[0..nFolk], null);
-        inline for (FOE_GROUPS, 0..) |f, gi| gateTerrain(g, @field(g, f.field).live(), wasPos[gi][0..wasN[gi]], f.kind);
+        gateTerrain(g, g.folk.live(), wasFolk[0..nFolk], null, false);
+        inline for (FOE_GROUPS, 0..) |f, gi| gateTerrain(g, @field(g, f.field).live(), wasPos[gi][0..wasN[gi]], f.kind, false);
         inline for (FOE_GROUPS, 0..) |f, gi| gateChill(@field(g, f.field).live(), wasPos[gi][0..wasN[gi]]);
         if (g.hero.breathLive()) rimeBreathe(g, dt);
         for (&g.arrows) |*ar| {
@@ -4286,7 +4438,7 @@ fn inBounds(p: rl.Vector3) rl.Vector3 {
 
 fn collideActors(g: *Game, dt: f32) void {
     const step = COLLIDE_RATE * dt;
-    var hp = g.env.resolveActor(g.hero.pos, HERO_R, g.hero.footY());
+    var hp = g.env.resolveHeroSide(g.hero.pos, HERO_R, g.hero.footY());
     inline for (FOE_GROUPS) |gr| {
         for (@field(g, gr.field).live()) |*a| {
             if (foemod.corporeal(a) and !a.airborne() and !phased(a) and g.hero.footY() < a.topWorld().y) {
@@ -4311,7 +4463,7 @@ fn collideActors(g: *Game, dt: f32) void {
     for (g.pack.live()) |*w| {
         if (!foemod.corporeal(w)) continue;
         const r = w.bodyR();
-        var q = g.env.resolveActor(w.pos, r, w.pos.y);
+        var q = g.env.resolveHeroSide(w.pos, r, w.pos.y);
         q = collision.pushOutCircle(q, r, g.hero.pos, HERO_R);
         w.pos = mathx.approachV(w.pos, inBounds(q), step);
     }

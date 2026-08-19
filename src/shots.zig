@@ -152,6 +152,43 @@ fn standHero(g: *Game, x: f32, z: f32, faceYaw: f32) void {
     g.hero.pose();
 }
 
+/// **THE FOG GATE, PHOTOGRAPHED WHERE THE MAP ACTUALLY PUT ONE.** Found through `env.wardProps` rather than at
+/// coordinates copied out of the world file, so moving the gate in the editor moves the shot with it — and if
+/// the map has none, there is nothing to judge and the stage says so instead of shooting empty ground.
+/// TWO FRAMES a second apart, because "it undulates" is the one claim a single frame cannot make.
+fn fogGateShots(g: *Game, dt: f32) void {
+    if (g.env.nwards == 0) {
+        std.debug.print("shots: no fog gate in {s} — skipping the gate stage\n", .{worldfmt.startMap()});
+        return;
+    }
+    const pr = &g.env.props[g.env.wardProps[0]];
+    const at = pr.pos;
+    // DERIVED FROM THE GATE'S OWN SIZE, never hand-picked: the editor's `scale` runs from a half-door to
+    // several, and a distance tuned against one of them frames none of the others.
+    const tall = props.info(.foggate).top * pr.scale;
+    const back = mathx.headingDir(mathx.radians(LIT_YAW)); // off the SUN's bearing, or the sheet is in its own shadow
+    const step = tall * 0.5;
+    standSettled(g, at.x - back.x * step, at.z - back.z * step, mathx.headingXZ(back));
+    // AIMED LOW ON PURPOSE. `follow` sets the eye at the AIM POINT's height, and an eye at mid-sheet looks
+    // over the top of a thing whose alpha is fading out up there — the frame fills with the canyon behind it
+    // and the wall reads as a haze. Aimed near the threshold, where it is thickest, it fills the frame.
+    shootAt(g, "shots/156_foggate.png", v3(at.x, at.y + tall * 0.20, at.z), LIT_YAW, 0.06, tall * 0.84);
+    // The TORN HEAD alone, which is the one part of it that is neither opaque nor still.
+    shootAt(g, "shots/156b_foggate_head.png", v3(at.x, at.y + tall * 0.62, at.z), LIT_YAW, 0.16, tall * 0.90);
+    var k: i32 = 0;
+    while (k < 60) : (k += 1) stepWorld(g, dt, 0);
+    standSettled(g, at.x - back.x * step, at.z - back.z * step, mathx.headingXZ(back));
+    shootAt(g, "shots/156c_foggate_moved.png", v3(at.x, at.y + tall * 0.20, at.z), LIT_YAW, 0.06, tall * 0.84);
+    // Edge-on, where the billow is a SILHOUETTE rather than a shading.
+    shootAt(g, "shots/156d_foggate_side.png", v3(at.x, at.y + tall * 0.20, at.z), LIT_YAW + 62, 0.06, tall * 0.84);
+    // …AND SHUT, which is a colour and therefore the one claim here that has to be photographed. Stamped
+    // directly rather than by walking him through it, because the seal wants a live boss and the harness is
+    // photographing whatever map it was pointed at.
+    g.env.wardShut[0] = true;
+    shootAt(g, "shots/156e_foggate_shut.png", v3(at.x, at.y + tall * 0.20, at.z), LIT_YAW, 0.06, tall * 0.84);
+    g.env.wardShut[0] = false;
+}
+
 /// **STANDING HIM ON SCULPTED GROUND TAKES MORE THAN ONE FRAME**, and the reason is written at `delverShots`'
 /// own copy of this: `hero.respawnNow` starts a pose CROSS-FADE against a world-space snapshot, `--shot` runs no
 /// loop to advance it, and one update leaves him blended toward that snapshot — drawn back at the map's spawn,
@@ -1559,6 +1596,8 @@ pub fn runShots(g: *Game) void {
         shootAt(g, "shots/155_mist_bank.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 22.0);
         game.forceFogForShot(g, false);
     }
+
+    fogGateShots(g, dt);
 
     g.hero.pos = mathx.ground(0, 4);
     g.hero.facing = std.math.pi;

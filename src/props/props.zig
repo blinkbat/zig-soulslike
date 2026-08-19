@@ -329,6 +329,9 @@ pub const Info = struct {
     solid: bool = false,
     occl: []const Blocker = &.{},
     casts: bool = true,
+    /// ITS `parts` ARE WARDS, NOT WALLS (`collision.Solid.ward`) — the hero and the spirit he summons walk
+    /// through, nothing else crosses either way, and no look crosses at all.
+    ward: bool = false,
     parts: []const Part = &.{},
     light: ?LightSpec = null,
     surf: collision.Surface = .stone,
@@ -467,7 +470,10 @@ pub const INFO = [NK]Info{
     // in the late pass (`env.drawVeils`) where a translucent thing belongs. `solid` because a fog wall is
     // exactly the thing that must NOT thin when it stands between the lens and him — that is its whole job —
     // and it casts nothing, since a shadow of a fog wall is a shadow of nothing.
-    .{ .kind = .foggate, .build = fx.fogGateStoneMesh, .veil = fx.fogGateMesh, .bound = 5.4, .top = fx.FOG_H, .view = 320, .solid = true, .casts = false },
+    // `ward` is the MECHANIC: the doorway is a capsule the width of its own sheet that no foe crosses in
+    // either direction and no sight crosses at all, and that he walks through. `interact` puts it in the
+    // editor's Interactables layer rather than among the walls it is the opposite of.
+    .{ .kind = .foggate, .build = fx.fogGateStoneMesh, .veil = fx.fogGateMesh, .bound = 5.4, .top = fx.FOG_H, .view = 320, .solid = true, .interact = true, .casts = false, .ward = true, .parts = &.{.{ .ax = -fx.FOG_W * 0.5, .bx = fx.FOG_W * 0.5, .r = fx.FOG_WARD_R, .h = fx.FOG_H }} },
 };
 
 pub fn info(k: Kind) *const Info {
@@ -481,6 +487,8 @@ comptime {
     for (INFO) |row| {
         if (row.veil != null or row.stow != null) std.debug.assert(row.solid);
         std.debug.assert(!(row.solid and row.occl.len > 0));
+        // A ward with no colliders is a rule nothing enforces, and it fails silently.
+        if (row.ward) std.debug.assert(row.parts.len > 0);
         for (row.occl) |bl| {
             std.debug.assert(bl.y1 > bl.y0);
             std.debug.assert(bl.y1 <= row.top + 0.001);

@@ -13,6 +13,11 @@ pub const Solid = struct {
     r: f32,
     h: f32 = 1e9,
     surf: Surface = .stone,
+    /// THE FOG GATE'S RULE, and the only thing in the world that has one: a wall to every BODY but the
+    /// hero's own side, in both directions, and a wall to every LOOK without exception. It is the gate's
+    /// slot in `env.wardProps` PLUS ONE, so 0 is an ordinary solid; `sees`, `blocksPoint` and the arrow's
+    /// cover do not ask, and only `env.resolveHeroSide` lets an OPEN one through.
+    ward: u8 = 0,
 };
 
 pub fn circle(x: f32, z: f32, r: f32) Solid {

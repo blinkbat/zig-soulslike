@@ -19,6 +19,10 @@ pub const sceneVS =
     \\in vec4 vertexColor;
     \\uniform mat4 mvp;
     \\uniform mat4 matModel;
+    \\// raylib's own per-draw tint (`drawModelEx`'s last argument). Everything in the scene passes WHITE and is
+    \\// unaffected; the fog gate passes an ember tint to say it is SHUT. `a` must stay 255 on any tint — the FS
+    \\// reads `1 - fragColor.a` as EMISSIVE, so a translucent tint would silently relight the model.
+    \\uniform vec4 colDiffuse;
     \\uniform float windAmt;   // 0 = rigid (terrain / props / hero); 1 = flora opts into sway
     \\uniform float uTime;     // seconds — drives the flora sway phase AND the water ripples (FS)
     \\out vec3 fragPosition;
@@ -87,18 +91,19 @@ pub const sceneVS =
     \\        vec3 baseW = vec3(matModel*vec4(0.0, 0.0, 0.0, 1.0));
     \\        float h = clamp(vertexTexCoord2.y, 0.0, 1.0);
     \\        fragLife = h;
-    \\        // No two gates in a world breathe together, and none of them breathes fast: a fog wall is the
-    \\        // one thing in this game that is standing still on purpose.
-    \\        float ph = uTime*0.42 + baseW.x*0.29 + baseW.z*0.23;
+    \\        // No two gates in a world breathe together (owner: more undulating). It HEAVES rather than
+    \\        // flutters: the biggest term is also the SLOWEST, and the two above it only break its edge.
+    \\        float ph = uTime*0.58 + baseW.x*0.29 + baseW.z*0.23;
+    \\        float swell = sin(ph*0.43 + p.x*0.55 + h*1.15);
     \\        float roll = sin(ph + p.x*1.30 + h*2.7) + 0.42*sin(ph*1.87 - p.x*2.10 + h*4.9) + 0.16*sin(ph*3.10 + h*8.0);
     \\        // OUT OF ITS OWN FACE, and further out the higher up it is: the foot of a fog wall is held by
     \\        // the doorway and the head of it is not held by anything.
-    \\        p.z += (0.035 + 0.150*h)*roll;
-    \\        p.x += 0.055*h*sin(ph*0.71 + p.y*1.7);
-    \\        p.y += 0.070*h*sin(ph*1.23 + p.x*0.90);
+    \\        p.z += (0.070 + 0.300*h)*roll + (0.050 + 0.190*h)*swell;
+    \\        p.x += 0.130*h*sin(ph*0.71 + p.y*1.7) + 0.070*h*swell;
+    \\        p.y += 0.150*h*sin(ph*1.23 + p.x*0.90);
     \\    }
     \\    fragPosition = vec3(matModel*vec4(p, 1.0));
-    \\    fragColor = vertexColor;
+    \\    fragColor = vertexColor*colDiffuse;
     \\    fragNormal = normalize(mat3(matModel)*vertexNormal);
     \\    fragUV = vertexTexCoord;      // surface-anchored, ~world units (Builder authors these)
     \\    fragMatF = vertexTexCoord2.x; // material id (gfx.Mat), constant per face
@@ -145,7 +150,7 @@ pub const sceneFS =
     \\const float FLAME_A_TIP = 0.42;
     \\const float SMOKE_A = 0.34;   // the ceiling on a puff — see the fade at the bottom of main()
     \\const float EMBER_A = 0.85;   // …and on a mote, which is nearly solid: it is a lit coal, not vapour
-    \\const float FOG_A = 0.80;     // a fog gate at the THRESHOLD, where it is thickest — it is a door, not a haze
+    \\const float FOG_A = 0.97;     // a fog gate at the THRESHOLD, where it is thickest — it is a door, not a haze
     \\float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
     \\float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
     \\  return mix(mix(hash21(i),hash21(i+vec2(1,0)),f.x), mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)),f.x),f.y); }
@@ -417,8 +422,12 @@ pub const sceneFS =
     \\  } else if (m == 15){ // FOG GATE: no surface either, and what it has instead is a slow CURDLE — two
     \\    // noise octaves crawling across the sheet at different speeds, which is what keeps a flat quad from
     \\    // reading as a flat quad once the vertex billow has moved it.
-    \\    base *= 0.82 + 0.26*fvn(q, 0.55, vec2(17.0), px) + 0.14*fvn(q, 1.90, vec2(5.3), px)
-    \\          + 0.07*sin(uTime*0.83 + q.x*0.90 + q.y*0.60);
+    \\    // The octaves DRIFT (an animated offset) rather than sitting still and breathing, so the churn goes
+    \\    // somewhere; and the troughs are deliberately deep — an evenly-valued sheet is a sheet of paper, and
+    \\    // dark holes moving through a bright body is what says the mass has something inside it.
+    \\    base *= 0.58 + 0.44*fvn(q, 0.42, vec2(17.0 + uTime*0.055, -uTime*0.115), px)
+    \\          + 0.26*fvn(q, 1.55, vec2(5.3 - uTime*0.090, uTime*0.048), px)
+    \\          + 0.09*sin(uTime*0.83 + q.x*0.90 + q.y*0.60);
     \\  } else if (m == 11 || m == 13){ // FLAME and EMBER: no surface texture at all — but they GUTTER.
     \\    // A fire has no SURFACE to weather, and the generic grain the default branch applies was mottling the one thing in the scene that is pure emitted light (flameInto's own comment, "no surface mottle over a glow", asked for this and could not get it — `.plain` IS the grain).
     \\    float fl = sin(uTime*11.0 + q.x*2.1 + q.y*1.7)*0.5
@@ -513,7 +522,12 @@ pub const sceneFS =
     \\  } else {
     \\    mi = int(fragMatF + 0.5);
     \\    // WATER is textured in WORLD xz, not surface UVs: the tarn is a radial fan of quads and the Builder decorrelates UVs per shape, so surface-anchored silt would show the lake's triangulation as a patchwork of unrelated blotches.
-    \\    base = matAlbedo(mi, (mi == 9) ? p : fragUV, base, n, (mi == 9) ? pxP : pxQ);
+    \\    // THE FOG GATE IS THE SAME PROBLEM STOOD UP: it is 224 quads with decorrelated UVs, so a UV-anchored
+    \\    // curdle was 224 unrelated blotches averaging out to a flat sheet. It takes world (x+z, y) — the
+    \\    // width and the HEIGHT, since a wall varies up as well as along — and world xz's own footprint,
+    \\    // which is the right order of magnitude and costs no third `fwidth` over the whole scene.
+    \\    vec2 mq = (mi == 9) ? p : (mi == 15) ? vec2(p.x + p.y, fragPosition.y) : fragUV;
+    \\    base = matAlbedo(mi, mq, base, n, (mi == 9 || mi == 15) ? pxP : pxQ);
     \\    // …and its ripples live in the NORMAL, so they must land before any lighting term.
     \\    if (mi == 9) { n = waterNormal(p, uTime, pxP); nv = clamp(dot(n, V), 0.0, 1.0); } // ripples move the normal
     \\  }
@@ -594,8 +608,11 @@ pub const sceneFS =
     \\    float tear = 0.60 + 0.16*sin(uTime*0.37 + fragPosition.x*1.10 + fragPosition.z*0.70)
     \\                     + 0.10*sin(uTime*0.83 - fragPosition.x*2.30)
     \\                     + 0.08*vnoise(vec2(fragPosition.x*1.7 + uTime*0.11, fragPosition.z*1.3));
-    \\    outA = FOG_A*(1.0 - smoothstep(0.05, tear, fragLife))
-    \\         *(0.90 + 0.10*sin(uTime*0.71 + fragPosition.x*0.8 + fragPosition.z*0.6));
+    \\    // AND IT IS SOLID FOR MOST OF ITS HEIGHT (owner: more opaque). Falling from 0.05 meant the sheet was
+    \\    // already half gone at chest height, which is a haze; it now holds full alpha to 0.62 of wherever its
+    \\    // own torn head happens to be that frame, and only then goes.
+    \\    outA = FOG_A*(1.0 - smoothstep(tear*0.62, tear, fragLife))
+    \\         *(0.96 + 0.04*sin(uTime*0.71 + fragPosition.x*0.8 + fragPosition.z*0.6));
     \\  }
     \\  if (mi == 13) outA = EMBER_A*smoothstep(0.0, 0.05, fragLife)*(1.0 - smoothstep(0.55, 1.0, fragLife))
     \\                     *(0.55 + 0.45*sin(uTime*17.0 + fragLife*29.0));

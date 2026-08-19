@@ -4,6 +4,7 @@ const gfx = @import("../gfx/gfx.zig");
 const mathx = @import("../core/mathx.zig");
 const collision = @import("../core/collision.zig");
 const props = @import("../props/props.zig");
+const propfx = @import("../props/propfx.zig");
 const wf = @import("worldfmt.zig");
 const chestmod = @import("../play/chest.zig");
 const pickupmod = @import("../play/pickup.zig");
@@ -26,6 +27,12 @@ const GROUND_HALF: f32 = wf.DEFAULT_HALF + 220.0;
 
 const MAX_PROPS = 24576;
 const MAX_SOLIDS = 8192;
+/// A ward is an ARENA DOOR (`props.Info.ward`). A map wanting more than this many is not laid out.
+pub const MAX_WARDS = 64;
+/// How far past a fog gate a crossing puts him down — clear of the sheet AND clear of the prompt's own reach,
+/// so stepping out the far side does not immediately offer him the way back in. That second half is a
+/// relationship with a number in another module, so `game.zig` asserts it rather than this comment claiming it.
+pub const WARD_CLEAR: f32 = 1.30;
 const MAX_SOLID_REFS = 4 * MAX_SOLIDS;
 const MAX_LIGHTS = 192;
 const MAX_DRESSED = 64;
@@ -233,6 +240,10 @@ const Prop = struct {
     lean: f32 = 0,
     leanDir: f32 = 0,
     op: u16 = 0,
+    /// Its slot in `wardProps` PLUS ONE, 0 for everything else — the same number `collision.Solid.ward`
+    /// carries, stamped beside it in `buildSolids`. Two copies because the two are walked by different
+    /// traversals: the solid grid answers about geometry, this answers about the draw.
+    ward: u8 = 0,
     fade: f32 = 1,
     fadeTo: f32 = 1,
     gone: bool = false,
@@ -356,6 +367,24 @@ pub const Env = struct {
     nprops: usize = 0,
     solid_buf: [MAX_SOLIDS]collision.Solid = undefined,
     nsolids: usize = 0,
+    /// THE FOG GATES, in the order `buildSolids` met them; `collision.Solid.ward` is a slot here PLUS ONE,
+    /// so that 0 can mean "an ordinary solid".
+    wardProps: [MAX_WARDS]u32 = undefined,
+    /// …and where its capsules sit in `solid_buf`, as the contiguous run `buildSolids` emits them in.
+    wardSolid0: [MAX_WARDS]u32 = undefined,
+    wardSolidN: [MAX_WARDS]u8 = [_]u8{0} ** MAX_WARDS,
+    nwards: usize = 0,
+    /// HE HAS BEEN THROUGH IT. Latched by his own step (`game.markWards`), cleared whenever the foes are
+    /// put back, or a respawned boss would shut a door with him on the wrong side of it.
+    wardIn: [MAX_WARDS]bool = [_]bool{false} ** MAX_WARDS,
+    /// …AND ITS BOSS IS STILL STANDING. The only thing that shuts a gate on HIM; stamped by the game, since
+    /// the op that names the boss and the count of what is alive are both its business, not the world's.
+    wardShut: [MAX_WARDS]bool = [_]bool{false} ** MAX_WARDS,
+    /// 1 WHILE IT STANDS, RUNNING TO 0 ONCE THE FIGHT IT SEALED IS OVER (owner: fade it out when the boss is
+    /// killed, then remove it). At 0 the gate is GONE, and `eachSolid` is where that is enforced — one line
+    /// there retires it from sight, from feet and from arrows together, where a per-query check is a query
+    /// to forget. The fade itself is stamped onto the prop's `shrink`, which is what draws it.
+    wardLife: [MAX_WARDS]f32 = [_]f32{1} ** MAX_WARDS,
     stx: Index = .{},
     flx: Index = .{},
     occl: [OCCL_MAX]u32 = undefined,
@@ -395,6 +424,8 @@ pub const Env = struct {
         self.waterSheet = waterQuad(shader, GROUND_HALF);
         self.nprops = 0;
         self.nsolids = 0;
+        self.nwards = 0;
+        self.openWards();
         self.nlights = 0;
         self.npools = 0;
         self.noccl = 0;
@@ -687,6 +718,8 @@ pub const Env = struct {
     pub fn materialize(self: *Env, m: *const wf.Map) void {
         self.nprops = 0;
         self.nsolids = 0;
+        self.nwards = 0;
+        self.openWards();
         self.nlights = 0;
         self.npools = 0;
         self.noccl = 0;
@@ -840,7 +873,9 @@ pub const Env = struct {
                 const c = cz * GRID_N + cx;
                 var k = self.sgrid_start[c];
                 while (k < self.sgrid_start[c + 1]) : (k += 1) {
-                    if (!visit(ctx, self.solid_buf[self.sgrid_items[k]])) return;
+                    const sol = self.solid_buf[self.sgrid_items[k]];
+                    if (sol.ward > 0 and self.wardLife[sol.ward - 1] <= 0) continue;
+                    if (!visit(ctx, sol)) return;
                 }
             }
         }
@@ -878,6 +913,100 @@ pub const Env = struct {
         return look.clear;
     }
 
+    /// WHICH FOG GATE THE LINE FROM `a` TO `b` GOES THROUGH, if any. A push-out only ever answers where a
+    /// body IS, so a move that ARRIVES rather than travels — the shade's blink, the delver under the ground,
+    /// any leap that clears the sheet in one frame — has to be asked about the whole segment or it lands
+    /// inside the arena having never touched the door.
+    pub fn wardCrossed(self: *const Env, a: rl.Vector3, b: rl.Vector3) ?u8 {
+        const Look = struct {
+            a: rl.Vector3,
+            b: rl.Vector3,
+            slot: ?u8 = null,
+            fn one(c: *@This(), s: collision.Solid) bool {
+                if (s.ward == 0 or !collision.blocksSight(c.a, c.b, s)) return true;
+                c.slot = s.ward - 1;
+                return false;
+            }
+        };
+        var look = Look{ .a = a, .b = b };
+        self.eachSolid(@min(a.x, b.x), @min(a.z, b.z), @max(a.x, b.x), @max(a.z, b.z), &look, Look.one);
+        return look.slot;
+    }
+
+    /// THE ONE WALK. Every question about a particular gate is about ITS OWN capsules and nothing else, and
+    /// as a filtered pass over the whole buffer that was the same scan written three times — eighteen hundred
+    /// solids apiece, one of them on the frame the prompt is drawn.
+    pub fn wardSolids(self: *const Env, i: u8) []const collision.Solid {
+        if (i >= self.nwards) return &.{};
+        const a = self.wardSolid0[i];
+        return self.solid_buf[a .. a + self.wardSolidN[i]];
+    }
+
+    /// Standing, and passable: the one predicate for "is this a door he could use".
+    pub fn wardOpen(self: *const Env, i: u8) bool {
+        return i < self.nwards and !self.wardShut[i] and self.wardLife[i] > 0;
+    }
+
+    /// Is `p` STANDING CLEAR of ward `i`? A door may not shut on the man in the doorway — pushed out of a
+    /// gate he is halfway through, he can land back on the side he came from and be locked OUT of a fight
+    /// he already started, with nothing left that can open it.
+    pub fn wardClear(self: *const Env, i: u8, p: rl.Vector3, r: f32) bool {
+        for (self.wardSolids(i)) |s| {
+            if (collision.blocksPoint(p, r, s)) return false;
+        }
+        return true;
+    }
+
+    /// THE GATE HE IS STANDING AT, and only one he could actually walk through. `margin` is how far off the
+    /// sheet counts as at it.
+    pub fn nearWard(self: *const Env, p: rl.Vector3, margin: f32) ?u8 {
+        for (0..self.nwards) |wi| {
+            const i: u8 = @intCast(wi);
+            if (!self.wardOpen(i)) continue;
+            for (self.wardSolids(i)) |s| {
+                if (collision.blocksPoint(p, margin, s)) return i;
+            }
+        }
+        return null;
+    }
+
+    /// **THE WHOLE LINE OF A CROSSING, DERIVED FROM THE SHEET AND NOT FROM WHERE HE HAPPENED TO STOP.** The
+    /// heading is the gate's own normal (off the SOLID, so the walk and the wall cannot disagree about which
+    /// way through is through), and `to` is that heading run from `p` far enough to clear the sheet's own
+    /// half-thickness plus the body's radius WHEREVER he started — the gap he still has to close is measured,
+    /// never assumed, or a man who triggered it from a metre back stops inside the door.
+    pub const Crossing = struct { dir: rl.Vector3, to: rl.Vector3 };
+
+    pub fn wardCross(self: *const Env, i: u8, p: rl.Vector3, r: f32) ?Crossing {
+        for (self.wardSolids(i)) |s| {
+            const n = mathx.perpXZ(mathx.dirXZ(s.a, s.b));
+            if (mathx.lenXZ(n) < 0.5) return null;
+            const q = mathx.closestOnSegXZ(p, s.a, s.b);
+            const away = v3(q.x - p.x, 0, q.z - p.z);
+            const dir = if (n.x * away.x + n.z * away.z >= 0) n else mathx.scaleV(n, -1);
+            const span = mathx.lenXZ(away) + s.r + r + WARD_CLEAR;
+            return .{ .dir = dir, .to = mathx.addV(p, mathx.scaleV(dir, span)) };
+        }
+        return null;
+    }
+
+    /// PUT THE DOORS BACK. Called wherever the bestiary is (`game.rehomeFoes`), because a fire that stands
+    /// the boss up again has to stand its gate up with it — a spent door and a live boss is an arena with no
+    /// mouth.
+    pub fn openWards(self: *Env) void {
+        self.wardIn = [_]bool{false} ** MAX_WARDS;
+        self.wardShut = [_]bool{false} ** MAX_WARDS;
+        self.wardLife = [_]f32{1} ** MAX_WARDS;
+        for (self.wardProps[0..self.nwards]) |pi| {
+            self.props[pi].shrink = 1;
+            self.props[pi].gone = false;
+        }
+    }
+
+    pub fn wardAt(self: *const Env, i: u8) rl.Vector3 {
+        return self.props[self.wardProps[i]].pos;
+    }
+
     pub fn blockedNear(self: *const Env, p: rl.Vector3, margin: f32, r: f32) bool {
         const Probe = struct {
             at: rl.Vector3,
@@ -894,19 +1023,39 @@ pub const Env = struct {
         return probe.hit;
     }
 
+    /// Every solid in the world, the fog gate's ward included — foes, folk, and the steering probe that
+    /// asks on their behalf (`game.wayClear`).
     pub fn resolveActor(self: *const Env, p: rl.Vector3, r: f32, footY: f32) rl.Vector3 {
+        return self.resolveActorPast(p, r, footY, false);
+    }
+
+    /// HIS OWN SIDE — the hero, and the spirit he summons, which follows him in. The one thing a ward lets
+    /// through; nothing here touches SIGHT, which a fog gate stops for him too.
+    pub fn resolveHeroSide(self: *const Env, p: rl.Vector3, r: f32, footY: f32) rl.Vector3 {
+        return self.resolveActorPast(p, r, footY, true);
+    }
+
+    fn resolveActorPast(self: *const Env, p: rl.Vector3, r: f32, footY: f32, crossesWards: bool) rl.Vector3 {
         const Push = struct {
             at: rl.Vector3,
             r: f32,
             footY: f32,
+            open: []const bool,
             fn one(c: *@This(), s: collision.Solid) bool {
+                if (s.ward > 0 and s.ward <= c.open.len and c.open[s.ward - 1]) return true;
                 if (c.footY >= s.h) return true;
                 c.at = collision.pushOut(c.at, c.r, s);
                 return true;
             }
         };
         const q = r + 1.0;
-        var push = Push{ .at = p, .r = r, .footY = footY };
+        // HIS SIDE WALKS THROUGH A GATE THAT IS STILL OPEN, and through nothing else. An empty slice is
+        // every ward standing: that is what a foe is handed, and it is what he is handed once one shuts.
+        var passable = [_]bool{false} ** MAX_WARDS;
+        if (crossesWards) {
+            for (0..self.nwards) |i| passable[i] = !self.wardShut[i];
+        }
+        var push = Push{ .at = p, .r = r, .footY = footY, .open = passable[0..self.nwards] };
         self.eachSolid(p.x - q, p.z - q, p.x + q, p.z + q, &push, Push.one);
         if (push.at.x == p.x and push.at.z == p.z) return push.at;
         self.eachSolid(p.x - q, p.z - q, p.x + q, p.z + q, &push, Push.one);
@@ -1200,12 +1349,23 @@ pub const Env = struct {
     pub fn drawVeils(self: *Env, view: *const View) void {
         for (self.dressItems[0..self.ndress]) |pi| {
             const pr = &self.props[pi];
+            if (pr.gone) continue;
             const mdl = self.veils[@intFromEnum(pr.kind)] orelse continue;
             const nfo = props.info(pr.kind);
             if (!view.visible(pr.pos, nfo.bound * pr.scale, nfo.view)) continue;
             self.stat_draws += 1;
+            // The SHEET does not shrink as it goes — a wall that got smaller would read as retreating rather
+            // than as thinning — so only the fade is taken, and the scale stays the gate's own.
             const sc = v3(pr.scale, pr.scale, pr.scale);
-            rl.drawModelEx(mdl, pr.pos, v3(0, 1, 0), pr.yaw, sc, rl.Color.white);
+            const fading = pr.shrink < 1.0;
+            if (fading) {
+                if (self.scene) |sn| sn.beginFade(pr.shrink);
+            }
+            const tint = if (pr.ward > 0 and self.wardShut[pr.ward - 1]) propfx.FOG_SHUT_TINT else rl.Color.white;
+            rl.drawModelEx(mdl, pr.pos, v3(0, 1, 0), pr.yaw, sc, tint);
+            if (fading) {
+                if (self.scene) |sn| sn.endFade();
+            }
         }
     }
 
@@ -1768,10 +1928,21 @@ pub fn coverField(x: f32, z: f32) f32 {
 
 fn buildSolids(e: *Env) void {
     e.nsolids = 0;
-    for (e.props[0..e.nprops]) |*pr| {
+    e.nwards = 0;
+    for (e.props[0..e.nprops], 0..) |*pr, pi| {
         const nfo = props.info(pr.kind);
         const s = pr.scale;
         const fr = PropFrame.of(pr);
+        var ward: u8 = 0;
+        if (nfo.ward) {
+            if (e.nwards >= MAX_WARDS) @panic("env: MAX_WARDS exceeded — raise the cap");
+            e.wardProps[e.nwards] = @intCast(pi);
+            e.wardSolid0[e.nwards] = @intCast(e.nsolids);
+            e.wardSolidN[e.nwards] = @intCast(nfo.parts.len);
+            e.nwards += 1;
+            ward = @intCast(e.nwards);
+        }
+        pr.ward = ward;
         for (nfo.parts) |part| {
             if (e.nsolids >= MAX_SOLIDS) @panic("env: MAX_SOLIDS exceeded — raise the cap");
             const a = fr.at(part.ax, 0, part.az);
@@ -1779,6 +1950,7 @@ fn buildSolids(e: *Env) void {
             var sol = collision.capsule(a.x, a.z, b.x, b.z, part.r * s);
             sol.h = pr.pos.y + part.h * s;
             sol.surf = nfo.surf;
+            sol.ward = ward;
             if (pr.lean != 0) {
                 var off = leanSwing(pr, part.h * s * 0.5);
                 const lim = part.r * s;
@@ -2255,6 +2427,95 @@ test "A WALL STOPS A LOOK, and the grid is walked far enough out to find one at 
     try std.testing.expect(e.sees(v3(0, eye, -22), v3(0, eye, 22)));
 }
 
+fn envWithFogGate() !*Env {
+    const e = try std.testing.allocator.create(Env);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.props[0] = .{ .kind = .foggate, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
+    e.nprops = 1;
+    buildSolids(e);
+    return e;
+}
+
+test "A FOG GATE IS A DOOR TO HIM AND A WALL TO A FOE, ENTERING AND LEAVING ALIKE" {
+    const e = try envWithFogGate();
+    defer std.testing.allocator.destroy(e);
+    const R: f32 = 0.42;
+    // Standing in the doorway from either side: the foe is pushed back out, the hero is left where he is.
+    for ([2]f32{ -0.25, 0.25 }) |z| {
+        const at = v3(0, 0, z);
+        try std.testing.expectEqual(at.x, e.resolveHeroSide(at, R, 0).x);
+        try std.testing.expectEqual(at.z, e.resolveHeroSide(at, R, 0).z);
+        const shoved = e.resolveActor(at, R, 0);
+        try std.testing.expect(@abs(shoved.z) > @abs(z));
+        try std.testing.expect(shoved.z * z > 0); // back the way it came, never through
+    }
+    // Off the end of the sheet is open ground for both. Measured off the ROW, not off the mesh constants.
+    const ward = props.info(.foggate).parts[0];
+    const past = v3(ward.bx + ward.r + R + 1.0, 0, 0);
+    try std.testing.expectEqual(past.z, e.resolveActor(past, R, 0).z);
+    // And a ward is a doorway, not a lid: a body whose feet are above it is not held by it.
+    try std.testing.expectEqual(@as(f32, 0.25), e.resolveActor(v3(0, 0, 0.25), R, ward.h + 0.1).z);
+}
+
+test "A FOG GATE STOPS A LOOK, AND STOPS HIS TOO" {
+    const e = try envWithFogGate();
+    defer std.testing.allocator.destroy(e);
+    const eye: f32 = 1.25;
+    try std.testing.expect(!e.sees(v3(0, eye, -9), v3(0, eye, 9)));
+    try std.testing.expect(!e.sees(v3(1.4, eye, -9), v3(-1.4, eye, 9)));
+    try std.testing.expect(e.sees(v3(6, eye, -9), v3(6, eye, 9)));
+}
+
+test "A BLINK ACROSS A FOG GATE IS A CROSSING; the same jump over a wall is not this rule's business" {
+    const e = try envWithFogGate();
+    defer std.testing.allocator.destroy(e);
+    try std.testing.expectEqual(@as(?u8, 0), e.wardCrossed(v3(0, 0, -5), v3(0, 0, 5)));
+    try std.testing.expectEqual(@as(?u8, null), e.wardCrossed(v3(0, 0, -5), v3(0, 0, -1))); // short of it
+    try std.testing.expectEqual(@as(?u8, null), e.wardCrossed(v3(6, 0, -5), v3(6, 0, 5))); // round the end
+    e.props[0] = .{ .kind = .wall, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
+    buildSolids(e);
+    try std.testing.expectEqual(@as(usize, 0), e.nwards);
+    try std.testing.expectEqual(@as(?u8, null), e.wardCrossed(v3(0, 0, -5), v3(0, 0, 5)));
+    try std.testing.expect(!e.sees(v3(0, 1.25, -5), v3(0, 1.25, 5)));
+}
+
+test "A CROSSING CLEARS THE SHEET WHEREVER HE STARTED FROM" {
+    const e = try envWithFogGate();
+    defer std.testing.allocator.destroy(e);
+    const R: f32 = 0.42;
+    // Triggered from hard against it and from a metre and a half back: both have to END clear on the far
+    // side, which is the thing a fixed travel distance gets wrong at one end or the other.
+    for ([_]f32{ -0.55, -1.50, -2.20 }) |z| {
+        const at = v3(0.3, 0, z);
+        const x = e.wardCross(0, at, R).?;
+        try std.testing.expect(x.dir.z > 0.9); // through, away from him
+        try std.testing.expect(x.to.z > 0);
+        try std.testing.expect(e.wardClear(0, x.to, R));
+        // …and it does not overshoot into the next county either.
+        try std.testing.expect(mathx.distXZ(at, x.to) < @abs(z) + 3.0);
+    }
+    // From the other side it points the other way.
+    const back = e.wardCross(0, v3(0, 0, 1.4), R).?;
+    try std.testing.expect(back.dir.z < -0.9);
+    try std.testing.expect(back.to.z < 0);
+}
+
+test "A SHUT GATE IS A WALL TO HIM TOO, and an open one is not" {
+    const e = try envWithFogGate();
+    defer std.testing.allocator.destroy(e);
+    const R: f32 = 0.42;
+    const at = v3(0, 0, 0.25);
+    try std.testing.expectEqual(at.z, e.resolveHeroSide(at, R, 0).z);
+    e.wardIn[0] = true;
+    e.wardShut[0] = true;
+    try std.testing.expect(e.resolveHeroSide(at, R, 0).z > at.z);
+    e.openWards();
+    try std.testing.expectEqual(at.z, e.resolveHeroSide(at, R, 0).z);
+    // …and a door may not shut on the man standing in it.
+    try std.testing.expect(!e.wardClear(0, at, R));
+    try std.testing.expect(e.wardClear(0, v3(0, 0, 4), R));
+}
+
 fn envWithRamp(rise: f32) !*Env {
     const e = try std.testing.allocator.create(Env);
     e.* = .{ .ground = undefined, .models = undefined };
@@ -2605,8 +2866,8 @@ test "THE BROOD ARENA LOADS — a scratch map is only useful if it is known to s
     try std.testing.expect(mothers > 0);
 }
 
-const PIN_PROPS: usize = 17535;
-const PIN_SOLIDS: usize = 1798;
+const PIN_PROPS: usize = 17536;
+const PIN_SOLIDS: usize = 1799;
 const PIN_LIGHTS: usize = 71;
 const PIN_JERKY: usize = 2;
 

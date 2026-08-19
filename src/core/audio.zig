@@ -551,6 +551,8 @@ pub const Id = enum {
     wolf_bite,
     wolf_hurt,
     wolf_die,
+    fog_seal,
+    fog_pass,
 };
 const NV = @typeInfo(Id).@"enum".fields.len;
 
@@ -1730,6 +1732,36 @@ fn mkSoulsTake(r: *Rack) void {
     r.master(2.0, 6400);
 }
 
+/// WALKING THROUGH THE SHEET. A long inhale rather than an event: broadband air opening and closing round him
+/// with a low body under it, no transient at all — the gate does not CLICK, and a tick at the head would be a
+/// door latching, which is the sound the SEAL owns.
+fn mkFogPass(r: *Rack) void {
+    r.air(0.00, 1.55, 0.34, 260, 1500, 0.30, 1.1);
+    r.air(0.10, 1.35, 0.24, 1700, 320, 0.34, 1.3);
+    r.body(0.00, 1.30, 58, 44, 0.30, 1.5);
+    r.grit(0.05, 1.10, 0.10, 700, 0.75, 1.6);
+    r.hall(1.20, 1800);
+    r.master(1.4, 2200);
+    r.ends(0.16, 0.42);
+}
+
+/// THE FOG GATE SHUTTING ON A BOSS FIGHT (owner: an ominous, low tone arrangement, about 5 s). Built on the
+/// interval rather than on the timbre: A1 (55 Hz) against E-flat above it is a TRITONE, which is the one
+/// interval nobody hears as resolved, and the two are laid a beat apart so the dissonance ARRIVES. The sub
+/// sags a semitone across the take — a pitch that settles reads as a chord, one that keeps falling does not.
+fn mkFogSeal(r: *Rack) void {
+    r.body(0.00, 1.60, 96, 44, 0.55, 2.2); // the stone hitting its seat
+    r.grit(0.00, 0.90, 0.30, 520, 0.85, 2.6);
+    r.body(0.05, 4.70, 41.2, 38.9, 0.62, 0.9); // the sub, sagging a semitone over the whole take
+    r.ring(0.10, 4.40, 55.0, 0.34, 1.1, 3); // A1
+    r.ring(0.95, 3.70, 77.8, 0.26, 1.2, 3); // …and the tritone above it, a beat late
+    r.choir(0.35, 4.20, 82.4, 0.30, 4, 0.42);
+    r.air(0.00, 4.90, 0.10, 380, 140, 0.30, 0.8);
+    r.hall(2.40, 1500);
+    r.master(1.5, 1100);
+    r.ends(0.03, 1.10);
+}
+
 fn mkRingSnap(r: *Rack) void {
     r.tick(0.0, 0.62, 7200);
     r.ring(0.0, 0.20, 1568, 0.34, 7.0, 2);
@@ -2235,10 +2267,20 @@ const BANK = [NV]Row{
     .{ .id = .wolf_bite, .make = mkWolfBite, .gain = battle(0.52), .mix = .combat, .jit = 0.16, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 52 },
     .{ .id = .wolf_hurt, .make = mkWolfHurt, .gain = battle(0.54), .mix = .combat, .jit = 0.20, .vjit = 0.26, .vars = 5, .poly = 3, .reach = 56 },
     .{ .id = .wolf_die, .make = mkWolfDie, .gain = battle(0.70), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 1, .reach = 90 },
+    // ONE TAKE, NO JITTER, ONE VOICE. A sting is a fixed event and the same door twice must sound the same
+    // twice; and it is played flat (`sfx.play`) rather than placed, so `reach` never enters into it.
+    // On `.sfx` with `ring_snap`, NOT in the fight's own band: a stinger that announces a fight has to sit
+    // ABOVE it, and the combat submix is deliberately compressed flat (`battle`).
+    .{ .id = .fog_seal, .make = mkFogSeal, .gain = 0.60, .jit = 0.0, .vjit = 0.0, .vars = 1, .poly = 1 },
+    .{ .id = .fog_pass, .make = mkFogPass, .gain = 0.44, .jit = 0.04, .vjit = 0.08, .vars = 2, .poly = 1 },
 };
 
 fn seconds(id: Id) f32 {
     return switch (id) {
+        // The door shutting on a boss fight, at the length the owner asked for.
+        .fog_seal => 5.0,
+        // …and it has to cover the WALK it plays under (`game.GATE_SPEED` over a gate-and-a-bit of ground).
+        .fog_pass => 1.7,
         .wind => 8.0,
         .crickets => 7.3,
         // A BED HAS TO OUTLAST ITS OWN PATTERN or the loop point is the thing you hear. The longest take here —
@@ -3157,6 +3199,31 @@ test "THE OPTIONS DIALS — three families, and the fight is one of them" {
     // …and a dial cannot become a boost.
     setVolume(.combat, 4.0);
     try std.testing.expectEqual(@as(f32, 1.0), volume(.combat));
+}
+
+test "THE FOG GATE STING IS FIVE SECONDS OF SOUND, not one second and four of silence" {
+    const id: Id = .fog_seal;
+    const secs = seconds(id);
+    try std.testing.expectApproxEqAbs(@as(f32, 5.0), secs, 1e-6);
+    var r = Rack.init(0x9E3779B9, secs);
+    BANK[@intFromEnum(id)].make(&r);
+    try std.testing.expectEqual(@as(usize, 0), r.dropped);
+
+    // RMS per second. The sting has to still be SOUNDING at the end — a take that has decayed to nothing by
+    // second two is a one-second sound with a four-second gap after it, which is what "about 5s" is not.
+    var rms: [5]f32 = undefined;
+    for (&rms, 0..) |*v, sec| {
+        const a0 = r.at(@as(f32, @floatFromInt(sec)));
+        const b0 = r.at(@as(f32, @floatFromInt(sec + 1)));
+        var sum: f32 = 0;
+        for (work[a0..b0]) |x| sum += x * x;
+        v.* = @sqrt(sum / @as(f32, @floatFromInt(b0 - a0)));
+    }
+    std.debug.print("\n  fog gate sting: rms/s {d:.3} {d:.3} {d:.3} {d:.3} {d:.3}\n", .{ rms[0], rms[1], rms[2], rms[3], rms[4] });
+    for (rms) |v| try std.testing.expect(v > 0.02);
+    try std.testing.expect(rms[4] > rms[0] * 0.10);
+    // …and it OPENS on the door rather than fading in: the first second is the loudest.
+    for (rms[1..]) |v| try std.testing.expect(rms[0] >= v);
 }
 
 test "THE FIGHT IS ONE BAND — no battle voice towers over the rest of them" {

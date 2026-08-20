@@ -1,0 +1,102 @@
+version: 1
+name: Bone Court
+half: 60.0
+runway: -3.40 -30.00 3.40 20.00
+
+zone: plain -400.0 -400.0 400.0 400.0 0.480 grasstall,grasstall,patch,tuft,clover,moss,thistle
+clear: 0.0 -14.0 9.0
+clear: -14.0 -26.0 9.0
+clear: 10.0 -34.0 11.0
+
+at: bonfire 3 6.5 0 1
+at: glow 2.1 5.5 40 1
+at: campfire_lit -13 -2 0 1
+at: campfire -6 12 0 1
+at: wall -20 -6 90 1.1
+at: wall 20 -6 -90 1.1
+at: wall -20 -30 90 1.15
+at: wall 20 -30 -90 1.05
+at: wall -8 -44 0 1.2
+at: wall 8 -44 180 1.1
+at: arch 0 -44 0 1
+at: pillar -9 -18 0 1
+at: pillar 9 -18 24 1
+at: broken -9 -36 -12 0.95
+at: pillar 9 -36 60 1.05
+at: rubble -3 -22 10 1
+at: rubble 5 -39 0 1
+at: block 14 -14 70 1
+at: block -14 -40 30 1
+at: graves -15 -14 15 0.9
+at: graves 15 -38 -25 0.85
+at: sword -2.6 -9 30 1
+at: sword 11 -27 -60 0.95
+at: brazier -4.2 -2.6 0 1
+at: brazier 4.6 -47 0 0.95
+at: barrels 13 -6 50 0.95
+belt: tuft -34 -52 34 14 54 0.85 1.3 seed=3001
+belt: rocks -36 -54 36 16 20 0.8 1.3 seed=3002
+belt: bush -36 -54 36 16 15 0.8 1.3 seed=3003
+belt: tuft -60 -60 -44 -44 9 0.68 1.34 seed=49387529158470 avoid=runway,water,solid mix=tuft,moss,thistle,patch,grasstall
+belt: grasstall -44 -60 -28 -44 7 0.68 1.34 seed=187468700523034 avoid=runway,water,solid mix=grasstall,clover,patch,moss,tuft
+belt: clover -28 -60 -12 -44 8 0.68 1.34 seed=197656815758631 avoid=runway,water,solid mix=clover,moss,grasstall,patch,thistle
+belt: thistle -12 -60 4 -44 3 0.68 1.34 seed=207162634827396 avoid=runway,water,solid mix=thistle,grasstall
+belt: moss 4 -60 20 -44 12 0.68 1.34 seed=61002223020635 avoid=runway,water,solid mix=moss,grasstall,thistle,tuft,patch
+belt: thistle 20 -60 36 -44 16 0.68 1.34 seed=110879242644210 avoid=runway,water,solid mix=thistle,tuft,moss,grasstall,clover,patch
+belt: patch 36 -60 52 -44 12 0.68 1.34 seed=270952576168663 avoid=runway,water,solid mix=patch,thistle,moss,clover,tuft,grasstall
+belt: tuft 52 -60 60 -44 4 0.68 1.34 seed=18047027215878 avoid=runway,water,solid mix=tuft,grasstall,clover
+belt: grasstall -44 -44 -28 -28 4 0.68 1.34 seed=136240700685168 avoid=runway,water,solid mix=grasstall,tuft,clover,thistle
+belt: grasstall -28 -44 -12 -28 4 0.68 1.34 seed=114968149038765 avoid=runway,water,solid mix=grasstall,clover,moss
+belt: moss -12 -44 4 -28 4 0.68 1.34 seed=266952211922946 avoid=runway,water,solid mix=moss,thistle,grasstall
+belt: moss 20 -44 36 -28 11 0.68 1.34 seed=99324795108592 avoid=runway,water,solid mix=moss,grasstall,patch,thistle,tuft
+belt: thistle 36 -44 52 -28 8 0.68 1.34 seed=84150221834532 avoid=runway,water,solid mix=thistle,moss,grasstall,patch
+belt: grasstall 52 -44 60 -28 1 0.68 1.34 seed=176753684944930 avoid=runway,water,solid
+belt: grasstall -60 -28 -44 -12 2 0.68 1.34 seed=174119985830633 avoid=runway,water,solid
+belt: patch -44 -28 -28 -12 1 0.68 1.34 seed=61470485403482 avoid=runway,water,solid
+belt: thistle -28 -28 -12 -12 2 0.68 1.34 seed=164994897348981 avoid=runway,water,solid mix=thistle,tuft
+belt: patch 4 -28 20 -12 3 0.68 1.34 seed=233128308845404 avoid=runway,water,solid mix=patch,grasstall,moss
+belt: grasstall 20 -28 36 -12 9 0.68 1.34 seed=268988624924008 avoid=runway,water,solid mix=grasstall,thistle,moss
+belt: grasstall 36 -28 52 -12 7 0.68 1.34 seed=269660956130649 avoid=runway,water,solid mix=grasstall,patch,tuft
+belt: thistle -60 -12 -44 4 8 0.68 1.34 seed=73141844930939 avoid=runway,water,solid mix=thistle,clover,grasstall,moss
+belt: grasstall -44 -12 -28 4 6 0.68 1.34 seed=156463877925946 avoid=runway,water,solid mix=grasstall,clover,moss,patch,thistle
+belt: thistle -28 -12 -12 4 1 0.68 1.34 seed=135887847457728 avoid=runway,water,solid
+belt: grasstall 4 -12 20 4 2 0.68 1.34 seed=239638266405442 avoid=runway,water,solid mix=grasstall,thistle
+belt: grasstall 20 -12 36 4 8 0.68 1.34 seed=138496854452313 avoid=runway,water,solid mix=grasstall,patch,thistle,tuft
+belt: grasstall 36 -12 52 4 3 0.68 1.34 seed=270777197205334 avoid=runway,water,solid mix=grasstall,moss,patch
+belt: moss -60 4 -44 20 1 0.68 1.34 seed=160636591657136 avoid=runway,water,solid
+belt: tuft -44 4 -28 20 7 0.68 1.34 seed=239183935643694 avoid=runway,water,solid mix=tuft,patch,clover,grasstall,thistle,moss
+belt: clover -28 4 -12 20 4 0.68 1.34 seed=114699470913904 avoid=runway,water,solid mix=clover,thistle,grasstall
+belt: grasstall -12 4 4 20 1 0.68 1.34 seed=187455965909291 avoid=runway,water,solid
+belt: tuft 4 4 20 20 8 0.68 1.34 seed=227767301032651 avoid=runway,water,solid mix=tuft,grasstall,clover,patch
+belt: grasstall 20 4 36 20 10 0.68 1.34 seed=21492359220157 avoid=runway,water,solid mix=grasstall,clover,patch,moss
+belt: tuft 36 4 52 20 3 0.68 1.34 seed=95726449865174 avoid=runway,water,solid mix=tuft,grasstall
+belt: clover 52 4 60 20 4 0.68 1.34 seed=48042163246961 avoid=runway,water,solid mix=clover,thistle,patch
+belt: grasstall -60 20 -44 36 2 0.68 1.34 seed=236284569696004 avoid=runway,water,solid mix=grasstall,thistle
+belt: grasstall -44 20 -28 36 3 0.68 1.34 seed=184708570496029 avoid=runway,water,solid mix=grasstall,patch
+belt: clover -28 20 -12 36 7 0.68 1.34 seed=186217490871557 avoid=runway,water,solid mix=clover,tuft,grasstall,patch
+belt: tuft -12 20 4 36 9 0.68 1.34 seed=63182103363787 avoid=runway,water,solid mix=tuft,grasstall,clover,patch
+belt: tuft 4 20 20 36 11 0.68 1.34 seed=100904477045901 avoid=runway,water,solid mix=tuft,thistle,grasstall,moss,clover
+belt: grasstall 20 20 36 36 8 0.68 1.34 seed=83347794709325 avoid=runway,water,solid mix=grasstall,tuft,clover,patch,moss
+belt: moss 36 20 52 36 14 0.68 1.34 seed=182828226106583 avoid=runway,water,solid mix=moss,tuft,grasstall,patch,clover
+belt: grasstall 52 20 60 36 9 0.68 1.34 seed=6957435563684 avoid=runway,water,solid mix=grasstall,patch,clover,moss
+belt: tuft -60 36 -44 52 5 0.68 1.34 seed=223943985880545 avoid=runway,water,solid mix=tuft,clover,grasstall,patch
+belt: tuft -44 36 -28 52 4 0.68 1.34 seed=180542135931550 avoid=runway,water,solid mix=tuft,patch
+belt: clover -28 36 -12 52 8 0.68 1.34 seed=230633442003121 avoid=runway,water,solid mix=clover,thistle,moss,tuft,grasstall
+belt: moss -12 36 4 52 10 0.68 1.34 seed=157373934638422 avoid=runway,water,solid mix=moss,thistle,grasstall,tuft
+belt: moss 4 36 20 52 12 0.68 1.34 seed=147382057194271 avoid=runway,water,solid mix=moss,thistle,grasstall,tuft,clover
+belt: grasstall 20 36 36 52 7 0.68 1.34 seed=86903230424955 avoid=runway,water,solid mix=grasstall,patch,thistle,tuft
+belt: patch 36 36 52 52 14 0.68 1.34 seed=148548859961341 avoid=runway,water,solid mix=patch,moss,tuft,clover,thistle,grasstall
+belt: tuft 52 36 60 52 13 0.68 1.34 seed=199362295430796 avoid=runway,water,solid mix=tuft,clover,moss,grasstall,patch,thistle
+belt: patch -60 52 -44 60 2 0.68 1.34 seed=112278066086296 avoid=runway,water,solid
+belt: thistle -44 52 -28 60 1 0.68 1.34 seed=169872623639657 avoid=runway,water,solid
+belt: moss -28 52 -12 60 7 0.68 1.34 seed=121432482474973 avoid=runway,water,solid mix=moss,patch,grasstall
+belt: grasstall -12 52 4 60 6 0.68 1.34 seed=245843760065000 avoid=runway,water,solid mix=grasstall,patch,clover,moss
+belt: patch 4 52 20 60 6 0.68 1.34 seed=226533389188267 avoid=runway,water,solid mix=patch,moss,tuft,grasstall
+belt: grasstall 20 52 36 60 7 0.68 1.34 seed=249706452666960 avoid=runway,water,solid mix=grasstall,clover,thistle
+belt: grasstall 36 52 52 60 8 0.68 1.34 seed=173352381651998 avoid=runway,water,solid mix=grasstall,moss,thistle
+belt: tuft 52 52 60 60 7 0.68 1.34 seed=161321990074343 avoid=runway,water,solid mix=tuft,moss,grasstall,clover
+
+foe: shieldman 0.00 -14.00 180.0 1.00 0.28
+foe: greatsword -14.00 -26.00 150.0 1.00 0.61
+foe: shieldman 8.00 -32.00 190.0 1.00 0.13
+foe: greatsword 13.00 -36.00 210.0 1.00 0.44

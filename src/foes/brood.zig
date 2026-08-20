@@ -1703,6 +1703,7 @@ pub const Brood = struct {
     sacs: [SAC_CAP]Sac = undefined,
     nsacs: usize = 0,
     pools: [POOL_CAP]Pool = [_]Pool{.{}} ** POOL_CAP,
+    soak: foe.Soak = .{},
     hatches: u32 = 0,
     bursts: u32 = 0,
     burstsFrame: u32 = 0,
@@ -1763,8 +1764,8 @@ pub const Brood = struct {
         sfx.world(.acid_splash, at);
     }
 
-    pub fn burn(self: *const Brood, dt: f32, hero: rl.Vector3) f32 {
-        return if (self.burning(hero)) ACID_BUILD * dt else 0;
+    pub fn burn(self: *Brood, dt: f32, hero: rl.Vector3) f32 {
+        return self.soak.step(self.burning(hero), dt, ACID_BUILD);
     }
     pub fn burning(self: *const Brood, hero: rl.Vector3) bool {
         for (&self.pools) |*p| {
@@ -2245,10 +2246,19 @@ test "a pool spreads, DOSES while he stands in it, thins out and stops" {
     try std.testing.expect(b.burning(at));
     try std.testing.expect(!b.burning(mathx.ground(ACID_R + 1, 0)));
 
+    // **A SECOND IN IT COSTS A SECOND'S BUILD PLUS THE ENTRY** (`foe.Soak`) — stepping in bills up front and
+    // the clock runs after, so clipping the rim is no longer free.
     var dosed: f32 = 0;
     t = 0;
     while (t < 1.0) : (t += 1.0 / 60.0) dosed += b.burn(1.0 / 60.0, at);
-    try std.testing.expectApproxEqAbs(ACID_BUILD, dosed, 0.7);
+    try std.testing.expectApproxEqAbs(ACID_BUILD * (1.0 + foe.ENTRY_BOLUS), dosed, 0.7);
+    const first = blk: {
+        var fresh = Brood{ .model = undefined };
+        fresh.clear();
+        fresh.pools[0] = b.pools[0];
+        break :blk fresh.burn(1.0 / 60.0, at);
+    };
+    try std.testing.expect(first > ACID_BUILD / 60.0 * 5.0);
     try std.testing.expectEqual(@as(f32, 0), b.burn(1.0 / 60.0, mathx.ground(50, 50)));
 
     t = 0;

@@ -28,6 +28,8 @@ pub fn main() void {
     }
     const mode: game.Mode = if (hasArg(argv, "--shot-props"))
         .props
+    else if (hasArg(argv, "--shot-land"))
+        .land
     else if (hasArg(argv, "--shot"))
         .shots
     else
@@ -84,6 +86,7 @@ test {
     _ = @import("foes/necro.zig");
     _ = @import("foes/ravager.zig");
     _ = @import("foes/shroommage.zig");
+    _ = @import("foes/sporegolem.zig");
     _ = @import("foes/fenlurker.zig");
     _ = @import("foes/wolf.zig");
     _ = @import("play/pickup.zig");
@@ -133,4 +136,8 @@ test {
     _ = @import("props/propruins.zig");
     _ = @import("props/propvillage.zig");
     _ = @import("props/propwood.zig");
+    _ = @import("props/propbone.zig");
+    _ = @import("props/propash.zig");
+    _ = @import("props/propfungus.zig");
+    _ = @import("props/propcoral.zig");
 }

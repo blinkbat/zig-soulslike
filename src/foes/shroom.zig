@@ -48,7 +48,9 @@ const RESISTS = combat.resists(.{ .fire = -50, .cold = 15, .chaos = 75 });
 pub const SOULS: u32 = 70;
 
 pub const FLING_HIT = combat.Hit{ .dmg = 12, .poise = 20, .stance = 8 };
-pub const SPORE_BUILD: f32 = 24.0;
+/// **POISON PER SECOND STANDING IN IT** (owner: accrue more rapidly). Nearly double: at 24 a sporeling's
+/// cloud was something you could walk through while reading the room, which is not what a gas is for.
+pub const SPORE_BUILD: f32 = 42.0;
 
 const HOP_REACH: f32 = 1.05;
 const HOP_APEX: f32 = 0.42;
@@ -669,6 +671,7 @@ pub const Cluster = struct {
     n: usize = 0,
     clouds: [CLOUD_CAP]Cloud = [_]Cloud{.{}} ** CLOUD_CAP,
     cloudHead: usize = 0,
+    soak: foe.Soak = .{},
 
     pub fn init(shader: rl.Shader) Cluster {
         return .{ .model = Model.init(shader) };
@@ -715,8 +718,8 @@ pub const Cluster = struct {
         return blow;
     }
 
-    pub fn spores(self: *const Cluster, dt: f32, hero: rl.Vector3) f32 {
-        return if (self.fuming(hero)) SPORE_BUILD * dt else 0;
+    pub fn spores(self: *Cluster, dt: f32, hero: rl.Vector3) f32 {
+        return self.soak.step(self.fuming(hero), dt, SPORE_BUILD);
     }
     pub fn fuming(self: *const Cluster, hero: rl.Vector3) bool {
         for (&self.clouds) |*c| {
@@ -876,13 +879,19 @@ test "THE CLOUD POISONS, IT DOES NOT BURN: linger and the meter fills, step out 
     const inside = v3(0.4, 0, 0.2);
     const outside = v3(9, 0, 9);
     var psn = combat.Status{};
+    var broke = false;
     var t: f32 = 0;
     while (t < CLOUD_LIFE) : (t += 1.0 / 60.0) {
         for (&c.clouds) |*cl| cl.update(1.0 / 60.0);
         psn.add(c.spores(1.0 / 60.0, inside));
         _ = psn.tick(1.0 / 60.0, 70);
+        if (psn.active()) broke = true;
     }
-    try std.testing.expect(psn.frac() > 0.5 and !psn.active());
+    // **IT BREAKS NOW, AND IT DID NOT BEFORE** (owner: accrue more rapidly). At `SPORE_BUILD` 24 a whole
+    // cloud lifetime left the meter half full and nothing happened; at 42, plus the entry bolus
+    // (`foe.Soak`), standing in one to the end poisons you. That is the point of a poison cloud.
+        std.debug.print("  sporeling cloud: {d:.0}/s over {d:.1} s of cloud -> poison {s}\n", .{ SPORE_BUILD, CLOUD_LIFE, if (broke) "BROKE" else "held" });
+    try std.testing.expect(broke);
     try std.testing.expectApproxEqAbs(@as(f32, 0), c.spores(1.0 / 60.0, outside), 1e-6);
     var k: u32 = 0;
     while (k < 60 * 5) : (k += 1) {

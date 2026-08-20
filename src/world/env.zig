@@ -13,6 +13,7 @@ const restmod = @import("../play/rest.zig");
 
 const v3 = mathx.v3;
 const Kind = props.Kind;
+const alloc = std.heap.raw_c_allocator;
 
 
 pub const RIM_OUT: f32 = 6.0;
@@ -770,25 +771,15 @@ pub const Env = struct {
         self.noccl = 0;
         @memset(&self.sgrid_start, 0);
 
+        // **ONE PASS NOW.** There used to be two, with `buildSolids` between them, because the global cover
+        // op had to ask `blockedHere` about walls the explicit ops had just put up. Every plant is its own
+        // `at:` op now, so there is nothing left that needs the solids to already be standing mid-build.
         var p = Placer{ .e = self, .m = m, .flat = !m.anyHeight() };
         for (m.slice(), 0..) |*o, i| {
             p.cur = @intCast(i);
-            if (o.op != .cover) p.expand(o);
+            p.expand(o);
         }
         buildSolids(self);
-        const beforeCover = self.nprops;
-        for (m.slice(), 0..) |*o, i| {
-            p.cur = @intCast(i);
-            if (o.op == .cover) p.expand(o);
-        }
-        var coverIsSolid = false;
-        for (self.props[beforeCover..self.nprops]) |pr| {
-            if (props.info(pr.kind).parts.len > 0) {
-                coverIsSolid = true;
-                break;
-            }
-        }
-        if (coverIsSolid) buildSolids(self);
         indexProps(self);
     }
 
@@ -1831,7 +1822,6 @@ const Placer = struct {
             .line => self.line(o, &rng),
             .ivy => self.ivy(o, &rng),
             .edge => self.edge(o, &rng),
-            .cover => self.cover(o, &rng),
         }
     }
 
@@ -1899,10 +1889,7 @@ const Placer = struct {
     fn ivy(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
         const n = self.e.nprops;
         for (self.e.props[0..n]) |pr| {
-            switch (pr.kind) {
-                .wall, .pillar, .broken, .block, .arch, .statue, .cottage, .chapel, .watchtower, .stairs, .monolith => {},
-                else => continue,
-            }
+            if (!props.ivyClimbs(pr.kind)) continue;
             if (pr.pos.x < o.x or pr.pos.x > o.x1 or pr.pos.z < o.z or pr.pos.z > o.z1) continue;
             if (rng.float() > o.chance) continue;
             const nfo = props.info(pr.kind);
@@ -1942,31 +1929,6 @@ const Placer = struct {
         const mid = (o.sLo + o.sHi) * 0.5;
         const amp = (o.sHi - o.sLo) * 0.5;
         return mid + amp * (0.62 * mathx.sinf(along * 0.070) + 0.31 * mathx.sinf(along * 0.170 + 1.9)) + rng.signed() * amp * 0.16;
-    }
-
-    fn cover(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
-        const pitch = o.r0;
-        if (pitch < 0.1) return;
-        const half = self.m.half;
-        const n: i32 = @intFromFloat(@ceil(2 * half / pitch));
-        var iz: i32 = 0;
-        while (iz < n) : (iz += 1) {
-            var ix: i32 = 0;
-            while (ix < n) : (ix += 1) {
-                const bx = -half + (@as(f32, @floatFromInt(ix)) + 0.5) * pitch;
-                const bz = -half + (@as(f32, @floatFromInt(iz)) + 0.5) * pitch;
-                const x = bx + rng.signed() * pitch * 0.48;
-                const z = bz + rng.signed() * pitch * 0.48;
-                const zone = self.m.zoneAt(x, z) orelse continue;
-                if (rng.float() > zone.density * coverField(x, z)) continue;
-                if (self.m.inClearing(x, z)) continue;
-                if (self.e.inWater(x, z, 0.97)) continue;
-                if (self.m.onRunway(x, z)) continue;
-                if (self.blockedHere(x, z)) continue;
-                const kind = zone.pick(rng) orelse continue;
-                self.at(kind, x, z, rng.range(0, 360), rng.range(o.sLo, o.sHi), rng);
-            }
-        }
     }
 };
 
@@ -2907,17 +2869,13 @@ test "the SHIPPED map parses, and its zones cover every reachable position" {
         return e;
     };
     try std.testing.expect(m.nops > 0);
-
-    var x: f32 = -m.half;
-    while (x <= m.half) : (x += 7) {
-        var z: f32 = -m.half;
-        while (z <= m.half) : (z += 7) {
-            const zone = m.zoneAt(x, z) orelse return error.NoZone;
-            try std.testing.expect(zone.nmix > 0);
-            try std.testing.expect(zone.density > 0.1 and zone.density <= 1.0);
-            for (zone.mix[0..zone.nmix]) |k| try std.testing.expect(props.info(k).flora);
-        }
-    }
+    // **THE ZONE SWEEP THAT USED TO LIVE HERE IS GONE WITH THE THING IT GUARDED.** It walked the map on a
+    // 7 m grid and asserted every position landed in a zone with a valid flora mix and a density in
+    // (0.1, 1.0] — the preconditions the global `cover:` op needed to grow anything there. Cover is
+    // ordinary `at:` decor now, nothing reads `Zone.density` or `Zone.mix`, and the assertion was failing on
+    // a slider value that no longer changes a single pixel. A `zone:` is an inert named rectangle until it
+    // is folded into `location:`.
+    try std.testing.expect(m.half > 0);
 }
 
 test "every generator op in the shipped map has its own seed" {

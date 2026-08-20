@@ -1,0 +1,30 @@
+version: 1
+name: Mushroom Mage Test
+half: 80.0
+runway: -6.00 -20.00 6.00 10.00
+
+zone: plain -400.0 -400.0 400.0 400.0 0.580 grasstall,grasstall,patch,tuft,clover,moss,mushrooms,wildflowers
+clear: 0.0 0.0 30.0
+cover: 3.1 0.70 1.35 seed=4
+
+# THREE AT THE FAR END, so the whole arc of a lob is in frame from the runway — the flight IS the tell, and a
+# mage stood on top of you shows none of it. Scales either side of 1 and seeds well apart, because a ring of
+# them throwing in lockstep is one attack with three sounds.
+foe: mushroom_mage 0.00 18.00 180.0 1.00 0.19
+foe: mushroom_mage 6.40 21.50 194.0 0.92 0.61
+foe: mushroom_mage -6.10 22.20 168.0 1.08 0.87
+
+# …and a lone one out on the flank, to watch ONE ball's whole bounce line without three others crossing it.
+foe: mushroom_mage 26.00 4.00 250.0 1.00 0.44
+
+# SOMETHING TO STAND BEHIND. The ball bursts on cover and only bounces off the EARTH, so a wall is the one
+# answer that is not feet — and that difference is only legible with a wall on the field to try it against.
+at: wall -9.00 8.00 0 1
+at: wall -9.00 11.60 0 1
+at: pillar -13.00 9.00 0 1
+at: boulder 9.50 6.00 0 1.4
+at: boulder 11.20 8.10 30 1.1
+
+# The neighbours it shares a kingdom with, for the swatch and the silhouette against each other.
+foe: shroom -20.00 10.00 90.0 1.00 0.55
+foe: florid_ravager -24.00 16.00 120.0 1.00 0.33

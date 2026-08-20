@@ -1,0 +1,668 @@
+const std = @import("std");
+const rl = @import("raylib");
+const gfx = @import("../gfx/gfx.zig");
+const mathx = @import("../core/mathx.zig");
+const combat = @import("../play/combat.zig");
+const foe = @import("foe.zig");
+const wf = @import("../world/worldfmt.zig");
+const sfx = @import("../core/audio.zig");
+const art = @import("../props/propart.zig");
+
+const v3 = mathx.v3;
+const rgba = mathx.rgba;
+const Builder = gfx.Builder;
+
+const rx = mathx.rx;
+const ry = mathx.ry;
+const rz = mathx.rz;
+const tr = mathx.tr;
+const mul = mathx.mul;
+const mul3 = mathx.mul3;
+const lerpF = mathx.lerpF;
+
+// ── THE SPORE HOMUNCULUS ────────────────────────────────────────────────────────────────────────────────
+//
+// **THE SPORELING'S BRUTISH COUSIN** (owner's brief, owner's word). Same kingdom, same palette, same two-part
+// silhouette of a cap over a body — and four times the mass, which is the whole joke: you have spent the
+// game stepping over knee-high mushrooms and this one is looking down at you.
+//
+// **IT IS ANSWERED WITH FIRE, NOT WITH A SWORD.** `ARMOUR` is the point of the creature. A homunculus packed
+// out of wet mycelium does not care about an edge — `combat.armourTaken` turns aside most of a middling
+// swing and a third of a big one, so trading with it costs a bar you do not have. Its resistances say the
+// same thing from the other side: fire and lightning go straight through, cold and chaos do nothing at all.
+// A player who reaches for the same answer he used on everything else loses; a player who reads the creature
+// burns it down in a quarter of the swings.
+//
+// **AND IT IS VERY SLOW, WHICH IS WHAT MAKES ANY OF THAT FAIR.** Two-fifths of a walk. You can leave whenever
+// you like. What you cannot do is stand in front of it, because both of its moves are designed to punish
+// exactly that:
+//
+//   SMASH — the whole cap comes down on the spot in front of it. Long tell, enormous damage, and it leaves
+//           a spore burst on the ground where it lands.
+//   SLAM  — it throws its whole body forward through the air. The bone knight's fall, turned FORWARD and
+//           told in half the time (owner: "similar to bone knight's fall but forward and quicker tell"),
+//           which is the move that catches you for backing straight off from the smash.
+//
+// The two cover each other: the smash owns the ground at its feet, the slam owns the ground you retreat to.
+
+pub const H: f32 = 3.15;
+pub const SCALE: f32 = 1.0;
+
+pub const AGGRO_R: f32 = 15.0;
+const TURN_RATE: f32 = 1.5;
+/// **VERY SLOW** (owner). Two-fifths of a walk: it cannot catch anybody and is not supposed to. Everything
+/// else about the creature is priced against a player being free to leave at any moment.
+const WALK_SPEED: f32 = 1.05;
+
+const BODY_R: f32 = 0.86;
+const HURT_R: f32 = 1.30;
+const CENTER_F: f32 = 0.52;
+const TOP_F: f32 = 0.98;
+
+/// **THE NUMBER THAT DEFINES IT.** `combat.armourTaken` is `A/(A + 5*dmg)` turned aside — at 220 a 27-damage
+/// heavy loses 62% of its bite and a 13-damage light loses 77%. Fire and lightning skip it entirely, because
+/// armour is physical only, which is the whole lesson the creature exists to teach.
+const ARMOUR: f32 = 220.0;
+const HP_MAX: f32 = 210.0;
+const POISE_MAX: f32 = 46.0;
+const STANCE_MAX: f32 = 70.0;
+const RESISTS = combat.resists(.{ .fire = -85, .cold = 55, .lightning = -40, .chaos = 70 });
+pub const SOULS: u32 = 900;
+
+const DEATH_DUR: f32 = 1.7;
+const DISS_DUR: f32 = 1.2;
+const SHOVE_DECAY: f32 = 4.0;
+pub const SHOVE = foe.Push{ .light = 0.55, .heavy = 1.35 };
+
+const CAP_COL = rgba(58, 34, 42, 255);
+const CAP_DK = rgba(34, 20, 26, 255);
+const GILL = rgba(150, 132, 128, 255);
+const FLESH = rgba(52, 42, 40, 255);
+const FLESH_DK = rgba(31, 25, 25, 255);
+const MOTE = rgba(206, 112, 158, 105);
+const CORE = rgba(236, 172, 200, 70);
+const DISSOLVE = foe.Dissolve{ .rate = 54.0, .spread = 1.25, .rise = 0.70, .flake = MOTE };
+
+// ── THE TWO MOVES ───────────────────────────────────────────────────────────────────────────────────────
+
+/// **A LONG TELL FOR AN ENORMOUS BLOW.** Nearly a second of the cap going up, which is the deal: this hits
+/// harder than anything else in the game that is not a boss, and you are told about it for a long time.
+pub const SMASH_WIND: f32 = 0.92;
+const SMASH_FALL: f32 = 0.16;
+const SMASH_RECOVER: f32 = 0.86;
+const SMASH_CD: f32 = 2.6;
+pub const SMASH_R: f32 = 2.35;
+pub const SMASH_HIT = combat.Hit{ .dmg = 46, .poise = 40, .stance = 22 };
+
+/// **AND THE SLAM IS TOLD IN HALF THE TIME** (owner: "quicker tell"). Half the smash's wind-up, because the
+/// smash is what you dodge by backing off and this is the answer to backing off — a tell as long as the
+/// smash's would simply be a second smash you could also walk out of.
+pub const SLAM_WIND: f32 = 0.44;
+const SLAM_AIR: f32 = 0.46;
+const SLAM_RECOVER: f32 = 1.05;
+const SLAM_CD: f32 = 4.4;
+/// Metres it covers, and how high the body rides at the top of the arc.
+pub const SLAM_REACH: f32 = 5.6;
+const SLAM_UP: f32 = 1.30;
+pub const SLAM_R: f32 = 2.05;
+pub const SLAM_HIT = combat.Hit{ .dmg = 38, .poise = 44, .stance = 26 };
+
+/// Where each move can be started from. They do NOT overlap: inside `SMASH_R` it smashes, and the slam is
+/// for the band beyond that — two moves that both answer the same distance is one move with a coin flip.
+const SMASH_AT: f32 = 3.10;
+const SLAM_MIN: f32 = 3.40;
+const SLAM_MAX: f32 = 7.20;
+
+comptime {
+    // The tells are readable and the quick one is genuinely the quick one.
+    std.debug.assert(SMASH_WIND >= foe.TELL_MIN);
+    std.debug.assert(SLAM_WIND >= foe.TELL_MIN);
+    std.debug.assert(SLAM_WIND < SMASH_WIND * 0.6);
+    // Neither move can be started from where the other one is the answer.
+    std.debug.assert(SMASH_AT < SLAM_MIN);
+    std.debug.assert(SLAM_MIN < SLAM_MAX);
+    // A slam that cannot cross its own opening band is a move that never reaches anybody.
+    std.debug.assert(SLAM_REACH + SLAM_R > SLAM_MIN);
+    // …and it may not be a teleport: it has to fall short of the far end of the band it opens from.
+    std.debug.assert(SLAM_REACH < SLAM_MAX);
+    // It hits harder than it is quick, in both directions.
+    std.debug.assert(SMASH_HIT.dmg > SLAM_HIT.dmg);
+    std.debug.assert(SLAM_HIT.poise > SMASH_HIT.poise);
+}
+
+// ── THE RIG ─────────────────────────────────────────────────────────────────────────────────────────────
+//
+// Six bones, the sporeling's own layout with an arm on each side — a cap, a trunk, two stumpy legs and the
+// two slabs it walks on its knuckles with. It has no neck: the cap sits ON the body, which is what makes the
+// smash read as the whole creature falling forward rather than as a head being nodded.
+
+const PARTS = 40;
+
+const N = 6;
+const BODY = 0;
+const CAP = 1;
+const ARML = 2;
+const ARMR = 3;
+const LEGL = 4;
+const LEGR = 5;
+
+const CAP_Y: f32 = 0.70 * H;
+/// **WIDER THAN THE BODY, NOT WIDER THAN THE CREATURE IS TALL.** First cut sat at 0.62 of H, which on a
+/// 3.15 m creature is a 3.9 m brim — it photographed as a pink pancake lying in the field with legs under
+/// it. The shroommage's own ceiling applies (`shroommage.RIM`): the cap has to be the widest thing on the
+/// animal and it may not be the ONLY thing on it.
+const CAP_R: f32 = 0.33 * H;
+const ARM_Y: f32 = 0.52 * H;
+/// Hugging the trunk, not hung off it — at 0.27 the two slabs read as separate blocks standing beside
+/// the body rather than as arms belonging to it.
+const ARM_X: f32 = 0.205 * H;
+const LEG_X: f32 = 0.13 * H;
+
+fn restPose() [N]rl.Vector3 {
+    var r: [N]rl.Vector3 = undefined;
+    r[BODY] = v3(0, 0.30 * H, 0);
+    r[CAP] = v3(0, CAP_Y, 0);
+    r[ARML] = v3(ARM_X, ARM_Y, 0.02 * H);
+    r[ARMR] = v3(-ARM_X, ARM_Y, 0.02 * H);
+    r[LEGL] = v3(LEG_X, 0.20 * H, 0);
+    r[LEGR] = v3(-LEG_X, 0.20 * H, 0);
+    return r;
+}
+
+const State = enum { idle, walk, smash_wind, smash_fall, smash_rec, slam_wind, slam_air, slam_rec, stunlight, stunheavy, dead };
+
+pub const Golem = struct {
+    pos: rl.Vector3 = mathx.zero3,
+    home: rl.Vector3 = mathx.zero3,
+    leash: foe.Leash = .{},
+    facing: f32 = 0,
+    seed: f32 = 0,
+    scale: f32 = SCALE,
+    gone: bool = false,
+    state: State = .idle,
+    t: f32 = 0,
+    phase: f32 = 0,
+    moving: f32 = 0,
+    speed: f32 = 0,
+    fade: f32 = 0,
+    flash: f32 = 0,
+    hits: u32 = 0,
+    hitLatch: bool = false,
+    justDied: bool = false,
+    parried: bool = false,
+    root: combat.Root = .{},
+    chill: combat.Chill = .{},
+    threat: foe.Threat = .{},
+    nav: foe.Nav = .{},
+    shove: rl.Vector3 = mathx.zero3,
+    smashCd: f32 = 0,
+    slamCd: f32 = 0,
+    lift: f32 = 0,
+    launch: rl.Vector3 = mathx.zero3,
+    struck: bool = false,
+    burst: ?rl.Vector3 = null,
+    fxAccum: f32 = 0,
+    fxHead: usize = 0,
+    parts: [PARTS]foe.Particle = [_]foe.Particle{.{}} ** PARTS,
+    fxRng: mathx.Rng = mathx.Rng.init(1),
+    xf: [N]rl.Matrix = undefined,
+    rest: [N]rl.Vector3 = restPose(),
+    vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS).withArmour(ARMOUR),
+
+    pub fn spawn(at: rl.Vector3, yaw: f32, scale: f32, seed: f32) Golem {
+        var g = Golem{
+            .pos = at,
+            .home = at,
+            .facing = mathx.radians(yaw),
+            .seed = seed,
+            .scale = scale * SCALE,
+            .fxRng = foe.fxStream(seed, 51413.0, 0x60_1E),
+            .vit = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS).withArmour(ARMOUR),
+        };
+        g.pose();
+        return g;
+    }
+
+    pub fn kind(self: *const Golem) wf.FoeKind {
+        _ = self;
+        return .spore_golem;
+    }
+    pub fn hurtRadius(self: *const Golem) f32 {
+        return HURT_R * self.scale;
+    }
+    pub fn alive(self: *const Golem) bool {
+        return !self.gone;
+    }
+    pub fn dying(self: *const Golem) bool {
+        return self.state == .dead;
+    }
+    pub fn staggered(self: *const Golem) bool {
+        return self.state == .stunlight or self.state == .stunheavy;
+    }
+    pub fn draw(self: *const Golem, model: *const Model) void {
+        model.draw(self);
+    }
+    pub fn drawFx(self: *const Golem) void {
+        foe.drawParticles(&self.parts);
+    }
+    pub fn flashFrac(self: *const Golem) f32 {
+        return foe.flashFrac(self.flash);
+    }
+    pub fn navWant(self: *const Golem, hero: rl.Vector3) ?rl.Vector3 {
+        if (self.state != .idle) return null;
+        if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) return hero;
+        return if (mathx.distXZ(self.pos, self.home) > 2.0) self.home else null;
+    }
+    pub fn bodyR(self: *const Golem) f32 {
+        return BODY_R * self.scale;
+    }
+    pub fn centerWorld(self: *const Golem) rl.Vector3 {
+        return foe.bodyPoint(self.pos, CENTER_F * H, self.scale, self.lift);
+    }
+    pub fn topWorld(self: *const Golem) rl.Vector3 {
+        return foe.bodyPoint(self.pos, TOP_F * H, self.scale, self.lift);
+    }
+    pub fn lockPoint(self: *const Golem) rl.Vector3 {
+        return foe.markOn(self.xf[CAP], v3(0, 0.04 * H, 0));
+    }
+    pub fn souls(self: *const Golem) u32 {
+        _ = self;
+        return SOULS;
+    }
+    /// **AIRBORNE ON THE SLAM, AND THAT MATTERS TO THE FLOOR** — a creature off the ground does not collide
+    /// with terrain the way a walking one does, which is what lets the slam cross a lip it could not climb.
+    pub fn airborne(self: *const Golem) bool {
+        return self.state == .slam_air and self.lift > foe.AIRBORNE_LIFT;
+    }
+
+    fn enter(self: *Golem, s: State) void {
+        self.state = s;
+        self.t = 0;
+        self.struck = false;
+    }
+
+    fn decide(self: *Golem, dist: f32) void {
+        if (self.leash.goingHome()) return self.enter(.walk);
+        if (dist <= SMASH_AT and self.smashCd <= 0) {
+            self.smashCd = SMASH_CD;
+            return self.enter(.smash_wind);
+        }
+        if (dist >= SLAM_MIN and dist <= SLAM_MAX and self.slamCd <= 0) {
+            self.slamCd = SLAM_CD;
+            return self.enter(.slam_wind);
+        }
+        if (dist <= AGGRO_R) return self.enter(.walk);
+        self.enter(.idle);
+    }
+
+    pub fn update(self: *Golem, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
+        if (self.gone) return null;
+        self.vit.tick(dt);
+        foe.fadeFlash(&self.flash, dt);
+        foe.tickParticles(&self.parts, dt, self.pos.y);
+        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
+        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
+        self.smashCd = mathx.maxF(0, self.smashCd - dt);
+        self.slamCd = mathx.maxF(0, self.slamCd - dt);
+        self.t += dt;
+        self.burst = null;
+        _ = blade;
+
+        if (self.state == .dead) {
+            foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE);
+            self.speed = 0;
+            self.pose();
+            return null;
+        }
+        if (self.vit.dead) {
+            self.enter(.dead);
+            self.justDied = true;
+            self.pose();
+            return null;
+        }
+
+        const d = mathx.distXZ(self.pos, hero);
+        var blow: ?combat.Hit = null;
+        var moved: f32 = 0;
+
+        switch (self.state) {
+            .idle => {
+                if (d <= AGGRO_R) self.face(hero, dt);
+                if (self.t >= 0.35) self.decide(d);
+            },
+            .walk => {
+                self.face(hero, dt);
+                const way = if (self.leash.goingHome()) mathx.dirXZ(self.pos, self.home) else mathx.dirXZ(self.pos, hero);
+                const step = WALK_SPEED * dt;
+                mathx.stepXZ(&self.pos, way, step, bounds);
+                moved = step;
+                if (self.t >= 0.40) self.decide(d);
+            },
+            // **IT REARS AND HOLDS.** The cap goes all the way up over the first two thirds and the last
+            // third is dead still, which is the frame the player is actually reading.
+            .smash_wind => {
+                self.face(hero, dt);
+                if (self.t >= SMASH_WIND) self.enter(.smash_fall);
+            },
+            .smash_fall => {
+                if (!self.struck and self.t >= SMASH_FALL * 0.5) {
+                    self.struck = true;
+                    const at = self.reachPoint(SMASH_R * 0.62);
+                    self.burst = at;
+                    if (mathx.distXZ(at, hero) <= SMASH_R * self.scale + foe.HERO_R) {
+                        blow = SMASH_HIT;
+                    }
+                }
+                if (self.t >= SMASH_FALL) self.enter(.smash_rec);
+            },
+            .smash_rec => if (self.t >= SMASH_RECOVER) self.decide(d),
+            // **IT GATHERS AND THROWS ITSELF.** The launch vector is fixed at the end of the wind-up, so the
+            // slam commits to a spot the way the bone knight's fall does — it cannot steer onto you in the
+            // air, and stepping aside during the flight is the answer.
+            .slam_wind => {
+                self.face(hero, dt);
+                if (self.t >= SLAM_WIND) {
+                    const way = mathx.dirXZ(self.pos, hero);
+                    const gap = mathx.minF(mathx.distXZ(self.pos, hero), SLAM_REACH);
+                    self.launch = mathx.scaleV(way, gap);
+                    self.enter(.slam_air);
+                }
+            },
+            .slam_air => {
+                const u = mathx.clampF(self.t / SLAM_AIR, 0, 1);
+                const step = mathx.lenV(self.launch) / SLAM_AIR * dt;
+                mathx.stepXZ(&self.pos, mathx.normV(self.launch), step, bounds);
+                moved = step;
+                self.lift = SLAM_UP * mathx.sinf(std.math.pi * u) * self.scale;
+                if (u >= 1.0) {
+                    self.lift = 0;
+                    self.burst = self.pos;
+                    if (mathx.distXZ(self.pos, hero) <= SLAM_R * self.scale + foe.HERO_R) {
+                        blow = SLAM_HIT;
+                    }
+                    self.enter(.slam_rec);
+                }
+            },
+            .slam_rec => if (self.t >= SLAM_RECOVER) self.decide(d),
+            .stunlight, .stunheavy => if (!self.vit.stunned()) self.decide(d),
+            .dead => {},
+        }
+
+        if (self.vit.stunned() and self.state != .stunlight and self.state != .stunheavy and self.state != .dead) {
+            self.enter(if (self.vit.stance <= 0) .stunheavy else .stunlight);
+        }
+
+        self.speed = if (dt > 0) moved / dt else 0;
+        self.moving = mathx.approach(self.moving, if (moved > 0) 1 else 0, 4.0 * dt);
+        self.phase += self.speed * 0.55 * dt + self.moving * 0.20 * dt;
+        self.pose();
+        return blow;
+    }
+
+    fn face(self: *Golem, target: rl.Vector3, dt: f32) void {
+        foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt);
+    }
+
+    fn reachPoint(self: *const Golem, out: f32) rl.Vector3 {
+        const d = mathx.headingDir(self.facing);
+        return v3(self.pos.x + d.x * out * self.scale, self.pos.y, self.pos.z + d.z * out * self.scale);
+    }
+
+
+    pub fn tryHit(self: *Golem, blade: foe.Blade) void {
+        if (self.state == .dead) return;
+        const s = foe.reached(self, blade) orelse return;
+        const heavy = foe.wounded(self, s, blade, SHOVE);
+        sfx.world(.shroom_hurt, self.pos);
+        switch (s.reaction) {
+            .death => {
+                sfx.world(.shroom_die, self.pos);
+                self.enter(.dead);
+                self.justDied = true;
+            },
+            .heavy => self.enter(.stunheavy),
+            .light => self.enter(.stunlight),
+            .none => {},
+        }
+        _ = heavy;
+    }
+
+    pub fn pose(self: *Golem) void {
+        const fs = foe.rigScale(self.scale, self.fade);
+        const facingDeg = mathx.degrees(self.facing);
+        const dk = if (self.state == .dead) mathx.smoothstep(0, 0.5, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
+
+        // **THE WHOLE CREATURE IS THE ANIMATION.** It has no neck and no wrists, so every read it has is the
+        // trunk: the rear is the body arching back, the smash is the body folding forward over its own feet,
+        // and the slam is the same fold thrown off the ground.
+        const rear = self.rearAmt();
+        const fold = self.foldAmt();
+        const bob = mathx.sinf(self.phase * std.math.tau) * 0.022 * H * self.moving;
+        const trunk = -34.0 * rear + 66.0 * fold - 74.0 * dk;
+
+        var wx: [N]rl.Matrix = undefined;
+        const rootY = self.rest[BODY].y + bob - 0.30 * H * dk;
+        wx[BODY] = mul3(
+            rx(trunk),
+            tr(0, rootY, 0),
+            mul(ry(facingDeg), tr(self.pos.x, self.pos.y + self.lift, self.pos.z)),
+        );
+        // The cap leads the fold and lags the rear, which is what stops the two reading as one rigid board.
+        const swing = mathx.sinf(self.phase * std.math.tau) * 16.0 * self.moving;
+        self.limb(&wx, CAP, rx(-12.0 * rear + 24.0 * fold));
+        self.limb(&wx, ARML, rx(swing - 28.0 * rear + 58.0 * fold));
+        self.limb(&wx, ARMR, rx(-swing - 28.0 * rear + 58.0 * fold));
+        self.limb(&wx, LEGL, rx(-swing * 0.7));
+        self.limb(&wx, LEGR, rx(swing * 0.7));
+        for (&wx) |*m| m.* = mul(mathx.scaleM(fs, fs, fs), m.*);
+        self.xf = wx;
+    }
+
+    /// Hangs a bone off the trunk at its rest offset. Everything above the body follows the trunk, which is
+    /// the whole of this creature's animation.
+    fn limb(self: *const Golem, wx: *[N]rl.Matrix, i: usize, local: rl.Matrix) void {
+        const off = mathx.subV(self.rest[i], self.rest[BODY]);
+        wx[i] = mul(mul(local, tr(off.x, off.y, off.z)), wx[BODY]);
+    }
+
+    /// 0..1 of the gather, on whichever move is gathering.
+    fn rearAmt(self: *const Golem) f32 {
+        return switch (self.state) {
+            .smash_wind => mathx.smoothstep(0, SMASH_WIND * 0.66, self.t),
+            .slam_wind => mathx.smoothstep(0, SLAM_WIND * 0.80, self.t),
+            .smash_fall, .slam_air => 1.0 - mathx.clampF(self.t / 0.10, 0, 1),
+            else => 0,
+        };
+    }
+    /// 0..1 of the blow itself.
+    fn foldAmt(self: *const Golem) f32 {
+        return switch (self.state) {
+            .smash_fall => mathx.smoothstep(0, SMASH_FALL, self.t),
+            .smash_rec => 1.0 - mathx.smoothstep(0, SMASH_RECOVER * 0.55, self.t),
+            .slam_air => mathx.smoothstep(SLAM_AIR * 0.45, SLAM_AIR, self.t),
+            .slam_rec => 1.0 - mathx.smoothstep(0, SLAM_RECOVER * 0.5, self.t),
+            else => 0,
+        };
+    }
+};
+
+// ── THE MESHES ──────────────────────────────────────────────────────────────────────────────────────────
+
+fn buildBone(b: *Builder, i: usize) void {
+    var rng = mathx.Rng.init(0x60_1E33 + @as(u64, @intCast(i)));
+    switch (i) {
+        BODY => {
+            b.setMat(.skin);
+            // A packed sack, widest at the shoulder and drawn in at the waist — the sporeling's own profile
+            // with the mass moved UP, which is what turns a mushroom into something that can throw itself.
+            b.addBlob(v3(0, 0.12 * H, 0), v3(0.24 * H, 0.26 * H, 0.22 * H), 11, 9, FLESH);
+            b.addBlob(v3(0, -0.08 * H, 0), v3(0.20 * H, 0.14 * H, 0.19 * H), 9, 8, FLESH_DK);
+            var k: u32 = 0;
+            while (k < 9) : (k += 1) {
+                const a = rng.angle();
+                const rr = 0.24 * H * rng.range(0.7, 1.05);
+                const s = rng.range(0.030, 0.062) * H;
+                b.addBlob(
+                    v3(mathx.cosf(a) * rr, rng.range(-0.10, 0.20) * H, mathx.sinf(a) * rr),
+                    v3(s, s * rng.range(0.7, 1.2), s),
+                    5,
+                    5,
+                    if (rng.float() < 0.35) FLESH else FLESH_DK,
+                );
+            }
+        },
+        CAP => {
+            b.setMat(.skin);
+            // **THE CAP IS THE WEAPON AND IT IS SIZED LIKE ONE.** Wider than the body it sits on, so the
+            // silhouette says "this comes down on you" before the creature has done anything.
+            b.addBlob(v3(0, 0.04 * H, 0), v3(CAP_R, 0.20 * H, CAP_R * 0.95), 13, 10, CAP_COL);
+            b.addBlob(v3(0, 0.15 * H, 0), v3(CAP_R * 0.66, 0.12 * H, CAP_R * 0.64), 10, 8, CAP_DK);
+            b.addBlob(v3(0, -0.04 * H, 0), v3(CAP_R * 0.88, 0.030 * H, CAP_R * 0.84), 10, 9, GILL);
+            var k: u32 = 0;
+            while (k < 14) : (k += 1) {
+                const a = @as(f32, @floatFromInt(k)) / 14.0 * std.math.tau + rng.range(-0.12, 0.12);
+                const rr = CAP_R * rng.range(0.55, 0.92);
+                const s = rng.range(0.020, 0.048) * H;
+                b.addBlob(v3(mathx.cosf(a) * rr, 0.09 * H, mathx.sinf(a) * rr), v3(s, s * 0.7, s), 5, 5, CAP_DK);
+            }
+            // The glow it carries under the brim — the only bright thing on it, and the reason you can see
+            // the cap coming in a dark hollow.
+            b.setMat(.plain);
+            b.addBlob(v3(0, -0.06 * H, 0), v3(CAP_R * 0.46, 0.026 * H, CAP_R * 0.44), 9, 8, MOTE);
+            b.addBlob(v3(0, -0.07 * H, 0), v3(CAP_R * 0.24, 0.020 * H, CAP_R * 0.22), 8, 7, CORE);
+        },
+        ARML, ARMR => {
+            b.setMat(.skin);
+            const side: f32 = if (i == ARML) 1.0 else -1.0;
+            // A slab, hanging past the knee — it walks on these.
+            b.addCapsule(
+                v3(0, 0, 0),
+                v3(side * 0.075 * H, -0.34 * H, 0.02 * H),
+                0.105 * H,
+                0.125 * H,
+                9,
+                FLESH,
+            );
+            b.addBlob(v3(side * 0.075 * H, -0.37 * H, 0.02 * H), v3(0.13 * H, 0.10 * H, 0.14 * H), 8, 7, FLESH_DK);
+        },
+        LEGL, LEGR => {
+            b.setMat(.skin);
+            b.addCapsule(v3(0, 0, 0), v3(0, -0.19 * H, 0), 0.085 * H, 0.10 * H, 8, FLESH_DK);
+            b.addBlob(v3(0, -0.20 * H, 0.02 * H), v3(0.11 * H, 0.05 * H, 0.14 * H), 7, 6, FLESH_DK);
+        },
+        else => {},
+    }
+}
+
+pub const Model = struct {
+    mesh: [N]rl.Mesh,
+    mat: rl.Material,
+
+    pub fn draw(self: *const Model, t: *const Golem) void {
+        for (0..N) |i| rl.drawMesh(self.mesh[i], self.mat, t.xf[i]);
+    }
+
+    pub fn build(shader: rl.Shader) Model {
+        var mesh: [N]rl.Mesh = undefined;
+        for (0..N) |i| {
+            var b = Builder.init();
+            buildBone(&b, i);
+            mesh[i] = b.toMesh();
+        }
+        return .{ .mesh = mesh, .mat = gfx.material(shader, "spore golem") };
+    }
+};
+
+pub const CAP_N: usize = 8;
+
+pub const Host = struct {
+    model: Model,
+    ones: [CAP_N]Golem = undefined,
+    n: usize = 0,
+
+    pub fn init(shader: rl.Shader) Host {
+        return .{ .model = Model.build(shader) };
+    }
+    pub fn live(self: *Host) []Golem {
+        return self.ones[0..self.n];
+    }
+    pub fn liveConst(self: *const Host) []const Golem {
+        return self.ones[0..self.n];
+    }
+    pub fn reset(self: *Host, m: *const wf.Map) void {
+        foe.resetGroup(Golem, &self.ones, &self.n, m, .spore_golem);
+    }
+    pub fn update(self: *Host, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {
+        return foe.groupBlow(self.live(), dt, hero, bounds, blade);
+    }
+    pub fn setShader(self: *Host, sh: rl.Shader) void {
+        self.model.mat.shader = sh;
+    }
+    pub fn draw(self: *const Host, scene: ?*gfx.Scene) void {
+        foe.drawGroup(self.liveConst(), &self.model, scene);
+    }
+    pub fn pierce(self: *Host, blade: foe.Blade) bool {
+        return foe.pierceGroup(self.live(), blade);
+    }
+    pub fn anyDied(self: *const Host) bool {
+        return foe.anyDied(self.liveConst());
+    }
+    pub fn soulsDropped(self: *const Host) u32 {
+        return foe.soulsDropped(self.liveConst(), SOULS);
+    }
+    pub fn totalHits(self: *const Host) u32 {
+        return foe.totalHits(self.liveConst());
+    }
+    pub fn drawFx(self: *const Host) void {
+        for (self.liveConst()) |*h| h.drawFx();
+    }
+    pub fn aliveCount(self: *const Host) u32 {
+        return foe.aliveCount(self.liveConst());
+    }
+};
+
+test "THE HOMUNCULUS IS ANSWERED WITH FIRE, NOT WITH A SWORD" {
+    var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const light = combat.Hit{ .dmg = 13 };
+    const heavy = combat.Hit{ .dmg = 27 };
+    const fire = combat.Hit{ .elem = combat.elems(.{ .fire = 27 }) };
+    const took_l = g.vit.damageFrom(light);
+    const took_h = g.vit.damageFrom(heavy);
+    const took_f = g.vit.damageFrom(fire);
+    std.debug.print("\n  spore golem: armour {d:.0} — a 13 light lands {d:.1}, a 27 heavy lands {d:.1}, 27 fire lands {d:.1}\n", .{ ARMOUR, took_l, took_h, took_f });
+    // Steel is a bad idea and fire is a good one, by a wide enough margin that a player notices in one fight.
+    try std.testing.expect(took_l < 13.0 * 0.30);
+    try std.testing.expect(took_h < 27.0 * 0.45);
+    try std.testing.expect(took_f > 27.0 * 1.5);
+    try std.testing.expect(took_f > took_h * 4.0);
+    // …and armour is never immunity, however much of it there is (`combat.armourTaken`).
+    try std.testing.expect(took_l > 0 and took_h > 0);
+}
+
+test "TWO MOVES THAT COVER EACH OTHER: the smash owns its feet, the slam owns where you back off to" {
+    std.debug.print("  spore golem: smash {d:.2} m at a {d:.2} s tell | slam {d:.1} m from {d:.1}..{d:.1} at a {d:.2} s tell\n", .{ SMASH_R, SMASH_WIND, SLAM_REACH, SLAM_MIN, SLAM_MAX, SLAM_WIND });
+    // The quick tell is the one that chases; the long tell is the one that owns the ground it stands on.
+    try std.testing.expect(SLAM_WIND * 2.0 < SMASH_WIND);
+    // Backing out of the smash puts you INSIDE the slam's opening band, which is the whole trap.
+    try std.testing.expect(SMASH_R < SLAM_MIN);
+    try std.testing.expect(SLAM_MIN < SMASH_R + 2.0);
+    // And it is genuinely slow enough to walk away from between them.
+    try std.testing.expect(WALK_SPEED < 1.2);
+}
+
+test "IT COMMITS TO A SPOT AND CANNOT STEER ONTO HIM IN THE AIR" {
+    var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.5);
+    const hero = v3(0, 0, 5.0);
+    var t: f32 = 0;
+    // Walk it up to the slam band and let it decide.
+    while (t < 6.0 and g.state != .slam_air) : (t += 1.0 / 60.0) _ = g.update(1.0 / 60.0, hero, 400, .{});
+    try std.testing.expect(g.state == .slam_air);
+    const aimed = g.launch;
+    // He moves; the slam does not follow.
+    const moved = v3(6.0, 0, 5.0);
+    var k: u32 = 0;
+    while (k < 4) : (k += 1) _ = g.update(1.0 / 60.0, moved, 400, .{});
+    try std.testing.expectApproxEqAbs(aimed.x, g.launch.x, 1e-5);
+    try std.testing.expectApproxEqAbs(aimed.z, g.launch.z, 1e-5);
+    try std.testing.expect(g.airborne());
+}

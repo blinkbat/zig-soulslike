@@ -137,6 +137,39 @@ pub fn draw(k: item.Kind, cx: f32, cy: f32, px: f32) void {
     drawHeld(k, cx, cy, px, true);
 }
 
+/// **A SHEAF, NOT ONE ARROW.** Three shafts fanned and tied — a single arrow at this size is a line, and a
+/// line is what every other stick in the tray already looks like. `hot` swaps the heads for tallow-wrapped
+/// rag, which is the only thing that separates the two kinds at 32 px.
+fn arrowSheaf(cx: f32, cy: f32, px: f32, hot: bool) void {
+    const s = px;
+    const k = strokeK(px);
+    const LEAN = [_]f32{ -0.16, 0.02, 0.19 };
+    for (LEAN, 0..) |lean, i| {
+        const t = @as(f32, @floatFromInt(i));
+        const foot = v2(cx + lean * s * 1.4 - s * 0.02, cy + s * 0.36);
+        const head = v2(cx + lean * s * 0.5, cy - s * 0.34);
+        rl.drawLineEx(foot, head, 2.2 * k, if (i == 1) BOWWOOD_LT else BOWWOOD);
+        // The head: a leaf point in steel, or a wrapped bundle if it is meant to burn.
+        if (hot) {
+            rl.drawCircleV(v2(head.x, head.y + s * 0.03), 3.4 * k, CORD);
+            rl.drawCircleV(v2(head.x, head.y + s * 0.01), 2.4 * k, if (@mod(t, 2.0) == 0) FIRE else FIRE_DIM);
+        } else {
+            rl.drawTriangle(
+                v2(head.x, head.y - s * 0.06),
+                v2(head.x - s * 0.045, head.y + s * 0.05),
+                v2(head.x + s * 0.045, head.y + s * 0.05),
+                STEEL_MID,
+            );
+        }
+        // Fletching, on the near side only — three sets of both is a hedge.
+        const fl = v2(mathx.lerpF(foot.x, head.x, 0.16), mathx.lerpF(foot.y, head.y, 0.16));
+        rl.drawLineEx(fl, v2(fl.x - s * 0.07, fl.y + s * 0.03), 1.6 * k, BONE_DK);
+        rl.drawLineEx(v2(fl.x, fl.y + s * 0.05), v2(fl.x - s * 0.06, fl.y + s * 0.08), 1.5 * k, BONE_DK);
+    }
+    // The cord that makes it a sheaf.
+    rl.drawLineEx(v2(cx - s * 0.16, cy + s * 0.08), v2(cx + s * 0.15, cy + s * 0.05), 2.6 * k, CORD);
+}
+
 pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
     switch (k) {
         .crimson_flask => flask(cx, cy, px, .crimson, any),
@@ -146,6 +179,8 @@ pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
         .smithing_stone => smithingStone(cx, cy, px),
         .bloodgrass => bloodgrass(cx, cy, px),
         .kobold_fang => koboldFang(cx, cy, px),
+        .plain_arrows => arrowSheaf(cx, cy, px, false),
+        .fire_arrows => arrowSheaf(cx, cy, px, true),
         .iron_key => ironKey(cx, cy, px),
         .mushroom_jerky => jerky(cx, cy, px),
         .ember_candle => emberCandle(cx, cy, px),

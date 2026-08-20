@@ -14,7 +14,12 @@ pub const DEFAULT_HALF: f32 = 280.0;
 
 pub const MAX_DECLARED_HALF: f32 = 312.0;
 
-pub const MAX_OPS: usize = 2048;
+/// **RAISED FROM 2048 WHEN THE GLOBAL COVER OP WAS BAKED INTO ORDINARY DECOR.** One `cover:` line grew
+/// 13,228 plants a man could not select or delete; every one of them is its own `at:` op now, on top of the
+/// ~1,290 explicit ops the shipped map already carried. A test below prints what this costs the editor's
+/// 24-deep undo ring, which is whole-`Map` copies — so this number IS memory, and it is the reason the
+/// first cut tried to get away with `belt:` patches instead. The owner wanted the plants, not the clumps.
+pub const MAX_OPS: usize = 16384;
 pub const MAX_MIX: usize = 24;
 pub const MAX_LOOT: usize = 8;
 pub const MAX_ZONES: usize = 16;
@@ -33,7 +38,6 @@ pub const OpKind = enum(u8) {
     line,
     ivy,
     edge,
-    cover,
 };
 
 pub const Avoid = struct {
@@ -114,7 +118,6 @@ fn fieldsOf(comptime k: OpKind) []const []const u8 {
         .line => &.{ "kind", "x", "z", "x1", "z1", "r0", "sLo", "sHi" },
         .ivy => &.{ "kind", "x", "z", "x1", "z1", "sLo", "sHi" },
         .edge => &.{ "kind", "r0", "n", "sLo", "sHi" },
-        .cover => &.{ "r0", "sLo", "sHi" },
     };
 }
 
@@ -141,11 +144,59 @@ pub fn defaults(k: OpKind) Op {
         .line => o.chance = 0.78,
         .ivy => o.chance = 0.55,
         .edge => {},
-        .cover => o.avoid = .{ .runway = true, .water = true, .solid = true },
     }
     return o;
 }
 
+
+pub const MAX_LOCATIONS: usize = 64;
+
+/// **A NAMED RECTANGLE, AND NOTHING ELSE IS REQUIRED OF IT** — StarEdit's Location, which this script layer
+/// has been missing since it was written. Until now a trigger that cared about a place carried the four
+/// coordinates inline (`Cond.region`), so two triggers about the same doorway held two copies of it and
+/// moving the doorway meant editing both. A location is declared ONCE and referred to by name.
+///
+/// **THEY OVERLAP FREELY AND THE MOST RECENTLY PAINTED ONE WINS.** `locationAt` takes the FIRST match and the
+/// editor prepends, which is the rule a brush teaches you without being told: what you just painted is on top.
+/// Any other rule (smallest-wins, largest-wins) makes a location you can see disagree with the one that
+/// answers, which is the kind of thing you debug for an hour.
+pub const Location = struct {
+    name: [NAME_CAP]u8 = [_]u8{0} ** NAME_CAP,
+    x: f32 = 0,
+    z: f32 = 0,
+    x1: f32 = 0,
+    z1: f32 = 0,
+    /// **THE WEATHER THIS PLACE KEEPS**, or null for "no opinion" — the world's own storm clock stands.
+    /// There is ONE sky, ONE sun and ONE rain sheet drawn round the camera, so a location cannot make it
+    /// rain over there while it is dry here: what it does is drive the GLOBAL level while he is inside it,
+    /// cross-faded over `blend`. Walking into a storm, not looking at one.
+    wet: ?f32 = null,
+    fog: ?f32 = null,
+    /// **SPOREFALL** — fog's third channel, and a DIFFERENT weather rather than a tint on the same one: it
+    /// carries the peach haze, the lit banks and the motes in the air together, and it is the only one of
+    /// the three that reads at all on a clear bright hour.
+    spore: ?f32 = null,
+    /// Seconds the cross-fade takes, in or out. A hard switch at the boundary is a pop.
+    blend: f32 = 6.0,
+
+    pub fn contains(self: *const Location, px: f32, pz: f32) bool {
+        return px >= @min(self.x, self.x1) and px <= @max(self.x, self.x1) and
+            pz >= @min(self.z, self.z1) and pz <= @max(self.z, self.z1);
+    }
+    /// Does it say anything about the sky at all? A location with no weather is still a perfectly good
+    /// location — it is a name for a place, and the script layer is its other customer.
+    pub fn hasWeather(self: *const Location) bool {
+        return self.wet != null or self.fog != null or self.spore != null;
+    }
+    pub fn label(self: *const Location) []const u8 {
+        return std.mem.sliceTo(&self.name, 0);
+    }
+    pub fn setName(self: *Location, s: []const u8) void {
+        self.name = [_]u8{0} ** NAME_CAP;
+        const n = @min(s.len, NAME_CAP - 1);
+        @memcpy(self.name[0..n], s[0..n]);
+    }
+};
 
 pub const Zone = struct {
     name: [NAME_CAP]u8 = [_]u8{0} ** NAME_CAP,
@@ -185,7 +236,7 @@ pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
 /// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at
 /// comptime, and each `roleOf` reads its own entries as a CONTIGUOUS RUN off the first of them — so
 /// inserting a kind in the middle silently renumbers all of it.
-pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, florid_ravager, mushroom_mage, fen_lurker };
+pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, florid_ravager, mushroom_mage, fen_lurker, spore_golem };
 
 pub fn foeName(k: FoeKind) [:0]const u8 {
     return switch (k) {
@@ -210,6 +261,7 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
         .florid_ravager => "Florid Ravager",
         .mushroom_mage => "Mushroom Mage",
         .fen_lurker => "Fen Lurker",
+        .spore_golem => "Spore Homunculus",
     };
 }
 
@@ -457,12 +509,20 @@ pub const Soil = enum(u8) {
     silt,
     ash,
     moss,
+    bone,
+    cinder,
+    spore,
+    bloom,
 
     pub const N = @typeInfo(Soil).@"enum".fields.len;
 
+    /// Bone SCATTERS and burnt ground TEARS — a shard field has no line and a burn has a ragged one.
     pub fn defaultEdge(s: Soil) Edge {
         return switch (s) {
             .stone => .tiled,
+            .bone => .speckle,
+            .cinder => .frayed,
+            .bloom => .blend,
             else => .natural,
         };
     }
@@ -502,7 +562,9 @@ pub const Edge = enum(u8) {
 };
 
 comptime {
-    std.debug.assert(Soil.N == 7);
+    // `shaders.zig`'s `soilColor(id)` carries one branch per id from 1 up; a soil added without a colour
+    // there comes out as the fallback, which is a new material that draws as moss.
+    std.debug.assert(Soil.N == 11);
     // …AND `shaders.zig`'s `edgeShape(e)` BRANCHES ON THESE ORDINALS, 0..7 in this order: an inserted row
     // would silently re-point every stroke in every map at the wrong shape.
     std.debug.assert(Edge.N == 8);
@@ -644,6 +706,8 @@ pub const Map = struct {
 
     ops: [MAX_OPS]Op = undefined,
     nops: usize = 0,
+    locations: [MAX_LOCATIONS]Location = undefined,
+    nlocations: usize = 0,
     zones: [MAX_ZONES]Zone = undefined,
     nzones: usize = 0,
     clearings: [MAX_CLEARINGS]Clearing = undefined,
@@ -714,14 +778,6 @@ pub const Map = struct {
         setMix(&rim.mix, &rim.nmix, &props.CLIFFS);
         return rim;
     }
-    pub fn defaultCover() Op {
-        var cover = defaults(.cover);
-        cover.r0 = 3.3;
-        cover.sLo = 0.72;
-        cover.sHi = 1.38;
-        return cover;
-    }
-
     pub fn blank(self: *Map, name: []const u8) void {
         self.* = .{};
         self.setName(name);
@@ -731,16 +787,13 @@ pub const Map = struct {
         self.zones[0] = z;
         self.nzones = 1;
 
-        var cover = defaultCover();
-        cover.seed = 1001;
-        self.ops[0] = cover;
-        self.nops = 1;
-
+        // **NO GROUND COVER.** A blank map used to open with a global `cover:` op, and it grew thirteen
+        // thousand plants nobody could select or delete. Cover is ordinary `at:` decor now, painted where he
+        // wants it — so a new map opens EMPTY of it and the rim is the only thing standing.
         var rim = defaultRim();
         rim.seed = 1002;
-        self.ops[1] = self.ops[0];
         self.ops[0] = rim;
-        self.nops = 2;
+        self.nops = 1;
     }
 
     pub fn add(self: *Map, o: Op) !usize {
@@ -843,6 +896,31 @@ pub const Map = struct {
 
     pub fn isFallbackZone(self: *const Map, i: usize) bool {
         return self.nzones > 0 and i + 1 == self.nzones;
+    }
+
+    /// FIRST MATCH, which is the most recently painted (the editor prepends). Null outside them all —
+    /// unlike `zoneAt`, a location has no last-resort fallback: being nowhere in particular is a real answer.
+    pub fn locationAt(self: *const Map, px: f32, pz: f32) ?*const Location {
+        for (self.locations[0..self.nlocations]) |*l| {
+            if (l.contains(px, pz)) return l;
+        }
+        return null;
+    }
+
+    /// …and the first one that actually has an opinion about the sky. A weatherless location standing over a
+    /// rainy one may not silence it — it is a name for a place, not a hole in the storm.
+    pub fn weatherAt(self: *const Map, px: f32, pz: f32) ?*const Location {
+        for (self.locations[0..self.nlocations]) |*l| {
+            if (l.hasWeather() and l.contains(px, pz)) return l;
+        }
+        return null;
+    }
+
+    pub fn findLocation(self: *const Map, name: []const u8) ?u16 {
+        for (self.locations[0..self.nlocations], 0..) |*l, i| {
+            if (std.mem.eql(u8, l.label(), name)) return @intCast(i);
+        }
+        return null;
     }
 
     pub fn zoneAt(self: *const Map, px: f32, pz: f32) ?*const Zone {
@@ -1068,10 +1146,18 @@ pub fn write(m: *const Map, w: anytype) !void {
         try writeMix(w, z.mix[0..z.nmix]);
         try w.writeAll("\n");
     }
+    for (m.locations[0..m.nlocations]) |*l| {
+        try w.print("location: {s} {d:.1} {d:.1} {d:.1} {d:.1}", .{ l.label(), l.x, l.z, l.x1, l.z1 });
+        if (l.wet) |v| try w.print(" wet={d:.3}", .{v});
+        if (l.fog) |v| try w.print(" fog={d:.3}", .{v});
+        if (l.spore) |v| try w.print(" spore={d:.3}", .{v});
+        if (l.blend != 6.0) try w.print(" blend={d:.2}", .{l.blend});
+        try w.writeAll("\n");
+    }
     for (m.clearings[0..m.nclearings]) |c| {
         try w.print("clear: {d:.1} {d:.1} {d:.1}\n", .{ c.x, c.z, c.r });
     }
-    if (m.nzones + m.nclearings > 0) try w.writeAll("\n");
+    if (m.nzones + m.nclearings + m.nlocations > 0) try w.writeAll("\n");
 
     for (m.ops[0..m.nops]) |*o| try writeOp(o, w);
 
@@ -1309,9 +1395,9 @@ pub const ParseError = error{
     BadKind,
     TooManyOps,
     TooManyZones,
+    TooManyLocations,
     TooManyClearings,
     TooManyFoes,
-    NoCoverOp,
     TooManyNpcs,
     TooManyTriggers,
     TooManyConds,
@@ -1372,6 +1458,10 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
             if (m.nzones >= MAX_ZONES) return ParseError.TooManyZones;
             m.zones[m.nzones] = try parseZone(&it);
             m.nzones += 1;
+        } else if (std.mem.eql(u8, rec, "location")) {
+            if (m.nlocations >= MAX_LOCATIONS) return ParseError.TooManyLocations;
+            m.locations[m.nlocations] = try parseLocation(&it);
+            m.nlocations += 1;
         } else if (std.mem.eql(u8, rec, "clear")) {
             if (m.nclearings >= MAX_CLEARINGS) return ParseError.TooManyClearings;
             m.clearings[m.nclearings] = .{ .x = try nextFloat(&it), .z = try nextFloat(&it), .r = try nextFloat(&it) };
@@ -1417,10 +1507,6 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     if (edgeAt == 0) fillLegacyEdges(m);
     lineOut.* = 0;
     try link(m);
-    for (m.ops[0..m.nops]) |*o| {
-        if (o.op == .cover) return;
-    }
-    return ParseError.NoCoverOp;
 }
 
 fn readGrid(it: *std.mem.TokenIterator(u8, .any), cells: []u8, at: usize, lim: u16) !usize {
@@ -1739,6 +1825,91 @@ fn nodeIn(m: *const Map, d: *const Dialog, name: []const u8) !u16 {
     return ParseError.UnknownRef;
 }
 
+/// `location: <name> <x> <z> <x1> <z1> [wet=..] [fog=..] [spore=..] [blend=..]` — the rectangle is positional and the
+/// sky is optional, because most locations will never have anything to do with the weather.
+fn parseLocation(it: *std.mem.TokenIterator(u8, .any)) !Location {
+    var l = Location{};
+    l.setName(it.next() orelse return ParseError.MissingField);
+    l.x = try nextFloat(it);
+    l.z = try nextFloat(it);
+    l.x1 = try nextFloat(it);
+    l.z1 = try nextFloat(it);
+    while (it.next()) |tok| {
+        const eq = std.mem.indexOfScalar(u8, tok, '=') orelse return ParseError.UnknownKey;
+        const key = tok[0..eq];
+        const val = tok[eq + 1 ..];
+        if (std.mem.eql(u8, key, "wet")) {
+            l.wet = try band01(val);
+        } else if (std.mem.eql(u8, key, "fog")) {
+            l.fog = try band01(val);
+        } else if (std.mem.eql(u8, key, "spore")) {
+            l.spore = try band01(val);
+        } else if (std.mem.eql(u8, key, "blend")) {
+            l.blend = try finiteFloat(f32, val);
+            if (!(l.blend >= 0 and l.blend <= 120)) return ParseError.BadNumber;
+        } else return ParseError.UnknownKey;
+    }
+    return l;
+}
+
+fn band01(tok: []const u8) !f32 {
+    const v = try finiteFloat(f32, tok);
+    if (!(v >= 0 and v <= 1)) return ParseError.BadNumber;
+    return v;
+}
+
+test "LOCATIONS OVERLAP AND THE LAST PAINTED WINS, and a weatherless one does not silence a wet one" {
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    m.* = .{};
+    // The editor PREPENDS, so index 0 is the newest — `locationAt` takes the first match.
+    m.locations[0] = .{ .x = -10, .z = -10, .x1 = 10, .z1 = 10, .wet = 0.9 };
+    m.locations[0].setName("inner");
+    m.locations[1] = .{ .x = -50, .z = -50, .x1 = 50, .z1 = 50, .wet = 0.2 };
+    m.locations[1].setName("outer");
+    m.nlocations = 2;
+
+    try std.testing.expectEqualStrings("inner", m.locationAt(0, 0).?.label());
+    try std.testing.expectEqualStrings("outer", m.locationAt(30, 30).?.label());
+    try std.testing.expect(m.locationAt(80, 80) == null);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.9), m.weatherAt(0, 0).?.wet.?, 1e-6);
+
+    // A NAMED PLACE WITH NO SKY OPINION IS STILL A PLACE. Standing over a wet one it must not answer for the
+    // weather, or every trigger rectangle you draw punches a dry hole in the storm.
+    m.locations[0].wet = null;
+    m.locations[0].fog = null;
+    try std.testing.expectEqualStrings("inner", m.locationAt(0, 0).?.label());
+    try std.testing.expectEqualStrings("outer", m.weatherAt(0, 0).?.label());
+    try std.testing.expectApproxEqAbs(@as(f32, 0.2), m.weatherAt(0, 0).?.wet.?, 1e-6);
+
+    try std.testing.expect(m.findLocation("outer").? == 1);
+    try std.testing.expect(m.findLocation("nowhere") == null);
+}
+
+test "a location round-trips through the format with and without its weather" {
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    var line: usize = 0;
+    const text =
+        "version: 1\n" ++
+        "half: 100\n" ++
+        "location: plain -20 -20 20 20\n" ++
+        "location: storm 0 0 40 40 wet=0.750 fog=0.300 blend=9.00\n";
+    try parse(text, m, &line);
+    try std.testing.expectEqual(@as(usize, 2), m.nlocations);
+    try std.testing.expect(!m.locations[0].hasWeather());
+    try std.testing.expect(m.locations[1].hasWeather());
+    try std.testing.expectApproxEqAbs(@as(f32, 0.75), m.locations[1].wet.?, 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 9.0), m.locations[1].blend, 1e-4);
+    // Out of range is refused rather than clamped: a wet of 4 is a typo, not an intention.
+    var bad: usize = 0;
+    try std.testing.expectError(ParseError.BadNumber, parse(
+        "version: 1\nhalf: 100\nlocation: x 0 0 1 1 wet=4\n",
+        m,
+        &bad,
+    ));
+}
+
 fn parseZone(it: *std.mem.TokenIterator(u8, .any)) !Zone {
     var z = Zone{};
     z.setName(it.next() orelse return ParseError.MissingField);
@@ -2029,7 +2200,6 @@ fn trim(s: []const u8) []const u8 {
 pub const TEST_HEAD =
     \\version: 1
     \\zone: plain -4000 -4000 4000 4000 0.7 grasstall
-    \\cover: 3.3 0.72 1.38 seed=1
     \\
 ;
 const SCRIPT_HEAD = TEST_HEAD;
@@ -2258,7 +2428,6 @@ test "an op round-trips through write and parse" {
     o.mix[1] = .conifer;
     o.mix[2] = .birch;
     _ = try m.add(o);
-    _ = try m.add(defaults(.cover));
 
     var buf: [8192]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&buf);
@@ -2267,7 +2436,7 @@ test "an op round-trips through write and parse" {
     var back = Map{};
     var ln: usize = 0;
     try parse(fbs.getWritten(), &back, &ln);
-    try std.testing.expectEqual(@as(usize, 2), back.nops);
+    try std.testing.expectEqual(@as(usize, 1), back.nops);
     const b = back.ops[0];
     try std.testing.expectEqual(Kind.fern, b.kind);
     try std.testing.expectEqual(@as(i32, 220), b.n);
@@ -2293,7 +2462,6 @@ test "A FOG GATE'S BOSS ROUND-TRIPS, and the default costs the file nothing" {
     never.kind = .foggate;
     never.boss = null;
     _ = try m.add(never);
-    _ = try m.add(defaults(.cover));
 
     var buf: [8192]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&buf);
@@ -2307,7 +2475,7 @@ test "A FOG GATE'S BOSS ROUND-TRIPS, and the default costs the file nothing" {
     var back = Map{};
     var ln: usize = 0;
     try parse(text, &back, &ln);
-    try std.testing.expectEqual(@as(usize, 4), back.nops);
+    try std.testing.expectEqual(@as(usize, 3), back.nops);
     try std.testing.expect(eqlBoss(back.ops[0].boss, .bone_knight));
     try std.testing.expect(eqlBoss(back.ops[1].boss, .ogre));
     try std.testing.expect(eqlBoss(back.ops[2].boss, null));
@@ -2549,39 +2717,38 @@ test "a bad key or a missing field is a load error, never a default" {
     var m = Map{};
     var ln: usize = 0;
     try std.testing.expectError(ParseError.UnknownKey, parse(
-        "version: 1\ncover: 3.3 0.7 1.4\nbelt: fern -1 -1 1 1 10 0.8 1.2 wobble=3\n",
+        "version: 1\nbelt: fern -1 -1 1 1 10 0.8 1.2 wobble=3\n",
         &m,
         &ln,
     ));
     try std.testing.expectError(ParseError.MissingField, parse("version: 1\nbelt: fern -1 -1 1 1\n", &m, &ln));
     try std.testing.expectError(ParseError.UnknownRecord, parse("version: 1\nsplat: 1 2 3\n", &m, &ln));
     try std.testing.expectError(ParseError.BadVersion, parse("version: 99\n", &m, &ln));
-    try std.testing.expectError(ParseError.NoCoverOp, parse("version: 1\nat: pillar 0 0 0 1\n", &m, &ln));
 }
 
 test "a value that only LOOKS parseable is a load error too" {
     var m = Map{};
     var ln: usize = 0;
-    const cover = "version: 1\ncover: 3.3 0.7 1.4\n";
-    try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=ture\n", &m, &ln));
-    try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=yes\n", &m, &ln));
-    try parse(cover ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=0\n", &m, &ln);
+    const head = "version: 1\n";
+    try std.testing.expectError(ParseError.BadNumber, parse(head ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=ture\n", &m, &ln));
+    try std.testing.expectError(ParseError.BadNumber, parse(head ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=yes\n", &m, &ln));
+    try parse(head ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=0\n", &m, &ln);
     try std.testing.expect(!m.ops[1].field);
-    try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "at: pillar nan 0 0 1\n", &m, &ln));
-    try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "foe: toad 0 0 0 1 inf\n", &m, &ln));
-    try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: inf\n" ++ cover[11..], &m, &ln));
-    try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 0\n" ++ cover[11..], &m, &ln));
-    try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 99999\n" ++ cover[11..], &m, &ln));
-    try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 313\n" ++ cover[11..], &m, &ln));
-    try parse("version: 1\nhalf: 312\n" ++ cover[11..], &m, &ln);
+    try std.testing.expectError(ParseError.BadNumber, parse(head ++ "at: pillar nan 0 0 1\n", &m, &ln));
+    try std.testing.expectError(ParseError.BadNumber, parse(head ++ "foe: toad 0 0 0 1 inf\n", &m, &ln));
+    try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: inf\n" ++ head[11..], &m, &ln));
+    try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 0\n" ++ head[11..], &m, &ln));
+    try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 99999\n" ++ head[11..], &m, &ln));
+    try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 313\n" ++ head[11..], &m, &ln));
+    try parse("version: 1\nhalf: 312\n" ++ head[11..], &m, &ln);
     try std.testing.expectApproxEqAbs(MAX_DECLARED_HALF, m.half, 1e-4);
-    try parse("version: 1\nhalf: 280\n" ++ cover[11..], &m, &ln);
+    try parse("version: 1\nhalf: 280\n" ++ head[11..], &m, &ln);
     try std.testing.expectApproxEqAbs(DEFAULT_HALF, m.half, 1e-4);
     try std.testing.expect(DEFAULT_HALF <= MAX_DECLARED_HALF);
-    try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "foe: toad 0 0 0 1 1e20\n", &m, &ln));
-    try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "foe: toad 0 0 0 1 -0.5\n", &m, &ln));
-    try std.testing.expectError(ParseError.BadNumber, parse(cover ++ "foe: toad 0 0 0 1 1.5\n", &m, &ln));
-    try parse(cover ++ "foe: toad 0 0 0 1 0\nfoe: ogre 1 1 0 1 1\n", &m, &ln);
+    try std.testing.expectError(ParseError.BadNumber, parse(head ++ "foe: toad 0 0 0 1 1e20\n", &m, &ln));
+    try std.testing.expectError(ParseError.BadNumber, parse(head ++ "foe: toad 0 0 0 1 -0.5\n", &m, &ln));
+    try std.testing.expectError(ParseError.BadNumber, parse(head ++ "foe: toad 0 0 0 1 1.5\n", &m, &ln));
+    try parse(head ++ "foe: toad 0 0 0 1 0\nfoe: ogre 1 1 0 1 1\n", &m, &ln);
     try std.testing.expectEqual(@as(usize, 2), m.nfoes);
 }
 
@@ -2623,7 +2790,7 @@ test "reorder preserves every other op's position" {
 }
 
 test "A SPAWN'S SCALE IS VALIDATED ON LOAD, because zero is a NaN rig and not a small skeleton" {
-    const head = "version: 1\nhalf: 100.0\ncover: 3.3 0.72 1.38\n";
+    const head = "version: 1\nhalf: 100.0\n";
     var m: Map = .{};
     var line: usize = 0;
     try parse(head ++ "foe: toad 0 0 0 1.0 0.5\n", &m, &line);
@@ -2634,4 +2801,12 @@ test "A SPAWN'S SCALE IS VALIDATED ON LOAD, because zero is a NaN rig and not a 
             parse(head ++ "foe: toad 0 0 0 " ++ bad ++ " 0.5\n", &m, &line),
         );
     }
+}
+
+test "THE OP CAP IS MEMORY — the editor's undo ring is whole-Map copies" {
+    const one = @sizeOf(Map);
+    const ring = one * 24;
+    std.debug.print("\n  ops: {d} cap, {d} B an Op, {d:.1} MB a Map, {d:.1} MB for a 24-deep undo ring\n", .{ MAX_OPS, @sizeOf(Op), @as(f64, @floatFromInt(one)) / 1048576.0, @as(f64, @floatFromInt(ring)) / 1048576.0 });
+    // The whole reason cover was baked to PATCHES and not to 13,228 individual `at:` ops.
+    try std.testing.expect(ring < 200 * 1024 * 1024);
 }

@@ -1,0 +1,16 @@
+version: 1
+name: Ravager Test
+half: 80.0
+runway: -6.00 -18.00 6.00 12.00
+
+zone: plain -400.0 -400.0 400.0 400.0 0.620 grasstall,grasstall,patch,tuft,clover,moss,wildflowers,flowers
+clear: 0.0 0.0 26.0
+cover: 3.3 0.72 1.38 seed=1
+
+foe: florid_ravager 0.00 16.00 180.0 1.00 0.21
+foe: florid_ravager 5.20 19.40 190.0 0.94 0.63
+foe: florid_ravager -5.60 20.10 172.0 1.06 0.88
+
+foe: delver 24.00 -6.00 270.0 1.00 0.30
+foe: shroom -22.00 -6.00 90.0 1.00 0.55
+foe: ogre 30.00 22.00 220.0 1.00 0.30

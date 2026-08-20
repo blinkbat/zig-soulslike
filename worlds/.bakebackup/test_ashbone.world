@@ -1,0 +1,100 @@
+version: 1
+name: The Ribs in the Ashfall
+half: 96.0
+runway: -4.00 -10.00 4.00 12.00
+
+# THE RIBS IN THE ASHFALL — the two ideas are one place. What died here is the reason for the ash and the
+# ash is the reason you can still see what died. He starts at (0, 4) facing SOUTH (game.beginGame plants
+# every hero there), so the whole carcass is laid out down -Z from the spawn: gate, avenue, skull.
+
+zone: ashfall -400.0 -400.0 400.0 400.0 0.260 cinders,cinders,cinders,ashheap,bracken,thistle,rubble
+zone: scoured -400.0 -400.0 400.0 -70.0 0.110 cinders,cinders,ashheap
+# …and the opposite: a place it never rains. `wet=0` is an OPINION, where no location at all would leave the
+# world's storm clock free to soak the ashfall.
+location: burnt -96.0 -96.0 96.0 96.0 wet=0.000 fog=0.120 blend=12.00
+
+clear: 0.0 -34.0 16.0
+cover: 4.20 0.75 1.30 seed=7001
+
+soil: 5x726 7x4 5x106 7x7 5x103 7x9 5x98 7x14 5x97 7x16 5x95 7x23 5x88 7x25 5x13 8x5 5x68 7x26 5x9 8x10 5x67 7x26 5x7 8x13 5x65 7x27 5x5 8x15 5x65 7x28 5x3 8x16 5x65 7x28 5x3 8x16 5x64 7x34 8x14 5x64 7x35 8x13 5x64 7x35 8x13 5x63 7x36 8x13 5x63 7x36 8x14 5x62 7x36 8x15 5x61 7x36 8x15 5x61 7x36 8x15 5x61 7x36 8x15 5x61 7x36 8x15 5x60 7x37 8x14 5x61 7x37 8x14 5x61 7x37 8x13 5x62 7x38 5x3 8x8 5x63 7x38 5x4 8x5 5x64 7x40 5x72 7x40 5x72 7x40 5x61 8x4 5x7 7x40 5x59 8x7 5x6 7x40 5x58 8x9 5x5 7x40 5x57 8x14 7x41 5x57 8x14 7x40 5x57 8x15 7x40 5x57 8x15 7x40 5x57 8x16 7x39 5x57 8x16 7x39 5x57 8x16 7x38 5x59 8x16 7x37 5x60 8x15 5x2 7x35 5x60 8x15 5x2 7x34 5x62 8x13 5x3 7x34 5x62 8x13 5x4 7x32 5x63 8x12 5x5 7x32 5x63 8x10 5x7 7x31 5x65 8x8 5x8 7x30 5x67 8x4 5x11 7x30 5x82 7x29 5x83 7x28 5x85 7x26 5x86 7x25 5x90 7x22 5x91 7x20 5x93 7x18 5x94 7x17 5x96 7x16 5x96 7x5 5x4 7x6 5x4 8x6 5x97 7x4 5x3 8x9 5x97 7x1 5x4 8x10 5x101 8x11 5x100 8x12 5x100 8x12 5x99 8x13 5x99 8x14 5x98 8x14 5x98 8x14 5x98 8x14 5x99 8x12 5x102 8x9 5x77 8x4 5x106 8x7 5x103 8x9 5x102 8x11 5x100 8x12 5x100 8x13 5x98 8x16 5x96 8x17 5x94 8x19 5x93 8x19 5x93 8x19 5x94 8x17 5x95 8x17 5x97 8x15 5x99 8x12 5x101 8x10 5x103 8x8 5x104 8x6 5x108 8x2 5x1864
+soilcov: 255x12544
+soiledge: 1x726 2x4 1x106 2x7 1x103 2x9 1x98 2x14 1x97 2x16 1x95 2x23 1x88 2x25 1x13 2x5 1x68 2x26 1x9 2x10 1x67 2x26 1x7 2x13 1x65 2x27 1x5 2x15 1x65 2x28 1x3 2x16 1x65 2x28 1x3 2x16 1x64 2x48 1x64 2x48 1x64 2x48 1x63 2x49 1x63 2x50 1x62 2x51 1x61 2x51 1x61 2x51 1x61 2x51 1x61 2x51 1x60 2x51 1x61 2x51 1x61 2x50 1x62 2x38 1x3 2x8 1x63 2x38 1x4 2x5 1x64 2x40 1x72 2x40 1x72 2x40 1x61 2x4 1x7 2x40 1x59 2x7 1x6 2x40 1x58 2x9 1x5 2x40 1x57 2x55 1x57 2x54 1x57 2x55 1x57 2x55 1x57 2x55 1x57 2x55 1x57 2x54 1x59 2x53 1x60 2x15 1x2 2x35 1x60 2x15 1x2 2x34 1x62 2x13 1x3 2x34 1x62 2x13 1x4 2x32 1x63 2x12 1x5 2x32 1x63 2x10 1x7 2x31 1x65 2x8 1x8 2x30 1x67 2x4 1x11 2x30 1x82 2x29 1x83 2x28 1x85 2x26 1x86 2x25 1x90 2x22 1x91 2x20 1x93 2x18 1x94 2x17 1x96 2x16 1x96 2x5 1x4 2x6 1x4 2x6 1x97 2x4 1x3 2x9 1x97 2x1 1x4 2x10 1x101 2x11 1x100 2x12 1x100 2x12 1x99 2x13 1x99 2x14 1x98 2x14 1x98 2x14 1x98 2x14 1x99 2x12 1x102 2x9 1x77 2x4 1x106 2x7 1x103 2x9 1x102 2x11 1x100 2x12 1x100 2x13 1x98 2x16 1x96 2x17 1x94 2x19 1x93 2x19 1x93 2x19 1x94 2x17 1x95 2x17 1x97 2x15 1x99 2x12 1x101 2x10 1x103 2x8 1x104 2x6 1x108 2x2 1x1864
+
+# THE GATE. A rib arch is the only doorway in the world nobody built — 9.1 m of span on a 5.1 m crown,
+# both measured off `propbone.ribPath` rather than typed, so it is a semicircle and reads as one.
+at: ribarch 0 -14 0 1
+at: vertebra -6.4 -13.2 24 1.1
+at: vertebra 6.9 -14.6 -50 0.95
+
+# THE AVENUE. Pairs down the spine line, ALTERNATING the three kinds either side — wabi-sabi BETWEEN the
+# instances, never along one, so no two facing ribs are the same rib and the run never bands.
+at: rib -7.6 -22 80 0.92
+at: rib2 7.6 -24.4 269 0.88
+at: rib3 -8.4 -30 86 1.04
+at: rib 8.4 -32.4 262 1.09
+at: rib2 -8.0 -38 92 1.16
+at: rib3 8.0 -40.4 255 0.95
+at: rib -8.8 -46 80 0.98
+at: rib3 8.8 -48.4 269 1.16
+at: rib3 -7.4 -54 86 1.10
+at: rib2 7.4 -56.4 262 1.02
+at: rib2 -8.2 -62 92 0.92
+at: rib 8.2 -64.4 255 0.88
+
+# …AND THE ONES THAT CAME DOWN. A cage with every rib still standing is a fence.
+at: rib2 -13.5 -26.0 38 0.80
+at: rib3 15.2 -44.0 212 0.72
+at: rib 12.0 -57.0 300 0.66
+
+# THE HEAD, at the end of the avenue and turned a quarter off it — square on is placed, not fallen.
+at: skull -1.5 -74.0 24 1.35
+at: vertebra 2.8 -66.5 140 1.0
+at: vertebra -3.4 -69.5 70 0.85
+at: bones 4.2 -71.0 0 1.2
+at: bones -6.0 -76.5 45 1.0
+
+# THE WEATHER THAT BURIED IT. Every dune runs the same +X wind, so the field agrees which way it came.
+at: ashdune -30 -8 4 0.85
+at: ashdune -16 18 -2 0.95
+at: ashdune 26 -30 6 1.05
+at: ashdune -44 -46 -5 1.15
+at: ashdune 34 10 3 0.85
+at: ashdune 8 44 -4 0.95
+at: ashdune -52 22 7 1.05
+at: ashdune 46 -64 -6 1.15
+at: ashdune -24 -62 2 0.85
+belt: ashheap -80 -80 80 80 34 0.7 1.4 seed=7002
+belt: cinders -70 -70 70 70 26 0.8 1.5 seed=7003
+
+# BURNT STANDING TIMBER — the understorey layer, and the only thing here taller than a man that is not bone.
+belt: charspar -78 -78 -22 78 9 0.8 1.2 seed=7004
+belt: charspar 24 -78 78 78 8 0.85 1.25 seed=7005
+at: charspar -18 30 0 1.15
+at: charspar 21 -8 0 0.95
+
+# THE ROCK THE ASH DID NOT COVER. Four formations, well apart, each a different way of failing.
+at: hoodoo -58 -30 20 1.0
+at: hoodoo -63 -36 200 0.78
+at: spire 56 -22 0 1.0
+at: balanced -50 48 110 1.0
+at: fingers 48 40 -30 1.0
+at: boulder -54 -24 0 1.3
+at: scree 52 -26 0 1.4
+
+# AND ONE CORNER OF DRESSED STONE, so the new ruins can be read against the bones they are lying beside.
+at: obelisk -66 -70 8 1.0
+at: plinth -58 -66 -14 1.0
+at: altar -62 -76 90 1.0
+at: broken -70 -62 0 1.0
+at: rubble -60 -72 0 1.0
+
+# A fire to stand at, and a gate's worth of light on the skull.
+at: campfire_lit 0 8 0 1
+at: brazier -4.5 -70.0 0 1.1
+at: brazier 4.5 -70.0 0 1.1
+
+# Something living in it. The delver goes UNDER an ash field, which is the one place that reads.
+foe: delver -8.00 -30.00 0.0 1.00 0.21
+foe: delver 11.00 -48.00 180.0 1.05 0.63
+foe: archer -14.00 -58.00 90.0 1.00 0.40
+foe: archer 16.00 -62.00 270.0 0.96 0.77

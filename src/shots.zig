@@ -33,6 +33,9 @@ const bookmod = @import("ui/book.zig");
 const savemod = @import("save.zig"); // for the boot screen's shelf — staged, never read off the disk
 const sfx = @import("core/audio.zig");
 const worldfmt = @import("world/worldfmt.zig");
+const wf = worldfmt;
+const env = @import("world/env.zig");
+const alloc = std.heap.raw_c_allocator;
 
 const Game = game.Game;
 const v3 = mathx.v3;
@@ -57,6 +60,7 @@ const BOOT_SHOT_T: f32 = 11.0;
 pub const DIR = "shots";
 const DIR_PROPS = DIR ++ "/props";
 const DIR_MAP = DIR ++ "/map";
+const DIR_LAND = DIR ++ "/land";
 
 pub const SHOT_DT: f32 = 1.0 / 60.0;
 /// The DRAWING clock, one shot at a time: every camera here TELEPORTS, and a still frame cannot show a
@@ -338,6 +342,58 @@ pub fn runMapShots(g: *Game) void {
         }
     }
     std.debug.print("MAP SHOTS: {d} creature(s) into " ++ DIR_MAP ++ "/\n", .{n});
+}
+
+/// **PHOTOGRAPH THE PLACE, NOT THE CREATURES IN IT.** `runMapShots` frames one creature per kind, which is
+/// the right tool for a bestiary and the wrong one for a region: a biome is judged on its LAYERS, its ground
+/// and its silhouette against the sky, and none of those fit in a portrait of a toad.
+///
+/// Seven frames off any map the `--map` flag can load: one steep overhead for the layout (AGENTS.md's own
+/// `dist` near 55, scaled to the map's half), and six at eye level on a ring, every one of them shot from
+/// **yaw 53** — the bearing that puts `gfx.SUN_DIR` over the camera's shoulder, so the subject is LIT rather
+/// than merely in frame. Named off the map file, so two regions do not overwrite each other's evidence.
+pub fn runLandShots(g: *Game) void {
+    std.fs.cwd().makePath(DIR_LAND) catch {};
+    g.drawDt = SETTLE_DT;
+    g.menu.screen = .closed;
+    g.retro.allOff();
+    game.pinHourForShot(g, game.daynight.SHOT_HOUR);
+    game.rehomeFoesForShot(g);
+
+    const path = worldfmt.startMap();
+    const slash = std.mem.lastIndexOfScalar(u8, path, '/') orelse std.mem.lastIndexOfScalar(u8, path, '\\');
+    const from: usize = if (slash) |i| i + 1 else 0;
+    const dot = std.mem.lastIndexOfScalar(u8, path, '.') orelse path.len;
+    const stem = path[from..@max(dot, from)];
+
+    const half = g.map.half;
+    var buf: [256]u8 = undefined;
+
+    // THE LAYOUT. Steep and high, so the whole region's shape is one picture.
+    standHero(g, 0, 6, std.math.pi);
+    const wide = std.fmt.bufPrintZ(&buf, DIR_LAND ++ "/{s}_00_layout.png", .{stem}) catch unreachable;
+    // AT THE GROUND, NOT AT y = 0. A sculpted map stands up to 47 m off the datum, and a target under the
+    // terrain is the framing failure AGENTS.md names outright.
+    const wideZ = -half * 0.28;
+    game.pinSkyForShot(g);
+    shootAt(g, wide, v3(0, g.env.groundAt(0, wideZ), wideZ), LIT_YAW, 0.98, mathx.clampF(half * 0.85, 40, 150));
+
+    // …AND SIX FROM INSIDE IT. The hero stands at each station so the shadow ortho box tracks him and the
+    // ground under the lens actually casts (AGENTS.md: `standHero` near your subject or there are no shadows).
+    const ring = [_][2]f32{
+        .{ 0, 10 }, .{ 0, -half * 0.22 }, .{ -half * 0.20, -half * 0.42 },
+        .{ half * 0.20, -half * 0.36 }, .{ 0, -half * 0.62 }, .{ -half * 0.34, half * 0.10 },
+    };
+    for (ring, 0..) |at, i| {
+        standHero(g, at[0], at[1], std.math.pi);
+        g.hero.pos.y = g.env.groundAt(at[0], at[1]);
+        g.hero.pose();
+        game.pinSkyForShot(g);
+        const name = std.fmt.bufPrintZ(&buf, DIR_LAND ++ "/{s}_{d:0>2}_eye.png", .{ stem, i + 1 }) catch unreachable;
+        const aim = v3(at[0], g.env.groundAt(at[0], at[1]) + 1.4, at[1]);
+        shootAt(g, name, aim, LIT_YAW, 0.16, 13.0);
+    }
+    std.debug.print("LAND SHOTS: {s} - 7 frames, {d} props / {d} solids / {d} lights into " ++ DIR_LAND ++ "/\n", .{ stem, g.env.propCount(), g.env.solidCount(), g.env.lightCount() });
 }
 
 pub fn runShots(g: *Game) void {

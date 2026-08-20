@@ -341,7 +341,6 @@ pub fn mushroomsMesh(shader: rl.Shader) rl.Model {
         b.addCylinder(v3(x, 0, z), v3(x + rng.signed() * 0.02, h, z + rng.signed() * 0.02), capR * 0.30, capR * 0.24, 5, CAP_PALE);
         b.addBlob(v3(x + rng.signed() * 0.02, h + capR * 0.22, z + rng.signed() * 0.02), v3(capR, capR * rng.range(0.42, 0.72), capR), 3, 6, if (rng.float() < 0.6) CAP_BROWN else CAP_PALE);
     }
-    b.addBlob(v3(0, 0.02, 0), v3(0.36, 0.035, 0.32), 3, 6, MOSS_DK);
     return b.toModel(shader);
 }
 

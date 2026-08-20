@@ -12,6 +12,10 @@ const rock = @import("proprock.zig");
 const wood = @import("propwood.zig");
 const flora = @import("propflora.zig");
 const fx = @import("propfx.zig");
+const bone = @import("propbone.zig");
+const ash = @import("propash.zig");
+const fungus = @import("propfungus.zig");
+const coral = @import("propcoral.zig");
 
 const v3 = mathx.v3;
 
@@ -99,6 +103,58 @@ pub const Kind = enum(u8) {
     birch,
     snag,
     sapling,
+    rib,
+    rib2,
+    rib3,
+    ribarch,
+    skull,
+    vertebra,
+    ashheap,
+    ashdune,
+    cinders,
+    charspar,
+    hoodoo,
+    spire,
+    balanced,
+    fingers,
+    obelisk,
+    plinth,
+    altar,
+    rotlog,
+    deadfall,
+    capgiant,
+    capgiant2,
+    capgiant3,
+    capcolossal,
+    captower,
+    hyphaarch,
+    glowcluster,
+    lampstalk,
+    fleshfold,
+    sporevent,
+    glowvein,
+    tubecoral,
+    tubespire,
+    fancoral,
+    antlercoral,
+    floatsac,
+    floatshoal,
+    hangcurtain,
+    puffballs,
+    deadfingers,
+    crustfungus,
+    shelfstack,
+    brainknot,
+    pipeclutch,
+    coralcrust,
+    shards,
+    slabs,
+    cobbles,
+    whaleback,
+    capcluster,
+    bracket,
+    glowcap,
+    sporepod,
     pickup,
     foggate,
 };
@@ -119,6 +175,8 @@ pub const Group = enum {
     ferns,
     wetland,
     fungus,
+    bone,
+    ash,
 
     pub const N = @typeInfo(Group).@"enum".fields.len;
 
@@ -138,6 +196,8 @@ pub const Group = enum {
             .ferns => "Ferns",
             .wetland => "Wetland",
             .fungus => "Fungus",
+            .bone => "Great Bones",
+            .ash => "Ashfall",
         };
     }
 };
@@ -226,6 +286,58 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .birch => "Birch",
         .snag => "Dead Snag",
         .sapling => "Sapling",
+        .rib => "Great Rib",
+        .rib2 => "Great Rib (Bowed)",
+        .rib3 => "Great Rib (Steep)",
+        .ribarch => "Rib Arch",
+        .skull => "Colossal Skull",
+        .vertebra => "Great Vertebra",
+        .ashheap => "Ash Heap",
+        .ashdune => "Ash Dune",
+        .cinders => "Cinder Crust",
+        .charspar => "Charred Spar",
+        .hoodoo => "Hoodoo",
+        .spire => "Rock Spire",
+        .balanced => "Balanced Rock",
+        .fingers => "Split Slabs",
+        .obelisk => "Obelisk",
+        .plinth => "Empty Plinth",
+        .altar => "Altar Stone",
+        .rotlog => "Rotted Log",
+        .deadfall => "Deadfall",
+        .capgiant => "Great Cap (Broad)",
+        .capgiant2 => "Great Cap (Parasol)",
+        .capgiant3 => "Great Cap (Table)",
+        .capcolossal => "Colossal Cap",
+        .captower => "Cap Tower",
+        .hyphaarch => "Hyphal Arch",
+        .glowcluster => "Glow Knot",
+        .lampstalk => "Lamp Stalk",
+        .fleshfold => "Flesh Fold",
+        .sporevent => "Spore Vent",
+        .glowvein => "Glow Veins",
+        .tubecoral => "Tube Sponges",
+        .tubespire => "Tube Spire",
+        .fancoral => "Coral Fan",
+        .antlercoral => "Antler Coral",
+        .floatsac => "Float Sac",
+        .floatshoal => "Float Shoal",
+        .hangcurtain => "Hanging Curtain",
+        .puffballs => "Puffballs",
+        .deadfingers => "Dead Fingers",
+        .crustfungus => "Crust Fungus",
+        .shelfstack => "Shelf Stack",
+        .brainknot => "Brain Knot",
+        .pipeclutch => "Pipe Clutch",
+        .coralcrust => "Coral Crust",
+        .shards => "Rock Shards",
+        .slabs => "Shale Slabs",
+        .cobbles => "Cobbles",
+        .whaleback => "Whaleback",
+        .capcluster => "Cap Cluster",
+        .bracket => "Bracket Shelves",
+        .glowcap => "Glowcap",
+        .sporepod => "Spore Pods",
         .pickup => "Item",
         .foggate => "Fog Gate",
     };
@@ -239,9 +351,13 @@ pub fn group(k: Kind) Group {
         .gibbet, .cairn,
         => .ruins,
         .chapel, .watchtower, .cottage, .tower, .gate, .causeway, .foggate => .buildings,
+        .obelisk, .plinth, .altar => .ruins,
         .well, .shrine, .lantern, .fence, .barrels, .woodpile, .cart, .bonfire => .village,
         .chest, .pickup => .treasure,
-        .boulder, .rocks, .outcrop, .scree, .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6, .stump, .log => .rock,
+        .boulder, .rocks, .outcrop, .scree, .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6, .stump, .log,
+        .shards, .slabs, .cobbles, .whaleback,
+        .hoodoo, .spire, .balanced, .fingers, .rotlog, .deadfall,
+        => .rock,
         .tree, .bigtree, .bigtree2, .bigtree3, .willow, .conifer, .birch, .snag, .sapling => .trees,
         .torch, .brazier, .campfire, .campfire_lit => .fire,
         .water => .water,
@@ -250,8 +366,118 @@ pub fn group(k: Kind) Group {
         .shrub, .bush, .bramble, .thicket, .gorse, .heather, .nettles, .ivy => .brush,
         .fern, .bracken => .ferns,
         .reeds, .cattails, .lilypads => .wetland,
-        .mushrooms => .fungus,
+        .mushrooms, .capgiant, .capgiant2, .capgiant3, .capcolossal, .captower, .hyphaarch,
+        .glowcluster, .lampstalk, .fleshfold, .sporevent, .glowvein, .capcluster, .bracket, .glowcap, .sporepod,
+        .tubecoral, .tubespire, .fancoral, .antlercoral, .floatsac, .floatshoal, .hangcurtain,
+        .puffballs, .deadfingers, .crustfungus, .shelfstack, .brainknot, .pipeclutch, .coralcrust => .fungus,
+        .rib, .rib2, .rib3, .ribarch, .skull, .vertebra => .bone,
+        .ashheap, .ashdune, .cinders, .charspar => .ash,
     };
+}
+
+/// **WHERE A THING BELONGS, WHICH IS NOT WHAT IT IS MADE OF.** `Group` is the editor's palette — how a prop
+/// is FILED, so you can find the fences next to the gates. This is the other axis: which kingdom it reads as
+/// standing in. They cross, and the crossings are the point — a boulder is `Group.rock` and `Biome.rock`, but
+/// a cairn is `Group.ruins` and `Biome.ruins` while an outcrop beside it is rock, and a rotted log is filed
+/// under rock with the stumps and belongs to the forest.
+///
+/// `any` is not a dustbin: it is the set that reads right ANYWHERE — grass, a torch, a chest, the water sheet.
+/// A kind put there because nobody could decide is a kind that will turn up in the ashfall looking wrong.
+pub const Biome = enum {
+    any,
+    ruins,
+    village,
+    forest,
+    rock,
+    wetland,
+    ash,
+    bone,
+    fungal,
+
+    pub const N = @typeInfo(Biome).@"enum".fields.len;
+
+    pub fn label(b: Biome) [:0]const u8 {
+        return switch (b) {
+            .any => "Anywhere",
+            .ruins => "Ruins",
+            .village => "Village",
+            .forest => "Forest",
+            .rock => "Rock",
+            .wetland => "Wetland",
+            .ash => "Ashfall",
+            .bone => "Bonefield",
+            .fungal => "Mycelian",
+        };
+    }
+};
+
+pub fn biome(k: Kind) Biome {
+    return switch (k) {
+        .rubble, .chest, .pickup, .water, .foggate,
+        .torch, .brazier, .campfire, .campfire_lit,
+        .tuft, .patch, .shrub, .flowers, .glow, .grasstall, .clover,
+        .thistle, .foxglove, .heather, .gorse, .wildflowers,
+        => .any,
+
+        .pillar, .broken, .block, .arch, .wall, .graves, .sword, .tower, .gate,
+        .banner, .statue, .causeway, .paving, .monolith, .bones, .sarcophagus,
+        .stairs, .gibbet, .cairn, .chapel, .watchtower, .obelisk, .plinth, .altar,
+        => .ruins,
+
+        .bonfire, .cottage, .cart, .well, .shrine, .lantern, .fence, .barrels, .woodpile => .village,
+
+        .tree, .stump, .log, .bigtree, .bigtree2, .bigtree3, .willow, .conifer, .birch,
+        .snag, .sapling, .rotlog, .deadfall,
+        .bush, .bramble, .fern, .moss, .mushrooms, .nettles, .bracken, .thicket, .ivy,
+        => .forest,
+
+        .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6,
+        .boulder, .rocks, .outcrop, .scree, .hoodoo, .spire, .balanced, .fingers,
+        .shards, .slabs, .cobbles, .whaleback,
+        => .rock,
+
+        .reeds, .cattails, .lilypads => .wetland,
+        .ashheap, .ashdune, .cinders, .charspar => .ash,
+        .rib, .rib2, .rib3, .ribarch, .skull, .vertebra => .bone,
+        .capgiant, .capgiant2, .capgiant3, .capcolossal, .captower, .hyphaarch,
+        .glowcluster, .lampstalk, .fleshfold, .sporevent, .glowvein,
+        .tubecoral, .tubespire, .fancoral, .antlercoral, .floatsac, .floatshoal, .hangcurtain,
+        .capcluster, .bracket, .glowcap, .sporepod,
+        .puffballs, .deadfingers, .crustfungus, .shelfstack, .brainknot, .pipeclutch, .coralcrust,
+        => .fungal,
+    };
+}
+
+/// Everything that reads right in `b`, plus everything that reads right anywhere — which is what a zone's
+/// `mix=` is actually picking from.
+pub fn inBiome(k: Kind, b: Biome) bool {
+    const own = biome(k);
+    return own == b or own == .any;
+}
+
+/// **WHAT IVY CLIMBS** — dressed or laid stone with a vertical face, and nothing else. It lived as a bare
+/// prong list inside `env.Placer.ivy`, three files away from the kinds it names, and fell out of step the
+/// day the ruins family grew: an obelisk and an altar were unclimbable and nothing anywhere said so. It is
+/// deliberately NOT `group(k) == .ruins` — that set holds a planted sword and a rubble pile too.
+pub const IVY_HOSTS = [_]Kind{
+    .wall,    .pillar,  .broken,     .block,  .arch,
+    .statue,  .cottage, .chapel,     .watchtower, .stairs,
+    .monolith, .obelisk, .plinth,    .altar,
+};
+
+pub fn ivyClimbs(k: Kind) bool {
+    for (IVY_HOSTS) |h| {
+        if (h == k) return true;
+    }
+    return false;
+}
+
+comptime {
+    // Every host is masonry, or the ivy is growing on a bush.
+    for (IVY_HOSTS) |k| {
+        const b = biome(k);
+        if (b != .ruins and b != .village) @compileError("props: ivy host `" ++ @tagName(k) ++ "` is not built stone");
+    }
 }
 
 pub const CLIFFS = [_]Kind{ .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6 };
@@ -279,6 +505,7 @@ pub const SOLID_KINDS = kindsOn(.props);
 pub const INTERACT_KINDS = kindsOn(.interact);
 
 fn kindsOn(comptime s: Stock) [countOn(s)]Kind {
+    @setEvalBranchQuota(30000);
     var out: [countOn(s)]Kind = undefined;
     var n = 0;
     for (0..NK) |i| {
@@ -292,6 +519,7 @@ fn kindsOn(comptime s: Stock) [countOn(s)]Kind {
 }
 
 fn countOn(comptime s: Stock) usize {
+    @setEvalBranchQuota(30000);
     var n: usize = 0;
     for (0..NK) |i| {
         if (stock(@enumFromInt(i)) == s) n += 1;
@@ -305,7 +533,7 @@ comptime {
 }
 pub const Part = art.Part;
 
-pub const Blocker = struct { r: f32, y0: f32 = 0, y1: f32, x: f32 = 0, z: f32 = 0 };
+pub const Blocker = art.Blocker;
 
 pub const LightSpec = struct {
     y: f32, // height of the flame above the prop's base (fires sit on the prop axis, so x/z are 0)
@@ -465,6 +693,104 @@ pub const INFO = [NK]Info{
     // A sapling CASTS (3 m of tree with no shadow reads as a decal) and so must not sway — the depth pass
     // has no wind term.
     .{ .kind = .sapling, .build = wood.saplingMesh, .bound = 3.8, .top = 3.4, .view = 220, .parts = circleParts(0.16, 2.2), .surf = .wood },
+    // ── THE GREAT BONES ─────────────────────────────────────────────────────────────────────────────────
+    // `bound` and `top` are SOLVED off `propbone.ribPath` at comptime — the same walk the mesh is drawn from,
+    // so a retuned curl moves the sphere with the shaft. They were typed here once, beside a comment that
+    // claimed this; the arch is what proved the comment wrong, its keystone standing 0.29 m above the `top`
+    // it declared.
+    // A rib THINS like a tree rather than standing solid like a wall: it is a mast, and losing the hero
+    // behind one is nothing the geometry is doing on purpose.
+    .{ .kind = .rib, .build = bone.rib1, .bound = bone.ribBound(bone.RIB_TALL), .top = bone.ribTop(bone.RIB_TALL), .view = FAR, .parts = circleParts(0.62, 3.0), .occl = &.{ .{ .r = 0.90, .y1 = 4.0 }, .{ .x = 3.0, .r = 2.60, .y0 = 3.8, .y1 = bone.ribTop(bone.RIB_TALL) } } },
+    .{ .kind = .rib2, .build = bone.rib2, .bound = bone.ribBound(bone.RIB_STOUT), .top = bone.ribTop(bone.RIB_STOUT), .view = FAR, .parts = circleParts(0.70, 2.6), .occl = &.{ .{ .r = 1.00, .y1 = 2.8 }, .{ .x = 2.6, .r = 2.20, .y0 = 2.6, .y1 = bone.ribTop(bone.RIB_STOUT) } } },
+    .{ .kind = .rib3, .build = bone.rib3, .bound = bone.ribBound(bone.RIB_SPLIT), .top = bone.ribTop(bone.RIB_SPLIT), .view = FAR, .parts = circleParts(0.55, 3.2), .occl = &.{ .{ .r = 0.85, .y1 = 4.0 }, .{ .x = 1.6, .r = 1.60, .y0 = 3.8, .y1 = bone.ribTop(bone.RIB_SPLIT) } } },
+    // TWO LEGS AND A HOLE BETWEEN THEM — the colliders are the feet and nothing else, so it is a gate you
+    // walk through rather than a wall with a picture of an arch on it. Their spacing is the mesh's own
+    // (`bone.ARCH_HALF`), solved from the shaft, so the door cannot drift off the stone.
+    .{ .kind = .ribarch, .build = bone.ribArchMesh, .bound = bone.archBound(), .top = bone.archTop(), .view = FAR, .parts = &.{
+        .{ .ax = -bone.ARCH_HALF, .bx = -bone.ARCH_HALF, .r = 0.75, .h = 2.6 },
+        .{ .ax = bone.ARCH_HALF, .bx = bone.ARCH_HALF, .r = 0.75, .h = 2.6 },
+    }, .occl = &.{ .{ .x = -bone.ARCH_HALF, .r = 1.10, .y1 = 4.2 }, .{ .x = bone.ARCH_HALF, .r = 1.10, .y1 = 4.2 } } },
+    .{ .kind = .skull, .build = bone.skullMesh, .bound = 3.9, .top = 2.3, .view = 300, .parts = &.{.{ .ax = -0.60, .bx = 1.60, .r = 1.05, .h = 1.95 }} },
+    .{ .kind = .vertebra, .build = bone.vertebraMesh, .bound = 2.9, .top = 2.5, .view = 220, .parts = circleParts(0.85, 1.60) },
+
+    // ── THE ASHFALL ─────────────────────────────────────────────────────────────────────────────────────
+    // A heap is walked OVER and a dune is walked ROUND — and the dune's collider is only 1.4 m tall against
+    // its own 2.2, so a look passes over the ridge a body cannot cross. That gap is the region's one idea.
+    .{ .kind = .ashheap, .build = ash.ashHeapMesh, .bound = 2.0, .top = 0.80, .view = 150 },
+    .{ .kind = .ashdune, .build = ash.ashDuneMesh, .bound = 5.8, .top = 2.20, .view = 250, .parts = &.{.{ .ax = -2.40, .bx = 2.40, .r = 1.20, .h = 1.40 }} },
+    // Its coals are EMISSIVE vertex alpha, not a light — so a field of them costs nothing and lights nothing.
+    .{ .kind = .cinders, .build = ash.cindersMesh, .bound = 1.6, .top = 0.25, .view = 130, .casts = false },
+    .{ .kind = .charspar, .build = ash.charSparMesh, .bound = 5.9, .top = 5.50, .view = 300, .parts = circleParts(0.44, 4.0), .occl = &.{.{ .r = 0.70, .y1 = 5.4 }}, .surf = .wood },
+
+    // ── FORMATIONS ──────────────────────────────────────────────────────────────────────────────────────
+    .{ .kind = .hoodoo, .build = rock.hoodooMesh, .bound = 6.4, .top = 5.90, .view = FAR, .parts = circleParts(0.60, 4.6), .occl = &.{ .{ .r = 0.90, .y1 = 3.5 }, .{ .r = 1.45, .y0 = 3.4, .y1 = 5.8 } } },
+    .{ .kind = .spire, .build = rock.spireMesh, .bound = 10.2, .top = 9.40, .view = FAR, .parts = circleParts(1.10, 7.0), .occl = &.{.{ .r = 1.40, .y1 = 9.3 }} },
+    .{ .kind = .balanced, .build = rock.balancedMesh, .bound = 4.6, .top = 4.10, .view = 320, .parts = &.{.{ .ax = 0.0, .bx = 0.62, .r = 1.10, .h = 2.30 }}, .occl = &.{.{ .x = 0.5, .r = 1.70, .y1 = 4.0 }} },
+    .{ .kind = .fingers, .build = rock.fingersMesh, .bound = 5.6, .top = 4.80, .view = 320, .parts = &.{.{ .ax = -0.90, .bx = 1.70, .r = 0.60, .h = 3.80 }}, .occl = &.{.{ .x = 0.4, .r = 1.90, .y1 = 4.7 }} },
+
+    // ── MORE RUINS ──────────────────────────────────────────────────────────────────────────────────────
+    // No `occl` on any of the three, which is the ruins family's own rule: dressed stone is architecture and
+    // architecture does not ghost.
+    .{ .kind = .obelisk, .build = ruins.obeliskMesh, .bound = 9.2, .top = 8.70, .view = FAR, .parts = circleParts(0.85, 7.0) },
+    .{ .kind = .plinth, .build = ruins.plinthMesh, .bound = 2.8, .top = 2.60, .view = 210, .parts = &.{.{ .ax = -0.30, .bx = 0.30, .r = 0.85, .h = 1.70 }} },
+    .{ .kind = .altar, .build = ruins.altarMesh, .bound = 2.9, .top = 1.15, .view = 210, .parts = &.{.{ .ax = -1.35, .bx = 1.35, .r = 0.68, .h = 1.05 }} },
+
+    // ── WOOD GOING BACK TO THE GROUND ───────────────────────────────────────────────────────────────────
+    .{ .kind = .rotlog, .build = wood.rotLogMesh, .bound = 3.2, .top = 0.95, .view = 175, .parts = &.{.{ .ax = -2.10, .bx = 2.10, .r = 0.40, .h = 0.85 }}, .surf = .wood },
+    .{ .kind = .deadfall, .build = wood.deadfallMesh, .bound = 3.4, .top = 2.00, .view = 200, .parts = circleParts(1.10, 1.60), .surf = .wood },
+
+    // ── THE MYCELIAN ────────────────────────────────────────────────────────────────────────────────────
+    // The canopy, and you walk UNDER it: the colliders are the two stipes, so the cap is a roof rather than
+    // a wall. Two blockers for `bigtree`'s reason — one cylinder cannot be narrow at the foot and 3.3 m wide
+    // at the brim.
+    .{ .kind = .capgiant, .build = fungus.capGiantMesh, .bound = fungus.capBound(fungus.GIANT_BROAD), .top = fungus.capTop(fungus.GIANT_BROAD), .view = FAR, .parts = &fungus.capParts(fungus.GIANT_BROAD), .occl = &fungus.capOccl(fungus.GIANT_BROAD), .surf = .wood },
+    // TWO MORE CANOPIES. Their `bound`/`top` are their own — a parasol is taller and narrower than the broad
+    // one and a table is the other way round, which is the whole reason they exist.
+    .{ .kind = .capgiant2, .build = fungus.capGiant2Mesh, .bound = fungus.capBound(fungus.GIANT_TALL), .top = fungus.capTop(fungus.GIANT_TALL), .view = FAR, .parts = &fungus.capParts(fungus.GIANT_TALL), .occl = &fungus.capOccl(fungus.GIANT_TALL), .surf = .wood },
+    .{ .kind = .capgiant3, .build = fungus.capGiant3Mesh, .bound = fungus.capBound(fungus.GIANT_TABLE), .top = fungus.capTop(fungus.GIANT_TABLE), .view = FAR, .parts = &fungus.capParts(fungus.GIANT_TABLE), .occl = &fungus.capOccl(fungus.GIANT_TABLE), .surf = .wood },
+    // THE LANDMARK. Seventeen metres, `tower`-scale, and its four numbers come off `CapSpec` like the rest.
+    .{ .kind = .capcolossal, .build = fungus.capColossalMesh, .bound = fungus.capBound(fungus.GIANT_COLOSSAL), .top = fungus.capTop(fungus.GIANT_COLOSSAL), .view = FAR, .parts = &fungus.capParts(fungus.GIANT_COLOSSAL), .occl = &fungus.capOccl(fungus.GIANT_COLOSSAL), .surf = .wood },
+    .{ .kind = .captower, .build = fungus.capTowerMesh, .bound = 10.2, .top = 9.90, .view = FAR, .parts = circleParts(0.86, 8.4), .occl = &.{ .{ .r = 2.10, .y1 = 4.2 }, .{ .r = 1.30, .y0 = 4.0, .y1 = 9.8 } }, .surf = .wood },
+    // A SPAN, so the colliders are the two feet and the gap between them is the door.
+    .{ .kind = .hyphaarch, .build = fungus.hyphaArchMesh, .bound = 6.6, .top = 5.90, .view = 340, .parts = &.{
+        .{ .ax = -fungus.ARCH_SPAN * 0.5, .bx = -fungus.ARCH_SPAN * 0.5, .r = 0.60, .h = 2.40 },
+        .{ .ax = fungus.ARCH_SPAN * 0.5, .bx = fungus.ARCH_SPAN * 0.5, .r = 0.60, .h = 2.40 },
+    }, .occl = &.{ .{ .x = -fungus.ARCH_SPAN * 0.5, .r = 0.90, .y1 = 4.4 }, .{ .x = fungus.ARCH_SPAN * 0.5, .r = 0.90, .y1 = 4.4 } }, .surf = .wood },
+    // THE THREE LAMPS, at knee, chest and overhead. Radii kept small on purpose — a light POOLS or it is a
+    // wash, and this kingdom has a great many of them against a sixteen-light budget.
+    .{ .kind = .glowcluster, .build = fungus.glowClusterMesh, .bound = 2.0, .top = 1.80, .view = 220, .parts = circleParts(0.55, 1.10), .light = .{ .y = fungus.CLUSTER_LIGHT_Y, .col = v3(0.62, 0.26, 0.46), .radius = 6.5, .flicker = 0.04 }, .surf = .wood },
+    .{ .kind = .lampstalk, .build = fungus.lampStalkMesh, .bound = 4.6, .top = 4.20, .view = 300, .parts = circleParts(0.26, 2.60), .light = .{ .y = fungus.LAMP_LIGHT_Y, .col = v3(0.70, 0.32, 0.52), .radius = 10.0, .flicker = 0.03 }, .surf = .wood },
+    // No collider: a fold is ankle-high and you walk over it. It still casts, because a 1.4 m mass that
+    // lays no shadow reads as a decal.
+    .{ .kind = .fleshfold, .build = fungus.fleshFoldMesh, .bound = 2.6, .top = 1.40, .view = 180 },
+    .{ .kind = .sporevent, .build = fungus.sporeVentMesh, .bound = 4.0, .top = 3.70, .view = 260, .parts = circleParts(1.05, 3.40), .light = .{ .y = fungus.VENT_H - 0.40, .col = v3(0.46, 0.20, 0.36), .radius = 5.0, .flicker = 0.09 }, .surf = .wood },
+    // EMISSIVE VERTEX ALPHA AND NOT A LIGHT — the point of it is that you can sow hundreds.
+    .{ .kind = .glowvein, .build = fungus.glowVeinMesh, .bound = 2.3, .top = 0.12, .view = 120, .flora = true, .casts = false },
+    .{ .kind = .tubecoral, .build = coral.tubeCoralMesh, .bound = coral.TUBE_H + 0.30, .top = coral.TUBE_H + 0.10, .view = 240, .parts = circleParts(0.62, coral.TUBE_H * 0.9), .surf = .wood },
+    .{ .kind = .tubespire, .build = coral.tubeSpireMesh, .bound = coral.SPIRE_H + 0.40, .top = coral.SPIRE_H + 0.20, .view = FAR, .parts = circleParts(0.80, coral.SPIRE_H * 0.94), .occl = &.{.{ .r = 1.10, .y1 = coral.SPIRE_H }}, .light = .{ .y = coral.SPIRE_LIGHT_Y, .col = v3(0.66, 0.30, 0.48), .radius = 9.0, .flicker = 0.05 }, .surf = .wood },
+    .{ .kind = .fancoral, .build = coral.fanCoralMesh, .bound = coral.FAN_H + 0.40, .top = coral.FAN_H + 0.20, .view = 300, .parts = circleParts(0.34, 0.60), .surf = .wood },
+    .{ .kind = .antlercoral, .build = coral.antlerCoralMesh, .bound = coral.ANTLER_H + 0.50, .top = coral.ANTLER_H + 0.30, .view = 260, .parts = circleParts(0.40, 0.90), .surf = .wood },
+    .{ .kind = .floatsac, .build = coral.floatSacMesh, .bound = coral.FLOAT_Y + coral.FLOAT_R * 1.6, .top = coral.FLOAT_Y + coral.FLOAT_R * 1.3, .view = 320, .parts = circleParts(0.18, 0.30), .light = .{ .y = coral.FLOAT_LIGHT_Y, .col = v3(0.60, 0.28, 0.44), .radius = 8.0, .flicker = 0.06 }, .surf = .wood },
+    .{ .kind = .floatshoal, .build = coral.floatShoalMesh, .bound = coral.SHOAL_TOP + 0.90, .top = coral.SHOAL_TOP + 0.60, .view = FAR, .parts = circleParts(0.30, 0.30), .light = .{ .y = coral.SHOAL_TOP * 0.72, .col = v3(0.58, 0.28, 0.46), .radius = 10.0, .flicker = 0.05 }, .surf = .wood },
+    .{ .kind = .hangcurtain, .build = coral.hangCurtainMesh, .bound = coral.HANG_H + 0.60, .top = coral.HANG_H + 0.30, .view = 340, .parts = &.{.{ .ax = -coral.HANG_SPAN * 0.5, .az = 0, .bx = -coral.HANG_SPAN * 0.5, .bz = 0, .r = 0.34, .h = 1.30 }}, .light = .{ .y = coral.HANG_LIGHT_Y, .col = v3(0.62, 0.30, 0.50), .radius = 7.5, .flicker = 0.07 }, .surf = .wood },
+    .{ .kind = .puffballs, .build = fungus.puffballsMesh, .bound = fungus.PUFF_R * 1.2, .top = 0.62, .view = 150, .parts = circleParts(0.30, 0.30), .surf = .wood },
+    .{ .kind = .deadfingers, .build = fungus.deadFingersMesh, .bound = 0.62, .top = fungus.FINGER_H + 0.08, .view = 130 },
+    .{ .kind = .crustfungus, .build = fungus.crustFungusMesh, .bound = fungus.CRUST_R * 1.1, .top = 0.12, .view = 140, .flora = true, .casts = false },
+    .{ .kind = .shelfstack, .build = fungus.shelfStackMesh, .bound = fungus.SHELF_H + 0.20, .top = fungus.SHELF_H + 0.10, .view = 200, .parts = circleParts(0.20, 1.05), .surf = .wood },
+    .{ .kind = .brainknot, .build = coral.brainKnotMesh, .bound = coral.BRAIN_R * 1.15, .top = coral.BRAIN_H + 0.06, .view = 170, .parts = circleParts(0.82, coral.BRAIN_H), .surf = .wood },
+    .{ .kind = .pipeclutch, .build = coral.pipeClutchMesh, .bound = coral.CLUTCH_H + 0.20, .top = coral.CLUTCH_H + 0.10, .view = 160, .parts = circleParts(0.46, coral.CLUTCH_H * 0.8), .surf = .wood },
+    .{ .kind = .coralcrust, .build = coral.coralCrustMesh, .bound = coral.CCRUST_R * 1.1, .top = 0.36, .view = 150, .flora = true, .casts = false },
+    .{ .kind = .shards, .build = rock.shardsMesh, .bound = rock.SHARD_H + 0.35, .top = rock.SHARD_H + 0.06, .view = 170, .surf = .stone },
+    .{ .kind = .slabs, .build = rock.slabsMesh, .bound = 1.35, .top = 0.32, .view = 160, .surf = .stone },
+    .{ .kind = .cobbles, .build = rock.cobblesMesh, .bound = 1.30, .top = 0.24, .view = 140, .surf = .stone, .casts = false },
+    .{ .kind = .whaleback, .build = rock.whalebackMesh, .bound = 2.45, .top = rock.WHALE_H + 0.10, .view = 240, .parts = circleParts(0.90, rock.WHALE_H), .surf = .stone },
+    .{ .kind = .capcluster, .build = fungus.capClusterMesh, .bound = 3.4, .top = 2.80, .view = 230, .parts = circleParts(0.75, 1.80), .occl = &.{.{ .r = 1.20, .y1 = 2.7 }}, .surf = .wood },
+    .{ .kind = .bracket, .build = fungus.bracketMesh, .bound = 2.6, .top = 2.50, .view = 200, .parts = circleParts(0.45, 2.20), .surf = .wood },
+    // THE ONE REAL LIGHT IN THE KINGDOM. Cold, and its radius is small on purpose — a light POOLS or it is a
+    // wash, and this region has a great many of them.
+    .{ .kind = .glowcap, .build = fungus.glowCapMesh, .bound = 3.0, .top = 2.90, .view = 260, .parts = circleParts(0.22, 2.00), .light = .{ .y = fungus.GLOW_LIGHT_Y, .col = v3(0.26, 0.62, 0.58), .radius = 7.5, .flicker = 0.05 }, .surf = .wood },
+    .{ .kind = .sporepod, .build = fungus.sporePodMesh, .bound = 1.3, .top = 1.25, .view = 95, .flora = true, .casts = false },
+
     .{ .kind = .pickup, .build = fx.pickupMesh, .bound = 1.9, .top = fx.PICKUP_TOP, .view = 190, .interact = true, .casts = false, .light = .{ .y = 0.30, .col = v3(0.86, 0.82, 0.58), .radius = 5.4, .flicker = 0.03 } },
     // THE FOG GATE. `build` is the two threshold stones; the sheet itself is the VEIL, which is what puts it
     // in the late pass (`env.drawVeils`) where a translucent thing belongs. `solid` because a fog wall is
@@ -481,6 +807,8 @@ pub fn info(k: Kind) *const Info {
 }
 
 comptime {
+    // The table is 110 rows now and each one is walked by five asserts below.
+    @setEvalBranchQuota(20000);
     for (INFO, 0..) |row, i| std.debug.assert(@intFromEnum(row.kind) == i);
     for (INFO) |row| std.debug.assert(row.bound >= row.top);
     for (INFO) |row| std.debug.assert(!(row.flora and row.casts));
@@ -495,6 +823,25 @@ comptime {
             std.debug.assert(@sqrt(bl.x * bl.x + bl.z * bl.z) + bl.r <= row.bound + 0.001);
         }
     }
+}
+
+test "EVERY KIND IS FILED UNDER ONE KINGDOM, and `any` is not a dustbin" {
+    // The classification is the whole point of the axis, so it is pinned rather than trusted: the switch is
+    // exhaustive (the compiler sees to that) and this says the answers are not all the same one.
+    var seen = [_]usize{0} ** Biome.N;
+    for (0..NK) |i| seen[@intFromEnum(biome(@enumFromInt(i)))] += 1;
+    for (seen, 0..) |n, b| {
+        if (n == 0) std.debug.print("no kind is filed under {s}\n", .{Biome.label(@enumFromInt(b))});
+        try std.testing.expect(n > 0);
+    }
+    // …and `any` stays the minority: a kind put there because nobody could decide turns up in the ashfall
+    // looking wrong, so it may never be the biggest set.
+    const anyN = seen[@intFromEnum(Biome.any)];
+    try std.testing.expect(anyN * 3 < NK);
+    // A zone picks from its own kingdom PLUS the ones that read anywhere, and never from another kingdom's.
+    try std.testing.expect(inBiome(.rib, .bone) and inBiome(.tuft, .bone));
+    try std.testing.expect(!inBiome(.rib, .fungal) and !inBiome(.capgiant, .ruins));
+    try std.testing.expect(inBiome(.obelisk, .ruins) and inBiome(.rotlog, .forest));
 }
 
 test "every kind row sits at its own index and carries a mesh builder" {

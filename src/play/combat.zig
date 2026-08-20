@@ -167,6 +167,11 @@ pub const Vitals = struct {
     lightStun: f32 = LIGHT_STUN_DUR,
     heavyStun: f32 = HEAVY_STUN_DUR,
     res: Resists = .{},
+    /// **THE PHYSICAL HALF OF `res`** (`armourTaken`'s own note: "the thing they were always the other half
+    /// of"). Written for the hero and never worn by a foe until the spore homunculus, which is meant to be
+    /// answered with fire rather than with a sword — resistances alone could not say that, because there is
+    /// no `.physical` element to give a resistance to.
+    armour: f32 = 0,
 
     pub fn init(hpMax: f32, poiseMax: f32, stanceMax: f32) Vitals {
         return .{
@@ -195,7 +200,13 @@ pub const Vitals = struct {
     }
 
     pub fn damageFrom(self: *const Vitals, h: Hit) f32 {
-        return h.dmg + self.res.takenAll(h.elem);
+        return armourTaken(self.armour, h.dmg) + self.res.takenAll(h.elem);
+    }
+
+    pub fn withArmour(self: Vitals, a: f32) Vitals {
+        var out = self;
+        out.armour = a;
+        return out;
     }
 
     pub fn stunned(self: *const Vitals) bool {
@@ -1902,4 +1913,20 @@ test "…and shedding the row it was TURNED TO lands the selection on something 
     q.dropEmpty(&bag);
     try std.testing.expectEqual(@as(?item.Kind, null), q.selected());
     try std.testing.expectEqual(@as(usize, 0), q.filled());
+}
+
+test "A SHEAF NEVER CARRIES MORE THAN THE QUIVER HOLDS" {
+    // `item.zig` imports nothing but std, so the two halves of this contract are checked from THIS side —
+    // a sheaf worth more than the bank it fills silently bins the surplus the moment it is picked up.
+    inline for (@typeInfo(item.Kind).@"enum".fields) |f| {
+        const k: item.Kind = @enumFromInt(f.value);
+        switch (item.use(k)) {
+            .arrows => |a| {
+                const c = Quiver.cap(if (a.fire) .fire else .plain);
+                std.debug.print("\n  {s}: {d} arrows into a bank of {d}\n", .{ item.displayName(k), a.n, c });
+                try std.testing.expect(a.n <= c);
+            },
+            else => {},
+        }
+    }
 }

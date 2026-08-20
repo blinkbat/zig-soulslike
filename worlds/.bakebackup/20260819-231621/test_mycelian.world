@@ -1,0 +1,249 @@
+version: 1
+name: The Mycelian
+half: 88.0
+runway: -4.00 -8.00 4.00 12.00
+
+zone: myc -400.0 -400.0 400.0 400.0 0.880 sporepod,sporepod,sporepod,moss,moss,moss,mushrooms,mushrooms,clover,bracken,fern
+zone: thin -400.0 -400.0 -46.0 400.0 0.420 moss,mushrooms,sporepod,clover
+location: bloom -34.0 -66.0 34.0 8.0 fog=0.180 spore=0.850 blend=8.00
+location: fringe -80.0 -80.0 80.0 80.0 fog=0.220 spore=0.300 blend=10.00
+clear: 0.0 0.0 13.0
+clear: 34.0 -40.0 11.0
+
+at: capgiant -16 -18 40 1
+at: capgiant2 14 -26 150 1.22
+at: capgiant3 -26 -44 255 0.88
+at: capgiant2 22 -52 70 1.06
+at: capgiant -8 -62 320 1.34
+at: capgiant3 30 -14 195 0.94
+at: capgiant3 -38 -24 105 1.12
+at: capgiant 6 -38 15 0.8
+at: capgiant2 -20 10 230 1.05
+at: capgiant 26 18 60 0.9
+at: capgiant3 -44 -56 140 1.18
+at: capgiant2 40 -40 290 0.86
+belt: capcluster -70 -70 70 70 40 0.75 1.35 seed=8002
+belt: bracket -70 -70 70 70 26 0.8 1.3 seed=8003
+belt: rotlog -68 -68 68 68 14 0.85 1.25 seed=8004
+belt: deadfall -68 -68 68 68 11 0.8 1.2 seed=8005
+at: glowcap -9 -12 0 0.85
+at: glowcap 11 -20 47 0.91
+at: glowcap -19 -33 94 0.97
+at: glowcap 17 -42 141 1.03
+at: glowcap -5 -53 188 1.09
+at: glowcap 24 -6 235 0.85
+at: glowcap -31 -19 282 0.91
+at: glowcap 2 -30 329 0.97
+at: glowcap -14 6 16 1.03
+at: glowcap 19 12 63 1.09
+at: glowcap -36 -47 110 0.85
+at: glowcap 33 -31 157 0.91
+at: glowcap -25 -60 204 0.97
+at: glowcap 8 -68 251 1.03
+belt: sporepod -60 -60 60 60 90 0.75 1.35 seed=8006
+at: snag -30 -8 0 1
+at: snag 27 -60 0 0.9
+at: rotlog -12 -6 70 1.1
+at: rotlog 9 -46 200 1
+at: deadfall -22 -52 0 1.05
+at: campfire_lit 0 8 0 1
+belt: sporepod -88 -88 -72 -72 25 0.7 1.4 seed=49387529158470 avoid=runway,water,solid mix=sporepod,moss,clover,fern,mushrooms,bracken
+belt: bracken -72 -88 -56 -72 15 0.7 1.4 seed=187468700523034 avoid=runway,water,solid mix=bracken,mushrooms,sporepod,clover,moss
+belt: moss -56 -88 -40 -72 30 0.7 1.4 seed=197656815758631 avoid=runway,water,solid mix=moss,mushrooms,fern,sporepod,clover,bracken
+belt: moss -40 -88 -24 -72 35 0.7 1.4 seed=207162634827396 avoid=runway,water,solid mix=moss,sporepod,fern,mushrooms,bracken,clover
+belt: moss -24 -88 -8 -72 27 0.7 1.4 seed=61002223020635 avoid=runway,water,solid mix=moss,mushrooms,sporepod,fern,clover,bracken
+belt: mushrooms -8 -88 8 -72 24 0.7 1.4 seed=110879242644210 avoid=runway,water,solid mix=mushrooms,moss,sporepod,fern,bracken
+belt: sporepod 8 -88 24 -72 24 0.7 1.4 seed=270952576168663 avoid=runway,water,solid mix=sporepod,mushrooms,moss,fern,bracken,clover
+belt: moss 24 -88 40 -72 29 0.7 1.4 seed=18047027215878 avoid=runway,water,solid mix=moss,clover,bracken,mushrooms,fern,sporepod
+belt: mushrooms 40 -88 56 -72 34 0.7 1.4 seed=136240700685168 avoid=runway,water,solid mix=mushrooms,sporepod,moss,bracken,clover,fern
+belt: fern 56 -88 72 -72 32 0.7 1.4 seed=114968149038765 avoid=runway,water,solid mix=fern,moss,mushrooms,sporepod,bracken,clover
+belt: clover 72 -88 88 -72 37 0.7 1.4 seed=266952211922946 avoid=runway,water,solid mix=clover,fern,sporepod,bracken,moss,mushrooms
+belt: clover -88 -72 -72 -56 8 0.7 1.4 seed=99324795108592 avoid=runway,water,solid mix=clover,moss,fern,bracken,sporepod
+belt: sporepod -72 -72 -56 -56 7 0.7 1.4 seed=84150221834532 avoid=runway,water,solid mix=sporepod,moss,mushrooms,fern
+belt: moss -56 -72 -40 -56 28 0.7 1.4 seed=176753684944930 avoid=runway,water,solid mix=moss,mushrooms,clover,sporepod,bracken
+belt: bracken -40 -72 -24 -56 37 0.7 1.4 seed=174119985830633 avoid=runway,water,solid mix=bracken,mushrooms,sporepod,fern,moss,clover
+belt: sporepod -24 -72 -8 -56 18 0.7 1.4 seed=61470485403482 avoid=runway,water,solid mix=sporepod,bracken,moss,clover,mushrooms
+belt: fern -8 -72 8 -56 15 0.7 1.4 seed=164994897348981 avoid=runway,water,solid mix=fern,clover,moss,mushrooms,bracken,sporepod
+belt: clover 8 -72 24 -56 27 0.7 1.4 seed=233128308845404 avoid=runway,water,solid mix=clover,sporepod,fern,bracken,mushrooms,moss
+belt: sporepod 24 -72 40 -56 37 0.7 1.4 seed=268988624924008 avoid=runway,water,solid mix=sporepod,mushrooms,moss,fern,bracken,clover
+belt: mushrooms 40 -72 56 -56 40 0.7 1.4 seed=269660956130649 avoid=runway,water,solid mix=mushrooms,bracken,clover,sporepod,moss,fern
+belt: sporepod 56 -72 72 -56 35 0.7 1.4 seed=73141844930939 avoid=runway,water,solid mix=sporepod,clover,moss,bracken,mushrooms,fern
+belt: sporepod 72 -72 88 -56 40 0.7 1.4 seed=156463877925946 avoid=runway,water,solid mix=sporepod,fern,moss,bracken,mushrooms,clover
+belt: mushrooms -88 -56 -72 -40 14 0.7 1.4 seed=135887847457728 avoid=runway,water,solid mix=mushrooms,clover,fern,moss,sporepod
+belt: bracken -72 -56 -56 -40 18 0.7 1.4 seed=239638266405442 avoid=runway,water,solid mix=bracken,clover,moss,mushrooms,fern,sporepod
+belt: sporepod -56 -56 -40 -40 18 0.7 1.4 seed=138496854452313 avoid=runway,water,solid mix=sporepod,fern,bracken,moss,mushrooms
+belt: fern -40 -56 -24 -40 8 0.7 1.4 seed=270777197205334 avoid=runway,water,solid mix=fern,mushrooms,moss,sporepod
+belt: moss -24 -56 -8 -40 10 0.7 1.4 seed=160636591657136 avoid=runway,water,solid mix=moss,fern,clover,sporepod,bracken
+belt: clover -8 -56 8 -40 16 0.7 1.4 seed=239183935643694 avoid=runway,water,solid mix=clover,fern,mushrooms,bracken,moss,sporepod
+belt: moss 8 -56 24 -40 29 0.7 1.4 seed=114699470913904 avoid=runway,water,solid mix=moss,fern,clover,mushrooms,sporepod,bracken
+belt: sporepod 24 -56 40 -40 14 0.7 1.4 seed=187455965909291 avoid=runway,water,solid mix=sporepod,moss,mushrooms
+belt: fern 40 -56 56 -40 22 0.7 1.4 seed=227767301032651 avoid=runway,water,solid mix=fern,moss,bracken,mushrooms,sporepod
+belt: moss 56 -56 72 -40 10 0.7 1.4 seed=21492359220157 avoid=runway,water,solid mix=moss,bracken,clover,sporepod,mushrooms
+belt: sporepod 72 -56 88 -40 12 0.7 1.4 seed=95726449865174 avoid=runway,water,solid mix=sporepod,fern,mushrooms,bracken,moss
+belt: sporepod -88 -40 -72 -24 17 0.7 1.4 seed=48042163246961 avoid=runway,water,solid mix=sporepod,bracken,moss,mushrooms,fern,clover
+belt: sporepod -72 -40 -56 -24 9 0.7 1.4 seed=236284569696004 avoid=runway,water,solid mix=sporepod,moss,mushrooms,fern
+belt: clover -56 -40 -40 -24 6 0.7 1.4 seed=184708570496029 avoid=runway,water,solid mix=clover,mushrooms,moss,sporepod
+belt: bracken -40 -40 -24 -24 4 0.7 1.4 seed=186217490871557 avoid=runway,water,solid mix=bracken,moss
+belt: sporepod -24 -40 -8 -24 8 0.7 1.4 seed=63182103363787 avoid=runway,water,solid mix=sporepod,mushrooms,fern,moss,bracken
+belt: fern -8 -40 8 -24 17 0.7 1.4 seed=100904477045901 avoid=runway,water,solid mix=fern,mushrooms,moss,sporepod,bracken,clover
+belt: sporepod 8 -40 24 -24 20 0.7 1.4 seed=83347794709325 avoid=runway,water,solid mix=sporepod,moss,bracken,mushrooms,fern
+belt: sporepod 24 -40 40 -24 14 0.7 1.4 seed=182828226106583 avoid=runway,water,solid mix=sporepod,mushrooms,clover,moss,bracken
+belt: sporepod 40 -40 56 -24 15 0.7 1.4 seed=6957435563684 avoid=runway,water,solid mix=sporepod,moss,mushrooms,clover
+belt: sporepod 72 -40 88 -24 1 0.7 1.4 seed=223943985880545 avoid=runway,water,solid
+belt: mushrooms -88 -24 -72 -8 25 0.7 1.4 seed=180542135931550 avoid=runway,water,solid mix=mushrooms,bracken,sporepod,fern,moss,clover
+belt: bracken -72 -24 -56 -8 10 0.7 1.4 seed=230633442003121 avoid=runway,water,solid mix=bracken,moss,mushrooms
+belt: moss -56 -24 -40 -8 9 0.7 1.4 seed=157373934638422 avoid=runway,water,solid mix=moss,fern,sporepod,mushrooms
+belt: moss -40 -24 -24 -8 12 0.7 1.4 seed=147382057194271 avoid=runway,water,solid mix=moss,mushrooms,sporepod,bracken,clover
+belt: mushrooms -24 -24 -8 -8 17 0.7 1.4 seed=86903230424955 avoid=runway,water,solid mix=mushrooms,fern,moss,sporepod
+belt: sporepod -8 -24 8 -8 4 0.7 1.4 seed=148548859961341 avoid=runway,water,solid mix=sporepod,moss
+belt: mushrooms 8 -24 24 -8 9 0.7 1.4 seed=199362295430796 avoid=runway,water,solid mix=mushrooms,moss,fern,bracken,sporepod
+belt: clover 24 -24 40 -8 19 0.7 1.4 seed=112278066086296 avoid=runway,water,solid mix=clover,sporepod,moss,fern,mushrooms,bracken
+belt: moss 40 -24 56 -8 13 0.7 1.4 seed=169872623639657 avoid=runway,water,solid mix=moss,sporepod,clover,mushrooms,fern
+belt: sporepod 72 -24 88 -8 1 0.7 1.4 seed=121432482474973 avoid=runway,water,solid
+belt: sporepod -88 -8 -72 8 37 0.7 1.4 seed=245843760065000 avoid=runway,water,solid mix=sporepod,moss,fern,clover,bracken,mushrooms
+belt: bracken -72 -8 -56 8 15 0.7 1.4 seed=226533389188267 avoid=runway,water,solid mix=bracken,mushrooms,sporepod,moss,fern
+belt: moss -56 -8 -40 8 20 0.7 1.4 seed=249706452666960 avoid=runway,water,solid mix=moss,mushrooms,sporepod,clover
+belt: sporepod -40 -8 -24 8 17 0.7 1.4 seed=173352381651998 avoid=runway,water,solid mix=sporepod,mushrooms,moss,clover
+belt: sporepod -24 -8 -8 8 1 0.7 1.4 seed=161321990074343 avoid=runway,water,solid
+belt: sporepod 8 -8 24 8 13 0.7 1.4 seed=250249158884304 avoid=runway,water,solid mix=sporepod,clover,moss,mushrooms
+belt: bracken 24 -8 40 8 18 0.7 1.4 seed=263469242000891 avoid=runway,water,solid mix=bracken,sporepod,moss,clover,mushrooms,fern
+belt: sporepod 40 -8 56 8 8 0.7 1.4 seed=30351439201130 avoid=runway,water,solid mix=sporepod,bracken,moss
+belt: fern 72 -8 88 8 7 0.7 1.4 seed=31590307957508 avoid=runway,water,solid mix=fern,mushrooms,sporepod,moss
+belt: moss -88 8 -72 24 20 0.7 1.4 seed=155598942294514 avoid=runway,water,solid mix=moss,mushrooms,sporepod,bracken,fern,clover
+belt: fern -72 8 -56 24 14 0.7 1.4 seed=106917699921373 avoid=runway,water,solid mix=fern,clover,sporepod,moss,mushrooms
+belt: moss -56 8 -40 24 13 0.7 1.4 seed=140026437973697 avoid=runway,water,solid mix=moss,sporepod,fern,bracken,clover
+belt: clover -40 8 -24 24 24 0.7 1.4 seed=245130497846044 avoid=runway,water,solid mix=clover,sporepod,mushrooms,moss,fern,bracken
+belt: sporepod -24 8 -8 24 11 0.7 1.4 seed=35755545620994 avoid=runway,water,solid mix=sporepod,clover,moss,mushrooms,fern
+belt: sporepod -8 8 8 24 12 0.7 1.4 seed=183200302005269 avoid=runway,water,solid mix=sporepod,moss,mushrooms,fern
+belt: bracken 8 8 24 24 24 0.7 1.4 seed=128117189770281 avoid=runway,water,solid mix=bracken,sporepod,clover,mushrooms,moss,fern
+belt: clover 24 8 40 24 17 0.7 1.4 seed=199787600967441 avoid=runway,water,solid mix=clover,sporepod,fern,moss,mushrooms
+belt: sporepod 40 8 56 24 12 0.7 1.4 seed=19317544178888 avoid=runway,water,solid mix=sporepod,fern,moss,mushrooms,bracken,clover
+belt: fern 56 8 72 24 17 0.7 1.4 seed=277528653867188 avoid=runway,water,solid mix=fern,bracken,sporepod,moss,mushrooms
+belt: moss 72 8 88 24 26 0.7 1.4 seed=153847639555235 avoid=runway,water,solid mix=moss,clover,mushrooms,bracken,sporepod,fern
+belt: sporepod -88 24 -72 40 6 0.7 1.4 seed=247338018726065 avoid=runway,water,solid mix=sporepod,bracken,moss
+belt: mushrooms -72 24 -56 40 8 0.7 1.4 seed=131912404030459 avoid=runway,water,solid mix=mushrooms,sporepod,moss
+belt: bracken -56 24 -40 40 10 0.7 1.4 seed=174901083449405 avoid=runway,water,solid mix=bracken,sporepod,fern,moss,clover
+belt: mushrooms -40 24 -24 40 12 0.7 1.4 seed=80118795382112 avoid=runway,water,solid mix=mushrooms,moss,clover,sporepod,bracken
+belt: moss -24 24 -8 40 27 0.7 1.4 seed=13867401932504 avoid=runway,water,solid mix=moss,sporepod,bracken,clover,mushrooms
+belt: clover -8 24 8 40 32 0.7 1.4 seed=262914811645587 avoid=runway,water,solid mix=clover,mushrooms,fern,moss,bracken,sporepod
+belt: fern 8 24 24 40 29 0.7 1.4 seed=219497941893740 avoid=runway,water,solid mix=fern,sporepod,mushrooms,moss,bracken,clover
+belt: moss 24 24 40 40 30 0.7 1.4 seed=203047239263285 avoid=runway,water,solid mix=moss,sporepod,clover,mushrooms,bracken,fern
+belt: bracken 40 24 56 40 33 0.7 1.4 seed=171317589402067 avoid=runway,water,solid mix=bracken,moss,sporepod,mushrooms,fern,clover
+belt: mushrooms 56 24 72 40 37 0.7 1.4 seed=219606060853853 avoid=runway,water,solid mix=mushrooms,sporepod,moss,clover,fern
+belt: sporepod 72 24 88 40 43 0.7 1.4 seed=275295803391291 avoid=runway,water,solid mix=sporepod,clover,mushrooms,bracken,moss,fern
+belt: mushrooms -88 40 -72 56 26 0.7 1.4 seed=66492258503500 avoid=runway,water,solid mix=mushrooms,moss,sporepod,clover,bracken,fern
+belt: mushrooms -72 40 -56 56 25 0.7 1.4 seed=199648066426375 avoid=runway,water,solid mix=mushrooms,moss,sporepod,bracken,clover
+belt: moss -56 40 -40 56 7 0.7 1.4 seed=264495566079696 avoid=runway,water,solid mix=moss,bracken,sporepod,clover,fern
+belt: clover -40 40 -24 56 21 0.7 1.4 seed=74128667113505 avoid=runway,water,solid mix=clover,fern,sporepod,moss,bracken,mushrooms
+belt: clover -24 40 -8 56 29 0.7 1.4 seed=144258919573532 avoid=runway,water,solid mix=clover,sporepod,fern,moss,mushrooms,bracken
+belt: sporepod -8 40 8 56 34 0.7 1.4 seed=6320770910418 avoid=runway,water,solid mix=sporepod,mushrooms,moss,clover,bracken,fern
+belt: clover 8 40 24 56 31 0.7 1.4 seed=75144725869854 avoid=runway,water,solid mix=clover,bracken,moss,sporepod,mushrooms,fern
+belt: moss 24 40 40 56 36 0.7 1.4 seed=258353472156572 avoid=runway,water,solid mix=moss,sporepod,clover,bracken,fern,mushrooms
+belt: sporepod 40 40 56 56 31 0.7 1.4 seed=279064488552858 avoid=runway,water,solid mix=sporepod,moss,mushrooms,bracken
+belt: clover 56 40 72 56 39 0.7 1.4 seed=240959424766897 avoid=runway,water,solid mix=clover,fern,sporepod,moss,bracken,mushrooms
+belt: sporepod 72 40 88 56 35 0.7 1.4 seed=102682065815950 avoid=runway,water,solid mix=sporepod,moss,fern,mushrooms,bracken,clover
+belt: clover -88 56 -72 72 37 0.7 1.4 seed=195444131465458 avoid=runway,water,solid mix=clover,sporepod,moss,mushrooms,bracken
+belt: moss -72 56 -56 72 37 0.7 1.4 seed=183098847965616 avoid=runway,water,solid mix=moss,bracken,clover,mushrooms,sporepod,fern
+belt: clover -56 56 -40 72 22 0.7 1.4 seed=209754456093090 avoid=runway,water,solid mix=clover,moss,mushrooms,sporepod,bracken,fern
+belt: bracken -40 56 -24 72 19 0.7 1.4 seed=21727547120136 avoid=runway,water,solid mix=bracken,fern,sporepod,mushrooms,clover,moss
+belt: bracken -24 56 -8 72 22 0.7 1.4 seed=94997565167155 avoid=runway,water,solid mix=bracken,fern,mushrooms,sporepod,moss
+belt: moss -8 56 8 72 25 0.7 1.4 seed=191716176711149 avoid=runway,water,solid mix=moss,fern,mushrooms,clover,bracken,sporepod
+belt: clover 8 56 24 72 32 0.7 1.4 seed=102996470014667 avoid=runway,water,solid mix=clover,moss,sporepod,mushrooms,fern
+belt: sporepod 24 56 40 72 40 0.7 1.4 seed=281050838777328 avoid=runway,water,solid mix=sporepod,moss,clover,fern,mushrooms,bracken
+belt: moss 40 56 56 72 37 0.7 1.4 seed=57791831974529 avoid=runway,water,solid mix=moss,bracken,sporepod,mushrooms,clover,fern
+belt: sporepod 56 56 72 72 31 0.7 1.4 seed=173667273184125 avoid=runway,water,solid mix=sporepod,mushrooms,moss,fern,clover
+belt: moss 72 56 88 72 33 0.7 1.4 seed=1895001555547 avoid=runway,water,solid mix=moss,mushrooms,sporepod,fern,bracken
+belt: moss -88 72 -72 88 37 0.7 1.4 seed=10890528908087 avoid=runway,water,solid mix=moss,sporepod,bracken,mushrooms,fern,clover
+belt: moss -72 72 -56 88 39 0.7 1.4 seed=90403445423763 avoid=runway,water,solid mix=moss,mushrooms,sporepod,fern,bracken
+belt: mushrooms -56 72 -40 88 32 0.7 1.4 seed=191970020872795 avoid=runway,water,solid mix=mushrooms,sporepod,moss,clover,bracken,fern
+belt: mushrooms -40 72 -24 88 33 0.7 1.4 seed=238197455602352 avoid=runway,water,solid mix=mushrooms,fern,bracken,moss,sporepod,clover
+belt: fern -24 72 -8 88 39 0.7 1.4 seed=78407380307119 avoid=runway,water,solid mix=fern,bracken,sporepod,moss,clover,mushrooms
+belt: fern -8 72 8 88 22 0.7 1.4 seed=108737097557366 avoid=runway,water,solid mix=fern,sporepod,clover,mushrooms,moss
+belt: moss 8 72 24 88 23 0.7 1.4 seed=105659183633349 avoid=runway,water,solid mix=moss,fern,sporepod,bracken,mushrooms,clover
+belt: mushrooms 24 72 40 88 35 0.7 1.4 seed=187832440898490 avoid=runway,water,solid mix=mushrooms,moss,sporepod,clover,fern,bracken
+belt: mushrooms 40 72 56 88 31 0.7 1.4 seed=207203903786398 avoid=runway,water,solid mix=mushrooms,moss,sporepod,bracken,clover,fern
+belt: clover 56 72 72 88 39 0.7 1.4 seed=3933816938902 avoid=runway,water,solid mix=clover,bracken,sporepod,moss,mushrooms,fern
+belt: moss 72 72 88 88 33 0.7 1.4 seed=87063488534512 avoid=runway,water,solid mix=moss,sporepod,clover,fern,bracken,mushrooms
+
+soil: 9x10 6x10 9x23 1x6 9x8 6x4 9x11 6x9 9x40 6x10 9x24 1x5 9x9 6x2 9x13 6x9
+soil: 9x40 6x9 9x25 1x4 9x25 6x8 9x41 6x8 9x26 1x2 9x27 6x7 9x42 6x7 9x56 6x6
+soil: 9x43 6x5 9x58 6x5 9x44 6x4 9x59 6x3 9x242 6x2 9x47 6x1 9x18 6x3 9x39 6x4
+soil: 9x46 6x2 9x16 6x5 9x38 6x6 9x45 6x1 9x16 6x6 9x37 6x7 9x31 1x4 9x25 6x8
+soil: 9x36 6x7 9x15 6x2 9x14 1x5 9x24 6x8 9x37 6x7 9x13 6x4 9x12 1x7 9x23 6x9
+soil: 9x26 1x2 9x8 6x8 9x11 6x6 9x11 1x8 9x22 6x10 9x24 1x4 9x8 6x8 9x10 6x7
+soil: 9x10 1x8 9x22 6x11 9x22 1x6 9x7 6x8 9x9 6x8 9x10 1x9 9x21 6x11 9x22 1x7
+soil: 9x7 6x8 9x8 6x9 9x10 1x9 9x20 6x12 9x21 1x8 9x7 6x7 9x7 6x11 9x9 1x10
+soil: 9x19 6x13 9x20 1x9 9x6 6x8 9x6 6x11 9x9 1x10 9x19 6x13 9x20 1x9 9x7 6x7
+soil: 9x6 6x12 9x9 1x10 9x19 6x13 9x19 1x10 9x7 6x5 9x7 6x13 9x8 1x10 9x19 6x14
+soil: 9x19 1x10 9x7 6x4 9x8 6x12 9x9 1x10 9x19 6x13 9x19 1x10 9x19 6x13 9x8 1x10
+soil: 9x19 6x14 9x19 1x10 9x19 6x13 9x8 1x10 9x19 6x13 9x19 1x10 9x19 6x13 9x9 1x9
+soil: 9x20 6x13 9x19 1x10 9x19 6x13 9x8 1x9 9x20 6x13 9x19 1x10 9x20 6x12 9x9 1x8
+soil: 9x21 6x12 9x20 1x9 9x20 6x13 9x9 1x7 9x22 6x11 9x21 1x9 9x20 6x12 9x10 1x5
+soil: 9x23 6x11 9x21 1x9 9x21 6x11 9x11 1x4 9x24 6x10 9x22 1x8 9x21 6x12 9x11 1x2
+soil: 9x26 6x9 9x23 1x7 9x22 6x11 9x39 6x9 9x13 6x2 9x9 1x5 9x24 6x10 9x40 6x8
+soil: 9x13 6x3 9x9 1x4 9x25 6x9 9x41 6x6 9x15 6x3 9x38 6x8 9x42 6x5 9x15 6x3
+soil: 9x39 6x6 9x44 6x3 9x17 6x3 9x39 6x5 9x45 6x1 9x19 6x1 9x41 6x3 9x136 6x1
+soil: 9x62 6x1 9x46 6x4 9x59 6x4 9x44 6x5 9x57 6x6 9x43 6x6 9x56 6x8 9x41 6x7
+soil: 9x27 1x2 9x26 6x8 9x26 1x3 9x13 6x7 9x14 6x3 9x8 1x5 9x24 6x9 9x24 1x5
+soil: 9x12 6x8 9x12 6x4 9x8 1x6 9x23 6x10 9x23 1x6 9x11 6x9 9x10 6x6 9x8 1x5
+soil: 9x24 6x10 9x22 1x7 9x11 6x8 9x10 6x7 9x7 1x6 9x23 6x11 9x21 1x8 9x11 6x8
+soil: 9x8 6x9 9x6 1x7 9x22 6x12 9x20 1x9 9x10 6x9 9x7 6x9 9x7 1x6 9x23 6x11
+soil: 9x21 1x9 9x10 6x8 9x6 6x11 9x6 1x7 9x22 6x12 9x20 1x9 9x11 6x7 9x6 6x12
+soil: 9x6 1x6 9x12 1x3 9x8 6x12 9x8 6x4 9x7 1x10 9x11 6x6 9x6 6x12 9x7 1x5
+soil: 9x12 1x5 9x6 6x12 9x7 6x6 9x7 1x10 9x11 6x5 9x7 6x12 9x7 1x4 9x11 1x7
+soil: 9x6 6x12 9x6 6x7 9x6 1x10 9x12 6x3 9x8 6x13 9x7 1x3 9x11 1x7 9x6 6x13
+soil: 9x4 6x9 9x6 1x9 9x23 6x13 9x21 1x8 9x6 6x12 9x4 6x10 9x6 1x9 9x23 6x13
+soil: 9x21 1x8 9x6 6x11 9x4 6x10 9x6 1x9 9x24 6x12 9x21 1x8 9x6 6x11 9x4 6x11
+soil: 9x6 1x8 9x24 6x13 9x20 1x9 9x6 6x9 9x6 6x11 9x6 1x7 9x25 6x12 9x21 1x8
+soil: 9x7 6x8 9x6 6x11 9x7 1x6 9x26 6x12 9x21 1x8 9x7 6x6 9x8 6x11 9x6 1x5
+soil: 9x14 1x2 9x11 6x12 9x21 1x8 9x8 6x4 9x10 6x10 9x8 1x3 9x14 1x3 9x11 6x11
+soil: 9x22 1x8 9x8 6x2 9x12 6x10 9x25 1x3 9x11 6x11 9x22 1x7 9x22 6x10 9x25 1x3
+soil: 9x12 6x10 9x23 1x6 9x23 6x9 9x26 1x2 9x13 6x9 9x24 1x5 9x24 6x9 9x26 1x1
+soil: 9x13 6x9 9x25 1x4 9x25 6x8 9x41 6x7 9x56 6x7 9x42 6x6 9x57 6x6 9x43 6x4
+soil: 9x59 6x4 9x46 6x1 9x62 6x1 9x200 6x2 9x40 6x3 9x65 6x5 9x38 6x4 9x63 6x6
+soil: 9x38 6x5 9x16 6x3 9x14 1x3 9x26 6x7 9x37 6x6 9x14 6x4 9x13 1x5 9x25 6x8
+soil: 9x37 6x6 9x13 6x5 9x12 1x6 9x23 6x10 9x25 1x3 9x8 6x7 9x11 6x7 9x11 1x7
+soil: 9x22 6x11 9x23 1x5 9x8 6x6 9x11 6x8 9x10 1x8 9x21 6x11 9x23 1x6 9x8 6x6
+soil: 9x9 6x9 9x10 1x9 9x20 6x12 9x22 1x7 9x7 6x6 9x9 6x10 9x9 1x9 9x21 6x12
+soil: 9x20 1x9 9x7 6x5 9x9 6x11 9x9 1x9 9x20 6x12 9x21 1x9 9x7 6x4 9x9 6x11
+soil: 9x9 1x10 9x19 6x13 9x20 1x9 9x20 6x12 9x9 1x9 9x20 6x13 9x19 1x10 9x19 6x13
+soil: 9x8 1x10 9x19 6x13 9x19 1x11 9x18 6x13 9x9 1x9 9x20 6x13 9x19 1x10 9x19 6x13
+soil: 9x8 1x10 9x19 6x14 9x18 1x11 9x18 6x14 9x8 1x9 9x20 6x13 9x19 1x10 9x19 6x13
+soil: 9x9 1x8 9x21 6x12 9x19 1x11 9x19 6x13 9x8 1x8 9x21 6x13 9x19 1x10 9x19 6x13
+soil: 9x9 1x7 9x22 6x12 9x20 1x9 9x20 6x13 9x9 1x6 9x23 6x11 9x20 1x9 9x21 6x12
+soil: 9x10 1x4 9x24 6x11 9x10 6x3 9x8 1x8 9x21 6x12 9x11 1x2 9x16 1x2 9x8 6x10
+soil: 9x10 6x4 9x8 1x7 9x22 6x11 9x30 1x2 9x8 6x9 9x10 6x5 9x8 1x6 9x23 6x11
+soil: 9x29 1x2 9x8 6x8 9x12 6x5 9x8 1x5 9x24 6x10 9x40 6x7 9x12 6x6 9x8 1x3
+soil: 9x25 6x9 9x42 6x5 9x14 6x5 9x37 6x8 9x43 6x4 9x15 6x4 9x38 6x7 9x43 6x3
+soil: 9x16 6x5 9x38 6x6 9x64 6x3 9x39 6x4 9x66 6x1 9x41 6x2 9x136 6x3 9x60 6x3
+soil: 9x45 6x4 9x58 6x6 9x43 6x5 9x17 6x1 9x39 6x7 9x42 6x6 9x15 6x3 9x38 6x8
+soil: 9x26 1x2 9x14 6x6 9x13 6x5 9x9 1x2 9x26 6x9 9x24 1x5 9x12 6x7 9x12 6x6
+soil: 9x8 1x3 9x25 6x9 9x24 1x6 9x12 6x6 9x11 6x7 9x8 1x4 9x24 6x10 9x23 1x7
+soil: 9x11
+soiledge: 0x43 1x6 0x106 1x5 0x107 1x4 0x108 1x2 0x978 1x4 0x107 1x5 0x105 1x7 0x58 1x2
+soiledge: 0x44 1x8 0x56 1x4 0x43 1x8 0x55 1x6 0x42 1x9 0x54 1x7 0x42 1x9 0x53 1x8
+soiledge: 0x41 1x10 0x52 1x9 0x40 1x10 0x52 1x9 0x41 1x10 0x51 1x10 0x40 1x10 0x52 1x10
+soiledge: 0x40 1x10 0x51 1x10 0x40 1x10 0x52 1x10 0x40 1x10 0x51 1x10 0x41 1x9 0x52 1x10
+soiledge: 0x40 1x9 0x52 1x10 0x41 1x8 0x53 1x9 0x42 1x7 0x54 1x9 0x42 1x5 0x55 1x9
+soiledge: 0x43 1x4 0x56 1x8 0x44 1x2 0x58 1x7 0x105 1x5 0x107 1x4 0x1089 1x2 0x60 1x3
+soiledge: 0x45 1x5 0x57 1x5 0x44 1x6 0x56 1x6 0x44 1x5 0x56 1x7 0x43 1x6 0x55 1x8
+soiledge: 0x42 1x7 0x54 1x9 0x42 1x6 0x55 1x9 0x41 1x7 0x54 1x9 0x42 1x6 0x12 1x3
+soiledge: 0x39 1x10 0x42 1x5 0x12 1x5 0x38 1x10 0x42 1x4 0x11 1x7 0x37 1x10 0x43 1x3
+soiledge: 0x11 1x7 0x38 1x9 0x57 1x8 0x38 1x9 0x57 1x8 0x37 1x9 0x57 1x8 0x38 1x8
+soiledge: 0x57 1x9 0x38 1x7 0x58 1x8 0x39 1x6 0x59 1x8 0x38 1x5 0x14 1x2 0x44 1x8
+soiledge: 0x40 1x3 0x14 1x3 0x44 1x8 0x57 1x3 0x44 1x7 0x57 1x3 0x45 1x6 0x58 1x2
+soiledge: 0x46 1x5 0x59 1x1 0x47 1x4 0x977 1x3 0x107 1x5 0x106 1x6 0x58 1x3 0x44 1x7
+soiledge: 0x56 1x5 0x43 1x8 0x55 1x6 0x42 1x9 0x54 1x7 0x41 1x9 0x53 1x9 0x41 1x9
+soiledge: 0x53 1x9 0x40 1x10 0x52 1x9 0x41 1x9 0x52 1x10 0x40 1x10 0x51 1x11 0x40 1x9
+soiledge: 0x52 1x10 0x40 1x10 0x51 1x11 0x40 1x9 0x52 1x10 0x41 1x8 0x52 1x11 0x40 1x8
+soiledge: 0x53 1x10 0x41 1x7 0x54 1x9 0x42 1x6 0x54 1x9 0x43 1x4 0x56 1x8 0x44 1x2
+soiledge: 0x16 1x2 0x40 1x7 0x63 1x2 0x40 1x6 0x63 1x2 0x41 1x5 0x107 1x3 0x1152 1x2
+soiledge: 0x47 1x2 0x59 1x5 0x45 1x3 0x58 1x6 0x44 1x4 0x57 1x7 0x11
+
+foe: mushroom_mage -13.00 -28.00 160.0 1.00 0.29
+foe: mushroom_mage 15.00 -36.00 200.0 1.08 0.71
+foe: shroom -6.00 -18.00 180.0 1.00 0.44
+foe: shroom 8.00 -22.00 190.0 0.94 0.12
+foe: shroom -18.00 -40.00 90.0 1.06 0.83
+foe: florid_ravager 20.00 -14.00 240.0 1.00 0.55
+foe: rooted -28.00 -30.00 0.0 1.10 0.37

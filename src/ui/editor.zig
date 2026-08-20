@@ -122,10 +122,14 @@ const groundBrushes = [_][:0]const u8{
     "silt",
     "ash",
     "moss",
+    "bone",
+    "cinder",
+    "spore",
+    "bloom",
     "Water",
     "Erase",
 };
-const coverBrushes = [_][:0]const u8{ "Clearing", "Zone", "Erase" };
+const coverBrushes = [_][:0]const u8{ "Clearing", "Zone", "Location", "Erase" };
 const decorBrushes = [_][:0]const u8{ "Single", "Patch", "Scatter", "Erase" };
 const propBrushes = [_][:0]const u8{ "Stamp", "Row", "Ring", "Cluster", "Ivy", "Erase" };
 const interactBrushes = [_][:0]const u8{ "Stamp", "Erase" };
@@ -158,12 +162,17 @@ const groundTips = [_][:0]const u8{
     "Pale silt, the tarn's margin",
     "Ash and burnt ground",
     "Deep moss",
+    "Bone meal - shard and splinter ground, and the palest floor there is",
+    "Cinder - burnt crust, warmer and darker than ash",
+    "Spore floor - the one cold ground",
+    "Fungal bloom - pink flesh underfoot, the Mycelian's own",
     "Hold and sweep to flood - depth, shore and wet sand are all worked out from the outline",
     "Hold and sweep to unpaint soil AND water. It leaves the sculpted SHAPE alone",
 };
 const coverTips = [_][:0]const u8{
     "Drag a circle nothing grows in",
     "Drag a rectangle the ground cover grows differently inside",
+    "Drag a NAMED rectangle - triggers point at it by name, and it can carry its own weather",
     "Hold and sweep to remove the zones and clearings you cross",
 };
 const decorTips = [_][:0]const u8{
@@ -206,6 +215,7 @@ const unitTips = [_][:0]const u8{
     "Post a Florid Ravager - a big hound with a flower for a head. The bloom OPENS before it leaps; that is your cue to move",
     "Post a Mushroom Mage - a cloaked caster that lobs SLOW, BOUNCING fireballs. Do not back away, that is down the bounce line - go sideways, or straight at it",
     "Post a Fen Lurker - it lies under the water and comes up when you WADE. It cannot follow you onto dry land, and it cannot be hit while it is down. Put it in water",
+    "Post a Spore Homunculus - VERY tough against steel and very slow. Fire and lightning go straight through it. It SMASHES the ground at its feet and SLAMS forward at anyone who backs off",
     "Hold and sweep to remove spawns ([ ] sets radius)",
 };
 
@@ -220,7 +230,7 @@ fn layerIcon(l: Layer) ui.Icon {
     };
 }
 
-const coverIcons = [_]ui.Icon{ .clearing, .zone, .erase };
+const coverIcons = [_]ui.Icon{ .clearing, .zone, .location, .erase };
 const decorIcons = [_]ui.Icon{ .single, .patch, .scatter, .erase };
 const propIcons = [_]ui.Icon{ .stamp, .row, .ring, .cluster, .ivy, .erase };
 const interactIcons = [_]ui.Icon{ .stamp, .erase };
@@ -246,6 +256,7 @@ const unitIcons = [_]ui.Icon{
     .florid_ravager,
     .mushroom_mage,
     .fen_lurker,
+    .spore_golem,
     .erase,
 };
 
@@ -325,8 +336,8 @@ comptime {
     }
 }
 
-pub const GroundBrush = enum { raise, lower, smooth, flat, dirt, turf, stone, silt, ash, moss, water, erase };
-const CoverBrush = enum { clearing, zone, erase };
+pub const GroundBrush = enum { raise, lower, smooth, flat, dirt, turf, stone, silt, ash, moss, bone, cinder, spore, bloom, water, erase };
+const CoverBrush = enum { clearing, zone, location, erase };
 pub const DecorBrush = enum { single, patch, scatter, erase };
 const PropBrush = enum { stamp, row, ring, cluster, ivy, erase };
 const InteractBrush = enum { stamp, erase };
@@ -354,6 +365,7 @@ const UnitBrush = enum {
     florid_ravager,
     mushroom_mage,
     fen_lurker,
+    spore_golem,
     erase,
 };
 
@@ -432,7 +444,6 @@ fn layerHasGroup(l: Layer, g: props.Group) bool {
 
 fn layerOf(o: *const wf.Op) Layer {
     return switch (o.op) {
-        .cover => .cover,
         .ivy => .props,
         .edge => .props,
         else => switch (props.stock(o.kind)) {
@@ -463,6 +474,7 @@ const JUKE_COL_W: i32 = JUKE_W - JUKE_LIST_W - RACK_W - 80;
 const DLG_PAD: i32 = 24;
 const DLG_BTN_H: i32 = 28;
 const DLG_FOOT: i32 = 44;
+const TAB_H: i32 = 26;
 const LOOT_ROW_H: i32 = 26;
 const LOOT_TOP: i32 = 84;
 
@@ -510,7 +522,7 @@ fn translateOp(o: *wf.Op, dx: f32, dz: f32) void {
 }
 
 fn isMovable(o: *const wf.Op) bool {
-    return o.op != .cover and o.op != .edge;
+    return o.op != .edge;
 }
 
 fn eraseMiss(l: Layer) [:0]const u8 {
@@ -599,6 +611,8 @@ pub const Editor = struct {
     /// WHICH ZONE the name field and the mix modal are editing. A zone is not an `Op`, so it cannot ride
     /// `sel` — and its mix was the one thing in the whole format the editor could only ever INHERIT.
     zoneSel: ?usize = null,
+    locSel: ?usize = null,
+    lootTab: item.Class = .tool,
     zoneNameLen: usize = 0,
     zoneNameBuf: [wf.NAME_CAP]u8 = [_]u8{0} ** wf.NAME_CAP,
     /// The zone name field owns the keyboard while it is on screen — set by the draw pass, read by
@@ -889,6 +903,7 @@ pub const Editor = struct {
         self.selFoe = null;
         self.nMarked = 0;
         self.zoneSel = null;
+        self.locSel = null;
     }
 
     pub fn applyCamForShot(self: *Editor) void {
@@ -959,7 +974,7 @@ pub const Editor = struct {
             .ring => o.r0 * 2,
             .line => mathx.distXZ(v3(o.x, 0, o.z), v3(o.x1, 0, o.z1)),
             .at => AT_SPAN,
-            .edge, .cover => m.half,
+            .edge => m.half,
         };
         const c = if (isMovable(&o)) opAnchor(&o) else mathx.zero3;
         self.lookAtGround(c.x, c.z, span);
@@ -1336,7 +1351,8 @@ pub const Editor = struct {
                         self.dragTo = g;
                     }
                 },
-                .ground => unreachable,
+                // Guarded above (the ground layer paints and returns); a message beats UB in Release.
+                .ground => @panic("editor: ground layer reached the op placer"),
             }
             return;
         }
@@ -1471,6 +1487,25 @@ pub const Editor = struct {
                     self.zoneSel = null;
                     self.say("+zone");
                 },
+                .location => {
+                    if (m.nlocations >= wf.MAX_LOCATIONS) {
+                        self.say("location cap reached");
+                        return;
+                    }
+                    self.bank(m);
+                    const box = normRect(a, b);
+                    var l = wf.Location{ .x = box.x0, .z = box.z0, .x1 = box.x1, .z1 = box.z1 };
+                    var nbuf: [wf.NAME_CAP]u8 = undefined;
+                    l.setName(std.fmt.bufPrint(&nbuf, "loc{d}", .{m.nlocations + 1}) catch "loc");
+                    // PREPENDED, and that IS the overlap rule: `locationAt` takes the first match, so the
+                    // one you painted last is the one that answers. Any other order makes the rectangle you
+                    // can see disagree with the rectangle that fires.
+                    std.mem.copyBackwards(wf.Location, m.locations[1 .. m.nlocations + 1], m.locations[0..m.nlocations]);
+                    m.locations[0] = l;
+                    m.nlocations += 1;
+                    self.locSel = 0;
+                    self.sayFmt("+{s}", .{m.locations[0].label()});
+                },
                 .clearing => {
                     if (m.nclearings >= wf.MAX_CLEARINGS) {
                         self.say("clearing cap reached");
@@ -1492,7 +1527,7 @@ pub const Editor = struct {
         o.kind = self.kindForLayer();
         switch (self.layer) {
             .ground, .units => return,
-            .cover => unreachable,
+            .cover => @panic("editor: cover layer reached the op placer"),
             .decor => switch (@as(DecorBrush, @enumFromInt(self.brushIdx()))) {
                 .single => {
                     o.x = a.x;
@@ -1572,7 +1607,7 @@ pub const Editor = struct {
             self.say(FULL_MSG);
             return;
         };
-        const at = self.sinkBeforeCover(m, idx);
+        const at = idx;
         self.sel = at;
         self.selFoe = null;
         self.rebuild(m, env);
@@ -1689,6 +1724,17 @@ pub const Editor = struct {
                     self.say("-clearing");
                     return true;
                 }
+                var li: usize = 0;
+                while (li < m.nlocations) : (li += 1) {
+                    if (!m.locations[li].contains(g.x, g.z)) continue;
+                    self.bankStroke(m);
+                    std.mem.copyForwards(wf.Location, m.locations[li .. m.nlocations - 1], m.locations[li + 1 .. m.nlocations]);
+                    m.nlocations -= 1;
+                    self.locSel = null;
+                    self.rebuild(m, env);
+                    self.say("-location");
+                    return true;
+                }
                 var i: usize = 0;
                 while (i < m.nzones) : (i += 1) {
                     if (m.isFallbackZone(i)) continue;
@@ -1766,8 +1812,7 @@ pub const Editor = struct {
         var o = m.ops[s];
         o.seed = self.freshSeed(m);
         translateOp(&o, DUPE_OFFSET, 0);
-        var idx = m.add(o) catch return;
-        idx = self.sinkBeforeCover(m, idx);
+        const idx = m.add(o) catch return;
         self.sel = idx;
         self.rebuild(m, env);
         self.sayFmt("duplicated #{d} -> #{d}", .{ s, idx });
@@ -1914,7 +1959,7 @@ pub const Editor = struct {
                 self.say(FULL_MSG);
                 break;
             };
-            self.mark(self.sinkBeforeCover(m, idx));
+            self.mark(idx);
             landed += 1;
         }
         for (clipFoes[0..nFoes]) |src| {
@@ -1962,12 +2007,6 @@ pub const Editor = struct {
         self.sayFmt("deleted {d}", .{removed});
     }
 
-    fn sinkBeforeCover(self: *Editor, m: *wf.Map, idx: usize) usize {
-        _ = self;
-        var at = idx;
-        while (at > 0 and m.ops[at - 1].op == .cover) : (at -= 1) m.reorder(at, at - 1);
-        return at;
-    }
 
 
     fn request(self: *Editor, what: Pending) void {
@@ -2066,6 +2105,13 @@ pub const Editor = struct {
             outline(z.x, z.z, z.x1, z.z1, y, ui.alpha(ui.TRIM, coverA));
         }
         for (m.clearings[0..m.nclearings]) |c| ringXZ(c.x, c.z, c.r, y, ui.alpha(ui.HOT, coverA));
+        // A weather region reads GOLD and a plain one reads cool, so you can see at a glance which
+        // rectangles are doing something to the sky.
+        for (m.locations[0..m.nlocations], 0..) |*l, i| {
+            const on = self.locSel == i;
+            const col = if (l.hasWeather()) ui.LIVE else ui.TRIM;
+            outline(l.x, l.z, l.x1, l.z1, y + 0.02, ui.alpha(if (on) ui.HOT else col, if (self.layer == .cover) 220 else 55));
+        }
 
         const unitA: u8 = if (self.layer == .units) 235 else 70;
         for (m.foes[0..m.nfoes], 0..) |f, i| {
@@ -2153,7 +2199,7 @@ pub const Editor = struct {
             const box = normRect(a, b);
             if (self.layer == .cover) {
                 switch (@as(CoverBrush, @enumFromInt(self.brushIdx()))) {
-                    .zone => outlineOf(box, y, ui.HOT),
+                    .zone, .location => outlineOf(box, y, ui.HOT),
                     .clearing => ringXZ(a.x, a.z, rad, y, ui.HOT),
                     .erase => {},
                 }
@@ -2200,7 +2246,7 @@ fn drawOpGizmo(o: *const wf.Op, y: f32) void {
         },
         .ring => ringXZ(o.x, o.z, o.r0, y, ui.HOT),
         .line => groundLine(o.x, o.z, o.x1, o.z1, y, ui.HOT),
-        .edge, .cover => {},
+        .edge => {},
     }
 }
 
@@ -2236,6 +2282,7 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         .necromancer => ui.col(126, 196, 224, 255),
         .florid_ravager => ui.col(226, 138, 196, 255),
         .mushroom_mage => ui.col(238, 152, 66, 255),
+        .spore_golem => ui.col(214, 96, 132, 255),
         .fen_lurker => ui.col(78, 200, 186, 255),
     };
 }
@@ -2738,6 +2785,64 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
     }
 
     if (ed.layer == .cover) {
+        // **THE LOCATIONS FIRST, because they are the ones that do something.** Weather is per location and
+        // the ONE sky cross-fades toward whichever one he is standing in (`game.settleSky`), so these three
+        // dials are the whole of a weather region: how wet, how thick, and how long it takes to arrive.
+        if (m.nlocations > 0) {
+            hud.mono("LOCATIONS", x, y, hud.MONO, ui.TITLE);
+            y += ROW_H + 4;
+            var lchanged = false;
+            const lbefore = m.locations;
+            for (m.locations[0..m.nlocations], 0..) |*l, i| {
+                var lb: [56]u8 = undefined;
+                const on = ed.locSel == i;
+                const lab = std.fmt.bufPrintZ(&lb, "{s}{s}", .{ l.label(), if (l.hasWeather()) " *" else "" }) catch "?";
+                if (ui.buttonTip(ctx, ui.rect(x, y, w, 22), lab, hud.MONO, on, "Select this location - a * means it carries weather")) {
+                    ed.locSel = if (on) null else i;
+                }
+                y += ROW_H;
+                if (!on) continue;
+                // A location with NO opinion leaves the world's own storm alone, which is not the same as
+                // one that says "dry": the toggle is the difference and it has to be explicit.
+                var wet = l.wet orelse 0;
+                var fog = l.fog orelse 0;
+                var spore = l.spore orelse 0;
+                var has = l.hasWeather();
+                var usedW: i32 = 0;
+                if (ui.chip(ctx, x + 8, y, "weather", has, &usedW)) {
+                    has = !has;
+                    l.wet = if (has) wet else null;
+                    l.fog = if (has) fog else null;
+                    l.spore = if (has) spore else null;
+                    lchanged = true;
+                }
+                y += ROW_H;
+                if (has) {
+                    if (ui.slider(ctx, x + 8, y, w - 16, "wet", &wet, 0, 1)) {
+                        l.wet = wet;
+                        lchanged = true;
+                    }
+                    y += ROW_H + SLIDER_DROP;
+                    if (ui.slider(ctx, x + 8, y, w - 16, "fog", &fog, 0, 1)) {
+                        l.fog = fog;
+                        lchanged = true;
+                    }
+                    y += ROW_H + SLIDER_DROP;
+                    if (ui.slider(ctx, x + 8, y, w - 16, "spore", &spore, 0, 1)) {
+                        l.spore = spore;
+                        lchanged = true;
+                    }
+                    y += ROW_H + SLIDER_DROP;
+                    if (ui.slider(ctx, x + 8, y, w - 16, "blend s", &l.blend, 0, 30)) lchanged = true;
+                    y += ROW_H + SLIDER_DROP;
+                }
+            }
+            if (lchanged) {
+                ed.dirty = true;
+                _ = lbefore;
+            }
+            y += 6;
+        }
         hud.mono("ZONES", x, y, hud.MONO, ui.TITLE);
         y += ROW_H + 4;
         var changed = false;
@@ -2813,7 +2918,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
     var head: [48]u8 = undefined;
     const title = std.fmt.bufPrintZ(&head, "#{d} {s}", .{ s, @tagName(o.op) }) catch "";
     hud.mono(title, x, y, hud.MONO, ui.TITLE);
-    if (o.op != .cover and ui.buttonTip(ctx, ui.rect(x + w - 74, y - 2, 74, 22), "view", hud.MONO, false, "Open this kind in the object viewer")) {
+    if (ui.buttonTip(ctx, ui.rect(x + w - 74, y - 2, 74, 22), "view", hud.MONO, false, "Open this kind in the object viewer")) {
         ed.objects.show(o.kind);
         ed.modal = .objects;
         return;
@@ -2885,7 +2990,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             changed = ui.stepperI(ctx, x, y, w, "talus", &o.n, 5, 0, 600) or changed;
             y += ROW_H;
         },
-        .cover => {},
     }
 
     if (o.op != .at) {
@@ -3002,7 +3106,7 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.C
     }.f;
 
     for (m.ops[0..m.nops]) |*o| {
-        if (o.op == .cover or o.op == .edge) continue;
+        if (o.op == .edge) continue;
         if (!onMap(o.x, o.z, m.half)) continue;
         const p = toMini(o.x, o.z, m.half, px, py, inner);
         const mine = layerOf(o) == ed.layer;
@@ -3043,6 +3147,10 @@ comptime {
 }
 
 fn blitField(cells: []const u8, n: usize, px: i32, py: i32, inner: f32, paint: ?rl.Color) void {
+    // Both callers pass a comptime grid width, so this cannot fire today — it is here because the same
+    // shape (a divide by a caller's count) was a live crash in `book.rowStep`, reached through a picker
+    // whose candidate list came back empty. A third caller with a runtime `n` is one line away from it.
+    if (n == 0) return;
     const cellPx = inner / @as(f32, @floatFromInt(n));
     for (0..n) |cz| {
         const row = cells[cz * n ..][0..n];
@@ -3075,6 +3183,10 @@ fn soilSwatch(s: wf.Soil) rl.Color {
         .silt => ui.col(146, 128, 88, 255),
         .ash => ui.col(62, 58, 54, 255),
         .moss => ui.col(52, 78, 40, 255),
+        .bone => ui.col(168, 160, 138, 255),
+        .cinder => ui.col(58, 42, 36, 255),
+        .spore => ui.col(74, 62, 84, 255),
+        .bloom => ui.col(150, 96, 112, 255),
     };
 }
 
@@ -3174,22 +3286,50 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             }
         },
         .loot => {
-            const rows: i32 = @intCast(item.NK);
+            // **TABBED BY CLASS** (owner: organize the item menus by type). Thirty-seven items in one column
+            // ran off the bottom of a 1080 screen and was unreadable besides — `item.Class` is the shelf a
+            // thing belongs on and it already exists, so the picker uses it rather than inventing an order.
             const sPre = lootOp(ed, m) orelse {
                 ed.modal = .none;
                 return;
             };
+            var shown: [item.NK]item.Kind = undefined;
+            var nshown: usize = 0;
+            for (0..item.NK) |ki| {
+                const k: item.Kind = @enumFromInt(ki);
+                if (item.class(k) != ed.lootTab) continue;
+                shown[nshown] = k;
+                nshown += 1;
+            }
+            const rows: i32 = @intCast(@max(nshown, 1));
             const title: [:0]const u8 = if (m.ops[sPre].kind == .chest) "Chest contents" else "Item contents";
-            const box = ui.beginModal(ctx, 470, LOOT_TOP + rows * LOOT_ROW_H + 8 + DLG_FOOT, title);
+            const box = ui.beginModal(ctx, 470, LOOT_TOP + TAB_H + rows * LOOT_ROW_H + 8 + DLG_FOOT, title);
             const s = sPre;
             const o = &m.ops[s];
             var buf: [48]u8 = undefined;
             const total = std.fmt.bufPrintZ(&buf, "{d} / {d} items", .{ o.nloot, wf.MAX_LOOT }) catch "";
             hud.mono(total, box.x + DLG_PAD, box.y + 58, hud.MONO, ui.LABEL);
-            var i: usize = 0;
-            while (i < item.NK) : (i += 1) {
-                const k: item.Kind = @enumFromInt(i);
-                const y = box.y + LOOT_TOP + @as(i32, @intCast(i)) * LOOT_ROW_H;
+
+            // The tabs. A class carrying something already in this container is marked, so you can find what
+            // you put in without walking every shelf.
+            const CLASSES = [_]item.Class{ .tool, .gear, .material, .treasure, .key };
+            const tabW: i32 = @divTrunc(470 - DLG_PAD * 2, @as(i32, CLASSES.len));
+            for (CLASSES, 0..) |c, ci| {
+                var tb: [24]u8 = undefined;
+                var carried: u8 = 0;
+                for (o.loot[0..o.nloot]) |it| {
+                    if (item.class(it) == c) carried += 1;
+                }
+                const lab = if (carried > 0)
+                    std.fmt.bufPrintZ(&tb, "{s} *", .{c.label()}) catch c.label()
+                else
+                    c.label();
+                const r = ui.rect(box.x + DLG_PAD + @as(i32, @intCast(ci)) * tabW, box.y + LOOT_TOP - TAB_H, tabW - 3, TAB_H - 4);
+                if (ui.buttonTip(ctx, r, lab, hud.MONO, ed.lootTab == c, "Show this shelf - a * means this container already holds one")) ed.lootTab = c;
+            }
+
+            for (shown[0..nshown], 0..) |k, row| {
+                const y = box.y + LOOT_TOP + TAB_H + @as(i32, @intCast(row)) * LOOT_ROW_H;
                 hud.mono(item.displayName(k), box.x + DLG_PAD, y + 5, hud.MONO, ui.VALUE);
                 var ebuf: [item.EFFECT_BUF]u8 = undefined;
                 var tbuf: [item.EFFECT_BUF + 32]u8 = undefined;
@@ -3376,8 +3516,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                     ed.say(FULL_MSG);
                 } else {
                     ed.bank(m);
-                    if (m.add(freshRim(ed, m))) |idx| {
-                        _ = ed.sinkBeforeCover(m, idx);
+                    if (m.add(freshRim(ed, m))) |_| {
                         ed.rebuild(m, env);
                         ed.say("+rim");
                     } else |_| ed.say(FULL_MSG);
@@ -3684,7 +3823,7 @@ fn menuEnabled(ed: *const Editor, m: *const wf.Map, act: MenuItem) bool {
     return switch (act) {
         .close => true,
         .focus => op != null,
-        .view => if (op) |s| m.ops[s].op != .cover else false,
+        .view => op != null,
         .loot => lootOp(ed, m) != null,
         .boss => bossOp(ed, m) != null,
         .reroll, .duplicate => if (op) |s| isMovable(&m.ops[s]) else false,
@@ -3694,7 +3833,7 @@ fn menuEnabled(ed: *const Editor, m: *const wf.Map, act: MenuItem) bool {
 
 fn viewLabel(ed: *const Editor, m: *const wf.Map, buf: []u8) [:0]const u8 {
     const s = ed.sel orelse return "View...";
-    if (s >= m.nops or m.ops[s].op == .cover) return "View...";
+    if (s >= m.nops) return "View...";
     return std.fmt.bufPrintZ(buf, "View {s}...", .{props.displayName(m.ops[s].kind)}) catch "View...";
 }
 

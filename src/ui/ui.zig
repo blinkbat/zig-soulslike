@@ -23,6 +23,9 @@ pub const LABEL = uiart.TEXT_DIM;
 pub const VALUE = rgba(228, 216, 194, 255);
 pub const TITLE = rgba(236, 226, 202, 255);
 pub const HOT = uiart.HOT;
+/// A gizmo that is DOING something as well as sitting there — a location that carries weather, against the
+/// plain ones drawn in `TRIM`. Cool against the whole rack's gilt, so it reads as a different KIND of thing.
+pub const LIVE = rgba(110, 178, 168, 255);
 pub const ACTIVE_FILL = rgba(96, 74, 40, 235);
 pub const IDLE_FILL = rgba(26, 22, 18, 228);
 pub const HOVER_FILL = rgba(42, 34, 26, 235);

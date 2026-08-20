@@ -50,12 +50,18 @@ const HURT_R: f32 = 0.92;
 const CENTER_F: f32 = 1.05;
 const TOP_F: f32 = 1.66;
 
-const HP_MAX: f32 = 62.0;
-const POISE_MAX: f32 = 18.0;
+/// **TOUGH IN THE BODY, NOTHING IN THE STALK** (owner: tougher but poisebreak easily). The two numbers say
+/// the same thing from opposite ends: it takes a long time to kill and it comes apart the moment you
+/// interrupt it, so the fight is about catching the rear rather than about out-trading it.
+const HP_MAX: f32 = 88.0;
+/// **AND IT HAS TO SIT BETWEEN THE HERO'S TWO SWINGS**, not under both: at 9 a light poke flinched it, and a
+/// creature you can stunlock with the fast button is not dangerous, it is furniture. The hero's light is 10
+/// poise and his heavy is 22, so 12 is as low as "breaks easily" can go and still mean the HEAVY breaks it.
+const POISE_MAX: f32 = 12.0;
 const STANCE_MAX: f32 = 40.0;
 const RESISTS = combat.resists(.{ .fire = -45, .cold = 30, .lightning = 0, .chaos = 20 });
 
-const SOULS: u32 = 95;
+const SOULS: u32 = 190;
 
 const DEATH_DUR: f32 = 1.25;
 const DISS_DUR: f32 = 1.05;
@@ -102,7 +108,9 @@ const BITE_HIT = combat.Hit{ .dmg = 24, .poise = 20, .stance = 9 };
 
 const OPEN_BY: f32 = 0.62;
 const SHUT_BY: f32 = 0.75;
-const ATTACK_OPEN: f32 = 1.62;
+/// **AND IT OPENS FURTHER WHEN IT COMES AT YOU** (owner). The approach tier is unchanged; this is the leap's
+/// own, and widening only the top of the range keeps the two tiers distinct instead of flattening them.
+const ATTACK_OPEN: f32 = 2.10;
 /// WHERE THE BLOOM STARTS TO WAKE and where it is at its full approach gape. The near end is the leap's own
 /// trigger ring, so it is ALREADY at its widest on the frame the leap can be chosen: the attack tier then has
 /// somewhere to go, and the opening is never news that arrives with the blow.
@@ -125,7 +133,9 @@ const JAW_REACH: f32 = 0.13;
 /// …AND THE BLOOM'S OWN HALF-WIDTH, which is what its reach and its measured height are both taken over: a
 /// ring of petals closing on you is a mouth the size of the head, not a set of teeth, so the mouth is a
 /// radius and not a point.
-const BLOOM_R: f32 = 0.30;
+/// Bigger head (owner). The bloom is the aim point, the tell and the hitbox all at once, so this moves the
+/// silhouette, the reticle and what the strike can reach together.
+const BLOOM_R: f32 = 0.40;
 /// HOW FAR OFF ITS NOSE THE BLOOM STILL CATCHES HIM — the cosine of the frontal cone (the toad's own dial).
 /// 0.25 is about 76 degrees either side, which is a ring of petals rather than a point.
 const BITE_FRONT_DOT: f32 = 0.25;
@@ -160,8 +170,11 @@ const NECK_STRETCH: f32 = 0.26;
 /// chain pitches forward and under across the strike. It has to be big: reared and stretched the bloom rides
 /// at 3.3 m, which is a metre and a half over the top of his head — a creature that leapt from there would
 /// pass clean over him every time. The rear is the TELL and the dive is the BLOW, and both are the neck.
-const STRIKE_DIVE: f32 = 152.0;
+const STRIKE_DIVE: f32 = 108.0;
 const DIVE_BY: f32 = 0.55;
+/// How much of the neck's reach the dive takes back. High: the gather is the extension and the blow is the
+/// fold, and the two sharing the same 0..1 is what keeps them from telling different stories.
+const DIVE_COIL: f32 = 0.50;
 const BODY_DIVE: f32 = 26.0;
 
 fn restPose() [N]rl.Vector3 {
@@ -609,7 +622,12 @@ pub const Ravager = struct {
         // **AND THE HEAD STRETCHES UP THE NECK'S OWN AXIS**, not along the world's: `setJoint` takes the bone's
         // length from the DISTANCE between two rest points, so the reach is added as a translate on top of it
         // and the mesh, the bloom and everything measured off `jawPoint` all come with it for free.
-        const reach = NECK_STRETCH * W * self.stretchAmt();
+        // **AND IT COILS BACK AS IT STRIKES** (owner: the attack animation, the neck goes crazy). The stalk
+        // used to hold FULL stretch right through the dive: 108 degrees of pitch on a neck that was also at
+        // its longest, so the bloom swept a metre-and-a-half arc through the air and read as a whip cracking
+        // rather than as an animal striking. A real strike shortens — the head is thrown by the neck folding,
+        // not carried around by it staying out. `diveAmt` takes most of the reach back over the blow.
+        const reach = NECK_STRETCH * W * self.stretchAmt() * (1.0 - DIVE_COIL * self.diveAmt());
         const neckOff = mathx.subV(self.rest[HEAD], self.rest[NECK]);
         const up = if (mathx.lenV(neckOff) > 1e-5) mathx.normV(neckOff) else v3(0, 1, 0);
         wx[HEAD] = mul(
@@ -635,8 +653,8 @@ pub const Ravager = struct {
 /// How far the whole animal sinks through the gather, as a fraction of `W` — deeper than the spirit's 0.09
 /// because it is a bigger body loading a longer leap, and the sink IS the wind-up you read the leap off.
 const CROUCH: f32 = 0.13;
-const PETAL_GAPE: f32 = 74.0;
-const PETAL_SPLAY: f32 = 62.0;
+const PETAL_GAPE: f32 = 86.0;
+const PETAL_SPLAY: f32 = 74.0;
 const PETAL_BACK_ANG: f32 = -58.0;
 
 const CAP_N = wf.MAX_PER_KIND;

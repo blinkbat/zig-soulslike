@@ -92,6 +92,54 @@ pub const NEEDLE_DK = rgba(15, 24, 21, 255);
 pub const BIRCH_BARK = rgba(104, 100, 90, 255);
 pub const BIRCH_SCAR = rgba(44, 42, 38, 255);
 pub const BONE = rgba(108, 104, 92, 255);
+// **GREAT BONE IS NOT SCATTERED BONE.** `BONE` above is a shin lying in the grass — a hand's width of it, so
+// it can afford to be pale. A rib nine metres tall is a BIG SMOOTH MASS, and at 108 the hot key and the
+// gamma lift bring it back at 221/255: a white plastic tube. Solved instead — 60 comes back at 172, a
+// bleached grey — and pushed NEUTRAL, since every other outdoor albedo here is warm and that is the only
+// separation daylight cannot flatten.
+pub const BONE_OLD = rgba(44, 45, 41, 255);
+pub const BONE_LT = rgba(58, 59, 53, 255);
+pub const BONE_DK = rgba(28, 29, 27, 255);
+/// The snap face, and the ONE warm tone on a bone — small enough an area to carry it.
+pub const MARROW = rgba(70, 63, 50, 255);
+// **CHARCOAL IS THE DARKEST ALBEDO IN THE WORLD** and has to be: a burnt spar is a tall smooth mass, and
+// anything above the oldest bark comes back off the hot key as grey. 18 lands at 98/255 on screen.
+pub const CHAR = rgba(18, 16, 15, 255);
+pub const CHAR_LT = rgba(30, 27, 24, 255);
+/// A live coal in a crust. Its ALPHA is the emissive channel, not its opacity.
+pub const EMBER_LIVE = rgba(198, 92, 26, 60);
+pub const CINDER_GREY = rgba(46, 42, 39, 255);
+// **A DRIFT IS NOT THE CAMPFIRE'S ASH.** `ASH`/`ASH_LT` are a handful in a hearth and are authored for that;
+// a two-metre dune is a BIG SMOOTH MASS and at 96 it came back at 214/255 — a snowbank. These are the same
+// material solved for the size it is actually drawn at.
+pub const DRIFT = rgba(54, 50, 47, 255);
+pub const DRIFT_LT = rgba(70, 66, 62, 255);
+pub const DRIFT_DK = rgba(37, 34, 32, 255);
+pub const PUNK = rgba(66, 54, 36, 255);
+pub const PUNK_DK = rgba(42, 34, 23, 255);
+// The Mycelian. Caps read against a wood by being COOL and slightly violet where bark is warm brown; the
+// gills stay pale because they are always in the cap's own shade and never take the sun.
+pub const CAP_FLESH = rgba(44, 35, 40, 255);
+pub const CAP_FLESH_DK = rgba(29, 23, 28, 255);
+/// **A FUNGUS STANDS IN NOTHING.** Every prop in the kingdom used to carry a pad at its foot to hide the
+/// seam where a round base meets uneven ground, and every one was `MOSS_DK` — a green disc under a pink
+/// mushroom, twenty-two times over (owner: "disrupts palette"). Recolouring it did not save it and neither
+/// did sinking it: a horizontal disc of any colour that is not the ground's takes the key square-on and
+/// reads as a PLATE THE PROP IS STANDING ON. They are gone; the stipes meet the ground on their own.
+/// Moss on STONE is still moss — that is the rock palette and it is not this.
+pub const DUFF = rgba(26, 21, 21, 255);
+pub const CAP_RIM = rgba(58, 46, 50, 255);
+pub const GILL = rgba(104, 96, 88, 255);
+pub const STIPE = rgba(72, 66, 58, 255);
+pub const STIPE_DK = rgba(46, 42, 37, 255);
+pub const SPORE_GLOW = rgba(150, 206, 198, 120);
+pub const CAP_GLOW = rgba(96, 168, 160, 150);
+// The warm half of the Mycelian's light. Alpha is EMISSIVE, so these are how bright they burn, not how
+// see-through they are — and a low number is a strong glow.
+pub const BLOOM_GLOW = rgba(206, 112, 158, 105);
+pub const BLOOM_CORE = rgba(236, 172, 200, 70);
+pub const FLESH_PINK = rgba(74, 44, 54, 255);
+pub const FLESH_PINK_DK = rgba(48, 28, 36, 255);
 pub const RUST = rgba(58, 38, 24, 255);
 pub const ASH = rgba(78, 74, 70, 255);
 pub const ASH_LT = rgba(96, 92, 86, 255);
@@ -102,6 +150,11 @@ pub const WATER_SHALLOW = rgba(30, 35, 31, 255);
 pub const WATER_MUD = rgba(40, 35, 25, 255);
 
 pub const Part = struct { ax: f32 = 0, az: f32 = 0, bx: f32 = 0, bz: f32 = 0, r: f32, h: f32 };
+
+/// A volume a prop blocks the VIEW with (`props.Info.occl`). It lives here beside `Part` rather than in
+/// `props.zig` because a family file that builds its own colliders needs to build its own occluders too, and
+/// `props.zig` imports the families — so declaring it there means every family mirroring the struct back.
+pub const Blocker = struct { r: f32, y0: f32 = 0, y1: f32, x: f32 = 0, z: f32 = 0 };
 
 pub const TOWER_R: f32 = 2.35;
 pub const TOWER_SIDES: i32 = 14;
@@ -319,6 +372,21 @@ pub fn flameInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, s: f32
     }
     b.setAnimY(0);
 }
+/// **WABI-SABI GOES BETWEEN THE INSTANCES, NOT ALONG ONE** (the house rule, and the one it is easiest to
+/// break by accident). Two tones alternated segment by segment band a shaft like a barber's pole — it happened
+/// to the ribs, to every rock formation and to the ash in one sitting. The SAME two tones taken as a slow
+/// lerp from foot to tip read as weathering instead: damp and dark where it leaves the ground, sun-bleached
+/// where it does not. `t` is 0 at the foot and 1 at the tip.
+pub fn weathered(foot: rl.Color, tip: rl.Color, t: f32) rl.Color {
+    return mathx.lerpColor(foot, tip, mathx.smoothstep(0.0, 1.0, t));
+}
+
+/// …and the ONE seam a stack is allowed, so strata still read: a single darker bed every `every` courses.
+/// Anything more often than that is the barber's pole again wearing a geologist's hat.
+pub fn seam(base: rl.Color, dark: rl.Color, i: i32, every: i32) rl.Color {
+    return if (@mod(i, every) == every - 1) dark else base;
+}
+
 pub fn blade(b: *Builder, x: f32, z: f32, h: f32, lx: f32, lz: f32, r: f32, col: rl.Color) void {
     b.addCylinder(v3(x, 0, z), v3(x + lx, h, z + lz), r, 0.003, 4, col);
 }

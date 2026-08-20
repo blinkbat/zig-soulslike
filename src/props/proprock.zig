@@ -503,3 +503,322 @@ pub fn screeMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
+
+// ── FORMATIONS ──────────────────────────────────────────────────────────────────────────────────────────
+//
+// Weathered rock, not laid rock. The four below are all the same trick — a hard bed over a soft one — and
+// they differ in what the soft bed was made to do: undercut, split, isolate, or fail on one side.
+// The BANDING is what says "weathered": the three cliff tones already disagree in HUE, so alternating them
+// per bed reads as strata under a sun that flattens any value pair.
+
+/// One tone up a stack, with a single darker seam every fourth bed — `art.weathered`'s rule and `art.seam`'s
+/// exception. Alternated per bed instead (which is what this was) a hoodoo is a stack of poker chips.
+fn stratumCol(i: i32, n: i32) rl.Color {
+    const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(@max(n - 1, 1)));
+    return art.seam(art.weathered(ROCK_DEEP, CLIFF_LT, t), CLIFF_DK, i, 4);
+}
+
+/// A stack of beds up an axis, each one a squashed blob a touch off the one below. Returns the top.
+fn bedsInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, y0: f32, h: f32, r0: f32, r1: f32, n: i32, wander: f32) rl.Vector3 {
+    var y = y0;
+    var x = cx;
+    var z = cz;
+    var i: i32 = 0;
+    while (i < n) : (i += 1) {
+        const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(n));
+        const bh = h / @as(f32, @floatFromInt(n));
+        const r = mathx.lerpF(r0, r1, t) * rng.range(0.90, 1.10);
+        b.addBlob(v3(x, y + bh * 0.5, z), v3(r, bh * 0.78, r * rng.range(0.90, 1.10)), 4, 10, stratumCol(i, n));
+        y += bh;
+        x += rng.signed() * wander;
+        z += rng.signed() * wander;
+    }
+    return v3(x, y, z);
+}
+
+pub const HOODOO_H: f32 = 5.6;
+
+/// **THE UNDERCUT ONE.** A hard capstone the weather could not take, over a neck it took nearly all of —
+/// so the silhouette is top-heavy, which is the whole reason it stops you looking at it.
+pub fn hoodooMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x0C1);
+    b.setMat(.stone);
+    const skirt = bedsInto(&b, &rng, 0, 0, 0, HOODOO_H * 0.30, 1.05, 0.62, 3, 0.05);
+    const neck = bedsInto(&b, &rng, skirt.x, skirt.z, skirt.y, HOODOO_H * 0.46, 0.52, 0.34, 4, 0.09);
+    // The cap: WIDER THAN THE NECK BY HALF AGAIN, or it is a post with a hat on.
+    b.addBlob(v3(neck.x, neck.y + 0.42, neck.z), v3(1.30, 0.46, 1.15), 4, 9, ROCK_DEEP);
+    b.addBlob(v3(neck.x + 0.10, neck.y + 0.80, neck.z - 0.06), v3(0.95, 0.34, 0.86), 3, 8, CLIFF_DK);
+    b.addDome(v3(neck.x + 0.10, neck.y + 0.92, neck.z - 0.06), v3(0, 1, 0), 0.72, 10, ROCK_DEEP);
+    art.chipsInto(&b, &rng, 0, 0, 1.8, 0.10, 0.26, 6);
+    b.setMat(.plant);
+    tuftInto(&b, &rng, rng.signed() * 1.3, rng.signed() * 1.3, 0.5);
+    return b.toModel(shader);
+}
+
+pub const SPIRE_H: f32 = 9.2;
+
+/// **THE SPLIT ONE.** A needle that lost its point long ago — a rock spire ends in a snapped bench, not a
+/// spike, and the crack that will take the next piece off it is already open down one side.
+pub fn spireMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x0C2);
+    b.setMat(.stone);
+    const lean = mathx.radians(7.5);
+    var y: f32 = 0;
+    var i: i32 = 0;
+    const N = 9;
+    while (i < N) : (i += 1) {
+        const t = @as(f32, @floatFromInt(i)) / N;
+        const bh = SPIRE_H / N;
+        const r = mathx.lerpF(1.35, 0.40, t) * rng.range(0.92, 1.08);
+        const off = mathx.sinf(lean) * y;
+        b.addBlob(v3(off, y + bh * 0.5, rng.signed() * 0.05), v3(r, bh * 0.76, r * rng.range(0.88, 1.12)), 4, 10, stratumCol(i, N));
+        y += bh;
+    }
+    const top = v3(mathx.sinf(lean) * y, y, 0);
+    // The BENCH it snapped on — flat, tilted, and a shade paler than the shaft because it is fresh rock.
+    b.addBlob(v3(top.x, top.y - 0.10, top.z), v3(0.46, 0.13, 0.42), 2, 8, CLIFF_LT);
+    art.crackInto(&b, v3(top.x - 0.3, top.y - 0.4, 0.30), v3(-0.10, -1.0, 0.06), v3(1, 0, 0), SPIRE_H * 0.55, 0.10, 0.16);
+    // What has already come off it, lying at the foot on the downhill side.
+    var j: i32 = 0;
+    while (j < 6) : (j += 1) {
+        const a = rng.range(-0.9, 0.9);
+        const d = rng.range(1.3, 2.4);
+        const r = rng.range(0.20, 0.46);
+        b.addBlob(v3(mathx.cosf(a) * d, r * 0.55, mathx.sinf(a) * d), v3(r, r * rng.range(0.5, 0.8), r * rng.range(0.8, 1.3)), 3, 6, if (rng.float() < 0.5) CLIFF_DK else ROCK_DEEP);
+    }
+    art.chipsInto(&b, &rng, 0, 0, 2.2, 0.08, 0.20, 7);
+    return b.toModel(shader);
+}
+
+pub const BALANCED_H: f32 = 3.9;
+
+/// **THE ISOLATED ONE.** Everything round it went; this did not, and it is resting on a contact you can see
+/// daylight through. Off centre on purpose — a boulder balanced on its own axis is a ball on a tee.
+pub fn balancedMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x0C3);
+    b.setMat(.stone);
+    const ped = bedsInto(&b, &rng, 0, 0, 0, 1.55, 1.15, 0.58, 4, 0.06);
+    // The CONTACT: one small bed doing all the work, and the mass above it hanging well off to one side.
+    b.addBlob(v3(ped.x, ped.y + 0.10, ped.z), v3(0.42, 0.12, 0.38), 2, 7, ROCK_DEEP);
+    const cx = ped.x + 0.62;
+    const cz = ped.z - 0.24;
+    const cy = ped.y + 1.18;
+    b.addBlob(v3(cx, cy, cz), v3(1.62, 1.02, 1.44), 5, 10, CLIFF_ROCK);
+    b.addBlob(v3(cx - 0.45, cy + 0.34, cz + 0.30), v3(0.92, 0.62, 0.86), 4, 8, CLIFF_DK);
+    b.addBlob(v3(cx + 0.70, cy - 0.20, cz - 0.35), v3(0.62, 0.44, 0.58), 3, 7, CLIFF_LT);
+    art.lichenInto(&b, &rng, v3(cx - 0.2, cy + 0.86, cz), v3(0.70, 0.03, 0.62), 4);
+    art.chipsInto(&b, &rng, 0, 0, 1.9, 0.09, 0.24, 6);
+    b.setMat(.plant);
+    tuftInto(&b, &rng, rng.signed() * 1.2, rng.signed() * 1.2, 0.55);
+    return b.toModel(shader);
+}
+
+pub const FINGERS_H: f32 = 4.6;
+
+/// **THE ONE THAT FAILED ON ONE SIDE.** A bed that split along its joints and slid: five slabs still in
+/// order, each leaning a little further than the last. The ORDER is what reads — a fan, not a scatter.
+pub fn fingersMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x0C4);
+    b.setMat(.stone);
+    const N = 5;
+    var i: i32 = 0;
+    while (i < N) : (i += 1) {
+        const t = @as(f32, @floatFromInt(i)) / (N - 1);
+        // The lean and the height run TOGETHER down the fan: the tallest stands straightest.
+        const h = FINGERS_H * mathx.lerpF(1.0, 0.46, t) * rng.range(0.94, 1.06);
+        const lean = mathx.radians(mathx.lerpF(6.0, 34.0, t));
+        const x = mathx.lerpF(-0.9, 1.7, t);
+        const z = rng.signed() * 0.26;
+        const w = mathx.lerpF(0.58, 0.34, t);
+        const foot = v3(x, 0, z);
+        const head = v3(x + mathx.sinf(lean) * h, mathx.cosf(lean) * h, z + rng.signed() * 0.14);
+        // A SLAB, so it is wide across the fan and thin along it — 4 sides, not a cylinder.
+        b.addCylinder(foot, head, w, w * 0.72, 4, stratumCol(i, N));
+        b.addDome(head, mathx.normV(mathx.subV(head, foot)), w * 0.70, 6, CLIFF_LT);
+        b.addBlob(v3(x, 0.16, z), v3(w * 1.5, 0.22, w * 1.3), 3, 7, ROCK_DEEP);
+    }
+    art.chipsInto(&b, &rng, 0.4, 0, 2.0, 0.08, 0.22, 8);
+    b.setMat(.plant);
+    tuftInto(&b, &rng, -1.4, rng.signed() * 1.0, 0.5);
+    tuftInto(&b, &rng, 2.1, rng.signed() * 1.0, 0.42);
+    return b.toModel(shader);
+}
+
+test "a formation is top-heavy, a spire is not, and both know their own height" {
+    // The hoodoo's whole silhouette is the cap being wider than the neck it stands on; asserted here so a
+    // retune of either cannot quietly turn it into a post.
+    try std.testing.expect(HOODOO_H > 4.0);
+    try std.testing.expect(SPIRE_H > HOODOO_H);
+    try std.testing.expect(BALANCED_H < HOODOO_H);
+    try std.testing.expect(FINGERS_H < SPIRE_H);
+}
+
+
+// ── SMALL STONE, THE STUFF UNDERFOOT ────────────────────────────────────────────────────────────────────
+//
+// The formations above are things you navigate BY. These are things you walk OVER, and they exist because a
+// region with cliffs and nothing under a metre reads as a diorama: the ground between the landmarks has to
+// be made of the same rock, broken smaller. Every one is under knee height and none of them collide.
+//
+// **AND THEY ARE FOUR DIFFERENT BREAKS, NOT FOUR SIZES OF THE SAME ONE** — split, cleave, tumble, and the
+// one that never broke at all. That is what stops a scatter of them reading as one prop at random scales.
+
+pub const SHARD_H: f32 = 0.58;
+
+/// SPLIT. Angular slivers stood on end, leaning off one plane the way a frost-shattered bed does.
+///
+/// **BUILT THE WAY `fingersMesh` IS, AND FOR THE REASON IT IS** — a 4-sided tapered cylinder, not a box.
+/// Two rewrites went out as boxes and both photographed as a stack of pale dominoes: a box face square-on
+/// to the key takes the whole of it, so `ROCK_DEEP` at 23,22,21 renders light grey, and every box sharing
+/// the lean plane put its parallel faces next to its neighbour's and z-fought where they touched. The
+/// tapered prism's faces all disagree with each other, which is what makes the same albedo shade.
+///
+/// The LEAN is shared because one bed failed; the YAW is not, or it is the barber's pole stood on end.
+/// **AND THEY LEAN HARD AND STAY LOW.** At 0.86 m upright with a fat cap they came out as a row of
+/// gravestones, which is a thing this game already has. A splinter field is knee-high and falling over.
+pub fn shardsMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x5A11D);
+    b.setMat(.stone);
+    const plane = rng.angle();
+    const N = 9;
+    var i: i32 = 0;
+    while (i < N) : (i += 1) {
+        const a = rng.angle();
+        const d = rng.range(0, 0.86) * @sqrt(rng.float());
+        const h = SHARD_H * rng.range(0.32, 1.0);
+        const lean = rng.range(0.22, 0.62);
+        const x = mathx.cosf(a) * d;
+        const z = mathx.sinf(a) * d;
+        const w = rng.range(0.055, 0.125);
+        const foot = v3(x, -0.04, z);
+        const head = v3(x + mathx.cosf(plane) * h * lean, h, z + mathx.sinf(plane) * h * lean);
+        b.addCylinder(foot, head, w, w * rng.range(0.12, 0.30), 4, stratumCol(i, N));
+        // A broken crown — nothing dead ends in a point, and it kills the flat top face as well.
+        // Just enough to knock the point off. At 0.62 of the width these read as headstones.
+        b.addDome(head, mathx.normV(mathx.subV(head, foot)), w * 0.26, 5, CLIFF_DK);
+    }
+    art.chipsInto(&b, &rng, 0, 0, 1.15, 0.05, 0.13, 9);
+    b.setMat(.plant);
+    tuftInto(&b, &rng, rng.signed() * 0.8, rng.signed() * 0.8, 0.42);
+    return b.toModel(shader);
+}
+
+/// CLEAVE. Flat shale plates lying over one another, each one a hair off its neighbour's angle — a stack of
+/// parallel slabs is a pavement, and this is a bed that failed.
+pub fn slabsMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x51AB5);
+    b.setMat(.stone);
+    var y: f32 = 0.03;
+    var i: i32 = 0;
+    while (i < 7) : (i += 1) {
+        const a = rng.angle();
+        const d = rng.range(0, 0.55);
+        const w = rng.range(0.42, 0.92);
+        const t = rng.range(0.035, 0.075);
+        const yaw = rng.angle();
+        b.addBox(
+            v3(mathx.cosf(a) * d, y + t * 0.5, mathx.sinf(a) * d),
+            v3(mathx.cosf(yaw) * w, rng.signed() * 0.05, mathx.sinf(yaw) * w),
+            v3(0, t, 0),
+            v3(-mathx.sinf(yaw) * w * rng.range(0.55, 0.9), 0, mathx.cosf(yaw) * w * rng.range(0.55, 0.9)),
+            art.weathered(CLIFF_DK, CLIFF_LT, @as(f32, @floatFromInt(i)) / 6.0),
+        );
+        y += t * rng.range(0.35, 0.85);
+    }
+    b.setMat(.plant);
+    tuftInto(&b, &rng, rng.signed() * 0.9, rng.signed() * 0.9, 0.36);
+    return b.toModel(shader);
+}
+
+/// TUMBLE. Rounded river cobbles, packed. **NO TUFT ON THIS ONE** — cobbles are what is left where water
+/// took the soil away, and a clump of grass in the middle of them says the water never ran.
+pub fn cobblesMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0xC0BB1E);
+    b.setMat(.stone);
+    var i: i32 = 0;
+    while (i < 34) : (i += 1) {
+        const a = rng.angle();
+        const d = rng.range(0, 1.15) * @sqrt(rng.float());
+        const r = rng.range(0.07, 0.17);
+        b.addBlob(
+            v3(mathx.cosf(a) * d, r * 0.55, mathx.sinf(a) * d),
+            v3(r, r * rng.range(0.52, 0.78), r * rng.range(0.85, 1.2)),
+            3,
+            7,
+            if (rng.float() < 0.22) STONE_MOSS else art.weathered(ROCK_DEEP, CLIFF_LT, rng.float()),
+        );
+    }
+    return b.toModel(shader);
+}
+
+pub const WHALE_H: f32 = 0.92;
+
+/// AND THE ONE THAT NEVER BROKE. A whaleback: bedrock the soil washed off, worn smooth, mossed on top and
+/// bare down the flanks — the moss line is what says it has been there longer than everything around it.
+pub fn whalebackMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x3A1E);
+    b.setMat(.stone);
+    const yaw = rng.angle();
+    const L = 2.15;
+    var i: i32 = 0;
+    while (i < 5) : (i += 1) {
+        const t = (@as(f32, @floatFromInt(i)) + 0.5) / 5.0;
+        // Fattest a third along, so it has a head and a tail rather than two identical ends.
+        const bulge = mathx.sinf(std.math.pi * mathx.clampF(t * 0.88 + 0.06, 0, 1));
+        const along = (t - 0.5) * L * 2.0;
+        b.addBlob(
+            v3(mathx.cosf(yaw) * along, WHALE_H * bulge * 0.52, mathx.sinf(yaw) * along),
+            v3(0.86 * bulge * rng.range(0.92, 1.08), WHALE_H * bulge * 0.62, 0.86 * bulge * rng.range(0.92, 1.08)),
+            4,
+            9,
+            art.weathered(ROCK_DEEP, CLIFF_ROCK, t),
+        );
+    }
+    // **THE MOSS IS SUNK INTO THE ROCK, NOT LAID ON IT.** Flat pads photographed as sticky notes: a plate
+    // whose top faces straight up takes the full key while the dome around it curves away, so the same
+    // near-black green came out a bright sage. Spheres buried to `SINK` of their radius show a CURVED cap
+    // that shades with the surface it is on.
+    const SINK: f32 = 0.62;
+    i = 0;
+    while (i < 17) : (i += 1) {
+        const t = rng.range(0.10, 0.90);
+        const bulge = mathx.sinf(std.math.pi * mathx.clampF(t * 0.88 + 0.06, 0, 1));
+        const along = (t - 0.5) * L * 2.0;
+        // Across the back, never down the flanks — a mossed sphere is a green rock, and the bare sides are
+        // what say water still runs off it.
+        const across = rng.signed() * 0.46;
+        const surf = WHALE_H * bulge * 0.44 + WHALE_H * bulge * 0.62 * @sqrt(mathx.maxF(1.0 - across * across, 0.02));
+        const r = rng.range(0.13, 0.27);
+        b.addBlob(
+            v3(
+                mathx.cosf(yaw) * along - mathx.sinf(yaw) * across * 0.86 * bulge,
+                surf - r * SINK,
+                mathx.sinf(yaw) * along + mathx.cosf(yaw) * across * 0.86 * bulge,
+            ),
+            v3(r, r * 0.78, r * rng.range(0.8, 1.25)),
+            3,
+            7,
+            if (rng.float() < 0.45) MOSS_DK else STONE_MOSS,
+        );
+    }
+    b.setMat(.plant);
+    tuftInto(&b, &rng, mathx.cosf(yaw + 1.6) * 0.9, mathx.sinf(yaw + 1.6) * 0.9, 0.5);
+    return b.toModel(shader);
+}
+
+test "SMALL STONE IS FOUR BREAKS, NOT FOUR SIZES — and every one of them is under the knee" {
+    std.debug.print("\n  small stone: shards {d:.2} m, whaleback {d:.2} m — knee is 0.48 m\n", .{ SHARD_H, WHALE_H });
+    // Under a man's knee, or it is a formation and belongs with the hoodoos.
+    try std.testing.expect(SHARD_H < 1.0);
+    try std.testing.expect(WHALE_H < 1.0);
+    // The whaleback is the LOW WIDE one and the shards are the TALL NARROW one; that is the whole contrast.
+    try std.testing.expect(WHALE_H > SHARD_H);
+}

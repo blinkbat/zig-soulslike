@@ -3346,7 +3346,9 @@ pub const Vigil = struct {
             if (g.covers(hero)) inIt = g.pos;
         }
         const at = inIt orelse {
-            self.gasT = 0;
+            // **SEEDED AT THE INTERVAL, NOT AT ZERO** (`foe.Soak`'s note). Zeroed, stepping into the cloud
+            // bought you `GAS_DOSE_EVERY` of free standing; due, the frame you cross is the frame it bills.
+            self.gasT = GAS_DOSE_EVERY;
             return null;
         };
         self.gasT += dt;
@@ -4584,11 +4586,16 @@ test "the gas DOSES on its own clock, re-arms when he steps out, and thins to no
     while (t < GAS_DOSE_EVERY * 3.0) : (t += 1.0 / 60.0) {
         if (v.gasDose(1.0 / 60.0, at) != null) bites += 1;
     }
-    try std.testing.expect(bites >= 2 and bites <= 4);
+    // Four now, not three: the FIRST frame inside bills (owner: "deal dmg immediately if u step in, THEN
+    // start their clock"), so three intervals of standing there is four doses.
+    try std.testing.expect(bites >= 3 and bites <= 5);
 
     const outside = v3(GAS_R * 4.0, 0, 0);
     try std.testing.expect(v.gasDose(1.0 / 60.0, outside) == null);
-    try std.testing.expectApproxEqAbs(@as(f32, 0), v.gasT, 1e-6);
+    // **RE-ARMED, NOT ZEROED.** Stepping out leaves it DUE, so stepping back in bills on the entry frame
+    // instead of buying another `GAS_DOSE_EVERY` of free standing.
+    try std.testing.expectApproxEqAbs(GAS_DOSE_EVERY, v.gasT, 1e-6);
+    try std.testing.expect(v.gasDose(1.0 / 60.0, at) != null);
 
     t = 0;
     while (t < GAS_LIFE + 0.5) : (t += 1.0 / 60.0) v.gas[0].update(1.0 / 60.0);

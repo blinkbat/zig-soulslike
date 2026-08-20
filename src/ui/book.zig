@@ -408,7 +408,7 @@ fn quickWorth(kind: ?item.Kind, worn: heromod.Worn, sheet: stats.Sheet, perk: pt
         .none => 0,
         .regen => |r| hpMax * r.frac,
         .lob => |b| b.dmg + b.fire + b.lightning,
-        .ward, .wind, .grease, .souls, .brew, .purge, .steady => 0,
+        .ward, .wind, .grease, .souls, .brew, .purge, .steady, .arrows => 0,
     };
 }
 
@@ -1486,6 +1486,7 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
         .brew => |b| hud.text(fmt("Your wind returns {d:.1}x as fast for {d:.0} seconds.", .{ b.mult, b.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
         .purge => hud.text("Takes the poison back out of you, filling or already running.", inner.x, y, hud.SMALL, uiart.GOOD),
         .steady => |s| hud.text(fmt("Your footing returns {d:.1}x as fast for {d:.0} seconds.", .{ s.mult, s.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
+        .arrows => |a| hud.text(fmt("Puts {d} {s} arrows back in the quiver.", .{ a.n, if (a.fire) @as([]const u8, "fire") else "plain" }), inner.x, y, hud.SMALL, uiart.GOOD),
     }
     if (item.usable(k)) {
         const hy = y + hud.lineH(hud.SMALL) + 6;

@@ -1,0 +1,106 @@
+version: 1
+name: Brood Arena
+half: 70.0
+runway: -3.40 -30.00 3.40 20.00
+
+zone: plain -400.0 -400.0 400.0 400.0 0.620 grasstall,grasstall,patch,patch,tuft,clover,moss,shrub,wildflowers,thistle
+
+at: bonfire 3 6.5 0 1
+at: glow 2.1 5.5 40 1
+at: pillar -9 -12 0 1
+at: pillar 9 -12 14 1
+at: pillar -9 -24 -6 1.05
+at: broken 9 -24 20 0.95
+at: arch 0 -18 0 1
+at: wall -17 -18 78 1.1
+at: wall 17 -18 -12 1.1
+at: rubble -4 -21 10 1
+at: rubble 6 -15 0 1
+at: block 13 -9 70 1
+at: block -13 -28 30 1
+at: brazier -3.5 -17.2 0 1
+at: barrels 8.5 -8 50 0.95
+belt: tuft -30 -40 30 12 60 0.85 1.3 seed=2001
+belt: rocks -34 -44 34 14 22 0.8 1.3 seed=2002
+belt: bush -34 -44 34 14 18 0.8 1.3 seed=2003
+belt: clover -70 -70 -54 -54 6 0.72 1.38 seed=49387529158470 avoid=runway,water,solid mix=clover,grasstall,moss,patch
+belt: wildflowers -54 -70 -38 -54 15 0.72 1.38 seed=187468700523034 avoid=runway,water,solid mix=wildflowers,tuft,shrub,moss,patch,clover,grasstall,thistle
+belt: patch -38 -70 -22 -54 15 0.72 1.38 seed=197656815758631 avoid=runway,water,solid mix=patch,thistle,wildflowers,tuft,grasstall,moss,shrub
+belt: clover -22 -70 -6 -54 11 0.72 1.38 seed=207162634827396 avoid=runway,water,solid mix=clover,thistle,grasstall,tuft,shrub,patch
+belt: grasstall -6 -70 10 -54 3 0.72 1.38 seed=61002223020635 avoid=runway,water,solid mix=grasstall,moss
+belt: wildflowers 10 -70 26 -54 14 0.72 1.38 seed=110879242644210 avoid=runway,water,solid mix=wildflowers,patch,grasstall,shrub,tuft,moss
+belt: clover 26 -70 42 -54 17 0.72 1.38 seed=270952576168663 avoid=runway,water,solid mix=clover,wildflowers,moss,patch,shrub,grasstall,thistle
+belt: moss 42 -70 58 -54 22 0.72 1.38 seed=18047027215878 avoid=runway,water,solid mix=moss,patch,clover,grasstall,tuft,thistle,shrub,wildflowers
+belt: grasstall 58 -70 70 -54 14 0.72 1.38 seed=136240700685168 avoid=runway,water,solid mix=grasstall,thistle,patch,moss,tuft,clover
+belt: moss -70 -54 -54 -38 4 0.72 1.38 seed=114968149038765 avoid=runway,water,solid mix=moss,patch,wildflowers,grasstall
+belt: patch -54 -54 -38 -38 3 0.72 1.38 seed=266952211922946 avoid=runway,water,solid mix=patch,wildflowers,thistle
+belt: wildflowers -38 -54 -22 -38 5 0.72 1.38 seed=99324795108592 avoid=runway,water,solid mix=wildflowers,patch,shrub
+belt: moss -22 -54 -6 -38 5 0.72 1.38 seed=84150221834532 avoid=runway,water,solid mix=moss,clover,shrub,grasstall,tuft
+belt: grasstall -6 -54 10 -38 10 0.72 1.38 seed=176753684944930 avoid=runway,water,solid mix=grasstall,patch,shrub,clover,thistle
+belt: grasstall 10 -54 26 -38 8 0.72 1.38 seed=174119985830633 avoid=runway,water,solid mix=grasstall,shrub,wildflowers,thistle,moss,patch
+belt: clover 26 -54 42 -38 15 0.72 1.38 seed=61470485403482 avoid=runway,water,solid mix=clover,grasstall,moss,wildflowers,tuft,thistle,patch
+belt: tuft 42 -54 58 -38 5 0.72 1.38 seed=164994897348981 avoid=runway,water,solid mix=tuft,wildflowers,grasstall,moss
+belt: grasstall 58 -54 70 -38 1 0.72 1.38 seed=233128308845404 avoid=runway,water,solid
+belt: tuft -70 -38 -54 -22 8 0.72 1.38 seed=268988624924008 avoid=runway,water,solid mix=tuft,thistle,wildflowers,shrub,moss,grasstall
+belt: clover -54 -38 -38 -22 3 0.72 1.38 seed=269660956130649 avoid=runway,water,solid mix=clover,wildflowers,grasstall
+belt: grasstall -38 -38 -22 -22 8 0.72 1.38 seed=73141844930939 avoid=runway,water,solid mix=grasstall,shrub,moss,wildflowers,patch,tuft
+belt: moss -22 -38 -6 -22 3 0.72 1.38 seed=156463877925946 avoid=runway,water,solid mix=moss,tuft
+belt: grasstall -6 -38 10 -22 5 0.72 1.38 seed=135887847457728 avoid=runway,water,solid mix=grasstall,patch,moss
+belt: clover 10 -38 26 -22 11 0.72 1.38 seed=239638266405442 avoid=runway,water,solid mix=clover,patch,shrub,wildflowers,grasstall,tuft
+belt: shrub 26 -38 42 -22 18 0.72 1.38 seed=138496854452313 avoid=runway,water,solid mix=shrub,thistle,grasstall,moss,tuft,wildflowers,clover,patch
+belt: tuft 42 -38 58 -22 4 0.72 1.38 seed=270777197205334 avoid=runway,water,solid mix=tuft,grasstall,shrub,thistle
+belt: clover -70 -22 -54 -6 1 0.72 1.38 seed=160636591657136 avoid=runway,water,solid
+belt: shrub -54 -22 -38 -6 4 0.72 1.38 seed=239183935643694 avoid=runway,water,solid mix=shrub,thistle,clover
+belt: moss -38 -22 -22 -6 2 0.72 1.38 seed=114699470913904 avoid=runway,water,solid mix=moss,thistle
+belt: shrub -22 -22 -6 -6 4 0.72 1.38 seed=187455965909291 avoid=runway,water,solid mix=shrub,patch
+belt: patch 10 -22 26 -6 3 0.72 1.38 seed=227767301032651 avoid=runway,water,solid mix=patch,clover,tuft
+belt: thistle 26 -22 42 -6 9 0.72 1.38 seed=21492359220157 avoid=runway,water,solid mix=thistle,shrub,wildflowers,grasstall,tuft,patch,clover
+belt: moss 42 -22 58 -6 6 0.72 1.38 seed=95726449865174 avoid=runway,water,solid mix=moss,clover,patch,shrub,thistle,grasstall
+belt: moss 58 -22 70 -6 1 0.72 1.38 seed=48042163246961 avoid=runway,water,solid
+belt: grasstall -70 -6 -54 10 8 0.72 1.38 seed=236284569696004 avoid=runway,water,solid mix=grasstall,patch,moss,shrub,wildflowers
+belt: grasstall -54 -6 -38 10 9 0.72 1.38 seed=184708570496029 avoid=runway,water,solid mix=grasstall,moss,thistle,patch,clover,shrub
+belt: clover -38 -6 -22 10 10 0.72 1.38 seed=186217490871557 avoid=runway,water,solid mix=clover,grasstall,tuft,moss,patch,shrub
+belt: shrub -22 -6 -6 10 1 0.72 1.38 seed=63182103363787 avoid=runway,water,solid
+belt: shrub 10 -6 26 10 3 0.72 1.38 seed=100904477045901 avoid=runway,water,solid mix=shrub,grasstall,patch
+belt: patch 26 -6 42 10 7 0.72 1.38 seed=83347794709325 avoid=runway,water,solid mix=patch,clover,thistle,grasstall,moss
+belt: thistle 42 -6 58 10 5 0.72 1.38 seed=182828226106583 avoid=runway,water,solid mix=thistle,tuft,clover,wildflowers
+belt: moss -70 10 -54 26 5 0.72 1.38 seed=6957435563684 avoid=runway,water,solid mix=moss,clover,grasstall,thistle
+belt: grasstall -54 10 -38 26 2 0.72 1.38 seed=223943985880545 avoid=runway,water,solid mix=grasstall,shrub
+belt: patch -38 10 -22 26 5 0.72 1.38 seed=180542135931550 avoid=runway,water,solid mix=patch,wildflowers,grasstall
+belt: shrub -22 10 -6 26 5 0.72 1.38 seed=230633442003121 avoid=runway,water,solid mix=shrub,patch,wildflowers,grasstall
+belt: tuft -6 10 10 26 5 0.72 1.38 seed=157373934638422 avoid=runway,water,solid mix=tuft,shrub,patch,grasstall,moss
+belt: moss 10 10 26 26 10 0.72 1.38 seed=147382057194271 avoid=runway,water,solid mix=moss,patch,tuft,wildflowers,clover,shrub
+belt: thistle 26 10 42 26 9 0.72 1.38 seed=86903230424955 avoid=runway,water,solid mix=thistle,moss,patch,grasstall,tuft
+belt: patch 42 10 58 26 5 0.72 1.38 seed=148548859961341 avoid=runway,water,solid mix=patch,grasstall
+belt: patch 58 10 70 26 11 0.72 1.38 seed=199362295430796 avoid=runway,water,solid mix=patch,clover,grasstall,shrub,thistle,tuft
+belt: tuft -70 26 -54 42 8 0.72 1.38 seed=112278066086296 avoid=runway,water,solid mix=tuft,grasstall,clover,patch,shrub
+belt: wildflowers -54 26 -38 42 4 0.72 1.38 seed=169872623639657 avoid=runway,water,solid mix=wildflowers,clover,patch
+belt: grasstall -38 26 -22 42 3 0.72 1.38 seed=121432482474973 avoid=runway,water,solid mix=grasstall,moss,shrub
+belt: thistle -22 26 -6 42 11 0.72 1.38 seed=245843760065000 avoid=runway,water,solid mix=thistle,shrub,grasstall,patch,clover,wildflowers
+belt: patch -6 26 10 42 14 0.72 1.38 seed=226533389188267 avoid=runway,water,solid mix=patch,moss,grasstall,shrub,clover,wildflowers
+belt: moss 10 26 26 42 15 0.72 1.38 seed=249706452666960 avoid=runway,water,solid mix=moss,thistle,patch,grasstall,clover,shrub,tuft,wildflowers
+belt: shrub 26 26 42 42 12 0.72 1.38 seed=173352381651998 avoid=runway,water,solid mix=shrub,patch,clover,tuft,grasstall
+belt: thistle 42 26 58 42 16 0.72 1.38 seed=161321990074343 avoid=runway,water,solid mix=thistle,wildflowers,grasstall,tuft,patch,shrub,clover,moss
+belt: tuft 58 26 70 42 12 0.72 1.38 seed=250249158884304 avoid=runway,water,solid mix=tuft,grasstall,thistle,moss,wildflowers,patch
+belt: patch -70 42 -54 58 13 0.72 1.38 seed=263469242000891 avoid=runway,water,solid mix=patch,grasstall,thistle,tuft,wildflowers,moss,clover,shrub
+belt: patch -54 42 -38 58 5 0.72 1.38 seed=30351439201130 avoid=runway,water,solid mix=patch,grasstall,tuft
+belt: shrub -38 42 -22 58 6 0.72 1.38 seed=31590307957508 avoid=runway,water,solid mix=shrub,thistle,moss,patch,grasstall
+belt: patch -22 42 -6 58 11 0.72 1.38 seed=155598942294514 avoid=runway,water,solid mix=patch,thistle,shrub,grasstall,moss
+belt: patch -6 42 10 58 12 0.72 1.38 seed=106917699921373 avoid=runway,water,solid mix=patch,grasstall,tuft,thistle,clover,shrub,wildflowers
+belt: clover 10 42 26 58 20 0.72 1.38 seed=140026437973697 avoid=runway,water,solid mix=clover,tuft,shrub,grasstall,moss,thistle
+belt: patch 26 42 42 58 20 0.72 1.38 seed=245130497846044 avoid=runway,water,solid mix=patch,clover,grasstall,moss,tuft
+belt: wildflowers 42 42 58 58 17 0.72 1.38 seed=35755545620994 avoid=runway,water,solid mix=wildflowers,clover,thistle,moss,grasstall,tuft,patch
+belt: grasstall 58 42 70 58 14 0.72 1.38 seed=183200302005269 avoid=runway,water,solid mix=grasstall,shrub,thistle,patch,wildflowers,moss
+belt: shrub -70 58 -54 70 15 0.72 1.38 seed=128117189770281 avoid=runway,water,solid mix=shrub,patch,clover,thistle,grasstall,moss,wildflowers,tuft
+belt: patch -54 58 -38 70 5 0.72 1.38 seed=199787600967441 avoid=runway,water,solid mix=patch,tuft,wildflowers,grasstall
+belt: patch -38 58 -22 70 8 0.72 1.38 seed=19317544178888 avoid=runway,water,solid mix=patch,thistle,grasstall,shrub,tuft
+belt: grasstall -22 58 -6 70 10 0.72 1.38 seed=277528653867188 avoid=runway,water,solid mix=grasstall,clover,tuft,thistle,patch
+belt: grasstall -6 58 10 70 10 0.72 1.38 seed=153847639555235 avoid=runway,water,solid mix=grasstall,clover,tuft,wildflowers,thistle
+belt: grasstall 10 58 26 70 14 0.72 1.38 seed=247338018726065 avoid=runway,water,solid mix=grasstall,moss,patch,tuft,shrub,wildflowers,clover
+belt: wildflowers 26 58 42 70 16 0.72 1.38 seed=131912404030459 avoid=runway,water,solid mix=wildflowers,grasstall,moss,patch,shrub,tuft
+belt: moss 42 58 58 70 13 0.72 1.38 seed=174901083449405 avoid=runway,water,solid mix=moss,tuft,shrub,patch,thistle,wildflowers
+belt: patch 58 58 70 70 16 0.72 1.38 seed=80118795382112 avoid=runway,water,solid mix=patch,clover,wildflowers,shrub,tuft,grasstall,moss,thistle
+
+foe: brood_mother 0.00 -26.00 180.0 1.00 0.28
+foe: brood_mother -19.00 -34.00 200.0 1.10 0.55
+foe: broodling 7.00 -20.00 180.0 1.00 0.31

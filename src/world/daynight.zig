@@ -320,6 +320,79 @@ pub fn overcast(p: Palette, wet: f32) Palette {
     return o;
 }
 
+// ── THE BLOOM, AND IT IS THE OPPOSITE OF THE STORM ──────────────────────────────────────────────────────
+//
+// **A SPORE BLOOM BRIGHTENS THE AIR. Every other weather in this game slates it.** `overcast` puts the key
+// out and pulls the warmth; this leaves the key alone and pushes PEACH into everything the distance is made
+// of, then shortens it. Standing in one should feel like standing inside a lamp, not under cloud — which is
+// also the only reason it reads at noon as well as at dusk.
+//
+// **AND IT THINS WITH ALTITUDE.** Spores hang at head height and settle; there is no bloom at the zenith.
+// So `skyLow` takes the full tint, `skyMid` two thirds of it and `skyHigh` a fifth — without that ramp the
+// whole dome goes pink and it reads as a sunset, not as air full of seed.
+//
+// This lives here, beside `overcast`, for the same reason `overcast` does: it is a palette operation, and
+// this file owns the hour's whole palette. `worldfmt.Location.spore` owns the number.
+
+/// **AND EVERY TERM IS A FACTOR ON THE HOUR'S OWN VALUE, NEVER A CONSTANT** — `overcast`'s law, and this
+/// broke it first time out: lerping toward an absolute peach DARKENED noon's horizon by 0.140 while lifting
+/// its zenith, because noon's sky is already brighter than any fixed colour worth using at dusk. A test
+/// prints all three bands and fails on it. `peach` is `slate` written warm: take the luminance the hour
+/// actually has and re-split it toward the red end.
+fn peach(c: rl.Vector3) rl.Vector3 {
+    const l = 0.299 * c.x + 0.587 * c.y + 0.114 * c.z;
+    return v3(l * 1.62, l * 0.90, l * 0.74);
+}
+
+/// How much brighter than the hour a full bloom is. Over 1 in every channel-weighted sense, which is the
+/// whole claim: a bloom is a source.
+const BLOOM_LIFT: f32 = 1.08;
+/// The haze is lifted harder than the sky — it is the part standing between him and everything.
+const BLOOM_HAZE_LIFT: f32 = 2.10;
+const BLOOM_BANK_LIFT: f32 = 1.35;
+/// How much of the tint each band of the dome takes. Full at the horizon, a fifth at the zenith: spores hang
+/// at head height and settle, so there is no bloom at the zenith, and without the ramp the whole dome goes
+/// pink and reads as a sunset rather than as air full of seed.
+const BLOOM_BANDS = [3]f32{ 1.0, 0.62, 0.20 };
+/// Multiplier on `hazeDensity` at full bloom — the far field goes SHORT, the way pollen closes a valley.
+pub const HAZE_SPORE_D: f32 = 2.30;
+/// The ambient goes with it: a lit fog is a source, and the ground under one is not lit by the sun alone.
+const BLOOM_AMB: f32 = 1.35;
+/// …and the stars go out. You cannot see through it.
+const BLOOM_STARS: f32 = 0.25;
+
+/// **AND IT MAY NOT CLIP.** A channel over 1 is a white hole in the dome, not a brighter sky, and the bands
+/// that blow first are noon's — the ones that were already bright. Scaled as a WHOLE VECTOR rather than
+/// clamped per channel: clamping red at 1 while green climbs turns peach into yellow on exactly the hours it
+/// is loudest. A test sweeps nine hours and pins the brightest channel under 1.
+fn ceiling(c: rl.Vector3) rl.Vector3 {
+    const hi = @max(c.x, @max(c.y, c.z));
+    return if (hi <= 1.0) c else mathx.scaleV(c, 1.0 / hi);
+}
+
+fn blush(c: rl.Vector3, k: f32, lift: f32) rl.Vector3 {
+    return ceiling(toward(c, mathx.scaleV(peach(c), lift), k));
+}
+
+pub fn bloom(p: Palette, spore: f32) Palette {
+    const k = mathx.clampF(spore, 0, 1);
+    if (k <= 0) return p;
+    var o = p;
+    o.haze = blush(p.haze, k, BLOOM_HAZE_LIFT);
+    o.hazeBank = blush(p.hazeBank, k, BLOOM_BANK_LIFT);
+    o.skyLow = blush(p.skyLow, k * BLOOM_BANDS[0], BLOOM_LIFT);
+    o.skyMid = blush(p.skyMid, k * BLOOM_BANDS[1], BLOOM_LIFT);
+    o.skyHigh = blush(p.skyHigh, k * BLOOM_BANDS[2], BLOOM_LIFT);
+    o.skyBank = blush(p.skyBank, k, BLOOM_BANK_LIFT);
+    o.cloudDark = blush(p.cloudDark, k, BLOOM_LIFT);
+    o.cloudLit = blush(p.cloudLit, k, BLOOM_LIFT);
+    o.ambSky = blush(p.ambSky, k, BLOOM_AMB);
+    o.ambGround = blush(p.ambGround, k * 0.6, BLOOM_LIFT);
+    o.stars = p.stars * (1.0 - k * (1.0 - BLOOM_STARS));
+    return o;
+}
+
+
 pub fn keyAmt(p: Palette) f32 {
     const luma = 0.299 * p.key.x + 0.587 * p.key.y + 0.114 * p.key.z;
     return mathx.clampF(luma / ANCHOR_KEY_LUMA, 0, 4);
@@ -749,4 +822,40 @@ test "the readout says the hour and names the phase" {
     try std.testing.expectEqualStrings("night", phaseName(2.0));
     var h: f32 = 0;
     while (h < HOURS) : (h += 0.1) try std.testing.expect(phaseName(h).len > 0);
+}
+
+test "A BLOOM BRIGHTENS THE DISTANCE, and it thins with altitude — every other weather here slates it" {
+    const noon = paletteAt(12.0);
+    const lit = bloom(noon, 1.0);
+    std.debug.print("\n  bloom: haze {d:.3},{d:.3},{d:.3} -> {d:.3},{d:.3},{d:.3}, density x{d:.2}\n", .{ noon.haze.x, noon.haze.y, noon.haze.z, lit.haze.x, lit.haze.y, lit.haze.z, HAZE_SPORE_D });
+    try std.testing.expect(lit.haze.x > lit.haze.y and lit.haze.y > lit.haze.z);
+    try std.testing.expect(lit.haze.x > noon.haze.x);
+    try std.testing.expect(HAZE_SPORE_D > 1.0);
+    // The KEY is the one thing it does not touch — that is what makes it the opposite of `overcast`.
+    try std.testing.expectEqual(noon.key.x, lit.key.x);
+    try std.testing.expect(overcast(noon, 1.0).key.x < noon.key.x);
+    // Horizon takes the full tint, zenith a fifth: without the ramp the dome reads as a sunset.
+    const dLow = lit.skyLow.x - noon.skyLow.x;
+    const dHigh = lit.skyHigh.x - noon.skyHigh.x;
+    std.debug.print("  ...dome tint: low +{d:.3}, mid +{d:.3}, high +{d:.3}\n", .{ dLow, lit.skyMid.x - noon.skyMid.x, dHigh });
+    try std.testing.expect(dLow > dHigh * 3.0);
+    // …and it LIFTS every band at every hour. The first cut lerped to an absolute peach and darkened noon.
+    var hi: f32 = 0;
+    for ([_]f32{ 0.0, 3.0, 6.0, 9.0, 12.0, 15.0, 17.5, 20.0, 21.0 }) |h| {
+        const q = paletteAt(h);
+        const w = bloom(q, 1.0);
+        try std.testing.expect(w.skyLow.x >= q.skyLow.x);
+        try std.testing.expect(w.haze.x > q.haze.x);
+        try std.testing.expect(w.haze.x > w.haze.z);
+        // …and NOTHING CLIPS. A band over 1.0 is a white hole in the dome, not a brighter sky.
+        inline for (.{ w.skyLow, w.skyMid, w.skyHigh, w.hazeBank, w.cloudLit }) |c| {
+            hi = @max(hi, @max(c.x, @max(c.y, c.z)));
+        }
+    }
+    std.debug.print("  ...brightest channel at any hour under a full bloom: {d:.3}\n", .{hi});
+    try std.testing.expect(hi <= 1.0);
+    const half = bloom(noon, 0.5);
+    try std.testing.expect(half.haze.x > noon.haze.x and half.haze.x < lit.haze.x);
+    try std.testing.expect(bloom(noon, 0).stars == noon.stars);
+    try std.testing.expect(paletteAt(0.0).stars > bloom(paletteAt(0.0), 1.0).stars);
 }

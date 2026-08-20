@@ -1,0 +1,85 @@
+version: 1
+name: The Mycelian
+half: 88.0
+runway: -4.00 -8.00 4.00 12.00
+
+# THE MYCELIAN — a wood with no wood in it. All THREE layers a region owes are fungal (great caps for
+# canopy, clusters and brackets for understorey, pods and moss on the floor), which is what stops it
+# reading as a forest that had its trees swapped out. The only real lights in it are the glowcaps, so it
+# holds its look at any hour: walk OUT of it at dusk and that is when you notice.
+
+zone: myc -400.0 -400.0 400.0 400.0 0.880 sporepod,sporepod,sporepod,moss,moss,moss,mushrooms,mushrooms,clover,bracken,fern
+zone: thin -400.0 -400.0 -46.0 400.0 0.420 moss,mushrooms,sporepod,clover
+# A WEATHER REGION. The mushroom wood keeps its own air: half-wet and thick with it, cross-faded over 8 s as
+# you walk in. There is one sky, so this drives the global level while he is inside rather than raining only
+# here — walking into the murk, not looking at it from outside.
+location: bloom -34.0 -66.0 34.0 8.0 spore=0.850 fog=0.180 blend=8.00
+location: fringe -80.0 -80.0 80.0 80.0 spore=0.300 fog=0.220 blend=10.00
+
+clear: 0.0 0.0 13.0
+clear: 34.0 -40.0 11.0
+cover: 2.60 0.70 1.40 seed=8001
+
+soil: 9x10 6x10 9x23 1x6 9x8 6x4 9x11 6x9 9x40 6x10 9x24 1x5 9x9 6x2 9x13 6x9 9x40 6x9 9x25 1x4 9x25 6x8 9x41 6x8 9x26 1x2 9x27 6x7 9x42 6x7 9x56 6x6 9x43 6x5 9x58 6x5 9x44 6x4 9x59 6x3 9x242 6x2 9x47 6x1 9x18 6x3 9x39 6x4 9x46 6x2 9x16 6x5 9x38 6x6 9x45 6x1 9x16 6x6 9x37 6x7 9x31 1x4 9x25 6x8 9x36 6x7 9x15 6x2 9x14 1x5 9x24 6x8 9x37 6x7 9x13 6x4 9x12 1x7 9x23 6x9 9x26 1x2 9x8 6x8 9x11 6x6 9x11 1x8 9x22 6x10 9x24 1x4 9x8 6x8 9x10 6x7 9x10 1x8 9x22 6x11 9x22 1x6 9x7 6x8 9x9 6x8 9x10 1x9 9x21 6x11 9x22 1x7 9x7 6x8 9x8 6x9 9x10 1x9 9x20 6x12 9x21 1x8 9x7 6x7 9x7 6x11 9x9 1x10 9x19 6x13 9x20 1x9 9x6 6x8 9x6 6x11 9x9 1x10 9x19 6x13 9x20 1x9 9x7 6x7 9x6 6x12 9x9 1x10 9x19 6x13 9x19 1x10 9x7 6x5 9x7 6x13 9x8 1x10 9x19 6x14 9x19 1x10 9x7 6x4 9x8 6x12 9x9 1x10 9x19 6x13 9x19 1x10 9x19 6x13 9x8 1x10 9x19 6x14 9x19 1x10 9x19 6x13 9x8 1x10 9x19 6x13 9x19 1x10 9x19 6x13 9x9 1x9 9x20 6x13 9x19 1x10 9x19 6x13 9x8 1x9 9x20 6x13 9x19 1x10 9x20 6x12 9x9 1x8 9x21 6x12 9x20 1x9 9x20 6x13 9x9 1x7 9x22 6x11 9x21 1x9 9x20 6x12 9x10 1x5 9x23 6x11 9x21 1x9 9x21 6x11 9x11 1x4 9x24 6x10 9x22 1x8 9x21 6x12 9x11 1x2 9x26 6x9 9x23 1x7 9x22 6x11 9x39 6x9 9x13 6x2 9x9 1x5 9x24 6x10 9x40 6x8 9x13 6x3 9x9 1x4 9x25 6x9 9x41 6x6 9x15 6x3 9x38 6x8 9x42 6x5 9x15 6x3 9x39 6x6 9x44 6x3 9x17 6x3 9x39 6x5 9x45 6x1 9x19 6x1 9x41 6x3 9x136 6x1 9x62 6x1 9x46 6x4 9x59 6x4 9x44 6x5 9x57 6x6 9x43 6x6 9x56 6x8 9x41 6x7 9x27 1x2 9x26 6x8 9x26 1x3 9x13 6x7 9x14 6x3 9x8 1x5 9x24 6x9 9x24 1x5 9x12 6x8 9x12 6x4 9x8 1x6 9x23 6x10 9x23 1x6 9x11 6x9 9x10 6x6 9x8 1x5 9x24 6x10 9x22 1x7 9x11 6x8 9x10 6x7 9x7 1x6 9x23 6x11 9x21 1x8 9x11 6x8 9x8 6x9 9x6 1x7 9x22 6x12 9x20 1x9 9x10 6x9 9x7 6x9 9x7 1x6 9x23 6x11 9x21 1x9 9x10 6x8 9x6 6x11 9x6 1x7 9x22 6x12 9x20 1x9 9x11 6x7 9x6 6x12 9x6 1x6 9x12 1x3 9x8 6x12 9x8 6x4 9x7 1x10 9x11 6x6 9x6 6x12 9x7 1x5 9x12 1x5 9x6 6x12 9x7 6x6 9x7 1x10 9x11 6x5 9x7 6x12 9x7 1x4 9x11 1x7 9x6 6x12 9x6 6x7 9x6 1x10 9x12 6x3 9x8 6x13 9x7 1x3 9x11 1x7 9x6 6x13 9x4 6x9 9x6 1x9 9x23 6x13 9x21 1x8 9x6 6x12 9x4 6x10 9x6 1x9 9x23 6x13 9x21 1x8 9x6 6x11 9x4 6x10 9x6 1x9 9x24 6x12 9x21 1x8 9x6 6x11 9x4 6x11 9x6 1x8 9x24 6x13 9x20 1x9 9x6 6x9 9x6 6x11 9x6 1x7 9x25 6x12 9x21 1x8 9x7 6x8 9x6 6x11 9x7 1x6 9x26 6x12 9x21 1x8 9x7 6x6 9x8 6x11 9x6 1x5 9x14 1x2 9x11 6x12 9x21 1x8 9x8 6x4 9x10 6x10 9x8 1x3 9x14 1x3 9x11 6x11 9x22 1x8 9x8 6x2 9x12 6x10 9x25 1x3 9x11 6x11 9x22 1x7 9x22 6x10 9x25 1x3 9x12 6x10 9x23 1x6 9x23 6x9 9x26 1x2 9x13 6x9 9x24 1x5 9x24 6x9 9x26 1x1 9x13 6x9 9x25 1x4 9x25 6x8 9x41 6x7 9x56 6x7 9x42 6x6 9x57 6x6 9x43 6x4 9x59 6x4 9x46 6x1 9x62 6x1 9x200 6x2 9x40 6x3 9x65 6x5 9x38 6x4 9x63 6x6 9x38 6x5 9x16 6x3 9x14 1x3 9x26 6x7 9x37 6x6 9x14 6x4 9x13 1x5 9x25 6x8 9x37 6x6 9x13 6x5 9x12 1x6 9x23 6x10 9x25 1x3 9x8 6x7 9x11 6x7 9x11 1x7 9x22 6x11 9x23 1x5 9x8 6x6 9x11 6x8 9x10 1x8 9x21 6x11 9x23 1x6 9x8 6x6 9x9 6x9 9x10 1x9 9x20 6x12 9x22 1x7 9x7 6x6 9x9 6x10 9x9 1x9 9x21 6x12 9x20 1x9 9x7 6x5 9x9 6x11 9x9 1x9 9x20 6x12 9x21 1x9 9x7 6x4 9x9 6x11 9x9 1x10 9x19 6x13 9x20 1x9 9x20 6x12 9x9 1x9 9x20 6x13 9x19 1x10 9x19 6x13 9x8 1x10 9x19 6x13 9x19 1x11 9x18 6x13 9x9 1x9 9x20 6x13 9x19 1x10 9x19 6x13 9x8 1x10 9x19 6x14 9x18 1x11 9x18 6x14 9x8 1x9 9x20 6x13 9x19 1x10 9x19 6x13 9x9 1x8 9x21 6x12 9x19 1x11 9x19 6x13 9x8 1x8 9x21 6x13 9x19 1x10 9x19 6x13 9x9 1x7 9x22 6x12 9x20 1x9 9x20 6x13 9x9 1x6 9x23 6x11 9x20 1x9 9x21 6x12 9x10 1x4 9x24 6x11 9x10 6x3 9x8 1x8 9x21 6x12 9x11 1x2 9x16 1x2 9x8 6x10 9x10 6x4 9x8 1x7 9x22 6x11 9x30 1x2 9x8 6x9 9x10 6x5 9x8 1x6 9x23 6x11 9x29 1x2 9x8 6x8 9x12 6x5 9x8 1x5 9x24 6x10 9x40 6x7 9x12 6x6 9x8 1x3 9x25 6x9 9x42 6x5 9x14 6x5 9x37 6x8 9x43 6x4 9x15 6x4 9x38 6x7 9x43 6x3 9x16 6x5 9x38 6x6 9x64 6x3 9x39 6x4 9x66 6x1 9x41 6x2 9x136 6x3 9x60 6x3 9x45 6x4 9x58 6x6 9x43 6x5 9x17 6x1 9x39 6x7 9x42 6x6 9x15 6x3 9x38 6x8 9x26 1x2 9x14 6x6 9x13 6x5 9x9 1x2 9x26 6x9 9x24 1x5 9x12 6x7 9x12 6x6 9x8 1x3 9x25 6x9 9x24 1x6 9x12 6x6 9x11 6x7 9x8 1x4 9x24 6x10 9x23 1x7 9x11
+soilcov: 255x12544
+soiledge: 0x43 1x6 0x106 1x5 0x107 1x4 0x108 1x2 0x978 1x4 0x107 1x5 0x105 1x7 0x58 1x2 0x44 1x8 0x56 1x4 0x43 1x8 0x55 1x6 0x42 1x9 0x54 1x7 0x42 1x9 0x53 1x8 0x41 1x10 0x52 1x9 0x40 1x10 0x52 1x9 0x41 1x10 0x51 1x10 0x40 1x10 0x52 1x10 0x40 1x10 0x51 1x10 0x40 1x10 0x52 1x10 0x40 1x10 0x51 1x10 0x41 1x9 0x52 1x10 0x40 1x9 0x52 1x10 0x41 1x8 0x53 1x9 0x42 1x7 0x54 1x9 0x42 1x5 0x55 1x9 0x43 1x4 0x56 1x8 0x44 1x2 0x58 1x7 0x105 1x5 0x107 1x4 0x1089 1x2 0x60 1x3 0x45 1x5 0x57 1x5 0x44 1x6 0x56 1x6 0x44 1x5 0x56 1x7 0x43 1x6 0x55 1x8 0x42 1x7 0x54 1x9 0x42 1x6 0x55 1x9 0x41 1x7 0x54 1x9 0x42 1x6 0x12 1x3 0x39 1x10 0x42 1x5 0x12 1x5 0x38 1x10 0x42 1x4 0x11 1x7 0x37 1x10 0x43 1x3 0x11 1x7 0x38 1x9 0x57 1x8 0x38 1x9 0x57 1x8 0x37 1x9 0x57 1x8 0x38 1x8 0x57 1x9 0x38 1x7 0x58 1x8 0x39 1x6 0x59 1x8 0x38 1x5 0x14 1x2 0x44 1x8 0x40 1x3 0x14 1x3 0x44 1x8 0x57 1x3 0x44 1x7 0x57 1x3 0x45 1x6 0x58 1x2 0x46 1x5 0x59 1x1 0x47 1x4 0x977 1x3 0x107 1x5 0x106 1x6 0x58 1x3 0x44 1x7 0x56 1x5 0x43 1x8 0x55 1x6 0x42 1x9 0x54 1x7 0x41 1x9 0x53 1x9 0x41 1x9 0x53 1x9 0x40 1x10 0x52 1x9 0x41 1x9 0x52 1x10 0x40 1x10 0x51 1x11 0x40 1x9 0x52 1x10 0x40 1x10 0x51 1x11 0x40 1x9 0x52 1x10 0x41 1x8 0x52 1x11 0x40 1x8 0x53 1x10 0x41 1x7 0x54 1x9 0x42 1x6 0x54 1x9 0x43 1x4 0x56 1x8 0x44 1x2 0x16 1x2 0x40 1x7 0x63 1x2 0x40 1x6 0x63 1x2 0x41 1x5 0x107 1x3 0x1152 1x2 0x47 1x2 0x59 1x5 0x45 1x3 0x58 1x6 0x44 1x4 0x57 1x7 0x11
+
+# THE CANOPY. Six great caps, no two at the same scale or yaw, spaced so you walk UNDER them rather than
+# round them — the collider is the stipe, and the cap at 6.4 m clears a man with room over him.
+at: capgiant -16 -18 40 1.00
+at: capgiant2 14 -26 150 1.22
+at: capgiant3 -26 -44 255 0.88
+at: capgiant2 22 -52 70 1.06
+at: capgiant -8 -62 320 1.34
+at: capgiant3 30 -14 195 0.94
+at: capgiant3 -38 -24 105 1.12
+at: capgiant 6 -38 15 0.80
+at: capgiant2 -20 10 230 1.05
+at: capgiant 26 18 60 0.90
+at: capgiant3 -44 -56 140 1.18
+at: capgiant2 40 -40 290 0.86
+
+# THE UNDERSTOREY, and it is a SCATTER rather than a row — clusters where the mat is thick, brackets
+# wherever there was something dead to stand on.
+belt: capcluster -70 -70 70 70 40 0.75 1.35 seed=8002
+belt: bracket -70 -70 70 70 26 0.80 1.30 seed=8003
+belt: rotlog -68 -68 68 68 14 0.85 1.25 seed=8004
+belt: deadfall -68 -68 68 68 11 0.80 1.20 seed=8005
+
+# THE LIGHT. Every one of these carries a real 7.5 m pool, so they are placed to POOL rather than to wash:
+# spaced further apart than two radii, and set off the path rather than on it.
+at: glowcap -9 -12 0 0.85
+at: glowcap 11 -20 47 0.91
+at: glowcap -19 -33 94 0.97
+at: glowcap 17 -42 141 1.03
+at: glowcap -5 -53 188 1.09
+at: glowcap 24 -6 235 0.85
+at: glowcap -31 -19 282 0.91
+at: glowcap 2 -30 329 0.97
+at: glowcap -14 6 16 1.03
+at: glowcap 19 12 63 1.09
+at: glowcap -36 -47 110 0.85
+at: glowcap 33 -31 157 0.91
+at: glowcap -25 -60 204 0.97
+at: glowcap 8 -68 251 1.03
+
+# THE FLOOR is the cover op's, plus pods thick in the hollows where the mat is bare dirt.
+belt: sporepod -60 -60 60 60 90 0.75 1.35 seed=8006
+
+# What the fungus grew ON. Two snags left standing and the rest gone soft.
+at: snag -30 -8 0 1.0
+at: snag 27 -60 0 0.9
+at: rotlog -12 -6 70 1.1
+at: rotlog 9 -46 200 1.0
+at: deadfall -22 -52 0 1.05
+
+at: campfire_lit 0 8 0 1
+
+# Its own kingdom's creatures, and they already existed — this is the ground they never had.
+foe: mushroom_mage -13.00 -28.00 160.0 1.00 0.29
+foe: mushroom_mage 15.00 -36.00 200.0 1.08 0.71
+foe: shroom -6.00 -18.00 180.0 1.00 0.44
+foe: shroom 8.00 -22.00 190.0 0.94 0.12
+foe: shroom -18.00 -40.00 90.0 1.06 0.83
+foe: florid_ravager 20.00 -14.00 240.0 1.00 0.55
+foe: rooted -28.00 -30.00 0.0 1.10 0.37

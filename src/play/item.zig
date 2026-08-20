@@ -38,6 +38,8 @@ pub const Kind = enum(u8) {
     rimeward_mantle,
     sporecrown,
     gravebell_amulet,
+    plain_arrows,
+    fire_arrows,
 };
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
@@ -51,7 +53,8 @@ const ORDER = [_][]const u8{
     "fang_dirk",       "grave_warbow",   "quilted_gambeson", "spirit_scroll_wolf",
     "pitted_helm",     "ashen_amulet",   "banded_warbelt", "marchboots",
     "deft_signet",     "purgeleaf",      "pilgrims_salt", "ironwort_tea",
-    "rimeward_mantle", "sporecrown",     "gravebell_amulet",
+    "rimeward_mantle", "sporecrown",     "gravebell_amulet", "plain_arrows",
+    "fire_arrows",
 };
 
 comptime {
@@ -102,6 +105,8 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .rimeward_mantle => "Rimeward Mantle",
         .sporecrown => "Sporecrown",
         .gravebell_amulet => "Gravebell Amulet",
+        .plain_arrows => "Sheaf of Arrows",
+        .fire_arrows => "Sheaf of Fire Arrows",
     };
 }
 
@@ -161,6 +166,7 @@ pub fn class(k: Kind) Class {
         => .gear,
         .soul_binding_ring => .gear,
         .spirit_scroll_wolf => .treasure,
+        .plain_arrows, .fire_arrows => .tool,
         .smithing_stone, .bloodgrass, .kobold_fang => .material,
         .iron_key => .key,
     };
@@ -203,11 +209,15 @@ pub fn describe(k: Kind) [:0]const u8 {
         .rimeward_mantle => "A mantle of layered fleece and oiled hide, cut for a winter these ruins do not have. The cold slides off it, and off you - which is worth knowing where anything at all deals cold.",
         .sporecrown => "A cap of woven stalk-fibre, still faintly warm, the inside furred with something that eats spores for a living. What gets past it gets past slowly.",
         .gravebell_amulet => "A finger of bell-bronze on a thong, cracked through and still ringing on if you hold it to the ear. A call made near it costs less to make; what it takes for the loan is depth out of the pool the call comes from.",
+        .plain_arrows => "A dozen shafts bundled in oiled cord, fletched with whatever still had feathers. They go in the quiver and most of them come back out of whatever you hit.",
+        .fire_arrows => "Five heads wrapped in tallow-soaked rag. They cost more than they are worth against anything that is not afraid of burning, and rather less against anything that is.",
     };
 }
 
 pub const Use = union(enum) {
     none,
+    /// Refills one bank of the quiver (`combat.Quiver`). `n` is arrows, and the quiver caps it.
+    arrows: struct { fire: bool, n: u8 },
     regen: struct { frac: f32, secs: f32 },
     lob: struct { dmg: f32, fire: f32 = 0, lightning: f32 = 0, poise: f32 },
     /// A timed ward: `chaos` resistance for `secs` seconds. Refreshes, never stacks (the status law).
@@ -376,6 +386,13 @@ pub const GEAR = [_]Gear{
     .{ .kind = .purgeleaf, .use = .purge },
     .{ .kind = .pilgrims_salt, .use = .{ .souls = .{ .n = 600 } } },
     .{ .kind = .ironwort_tea, .use = .{ .steady = .{ .mult = 2.2, .secs = 40 } } },
+    // **AMMUNITION IS AN ITEM NOW** (owner: arrows need to be droppable, placeable, all kinds). Both banks of
+    // the quiver, so a map can hand out either one and the editor can drop either one on the ground.
+    // **SIZED TO THE BANK, NOT GUESSED.** 12 into a quiver of 10 wasted two shafts on every pickup, which a
+    // cross-check in `combat.zig` caught on the first run — `item.zig` imports nothing but std, so it cannot
+    // read `combat.ARROWS_MAX` itself and the test is what holds the two together.
+    .{ .kind = .plain_arrows, .use = .{ .arrows = .{ .fire = false, .n = 10 } } },
+    .{ .kind = .fire_arrows, .use = .{ .arrows = .{ .fire = true, .n = 5 } } },
 };
 
 pub const INERT = [_]Kind{
@@ -562,6 +579,7 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
         .wind => |w| std.fmt.bufPrintZ(buf, "Gives back {d:.0}% of stamina at once, and lets the winded lockout go.", .{w.share * 100}) catch "Gives stamina back.",
         .grease => |gr| std.fmt.bufPrintZ(buf, "Sword hangs +{d:.0}% of its blow as fire for {d:.0}s. Refreshes, never stacks.", .{ gr.frac * 100, gr.secs }) catch "Sets the blade alight.",
         .souls => |s| std.fmt.bufPrintZ(buf, "Crushed for {d} souls, on the spot.", .{s.n}) catch "Worth souls.",
+        .arrows => |a| std.fmt.bufPrintZ(buf, "Puts {d} {s} arrows back in the quiver.", .{ a.n, if (a.fire) @as([]const u8, "fire") else "plain" }) catch "Refills the quiver.",
         .brew => |b| std.fmt.bufPrintZ(buf, "Stamina comes back {d:.1}x as fast for {d:.0}s. Refreshes, never stacks.", .{ b.mult, b.secs }) catch "Stamina returns faster.",
         .purge => "Clears poison outright, filling or already running.",
         .steady => |s| std.fmt.bufPrintZ(buf, "Poise comes back {d:.1}x as fast for {d:.0}s. Refreshes, never stacks.", .{ s.mult, s.secs }) catch "Poise returns faster.",
@@ -731,6 +749,14 @@ test "every usable kind carries its OWN dose, and the rest do nothing" {
                 found += 1;
                 try std.testing.expect(usable(k));
                 try std.testing.expect(l.dmg + l.fire + l.lightning > 0);
+            },
+            .arrows => |a| {
+                found += 1;
+                try std.testing.expect(usable(k));
+                // A sheaf worth nothing is a sheaf that shelves as clutter. The upper bound is checked
+                // against `combat.Quiver.cap` where the two can see each other — this file imports nothing
+                // but std on purpose, so all it can say here is that the number is a number.
+                try std.testing.expect(a.n > 0 and a.n < 100);
             },
             .ward => |w| {
                 found += 1;

@@ -80,6 +80,12 @@ comptime {
 
 pub const DIM_MAX: f32 = 0.17;
 
+/// The overlay's darkening for a wet level — taken off the LEVEL and not off the storm, because a location
+/// can now be the thing setting it (`worldfmt.Location.wet`) and the world clock is then only one voice.
+pub fn dimOf(level: f32) f32 {
+    return level * DIM_MAX;
+}
+
 pub const Weather = struct {
     rng: mathx.Rng,
     kind: Kind = .gentle,
@@ -93,6 +99,15 @@ pub const Weather = struct {
     boomGain: f32 = 0,
     boomNow: bool = false,
     t: f32 = 0,
+    /// **THE SLOW CLOCK, AND IT IS `f64` FOR THE SAME REASON `t` IS WRAPPED.** `t` above wraps on the rain's
+    /// own cell — 5 m at 13 m/s, so it resets 2.6 times a SECOND — because everything it drives is already
+    /// modulo that cell and an f32 counting since boot loses the low bits the phase is made of.
+    ///
+    /// Sporefall needs the opposite: periods of 41 s to 82 s, and handed the rain's clock its motes crept
+    /// three centimetres and snapped back forever while the shoal fade never advanced at all (owner: "like
+    /// theyre resetting in place"). f64 keeps both ends — a session's worth of seconds and the low bits —
+    /// so it never has to wrap and there is no jump to hide.
+    slowT: f64 = 0,
     gustT: f32 = 0,
 
     pub fn init(seed: u64) Weather {
@@ -113,6 +128,7 @@ pub const Weather = struct {
         // `CELL_H`, and an f32 that has been counting seconds since the game booted has lost the low bits that
         // phase is made of (`audio.mkCrickets`' note, one system along). Wrapped here, it never grows at all.
         self.t = @mod(self.t + dt, CELL_H / FALL_MPS);
+        self.slowT += dt;
         self.gustT = @mod(self.gustT + dt, GUST_WRAP);
         self.boomNow = false;
         self.left -= dt;
@@ -171,6 +187,12 @@ pub const Weather = struct {
         }
     }
 
+    /// Seconds since boot, for anything whose period is longer than the rain's cell. Cast at the call so
+    /// the accumulator keeps its precision and only the sine argument spends it.
+    pub fn slowSecs(self: *const Weather) f32 {
+        return @floatCast(self.slowT);
+    }
+
     pub fn rain(self: *const Weather) f32 {
         return self.level;
     }
@@ -190,7 +212,7 @@ pub const Weather = struct {
     }
 
     pub fn dim(self: *const Weather) f32 {
-        return self.level * DIM_MAX;
+        return dimOf(self.level);
     }
 
     /// **THE DEBUG ROW'S OWN CYCLE — dry, gentle, moderate, dry** (`menu.DBG_WEATHER`). It is the day clock's
@@ -859,7 +881,7 @@ pub const Mist = struct {
         };
     }
 
-    pub fn draw(self: *const Mist, scene: *gfx.Scene, eye: rl.Vector3, fog: f32) void {
+    pub fn draw(self: *const Mist, scene: *gfx.Scene, eye: rl.Vector3, fog: f32, tint: rl.Color) void {
         if (fog <= MIST_MIN) return;
         var any = false;
         for (0..MIST_CAP) |i| {
@@ -878,7 +900,7 @@ pub const Mist = struct {
                 v3(0, 1, 0),
                 bk.yaw,
                 v3(s, s, s),
-                rl.Color.white,
+                tint,
             );
         }
         if (any) scene.endFade();
@@ -947,4 +969,221 @@ test "A BANK GIVES WAY AS YOU WALK INTO IT, AND COMES BACK AS YOU LEAVE" {
 
     try std.testing.expect(MIST_FADE * 3.0 < LIFE_LO);
     std.debug.print("  mist: {d:.0}s ramps inside a {d:.0}..{d:.0}s life, gone within {d:.1}x its radius, full past {d:.1}x\n", .{ MIST_FADE, LIFE_LO, LIFE_HI, NEAR_GONE, NEAR_FULL });
+}
+
+// ============================================================================================================
+// SPOREFALL — THE THIRD WEATHER
+// ============================================================================================================
+//
+// **IT IS NOT FOG WITH A FILTER ON IT.** Rain and fog are both the sky going grey; a spore bloom is the AIR
+// ITSELF being alive, and it has to read on a bright noon as well as under cloud. So it is three things at
+// once and all three are driven off the one 0..1 dial:
+//
+//   1. the distance haze turns peach (`sporeHaze`, pushed through `gfx.Scene.setHour`),
+//   2. the drifting banks stop being grey and become lit cloud (`sporeTint` on the mist's own draw),
+//   3. and there are SPORES IN IT — this system, a slow-falling mote cell round the camera.
+//
+// The motes are the part that says "alive" rather than "weather". They fall at `SPORE_MPS`, which is 3% of
+// rain: near enough to hanging that the eye reads drift, far enough from still that the air is not frozen.
+
+/// **HOW FAR THE MOTES REACH.** Smaller than `CELL_R` on purpose — rain is a sheet you stand under and see
+/// across a field, spores are something in the air AROUND YOU. Past this the peach haze carries it instead,
+/// and haze costs no fill at all.
+pub const SPORE_R: f32 = 26.0;
+pub const SPORE_CELL_H: f32 = 7.0;
+pub const SPORE_STACKS: usize = 3;
+
+/// Motes across the WHOLE field, split evenly between the shoals below. Raised with the fade: an average
+/// shoal sits at half strength, so the cloud needs more of them to hold the density it had when all were on.
+pub const MOTES: usize = 420;
+const MOTE_LO: f32 = 0.016;
+const MOTE_HI: f32 = 0.052;
+
+/// **SPORES DO NOT TRAVEL, THEY HANG** (owner: "too fast ... sloooowww"). Metres a second. Rain is 13; this
+/// is under a hundredth of it, and one mote takes over a minute to cross its own cell. At the first cut's
+/// 0.40 the field read as fine snow, which is a thing that falls.
+pub const SPORE_MPS: f32 = 0.085;
+/// …and it does not settle STRAIGHT. Each shoal swims on two out-of-phase periods — slowed WITH the fall,
+/// because a slow drift under a fast wobble reads as jitter rather than as air. Metres, and seconds.
+///
+/// **AND EVERY SHOAL SWIMS ITS OWN WAY** (owner: "they need to vary over time positionally"). Shared, these
+/// terms move all 420 motes as one rigid block: the cloud translates and nothing inside it ever changes,
+/// which is what made it read as a stuck object rather than as air. Detuned per shoal, five clouds drift
+/// through each other and the field has internal motion without a per-mote vertex path.
+const SWIM_X: f32 = 1.60;
+const SWIM_Z: f32 = 1.15;
+const SWIM_SECS_X: f32 = 54.0;
+const SWIM_SECS_Z: f32 = 37.0;
+/// How far apart the shoals are detuned, as a fraction either side of the base period. Wide enough that no
+/// two come back into step inside a session.
+const SWIM_SPREAD: f32 = 0.42;
+
+fn swimOf(t: f32, i: usize) rl.Vector3 {
+    const k = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(SPORE_SHOALS)) - 0.5;
+    const px = SWIM_SECS_X * (1.0 + SWIM_SPREAD * k * 2.0);
+    const pz = SWIM_SECS_Z * (1.0 - SWIM_SPREAD * k * 1.7);
+    const off = @as(f32, @floatFromInt(i)) * 2.399;
+    return v3(
+        mathx.sinf(std.math.tau * t / px + off) * SWIM_X * (0.7 + 0.6 * @abs(k * 2.0)),
+        // A little vertical wander on top of the settle, so a shoal is not a plane sliding sideways.
+        mathx.sinf(std.math.tau * t / (px * 1.63) + off * 1.7) * 0.55,
+        mathx.cosf(std.math.tau * t / pz + off * 0.7) * SWIM_Z * (0.7 + 0.6 * @abs(k * 2.0)),
+    );
+}
+
+/// **PEACH, AND EMISSIVE.** Alpha is the emissive channel (`gfx` law), so 236 is a mote that keeps its colour
+/// in shadow — which is the whole point of a glowing spore. The pair gives the cloud two tones at any depth.
+const MOTE_WARM = rgba(255, 208, 178, 236);
+const MOTE_PALE = rgba(255, 232, 214, 214);
+
+// -- AND THEY FADE IN AND OUT --------------------------------------------------------------------------
+//
+// **A SPORE HAS TO ARRIVE AND LEAVE, NOT ENTER AND EXIT.** With one mote field the only way out of frame is
+// to fall out of the bottom, and at `SPORE_MPS` that now takes a minute and a half — so the cloud would be
+// the same cloud, motionless, forever.
+//
+// Vertex alpha is the EMISSIVE channel (`gfx` law) and the `fade` uniform is per-DRAW, so a per-mote opacity
+// is the one thing this renderer cannot do — the same wall `Rain` hits with its taper, which it solves by
+// baking the thinning into the GEOMETRY. That cannot work here, because this one has to move.
+//
+// So the field is cut into `SPORE_SHOALS` separate models, each drawn at its own `fade` on a long sine
+// offset a fifth of a period from its neighbour's. Each shoal materialises, drifts and dissolves; because
+// they are out of phase the field as a whole never blinks, which a test pins.
+pub const SPORE_SHOALS: usize = 5;
+/// Seconds for one shoal to come up and go back down. Long — the slowest cycle in the game after a mist
+/// bank's life, and under half a minute the field pulses like a heartbeat.
+pub const SHOAL_SECS: f32 = 41.0;
+
+/// One shoal's share of the light, 0..1, on its own offset cycle. Held off zero rather than run to it: a
+/// shoal that vanishes outright pops on the frame it comes back.
+pub fn shoalFade(t: f32, i: usize) f32 {
+    const off = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(SPORE_SHOALS));
+    const u = @mod(t / SHOAL_SECS + off, 1.0);
+    return 0.10 + 0.90 * (0.5 - 0.5 * mathx.cosf(std.math.tau * u));
+}
+
+pub const SPORE_OPACITY: f32 = 0.62;
+const SPORE_TAPER: f32 = 0.70;
+
+/// The tint the mist banks are drawn with, so one grey mesh serves both weathers. White is the bank's own
+/// `MIST_COL`; at full spore it is peach lit from inside.
+pub fn sporeTint(k: f32) rl.Color {
+    const t = mathx.clampF(k, 0, 1);
+    return rgba(
+        255,
+        @intFromFloat(mathx.lerpF(255, 196, t)),
+        @intFromFloat(mathx.lerpF(255, 170, t)),
+        255,
+    );
+}
+
+/// **BUILT ONCE AND PERMANENT**, same reasoning as `Rain` — the material holds the scene shader.
+pub const Spore = struct {
+    shoals: [SPORE_SHOALS]rl.Model,
+
+    pub fn build(shader: rl.Shader) Spore {
+        var out: Spore = .{ .shoals = undefined };
+        var rng = mathx.Rng.init(0x5F0AE_11FE);
+        for (&out.shoals) |*into| {
+            var b = gfx.Builder.init();
+            b.setMat(.plain);
+            b.setAnimY(0);
+            for (0..MOTES / SPORE_SHOALS) |_| {
+                const a = rng.angle();
+                const rr = SPORE_R * @sqrt(rng.float());
+                const t = mathx.smoothstep(SPORE_TAPER * SPORE_R, SPORE_R, rr);
+                const r = rng.range(MOTE_LO, MOTE_HI) * (1.0 - t * 0.55);
+                b.addBlob(
+                    v3(mathx.cosf(a) * rr, rng.float() * SPORE_CELL_H, mathx.sinf(a) * rr),
+                    v3(r, r * rng.range(0.7, 1.3), r),
+                    2,
+                    4,
+                    if (rng.float() < 0.34) MOTE_PALE else MOTE_WARM,
+                );
+            }
+            into.* = b.toModel(shader);
+        }
+        return out;
+    }
+
+    /// Stacked and wrapped like the rain, but the wrap is on `SPORE_MPS` — and the whole column swims
+    /// sideways, which the rain must never do (a slanted sheet that slides is a camera bug; a cloud of seed
+    /// that slides is wind). Each shoal carries its own `fade`, so they arrive and leave out of phase.
+    pub fn draw(self: *const Spore, scene: *gfx.Scene, eye: rl.Vector3, at: rl.Vector3, level: f32, t: f32) void {
+        if (level <= 0.02) return;
+        const lv = mathx.clampF(level, 0, 1);
+        // **NO `@floor` ON THE EYE.** `Rain` quantises its column to a whole metre so the sheet does not
+        // slide as the camera bobs, and at 13 m/s that snap is a thirteenth of a second of travel — nobody
+        // sees it. At 0.085 m/s the SAME snap is twelve seconds of drift arriving on one frame, and it read
+        // exactly as the owner described: motes resetting in place. The column follows the eye continuously.
+        var any = false;
+        for (&self.shoals, 0..) |*m, si| {
+            const amt = SPORE_OPACITY * lv * shoalFade(t, si);
+            if (amt <= 0.004) continue;
+            if (!any) {
+                scene.beginFade(amt);
+                any = true;
+            } else scene.setFade(amt);
+            const sw = swimOf(t, si);
+            // Each shoal falls on its OWN phase too, so they do not all wrap on the same frame.
+            const lead = @as(f32, @floatFromInt(si)) * SPORE_CELL_H / @as(f32, @floatFromInt(SPORE_SHOALS));
+            const phase = @mod(t * SPORE_MPS + lead, SPORE_CELL_H);
+            const baseY = eye.y - SPORE_CELL_H * 1.5 - phase + sw.y;
+            for (0..SPORE_STACKS) |i| {
+                const y = baseY + @as(f32, @floatFromInt(i)) * SPORE_CELL_H;
+                rl.drawModelEx(m.*, v3(at.x + sw.x, y, at.z + sw.z), v3(0, 1, 0), 0, v3(1, 1, 1), rl.Color.white);
+            }
+        }
+        if (any) scene.endFade();
+    }
+};
+
+test "A SPORE SETTLES, IT DOES NOT FALL - and the shoals breathe out of phase so the field never blinks" {
+    const cross = SPORE_CELL_H / SPORE_MPS;
+    std.debug.print("\n  spore: {d:.3} m/s, one mote crosses its {d:.0} m cell in {d:.0} s ({d:.0}x slower than rain)\n", .{ SPORE_MPS, SPORE_CELL_H, cross, FALL_MPS / SPORE_MPS });
+    try std.testing.expect(SPORE_MPS < FALL_MPS * 0.01);
+    try std.testing.expect(cross > 60.0);
+    // The wobble has to be SLOWER than the fall, or the drift reads as jitter rather than as air.
+    try std.testing.expect(SWIM_SECS_X > cross * 0.5);
+    // No two shoals peak together, and the field never goes dark or surges.
+    var lo: f32 = 1e9;
+    var hi: f32 = -1e9;
+    var step: f32 = 0;
+    while (step < SHOAL_SECS) : (step += 0.25) {
+        var sum: f32 = 0;
+        for (0..SPORE_SHOALS) |i| sum += shoalFade(step, i);
+        lo = @min(lo, sum);
+        hi = @max(hi, sum);
+    }
+    std.debug.print("  ...{d} shoals on a {d:.0} s cycle: the field holds between {d:.2} and {d:.2} shoals lit\n", .{ SPORE_SHOALS, SHOAL_SECS, lo, hi });
+    try std.testing.expect(lo > @as(f32, @floatFromInt(SPORE_SHOALS)) * 0.35);
+    try std.testing.expect((hi - lo) / hi < 0.08);
+    const tris = MOTES * 2 * 4 * 2;
+    std.debug.print("  ...{d} motes, {d} tris over the field, {d} draws at full - the rain is {d} tris in {d}\n", .{ MOTES, tris, SPORE_SHOALS * SPORE_STACKS, STREAKS * 2, STACKS });
+}
+
+test "THE SPORE FIELD IS NOT ON THE RAIN'S CLOCK - that one wraps 2.6 times a second" {
+    const rainWrap = CELL_H / FALL_MPS;
+    const fall = SPORE_CELL_H / SPORE_MPS;
+    std.debug.print("\n  clocks: rain t wraps every {d:.3} s; sporefall needs {d:.0} s to fall a cell and {d:.0} s to breathe\n", .{ rainWrap, fall, SHOAL_SECS });
+    // Handed `Weather.t`, every spore period below was a sawtooth a third of a second long.
+    try std.testing.expect(rainWrap < 0.5);
+    try std.testing.expect(fall > rainWrap * 100.0);
+    try std.testing.expect(SHOAL_SECS > rainWrap * 100.0);
+    // The slow clock climbs and never wraps.
+    var w = Weather.init(1);
+    var i: usize = 0;
+    while (i < 60 * 200) : (i += 1) w.tick(1.0 / 60.0);
+    std.debug.print("  ...after 200 s of ticks: rain t = {d:.3}, slow = {d:.1}\n", .{ w.t, w.slowSecs() });
+    try std.testing.expect(w.slowSecs() > 199.0);
+    try std.testing.expect(w.t < rainWrap);
+    // …and the shoals actually move on it, which they did not on the old one.
+    try std.testing.expect(@abs(shoalFade(0, 0) - shoalFade(SHOAL_SECS * 0.5, 0)) > 0.5);
+    try std.testing.expect(@abs(shoalFade(0, 0) - shoalFade(rainWrap, 0)) < 0.01);
+    // Every shoal swims its own way: none of them share a displacement at any instant.
+    for (1..SPORE_SHOALS) |k| {
+        const a = swimOf(17.0, 0);
+        const b = swimOf(17.0, k);
+        try std.testing.expect(mathx.lenV(mathx.subV(a, b)) > 0.15);
+    }
 }

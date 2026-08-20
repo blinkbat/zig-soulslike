@@ -108,12 +108,12 @@ pub const Sky = struct {
         };
         // A SKY WITH NO HOUR IN IT IS BLACK, so it is armed at the anchor here rather than left to the first
         // frame: the menu draws over a live sky before the loop has ticked anything.
-        out.setHour(daynight.SHOT_HOUR, 0);
+        out.setHour(daynight.SHOT_HOUR, 0, 0);
         return out;
     }
 
-    pub fn setHour(self: *Sky, hour: f32, wet: f32) void {
-        const p = daynight.overcast(daynight.paletteAt(hour), wet);
+    pub fn setHour(self: *Sky, hour: f32, wet: f32, spore: f32) void {
+        const p = daynight.bloom(daynight.overcast(daynight.paletteAt(hour), wet), spore);
         var s = daynight.sunDir(hour);
         var m = daynight.moonDir(hour);
         rl.setShaderValue(self.shader, self.loc_sun, &s, .vec3);
@@ -488,7 +488,7 @@ pub const Scene = struct {
             .loc_keyAmt = rl.getShaderLocation(shader, "keyAmt"),
             .loc_hazeD = rl.getShaderLocation(shader, "hazeDensity"),
         };
-        out.setHour(daynight.SHOT_HOUR, 0, 1.0);
+        out.setHour(daynight.SHOT_HOUR, 0, 1.0, 0);
         return out;
     }
 
@@ -498,9 +498,11 @@ pub const Scene = struct {
     ///
     /// **AND THE STORM IS A LAYER ON TOP OF IT** (`daynight.overcast`, owner: affect lighting depending on
     /// weather). `wet` is `weather.Weather.rain()`; at 0 the palette is the hour's own, untouched. `fogK` is
-    /// the DEBUG override on the haze distance and is 1 in the game (`menu.fogK`).
-    pub fn setHour(self: *Scene, hour: f32, wet: f32, fogK: f32) void {
-        const p = daynight.overcast(daynight.paletteAt(hour), wet);
+    /// the DEBUG override on the haze distance and is 1 in the game (`menu.fogK`). `spore` is the bloom
+    /// (`worldfmt.Location.spore`), which turns the distance PEACH and shortens it — the one weather here
+    /// that brightens rather than slates.
+    pub fn setHour(self: *Scene, hour: f32, wet: f32, fogK: f32, spore: f32) void {
+        const p = daynight.bloom(daynight.overcast(daynight.paletteAt(hour), wet), spore);
         sun = daynight.keyDir(hour);
         sunReach = daynight.shadowReach(hour);
         var d = sun;
@@ -517,7 +519,8 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_hazeBank, &hb, .vec3);
         var ka = daynight.keyAmt(p);
         rl.setShaderValue(self.shader, self.loc_keyAmt, &ka, .float);
-        var density: f32 = HAZE_DENSITY * (1.0 + (HAZE_STORM - 1.0) * mathx.clampF(wet, 0, 1)) * mathx.maxF(fogK, 0);
+        var density: f32 = HAZE_DENSITY * (1.0 + (HAZE_STORM - 1.0) * mathx.clampF(wet, 0, 1)) *
+            (1.0 + (daynight.HAZE_SPORE_D - 1.0) * mathx.clampF(spore, 0, 1)) * mathx.maxF(fogK, 0);
         rl.setShaderValue(self.shader, self.loc_hazeD, &density, .float);
     }
 

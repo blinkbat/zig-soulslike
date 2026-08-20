@@ -26,6 +26,7 @@ const delvermod = @import("../foes/delver.zig");
 const necromod = @import("../foes/necro.zig");
 const ravagermod = @import("../foes/ravager.zig");
 const magemod = @import("../foes/shroommage.zig");
+const golemmod = @import("../foes/sporegolem.zig");
 const fenmod = @import("../foes/fenlurker.zig");
 const combat = @import("../play/combat.zig");
 const foemod = @import("../foes/foe.zig");
@@ -110,6 +111,7 @@ pub const Mode = enum {
     icons,
     chars,
     effects,
+    volumes,
 
     fn label(m: Mode) [:0]const u8 {
         return switch (m) {
@@ -117,6 +119,34 @@ pub const Mode = enum {
             .icons => "Icons",
             .chars => "Characters",
             .effects => "Effects",
+            .volumes => "Gas & AOE",
+        };
+    }
+};
+
+/// **THE GROUND VOLUMES, PLAYING, WITH THEIR OWN NUMBERS BESIDE THEM** (owner: a particle viewer, gas viewer,
+/// aoes). The effects bench one tab along auditions `elemfx`'s twelve particle signatures; this is the other
+/// half of the same problem and a worse one, because a cloud is a RADIUS, a LIFE and a DOSE at once and none
+/// of the three can be read off a source file. Every entry here runs the real object on a loop over real
+/// ground, with a ring at its true radius and its authored constants printed.
+const Volume = enum {
+    spore_cloud,
+    acid_pool,
+    knight_gas,
+
+    fn label(v: Volume) [:0]const u8 {
+        return switch (v) {
+            .spore_cloud => "Sporeling cloud",
+            .acid_pool => "Broodling acid",
+            .knight_gas => "Bone knight gas",
+        };
+    }
+    /// Seconds before it is restarted. A shade past its own life, so you see it thin out and go.
+    fn loop(v: Volume) f32 {
+        return switch (v) {
+            .spore_cloud => shroommod.CLOUD_LIFE + 0.8,
+            .acid_pool => broodmod.ACID_LIFE + 0.8,
+            .knight_gas => knightmod.GAS_LIFE + 0.8,
         };
     }
 };
@@ -192,6 +222,12 @@ pub const State = struct {
     elem: combat.Elem = .cold,
     verb: Verb = .pour,
     fxPose: Pose = .{},
+    vol: Volume = .spore_cloud,
+    volPose: Pose = .{},
+    volT: f32 = 0,
+    volCloud: shroommod.Cloud = .{},
+    volPool: broodmod.Pool = .{},
+    volGas: knightmod.Gas = .{},
     fx: [BENCH_FX_N]foemod.Particle = [_]foemod.Particle{.{}} ** BENCH_FX_N,
     fxHead: usize = 0,
     fxT: f32 = 0,
@@ -280,6 +316,7 @@ const CharSet = struct {
     vigil: knightmod.Vigil,
     thicket: ravagermod.Thicket,
     ring: magemod.Ring,
+    host: golemmod.Host,
     marsh: fenmod.Marsh,
 };
 var charSet: ?CharSet = null;
@@ -302,6 +339,7 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
             .vigil = knightmod.Vigil.init(scene.shader),
             .thicket = ravagermod.Thicket.init(scene.shader),
             .ring = magemod.Ring.init(scene.shader),
+            .host = golemmod.Host.init(scene.shader),
             .marsh = fenmod.Marsh.init(scene.shader),
         };
         var cs = &charSet.?;
@@ -342,6 +380,7 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         .necromancer => .{ .top = 2.8, .bound = 1.3 },
         .florid_ravager => .{ .top = 1.9, .bound = 2.2 },
         .mushroom_mage => .{ .top = 1.6, .bound = 1.4 },
+        .spore_golem => .{ .top = 3.3, .bound = 2.6 },
         .fen_lurker => .{ .top = 2.9, .bound = 1.1 },
     };
 }
@@ -429,6 +468,11 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
             cs.thicket.live()[0] = ravagermod.Ravager.spawn(mathx.zero3, 0, 1.0, seed);
             cs.thicket.live()[0].stageGather(1.0);
             cs.thicket.draw(scene);
+        },
+        .spore_golem => {
+            cs.host.n = 1;
+            cs.host.live()[0] = golemmod.Golem.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.host.draw(scene);
         },
         .mushroom_mage => {
             cs.ring.n = 1;
@@ -988,6 +1032,144 @@ fn renderBench(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, st: 
     rl.endTextureMode();
 }
 
+// ── THE VOLUME BENCH ────────────────────────────────────────────────────────────────────────────────────
+
+fn volReset(st: *State) void {
+    st.volT = 0;
+    st.volCloud = .{ .pos = mathx.zero3, .live = true, .fxRng = foemod.fxStream(1.0, 977.0, 0xC10D) };
+    st.volPool = broodmod.Pool.splash(mathx.zero3, 0.5);
+    st.volGas = .{ .pos = mathx.zero3, .scale = 1.0, .live = true, .fxRng = foemod.fxStream(2.0, 641.0, 0x6A50) };
+}
+
+fn volStep(st: *State, dt: f32) void {
+    st.volT += dt;
+    if (st.volT >= st.vol.loop()) volReset(st);
+    switch (st.vol) {
+        .spore_cloud => st.volCloud.update(dt),
+        .acid_pool => st.volPool.update(dt),
+        .knight_gas => st.volGas.update(dt),
+    }
+}
+
+fn volRadius(st: *const State) f32 {
+    return switch (st.vol) {
+        .spore_cloud => st.volCloud.radius(),
+        .acid_pool => st.volPool.radius(),
+        .knight_gas => st.volGas.radius(),
+    };
+}
+
+fn volDrawFx(st: *const State) void {
+    switch (st.vol) {
+        .spore_cloud => st.volCloud.drawFx(),
+        .acid_pool => st.volPool.drawFx(),
+        .knight_gas => st.volGas.drawFx(),
+    }
+}
+
+fn renderVolume(st: *State, rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene) void {
+    const aspect = @as(f32, @floatFromInt(rt.texture.width)) / @as(f32, @floatFromInt(rt.texture.height));
+    // Framed on the volume's OWN reach, not on a fixed box: a 1.55 m pool and a 1.9 m cloud want different
+    // cameras, and the whole point of the bench is comparing what they actually cover.
+    const reach = mathx.maxF(volRadius(st), 0.5) * 2.2;
+    const cam = fitCam(reach * 0.5, reach, st.volPose, aspect);
+    rl.beginTextureMode(rt);
+    rl.clearBackground(BACKDROP);
+    rl.beginMode3D(cam);
+    scene.bind(cam.position);
+    scene.shadowsOff();
+    scene.setLights(&.{});
+    scene.setGround(true);
+    const view = envmod.View.fromCamera(cam, aspect);
+    env.drawGround(&view);
+    scene.setGround(false);
+    // **THE RING IS THE POINT.** A cloud is a soft mass with no edge you can see, and where its edge is IS
+    // the mechanic — inside it you are being dosed and outside you are not.
+    ringOnGround(volRadius(st), ui.LIVE);
+    volDrawFx(st);
+    rl.endMode3D();
+    rl.endTextureMode();
+}
+
+fn ringOnGround(r: f32, col: rl.Color) void {
+    const SEG = 48;
+    var prev = mathx.v3(r, 0.02, 0);
+    var i: usize = 1;
+    while (i <= SEG) : (i += 1) {
+        const a = std.math.tau * @as(f32, @floatFromInt(i)) / SEG;
+        const p = mathx.v3(mathx.cosf(a) * r, 0.02, mathx.sinf(a) * r);
+        rl.drawLine3D(prev, p, col);
+        prev = p;
+    }
+}
+
+fn volumePanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
+    const sw = rl.getScreenWidth();
+    const sh = rl.getScreenHeight();
+    const w = @min(sw - 60, BIG_W + INFO_W + 3 * BIG_PAD);
+    const h = @min(sh - 60, BIG_H + 130);
+    const box = ui.beginModal(ctx, w, h, "Gas & AOE bench");
+    if (modeTabs(st, ctx, box.x + 16, box.y + 44).changed) return true;
+
+    var tx = box.x + 16;
+    const vy = box.y + 78;
+    inline for (@typeInfo(Volume).@"enum".fields) |f| {
+        const v: Volume = @enumFromInt(f.value);
+        var usedW: i32 = 0;
+        if (ui.chip(ctx, tx, vy, v.label(), st.vol == v, &usedW) and st.vol != v) {
+            st.vol = v;
+            volReset(st);
+        }
+        tx += usedW;
+    }
+
+    volStep(st, rl.getFrameTime());
+    const viewR = ui.rect(box.x + BIG_PAD, vy + ui.ROW_H + 10, w - INFO_W - 3 * BIG_PAD, h - (vy - box.y) - ui.ROW_H - 10 - 44);
+    spinView(st, ctx, &st.volPose, viewR);
+    renderVolume(st, target(&bigRT, BIG_W, BIG_H), env, scene);
+    blit(bigRT.?, viewR);
+    rl.drawRectangleLinesEx(viewR, 1, ui.alpha(ui.TRIM, 110));
+
+    // The numbers, which are the reason this page exists.
+    const ix = box.x + w - INFO_W - BIG_PAD;
+    var iy: i32 = @intFromFloat(viewR.y);
+    var buf: [96]u8 = undefined;
+    const rows = volFacts(st, &buf);
+    hud.mono(rows.a, ix, iy, hud.MONO, ui.VALUE);
+    iy += ui.ROW_H;
+    hud.mono(rows.b, ix, iy, hud.MONO, ui.LABEL);
+    iy += ui.ROW_H;
+    hud.mono(rows.c, ix, iy, hud.MONO, ui.LABEL);
+    iy += ui.ROW_H + 6;
+    var tbuf: [40]u8 = undefined;
+    const now = std.fmt.bufPrintZ(&tbuf, "t {d:.2} / {d:.2} s   r {d:.2} m", .{ st.volT, st.vol.loop(), volRadius(st) }) catch "";
+    hud.mono(now, ix, iy, hud.MONO, ui.LIVE);
+    return true;
+}
+
+const VolFacts = struct { a: [:0]const u8, b: [:0]const u8, c: [:0]const u8 };
+
+fn volFacts(st: *const State, buf: []u8) VolFacts {
+    _ = buf;
+    return switch (st.vol) {
+        .spore_cloud => .{
+            .a = "POISON, and it builds while you stand in it",
+            .b = "r 1.90 m   life 3.40 s   build 42/s",
+            .c = "Entry costs 0.34 s of build up front (foe.Soak)",
+        },
+        .acid_pool => .{
+            .a = "ACID, spreading, then thinning out",
+            .b = "r 1.55 m   life 7.50 s",
+            .c = "Entry costs 0.34 s of build up front (foe.Soak)",
+        },
+        .knight_gas => .{
+            .a = "CHAOS, dosed on a clock rather than built",
+            .b = "r 1.00 m   life 4.20 s   dose every 0.55 s",
+            .c = "The frame you step in is already due (foe.Soak)",
+        },
+    };
+}
+
 fn benchPanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
     const sw = rl.getScreenWidth();
     const sh = rl.getScreenHeight();
@@ -1090,6 +1272,7 @@ fn liveParts(st: *const State) usize {
 pub fn draw(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
     switch (st.mode) {
         .effects => return benchPanel(st, env, scene, ctx),
+        .volumes => return volumePanel(st, env, scene, ctx),
         .objects => {
             if (st.open) |k| {
                 if (big(st, env, scene, ctx, k)) return true;

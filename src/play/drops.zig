@@ -74,6 +74,7 @@ pub const TABLE = [_]Row{
     .{ .foe = .mushroom_mage, .common = .purgeleaf, .odds = UNCOMMON },
 
     .{ .foe = .fen_lurker, .common = .ironwort_tea, .odds = UNCOMMON },
+    .{ .foe = .spore_golem, .common = .purgeleaf, .odds = UNCOMMON },
 };
 
 pub const NFOE = @typeInfo(wf.FoeKind).@"enum".fields.len;

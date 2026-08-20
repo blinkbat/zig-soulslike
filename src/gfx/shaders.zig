@@ -177,7 +177,13 @@ pub const sceneFS =
     \\  if (id==3) return vec3(0.132, 0.134, 0.130);  // stone, flagged or scoured bare
     \\  if (id==4) return vec3(0.150, 0.132, 0.090);  // pale silt, the tarn's margin
     \\  if (id==5) return vec3(0.062, 0.058, 0.054);  // ash and burnt ground
-    \\  return vec3(0.046, 0.062, 0.034);             // 6 = deep moss
+    \\  if (id==6) return vec3(0.046, 0.062, 0.034);  // deep moss
+    \\  // The three below separate from the six above on HUE, not value: neutral-cool, warm-black, violet.
+    \\  if (id==7) return vec3(0.165, 0.156, 0.132);  // bone meal - the palest ground in the table
+    \\  if (id==8) return vec3(0.058, 0.044, 0.038);  // cinder, a burnt crust warmer and darker than ash
+    \\  if (id==9) return vec3(0.058, 0.048, 0.062);  // spore floor, the one COLD ground
+    \\  if (id==10) return vec3(0.115, 0.055, 0.070);  // fungal bloom - the one PINK ground, mauve at 122/85/97 on screen
+    \\  return vec3(0.046, 0.062, 0.034);
     \\}
     \\int soilAt(vec2 w){
     \\  vec2 uv = w/(2.0*soilHalf) + 0.5;

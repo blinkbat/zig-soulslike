@@ -546,10 +546,4 @@ fn groundCover(p: *Emit) void {
         .flowers,   .thistle,   .foxglove,  .bracken,
     });
 
-    var o = wf.defaults(.cover);
-    o.r0 = 3.3;
-    o.sLo = 0.72;
-    o.sHi = 1.38;
-    o.seed = p.nextSeed();
-    p.push(o);
 }

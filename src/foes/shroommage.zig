@@ -44,7 +44,9 @@ const setLocal = heromod.setHumanoid;
 // on the second touch. The answer it wants is sideways, or forwards into its face, where it has no melee at
 // all. Nothing else in this game asks you to think about where a shot is going to be TWICE.
 
-pub const SCALE = (heromod.H - 0.32) / heromod.H;
+/// **IT STANDS OVER YOU NOW** (owner: taller, bigger). It was a head shorter than the hero at 0.82; at 1.13
+/// it is 2.04 m to the crown of the cap, which is what a thing that lobs detonators over your head should be.
+pub const SCALE = (heromod.H + 0.24) / heromod.H;
 const HIP_HALF = heromod.HIP_HALF * 1.26;
 const SHOULDER_HALF = heromod.SHOULDER_HALF * 1.14;
 const H: f32 = heromod.H;
@@ -113,25 +115,27 @@ const FIRE_EDGE = elemfx.sig(.fire).edge;
 
 pub const AGGRO_R: f32 = 22.0;
 const TURN_RATE: f32 = 2.6;
-const WALK_SPEED: f32 = heromod.WALK_SPEED * 0.80;
+/// **SLOWER, BECAUSE IT IS NOW WORTH DODGING** (owner: tougher, slower, more dangerous). Three-fifths of a
+/// walk. It cannot chase and it is not meant to; what it does is make you come to it through its own fire.
+const WALK_SPEED: f32 = heromod.WALK_SPEED * 0.60;
 
-const BODY_R: f32 = 0.36;
+const BODY_R: f32 = 0.43;
 /// **THE HURT SPHERE HAS TO HOLD THE CAP, NOT JUST THE BARREL** — the ravager's lesson one creature along.
 /// The cap is the widest thing on this creature, it is what the reticle rides (`lockPoint`) and it is what
 /// the player is aiming at; fitted to the body alone the sphere stopped at 1.45 m and the mark sat 1.35 m up
 /// on its own rim, OUTSIDE anything a sword could reach — a reticle on a place you cannot hit. MEASURED off
 /// the posed rig: the head bone is at 0.885·H, the dome's crown 0.17·H above that, so the pair is solved to
 /// span the barrel's middle up past the mark and a test pins it.
-const HURT_R: f32 = 0.62;
+const HURT_R: f32 = 0.88;
 const CENTER_F: f32 = 0.66;
 const TOP_F: f32 = 1.10;
 
-const HP_MAX: f32 = 58.0;
-const POISE_MAX: f32 = 13.0;
-const STANCE_MAX: f32 = 32.0;
+const HP_MAX: f32 = 96.0;
+const POISE_MAX: f32 = 22.0;
+const STANCE_MAX: f32 = 44.0;
 const RESISTS = combat.resists(.{ .fire = 55, .cold = 20, .lightning = -20, .chaos = -45 });
 
-pub const SOULS: u32 = 145;
+pub const SOULS: u32 = 260;
 
 const DEATH_DUR: f32 = 1.15;
 const DISS_DUR: f32 = 1.0;
@@ -141,14 +145,18 @@ const SHOVE_DECAY: f32 = 6.5;
 const A_PROT: f32 = 3.2;
 
 
-pub const LOB_WIND: f32 = 0.66;
+/// Longer wind-up with the bigger blast: the tell has to be worth the damage behind it.
+pub const LOB_WIND: f32 = 0.94;
 const LOB_THROW: f32 = 0.16;
 const LOB_RECOVER: f32 = 0.54;
-const LOB_CD: f32 = 2.4;
+const LOB_CD: f32 = 3.4;
 const RELEASE_K: f32 = 0.34;
 
-pub const EMBER_SPEED: f32 = 8.0;
-pub const EMBER_HIT = combat.Hit{ .poise = 12, .elem = combat.elems(.{ .fire = 16 }) };
+/// **SLOWER AND FLATTER** (owner: slower bounce, lower lob). At 8.0 with a full ballistic loft the shot went
+/// up and came down on you; at 6.4 with `archer.EMBER_LOFT` at 0.52 it comes ACROSS the ground, which is what
+/// makes the bounce line readable and the sideways dodge the answer.
+pub const EMBER_SPEED: f32 = 6.4;
+pub const EMBER_HIT = combat.Hit{ .poise = 20, .elem = combat.elems(.{ .fire = 27 }) };
 
 const LOB_MIN: f32 = 4.5;
 const LOB_MAX: f32 = 16.0;
@@ -791,7 +799,9 @@ const CLOAK_DAMP: f32 = 11.0;
 /// spell that visibly changes size on the frame it is thrown. Metres, before the creature's own scale, and
 /// sized against the hands holding it: measured off the crop at 0.178 it was two thirds of the cap's whole
 /// width and read as a pumpkin.
-pub const BALL_R: f32 = 0.145;
+/// **A DETONATOR, NOT AN EMBER** (owner: bigger fireball, fungal detonator). Half again, and the hands were
+/// already sized off it — the comment below is the measurement that keeps it inside them.
+pub const BALL_R: f32 = 0.212;
 pub const BALL_CORE: f32 = BALL_R * 0.64;
 const KINDLE_RATE_0: f32 = 8.0;
 const KINDLE_RATE_1: f32 = 74.0;
@@ -868,7 +878,10 @@ fn neckMesh() rl.Mesh {
     return b.toMesh();
 }
 
-const RIM: f32 = 0.150 * H;
+/// **THE CAP IS THE READ AND IT GOT BIGGER** (owner: bigger shroom head). 0.150 -> 0.200 of H, which with
+/// the new `SCALE` puts the brim at 0.41 m of half-width against the old 0.22 — nearly double. The ceiling
+/// below is the same one as before and it still holds: wider than the shoulders, not wider than the creature.
+const RIM: f32 = 0.200 * H;
 comptime {
     std.debug.assert(RIM > SHOULDER_HALF * 1.35);
     std.debug.assert(RIM < SHOULDER_HALF * 2.4);
@@ -1217,14 +1230,18 @@ test "THE CUP IS BETWEEN THE HANDS AND IN FRONT OF THE BODY, at the frame it thr
     var k = Mage.spawn(mathx.zero3, 0, 1.0, 0.2);
     k.stageGather(1.0);
     const at = k.cupWorld();
+    const l = foe.markOn(k.xf[WRL], v3(0, -0.02 * H, 0.05 * H));
+    const r = foe.markOn(k.xf[WRR], v3(0, -0.02 * H, 0.05 * H));
+    const apart = mathx.lenV(mathx.subV(l, r));
+    const tall = H * SCALE;
+    std.debug.print("  mushroom mage cup: {d:.2} m up of {d:.2}, {d:.2} m out, hands {d:.2} m apart, ball {d:.2} across\n", .{ at.y, tall, at.z, apart, BALL_R * 2.0 * SCALE });
     // In FRONT of it (it faces +Z at yaw 0) and up at its own chest — a ball conjured behind or below the
     // creature is one the player never sees being made.
     try std.testing.expect(at.z > 0.10);
-    try std.testing.expect(at.y > 0.55 and at.y < 1.35);
-    const l = foe.markOn(k.xf[WRL], v3(0, -0.02 * H, 0.05 * H));
-    const r = foe.markOn(k.xf[WRR], v3(0, -0.02 * H, 0.05 * H));
-    try std.testing.expect(mathx.lenV(mathx.subV(l, r)) < 0.55);
-    std.debug.print("  mushroom mage cup: {d:.2} m up, {d:.2} m out, hands {d:.2} m apart\n", .{
-        at.y, at.z, mathx.lenV(mathx.subV(l, r)),
-    });
+    // **SHARES OF THE CREATURE, NOT METRE MARKS.** It grew (`SCALE`) and both bounds here were the OLD
+    // mage written down as constants — 1.35 m of chest height and 0.55 m of shoulder span. Either one
+    // fails the next time somebody resizes it, which is exactly what happened.
+    try std.testing.expect(at.y > tall * 0.30 and at.y < tall * 0.85);
+    // Two hands cupping ONE ball may not be further apart than the ball is wide, twice over.
+    try std.testing.expect(apart < BALL_R * 4.0 * SCALE);
 }

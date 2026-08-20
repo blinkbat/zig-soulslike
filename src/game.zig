@@ -29,6 +29,7 @@ const delvermod = @import("foes/delver.zig");
 const necromod = @import("foes/necro.zig");
 const ravagermod = @import("foes/ravager.zig");
 const magemod = @import("foes/shroommage.zig");
+const golemmod = @import("foes/sporegolem.zig");
 const fenmod = @import("foes/fenlurker.zig");
 const leechmod = @import("foes/leechfly.zig");
 const shademod = @import("foes/shade.zig");
@@ -212,6 +213,7 @@ pub const Game = struct {
     rite: necromod.Rite,
     thicket: ravagermod.Thicket,
     ring: magemod.Ring,
+    host: golemmod.Host,
     marsh: fenmod.Marsh,
     vigil: knightmod.Vigil,
     swarm: leechmod.Swarm,
@@ -236,13 +238,20 @@ pub const Game = struct {
     spiritK: f32 = 0,
     spiritHp: f32 = 0,
     day: daynight.Clock = .{},
+    /// **WHAT THE SKY IS ACTUALLY DOING WHERE HE IS STANDING.** The world's storm clock is one voice and
+    /// a `worldfmt.Location` is the other; these are the eased result, and every read site takes THEM.
+    wetNow: f32 = 0,
+    fogNow: f32 = 0,
+    sporeNow: f32 = 0,
     hourLit: f32 = std.math.nan(f32),
     wetLit: f32 = std.math.nan(f32),
     fogLit: f32 = std.math.nan(f32),
+    sporeLit: f32 = std.math.nan(f32),
     souls: soulsmod.Souls,
     weather: weathermod.Weather,
     rainfall: weathermod.Rain,
     mist: weathermod.Mist,
+    sporefall: weathermod.Spore,
     tree: ptree.Tree = .{},
     restRetro: [gfx.RETRO_COUNT]f32 = [_]f32{0} ** gfx.RETRO_COUNT,
     bag: item.Bag = .{},
@@ -316,6 +325,7 @@ pub const Game = struct {
         g.rite = necromod.Rite.init(g.scene.shader);
         g.thicket = ravagermod.Thicket.init(g.scene.shader);
         g.ring = magemod.Ring.init(g.scene.shader);
+        g.host = golemmod.Host.init(g.scene.shader);
         g.marsh = fenmod.Marsh.init(g.scene.shader);
         g.vigil = knightmod.Vigil.init(g.scene.shader);
         g.swarm = leechmod.Swarm.init(g.scene.shader);
@@ -333,15 +343,20 @@ pub const Game = struct {
         g.gateWalk = null;
         g.spiritK = 0;
         g.spiritHp = 0;
+        g.wetNow = 0;
+        g.fogNow = 0;
+        g.sporeNow = 0;
         g.hourLit = std.math.nan(f32);
         g.wetLit = std.math.nan(f32);
         g.fogLit = std.math.nan(f32);
+        g.sporeLit = std.math.nan(f32);
         g.souls = soulsmod.Souls.init(g.scene.shader);
         // **THE WEATHER IS SEEDED ONCE AND NEVER REWOUND** (`dropRng`'s reason): a storm clock reset per
         // character would put the same shower at the same minute of every run.
         g.weather = weathermod.Weather.init(0x5701_A17E);
         g.rainfall = weathermod.Rain.build(g.scene.shader);
         g.mist = weathermod.Mist.build(g.scene.shader);
+        g.sporefall = weathermod.Spore.build(g.scene.shader);
         phase(&initTimer, "foes");
         g.arrowModel = archermod.arrowMesh(g.scene.shader);
         g.clumpModel = koboldmod.clumpMesh(g.scene.shader);
@@ -599,6 +614,8 @@ pub const FOE_GROUPS = [_]FoeGroup{
     // 1.34 m hound was the one being shoved off its line by a knee-high mushroom.
     .{ .field = "thicket", .kind = .florid_ravager, .aggro = ravagermod.AGGRO_R },
     .{ .field = "ring", .kind = .mushroom_mage, .aggro = magemod.AGGRO_R },
+    // It shoulders every other fungal thing aside — three hundred kilos of mycelium walks through a sporeling.
+    .{ .field = "host", .kind = .spore_golem, .aggro = golemmod.AGGRO_R },
     .{ .field = "marsh", .kind = .fen_lurker, .aggro = fenmod.AGGRO_R, .vsHero = false },
     .{ .field = "vigil", .kind = .bone_knight, .aggro = knightmod.AGGRO_R, .vsHero = false, .vs = &.{ "line", "muster" } },
 };
@@ -607,6 +624,7 @@ const BLOW_GROUPS = [_][]const u8{
     "warren", "grief",  "line",    "band",    "muster", "haunt",
     "swarm",  "grove",  "cluster", "warrens", "vigil",  "brood",
     "rite",   "thicket", "ring",    "marsh",
+    "host",
 };
 
 comptime {
@@ -2241,14 +2259,16 @@ fn applyHour(g: *Game) void {
     // a ramp and re-uploading eighteen uniforms sixty times a second is the exact cost this guard exists to
     // refuse — a sixty-fourth of the range is finer than the eye reads and lands on ~7 uploads a second
     // through the fastest ramp there is.
-    const wet = @round(g.weather.rain() * WET_STEPS) / WET_STEPS;
+    const wet = @round(g.wetNow * WET_STEPS) / WET_STEPS;
     const fog = g.menu.fogK();
-    if (g.day.hour == g.hourLit and wet == g.wetLit and fog == g.fogLit) return;
+    const spore = @round(g.sporeNow * WET_STEPS) / WET_STEPS;
+    if (g.day.hour == g.hourLit and wet == g.wetLit and fog == g.fogLit and spore == g.sporeLit) return;
     g.hourLit = g.day.hour;
     g.wetLit = wet;
     g.fogLit = fog;
-    g.scene.setHour(g.day.hour, wet, fog);
-    g.sky.setHour(g.day.hour, wet);
+    g.sporeLit = spore;
+    g.scene.setHour(g.day.hour, wet, fog, spore);
+    g.sky.setHour(g.day.hour, wet, spore);
     sfx.setDaylight(daynight.dayAmt(g.day.hour));
 }
 
@@ -2264,6 +2284,23 @@ pub fn pinHourForShot(g: *Game, hour: f32) void {
     g.day.freeze(true);
     applyHour(g);
 }
+
+/// **THE SKY THE MAN IS ACTUALLY STANDING IN, WITH NO BLEND** — the shot harness's own. `settleSky` walks
+/// toward a region's weather over `blend` seconds and the harness renders single frames, so without this a
+/// photograph of a spore bloom is a photograph of a clear day.
+pub fn pinSkyForShot(g: *Game) void {
+    const here = g.map.weatherAt(g.hero.pos.x, g.hero.pos.z);
+    g.wetNow = mathx.clampF(if (here) |l| l.wet orelse g.weather.rain() else g.weather.rain(), 0, 1);
+    g.fogNow = mathx.clampF(if (here) |l| l.fog orelse 0 else 0, 0, 1);
+    g.sporeNow = mathx.clampF(if (here) |l| l.spore orelse 0 else 0, 0, 1);
+    if (g.sporeNow > weathermod.MIST_MIN) {
+        g.mist.tick(SHOT_SETTLE, g.hero.pos, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), fogAmt(g));
+    }
+    applyHour(g);
+}
+
+/// One tick long enough to seed the mist field and get it past its own fade-in ramp.
+const SHOT_SETTLE: f32 = 1.0 / 60.0;
 
 const REST_WARMTH: f32 = 0.14;
 const REST_PAN: f32 = 0.70;
@@ -2976,6 +3013,29 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
     }
 }
 
+/// **THE DETONATOR CATCHES YOU FOR STANDING NEAR IT** (owner: aoe on impact). A direct hit is resolved
+/// where every other shot is; this is the other half — the one that lands at your feet and takes a third of
+/// the bar anyway. Falls off to nothing at the rim rather than ending at a wall, so backing off half a metre
+/// is worth something and standing still is not.
+///
+/// **AND IT IS THE REASON THE ARC WENT FLAT.** A blast this size dropped from overhead is undodgeable; rolled
+/// in along the ground it is a line you can read and step off (`archer.EMBER_LOFT`).
+const BLAST_R: f32 = 3.1;
+const BLAST_FLOOR: f32 = 0.30;
+
+fn emberBlast(g: *Game, ar: *const archermod.Arrow) void {
+    if (ar.shot != .emberball or g.hero.dead) return;
+    const d = mathx.distXZ(ar.pos, g.hero.pos);
+    if (d > BLAST_R) return;
+    const k = mathx.lerpF(1.0, BLAST_FLOOR, mathx.clampF(d / BLAST_R, 0, 1));
+    var hit = ar.blow;
+    hit.poise *= k;
+    hit.dmg *= k;
+    hit.elem = ar.blow.elem.scaled(k);
+    const blow = foemod.Blow{ .hit = hit, .from = ar.pos };
+    _ = heroTakes(g, blow, false, false);
+}
+
 fn emberBounces(g: *Game) void {
     for (quivers(g)) |pool| {
         for (pool) |*ar| {
@@ -3043,18 +3103,49 @@ fn reservedLights(g: *const Game, out: *[RESERVED_LIGHTS]gfx.Light) []const gfx.
 /// thunder, which arrives as a one-frame edge seconds after the light did.
 fn tickWeather(g: *Game, dt: f32) void {
     g.weather.tick(dt);
-    sfx.setRain(g.weather.rain());
+    settleSky(g, dt);
+    sfx.setRain(g.wetNow);
+    // THE LIGHTNING STAYS THE WORLD'S. A location sets how wet it is; the storm that throws bolts is still
+    // the sky's own event, so walking into a rain region does not conjure thunder out of a clear afternoon.
     if (g.weather.thunder()) |gain| sfx.playAt(.thunder, gain);
     g.mist.tick(dt, g.hero.pos, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), fogAmt(g));
 }
 
-fn fogAmt(g: *const Game) f32 {
-    return g.menu.fogAmt(g.weather.rain());
+/// **A REGION'S WEATHER IS A CROSS-FADE, NEVER A SWITCH** — there is one sky, one sun and one rain sheet
+/// drawn round the camera, so crossing a boundary cannot swap them: it has to walk the level there. Outside
+/// every weather location the target is the world clock's own, so leaving one fades back the same way.
+fn settleSky(g: *Game, dt: f32) void {
+    settleSkyAt(g, dt, g.hero.pos);
 }
+
+fn settleSkyAt(g: *Game, dt: f32, at: rl.Vector3) void {
+    const here = g.map.weatherAt(at.x, at.z);
+    const wantWet = if (here) |l| l.wet orelse g.weather.rain() else g.weather.rain();
+    const wantFog = if (here) |l| l.fog orelse 0 else 0;
+    const wantSpore = if (here) |l| l.spore orelse 0 else 0;
+    const secs = if (here) |l| l.blend else SKY_SETTLE;
+    const rate = 1.0 / mathx.maxF(secs, 0.05);
+    g.wetNow = mathx.approach(g.wetNow, mathx.clampF(wantWet, 0, 1), rate * dt);
+    g.fogNow = mathx.approach(g.fogNow, mathx.clampF(wantFog, 0, 1), rate * dt);
+    g.sporeNow = mathx.approach(g.sporeNow, mathx.clampF(wantSpore, 0, 1), rate * dt);
+}
+
+/// How fast the sky comes back to the world's own weather once he walks out of a region.
+const SKY_SETTLE: f32 = 6.0;
+
+/// **A BLOOM BRINGS ITS OWN BANKS.** The mist field is the only cloud volume there is, so sporefall borrows
+/// it rather than growing a second one — at `SPORE_BANKS` of its strength, tinted peach on the draw.
+fn fogAmt(g: *const Game) f32 {
+    return mathx.maxF(mathx.maxF(g.menu.fogAmt(g.wetNow), g.fogNow), g.sporeNow * SPORE_BANKS);
+}
+
+/// How much of a bloom's dial shows up as drifting bank rather than haze and motes. Under half: the banks are
+/// the SLOWEST of the three reads and a wall of them buries the motes, which are what says "alive".
+const SPORE_BANKS: f32 = 0.45;
 
 fn drawWeatherOverlay(g: *Game) void {
     if (g.editor.on) return;
-    weathermod.drawOverlay(rl.getScreenWidth(), rl.getScreenHeight(), g.weather.dim(), g.weather.flash());
+    weathermod.drawOverlay(rl.getScreenWidth(), rl.getScreenHeight(), weathermod.dimOf(g.wetNow), g.weather.flash());
 }
 
 pub fn drawScene(g: *Game) void {
@@ -3119,8 +3210,9 @@ pub fn drawScene(g: *Game) void {
         }
     }
     if (g.editor.on) g.editor.draw3D(&g.map, &g.env);
-    if (!g.editor.on) g.rainfall.draw(&g.scene, cam.position, g.hero.pos, g.weather.rain(), g.weather.t);
-    if (!g.editor.on) g.mist.draw(&g.scene, cam.position, fogAmt(g));
+    if (!g.editor.on) g.rainfall.draw(&g.scene, cam.position, g.hero.pos, g.wetNow, g.weather.t);
+    if (!g.editor.on) g.mist.draw(&g.scene, cam.position, fogAmt(g), weathermod.sporeTint(g.sporeNow));
+    g.sporefall.draw(&g.scene, cam.position, if (g.editor.on) cam.position else g.hero.pos, g.sporeNow, g.weather.slowSecs());
     rl.endMode3D();
 
     drawWeatherOverlay(g);
@@ -3362,7 +3454,7 @@ fn gaitLabel(moving: f32, speed: f32) [:0]const u8 {
     };
 }
 
-pub const Mode = enum { play, shots, props };
+pub const Mode = enum { play, shots, props, land };
 
 /// **A HITCH IS NOT SIMULATED IN FULL** — `anim.Spring` already clamps to this and says why; the whole
 /// simulation owes the same cap, because a raw `getFrameTime` is the one unbounded number in the loop and
@@ -3422,6 +3514,10 @@ pub fn run(mode: Mode) void {
         @import("shots.zig").runPropShots(g);
         return;
     }
+    if (mode == .land) {
+        @import("shots.zig").runLandShots(g);
+        return;
+    }
 
     rl.hideCursor();
     var wasInside = false;
@@ -3446,6 +3542,11 @@ pub fn run(mode: Mode) void {
         if (!g.editor.on and !g.menu.isOpen() and !g.rest.active() and !g.talk.active() and !g.award.carding()) {
             g.day.tick(dt);
             tickWeather(g, dt);
+        } else if (g.editor.on) {
+            // **A PAINTED WEATHER HAS TO SHOW WHILE HE IS PAINTING IT.** The rest of the storm is frozen in
+            // the editor on purpose, but a bloom is authored by dragging a slider and looking, so the sky
+            // settles against the CURSOR rather than the man — put the pointer in the region and it blooms.
+            settleSkyAt(g, dt, g.editor.cursor orelse g.hero.pos);
         }
         applyHour(g);
         sfx.mute(g.editor.on and !g.editor.auditioning());
@@ -3907,6 +4008,16 @@ pub fn run(mode: Mode) void {
                 spawnEmber(g, k.lobFrom);
             }
         }
+        if (g.host.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.heavy(), true);
+        }
+        for (g.host.live()) |*h| {
+            if (h.burst) |at| {
+                sfx.world(.ember_burst, at);
+                g.ring.splash(at);
+                g.rig.addShake(SHAKE_HIT_HEAVY);
+            }
+        }
         if (g.marsh.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.heavy(), true);
         }
@@ -3991,7 +4102,11 @@ pub fn run(mode: Mode) void {
                 const out: combat.HitOutcome = if (g.hero.dead) .ignored else heroTakes(g, blow, blow.hit.heavy(), false);
                 if (out == .taken or out == .ignored) sfx.play(.arrow_hit);
                 splashOf(g, ar);
-            } else planted(g, ar);
+            } else {
+                planted(g, ar);
+                splashOf(g, ar);
+                emberBlast(g, ar);
+            }
         }
         if (allHits(g) > hitsBefore) {
             g.rumble.play(if (g.hero.atkHeavy) rumblemod.hit_heavy else rumblemod.hit_light);
@@ -4120,7 +4235,7 @@ fn stepOverlay(g: *const Game, x: f32, z: f32) ?sfx.Id {
     if (v >= worldfmt.Soil.N) return null;
     return switch (@as(worldfmt.Soil, @enumFromInt(v))) {
         .stone => .step_stone,
-        .none, .dirt, .turf, .silt, .ash, .moss => null,
+        .none, .dirt, .turf, .silt, .ash, .moss, .bone, .cinder, .spore, .bloom => null,
     };
 }
 
@@ -4267,6 +4382,11 @@ fn useItem(g: *Game, k: item.Kind) void {
             if (g.bag.take(k, 1) == 0) return;
             g.hero.stam.secondWind(w.share);
             sfx.play(.flask_drink);
+        },
+        .arrows => |a| {
+            if (g.bag.take(k, 1) == 0) return;
+            g.hero.quiver.add(if (a.fire) .fire else .plain, a.n);
+            sfx.play(.eat);
         },
         .grease => |gr| {
             if (g.bag.take(k, 1) == 0) return;
@@ -4419,7 +4539,8 @@ fn tickBoltGas(g: *Game, dt: f32) void {
         if (c.live) any = true;
     }
     if (!any) {
-        g.boltGasT = 0;
+        // Due the moment a cloud exists, for the same reason `knight.Vigil.gasDose` is (`foe.Soak`).
+        g.boltGasT = knightmod.GAS_DOSE_EVERY;
         return;
     }
     g.boltGasT += dt;

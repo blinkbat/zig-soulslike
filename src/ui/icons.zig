@@ -13,6 +13,7 @@ pub const Icon = enum {
     select,
     erase,
     zone,
+    location,
     clearing,
     scatter,
     patch,
@@ -43,6 +44,7 @@ pub const Icon = enum {
     florid_ravager,
     mushroom_mage,
     fen_lurker,
+    spore_golem,
     new,
     open,
     save,
@@ -131,6 +133,14 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             box(cx, cy, s * 0.68, s * 0.56, w, col);
             dot(cx - s * 0.34, cy - s * 0.28, w * 1.5, col);
             dot(cx + s * 0.34, cy + s * 0.28, w * 1.5, col);
+        },
+        .location => {
+            // A rectangle with its corner handles — StarEdit's own, and it is not the zone's dotted pair.
+            box(cx, cy, s * 0.70, s * 0.54, w, col);
+            dot(cx - s * 0.35, cy - s * 0.27, w * 1.6, col);
+            dot(cx + s * 0.35, cy - s * 0.27, w * 1.6, col);
+            dot(cx - s * 0.35, cy + s * 0.27, w * 1.6, col);
+            dot(cx + s * 0.35, cy + s * 0.27, w * 1.6, col);
         },
         .clearing => {
             ring2(cx, cy, s * 0.34, w, col);
@@ -380,6 +390,18 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             }
         },
 
+        .spore_golem => {
+            // A brim wider than the whole glyph over a block of a body: the silhouette IS the read.
+            hline(cx - s * 0.46, cy - s * 0.16, s * 0.92, w * 2.2, col);
+            line(cx - s * 0.40, cy - s * 0.16, cx - s * 0.14, cy - s * 0.44, w * 1.2, col);
+            line(cx + s * 0.40, cy - s * 0.16, cx + s * 0.14, cy - s * 0.44, w * 1.2, col);
+            hline(cx - s * 0.16, cy - s * 0.44, s * 0.32, w * 1.2, col);
+            hline(cx - s * 0.26, cy - s * 0.02, s * 0.52, w * 1.4, d);
+            line(cx - s * 0.26, cy - s * 0.02, cx - s * 0.30, cy + s * 0.34, w * 1.8, col);
+            line(cx + s * 0.26, cy - s * 0.02, cx + s * 0.30, cy + s * 0.34, w * 1.8, col);
+            hline(cx - s * 0.30, cy + s * 0.34, s * 0.60, w * 1.6, col);
+            hline(cx - s * 0.22, cy + s * 0.46, s * 0.44, w * 1.4, col);
+        },
         .mushroom_mage => {
             hline(cx - s * 0.34, cy - s * 0.14, s * 0.68, w * 1.6, col);
             line(cx - s * 0.30, cy - s * 0.14, cx - s * 0.06, cy - s * 0.40, w * 1.1, col);

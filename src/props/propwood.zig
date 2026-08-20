@@ -599,3 +599,118 @@ pub fn saplingMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
+
+// ── WOOD GOING BACK TO THE GROUND ───────────────────────────────────────────────────────────────────────
+//
+// `logMesh` is a log; these two are what a log becomes. The whole difference is that a rotted mass has LOST
+// ITS LINE — it sags between its bearing points, it splits along the grain rather than across it, and the
+// pale punk inside is the one bright thing on it.
+
+pub const ROTLOG_L: f32 = 4.2;
+
+/// A bole gone soft. It SAGS: the ends still carry, the middle has settled, and it has split open along the
+/// top where the rain got in. Nothing about it is a cylinder any more.
+pub fn rotLogMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x0D01);
+    b.setMat(.bark);
+    const N = 7;
+    const sag = 0.16;
+    var i: i32 = 0;
+    while (i < N) : (i += 1) {
+        const t0 = @as(f32, @floatFromInt(i)) / N;
+        const t1 = @as(f32, @floatFromInt(i + 1)) / N;
+        const x0 = (t0 - 0.5) * ROTLOG_L;
+        const x1 = (t1 - 0.5) * ROTLOG_L;
+        // A catenary, near enough: the middle has dropped and the two ends have not.
+        const y0 = 0.42 - sag * mathx.sinf(t0 * std.math.pi);
+        const y1 = 0.42 - sag * mathx.sinf(t1 * std.math.pi);
+        const r0 = 0.40 * (0.80 + 0.35 * mathx.sinf(t0 * std.math.pi)) * rng.range(0.92, 1.10);
+        const r1 = 0.40 * (0.80 + 0.35 * mathx.sinf(t1 * std.math.pi)) * rng.range(0.92, 1.10);
+        b.addCapsule(v3(x0, y0, rng.signed() * 0.05), v3(x1, y1, rng.signed() * 0.05), r0, r1, 8, art.weathered(BARK_DK, BARK_OLD, t0));
+    }
+    // THE SPLIT, down the top and along the grain — and the punk inside it, which is the bright thing.
+    var j: i32 = 0;
+    while (j < 9) : (j += 1) {
+        const t = (@as(f32, @floatFromInt(j)) + 0.5) / 9.0;
+        const x = (t - 0.5) * ROTLOG_L * 0.86;
+        const y = 0.42 - sag * mathx.sinf(t * std.math.pi);
+        const w = 0.13 * mathx.sinf(t * std.math.pi) + 0.03;
+        b.addBlob(v3(x, y + 0.26, rng.signed() * 0.06), v3(0.20, 0.07, w), 2, 5, art.PUNK);
+        if (rng.float() < 0.5) b.addBlob(v3(x, y + 0.30, rng.signed() * 0.05), v3(0.12, 0.04, w * 0.6), 2, 5, art.PUNK_DK);
+    }
+    // Both ends are SNAPS, not cuts, and they show heartwood.
+    for ([_]f32{ -1.0, 1.0 }) |sd| {
+        const x = sd * ROTLOG_L * 0.5;
+        b.addDome(v3(x, 0.42, 0), v3(sd, 0.06, 0), 0.32, 7, art.PUNK);
+        b.addBlob(v3(x + sd * 0.06, 0.40, 0), v3(0.10, 0.16, 0.16), 2, 6, art.PUNK_DK);
+    }
+    // What grows on rot: brackets up the shaded flank, moss over the crown.
+    b.setMat(.plant);
+    var k: i32 = 0;
+    while (k < 5) : (k += 1) {
+        const t = rng.range(0.15, 0.85);
+        const x = (t - 0.5) * ROTLOG_L;
+        const sd: f32 = if (rng.float() < 0.5) -1.0 else 1.0;
+        const r = rng.range(0.10, 0.20);
+        b.addBlob(v3(x, 0.42 - sag * mathx.sinf(t * std.math.pi) + rng.range(-0.05, 0.14), sd * 0.34), v3(r, r * 0.24, r * 0.7), 2, 6, if (rng.float() < 0.5) CAP_PALE else CAP_BROWN);
+    }
+    b.addBlob(v3(rng.signed() * 0.6, 0.66, rng.signed() * 0.10), v3(1.0, 0.06, 0.30), 3, 7, MOSS_DK);
+    tuftInto(&b, &rng, rng.signed() * 1.6, 0.55, 0.55);
+    return b.toModel(shader);
+}
+
+pub const DEADFALL_H: f32 = 1.9;
+
+/// **A TANGLE, AND A TANGLE IS NOT A HEAP.** What makes it read is that the limbs LEAN ON EACH OTHER — every
+/// one runs from the ground up to a common bearing near the middle, so there is a real void underneath it.
+pub fn deadfallMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x0D02);
+    b.setMat(.bark);
+    const hub = v3(rng.signed() * 0.2, DEADFALL_H * 0.62, rng.signed() * 0.2);
+    var i: i32 = 0;
+    while (i < 7) : (i += 1) {
+        const a = rng.angle();
+        const d = rng.range(1.15, 2.10);
+        const foot = v3(mathx.cosf(a) * d, 0.06, mathx.sinf(a) * d);
+        // It crosses the hub and carries on PAST it — a limb that stops at the pile is a spoke.
+        const over = rng.range(0.25, 0.85);
+        const dir = mathx.normV(mathx.subV(hub, foot));
+        const head = mathx.addV(hub, mathx.scaleV(dir, over));
+        const r = rng.range(0.09, 0.17);
+        b.addCapsule(foot, head, r, r * 0.7, 6, art.weathered(BARK_DK, BARK_OLD, @as(f32, @floatFromInt(i)) / 6.0));
+        b.addDome(head, dir, r * 0.68, 5, art.PUNK_DK);
+        if (rng.float() < 0.55) {
+            const mid = mathx.lerpV(foot, hub, rng.range(0.3, 0.7));
+            deadLimbInto(&b, &rng, mid, a + rng.signed() * 1.6, rng.range(0.5, 1.0), rng.range(0.1, 0.4), r * 0.55, 2);
+        }
+    }
+    // The litter it has already shed, banked in the lee of the pile.
+    var j: i32 = 0;
+    while (j < 8) : (j += 1) {
+        const a = rng.angle();
+        const d = rng.range(0.4, 1.6);
+        const r = rng.range(0.04, 0.10);
+        b.addCapsule(
+            v3(mathx.cosf(a) * d, r, mathx.sinf(a) * d),
+            v3(mathx.cosf(a) * d + rng.signed() * 0.5, r * 0.9, mathx.sinf(a) * d + rng.signed() * 0.5),
+            r,
+            r * 0.6,
+            5,
+            BARK_OLD,
+        );
+    }
+    b.setMat(.plant);
+    b.addBlob(v3(hub.x, 0.10, hub.z), v3(1.1, 0.07, 1.0), 3, 7, MOSS_DK);
+    tuftInto(&b, &rng, rng.signed() * 1.3, rng.signed() * 1.3, 0.6);
+    tuftInto(&b, &rng, rng.signed() * 1.8, rng.signed() * 1.8, 0.45);
+    return b.toModel(shader);
+}
+
+test "rot has lost its line — the log sags and the tangle has a void under it" {
+    // A rotted bole is lower in the middle than at its bearings; a fresh one is a cylinder. And the hub of
+    // the deadfall sits well up, or the limbs are lying flat and it is a heap.
+    try std.testing.expect(ROTLOG_L > 3.0);
+    try std.testing.expect(DEADFALL_H * 0.62 > 0.9);
+}

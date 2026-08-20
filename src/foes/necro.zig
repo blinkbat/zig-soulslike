@@ -58,9 +58,13 @@ const STAFF = heromod.HELD;
 
 const H: f32 = heromod.H;
 
-pub const SCALE = (H + 0.62) / H;
-const HIP_HALF = heromod.HIP_HALF * 0.80;
-const SHOULDER_HALF = heromod.SHOULDER_HALF * 0.78;
+/// **MUCH TALLER, AND IT IS THE WHOLE SILHOUETTE** (owner). 2.85 m to the crown against the hero's 1.8 —
+/// it looks DOWN at him from across the field, which is what a thing that raises the dead should do.
+pub const SCALE = (H + 1.05) / H;
+/// …and GAUNT with it (owner). Taller AND narrower is the only combination that reads as starved rather
+/// than as a big man: widen these with the height and it is an ogre in a robe.
+const HIP_HALF = heromod.HIP_HALF * 0.60;
+const SHOULDER_HALF = heromod.SHOULDER_HALF * 0.64;
 const REST = heromod.restHumanoid(HIP_HALF, SHOULDER_HALF, H);
 /// His feet are the archer's feet — the same dead man's boots, and `footMesh` is what a sole patch is
 /// measured off, so a second copy is a second thing to retune.
@@ -80,15 +84,19 @@ const FIST_Y = -0.05 * H;
 const FIST_Z = 0.02 * H;
 
 pub const AGGRO_R = 26.0;
-const TURN_RATE = 3.2;
-const WALK_SPEED = heromod.WALK_SPEED * 0.72;
+const TURN_RATE = 4.6;
+/// **FAST** (owner). Over a walk, where it used to be under one — you cannot simply jog it down any more,
+/// and with `LEAP_SPEED` behind it the way to reach it is to cut the angle rather than to chase.
+const WALK_SPEED = heromod.WALK_SPEED * 1.18;
 const SPEED = 1.0;
 const BODY_R = 0.34;
 const HURT_R = 0.42;
-pub const SOULS: u32 = 320;
+pub const SOULS: u32 = 520;
 
-const HP_MAX: f32 = 78.0;
-const POISE_MAX: f32 = 12.0;
+const HP_MAX: f32 = 84.0;
+/// **ALMOST NONE** (owner). Under the hero's light poke (10 poise), so ANYTHING that lands staggers it.
+/// That is the trade for the speed and the reach: catch it once and the whole cast comes apart.
+const POISE_MAX: f32 = 5.0;
 const STANCE_MAX: f32 = 34.0;
 
 const RESISTS = combat.resists(.{ .fire = -35, .cold = 75, .chaos = 45 });
@@ -122,7 +130,10 @@ pub const FROST_R: f32 = 2.4;
 pub const FROST_WIND: f32 = 0.72;
 const FROST_CAST_DUR: f32 = 0.30;
 const FROST_RECOVER: f32 = 0.70;
-pub const FROST_FUSE: f32 = 2.20;
+/// **AND IT GREW WITH THE CASTER.** The ring lands at `FROST_R * SCALE`, so making the necromancer taller
+/// widened it from 3.80 m to 4.16 m of ground to clear — and the comptime assert below, which is the whole
+/// contract that a WALK gets you out, is what caught it. 2.4 m/s of walking over 2.7 s clears 4.59 m.
+pub const FROST_FUSE: f32 = 2.70;
 const FROST_CD: f32 = 4.2;
 const FROST_R_MIN: f32 = 3.0;
 const FROST_R_MAX: f32 = 18.0;
@@ -171,7 +182,7 @@ const HEM_EASE = 6.5;
 const HEM_SETTLE = 3.4;
 const HEM_SWAY = 2.2;
 
-const State = enum { idle, drift, raise_wind, raise_up, frost_wind, frost_cast, recover, stunlight, stunheavy, dead };
+const State = enum { idle, drift, leap, raise_wind, raise_up, frost_wind, frost_cast, recover, stunlight, stunheavy, dead };
 
 /// WHICH OF THE TWO IT LAST SPENT. Its own type rather than a bool, because the recovery reads it through an
 /// exhaustive switch — a third move then cannot be added without saying how long its opening is.
@@ -184,6 +195,18 @@ fn classify(dist: f32, hasBody: bool, raiseReady: bool, frostReady: bool) Choice
     if (frostReady and dist >= FROST_R_MIN and dist <= FROST_R_MAX) return .frost;
     return .keep;
 }
+
+// **AND IT LEAPS AWAY RATHER THAN BACKING UP** (owner). Drifting out at walking pace is something a man can
+// simply out-walk, and a caster that can be walked down has no spacing game at all. Inside `LEAP_R` it goes
+// backwards in one burst — four times its own walk for a third of a second, which buys it most of the band
+// it wants in less time than a swing takes.
+const LEAP_R: f32 = 4.2;
+const LEAP_DUR: f32 = 0.34;
+const LEAP_SPEED: f32 = 4.6;
+const LEAP_CD: f32 = 2.2;
+/// A hop, not a glide. Metres at the top of the arc — enough to read as leaving the ground and not enough to
+/// clear anything, because this is a retreat and not a traversal.
+const LEAP_UP: f32 = 0.55;
 
 const WANT_MIN: f32 = 8.0;
 const WANT_MAX: f32 = 15.0;
@@ -311,6 +334,8 @@ pub const Necro = struct {
     prevPhase: f32 = 0,
 
     vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
+    leapCd: f32 = 0,
+    hop: f32 = 0,
     hits: u32 = 0,
     hitLatch: bool = false,
     flash: f32 = 0,
@@ -426,6 +451,7 @@ pub const Necro = struct {
         self.vit.tick(dt);
         self.raiseCd = mathx.maxF(0, self.raiseCd - dt);
         self.frostCd = mathx.maxF(0, self.frostCd - dt);
+        self.leapCd = mathx.maxF(0, self.leapCd - dt);
         foe.fadeFlash(&self.flash, dt);
         foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
@@ -441,6 +467,24 @@ pub const Necro = struct {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
                 self.setCarry(dt);
                 if (self.t >= 0.20) self.decide(d);
+            },
+            .leap => {
+                // Facing him the whole way out: it is backing off, not fleeing, and the difference is
+                // whether you can see the staff coming up while it goes.
+                self.faceToward(hero, dt);
+                const way = self.nav.along(self.moveDir);
+                const u = mathx.clampF(self.t / LEAP_DUR, 0, 1);
+                moveSpeed = LEAP_SPEED * mathx.sinf(std.math.pi * u);
+                const moved = moveSpeed * dt;
+                mathx.stepXZ(&self.pos, way, moved, bounds);
+                movedDist = moved;
+                moveYaw = mathx.headingXZ(way);
+                self.hop = LEAP_UP * mathx.sinf(std.math.pi * u);
+                self.setCarry(dt);
+                if (self.t >= LEAP_DUR) {
+                    self.hop = 0;
+                    self.decide(d);
+                }
             },
             .drift => {
                 self.faceToward(hero, dt);
@@ -599,6 +643,11 @@ pub const Necro = struct {
                 const side: f32 = if (self.seed < 0.5) 1.0 else -1.0;
                 const out = mathx.scaleV(f, -1.0);
                 const lat = mathx.scaleV(mathx.perpXZ(f), side);
+                if (dist < LEAP_R and self.leapCd <= 0) {
+                    self.leapCd = LEAP_CD;
+                    self.moveDir = mathx.normV(mathx.addV(out, mathx.scaleV(lat, 0.35)));
+                    return self.enter(.leap);
+                }
                 self.moveDir = if (dist < WANT_MIN)
                     mathx.normV(mathx.addV(out, mathx.scaleV(lat, 0.5)))
                 else if (dist > WANT_MAX)
@@ -796,7 +845,8 @@ pub const Necro = struct {
         var wx: [N]rl.Matrix = undefined;
         const collapse = lerpF(hipY, 0.20 * H, dk);
         const pitchBody = 18.0 * dk;
-        const pelvY = if (dead) collapse else hipY + bob - dip;
+        // The leap's arc rides the pelvis, so every bone above it comes along and the robe drags with it.
+        const pelvY = if (dead) collapse else hipY + bob - dip + self.hop / mathx.maxF(self.scale, 1e-3);
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
             mul3(rz(9.0 * dk), rx(pitchBody), ry(prot)),
             mul(tr(sway * fs, pelvY * fs + sink, 0), ry(facingDeg)),
@@ -1633,8 +1683,12 @@ test "THE STAFF STANDS UP, ON ITS OWN SIDE, AND ITS FOOT IS ON THE GROUND — me
     // first pass had `staffFit` driving the entire pole DOWN the forearm, so 1.5 m of it was underground and
     // there was nothing in the picture at all.
     try std.testing.expect(head.y > foot.y);
-    try std.testing.expect(foot.y < 0.30);
-    try std.testing.expect(mathx.lenXZ(mathx.subV(foot, k.pos)) < 0.90);
+    // **SHARES OF THE CREATURE, NOT METRE MARKS.** It got much taller and gaunter (`SCALE`, `HIP_HALF`) and
+    // both of these were the OLD necromancer's proportions written down as absolutes — 0.30 m of ground
+    // clearance and 0.90 m of reach. A staff carried by a 2.85 m thing is further out and its foot swings
+    // higher, and neither is a bug.
+    try std.testing.expect(foot.y < crown * 0.13);
+    try std.testing.expect(mathx.lenXZ(mathx.subV(foot, k.pos)) < crown * 0.36);
     try std.testing.expect(head.y > k.centerWorld().y);
     try std.testing.expect(head.y < crown + 0.20);
     // NEAR PLUMB, and never laid out flat: past about 35 degrees off vertical it stops being carried and

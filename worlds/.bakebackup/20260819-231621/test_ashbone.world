@@ -1,0 +1,216 @@
+version: 1
+name: The Ribs in the Ashfall
+half: 96.0
+runway: -4.00 -10.00 4.00 12.00
+
+zone: ashfall -400.0 -400.0 400.0 400.0 0.260 cinders,cinders,cinders,ashheap,bracken,thistle,rubble
+zone: scoured -400.0 -400.0 400.0 -70.0 0.110 cinders,cinders,ashheap
+location: burnt -96.0 -96.0 96.0 96.0 wet=0.000 fog=0.120 blend=12.00
+clear: 0.0 -34.0 16.0
+
+at: ribarch 0 -14 0 1
+at: vertebra -6.4 -13.2 24 1.1
+at: vertebra 6.9 -14.6 -50 0.95
+at: rib -7.6 -22 80 0.92
+at: rib2 7.6 -24.4 269 0.88
+at: rib3 -8.4 -30 86 1.04
+at: rib 8.4 -32.4 262 1.09
+at: rib2 -8 -38 92 1.16
+at: rib3 8 -40.4 255 0.95
+at: rib -8.8 -46 80 0.98
+at: rib3 8.8 -48.4 269 1.16
+at: rib3 -7.4 -54 86 1.1
+at: rib2 7.4 -56.4 262 1.02
+at: rib2 -8.2 -62 92 0.92
+at: rib 8.2 -64.4 255 0.88
+at: rib2 -13.5 -26 38 0.8
+at: rib3 15.2 -44 212 0.72
+at: rib 12 -57 300 0.66
+at: skull -1.5 -74 24 1.35
+at: vertebra 2.8 -66.5 140 1
+at: vertebra -3.4 -69.5 70 0.85
+at: bones 4.2 -71 0 1.2
+at: bones -6 -76.5 45 1
+at: ashdune -30 -8 4 0.85
+at: ashdune -16 18 -2 0.95
+at: ashdune 26 -30 6 1.05
+at: ashdune -44 -46 -5 1.15
+at: ashdune 34 10 3 0.85
+at: ashdune 8 44 -4 0.95
+at: ashdune -52 22 7 1.05
+at: ashdune 46 -64 -6 1.15
+at: ashdune -24 -62 2 0.85
+belt: ashheap -80 -80 80 80 34 0.7 1.4 seed=7002
+belt: cinders -70 -70 70 70 26 0.8 1.5 seed=7003
+belt: charspar -78 -78 -22 78 9 0.8 1.2 seed=7004
+belt: charspar 24 -78 78 78 8 0.85 1.25 seed=7005
+at: charspar -18 30 0 1.15
+at: charspar 21 -8 0 0.95
+at: hoodoo -58 -30 20 1
+at: hoodoo -63 -36 200 0.78
+at: spire 56 -22 0 1
+at: balanced -50 48 110 1
+at: fingers 48 40 -30 1
+at: boulder -54 -24 0 1.3
+at: scree 52 -26 0 1.4
+at: obelisk -66 -70 8 1
+at: plinth -58 -66 -14 1
+at: altar -62 -76 90 1
+at: broken -70 -62 0 1
+at: rubble -60 -72 0 1
+at: campfire_lit 0 8 0 1
+at: brazier -4.5 -70 0 1.1
+at: brazier 4.5 -70 0 1.1
+belt: cinders -96 -96 -80 -80 3 0.75 1.3 seed=49387529158470 avoid=runway,water,solid mix=cinders,rubble
+belt: cinders -80 -96 -64 -80 5 0.75 1.3 seed=187468700523034 avoid=runway,water,solid mix=cinders,ashheap
+belt: cinders -64 -96 -48 -80 2 0.75 1.3 seed=197656815758631 avoid=runway,water,solid mix=cinders,bracken
+belt: cinders -48 -96 -32 -80 4 0.75 1.3 seed=207162634827396 avoid=runway,water,solid mix=cinders,rubble
+belt: bracken -32 -96 -16 -80 6 0.75 1.3 seed=61002223020635 avoid=runway,water,solid mix=bracken,ashheap,cinders,thistle
+belt: thistle -16 -96 0 -80 5 0.75 1.3 seed=110879242644210 avoid=runway,water,solid mix=thistle,bracken,cinders,rubble
+belt: cinders 0 -96 16 -80 2 0.75 1.3 seed=270952576168663 avoid=runway,water,solid mix=cinders,thistle
+belt: cinders 16 -96 32 -80 1 0.75 1.3 seed=18047027215878 avoid=runway,water,solid
+belt: thistle 32 -96 48 -80 1 0.75 1.3 seed=136240700685168 avoid=runway,water,solid
+belt: bracken 48 -96 64 -80 4 0.75 1.3 seed=114968149038765 avoid=runway,water,solid mix=bracken,ashheap,cinders,thistle
+belt: cinders 64 -96 80 -80 3 0.75 1.3 seed=266952211922946 avoid=runway,water,solid mix=cinders,rubble
+belt: rubble 80 -96 96 -80 3 0.75 1.3 seed=99324795108592 avoid=runway,water,solid mix=rubble,ashheap,cinders
+belt: cinders -48 -80 -32 -64 4 0.75 1.3 seed=84150221834532 avoid=runway,water,solid mix=cinders,thistle,rubble,bracken
+belt: thistle -32 -80 -16 -64 6 0.75 1.3 seed=176753684944930 avoid=runway,water,solid mix=thistle,cinders
+belt: rubble -16 -80 0 -64 3 0.75 1.3 seed=174119985830633 avoid=runway,water,solid mix=rubble,cinders
+belt: bracken 0 -80 16 -64 3 0.75 1.3 seed=61470485403482 avoid=runway,water,solid mix=bracken,rubble,cinders
+belt: cinders 16 -80 32 -64 4 0.75 1.3 seed=164994897348981 avoid=runway,water,solid mix=cinders,thistle,ashheap
+belt: cinders 32 -80 48 -64 4 0.75 1.3 seed=233128308845404 avoid=runway,water,solid mix=cinders,rubble,bracken
+belt: ashheap 48 -80 64 -64 4 0.75 1.3 seed=268988624924008 avoid=runway,water,solid mix=ashheap,rubble,cinders
+belt: bracken 64 -80 80 -64 3 0.75 1.3 seed=269660956130649 avoid=runway,water,solid mix=bracken,thistle
+belt: thistle 80 -80 96 -64 5 0.75 1.3 seed=73141844930939 avoid=runway,water,solid mix=thistle,cinders,rubble
+belt: cinders -96 -64 -80 -48 3 0.75 1.3 seed=156463877925946 avoid=runway,water,solid mix=cinders,ashheap
+belt: rubble -64 -64 -48 -48 2 0.75 1.3 seed=135887847457728 avoid=runway,water,solid mix=rubble,thistle
+belt: cinders -48 -64 -32 -48 5 0.75 1.3 seed=239638266405442 avoid=runway,water,solid mix=cinders,thistle,bracken
+belt: ashheap -16 -64 0 -48 1 0.75 1.3 seed=138496854452313 avoid=runway,water,solid
+belt: thistle 0 -64 16 -48 3 0.75 1.3 seed=270777197205334 avoid=runway,water,solid mix=thistle,rubble,bracken
+belt: cinders 16 -64 32 -48 5 0.75 1.3 seed=160636591657136 avoid=runway,water,solid mix=cinders,bracken
+belt: thistle 32 -64 48 -48 6 0.75 1.3 seed=239183935643694 avoid=runway,water,solid mix=thistle,cinders,ashheap,rubble
+belt: thistle 48 -64 64 -48 6 0.75 1.3 seed=114699470913904 avoid=runway,water,solid mix=thistle,cinders,ashheap,bracken
+belt: cinders 64 -64 80 -48 2 0.75 1.3 seed=187455965909291 avoid=runway,water,solid
+belt: bracken 80 -64 96 -48 3 0.75 1.3 seed=227767301032651 avoid=runway,water,solid mix=bracken,ashheap,cinders
+belt: thistle -96 -48 -80 -32 2 0.75 1.3 seed=21492359220157 avoid=runway,water,solid mix=thistle,ashheap
+belt: rubble -80 -48 -64 -32 2 0.75 1.3 seed=95726449865174 avoid=runway,water,solid mix=rubble,cinders
+belt: rubble 0 -48 16 -32 2 0.75 1.3 seed=48042163246961 avoid=runway,water,solid mix=rubble,thistle
+belt: bracken 16 -48 32 -32 4 0.75 1.3 seed=236284569696004 avoid=runway,water,solid mix=bracken,cinders,thistle
+belt: bracken 32 -48 48 -32 5 0.75 1.3 seed=184708570496029 avoid=runway,water,solid mix=bracken,thistle,rubble,cinders
+belt: ashheap 48 -48 64 -32 2 0.75 1.3 seed=186217490871557 avoid=runway,water,solid
+belt: thistle 80 -48 96 -32 1 0.75 1.3 seed=63182103363787 avoid=runway,water,solid
+belt: cinders -96 -32 -80 -16 2 0.75 1.3 seed=100904477045901 avoid=runway,water,solid mix=cinders,thistle
+belt: cinders -80 -32 -64 -16 2 0.75 1.3 seed=83347794709325 avoid=runway,water,solid
+belt: cinders -16 -32 0 -16 2 0.75 1.3 seed=182828226106583 avoid=runway,water,solid mix=cinders,ashheap
+belt: cinders 16 -32 32 -16 1 0.75 1.3 seed=6957435563684 avoid=runway,water,solid
+belt: thistle 32 -32 48 -16 1 0.75 1.3 seed=223943985880545 avoid=runway,water,solid
+belt: cinders 48 -32 64 -16 1 0.75 1.3 seed=180542135931550 avoid=runway,water,solid
+belt: cinders -96 -16 -80 0 1 0.75 1.3 seed=230633442003121 avoid=runway,water,solid
+belt: cinders -80 -16 -64 0 2 0.75 1.3 seed=157373934638422 avoid=runway,water,solid mix=cinders,ashheap
+belt: cinders -32 -16 -16 0 1 0.75 1.3 seed=147382057194271 avoid=runway,water,solid
+belt: ashheap -16 -16 0 0 1 0.75 1.3 seed=86903230424955 avoid=runway,water,solid
+belt: cinders 0 -16 16 0 1 0.75 1.3 seed=148548859961341 avoid=runway,water,solid
+belt: cinders 16 -16 32 0 2 0.75 1.3 seed=199362295430796 avoid=runway,water,solid mix=cinders,ashheap
+belt: cinders 32 -16 48 0 1 0.75 1.3 seed=112278066086296 avoid=runway,water,solid
+belt: cinders 48 -16 64 0 3 0.75 1.3 seed=169872623639657 avoid=runway,water,solid
+belt: thistle -96 0 -80 16 2 0.75 1.3 seed=121432482474973 avoid=runway,water,solid mix=thistle,bracken
+belt: bracken -80 0 -64 16 2 0.75 1.3 seed=245843760065000 avoid=runway,water,solid mix=bracken,ashheap
+belt: rubble -64 0 -48 16 1 0.75 1.3 seed=226533389188267 avoid=runway,water,solid
+belt: thistle -48 0 -32 16 3 0.75 1.3 seed=249706452666960 avoid=runway,water,solid mix=thistle,cinders
+belt: bracken 0 0 16 16 1 0.75 1.3 seed=173352381651998 avoid=runway,water,solid
+belt: ashheap 16 0 32 16 1 0.75 1.3 seed=161321990074343 avoid=runway,water,solid
+belt: cinders 32 0 48 16 4 0.75 1.3 seed=250249158884304 avoid=runway,water,solid mix=cinders,ashheap
+belt: cinders 64 0 80 16 1 0.75 1.3 seed=263469242000891 avoid=runway,water,solid
+belt: ashheap 80 0 96 16 3 0.75 1.3 seed=30351439201130 avoid=runway,water,solid mix=ashheap,cinders,bracken
+belt: rubble -96 16 -80 32 3 0.75 1.3 seed=31590307957508 avoid=runway,water,solid mix=rubble,cinders
+belt: ashheap -80 16 -64 32 1 0.75 1.3 seed=155598942294514 avoid=runway,water,solid
+belt: cinders -16 16 0 32 3 0.75 1.3 seed=106917699921373 avoid=runway,water,solid mix=cinders,bracken
+belt: cinders 0 16 16 32 3 0.75 1.3 seed=140026437973697 avoid=runway,water,solid
+belt: bracken 16 16 32 32 4 0.75 1.3 seed=245130497846044 avoid=runway,water,solid mix=bracken,cinders,rubble
+belt: thistle 32 16 48 32 1 0.75 1.3 seed=35755545620994 avoid=runway,water,solid
+belt: rubble 48 16 64 32 2 0.75 1.3 seed=183200302005269 avoid=runway,water,solid mix=rubble,thistle
+belt: thistle 64 16 80 32 4 0.75 1.3 seed=128117189770281 avoid=runway,water,solid mix=thistle,ashheap,cinders
+belt: cinders 80 16 96 32 7 0.75 1.3 seed=199787600967441 avoid=runway,water,solid mix=cinders,rubble,ashheap,thistle
+belt: cinders -96 32 -80 48 1 0.75 1.3 seed=19317544178888 avoid=runway,water,solid
+belt: bracken -80 32 -64 48 4 0.75 1.3 seed=277528653867188 avoid=runway,water,solid mix=bracken,cinders,thistle
+belt: cinders -64 32 -48 48 1 0.75 1.3 seed=153847639555235 avoid=runway,water,solid
+belt: cinders -48 32 -32 48 2 0.75 1.3 seed=247338018726065 avoid=runway,water,solid
+belt: cinders -32 32 -16 48 2 0.75 1.3 seed=131912404030459 avoid=runway,water,solid
+belt: bracken -16 32 0 48 3 0.75 1.3 seed=174901083449405 avoid=runway,water,solid mix=bracken,rubble,ashheap
+belt: cinders 0 32 16 48 3 0.75 1.3 seed=80118795382112 avoid=runway,water,solid mix=cinders,thistle
+belt: bracken 16 32 32 48 3 0.75 1.3 seed=13867401932504 avoid=runway,water,solid mix=bracken,cinders,thistle
+belt: bracken 32 32 48 48 6 0.75 1.3 seed=262914811645587 avoid=runway,water,solid mix=bracken,ashheap,cinders
+belt: cinders 48 32 64 48 9 0.75 1.3 seed=219497941893740 avoid=runway,water,solid mix=cinders,thistle,bracken
+belt: rubble 64 32 80 48 4 0.75 1.3 seed=203047239263285 avoid=runway,water,solid mix=rubble,ashheap,cinders
+belt: cinders 80 32 96 48 5 0.75 1.3 seed=171317589402067 avoid=runway,water,solid mix=cinders,rubble
+belt: cinders -96 48 -80 64 4 0.75 1.3 seed=219606060853853 avoid=runway,water,solid mix=cinders,rubble,bracken,thistle
+belt: bracken -80 48 -64 64 4 0.75 1.3 seed=275295803391291 avoid=runway,water,solid mix=bracken,cinders,ashheap
+belt: cinders -64 48 -48 64 2 0.75 1.3 seed=66492258503500 avoid=runway,water,solid
+belt: bracken -48 48 -32 64 2 0.75 1.3 seed=199648066426375 avoid=runway,water,solid
+belt: thistle -16 48 0 64 2 0.75 1.3 seed=264495566079696 avoid=runway,water,solid mix=thistle,cinders
+belt: cinders 0 48 16 64 5 0.75 1.3 seed=74128667113505 avoid=runway,water,solid mix=cinders,rubble,thistle
+belt: cinders 16 48 32 64 5 0.75 1.3 seed=144258919573532 avoid=runway,water,solid mix=cinders,bracken,rubble
+belt: ashheap 32 48 48 64 1 0.75 1.3 seed=6320770910418 avoid=runway,water,solid
+belt: bracken 48 48 64 64 5 0.75 1.3 seed=75144725869854 avoid=runway,water,solid mix=bracken,rubble,cinders,thistle
+belt: cinders 64 48 80 64 2 0.75 1.3 seed=258353472156572 avoid=runway,water,solid
+belt: cinders 80 48 96 64 2 0.75 1.3 seed=279064488552858 avoid=runway,water,solid
+belt: rubble -96 64 -80 80 3 0.75 1.3 seed=240959424766897 avoid=runway,water,solid mix=rubble,cinders,bracken
+belt: cinders -80 64 -64 80 6 0.75 1.3 seed=102682065815950 avoid=runway,water,solid mix=cinders,ashheap,bracken
+belt: ashheap -64 64 -48 80 4 0.75 1.3 seed=195444131465458 avoid=runway,water,solid mix=ashheap,cinders,thistle
+belt: cinders -32 64 -16 80 2 0.75 1.3 seed=183098847965616 avoid=runway,water,solid mix=cinders,rubble
+belt: cinders -16 64 0 80 1 0.75 1.3 seed=209754456093090 avoid=runway,water,solid
+belt: cinders 0 64 16 80 4 0.75 1.3 seed=21727547120136 avoid=runway,water,solid mix=cinders,bracken,thistle
+belt: rubble 16 64 32 80 6 0.75 1.3 seed=94997565167155 avoid=runway,water,solid mix=rubble,ashheap,cinders,bracken
+belt: cinders 32 64 48 80 2 0.75 1.3 seed=191716176711149 avoid=runway,water,solid mix=cinders,ashheap
+belt: cinders 48 64 64 80 2 0.75 1.3 seed=102996470014667 avoid=runway,water,solid
+belt: rubble 64 64 80 80 5 0.75 1.3 seed=281050838777328 avoid=runway,water,solid mix=rubble,cinders,thistle
+belt: cinders 80 64 96 80 1 0.75 1.3 seed=57791831974529 avoid=runway,water,solid
+belt: bracken -96 80 -80 96 3 0.75 1.3 seed=173667273184125 avoid=runway,water,solid mix=bracken,rubble,cinders
+belt: bracken -80 80 -64 96 6 0.75 1.3 seed=1895001555547 avoid=runway,water,solid mix=bracken,cinders,rubble
+belt: cinders -64 80 -48 96 5 0.75 1.3 seed=10890528908087 avoid=runway,water,solid mix=cinders,bracken,rubble,ashheap
+belt: cinders -48 80 -32 96 2 0.75 1.3 seed=90403445423763 avoid=runway,water,solid
+belt: rubble -32 80 -16 96 2 0.75 1.3 seed=191970020872795 avoid=runway,water,solid mix=rubble,cinders
+belt: cinders -16 80 0 96 5 0.75 1.3 seed=238197455602352 avoid=runway,water,solid mix=cinders,thistle
+belt: cinders 0 80 16 96 2 0.75 1.3 seed=78407380307119 avoid=runway,water,solid
+belt: cinders 16 80 32 96 5 0.75 1.3 seed=108737097557366 avoid=runway,water,solid mix=cinders,ashheap,bracken
+belt: rubble 32 80 48 96 7 0.75 1.3 seed=105659183633349 avoid=runway,water,solid mix=rubble,cinders,thistle,ashheap
+belt: cinders 48 80 64 96 7 0.75 1.3 seed=187832440898490 avoid=runway,water,solid mix=cinders,bracken
+belt: thistle 64 80 80 96 7 0.75 1.3 seed=207203903786398 avoid=runway,water,solid mix=thistle,cinders,ashheap
+belt: cinders 80 80 96 96 2 0.75 1.3 seed=3933816938902 avoid=runway,water,solid mix=cinders,thistle
+
+soil: 5x726 7x4 5x106 7x7 5x103 7x9 5x98 7x14 5x97 7x16 5x95 7x23 5x88 7x25 5x13 8x5
+soil: 5x68 7x26 5x9 8x10 5x67 7x26 5x7 8x13 5x65 7x27 5x5 8x15 5x65 7x28 5x3 8x16
+soil: 5x65 7x28 5x3 8x16 5x64 7x34 8x14 5x64 7x35 8x13 5x64 7x35 8x13 5x63 7x36 8x13
+soil: 5x63 7x36 8x14 5x62 7x36 8x15 5x61 7x36 8x15 5x61 7x36 8x15 5x61 7x36 8x15 5x61
+soil: 7x36 8x15 5x60 7x37 8x14 5x61 7x37 8x14 5x61 7x37 8x13 5x62 7x38 5x3 8x8 5x63
+soil: 7x38 5x4 8x5 5x64 7x40 5x72 7x40 5x72 7x40 5x61 8x4 5x7 7x40 5x59 8x7 5x6
+soil: 7x40 5x58 8x9 5x5 7x40 5x57 8x14 7x41 5x57 8x14 7x40 5x57 8x15 7x40 5x57 8x15
+soil: 7x40 5x57 8x16 7x39 5x57 8x16 7x39 5x57 8x16 7x38 5x59 8x16 7x37 5x60 8x15 5x2
+soil: 7x35 5x60 8x15 5x2 7x34 5x62 8x13 5x3 7x34 5x62 8x13 5x4 7x32 5x63 8x12 5x5
+soil: 7x32 5x63 8x10 5x7 7x31 5x65 8x8 5x8 7x30 5x67 8x4 5x11 7x30 5x82 7x29 5x83
+soil: 7x28 5x85 7x26 5x86 7x25 5x90 7x22 5x91 7x20 5x93 7x18 5x94 7x17 5x96 7x16 5x96
+soil: 7x5 5x4 7x6 5x4 8x6 5x97 7x4 5x3 8x9 5x97 7x1 5x4 8x10 5x101 8x11 5x100
+soil: 8x12 5x100 8x12 5x99 8x13 5x99 8x14 5x98 8x14 5x98 8x14 5x98 8x14 5x99 8x12 5x102
+soil: 8x9 5x77 8x4 5x106 8x7 5x103 8x9 5x102 8x11 5x100 8x12 5x100 8x13 5x98 8x16 5x96
+soil: 8x17 5x94 8x19 5x93 8x19 5x93 8x19 5x94 8x17 5x95 8x17 5x97 8x15 5x99 8x12 5x101
+soil: 8x10 5x103 8x8 5x104 8x6 5x108 8x2 5x1864
+soiledge: 1x726 2x4 1x106 2x7 1x103 2x9 1x98 2x14 1x97 2x16 1x95 2x23 1x88 2x25 1x13 2x5
+soiledge: 1x68 2x26 1x9 2x10 1x67 2x26 1x7 2x13 1x65 2x27 1x5 2x15 1x65 2x28 1x3 2x16
+soiledge: 1x65 2x28 1x3 2x16 1x64 2x48 1x64 2x48 1x64 2x48 1x63 2x49 1x63 2x50 1x62 2x51
+soiledge: 1x61 2x51 1x61 2x51 1x61 2x51 1x61 2x51 1x60 2x51 1x61 2x51 1x61 2x50 1x62 2x38
+soiledge: 1x3 2x8 1x63 2x38 1x4 2x5 1x64 2x40 1x72 2x40 1x72 2x40 1x61 2x4 1x7 2x40
+soiledge: 1x59 2x7 1x6 2x40 1x58 2x9 1x5 2x40 1x57 2x55 1x57 2x54 1x57 2x55 1x57 2x55
+soiledge: 1x57 2x55 1x57 2x55 1x57 2x54 1x59 2x53 1x60 2x15 1x2 2x35 1x60 2x15 1x2 2x34
+soiledge: 1x62 2x13 1x3 2x34 1x62 2x13 1x4 2x32 1x63 2x12 1x5 2x32 1x63 2x10 1x7 2x31
+soiledge: 1x65 2x8 1x8 2x30 1x67 2x4 1x11 2x30 1x82 2x29 1x83 2x28 1x85 2x26 1x86 2x25
+soiledge: 1x90 2x22 1x91 2x20 1x93 2x18 1x94 2x17 1x96 2x16 1x96 2x5 1x4 2x6 1x4 2x6
+soiledge: 1x97 2x4 1x3 2x9 1x97 2x1 1x4 2x10 1x101 2x11 1x100 2x12 1x100 2x12 1x99 2x13
+soiledge: 1x99 2x14 1x98 2x14 1x98 2x14 1x98 2x14 1x99 2x12 1x102 2x9 1x77 2x4 1x106 2x7
+soiledge: 1x103 2x9 1x102 2x11 1x100 2x12 1x100 2x13 1x98 2x16 1x96 2x17 1x94 2x19 1x93 2x19
+soiledge: 1x93 2x19 1x94 2x17 1x95 2x17 1x97 2x15 1x99 2x12 1x101 2x10 1x103 2x8 1x104 2x6
+soiledge: 1x108 2x2 1x1864
+
+foe: delver -8.00 -30.00 0.0 1.00 0.21
+foe: delver 11.00 -48.00 180.0 1.05 0.63
+foe: archer -14.00 -58.00 90.0 1.00 0.40
+foe: archer 16.00 -62.00 270.0 0.96 0.77

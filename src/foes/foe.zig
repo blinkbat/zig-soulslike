@@ -86,7 +86,7 @@ pub fn traitsOf(k: wf.FoeKind) Traits {
         .archer, .shieldman, .greatsword, .bone_knight, .necromancer => .{ .nature = .undead },
         .berserker, .priest, .slinger, .ogre => .{ .nature = .humanoid },
         .brood_mother, .broodling, .delver, .florid_ravager => .{ .nature = .beast },
-        .shroom, .mushroom_mage => .{ .nature = .plant },
+        .shroom, .mushroom_mage, .spore_golem => .{ .nature = .plant },
     };
 }
 
@@ -1606,4 +1606,52 @@ test "EVERY CREATURE IS CLASSIFIED, and the water is only home to the two it bel
     try std.testing.expectEqual(Nature.demon, traitsOf(.fen_lurker).nature);
     try std.testing.expect(still >= 4);
     std.debug.print("\n  wade: a 1.8 m walker turns back at {d:.2} m, where the hero goes to {d:.2} m\n", .{ wadeLimit(.archer, 1.8), envWadePin });
+}
+
+// ── STANDING IN SOMETHING THAT HURTS ────────────────────────────────────────────────────────────────────
+//
+// **A GAS BILLS YOU THE MOMENT YOU STEP IN, AND THE CLOCK STARTS AFTER** (owner). Every cloud in this game
+// was written the other way round — zero the timer on exit, accumulate `dt` inside, pay out on the interval
+// — so walking through the edge of one cost nothing at all and standing in it for half a second cost
+// nothing either. You could clip the corner of a poison cloud for free, which taught the player that the
+// cloud is a suggestion.
+//
+// Two shapes need it and they differ in what they meter:
+//
+//   * A DOSE on an interval (`knight.Vigil.gasDose`, `game.tickBoltGas`) — those only had to seed the
+//     accumulator AT the interval instead of at zero, so the first frame inside is already due.
+//   * A BUILD per second (poison, acid) — that is this, because there is no interval to seed. Entering
+//     pays `ENTRY_BOLUS` seconds of the rate up front, and every frame after is the honest `rate * dt`.
+
+/// Seconds of the rate handed over the instant you cross into a cloud. A third: enough that clipping the rim
+/// is a real cost, not so much that the entry frame is worse than the second you spend in there.
+pub const ENTRY_BOLUS: f32 = 0.34;
+
+pub const Soak = struct {
+    inside: bool = false,
+
+    pub fn step(self: *Soak, now: bool, dt: f32, rate: f32) f32 {
+        if (!now) {
+            self.inside = false;
+            return 0;
+        }
+        if (!self.inside) {
+            self.inside = true;
+            return rate * ENTRY_BOLUS;
+        }
+        return rate * dt;
+    }
+};
+
+test "A CLOUD BILLS YOU ON ENTRY AND THEN ON THE CLOCK" {
+    var s = Soak{};
+    const dt: f32 = 1.0 / 60.0;
+    const first = s.step(true, dt, 24.0);
+    const after = s.step(true, dt, 24.0);
+    std.debug.print("\n  soak: stepping in costs {d:.2}, each frame after costs {d:.3}\n", .{ first, after });
+    try std.testing.expect(first > after * 10.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 24.0 * ENTRY_BOLUS), first, 1e-4);
+    // Leaving and coming back is a NEW entry — clipping the rim twice costs twice.
+    try std.testing.expectEqual(@as(f32, 0), s.step(false, dt, 24.0));
+    try std.testing.expect(s.step(true, dt, 24.0) > after * 10.0);
 }

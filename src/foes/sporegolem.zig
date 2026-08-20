@@ -299,7 +299,10 @@ pub const Golem = struct {
             self.smashCd = SMASH_CD;
             return self.enter(.smash_wind);
         }
-        if (dist >= SLAM_MIN and dist <= SLAM_MAX and self.slamCd <= 0) {
+        // **THE SLAM IS A LEAP, SO IT IS GATED WHERE THE MOVE IS CHOSEN** (`ravager`'s law, `foe.canLeap`) —
+        // the airborne half of `foe.grip` deliberately lets a body finish an arc it is already in, so a jump
+        // still ALLOWED to start is a jump straight out of the roots that were holding its feet.
+        if (dist >= SLAM_MIN and dist <= SLAM_MAX and self.slamCd <= 0 and foe.canLeap(&self.root)) {
             self.slamCd = SLAM_CD;
             return self.enter(.slam_wind);
         }
@@ -315,6 +318,10 @@ pub const Golem = struct {
             foe.tickParticles(&self.parts, dt, self.pos.y);
             return null;
         }
+        // The wand's grip and the rime's chill, on the foe contract's own terms — taken before anything moves
+        // `pos`, held through a `defer`, and left to the `vit.dead` check below to resolve a drip that kills.
+        const held = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
+        defer if (!self.airborne()) held.hold(&self.pos);
         self.vit.tick(dt);
         foe.fadeFlash(&self.flash, dt);
         foe.tickParticles(&self.parts, dt, self.pos.y);
@@ -420,7 +427,7 @@ pub const Golem = struct {
         }
 
         if (self.vit.stunned() and self.state != .stunlight and self.state != .stunheavy and self.state != .dead) {
-            self.enter(if (self.vit.stance <= 0) .stunheavy else .stunlight);
+            self.enter(if (self.vit.stunHeavy()) .stunheavy else .stunlight);
         }
 
         self.speed = if (dt > 0) moved / dt else 0;
@@ -802,4 +809,95 @@ test "THE STAMPED WAY IS ACTUALLY READ, and a slam broken in the air comes down"
     k = 0;
     while (k < 60) : (k += 1) _ = plinked.update(dt, far, 400, .{});
     try std.testing.expect(plinked.state != .idle);
+}
+
+test "THE WAND REACHES IT: the grip bills and lets go, and the rime's cone does too" {
+    const dt: f32 = 1.0 / 60.0;
+    const hero = v3(0, 0, 4.0);
+
+    // **ROOTS BILL, AND THE GRIP EXPIRES.** `game.seedRoots` writes `root` on whatever it picks, and a
+    // creature that never calls `foe.grip` bills none of it and holds the clock open for good — the spell
+    // costs 12 FP and does literally nothing.
+    var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const before = g.vit.hp;
+    g.root.grab();
+    try std.testing.expect(g.root.held());
+    var t: f32 = 0;
+    while (t < combat.ROOT_HOLD + 0.2) : (t += dt) _ = g.update(dt, hero, 400, .{});
+    try std.testing.expect(!g.root.held());
+    const paid = before - g.vit.hp;
+    std.debug.print("\n  spore golem: the roots bill {d:.1} of a {d:.0} bar over {d:.1} s\n", .{ paid, HP_MAX, combat.ROOT_HOLD });
+    try std.testing.expect(paid > 0);
+    // CHAOS, and it resists chaos hard, so the bill is well under the raw drip rather than equal to it.
+    try std.testing.expect(paid < combat.ROOT_HOLD * combat.ROOT_DPS);
+
+    // **AND THE FEET ARE HELD WHILE IT RUNS** — the whole point of the spell on a thing that walks at you.
+    var pinned = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
+    while (pinned.state != .walk) _ = pinned.update(dt, v3(0, 0, 9.0), 400, .{});
+    pinned.root.grab();
+    const stood = pinned.pos;
+    var k: u32 = 0;
+    while (k < 20) : (k += 1) _ = pinned.update(dt, v3(0, 0, 9.0), 400, .{});
+    try std.testing.expectApproxEqAbs(stood.x, pinned.pos.x, 1e-5);
+    try std.testing.expectApproxEqAbs(stood.z, pinned.pos.z, 1e-5);
+
+    // **THE RIME BILLS AS COLD, WHICH IT RESISTS** — the cone is poured every frame it is held, so what has
+    // to happen here is that the owed bite is collected at all.
+    var cold = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const hp0 = cold.vit.hp;
+    t = 0;
+    while (t < combat.RIME_DUR) : (t += dt) {
+        cold.chill.breathe(dt);
+        _ = cold.update(dt, hero, 400, .{});
+    }
+    try std.testing.expect(cold.vit.hp < hp0);
+    try std.testing.expect(cold.chill.held());
+    t = 0;
+    while (t < combat.CHILL_HOLD + 0.2) : (t += dt) _ = cold.update(dt, hero, 400, .{});
+    try std.testing.expect(!cold.chill.held());
+}
+
+test "A STAGGER FROM ANYWHERE PICKS THE RIGHT SEVERITY — `stance <= 0` never was true" {
+    const dt: f32 = 1.0 / 60.0;
+    const hero = v3(0, 0, 4.0);
+    var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
+    _ = g.update(dt, hero, 400, .{});
+    // A break straight through the bars, the way a blow that did not come down `tryHit` arrives. `Vitals.hit`
+    // refills `stance` on the frame it breaks, so the severity has to be read off the stun and not off a bar.
+    g.vit.stance = 1;
+    try std.testing.expectEqual(combat.HitResult.heavy, g.vit.hit(.{ .stance = 40 }));
+    try std.testing.expect(g.vit.stunHeavy());
+    _ = g.update(dt, hero, 400, .{});
+    try std.testing.expectEqual(State.stunheavy, g.state);
+
+    var lit = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
+    _ = lit.update(dt, hero, 400, .{});
+    try std.testing.expectEqual(combat.HitResult.light, lit.vit.hit(.{ .poise = POISE_MAX + 1 }));
+    try std.testing.expect(!lit.vit.stunHeavy());
+    _ = lit.update(dt, hero, 400, .{});
+    try std.testing.expectEqual(State.stunlight, lit.state);
+}
+
+test "IT CANNOT SLAM ITS WAY OUT OF THE ROOTS — the leap is gated where the move is chosen" {
+    const dt: f32 = 1.0 / 60.0;
+    // Standing in the slam's own band, cooldown clear, and held by the ankles: it may pick anything but the
+    // leap. `foe.grip`'s airborne guard lets a body finish an arc it is ALREADY in, so a jump still allowed to
+    // start is a jump straight out of the fist of roots (`ravager`'s own note).
+    const hero = v3(0, 0, (SLAM_MIN + SLAM_MAX) * 0.5);
+    var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
+    g.root.grab();
+    var t: f32 = 0;
+    while (t < combat.ROOT_HOLD * 0.8) : (t += dt) {
+        _ = g.update(dt, hero, 400, .{});
+        try std.testing.expect(g.state != .slam_wind and g.state != .slam_air);
+    }
+    // …and the same golem, unheld, takes it — or the gate above is passing for the wrong reason.
+    var free = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
+    t = 0;
+    var leapt = false;
+    while (t < 6.0 and !leapt) : (t += dt) {
+        _ = free.update(dt, hero, 400, .{});
+        if (free.state == .slam_wind or free.state == .slam_air) leapt = true;
+    }
+    try std.testing.expect(leapt);
 }

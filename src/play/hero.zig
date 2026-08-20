@@ -568,6 +568,11 @@ pub const STANCE_MAX = 90.0;
 pub const ATK_LIGHT_HIT = combat.Hit{ .dmg = 13, .poise = 10 };
 pub const ATK_HEAVY_HIT = combat.Hit{ .dmg = 27, .poise = 22, .stance = 14 };
 
+/// **HIS `vit.armour` STAYS 0, AND NOTHING MAY EVER SET IT.** Armour has one arithmetic (`combat.armourTaken`)
+/// and two doors into it: a creature carries the figure on its `Vitals` (`Vitals.withArmour`, the spore
+/// homunculus) and `damageFrom` applies it, where the HERO's is a DERIVED value — worn plate plus the tree —
+/// so `takeHit`/`blockHit` pre-apply it off `armourA()` at the moment of the blow. Both at once is the same
+/// curve twice, silently, and a ring would read as four times its plate.
 pub fn freshVitals(sheet: statsmod.Sheet) combat.Vitals {
     return combat.Vitals.init(sheet.hp(), POISE_MAX, STANCE_MAX);
 }
@@ -1482,7 +1487,9 @@ pub const Hero = struct {
     }
 
     /// **WHICH HAND SOMETHING IS IN.** The RIGHT wins if somehow both, since that is the hand the rig's own
-    /// held bone is parented to. ONE COPY: every armament that is POSED, MEASURED or EMITTED FROM asks this.
+    /// held bone is parented to. One of the TWO forms the four `*Left` predicates below are written in, and
+    /// they agree on every state where the thing is actually in a hand (`holds`): what separates them is only
+    /// which hand they name for an armament that is not held at all — see those four.
     fn heldLeft(self: *const Hero, a: Armament) bool {
         return self.arm != a and self.off == a and self.offInHand();
     }
@@ -1499,6 +1506,11 @@ pub const Hero = struct {
         return self.heldLeft(.bell);
     }
 
+    /// **AN UNHELD ARMAMENT FALLS BACK TO ITS OWN HAND, WHICH IS WHY THESE TWO ARE THE OTHER WAY ROUND.** The
+    /// rod and the boards are LEFT-hand things, so `!heldRight` (left unless the rack put it right); the sword
+    /// and the bell are RIGHT-hand things, so `heldLeft`. It only shows while `guardB`/the cast blend eases out
+    /// after a swap took the thing out of both hands — the pose is fading and nothing of that shape is drawn,
+    /// so the arm it fades on is the only thing at stake. Unifying them is a LOOK, not a cleanup.
     pub fn wandLeft(self: *const Hero) bool {
         return !self.heldRight(.wand);
     }

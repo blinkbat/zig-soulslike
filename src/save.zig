@@ -558,8 +558,14 @@ pub fn parse(text: []const u8, d: *Data) !void {
 
 const Tok = std.mem.TokenIterator(u8, .any);
 
+/// **NON-FINITE IS A BAD FIELD** (`worldfmt.finiteFloat`'s rule, and this parser is the other door into the
+/// same runtime). `parseFloat` accepts `nan` and `inf`, and a NaN through here is not a wrong number, it is a
+/// number nothing downstream can refuse: a NaN `at:` clamps to the corner of the world and a NaN facing poses
+/// the whole rig off-screen. Refuse the file instead.
 fn float(it: *Tok) !f32 {
-    return std.fmt.parseFloat(f32, it.next() orelse return Error.BadField) catch Error.BadField;
+    const v = std.fmt.parseFloat(f32, it.next() orelse return Error.BadField) catch return Error.BadField;
+    if (!std.math.isFinite(v)) return Error.BadField;
+    return v;
 }
 
 fn int(comptime T: type, it: *Tok) !T {

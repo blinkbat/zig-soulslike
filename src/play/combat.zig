@@ -164,6 +164,7 @@ pub const Vitals = struct {
     regenRate: f32 = 1.0,
     poiseRate: f32 = 1.0,
     stunLeft: f32 = 0,
+    stunAs: StunKind = .none,
     lightStun: f32 = LIGHT_STUN_DUR,
     heavyStun: f32 = HEAVY_STUN_DUR,
     res: Resists = .{},
@@ -213,17 +214,26 @@ pub const Vitals = struct {
         return self.stunLeft > 0;
     }
 
+    /// **WHICH STAGGER IS IN FLIGHT** — STORED, because it cannot be recovered from the bars afterwards: `hit`
+    /// refills `stance` to full on the frame it breaks, so a `stance <= 0` test for "was that the heavy one"
+    /// is a condition that is never true. Read by a creature whose state machine has a pose per severity.
+    pub fn stunHeavy(self: *const Vitals) bool {
+        return self.stunAs == .heavy;
+    }
+
     pub fn revive(self: *Vitals, frac: f32) void {
         self.dead = false;
         self.hp = mathx.maxF(1.0, self.hpMax * mathx.clampF(frac, 0, 1));
         self.poise = self.poiseMax;
         self.stance = self.stanceMax;
         self.stunLeft = 0;
+        self.stunAs = .none;
         self.sinceHit = LONG_AGO;
         self.sinceHurt = LONG_AGO;
     }
 
     pub fn beginStun(self: *Vitals, kind: StunKind) void {
+        self.stunAs = kind;
         self.stunLeft = switch (kind) {
             .none => 0,
             .light => self.lightStun,
@@ -253,6 +263,7 @@ pub const Vitals = struct {
             self.stunLeft -= dt;
             if (self.stunLeft <= 0) {
                 self.stunLeft = 0;
+                self.stunAs = .none;
                 self.poise = self.poiseMax;
             }
         }
@@ -1141,8 +1152,12 @@ pub const Souls = struct {
         self.shown = minF(goal, self.shown + maxF((goal - self.shown) * SOUL_ROLL_RATE, SOUL_ROLL_FLOOR) * dt);
     }
 
+    /// **THROUGH A `u64` AND CAPPED ON THE TOTAL.** `maxInt(u32)` has no f32 that represents it — the nearest
+    /// is 2^32 — so a saturated total rolls `shown` to a float ONE PAST the type it was being cast into, and
+    /// that cast is illegal rather than merely wrong. `maxF` is the NaN guard (`clampF`'s reason).
     pub fn display(self: *const Souls) u32 {
-        return @intFromFloat(@floor(maxF(self.shown, 0)));
+        const n: u64 = @intFromFloat(@floor(maxF(self.shown, 0)));
+        return @intCast(@min(n, self.total));
     }
 };
 

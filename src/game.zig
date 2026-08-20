@@ -3520,7 +3520,7 @@ pub fn run(mode: Mode) void {
     defer menumod.unload();
 
     const alloc = std.heap.c_allocator;
-    const g = alloc.create(Game) catch return;
+    const g = alloc.create(Game) catch @panic("game: could not allocate Game");
     defer alloc.destroy(g);
     g.init();
 
@@ -3840,7 +3840,7 @@ pub fn run(mode: Mode) void {
 
         const l1Held = rl.isMouseButtonDown(.right) or padDown(.left_trigger_1);
         const l1Press = rl.isMouseButtonPressed(.right) or padPressed(.left_trigger_1);
-        const l2Held = rl.isMouseButtonDown(.right) or padDown(.left_trigger_2);
+        const l2Held = rl.isKeyDown(PARRY_KEY) or padDown(.left_trigger_2);
         const l2Press = rl.isKeyPressed(PARRY_KEY) or padPressed(.left_trigger_2);
         const shiftDown = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
         const lmbPress = rl.isMouseButtonPressed(.left);

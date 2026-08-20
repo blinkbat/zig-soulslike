@@ -5,7 +5,7 @@ const mathx = @import("../core/mathx.zig");
 
 pub const Icon = enum {
     ground,
-    cover,
+    locations,
     decor,
     props,
     interact,
@@ -52,6 +52,8 @@ pub const Icon = enum {
     reload,
     undo,
     redo,
+    eye,
+    eyeOff,
 };
 
 pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
@@ -65,7 +67,7 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             hline(cx + s * 0.22, cy, s * 0.20, w, d);
             hline(cx, cy + s * 0.22, s * 0.72, w, col);
         },
-        .cover => {
+        .locations => {
             box(cx, cy, s * 0.78, s * 0.62, w, d);
             var i: i32 = -1;
             while (i <= 1) : (i += 1) {
@@ -460,6 +462,28 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             vline(cx + s * 0.30, cy + s * 0.18, s * 0.24, w, col);
             arrowHead(cx + s * 0.30, cy + s * 0.30, s * 0.17, 90, col);
         },
+        // TWO ARCS AND A PUPIL, and the lid is the SAME shape mirrored — an eye drawn as a circle in a box
+        // reads as a target at this size. `eyeOff` keeps the whole open eye and strikes it, rather than
+        // drawing a closed lid: the two have to be one glance apart on a strip of six.
+        .eye => eyeInto(cx, cy, s, w, col, false),
+        .eyeOff => eyeInto(cx, cy, s, w, col, true),
+    }
+}
+
+/// **A LENS AND A SOLID PUPIL, AND THAT IS ALL IT CAN AFFORD.** This one is drawn at about a dozen pixels in
+/// the editor's layer strip — the smallest glyph in the set — so the first version's two deep arcs round a
+/// ring round a dot came out as one grey blob. Two SHALLOW arcs meeting at the corners read as an eye at that
+/// size; the pupil is filled rather than outlined for the same reason.
+fn eyeInto(cx: f32, cy: f32, s: f32, w: f32, col: rl.Color, struck: bool) void {
+    const body = if (struck) dim(col) else col;
+    arc(cx, cy + s * 0.30, s * 0.46, 214, 326, w, body);
+    arc(cx, cy - s * 0.30, s * 0.46, 34, 146, w, body);
+    if (struck) {
+        // The whole open eye stays under the stroke: shut and open have to be one glance apart on a strip of
+        // six, and a closed lid drawn as a single line is indistinguishable from a dash.
+        line(cx - s * 0.40, cy + s * 0.34, cx + s * 0.40, cy - s * 0.34, w * 1.3, col);
+    } else {
+        dot(cx, cy, @max(w * 1.05, s * 0.15), col);
     }
 }
 

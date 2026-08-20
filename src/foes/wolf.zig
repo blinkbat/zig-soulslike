@@ -77,10 +77,9 @@ comptime {
     }
 }
 
-// Segment lengths as fractions of `W`, summing to the stature they are measured against. The CHEST IS HALF
-// THE HEIGHT and that is what stops it being leggy: a canid's brisket sits at ~0.55 of the withers, so the
-// body is nearly as deep as the leg under it is long. Built with the shoulder at 0.62 the trunk floated on
-// stilts and read as a deer.
+// Segment lengths as fractions of `W`, summing to the stature they are measured against. THE CHEST IS HALF
+// THE HEIGHT: a canid's brisket sits at ~0.55 of the withers, so the body is nearly as deep as the leg
+// under it is long. Built with the shoulder at 0.62 the trunk floated on stilts and read as a deer.
 const SHOULDER_Y = 0.70;
 const HIP_Y = 0.72;
 const BRISKET_Y = 0.46;
@@ -96,10 +95,9 @@ const HEAD_Y = 0.82;
 const HEAD_Z = 0.72;
 
 /// In the animal's own standing frame (X its left, Y up, Z forward), as fractions of the WITHERS HEIGHT it is
-/// handed. **THE ONE DIAL THAT IS HONESTLY PER-CREATURE**, and the reason this takes it rather than reading
-/// `W`: everything above is a canid's proportions and every four-legged thing in this game is one, so a second
-/// quadruped is a stature and a head — never a second copy of the joint layout (`hero.restHumanoid`'s law, one
-/// rig along). Uniform, because "bigger" is a scale and "chunkier" is these fractions.
+/// handed. **THE ONE DIAL THAT IS HONESTLY PER-CREATURE**, and why this takes it rather than reading `W`:
+/// everything above is a canid's proportions, so a second quadruped is a stature and a head, never a second
+/// copy of the joint layout. Uniform, because "bigger" is a scale and "chunkier" is these fractions.
 pub fn restPose(w: f32) [N]rl.Vector3 {
     var r: [N]rl.Vector3 = undefined;
     r[ROOT] = v3(0, HIP_Y, HIP_Z);
@@ -115,8 +113,7 @@ pub fn restPose(w: f32) [N]rl.Vector3 {
     r[EARR] = v3(-0.050, HEAD_Y + 0.075, HEAD_Z - 0.055);
     // THE REST CHAIN CARRIES THE TRUE SEGMENT LENGTHS, so its paw hangs BELOW the ground — that surplus is
     // the zig-zag. `setJoint` takes each bone's length from the DISTANCE between two rest points, so laying
-    // the paw at y = 0 tells the solver a lower segment 4-10% longer than the bones are, and it over-bends
-    // every limb and stands the animal on four feet hanging in the air.
+    // the paw at y = 0 tells the solver a lower segment 4-10% longer than the bones are.
     inline for (.{ .{ SHL, ELL, CAL, PAWL, TRACK }, .{ SHR, ELR, CAR, PAWR, -TRACK } }) |c| {
         r[c[0]] = v3(c[4], SHOULDER_Y, CHEST_Z);
         r[c[1]] = v3(c[4], SHOULDER_Y - HUMERUS, CHEST_Z);
@@ -147,8 +144,7 @@ pub const WALK = Gait{ .duty = 0.65, .lag = 0.84 };
 pub const TROT = Gait{ .duty = 0.55, .lag = 0.50 };
 pub const GALLOP = Gait{ .duty = 0.42, .lag = 0.63 };
 pub const WALK_SPEED: f32 = 1.1;
-/// A WOLF'S TRAVELLING GAIT, and the speed it will hold for hours: 2.2-2.7 m/s. Just over the hero's walk,
-/// which is why it can pace him without breaking into anything.
+/// A WOLF'S TRAVELLING GAIT, and the speed it will hold for hours: 2.2-2.7 m/s. Just over the hero's walk.
 pub const TROT_SPEED: f32 = 2.4;
 pub const GALLOP_SPEED: f32 = 5.2;
 
@@ -199,12 +195,11 @@ pub fn pawAt(phase: f32, g: Gait, stride: f32, w: f32) struct { z: f32, y: f32 }
 
 const SWING_LIFT: f32 = 0.115;
 
-/// **ALL FOUR LEGS, AND IT IS THE SHARED HALF OF THE QUADRUPED RIG** (`hero.legChain`'s opposite number, one
-/// rig along). A free function over `rest` and a withers height rather than a method, for exactly the reason
-/// the humanoid's is: a second four-legged creature owes a stature and a head, never a transcription of the
-/// joint layout — and the layout is what `LIMBS` is. `crouch` is how far the whole animal has sunk this frame
-/// (the gather; it comes off the joint's own height, because a lower body has that much less leg to span) and
-/// `tuck` is how far the paws are drawn up under it, 0..1 of the limb's reach — the leap's fold.
+/// **ALL FOUR LEGS, AND IT IS THE SHARED HALF OF THE QUADRUPED RIG** (`hero.legChain`'s opposite number). A
+/// free function over `rest` and a withers height for that one's reason: a second four-legged creature owes a
+/// stature and a head, never a transcription of the joint layout. `crouch` is how far the whole animal has
+/// sunk this frame (off the joint's own height) and `tuck` how far the paws are drawn up under it, 0..1 of
+/// the limb's reach.
 pub fn legs(
     wx: *[N]rl.Matrix,
     rest: *const [N]rl.Vector3,
@@ -229,7 +224,7 @@ pub fn legs(
         heromod.setJoint(wx, rest, top, @intCast(PARENT[top]), rx(sol.upper));
         heromod.setJoint(wx, rest, mid, top, rx(sol.lower));
         // The carpus/hock takes a share of the lower segment's fold back the other way — that second bend is
-        // the zig-zag a canid's leg has and a two-link solve on its own cannot show.
+        // the zig-zag a canid's leg has and a two-link solve cannot show.
         heromod.setJoint(wx, rest, low, mid, rx(-sol.lower * 0.45));
         const lift: f32 = if (planted(phase, g)) 0 else 26.0 * m;
         heromod.setJoint(wx, rest, paw, low, rx(-sol.upper - sol.lower * 0.55 + lift));
@@ -259,10 +254,9 @@ const PAW = rgba(28, 29, 34, SHEEN);
 const FUR = rgba(78, 86, 98, 172);
 const FUR_DK = rgba(40, 44, 52, SHEEN);
 
-/// How solid he draws in the lit pass. Raised from 0.72: with depth writes ON the far side of him is already
-/// gone, so the remaining alpha is doing ONE job — letting a little of the world through his near face — and
-/// at 0.72 that read as a jellyfish. This is "you can tell he is not quite here", not "you can see through
-/// him".
+/// How solid he draws in the lit pass. With depth writes ON, the far side of him is already gone, so the
+/// remaining alpha does ONE job — letting a little of the world through his near face — and at 0.72 that
+/// read as a jellyfish.
 pub const SPIRIT_FADE: f32 = 0.86;
 const NOSE = rgba(22, 20, 19, 255);
 const EYE = rgba(150, 180, 210, 110);
@@ -298,11 +292,8 @@ fn boneMesh(i: usize) rl.Mesh {
     const s = W;
     switch (i) {
         // THE TRUNK, ROUND and ONE MASS: blobs and capsules, never a box. Each section OVERLAPS its neighbour
-        // well past the joint (the packed-stone rule) and the radii GRADE, so what reads is one barrel
-        // deepening toward the chest rather than a caterpillar of balls with a waist between each. Each is
-        // still drawn from its own bone, so the spine bends. The chest is DEEP — brisket 0.55 W to withers
-        // 1.00 is near half the animal's height — and the barrel is WIDE, carried on the X radii, because
-        // depth alone reads as a slab from the side and changes nothing head-on.
+        // well past the joint (the packed-stone rule) and the radii GRADE. The chest is DEEP — brisket 0.55 W
+        // to withers 1.00 — and the barrel is WIDE on the X radii, because depth alone reads as a slab.
         CHEST => {
             const dep = (SHOULDER_Y - BRISKET_Y) + 0.26;
             b.addBlob(v3(0, -0.015 * s, -0.10 * s), v3(0.205 * s, dep * 0.5 * s, 0.36 * s), 6, 11, peltAt(0.5));
@@ -390,21 +381,18 @@ pub const DISS_DUR: f32 = 1.25;
 pub const DISSOLVE = foe.Dissolve{ .rate = 62.0, .spread = 1.05, .rise = 0.85, .flake = PELT_LT };
 
 pub const HUNT_R: f32 = 16.0;
-/// **A FOE THE HERO HAS WALKED AWAY FROM IS NOT THIS SPIRIT'S PROBLEM** (owner's call). Its tether is to HIM,
-/// not to a post — that is the whole difference between a summon and a creature — so a body only counts as
-/// quarry while the HERO is still this close to it. Tightened from 19 m: at that range it would stay behind
-/// worrying at an archer the player had long since left, which is a summon you have to come back for.
+/// **A FOE THE HERO HAS WALKED AWAY FROM IS NOT THIS SPIRIT'S PROBLEM.** Its tether is to HIM, not to a post
+/// — the whole difference between a summon and a creature. At the old 19 m it would stay behind worrying at
+/// an archer the player had long since left.
 pub const TETHER_R: f32 = 12.0;
-/// …and the hard recall. Past this from him, NOTHING is worth chasing: it breaks off whatever it is doing and
-/// comes back. Above `TETHER_R` so the two rules cannot fight — the first stops it TAKING distant work, this
-/// one drops work it is already on.
+/// …and the hard recall. Past this from him, NOTHING is worth chasing. Above `TETHER_R` so the two rules
+/// cannot fight — the first stops it TAKING distant work, this one drops work it is already on.
 pub const RECALL_R: f32 = 15.0;
 pub const HEEL_R: f32 = 3.2;
 pub const RUN_GAP: f32 = 7.0;
-/// HOW LONG IT MAY BE OUT PAST `RECALL_R` BEFORE THE BOND MOVES IT ITSELF (owner's call). Running home is the
-/// first answer and this is the one for when running cannot work — a bank it may not climb, a wall with no way
-/// round inside its probe, or a man who simply out-sprints it. Measured against the recall ring rather than
-/// against a distance of its own, so the clock only runs while it has already been told to come back.
+/// HOW LONG IT MAY BE OUT PAST `RECALL_R` BEFORE THE BOND MOVES IT ITSELF. Running home is the first answer;
+/// this is for when running cannot work. Measured against the recall ring rather than a distance of its own,
+/// so the clock only runs while it has already been told to come back.
 pub const LOST_DWELL: f32 = 3.0;
 pub const BITE_R: f32 = 1.35;
 
@@ -418,21 +406,17 @@ const BITE_TRIGGER_R: f32 = BITE_R + BITE_HOP * 0.8;
 pub const HUNT_KEEP: f32 = 1.7;
 
 /// WHAT IT IS SET ON: a point, HOW BROAD IT IS (the bite gate is measured off the radius), HOW HIGH UP ITS
-/// MASS ACTUALLY SITS, and WHICH BODY. The key is OPAQUE here — only `game.zig` mints one and reads it back
-/// (`foe.Leash`'s arrangement).
+/// MASS SITS, and WHICH BODY. The key is OPAQUE here — only `game.zig` mints one and reads it back.
 ///
-/// **`aim` IS WHY THE LEAP IS THE QUARRY'S AND NOT A CONSTANT.** A pounce sized for an ogre's chest sails clean
-/// over a snag whose whole mass is at knee height, which is the same "struggles to hit" one creature along.
-/// Metres above the quarry's OWN FEET, so it is a fact about that body and not about where either of them is
-/// standing; 0 means "no idea", which reads as a flat-footed snap.
+/// **`aim` IS WHY THE LEAP IS THE QUARRY'S AND NOT A CONSTANT.** Metres above the quarry's OWN FEET, so it
+/// is a fact about that body and not about where either is standing; 0 means "no idea", a flat-footed snap.
 pub const Quarry = struct { at: rl.Vector3, r: f32 = 0, aim: f32 = 0, key: u32 = NO_QUARRY };
 pub const NO_QUARRY: u32 = std.math.maxInt(u32);
 
-/// **THE GATE IS MEASURED FROM THE QUARRY'S HIDE, NOT ITS CENTRE** — the knight's `triggerR` idiom, and for
-/// the same reason. Asked centre-to-centre, a flat 1.85 m is unsatisfiable on anything broad: `env.resolveActor`
-/// holds the wolf `bodyR + its own` out, which on the Bone Knight is 2.11 m, so the jaws opened 0.26 m closer
-/// than the animal was ever allowed to stand and it circled a creature it could not trigger on for ever. The
-/// ogre had 0.24 m of margin, which is why that one only ever "struggled" (owner). A test pins both.
+/// **THE GATE IS MEASURED FROM THE QUARRY'S HIDE, NOT ITS CENTRE** — the knight's `triggerR` idiom. Asked
+/// centre-to-centre, a flat 1.85 m is unsatisfiable on anything broad: `env.resolveActor` holds the wolf
+/// `bodyR + its own` out, which on the Bone Knight is 2.11 m, so the jaws opened 0.26 m closer than the animal
+/// could ever stand. The ogre had 0.24 m of margin. A test pins both.
 pub fn triggerR(quarryR: f32) f32 {
     return BITE_TRIGGER_R + quarryR;
 }
@@ -440,35 +424,30 @@ pub fn triggerR(quarryR: f32) f32 {
 fn stopR(quarryR: f32) f32 {
     return BITE_R * 0.85 + quarryR;
 }
-/// **THE BITE IS A POUNCE, AND WHAT THE LEAP BUYS IS HEIGHT** (owner: she has to jump and reach higher, she
-/// struggles to hit). Off the ground as a fraction of `W`. At 0.14 it lifted the teeth 0.16 m onto a resting
-/// 1.08, which lands them 0.25 m inside the BOTTOM of an ogre's hurt sphere — a 0.89 m horizontal window
-/// against a collider that holds her 1.61 m out, so a slope, a shove or one frame of settle dropped her under
-/// it and the jaws shut on air. MEASURED, not picked: `POUNCE_INTO` says how far up the mass the teeth have to
-/// arrive and a test solves this pair against every creature she is asked to bite.
+/// **THE BITE IS A POUNCE, AND WHAT THE LEAP BUYS IS HEIGHT.** Off the ground as a fraction of `W`. At 0.14 it
+/// lifted the teeth 0.16 m onto a resting 1.08, landing them 0.25 m inside the BOTTOM of an ogre's hurt
+/// sphere — a 0.89 m horizontal window against a collider that holds her 1.61 m out. MEASURED, not picked:
+/// `POUNCE_INTO` says how far up the mass the teeth must arrive and a test solves the pair against every
+/// creature she is asked to bite.
 pub const BITE_HOP_UP: f32 = 0.40;
 pub const BITE_PITCH: f32 = 24.0;
 /// **AND SHE STILL LEAVES THE GROUND FOR THE LOWEST THING SHE BITES** — the share of the leap a `pounce` of 0
-/// keeps. **THE BITE IS A HOP** was the owner's call before it was a pounce and it is still true: a wolf does
-/// not stand still and open its mouth. This is what the hop used to be (0.14 of `W`) as a fraction of what the
-/// full leap is now, so the flat-footed snap is exactly the animation it always was.
+/// keeps. This is what the hop used to be (0.14 of `W`) as a fraction of what the full leap is now, so the
+/// flat-footed snap is exactly the animation it always was.
 pub const HOP_FLOOR: f32 = 0.14 / BITE_HOP_UP;
 /// **HOW FAR UP THE MASS THE TEETH HAVE TO ARRIVE**, as a share of the hurt sphere's own radius above its
-/// floor. This is the requirement the two dials above are solved against, and it is a share rather than a
-/// height because the thing she is biting is a toad on one day and a five-metre knight on the next. At half
-/// the radius the horizontal window on an ogre opens from 0.89 m to 1.44 m, which is wider than the collider
-/// holds her out by — so the bite lands because the geometry says it must, not because it was tuned until it
-/// did on one creature.
+/// floor — the requirement the two dials above are solved against. A share rather than a height because the
+/// thing she is biting is a toad on one day and a five-metre knight on the next. At half the radius the
+/// horizontal window on an ogre opens from 0.89 m to 1.44 m, wider than the collider holds her out by.
 pub const POUNCE_INTO: f32 = 0.5;
 
 pub fn pounceApexT() f32 {
     return (BITE_WIND * 0.55 + BITE_WIND + BITE_STRIKE) * 0.5;
 }
 
-/// WHERE HER TEETH ARE WITH ALL FOUR PAWS DOWN, and where they are at the top of a full pounce — the two ends
-/// of the dial `pounceFor` interpolates. MEASURED off the posed rig by a test rather than written here from
-/// the pose's arithmetic: `BITE_HOP_UP` and `BITE_PITCH` both feed the top one and adding them up by hand is
-/// the drift the test exists to catch.
+/// WHERE HER TEETH ARE WITH ALL FOUR PAWS DOWN, and at the top of a full pounce — the two ends of the dial
+/// `pounceFor` interpolates. MEASURED off the posed rig by a test rather than written from the pose's
+/// arithmetic: `BITE_HOP_UP` and `BITE_PITCH` both feed the top one.
 pub const TEETH_REST: f32 = 1.08;
 pub const TEETH_POUNCE: f32 = 1.97;
 
@@ -476,26 +455,18 @@ pub fn pounceFor(aim: f32) f32 {
     return mathx.clampF((aim - TEETH_REST) / (TEETH_POUNCE - TEETH_REST), 0, 1);
 }
 
-/// **AND SHE PUTS HER NOSE DOWN FOR WHAT IS ON THE FLOOR, which is the same complaint upside down** (owner: she
-/// has trouble hitting floorbound short foes). `pounceFor` only ever asked for HEIGHT: under her resting teeth
-/// it clamps to 0 and the jaws shut at `TEETH_REST`, which on a sporeling, a broodling or a toad is over the
-/// top of the whole animal — the swept blade never crosses the mass, so the bite could not land however close
-/// she stood. The dial runs BOTH ways now: above her reach she leaps, below it she stoops.
-///
-/// **AND IT IS THE NECK THAT GOES DOWN, NOT THE BODY.** A canid reaching the ground lowers its head; dropping
-/// the root would sink the legs, which is the one thing this rig may not do (FEET DO NOT SINK). So the stoop is
-/// degrees through NECK and HEAD, and the two share it — a head-only stoop is a chin tucked onto a chest.
+/// **AND SHE PUTS HER NOSE DOWN FOR WHAT IS ON THE FLOOR.** `pounceFor` only ever asked for HEIGHT: under her
+/// resting teeth it clamped to 0 and the jaws shut at `TEETH_REST`, over the top of a sporeling entirely. The
+/// dial runs BOTH ways now. **AND IT IS THE NECK THAT GOES DOWN, NOT THE BODY** — dropping the root would
+/// sink the legs (FEET DO NOT SINK), so the stoop is degrees through NECK and HEAD, shared between the two.
 pub const STOOP_MAX: f32 = 62.0;
-/// **AND THE FOREQUARTERS COME DOWN WITH IT — A PLAY-BOW.** The neck alone is worth 0.20 m on this animal (a
-/// canid's neck reaches FORWARD, so rotating it swings the skull down AND back), and the gap to a sporeling was
-/// 0.65 m. So the stoop also sinks the body, in W units, through the SAME `crouch` the gather already uses —
-/// which is the dial `legs` folds the limbs against with the paws WORLD-FIXED, so this costs no new solver and
-/// cannot slide her feet (the gather's own test pins that).
+/// **AND THE FOREQUARTERS COME DOWN WITH IT — A PLAY-BOW.** The neck alone is worth 0.20 m (a canid's neck
+/// reaches FORWARD, so rotating it swings the skull down AND back) against a 0.65 m gap to a sporeling. In W
+/// units, through the SAME `crouch` the gather uses — which folds the limbs with the paws WORLD-FIXED.
 pub const STOOP_SINK: f32 = 0.26;
 pub const STOOP_NECK_SHARE: f32 = 0.62;
 pub const STOOP_LOW: f32 = 0.34;
-/// WHERE HER TEETH ARE AT A FULL STOOP, the third end of the same dial. MEASURED off the posed rig by the
-/// same test as the other two, never written down from the pose's arithmetic.
+/// WHERE HER TEETH ARE AT A FULL STOOP, the third end of the same dial. MEASURED off the posed rig.
 pub const TEETH_STOOP: f32 = 0.39;
 
 pub fn stoopFor(aim: f32) f32 {
@@ -506,9 +477,8 @@ pub fn stoopFor(aim: f32) f32 {
 comptime {
     std.debug.assert(STOOP_LOW < TEETH_REST and TEETH_REST < TEETH_POUNCE);
     // WHAT THE STOOP ACTUALLY REACHES IS NOT ASSERTABLE HERE — it comes out of the posed rig off three
-    // contributions (the neck, the bow, and the hop it gives up), and adding them up by hand is the drift
-    // `TEETH_REST`/`TEETH_POUNCE` are measured rather than written for. The bar it has to clear is
-    // `POUNCE_INTO` against the smallest sphere she is asked to bite, and the test is where that lives.
+    // contributions (the neck, the bow, and the hop it gives up). The bar is `POUNCE_INTO` against the
+    // smallest sphere she is asked to bite, and the test is where that lives.
     std.debug.assert(TEETH_STOOP < TEETH_REST);
     std.debug.assert(STOOP_NECK_SHARE > 0.5 and STOOP_NECK_SHARE < 1.0);
 }
@@ -517,12 +487,9 @@ pub const BITE_HIT = combat.Hit{ .dmg = 21, .poise = 16, .stance = 3 };
 
 const GROWL_EVERY: f32 = 2.6;
 
-/// THE DISSOLVE'S RING, named like every sibling's (`archer.NPART`, `frog.FX_MAX`, `shade.PARTS`) rather than
-/// left as a bare literal in the field's own type — a ring overwrites its oldest SILENTLY, so its size is a
-/// thing to argue rather than a number that looked big enough. `foe.dissolveMotes` is the only emitter that
-/// feeds it: `DISSOLVE.rate` 62 a second against a mean life of ~0.72 s (0.55-1.05 for a mote, 0.32-0.65 for
-/// a flake, three in four being motes) stands about 45 at the fade's start, and the rate only falls from
-/// there as `thinning` closes.
+/// THE DISSOLVE'S RING, named rather than left a bare literal in the field's type — a ring overwrites its
+/// oldest SILENTLY. `DISSOLVE.rate` 62 a second against a mean life of ~0.72 s stands about 45 at the fade's
+/// start, and the rate only falls from there as `thinning` closes.
 const PARTS = 48;
 const RIFT_N = 12;
 
@@ -545,8 +512,7 @@ pub const Wolf = struct {
     vit: combat.Vitals = combat.Vitals.initFoe(HP, POISE, STANCE),
     state: State = .idle,
     t: f32 = 0,
-    /// Gait phase, 0..1, and it is advanced by DISTANCE — never by time (the hero's law, and the reason the
-    /// paws do not skate).
+    /// Gait phase, 0..1, advanced by DISTANCE and never by time (the hero's law, and why the paws do not skate).
     phase: f32 = 0,
     speed: f32 = 0,
     speedS: f32 = 0,
@@ -560,17 +526,16 @@ pub const Wolf = struct {
     flash: f32 = 0,
     shove: rl.Vector3 = mathx.zero3,
     /// WHICH BODY IT IS GOING FOR. An index into the field, handed in by game.zig — the creature never reaches
-    /// out for the foe list, exactly as a foe never reaches out for the hero's shield (`foe.Parry`'s law).
+    /// out for the foe list (`foe.Parry`'s law).
     quarry: ?Quarry = null,
     nav: foe.Nav = .{},
-    /// SECONDS IT HAS BEEN OUT PAST `RECALL_R`, and the creature's own because the creature is the thing that
-    /// knows how far off it is standing. `LOST_DWELL` is what it is measured against.
+    /// SECONDS IT HAS BEEN OUT PAST `RECALL_R`, measured against `LOST_DWELL`.
     lostT: f32 = 0,
     biteCool: f32 = 0,
     wasAt: rl.Vector3 = mathx.zero3,
     pounce: f32 = 0,
-    /// …and the same latch for the OTHER half of the dial (`stoopFor`): how far she has her nose down. Latched
-    /// at the commit for `pounce`'s reason, and never both at once (the comptime assert up there).
+    /// …and the same latch for the OTHER half of the dial (`stoopFor`). Latched at the commit for `pounce`'s
+    /// reason, and never both at once (the comptime assert above).
     stoop: f32 = 0,
     jaw0: rl.Vector3 = mathx.zero3,
     jaw1: rl.Vector3 = mathx.zero3,
@@ -618,9 +583,7 @@ pub const Wolf = struct {
         var w = Wolf{ .pos = at, .facing = facing, .rest = restPose(W) };
         w.pose();
         // THE JAW STARTS WHERE THE JAW IS. Left at the origin, the first frame's swept bite is a segment from
-        // world zero to its teeth — a blade across the entire map. It cannot bite that early today (it spawns
-        // idle and has to reach something first), which is exactly what makes it the kind of latent blade that
-        // goes off the day the spirit is ever called ON TOP of a foe.
+        // world zero to its teeth — a blade across the entire map, latent until a spirit is called ON a foe.
         w.jaw1 = w.jawPoint();
         w.jaw0 = w.jaw1;
         return w;
@@ -682,8 +645,8 @@ pub const Wolf = struct {
         self.vit.tick(dt);
         foe.fadeFlash(&self.flash, dt);
         self.biteCool = mathx.maxF(0, self.biteCool - dt);
-        // HOW LONG IT HAS BEEN OUT OF HIS REACH. Up here with the other clocks and BEFORE the early returns,
-        // because a spirit stuck 20 m off worrying at something is exactly as lost as one stuck against a bank.
+        // HOW LONG IT HAS BEEN OUT OF HIS REACH. Up here with the other clocks and BEFORE the early returns:
+        // a spirit stuck 20 m off worrying at something is exactly as lost as one stuck against a bank.
         if (mathx.distXZ(self.pos, heel) > RECALL_R) self.lostT += dt else self.lostT = 0;
         foe.tickParticles(&self.parts, dt, self.pos.y);
         self.jaw0 = self.jaw1;
@@ -744,8 +707,7 @@ pub const Wolf = struct {
             self.state = .move;
             // …AND IT TURNS ROUND WHAT IS IN THE WAY RATHER THAN INTO IT (`foe.Nav`). It walks where it is
             // LOOKING, so the way through is read at the FACING and the step below is untouched — the GAP is
-            // still measured to the real target, so a detour cannot talk it into biting a wall or ambling home
-            // as though it had arrived.
+            // still measured to the real target.
             self.faceToward(self.nav.aim(self.pos, want), dt);
             const step = self.speed * dt;
             mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), step, bounds);
@@ -779,9 +741,6 @@ pub const Wolf = struct {
         return self.wants(heel);
     }
 
-    /// **HAS THE BOND BEEN STRETCHED PAST WHAT WALKING CAN FIX.** Running home is the first answer and it is
-    /// nearly always the right one; this is for the cases where it cannot work — a bank it may not climb, a
-    /// pocket with no way out inside its own probe, or a man who simply out-sprints it.
     pub fn lost(self: *const Wolf) bool {
         return self.lostT >= LOST_DWELL and self.state != .dead and !self.gone;
     }
@@ -845,9 +804,8 @@ pub const Wolf = struct {
     }
 
     /// **THE BITE AS IT WOULD ACTUALLY ARRIVE AT A BODY OF THAT MASS HEIGHT**, both halves of the dial latched
-    /// off ONE number exactly as `update` latches them. The hook is `aim` and not the pair, because a leap and a
-    /// stoop set by hand can be given values the fight can never produce — and it is the pair that the reach is
-    /// measured against.
+    /// off ONE number exactly as `update` does. The hook is `aim` and not the pair, because a leap and a stoop
+    /// set by hand can be given values the fight can never produce.
     pub fn stageBiteAt(self: *Wolf, aim: f32) void {
         self.state = .bite;
         self.pounce = pounceFor(aim);
@@ -866,13 +824,12 @@ pub const Wolf = struct {
         const react: f32 = if (self.state == .hurt) foe.stunCurve(self.t, self.heavyStun) else 0;
         const fall: f32 = if (self.state == .dead) mathx.clampF(self.t / (DEATH_DUR * 0.7), 0, 1) else 0;
 
-        // THE HOP'S OWN HEIGHT AND ITS GATHER. It SINKS through the wind, leaves the ground across the strike,
-        // and is back down by the end of it — one arc off the bite's own clock, so the lift and the travel
+        // THE HOP'S OWN HEIGHT AND ITS GATHER. One arc off the bite's own clock, so the lift and the travel
         // cannot drift apart the way a second timer would let them.
         var hop: f32 = 0;
         var crouch: f32 = 0;
-        // …AND THE NOSE-UP THAT RIDES THE SAME ARC. One curve drives both, so the pitch cannot peak on a frame
-        // the animal is already coming down on and the jaws cannot be highest while the body is not.
+        // …AND THE NOSE-UP THAT RIDES THE SAME ARC. One curve drives both, so the jaws cannot be highest while
+        // the body is not.
         var pitch: f32 = 0;
         var duckN: f32 = 0;
         if (self.state == .bite) {
@@ -882,8 +839,7 @@ pub const Wolf = struct {
                 const u = (self.t - BITE_WIND * 0.55) / (hopEnd - BITE_WIND * 0.55);
                 const bell = mathx.sinf(u * std.math.pi);
                 // **AND SHE GIVES UP THE HOP TO STOOP.** `HOP_FLOOR` is the flat-footed snap and it lifts the
-                // teeth 0.16 m — the wrong way for a mouthful of dirt, and a sixth of the whole gap to a
-                // sporeling. A nose to the floor IS the movement, so it does not need a hop under it too.
+                // teeth 0.16 m — the wrong way for a mouthful of dirt, and a sixth of the whole gap to a sporeling.
                 const arc = bell * mathx.lerpF(HOP_FLOOR * (1.0 - self.stoop), 1.0, self.pounce);
                 hop = BITE_HOP_UP * arc;
                 pitch = BITE_PITCH * arc;
@@ -1021,15 +977,14 @@ test "a spirit dies and stops being a collider before it stops being drawn" {
     try std.testing.expect(w.justDied);
     try std.testing.expect(!foe.corporeal(&w));
     try std.testing.expect(w.alive());
-    // …and `justDied` is a ONE-FRAME flag, not a latch that bills the death every frame after.
     w.update(1.0 / 60.0, mathx.zero3, 100);
     try std.testing.expect(!w.justDied);
 }
 
 test "THE EDGES A BLOW SETS DO NOT SURVIVE THE UPDATE — so they have to be read above it" {
     // `takeHit` runs with the FIELD's blows and `update` clears every one-frame edge at the top of its body,
-    // so a caller reading these two AFTER `Pack.update` reads false on every frame — which is what left
-    // `wolf_hurt` and `wolf_die` silent. Pinned here rather than in game.zig: the contract is the creature's.
+    // so a caller reading these two AFTER `Pack.update` reads false on every frame. Pinned here rather than
+    // in game.zig: the contract is the creature's.
     var hurt = Wolf.spawn(mathx.zero3, 0);
     _ = hurt.takeHit(.{ .dmg = 1, .poise = 999 });
     try std.testing.expect(hurt.yelped);
@@ -1076,11 +1031,9 @@ test "A SPIRIT THAT CANNOT GET HOME IS MOVED HOME" {
     try std.testing.expectEqual(State.idle, w.state);
     try std.testing.expectApproxEqAbs(@as(f32, 0), w.lostT, 1e-6);
     try std.testing.expect(!w.lost());
-    // THE JAWS ARRIVED WITH IT. Left behind, the swept bite is a blade from the old spot to the new one —
-    // `spawn`'s own law, and the reason this is measured rather than trusted.
+    // THE JAWS ARRIVED WITH IT. Left behind, the swept bite is a blade from the old spot to the new one.
     try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.distXZ(w.jaw0, w.jaw1), 1e-5);
     try std.testing.expect(mathx.distXZ(w.jaw1, spot) < 2.0);
-    // …and it is inside the ring the moment it lands, so the clock cannot fire again next frame.
     w.update(1.0 / 60.0, heel, 100);
     try std.testing.expect(!w.lost());
 }
@@ -1125,8 +1078,8 @@ test "A PLANTED PAW IS WORLD-FIXED — the whole of why the feet do not skate" {
 }
 
 test "THE HIND FOOT LANDS IN THE FOREFOOT'S PRINT — one stride length for all four limbs" {
-    // Fore and hind stride lengths in the working-dog data are equal to two decimals. Here that is structural:
-    // every limb reads the same `stride`, so tracking up cannot drift.
+    // Fore and hind stride lengths in the working-dog data are equal to two decimals. Here that is
+    // structural: every limb reads the same `stride`, so tracking up cannot drift.
     const g = TROT;
     const stride = strideFor(TROT_SPEED);
     const swept = pawAt(0, g, stride, W).z - pawAt(g.duty - 1e-5, g, stride, W).z;

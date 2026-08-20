@@ -24,7 +24,12 @@ pub const MAX_MIX: usize = 24;
 pub const MAX_LOOT: usize = 8;
 pub const MAX_ZONES: usize = 16;
 pub const MAX_CLEARINGS: usize = 32;
-pub const MAX_FOES: usize = 256;
+/// **THE ONE FOE LIMIT** (owner: can u make it 512, this map is huge). Every group's slab is this wide too
+/// (`MAX_PER_KIND`), so the cost of raising it is 17 slabs' worth: 512 puts the roster at ~52 MB of the one
+/// startup allocation, and `build.zig`'s stack reserve carries the same figure again because startup builds
+/// those groups BY VALUE. Both are address space rather than resident memory; the frame cost is nil, since
+/// every pass walks `live()` — the bodies actually placed — and never the slab.
+pub const MAX_FOES: usize = 512;
 pub const FOE_SCALE_LO: f32 = 0.5;
 pub const FOE_SCALE_HI: f32 = 2.0;
 pub const NAME_CAP: usize = 48;
@@ -280,7 +285,17 @@ pub const Foe = struct {
     seed: f32 = 0,
 };
 
-pub const MAX_PER_KIND: usize = 24;
+/// **THERE IS ONE FOE LIMIT AND IT IS `MAX_FOES`** (owner: remove the foe limits, seems dumb to have). This
+/// used to be 24 — a SECOND cap, per kind, sitting under the global one and doing nothing but surprise you:
+/// `foe.resetGroup` fills a fixed slab and `continue`s past the overflow, so a 25th shroom was a body the map
+/// placed, the editor drew, the save counted and the level never spawned. `01_fallen_plain` stands on exactly
+/// 24 of them, so it was one click from happening.
+///
+/// Set to the whole budget, the per-kind cap cannot bite by construction: a map that fits inside `MAX_FOES` at
+/// all fits inside any one group. It buys that with memory — every group's slab is this wide, so the 17 of
+/// them go from 2.65 MB to ~28 MB of a single startup allocation — and a comptime walk in `game.zig` pins
+/// every slab at this width so a group cannot quietly be built narrower again.
+pub const MAX_PER_KIND: usize = MAX_FOES;
 
 pub const Runway = struct { x: f32 = -3.4, z: f32 = -44, x1: f32 = 3.4, z1: f32 = 30 };
 
@@ -2724,6 +2739,31 @@ test "a bad key or a missing field is a load error, never a default" {
     try std.testing.expectError(ParseError.MissingField, parse("version: 1\nbelt: fern -1 -1 1 1\n", &m, &ln));
     try std.testing.expectError(ParseError.UnknownRecord, parse("version: 1\nsplat: 1 2 3\n", &m, &ln));
     try std.testing.expectError(ParseError.BadVersion, parse("version: 99\n", &m, &ln));
+}
+
+test "ONE FOE LIMIT, AND A MAP MAY SPEND ALL OF IT ON ONE KIND" {
+    var m = Map{};
+    var ln: usize = 0;
+    const head = "version: 1\n";
+
+    // The WHOLE budget as a single kind — the case a per-kind cap used to silently truncate at 24.
+    var rows: [40 * MAX_FOES]u8 = undefined;
+    var at: usize = 0;
+    for (0..MAX_FOES) |i| at += (try std.fmt.bufPrint(rows[at..], "foe: shroom {d} 0 0 1 0.5\n", .{i % 90})).len;
+    var doc: [40 * MAX_FOES + 64]u8 = undefined;
+    try parse(try std.fmt.bufPrint(&doc, "{s}{s}", .{ head, rows[0..at] }), &m, &ln);
+    try std.testing.expectEqual(MAX_FOES, m.nfoes);
+
+    // …and every one of them fits the group that will have to hold it, which is the whole point of the change.
+    try std.testing.expect(MAX_PER_KIND >= MAX_FOES);
+
+    // One past the global budget is still a refusal, because that one is the map's own table.
+    var over = Map{};
+    try std.testing.expectError(ParseError.TooManyFoes, parse(
+        try std.fmt.bufPrint(&doc, "{s}{s}foe: shroom 1 0 0 1 0.5\n", .{ head, rows[0..at] }),
+        &over,
+        &ln,
+    ));
 }
 
 test "a value that only LOOKS parseable is a load error too" {

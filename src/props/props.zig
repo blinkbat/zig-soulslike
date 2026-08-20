@@ -807,7 +807,8 @@ pub fn info(k: Kind) *const Info {
 }
 
 comptime {
-    // The table is 110 rows now and each one is walked by five asserts below.
+    // Every row is walked by all of the asserts below. NO COUNT IN THE PROSE: it said 110 rows and five
+    // asserts while the table stood at 136 and ten, which is the one kind of comment that rots on its own.
     @setEvalBranchQuota(20000);
     for (INFO, 0..) |row, i| std.debug.assert(@intFromEnum(row.kind) == i);
     for (INFO) |row| std.debug.assert(row.bound >= row.top);

@@ -72,7 +72,7 @@ var listing: wf.Listing = .{};
 
 pub const Layer = enum(u8) {
     ground,
-    cover,
+    locations,
     decor,
     props,
     interact,
@@ -83,7 +83,7 @@ pub const Layer = enum(u8) {
     fn label(l: Layer) [:0]const u8 {
         return switch (l) {
             .ground => "Ground",
-            .cover => "Cover",
+            .locations => "Locations",
             .decor => "Decor",
             .props => "Props",
             .interact => "Interactables",
@@ -94,17 +94,17 @@ pub const Layer = enum(u8) {
     fn opLayer(l: Layer) bool {
         return switch (l) {
             .decor, .props, .interact => true,
-            .ground, .cover, .units => false,
+            .ground, .locations, .units => false,
         };
     }
 };
 
 const layerTips = [Layer.N][:0]const u8{
-    "SHAPE the land and paint the soil under everything (Tab cycles layers)",
-    "The flora carpet: zone density and the clearings it keeps out of",
-    "Growing things - ferns, grass, bramble, reeds",
-    "Standing things - stone, timber, fire, water",
-    "Things only the player gets through - chests and what is in them (right-click > Items...), and the fog gate",
+    "Shape the land and paint the soil (Tab cycles layers)",
+    "Zone density and the clearings it keeps out of",
+    "Plants",
+    "Props - stone, timber, fire, water",
+    "Chests (right-click > Items...) and the fog gate",
     "Foe spawns",
 };
 
@@ -129,7 +129,7 @@ const groundBrushes = [_][:0]const u8{
     "Water",
     "Erase",
 };
-const coverBrushes = [_][:0]const u8{ "Clearing", "Zone", "Location", "Erase" };
+const locationBrushes = [_][:0]const u8{ "Clearing", "Zone", "Location", "Erase" };
 const decorBrushes = [_][:0]const u8{ "Single", "Patch", "Scatter", "Erase" };
 const propBrushes = [_][:0]const u8{ "Stamp", "Row", "Ring", "Cluster", "Ivy", "Erase" };
 const interactBrushes = [_][:0]const u8{ "Stamp", "Erase" };
@@ -151,78 +151,80 @@ const RAISE_SWATCH = ui.col(126, 100, 62, 255);
 const LOWER_SWATCH = ui.col(74, 60, 44, 255);
 const EVEN_SWATCH = ui.col(96, 100, 104, 255);
 
+// THE SOIL ROWS CARRY NO TIP: `groundBrushes` already names each one, and a tooltip that repeats the label
+// is a hover that costs a read and says nothing.
 const groundTips = [_][:0]const u8{
-    "Hold and sweep to RAISE the ground - [ ] sets the brush size, and the panel sets how hard",
-    "Hold and sweep to dig the ground DOWN",
-    "Hold and sweep to SMOOTH what you sculpted - this is what turns a lump into a slope you can walk",
-    "Hold and sweep to FLATTEN toward the height you started the stroke on - terraces, pads, roads",
-    "Trodden dirt - a path worn through ([ ] sets radius)",
-    "Green turf",
-    "Stone, flagged or scoured bare",
-    "Pale silt, the tarn's margin",
-    "Ash and burnt ground",
-    "Deep moss",
-    "Bone meal - shard and splinter ground, and the palest floor there is",
-    "Cinder - burnt crust, warmer and darker than ash",
-    "Spore floor - the one cold ground",
-    "Fungal bloom - pink flesh underfoot, the Mycelian's own",
-    "Hold and sweep to flood - depth, shore and wet sand are all worked out from the outline",
-    "Hold and sweep to unpaint soil AND water. It leaves the sculpted SHAPE alone",
+    "Sweep to raise. [ ] sets size, the panel sets strength",
+    "Sweep to lower",
+    "Sweep to smooth a lump into a walkable slope",
+    "Sweep to flatten toward the height the stroke started on",
+    "[ ] sets radius",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "Sweep to flood. Depth, shore and wet sand come off the outline",
+    "Sweep to unpaint soil and water. Leaves the sculpted shape",
 };
-const coverTips = [_][:0]const u8{
+const locationTips = [_][:0]const u8{
     "Drag a circle nothing grows in",
-    "Drag a rectangle the ground cover grows differently inside",
-    "Drag a NAMED rectangle - triggers point at it by name, and it can carry its own weather",
-    "Hold and sweep to remove the zones and clearings you cross",
+    "Drag a rectangle with its own cover density",
+    "Drag a NAMED rectangle. Triggers find it by name; carries its own weather",
+    "Sweep to erase",
 };
 const decorTips = [_][:0]const u8{
-    "Click to place ONE plant, exactly there",
-    "Drag from the centre out for a round patch",
-    "Drag a rectangle to sow a scattered belt inside it",
-    "Hold and sweep to remove the ops that grew the plants you cross",
+    "Click to place one",
+    "Drag out for a round patch",
+    "Drag a rectangle for a scattered belt",
+    "Sweep to erase",
 };
 const propTips = [_][:0]const u8{
-    "Click to stamp one prop, exactly there",
-    "Drag a line for a broken run laid nose to tail",
-    "Drag from the centre out for an evenly spaced circle",
-    "Drag from the centre out for a scattered ring-shaped band",
-    "Drag a box to sow ivy at the feet of the stone already standing in it",
-    "Hold and sweep to remove the ops that placed the props you cross",
+    "Click to stamp one",
+    "Drag a line for a run, nose to tail",
+    "Drag out for an even circle",
+    "Drag out for a scattered ring",
+    "Drag a box to sow ivy on the stone inside it",
+    "Sweep to erase",
 };
 const interactTips = [_][:0]const u8{
-    "Click to place one, exactly there - then right-click it > Items... to fill it",
-    "Hold and sweep to remove the ones you cross",
+    "Click to place. Right-click > Items... to fill",
+    "Sweep to erase",
 };
 const unitTips = [_][:0]const u8{
-    "Post a gaping toad",
-    "Post a skeletal archer",
-    "Post the one-eyed ogre",
-    "Post a kobold berserker - two axes, a wild flurry, then a long opening",
-    "Post a kobold priest - no attack, heals the hurt one; break the cast",
-    "Post a kobold slinger - stones at range, teeth up close",
-    "Post a brood mother - slow, spits acid pools, lays up to three sacs",
-    "Post a lone broodling - fast, one hit kills it, leaps",
-    "Post an egg sac - hatches on its own clock unless you cut it open",
-    "Post a skeleton shieldman - blocks what comes at his front; break the guard, then punish",
-    "Post a skeleton greatsword - a long diagonal slam you cannot interrupt; walk out of it",
-    "Post a shade - drains focus up close, hurls wisps at range, blinks behind you when threatened",
-    "Post a leechfly - a fast flyer that drinks your life through its beak, and zooms out of sword reach",
-    "Post a Rooted - a dead tree that is not one. Its eyes open before its reach does; walk in and it unfolds",
-    "Post a sporeling - a squat mushroom that flings itself at you and bursts a chaos spore cloud. Sometimes it trips",
-    "Post a Bone Knight - a giant behind a tower shield nothing can break. Work round the side; stand dead behind him and he falls on you",
-    "Post a delver - it burrows and travels under the ground as a moving mound, then bursts up under your feet. Watch the floor",
-    "Post a necromancer - skeletons near it stop dissolving, and it puts them back up. Kill it first, or fight away from the bodies",
-    "Post a Florid Ravager - a big hound with a flower for a head. The bloom OPENS before it leaps; that is your cue to move",
-    "Post a Mushroom Mage - a cloaked caster that lobs SLOW, BOUNCING fireballs. Do not back away, that is down the bounce line - go sideways, or straight at it",
-    "Post a Fen Lurker - it lies under the water and comes up when you WADE. It cannot follow you onto dry land, and it cannot be hit while it is down. Put it in water",
-    "Post a Spore Homunculus - VERY tough against steel and very slow. Fire and lightning go straight through it. It SMASHES the ground at its feet and SLAMS forward at anyone who backs off",
-    "Hold and sweep to remove spawns ([ ] sets radius)",
+    "",
+    "",
+    "",
+    "Two axes, a wild flurry, then a long opening",
+    "No attack, heals the hurt one; break the cast",
+    "Stones at range, teeth up close",
+    "Slow, spits acid pools, lays up to three sacs",
+    "Fast, one hit kills it, leaps",
+    "Hatches on its own clock unless you cut it open",
+    "Blocks what comes at his front; break the guard, then punish",
+    "A long diagonal slam you cannot interrupt; walk out of it",
+    "Drains focus up close, wisps at range, teleports when threatened",
+    "Flyer. Heals off what it drains, and zooms out of sword reach",
+    "Disguised as a snag. Eyes open before its reach does; never moves",
+    "Flings itself and bursts a poison spore cloud. Sometimes it trips instead",
+    "Unbreakable shield across his front. Work round the side; stand behind him and he falls on you",
+    "Travels underground as a moving mound, then bursts up under your feet. Cannot be locked on while down",
+    "Skeletons near it stop dissolving and get raised. Also lays a delayed ice ring",
+    "The bloom OPENS before it leaps",
+    "Lobs slow bouncing fireballs. Backing away stays in the bounce line; go sideways",
+    "Place in water. Surfaces when you wade; cannot leave water or be hit while down",
+    "Very tough against steel, weak to fire and lightning. Slams forward at anyone who backs off",
+    "Sweep to erase ([ ] sets radius)",
 };
 
 fn layerIcon(l: Layer) ui.Icon {
     return switch (l) {
         .ground => .ground,
-        .cover => .cover,
+        .locations => .locations,
         .decor => .decor,
         .props => .props,
         .interact => .interact,
@@ -230,7 +232,7 @@ fn layerIcon(l: Layer) ui.Icon {
     };
 }
 
-const coverIcons = [_]ui.Icon{ .clearing, .zone, .location, .erase };
+const locationIcons = [_]ui.Icon{ .clearing, .zone, .location, .erase };
 const decorIcons = [_]ui.Icon{ .single, .patch, .scatter, .erase };
 const propIcons = [_]ui.Icon{ .stamp, .row, .ring, .cluster, .ivy, .erase };
 const interactIcons = [_]ui.Icon{ .stamp, .erase };
@@ -261,12 +263,12 @@ const unitIcons = [_]ui.Icon{
 };
 
 comptime {
-    pinIcons(CoverBrush, &coverIcons);
+    pinIcons(LocationBrush, &locationIcons);
     pinIcons(DecorBrush, &decorIcons);
     pinIcons(PropBrush, &propIcons);
     pinIcons(InteractBrush, &interactIcons);
     pinIcons(UnitBrush, &unitIcons);
-    std.debug.assert(coverIcons.len == coverBrushes.len);
+    std.debug.assert(locationIcons.len == locationBrushes.len);
     std.debug.assert(decorIcons.len == decorBrushes.len);
     std.debug.assert(propIcons.len == propBrushes.len);
     std.debug.assert(interactIcons.len == interactBrushes.len);
@@ -283,7 +285,7 @@ fn brushSectionFor(l: Layer, i: usize) ?[:0]const u8 {
 fn brushIconsFor(l: Layer) ?[]const ui.Icon {
     return switch (l) {
         .ground => null,
-        .cover => &coverIcons,
+        .locations => &locationIcons,
         .decor => &decorIcons,
         .props => &propIcons,
         .interact => &interactIcons,
@@ -294,7 +296,7 @@ fn brushIconsFor(l: Layer) ?[]const ui.Icon {
 fn brushesFor(l: Layer) []const [:0]const u8 {
     return switch (l) {
         .ground => &groundBrushes,
-        .cover => &coverBrushes,
+        .locations => &locationBrushes,
         .decor => &decorBrushes,
         .props => &propBrushes,
         .interact => &interactBrushes,
@@ -305,7 +307,7 @@ fn brushesFor(l: Layer) []const [:0]const u8 {
 fn brushTipsFor(l: Layer) []const [:0]const u8 {
     return switch (l) {
         .ground => &groundTips,
-        .cover => &coverTips,
+        .locations => &locationTips,
         .decor => &decorTips,
         .props => &propTips,
         .interact => &interactTips,
@@ -316,7 +318,7 @@ fn brushTipsFor(l: Layer) []const [:0]const u8 {
 comptime {
     std.debug.assert(layerTips.len == Layer.N);
     std.debug.assert(groundTips.len == groundBrushes.len);
-    std.debug.assert(coverTips.len == coverBrushes.len);
+    std.debug.assert(locationTips.len == locationBrushes.len);
     std.debug.assert(decorTips.len == decorBrushes.len);
     std.debug.assert(propTips.len == propBrushes.len);
     std.debug.assert(interactTips.len == interactBrushes.len);
@@ -337,7 +339,7 @@ comptime {
 }
 
 pub const GroundBrush = enum { raise, lower, smooth, flat, dirt, turf, stone, silt, ash, moss, bone, cinder, spore, bloom, water, erase };
-const CoverBrush = enum { clearing, zone, location, erase };
+const LocationBrush = enum { clearing, zone, location, erase };
 pub const DecorBrush = enum { single, patch, scatter, erase };
 const PropBrush = enum { stamp, row, ring, cluster, ivy, erase };
 const InteractBrush = enum { stamp, erase };
@@ -370,7 +372,7 @@ const UnitBrush = enum {
 };
 
 comptime {
-    pinBrushes(CoverBrush, &coverBrushes);
+    pinBrushes(LocationBrush, &locationBrushes);
     pinBrushes(DecorBrush, &decorBrushes);
     pinBrushes(PropBrush, &propBrushes);
     pinBrushes(InteractBrush, &interactBrushes);
@@ -415,7 +417,7 @@ fn kindPool(l: Layer) ?[]const Kind {
         .decor => &floraKinds,
         .props => &solidKinds,
         .interact => &interactKinds,
-        .ground, .cover, .units => null,
+        .ground, .locations, .units => null,
     };
 }
 
@@ -528,7 +530,7 @@ fn isMovable(o: *const wf.Op) bool {
 fn eraseMiss(l: Layer) [:0]const u8 {
     return switch (l) {
         .ground => "",
-        .cover => "nothing here (the last zone is the fallback and stays)",
+        .locations => "nothing here (the last zone is the fallback and stays)",
         .units => "no spawn inside the brush",
         .decor, .props, .interact => "nothing in this layer here",
     };
@@ -555,6 +557,14 @@ pub const Editor = struct {
 
     selecting: bool = false,
     layer: Layer = .props,
+    /// **WHAT IS ON SCREEN, WHICH IS NOT WHAT IS SELECTED.** One eye per layer plus the sky's own, and the
+    /// two axes stay independent on purpose: you hide the wood to place a wall under it and the Props layer is
+    /// still the one your brush is on. Hiding is a VIEW and never touches the map, so nothing here is saved,
+    /// nothing is undoable and a hidden layer still parses, still builds and still spawns.
+    shown: [Layer.N]bool = [_]bool{true} ** Layer.N,
+    /// The rain, the mist and the sporefall — not a layer, because it is not a thing the map places in a
+    /// rectangle. It is the one overlay that hides the GROUND you are trying to sculpt.
+    showWeather: bool = true,
     brush: [Layer.N]usize = [_]usize{0} ** Layer.N,
     decorKind: Kind = .fern,
     propKind: Kind = .pillar,
@@ -743,14 +753,14 @@ pub const Editor = struct {
         return switch (self.layer) {
             .decor => &self.decorKind,
             .interact => &self.interactKind,
-            .ground, .cover, .props, .units => &self.propKind,
+            .ground, .locations, .props, .units => &self.propKind,
         };
     }
     fn kindForLayer(self: *const Editor) Kind {
         return switch (self.layer) {
             .decor => self.decorKind,
             .interact => self.interactKind,
-            .ground, .cover, .props, .units => self.propKind,
+            .ground, .locations, .props, .units => self.propKind,
         };
     }
 
@@ -1344,7 +1354,7 @@ pub const Editor = struct {
                 .units => {
                     if (ground) |g| self.addFoe(m, g);
                 },
-                .cover, .decor, .props, .interact => {
+                .locations, .decor, .props, .interact => {
                     if (ground) |g| {
                         self.dragging = true;
                         self.dragFrom = g;
@@ -1442,7 +1452,7 @@ pub const Editor = struct {
             },
             .none => {},
         }
-        if (self.layer == .cover) {
+        if (self.layer == .locations) {
             const g = self.groundAt() orelse return false;
             for (m.clearings[0..m.nclearings], 0..) |c, i| {
                 if (mathx.dist2XZ(v3(c.x, 0, c.z), g) < c.r * c.r) {
@@ -1460,8 +1470,8 @@ pub const Editor = struct {
         const b = self.dragTo;
         const span = mathx.distXZ(a, b);
 
-        if (self.layer == .cover) {
-            switch (@as(CoverBrush, @enumFromInt(self.brushIdx()))) {
+        if (self.layer == .locations) {
+            switch (@as(LocationBrush, @enumFromInt(self.brushIdx()))) {
                 .zone => {
                     if (m.nzones >= wf.MAX_ZONES) {
                         self.say("zone cap reached");
@@ -1527,7 +1537,7 @@ pub const Editor = struct {
         o.kind = self.kindForLayer();
         switch (self.layer) {
             .ground, .units => return,
-            .cover => @panic("editor: cover layer reached the op placer"),
+            .locations => @panic("editor: locations layer reached the op placer"),
             .decor => switch (@as(DecorBrush, @enumFromInt(self.brushIdx()))) {
                 .single => {
                     o.x = a.x;
@@ -1663,8 +1673,8 @@ pub const Editor = struct {
             self.say(FOES_FULL_MSG);
             return;
         }
-        self.bank(m);
         const kind: wf.FoeKind = @enumFromInt(self.brushIdx());
+        self.bank(m);
         const seed = @as(f32, @floatFromInt((m.nfoes * 37) % 100)) / 100.0;
         m.foes[m.nfoes] = .{ .kind = kind, .x = at.x, .z = at.z, .yaw = 0, .scale = 1, .seed = seed };
         self.selFoe = m.nfoes;
@@ -1714,7 +1724,7 @@ pub const Editor = struct {
                     return true;
                 }
             },
-            .cover => {
+            .locations => {
                 for (m.clearings[0..m.nclearings], 0..) |c, i| {
                     if (mathx.dist2XZ(v3(c.x, 0, c.z), g) > c.r * c.r) continue;
                     self.bankStroke(m);
@@ -2093,32 +2103,69 @@ pub const Editor = struct {
     }
 
 
+    /// **THE LAYER YOU ARE STANDING ON IS ALWAYS VISIBLE**, whatever its eye says. Hiding the layer your brush
+    /// is on would leave you painting into a layer you cannot see — the cursor, the marquee and the selection
+    /// gizmos would all be drawing for something invisible, which is a way to lose work rather than a view.
+    /// The eye stays as you left it, so selecting away restores the hidden state.
+    pub fn visible(self: *const Editor, l: Layer) bool {
+        return self.layer == l or self.shown[@intFromEnum(l)];
+    }
+
+    /// **DOES THE TOP STRIP FIT WITH ITS LAYER NAMES SPELLED OUT.** Measured, not guessed at: `BarRow`'s own
+    /// widths for the layers, plus the same arithmetic for the fixed tail that follows them, so a label added
+    /// or a verb added is answered here rather than discovered as a clipped button on the right-hand edge.
+    fn barWide(self: *const Editor, sw: i32) bool {
+        _ = self;
+        const step = BarRow.GAP;
+        const sq = BAR_H - 10;
+        var w: i32 = 8;
+        inline for (@typeInfo(Layer).@"enum".fields) |f| {
+            const l: Layer = @enumFromInt(f.value);
+            w += ui.layerButtonW(l.label(), hud.MONO) + step;
+        }
+        w += 6 + sq + step; // the weather eye
+        w += 14 + 7 * (sq + step) + 10 + 10; // the seven verbs and the gaps that group them
+        inline for (.{ "Objects", "World", "Sounds" }) |lab| {
+            w += hud.monoW(lab, hud.MONO) + BarRow.PAD + step;
+        }
+        return w + DIRTY_W <= sw;
+    }
+
+    /// Room for the unsaved-changes `*` that `drawTopBar` sets down past the last button.
+    const DIRTY_W: i32 = 20;
+
     pub fn draw3D(self: *Editor, m: *const wf.Map, env: *const envmod.Env) void {
         gizmoWorld = env;
         const y: f32 = 0.05;
         rl.drawCubeWires(v3(0, envmod.groundY() + y, 0), m.half * 2, 0.02, m.half * 2, ui.alpha(ui.TRIM, 90));
         outline(m.runway.x, m.runway.z, m.runway.x1, m.runway.z1, y, ui.alpha(ui.HOT, 70));
 
-        const coverA: u8 = if (self.layer == .cover) 200 else 45;
-        for (m.zones[0..m.nzones]) |*z| {
-            if (z.x1 - z.x > m.half * 3) continue;
-            outline(z.x, z.z, z.x1, z.z1, y, ui.alpha(ui.TRIM, coverA));
+        const locA: u8 = if (self.layer == .locations) 200 else 45;
+        if (self.visible(.locations)) {
+            for (m.zones[0..m.nzones]) |*z| {
+                if (z.x1 - z.x > m.half * 3) continue;
+                outline(z.x, z.z, z.x1, z.z1, y, ui.alpha(ui.TRIM, locA));
+            }
+            for (m.clearings[0..m.nclearings]) |c| ringXZ(c.x, c.z, c.r, y, ui.alpha(ui.HOT, locA));
         }
-        for (m.clearings[0..m.nclearings]) |c| ringXZ(c.x, c.z, c.r, y, ui.alpha(ui.HOT, coverA));
         // A weather region reads GOLD and a plain one reads cool, so you can see at a glance which
         // rectangles are doing something to the sky.
-        for (m.locations[0..m.nlocations], 0..) |*l, i| {
-            const on = self.locSel == i;
-            const col = if (l.hasWeather()) ui.LIVE else ui.TRIM;
-            outline(l.x, l.z, l.x1, l.z1, y + 0.02, ui.alpha(if (on) ui.HOT else col, if (self.layer == .cover) 220 else 55));
+        if (self.visible(.locations)) {
+            for (m.locations[0..m.nlocations], 0..) |*l, i| {
+                const on = self.locSel == i;
+                const col = if (l.hasWeather()) ui.LIVE else ui.TRIM;
+                outline(l.x, l.z, l.x1, l.z1, y + 0.02, ui.alpha(if (on) ui.HOT else col, if (self.layer == .locations) 220 else 55));
+            }
         }
 
         const unitA: u8 = if (self.layer == .units) 235 else 70;
-        for (m.foes[0..m.nfoes], 0..) |f, i| {
-            const sel = self.layer == .units and self.selFoe == i;
-            const col = if (sel) ui.HOT else ui.alpha(foeSwatch(f.kind), unitA);
-            const at = liftAt(f.x, f.z, y + FOE_BOX_H * 0.5);
-            rl.drawCubeWires(at, FOE_BOX_W, FOE_BOX_H, FOE_BOX_W, col);
+        if (self.visible(.units)) {
+            for (m.foes[0..m.nfoes], 0..) |f, i| {
+                const sel = self.layer == .units and self.selFoe == i;
+                const col = if (sel) ui.HOT else ui.alpha(foeSwatch(f.kind), unitA);
+                const at = liftAt(f.x, f.z, y + FOE_BOX_H * 0.5);
+                rl.drawCubeWires(at, FOE_BOX_W, FOE_BOX_H, FOE_BOX_W, col);
+            }
         }
 
         self.selOwned = 0;
@@ -2197,8 +2244,8 @@ pub const Editor = struct {
             const b = self.dragTo;
             const rad = mathx.distXZ(a, b);
             const box = normRect(a, b);
-            if (self.layer == .cover) {
-                switch (@as(CoverBrush, @enumFromInt(self.brushIdx()))) {
+            if (self.layer == .locations) {
+                switch (@as(LocationBrush, @enumFromInt(self.brushIdx()))) {
                     .zone, .location => outlineOf(box, y, ui.HOT),
                     .clearing => ringXZ(a.x, a.z, rad, y, ui.HOT),
                     .erase => {},
@@ -2362,14 +2409,14 @@ fn edgeTip(e: wf.Edge, wet: bool) [:0]const u8 {
         .speckle => "A bog: the fringe breaks into separate pools. The ONE shape allowed to disconnect water",
     };
     return switch (e) {
-        .blend => "No line at all. One material dissolves into the next over metres",
-        .natural => "A soft boundary that wanders on its own. Grass into dirt",
-        .frayed => "A light, quick wander, still soft. Turf creeping into gravel",
-        .jagged => "Deep, quick and CUT. A torn line: broken flags, the lip of a scree",
-        .straight => "Cut exactly where you painted it. No wander",
-        .tiled => "Cut and snapped to the grid, so every edge runs on an axis. Laid masonry",
-        .scallop => "A deliberate repeating wave instead of noise. A laid border, a tide line",
-        .speckle => "Breaks into detached flecks before it ends. Moss stippling over stone",
+        .blend => "No line. Dissolves over metres",
+        .natural => "Soft, wandering boundary",
+        .frayed => "Light, quick wander",
+        .jagged => "Deep, quick, torn",
+        .straight => "Cut where you painted it. No wander",
+        .tiled => "Snapped to the grid, so every edge runs on an axis",
+        .scallop => "A repeating wave instead of noise",
+        .speckle => "Breaks into detached flecks before it ends",
     };
 }
 
@@ -2406,7 +2453,7 @@ const BarRow = struct {
     ctx: *ui.Ctx,
     x: i32,
 
-    const GAP: i32 = 4;
+    const GAP: i32 = 3;
     const PAD: i32 = 18;
 
     fn button(r: *BarRow, label: [:0]const u8, active: bool, tip: [:0]const u8) bool {
@@ -2415,18 +2462,25 @@ const BarRow = struct {
         return ui.buttonTip(r.ctx, ui.rect(r.x, 5, w, BAR_H - 10), label, hud.MONO, active, tip);
     }
 
-    fn layer(r: *BarRow, ic: ui.Icon, label: [:0]const u8, active: bool, tip: [:0]const u8) bool {
-        const w = ui.iconButtonW(label, hud.MONO);
+    fn layer(r: *BarRow, ic: ui.Icon, label: [:0]const u8, active: bool, shown: bool, tip: [:0]const u8) ui.LayerHit {
+        const w = ui.layerButtonW(label, hud.MONO);
         defer r.x += w + GAP;
         const rect = ui.rect(r.x, 5, w, BAR_H - 10);
         ui.tipFor(r.ctx, rect, tip);
-        return ui.iconButton(r.ctx, rect, ic, label, hud.MONO, active);
+        return ui.layerButton(r.ctx, rect, ic, label, hud.MONO, active, shown);
     }
 
     fn verb(r: *BarRow, ic: ui.Icon, tip: [:0]const u8) bool {
         const w = BAR_H - 10;
         defer r.x += w + GAP;
         return ui.iconOnly(r.ctx, ui.rect(r.x, 5, w, w), ic, false, tip);
+    }
+
+    /// THE SKY'S OWN EYE — a lone one, because the weather is not a layer and has no label to ride inside.
+    fn eye(r: *BarRow, on: bool, tip: [:0]const u8) bool {
+        const w = BAR_H - 10;
+        defer r.x += w + GAP;
+        return ui.iconOnly(r.ctx, ui.rect(r.x, 5, w, w), if (on) .eye else .eyeOff, !on, tip);
     }
 
     fn gap(r: *BarRow, px: i32) void {
@@ -2437,9 +2491,26 @@ const BarRow = struct {
 fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) void {
     ui.panel(ctx, ui.rect(0, 0, sw, BAR_H), null);
     var row = BarRow{ .ctx = ctx, .x = 8 };
+    // **THE STRIP MEASURES ITSELF AND DROPS THE LABELS RATHER THAN RUN OFF THE WINDOW.** The eyes cost
+    // `EYE_SLOT` apiece and pushed `Sounds` off the right-hand edge at 1280 — and a bar whose last button is
+    // unreachable is worse than one whose names are in the tooltips. `barWide` is the one place the decision
+    // is made, so the widths the layout uses and the widths it measured cannot disagree.
+    const named = ed.barWide(sw);
     inline for (@typeInfo(Layer).@"enum".fields) |f| {
         const l: Layer = @enumFromInt(f.value);
-        if (row.layer(layerIcon(l), l.label(), ed.layer == l, layerTips[f.value])) ed.setLayer(l);
+        switch (row.layer(layerIcon(l), if (named) l.label() else "", ed.layer == l, ed.shown[f.value], layerTips[f.value])) {
+            .select => ed.setLayer(l),
+            .toggle => ed.shown[f.value] = !ed.shown[f.value],
+            .none => {},
+        }
+    }
+    row.gap(6);
+    if (row.eye(ed.showWeather, if (ed.showWeather)
+        "Hide the weather - rain, mist and sporefall, so you can see the ground"
+    else
+        "Show the weather"))
+    {
+        ed.showWeather = !ed.showWeather;
     }
     row.gap(14);
     if (row.verb(.new, "New - start an empty map (Ctrl+N)")) ed.request(.new);
@@ -2784,7 +2855,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         return;
     }
 
-    if (ed.layer == .cover) {
+    if (ed.layer == .locations) {
         // **THE LOCATIONS FIRST, because they are the ones that do something.** Weather is per location and
         // the ONE sky cross-fades toward whichever one he is standing in (`game.settleSky`), so these three
         // dials are the whole of a weather region: how wet, how thick, and how long it takes to arrive.
@@ -3957,3 +4028,4 @@ test "the rate gate paces a sweep, and an empty sweep costs no undo step" {
     try std.testing.expectEqual(@as(usize, 0), undoN);
     try std.testing.expect(!idle.dirty);
 }
+

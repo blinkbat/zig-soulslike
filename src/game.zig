@@ -73,7 +73,6 @@ const LOOK_RATE_PITCH = 2.0;
 const LOOK_CURVE = 1.7;
 const AIM_LOOK_SCALE = 0.42;
 const ROLL_TAP_MAX = 0.22;
-// No run-unlock hold, ever (owner's law): tilt maps straight to ground speed every frame.
 
 const SHAKE_HIT_LIGHT = 0.09;
 const SHAKE_HIT_HEAVY = 0.15;
@@ -133,11 +132,9 @@ const LOCK_TILT_TALL: f32 = 3.2; // over the shade's 2.4 and under the ogre's 4.
 const LOCK_TILT_TALLER: f32 = 3.6;
 const LOCK_TILT_NEAR: f32 = 7.0;
 const LOCK_TILT_FAR: f32 = 17.0;
-/// **HOW FAR DOWN AN EYE AT `eyeY` HAS TO LOOK TO BE ON `mark`, `flat` metres away** — radians, 0 is level and
-/// positive is down. `mathx.tiltDeg`'s companion and its complement: that one asks how far a segment leans off
-/// world UP, this one how far a look leans off the HORIZON. The camera's lock pitch and the head's melee pitch
-/// are one triangle, and they had it written out twice — in different units, which is how the second one gets
-/// retuned alone.
+/// **HOW FAR DOWN AN EYE AT `eyeY` HAS TO LOOK TO BE ON `mark`, `flat` metres away** — radians, 0 is level
+/// and positive is down. `mathx.tiltDeg`'s complement: that asks how far a segment leans off world UP, this
+/// how far a look leans off the HORIZON.
 fn depression(eyeY: f32, mark: rl.Vector3, flat: f32) f32 {
     return std.math.atan2(eyeY - mark.y, flat);
 }
@@ -152,8 +149,7 @@ fn lockPitch(g: *const Game, r: FoeRef) f32 {
     return mathx.lerpF(LOCK_PITCH, want, lockTiltShare(g, r, flat));
 }
 
-/// HOW MUCH OF THE FULL DOWN-TILT A BODY THAT TALL, THAT FAR OFF, IS WORTH — pure, so the test below can pin
-/// THIS and not a transcription of it. Written out twice, a retune here left the test agreeing with itself.
+/// Pure, so the test below pins THIS and not a transcription of it.
 fn tiltShare(rise: f32, flat: f32) f32 {
     const tall = mathx.smoothstep(LOCK_TILT_TALL, LOCK_TILT_TALLER, rise);
     const near = 1.0 - mathx.smoothstep(LOCK_TILT_NEAR, LOCK_TILT_FAR, flat);
@@ -232,14 +228,13 @@ pub const Game = struct {
     bootT: f32 = 0,
     bossK: f32 = 0,
     bossFrac: f32 = 0,
-    /// THE CROSSING HE IS PART-WAY THROUGH, or null. A DEFAULTED FIELD, so it is assigned in `init` and in
-    /// `beginGame` — `Game` comes off `alloc.create` and `= null` here never runs.
+    /// A DEFAULTED FIELD: assigned in `init` and in `beginGame` — `Game` comes off `alloc.create`, so the
+    /// `= null` here never runs.
     gateWalk: ?GateWalk = null,
     spiritK: f32 = 0,
     spiritHp: f32 = 0,
     day: daynight.Clock = .{},
-    /// **WHAT THE SKY IS ACTUALLY DOING WHERE HE IS STANDING.** The world's storm clock is one voice and
-    /// a `worldfmt.Location` is the other; these are the eased result, and every read site takes THEM.
+    /// The eased result of the world's storm clock and a `worldfmt.Location`; every read site takes THESE.
     wetNow: f32 = 0,
     fogNow: f32 = 0,
     sporeNow: f32 = 0,
@@ -278,10 +273,9 @@ pub const Game = struct {
     enterOut: f32 = 0,
     enterIn: f32 = 0,
     enterAct: ?Enter = null,
-    /// **THE DROP STREAM, SEEDED ONCE AT STARTUP AND NEVER REWOUND.** Off a seeded `Rng` rather than wall
-    /// time because `--shot` has to stay reproducible; and seeded in `init` rather than in `beginGame` so
-    /// that reloading a save does not put the sequence back to where it was — reload, kill the same
-    /// sporeling, and a stream reset per character would hand you the same answer forever.
+    /// **SEEDED ONCE AT STARTUP AND NEVER REWOUND.** Off a seeded `Rng` rather than wall time because
+    /// `--shot` has to stay reproducible; and in `init` rather than `beginGame`, or a reload would hand you
+    /// the same answer for the same kill forever.
     dropRng: mathx.Rng = mathx.Rng.init(0),
     saveT: f32 = 0,
     boltGas: [BOLT_GAS_CAP]knightmod.Gas = undefined,
@@ -351,8 +345,7 @@ pub const Game = struct {
         g.fogLit = std.math.nan(f32);
         g.sporeLit = std.math.nan(f32);
         g.souls = soulsmod.Souls.init(g.scene.shader);
-        // **THE WEATHER IS SEEDED ONCE AND NEVER REWOUND** (`dropRng`'s reason): a storm clock reset per
-        // character would put the same shower at the same minute of every run.
+        // **THE WEATHER IS SEEDED ONCE AND NEVER REWOUND** (`dropRng`'s reason).
         g.weather = weathermod.Weather.init(0x5701_A17E);
         g.rainfall = weathermod.Rain.build(g.scene.shader);
         g.mist = weathermod.Mist.build(g.scene.shader);
@@ -397,8 +390,7 @@ pub const Game = struct {
 const SHOT_CLEAR: f32 = 0.02;
 
 
-/// Where the pass is centred: deep in the WOOD (`zone: wood` runs west of x = -52 at 0.98 density), well off
-/// the runway and well off the village, so what is under the lens is canopy.
+/// Deep in the WOOD (`zone: wood` runs west of x = -52 at 0.98 density), well off the runway and the village.
 const BOOT_AT_X: f32 = -104.0;
 const BOOT_AT_Z: f32 = 18.0;
 const BOOT_DRIFT_R: f32 = 26.0;
@@ -408,9 +400,7 @@ const BOOT_LOOK_UP: f32 = 6.0;
 const BOOT_YAW_MID: f32 = 53.0; // degrees — the sun's own over-the-shoulder bearing
 const BOOT_YAW_SWEEP: f32 = 38.0;
 const BOOT_YAW_T: f32 = 41.0;
-/// **LOOKING SOMEWHAT DOWN**, and this is the dial that says so: 0.44 rad is about 25 degrees under the
-/// horizon, which keeps the horizon and its sky in the upper third while the canopy fills the rest. At 35 the
-/// frame was all shaded crown and no distance — a map rather than a view.
+/// 0.44 rad is about 25 degrees under the horizon, which keeps the horizon and its sky in the upper third.
 pub const BOOT_PITCH: f32 = 0.44;
 pub const BOOT_DIST: f32 = 46.0;
 const BOOT_SWOOP_PITCH: f32 = 0.17;
@@ -425,8 +415,7 @@ fn bootLook(g: *const Game, t: f32) rl.Vector3 {
     return v3(x, g.env.groundAt(x, z) + BOOT_LOOK_UP, z);
 }
 
-/// …and the whole camera for that instant. ONE function, so the loop and the harness cannot frame it two
-/// different ways.
+/// ONE function, so the loop and the harness cannot frame it two different ways.
 pub fn bootCam(g: *Game, t: f32) void {
     g.rig.yaw = mathx.radians(BOOT_YAW_MID + BOOT_YAW_SWEEP * mathx.sinf(t * std.math.tau / BOOT_YAW_T));
     g.rig.pitch = BOOT_PITCH + BOOT_SWOOP_PITCH * mathx.sinf(t * std.math.tau / BOOT_SWOOP_T);
@@ -502,7 +491,7 @@ fn enterNow(g: *Game, act: Enter) void {
                 g.slot = i;
                 g.menu.started();
             } else {
-                g.shelf.head[i] = null; // …and the row goes dead, so it cannot be pressed again
+                g.shelf.head[i] = null;
                 std.debug.print("LOAD FAILED: {s} is not a save this build can read\n", .{savemod.path(i)});
             }
         },
@@ -609,12 +598,9 @@ pub const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "cluster", .kind = .shroom, .aggro = shroommod.AGGRO_R, .vs = &.{"thicket"} },
     .{ .field = "warrens", .kind = .delver, .aggro = delvermod.AGGRO_R },
     .{ .field = "rite", .kind = .necromancer, .aggro = necromod.AGGRO_R, .vs = &.{ "line", "muster" } },
-    // A PACK, and it shoulders the small things aside: a hound this size walks through a sporeling. **THE
-    // ROW THAT YIELDS IS THE ROW THAT NAMES THE OTHER** — `vs` is who shoulders ME, so listed here the
-    // 1.34 m hound was the one being shoved off its line by a knee-high mushroom.
+    // **THE ROW THAT YIELDS IS THE ROW THAT NAMES THE OTHER** — `vs` is who shoulders ME.
     .{ .field = "thicket", .kind = .florid_ravager, .aggro = ravagermod.AGGRO_R },
     .{ .field = "ring", .kind = .mushroom_mage, .aggro = magemod.AGGRO_R },
-    // It shoulders every other fungal thing aside — three hundred kilos of mycelium walks through a sporeling.
     .{ .field = "host", .kind = .spore_golem, .aggro = golemmod.AGGRO_R },
     .{ .field = "marsh", .kind = .fen_lurker, .aggro = fenmod.AGGRO_R, .vsHero = false },
     .{ .field = "vigil", .kind = .bone_knight, .aggro = knightmod.AGGRO_R, .vsHero = false, .vs = &.{ "line", "muster" } },
@@ -691,6 +677,64 @@ test "A FIGHT IS ON while something is roused OR simply near, and is over when t
     try std.testing.expect(!foeFights(&toad, near, frogmod.AGGRO_R));
 }
 
+test "A LANDED SHOT DETONATES ONCE, not once a frame for the 1.4 s it lies there" {
+    const dt: f32 = 1.0 / 60.0;
+    var a = archermod.launchShaft(v3(0, 1.15, 0), v3(0, 1.0, 11.0), magemod.EMBER_SPEED, .{}, true, .emberball);
+
+    var landings: u32 = 0;
+    var airborne: u32 = 0;
+    var i: usize = 0;
+    while (i < 900 and a.live) : (i += 1) {
+        _ = archermod.stepShaft(&a, 0, &.{}, dt);
+        a.bounced = false;
+        if (justLanded(&a)) landings += 1 else if (!a.stuck) airborne += 1;
+    }
+    std.debug.print("\n  ember: {d} landing frame(s) over {d} of flight and {d} of rest\n", .{ landings, airborne, i - landings - airborne });
+    try std.testing.expect(!a.live);
+    try std.testing.expect(airborne > 10);
+    try std.testing.expect(i - landings - airborne > 10);
+    try std.testing.expectEqual(@as(u32, 1), landings);
+}
+
+test "EVERY GROUP HOLDS EVERYTHING THE MAP CAN PLACE — the per-kind limit is gone, not raised" {
+    var total: usize = 0;
+    inline for (FOE_GROUPS) |gr| {
+        try std.testing.expect(comptime groupCap(gr.field) >= worldfmt.MAX_FOES);
+        total += @sizeOf(@FieldType(Game, gr.field));
+    }
+    std.debug.print("\n  foes: 17 slabs {d:.1} MB, Game {d:.1} MB, frame scratch {d:.0} KB - any {d} of one kind fits\n", .{
+        @as(f64, @floatFromInt(total)) / (1024.0 * 1024.0),
+        @as(f64, @floatFromInt(@sizeOf(Game))) / (1024.0 * 1024.0),
+        @as(f64, @floatFromInt(@sizeOf(@TypeOf(frameWasPos)))) / 1024.0,
+        worldfmt.MAX_FOES,
+    });
+    try std.testing.expect(worldfmt.MAX_PER_KIND >= worldfmt.MAX_FOES);
+}
+
+test "A DETONATOR RESOLVES ONE WAY — caught on the chest and rolled to a stop bill the SAME blow" {
+    const full = mathx.lerpF(1.0, BLAST_FLOOR, 0.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), full, 1e-6);
+    const rim = mathx.lerpF(1.0, BLAST_FLOOR, 1.0);
+    try std.testing.expectApproxEqAbs(BLAST_FLOOR, rim, 1e-6);
+    try std.testing.expect(rim > 0 and rim < 0.5);
+
+    var bombs: usize = 0;
+    inline for (@typeInfo(archermod.Shot).@"enum".fields) |f| {
+        if (detonates(@enumFromInt(f.value))) bombs += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), bombs);
+    try std.testing.expect(detonates(.emberball));
+    try std.testing.expect(!detonates(.arrow) and !detonates(.firearrow) and !detonates(.bolt));
+
+    const dt: f32 = 1.0 / 60.0;
+    var a = archermod.launchShaft(v3(0, 1.15, 0), v3(0, 1.0, 11.0), magemod.EMBER_SPEED, .{}, true, .emberball);
+    var flight: f32 = 0;
+    while (a.live and !a.stuck) : (flight += dt) _ = archermod.stepShaft(&a, 0, &.{}, dt);
+    std.debug.print("\n  ember: {d:.2} s of flight against a {d:.1} s life\n", .{ flight, archermod.EMBER_LIFE_S });
+    try std.testing.expect(a.stuck);
+    try std.testing.expect(flight < archermod.EMBER_LIFE_S);
+}
+
 test "A BUTTON IS NAMED ONCE — the press the loop reads IS the letter the cribs draw" {
     try std.testing.expectEqual(INTERACT_PAD, hud_.padOf(hud_.BTN_INTERACT));
     try std.testing.expectEqual(QUICK_PAD, hud_.padOf(hud_.BTN_QUICK));
@@ -716,8 +760,6 @@ test "the ranges the fight is judged at are each GROUP'S OWN, never one figure f
 const Sighted = enum { blind, seen };
 
 fn rehomeFoes(g: *Game, sighted: Sighted) void {
-    // A RESPAWNED BOSS MAY NOT SHUT A DOOR HE IS STANDING OUTSIDE OF — the latch is per visit, and the fire
-    // putting the bestiary back is the end of the visit.
     g.env.openWards();
     inline for (FOE_GROUPS) |f| {
         @field(g, f.field).reset(&g.map);
@@ -751,6 +793,24 @@ const FOE_CAP = blk: {
     for (FOE_GROUPS) |f| w = @max(w, groupCap(f.field));
     break :blk w;
 };
+
+/// LAST FRAME'S FOE POSITIONS, for the terrain and chill gates — **MODULE SCRATCH, NOT A STACK ARRAY AND NOT
+/// A `Game` FIELD.** On the stack it was 15 KB and would be 157 KB now; on `Game` it cannot go at all,
+/// because `FOE_CAP` is measured FROM `Game`. Deliberately uninitialised: rewritten head-first every frame
+/// and only ever read back as `[gi][0..wasN[gi]]`, the range just written.
+var frameWasPos: [FOE_GROUPS.len][FOE_CAP]rl.Vector3 = undefined;
+
+comptime {
+    // **NO GROUP MAY BE NARROWER THAN THE MAP CAN PLACE** — `sporegolem` was built 8 wide against a map
+    // that could place 24, and `foe.resetGroup` dropped the rest in silence. A compile error here rather
+    // than a body that never appears.
+    for (FOE_GROUPS) |f| {
+        if (groupCap(f.field) < worldfmt.MAX_PER_KIND) {
+            @compileError("game: foe group '" ++ f.field ++ "' is narrower than worldfmt.MAX_PER_KIND — " ++
+                "a map that places more than it holds loses the difference without a word");
+        }
+    }
+}
 
 const Move = struct { fx: f32 = 0, fz: f32 = 0, speed: f32 = 0 };
 
@@ -908,9 +968,6 @@ test "A SPIRIT'S JAWS MUST REACH INTO WHAT IT IS SET ON — the BOTTOM of a gian
     const rest = w.jawPoint().y - w.pos.y + 0.20 * w.scale;
     w.stagePounce(1.0);
     const full = w.jawPoint().y - w.pos.y + 0.20 * w.scale;
-    // …AND THE THIRD END OF THE SAME DIAL: the nose on the DIRT (owner: she has trouble hitting floorbound
-    // short foes). Under her resting reach the leap clamps to nothing and the jaws shut at `TEETH_REST`, which
-    // is over the top of the small things entirely — so the stoop is measured here beside the other two.
     w.stageBiteAt(wolfmod.STOOP_LOW * 0.5);
     const down = w.jawPoint().y - w.pos.y + 0.20 * w.scale;
     var giant = ogremod.Ogre.spawn(mathx.zero3, 0, 1.0, 0.3);
@@ -924,8 +981,6 @@ test "A SPIRIT'S JAWS MUST REACH INTO WHAT IT IS SET ON — the BOTTOM of a gian
     try std.testing.expectApproxEqAbs(wolfmod.TEETH_REST, rest, 0.04);
     try std.testing.expectApproxEqAbs(wolfmod.TEETH_POUNCE, full, 0.04);
 
-    // **EVERY SIZE SHE IS ASKED TO BITE, THE SMALL ONES INCLUDED.** Three tall creatures is what let a bite
-    // that cannot reach a sporeling pass this test for as long as it did.
     inline for (.{
         .{ "ogre", &giant },
         .{ "rooted", &snag },
@@ -949,13 +1004,9 @@ test "A SPIRIT'S JAWS MUST REACH INTO WHAT IT IS SET ON — the BOTTOM of a gian
         });
         try std.testing.expect(held < trigger);
         try std.testing.expect(@abs(mid - jaw) <= (1.0 - wolfmod.POUNCE_INTO) * r);
-        // …and the window she has to find has to be worth more than the collider holding her out of it.
-        //
-        // **BUT A TARGET SMALLER THAN SHE IS HAS NO CHORD TO SPARE, so it answers the other bar.** A
-        // broodling's whole hurt sphere is 0.38 m wide against colliders that hold her 0.79 m off its centre:
-        // no bite height makes a chord of it beat that, because the sphere is narrower than the number. On a
-        // giant the sphere is the wide thing and the chord IS the question; on something the size of her own
-        // head the question is whether her head gets there, which is the MUZZLE'S own forward reach.
+        // **A TARGET SMALLER THAN SHE IS HAS NO CHORD TO SPARE, so it answers the other bar.** A broodling's
+        // hurt sphere is 0.38 m wide against colliders that hold her 0.79 m off its centre: no bite height
+        // makes a chord of it beat that, so the question is the MUZZLE'S own forward reach.
         const snout = w.jawPoint().z - w.pos.z;
         if (r >= held * 0.55) {
             try std.testing.expect(window > held * 0.55);
@@ -1124,10 +1175,8 @@ fn snapshotPos(foes: anytype, out: []rl.Vector3) void {
     }
 }
 
-/// **AND NOTHING ON FOOT WALKS INTO THE DEEP AFTER HIM** (`foe.wadeLimit`). The gate has always carried the
-/// water half — but at the HERO's waterline, chest height on a man, which is over the head of half the
-/// bestiary. A creature turns back at its own hips, and the ones the water belongs to (the toad, the fen
-/// lurker) are handed no limit at all rather than a branch of their own.
+/// **AND NOTHING ON FOOT WALKS INTO THE DEEP AFTER HIM** (`foe.wadeLimit`). A creature turns back at its own
+/// hips, not the hero's waterline; the ones the water belongs to are handed no limit at all.
 fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?FoeKind, crossesWards: bool) void {
     const T = @typeInfo(@TypeOf(foes)).pointer.child;
     for (foes, 0..) |*f, i| {
@@ -1136,10 +1185,9 @@ fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?F
             if (!f.alive()) continue;
         }
         if (mathx.distXZ(was[i], f.pos) < 1e-5) continue;
-        // …AND THE FOG GATE IS THE ONE REFUSAL A FLYER AND A BLINK ANSWER TO. The push-out in
-        // `collideActors` holds a body that WALKS at the door; it cannot hold one that arrives on the far
-        // side without ever standing in it, so the whole travelled segment is asked here and the step is
-        // handed straight back. Above the terrain skip, because a ward is not ground.
+        // …AND THE FOG GATE IS THE ONE REFUSAL A FLYER AND A BLINK ANSWER TO: the push-out holds a body that
+        // WALKS at the door, so the whole travelled segment is asked here. Above the terrain skip, because a
+        // ward is not ground.
         if (!crossesWards and g.env.wardCrossed(was[i], f.pos) != null) {
             f.pos.x = was[i].x;
             f.pos.z = was[i].z;
@@ -1148,8 +1196,6 @@ fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?F
         if (comptime @hasDecl(T, "airborne")) {
             if (f.airborne()) continue;
         }
-        // The wolf and the wanderers are in no group and are ordinary walkers; everything else answers for
-        // its own kind, the multi-role bands through their own `kind()`.
         const wade = if (comptime @hasDecl(T, "kind"))
             foemod.wadeLimit(f.kind(), statureOf(f))
         else if (group) |k|
@@ -1162,22 +1208,18 @@ fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?F
     }
 }
 
-/// HOW TALL THE THING IS, off the body point every creature already reports for its own bar.
+/// Off the body point every creature already reports for its own bar.
 fn statureOf(f: anytype) f32 {
     return @max(f.topWorld().y - f.pos.y, 0.2);
 }
 
-/// **THE TRAVERSAL RULE ON THE HERO, AS ONE POST-STEP GATE** — `gateTerrain`'s arrangement one actor along,
-/// and for its reason: eight branches move him and only `moveHero` ever asked the ground anything. The ROLL
-/// and the attack LUNGE step through `mathx.stepXZ`, which is a clamp to the play square and NOTHING ELSE, so
-/// 3.5 m of roll crossed ground a walk refuses outright and `groundActor` then hauled him up it at
-/// `GROUND_RISE_RATE` — 9 m/s over a 0.70 s roll is a 61 degree climb against the 40 the walk caps at, and a
-/// riser past `GROUND_SNAP` is a plant, i.e. a teleport up a cliff. Foes have been held to this since
-/// `gateTerrain`; he was the one body in the world that was not.
+/// **THE TRAVERSAL RULE ON THE HERO, AS ONE POST-STEP GATE.** The ROLL and the attack LUNGE step through
+/// `mathx.stepXZ`, which is a clamp to the play square and NOTHING ELSE, so 3.5 m of roll crossed ground a
+/// walk refuses and `groundActor` hauled him up it at `GROUND_RISE_RATE` — 9 m/s over a 0.70 s roll is a 61
+/// degree climb against the 40 the walk caps at, and a riser past `GROUND_SNAP` is a teleport up a cliff.
 ///
 /// **AIRBORNE KEEPS ONLY THE WATER HALF.** A jump has its own rule (`env.flyStep`) and clearing ground the
-/// walk refuses is what it is FOR — but no arc of it may end in the deep, which is what this gate was
-/// originally hoisted out of the eight branches to say.
+/// walk refuses is what it is FOR — but no arc of it may end in the deep.
 fn gateHeroTerrain(g: *Game, was: rl.Vector3) void {
     // Refused on the SEGMENT (`env.wardRefusing`) rather than left to the push-out: a roll is 3.5 m in one
     // step and the sheet is 0.8 m thick.
@@ -1203,17 +1245,13 @@ fn gatedXZ(e: *const envmod.Env, was: rl.Vector3, to: rl.Vector3, airborne: bool
 }
 
 test "THE ROLL OBEYS THE GROUND — a committed move may not take him up what a walk refuses" {
-    // THE BUG: only `moveHero` ever asked the ground anything. The ROLL and the attack LUNGE step through
-    // `mathx.stepXZ`, which is a clamp to the play square and nothing else, so 3.5 m of roll walked up a
-    // cliff face and `groundActor` hauled him after it. Foes have been held to this by `gateTerrain` all
-    // along; he was the one body in the world that was not.
     const e = try std.testing.allocator.create(envmod.Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
     e.heightAny = true;
     e.heightHalf = 100.0;
-    // A WALL ACROSS +X: flat to x = 0, then straight up. One lattice pitch is 2*half/(N-1) ≈ 0.90 m, so the
-    // riser is far past `STEP_UP` (0.55) and its slope far past `MAX_SLOPE` (tan 40).
+    // A WALL ACROSS +X. One lattice pitch is 2*half/(N-1) ≈ 0.90 m, so the riser is far past `STEP_UP`
+    // (0.55) and its slope far past `MAX_SLOPE` (tan 40).
     const pitch = 2 * e.heightHalf / @as(f32, @floatFromInt(worldfmt.HEIGHT_N - 1));
     for (0..worldfmt.HEIGHT_N) |zi| {
         for (0..worldfmt.HEIGHT_N) |xi| {
@@ -1296,10 +1334,19 @@ fn heroFade(g: *const Game) f32 {
     return mathx.lerpF(1.0, AIM_FADE, mathx.clampF(g.hero.aimB, 0, 1));
 }
 
+/// Always true in play — the eyes are an authoring view and the game may not be able to tell they exist.
+fn shows(g: *const Game, l: editormod.Layer) bool {
+    return !g.editor.on or g.editor.visible(l);
+}
+
 fn drawCasters(g: *Game, cull: envmod.Cull) void {
-    g.env.drawProps(cull);
-    g.chests.draw();
-    if (cull == .view) g.chests.drawGlow(&g.scene);
+    // GATED IN BOTH PASSES, because this function is the depth pass as well (`drawCasters`' own contract): a
+    // prop hidden in colour but still laid into the shadow map is a shadow with nothing casting it.
+    if (shows(g, .props)) g.env.drawProps(cull);
+    if (shows(g, .interact)) {
+        g.chests.draw();
+        if (cull == .view) g.chests.drawGlow(&g.scene);
+    }
     g.hero.drawRoots();
     const fade = heroFade(g);
     const seeThrough = cull == .view and fade < 0.999;
@@ -1498,10 +1545,8 @@ pub fn stepArrowsForShot(g: *Game, dt: f32) void {
     for (&g.arrows) |*ar| {
         if (!ar.live) continue;
         flyArrow(g, ar, dt);
-        // **THE HARNESS STILL HAS TO SPEND THE ONE-FRAME FLAG** even though it deliberately skips the voice
-        // and the embers (`emberBounces` — a shot must not play a sound). A one-frame flag with a reset on
-        // only ONE of its two drive paths is `justDied`'s own hazard: left set it latches for the rest of
-        // the run and every later frame reads a bounce that already happened.
+        // **THE HARNESS STILL HAS TO SPEND THE ONE-FRAME FLAG** even though it skips the voice and the
+        // embers. A flag reset on only ONE of its two drive paths latches for the rest of the run.
         ar.bounced = false;
     }
 }
@@ -1569,9 +1614,8 @@ pub fn drawBonfireForShot(g: *Game) void {
     restmod.drawScreen(&g.rest, &g.tree, g.hero.souls.total);
 }
 
-/// THE SAVE MARK AT A FIXED POINT IN ITS GROWTH. `saveMark` ticks a clock the shot loop never runs, and the
-/// frame worth photographing is a chosen one rather than whatever a clock happened to be on — `pinHourForShot`'s
-/// arrangement. Takes no `Game`: the mark is a pure function of one number.
+/// Takes no `Game`: the mark is a pure function of one number. `saveMark` ticks a clock the shot loop never
+/// runs, and the frame worth photographing is a chosen one (`pinHourForShot`'s arrangement).
 pub fn drawSaveMarkForShot(left: f32) void {
     hud_.saveTree(left);
 }
@@ -1702,14 +1746,10 @@ fn inReach(g: *const Game, r: Reach) bool {
     };
 }
 
-/// **A FOG GATE IS A DOOR, AND A DOOR IS ASKED FOR** (owner: prompt to enter with Y). Offered only on the one
-/// he is close enough to touch, and only while it is still OPEN — a shut gate has no prompt, because the
-/// answer to it is the boss and not the button.
 const GATE_MARGIN: f32 = 1.15;
 comptime {
-    // HE MAY NOT STEP OUT OF A GATE INTO ITS OWN PROMPT. The crossing lands him `WARD_CLEAR` past the sheet
-    // and the prompt reaches `GATE_MARGIN`, both measured off the same capsule, so the one has to clear the
-    // other or every crossing ends with "Enter" already lit behind him.
+    // HE MAY NOT STEP OUT OF A GATE INTO ITS OWN PROMPT: the crossing lands him `WARD_CLEAR` past the sheet
+    // and the prompt reaches `GATE_MARGIN`, both off the same capsule, so the one has to clear the other.
     std.debug.assert(envmod.WARD_CLEAR > GATE_MARGIN);
 }
 
@@ -1737,14 +1777,9 @@ fn interact(g: *Game) void {
     }
 }
 
-/// **HE WALKS IT, HE IS NOT TELEPORTED THROUGH IT** (owner: char walks thru slowly with sound fx and
-/// particles). The whole line comes off the sheet (`env.wardCross`) and not off his facing: entering at an
-/// angle still puts him out square on the far side, and it ends far enough past the sheet that he cannot come
-/// to rest inside the door he just opened.
-///
-/// **SLOWLY** (owner), and that is a SPEED and not a duration: he may trigger the walk from anywhere inside
-/// the prompt's reach, and a fixed clock over a distance that varies by metres is a walk that is sometimes a
-/// run. Two thirds of his own walk, which is the pace of somebody committing to something.
+/// The whole line comes off the sheet (`env.wardCross`) and not off his facing: entering at an angle still
+/// puts him out square on the far side. A SPEED and not a duration — a fixed clock over a distance that
+/// varies by metres is a walk that is sometimes a run.
 pub const GATE_SPEED: f32 = heromod.WALK_SPEED * 0.66;
 const GATE_MOTES_PER_S: f32 = 26.0;
 const GATE_MOTE_CAP: u32 = 8;
@@ -1761,8 +1796,6 @@ const GateWalk = struct {
 
 fn enterGate(g: *Game) void {
     const w = gateAt(g) orelse return;
-    // FROM WHERE HE IS STANDING, never from a lead-in behind him: the walk's first frame IS his own position,
-    // so pressing the button cannot snap him backwards before he sets off.
     const x = g.env.wardCross(w, g.hero.pos, HERO_R) orelse return;
     g.gateWalk = .{
         .ward = w,
@@ -1778,8 +1811,8 @@ fn enterGate(g: *Game) void {
     sfx.play(.fog_pass);
 }
 
-/// The traversal itself: a slow, even walk on the committed line, with the gait driven by the distance he is
-/// actually covering rather than by a speed handed in, so the feet cannot skate (the rig's own law).
+/// The gait is driven by the distance he is actually covering rather than by a speed handed in, so the feet
+/// cannot skate (the rig's own law).
 fn updateGateWalk(g: *Game, dt: f32) void {
     const gw = &(g.gateWalk orelse return);
     const was = g.hero.pos;
@@ -1792,7 +1825,7 @@ fn updateGateWalk(g: *Game, dt: f32) void {
     g.hero.facing = face;
     g.hero.update(dt, moved, if (dt > 0) moved / dt else 0, face);
     // The rig is replayed HERE like every other branch of the loop's state chain: `hero.update` only advances
-    // the clocks and the gait phase, and the crossing was the one path that never chained the bones after it.
+    // the clocks and the gait phase.
     g.hero.pose();
     gw.motes += dt * GATE_MOTES_PER_S;
     var n: u32 = 0;
@@ -1804,12 +1837,12 @@ fn updateGateWalk(g: *Game, dt: f32) void {
 fn ringBell(g: *Game) void {
     if (!g.hero.canRing()) return;
     if (g.bag.count(combat.scrollFor(g.hero.spirit)) == 0) {
-        g.trig.say("The bell rings on nothing. You carry no scroll for it.");
+        g.trig.say("No spirit scroll.");
         sfx.play(.refused);
         return;
     }
     if (!g.pack.room()) {
-        g.trig.say("One already answers.");
+        g.trig.say("A spirit is already out.");
         sfx.play(.refused);
         return;
     }
@@ -1962,15 +1995,10 @@ fn hidePickups(g: *Game) void {
     for (g.pickups.mappedOnes(), 0..) |*p, i| g.env.setPickupDraw(i, p.sizeLeft(), p.spent());
 }
 
-/// **WHAT A BODY LEFT, DRAWN.** The map's glows are props in the world grid; these have no prop behind them,
-/// so the loop draws them — off `env`'s OWN pickup model, and **NOT DRAWN AT ALL once it is spent**, which is
-/// what takes a picked-up glow off the ground rather than leaving a zero-sized one standing in it. Off
-/// `drawCasters` entirely, `souls.draw`'s reason: a thing made of light lays no shadow.
-///
-/// **AND IT THINS AS WELL AS SHRINKING** — `env.drawIndexed`'s branch for the map's own, on the same owner's
-/// call: the shrink alone is a glow getting SMALLER at full brightness, which reads as one moving away rather
-/// than one going out. Through `Scene.beginFade`/`endFade`, which is that branch's own pair — one definition of
-/// how a thing going out is drawn, so a dropped glow and a placed one cannot go out differently.
+/// **WHAT A BODY LEFT, DRAWN.** These have no prop behind them, so the loop draws them off `env`'s own pickup
+/// model — and **NOT DRAWN AT ALL once it is spent**, rather than as a zero-sized glow left standing. Off
+/// `drawCasters` entirely (`souls.draw`'s reason): a thing made of light lays no shadow. It thins as well as
+/// shrinking, through `Scene.beginFade`/`endFade`, so a dropped glow and a placed one cannot go out differently.
 fn drawDrops(g: *Game) void {
     const mdl = g.env.pickupModel();
     for (g.pickups.droppedOnes()) |*p| {
@@ -2009,10 +2037,8 @@ fn triggerWorld(g: *const Game) trigmod.World {
     return w;
 }
 
-/// **WHAT A DEATH IS WORTH TO THE SCRIPT AND TO THE BAG, IN ONE WALK.** The trigger tally and the drop are the
-/// same event asked twice, and read off two passes they would be two lists of who died — which the day a
-/// creature is added is one list to forget. `justDied` is a one-frame edge, so this must run exactly once a
-/// frame (`tickTriggers`).
+/// **WHAT A DEATH IS WORTH TO THE SCRIPT AND TO THE BAG, IN ONE WALK.** `justDied` is a one-frame edge, so
+/// this must run exactly once a frame (`tickTriggers`).
 fn billDeaths(g: *Game) void {
     const Ctx = struct {
         g: *Game,
@@ -2023,14 +2049,10 @@ fn billDeaths(g: *Game) void {
                 if (!f.justDied) continue;
                 const k = memberKind(f, kind);
                 self.g.trig.died(k);
-                // **IT GOES ON THE GROUND WHERE IT FELL** (owner's call), not into his hands: a body leaves a
-                // glow you have to walk to, exactly as the map's own do and exactly as his souls do. The roll
-                // is spent whatever died, so the stream cannot become a function of what you chose to fight.
+                // **IT GOES ON THE GROUND WHERE IT FELL**, not into his hands. The roll is spent whatever
+                // died, so the stream cannot become a function of what you chose to fight.
                 var buf: [pickupmod.DROP_MAX]item.Kind = undefined;
                 self.g.pickups.spawn(f.pos, dropsmod.roll(k, self.g.hero.sheet.at(.luck), &self.g.dropRng, &buf));
-                // **AND WHAT A BODY IS WORTH THE MOMENT IT DROPS** (`passivetree.Grant.onKill`). Billed on
-                // the SAME `justDied` edge the drop and the trigger tally are — one walk, one list of who
-                // died, so a creature added cannot be worth souls and a glow but not this.
                 if (self.g.hero.perk.onKill > 0 and !self.g.hero.dead) {
                     _ = self.g.hero.vit.heal(self.g.hero.perk.onKill);
                 }
@@ -2050,13 +2072,11 @@ fn tickTriggers(g: *Game, dt: f32) void {
     if (!g.talk.open(&g.map, &g.trig, want, "", null)) g.trig.dialogClosed();
 }
 
-/// **THE FOG GATE SHUTS BEHIND HIM AND THE BOSS IS THE KEY** (owner: once you enter a fog gate it becomes
-/// impassable til you kill a boss). Two halves, and they are deliberately apart: the LATCH is his own step
-/// crossing the sheet (`markWardStep`), and the DOOR is only actually shut while the creature the op names
-/// is still standing — so a gate whose boss is already dead is a doorway you walk both ways, and killing it
-/// is what lets you back out. A gate may not shut on the man IN it (`wardClear`), or a push-out could land
-/// him on the outside of a fight he already started with nothing left able to open it.
-/// How long a spent gate takes to go (owner: fade it out when the boss is killed, and then remove it).
+/// Two halves, deliberately apart: the LATCH is his own step crossing the sheet (`markWardStep`), and the
+/// DOOR is shut only while the creature the op names is still standing — so killing it is what lets you back
+/// out. A gate may not shut on the man IN it (`wardClear`), or a push-out could seal him inside with nothing
+/// left able to open it.
+/// How long a spent gate takes to go.
 const WARD_FADE: f32 = 2.6;
 
 fn markWards(g: *Game, alive: [@typeInfo(FoeKind).@"enum".fields.len]u32, dt: f32) void {
@@ -2065,16 +2085,11 @@ fn markWards(g: *Game, alive: [@typeInfo(FoeKind).@"enum".fields.len]u32, dt: f3
         const boss = if (pr.op < g.map.nops) g.map.ops[pr.op].boss else null;
         const standing = if (boss) |b| alive[@intFromEnum(b)] > 0 else false;
         const shut = g.env.wardIn[i] and standing and g.env.wardClear(@intCast(i), g.hero.pos, HERO_R);
-        // THE STING IS THE DOOR SHUTTING, not the sheet being touched: walk through a gate whose boss is
-        // already down and nothing sounds, because nothing happened.
         if (shut and !g.env.wardShut[i]) sfx.play(.fog_seal);
         g.env.wardShut[i] = shut;
-        // …AND IT IS SPENT BY THE FIGHT IT SEALED, never by a death somewhere else: only a gate he actually
-        // went through, whose named boss has since gone down, goes away.
         if (g.env.wardIn[i] and boss != null and !standing) {
-            // **AND THE SEAL IS OWED AN ANSWER** (owner: a tone arrangement for victory, still deep and dark
-            // but hopeful). One shot off the first frame of the door letting go — past it `wardLife` is
-            // already under 1, so the edge cannot come round twice.
+            // One shot off the first frame of the door letting go — past it `wardLife` is already under 1,
+            // so the edge cannot come round twice.
             if (g.env.wardLife[i] >= 1.0) sfx.play(.fog_felled);
             g.env.wardLife[i] = mathx.maxF(0, g.env.wardLife[i] - dt / WARD_FADE);
         }
@@ -2083,8 +2098,7 @@ fn markWards(g: *Game, alive: [@typeInfo(FoeKind).@"enum".fields.len]u32, dt: f3
     }
 }
 
-/// The latch, taken off the step he actually travelled — the same segment question `gateTerrain` asks on a
-/// foe's behalf, so a roll through a gate counts exactly as a walk through it does.
+/// Taken off the step he actually travelled — the same segment question `gateTerrain` asks on a foe's behalf.
 fn markWardStep(g: *Game, was: rl.Vector3) void {
     const w = g.env.wardCrossed(was, g.hero.pos) orelse return;
     g.env.wardIn[w] = true;
@@ -2246,19 +2260,12 @@ fn applyStow(g: *Game) void {
 }
 
 fn applyHour(g: *Game) void {
-    // **AND ONLY WHEN THE HOUR HAS ACTUALLY MOVED.** The loop asks this every frame down every branch, and
-    // what it costs is not small: TWO full `paletteAt` walks (a table search plus a fourteen-field blend
-    // each), three `keyDir`-class solves for the caster, its reach and the two discs, and EIGHTEEN
-    // `setShaderValue` calls — each of which is a `glUseProgram` and a `glUniform` at the driver. Under a
-    // menu, at a bonfire, inside a conversation, in the editor and under a frozen clock (`--shot`) the
-    // answer cannot have changed, and the guard is the value itself rather than a flag anybody has to
-    // remember to raise. Nothing else writes these uniforms, so a skipped frame leaves them exactly right.
-    //
-    // **AND THE STORM IS PART OF THE ANSWER NOW** (`daynight.overcast`), so it is part of the guard: the sheet
-    // ramps over seconds and the light has to come with it. QUANTIZED, because the level moves every frame of
-    // a ramp and re-uploading eighteen uniforms sixty times a second is the exact cost this guard exists to
-    // refuse — a sixty-fourth of the range is finer than the eye reads and lands on ~7 uploads a second
-    // through the fastest ramp there is.
+    // **AND ONLY WHEN THE HOUR HAS ACTUALLY MOVED**, because the cost is not small: two full `paletteAt`
+    // walks, three `keyDir`-class solves, and EIGHTEEN `setShaderValue` calls, each a `glUseProgram` plus a
+    // `glUniform` at the driver. The guard is the value itself rather than a flag anybody has to raise, and
+    // nothing else writes these uniforms, so a skipped frame leaves them exactly right. QUANTIZED because a
+    // storm ramp moves every frame: a sixty-fourth of the range is finer than the eye reads and lands on ~7
+    // uploads a second through the fastest ramp there is.
     const wet = @round(g.wetNow * WET_STEPS) / WET_STEPS;
     const fog = g.menu.fogK();
     const spore = @round(g.sporeNow * WET_STEPS) / WET_STEPS;
@@ -2286,8 +2293,7 @@ pub fn pinHourForShot(g: *Game, hour: f32) void {
 }
 
 /// **THE SKY THE MAN IS ACTUALLY STANDING IN, WITH NO BLEND** — the shot harness's own. `settleSky` walks
-/// toward a region's weather over `blend` seconds and the harness renders single frames, so without this a
-/// photograph of a spore bloom is a photograph of a clear day.
+/// toward a region's weather over `blend` seconds and the harness renders single frames.
 pub fn pinSkyForShot(g: *Game) void {
     const here = g.map.weatherAt(g.hero.pos.x, g.hero.pos.z);
     g.wetNow = mathx.clampF(if (here) |l| l.wet orelse g.weather.rain() else g.weather.rain(), 0, 1);
@@ -2392,9 +2398,8 @@ fn throwLance(g: *Game) void {
     g.hero.lanceBeam(from, to, g.hero.casts);
 }
 
-/// **SUNDER — the levin's exact plumbing at a quarter of its reach.** One named body, delivered through that
-/// creature's own `tryHit` (`strikeOne`), so a shield that would stop it stops it: a guard-breaker the guard
-/// cannot answer is not a guard-breaker, it is a rule.
+/// **SUNDER — the levin's exact plumbing at a quarter of its reach.** Delivered through that creature's own
+/// `tryHit` (`strikeOne`), so a shield that would stop it stops it.
 fn strikeSunder(g: *Game) void {
     const blow = g.hero.castBlow() orelse return;
     const reach = combat.spellReach(g.hero.spell) orelse return;
@@ -2444,10 +2449,8 @@ fn rootVictim(g: *const Game, at: rl.Vector3) ?RootPick {
     inline for (FOE_GROUPS, 0..) |f, gi| {
         for (@field(g, f.field).liveConst(), 0..) |*a, i| {
             if (!foemod.corporeal(a)) continue;
-            // A BODY THAT IS NOT ON THE FIELD IS NOT A TARGET — `strikeVictim`'s own line, and the two pickers
-            // in this file that lacked it are the two that work in XZ off `pos` rather than off a swept
-            // capsule, so nothing else was refusing them: a burrowed delver, a sunk lurker and a dormant snag
-            // were all grippable through the ground you cannot even see them under.
+            // A BODY THAT IS NOT ON THE FIELD IS NOT A TARGET (`strikeVictim`'s own line): a burrowed delver,
+            // a sunk lurker and a dormant snag were all grippable through the ground.
             if (disguised(a)) continue;
             if (locked) |l| if (l.idx == i and l.kind == memberKind(a, f.kind)) return .{ .group = gi, .idx = i };
             const d = mathx.distXZ(a.pos, at);
@@ -2512,22 +2515,16 @@ fn rimeBreathe(g: *Game, dt: f32) void {
     }
 }
 
-// THE TWO SORCERIES THAT DO NOT CROSS THE GROUND (`combat.LEVIN_*`, `combat.SIPHON_*`)
-//
-// **A STRIKE IS AIMED AT A BODY, NOT THROWN AT A PLACE.** The bolt is a stone the arrow pool carries and the
-// roots are a hold seeded at a mark; these two land on ONE body on the frame they are cast. So there is no
-// flight to intercept, and SIGHT is what stands in for one: a wall is still a wall (`env.sees`), and the
-// picture is drawn down the blow's own segment so the flash cannot land where the blade did not.
+// THE TWO SORCERIES THAT DO NOT CROSS THE GROUND (`combat.LEVIN_*`, `combat.SIPHON_*`). These land on ONE
+// body on the frame they are cast, so there is no flight to intercept and SIGHT stands in for one: a wall is
+// still a wall (`env.sees`), and the picture is drawn down the blow's own segment.
 
-/// How far above the crown the stroke starts, and how far it LEANS back toward him across the drop. The lean is
-/// not decoration: `foe.strike` takes the shove and the facing snap off the segment's own XZ bearing, and a
-/// plumb line has none — the fallback would then push the body along contact-toward-centre, which is nothing.
-/// MEASURED, not picked: at 2.6 m above a skeleton's crown the stroke started at 4.5 m, which is off the top of
-/// the frame at every distance this fight is actually fought at — the picture was above the camera.
+/// How far above the crown the stroke starts, and how far it LEANS back across the drop. The lean is not
+/// decoration: `foe.strike` takes the shove and the facing snap off the segment's own XZ bearing and a plumb
+/// line has none. MEASURED: at 2.6 m above a skeleton's crown the stroke started at 4.5 m, off the top of frame.
 const STRIKE_RISE: f32 = 1.7;
 const STRIKE_LEAN: f32 = 0.9;
-/// The swept capsule is only as fat as it has to be to be certain of a body already picked — it cannot miss and
-/// is not allowed to reach a neighbour instead.
+/// Only as fat as it has to be to be certain of a body already picked — it cannot miss and may not reach a neighbour.
 const STRIKE_R: f32 = 0.30;
 
 fn strikeSegment(g: *const Game, at: rl.Vector3, topY: f32) [2]rl.Vector3 {
@@ -2536,11 +2533,9 @@ fn strikeSegment(g: *const Game, at: rl.Vector3, topY: f32) [2]rl.Vector3 {
     return .{ v3(at.x - away.x * STRIKE_LEAN, topY + STRIKE_RISE, at.z - away.z * STRIKE_LEAN), at };
 }
 
-/// **WHAT ONE IS AIMED AT** — the locked body, else the NEAREST inside the spell's own reach and a narrow arc of
-/// his facing (`combat.STRIKE_ARC`). Reach is measured off the target's HIDE and not its centre, the range-gate
-/// law, or the broad creatures are unstrikable at the distance the colliders hold you at. A lock is the aim, so
-/// it skips the arc — but never the reach and never the sight: a body across the map or behind a wall is not a
-/// target because the reticle is on it.
+/// **WHAT ONE IS AIMED AT** — the locked body, else the NEAREST inside the spell's reach and a narrow arc of
+/// his facing (`combat.STRIKE_ARC`). Reach is measured off the target's HIDE and not its centre (the range-gate
+/// law). A lock is the aim, so it skips the arc — but never the reach and never the sight.
 fn strikeVictim(g: *const Game, reach: f32) ?RootPick {
     const eye = heroEye(g);
     const locked = activeLock(g);
@@ -2634,8 +2629,7 @@ fn drawSiphon(g: *Game) void {
     };
     const hit = strikeOne(g, pick, blow) orelse return;
     // **A SHARE OF WHAT THE BODY ACTUALLY LOST**, never of what was thrown at it: resisted damage is resisted
-    // healing, which is what keeps the wand's chaos trade honest on the one spell that could have voided it.
-    // Capped by what it took, so an overkill cannot be milked for a body's worth of HP it never had.
+    // healing. Capped by what it took, so an overkill cannot be milked.
     g.hero.siphonDrain(hit.at, g.hero.casts);
     _ = g.hero.drinkSiphon(hit.took * combat.SIPHON_SHARE);
 }
@@ -2645,8 +2639,7 @@ fn gateChill(foes: anytype, was: []const rl.Vector3) void {
     if (comptime !@hasField(T, "chill")) return;
     for (foes, 0..) |*f, i| {
         // THE CLOCK IS NOT RUN HERE. `foe.grip` ticks it at the top of the creature's own update, where the
-        // bite it owes can be billed and can KILL — run again here it would decay at twice the rate and
-        // swallow a frame of cold on its way past.
+        // bite it owes can be billed and can KILL — run again here it would decay at twice the rate.
         if (i >= was.len or !f.chill.held()) continue;
         f.pos.x = was[i].x + (f.pos.x - was[i].x) * combat.CHILL_TRAVEL;
         f.pos.z = was[i].z + (f.pos.z - was[i].z) * combat.CHILL_TRAVEL;
@@ -2759,18 +2752,14 @@ fn markSight(g: *Game) void {
 const WAY_PROBE: f32 = 2.0;
 const WAY_FAN = [_]f32{ 0.45, 0.90, 1.40, 1.95, 2.50 };
 const WAY_TRUE: f32 = 0.98;
-/// How much overlap the probe forgives, in metres. It used to be the slack on a MEASURED displacement; it is
-/// now taken off the margin instead, which is the same predicate — blocked iff the gap closes past
-/// `r + s.r - WAY_SLACK` — asked without solving for where the body would end up.
+/// Metres of overlap forgiven: blocked iff the gap closes past `r + s.r - WAY_SLACK`, asked without solving
+/// for where the body would end up.
 const WAY_SLACK: f32 = 1e-3;
 
-/// **A PROBE ASKS WHETHER A POINT IS BLOCKED, SO IT ASKS THAT** (`env.blockedNear`) — it used to push a body
-/// out of everything in the cells and then measure whether it had moved. `resolveActor` is a SOLVER: on a
-/// point that overlaps it runs its whole second settling pass, so every blocked probe cost two full visits of
-/// every solid nearby plus the push arithmetic, to produce one bit. `blockedNear` stops at the first blocker.
-/// It is the fan-out that makes this worth saying: `markWay` gives up on the straight line and then tries ten
-/// more headings, two probes each, so a foe steering round a wall was spending twenty of these a frame — and
-/// the blocked answer, the expensive one, is the answer the fan-out is built to keep getting.
+/// **A PROBE ASKS WHETHER A POINT IS BLOCKED, SO IT ASKS THAT** (`env.blockedNear`) — `resolveActor` is a
+/// SOLVER and on an overlapping point runs its whole second settling pass, so every blocked probe cost two
+/// full visits of every solid nearby to produce one bit. `markWay` tries ten headings at two probes each, so
+/// a foe steering round a wall was spending twenty of these a frame.
 fn wayClear(g: *const Game, at: rl.Vector3, r: f32, dir: rl.Vector3) bool {
     const reach = WAY_PROBE + r;
     const went = mathx.dirXZ(at, g.env.walkStep(at, dir, reach));
@@ -2936,8 +2925,8 @@ fn nearestRaisable(g: *Game, at: rl.Vector3, within: f32, claimed: Claimed) ?Bod
 
 fn withRaisable(g: *Game, ref: BodyRef, ctx: anytype, comptime visit: anytype) void {
     // The group test is a runtime `if` WRAPPING the body rather than a `continue` — `gi` is comptime and
-    // `ref.group` is not, so skipping an `inline for` iteration on it is comptime control flow inside a runtime
-    // block, which Zig refuses outright.
+    // `ref.group` is not, so skipping an `inline for` iteration on it is comptime control flow inside a
+    // runtime block, which Zig refuses outright.
     inline for (FOE_GROUPS, 0..) |gr, gi| {
         if (gi == ref.group) {
             for (@field(g, gr.field).live(), 0..) |*f, i| {
@@ -2969,10 +2958,8 @@ fn canSee(g: *const Game, r: FoeRef) bool {
 fn pierceFoes(g: *Game, blade: foemod.Blade) bool {
     var hit = false;
     inline for (FOE_GROUPS) |f| {
-        // `through` is what carries the blade past a body it already found (`foe.Blade.through`); without it
-        // the first group to report a hit is where it is spent, which is what a shaft and a bite are. Written
-        // as a WRAPPING `if` rather than a `continue`, for `withRaisable`'s reason: this is a runtime test and
-        // skipping an `inline for` iteration on one is comptime control flow inside a runtime block.
+        // `through` is what carries the blade past a body it already found (`foe.Blade.through`). A WRAPPING
+        // `if` rather than a `continue`, for `withRaisable`'s reason.
         if (!hit or blade.through) {
             if (@field(g, f.field).pierce(blade)) hit = true;
         }
@@ -2982,7 +2969,11 @@ fn pierceFoes(g: *Game, blade: foemod.Blade) bool {
 
 const ARROW_QUERY_PAD: f32 = 1.5;
 var arrow_cover_buf: [envmod.MAX_NEAR]collision.Solid = undefined;
+/// **A PLANTED SHAFT ASKS THE GRID FOR NOTHING.** `archer.flying` early-returns on `stuck`, and the argument
+/// is evaluated first, so a landed shot bought a cell sweep and up to `env.MAX_NEAR` `Solid` copies into
+/// `arrow_cover_buf` every frame of the 1.4 s it lies there (`ARROW_STICK_FADE`) and threw all of it away.
 pub fn arrowCover(g: *const Game, ar: *const archermod.Arrow, dt: f32) []const collision.Solid {
+    if (ar.stuck) return &.{};
     return g.env.nearSolids(ar.pos, mathx.lenV(ar.vel) * dt + ARROW_QUERY_PAD, &arrow_cover_buf);
 }
 
@@ -2990,8 +2981,15 @@ fn quivers(g: *Game) [2][]archermod.Arrow {
     return .{ &g.arrows, &g.shafts };
 }
 
+/// **THE LANDING FRAME, NOT THE `ARROW_STICK_FADE` IT LIES THERE.** A planted shot stays `live` for 1.4 s
+/// with `stepArrow` early-returning, so the miss branch runs eighty more times: unguarded, `splashOf`
+/// re-detonated at 60 Hz and `emberBlast` billed its whole `EMBER_HIT` once a frame.
+fn justLanded(ar: *const archermod.Arrow) bool {
+    return ar.stuck and ar.age == 0;
+}
+
 fn planted(g: *Game, ar: *const archermod.Arrow) void {
-    if (!ar.stuck or ar.age != 0) return;
+    if (!justLanded(ar)) return;
     if (ar.shot != .venom) sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
     splashOf(g, ar);
 }
@@ -3013,13 +3011,15 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
     }
 }
 
-/// **THE DETONATOR CATCHES YOU FOR STANDING NEAR IT** (owner: aoe on impact). A direct hit is resolved
-/// where every other shot is; this is the other half — the one that lands at your feet and takes a third of
-/// the bar anyway. Falls off to nothing at the rim rather than ending at a wall, so backing off half a metre
-/// is worth something and standing still is not.
-///
-/// **AND IT IS THE REASON THE ARC WENT FLAT.** A blast this size dropped from overhead is undodgeable; rolled
-/// in along the ground it is a line you can read and step off (`archer.EMBER_LOFT`).
+/// **A DETONATOR HAS NO DIRECT HIT — IT ONLY EVER EXPLODES.** The blast is the only way its blow lands, on
+/// every route its flight can end. At point blank `k` is 1.0, so catching one bills exactly what a direct hit
+/// already did.
+fn detonates(s: archermod.Shot) bool {
+    return s == .emberball;
+}
+
+/// Falls off to nothing at the rim rather than ending at a wall. A blast this size dropped from overhead is
+/// undodgeable, which is why the arc went flat (`archer.EMBER_LOFT`).
 const BLAST_R: f32 = 3.1;
 const BLAST_FLOOR: f32 = 0.30;
 
@@ -3098,31 +3098,49 @@ fn reservedLights(g: *const Game, out: *[RESERVED_LIGHTS]gfx.Light) []const gfx.
     return out[0..n];
 }
 
-/// **THE STORM, AND THE TWO THINGS IT TELLS.** The clock is the module's; what lives here is the wiring — the
-/// bed's level, which is a world state pushed at the mixer exactly as the hour is (`sfx.setDaylight`), and the
-/// thunder, which arrives as a one-frame edge seconds after the light did.
 fn tickWeather(g: *Game, dt: f32) void {
     g.weather.tick(dt);
     settleSky(g, dt);
     sfx.setRain(g.wetNow);
-    // THE LIGHTNING STAYS THE WORLD'S. A location sets how wet it is; the storm that throws bolts is still
-    // the sky's own event, so walking into a rain region does not conjure thunder out of a clear afternoon.
+    // THE LIGHTNING STAYS THE WORLD'S: a location sets how wet it is, but the storm that throws bolts is
+    // still the sky's own event.
     if (g.weather.thunder()) |gain| sfx.playAt(.thunder, gain);
     g.mist.tick(dt, g.hero.pos, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), fogAmt(g));
 }
 
 /// **A REGION'S WEATHER IS A CROSS-FADE, NEVER A SWITCH** — there is one sky, one sun and one rain sheet
-/// drawn round the camera, so crossing a boundary cannot swap them: it has to walk the level there. Outside
-/// every weather location the target is the world clock's own, so leaving one fades back the same way.
+/// drawn round the camera. Outside every weather location the target is the world clock's own.
 fn settleSky(g: *Game, dt: f32) void {
     settleSkyAt(g, dt, g.hero.pos);
 }
 
+/// Always true in play. In the editor it answers to two eyes: the sky's own, and the LOCATIONS layer's —
+/// weather is a property of those rectangles (`Location.wet`/`fog`/`spore`), so hiding them hides what they do.
+fn skyLive(g: *const Game) bool {
+    if (!g.editor.on) return true;
+    return g.editor.showWeather and g.editor.visible(.locations);
+}
+
 fn settleSkyAt(g: *Game, dt: f32, at: rl.Vector3) void {
+    // **SHUT MEANS GONE THIS FRAME, NOT FADING** (owner: make sure it hides/shows weather instantly).
+    if (!skyLive(g)) {
+        g.wetNow = 0;
+        g.fogNow = 0;
+        g.sporeNow = 0;
+        return;
+    }
     const here = g.map.weatherAt(at.x, at.z);
     const wantWet = if (here) |l| l.wet orelse g.weather.rain() else g.weather.rain();
     const wantFog = if (here) |l| l.fog orelse 0 else 0;
     const wantSpore = if (here) |l| l.spore orelse 0 else 0;
+    // **AND THE EDITOR NEVER RAMPS** — its camera jumps across the map, so a blend is weather arriving over
+    // somewhere you have already left. Snap, both directions.
+    if (g.editor.on) {
+        g.wetNow = mathx.clampF(wantWet, 0, 1);
+        g.fogNow = mathx.clampF(wantFog, 0, 1);
+        g.sporeNow = mathx.clampF(wantSpore, 0, 1);
+        return;
+    }
     const secs = if (here) |l| l.blend else SKY_SETTLE;
     const rate = 1.0 / mathx.maxF(secs, 0.05);
     g.wetNow = mathx.approach(g.wetNow, mathx.clampF(wantWet, 0, 1), rate * dt);
@@ -3130,17 +3148,18 @@ fn settleSkyAt(g: *Game, dt: f32, at: rl.Vector3) void {
     g.sporeNow = mathx.approach(g.sporeNow, mathx.clampF(wantSpore, 0, 1), rate * dt);
 }
 
-/// How fast the sky comes back to the world's own weather once he walks out of a region.
+/// Seconds to come back to the world's own weather once he walks out of a region.
 const SKY_SETTLE: f32 = 6.0;
 
 /// **A BLOOM BRINGS ITS OWN BANKS.** The mist field is the only cloud volume there is, so sporefall borrows
-/// it rather than growing a second one — at `SPORE_BANKS` of its strength, tinted peach on the draw.
+/// it at `SPORE_BANKS` of its strength rather than growing a second one.
 fn fogAmt(g: *const Game) f32 {
+    if (!skyLive(g)) return 0;
     return mathx.maxF(mathx.maxF(g.menu.fogAmt(g.wetNow), g.fogNow), g.sporeNow * SPORE_BANKS);
 }
 
-/// How much of a bloom's dial shows up as drifting bank rather than haze and motes. Under half: the banks are
-/// the SLOWEST of the three reads and a wall of them buries the motes, which are what says "alive".
+/// How much of a bloom's dial shows up as drifting bank rather than haze and motes. Under half: a wall of
+/// banks buries the motes, which are what says "alive".
 const SPORE_BANKS: f32 = 0.45;
 
 fn drawWeatherOverlay(g: *Game) void {
@@ -3176,19 +3195,21 @@ pub fn drawScene(g: *Game) void {
     g.scene.setGround(true);
     g.env.drawGround(&view);
     g.scene.setGround(false);
-    g.env.drawWater();
+    if (shows(g, .ground)) g.env.drawWater();
     if (g.menu.wireframe) rl.gl.rlEnableWireMode();
     drawCasters(g, .{ .view = view });
-    g.scene.setWind(true);
-    g.env.drawFlora(&view);
-    g.scene.setWind(false);
+    if (shows(g, .decor)) {
+        g.scene.setWind(true);
+        g.env.drawFlora(&view);
+        g.scene.setWind(false);
+    }
     drawArrows(g);
     g.souls.draw();
     drawDrops(g);
     for (&g.boltGas) |*c| c.drawFx();
-    g.env.drawThinned(&view);
+    if (shows(g, .props)) g.env.drawThinned(&view);
     if (g.menu.wireframe) rl.gl.rlDisableWireMode();
-    g.env.drawVeils(&view);
+    if (shows(g, .interact)) g.env.drawVeils(&view);
     inline for (FOE_GROUPS) |f| {
         if (comptime @hasDecl(@FieldType(Game, f.field), "drawFx")) @field(g, f.field).drawFx();
     }
@@ -3210,9 +3231,13 @@ pub fn drawScene(g: *Game) void {
         }
     }
     if (g.editor.on) g.editor.draw3D(&g.map, &g.env);
-    if (!g.editor.on) g.rainfall.draw(&g.scene, cam.position, g.hero.pos, g.wetNow, g.weather.t);
-    if (!g.editor.on) g.mist.draw(&g.scene, cam.position, fogAmt(g), weathermod.sporeTint(g.sporeNow));
-    g.sporefall.draw(&g.scene, cam.position, if (g.editor.on) cam.position else g.hero.pos, g.sporeNow, g.weather.slowSecs());
+        // **ONE PREDICATE FOR ALL THREE SHEETS** (`skyLive`). The SPOREFALL was the thick one and was not
+        // routed through it, so the eye had nothing to shut.
+    if (skyLive(g)) {
+        if (!g.editor.on) g.rainfall.draw(&g.scene, cam.position, g.hero.pos, g.wetNow, g.weather.t);
+        if (!g.editor.on) g.mist.draw(&g.scene, cam.position, fogAmt(g), weathermod.sporeTint(g.sporeNow));
+        g.sporefall.draw(&g.scene, cam.position, if (g.editor.on) cam.position else g.hero.pos, g.sporeNow, g.weather.slowSecs());
+    }
     rl.endMode3D();
 
     drawWeatherOverlay(g);
@@ -3456,12 +3481,11 @@ fn gaitLabel(moving: f32, speed: f32) [:0]const u8 {
 
 pub const Mode = enum { play, shots, props, land };
 
-/// **A HITCH IS NOT SIMULATED IN FULL** — `anim.Spring` already clamps to this and says why; the whole
-/// simulation owes the same cap, because a raw `getFrameTime` is the one unbounded number in the loop and
-/// several things downstream are only PROVEN safe for a frame-sized step. `arrowCover` queries a radius of
+/// **A HITCH IS NOT SIMULATED IN FULL.** A raw `getFrameTime` is the one unbounded number in the loop and
+/// several things downstream are only PROVEN safe for a frame-sized step: `arrowCover` queries a radius of
 /// `speed * dt`, and the cap that query cannot overflow (`MAX_NEAR`) is pinned by a test over a 2x2 cell
-/// window; at 40 m/s a 0.35 s stall asks for a 3-wide one and the overflow DROPS SILENTLY, which is an arrow
-/// through a wall. `drawDt`, the editor and the audio pump keep the raw figure — they are not the sim.
+/// window — at 40 m/s a 0.35 s stall asks for a 3-wide one and the overflow DROPS SILENTLY, which is an
+/// arrow through a wall. `drawDt`, the editor and the audio pump keep the raw figure; they are not the sim.
 const DT_MAX: f32 = 1.0 / 30.0;
 
 pub fn run(mode: Mode) void {
@@ -3543,9 +3567,8 @@ pub fn run(mode: Mode) void {
             g.day.tick(dt);
             tickWeather(g, dt);
         } else if (g.editor.on) {
-            // **A PAINTED WEATHER HAS TO SHOW WHILE HE IS PAINTING IT.** The rest of the storm is frozen in
-            // the editor on purpose, but a bloom is authored by dragging a slider and looking, so the sky
-            // settles against the CURSOR rather than the man — put the pointer in the region and it blooms.
+            // **A PAINTED WEATHER HAS TO SHOW WHILE HE IS PAINTING IT** — the sky settles against the CURSOR
+            // rather than the man, so putting the pointer in the region blooms it.
             settleSkyAt(g, dt, g.editor.cursor orelse g.hero.pos);
         }
         applyHour(g);
@@ -3892,9 +3915,8 @@ pub fn run(mode: Mode) void {
         leanToGround(g, dt);
         const heroWas = g.hero.pos;
         const heroAfoot = !g.hero.dead;
-        // **A CROSSING IS ABANDONED, NOT SUSPENDED.** Both branches below outrank it, and a walk left standing
-        // through one of them resumes against a line drawn before the interruption — from wherever he was
-        // knocked to, or from a respawn on the other side of the map, which is a teleport either way.
+        // **A CROSSING IS ABANDONED, NOT SUSPENDED.** A walk left standing resumes against a line drawn
+        // before the interruption, which is a teleport either way.
         if (g.hero.dead or g.hero.staggered()) g.gateWalk = null;
         if (g.hero.dead) {
             g.hero.updateDeath(dt);
@@ -3925,7 +3947,7 @@ pub fn run(mode: Mode) void {
             moveHero(g, dt, mv, faceYaw);
         }
         if (heroAfoot) gateHeroTerrain(g, heroWas);
-        var wasPos: [FOE_GROUPS.len][FOE_CAP]rl.Vector3 = undefined;
+        const wasPos = &frameWasPos;
         var wasN: [FOE_GROUPS.len]usize = undefined;
         inline for (FOE_GROUPS, 0..) |f, gi| {
             const row = @field(g, f.field).live();
@@ -3986,9 +4008,8 @@ pub fn run(mode: Mode) void {
         if (g.thicket.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.heavy(), true);
         }
-        // **THE CREATURE SAYS WHEN AND THIS SAYS IT** (the spirit's arrangement) — a creature that called
-        // `sfx` itself would be one that plays through the pause card and the shot harness. Five one-frame
-        // edges, cleared at the top of its own update.
+        // **THE CREATURE SAYS WHEN AND THIS SAYS IT** — a creature that called `sfx` itself would be one that
+        // plays through the pause card and the shot harness. Five one-frame edges, cleared in its own update.
         for (g.thicket.live()) |*r| {
             if (r.opened) sfx.world(.ravager_bloom, r.pos);
             if (r.leapt) sfx.world(.ravager_leap, r.pos);
@@ -4021,7 +4042,6 @@ pub fn run(mode: Mode) void {
         if (g.marsh.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.heavy(), true);
         }
-        // …and its FIVE one-frame edges. The creature says WHEN; `game.zig` owns the speaker.
         for (g.marsh.live()) |*l| {
             if (l.broke) sfx.world(.lurker_break, l.pos);
             if (l.lashed) sfx.world(.lurker_lash, l.pos);
@@ -4095,16 +4115,20 @@ pub fn run(mode: Mode) void {
             if (!ar.live) continue;
             flyArrow(g, ar, dt);
             if (ar.hit) {
-                const blow = foemod.Blow{
-                    .hit = ar.blow,
-                    .from = mathx.addV(g.hero.pos, mathx.scaleV(ar.vel, -1)),
-                };
-                const out: combat.HitOutcome = if (g.hero.dead) .ignored else heroTakes(g, blow, blow.hit.heavy(), false);
-                if (out == .taken or out == .ignored) sfx.play(.arrow_hit);
+                // A BOMB'S BLOW IS ITS BLAST AND NOTHING ELSE (`detonates`), so the generic direct bill is
+                // skipped and `emberBlast` below owns the whole event.
+                if (!detonates(ar.shot)) {
+                    const blow = foemod.Blow{
+                        .hit = ar.blow,
+                        .from = mathx.addV(g.hero.pos, mathx.scaleV(ar.vel, -1)),
+                    };
+                    const out: combat.HitOutcome = if (g.hero.dead) .ignored else heroTakes(g, blow, blow.hit.heavy(), false);
+                    if (out == .taken or out == .ignored) sfx.play(.arrow_hit);
+                }
                 splashOf(g, ar);
-            } else {
+                emberBlast(g, ar);
+            } else if (justLanded(ar)) {
                 planted(g, ar);
-                splashOf(g, ar);
                 emberBlast(g, ar);
             }
         }
@@ -4187,13 +4211,10 @@ pub fn run(mode: Mode) void {
     }
 }
 
-/// **ONE FRAME WITH THE WORLD HELD** — the award card's and the map cut's, which were eleven identical lines
-/// each: he breathes and nothing else (`hero.update` at zero speed), the eye stays on his shoulder, the motors
-/// decay, and the scene and the chrome are drawn. The three loop-locals go by pointer because they belong to
-/// `run`'s own frame and not to the game: `bWasDown`/`bHeldT` POISON the pad-B tap window, so releasing B on
-/// the frame the card closes cannot come out of it as a roll, and `wasInside` swallows the mouse delta the
-/// held frame accumulated. Whatever the branch draws ON TOP of this stays at the branch — that is the half
-/// that differs.
+/// **ONE FRAME WITH THE WORLD HELD** — the award card's and the map cut's. The three loop-locals go by
+/// pointer because they belong to `run`'s own frame: `bWasDown`/`bHeldT` POISON the pad-B tap window so
+/// releasing B on the frame the card closes cannot come out as a roll, and `wasInside` swallows the mouse
+/// delta the held frame accumulated. Whatever the branch draws ON TOP of this stays at the branch.
 fn heldFrame(g: *Game, rawDt: f32, bWasDown: *bool, bHeldT: *f32, wasInside: *bool) void {
     g.hero.held = true;
     bWasDown.* = true;
@@ -4526,9 +4547,8 @@ comptime {
     const casts = combat.FP_MAX / combat.BOLT_FP;
     std.debug.assert(@as(f32, @floatFromInt(BOLT_GAS_CAP)) >= casts * 0.9);
 }
-/// WHAT STANDING IN HIS CLOUD COSTS A BODY, per dose. **ALL CHAOS, and NO POISE AND NO STANCE** — the
-/// knight's own gas law read from the other side: a hazard that staggers can kill something while it is not
-/// allowed to walk out, and the counter to a cloud has to be leaving it. Deliberately small against the
+/// WHAT STANDING IN HIS CLOUD COSTS A BODY, per dose. **ALL CHAOS, and NO POISE AND NO STANCE** — a hazard
+/// that staggers can kill something while it is not allowed to walk out. Deliberately small against the
 /// bolt's own 25: what the keystone sells is GROUND, never a bigger bolt.
 const BOLT_GAS_HIT = combat.Hit{ .elem = combat.elems(.{ .chaos = 7 }) };
 
@@ -4806,18 +4826,17 @@ fn disguised(f: anytype) bool {
     return false;
 }
 
-/// **IS THIS BODY OUT OF THE WAY** — `disguised`'s twin, and DELIBERATELY NOT THE SAME QUESTION. That one is
-/// about being seen (the reticle, the bar); this one is about being solid, and the rooted is exactly why they
-/// cannot share a predicate: a dormant snag is not a creature to look at and is still a tree you walk into.
-/// An opt-in decl (`markWays`' rule), so the seventeen groups that are always solid pay a comptime-false.
+/// **IS THIS BODY OUT OF THE WAY** — `disguised`'s twin, and DELIBERATELY NOT THE SAME QUESTION: that one is
+/// about being seen, this one about being solid. A dormant snag is not a creature to look at and is still a
+/// tree you walk into. An opt-in decl (`markWays`' rule), so the always-solid groups pay a comptime-false.
 fn phased(f: anytype) bool {
     if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "phased")) return f.phased();
     return false;
 }
 
 /// **WHAT A BODY HOLDS ON THE GROUND.** A circle at the feet is the whole of a creature that STANDS; one that
-/// can be put on its back is metres of it lying behind them, and only the creature knows where (`knight.bodySeg`).
-/// Everything else answers the same ring it always did — `pushOut` on a degenerate segment IS `pushOutCircle`.
+/// can be put on its back is metres of it lying behind them, and only the creature knows where
+/// (`knight.bodySeg`). `pushOut` on a degenerate segment IS `pushOutCircle`, so nothing else changes.
 fn bodyOf(f: anytype) collision.Solid {
     if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "bodySeg")) {
         if (f.bodySeg()) |s| return collision.capsule(s[0].x, s[0].z, s[1].x, s[1].z, f.bodyR());

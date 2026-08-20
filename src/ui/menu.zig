@@ -763,11 +763,10 @@ fn drawGauge(x: i32, y: i32, w: i32, h: i32, v: f32, selected: bool) void {
     }
 }
 
-const BOOT_NOTE: [:0]const u8 = "Three slots. A bonfire saves over the one you are playing.";
-const BOOT_NOTE_EMPTY: [:0]const u8 = "No save yet. Rest at a bonfire to write one.";
-/// …and the one that says WHY New Game is dim. A greyed row the player cannot read the reason for is the
-/// thing `Card.dim`'s own comment refuses, and "all three are written" is not visible from the boot screen.
-const BOOT_NOTE_FULL: [:0]const u8 = "All three slots are written. Delete one to start a new game.";
+const BOOT_NOTE: [:0]const u8 = "";
+const BOOT_NOTE_EMPTY: [:0]const u8 = "";
+/// The one note that survives: it says WHY New Game is dim, which is not visible from the boot screen.
+const BOOT_NOTE_FULL: [:0]const u8 = "All slots full. Delete one.";
 
 fn bootLabels() [BOOT_COUNT][:0]const u8 {
     var out: [BOOT_COUNT][:0]const u8 = undefined;

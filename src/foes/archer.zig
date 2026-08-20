@@ -283,6 +283,9 @@ fn lifeOf(s: Shot) f32 {
     };
 }
 const EMBER_LIFE: f32 = 6.0;
+/// Readable from outside so the loop's own test can show that the ball always reaches the earth well inside
+/// its life — which is what makes "ran out of time still in the air" not a route the blast has to cover.
+pub const EMBER_LIFE_S: f32 = EMBER_LIFE;
 
 pub const Arrow = struct {
     pos: rl.Vector3 = mathx.zero3,

@@ -1122,7 +1122,7 @@ pub const Souls = struct {
     shown: f32 = 0,
 
     pub fn gain(self: *Souls, n: u32) void {
-        self.total += n;
+        self.total +|= n;
     }
 
     pub fn dropAll(self: *Souls) u32 {

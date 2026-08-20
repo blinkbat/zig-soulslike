@@ -44,10 +44,8 @@ pub const sceneVS =
     \\        p.x += bend*sway;
     \\        p.z += bend*sway*0.4;
     \\    }
-    \\    // writhe has to happen HERE.
-    \\    // BOUNDED AT THE TOP, and that is load-bearing: the vertex-animated materials are 11, 12 and 13
-    \\    // and nothing else, so an open-ended `> 11.5` claims every id ADDED AFTER THEM. `bark` (14) went
-    \\    // in and every trunk in the wood started billowing and climbing like an ember.
+    \\    // EVERY BRANCH IS BOUNDED AT THE TOP, and that is load-bearing: an open-ended `> 11.5` claims every
+    \\    // id ADDED AFTER. `bark` (14) went in and every trunk in the wood started climbing like an ember.
     \\    if (vertexTexCoord2.x > 11.5 && vertexTexCoord2.x < 13.5) {
     \\        vec3 baseW = vec3(matModel*vec4(0.0, 0.0, 0.0, 1.0));
     \\        float oy   = floor(vertexTexCoord2.y);   // the source height…
@@ -101,6 +99,21 @@ pub const sceneVS =
     \\        p.z += (0.070 + 0.300*h)*roll + (0.050 + 0.190*h)*swell;
     \\        p.x += 0.130*h*sin(ph*0.71 + p.y*1.7) + 0.070*h*swell;
     \\        p.y += 0.150*h*sin(ph*1.23 + p.x*0.90);
+    \\    } else if (vertexTexCoord2.x > 7.5 && vertexTexCoord2.x < 8.5 && vertexTexCoord2.y > 0.0) {
+    \\        // DANGLE (plant, 8). `animY` is the MODEL-space height of the point this vertex hangs FROM, so the
+    \\        // throw is LINEAR in the drop below it — a thread swinging by theta carries a point at distance L
+    \\        // by L*sin(theta). The flora term above is h-squared because that is a stalk rooted at the GROUND;
+    \\        // used here it would pin the bead and swing the thing it hangs off.
+    \\        vec3 baseW = vec3(matModel*vec4(0.0, 0.0, 0.0, 1.0));
+    \\        float drop = max(vertexTexCoord2.y - p.y, 0.0);
+    \\        // 0.017 m per metre of drop and the two terms peak near 1.3, so 3 cm on the deepest authored hang
+    \\        // (`propfungus.DANGLE_DROP_MAX`) — half a spore bead's own width, and 2 texels of mesh-to-shadow
+    \\        // divorce at SHADOW_ORTHO 108 m over 8192, since the depth pass has no wind term.
+    \\        // Off the flora's 1.5, or the fungus beats in time with the grass. `- drop` lags the far end.
+    \\        float ph = uTime*1.15 + baseW.x*0.6 + baseW.z*0.5 + vertexTexCoord2.y*2.7 - drop*1.4;
+    \\        float swing = sin(ph) + 0.3*sin(ph*2.31 + 1.1);
+    \\        p.x += drop*0.017*swing;
+    \\        p.z += drop*0.017*swing*0.55;
     \\    }
     \\    fragPosition = vec3(matModel*vec4(p, 1.0));
     \\    fragColor = vertexColor*colDiffuse;

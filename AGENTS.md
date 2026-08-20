@@ -125,7 +125,7 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `ui/editor.zig` | THE EDITOR (Menu > Editor), layered StarEdit-style; biggest file, next split candidate |
 | `ui/objview.zig` | object viewer + the JUKEBOX (sound auditioning) + the FX BENCH (`elemfx`'s twelve cells, playing on a loop with the numbers being tuned printed beside them — the jukebox's argument, one system along: `lifeHi 1.15` is not a thing anybody can picture) |
 | `props/props.zig` | prop VOCABULARY + the `INFO` table (one row per kind); `displayName`/`group`/`stock` are exhaustive switches |
-| `prop*.zig` | the meshes by family — `propart` (palette + weathering), `propruins`, `propbuild`, `propvillage`, `proprock`, `propwood`, `propflora`, `propfx` |
+| `prop*.zig` | the meshes by family — `propart` (palette + weathering), `propruins`, `propbuild`, `propvillage`, `proprock`, `propwood`, `propflora`, `propfungus`, `propcoral`, `propash`, `propbone`, `propfx` |
 | `foes/foe.zig` | THE FOE STANDARD — shared contract, `Blade`/`strike`/`weaponReaches`/`Blow`, `Trail` ribbon, particles, `Leash`, group plumbing |
 | `gfx/elemfx.zig` | THE ELEMENTS' PARTICLE LANGUAGE — one signature per `combat.Elem` and three verbs (`gather`/`burst`/`pour`) to render it in. **THE SIGNATURE IS THE MOTION**: fire RISES and is the only one that leaves a residue, cold FALLS and lies about (the longest life by 2×), lightning DOES NOT TRAVEL (the shortest by 3×, and the only colourless one), chaos GOES THE WRONG WAY (inward, the only one). A test tells the four apart with the colour taken away, and a second one on hue alone — that one caught three of the four cores authored near-white, and a cold and a lightning nobody could have separated. TUNED IN THE EDITOR (`objview` > Effects) |
 | `foes/frog.zig` | gaping toad + `Knot` |
@@ -142,6 +142,10 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `foes/delver.zig` | THE DELVER + `Warrens` — the first thing that goes UNDER the world. It burrows, travels as a ridge of moving earth, and comes out TWO ways: BURSTING up through the ground under his feet with a small ring of a blow, or PLOUGHING a furrow down the line he is running along. On the surface, a claw that RETURNS. You cannot lock on to it while it is down |
 | `foes/necro.zig` | THE NECROMANCER + `Rite` — TALL, SKINNY, a dragging robe, a bone helm and a crooked staff. It never melees. A skeleton corpse inside its reach **STOPS DISSIPATING** (`heldOpen`) and it puts that body back up at part HP, once each; and it lays a **DELAYED ICE RUNE RING** on the ground where he is standing, which is the game's first and only source of COLD |
 | `foes/wolf.zig` | THE FIRST SPIRIT + `Pack` — what the BELL calls, and the one thing that fights ON HIS SIDE. NOT a foe (no `Leash`, its own `takeHit`, not in `FOE_GROUPS`) and the first QUADRUPED: 27 bones, and the gait is Hildebrand's two dials. Out past `RECALL_R` for `LOST_DWELL` and the BOND MOVES IT (`reappear` + `game.rematerialize`, the bell's own spot) — running home is what it tries first, and this is for when running cannot work |
+| `foes/ravager.zig` | THE FLORID RAVAGER + `Thicket` — the QUADRUPED RIG'S SECOND USER, which is the whole reason it could be written at all. A big hound with a bloom for a head, and the BLOOM IS THE TELL: shut it is a knot on a neck, and it OPENS before the leap |
+| `foes/shroommage.zig` | THE MUSHROOM MAGE + `Ring` — a cloaked caster whose CAP IS THE HOOD, and the FIREBALL IS THE FIGHT: slow enough to walk out of once, and it BOUNCES, so what it punishes is BACKING OFF (that is why it is slow). Answered sideways or straight at it, never down the bounce line |
+| `foes/fenlurker.zig` | THE FEN LURKER + `Marsh` — the first thing the WATER is for. A FIXTURE on the rooted's shelf: it never leaves the water, comes up when he WADES, and sunk it is a wake with no bar, no reticle and nothing a sword can reach. THE COUNTER IS DRY LAND |
+| `foes/sporegolem.zig` | THE SPORE HOMUNCULUS + `Host` — the sporeling's brutish cousin at four times the mass. `ARMOUR` is the creature: steel registers and no more, and FIRE and LIGHTNING go straight through. VERY slow, so you may always leave — the SMASH owns the ground at its feet and the SLAM owns the ground you back off to |
 | `play/combat.zig` | `Vitals` (HP + two-tier stagger + regen + death), `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`, `SpiritKind`/`SUMMON_MAX`. THE place to retune feel |
 | `play/stats.zig` | the character sheet — seven attributes, the curves that make the bars, and the ONE skill curve (`scaleFor`) that three of the other four multiply a blow by. `inert` is the predicate for the row nothing reads, and it is LUCK alone |
 | `play/passivetree.zig` | THE PASSIVE TREE — PoE2's, radially: three arms out of one hub, the gates, the `Bonus`, and the wheel it is drawn as |
@@ -150,6 +154,7 @@ whose contents change together is fine. Splits go where concerns genuinely part 
 | `play/rest.zig` | bonfire + campfire bonfire — the phase machine, the seat, and THE FIRE'S OWN SCREEN (its list, and the wheel behind Level Up); `isRestKind` is the one predicate |
 | `play/souls.zig` | THE DROP — what a death leaves on the ground, the gold bloom it stands as, and the walk back for it |
 | `play/drops.zig` | THE DROP TABLE — one row per `FoeKind`, the GUARANTEED item every body leaves and the rare it might, and **the one thing LUCK reads** (`stats.findFor`, rare weight only — scale the guaranteed row too and the attribute does nothing). It goes ON THE GROUND as a glow you walk to (`pickup.Pickups.spawn`), not into his hands, and it is rolled off a seeded stream (`game.dropRng`) so `--shot` stays reproducible |
+| `play/pickup.zig` | WHAT IS LYING ON THE GROUND — the glow a drop stands as and the walk-up that takes it. `REACH` is 2.4, bracketed between `souls.REACH` (2.6, the one you come back for under pressure) and `rest.REACH` (3.2, a thing you walk at rather than hunt for) |
 | `ui/hud.zig` | ER HUD, the PAD-GLYPH kit every prompt and crib is drawn with, and the ONLY path to draw/measure text. The three bars start at `BARS_X`, not `MARGIN` — the WORLD CLOCK'S dial has the corner (`dayDial`, drawn off `daynight.spanU`/`isDay`, so it cannot tell a different time than the light). The BOSS BAR (`bossBar`) is the named bar across the bottom: `game.zig` owns when it shows and suppresses the same body's floating bar |
 | `ui/ui.zig` | editor widget kit; `Ctx.anyHot` gates world clicks next frame |
 | — | **THE LIVE PORTRAIT** (`hud.renderPortrait`/`blitPortrait`/`livePortrait`) is the one way a body is photographed into the UI — the book's doll, the conversation's speaker, the spirit panel. **TAKING IT AND MOUNTING IT ARE TWO CALLS AND THE SPLIT IS LOAD-BEARING**: `endTextureMode` restores the DEFAULT framebuffer, not the target bound before it, so a render nested inside `hud.beginChrome`'s target silently sends the whole rest of the frame at the backbuffer. Render BEFORE the chrome opens, blit inside. The ANGLE is the house's (`hud.PORTRAIT_*`), the DISTANCE the subject's (`npc.PORTRAIT_DIST`, `wolf.PORTRAIT_DIST`) |
@@ -1001,7 +1006,7 @@ law used to read "there are no area spells" and it no longer does). What makes m
 that it is not thrown AT anything: it is a direction he holds in front of himself for `RIME_DUR`, so it is
 aimed, it is answered by not standing in front of him, and a body walks out of it exactly the way a body
 walks out of a swing. Everything else about it is priced to stay off the single-target ladder — dearer than
-the roots (`RIME_FP` 22 against 18) and the worst of the three spells at killing anybody
+the roots (`combat.SPELLS`' own fp column, 15 against 12) and the worst of the three spells at killing anybody
 (`spellDamage(.rime)` is under the roots' whole grip), because what it sells is the number of bodies and it
 may not also be the better spell against one. A comptime assert pins both.
 
@@ -2076,9 +2081,11 @@ The mesh is TILED (`TCHUNK`), with normals from the FIELD so two tiles agree at 
   be rejected before any prop in it is looked at.
 - **THE LIT PASS culls per cell then per prop** — four frustum side planes plus each kind's `view`
   distance (stricter and cheaper than near/far planes).
-- **THE DEPTH PASS culls by SHADOW REACH, not camera distance.** A caster throws its shadow ~1.5× its
-  height sideways (`SUN_REACH`), so a prop matters iff its footprint plus that reach can touch the
-  ortho box (`castsInto`). A naive distance cull clips real shadows.
+- **THE DEPTH PASS culls by SHADOW REACH, not camera distance.** A caster throws its shadow `gfx.sunReach`
+  times its height sideways — the cotangent of the sun's elevation, so it is solved from the HOUR
+  (`daynight.shadowReach`, written only by `Scene.setHour`) and runs long at dawn and dusk. A prop matters
+  iff its footprint plus that reach can touch the ortho box (`castsInto`); a naive distance cull clips real
+  shadows.
 - **COLLISION + ARROW FLIGHT query the grid**, never the whole solid list.
 - **Check it, don't trust it.** Menu > Debug > Stats prints the live counts and `--shot` captures
   them. If `drawn` approaches `props`, a culler has been defeated. Caps are init-time PANICS
@@ -2549,7 +2556,7 @@ not the stick-speed `runB`.
   cut a hair longer than its own period so consecutive ones overlap, and gapping it is the helicopter.
 - **THE FAMILY LEVEL IS `TRIM_COMBAT` (0.46), NOT THE FLOOR** — the floor moves only the `battle()` band,
   where the trim reaches the literal-gain rows too (the swings, the chant, the draw). Whole-family moves go
-  there. **And the fight is rolled off the top** (`COMBAT_TREBLE`, one pole at bake in `bakeRow`, UNDER the
+  there. **And the fight is rolled off the top** (`COMBAT_TREBLE`, one pole at bake in `bakeTake`, UNDER the
   player's rack so a dial still sits on top of it): the fizz on a struck edge is what makes a busy fight
   tiring, and the body of every one of these voices is well below the cut.
 - **The sound filter rack is BAKE-TIME** — raylib cannot filter a playing voice, but every

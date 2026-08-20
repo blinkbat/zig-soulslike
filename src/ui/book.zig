@@ -308,28 +308,28 @@ fn wearOf(s: SlotId) ?item.Wear {
 
 fn emptyHanded(w: item.Wear) [:0]const u8 {
     return switch (w) {
-        .chest => "Nothing you are carrying goes on the body.",
-        .ring, .ring2 => "Nothing you are carrying goes on a finger.",
-        .helm => "Nothing you are carrying goes on your head.",
-        .neck => "Nothing you are carrying hangs at the throat.",
-        .belt => "Nothing you are carrying goes round the waist.",
-        .feet => "Nothing you are carrying goes on your feet.",
-        .hand_sword, .hand_bow, .hand_shield => "Nothing you are carrying fills that hand.",
+        .chest => "No chest armour.",
+        .ring, .ring2 => "No rings.",
+        .helm => "No helm.",
+        .neck => "No amulet.",
+        .belt => "No belt.",
+        .feet => "No boots.",
+        .hand_sword, .hand_bow, .hand_shield => "Nothing to hold.",
     };
 }
 
 fn locked(s: SlotId, v: View) ?[:0]const u8 {
     if (wearOf(s)) |w| return if (!carriesFor(w, v)) emptyHanded(w) else null;
     return switch (s) {
-        .left => if (!v.offInHand()) "Both hands are on the bow. The other comes back when the bow goes away." else null,
+        .left => if (!v.offInHand()) "The bow takes both hands." else null,
         // AN ALTERNATE IS NEVER LOCKED: it is what he is NOT holding, so nothing he is holding can deny it.
         .left2, .right2 => null,
         .sorcery => if (v.holds(.bow))
-            "Both hands are on the bow. Nothing is free to hold a wand."
+            "The bow takes both hands."
         else if (!v.holds(.wand))
-            "No wand in his hand to cast a sorcery with."
+            "No wand equipped."
         else
-            "The rod is turned to its other sorcery with D-pad Up.",
+            "D-pad Up switches sorcery.",
         else => null,
     };
 }
@@ -401,7 +401,7 @@ fn quickWorth(kind: ?item.Kind, worn: heromod.Worn, sheet: stats.Sheet, perk: pt
     const k = kind orelse return 0;
     const hpMax = heromod.hpMaxOf(sheet, worn, perk);
     if (combat.flaskOf(k)) |f| return switch (f) {
-        .crimson => hpMax * combat.FLASK_HP_FRAC,
+        .crimson => hpMax * combat.FLASK_HP_FRAC * perk.flaskHeal,
         .cerulean => heromod.fpMaxOf(sheet, worn, perk) * combat.FLASK_FP_FRAC,
     };
     return switch (item.use(k)) {
@@ -1034,6 +1034,17 @@ fn fmt(comptime f: []const u8, args: anytype) [:0]const u8 {
     return std.fmt.bufPrintZ(&scratch[scratchAt], f, args) catch "?";
 }
 
+var saysBuf: [256]u8 = undefined;
+
+/// A copy that outlives `fmt`'s rotating scratch. Anything drawn AFTER a run of `fmt` calls has to own its
+/// bytes; a slice into slot N is only good for the next fifteen.
+fn saysOwn(s: []const u8) [:0]const u8 {
+    const n = @min(s.len, saysBuf.len - 1);
+    @memcpy(saysBuf[0..n], s[0..n]);
+    saysBuf[n] = 0;
+    return saysBuf[0..n :0];
+}
+
 fn panel(b: Box, title: [:0]const u8) Box {
     uiart.well(b.x, b.y, b.w, b.h, 210);
     rl.drawRectangleLinesEx(rect(b.x, b.y, b.w, b.h), 1, mathx.withAlpha(uiart.GILT_DIM, 90));
@@ -1298,7 +1309,10 @@ fn drawDerived(box: Box, v: View, cand: ?Cand) void {
     const now = derive(base, v);
     const then = if (cand) |c| derive(withCand(base, c), v) else now;
 
-    const says = if (cand) |c| candSays(c, v) else armSays(v.arm, v.off);
+    // **TAKEN OFF THE ROTATING SCRATCH BEFORE THE ROWS RUN.** `gearSays` builds through `fmt`, which cycles a
+    // 16-slot buffer, and the loop below spends 28 slots on `unitStr` — so by the time this is drawn the slot
+    // it pointed at holds the tail of a stat value. It printed as a bare "65" under the table.
+    const says = saysOwn(if (cand) |c| candSays(c, v) else armSays(v.arm, v.off));
     const foot = proseH(says, inner.w, hud.HINT) + 22;
     const step0 = rowStep(inner.h - foot - hud.lineH(hud.SMALL) - 4, ND);
     const size = rowSize(step0);
@@ -1342,19 +1356,19 @@ fn armArt(a: heromod.Armament, cx: f32, cy: f32, px: f32) void {
 }
 
 fn armSays(a: heromod.Armament, o: heromod.Armament) []const u8 {
-    if (heromod.armTwoHanded(a)) return "The bow takes both hands, so nothing is on his other arm and nothing can be blocked.";
-    if (o == .shield or a == .shield) return "He can guard, and a guard is worth more than any number on this page.";
-    if (o == .wand or a == .wand) return "He casts with a hand that could have blocked, and pays in Focus instead of stamina.";
-    return "Two hands, and neither of them is going to stop anything.";
+    if (heromod.armTwoHanded(a)) return "Both hands. No off-hand, no block.";
+    if (o == .shield or a == .shield) return "Can guard.";
+    if (o == .wand or a == .wand) return "Casts on L1. Costs Focus, not stamina.";
+    return "No block.";
 }
 
 fn armCandSays(a: heromod.Armament) []const u8 {
     return switch (a) {
-        .sword => "A blade. It is the only thing he carries that swings.",
-        .bow => "Both hands go to the bow, and whatever was in the other one goes with them.",
-        .bell => "Ring it and what the scroll names comes. Nothing else: a bell has no attack in it.",
-        .shield => "Boards on the arm. He can guard, which is worth more than any number on this page.",
-        .wand => "The wand takes a hand that could have blocked - and L1 casts instead.",
+        .sword => "",
+        .bow => "Takes both hands.",
+        .bell => "Summons what the scroll names. No attack.",
+        .shield => "Can guard.",
+        .wand => "Casts on L1. Takes a hand.",
     };
 }
 
@@ -1366,15 +1380,15 @@ fn gearSays(k: item.Kind) [:0]const u8 {
 fn candSays(c: Cand, _: View) []const u8 {
     return switch (c.act) {
         .arm, .off, .armAlt, .offAlt => |h| if (h.kind) |k| gearSays(k) else armCandSays(h.a),
-        .wear => |wr| if (wr.kind) |k| gearSays(k) else "Take it off. Whatever it was giving you goes with it.",
+        .wear => |wr| if (wr.kind) |k| gearSays(k) else "Take it off.",
         .ammo => |a| switch (a) {
-            .plain => "A plain shaft. Ten of them, and nothing in these ruins resists the hole one leaves.",
-            .fire => "Fire rides on top of the shaft's own damage. Five of them, so pick the target.",
+            .plain => "",
+            .fire => "Adds fire to the shaft's damage.",
         },
         .quick => |q| if (q.kind == null)
             "Leave the socket empty."
         else
-            "On the belt, which is the only reach he has in a fight.",
+            "",
         else => "",
     };
 }
@@ -1443,14 +1457,6 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
     const inner = panel(box, "");
     const k = kind orelse {
         hud.text("Nothing carried.", inner.x, inner.y + 6, hud.BODY, uiart.TEXT_DIM);
-        _ = prose(
-            "Chests hold most of what there is, and the dead drop the rest.",
-            inner.x,
-            inner.y + 8 + hud.lineH(hud.BODY),
-            inner.w,
-            hud.HINT,
-            uiart.TEXT_HINT,
-        );
         return;
     };
     const plateW = @min(@divTrunc(inner.w, 2), 200);
@@ -1476,22 +1482,22 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
         return;
     }
     switch (item.use(k)) {
-        .none => hud.text("It does nothing you can do here.", inner.x, y, hud.HINT, uiart.TEXT_HINT),
-        .regen => |r| hud.text(fmt("Restores {d:.0} HP over {d:.0} seconds.", .{ v.sheet.hp() * r.frac, r.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
-        .lob => |l| hud.text(fmt("Thrown at the reticle; bursts for {d:.0} + {d:.0} {s}.", .{ l.dmg, l.fire + l.lightning, if (l.lightning > 0) @as([]const u8, "lightning") else "fire" }), inner.x, y, hud.SMALL, uiart.GOOD),
-        .ward => |w| hud.text(fmt("Chaos slides off you (+{d:.0}) for {d:.0} seconds.", .{ w.chaos, w.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
-        .wind => |w| hud.text(fmt("Half your wind back at once ({d:.0} stamina), and the lockout with it.", .{ v.sheet.stamina() * w.share }), inner.x, y, hud.SMALL, uiart.GOOD),
-        .grease => |gr| hud.text(fmt("The sword hangs {d:.0}% of its blow as fire for {d:.0} seconds.", .{ gr.frac * 100, gr.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
-        .souls => |so| hud.text(fmt("Crushed for {d} souls, on the spot.", .{so.n}), inner.x, y, hud.SMALL, uiart.GOOD),
-        .brew => |b| hud.text(fmt("Your wind returns {d:.1}x as fast for {d:.0} seconds.", .{ b.mult, b.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
-        .purge => hud.text("Takes the poison back out of you, filling or already running.", inner.x, y, hud.SMALL, uiart.GOOD),
-        .steady => |s| hud.text(fmt("Your footing returns {d:.1}x as fast for {d:.0} seconds.", .{ s.mult, s.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
-        .arrows => |a| hud.text(fmt("Puts {d} {s} arrows back in the quiver.", .{ a.n, if (a.fire) @as([]const u8, "fire") else "plain" }), inner.x, y, hud.SMALL, uiart.GOOD),
+        .none => hud.text("Nothing to use here.", inner.x, y, hud.HINT, uiart.TEXT_HINT),
+        .regen => |r| hud.text(fmt("+{d:.0} HP over {d:.0}s", .{ v.sheet.hp() * r.frac, r.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
+        .lob => |l| hud.text(fmt("Thrown. Bursts for {d:.0} + {d:.0} {s}", .{ l.dmg, l.fire + l.lightning, if (l.lightning > 0) @as([]const u8, "lightning") else "fire" }), inner.x, y, hud.SMALL, uiart.GOOD),
+        .ward => |w| hud.text(fmt("+{d:.0} chaos resistance for {d:.0}s", .{ w.chaos, w.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
+        .wind => |w| hud.text(fmt("+{d:.0} stamina, clears the lockout", .{v.sheet.stamina() * w.share}), inner.x, y, hud.SMALL, uiart.GOOD),
+        .grease => |gr| hud.text(fmt("Sword deals +{d:.0}% as fire for {d:.0}s", .{ gr.frac * 100, gr.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
+        .souls => |so| hud.text(fmt("+{d} souls", .{so.n}), inner.x, y, hud.SMALL, uiart.GOOD),
+        .brew => |b| hud.text(fmt("Stamina regen x{d:.1} for {d:.0}s", .{ b.mult, b.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
+        .purge => hud.text("Clears poison.", inner.x, y, hud.SMALL, uiart.GOOD),
+        .steady => |s| hud.text(fmt("Poise regen x{d:.1} for {d:.0}s", .{ s.mult, s.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
+        .arrows => |a| hud.text(fmt("+{d} {s} arrows", .{ a.n, if (a.fire) @as([]const u8, "fire") else "plain" }), inner.x, y, hud.SMALL, uiart.GOOD),
     }
     if (item.usable(k)) {
         const hy = y + hud.lineH(hud.SMALL) + 6;
         if (v.inCombat) {
-            hud.text("Not with something on you - load it on the quick bar.", inner.x, hy, hud.HINT, uiart.BAD);
+            hud.text("Load it on the quick bar.", inner.x, hy, hud.HINT, uiart.BAD);
         } else {
             hud.hintRowAt(
                 &[_]hud.Hint{.{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Use" }},
@@ -1513,7 +1519,7 @@ fn drawStats(self: *const Book, body: Box, v: View, portrait: ?Portrait) void {
     const cols = statsCols(body);
     drawAttributes(self, cols[0], v);
     drawBody(cols[1], v);
-    drawPortrait(self, cols[2], portrait, fmt("Level {d}    {d} souls    Left / Right turns him", .{ v.tree.level(), v.souls }));
+    drawPortrait(self, cols[2], portrait, fmt("Level {d}    {d} souls", .{ v.tree.level(), v.souls }));
 }
 
 fn drawAttributes(self: *const Book, col: Box, v: View) void {
@@ -1540,10 +1546,9 @@ fn drawAttributes(self: *const Book, col: Box, v: View) void {
     y += 6;
     uiart.divider(inner.x + @divTrunc(inner.w, 2), y, @divTrunc(inner.w, 2) - 10, 120);
     const a: stats.Attr = @enumFromInt(@min(self.cur[idx(.stats)], stats.NA - 1));
-    const says = if (v.sheet.barFor(a)) |t|
-        fmt("{s}  Yours: {d:.0}.", .{ stats.governs(a), t })
-    else if (!stats.inert(a))
-        fmt("{s}  Yours: {d:.2}x damage.", .{ stats.governs(a), v.sheet.scale(a) })
+    // A BAR STAT'S OWN FIGURE IS ALREADY IN THE BODY COLUMN, so only the skill multiple is worth printing.
+    const says = if (v.sheet.barFor(a) == null and !stats.inert(a))
+        fmt("{s}  x{d:.2}", .{ stats.governs(a), v.sheet.scale(a) })
     else
         stats.governs(a);
     _ = prose(says, inner.x, y + 12, inner.w, hud.HINT, uiart.TEXT_HINT);
@@ -1571,9 +1576,9 @@ fn drawBody(col: Box, v: View) void {
         if (@abs(v.res.at(@enumFromInt(i))) > 0.05) granted = true;
     }
     const says = if (granted)
-        fmt("Capped at {d:.0}%. What is over the cap is stacked, not spent.", .{combat.RES_CAP})
+        fmt("Capped at {d:.0}%.", .{combat.RES_CAP})
     else
-        "Nothing he owns grants any, so all four sit at nothing.";
+        "";
 
     // THE THREE BLOCKS ARE FITTED TO THE COLUMN. Fifteen rows at a fixed pitch ran off the bottom of it,
     // which is a readout the player cannot read — so the pitch gives way before the content does.
@@ -1951,8 +1956,13 @@ test "THE DERIVED COLUMN PRICES THE TREE'S OWN MULTIPLES, not only its attribute
     rod.off = .wand;
     const bolt = derive(rod, v);
     try std.testing.expectApproxEqAbs(combat.BOLT_FP * perk.spellCost, worth(bolt, .spell_fp), 1e-3);
+    // **THE SCALING READS THE PERKED SHEET, NOT THE BARE ONE** — a `spellDmg` node that also rides a stat-up
+    // (`passivetree.Bump`) raises INTELLIGENCE as well, so priced off `stats.Sheet{}` the row came out under
+    // what the page shows. Two multipliers off one node, and the column has to carry both.
+    const perked = sheetOf(rod, perk);
+    try std.testing.expect(perked.at(.intelligence) > sheet.at(.intelligence));
     try std.testing.expectApproxEqAbs(
-        combat.spellDamage(.bolt) * perk.spellDmg * sheet.scale(.intelligence),
+        combat.spellDamage(.bolt) * perk.spellDmg * perked.scale(.intelligence),
         worth(bolt, .spell),
         1e-3,
     );

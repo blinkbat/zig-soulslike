@@ -1153,19 +1153,19 @@ fn volFacts(st: *const State, buf: []u8) VolFacts {
     _ = buf;
     return switch (st.vol) {
         .spore_cloud => .{
-            .a = "POISON, and it builds while you stand in it",
+            .a = "POISON - builds while you stand in it",
             .b = "r 1.90 m   life 3.40 s   build 42/s",
-            .c = "Entry costs 0.34 s of build up front (foe.Soak)",
+            .c = "Entry costs 0.34 s of build up front",
         },
         .acid_pool => .{
-            .a = "ACID, spreading, then thinning out",
+            .a = "ACID - spreads, then thins",
             .b = "r 1.55 m   life 7.50 s",
-            .c = "Entry costs 0.34 s of build up front (foe.Soak)",
+            .c = "Entry costs 0.34 s of build up front",
         },
         .knight_gas => .{
-            .a = "CHAOS, dosed on a clock rather than built",
+            .a = "CHAOS - dosed on a clock, not built",
             .b = "r 1.00 m   life 4.20 s   dose every 0.55 s",
-            .c = "The frame you step in is already due (foe.Soak)",
+            .c = "First frame in is already due",
         },
     };
 }

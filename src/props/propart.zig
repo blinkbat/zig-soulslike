@@ -121,13 +121,9 @@ pub const PUNK_DK = rgba(42, 34, 23, 255);
 // gills stay pale because they are always in the cap's own shade and never take the sun.
 pub const CAP_FLESH = rgba(44, 35, 40, 255);
 pub const CAP_FLESH_DK = rgba(29, 23, 28, 255);
-/// **A FUNGUS STANDS IN NOTHING.** Every prop in the kingdom used to carry a pad at its foot to hide the
-/// seam where a round base meets uneven ground, and every one was `MOSS_DK` — a green disc under a pink
-/// mushroom, twenty-two times over (owner: "disrupts palette"). Recolouring it did not save it and neither
-/// did sinking it: a horizontal disc of any colour that is not the ground's takes the key square-on and
-/// reads as a PLATE THE PROP IS STANDING ON. They are gone; the stipes meet the ground on their own.
-/// Moss on STONE is still moss — that is the rock palette and it is not this.
-pub const DUFF = rgba(26, 21, 21, 255);
+/// **A FUNGUS STANDS IN NOTHING.** A horizontal disc of any colour that is not the ground's takes the key
+/// square-on and reads as a PLATE THE PROP IS STANDING ON, so the pads at every stipe's foot are gone and
+/// the colour they were drawn in went with them. Moss on STONE is still moss — that is the rock palette.
 pub const CAP_RIM = rgba(58, 46, 50, 255);
 pub const GILL = rgba(104, 96, 88, 255);
 pub const STIPE = rgba(72, 66, 58, 255);

@@ -27,11 +27,18 @@ const lerpF = mathx.lerpF;
 // game stepping over knee-high mushrooms and this one is looking down at you.
 //
 // **IT IS ANSWERED WITH FIRE, NOT WITH A SWORD.** `ARMOUR` is the point of the creature. A homunculus packed
-// out of wet mycelium does not care about an edge — `combat.armourTaken` turns aside most of a middling
+// out of wet mycelium does not care about an edge — `combat.armourTaken` turns aside a good half of a middling
 // swing and a third of a big one, so trading with it costs a bar you do not have. Its resistances say the
 // same thing from the other side: fire and lightning go straight through, cold and chaos do nothing at all.
 // A player who reaches for the same answer he used on everything else loses; a player who reads the creature
-// burns it down in a quarter of the swings.
+// burns it down in a third of the swings.
+//
+// **BUT STEEL HAS TO REGISTER** (owner: seems impossible to hit with melee, should do a little dmg, just
+// highly reduced). At 220 it did not: a light swing landed 3.0 of a 210 bar — 71 swings, and 21 heavies
+// against the OGRE's 11 for half again the health and no armour at all. That is not a bad answer, it is no
+// answer, and a bar that does not visibly move reads as a creature you cannot hurt rather than one you are
+// hurting wrong. At 80 a light lands 5.8 and a heavy 17.0, so it is an ogre-length fight with a sword and
+// still a third of the speed of the right tool. The MARGIN is the design; the wall was a bug.
 //
 // **AND IT IS VERY SLOW, WHICH IS WHAT MAKES ANY OF THAT FAIR.** Two-fifths of a walk. You can leave whenever
 // you like. What you cannot do is stand in front of it, because both of its moves are designed to punish
@@ -62,7 +69,7 @@ const TOP_F: f32 = 0.98;
 /// **THE NUMBER THAT DEFINES IT.** `combat.armourTaken` is `A/(A + 5*dmg)` turned aside — at 220 a 27-damage
 /// heavy loses 62% of its bite and a 13-damage light loses 77%. Fire and lightning skip it entirely, because
 /// armour is physical only, which is the whole lesson the creature exists to teach.
-const ARMOUR: f32 = 220.0;
+const ARMOUR: f32 = 80.0;
 const HP_MAX: f32 = 210.0;
 const POISE_MAX: f32 = 46.0;
 const STANCE_MAX: f32 = 70.0;
@@ -189,7 +196,6 @@ pub const Golem = struct {
     hits: u32 = 0,
     hitLatch: bool = false,
     justDied: bool = false,
-    parried: bool = false,
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     threat: foe.Threat = .{},
@@ -248,10 +254,12 @@ pub const Golem = struct {
     pub fn flashFrac(self: *const Golem) f32 {
         return foe.flashFrac(self.flash);
     }
+    /// **THE TRAVEL STATE IS `.walk`, WHICH IS THE ONE THE STAMP HAS TO BE FOR.** Asked while `.idle` the
+    /// heading was solved for the frames it stands still and null on every frame it moves, so the stamp was
+    /// never read and the creature pressed into whatever it walked at.
     pub fn navWant(self: *const Golem, hero: rl.Vector3) ?rl.Vector3 {
-        if (self.state != .idle) return null;
-        if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) return hero;
-        return if (mathx.distXZ(self.pos, self.home) > 2.0) self.home else null;
+        if (self.state != .walk) return null;
+        return if (self.leash.goingHome()) self.home else hero;
     }
     pub fn bodyR(self: *const Golem) f32 {
         return BODY_R * self.scale;
@@ -275,10 +283,14 @@ pub const Golem = struct {
         return self.state == .slam_air and self.lift > foe.AIRBORNE_LIFT;
     }
 
+    /// **AND IT PUTS THE BODY BACK ON THE GROUND** (`frog.base`, `shroom.enterStun`): `.slam_air` is the only
+    /// thing that writes `lift` and it clears it only on its own landing, so a stagger or a death taken in
+    /// mid-flight left the whole creature — its pose, its hurt centre and its bar — 1.3 m up for good.
     fn enter(self: *Golem, s: State) void {
         self.state = s;
         self.t = 0;
         self.struck = false;
+        self.lift = 0;
     }
 
     fn decide(self: *Golem, dist: f32) void {
@@ -296,7 +308,13 @@ pub const Golem = struct {
     }
 
     pub fn update(self: *Golem, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
-        if (self.gone) return null;
+        // A CLOUD TICKS ITS MOTES PAST THE BODY'S OWN END (the foe contract's rule, and `shroom`'s test pins
+        // it): the flakes a dissolve throws are still in the air when the slab goes `gone`, and returning
+        // before this froze them where they were for the rest of the level.
+        if (self.gone) {
+            foe.tickParticles(&self.parts, dt, self.pos.y);
+            return null;
+        }
         self.vit.tick(dt);
         foe.fadeFlash(&self.flash, dt);
         foe.tickParticles(&self.parts, dt, self.pos.y);
@@ -306,6 +324,11 @@ pub const Golem = struct {
         self.slamCd = mathx.maxF(0, self.slamCd - dt);
         self.t += dt;
         self.burst = null;
+        // THE ONE-FRAME FLAG, CLEARED AT THE TOP LIKE EVERY OTHER CREATURE'S. `Host.live` hands out the whole
+        // slab with no `gone` filter, so left set this latched for the rest of the map — and `game.anyFoeDied`
+        // reads it, so the kill sound, the kill shake and the pad rumble fired EVERY FRAME after the first
+        // golem died. Set again below, and in `tryHit`, only on the frame the body actually goes.
+        self.justDied = false;
         _ = blade;
 
         if (self.state == .dead) {
@@ -321,7 +344,11 @@ pub const Golem = struct {
             return null;
         }
 
-        const d = mathx.distXZ(self.pos, hero);
+        // **THE DECISIONS READ THE SENSED DISTANCE, NEVER THE REAL ONE** (`foe.sensedDist`) — the raw gap
+        // ignored the tether it is already ticking, so a golem that had lost sight of him kept walking, and
+        // the anti-cheese rouse `foe.reached` buys did nothing: shot from 16 m it never woke up. The reach
+        // tests below stay on the REAL distance, because a blow lands where the body is.
+        const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         var blow: ?combat.Hit = null;
         var moved: f32 = 0;
 
@@ -331,10 +358,14 @@ pub const Golem = struct {
                 if (self.t >= 0.35) self.decide(d);
             },
             .walk => {
-                self.face(hero, dt);
-                const way = if (self.leash.goingHome()) mathx.dirXZ(self.pos, self.home) else mathx.dirXZ(self.pos, hero);
+                // IT WALKS WHERE IT IS LOOKING and turns round what is in the way through the FACING — the
+                // ogre's and the ravager's arrangement, because a mass this size does not strafe. Stepping at
+                // the target instead carried it sideways and backwards for the two seconds a 1.5 rad/s turn
+                // takes, and left `foe.Nav`'s stamp unread.
+                const tgt = if (self.leash.goingHome()) self.home else hero;
+                self.face(self.nav.aim(self.pos, tgt), dt);
                 const step = WALK_SPEED * dt;
-                mathx.stepXZ(&self.pos, way, step, bounds);
+                mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), step, bounds);
                 moved = step;
                 if (self.t >= 0.40) self.decide(d);
             },
@@ -573,7 +604,9 @@ pub const Model = struct {
     }
 };
 
-pub const CAP_N: usize = 8;
+/// **THE MAP'S OWN PER-KIND CAP, like every other creature's slab** — it was a bare 8, so a map placing a
+/// ninth golem got eight and `foe.resetGroup` dropped the rest in silence.
+pub const CAP_N: usize = wf.MAX_PER_KIND;
 
 pub const Host = struct {
     model: Model,
@@ -629,14 +662,64 @@ test "THE HOMUNCULUS IS ANSWERED WITH FIRE, NOT WITH A SWORD" {
     const took_l = g.vit.damageFrom(light);
     const took_h = g.vit.damageFrom(heavy);
     const took_f = g.vit.damageFrom(fire);
-    std.debug.print("\n  spore golem: armour {d:.0} — a 13 light lands {d:.1}, a 27 heavy lands {d:.1}, 27 fire lands {d:.1}\n", .{ ARMOUR, took_l, took_h, took_f });
+    std.debug.print("\n  spore golem: armour {d:.0} — a 13 light lands {d:.1} ({d:.0} swings), a 27 heavy lands {d:.1} ({d:.0}), 27 fire lands {d:.1} ({d:.0})\n", .{ ARMOUR, took_l, HP_MAX / took_l, took_h, HP_MAX / took_h, took_f, HP_MAX / took_f });
     // Steel is a bad idea and fire is a good one, by a wide enough margin that a player notices in one fight.
-    try std.testing.expect(took_l < 13.0 * 0.30);
-    try std.testing.expect(took_h < 27.0 * 0.45);
+    try std.testing.expect(took_l < 13.0 * 0.55);
+    try std.testing.expect(took_h < 27.0 * 0.70);
     try std.testing.expect(took_f > 27.0 * 1.5);
-    try std.testing.expect(took_f > took_h * 4.0);
+    // **A MARGIN, NOT A WALL** (owner: seems impossible to hit with melee). Fire has to be the obvious answer
+    // and steel has to be an answer: at 4x the fight was 21 heavy swings against the ogre's 11, which reads as
+    // a creature that cannot be hurt. Bounded at BOTH ends now — under 2 and the armour says nothing, over
+    // 3.5 and the sword stops being a choice a player can make badly.
+    const margin = took_f / took_h;
+    try std.testing.expect(margin > 2.0 and margin < 3.5);
+    // …and it may never take longer with a sword than the OGRE does, which carries half again the health and
+    // no armour at all. That comparison is the one the number got away from.
+    try std.testing.expect(HP_MAX / took_h < 300.0 / 27.0 * 1.25);
     // …and armour is never immunity, however much of it there is (`combat.armourTaken`).
     try std.testing.expect(took_l > 0 and took_h > 0);
+}
+
+test "A DEATH IS ONE FRAME LONG, and the flakes outlive the body that threw them" {
+    const dt: f32 = 1.0 / 60.0;
+    var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const hero = v3(0, 0, 4.0);
+    _ = g.update(dt, hero, 200, .{});
+    try std.testing.expect(!g.justDied);
+
+    // Kill it outright, then run well past the whole death + dissolve and count the frames that claim a death.
+    g.vit.hp = 0;
+    g.vit.dead = true;
+    const Live = struct {
+        fn count(ps: []const foe.Particle) usize {
+            var n: usize = 0;
+            for (ps) |q| {
+                if (q.life > 0) n += 1;
+            }
+            return n;
+        }
+    };
+
+    var claims: u32 = 0;
+    var frames: u32 = 0;
+    var atGone: usize = 0;
+    var goneAt: ?u32 = null;
+    while (frames < 900) : (frames += 1) {
+        _ = g.update(dt, hero, 200, .{});
+        if (g.justDied) claims += 1;
+        if (g.gone and goneAt == null) {
+            goneAt = frames;
+            atGone = Live.count(&g.parts);
+        }
+    }
+    std.debug.print("\n  spore golem: {d} frame(s) claimed a death over {d}; gone at frame {d} with {d} flakes still up, {d} left now\n", .{ claims, frames, goneAt orelse 0, atGone, Live.count(&g.parts) });
+    // **ONE.** `Host.live` hands out the whole slab with no `gone` filter, so a flag left set here is a flag
+    // `game.anyFoeDied` reads every frame for the rest of the map — the kill sound, shake and rumble on a loop.
+    try std.testing.expectEqual(@as(u32, 1), claims);
+    try std.testing.expect(goneAt != null);
+    // …and the flakes still up when the slab went have aged out since, rather than frozen where they were.
+    try std.testing.expect(atGone > 0);
+    try std.testing.expectEqual(@as(usize, 0), Live.count(&g.parts));
 }
 
 test "TWO MOVES THAT COVER EACH OTHER: the smash owns its feet, the slam owns where you back off to" {
@@ -665,4 +748,58 @@ test "IT COMMITS TO A SPOT AND CANNOT STEER ONTO HIM IN THE AIR" {
     try std.testing.expectApproxEqAbs(aimed.x, g.launch.x, 1e-5);
     try std.testing.expectApproxEqAbs(aimed.z, g.launch.z, 1e-5);
     try std.testing.expect(g.airborne());
+}
+
+test "THE STAMPED WAY IS ACTUALLY READ, and a slam broken in the air comes down" {
+    const dt: f32 = 1.0 / 60.0;
+    const hero = v3(0, 0, 12.0);
+
+    // **THE STAMP BENDS THE WALK.** `markWays` asks `navWant` while the body is in its TRAVEL state, so a
+    // heading written onto `nav` has to move the creature — a field nothing reads is the silent half of
+    // `game.markWays`' field-implies-method pin.
+    var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.5);
+    while (g.state != .walk) _ = g.update(dt, hero, 400, .{});
+    try std.testing.expect(g.navWant(hero) != null);
+    var bent = g;
+    bent.nav.dir = v3(1, 0, 0);
+    var k: u32 = 0;
+    while (k < 30) : (k += 1) {
+        _ = g.update(dt, hero, 400, .{});
+        _ = bent.update(dt, hero, 400, .{});
+        bent.nav.dir = v3(1, 0, 0);
+    }
+    try std.testing.expect(bent.pos.x > g.pos.x + 0.1);
+
+    // …AND IT WALKS WHERE IT LOOKS: spawned facing away it sets off the way it is pointing and turns, rather
+    // than sliding backwards at him for the two seconds a 1.5 rad/s about-face takes.
+    var away = Golem.spawn(mathx.zero3, 180.0, 1.0, 0.5);
+    while (away.state != .walk) _ = away.update(dt, hero, 400, .{});
+    const from = away.pos;
+    k = 0;
+    while (k < 12) : (k += 1) _ = away.update(dt, hero, 400, .{});
+    try std.testing.expect(away.pos.z < from.z);
+
+    // **AND A BODY CAUGHT IN MID-FLIGHT IS ON THE GROUND ON THE FRAME IT IS CAUGHT** (`frog.base`'s rule).
+    var air = Golem.spawn(mathx.zero3, 0, 1.0, 0.5);
+    var t: f32 = 0;
+    while (t < 6.0 and air.state != .slam_air) : (t += dt) _ = air.update(dt, v3(0, 0, 5.0), 400, .{});
+    try std.testing.expect(air.state == .slam_air);
+    while (air.lift <= foe.AIRBORNE_LIFT) _ = air.update(dt, v3(0, 0, 5.0), 400, .{});
+    try std.testing.expect(air.airborne());
+    air.enter(.stunheavy);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), air.lift, 1e-6);
+    try std.testing.expect(!air.airborne());
+    try std.testing.expectApproxEqAbs(air.pos.y, air.centerWorld().y - CENTER_F * H, 1e-5);
+
+    // **AND A BLOW FROM OUTSIDE ITS AGGRO STILL WAKES IT** — `foe.reached` rouses the tether, and the
+    // decisions have to be reading that tether or the rouse buys nothing and a bow beats the creature.
+    var plinked = Golem.spawn(mathx.zero3, 0, 1.0, 0.5);
+    const far = v3(0, 0, AGGRO_R + 1.5);
+    k = 0;
+    while (k < 60) : (k += 1) _ = plinked.update(dt, far, 400, .{});
+    try std.testing.expect(plinked.state == .idle);
+    plinked.leash.provoke();
+    k = 0;
+    while (k < 60) : (k += 1) _ = plinked.update(dt, far, 400, .{});
+    try std.testing.expect(plinked.state != .idle);
 }

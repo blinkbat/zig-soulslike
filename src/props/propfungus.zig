@@ -34,6 +34,34 @@ const BARK_OLD = art.BARK_OLD;
 /// from any angle you can stand at, shallow enough that the rim still reads as an edge.
 const GILL_IN: f32 = 0.62;
 
+// ── WHAT HANGS, AND HOW FAR ─────────────────────────────────────────────────────────────────────────────
+//
+// **A HANGING THING SWINGS, AND IT IS THE ONLY THING HERE THAT MOVES.** The caps are roofs and the stalks
+// are structure — `sporePodMesh` alone is thin enough for the flora sway. What is left over is the stuff
+// with nothing under it: spore beads in the still air below a cap, and the lamp's bulb on its thread.
+//
+// `Builder.setAnimY` carries the MODEL-SPACE HEIGHT OF THE POINT A VERTEX HANGS FROM, and the scene shader's
+// `plant` branch throws it sideways in proportion to the drop below that anchor. Zero is the default and
+// means rigid, so nothing else in the world is touched.
+
+/// The mote radius every spore bead here is drawn at the top of — the deepest hang is a bead's underside.
+const SPORE_R_HI: f32 = 0.045;
+/// How far below the glowcap's crown its lowest bead hangs, and below the lamp's bulb its lowest.
+const GLOW_SPORE_DROP_HI: f32 = 1.30;
+const LAMP_SPORE_DROP_HI: f32 = 0.70;
+/// The bulb's own thread, off the arc's tip.
+const LAMP_BULB_DROP: f32 = 0.46;
+
+/// THE DEEPEST HANG IN THE KINGDOM, solved off the two meshes that author one rather than typed beside them.
+pub const DANGLE_DROP_MAX: f32 = @max(GLOW_SPORE_DROP_HI, LAMP_BULB_DROP + LAMP_SPORE_DROP_HI) + SPORE_R_HI;
+
+/// Lateral metres per metre of drop. **THE SCENE SHADER CARRIES THIS SAME LITERAL** (`shaders.sceneVS`, the
+/// `plant` branch); the test below is what stops a deepened hang turning a sway into a swing.
+pub const DANGLE_PER_M: f32 = 0.017;
+
+/// What the two sine terms peak at together.
+const DANGLE_PEAK: f32 = 1.3;
+
 /// **AT THE CAP'S OWN CENTRE, NOT AT THE ORIGIN.** Every cap here LEANS, so its crown sits off the axis its
 /// stalk came out of — and the gills were being laid at 0,0 regardless. On a 6-degree lean over 6.4 m that is
 /// half a metre of offset, which is why they came out of one side of the brim as a saw blade. Pulling the
@@ -301,20 +329,22 @@ pub fn glowCapMesh(shader: rl.Shader) rl.Model {
     }, 0, 0, 1.9);
     // Spores coming off the gills, hanging in the still air under the cap.
     b.setMat(.plant);
+    b.setAnimY(GLOW_H);
     var i: i32 = 0;
     while (i < 9) : (i += 1) {
         const a = rng.angle();
         const d = rng.range(0.2, 1.0);
-        const r = rng.range(0.020, 0.045);
-        b.addBlob(v3(mathx.cosf(a) * d, GLOW_H - rng.range(0.35, 1.30), mathx.sinf(a) * d), v3(r, r, r), 2, 5, SPORE_GLOW);
+        const r = rng.range(0.020, SPORE_R_HI);
+        b.addBlob(v3(mathx.cosf(a) * d, GLOW_H - rng.range(0.35, GLOW_SPORE_DROP_HI), mathx.sinf(a) * d), v3(r, r, r), 2, 5, SPORE_GLOW);
     }
+    b.setAnimY(0);
     return b.toModel(shader);
 }
 
 pub const POD_H: f32 = 1.15;
 
-/// Ground cover, and the only one of these that SWAYS — `setAnimY` is what puts a vertex in the wind, and
-/// the stalk is thin enough to earn it where a cap the size of a roof is not.
+/// Ground cover, and the one fungus that takes the FLORA sway — `flora = true` in the INFO row is what puts
+/// it in the wind, and the stalk is thin enough to earn it where a cap the size of a roof is not.
 pub fn sporePodMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0A5);
@@ -328,13 +358,10 @@ pub fn sporePodMesh(shader: rl.Shader) rl.Model {
         const z = mathx.sinf(a) * d;
         const tipx = x + rng.signed() * h * 0.16;
         const tipz = z + rng.signed() * h * 0.16;
-        b.setAnimY(h * 0.5);
         b.addCapsule(v3(x, 0, z), v3(tipx, h * 0.86, tipz), 0.030, 0.022, 5, STIPE);
-        b.setAnimY(h);
         const pr = rng.range(0.055, 0.105);
         b.addBlob(v3(tipx, h * 0.86 + pr * 0.7, tipz), v3(pr, pr * rng.range(1.3, 1.9), pr), 3, 6, if (rng.float() < 0.45) SPORE_GLOW else CAP_FLESH);
     }
-    b.setAnimY(0);
     return b.toModel(shader);
 }
 
@@ -362,6 +389,19 @@ test "THE THREE LAYERS ARE ALL FUNGAL — canopy, understorey and floor, and the
     try std.testing.expect(@abs(GIANT_BROAD.h - GIANT_TALL.h) > 1.0);
     try std.testing.expect(@abs(GIANT_BROAD.h - GIANT_TABLE.h) > 1.0);
     try std.testing.expect(@abs(GIANT_TALL.capR - GIANT_TABLE.capR) > 1.0);
+}
+
+test "a hanging thing sways a BIT: the deepest bead's throw stays inside its own width" {
+    const throw = DANGLE_DROP_MAX * DANGLE_PER_M * DANGLE_PEAK;
+    // 3.0 cm on a 4.5 cm bead. Under half its own width it reads as alive; over it, as blowing away.
+    try std.testing.expect(throw < SPORE_R_HI * 2.0 * 0.75);
+    try std.testing.expect(throw > 0.015);
+    // …AND IT IS THE WHOLE MESH-TO-SHADOW DIVORCE, because the depth pass has no wind term (`props.INFO`'s
+    // sapling note). Under three texels of the sun's map, which is 108 m over 8192.
+    const texel = gfx.SHADOW_ORTHO / @as(f32, gfx.SHADOWMAP_RES);
+    try std.testing.expect(throw < texel * 3.0);
+    // The lamp's bulb hangs on the shallower of the two, so the arc it swings on is the gentler one.
+    try std.testing.expect(LAMP_BULB_DROP < GLOW_SPORE_DROP_HI);
 }
 
 test "the glow's light sits under its own cap rather than on top of it" {
@@ -514,18 +554,22 @@ pub fn lampStalkMesh(shader: rl.Shader) rl.Model {
         prev = next;
         a += dA;
     }
-    const hang = v3(prev.x, prev.y - 0.46, prev.z);
+    // The arc is 4.2 m of structure and stays rigid; everything below its tip hangs off it, so the tip is the
+    // pivot for the thread, the bulb and the spores together — one arc rather than three.
+    const hang = v3(prev.x, prev.y - LAMP_BULB_DROP, prev.z);
+    b.setAnimY(prev.y);
     b.addCapsule(prev, hang, 0.045, 0.035, 5, STIPE_DK);
     b.addBlob(hang, v3(0.34, 0.40, 0.34), 4, 9, art.BLOOM_GLOW);
     b.addBlob(v3(hang.x, hang.y + 0.06, hang.z), v3(0.20, 0.24, 0.20), 3, 7, art.BLOOM_CORE);
-    b.addBlob(v3(0, 0.16, 0), v3(0.46, 0.20, 0.42), 3, 8, STIPE_DK);
     var s: i32 = 0;
     while (s < 5) : (s += 1) {
         const ang = rng.angle();
         const d = rng.range(0.15, 0.65);
-        const r = rng.range(0.020, 0.045);
-        b.addBlob(v3(hang.x + mathx.cosf(ang) * d, hang.y - rng.range(0.1, 0.7), hang.z + mathx.sinf(ang) * d), v3(r, r, r), 2, 5, SPORE_GLOW);
+        const r = rng.range(0.020, SPORE_R_HI);
+        b.addBlob(v3(hang.x + mathx.cosf(ang) * d, hang.y - rng.range(0.1, LAMP_SPORE_DROP_HI), hang.z + mathx.sinf(ang) * d), v3(r, r, r), 2, 5, SPORE_GLOW);
     }
+    b.setAnimY(0);
+    b.addBlob(v3(0, 0.16, 0), v3(0.46, 0.20, 0.42), 3, 8, STIPE_DK);
     return b.toModel(shader);
 }
 

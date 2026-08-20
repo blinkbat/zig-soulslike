@@ -33,10 +33,10 @@ pub fn governs(a: Attr) [:0]const u8 {
         .vitality => "Governs HP.",
         .mind => "Governs FP.",
         .endurance => "Governs stamina.",
-        .strength => "Skill with heavy arms - the club, and half of what the sword is worth.",
-        .dexterity => "Skill with light arms - the dirk, the bow, and the sword's other half.",
-        .intelligence => "Skill with sorcery - everything the rod throws.",
-        .luck => "Rare finds. What a body drops on top of the thing it always drops.",
+        .strength => "Club damage, and half the sword's.",
+        .dexterity => "Dirk and bow damage, and half the sword's.",
+        .intelligence => "Sorcery damage.",
+        .luck => "Rare drops.",
     };
 }
 

@@ -20,6 +20,15 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    // **STARTUP BUILDS THE FOE GROUPS BY VALUE, AND THEY ARE BIG.** `game.init` assigns seventeen
+    // `Group.init(shader)` results and `objview` builds all seventeen in ONE struct literal; a Debug frame
+    // reserves every temporary up front, so that is `sizeOf` of the whole roster on the stack at once — 26 MB
+    // now that a group holds `worldfmt.MAX_FOES` bodies rather than 24, and it overflowed the default at boot.
+    // Windows COMMITS stack lazily, so this reserves address space and not memory. The alternative was
+    // threading a destination pointer through nineteen files to keep a number nobody will reach reachable.
+    // **IT HAS TO CLEAR THE WHOLE ROSTER WITH ROOM OVER** — ~52 MB at `MAX_FOES` 512, and raising that number
+    // again means raising this one with it, or the game stack-overflows in `init` before it draws a frame.
+    exe.stack_size = 192 * 1024 * 1024;
     exe.linkLibrary(raylib_artifact);
     exe.root_module.addImport("raylib", raylib);
     exe.root_module.addAnonymousImport("campfire_wav", .{ .root_source_file = b.path("assets/campfire.wav") });

@@ -58,16 +58,12 @@ const STAFF = heromod.HELD;
 
 const H: f32 = heromod.H;
 
-/// **MUCH TALLER, AND IT IS THE WHOLE SILHOUETTE** (owner). 2.85 m to the crown against the hero's 1.8 —
-/// it looks DOWN at him from across the field, which is what a thing that raises the dead should do.
+/// 2.85 m to the crown against the hero's 1.8 — it looks DOWN at him from across the field.
 pub const SCALE = (H + 1.05) / H;
-/// …and GAUNT with it (owner). Taller AND narrower is the only combination that reads as starved rather
-/// than as a big man: widen these with the height and it is an ogre in a robe.
 const HIP_HALF = heromod.HIP_HALF * 0.60;
 const SHOULDER_HALF = heromod.SHOULDER_HALF * 0.64;
 const REST = heromod.restHumanoid(HIP_HALF, SHOULDER_HALF, H);
-/// His feet are the archer's feet — the same dead man's boots, and `footMesh` is what a sole patch is
-/// measured off, so a second copy is a second thing to retune.
+/// His feet are the archer's feet, and `footMesh` is what a sole patch is measured off.
 const solePatches = archermod.solePatches;
 
 const rx = mathx.rx;
@@ -85,8 +81,6 @@ const FIST_Z = 0.02 * H;
 
 pub const AGGRO_R = 26.0;
 const TURN_RATE = 4.6;
-/// **FAST** (owner). Over a walk, where it used to be under one — you cannot simply jog it down any more,
-/// and with `LEAP_SPEED` behind it the way to reach it is to cut the angle rather than to chase.
 const WALK_SPEED = heromod.WALK_SPEED * 1.18;
 const SPEED = 1.0;
 const BODY_R = 0.34;
@@ -94,8 +88,7 @@ const HURT_R = 0.42;
 pub const SOULS: u32 = 520;
 
 const HP_MAX: f32 = 84.0;
-/// **ALMOST NONE** (owner). Under the hero's light poke (10 poise), so ANYTHING that lands staggers it.
-/// That is the trade for the speed and the reach: catch it once and the whole cast comes apart.
+/// **ALMOST NONE.** Under the hero's light poke (10 poise), so ANYTHING that lands staggers it.
 const POISE_MAX: f32 = 5.0;
 const STANCE_MAX: f32 = 34.0;
 
@@ -106,60 +99,46 @@ const DISS_DUR = archermod.DISS_DUR;
 const SHOVE_DECAY = 7.0;
 const A_PROT = 2.6;
 
-// ─── THE RAISE ────────────────────────────────────────────────────────────────────────────────────────
-//
 // **THE CORPSE IS THE MECHANIC, AND THE WINDOW HAD TO BE MADE TO EXIST.** A skeleton is 2.05 s from the
-// killing blow to its last mote, and a readable tell does not fit inside that — so a body inside `RAISE_R`
-// of a living necromancer **STOPS DISSIPATING** (`vigil`, stamped by `game.markVigil`, read by
-// `foe.dissipate`). The held corpse IS the tell, and it lands before the cast does.
+// killing blow to its last mote and a readable tell does not fit inside that, so a body inside `RAISE_R` of
+// a living necromancer **STOPS DISSIPATING** (`vigil`, stamped by `game.markVigil`, read by `foe.dissipate`).
+// The held corpse IS the tell, and it lands before the cast does.
 pub const RAISE_R: f32 = 11.0;
 pub const RAISE_WIND: f32 = 1.90;
 const RAISE_DUR: f32 = 0.42;
 const RAISE_RECOVER: f32 = 1.15;
 const RAISE_CD: f32 = 7.5;
-/// WHAT COMES BACK UP. Not full: a raised body is a body that has already been killed once, and a fight
-/// where the graveyard refills at full strength is one the player cannot see themselves winning.
 pub const RAISE_HP_FRAC: f32 = 0.55;
 pub const RAISE_MATCH_R: f32 = 1.2;
 
 pub const FROST_HIT = combat.Hit{ .poise = 18, .stance = 8, .elem = combat.elems(.{ .cold = 26 }) };
 pub const FROST_R: f32 = 2.4;
 /// The cast — the staff comes up and the hand goes out over the mark. PUBLIC because the harness aims a beat
-/// with it (`shots.FROST_TELL_AT`): a portrait pinned to a literal 0.65 s photographs somewhere else the next
-/// time this is tuned.
+/// with it (`shots.FROST_TELL_AT`): a portrait pinned to a literal 0.65 s photographs somewhere else later.
 pub const FROST_WIND: f32 = 0.72;
 const FROST_CAST_DUR: f32 = 0.30;
 const FROST_RECOVER: f32 = 0.70;
 /// **AND IT GREW WITH THE CASTER.** The ring lands at `FROST_R * SCALE`, so making the necromancer taller
-/// widened it from 3.80 m to 4.16 m of ground to clear — and the comptime assert below, which is the whole
-/// contract that a WALK gets you out, is what caught it. 2.4 m/s of walking over 2.7 s clears 4.59 m.
+/// widened it from 3.80 m to 4.16 m of ground to clear. 2.4 m/s of walking over 2.7 s clears 4.59 m.
 pub const FROST_FUSE: f32 = 2.70;
 const FROST_CD: f32 = 4.2;
 const FROST_R_MIN: f32 = 3.0;
 const FROST_R_MAX: f32 = 18.0;
 
 comptime {
-    // A COMMITTED SPOT HE CAN GET OFF, and the price of standing still. The ring lands centred on him, so
-    // what he has to clear is its whole radius plus his own footprint. A WALK does it here (see `FROST_FUSE`)
-    // and that is the decision; the hero's own figures are written out rather than imported for
-    // `foe.HERO_*`'s reason — this file sits below `hero.zig` in the import graph.
-    //
-    // **MEASURED AT THE SCALE IT IS ACTUALLY DRAWN AT**, unlike the delver's own version of this assert: the
-    // radius on the field is `FROST_R * scale`, so asserting the bare `FROST_R` would pass on a ring a third
-    // wider than the one tested. A map that posts an oversized one widens the ring without lengthening the
-    // fuse, which is the same trade every scaled creature already makes with its reach.
+    // A COMMITTED SPOT HE CAN GET OFF. The ring lands centred on him, so what he has to clear is its whole
+    // radius plus his own footprint; the hero's figures are written out rather than imported because this
+    // file sits below `hero.zig` in the import graph. **MEASURED AT THE SCALE IT IS ACTUALLY DRAWN AT** —
+    // the radius on the field is `FROST_R * scale`, so asserting the bare `FROST_R` would pass on a ring a
+    // third wider than the one tested.
     std.debug.assert(FROST_FUSE * 1.7 > FROST_R * SCALE + foe.HERO_R);
     std.debug.assert(FROST_WIND >= foe.TELL_MIN);
     std.debug.assert(RAISE_WIND > FROST_WIND + FROST_CAST_DUR);
     std.debug.assert(RAISE_CD > RAISE_WIND + RAISE_DUR + RAISE_RECOVER);
     std.debug.assert(FROST_HIT.dmg == 0 and FROST_HIT.elem.at(.cold) > 0);
-    // …and it reaches for a body from further off than it throws ice at one, or there is ground it will
-    // defend that it cannot fight on.
     std.debug.assert(RAISE_R > FROST_R_MIN);
-    // **THE RANGE IT WANTS TO STAND AT MUST SIT INSIDE THE RANGE IT CAN CAST FROM.** Two independently authored
-    // bands (`WANT_*` for the drift, `FROST_R_*` for the throw) that only happen to overlap is a creature that
-    // walks to the one place it cannot use its own move — `A MOVE THAT CANNOT LAND IS NOT A DECISION`, arrived
-    // at from the movement's side instead of the attack's.
+    // **THE RANGE IT WANTS TO STAND AT MUST SIT INSIDE THE RANGE IT CAN CAST FROM.** Two independently
+    // authored bands that only happen to overlap is a creature that walks to the one place it cannot cast.
     std.debug.assert(WANT_MIN >= FROST_R_MIN and WANT_MAX <= FROST_R_MAX);
     std.debug.assert(WANT_MIN < WANT_MAX);
     std.debug.assert(WANT_MIN > FROST_R * SCALE);
@@ -168,10 +147,8 @@ comptime {
 const NPART = 104;
 const RAISE_BLOOM: u32 = 40;
 const FROST_BLOOM: u32 = 30;
-/// The ring going off. NAMED and asserted like the other two: as a literal `34` inside `burst` it was the one
-/// emitter of the three that nothing checked against the pool. It is now the biggest of the three and the
-/// pool is sized off IT rather than off the raise — the rim wall is most of the blow's read, and a burst that
-/// overwrote its own first shards would thin exactly the frame it is loudest.
+/// The ring going off. NAMED and asserted like the other two, and the biggest of the three: the pool is
+/// sized off IT, since a burst that overwrote its own first shards would thin the frame it is loudest.
 const FROST_SHARDS: u32 = 60;
 comptime {
     std.debug.assert(RAISE_BLOOM < NPART and FROST_BLOOM < NPART and FROST_SHARDS < NPART);
@@ -184,8 +161,8 @@ const HEM_SWAY = 2.2;
 
 const State = enum { idle, drift, leap, raise_wind, raise_up, frost_wind, frost_cast, recover, stunlight, stunheavy, dead };
 
-/// WHICH OF THE TWO IT LAST SPENT. Its own type rather than a bool, because the recovery reads it through an
-/// exhaustive switch — a third move then cannot be added without saying how long its opening is.
+/// Its own type rather than a bool, because the recovery reads it through an exhaustive switch — a third
+/// move then cannot be added without saying how long its opening is.
 const Spent = enum { raise, frost };
 
 const Choice = enum { raise, frost, keep, hold };
@@ -196,16 +173,14 @@ fn classify(dist: f32, hasBody: bool, raiseReady: bool, frostReady: bool) Choice
     return .keep;
 }
 
-// **AND IT LEAPS AWAY RATHER THAN BACKING UP** (owner). Drifting out at walking pace is something a man can
-// simply out-walk, and a caster that can be walked down has no spacing game at all. Inside `LEAP_R` it goes
-// backwards in one burst — four times its own walk for a third of a second, which buys it most of the band
-// it wants in less time than a swing takes.
+// **AND IT LEAPS AWAY RATHER THAN BACKING UP.** Inside `LEAP_R` it goes backwards in one burst — four times
+// its own walk for a third of a second, which buys most of the band it wants in less time than a swing takes.
 const LEAP_R: f32 = 4.2;
 const LEAP_DUR: f32 = 0.34;
 const LEAP_SPEED: f32 = 4.6;
 const LEAP_CD: f32 = 2.2;
-/// A hop, not a glide. Metres at the top of the arc — enough to read as leaving the ground and not enough to
-/// clear anything, because this is a retreat and not a traversal.
+/// A hop, not a glide. Metres at the top of the arc — enough to read as leaving the ground and not enough
+/// to clear anything.
 const LEAP_UP: f32 = 0.55;
 
 const WANT_MIN: f32 = 8.0;
@@ -213,8 +188,7 @@ const WANT_MAX: f32 = 15.0;
 const DRIFT_DUR: f32 = 0.9;
 
 /// A CORPSE THIS CREATURE IS HOLDING OPEN, stamped by the game (`game.markVigil`) — `Leash`'s law: the
-/// creature reads the field and never reaches out for the state. Null is the ordinary case and it means
-/// there is nothing on the ground worth standing over.
+/// creature reads the field and never reaches out for the state. Null means nothing worth standing over.
 pub const Vigil = struct {
     at: ?rl.Vector3 = null,
 
@@ -232,7 +206,7 @@ const Sigil = struct {
         return self.left > 0;
     }
     /// **0 AT THE CAST, 1 AT THE BURST** — what the ring on the ground is drawn off, so the picture and the
-    /// fuse are one number and cannot disagree about how long is left.
+    /// fuse are one number.
     fn fill(self: *const Sigil) f32 {
         return mathx.clampF(1.0 - self.left / FROST_FUSE, 0, 1);
     }
@@ -282,8 +256,6 @@ pub const Necro = struct {
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     parry: foe.Parry = .{},
-    /// …and WHAT IT IS STANDING OVER (`game.markVigil`), which is the one thing about this creature that
-    /// cannot be seen from inside its own file.
     vigil: Vigil = .{},
     facing: f32 = 0,
     scale: f32 = SCALE,
@@ -294,16 +266,14 @@ pub const Necro = struct {
     elapsed: f32 = 0,
     raiseCd: f32 = 0,
     frostCd: f32 = 0,
-    /// **THE BODY IT RAISED THIS FRAME** — a one-frame flag (`justDied`'s rule), reset at the TOP of
-    /// `update` and read by the game after it. The creature cannot do the raising itself: the body is in
-    /// another group, in another array, of another type.
+    /// **THE BODY IT RAISED THIS FRAME** — a one-frame flag (`justDied`'s rule), reset at the TOP of `update`.
+    /// The creature cannot do the raising itself: the body is in another group, another array, another type.
     raised: bool = false,
     raiseAt: rl.Vector3 = mathx.zero3,
     spent: Spent = .frost,
     sigil: Sigil = .{},
-    /// **A RING WENT INTO THE GROUND THIS FRAME** — a one-frame edge (`justDied`'s law), reset at the TOP of
-    /// `update`. As a window on the fuse's own clock (`left > FROST_FUSE - 0.05`) it read true for three frames
-    /// running at 60 fps, so the pad and the frame shake fired three times for one cast.
+    /// **A RING WENT INTO THE GROUND THIS FRAME** — a one-frame edge, reset at the TOP of `update`. As a
+    /// window on the fuse's own clock it read true for three frames at 60 fps: one cast, three shakes.
     laid: bool = false,
     heroHit: ?combat.Hit = null,
     hitFrom: rl.Vector3 = mathx.zero3,
@@ -311,7 +281,7 @@ pub const Necro = struct {
     homing: bool = false,
     parried: bool = false,
 
-    // posture channels (degrees), resolved by the state and read by pose()
+    // posture channels, degrees
     staffSh: f32 = STAFF_CARRY_SH,
     staffEl: f32 = STAFF_CARRY_EL,
     staffAbd: f32 = STAFF_CARRY_ABD,
@@ -428,11 +398,9 @@ pub const Necro = struct {
     }
 
     pub fn update(self: *Necro, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
-        // **CLEARED BEFORE THE `gone` BRANCH, NOT AFTER IT.** The ring outlives its caster, so this function
-        // keeps billing a blow from a body that has left the field — and reset only on the live path, the
-        // corpse's own branch returned the SAME hit every frame from the burst onward. Cold damage forever,
-        // off one ring, silently: `justDied`'s law (a one-frame flag is reset at the TOP) applied to the one
-        // creature whose blow can outlast it.
+        // **CLEARED BEFORE THE `gone` BRANCH, NOT AFTER IT.** The ring outlives its caster, so reset only on
+        // the live path the corpse's own branch returned the SAME hit every frame from the burst onward —
+        // cold damage forever, off one ring, silently.
         self.heroHit = null;
         self.laid = false;
         if (self.gone) {
@@ -469,8 +437,6 @@ pub const Necro = struct {
                 if (self.t >= 0.20) self.decide(d);
             },
             .leap => {
-                // Facing him the whole way out: it is backing off, not fleeing, and the difference is
-                // whether you can see the staff coming up while it goes.
                 self.faceToward(hero, dt);
                 const way = self.nav.along(self.moveDir);
                 const u = mathx.clampF(self.t / LEAP_DUR, 0, 1);
@@ -501,11 +467,9 @@ pub const Necro = struct {
                 } else if (self.t >= DRIFT_DUR) self.decide(d);
             },
             .raise_wind => {
-                // **IT TURNS TO THE BODY IT COMMITTED TO, NOT TO HIM** — the one move here besides the
-                // knight's fall that looks away from the hero, and that IS the tell: a necromancer squaring
-                // up to a corpse announces exactly what is about to happen and where. `raiseAt` and never
-                // `vigil.at`: the spot is committed at the START of the gather (see `enter`), so a nearer
-                // body falling mid-tell cannot swing 1.9 s of announcement onto somewhere else.
+                // **IT TURNS TO THE BODY IT COMMITTED TO, NOT TO HIM** — and that IS the tell. `raiseAt` and
+                // never `vigil.at`: the spot is committed at the START of the gather, so a nearer body falling
+                // mid-tell cannot swing 1.9 s of announcement onto somewhere else.
                 self.faceToward(self.raiseAt, dt);
                 const u = mathx.clampF(self.t / RAISE_WIND, 0, 1);
                 self.setRaiseWind(u);
@@ -589,10 +553,9 @@ pub const Necro = struct {
         }
     }
 
-    /// **A BLOW AND WHERE IT CAME FROM, SET TOGETHER OR NOT AT ALL.** `Rite.update` reports `hitFrom` as the
-    /// blow's origin, so a future move that set `heroHit` and forgot the other half would bill a hit from the
-    /// WORLD ORIGIN — which on this creature means a bearing the shield can answer, on the one blow that must
-    /// never have one. One writer, so the pair cannot come apart.
+    /// **A BLOW AND WHERE IT CAME FROM, SET TOGETHER OR NOT AT ALL.** A move that set `heroHit` and forgot
+    /// the other half would bill from the WORLD ORIGIN — a bearing the shield can answer, on the one blow
+    /// that must never have one. One writer, so the pair cannot come apart.
     fn bill(self: *Necro, hit: combat.Hit, from: rl.Vector3) void {
         self.heroHit = hit;
         self.hitFrom = from;
@@ -724,10 +687,8 @@ pub const Necro = struct {
         self.headYaw = approach(self.headYaw, 0, e);
     }
 
-    /// **THE GATHER TRAVELS HARD, AND IT TRAVELS AWAY FROM WHERE IT ENDS** (the knight's tell lesson): the
-    /// staff is driven DOWN and planted, the free hand is hauled up and back over the shoulder, and the
-    /// whole trunk arches back off the body it is about to reach into. Every channel is moving for the whole
-    /// 1.9 s, because a committed action that shows nothing is indistinguishable from one that never began.
+    /// **THE GATHER TRAVELS HARD, AND IT TRAVELS AWAY FROM WHERE IT ENDS** (the knight's tell lesson). Every
+    /// channel is moving for the whole 1.9 s, because a committed action that shows nothing never began.
     fn setRaiseWind(self: *Necro, u: f32) void {
         const e = mathx.smoothstep(0, 0.92, u);
         self.staffSh = lerpF(STAFF_CARRY_SH, RAISE_STAFF_SH, e);
@@ -743,8 +704,6 @@ pub const Necro = struct {
         self.headYaw = lerpF(0, RAISE_HEAD_YAW, e);
     }
 
-    /// The turn: the free hand is thrown DOWN and out over the corpse and the trunk snaps forward over it —
-    /// the opposite of everything the gather did, which is what makes 1.9 s of hauling resolve.
     fn setRaiseUp(self: *Necro, u: f32) void {
         const e = foe.swingCurve(u);
         self.castSh = lerpF(RAISE_FREE_SH, RAISE_THROW_SH, e);
@@ -757,8 +716,6 @@ pub const Necro = struct {
 
     fn setFrostWind(self: *Necro, u: f32) void {
         const e = mathx.smoothstep(0, 0.9, u);
-        // The staff comes UP off the ground — the one thing it does with the staff besides lean on it, and
-        // the reason the two casts cannot be confused for one another at a glance.
         self.staffSh = lerpF(STAFF_CARRY_SH, FROST_STAFF_SH, e);
         self.staffEl = lerpF(STAFF_CARRY_EL, FROST_STAFF_EL, e);
         self.staffAbd = lerpF(STAFF_CARRY_ABD, FROST_STAFF_ABD, e);
@@ -845,7 +802,6 @@ pub const Necro = struct {
         var wx: [N]rl.Matrix = undefined;
         const collapse = lerpF(hipY, 0.20 * H, dk);
         const pitchBody = 18.0 * dk;
-        // The leap's arc rides the pelvis, so every bone above it comes along and the robe drags with it.
         const pelvY = if (dead) collapse else hipY + bob - dip + self.hop / mathx.maxF(self.scale, 1e-3);
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
             mul3(rz(9.0 * dk), rx(pitchBody), ry(prot)),
@@ -907,12 +863,10 @@ pub const Necro = struct {
         setLocal(wx, SHR, rest, mul3(rx(-staffSh), ry(0), rz(-self.staffAbd - wonk * 0.4)));
         setLocal(wx, ELR, rest, rx(-staffEl));
         setLocal(wx, WRR, rest, rz(4.0));
-        // WHERE THE STAFF POINTS IS AUTHORED IN THE WORLD, NOT IN THE WRIST (`hero.shieldFit`'s law and the
-        // wanderer's): the fit BILLS THE ARM for its own flexion, so `staffTilt` means degrees the head leads
-        // FORWARD OF PLUMB in the world, and a retune of the carry cannot lay the pole out flat like a lance.
-        // The arm's own rx down this chain is `-(staffSh + staffEl)`, so that is what is BILLED BACK — and the
-        // sign was measured, not argued: added instead, the test read the pole out at 93 degrees, horizontal
-        // and pointing forward like a lance.
+        // WHERE THE STAFF POINTS IS AUTHORED IN THE WORLD, NOT IN THE WRIST (`hero.shieldFit`'s law): the fit
+        // BILLS THE ARM for its own flexion, so `staffTilt` means degrees the head leads FORWARD OF PLUMB in
+        // the world. The arm's own rx down this chain is `-(staffSh + staffEl)`, so that is what is BILLED
+        // BACK — and the sign was measured: added instead, the pole read out at 93 degrees, flat like a lance.
         setLocal(wx, STAFF, rest, staffFit(self.staffTilt - staffSh - staffEl));
     }
 
@@ -920,9 +874,8 @@ pub const Necro = struct {
         model.draw(self);
     }
 
-    /// The unlit pass — the sigil on the ground, the gather at the free hand, and the particles. Drawn here
-    /// rather than in the mesh for the leechfly's reason: vertex alpha is a FIXED emissive channel and
-    /// cannot brighten, and brightening is the whole cue.
+    /// The unlit pass — the sigil, the gather at the free hand, and the particles. Drawn here rather than in
+    /// the mesh for the leechfly's reason: vertex alpha is a FIXED emissive channel and cannot brighten.
     pub fn drawFx(self: *const Necro) void {
         self.drawSigil();
         self.drawGather();
@@ -931,11 +884,8 @@ pub const Necro = struct {
 
     /// **THE RING SAYS HOW LONG IS LEFT IN ITS OWN PICTURE.** The rim sits at the full radius from the first
     /// frame, so what is drawn is exactly the ground that is about to go — a ring that grew to its reach would
-    /// promise safety at a rim it had not got to yet. Inside it a SECOND circle and the glyphs between the
-    /// two, which is the BAND (`RING_INNER`); the fuse is the runes taking one by one round it, and the inner
-    /// line and the eye brighten as it closes. The last quarter of a second is the loudest thing on screen at
-    /// the hero's feet — and the ground under it is lit besides (`sigilLight`), which is the half of this the
-    /// unlit grains cannot say.
+    /// promise safety at a rim it had not got to yet. Inside it the BAND (`RING_INNER`) the runes take one by
+    /// one, and the ground under it is lit besides (`sigilLight`).
     fn drawSigil(self: *const Necro) void {
         const r = FROST_R * self.scale;
         const at = self.sigil.at;
@@ -959,8 +909,7 @@ pub const Necro = struct {
             }
             return;
         }
-        // …AND THE BURST'S OWN RING RIDES ITS OWN DECAY, never a clock beside it (the knight's landing): it
-        // starts at 0 the frame the fuse runs out and it is blind to what the caster is doing by then.
+        // …AND THE BURST'S OWN RING RIDES ITS OWN DECAY, never a clock beside it (the knight's landing).
         const age = self.sigil.blew;
         if (age >= FROST_BURST_RING) return;
         const u = age / FROST_BURST_RING;
@@ -1013,8 +962,8 @@ pub const Necro = struct {
     pub fn castPoint(self: *const Necro) rl.Vector3 {
         return foe.markOn(self.xf[WRL], v3(0, FIST_Y, FIST_Z));
     }
-    /// …and THE STAFF, as the segment it actually occupies — ferrule to head, measured off the mesh's own
-    /// constants (the ogre's `clubLowWorld` law). Nothing about where the pole is may be guessed from a yaw.
+    /// …and THE STAFF, as the segment it occupies — ferrule to head, measured off the mesh's own constants
+    /// (the ogre's `clubLowWorld` law). Nothing about where the pole is may be guessed from a yaw.
     pub fn staffSeg(self: *const Necro) [2]rl.Vector3 {
         return .{
             foe.markOn(self.xf[STAFF], v3(0, FIST_Y - STAFF_DOWN, FIST_Z)),
@@ -1142,9 +1091,8 @@ pub const Necro = struct {
         }
     }
 
-    /// The hem sweeping the ground rather than a boot striking it — this thing is barefoot bone under a
-    /// metre of wet cloth, so the footfall is a DRAG. At or under the fight's floor (the audio law): it is
-    /// texture, and texture never competes with what is about to hit you.
+    /// The hem sweeping the ground rather than a boot striking it — barefoot bone under a metre of wet cloth,
+    /// so the footfall is a DRAG. At or under the fight's floor (the audio law).
     fn footfalls(self: *Necro) void {
         const ph = self.phase;
         const crossed = @floor(ph * 2.0) != @floor(self.prevPhase * 2.0);
@@ -1172,23 +1120,21 @@ fn approach(cur: f32, want: f32, e: f32) f32 {
     return lerpF(cur, want, mathx.clampF(e, 0, 1));
 }
 
-// ── THE RUNE RING ─────────────────────────────────────────────────────────────────────────────────────
-//
 // **BUILT OUT OF `drawSphereEx` AND NOTHING ELSE.** Do not replace it with line or strip geometry:
 // `rl.drawLine3D` is one pixel however close you stand, and a `drawTriangleStrip3D` annulus came back
-// INVISIBLE beside particles landing on the same spot on the same frame. Spheres demonstrably arrive.
+// INVISIBLE beside particles landing on the same spot on the same frame.
 //
 // **THE FUSE BURNS ROUND THE RING RATHER THAN FILLING IT** — runes lighting one by one are a countdown you
 // can COUNT from any bearing, where a disc closing from the middle has to be looked down at.
 //
 // **MEASURED:** one live sigil is 157 `drawSphereEx` calls at 4x6, ~7.5k CPU-transformed triangles a frame,
-// and unlike the particle pool it draws its full count every frame a fuse burns — three casters pay ~23k. It
-// early-outs to nothing when no sigil is live, which is the overwhelming majority of frames.
+// and it draws its full count every frame a fuse burns — three casters pay ~23k. It early-outs to nothing
+// when no sigil is live.
 const RUNE_N: i32 = 14;
 const RUNE_R: f32 = 0.89;
 const RING_INNER: f32 = 0.78;
-/// A small rosette at dead centre. It costs six grains and it answers the one question the rim cannot: which
-/// way is OUT. Stood on the mark you cannot see the whole rim at once, but you can always see the middle.
+/// A small rosette at dead centre. Six grains, and it answers the one question the rim cannot: which way is
+/// OUT — stood on the mark you cannot see the whole rim at once, but you can always see the middle.
 const RING_EYE: f32 = 0.18;
 const RING_DOTS: i32 = 46;
 const RING_DOTS_IN: i32 = @intFromFloat(@as(f32, @floatFromInt(RING_DOTS)) * RING_INNER);
@@ -1236,8 +1182,6 @@ fn ringOfGrains(at: rl.Vector3, r: f32, size: f32, col: rl.Color, n: i32) void {
     }
 }
 
-// ── THE CARRY AND THE TWO CASTS, in degrees ───────────────────────────────────────────────────────────
-//
 // Sign is POSITIVE-IS-FORWARD on both shoulders — `poseUpper` negates on the way in, exactly as the
 // warriors' does, because authored the obvious way round the arms hang behind him.
 
@@ -1250,14 +1194,12 @@ const FREE_CARRY_SH = -6.0;
 const FREE_CARRY_EL = -22.0;
 const FREE_CARRY_ABD = 7.0;
 
-// THE RAISE. Everything travels AWAY from where the turn takes it, and it travels for the whole 1.9 s.
 const RAISE_STAFF_SH = 26.0;
 const RAISE_STAFF_EL = -12.0;
 const RAISE_STAFF_ABD = 8.0;
-/// **THE TRUNK IS NOT BILLED BY THE FIT, ONLY THE ARM IS — so a pose that arches the spine has to pay for it
-/// here.** `RAISE_LEAN` takes the chest back 22 degrees and the staff inherits every one of them, so the same
-/// 180-is-plumb number that stands the pole up at the carry laid it out at nearly 50 degrees through the
-/// gather. Solved against this pose's own trunk rather than nudged, and the measurement test pins it.
+/// **THE TRUNK IS NOT BILLED BY THE FIT, ONLY THE ARM IS — so a pose that arches the spine pays for it
+/// here.** `RAISE_LEAN` takes the chest back 22 degrees and the staff inherits every one of them, so the
+/// same 180-is-plumb number that stands the pole up at the carry laid it out at nearly 50 degrees.
 const RAISE_STAFF_TILT = 150.0;
 const RAISE_FREE_SH = -128.0;
 const RAISE_FREE_EL = -58.0;
@@ -1292,12 +1234,11 @@ fn staffFit(tilt: f32) rl.Matrix {
     return mul(ry(180.0), rx(180.0 - tilt));
 }
 
-// **BOTH ENDS ARE SOLVED AGAINST THE BODY, not chosen.** The fist rides at `rest[WRR].y` = 0.485·H, which on
-// this rig is 1.17 m off the ground, so: the ferrule is the drop that puts it ON the ground (a staff is being
-// leaned on, and 0.30·H left it floating half a metre up), and the head is the rise that puts it just over the
-// helm without becoming the read itself. The measurement test brackets both.
-const STAFF_UP = 0.65 * H; // fist → the head of the staff, landing ~2.74 m: a hand over the crown
-const STAFF_DOWN = 0.46 * H; // …and on down past the fist to the ferrule, which lands ~0.06 m: on the ground
+// **BOTH ENDS ARE SOLVED AGAINST THE BODY, not chosen.** The fist rides at `rest[WRR].y` = 0.485·H, which
+// on this rig is 1.17 m off the ground: the ferrule is the drop that puts it ON the ground (0.30·H left it
+// floating half a metre up) and the head is the rise that puts it just over the helm. A test brackets both.
+const STAFF_UP = 0.65 * H; // fist → the head, landing ~2.74 m: a hand over the crown
+const STAFF_DOWN = 0.46 * H; // …and down past the fist to the ferrule, landing ~0.06 m: on the ground
 const STAFF_SEGS = 7;
 const STAFF_CURL = 0.055;
 
@@ -1349,10 +1290,8 @@ fn chestMesh() rl.Mesh {
     b.addBlob(v3(0, -0.012 * H, 0), v3(0.072 * H, 0.082 * H, 0.056 * H), 4, 10, ROBE);
     b.addBlob(v3(0, 0.048 * H, 0), v3(0.082 * H, 0.052 * H, 0.060 * H), 4, 10, ROBE_LT);
     // **THE YOKE, and without it the arms hang in mid-air.** `restHumanoid` puts the shoulder joints at
-    // ±`sx` = ±0.117·H while this chest is 0.072·H across, so there is a clear 0.045·H of daylight either side
-    // between the torso and the top of a sleeve 0.023·H thick — the sleeves read as two tubes floating beside
-    // the body. The yoke spans joint to joint and closes it, and it is the ONE place this creature may carry
-    // width: a shoulder line is not a pauldron.
+    // ±0.117·H while this chest is 0.072·H across, so there is 0.045·H of daylight either side of a sleeve
+    // 0.023·H thick. It is the ONE place this creature may carry width: a shoulder line is not a pauldron.
     const shx = SHOULDER_HALF * H;
     const shy = (0.818 - 0.760) * H;
     b.addCapsule(v3(-shx, shy, 0), v3(shx, shy, 0), 0.030 * H, 0.030 * H, 8, ROBE);
@@ -1384,8 +1323,8 @@ fn hemMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(7717);
     b.setMat(.cloth);
-    // From the hip down past the feet. `-0.030·H` is BELOW the sole plane on purpose: that is the drag, and a
-    // hem stopping at the ankle is a dress.
+    // From the hip down past the feet. `-0.030·H` is BELOW the sole plane on purpose: that is the drag, and
+    // a hem stopping at the ankle is a dress.
     const top = 0.010 * H;
     const bot = -0.030 * H - REST[ROOT].y;
     const hip = -0.20 * REST[ROOT].y;
@@ -1450,11 +1389,8 @@ fn neckMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// **THE BONE HELM** (owner's call). Not a bare skull and not a steel helm: bone WORKED into a helm — a
-/// skullcap over the cranium, a brow ridge standing proud of it, a nasal down the middle and cheek plates
-/// hanging either side, with the eye sockets left as HOLES. The hole is the one place a hard value break is
-/// free (the wanderer's `HOOD_IN` law): it cannot blow out, and the contrast against the shell is the whole
-/// read of a face at this distance.
+/// **THE BONE HELM.** The eye sockets are left as HOLES, and a hole is the one place a hard value break is
+/// free (the wanderer's `HOOD_IN` law): it cannot blow out, and the contrast is the whole read of a face.
 fn helmMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(5153);
@@ -1524,10 +1460,8 @@ fn shankMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// **THE SLEEVES ARE THE THINNEST THING ON HIM, and the first pass had them the fattest.** At 0.038·H of
-/// radius each arm was 0.14 wide against a 0.26 chest, so the pair hung off the shoulders as bolsters and
-/// turned a gaunt silhouette into a barrel — the pauldron failure the wanderer's note warns about, arriving as
-/// a sleeve instead of a plate. A robe on a skeleton has almost nothing inside the cloth.
+/// **THE SLEEVES ARE THE THINNEST THING ON HIM.** At 0.038·H of radius each arm was 0.14 wide against a 0.26
+/// chest, so the pair hung off the shoulders as bolsters — a robe on a skeleton has almost nothing inside it.
 fn sleeveMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.cloth);
@@ -1649,8 +1583,7 @@ test "TALL AND SKINNY is two dials, and the RATIO is what either of them alone c
     try std.testing.expect(SCALE > archermod.SCALE);
     try std.testing.expect(SCALE * H > 2.3);
     // SKINNY: narrower than the shared scaffold at the shoulder AND at the hip. Measured off the rest pose
-    // rather than off the constants, so a change to `restHumanoid` cannot pass this while breaking it — and
-    // against the SCAFFOLD's own rest, never against the bare fraction, which is not a length at all.
+    // rather than off the constants, and against the SCAFFOLD's own rest, never against the bare fraction.
     try std.testing.expect(REST[SHL].x < scaffold[SHL].x);
     try std.testing.expect(@abs(REST[HIPL].x) < @abs(scaffold[HIPL].x));
     const mySpan = 2.0 * REST[SHL].x * SCALE;
@@ -1679,14 +1612,9 @@ test "THE STAFF STANDS UP, ON ITS OWN SIDE, AND ITS FOOT IS ON THE GROUND — me
             mathx.tiltDeg(foot, head),
         },
     );
-    // **IT STANDS UP.** The head is above the foot, which is the whole of "a staff and not a lance" — the
-    // first pass had `staffFit` driving the entire pole DOWN the forearm, so 1.5 m of it was underground and
-    // there was nothing in the picture at all.
     try std.testing.expect(head.y > foot.y);
-    // **SHARES OF THE CREATURE, NOT METRE MARKS.** It got much taller and gaunter (`SCALE`, `HIP_HALF`) and
-    // both of these were the OLD necromancer's proportions written down as absolutes — 0.30 m of ground
-    // clearance and 0.90 m of reach. A staff carried by a 2.85 m thing is further out and its foot swings
-    // higher, and neither is a bug.
+    // **SHARES OF THE CREATURE, NOT METRE MARKS.** Both of these were the OLD necromancer's proportions
+    // written down as absolutes — 0.30 m of ground clearance and 0.90 m of reach.
     try std.testing.expect(foot.y < crown * 0.13);
     try std.testing.expect(mathx.lenXZ(mathx.subV(foot, k.pos)) < crown * 0.36);
     try std.testing.expect(head.y > k.centerWorld().y);
@@ -1711,8 +1639,8 @@ test "…AND IT STAYS A STAFF THROUGH BOTH CASTS — the trunk's own lean is bil
     }.lean;
     const dt = 1.0 / 60.0;
 
-    // THE RAISE. `RAISE_LEAN` arches the chest back 22 degrees and the pole inherits all of it, so the carry's
-    // own 180-is-plumb number laid it out diagonally across his front. Planted, it must still stand.
+    // THE RAISE. `RAISE_LEAN` arches the chest back 22 degrees and the pole inherits all of it. Planted, it
+    // must still stand.
     var r = Necro.spawn(mathx.zero3, 0, 1.0, 0.4);
     r.debugRaise(v3(2, 0, 2));
     var t: f32 = 0;
@@ -1726,8 +1654,6 @@ test "…AND IT STAYS A STAFF THROUGH BOTH CASTS — the trunk's own lean is bil
     try std.testing.expect(at(&r) < 34.0);
     try std.testing.expect(rSeg[0].y < 0.45);
 
-    // THE FROST, whose whole point is to be a DIFFERENT picture: the staff comes UP where the raise plants it,
-    // so the two tells cannot be confused at a glance. A test, because that is a claim and not a taste.
     var f = Necro.spawn(mathx.zero3, 0, 1.0, 0.4);
     f.debugFrost();
     t = 0;
@@ -1767,7 +1693,6 @@ test "THE RAISE OUTRANKS THE FROST whenever a body is offered, and distance deci
     try std.testing.expectEqual(Choice.raise, classify(16.0, true, true, false));
     try std.testing.expectEqual(Choice.frost, classify(6.0, false, true, true));
     try std.testing.expectEqual(Choice.frost, classify(6.0, true, false, true));
-    // …and OUTSIDE that band it throws nothing. A move that cannot land is not a decision.
     try std.testing.expectEqual(Choice.keep, classify(FROST_R_MIN - 0.5, false, true, true));
     try std.testing.expectEqual(Choice.keep, classify(FROST_R_MAX + 1.0, false, true, true));
     try std.testing.expectEqual(Choice.keep, classify(9.0, false, false, false));
@@ -1893,8 +1818,6 @@ test "THE FROST IS THE FIRST COLD IN THE GAME, and it arrives as cold and nothin
     try std.testing.expectApproxEqAbs(@as(f32, 0), FROST_HIT.dmg, 1e-6);
     try std.testing.expect(FROST_HIT.elem.at(.cold) > 0);
     try std.testing.expectApproxEqAbs(FROST_HIT.elem.at(.cold), FROST_HIT.elem.total(), 1e-6);
-    // …and its own hide is what its element cannot touch: a creature you freeze with its own frost is one
-    // whose whole identity the resistance sheet argues against.
     var v = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS);
     _ = v.hit(FROST_HIT);
     try std.testing.expect(v.hp > HP_MAX - 8.0);
@@ -1976,7 +1899,5 @@ test "A CORPSE IS HELD OPEN WITHIN REACH AND NOWHERE ELSE, so walking the fight 
     try std.testing.expect(k.vigil.any());
     k.vigil.at = null;
     try std.testing.expect(!k.vigil.any());
-    // …and it reaches for a body from further off than it throws ice, or there is ground it defends and
-    // cannot fight on.
     try std.testing.expect(RAISE_R > FROST_R_MIN);
 }

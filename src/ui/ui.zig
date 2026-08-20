@@ -150,6 +150,65 @@ pub fn iconButton(ctx: *Ctx, r: rl.Rectangle, ic: Icon, label: [:0]const u8, siz
     return h and ctx.pressed;
 }
 
+/// **A LAYER BUTTON WITH ITS OWN EYE IN IT** — Tiled's and Photoshop's arrangement, and the reason it is one
+/// widget rather than two is WIDTH: the editor's top strip already runs the length of the window, and six
+/// separate eye buttons pushed the last of it off the right-hand edge. The eye sits in the button's own right
+/// margin, so a layer costs exactly what its label costs and the pair cannot drift apart on screen.
+///
+/// Returns which HALF was pressed, never both: the eye's rect is tested FIRST and takes the click, so the
+/// selection half is the whole button minus that.
+pub const LayerHit = enum { none, select, toggle };
+
+/// An EMPTY label is the narrow form — icon, eye, and the name in the tooltip. `drawTopBar` measures the
+/// strip and falls back to it rather than letting the right-hand end run off the window.
+pub fn layerButtonW(label: [:0]const u8, size: i32) i32 {
+    if (label.len == 0) return ICON_PAD * 2 + size + EYE_SLOT;
+    return iconButtonW(label, size) + EYE_SLOT;
+}
+
+/// **THE SLOT IS THE HIT AREA; THE GLYPH IS DRAWN BIGGER THAN IT.** Two numbers because they answer to
+/// different things: the slot costs WIDTH six times over on a strip that only just fits the window, while the
+/// glyph has to be legible. It overhangs into the label's own right-hand `ICON_PAD`, which is empty space, so
+/// the eye reads at `EYE_DRAW` while the layout only pays `EYE_SLOT`.
+const EYE_SLOT: i32 = 15;
+const EYE_DRAW: f32 = 19.0;
+
+pub fn layerButton(ctx: *Ctx, r: rl.Rectangle, ic: Icon, label: [:0]const u8, size: i32, active: bool, shown: bool) LayerHit {
+    const slot: f32 = @floatFromInt(EYE_SLOT);
+    const eyeR = rl.Rectangle{ .x = r.x + r.width - slot, .y = r.y, .width = slot, .height = r.height };
+    const overEye = ctx.hot(eyeR);
+    const h = ctx.hot(r);
+    const face = if (active) ACTIVE_FILL else if (h) HOVER_FILL else IDLE_FILL;
+    rl.drawRectangleRec(r, face);
+    rl.drawRectangleLinesEx(r, 1, alpha(TRIM, if (active) 220 else if (h) 170 else 80));
+    // A HIDDEN LAYER READS AS HIDDEN FROM THE LABEL, not only from the glyph: the whole row goes dim, which is
+    // the state you need to spot at a glance when you have forgotten why the wood is missing.
+    const fg = if (!shown) LABEL else if (active) HOT else VALUE;
+    const isz: f32 = @floatFromInt(size);
+    icons.draw(ic, r.x + @as(f32, @floatFromInt(ICON_PAD)) + isz * 0.5, r.y + r.height * 0.5, isz, fg);
+    if (label.len > 0) {
+        const tx: i32 = @as(i32, @intFromFloat(r.x)) + ICON_PAD + size + ICON_GAP;
+        const ty: i32 = @intFromFloat(r.y + (r.height - @as(f32, @floatFromInt(hud.monoLineH(size)))) * 0.5);
+        hud.mono(label, tx, ty, size, fg);
+    }
+    rl.drawLineEx(
+        .{ .x = eyeR.x, .y = r.y + 3 },
+        .{ .x = eyeR.x, .y = r.y + r.height - 3 },
+        1,
+        alpha(TRIM, if (overEye) 190 else 70),
+    );
+    icons.draw(
+        if (shown) .eye else .eyeOff,
+        eyeR.x + slot * 0.5,
+        eyeR.y + eyeR.height * 0.5,
+        @min(EYE_DRAW, eyeR.height),
+        if (overEye) HOT else if (shown) VALUE else LABEL,
+    );
+    if (!ctx.pressed) return .none;
+    if (overEye) return .toggle;
+    return if (h) .select else .none;
+}
+
 pub fn iconOnly(ctx: *Ctx, r: rl.Rectangle, ic: Icon, active: bool, tip: [:0]const u8) bool {
     tipFor(ctx, r, tip);
     const h = ctx.hot(r);

@@ -115,6 +115,23 @@ fn advanceAttack(g: *Game, dt: f32, frames: i32) void {
     }
 }
 
+/// …AND THE SAME BY FRACTION OF THE MOVE rather than by frame count, which is the only way to aim at the
+/// same BEAT across six strokes whose durations are all different (`hero.MOVES`).
+fn advanceTo(g: *Game, dt: f32, u: f32) void {
+    const dur = g.hero.atkDur(g.hero.atkHeavy);
+    while (g.hero.attacking and g.hero.atkT / dur < u) {
+        g.hero.updateAttack(dt, game.PLAY_HALF, null);
+        g.rig.follow(g.hero.shoulderPoint());
+    }
+}
+
+/// The middle of a move's LIVE WINDOW, so a shot aimed at "the blow" follows the table when it is retuned
+/// instead of quietly drifting off the frame it was picked for.
+fn liveMid(b: heromod.Blade, heavy: bool) f32 {
+    const t = heromod.moveOf(b, heavy).t;
+    return 0.5 * (t.hitA + t.hitB);
+}
+
 fn stepFoe(f: anytype, frames: i32, hero: rl.Vector3) void {
     var k: i32 = 0;
     while (k < frames) : (k += 1) _ = f.update(SHOT_DT, hero, game.PLAY_HALF, .{});
@@ -557,6 +574,75 @@ pub fn runShots(g: *Game) void {
     shoot(g, "shots/18_atk_hitbox.png");
     advanceAttack(g, dt, 999);
     g.menu.hitboxes = false;
+
+    // **THE OTHER TWO CLASSES' STROKES** — four of the kit's six presses, aimed at fractions of each move's
+    // OWN clock rather than at frame counts, because the four durations are all different (`hero.MOVES`).
+    // **AND THE BEATS THAT HAVE A NAME IN THE TABLE ARE TAKEN FROM IT** (`liveMid`, `hitA`/`hitB`):
+    // transcribed as bare fractions they were a second copy of the key times, and retuning the strokes once
+    // already left every one of them aiming at the wrong frame.
+    // Yaw 53 puts the sun over the lens's shoulder (`gfx.SUN_DIR`).
+    const meleeWorn = g.hero.worn;
+    g.rig.yaw = mathx.radians(53);
+    g.rig.pitch = 0.13;
+    g.rig.dist = 4.2;
+
+    g.hero.arm = .dagger;
+    must(g.hero.wear(.hand_dagger, .fang_dirk), "the dirk would not go in its own socket");
+    stagedAttack(g, .light);
+    advanceTo(g, dt, 0.16); // the cock — IN at the far ribs, not back
+    shoot(g, "shots/15x_dagger_flick_cock.png");
+    advanceTo(g, dt, liveMid(.dagger, false)); // accelerating through the live window
+    shoot(g, "shots/15y_dagger_flick_through.png");
+    advanceTo(g, dt, 0.58); // and the carry-past
+    shoot(g, "shots/15z_dagger_flick_past.png");
+    advanceAttack(g, dt, 999);
+
+    stagedAttack(g, .heavy);
+    advanceTo(g, dt, 0.30); // THE HELD COIL, which is the bait
+    shoot(g, "shots/16x_dagger_thrust_coil.png");
+    advanceTo(g, dt, liveMid(.dagger, true)); // the point out, trunk squared rather than turned
+    shoot(g, "shots/16y_dagger_thrust_out.png");
+    advanceAttack(g, dt, 999);
+
+    g.hero.arm = .club;
+    must(g.hero.wear(.hand_club, .greatclub), "the club would not go in its own socket");
+    g.rig.dist = 5.6; // 1.44 m of bog-oak needs the room
+    stagedAttack(g, .light);
+    advanceTo(g, dt, 0.29); // the wind, held at the far end of itself
+    shoot(g, "shots/15c1_club_sweep_wind.png");
+    advanceTo(g, dt, liveMid(.club, false)); // through, hips already round
+    shoot(g, "shots/15c2_club_sweep_through.png");
+    advanceTo(g, dt, 0.71); // and a long way past
+    shoot(g, "shots/15c3_club_sweep_past.png");
+    advanceAttack(g, dt, 999);
+
+    g.rig.pitch = 0.02;
+    g.rig.dist = 7.0; // the head stands 3.3 m up at the hang (measured), well outside the sweep's framing
+    stagedAttack(g, .heavy);
+    advanceTo(g, dt, 0.38); // THE HANG — 0.17 s of a club dead still overhead, inside its own `.hold`
+    shoot(g, "shots/16c1_club_smash_hang.png");
+    advanceTo(g, dt, heromod.moveOf(.club, true).t.hitA); // the frame the capsule goes live, half way down
+    shoot(g, "shots/16c2_club_smash_falling.png");
+    advanceTo(g, dt, heromod.moveOf(.club, true).t.hitB); // into the ground at his feet
+    shoot(g, "shots/16c3_club_smash_ground.png");
+    advanceAttack(g, dt, 999);
+
+    g.menu.hitboxes = true;
+    stagedAttack(g, .heavy);
+    advanceTo(g, dt, liveMid(.club, true));
+    shoot(g, "shots/18c_club_smash_hitbox.png");
+    advanceAttack(g, dt, 999);
+    g.menu.hitboxes = false;
+
+    g.hero.arm = .sword;
+    g.hero.off = .shield;
+    inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
+        const w: item.Wear = @enumFromInt(f.value);
+        _ = g.hero.wear(w, meleeWorn.at(w));
+    }
+    g.rig.yaw = mathx.radians(0);
+    g.rig.pitch = 0.13;
+    g.rig.dist = 4.2;
 
     {
         var k: i32 = 0;
@@ -2905,15 +2991,20 @@ fn chestShots(g: *Game) void {
     // **AND THE PAGE WITH THE SUIT ACTUALLY ON.** Staged bare, the doll is seven empty holes and the NOW
     // column reads the plain sword's figures whatever is in the bag.
     const wornWas = g.hero.worn;
+    const armWas = g.hero.arm;
     for ([_]item.Kind{ .greatclub, .tower_shield, .quilted_gambeson, .pitted_helm, .marchboots, .banded_warbelt, .ashen_amulet, .leech_signet, .deft_signet }) |k| {
         _ = g.hero.wear(item.wearSlot(k).?, k);
     }
+    // THE CLUB IN ITS SOCKET IS NOT THE CLUB IN HIS FIST: the NOW column prices whatever `swingSocket` says
+    // is held, so staged without this the page showed a club on the doll and the plain sword's figures.
+    g.hero.arm = .club;
     bookShot(g, "shots/106e2_book_geared.png", .equipment, bookmod.slotOrdinal(.chest), null, 0);
     bookShot(g, "shots/106e3_book_geared_pick.png", .equipment, bookmod.slotOrdinal(.right), bookmod.slotOrdinal(.right), 0);
     inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
         const w: item.Wear = @enumFromInt(f.value);
         _ = g.hero.wear(w, wornWas.at(w));
     }
+    g.hero.arm = armWas;
     g.menu.screen = .closed;
 
     g.map.nops = saved;

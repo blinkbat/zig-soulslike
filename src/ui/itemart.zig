@@ -1133,12 +1133,16 @@ pub fn wand(cx: f32, cy: f32, px: f32) void {
 /// come through here, the way `spellArt` is already the one answer for the sorcery cell. Named apart from
 /// `hero.Armament` because `hud` and this file may not import `hero`: `hud.Held` aliases it and one map
 /// (`book.armPic`) is the only place the two enums meet.
-pub const Arm = enum { sword, bow, bell, shield, wand, torch };
+pub const Arm = enum { sword, dagger, club, bow, bell, shield, wand, torch };
 
 pub fn heldArt(a: Arm, gear: ?item.Kind, cx: f32, cy: f32, px: f32) void {
     if (gear) |k| return drawHeld(k, cx, cy, px, true);
     switch (a) {
         .sword => sword(cx, cy, px),
+        // THE CLASS PICTURE IS ITS ONE WEAPON'S, because in this world it IS the class — and the hand cell
+        // never offers either of these two bare (`book.candidates`), so this is the fallback and not the view.
+        .dagger => fangDirk(cx, cy, px),
+        .club => greatclub(cx, cy, px),
         .bow => bow(cx, cy, px),
         .bell => bell(cx, cy, px),
         .shield => shield(cx, cy, px),

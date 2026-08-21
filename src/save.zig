@@ -480,13 +480,19 @@ pub fn parse(text: []const u8, d: *Data) !void {
         } else if (std.mem.eql(u8, key, "quicksel:")) {
             d.quickSel = try int(usize, &it);
         } else if (std.mem.eql(u8, key, "worn:")) {
+            // **THE KIND NAMES ITS OWN SOCKET; THE POSITION IS ONLY A CURSOR FOR THE DASHES.** Every kind has
+            // exactly one `wearSlot`, so for a named item the position carries nothing the kind does not — and
+            // a positional mismatch is a socket that MOVED under a file already on disk, not corruption.
+            // Refusing it cost a real save: `fang_dirk` was written at `hand_sword` and re-socketed to
+            // `hand_dagger`, and the guard threw out the whole file — position, souls, tree and bag with it.
+            // A file may not be lost because the game grew a socket. What is still refused is a tag this
+            // build does not know (`fromTag`) and an item with no socket at all.
             d.worn = .{};
-            inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
+            inline for (@typeInfo(item.Wear).@"enum".fields) |_| {
                 const tok = it.next() orelse break;
                 if (!std.mem.eql(u8, tok, "-")) {
                     const k = item.fromTag(tok) orelse return Error.BadField;
-                    if (item.wearSlot(k) != @as(item.Wear, @enumFromInt(f.value))) return Error.BadField;
-                    d.worn.put(@enumFromInt(f.value), k);
+                    d.worn.put(item.wearSlot(k) orelse return Error.BadField, k);
                 }
             }
         } else if (std.mem.eql(u8, key, "bag:")) {
@@ -652,7 +658,8 @@ fn sample() Data {
     d.quick[0] = .crimson_flask;
     d.quick[3] = .mushroom_jerky;
     d.quickSel = 3;
-    d.worn.put(.hand_sword, .greatclub);
+    d.worn.put(.hand_club, .greatclub);
+    d.worn.put(.hand_dagger, .fang_dirk);
     d.worn.put(.chest, .quilted_gambeson);
     d.worn.put(.ring2, .deft_signet);
     d.bag[@intFromEnum(item.Kind.kobold_fang)] = 7;
@@ -785,22 +792,39 @@ test "a bag tag this build does not know is a load error" {
     try testing.expectError(Error.BadField, parse("version: 1\nbag: dragon_hoard 3\n", &d));
 }
 
-test "WHAT HE WAS WEARING SURVIVES THE FILE, a short line loads bare, and a wrong socket is refused" {
+test "WHAT HE WAS WEARING SURVIVES THE FILE, a short line loads bare, and a MOVED socket still loads" {
     const back = try roundTrip(&sample());
     inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
         const w: item.Wear = @enumFromInt(f.value);
         try testing.expectEqual(sample().worn.at(w), back.worn.at(w));
     }
 
+    // **A LINE SHORTER THAN THE SOCKET LIST LOADS WHAT IT NAMES AND CLEARS THE REST** — which is what makes
+    // `item.Wear` safe to APPEND to.
     var short = Data{};
     short.worn.put(.ring2, .deft_signet);
-    try parse("version: 1\nworn: greatclub -\n", &short);
-    try testing.expectEqual(item.Kind.greatclub, short.worn.at(.hand_sword).?);
+    try parse("version: 1\nworn: - grave_warbow\n", &short);
+    try testing.expectEqual(item.Kind.grave_warbow, short.worn.at(.hand_bow).?);
     try testing.expect(short.worn.at(.ring2) == null);
+    try testing.expect(short.worn.at(.hand_club) == null);
 
+    // **AND A SOCKET THAT MOVED UNDER A FILE ALREADY ON DISK STILL LOADS IT** — this is a REAL save, written
+    // when the dagger and the club shared `hand_sword`. Refusing it threw away the position, the souls, the
+    // tree and the bag along with the weapon.
+    var moved = Data{};
+    try parse("version: 1\nworn: fang_dirk - - quilted_gambeson\nsouls: 3558\n", &moved);
+    try testing.expectEqual(item.Kind.fang_dirk, moved.worn.at(.hand_dagger).?);
+    try testing.expect(moved.worn.at(.hand_sword) == null);
+    try testing.expectEqual(item.Kind.quilted_gambeson, moved.worn.at(.chest).?);
+    try testing.expectEqual(@as(u32, 3558), moved.souls);
+
+    // A coat at the sword's position is a MOVED socket as far as the file can tell, so it lands in the one
+    // socket it fits. A TAG THIS BUILD DOES NOT KNOW, and an item with no socket at all, are still refused.
     var wrong = Data{};
-    try testing.expectError(Error.BadField, parse("version: 1\nworn: quilted_gambeson\n", &wrong));
+    try parse("version: 1\nworn: quilted_gambeson\n", &wrong);
+    try testing.expectEqual(item.Kind.quilted_gambeson, wrong.worn.at(.chest).?);
     try testing.expectError(Error.BadField, parse("version: 1\nworn: dragon_plate\n", &wrong));
+    try testing.expectError(Error.BadField, parse("version: 1\nworn: crimson_flask\n", &wrong));
 }
 
 /// The live objects a `Slot` points at, with only the fields `gather`/`scatter` touch made real. The three

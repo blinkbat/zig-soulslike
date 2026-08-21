@@ -150,7 +150,9 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     // SWORD and the page priced a swing he cannot take. Zero is the honest figure, and the arm's own tip
     // already says it in words.
     const attacks = bow or heromod.armSwings(l.arm) or heromod.armSwings(l.off);
-    const row = heromod.armRow(l.worn, if (bow) .hand_bow else .hand_sword);
+    // WHICH SOCKET THE SWING IS PRICED FROM. `hand_sword` while there were three weapons in one socket; a
+    // dagger and a club have their own now, and reading the sword's here priced every club as a bare sword.
+    const row = heromod.armRow(l.worn, if (bow) .hand_bow else heromod.swingSocket(l.arm, l.off));
     const perk = v.tree.bonus();
     const sheet = sheetOf(l, perk);
     const light = heromod.weigh(if (bow) heromod.arrowBlow(l.ammo, false, perk) else heromod.ATK_LIGHT_HIT, row, sheet);
@@ -313,14 +315,21 @@ fn emptyHanded(w: item.Wear) [:0]const u8 {
         .neck => "No amulet.",
         .belt => "No belt.",
         .feet => "No boots.",
-        .hand_sword, .hand_bow, .hand_shield => "Nothing to hold.",
+        .hand_sword, .hand_dagger, .hand_club, .hand_bow, .hand_shield => "Nothing to hold.",
     };
 }
 
 fn locked(s: SlotId, v: View) ?[:0]const u8 {
     if (wearOf(s)) |w| return if (!carriesFor(w, v)) emptyHanded(w) else null;
     return switch (s) {
-        .left => if (!v.offInHand()) "The bow takes both hands." else null,
+        .left => if (v.offInHand())
+            null
+        else if (heromod.armTwoHanded(v.arm) or heromod.armTwoHanded(v.off))
+            "The bow takes both hands."
+        else
+            // THE WEAPON HAND IS ONE HAND (`hero.handsHold`) — say so, rather than draw a second weapon the
+            // rig has no bone for.
+            "One weapon hand. The right takes it.",
         // AN ALTERNATE IS NEVER LOCKED: it is what he is NOT holding, so nothing he is holding can deny it.
         .left2, .right2 => null,
         .sorcery => if (v.holds(.bow))
@@ -353,6 +362,8 @@ const EMPTY = "-";
 fn armName(a: heromod.Armament) [:0]const u8 {
     return switch (a) {
         .sword => "Straight Sword",
+        .dagger => "Dagger",
+        .club => "Club",
         .bow => "Short Bow",
         .bell => "Summoning Bell",
         .shield => "Small Shield",
@@ -473,8 +484,16 @@ fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
             var n: usize = 0;
             inline for (@typeInfo(heromod.Armament).@"enum".fields) |f| {
                 const a: heromod.Armament = @enumFromInt(f.value);
-                out[n] = .{ .name = armName(a), .act = handAct(s, .{ .a = a }) };
-                n += 1;
+                // **THE DAGGER AND THE CLUB ARE NEVER OFFERED BARE.** The straight sword is the one he was
+                // born holding, so its row stands whatever its socket holds; those two are things you FIND,
+                // and a selectable empty class both hands him one for free and offers an "unequip" that
+                // swaps the weapon for a mechanically identical copy of itself (`item.bareArm` IS their row).
+                // The weapon rows below are the only way into either class, and they are enough: picking one
+                // sets the armament AND fills its socket (`wearInto`).
+                if (comptime !heromod.armSwings(a) or a == .sword) {
+                    out[n] = .{ .name = armName(a), .act = handAct(s, .{ .a = a }) };
+                    n += 1;
+                }
                 if (comptime heromod.wearFor(a)) |w| {
                     inline for (@typeInfo(item.Kind).@"enum".fields) |kf| {
                         const k: item.Kind = @enumFromInt(kf.value);
@@ -1355,10 +1374,12 @@ comptime {
 
 /// **THE ONE PLACE THE TWO ENUMS MEET.** `itemart.Arm` is the picture's name for a thing in a hand and
 /// `hero.Armament` is the fight's, and they are separate because neither `hud` nor `itemart` may import
-/// `hero`. Exhaustive, so a sixth armament is a compile error HERE and nowhere else.
+/// `hero`. Exhaustive, so a NEW armament is a compile error HERE and nowhere else.
 pub fn armPic(a: heromod.Armament) itemart.Arm {
     return switch (a) {
         .sword => .sword,
+        .dagger => .dagger,
+        .club => .club,
         .bow => .bow,
         .bell => .bell,
         .shield => .shield,
@@ -1378,6 +1399,8 @@ fn armSays(a: heromod.Armament, o: heromod.Armament) []const u8 {
 fn armCandSays(a: heromod.Armament) []const u8 {
     return switch (a) {
         .sword => "",
+        .dagger => "Fastest in the kit. Least reach, least poise.",
+        .club => "Slowest, heaviest. R2 comes down overhead.",
         .bow => "Takes both hands.",
         .bell => "Summons what the scroll names. No attack.",
         .shield => "Can guard.",
@@ -1787,7 +1810,8 @@ test "A BOON IS PRICED INTO THE PAGE'S OWN DAMAGE ROWS, and only counted once" {
     try std.testing.expectApproxEqAbs(worth(derive(belted, v), .heavy), worth(derive(belted, live), .heavy), 1e-4);
 
     var club = bare;
-    club.worn.put(.hand_sword, .greatclub);
+    club.arm = .club;
+    club.worn.put(.hand_club, .greatclub);
     var clubRing = club;
     clubRing.worn.put(.ring2, .deft_signet);
     try std.testing.expectApproxEqAbs(worth(derive(club, v), .heavy), worth(derive(clubRing, v), .heavy), 1e-4);
@@ -1802,7 +1826,10 @@ test "THE NOW COLUMN PRICES WHAT HE HAS ON — every axis of the set in force, `
     var v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
     const bareRows = derive(inForce(v), v);
 
-    v.worn.put(.hand_sword, .greatclub);
+    // THE ARMAMENT AS WELL AS THE SOCKET: the club has its own socket now, and a club sitting in it while
+    // the sword is the thing in his fist prices the sword (`swingSocket`), which is the bug not the test.
+    v.arm = .club;
+    v.worn.put(.hand_club, .greatclub);
     v.worn.put(.hand_shield, .tower_shield);
     v.worn.put(.chest, .quilted_gambeson);
     const geared = derive(inForce(v), v);

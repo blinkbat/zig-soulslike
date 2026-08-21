@@ -235,6 +235,8 @@ pub const Use = union(enum) {
 /// **APPEND-ONLY, for `save.Data.worn`'s sake** — the `worn:` line is one word per socket in THIS order and
 /// the parser stops at the end of a short line, so an older save loads with the new sockets empty. Inserting
 /// a tag re-points every word on every line on disk.
+/// **APPENDED, NEVER INSERTED** — a save's `worn:` run is positional over these fields (`save.zig`), so a
+/// socket added in the middle re-points every equipped item in every file on disk.
 pub const Wear = enum {
     hand_sword,
     hand_bow,
@@ -246,9 +248,16 @@ pub const Wear = enum {
     belt,
     feet,
     ring2,
+    hand_dagger,
+    hand_club,
 
+    /// Read by the comptime gear check below (an `.arm` equip must live in a held socket) and by the two tests
+    /// that ask about the WORN sockets — extending it is what let `item.DAGGER`/`item.CLUB` exist at all.
     pub fn held(w: Wear) bool {
-        return w == .hand_sword or w == .hand_bow or w == .hand_shield;
+        return switch (w) {
+            .hand_sword, .hand_dagger, .hand_club, .hand_bow, .hand_shield => true,
+            else => false,
+        };
     }
 };
 
@@ -263,7 +272,8 @@ pub const Scaling = enum { strength, dexterity, quality };
 /// **WHAT KIND OF WEAPON IT IS, ON THE TWO AXES A FIGHT ACTUALLY ASKS ABOUT.** `reach` is where the blow
 /// lands from and is pinned to the socket below — a thing in the bow hand is the ranged one, and there is no
 /// third answer. `heft` is how much of the body goes into it: the multipliers say a club is slower and hits
-/// harder, but only this says it is swung like a club, and `hero.swingOf` reads it for the pose.
+/// harder, but only this says it is swung like a club. The STROKES themselves are the armament's, not this
+/// dial's (`hero.MOVES`); what reads `heft` is the book's own wording, and a test pins the two agreeing.
 pub const Heft = enum {
     light,
     heavy,
@@ -323,13 +333,24 @@ pub const Equip = union(enum) {
     bind: Bind,
 };
 
+/// **A MELEE CLASS'S OWN ROW, WRITTEN ONCE.** The straight sword is the reference and is 1 on every dial —
+/// `hero.ATK_LIGHT_HIT`/`ATK_HEAVY_HIT` are literally its blow — and the other two classes say only how they
+/// differ from it. The two weapons standing in those sockets ARE these rows, so the numbers exist in one
+/// place and a SECOND dagger written later differs from a figure already on the page.
+pub const DAGGER = Arm{ .slot = .hand_dagger, .heft = .light, .dmg = 0.74, .poise = 0.72, .dur = 0.78, .stam = 0.76, .scales = .dexterity };
+pub const CLUB = Arm{ .slot = .hand_club, .heft = .heavy, .dmg = 1.48, .poise = 1.60, .dur = 1.34, .stam = 1.48, .scales = .strength };
+
 /// **THE BARE ARMAMENT'S ROW** — every dial 1, and the skill that drives the thing he was born holding. An empty
 /// socket may not inherit the sword's `quality` default and quietly pay a bowman for his strength.
 pub fn bareArm(w: Wear) Arm {
-    return .{
-        .slot = w,
-        .scales = if (w == .hand_bow) .dexterity else .quality,
-        .reach = if (w == .hand_bow) .ranged else .melee,
+    return switch (w) {
+        .hand_dagger => DAGGER,
+        .hand_club => CLUB,
+        else => .{
+            .slot = w,
+            .scales = if (w == .hand_bow) .dexterity else .quality,
+            .reach = if (w == .hand_bow) .ranged else .melee,
+        },
     };
 }
 
@@ -340,8 +361,8 @@ pub const Gear = struct {
 };
 
 pub const GEAR = [_]Gear{
-    .{ .kind = .fang_dirk, .equip = .{ .arm = .{ .slot = .hand_sword, .heft = .light, .dmg = 0.74, .poise = 0.72, .dur = 0.78, .stam = 0.76, .scales = .dexterity } } },
-    .{ .kind = .greatclub, .equip = .{ .arm = .{ .slot = .hand_sword, .heft = .heavy, .dmg = 1.48, .poise = 1.60, .dur = 1.34, .stam = 1.48, .scales = .strength } } },
+    .{ .kind = .fang_dirk, .equip = .{ .arm = DAGGER } },
+    .{ .kind = .greatclub, .equip = .{ .arm = CLUB } },
     .{ .kind = .grave_warbow, .equip = .{ .arm = .{ .slot = .hand_bow, .heft = .heavy, .reach = .ranged, .dmg = 1.62, .poise = 1.45, .dur = 1.28, .stam = 1.34, .scales = .dexterity } } },
     // A DOOR — half again the compass of the small shield, at four fifths of the speed and more per blow.
     // **THE NEGATION DIAL STOPS UNDER THE CAP ON PURPOSE**: `combat.GUARD_NEGATE_CAP` is 0.95 on a 0.85 base,

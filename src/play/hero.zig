@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const gfx = @import("../gfx/gfx.zig");
 const mathx = @import("../core/mathx.zig");
+const anim = @import("../core/anim.zig");
 const combat = @import("combat.zig");
 const item = @import("item.zig");
 const statsmod = @import("stats.zig");
@@ -764,6 +765,8 @@ pub fn armRow(worn: Worn, w: item.Wear) item.Arm {
 pub fn wearFor(a: Armament) ?item.Wear {
     return switch (a) {
         .sword => .hand_sword,
+        .dagger => .hand_dagger,
+        .club => .hand_club,
         .bow => .hand_bow,
         .shield => .hand_shield,
         .bell, .wand, .torch => null,
@@ -948,13 +951,13 @@ fn bladeAt(t: f32) rl.Vector3 {
 }
 /// `t` is the fraction of STATURE out along the grip axis (`bladeAt`), so a reach is metres once `H` is
 /// fixed; `r` is the capsule the fight is fought with, not anything you can see.
-pub const Blade = enum { sword, dirk, club };
+pub const Blade = enum { sword, dagger, club };
 
 const BladeSpec = struct { base: f32, tip: f32, r: f32 };
 
 const BLADES = [_]BladeSpec{
     .{ .base = -0.06, .tip = 0.64, .r = BLADE_R }, // sword: 1.15 m past the fist
-    .{ .base = -0.05, .tip = 0.37, .r = 0.25 }, // dirk: 0.67 m
+    .{ .base = -0.05, .tip = 0.37, .r = 0.25 }, // dagger: 0.67 m
     .{ .base = -0.06, .tip = 0.80, .r = 0.42 }, // club: 1.44 m
 };
 
@@ -962,25 +965,255 @@ fn bladeSpec(b: Blade) BladeSpec {
     return BLADES[@intFromEnum(b)];
 }
 
-/// WHICH SHAPE A PIECE OF GEAR IS. The socket is `hand_sword` for all three — the one place a kind becomes a shape.
-pub fn bladeFor(k: ?item.Kind) Blade {
-    return switch (k orelse return .sword) {
-        .fang_dirk => .dirk,
-        .greatclub => .club,
-        else => .sword,
+/// WHICH CAPSULE AN ARMAMENT SWINGS — null for the five that swing nothing. The shape is the ARMAMENT's now,
+/// not a lookup on what happens to be in one shared socket.
+pub fn bladeOf(a: Armament) ?Blade {
+    return switch (a) {
+        .sword => .sword,
+        .dagger => .dagger,
+        .club => .club,
+        .bow, .bell, .shield, .wand, .torch => null,
     };
 }
 
-/// …AND HOW THE BODY GOES INTO IT. Multipliers on the ONE set of pose constants (`AL_*`, `AH_*`), so a
-/// retune of the swing moves all three together. **THE PLAIN SWORD IS 1 ON EVERY DIAL** — the law
-/// `item.bareArm` keeps on the other side of the same weapon, and a test pins the table against `item.Heft`.
-pub const SwingShape = struct { arc: f32 = 1, wind: f32 = 1, dip: f32 = 1 };
+/// **WHICH STROKE A PRESS PLAYS.** Six moves, two per class, and no strings: R1 and R2 are the whole kit
+/// (owner's call). The three families are the ones the genre settled on —
+///   `slash`/`chop`  the straight sword's diagonal cut and its overhead, the reference and untouched;
+///   `flick`/`thrust` the dagger: rapid inside slashes, and the R2 that thrusts (DS1's dagger jabs and the
+///                    Main-gauche / Miséricorde / Scorpion's Stinger thrust in ER);
+///   `sweep`/`smash`  the club: the dashing horizontal swing of DS1's Large Club, and the slow heavy
+///                    OVERHEAD SMASH that is the great hammer's whole signature.
+pub const Stroke = enum { slash, chop, flick, thrust, sweep, smash };
 
-pub fn swingOf(b: Blade) SwingShape {
-    return switch (b) {
-        .sword => .{},
-        .dirk => .{ .arc = 0.82, .wind = 0.84, .dip = 0.86 },
-        .club => .{ .arc = 1.22, .wind = 1.30, .dip = 1.40 },
+/// **ONE STROKE'S CLOCK, IN FRACTIONS OF ITSELF.** `dur` is the move's own seconds at dial 1 and the
+/// weapon's `item.Arm.dur` multiplies it (`atkDur`), so every phase below scales together and the row stays
+/// the one speed dial. `hit` is the capsule's live window, `travel` when the body covers `lunge` metres,
+/// `recov` where the pose starts home (and re-tracking is allowed again), `chain` where a queued press may
+/// take the move over.
+pub const Timing = struct {
+    dur: f32,
+    hitA: f32,
+    hitB: f32,
+    travelA: f32,
+    travelB: f32,
+    recovA: f32,
+    chain: f32,
+    lunge: f32,
+};
+
+pub const Move = struct { stroke: Stroke, t: Timing };
+
+/// THE SWORD'S TWO ROWS ARE THE SHIPPED NUMBERS TRANSCRIBED (`AL_*`/`AH_*`) and must stay that way: its
+/// strokes are hand-tuned and the table exists to let the other two classes differ, not to retune it.
+const SWORD_LIGHT = Timing{ .dur = ATK_LIGHT_DUR, .hitA = AL_HIT_A, .hitB = AL_HIT_B, .travelA = AL_STRIKE_A, .travelB = AL_STRIKE_B, .recovA = AL_RECOV_A, .chain = AL_CHAIN, .lunge = AL_LUNGE };
+const SWORD_HEAVY = Timing{ .dur = ATK_HEAVY_DUR, .hitA = AH_HIT_A, .hitB = AH_HIT_B, .travelA = AH_STRIKE_A, .travelB = AH_STRIKE_B, .recovA = AH_RECOV_A, .chain = AH_CHAIN, .lunge = AH_LUNGE };
+
+/// Indexed `[Blade][heavy]`. **THE SECONDS PRINTED IN A COMMENT ARE AFTER THE ROW'S DIAL** (dagger 0.78,
+/// club 1.34) — the figure the fight actually runs at, since a base nobody plays at is not a timing.
+const MOVES = [3][2]Move{
+    .{
+        .{ .stroke = .slash, .t = SWORD_LIGHT },
+        .{ .stroke = .chop, .t = SWORD_HEAVY },
+    },
+    .{
+        // 0.413 s, live 0.083 — the fastest thing he owns, and it buys that with 0.67 m of reach.
+        .{ .stroke = .flick, .t = .{ .dur = 0.53, .hitA = 0.30, .hitB = 0.50, .travelA = 0.26, .travelB = 0.46, .recovA = 0.60, .chain = 0.74, .lunge = 0.35 } },
+        // 0.671 s. THE STEP IS THE MOVE: 1.35 m of it, which is how the shortest weapon in the game reaches
+        // anything at all — answered by walking sideways, never by backing off.
+        .{ .stroke = .thrust, .t = .{ .dur = 0.86, .hitA = 0.40, .hitB = 0.60, .travelA = 0.34, .travelB = 0.58, .recovA = 0.66, .chain = 0.82, .lunge = 1.35 } },
+    },
+    .{
+        // 0.884 s, live 0.283 — THE LONGEST ACTIVE WINDOW IN THE KIT by 2x. A sweep owns its whole arc, so
+        // what it answers is a crowd and what beats it is standing outside it for a third of a second.
+        .{ .stroke = .sweep, .t = .{ .dur = 0.66, .hitA = 0.34, .hitB = 0.66, .travelA = 0.30, .travelB = 0.62, .recovA = 0.70, .chain = 0.86, .lunge = 0.60 } },
+        // 1.447 s, and the blow does not arrive until 0.695 of it. The HANG at the top is written into the
+        // track (`.hold`), so the tell is a club standing still over his head — read it and walk.
+        .{ .stroke = .smash, .t = .{ .dur = 1.08, .hitA = 0.48, .hitB = 0.66, .travelA = 0.44, .travelB = 0.64, .recovA = 0.72, .chain = 0.90, .lunge = 0.85 } },
+    },
+};
+
+// **SIX HAND-WRITTEN ROWS OF FRACTIONS, CHECKED AT COMPTIME.** Each mistake here fails SILENTLY in a
+// different way: `travelB == travelA` divides by zero in `updateAttack`'s lunge speed, `hitA >= hitB` is a
+// stroke whose capsule never goes live, and a fraction past 1 is a phase the clock never reaches.
+comptime {
+    if (MOVES.len != @typeInfo(Blade).@"enum".fields.len) @compileError("hero: a Blade has no moveset row");
+    for (MOVES) |pair| {
+        for (pair) |m| {
+            const t = m.t;
+            if (!(t.dur > 0)) @compileError("hero: a move with no duration divides by zero in `atkDur`");
+            if (!(t.hitA < t.hitB)) @compileError("hero: a move whose hit window never opens");
+            if (!(t.travelA < t.travelB)) @compileError("hero: a move whose travel span divides by zero");
+            if (!(t.recovA > t.hitA and t.recovA < 1)) @compileError("hero: recovery must start after the blow and inside the move");
+            if (!(t.chain > t.recovA and t.chain <= 1)) @compileError("hero: the chain must open after recovery starts and inside the move");
+            if (!(t.hitB <= 1 and t.travelB <= 1)) @compileError("hero: a phase past the end of the move");
+            if (!(t.lunge >= 0)) @compileError("hero: a stroke does not travel backwards");
+        }
+    }
+}
+
+pub fn moveOf(b: Blade, heavy: bool) Move {
+    return MOVES[@intFromEnum(b)][@intFromBool(heavy)];
+}
+
+/// **ONE FRAME OF A MELEE STROKE.** Degrees except `dip`, which is metres the pelvis drops. Signs are the
+/// AUTHORED side's — a right-hand stroke — and `armSide`'s mirror times the alternation flip (`lat`) carries
+/// every LATERAL channel to the other hand and the other shoulder, leaving the sagittal ones alone.
+/// `sh` is how far the weapon shoulder is RAISED, `sweep` its yaw across the body (negative = cocked back),
+/// `grip` the pitch taken out of the grip axis at the held bone (`GRIP_PITCH` levels the blade, 0 leaves it
+/// in line with the forearm).
+const MCH_N = 14;
+
+const MK = struct {
+    dip: f32 = 0,
+    yaw: f32 = 0,
+    chest: f32 = 0,
+    pitch: f32 = 0,
+    tilt: f32 = 0,
+    sh: f32 = 0,
+    sweep: f32 = 0,
+    abd: f32 = 0,
+    elbow: f32 = IDLE_ELBOW,
+    wrist: f32 = 0,
+    roll: f32 = 0,
+    free: f32 = 0,
+    brace: f32 = 0,
+    grip: f32 = 0,
+
+    /// **PACKED AND UNPACKED OFF THE FIELD LIST ITSELF**, never by transcribing it. Written out as two
+    /// literal orders — `.{ self.dip, self.yaw, … }` here and `.dip = c[0], .yaw = c[1], …` in `mkAt` — a
+    /// field inserted in the middle silently renames every channel after it, which is a whole stroke posed
+    /// through the wrong joints and nothing to see at the call site. `MCH_N` is tied below.
+    pub fn chan(self: MK) [MCH_N]f32 {
+        var c: [MCH_N]f32 = undefined;
+        inline for (@typeInfo(MK).@"struct".fields, 0..) |f, i| c[i] = @field(self, f.name);
+        return c;
+    }
+};
+
+comptime {
+    if (@typeInfo(MK).@"struct".fields.len != MCH_N) @compileError("hero: MCH_N disagrees with MK's field count");
+}
+
+const MKey = anim.Pose(MK).PoseKey;
+const sampleMK = anim.Pose(MK).sample;
+
+fn mkAt(keys: []const MKey, u: f32) MK {
+    const c = sampleMK(keys, u);
+    var out: MK = .{};
+    inline for (@typeInfo(MK).@"struct".fields, 0..) |f, i| @field(out, f.name) = c[i];
+    return out;
+}
+
+// ===========================================================================================
+// THE FOUR STROKES THE SWORD DOES NOT OWN — authored as KEYED POSES (`anim.Pose`), not as scaled copies of
+// the sword's. **NO SPRING BANK HERE ON PURPOSE**: every hero pose is a pure function of its own clock
+// (`pose` takes no `dt`, which is what keeps `--shot` reproducible), so the load, the HANG, the snap, the
+// carry-past and the settle are authored as KEYS instead — the overshoot being one key that goes past the
+// rest and one that comes back onto it. Interrupt continuity is `applyXfade`'s job here, not a spring's.
+//
+// **AN ARRIVAL IS `.accel` INTO THE BLOW AND `.decel` OUT OF IT, NEVER `.snap`.** `snap` is front-loaded
+// (1-(1-f)^5), so authored on the strike key it puts the whole stroke BEHIND the capsule: measured, the
+// dagger's tip crossed 13 degrees of its 84-degree arc across its own live window, and the club was already
+// on the ground when the window opened. Accelerate through the window, decelerate past it — which is also
+// what a mass falling actually does.
+
+const FLICK_REST = MK{ .sh = 22, .elbow = 44, .sweep = -10, .grip = GRIP_PITCH };
+const FLICK_COCK = MK{ .sh = 52, .elbow = 92, .sweep = -36, .roll = 28, .wrist = 16, .yaw = -8, .chest = -13, .dip = 0.012 * H, .pitch = -4, .free = -14, .brace = 4, .abd = 6, .grip = GRIP_PITCH };
+
+/// **THE DAGGER'S R1** — DS1's dagger "jabbed in rapid succession", the fastest normals in the game. Cocked
+/// IN to the far ribs rather than back: the elbow and wrist do the work, the shoulder barely moves, and it
+/// comes back across instead of following through wide. There is no wind-up worth the name — the whole
+/// gather is 0.075 s at the dial the fight runs it at.
+const FLICK_KEYS = [_]MKey{
+    .{ .t = 0.00, .p = FLICK_REST },
+    .{ .t = 0.16, .p = FLICK_COCK, .ease = .decel },
+    .{ .t = 0.48, .p = .{ .sh = 56, .elbow = 16, .sweep = 48, .roll = -34, .wrist = -22, .yaw = 12, .chest = 27, .dip = 0.012 * H, .pitch = 5, .free = 20, .brace = 8, .grip = GRIP_PITCH }, .ease = .accel },
+    // CARRIES PAST ITS REST AND SETTLES BACK ONTO IT: the arm runs out of stroke before the shoulder does.
+    .{ .t = 0.58, .p = .{ .sh = 53, .elbow = 11, .sweep = 60, .roll = -38, .wrist = -27, .yaw = 15, .chest = 33, .dip = 0.010 * H, .pitch = 4, .free = 24, .brace = 6, .grip = GRIP_PITCH }, .ease = .decel },
+    .{ .t = 0.72, .p = .{ .sh = 36, .elbow = 36, .sweep = 38, .roll = -14, .wrist = -8, .yaw = 6, .chest = 17, .dip = 0.006 * H, .pitch = 3, .free = 11, .brace = 3, .grip = GRIP_PITCH } },
+    .{ .t = 1.00, .p = FLICK_REST },
+};
+
+const THRUST_REST = MK{ .sh = 12, .elbow = 42, .grip = GRIP_PITCH };
+/// **`sh` IS MEASURED FROM ARM-HANGING-DOWN, SO 90 IS HORIZONTAL FORWARD.** Extended at 40 the point raked
+/// 55 deg into the dirt (measured) — a thrust aimed between his own feet.
+/// **AND THE COIL IS BEHIND HIM, NOT ACROSS HIM.** Authored at a slash's rotation (yaw -18, chest -22, roll 42)
+/// the point swung 1.36 m sideways across its own live window against the flick's 1.43 — measured, and a
+/// thrust that travels as far sideways as the slash it is meant to contrast with is just a slower slash.
+/// The whole drive is `sh` + `elbow` + the 1.35 m step; the trunk barely turns.
+const THRUST_COIL = MK{ .sh = 26, .elbow = 104, .sweep = -4, .roll = 8, .wrist = 14, .yaw = -9, .chest = -11, .dip = 0.030 * H, .pitch = -7, .free = -20, .brace = 10, .abd = 4, .grip = GRIP_PITCH };
+
+/// **THE DAGGER'S R2 — THE THRUST.** The fan-favourite dagger heavy across the series (DS1's dagger R2, and
+/// ER's Main-gauche / Miséricorde / Scorpion's Stinger, which trade the class's double-slash for a point).
+/// The shoulder goes FORWARD rather than up and the trunk SQUARES rather than turning — that is the whole
+/// difference between a thrust and a slash worked by the same arm — and the 1.35 m step is how the shortest
+/// weapon in the game reaches anything at all.
+const THRUST_KEYS = [_]MKey{
+    .{ .t = 0.00, .p = THRUST_REST },
+    .{ .t = 0.22, .p = THRUST_COIL, .ease = .decel },
+    // **THE COIL IS HELD, AND THAT IS THE BAIT** (`anim.Ease.hold`) — a chamber that creeps while it waits
+    // reads as the thrust already coming. 0.07 s of a point standing still at the ribs.
+    .{ .t = 0.32, .p = THRUST_COIL, .ease = .hold },
+    .{ .t = 0.50, .p = .{ .sh = 78, .elbow = 3, .sweep = 0, .roll = 2, .wrist = -6, .yaw = 4, .chest = 6, .dip = 0.014 * H, .pitch = 15, .free = 26, .brace = 5, .grip = GRIP_PITCH }, .ease = .accel },
+    .{ .t = 0.60, .p = .{ .sh = 84, .elbow = -3, .sweep = 1, .roll = 1, .wrist = -9, .yaw = 6, .chest = 8, .dip = 0.010 * H, .pitch = 18, .free = 29, .brace = 3, .grip = GRIP_PITCH }, .ease = .decel },
+    .{ .t = 0.76, .p = .{ .sh = 44, .elbow = 44, .sweep = 0, .roll = 4, .yaw = 2, .chest = 3, .dip = 0.010 * H, .pitch = 6, .free = 12, .brace = 4, .grip = GRIP_PITCH } },
+    .{ .t = 1.00, .p = THRUST_REST },
+};
+
+const SWEEP_REST = MK{ .sh = 24, .elbow = 32, .grip = GRIP_PITCH };
+const SWEEP_WIND = MK{ .sh = 44, .elbow = 68, .sweep = -94, .roll = 18, .wrist = 22, .yaw = -30, .chest = -35, .dip = 0.030 * H, .pitch = -9, .free = -26, .brace = 13, .abd = 14, .tilt = -6, .grip = GRIP_PITCH };
+
+/// **THE CLUB'S R1 — THE DASHING HORIZONTAL SWING** of DS1's Large Club. Hips first: the pelvis is round
+/// before the hand is, and 1.44 m of bog-oak does not stop where the swing did, so the carry-past is the
+/// longest in the kit. What it answers is a crowd; what beats it is standing outside the arc.
+const SWEEP_KEYS = [_]MKey{
+    .{ .t = 0.00, .p = SWEEP_REST },
+    .{ .t = 0.24, .p = SWEEP_WIND, .ease = .decel },
+    // A BEAT OF MASS at the far end of the wind — the club is what has to change direction, not the arm.
+    .{ .t = 0.31, .p = SWEEP_WIND, .ease = .hold },
+    .{ .t = 0.58, .p = .{ .sh = 44, .elbow = 21, .sweep = 76, .roll = -22, .wrist = -18, .yaw = 27, .chest = 41, .dip = 0.040 * H, .pitch = 6, .free = 30, .brace = 9, .tilt = 5, .grip = GRIP_PITCH }, .ease = .accel },
+    .{ .t = 0.71, .p = .{ .sh = 40, .elbow = 15, .sweep = 106, .roll = -30, .wrist = -24, .yaw = 35, .chest = 53, .dip = 0.036 * H, .pitch = 5, .free = 34, .brace = 7, .tilt = 8, .grip = GRIP_PITCH }, .ease = .decel },
+    .{ .t = 0.87, .p = .{ .sh = 32, .elbow = 36, .sweep = 78, .roll = -12, .wrist = -8, .yaw = 20, .chest = 30, .dip = 0.018 * H, .pitch = 4, .free = 16, .brace = 4, .tilt = 3, .grip = GRIP_PITCH } },
+    .{ .t = 1.00, .p = SWEEP_REST },
+};
+
+const SMASH_REST = MK{ .sh = 16, .elbow = 32, .grip = GRIP_PITCH };
+/// **THE ELBOW IS NEARLY STRAIGHT AT THE TOP, AND THAT IS THE WHOLE TELL.** Folded to 86 the club cocks back
+/// behind the shoulder and the tip clears his crown by 4 cm (measured) — a tell nobody can read from in
+/// front. At 34 it stands 3.3 m up, which is a club above his head and legible across the arena.
+const SMASH_TOP = MK{ .sh = 170, .elbow = 34, .sweep = -6, .wrist = 22, .yaw = -8, .chest = -11, .dip = -0.008 * H, .pitch = -15, .free = -36, .brace = 5, .abd = 8 };
+
+/// **THE CLUB'S R2 — THE OVERHEAD SMASH**, the great hammer's whole signature: the "slow, heavy overhead
+/// smash" DS1 gives the Great Club and the Large Club two-handed, and the reason the class is a fan
+/// favourite at all. He RISES onto it (the dip goes negative — a mass going overhead takes the body with
+/// it), HANGS, then drops his whole weight behind it rather than swinging the arm faster; the deepest dip in
+/// the kit, and the ground is what stops it.
+const SMASH_KEYS = [_]MKey{
+    .{ .t = 0.00, .p = SMASH_REST },
+    .{ .t = 0.28, .p = SMASH_TOP, .ease = .decel },
+    // **THE HANG IS THE TELL, AND IT IS 0.17 s** at the dial the fight runs it at — a club standing dead
+    // still above his head: ten frames, which is long enough to read. It was 0.37 s and that was a
+    // telegraph you could go and make a cup of tea during (owner: less hang time before coming down).
+    .{ .t = 0.40, .p = SMASH_TOP, .ease = .hold },
+    // `.smooth` and not `.accel`: back-loaded, the club was still 3.35 m up when the capsule went live
+    // (measured). Half the fall is spent by 0.60, which is where the window opens.
+    .{ .t = 0.56, .p = .{ .sh = 65, .elbow = 14, .sweep = 4, .wrist = 30, .yaw = 6, .chest = 15, .dip = 0.075 * H, .pitch = 27, .free = 22, .brace = 17 }, .ease = .smooth },
+    // THE GROUND STOPS IT and the shaft rings: the recoil is the club's, not a flinch of his.
+    .{ .t = 0.67, .p = .{ .sh = 58, .elbow = 26, .sweep = 3, .wrist = 16, .yaw = 5, .chest = 12, .dip = 0.066 * H, .pitch = 23, .free = 18, .brace = 14 }, .ease = .decel },
+    .{ .t = 0.83, .p = .{ .sh = 40, .elbow = 30, .wrist = 6, .yaw = 3, .chest = 6, .dip = 0.032 * H, .pitch = 12, .free = 9, .brace = 7 } },
+    .{ .t = 1.00, .p = SMASH_REST },
+};
+
+/// WHICH TRACK A STROKE PLAYS, and whether the chain's alternation MIRRORS it. A slash and a sweep come off
+/// alternating shoulders; a thrust and a smash are on the centre line and mirroring one only makes it look
+/// like it missed on purpose. The sword's two are its own hand-tuned functions and have no track here.
+fn strokeTrack(s: Stroke) ?struct { keys: []const MKey, mirrors: bool } {
+    return switch (s) {
+        .slash, .chop => null,
+        .flick => .{ .keys = &FLICK_KEYS, .mirrors = true },
+        .thrust => .{ .keys = &THRUST_KEYS, .mirrors = false },
+        .sweep => .{ .keys = &SWEEP_KEYS, .mirrors = true },
+        .smash => .{ .keys = &SMASH_KEYS, .mirrors = false },
     };
 }
 
@@ -992,6 +1225,12 @@ const CARRY_LIFT_WALK = 0.4;
 const CARRY_ABD_RUN = 12.0;
 const CARRY_WRIST_YAW = -48.0;
 const CARRY_SWING_STILL = 0.6;
+
+/// **HOW A TRUNK ROTATION DIVIDES BETWEEN THE TWO SPINE JOINTS.** One rig fact, and it was the same pair of
+/// literals in the sword's slash, the cast and now every keyed stroke. The CHEST carries the larger share:
+/// split evenly the shoulders lead the hips, which reads as the arm dragging the body round after it.
+const TRUNK_YAW_SPINE = 0.35;
+const TRUNK_YAW_CHEST = 0.65;
 
 const POSE_XFADE = 0.09;
 const SPEED_SMOOTH = 80.0;
@@ -1161,7 +1400,11 @@ fn burstFrame(axis: rl.Vector3) struct { side: rl.Vector3, up: rl.Vector3 } {
 
 pub const Attack = enum { light, heavy };
 
-pub const Armament = enum { sword, bow, bell, shield, wand, torch };
+/// **THE THREE MELEE CLASSES ARE THREE ARMAMENTS, NOT ONE WITH A DIAL ON IT.** Each draws its row from its
+/// OWN socket (`wearFor`), carries its own capsule (`Blade`) and plays its own two strokes (`MOVES`) — a club
+/// is not a sword that is slow, and a dagger is not a sword that is small. Appending is free: `save.zig`
+/// writes the rack by TAG NAME, and the book's hand menu is folded over these fields in this order.
+pub const Armament = enum { sword, dagger, club, bow, bell, shield, wand, torch };
 
 pub const Arm = Armament;
 pub const Off = Armament;
@@ -1169,16 +1412,13 @@ pub const Off = Armament;
 pub const RIGHT: usize = 0;
 pub const LEFT: usize = 1;
 
+/// Whether the blade capsule can ever go live in this hand — and, the same question asked the other way,
+/// whether this is one of the melee CLASSES. The bow's R1/R2 are not swings; the loose is routed on `bowOut`
+/// at the input.
 pub fn armSwings(a: Armament) bool {
     return switch (a) {
-        .sword => true,
-        // The bow's R1/R2 are not SWINGS; the loose is routed on `bowOut` at the input. What this answers is
-        // whether the blade capsule can ever go live.
-        .bow => false,
-        .bell => false,
-        .shield => false,
-        .wand => false,
-        .torch => false,
+        .sword, .dagger, .club => true,
+        .bow, .bell, .shield, .wand, .torch => false,
     };
 }
 
@@ -1189,7 +1429,28 @@ pub fn armTwoHanded(a: Armament) bool {
 pub fn handsHold(arm: Armament, off: Armament, a: Armament) bool {
     if (armTwoHanded(arm)) return a == arm;
     if (armTwoHanded(off)) return a == off;
+    // **THE WEAPON HAND IS ONE HAND.** A dagger and a club in the two live cells is two melee weapons in one
+    // pair of fists, and the rig has ONE held bone (`SWORD`) — the second would silently not be drawn. The
+    // RIGHT cell wins, exactly as a two-hander wins over the cell it did not fill, and `offInHand` reports it
+    // so the book can give a reason where it would otherwise show a weapon that is not there.
+    if (armSwings(arm) and armSwings(off)) return a == arm;
     return arm == a or off == a;
+}
+
+/// **WHICH MELEE ARMAMENT A PAIR OF LIVE CELLS ACTUALLY HOLDS**, or null for none. Off the two cells alone,
+/// so the book can price a candidate loadout by it (`derive`) with the same answer the hero gives about
+/// himself (`Hero.meleeArm`).
+pub fn meleeArmOf(arm: Armament, off: Armament) ?Armament {
+    if (armSwings(arm) and handsHold(arm, off, arm)) return arm;
+    if (armSwings(off) and handsHold(arm, off, off)) return off;
+    return null;
+}
+
+/// …AND THE SOCKET IT DRAWS ITS ROW FROM. `hand_sword` when he holds nothing that swings: a bare row is the
+/// honest price of a hand with no weapon in it, and `armSwings` is what gates whether it is shown at all.
+pub fn swingSocket(arm: Armament, off: Armament) item.Wear {
+    const a = meleeArmOf(arm, off) orelse return .hand_sword;
+    return wearFor(a) orelse .hand_sword;
 }
 
 pub const Queued = union(enum) { attack: Attack, roll: rl.Vector3 };
@@ -1204,7 +1465,7 @@ pub const Hero = struct {
     bell: rl.Mesh,
     torch: rl.Mesh,
     torchFlame: rl.Mesh,
-    dirk: rl.Mesh,
+    dagger: rl.Mesh,
     club: rl.Mesh,
     roots: [ROOT_KINDS]rl.Mesh,
     guitar: rl.Mesh,
@@ -1349,7 +1610,7 @@ pub const Hero = struct {
             .bell = bellMesh(),
             .torch = torchMesh(),
             .torchFlame = torchFlameMesh(),
-            .dirk = dirkMesh(),
+            .dagger = daggerMesh(),
             .club = clubMesh(),
             .roots = blk: {
                 var out: [ROOT_KINDS]rl.Mesh = undefined;
@@ -1578,10 +1839,6 @@ pub const Hero = struct {
         return self.arm == a;
     }
 
-    pub fn swordLeft(self: *const Hero) bool {
-        return self.heldLeft(.sword);
-    }
-
     pub fn bellLeft(self: *const Hero) bool {
         return self.heldLeft(.bell);
     }
@@ -1611,8 +1868,12 @@ pub const Hero = struct {
 
     /// Not the same question as which one is EQUIPPED: a raised bow takes the OTHER hand to the string too.
     /// Asked here rather than cleared on the swap, so it cannot stale.
+    /// Whether the LEFT cell's armament is actually in the left hand — false when the right cell has taken
+    /// both hands (`armTwoHanded`) and false when both cells hold a melee class (`handsHold`'s weapon-hand
+    /// rule). The book reads this to give a REASON rather than draw a weapon that is not there.
     pub fn offInHand(self: *const Hero) bool {
-        return !armTwoHanded(self.arm) and !armTwoHanded(self.off);
+        if (armTwoHanded(self.arm) or armTwoHanded(self.off)) return false;
+        return !(armSwings(self.arm) and armSwings(self.off));
     }
 
     pub fn armInHand(self: *const Hero) Armament {
@@ -1684,7 +1945,20 @@ pub const Hero = struct {
         return true;
     }
 
+    /// **WHETHER AN ARMAMENT MAY STAND IN THE RACK AT ALL.** The sword and the five tools always; a dagger or
+    /// a club only with its own weapon actually in its socket, because those two are things you FIND. The
+    /// book enforces the same rule at the offer (`book.candidates`) — this is for the paths that do not go
+    /// through the book.
+    pub fn canRack(self: *const Hero, a: Armament) bool {
+        if (!armSwings(a) or a == .sword) return true;
+        return self.worn.at(wearFor(a) orelse return false) != null;
+    }
+
     /// A save written before the rack was distinct can hold the same armament twice; the first cell keeps it.
+    /// **AND THE FILLER MAY NOT BE A WEAPON HE DOES NOT OWN.** Taking the first unused value in declaration
+    /// order put `.dagger` — position 1, once the melee classes became armaments — into the duplicate cell of
+    /// every such save, handing him a free dagger on load. Six fillers always pass `canRack` against four
+    /// cells, so a duplicate is still always resolvable.
     pub fn tidyHands(self: *Hero) void {
         var seen = std.EnumSet(Armament).initEmpty();
         for (self.rack()) |c| {
@@ -1693,7 +1967,7 @@ pub const Hero = struct {
                 continue;
             }
             for (std.enums.values(Armament)) |a| {
-                if (seen.contains(a)) continue;
+                if (seen.contains(a) or !self.canRack(a)) continue;
                 c.* = a;
                 seen.insert(a);
                 break;
@@ -2242,8 +2516,12 @@ pub const Hero = struct {
 
     pub fn startAttack(self: *Hero, kind: Attack) void {
         if (self.committed() or self.dead or self.staggered() or self.resting) return;
-        self.atkRow = self.armOf(.hand_sword);
-        self.atkBlade = bladeFor(self.worn.at(.hand_sword));
+        // NOTHING SWINGS AN EMPTY HAND. The input already routes R1/R2 per armament (`game.handActs`), so this
+        // only catches a caller reaching past it — but a swing with no weapon poses the rig round a mesh that
+        // is not drawn and lands a bare-row blow, which is worse than nothing happening.
+        const held = self.meleeArm() orelse return;
+        self.atkRow = self.armOf(wearFor(held) orelse .hand_sword);
+        self.atkBlade = bladeOf(held) orelse .sword;
         const cost: f32 = @as(f32, if (kind == .heavy) combat.STAM_HEAVY else combat.STAM_LIGHT) * self.atkRow.stam;
         if (!self.stam.canAct()) {
             self.refuse();
@@ -2260,22 +2538,19 @@ pub const Hero = struct {
 
     pub fn updateAttack(self: *Hero, dt: f32, bounds: f32, faceYaw: ?f32) void {
         self.tickClocks(dt);
+        const tm = self.swingMove().t;
         const dur: f32 = self.atkDur(self.atkHeavy);
-        const sa: f32 = if (self.atkHeavy) AH_STRIKE_A else AL_STRIKE_A;
-        const sb: f32 = if (self.atkHeavy) AH_STRIKE_B else AL_STRIKE_B;
-        const lunge: f32 = if (self.atkHeavy) AH_LUNGE else AL_LUNGE;
         const u = mathx.clampF(self.atkT / dur, 0, 1);
-        const speed: f32 = if (u >= sa and u < sb) lunge / ((sb - sa) * dur) else 0;
+        const speed: f32 = if (u >= tm.travelA and u < tm.travelB) tm.lunge / ((tm.travelB - tm.travelA) * dur) else 0;
         const moved = speed * dt;
         mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), moved, bounds);
         self.speed = speed;
         self.speedS = mathx.approach(self.speedS, speed, dt * SPEED_SMOOTH);
         if (faceYaw) |ty| {
-            const recovA: f32 = if (self.atkHeavy) AH_RECOV_A else AL_RECOV_A;
-            if (u >= recovA) self.facing = mathx.approachAngle(self.facing, ty, dt * ATK_RETRACK);
+            if (u >= tm.recovA) self.facing = mathx.approachAngle(self.facing, ty, dt * ATK_RETRACK);
         }
         self.atkT += dt;
-        const chain: f32 = if (self.atkHeavy) AH_CHAIN else AL_CHAIN;
+        const chain: f32 = tm.chain;
         const wasLight = !self.atkHeavy;
         const wasAlt = self.atkAlt;
         if (self.atkT / dur >= chain and self.queued != null) {
@@ -2376,8 +2651,9 @@ pub const Hero = struct {
 
     pub fn hitActive(self: *const Hero) bool {
         if (!self.attacking) return false;
+        const t = self.swingMove().t;
         const u = self.atkT / self.atkDur(self.atkHeavy);
-        return if (self.atkHeavy) (u >= AH_HIT_A and u < AH_HIT_B) else (u >= AL_HIT_A and u < AL_HIT_B);
+        return u >= t.hitA and u < t.hitB;
     }
 
     fn updateBlade(self: *Hero) void {
@@ -2743,14 +3019,29 @@ pub const Hero = struct {
         return armRow(self.worn, w);
     }
 
+    /// **WHICH MELEE ARMAMENT IS ACTUALLY IN A FIST**, or null when neither hand has one. The weapon hand is
+    /// one hand (`handsHold`), so this is the single question `meleeLeft`, `startAttack`, the held mesh and
+    /// the stow all open on.
+    pub fn meleeArm(self: *const Hero) ?Armament {
+        return meleeArmOf(self.arm, self.off);
+    }
+
+    /// …AND WHICH HAND IT IS IN. False when he holds none: an unheld weapon falls back to its own hand and
+    /// the melee classes are RIGHT-handed (the `heldLeft` half of `wandLeft`'s law).
+    pub fn meleeLeft(self: *const Hero) bool {
+        const a = self.meleeArm() orelse return false;
+        return self.arm != a;
+    }
+
     fn swingRow(self: *const Hero) item.Arm {
-        return if (self.attacking) self.atkRow else self.armOf(.hand_sword);
+        return if (self.attacking) self.atkRow else self.armOf(swingSocket(self.arm, self.off));
     }
 
     /// WHICH SHAPE IS IN THE FIST — latched for the stroke in flight (`swingRow`'s law): a club taken up
     /// mid-swing may not lend its reach to the sword that started it.
     pub fn heldBlade(self: *const Hero) Blade {
-        return if (self.attacking) self.atkBlade else bladeFor(self.worn.at(.hand_sword));
+        if (self.attacking) return self.atkBlade;
+        return bladeOf(self.meleeArm() orelse return .sword) orelse .sword;
     }
 
     pub fn bladeR(self: *const Hero) f32 {
@@ -2760,13 +3051,14 @@ pub const Hero = struct {
     fn bladeMesh(self: *const Hero) rl.Mesh {
         return switch (self.heldBlade()) {
             .sword => self.mesh[SWORD],
-            .dirk => self.dirk,
+            .dagger => self.dagger,
             .club => self.club,
         };
     }
 
-    fn swingShape(self: *const Hero) SwingShape {
-        return swingOf(self.heldBlade());
+    /// THE STROKE IN FLIGHT — its clock and which pose plays it, latched exactly as the capsule is.
+    fn swingMove(self: *const Hero) Move {
+        return moveOf(self.heldBlade(), self.atkHeavy);
     }
     fn drawRow(self: *const Hero) item.Arm {
         return if (self.shooting) self.shotRow else self.armOf(.hand_bow);
@@ -2814,7 +3106,7 @@ pub const Hero = struct {
     }
 
     pub fn atkDur(self: *const Hero, heavy: bool) f32 {
-        return @as(f32, if (heavy) ATK_HEAVY_DUR else ATK_LIGHT_DUR) * self.swingRow().dur;
+        return moveOf(self.heldBlade(), heavy).t.dur * self.swingRow().dur;
     }
 
     /// …AND THE SAME CLOCK FOR THE BOW, the one armament whose `dur` reached nothing. ONE answer for the three
@@ -3105,7 +3397,7 @@ pub const Hero = struct {
         const armR = armAmp * armSwing(ph) * m * fw;
         armChain(&wx, self.rest, armL, m, runB, sprintB, 1.0, 0.0, SHL, ELL, WRL);
         armChain(&wx, self.rest, armR, m, runB, sprintB, -1.0, 1.0, SHR, ELR, WRR);
-        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
 
         if (gB > 0.001) self.poseGuard(&wx, gB, rec, lean, prot, bank);
 
@@ -3206,7 +3498,7 @@ pub const Hero = struct {
         setLocal(&gp, free.sh, self.rest, mul(rx(GUARD_SWORD_BACK), rz(free.mirror * -ARM_ABD)));
         setLocal(&gp, free.el, self.rest, rx(-GUARD_SWORD_ELBOW));
         setLocal(&gp, free.wr, self.rest, rx(GUARD_SWORD_WRIST));
-        placeSword(&gp, self.rest, rl.math.matrixIdentity(), self.swordLeft());
+        placeSword(&gp, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         for ([_]usize{ SPINE, CHEST, NECK, HEAD, SHL, ELL, WRL, SHR, ELR, WRR, SWORD }) |i| {
             wx[i] = lerpM(wx[i], gp[i], k);
         }
@@ -3273,7 +3565,7 @@ pub const Hero = struct {
         setLocal(&wx, free.sh, self.rest, mul(rx(GUARD_SWORD_BACK + PARRY_SWORD_COCK * k), rz(free.mirror * -ARM_ABD)));
         setLocal(&wx, free.el, self.rest, rx(-(GUARD_SWORD_ELBOW + 14.0 * k)));
         setLocal(&wx, free.wr, self.rest, rx(GUARD_SWORD_WRIST));
-        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         self.applyXfade(&wx);
         self.xf = wx;
     }
@@ -3311,7 +3603,7 @@ pub const Hero = struct {
         jumpLeg(&wx, self.rest, drive, reach, tuck, 1.0 - JUMP_LEG_SPLIT / JUMP_TUCK_HIP, -1.0, HIPR, KNEER, ANKR);
         jumpArm(&wx, self.rest, drive, reach, tuck, 1.0, SHL, ELL, WRL);
         jumpArm(&wx, self.rest, drive, reach, tuck, -1.0, SHR, ELR, WRR);
-        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         if (self.guardB > 0.001) self.poseGuard(&wx, mathx.clampF(self.guardB, 0, 1), 0, fold * 0.5, 0, 0);
         self.poseCarried(&wx);
         if (self.bowOut()) self.poseBowArms(&wx, fold * 0.5, 0, 0);
@@ -3352,18 +3644,69 @@ pub const Hero = struct {
         rollLeg(&wx, self.rest, tuck, if (overL) trailF else leadF, -1.0, HIPR, KNEER, ANKR);
         rollArm(&wx, self.rest, tuck, if (overL) guideF else pushF, 1.0, SHL, ELL, WRL);
         rollArm(&wx, self.rest, tuck, if (overL) pushF else guideF, -1.0, SHR, ELR, WRR);
-        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         self.applyXfade(&wx);
         self.xf = wx;
     }
 
     fn poseAttack(self: *Hero) void {
-        if (self.atkHeavy) return self.poseHeavy();
+        const stroke = self.swingMove().stroke;
+        if (strokeTrack(stroke)) |tr_| return self.poseStroke(tr_.keys, tr_.mirrors);
+        if (stroke == .chop) return self.poseHeavy();
         self.poseLight();
     }
 
+    /// **THE ONE RIG THAT PLAYS A KEYED STROKE** — four moves, one function, because what differs between a
+    /// dagger's flick and a club's overhead is the TRACK and not the skeleton it drives. `lat` is the lateral
+    /// sign (which hand, times the chain's alternation) and it multiplies exactly the channels that mirror.
+    fn poseStroke(self: *Hero, keys: []const MKey, mirrors: bool) void {
+        const u = mathx.clampF(self.atkT / self.atkDur(self.atkHeavy), 0, 1);
+        const k = mkAt(keys, u);
+        const sA = armSide(self.meleeLeft(), false);
+        const fA = armSide(!self.meleeLeft(), false);
+        const sd = sA.mirror;
+        const sw: f32 = if (mirrors and self.atkAlt) -1.0 else 1.0;
+        const lat = sd * sw;
+        const facingDeg = mathx.degrees(self.facing);
+        const hipY = self.rest[ROOT].y;
+        // THE WAIST TAKES THE FOLD, THE PELVIS STAYS NEAR-UPRIGHT (the ogre's `PELVIS_SHARE` law): a quarter
+        // of the pitch at the root and the rest split across spine and chest.
+        const trunk = 0.5 * (0.75 * k.pitch + self.aimLean);
+        // The BRACE is staggered across the two legs so it reads as a stance and not as a squat.
+        const lead: f32 = if (lat > 0) 1.0 else 0.6;
+        const trail: f32 = if (lat > 0) 0.6 else 1.0;
+
+        var wx: [N]rl.Matrix = undefined;
+        wx[ROOT] = mul3(
+            ry(lat * k.yaw),
+            mul(tr(0, hipY - k.dip, 0), mul(rx(0.25 * k.pitch), ry(facingDeg))),
+            rootAt(self.footPos()),
+        );
+        setLocal(&wx, SPINE, self.rest, mul3(rx(trunk), ry(lat * TRUNK_YAW_SPINE * k.chest), rz(lat * 0.5 * k.tilt)));
+        setLocal(&wx, CHEST, self.rest, mul3(rx(trunk), ry(lat * TRUNK_YAW_CHEST * k.chest), rz(lat * 0.5 * k.tilt)));
+        setLocal(&wx, NECK, self.rest, ry(-lat * 0.35 * (k.yaw + k.chest)));
+        setLocal(&wx, HEAD, self.rest, mul(rx(HEAD_WALK - 0.25 * k.pitch), ry(-lat * 0.30 * (k.yaw + k.chest))));
+        setLocal(&wx, HIPL, self.rest, mul(rx(-0.7 * lead * k.brace), rz(-HIP_ADDUCT)));
+        setLocal(&wx, KNEEL, self.rest, rx(IDLE_KNEE + lead * k.brace));
+        setLocal(&wx, ANKL, self.rest, ry(FOOT_TOEOUT));
+        setLocal(&wx, HIPR, self.rest, mul(rx(0.35 * trail * k.brace), rz(HIP_ADDUCT)));
+        setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + 1.25 * trail * k.brace));
+        setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
+        setLocal(&wx, fA.sh, self.rest, mul(rx(-k.free), rz(sd * ARM_ABD)));
+        setLocal(&wx, fA.el, self.rest, rx(-(IDLE_ELBOW + 0.45 * @abs(k.free))));
+        setLocal(&wx, fA.wr, self.rest, rl.math.matrixIdentity());
+        setLocal(&wx, sA.sh, self.rest, mul3(rx(-k.sh), ry(lat * k.sweep), rz(sd * (-ARM_ABD - k.abd))));
+        setLocal(&wx, sA.el, self.rest, rx(-k.elbow));
+        setLocal(&wx, sA.wr, self.rest, mul(ry(lat * k.roll), rx(k.wrist)));
+        placeSword(&wx, self.rest, rx(k.grip), sd < 0);
+        self.applyXfade(&wx);
+        self.xf = wx;
+    }
+
     fn poseLight(self: *Hero) void {
-        const u = mathx.clampF(self.atkT / self.atkDur(false), 0, 1);
+        // OFF `atkHeavy`, NOT OFF A CONSTANT: `poseAttack` picks this function by STROKE now, so a class
+        // that ever mapped `.slash` to its R2 would divide the heavy clock by the light duration.
+        const u = mathx.clampF(self.atkT / self.atkDur(self.atkHeavy), 0, 1);
         const rec = 1.0 - mathx.smoothstep(AL_RECOV_A, 1.0, u);
         const wind = mathx.smoothstep(0, AL_WIND_B, u) * rec;
         const sPelv = mathx.smoothstep(AL_STRIKE_A, AL_STRIKE_B, u) * rec;
@@ -3373,14 +3716,13 @@ pub const Hero = struct {
         const sw: f32 = if (self.atkAlt) -1.0 else 1.0;
         const amp: f32 = if (self.atkAlt) 0.8 else 1.0;
         // THE SWORD ARM AND THE FREE ONE, THROUGH `armSide`; `sd` is the sword side's own mirror.
-        const sA = armSide(self.swordLeft(), false);
-        const fA = armSide(!self.swordLeft(), false);
+        const sA = armSide(self.meleeLeft(), false);
+        const fA = armSide(!self.meleeLeft(), false);
         const sd = sA.mirror;
 
-        const shape = self.swingShape();
         const os = AL_OVER * bump(u, AL_STRIKE_B + 2 * AL_LAG, AL_RECOV_A + 0.15);
-        const yawP = sd * sw * shape.arc * (-AL_BODY_YAW * wind + (AL_BODY_YAW_THRU + AL_BODY_YAW) * sPelv);
-        const yawC = sd * sw * (1.35 * shape.arc * (-AL_BODY_YAW * wind + (AL_BODY_YAW_THRU + AL_BODY_YAW) * sChest) + os);
+        const yawP = sd * sw * (-AL_BODY_YAW * wind + (AL_BODY_YAW_THRU + AL_BODY_YAW) * sPelv);
+        const yawC = sd * sw * (1.35 * (-AL_BODY_YAW * wind + (AL_BODY_YAW_THRU + AL_BODY_YAW) * sChest) + os);
         const crunch = AL_SPINE_CRUNCH * sChest;
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
@@ -3388,11 +3730,11 @@ pub const Hero = struct {
         var wx: [N]rl.Matrix = undefined;
         wx[ROOT] = mul3(
             ry(yawP),
-            mul(tr(0, hipY - shape.dip * (AL_LOAD * wind + AL_DIP * sPelv), 0), mul(rx(1.5 * sChest), ry(facingDeg))),
+            mul(tr(0, hipY - (AL_LOAD * wind + AL_DIP * sPelv), 0), mul(rx(1.5 * sChest), ry(facingDeg))),
             rootAt(self.footPos()),
         );
-        setLocal(&wx, SPINE, self.rest, mul(rx(crunch + self.aimLean * 0.5), ry(0.35 * yawC)));
-        setLocal(&wx, CHEST, self.rest, mul(rx(crunch + self.aimLean * 0.5), ry(0.65 * yawC)));
+        setLocal(&wx, SPINE, self.rest, mul(rx(crunch + self.aimLean * 0.5), ry(TRUNK_YAW_SPINE * yawC)));
+        setLocal(&wx, CHEST, self.rest, mul(rx(crunch + self.aimLean * 0.5), ry(TRUNK_YAW_CHEST * yawC)));
         setLocal(&wx, NECK, self.rest, ry(-0.4 * (yawP + yawC)));
         setLocal(&wx, HEAD, self.rest, mul(rx(HEAD_WALK), ry(-0.35 * (yawP + yawC))));
         const braceL: f32 = if (self.atkAlt) 6.0 else -10.0;
@@ -3412,8 +3754,8 @@ pub const Hero = struct {
         const sRaise = mathx.smoothstep(AL_WIND_B - 0.06, AL_HIT_A - 0.02, u) * rec;
         const elev = AL_SH_ELEV_WIND * wind + (AL_SH_ELEV - AL_SH_ELEV_WIND) * sRaise;
         const sSweep = mathx.smoothstep(AL_STRIKE_A + AL_LAG, AL_HIT_B - 0.01, u) * rec;
-        const back = AL_SWEEP_WIND * windAmp * shape.wind;
-        const sweep = sw * (-back * wind + (back + AL_SWEEP_END * shape.arc) * sSweep + 0.9 * os);
+        const back = AL_SWEEP_WIND * windAmp;
+        const sweep = sw * (-back * wind + (back + AL_SWEEP_END) * sSweep + 0.9 * os);
         setLocal(&wx, sA.sh, self.rest, mul3(rx(-elev), ry(sd * sweep), rz(sd * (-ARM_ABD - 10.0 * amp * wind))));
         const elb = IDLE_ELBOW + (AL_ELBOW_WIND - IDLE_ELBOW) * wind - (AL_ELBOW_WIND - AL_ELBOW_STRIKE) * sElb;
         setLocal(&wx, sA.el, self.rest, rx(-elb));
@@ -3426,7 +3768,7 @@ pub const Hero = struct {
     }
 
     fn poseHeavy(self: *Hero) void {
-        const u = mathx.clampF(self.atkT / self.atkDur(true), 0, 1);
+        const u = mathx.clampF(self.atkT / self.atkDur(self.atkHeavy), 0, 1);
         const rec = 1.0 - mathx.smoothstep(AH_RECOV_A, 1.0, u);
         const wind = mathx.smoothstep(0, AH_WIND_B, u) * rec;
         const sPelv = mathx.smoothstep(AH_STRIKE_A, AH_STRIKE_B, u) * rec;
@@ -3438,15 +3780,14 @@ pub const Hero = struct {
         const gather = mathx.smoothstep(AH_WIND_B - 0.05, AH_STRIKE_A + 2 * AH_LAG, u) * (1.0 - sSh) * rec;
         const rcl = bump(u, AH_STRIKE_B + 2 * AH_LAG, AH_RECOV_A) * rec;
         // THE SWORD ARM AND THE FREE ONE, THROUGH `armSide`; `sd` is the sword side's own mirror.
-        const sA = armSide(self.swordLeft(), false);
-        const fA = armSide(!self.swordLeft(), false);
+        const sA = armSide(self.meleeLeft(), false);
+        const fA = armSide(!self.meleeLeft(), false);
         const sd = sA.mirror;
 
-        const shape = self.swingShape();
-        const yaw = sd * shape.arc * (-AH_BODY_YAW * wind + 2.0 * AH_BODY_YAW * sPelv);
-        const spineX = -AH_LEAN_BACK * shape.wind * wind + (AH_LEAN_BACK + AH_SPINE_CRUNCH) * sChest;
+        const yaw = sd * (-AH_BODY_YAW * wind + 2.0 * AH_BODY_YAW * sPelv);
+        const spineX = -AH_LEAN_BACK * wind + (AH_LEAN_BACK + AH_SPINE_CRUNCH) * sChest;
         const tilt = -AH_SPINE_TILT * wind + 1.5 * AH_SPINE_TILT * sChest;
-        const dip = shape.dip * (AH_LOAD * wind + (AH_DIP - AH_LOAD) * sPelv) - 0.008 * H * rcl;
+        const dip = (AH_LOAD * wind + (AH_DIP - AH_LOAD) * sPelv) - 0.008 * H * rcl;
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
 
@@ -3469,8 +3810,8 @@ pub const Hero = struct {
         setLocal(&wx, fA.sh, self.rest, mul(rx(-22.0 * wind + 30.0 * sChest), rz(sd * (ARM_ABD + 6.0 * wind))));
         setLocal(&wx, fA.el, self.rest, rx(-(IDLE_ELBOW + 16.0 * wind)));
         setLocal(&wx, fA.wr, self.rest, rl.math.matrixIdentity());
-        const up = AH_SH_UP * shape.wind;
-        const shX = -up * wind - AH_GATHER * shape.wind * gather + (up - AH_SH_DOWN * shape.arc) * sSh + AH_RECOIL * rcl;
+        const up = AH_SH_UP;
+        const shX = -up * wind - AH_GATHER * gather + (up - AH_SH_DOWN) * sSh + AH_RECOIL * rcl;
         setLocal(&wx, sA.sh, self.rest, mul(rx(shX), rz(sd * (-ARM_ABD - 8.0 * wind))));
         const elb = IDLE_ELBOW + (AH_ELBOW_WIND - IDLE_ELBOW) * wind + 5.0 * gather - (AH_ELBOW_WIND - AH_ELBOW_STRIKE) * sElb;
         setLocal(&wx, sA.el, self.rest, rx(-elb));
@@ -3511,8 +3852,8 @@ pub const Hero = struct {
             rootAt(self.footPos()),
         );
         const spineX = -CAST_LEAN * wind + 2.0 * CAST_LEAN * sThrow + BREATH_LEAN * bOn - 0.45 * BREATH_LEAN * bOut;
-        setLocal(&wx, SPINE, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), ry(0.35 * yaw)));
-        setLocal(&wx, CHEST, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), ry(0.65 * yaw)));
+        setLocal(&wx, SPINE, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), ry(TRUNK_YAW_SPINE * yaw)));
+        setLocal(&wx, CHEST, self.rest, mul(rx(0.5 * (spineX + self.aimLean)), ry(TRUNK_YAW_CHEST * yaw)));
         setLocal(&wx, NECK, self.rest, rx(-0.35 * spineX));
         setLocal(&wx, HEAD, self.rest, mul(rx(HEAD_WALK + CAST_HEAD * sThrow + BREATH_HEAD * bOn), ry(-0.4 * yaw)));
         setLocal(&wx, HIPL, self.rest, mul(rx(-6.0 * wind - 4.0 * sThrow), rz(-HIP_ADDUCT)));
@@ -3529,7 +3870,7 @@ pub const Hero = struct {
         setLocal(&wx, free.sh, self.rest, mul(rx(GUARD_SWORD_BACK * wind), rz(free.mirror * -ARM_ABD)));
         setLocal(&wx, free.el, self.rest, rx(-(IDLE_ELBOW + (GUARD_SWORD_ELBOW - IDLE_ELBOW) * wind)));
         setLocal(&wx, free.wr, self.rest, rx(GUARD_SWORD_WRIST * wind));
-        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         self.applyXfade(&wx);
         self.xf = wx;
     }
@@ -3562,7 +3903,7 @@ pub const Hero = struct {
         setLocal(&wx, bel.sh, self.rest, mul3(rx(-RING_SH_FWD * lift), ry(0), rz(bel.mirror * (-ARM_ABD - RING_SH_ABD * lift))));
         setLocal(&wx, bel.el, self.rest, rx(-(IDLE_ELBOW + (RING_ELBOW - IDLE_ELBOW) * lift) + 5.0 * shake));
         setLocal(&wx, bel.wr, self.rest, mul(rz(bel.mirror * RING_FLICK * shake), rx(-14.0 * lift)));
-        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         setLocal(&wx, free.sh, self.rest, mul(rx(-6.0 * lift), rz(free.mirror * ARM_ABD)));
         setLocal(&wx, free.el, self.rest, rx(-(IDLE_ELBOW + 10.0 * lift)));
         setLocal(&wx, free.wr, self.rest, rl.math.matrixIdentity());
@@ -3608,7 +3949,7 @@ pub const Hero = struct {
         setLocal(&wx, SHR, self.rest, mul(rx(-48.0 + 1.2 * strum), rz(-ARM_ABD - 34.0)));
         setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + 88.0 + 3.5 * strum)));
         setLocal(&wx, WRR, self.rest, rz(9.0 * strum));
-        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         self.xf = wx;
     }
 
@@ -3657,7 +3998,7 @@ pub const Hero = struct {
         setLocal(&wx, SHR, self.rest, mul(rx(-0.8 * armUp), rz(-ARM_ABD - 0.4 * armUp)));
         setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + 16.0 * amt)));
         setLocal(&wx, WRR, self.rest, rl.math.matrixIdentity());
-        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         self.applyXfade(&wx);
         self.xf = wx;
     }
@@ -3694,7 +4035,7 @@ pub const Hero = struct {
         setLocal(&wx, SHR, self.rest, mul(rx(-10.0 * k), rz(-ARM_ABD - 10.0 * k)));
         setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + 24.0 * k)));
         setLocal(&wx, WRR, self.rest, rl.math.matrixIdentity());
-        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         self.applyXfade(&wx);
         self.xf = wx;
     }
@@ -3703,7 +4044,7 @@ pub const Hero = struct {
     /// SHADOW**: the torch flame is real geometry 0.45 m off his own axis, and the shadow ortho box tracks
     /// the hero at 13 mm a texel, so in the depth pass it laid a 23-texel dark blob on the ground beside him.
     pub fn draw(self: *const Hero, lit: bool) void {
-        const stowSword = self.resting or !self.holds(.sword);
+        const stowSword = self.resting or self.meleeArm() == null;
         for (0..N) |i| {
             if (i == SWORD) continue;
             rl.drawMesh(self.mesh[i], self.mat, self.xf[i]);
@@ -3725,7 +4066,9 @@ pub const Hero = struct {
         const wrist = self.xf[if (left) WRL else WRR];
         const grip = gripFrame(wrist, self.rest, left);
         switch (a) {
-            .sword => {},
+            // THE BLADE IS A RIG BONE, NOT A HAND PROP — all three melee classes are drawn at `xf[SWORD]`
+            // by `draw` off `bladeMesh`, so there is nothing for this hand to hang.
+            .sword, .dagger, .club => {},
             .bow => {
                 rl.drawMesh(self.bow, self.mat, grip);
                 for (self.stringXf) |sm| rl.drawMesh(self.bowString, self.mat, sm);
@@ -3964,7 +4307,7 @@ fn swordMesh() rl.Mesh {
 
 /// A FANG, HAFTED. Ground out of a kobold's tooth (`item.describe`), so the blade is BONE. The visible point
 /// is at t 0.28 where the capsule reaches 0.37 — the sword's own proportion.
-fn dirkMesh() rl.Mesh {
+fn daggerMesh() rl.Mesh {
     var b = Builder.init();
     const s = v3(0.5 * OUT_CA, 0, 0.5 * OUT_SA);
     const n = v3(-0.5 * GRIP_CA * OUT_SA, 0.5 * GRIP_SA, 0.5 * GRIP_CA * OUT_CA);
@@ -4404,7 +4747,7 @@ fn testHero() Hero {
         .bell = undefined,
         .torch = undefined,
         .torchFlame = undefined,
-        .dirk = undefined,
+        .dagger = undefined,
         .club = undefined,
         .roots = undefined,
         .guitar = undefined,
@@ -5443,14 +5786,14 @@ test "THE BLADE IS IN WHICHEVER HAND HOLDS IT — bone, capsule and swing, all m
     var h = testHero();
     h.arm = .sword;
     h.off = .shield;
-    try std.testing.expect(!h.swordLeft());
+    try std.testing.expect(!h.meleeLeft());
     try std.testing.expect(h.holds(.sword));
     h.pose();
     const right = h.xf[SWORD];
 
     h.arm = .shield;
     h.off = .sword;
-    try std.testing.expect(h.swordLeft());
+    try std.testing.expect(h.meleeLeft());
     try std.testing.expect(h.holds(.sword));
     h.pose();
     const left = h.xf[SWORD];
@@ -5471,32 +5814,44 @@ test "THE BLADE IS IN WHICHEVER HAND HOLDS IT — bone, capsule and swing, all m
 
     h.arm = .bow;
     h.off = .sword;
-    try std.testing.expect(!h.swordLeft() and !h.holds(.sword));
+    try std.testing.expect(!h.meleeLeft() and !h.holds(.sword));
 }
 
-test "A DIRK IS SHORTER THAN A SWORD AND A CLUB IS LONGER — the reach is the weapon's, not the rig's" {
+/// A hero holding one melee class in the RIGHT hand, with that class's weapon in its own socket.
+fn meleeHero(a: Armament, k: ?item.Kind) Hero {
+    var h = testHero();
+    h.arm = a;
+    h.off = .shield;
+    if (k) |kind| std.debug.assert(h.wear(wearFor(a).?, kind));
+    return h;
+}
+
+test "A DAGGER IS SHORTER THAN A SWORD AND A CLUB IS LONGER — the reach is the weapon's, not the rig's" {
     const fist = bladeAt(0);
     var reach: [3]f32 = undefined;
     for (BLADES, 0..) |spec, i| reach[i] = mathx.lenV(mathx.subV(bladeAt(spec.tip), fist));
-    std.debug.print("\n  blade reach: sword {d:.2} m, dirk {d:.2} m, club {d:.2} m\n", .{ reach[0], reach[1], reach[2] });
-    try std.testing.expect(reach[@intFromEnum(Blade.dirk)] < reach[@intFromEnum(Blade.sword)]);
+    std.debug.print("\n  blade reach: sword {d:.2} m, dagger {d:.2} m, club {d:.2} m\n", .{ reach[0], reach[1], reach[2] });
+    try std.testing.expect(reach[@intFromEnum(Blade.dagger)] < reach[@intFromEnum(Blade.sword)]);
     try std.testing.expect(reach[@intFromEnum(Blade.club)] > reach[@intFromEnum(Blade.sword)]);
-    try std.testing.expect(bladeSpec(.dirk).r < BLADE_R and bladeSpec(.club).r > BLADE_R);
+    try std.testing.expect(bladeSpec(.dagger).r < BLADE_R and bladeSpec(.club).r > BLADE_R);
 
+    // THE SHAPE IS THE ARMAMENT'S — one socket per class, so nothing has to be asked of an item kind.
     var h = testHero();
     try std.testing.expectEqual(Blade.sword, h.heldBlade());
-    try std.testing.expect(h.wear(.hand_sword, .fang_dirk));
-    try std.testing.expectEqual(Blade.dirk, h.heldBlade());
-    try std.testing.expect(h.wear(.hand_sword, .greatclub));
+    h.arm = .dagger;
+    try std.testing.expectEqual(Blade.dagger, h.heldBlade());
+    h.arm = .club;
     try std.testing.expectEqual(Blade.club, h.heldBlade());
+    h.arm = .bow;
+    try std.testing.expectEqual(@as(?Armament, null), h.meleeArm());
 
-    h.pose();
-    h.updateBlade();
-    const clubTip = mathx.distXZ(h.pos, h.bladeB);
+    var club = meleeHero(.club, .greatclub);
+    club.pose();
+    club.updateBlade();
     var s = testHero();
     s.pose();
     s.updateBlade();
-    try std.testing.expect(clubTip > mathx.distXZ(s.pos, s.bladeB));
+    try std.testing.expect(mathx.distXZ(club.pos, club.bladeB) > mathx.distXZ(s.pos, s.bladeB));
 }
 
 test "THE SWING IN FLIGHT KEEPS ITS OWN CAPSULE — a club taken up mid-stroke lends the sword nothing" {
@@ -5504,43 +5859,286 @@ test "THE SWING IN FLIGHT KEEPS ITS OWN CAPSULE — a club taken up mid-stroke l
     h.startAttack(.light);
     const r = h.bladeR();
     try std.testing.expectApproxEqAbs(BLADE_R, r, 1e-6);
-    try std.testing.expect(h.wear(.hand_sword, .greatclub));
+    h.arm = .club; // `equip` refuses mid-swing; the latch is what holds if anything reaches past it
     try std.testing.expectApproxEqAbs(r, h.bladeR(), 1e-6);
     try std.testing.expectEqual(Blade.sword, h.heldBlade());
+    try std.testing.expectEqual(Stroke.slash, h.swingMove().stroke);
     h.attacking = false;
     try std.testing.expectEqual(Blade.club, h.heldBlade());
     h.startAttack(.light);
     try std.testing.expect(h.bladeR() > r);
+    try std.testing.expectEqual(Stroke.sweep, h.swingMove().stroke);
 }
 
-test "A HEAVY WEAPON IS SWUNG LIKE ONE — the same stroke, wider and lower on the hips" {
-    try std.testing.expectEqual(SwingShape{}, swingOf(.sword));
-    for ([_]item.Kind{ .fang_dirk, .greatclub }) |k| {
-        const shape = swingOf(bladeFor(k));
-        const heavy = item.equip(k).arm.heft == .heavy;
-        try std.testing.expect((shape.arc > 1) == heavy);
-        try std.testing.expect((shape.wind > 1) == heavy);
-        try std.testing.expect((shape.dip > 1) == heavy);
+test "ALL THREE CLASSES WORK IN EITHER HAND — the mesh, the pose and the capsule agree on which fist" {
+    for ([_]Armament{ .sword, .dagger, .club }) |a| {
+        var right = testHero();
+        right.arm = a;
+        right.off = .shield;
+        var left = testHero();
+        left.arm = .shield;
+        left.off = a;
+        try std.testing.expect(!right.meleeLeft() and left.meleeLeft());
+        try std.testing.expectEqual(right.heldBlade(), left.heldBlade());
+
+        for ([_]Attack{ .light, .heavy }) |kind| {
+            for ([_]*Hero{ &right, &left }) |h| {
+                h.startAttack(kind);
+                h.blendT = POSE_XFADE;
+                h.atkT = 0.5 * h.atkDur(kind == .heavy);
+                h.pose();
+                h.updateBlade();
+            }
+            // **THE CAPSULE'S ROOT IS NEARER THE HAND THAT HOLDS IT THAN THE OTHER HAND** — asked of each
+            // hero about ITSELF, which is the exact form of the `wandTipWorld` failure (a rod that drew in
+            // one fist and cast from the other) and the only form that is frame-independent. Comparing the
+            // two heroes' tips is not: a thrust and a smash are on the CENTRE LINE and do not mirror
+            // (`strokeTrack`), so both hands drive the point to nearly the same place on purpose.
+            for ([_]*Hero{ &right, &left }) |h| {
+                const own = rl.math.vector3Transform(mathx.zero3, h.xf[if (h.meleeLeft()) WRL else WRR]);
+                const other = rl.math.vector3Transform(mathx.zero3, h.xf[if (h.meleeLeft()) WRR else WRL]);
+                try std.testing.expect(mathx.distXZ(h.bladeA, own) < 0.5);
+                try std.testing.expect(mathx.distXZ(h.bladeA, own) < mathx.distXZ(h.bladeA, other));
+            }
+            // …and the SAGITTAL half of the stroke is never mirrored: both hands reach as far forward and
+            // as high. This is what `armSide`'s `mirror` buys, and getting it wrong flips a stroke backwards.
+            try std.testing.expectApproxEqAbs(right.bladeB.y, left.bladeB.y, 0.30);
+            for ([_]*Hero{ &right, &left }) |h| h.attacking = false;
+        }
+    }
+}
+
+test "THE WEAPON HAND IS ONE HAND — a second melee class in the other cell is stowed, not dual-wielded" {
+    var h = testHero();
+    h.arm = .club;
+    h.off = .dagger;
+    try std.testing.expect(!h.offInHand());
+    try std.testing.expect(h.holds(.club) and !h.holds(.dagger));
+    try std.testing.expectEqual(Armament.club, h.meleeArm().?);
+    try std.testing.expectEqual(Blade.club, h.heldBlade());
+    try std.testing.expect(!h.meleeLeft());
+
+    // AND THE RIGHT CELL IS THE ONE THAT WINS, whichever pair it is.
+    for ([_]Armament{ .sword, .dagger, .club }) |r| {
+        for ([_]Armament{ .sword, .dagger, .club }) |o| {
+            var t = testHero();
+            t.arm = r;
+            t.off = o;
+            try std.testing.expectEqual(r, t.meleeArm().?);
+            try std.testing.expectEqual(wearFor(r).?, swingSocket(r, o));
+        }
     }
 
-    var bare = testHero();
-    var club = testHero();
-    try std.testing.expect(club.wear(.hand_sword, .greatclub));
-    var dirk = testHero();
-    try std.testing.expect(dirk.wear(.hand_sword, .fang_dirk));
+    // A NON-WEAPON OFF-HAND IS UNAFFECTED — that pairing is the whole game.
+    var g = testHero();
+    g.arm = .dagger;
+    g.off = .shield;
+    try std.testing.expect(g.offInHand() and g.holds(.shield) and g.shieldOut());
+}
 
+test "A CLASS'S ROW AND ITS WEAPON'S ROW ARE THE SAME NUMBERS — written once, in `item`" {
+    try std.testing.expectEqual(item.DAGGER, item.equip(.fang_dirk).arm);
+    try std.testing.expectEqual(item.CLUB, item.equip(.greatclub).arm);
+    try std.testing.expectEqual(item.DAGGER, item.bareArm(.hand_dagger));
+    try std.testing.expectEqual(item.CLUB, item.bareArm(.hand_club));
+    // THE SWORD IS THE REFERENCE AND IS 1 ON EVERY DIAL.
+    const s = item.bareArm(.hand_sword);
+    try std.testing.expectEqual(@as(f32, 1), s.dmg);
+    try std.testing.expectEqual(@as(f32, 1), s.poise);
+    try std.testing.expectEqual(@as(f32, 1), s.dur);
+    try std.testing.expectEqual(@as(f32, 1), s.stam);
+    // …AND `heft` AGREES WITH THE STROKES: the heavy class is the one whose R2 is the overhead smash.
+    try std.testing.expectEqual(item.Heft.heavy, item.CLUB.heft);
+    try std.testing.expectEqual(Stroke.smash, moveOf(.club, true).stroke);
+    try std.testing.expectEqual(item.Heft.light, item.DAGGER.heft);
+    for ([_]Blade{ .sword, .dagger, .club }) |b| {
+        const w = wearFor(switch (b) {
+            .sword => Armament.sword,
+            .dagger => Armament.dagger,
+            .club => Armament.club,
+        }).?;
+        try std.testing.expectEqual(w, item.bareArm(w).slot);
+        try std.testing.expectEqual(item.Reach.melee, item.bareArm(w).reach);
+    }
+}
+
+test "NOTHING SWINGS AN EMPTY HAND — a press with no melee class in a fist starts no stroke" {
+    var h = testHero();
+    h.arm = .shield;
+    h.off = .bell;
+    h.startAttack(.light);
+    try std.testing.expect(!h.attacking);
+    h.off = .club;
+    h.startAttack(.light);
+    try std.testing.expect(h.attacking and h.meleeLeft());
+}
+
+test "SIX MOVES, SIX STROKES — every class's R1 and R2 is its own, and the sword's two are untouched" {
+    // THE SWORD'S ROWS ARE THE SHIPPED CONSTANTS. Transcribed into the table, so if either drifts this fails
+    // before anybody notices the swing changed.
+    try std.testing.expectEqual(Stroke.slash, moveOf(.sword, false).stroke);
+    try std.testing.expectEqual(Stroke.chop, moveOf(.sword, true).stroke);
+    try std.testing.expectEqual(@as(f32, ATK_LIGHT_DUR), moveOf(.sword, false).t.dur);
+    try std.testing.expectEqual(@as(f32, AL_HIT_A), moveOf(.sword, false).t.hitA);
+    try std.testing.expectEqual(@as(f32, AH_LUNGE), moveOf(.sword, true).t.lunge);
+    try std.testing.expect(strokeTrack(.slash) == null and strokeTrack(.chop) == null);
+
+    var seen = std.EnumSet(Stroke).initEmpty();
+    for ([_]Blade{ .sword, .dagger, .club }) |b| {
+        for ([_]bool{ false, true }) |heavy| {
+            const s = moveOf(b, heavy).stroke;
+            try std.testing.expect(!seen.contains(s)); // no two presses in the kit play the same stroke
+            seen.insert(s);
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 6), seen.count());
+
+    std.debug.print("\n  moveset (seconds at the row's own dial):\n", .{});
+    const rows = [_]struct { a: Armament, k: ?item.Kind }{
+        .{ .a = .sword, .k = null },
+        .{ .a = .dagger, .k = .fang_dirk },
+        .{ .a = .club, .k = .greatclub },
+    };
+    var lightDur: [3]f32 = undefined;
+    var heavyDur: [3]f32 = undefined;
+    var live: [3][2]f32 = undefined;
+    for (rows, 0..) |r, i| {
+        var h = meleeHero(r.a, r.k);
+        inline for ([_]bool{ false, true }) |heavy| {
+            const t = moveOf(bladeOf(r.a).?, heavy).t;
+            const dur = h.atkDur(heavy);
+            const active = (t.hitB - t.hitA) * dur;
+            live[i][@intFromBool(heavy)] = active;
+            if (heavy) heavyDur[i] = dur else lightDur[i] = dur;
+            std.debug.print("    {s:<7} {s:<6} {s:<7} total {d:.3}  live {d:.3} at {d:.3}  step {d:.2} m\n", .{
+                @tagName(r.a),
+                if (heavy) "R2" else "R1",
+                @tagName(moveOf(bladeOf(r.a).?, heavy).stroke),
+                dur,
+                active,
+                t.hitA * dur,
+                t.lunge,
+            });
+        }
+    }
+    // THE DAGGER IS THE FASTEST THING HE OWNS AND THE CLUB THE SLOWEST, on both presses.
+    try std.testing.expect(lightDur[1] < lightDur[0] and lightDur[0] < lightDur[2]);
+    try std.testing.expect(heavyDur[1] < heavyDur[0] and heavyDur[0] < heavyDur[2]);
+    // THE SWEEP OWNS ITS WHOLE ARC: the longest live window in the kit, by half again over the next.
+    try std.testing.expect(live[2][0] > 1.5 * live[0][0] and live[2][0] > 1.5 * live[1][1]);
+    // …AND THE FLICK THE SHORTEST.
+    for ([_]f32{ live[0][0], live[0][1], live[1][1], live[2][0], live[2][1] }) |o| {
+        try std.testing.expect(live[1][0] < o);
+    }
+    // THE THRUST BUYS ITS REACH BACK BY STEPPING — the longest travel of any light-class move.
+    try std.testing.expect(moveOf(.dagger, true).t.lunge > moveOf(.sword, true).t.lunge);
+    try std.testing.expect(moveOf(.dagger, true).t.lunge > 3.0 * moveOf(.dagger, false).t.lunge);
+}
+
+test "THE HANG IS REAL AND THE SMASH ARRIVES OVERHEAD — measured off the posed club, not argued" {
+    var club = meleeHero(.club, .greatclub);
+    club.startAttack(.heavy);
+    club.blendT = POSE_XFADE; // past the cross-fade: the stroke's own pose, not a blend with an unset one
+    const dur = club.atkDur(true);
+    const t = moveOf(.club, true).t;
+
+    // THE CLUB STANDS STILL OVER HIS HEAD across the whole `.hold` span, and that is the tell.
+    const topA = mkAt(&SMASH_KEYS, 0.30);
+    const topB = mkAt(&SMASH_KEYS, 0.38);
+    try std.testing.expectApproxEqAbs(topA.sh, topB.sh, 1e-4);
+    try std.testing.expectApproxEqAbs(topA.dip, topB.dip, 1e-4);
+    const hang = (0.40 - 0.28) * dur;
+    std.debug.print("\n  smash: hang {d:.3} s of {d:.3} s, blow at {d:.3} s\n", .{ hang, dur, t.hitA * dur });
+    // A REAL HANG, BUT NOT A TELEGRAPH: ten frames of a motionless club, not twenty-two.
+    try std.testing.expect(hang > 0.14 and hang < 0.24);
+
+    // AND THE TIP IS GENUINELY UP THERE, then genuinely down at his feet: measured off the posed bone.
+    club.atkT = 0.40 * dur;
+    club.pose();
+    club.updateBlade();
+    const overhead = club.bladeB.y;
+    const crown = club.pos.y + H;
+
+    // **MEASURED ACROSS THE LIVE WINDOW, NOT AT ITS OPENING FRAME.** The capsule goes live half way down, so
+    // at `hitA` the club is still well overhead — what the move claims is that it comes THROUGH a standing
+    // body and finishes on the ground, and that is a span, not a point.
+    const span = tipSpan(.club, .greatclub, true, .y);
+    std.debug.print("  smash tip: {d:.2} m overhead (crown {d:.2}); live window sweeps {d:.2} m -> {d:.2} m\n", .{ overhead, crown, span.hi, span.lo });
+    try std.testing.expect(overhead > crown);
+    try std.testing.expect(span.hi > crown); // it is still above a standing man when the capsule opens
+    try std.testing.expect(span.lo < 0.45 * H); // and it finishes on the ground at his feet
+    try std.testing.expect(span.hi - span.lo > 1.6);
+}
+
+test "A CLUB IS SWUNG LIKE ONE — it sinks the hips, the dagger does not, and the thrust goes STRAIGHT" {
+    var bare = testHero();
+    var club = meleeHero(.club, .greatclub);
+    var dagger = meleeHero(.dagger, .fang_dirk);
+
+    // **COMPARED AT EACH STROKE'S OWN DEEPEST FRAME, NOT AT A SHARED `u`**: the smash's midpoint is the HANG,
+    // where he is RISEN onto the club and higher than any other stroke puts him. Asked at 0.5 the club came
+    // out above the sword and the claim read backwards.
     for ([_]Attack{ .light, .heavy }) |kind| {
         const heavy = kind == .heavy;
-        for ([_]*Hero{ &bare, &club, &dirk }) |h| {
+        var deep: [3]f32 = undefined;
+        for ([_]*Hero{ &bare, &club, &dagger }, 0..) |h, i| {
             h.startAttack(kind);
-            h.blendT = POSE_XFADE; // past the cross-fade: the stroke's own pose, not a blend with an unset one
-            h.atkT = 0.5 * h.atkDur(heavy); // the same POINT in each stroke, which is not the same second
-            h.pose();
+            h.blendT = POSE_XFADE;
+            deep[i] = 1e9;
+            var u: f32 = 0;
+            while (u <= 1.0) : (u += 0.02) {
+                h.atkT = u * h.atkDur(heavy);
+                h.pose();
+                deep[i] = mathx.minF(deep[i], h.xf[ROOT].m13);
+            }
+            h.attacking = false;
         }
-        try std.testing.expect(club.xf[ROOT].m13 < bare.xf[ROOT].m13);
-        try std.testing.expect(dirk.xf[ROOT].m13 > bare.xf[ROOT].m13);
-        for ([_]*Hero{ &bare, &club, &dirk }) |h| h.attacking = false;
+        std.debug.print("  deepest hip ({s}): sword {d:.3}, club {d:.3}, dagger {d:.3}\n", .{ @tagName(kind), deep[0], deep[1], deep[2] });
+        try std.testing.expect(deep[1] < deep[0]); // the club drops further into every stroke it owns
+        try std.testing.expect(deep[2] > deep[0]); // …and the dagger barely drops at all
     }
+
+    // THE THRUST TRAVELS DOWN HIS FACING, NOT ACROSS IT — which is the whole difference between it and every
+    // other stroke in the kit. Measured as the LATERAL drift of the tip across the live window.
+    const thrustLat = tipSpan(.dagger, .fang_dirk, true, .x);
+    const flickLat = tipSpan(.dagger, .fang_dirk, false, .x);
+    const thrust = thrustLat.hi - thrustLat.lo;
+    const flick = flickLat.hi - flickLat.lo;
+    std.debug.print("  dagger tip lateral travel: thrust {d:.3} m, flick {d:.3} m\n", .{ thrust, flick });
+    try std.testing.expect(thrust < 0.5 * flick);
+}
+
+/// The blade's own pitch off horizontal at a fraction of its stroke, + = the point is BELOW the grip.
+fn bladePitchAt(a: Armament, k: ?item.Kind, heavy: bool, u: f32) f32 {
+    var h = meleeHero(a, k);
+    h.startAttack(if (heavy) .heavy else .light);
+    h.blendT = POSE_XFADE;
+    h.atkT = u * h.atkDur(heavy);
+    h.pose();
+    h.updateBlade();
+    const d = mathx.subV(h.bladeB, h.bladeA);
+    return mathx.degrees(std.math.atan2(-d.y, @sqrt(d.x * d.x + d.z * d.z)));
+}
+
+test "A SWEEP RUNS LEVEL AND A SMASH COMES DOWN — the blade's own pitch, not the arm's" {
+    const t = moveOf(.club, false).t;
+    const mid = 0.5 * (t.hitA + t.hitB);
+    const sweep = bladePitchAt(.club, .greatclub, false, mid);
+    const thrust = bladePitchAt(.dagger, .fang_dirk, true, 0.52);
+    const smash = bladePitchAt(.club, .greatclub, true, 0.56); // the impact key, not the window's tail
+    std.debug.print("\n  blade pitch (+ = point below the grip): sweep {d:.1} deg, thrust {d:.1}, smash {d:.1}\n", .{ sweep, thrust, smash });
+    // **A HORIZONTAL SWING MUST BE HORIZONTAL.** At 60 deg it rakes the dirt in front of him and reads as a
+    // failed overhead, which is exactly what the first pass did (measured).
+    try std.testing.expect(@abs(sweep) < 25);
+    // A THRUST POINTS AT A TORSO, not at the ground between them.
+    try std.testing.expect(@abs(thrust) < 25);
+    // …AND THE SMASH IS THE ONE THAT IS STEEP — against the club's OWN horizontal, and at least as steep as
+    // the sword's overhead. **A 1.44 m CLUB ON A 1.3 m SHOULDER CANNOT BE BOTH VERTICAL AND ON THE GROUND**:
+    // solved, the head reaches the earth with the shaft near 40 deg, and forcing it past that drove the tip
+    // 0.81 m UNDER the floor (measured). The steepness claim is therefore RELATIVE, which is the only form
+    // of it that is true.
+    try std.testing.expect(smash > 2.0 * @abs(sweep));
+    try std.testing.expect(smash > 30);
 }
 
 test "THE ROD LEAVES THE HAND IT IS IN — the tip is where every spell comes out of" {
@@ -5659,6 +6257,28 @@ test "ONE OF EACH ACROSS THE FOUR CELLS — taking a thing that is already racke
     try std.testing.expect(stale.armAlt != .sword and stale.off != .sword);
     try std.testing.expect(stale.armAlt != stale.off);
     try std.testing.expectEqual(Armament.shield, stale.offAlt);
+
+    // **AND THE TIDY MAY NOT CONJURE A WEAPON HE HAS NOT FOUND.** `.dagger` is position 1 in the enum, so
+    // the first-unused-value fill handed one out on every load of a save with a duplicated cell.
+    for (stale.rack()) |c| try std.testing.expect(c.* != .dagger and c.* != .club);
+    try std.testing.expect(!stale.canRack(.dagger) and !stale.canRack(.club));
+    try std.testing.expect(stale.canRack(.sword) and stale.canRack(.bow));
+
+    // …AND MAY USE ONE HE HAS. The gate is ownership, not the name.
+    var owns = testHero();
+    owns.arm = .sword;
+    owns.armAlt = .sword;
+    owns.off = .sword;
+    owns.offAlt = .shield;
+    try std.testing.expect(owns.wear(.hand_club, .greatclub));
+    try std.testing.expect(owns.canRack(.club) and !owns.canRack(.dagger));
+    owns.tidyHands();
+    var sawClub = false;
+    for (owns.rack()) |c| {
+        try std.testing.expect(c.* != .dagger);
+        if (c.* == .club) sawClub = true;
+    }
+    try std.testing.expect(sawClub);
 }
 
 test "A SKILL REACHES THE BLOW IT GOVERNS AND NOTHING ELSE" {
@@ -5669,10 +6289,8 @@ test "A SKILL REACHES THE BLOW IT GOVERNS AND NOTHING ELSE" {
     try std.testing.expectApproxEqAbs(ATK_LIGHT_HIT.dmg, bare.attackHit().dmg, 1e-4);
     try std.testing.expectApproxEqAbs(combat.BOLT_HIT.raw(), bare.castBlow().?.raw(), 1e-3);
 
-    var club = testHero();
-    _ = club.wear(.hand_sword, .greatclub);
-    var dirk = testHero();
-    _ = dirk.wear(.hand_sword, .fang_dirk);
+    var club = meleeHero(.club, .greatclub);
+    var dirk = meleeHero(.dagger, .fang_dirk);
     club.atkHeavy = true;
     dirk.atkHeavy = true;
     const clubBase = club.attackHit().dmg;
@@ -5684,8 +6302,7 @@ test "A SKILL REACHES THE BLOW IT GOVERNS AND NOTHING ELSE" {
     dirk.sheet.set(.dexterity, 60);
     try std.testing.expect(dirk.attackHit().dmg > dirkBase);
 
-    var strong = testHero();
-    _ = strong.wear(.hand_sword, .greatclub);
+    var strong = meleeHero(.club, .greatclub);
     strong.atkHeavy = true;
     const weakPoise = strong.attackHit().poise;
     const weakStance = strong.attackHit().stance;
@@ -5764,10 +6381,8 @@ test "THE WHOLE SUIT ANSWERS PHYSICAL, and stacking it cannot become immunity" {
 
 test "WHAT HE IS WEARING REACHES THE FIGHT — the swing, the clock, the bill, the boards and the bar" {
     var bare = testHero();
-    var club = testHero();
-    _ = club.wear(.hand_sword, .greatclub);
-    var dirk = testHero();
-    _ = dirk.wear(.hand_sword, .fang_dirk);
+    var club = meleeHero(.club, .greatclub);
+    var dirk = meleeHero(.dagger, .fang_dirk);
 
     bare.atkHeavy = true;
     club.atkHeavy = true;
@@ -5820,6 +6435,9 @@ test "WHAT HE IS WEARING REACHES THE FIGHT — the swing, the clock, the bill, t
 
     try std.testing.expect(!bare.wear(.chest, .greatclub));
     try std.testing.expect(!bare.wear(.hand_sword, .quilted_gambeson));
+    // AND A WEAPON GOES IN ITS OWN CLASS'S SOCKET, not in the sword's.
+    try std.testing.expect(!bare.wear(.hand_sword, .greatclub));
+    try std.testing.expect(!bare.wear(.hand_club, .fang_dirk));
     try std.testing.expect(bare.worn.at(.chest) == null);
 }
 
@@ -5830,7 +6448,7 @@ test "WHAT STARTS IS WHAT LANDS — a variant taken up mid-stroke cannot reach i
     const dmg = h.attackHit().dmg;
     h.atkT = dur * 0.70;
     try std.testing.expect(!h.hitActive());
-    try std.testing.expect(h.wear(.hand_sword, .greatclub));
+    h.arm = .club; // `equip` refuses mid-swing; this is what holds if something reaches past it
 
     // Read live, `atkT / dur` fell back to 0.52 of a club's longer clock — inside `AL_HIT_A`..`AL_HIT_B`,
     // which re-opens a window that had already closed and re-arms `foe.strike`'s one-hit latch.
@@ -5855,4 +6473,63 @@ test "WHAT STARTS IS WHAT LANDS — a variant taken up mid-stroke cannot reach i
     b.shooting = false;
     try std.testing.expect(b.shotDur(false) > shot);
     try std.testing.expectApproxEqAbs(BOW_SHOT_DUR * item.equip(.grave_warbow).arm.dur, b.shotDur(true), 1e-6);
+}
+
+const Span = struct { lo: f32, hi: f32, mean: f32 };
+
+/// **ONE WALK OF A STROKE'S LIVE WINDOW** — the measurement every claim about where a blow goes is made over.
+/// `.y` is height, `.x` is his own LATERAL (facing is pinned to +Z). As three separate loops the step size and
+/// the endpoints were already three slightly different questions.
+fn tipSpan(a: Armament, k: ?item.Kind, heavy: bool, axis: enum { x, y }) Span {
+    var h = meleeHero(a, k);
+    h.facing = 0;
+    h.startAttack(if (heavy) .heavy else .light);
+    h.blendT = POSE_XFADE; // past the cross-fade: the stroke's own pose, not a blend with an unset one
+    const t = moveOf(bladeOf(a).?, heavy).t;
+    const dur = h.atkDur(heavy);
+    var out = Span{ .lo = 1e9, .hi = -1e9, .mean = 0 };
+    var n: f32 = 0;
+    var u = t.hitA;
+    while (u <= t.hitB) : (u += 0.01) {
+        h.atkT = u * dur;
+        h.pose();
+        h.updateBlade();
+        const v = if (axis == .x) h.bladeB.x else h.bladeB.y;
+        out.lo = mathx.minF(out.lo, v);
+        out.hi = mathx.maxF(out.hi, v);
+        out.mean += v;
+        n += 1;
+    }
+    out.mean /= n;
+    return out;
+}
+
+/// The mean height the tip holds across the live window — where the blow actually aims, which is not where
+/// the arm ends up and not the highest point the tip reaches.
+fn aimHeightOf(a: Armament, k: ?item.Kind, heavy: bool) f32 {
+    return tipSpan(a, k, heavy, .y).mean;
+}
+
+test "EVERY STROKE AIMS AT A BODY — except the one whose target is the ground" {
+    const slash = aimHeightOf(.sword, null, false);
+    const flick = aimHeightOf(.dagger, .fang_dirk, false);
+    const sweep = aimHeightOf(.club, .greatclub, false);
+    const smash = aimHeightOf(.club, .greatclub, true);
+    const thrust = aimHeightOf(.dagger, .fang_dirk, true);
+    std.debug.print("\n  aim (mean tip height over the live window, H={d:.2}): slash {d:.2}, flick {d:.2}, thrust {d:.2}, sweep {d:.2}, smash {d:.2}\n", .{ H, slash, flick, thrust, sweep, smash });
+
+    // **THE LIGHT STROKES AIM WHERE THE SWORD'S DOES.** Authored off the arm rather than off the target, the
+    // flick sat at 0.80 m and the sweep at 0.66 — both raking a standing man's SHINS (measured; owner: they
+    // should aim higher with weak). The sword's own slash is the line, because it is the tuned one.
+    for ([_]f32{ flick, sweep }) |aim| {
+        try std.testing.expect(aim > 0.55 * H); // a torso, not a knee
+        try std.testing.expect(@abs(aim - slash) < 0.35);
+    }
+    // A THRUST IS LEVEL AT A BODY TOO.
+    try std.testing.expect(thrust > 0.45 * H);
+    // …AND THE SMASH IS THE ONE THAT COMES DOWN THROUGH ALL OF IT. Its MEAN sits well under the club's own
+    // horizontal because the window opens with the club overhead and closes on the earth; where it FINISHES
+    // is measured next door, at -0.01 m.
+    try std.testing.expect(smash < sweep);
+    try std.testing.expect(smash < 0.7 * slash);
 }

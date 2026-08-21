@@ -4394,7 +4394,9 @@ const Acts = struct {
 
 fn handActs(a: heromod.Armament, in: HandIn, out: *Acts) void {
     switch (a) {
-        .sword => {
+        // R1 AND R2 ARE THE WHOLE MELEE KIT (owner's call) — three classes, two strokes each, no strings.
+        // Which stroke a press plays is the armament's own answer (`hero.moveOf`), not this file's.
+        .sword, .dagger, .club => {
             out.light = out.light or in.press1;
             out.heavy = out.heavy or in.press2;
         },

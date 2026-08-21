@@ -197,6 +197,31 @@ whose contents change together is fine. Splits go where concerns genuinely part 
   the guard and the parry) and on the bell, mirrored (its ring was welded to the RIGHT).
   **AND A TWO-HANDER CLAIMS BOTH HANDS FROM EITHER SLOT** — asked as "is the RIGHT slot two-handed", a bow
   set in the LEFT left a shield in the right blocking and parrying while nothing was drawn in either hand.
+- **THE THREE MELEE CLASSES ARE THREE ARMAMENTS, EACH WITH ITS OWN SOCKET AND ITS OWN TWO STROKES** —
+  `sword`/`dagger`/`club`, `hand_sword`/`hand_dagger`/`hand_club`, and `hero.MOVES` indexed `[Blade][heavy]`.
+  As ONE armament reading `hand_sword` and scaling the sword's swing by three multipliers, a club was a slow
+  sword and a dagger a small one: the same stroke at two amplitudes, which is a dial and not a moveset.
+  R1 and R2 are the whole kit — no strings — and the six are `slash`/`chop` (the sword's, hand-tuned and
+  left alone), `flick`/`thrust` (the dagger: DS1's rapid jabs, and the R2 that thrusts), `sweep`/`smash`
+  (the club: DS1's dashing horizontal swing, and the OVERHEAD SMASH that is the great hammer's signature).
+  - **THE WEAPON HAND IS ONE HAND** (`handsHold`, `offInHand`). The rig has ONE held bone, so a dagger and a
+    club in the two live cells would silently draw one of them nowhere. The RIGHT cell wins, exactly as a
+    two-hander wins over the cell it did not fill, and `offInHand` says so in words the book can print.
+  - **THE FOUR NEW STROKES ARE KEYED TRACKS** (`MK`, `anim.Pose`, `poseStroke`) — one rig function, four key
+    tables, because what differs between a flick and an overhead is the TRACK and not the skeleton. NO SPRING
+    BANK: `pose` takes no `dt` (every hero pose is pure in its own clock, which is what keeps `--shot`
+    reproducible), so the load, the HANG, the snap, the carry-past and the settle are authored as KEYS.
+  - **AN ARRIVAL IS `.accel` INTO THE BLOW AND `.decel` OUT OF IT, NEVER `.snap`.** `snap` is front-loaded,
+    so on a strike key it puts the whole stroke BEHIND the capsule: measured, the dagger crossed 13° of its
+    84° arc inside its own live window and the club was already on the ground when the window opened.
+  - **A CLASS'S ROW IS `item.DAGGER`/`item.CLUB` AND ITS WEAPON *IS* THAT ROW** — one set of numbers, so a
+    second dagger written later differs from a figure already on the page. Neither class is offered BARE in
+    the book: they are things you FIND, and `bareArm` exists so an emptied socket is sane, not reachable.
+  - **AND `item.Wear` IS APPEND-ONLY, BUT THAT IS NOT ENOUGH ON ITS OWN.** A save's `worn:` run is positional
+    over that enum, and re-socketing the dirk from `hand_sword` to `hand_dagger` made the loader's
+    position-vs-kind guard throw out a REAL file — position, souls, tree and bag with it. The KIND now names
+    its own socket and the position is only a cursor for the dashes: a file may not be lost because the game
+    grew a socket.
 - **HUMANOID ENEMIES REUSE THE HERO'S WALK/STRAFE** — `hero.advanceGait` + `hero.legChain`. Never
   author a bespoke walk; only the upper body is per-enemy. `legChain` is rig-size agnostic but a foe
   rig must keep the hero's leg indices (5..10) where they are.

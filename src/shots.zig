@@ -1039,6 +1039,27 @@ pub fn runShots(g: *Game) void {
         g.menu.hitboxes = false;
         g.menu.stats = false;
 
+        // THE WOUND, TWICE — the streaked blood a few frames after the blade lands, and the stains it
+        // leaves on the ground once the flight is over.
+        f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+        g.hero.pos = mathx.ground(0, 0.85);
+        g.hero.facing = std.math.pi;
+        g.hero.update(dt, 0, 0, null);
+        g.hero.pose();
+        stagedAttack(g, .light);
+        var wk: i32 = 0;
+        var landed: i32 = -1;
+        while (wk < 999 and g.hero.attacking) : (wk += 1) {
+            g.hero.updateAttack(dt, game.PLAY_HALF, null);
+            _ = f.update(dt, mathx.ground(0, 60), game.PLAY_HALF, heroBlade(g));
+            if (f.hits > 0 and landed < 0) landed = wk;
+            if (landed >= 0 and wk == landed + 5) shootFoe(g, f, "shots/29b_frog_wound.png", 60, 0.10, 2.6);
+        }
+        must(landed >= 0, "the wound shot's swing never landed");
+        var ws: i32 = 0;
+        while (ws < 12) : (ws += 1) _ = f.update(dt, mathx.ground(0, 60), game.PLAY_HALF, .{});
+        shootFoe(g, f, "shots/29c_frog_wound_after.png", 60, 0.30, 2.4);
+
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         stepFoe(f, 8, front);
         g.hero.pos = mathx.ground(1.7, 3.6);
@@ -2504,10 +2525,8 @@ fn knightShots(g: *Game) void {
     g.bossK = 0;
 }
 
-/// EVERY FRAME OF ALL THREE STROKES, IN PROFILE. He is stood ACROSS the lens with the hero out on the side
-/// he is swinging at, so the arc travels across the frame instead of foreshortening down it; the whole wind
-/// AND the whole strike are walked at a fixed step, so a stroke that snaps shows up as a break between two
-/// adjacent frames.
+/// EVERY FRAME OF ALL THREE STROKES, IN PROFILE — stood ACROSS the lens so the arc travels the frame instead
+/// of foreshortening down it, walked at a fixed step so a stroke that snaps breaks between two frames.
 fn knightStrokeStrips(
     g: *Game,
     sc: rl.Vector3,

@@ -22,9 +22,6 @@ pub fn closestApproach(bodyR: f32) f32 {
 
 pub const AIRBORNE_LIFT: f32 = 0.04;
 
-/// **WHAT A CREATURE IS, AND HOW IT GETS ABOUT — ONE ROW PER KIND, HERE.** `Nature` is WHAT IT IS and
-/// `Gait` is HOW IT TRAVELS, two axes on purpose: a shade and a leechfly both leave the ground and are
-/// nothing else alike.
 pub const Nature = enum {
     beast,
     demon,
@@ -46,8 +43,7 @@ pub const Nature = enum {
     }
 };
 
-/// **NOT `airborne()`, WHICH IS A DIFFERENT QUESTION.** That one is whether a body is off the ground THIS
-/// FRAME and is what collision asks. This is what the creature IS: a leechfly is `.flying` on every frame.
+/// NOT `airborne()`, which is off-the-ground THIS FRAME: this is what the creature IS, on every frame.
 pub const Gait = enum {
     /// On foot, and the water gate holds it (`game.gateTerrain`).
     walking,
@@ -84,11 +80,9 @@ pub fn traitsOf(k: wf.FoeKind) Traits {
     };
 }
 
-/// **HOW DEEP A THING WILL GO IN, AS A SHARE OF ITS OWN STATURE.** The hero's own limit is 0.76 of his
-/// (`env.WADE_MAX`) and he chose to be in there; a creature turns back at the hips.
+/// A share of its OWN STATURE — the hips. The hero's own limit is 0.76 of his (`env.WADE_MAX`).
 pub const WADE_FRAC: f32 = 0.45;
 
-/// The depth past which a creature will not follow. Infinite for anything the water is not an obstacle to.
 pub fn wadeLimit(k: wf.FoeKind, stature: f32) f32 {
     return switch (traitsOf(k).gait) {
         .walking => WADE_FRAC * mathx.maxF(stature, 0.2),
@@ -96,14 +90,12 @@ pub fn wadeLimit(k: wf.FoeKind, stature: f32) f32 {
     };
 }
 
-/// **NO ATTACK COMES OUT OF NOWHERE**: seconds a creature's kit must be VISIBLY MOVING before it can deal
-/// damage. The ogre's swipe, the brood's bite and the toad's gape are all half a second up; the berserker's
-/// chop at 0.14 and the broodling's at 0.20 read as INSTANT. A FLOOR under the winds, never the length of one.
+/// **NO ATTACK COMES OUT OF NOWHERE**: seconds the kit must be VISIBLY MOVING first. A chop at 0.14 and a
+/// bite at 0.20 read as INSTANT. A FLOOR under the winds, never the length of one.
 pub const TELL_MIN: f32 = 0.30;
 
-/// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT ON THE BOARDS — one number, IN SECONDS, measured back
-/// from the move's own impact frame, and it IS the parry's difficulty. **Every creature with windows reads
-/// THIS one**, so a club, a mace, a greatsword and a mother's fangs teach one rule (`ogre.parryable`).
+/// SECONDS back from the move's own impact frame, and it IS the parry's difficulty. Every creature with a
+/// window reads THIS one, so every weapon in the field teaches one rule (`ogre.parryable`).
 pub const PARRY_LEAD: f32 = 0.18;
 
 pub fn inParryWindow(left: f32) bool {
@@ -126,8 +118,8 @@ pub fn corporeal(f: anytype) bool {
 }
 
 
-/// HOW FAR PAST ITS OWN NOTICE RING a creature follows before turning for home. Per-creature: one flat 30 m
-/// was both 2.7x the toad's aggro and the spacing between camps in `worlds/`.
+/// Past its own notice ring, before turning for home. Per-creature: one flat 30 m was 2.7x the toad's aggro
+/// and the spacing between camps in `worlds/`.
 pub const LEASH_SLACK: f32 = 6.0;
 /// …and it is home again only this close — the hysteresis, so a foe at the boundary cannot flap.
 pub const LEASH_HOME_R: f32 = 3.0;
@@ -157,12 +149,9 @@ pub const Leash = struct {
     engagedLeft: f32 = 0,
     returning: bool = false,
 
-    /// Per frame, BEFORE the state machine decides anything. `out` is how far the CREATURE is from its post
-    /// and `heroOut` how far the HERO is from that same post.
-    ///
-    /// **BOTH RANGES ARE MEASURED FROM THE POST, and that is the whole of the tether.** As the gap between
-    /// the two BODIES, tethers nominally 17–30 m long released at 34 m (ogre) to 176 m (leechfly): the
-    /// question is "has he left my patch", and a patch is a place, not a separation.
+    /// Per frame, BEFORE the state machine decides anything. **BOTH RANGES ARE MEASURED FROM THE POST** —
+    /// `out` for the creature, `heroOut` for the hero. As the gap between the two BODIES, tethers nominally
+    /// 17–30 m long released at 34 m (ogre) to 176 m (leechfly).
     pub fn tick(self: *Leash, dt: f32, out: f32, heroOut: f32, aggroR: f32) void {
         self.sinceCombat += dt;
         self.sinceSeen += dt;
@@ -231,14 +220,12 @@ pub fn sensedDist(l: *const Leash, real: f32, aggroR: f32) f32 {
     return real;
 }
 
-/// ONE FRAME OF A CREATURE'S TETHER, off the three points it is actually about — so `out` and `heroOut`
-/// cannot be transposed into a tether that releases at the wrong range.
+/// `out` and `heroOut` transposed is a tether that releases at the wrong range.
 pub fn tickLeash(l: *Leash, dt: f32, at: rl.Vector3, home: rl.Vector3, hero: rl.Vector3, aggroR: f32) void {
     l.tick(dt, mathx.distXZ(at, home), mathx.distXZ(home, hero), aggroR);
 }
 
-/// …AND A FIXTURE'S, the same tether with the first distance known: a creature that never travels is always
-/// at its post, so `out` is 0 by construction and all the tether can answer is whether HE left its patch.
+/// …AND A FIXTURE'S: it is always at its post, so `out` is 0 and the tether only asks whether HE left.
 pub fn tickFixedLeash(l: *Leash, dt: f32, home: rl.Vector3, hero: rl.Vector3, aggroR: f32) void {
     l.tick(dt, 0, mathx.distXZ(home, hero), aggroR);
 }
@@ -283,16 +270,12 @@ test "AN UNSTAMPED WAY CHANGES NOTHING — steering is a bend on a refused headi
     try std.testing.expectApproxEqAbs(@as(f32, 1), n.along(straight).x, 1e-6);
 }
 
-/// How hard the bearing rate is smoothed — a creature answers a real orbit, never one frame of jitter.
 pub const SENSE_SMOOTH: f32 = 6.0;
 pub const PRESSURE_HALFLIFE: f32 = 3.2;
 
-/// **WHAT A CREATURE KNOWS ABOUT HOW THE FIGHT IS GOING, and it is all WORLD STATE** — the bearing's own
-/// measured rate and the damage its body has taken since it last stood somewhere else. Neither reads the
-/// hero's state machine, so the NO INPUT READING law is kept by construction.
-///
-/// **PRESSURE IS PER SPOT, NOT PER FIGHT** (`stood`): travelling further than `spanR` wipes the meter, or a
-/// creature that repositions once arrives already convinced it should reposition again.
+/// ALL WORLD STATE — a measured bearing rate and damage taken since it last stood somewhere else, so NO
+/// INPUT READING holds by construction. **PRESSURE IS PER SPOT, NOT PER FIGHT** (`stood`): travelling past
+/// `spanR` wipes the meter, or one reposition arrives already convinced it should reposition again.
 pub const Sense = struct {
     bearingWas: f32 = 0,
     circleRate: f32 = 0,
@@ -362,8 +345,7 @@ test "IT DOES NOT READ ITS OWN TRAVEL AS AN ORBIT" {
 }
 
 /// **HOW MANY MOTES A WOUND ACTUALLY THROWS** — ONE DIAL FOR THE WHOLE FIELD. What each creature sheds and
-/// in what proportion stays in its own file; how heavy a landed blow reads overall is this, and as twenty
-/// literals over twelve files it was a number nobody could turn.
+/// in what proportion stays in its own file; how heavy a landed blow reads overall is this.
 pub const HIT_PARTS: f32 = 1.5;
 
 pub fn hitParts(n: i32) i32 {
@@ -374,22 +356,19 @@ pub fn flashFrac(flash: f32) f32 {
     return mathx.clampF(flash / FLASH_DUR, 0, 1);
 }
 
-/// …AND THE DRAIN THAT GOES WITH IT, because `FLASH_DUR` is a DURATION and only a decay of 1.0/s makes it
-/// one. Written out per creature, three subtracted `dt * 4.0` and popped for 0.05 s — a quarter of a flash.
+/// …AND THE DRAIN THAT GOES WITH IT: `FLASH_DUR` is a DURATION, so only a decay of 1.0/s makes it one.
 pub fn fadeFlash(flash: *f32, dt: f32) void {
     flash.* = mathx.maxF(0, flash.* - dt);
 }
 
-/// A POINT ON A CREATURE'S OWN AXIS: `h` metres of ITS OWN SCALE above the ground under it, plus whatever it
-/// is holding off that ground this frame (`lift`). **EVERY WORLD POINT ON AN ACTOR IS MEASURED FROM `pos.y`**
-/// — off the datum, a foe on a bank keeps its bar down in the field.
+/// `h` metres of ITS OWN SCALE above the ground under it, plus this frame's `lift`. **EVERY WORLD POINT ON AN
+/// ACTOR IS MEASURED FROM `pos.y`** — off the datum, a foe on a bank keeps its bar down in the field.
 pub fn bodyPoint(pos: rl.Vector3, h: f32, scale: f32, lift: f32) rl.Vector3 {
     return v3(pos.x, pos.y + h * scale + lift, pos.z);
 }
 
-/// …AND A POINT ON THE POSED BODY ITSELF: `at` is in the BONE's own frame, so the answer follows whatever
-/// that bone is doing this frame. THE RETICLE RIDES THIS. Every bone matrix already carries the rig's scale,
-/// the facing and `pos`, and every `spawn` poses before it returns, so the matrix is never undefined.
+/// `at` is in the BONE's own frame, which already carries the rig's scale, the facing and `pos`; every
+/// `spawn` poses before it returns, so the matrix is never undefined. THE RETICLE RIDES THIS.
 pub fn markOn(bone: rl.Matrix, at: rl.Vector3) rl.Vector3 {
     return rl.math.vector3Transform(at, bone);
 }
@@ -427,12 +406,58 @@ pub fn wounded(self: anytype, s: Strike, blade: Blade, push: Push) bool {
     self.flash = FLASH_DUR;
     const heavy = blade.hit.heavy();
     self.shove = mathx.scaleV(s.dir, if (heavy) push.heavy else push.light);
+    woundImpact(self, s, heavy);
     return heavy;
 }
 
-/// ROOTED: THE FEET ARE HELD, AND NOTHING ELSE IS — the state machine runs, the kit swings, the blow lands,
-/// and the body does not travel. A GATE at the end of a creature's own `update` rather than a guard at each
-/// `stepXZ`, because a creature grows movements and a per-site list forgets one.
+pub const HIT_FLASH = mathx.rgba(255, 244, 214, 235);
+const HIT_HAZE = mathx.rgba(64, 52, 42, 92);
+
+const WOUND_HAZE_HEAVY = 3;
+const WOUND_HAZE_LIGHT = 2;
+/// **WHAT THE WOUND ITSELF COSTS THE RING**, worst case — the flash plus the heavy blow's haze. Every pool
+/// asserted over its worst frame carries a landed blow in that frame.
+pub const WOUND_PARTS = 1 + WOUND_HAZE_HEAVY;
+
+/// The FLASH (gone in four frames) and the HAZE that hangs after; the middle layer — blood, bone, gore —
+/// stays the creature's own. FIELDS ONLY: `parts`/`fxHead`/`fxRng`/`scale`.
+fn woundImpact(self: anytype, s: Strike, heavy: bool) void {
+    if (comptime !@hasField(std.meta.Child(@TypeOf(self)), "parts")) return;
+    const fr: f32 = if (heavy) 0.15 else 0.10;
+    emitPart(&self.parts, &self.fxHead, .{
+        .p = s.contact,
+        .v = mathx.scaleV(s.dir, 0.6),
+        .life = 0.07,
+        .r0 = fr * self.scale,
+        .r1 = fr * self.scale * 0.3,
+        .col = HIT_FLASH,
+        .add = true,
+    });
+    var i: usize = 0;
+    const n: usize = if (heavy) WOUND_HAZE_HEAVY else WOUND_HAZE_LIGHT;
+    while (i < n) : (i += 1) {
+        emitPart(&self.parts, &self.fxHead, .{
+            .p = mathx.addV(s.contact, mathx.scaleV(randomUnit(&self.fxRng), 0.06 * self.scale)),
+            .v = v3(s.dir.x * self.fxRng.range(0.4, 0.9), self.fxRng.range(0.2, 0.6), s.dir.z * self.fxRng.range(0.4, 0.9)),
+            .life = self.fxRng.range(0.45, 0.75),
+            .r0 = 0.05 * self.scale,
+            .r1 = 0.16 * self.scale,
+            .col = HIT_HAZE,
+            .grav = -0.25,
+            .drag = 2.5,
+        });
+    }
+}
+
+pub fn randomUnit(rng: *mathx.Rng) rl.Vector3 {
+    const z = rng.signed();
+    const a = rng.range(0, std.math.tau);
+    const r = @sqrt(mathx.maxF(0, 1.0 - z * z));
+    return v3(r * mathx.cosf(a), z, r * mathx.sinf(a));
+}
+
+/// THE FEET ARE HELD AND NOTHING ELSE IS. A GATE at the end of `update`, never a guard at each `stepXZ` —
+/// a creature grows movements and a per-site list forgets one.
 pub const Grip = struct {
     was: rl.Vector3,
     on: bool,
@@ -452,8 +477,6 @@ pub const Grip = struct {
 ///     defer if (!self.airborne()) grip.hold(&self.pos);
 ///     if (grip.killed) self.enterDeath();
 ///
-/// The airborne guard IS the finishes-its-arc half of the law below. Three creatures hold unconditionally:
-/// the LEECHFLY because it is ALWAYS airborne, the OGRE and the ROOTED because neither leaves the ground.
 /// The bite is billed as a DRIP, never as a blow.
 pub fn canLeap(root: *const combat.Root) bool {
     return !root.held();
@@ -466,8 +489,7 @@ pub fn grip(root: *combat.Root, chill: *combat.Chill, vit: *combat.Vitals, dt: f
     return .{ .was = at, .on = on, .killed = bitten or frozen };
 }
 
-/// THE HERO'S SHIELD AS THE THING SWINGING AT HIM SEES IT — stamped every frame from outside
-/// (`game.markParry`) rather than fetched, because the ARC belongs to the shield and not to what is caught.
+/// Stamped from outside every frame (`game.markParry`): the ARC belongs to the shield, not to what is caught.
 pub const Parry = struct {
     live: bool = false,
     at: rl.Vector3 = mathx.zero3,
@@ -483,9 +505,8 @@ pub const Parry = struct {
     }
 };
 
-/// **WHAT EVERY CATCH OWES, WHOEVER IS CAUGHT** — the reach test, the one-frame edge, the flash and the
-/// combat clock. FIELDS ONLY (`parry`, `pos`, `parried`, `flash`, `leash`), `dissipate`'s rule: the
-/// cooldown, the sparks, the voice and the stun stay in the creature's own file.
+/// FIELDS ONLY (`parry`, `pos`, `parried`, `flash`, `leash`): the cooldown, the sparks, the voice and the
+/// stun stay in the creature's own file.
 pub fn caught(self: anytype, reach: f32) bool {
     if (!self.parry.catches(self.pos, reach)) return false;
     self.parried = true;
@@ -494,11 +515,8 @@ pub fn caught(self: anytype, reach: f32) bool {
     return true;
 }
 
-/// **HOW DEEP THE WATER IS, AS A CREATURE STANDING IN IT SEES IT** — stamped every frame (`game.markWade`),
-/// because only `game.zig` can see the creature and `env`'s water field at once.
-///
-/// **AND IT IS A PLACE, NOT A STATE OF HIS.** `quarry` is how deep the water is where the HERO IS STANDING,
-/// which is a fact about the ground — the NO INPUT READING law kept by construction.
+/// Stamped every frame (`game.markWade`) — only `game.zig` sees the creature and `env`'s water at once.
+/// `quarry` is the depth where the HERO IS STANDING: a fact about the ground, so NO INPUT READING holds.
 pub const Wade = struct {
     here: f32 = 0,
     quarry: f32 = 0,
@@ -508,10 +526,27 @@ pub fn setWade(foes: anytype, at: anytype, quarry: f32, comptime depthAt: anytyp
     for (foes) |*f| f.wade = .{ .here = depthAt(at, f.pos), .quarry = quarry };
 }
 
-/// **A HOP'S OWN TRAVEL — ONE COPY.** The landing spot is solved ONCE at the launch (clamped into the play
-/// square THERE, not every frame, or a hop into the rim shortens under you) and the body walks the straight
-/// line to it at a constant rate. Returns how far through the flight it is. `dir` is handed in rather than
-/// taken off the body. FIELDS ONLY: `launched`/`hopFrom`/`hopTo`/`hopReach`.
+/// **A STAIN NEEDS DRY GROUND** — a splat lands at TERRAIN height, so a drop shed over water is blood on the
+/// riverbed. Opt-in on the `wade` field: a creature that never sees water is dry by construction.
+pub const SPLAT_DRY_MAX: f32 = 0.05;
+pub fn onDryGround(self: anytype) bool {
+    if (comptime !@hasField(std.meta.Child(@TypeOf(self)), "wade")) return true;
+    return self.wade.here <= SPLAT_DRY_MAX;
+}
+
+test "A CREATURE THAT NEVER SEES WATER IS DRY BY CONSTRUCTION, and a wading one sheds no stain" {
+    var landlocked = struct { pos: rl.Vector3 = mathx.zero3 }{};
+    try std.testing.expect(onDryGround(&landlocked));
+    var w = struct { wade: Wade = .{} }{};
+    try std.testing.expect(onDryGround(&w));
+    w.wade.here = SPLAT_DRY_MAX;
+    try std.testing.expect(onDryGround(&w));
+    w.wade.here = SPLAT_DRY_MAX + 0.01;
+    try std.testing.expect(!onDryGround(&w));
+}
+
+/// The landing spot is solved ONCE at the launch and clamped THERE, not every frame — clamped per frame, a
+/// hop into the rim shortens under you. FIELDS ONLY: `launched`/`hopFrom`/`hopTo`/`hopReach`.
 pub fn hopStep(self: anytype, dt: f32, bounds: f32, dir: rl.Vector3, coil: f32, flight: f32) f32 {
     if (!self.launched) {
         self.launched = true;
@@ -532,8 +567,74 @@ pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32,
 
 
 pub const DUST = mathx.rgba(150, 132, 96, 175);
+/// What a cloud THINS TO — paler and cooler as it disperses and takes the sky's light instead of the ground's.
+pub const DUST_THIN = mathx.rgba(176, 168, 150, 96);
+/// **DUST IS FINE PARTICULATE, NOT FLUNG GRAVEL.** It leaves the ground fast, stalls inside a body-length
+/// and then HANGS while it thins: high drag is what makes it dust, low gravity is what lets it hang.
+pub const DUST_DRAG: f32 = 4.5;
+pub const DUST_GRAV: f32 = 1.6;
+
+/// **BLOOD IS DROPLETS, AND THE PHYSICS OF A DROPLET IS NOT THE CREATURE'S TO PICK.** It leaves the wound
+/// fast, loses the throw inside a body-length and then falls at a real weight. The COLOUR stays each
+/// creature's own (a toad's is not a spider's), and so does how far it is thrown.
+pub const BLOOD_DRAG: f32 = 3.6;
+pub const BLOOD_GRAV: f32 = 14.0;
+pub const BLOOD_STRETCH: f32 = 0.045;
 pub const MOTE = mathx.rgba(252, 198, 92, 170);
 pub const WAKE = mathx.rgba(224, 230, 244, 255);
+
+/// **DRAG COSTS REACH, SO THE SPEED HAS TO BUY IT BACK** — the relation fire's numbers were re-solved by
+/// hand with. Under drag `k` a mote covers v0/k·(1−e^(−k·t)) where a free one covers v0·t; a burst moved onto
+/// drag without this arrives at a third of where it was aimed, and every count and radius around it is a lie.
+pub fn dragBoost(k: f32, life: f32) f32 {
+    if (k <= 0 or life <= 0) return 1.0;
+    return k * life / (1.0 - @exp(-k * life));
+}
+
+/// **THE LIFE, THE DRAG AND THE BOOST ARE ONE NUMBER IN THREE PARTS, SO THEY TRAVEL TOGETHER** — split up,
+/// a retuned range leaves the speed solved for the old one, silently. Built at comptime:
+/// `const B = Blast.of(DUST_DRAG, 0.4, 0.7)`, then `B.boost` on every speed, `B.life(rng)`, `B.k` on `.drag`.
+pub const Blast = struct {
+    lo: f32,
+    hi: f32,
+    k: f32,
+    boost: f32,
+
+    pub fn of(k: f32, lo: f32, hi: f32) Blast {
+        return .{ .lo = lo, .hi = hi, .k = k, .boost = dragBoost(k, (lo + hi) * 0.5) };
+    }
+    pub fn life(self: Blast, rng: *mathx.Rng) f32 {
+        return rng.range(self.lo, self.hi);
+    }
+};
+
+test "A BLAST SOLVES ITS OWN BOOST FROM ITS OWN LIFE — the two cannot be retuned apart" {
+    const b = Blast.of(DUST_DRAG, 0.4, 0.7);
+    try std.testing.expectEqual(dragBoost(DUST_DRAG, 0.55), b.boost);
+    try std.testing.expectEqual(DUST_DRAG, b.k);
+    // The same reach a free mote covered over the same mean life.
+    const free: f32 = 3.0 * 0.55;
+    const dragged = 3.0 * b.boost / b.k * (1.0 - @exp(-b.k * 0.55));
+    try std.testing.expectApproxEqRel(free, dragged, 1e-4);
+    var rng = mathx.Rng.init(0xB1A5);
+    for (0..64) |_| {
+        const t = b.life(&rng);
+        try std.testing.expect(t >= b.lo and t <= b.hi);
+    }
+}
+
+test "DRAG COSTS REACH AND THE BOOST BUYS IT BACK — same metres, front-loaded" {
+    for ([_]f32{ 2.0, 3.6, 4.5 }) |k| {
+        for ([_]f32{ 0.35, 0.55, 0.9 }) |life| {
+            const boost = dragBoost(k, life);
+            const free: f32 = 3.0 * life;
+            const dragged = 3.0 * boost / k * (1.0 - @exp(-k * life));
+            try std.testing.expectApproxEqRel(free, dragged, 1e-4);
+        }
+    }
+    std.debug.print("\n  dust drag {d:.1}/s over a {d:.2} s life costs {d:.2}x the speed to reach the same metres\n", .{ DUST_DRAG, @as(f32, 0.55), dragBoost(DUST_DRAG, 0.55) });
+    try std.testing.expectEqual(@as(f32, 1.0), dragBoost(0, 0.5));
+}
 
 pub fn fxStream(seed: f32, mul: f32, salt: u64) mathx.Rng {
     return mathx.Rng.init(@as(u64, @intFromFloat(@abs(seed) * mul)) +% salt);
@@ -547,7 +648,24 @@ pub const Particle = struct {
     r0: f32 = 0.05,
     r1: f32 = 0.05,
     col: rl.Color = mathx.rgba(255, 255, 255, 255),
+    /// Colour at the END of life — hot things cool (white → amber → ember), wet things dry. Null keeps one colour.
+    col1: ?rl.Color = null,
     grav: f32 = 0,
+    /// 1/s exponential velocity decay — a burst that starts fast and DIES DOWN reads as a blast; linear flight reads as drift.
+    drag: f32 = 0,
+    /// Seconds of velocity the draw trails behind the head: a fast mote becomes a tapered streak, and collapses back to a dot as it slows.
+    stretch: f32 = 0,
+    /// Floor restitution — hard debris (bone chips, sparks) skitters instead of sticking.
+    bounce: f32 = 0,
+    /// >0: a drop that reaches the floor stops and lies as a stain this many times its radius.
+    /// ONE-OFF BURSTS ONLY — a landed mote holds `SPLAT_HOLD`, so a continuous drip parks its whole rate
+    /// in the ring (brood drool at 8-34/s was 40+ resident stains, eating the blood behind them).
+    splat: f32 = 0,
+    /// LIGHT, not matter — drawn additive, so overlapping motes brighten into a glow. Sparks, flames,
+    /// frost, magic. Matter (blood, dust, gas, chips) stays alpha-blended: additive can only brighten,
+    /// and a dark thing drawn additive disappears.
+    add: bool = false,
+    landed: bool = false,
     floor: ?f32 = null,
 };
 
@@ -560,6 +678,13 @@ pub fn emitTicks(acc: *f32, dt: f32, rate: f32, cap: usize) usize {
     // 16/s wake ran at 15. What is dropped is only what could not be paid.
     if (acc.* >= 1.0) acc.* = 0;
     return n;
+}
+
+/// **THE RATE AND ITS CEILING TRAVEL TOGETHER** — a cap that does not match its rate is an emitter quietly
+/// running slow. Pass a cap yourself only to mean something OTHER than this rate's own ceiling
+/// (`hero.CAST_MOTE_CAP`, or `dissolveMotes`, whose cap is the UNTHINNED rate's).
+pub fn emitDue(acc: *f32, dt: f32, rate: f32) usize {
+    return emitTicks(acc, dt, rate, emitCap(rate));
 }
 
 /// …AND THE CEILING ITSELF, off the rate — where "a couple of frames' arrears at 60 fps" is written down.
@@ -607,8 +732,9 @@ test "A SLOW EMITTER RUNS AT ITS OWN RATE — a cap of one is not a hitch every 
     try std.testing.expectEqual(@as(f32, 0), slow);
 }
 
-pub fn emitParticle(pool: []Particle, head: *usize, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
-    pool[head.*] = .{ .p = p, .v = vel, .life = life, .max = life, .r0 = r0, .r1 = r1, .col = col, .grav = grav };
+pub fn emitPart(pool: []Particle, head: *usize, q: Particle) void {
+    pool[head.*] = q;
+    pool[head.*].max = q.life;
     head.* = (head.* + 1) % pool.len;
 }
 
@@ -624,6 +750,11 @@ pub const Spray = struct {
     r1: f32,
     col: rl.Color,
     grav: f32,
+    col1: ?rl.Color = null,
+    stretch: f32 = 0,
+    bounce: f32 = 0,
+    splat: f32 = 0,
+    drag: f32 = 0,
 };
 
 /// **THE DRAW ORDER IS LOAD-BEARING** — angle, speed, the fan on X, the lift, the fan on Z, the life, the
@@ -639,7 +770,20 @@ pub fn spray(pool: []Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3, di
             rng.range(s.upLo, s.upHi),
             dir.z * sp + mathx.sinf(a) * rng.range(s.fanLo, s.fanHi),
         );
-        emitParticle(pool, head, at, vel, rng.range(s.lifeLo, s.lifeHi), rng.range(s.rLo, s.rHi) * scale, s.r1, s.col, s.grav);
+        emitPart(pool, head, .{
+            .p = at,
+            .v = vel,
+            .life = rng.range(s.lifeLo, s.lifeHi),
+            .r0 = rng.range(s.rLo, s.rHi) * scale,
+            .r1 = s.r1,
+            .col = s.col,
+            .col1 = s.col1,
+            .grav = s.grav,
+            .stretch = s.stretch,
+            .bounce = s.bounce,
+            .splat = s.splat,
+            .drag = s.drag,
+        });
     }
 }
 
@@ -667,7 +811,7 @@ test "THE SPRAY IS THE FIVE HAND-WRITTEN LOOPS, MOTE FOR MOTE — the draw order
             r.range(S.upLo, S.upHi),
             dir.z * sp + mathx.sinf(a) * r.range(S.fanLo, S.fanHi),
         );
-        emitParticle(&wantPool, &wantHead, at, vel, r.range(S.lifeLo, S.lifeHi), r.range(S.rLo, S.rHi) * scale, S.r1, S.col, S.grav);
+        emitPart(&wantPool, &wantHead, .{ .p = at, .v = vel, .life = r.range(S.lifeLo, S.lifeHi), .r0 = r.range(S.rLo, S.rHi) * scale, .r1 = S.r1, .col = S.col, .grav = S.grav });
     }
 
     var gotPool = [_]Particle{.{}} ** 64;
@@ -687,14 +831,66 @@ test "THE SPRAY IS THE FIVE HAND-WRITTEN LOOPS, MOTE FOR MOTE — the draw order
     std.debug.print("\n  spray: {d} motes, identical to the hand-written loop mote for mote\n", .{gotHead});
 }
 
+/// **A BURST IS JUDGED BY ITS CROSS-SECTION, NOT BY ITS SPEED** — a fast cloud all going one way is one blob.
+/// `open` is the widest separation perpendicular to `dir`, `reach` the furthest any mote got, both at
+/// `sampleAt`; `splats` is counted once the flight is over.
+pub const SprayShape = struct { open: f32, reach: f32, splats: usize, motes: usize, sink: f32 };
+
+pub fn measureSpray(pool: []Particle, s: Spray, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32, scale: f32, seed: u64, sampleAt: f32, floor: f32) SprayShape {
+    // The caller hands a pool that holds the whole burst, or the measurement reads motes it overwrote.
+    const motes = @as(usize, @intCast(@max(0, hitParts(n))));
+    std.debug.assert(motes <= pool.len);
+    var head: usize = 0;
+    var rng = mathx.Rng.init(seed);
+    spray(pool, &head, &rng, at, dir, n, spd, scale, s);
+    var out = SprayShape{ .open = 0, .reach = 0, .splats = 0, .motes = motes, .sink = 0 };
+    const dt = 1.0 / 60.0;
+
+    var t: f32 = 0;
+    var sampled = false;
+    while (t < 3.0) : (t += dt) {
+        tickParticles(pool, dt, floor);
+        if (!sampled and t + dt >= sampleAt) {
+            sampled = true;
+            for (pool[0..motes], 0..) |*a, i| {
+                out.reach = mathx.maxF(out.reach, mathx.lenV(mathx.subV(a.p, at)));
+                for (pool[i + 1 .. motes]) |*b| {
+                    const d = mathx.subV(a.p, b.p);
+                    const along = d.x * dir.x + d.y * dir.y + d.z * dir.z;
+                    out.open = mathx.maxF(out.open, mathx.lenV(mathx.subV(d, mathx.scaleV(dir, along))));
+                }
+            }
+        }
+    }
+    for (pool[0..motes]) |*q| {
+        if (q.landed) out.splats += 1;
+    }
+
+    // …and the same flight given all the life it wants: `sink` is what `lifeHi` must cover for a stain.
+    head = 0;
+    var rng2 = mathx.Rng.init(seed);
+    spray(pool, &head, &rng2, at, dir, n, spd, scale, s);
+    for (pool[0..motes]) |*q| q.life = 9.0;
+    t = 0;
+    while (t < 3.0) : (t += dt) {
+        tickParticles(pool, dt, floor);
+        var flying: usize = 0;
+        for (pool[0..motes]) |*q| {
+            if (!q.landed) flying += 1;
+        }
+        if (flying == 0) break;
+        out.sink = t + dt;
+    }
+    return out;
+}
+
 pub fn floorBurst(pool: []Particle, from: usize, to: usize, floor: f32) void {
     var i = from;
     while (i != to) : (i = (i + 1) % pool.len) pool[i].floor = floor;
 }
 
-/// **A BODY GOES BY GOING TRANSPARENT, NOT BY GETTING SMALL.** Every creature shrank 55-85% on the way out,
-/// which at any distance is a corpse walking off into the ground. What is left is a SETTLE — a tenth — and
-/// the vanish itself is the alpha `drawGroup` hands the shader.
+/// **A BODY GOES BY GOING TRANSPARENT, NOT BY GETTING SMALL** — at the 55-85% shrink it had, a corpse walks
+/// off into the ground. What is left is a SETTLE, a tenth; the vanish is the alpha `drawGroup` hands over.
 pub const DEATH_SHRINK: f32 = 0.10;
 pub fn rigScale(scale: f32, fade: f32) f32 {
     return scale * (1.0 - DEATH_SHRINK * fade);
@@ -722,16 +918,36 @@ pub fn dissolveMotes(self: anytype, dt: f32, d: Dissolve) void {
             self.pos.z + mathx.sinf(a) * rr,
         );
         if (self.fxRng.float() < DISS_MOTE_SHARE) {
-            emitParticle(&self.parts, &self.fxHead, p, mathx.v3(self.fxRng.signed() * 0.3, self.fxRng.range(0.5, 1.4), self.fxRng.signed() * 0.3), self.fxRng.range(0.55, 1.05), self.fxRng.range(0.42, 1.0) * DISS_MOTE_R * d.spread * self.scale, 0.004, MOTE, -0.7);
+            emitPart(&self.parts, &self.fxHead, .{
+                .p = p,
+                .v = mathx.v3(self.fxRng.signed() * 0.3, self.fxRng.range(0.5, 1.4), self.fxRng.signed() * 0.3),
+                .life = self.fxRng.range(0.55, 1.05),
+                .r0 = self.fxRng.range(0.42, 1.0) * DISS_MOTE_R * d.spread * self.scale,
+                .r1 = 0.004,
+                .col = MOTE,
+                .grav = -0.7,
+                .add = true,
+            });
         } else {
-            emitParticle(&self.parts, &self.fxHead, p, mathx.v3(self.fxRng.signed() * 0.35, self.fxRng.range(0.1, 0.45), self.fxRng.signed() * 0.35), self.fxRng.range(0.32, 0.65), self.fxRng.range(0.55, 1.0) * DISS_FLAKE_R * d.spread * self.scale, 0.011, d.flake, 2.0);
+            // The ASH half — alpha, and it goes out by thinning where the mote above goes out by cooling.
+            // Its drag is what stops the two halves drifting apart into two effects.
+            emitPart(&self.parts, &self.fxHead, .{
+                .p = p,
+                .v = mathx.v3(self.fxRng.signed() * 0.35, self.fxRng.range(0.1, 0.45), self.fxRng.signed() * 0.35),
+                .life = self.fxRng.range(0.32, 0.65),
+                .r0 = self.fxRng.range(0.55, 1.0) * DISS_FLAKE_R * d.spread * self.scale,
+                .r1 = 0.011,
+                .col = d.flake,
+                .col1 = mathx.withAlpha(d.flake, d.flake.a / 3),
+                .grav = 2.0,
+                .drag = 1.8,
+            });
         }
     }
 }
 
-/// **A CORPSE SOMETHING IS STANDING OVER DOES NOT GO** — the BODY's own `heldOpen` flag, stamped by
-/// `game.markVigil` and read as an OPT-IN (`@hasField`), so the eleven creatures nothing raises pay a
-/// comptime-false: gaining a behaviour is a FIELD on the creature, never an edit to the shared pass.
+/// **A CORPSE SOMETHING IS STANDING OVER DOES NOT GO** — `heldOpen`, stamped by `game.markVigil` and read as
+/// an OPT-IN (`@hasField`): gaining a behaviour is a FIELD on the creature, never an edit to a shared pass.
 fn stayed(self: anytype) bool {
     if (comptime @hasField(std.meta.Child(@TypeOf(self)), "heldOpen")) return self.heldOpen;
     return false;
@@ -745,11 +961,9 @@ pub fn dissipate(self: anytype, dt: f32, still: f32, diss: f32, d: Dissolve) voi
     if (self.t >= still + diss) self.gone = true;
 }
 
-/// **THE BODY COMING BACK UP** — `dissipate` run backwards, and the one copy of it. FIELDS ONLY: `vit`,
-/// `fade`, `gone`, `hitLatch`, `flash`, `shove`, `justDied`, `heldOpen`, `t`. `hits` is deliberately NOT
-/// among them — `game.allHits` diffs it across a frame, and a body that reset it would take the total DOWN.
-/// The STATE it comes up in cannot be here (a state enum is private to its file), so a creature's own
-/// `reraise` calls this and then says what it is doing next.
+/// **THE BODY COMING BACK UP** — `dissipate` run backwards. FIELDS ONLY: `vit`, `fade`, `gone`, `hitLatch`,
+/// `flash`, `shove`, `justDied`, `heldOpen`, `t`. `hits` is deliberately NOT among them: `game.allHits` diffs
+/// it across a frame, and a body that reset it would take the total DOWN.
 pub fn rekindle(self: anytype, frac: f32) void {
     self.vit.revive(frac);
     self.fade = 0;
@@ -762,23 +976,87 @@ pub fn rekindle(self: anytype, frac: f32) void {
     self.t = 0;
 }
 
+const SPLAT_HOLD: f32 = 0.7;
+
 pub fn tickParticles(pool: []Particle, dt: f32, floor: f32) void {
     for (pool) |*q| {
         if (q.life <= 0) continue;
         q.life -= dt;
+        if (q.landed) continue;
         q.p.x += q.v.x * dt;
         q.p.y += q.v.y * dt;
         q.p.z += q.v.z * dt;
         q.v.y -= q.grav * dt;
+        if (q.drag > 0) {
+            const k = 1.0 / (1.0 + q.drag * dt);
+            q.v.x *= k;
+            q.v.y *= k;
+            q.v.z *= k;
+        }
         const at = q.floor orelse floor;
-        if (q.p.y < at) q.p.y = at;
+        if (q.p.y < at) {
+            q.p.y = at;
+            if (q.splat > 0) {
+                q.landed = true;
+                q.v = mathx.zero3;
+                // A stain fades on its own clock — on the flight's leftovers it was gone before anyone saw it.
+                q.life = SPLAT_HOLD;
+                q.max = SPLAT_HOLD;
+            } else if (q.bounce > 0 and q.v.y < 0) {
+                q.v.y = -q.v.y * q.bounce;
+                q.v.x *= 0.6;
+                q.v.z *= 0.6;
+            }
+        }
+    }
+}
+
+test "a SPLAT drop stops where it lands and a BOUNCE chip skitters" {
+    var pool = [_]Particle{.{}} ** 4;
+    var head: usize = 0;
+    emitPart(&pool, &head, .{ .p = v3(0, 0.5, 0), .v = v3(1.0, -2.0, 0), .life = 1.0, .splat = 3.0 });
+    emitPart(&pool, &head, .{ .p = v3(0, 0.5, 0), .v = v3(1.0, -2.0, 0), .life = 1.0, .bounce = 0.5 });
+    var t: f32 = 0;
+    while (t < 0.5) : (t += 1.0 / 60.0) tickParticles(&pool, 1.0 / 60.0, 0);
+    try std.testing.expect(pool[0].landed);
+    try std.testing.expectEqual(@as(f32, 0), pool[0].p.y);
+    try std.testing.expectEqual(@as(f32, 0), mathx.lenV(pool[0].v));
+    try std.testing.expect(!pool[1].landed);
+    try std.testing.expect(pool[1].v.x > 0);
+    var burst = [_]Particle{.{}} ** 1;
+    var bh: usize = 0;
+    emitPart(&burst, &bh, .{ .p = mathx.zero3, .v = v3(4.0, 0, 0), .life = 2.0, .drag = 2.6 });
+    t = 0;
+    while (t < 1.0) : (t += 1.0 / 60.0) tickParticles(&burst, 1.0 / 60.0, -10);
+    try std.testing.expect(burst[0].v.x < 4.0 * 0.15);
+}
+
+test "EVERY LANDED BLOW IS THREE LAYERS — the flash on the impact frame, the haze hanging after" {
+    const Dummy = struct {
+        hits: u32 = 0,
+        flash: f32 = 0,
+        shove: rl.Vector3 = mathx.zero3,
+        scale: f32 = 1.0,
+        parts: [16]Particle = [_]Particle{.{}} ** 16,
+        fxHead: usize = 0,
+        fxRng: mathx.Rng = mathx.Rng.init(0xF1A5),
+    };
+    var d = Dummy{};
+    const s = Strike{ .contact = v3(1, 1, 1), .dir = v3(1, 0, 0), .reaction = .light };
+    _ = wounded(&d, s, .{ .hit = .{ .dmg = 5 } }, .{ .light = 1, .heavy = 2 });
+    try std.testing.expectEqual(@as(usize, 3), d.fxHead);
+    try std.testing.expect(d.parts[0].life < 0.1);
+    for (d.parts[1..3]) |q| {
+        try std.testing.expect(q.life > 4.0 * d.parts[0].life);
+        try std.testing.expect(q.r1 > q.r0);
+        try std.testing.expect(q.col.a < d.parts[0].col.a);
     }
 }
 
 const TrailSample = struct { a: rl.Vector3 = mathx.zero3, b: rl.Vector3 = mathx.zero3, age: f32 = mathx.LONG_AGO };
 
-/// Metres the point must travel in a frame to be worth a sample. A DEGENERACY GUARD, not a per-weapon dial:
-/// 0.05 m at 60 fps is 3 m/s of tip, and nothing slower is a swing — so callers do not pass their own.
+/// Metres per frame worth a sample. A DEGENERACY GUARD, not a per-weapon dial — 0.05 m at 60 fps is 3 m/s of
+/// tip and nothing slower is a swing, so callers do not pass their own.
 pub const TRAIL_SWEEP_MIN: f32 = 0.05;
 
 pub fn Trail(comptime N: usize) type {
@@ -817,18 +1095,119 @@ pub fn Trail(comptime N: usize) type {
     };
 }
 
-const PART_FINE_R: f32 = 0.10;
-const PART_MID_R: f32 = 0.04;
+/// A streak is only drawn while it is one — tail shorter than this many radii collapses back to a dot,
+/// so a drag-slowed spark dies as a glowing point rather than a smear standing still.
+const STREAK_MIN_RADII: f32 = 1.6;
+
+// **A MOTE IS A TEXTURED BILLBOARD, NEVER A SOLID SPHERE** — a hard-edged Lambert ball reads as a flat
+// circle however it moves, and a quad costs a tenth of it. Two sprites, lazily built on the first draw:
+// SOFT is the glow (light, smoke, stains); GRAIN keeps a near-solid core for matter in flight (blood,
+// chips, clods), which drawn fully soft reads as vapour.
+var moteSoft: ?rl.Texture2D = null;
+var moteGrain: ?rl.Texture2D = null;
+
+fn moteTexture(density: f32) rl.Texture2D {
+    const img = rl.genImageGradientRadial(64, 64, density, mathx.rgba(255, 255, 255, 255), mathx.rgba(255, 255, 255, 0));
+    defer rl.unloadImage(img);
+    const tex = rl.loadTextureFromImage(img) catch @panic("mote sprite");
+    rl.setTextureFilter(tex, .bilinear);
+    return tex;
+}
+
 pub fn drawParticles(pool: []const Particle) void {
+    if (moteSoft == null) {
+        moteSoft = moteTexture(0.12);
+        moteGrain = moteTexture(0.55);
+    }
+    // Depth is TESTED, never WRITTEN: soft quads that wrote depth would punch square holes in each other.
+    rl.gl.rlDisableBackfaceCulling();
+    rl.gl.rlDisableDepthMask();
+    drawPass(pool, false);
+    rl.beginBlendMode(.additive);
+    drawPass(pool, true);
+    rl.endBlendMode();
+    rl.gl.rlEnableDepthMask();
+    rl.gl.rlEnableBackfaceCulling();
+}
+
+/// Which sprite a mote draws through — ONE predicate, so the draw and anything measuring its batching
+/// cannot disagree. Light and anything that DIFFUSES (smoke, a stain) is soft; matter in flight keeps a core.
+fn wantsSoft(q: *const Particle) bool {
+    return q.add or q.landed or q.r1 > q.r0;
+}
+
+fn drawPass(pool: []const Particle, add: bool) void {
+    var open: u32 = 0;
     for (pool) |*q| {
-        if (q.life <= 0) continue;
+        if (q.life <= 0 or q.add != add) continue;
         const frac = mathx.clampF(q.life / q.max, 0, 1);
         const rad = mathx.lerpF(q.r1, q.r0, frac);
-        const a = mathx.u8f(@as(f32, @floatFromInt(q.col.a)) * frac);
-        const rings: i32 = if (rad >= PART_FINE_R) 6 else if (rad >= PART_MID_R) 4 else 3;
-        const slices: i32 = if (rad >= PART_FINE_R) 8 else if (rad >= PART_MID_R) 6 else 4;
-        rl.drawSphereEx(q.p, rad, rings, slices, mathx.withAlpha(q.col, a));
+        if (rad <= 0.0004) continue;
+        const col = if (q.col1) |c1| mathx.lerpColor(q.col, c1, 1.0 - frac) else q.col;
+        const a = mathx.u8f(@as(f32, @floatFromInt(col.a)) * frac);
+        const soft = wantsSoft(q);
+        const want = (if (soft) moteSoft else moteGrain).?.id;
+        if (want != open) {
+            if (open != 0) rl.gl.rlEnd();
+            rl.gl.rlSetTexture(want);
+            rl.gl.rlBegin(rl.gl.rl_quads);
+            open = want;
+        }
+        rl.gl.rlColor4ub(col.r, col.g, col.b, a);
+        if (q.landed) {
+            const s = rad * q.splat;
+            quad(
+                v3(q.p.x - s, q.p.y + 0.005, q.p.z - s),
+                v3(q.p.x + s, q.p.y + 0.005, q.p.z - s),
+                v3(q.p.x + s, q.p.y + 0.005, q.p.z + s),
+                v3(q.p.x - s, q.p.y + 0.005, q.p.z + s),
+            );
+            continue;
+        }
+        if (q.stretch > 0) {
+            const sp2 = q.v.x * q.v.x + q.v.y * q.v.y + q.v.z * q.v.z;
+            const min = rad * STREAK_MIN_RADII;
+            if (sp2 * q.stretch * q.stretch > min * min) {
+                const sp = @sqrt(sp2);
+                const axis = mathx.scaleV(q.v, 1.0 / sp);
+                const toCam = mathx.subV(lensAt, q.p);
+                var side = mathx.crossV(axis, toCam);
+                const sl = mathx.lenV(side);
+                if (sl > 1e-4) {
+                    side = mathx.scaleV(side, rad / sl);
+                    const tail = mathx.scaleV(axis, sp * q.stretch);
+                    quad(
+                        v3(q.p.x - tail.x - side.x, q.p.y - tail.y - side.y, q.p.z - tail.z - side.z),
+                        v3(q.p.x - side.x, q.p.y - side.y, q.p.z - side.z),
+                        v3(q.p.x + side.x, q.p.y + side.y, q.p.z + side.z),
+                        v3(q.p.x - tail.x + side.x, q.p.y - tail.y + side.y, q.p.z - tail.z + side.z),
+                    );
+                    continue;
+                }
+            }
+        }
+        quad(
+            v3(q.p.x - (lensRight.x + lensUp.x) * rad, q.p.y - (lensRight.y + lensUp.y) * rad, q.p.z - (lensRight.z + lensUp.z) * rad),
+            v3(q.p.x + (lensRight.x - lensUp.x) * rad, q.p.y + (lensRight.y - lensUp.y) * rad, q.p.z + (lensRight.z - lensUp.z) * rad),
+            v3(q.p.x + (lensRight.x + lensUp.x) * rad, q.p.y + (lensRight.y + lensUp.y) * rad, q.p.z + (lensRight.z + lensUp.z) * rad),
+            v3(q.p.x - (lensRight.x - lensUp.x) * rad, q.p.y - (lensRight.y - lensUp.y) * rad, q.p.z - (lensRight.z - lensUp.z) * rad),
+        );
     }
+    if (open != 0) {
+        rl.gl.rlEnd();
+        rl.gl.rlSetTexture(0);
+    }
+}
+
+fn quad(c0: rl.Vector3, c1: rl.Vector3, c2: rl.Vector3, c3: rl.Vector3) void {
+    rl.gl.rlTexCoord2f(0, 0);
+    rl.gl.rlVertex3f(c0.x, c0.y, c0.z);
+    rl.gl.rlTexCoord2f(1, 0);
+    rl.gl.rlVertex3f(c1.x, c1.y, c1.z);
+    rl.gl.rlTexCoord2f(1, 1);
+    rl.gl.rlVertex3f(c2.x, c2.y, c2.z);
+    rl.gl.rlTexCoord2f(0, 1);
+    rl.gl.rlVertex3f(c3.x, c3.y, c3.z);
 }
 
 
@@ -965,8 +1344,7 @@ pub const Blade = struct {
 pub const Victim = enum { hero, spirit };
 
 pub const THREAT_HALFLIFE: f32 = 5.0;
-/// How much threat a point of damage is worth. Only the RATIO between this and `THREAT_PROX` matters — this
-/// one is 1.0 so damage numbers read directly as threat.
+/// Only the RATIO to `THREAT_PROX` matters; 1.0 so damage numbers read directly as threat.
 pub const THREAT_PER_DMG: f32 = 1.0;
 pub const THREAT_PROX: f32 = 26.0;
 pub const THREAT_PROX_R: f32 = 9.0;
@@ -979,8 +1357,7 @@ pub const Threat = struct {
     dmgSpirit: f32 = 0,
     on: Victim = .hero,
     since: f32 = mathx.LONG_AGO,
-    /// Where that victim is standing, stamped each frame by the game (`game.markThreat`). The creature reads
-    /// this and never asks what a spirit is.
+    /// Stamped each frame (`game.markThreat`) — the creature never asks what a spirit is.
     at: rl.Vector3 = mathx.zero3,
     hasSpirit: bool = false,
 
@@ -1457,23 +1834,30 @@ test "A SWING STARTS SLOW ENOUGH TO BE SEEN, then whips" {
     try std.testing.expect(swingCurve(0.5) < 0.5);
 }
 
-// **A MOTE IS A CPU-TRANSFORMED SPHERE, AND THAT IS THE WHOLE REASON THIS EXISTS.** `drawParticles` puts
-// every live mote through `rl.drawSphereEx`, which generates its vertices on the CPU with trig per vertex:
-// the necromancer's 157 motes at 4x6 are ~7.5k transformed triangles a frame, and a boss in phase two stands
-// in a lane of twelve `GAS_PARTS` pools, most of it behind you or across the arena.
+// **THIS GATE IS ABOUT COUNT, NOT COST PER MOTE** — a boss in phase two stands in a lane of twelve
+// `GAS_PARTS` pools (132 each), and every one walks its whole array and appends quads for motes nobody sees.
 //
-// **IT IS NOT THE FRUSTUM AND MUST NEVER BECOME ONE.** `env.View` is the frustum, there is exactly one of
-// them, and a second culler is the bug AGENTS.md names outright. This is the coarse question a pool can
-// answer about ITSELF: a reach, and a HEMISPHERE behind the lens. Nothing inside any field of view this game
-// uses can fail either test, which is what makes it safe to be approximate.
+// **IT IS NOT THE FRUSTUM AND MUST NEVER BECOME ONE.** `env.View` is the frustum, there is exactly one, and
+// a second culler is the bug AGENTS.md names outright. This is a reach and a HEMISPHERE — nothing inside any
+// field of view this game uses can fail either test, which is what makes it safe to be approximate.
 
 var lensAt: rl.Vector3 = mathx.zero3;
 var lensFwd: rl.Vector3 = v3(0, 0, 1);
+var lensRight: rl.Vector3 = v3(1, 0, 0);
+var lensUp: rl.Vector3 = v3(0, 1, 0);
 
-/// Set ONCE a frame, before anything draws its motes (`game.drawScene`).
+/// Set ONCE a frame, before anything draws its motes (`game.drawScene`). The basis is what every
+/// billboard faces — solved here rather than per mote.
 pub fn setLens(at: rl.Vector3, fwd: rl.Vector3) void {
     lensAt = at;
     lensFwd = fwd;
+    var r = mathx.crossV(fwd, v3(0, 1, 0));
+    const rl2 = mathx.lenV(r);
+    if (rl2 > 1e-4) {
+        r = mathx.scaleV(r, 1.0 / rl2);
+        lensRight = r;
+        lensUp = mathx.crossV(r, fwd);
+    }
 }
 
 /// How far out a pool of motes is still worth the vertices. Past this a mote of any size is under a pixel and
@@ -1545,14 +1929,10 @@ test "EVERY CREATURE IS CLASSIFIED, and the water is only home to the two it bel
     std.debug.print("\n  wade: a 1.8 m walker turns back at {d:.2} m, where the hero goes to {d:.2} m\n", .{ wadeLimit(.archer, 1.8), envWadePin });
 }
 
-// **A GAS BILLS YOU THE MOMENT YOU STEP IN, AND THE CLOCK STARTS AFTER.** Every cloud was written the other
-// way round — zero the timer on exit, accumulate `dt` inside, pay out on the interval — so clipping the edge
-// of one cost nothing at all. Two shapes need it and they differ in what they meter:
-//
-//   * A DOSE on an interval (`knight.Vigil.gasDose`, `game.tickBoltGas`) — seed the accumulator AT the
-//     interval instead of at zero, so the first frame inside is already due.
-//   * A BUILD per second (poison, acid) — this, because there is no interval to seed. Entering pays
-//     `ENTRY_BOLUS` seconds of the rate up front, and every frame after is the honest `rate * dt`.
+// **A GAS BILLS YOU THE MOMENT YOU STEP IN, AND THE CLOCK STARTS AFTER**, or clipping the edge of one costs
+// nothing. A DOSE on an interval (`knight.Vigil.gasDose`) seeds the accumulator AT the interval; a BUILD per
+// second (poison, acid) has no interval to seed, so entering pays `ENTRY_BOLUS` seconds of the rate up front
+// and every frame after is the honest `rate * dt`.
 
 /// Seconds of the rate handed over the instant you cross into a cloud. A third: enough that clipping the rim
 /// is a real cost, not so much that the entry frame is worse than the second you spend in there.
@@ -1584,4 +1964,41 @@ test "A CLOUD BILLS YOU ON ENTRY AND THEN ON THE CLOCK" {
     try std.testing.expectApproxEqAbs(@as(f32, 24.0 * ENTRY_BOLUS), first, 1e-4);
     try std.testing.expectEqual(@as(f32, 0), s.step(false, dt, 24.0));
     try std.testing.expect(s.step(true, dt, 24.0) > after * 10.0);
+}
+
+
+test "THE RING KEEPS A BURST CONTIGUOUS, so the draw does not flip sprite per mote" {
+    // A frog mid-fight: a dust burst, then a wound, then another dust burst — emitted as runs, which is how
+    // every emitter here works. Each `rlEnd`/`rlSetTexture`/`rlBegin` flush costs far more than the walk.
+    var pool = [_]Particle{.{}} ** 84;
+    var head: usize = 0;
+    var rng = mathx.Rng.init(0xFEED);
+    for (0..14) |_| emitPart(&pool, &head, .{ .p = v3(0, 0.1, 0), .life = 0.5, .r0 = 0.08, .r1 = 0.22, .col = DUST });
+    emitPart(&pool, &head, .{ .p = v3(0, 0.6, 0), .life = 0.07, .r0 = 0.10, .r1 = 0.03, .col = HIT_FLASH, .add = true });
+    for (0..2) |_| emitPart(&pool, &head, .{ .p = v3(0, 0.6, 0), .life = 0.6, .r0 = 0.05, .r1 = 0.16, .col = HIT_HAZE });
+    var blood = Spray{
+        .fanLo = 0.6, .fanHi = 3.8, .upLo = 0.8, .upHi = 3.6,
+        .lifeLo = 0.45, .lifeHi = 0.85, .rLo = 0.028, .rHi = 0.055,
+        .r1 = 0.008, .col = mathx.rgba(112, 22, 16, 235), .grav = BLOOD_GRAV, .drag = BLOOD_DRAG,
+    };
+    blood.stretch = BLOOD_STRETCH;
+    spray(&pool, &head, &rng, v3(0, 0.6, 0), v3(1, 0, 0), 18, 6.4, 1.0, blood);
+    for (0..14) |_| emitPart(&pool, &head, .{ .p = v3(0, 0.1, 0), .life = 0.5, .r0 = 0.08, .r1 = 0.22, .col = DUST });
+
+    var flips: usize = 0;
+    var live: usize = 0;
+    for ([_]bool{ false, true }) |add| {
+        var open: ?bool = null;
+        for (&pool) |*q| {
+            if (q.life <= 0 or q.add != add) continue;
+            live += 1;
+            const soft = wantsSoft(q);
+            if (open == null or open.? != soft) flips += 1;
+            open = soft;
+        }
+    }
+    std.debug.print("\n  draw batching: {d} live motes in {d} sprite runs\n", .{ live, flips });
+    // Runs, not motes: one per burst plus the pass boundary, nowhere near one per mote.
+    try std.testing.expect(flips <= 6);
+    try std.testing.expect(live > 55);
 }

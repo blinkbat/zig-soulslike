@@ -1213,13 +1213,10 @@ fn statureOf(f: anytype) f32 {
     return @max(f.topWorld().y - f.pos.y, 0.2);
 }
 
-/// **THE TRAVERSAL RULE ON THE HERO, AS ONE POST-STEP GATE.** The ROLL and the attack LUNGE step through
-/// `mathx.stepXZ`, which is a clamp to the play square and NOTHING ELSE, so 3.5 m of roll crossed ground a
-/// walk refuses and `groundActor` hauled him up it at `GROUND_RISE_RATE` — 9 m/s over a 0.70 s roll is a 61
-/// degree climb against the 40 the walk caps at, and a riser past `GROUND_SNAP` is a teleport up a cliff.
-///
-/// **AIRBORNE KEEPS ONLY THE WATER HALF.** A jump has its own rule (`env.flyStep`) and clearing ground the
-/// walk refuses is what it is FOR — but no arc of it may end in the deep.
+/// **THE TRAVERSAL RULE ON THE HERO, AS ONE POST-STEP GATE.** The ROLL and the LUNGE step through
+/// `mathx.stepXZ`, a clamp to the play square and nothing else, so 3.5 m of roll crossed ground a walk
+/// refuses: `GROUND_RISE_RATE`'s 9 m/s over a 0.70 s roll is a 61 degree climb against the walk's 40 cap.
+/// **AIRBORNE KEEPS ONLY THE WATER HALF** (`env.flyStep`) — no arc may end in the deep.
 fn gateHeroTerrain(g: *Game, was: rl.Vector3) void {
     // Refused on the SEGMENT (`env.wardRefusing`) rather than left to the push-out: a roll is 3.5 m in one
     // step and the sheet is 0.8 m thick.
@@ -1781,8 +1778,6 @@ fn interact(g: *Game) void {
 /// puts him out square on the far side. A SPEED and not a duration — a fixed clock over a distance that
 /// varies by metres is a walk that is sometimes a run.
 pub const GATE_SPEED: f32 = heromod.WALK_SPEED * 0.66;
-const GATE_MOTES_PER_S: f32 = 26.0;
-const GATE_MOTE_CAP: u32 = 8;
 
 const GateWalk = struct {
     ward: u8,
@@ -1827,9 +1822,9 @@ fn updateGateWalk(g: *Game, dt: f32) void {
     // The rig is replayed HERE like every other branch of the loop's state chain: `hero.update` only advances
     // the clocks and the gait phase.
     g.hero.pose();
-    gw.motes += dt * GATE_MOTES_PER_S;
+    gw.motes += dt * heromod.FOG_WAKE_RATE;
     var n: u32 = 0;
-    while (gw.motes >= 1.0 and n < GATE_MOTE_CAP) : (n += 1) gw.motes -= 1.0;
+    while (gw.motes >= 1.0 and n < heromod.FOG_WAKE_CAP) : (n += 1) gw.motes -= 1.0;
     if (n > 0) g.hero.fogWake(g.hero.shoulderPoint(), gw.dir, n);
     if (gw.t >= 1.0) g.gateWalk = null;
 }
@@ -2072,10 +2067,9 @@ fn tickTriggers(g: *Game, dt: f32) void {
     if (!g.talk.open(&g.map, &g.trig, want, "", null)) g.trig.dialogClosed();
 }
 
-/// Two halves, deliberately apart: the LATCH is his own step crossing the sheet (`markWardStep`), and the
-/// DOOR is shut only while the creature the op names is still standing — so killing it is what lets you back
-/// out. A gate may not shut on the man IN it (`wardClear`), or a push-out could seal him inside with nothing
-/// left able to open it.
+/// Two halves apart: the LATCH is his step crossing the sheet (`markWardStep`), the DOOR is shut only while
+/// the creature the op names stands. A gate may not shut on the man IN it (`wardClear`), or a push-out seals
+/// him inside with nothing left able to open it.
 /// How long a spent gate takes to go.
 const WARD_FADE: f32 = 2.6;
 
@@ -2260,12 +2254,10 @@ fn applyStow(g: *Game) void {
 }
 
 fn applyHour(g: *Game) void {
-    // **AND ONLY WHEN THE HOUR HAS ACTUALLY MOVED**, because the cost is not small: two full `paletteAt`
-    // walks, three `keyDir`-class solves, and EIGHTEEN `setShaderValue` calls, each a `glUseProgram` plus a
-    // `glUniform` at the driver. The guard is the value itself rather than a flag anybody has to raise, and
-    // nothing else writes these uniforms, so a skipped frame leaves them exactly right. QUANTIZED because a
-    // storm ramp moves every frame: a sixty-fourth of the range is finer than the eye reads and lands on ~7
-    // uploads a second through the fastest ramp there is.
+    // **ONLY WHEN THE HOUR HAS ACTUALLY MOVED**: two `paletteAt` walks, three `keyDir`-class solves and
+    // EIGHTEEN `setShaderValue` calls, each a `glUseProgram` plus a `glUniform`. The guard is the value
+    // itself, not a flag, and nothing else writes these uniforms. QUANTIZED to a sixty-fourth of the range —
+    // finer than the eye reads, ~7 uploads a second through the fastest ramp there is.
     const wet = @round(g.wetNow * WET_STEPS) / WET_STEPS;
     const fog = g.menu.fogK();
     const spore = @round(g.sporeNow * WET_STEPS) / WET_STEPS;
@@ -3481,11 +3473,9 @@ fn gaitLabel(moving: f32, speed: f32) [:0]const u8 {
 
 pub const Mode = enum { play, shots, props, land };
 
-/// **A HITCH IS NOT SIMULATED IN FULL.** A raw `getFrameTime` is the one unbounded number in the loop and
-/// several things downstream are only PROVEN safe for a frame-sized step: `arrowCover` queries a radius of
-/// `speed * dt`, and the cap that query cannot overflow (`MAX_NEAR`) is pinned by a test over a 2x2 cell
-/// window — at 40 m/s a 0.35 s stall asks for a 3-wide one and the overflow DROPS SILENTLY, which is an
-/// arrow through a wall. `drawDt`, the editor and the audio pump keep the raw figure; they are not the sim.
+/// **A HITCH IS NOT SIMULATED IN FULL.** `arrowCover` queries a radius of `speed * dt` and `MAX_NEAR` is
+/// pinned over a 2x2 cell window — at 40 m/s a 0.35 s stall asks for a 3-wide one and the overflow DROPS
+/// SILENTLY, which is an arrow through a wall. `drawDt`, the editor and the audio pump keep the raw figure.
 const DT_MAX: f32 = 1.0 / 30.0;
 
 pub fn run(mode: Mode) void {

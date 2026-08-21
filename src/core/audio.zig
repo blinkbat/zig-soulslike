@@ -1410,11 +1410,8 @@ fn mkOgreDie(r: *Rack) void {
     r.ends(0.006, 0.20);
 }
 
-// **THE BOSS'S OWN THROAT — IRON OVER BONE, AND NOTHING ALIVE INSIDE IT.** He borrowed the ogre's whole
-// voice, and the ogre is FLESH: `growl`'s saw under a lowpass riding its own pitch is a CHEST. What tells a
-// sealed suit apart is that every cue here carries a `ring` — struck plate, and the one layer the ogre never
-// uses — over `grit` that is dry bone rather than a wet thump, and that the voice comes out of a HELM, so it
-// is air in a box with a room behind it, never a windpipe.
+// **IRON OVER BONE, NOTHING ALIVE INSIDE IT.** Every cue carries a `ring` — struck plate, the one layer the
+// ogre never uses — over `grit` that is dry bone rather than a wet thump.
 
 fn mkKnightStep(r: *Rack) void {
     r.body(0.0, 0.46, 70, 25, 1.15, 2.3);
@@ -1851,9 +1848,8 @@ fn mkSoulsTake(r: *Rack) void {
     r.master(2.0, 6400);
 }
 
-/// WALKING THROUGH THE SHEET. A long inhale rather than an event: broadband air opening and closing round him
-/// with a low body under it, no transient at all — the gate does not CLICK, and a tick at the head would be a
-/// door latching, which is the sound the SEAL owns.
+/// A long inhale rather than an event, with NO TRANSIENT: a tick at the head is a door latching, which is the
+/// sound the SEAL owns.
 fn mkFogPass(r: *Rack) void {
     r.air(0.00, 1.55, 0.34, 260, 1500, 0.30, 1.1);
     r.air(0.10, 1.35, 0.24, 1700, 320, 0.34, 1.3);
@@ -1881,13 +1877,10 @@ fn mkFogSeal(r: *Rack) void {
     r.ends(0.03, 1.10);
 }
 
-/// THE BOSS DOWN AND THE DOOR SPENT (owner: like the entry sting, still deep and dark but MORE HOPEFUL, not
-/// scary). Same architecture as `mkFogSeal`, opposite interval. The root stays A1 at 55 Hz and the register
-/// stays where it was — DARK is not the same dial as FRIGHTENING. What arrives a beat late is the PERFECT
-/// FIFTH (E2, 82.41) instead of the tritone, the MAJOR THIRD (C#2, 69.30) lands last, and the three together
-/// are an A major triad where the seal is the one interval nobody hears as resolved. The sub RISES the
-/// semitone the seal's sags, the choir opens upward instead of sitting, and the air brightens across the take
-/// where the seal's closes down.
+/// THE BOSS DOWN AND THE DOOR SPENT (owner: still deep and dark but MORE HOPEFUL, not scary). `mkFogSeal`'s
+/// architecture, opposite interval: root A1 55 Hz, then the PERFECT FIFTH (E2, 82.41) instead of the
+/// tritone and the MAJOR THIRD (C#2, 69.30) last — an A major triad. DARK is not the same dial as
+/// FRIGHTENING, so the register does not move; the sub RISES the semitone the seal's sags.
 fn mkFogFelled(r: *Rack) void {
     r.body(0.00, 1.40, 82, 55, 0.42, 2.0);      // the weight coming off — not a stone finding its seat
     r.body(0.05, 4.90, 38.9, 41.2, 0.60, 0.8);  // the sub, rising the semitone
@@ -2554,12 +2547,9 @@ fn bakeTake(id: Id, idx: usize) void {
     slots[idx].next = 0;
 }
 
-/// Walks the rest of the bank in behind the menu, a few ms a frame; returns whether work remains. Whole,
-/// it was 4.4 s of synthesis on the main thread in front of an already-blank window.
-///
-/// A TAKE IS INDIVISIBLE: the budget bounds how much we START, never how much we finish, so one 8 s bed
-/// take is a ~300 ms hole in whatever frame picks it up — hence `longOk`, which defers the long rows to a
-/// pause. `LONG_TAKE` is in seconds of AUDIO, the one cheap proxy for the cost.
+/// A few ms a frame behind the menu; whole, it was 4.4 s of synthesis on the main thread. A TAKE IS
+/// INDIVISIBLE — the budget bounds what we START, so one 8 s bed take is a ~300 ms hole in the frame that
+/// picks it up, hence `longOk`. `LONG_TAKE` is in seconds of AUDIO, the cheap proxy for cost.
 const LONG_TAKE: f32 = 1.4;
 
 pub fn pump(budgetNs: u64, longOk: bool) bool {
@@ -2803,22 +2793,20 @@ pub fn voiceInfo(id: Id) VoiceInfo {
     return .{ .gain = r.gain, .mix = r.mix, .jit = r.jit, .vjit = r.vjit, .vars = r.vars, .poly = r.poly, .reach = r.reach };
 }
 
-// **THE BENCH — A VOICE AS IT IS PLAYING, WHICH IS NOT ALWAYS THE VOICE AS IT WAS AUTHORED** (owner: let me
-// edit basic things on sound fx and save over them, keep your originals for a revert). `BANK` is the
-// original and NEVER moves — that IS the revert, and it is why nothing here needs a backup file to be
-// correct. `live` is what every play path reads and the only thing the editor writes; `settings.cfg` carries
-// the DIFFERENCE and nothing else, so a voice re-authored in code flows straight through to a save that
-// never mentioned it.
+// (owner: let me edit basic things on sound fx and save over them, keep your originals for a revert.)
+// `BANK` is the original and NEVER moves — that IS the revert. `live` is what every play path reads and all
+// the editor writes; `settings.cfg` carries the DIFFERENCE only, so a voice re-authored in code flows
+// through to a save that never mentioned it.
 //
-// **THE SHAPE OF A ROW IS NOT ON THE BENCH.** `vars` and `poly` size the alias table `freeRow` walks to
-// unload it, so a dial that moved either between a bake and its free would leak or double-free; those two,
-// `mix`, `id` and `make` are read from `BANK` everywhere and have no setter.
+// **THE SHAPE OF A ROW IS NOT ON THE BENCH.** `vars` and `poly` size the alias table `freeRow` walks, so a
+// dial that moved either between a bake and its free would leak or double-free; those two, `mix`, `id` and
+// `make` have no setter.
 var live: [NV]Row = BANK;
 var voiceFx: [NV][AFX_COUNT]f32 = [_][AFX_COUNT]f32{[_]f32{0} ** AFX_COUNT} ** NV;
 var voiceDirty: [NV]bool = [_]bool{false} ** NV;
 
-/// The dials the bench exposes. Each is a plain multiplier or an angle on the take — none of them re-bakes,
-/// which is why they answer under the finger while the filters take `FX_SETTLE`.
+/// Each is a plain multiplier or an angle on the take — none re-bakes, which is why they answer under the
+/// finger while the filters take `FX_SETTLE`.
 pub const Dial = enum { gain, pitch, reach, jit, vjit };
 
 /// Every voice's name, once, as a runtime table — the bench lists off it and `settings.cfg` is keyed on it.
@@ -2889,8 +2877,7 @@ pub fn applyVoiceFxPreset(id: Id, preset: []const FxPreset) void {
     for (preset) |p| setVoiceFx(id, p.idx, p.val);
 }
 
-/// Has this one been moved off what the code says? What the Revert button lights on, and the whole of what
-/// `saveSettings` writes down.
+/// What the Revert button lights on, and the whole of what `saveSettings` writes down.
 pub fn voiceEdited(id: Id) bool {
     const idx: usize = @intFromEnum(id);
     const a = live[idx];
@@ -3017,8 +3004,8 @@ pub fn loadSettings() void {
             for (NAMES, 0..) |nm, vi| {
                 if (!std.mem.eql(u8, name, nm)) continue;
                 const id: Id = @enumFromInt(vi);
-                // Read against the AUTHORED row, so a short or damaged line leaves the rest of the voice
-                // exactly where the code has it rather than at zero.
+                // Against the AUTHORED row: a short or damaged line leaves the rest of the voice where the
+                // code has it rather than at zero.
                 live[vi] = BANK[vi];
                 inline for (@typeInfo(Dial).@"enum".fields) |dfld| {
                     if (it.next()) |tok| {
@@ -3711,8 +3698,7 @@ test "the two ambient voices are baked DARK, which is the cue level cannot buy" 
     try std.testing.expect(wind < 0.75 * crossings(.toad_chomp, @intFromEnum(Id.toad_chomp)));
     try std.testing.expect(wind < 0.60 * crossings(.swing_light, @intFromEnum(Id.swing_light)));
 
-    // THE BIRDS ARE NOT MEASURED THIS WAY: a chirp is PITCHED, so its zero-crossing rate is set by its
-    // fundamental and barely moves when the reedy harmonics come off the top.
+    // NOT THE BIRDS: a chirp is PITCHED, so its zero-crossing rate is set by its fundamental.
     try std.testing.expect(AIR_FAR_CALL < AIR_NEAR_DARKEST);
     try std.testing.expect(AIR_FAR_BED < AIR_FAR_CALL);
     try std.testing.expect(AIR_FAR_CRY < AIR_FAR_CALL);
@@ -3772,11 +3758,9 @@ fn crossingsPerSec(id: Id) f32 {
 }
 
 test "THE BOSS HAS HIS OWN THROAT — no cue of his measures as the ogre's, and each one differs the right way" {
-    // He borrowed the ogre's step, slam, heave, roar, swipe, hurt and die outright. The ogre is FLESH —
-    // `growl` and `body` and nothing over them — and what tells a sealed suit apart is struck PLATE, which is
-    // `ring`, the layer the ogre never uses. Judged with the timbre taken away, on the zero-crossing rate the
-    // ambient bed is judged by: IRON RINGS, so every struck cue of his sits ABOVE the one it replaced, and a
-    // dead thing inside a helm is LOWER than a living throat, so both voiced ones sit below.
+    // Judged on zero-crossing rate with the timbre taken away: IRON RINGS, so every struck cue of his sits
+    // ABOVE the ogre cue it replaced, and a dead thing in a helm is LOWER than a living throat, so both
+    // voiced ones sit below.
     const pairs = [_][2]Id{
         .{ .knight_step, .ogre_step },
         .{ .knight_roar, .ogre_roar },

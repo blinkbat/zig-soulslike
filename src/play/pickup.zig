@@ -13,12 +13,9 @@ const v3 = mathx.v3;
 
 pub const CAP: usize = 96;
 
-/// How close you have to be for the prompt (metres, on XZ from the glow's own origin). **Wider than the box
-/// and narrower than the drop** — `souls.REACH` is 2.6 because you come back for that one under pressure, and
-/// this is 2.4 for the other half of that reason: the thing is a wisp of light with no body to bump into, so
-/// a ring sized like a box's makes you hunt for the spot it answers on. It is NOT the widest ring in the game
-/// and the asserts below do not claim it is — `rest.REACH` is 3.2, and a bonfire is a thing you walk at rather
-/// than a thing you have to find the spot of.
+/// METRES on XZ from the glow's own origin. **Wider than the box and narrower than the drop**: `souls.REACH`
+/// is 2.6 because you come back for that one under pressure, and this is 2.4 because a wisp of light has no
+/// body to bump into. NOT the widest ring in the game — `rest.REACH` is 3.2.
 pub const REACH: f32 = 2.4;
 
 pub const FADE_DUR: f32 = 0.42;
@@ -109,13 +106,11 @@ pub const Pickups = struct {
         self.n = @min(self.mapped, self.n);
     }
 
-    /// **A BODY LEFT SOMETHING ON THE GROUND** (`drops.roll` → `game.billDeaths`). Refuses an empty list, so
-    /// `nloot > 0` stays the honest test for "this one is a drop".
+    /// Refuses an empty list, so `nloot > 0` stays the honest test for "this one is a drop".
     ///
-    /// **A FULL LIST RECYCLES A SPENT SLOT BEFORE IT REFUSES.** The cap is shared with the map's own glows and
-    /// a long session kills far more than 96 things — but a glow that has been picked up is a slot nobody can
-    /// see, so the ground never silently loses something you could still walk to. With none spendable the
-    /// drop is DROPPED, which is the honest failure: better than overwriting a glow standing in front of you.
+    /// **A FULL LIST RECYCLES A SPENT SLOT BEFORE IT REFUSES** — a session kills far more than the 96 the cap
+    /// shares with the map's glows, and a picked-up glow is a slot nobody can see. With none spendable the
+    /// drop is DROPPED rather than overwriting a glow standing in front of you.
     pub fn spawn(self: *Pickups, at: rl.Vector3, kinds: []const item.Kind) void {
         if (kinds.len == 0) return;
         const n = @min(kinds.len, DROP_MAX);

@@ -20,29 +20,18 @@ const PUNK_DK = art.PUNK_DK;
 const BARK_OLD = art.BARK_OLD;
 
 
-// ── THE MYCELIAN ────────────────────────────────────────────────────────────────────────────────────────
-//
-// A wood with no wood in it. The three layers a region owes are all fungal here — a canopy of caps you walk
-// under, brackets and clusters for understorey, pods on the floor — which is what stops it reading as a
-// forest that had its trees swapped out.
-//
-// **THE GILLS ARE THE WHOLE THING.** A cap without them is an umbrella, and they are the one surface in the
-// world that is permanently in its own shade — so `GILL` is authored PALE where every other albedo here is
-// authored near-black. It never takes the sun, so the hot key never gets at it.
+// A wood with no wood in it, and all three layers a region owes are fungal. **THE GILLS ARE THE WHOLE THING**
+// — the one surface permanently in its own shade, so `GILL` is authored PALE where every other albedo here is
+// near-black.
 
 /// How far under the cap the gills are laid, as a share of the cap's own drop. Deep enough to be in shadow
 /// from any angle you can stand at, shallow enough that the rim still reads as an edge.
 const GILL_IN: f32 = 0.62;
 
-// ── WHAT HANGS, AND HOW FAR ─────────────────────────────────────────────────────────────────────────────
-//
-// **A HANGING THING SWINGS, AND IT IS THE ONLY THING HERE THAT MOVES.** The caps are roofs and the stalks
-// are structure — `sporePodMesh` alone is thin enough for the flora sway. What is left over is the stuff
-// with nothing under it: spore beads in the still air below a cap, and the lamp's bulb on its thread.
-//
-// `Builder.setAnimY` carries the MODEL-SPACE HEIGHT OF THE POINT A VERTEX HANGS FROM, and the scene shader's
-// `plant` branch throws it sideways in proportion to the drop below that anchor. Zero is the default and
-// means rigid, so nothing else in the world is touched.
+// **A HANGING THING SWINGS, AND IT IS THE ONLY THING HERE THAT MOVES** — caps are roofs and stalks are
+// structure, so only what has nothing under it sways. `Builder.setAnimY` carries the MODEL-SPACE HEIGHT OF
+// THE POINT A VERTEX HANGS FROM and the shader's `plant` branch throws it sideways in proportion to the drop
+// below that anchor. Zero means rigid, so nothing else in the world is touched.
 
 /// The mote radius every spore bead here is drawn at the top of — the deepest hang is a bead's underside.
 const SPORE_R_HI: f32 = 0.045;
@@ -411,8 +400,6 @@ test "the glow's light sits under its own cap rather than on top of it" {
     try std.testing.expect(CAP_GLOW.a < 255 and SPORE_GLOW.a < 255);
 }
 
-// ── BIGGER, WEIRDER, AND MORE OF IT LIT ─────────────────────────────────────────────────────────────────
-//
 // The three great caps are a wood. These are the things that make it a KINGDOM: one cap at landmark scale,
 // two structures nothing grew on purpose, and three more sources of light so the floor is never black.
 
@@ -695,14 +682,9 @@ test "THE KINGDOM IS FOUR CANOPY SILHOUETTES AND THREE KINDS OF LIGHT, not one s
 }
 
 
-// ── THE FLOOR OF THE KINGDOM ────────────────────────────────────────────────────────────────────────────
-//
-// Caps and towers are what you see across the hollow; these are what is under your boots on the way there.
 // **A REGION OWES THREE LAYERS AND THE LOWEST ONE IS THE EASIEST TO SKIP** — the canopy got nine props and
-// the floor got two, which is why the mycelian photographed as furniture standing on a lawn.
-//
-// Four of them, and they are four different HABITS rather than four sizes: a sphere, a spike, a crust and a
-// shelf. Nothing here is a small mushroom, because a small mushroom is what `mushrooms` already is.
+// the floor two, which is why the mycelian photographed as furniture on a lawn. Four different HABITS rather
+// than four sizes: a sphere, a spike, a crust and a shelf, none of them a small mushroom (`mushrooms` is).
 
 pub const PUFF_R: f32 = 0.62;
 

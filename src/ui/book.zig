@@ -175,11 +175,10 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     // he cannot cast is not worth a number — and it is the SORCERY THAT IS LOADED that is priced, through
     // `combat`'s own two answers: the rod carries FIVE, and no two of them cost or deal the same.
     const casts = heromod.handsHold(l.arm, l.off, .wand);
-    // …through the WHOLE multiple the cast itself takes (`hero.castBlow`: the sorcery node times INTELLIGENCE),
-    // and **ONLY FOR THE THREE THAT ARE SCALED AT ALL**. `spellBlow` is null for the roots and the rime because
-    // neither lands a blow — their chaos and their cold are billed flat, a frame at a time, by `combat.Root.tick`
-    // and `combat.Chill.tick`, which read no sheet and no perk. Multiplied here, the page promised an Intelligence
-    // build a stronger grip and a colder breath than it was ever going to get.
+    // …through the WHOLE multiple the cast takes (`hero.castBlow`), and **ONLY FOR THE THREE THAT ARE SCALED
+    // AT ALL**: `spellBlow` is null for the roots and the rime, which are billed flat a frame at a time by
+    // `combat.Root.tick`/`Chill.tick` and read no sheet. Multiplied here, the page promised a stronger grip
+    // and a colder breath than the fight gives.
     const spellK: f32 = if (combat.spellBlow(l.spell) != null) perk.spellDmg * sheet.scale(.intelligence) else 1.0;
     d[@intFromEnum(Der.spell)] = if (casts) combat.spellDamage(l.spell) * spellK else 0;
     d[@intFromEnum(Der.spell_fp)] = if (casts) castFp(l.spell, perk) else 0;
@@ -569,14 +568,10 @@ fn heldSame(h: Hand, v: View) bool {
     return v.worn.at(w) == h.kind;
 }
 
-/// Where a picker opens: on what is ALREADY equipped, never on row 0 — landing the cursor somewhere other
-/// than the current choice is how a menu tricks you into swapping something you meant to look at.
-///
-/// **ASKED OF THE LIST ITSELF, NEVER COUNTED A SECOND TIME.** Three of these were hand-walked copies of
-/// `candidates`' own ordering — a hand's two interleaved axes, a worn socket's "(nothing)" row, the quick bar's
-/// filtered one — parallel lists kept in lockstep by hand, and a cursor that opens on the wrong row is exactly
-/// the failure this function exists to prevent. `equipped` already answers "is THIS row the one in force" for
-/// every action there is, so the row is where that first says yes, and the two cannot drift apart.
+/// On what is ALREADY equipped, never row 0 — a cursor landing anywhere else tricks you into swapping
+/// something you meant to look at. **ASKED OF THE LIST ITSELF, NEVER COUNTED A SECOND TIME**: three
+/// hand-walked copies of `candidates`' ordering were parallel lists kept in lockstep by hand. `equipped`
+/// already answers "is THIS row in force", so the row is where that first says yes.
 fn pickIndexOf(s: SlotId, v: View) usize {
     var out: [CAND_MAX]Cand = undefined;
     for (candidates(s, v, &out), 0..) |c, i| {
@@ -1055,11 +1050,9 @@ fn panel(b: Box, title: [:0]const u8) Box {
     return panelInner(b, title.len > 0);
 }
 
-/// THE PITCH `n` ROWS GET IN `space` PIXELS: their natural one, tightened to fit, and NEVER under the GLYPH
-/// height. A panel too short for its rows spills off the bottom, which is ugly, where a negative pitch stacks
-/// them backwards up through the heading, which is unreadable. The floor used to be `lineH`, which twelve
-/// rows cannot make fit in the half-panel a picker leaves them: they overran the foot and the divider drew
-/// straight through the last row.
+/// Their natural pitch, tightened to fit, and NEVER under the GLYPH height: too short spills off the bottom,
+/// where a NEGATIVE pitch stacks them backwards up through the heading. The floor was `lineH`, which twelve
+/// rows cannot fit in the half-panel a picker leaves them.
 fn rowStep(space: i32, n: usize) i32 {
     const natural = hud.lineH(hud.SMALL) + 7;
     // A picker CAN be open on a slot with nothing to offer (`candidates` returns an empty slice for a locked

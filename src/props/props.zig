@@ -375,14 +375,11 @@ pub fn group(k: Kind) Group {
     };
 }
 
-/// **WHERE A THING BELONGS, WHICH IS NOT WHAT IT IS MADE OF.** `Group` is the editor's palette — how a prop
-/// is FILED, so you can find the fences next to the gates. This is the other axis: which kingdom it reads as
-/// standing in. They cross, and the crossings are the point — a boulder is `Group.rock` and `Biome.rock`, but
-/// a cairn is `Group.ruins` and `Biome.ruins` while an outcrop beside it is rock, and a rotted log is filed
-/// under rock with the stumps and belongs to the forest.
+/// `Group` is the editor's palette — how a prop is FILED. This is the other axis: which kingdom it reads as
+/// standing in. They cross, and the crossings are the point.
 ///
-/// `any` is not a dustbin: it is the set that reads right ANYWHERE — grass, a torch, a chest, the water sheet.
-/// A kind put there because nobody could decide is a kind that will turn up in the ashfall looking wrong.
+/// `any` is not a dustbin — it is the set that reads right ANYWHERE. A kind put there because nobody could
+/// decide will turn up in the ashfall looking wrong.
 pub const Biome = enum {
     any,
     ruins,
@@ -455,10 +452,8 @@ pub fn inBiome(k: Kind, b: Biome) bool {
     return own == b or own == .any;
 }
 
-/// **WHAT IVY CLIMBS** — dressed or laid stone with a vertical face, and nothing else. It lived as a bare
-/// prong list inside `env.Placer.ivy`, three files away from the kinds it names, and fell out of step the
-/// day the ruins family grew: an obelisk and an altar were unclimbable and nothing anywhere said so. It is
-/// deliberately NOT `group(k) == .ruins` — that set holds a planted sword and a rubble pile too.
+/// **WHAT IVY CLIMBS** — dressed or laid stone with a vertical face, and nothing else. Deliberately NOT
+/// `group(k) == .ruins`, which holds a planted sword and a rubble pile too.
 pub const IVY_HOSTS = [_]Kind{
     .wall,    .pillar,  .broken,     .block,  .arch,
     .statue,  .cottage, .chapel,     .watchtower, .stairs,
@@ -693,13 +688,9 @@ pub const INFO = [NK]Info{
     // A sapling CASTS (3 m of tree with no shadow reads as a decal) and so must not sway — the depth pass
     // has no wind term.
     .{ .kind = .sapling, .build = wood.saplingMesh, .bound = 3.8, .top = 3.4, .view = 220, .parts = circleParts(0.16, 2.2), .surf = .wood },
-    // ── THE GREAT BONES ─────────────────────────────────────────────────────────────────────────────────
     // `bound` and `top` are SOLVED off `propbone.ribPath` at comptime — the same walk the mesh is drawn from,
-    // so a retuned curl moves the sphere with the shaft. They were typed here once, beside a comment that
-    // claimed this; the arch is what proved the comment wrong, its keystone standing 0.29 m above the `top`
-    // it declared.
-    // A rib THINS like a tree rather than standing solid like a wall: it is a mast, and losing the hero
-    // behind one is nothing the geometry is doing on purpose.
+    // so a retuned curl moves the sphere with the shaft. Typed by hand, the arch's keystone stood 0.29 m
+    // above the `top` it declared.
     .{ .kind = .rib, .build = bone.rib1, .bound = bone.ribBound(bone.RIB_TALL), .top = bone.ribTop(bone.RIB_TALL), .view = FAR, .parts = circleParts(0.62, 3.0), .occl = &.{ .{ .r = 0.90, .y1 = 4.0 }, .{ .x = 3.0, .r = 2.60, .y0 = 3.8, .y1 = bone.ribTop(bone.RIB_TALL) } } },
     .{ .kind = .rib2, .build = bone.rib2, .bound = bone.ribBound(bone.RIB_STOUT), .top = bone.ribTop(bone.RIB_STOUT), .view = FAR, .parts = circleParts(0.70, 2.6), .occl = &.{ .{ .r = 1.00, .y1 = 2.8 }, .{ .x = 2.6, .r = 2.20, .y0 = 2.6, .y1 = bone.ribTop(bone.RIB_STOUT) } } },
     .{ .kind = .rib3, .build = bone.rib3, .bound = bone.ribBound(bone.RIB_SPLIT), .top = bone.ribTop(bone.RIB_SPLIT), .view = FAR, .parts = circleParts(0.55, 3.2), .occl = &.{ .{ .r = 0.85, .y1 = 4.0 }, .{ .x = 1.6, .r = 1.60, .y0 = 3.8, .y1 = bone.ribTop(bone.RIB_SPLIT) } } },
@@ -713,7 +704,6 @@ pub const INFO = [NK]Info{
     .{ .kind = .skull, .build = bone.skullMesh, .bound = 3.9, .top = 2.3, .view = 300, .parts = &.{.{ .ax = -0.60, .bx = 1.60, .r = 1.05, .h = 1.95 }} },
     .{ .kind = .vertebra, .build = bone.vertebraMesh, .bound = 2.9, .top = 2.5, .view = 220, .parts = circleParts(0.85, 1.60) },
 
-    // ── THE ASHFALL ─────────────────────────────────────────────────────────────────────────────────────
     // A heap is walked OVER and a dune is walked ROUND — and the dune's collider is only 1.4 m tall against
     // its own 2.2, so a look passes over the ridge a body cannot cross. That gap is the region's one idea.
     .{ .kind = .ashheap, .build = ash.ashHeapMesh, .bound = 2.0, .top = 0.80, .view = 150 },
@@ -722,24 +712,20 @@ pub const INFO = [NK]Info{
     .{ .kind = .cinders, .build = ash.cindersMesh, .bound = 1.6, .top = 0.25, .view = 130, .casts = false },
     .{ .kind = .charspar, .build = ash.charSparMesh, .bound = 5.9, .top = 5.50, .view = 300, .parts = circleParts(0.44, 4.0), .occl = &.{.{ .r = 0.70, .y1 = 5.4 }}, .surf = .wood },
 
-    // ── FORMATIONS ──────────────────────────────────────────────────────────────────────────────────────
     .{ .kind = .hoodoo, .build = rock.hoodooMesh, .bound = 6.4, .top = 5.90, .view = FAR, .parts = circleParts(0.60, 4.6), .occl = &.{ .{ .r = 0.90, .y1 = 3.5 }, .{ .r = 1.45, .y0 = 3.4, .y1 = 5.8 } } },
     .{ .kind = .spire, .build = rock.spireMesh, .bound = 10.2, .top = 9.40, .view = FAR, .parts = circleParts(1.10, 7.0), .occl = &.{.{ .r = 1.40, .y1 = 9.3 }} },
     .{ .kind = .balanced, .build = rock.balancedMesh, .bound = 4.6, .top = 4.10, .view = 320, .parts = &.{.{ .ax = 0.0, .bx = 0.62, .r = 1.10, .h = 2.30 }}, .occl = &.{.{ .x = 0.5, .r = 1.70, .y1 = 4.0 }} },
     .{ .kind = .fingers, .build = rock.fingersMesh, .bound = 5.6, .top = 4.80, .view = 320, .parts = &.{.{ .ax = -0.90, .bx = 1.70, .r = 0.60, .h = 3.80 }}, .occl = &.{.{ .x = 0.4, .r = 1.90, .y1 = 4.7 }} },
 
-    // ── MORE RUINS ──────────────────────────────────────────────────────────────────────────────────────
     // No `occl` on any of the three, which is the ruins family's own rule: dressed stone is architecture and
     // architecture does not ghost.
     .{ .kind = .obelisk, .build = ruins.obeliskMesh, .bound = 9.2, .top = 8.70, .view = FAR, .parts = circleParts(0.85, 7.0) },
     .{ .kind = .plinth, .build = ruins.plinthMesh, .bound = 2.8, .top = 2.60, .view = 210, .parts = &.{.{ .ax = -0.30, .bx = 0.30, .r = 0.85, .h = 1.70 }} },
     .{ .kind = .altar, .build = ruins.altarMesh, .bound = 2.9, .top = 1.15, .view = 210, .parts = &.{.{ .ax = -1.35, .bx = 1.35, .r = 0.68, .h = 1.05 }} },
 
-    // ── WOOD GOING BACK TO THE GROUND ───────────────────────────────────────────────────────────────────
     .{ .kind = .rotlog, .build = wood.rotLogMesh, .bound = 3.2, .top = 0.95, .view = 175, .parts = &.{.{ .ax = -2.10, .bx = 2.10, .r = 0.40, .h = 0.85 }}, .surf = .wood },
     .{ .kind = .deadfall, .build = wood.deadfallMesh, .bound = 3.4, .top = 2.00, .view = 200, .parts = circleParts(1.10, 1.60), .surf = .wood },
 
-    // ── THE MYCELIAN ────────────────────────────────────────────────────────────────────────────────────
     // The canopy, and you walk UNDER it: the colliders are the two stipes, so the cap is a roof rather than
     // a wall. Two blockers for `bigtree`'s reason — one cylinder cannot be narrow at the foot and 3.3 m wide
     // at the brim.
@@ -792,13 +778,9 @@ pub const INFO = [NK]Info{
     .{ .kind = .sporepod, .build = fungus.sporePodMesh, .bound = 1.3, .top = 1.25, .view = 95, .flora = true, .casts = false },
 
     .{ .kind = .pickup, .build = fx.pickupMesh, .bound = 1.9, .top = fx.PICKUP_TOP, .view = 190, .interact = true, .casts = false, .light = .{ .y = 0.30, .col = v3(0.86, 0.82, 0.58), .radius = 5.4, .flicker = 0.03 } },
-    // THE FOG GATE. `build` is the two threshold stones; the sheet itself is the VEIL, which is what puts it
-    // in the late pass (`env.drawVeils`) where a translucent thing belongs. `solid` because a fog wall is
-    // exactly the thing that must NOT thin when it stands between the lens and him — that is its whole job —
-    // and it casts nothing, since a shadow of a fog wall is a shadow of nothing.
-    // `ward` is the MECHANIC: the doorway is a capsule the width of its own sheet that no foe crosses in
-    // either direction and no sight crosses at all, and that he walks through. `interact` puts it in the
-    // editor's Interactables layer rather than among the walls it is the opposite of.
+    // `build` is the two threshold stones; the sheet is the VEIL, hence the late pass (`env.drawVeils`).
+    // `solid` because a fog wall must NOT thin between the lens and him, and it casts nothing. `ward` is the
+    // MECHANIC: a capsule the width of its own sheet that no foe and no sight crosses, and that he does.
     .{ .kind = .foggate, .build = fx.fogGateStoneMesh, .veil = fx.fogGateMesh, .bound = 5.4, .top = fx.FOG_H, .view = 320, .solid = true, .interact = true, .casts = false, .ward = true, .parts = &.{.{ .ax = -fx.FOG_W * 0.5, .bx = fx.FOG_W * 0.5, .r = fx.FOG_WARD_R, .h = fx.FOG_H }} },
 };
 

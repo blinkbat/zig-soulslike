@@ -29,20 +29,12 @@ const setLocal = heromod.setHumanoid;
 // THE MUSHROOM MAGE (owner's creature, owner's brief) — a cloaked fungal caster that throws SLOW, BOUNCING
 // fireballs.
 //
-// **THE CAP IS THE HOOD.** That is the whole read and it is why this is not just a robed man: from behind it
-// is a cowled figure like any other, and when it turns round the cowl is a mushroom, with a dark hollow of
-// gills where a face should be. Authored as a hood WITH a mushroom under it there would be two silhouettes
-// fighting; as one shape there is only the one, and it is a shape nothing else in the world has.
+// **THE CAP IS THE HOOD** — one silhouette, not a hood WITH a mushroom under it, which would be two fighting.
 //
-// **AND THE FIREBALL IS THE FIGHT.** Slow enough to walk out of the way of once, and it BOUNCES
-// (`archer.bouncesOf`), so the ground it threatens is not one spot but a LINE of them running on away from
-// the caster: measured, a ball aimed at 11 m touches at 11.9, 18.1 and 21.0 and rests at 22.4.
-//
-// **WHICH MEANS WHAT IT PUNISHES IS BACKING OFF**, and that is the whole reason the thing is slow. The
-// obvious answer to a projectile you can see coming for a second and a half is to walk backwards out of it —
-// and walking backwards is walking down the bounce line, so the arc you dodged is the one that catches you
-// on the second touch. The answer it wants is sideways, or forwards into its face, where it has no melee at
-// all. Nothing else in this game asks you to think about where a shot is going to be TWICE.
+// **AND THE FIREBALL IS THE FIGHT.** It BOUNCES (`archer.bouncesOf`), so it threatens a LINE running away
+// from the caster: measured, a ball aimed at 11 m touches at 11.9, 18.1 and 21.0 and rests at 22.4. **WHAT IT
+// PUNISHES IS BACKING OFF** — backwards is down the bounce line, so the arc you dodged catches you on the
+// second touch. The answer is sideways, or forwards into its face, where it has no melee at all.
 
 /// **IT STANDS OVER YOU NOW** (owner: taller, bigger). It was a head shorter than the hero at 0.82; at 1.13
 /// it is 2.04 m to the crown of the cap, which is what a thing that lobs detonators over your head should be.
@@ -81,21 +73,14 @@ const SOLES = [_]heromod.SolePatch{
     .{ .bone = ANKR, .heel = 0.045 * H, .toe = 0.180 * H, .halfW = 0.058 * H, .drop = 0.036 * H },
 };
 
-// ── THE PALETTE ────────────────────────────────────────────────────────────────────────────────────────
-//
-// **AUTHOR DARK AND SOLVE IT** — the chain is albedo x 1.72 -> linear -> gamma 1/2.2, so screen goes as
-// albedo^(1/2.2) and the bigger and smoother the mass the darker it has to start. The cloak is the biggest
-// face on the creature, so it is the one that bites hardest.
+// **AUTHOR DARK AND SOLVE IT** — screen goes as albedo^(1/2.2), so the bigger and smoother the mass the
+// darker it has to start. The cloak is the biggest face here.
 
-/// THE CLOAK. Damp and GREEN-BLACK — the world outdoors is warm and a caster has to separate from the
-/// bracken it stands in, but this one may not go blue-black: that is the necromancer's separation and two
-/// dark robed things reading the same colour is two things you cannot tell apart at the range they are
-/// fought from. Cold-green against his cold-blue.
+/// Damp and GREEN-BLACK, and it may NOT go blue-black: that is the necromancer's separation, and two dark
+/// robed things at one colour cannot be told apart at fighting range.
 ///
-/// **SOLVED OFF THE RENDER, NOT PICKED.** At (16,22,15) the cloak sampled 83 luma against ground at 102 —
-/// only 0.81 of the field it stands in, which is the knight's "one more slab of the cliffs" a shade under
-/// rather than a shade over. Wanted ~0.64 of it, and screen goes as albedo^(1/2.2), so the albedo factor is
-/// 0.79^2.2 = 0.59 — hence these.
+/// **SOLVED OFF THE RENDER, NOT PICKED.** At (16,22,15) it sampled 83 luma against ground at 102 — 0.81 of
+/// its field. Wanted ~0.64, so the albedo factor is 0.79^2.2 = 0.59.
 const CLOAK = rgba(10, 13, 9, 255);
 const CLOAK_LT = rgba(15, 19, 13, 255);
 const HEM = rgba(6, 9, 6, 255);
@@ -120,12 +105,9 @@ const TURN_RATE: f32 = 2.6;
 const WALK_SPEED: f32 = heromod.WALK_SPEED * 0.60;
 
 const BODY_R: f32 = 0.43;
-/// **THE HURT SPHERE HAS TO HOLD THE CAP, NOT JUST THE BARREL** — the ravager's lesson one creature along.
-/// The cap is the widest thing on this creature, it is what the reticle rides (`lockPoint`) and it is what
-/// the player is aiming at; fitted to the body alone the sphere stopped at 1.45 m and the mark sat 1.35 m up
-/// on its own rim, OUTSIDE anything a sword could reach — a reticle on a place you cannot hit. MEASURED off
-/// the posed rig: the head bone is at 0.885·H, the dome's crown 0.17·H above that, so the pair is solved to
-/// span the barrel's middle up past the mark and a test pins it.
+/// **IT HAS TO HOLD THE CAP, NOT JUST THE BARREL** (the ravager's lesson). Fitted to the body the sphere
+/// stopped at 1.45 m with the mark 1.35 m up on its own rim — a reticle on a place you cannot hit. MEASURED
+/// off the posed rig: head bone at 0.885·H, crown 0.17·H above it.
 const HURT_R: f32 = 0.88;
 const CENTER_F: f32 = 0.66;
 const TOP_F: f32 = 1.10;
@@ -169,11 +151,8 @@ comptime {
     std.debug.assert(FLEE_R < LOB_MIN);
 }
 
-// ── THE POSE, AS KEYED TRACKS ──────────────────────────────────────────────────────────────────────────
-//
-// **AN ATTACK IS A SEQUENCE OF KEY POSES CHASED BY SPRINGS, NEVER TWO CONSTANTS AND A LERP.** The channels
-// are flattened ROOT-most to TIP-most and the bank's falloff is what lags the hands behind the trunk, so
-// the mass flows outward without any of these tracks saying a word about it.
+// **AN ATTACK IS A SEQUENCE OF KEY POSES CHASED BY SPRINGS, NEVER TWO CONSTANTS AND A LERP.** Channels are
+// flattened ROOT-most to TIP-most and the bank's falloff lags the hands behind the trunk.
 
 const CHAN_N = 7;
 const Chan = [CHAN_N]f32;
@@ -554,12 +533,10 @@ pub const Mage = struct {
         self.pose();
     }
 
-    /// WHAT IT DOES NEXT. The pick is `classify`'s and the plumbing is here, so the decision can be pinned
-    /// by a test without a world anywhere near it.
-    /// **IT MOVES OFF ITS OWN BEARING, NEVER OFF HIS POSITION** (the necromancer's `decide`, and the reason
-    /// it holds): every branch above this one has already spent the frame facing him, so `fdir()` IS "toward
-    /// the hero" — and asked that way the creature never reaches out for a body it is not allowed to know
-    /// about. Which way it circles is its own, and it is SEEDED: a ring of them must not drift as one body.
+    /// The pick is `classify`'s and the plumbing is here, so the decision pins by test with no world near it.
+    /// **IT MOVES OFF ITS OWN BEARING, NEVER OFF HIS POSITION**: every branch above has already spent the
+    /// frame facing him, so `fdir()` IS toward the hero. Which way it circles is SEEDED — a ring of them must
+    /// not drift as one body.
     fn decide(self: *Mage, dist: f32) void {
         if (self.leash.goingHome()) {
             self.homing = true;
@@ -655,17 +632,16 @@ pub const Mage = struct {
         while (i < total) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(0.5, 1.5);
-            foe.emitParticle(
-                &self.parts,
-                &self.fxHead,
-                at,
-                v3(mathx.cosf(a) * sp, self.fxRng.range(0.4, 1.7), mathx.sinf(a) * sp),
-                self.fxRng.range(0.28, 0.58),
-                self.fxRng.range(0.020, 0.044) * self.scale,
-                0.004,
-                if (self.fxRng.float() < 0.5) WART else CAP_DK,
-                1.4,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = at,
+                .v = v3(mathx.cosf(a) * sp, self.fxRng.range(0.4, 1.7), mathx.sinf(a) * sp),
+                .life = self.fxRng.range(0.28, 0.58),
+                .r0 = self.fxRng.range(0.020, 0.044) * self.scale,
+                .r1 = 0.004,
+                .col = if (self.fxRng.float() < 0.5) WART else CAP_DK,
+                .grav = 1.4,
+                .drag = 1.5,
+            });
         }
     }
 
@@ -793,14 +769,10 @@ const CLOAK_SWAY: f32 = 4.0;
 const CLOAK_STIFF: f32 = 90.0;
 const CLOAK_DAMP: f32 = 11.0;
 
-/// **THE BALL'S OWN RADIUS, AND IT IS ONE NUMBER FOR BOTH ENDS OF THE MOVE** — the thing cupped in its hands
-/// and the thing flying at you are the SAME OBJECT, and the whole point of showing the gather is that the
-/// player recognises what leaves it. Written out twice they were already 0.178 and 0.170 apart, which is a
-/// spell that visibly changes size on the frame it is thrown. Metres, before the creature's own scale, and
-/// sized against the hands holding it: measured off the crop at 0.178 it was two thirds of the cap's whole
-/// width and read as a pumpkin.
-/// **A DETONATOR, NOT AN EMBER** (owner: bigger fireball, fungal detonator). Half again, and the hands were
-/// already sized off it — the comment below is the measurement that keeps it inside them.
+/// **ONE NUMBER FOR BOTH ENDS OF THE MOVE** — the thing cupped in its hands and the thing flying at you are
+/// the SAME OBJECT. Written out twice they drifted to 0.178 and 0.170: a spell that changes size on the frame
+/// it is thrown. METRES, before the creature's own scale. **A DETONATOR, NOT AN EMBER** (owner: bigger
+/// fireball, fungal detonator) — half again, and the hands are sized off it.
 pub const BALL_R: f32 = 0.212;
 pub const BALL_CORE: f32 = BALL_R * 0.64;
 const KINDLE_RATE_0: f32 = 8.0;
@@ -891,14 +863,11 @@ fn capMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x9C4B);
     b.setMat(.skin);
-    // The dome. WIDE — wider than the shoulders under it, because the silhouette is the whole read; a hair
-    // oblong and leaning a few degrees, because nothing here is turned on a lathe.
+    // WIDE — wider than the shoulders under it, a hair oblong and leaning a few degrees.
     //
     // **AND WIDE HAS A CEILING, WHICH IS THE BODY.** At 0.196·H the brim was 0.35 m of half-width on a 1.48 m
-    // creature — as broad as the whole cloak, sitting at chin height, and it swallowed the hollow, the eyes
-    // and the fire in its own hands. Measured off the crop, not argued: the cap has to be the widest thing on
-    // the creature and it may not be the ONLY thing on it. `RIM` is that half-width and everything under the
-    // dome is a share of it, so the proportion holds if it is ever retuned again.
+    // creature: as broad as the whole cloak, and it swallowed the hollow, the eyes and the fire in its hands.
+    // `RIM` is that half-width and everything under the dome is a share of it.
     b.addBlob(v3(0, 0.072 * H, 0.004 * H), v3(RIM, 0.090 * H, RIM * 0.94), 11, 9, CAP_COL);
     b.addBlob(v3(0.016 * H, 0.114 * H, -0.012 * H), v3(RIM * 0.56, 0.052 * H, RIM * 0.53), 8, 6, CAP_COL);
     b.addBlob(v3(0, 0.042 * H, 0.006 * H), v3(RIM * 0.90, 0.022 * H, RIM * 0.85), 7, 7, GILL);

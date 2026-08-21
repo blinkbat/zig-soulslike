@@ -2461,11 +2461,15 @@ not the stick-speed `runB`.
   instead, and a wander made of straight capsules is a chain of elbows. The total arc is the per-segment
   curl TIMES the segment count, so moving either the length or the count re-brackets the curl — the same
   bend spread over a longer run straightens into a stake.
-- **A MOTE IS A CPU-TRANSFORMED SPHERE, SO A POOL NOBODY CAN SEE MAY NOT BE DRAWN** (`foe.motesVisible`,
-  `foe.setLens`). `drawParticles` puts every live mote through `rl.drawSphereEx`, which generates its vertices
-  on the CPU with trig per vertex — `necro`'s sigil writes the measurement down beside itself (157 spheres at
-  4×6 ≈ 7.5k transformed triangles a frame), and twelve chaos clouds (`knight.GAS_CAP`, the charge's lane) is an
-  order of magnitude past it, most of it behind you while you fight the thing that laid it. The gate is a REACH
+- **A MOTE IS A CAMERA-FACING TEXTURED BILLBOARD, NEVER A SOLID SPHERE** (`foe.drawParticles`, `foe.setLens`).
+  A hard-edged Lambert ball reads as a flat circle however it moves; a quad through a radial-gradient sprite
+  has the soft falloff every real particle kit is built on, and at 4 vertices it costs a tenth of the CPU
+  sphere it replaced. Two sprites, lazily built on the first draw: SOFT is the glow (light, smoke, stains),
+  GRAIN keeps a near-solid core for matter in flight (blood, chips, clods), which drawn fully soft reads as
+  vapour. Two passes per pool — alpha MATTER first, then additive LIGHT — depth TESTED, never WRITTEN.
+- **A POOL NOBODY CAN SEE MAY NOT BE DRAWN** (`foe.motesVisible`). Not for the per-mote cost any more — a
+  billboard is two triangles — but for the COUNT: twelve chaos clouds (`knight.GAS_CAP`, the charge's lane)
+  at 132 motes each still walk their whole array and append quads for motes behind you. The gate is a REACH
   and a HEMISPHERE and **it is not the frustum and may never become one** — `env.View` is the frustum, there is
   one of them, and a second culler is the empty-world bug. A pool the lens is standing INSIDE always draws.
   - **AND IT IS NOT GATED ON THE EMITTER BEING ALIVE.** A cloud ticks its motes past its own death on purpose,

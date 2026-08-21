@@ -470,10 +470,8 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
     }
 }
 
-/// **A LENS AND A SOLID PUPIL, AND THAT IS ALL IT CAN AFFORD.** This one is drawn at about a dozen pixels in
-/// the editor's layer strip — the smallest glyph in the set — so the first version's two deep arcs round a
-/// ring round a dot came out as one grey blob. Two SHALLOW arcs meeting at the corners read as an eye at that
-/// size; the pupil is filled rather than outlined for the same reason.
+/// **A LENS AND A SOLID PUPIL, AND THAT IS ALL IT CAN AFFORD** — the smallest glyph in the set, about a dozen
+/// pixels, where arcs round a ring round a dot came out as one grey blob.
 fn eyeInto(cx: f32, cy: f32, s: f32, w: f32, col: rl.Color, struck: bool) void {
     const body = if (struck) dim(col) else col;
     arc(cx, cy + s * 0.30, s * 0.46, 214, 326, w, body);

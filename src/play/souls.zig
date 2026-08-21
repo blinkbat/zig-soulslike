@@ -47,19 +47,13 @@ const TAKE_INTO: f32 = 1.05;
 /// pulses, and a pulse reads as something arming rather than something waiting.
 const HUM_EVERY: f32 = 1.15;
 
-/// THE GOLD ITSELF, and it must read as GOLD and not as BONE — which is the one thing a pale glowing tree in
-/// a graveyard cannot afford to look like. Vertex alpha is the emissive channel (255 = lit by the sun, lower
-/// = self-lit), so ONE alpha across all three tones: at a single emissive level the tones separate on hue and
-/// value alone, and the shaft cannot band where a level changes.
+/// It must read as GOLD and not as BONE. Vertex alpha is the emissive channel (255 = lit by the sun, lower =
+/// self-lit), so ONE alpha across all three tones or the shaft bands where the level changes.
 ///
-/// MEASURED, NOT GUESSED (AGENTS.md). At alpha 58 the chain is screen = 255·(albedo/255 · 1.236)^(1/2.2),
-/// and anything over albedo ~205 clips to 255 — which is how tips authored at 246,220,150 came back a white
-/// knuckle and read as bone. Solved back from the screen values wanted, none of the four clips.
-///
-/// FOUR TONES, AND THE LADDER IS THE POINT. Two of them ~18 screen values apart is no separation at all, and
-/// a mass lit uniformly by its own emissive with nothing dark in it has no form. The reds step
-/// 150 → 214 → 246 → 254 while the blues step 24 → 60 → 100 → 170, so it DESATURATES as it brightens, which
-/// is what hot metal does and what a flat value ramp cannot fake.
+/// MEASURED, NOT GUESSED. At alpha 58 the chain is screen = 255·(albedo/255 · 1.236)^(1/2.2), so anything
+/// over albedo ~205 clips to 255 — tips authored at 246,220,150 came back a white knuckle and read as bone.
+/// FOUR TONES: the reds step 150 → 214 → 246 → 254 and the blues 24 → 60 → 100 → 170, so it DESATURATES as it
+/// brightens, which is what hot metal does.
 const EMISSIVE: u8 = 58;
 const GOLD_DEEP = rgba(64, 20, 1, EMISSIVE);
 const GOLD = rgba(141, 73, 8, EMISSIVE);
@@ -166,7 +160,7 @@ pub const Souls = struct {
             sfx.world(.souls_hum, self.drop.topWorld());
         }
         const emitRate = MOTE_RATE * self.drop.grown();
-        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.05, 0.42);
@@ -175,17 +169,16 @@ pub const Souls = struct {
                 self.drop.at.y + self.fxRng.range(0.05, 1.0) * H,
                 self.drop.at.z + mathx.sinf(a) * rr,
             );
-            foe.emitParticle(
-                &self.parts,
-                &self.fxHead,
-                from,
-                v3(self.fxRng.signed() * 0.18, self.fxRng.range(0.35, 0.9), self.fxRng.signed() * 0.18),
-                self.fxRng.range(MOTE_LIFE_LO, MOTE_LIFE_HI),
-                self.fxRng.range(0.022, 0.045),
-                0.004,
-                MOTE,
-                -0.55,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = from,
+                .v = v3(self.fxRng.signed() * 0.18, self.fxRng.range(0.35, 0.9), self.fxRng.signed() * 0.18),
+                .life = self.fxRng.range(MOTE_LIFE_LO, MOTE_LIFE_HI),
+                .r0 = self.fxRng.range(0.022, 0.045),
+                .r1 = 0.004,
+                .col = MOTE,
+                .grav = -0.55,
+                .add = true,
+            });
         }
     }
 
@@ -202,17 +195,17 @@ pub const Souls = struct {
             );
             const life = self.fxRng.range(TAKE_PULL * 0.6, TAKE_PULL);
             const v = mathx.scaleV(mathx.subV(into, from), 1.0 / life);
-            foe.emitParticle(
-                &self.parts,
-                &self.fxHead,
-                from,
-                v3(v.x, v.y + self.fxRng.range(-0.4, 0.8), v.z),
-                life,
-                self.fxRng.range(0.030, 0.060),
-                0.010,
-                MOTE,
-                0,
-            );
+            // The take is a FLOW, not a scatter — streaked along the pull so the gold visibly runs into him.
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = from,
+                .v = v3(v.x, v.y + self.fxRng.range(-0.4, 0.8), v.z),
+                .life = life,
+                .r0 = self.fxRng.range(0.030, 0.060),
+                .r1 = 0.010,
+                .col = MOTE,
+                .stretch = 0.035,
+                .add = true,
+            });
         }
     }
 

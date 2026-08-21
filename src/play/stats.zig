@@ -40,11 +40,9 @@ pub fn governs(a: Attr) [:0]const u8 {
     };
 }
 
-/// **AN ATTRIBUTE NOTHING READS, AND TODAY THERE IS NONE.** It was LUCK, right up until the drop tables gave
-/// it the one job its own line always promised (`findFor`, `drops.roll`). The predicate STAYS because the next
-/// attribute arrives dead the way that one did, and a row nothing reads has to be greyed and has to say so
-/// (`book.drawAttributes`, and `item`'s comptime refusal to write a boon of one). Asked as its own question because
-/// feeding a BAR and being worth something are two different facts, and only one of them is about bars.
+/// **AN ATTRIBUTE NOTHING READS, AND TODAY THERE IS NONE** — it was LUCK until the drop tables gave it a job.
+/// The predicate STAYS because the next attribute arrives dead the way that one did, and a row nothing reads
+/// has to be greyed (`book.drawAttributes`, and `item`'s comptime refusal to write a boon of one).
 pub fn inert(a: Attr) bool {
     _ = a;
     return false;
@@ -79,12 +77,9 @@ const STAM_SEGS = [_]Seg{
     .{ .upTo = MAX, .per = 15.0 / 49.0 },
 };
 
-// **WHAT A POINT OF SKILL IS WORTH TO A BLOW** — ONE curve, shared by strength, dexterity and intelligence,
-// because three curves would be three things to retune and nothing about these three differs but which weapon
-// asks. It is 1.0 at `START` for the bar curves' own reason: putting damage behind an attribute may not move
-// the damage the game is already tuned around. Under-invested it BITES (0.72 at a single point) and a maxed
-// attribute is worth about 1.71x, which is a build's worth of levels for well under double. Caps are ER's
-// weapon-scaling ones (`docs/ELDEN_RING.md` §2), 20/55/80.
+// ONE curve for strength, dexterity and intelligence — nothing about the three differs but which weapon asks.
+// 1.0 at `START`: putting damage behind an attribute may not move the damage the game is tuned around. 0.72
+// at a single point, ~1.71x maxed. Caps are ER's weapon-scaling ones (`docs/ELDEN_RING.md` §2), 20/55/80.
 const SCALE_BASE: f32 = 0.72;
 const SCALE_SEGS = [_]Seg{
     .{ .upTo = 20, .per = 0.020 },
@@ -97,12 +92,9 @@ pub fn scaleFor(pts: u8) f32 {
     return yield(pts, SCALE_BASE, &SCALE_SEGS);
 }
 
-// **WHAT A POINT OF LUCK IS WORTH TO A DROP** — the seventh attribute's job, and until this curve it had none.
-// It multiplies a RARE row's weight and NOTHING ELSE: scale every row and luck does literally nothing, since
-// the weights are relative to each other. 1.0 at `START` for the same reason every other curve here is —
-// putting the drops behind an attribute may not move the drops the game already has. Under-invested it takes
-// nearly half your rare chance away; maxed it is about two and a half times, which is a build's worth of
-// levels for a real return rather than a lottery.
+// It multiplies a RARE row's weight and NOTHING ELSE — scale every row and luck does nothing, the weights
+// being relative. 1.0 at `START` like every curve here. Under-invested takes nearly half the rare chance;
+// maxed is about two and a half times.
 const FIND_BASE: f32 = 0.60;
 const FIND_SEGS = [_]Seg{
     // WRITTEN AS THE DIVISION IT IS (`STAM_SEGS`' idiom): the RATE is what carries 0.60 → 1.00 across the

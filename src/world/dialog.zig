@@ -179,12 +179,9 @@ pub const Session = struct {
 
         const x = SIDE_MARGIN;
         const wpx = sw - SIDE_MARGIN * 2;
-        // THE PICTURE TAKES ITS COLUMN OUT OF THE PROSE'S, never off the end of the plate: the wrap below is
-        // measured against what is LEFT, so a portrait can never push a line out past the frame.
-        //
-        // …AND IT IS DROPPED ENTIRELY RATHER THAN STARVING THE WORDS. On a window too narrow to hold both,
-        // the portrait is the half that goes: it says who is speaking, and the panel already says that in
-        // text. Without this the wrap is handed a negative width and the plate a negative-sided rectangle.
+        // THE PICTURE TAKES ITS COLUMN OUT OF THE PROSE'S: the wrap is measured against what is LEFT, so a
+        // portrait cannot push a line past the frame. …AND IT IS DROPPED ENTIRELY RATHER THAN STARVING THE
+        // WORDS — without that, the wrap gets a negative width and the plate a negative-sided rectangle.
         const room = wpx - PAD * 2 - (PORT_W + PORT_GAP) >= PROSE_MIN_W;
         const showPort = port != null and room;
         const portCol: i32 = if (showPort) PORT_W + PORT_GAP else 0;

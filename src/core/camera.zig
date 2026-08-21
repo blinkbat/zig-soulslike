@@ -142,11 +142,9 @@ pub const CamRig = struct {
         return .{ .origin = c.cam.position, .dir = mathx.normV(mathx.subV(c.cam.target, c.cam.position)) };
     }
 
-    /// THE BOOM GIVES WAY TO TERRAIN, NEVER TO ITS OWN PITCH. An up-tilt puts the eye low ON PURPOSE —
-    /// the lock framing a tall foe (`game.lockPitch`) — and shortening to buy that altitude back read as
-    /// a hard zoom every time the rig tilted onto an ogre. So only ground standing PROUD of the hero's
-    /// own level (a hillside behind the lens) is paid for in boom; on level ground the skim clamp below
-    /// lifts the eye the last few centimetres and the distance stays the player's.
+    /// THE BOOM GIVES WAY TO TERRAIN, NEVER TO ITS OWN PITCH — an up-tilt puts the eye low ON PURPOSE
+    /// (`game.lockPitch`), and shortening to buy that altitude back read as a hard zoom onto every ogre.
+    /// Only ground PROUD of the hero's own level is paid for in boom; the skim clamp does the rest.
     pub fn followClear(c: *CamRig, shoulder: rl.Vector3, ctx: anytype, comptime groundAt: fn (@TypeOf(ctx), f32, f32) f32) void {
         const target = c.targetFor(shoulder);
         const back = c.backDir();

@@ -986,8 +986,6 @@ pub fn rubbleMesh(shader: rl.Shader) rl.Model {
 }
 
 
-// ── THREE MORE FROM THE SAME HANDS ──────────────────────────────────────────────────────────────────────
-//
 // Dressed stone, so `.marble` where a face was worked and `.stone` where it was only laid — the two-material
 // rule, and the reason the obelisk reads as carved and the altar's footings do not.
 

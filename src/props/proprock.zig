@@ -504,12 +504,9 @@ pub fn screeMesh(shader: rl.Shader) rl.Model {
 }
 
 
-// ── FORMATIONS ──────────────────────────────────────────────────────────────────────────────────────────
-//
-// Weathered rock, not laid rock. The four below are all the same trick — a hard bed over a soft one — and
-// they differ in what the soft bed was made to do: undercut, split, isolate, or fail on one side.
-// The BANDING is what says "weathered": the three cliff tones already disagree in HUE, so alternating them
-// per bed reads as strata under a sun that flattens any value pair.
+// Weathered rock, not laid rock — all four are a hard bed over a soft one, differing in what the soft bed
+// does: undercut, split, isolate, or fail on one side. The BANDING is what says weathered: the three cliff
+// tones disagree in HUE, so alternating them per bed reads as strata under a sun that flattens value pairs.
 
 /// One tone up a stack, with a single darker seam every fourth bed — `art.weathered`'s rule and `art.seam`'s
 /// exception. Alternated per bed instead (which is what this was) a hoodoo is a stack of poker chips.
@@ -658,28 +655,20 @@ test "a formation is top-heavy, a spire is not, and both know their own height" 
 }
 
 
-// ── SMALL STONE, THE STUFF UNDERFOOT ────────────────────────────────────────────────────────────────────
-//
-// The formations above are things you navigate BY. These are things you walk OVER, and they exist because a
-// region with cliffs and nothing under a metre reads as a diorama: the ground between the landmarks has to
-// be made of the same rock, broken smaller. Every one is under knee height and none of them collide.
-//
-// **AND THEY ARE FOUR DIFFERENT BREAKS, NOT FOUR SIZES OF THE SAME ONE** — split, cleave, tumble, and the
-// one that never broke at all. That is what stops a scatter of them reading as one prop at random scales.
+// A region with cliffs and nothing under a metre reads as a diorama, so the ground between the landmarks is
+// the same rock broken smaller. Every one is under knee height and none collide. **FOUR DIFFERENT BREAKS,
+// NOT FOUR SIZES OF ONE** — split, cleave, tumble, and the one that never broke.
 
 pub const SHARD_H: f32 = 0.58;
 
 /// SPLIT. Angular slivers stood on end, leaning off one plane the way a frost-shattered bed does.
 ///
-/// **BUILT THE WAY `fingersMesh` IS, AND FOR THE REASON IT IS** — a 4-sided tapered cylinder, not a box.
-/// Two rewrites went out as boxes and both photographed as a stack of pale dominoes: a box face square-on
-/// to the key takes the whole of it, so `ROCK_DEEP` at 23,22,21 renders light grey, and every box sharing
-/// the lean plane put its parallel faces next to its neighbour's and z-fought where they touched. The
-/// tapered prism's faces all disagree with each other, which is what makes the same albedo shade.
+/// **A 4-SIDED TAPERED CYLINDER, NOT A BOX** (`fingersMesh`'s reason): a box face square-on to the key takes
+/// the whole of it, so `ROCK_DEEP` at 23,22,21 renders light grey, and boxes sharing the lean plane z-fought
+/// where they touched. The prism's faces disagree with each other, which is what makes one albedo shade.
 ///
-/// The LEAN is shared because one bed failed; the YAW is not, or it is the barber's pole stood on end.
-/// **AND THEY LEAN HARD AND STAY LOW.** At 0.86 m upright with a fat cap they came out as a row of
-/// gravestones, which is a thing this game already has. A splinter field is knee-high and falling over.
+/// The LEAN is shared because one bed failed; the YAW is not, or it is the barber's pole stood on end. **AND
+/// THEY LEAN HARD AND STAY LOW** — at 0.86 m upright with a fat cap they were a row of gravestones.
 pub fn shardsMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5A11D);
@@ -782,10 +771,9 @@ pub fn whalebackMesh(shader: rl.Shader) rl.Model {
             art.weathered(ROCK_DEEP, CLIFF_ROCK, t),
         );
     }
-    // **THE MOSS IS SUNK INTO THE ROCK, NOT LAID ON IT.** Flat pads photographed as sticky notes: a plate
-    // whose top faces straight up takes the full key while the dome around it curves away, so the same
-    // near-black green came out a bright sage. Spheres buried to `SINK` of their radius show a CURVED cap
-    // that shades with the surface it is on.
+    // **THE MOSS IS SUNK INTO THE ROCK, NOT LAID ON IT** — a flat pad's top takes the full key while the dome
+    // around it curves away, so the same near-black green came out a bright sage. Spheres buried to `SINK` of
+    // their radius show a CURVED cap that shades with the surface.
     const SINK: f32 = 0.62;
     i = 0;
     while (i < 17) : (i += 1) {

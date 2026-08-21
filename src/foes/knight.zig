@@ -36,6 +36,8 @@ const KBONE_DK = rgba(30, 27, 23, 255);
 const EMBER = rgba(228, 118, 52, 54);
 const SOCKET = rgba(12, 10, 9, 255);
 const EMBER_MARK = rgba(232, 122, 46, 235);
+/// Its fire is LIGHT — drawn additive, and cooling through this as it climbs off the ring.
+const EMBER_MARK_COOL = rgba(158, 40, 14, 120);
 
 const DUST = foe.DUST;
 const CHIP = archermod.BONE_CHIP;
@@ -45,8 +47,10 @@ const CHIP_SPRAY = foe.Spray{
     .lifeLo = 0.34, .lifeHi = 0.64,
     .rLo = 0.024,   .rHi = 0.055,
     .r1 = 0.008,    .col = CHIP, .grav = 8.0,
+    .stretch = 0.030, .bounce = 0.42,
 };
 const SPARK = rgba(255, 206, 126, 240);
+const SPARK_COOL = rgba(226, 116, 38, 200);
 
 const PLATE = gfx.Mat.plain;
 const BRIGHT = gfx.Mat.steel;
@@ -431,7 +435,7 @@ pub const Gas = struct {
         const s = elemfx.sig(.chaos); // the COLOUR is never picked at a call site (elemfx's law)
         const f = self.fade();
         const emitRate = gasRate(self.scale) * f;
-        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rim = self.fxRng.float() < 0.34;
@@ -442,17 +446,15 @@ pub const Gas = struct {
                 self.pos.y + self.fxRng.range(0.05, GAS_H * self.scale),
                 self.pos.z + dir.z * rr,
             );
-            foe.emitParticle(
-                &self.parts,
-                &self.fxHead,
-                from,
-                v3(-dir.x * GAS_DRIFT, self.fxRng.range(-0.03, 0.09), -dir.z * GAS_DRIFT),
-                self.fxRng.range(GAS_PUFF_LO, GAS_PUFF_HI),
-                self.fxRng.range(0.12, 0.20),
-                self.fxRng.range(0.26, 0.38),
-                gasTint(if (self.fxRng.float() < 0.34) s.edge else s.core, f),
-                0,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = from,
+                .v = v3(-dir.x * GAS_DRIFT, self.fxRng.range(-0.03, 0.09), -dir.z * GAS_DRIFT),
+                .life = self.fxRng.range(GAS_PUFF_LO, GAS_PUFF_HI),
+                .r0 = self.fxRng.range(0.12, 0.20),
+                .r1 = self.fxRng.range(0.26, 0.38),
+                .col = gasTint(if (self.fxRng.float() < 0.34) s.edge else s.core, f),
+                .col1 = if (s.cool) |c1| gasTint(c1, f) else null,
+            });
         }
     }
     pub fn drawFx(self: *const Gas) void {
@@ -2186,6 +2188,7 @@ pub const Knight = struct {
     }
 
     fn enter(self: *Knight, s: State) void {
+        self.leaveAwaken();
         self.state = s;
         self.t = 0;
         self.dealt = false;
@@ -2276,7 +2279,21 @@ pub const Knight = struct {
         self.t = 0;
         self.homing = false;
     }
+    /// **THE ONE MOVE THAT IS NOT A MOVE.** The roar is a phase CHANGE, not an attack, and a phase change
+    /// that can be stagger-cancelled is a phase change the player never sees land.
+    pub fn transforming(self: *const Knight) bool {
+        return self.state == .awaken;
+    }
+
+    /// **A SPENT TRANSFORMATION IS ALWAYS A LIT ONE.** `awoken` latches when he COMMITS; `lit` lands 2.7 s
+    /// later, so anything taking him out of `.awaken` between the two spent his one phase change without
+    /// entering phase two. EVERY path out of the state goes through here.
+    fn leaveAwaken(self: *Knight) void {
+        if (self.transforming() and self.awoken) self.lit = true;
+    }
+
     fn enterStun(self: *Knight, s: State) void {
+        self.leaveAwaken();
         self.billString();
         self.state = s;
         self.t = 0;
@@ -2496,8 +2513,8 @@ pub const Knight = struct {
                 sfx.world(.knight_die, self.pos);
                 self.enterDeath();
             },
-            .heavy => if (!self.floored()) self.enterStun(.stunheavy),
-            .light => if (!self.floored() and !self.inString()) self.enterStun(.stunlight),
+            .heavy => if (!self.floored() and !self.transforming()) self.enterStun(.stunheavy),
+            .light => if (!self.floored() and !self.inString() and !self.transforming()) self.enterStun(.stunlight),
             .none => self.counterFlank(s),
         }
     }
@@ -2739,7 +2756,7 @@ pub const Knight = struct {
         const seg = self.wpnHere();
         const k = mathx.clampF(self.t / (AWAKEN.liftDur + AWAKEN.holdDur), 0, 1);
         const emitRate = 30.0 + 210.0 * k;
-        var owed = foe.emitTicks(&self.emberAccum, dt, emitRate, foe.emitCap(emitRate));
+        var owed = foe.emitDue(&self.emberAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const at = mathx.lerpV(seg[0], seg[1], self.fxRng.float());
             elemfx.gather(&self.parts, &self.fxHead, &self.fxRng, at, .chaos, 1, 0.22 + 0.26 * k, self.scale * 0.5);
@@ -2987,24 +3004,24 @@ pub const Knight = struct {
     }
 
 
-    fn emit(self: *Knight, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
-        foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
-    }
 
     fn dustBurst(self: *Knight, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
+        const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.42, 0.76);
         var i: i32 = 0;
         while (i < n) : (i += 1) {
             const a = self.fxRng.angle();
-            const s = self.fxRng.range(0.45, 1.0) * spd * self.scale;
-            self.emit(
-                v3(c.x, self.pos.y + 0.06, c.z),
-                v3(mathx.cosf(a) * s, self.fxRng.range(0.8, 3.0), mathx.sinf(a) * s),
-                self.fxRng.range(0.42, 0.76),
-                self.fxRng.range(0.08, 0.17) * self.scale,
-                big * self.fxRng.range(0.8, 1.35) * self.scale,
-                DUST,
-                4.4,
-            );
+            const s = self.fxRng.range(0.45, 1.0) * spd * self.scale * B.boost;
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(c.x, self.pos.y + 0.06, c.z),
+                .v = v3(mathx.cosf(a) * s, self.fxRng.range(0.8, 3.0) * B.boost, mathx.sinf(a) * s),
+                .life = B.life(&self.fxRng),
+                .r0 = self.fxRng.range(0.08, 0.17) * self.scale,
+                .r1 = big * self.fxRng.range(0.8, 1.35) * self.scale,
+                .col = DUST,
+                .col1 = foe.DUST_THIN,
+                .grav = foe.DUST_GRAV,
+                .drag = foe.DUST_DRAG,
+            });
         }
     }
     fn grit(self: *Knight, c: rl.Vector3, n: i32) void {
@@ -3012,15 +3029,17 @@ pub const Knight = struct {
         while (i < n) : (i += 1) {
             const a = self.fxRng.angle();
             const s = self.fxRng.range(1.3, 3.6) * self.scale;
-            self.emit(
-                v3(c.x, self.pos.y + 0.09, c.z),
-                v3(mathx.cosf(a) * s, self.fxRng.range(2.6, 5.6), mathx.sinf(a) * s),
-                self.fxRng.range(0.48, 0.9),
-                self.fxRng.range(0.026, 0.058) * self.scale,
-                0.012,
-                CHIP,
-                9.0,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(c.x, self.pos.y + 0.09, c.z),
+                .v = v3(mathx.cosf(a) * s, self.fxRng.range(2.6, 5.6), mathx.sinf(a) * s),
+                .life = self.fxRng.range(0.48, 0.9),
+                .r0 = self.fxRng.range(0.026, 0.058) * self.scale,
+                .r1 = 0.012,
+                .col = CHIP,
+                .grav = 9.0,
+                .stretch = 0.030,
+                .bounce = 0.42,
+            });
         }
     }
     fn chips(self: *Knight, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
@@ -3031,15 +3050,19 @@ pub const Knight = struct {
         while (i < n) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(1.5, 4.4);
-            self.emit(
-                at,
-                v3(-dir.x * sp * 0.5 + mathx.cosf(a) * sp * 0.6, self.fxRng.range(1.2, 3.8), -dir.z * sp * 0.5 + mathx.sinf(a) * sp * 0.6),
-                self.fxRng.range(0.16, 0.34),
-                self.fxRng.range(0.015, 0.032),
-                0.002,
-                SPARK,
-                6.0,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = at,
+                .v = v3(-dir.x * sp * 0.5 + mathx.cosf(a) * sp * 0.6, self.fxRng.range(1.2, 3.8), -dir.z * sp * 0.5 + mathx.sinf(a) * sp * 0.6),
+                .life = self.fxRng.range(0.16, 0.34),
+                .r0 = self.fxRng.range(0.015, 0.032),
+                .r1 = 0.002,
+                .col = SPARK,
+                .col1 = SPARK_COOL,
+                .grav = 6.0,
+                .stretch = 0.055,
+                .bounce = 0.45,
+                .add = true,
+            });
         }
     }
     fn plantBurst(self: *Knight) void {
@@ -3062,21 +3085,23 @@ pub const Knight = struct {
     fn slamRingTell(self: *Knight, dt: f32) void {
         const k = mathx.clampF(self.t / SLAM.windDur, 0, 1);
         const emitRate = 10.0 + 52.0 * k;
-        var owed = foe.emitTicks(&self.ringAccum, dt, emitRate, foe.emitCap(emitRate));
+        var owed = foe.emitDue(&self.ringAccum, dt, emitRate);
         const at = self.slamMark();
         const reach = SLAM.r * self.scale;
         while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = reach * self.fxRng.range(0.94, 1.04);
-            self.emit(
-                v3(at.x + mathx.cosf(a) * rr, self.pos.y + 0.04, at.z + mathx.sinf(a) * rr),
-                v3(0, self.fxRng.range(0.5, 1.6) * (0.4 + k), 0),
-                self.fxRng.range(0.30, 0.55),
-                self.fxRng.range(0.030, 0.062) * self.scale,
-                0.010,
-                EMBER_MARK,
-                0.9,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(at.x + mathx.cosf(a) * rr, self.pos.y + 0.04, at.z + mathx.sinf(a) * rr),
+                .v = v3(0, self.fxRng.range(0.5, 1.6) * (0.4 + k), 0),
+                .life = self.fxRng.range(0.30, 0.55),
+                .r0 = self.fxRng.range(0.030, 0.062) * self.scale,
+                .r1 = 0.010,
+                .col = EMBER_MARK,
+                .col1 = EMBER_MARK_COOL,
+                .grav = 0.9,
+                .add = true,
+            });
         }
     }
 
@@ -3090,15 +3115,20 @@ pub const Knight = struct {
             const a = self.fxRng.angle();
             const life = self.fxRng.range(0.40, 0.62);
             const sp = reach / life * self.fxRng.range(0.75, 1.0);
-            self.emit(
-                v3(at.x + mathx.cosf(a) * 0.4 * self.scale, self.pos.y + 0.10, at.z + mathx.sinf(a) * 0.4 * self.scale),
-                v3(mathx.cosf(a) * sp, self.fxRng.range(0.5, 1.7), mathx.sinf(a) * sp),
-                life,
-                self.fxRng.range(0.11, 0.19) * self.scale,
-                0.42 * self.fxRng.range(0.8, 1.3) * self.scale,
-                DUST,
-                4.2,
-            );
+            // NO DRAG and NOT `foe.DUST_GRAV` — the crater is the one dust in the game that is not free to
+            // be dust. Its speed is solved as reach/life to land exactly on `SLAM.r`, so drag would take
+            // back the reach the ring already promised the player, and a hanging gravity would leave it
+            // there after the blow is over. It is a ring drawn in dust, and it keeps its own numbers.
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(at.x + mathx.cosf(a) * 0.4 * self.scale, self.pos.y + 0.10, at.z + mathx.sinf(a) * 0.4 * self.scale),
+                .v = v3(mathx.cosf(a) * sp, self.fxRng.range(0.5, 1.7), mathx.sinf(a) * sp),
+                .life = life,
+                .r0 = self.fxRng.range(0.11, 0.19) * self.scale,
+                .r1 = 0.42 * self.fxRng.range(0.8, 1.3) * self.scale,
+                .col = DUST,
+                .col1 = foe.DUST_THIN,
+                .grav = 4.2,
+            });
         }
         self.grit(at, 18);
         sfx.world(.knight_slam, at);
@@ -3119,54 +3149,63 @@ pub const Knight = struct {
 
     fn chargeWake(self: *Knight, dt: f32) void {
         const emitRate = 46.0;
-        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const back = mathx.scaleV(self.fdir(), -1);
             const heel = self.heelPoint();
             const side = self.fxRng.signed() * 0.45 * self.scale;
-            self.emit(
-                v3(heel.x - back.z * side, self.pos.y + 0.18, heel.z + back.x * side),
-                v3(back.x * self.fxRng.range(1.2, 2.8) * self.scale, self.fxRng.range(1.6, 3.4), back.z * self.fxRng.range(1.2, 2.8) * self.scale),
-                self.fxRng.range(0.34, 0.60),
-                self.fxRng.range(0.08, 0.15) * self.scale,
-                0.34 * self.fxRng.range(0.8, 1.2) * self.scale,
-                DUST,
-                2.2,
-            );
+            const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.34, 0.60);
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(heel.x - back.z * side, self.pos.y + 0.18, heel.z + back.x * side),
+                .v = v3(back.x * self.fxRng.range(1.2, 2.8) * self.scale * B.boost, self.fxRng.range(1.6, 3.4) * B.boost, back.z * self.fxRng.range(1.2, 2.8) * self.scale * B.boost),
+                .life = B.life(&self.fxRng),
+                .r0 = self.fxRng.range(0.08, 0.15) * self.scale,
+                .r1 = 0.34 * self.fxRng.range(0.8, 1.2) * self.scale,
+                .col = DUST,
+                .col1 = foe.DUST_THIN,
+                .grav = foe.DUST_GRAV,
+                .drag = foe.DUST_DRAG,
+            });
         }
     }
     fn emitGather(self: *Knight, dt: f32, k: f32, w: Weight) void {
         const emitRate = (6.0 + 28.0 * k);
-        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.2, 0.8) * self.scale;
-            self.emit(
-                v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + 0.05, self.pos.z + mathx.sinf(a) * rr),
-                v3(self.fxRng.signed() * 0.5, self.fxRng.range(0.3, 1.4), self.fxRng.signed() * 0.5),
-                self.fxRng.range(0.28, 0.52),
-                self.fxRng.range(0.035, 0.08) * self.scale,
-                0.014,
-                DUST,
-                3.2,
-            );
+            const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.28, 0.52);
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + 0.05, self.pos.z + mathx.sinf(a) * rr),
+                .v = v3(self.fxRng.signed() * 0.5 * B.boost, self.fxRng.range(0.3, 1.4) * B.boost, self.fxRng.signed() * 0.5 * B.boost),
+                .life = B.life(&self.fxRng),
+                .r0 = self.fxRng.range(0.035, 0.08) * self.scale,
+                .r1 = 0.014,
+                .col = DUST,
+                .col1 = foe.DUST_THIN,
+                .grav = foe.DUST_GRAV,
+                .drag = foe.DUST_DRAG,
+            });
         }
         const fire = w.ember();
         if (fire <= 0) return;
         const emberRate = (14.0 + 78.0 * k) * fire;
-        var emberOwed = foe.emitTicks(&self.emberAccum, dt, emberRate, foe.emitCap(emberRate));
+        var emberOwed = foe.emitDue(&self.emberAccum, dt, emberRate);
         while (emberOwed > 0) : (emberOwed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.52, 1.18) * self.scale;
-            self.emit(
-                v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + 0.04, self.pos.z + mathx.sinf(a) * rr),
-                v3(self.fxRng.signed() * 0.2, self.fxRng.range(2.2, 5.4) * (0.6 + 0.6 * fire), self.fxRng.signed() * 0.2),
-                self.fxRng.range(0.46, 0.86),
-                self.fxRng.range(0.038, 0.082) * self.scale * (0.7 + 0.5 * fire),
-                0.010,
-                EMBER_MARK,
-                -0.7,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + 0.04, self.pos.z + mathx.sinf(a) * rr),
+                .v = v3(self.fxRng.signed() * 0.2, self.fxRng.range(2.2, 5.4) * (0.6 + 0.6 * fire), self.fxRng.signed() * 0.2),
+                .life = self.fxRng.range(0.46, 0.86),
+                .r0 = self.fxRng.range(0.038, 0.082) * self.scale * (0.7 + 0.5 * fire),
+                .r1 = 0.010,
+                .col = EMBER_MARK,
+                .col1 = EMBER_MARK_COOL,
+                .grav = -0.7,
+                .stretch = 0.028,
+                .add = true,
+            });
         }
     }
     fn footfalls(self: *Knight) void {
@@ -5310,4 +5349,52 @@ test "A FLOORED BODY HOLDS THE GROUND IT IS LYING ON — the capsule, not the ri
     k.state = .idle;
     k.t = 0;
     try std.testing.expect(k.bodySeg() == null);
+}
+
+test "A SPENT TRANSFORMATION IS ALWAYS A LIT ONE — staggering him mid-roar may not cost phase two" {
+    // `awoken` latches the instant he COMMITS to the awaken; `lit` only lands when the roar finishes 2.7 s
+    // later. Anything that took him out of `.awaken` in between left him having spent his one phase change
+    // without ever entering phase two — no lit sword, no discs, no chaos clouds, for the rest of the fight.
+    std.debug.print("\n  the awaken window is {d:.2} s of state he can be knocked out of\n", .{ AWAKEN.liftDur + AWAKEN.holdDur + AWAKEN.settleDur });
+
+    var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    k.leash.provoke();
+    k.vit.hp = k.vit.hpMax * AWAKEN.at;
+    k.decide(6.0, 0);
+    try std.testing.expectEqual(State.awaken, k.state);
+    try std.testing.expect(k.awoken and !k.lit);
+
+    // A heavy blow lands halfway through the roar.
+    const dt = 1.0 / 120.0;
+    var t: f32 = 0;
+    const far = v3(0, 0, 40.0);
+    while (t < AWAKEN.liftDur) : (t += dt) _ = k.update(dt, far, 400.0, .{});
+    k.enterStun(.stunheavy);
+
+    // Whatever ended the roar, the transformation is spent — so phase two is ON.
+    try std.testing.expect(k.awoken);
+    try std.testing.expect(k.lit);
+
+    // …and he never gets a second one, so a lost one is lost for the whole fight.
+    k.vit.hp = k.vit.hpMax * 0.2;
+    k.decide(6.0, 0);
+    try std.testing.expect(k.state != .awaken);
+    try std.testing.expect(k.lit);
+}
+
+test "THE ROAR IS NOT INTERRUPTIBLE — a phase change plays in full or it is not a phase change" {
+    var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    k.leash.provoke();
+    k.vit.hp = k.vit.hpMax * AWAKEN.at;
+    k.decide(6.0, 0);
+    try std.testing.expectEqual(State.awaken, k.state);
+    try std.testing.expect(k.transforming());
+
+    const dt = 1.0 / 120.0;
+    var t: f32 = 0;
+    const far = v3(0, 0, 40.0);
+    while (t < AWAKEN.liftDur + AWAKEN.holdDur) : (t += dt) {
+        _ = k.update(dt, far, 400.0, .{});
+        try std.testing.expectEqual(State.awaken, k.state);
+    }
 }

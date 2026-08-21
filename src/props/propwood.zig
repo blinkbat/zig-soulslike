@@ -600,11 +600,8 @@ pub fn saplingMesh(shader: rl.Shader) rl.Model {
 }
 
 
-// ── WOOD GOING BACK TO THE GROUND ───────────────────────────────────────────────────────────────────────
-//
-// `logMesh` is a log; these two are what a log becomes. The whole difference is that a rotted mass has LOST
-// ITS LINE — it sags between its bearing points, it splits along the grain rather than across it, and the
-// pale punk inside is the one bright thing on it.
+// `logMesh` is a log; these two are what a log becomes. A rotted mass has LOST ITS LINE — it sags between its
+// bearing points, splits ALONG the grain rather than across, and the pale punk inside is the one bright thing.
 
 pub const ROTLOG_L: f32 = 4.2;
 

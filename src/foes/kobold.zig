@@ -52,6 +52,7 @@ const CLUMP_CHAR = rgba(38, 32, 28, 255);
 const EMBER = rgba(238, 122, 30, 205);
 const EMBER_HOT = rgba(255, 214, 132, 225);
 const EMBER_CORE = rgba(255, 168, 52, 255);
+const EMBER_COOL = rgba(150, 46, 14, 170);
 
 const N = heromod.N;
 const ROOT = heromod.ROOT;
@@ -252,8 +253,17 @@ fn legSink(crouch: f32) f32 {
     return (SEG_THIGH + SEG_SHANK) * H * (1.0 - mathx.cosf(mathx.radians(crouch)));
 }
 
-const NPART = 22;
+/// ARITHMETIC over the worst frame (the ring law): at 22 the HEAL BLOOM ALONE OVERFLOWED IT, 34 motes on one
+/// frame into 22 slots. Worst frame is the bloom's 34 on the ~14 `emitCastMotes` leaves resident (34/s at a
+/// 0.42 s life), with a blow landing the same frame for `emitBlood`'s 14 and the wound — 65. The whirl's
+/// path is under it at 59.
+const NPART = 68;
+comptime {
+    // THE RING LAW, EXECUTABLE — this is the assert that was missing when 22 could not hold HEAL_BLOOM's 34.
+    std.debug.assert(NPART >= HEAL_BLOOM + 14 + foe.hitParts(9) + foe.WOUND_PARTS);
+}
 const BLOOD = rgba(104, 26, 22, 200);
+const BLOOD_DRY = rgba(48, 11, 9, 190);
 
 const State = enum {
     idle,
@@ -326,6 +336,8 @@ pub const Kobold = struct {
     fxHead: usize = 0,
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
+    /// Carried ONLY so its blood knows whether the ground under it is dry (`foe.onDryGround`).
+    wade: foe.Wade = .{},
 
     xf: [N]rl.Matrix = undefined,
     jawXf: rl.Matrix = undefined,
@@ -564,12 +576,9 @@ pub const Kobold = struct {
         return act;
     }
 
-    /// **THE BERSERKER RUNS** (owner: he should always run unless he is very close to you, and faster than the
-    /// other skels too). He was the one melee rusher on the field walking in at `WALK_SPEED * 1.22` — 2.07 m/s
-    /// against a shieldman who CHARGES at 2.92 and a greatsword at 2.52, so the thing whose entire design is
-    /// getting in your face was the slowest skeleton on the field and could be strolled away from. It is the
-    /// warrior's own rule (`warrior.approachSpeed`), which is why it is that shape and not a new one: run at
-    /// distance, walk the last stride in.
+    /// **THE BERSERKER RUNS** (owner: always run unless very close, and faster than the other skels). At
+    /// `WALK_SPEED * 1.22` he closed at 2.07 m/s against a shieldman charging at 2.92 and a greatsword at
+    /// 2.52. `warrior.approachSpeed`'s shape: run at distance, walk the last stride in.
     pub fn approachSpeed(self: *const Kobold, dist: f32) f32 {
         const base = spec(self.role).speed;
         if (self.role != .berserker or dist > AGGRO_R or dist <= self.walkInR()) return WALK_SPEED * base;
@@ -669,17 +678,16 @@ pub const Kobold = struct {
         const head = self.staffTop();
         const a = self.fxRng.angle();
         const r = self.fxRng.range(0.16, 0.42);
-        foe.emitParticle(
-            &self.parts,
-            &self.fxHead,
-            v3(head.x + mathx.cosf(a) * r, head.y + self.fxRng.range(-0.2, 0.2), head.z + mathx.sinf(a) * r),
-            mathx.scaleV(mathx.dirXZ(v3(head.x + mathx.cosf(a) * r, 0, head.z + mathx.sinf(a) * r), head), 0.9),
-            0.42,
-            0.028,
-            0.006,
-            HEAL_GLOW,
-            -0.4,
-        );
+        foe.emitPart(&self.parts, &self.fxHead, .{
+            .p = v3(head.x + mathx.cosf(a) * r, head.y + self.fxRng.range(-0.2, 0.2), head.z + mathx.sinf(a) * r),
+            .v = mathx.scaleV(mathx.dirXZ(v3(head.x + mathx.cosf(a) * r, 0, head.z + mathx.sinf(a) * r), head), 0.9),
+            .life = 0.42,
+            .r0 = 0.028,
+            .r1 = 0.006,
+            .col = HEAL_GLOW,
+            .grav = -0.4,
+            .add = true,
+        });
     }
 
     fn emitWhirlEmbers(self: *Kobold, dt: f32) void {
@@ -689,17 +697,18 @@ pub const Kobold = struct {
         while (n < 2) : (n += 1) {
             if (self.fxRng.float() > dt * 26.0) continue;
             const sp = self.fxRng.range(1.4, 3.2);
-            foe.emitParticle(
-                &self.parts,
-                &self.fxHead,
-                v3(at.x + self.fxRng.signed() * 0.05, at.y + self.fxRng.signed() * 0.05, at.z + self.fxRng.signed() * 0.05),
-                v3(tangent.x * sp, self.fxRng.range(0.2, 1.1), tangent.z * sp),
-                self.fxRng.range(0.30, 0.62),
-                self.fxRng.range(0.020, 0.036),
-                0.004,
-                if (self.fxRng.float() < 0.4) EMBER_HOT else EMBER,
-                5.5,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(at.x + self.fxRng.signed() * 0.05, at.y + self.fxRng.signed() * 0.05, at.z + self.fxRng.signed() * 0.05),
+                .v = v3(tangent.x * sp, self.fxRng.range(0.2, 1.1), tangent.z * sp),
+                .life = self.fxRng.range(0.30, 0.62),
+                .r0 = self.fxRng.range(0.020, 0.036),
+                .r1 = 0.004,
+                .col = if (self.fxRng.float() < 0.4) EMBER_HOT else EMBER,
+                .col1 = EMBER_COOL,
+                .grav = 5.5,
+                .stretch = 0.040,
+                .add = true,
+            });
         }
     }
 
@@ -710,21 +719,22 @@ pub const Kobold = struct {
         while (i < SLING_SPARKS) : (i += 1) {
             const a = self.fxRng.angle();
             const spread = self.fxRng.range(0.6, 2.4);
-            foe.emitParticle(
-                &self.parts,
-                &self.fxHead,
-                v3(at.x + mathx.cosf(a) * 0.06, at.y + self.fxRng.signed() * 0.06, at.z + mathx.sinf(a) * 0.06),
-                v3(
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(at.x + mathx.cosf(a) * 0.06, at.y + self.fxRng.signed() * 0.06, at.z + mathx.sinf(a) * 0.06),
+                .v = v3(
                     away.x * self.fxRng.range(0.8, 3.4) + mathx.cosf(a) * spread,
                     self.fxRng.range(0.4, 2.2),
                     away.z * self.fxRng.range(0.8, 3.4) + mathx.sinf(a) * spread,
                 ),
-                self.fxRng.range(0.26, 0.60),
-                self.fxRng.range(0.024, 0.044),
-                0.004,
-                if (self.fxRng.float() < 0.5) EMBER_HOT else EMBER,
-                6.5,
-            );
+                .life = self.fxRng.range(0.26, 0.60),
+                .r0 = self.fxRng.range(0.024, 0.044),
+                .r1 = 0.004,
+                .col = if (self.fxRng.float() < 0.5) EMBER_HOT else EMBER,
+                .col1 = EMBER_COOL,
+                .grav = 6.5,
+                .stretch = 0.045,
+                .add = true,
+            });
         }
     }
 
@@ -733,17 +743,19 @@ pub const Kobold = struct {
         while (i < CLUMP_SPARKS) : (i += 1) {
             const a = self.fxRng.angle();
             const out = self.fxRng.range(1.2, 4.6);
-            foe.emitParticle(
-                &self.parts,
-                &self.fxHead,
-                v3(at.x + mathx.cosf(a) * 0.08, at.y + self.fxRng.range(0, 0.12), at.z + mathx.sinf(a) * 0.08),
-                v3(mathx.cosf(a) * out, self.fxRng.range(1.2, 4.0), mathx.sinf(a) * out),
-                self.fxRng.range(0.34, 0.78),
-                self.fxRng.range(0.026, 0.050),
-                0.004,
-                if (self.fxRng.float() < 0.55) EMBER_HOT else EMBER,
-                7.5,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(at.x + mathx.cosf(a) * 0.08, at.y + self.fxRng.range(0, 0.12), at.z + mathx.sinf(a) * 0.08),
+                .v = v3(mathx.cosf(a) * out, self.fxRng.range(1.2, 4.0), mathx.sinf(a) * out),
+                .life = self.fxRng.range(0.34, 0.78),
+                .r0 = self.fxRng.range(0.026, 0.050),
+                .r1 = 0.004,
+                .col = if (self.fxRng.float() < 0.55) EMBER_HOT else EMBER,
+                .col1 = EMBER_COOL,
+                .grav = 7.5,
+                .stretch = 0.045,
+                .bounce = 0.40,
+                .add = true,
+            });
         }
     }
 
@@ -756,26 +768,37 @@ pub const Kobold = struct {
         while (i < HEAL_BLOOM) : (i += 1) {
             const a = self.fxRng.angle();
             const r = self.fxRng.range(0.05, spread);
-            foe.emitParticle(
-                &self.parts,
-                &self.fxHead,
-                v3(at.x + mathx.cosf(a) * r, at.y + self.fxRng.signed() * spread * 0.7, at.z + mathx.sinf(a) * r),
-                v3(mathx.cosf(a) * self.fxRng.range(0.3, 1.1), self.fxRng.range(0.7, 2.0), mathx.sinf(a) * self.fxRng.range(0.3, 1.1)),
-                self.fxRng.range(0.55, 1.05),
-                0.052,
-                0.006,
-                HEAL_GLOW,
-                -0.9,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(at.x + mathx.cosf(a) * r, at.y + self.fxRng.signed() * spread * 0.7, at.z + mathx.sinf(a) * r),
+                .v = v3(mathx.cosf(a) * self.fxRng.range(0.3, 1.1), self.fxRng.range(0.7, 2.0), mathx.sinf(a) * self.fxRng.range(0.3, 1.1)),
+                .life = self.fxRng.range(0.55, 1.05),
+                .r0 = 0.052,
+                .r1 = 0.006,
+                .col = HEAL_GLOW,
+                .grav = -0.9,
+                .add = true,
+            });
         }
     }
 
 
     fn emitBlood(self: *Kobold, at: rl.Vector3, dir: rl.Vector3) void {
-        const parts: u32 = @intCast(@max(0, foe.hitParts(7)));
+        const parts: u32 = @intCast(@max(0, foe.hitParts(9)));
         var i: u32 = 0;
         while (i < parts) : (i += 1) {
-            foe.emitParticle(&self.parts, &self.fxHead, at, v3(dir.x * self.fxRng.range(1.0, 2.6) + self.fxRng.signed() * 0.7, self.fxRng.range(0.7, 2.1), dir.z * self.fxRng.range(1.0, 2.6) + self.fxRng.signed() * 0.7), self.fxRng.range(0.28, 0.5), 0.036, 0.012, BLOOD, 7.0);
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = at,
+                .v = v3(dir.x * self.fxRng.range(2.2, 5.4) + self.fxRng.signed() * 2.8, self.fxRng.range(0.8, 3.2), dir.z * self.fxRng.range(2.2, 5.4) + self.fxRng.signed() * 2.8),
+                .life = self.fxRng.range(0.45, 0.80),
+                .r0 = 0.036,
+                .r1 = 0.012,
+                .col = BLOOD,
+                .col1 = BLOOD_DRY,
+                .grav = foe.BLOOD_GRAV,
+                .stretch = foe.BLOOD_STRETCH,
+                .splat = if (foe.onDryGround(self)) 3.0 else 0,
+                .drag = foe.BLOOD_DRAG,
+            });
         }
     }
 

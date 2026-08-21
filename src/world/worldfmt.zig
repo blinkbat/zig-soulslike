@@ -14,11 +14,9 @@ pub const DEFAULT_HALF: f32 = 280.0;
 
 pub const MAX_DECLARED_HALF: f32 = 312.0;
 
-/// **RAISED FROM 2048 WHEN THE GLOBAL COVER OP WAS BAKED INTO ORDINARY DECOR.** One `cover:` line grew
-/// 13,228 plants a man could not select or delete; every one of them is its own `at:` op now, on top of the
-/// ~1,290 explicit ops the shipped map already carried. A test below prints what this costs the editor's
-/// 24-deep undo ring, which is whole-`Map` copies — so this number IS memory, and it is the reason the
-/// first cut tried to get away with `belt:` patches instead. The owner wanted the plants, not the clumps.
+/// **RAISED FROM 2048 WHEN THE GLOBAL COVER OP WAS BAKED INTO ORDINARY DECOR** — one `cover:` line grew 13,228
+/// plants a man could not select or delete, each its own `at:` op now on top of the map's ~1,290. This number
+/// IS memory: the editor's 24-deep undo ring is whole-`Map` copies, and a test prints the cost.
 pub const MAX_OPS: usize = 16384;
 pub const MAX_MIX: usize = 24;
 pub const MAX_LOOT: usize = 8;
@@ -156,15 +154,12 @@ pub fn defaults(k: OpKind) Op {
 
 pub const MAX_LOCATIONS: usize = 64;
 
-/// **A NAMED RECTANGLE, AND NOTHING ELSE IS REQUIRED OF IT** — StarEdit's Location, which this script layer
-/// has been missing since it was written. Until now a trigger that cared about a place carried the four
-/// coordinates inline (`Cond.region`), so two triggers about the same doorway held two copies of it and
-/// moving the doorway meant editing both. A location is declared ONCE and referred to by name.
+/// StarEdit's Location: declared ONCE and referred to by name, where `Cond.region`'s inline coordinates meant
+/// two triggers about one doorway held two copies of it.
 ///
-/// **THEY OVERLAP FREELY AND THE MOST RECENTLY PAINTED ONE WINS.** `locationAt` takes the FIRST match and the
-/// editor prepends, which is the rule a brush teaches you without being told: what you just painted is on top.
-/// Any other rule (smallest-wins, largest-wins) makes a location you can see disagree with the one that
-/// answers, which is the kind of thing you debug for an hour.
+/// **THEY OVERLAP FREELY AND THE MOST RECENTLY PAINTED ONE WINS** — `locationAt` takes the FIRST match and the
+/// editor prepends. Any other rule (smallest-wins, largest-wins) makes a location you can see disagree with
+/// the one that answers.
 pub const Location = struct {
     name: [NAME_CAP]u8 = [_]u8{0} ** NAME_CAP,
     x: f32 = 0,
@@ -285,16 +280,14 @@ pub const Foe = struct {
     seed: f32 = 0,
 };
 
-/// **THERE IS ONE FOE LIMIT AND IT IS `MAX_FOES`** (owner: remove the foe limits, seems dumb to have). This
-/// used to be 24 — a SECOND cap, per kind, sitting under the global one and doing nothing but surprise you:
-/// `foe.resetGroup` fills a fixed slab and `continue`s past the overflow, so a 25th shroom was a body the map
-/// placed, the editor drew, the save counted and the level never spawned. `01_fallen_plain` stands on exactly
-/// 24 of them, so it was one click from happening.
+/// **THERE IS ONE FOE LIMIT AND IT IS `MAX_FOES`** (owner: remove the foe limits, seems dumb to have). At 24 a
+/// per-kind cap sat under the global one: `foe.resetGroup` fills a fixed slab and `continue`s past the
+/// overflow, so a 25th shroom was a body the map placed, the editor drew, the save counted and the level never
+/// spawned — and `01_fallen_plain` stands on exactly 24.
 ///
-/// Set to the whole budget, the per-kind cap cannot bite by construction: a map that fits inside `MAX_FOES` at
-/// all fits inside any one group. It buys that with memory — every group's slab is this wide, so the 17 of
-/// them go from 2.65 MB to ~28 MB of a single startup allocation — and a comptime walk in `game.zig` pins
-/// every slab at this width so a group cannot quietly be built narrower again.
+/// Set to the whole budget it cannot bite: anything fitting `MAX_FOES` fits one group. It costs memory — the
+/// 17 slabs go from 2.65 MB to ~28 MB of one startup allocation — and a comptime walk in `game.zig` pins every
+/// slab at this width.
 pub const MAX_PER_KIND: usize = MAX_FOES;
 
 pub const Runway = struct { x: f32 = -3.4, z: f32 = -44, x1: f32 = 3.4, z1: f32 = 30 };

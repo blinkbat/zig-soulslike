@@ -436,14 +436,10 @@ pub fn guardStamina(h: Hit) f32 {
     return GUARD_STAM_FLAT + GUARD_STAM_PER_DMG * h.raw();
 }
 /// WHAT GETS THROUGH — still a `Hit`, so the chip's elemental share meets the blocker's resistances instead of arriving as raw HP. DAMAGE ONLY: poise and stance are what the shield is FOR, and a chip that carried the blow's stagger through would flinch him behind his own guard.
-/// **ARMOUR — THE FIFTH COLUMN, AND IT IS A CURVE AND NOT A PERCENTAGE.** PoE2's own, and the shape AGENTS.md
-/// reserved for the day armour landed: `A/(A + 5*dmg)` of a blow is turned aside, so the same coat is worth a
-/// fifth of a middling blow and a tenth of the one that was going to kill you. That is why armour can never
-/// become immunity however much of it is stacked, and why it needs no cap of its own the way a resistance does.
-///
-/// **PHYSICAL ONLY.** The four elements have `Resists`; this is the thing they were always the other half of.
-/// **AND IT TOUCHES NEITHER POISE NOR STANCE** — those belong to the BLOW and not to the body it lands on, which
-/// is `guardChip`'s law and the reason a coat cannot make him harder to stagger.
+/// **A CURVE, NOT A PERCENTAGE** (PoE2's own): `A/(A + 5*dmg)` of a blow is turned aside, so the same coat is
+/// worth a fifth of a middling blow and a tenth of the one that was going to kill you — which is why it can
+/// never become immunity and needs no cap. **PHYSICAL ONLY**, the other half of `Resists`. **AND IT TOUCHES
+/// NEITHER POISE NOR STANCE** — those belong to the BLOW, not to the body it lands on (`guardChip`'s law).
 pub fn armourTaken(a: f32, dmg: f32) f32 {
     if (a <= 0 or dmg <= 0) return dmg;
     return dmg * (1.0 - a / (a + 5.0 * dmg));
@@ -612,23 +608,17 @@ pub const Chill = struct {
     }
 };
 
-/// **THE TWO THAT DO NOT CROSS THE GROUND.** The bolt is a stone thrown through the arrow pool and the rime is
-/// a cone he holds; these two arrive on ONE named body on the frame they are cast, so what they need is not a
-/// speed but a REACH and an ARC to find that body inside.
-///
-/// **HOW FAR OFF HIS FACING ONE WILL TAKE A BODY WITH NOTHING LOCKED.** Narrower than the rime cone's 30 on
-/// purpose: that spell is a wash poured over whatever is in front of him, and these are aimed at somebody.
+/// **THE TWO THAT DO NOT CROSS THE GROUND** — they arrive on ONE named body on the frame they are cast, so
+/// they need a REACH and an ARC rather than a speed. The arc is narrower than the rime cone's 30 on purpose:
+/// that spell is a wash poured over what is in front of him, and these are aimed at somebody.
 pub const STRIKE_ARC: f32 = 22.0;
 
-/// **THE LEVIN STRIKE — the rod's fourth, and the one that does not travel.** Lightning's own signature in
-/// `elemfx` is the fastest and shortest-lived in the table — a spark is dead before it arrives — so a bolt of
-/// it sailing across six metres of field as a thrown stone would be the one spell whose picture argues with
-/// its element. What it sells is the INTERRUPT: the heaviest poise anything the hero owns carries, bought with
-/// damage that is deliberately middling.
-/// POISE PAST EVERY CREATURE'S OWN `POISE_MAX` BAR THE BONE KNIGHT'S 78 (the ogre's 30 is the highest of the
-/// rest), so one cast flinches anything that is not a boss — where his own heavy swing at 22 flinches the
-/// toads and leaves the giants standing. The STANCE is deliberately UNDER that swing's 14: a spell thrown from
-/// across the room may not be the better guard-breaker than a stroke committed inside reach.
+/// **THE ONE THAT DOES NOT TRAVEL** — lightning's signature is the shortest-lived in `elemfx`, so a bolt of it
+/// sailing six metres as a thrown stone is a picture arguing with its element. What it sells is the INTERRUPT.
+/// POISE PAST EVERY CREATURE'S `POISE_MAX` BAR THE BONE KNIGHT'S 78 (the ogre's 30 is the next), so one cast
+/// flinches anything that is not a boss, where his heavy swing at 22 leaves the giants standing. STANCE
+/// deliberately UNDER that swing's 14: a spell thrown from across the room may not be the better
+/// guard-breaker than a stroke committed inside reach.
 pub const LEVIN_HIT = Hit{ .poise = 34, .stance = 10, .elem = elems(.{ .lightning = 22 }) };
 /// Well past the roots' 7 m throw, since nothing has to cross the ground to get there, and far short of the
 /// bolt's 55: an interrupt thrown from outside the fight is not an interrupt.
@@ -638,28 +628,18 @@ pub const SIPHON_HIT = Hit{ .elem = elems(.{ .chaos = 18 }) };
 pub const SIPHON_SHARE: f32 = 0.55;
 pub const SIPHON_REACH: f32 = 12.0;
 
-/// **THE EMBER LANCE — the rod's sixth, and the first FIRE anywhere on his side of the fight.** Every other
-/// element he owns has a spell (chaos twice, cold, lightning) and fire had none: it arrived only as an arrow
-/// he had to have fletched or a candle he had to have found, while the newest creature in the wood throws it
-/// at him. And it is the only one that does not stop at the first body — a LANCE goes THROUGH, so what it is
-/// for is a line of them: the muster shoulder to shoulder, a warband, a ring of mages.
-/// PER BODY, and deliberately small — it is priced where the rime is, because it is the rime's kind of spell:
-/// what the focus buys is the SECOND body and the third, never the number on the first. Poise under the
-/// levin's 34 (that spell's whole sale is the interrupt) and over a hero light's, so a line of small things
-/// is a line of small things that all flinch at once.
+/// **THE FIRST FIRE ON HIS SIDE OF THE FIGHT**, and the only spell that does not stop at the first body: a
+/// LANCE goes THROUGH, so it is for a line of them. PER BODY and deliberately small, priced where the rime
+/// is — what it buys is the SECOND body and the third, never the number on the first. Poise under the levin's
+/// 34 and over a hero light's, so a line of small things all flinch at once.
 pub const LANCE_HIT = Hit{ .poise = 18, .stance = 6, .elem = elems(.{ .fire = 16.5 }) };
 pub const LANCE_REACH: f32 = 20.0;
 pub const LANCE_R: f32 = 0.55;
 
-/// **SUNDER — the seventh, and the rod's answer to a SHIELD.** Stance is the bar that decides whether a guard
-/// holds, and until now the only thing that moved it in any quantity was a committed stroke inside reach: the
-/// shieldman, the greatsword and the knight are all fights a caster simply had no tool for.
-///
-/// **AND IT IS CAST IN MELEE RANGE ON PURPOSE** (`SUNDER_REACH`, inside a sword's own). `LEVIN_HIT`'s note is
-/// the law it keeps: a spell thrown from across the room may not be the better guard-breaker than a stroke
-/// committed inside reach. So it carries a parry's worth of stance and you have to be standing there to spend it.
-/// PHYSICAL, and NO ELEMENT — a sundering blow is a mass arriving, and every element in the table already has
-/// a spell. The damage is the lowest of the seven, which is the ladder's own rule paying for the stance.
+/// **THE ROD'S ANSWER TO A SHIELD** — stance decides whether a guard holds, and nothing but a committed
+/// stroke inside reach moved it in quantity. **CAST IN MELEE RANGE ON PURPOSE** (`SUNDER_REACH`, inside a
+/// sword's own), keeping `LEVIN_HIT`'s law: it carries a parry's worth of stance and you have to be standing
+/// there to spend it. PHYSICAL, NO ELEMENT, and the lowest damage of the seven — the ladder paying for stance.
 pub const SUNDER_HIT = Hit{ .dmg = 14, .poise = 12, .stance = 40 };
 /// INSIDE THE SWORD'S OWN REACH (`game.MELEE_AIM_R` is 3.6). This is the one sorcery that is not a way to
 /// avoid being in the fight.
@@ -676,14 +656,10 @@ pub const SpellRow = struct {
     drip: f32 = 0,
 };
 
-/// **THE ROD'S SEVEN, AS ONE TABLE YOU CAN READ DOWN.** It was five switches over `Spell` and seven loose
-/// `*_FP` constants scattered through the file, so retuning one spell meant five edits in four places and a
-/// missed one still compiled. The FP column is the LADDER — read it top to bottom and the price list is the
-/// whole design, which is what the monotonicity assert below is checking.
-///
-/// **ROW ORDER IS `Spell`'S OWN**, pinned at comptime: an eighth spell is a compile error here until it has
-/// said what it costs and what it does. The MECHANICS each one is made of (`ROOT_HOLD`, `RIME_ARC`, `LANCE_R`,
-/// `SIPHON_SHARE`…) stay up beside their own spell — this is the price, not the physics.
+/// **THE ROD'S SEVEN, AS ONE TABLE YOU CAN READ DOWN.** The FP column is the LADDER, which is what the
+/// monotonicity assert below checks. **ROW ORDER IS `Spell`'S OWN**, pinned at comptime: an eighth spell is a
+/// compile error until it has said what it costs and what it does. The MECHANICS stay beside their own spell —
+/// this is the price, not the physics.
 pub const SPELLS = [_]SpellRow{
     .{ .spell = .bolt,   .name = "Chaos Bolt",   .fp = 8,  .blow = BOLT_HIT },
     .{ .spell = .roots,  .name = "Roots",        .fp = 12, .drip = ROOT_HOLD * ROOT_DPS },
@@ -732,12 +708,10 @@ pub const BOLT_FP: f32 = spellFp(.bolt);
 
 comptime {
     // **THE LADDER IS MONOTONE, AND THAT IS THE WHOLE PRICE LIST**: 8→25, 11→22, 12→19.6, 13→18, 14→16.5,
-    // 15→15.3, 16→14. **AND EVERY RUNG NOW CLEARS A FREE LIGHT SWING** (`hero.ATK_LIGHT_HIT`, 13) — five of
-    // the seven used to sit under it while costing a third of the pool, which is a rod nobody would draw. Every
-    // step up in FP is a step DOWN in raw damage, because what the difference buys is never damage — it is a
-    // stagger, a hold, a mouthful of HP back, or a second body in the cone. Asserted over every PAIR rather
-    // than against a written-out order, so a sixth spell is priced by this rule without editing it, and the
-    // three hand-written comparisons this replaces (rime > roots > bolt, both ways round) cannot drift apart.
+    // 15→15.3, 16→14. **AND EVERY RUNG CLEARS A FREE LIGHT SWING** (`hero.ATK_LIGHT_HIT`, 13) — five of the
+    // seven sat under it while costing a third of the pool. Every step up in FP is a step DOWN in raw damage:
+    // what the difference buys is a stagger, a hold, HP back or a second body. Asserted over every PAIR, so an
+    // eighth spell is priced by the rule without editing it.
     for (std.enums.values(Spell)) |a| {
         for (std.enums.values(Spell)) |b| {
             if (spellFp(a) < spellFp(b)) std.debug.assert(spellDamage(a) > spellDamage(b));

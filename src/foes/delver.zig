@@ -32,6 +32,9 @@ const SOIL = rgba(24, 19, 14, 255);
 const SOIL_DK = rgba(15, 12, 9, 255);
 const CLOD = rgba(148, 120, 84, 220);
 const CLOD_DK = rgba(106, 84, 58, 210);
+/// Turned earth DRIES AND DARKENS on the way down. Clods are chunky: their drag is a third of dust's.
+const CLOD_DRY = rgba(84, 68, 48, 180);
+const CLOD_DRAG: f32 = 1.5;
 
 pub const H: f32 = 1.55;
 
@@ -57,29 +60,21 @@ pub const BURST_R: f32 = 1.9;
 const WALK_SPEED: f32 = 2.2;
 const CHASE_SPEED: f32 = 3.9;
 const TURN_RATE: f32 = 4.2;
-/// WHAT THE POSED CLAW ACTUALLY REACHES off the creature's own axis. **MEASURED, NOT ARGUED** — a test walks
-/// the stroke frame by frame and brackets this from both sides, which is what caught the first pass declaring
-/// 2.9 m off a limb that arrived at 1.19.
+/// **MEASURED, NOT ARGUED** — a test walks the stroke frame by frame and brackets it from both sides, which
+/// caught the first pass declaring 2.9 m off a limb that arrived at 1.19.
 const CLAW_REACH: f32 = 1.75;
 const CLAW_SWEEP_R: f32 = 0.34;
-/// **THE DECISION IS TAKEN AT THE RANGE THE BLOW LANDS AT**, never at a number beside it, or it spends half a
-/// second on a guaranteed miss (the ogre's swipe-inner lesson).
-///
-/// **AND WHAT THAT RANGE IS, IS WHERE THE ARC CROSSES HIM — NOT HOW FAR THE TIP GETS** (owner: the moles
-/// cannot hit me with their regular attacks). `CLAW_REACH + CLAW_SWEEP_R` is the tip's RADIAL reach, which it
-/// achieves out to the SIDE at the end of the sweep; a man standing in front is only ever struck where the
-/// arc passes through the body's own forward line, and that is nearer. At 2.09 the outer fifth of its own
-/// trigger band was a committed stroke that could not land by construction, on top of the missing lateral
-/// channel (`SWING_YAW`) that meant none of the band could. MEASURED by the band test below.
+/// **THE DECISION IS TAKEN AT THE RANGE THE BLOW LANDS AT**, never a number beside it, or it spends half a
+/// second on a guaranteed miss. **AND THAT RANGE IS WHERE THE ARC CROSSES HIM, NOT HOW FAR THE TIP GETS**
+/// (owner: the moles cannot hit me): `CLAW_REACH + CLAW_SWEEP_R` is the tip's RADIAL reach, achieved out to
+/// the SIDE. At 2.09 the outer fifth of the trigger band could not land by construction. MEASURED below.
 const CLAW_BAND: f32 = 1.65;
 const CLAW_KEEP: f32 = CLAW_BAND - 0.5;
 pub const CLAW_WIND: f32 = 0.48;
 const CLAW_STRIKE: f32 = 0.20;
-/// **AND IT IS VICIOUS ON ITS FEET, NOT ONLY UNDER THEM** (owner: more vicious even when not underground).
-/// The surface kit was a courtesy — one stroke every 1.9 s off a body that walked at 2.2 m/s, so a delver
-/// caught above ground was a punching bag between dives and the whole creature lived in the burrow. The
-/// recovery is shorter, the cooldown is most of a second off, and it CLOSES rather than ambling: the thing
-/// that goes under the world is not supposed to be safe to stand next to when it comes out of it.
+/// **VICIOUS ON ITS FEET, NOT ONLY UNDER THEM** (owner: more vicious even when not underground). One stroke
+/// every 1.9 s off a body walking 2.2 m/s was a punching bag between dives, so the recovery is shorter, the
+/// cooldown most of a second off, and it CLOSES rather than ambling.
 const CLAW_RECOVER: f32 = 0.40;
 const CLAW_CD: f32 = 1.05;
 
@@ -89,66 +84,48 @@ const UNDER_MIN: f32 = 2.6;
 const UNDER_MAX: f32 = 7.0;
 const UNDER_SPEED: f32 = 4.8;
 const UNDER_TURN: f32 = 2.6;
-/// HOW FAR UNDER THE GROUND ITS BODY RIDES. See the comptime assert below: this number is what makes it
-/// unhittable while it is down, and nothing else does.
+/// This number is what makes it unhittable while it is down, and nothing else does (the assert below).
 pub const UNDER_DEPTH: f32 = 2.6;
 const SURGE_LOCK_R: f32 = 1.0;
 const MOUND_TRAVEL_R: f32 = 1.05;
 const MOUND_TRAVEL_H: f32 = 0.28;
 
 /// **THE TELL IS THROWN EARTH, NOT A SWELLING DOME** (owner: instead of distending the bump, steadily add
-/// particles until he jumps out). The dome grew to `BURST_R * 0.86` and stood there — a mound inflating is a
-/// slow, soft read at exactly the moment the read has to be urgent, and a shape held for over a second stops
-/// being motion at all. What replaces it is a spray that BUILDS: a few clods at the commit, a fountain by the
-/// end, so the ground comes apart harder every frame and the eye is pulled by CHANGE rather than by size.
-/// The disc the blow lands on is still exactly `BURST_R` — the picture has simply stopped lying about it by
-/// being smaller than the thing it announces.
-///
-/// The mound itself HOLDS at its travelling size right to the burst, which is what keeps the spot honest: the
-/// ridge stopped there, and that is where it comes out.
+/// particles until he jumps out) — a shape held for over a second stops being motion at all. The spray
+/// BUILDS, the disc the blow lands on is exactly `BURST_R`, and the mound HOLDS at its travelling size to the
+/// burst: the ridge stopped there, and that is where it comes out.
 const MOUND_SWELL_R: f32 = MOUND_TRAVEL_R;
 const MOUND_SWELL_H: f32 = MOUND_TRAVEL_H;
 const SURGE_SPRAY_0: f32 = 14.0;
 const SURGE_SPRAY_1: f32 = 190.0;
 const SURGE_SPRAY_CURVE: f32 = 2.4;
 const SURGE_SPRAY_LIFT: f32 = 2.6;
-/// THE TELL, AND IT IS THE LONGEST THING IT DOES. The mound STOPS, the earth domes up over the spot and
-/// throws dirt; the blow lands where it stopped. Bracketed from below by its own dive wind, because the one
-/// move that arrives from a direction the camera cannot be turned toward may not be the one you get least
-/// warning of (the Bone Knight's fall, one creature along) — and bracketed again by what it costs to get out
-/// of the ring, which is the assert below. It is on TOP of a mound that has been visible the whole way in:
-/// this is the final commit, not the whole warning.
+/// THE LONGEST THING IT DOES. Bracketed from below by its own dive wind — the one move arriving from a
+/// direction the camera cannot be turned toward may not be the one you get least warning of — and again by
+/// what it costs to get out of the ring (the assert below).
 pub const SURGE_DUR: f32 = 1.15;
 pub const BURST_RISE: f32 = 0.28;
 const BURST_RECOVER: f32 = 0.95;
 const DIVE_CD: f32 = 6.5;
-/// **THE CHURN IS A RETRIGGER, NOT A LOOP** (the leechfly's whine idiom — raylib cannot loop a synthesized
-/// take), and the voice is cut a hair longer than this so consecutive ones overlap. It is what a player
-/// looking the wrong way has instead of the mound, so it is the one thing about this creature that reaches
-/// further than it can see.
+/// **A RETRIGGER, NOT A LOOP** (raylib cannot loop a synthesized take), and the voice is cut a hair longer
+/// than this so consecutive ones overlap.
 pub const CHURN_EVERY: f32 = 0.72;
 /// The stride the limb phase is measured in — one number, read by the surface walk and by the swim under it.
 const STRIDE: f32 = 0.92;
 
 comptime {
-    // **SUBMERGED IT CANNOT BE STRUCK, AND THAT IS GEOMETRY RATHER THAN A GUARD IN `tryHit`.** Its hurt
-    // sphere is measured off `pos.y` like everything else's (`foe.bodyPoint`, with the depth as a NEGATIVE
-    // lift), so at `UNDER_DEPTH` the top of it sits this far under the ground he is standing on — further
-    // than any blade of his reaches below his own boots, and the swept test then refuses it on its own.
-    // A creature that needed a special case here would need one at every future site that swings anything.
+    // **SUBMERGED IT CANNOT BE STRUCK, AND THAT IS GEOMETRY RATHER THAN A GUARD IN `tryHit`** — at
+    // `UNDER_DEPTH` the top of its hurt sphere sits further under the ground than any blade reaches below
+    // his boots, and the swept test refuses it on its own.
     //
-    // **AND IT HOLDS AT EVERY SCALE THE MAP CAN POST, which is why this may be written in bare constants.**
-    // `depth` is in SCALE-1 METRES and `ride()` is what multiplies it (`-depth * scale`), so every term below
-    // is the same multiple of `scale` and the whole inequality is scale-invariant. Read the other way — depth
-    // as world metres — it looks like a check that only pins scale 1, and "fixing" that by scaling `depth`
-    // at its writers double-scales the burrow and surfaces a small delver. The test below is the pin.
+    // **`depth` IS IN SCALE-1 METRES** and `ride()` multiplies it (`-depth * scale`), so every term here is
+    // the same multiple of `scale` and the inequality is scale-invariant. Scaling `depth` at its writers to
+    // "fix" that double-scales the burrow and surfaces a small delver.
     std.debug.assert(UNDER_DEPTH - CENTER_F * H - HURT_R > 0.8);
     std.debug.assert(SURGE_DUR > DIVE_WIND and DIVE_WIND >= foe.TELL_MIN and CLAW_WIND >= foe.TELL_MIN);
-    // A COMMITTED SPOT HE CAN GET OFF, and the price of standing still. He starts at the CENTRE — it came
-    // up under him — so what he has to clear is the whole radius plus his own footprint. A RUN does it with
-    // room to spare and a ROLL does it outright; a WALK covers 1.96 m of the 2.26 and is deliberately not
-    // enough, or the move is a tax on being anywhere rather than a thing you answer. The hero's own figures
-    // are written out here rather than imported for `foe.HERO_*`'s reason: this file sits below `hero.zig`.
+    // He starts at the CENTRE, so he must clear the radius plus his own footprint. A RUN and a ROLL do it; a
+    // WALK covers 1.96 m of the 2.26 and is deliberately not enough. The hero's figures are written out here
+    // because this file sits below `hero.zig`.
     std.debug.assert(SURGE_DUR * 3.4 > BURST_R + foe.HERO_R);
     std.debug.assert(SURGE_DUR > 0.70 + 0.30);
 }
@@ -166,11 +143,9 @@ const MOUND_PLOUGH_H: f32 = MOUND_TRAVEL_H * 1.45;
 const MOUND_PLOUGH_LONG: f32 = 2.8;
 
 pub const RAKE_HIT = combat.Hit{ .dmg = 12, .poise = 16, .stance = 5 };
-/// **AND IT IS STILL LONG ENOUGH TO BE CAUGHT ON, WHICH IS WHAT SIZES IT FROM BELOW.** It carries a parry
-/// window like the opener does, and `foe.PARRY_LEAD` brackets every wind in the game from above (the toad's
-/// `LUNGE_COIL` and the brood's `BITE_WINDUP` were both pushed up for exactly this). At 0.33 the game's one
-/// difficulty dial covered 55% of this tell against under half of the claw's beside it — the same move twice
-/// at two difficulties, and nothing pinned it.
+/// **LONG ENOUGH TO BE CAUGHT ON, WHICH IS WHAT SIZES IT FROM BELOW** — `foe.PARRY_LEAD` brackets every wind
+/// from above. At 0.33 the one difficulty dial covered 55% of this tell against under half of the claw's
+/// beside it: the same move at two difficulties.
 pub const RAKE_WIND: f32 = 0.40;
 const RAKE_STRIKE: f32 = 0.18;
 const RAKE_CHANCE: f32 = 0.55;
@@ -189,11 +164,9 @@ const DISS_DUR: f32 = 1.05;
 const SHOVE_DECAY: f32 = 7.0;
 const DISSOLVE = foe.Dissolve{ .rate = 58.0, .spread = 0.9, .rise = 0.75, .flake = CLOD };
 
-/// Sized by ARITHMETIC over the worst frame (the ring law), and the worst frame is the PLOUGH'S LAST one, not
-/// the burst's: the furrow can land its blow on the same frame the run ends, so the 12-clod hit burst and the
-/// 40 of `burstDirt` go in together — on top of what the run itself left resident, which is `emitWake` at 22/s
-/// and `emitSpray` at 24/s against lives of 0.3-0.7 s, about 22. That is 74 against the 72 this used to be,
-/// and a ring that overwrites its oldest does it SILENTLY. 96 clears it with room for the shove's dust.
+/// ARITHMETIC over the worst frame (the ring law), and it is the PLOUGH'S LAST frame: the furrow can land its
+/// blow as the run ends, so the 12-clod hit burst and `burstDirt`'s 40 go in together, on the ~22 `emitWake`
+/// (22/s) and `emitSpray` (24/s) leave resident at 0.3-0.7 s lives. 74 against the 72 this used to be.
 const PARTS = 96;
 
 const N = 10;
@@ -225,11 +198,9 @@ const REST = [N]rl.Vector3{
 /// and what `parryable` hands over as its reach. MEASURED off the mesh, never argued (the ogre's club law).
 const CLAW_TIP = v3(0, -0.16, 0.78);
 
-/// **HOW FAR ACROSS ITS OWN FRONT THE STROKE CARRIES, in degrees at the shoulder** — the lateral half of
-/// `swing`, and the half that was missing. The shoulder sits 0.34 m off the axis and the claw rides about
-/// 1.2 m out in front of it, so this is solved against the crossing rather than picked: the tip has to pass
-/// THROUGH the body's own forward line inside the strike window, or a man standing where the creature is
-/// looking is never crossed by anything. MEASURED by the reach test below, never argued.
+/// DEGREES at the shoulder — the lateral half of `swing`. The shoulder sits 0.34 m off the axis and the claw
+/// rides ~1.2 m out, so this is SOLVED against the crossing: the tip must pass THROUGH the body's own forward
+/// line inside the strike window. MEASURED by the reach test, never argued.
 const SWING_YAW: f32 = 46.0;
 
 const State = enum { idle, walk, claw, rake, recover, dive, under, surge, plough, burst, heave, stunlight, stunheavy, dead };
@@ -377,11 +348,9 @@ pub const Delver = struct {
     pub fn mounded(self: *const Delver) bool {
         return self.moundR > 1e-3;
     }
-    /// **YOU CANNOT FIX ON WHAT IS UNDER THE GROUND** (owner's call) — the Rooted's `hidden` predicate, which
-    /// `game.disguised` finds by `@hasDecl` and every targeting site already asks. A held lock DROPS the frame
-    /// it goes under, the flick skips it, a fresh press cannot take it, no bar hangs over the hole and the
-    /// wolf stops trying to bite two and a half metres of earth. Coming back up is a re-acquire, and that is
-    /// the point of the move: the camera is yours again and it is your problem where the mound went.
+    /// **YOU CANNOT FIX ON WHAT IS UNDER THE GROUND** (owner's call) — the Rooted's `hidden` predicate, found
+    /// by `@hasDecl` at every targeting site. A held lock DROPS the frame it goes under and coming back up is
+    /// a re-acquire.
     pub fn hidden(self: *const Delver) bool {
         return self.deep();
     }
@@ -610,7 +579,7 @@ pub const Delver = struct {
             self.heroLatch = true;
             self.heroHit = PLOUGH_HIT;
             self.leash.noteCombat();
-            self.dirtBurst(v3(hero.x, self.pos.y + 0.08, hero.z), 12, 3.0, 0.20);
+            self.dirtBurst(v3(hero.x, self.pos.y + 0.08, hero.z), 18, 3.0, 0.20);
         }
         if (u >= 1.0) {
             sfx.world(.delver_burst, self.pos);
@@ -628,8 +597,8 @@ pub const Delver = struct {
     fn updateDive(self: *Delver, dt: f32, hero: rl.Vector3) void {
         if (self.t < DIVE_WIND) {
             self.faceToward(self.goingFor(hero), TURN_RATE, dt);
-            // UP ON ITS HIND LEGS, forelimbs overhead — the biggest it ever is, and the only frame of this
-            // creature you can read from across the field.
+            // UP ON ITS HIND LEGS — the biggest it ever is, and the only frame you can read from across the
+            // field.
             const u = mathx.smoothstep(0, DIVE_WIND, self.t);
             self.rear = lerpF(0, 1.0, u);
             self.swing = lerpF(0, -0.7, u);
@@ -869,7 +838,7 @@ pub const Delver = struct {
         if (self.state == .dead) return;
         const s = foe.reached(self, blade) orelse return;
         const heavy = foe.wounded(self, s, blade, .{ .light = 0.7, .heavy = 1.15 });
-        self.dirtBurst(s.contact, if (heavy) 9 else 5, 2.0, 0.13);
+        self.dirtBurst(s.contact, foe.hitParts(if (heavy) 9 else 5), 2.0, 0.13);
         sfx.world(.delver_hurt, self.pos);
         switch (s.reaction) {
             .death => {
@@ -882,16 +851,25 @@ pub const Delver = struct {
         }
     }
 
-    fn emit(self: *Delver, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
-        foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
-    }
-    fn dirtBurst(self: *Delver, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
-        const parts = foe.hitParts(n);
+    /// MOTES, not a wound's worth of them — `foe.HIT_PARTS` belongs to a landed blow, and two of the three
+    /// callers here are moves.
+    fn dirtBurst(self: *Delver, c: rl.Vector3, motes: i32, spd: f32, big: f32) void {
+        const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.3, 0.6);
         var i: i32 = 0;
-        while (i < parts) : (i += 1) {
+        while (i < motes) : (i += 1) {
             const a = self.fxRng.angle();
-            const sp = self.fxRng.range(0.4, 1.0) * spd;
-            self.emit(c, v3(mathx.cosf(a) * sp, self.fxRng.range(0.6, 2.0), mathx.sinf(a) * sp), self.fxRng.range(0.3, 0.6), self.fxRng.range(0.05, 0.10), big, foe.DUST, 5.0);
+            const sp = self.fxRng.range(0.4, 1.0) * spd * B.boost;
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = c,
+                .v = v3(mathx.cosf(a) * sp, self.fxRng.range(0.6, 2.0) * B.boost, mathx.sinf(a) * sp),
+                .life = B.life(&self.fxRng),
+                .r0 = self.fxRng.range(0.05, 0.10),
+                .r1 = big,
+                .col = foe.DUST,
+                .col1 = foe.DUST_THIN,
+                .grav = foe.DUST_GRAV,
+                .drag = foe.DUST_DRAG,
+            });
         }
     }
     fn burstDirt(self: *Delver) void {
@@ -899,86 +877,107 @@ pub const Delver = struct {
         while (i < 26) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(0.5, 1.0) * 4.2;
-            self.emit(
-                v3(self.pos.x + mathx.cosf(a) * 0.4, self.pos.y + 0.10, self.pos.z + mathx.sinf(a) * 0.4),
-                v3(mathx.cosf(a) * sp, self.fxRng.range(2.4, 5.2), mathx.sinf(a) * sp),
-                self.fxRng.range(0.55, 0.9),
-                self.fxRng.range(0.07, 0.15),
-                0.03,
-                if (self.fxRng.float() < 0.35) CLOD_DK else CLOD,
-                9.0,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(self.pos.x + mathx.cosf(a) * 0.4, self.pos.y + 0.10, self.pos.z + mathx.sinf(a) * 0.4),
+                .v = v3(mathx.cosf(a) * sp, self.fxRng.range(2.4, 5.2), mathx.sinf(a) * sp),
+                .life = self.fxRng.range(0.55, 0.9),
+                .r0 = self.fxRng.range(0.07, 0.15),
+                .r1 = 0.03,
+                .col = if (self.fxRng.float() < 0.35) CLOD_DK else CLOD,
+                .col1 = CLOD_DRY,
+                .grav = 9.0,
+                .stretch = 0.030,
+                .bounce = 0.35,
+                .drag = CLOD_DRAG,
+            });
         }
-        self.dirtBurst(v3(self.pos.x, self.pos.y + 0.06, self.pos.z), 14, 3.4, 0.24);
+        self.dirtBurst(v3(self.pos.x, self.pos.y + 0.06, self.pos.z), 21, 3.4, 0.24);
     }
     fn emitWake(self: *Delver, dt: f32) void {
         const emitRate = 22.0;
-        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.3, 1.0) * self.moundR * self.scale;
             const back = mathx.scaleV(self.fdir(), -self.fxRng.range(0.1, 0.7));
-            self.emit(
-                v3(self.pos.x + back.x + mathx.cosf(a) * rr, self.pos.y + 0.08, self.pos.z + back.z + mathx.sinf(a) * rr),
-                v3(mathx.cosf(a) * 0.5, self.fxRng.range(0.5, 1.5), mathx.sinf(a) * 0.5),
-                self.fxRng.range(0.35, 0.7),
-                self.fxRng.range(0.05, 0.11),
-                0.03,
-                if (self.fxRng.float() < 0.4) CLOD_DK else CLOD,
-                6.0,
-            );
+            const B = comptime foe.Blast.of(CLOD_DRAG, 0.35, 0.7);
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(self.pos.x + back.x + mathx.cosf(a) * rr, self.pos.y + 0.08, self.pos.z + back.z + mathx.sinf(a) * rr),
+                .v = v3(mathx.cosf(a) * 0.5 * B.boost, self.fxRng.range(0.5, 1.5) * B.boost, mathx.sinf(a) * 0.5 * B.boost),
+                .life = B.life(&self.fxRng),
+                .r0 = self.fxRng.range(0.05, 0.11),
+                .r1 = 0.03,
+                .col = if (self.fxRng.float() < 0.4) CLOD_DK else CLOD,
+                .col1 = CLOD_DRY,
+                .grav = 6.0,
+                .stretch = 0.025,
+                .bounce = 0.30,
+                .drag = CLOD_DRAG,
+            });
         }
     }
     fn emitSpray(self: *Delver, dt: f32, rate: f32) void {
         if (rate <= 0) return;
         const kick = 1.0 + (SURGE_SPRAY_LIFT - 1.0) * self.surgeK;
         const emitRate = rate;
-        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.2, 1.0) * mathx.maxF(0.5, self.moundR) * self.scale;
-            self.emit(
-                v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + 0.06, self.pos.z + mathx.sinf(a) * rr),
-                v3(mathx.cosf(a) * 0.8 * kick, self.fxRng.range(1.2, 3.0) * kick, mathx.sinf(a) * 0.8 * kick),
-                self.fxRng.range(0.3, 0.6) * (1.0 + 0.5 * self.surgeK),
-                self.fxRng.range(0.05, 0.11),
-                0.03,
-                if (self.fxRng.float() < 0.4) CLOD_DK else CLOD,
-                7.5,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + 0.06, self.pos.z + mathx.sinf(a) * rr),
+                .v = v3(mathx.cosf(a) * 0.8 * kick, self.fxRng.range(1.2, 3.0) * kick, mathx.sinf(a) * 0.8 * kick),
+                .life = self.fxRng.range(0.3, 0.6) * (1.0 + 0.5 * self.surgeK),
+                .r0 = self.fxRng.range(0.05, 0.11),
+                .r1 = 0.03,
+                .col = if (self.fxRng.float() < 0.4) CLOD_DK else CLOD,
+                .col1 = CLOD_DRY,
+                .grav = 7.5,
+                .stretch = 0.030,
+                .bounce = 0.30,
+                .drag = CLOD_DRAG,
+            });
         }
     }
     fn emitScrape(self: *Delver, dt: f32) void {
         const emitRate = 14.0;
-        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const f = self.fdir();
             const a = self.fxRng.angle();
-            self.emit(
-                v3(self.pos.x + f.x * 0.5 + mathx.cosf(a) * 0.3, self.pos.y + 0.05, self.pos.z + f.z * 0.5 + mathx.sinf(a) * 0.3),
-                v3(-f.x * 1.6, self.fxRng.range(0.4, 1.2), -f.z * 1.6),
-                self.fxRng.range(0.25, 0.5),
-                self.fxRng.range(0.04, 0.08),
-                0.02,
-                CLOD_DK,
-                6.0,
-            );
+            const B = comptime foe.Blast.of(CLOD_DRAG, 0.25, 0.5);
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(self.pos.x + f.x * 0.5 + mathx.cosf(a) * 0.3, self.pos.y + 0.05, self.pos.z + f.z * 0.5 + mathx.sinf(a) * 0.3),
+                .v = v3(-f.x * 1.6 * B.boost, self.fxRng.range(0.4, 1.2) * B.boost, -f.z * 1.6 * B.boost),
+                .life = B.life(&self.fxRng),
+                .r0 = self.fxRng.range(0.04, 0.08),
+                .r1 = 0.02,
+                .col = CLOD_DK,
+                .col1 = CLOD_DRY,
+                .grav = 6.0,
+                .stretch = 0.025,
+                .bounce = 0.30,
+                .drag = CLOD_DRAG,
+            });
         }
     }
     fn emitScuff(self: *Delver, dt: f32) void {
         const emitRate = 5.0;
-        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
-            self.emit(
-                v3(self.pos.x + mathx.cosf(a) * 0.4, self.pos.y + 0.03, self.pos.z + mathx.sinf(a) * 0.4),
-                v3(mathx.cosf(a) * 0.3, self.fxRng.range(0.2, 0.6), mathx.sinf(a) * 0.3),
-                self.fxRng.range(0.2, 0.4),
-                0.05,
-                0.10,
-                foe.DUST,
-                4.0,
-            );
+            const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.2, 0.4);
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(self.pos.x + mathx.cosf(a) * 0.4, self.pos.y + 0.03, self.pos.z + mathx.sinf(a) * 0.4),
+                .v = v3(mathx.cosf(a) * 0.3 * B.boost, self.fxRng.range(0.2, 0.6) * B.boost, mathx.sinf(a) * 0.3 * B.boost),
+                .life = B.life(&self.fxRng),
+                .r0 = 0.05,
+                .r1 = 0.10,
+                .col = foe.DUST,
+                .col1 = foe.DUST_THIN,
+                .grav = foe.DUST_GRAV,
+                .drag = foe.DUST_DRAG,
+            });
         }
     }
     pub fn drawFx(self: *const Delver) void {
@@ -1009,13 +1008,9 @@ pub const Delver = struct {
             const shoulder = -74.0 * self.rear - 34.0 * own;
             const abd = 16.0 + 26.0 * self.rear + 10.0 * @abs(own);
             const hip = v3(REST[ai].x, REST[ai].y - 0.12 * self.crouch, REST[ai].z);
-            // **AND THE STROKE HAS TO GO ACROSS HIM, WHICH MEANS IT NEEDS A LATERAL CHANNEL** (owner: the
-            // moles cannot hit me with their regular attacks). `swing` was spent entirely on `rx` — a
-            // SAGITTAL rake — while `abd` used `@abs(own)`, so the limb was pushed FURTHER OUT at both ends
-            // of the arc. Measured, the claw ran from x −0.51 to −1.07 and back and never once crossed the
-            // body's own axis: the whole stroke happened down its flank while the man it was aimed at stood
-            // dead ahead. The reach test passed the whole time because it measured RADIAL distance from the
-            // body centre, which a swipe out to the side satisfies perfectly.
+            // **THE STROKE NEEDS A LATERAL CHANNEL** (owner: the moles cannot hit me). Spent entirely on
+            // `rx` — a SAGITTAL rake — with `abd` on `@abs(own)`, the claw ran x −0.51 to −1.07 and back and
+            // never crossed the body's own axis, which RADIAL reach tests satisfy perfectly.
             const cross = SWING_YAW * own * -sgn;
             self.xf[ai] = mul(mul(mul3(rz(sgn * abd), rx(shoulder), ry(cross)), tr(hip.x, hip.y, hip.z)), root);
             const elbow = 40.0 - 46.0 * own - 26.0 * self.rear;
@@ -1172,15 +1167,10 @@ fn clawMesh(side: f32) rl.Mesh {
     b.addCapsule(v3(0, 0, 0), v3(side * 0.05, -0.09, 0.40), 0.125, 0.10, 9, HIDE_LO);
     b.addBlob(v3(side * 0.05, -0.10, 0.44), v3(0.14, 0.11, 0.13), 5, 10, HIDE_LO);
     b.setMat(.plain);
-    // **THE CLAWS ARE THE CREATURE'S POINT AND THEY HAVE TO LOOK IT** (owner: more pronounced claws and
-    // nails). At 0.04 thick and 0.22 long they were three scratches on the end of a pad — a digging animal's
-    // whole argument is its hands, and on a body this dark the only thing that carries at distance is the pale
-    // horn on the front of it. Half again as long, half again as thick at the root, and hooked DOWN and UNDER
-    // rather than laid flat, which is what says they are for tearing earth rather than for standing on.
-    //
-    // Still THREE, still uneven, still longest in the middle, and **still none of them ends in a point** — the
-    // tip is a blunt capsule cap, because a rosette of needles is a hub of spokes. What makes them read as
-    // sharp is the TAPER (0.062 to 0.020, a hair over 3:1) and the hook, never a spike.
+    // **THE CLAWS HAVE TO LOOK LIKE THE CREATURE'S POINT** (owner: more pronounced claws and nails). At 0.04
+    // thick and 0.22 long they were three scratches on a pad. Half again as long and thick, hooked DOWN and
+    // UNDER. **NONE ENDS IN A POINT** — a blunt capsule cap, because a rosette of needles is a hub of spokes;
+    // what reads as sharp is the TAPER (0.062 to 0.020, a hair over 3:1) and the hook.
     inline for (.{
         .{ 0.11, -0.12, 0.50, 0.13, -0.30, 0.92, 0.056, 0.020 },
         .{ 0.00, -0.13, 0.51, 0.00, -0.33, 1.02, 0.062, 0.022 },
@@ -1286,11 +1276,9 @@ test "TWO WAYS OUT OF THE BURROW: under him it BURSTS, out in front of him it PL
 }
 
 test "SUBMERGED IT IS UNDER THE GROUND AT EVERY SCALE THE MAP CAN POST, not just at 1" {
-    // The comptime block above is written in bare constants, which READS like a check that can only speak for
-    // scale 1 — and a map may post this creature anywhere in `wf.FOE_SCALE_LO..HI`. It is in fact
-    // scale-invariant, because `depth` is in scale-1 metres and `ride()` is the thing that scales it. This
-    // walks the band and measures the actual sphere, so the next reader who spots the same apparent gap and
-    // scales `depth` at its writers gets told: that double-scales the burrow, and a 0.5 delver surfaces.
+    // The comptime block above READS like a check that only speaks for scale 1. It is scale-invariant
+    // (`depth` is scale-1 metres, `ride()` scales it); this walks the band, so a reader who "fixes" the
+    // apparent gap by scaling `depth` at its writers is told that a 0.5 delver surfaces.
     for ([_]f32{ wf.FOE_SCALE_LO, 1.0, 1.4, wf.FOE_SCALE_HI }) |sc| {
         var d = Delver.spawn(mathx.zero3, 0, sc, 0.3);
         d.debugDive();
@@ -1354,9 +1342,8 @@ test "THE CLAW COMES BACK — the surfaced window is a trade now, not a free hit
 }
 
 test "THE COOLDOWN IS SURFACE TIME — the burrow does not spend the dial that gates it" {
-    // Armed where it went DOWN, the under, the surge, the rise and the opening ran most of `DIVE_CD` off
-    // before the creature was ever standing in front of you — and a burrow that went to `UNDER_MAX` left
-    // nothing at all, so it re-dived on the frame it finished getting up.
+    // Armed where it went DOWN, the under, surge, rise and opening ran most of `DIVE_CD` off before it was
+    // ever standing in front of you — at `UNDER_MAX`, nothing at all, so it re-dived as it finished rising.
     try std.testing.expect(UNDER_MIN + SURGE_DUR + BURST_RISE + BURST_RECOVER > DIVE_CD * 0.5);
     var d = Delver.spawn(mathx.zero3, 0, 1.0, 0.3);
     const hero = v3(0, 0, 3.0);
@@ -1589,11 +1576,9 @@ test "IT IS VICIOUS ON ITS FEET TOO — it runs him down and its stroke comes ro
 }
 
 test "THE STROKE CROSSES A MAN STANDING IN FRONT — every range inside its own band lands" {
-    // **THE BUG THE REACH TEST COULD NOT SEE.** That one measures the tip's RADIAL distance from the body
-    // centre and its HEIGHT, and a swipe raked down the creature's own flank satisfies both perfectly. The
-    // question it never asked is the only one that matters: does the swept claw actually cross the man it is
-    // aimed at. Measured, it did not — at ANY range. The claw ran from x -0.51 to -1.07 and back, so the
-    // closest it ever came to a hero on the creature's own facing line was 0.50 m against a 0.34 m blade.
+    // **THE BUG THE REACH TEST COULD NOT SEE**: RADIAL distance and HEIGHT are both satisfied by a swipe
+    // raked down the flank. Does the swept claw cross the man it is aimed at — at x −0.51 to −1.07 the
+    // closest it came on the facing line was 0.50 m against a 0.34 m blade.
     var dist: f32 = BODY_R + foe.HERO_R;
     var worst: f32 = 0;
     while (dist <= CLAW_BAND + 1e-3) : (dist += 0.05) {

@@ -111,6 +111,27 @@ const BRASS = art.BRASS;
 /// reads the first eight entries and silently drops the rest, and the seam test still passes.
 pub const GAIT_N = 8;
 
+/// **THE ARM OPPOSES THE LEG ON ITS OWN SIDE.** The left hip's flex peaks FORWARD at phase 0 (`HIP_FLEX`'s
+/// 25) and every chain applies pitch as `rx(-flex)`, so the LEFT shoulder's `rx` peaks POSITIVE at phase 0
+/// and the right's negative. Unit amplitude for the LEFT arm; a rig scales and negates for the other side.
+/// NOT `sin`, which is a quarter-cycle off.
+pub fn armSwing(phase: f32) f32 {
+    return mathx.cosf(std.math.tau * phase);
+}
+
+test "THE ARM OPPOSES ITS OWN LEG — the swing and the hip flex are antiphase, measured off the curve" {
+    for ([_]f32{ 0.0, 0.5, 1.0 }) |ph| {
+        const hipRx = -sampleCurve(HIP_FLEX, ph);
+        const armRx = armSwing(ph);
+        std.debug.print("\n  phase {d:.2}: left hip rx {d: >6.1}, left arm rx {d: >5.2}", .{ ph, hipRx, armRx });
+        try std.testing.expect(hipRx * armRx < 0);
+    }
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), @abs(armSwing(0.0)), 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), @abs(armSwing(0.5)), 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), armSwing(0.25), 1e-5);
+    std.debug.print("\n", .{});
+}
+
 pub const HIP_FLEX = [GAIT_N]f32{ 25, 13, 3, -5, -10, -3, 12, 22 };
 pub const KNEE_FLEX = [GAIT_N]f32{ 5, 18, 10, 4, 10, 38, 62, 30 };
 pub const ANK_DORSI = [GAIT_N]f32{ -2, -6, 2, 9, 6, -14, -6, -1 };
@@ -410,6 +431,8 @@ fn offAxis(at: rl.Vector3, r: f32, a: f32) rl.Vector3 {
 
 const CHAOS_MOTE = elemfx.sig(.chaos).edge;
 const CHAOS_HOT = elemfx.sig(.chaos).core;
+const CHAOS_COOL = elemfx.sig(.chaos).cool;
+const CHAOS_STRETCH = elemfx.sig(.chaos).stretch;
 const CAST_MOTE_RATE = 52.0;
 const CAST_MOTE_R = 0.17;
 const CAST_MOTE_RATE_HI = 300.0;
@@ -516,15 +539,13 @@ const BREATH_NOZZLE_FWD = 0.030 * H;
 const BREATH_LEAN = -13.0;
 const BREATH_HEAD = 6.0;
 const BREATH_REACH = 12.0;
-/// **AND THE ROD COMES DOWN TO LEVEL FOR IT.** `breathDir` is level by construction and the bite is tested
-/// in XZ, so a rod still pointed at the sky promises a reach the mechanic has not got. Subtracted off the
-/// throw's `CAST_SH_FWD` (118 deg) to land near 78 — under straight out, because the wand is held at an
-/// angle in the fist and a shoulder at a true 90 still points it up.
+/// `breathDir` is level and the bite is tested in XZ, so a rod pointed at the sky promises reach the mechanic
+/// has not got. Off the throw's `CAST_SH_FWD` (118 deg) to land near 78: a shoulder at a true 90 points up.
 const BREATH_SH_LEVEL = 40.0;
 const BREATH_SHIVER = 1.5;
 const BREATH_SHIVER_HZ = 12.0;
 
-const FX_N = 1280;
+const FX_N = 1472;
 
 comptime {
     const gather = CAST_MOTE_RATE_HI * CAST_MOTE_LIFE_HI;
@@ -534,7 +555,13 @@ comptime {
     const ticks = @ceil(combat.RIME_DUR * BREATH_RATE);
     const breath = @as(f32, @floatFromInt(elemfx.pourCount(1))) * ticks;
     const struck = LEVIN_STEPS * LEVIN_SPARKS + LEVIN_BURST + SIPHON_MOTES;
-    const worst = gather + breath + @as(f32, release + erupt + caught + struck + 2 * BOLT_BURST);
+    // …AND THE THREE THIS LIST WENT WITHOUT. The lance is the one that matters: a fire burst emits its ASH
+    // beside every third mote (`elemfx.burstCount`), so 22 steps of 4 is 110 motes and not 88.
+    const lance = LANCE_STEPS * elemfx.burstCount(.fire, LANCE_SPARKS);
+    const blocked = BLOCK_GRIT_MAX + BLOCK_SPARK_MAX + 1;
+    const wake = FOG_WAKE_RATE * FOG_WAKE_LIFE_HI;
+    const worst = gather + breath + wake +
+        @as(f32, release + erupt + caught + struck + 2 * BOLT_BURST + lance + blocked);
     if (@as(f32, FX_N) < worst) @compileError(std.fmt.comptimePrint(
         "hero: FX_N = {d} but a cast can have {d} particles in the air — raise it",
         .{ FX_N, worst },
@@ -568,11 +595,9 @@ pub const STANCE_MAX = 90.0;
 pub const ATK_LIGHT_HIT = combat.Hit{ .dmg = 13, .poise = 10 };
 pub const ATK_HEAVY_HIT = combat.Hit{ .dmg = 27, .poise = 22, .stance = 14 };
 
-/// **HIS `vit.armour` STAYS 0, AND NOTHING MAY EVER SET IT.** Armour has one arithmetic (`combat.armourTaken`)
-/// and two doors into it: a creature carries the figure on its `Vitals` (`Vitals.withArmour`, the spore
-/// homunculus) and `damageFrom` applies it, where the HERO's is a DERIVED value — worn plate plus the tree —
-/// so `takeHit`/`blockHit` pre-apply it off `armourA()` at the moment of the blow. Both at once is the same
-/// curve twice, silently, and a ring would read as four times its plate.
+/// **HIS `vit.armour` STAYS 0, AND NOTHING MAY EVER SET IT.** His figure is DERIVED (plate + tree), so
+/// `takeHit`/`blockHit` pre-apply it off `armourA()`. Both doors at once is `combat.armourTaken` twice,
+/// silently — a ring would read as four times its plate.
 pub fn freshVitals(sheet: statsmod.Sheet) combat.Vitals {
     return combat.Vitals.init(sheet.hp(), POISE_MAX, STANCE_MAX);
 }
@@ -590,16 +615,14 @@ pub const Worn = struct {
     }
 };
 
-/// **WHAT THE WHOLE SUIT IS WORTH AGAINST PHYSICAL** — summed over every socket with a plate in it.
-/// `combat.armourTaken` is a diminishing curve, so summing cannot become immunity however many sockets gain
-/// a plate. A FREE function for `armourA`'s reason: the page prices a suit he is only considering.
+/// Summed over every socket. `combat.armourTaken` is a diminishing curve, so summing cannot reach immunity.
+/// FREE, not a method: the page prices a suit he is only considering.
 pub fn armourOf(worn: Worn) f32 {
     return plateOf(worn).a;
 }
 
-/// **THE WHOLE DEFENSIVE ROW OF THE SUIT, IN ONE WALK.** **PHYSICAL AND THE FOUR COLUMNS ADD; THE STATUS
-/// RATE MULTIPLIES** — two pieces that each halve it leave a quarter, where two that each took 0.5 off would
-/// leave nothing and make a second one free immunity.
+/// **PHYSICAL AND THE FOUR COLUMNS ADD; THE STATUS RATE MULTIPLIES** — halving twice leaves a quarter, where
+/// subtracting 0.5 twice leaves nothing and makes the second piece free immunity.
 pub fn plateOf(worn: Worn) item.Plate {
     var out = item.Plate{ .slot = .chest };
     inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
@@ -703,19 +726,16 @@ pub fn wearFor(a: Armament) ?item.Wear {
     };
 }
 
-/// **WHICH PIECE OF GEAR IS IN THAT HAND, IF ANY** — the one answer the HUD's cell, the book's socket and
-/// the held mesh all ask, so a dirk cannot be drawn in one picture and a sword in the other.
+/// ONE answer for the HUD cell, the book socket and the held mesh, or a dirk is drawn in one and a sword in
+/// the other.
 pub fn heldGear(a: Armament, worn: Worn) ?item.Kind {
     const w = wearFor(a) orelse return null;
     return worn.at(w);
 }
 
-/// **WHAT A WEAPON'S ROW DOES TO A BLOW, AND THE ONE PLACE IT IS DONE.** The ELEMENTAL half rides the DAMAGE
-/// dial (a fire arrow's fire is a share of the shaft's own physical, `arrowBlow`) and the STANCE rides the
-/// POISE dial: both are the blow's WEIGHT (`combat.Hit.scaled`).
-///
-/// **AND THE SKILL RIDES THE DAMAGE DIAL AND NOTHING ELSE** (`sheet`, through the row's own `scales`).
-/// Strength makes a club hit HARDER, not heavier: poise and stance belong to the WEAPON's mass.
+/// The ELEMENTAL half rides the DAMAGE dial (`arrowBlow`), the STANCE rides the POISE dial — both are the
+/// blow's WEIGHT (`combat.Hit.scaled`). **THE SKILL RIDES THE DAMAGE DIAL AND NOTHING ELSE**: strength makes
+/// a club hit HARDER, not heavier, and poise and stance belong to the WEAPON's mass.
 pub fn weigh(h: combat.Hit, row: item.Arm, sheet: statsmod.Sheet) combat.Hit {
     const skill = scaleOf(sheet, row.scales);
     return .{
@@ -758,9 +778,9 @@ const PARRY_OPEN = 0.10;
 const PARRY_SHUT = 0.26;
 pub const PARRY_PUNCH_AT = 0.33;
 const PARRY_REBOUND = 0.75;
-/// THE THRUST, AND IT IS PAID FOR AT BOTH JOINTS. `shieldFit` is the INVERSE of the guard's arm fold
-/// (`GUARD_ARM_FOLD` = shoulder flex + elbow), so the boards keep their facing only while that SUM does:
-/// opened at the elbow alone, a shove this size rotates the shield clean off its own arm (measured).
+/// PAID FOR AT BOTH JOINTS: `shieldFit` inverts `GUARD_ARM_FOLD` (shoulder flex + elbow), so the boards keep
+/// their facing only while that SUM does — opened at the elbow alone, this shove rotates the shield off its
+/// own arm (measured).
 const PARRY_PUNCH = 60.0;
 const PARRY_SWEEP = 26.0;
 const PARRY_WRIST = 20.0;
@@ -779,6 +799,10 @@ const PARRY_HEAD = 12.0;
 /// 3 cm read as a soft bubble sitting on them (measured, at 30 of them).
 const PARRY_SPARK = rgba(255, 206, 108, 240);
 const PARRY_SPARK_HOT = rgba(255, 250, 232, 250);
+/// What a spark COOLS TO — white-hot dies through amber into this, and the streak collapses to a dot with it.
+const PARRY_SPARK_COOL = rgba(224, 118, 40, 210);
+const SPARK_STRETCH = 0.055;
+const SPARK_BOUNCE = 0.45;
 const PARRY_SPARKS = 34;
 /// Forward is DOWN THE LENS here, so at 0.42 of the forward speed most were still inside the disc's own
 /// outline four frames later (measured). What says "shower" is the ones crossing the RIM.
@@ -828,6 +852,14 @@ const FOG_WAKE_LIFE_HI = 1.25;
 const FOG_WAKE_R0_LO = 0.055;
 const FOG_WAKE_R0_HI = 0.115;
 const FOG_WAKE_R1 = 0.20;
+/// Torn fog SLOWS THE MOMENT IT LEAVES THE WALL and thins to nothing — a wisp that keeps its parting speed
+/// reads as a thrown puff, and the gate is not throwing anything.
+const FOG_WAKE_THIN = mathx.rgba(206, 214, 226, 0);
+const FOG_WAKE_DRAG: f32 = 2.8;
+/// The RATE the walk asks for the wake at, and the arrears one frame may pay. Here rather than at the caller
+/// because the pool it fills is here, and `FX_N` is solved over it.
+pub const FOG_WAKE_RATE: f32 = 26.0;
+pub const FOG_WAKE_CAP: u32 = 8;
 /// Deliberately UNDER the parry's shower (`PARRY_SPARKS`, 34): the catch is the earned one and may not be
 /// out-sparked by holding the boards up.
 const BLOCK_SPARK_MIN = 4;
@@ -870,9 +902,8 @@ const FIST_Z = 0.005 * H;
 fn bladeAt(t: f32) rl.Vector3 {
     return v3(-GRIP_SA * OUT_SA * t * H, FIST_Y - GRIP_CA * t * H, FIST_Z + GRIP_SA * OUT_CA * t * H);
 }
-/// **WHAT IS ACTUALLY IN HIS FIST — THREE SHAPES ON ONE GRIP.** `t` is the fraction of stature out along the
-/// grip axis (`bladeAt`), so a reach here is metres the moment `H` is fixed, and `r` is the capsule the fight
-/// is fought with rather than anything you can see.
+/// `t` is the fraction of STATURE out along the grip axis (`bladeAt`), so a reach is metres once `H` is
+/// fixed; `r` is the capsule the fight is fought with, not anything you can see.
 pub const Blade = enum { sword, dirk, club };
 
 const BladeSpec = struct { base: f32, tip: f32, r: f32 };
@@ -1506,11 +1537,9 @@ pub const Hero = struct {
         return self.heldLeft(.bell);
     }
 
-    /// **AN UNHELD ARMAMENT FALLS BACK TO ITS OWN HAND, WHICH IS WHY THESE TWO ARE THE OTHER WAY ROUND.** The
-    /// rod and the boards are LEFT-hand things, so `!heldRight` (left unless the rack put it right); the sword
-    /// and the bell are RIGHT-hand things, so `heldLeft`. It only shows while `guardB`/the cast blend eases out
-    /// after a swap took the thing out of both hands — the pose is fading and nothing of that shape is drawn,
-    /// so the arm it fades on is the only thing at stake. Unifying them is a LOOK, not a cleanup.
+    /// **AN UNHELD ARMAMENT FALLS BACK TO ITS OWN HAND, WHICH IS WHY THESE TWO ARE THE OTHER WAY ROUND**: the
+    /// rod and boards are LEFT-hand, so `!heldRight`; the sword and bell are RIGHT-hand, so `heldLeft`. It
+    /// only shows while a swap's blend eases out, so unifying them is a LOOK, not a cleanup.
     pub fn wandLeft(self: *const Hero) bool {
         return !self.heldRight(.wand);
     }
@@ -1791,9 +1820,21 @@ pub const Hero = struct {
                 mathx.scaleV(f.n, rng.range(PARRY_SPARK_OUT_LO, PARRY_SPARK_OUT_HI)),
                 mathx.addV(mathx.scaleV(side, mathx.cosf(a) * fan), mathx.scaleV(up, mathx.sinf(a) * fan)),
             );
-            foemod.emitParticle(&self.fx, &self.fxHead, at, v, rng.range(0.16, 0.72), rng.range(PARRY_SPARK_R0_LO, PARRY_SPARK_R0_HI), 0.003, if (rng.float() < 0.45) PARRY_SPARK_HOT else PARRY_SPARK, PARRY_SPARK_GRAV);
+            foemod.emitPart(&self.fx, &self.fxHead, .{
+                .p = at,
+                .v = v,
+                .life = rng.range(0.16, 0.72),
+                .r0 = rng.range(PARRY_SPARK_R0_LO, PARRY_SPARK_R0_HI),
+                .r1 = 0.003,
+                .col = if (rng.float() < 0.45) PARRY_SPARK_HOT else PARRY_SPARK,
+                .col1 = PARRY_SPARK_COOL,
+                .grav = PARRY_SPARK_GRAV,
+                .stretch = SPARK_STRETCH,
+                .bounce = SPARK_BOUNCE,
+                .add = true,
+            });
         }
-        foemod.emitParticle(&self.fx, &self.fxHead, at, mathx.scaleV(f.n, 0.8), PARRY_FLASH_LIFE, PARRY_FLASH_R, PARRY_FLASH_R * 0.25, PARRY_SPARK_HOT, 0);
+        foemod.emitPart(&self.fx, &self.fxHead, .{ .p = at, .v = mathx.scaleV(f.n, 0.8), .life = PARRY_FLASH_LIFE, .r0 = PARRY_FLASH_R, .r1 = PARRY_FLASH_R * 0.25, .col = PARRY_SPARK_HOT, .add = true });
     }
 
     pub fn fogWake(self: *Hero, at: rl.Vector3, along: rl.Vector3, n: u32) void {
@@ -1808,7 +1849,17 @@ pub const Hero = struct {
                 v3(0, @abs(mathx.sinf(a)) * out * 0.8 + FOG_WAKE_RISE, 0),
             );
             const p = mathx.addV(at, v3(rng.signed() * 0.34, rng.signed() * 0.42, rng.signed() * 0.18));
-            foemod.emitParticle(&self.fx, &self.fxHead, p, v, rng.range(FOG_WAKE_LIFE_LO, FOG_WAKE_LIFE_HI), rng.range(FOG_WAKE_R0_LO, FOG_WAKE_R0_HI), FOG_WAKE_R1, if (rng.float() < 0.45) propfx.FOG_WAKE_PALE else propfx.FOG_WAKE_DEEP, FOG_WAKE_GRAV);
+            foemod.emitPart(&self.fx, &self.fxHead, .{
+                .p = p,
+                .v = v,
+                .life = rng.range(FOG_WAKE_LIFE_LO, FOG_WAKE_LIFE_HI),
+                .r0 = rng.range(FOG_WAKE_R0_LO, FOG_WAKE_R0_HI),
+                .r1 = FOG_WAKE_R1,
+                .col = if (rng.float() < 0.45) propfx.FOG_WAKE_PALE else propfx.FOG_WAKE_DEEP,
+                .col1 = FOG_WAKE_THIN,
+                .grav = FOG_WAKE_GRAV,
+                .drag = FOG_WAKE_DRAG,
+            });
         }
     }
 
@@ -1827,7 +1878,17 @@ pub const Hero = struct {
                 mathx.scaleV(f.n, rng.range(BLOCK_GRIT_OUT_LO, BLOCK_GRIT_OUT_HI)),
                 mathx.addV(mathx.scaleV(fr.side, mathx.cosf(a) * fan), mathx.scaleV(fr.up, mathx.sinf(a) * fan)),
             );
-            foemod.emitParticle(&self.fx, &self.fxHead, at, v, rng.range(BLOCK_GRIT_LIFE_LO, BLOCK_GRIT_LIFE_HI), rng.range(0.010, 0.022), 0.004, if (rng.float() < 0.5) BLOCK_GRIT else BLOCK_GRIT_DARK, BLOCK_GRIT_GRAV);
+            foemod.emitPart(&self.fx, &self.fxHead, .{
+                .p = at,
+                .v = v,
+                .life = rng.range(BLOCK_GRIT_LIFE_LO, BLOCK_GRIT_LIFE_HI),
+                .r0 = rng.range(0.010, 0.022),
+                .r1 = 0.004,
+                .col = if (rng.float() < 0.5) BLOCK_GRIT else BLOCK_GRIT_DARK,
+                .grav = BLOCK_GRIT_GRAV,
+                .stretch = 0.030,
+                .bounce = 0.35,
+            });
         }
         const ns: u32 = @intFromFloat(mathx.lerpF(BLOCK_SPARK_MIN, BLOCK_SPARK_MAX, w));
         var j: u32 = 0;
@@ -1838,9 +1899,30 @@ pub const Hero = struct {
                 mathx.scaleV(f.n, rng.range(PARRY_SPARK_OUT_LO, PARRY_SPARK_OUT_HI)),
                 mathx.addV(mathx.scaleV(fr.side, mathx.cosf(a) * fan), mathx.scaleV(fr.up, mathx.sinf(a) * fan)),
             );
-            foemod.emitParticle(&self.fx, &self.fxHead, at, v, rng.range(0.16, 0.38), rng.range(PARRY_SPARK_R0_LO, PARRY_SPARK_R0_HI), 0.003, if (rng.float() < 0.34) PARRY_SPARK_HOT else PARRY_SPARK, PARRY_SPARK_GRAV);
+            foemod.emitPart(&self.fx, &self.fxHead, .{
+                .p = at,
+                .v = v,
+                .life = rng.range(0.16, 0.38),
+                .r0 = rng.range(PARRY_SPARK_R0_LO, PARRY_SPARK_R0_HI),
+                .r1 = 0.003,
+                .col = if (rng.float() < 0.34) PARRY_SPARK_HOT else PARRY_SPARK,
+                .col1 = PARRY_SPARK_COOL,
+                .grav = PARRY_SPARK_GRAV,
+                .stretch = SPARK_STRETCH,
+                .bounce = SPARK_BOUNCE,
+                .add = true,
+            });
         }
-        foemod.emitParticle(&self.fx, &self.fxHead, at, mathx.scaleV(f.n, 0.25), BLOCK_PUFF_LIFE, BLOCK_PUFF_R * (0.6 + 0.4 * w), BLOCK_PUFF_R * 1.6, BLOCK_GRIT_DARK, 1.5);
+        foemod.emitPart(&self.fx, &self.fxHead, .{
+            .p = at,
+            .v = mathx.scaleV(f.n, 0.25),
+            .life = BLOCK_PUFF_LIFE,
+            .r0 = BLOCK_PUFF_R * (0.6 + 0.4 * w),
+            .r1 = BLOCK_PUFF_R * 1.6,
+            .col = BLOCK_GRIT_DARK,
+            .grav = 1.5,
+            .drag = 3.0,
+        });
     }
 
     /// What separates a glint from a catch is COUNT and fan, never colour, or a whiff reads as half a hit.
@@ -1864,9 +1946,20 @@ pub const Hero = struct {
                 ),
                 mathx.addV(mathx.scaleV(side, mathx.cosf(a) * fan * 0.4), mathx.scaleV(up, mathx.sinf(a) * fan)),
             );
-            foemod.emitParticle(&self.fx, &self.fxHead, from, v, rng.range(0.05, 0.15), rng.range(PARRY_SPARK_R0_LO, PARRY_SPARK_R0_HI), 0.003, PARRY_SPARK_HOT, PARRY_SPARK_GRAV);
+            foemod.emitPart(&self.fx, &self.fxHead, .{
+                .p = from,
+                .v = v,
+                .life = rng.range(0.05, 0.15),
+                .r0 = rng.range(PARRY_SPARK_R0_LO, PARRY_SPARK_R0_HI),
+                .r1 = 0.003,
+                .col = PARRY_SPARK_HOT,
+                .col1 = PARRY_SPARK_COOL,
+                .grav = PARRY_SPARK_GRAV,
+                .stretch = SPARK_STRETCH,
+                .add = true,
+            });
         }
-        foemod.emitParticle(&self.fx, &self.fxHead, at, mathx.scaleV(f.n, 0.9), PARRY_FLASH_LIFE, PARRY_GLINT_FLASH_R, PARRY_GLINT_FLASH_R * 0.25, PARRY_SPARK_HOT, 0);
+        foemod.emitPart(&self.fx, &self.fxHead, .{ .p = at, .v = mathx.scaleV(f.n, 0.9), .life = PARRY_FLASH_LIFE, .r0 = PARRY_GLINT_FLASH_R, .r1 = PARRY_GLINT_FLASH_R * 0.25, .col = PARRY_SPARK_HOT, .add = true });
     }
 
     pub fn canCast(self: *const Hero) bool {
@@ -2045,12 +2138,10 @@ pub const Hero = struct {
         return rl.math.vector3Transform(wandAt(WAND_TIP_T), self.xf[if (self.wandLeft()) WRL else WRR]);
     }
 
-    /// SCALED WHOLE, not on the damage alone: a bolt that hit harder without hitting heavier would leave the
-    /// poise it staggers with pinned at its level-1 figure. Null for the two that bill over time
-    /// (`combat.spellBlow`), so a caller cannot spend a blow they have not got.
-    ///
-    /// **AND INTELLIGENCE IS THE OTHER HALF OF THE SAME MULTIPLE.** A rod is the only thing that reads this
-    /// attribute, and `hero.wearFor` gives the wand no socket, so there is no `item.Arm` row to hang it off.
+    /// SCALED WHOLE, not on the damage alone, or the poise it staggers with stays at its level-1 figure. Null
+    /// for the two that bill over time (`combat.spellBlow`), so a caller cannot spend a blow they have not
+    /// got. INTELLIGENCE is the other half of the same multiple: `hero.wearFor` gives the wand no socket, so
+    /// there is no `item.Arm` row to hang it off.
     pub fn castBlow(self: *const Hero) ?combat.Hit {
         const base = combat.spellBlow(self.spell) orelse return null;
         return base.scaled(self.perk.spellDmg * self.sheet.scale(.intelligence));
@@ -2263,7 +2354,7 @@ pub const Hero = struct {
             const from = v3(at.x + mathx.cosf(a) * rr, at.y + el * rr, at.z + mathx.sinf(a) * rr);
             const life = rng.range(CAST_MOTE_LIFE_LO, CAST_MOTE_LIFE_HI);
             const v = mathx.addV(mathx.scaleV(mathx.subV(at, from), 1.0 / life), tipV);
-            foemod.emitParticle(&self.fx, &self.fxHead, from, v, life, CAST_MOTE_R0, CAST_MOTE_R1, CHAOS_MOTE, 0);
+            foemod.emitPart(&self.fx, &self.fxHead, .{ .p = from, .v = v, .life = life, .r0 = CAST_MOTE_R0, .r1 = CAST_MOTE_R1, .col = CHAOS_MOTE, .stretch = CHAOS_STRETCH, .add = true });
         }
     }
 
@@ -2278,7 +2369,18 @@ pub const Hero = struct {
             const spread = v3(rng.range(-1, 1), rng.range(-1, 1), rng.range(-1, 1));
             const v = mathx.addV(mathx.scaleV(dir, rng.range(2.6, 7.0)), mathx.scaleV(spread, rng.range(1.0, 3.2)));
             const life = rng.range(0.20, 0.44);
-            foemod.emitParticle(&self.fx, &self.fxHead, at, v, life, rng.range(0.030, 0.058), 0.008, if (rng.float() < 0.4) CHAOS_HOT else CHAOS_MOTE, 2.0);
+            foemod.emitPart(&self.fx, &self.fxHead, .{
+                .p = at,
+                .v = v,
+                .life = life,
+                .r0 = rng.range(0.030, 0.058),
+                .r1 = 0.008,
+                .col = if (rng.float() < 0.4) CHAOS_HOT else CHAOS_MOTE,
+                .col1 = CHAOS_COOL,
+                .grav = 2.0,
+                .stretch = 0.040,
+                .add = true,
+            });
         }
         i = 0;
         while (i < CAST_COLLAR) : (i += 1) {
@@ -2288,9 +2390,20 @@ pub const Hero = struct {
                 mathx.scaleV(side, mathx.cosf(a) * sp),
                 mathx.addV(mathx.scaleV(up, mathx.sinf(a) * sp), mathx.scaleV(dir, rng.range(0.3, 1.4))),
             );
-            foemod.emitParticle(&self.fx, &self.fxHead, at, v, rng.range(0.13, 0.26), rng.range(0.022, 0.040), 0.006, CHAOS_HOT, 1.2);
+            foemod.emitPart(&self.fx, &self.fxHead, .{
+                .p = at,
+                .v = v,
+                .life = rng.range(0.13, 0.26),
+                .r0 = rng.range(0.022, 0.040),
+                .r1 = 0.006,
+                .col = CHAOS_HOT,
+                .col1 = CHAOS_COOL,
+                .grav = 1.2,
+                .stretch = 0.040,
+                .add = true,
+            });
         }
-        foemod.emitParticle(&self.fx, &self.fxHead, at, mathx.scaleV(dir, 1.2), CAST_FLASH_LIFE, CAST_FLASH_R, CAST_FLASH_R * 0.30, CHAOS_HOT, 0);
+        foemod.emitPart(&self.fx, &self.fxHead, .{ .p = at, .v = mathx.scaleV(dir, 1.2), .life = CAST_FLASH_LIFE, .r0 = CAST_FLASH_R, .r1 = CAST_FLASH_R * 0.30, .col = CHAOS_HOT, .add = true });
     }
 
     /// A RESERVED light slot, so a torch he stands beside cannot evict it.
@@ -2322,7 +2435,17 @@ pub const Hero = struct {
             const from = v3(at.x + mathx.cosf(a) * rr, at.y + 0.03, at.z + mathx.sinf(a) * rr);
             const sp = rng.range(1.1, 3.0);
             const v = v3(mathx.cosf(a) * sp, rng.range(2.4, 5.4), mathx.sinf(a) * sp);
-            foemod.emitParticle(&self.fx, &self.fxHead, from, v, rng.range(0.38, 0.78), rng.range(0.045, 0.100), 0.014, ROOT_SOIL, 7.0);
+            foemod.emitPart(&self.fx, &self.fxHead, .{
+                .p = from,
+                .v = v,
+                .life = rng.range(0.38, 0.78),
+                .r0 = rng.range(0.045, 0.100),
+                .r1 = 0.014,
+                .col = ROOT_SOIL,
+                .grav = 7.0,
+                .stretch = 0.030,
+                .bounce = 0.25,
+            });
         }
         var j: u32 = 0;
         while (j < ROOT_MOTES) : (j += 1) {
@@ -2330,7 +2453,17 @@ pub const Hero = struct {
             const rr = rng.range(0.2, combat.ROOT_GRIP_R);
             const from = v3(at.x + mathx.cosf(a) * rr, at.y + rng.range(0.05, 0.6), at.z + mathx.sinf(a) * rr);
             const v = v3(rng.signed() * 0.9, rng.range(0.8, 2.4), rng.signed() * 0.9);
-            foemod.emitParticle(&self.fx, &self.fxHead, from, v, rng.range(0.45, 1.00), rng.range(0.038, 0.072), 0.010, if (rng.float() < 0.4) CHAOS_HOT else CHAOS_MOTE, -0.6);
+            foemod.emitPart(&self.fx, &self.fxHead, .{
+                .p = from,
+                .v = v,
+                .life = rng.range(0.45, 1.00),
+                .r0 = rng.range(0.038, 0.072),
+                .r1 = 0.010,
+                .col = if (rng.float() < 0.4) CHAOS_HOT else CHAOS_MOTE,
+                .col1 = CHAOS_COOL,
+                .grav = -0.6,
+                .add = true,
+            });
         }
     }
 
@@ -2370,7 +2503,19 @@ pub const Hero = struct {
             const sp = rng.range(1.8, 6.4);
             const v = v3(mathx.cosf(a) * sp, el * sp, mathx.sinf(a) * sp);
             const life = rng.range(0.24, 0.56);
-            foemod.emitParticle(&self.fx, &self.fxHead, at, v, life, rng.range(0.040, 0.086), 0.010, if (rng.float() < 0.45) CHAOS_HOT else CHAOS_MOTE, 3.4);
+            foemod.emitPart(&self.fx, &self.fxHead, .{
+                .p = at,
+                .v = v,
+                .life = life,
+                .r0 = rng.range(0.040, 0.086),
+                .r1 = 0.010,
+                .col = if (rng.float() < 0.45) CHAOS_HOT else CHAOS_MOTE,
+                .col1 = CHAOS_COOL,
+                .grav = 3.4,
+                .drag = 1.2,
+                .stretch = 0.040,
+                .add = true,
+            });
         }
     }
 
@@ -2453,7 +2598,18 @@ pub const Hero = struct {
             const a = (@as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(n))) * std.math.tau + rng.range(-0.25, 0.25);
             const sp = rng.range(SUNDER_SPEED_LO, SUNDER_SPEED_HI);
             const v = v3(mathx.cosf(a) * sp, rng.range(0.3, 1.4), mathx.sinf(a) * sp);
-            foemod.emitParticle(&self.fx, &self.fxHead, at, v, rng.range(0.22, 0.46), rng.range(0.030, 0.062), 0.008, if (rng.float() < 0.5) SUNDER_DUST else SUNDER_CHIP, 6.0);
+            const chip = rng.float() < 0.5;
+            foemod.emitPart(&self.fx, &self.fxHead, .{
+                .p = at,
+                .v = v,
+                .life = rng.range(0.22, 0.46),
+                .r0 = rng.range(0.030, 0.062),
+                .r1 = 0.008,
+                .col = if (chip) SUNDER_CHIP else SUNDER_DUST,
+                .grav = 6.0,
+                .stretch = if (chip) 0.030 else 0,
+                .bounce = if (chip) 0.35 else 0,
+            });
         }
     }
 
@@ -2467,7 +2623,17 @@ pub const Hero = struct {
             const from = v3(at.x + mathx.cosf(a) * rr, at.y + rng.range(-SIPHON_SPREAD, SIPHON_SPREAD), at.z + mathx.sinf(a) * rr);
             const life = rng.range(SIPHON_LIFE_LO, SIPHON_LIFE_HI);
             const v = mathx.scaleV(mathx.subV(tip, from), 1.0 / life);
-            foemod.emitParticle(&self.fx, &self.fxHead, from, v, life, rng.range(0.026, 0.048), 0.008, if (rng.float() < 0.45) CHAOS_HOT else CHAOS_MOTE, 0);
+            foemod.emitPart(&self.fx, &self.fxHead, .{
+                .p = from,
+                .v = v,
+                .life = life,
+                .r0 = rng.range(0.026, 0.048),
+                .r1 = 0.008,
+                .col = if (rng.float() < 0.45) CHAOS_HOT else CHAOS_MOTE,
+                .col1 = CHAOS_COOL,
+                .stretch = 0.030,
+                .add = true,
+            });
         }
     }
 
@@ -2855,8 +3021,8 @@ pub const Hero = struct {
         legChain(&wx, &self.rest, ph + 0.5, m, runB, fw, lat, -1.0, HIPR, KNEER, BOOT_SOLE[1]);
 
         const armAmp = mathx.lerpF(ARM_SWING, RUN_ARM_SWING, runB);
-        const armL = -armAmp * mathx.cosf(twoPi * ph) * m * fw;
-        const armR = armAmp * mathx.cosf(twoPi * ph) * m * fw;
+        const armL = -armAmp * armSwing(ph) * m * fw;
+        const armR = armAmp * armSwing(ph) * m * fw;
         armChain(&wx, self.rest, armL, m, runB, sprintB, 1.0, 0.0, SHL, ELL, WRL);
         armChain(&wx, self.rest, armR, m, runB, sprintB, -1.0, 1.0, SHR, ELR, WRR);
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());

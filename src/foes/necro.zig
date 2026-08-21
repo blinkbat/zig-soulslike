@@ -31,6 +31,7 @@ const RIME = mathx.withAlpha(elemfx.sig(.cold).edge, 255);
 const RIME_LT = rgba(206, 234, 246, 255);
 const FROST_MOTE = elemfx.sig(.cold).core;
 const FROST_SHARD = rgba(168, 208, 228, 240);
+const FROST_COOL = elemfx.sig(.cold).cool;
 const RAISE_GLOW = rgba(236, 198, 104, 200);
 
 const DUST = foe.DUST;
@@ -126,11 +127,9 @@ const FROST_R_MIN: f32 = 3.0;
 const FROST_R_MAX: f32 = 18.0;
 
 comptime {
-    // A COMMITTED SPOT HE CAN GET OFF. The ring lands centred on him, so what he has to clear is its whole
-    // radius plus his own footprint; the hero's figures are written out rather than imported because this
-    // file sits below `hero.zig` in the import graph. **MEASURED AT THE SCALE IT IS ACTUALLY DRAWN AT** —
-    // the radius on the field is `FROST_R * scale`, so asserting the bare `FROST_R` would pass on a ring a
-    // third wider than the one tested.
+    // The ring lands centred on him, so he must clear its radius plus his own footprint. **MEASURED AT THE
+    // SCALE IT IS DRAWN AT** — the field radius is `FROST_R * scale`, and asserting the bare `FROST_R` would
+    // pass on a ring a third wider. The hero's figures are inline: this file sits below `hero.zig`.
     std.debug.assert(FROST_FUSE * 1.7 > FROST_R * SCALE + foe.HERO_R);
     std.debug.assert(FROST_WIND >= foe.TELL_MIN);
     std.debug.assert(RAISE_WIND > FROST_WIND + FROST_CAST_DUR);
@@ -144,14 +143,24 @@ comptime {
     std.debug.assert(WANT_MIN > FROST_R * SCALE);
 }
 
-const NPART = 104;
+/// Sized by ARITHMETIC over the worst FRAME, not over the biggest burst — which is what 104 was, and the
+/// two do not meet here: the sigil's fuse runs on its own clock, so the ring going off (60) lands on the
+/// creep it has been laying the whole 2.70 s (22/s at a 1.0 s life) and can share that frame with the blow
+/// that kills the caster (both chip sprays and the wound). At 104 that frame overwrote 34 of its own motes.
+const NPART = 144;
 const RAISE_BLOOM: u32 = 40;
 const FROST_BLOOM: u32 = 30;
-/// The ring going off. NAMED and asserted like the other two, and the biggest of the three: the pool is
-/// sized off IT, since a burst that overwrote its own first shards would thin the frame it is loudest.
 const FROST_SHARDS: u32 = 60;
+const CREEP_RATE: f32 = 22.0;
+const CREEP_LIFE_HI: f32 = 1.00;
+const CHIP_LIGHT: u32 = 11;
+const CHIP_HEAVY: u32 = 18;
+const CHIP_DEATH: u32 = 20;
 comptime {
-    std.debug.assert(RAISE_BLOOM < NPART and FROST_BLOOM < NPART and FROST_SHARDS < NPART);
+    std.debug.assert(@as(f32, NPART) >= CREEP_RATE * CREEP_LIFE_HI + @as(f32, @floatFromInt(FROST_SHARDS +
+        @as(u32, @intCast(foe.hitParts(CHIP_HEAVY) + foe.hitParts(CHIP_DEATH))) + foe.WOUND_PARTS)));
+    // The raise's bloom is the other one-shot that can be up under all that, and it is smaller than the blow.
+    std.debug.assert(RAISE_BLOOM <= foe.hitParts(CHIP_HEAVY) + foe.hitParts(CHIP_DEATH) and FROST_BLOOM < NPART);
 }
 
 const HEM_DRAG = 15.0;
@@ -638,11 +647,11 @@ pub const Necro = struct {
         if (self.state == .dead) return;
         const s = foe.reached(self, blade) orelse return;
         const heavyBlow = foe.wounded(self, s, blade, .{ .light = 1.5, .heavy = 2.3 });
-        self.chips(s.contact, s.dir, if (heavyBlow) 18 else 11, if (heavyBlow) 3.2 else 2.2);
+        self.chips(s.contact, s.dir, if (heavyBlow) CHIP_HEAVY else CHIP_LIGHT, if (heavyBlow) 3.2 else 2.2);
         sfx.world(.bone_hurt, self.pos);
         switch (s.reaction) {
             .death => {
-                self.chips(s.contact, s.dir, 20, 2.8);
+                self.chips(s.contact, s.dir, CHIP_DEATH, 2.8);
                 sfx.world(.bone_die, self.pos);
                 self.enterDeath();
             },
@@ -850,7 +859,7 @@ pub const Necro = struct {
         if (dead) heromod.deadLegs(wx, rest, dk);
 
         const armStun = -66.0 * stun;
-        const swing = 11.0 * mathx.sinf(twoPi * self.phase) * m * @abs(self.fwdB);
+        const swing = -11.0 * heromod.armSwing(self.phase) * m * @abs(self.fwdB);
         const fwdHalf = mathx.maxF(0, mathx.sinf(twoPi * self.phase));
         const castSh = self.castSh + swing + armStun - 30.0 * dk + 2.0 * swyLag;
         setLocal(wx, SHL, rest, mul3(rx(-castSh), ry(0), rz(self.castAbd + wonk * 0.4)));
@@ -971,20 +980,26 @@ pub const Necro = struct {
         };
     }
 
-    fn emit(self: *Necro, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
-        foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
-    }
 
     fn gather(self: *Necro, dt: f32, u: f32) void {
         const emitRate = (10.0 + 26.0 * u);
         const at = self.castPoint();
-        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.35, 1.0) * 0.55 * self.scale;
             const p = v3(at.x + mathx.cosf(a) * rr, at.y + self.fxRng.range(-0.2, 0.5) * self.scale, at.z + mathx.sinf(a) * rr);
             const life = self.fxRng.range(0.20, 0.34);
-            self.emit(p, mathx.scaleV(mathx.subV(at, p), 1.0 / life), life, self.fxRng.range(0.020, 0.042) * self.scale, 0.004, RAISE_GLOW, 0);
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = p,
+                .v = mathx.scaleV(mathx.subV(at, p), 1.0 / life),
+                .life = life,
+                .r0 = self.fxRng.range(0.020, 0.042) * self.scale,
+                .r1 = 0.004,
+                .col = RAISE_GLOW,
+                .stretch = 0.030,
+                .add = true,
+            });
         }
     }
 
@@ -994,15 +1009,17 @@ pub const Necro = struct {
         while (i < n) : (i += 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.2, 1.0) * 1.15;
-            self.emit(
-                v3(at.x + mathx.cosf(a) * rr, at.y + self.fxRng.range(1.0, 2.2), at.z + mathx.sinf(a) * rr),
-                v3(mathx.cosf(a) * -0.5, -self.fxRng.range(1.6, 3.2), mathx.sinf(a) * -0.5),
-                self.fxRng.range(0.42, 0.78),
-                self.fxRng.range(0.05, 0.10),
-                0.006,
-                RAISE_GLOW,
-                -1.4,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(at.x + mathx.cosf(a) * rr, at.y + self.fxRng.range(1.0, 2.2), at.z + mathx.sinf(a) * rr),
+                .v = v3(mathx.cosf(a) * -0.5, -self.fxRng.range(1.6, 3.2), mathx.sinf(a) * -0.5),
+                .life = self.fxRng.range(0.42, 0.78),
+                .r0 = self.fxRng.range(0.05, 0.10),
+                .r1 = 0.006,
+                .col = RAISE_GLOW,
+                .grav = -1.4,
+                .stretch = 0.030,
+                .add = true,
+            });
         }
         foe.floorBurst(&self.parts, from, self.fxHead, at.y);
     }
@@ -1015,35 +1032,40 @@ pub const Necro = struct {
         while (i < n) : (i += 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.1, 1.0) * r;
-            self.emit(
-                v3(at.x + mathx.cosf(a) * rr, at.y + 0.05, at.z + mathx.sinf(a) * rr),
-                v3(mathx.cosf(a) * 0.7, self.fxRng.range(0.3, 0.9), mathx.sinf(a) * 0.7),
-                self.fxRng.range(0.30, 0.60),
-                self.fxRng.range(0.03, 0.06) * self.scale,
-                0.008,
-                FROST_MOTE,
-                1.4,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(at.x + mathx.cosf(a) * rr, at.y + 0.05, at.z + mathx.sinf(a) * rr),
+                .v = v3(mathx.cosf(a) * 0.7, self.fxRng.range(0.3, 0.9), mathx.sinf(a) * 0.7),
+                .life = self.fxRng.range(0.30, 0.60),
+                .r0 = self.fxRng.range(0.03, 0.06) * self.scale,
+                .r1 = 0.008,
+                .col = FROST_MOTE,
+                .col1 = FROST_COOL,
+                .grav = 1.4,
+                .stretch = 0.020,
+                .add = true,
+            });
         }
         foe.floorBurst(&self.parts, from, self.fxHead, at.y);
     }
 
     fn creep(self: *Necro, dt: f32) void {
-        const emitRate = 22.0;
-        var owed = foe.emitTicks(&self.sigAccum, dt, emitRate, foe.emitCap(emitRate));
+        const emitRate = CREEP_RATE;
+        var owed = foe.emitDue(&self.sigAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.80, 1.04) * FROST_R * self.scale;
             const from = self.fxHead;
-            self.emit(
-                v3(self.sigil.at.x + mathx.cosf(a) * rr, self.sigil.at.y + 0.04, self.sigil.at.z + mathx.sinf(a) * rr),
-                v3(0, self.fxRng.range(0.55, 1.30), 0),
-                self.fxRng.range(0.55, 1.00),
-                self.fxRng.range(0.028, 0.055) * self.scale,
-                0.010,
-                FROST_MOTE,
-                0.5,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(self.sigil.at.x + mathx.cosf(a) * rr, self.sigil.at.y + 0.04, self.sigil.at.z + mathx.sinf(a) * rr),
+                .v = v3(0, self.fxRng.range(0.55, 1.30), 0),
+                .life = self.fxRng.range(0.55, CREEP_LIFE_HI),
+                .r0 = self.fxRng.range(0.028, 0.055) * self.scale,
+                .r1 = 0.010,
+                .col = FROST_MOTE,
+                .col1 = FROST_COOL,
+                .grav = 0.5,
+                .add = true,
+            });
             foe.floorBurst(&self.parts, from, self.fxHead, self.sigil.at.y);
         }
     }
@@ -1060,15 +1082,20 @@ pub const Necro = struct {
             const rr = if (wall) self.fxRng.range(0.86, 1.06) * r else self.fxRng.range(0.0, 0.85) * r;
             const s = self.fxRng.range(0.7, 1.0) * 6.2;
             const out: f32 = if (wall) 0.30 else 0.62;
-            self.emit(
-                v3(at.x + mathx.cosf(a) * rr, at.y + MARK_LIFT, at.z + mathx.sinf(a) * rr),
-                v3(mathx.cosf(a) * s * out, self.fxRng.range(4.2, 8.4), mathx.sinf(a) * s * out),
-                self.fxRng.range(0.46, 0.82),
-                self.fxRng.range(0.07, 0.15) * self.scale,
-                0.016,
-                FROST_SHARD,
-                5.4,
-            );
+            // Ice erupting is SLIVERS, not snowballs — the stretch is what makes the wall read as shards.
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(at.x + mathx.cosf(a) * rr, at.y + MARK_LIFT, at.z + mathx.sinf(a) * rr),
+                .v = v3(mathx.cosf(a) * s * out, self.fxRng.range(4.2, 8.4), mathx.sinf(a) * s * out),
+                .life = self.fxRng.range(0.46, 0.82),
+                .r0 = self.fxRng.range(0.07, 0.15) * self.scale,
+                .r1 = 0.016,
+                .col = FROST_SHARD,
+                .col1 = FROST_COOL,
+                .grav = 5.4,
+                .stretch = 0.040,
+                .bounce = 0.30,
+                .add = true,
+            });
         }
         foe.floorBurst(&self.parts, from, self.fxHead, at.y);
     }
@@ -1079,15 +1106,17 @@ pub const Necro = struct {
         while (i < parts) : (i += 1) {
             const a = self.fxRng.angle();
             const s = self.fxRng.range(0.4, 1.0) * spd;
-            self.emit(
-                v3(at.x + self.fxRng.signed() * 0.06, at.y + self.fxRng.signed() * 0.06, at.z + self.fxRng.signed() * 0.06),
-                v3(dir.x * s + mathx.cosf(a) * s * 0.5, self.fxRng.range(0.9, 3.0), dir.z * s + mathx.sinf(a) * s * 0.5),
-                self.fxRng.range(0.28, 0.55),
-                self.fxRng.range(0.02, 0.05) * self.scale,
-                0.008,
-                CHIP,
-                6.4,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(at.x + self.fxRng.signed() * 0.06, at.y + self.fxRng.signed() * 0.06, at.z + self.fxRng.signed() * 0.06),
+                .v = v3(dir.x * s + mathx.cosf(a) * s * 0.5, self.fxRng.range(0.9, 3.0), dir.z * s + mathx.sinf(a) * s * 0.5),
+                .life = self.fxRng.range(0.28, 0.55),
+                .r0 = self.fxRng.range(0.02, 0.05) * self.scale,
+                .r1 = 0.008,
+                .col = CHIP,
+                .grav = 6.4,
+                .stretch = 0.030,
+                .bounce = 0.42,
+            });
         }
     }
 
@@ -1103,15 +1132,18 @@ pub const Necro = struct {
         var i: u32 = 0;
         while (i < 4) : (i += 1) {
             const a = self.fxRng.angle();
-            self.emit(
-                v3(self.pos.x + self.fxRng.signed() * 0.26 * self.scale, self.pos.y + 0.03, self.pos.z + self.fxRng.signed() * 0.26 * self.scale),
-                v3(-f.x * 0.5 + mathx.cosf(a) * 0.35, self.fxRng.range(0.15, 0.5), -f.z * 0.5 + mathx.sinf(a) * 0.35),
-                self.fxRng.range(0.30, 0.55),
-                self.fxRng.range(0.05, 0.10) * self.scale,
-                0.22 * self.scale,
-                DUST,
-                2.2,
-            );
+            const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.30, 0.55);
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(self.pos.x + self.fxRng.signed() * 0.26 * self.scale, self.pos.y + 0.03, self.pos.z + self.fxRng.signed() * 0.26 * self.scale),
+                .v = v3((-f.x * 0.5 + mathx.cosf(a) * 0.35) * B.boost, self.fxRng.range(0.15, 0.5) * B.boost, (-f.z * 0.5 + mathx.sinf(a) * 0.35) * B.boost),
+                .life = B.life(&self.fxRng),
+                .r0 = self.fxRng.range(0.05, 0.10) * self.scale,
+                .r1 = 0.22 * self.scale,
+                .col = DUST,
+                .col1 = foe.DUST_THIN,
+                .grav = foe.DUST_GRAV,
+                .drag = foe.DUST_DRAG,
+            });
         }
     }
 };
@@ -1122,14 +1154,11 @@ fn approach(cur: f32, want: f32, e: f32) f32 {
 
 // **BUILT OUT OF `drawSphereEx` AND NOTHING ELSE.** Do not replace it with line or strip geometry:
 // `rl.drawLine3D` is one pixel however close you stand, and a `drawTriangleStrip3D` annulus came back
-// INVISIBLE beside particles landing on the same spot on the same frame.
+// INVISIBLE beside particles on the same spot. **THE FUSE BURNS ROUND THE RING RATHER THAN FILLING IT** —
+// runes lighting one by one are a countdown you can COUNT from any bearing.
 //
-// **THE FUSE BURNS ROUND THE RING RATHER THAN FILLING IT** — runes lighting one by one are a countdown you
-// can COUNT from any bearing, where a disc closing from the middle has to be looked down at.
-//
-// **MEASURED:** one live sigil is 157 `drawSphereEx` calls at 4x6, ~7.5k CPU-transformed triangles a frame,
-// and it draws its full count every frame a fuse burns — three casters pay ~23k. It early-outs to nothing
-// when no sigil is live.
+// **MEASURED:** 157 `drawSphereEx` calls at 4x6, ~7.5k CPU-transformed triangles a frame per live sigil,
+// ~23k for three casters. Early-outs to nothing when none is live.
 const RUNE_N: i32 = 14;
 const RUNE_R: f32 = 0.89;
 const RING_INNER: f32 = 0.78;

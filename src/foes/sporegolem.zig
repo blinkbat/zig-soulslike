@@ -20,45 +20,20 @@ const mul = mathx.mul;
 const mul3 = mathx.mul3;
 const lerpF = mathx.lerpF;
 
-// ── THE SPORE HOMUNCULUS ────────────────────────────────────────────────────────────────────────────────
-//
-// **THE SPORELING'S BRUTISH COUSIN** (owner's brief, owner's word). Same kingdom, same palette, same two-part
-// silhouette of a cap over a body — and four times the mass, which is the whole joke: you have spent the
-// game stepping over knee-high mushrooms and this one is looking down at you.
-//
-// **IT IS ANSWERED WITH FIRE, NOT WITH A SWORD.** `ARMOUR` is the point of the creature. A homunculus packed
-// out of wet mycelium does not care about an edge — `combat.armourTaken` turns aside a good half of a middling
-// swing and a third of a big one, so trading with it costs a bar you do not have. Its resistances say the
-// same thing from the other side: fire and lightning go straight through, cold and chaos do nothing at all.
-// A player who reaches for the same answer he used on everything else loses; a player who reads the creature
-// burns it down in a third of the swings.
+// **THE SPORELING'S BRUTISH COUSIN, ANSWERED WITH FIRE AND NOT WITH A SWORD** (owner's brief). `ARMOUR` is
+// the point of it: fire and lightning skip it entirely, cold and chaos do nothing.
 //
 // **BUT STEEL HAS TO REGISTER** (owner: seems impossible to hit with melee, should do a little dmg, just
-// highly reduced). At 220 it did not: a light swing landed 3.0 of a 210 bar — 71 swings, and 21 heavies
-// against the OGRE's 11 for half again the health and no armour at all. That is not a bad answer, it is no
-// answer, and a bar that does not visibly move reads as a creature you cannot hurt rather than one you are
-// hurting wrong. At 80 a light lands 5.8 and a heavy 17.0, so it is an ogre-length fight with a sword and
-// still a third of the speed of the right tool. The MARGIN is the design; the wall was a bug.
-//
-// **AND IT IS VERY SLOW, WHICH IS WHAT MAKES ANY OF THAT FAIR.** Two-fifths of a walk. You can leave whenever
-// you like. What you cannot do is stand in front of it, because both of its moves are designed to punish
-// exactly that:
-//
-//   SMASH — the whole cap comes down on the spot in front of it. Long tell, enormous damage, and it leaves
-//           a spore burst on the ground where it lands.
-//   SLAM  — it throws its whole body forward through the air. The bone knight's fall, turned FORWARD and
-//           told in half the time (owner: "similar to bone knight's fall but forward and quicker tell"),
-//           which is the move that catches you for backing straight off from the smash.
-//
-// The two cover each other: the smash owns the ground at its feet, the slam owns the ground you retreat to.
+// highly reduced). At 220 a light landed 3.0 of a 210 bar — 71 swings, and 21 heavies against the OGRE's 11.
+// At 80 a light lands 5.8 and a heavy 17.0: an ogre-length fight with a sword, still a third of the speed of
+// the right tool.
 
 pub const H: f32 = 3.15;
 pub const SCALE: f32 = 1.0;
 
 pub const AGGRO_R: f32 = 15.0;
 const TURN_RATE: f32 = 1.5;
-/// **VERY SLOW** (owner). Two-fifths of a walk: it cannot catch anybody and is not supposed to. Everything
-/// else about the creature is priced against a player being free to leave at any moment.
+/// **VERY SLOW** (owner). Two-fifths of a walk — everything else is priced against a player free to leave.
 const WALK_SPEED: f32 = 1.05;
 
 const BODY_R: f32 = 0.86;
@@ -66,9 +41,8 @@ const HURT_R: f32 = 1.30;
 const CENTER_F: f32 = 0.52;
 const TOP_F: f32 = 0.98;
 
-/// **THE NUMBER THAT DEFINES IT.** `combat.armourTaken` is `A/(A + 5*dmg)` turned aside — at 220 a 27-damage
-/// heavy loses 62% of its bite and a 13-damage light loses 77%. Fire and lightning skip it entirely, because
-/// armour is physical only, which is the whole lesson the creature exists to teach.
+/// `combat.armourTaken` turns aside `A/(A + 5*dmg)` — at 220 a 27-damage heavy lost 62% and a 13-damage
+/// light 77%. Armour is PHYSICAL ONLY, so fire and lightning skip it.
 const ARMOUR: f32 = 80.0;
 const HP_MAX: f32 = 210.0;
 const POISE_MAX: f32 = 46.0;
@@ -90,10 +64,9 @@ const MOTE = rgba(206, 112, 158, 105);
 const CORE = rgba(236, 172, 200, 70);
 const DISSOLVE = foe.Dissolve{ .rate = 54.0, .spread = 1.25, .rise = 0.70, .flake = MOTE };
 
-// ── THE TWO MOVES ───────────────────────────────────────────────────────────────────────────────────────
 
-/// **A LONG TELL FOR AN ENORMOUS BLOW.** Nearly a second of the cap going up, which is the deal: this hits
-/// harder than anything else in the game that is not a boss, and you are told about it for a long time.
+/// **A LONG TELL FOR AN ENORMOUS BLOW** — nearly a second of the cap going up. Hits harder than anything in
+/// the game that is not a boss.
 pub const SMASH_WIND: f32 = 0.92;
 const SMASH_FALL: f32 = 0.16;
 const SMASH_RECOVER: f32 = 0.86;
@@ -101,9 +74,8 @@ const SMASH_CD: f32 = 2.6;
 pub const SMASH_R: f32 = 2.35;
 pub const SMASH_HIT = combat.Hit{ .dmg = 46, .poise = 40, .stance = 22 };
 
-/// **AND THE SLAM IS TOLD IN HALF THE TIME** (owner: "quicker tell"). Half the smash's wind-up, because the
-/// smash is what you dodge by backing off and this is the answer to backing off — a tell as long as the
-/// smash's would simply be a second smash you could also walk out of.
+/// **TOLD IN HALF THE TIME** (owner: "quicker tell") — this is the answer to backing off the smash, so at
+/// the smash's own wind-up it would be a second smash you could also walk out of.
 pub const SLAM_WIND: f32 = 0.44;
 const SLAM_AIR: f32 = 0.46;
 const SLAM_RECOVER: f32 = 1.05;
@@ -114,34 +86,28 @@ const SLAM_UP: f32 = 1.30;
 pub const SLAM_R: f32 = 2.05;
 pub const SLAM_HIT = combat.Hit{ .dmg = 38, .poise = 44, .stance = 26 };
 
-/// Where each move can be started from. They do NOT overlap: inside `SMASH_R` it smashes, and the slam is
-/// for the band beyond that — two moves that both answer the same distance is one move with a coin flip.
+/// They do NOT overlap: inside `SMASH_R` it smashes, the slam owns the band beyond. Two moves answering one
+/// distance is one move with a coin flip.
 const SMASH_AT: f32 = 3.10;
 const SLAM_MIN: f32 = 3.40;
 const SLAM_MAX: f32 = 7.20;
 
 comptime {
-    // The tells are readable and the quick one is genuinely the quick one.
     std.debug.assert(SMASH_WIND >= foe.TELL_MIN);
     std.debug.assert(SLAM_WIND >= foe.TELL_MIN);
     std.debug.assert(SLAM_WIND < SMASH_WIND * 0.6);
-    // Neither move can be started from where the other one is the answer.
     std.debug.assert(SMASH_AT < SLAM_MIN);
     std.debug.assert(SLAM_MIN < SLAM_MAX);
     // A slam that cannot cross its own opening band is a move that never reaches anybody.
     std.debug.assert(SLAM_REACH + SLAM_R > SLAM_MIN);
     // …and it may not be a teleport: it has to fall short of the far end of the band it opens from.
     std.debug.assert(SLAM_REACH < SLAM_MAX);
-    // It hits harder than it is quick, in both directions.
     std.debug.assert(SMASH_HIT.dmg > SLAM_HIT.dmg);
     std.debug.assert(SLAM_HIT.poise > SMASH_HIT.poise);
 }
 
-// ── THE RIG ─────────────────────────────────────────────────────────────────────────────────────────────
-//
-// Six bones, the sporeling's own layout with an arm on each side — a cap, a trunk, two stumpy legs and the
-// two slabs it walks on its knuckles with. It has no neck: the cap sits ON the body, which is what makes the
-// smash read as the whole creature falling forward rather than as a head being nodded.
+// Six bones, the sporeling's layout with an arm each side. NO NECK — the cap sits ON the body, which is what
+// makes the smash read as the whole creature falling forward rather than a head being nodded.
 
 const PARTS = 40;
 
@@ -154,10 +120,8 @@ const LEGL = 4;
 const LEGR = 5;
 
 const CAP_Y: f32 = 0.70 * H;
-/// **WIDER THAN THE BODY, NOT WIDER THAN THE CREATURE IS TALL.** First cut sat at 0.62 of H, which on a
-/// 3.15 m creature is a 3.9 m brim — it photographed as a pink pancake lying in the field with legs under
-/// it. The shroommage's own ceiling applies (`shroommage.RIM`): the cap has to be the widest thing on the
-/// animal and it may not be the ONLY thing on it.
+/// **WIDER THAN THE BODY, NOT WIDER THAN THE CREATURE IS TALL** — 0.62 of H on a 3.15 m creature is a 3.9 m
+/// brim, which photographed as a pink pancake with legs under it (`shroommage.RIM`'s ceiling).
 const CAP_R: f32 = 0.33 * H;
 const ARM_Y: f32 = 0.52 * H;
 /// Hugging the trunk, not hung off it — at 0.27 the two slabs read as separate blocks standing beside
@@ -524,7 +488,6 @@ pub const Golem = struct {
     }
 };
 
-// ── THE MESHES ──────────────────────────────────────────────────────────────────────────────────────────
 
 fn buildBone(b: *Builder, i: usize) void {
     var rng = mathx.Rng.init(0x60_1E33 + @as(u64, @intCast(i)));

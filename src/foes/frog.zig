@@ -92,18 +92,41 @@ const SHOVE_DECAY = 7.0;
 const DISS_DUR = 0.95;
 const DISSOLVE = foe.Dissolve{ .rate = 44.0, .spread = 0.55, .rise = 0.35 };
 
-const FX_MAX = 40;
+/// Sized by ARITHMETIC over the worst frame (the ring law): a KILLING HEAVY BLOW landing on the frame a
+/// lunge impacts. The lunge lays 32 dust; `tryHit` then fires the heavy spray (`hitParts(18)` = 27), the
+/// death spray on top of it (`hitParts(14)` = 21) and `foe.wounded`'s 3. That is 83, and a ring that
+/// overwrites its oldest does it SILENTLY.
+const FX_MAX = 84;
 const DUST = foe.DUST;
 const EMBER = rgba(252, 196, 84, 150);
+/// An ember is LIGHT, so it is drawn additive and it COOLS — amber down through this as it rises and dies.
+const EMBER_COOL = rgba(214, 92, 26, 90);
 const SPIT = rgba(176, 190, 150, 140);
+const SPIT_DRY = rgba(120, 138, 104, 110);
 const BLOOD = rgba(112, 22, 16, 235);
+/// **THE FAN IS WHAT OPENS A WOUND, NOT THE THROW.** At 0.8 m/s of fan against 2.6 of throw every drop went
+/// the same way and five frames on it was still one blob (`shots/29b`); the parry's shower reads because its
+/// tangential spread is the BIGGER number. Drag pays for the speed — 3.6/s, so it is a burst that dies down
+/// inside a body-length instead of a jet crossing the clearing.
 const BLOOD_SPRAY = foe.Spray{
-    .fanLo = 0.15, .fanHi = 0.8,
-    .upLo = 0.7,   .upHi = 2.4,
-    .lifeLo = 0.28, .lifeHi = 0.5,
+    .fanLo = 0.6,  .fanHi = 3.8,
+    .upLo = 0.8,   .upHi = 3.6,
+    .lifeLo = 0.45, .lifeHi = 0.85,
     .rLo = 0.028,  .rHi = 0.055,
-    .r1 = 0.008,   .col = BLOOD, .grav = 7.5,
+    .r1 = 0.008,   .col = BLOOD, .grav = foe.BLOOD_GRAV,
+    .col1 = rgba(52, 9, 7, 225), .stretch = foe.BLOOD_STRETCH, .splat = 3.0, .drag = foe.BLOOD_DRAG,
 };
+const BLOOD_LIGHT = 9;
+const BLOOD_HEAVY = 18;
+const BLOOD_DEATH = 14;
+const BLOOD_SPD_LIGHT = 4.6;
+const BLOOD_SPD_HEAVY = 6.4;
+const BLOOD_SPD_DEATH = 5.4;
+comptime {
+    // THE RING LAW, EXECUTABLE: the lunge's 32 dust with a killing heavy blow's two sprays and the shared
+    // wound on top. A count raised without the pool is a burst that silently eats its own oldest.
+    std.debug.assert(FX_MAX >= 32 + foe.hitParts(BLOOD_HEAVY) + foe.hitParts(BLOOD_DEATH) + foe.WOUND_PARTS);
+}
 
 const HP_MAX = 46.0;
 const POISE_MAX = 8.0;
@@ -207,6 +230,9 @@ pub const Frog = struct {
     fxHead: usize = 0,
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
+    /// Carried ONLY so its blood knows whether the ground under it is dry (`foe.onDryGround`) — a toad in
+    /// the shallows moves and fights exactly as one on the bank.
+    wade: foe.Wade = .{},
 
     xf: [NP]rl.Matrix = undefined,
 
@@ -632,11 +658,11 @@ pub const Frog = struct {
         if (self.state == .dead) return;
         const s = foe.reached(self, blade) orelse return;
         const heavyBlow = foe.wounded(self, s, blade, .{ .light = 1.25, .heavy = 1.9 });
-        self.bloodBurst(s.contact, s.dir, if (heavyBlow) 14 else 9, if (heavyBlow) 2.6 else 1.9);
+        self.bloodBurst(s.contact, s.dir, if (heavyBlow) BLOOD_HEAVY else BLOOD_LIGHT, if (heavyBlow) BLOOD_SPD_HEAVY else BLOOD_SPD_LIGHT);
         sfx.world(.toad_hurt, self.pos);
         switch (s.reaction) {
             .death => {
-                self.bloodBurst(s.contact, s.dir, 10, 2.2);
+                self.bloodBurst(s.contact, s.dir, BLOOD_DEATH, BLOOD_SPD_DEATH);
                 sfx.world(.toad_die, self.pos);
                 self.enterDeath();
             },
@@ -655,31 +681,39 @@ pub const Frog = struct {
         while (i < n) : (i += 1) {
             const a = self.fxRng.angle();
             const r = self.fxRng.range(0.05, 0.42) * self.scale;
-            self.emit(
-                v3(c.x + mathx.cosf(a) * r, c.y + self.fxRng.signed() * 0.30 * self.scale, c.z + mathx.sinf(a) * r),
-                v3(back.x * self.fxRng.range(0.5, 2.2), self.fxRng.range(-0.1, 0.7), back.z * self.fxRng.range(0.5, 2.2)),
-                self.fxRng.range(0.26, 0.58),
-                self.fxRng.range(0.030, 0.075) * self.scale,
-                0.004,
-                EMBER,
-                -0.55,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(c.x + mathx.cosf(a) * r, c.y + self.fxRng.signed() * 0.30 * self.scale, c.z + mathx.sinf(a) * r),
+                .v = v3(back.x * self.fxRng.range(0.5, 2.2), self.fxRng.range(-0.1, 0.7), back.z * self.fxRng.range(0.5, 2.2)),
+                .life = self.fxRng.range(0.26, 0.58),
+                .r0 = self.fxRng.range(0.030, 0.075) * self.scale,
+                .r1 = 0.004,
+                .col = EMBER,
+                .col1 = EMBER_COOL,
+                .grav = -0.55,
+                .stretch = 0.030,
+                .add = true,
+            });
         }
         if (self.fxRng.float() < dt * 44.0 * heavy) {
-            self.emit(
-                v3(self.pos.x + self.fxRng.signed() * 0.3 * self.scale, self.pos.y + 0.05, self.pos.z + self.fxRng.signed() * 0.3 * self.scale),
-                v3(back.x * self.fxRng.range(1.0, 2.6), self.fxRng.range(0.5, 1.6), back.z * self.fxRng.range(1.0, 2.6)),
-                self.fxRng.range(0.3, 0.62),
-                self.fxRng.range(0.05, 0.12) * self.scale,
-                0.01,
-                foe.DUST,
-                2.6,
-            );
+            const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.3, 0.62);
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(self.pos.x + self.fxRng.signed() * 0.3 * self.scale, self.pos.y + 0.05, self.pos.z + self.fxRng.signed() * 0.3 * self.scale),
+                .v = v3(back.x * self.fxRng.range(1.0, 2.6) * B.boost, self.fxRng.range(0.5, 1.6) * B.boost, back.z * self.fxRng.range(1.0, 2.6) * B.boost),
+                .life = B.life(&self.fxRng),
+                .r0 = self.fxRng.range(0.05, 0.12) * self.scale,
+                .r1 = 0.01,
+                .col = foe.DUST,
+                .col1 = foe.DUST_THIN,
+                .grav = foe.DUST_GRAV,
+                .drag = foe.DUST_DRAG,
+            });
         }
     }
 
     fn bloodBurst(self: *Frog, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, BLOOD_SPRAY);
+        var s = BLOOD_SPRAY;
+        if (!foe.onDryGround(self)) s.splat = 0;
+        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, s);
     }
 
     fn fdir(self: *const Frog) rl.Vector3 {
@@ -693,44 +727,90 @@ pub const Frog = struct {
         const d = self.fdir();
         return v3(self.pos.x + d.x * 0.52 * self.scale, self.pos.y + 0.32 * self.scale + self.lift, self.pos.z + d.z * 0.52 * self.scale);
     }
-    fn emit(self: *Frog, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
-        foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
-    }
     fn updateFx(self: *Frog, dt: f32) void {
         foe.tickParticles(&self.parts, dt, self.pos.y);
     }
     fn dustBurst(self: *Frog, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
+        const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.35, 0.62);
         var i: i32 = 0;
         while (i < n) : (i += 1) {
             const a = self.fxRng.angle();
-            const s = self.fxRng.range(0.5, 1.0) * spd * self.scale;
-            const vel = v3(mathx.cosf(a) * s, self.fxRng.range(0.6, 2.2), mathx.sinf(a) * s);
-            self.emit(v3(c.x, self.pos.y + 0.05, c.z), vel, self.fxRng.range(0.35, 0.62), self.fxRng.range(0.06, 0.12) * self.scale, big * self.fxRng.range(0.8, 1.3) * self.scale, DUST, 4.5);
+            const s = self.fxRng.range(0.5, 1.0) * spd * self.scale * B.boost;
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(c.x, self.pos.y + 0.05, c.z),
+                .v = v3(mathx.cosf(a) * s, self.fxRng.range(0.6, 2.2) * B.boost, mathx.sinf(a) * s),
+                .life = B.life(&self.fxRng),
+                .r0 = self.fxRng.range(0.06, 0.12) * self.scale,
+                .r1 = big * self.fxRng.range(0.8, 1.3) * self.scale,
+                .col = DUST,
+                .col1 = foe.DUST_THIN,
+                .grav = foe.DUST_GRAV,
+                .drag = foe.DUST_DRAG,
+            });
         }
     }
     fn emitCoil(self: *Frog, dt: f32, k: f32) void {
         const emitRate = (12.0 + 40.0 * k);
-        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.18, 0.5) * self.scale;
             const bp = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + 0.04, self.pos.z + mathx.sinf(a) * rr);
-            self.emit(bp, v3(self.fxRng.signed() * 0.4, self.fxRng.range(0.5, 1.5), self.fxRng.signed() * 0.4), self.fxRng.range(0.3, 0.5), self.fxRng.range(0.05, 0.10) * self.scale, self.fxRng.range(0.14, 0.24) * self.scale, DUST, 3.0);
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = bp,
+                .v = v3(self.fxRng.signed() * 0.4, self.fxRng.range(0.5, 1.5), self.fxRng.signed() * 0.4),
+                .life = self.fxRng.range(0.3, 0.5),
+                .r0 = self.fxRng.range(0.05, 0.10) * self.scale,
+                .r1 = self.fxRng.range(0.14, 0.24) * self.scale,
+                .col = DUST,
+                .col1 = foe.DUST_THIN,
+                .grav = foe.DUST_GRAV,
+                .drag = foe.DUST_DRAG,
+            });
             if (self.fxRng.float() < 0.6) {
                 const m = self.mouthWorld();
-                self.emit(v3(m.x + self.fxRng.signed() * 0.22, m.y + self.fxRng.range(-0.08, 0.24), m.z + self.fxRng.signed() * 0.22), v3(self.fxRng.signed() * 0.22, self.fxRng.range(0.35, 0.95), self.fxRng.signed() * 0.22), self.fxRng.range(0.3, 0.55) + 0.4 * k, self.fxRng.range(0.03, 0.06) * self.scale, 0.004, EMBER, -0.6);
+                foe.emitPart(&self.parts, &self.fxHead, .{
+                    .p = v3(m.x + self.fxRng.signed() * 0.22, m.y + self.fxRng.range(-0.08, 0.24), m.z + self.fxRng.signed() * 0.22),
+                    .v = v3(self.fxRng.signed() * 0.22, self.fxRng.range(0.35, 0.95), self.fxRng.signed() * 0.22),
+                    .life = self.fxRng.range(0.3, 0.55) + 0.4 * k,
+                    .r0 = self.fxRng.range(0.03, 0.06) * self.scale,
+                    .r1 = 0.004,
+                    .col = EMBER,
+                    .col1 = EMBER_COOL,
+                    .grav = -0.6,
+                    .add = true,
+                });
             }
         }
     }
     fn emitGape(self: *Frog, dt: f32, k: f32) void {
         const emitRate = (10.0 + 30.0 * k);
-        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const m = self.mouthWorld();
-            self.emit(v3(m.x + self.fxRng.signed() * 0.22, m.y + self.fxRng.range(-0.05, 0.22), m.z + self.fxRng.signed() * 0.22), v3(self.fxRng.signed() * 0.2, self.fxRng.range(0.3, 0.8), self.fxRng.signed() * 0.2), self.fxRng.range(0.3, 0.55), self.fxRng.range(0.03, 0.06) * self.scale, 0.004, EMBER, -0.5);
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(m.x + self.fxRng.signed() * 0.22, m.y + self.fxRng.range(-0.05, 0.22), m.z + self.fxRng.signed() * 0.22),
+                .v = v3(self.fxRng.signed() * 0.2, self.fxRng.range(0.3, 0.8), self.fxRng.signed() * 0.2),
+                .life = self.fxRng.range(0.3, 0.55),
+                .r0 = self.fxRng.range(0.03, 0.06) * self.scale,
+                .r1 = 0.004,
+                .col = EMBER,
+                .col1 = EMBER_COOL,
+                .grav = -0.5,
+                .add = true,
+            });
             if (self.fxRng.float() < 0.5) {
                 const d = self.fdir();
-                self.emit(v3(m.x, m.y - 0.06, m.z), v3(d.x * 0.5 + self.fxRng.signed() * 0.2, -0.2, d.z * 0.5 + self.fxRng.signed() * 0.2), self.fxRng.range(0.35, 0.6), self.fxRng.range(0.03, 0.05) * self.scale, 0.015 * self.scale, SPIT, 5.0);
+                foe.emitPart(&self.parts, &self.fxHead, .{
+                    .p = v3(m.x, m.y - 0.06, m.z),
+                    .v = v3(d.x * 0.5 + self.fxRng.signed() * 0.2, -0.2, d.z * 0.5 + self.fxRng.signed() * 0.2),
+                    .life = self.fxRng.range(0.35, 0.6),
+                    .r0 = self.fxRng.range(0.03, 0.05) * self.scale,
+                    .r1 = 0.015 * self.scale,
+                    .col = SPIT,
+                    .col1 = SPIT_DRY,
+                    .grav = 5.0,
+                });
             }
         }
     }
@@ -741,7 +821,17 @@ pub const Frog = struct {
         while (i < 12) : (i += 1) {
             const spd = self.fxRng.range(1.6, 3.4);
             const vel = v3(d.x * spd + self.fxRng.signed() * 0.7, self.fxRng.range(0.2, 1.1), d.z * spd + self.fxRng.signed() * 0.7);
-            self.emit(m, vel, self.fxRng.range(0.28, 0.5), self.fxRng.range(0.03, 0.05) * self.scale, 0.012 * self.scale, SPIT, 6.0);
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = m,
+                .v = vel,
+                .life = self.fxRng.range(0.32, 0.58),
+                .r0 = self.fxRng.range(0.03, 0.05) * self.scale,
+                .r1 = 0.012 * self.scale,
+                .col = SPIT,
+                .grav = 6.0,
+                .stretch = 0.040,
+                .splat = 2.6,
+            });
         }
     }
     pub fn drawFx(self: *const Frog) void {
@@ -1192,4 +1282,19 @@ test "NO ATTACK COMES OUT OF NOWHERE: the gape and the coil are both real tells"
     try std.testing.expect(CHOMP_GAPE >= foe.TELL_MIN);
     try std.testing.expect(LUNGE_COIL >= foe.TELL_MIN);
     try std.testing.expect(LUNGE_COIL > CHOMP_GAPE);
+}
+
+test "THE WOUND OPENS: five frames on, the blood is a spray across the throw and not one blob" {
+    var pool = [_]Particle{.{}} ** FX_MAX;
+    const at = v3(0, 0.55, 0);
+    const dir = v3(1, 0, 0);
+    for ([_]struct { name: []const u8, n: i32, spd: f32 }{
+        .{ .name = "light", .n = BLOOD_LIGHT, .spd = BLOOD_SPD_LIGHT },
+        .{ .name = "heavy", .n = BLOOD_HEAVY, .spd = BLOOD_SPD_HEAVY },
+    }) |b| {
+        const m = foe.measureSpray(&pool, BLOOD_SPRAY, at, dir, b.n, b.spd, 1.0, 0xB10D, 5.0 / 60.0, 0);
+        std.debug.print("\n  toad {s}: {d} motes, opens {d:.2} m across the throw, reaches {d:.2} m, {d} stains, all down by {d:.2} s\n", .{ b.name, m.motes, m.open, m.reach, m.splats, m.sink });
+        try std.testing.expect(m.open > 0.38);
+        try std.testing.expect(m.splats * 2 >= m.motes);
+    }
 }

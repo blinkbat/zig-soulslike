@@ -7,20 +7,15 @@ const v3 = mathx.v3;
 // THE WORLD CLOCK — one number, `hour`, and everything the light does is a function of it.
 //
 // **ONE DIRECTION CASTS, AND IT IS THE SAME ONE THE SHADER KEYS OFF** (AGENTS.md: "Sun + shadows are ONE
-// source"), solved from the hour rather than written down. `keyDir` is the whole of it: the SUN while the
-// sun is up, the MOON once it is down, and nothing else gets a say.
+// source"). `keyDir` is the whole of it: the SUN while it is up, the MOON once it is down.
 //
-// **THE SKY DRAWS THE TRUE PATH; THE SHADOWS DO NOT.** A sun at two degrees of altitude throws a shadow
-// three hundred metres long, which the 108 m ortho box cannot hold and the depth pass cannot cull for. So
-// `keyDir` FLOORS the altitude (`KEY_ALT_MIN`) while `sunDir`/`moonDir` keep the honest angle for the disc.
-// The eye reads the disc's height off the horizon and the shadow's DIRECTION off the ground; this is the one
-// place the two are allowed to disagree.
+// **THE SKY DRAWS THE TRUE PATH; THE SHADOWS DO NOT.** A sun at two degrees throws a 300 m shadow, which the
+// 108 m ortho box cannot hold, so `keyDir` FLOORS the altitude (`KEY_ALT_MIN`) while `sunDir`/`moonDir` keep
+// the honest angle for the disc.
 //
-// **THE ANCHOR IS NOT A KEYFRAME.** Every reference shot in `shots/` is framed off the bearing of the sun
-// this game was authored under (`shots.LIT_YAW` = 53 puts it over the camera's shoulder), and the whole
-// palette was measured against that one light. So the cycle is SOLVED THROUGH it: `SHOT_HOUR` is the hour
-// that reproduces it, the palette's noon-to-dusk keys are the authored numbers sitting on that hour, and a
-// test pins both. Retuning the path without moving the anchor is what silently re-lights 362 photographs.
+// **THE ANCHOR IS NOT A KEYFRAME.** `SHOT_HOUR` is the hour that reproduces the sun this game was authored
+// under (`shots.LIT_YAW` = 53), the palette's keys are the authored numbers sitting on that hour, and a test
+// pins both. Retuning the path without moving the anchor silently re-lights 362 photographs.
 
 pub const HOURS: f32 = 24.0;
 pub const SUNRISE: f32 = 6.0;
@@ -32,21 +27,16 @@ pub const NIGHT_SPAN: f32 = HOURS - DAY_SPAN;
 const AZ_RISE: f32 = 100.0;
 const AZ_SET: f32 = 262.0;
 
-/// THE ANCHOR, and the two constants below are SOLVED from it rather than chosen (see the note above).
-/// `gfx.SUN_DIR` = norm(-0.60, 0.50, -0.46) is bearing 180 + atan(0.60/0.46) = 232.5256 deg, at an altitude of
-/// atan(0.50 / hypot(0.60, 0.46)) = 33.4793 deg. That bearing is 0.8180593 of the sweep from `AZ_RISE` to
-/// `AZ_SET`, which gives the hour; and the altitude is that fraction of the arch's own sine, which gives the
-/// peak: 33.4793 / sin(pi * 0.8180593) = 61.8895.
-/// **MOVE `AZ_RISE`/`AZ_SET` AND BOTH OF THESE MOVE WITH THEM** — solve them again, do not nudge them. The
-/// first test below is what fails if you don't, and what it is protecting is 362 photographs.
+/// THE ANCHOR, and the two constants below are SOLVED from it. `gfx.SUN_DIR` = norm(-0.60, 0.50, -0.46) is
+/// bearing 180 + atan(0.60/0.46) = 232.5256 deg at altitude atan(0.50 / hypot(0.60, 0.46)) = 33.4793 deg;
+/// that bearing is 0.8180593 of the `AZ_RISE`..`AZ_SET` sweep, giving the hour, and the altitude is that
+/// fraction of the arch's sine, giving the peak: 33.4793 / sin(pi * 0.8180593) = 61.8895.
+/// **MOVE `AZ_RISE`/`AZ_SET` AND BOTH MOVE WITH THEM** — solve them again, do not nudge them.
 pub const SUN_ALT_MAX: f32 = 61.8895;
 pub const SHOT_HOUR: f32 = 17.45283;
 
-/// WHERE A BONFIRE'S "REST UNTIL EVENING" PUTS YOU — 9 pm, and **the sun is DOWN there** (owner's call). It is
-/// deliberately NOT `SHOT_HOUR`: the anchor is the golden hour with the sun still well up, and a row named
-/// "evening" that hands you back an afternoon is a row that does nothing you can see. An hour past `SUNSET`,
-/// so what walks out of that fire is walking out into the dark — which is the whole point of being able to
-/// wait at one. A comptime assert below pins it past the horizon rather than trusting the number.
+/// 9 pm, and **the sun is DOWN there** (owner's call) — deliberately NOT `SHOT_HOUR`, which is the golden hour
+/// with the sun well up. An hour past `SUNSET`, pinned past the horizon by a comptime assert.
 pub const EVENING_HOUR: f32 = 21.0;
 comptime {
     std.debug.assert(EVENING_HOUR > SUNSET);
@@ -54,16 +44,10 @@ comptime {
 
 const KEY_ALT_MIN: f32 = 15.0;
 
-/// **WHEN THE CASTER CHANGES HANDS, AND IT IS NOT SUNRISE AND SUNSET.**
-///
-/// The moon is the ANTI-sun, so the handover turns the key's bearing most of the way round the compass.
-/// Swapped on `isDay` that lands at 20:00, 0.6 h into the ramp down from sunset: measured, 179.9 degrees in
-/// a hundredth of an hour with the key still at half the anchor's brightness. So the swap sits at the
-/// DIMMEST hours of each ramp instead, where the key is about a tenth of the anchor. Through the hour on
-/// each side the caster is the SUN with its altitude on the floor and its true bearing, so dusk throws long
-/// shadows away from where the sun actually went down.
-///
-/// **`isDay` IS NOT TOUCHED** — that is the day's own definition. This is the CASTER's question.
+/// **NOT SUNRISE AND SUNSET.** The moon is the ANTI-sun, so the handover turns the key most of the way round
+/// the compass: swapped on `isDay` it lands at 20:00 and measured 179.9 degrees in a hundredth of an hour with
+/// the key still at half the anchor's brightness. The swap sits at the DIMMEST hours of each ramp instead,
+/// where the key is a tenth of the anchor. **`isDay` IS NOT TOUCHED** — this is the CASTER's question.
 const KEY_SWAP_DAWN: f32 = 5.0;
 const KEY_SWAP_DUSK: f32 = 20.8;
 
@@ -270,19 +254,13 @@ pub const Palette = struct {
     }
 };
 
-// ── THE STORM'S OWN LAYER, OVER THE HOUR'S ──────────────────────────────────────────────────────────────
+// **WEATHER CHANGES THE LIGHT, NOT JUST THE FRAME** (owner: affect lighting depending on weather). Cloud does
+// four things a slate rectangle cannot: puts the KEY out so the shadows go with it, leaves the AMBIENT alone
+// (an overcast sky is one enormous soft source), takes the WARMTH out, and closes the DISTANCE.
 //
-// **WEATHER CHANGES THE LIGHT, NOT JUST THE FRAME** (owner: affect lighting depending on weather; different
-// filters/layers). A slate rectangle over the picture (`weather.drawOverlay`) is a filter — it dims the HUD-
-// side of the image and cannot touch a shadow, a specular or the far distance. Cloud does four things a
-// rectangle cannot: it puts the KEY out, so the shadows go with it; it leaves the AMBIENT alone, because an
-// overcast sky is one enormous soft source; it takes the WARMTH out of everything; and it closes the DISTANCE.
-//
-// **IT LIVES HERE AND NOT IN `weather.zig` BECAUSE IT IS A PALETTE OPERATION** — this file owns the hour's
-// whole palette, and `gfx` already reads it. `weather` owns the CLOCK and hands over one number.
-//
-// **AND EVERY TERM IS A FACTOR ON THE HOUR'S OWN VALUE, NEVER A CONSTANT.** An overcast midnight has to stay
-// midnight: a storm palette written as absolute colours would light the world at 3 a.m.
+// Here and not in `weather.zig` because it is a PALETTE operation; `weather` owns the CLOCK and hands over one
+// number. **AND EVERY TERM IS A FACTOR ON THE HOUR'S OWN VALUE, NEVER A CONSTANT** — absolute storm colours
+// would light the world at 3 a.m.
 
 const STORM_KEY: f32 = 0.34;
 const STORM_HAZE: f32 = 1.70;
@@ -320,25 +298,16 @@ pub fn overcast(p: Palette, wet: f32) Palette {
     return o;
 }
 
-// ── THE BLOOM, AND IT IS THE OPPOSITE OF THE STORM ──────────────────────────────────────────────────────
+// **A SPORE BLOOM BRIGHTENS THE AIR. Every other weather in this game slates it.** It leaves the key alone,
+// pushes PEACH into everything the distance is made of, and shortens it — standing inside a lamp, not under
+// cloud, which is why it reads at noon as well as at dusk.
 //
-// **A SPORE BLOOM BRIGHTENS THE AIR. Every other weather in this game slates it.** `overcast` puts the key
-// out and pulls the warmth; this leaves the key alone and pushes PEACH into everything the distance is made
-// of, then shortens it. Standing in one should feel like standing inside a lamp, not under cloud — which is
-// also the only reason it reads at noon as well as at dusk.
-//
-// **AND IT THINS WITH ALTITUDE.** Spores hang at head height and settle; there is no bloom at the zenith.
-// So `skyLow` takes the full tint, `skyMid` two thirds of it and `skyHigh` a fifth — without that ramp the
-// whole dome goes pink and it reads as a sunset, not as air full of seed.
-//
-// This lives here, beside `overcast`, for the same reason `overcast` does: it is a palette operation, and
-// this file owns the hour's whole palette. `worldfmt.Location.spore` owns the number.
+// **AND IT THINS WITH ALTITUDE**: `skyLow` takes the full tint, `skyMid` two thirds, `skyHigh` a fifth.
+// Without the ramp the whole dome goes pink and reads as a sunset, not as air full of seed.
 
-/// **AND EVERY TERM IS A FACTOR ON THE HOUR'S OWN VALUE, NEVER A CONSTANT** — `overcast`'s law, and this
-/// broke it first time out: lerping toward an absolute peach DARKENED noon's horizon by 0.140 while lifting
-/// its zenith, because noon's sky is already brighter than any fixed colour worth using at dusk. A test
-/// prints all three bands and fails on it. `peach` is `slate` written warm: take the luminance the hour
-/// actually has and re-split it toward the red end.
+/// **A FACTOR ON THE HOUR'S OWN VALUE, NEVER A CONSTANT** (`overcast`'s law): lerping toward an absolute peach
+/// DARKENED noon's horizon by 0.140 while lifting its zenith. `peach` is `slate` written warm — take the
+/// luminance the hour actually has and re-split it toward the red end.
 fn peach(c: rl.Vector3) rl.Vector3 {
     const l = 0.299 * c.x + 0.587 * c.y + 0.114 * c.z;
     return v3(l * 1.62, l * 0.90, l * 0.74);
@@ -418,12 +387,9 @@ const NIGHT_P = Palette{
     .stars = 1.0,
 };
 
-/// THE DAY, AS A HANDFUL OF HOURS. Ordered, first key at 0 and last at 24 with the SAME palette on both, so
-/// the wrap through midnight is a blend like every other and not a seam.
-///
-/// **THE `SHOT_HOUR` ROW IS THE ANCHOR AND MAY NOT BE RETUNED CASUALLY** — those are the exact numbers that
-/// were baked into the two shaders, measured against real renders (AGENTS.md's albedo rule), and every
-/// reference frame in `shots/` is that row. Everything else in this table is free.
+/// Ordered, first key at 0 and last at 24 with the SAME palette on both, so the wrap through midnight is a
+/// blend and not a seam. **THE `SHOT_HOUR` ROW IS THE ANCHOR AND MAY NOT BE RETUNED CASUALLY** — those are the
+/// numbers baked into the two shaders and every reference frame in `shots/`. Everything else is free.
 const KEYS = [_]Key{
     .{ .at = 0.0, .p = NIGHT_P },
     .{ .at = 5.0, .p = .{
@@ -756,13 +722,9 @@ test "THE DAY SPEED AND THE HOLD ARE TWO QUESTIONS — neither row reaches into 
 }
 
 test "THE CASTER MAY ONLY CHANGE HANDS IN THE DARK — the moonrise light switch" {
-    // No arrangement of two opposite bearings avoids the half turn; what CAN be arranged is WHEN. So this
-    // measures the swing WEIGHTED BY HOW BRIGHT THE KEY IS while it swings — that flip on a light nearly out
-    // is the light going cold, and the same flip at half the anchor's brightness is every shadow in the world
-    // reversing while you watch. Swapped on `isDay` it measured 67.8 (179.9 deg at 19.99 h, key at 0.471).
-    // The bound below holds both fixes: the swap at the dim ends of the ramps, and the handover a SWEEP
-    // across `KEY_SWAP_FADE` rather than a pick. The STEP is part of the measurement — a coarser walk smears
-    // the flip across two samples and flatters it.
+    // Two opposite bearings cannot avoid the half turn; WHEN can be arranged. This weights the swing by how
+    // bright the key is while it swings: on `isDay` it measured 67.8 (179.9 deg at 19.99 h, key at 0.471).
+    // The STEP is part of the measurement — a coarser walk smears the flip across two samples and flatters it.
     const STEP: f32 = 0.01;
     var h: f32 = 0;
     var worst: f32 = 0;

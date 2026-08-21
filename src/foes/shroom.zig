@@ -28,6 +28,10 @@ const STALK_DK = rgba(52, 44, 32, 255);
 const MOUTH = rgba(10, 8, 7, 255);
 const SPORE = rgba(192, 172, 136, 215);
 const SPORE_VIO = rgba(134, 92, 172, 210);
+/// What a spore cloud THINS TO as it disperses — both tints wash out to the same pale nothing.
+const SPORE_THIN = rgba(196, 186, 176, 70);
+/// Spores are the finest thing anything here sheds: they leave the cap and STOP, then hang and drift.
+const SPORE_DRAG: f32 = 6.0;
 const SPORE_VIO_SHARE: f32 = 0.48;
 
 pub const H: f32 = 0.92;
@@ -86,9 +90,22 @@ const DISS_DUR: f32 = 0.9;
 const SHOVE_DECAY: f32 = 8.0;
 const DISSOLVE = foe.Dissolve{ .rate = 46.0, .spread = 0.6, .rise = 0.8, .flake = SPORE };
 
-/// Sized by ARITHMETIC over the emitters' worst frame (the ring-buffer law): the landing stacks the
-/// 16-spore burst (life ≤ 0.7) on 14 dust (≤ 0.5) on the flight trail's last 0.55 s at 26/s (≈ 14).
-const PARTS = 48;
+const TRAIL_RATE: f32 = 26.0;
+const TRAIL_LIFE_HI: f32 = 0.55;
+const TREMBLE_RATE: f32 = 9.0;
+const FLING_DUST = 14;
+const FLING_PUFF = 24;
+const TRIP_PUFF = 6;
+const HIT_PUFF_LIGHT = 3;
+const HIT_PUFF_HEAVY = 6;
+/// Sized by ARITHMETIC over the emitters' worst frame (the ring law), and WRITTEN AS ARITHMETIC because at
+/// 48 the prose got it wrong: the fling's puff is `hitParts`-scaled, so it is 24 motes and not the 16 asked
+/// for, and the landing already stacked 24 + 14 dust + the flight trail's ≈ 14 before a blow was in it.
+const PARTS = 68;
+comptime {
+    std.debug.assert(@as(f32, PARTS) >= TRAIL_RATE * TRAIL_LIFE_HI +
+        @as(f32, @floatFromInt(FLING_DUST + FLING_PUFF + foe.hitParts(HIT_PUFF_HEAVY) + foe.WOUND_PARTS)));
+}
 
 const N = 6;
 const BODY = 0;
@@ -301,7 +318,7 @@ pub const Shroom = struct {
                 self.kick = mathx.sinf(self.elapsed * 16.0) * fall * (1.0 - rise);
                 if ((self.t - dt) < TRIP_FALL and self.t >= TRIP_FALL) {
                     self.dustBurst(self.pos, 7, 1.3, 0.12);
-                    self.emitPuff(self.pos, 4);
+                    self.emitPuff(self.pos, TRIP_PUFF);
                 }
                 if (self.t >= TRIP_FALL + TRIP_SPRAWL + TRIP_RISE) {
                     self.flingCd = FLING_CD * 0.55 * self.aiRng.range(0.9, 1.2);
@@ -416,8 +433,8 @@ pub const Shroom = struct {
             self.kick = 0;
             if ((self.t - dt) < coil + flight) {
                 if (fling) {
-                    self.dustBurst(self.pos, 14, 2.6, 0.20);
-                    self.emitPuff(self.pos, 16);
+                    self.dustBurst(self.pos, FLING_DUST, 2.6, 0.20);
+                    self.emitPuff(self.pos, FLING_PUFF);
                     sfx.world(.shroom_puff, self.pos);
                     self.burstAt = self.pos;
                     if (mathx.distXZ(self.pos, hero) <= (SPLAT_R + foe.HERO_REACH) * self.scale) {
@@ -482,7 +499,7 @@ pub const Shroom = struct {
         if (self.state == .dead) return;
         const s = foe.reached(self, blade) orelse return;
         const heavy = foe.wounded(self, s, blade, .{ .light = 0.9, .heavy = 1.4 });
-        self.emitPuff(s.contact, if (heavy) 6 else 3);
+        self.emitPuff(s.contact, foe.hitParts(if (heavy) HIT_PUFF_HEAVY else HIT_PUFF_LIGHT));
         sfx.world(.shroom_hurt, self.pos);
         switch (s.reaction) {
             .death => {
@@ -495,57 +512,80 @@ pub const Shroom = struct {
         }
     }
 
-    fn emit(self: *Shroom, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
-        foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
-    }
     fn dustBurst(self: *Shroom, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
+        const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.3, 0.5);
         var i: i32 = 0;
         while (i < n) : (i += 1) {
             const a = self.fxRng.angle();
-            const sp = self.fxRng.range(0.5, 1.0) * spd;
-            self.emit(v3(c.x, self.pos.y + 0.04, c.z), v3(mathx.cosf(a) * sp, self.fxRng.range(0.5, 1.6), mathx.sinf(a) * sp), self.fxRng.range(0.3, 0.5), self.fxRng.range(0.04, 0.08), big, foe.DUST, 4.5);
+            const sp = self.fxRng.range(0.5, 1.0) * spd * B.boost;
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(c.x, self.pos.y + 0.04, c.z),
+                .v = v3(mathx.cosf(a) * sp, self.fxRng.range(0.5, 1.6) * B.boost, mathx.sinf(a) * sp),
+                .life = B.life(&self.fxRng),
+                .r0 = self.fxRng.range(0.04, 0.08),
+                .r1 = big,
+                .col = foe.DUST,
+                .col1 = foe.DUST_THIN,
+                .grav = foe.DUST_GRAV,
+                .drag = foe.DUST_DRAG,
+            });
         }
     }
-    fn emitPuff(self: *Shroom, at: rl.Vector3, n: i32) void {
-        const parts = foe.hitParts(n);
+    /// MOTES, not a wound's worth of them: `foe.HIT_PARTS` is how heavy a LANDED BLOW reads, and a fling
+    /// landing is not a blow. Read off it, the field-wide dial silently rescaled a trip and a fling too.
+    fn emitPuff(self: *Shroom, at: rl.Vector3, motes: i32) void {
         var i: i32 = 0;
-        while (i < parts) : (i += 1) {
+        while (i < motes) : (i += 1) {
             const a = self.fxRng.angle();
-            const sp = self.fxRng.range(0.3, 1.1);
-            self.emit(
-                v3(at.x, at.y + 0.2, at.z),
-                v3(mathx.cosf(a) * sp, self.fxRng.range(0.4, 1.3), mathx.sinf(a) * sp),
-                self.fxRng.range(0.45, 0.7),
-                self.fxRng.range(0.05, 0.09),
-                self.fxRng.range(0.11, 0.17),
-                if (self.fxRng.float() < SPORE_VIO_SHARE) SPORE_VIO else SPORE,
-                0.6,
-            );
+            const B = comptime foe.Blast.of(SPORE_DRAG, 0.45, 0.7);
+            const sp = self.fxRng.range(0.3, 1.1) * B.boost;
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(at.x, at.y + 0.2, at.z),
+                .v = v3(mathx.cosf(a) * sp, self.fxRng.range(0.4, 1.3) * B.boost, mathx.sinf(a) * sp),
+                .life = B.life(&self.fxRng),
+                .r0 = self.fxRng.range(0.05, 0.09),
+                .r1 = self.fxRng.range(0.11, 0.17),
+                .col = if (self.fxRng.float() < SPORE_VIO_SHARE) SPORE_VIO else SPORE,
+                .col1 = SPORE_THIN,
+                .grav = 0.6,
+                .drag = SPORE_DRAG,
+            });
         }
     }
     fn emitTremble(self: *Shroom, dt: f32) void {
-        const emitRate = 9.0;
-        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        const emitRate = TREMBLE_RATE;
+        var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = 0.4 * self.scale;
-            self.emit(
-                v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + (0.5 + self.lift) * self.scale, self.pos.z + mathx.sinf(a) * rr),
-                v3(0, self.fxRng.range(0.1, 0.4), 0),
-                self.fxRng.range(0.3, 0.6),
-                self.fxRng.range(0.03, 0.06),
-                0.10,
-                SPORE,
-                1.2,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + (0.5 + self.lift) * self.scale, self.pos.z + mathx.sinf(a) * rr),
+                .v = v3(0, self.fxRng.range(0.1, 0.4), 0),
+                .life = self.fxRng.range(0.3, 0.6),
+                .r0 = self.fxRng.range(0.03, 0.06),
+                .r1 = 0.10,
+                .col = SPORE,
+                .col1 = SPORE_THIN,
+                .grav = 1.2,
+            });
         }
     }
     fn emitTrail(self: *Shroom, dt: f32) void {
-        const emitRate = 26.0;
-        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        const emitRate = TRAIL_RATE;
+        var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const c = self.centerWorld();
-            self.emit(c, v3(self.fxRng.signed() * 0.4, self.fxRng.range(-0.2, 0.4), self.fxRng.signed() * 0.4), self.fxRng.range(0.3, 0.55), 0.06, 0.14, SPORE, 0.8);
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = c,
+                .v = v3(self.fxRng.signed() * 0.4, self.fxRng.range(-0.2, 0.4), self.fxRng.signed() * 0.4),
+                .life = self.fxRng.range(0.3, TRAIL_LIFE_HI),
+                .r0 = 0.06,
+                .r1 = 0.14,
+                .col = SPORE,
+                .col1 = SPORE_THIN,
+                .grav = 0.8,
+                .drag = SPORE_DRAG,
+            });
         }
     }
     pub fn drawFx(self: *const Shroom) void {
@@ -584,14 +624,9 @@ const CLOUD_RATE_FRESH: f32 = 26.0;
 const CLOUD_PUFF_MIN: f32 = 1.1;
 const CLOUD_PUFF_MAX: f32 = 1.7;
 const CLOUD_PARTS = 112;
-// **WHAT THE CLOUDS COST, MEASURED** (`necro.drawSigil`'s note, one creature along). A live cloud is up to
-// `CLOUD_PARTS` spheres at 6x8 through `foe.drawParticles`, so the field's worst case is `CLOUD_CAP` of them
-// at once — about 900 spheres, ~86k CPU-transformed triangles. Tripled from the old 36 to buy a hazard you
-// can actually see, and bounded by two things: a slot draws nothing unless something emitted into it, and
-// eight concurrent clouds needs eight flings inside one `CLOUD_LIFE` against a `FLING_CD` of 4.6 s — which
-// is more sporelings than a cluster fields. Two or three clouds is the real number, and that is where it
-// was before. Left alone deliberately: the resolution is `drawParticles`' and shared with every effect in
-// the game, so trimming it here would be trimming it everywhere.
+// **WHAT THE CLOUDS COST, MEASURED.** Worst case is `CLOUD_CAP` live clouds of `CLOUD_PARTS` motes. Eight at
+// once needs eight flings inside one `CLOUD_LIFE` against a `FLING_CD` of 4.6 s — more sporelings than a
+// cluster fields; two or three is the real number.
 comptime {
     std.debug.assert(@as(f32, @floatFromInt(CLOUD_PARTS)) >= (CLOUD_RATE + CLOUD_RATE_FRESH) * CLOUD_PUFF_MAX);
 }
@@ -626,34 +661,27 @@ pub const Cloud = struct {
             self.live = false;
             return;
         }
-        // A slow ochre bloom — dense at the middle, violet flecks through it, barely any lift: spores
-        // HANG, and the hang is what says "do not stand in this".
-        //
         // **IT HAS TO BE A VOLUME, AND IT HAS TO HAVE AN EDGE** (owner's call). Thirty-odd puffs over a 1.9 m
-        // disc was a handful of translucent blobs beside a mushroom — a hazard you walk into because there is
-        // nothing there to not walk into. Two things fix it and neither is "more of the same":
-        //   1. **HEIGHT.** Spores to a metre and a half, which is his own chest: a knee-high haze is something
-        //      you step over, and this is something you are IN.
-        //   2. **A RIM.** One puff in three is laid on the boundary rather than spread through the disc, so
-        //      the cloud says where it STOPS. A gradient has no line to be on the safe side of.
+        // disc was a few translucent blobs. HEIGHT: spores to a metre and a half, his own chest, so it is
+        // something you are IN rather than step over. A RIM: one puff in three is laid on the boundary, so the
+        // cloud says where it STOPS — a gradient has no line to be on the safe side of.
         const emitRate = (CLOUD_RATE + CLOUD_RATE_FRESH * (1.0 - self.t / CLOUD_LIFE));
-        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             self.rimTick +%= 1;
             const a = self.fxRng.angle();
             const rim = self.rimTick % 3 == 0;
             const rr = if (rim) self.radius() * self.fxRng.range(0.88, 1.0) else self.fxRng.float() * self.radius() * 0.86;
-            foe.emitParticle(
-                &self.parts,
-                &self.fxHead,
-                v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + self.fxRng.range(0.08, 1.45), self.pos.z + mathx.sinf(a) * rr),
-                v3(self.fxRng.signed() * 0.15, self.fxRng.range(0.05, 0.3), self.fxRng.signed() * 0.15),
-                self.fxRng.range(CLOUD_PUFF_MIN, CLOUD_PUFF_MAX),
-                self.fxRng.range(0.13, 0.22),
-                self.fxRng.range(0.26, 0.40),
-                if (self.fxRng.float() < SPORE_VIO_SHARE) SPORE_VIO else SPORE,
-                0.25,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + self.fxRng.range(0.08, 1.45), self.pos.z + mathx.sinf(a) * rr),
+                .v = v3(self.fxRng.signed() * 0.15, self.fxRng.range(0.05, 0.3), self.fxRng.signed() * 0.15),
+                .life = self.fxRng.range(CLOUD_PUFF_MIN, CLOUD_PUFF_MAX),
+                .r0 = self.fxRng.range(0.13, 0.22),
+                .r1 = self.fxRng.range(0.26, 0.40),
+                .col = if (self.fxRng.float() < SPORE_VIO_SHARE) SPORE_VIO else SPORE,
+                .col1 = SPORE_THIN,
+                .grav = 0.25,
+            });
         }
     }
     pub fn drawFx(self: *const Cloud) void {

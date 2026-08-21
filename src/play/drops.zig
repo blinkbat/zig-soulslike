@@ -30,12 +30,9 @@ pub const RARE_CAP: f32 = 0.85;
 
 pub const MAX_PER_BODY: usize = 2;
 
-/// THE TABLE, one row per `wf.FoeKind` IN ITS ORDER — a comptime walk below pins it, so a creature added to
-/// that enum is a compile error here until it has said what it leaves.
-///
-/// **WHAT EACH ONE DROPS IS WHAT IT IS.** Most of these were already written into the item's own description
-/// long before anything dropped: the signet is "cut from a leech's beak", the broth is toadflesh, the fang is
-/// a kobold's, the cap is a sporeling's, and the club is the thing the ogre is swinging at you.
+/// One row per `wf.FoeKind` IN ITS ORDER — a comptime walk pins it, so a creature added to that enum is a
+/// compile error here until it has said what it leaves. **WHAT EACH ONE DROPS IS WHAT IT IS**, and most were
+/// already written into the item's own description long before anything dropped.
 pub const TABLE = [_]Row{
     .{ .foe = .toad, .common = .bloodgrass, .rare = .toadflesh_broth, .chance = 0.14 },
 

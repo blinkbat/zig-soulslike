@@ -55,10 +55,9 @@ const DBG_HITBOX = 3;
 const DBG_HOUR = 4;
 const DBG_DAYRATE = 5;
 const DBG_TIMESCALE = 6;
-/// **THE SKY'S OWN EVENTS, ON DEMAND** — `DBG_HOUR`'s arrangement one system along, and for its exact reason.
 /// Weather arrives on a clock measured in MINUTES, so "is the rain working" is not a question anybody can sit
-/// and answer; Confirm cycles dry → gentle → moderate → dry (`weather.Weather.cycleForce`). A row and not a
-/// submenu, because the whole point is to watch the sky while you turn it.
+/// and answer. Confirm cycles dry → gentle → moderate → dry (`weather.Weather.cycleForce`), as a row and not
+/// a submenu because the point is to watch the sky while you turn it.
 const DBG_WEATHER = 7;
 const DBG_FOG = 8;
 const DBG_CLOSE = 9;
@@ -118,10 +117,8 @@ const SLOT_THUMB_H: i32 = 90;
 const SLOT_H: i32 = SLOT_THUMB_H + 16;
 const SLOT_GAP: i32 = 8;
 const SLOT_TEXT_GAP: i32 = 18;
-/// WHERE A ROW'S CONTENT SITS, measured from the HILITE's left edge and shared by both kinds of card — so the
-/// picker's thumbnail starts exactly where an ordinary row's label starts. Written once rather than at each
-/// call site: the picker laid its picture out at the hilite inset instead and it came out over the cursor bar
-/// (`uiart.caret`, which is what marks a row).
+/// From the HILITE's left edge, shared by both kinds of card, so a picker's thumbnail starts where an
+/// ordinary row's label starts. At the hilite inset instead, the picture came out over the cursor bar.
 const ROW_LABEL: i32 = 26;
 
 const VEIL = rgba(6, 6, 9, 150);
@@ -910,12 +907,10 @@ pub fn navPressed(dir: NavDir) bool {
     return dirPressed(dir, true);
 }
 
-// THE LEFT STICK AS A WALK, and getting this wrong is a known genre of bug — a stick is a LEVEL where a walk
-// wants EDGES, so the naive reading fires a step every frame the stick is anywhere but centre. Four standard
-// pieces, all of them here:
-//  1. A RADIAL magnitude, never per-axis. Testing the axes separately is the "snap to grid" mistake: the
-//     corner of the square passes at 0.62 on each axis while the true deflection is 0.88, so a lazy diagonal
-//     reads as a hard push.
+// A stick is a LEVEL where a walk wants EDGES, so a naive reading fires a step every frame it is off centre.
+// Four standard pieces:
+//  1. A RADIAL magnitude, never per-axis — the corner of the square passes at 0.62 on each axis while the
+//     true deflection is 0.88, so a lazy diagonal reads as a hard push.
 const STICK_FIRE: f32 = 0.72;
 const STICK_REARM: f32 = 0.42;
 const STICK_CONE: f32 = 0.848;

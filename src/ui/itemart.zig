@@ -353,10 +353,8 @@ fn gravebellAmulet(cx: f32, cy: f32, px: f32) void {
 }
 
 /// **WHICH PICTURE A SORCERY IS, AND THE ONE PLACE IT IS DECIDED** — `drawHeld`'s own shape one enum along.
-/// Written out at the HUD's cross AND at the character book's socket, it was one list of five in two files that
-/// differed only in how each spelled "can he afford it": a sixth spell is now one row here instead of a picture
-/// somebody has to remember twice. `lit` is that affordability — a thing you cannot cast has to LOOK it, the
-/// ammo box's own rule.
+/// One list of five lived at the HUD's cross AND the book's socket, differing only in how each spelled "can he
+/// afford it". `lit` is that affordability: a thing you cannot cast has to LOOK it (the ammo box's rule).
 pub fn spellArt(s: combat.Spell, cx: f32, cy: f32, px: f32, lit: bool) void {
     switch (s) {
         .bolt => spell(cx, cy, px, lit),

@@ -598,9 +598,11 @@ pub const sceneFS =
     \\  lit = mix(lit, base*1.35, emis);
     \\  // Rime: a chilled body wears a pale blue coat while the hold lasts (per-draw, like the flash).
     \\  lit = mix(lit, vec3(0.60, 0.74, 0.88), frost);
-    \\  // Combat flash: the struck actor pops blood-red for a beat (per-draw uniform). AFTER the frost,
-    \\  // so a hit still reads on a frosted body.
-    \\  lit = mix(lit, vec3(0.55, 0.07, 0.05), hitFlash);
+    \\  // Combat flash: the struck actor pops for a beat (per-draw uniform). AFTER the frost, so a hit
+    \\  // still reads on a frosted body. PALE ARTERIAL, not blood-red: at (0.55,0.07,0.05) the body came
+    \\  // back off this chain at luma 111 and the blood flying off it at 48, so the spray was a dark red
+    \\  // thing on a red thing. Screen luma here is 185 — the same hue, twice the gap.
+    \\  lit = mix(lit, vec3(0.88, 0.38, 0.30), hitFlash);
     \\  float haze = 1.0 - exp(-hazeDensity*dist);
     \\  // Haze banks golden looking into the sun's quarter (matches the sky shader's bank).
     \\  float sunAmt = pow(clamp(dot(-V, L), 0.0, 1.0), 3.0);

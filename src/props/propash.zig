@@ -15,12 +15,9 @@ const CHAR_LT = art.CHAR_LT;
 const CINDER_GREY = art.CINDER_GREY;
 const EMBER_LIVE = art.EMBER_LIVE;
 
-// ── THE ASHFALL ─────────────────────────────────────────────────────────────────────────────────────────
-//
-// **A DRIFT HAS A WINDWARD SIDE AND A LEE, AND THAT IS THE WHOLE OF WHY IT READS AS ASH.** A symmetrical
-// mound is a pile of anything; the long shallow ramp into the wind and the short steep slip-face out of it
-// is the one silhouette that says a fall was blown here rather than tipped. Every heap below is laid on the
-// same +X wind, so a field of them agrees about which way the weather came from.
+// **A DRIFT HAS A WINDWARD SIDE AND A LEE, AND THAT IS THE WHOLE OF WHY IT READS AS ASH** — a symmetrical
+// mound is a pile of anything. Every heap below is laid on the same +X wind, so a field of them agrees about
+// which way the weather came from.
 
 const Drift = struct {
     /// Along the RIDGE, which runs across the wind.
@@ -90,11 +87,9 @@ fn driftInto(b: *Builder, rng: *mathx.Rng, d: Drift, cx: f32, cz: f32, yaw: f32)
             const p10 = at(d, ub, v0, jit, cx, cz, c, sn);
             const p11 = at(d, ub, v1, jit, cx, cz, c, sn);
             const p01 = at(d, ua, v1, jit, cx, cz, c, sn);
-            // TONE FOLLOWS THE HEIGHT, not the station — the crest catches light and the toes do not, which
-            // is a gradient across the slope and not a band along it.
-            // A CONTINUOUS TWO-STOP GRADIENT. Switching the lerp's TARGET at a threshold puts a step in the
-            // colour along that contour — a hard ring round the crest, which is the banding law again in a
-            // gradient's clothing. Toes to body, then body to the catch of light, and they meet at 0.80.
+            // TONE FOLLOWS THE HEIGHT, not the station: a gradient across the slope, never a band along it.
+            // A CONTINUOUS TWO-STOP GRADIENT — switching the lerp's TARGET at a threshold puts a hard ring
+            // round the crest. Toes to body, then body to the catch of light, meeting at 0.80.
             const t = mathx.clampF(0.5 * (p00.y + p11.y) / mathx.maxF(d.high, 0.01), 0, 1);
             const CREST: f32 = 0.80;
             const tone = if (t < CREST)

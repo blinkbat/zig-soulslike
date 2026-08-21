@@ -230,13 +230,11 @@ pub const Use = union(enum) {
     steady: struct { mult: f32, secs: f32 },
 };
 
-/// **WHICH SOCKET A PIECE OF GEAR GOES IN.** `book.SlotId`'s own subset — the sockets gear can actually fill —
-/// named HERE because which socket a thing belongs in is a fact about the THING. This file imports nothing but
-/// std, so it cannot say `hero.Armament`; `hero.wearFor` is the one place the two are matched up, exactly as
-/// `combat.flaskOf` is the one place a kind becomes a `FlaskKind`.
-/// **APPEND-ONLY, for `save.Data.worn`'s sake** — the `worn:` line is one word per socket in THIS order, and the
-/// parser stops at the end of a short line so an older save loads with the new sockets empty (which is honestly
-/// what that character had in them). Inserting a tag instead re-points every word on every line on disk.
+/// `book.SlotId`'s own subset, named HERE because which socket a thing belongs in is a fact about the THING.
+/// This file imports nothing but std, so `hero.wearFor` is the one place the two are matched up.
+/// **APPEND-ONLY, for `save.Data.worn`'s sake** — the `worn:` line is one word per socket in THIS order and
+/// the parser stops at the end of a short line, so an older save loads with the new sockets empty. Inserting
+/// a tag re-points every word on every line on disk.
 pub const Wear = enum {
     hand_sword,
     hand_bow,
@@ -254,15 +252,12 @@ pub const Wear = enum {
     }
 };
 
-/// **A HAND'S ARMAMENT, PRICED AS MULTIPLIERS ON THE ONE IT REPLACES** — never as a fresh set of absolutes.
-/// `hero.ATK_*_HIT`, `combat.STAM_*` and `combat.GUARD_*` stay the single place a swing, a block and their bills
-/// are written down, and a weapon says only how it DIFFERS. Bare-handed every dial here is 1, which is why this
-/// whole system lands without retuning one existing number: the starting kit is the game exactly as it was.
-/// **WHICH SKILL DRIVES A WEAPON** — ER's scaling letters, at ONE letter per armament rather than a letter per
-/// attribute, because a weapon carrying two rates would need a table and there are three weapons in the world.
-/// `quality` is the straight sword everybody starts with: the MEAN of the two curves, so either build carries it
-/// and neither build is best with it. The mapping to a `stats.Attr` is `hero.scaleOf`, and the curve is
-/// `stats.scaleFor` — one place each.
+/// **PRICED AS MULTIPLIERS ON THE ONE IT REPLACES**, never a fresh set of absolutes: `hero.ATK_*_HIT`,
+/// `combat.STAM_*` and `combat.GUARD_*` stay the single place a swing, a block and their bills are written,
+/// and a weapon says only how it DIFFERS. Bare-handed every dial is 1.
+/// **WHICH SKILL DRIVES A WEAPON** — ER's scaling letters, ONE per armament rather than one per attribute.
+/// `quality` is the MEAN of the two curves, so either build carries the starting sword and neither is best
+/// with it. `hero.scaleOf` maps to a `stats.Attr`, `stats.scaleFor` is the curve.
 pub const Scaling = enum { strength, dexterity, quality };
 
 /// **WHAT KIND OF WEAPON IT IS, ON THE TWO AXES A FIGHT ACTUALLY ASKS ABOUT.** `reach` is where the blow
@@ -309,11 +304,8 @@ pub const Arm = struct {
 
 pub const Res = struct { fire: f32 = 0, cold: f32 = 0, lightning: f32 = 0, chaos: f32 = 0 };
 
-/// **WORN, AND IT IS THE DEFENSIVE ROW — all of it.** `a` is the armour value in `A/(A + 5*dmg)`
-/// (`combat.armourTaken`), so physical is a diminishing return by construction and a coat cannot become
-/// immunity however many are stacked. `res` is the four elemental columns beside it, and `poison` is a
-/// MULTIPLIER on how fast a status meter fills — the three things a piece of armour can honestly turn aside,
-/// on one row rather than three verbs that would each have to be stacked and printed separately.
+/// `a` is the armour value in `A/(A + 5*dmg)` (`combat.armourTaken`), `res` the four elemental columns, and
+/// `poison` a MULTIPLIER on how fast a status meter fills — one row, not three verbs each stacked separately.
 pub const Plate = struct { slot: Wear, a: f32 = 0, res: Res = .{}, poison: f32 = 1 };
 
 pub const Charm = struct { slot: Wear, leech: f32 = 0, hpFrac: f32 = 0, spiritFp: f32 = 1, fpFrac: f32 = 0 };
@@ -351,13 +343,10 @@ pub const GEAR = [_]Gear{
     .{ .kind = .fang_dirk, .equip = .{ .arm = .{ .slot = .hand_sword, .heft = .light, .dmg = 0.74, .poise = 0.72, .dur = 0.78, .stam = 0.76, .scales = .dexterity } } },
     .{ .kind = .greatclub, .equip = .{ .arm = .{ .slot = .hand_sword, .heft = .heavy, .dmg = 1.48, .poise = 1.60, .dur = 1.34, .stam = 1.48, .scales = .strength } } },
     .{ .kind = .grave_warbow, .equip = .{ .arm = .{ .slot = .hand_bow, .heft = .heavy, .reach = .ranged, .dmg = 1.62, .poise = 1.45, .dur = 1.28, .stam = 1.34, .scales = .dexterity } } },
-    // A DOOR. It stops nearly everything and covers half again the compass the small shield does — and the
-    // three metres of it are why he walks behind it at four fifths of the speed and pays more per blow eaten.
-    // **THE NEGATION DIAL STOPS UNDER THE CAP ON PURPOSE.** `combat.GUARD_NEGATE_CAP` is 0.95 and the base is
-    // 0.85, so anything past ~1.118 here is silently clamped — and `effect` below PRINTS this figure, so a
-    // clamped dial is a number on the panel that the fight does not honour. At 1.10 the door is worth every
-    // point of it, and the cap goes back to being what it is for: stopping a shield PLUS a tree node from
-    // making a block free.
+    // A DOOR — half again the compass of the small shield, at four fifths of the speed and more per blow.
+    // **THE NEGATION DIAL STOPS UNDER THE CAP ON PURPOSE**: `combat.GUARD_NEGATE_CAP` is 0.95 on a 0.85 base,
+    // so anything past ~1.118 is silently clamped — and `effect` PRINTS this figure, so a clamped dial is a
+    // number the fight does not honour. The cap is for stopping a shield PLUS a tree node being free.
     .{ .kind = .tower_shield, .equip = .{ .arm = .{ .slot = .hand_shield, .heft = .heavy, .negate = 1.10, .arc = 1.45, .walk = 0.80, .stam = 1.30 } } },
     .{ .kind = .quilted_gambeson, .equip = .{ .plate = .{ .slot = .chest, .a = 22.0 } } },
     .{ .kind = .leech_signet, .equip = .{ .charm = .{ .slot = .ring, .leech = 2.0, .hpFrac = 0.06 } } },
@@ -366,11 +355,9 @@ pub const GEAR = [_]Gear{
     .{ .kind = .banded_warbelt, .equip = .{ .boon = .{ .slot = .belt, .attr = .strength, .n = 3 } } },
     .{ .kind = .deft_signet, .equip = .{ .boon = .{ .slot = .ring2, .attr = .dexterity, .n = 3 } } },
     .{ .kind = .ashen_amulet, .equip = .{ .boon = .{ .slot = .neck, .attr = .intelligence, .n = 3 } } },
-    // **THE FIRST COLD RESISTANCE ANYWHERE ON HIS SIDE.** The necromancer's rune ring is the game's one
-    // source of cold and the sheet showed 0% with nothing in the world able to move it, so this coat is a
-    // real answer to a real creature rather than a number. Its PHYSICAL is under the gambeson's on purpose:
-    // fleece and hide turn a chill, not an edge, and a chest socket that was strictly better than the coat
-    // already in it would retire that coat instead of competing with it.
+    // **THE FIRST COLD RESISTANCE ANYWHERE ON HIS SIDE** — the necromancer's rune ring is the game's one
+    // source of cold and the sheet showed 0%. PHYSICAL under the gambeson's on purpose: a chest socket
+    // strictly better than the coat already in it retires that coat instead of competing with it.
     .{ .kind = .rimeward_mantle, .equip = .{ .plate = .{ .slot = .chest, .a = 13.0, .res = .{ .cold = 35 } } } },
     .{ .kind = .sporecrown, .equip = .{ .plate = .{ .slot = .helm, .a = 8.0, .poison = 0.55 } } },
     .{ .kind = .gravebell_amulet, .equip = .{ .charm = .{ .slot = .neck, .spiritFp = 0.60, .fpFrac = 0.10 } } },
@@ -386,11 +373,9 @@ pub const GEAR = [_]Gear{
     .{ .kind = .purgeleaf, .use = .purge },
     .{ .kind = .pilgrims_salt, .use = .{ .souls = .{ .n = 600 } } },
     .{ .kind = .ironwort_tea, .use = .{ .steady = .{ .mult = 2.2, .secs = 40 } } },
-    // **AMMUNITION IS AN ITEM NOW** (owner: arrows need to be droppable, placeable, all kinds). Both banks of
-    // the quiver, so a map can hand out either one and the editor can drop either one on the ground.
-    // **SIZED TO THE BANK, NOT GUESSED.** 12 into a quiver of 10 wasted two shafts on every pickup, which a
-    // cross-check in `combat.zig` caught on the first run — `item.zig` imports nothing but std, so it cannot
-    // read `combat.ARROWS_MAX` itself and the test is what holds the two together.
+    // **AMMUNITION IS AN ITEM NOW** (owner: arrows need to be droppable, placeable, all kinds) — both banks.
+    // **SIZED TO THE BANK, NOT GUESSED**: 12 into a quiver of 10 wasted two shafts on every pickup. This file
+    // imports nothing but std, so it cannot read `combat.ARROWS_MAX` and a test holds the two together.
     .{ .kind = .plain_arrows, .use = .{ .arrows = .{ .fire = false, .n = 10 } } },
     .{ .kind = .fire_arrows, .use = .{ .arrows = .{ .fire = true, .n = 5 } } },
 };

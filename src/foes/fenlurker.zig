@@ -20,21 +20,10 @@ const mul3 = mathx.mul3;
 const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 
-// THE FEN LURKER (owner's creature, owner's brief) — a thing that lives UNDER the painted water and comes up
-// when you wade.
-//
-// **IT IS THE FIRST THING IN THIS WORLD THAT THE WATER IS FOR.** The sheet of water has been authored since
-// the map was: one level plane, painted, walked through, slowing him down and drowning him past `WADE_MAX` —
-// and nothing at all lived in it. Every creature before this one fights on the dirt beside it.
-//
-// **THE COUNTER IS DRY LAND, AND THAT IS THE WHOLE FIGHT.** It is a FIXTURE (the rooted's shelf): it never
-// travels, it guards the pool it is in, and it cannot follow you out. What it sells is that the water is the
-// short way and the shore is the long way round — so every one of these is a question about whether you are
-// in a hurry.
-//
-// **AND IT IS ONLY THERE WHILE IT IS UP.** Sunk it is a wake on the surface: no bar, no reticle, and a sword
-// through it hits water (the delver's law, `hidden`). You do not fight this creature at a time of your
-// choosing; you make it come up by standing where it can feel you, and the window is the one it gives you.
+// THE FEN LURKER (owner's creature, owner's brief) — lives UNDER the painted water and comes up when you
+// wade. **THE COUNTER IS DRY LAND**: a FIXTURE (the rooted's shelf), it never travels and cannot follow you
+// out. **AND IT IS ONLY THERE WHILE IT IS UP** — sunk it is a wake, with no bar, no reticle, and a sword
+// through it hits water (the delver's `hidden`).
 
 /// How far out of the water the head rides at full surge, in metres — its own stature, and everything on the
 /// rig is a fraction of it. Over the hero's own 1.8 so the thing that comes up is looking DOWN at him.
@@ -85,8 +74,7 @@ pub const LASH_HIT = combat.Hit{ .dmg = 26, .poise = 24, .stance = 11 };
 /// the test at the foot of this file, never guessed.
 const LASH_R: f32 = 2.35;
 const LASH_FRONT_DOT: f32 = 0.30;
-/// THE HEAD'S OWN HALF-WIDTH, which its reach and its measured height are both taken over — a flat skull
-/// coming down is a mass, not a point.
+/// Its reach and measured height are both taken over this: a flat skull coming down is a MASS, not a point.
 const HEAD_R: f32 = 0.34;
 
 const TURN_RATE: f32 = 2.2;
@@ -126,12 +114,9 @@ fn restPose() [N]rl.Vector3 {
     return r;
 }
 
-// ── THE PALETTE ────────────────────────────────────────────────────────────────────────────────────────
-//
 // **AUTHOR DARK, AND SOLVE IT** — albedo x 1.72 -> linear -> gamma 1/2.2, so screen goes as albedo^(1/2.2)
-// and the bigger and smoother the mass the darker it must start. A wet hide is the smoothest thing in this
-// world and it comes up against a WATER SHEET rather than against the field, which is the brighter backdrop
-// of the two: so this is authored under the ravager's own hide, not level with it.
+// and the bigger and smoother the mass the darker it must start. This hide comes up against the WATER SHEET,
+// the brighter backdrop, so it is authored UNDER the ravager's.
 
 const HIDE = rgba(9, 13, 11, 208);
 const HIDE_LT = rgba(14, 19, 16, 194);
@@ -194,8 +179,8 @@ pub const Lurker = struct {
     flash: f32 = 0,
     shove: rl.Vector3 = mathx.zero3,
     justDied: bool = false,
-    /// The voices' one-frame edges, cleared at the top of `update`. The creature says WHEN; `game.zig` owns
-    /// the speaker, or a creature would play through the pause card and the shot harness.
+    /// One-frame edges, cleared at the top of `update`. The creature says WHEN and `game.zig` owns the
+    /// speaker, or it plays through the pause card and the shot harness.
     broke: bool = false,
     lashed: bool = false,
     yelped: bool = false,
@@ -237,11 +222,9 @@ pub const Lurker = struct {
     pub fn lockPoint(self: *const Lurker) rl.Vector3 {
         return foe.markOn(self.xf[HEAD], v3(0, 0.02 * H, 0.05 * H));
     }
-    /// **THE CROWN IS HOW TALL THE CREATURE IS, NOT HOW FAR UP IT HAPPENS TO BE.** Scaled by `up` it answered
-    /// 0.43 m to anything that asked while the thing was down — and `shots.runMapShots` solves its whole
-    /// camera off this BEFORE staging the pose, so it framed a creature the size of a stone and then the real
-    /// one rose two and a half metres out of the top of the plate. Nothing was bought by the scaling either:
-    /// no bar hangs over a sunk one because `disguised` reads `hidden` and skips it outright (`game.BarCtx`).
+    /// **HOW TALL THE CREATURE IS, NOT HOW FAR UP IT HAPPENS TO BE.** Scaled by `up` it answered 0.43 m while
+    /// down, and `shots.runMapShots` solves its camera off this BEFORE the pose — it framed a stone and the
+    /// real one rose 2.5 m out of frame. A sunk one needs no scaling: `disguised` reads `hidden` and skips it.
     pub fn topWorld(self: *const Lurker) rl.Vector3 {
         return foe.bodyPoint(self.pos, TOP_F * H, self.scale, 0);
     }
@@ -271,13 +254,9 @@ pub const Lurker = struct {
         return self.up <= SHOW_AT;
     }
 
-    /// **AND NOTHING UNDER THE SURFACE IS IN HIS WAY.** A separate question from `hidden`, though today it is
-    /// the same answer: that one is about being SEEN (the reticle, the bar, the sword), this one is about
-    /// being SOLID. They have to be separate because the rooted answers them differently — a dormant snag is
-    /// invisible as a creature and still very much a tree you walk into.
-    ///
-    /// Without it the hero swims into a wall he cannot see: `game.collideActors` pushes him out of every
-    /// corporeal body whose crown clears his feet, and a sunk lurker's crown is its full 2.9 m.
+    /// SEPARATE from `hidden`, which is about being SEEN where this is about being SOLID — the rooted answers
+    /// them differently, a dormant snag being invisible and still a tree you walk into. Without it
+    /// `game.collideActors` pushes him out of a sunk lurker's full 2.9 m crown.
     pub fn phased(self: *const Lurker) bool {
         return self.hidden();
     }
@@ -501,17 +480,16 @@ pub const Lurker = struct {
         while (i < total) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(0.7, 2.1);
-            foe.emitParticle(
-                &self.parts,
-                &self.fxHead,
-                at,
-                v3(mathx.cosf(a) * sp, self.fxRng.range(0.8, 2.6), mathx.sinf(a) * sp),
-                self.fxRng.range(0.24, 0.50),
-                self.fxRng.range(0.022, 0.050) * self.scale,
-                0.005,
-                if (self.fxRng.float() < 0.5) SPRAY else SILT,
-                7.0,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = at,
+                .v = v3(mathx.cosf(a) * sp, self.fxRng.range(0.8, 2.6), mathx.sinf(a) * sp),
+                .life = self.fxRng.range(0.24, 0.50),
+                .r0 = self.fxRng.range(0.022, 0.050) * self.scale,
+                .r1 = 0.005,
+                .col = if (self.fxRng.float() < 0.5) SPRAY else SILT,
+                .grav = 7.0,
+                .stretch = 0.040,
+            });
         }
     }
 
@@ -519,23 +497,23 @@ pub const Lurker = struct {
     /// because the body is not drawn at all down there. Off the accumulator (`foe.emitTicks`) so the ring is
     /// a RATE rather than a per-frame chance, and capped so one long frame cannot empty the pool.
     fn ripple(self: *Lurker, dt: f32) void {
-        const n = foe.emitTicks(&self.fxAccum, dt, WAKE_RATE, foe.emitCap(WAKE_RATE));
+        const n = foe.emitDue(&self.fxAccum, dt, WAKE_RATE);
         var i: usize = 0;
         while (i < n) : (i += 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.25, 1.0) * WAKE_R * self.scale;
             const p = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + WAKE_Y, self.pos.z + mathx.sinf(a) * rr);
-            foe.emitParticle(
-                &self.parts,
-                &self.fxHead,
-                p,
-                v3(mathx.cosf(a) * WAKE_SPREAD, 0.02, mathx.sinf(a) * WAKE_SPREAD),
-                self.fxRng.range(0.30, 0.62),
-                self.fxRng.range(0.020, 0.038) * self.scale,
-                0.055,
-                SPRAY,
-                0,
-            );
+            const B = comptime foe.Blast.of(WAKE_DRAG, 0.30, 0.62);
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = p,
+                .v = v3(mathx.cosf(a) * WAKE_SPREAD * B.boost, 0.02, mathx.sinf(a) * WAKE_SPREAD * B.boost),
+                .life = B.life(&self.fxRng),
+                .r0 = self.fxRng.range(0.020, 0.038) * self.scale,
+                .r1 = 0.055,
+                .col = SPRAY,
+                .col1 = SPRAY_FLAT,
+                .drag = WAKE_DRAG,
+            });
         }
     }
 
@@ -558,11 +536,9 @@ pub const Lurker = struct {
         const sink = -(1.0 - self.up) * SUBMERGE * H;
         const breath = mathx.sinf(self.elapsed * 1.35 + self.seed * 6.28) * 0.010 * H * self.up;
 
-        // **AND THE WHOLE BODY DIVES WITH THE STROKE, WHICH IS THE OTHER HALF OF HAVING A NECK.** A curled
-        // chain moves the head SIDEWAYS more than down — five distributed bends keep far more height than one
-        // hinge would, and MEASURED off the posed rig the jaws finished the lash at 2.04 m, which is over the
-        // top of his head. The neck does the rearing and the BODY does the arriving. Forward only: it is a
-        // dive, and a creature that also reared its whole coil would simply be standing further back.
+        // **THE WHOLE BODY DIVES WITH THE STROKE.** A curled chain moves the head SIDEWAYS more than down —
+        // MEASURED off the posed rig, five distributed bends finished the lash at 2.04 m, over his head. The
+        // neck rears and the BODY arrives, forward only.
         const dive = LASH_DIVE * mathx.maxF(0, self.swing);
         var wx: [N]rl.Matrix = undefined;
         wx[ROOT] = mul3(
@@ -595,11 +571,9 @@ pub const Lurker = struct {
 const SUBMERGE: f32 = 1.18;
 const SHOW_AT: f32 = 0.06;
 
-/// **THE STROKE'S SHARE PER NECK SEGMENT, AND THESE COMPOUND.** Each joint is rotated relative to its
-/// PARENT, so what the head ends up at is the SUM down the chain plus its own — five segments and a skull.
-/// Authored as though each were absolute (9 rising to 27, plus 34) the total rear came to 124 degrees and
-/// the creature lay down flat on the water with its head out of frame. `TOTAL_BEND` below is the sum, and a
-/// test pins it: a number that is only correct as an aggregate has to be checked as one.
+/// **THESE COMPOUND** — each joint rotates relative to its PARENT, so the head ends up at the SUM down the
+/// chain. Authored as absolutes (9 rising to 27, plus 34) the rear came to 124 degrees and the creature lay
+/// flat on the water. `TOTAL_BEND` is the sum and a test pins it.
 const SEG_BEND_LO: f32 = 3.5;
 const SEG_BEND_HI: f32 = 11.0;
 const HEAD_BEND: f32 = 15.0;
@@ -632,6 +606,10 @@ const WAKE_R: f32 = 0.85;
 const WAKE_SPREAD: f32 = 0.55;
 const WAKE_Y: f32 = 0.06;
 const SPRAY = rgba(150, 162, 152, 175);
+/// A ring on the water flattens out as it spreads — same tint, nearly gone by the time it reaches its width.
+const SPRAY_FLAT = rgba(178, 190, 186, 55);
+/// A ring SLOWS as it widens; run out at a constant rate it reads as a solid disc growing.
+const WAKE_DRAG: f32 = 2.4;
 
 const CAP_N = wf.MAX_PER_KIND;
 
@@ -749,14 +727,9 @@ fn buildBone(b: *Builder, i: usize, rest: [N]rl.Vector3) void {
             b.addBlob(v3(0, 0.010 * H, 0.055 * H), v3(HEAD_R * H * 0.86, 0.062 * H, 0.155 * H), 11, 7, HIDE);
             b.addBlob(v3(0, -0.012 * H, 0.030 * H), v3(HEAD_R * H * 0.72, 0.042 * H, 0.120 * H), 9, 6, BELLY);
             b.addBlob(v3(0, 0.004 * H, 0.150 * H), v3(0.082 * H, 0.046 * H, 0.058 * H), 8, 6, HIDE_LT);
-            // **THE EYES, HIGH ON THE SKULL AND SET WIDE** — a thing that hunts lying just under a surface
-            // keeps them where they clear it first. Emissive, and the only bright pair on the creature.
-            //
-            // **AND THEY HAVE TO SIT PROUD OF THE DOME, WHICH IS THE ONE PLACE THE RELIEF LAW DOES NOT
-            // APPLY.** Sunk the few percent everything else here is sunk (y 0.048 against a crown at 0.072)
-            // they were INSIDE the mass — measured off the render, what showed on the head was the two brow
-            // ridges reading as dark slots and no lamps at all. A surface the sun lights may be flush; a
-            // surface that lights ITSELF has to be visible or it is not a light.
+            // **THE EYES SIT PROUD OF THE DOME — THE ONE PLACE THE RELIEF LAW DOES NOT APPLY.** Sunk the few
+            // percent everything else is (y 0.048 against a crown at 0.072) they were INSIDE the mass and the
+            // render showed two dark slots. A surface that lights ITSELF has to be visible.
             b.addBlob(v3(0.086 * H, 0.064 * H, 0.058 * H), v3(0.030 * H, 0.028 * H, 0.030 * H), 6, 5, EYE);
             b.addBlob(v3(-0.084 * H, 0.063 * H, 0.056 * H), v3(0.029 * H, 0.027 * H, 0.029 * H), 6, 5, EYE);
             b.addBlob(v3(0.094 * H, 0.050 * H, 0.010 * H), v3(0.038 * H, 0.020 * H, 0.048 * H), 6, 4, HIDE_DK);

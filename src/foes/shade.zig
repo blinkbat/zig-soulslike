@@ -124,7 +124,19 @@ const HEM_LAG_RATE: f32 = 5.2;
 const HEM_SWING: f32 = 34.0; // degrees of tatter throw at full travel
 const HEM_WOBBLE: f32 = 6.0;
 
-const PARTS = 48;
+const RIFT_N = 14;
+const DRAIN_N = 12;
+const TORN_N = 10;
+const UNRAVEL_N = 26;
+/// Sized by ARITHMETIC over the worst frame (the ring law). At 48 THE DEATH DID NOT FIT ITS OWN BLOW: the
+/// killing strike lays `tornMotes` (15) and the shared wound, then `enterDeath` unravels the body over the
+/// same frame — 45 on its own, with a blink's rift (14, still up at a 0.30 s life) or the drain it was
+/// mid-touch of under it, so the unravel ate the very motes the body is made of going.
+const PARTS = 64;
+comptime {
+    std.debug.assert(PARTS >= RIFT_N + foe.hitParts(TORN_N) + UNRAVEL_N + foe.WOUND_PARTS);
+    std.debug.assert(RIFT_N >= DRAIN_N); // the rift is the bigger of the two one-shots the blow can land on
+}
 
 const N = 17;
 const ROOT = 0;
@@ -583,32 +595,32 @@ pub const Shade = struct {
     }
 
 
-    fn emit(self: *Shade, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
-        foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
-    }
 
     fn rift(self: *Shade) void {
         const c = self.centerWorld();
         var i: i32 = 0;
-        while (i < 14) : (i += 1) {
+        while (i < RIFT_N) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(1.6, 3.4) * self.scale;
-            self.emit(
-                v3(c.x, c.y + self.fxRng.range(-0.35, 0.45) * self.scale, c.z),
-                v3(mathx.cosf(a) * sp, self.fxRng.range(-0.4, 1.6), mathx.sinf(a) * sp),
-                self.fxRng.range(0.16, 0.30),
-                self.fxRng.range(0.032, 0.062) * self.scale,
-                0.006,
-                if (self.fxRng.float() < 0.4) RIFT else WISP_COL,
-                1.2,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(c.x, c.y + self.fxRng.range(-0.35, 0.45) * self.scale, c.z),
+                .v = v3(mathx.cosf(a) * sp, self.fxRng.range(-0.4, 1.6), mathx.sinf(a) * sp),
+                .life = self.fxRng.range(0.16, 0.30),
+                .r0 = self.fxRng.range(0.032, 0.062) * self.scale,
+                .r1 = 0.006,
+                .col = if (self.fxRng.float() < 0.4) RIFT else WISP_COL,
+                .grav = 1.2,
+                .drag = 3.0,
+                .stretch = 0.045,
+                .add = true,
+            });
         }
     }
 
     fn drainMotes(self: *Shade, hero: rl.Vector3) void {
         const to = self.centerWorld();
         var i: i32 = 0;
-        while (i < 12) : (i += 1) {
+        while (i < DRAIN_N) : (i += 1) {
             const from = v3(
                 hero.x + self.fxRng.range(-0.3, 0.3),
                 hero.y + self.fxRng.range(0.5, 1.5),
@@ -616,53 +628,58 @@ pub const Shade = struct {
             );
             const d = mathx.subV(to, from);
             const life = self.fxRng.range(0.22, 0.34);
-            self.emit(
-                from,
-                mathx.scaleV(d, 1.0 / life),
-                life,
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = from,
+                .v = mathx.scaleV(d, 1.0 / life),
+                .life = life,
                 // SIZED BETWEEN TWO FAILURES (AGENTS.md): at 0.09 the stream was a row of beach balls with
                 // the arm that caused it hidden behind them. Judged against the CREATURE, not the hero.
-                self.fxRng.range(0.026, 0.046),
-                0.008,
-                DRAIN,
-                -0.6,
-            );
+                .r0 = self.fxRng.range(0.026, 0.046),
+                .r1 = 0.008,
+                .col = DRAIN,
+                .grav = -0.6,
+                .stretch = 0.030,
+                .add = true,
+            });
         }
     }
 
     fn tornMotes(self: *Shade, at: rl.Vector3, dir: rl.Vector3) void {
-        const parts = foe.hitParts(10);
+        const parts = foe.hitParts(TORN_N);
         var i: i32 = 0;
         while (i < parts) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(0.5, 1.9);
-            self.emit(
-                at,
-                v3(dir.x * sp + mathx.cosf(a) * 0.7, self.fxRng.range(0.3, 1.8), dir.z * sp + mathx.sinf(a) * 0.7),
-                self.fxRng.range(0.26, 0.46),
-                self.fxRng.range(0.04, 0.085) * self.scale,
-                0.01,
-                WISP_DK,
-                2.4,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = at,
+                .v = v3(dir.x * sp + mathx.cosf(a) * 0.7, self.fxRng.range(0.3, 1.8), dir.z * sp + mathx.sinf(a) * 0.7),
+                .life = self.fxRng.range(0.26, 0.46),
+                .r0 = self.fxRng.range(0.04, 0.085) * self.scale,
+                .r1 = 0.01,
+                .col = WISP_DK,
+                .grav = 2.4,
+                .drag = 2.0,
+            });
         }
     }
 
     fn unravel(self: *Shade) void {
         const c = self.centerWorld();
         var i: i32 = 0;
-        while (i < 26) : (i += 1) {
+        while (i < UNRAVEL_N) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(0.4, 2.2) * self.scale;
-            self.emit(
-                v3(c.x, c.y + self.fxRng.range(-0.7, 0.6) * self.scale, c.z),
-                v3(mathx.cosf(a) * sp, self.fxRng.range(0.2, 2.4), mathx.sinf(a) * sp),
-                self.fxRng.range(0.5, 1.05),
-                self.fxRng.range(0.07, 0.15) * self.scale,
-                0.01,
-                if (self.fxRng.float() < 0.3) foe.MOTE else WISP_COL,
-                1.1,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(c.x, c.y + self.fxRng.range(-0.7, 0.6) * self.scale, c.z),
+                .v = v3(mathx.cosf(a) * sp, self.fxRng.range(0.2, 2.4), mathx.sinf(a) * sp),
+                .life = self.fxRng.range(0.5, 1.05),
+                .r0 = self.fxRng.range(0.07, 0.15) * self.scale,
+                .r1 = 0.01,
+                .col = if (self.fxRng.float() < 0.3) foe.MOTE else WISP_COL,
+                .grav = 1.1,
+                .drag = 1.6,
+                .add = true,
+            });
         }
     }
 
@@ -1191,6 +1208,34 @@ test "the wisp leaves the hands exactly once, and from between them" {
     try std.testing.expectEqual(@as(u32, 1), thrown);
     try std.testing.expect(from.y > s.pos.y + 0.5);
     try std.testing.expect(mathx.distXZ(from, s.pos) < 1.6);
+}
+
+test "THE UNRAVEL DOES NOT EAT ITSELF — a blink's rift is still up when the killing blow lands" {
+    var s = Shade.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const hero = v3(0, 0, 5);
+    s.debugBlink(hero);
+    var live: usize = 0;
+    for (&s.parts) |*q| {
+        if (q.life > 0) live += 1;
+    }
+    try std.testing.expectEqual(@as(usize, RIFT_N), live);
+
+    const cut = foe.Blade{
+        .active = true,
+        .r = 0.4,
+        .a = mathx.addV(s.centerWorld(), v3(-1, 0, 0)),
+        .b = mathx.addV(s.centerWorld(), v3(1, 0, 0)),
+        .hit = .{ .dmg = 9999, .poise = 999, .stance = 40 }, // `stance` is what makes a blow HEAVY
+    };
+    s.tryHit(cut);
+    try std.testing.expect(s.justDied);
+    live = 0;
+    for (&s.parts) |*q| {
+        if (q.life > 0) live += 1;
+    }
+    // Every mote of that frame is still in the ring: the rift, the tear, the wound and the body coming apart.
+    std.debug.print("\n  shade death frame: {d} live motes in a {d}-slot ring\n", .{ live, PARTS });
+    try std.testing.expectEqual(@as(usize, RIFT_N + @as(usize, @intCast(foe.hitParts(TORN_N))) + UNRAVEL_N + foe.WOUND_PARTS), live);
 }
 
 test "A CORPSE IS NOT A COLLIDER, and it comes apart rather than falling over" {

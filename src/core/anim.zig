@@ -84,11 +84,9 @@ pub const Spring = struct {
     /// lives just under 1.
     pub fn step(self: *Spring, target: f32, stiff: f32, zeta: f32, dt: f32) f32 {
         const damp = 2.0 * zeta * @sqrt(mathx.maxF(stiff, 0));
-        // **SUBSTEPPED, because these are stiff enough to need it.** A spring fast enough to track a
-        // two-hundred-millisecond strike has a natural period near a tenth of a second, and integrating
-        // that in one frame-sized step is how a spring layer either lags visibly or detonates. The total
-        // `dt` is still clamped — a hitch must not be simulated in full — and then walked in pieces small
-        // enough that the result is the same at 30 fps as at 144.
+        // **SUBSTEPPED**: a spring tracking a 200 ms strike has a natural period near 0.1 s, and integrating
+        // that in one frame-sized step lags visibly or detonates. `dt` is clamped, then walked in pieces
+        // small enough that 30 fps and 144 agree.
         const total = mathx.minF(dt, 1.0 / 30.0);
         const steps: u32 = @intFromFloat(@max(1.0, @ceil(total * 240.0)));
         const h = total / @as(f32, @floatFromInt(steps));

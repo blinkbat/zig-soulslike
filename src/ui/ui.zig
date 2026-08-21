@@ -150,13 +150,9 @@ pub fn iconButton(ctx: *Ctx, r: rl.Rectangle, ic: Icon, label: [:0]const u8, siz
     return h and ctx.pressed;
 }
 
-/// **A LAYER BUTTON WITH ITS OWN EYE IN IT** — Tiled's and Photoshop's arrangement, and the reason it is one
-/// widget rather than two is WIDTH: the editor's top strip already runs the length of the window, and six
-/// separate eye buttons pushed the last of it off the right-hand edge. The eye sits in the button's own right
-/// margin, so a layer costs exactly what its label costs and the pair cannot drift apart on screen.
-///
-/// Returns which HALF was pressed, never both: the eye's rect is tested FIRST and takes the click, so the
-/// selection half is the whole button minus that.
+/// **A LAYER BUTTON WITH ITS OWN EYE IN IT** — Tiled's arrangement. One widget and not two for WIDTH: six
+/// separate eye buttons pushed the editor's top strip off the right-hand edge. Returns which HALF was
+/// pressed, never both — the eye's rect is tested FIRST, so the selection half is the button minus it.
 pub const LayerHit = enum { none, select, toggle };
 
 /// An EMPTY label is the narrow form — icon, eye, and the name in the tooltip. `drawTopBar` measures the
@@ -166,10 +162,8 @@ pub fn layerButtonW(label: [:0]const u8, size: i32) i32 {
     return iconButtonW(label, size) + EYE_SLOT;
 }
 
-/// **THE SLOT IS THE HIT AREA; THE GLYPH IS DRAWN BIGGER THAN IT.** Two numbers because they answer to
-/// different things: the slot costs WIDTH six times over on a strip that only just fits the window, while the
-/// glyph has to be legible. It overhangs into the label's own right-hand `ICON_PAD`, which is empty space, so
-/// the eye reads at `EYE_DRAW` while the layout only pays `EYE_SLOT`.
+/// **THE SLOT IS THE HIT AREA; THE GLYPH IS DRAWN BIGGER THAN IT.** The glyph overhangs into the label's own
+/// right-hand `ICON_PAD`, so the eye reads at `EYE_DRAW` while the layout only pays `EYE_SLOT`.
 const EYE_SLOT: i32 = 15;
 const EYE_DRAW: f32 = 19.0;
 

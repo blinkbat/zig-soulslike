@@ -143,16 +143,10 @@ const PILLAR_H: f32 = 1.48;
 const PILLAR_R0: f32 = 0.105;
 const PILLAR_R1: f32 = 0.048;
 /// **THE ALPHA IS SOLVED AGAINST THE SHADER'S OWN STEP, NOT CHOSEN.** `outA` lerps TIP→CORE across
-/// `smoothstep(0.62, 0.90, emis)` and `emis = 1 - a/255`, so the translucent end wants `emis <= 0.62`, i.e.
-/// any `a >= 97`.
-///
-/// **AND IT FADES OUT AS IT GOES UP** (owner's call). Both ends used to sit on one alpha, so only the COLOUR
-/// dimmed and the shaft was uniformly `FLAME_A_TIP` from foot to head — a column of even translucency, which
-/// reads as a cut-off cylinder rather than as light dispersing. Since the shader FLOORS opacity at the tip
-/// value, the only way to get a gradient is to make the FOOT more solid, so the foot is solved and the head
-/// is left on the floor: `a = 63` → `emis = 0.753` → `outA ≈ 0.62`, easing to the tip's 0.42 by the top. It
-/// is deliberately short of `FLAME_A_CORE` (0.86) — you still see THROUGH the thing, which is the whole of
-/// what makes it a shaft of light and not a post.
+/// `smoothstep(0.62, 0.90, emis)` with `emis = 1 - a/255`, so the translucent end wants `emis <= 0.62`, any
+/// `a >= 97`. **AND IT FADES OUT AS IT GOES UP** (owner's call): the shader FLOORS opacity at the tip value,
+/// so the gradient has to come from a more solid FOOT — `a = 63` → `emis = 0.753` → `outA ≈ 0.62`, easing to
+/// the tip's 0.42. Deliberately short of `FLAME_A_CORE` (0.86): you still see THROUGH it.
 const PILLAR_A_FOOT: u8 = 63;
 const PILLAR_A_HEAD: u8 = 104;
 const PILLAR = mathx.rgba(212, 208, 176, PILLAR_A_FOOT);
@@ -215,11 +209,10 @@ pub fn pickupMesh(shader: rl.Shader) rl.Model {
             prevP.y + PILLAR_H / PSEGF,
             prevP.z + rng.signed() * 0.016,
         );
-        // **THE COLOUR IS THE SEGMENT'S MIDDLE, EASED.** Taken at its FOOT the last segment sampled 0.8 and the
-        // head never reached the top colour at all — the shaft simply stopped, one band short of gone. And the
-        // ease is what makes it a DISPERSAL rather than a ramp: it holds near full through the lower third,
-        // where a shaft of light is still a shaft, then gives out over the top — reaching the shader's own
-        // translucent floor a little before the tip, so the head goes to nothing instead of ending on a rim.
+        // **THE SEGMENT'S MIDDLE, EASED.** Taken at its FOOT the last segment sampled 0.8 and the head never
+        // reached the top colour — the shaft stopped one band short of gone. The ease holds near full through
+        // the lower third and reaches the shader's translucent floor before the tip, so the head goes to
+        // nothing instead of ending on a rim.
         const fm = (f + 0.5 / PSEGF);
         const t = fm * @sqrt(fm);
         b.addCapsule(
@@ -309,12 +302,10 @@ pub fn waterMesh(shader: rl.Shader) rl.Model {
 }
 
 
-// THE FOG GATE — a doorway you can see is a doorway, and cannot see through. Authored at the size of a real
-// one (`FOG_W` x `FOG_H`) so the editor's `scale` reads as a multiple of a door rather than of nothing.
+// Authored at the size of a real door (`FOG_W` x `FOG_H`), so the editor's `scale` reads as a multiple of one.
 //
-// **IT IS A VEIL, NOT A PROP MESH** (`props.INFO`): the sheet has to be laid down AFTER everything opaque or
-// its own depth would punch a hole in whatever is standing behind it, which at the head of the gate — where
-// it has faded to nothing — is a rectangle of missing world.
+// **IT IS A VEIL, NOT A PROP MESH** (`props.INFO`): laid down AFTER everything opaque, or its own depth
+// punches a hole in what stands behind it — at the faded head of the gate, a rectangle of missing world.
 pub const FOG_W: f32 = 3.4;
 pub const FOG_H: f32 = 4.2;
 /// Half-thickness of the WARD behind the sheet (`props.Info.ward`) — not of the curtain, whose three
@@ -322,44 +313,33 @@ pub const FOG_H: f32 = 4.2;
 /// charge steps clean through: the knight's 12.4 m/s covers 0.21 m at 60 fps and 0.41 m at 30.
 pub const FOG_WARD_R: f32 = 0.40;
 // THE UNDULATION IS PER-VERTEX, so the grid IS the amplitude it can carry: at 10x9 the roll had two and a
-// half cells to bend through and read as a flag rather than as a body of vapour.
+// half cells to bend through and read as a flag.
 //
-// **AND THIS IS THE EXPENSIVE PROP IN THE GAME, ON PURPOSE.** 16x14x5x2 = 2240 quads, 4480 tris (it was 1080),
-// and five ALPHA-BLENDED layers of a fragment shader that runs three value-noise octaves — over a sheet that
-// fills most of the frame when you are standing at it. It is the price of "opaque and undulating" and it is
-// paid only on frames a gate is on screen; if it ever needs to come down, the sheet COUNT is the dial, since
-// it multiplies fill directly while the grid only costs vertices.
+// **AND THIS IS THE EXPENSIVE PROP IN THE GAME, ON PURPOSE**: 16x14x5x2 = 2240 quads, 4480 tris (it was
+// 1080), five ALPHA-BLENDED layers over three value-noise octaves, on a sheet that fills the frame. If it
+// has to come down, the sheet COUNT is the dial — it multiplies fill, where the grid only costs vertices.
 const FOG_COLS: i32 = 16;
 const FOG_ROWS: i32 = 14;
 const FOG_SHEETS: i32 = 5; // depth: five curtains a hand apart, so the billow has something to move THROUGH
-// COLD AND HEAVY, not the pale grey it was — everything outdoors here is warm, so the one thing standing
-// between you and a boss is the one thing that is not.
-//
-// **SOLVED AGAINST THE RENDER, NOT PICKED.** At (190,198,210) the sheet measured 220,209,201 on screen beside
-// a cliff at 151,137,105: the brightest thing in the frame, warm, and so far up the curve that the curdle and
-// the billow were both clipped flat out of it. Screen goes as albedo^(1/2.2), so 220 → 130 wants a factor of
-// (130/220)^2.2 = 0.314 on the albedo. The BLUE is then pushed well past neutral on top of that, because the
-// warm key and the haze bank drag it back: an albedo B/R of 1.18 came out at 0.91.
-// Alpha is EMISSIVE, not opacity (the shader reads `1 - alpha`), and it rises with the darkening — the
-// emissive floor is proportional to the albedo, so a sheet this dark needs more of it to survive nightfall.
+// COLD AND HEAVY: everything outdoors here is warm, so the one thing between you and a boss is the one that
+// is not. **SOLVED AGAINST THE RENDER, NOT PICKED** — at (190,198,210) it measured 220,209,201 beside a cliff
+// at 151,137,105, so far up the curve that the curdle and billow clipped flat. 220 → 130 wants
+// (130/220)^2.2 = 0.314 on the albedo, and the BLUE is pushed past neutral because the warm key drags it
+// back: an albedo B/R of 1.18 came out at 0.91. Alpha is EMISSIVE, not opacity (the shader reads `1 - alpha`).
 const FOG_PALE = mathx.rgba(38, 44, 58, 176);
 const FOG_DEEP = mathx.rgba(20, 24, 36, 176);
-/// **THE MOTES THE SHEET SHEDS AS HE CROSSES** (`hero.fogWake`). DERIVED from the curtain's own colours
-/// rather than picked beside them, or a retune of the wall leaves the fog it throws off the wrong colour and
-/// nothing says so: a mote is drawn as a lit SPHERE and the sheet as a translucent emissive plane, so the
-/// same albedo reads several times darker on the mote and the lift is what puts the two back on one value.
-/// The ALPHA is the mote's own opacity (`foe.drawParticles`) and NOT the sheet's emissive channel, so it is
-/// the one number here that is set rather than carried over.
+/// **THE MOTES THE SHEET SHEDS AS HE CROSSES** (`hero.fogWake`), DERIVED from the curtain's own colours or a
+/// retune of the wall leaves them the wrong colour silently. A mote draws lit and the sheet translucent
+/// emissive, so the same albedo reads several times darker on the mote and the lift puts them back on one
+/// value. The ALPHA is the mote's own opacity and NOT the sheet's emissive channel.
 const WAKE_LIFT: f32 = 0.40;
 const WHITE = mathx.rgba(255, 255, 255, 255);
 pub const FOG_WAKE_PALE = mathx.withAlpha(mathx.lerpColor(FOG_PALE, WHITE, WAKE_LIFT), 168);
 pub const FOG_WAKE_DEEP = mathx.withAlpha(mathx.lerpColor(FOG_DEEP, WHITE, WAKE_LIFT), 148);
 
-/// **WHAT A SHUT GATE IS TINTED** (owner: gate changes colour to signify it's closed). A per-draw multiply on
-/// the sheet's own albedo (`shaders.sceneVS`'s `colDiffuse`), so the curdle, the billow and the torn head are
-/// all still there — it is the same wall in a different light, not a second material. It goes the ONE way
-/// nothing else outdoors here goes cold: red stays, blue is cut to a third, and alpha MUST be 255 because the
-/// shader reads that channel as emissive.
+/// **WHAT A SHUT GATE IS TINTED** (owner: gate changes colour to signify it's closed) — a per-draw multiply on
+/// the sheet's albedo (`shaders.sceneVS`'s `colDiffuse`), so it is the same wall in a different light. Red
+/// stays, blue is cut to a third, and alpha MUST be 255: the shader reads that channel as emissive.
 pub const FOG_SHUT_TINT = mathx.rgba(255, 132, 58, 255);
 
 /// The curtain. Vertex ALPHA is left near-solid on purpose — the scene shader reads `1 - alpha` as emissive

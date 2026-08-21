@@ -38,8 +38,10 @@ const CHIP_SPRAY = foe.Spray{
     .lifeLo = 0.32, .lifeHi = 0.60,
     .rLo = 0.022,   .rHi = 0.050,
     .r1 = 0.008,    .col = CHIP, .grav = 8.0,
+    .stretch = 0.030, .bounce = 0.42,
 };
 const SPARK = rgba(255, 208, 128, 240);
+const SPARK_COOL = rgba(226, 116, 38, 200);
 const SPLINTER = rgba(86, 64, 44, 240);
 
 const TRAIL_N = 22;
@@ -357,7 +359,15 @@ const KNEEL_TRAIL_KNEE = 122.0;
 const KNEEL_FOLD = 19.0;
 const KNEEL_HEAD = 40.0;
 
-const NPART = 56;
+/// ARITHMETIC over the worst frame (the ring law). At 56 A KILLING BLOW OVERFLOWED IT ON ITS OWN: `chips(20)`
+/// (`hitParts` = 30) + the death `chips(22)` (= 33) + the wound = 66 into 56. The real worst frame is that
+/// blow landing on the KICK, which lays `kickBurst`'s 36 and `grit`'s 18 together: 54 + 66 = 120.
+const NPART = 124;
+comptime {
+    // THE RING LAW, EXECUTABLE: the kick's 36 + 18 with a killing heavy blow's two chip sprays and the
+    // shared wound. At 56 the blow alone did not fit.
+    std.debug.assert(NPART >= 36 + 18 + foe.hitParts(20) + foe.hitParts(22) + foe.WOUND_PARTS);
+}
 
 const State = enum { idle, approach, circle, wind, swing, recover, stunlight, stunheavy, guardbreak, dead };
 
@@ -797,16 +807,19 @@ pub const Warrior = struct {
         var i: i32 = 0;
         while (i < n) : (i += 1) {
             const a = self.fxRng.angle();
-            const s = self.fxRng.range(0.5, 1.0) * spd * self.scale;
-            self.emit(
-                v3(self.pos.x + self.fxRng.signed() * 0.22, self.pos.y + 0.04, self.pos.z + self.fxRng.signed() * 0.22),
-                v3(f.x * along * s + mathx.cosf(a) * s * 0.45, self.fxRng.range(1.1, 3.4), f.z * along * s + mathx.sinf(a) * s * 0.45),
-                self.fxRng.range(0.42, 0.80),
-                self.fxRng.range(0.08, 0.19) * self.scale,
-                0.34 * self.fxRng.range(0.8, 1.4) * self.scale,
-                DUST,
-                3.6,
-            );
+            const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.42, 0.80);
+            const s = self.fxRng.range(0.5, 1.0) * spd * self.scale * B.boost;
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(self.pos.x + self.fxRng.signed() * 0.22, self.pos.y + 0.04, self.pos.z + self.fxRng.signed() * 0.22),
+                .v = v3(f.x * along * s + mathx.cosf(a) * s * 0.45, self.fxRng.range(1.1, 3.4) * B.boost, f.z * along * s + mathx.sinf(a) * s * 0.45),
+                .life = B.life(&self.fxRng),
+                .r0 = self.fxRng.range(0.08, 0.19) * self.scale,
+                .r1 = 0.34 * self.fxRng.range(0.8, 1.4) * self.scale,
+                .col = DUST,
+                .col1 = foe.DUST_THIN,
+                .grav = foe.DUST_GRAV,
+                .drag = foe.DUST_DRAG,
+            });
         }
     }
 
@@ -1427,17 +1440,24 @@ pub const Warrior = struct {
     }
 
 
-    fn emit(self: *Warrior, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
-        foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
-    }
 
     fn dustBurst(self: *Warrior, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
+        const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.38, 0.68);
         var i: i32 = 0;
         while (i < n) : (i += 1) {
             const a = self.fxRng.angle();
-            const s = self.fxRng.range(0.45, 1.0) * spd * self.scale;
-            const vel = v3(mathx.cosf(a) * s, self.fxRng.range(0.7, 2.6), mathx.sinf(a) * s);
-            self.emit(v3(c.x, self.pos.y + 0.05, c.z), vel, self.fxRng.range(0.38, 0.68), self.fxRng.range(0.07, 0.15) * self.scale, big * self.fxRng.range(0.8, 1.3) * self.scale, DUST, 4.2);
+            const s = self.fxRng.range(0.45, 1.0) * spd * self.scale * B.boost;
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(c.x, self.pos.y + 0.05, c.z),
+                .v = v3(mathx.cosf(a) * s, self.fxRng.range(0.7, 2.6) * B.boost, mathx.sinf(a) * s),
+                .life = B.life(&self.fxRng),
+                .r0 = self.fxRng.range(0.07, 0.15) * self.scale,
+                .r1 = big * self.fxRng.range(0.8, 1.3) * self.scale,
+                .col = DUST,
+                .col1 = foe.DUST_THIN,
+                .grav = foe.DUST_GRAV,
+                .drag = foe.DUST_DRAG,
+            });
         }
     }
     fn grit(self: *Warrior, c: rl.Vector3, n: i32) void {
@@ -1445,15 +1465,17 @@ pub const Warrior = struct {
         while (i < n) : (i += 1) {
             const a = self.fxRng.angle();
             const s = self.fxRng.range(1.2, 3.4) * self.scale;
-            self.emit(
-                v3(c.x, self.pos.y + 0.08, c.z),
-                v3(mathx.cosf(a) * s, self.fxRng.range(2.4, 5.2), mathx.sinf(a) * s),
-                self.fxRng.range(0.45, 0.85),
-                self.fxRng.range(0.025, 0.055) * self.scale,
-                0.012,
-                CHIP,
-                9.0,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(c.x, self.pos.y + 0.08, c.z),
+                .v = v3(mathx.cosf(a) * s, self.fxRng.range(2.4, 5.2), mathx.sinf(a) * s),
+                .life = self.fxRng.range(0.45, 0.85),
+                .r0 = self.fxRng.range(0.025, 0.055) * self.scale,
+                .r1 = 0.012,
+                .col = CHIP,
+                .grav = 9.0,
+                .stretch = 0.030,
+                .bounce = 0.42,
+            });
         }
     }
     fn chips(self: *Warrior, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
@@ -1464,15 +1486,19 @@ pub const Warrior = struct {
         while (i < n) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(1.4, 4.2);
-            self.emit(
-                at,
-                v3(-dir.x * sp * 0.5 + mathx.cosf(a) * sp * 0.6, self.fxRng.range(1.2, 3.6), -dir.z * sp * 0.5 + mathx.sinf(a) * sp * 0.6),
-                self.fxRng.range(0.16, 0.34),
-                self.fxRng.range(0.014, 0.030),
-                0.002,
-                SPARK,
-                6.0,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = at,
+                .v = v3(-dir.x * sp * 0.5 + mathx.cosf(a) * sp * 0.6, self.fxRng.range(1.2, 3.6), -dir.z * sp * 0.5 + mathx.sinf(a) * sp * 0.6),
+                .life = self.fxRng.range(0.16, 0.34),
+                .r0 = self.fxRng.range(0.014, 0.030),
+                .r1 = 0.002,
+                .col = SPARK,
+                .col1 = SPARK_COOL,
+                .grav = 6.0,
+                .stretch = 0.055,
+                .bounce = 0.45,
+                .add = true,
+            });
         }
     }
     fn shatter(self: *Warrior, at: rl.Vector3) void {
@@ -1481,33 +1507,38 @@ pub const Warrior = struct {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(1.6, 5.0) * self.scale;
             const wood = self.fxRng.float() < 0.72;
-            self.emit(
-                v3(at.x + self.fxRng.signed() * 0.18, at.y + self.fxRng.signed() * 0.26, at.z + self.fxRng.signed() * 0.18),
-                v3(mathx.cosf(a) * sp, self.fxRng.range(1.4, 4.6), mathx.sinf(a) * sp),
-                self.fxRng.range(0.5, 0.95),
-                self.fxRng.range(0.03, 0.075) * self.scale,
-                0.010,
-                if (wood) SPLINTER else CHIP,
-                8.5,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(at.x + self.fxRng.signed() * 0.18, at.y + self.fxRng.signed() * 0.26, at.z + self.fxRng.signed() * 0.18),
+                .v = v3(mathx.cosf(a) * sp, self.fxRng.range(1.4, 4.6), mathx.sinf(a) * sp),
+                .life = self.fxRng.range(0.5, 0.95),
+                .r0 = self.fxRng.range(0.03, 0.075) * self.scale,
+                .r1 = 0.010,
+                .col = if (wood) SPLINTER else CHIP,
+                .grav = 8.5,
+                .stretch = 0.035,
+                .bounce = if (wood) 0.30 else 0.42,
+            });
         }
         self.sparks(at, self.fdir(), 12);
     }
     fn emitGather(self: *Warrior, dt: f32, k: f32) void {
         const emitRate = (5.0 + 26.0 * k);
-        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.2, 0.7) * self.scale;
-            self.emit(
-                v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + 0.04, self.pos.z + mathx.sinf(a) * rr),
-                v3(self.fxRng.signed() * 0.5, self.fxRng.range(0.3, 1.3), self.fxRng.signed() * 0.5),
-                self.fxRng.range(0.28, 0.5),
-                self.fxRng.range(0.03, 0.07) * self.scale,
-                0.012,
-                DUST,
-                3.0,
-            );
+            const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.28, 0.5);
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + 0.04, self.pos.z + mathx.sinf(a) * rr),
+                .v = v3(self.fxRng.signed() * 0.5 * B.boost, self.fxRng.range(0.3, 1.3) * B.boost, self.fxRng.signed() * 0.5 * B.boost),
+                .life = B.life(&self.fxRng),
+                .r0 = self.fxRng.range(0.03, 0.07) * self.scale,
+                .r1 = 0.012,
+                .col = DUST,
+                .col1 = foe.DUST_THIN,
+                .grav = foe.DUST_GRAV,
+                .drag = foe.DUST_DRAG,
+            });
         }
     }
     fn footfalls(self: *Warrior) void {

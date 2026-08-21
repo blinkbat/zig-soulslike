@@ -12,12 +12,9 @@ const BONE_DK = art.BONE_DK;
 const MARROW = art.MARROW;
 const ASH_DK = art.ASH_DK;
 
-// ── THE GREAT BONES ─────────────────────────────────────────────────────────────────────────────────────
-//
-// Something enormous died here and the earth took everything but the frame. These are the only props in the
-// world at architecture scale that were never built, so they keep the DEAD-GROWTH laws rather than the
-// masonry ones: nothing dead is straight, nothing ends in a point, and a curved shaft draws its curl ONCE
-// and applies it every segment (`propwood.deadLimbInto`'s rule, one family along).
+// The only props at architecture scale that were never BUILT, so they keep the DEAD-GROWTH laws and not the
+// masonry ones: nothing dead is straight, nothing ends in a point, and a curved shaft draws its curl ONCE and
+// applies it every segment (`propwood.deadLimbInto`'s rule).
 
 pub const RibKind = struct {
     /// Arc LENGTH along the shaft, not height — the height falls out of the curl and is measured, never typed.
@@ -212,13 +209,10 @@ pub const ARCH_HALF: f32 = blk: {
     break :blk mathx.lenXZ(ribPath(RIB_STOUT).tip());
 };
 
-// ── THE SKULL ───────────────────────────────────────────────────────────────────────────────────────────
 
-/// Half sunk and canted, because a skull that sits square on the ground looks placed. The sockets are RELIEF
-/// INWARD — sunk blobs in shadow, not holes, since a hole in a closed hull is a hole you can see the inside of.
-/// **THE SWATCH IS PART OF THE TEST.** `runPropShots` frames every kind from yaw 35, which looks up +Z — so
-/// a head authored muzzle-on-+X shows the harness the back of its own skull and nothing else. Authored along
-/// +X all the same, because that is the axis the jaw and the teeth are easiest to read in, and then TURNED.
+/// Half sunk and canted. Sockets are RELIEF INWARD — sunk blobs in shadow, not holes: a hole in a closed hull
+/// is a hole you can see the inside of. **THE SWATCH IS PART OF THE TEST** — `runPropShots` frames every kind
+/// from yaw 35, looking up +Z, so a head authored muzzle-on-+X shows the harness the back of its own skull.
 const SKULL_YAW: f32 = 2.53;
 
 pub fn skullMesh(shader: rl.Shader) rl.Model {
@@ -229,10 +223,9 @@ pub fn skullMesh(shader: rl.Shader) rl.Model {
     const o = mathx.zero3;
     b.setMat(.stone);
 
-    // **WHAT MAKES A SKULL A SKULL IS THE HOLES AND THE ARCHES, NOT THE DOME.** Built as one smooth cranium
-    // it came back an igloo: pale, closed and shapeless. So the mass is dark, the muzzle stands well clear of
-    // the braincase on a visible neck, the cheek arches carry daylight under them, and the sockets are RIDGE
-    // PLUS SHADOW rather than a sunk blob — a depression pushed into a closed hull is invisible from outside.
+    // **WHAT MAKES A SKULL A SKULL IS THE HOLES AND THE ARCHES, NOT THE DOME** — one smooth cranium came back
+    // an igloo. The mass is dark, the muzzle stands clear of the braincase, the cheek arches carry daylight
+    // under them, and the sockets are RIDGE PLUS SHADOW: a depression in a closed hull is invisible outside.
 
     // The braincase, canted and half into the ground. Darkest thing on the prop: it is the biggest face.
     b.addBlob(put(o, c, sn, v3(-0.70, 1.06, 0)), v3(1.38, 1.00, 1.24), 6, 11, BONE_DK);
@@ -298,7 +291,6 @@ pub fn skullMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// ── THE VERTEBRA ────────────────────────────────────────────────────────────────────────────────────────
 
 /// One knuckle of the spine, boulder-sized: a drum, a blade of neural spine over it and two processes out
 /// the sides. It is the piece that says the ribs had something to hang off.

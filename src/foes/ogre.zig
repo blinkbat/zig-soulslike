@@ -33,6 +33,8 @@ const IRON_RUST = rgba(72, 46, 26, 255);
 const MAW = rgba(14, 8, 7, 255);
 const TONGUE = rgba(58, 25, 23, 255);
 const PARRY_SPARK = rgba(236, 170, 84, 230);
+/// A struck spark is LIGHT and it COOLS — the hero's own catch cools the same way (`hero.PARRY_SPARK_COOL`).
+const PARRY_SPARK_COOL = rgba(206, 96, 30, 190);
 
 const N = 24;
 const ROOT = 0;
@@ -138,13 +140,9 @@ const SLAM_R = 2.3;
 const SWIPE_R = 4.4;
 const TURN_RATE = 3.4; // rad/s (~195 deg/s) — still out-turned by the hero, but no longer a turret
 const SWIPE_TURN = 5.4;
-/// The reticle's seat in the CHEST bone's own frame, and it is DOWN off the joint (which sits at the TOP of
-/// the barrel, 0.775·H) rather than up past it — owner's call, the mark was riding too high. It now sits in
-/// the upper barrel at ~0.715·H, which is 2.9 m of a 4.1 m creature: the middle of the mass you are actually
-/// swinging at, not the collar line above it. Well inside the hurt sphere (`centerWorld` ± `hurtRadius` spans
-/// 0.8..4.1 m), so a locked shaft still converges on something it can hit, and far enough under the skull at
-/// 0.925·H that the head stays what the ogre's mark is kept OFF. It still HINGES: he folds at the waist
-/// through the slam and the mark goes with the chest.
+/// DOWN off the CHEST joint (which sits at the top of the barrel, 0.775·H) — owner's call, the mark rode too
+/// high. Now ~0.715·H, 2.9 m of a 4.1 m creature, inside the hurt sphere (0.8..4.1 m) and clear of the skull
+/// at 0.925·H. It still HINGES with the chest through the slam.
 const LOCK_AT = v3(0, -0.06 * H, 0);
 const BODY_R = 0.55; // ground footprint (pre-scale) — broad
 const HURT_R = 0.72; // hurt-sphere radius the hero's blade tests against (pre-scale) — a big target
@@ -210,14 +208,10 @@ const SWIPE_OUTER = 1.95;
 const SWIPE_ARC_MID = -48.0;
 const SWIPE_ARC = 144.0;
 
-// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT — ONE NUMBER FOR BOTH MOVES (owner's call), IN
-// SECONDS, measured back from that move's own impact frame. A parry is a read of the blow ARRIVING, never of
-// the tell starting, and this is the only form that says so: the window ends where the club does by
-// construction, so a caught blow is one that never landed.
-//
-// WRITTEN AS TWO FRACTIONS OF TWO DIFFERENT STATE CLOCKS the total was emergent — the slam's came out at
-// 0.29 s, most of it while the club was still overhead and motionless. And it is the whole GAME's number now
-// (`foe.PARRY_LEAD`): three private copies of one difficulty dial is `stunCurve`'s story.
+// ONE NUMBER FOR BOTH MOVES (owner's call), IN SECONDS back from that move's own impact frame: a parry reads
+// the blow ARRIVING, never the tell starting, so the window ends where the club does. As two fractions of two
+// state clocks the slam's came out at 0.29 s, most of it with the club overhead and motionless. Now the whole
+// game's (`foe.PARRY_LEAD`).
 const PARRY_LEAD = foe.PARRY_LEAD;
 
 const HUNCH = 9.0;
@@ -296,15 +290,31 @@ const BRACE_HIP = 12.0;
 const BRACE_KNEE = 24.0;
 const BRACE_SINK = 0.011 * H;
 
-const FX_MAX = 56;
+/// Sized by ARITHMETIC over the worst frame (the ring law): a KILLING HEAVY BLOW landing on the frame the
+/// DRIVE hits. The drive lays 42 dust; `tryHit` then fires the heavy spray (`hitParts(20)` = 30), the death
+/// spray on top of it (`hitParts(16)` = 24) and `foe.wounded`'s 3. That is 99.
+const FX_MAX = 100;
 const DUST = foe.DUST;
+/// A BIGGER BODY THROWS FURTHER — the toad's dials over a giant's wound read as a nick. Same shape as
+/// `frog.BLOOD_SPRAY`: the fan is the number that opens it, and drag turns the throw into a burst.
 const BLOOD_SPRAY = foe.Spray{
-    .fanLo = 0.2,  .fanHi = 1.0,
-    .upLo = 0.8,   .upHi = 2.8,
-    .lifeLo = 0.3, .lifeHi = 0.55,
+    .fanLo = 0.8,  .fanHi = 4.6,
+    .upLo = 1.0,   .upHi = 4.2,
+    .lifeLo = 0.70, .lifeHi = 1.15,
     .rLo = 0.04,   .rHi = 0.08,
-    .r1 = 0.01,    .col = BLOOD, .grav = 7.5,
+    .r1 = 0.01,    .col = BLOOD, .grav = foe.BLOOD_GRAV,
+    .col1 = rgba(40, 9, 7, 225), .stretch = foe.BLOOD_STRETCH, .splat = 3.0, .drag = foe.BLOOD_DRAG,
 };
+const BLOOD_LIGHT = 10;
+const BLOOD_HEAVY = 20;
+const BLOOD_DEATH = 16;
+const BLOOD_SPD_LIGHT = 5.4;
+const BLOOD_SPD_HEAVY = 7.6;
+const BLOOD_SPD_DEATH = 6.4;
+comptime {
+    // THE RING LAW, EXECUTABLE: the drive's 42 dust with a killing heavy blow's two sprays and the shared wound.
+    std.debug.assert(FX_MAX >= 42 + foe.hitParts(BLOOD_HEAVY) + foe.hitParts(BLOOD_DEATH) + foe.WOUND_PARTS);
+}
 const BLOOD = rgba(84, 20, 16, 235);
 
 const Particle = foe.Particle;
@@ -416,6 +426,8 @@ pub const Ogre = struct {
     fxHead: usize = 0,
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
+    /// Carried ONLY so its blood knows whether the ground under it is dry (`foe.onDryGround`).
+    wade: foe.Wade = .{},
     /// The DECISION stream — every hold, chain roll and cooldown jitter comes off this, its own stream so
     /// a dust budget change cannot re-deal the fight (fxRng's law). Seeded, so --shot stays deterministic.
     aiRng: mathx.Rng = mathx.Rng.init(2),
@@ -765,11 +777,11 @@ pub const Ogre = struct {
         if (self.state == .dead) return;
         const s = foe.reached(self, blade) orelse return;
         const heavyBlow = foe.wounded(self, s, blade, .{ .light = 0.4, .heavy = 0.7 });
-        self.bloodBurst(s.contact, s.dir, if (heavyBlow) 16 else 10, if (heavyBlow) 2.8 else 2.0);
+        self.bloodBurst(s.contact, s.dir, if (heavyBlow) BLOOD_HEAVY else BLOOD_LIGHT, if (heavyBlow) BLOOD_SPD_HEAVY else BLOOD_SPD_LIGHT);
         sfx.world(.ogre_hurt, self.pos);
         switch (s.reaction) {
             .death => {
-                self.bloodBurst(s.contact, s.dir, 14, 2.4);
+                self.bloodBurst(s.contact, s.dir, BLOOD_DEATH, BLOOD_SPD_DEATH);
                 sfx.world(.ogre_die, self.pos);
                 self.enterDeath();
             },
@@ -873,15 +885,19 @@ pub const Ogre = struct {
         while (sp < 12) : (sp += 1) {
             const a = self.fxRng.angle();
             const fan = self.fxRng.range(0.5, 1.0);
-            self.emit(
-                low,
-                v3(back.x * 3.4 * fan + mathx.cosf(a) * 1.5, self.fxRng.range(1.2, 3.2), back.z * 3.4 * fan + mathx.sinf(a) * 1.5),
-                self.fxRng.range(0.16, 0.30),
-                0.05,
-                0.01,
-                PARRY_SPARK,
-                2.4,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = low,
+                .v = v3(back.x * 3.4 * fan + mathx.cosf(a) * 1.5, self.fxRng.range(1.2, 3.2), back.z * 3.4 * fan + mathx.sinf(a) * 1.5),
+                .life = self.fxRng.range(0.16, 0.30),
+                .r0 = 0.05,
+                .r1 = 0.01,
+                .col = PARRY_SPARK,
+                .col1 = PARRY_SPARK_COOL,
+                .grav = 2.4,
+                .stretch = 0.055,
+                .bounce = 0.45,
+                .add = true,
+            });
         }
         sfx.world(.ogre_hurt, self.pos);
         switch (self.vit.hit(combat.PARRY_HIT)) {
@@ -948,11 +964,9 @@ pub const Ogre = struct {
         self.jawOpen = mathx.approach(self.jawOpen, JAW_REST + JAW_BREATHE * breathe + 6.0 * sigh + JAW_STALK * stalk, e * 0.8);
         self.girdle = mathx.approach(self.girdle, GIRDLE_HEAVE * mathx.sinf(self.elapsed * BREATHE_RATE + self.seed * 6.28 - 0.7) - 2.0 * sigh, e);
     }
-    /// A STAGGERED BODY GIVES UP ITS POSTURE, and `mathx.approach` steps in the units of whatever it is moving
-    /// — so ONE rate cannot serve both an angle and a fraction. At the 4 the leg brace wants, an interrupted
-    /// windup crawled the club arm home from OVER_SH at FOUR DEGREES A SECOND: forty seconds to travel 163, so
-    /// a stunned ogre stood with its club overhead and the next move snapped the arm down on frame one. At
-    /// `STUN_EASE_DEG` it is home in ~0.6 s, inside even the LIGHT stun — that IS the reset.
+    /// `mathx.approach` steps in the units of what it moves, so ONE rate cannot serve both an angle and a
+    /// fraction: at the 4 the leg brace wants, the club arm crawled home from OVER_SH at four degrees a
+    /// second — forty seconds for 163. At `STUN_EASE_DEG` it is home in ~0.6 s, inside even the LIGHT stun.
     fn easeChannelsNeutral(self: *Ogre, dt: f32) void {
         const d = dt * STUN_EASE_DEG;
         self.clubShoulder = mathx.approach(self.clubShoulder, CARRY_SH, d);
@@ -1037,11 +1051,9 @@ pub const Ogre = struct {
         self.jawOpen = lerpF(JAW_ROAR * 0.55, JAW_GRIT, mathx.smoothstep(0.1, 0.7, k));
         self.girdle = lerpF(9.0, -2.0, kW);
     }
-    // THE RETURN'S RE-COCK — from the OVERSWING, not the carry: the swipe ends slung across him (twist 52,
-    // sweep 52, kW = 1 exactly), so these lerps start from those numbers and the chain is continuous by
-    // construction. The RE-COCK is a DRAG, not a lift: the club head drops toward the dirt (this rig is low at
-    // his left, high at his right — measured), so the return cuts a RISING diagonal back across the band. A
-    // re-shouldered gather left the whole return over the hero's head, a blow the sector could not bill.
+    // FROM THE OVERSWING, NOT THE CARRY: the swipe ends slung across him (twist 52, sweep 52, kW = 1), so
+    // these lerps start there and the chain is continuous. The re-cock is a DRAG, not a lift — re-shouldered,
+    // the whole return passed over the hero's head and the sector could not bill it.
     fn setBackwind(self: *Ogre, k: f32) void {
         self.twist = lerpF(52.0, 52.0, k);
         self.clubShoulder = lerpF(-6.0, -6.0, k);
@@ -1319,19 +1331,26 @@ pub const Ogre = struct {
         const low = self.clubLowWorld();
         return v3(low.x, self.pos.y + 0.05, low.z);
     }
-    fn emit(self: *Ogre, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
-        foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
-    }
     fn updateFx(self: *Ogre, dt: f32) void {
         foe.tickParticles(&self.parts, dt, self.pos.y);
     }
     fn dustBurst(self: *Ogre, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
+        const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.4, 0.7);
         var i: i32 = 0;
         while (i < n) : (i += 1) {
             const a = self.fxRng.angle();
-            const s = self.fxRng.range(0.5, 1.0) * spd * self.scale;
-            const vel = v3(mathx.cosf(a) * s, self.fxRng.range(0.8, 3.0), mathx.sinf(a) * s);
-            self.emit(v3(c.x, self.pos.y + 0.06, c.z), vel, self.fxRng.range(0.4, 0.7), self.fxRng.range(0.08, 0.16) * self.scale, big * self.fxRng.range(0.8, 1.3) * self.scale, DUST, 4.5);
+            const s = self.fxRng.range(0.5, 1.0) * spd * self.scale * B.boost;
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(c.x, self.pos.y + 0.06, c.z),
+                .v = v3(mathx.cosf(a) * s, self.fxRng.range(0.8, 3.0) * B.boost, mathx.sinf(a) * s),
+                .life = B.life(&self.fxRng),
+                .r0 = self.fxRng.range(0.08, 0.16) * self.scale,
+                .r1 = big * self.fxRng.range(0.8, 1.3) * self.scale,
+                .col = DUST,
+                .col1 = foe.DUST_THIN,
+                .grav = foe.DUST_GRAV,
+                .drag = foe.DUST_DRAG,
+            });
         }
     }
     fn plantBurst(self: *Ogre) void {
@@ -1345,12 +1364,23 @@ pub const Ogre = struct {
 
     fn emitStrain(self: *Ogre, dt: f32, k: f32) void {
         const emitRate = (6.0 + 22.0 * k);
-        var owed = foe.emitTicks(&self.fxAccum, dt, emitRate, foe.emitCap(emitRate));
+        var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.3, 0.9) * self.scale;
             const bp = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + 0.05, self.pos.z + mathx.sinf(a) * rr);
-            self.emit(bp, v3(self.fxRng.signed() * 0.3, self.fxRng.range(0.3, 1.0), self.fxRng.signed() * 0.3), self.fxRng.range(0.3, 0.5), self.fxRng.range(0.05, 0.11) * self.scale, self.fxRng.range(0.1, 0.18) * self.scale, DUST, 3.5);
+            const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.3, 0.5);
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = bp,
+                .v = v3(self.fxRng.signed() * 0.3 * B.boost, self.fxRng.range(0.3, 1.0) * B.boost, self.fxRng.signed() * 0.3 * B.boost),
+                .life = B.life(&self.fxRng),
+                .r0 = self.fxRng.range(0.05, 0.11) * self.scale,
+                .r1 = self.fxRng.range(0.1, 0.18) * self.scale,
+                .col = DUST,
+                .col1 = foe.DUST_THIN,
+                .grav = foe.DUST_GRAV,
+                .drag = foe.DUST_DRAG,
+            });
         }
     }
     fn footfalls(self: *Ogre) void {
@@ -1371,7 +1401,9 @@ pub const Ogre = struct {
         self.prevPhase = self.phase;
     }
     fn bloodBurst(self: *Ogre, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, BLOOD_SPRAY);
+        var s = BLOOD_SPRAY;
+        if (!foe.onDryGround(self)) s.splat = 0;
+        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, s);
     }
     pub fn drawFx(self: *const Ogre) void {
         foe.drawParticles(&self.parts);
@@ -1825,11 +1857,9 @@ test "the SLAM reaches the earth, and the crush strip ends where the club does" 
 }
 
 test "the head clears the chest barrel — a giant with no visible head is the fail this guards" {
-    // IT MEASURES THE MASSES, NOT THE JOINTS, and it measures the WHOLE STRIDE. As written it compared the
-    // skull JOINT against the barrel's top and sampled ONE frame of the walk: the joint sits 0.150·H under
-    // the top of the cranium it carries, so the comparison was 0.150·H stricter than the thing the test is
-    // named for — and it passed on which frame the stride happened to be at, which is why a nudge to `SCALE`
-    // flipped it while the rig had not moved at all. Both ends now come off the meshes' own constants.
+    // THE MASSES, NOT THE JOINTS, and the WHOLE STRIDE: the skull joint sits 0.150·H under the cranium it
+    // carries, so a joint comparison is that much stricter than the test's name — and sampled at one frame it
+    // flipped on a nudge to `SCALE` with the rig unmoved.
     var o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.4);
     var worst: f32 = 99;
     var k: i32 = 0;
@@ -2162,4 +2192,19 @@ test "A CAUGHT SLAM NEVER LANDS, and the second catch is the punish window" {
     try std.testing.expect(o.parried);
     try std.testing.expectEqual(State.stunheavy, o.state);
     try std.testing.expect(combat.FOE_HEAVY_STUN_DUR > combat.FOE_LIGHT_STUN_DUR);
+}
+
+test "THE WOUND OPENS: five frames on, a giant's blood is a spray across the throw and not one blob" {
+    var pool = [_]Particle{.{}} ** FX_MAX;
+    const at = v3(0, 1.6, 0);
+    const dir = v3(1, 0, 0);
+    for ([_]struct { name: []const u8, n: i32, spd: f32 }{
+        .{ .name = "light", .n = BLOOD_LIGHT, .spd = BLOOD_SPD_LIGHT },
+        .{ .name = "heavy", .n = BLOOD_HEAVY, .spd = BLOOD_SPD_HEAVY },
+    }) |b| {
+        const m = foe.measureSpray(&pool, BLOOD_SPRAY, at, dir, b.n, b.spd, 1.0, 0xB10D, 5.0 / 60.0, 0);
+        std.debug.print("\n  ogre {s}: {d} motes, opens {d:.2} m across the throw, reaches {d:.2} m, {d} stains, all down by {d:.2} s\n", .{ b.name, m.motes, m.open, m.reach, m.splats, m.sink });
+        try std.testing.expect(m.open > 0.50);
+        try std.testing.expect(m.splats * 2 >= m.motes);
+    }
 }

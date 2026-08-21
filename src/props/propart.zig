@@ -92,11 +92,9 @@ pub const NEEDLE_DK = rgba(15, 24, 21, 255);
 pub const BIRCH_BARK = rgba(104, 100, 90, 255);
 pub const BIRCH_SCAR = rgba(44, 42, 38, 255);
 pub const BONE = rgba(108, 104, 92, 255);
-// **GREAT BONE IS NOT SCATTERED BONE.** `BONE` above is a shin lying in the grass — a hand's width of it, so
-// it can afford to be pale. A rib nine metres tall is a BIG SMOOTH MASS, and at 108 the hot key and the
-// gamma lift bring it back at 221/255: a white plastic tube. Solved instead — 60 comes back at 172, a
-// bleached grey — and pushed NEUTRAL, since every other outdoor albedo here is warm and that is the only
-// separation daylight cannot flatten.
+// **GREAT BONE IS NOT SCATTERED BONE** — a rib nine metres tall is a BIG SMOOTH MASS, and at albedo 108 the
+// key and the gamma lift bring it back at 221/255, a white plastic tube. 60 comes back at 172, and NEUTRAL,
+// since every other outdoor albedo here is warm.
 pub const BONE_OLD = rgba(44, 45, 41, 255);
 pub const BONE_LT = rgba(58, 59, 53, 255);
 pub const BONE_DK = rgba(28, 29, 27, 255);
@@ -368,11 +366,9 @@ pub fn flameInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, s: f32
     }
     b.setAnimY(0);
 }
-/// **WABI-SABI GOES BETWEEN THE INSTANCES, NOT ALONG ONE** (the house rule, and the one it is easiest to
-/// break by accident). Two tones alternated segment by segment band a shaft like a barber's pole — it happened
-/// to the ribs, to every rock formation and to the ash in one sitting. The SAME two tones taken as a slow
-/// lerp from foot to tip read as weathering instead: damp and dark where it leaves the ground, sun-bleached
-/// where it does not. `t` is 0 at the foot and 1 at the tip.
+/// **WABI-SABI GOES BETWEEN THE INSTANCES, NOT ALONG ONE** (the house rule) — two tones alternated segment by
+/// segment band a shaft like a barber's pole; the same two as a slow lerp foot to tip read as weathering.
+/// `t` is 0 at the foot and 1 at the tip.
 pub fn weathered(foot: rl.Color, tip: rl.Color, t: f32) rl.Color {
     return mathx.lerpColor(foot, tip, mathx.smoothstep(0.0, 1.0, t));
 }

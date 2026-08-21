@@ -408,13 +408,11 @@ const FP_TP = rgba(88, 148, 188, 255);
 const ST_HI = rgba(112, 136, 58, 255);
 const ST_LO = rgba(60, 78, 28, 255);
 const ST_TP = rgba(154, 178, 88, 255);
-/// THE STATUS METER, TWO faces off ONE number: a sickly violet while it FILLS (a threat), a hot toxic YELLOW
-/// once it has GONE OFF (a thing happening to you). The number means opposite things either side of the proc,
-/// so filling and poisoned may not read as the same bar at different lengths.
+/// TWO faces off ONE number: violet while it FILLS (a threat), hot YELLOW once it has GONE OFF. The number
+/// means opposite things either side of the proc, so the two may not read as one bar at two lengths.
 ///
-/// AND THE ACTIVE FACE IS NOT GREEN, though poison green is the genre's own: it sits DIRECTLY UNDER the
-/// stamina bar, and measured (108,150,44 against stamina's 112,136,58) the two were the same bar. Separated
-/// on HUE *and* VALUE — yellow, and much lighter than the olive above it.
+/// AND THE ACTIVE FACE IS NOT GREEN, the genre's own: measured (108,150,44 against stamina's 112,136,58) it
+/// was the same bar as the stamina directly above it. Separated on HUE *and* VALUE.
 const PSN_HI = rgba(96, 62, 118, 255);
 const PSN_LO = rgba(52, 32, 66, 255);
 const PSN_TP = rgba(146, 106, 172, 255);
@@ -489,20 +487,13 @@ pub const LivePortrait = struct {
 const PORT_CLEAR = rgba(13, 12, 11, 255);
 
 /// **TAKING THE PICTURE AND MOUNTING IT ARE TWO CALLS, AND THE SPLIT IS LOAD-BEARING.** `endTextureMode`
-/// restores the DEFAULT framebuffer — not whatever target was bound before it — so a render nested inside
-/// another target silently redirects the whole rest of the frame at the backbuffer, which is then
-/// overwritten by the outer target's own blit. The chrome fade (`beginChrome`) is exactly such a target and
-/// the spirit toast is drawn inside it, so the toast RENDERS before the chrome opens and only BLITS within.
-/// `dialog.zig` draws outside any target and may use `livePortrait`, which is simply the two in order.
+/// restores the DEFAULT framebuffer, not whatever was bound before it, so a render nested inside another
+/// target redirects the rest of the frame at the backbuffer. The chrome fade is such a target, so the toast
+/// RENDERS before it opens and only BLITS within. Returns false when the target could not be made.
 ///
-/// Returns false when the target could not be made, so a caller can leave the frame bare rather than mount
-/// a stale picture.
-///
-/// **IT IS RE-TAKEN EVERY FRAME AND THAT IS MEASURED, NOT ASSUMED.** One target switch, one shader bind and
-/// the subject's own meshes — 27 for the wolf, 18 for a wanderer — against a world frame that runs a full
-/// shadow pass over hundreds: well under a percent, and only while a panel is up. A refresh clock is REFUSED
-/// — the target is shared, so a throttle needs a subject tag to avoid mounting the wrong face, and `--shot`
-/// steps the sim faster than any wall-clock gate would photograph.
+/// **RE-TAKEN EVERY FRAME, AND THAT IS MEASURED**: one target switch, one shader bind and the subject's own
+/// meshes — 27 for the wolf, 18 for a wanderer — against a full shadow pass over hundreds. A refresh clock is
+/// REFUSED: the target is shared, so a throttle needs a subject tag to avoid mounting the wrong face.
 pub fn renderPortrait(p: LivePortrait) bool {
     if (portRT == null) portRT = rl.loadRenderTexture(PORT_RT_W, PORT_RT_H) catch null;
     const rt = portRT orelse return false;
@@ -834,21 +825,17 @@ pub fn souls(n: u32) void {
     text(s, x + SOUL_W - textW(s, BODY) - 11, y + @divTrunc(SOUL_H - lineH(BODY), 2) + 1, BODY, SOUL_TEXT);
 }
 
-// ── THE SAVE MARK: A DEAD TREE THAT GROWS ───────────────────────────────────────────────────────────────
+// **THE ONE THING THAT SAYS THE DISK WAS TOUCHED** (owner: a save spinner, bottom right — a tree that grows;
+// a DEAD one). Not a spinner: the file is on disk before the first frame of this draws, so it says "that
+// happened", which is a thing that finishes.
 //
-// **THE ONE THING THAT SAYS THE DISK WAS TOUCHED** (owner: a save spinner, bottom right — a tree that grows; a
-// DEAD one). Not a spinner and not a word. A spinner says WAIT, and nothing here is waiting: the file is on disk
-// before the first frame of this draws, so what it has to say is "that happened", which is a thing that finishes.
+// **IT IS FORLORN AND IT DOES NOT BOUNCE** (owner's call, and the one place in this codebase where **A MASS
+// IN MOTION OVERSHOOTS ITS REST** does NOT apply — do not put the overshoot back).
 //
-// **IT IS FORLORN AND IT DOES NOT BOUNCE** (owner's call, and the one place in this codebase where **A MASS IN
-// MOTION OVERSHOOTS ITS REST** does NOT apply — do not put the overshoot back). A spring in it reads as a chirpy
-// little notification; this is a snag putting itself up out of poor ground.
-//
-// **AND IT IS BUILT TO THE DEAD-GROWTH LAW** (`propwood.deadLimbInto`, at HUD scale and in two dimensions):
-// NOTHING DEAD IS STRAIGHT AND NOTHING ENDS IN A POINT. A limb leaves the bole ON ITS OWN AXIS, rises to an
-// elbow, DROOPS off that line, and ends in a BLUNT SNAP of pale heartwood; the twigs root on the OUTER half and
-// carry on outward. Drawn as one stroke to a needle tip it is a spear, and four of those is a hub of spokes.
-// There is no crown and no leaf on it anywhere — the fork at the top is finer limbs, not foliage.
+// **AND IT IS BUILT TO THE DEAD-GROWTH LAW** (`propwood.deadLimbInto`, at HUD scale in two dimensions):
+// NOTHING DEAD IS STRAIGHT AND NOTHING ENDS IN A POINT. A limb leaves the bole on its own axis, rises to an
+// elbow, DROOPS off that line and ends in a BLUNT SNAP of pale heartwood; twigs root on the OUTER half. No
+// crown and no leaf anywhere — the fork at the top is finer limbs, not foliage.
 
 pub const SAVE_GROW: f32 = 0.92;
 pub const SAVE_HOLD: f32 = 0.50;

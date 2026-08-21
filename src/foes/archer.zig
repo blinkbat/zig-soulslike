@@ -173,7 +173,24 @@ pub const SOULS: u32 = 130;
 pub const DISS_DUR = 0.9;
 pub const BONE_CHIP = rgba(150, 140, 116, 235);
 pub const DISSOLVE = foe.Dissolve{ .flake = BONE_CHIP };
+// The one skeleton that shed nothing when struck — its twin the warrior chips, so it does, a size down.
+const CHIP_SPRAY = foe.Spray{
+    .fanLo = 0.2,   .fanHi = 1.0,
+    .upLo = 0.8,    .upHi = 2.8,
+    .lifeLo = 0.30, .lifeHi = 0.56,
+    .rLo = 0.020,   .rHi = 0.045,
+    .r1 = 0.008,    .col = BONE_CHIP, .grav = 8.0,
+    .stretch = 0.030, .bounce = 0.42,
+};
+const CHIP_LIGHT = 10;
+const CHIP_HEAVY = 16;
+const CHIP_DEATH = 18;
 const NPART = 56;
+comptime {
+    // THE RING LAW, EXECUTABLE: a killing heavy blow is both chip sprays and the shared wound on one frame,
+    // and nothing else emits into this pool (the dissolve waits out `DEATH_DUR`, past the last chip).
+    std.debug.assert(NPART >= foe.hitParts(CHIP_HEAVY) + foe.hitParts(CHIP_DEATH) + foe.WOUND_PARTS);
+}
 const SHOVE_DECAY = 7.0;
 
 const ARROW_SPEED = 15.0;
@@ -443,11 +460,9 @@ pub fn plantShaft(a: *Arrow) void {
     a.age = 0;
 }
 
-/// **A BOUNCING THING SPENDS ITS LIFE DOWN AT HIS BOOTS, AND THE SHARED COLUMN DOES NOT REACH THEM.**
-/// `ARROW_HIT_HALF_H` is 0.85 about a centre a metre up, so it opens 0.15 m ABOVE the ground he is standing
-/// on — right for a shaft, which arrives at chest height or not at all, and wrong for a ball skimming the
-/// grass, which rolled through his shins and out the other side. The fireball's own reaches from under his
-/// soles to over his head, and it is a hair wider because a ball has a radius where a shaft has a point.
+/// `ARROW_HIT_HALF_H` is 0.85 about a centre a metre up, so it opens 0.15 m ABOVE the ground — right for a
+/// shaft at chest height, wrong for a ball skimming the grass, which rolled through his shins. The
+/// fireball's own reaches from under his soles to over his head, and a hair wider: a ball has a radius.
 fn hitBoxOf(s: Shot) struct { r: f32, halfH: f32 } {
     return switch (s) {
         .emberball => .{ .r = EMBER_HIT_R, .halfH = EMBER_HIT_HALF_H },
@@ -879,17 +894,23 @@ pub const Archer = struct {
     pub fn tryHit(self: *Archer, blade: foe.Blade) void {
         if (self.state == .dead) return;
         const s = foe.reached(self, blade) orelse return;
-        _ = foe.wounded(self, s, blade, .{ .light = 1.15, .heavy = 1.8 });
+        const heavyBlow = foe.wounded(self, s, blade, .{ .light = 1.15, .heavy = 1.8 });
+        self.chips(s.contact, s.dir, if (heavyBlow) CHIP_HEAVY else CHIP_LIGHT, if (heavyBlow) 3.0 else 2.2);
         sfx.world(.bone_hurt, self.pos);
         switch (s.reaction) {
             .death => {
                 sfx.world(.bone_die, self.pos);
+                self.chips(s.contact, s.dir, CHIP_DEATH, 2.8);
                 self.enterDeath();
             },
             .heavy => self.enterStun(.stunheavy),
             .light => self.enterStun(.stunlight),
             .none => {},
         }
+    }
+
+    fn chips(self: *Archer, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
+        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, CHIP_SPRAY);
     }
 
     pub fn pose(self: *Archer) void {

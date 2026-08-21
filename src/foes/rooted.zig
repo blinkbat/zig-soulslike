@@ -136,6 +136,17 @@ const LIMB_H = 11;
 const CLAW_L = 14;
 const CLAW_R = 15;
 const SEGS = 3;
+/// The three limb ROOTS, and the one list of them — three loops each wrote it out.
+const LIMBS = [_]usize{ LIMB_L, LIMB_R, LIMB_H };
+comptime {
+    // **THE JOINT LAYOUT IS ONE SEGS-LONG RUN PER LIMB, AND THE SPACING IS THE ONLY THING SAYING SO.** Six
+    // tables are indexed by segment and two by limb; both counts are three, so a limb index used on a
+    // segment table reads a real number and nothing catches it.
+    std.debug.assert(LIMB_R == LIMB_L + SEGS and LIMB_H == LIMB_R + SEGS and CLAW_L == LIMB_H + SEGS);
+    std.debug.assert(SEG_LEN.len == SEGS and LIMB_SHUT.len == SEGS and LIMB_OPEN.len == SEGS);
+    std.debug.assert(LIMB_ARC.len == SEGS and DIP.len == SEGS and EXT.len == SEGS);
+    std.debug.assert(LIMB_Y.len == LIMBS.len and LIMB_A.len == LIMBS.len);
+}
 
 const EYE_Y: f32 = 0.30 * H;
 const EYE_HALF: f32 = 0.21;
@@ -156,7 +167,7 @@ const REST = blk: {
     r[BOLE2] = v3(0, BOLE_Y, 0);
     r[LID_L] = v3(EYE_HALF, EYE_Y, EYE_Z);
     r[LID_R] = v3(-EYE_HALF, EYE_Y, EYE_Z);
-    for ([_]usize{ LIMB_L, LIMB_R, LIMB_H }, 0..) |b, i| {
+    for (LIMBS, 0..) |b, i| {
         const a = mathx.radians(LIMB_A[i]);
         r[b] = v3(@sin(a) * 0.34, LIMB_Y[i], @cos(a) * 0.34);
         r[b + 1] = v3(0, 0, SEG_LEN[0]);
@@ -357,7 +368,7 @@ pub const Rooted = struct {
                     self.dealt = true;
                     self.leash.noteCombat();
                     sfx.world(.wood_hit, self.tipWorld());
-                    self.splinters(self.tipWorld(), 10);
+                    self.splinters(self.tipWorld(), 15);
                     act = .{ .struck = .{ .hit = a.hit, .pull = if (self.atk == HOOK) DRAG_PULL else 0 } };
                 }
                 if (self.t >= a.strikeDur) self.enter(.recover);
@@ -494,7 +505,7 @@ pub const Rooted = struct {
         // NOTHING SHOVES IT. `foe.wounded` writes the field either way; handed a real number it would slide
         // a thing whose whole design is that it cannot move.
         const heavy = foe.wounded(self, s, blade, .{ .light = 0, .heavy = 0 });
-        self.splinters(s.contact, if (heavy) 16 else 9);
+        self.splinters(s.contact, foe.hitParts(if (heavy) 16 else 9));
         sfx.world(.wood_hurt, s.contact);
         switch (s.reaction) {
             .death => {
@@ -507,25 +518,24 @@ pub const Rooted = struct {
         }
     }
 
-    fn emit(self: *Rooted, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
-        foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
-    }
 
-    fn splinters(self: *Rooted, at: rl.Vector3, n: i32) void {
-        const parts = foe.hitParts(n);
+    /// MOTES, not a wound's worth of them — the swing sheds these too, and it is not a landed blow.
+    fn splinters(self: *Rooted, at: rl.Vector3, motes: i32) void {
         var i: i32 = 0;
-        while (i < parts) : (i += 1) {
+        while (i < motes) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(0.6, 1.0) * 3.2;
-            self.emit(
-                v3(at.x + self.fxRng.signed() * 0.1, at.y + self.fxRng.signed() * 0.1, at.z + self.fxRng.signed() * 0.1),
-                v3(mathx.cosf(a) * sp, self.fxRng.range(1.2, 3.6), mathx.sinf(a) * sp),
-                self.fxRng.range(0.32, 0.62),
-                self.fxRng.range(0.025, 0.055) * self.scale,
-                0.008,
-                if (self.fxRng.float() < 0.4) TIMBER else SPLINTER,
-                7.0,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(at.x + self.fxRng.signed() * 0.1, at.y + self.fxRng.signed() * 0.1, at.z + self.fxRng.signed() * 0.1),
+                .v = v3(mathx.cosf(a) * sp, self.fxRng.range(1.2, 3.6), mathx.sinf(a) * sp),
+                .life = self.fxRng.range(0.32, 0.62),
+                .r0 = self.fxRng.range(0.025, 0.055) * self.scale,
+                .r1 = 0.008,
+                .col = if (self.fxRng.float() < 0.4) TIMBER else SPLINTER,
+                .grav = 7.0,
+                .stretch = 0.035,
+                .bounce = 0.30,
+            });
         }
     }
 
@@ -586,7 +596,7 @@ pub const Rooted = struct {
             self.xf[b] = mul(mul3(rz(side * LID_SWING * 0.25 * self.eyes), rx(-LID_SWING * self.eyes), place(REST[b])), self.xf[BOLE]);
         }
 
-        inline for ([_]usize{ LIMB_L, LIMB_R, LIMB_H }, 0..) |b0, i| {
+        inline for (LIMBS, 0..) |b0, i| {
             const fi: f32 = @floatFromInt(i);
             const live = swinging and self.move().limb == b0;
             const overhead = b0 == LIMB_H;
@@ -641,7 +651,7 @@ fn buildMeshes() [N]rl.Mesh {
     mesh[BOLE2] = boleMesh(1);
     mesh[LID_L] = lidMesh(0);
     mesh[LID_R] = lidMesh(1);
-    inline for ([_]usize{ LIMB_L, LIMB_R, LIMB_H }, 0..) |b0, i| {
+    inline for (LIMBS, 0..) |b0, i| {
         for (0..SEGS) |seg| mesh[b0 + seg] = limbMesh(i, seg);
     }
     mesh[CLAW_L] = clawMesh(0);

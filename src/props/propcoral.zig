@@ -14,30 +14,20 @@ const SPORE_GLOW = art.SPORE_GLOW;
 const STIPE_DK = art.STIPE_DK;
 const PUNK_DK = art.PUNK_DK;
 
-// ── THE REEF, AND THE CITY IT BUILDS ────────────────────────────────────────────────────────────────────
-//
-// **A SECOND KINGDOM INSIDE THE FIRST.** The caps and stipes are a wood with the wood taken out; this is a
-// REEF, which is the other thing a mycelium can be mistaken for and the one that gets shapes a forest
-// cannot. Stand tube spires together with curtains slung between them and floaters riding over the top and
-// you have streets — which is what the owner called it: a mushroom city.
-//
-// The four families exist because they read differently at a hundred metres, the only test a silhouette has
-// to pass:
+// A REEF, not a wood with the wood taken out — a mushroom city (owner's word). The four families read
+// differently at a hundred metres, the only test a silhouette has to pass:
 //
 //   TUBES     — clustered vertical pipes, OPEN at the mouth. Verticals in a field of domes.
 //   CORAL     — a flat fan and a branching antler. Both are HOLES; every other prop here is a mass.
 //   FLOATERS  — a bladder held over the ground on a taut tether. Nothing else in the game is up there.
 //   HANGERS   — a spar that brings its own ceiling so something can dangle from it.
 //
-// **A CAPLESS CYLINDER IS THE HOUSE LAW AND HERE IT IS ALSO THE POINT** (AGENTS.md). A tube sponge with a
-// lid is a bollard. Every mouth in this file is open and every one is a different width, because wabi-sabi
-// lives BETWEEN instances and a rack of identical pipes is the barber's pole stood on end.
+// **A CAPLESS CYLINDER IS THE HOUSE LAW AND HERE IT IS ALSO THE POINT** (AGENTS.md): every mouth is open and
+// every one is a different width, because a rack of identical pipes is the barber's pole stood on end.
 
-// **NEAR-BLACK, LIKE EVERYTHING ELSE BIG AND SMOOTH IN THIS GAME** (AGENTS.md's albedo chain: x1.72 then
-// gamma 1/2.2, so screen brightness goes as albedo^(1/2.2) and a mid-grey mass comes out chalk). The first
-// cut of the spire was authored at 150,96,92 and photographed as a pink concrete slab eight metres high.
-// These sit with `CAP_FLESH_DK` (29,23,28) and `FLESH_PINK` (74,44,54), which are the tones the kingdom
-// already uses at this size.
+// **NEAR-BLACK, LIKE EVERYTHING ELSE BIG AND SMOOTH IN THIS GAME** — screen goes as albedo^(1/2.2), so a
+// mid-grey mass comes out chalk: the spire at 150,96,92 photographed as a pink concrete slab eight metres
+// high. These sit with `CAP_FLESH_DK` (29,23,28) and `FLESH_PINK` (74,44,54).
 const TUBE = rgba(34, 20, 22, 255);
 const TUBE_LT = rgba(58, 35, 34, 255);
 const TUBE_MOUTH = rgba(10, 6, 8, 255);
@@ -45,7 +35,6 @@ const FAN = rgba(40, 23, 26, 255);
 const FAN_LT = rgba(66, 40, 40, 255);
 const SAC = rgba(70, 43, 42, 255);
 
-// ── TUBES ───────────────────────────────────────────────────────────────────────────────────────────────
 
 pub const TUBE_H: f32 = 2.9;
 pub const TUBE_R: f32 = 1.30;
@@ -140,7 +129,6 @@ pub fn tubeSpireMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// ── CORAL ───────────────────────────────────────────────────────────────────────────────────────────────
 
 pub const FAN_H: f32 = 3.2;
 pub const FAN_W: f32 = 3.6;
@@ -220,16 +208,13 @@ pub fn antlerCoralMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// ── FLOATERS ────────────────────────────────────────────────────────────────────────────────────────────
 
 pub const FLOAT_Y: f32 = 4.10;
 pub const FLOAT_R: f32 = 0.92;
 pub const FLOAT_LIGHT_Y: f32 = FLOAT_Y - 0.20;
 
-/// **THE TETHER IS NOT DECORATION, IT IS THE ARGUMENT.** A sac hanging in mid-air with nothing holding it
-/// down reads as a prop that failed to drop to the ground; the same sac on a taut line off a ground anchor
-/// reads as buoyant, which is the whole idea. So the line is drawn first and it is drawn TIGHT — a slack
-/// tether says the thing above it has no lift.
+/// **THE TETHER IS NOT DECORATION, IT IS THE ARGUMENT** — a sac in mid-air reads as a prop that failed to
+/// drop. Drawn first and drawn TIGHT: a slack tether says the thing above it has no lift.
 fn sacInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, y: f32, r: f32, glow: bool) void {
     const ax = cx + rng.signed() * 0.10;
     const az = cz + rng.signed() * 0.10;
@@ -279,7 +264,6 @@ pub fn floatShoalMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// ── HANGERS ─────────────────────────────────────────────────────────────────────────────────────────────
 
 pub const HANG_SPAN: f32 = 5.2;
 pub const HANG_H: f32 = 4.6;
@@ -353,21 +337,15 @@ test "A REEF IS HOLES AND HEIGHTS — the tubes are open, the fan is a lattice, 
 }
 
 
-// ── REEF FLOOR ──────────────────────────────────────────────────────────────────────────────────────────
-//
 // The spires and fans stand up; these lie down. Same three-layer debt the fungal side owes, paid in the
 // reef's own vocabulary — a groove, a bundle and a crust.
 
 pub const BRAIN_R: f32 = 0.98;
 pub const BRAIN_H: f32 = 0.66;
 
-/// **RIDGED, NOT GROOVED — AND THAT IS THE WHOLE FIX.** First cut laid dark blobs along a meandering walk
-/// to be the channel, and an additive builder cannot cut: they came out as a scatter of dark lumps sitting
-/// on a pink cake. So the dome is DARK and the walk is a PALE RAISED WORM over it — the wall between two
-/// grooves, which is what you actually see on a brain coral anyway. The shadow it throws into its own dark
-/// base is the groove.
-///
-/// One wandering channel, never concentric rings: rings are a tree stump, and a maze is what this is.
+/// **RIDGED, NOT GROOVED**: an additive builder cannot cut, so dark blobs along a walk came out as lumps on a
+/// pink cake. The dome is DARK and the walk a PALE RAISED WORM over it — the wall between two grooves, and
+/// the shadow it throws is the groove. One wandering channel, never concentric rings, which are a tree stump.
 pub fn brainKnotMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xB2A17);

@@ -195,11 +195,10 @@ pub fn pawAt(phase: f32, g: Gait, stride: f32, w: f32) struct { z: f32, y: f32 }
 
 const SWING_LIFT: f32 = 0.115;
 
-/// **ALL FOUR LEGS, AND IT IS THE SHARED HALF OF THE QUADRUPED RIG** (`hero.legChain`'s opposite number). A
-/// free function over `rest` and a withers height for that one's reason: a second four-legged creature owes a
-/// stature and a head, never a transcription of the joint layout. `crouch` is how far the whole animal has
-/// sunk this frame (off the joint's own height) and `tuck` how far the paws are drawn up under it, 0..1 of
-/// the limb's reach.
+/// **THE SHARED HALF OF THE QUADRUPED RIG** — a free function over `rest` and a withers height, because a
+/// second four-legged creature owes a stature and a head, never a transcription of the joint layout.
+/// `crouch` is how far the animal has sunk off the joint's own height, `tuck` how far the paws are drawn up
+/// under it, 0..1 of the limb's reach.
 pub fn legs(
     wx: *[N]rl.Matrix,
     rest: *const [N]rl.Vector3,
@@ -405,11 +404,9 @@ const BITE_TRIGGER_R: f32 = BITE_R + BITE_HOP * 0.8;
 
 pub const HUNT_KEEP: f32 = 1.7;
 
-/// WHAT IT IS SET ON: a point, HOW BROAD IT IS (the bite gate is measured off the radius), HOW HIGH UP ITS
-/// MASS SITS, and WHICH BODY. The key is OPAQUE here — only `game.zig` mints one and reads it back.
-///
-/// **`aim` IS WHY THE LEAP IS THE QUARRY'S AND NOT A CONSTANT.** Metres above the quarry's OWN FEET, so it
-/// is a fact about that body and not about where either is standing; 0 means "no idea", a flat-footed snap.
+/// A point, HOW BROAD (the bite gate is off the radius), HOW HIGH the mass sits, and WHICH BODY. The key is
+/// OPAQUE — only `game.zig` mints one and reads it back. **`aim` IS WHY THE LEAP IS THE QUARRY'S AND NOT A
+/// CONSTANT**: metres above the quarry's OWN FEET, so 0 means "no idea", a flat-footed snap.
 pub const Quarry = struct { at: rl.Vector3, r: f32 = 0, aim: f32 = 0, key: u32 = NO_QUARRY };
 pub const NO_QUARRY: u32 = std.math.maxInt(u32);
 
@@ -424,11 +421,10 @@ pub fn triggerR(quarryR: f32) f32 {
 fn stopR(quarryR: f32) f32 {
     return BITE_R * 0.85 + quarryR;
 }
-/// **THE BITE IS A POUNCE, AND WHAT THE LEAP BUYS IS HEIGHT.** Off the ground as a fraction of `W`. At 0.14 it
-/// lifted the teeth 0.16 m onto a resting 1.08, landing them 0.25 m inside the BOTTOM of an ogre's hurt
-/// sphere — a 0.89 m horizontal window against a collider that holds her 1.61 m out. MEASURED, not picked:
-/// `POUNCE_INTO` says how far up the mass the teeth must arrive and a test solves the pair against every
-/// creature she is asked to bite.
+/// **WHAT THE LEAP BUYS IS HEIGHT**, as a fraction of `W`. At 0.14 it lifted the teeth 0.16 m onto a resting
+/// 1.08 — 0.25 m inside the BOTTOM of an ogre's hurt sphere, a 0.89 m window against a collider holding her
+/// 1.61 m out. MEASURED: `POUNCE_INTO` says how far up the mass the teeth must arrive, and a test solves the
+/// pair against every creature she bites.
 pub const BITE_HOP_UP: f32 = 0.40;
 pub const BITE_PITCH: f32 = 24.0;
 /// **AND SHE STILL LEAVES THE GROUND FOR THE LOWEST THING SHE BITES** — the share of the leap a `pounce` of 0
@@ -492,6 +488,8 @@ const GROWL_EVERY: f32 = 2.6;
 /// start, and the rate only falls from there as `thinning` closes.
 const PARTS = 48;
 const RIFT_N = 12;
+/// What the rift's light dies to — cold blue-white down to a dim slate, never a warm ember.
+const RIFT_COOL = rgba(72, 96, 128, 40);
 
 /// How far down the jaw bone the teeth sit, as a fraction of `W` — where the bite's blade is measured from.
 const JAW_REACH: f32 = 0.10;
@@ -771,17 +769,28 @@ pub const Wolf = struct {
         while (i < RIFT_N) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(1.4, 3.0) * self.scale;
-            foe.emitParticle(
-                &self.parts,
-                &self.fxHead,
-                v3(at.x, at.y + (CENTER_H * W + self.fxRng.range(-0.32, 0.42)) * self.scale, at.z),
-                v3(mathx.cosf(a) * sp, self.fxRng.range(-0.3, 1.5), mathx.sinf(a) * sp),
-                self.fxRng.range(0.18, 0.32),
-                self.fxRng.range(0.030, 0.058) * self.scale,
-                0.006,
-                if (self.fxRng.float() < 0.4) EYE else PELT_LT,
-                1.2,
-            );
+            // The draws stay in the order they were written in — height, velocity, life, radius, THEN the
+            // coin for which half this mote is. Hoisting that coin re-deals every rift off the same seed.
+            const p = v3(at.x, at.y + (CENTER_H * W + self.fxRng.range(-0.32, 0.42)) * self.scale, at.z);
+            const v = v3(mathx.cosf(a) * sp, self.fxRng.range(-0.3, 1.5), mathx.sinf(a) * sp);
+            const life = self.fxRng.range(0.18, 0.32);
+            const r0 = self.fxRng.range(0.030, 0.058) * self.scale;
+            // HALF LIGHT, HALF PELT — the rift's glow is additive and cools out; the fur torn off with it is
+            // matter and stays alpha, or it would brighten into the same white smear.
+            const lit = self.fxRng.float() < 0.4;
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = p,
+                .v = v,
+                .life = life,
+                .r0 = r0,
+                .r1 = 0.006,
+                .col = if (lit) EYE else PELT_LT,
+                .col1 = if (lit) RIFT_COOL else null,
+                .grav = 1.2,
+                .stretch = 0.030,
+                .drag = 2.4,
+                .add = lit,
+            });
         }
     }
 

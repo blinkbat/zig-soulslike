@@ -9,9 +9,8 @@ const uiart = @import("../ui/uiart.zig");
 
 const rgba = mathx.rgba;
 
-/// THE THREE ARMS, AND THEY ARE NEVER NAMED ON SCREEN (owner's call) — no "WARRIOR" caption, no blurb, no
-/// arm in a lock message. What an arm is, is what its nodes DO, and the colour and the direction carry which
-/// one you are on. A label naming it as well is the picture and a word for the picture.
+/// NEVER NAMED ON SCREEN (owner's call) — no caption, no blurb, no arm in a lock message. The colour and
+/// the direction carry which one you are on.
 pub const Arm = enum {
     warrior,
     rogue,
@@ -36,14 +35,9 @@ pub const Arm = enum {
 
 pub const NARM = @typeInfo(Arm).@"enum".fields.len;
 
-/// **TWO BRANCHES PER ARM, AND THE BRANCH IS THE THING YOU ACTUALLY CLIMB** (owner: 2 "branches" per
-/// "class" now, with bespoke ideas and stat boosts alike). An arm used to be one fan of seven whose two
-/// strands met at a single tip, so "warrior" was one destination wearing two routes. Each arm now opens on
-/// its own class node and RADIATES from it into two SEPARATE climbs, each ending in its OWN keystone —
-/// which is what lets one arm hold two ideas that do not belong together.
-///
-/// **IN ARM ORDER, TWO AT A TIME** — a comptime walk below pins that, so `Branch.arm` is arithmetic and
-/// never a table somebody has to keep in step.
+/// **TWO BRANCHES PER ARM** (owner: 2 branches per class, bespoke ideas and stat boosts alike). Each arm
+/// opens on its class node and radiates into two SEPARATE climbs, each with its OWN keystone. **IN ARM ORDER,
+/// TWO AT A TIME** — a comptime walk pins it, so `Branch.arm` is arithmetic and never a hand-kept table.
 pub const Branch = enum {
     warrior_life,
     warrior_berserk,
@@ -62,14 +56,10 @@ pub const Branch = enum {
 
 pub const NBRANCH = @typeInfo(Branch).@"enum".fields.len;
 
-/// **THE THREE SEAMS BETWEEN THE ARMS.** A seam is not a class of its own — it is the gap between two, and a
-/// bridge standing in one is reachable from EITHER side and opens the other. That is the whole point: a
-/// warrior who wants what the rogue keeps at ring 5 can buy his way ACROSS rather than paying for the rogue's
-/// first four rings a second time.
-///
-/// `from` is the arm's own index and `to` is the next one round, so both are arithmetic. The arms sit at
-/// DECREASING angle in enum order (`armAngle`), which is why the seam is a NEGATIVE sixth of a turn off
-/// `from` — and why the branch facing it is `from`'s LANE 0 and `to`'s LANE 1.
+/// A bridge in a seam is reachable from EITHER side and opens the other, so a warrior buys ACROSS instead of
+/// paying for the rogue's first four rings again. The arms sit at DECREASING angle in enum order
+/// (`armAngle`), so the seam is a NEGATIVE sixth of a turn off `from`, and the branch facing it is `from`'s
+/// LANE 0 and `to`'s LANE 1.
 pub const Seam = enum {
     warrior_rogue,
     rogue_wizard,
@@ -85,25 +75,19 @@ pub const Seam = enum {
 
 pub const NSEAM = @typeInfo(Seam).@"enum".fields.len;
 
-/// **WHICH RINGS A SEAM IS BRIDGED AT — "occasionally", as a table.** Both are rings where a branch is at
-/// least two slots wide, so there is an outermost slot genuinely facing the seam rather than a single rung on
-/// the lane's own centre line. Ring 3 is the cheap generalist crossing and ring 5 is the deep one, which is
-/// what makes the pair a LADDER rather than two of the same thing.
+/// Both are rings where a branch is at least two slots wide, so a slot genuinely faces the seam. Ring 3 is
+/// the cheap crossing, ring 5 the deep one — a LADDER, not two of the same thing.
 const BRIDGE_RINGS = [_]u8{ 3, 5 };
 
 pub const PER_SEAM: usize = BRIDGE_RINGS.len;
 pub const NBRIDGE: usize = NSEAM * PER_SEAM;
 
-/// **THE SHAPE OF A BRANCH, RING BY RING** — and the ONE table the wiring, the wheel, the feeder buffer and
-/// the comptime walk are all solved from. It opens on a single rung, FANS to three across its middle, and
-/// draws back in on its keystone, so a branch is a lattice you pick a line through rather than two rails.
+/// The ONE table the wiring, the wheel, the feeder buffer and the comptime walk are all solved from.
 const BRANCH_RINGS = [_]u8{ 1, 2, 3, 3, 2, 1 };
 
-/// **THE WIDEST RING IS WHAT A FEEDER LIST HAS TO HOLD**, taken off the table rather than written as a number
-/// beside it. It was a bare `[2]usize` while no ring was wider than two; at three wide the keystone rule
-/// (`out[0]`, then `out[1]` if there was one) would have wired two parents of three and dropped the last in
-/// silence — a rung that opens nothing, which looks exactly like a rung nobody bothered to link.
-/// **PLUS ONE FOR THE BRIDGE**: an anchor keeps every in-arm parent it had and gains the seam's edge on top.
+/// Off the table, never a number beside it: a buffer one short drops a parent in silence, which looks exactly
+/// like a rung nobody linked. **PLUS ONE FOR THE BRIDGE** — an anchor keeps its in-arm parents and gains the
+/// seam's edge on top.
 pub const MAX_FEED: usize = blk: {
     var w: usize = 1;
     for (BRANCH_RINGS) |s| w = @max(w, s);
@@ -117,9 +101,8 @@ pub const PER_BRANCH: usize = blk: {
 };
 pub const PER_ARM: usize = 1 + PER_BRANCH * 2;
 
-/// The arms' own block, and every `armFirst`/`branchFirst` index is inside it. The bridges are indexed AFTER
-/// it, so adding a seam moves nothing that was already numbered — including a save's own bit run
-/// (`save.readBits`: a short run is legal, so an old file loads its new tail unspent).
+/// The bridges are indexed AFTER the arms' block, so adding a seam renumbers nothing — including a save's bit
+/// run (`save.readBits`: a short run is legal, so an old file loads its new tail unspent).
 pub const NTREE: usize = NARM * PER_ARM;
 pub const N: usize = NTREE + NBRIDGE;
 pub const RINGS: u8 = @intCast(1 + BRANCH_RINGS.len);
@@ -141,10 +124,8 @@ fn ringFirst(b: Branch, br: usize) usize {
     return at;
 }
 
-/// **THE TWO RUNGS A BRIDGE IS TIED TO — the outermost slot on each side, solved and never listed.** The seam
-/// sits a negative sixth of a turn off `from`, so on `from`'s lane-0 branch the nearest rung is SLOT 0 and on
-/// `to`'s lane-1 branch it is the LAST slot. A table of index pairs here would go stale the first time
-/// `BRANCH_RINGS` changed width.
+/// The outermost slot on each side, SOLVED and never listed: on `from`'s lane-0 branch that is SLOT 0 and on
+/// `to`'s lane-1 branch the LAST slot. A table of pairs goes stale the first time a ring changes width.
 pub fn bridgeAnchors(s: Seam, ring: u8) [2]usize {
     const br: usize = ring - 1;
     const wide = BRANCH_RINGS[br];
@@ -153,20 +134,15 @@ pub fn bridgeAnchors(s: Seam, ring: u8) [2]usize {
     return .{ ringFirst(near, br), ringFirst(far, br) + wide - 1 };
 }
 
-/// **A RUNG IS FED BY WHATEVER IT OVERLAPS ONE RING IN.** Each ring cuts the branch's width into as many equal
-/// intervals as it has slots, and an edge exists exactly where two intervals meet. That is ONE rule for every
-/// pairing of widths: a fan-out gives every parent at least one child, a fan-in gives every child at least one
-/// parent, and no rung anywhere is a dead end whatever `BRANCH_RINGS` is changed to. It reproduces the two
-/// hand-written cases it replaces — a `min(slot, prev - 1)` rail and a keystone taking the pair above it —
-/// which is why the wiring did not move when the middle went three wide.
+/// **A RUNG IS FED BY WHATEVER IT OVERLAPS ONE RING IN.** Each ring cuts the branch's width into as many
+/// equal intervals as it has slots and an edge exists where two intervals meet — ONE rule for every pairing
+/// of widths, so no rung is a dead end whatever `BRANCH_RINGS` becomes.
 fn overlaps(p: usize, wp: usize, s: usize, wc: usize) bool {
     return p * wc < (s + 1) * wp and s * wp < (p + 1) * wc;
 }
 
-/// **A BRIDGE'S EDGE RUNS BOTH WAYS, AND IT HAS TO.** `reached` asks whether any FEEDER is taken, so an edge
-/// listed on one end only would let you buy the bridge from your own arm and open nothing on the far side —
-/// which is a crossing you pay for and cannot walk. Every anchor therefore keeps its in-arm parents AND names
-/// the bridge; the graph stays rootable because an anchor's own parent is still there.
+/// **A BRIDGE'S EDGE RUNS BOTH WAYS.** `reached` asks whether any FEEDER is taken, so an edge on one end only
+/// is a crossing you pay for and cannot walk. Every anchor keeps its in-arm parents AND names the bridge.
 fn bridgeOn(i: usize, out: *[MAX_FEED]usize, k: usize) usize {
     var n = k;
     for (0..NSEAM) |si| {
@@ -243,10 +219,8 @@ pub const Grant = union(enum) {
     boltCloud,
 };
 
-/// **A STAT-UP RIDING AN IDEA** (owner: at least half the nodes should be stat ups or include a stat up with
-/// other bonuses). A node's `grant` is the thing it SELLS; the rider is the point it also pays on the way
-/// past, so a branch has no rung that is purely a toll. It may only ride a grant that is not itself a
-/// stat-up — a `+2 Strength` node wearing a `+1 Strength` rider is one number written as two, and the
+/// **A STAT-UP RIDING AN IDEA** (owner: at least half the nodes carry one). It may only ride a grant that is
+/// not itself a stat-up: `+2 Strength` wearing a `+1 Strength` rider is one number written as two, and the
 /// comptime walk refuses it.
 pub const Bump = struct { a: stats.Attr, n: u8 };
 
@@ -276,17 +250,14 @@ fn classNode(a: Arm, name: [:0]const u8) Node {
     return .{ .arm = a, .ring = 0, .name = name, .grant = attr(a.stat(), 3) };
 }
 
-/// **A BRIDGE PAYS BOTH SIDES, WHICH IS THE WHOLE OF WHAT IT SELLS.** Its grant is one stat and its rider the
-/// other, so the split needs no new `Grant` arm and `Bonus` already sums the pair (`Tree.bonus` applies the
-/// rider straight after the grant). `near` is the `from` arm's stat and `far` the `to` arm's, in that order,
-/// because the panel prints the grant first and a crossing should read from the side you are standing on.
+/// Grant is one stat, rider the other, so no new `Grant` arm is needed. `near` is the `from` arm's stat and
+/// `far` the `to` arm's, in that order: the panel prints the grant first.
 fn bridgeNode(s: Seam, ring: u8, name: [:0]const u8, near: stats.Attr, far: stats.Attr, n: u8) Node {
     return .{ .arm = s.from(), .seam = s, .ring = ring, .name = name, .grant = attr(near, n), .bump = rides(far, n) };
 }
 
-/// IN ARM ORDER — the class node, then its first branch, then its second, each in ring/slot order. A
-/// comptime walk below pins every one of those, so a node in the wrong place is a compile error rather than
-/// a wheel with a hole in it.
+/// IN ARM ORDER — class node, first branch, second branch, each in ring/slot order. A comptime walk pins it,
+/// so a node in the wrong place is a compile error.
 pub const NODES = [N]Node{
     classNode(.warrior, "Iron Thews"),
 
@@ -297,40 +268,29 @@ pub const NODES = [N]Node{
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 3, .slot = 1, .name = "Stubborn Flesh", .grant = attr(.vitality, 3) },
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 3, .slot = 2, .name = "Scar Tissue", .grant = .{ .hpRegen = 0.5 }, .bump = rides(.vitality, 1) },
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 4, .slot = 0, .name = "Stalwart", .grant = .{ .guard = 0.05 } },
-    // **THE ONE THING IN THE TREE THAT BUYS THE STAGGER BAR** (`hero.POISE_MAX`), and it is the warrior's
-    // because poise is the price of standing still. It lengthens the bar, never the refill: a man who is
-    // harder to flinch is not a man who recovers faster, and the two dials read as one if they move together.
+    // **THE ONE THING IN THE TREE THAT BUYS THE STAGGER BAR** (`hero.POISE_MAX`). It lengthens the bar, never
+    // the refill — moved together the two dials read as one.
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 4, .slot = 1, .name = "Unshaken", .grant = .{ .poiseMax = 1.20 }, .bump = rides(.strength, 1) },
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 4, .slot = 2, .name = "Bloodfeast", .grant = .{ .leech = 0.3 } },
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 5, .slot = 0, .name = "Ironbound", .grant = .{ .armour = 14.0 }, .bump = rides(.vitality, 2) },
-    // THE FLASK ITSELF, which every sustain node in the file is priced against — so the one node that moves
-    // it sits here, at the top of the branch that is about outlasting a fight rather than winning it faster.
+    // THE FLASK ITSELF, which every sustain node in the file is priced against.
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 5, .slot = 1, .name = "Long Draught", .grant = .{ .flaskHeal = 1.25 }, .bump = rides(.vitality, 1) },
-    // **THE KEYSTONE, AND THE WHOLE BRANCH IS WORTH HALF THE RING** (owner, third time: lifesteal nodes are
-    // STILL op). The number that indicts it is the FLASK: the red bar is 70 at the start (`stats.HP_BASE`) and
-    // two crimson charges of `FLASK_HP_FRAC` are the entire 63 HP a man has between bonfires. It went 5.5 → 2.0
-    // → 1.0 for the branch, because per-hit healing is not priced by the hit, it is priced by the RATE — a
-    // light chain lands about 1.5 blows a second, so 2.0 was 3 HP a second forever and free, refilling the whole
-    // bar every 23 s while you fought. At 1.0 it is 1.5 a second: real, felt, and no longer a bar that cannot
-    // go down. The RING stays the bigger dial for ONE hit (`item.leech_signet`, 2.0 for a permanent 6% of the
-    // bar) — points buy the trickle, health buys the size, and now the trickle is under the thing that charges
-    // for itself. A flask charge is ~32 blows on the branch alone.
+    // **THE KEYSTONE IS WORTH HALF THE BRANCH'S RING** (owner, third time: lifesteal nodes are STILL op).
+    // Priced by the RATE, not the hit: a light chain lands ~1.5 blows/s, so 5.5 → 2.0 → 1.0 per blow. At 2.0
+    // that was 3 HP/s forever, refilling the whole 70 HP bar every 23 s; at 1.0 it is 1.5/s and a flask charge
+    // is ~32 blows. The RING stays the bigger dial for ONE hit (`item.leech_signet`, 2.0).
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 6, .name = "Sanguine Pact", .grant = .{ .leech = 0.7 }, .key = true },
 
     .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 1, .name = "Reaver", .grant = .{ .onKill = 1.0 } },
     .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 2, .slot = 0, .name = "Blood Price", .grant = .{ .sacrifice = .{ .hpFrac = 0.08, .dmg = 1.10 } } },
     .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 2, .slot = 1, .name = "Culling Blow", .grant = .{ .cull = 0.10 } },
     .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 3, .slot = 0, .name = "Brute Force", .grant = attr(.strength, 3) },
-    // **`strike` IS THE BARGAIN WITH THE COST TAKEN OFF**, and it rides the same `Bonus.dmg` the sacrifices
-    // multiply — so the branch reads as one ladder rather than two kinds of damage, and it is priced small
-    // because the thing it does not ask for is the whole difference.
+    // `strike` rides the same `Bonus.dmg` the sacrifices multiply, and is priced small because it asks for
+    // nothing back.
     .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 3, .slot = 1, .name = "Heavy Hands", .grant = .{ .strike = 1.08 }, .bump = rides(.strength, 1) },
     .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 3, .slot = 2, .name = "Butcher's Eye", .grant = .{ .cull = 0.14 }, .bump = rides(.dexterity, 1) },
-    // **A BODY IS WORTH A TENTH OF A FLASK CHARGE.** It went 20 → 6 → 3 a kill alongside the leech, and for the
-    // same reason: at 6 a six-body fight handed back 18 HP against the 63 a man carries between bonfires, so
-    // clearing a camp was most of a flask you never had to sip. At 3 it is a tenth of a charge a body — a
-    // branch that pays out, not a branch that replaces the flask. It only ever pays when something actually
-    // dies, which is the honest half of it and the reason it may sit above the per-hit trickle at all.
+    // **A BODY IS WORTH A TENTH OF A FLASK CHARGE**: 20 → 6 → 3 a kill. At 6 a six-body fight handed back 18
+    // HP of the 63 a man carries between bonfires — most of a flask nobody had to sip.
     .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 4, .slot = 0, .name = "Red Harvest", .grant = .{ .onKill = 2.0 } },
     .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 4, .slot = 1, .name = "Reckless", .grant = .{ .sacrifice = .{ .hpFrac = 0.06, .dmg = 1.08 } } },
     .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 4, .slot = 2, .name = "Executioner", .grant = .{ .cull = 0.18 }, .bump = rides(.strength, 1) },
@@ -347,9 +307,8 @@ pub const NODES = [N]Node{
     .{ .arm = .rogue, .branch = .rogue_evade, .ring = 3, .slot = 1, .name = "Tumbler", .grant = .{ .rollStam = 0.88 }, .bump = rides(.endurance, 1) },
     .{ .arm = .rogue, .branch = .rogue_evade, .ring = 3, .slot = 2, .name = "Long Legs", .grant = .{ .moveSpeed = 1.05 }, .bump = rides(.endurance, 1) },
     .{ .arm = .rogue, .branch = .rogue_evade, .ring = 4, .slot = 0, .name = "Wind at Heel", .grant = .{ .stamRegen = 1.25 } },
-    // **THE POOL'S SIZE, WHICH IS NOT ITS REFILL** — `stamRegen` paces a flurry and this buys how long one
-    // can be. ENDURANCE already owns the bar (`stats.staminaFor`), so this multiplies what the attribute
-    // yields rather than replacing it, and the rider on it is that same attribute: one node, said twice over.
+    // **THE POOL'S SIZE, WHICH IS NOT ITS REFILL** (`stamRegen` paces a flurry). ENDURANCE owns the bar
+    // (`stats.staminaFor`), so this MULTIPLIES what the attribute yields rather than replacing it.
     .{ .arm = .rogue, .branch = .rogue_evade, .ring = 4, .slot = 1, .name = "Deep Lungs", .grant = .{ .stamMax = 1.18 }, .bump = rides(.endurance, 2) },
     .{ .arm = .rogue, .branch = .rogue_evade, .ring = 4, .slot = 2, .name = "Warded Blood", .grant = .{ .poison = 0.70 } },
     .{ .arm = .rogue, .branch = .rogue_evade, .ring = 5, .slot = 0, .name = "Slip", .grant = .{ .iframe = 0.04 }, .bump = rides(.dexterity, 1) },
@@ -361,16 +320,13 @@ pub const NODES = [N]Node{
     .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 2, .slot = 1, .name = "Wayfinder", .grant = attr(.luck, 2) },
     .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 3, .slot = 0, .name = "Fletcher", .grant = .{ .bowDmg = 1.10 }, .bump = rides(.dexterity, 1) },
     .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 3, .slot = 1, .name = "Steady Hand", .grant = attr(.dexterity, 2) },
-    // LUCK is the one attribute nothing else reads (`stats.inert`), and the rare column of the drop table is
-    // the whole of what it buys — so the branch that is about shooting things from a distance is where the
-    // points for looting them belong.
+    // LUCK is the one attribute nothing else reads (`stats.inert`); the drop table's rare column is all it buys.
     .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 3, .slot = 2, .name = "Lucky Find", .grant = attr(.luck, 3) },
     .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 4, .slot = 0, .name = "Broadhead", .grant = .{ .bowDmg = 1.18 } },
     .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 4, .slot = 1, .name = "Strong Draw", .grant = attr(.strength, 2) },
     .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 4, .slot = 2, .name = "Oiled Rags", .grant = .{ .thrownDmg = 1.18 }, .bump = rides(.dexterity, 1) },
     .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 5, .slot = 0, .name = "Marksman", .grant = .{ .bowDmg = 1.12 }, .bump = rides(.dexterity, 2) },
     .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 5, .slot = 1, .name = "Pot-Hunter", .grant = attr(.luck, 3) },
-    // THE KEYSTONE: the jars, which are the one thing he throws that he cannot make more of.
     .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 6, .name = "Hail", .grant = .{ .thrownDmg = 1.55 }, .key = true },
 
     classNode(.wizard, "Lore"),
@@ -384,9 +340,8 @@ pub const NODES = [N]Node{
     .{ .arm = .wizard, .branch = .wizard_well, .ring = 4, .slot = 0, .name = "Veil", .grant = .{ .res = combat.resists(.{ .chaos = 20, .lightning = 10 }) } },
     .{ .arm = .wizard, .branch = .wizard_well, .ring = 4, .slot = 1, .name = "Warded", .grant = .{ .res = combat.resists(.{ .fire = 15, .cold = 15 }) } },
     .{ .arm = .wizard, .branch = .wizard_well, .ring = 4, .slot = 2, .name = "Brimming", .grant = .{ .fpMax = 1.12 }, .bump = rides(.mind, 2) },
-    // **CHAOS IS WHAT POISON IS BILLED AS** (`combat.poisonPulse`), so this row is the ward against the spore
-    // creatures as much as against the knight's gas — one resistance answering two things that look nothing
-    // alike, which is the reason the elements are four and not forty.
+    // **CHAOS IS WHAT POISON IS BILLED AS** (`combat.poisonPulse`) — this row wards the spore creatures as
+    // well as the knight's gas.
     .{ .arm = .wizard, .branch = .wizard_well, .ring = 5, .slot = 0, .name = "Sealed Mind", .grant = .{ .res = combat.resists(.{ .chaos = 15 }) }, .bump = rides(.intelligence, 1) },
     .{ .arm = .wizard, .branch = .wizard_well, .ring = 5, .slot = 1, .name = "Stormproof", .grant = .{ .res = combat.resists(.{ .lightning = 20 }) }, .bump = rides(.vitality, 1) },
     .{ .arm = .wizard, .branch = .wizard_well, .ring = 6, .name = "Wellspring", .grant = .{ .fpRegen = 2.4 }, .key = true },
@@ -404,10 +359,8 @@ pub const NODES = [N]Node{
     .{ .arm = .wizard, .branch = .wizard_cast, .ring = 5, .slot = 1, .name = "Sharp Tongue", .grant = .{ .castSpeed = 1.12 }, .bump = rides(.intelligence, 1) },
     .{ .arm = .wizard, .branch = .wizard_cast, .ring = 6, .name = "Chaos Bloom", .grant = .boltCloud, .key = true },
 
-    // THE SEAMS, in `Seam` order and shallow-to-deep inside each. **THE SHALLOW CROSSING TRADES WHAT AN ARM
-    // SUPPORTS ITSELF WITH AND THE DEEP ONE TRADES ITS CLASS STAT** (`Arm.stat`), which is what makes the pair
-    // a ladder: ring 3 is a cheap dip into the neighbour, ring 5 is a real hybrid and priced by the level it
-    // lands at. No two bridges spend the same pair.
+    // THE SEAMS, in `Seam` order and shallow-to-deep. The shallow crossing trades what an arm supports itself
+    // with, the deep one trades its CLASS STAT (`Arm.stat`). No two bridges spend the same pair.
     bridgeNode(.warrior_rogue, 3, "Rough Luck", .vitality, .luck, 1),
     bridgeNode(.warrior_rogue, 5, "Duellist", .strength, .dexterity, 2),
     bridgeNode(.rogue_wizard, 3, "Long Breath", .endurance, .mind, 1),
@@ -454,8 +407,7 @@ comptime {
             const n = NODES[i];
             std.debug.assert(n.seam.? == s and n.branch == null and !n.key);
             std.debug.assert(n.ring == ring);
-            // A bridge stands where a branch is genuinely two rungs wide, or "the outermost slot" is the only
-            // slot and the crossing hangs off a lane's own centre line.
+            // Two rungs wide, or "the outermost slot" is the only slot and the crossing hangs off the centre.
             std.debug.assert(BRANCH_RINGS[ring - 1] >= 2);
             const a = bridgeAnchors(s, ring);
             std.debug.assert(NODES[a[0]].arm == s.from() and NODES[a[1]].arm == s.to());
@@ -472,11 +424,8 @@ comptime {
     }
     std.debug.assert(keys == NBRANCH);
 
-    // **AT LEAST HALF THE BOARD PAYS A POINT** (owner: at least half of the nodes should be stat ups or include
-    // a stat up with other bonuses). Asserted rather than counted by hand, so the rule survives the next node
-    // added — and a rider may not double the grant it rides on the SAME attribute, since a `+2 Strength` node
-    // wearing a `+1 Strength` rider is one number printed on two lines. A SPLIT is the whole point of a bridge
-    // (`bridgeNode`), so two DIFFERENT attributes are legal and only the collision is refused.
+    // **AT LEAST HALF THE BOARD PAYS A POINT** (owner's call), asserted so the rule survives the next node.
+    // A rider may not double its grant on the SAME attribute; two DIFFERENT ones are a bridge's whole point.
     var carry: usize = 0;
     for (NODES) |n| {
         const pureOn: ?stats.Attr = switch (n.grant) {
@@ -535,9 +484,8 @@ pub fn grantSays(g: Grant) [:0]const u8 {
     };
 }
 
-/// The rider's own line, drawn UNDER the grant's — never folded into it, because the two are separate
-/// promises and a reader who has to parse one sentence for both cannot tell which half he is buying.
-/// THREE ASCII DOTS AND NOT AN ELLIPSIS: the Balthazar atlas is ASCII-only and a `…` draws as tofu.
+/// Drawn UNDER the grant's line, never folded into it. THREE ASCII DOTS AND NOT AN ELLIPSIS: the Balthazar
+/// atlas is ASCII-only and a `…` draws as tofu.
 pub fn bumpSays(b: Bump) [:0]const u8 {
     return fmt("+{d} {s}", .{ b.n, stats.displayName(b.a) });
 }
@@ -573,8 +521,8 @@ pub const Bonus = struct {
     castSpeed: f32 = 1,
     boltCloud: bool = false,
 
-    /// THE LIVE CHARACTER SHEET — the starting sheet plus every attribute node taken, and the ONLY way an
-    /// attribute here ever moves. `stats.Sheet.set` clamps, so a maxed attribute cannot be pushed past 99.
+    /// The starting sheet plus every attribute node taken, and the ONLY way an attribute here moves.
+    /// `stats.Sheet.set` clamps, so a maxed attribute cannot be pushed past 99.
     pub fn sheet(self: Bonus) stats.Sheet {
         var s = stats.Sheet{};
         for (self.attrs, 0..) |n, i| {
@@ -584,11 +532,9 @@ pub const Bonus = struct {
     }
 };
 
-/// SOULS FOR THE NEXT NODE, off the level you are standing on. Quadratic, ER's shape.
-///
-/// MEASURED AGAINST WHAT A BODY IS WORTH, not picked for looking like money: a toad is 60, an archer 130, a
-/// brood mother 240. **THE FIRST NODE COSTS `costAt(1)`, WHICH IS 360** — never `costAt(0)`: `Tree.cost`
-/// prices the LEVEL you are standing on, and you stand on level 1 before you have spent anything at all.
+/// Off the level you are standing on. Quadratic, ER's shape, and MEASURED against what a body is worth: a
+/// toad is 60, an archer 130, a brood mother 240. **THE FIRST NODE COSTS `costAt(1)`, WHICH IS 360** — never
+/// `costAt(0)`: you stand on level 1 before you have spent anything.
 pub fn costAt(level: u32) u32 {
     return 280 + 62 * level + 18 * level * level;
 }
@@ -596,10 +542,8 @@ pub fn costAt(level: u32) u32 {
 pub const Tree = struct {
     taken: [N]bool = [_]bool{false} ** N,
 
-    /// TAKING A NODE IS THE LEVEL (owner's call) — there is no pool of points between the two, because a
-    /// point you are holding is a decision you have already paid for and not yet made, and that is a state
-    /// with nothing to show for itself. LEVEL IS COUNTED, never stored (`stats.Sheet.level`'s law): it is
-    /// the nodes on the board plus one.
+    /// TAKING A NODE IS THE LEVEL (owner's call) — no pool of points between the two. LEVEL IS COUNTED, never
+    /// stored (`stats.Sheet.level`'s law): the nodes on the board plus one.
     pub fn spent(self: *const Tree) u32 {
         var n: u32 = 0;
         for (self.taken) |t| n += @intFromBool(t);
@@ -716,11 +660,9 @@ fn branchAngle(b: Branch) f32 {
     return armAngle(b.arm()) + side * BRANCH_SPLIT;
 }
 
-/// How wide a ring's fan opens. It WIDENS outward — a constant spread draws parallel rails, which is a
-/// ladder and not a branch. **AND IT IS NARROWER THAN IT WAS**: a branch now has half an arm's lane rather
-/// than the whole of it, so a fan sized for the old three would put one branch's ring-2 pair on top of its
-/// neighbour's. Solved against `BRANCH_SPLIT` rather than picked — the widest fan may not reach the lane's
-/// own half-width, or the two branches of an arm cross.
+/// It WIDENS outward — a constant spread draws parallel rails, which is a ladder and not a branch. Solved
+/// against `BRANCH_SPLIT`, never picked: the widest fan may not reach the lane's own half-width, or the two
+/// branches of an arm cross.
 fn spreadAt(ring: u8) f32 {
     return 0.130 + 0.032 * @as(f32, @floatFromInt(ring));
 }
@@ -770,21 +712,15 @@ fn unitPos(i: usize) rl.Vector2 {
 
 const STEP_CONE: f32 = 0.5;
 
-/// **THE PICK IS THE NODE NEAREST THE LINE YOU PUSHED, NOT THE NEAREST NODE INSIDE THE WEDGE** — and on a
-/// lattice those are two different answers. A rung's own children sit DIAGONALLY out from it while its
-/// siblings sit LEVEL with it, so a sibling is always the shorter hop: scored on distance, a push aimed
-/// squarely at a child of a three-wide ring landed on the sibling beside it every time, which is the
-/// "point at a node and you go to that node" law failing on exactly the shape it exists for. So the
-/// PERPENDICULAR offset from the pushed ray decides, and the distance ALONG it is only the tiebreak between
-/// two things equally on the line — which is what still puts a near child ahead of the one behind it.
+/// **THE PICK IS THE NODE NEAREST THE LINE YOU PUSHED, NOT THE NEAREST NODE INSIDE THE WEDGE.** On a lattice a
+/// rung's children sit DIAGONALLY out while its siblings sit LEVEL, so a sibling is always the shorter hop and
+/// a distance score landed on it every time. The PERPENDICULAR offset from the pushed ray decides; distance
+/// ALONG it is only the tiebreak.
 ///
-/// **AND THE WEIGHT IS BRACKETED AT BOTH ENDS, WHICH IS WHY IT IS SOLVED AND NOT PICKED.** Too small and
-/// distance stops mattering at all: pushing UP from the warrior's class node aims within 3 degrees of the
-/// WIZARD's first branch node two rings away, straight past the hub sitting one unit off the line — the middle
-/// became a pocket you could leave and never re-enter, and a D-pad has only these four bearings
-/// (`game.zig`'s `nav`), so that is a node nobody can walk back onto. Too large and it degenerates to the
-/// distance walk that could not leave a three-wide ring. The two cases bound it to (0.45, 0.86) and this sits
-/// in the middle of that; both are pinned by tests, so the bracket is checked rather than remembered.
+/// **THE WEIGHT IS BRACKETED AT BOTH ENDS, WHICH IS WHY IT IS SOLVED AND NOT PICKED.** Too small and pushing
+/// UP from the warrior's class node aims within 3 degrees of the WIZARD's node two rings away, past the hub
+/// one unit off the line — a middle you can leave and never re-enter, and a D-pad has only four bearings. Too
+/// large and it degenerates to the distance walk. The cases bound it to (0.45, 0.86); tests pin both.
 const STEP_ALONG: f32 = 0.65;
 
 /// MOVE BY GEOMETRY, not by ordinal (`book.slotStep`'s law) — on a wheel an ordinal walk steps between
@@ -1608,11 +1544,11 @@ test "…and from the MIDDLE each arm is under the thumb that points at it" {
 }
 
 test "POINT AT A NODE AND YOU GO TO THAT NODE — the stick's bearing IS the step" {
-    // THE COMPLAINT, as arithmetic (owner: walking the tree with the stick "feels horrible"). The arms run out
-    // at 0, 120 and 240 degrees, so from the middle the ring-0 nodes sit at ∓15, 105, 135, 225 and 255 — and
-    // every outward step along the two lower arms runs down a bearing near 96 or 216. Snapped to four screen
-    // axes and gated by a 32-degree dead cone (`menu.STICK_CONE`), the push aimed AT a node landed in the cone
-    // and did nothing on two arms out of three. `stickPush`'s `radial` hands the bearing over instead, so:
+    // THE COMPLAINT, as arithmetic (owner: walking the tree with the stick "feels horrible"). Arms run out at
+    // 0, 120 and 240 degrees, so ring-0 nodes sit at ∓15, 105, 135, 225 and 255 and every outward step on the
+    // two lower arms runs near 96 or 216 — snapped to four screen axes inside a 32-degree dead cone
+    // (`menu.STICK_CONE`), the push aimed AT a node did nothing on two arms of three. `stickPush`'s `radial`
+    // hands the bearing over instead, so:
     //   1. from the MIDDLE, a push aimed at any ring-0 node reaches THAT node and not its neighbour…
     for (0..N) |i| {
         if (NODES[i].ring != 0) continue;

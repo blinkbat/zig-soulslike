@@ -23,12 +23,9 @@ pub const WET_HI: f32 = 145.0;
 pub const RAMP_IN: f32 = 9.0;
 pub const RAMP_OUT: f32 = 14.0;
 
-/// **AND IT DOES NOT SIT AT ONE LEVEL WHILE IT IS THERE.** The level breathes under its own top: two slow
-/// swells beating against each other, on periods that do not divide (17.5 s and 30), so a lull never lands
-/// twice in the same place in a storm.
-///
-/// **HOW FAR UNDER ITS TOP A LULL TAKES IT.** Deep enough to see, and short of the levels other things key
-/// off: the lull bottoms out well over `FLASH_AT`, so lightning cannot switch off inside its own storm.
+/// The level breathes under its own top — two swells on periods that do not divide (17.5 s and 30), so a lull
+/// never lands twice in the same place. It bottoms out well over `FLASH_AT`, so lightning cannot switch off
+/// inside its own storm.
 pub const GUST_DEEP: f32 = 0.30;
 const GUST_A: f32 = 17.5;
 const GUST_B: f32 = 30.0;
@@ -231,11 +228,10 @@ pub const Weather = struct {
 
 
 pub const CELL_H: f32 = 5.0;
-/// …and how far out it reaches. **IT HAS TO REACH AS FAR AS THE STORM'S OWN AIR HIDES.** The haze is
-/// `1 - exp(-density * dist)`, so at the old 24 m rim a full storm was only 53% thick. Solved against
-/// `gfx.HAZE_STORM`: the rim stands where the air is 80% thick and the taper starts where it is 70%.
-/// **AND THE SPREAD IS ALSO THE THINNING** — streaks are distributed by area (`@sqrt`), so the near field
-/// thins as the disc grows and the far field costs almost no fill.
+/// **IT HAS TO REACH AS FAR AS THE STORM'S OWN AIR HIDES.** The haze is `1 - exp(-density * dist)`, so at a
+/// 24 m rim a full storm was only 53% thick. Solved against `gfx.HAZE_STORM`: the rim stands where the air is
+/// 80% thick and the taper starts at 70%. **AND THE SPREAD IS ALSO THE THINNING** — streaks are distributed
+/// by area (`@sqrt`), so the near field thins as the disc grows.
 pub const CELL_R: f32 = 40.0;
 const TAPER_FROM: f32 = 0.74;
 /// How many cells are stacked up the camera's column. Four puts the top of the rain 15 m up.
@@ -310,15 +306,12 @@ pub const Rain = struct {
         return .{ .model = b.toModel(shader) };
     }
 
-    /// **THE WHOLE STORM, IN `STACKS` DRAW CALLS** (twice that at the heavier end). The cell is drawn up the
-    /// camera's own column and slid down by a phase that WRAPS on `CELL_H`, so the seam never arrives.
+    /// **THE WHOLE STORM, IN `STACKS` DRAW CALLS** (twice that at the heavier end), slid down by a phase that
+    /// WRAPS on `CELL_H` so the seam never arrives. Drawn LAST with the depth mask off (`Scene.beginFade`) and
+    /// still depth TESTED, which puts the rain behind a wall you are standing under.
     ///
-    /// Drawn LAST with the depth mask off (`Scene.beginFade`) — a streak may not write depth over the world
-    /// behind it — but still depth TESTED, which puts the rain behind a wall you are standing under.
-    ///
-    /// **CENTRED ON THE MAN, NOT ON THE LENS.** `at` is his ground point and `eye` is only where the column
-    /// is stacked FROM: on the camera the disc reached 24 m behind the lens and 19 ahead of the hero. And it
-    /// must be a point the CAMERA DOES NOT ROTATE, or turning slides 40 m/s of rain sideways.
+    /// **CENTRED ON THE MAN, NOT ON THE LENS** — on the camera the disc reached 24 m behind the lens and 19
+    /// ahead of the hero, and it must be a point the CAMERA DOES NOT ROTATE or turning slides the rain.
     pub fn draw(self: *const Rain, scene: *gfx.Scene, eye: rl.Vector3, at: rl.Vector3, level: f32, t: f32) void {
         if (level <= 0.02) return;
         const lv = mathx.clampF(level, 0, 1);
@@ -652,16 +645,14 @@ test "THE FIRST STORM LANDS INSIDE A SESSION, at the seed the game actually ship
     }
 }
 
-// **MIST THAT DRIFTS THROUGH, AND ONLY WHEN THE AIR IS ALREADY THICK.** The haze (`gfx.HAZE_STORM`) is the
-// AIR and has no shape at all; these are the shape, so the fog is somewhere you walk through.
+// The haze (`gfx.HAZE_STORM`) is the AIR and has no shape; these are the shape.
 //
-// **THE GRADIENT IS IN THE GEOMETRY, NOT IN A TEXTURE AND NOT IN SHELLS.** One bank is a CLUSTER of
-// overlapping lumps through a flattened volume, so the alpha COMPOUNDS where they pile up and thins toward
-// the rim. That is a soft edge without a per-vertex opacity — vertex alpha here is the EMISSIVE channel
-// (`gfx`'s law) — and without three concentric shells, each of which would read as a ring. ONE DRAW per bank.
+// **THE GRADIENT IS IN THE GEOMETRY, NOT IN A TEXTURE AND NOT IN SHELLS** — a CLUSTER of overlapping lumps
+// through a flattened volume, so the alpha COMPOUNDS where they pile up. Vertex alpha here is the EMISSIVE
+// channel (`gfx`'s law), and concentric shells each read as a ring. ONE DRAW per bank.
 //
-// **AND IT IS SLOWER THAN ANYTHING ELSE IN THE GAME.** `DRIFT_HI` is 0.16 m/s: a bank takes a minute and a
-// half to cross its own width, so you never catch it moving, you only notice it has moved.
+// **AND IT IS SLOWER THAN ANYTHING ELSE IN THE GAME**: `DRIFT_HI` is 0.16 m/s, so a bank takes a minute and a
+// half to cross its own width.
 
 pub const MIST_CAP: usize = 7;
 pub const MIST_KINDS: usize = 3;
@@ -911,17 +902,14 @@ test "A BANK GIVES WAY AS YOU WALK INTO IT, AND COMES BACK AS YOU LEAVE" {
     std.debug.print("  mist: {d:.0}s ramps inside a {d:.0}..{d:.0}s life, gone within {d:.1}x its radius, full past {d:.1}x\n", .{ MIST_FADE, LIFE_LO, LIFE_HI, NEAR_GONE, NEAR_FULL });
 }
 
-// SPOREFALL. **IT IS NOT FOG WITH A FILTER ON IT.** Rain and fog are both the sky going grey; a spore bloom
-// is the AIR ITSELF being alive, and it has to read on a bright noon as well as under cloud. Three things
-// off the one 0..1 dial:
+// SPOREFALL. **IT IS NOT FOG WITH A FILTER ON IT** — it has to read on a bright noon as well as under cloud.
+// Three things off the one 0..1 dial:
 //
-//   1. the distance haze turns peach and shortens (`daynight.bloom` + `HAZE_SPORE_D`, both pushed
-//      through `gfx.Scene.setHour`),
-//   2. the drifting banks stop being grey and become lit cloud (`sporeTint` on the mist's own draw),
+//   1. the distance haze turns peach and shortens (`daynight.bloom` + `HAZE_SPORE_D`),
+//   2. the drifting banks become lit cloud (`sporeTint` on the mist's own draw),
 //   3. and there are SPORES IN IT — this system, a slow-falling mote cell round the camera.
 //
-// The motes fall at `SPORE_MPS`, 3% of rain: near enough to hanging that the eye reads drift, far enough
-// from still that the air is not frozen.
+// The motes fall at `SPORE_MPS`, 3% of rain.
 
 /// **HOW FAR THE MOTES REACH.** Smaller than `CELL_R` on purpose — rain is a sheet you stand under, spores
 /// are something in the air AROUND YOU. Past this the peach haze carries it, and haze costs no fill.
@@ -967,14 +955,11 @@ fn swimOf(t: f32, i: usize) rl.Vector3 {
 const MOTE_WARM = rgba(255, 208, 178, 236);
 const MOTE_PALE = rgba(255, 232, 214, 214);
 
-// **A SPORE HAS TO ARRIVE AND LEAVE, NOT ENTER AND EXIT.** With one mote field the only way out of frame is
-// to fall out of the bottom, and at `SPORE_MPS` that takes a minute and a half.
-//
-// Vertex alpha is the EMISSIVE channel (`gfx` law) and the `fade` uniform is per-DRAW, so a per-mote opacity
-// is the one thing this renderer cannot do — the wall `Rain` hits with its taper and solves by baking the
-// thinning into the GEOMETRY, which cannot work here because this one has to move. So the field is cut into
-// `SPORE_SHOALS` separate models, each drawn at its own `fade` on a long sine offset a fifth of a period
-// from its neighbour's — out of phase, so the field as a whole never blinks. A test pins it.
+// **A SPORE HAS TO ARRIVE AND LEAVE, NOT ENTER AND EXIT** — with one field the only way out of frame is to
+// fall out of the bottom, which at `SPORE_MPS` takes a minute and a half. Vertex alpha is the EMISSIVE channel
+// and `fade` is per-DRAW, so per-mote opacity is impossible and `Rain`'s baked-in taper cannot work on
+// something that moves. The field is cut into `SPORE_SHOALS` models, each on its own `fade` sine offset a
+// fifth of a period from its neighbour's, so the field never blinks. A test pins it.
 pub const SPORE_SHOALS: usize = 5;
 /// Seconds for one shoal to come up and go back down. Under half a minute the field pulses like a heartbeat.
 pub const SHOAL_SECS: f32 = 41.0;

@@ -29,11 +29,9 @@ pub const WATER_SHORE: u8 = 128;
 pub const WATER_DEEP_AT: f32 = 11.0;
 pub const WATER_WET_OUT: f32 = 3.4;
 
-/// THE ANCHOR SUN — the light this whole game was authored, measured and photographed under, and the bearing
-/// every reference frame in `shots/` is framed off (`shots.LIT_YAW`). It is NOT what casts any more: the clock
-/// is (`daynight.keyDir`, and `sun` below). It stays because it is the thing the cycle is SOLVED THROUGH, and
-/// because `--shot` pins the hour that reproduces it — which is `daynight`'s own test, and that test only
-/// pins THIS bearing because this IS its constant rather than a second triple that happens to match it.
+/// THE ANCHOR SUN — what the game was authored and photographed under, and the bearing every frame in
+/// `shots/` is framed off (`shots.LIT_YAW`). It is NOT what casts any more (`daynight.keyDir`); it stays
+/// because the cycle is SOLVED THROUGH it and `--shot` pins the hour that reproduces it.
 pub const SUN_DIR = daynight.ANCHOR_DIR;
 
 /// WHAT IS CASTING THIS FRAME, and it is STILL ONE SOURCE (AGENTS.md): the shader's `sunDir`, the shadow
@@ -492,15 +490,12 @@ pub const Scene = struct {
         return out;
     }
 
-    /// THE HOUR, PUSHED — and this is the ONE writer of `gfx.sun`/`gfx.sunReach`, which is what keeps the
-    /// shader's key, the shadow camera's position and `env`'s depth-pass cull the single source AGENTS.md says
-    /// they are. Called once a frame, before either pass.
+    /// The ONE writer of `gfx.sun`/`gfx.sunReach`, keeping the shader key, the shadow camera and `env`'s
+    /// depth cull one source. Called once a frame, before either pass.
     ///
-    /// **AND THE STORM IS A LAYER ON TOP OF IT** (`daynight.overcast`, owner: affect lighting depending on
-    /// weather). `wet` is `weather.Weather.rain()`; at 0 the palette is the hour's own, untouched. `fogK` is
-    /// the DEBUG override on the haze distance and is 1 in the game (`menu.fogK`). `spore` is the bloom
-    /// (`worldfmt.Location.spore`), which turns the distance PEACH and shortens it — the one weather here
-    /// that brightens rather than slates.
+    /// **THE STORM IS A LAYER ON TOP** (`daynight.overcast`, owner: affect lighting depending on weather).
+    /// `wet` is `weather.Weather.rain()`, 0 leaving the hour's palette untouched; `fogK` is the DEBUG haze
+    /// override, 1 in the game; `spore` turns the distance PEACH and shortens it.
     pub fn setHour(self: *Scene, hour: f32, wet: f32, fogK: f32, spore: f32) void {
         const p = daynight.bloom(daynight.overcast(daynight.paletteAt(hour), wet), spore);
         sun = daynight.keyDir(hour);

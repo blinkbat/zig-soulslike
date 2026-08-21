@@ -125,10 +125,8 @@ pub const Mode = enum {
 };
 
 /// **THE GROUND VOLUMES, PLAYING, WITH THEIR OWN NUMBERS BESIDE THEM** (owner: a particle viewer, gas viewer,
-/// aoes). The effects bench one tab along auditions `elemfx`'s twelve particle signatures; this is the other
-/// half of the same problem and a worse one, because a cloud is a RADIUS, a LIFE and a DOSE at once and none
-/// of the three can be read off a source file. Every entry here runs the real object on a loop over real
-/// ground, with a ring at its true radius and its authored constants printed.
+/// aoes) — a cloud is a RADIUS, a LIFE and a DOSE at once and none of the three reads off a source file. Every
+/// entry runs the real object on a loop over real ground, ringed at its true radius.
 const Volume = enum {
     spore_cloud,
     acid_pool,
@@ -1032,7 +1030,6 @@ fn renderBench(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, st: 
     rl.endTextureMode();
 }
 
-// ── THE VOLUME BENCH ────────────────────────────────────────────────────────────────────────────────────
 
 fn volReset(st: *State) void {
     st.volT = 0;
@@ -1226,6 +1223,8 @@ fn benchPanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) boo
         .{ "..hi", sig.lifeHi },
         .{ "r0", sig.r0 },
         .{ "r1", sig.r1 },
+        .{ "drag", sig.drag },
+        .{ "stretch", sig.stretch },
     }) |row| {
         const s = std.fmt.bufPrintZ(&buf, "{s: <7}{d: >7.3}", .{ row[0], row[1] }) catch "";
         hud.mono(s, x, y, hud.MONO, ui.VALUE);
@@ -1235,6 +1234,11 @@ fn benchPanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) boo
     inline for (.{ .{ "core", sig.core }, .{ "edge", sig.edge } }) |row| {
         hud.mono(row[0], x, y, hud.MONO, ui.alpha(ui.LABEL, 210));
         rl.drawRectangleRec(ui.rect(x + 56, y + 2, 46, line - 6), row[1]);
+        y += line;
+    }
+    if (sig.cool) |cool| {
+        hud.mono("cool", x, y, hud.MONO, ui.alpha(ui.LABEL, 210));
+        rl.drawRectangleRec(ui.rect(x + 56, y + 2, 46, line - 6), cool);
         y += line;
     }
     y += 4;

@@ -22,16 +22,12 @@ const scaleM = mathx.scaleM;
 
 // THE FLORID RAVAGER (owner's creature, owner's name) — a big hound with an open flower for a head.
 //
-// **IT IS THE QUADRUPED RIG'S SECOND USER, AND THAT IS THE WHOLE REASON IT COULD BE WRITTEN AT ALL.** The bone
-// layout, the rest chain, Hildebrand's two gait dials, the limb solver and the leap all come out of `wolf.zig`
-// (`wolf.restPose`, `wolf.legs`, `wolf.gaitAt`, `wolf.limbPhases`, `wolf.strideFor`, and the leap's own
-// `wolf.BITE_HOP_UP`/`BITE_PITCH`). What is honestly its own is a STATURE and a HEAD — everything else here
-// would have been a transcription, which the rig law forbids outright.
+// **THE QUADRUPED RIG'S SECOND USER**: the bone layout, rest chain, gait dials, limb solver and leap all come
+// from `wolf.zig`. Its own are a STATURE and a HEAD — anything else would be a transcription, which the rig
+// law forbids.
 //
-// **THE BLOOM IS THE TELL AND THE TELL IS THE WHOLE FIGHT.** Shut it is a knot on a neck and the animal is
-// stalking; open it is a gaping ring of petals and the leap is already coming. One scalar (`open`) drives the
-// petals, and it is read off the bite's own clock rather than kept as a second timer, so the picture cannot
-// promise a lunge the mechanic is not throwing.
+// **THE BLOOM IS THE TELL AND THE TELL IS THE WHOLE FIGHT.** One scalar (`open`), read off the bite's own
+// clock and never a second timer, so the picture cannot promise a lunge the mechanic is not throwing.
 
 /// Height at the WITHERS. Over Hildebrand's 1.12 (owner: LARGE dogs) — it stands about as tall as the hero's
 /// chest, which is what makes the head coming at you a head and not a knee.
@@ -41,11 +37,9 @@ pub const AGGRO_R: f32 = 11.0;
 const HOME_R: f32 = 1.2;
 
 const BODY_R: f32 = 0.46;
-/// **THE HURT SPHERE HAS TO HOLD THE STALK AS WELL AS THE BODY.** Sized for a quadruped's ribcage it stopped
-/// at 1.4 m and the whole neck and bloom — over a third of the creature, and the part the player is aiming at
-/// — stood outside anything a sword could reach. Centre and radius are solved to span the barrel's own middle
-/// (0.83 m) up to the bloom (2.17 m), which is what makes it one animal to hit rather than a dog with a
-/// decoration floating over it.
+/// **IT HAS TO HOLD THE STALK AS WELL AS THE BODY.** Sized for a ribcage it stopped at 1.4 m and the neck and
+/// bloom — a third of the creature, and what the player aims at — were outside any sword. Solved to span the
+/// barrel's middle (0.83 m) up to the bloom (2.17 m).
 const HURT_R: f32 = 0.92;
 const CENTER_F: f32 = 1.05;
 const TOP_F: f32 = 1.66;
@@ -130,11 +124,9 @@ const SHOVE_DECAY: f32 = 6.0;
 /// How far down the jaw bone the bloom's throat sits, as a fraction of `W` — the point the mouth's height is
 /// measured at, the wolf's `JAW_REACH` one creature along.
 const JAW_REACH: f32 = 0.13;
-/// …AND THE BLOOM'S OWN HALF-WIDTH, which is what its reach and its measured height are both taken over: a
-/// ring of petals closing on you is a mouth the size of the head, not a set of teeth, so the mouth is a
-/// radius and not a point.
-/// Bigger head (owner). The bloom is the aim point, the tell and the hitbox all at once, so this moves the
-/// silhouette, the reticle and what the strike can reach together.
+/// …AND THE BLOOM'S OWN HALF-WIDTH, which its reach and measured height are both taken over: the mouth is a
+/// RADIUS, not a point. Bigger head (owner) — this moves the silhouette, the reticle and the strike's reach
+/// together.
 const BLOOM_R: f32 = 0.40;
 /// HOW FAR OFF ITS NOSE THE BLOOM STILL CATCHES HIM — the cosine of the frontal cone (the toad's own dial).
 /// 0.25 is about 76 degrees either side, which is a ring of petals rather than a point.
@@ -188,12 +180,10 @@ fn restPose() [N]rl.Vector3 {
     return r;
 }
 
-// THE PALETTE. **AUTHOR DARK, AND SOLVE IT RATHER THAN GUESS** — the chain is albedo x 1.72 -> linear ->
-// gamma 1/2.2, so screen goes as albedo^(1/2.2) and a factor you want on screen is that factor^2.2 on the
-// albedo. MEASURED off the render: at (38, 34, 30) the hide came back at 144 against ground sampled at 112,
-// i.e. the animal was BRIGHTER than the field it stands in. Wanted ~78, which is 0.54 on screen and
-// 0.54^2.2 = 0.264 on the albedo — hence these. The bigger and smoother the mass, the darker it must start. The bloom is the one thing allowed to be bright, and it is bright because
-// it is the read: a dark animal with a pale gaping ring where a face should be.
+// **AUTHOR DARK, AND SOLVE IT RATHER THAN GUESS** — screen goes as albedo^(1/2.2), so a factor you want on
+// screen is that factor^2.2 on the albedo. MEASURED: at (38, 34, 30) the hide came back at 144 against ground
+// at 112 — BRIGHTER than its field. Wanted ~78, i.e. 0.54 on screen, 0.54^2.2 = 0.264 on the albedo. The
+// bloom is the one thing allowed to be bright, because it is the read.
 const HIDE = rgba(10, 9, 8, 206);
 const HIDE_LT = rgba(15, 13, 11, 190);
 const HIDE_DK = rgba(6, 6, 5, 210);
@@ -300,11 +290,9 @@ pub const Ravager = struct {
     pub fn centerWorld(self: *const Ravager) rl.Vector3 {
         return foe.bodyPoint(self.pos, CENTER_F * W, self.scale, 0);
     }
-    /// **THE MARK RIDES THE BODY, NOT THE BLOOM** (owner's call). On the head it rode a stalk that rears
-    /// 1.6 `W` over the withers, stretches another quarter and then DIVES 152 degrees — so the reticle
-    /// travelled a metre and a half every strike and the camera chased a flower round the field. The barrel is
-    /// the part of this animal that is where the animal is. Off `CHEST` and not `centerWorld`, so it still
-    /// rides the POSE (`foe.markOn`'s whole reason) rather than sitting on the pelvis's bare height.
+    /// **THE MARK RIDES THE BODY, NOT THE BLOOM** (owner's call) — on the head it rode a stalk that rears
+    /// 1.6 `W`, stretches a quarter more and DIVES 152 degrees, so the reticle travelled a metre and a half a
+    /// strike. Off `CHEST` and not `centerWorld`, so it still rides the POSE (`foe.markOn`'s reason).
     pub fn lockPoint(self: *const Ravager) rl.Vector3 {
         return foe.markOn(self.xf[SPINE], LOCK_AT);
     }
@@ -337,16 +325,10 @@ pub const Ravager = struct {
         return foe.markOn(self.xf[JAW], v3(0, 0, JAW_REACH * W));
     }
 
-    /// HOW OPEN THE BLOOM IS, 0..1 — **read off the bite's own clock and nowhere else**, so the picture and
-    /// the mechanic cannot tell a different story about when the thing is coming. Shut in every other state.
-    /// **THE BLOOM HAS TWO TIERS AND THE SECOND ONE IS THE TELL** (owner: open as he gets close, very wide;
-    /// wider still when it attacks). 0 shut, 1 the wide-awake gape it wears the whole time he is near it, and
-    /// past 1 up to `ATTACK_OPEN` for the leap. The two have to be a RANGE and not a switch: a flower that is
-    /// already all the way out while it stalks has nothing left to say when the leap comes, and one that only
-    /// opens on the attack is a dog with a knot on its neck until the frame it kills you.
-    ///
-    /// The approach tier is a SMOOTHED level (`nearK`) and the attack tier is the bite's own clock — so the
-    /// first cannot pop as he crosses a threshold and the second cannot disagree with the mechanic.
+    /// 0..1, **read off the bite's own clock and nowhere else**, so the picture and the mechanic cannot
+    /// disagree. **TWO TIERS, AND THE SECOND IS THE TELL** (owner: open as he gets close, very wide; wider
+    /// still when it attacks) — 0 shut, 1 the wide-awake gape while he is near, past 1 to `ATTACK_OPEN` for
+    /// the leap. A RANGE and not a switch. The approach tier is SMOOTHED (`nearK`) so it cannot pop.
     pub fn openAmt(self: *const Ravager) f32 {
         const near = self.nearK;
         if (self.state != .bite) return near;
@@ -558,17 +540,17 @@ pub const Ravager = struct {
         while (i < n) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(0.6, 1.7);
-            foe.emitParticle(
-                &self.parts,
-                &self.fxHead,
-                at,
-                v3(mathx.cosf(a) * sp, self.fxRng.range(0.3, 1.6), mathx.sinf(a) * sp),
-                self.fxRng.range(0.30, 0.62),
-                self.fxRng.range(0.030, 0.058) * self.scale,
-                0.006,
-                if (self.fxRng.float() < 0.5) PETAL else PETAL_LT,
-                2.2,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = at,
+                .v = v3(mathx.cosf(a) * sp, self.fxRng.range(0.3, 1.6), mathx.sinf(a) * sp),
+                .life = self.fxRng.range(0.38, 0.78),
+                .r0 = self.fxRng.range(0.030, 0.058) * self.scale,
+                .r1 = 0.006,
+                .col = if (self.fxRng.float() < 0.5) PETAL else PETAL_LT,
+                .grav = 2.2,
+                // Petals FLUTTER — heavy drag against a light pull, so they leap off the bloom and then drift down.
+                .drag = 2.8,
+            });
         }
     }
 
@@ -600,11 +582,9 @@ pub const Ravager = struct {
         }
 
         var wx: [N]rl.Matrix = undefined;
-        // **THE WHOLE RIG TAKES THE MAP'S SCALE, NOT JUST THE PELVIS HEIGHT.** `centerWorld`, `topWorld`,
-        // `hurtRadius` and `bodyR` are every one of them `self.scale`'d, so a rig drawn at 1 hangs a bigger
-        // hurt sphere, mark and bar round a body that never grew. Innermost, so every child bone inherits it
-        // through the parent chain, and every vertical offset goes through it as well — at scale 1 this is
-        // exactly the expression it always was.
+        // **THE WHOLE RIG TAKES THE MAP'S SCALE, NOT JUST THE PELVIS HEIGHT** — `centerWorld`, `topWorld`,
+        // `hurtRadius` and `bodyR` are all `self.scale`'d, so a rig drawn at 1 hangs a bigger hurt sphere and
+        // bar round a body that never grew. INNERMOST, so every child bone inherits it through the chain.
         wx[ROOT] = mul3(
             mul(scaleM(s, s, s), mul(rx(-pitch), rz(-70.0 * mathx.smoothstep(0, 1, fall)))),
             mul(tr(0, (self.rest[ROOT].y + breath + lift - crouch * W - 0.10 * W * fall) * s, 0), ry(mathx.degrees(self.facing))),
@@ -619,14 +599,11 @@ pub const Ravager = struct {
         // …AND IT DIVES ON THE STRIKE. Negative about X at the neck brings the head DOWN and forward (the
         // root's own sign, one joint along), which is what puts a bloom carried at 2.2 m into a man's chest.
         heromod.setJoint(&wx, &self.rest, NECK, CHEST, rx(flex * 0.5 + 3.0 * m - duck * 1.4 - STRIKE_DIVE * self.diveAmt()));
-        // **AND THE HEAD STRETCHES UP THE NECK'S OWN AXIS**, not along the world's: `setJoint` takes the bone's
-        // length from the DISTANCE between two rest points, so the reach is added as a translate on top of it
-        // and the mesh, the bloom and everything measured off `jawPoint` all come with it for free.
-        // **AND IT COILS BACK AS IT STRIKES** (owner: the attack animation, the neck goes crazy). The stalk
-        // used to hold FULL stretch right through the dive: 108 degrees of pitch on a neck that was also at
-        // its longest, so the bloom swept a metre-and-a-half arc through the air and read as a whip cracking
-        // rather than as an animal striking. A real strike shortens — the head is thrown by the neck folding,
-        // not carried around by it staying out. `diveAmt` takes most of the reach back over the blow.
+        // **THE HEAD STRETCHES UP THE NECK'S OWN AXIS**, not the world's: `setJoint` takes the bone length
+        // from the DISTANCE between two rest points, so the reach is a translate on top and `jawPoint` comes
+        // with it. **AND IT COILS BACK AS IT STRIKES** (owner: the neck goes crazy) — at full stretch through
+        // 108 degrees of dive the bloom swept a metre and a half and read as a whip; `diveAmt` takes most of
+        // the reach back over the blow.
         const reach = NECK_STRETCH * W * self.stretchAmt() * (1.0 - DIVE_COIL * self.diveAmt());
         const neckOff = mathx.subV(self.rest[HEAD], self.rest[NECK]);
         const up = if (mathx.lenV(neckOff) > 1e-5) mathx.normV(neckOff) else v3(0, 1, 0);

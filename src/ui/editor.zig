@@ -3534,11 +3534,9 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             changed = ui.stepperF(ctx, x, y, w, "z1", &m.runway.z1, 0.5, -COORD_LIM, COORD_LIM) or changed;
             y += ROW_H + 10;
 
-            // **THE HOUR, WHERE YOU CAN FIND IT** (owner: add way to change time of day in editor — world menu).
-            // `,`/`.` have scrubbed it since the editor had a clock, and a shortcut nobody is told about is a
-            // feature nobody has: the world's LIGHT is a property of the world, so it belongs on this card
-            // beside its size. The keys stay, and the crib names them — the editor is AGENTS.md's one
-            // keyboard exception, and sweeping the day is still the gesture the stepper cannot be.
+            // **THE HOUR, WHERE YOU CAN FIND IT** (owner: add way to change time of day in editor — world
+            // menu). `,`/`.` still scrub it and the crib names them — the editor is AGENTS.md's one keyboard
+            // exception, and sweeping the day is the gesture a stepper cannot be.
             hud.mono("LIGHT", x, y, hud.MONO, ui.TITLE);
             y += ROW_H + 4;
             var cb: [10]u8 = undefined;

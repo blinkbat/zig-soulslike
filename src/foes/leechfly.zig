@@ -40,6 +40,7 @@ const WING_RIB = rgba(72, 74, 92, 255);
 const EYE = rgba(38, 9, 10, 255);
 const EYE_LIT = rgba(255, 52, 40, 255);
 const BLOOD = rgba(126, 20, 18, 235);
+const BLOOD_DRY = rgba(56, 9, 8, 225);
 const CHIP = rgba(74, 70, 86, 235);
 
 /// ITS OWN STATURE — nose to tail, and NOT the shared humanoid scaffold: it has no legs to walk on. SIZED
@@ -261,6 +262,9 @@ pub const Leechfly = struct {
     fxHead: usize = 0,
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
+    /// Carried ONLY so the blood it sheds and drinks knows whether the ground under it is dry
+    /// (`foe.onDryGround`) — it flies, so this is the water it is flying OVER.
+    wade: foe.Wade = .{},
 
     xf: [N]rl.Matrix = undefined,
 
@@ -618,26 +622,28 @@ pub const Leechfly = struct {
         }
     }
 
-    fn emit(self: *Leechfly, p: rl.Vector3, vel: rl.Vector3, life: f32, r0: f32, r1: f32, col: rl.Color, grav: f32) void {
-        foe.emitParticle(&self.parts, &self.fxHead, p, vel, life, r0, r1, col, grav);
-    }
 
     fn splatter(self: *Leechfly, at: rl.Vector3, dir: rl.Vector3, n: i32) void {
         const parts = foe.hitParts(n);
         var i: i32 = 0;
         while (i < parts) : (i += 1) {
             const a = self.fxRng.angle();
-            const sp = self.fxRng.range(0.5, 1.0) * 2.4;
+            const sp = self.fxRng.range(0.5, 1.0) * 4.6;
             const wet = self.fxRng.float() < 0.35 + 0.5 * self.gorge;
-            self.emit(
-                v3(at.x + self.fxRng.signed() * 0.06, at.y + self.fxRng.signed() * 0.06, at.z + self.fxRng.signed() * 0.06),
-                v3(dir.x * sp + mathx.cosf(a) * sp * 0.5, self.fxRng.range(0.6, 2.4), dir.z * sp + mathx.sinf(a) * sp * 0.5),
-                self.fxRng.range(0.28, 0.55),
-                self.fxRng.range(0.02, 0.045) * self.scale,
-                0.006,
-                if (wet) BLOOD else CHIP,
-                6.5,
-            );
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(at.x + self.fxRng.signed() * 0.06, at.y + self.fxRng.signed() * 0.06, at.z + self.fxRng.signed() * 0.06),
+                .v = v3(dir.x * sp + mathx.cosf(a) * sp * 0.85, self.fxRng.range(0.7, 3.0), dir.z * sp + mathx.sinf(a) * sp * 0.85),
+                .life = self.fxRng.range(0.42, 0.78),
+                .r0 = self.fxRng.range(0.02, 0.045) * self.scale,
+                .r1 = 0.006,
+                .col = if (wet) BLOOD else CHIP,
+                .col1 = if (wet) BLOOD_DRY else null,
+                .grav = if (wet) foe.BLOOD_GRAV else 11.0,
+                .stretch = if (wet) foe.BLOOD_STRETCH else 0.030,
+                .bounce = if (wet) 0 else 0.42,
+                .splat = if (wet and foe.onDryGround(self)) 3.0 else 0,
+                .drag = if (wet) foe.BLOOD_DRAG else 2.2,
+            });
         }
     }
 
@@ -647,15 +653,16 @@ pub const Leechfly = struct {
         const to = self.centerWorld();
         const life = self.fxRng.range(0.14, 0.22);
         const d = mathx.subV(to, tip);
-        self.emit(
-            v3(tip.x + self.fxRng.signed() * 0.05, tip.y + self.fxRng.signed() * 0.05, tip.z + self.fxRng.signed() * 0.05),
-            mathx.scaleV(d, 1.0 / life),
-            life,
-            self.fxRng.range(0.018, 0.032) * self.scale,
-            0.005,
-            BLOOD,
-            -0.4,
-        );
+        foe.emitPart(&self.parts, &self.fxHead, .{
+            .p = v3(tip.x + self.fxRng.signed() * 0.05, tip.y + self.fxRng.signed() * 0.05, tip.z + self.fxRng.signed() * 0.05),
+            .v = mathx.scaleV(d, 1.0 / life),
+            .life = life,
+            .r0 = self.fxRng.range(0.018, 0.032) * self.scale,
+            .r1 = 0.005,
+            .col = BLOOD,
+            .grav = -0.4,
+            .stretch = 0.030,
+        });
     }
 
     /// UNLIT OVER THE OPAQUE PASS, like every group's — the particles, and the EYES coming alight while it

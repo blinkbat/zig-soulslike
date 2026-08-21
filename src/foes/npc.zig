@@ -47,12 +47,10 @@ const FACE_AT = mathx.v3(0, 0.045 * H, 0.02 * H);
 pub const PORTRAIT_DIST: f32 = 0.86;
 const REST = heromod.restHumanoid(heromod.HIP_HALF, heromod.SHOULDER_HALF * 0.96, H);
 
-// THE PALETTE IS SOLVED AGAINST THE RENDER, NOT PICKED. Sampled, every material landed inside 30-36 on
-// screen — a lit figure at the value of ground in SHADOW — where the hero spans 29-50 plus skin near 90:
-// what separates a body is RANGE, not overall lightness. The chain is albedo × 1.72 → linear → gamma 1/2.2,
-// so albedo 40 comes back at 142 and 58 at 168 — on THIS sun, value contrast between two LARGE areas cannot
-// survive full daylight. So the layering is on HUE, warm wool under a COLD cloak, and the value contrast is
-// spent only on `LINEN`.
+// SOLVED AGAINST THE RENDER, NOT PICKED. Every material sampled 30-36 on screen — a lit figure at the value
+// of ground in SHADOW — where the hero spans 29-50 plus skin near 90: what separates a body is RANGE. On this
+// sun albedo 40 comes back at 142 and 58 at 168, so the layering is on HUE (warm wool, COLD cloak) and the
+// value contrast is spent only on `LINEN`.
 const ROBE = rgba(50, 42, 33, 255);
 const ROBE_LT = rgba(68, 58, 45, 255);
 const ROBE_DK = rgba(30, 25, 20, 255);
@@ -390,7 +388,7 @@ pub const Wanderer = struct {
             rz(wonk * 0.5),
         ));
 
-        const swing = 15.0 * mathx.sinf(twoPi * self.phase) * m;
+        const swing = 15.0 * heromod.armSwing(self.phase) * m;
         var sh: f32 = FREE_SH - swing;
         var el: f32 = FREE_EL - mathx.maxF(0, -swing) * 0.8;
         var abd: f32 = FREE_ABD;

@@ -995,7 +995,7 @@ const SLOT_GAP: i32 = eq(8);
 const PITCH_Y: i32 = eq(48);
 const BOTTOM: i32 = 26;
 
-pub const Held = enum { sword, bow, bell, shield, wand };
+pub const Held = itemart.Arm;
 
 /// **A HAND'S CELL KNOWS WHICH WEAPON IS IN IT, NOT JUST WHICH ARM.** The glyph was the armament's, so a dirk,
 /// a club and a warbow all drew as the plain sword and bow down here while the character book — which asks
@@ -1064,16 +1064,7 @@ fn slot(x: i32, y: i32, holds: Slot, charges: u8) void {
     const px: f32 = @floatFromInt(ICON);
     switch (holds) {
         .empty => {},
-        .held => |h| {
-            if (h.gear) |k| return itemart.drawHeld(k, cx, cy, px, true);
-            switch (h.arm) {
-                .sword => itemart.sword(cx, cy, px),
-                .bow => itemart.bow(cx, cy, px),
-                .bell => itemart.bell(cx, cy, px),
-                .shield => itemart.shield(cx, cy, px),
-                .wand => itemart.wand(cx, cy, px),
-            }
-        },
+        .held => |h| itemart.heldArt(h.arm, h.gear, cx, cy, px),
         // The sorcery cell's picture greys out when the FP will not cover a cast, which is the ammo box's own
         // rule: a thing you cannot use has to LOOK like a thing you cannot use. WHICH picture is `itemart`'s
         // one answer, shared with the character book's own socket.

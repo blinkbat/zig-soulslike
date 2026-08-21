@@ -300,7 +300,6 @@ pub const Golem = struct {
         // reads it, so the kill sound, the kill shake and the pad rumble fired EVERY FRAME after the first
         // golem died. Set again below, and in `tryHit`, only on the frame the body actually goes.
         self.justDied = false;
-        _ = blade;
 
         if (self.state == .dead) {
             foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE);
@@ -398,6 +397,7 @@ pub const Golem = struct {
         self.moving = mathx.approach(self.moving, if (moved > 0) 1 else 0, 4.0 * dt);
         self.phase += self.speed * 0.55 * dt + self.moving * 0.20 * dt;
         self.pose();
+        self.tryHit(blade);
         return blow;
     }
 
@@ -648,6 +648,25 @@ test "THE HOMUNCULUS IS ANSWERED WITH FIRE, NOT WITH A SWORD" {
     try std.testing.expect(HP_MAX / took_h < 300.0 / 27.0 * 1.25);
     // …and armour is never immunity, however much of it there is (`combat.armourTaken`).
     try std.testing.expect(took_l > 0 and took_h > 0);
+}
+
+test "HIS SWORD CAN ACTUALLY REACH IT — the blade is taken on every live state, not discarded" {
+    const swing = foe.Blade{
+        .active = true,
+        .r = 0.35,
+        .a = v3(0, 0.8, -1.2),
+        .b = v3(0, 0.8, 1.2),
+        .a0 = v3(0, 0.8, -1.2),
+        .b0 = v3(0, 0.8, 1.2),
+        .hit = .{ .dmg = 13, .poise = 6 },
+    };
+    for ([_]State{ .idle, .walk, .smash_wind, .smash_fall, .smash_rec, .slam_wind, .slam_air, .slam_rec, .stunlight, .stunheavy }) |st| {
+        var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
+        g.state = st;
+        _ = g.update(1.0 / 60.0, v3(0, 0, 30), 200, swing);
+        try std.testing.expectEqual(@as(u32, 1), g.hits);
+        try std.testing.expect(g.vit.hp < HP_MAX);
+    }
 }
 
 test "A DEATH IS ONE FRAME LONG, and the flakes outlive the body that threw them" {

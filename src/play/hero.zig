@@ -366,12 +366,22 @@ const CAST_ELBOW = 52.0;
 const CAST_ELBOW_SNAP = 40.0;
 const CAST_SWEEP = 46.0;
 const CAST_WRIST = 38.0;
-const WAND_CARRY_FLEX = 14.0;
-const WAND_CARRY_ABD = 6.0;
-const WAND_CARRY_ELBOW = 74.0;
-const WAND_CARRY_WRIST = -12.0;
-const WAND_CARRY_SWING = 0.55;
-const WAND_CARRY_ELBOW_SWING = 0.40;
+/// **ONE CARRY, AND THE THINGS CARRIED IN IT ARE ROWS.** A held thing that is not a weapon poses exactly the
+/// same three joints and differs only in the angles: `poseCarryArm` is the shape and this is the table. `yaw`
+/// is horizontal abduction and is the only term the rod does not use — 0 makes `ry` the identity, so the two
+/// go through one expression rather than one each.
+const Carry = struct {
+    flex: f32,
+    abd: f32,
+    elbow: f32,
+    wrist: f32,
+    swing: f32,
+    elbowSwing: f32,
+    yaw: f32 = 0,
+};
+
+const WAND_CARRY = Carry{ .flex = 14.0, .abd = 6.0, .elbow = 74.0, .wrist = -12.0, .swing = 0.55, .elbowSwing = 0.40 };
+const TORCH_CARRY = Carry{ .flex = 10.0, .abd = 10.0, .elbow = 85.0, .wrist = -4.0, .swing = 0.34, .elbowSwing = 0.26, .yaw = 28.0 };
 const CAST_TRUNK = 7.0;
 const CAST_LEAN = 6.0;
 const CAST_HEAD = 9.0;
@@ -428,6 +438,31 @@ fn offAxis(at: rl.Vector3, r: f32, a: f32) rl.Vector3 {
     const s = r * mathx.sinf(a);
     return v3(at.x + c * WAND_U.x + s * WAND_V.x, at.y + c * WAND_U.y + s * WAND_V.y, at.z + c * WAND_U.z + s * WAND_V.z);
 }
+
+/// **SQUARE ACROSS THE FIST** (the rod sits at 55 along it): a torch is gripped the way a hammer is held UP,
+/// so the brand stands plumb off a forearm that is level — solved for, with the carry angles, by the test.
+const TORCH_PITCH = 90.0;
+const TORCH_ULNAR = 5.0;
+const TORCH_PALM = 0.016 * H;
+const TORCH_CA = @cos(radians(TORCH_PITCH));
+const TORCH_SA = @sin(radians(TORCH_PITCH));
+const TORCH_UC = @cos(radians(TORCH_ULNAR));
+const TORCH_US = @sin(radians(TORCH_ULNAR));
+const TORCH_AX = v3(TORCH_SA * TORCH_US, -TORCH_CA, TORCH_SA * TORCH_UC);
+fn torchAt(t: f32) rl.Vector3 {
+    return v3(
+        TORCH_AX.x * t * H,
+        FIST_Y + TORCH_AX.y * t * H,
+        FIST_Z + TORCH_PALM + TORCH_AX.z * t * H,
+    );
+}
+const TORCH_TIP_T = 0.26;
+const TORCH_BUTT_T = 0.07;
+const TORCH_R = 0.017 * H;
+const TORCH_HEAD_R = 0.034 * H;
+const TORCH_HAFT = rgba(46, 33, 24, 255);
+const TORCH_HAFT_LT = rgba(66, 49, 36, 255);
+const TORCH_PITCHWAD = rgba(20, 16, 14, 255);
 
 const CHAOS_MOTE = elemfx.sig(.chaos).edge;
 const CHAOS_HOT = elemfx.sig(.chaos).core;
@@ -577,6 +612,15 @@ const WAND_LIT_CHARGED_R = 7.0;
 const WAND_LIT_FLARE = 2.30;
 const WAND_LIT_FLARE_R = 12.0;
 
+/// The WORLD torch's own row (`props`' `.torch`: col 0.64/0.34/0.13 at 6 m) opened out, because a carried one
+/// is the only light there is — a fifth again the colour and a third more reach.
+const TORCH_LIT = v3(0.78, 0.42, 0.16);
+const TORCH_LIT_R = 8.0;
+const TORCH_FLICKER = 0.16;
+/// The flame's own base, past the pitch wad — where the light sits and where `flameInto` is planted.
+const TORCH_FLAME_T = TORCH_TIP_T + 0.030;
+const TORCH_FLAME_S = 0.45;
+
 pub const AIM_LEAN_DOWN = 34.0;
 pub const AIM_LEAN_UP = 12.0;
 const AIM_LEAN_RATE = 190.0;
@@ -722,7 +766,7 @@ pub fn wearFor(a: Armament) ?item.Wear {
         .sword => .hand_sword,
         .bow => .hand_bow,
         .shield => .hand_shield,
-        .bell, .wand => null,
+        .bell, .wand, .torch => null,
     };
 }
 
@@ -1117,7 +1161,7 @@ fn burstFrame(axis: rl.Vector3) struct { side: rl.Vector3, up: rl.Vector3 } {
 
 pub const Attack = enum { light, heavy };
 
-pub const Armament = enum { sword, bow, bell, shield, wand };
+pub const Armament = enum { sword, bow, bell, shield, wand, torch };
 
 pub const Arm = Armament;
 pub const Off = Armament;
@@ -1134,6 +1178,7 @@ pub fn armSwings(a: Armament) bool {
         .bell => false,
         .shield => false,
         .wand => false,
+        .torch => false,
     };
 }
 
@@ -1157,6 +1202,8 @@ pub const Hero = struct {
     shield: rl.Mesh,
     wand: rl.Mesh,
     bell: rl.Mesh,
+    torch: rl.Mesh,
+    torchFlame: rl.Mesh,
     dirk: rl.Mesh,
     club: rl.Mesh,
     roots: [ROOT_KINDS]rl.Mesh,
@@ -1300,6 +1347,8 @@ pub const Hero = struct {
             .shield = shieldMesh(),
             .wand = wandMesh(),
             .bell = bellMesh(),
+            .torch = torchMesh(),
+            .torchFlame = torchFlameMesh(),
             .dirk = dirkMesh(),
             .club = clubMesh(),
             .roots = blk: {
@@ -1548,6 +1597,10 @@ pub const Hero = struct {
         return !self.heldRight(.shield);
     }
 
+    pub fn torchLeft(self: *const Hero) bool {
+        return !self.heldRight(.torch);
+    }
+
     pub fn bowOut(self: *const Hero) bool {
         return self.holds(.bow);
     }
@@ -1572,6 +1625,17 @@ pub const Hero = struct {
 
     pub fn shieldOut(self: *const Hero) bool {
         return self.holds(.shield);
+    }
+
+    pub fn torchOut(self: *const Hero) bool {
+        return self.holds(.torch);
+    }
+
+    /// **IS THERE A FIRE IN HIS HAND** — asked by the light and by the bed that is its voice, so the two can
+    /// never disagree about when it is burning. The bed used to ask by BUILDING `torchLight` and testing the
+    /// answer for null, which guttered a flame and solved a wrist transform every frame to throw both away.
+    pub fn torchLit(self: *const Hero) bool {
+        return self.torchOut() and !self.resting;
     }
 
     fn swapHand(self: *Hero, live: *Armament, alt: *Armament) bool {
@@ -2138,6 +2202,10 @@ pub const Hero = struct {
         return rl.math.vector3Transform(wandAt(WAND_TIP_T), self.xf[if (self.wandLeft()) WRL else WRR]);
     }
 
+    pub fn torchFlameWorld(self: *const Hero) rl.Vector3 {
+        return rl.math.vector3Transform(torchAt(TORCH_FLAME_T), self.xf[if (self.torchLeft()) WRL else WRR]);
+    }
+
     /// SCALED WHOLE, not on the damage alone, or the poise it staggers with stays at its level-1 figure. Null
     /// for the two that bill over time (`combat.spellBlow`), so a caller cannot spend a blow they have not
     /// got. INTELLIGENCE is the other half of the same multiple: `hero.wearFor` gives the wand no socket, so
@@ -2418,6 +2486,18 @@ pub const Hero = struct {
                 (WAND_LIT_CHARGED - WAND_LIT_CARRY) * held + (WAND_LIT_FLARE - WAND_LIT_CHARGED) * spike),
             .radius = WAND_LIT_CARRY_R +
                 (WAND_LIT_CHARGED_R - WAND_LIT_CARRY_R) * held + (WAND_LIT_FLARE_R - WAND_LIT_CHARGED_R) * spike,
+        };
+    }
+
+    /// The other RESERVED slot (`game.reservedLights`): the one light he brought with him is the one light a
+    /// room full of world fires may not evict. Guttered off the SAME curve every flame in the world uses.
+    pub fn torchLight(self: *const Hero) ?gfx.Light {
+        if (!self.torchLit()) return null;
+        const k = mathx.maxF(1.0 + TORCH_FLICKER * mathx.gutter(@floatCast(rl.getTime()), 0.7), 0.05);
+        return .{
+            .pos = self.torchFlameWorld(),
+            .col = mathx.scaleV(TORCH_LIT, k),
+            .radius = TORCH_LIT_R,
         };
     }
 
@@ -3029,20 +3109,32 @@ pub const Hero = struct {
 
         if (gB > 0.001) self.poseGuard(&wx, gB, rec, lean, prot, bank);
 
-        if (self.wandOut()) self.poseWandArm(&wx);
+        self.poseCarried(&wx);
         if (self.bowOut()) self.poseBowArms(&wx, lean, prot, bank);
         if (self.drinking) self.poseDrinkArm(&wx, dk.lift, dk.tip);
         self.applyXfade(&wx);
         self.xf = wx;
     }
 
-    fn poseWandArm(self: *const Hero, wx: *[N]rl.Matrix) void {
-        const a = armSide(self.wandLeft(), true);
+    /// **EVERY POSE THAT CARRIES, CARRIES EVERYTHING.** Asked in one place because the jump used to ask for
+    /// the rod alone: the brand went in beside it and the flame — and its light — snapped down onto a hanging
+    /// arm for the whole of a leap.
+    fn poseCarried(self: *const Hero, wx: *[N]rl.Matrix) void {
+        if (self.wandOut()) self.poseCarryArm(wx, self.wandLeft(), WAND_CARRY);
+        if (self.torchOut()) self.poseCarryArm(wx, self.torchLeft(), TORCH_CARRY);
+    }
+
+    fn poseCarryArm(self: *const Hero, wx: *[N]rl.Matrix, left: bool, c: Carry) void {
+        const a = armSide(left, true);
         const swing = ARM_SWING * mathx.cosf(std.math.tau * self.phase) * self.moving * self.fwdB;
         var p = wx.*;
-        setLocal(&p, a.sh, self.rest, mul(rx(-WAND_CARRY_FLEX + WAND_CARRY_SWING * swing), rz(a.mirror * (ARM_ABD + WAND_CARRY_ABD))));
-        setLocal(&p, a.el, self.rest, rx(-(WAND_CARRY_ELBOW + WAND_CARRY_ELBOW_SWING * swing)));
-        setLocal(&p, a.wr, self.rest, rz(a.mirror * WAND_CARRY_WRIST));
+        setLocal(&p, a.sh, self.rest, mul3(
+            rx(-c.flex + c.swing * swing),
+            ry(a.mirror * c.yaw),
+            rz(a.mirror * (ARM_ABD + c.abd)),
+        ));
+        setLocal(&p, a.el, self.rest, rx(-(c.elbow + c.elbowSwing * swing)));
+        setLocal(&p, a.wr, self.rest, rz(a.mirror * c.wrist));
         for ([_]usize{ a.sh, a.el, a.wr }) |i| wx[i] = p[i];
     }
 
@@ -3221,7 +3313,7 @@ pub const Hero = struct {
         jumpArm(&wx, self.rest, drive, reach, tuck, -1.0, SHR, ELR, WRR);
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.swordLeft());
         if (self.guardB > 0.001) self.poseGuard(&wx, mathx.clampF(self.guardB, 0, 1), 0, fold * 0.5, 0, 0);
-        if (self.wandOut()) self.poseWandArm(&wx);
+        self.poseCarried(&wx);
         if (self.bowOut()) self.poseBowArms(&wx, fold * 0.5, 0, 0);
         self.applyXfade(&wx);
         self.xf = wx;
@@ -3405,7 +3497,7 @@ pub const Hero = struct {
         const rod = armSide(self.wandLeft(), true);
         const free = armSide(!self.wandLeft(), false);
 
-        const shRz = rod.mirror * mathx.lerpF(ARM_ABD + WAND_CARRY_ABD, CAST_LIFT_ABD, wind);
+        const shRz = rod.mirror * mathx.lerpF(ARM_ABD + WAND_CARRY.abd, CAST_LIFT_ABD, wind);
         const shRy = rod.mirror * sw * CAST_SWEEP * (1.0 - 2.0 * sSweep) * wind;
         const yaw = rod.mirror * sw * (-CAST_TRUNK * wind + 1.6 * CAST_TRUNK * sSweep);
         const dip = CAST_DIP * wind - 0.4 * CAST_DIP * sThrow;
@@ -3429,11 +3521,11 @@ pub const Hero = struct {
         setLocal(&wx, HIPR, self.rest, mul(rx(4.0 * wind + 3.0 * sThrow), rz(HIP_ADDUCT)));
         setLocal(&wx, KNEER, self.rest, rx(IDLE_KNEE + 9.0 * wind + 3.0 * sThrow));
         setLocal(&wx, ANKR, self.rest, ry(-FOOT_TOEOUT));
-        const elb = mathx.lerpF(WAND_CARRY_ELBOW, CAST_ELBOW, wind) - CAST_ELBOW_SNAP * sThrow + 6.0 * kick -
+        const elb = mathx.lerpF(WAND_CARRY.elbow, CAST_ELBOW, wind) - CAST_ELBOW_SNAP * sThrow + 6.0 * kick -
             BREATH_REACH * bOn + 0.5 * BREATH_REACH * bOut + shiver;
-        setLocal(&wx, rod.sh, self.rest, mul3(rx(-(mathx.lerpF(WAND_CARRY_FLEX, CAST_SH_FWD, wind) - BREATH_SH_LEVEL * bOn)), ry(shRy), rz(shRz)));
+        setLocal(&wx, rod.sh, self.rest, mul3(rx(-(mathx.lerpF(WAND_CARRY.flex, CAST_SH_FWD, wind) - BREATH_SH_LEVEL * bOn)), ry(shRy), rz(shRz)));
         setLocal(&wx, rod.el, self.rest, rx(-elb));
-        setLocal(&wx, rod.wr, self.rest, rz(rod.mirror * (mathx.lerpF(WAND_CARRY_WRIST, CAST_WRIST, wind) - 1.5 * CAST_WRIST * sThrow - 8.0 * kick + 1.6 * shiver)));
+        setLocal(&wx, rod.wr, self.rest, rz(rod.mirror * (mathx.lerpF(WAND_CARRY.wrist, CAST_WRIST, wind) - 1.5 * CAST_WRIST * sThrow - 8.0 * kick + 1.6 * shiver)));
         setLocal(&wx, free.sh, self.rest, mul(rx(GUARD_SWORD_BACK * wind), rz(free.mirror * -ARM_ABD)));
         setLocal(&wx, free.el, self.rest, rx(-(IDLE_ELBOW + (GUARD_SWORD_ELBOW - IDLE_ELBOW) * wind)));
         setLocal(&wx, free.wr, self.rest, rx(GUARD_SWORD_WRIST * wind));
@@ -3607,7 +3699,10 @@ pub const Hero = struct {
         self.xf = wx;
     }
 
-    pub fn draw(self: *const Hero) void {
+    /// `lit` is FALSE in the depth pass (`game.drawCasters` runs this twice). **A FIRE MAY NOT CAST A
+    /// SHADOW**: the torch flame is real geometry 0.45 m off his own axis, and the shadow ortho box tracks
+    /// the hero at 13 mm a texel, so in the depth pass it laid a 23-texel dark blob on the ground beside him.
+    pub fn draw(self: *const Hero, lit: bool) void {
         const stowSword = self.resting or !self.holds(.sword);
         for (0..N) |i| {
             if (i == SWORD) continue;
@@ -3619,14 +3714,14 @@ pub const Hero = struct {
             return;
         }
         if (armTwoHanded(self.off)) {
-            _ = self.drawHand(self.off, false);
+            _ = self.drawHand(self.off, false, lit);
             return;
         }
-        if (self.drawHand(self.arm, false)) return;
-        if (self.offInHand()) _ = self.drawHand(self.off, true);
+        if (self.drawHand(self.arm, false, lit)) return;
+        if (self.offInHand()) _ = self.drawHand(self.off, true, lit);
     }
 
-    fn drawHand(self: *const Hero, a: Armament, left: bool) bool {
+    fn drawHand(self: *const Hero, a: Armament, left: bool, lit: bool) bool {
         const wrist = self.xf[if (left) WRL else WRR];
         const grip = gripFrame(wrist, self.rest, left);
         switch (a) {
@@ -3640,6 +3735,13 @@ pub const Hero = struct {
             .bell => rl.drawMesh(self.bell, self.mat, grip),
             .shield => rl.drawMesh(self.shield, self.mat, mul(shieldFit(left), wrist)),
             .wand => rl.drawMesh(self.wand, self.mat, wrist),
+            .torch => {
+                rl.drawMesh(self.torch, self.mat, wrist);
+                if (lit) {
+                    const at = self.torchFlameWorld();
+                    rl.drawMesh(self.torchFlame, self.mat, tr(at.x, at.y, at.z));
+                }
+            },
         }
         return false;
     }
@@ -4051,6 +4153,57 @@ fn wandMesh() rl.Mesh {
     return b.toMesh();
 }
 
+fn torchMesh() rl.Mesh {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x70C48);
+    const segs = 4;
+    b.setMat(.wood);
+    var prev = torchAt(-TORCH_BUTT_T);
+    var i: i32 = 0;
+    while (i < segs) : (i += 1) {
+        const f0 = @as(f32, @floatFromInt(i)) / @as(f32, segs);
+        const f1 = (@as(f32, @floatFromInt(i)) + 1.0) / @as(f32, segs);
+        const to = torchAt(mathx.lerpF(-TORCH_BUTT_T, TORCH_TIP_T - 0.030, f1));
+        const r0 = TORCH_R * mathx.lerpF(0.90, 1.14, f0) * rng.range(0.95, 1.05);
+        const r1 = TORCH_R * mathx.lerpF(0.90, 1.14, f1) * rng.range(0.95, 1.05);
+        b.addCapsule(prev, to, r0, r1, 7, if (@mod(i, 2) == 0) TORCH_HAFT else TORCH_HAFT_LT);
+        prev = to;
+    }
+    b.setMat(.leather);
+    const turns = 5;
+    var t: i32 = 0;
+    while (t < turns) : (t += 1) {
+        const f0 = -0.038 + 0.086 * (@as(f32, @floatFromInt(t)) + 0.12) / @as(f32, turns);
+        const f1 = -0.038 + 0.086 * (@as(f32, @floatFromInt(t)) + 0.88) / @as(f32, turns);
+        const rr = TORCH_R * rng.range(1.16, 1.30);
+        b.addCapsule(torchAt(f0), torchAt(f1), rr, rr, 8, WAND_BIND);
+    }
+    b.setMat(.steel);
+    const collar = torchAt(TORCH_TIP_T - 0.055);
+    b.addCapsule(torchAt(TORCH_TIP_T - 0.074), collar, TORCH_R * 1.20, TORCH_R * 1.10, 8, art.IRON);
+    b.setMat(.cloth);
+    // The pitch wad: soaked rag over the head, wider than the haft and bound down in three passes.
+    const head = torchAt(TORCH_TIP_T);
+    b.addBlob(head, v3(TORCH_HEAD_R, TORCH_HEAD_R * 1.24, TORCH_HEAD_R), 4, 9, TORCH_PITCHWAD);
+    var c: i32 = 0;
+    while (c < 3) : (c += 1) {
+        const f = TORCH_TIP_T - 0.046 + 0.020 * @as(f32, @floatFromInt(c));
+        const rr = TORCH_HEAD_R * mathx.lerpF(0.72, 0.98, @as(f32, @floatFromInt(c)) / 2.0);
+        b.addCapsule(torchAt(f - 0.004), torchAt(f + 0.004), rr, rr, 8, WAND_BIND);
+    }
+    return b.toMesh();
+}
+
+/// **DRAWN IN WORLD SPACE, NOT ON THE WRIST.** Fire climbs the world's up whatever the hand is doing with the
+/// brand, and the shader's flame billow (`shaders.sceneVS`, mat 11) throws along the MODEL's +Y — hung off the
+/// wrist it would lash sideways every time he turned his arm over.
+fn torchFlameMesh() rl.Mesh {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x70C49);
+    art.flameInto(&b, &rng, 0, 0, 0, TORCH_FLAME_S);
+    return b.toMesh();
+}
+
 fn shieldMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5C1E1D);
@@ -4249,6 +4402,8 @@ fn testHero() Hero {
         .shield = undefined,
         .wand = undefined,
         .bell = undefined,
+        .torch = undefined,
+        .torchFlame = undefined,
         .dirk = undefined,
         .club = undefined,
         .roots = undefined,
@@ -4731,6 +4886,68 @@ test "THE LANDING ABSORB OVERSHOOTS ITS REST AND IS SPENT, so the gait gets it b
     try std.testing.expectEqual(@as(f32, 0), h.landDip());
     h.landT = mathx.LONG_AGO;
     try std.testing.expectEqual(@as(f32, 0), h.landDip());
+}
+
+test "THE BRAND IS HELD CLEAR OF HIM — the flame's own height, reach and stand-off from the head" {
+    var h = testHero();
+    try std.testing.expect(h.equip(LEFT, 0, .torch));
+    try std.testing.expect(h.torchOut() and h.torchLeft());
+    // Past the swap's own cross-fade, or this measures the pose he is blending OUT of (the arm still hanging).
+    h.blendT = mathx.LONG_AGO;
+    h.pose();
+
+    const wrist = h.xf[WRL];
+    const at = h.torchFlameWorld();
+    const foot = rl.math.vector3Transform(torchAt(0), wrist);
+    const tip = rl.math.vector3Transform(torchAt(TORCH_TIP_T), wrist);
+    const head = v3(h.xf[HEAD].m12, h.xf[HEAD].m13, h.xf[HEAD].m14);
+    const side = @abs(at.x - h.pos.x);
+    const fwd = at.z - h.pos.z;
+    const off = mathx.lenV(mathx.subV(at, head));
+    const rise = mathx.subV(tip, foot);
+    const plumb = rise.y / mathx.lenV(rise);
+    std.debug.print(
+        "\n  torch flame: {d:.2} m up (crown {d:.2}), {d:.2} m to the side, {d:.2} m in front, {d:.2} m clear of the head; brand {d:.0} deg off plumb\n",
+        .{ at.y, H, side, fwd, off, mathx.degrees(std.math.acos(mathx.clampF(plumb, -1, 1))) },
+    );
+
+    // THE BRAND STANDS UP: inside 25 degrees of plumb, or it reads as a club being carried, not a light.
+    try std.testing.expect(plumb > 0.90);
+    // At the crown, so it lights what he is walking into rather than his own boots.
+    try std.testing.expect(at.y > H - 0.10 and at.y < H + 0.15);
+    // …and out of his own frame: off the shoulder line and in front of the chest, never over the head.
+    try std.testing.expect(side > 0.28 and side < 0.48);
+    try std.testing.expect(fwd > 0.20 and fwd < 0.45);
+    try std.testing.expect(off > 0.35);
+
+    const lit = h.torchLight() orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(at.x, lit.pos.x);
+    try std.testing.expectEqual(TORCH_LIT_R, lit.radius);
+    // It is the widest thing he can carry — the rod's own carry glow does not reach a third of it.
+    try std.testing.expect(lit.radius > WAND_LIT_CARRY_R * 3.0);
+    try std.testing.expect(h.equip(LEFT, 0, .shield));
+    try std.testing.expect(h.torchLight() == null);
+}
+
+test "A HAND IS A HAND, AND WHICH HAND IS THE WHOLE OF THE TRADE" {
+    var h = testHero();
+    h.setGuard(true);
+    try std.testing.expect(h.guarding);
+
+    // In the SHIELD's cell the boards are gone, so there is nothing to guard with…
+    try std.testing.expect(h.equip(LEFT, 0, .torch));
+    h.setGuard(true);
+    try std.testing.expect(!h.guarding and !h.canGuard());
+
+    // …and in the SWORD's he keeps the shield and gives up the swing instead. Nothing refuses a guard for
+    // CARRYING one, and the docs may not say it does.
+    try std.testing.expect(h.equip(LEFT, 0, .shield));
+    try std.testing.expect(h.equip(RIGHT, 0, .torch));
+    try std.testing.expect(h.torchOut() and !h.torchLeft());
+    h.setGuard(true);
+    try std.testing.expect(h.guarding and h.canGuard());
+    try std.testing.expect(!armSwings(.torch));
+    try std.testing.expect(wearFor(.torch) == null);
 }
 
 fn testGuarded() Hero {

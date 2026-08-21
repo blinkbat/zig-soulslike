@@ -1129,6 +1129,61 @@ pub fn wand(cx: f32, cy: f32, px: f32) void {
     rl.drawCircleV(v2(head.x - 1.9 * k, head.y - 2.1 * k), sr * 0.15, uiart.CATCH);
 }
 
+/// **WHAT A HAND HAS A PICTURE OF, ASKED ONCE** — the HUD cell, the book's four hand sockets and the doll all
+/// come through here, the way `spellArt` is already the one answer for the sorcery cell. Named apart from
+/// `hero.Armament` because `hud` and this file may not import `hero`: `hud.Held` aliases it and one map
+/// (`book.armPic`) is the only place the two enums meet.
+pub const Arm = enum { sword, bow, bell, shield, wand, torch };
+
+pub fn heldArt(a: Arm, gear: ?item.Kind, cx: f32, cy: f32, px: f32) void {
+    if (gear) |k| return drawHeld(k, cx, cy, px, true);
+    switch (a) {
+        .sword => sword(cx, cy, px),
+        .bow => bow(cx, cy, px),
+        .bell => bell(cx, cy, px),
+        .shield => shield(cx, cy, px),
+        .wand => wand(cx, cy, px),
+        .torch => torch(cx, cy, px),
+    }
+}
+
+/// On the ROD'S OWN DIAGONAL, so the two left-hand pictures read as one set — and shorter, because the flame
+/// is what has to fit in the box above it.
+pub fn torch(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x70C48);
+    const u = 0.70711;
+    const d = s * 0.30;
+    const butt = v2(cx + u * d, cy + u * d);
+    const head = v2(cx - u * d * 0.86, cy - u * d * 0.86);
+    rl.drawLineEx(v2(butt.x + 0.9 * k, butt.y + 1.1 * k), v2(head.x + 0.9 * k, head.y + 1.1 * k), 4.0 * k, rgba(0, 0, 0, 120));
+    rl.drawLineEx(butt, head, 3.6 * k, GRIP);
+    rl.drawLineEx(onAxis(butt, head, 0.30, -1.0 * k), onAxis(butt, head, 0.86, -0.9 * k), 1.0 * k, GRIP_LT);
+    for ([_]f32{ rng.range(0.05, 0.12), rng.range(0.20, 0.28), rng.range(0.34, 0.42) }) |f| {
+        const p = onAxis(butt, head, f, 0);
+        rl.drawLineEx(v2(p.x - u * 2.6 * k, p.y + u * 2.6 * k), v2(p.x + u * 2.6 * k, p.y - u * 2.6 * k), 1.2 * k, CORD);
+    }
+    const neck = onAxis(butt, head, 0.80, 0);
+    rl.drawLineEx(onAxis(butt, head, 0.72, 0), neck, 4.4 * k, IRON_DK);
+    // The pitch wad, then the flame off ITS far face — a torch is read by the fire, not by the stick.
+    const wad = onAxis(butt, head, 1.0, 0);
+    rl.drawCircleV(v2(wad.x, wad.y), s * 0.085, rgba(24, 20, 18, 255));
+    rl.drawLineEx(v2(wad.x - u * 3.0 * k, wad.y + u * 3.0 * k), v2(wad.x + u * 3.0 * k, wad.y - u * 3.0 * k), 1.2 * k, CORD);
+    const tip = v2(wad.x - s * 0.03, wad.y - s * 0.20);
+    quad(
+        v2(wad.x - s * 0.105, wad.y - s * 0.01),
+        v2(wad.x + s * 0.095, wad.y - s * 0.02),
+        v2(tip.x + s * 0.035 + rng.range(-1.0, 1.0) * k, tip.y + s * 0.06),
+        v2(tip.x - s * 0.045 + rng.range(-1.0, 1.0) * k, tip.y + s * 0.05),
+        FIRE_DIM,
+    );
+    rl.drawCircleV(v2(wad.x - s * 0.005, wad.y - s * 0.055), s * 0.075, FIRE_DIM);
+    rl.drawCircleV(v2(wad.x - s * 0.015, wad.y - s * 0.075), s * 0.048, FIRE);
+    rl.drawCircleV(v2(tip.x, tip.y + s * 0.055), s * 0.020, rgba(255, 238, 196, 255));
+    rl.drawCircleV(v2(wad.x + s * 0.075, wad.y - s * 0.20 + rng.range(0, 2) * k), 1.3 * k, FIRE_DIM);
+}
+
 pub fn spell(cx: f32, cy: f32, px: f32, on: bool) void {
     const s = px;
     const k = strokeK(px);

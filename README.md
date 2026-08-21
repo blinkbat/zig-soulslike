@@ -74,6 +74,15 @@ debug menu carries an **Hour** row you can scrub and hold, and in the editor `,`
 belt of trees can be judged under every light it will ever stand in rather than under one permanent
 afternoon.
 
+### …and something to carry into it
+
+A **pitch torch** goes in either hand from the character book's four weapon cells. It is the only light you
+own: an eight-metre pool of guttering firelight that walks with you, so the chapel's roofed altar end, the
+watchtower ground rooms and the whole of the small hours stop being places you squint at. It costs no stamina
+and no focus and it does nothing on either button — what it costs is the hand. Put it in the left and the
+shield is on the ground: light or a block, never both. Put it in the right and you keep the shield and give up
+the sword instead, which is the same trade read from the other end.
+
 ## Someone to talk to
 
 At the bonfire where you start there is now a **wanderer** — a hooded traveller with a walking staff who
@@ -93,7 +102,7 @@ conversations and the people — is **written in the `.world` file** alongside t
 everything about the map. `AGENTS.md` has the grammar.
 
 Every region is dressed in three layers — ground cover, understorey, canopy — from a registry of
-**82 prop kinds**: great trees in three variants, conifers, birches, dead snags and saplings;
+**136 prop kinds**: great trees in three variants, conifers, birches, dead snags and saplings;
 ferns, brambles, thickets, nettles, thistles, foxgloves, heather, gorse, clover, moss, mushrooms
 and bracken; boulders, outcrops, scree and cairns; wells, shrines, post lanterns, fences, barrels,
 woodpiles, sarcophagi, stair fragments, gibbets and bones; torches, braziers and campfires that

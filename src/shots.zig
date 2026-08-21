@@ -961,6 +961,16 @@ pub fn runShots(g: *Game) void {
         shootPortrait(g, "shots/20zx_bell_left.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 3.2);
         while (g.hero.ringing) g.hero.updateRing(dt, null);
 
+        armTo(g, .sword);
+        offTo(g, .torch);
+        must(g.hero.torchOut() and g.hero.torchLeft(), "the torch would not go in the left hand");
+        standSettled(g, 0, 4, mathx.headingXZ(LIT_BACK));
+        shootPortrait(g, "shots/20zy_torch_left.png", g.hero.torchFlameWorld(), LIT_YAW + 150, 0.10, 2.6);
+        // …AND AFTER DARK, which is the only frame that shows what the thing is FOR. Anchor hour straight back.
+        game.pinHourForShot(g, 23.4);
+        shootPortrait(g, "shots/20zz_torch_night.png", g.hero.shoulderPoint(), LIT_YAW + 150, 0.10, 4.4);
+        game.pinHourForShot(g, game.daynight.SHOT_HOUR);
+
         g.hero.fp.reset();
         g.hero.fpRefused = 0;
         armTo(g, .sword);

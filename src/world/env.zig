@@ -1514,7 +1514,7 @@ pub const Env = struct {
     fn lightOf(self: *const Env, wl: WorldLight, t: f32) ?gfx.Light {
         const owner = &self.props[wl.prop];
         if (owner.gone) return null;
-        const k = 1.0 + wl.flicker * gutter(t, wl.phase);
+        const k = 1.0 + wl.flicker * mathx.gutter(t, wl.phase);
         return .{
             .pos = wl.base.pos,
             .col = mathx.scaleV(wl.base.col, mathx.maxF(k, 0.05) * owner.shrink),
@@ -1555,11 +1555,6 @@ pub const Env = struct {
         scene.setLights(picked[0..n]);
     }
 };
-
-// A flame's guttering, in [-1, 1]: three incommensurate rates so it never reads as a pulse.
-fn gutter(t: f32, phase: f32) f32 {
-    return 0.30 * mathx.sinf(t * 4.3 + phase) + 0.14 * mathx.sinf(t * 8.9 + phase * 2.3) + 0.56 * mathx.sinf(t * 1.7 + phase * 0.6);
-}
 
 fn castsInto(focus: rl.Vector3, pos: rl.Vector3, bound: f32, top: f32) bool {
     const reach = SHADOW_BOX + bound + top * gfx.sunReach;

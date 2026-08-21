@@ -563,6 +563,7 @@ pub const Id = enum {
     fog_seal,
     fog_felled,
     fog_pass,
+    torch_fire,
 };
 const NV = @typeInfo(Id).@"enum".fields.len;
 
@@ -2043,6 +2044,50 @@ fn mkRain(r: *Rack) void {
     r.ends(0.9, 0.9);
 }
 
+/// Pops a second. A CRACKLE IS POISSON, not a metronome, so the gap is redrawn at every one of them.
+const TORCH_POPS: f32 = 9.0;
+
+fn mkTorchFire(r: *Rack) void {
+    var roar = Svf{};
+    var mid = Svf{};
+    var fine = Pole{};
+    var snap = Svf{};
+    const q1 = r.rng.angle();
+    const q2 = r.rng.angle();
+    var wait: i32 = 0;
+    var env: f32 = 0;
+    var hz: f32 = 900;
+    var i: usize = 0;
+    while (i < r.n) : (i += 1) {
+        const t = @as(f32, @floatFromInt(i)) / SRF;
+        const g1 = 0.5 + 0.5 * mathx.sinf(std.math.tau * 0.29 * t + q1);
+        const g2 = 0.5 + 0.5 * mathx.sinf(std.math.tau * 0.73 * t + 1.3 + q2);
+        const nz = r.rng.signed();
+        if (wait <= 0) {
+            wait = 1 + @as(i32, @intFromFloat(@abs(r.rng.signed()) * (2.0 * SRF / TORCH_POPS)));
+            env = 1.0;
+            hz = 620.0 + @abs(r.rng.signed()) * 2600.0;
+        }
+        wait -= 1;
+        // 0.9986 per sample is a 32 ms tail, and the SQUARE of it is the ~16 ms crack you actually hear.
+        env *= 0.9986;
+        const ro = roar.step(nz, 96.0 + 120.0 * g1, 0.42).bp;
+        const md = mid.step(nz, 520.0 + 380.0 * g2, 0.34).bp;
+        const fi = fine.step(nz, 5200) * 0.5;
+        const sp = snap.step(nz, hz, 0.88).bp * env * env;
+        work[i] = ro * (0.55 + 0.45 * g1) * 1.05 + md * 0.42 + fi * 0.14 + sp * 0.85;
+    }
+    r.norm(0.44);
+    r.sat(1.25);
+    r.crush(CRUSH_BITS + 1.5, CRUSH_HOLD);
+    r.warm(AIR_FAR_BED);
+    r.wow(0.002, 0.45);
+    r.hiss(0.028);
+    r.norm(0.62);
+    // A BED'S ENDS ARE LONG (the wind's own 0.9 s): a short one is a click, and a bed clicks every loop.
+    r.ends(0.9, 0.9);
+}
+
 fn mkThunder(r: *Rack) void {
     var lo = Svf{};
     var mid = Pole{};
@@ -2416,6 +2461,8 @@ const BANK = [NV]Row{
     .{ .id = .fog_seal, .make = mkFogSeal, .gain = 0.60, .jit = 0.0, .vjit = 0.0, .vars = 1, .poly = 1 },
     .{ .id = .fog_felled, .make = mkFogFelled, .gain = 0.60, .jit = 0.0, .vjit = 0.0, .vars = 1, .poly = 1 },
     .{ .id = .fog_pass, .make = mkFogPass, .gain = 0.44, .jit = 0.04, .vjit = 0.08, .vars = 2, .poly = 1 },
+    // LOUDER THAN THE RAIN and quieter than every call, because a torch is the one bed held at arm's length.
+    .{ .id = .torch_fire, .make = mkTorchFire, .gain = 0.075, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
 };
 
 fn seconds(id: Id) f32 {
@@ -2431,6 +2478,7 @@ fn seconds(id: Id) f32 {
         // A BED HAS TO OUTLAST ITS OWN PATTERN or the loop point is the thing you hear. The longest take here —
         // and it may not equal another bed's, or the two retrigger on one frame forever (`BEDS`' own test).
         .rain => 8.6,
+        .torch_fire => 7.9,
         .thunder => 3.4,
         .death => 3.2,
         .owl => 1.6,
@@ -2940,9 +2988,15 @@ pub fn setDaylight(k: f32) void {
 }
 
 var rainLevel: f32 = 0;
+var torchLevel: f32 = 0;
 
 pub fn setRain(k: f32) void {
     rainLevel = mathx.clampF(k, 0, 1);
+}
+
+/// The one bed the WORLD does not set: it is on when he is carrying the thing (`hero.torchOut`).
+pub fn setTorch(k: f32) void {
+    torchLevel = mathx.clampF(k, 0, 1);
 }
 
 const Hour = struct { atNoon: f32 = 1.0, atNight: f32 = 1.0 };
@@ -2954,17 +3008,27 @@ fn hourGain(h: Hour) f32 {
 pub fn setVolume(m: Submix, v: f32) void {
     userVol[@intFromEnum(m)] = mathx.clampF(v, 0, 1);
     if (ready and m == .ambience) {
-        for (BEDS) |b| {
-            const s = &slots[@intFromEnum(b.id)];
-            const lvl = bedLevel(live[@intFromEnum(b.id)], b.hour);
-            if (s.varsReady > 0) rl.setSoundVolume(s.snd[0][0], lvl);
-            if (s.varsReady > 1) rl.setSoundVolume(s.snd[1][0], lvl);
-        }
+        for (BEDS) |b| holdBed(b);
     }
+}
+
+/// **A BED'S LEVEL IS SET AT ITS TRIGGER AND THEN NEVER AGAIN**, so a dial moved mid-take went unheard until
+/// the loop came round — up to 8.6 s of it. The rain's own dial is a cross-fade and survived that; a torch is
+/// an F-press, and it went on crackling for the rest of the take after he put it away. Held every frame
+/// instead. Volume ONLY: `trigger` owns the pan, and re-centring a bed here would collapse its stereo.
+fn holdBed(b: Bed) void {
+    const s = &slots[@intFromEnum(b.id)];
+    const lvl = bedLevel(live[@intFromEnum(b.id)], b.hour) * bedDial(b);
+    if (s.varsReady > 0) rl.setSoundVolume(s.snd[0][0], lvl);
+    if (s.varsReady > 1) rl.setSoundVolume(s.snd[1][0], lvl);
 }
 
 fn bedLevel(row: Row, h: Hour) f32 {
     return levelFor(row, hourGain(h), 1.0);
+}
+
+fn bedDial(b: Bed) f32 {
+    return if (b.dial) |d| d.* else 1.0;
 }
 
 pub const SETTINGS_PATH = "settings.cfg";
@@ -3125,12 +3189,14 @@ fn bed(id: Id, vol: f32) void {
     trigger(s.snd[1][0], row, vol, 1.0 - BED_PAN, 1.0);
 }
 
-const Bed = struct { id: Id, hour: Hour = .{} };
+/// `dial` is what the WORLD has to say about this bed on top of the hour — null is "always on".
+const Bed = struct { id: Id, hour: Hour = .{}, dial: ?*const f32 = null };
 
 const BEDS = [_]Bed{
     .{ .id = .wind },
     .{ .id = .crickets, .hour = .{ .atNoon = 0.34, .atNight = 1.0 } },
-    .{ .id = .rain },
+    .{ .id = .rain, .dial = &rainLevel },
+    .{ .id = .torch_fire, .dial = &torchLevel },
 };
 
 pub const AMBIENT_EVENTS = [_]Id{.thunder};
@@ -3162,9 +3228,14 @@ pub fn ambience(dt: f32) void {
     for (BEDS) |b| {
         const s = &slots[@intFromEnum(b.id)];
         if (s.varsReady == 0) continue;
-        const lvl = if (b.id == .rain) hourGain(b.hour) * rainLevel else hourGain(b.hour);
-        if (lvl <= 0.004) continue;
-        if (!rl.isSoundPlaying(s.snd[0][0])) bed(b.id, lvl);
+        const lvl = hourGain(b.hour) * bedDial(b);
+        if (lvl <= 0.004) {
+            // A DIALLED bed is STOPPED rather than left to play out, and it is silent by then anyway
+            // (`holdBed` took it to zero on the way down), so there is no edge to click on.
+            if (b.dial != null and rl.isSoundPlaying(s.snd[0][0])) stopRow(@intFromEnum(b.id));
+            continue;
+        }
+        if (rl.isSoundPlaying(s.snd[0][0])) holdBed(b) else bed(b.id, lvl);
     }
     for (CALLS, 0..) |c, i| {
         callWait[i] -= dt;

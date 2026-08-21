@@ -323,6 +323,11 @@ pub fn degrees(rad: f32) f32 {
     return rad * 180.0 / std.math.pi;
 }
 
+// A flame's guttering, in [-1, 1]: three incommensurate rates so it never reads as a pulse.
+pub fn gutter(t: f32, phase: f32) f32 {
+    return 0.30 * sinf(t * 4.3 + phase) + 0.14 * sinf(t * 8.9 + phase * 2.3) + 0.56 * sinf(t * 1.7 + phase * 0.6);
+}
+
 
 test "signI is one step, and a NaN axis walks no cursor" {
     try std.testing.expectEqual(@as(i32, 1), signI(0.0001));

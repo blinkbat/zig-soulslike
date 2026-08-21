@@ -1353,7 +1353,7 @@ fn drawCasters(g: *Game, cull: envmod.Cull) void {
             g.scene.setFade(fade);
             rl.gl.rlDisableDepthMask();
         }
-        g.hero.draw();
+        g.hero.draw(cull == .view);
         if (seeThrough) {
             rl.gl.rlEnableDepthMask();
             g.scene.setFade(1);
@@ -3086,6 +3086,10 @@ fn reservedLights(g: *const Game, out: *[RESERVED_LIGHTS]gfx.Light) []const gfx.
         out[n] = w;
         n += 1;
     }
+    if (g.hero.torchLight()) |t| {
+        out[n] = t;
+        n += 1;
+    }
     n += g.rite.markLights(out[n..]);
     return out[0..n];
 }
@@ -3094,6 +3098,7 @@ fn tickWeather(g: *Game, dt: f32) void {
     g.weather.tick(dt);
     settleSky(g, dt);
     sfx.setRain(g.wetNow);
+    sfx.setTorch(if (g.hero.torchLit()) 1.0 else 0.0);
     // THE LIGHTNING STAYS THE WORLD'S: a location sets how wet it is, but the storm that throws bolts is
     // still the sky's own event.
     if (g.weather.thunder()) |gain| sfx.playAt(.thunder, gain);
@@ -4336,20 +4341,13 @@ fn handActs(a: heromod.Armament, in: HandIn, out: *Acts) void {
             out.parry = out.parry or in.press2;
         },
         .wand => out.cast = out.cast or in.press1,
+        // A LIT BRAND AND NOTHING ELSE. It has no action of its own; what it costs is the hand.
+        .torch => {},
     }
 }
 
 fn armSlot(g: *const Game, a: heromod.Armament) hud_.Slot {
-    return .{ .held = .{
-        .arm = switch (a) {
-            .sword => .sword,
-            .bow => .bow,
-            .bell => .bell,
-            .shield => .shield,
-            .wand => .wand,
-        },
-        .gear = heromod.heldGear(a, g.hero.worn),
-    } };
+    return .{ .held = .{ .arm = bookmod.armPic(a), .gear = heromod.heldGear(a, g.hero.worn) } };
 }
 
 fn quickLeft(g: *const Game) u8 {

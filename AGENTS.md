@@ -1792,6 +1792,35 @@ to intercept, and SIGHT stands in for one (`env.sees`): a wall is still a wall.
 - **ONE PLACE ANSWERS WHAT A SPELL LANDS** (`combat.spellBlow`), null for the two that bill over time: asked "what
   is one hit of this worth", the roots and the cone have no answer, and a zeroed `Hit` would be one that lies.
 
+### The torch (`hero.zig`) — the first thing carried for no reason but to SEE
+
+**IT IS A RACK CELL, NOT A KEYBIND.** There is no swap of its own: `Armament.torch` is a sixth thing the
+character book's four hand cells can hold, so it comes out wherever you put it and F cycles it like anything
+else. One torch in this world, so `wearFor` gives it no socket (the bell's and the rod's rule).
+
+- **WHAT IT COSTS IS THE HAND, AND NOTHING ELSE.** No stamina, no FP, no action on either button
+  (`handActs`' one empty prong). It is a hand and not a RULE: nothing anywhere refuses a guard for holding
+  one — `canGuard` asks `shieldOut` and gets its answer from the rack, so in the LEFT cell the boards are
+  gone and in the RIGHT the sword is. Both are the same trade read from opposite ends, and neither is
+  written down anywhere but the rack.
+- **THE LIGHT IS RESERVED** (`hero.torchLight` → `game.reservedLights`), beside the rod's stone: the one
+  light he brought with him may not be evicted by a room full of world fires. `TORCH_LIT` is the world
+  torch's own row (`props`' `.torch`) opened out — a fifth again the colour at 8 m instead of 6, because
+  a carried one is the only light there is.
+- **IT GUTTERS OFF THE SAME CURVE AS EVERY OTHER FLAME** (`mathx.gutter`, moved out of `env` for this):
+  three incommensurate rates, so nothing in the world pulses in time with anything else.
+- **THE FLAME IS DRAWN IN WORLD SPACE, THE BRAND ON THE WRIST.** Fire climbs the world's up whatever the
+  hand is doing, and the shader's flame billow throws along the MODEL's +Y (`sceneVS`, mat 11) — hung off
+  the wrist it would lash sideways every time he turned his arm over.
+- **THE CARRY WAS SOLVED, NOT EYEBALLED.** The brand is gripped SQUARE across the fist (90 deg, where the
+  rod sits at 55) — a torch is held the way a hammer is held UP — and the arm angles were swept for the
+  pose that puts the flame at the crown, off the shoulder line and in front of the chest: 1.78 m up,
+  0.38 m to the side, 0.30 m in front, 18 deg off plumb. The test prints all four and holds a window
+  round each, so a change to `legChain` or the rest pose cannot quietly put the fire in his face.
+- **ITS VOICE IS A BED, NOT A PLACED SOUND** (`audio.torch_fire`, driven by `sfx.setTorch`) — the fire is
+  at his own ear, so it is centred stereo on the rain's own machinery rather than panned from a position.
+  Nine pops a second, redrawn every pop: a crackle is Poisson, not a metronome.
+
 ## The world
 
 ### The map is data, and the editor owns it

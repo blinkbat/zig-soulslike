@@ -357,6 +357,7 @@ fn armName(a: heromod.Armament) [:0]const u8 {
         .bell => "Summoning Bell",
         .shield => "Small Shield",
         .wand => "Knotted Wand",
+        .torch => "Pitch Torch",
     };
 }
 fn ammoName(k: combat.ArrowKind) [:0]const u8 {
@@ -1292,8 +1293,7 @@ fn drawSlotArt(s: SlotId, v: View, cx: f32, cy: f32, px: f32) void {
 }
 
 fn handArt(a: heromod.Armament, worn: heromod.Worn, cx: f32, cy: f32, px: f32) void {
-    if (heromod.heldGear(a, worn)) |k| return itemart.drawHeld(k, cx, cy, px, true);
-    armArt(a, cx, cy, px);
+    itemart.heldArt(armPic(a), heromod.heldGear(a, worn), cx, cy, px);
 }
 
 fn drawDerived(box: Box, v: View, cand: ?Cand) void {
@@ -1338,20 +1338,40 @@ fn drawDerived(box: Box, v: View, cand: ?Cand) void {
     _ = prose(says, inner.x, footY, inner.w, hud.HINT, uiart.TEXT_HINT);
 }
 
-fn armArt(a: heromod.Armament, cx: f32, cy: f32, px: f32) void {
-    switch (a) {
-        .sword => itemart.sword(cx, cy, px),
-        .bow => itemart.bow(cx, cy, px),
-        .bell => itemart.bell(cx, cy, px),
-        .shield => itemart.shield(cx, cy, px),
-        .wand => itemart.wand(cx, cy, px),
+comptime {
+    // AND THE ONE PLACE THE PAIR IS CHECKED. Two enums in lockstep with nothing asserting it is the trap
+    // `item.ORDER` and `warrior`'s contiguous run are each guarded against; `armPic` being exhaustive catches
+    // a MISSING row but not a renamed or reordered one, and the pictures are indexed by name nowhere else.
+    const A = @typeInfo(heromod.Armament).@"enum".fields;
+    const B = @typeInfo(itemart.Arm).@"enum".fields;
+    if (A.len != B.len) @compileError("book: hero.Armament and itemart.Arm have drifted in LENGTH");
+    for (A, B) |a, b| {
+        if (!std.mem.eql(u8, a.name, b.name)) {
+            @compileError("book: hero.Armament." ++ a.name ++ " faces itemart.Arm." ++ b.name ++
+                " — the two must stay name-for-name in order, or `armPic` maps a hand to the wrong picture");
+        }
     }
+}
+
+/// **THE ONE PLACE THE TWO ENUMS MEET.** `itemart.Arm` is the picture's name for a thing in a hand and
+/// `hero.Armament` is the fight's, and they are separate because neither `hud` nor `itemart` may import
+/// `hero`. Exhaustive, so a sixth armament is a compile error HERE and nowhere else.
+pub fn armPic(a: heromod.Armament) itemart.Arm {
+    return switch (a) {
+        .sword => .sword,
+        .bow => .bow,
+        .bell => .bell,
+        .shield => .shield,
+        .wand => .wand,
+        .torch => .torch,
+    };
 }
 
 fn armSays(a: heromod.Armament, o: heromod.Armament) []const u8 {
     if (heromod.armTwoHanded(a)) return "Both hands. No off-hand, no block.";
     if (o == .shield or a == .shield) return "Can guard.";
     if (o == .wand or a == .wand) return "Casts on L1. Costs Focus, not stamina.";
+    if (o == .torch or a == .torch) return "Lights what you walk into. No block.";
     return "No block.";
 }
 
@@ -1362,6 +1382,7 @@ fn armCandSays(a: heromod.Armament) []const u8 {
         .bell => "Summons what the scroll names. No attack.",
         .shield => "Can guard.",
         .wand => "Casts on L1. Takes a hand.",
+        .torch => "Lights the dark. No attack, no block.",
     };
 }
 
@@ -1630,7 +1651,8 @@ const DOLL_CLEAR = rgba(14, 12, 10, 255);
 
 fn drawDoll(ctx: *const anyopaque) void {
     const h: *const heromod.Hero = @ptrCast(@alignCast(ctx));
-    h.draw();
+    // LIT: the doll is its own little scene with no depth pass, so everything he is carrying belongs in it.
+    h.draw(true);
 }
 
 pub fn unload() void {

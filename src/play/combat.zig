@@ -664,6 +664,9 @@ pub const SpellRow = struct {
     spell: Spell,
     name: [:0]const u8,
     fp: f32,
+    scroll: item.Kind,
+    /// ONE LINE OF MECHANIC (`item.effect`'s rule): what the FP buys, which the numbers beside it cannot say.
+    says: [:0]const u8,
     blow: ?Hit = null,
     reach: ?f32 = null,
     drip: f32 = 0,
@@ -674,13 +677,13 @@ pub const SpellRow = struct {
 /// compile error until it has said what it costs and what it does. The MECHANICS stay beside their own spell —
 /// this is the price, not the physics.
 pub const SPELLS = [_]SpellRow{
-    .{ .spell = .bolt,   .name = "Chaos Bolt",   .fp = 8,  .blow = BOLT_HIT },
-    .{ .spell = .roots,  .name = "Roots",        .fp = 12, .drip = ROOT_HOLD * ROOT_DPS },
-    .{ .spell = .rime,   .name = "Rime Breath",  .fp = 15, .drip = RIME_DUR * RIME_DPS },
-    .{ .spell = .levin,  .name = "Levin Strike", .fp = 11, .blow = LEVIN_HIT,  .reach = LEVIN_REACH },
-    .{ .spell = .siphon, .name = "Siphon",       .fp = 13, .blow = SIPHON_HIT, .reach = SIPHON_REACH },
-    .{ .spell = .lance,  .name = "Ember Lance",  .fp = 14, .blow = LANCE_HIT,  .reach = LANCE_REACH },
-    .{ .spell = .sunder, .name = "Sunder",       .fp = 16, .blow = SUNDER_HIT, .reach = SUNDER_REACH },
+    .{ .spell = .bolt,   .name = "Chaos Bolt",   .fp = 8,  .scroll = .scroll_bolt,   .says = "A thrown stone of chaos. Crosses the ground, and cover stops it.",     .blow = BOLT_HIT },
+    .{ .spell = .roots,  .name = "Roots",        .fp = 12, .scroll = .scroll_roots,  .says = "Holds a body where it stands and bleeds it while it is held.",        .drip = ROOT_HOLD * ROOT_DPS },
+    .{ .spell = .rime,   .name = "Rime Breath",  .fp = 15, .scroll = .scroll_rime,   .says = "A cone of cold, held out for as long as the breath lasts. Slows what it touches.", .drip = RIME_DUR * RIME_DPS },
+    .{ .spell = .levin,  .name = "Levin Strike", .fp = 11, .scroll = .scroll_levin,  .says = "Lands on one body the frame it is cast. Staggers anything that is not a boss.", .blow = LEVIN_HIT,  .reach = LEVIN_REACH },
+    .{ .spell = .siphon, .name = "Siphon",       .fp = 13, .scroll = .scroll_siphon, .says = "Drinks a share of what the body actually loses. No stagger.",          .blow = SIPHON_HIT, .reach = SIPHON_REACH },
+    .{ .spell = .lance,  .name = "Ember Lance",  .fp = 14, .scroll = .scroll_lance,  .says = "A held line of fire that spits every body standing in it.",           .blow = LANCE_HIT,  .reach = LANCE_REACH },
+    .{ .spell = .sunder, .name = "Sunder",       .fp = 16, .scroll = .scroll_sunder, .says = "Breaks a guard inside sword reach. The one sorcery cast in the fight.", .blow = SUNDER_HIT, .reach = SUNDER_REACH },
 };
 
 comptime {
@@ -688,6 +691,21 @@ comptime {
     for (SPELLS, 0..) |row, i| {
         if (@intFromEnum(row.spell) != i) @compileError("combat: SPELLS row " ++ row.name ++ " is out of `Spell` order");
         if ((row.blow == null) != (row.drip > 0)) @compileError("combat: " ++ row.name ++ " has no worth, or two");
+        if (!item.isSpellScroll(row.scroll)) @compileError("combat: " ++ row.name ++ " names a scroll that " ++
+            "`item.isSpellScroll` does not know — the bag would hold an object nothing can memorize");
+        if (row.says.len == 0) @compileError("combat: " ++ row.name ++ " says nothing about what it does");
+        for (SPELLS[0..i]) |prev| {
+            if (prev.scroll == row.scroll) @compileError("combat: " ++ row.name ++ " and " ++ prev.name ++
+                " are written on the same scroll — one sheet cannot hand over two sorceries");
+        }
+    }
+    // …and every scroll in the world is some spell's, or the bag holds a sheet the fire cannot read.
+    for (0..item.NK) |i| {
+        const k: item.Kind = @enumFromInt(i);
+        if (!item.isSpellScroll(k)) continue;
+        var named = false;
+        for (SPELLS) |row| named = named or row.scroll == k;
+        if (!named) @compileError("combat: nothing is written on " ++ @tagName(k));
     }
 }
 
@@ -697,6 +715,19 @@ pub fn rowFor(s: Spell) SpellRow {
 
 pub fn spellName(s: Spell) [:0]const u8 {
     return rowFor(s).name;
+}
+
+pub fn spellSays(s: Spell) [:0]const u8 {
+    return rowFor(s).says;
+}
+
+pub fn spellScroll(s: Spell) item.Kind {
+    return rowFor(s).scroll;
+}
+
+/// THE ONE PLACE "does he carry it" is asked, so carried cannot mean two things on two panels.
+pub fn carriesSpell(bag: *const item.Bag, s: Spell) bool {
+    return bag.count(spellScroll(s)) > 0;
 }
 
 /// WHAT EACH ONE BILLS. One place, so the HUD's "could he cast?" and the cast itself cannot disagree.
@@ -716,6 +747,75 @@ pub fn spellDamage(s: Spell) f32 {
     const row = rowFor(s);
     return if (row.blow) |b| b.raw() else row.drip;
 }
+
+/// ER's memory slots: how many sorceries he may have about him at once. Owning a scroll is not casting off
+/// it, and this is the only limit on the rod.
+pub const MEM_SLOTS: usize = 3;
+
+comptime {
+    // Past eight, `uiart.numeral` has no name for a slot and both screens print "-".
+    if (MEM_SLOTS == 0 or MEM_SLOTS > 8) @compileError("combat: MEM_SLOTS is 1..8 — a rack of none casts " ++
+        "nothing, and past eight the screens have no numeral to call a slot by");
+}
+
+/// What is memorized, filled at a bonfire. **THE RING IS THE SLOT ORDER, NOT `SPELLS`'** — the rack is what
+/// the player arranged himself, and a list that re-sorts under him is one he cannot learn (`Quick.slots`).
+pub const Memory = struct {
+    slots: [MEM_SLOTS]?Spell = blk: {
+        var s = [_]?Spell{null} ** MEM_SLOTS;
+        s[0] = .bolt;
+        break :blk s;
+    },
+
+    pub fn at(self: *const Memory, i: usize) ?Spell {
+        return if (i < MEM_SLOTS) self.slots[i] else null;
+    }
+
+    pub fn holds(self: *const Memory, s: Spell) bool {
+        return self.slotOf(s) != null;
+    }
+
+    pub fn slotOf(self: *const Memory, s: Spell) ?usize {
+        for (self.slots, 0..) |c, i| {
+            if (c == s) return i;
+        }
+        return null;
+    }
+
+    pub fn filled(self: *const Memory) usize {
+        var n: usize = 0;
+        for (self.slots) |c| {
+            if (c != null) n += 1;
+        }
+        return n;
+    }
+
+    pub fn first(self: *const Memory) ?Spell {
+        for (self.slots) |c| {
+            if (c) |s| return s;
+        }
+        return null;
+    }
+
+    /// A spell already in another slot MOVES rather than doubling: the two cells swap (`hero.equip`'s rule).
+    pub fn put(self: *Memory, i: usize, s: ?Spell) void {
+        if (i >= MEM_SLOTS) return;
+        if (s) |want| {
+            if (self.slotOf(want)) |had| self.slots[had] = self.slots[i];
+        }
+        self.slots[i] = s;
+    }
+
+    /// Null if nothing is memorized; `from` itself when it is the only one, so a caller can tell a cycle
+    /// that moved from one that could not.
+    pub fn next(self: *const Memory, from: Spell) ?Spell {
+        const start = self.slotOf(from) orelse return self.first();
+        for (1..MEM_SLOTS + 1) |step| {
+            if (self.slots[(start + step) % MEM_SLOTS]) |s| return s;
+        }
+        return null;
+    }
+};
 
 pub const BOLT_FP: f32 = spellFp(.bolt);
 

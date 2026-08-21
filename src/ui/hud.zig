@@ -1101,6 +1101,30 @@ pub fn wrap(s: []const u8, size: i32, maxW: i32, buf: []u8, lines: [][:0]const u
     return wrapBy(textW, s, size, maxW, buf, lines);
 }
 
+const PROSE_LINES = 8;
+const PROSE_BUF = 768;
+var proseLines: [PROSE_LINES][:0]const u8 = undefined;
+var proseBuf: [PROSE_BUF]u8 = undefined;
+
+/// Draws one wrapped paragraph; returns the y past the last line.
+pub fn prose(s: []const u8, x: i32, y: i32, w: i32, size: i32, col: rl.Color) i32 {
+    var yy = y;
+    for (proseWrap(s, w, size)) |line| {
+        text(line, x, yy, size, col);
+        yy += lineH(size);
+    }
+    return yy;
+}
+
+/// The same wrap MEASURED and not drawn, for a layout that has to reserve the room first.
+pub fn proseH(s: []const u8, w: i32, size: i32) i32 {
+    return @as(i32, @intCast(proseWrap(s, w, size).len)) * lineH(size);
+}
+
+pub fn proseWrap(s: []const u8, w: i32, size: i32) []const [:0]const u8 {
+    return wrap(s, size, w, &proseBuf, &proseLines);
+}
+
 /// …and the same wrap measured in the MONO face, for the editor's own chrome (`ui.drawTip`). Its own entry
 /// point rather than a flag, because which font a string will be DRAWN in is not something a wrap may guess.
 pub fn wrapMono(s: []const u8, size: i32, maxW: i32, buf: []u8, lines: [][:0]const u8) [][:0]const u8 {

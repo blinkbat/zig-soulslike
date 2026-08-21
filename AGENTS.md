@@ -1513,17 +1513,20 @@ ending in **its own keystone** — 39 nodes against the old 21. What each branch
 - **THE PRICE IS MEASURED AGAINST A BODY.** A toad is 60, an archer 130, a mother 240 — so `costAt` is set
   where the first node is three archers and the whole one-and-twenty is a game's worth of killing (~80k). It
   is ONE price per level whichever node it lands on: what you buy is the level, and which node is the choice.
-- **SPENT AT A BONFIRE, READ ANYWHERE.** The book's fourth page is the wheel READ-ONLY — where a build is
+- **SPENT AT A BONFIRE, READ ANYWHERE.** The book's LAST page is the wheel READ-ONLY — where a build is
   planned. The fire's own screen is where it is committed. `passivetree.drawPage` is ONE copy drawn by both,
-  `spendable` being the only difference.
+  `spendable` being the only difference. The tab is **PASSIVES** (owner's word); the wheel is the picture, not
+  the name of the page.
 - **THE BONFIRE IS A SCREEN, NOT A PAUSE** (owner's layout). He sits in the RIGHT of the frame and the fire's
-  menu is a list down the LEFT: **Level Up** (which opens the wheel) and **Leave Bonfire**, and nothing else
-  yet. The wheel is shown ONLY once Level Up is chosen — a tree behind every sit buries what a bonfire is.
+  menu is a list down the LEFT: **Level Up** (which opens the wheel), **Memorize Spells** (which opens the
+  rack), the two waits and **Leave Bonfire**, and nothing else yet. The wheel is shown ONLY once Level Up is
+  chosen — a tree behind every sit buries what a bonfire is, and the rack is behind its own row for the same
+  reason.
 - **GETTING UP IS A ROW ON THAT LIST, OR BACK.** It was "any button", which cannot coexist with a cursor: every
   press that chose a row also stood him up. Back is the one button that can never also pick, so it is the one
   exception (owner's call) — off the wheel first, then out of the fire. The character book and the pause card
   are still BOTH refused at a fire.
-- **NO HINT ROW ON THE FIRE'S LIST** (owner's call). Four verbs, each saying what it does; a crib under them was
+- **NO HINT ROW ON THE FIRE'S LIST** (owner's call). Every row a verb saying what it does; a crib under them was
   spelling out which button picks a row. The WHEEL keeps its hints — LS/RS/zoom is not guessable.
 - **THE VIEW IS PANNED, NOT SHEARED** (`game.restCamera`, `REST_PAN`). Eye and target move by the same vector
   along the camera's own right axis; swinging the target alone turns the camera and re-composes the shot
@@ -1609,8 +1612,8 @@ ending in **its own keystone** — 39 nodes against the old 21. What each branch
 **R1/R2 (and L1/L2) BELONG TO THE ARM, NOT THE WEAPON.** The attack buttons are read as buttons and
 routed by which armament is in that hand, so neither weapon can swallow the other's press. L1 is the left
 hand's ACTION (block / cast) and L2 is its SKILL (aim / parry), each split by what that hand is holding. Swaps:
-D-pad Right / Q = sword ↔ bow; D-pad Left / F = shield ↔ wand; D-pad Up / G cycles the five
-sorceries (bolt → roots → rime → levin → siphon). The QUIVER keeps
+D-pad Right / Q = sword ↔ bow; D-pad Left / F = shield ↔ wand; D-pad Up / G cycles the sorceries
+he has MEMORIZED, in rack order (`combat.Memory`, three of the seven). The QUIVER keeps
 keyboard Y alone — the cross is four directions and the spell has taken Up, so on the pad the arrow is changed
 in the character book's ammo slot.
 
@@ -1816,6 +1819,50 @@ to intercept, and SIGHT stands in for one (`env.sees`): a wall is still a wall.
   the victim would read as a thing being GIVEN.
 - **ONE PLACE ANSWERS WHAT A SPELL LANDS** (`combat.spellBlow`), null for the two that bill over time: asked "what
   is one hit of this worth", the roots and the cone have no answer, and a zeroed `Hit` would be one that lies.
+
+### The memory slots — the SCROLLS, and what the rod is carrying (`combat.Memory`, `rest.zig`, `book.zig`)
+
+**A SORCERY IS A THING YOU OWN AND A THING YOU ARE CARRYING, AND THOSE ARE TWO DIFFERENT QUESTIONS** (owner:
+mimic ER's spell slots at the bonfire). Every spell is written on a SCROLL (`combat.SpellRow.scroll`, an
+`item.Kind` that `item.isSpellScroll` claims), and the rod casts only what is in the RACK — three slots
+(`combat.MEM_SLOTS`) filled at a fire and read in the fight.
+
+- **THE RACK IS THE ONLY LIMIT, AND IT IS ONE NUMBER.** `MEM_SLOTS` is 3; nothing else counts the cells for
+  itself, and widening it is one edit. **A NEW CHARACTER HAS THE BOLT AND TWO HOLES** (`Memory{}`'s default),
+  which is the rod exactly as it was on the first spell.
+- **CARRYING THE SCROLL IS THE WHOLE GATE, AND MEMORIZING DOES NOT SPEND IT** (ER's own): the bag is asked and
+  never emptied, so a sorcery is owned once and racked as often as you like. The seven sheets are in
+  `game.STARTING_KIT` — where a scroll is FOUND is a placement, and placements belong to the map and the drop
+  table, not to this.
+- **THE RING IS THE RACK, NOT THE TABLE** (`Memory.next`, `hero.cycleSpell`). D-pad Up walks what is
+  memorized IN SLOT ORDER — the rack is the one thing the player arranged himself, and a ring that re-sorted
+  into `SPELLS` order under him is the quick bar's own lesson (a list that shuffles is a list you cannot
+  learn). One in the rack is nothing to cycle to.
+- **A SPELL ALREADY IN ANOTHER SLOT MOVES RATHER THAN DOUBLING** (`Memory.put`, `hero.equip`'s rack rule): the
+  two cells swap, so the same sorcery can never sit in two of them and no press is eaten.
+- **THE SELECTION IS A FINGER ON THE RACK AND FOLLOWS IT** (`hero.armed`, `hero.tidySpells`, and `memorize` is
+  the ONE door that moves either). Un-memorize what he was holding and the finger moves; empty the rack and
+  the wand holds nothing — `canCast` refuses, the HUD cell goes empty, and `game.castWand` says "Nothing
+  memorized." rather than eating the press (`ringBell`'s shape one hand along).
+- **THE FIRE IS WHERE IT IS COMMITTED AND THE BOOK IS WHERE IT IS READ** — the wheel's own split. `Memorize
+  Spells` is a row on the fire's list (`rest.Row.memorize`) and opens the rack; the book's SPELLS page is
+  READ-ONLY, and a rack fillable from a menu he can open mid-fight is the one thing slots exist to prevent.
+- **THE FIRE'S SCREEN IS TWO STAGES, THE EQUIPMENT PICKER'S EXACTLY** (`rest.memRow`/`memPick`): a slot is
+  chosen, THEN what goes in it, and the list opens on WHAT IS IN THE SLOT — counted, never taken as an
+  ordinal (`book.pickIndexOf`'s law), because it only holds the scrolls he happens to carry. An empty row is
+  always offered (a slot you cannot clear is one the player is stuck with), and a slot with nothing to put in
+  it does not open at all.
+- **A SORCERY HE HAS NO SCROLL FOR IS DIMMED ON THE PAGE, NEVER HIDDEN.** The page is what the rod COULD do,
+  and a missing rung is the thing worth going looking for.
+- **ONE SCROLL PICTURE, AND THE DRAWING ON IT SAYS WHICH** (`itemart.sorceryScroll`): the spirit scroll's own
+  sheet with `spellArt` inked on it at a third the size, so the sigil the HUD cell shows is the sigil in the
+  bag.
+- **THE FILE CARRIES THE RACK AND NOTHING DERIVED** (`memory:` in the save grammar). Absent from an older file
+  it loads as the STARTING rack, a tag this build does not know is a LOAD ERROR, and a file written with more
+  slots than this build has drops its tail rather than being refused — `MEM_SLOTS` is one number and may
+  narrow. A comptime block pins that every spell names a scroll, no two share one, and no scroll is unwritten.
+- **THE HARNESS MEMORIZES RATHER THAN CYCLES** (`game.selectSpellForShot`): the ring holds three now, so a
+  photograph of the sixth spell cannot be got by pressing Up.
 
 ### The torch (`hero.zig`) — the first thing carried for no reason but to SEE
 

@@ -32,6 +32,12 @@ pub fn flick(base: u8, x: i32) u8 {
     return u8f(fi(base) * (0.88 + 0.12 * mathx.sinf(t * 1.9 + fi(x) * 0.31)));
 }
 
+/// What a memory slot is called on screen — one table, so the fire and the book cannot name it differently.
+pub fn numeral(i: usize) [:0]const u8 {
+    const N = [_][:0]const u8{ "I", "II", "III", "IV", "V", "VI", "VII", "VIII" };
+    return if (i < N.len) N[i] else "-";
+}
+
 pub fn diamond(cx: f32, cy: f32, r: f32, col: rl.Color) void {
     rl.drawPoly(.{ .x = cx, .y = cy }, 4, r, 0, col);
 }

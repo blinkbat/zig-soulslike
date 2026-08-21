@@ -88,6 +88,9 @@ pub const Data = struct {
     armAlt: heromod.Armament = .bow,
     offAlt: heromod.Armament = .wand,
     spell: combat.Spell = .bolt,
+    /// ABSENT FROM AN OLDER FILE, which loads as the starting rack (`worn:`' rule); `hero.tidySpells` then
+    /// re-seats the selection.
+    memory: [combat.MEM_SLOTS]?combat.Spell = (combat.Memory{}).slots,
     arrow: combat.ArrowKind = .plain,
     flask: combat.FlaskKind = .crimson,
     quick: [combat.QUICK_SLOTS]?item.Kind = [_]?item.Kind{null} ** combat.QUICK_SLOTS,
@@ -137,6 +140,7 @@ const CAP: usize =
     4 * 48 +
     5 * 32 +
     combat.QUICK_SLOTS * 28 + 16 +
+    combat.MEM_SLOTS * 14 + 10 +
     NWEAR * 28 + 8 +
 
     item.NK * 36 + 8 +
@@ -280,6 +284,7 @@ pub fn gather(s: Slot) Data {
     d.armAlt = h.armAlt;
     d.offAlt = h.offAlt;
     d.spell = h.spell;
+    d.memory = h.mem.slots;
     d.arrow = h.quiver.sel;
     d.flask = h.flasks.sel;
     d.quick = h.quick.slots;
@@ -335,6 +340,8 @@ pub fn scatter(d: *const Data, s: Slot) void {
     h.offAlt = d.offAlt;
     h.tidyHands();
     h.spell = d.spell;
+    h.mem.slots = d.memory;
+    h.tidySpells();
     h.quiver.sel = d.arrow;
     h.flasks.sel = d.flask;
     h.quick.slots = d.quick;
@@ -390,6 +397,9 @@ pub fn render(w: anytype, d: *const Data) !void {
     try w.print("souls: {d}\n", .{d.souls});
     try w.print("hands: {s} {s} {s} {s} {s}\n", .{ @tagName(d.arm), @tagName(d.off), @tagName(d.spell), @tagName(d.armAlt), @tagName(d.offAlt) });
     try w.print("ready: {s} {s}\n", .{ @tagName(d.arrow), @tagName(d.flask) });
+    try w.writeAll("memory:");
+    for (d.memory) |m| try w.print(" {s}", .{if (m) |sp| @tagName(sp) else "-"});
+    try w.writeByte('\n');
     try w.writeAll("quick:");
     for (d.quick) |q| try w.print(" {s}", .{if (q) |k| item.tag(k) else "-"});
     try w.print("\nquicksel: {d}\n", .{d.quickSel});
@@ -476,6 +486,15 @@ pub fn parse(text: []const u8, d: *Data) !void {
                 if (i >= d.quick.len) return Error.BadField;
                 if (std.mem.eql(u8, tok, "-")) continue;
                 d.quick[i] = item.fromTag(tok) orelse return Error.BadField;
+            }
+        } else if (std.mem.eql(u8, key, "memory:")) {
+            d.memory = [_]?combat.Spell{null} ** combat.MEM_SLOTS;
+            var i: usize = 0;
+            while (it.next()) |tok| : (i += 1) {
+                // A rack wider than this build's is a narrowed `MEM_SLOTS`, not a corrupt file: drop the tail.
+                if (i >= d.memory.len) break;
+                if (std.mem.eql(u8, tok, "-")) continue;
+                d.memory[i] = std.meta.stringToEnum(combat.Spell, tok) orelse return Error.BadField;
             }
         } else if (std.mem.eql(u8, key, "quicksel:")) {
             d.quickSel = try int(usize, &it);
@@ -653,6 +672,7 @@ fn sample() Data {
     d.armAlt = .sword;
     d.offAlt = .shield;
     d.spell = .roots;
+    d.memory = .{ null, .roots, .levin };
     d.arrow = .fire;
     d.flask = .cerulean;
     d.quick[0] = .crimson_flask;
@@ -692,6 +712,26 @@ fn sample() Data {
     return d;
 }
 
+test "A FILE WITH NO RACK IN IT LOADS AS THE STARTING RACK, and a bad sorcery is refused rather than guessed" {
+    var old = Data{};
+    try parse("version: 1\nsouls: 44\nhands: sword wand rime bow shield\n", &old);
+    try testing.expectEqual((combat.Memory{}).slots, old.memory);
+    try testing.expectEqual(combat.Spell.rime, old.spell);
+
+    var wrote = Data{};
+    try parse("version: 1\nmemory: - levin bolt\n", &wrote);
+    try testing.expectEqual(@as(?combat.Spell, null), wrote.memory[0]);
+    try testing.expectEqual(combat.Spell.levin, wrote.memory[1].?);
+    try testing.expectEqual(combat.Spell.bolt, wrote.memory[2].?);
+
+    var bad = Data{};
+    try testing.expectError(Error.BadField, parse("version: 1\nmemory: - fireball -\n", &bad));
+
+    var wide = Data{};
+    try parse("version: 1\nmemory: bolt levin rime siphon lance sunder roots\n", &wide);
+    try testing.expectEqual(combat.Spell.bolt, wide.memory[0].?);
+}
+
 test "a save round-trips through its own text" {
     const d = sample();
     const back = try roundTrip(&d);
@@ -704,6 +744,7 @@ test "a save round-trips through its own text" {
     try testing.expectEqual(d.arm, back.arm);
     try testing.expectEqual(d.off, back.off);
     try testing.expectEqual(d.spell, back.spell);
+    try testing.expectEqual(d.memory, back.memory);
     try testing.expectEqual(d.arrow, back.arrow);
     try testing.expectEqual(d.flask, back.flask);
     try testing.expectEqual(d.quick, back.quick);

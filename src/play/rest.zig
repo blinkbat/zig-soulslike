@@ -1,3 +1,4 @@
+const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const props = @import("../props/props.zig");
@@ -6,6 +7,9 @@ const hud = @import("../ui/hud.zig");
 const uiart = @import("../ui/uiart.zig");
 const ptree = @import("passivetree.zig");
 const daynight = @import("../world/daynight.zig");
+const combat = @import("combat.zig");
+const item = @import("item.zig");
+const itemart = @import("../ui/itemart.zig");
 
 const v3 = mathx.v3;
 
@@ -29,6 +33,7 @@ const SEAT_TURN: f32 = 0.20;
 
 pub const Row = enum {
     level,
+    memorize,
     /// **WAIT OUT THE CLOCK.** A bonfire is where you stop, so it is the one place that may spend HOURS: the
     /// world's light is a thing you can now be in the wrong half of, and a fire you cannot wait at is a night
     /// you have to walk off. Two, and they are the two hours worth naming (`daynight.Until`) rather than a
@@ -40,6 +45,7 @@ pub const Row = enum {
     pub fn label(r: Row) [:0]const u8 {
         return switch (r) {
             .level => "Level Up",
+            .memorize => "Memorize Spells",
             .untilMorning => daynight.Until.morning.label(),
             .untilEvening => daynight.Until.evening.label(),
             .leave => "Leave Bonfire",
@@ -48,7 +54,7 @@ pub const Row = enum {
 
     pub fn until(r: Row) ?daynight.Until {
         return switch (r) {
-            .level, .leave => null,
+            .level, .memorize, .leave => null,
             .untilMorning => .morning,
             .untilEvening => .evening,
         };
@@ -57,12 +63,14 @@ pub const Row = enum {
 
 pub const NROW = @typeInfo(Row).@"enum".fields.len;
 
-pub const Screen = enum { list, tree };
+pub const Screen = enum { list, tree, spells };
 
 pub const Pick = union(enum) {
     none,
     take: usize,
     wait: daynight.Until,
+    /// A null spell EMPTIES the slot.
+    memorize: struct { slot: usize, spell: ?combat.Spell },
     leave,
 };
 
@@ -93,6 +101,10 @@ pub const Rest = struct {
     screen: Screen = .list,
     row: usize = 0,
     wheel: ptree.Wheel = .{},
+
+    /// `memPick` null is the slot list; set, the picker is open on that row (`book.picking`/`pick`'s pair).
+    memRow: usize = 0,
+    memPick: ?usize = null,
 
     pub fn reset(self: *Rest, sites: []const Site) void {
         self.n = 0;
@@ -151,6 +163,8 @@ pub const Rest = struct {
         self.near = null;
         self.screen = .list;
         self.row = 0;
+        self.memRow = 0;
+        self.memPick = null;
         return true;
     }
 
@@ -205,6 +219,36 @@ pub fn siteFromProp(pos: rl.Vector3, yaw: f32) Site {
 }
 
 
+/// What the fire is allowed to know (`game.bookView`'s shape): it owns no game state and reaches for nothing.
+pub const View = struct {
+    tree: *const Tree,
+    souls: u32,
+    mem: *const combat.Memory,
+    bag: *const item.Bag,
+};
+
+/// +1 for the EMPTY row: a slot you cannot clear is a slot the player is stuck with.
+const MEM_CANDS = combat.SPELLS.len + 1;
+
+fn memCands(v: View, out: *[MEM_CANDS]?combat.Spell) []const ?combat.Spell {
+    out[0] = null;
+    var n: usize = 1;
+    for (combat.SPELLS) |row| {
+        // Memorizing never SPENDS the scroll: owned once, racked as often as you like (ER's own).
+        if (!combat.carriesSpell(v.bag, row.spell)) continue;
+        out[n] = row.spell;
+        n += 1;
+    }
+    return out[0..n];
+}
+
+fn memPickRow(self: *const Rest, v: View) ?combat.Spell {
+    const at = self.memPick orelse return v.mem.at(self.memRow);
+    var buf: [MEM_CANDS]?combat.Spell = undefined;
+    const cs = memCands(v, &buf);
+    return if (at < cs.len) cs[at] else null;
+}
+
 pub fn navigate(self: *Rest, dx: f32, dy: f32) void {
     switch (self.screen) {
         .list => {
@@ -219,7 +263,27 @@ pub fn navigate(self: *Rest, dx: f32, dy: f32) void {
         },
         // THE WHEEL IS WALKED BY DIRECTION, never cycled (`ptree.step`'s law).
         .tree => if (self.wheel.move(dx, dy)) sfx.play(.menu_move),
+        .spells => {},
     }
+}
+
+/// Its own door, not a prong of `navigate`: the walk needs the bag to measure the open list.
+pub fn navigateSpells(self: *Rest, dy: f32, v: View) void {
+    if (self.screen != .spells) return;
+    const dv = mathx.signI(dy);
+    if (dv == 0) return;
+    const n: i32 = blk: {
+        if (self.memPick == null) break :blk @intCast(combat.MEM_SLOTS);
+        var buf: [MEM_CANDS]?combat.Spell = undefined;
+        break :blk @intCast(memCands(v, &buf).len);
+    };
+    if (n <= 0) return;
+    const at: i32 = @intCast(if (self.memPick) |i| i else self.memRow);
+    const next = @mod(at + dv + n, n);
+    // A one-row list does not click: a cursor that cannot move may not sound like it did.
+    if (next == at) return;
+    if (self.memPick != null) self.memPick = @intCast(next) else self.memRow = @intCast(next);
+    sfx.play(.menu_move);
 }
 
 pub fn zoom(self: *Rest, dv: f32, dt: f32) void {
@@ -230,7 +294,7 @@ pub fn pan(self: *Rest, v: rl.Vector2, dt: f32) void {
     if (self.screen == .tree) self.wheel.panBy(v, dt);
 }
 
-pub fn confirm(self: *Rest, t: *const Tree, souls: u32) Pick {
+pub fn confirm(self: *Rest, v: View) Pick {
     switch (self.screen) {
         .list => {
             const r: Row = @enumFromInt(self.row);
@@ -241,23 +305,68 @@ pub fn confirm(self: *Rest, t: *const Tree, souls: u32) Pick {
                     sfx.play(.menu_pick);
                     return .none;
                 },
+                .memorize => {
+                    self.screen = .spells;
+                    self.memRow = 0;
+                    self.memPick = null;
+                    sfx.play(.menu_pick);
+                    return .none;
+                },
                 .leave => return .leave,
                 .untilMorning, .untilEvening => unreachable,
             }
         },
         .tree => {
             const i = self.wheel.cursor;
-            if (i >= ptree.N or !t.canTake(i, souls)) {
+            if (i >= ptree.N or !v.tree.canTake(i, v.souls)) {
                 sfx.play(.menu_back);
                 return .none;
             }
             return .{ .take = i };
         },
+        .spells => {
+            var buf: [MEM_CANDS]?combat.Spell = undefined;
+            const cs = memCands(v, &buf);
+            if (self.memPick) |at| {
+                if (at >= cs.len) {
+                    sfx.play(.menu_back);
+                    return .none;
+                }
+                const want = cs[at];
+                self.memPick = null;
+                sfx.play(.item_get);
+                return .{ .memorize = .{ .slot = self.memRow, .spell = want } };
+            }
+            // Nothing to choose from opens no picker: the panel says so instead.
+            if (cs.len <= 1 and v.mem.at(self.memRow) == null) {
+                sfx.play(.menu_back);
+                return .none;
+            }
+            self.memPick = pickIndexOf(v, self.memRow);
+            sfx.play(.menu_pick);
+            return .none;
+        },
     }
 }
 
+/// COUNTED, never taken as an ordinal (`book.pickIndexOf`'s law): the list holds only carried scrolls.
+fn pickIndexOf(v: View, slot: usize) usize {
+    var buf: [MEM_CANDS]?combat.Spell = undefined;
+    const cs = memCands(v, &buf);
+    const has = v.mem.at(slot);
+    for (cs, 0..) |c, i| {
+        if (c == has) return i;
+    }
+    return 0;
+}
+
 pub fn back(self: *Rest) void {
-    if (self.screen == .tree) {
+    if (self.screen == .spells and self.memPick != null) {
+        self.memPick = null;
+        sfx.play(.menu_back);
+        return;
+    }
+    if (self.screen != .list) {
         self.screen = .list;
         sfx.play(.menu_back);
         return;
@@ -277,6 +386,13 @@ pub fn debugShow(self: *Rest, screen: Screen, row: usize, node: usize, mag: f32)
     self.wheel = .{ .cursor = node, .zoom = mag };
 }
 
+pub fn debugMemory(self: *Rest, slot: usize, pick: ?usize) void {
+    self.screen = .spells;
+    self.row = @intFromEnum(Row.memorize);
+    self.memRow = @min(slot, combat.MEM_SLOTS - 1);
+    self.memPick = pick;
+}
+
 pub const PANEL_FRAC: f32 = 0.34;
 const PANEL_MIN: i32 = 300;
 const PANEL_MAX: i32 = 460;
@@ -290,13 +406,14 @@ fn rowH() i32 {
     return hud.lineH(hud.BODY) + 18;
 }
 
-pub fn drawScreen(self: *const Rest, t: *const Tree, souls: u32) void {
+pub fn drawScreen(self: *const Rest, v: View) void {
     if (self.phase != .sit) return;
     const a: f32 = 1.0 - self.fade();
     if (a <= 0.02) return;
     switch (self.screen) {
         .list => drawList(self, a),
-        .tree => drawTree(self, t, souls, a),
+        .tree => drawTree(self, v.tree, v.souls, a),
+        .spells => drawSpells(self, v, a),
     }
 }
 
@@ -337,7 +454,8 @@ fn drawList(self: *const Rest, a: f32) void {
     }
 }
 
-fn drawTree(self: *const Rest, t: *const Tree, souls: u32, a: f32) void {
+/// One frame for both big screens; returns the BODY, which is all either of them draws into.
+fn bigScreen(title: [:0]const u8, foot: i32, a: f32) struct { x: i32, y: i32, w: i32, h: i32, headY: i32, right: i32, bottom: i32 } {
     const sw = rl.getScreenWidth();
     const sh = rl.getScreenHeight();
     const x = MARGIN;
@@ -351,22 +469,186 @@ fn drawTree(self: *const Rest, t: *const Tree, souls: u32, a: f32) void {
     uiart.frame(x, y, w, h, alpha(200.0, a));
 
     const headY = y + 14;
-    hud.engraved("PASSIVE TREE", x + 24, headY, hud.TITLE, ink(uiart.TEXT_TITLE, a));
-    const foot = hud.lineH(hud.HINT) + 20;
+    hud.engraved(title, x + PAD_X, headY, hud.TITLE, ink(uiart.TEXT_TITLE, a));
     const bodyY = headY + hud.lineH(hud.TITLE) + 12;
-    ptree.drawPage(t, self.wheel, x + 22, bodyY, w - 44, y + h - bodyY - foot - 8, true, souls);
+    return .{
+        .x = x + 22,
+        .y = bodyY,
+        .w = w - 44,
+        .h = y + h - bodyY - foot - 8,
+        .headY = headY,
+        .right = x + w,
+        .bottom = y + h,
+    };
+}
 
-    const hints = [_]hud.Hint{
+fn footRow(hints: []const hud.Hint, box: anytype, foot: i32, a: f32) void {
+    const hw = hud.hintRowW(hints, hud.HINT);
+    hud.hintRowAt(hints, box.x + @divTrunc(box.w - hw, 2), box.bottom - foot + 2, hud.HINT, ink(uiart.TEXT_HINT, a));
+}
+
+fn footH() i32 {
+    return hud.lineH(hud.HINT) + 20;
+}
+
+fn drawTree(self: *const Rest, t: *const Tree, souls: u32, a: f32) void {
+    const foot = footH();
+    const box = bigScreen("PASSIVES", foot, a);
+    ptree.drawPage(t, self.wheel, box.x, box.y, box.w, box.h, true, souls);
+    footRow(&[_]hud.Hint{
         .{ .glyph = .{ .bumper = "LS" }, .label = "Walk" },
         .{ .glyph = .{ .bumper = "RS" }, .label = "Pan" },
         .{ .glyph = .{ .dpad = .updown }, .label = "Zoom" },
         .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Take" },
         .{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Back" },
+    }, box, foot, a);
+}
+
+const RACK_CELL: i32 = 84;
+const RACK_GAP: i32 = 16;
+
+var scratch: [8][160]u8 = undefined;
+var scratchAt: usize = 0;
+
+fn fmt(comptime f: []const u8, args: anytype) [:0]const u8 {
+    scratchAt = (scratchAt + 1) % scratch.len;
+    return std.fmt.bufPrintZ(&scratch[scratchAt], f, args) catch "?";
+}
+
+fn drawSpells(self: *const Rest, v: View, a: f32) void {
+    const foot = footH();
+    const box = bigScreen("MEMORY", foot, a);
+    const tally = fmt("{d} of {d} slots", .{ v.mem.filled(), combat.MEM_SLOTS });
+    hud.text(tally, box.right - PAD_X - hud.textW(tally, hud.BODY), box.headY + 8, hud.BODY, ink(uiart.TEXT_VALUE, a));
+
+    const gut: i32 = 28;
+    const colW = @divTrunc(box.w - gut, 2);
+    drawRack(self, v, box.x, box.y, colW, a);
+    drawRead(self, v, box.x + colW + gut, box.y, box.w - colW - gut, a);
+
+    const picking = self.memPick != null;
+    footRow(&[_]hud.Hint{
+        .{ .glyph = .{ .dpad = .updown }, .label = if (picking) "Choose" else "Slot" },
+        .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = if (picking) "Memorize" else "Open" },
+        .{ .glyph = .{ .face = hud.BTN_BACK }, .label = if (picking) "Cancel" else "Back" },
+    }, box, foot, a);
+}
+
+fn drawRack(self: *const Rest, v: View, x: i32, y: i32, w: i32, a: f32) void {
+    var ry = y;
+    for (0..combat.MEM_SLOTS) |i| {
+        const on = i == self.memRow;
+        const held = v.mem.at(i);
+        if (on) uiart.rowHilite(x - 8, ry - 8, w + 16, RACK_CELL + 16);
+        uiart.slot(x, ry, RACK_CELL, RACK_CELL, held != null);
+        if (held) |sp| itemart.spellArt(sp, @floatFromInt(x + @divTrunc(RACK_CELL, 2)), @floatFromInt(ry + @divTrunc(RACK_CELL, 2)), @floatFromInt(RACK_CELL - 22), true);
+
+        const tx = x + RACK_CELL + 18;
+        hud.text(uiart.numeral(i), tx, ry + 2, hud.TINY, ink(uiart.GILT, a));
+        const name: [:0]const u8 = if (held) |sp| combat.spellName(sp) else "(empty)";
+        hud.text(name, tx, ry + hud.lineH(hud.TINY) + 4, hud.BODY, ink(if (on) uiart.HOT else if (held == null) uiart.TEXT_DIM else uiart.TEXT_VALUE, a));
+        if (held) |sp| {
+            hud.text(
+                fmt("{d:.0} focus", .{combat.spellFp(sp)}),
+                tx,
+                ry + hud.lineH(hud.TINY) + hud.lineH(hud.BODY) + 6,
+                hud.SMALL,
+                ink(uiart.TEXT_DIM, a),
+            );
+        }
+        ry += RACK_CELL + RACK_GAP;
+    }
+}
+
+fn drawRead(self: *const Rest, v: View, x: i32, y: i32, w: i32, a: f32) void {
+    var buf: [MEM_CANDS]?combat.Spell = undefined;
+    const cs = memCands(v, &buf);
+    var ry = y;
+    if (self.memPick) |at| {
+        hud.text(fmt("SLOT {s}", .{uiart.numeral(self.memRow)}), x, ry, hud.TINY, ink(uiart.GILT, a));
+        ry += hud.lineH(hud.TINY) + 8;
+        for (cs, 0..) |c, i| {
+            const on = i == at;
+            const step = hud.lineH(hud.BODY) + 10;
+            if (on) uiart.rowHilite(x - 8, ry - 5, w + 16, step - 2);
+            const name: [:0]const u8 = if (c) |sp| combat.spellName(sp) else "(nothing)";
+            hud.text(name, x, ry, hud.BODY, ink(if (on) uiart.HOT else uiart.TEXT_DIM, a));
+            if (c) |sp| {
+                if (v.mem.slotOf(sp)) |had| {
+                    const mark = fmt("SLOT {s}", .{uiart.numeral(had)});
+                    hud.text(mark, x + w - hud.textW(mark, hud.TINY), ry + 3, hud.TINY, ink(uiart.GILT, a));
+                } else {
+                    const cost = fmt("{d:.0} FP", .{combat.spellFp(sp)});
+                    hud.text(cost, x + w - hud.textW(cost, hud.SMALL), ry + 1, hud.SMALL, ink(uiart.TEXT_DIM, a));
+                }
+            }
+            ry += step;
+        }
+        ry += 10;
+    }
+    const sp = memPickRow(self, v) orelse {
+        const said: []const u8 = if (cs.len <= 1)
+            "No sorcery scrolls carried. A scroll is what hands a spell over; without one there is nothing to memorize."
+        else
+            "Nothing memorized here. The rod holds only what is in the rack, and cycles between those.";
+        _ = hud.prose(said, x, ry, w, hud.SMALL, ink(uiart.TEXT_HINT, a));
+        return;
     };
-    const hw = hud.hintRowW(&hints, hud.HINT);
-    hud.hintRowAt(&hints, x + @divTrunc(w - hw, 2), y + h - foot + 2, hud.HINT, ink(uiart.TEXT_HINT, a));
+    hud.engraved(combat.spellName(sp), x, ry, hud.BODY, ink(uiart.TEXT_TITLE, a));
+    ry += hud.lineH(hud.BODY) + 6;
+    hud.text(fmt("{d:.0} focus a cast, {d:.0} damage", .{ combat.spellFp(sp), combat.spellDamage(sp) }), x, ry, hud.SMALL, ink(uiart.GILT, a));
+    ry += hud.lineH(hud.SMALL) + 8;
+    ry = hud.prose(combat.spellSays(sp), x, ry, w, hud.SMALL, ink(uiart.TEXT_VALUE, a)) + 10;
+    uiart.divider(x + @divTrunc(w, 2), ry, @divTrunc(w, 2) - 10, alpha(120.0, a));
+    ry += 12;
+    const scroll = combat.spellScroll(sp);
+    const carried = combat.carriesSpell(v.bag, sp);
+    _ = hud.prose(
+        if (carried) item.displayName(scroll) else fmt("{s} - not carried", .{item.displayName(scroll)}),
+        x,
+        ry,
+        w,
+        hud.HINT,
+        ink(if (carried) uiart.TEXT_HINT else uiart.BAD, a),
+    );
 }
 
 pub fn isRestKind(k: props.Kind) bool {
     return k == .bonfire or k == .campfire_lit;
+}
+
+test "THE FIRE OFFERS ONLY THE SCROLLS HE CARRIES, and a slot is filled in two presses" {
+    var mem = combat.Memory{};
+    var bag = item.Bag{};
+    const tree = Tree{};
+    bag.add(combat.spellScroll(.bolt), 1);
+    bag.add(combat.spellScroll(.sunder), 1);
+    const v = View{ .tree = &tree, .souls = 0, .mem = &mem, .bag = &bag };
+
+    var buf: [MEM_CANDS]?combat.Spell = undefined;
+    const cs = memCands(v, &buf);
+    try std.testing.expectEqual(@as(usize, 3), cs.len); // the empty row, plus two carried
+    try std.testing.expectEqual(@as(?combat.Spell, null), cs[0]);
+    try std.testing.expectEqual(combat.Spell.bolt, cs[1].?);
+    try std.testing.expectEqual(combat.Spell.sunder, cs[2].?);
+
+    var r = Rest{ .phase = .sit, .screen = .spells };
+    try std.testing.expectEqual(Pick.none, confirm(&r, v));
+    try std.testing.expectEqual(@as(?usize, 1), r.memPick);
+    navigateSpells(&r, 1, v);
+    try std.testing.expectEqual(@as(?usize, 2), r.memPick);
+    const got = confirm(&r, v);
+    try std.testing.expectEqual(combat.Spell.sunder, got.memorize.spell.?);
+    try std.testing.expectEqual(@as(usize, 0), got.memorize.slot);
+    try std.testing.expect(r.memPick == null);
+
+    var none = combat.Memory{ .slots = [_]?combat.Spell{null} ** combat.MEM_SLOTS };
+    var empty = item.Bag{};
+    const bare = View{ .tree = &tree, .souls = 0, .mem = &none, .bag = &empty };
+    var r2 = Rest{ .phase = .sit, .screen = .spells };
+    try std.testing.expectEqual(Pick.none, confirm(&r2, bare));
+    try std.testing.expect(r2.memPick == null);
+    back(&r2);
+    try std.testing.expectEqual(Screen.list, r2.screen);
+    try std.testing.expectEqual(Phase.sit, r2.phase);
 }

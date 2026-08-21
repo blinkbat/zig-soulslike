@@ -1562,6 +1562,7 @@ pub const Hero = struct {
     off: Armament = .shield,
     offAlt: Armament = .wand,
     spell: combat.Spell = .bolt,
+    mem: combat.Memory = .{},
     casting: bool = false,
     castT: f32 = 0,
     castAlt: bool = false,
@@ -2300,9 +2301,18 @@ pub const Hero = struct {
         foemod.emitPart(&self.fx, &self.fxHead, .{ .p = at, .v = mathx.scaleV(f.n, 0.9), .life = PARRY_FLASH_LIFE, .r0 = PARRY_GLINT_FLASH_R, .r1 = PARRY_GLINT_FLASH_R * 0.25, .col = PARRY_SPARK_HOT, .add = true });
     }
 
-    pub fn canCast(self: *const Hero) bool {
+    pub fn armed(self: *const Hero) bool {
+        return self.mem.holds(self.spell);
+    }
+
+    /// The BODY's half only; `canCast` is this AND the rack, so a refusal can say which of the two said no.
+    pub fn castReady(self: *const Hero) bool {
         return self.wandOut() and !self.committed() and !self.staggered() and !self.dead and
             !self.resting and !self.sprinting;
+    }
+
+    pub fn canCast(self: *const Hero) bool {
+        return self.castReady() and self.armed();
     }
 
     pub fn requestCast(self: *Hero) bool {
@@ -2314,12 +2324,26 @@ pub const Hero = struct {
         return combat.spellFp(self.spell) * self.perk.spellCost;
     }
 
-    /// **THE RING IS THE TABLE'S OWN ORDER** (`combat.SPELLS`, pinned to `combat.Spell` at comptime). As a
-    /// switch it was that order stated twice, and the failure was silent: a row left pointing at `.bolt` compiles.
+    /// **THE RING IS THE RACK, NOT THE TABLE** — what is memorized, in the order the fire put it in.
     pub fn cycleSpell(self: *Hero) bool {
         if (self.dead or self.casting) return false;
-        self.spell = @enumFromInt((@intFromEnum(self.spell) + 1) % combat.SPELLS.len);
+        const next = self.mem.next(self.spell) orelse return false;
+        if (next == self.spell) return false;
+        self.spell = next;
         return true;
+    }
+
+    /// The selection follows the rack (`tidyHands`' rule one socket along): a finger left on an un-memorized
+    /// sorcery is a HUD cell naming a spell the wand refuses.
+    pub fn tidySpells(self: *Hero) void {
+        if (self.armed()) return;
+        if (self.mem.first()) |s| self.spell = s;
+    }
+
+    /// The ONE door: nothing puts a sorcery in the rack without the selection being re-seated.
+    pub fn memorize(self: *Hero, slot: usize, s: ?combat.Spell) void {
+        self.mem.put(slot, s);
+        self.tidySpells();
     }
 
     fn startCast(self: *Hero) bool {
@@ -5614,18 +5638,46 @@ test "REPEATED CASTS SWEEP OPPOSITE WAYS, and the bolt leaves ONCE, from over hi
     try std.testing.expect(peak > 0);
 }
 
-test "THE ROD'S RING VISITS EVERY SPELL ONCE AND COMES BACK — off the table's order, not a second copy of it" {
+test "THE ROD'S RING VISITS EVERY MEMORIZED SPELL ONCE AND COMES BACK — the rack's order, not the table's" {
     var h = testHero();
-    var seen = [_]bool{false} ** combat.SPELLS.len;
-    const from = h.spell;
-    for (0..combat.SPELLS.len) |_| {
-        const i = @intFromEnum(h.spell);
-        try std.testing.expect(!seen[i]);
-        seen[i] = true;
+    h.memorize(0, .sunder);
+    h.memorize(1, .levin);
+    h.memorize(2, .bolt);
+    h.spell = .sunder;
+    const want = [_]combat.Spell{ .levin, .bolt, .sunder };
+    for (want) |w| {
         try std.testing.expect(h.cycleSpell());
+        try std.testing.expectEqual(w, h.spell);
     }
-    try std.testing.expectEqual(from, h.spell);
-    for (seen) |v| try std.testing.expect(v);
+
+    h.memorize(0, null);
+    h.memorize(1, null);
+    h.mem.put(2, .bolt);
+    h.tidySpells();
+    try std.testing.expectEqual(combat.Spell.bolt, h.spell);
+    try std.testing.expect(!h.cycleSpell());
+    try std.testing.expect(h.armed());
+    h.memorize(2, null);
+    try std.testing.expect(!h.armed());
+    try std.testing.expect(!h.cycleSpell());
+    h.off = .wand;
+    try std.testing.expect(!h.canCast());
+    try std.testing.expect(!h.requestCast());
+}
+
+test "A SORCERY IN THE RACK NEVER SITS IN TWO SLOTS, and the finger follows what it is put in" {
+    var h = testHero();
+    h.memorize(0, .bolt);
+    h.memorize(1, .levin);
+    h.spell = .levin;
+    h.memorize(1, .bolt);
+    try std.testing.expectEqual(combat.Spell.levin, h.mem.at(0).?);
+    try std.testing.expectEqual(combat.Spell.bolt, h.mem.at(1).?);
+    try std.testing.expectEqual(@as(usize, 2), h.mem.filled());
+    try std.testing.expectEqual(combat.Spell.levin, h.spell);
+    h.memorize(0, null);
+    try std.testing.expectEqual(combat.Spell.bolt, h.spell);
+    try std.testing.expect(h.armed());
 }
 
 test "THE BOLT IS ALL CHAOS, and it is worth more than a light slash before anything resists it" {

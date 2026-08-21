@@ -20,6 +20,7 @@ pub const Page = enum {
     equipment,
     inventory,
     stats,
+    spells,
     tree,
 
     fn label(p: Page) [:0]const u8 {
@@ -27,7 +28,8 @@ pub const Page = enum {
             .equipment => "EQUIPMENT",
             .inventory => "INVENTORY",
             .stats => "STATS",
-            .tree => "PASSIVE TREE",
+            .spells => "SPELLS",
+            .tree => "PASSIVES",
         };
     }
 };
@@ -56,6 +58,7 @@ pub const View = struct {
     quick: *const combat.Quick,
     quiver: *const combat.Quiver,
     tree: *const ptree.Tree,
+    mem: combat.Memory = .{},
     inCombat: bool = false,
     arm: heromod.Armament,
     off: heromod.Armament,
@@ -175,7 +178,7 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     d[@intFromEnum(Der.armour)] = 100.0 * (1.0 - combat.armourTaken(armourOf(l.worn), heromod.ATK_HEAVY_HIT.dmg) / heromod.ATK_HEAVY_HIT.dmg);
     // …and what he bought with it. Zero on both rows unless a wand is actually in that hand, because a spell
     // he cannot cast is not worth a number — and it is the SORCERY THAT IS LOADED that is priced, through
-    // `combat`'s own two answers: the rod carries FIVE, and no two of them cost or deal the same.
+    // `combat`'s own two answers: no two rungs of the ladder cost or deal the same (`combat.SPELLS`).
     const casts = heromod.handsHold(l.arm, l.off, .wand);
     // …through the WHOLE multiple the cast takes (`hero.castBlow`), and **ONLY FOR THE THREE THAT ARE SCALED
     // AT ALL**: `spellBlow` is null for the roots and the rime, which are billed flat a frame at a time by
@@ -336,6 +339,8 @@ fn locked(s: SlotId, v: View) ?[:0]const u8 {
             "The bow takes both hands."
         else if (!v.holds(.wand))
             "No wand equipped."
+        else if (!v.mem.holds(v.spell))
+            "Nothing memorized. Sit at a bonfire."
         else
             "D-pad Up switches sorcery.",
         else => null,
@@ -351,7 +356,8 @@ fn slotHas(s: SlotId, v: View) bool {
     return switch (s) {
         .right, .left2, .right2 => true,
         .left => v.offInHand(),
-        .sorcery => v.holds(.wand),
+        // …AND A ROD WITH AN EMPTY RACK IS AN EMPTY CELL (`hero.armed`): the wand in hand is not the spell.
+        .sorcery => v.holds(.wand) and v.mem.holds(v.spell),
         .arrows => v.quiver.count(v.quiver.sel) > 0,
         else => quickAt(s, v) != null,
     };
@@ -656,6 +662,7 @@ pub const Book = struct {
         self.cur[idx(.inventory)] = @min(self.cur[idx(.inventory)], bag - 1);
         self.cur[idx(.equipment)] = @min(self.cur[idx(.equipment)], NSLOT - 1);
         self.cur[idx(.stats)] = @min(self.cur[idx(.stats)], stats.NA - 1);
+        self.cur[idx(.spells)] = @min(self.cur[idx(.spells)], combat.SPELLS.len - 1);
         const rows = (bag + BAG_COLS - 1) / BAG_COLS;
         self.scroll = @min(self.scroll, rows -| BAG_ROWS);
         const row = self.cur[idx(.inventory)] / BAG_COLS;
@@ -707,6 +714,10 @@ pub const Book = struct {
             .stats => if (sy == 0) self.cur[i] else @as(usize, @intCast(@mod(
                 @as(i32, @intCast(self.cur[i])) + sy + @as(i32, stats.NA),
                 @as(i32, stats.NA),
+            ))),
+            .spells => if (sy == 0) self.cur[i] else @as(usize, @intCast(@mod(
+                @as(i32, @intCast(self.cur[i])) + sy + @as(i32, combat.SPELLS.len),
+                @as(i32, combat.SPELLS.len),
             ))),
             .tree => unreachable,
         };
@@ -768,8 +779,8 @@ pub const Book = struct {
                 }
                 sfx.play(.menu_back);
             },
-            .stats => sfx.play(.menu_back),
-            .tree => sfx.play(.menu_back),
+            // Read-only: the tree owns the level, and the rack is filled at a fire or slots mean nothing.
+            .stats, .spells, .tree => sfx.play(.menu_back),
         }
         return .none;
     }
@@ -803,6 +814,7 @@ pub const Book = struct {
                 return g.at(self.cur[idx(.inventory)] - self.scroll * BAG_COLS);
             },
             .stats => return attrRow(statsCols(body)[0], self.cur[idx(.stats)]),
+            .spells => return spellRow(spellCols(body)[0], self.cur[idx(.spells)]),
             .tree => return ptree.nodeRect(self.wheel, body.x, body.y, body.w, body.h),
         }
     }
@@ -850,6 +862,12 @@ const Box = struct {
     }
     fn right(b: Box) i32 {
         return b.x + b.w;
+    }
+    fn cutDown(b: Box, h: i32) [2]Box {
+        return .{
+            .{ .x = b.x, .y = b.y, .w = b.w, .h = h },
+            .{ .x = b.x, .y = b.y + h + GUTTER, .w = b.w, .h = b.h - h - GUTTER },
+        };
     }
 };
 
@@ -1035,6 +1053,19 @@ fn attrStep() i32 {
     return hud.lineH(hud.BODY) + 16;
 }
 
+fn spellCols(body: Box) [2]Box {
+    return body.cut(@divTrunc(body.w * 46, 100));
+}
+
+fn spellStep() i32 {
+    return hud.lineH(hud.BODY) + 14;
+}
+
+fn spellRow(col: Box, i: usize) rl.Rectangle {
+    const inner = panelInner(col, true);
+    return rect(inner.x - 10, inner.y + @as(i32, @intCast(i)) * spellStep() - 6, inner.w + 20, spellStep() - 4);
+}
+
 fn attrRow(col: Box, i: usize) rl.Rectangle {
     const inner = panelInner(col, true);
     return rect(inner.x - 10, inner.y + @as(i32, @intCast(i)) * attrStep() - 6, inner.w + 20, attrStep() - 4);
@@ -1112,28 +1143,6 @@ fn unitStr(u: Unit, x: f32) [:0]const u8 {
     };
 }
 
-const PROSE_LINES = 8;
-const PROSE_BUF = 768;
-var proseLines: [PROSE_LINES][:0]const u8 = undefined;
-var proseBuf: [PROSE_BUF]u8 = undefined;
-
-fn proseWrap(s: []const u8, w: i32, size: i32) []const [:0]const u8 {
-    return hud.wrap(s, size, w, &proseBuf, &proseLines);
-}
-
-fn prose(s: []const u8, x: i32, y: i32, w: i32, size: i32, col: rl.Color) i32 {
-    var yy = y;
-    for (proseWrap(s, w, size)) |line| {
-        hud.text(line, x, yy, size, col);
-        yy += hud.lineH(size);
-    }
-    return yy;
-}
-
-fn proseH(s: []const u8, w: i32, size: i32) i32 {
-    return @as(i32, @intCast(proseWrap(s, w, size).len)) * hud.lineH(size);
-}
-
 pub fn draw(self: *const Book, v: View, portrait: ?Portrait) void {
     const card = cardBox();
     uiart.seat(card.x, card.y, card.w, card.h);
@@ -1146,6 +1155,7 @@ pub fn draw(self: *const Book, v: View, portrait: ?Portrait) void {
         .equipment => drawEquipment(self, body, v),
         .inventory => drawInventory(self, body, v),
         .stats => drawStats(self, body, v, portrait),
+        .spells => drawSpells(self, body, v),
         .tree => drawTree(self, body, v),
     }
 
@@ -1190,6 +1200,12 @@ pub fn draw(self: *const Book, v: View, portrait: ?Portrait) void {
             buf[2] = PAGE;
             buf[3] = CLOSE;
             break :blk buf[0..4];
+        },
+        .spells => blk: {
+            buf[0] = .{ .glyph = .{ .dpad = .updown }, .label = "Read" };
+            buf[1] = PAGE;
+            buf[2] = CLOSE;
+            break :blk buf[0..3];
         },
         .tree => blk: {
             buf[0] = .{ .glyph = .{ .bumper = "LS" }, .label = "Walk" };
@@ -1325,7 +1341,7 @@ fn drawDerived(box: Box, v: View, cand: ?Cand) void {
     // 16-slot buffer, and the loop below spends 28 slots on `unitStr` — so by the time this is drawn the slot
     // it pointed at holds the tail of a stat value. It printed as a bare "65" under the table.
     const says = saysOwn(if (cand) |c| candSays(c, v) else armSays(v.arm, v.off));
-    const foot = proseH(says, inner.w, hud.HINT) + 22;
+    const foot = hud.proseH(says, inner.w, hud.HINT) + 22;
     const step0 = rowStep(inner.h - foot - hud.lineH(hud.SMALL) - 4, ND);
     const size = rowSize(step0);
     const head: i32 = if (cand == null) 0 else hud.lineH(size) + 4;
@@ -1354,7 +1370,7 @@ fn drawDerived(box: Box, v: View, cand: ?Cand) void {
     }
     const footY = @max(inner.y + inner.h - foot + 22, y + 8);
     uiart.divider(inner.x + @divTrunc(inner.w, 2), @max(footY - 12, y + 2), @divTrunc(inner.w, 2) - 10, 120);
-    _ = prose(says, inner.x, footY, inner.w, hud.HINT, uiart.TEXT_HINT);
+    _ = hud.prose(says, inner.x, footY, inner.w, hud.HINT, uiart.TEXT_HINT);
 }
 
 comptime {
@@ -1509,7 +1525,7 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
     y += hud.lineH(hud.SMALL) + 2;
     hud.text(fmt("Held: {d}", .{v.bag.count(k)}), tx, y, hud.SMALL, uiart.TEXT_DIM);
 
-    y = prose(item.describe(k), inner.x, inner.y + plateH + 16, inner.w, hud.SMALL, uiart.TEXT_VALUE) + 10;
+    y = hud.prose(item.describe(k), inner.x, inner.y + plateH + 16, inner.w, hud.SMALL, uiart.TEXT_VALUE) + 10;
     uiart.divider(inner.x + @divTrunc(inner.w, 2), y, @divTrunc(inner.w, 2) - 10, 120);
     y += 12;
     if (item.wearable(k)) {
@@ -1547,6 +1563,95 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
     }
 }
 
+
+const RACK_CELL: i32 = 72;
+fn drawSpells(self: *const Book, body: Box, v: View) void {
+    const cols = spellCols(body);
+    drawKnown(self, cols[0], v);
+    const rows = cols[1].cutDown(RACK_CELL + titleH() + 12 + hud.lineH(hud.TINY) + 22);
+    drawRack(rows[0], v);
+    drawSpellRead(self, rows[1], v);
+}
+
+fn drawKnown(self: *const Book, col: Box, v: View) void {
+    const inner = panel(col, fmt("SORCERIES    {d} of {d} carried", .{ carriedSpells(v), combat.SPELLS.len }));
+    var y = inner.y;
+    for (combat.SPELLS, 0..) |row, i| {
+        const on = self.cur[idx(.spells)] == i;
+        const carried = combat.carriesSpell(v.bag, row.spell);
+        if (on) uiart.rowHilite(inner.x - 10, y - 6, inner.w + 20, spellStep() - 4);
+        // Dimmed, never hidden: a rung he has no scroll for is the thing worth going looking for.
+        const tint = if (on) uiart.HOT else if (!carried) mathx.withAlpha(uiart.TEXT_DIM, 150) else uiart.TEXT_VALUE;
+        hud.text(row.name, inner.x, y, hud.BODY, tint);
+        if (v.mem.slotOf(row.spell)) |slot| {
+            const mark = fmt("SLOT {s}", .{uiart.numeral(slot)});
+            hud.text(mark, inner.right() - hud.textW(mark, hud.TINY), y + 4, hud.TINY, mathx.withAlpha(uiart.GILT, 220));
+        } else {
+            const cost = fmt("{d:.0} FP", .{row.fp});
+            hud.text(cost, inner.right() - hud.textW(cost, hud.SMALL), y + 2, hud.SMALL, if (carried) uiart.TEXT_DIM else mathx.withAlpha(uiart.TEXT_DIM, 130));
+        }
+        y += spellStep();
+    }
+    y += 6;
+    uiart.divider(inner.x + @divTrunc(inner.w, 2), y, @divTrunc(inner.w, 2) - 10, 120);
+    _ = hud.prose("Memorized at a bonfire. The rod casts only what is in the rack.", inner.x, y + 12, inner.w, hud.HINT, uiart.TEXT_HINT);
+}
+
+fn carriedSpells(v: View) usize {
+    var n: usize = 0;
+    for (combat.SPELLS) |row| {
+        if (combat.carriesSpell(v.bag, row.spell)) n += 1;
+    }
+    return n;
+}
+
+fn drawRack(box: Box, v: View) void {
+    const inner = panel(box, fmt("MEMORY    {d} of {d} slots", .{ v.mem.filled(), combat.MEM_SLOTS }));
+    const gap: i32 = 14;
+    var x = inner.x;
+    for (0..combat.MEM_SLOTS) |i| {
+        const held = v.mem.at(i);
+        uiart.slot(x, inner.y, RACK_CELL, RACK_CELL, held != null);
+        if (held) |sp| itemart.spellArt(sp, fi(x + @divTrunc(RACK_CELL, 2)), fi(inner.y + @divTrunc(RACK_CELL, 2)), fi(RACK_CELL) * 0.78, v.fp >= castFp(sp, v.tree.bonus()));
+        const lab = uiart.numeral(i);
+        hud.text(lab, x + @divTrunc(RACK_CELL - hud.textW(lab, hud.TINY), 2), inner.y + RACK_CELL + 4, hud.TINY, mathx.withAlpha(uiart.TEXT_DIM, 200));
+        x += RACK_CELL + gap;
+    }
+    if (v.mem.first() == null) hud.text("Nothing memorized.", x + 6, inner.y + @divTrunc(RACK_CELL, 2) - 8, hud.SMALL, uiart.BAD);
+}
+
+fn drawSpellRead(self: *const Book, box: Box, v: View) void {
+    const row = combat.SPELLS[@min(self.cur[idx(.spells)], combat.SPELLS.len - 1)];
+    const inner = panel(box, "");
+    const plate = @min(@divTrunc(inner.w, 3), 150);
+    uiart.slot(inner.x, inner.y, plate, plate, true);
+    itemart.spellArt(row.spell, fi(inner.x + @divTrunc(plate, 2)), fi(inner.y + @divTrunc(plate, 2)), fi(plate) * 0.76, true);
+
+    const tx = inner.x + plate + 18;
+    var y = inner.y + 2;
+    hud.engraved(row.name, tx, y, hud.BODY, uiart.TEXT_TITLE);
+    y += hud.lineH(hud.BODY) + 6;
+    // Billed through the tree's multiple and the sheet, or the page prices a spell nobody casts.
+    const perk = v.tree.bonus();
+    const scaled: f32 = if (row.blow != null) perk.spellDmg * v.sheet.scale(.intelligence) else 1.0;
+    hud.text(fmt("{d:.0} focus a cast", .{castFp(row.spell, perk)}), tx, y, hud.SMALL, uiart.GILT);
+    y += hud.lineH(hud.SMALL) + 2;
+    hud.text(fmt("{d:.0} damage", .{combat.spellDamage(row.spell) * scaled}), tx, y, hud.SMALL, uiart.TEXT_VALUE);
+    y += hud.lineH(hud.SMALL) + 2;
+    hud.text(fmt("{d} casts off a full pool", .{castsLeft(heromod.fpMaxOf(v.sheet.*, v.worn, perk), row.spell, v)}), tx, y, hud.SMALL, uiart.TEXT_DIM);
+
+    y = hud.prose(row.says, inner.x, inner.y + plate + 14, inner.w, hud.SMALL, uiart.TEXT_VALUE) + 10;
+    uiart.divider(inner.x + @divTrunc(inner.w, 2), y, @divTrunc(inner.w, 2) - 10, 120);
+    y += 12;
+    const carried = combat.carriesSpell(v.bag, row.spell);
+    if (v.mem.slotOf(row.spell)) |slot| {
+        hud.text(fmt("Memorized in slot {s}.", .{uiart.numeral(slot)}), inner.x, y, hud.SMALL, uiart.GOOD);
+    } else if (carried) {
+        hud.text("Carried. Memorize it at a bonfire.", inner.x, y, hud.SMALL, uiart.TEXT_VALUE);
+    } else {
+        hud.text("Its scroll is not carried.", inner.x, y, hud.SMALL, uiart.BAD);
+    }
+}
 
 fn drawTree(self: *const Book, body: Box, v: View) void {
     ptree.drawPage(v.tree, self.wheel, body.x, body.y, body.w, body.h, false, v.souls);
@@ -1588,7 +1693,7 @@ fn drawAttributes(self: *const Book, col: Box, v: View) void {
         fmt("{s}  x{d:.2}", .{ stats.governs(a), v.sheet.scale(a) })
     else
         stats.governs(a);
-    _ = prose(says, inner.x, y + 12, inner.w, hud.HINT, uiart.TEXT_HINT);
+    _ = hud.prose(says, inner.x, y + 12, inner.w, hud.HINT, uiart.TEXT_HINT);
 }
 
 fn drawBody(col: Box, v: View) void {
@@ -1621,7 +1726,7 @@ fn drawBody(col: Box, v: View) void {
     // which is a readout the player cannot read — so the pitch gives way before the content does.
     const sect = hud.lineH(hud.TINY) + 6 + 22;
     const nRows = pools.len + costs.len + combat.NELEM;
-    const fixed = sect * 2 + proseH(says, inner.w, hud.HINT) + 10;
+    const fixed = sect * 2 + hud.proseH(says, inner.w, hud.HINT) + 10;
     const step = rowStep(inner.h - fixed, nRows);
 
     var y = inner.y;
@@ -1649,7 +1754,7 @@ fn drawBody(col: Box, v: View) void {
         rowValue(s, inner.right(), y, if (eff > 0.05) uiart.GOOD else if (eff < -0.05) uiart.BAD else uiart.TEXT_DIM);
         y += step;
     }
-    _ = prose(says, inner.x, y + 6, inner.w, hud.HINT, uiart.TEXT_HINT);
+    _ = hud.prose(says, inner.x, y + 6, inner.w, hud.HINT, uiart.TEXT_HINT);
 }
 
 fn section(inner: Box, y: i32, title: [:0]const u8) i32 {
@@ -1967,7 +2072,11 @@ test "THE PAGE PRICES THE SORCERY THAT IS LOADED, not the first one ever written
     try std.testing.expectApproxEqAbs(combat.spellFp(.roots), worth(roots, .spell_fp), 1e-4);
     try std.testing.expectEqualStrings(combat.spellName(.bolt), slotFilled(.sorcery, v));
     v.spell = .roots;
+    try std.testing.expectEqualStrings(EMPTY, slotFilled(.sorcery, v));
+    try std.testing.expect(!slotHas(.sorcery, v));
+    v.mem.put(1, .roots);
     try std.testing.expectEqualStrings(combat.spellName(.roots), slotFilled(.sorcery, v));
+    try std.testing.expect(slotHas(.sorcery, v));
     try std.testing.expect(castsLeft(combat.FP_MAX, .roots, v) < castsLeft(combat.FP_MAX, .bolt, v));
 }
 
@@ -2026,7 +2135,7 @@ test "the bag cursor is pulled back onto a real cell when the last of something 
     bag.add(.bloodgrass, 1);
     bag.add(.kobold_fang, 1);
     bag.add(.iron_key, 1);
-    var b = Book{ .page = .inventory, .cur = .{ 0, 2, 0, 0 } };
+    var b = Book{ .page = .inventory, .cur = .{ 0, 2, 0, 0, 0 } };
     b.clamp(testView(&bag, &sheet, &res, &flasks, &quiver, .sword));
     try std.testing.expectEqual(@as(usize, 2), b.cur[idx(.inventory)]);
     _ = bag.take(.iron_key, 1);

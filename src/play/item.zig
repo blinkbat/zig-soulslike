@@ -40,6 +40,13 @@ pub const Kind = enum(u8) {
     gravebell_amulet,
     plain_arrows,
     fire_arrows,
+    scroll_bolt,
+    scroll_roots,
+    scroll_rime,
+    scroll_levin,
+    scroll_siphon,
+    scroll_lance,
+    scroll_sunder,
 };
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
@@ -54,7 +61,8 @@ const ORDER = [_][]const u8{
     "pitted_helm",     "ashen_amulet",   "banded_warbelt", "marchboots",
     "deft_signet",     "purgeleaf",      "pilgrims_salt", "ironwort_tea",
     "rimeward_mantle", "sporecrown",     "gravebell_amulet", "plain_arrows",
-    "fire_arrows",
+    "fire_arrows",     "scroll_bolt",    "scroll_roots",   "scroll_rime",
+    "scroll_levin",    "scroll_siphon",  "scroll_lance",   "scroll_sunder",
 };
 
 comptime {
@@ -107,6 +115,13 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .gravebell_amulet => "Gravebell Amulet",
         .plain_arrows => "Sheaf of Arrows",
         .fire_arrows => "Sheaf of Fire Arrows",
+        .scroll_bolt => "Sorcery Scroll: Chaos Bolt",
+        .scroll_roots => "Sorcery Scroll: Roots",
+        .scroll_rime => "Sorcery Scroll: Rime Breath",
+        .scroll_levin => "Sorcery Scroll: Levin Strike",
+        .scroll_siphon => "Sorcery Scroll: Siphon",
+        .scroll_lance => "Sorcery Scroll: Ember Lance",
+        .scroll_sunder => "Sorcery Scroll: Sunder",
     };
 }
 
@@ -166,6 +181,14 @@ pub fn class(k: Kind) Class {
         => .gear,
         .soul_binding_ring => .gear,
         .spirit_scroll_wolf => .treasure,
+        .scroll_bolt,
+        .scroll_roots,
+        .scroll_rime,
+        .scroll_levin,
+        .scroll_siphon,
+        .scroll_lance,
+        .scroll_sunder,
+        => .treasure,
         .plain_arrows, .fire_arrows => .tool,
         .smithing_stone, .bloodgrass, .kobold_fang => .material,
         .iron_key => .key,
@@ -211,6 +234,13 @@ pub fn describe(k: Kind) [:0]const u8 {
         .gravebell_amulet => "A finger of bell-bronze on a thong, cracked through and still ringing on if you hold it to the ear. A call made near it costs less to make; what it takes for the loan is depth out of the pool the call comes from.",
         .plain_arrows => "A dozen shafts bundled in oiled cord, fletched with whatever still had feathers. They go in the quiver and most of them come back out of whatever you hit.",
         .fire_arrows => "Five heads wrapped in tallow-soaked rag. They cost more than they are worth against anything that is not afraid of burning, and rather less against anything that is.",
+        .scroll_bolt => "A single sheet, thumbed soft at one corner by whoever learned off it first. The figure on it is a fist closed round a stone that is not there, and the stone is the first thing any rod throws.",
+        .scroll_roots => "Bark-paper, and the ink has gone into it like sap. What is drawn is a hand pressed flat to the ground, and under the hand a tangle that goes down further than the sheet has room for.",
+        .scroll_rime => "Vellum stiff with cold that does not come off it in the sun. The mouth drawn open across the middle of it is breathing out, and the breath is the only part of the drawing still white.",
+        .scroll_levin => "A sheet burned through in one place, the hole the shape of a struck line. Whoever copied this out got it right once and never dared copy it again.",
+        .scroll_siphon => "Skin, and thinner than it ought to be, as though something had already drunk out of it. The figure drawn on it is fuller than the figure drawn opposite, and the line between them runs the wrong way.",
+        .scroll_lance => "Scorched down one edge and rolled tight against the draught. The mark on it is a straight run of fire held level, which is a thing to be aimed rather than thrown.",
+        .scroll_sunder => "Half a sheet, the tear old and clean. What is left shows a rod brought down close in, inside the length of a sword - which is the whole of what this one asks of you.",
     };
 }
 
@@ -405,6 +435,9 @@ pub const INERT = [_]Kind{
     .crimson_flask,  .cerulean_flask, .rune_arc,    .golden_seed,
     .smithing_stone, .bloodgrass,     .kobold_fang, .iron_key,
     .spirit_scroll_wolf,
+    // Inert on purpose: a scroll is neither worn nor used — it is CARRIED to a bonfire and racked there.
+    .scroll_bolt,    .scroll_roots,   .scroll_rime, .scroll_levin,
+    .scroll_siphon,  .scroll_lance,   .scroll_sunder,
 };
 
 comptime {
@@ -480,6 +513,7 @@ comptime {
             .none => {},
         }
     }
+    @setEvalBranchQuota(NK * @typeInfo(Wear).@"enum".fields.len * 8);
     for (@typeInfo(Wear).@"enum".fields) |wf| {
         const w: Wear = @enumFromInt(wf.value);
         if (w.held()) continue;
@@ -501,6 +535,20 @@ fn plateElem(r: Res) ?struct { name: []const u8, amount: f32 } {
 }
 
 
+pub fn isSpellScroll(k: Kind) bool {
+    return switch (k) {
+        .scroll_bolt,
+        .scroll_roots,
+        .scroll_rime,
+        .scroll_levin,
+        .scroll_siphon,
+        .scroll_lance,
+        .scroll_sunder,
+        => true,
+        else => false,
+    };
+}
+
 pub fn usable(k: Kind) bool {
     return std.meta.activeTag(use(k)) != .none;
 }
@@ -520,6 +568,8 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
         else => "Restores Focus. Charges refill at a bonfire, not from the bag.",
     };
     if (k == .spirit_scroll_wolf) return "Carried: the bell can call Hildebrand.";
+    // This file cannot import `combat`, so it will not write a second copy of the spell's name to say which.
+    if (isSpellScroll(k)) return "Carried: memorize it at a bonfire to cast it.";
     if (k == .iron_key) return "Opens the one lock it was cut for.";
     // GEAR SAYS WHAT IT DOES IN THE SAME PLACE A TOOL DOES, off `equip` for the same reason the tools read
     // `use`: a dial retuned in the table reads here, and the two cannot drift.

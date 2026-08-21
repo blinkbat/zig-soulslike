@@ -894,7 +894,7 @@ pub fn runShots(g: *Game) void {
 
         g.hero.fp.cur = g.hero.fp.max;
         g.hero.fpRefused = 0;
-        must(g.hero.cycleSpell(), "the rod would not change spell");
+        game.selectSpellForShot(g, .roots);
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
         shootClear(g, "shots/20zg2_roots_hud.png", LIT_YAW + 150, 0.18, 4.6);
@@ -914,7 +914,7 @@ pub fn runShots(g: *Game) void {
         shootPortrait(g, "shots/20zg6_roots_low.png", v3(rootsAt.x, rootsAt.y + 0.35, rootsAt.z), LIT_YAW - 40, 0.02, 4.0);
         while (g.hero.casting) g.hero.updateCast(dt, null);
 
-        must(g.hero.cycleSpell(), "the rod would not change to the rime");
+        game.selectSpellForShot(g, .rime);
         g.hero.fp.cur = g.hero.fp.max;
         const rimeAt = mathx.ground(-26.0, 30.0);
         standSettled(g, rimeAt.x, rimeAt.z, mathx.headingXZ(LIT_BACK));
@@ -955,7 +955,7 @@ pub fn runShots(g: *Game) void {
         g.muster.n = 0;
         g.hero.fp.cur = g.hero.fp.max;
 
-        must(g.hero.cycleSpell(), "the rod would not change to the levin");
+        game.selectSpellForShot(g, .levin);
         standSettled(g, rimeAt.x, rimeAt.z, mathx.headingXZ(LIT_BACK));
         shootClear(g, "shots/20zr_levin_hud.png", LIT_YAW + 150, 0.18, 4.6);
         g.muster.n = 1;
@@ -971,7 +971,7 @@ pub fn runShots(g: *Game) void {
 
         // THE SIPHON — motes off the BODY, solved to arrive at the stone. Hurt him first, or a full bar has
         // nothing to give back into.
-        must(g.hero.cycleSpell(), "the rod would not change to the siphon");
+        game.selectSpellForShot(g, .siphon);
         g.hero.fp.cur = g.hero.fp.max;
         g.hero.vit.hp = g.hero.vit.hpMax * 0.45;
         stagedCast(g);
@@ -983,7 +983,7 @@ pub fn runShots(g: *Game) void {
         g.muster.n = 0;
         g.hero.vit.hp = g.hero.vit.hpMax;
         g.hero.fp.reset();
-        must(g.hero.cycleSpell(), "the rod would not change back");
+        game.selectSpellForShot(g, .bolt);
         // Walking, at two points HALF A STRIDE apart. LAST in the block, because `stepWorld` forces travel
         // down −Z and takes the lit facing every shot above depends on. Started at z=6 rather than z=26 —
         // that end of the runway sits in a cliff's shadow.
@@ -1647,6 +1647,14 @@ pub fn runShots(g: *Game) void {
         bonfireShoot(g, "shots/71i_bonfire_tree.png");
         restmod.debugShow(&g.rest, .tree, 0, ptree.armFirst(.warrior) + 3, 2.3);
         bonfireShoot(g, "shots/71j_bonfire_tree_zoom.png");
+        const memWas = g.hero.mem;
+        g.hero.mem.put(1, .levin);
+        restmod.debugMemory(&g.rest, 1, null);
+        bonfireShoot(g, "shots/71k_bonfire_memory.png");
+        restmod.debugMemory(&g.rest, 2, 4);
+        bonfireShoot(g, "shots/71l_bonfire_memory_pick.png");
+        g.hero.mem = memWas;
+        restmod.debugShow(&g.rest, .list, 0, 0, 1.0);
         g.tree = .{};
         game.applyTree(g);
         g.hero.souls.total = treeSouls;
@@ -2974,6 +2982,10 @@ fn chestShots(g: *Game) void {
         const k: item.Kind = @enumFromInt(i);
         if (item.wearable(k) and g.bag.count(k) == 0) g.bag.add(k, 1);
     }
+    // …AND EVERY SORCERY SCROLL, or the spell page photographs seven dimmed rows and says 0 of 7 carried.
+    for (combat.SPELLS) |row| {
+        if (g.bag.count(row.scroll) == 0) g.bag.add(row.scroll, 1);
+    }
     g.menu.onStartButton();
     bookShot(g, "shots/106e_book_equipment.png", .equipment, bookmod.slotOrdinal(.right), null, 0);
     bookShot(g, "shots/106f_book_swap.png", .equipment, bookmod.slotOrdinal(.right), bookmod.slotOrdinal(.right), 1);
@@ -2987,6 +2999,17 @@ fn chestShots(g: *Game) void {
     // …AND A SKILL, which answers in a MULTIPLE rather than a bar's length (`stats.scaleFor`).
     bookShot(g, "shots/106h2_book_stats_skill.png", .stats, @intFromEnum(stats.Attr.strength), null, 0);
     bookShot(g, "shots/106i_book_tree.png", .tree, ptree.armFirst(.wizard) + ptree.PER_ARM - 1, null, 0);
+
+    const memWas = g.hero.mem;
+    g.hero.mem.put(1, .levin);
+    g.hero.mem.put(2, .rime);
+    bookShot(g, "shots/106k_book_spells.png", .spells, @intFromEnum(combat.Spell.rime), null, 0);
+    // …and a rung he has no scroll for, which is the one row the page dims.
+    const hadLance = g.bag.count(combat.spellScroll(.lance));
+    _ = g.bag.take(combat.spellScroll(.lance), hadLance);
+    bookShot(g, "shots/106k2_book_spells_missing.png", .spells, @intFromEnum(combat.Spell.lance), null, 0);
+    g.bag.add(combat.spellScroll(.lance), hadLance);
+    g.hero.mem = memWas;
 
     // **AND THE PAGE WITH THE SUIT ACTUALLY ON.** Staged bare, the doll is seven empty holes and the NOW
     // column reads the plain sword's figures whatever is in the bag.

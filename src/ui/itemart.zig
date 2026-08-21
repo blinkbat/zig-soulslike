@@ -209,6 +209,13 @@ pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
         .rimeward_mantle => rimewardMantle(cx, cy, px),
         .sporecrown => sporecrown(cx, cy, px),
         .gravebell_amulet => gravebellAmulet(cx, cy, px),
+        .scroll_bolt => sorceryScroll(cx, cy, px, .bolt),
+        .scroll_roots => sorceryScroll(cx, cy, px, .roots),
+        .scroll_rime => sorceryScroll(cx, cy, px, .rime),
+        .scroll_levin => sorceryScroll(cx, cy, px, .levin),
+        .scroll_siphon => sorceryScroll(cx, cy, px, .siphon),
+        .scroll_lance => sorceryScroll(cx, cy, px, .lance),
+        .scroll_sunder => sorceryScroll(cx, cy, px, .sunder),
     }
 }
 
@@ -527,6 +534,22 @@ pub fn bell(cx: f32, cy: f32, px: f32) void {
 fn spiritScroll(cx: f32, cy: f32, px: f32, glyph: SpiritGlyph) void {
     const s = px;
     const k = strokeK(px);
+    scrollSheet(cx, cy, px);
+    glyphOn(cx, cy - s * 0.03, s, k, glyph);
+    scrollRoll(cx, cy, px);
+}
+
+/// One scroll picture in the game; the sigil inked on it is what says which scroll it is.
+fn sorceryScroll(cx: f32, cy: f32, px: f32, sp: combat.Spell) void {
+    const s = px;
+    scrollSheet(cx, cy, px);
+    spellArt(sp, cx, cy - s * 0.03, s * 0.34, true);
+    scrollRoll(cx, cy, px);
+}
+
+fn scrollSheet(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
     var rng = mathx.Rng.init(0x5C011);
     const lean = rng.range(-0.8, 0.8) * k;
     const hw = s * 0.21;
@@ -539,9 +562,13 @@ fn spiritScroll(cx: f32, cy: f32, px: f32, glyph: SpiritGlyph) void {
     quad(tl, tr, v2(cx + hw * 0.94, rollY), v2(cx - hw * 0.96, rollY), HIDE);
     arc(cx + lean, top + s * 0.03, hw * 1.02, std.math.pi * 1.04, std.math.tau - 0.06, 10, s * 0.055, s * 0.035, HIDE_LT);
     rl.drawLineEx(v2(cx - hw * 0.96, rollY), v2(cx - hw * 1.06 + lean, top), 1.2 * k, HIDE_LT);
+}
 
-    glyphOn(cx, cy - s * 0.03, s, k, glyph);
-
+fn scrollRoll(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    const hw = s * 0.21;
+    const rollY = cy + s * 0.26;
     rl.drawLineEx(v2(cx - hw, rollY), v2(cx + hw, rollY), s * 0.17, HIDE_DK);
     rl.drawLineEx(v2(cx - hw, rollY - s * 0.03), v2(cx + hw, rollY - s * 0.03), s * 0.05, HIDE);
     rl.drawCircleV(v2(cx - hw, rollY), s * 0.085, HIDE_DK);

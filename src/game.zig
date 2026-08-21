@@ -435,6 +435,7 @@ fn beginGame(g: *Game) void {
     g.hero.off = .shield;
     g.hero.offAlt = .wand;
     g.hero.spell = .bolt;
+    g.hero.mem = .{};
     g.hero.quick = .{};
     g.hero.quiver = .{};
     g.hero.worn = .{};
@@ -891,6 +892,15 @@ const WADE_SLOWEST: f32 = 0.8;
 
 const STARTING_KIT = [_]item.Kind{
     .spirit_scroll_wolf,
+    // The seven sheets from the first frame; the SLOTS are the only limit. Where a scroll is FOUND is the
+    // map's and the drop table's call.
+    .scroll_bolt,
+    .scroll_roots,
+    .scroll_rime,
+    .scroll_levin,
+    .scroll_siphon,
+    .scroll_lance,
+    .scroll_sunder,
 };
 
 comptime {
@@ -1626,7 +1636,7 @@ pub fn takeSlotShot(g: *Game) void {
 }
 
 pub fn drawBonfireForShot(g: *Game) void {
-    restmod.drawScreen(&g.rest, &g.tree, g.hero.souls.total);
+    restmod.drawScreen(&g.rest, restView(g));
 }
 
 /// Takes no `Game`: the mark is a pure function of one number. `saveMark` ticks a clock the shot loop never
@@ -1718,6 +1728,12 @@ fn drawTalkingNpc(ctx: *const anyopaque) void {
     const i = g.talk.npc orelse return;
     g.folk.drawOne(i);
 }
+/// Stage a sorcery for the harness: the rack holds three, so the sixth spell cannot be reached by cycling.
+pub fn selectSpellForShot(g: *Game, s: combat.Spell) void {
+    g.hero.memorize(0, s);
+    g.hero.spell = s;
+}
+
 pub fn showSpiritToastForShot(g: *Game) void {
     g.spiritK = 1.0;
     g.spiritHp = if (g.pack.firstConst()) |w| w.vit.hpFrac() else 1.0;
@@ -1860,6 +1876,17 @@ fn ringBell(g: *Game) void {
         return;
     }
     if (g.hero.requestRing()) sfx.play(.wand_charge);
+}
+
+/// A rod with an empty rack SAYS SO (`ringBell`'s shape one hand along) rather than eating the press.
+fn castWand(g: *Game) void {
+    if (!g.hero.castReady()) return;
+    if (!g.hero.armed()) {
+        g.trig.say("Nothing memorized.");
+        sfx.play(.refused);
+        return;
+    }
+    if (g.hero.requestCast()) sfx.play(.wand_charge);
 }
 
 fn summonSpirit(g: *Game) void {
@@ -2217,15 +2244,26 @@ fn tickRest(g: *Game, dt: f32) void {
 fn bonfireInput(g: *Game, dt: f32) void {
     const onWheel = g.rest.screen == .tree;
     const nav = menumod.navFor(onWheel);
-    if (nav(.up)) restmod.navigate(&g.rest, 0, -1);
-    if (nav(.down)) restmod.navigate(&g.rest, 0, 1);
-    if (nav(.left)) restmod.navigate(&g.rest, -1, 0);
-    if (nav(.right)) restmod.navigate(&g.rest, 1, 0);
-    if (menumod.stickPush(dt, onWheel)) |d| restmod.navigate(&g.rest, d.x, d.y);
+    const v = restView(g);
+    if (g.rest.screen == .spells) {
+        if (nav(.up)) restmod.navigateSpells(&g.rest, -1, v);
+        if (nav(.down)) restmod.navigateSpells(&g.rest, 1, v);
+        if (menumod.stickPush(dt, false)) |d| restmod.navigateSpells(&g.rest, d.y, v);
+    } else {
+        if (nav(.up)) restmod.navigate(&g.rest, 0, -1);
+        if (nav(.down)) restmod.navigate(&g.rest, 0, 1);
+        if (nav(.left)) restmod.navigate(&g.rest, -1, 0);
+        if (nav(.right)) restmod.navigate(&g.rest, 1, 0);
+        if (menumod.stickPush(dt, onWheel)) |d| restmod.navigate(&g.rest, d.x, d.y);
+    }
     restmod.pan(&g.rest, menumod.stickPan(), dt);
     restmod.zoom(&g.rest, menumod.dpadZoom(), dt);
-    if (menumod.confirmPressed()) bonfirePick(g, restmod.confirm(&g.rest, &g.tree, g.hero.souls.total));
+    if (menumod.confirmPressed()) bonfirePick(g, restmod.confirm(&g.rest, v));
     if (menumod.backPressed() or rl.isKeyPressed(.escape)) restmod.back(&g.rest);
+}
+
+pub fn restView(g: *Game) restmod.View {
+    return .{ .tree = &g.tree, .souls = g.hero.souls.total, .mem = &g.hero.mem, .bag = &g.bag };
 }
 
 fn bonfirePick(g: *Game, pick: restmod.Pick) void {
@@ -2245,6 +2283,7 @@ fn bonfirePick(g: *Game, pick: restmod.Pick) void {
             sfx.play(.menu_pick);
             g.rest.leave();
         },
+        .memorize => |m| g.hero.memorize(m.slot, m.spell),
     }
     if (std.meta.activeTag(pick) != .none and g.rest.listening()) saveNow(g, .noShot);
 }
@@ -3400,7 +3439,7 @@ pub fn hud(g: *Game, dt: f32) void {
             hud_.equipment(
                 if (!g.hero.offInHand()) .empty else armSlot(g, g.hero.off),
                 armSlot(g, g.hero.armInHand()),
-                if (wandUp) hud_.Slot{ .sorcery = g.hero.spell } else .empty,
+                if (wandUp and g.hero.armed()) hud_.Slot{ .sorcery = g.hero.spell } else .empty,
                 g.hero.fp.cur >= g.hero.castCost(),
                 g.hero.quick.selected(),
                 quickLeft(g),
@@ -3763,7 +3802,7 @@ pub fn run(mode: Mode) void {
             drawScene(g);
             takeSlotShot(g);
             hud(g, rawDt);
-            restmod.drawScreen(&g.rest, &g.tree, g.hero.souls.total);
+            restmod.drawScreen(&g.rest, restView(g));
             saveMark(g, rawDt);
             rl.endDrawing();
             continue;
@@ -3945,7 +3984,7 @@ pub fn run(mode: Mode) void {
             } else if (quickReq) {
                 g.hero.requestShot(false);
             } else if (castReq) {
-                if (g.hero.requestCast()) sfx.play(.wand_charge);
+                castWand(g);
             } else if (ringReq) {
                 ringBell(g);
             }
@@ -4344,6 +4383,7 @@ pub fn bookView(g: *Game) bookmod.View {
         .armAlt = g.hero.armAlt,
         .offAlt = g.hero.offAlt,
         .spell = g.hero.spell,
+        .mem = g.hero.mem,
         .fp = g.hero.fp.cur,
         .souls = g.hero.souls.display(),
         .worn = g.hero.worn,

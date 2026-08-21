@@ -135,10 +135,20 @@ its tip. Prices are measured against what a body is worth: your first node costs
 archers, and the whole one-and-twenty is a game's worth of killing.
 
 There is no attribute screen any more: every attribute past the starting sheet comes off a node here. The
-wheel is the character book's fourth page and you can read it anywhere, but you spend **only at a bonfire**.
+wheel is the character book's last page and you can read it anywhere, but you spend **only at a bonfire**.
 Sitting at one is its own screen: you sit off to the right of the frame with the fire, and the bonfire's menu
-is a list down the left — **Level Up**, which opens the wheel, and **Leave Bonfire**, which is the only way
-back out. Walk the tree with the left stick and zoom it with the right.
+is a list down the left — **Level Up**, which opens the wheel, **Memorize Spells**, which opens the rack, the
+two waits, and **Leave Bonfire**, which is the only way back out. Walk the tree with the left stick and zoom
+it with the right.
+
+## The rod carries three
+
+Every sorcery is written on a **scroll**, and owning the scroll is not the same as having the spell about you.
+The rod casts only what is **memorized**: three slots, filled sitting at a bonfire and read in the fight,
+which is Elden Ring's memory slots and the reason a wand build is a decision rather than a menu. D-pad up
+cycles what is in the rack, in the order you put it there; the character book's **Spells** page is where you
+read what each one costs, what it does, and which scrolls you are still missing — read-only, because a rack
+you can fill mid-fight is a rack with no slots in it.
 
 ## Controls
 
@@ -158,7 +168,7 @@ Keyboard + mouse **or** a gamepad (Elden Ring default layout):
 | Aim the bow | Hold RMB | Hold L2 / LT |
 | Sword ↔ bow | Q | D-pad right |
 | Shield ↔ wand | F | D-pad left |
-| Chaos Bolt ↔ Roots | G | D-pad up |
+| Cycle memorized sorcery | G | D-pad up |
 | Plain ↔ fire arrow | U | — (character book's ammo slot) |
 | Drink / cycle flask | R / T | Square / X / D-pad down |
 | Jump | V | Cross / A |

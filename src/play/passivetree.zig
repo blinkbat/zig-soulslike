@@ -946,18 +946,6 @@ fn well(x: i32, y: i32, w: i32, h: i32) void {
     rl.drawRectangleLinesEx(uiart.rect(x, y, w, h), 1, mathx.withAlpha(uiart.GILT_DIM, 90));
 }
 
-var proseLines: [8][:0]const u8 = undefined;
-var proseBuf: [768]u8 = undefined;
-
-fn prose(s: []const u8, x: i32, y: i32, w: i32, size: i32, col: rl.Color) i32 {
-    var yy = y;
-    for (hud.wrap(s, size, w, &proseBuf, &proseLines)) |line| {
-        hud.text(line, x, yy, size, col);
-        yy += hud.lineH(size);
-    }
-    return yy;
-}
-
 pub fn readW(w: i32) i32 {
     return @min(@divTrunc(w * 30, 100), 430);
 }
@@ -1002,7 +990,7 @@ pub fn drawPage(t: *const Tree, wh: Wheel, x: i32, y: i32, w: i32, h: i32, spend
     if (i == HUB) {
         hud.text("The Middle", ix, yy, hud.BODY, uiart.TEXT_TITLE);
         yy += hud.lineH(hud.BODY) + 6;
-        _ = prose(
+        _ = hud.prose(
             "Where you begin, and the one place all three branches are open from. Nothing to take.",
             ix,
             yy,
@@ -1015,8 +1003,8 @@ pub fn drawPage(t: *const Tree, wh: Wheel, x: i32, y: i32, w: i32, h: i32, spend
     const n = NODES[i];
     hud.text(n.name, ix, yy, hud.BODY, if (t.taken[i]) uiart.HOT else uiart.TEXT_TITLE);
     yy += hud.lineH(hud.BODY) + 6;
-    yy = prose(grantSays(n.grant), ix, yy, iw, hud.SMALL, uiart.TEXT_VALUE);
-    if (n.bump) |bp| yy = prose(bumpSays(bp), ix, yy, iw, hud.SMALL, uiart.GOOD);
+    yy = hud.prose(grantSays(n.grant), ix, yy, iw, hud.SMALL, uiart.TEXT_VALUE);
+    if (n.bump) |bp| yy = hud.prose(bumpSays(bp), ix, yy, iw, hud.SMALL, uiart.GOOD);
     yy += 8;
 
     if (t.taken[i]) {
@@ -1024,7 +1012,7 @@ pub fn drawPage(t: *const Tree, wh: Wheel, x: i32, y: i32, w: i32, h: i32, spend
     } else if (!spendable) {
         hud.text("Bonfire only.", ix, yy, hud.HINT, uiart.TEXT_HINT);
     } else if (t.locked(i, souls)) |whyNot| {
-        if (whyNot.len > 0) _ = prose(whyNot, ix, yy, iw, hud.HINT, uiart.TEXT_HINT);
+        if (whyNot.len > 0) _ = hud.prose(whyNot, ix, yy, iw, hud.HINT, uiart.TEXT_HINT);
     }
 }
 

@@ -140,4 +140,5 @@ test {
     _ = @import("props/propash.zig");
     _ = @import("props/propfungus.zig");
     _ = @import("props/propcoral.zig");
+    _ = @import("props/propgold.zig");
 }

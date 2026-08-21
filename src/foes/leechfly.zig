@@ -466,7 +466,7 @@ pub const Leechfly = struct {
     }
 
     pub fn stabReach(self: *const Leechfly) f32 {
-        return (STAB_R + foe.HERO_REACH) * self.scale;
+        return foe.hurtReach(STAB_R, self.scale);
     }
 
     pub fn holds(self: *const Leechfly, hero: rl.Vector3) bool {

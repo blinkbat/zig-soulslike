@@ -366,12 +366,7 @@ pub const Frog = struct {
     }
     fn tryImpact(self: *Frog, hero: rl.Vector3, h: combat.Hit) void {
         if (self.heroLatch) return;
-        const d = mathx.distXZ(self.pos, hero);
-        if (d > LUNGE_IMPACT_R + HERO_REACH) return;
-        const to = mathx.dirXZ(self.pos, hero);
-        const fwd = self.fdir();
-        const front = to.x * fwd.x + to.z * fwd.z;
-        if (d > 0.35 and front < LUNGE_FRONT_DOT) return;
+        if (!foe.inFront(self.pos, self.facing, hero, LUNGE_IMPACT_R + HERO_REACH, LUNGE_FRONT_DOT)) return;
         self.heroHit = h;
         self.heroLatch = true;
         self.leash.noteCombat();

@@ -413,11 +413,7 @@ pub const Lurker = struct {
 
     fn tryLash(self: *Lurker, hero: rl.Vector3) void {
         if (self.heroLatch) return;
-        const d = mathx.distXZ(self.pos, hero);
-        if (d > LASH_R * self.scale + foe.HERO_REACH) return;
-        const to = mathx.dirXZ(self.pos, hero);
-        const fwd = mathx.headingDir(self.facing);
-        if (d > 0.35 and to.x * fwd.x + to.z * fwd.z < LASH_FRONT_DOT) return;
+        if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(LASH_R, self.scale), LASH_FRONT_DOT)) return;
         self.heroHit = LASH_HIT;
         self.heroLatch = true;
         self.leash.noteCombat();

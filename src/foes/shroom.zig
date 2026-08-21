@@ -437,7 +437,7 @@ pub const Shroom = struct {
                     self.emitPuff(self.pos, FLING_PUFF);
                     sfx.world(.shroom_puff, self.pos);
                     self.burstAt = self.pos;
-                    if (mathx.distXZ(self.pos, hero) <= (SPLAT_R + foe.HERO_REACH) * self.scale) {
+                    if (mathx.distXZ(self.pos, hero) <= foe.hurtReach(SPLAT_R, self.scale)) {
                         self.heroHit = FLING_HIT;
                         self.leash.noteCombat();
                     }
@@ -726,7 +726,9 @@ pub const Cluster = struct {
         self.model.setShader(sh);
     }
 
-    fn spawnCloud(self: *Cluster, at: rl.Vector3) void {
+    /// PUBLIC because the SPORE GOLEM's lobbed sac lands in this pool too — one cloud pool and one poison
+    /// meter for every spore in the game, or `spores` would be two accumulators filling one bar.
+    pub fn spawnCloud(self: *Cluster, at: rl.Vector3) void {
         self.clouds[self.cloudHead] = .{ .pos = at, .live = true, .fxRng = foe.fxStream(at.x + at.z, 977.0, 0xC10D) };
         self.cloudHead = (self.cloudHead + 1) % CLOUD_CAP;
     }

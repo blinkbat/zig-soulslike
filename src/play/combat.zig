@@ -450,6 +450,14 @@ pub fn armourTaken(a: f32, dmg: f32) f32 {
 /// and make blocking free. `guardChip` clamps at 1; this stops it ever getting there.
 pub const GUARD_NEGATE_CAP: f32 = 0.95;
 
+/// **WHAT A BOARD ACTUALLY TURNS ASIDE, NAMED ONCE.** The shield row multiplies the base, the tree node adds
+/// to it, and the cap holds the sum under 1 (`GUARD_NEGATE_CAP`'s own note). `hero.blockHit` and the
+/// character book's `guard` row both need this number and both spelled it out — two copies of the one figure
+/// the page exists to compare, and a page promising 97% behind a door the fight holds to 95 is a page lying.
+pub fn guardNegation(boardNegate: f32, perkGuard: f32) f32 {
+    return mathx.minF(GUARD_NEGATE_CAP, GUARD_NEGATE * boardNegate + perkGuard);
+}
+
 pub fn guardChip(h: Hit, negate: f32) Hit {
     const k = 1.0 - mathx.clampF(negate, 0, 1);
     return .{ .dmg = h.dmg * k, .elem = h.elem.scaled(k), .fp = h.fp * k };
@@ -522,8 +530,13 @@ pub const SUMMON_MAX: usize = 1;
 
 pub const BOLT_HIT = Hit{ .poise = 14, .stance = 6, .elem = elems(.{ .chaos = 25 }) };
 
-pub const ROOT_HOLD: f32 = 3.5;
-pub const ROOT_DPS: f32 = 5.6;
+/// **THE HOLD IS WHAT THE SPELL SELLS** (owner: make it last longer) — 3.5 s to 5.0. The DRIP came down to
+/// pay for it: `SPELLS`' ladder is monotone, so 12 FP has a window of (18, 22) between the siphon under it and
+/// the levin over it, and the same hold at the old 5.6/s would have billed 28 and broken the price list at
+/// comptime. That is the ladder working: every rung up in FP buys a stagger, a HOLD, HP back or a body —
+/// never more damage.
+pub const ROOT_HOLD: f32 = 5.0;
+pub const ROOT_DPS: f32 = 4.0;
 pub const ROOT_R: f32 = 2.6;
 pub const ROOT_GRIP_R: f32 = 1.0;
 

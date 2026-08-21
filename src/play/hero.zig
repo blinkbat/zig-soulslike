@@ -2882,7 +2882,7 @@ pub const Hero = struct {
         self.blockT = 0;
         const board = self.armOf(.hand_shield);
         self.stam.spend(combat.guardStamina(h) * board.stam);
-        const negate = mathx.minF(combat.GUARD_NEGATE_CAP, combat.GUARD_NEGATE * board.negate + self.perk.guard);
+        const negate = combat.guardNegation(board.negate, self.perk.guard);
         const chip = combat.guardChip(h, negate);
         self.fp.drain(chip.fp);
         const r = self.vit.hit(chip.throughArmour(self.armourA()));

@@ -97,7 +97,7 @@ pub fn moveClock(which: usize) foe.Clock {
     return foe.moveClock(MOVES[@min(which, MOVES.len - 1)]);
 }
 
-const GRASP_REACH: f32 = MOVES[GRASP].maxR + foe.HERO_REACH;
+const GRASP_REACH: f32 = MOVES[GRASP].maxR;
 
 
 const THREAT_R: f32 = 2.4;
@@ -459,14 +459,11 @@ pub const Shade = struct {
     }
 
     pub fn graspReach(self: *const Shade) f32 {
-        return GRASP_REACH * self.scale;
+        return foe.hurtReach(GRASP_REACH, self.scale);
     }
 
     pub fn holds(self: *const Shade, hero: rl.Vector3) bool {
-        if (mathx.distXZ(self.pos, hero) > self.graspReach()) return false;
-        const to = mathx.dirXZ(self.pos, hero);
-        if (mathx.lenXZ(to) < 1e-4) return true;
-        return combat.withinArc(mathx.headingXZ(to), self.facing, GRASP_ARC);
+        return foe.inArc(self.pos, self.facing, hero, self.graspReach(), GRASP_ARC);
     }
 
     fn faceToward(self: *Shade, target: rl.Vector3, dt: f32) void {

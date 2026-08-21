@@ -1402,11 +1402,7 @@ pub const Spider = struct {
 
     fn tryImpact(self: *Spider, hero: rl.Vector3, h: combat.Hit) void {
         if (self.heroLatch) return;
-        const d = mathx.distXZ(self.pos, hero);
-        if (d > B_LEAP_IMPACT_R + HERO_REACH) return;
-        const to = mathx.dirXZ(self.pos, hero);
-        const fwd = self.fdir();
-        if (d > 0.3 and to.x * fwd.x + to.z * fwd.z < B_LEAP_FRONT_DOT) return;
+        if (!foe.inFront(self.pos, self.facing, hero, B_LEAP_IMPACT_R + HERO_REACH, B_LEAP_FRONT_DOT)) return;
         self.heroHit = h;
         self.heroLatch = true;
         self.leash.noteCombat();

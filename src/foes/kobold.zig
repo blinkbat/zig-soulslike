@@ -445,8 +445,8 @@ pub const Kobold = struct {
 
     pub fn hurtReach(self: *const Kobold) f32 {
         return switch (self.state) {
-            .chop => ZERK_REACH * self.scale + foe.HERO_REACH,
-            .bite => BITE_R * self.scale + foe.HERO_REACH,
+            .chop => foe.hurtReach(ZERK_REACH, self.scale),
+            .bite => foe.hurtReach(BITE_R, self.scale),
             else => 0,
         };
     }
@@ -585,7 +585,7 @@ pub const Kobold = struct {
         return RUN_SPEED * base;
     }
     fn walkInR(self: *const Kobold) f32 {
-        return ZERK_REACH * self.scale + foe.HERO_REACH + ZERK_WALK_IN * self.scale;
+        return foe.hurtReach(ZERK_REACH, self.scale) + ZERK_WALK_IN * self.scale;
     }
 
     fn enter(self: *Kobold, s: State) void {
@@ -625,7 +625,7 @@ pub const Kobold = struct {
         const s = spec(self.role);
         switch (self.role) {
             .berserker => {
-                if (d <= ZERK_REACH * self.scale + foe.HERO_REACH) {
+                if (d <= foe.hurtReach(ZERK_REACH, self.scale)) {
                     self.chopsLeft = ZERK_SWINGS_LO + @as(u32, @intCast(self.fxRng.intn(@intCast(ZERK_SWINGS_HI - ZERK_SWINGS_LO + 1))));
                     self.chopLeftHand = false;
                     sfx.world(.kobold_snarl, self.pos);
@@ -649,7 +649,7 @@ pub const Kobold = struct {
                 return self.enter(.idle);
             },
             .slinger => {
-                if (d <= BITE_PREFER_R * self.scale + foe.HERO_REACH and self.biteCd <= 0) return self.enter(.bite);
+                if (d <= foe.hurtReach(BITE_PREFER_R, self.scale) and self.biteCd <= 0) return self.enter(.bite);
                 if (d < s.wantMin) {
                     self.moveDir = self.awayDir();
                     return self.enter(.reposition);

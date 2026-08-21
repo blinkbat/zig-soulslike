@@ -257,6 +257,7 @@ pub const Game = struct {
     fireArrowModel: rl.Model,
     boltModel: rl.Model,
     emberModel: rl.Model,
+    sacModel: rl.Model,
     wispModel: rl.Model,
     arrows: [MAX_ARROWS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_ARROWS,
     shafts: [MAX_SHAFTS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_SHAFTS,
@@ -358,6 +359,7 @@ pub const Game = struct {
         g.fireArrowModel = archermod.fireArrowMesh(g.scene.shader);
         g.boltModel = heromod.boltMesh(g.scene.shader);
         g.emberModel = magemod.emberMesh(g.scene.shader);
+        g.sacModel = golemmod.sacMesh(g.scene.shader);
         g.wispModel = shademod.wispMesh(g.scene.shader);
         g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
         g.shafts = [_]archermod.Arrow{.{}} ** MAX_SHAFTS;
@@ -1414,6 +1416,10 @@ fn spawnEmber(g: *Game, from: rl.Vector3) void {
     poolPut(g, archermod.launchShaft(from, heroAimPoint(g), magemod.EMBER_SPEED, magemod.EMBER_HIT, true, .emberball));
 }
 
+fn spawnSac(g: *Game, from: rl.Vector3) void {
+    poolPut(g, archermod.launchShaft(from, heroAimPoint(g), golemmod.SAC_SPEED, golemmod.SAC_HIT, true, .sac));
+}
+
 pub fn noteYank(g: *Game, from: rl.Vector3, pull: f32) void {
     g.hook = .{ .from = from, .pull = pull };
 }
@@ -1431,6 +1437,18 @@ fn applyYank(g: *Game, out: combat.HitOutcome) void {
     g.hero.pos = inBounds(g.env.walkStep(g.hero.pos, mathx.normV(dir), h.pull));
     g.rig.addShake(SHAKE_GUARD_BREAK);
     g.rumble.play(rumblemod.hit_heavy);
+}
+
+/// THE YANK IN REVERSE (`applyYank`, same walk): a blow that puts ground between them rather than taking it
+/// away. Only on a blow that actually landed — a guard that ate it holds its ground.
+fn heroShoved(g: *Game, from: rl.Vector3, push: f32, out: combat.HitOutcome) void {
+    switch (out) {
+        .blocked, .ignored => return,
+        .taken, .guardBroken => {},
+    }
+    const dir = mathx.dirXZ(from, g.hero.pos);
+    if (mathx.lenXZ(dir) < 1e-3) return;
+    g.hero.pos = inBounds(g.env.walkStep(g.hero.pos, mathx.normV(dir), push));
 }
 
 pub fn leechSip(g: *Game, h: combat.Hit) void {
@@ -2999,7 +3017,47 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
             sfx.world(.ember_burst, ar.pos);
             g.ring.splash(ar.pos);
         },
+        // ONE CLOUD POOL AND ONE POISON METER: the golem's sac lays the SPORELING'S cloud, so its gas builds
+        // the same bar in the same way and there is no second soak to keep in step with this one.
+        // …AND THE BURST IS `shroom_puff`, NOT `shroom_fling`: the fling is the LAUNCH, already played where
+        // the sac leaves the cap. Both here meant one sac threw the same voice twice and never made the
+        // sound the sporeling's own cloud makes.
+        .sac => {
+            sfx.world(.shroom_puff, ar.pos);
+            g.cluster.spawnCloud(ground);
+        },
         .arrow, .firearrow, .wisp, .crock => {},
+    }
+}
+
+/// **WHAT A SHOT LEAVES IN HIM BESIDES THE BLOW.** `brood.M_SPIT_BUILD` was authored, tested and wired to
+/// NOTHING: a glob that hit you did 2 damage and no venom at all, while the puddle it missed you with poisoned
+/// at 40/s. Only on a blow that actually landed — a board that ate the glob eats what is in it — and off the
+/// `Shot` rather than the creature, so a second poisoning missile says so here and nowhere else.
+fn shotBuildup(s: archermod.Shot) f32 {
+    return switch (s) {
+        .venom => broodmod.M_SPIT_BUILD,
+        .arrow, .firearrow, .clump, .crock, .bolt, .wisp, .emberball, .sac => 0,
+    };
+}
+
+fn shotStatus(g: *Game, s: archermod.Shot, out: combat.HitOutcome) void {
+    switch (out) {
+        .blocked, .ignored => return,
+        .taken, .guardBroken => {},
+    }
+    const amt = shotBuildup(s);
+    if (amt > 0) g.hero.poisonBy(amt);
+}
+
+test "A GLOB THAT LANDS CARRIES ITS VENOM — the constant the meter is written in has a consumer" {
+    // The bug this pins: `M_SPIT_BUILD` was declared, asserted against `POISON_MAX` by its own test, and
+    // read by NOTHING, so three globs in the chest left the bar empty while the puddle you dodged filled it.
+    try std.testing.expectEqual(broodmod.M_SPIT_BUILD, shotBuildup(.venom));
+    try std.testing.expect(shotBuildup(.venom) * 3.0 >= combat.POISON_MAX);
+    inline for (@typeInfo(archermod.Shot).@"enum".fields) |f| {
+        const s: archermod.Shot = @enumFromInt(f.value);
+        if (s != .venom) try std.testing.expectEqual(@as(f32, 0), shotBuildup(s));
     }
 }
 
@@ -3020,11 +3078,10 @@ fn emberBlast(g: *Game, ar: *const archermod.Arrow) void {
     const d = mathx.distXZ(ar.pos, g.hero.pos);
     if (d > BLAST_R) return;
     const k = mathx.lerpF(1.0, BLAST_FLOOR, mathx.clampF(d / BLAST_R, 0, 1));
-    var hit = ar.blow;
-    hit.poise *= k;
-    hit.dmg *= k;
-    hit.elem = ar.blow.elem.scaled(k);
-    const blow = foemod.Blow{ .hit = hit, .from = ar.pos };
+    // THROUGH `Hit.scaled`, NOT THREE FIELDS BY HAND: the falloff has to cover the WHOLE blow. Written out
+    // it scaled `dmg`, `poise` and `elem` and left `stance` and `fp` at full, which is a rim-of-the-blast
+    // guard-break at point-blank strength the day a detonator carries either.
+    const blow = foemod.Blow{ .hit = ar.blow.scaled(k), .from = ar.pos };
     _ = heroTakes(g, blow, false, false);
 }
 
@@ -3051,6 +3108,7 @@ fn drawArrows(g: *Game) void {
                 .firearrow => &g.fireArrowModel,
                 .bolt => &g.boltModel,
                 .emberball => &g.emberModel,
+                .sac => &g.sacModel,
                 .wisp => &g.wispModel,
             };
             rl.drawMesh(m.meshes[0], m.materials[0], archermod.arrowXform(ar));
@@ -3970,6 +4028,10 @@ pub fn run(mode: Mode) void {
             if (a.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) {
                 spawnArrow(g, a.nockWorld(), heroAimPoint(g));
             }
+            if (a.heroHit) |h| {
+                const out = heroTakes(g, .{ .hit = h, .from = a.pos }, false, true);
+                heroShoved(g, a.pos, archermod.BUTT_SHOVE, out);
+            }
         }
         if (g.band.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnClump)) |b| {
             _ = heroTakes(g, b, b.hit.poise >= koboldmod.ZERK_HIT.poise, true);
@@ -4009,6 +4071,7 @@ pub fn run(mode: Mode) void {
             if (r.opened) sfx.world(.ravager_bloom, r.pos);
             if (r.leapt) sfx.world(.ravager_leap, r.pos);
             if (r.snapped) sfx.world(.ravager_snap, r.pos);
+            if (r.swiped) sfx.world(.delver_claw, r.pos); // the claw voice already in the field, on a second animal
             if (r.yelped) sfx.world(.ravager_hurt, r.pos);
             if (r.justDied) sfx.world(.ravager_die, r.pos);
         }
@@ -4032,6 +4095,10 @@ pub fn run(mode: Mode) void {
                 sfx.world(.ember_burst, at);
                 g.ring.splash(at);
                 g.rig.addShake(SHAKE_HIT_HEAVY);
+            }
+            if (h.lobFrom) |from| {
+                sfx.world(.shroom_fling, from);
+                spawnSac(g, from);
             }
         }
         if (g.marsh.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
@@ -4119,6 +4186,7 @@ pub fn run(mode: Mode) void {
                     };
                     const out: combat.HitOutcome = if (g.hero.dead) .ignored else heroTakes(g, blow, blow.hit.heavy(), false);
                     if (out == .taken or out == .ignored) sfx.play(.arrow_hit);
+                    shotStatus(g, ar.shot, out);
                 }
                 splashOf(g, ar);
                 emberBlast(g, ar);
@@ -4493,6 +4561,12 @@ const MELEE_AIM_LOCKED: f32 = 2.0 * MELEE_AIM_R;
 const MELEE_AIM_DOT: f32 = 0.35;
 /// The eye line the pitch is measured FROM — his shoulders, which is roughly where the flat arc lives.
 const MELEE_AIM_EYE: f32 = 1.35;
+/// **TOO CLOSE TO HAVE A BEARING**, `foe.POINT_BLANK`'s idea on the hero's side of the fight, and TWO numbers
+/// because they answer two questions. `MELEE_AIM_BLANK` exempts a body from the front cone: something
+/// standing on his boots is not behind him. `MELEE_AIM_FLAT` refuses a PITCH, which is an arctangent over a
+/// flat distance and is meaningless as that distance goes to nothing. Both were bare literals.
+const MELEE_AIM_BLANK: f32 = 0.2;
+const MELEE_AIM_FLAT: f32 = 0.35;
 
 const MarkCtx = struct {
     g: *const Game,
@@ -4507,7 +4581,7 @@ const MarkCtx = struct {
             const d = mathx.distXZ(self.g.hero.pos, f.pos);
             if (d >= self.bestD) continue;
             const to = mathx.dirXZ(self.g.hero.pos, f.pos);
-            if (d > 0.2 and to.x * self.fwd.x + to.z * self.fwd.z < MELEE_AIM_DOT) continue;
+            if (d > MELEE_AIM_BLANK and to.x * self.fwd.x + to.z * self.fwd.z < MELEE_AIM_DOT) continue;
             self.bestD = d;
             self.best = f.lockPoint();
         }
@@ -4526,7 +4600,7 @@ fn meleeMark(g: *const Game) ?rl.Vector3 {
 fn meleePitch(g: *const Game) ?f32 {
     const mark = meleeMark(g) orelse return null;
     const flat = mathx.distXZ(g.hero.pos, mark);
-    if (flat < 0.35) return null;
+    if (flat < MELEE_AIM_FLAT) return null;
     return mathx.degrees(depression(g.hero.pos.y + MELEE_AIM_EYE, mark, flat));
 }
 
@@ -4630,6 +4704,16 @@ fn collideActors(g: *Game, dt: f32) void {
     }
 }
 
+/// **THE ONE THING IN THE FRAME THAT SCALES QUADRATICALLY**, and the pair of traps in front of anyone who
+/// tries to fix it. It is n² per group against `worldfmt.MAX_PER_KIND` (512): the shipped map's biggest kind
+/// is 24, so 552 `pushOut` a frame and nothing to see — at 512 in one group it is 261,632 and about a
+/// millisecond. Left alone on purpose; the answer is an actor grid, not an edit here.
+///
+/// **AND `bodyOf(o)` MAY NOT BE HOISTED OUT OF THE INNER LOOP** — the obvious win, and it is wrong. `a.pos`
+/// is written at the END of each outer pass, so body i settles against 0..i-1 at their NEW positions and the
+/// rest at their old ones: Gauss-Seidel. A pre-pass of solids makes everyone see the old ones, which is
+/// Jacobi, which is a different (and looser) settle. The n² is the cheap part anyway — the inner body is a
+/// closest-point and a compare.
 fn settleGroup(g: *Game, comptime gr: FoeGroup, step: f32) void {
     const foes = @field(g, gr.field).live();
     for (foes, 0..) |*a, i| {

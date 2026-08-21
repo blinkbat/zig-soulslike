@@ -13,11 +13,25 @@ pub const FLASH_GAIN: f32 = 0.85;
 pub const FROST_GAIN: f32 = 0.55;
 pub const HERO_R: f32 = 0.36;
 pub const HERO_REACH: f32 = 0.55;
+/// **TOO CLOSE TO HAVE A FRONT.** Inside this every close blow lands whatever the bearing says — a body
+/// standing ON a creature is not behind it, and without the exemption hugging a flank is a way to stand
+/// inside a jaw and take nothing. Six creatures wrote this out by hand and one of them had drifted to 0.30.
+pub const POINT_BLANK: f32 = 0.35;
 pub const HERO_LOW: f32 = -0.10;
 pub const HERO_HIGH: f32 = 1.71; // 0.95 of his 1.8 m stature
 pub const HERO_EYE: f32 = 1.25;
 pub fn closestApproach(bodyR: f32) f32 {
     return bodyR + HERO_R;
+}
+
+/// **THE WHOLE REACH OF A CLOSE BLOW** — the creature's own metres, scaled with the body, plus the hero's
+/// standing footprint, which is HIS and does not grow with the thing swinging at him. Twenty-two sites wrote
+/// this out and FOUR had drifted to `(own + HERO_REACH) * scale`, which bills the man's own 0.55 m at the
+/// creature's scale: +0.55 m of reach on a scale-2 body and -0.28 m on a scale-0.5 one, invisible at 1.0
+/// where every test spawns. `closestApproach` is the same triangle for COLLISION and uses `HERO_R`; this is
+/// the one for a HURT BOX.
+pub fn hurtReach(own: f32, scale: f32) f32 {
+    return own * scale + HERO_REACH;
 }
 
 pub const AIRBORNE_LIFT: f32 = 0.04;
@@ -232,6 +246,30 @@ pub fn tickFixedLeash(l: *Leash, dt: f32, home: rl.Vector3, hero: rl.Vector3, ag
 
 pub fn senseHero(l: *const Leash, at: rl.Vector3, hero: rl.Vector3, aggroR: f32) f32 {
     return sensedDist(l, mathx.distXZ(at, hero), aggroR);
+}
+
+/// **THE FRONTAL CONE EVERY CLOSE BLOW ANSWERS FOR**: inside `reach`, and inside `dot` of the way the body is
+/// looking, with `POINT_BLANK` exempt. Six creatures had this written out with the dot product by hand — a
+/// jab, a lash, two leaps, a bite and a swipe — which is six chances to get a sign wrong and one of them had
+/// already drifted on the exemption. `reach` is the whole reach, the hero's own footprint included.
+pub fn inFront(pos: rl.Vector3, facing: f32, at: rl.Vector3, reach: f32, dot: f32) bool {
+    const d = mathx.distXZ(pos, at);
+    if (d > reach) return false;
+    if (d <= POINT_BLANK) return true;
+    const to = mathx.dirXZ(pos, at);
+    const fwd = mathx.headingDir(facing);
+    return to.x * fwd.x + to.z * fwd.z >= dot;
+}
+
+/// **THE SAME QUESTION IN DEGREES** — `inFront`'s twin, for the callers whose sector is authored as an ARC
+/// (`combat.withinArc`'s unit) rather than as a dot: the shield, the snag's three limbs, the shade's grasp.
+/// The exemption is DIFFERENT on purpose and it is the degenerate one — a bearing off a zero-length vector is
+/// not a bearing — where `inFront`'s is the metre of `POINT_BLANK`. Three files had this written out by hand.
+pub fn inArc(pos: rl.Vector3, facing: f32, at: rl.Vector3, reach: f32, arcDeg: f32) bool {
+    if (mathx.distXZ(pos, at) > reach) return false;
+    const to = mathx.dirXZ(pos, at);
+    if (mathx.lenXZ(to) < 1e-4) return true;
+    return combat.withinArc(mathx.headingXZ(to), facing, arcDeg);
 }
 
 pub fn faceToward(pos: rl.Vector3, facing: *f32, target: rl.Vector3, rate: f32, dt: f32) void {
@@ -498,10 +536,7 @@ pub const Parry = struct {
 
     pub fn catches(self: *const Parry, at: rl.Vector3, reach: f32) bool {
         if (!self.live) return false;
-        if (mathx.distXZ(self.at, at) > reach) return false;
-        const to = mathx.dirXZ(self.at, at);
-        if (mathx.lenXZ(to) < 1e-4) return true;
-        return combat.withinArc(mathx.headingXZ(to), self.facing, self.arc);
+        return inArc(self.at, self.facing, at, reach, self.arc);
     }
 };
 

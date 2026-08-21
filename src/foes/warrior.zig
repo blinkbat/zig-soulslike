@@ -107,6 +107,13 @@ fn swingTilt(windAtt: f32, endAtt: f32, k: f32, armSh: f32) f32 {
     return lerpF(windAtt, endAtt, k) - armSh;
 }
 
+/// The same trick with the ELBOW PAID FOR TOO. `swingTilt` reads the shoulder alone, which is honest while a
+/// wind keeps the elbow near straight (the mace's is -22) — the horizontal's is not, and it MEASURED 0.8 m of
+/// blade height for 18 deg of fold. MEASURED relation: attitude = tilt + shoulder - elbow.
+fn levelTilt(windAtt: f32, endAtt: f32, k: f32, armSh: f32, armEl: f32) f32 {
+    return lerpF(windAtt, endAtt, k) - armSh + armEl;
+}
+
 const MACE_HEAD = 0.30 * H;
 const MACE_CAP = 0.062 * H;
 const GS_GUARD = 0.115 * H;
@@ -123,6 +130,10 @@ const KIT_R = [SPEC.len]f32{ MACE_FLANGE, GS_HALF_W };
 pub const Role = enum { shieldman, greatsword };
 
 comptime {
+    // …and a SPEC ROW PER ROLE, which `kobold.zig` and `brood.zig` both pin and this did not: `roleOf`
+    // measures the run with `SPEC.len`, so a role added without a row returns null for its own kind (the
+    // creature never spawns) and `spec()` walks off the end.
+    if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("warrior: a Role with no spec row");
     // A CONTIGUOUS RUN off `shieldman`, in role order — `roleOf`/`kindOf` are an ordinal shift.
     for (@typeInfo(Role).@"enum".fields, 0..) |f, i| {
         const fk: wf.FoeKind = @enumFromInt(@intFromEnum(wf.FoeKind.shieldman) + i);
@@ -143,7 +154,13 @@ pub fn kindOf(r: Role) wf.FoeKind {
     return @enumFromInt(@intFromEnum(wf.FoeKind.shieldman) + @intFromEnum(r));
 }
 
+/// WHICH ANIMATION A ROW WEARS, and nothing else — `hyper`/`lunge`/`crash` still carry the MECHANICS.
+/// The pose functions used to sniff those columns for identity, which left a third greatsword stroke with
+/// no way to be anything but a slam.
+const Style = enum { mace, slam, lunge, sweep };
+
 const Attack = struct {
+    style: Style,
     /// The AI's TRIGGER RANGE only, pre-scale and measured off the posed kit. What the blow hits is the
     /// swept weapon (`tryReach`), so this cannot grow a hurt box the swing never enters — it shipped that
     /// way once, a mace head that never left 0.6 m of his own axis firing a 2.8 m sector.
@@ -164,6 +181,7 @@ const Attack = struct {
 };
 
 const MACE = Attack{
+    .style = .mace,
     .reachOut = 1.23, // MEASURED off the posed head: its own furthest, out in front of him at the blow
     .windDur = 0.64,
     .swingDur = 0.30,
@@ -176,6 +194,7 @@ const MACE = Attack{
 
 
 const SLAM = Attack{
+    .style = .slam,
     .reachOut = 2.18, // MEASURED: near three metres of reach, cocked high and driven down through
     .windDur = 1.34,
     .swingDur = 0.30,
@@ -188,6 +207,7 @@ const SLAM = Attack{
 };
 
 const LUNGE = Attack{
+    .style = .lunge,
     .reachOut = 1.98, // MEASURED: the point driven straight out — shorter than the slam's whole arc
     // Was 0.34, which is a two-metre thrust arriving barely over the tell floor. It stays UNDER 0.4 of the
     // slam's haul, because "the lunge is the quick one" is the pair's whole shape (and a test says so).
@@ -203,8 +223,25 @@ const LUNGE = Attack{
     .hop = 0.40,
 };
 
+/// THE STRAFE TAX. The slam is a vertical and the lunge is a straight line: one sidestep answered the whole
+/// kit, so this is the stroke that owns the ground BESIDE him. `reachOut` is MEASURED off the pose like every
+/// other row, and the arc it sweeps is measured too (`swung`).
+const SWEEP = Attack{
+    .style = .sweep,
+    // MEASURED: the tip gets 2.79 m out at full stretch. Held a hair UNDER the slam's 2.18 on purpose —
+    // `pick` answers at the longest reach in range, and the slam stays the greatsword's first word.
+    .reachOut = 2.15,
+    .windDur = 0.98,
+    .swingDur = 0.34,
+    .impactK = 0.30,
+    .recoverDur = 1.45,
+    .cd = 4.20,
+    .hit = .{ .dmg = 24, .poise = 34, .stance = 10 },
+    .step = SWEEP_STEP,
+};
+
 const MOVES_SHIELDMAN = [_]Attack{MACE};
-const MOVES_GREATSWORD = [_]Attack{ SLAM, LUNGE };
+const MOVES_GREATSWORD = [_]Attack{ SLAM, LUNGE, SWEEP };
 
 /// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT — the game's own number (`foe.PARRY_LEAD`), the SAME
 /// one for all three moves: what you read is the BLOW, not the animation in front of it. In SECONDS BEFORE
@@ -327,6 +364,30 @@ const GS_END_ATT = 38.0;
 const GS_WIND_ATT = GS_WIND_SH + GS_WIND_TILT + 360.0;
 const MACE_END_TILT = MACE_END_ATT - (MACE_HIT_SH + MACE_OVER_SH);
 const GS_END_TILT = GS_END_ATT - GS_HIT_SH;
+
+// THE HORIZONTAL. The blade is held LEVEL the whole way through — the attitude barely moves (96 deg to 88,
+// where 90 is level) and what travels is the SHOULDER'S YAW, `armSweep`, from behind his off hip to past his
+// sword side. That is why it is the one stroke a sidestep does not answer, and why it never touches the turf.
+const SWEEP_WIND_SH = 68.0;
+const SWEEP_WIND_EL = -66.0;
+const SWEEP_WIND_ABD = 28.0;
+const SWEEP_WIND_TWIST = -54.0;
+const SWEEP_WIND_LEAN = -7.0;
+const SWEEP_WIND_SWEEP = -128.0;
+const SWEEP_WIND_ATT = 78.0;
+const SWEEP_HIT_SH = 82.0;
+const SWEEP_HIT_EL = -58.0; // THE ARM STAYS LONG — a folded elbow keeps the tip inside his own silhouette
+const SWEEP_HIT_ABD = 4.0;
+const SWEEP_HIT_TWIST = 48.0;
+const SWEEP_HIT_LEAN = 15.0;
+const SWEEP_HIT_SWEEP = 84.0;
+const SWEEP_END_ATT = 74.0;
+const SWEEP_STEP = 0.52; // metres the stroke carries him forward, pre-scale
+/// The two ends of the horizontal's tilt, SOLVED rather than typed: `levelTilt`'s own arithmetic
+/// (attitude - shoulder + elbow) at each end of the stroke. The wind and the recover both need an endpoint and
+/// both had it written out by hand, which is two places to retune a level blade and get one of them.
+const SWEEP_WIND_TILT = SWEEP_WIND_ATT - SWEEP_WIND_SH + SWEEP_WIND_EL;
+const SWEEP_END_TILT = SWEEP_END_ATT - SWEEP_HIT_SH + SWEEP_HIT_EL;
 
 const LUNGE_WIND_SH = -50.0;
 const LUNGE_WIND_EL = -72.0;
@@ -694,7 +755,11 @@ pub const Warrior = struct {
                 self.faceToward(hero, dt * 0.5);
                 const dur = self.windDur();
                 self.setWind(mathx.smoothstep(0, dur * 0.88, self.t));
-                const load: f32 = if (a.hyper) GATHER_HEAVY else if (a.lunge > 0) GATHER_LEAP else GATHER_PLAIN;
+                const load: f32 = switch (a.style) {
+                    .slam, .sweep => GATHER_HEAVY,
+                    .lunge => GATHER_LEAP,
+                    .mace => GATHER_PLAIN,
+                };
                 if (self.stroke == 0) self.emitGather(dt, mathx.clampF(self.t / dur, 0, 1) * load);
                 if (self.t >= dur) self.enter(.swing);
             },
@@ -849,12 +914,15 @@ pub const Warrior = struct {
         switch (s) {
             .wind => {
                 if (self.stroke > 0) return;
-                const a = self.move();
-                if (a.lunge > 0) {
-                    sfx.world(.skel_lunge, self.pos);
-                    self.dustBurst(self.pos, 26, 3.4, 0.34);
-                    self.grit(self.pos, 10);
-                } else sfx.world(if (a.hyper) .swing_heavy else .swing_light, self.pos);
+                switch (self.move().style) {
+                    .lunge => {
+                        sfx.world(.skel_lunge, self.pos);
+                        self.dustBurst(self.pos, 26, 3.4, 0.34);
+                        self.grit(self.pos, 10);
+                    },
+                    .slam, .sweep => sfx.world(.swing_heavy, self.pos),
+                    .mace => sfx.world(.swing_light, self.pos),
+                }
             },
             .swing => {
                 if (self.role == .shieldman) sfx.world(.swing_light, self.pos);
@@ -931,7 +999,7 @@ pub const Warrior = struct {
     /// HOW FAR OUT THE KIT ACTUALLY ARRIVES at the impact frame, hero footprint included — the parry window's
     /// reach, and the MOVE's own rather than one number per warrior: a mace lands at 1.23 m, the slam at 2.18.
     fn parryReach(self: *const Warrior, a: Attack) f32 {
-        return a.reachOut * self.scale + foe.HERO_REACH;
+        return foe.hurtReach(a.reachOut, self.scale);
     }
 
     fn toImpact(self: *const Warrior) ?f32 {
@@ -973,7 +1041,7 @@ pub const Warrior = struct {
     /// to one blow per stroke — never a yaw-guessed sector.
     fn tryReach(self: *Warrior, hero: rl.Vector3) void {
         if (self.dealt) return;
-        const r = KIT_R[@intFromEnum(self.role)] * self.scale + foe.HERO_REACH;
+        const r = foe.hurtReach(KIT_R[@intFromEnum(self.role)], self.scale);
         if (!foe.weaponReaches(self.wpnWas, self.wpnHere(), hero, r)) return;
         self.heroHit = self.move().hit;
         self.dealt = true;
@@ -1149,10 +1217,12 @@ pub const Warrior = struct {
 
     fn setWind(self: *Warrior, k: f32) void {
         const kArm = k * @sqrt(k);
-        const a = self.move();
-        if (a.hyper) return self.setSlamWind(k, kArm);
-        if (a.lunge > 0) return self.setLungeWind(k, kArm);
-        self.setMaceWind(k, kArm);
+        switch (self.move().style) {
+            .slam => self.setSlamWind(k, kArm),
+            .lunge => self.setLungeWind(k, kArm),
+            .sweep => self.setSweepWind(k, kArm),
+            .mace => self.setMaceWind(k, kArm),
+        }
     }
 
     fn setMaceWind(self: *Warrior, k: f32, kArm: f32) void {
@@ -1195,6 +1265,22 @@ pub const Warrior = struct {
         self.legBrace = lerpF(0, 0.62, k);
     }
 
+    fn setSweepWind(self: *Warrior, k: f32, kArm: f32) void {
+        const shiver = mathx.sinf(self.t * 32.0) * 1.4 * mathx.smoothstep(0.78, 1.0, k);
+        self.armSh = lerpF(GS_CARRY_SH, SWEEP_WIND_SH, kArm) + shiver;
+        self.armEl = lerpF(CARRY_EL - 10.0, SWEEP_WIND_EL, kArm);
+        self.armAbd = lerpF(GS_CARRY_ABD, SWEEP_WIND_ABD, kArm);
+        self.armSweep = lerpF(0, SWEEP_WIND_SWEEP, kArm);
+        self.wpnTilt = lerpF(GS_CARRY_TILT, SWEEP_WIND_TILT, kArm) + shiver * 0.7;
+        self.offSh = lerpF(GS_CARRY_SH - 16.0, SWEEP_WIND_SH - 12.0, kArm);
+        self.offEl = lerpF(-58.0, -70.0, kArm);
+        self.offAbd = lerpF(-34.0, -20.0, kArm);
+        self.bodyLean = lerpF(5.0, SWEEP_WIND_LEAN, k);
+        self.twist = lerpF(-8.0, SWEEP_WIND_TWIST, k);
+        self.headPitch = lerpF(2.0, -4.0, k);
+        self.legBrace = lerpF(0, 0.58, k);
+    }
+
     fn setLungeWind(self: *Warrior, k: f32, kArm: f32) void {
         self.armSh = lerpF(GS_CARRY_SH, LUNGE_WIND_SH, kArm);
         self.armEl = lerpF(CARRY_EL - 10.0, LUNGE_WIND_EL, kArm);
@@ -1212,10 +1298,12 @@ pub const Warrior = struct {
 
     fn setSwing(self: *Warrior, k: f32) void {
         const kW = 1.0 - (1.0 - k) * (1.0 - k) * (1.0 - k);
-        const a = self.move();
-        if (a.hyper) return self.setSlamSwing(kW, k);
-        if (a.lunge > 0) return self.setLungeSwing(kW, k);
-        self.setMaceSwing(kW, k);
+        switch (self.move().style) {
+            .slam => self.setSlamSwing(kW, k),
+            .lunge => self.setLungeSwing(kW, k),
+            .sweep => self.setSweepSwing(kW, k),
+            .mace => self.setMaceSwing(kW, k),
+        }
     }
 
     fn setMaceSwing(self: *Warrior, kW: f32, k: f32) void {
@@ -1249,6 +1337,21 @@ pub const Warrior = struct {
         self.legBrace = lerpF(0.62, 0.9, k);
     }
 
+    fn setSweepSwing(self: *Warrior, kW: f32, k: f32) void {
+        self.armSh = lerpF(SWEEP_WIND_SH, SWEEP_HIT_SH, kW);
+        self.armEl = lerpF(SWEEP_WIND_EL, SWEEP_HIT_EL, kW);
+        self.armAbd = lerpF(SWEEP_WIND_ABD, SWEEP_HIT_ABD, kW);
+        self.armSweep = lerpF(SWEEP_WIND_SWEEP, SWEEP_HIT_SWEEP, kW);
+        self.wpnTilt = levelTilt(SWEEP_WIND_ATT, SWEEP_END_ATT, k, self.armSh, self.armEl);
+        self.offSh = lerpF(SWEEP_WIND_SH - 12.0, SWEEP_HIT_SH - 22.0, kW);
+        self.offEl = lerpF(-70.0, -34.0, kW);
+        self.offAbd = lerpF(-20.0, -40.0, kW);
+        self.bodyLean = lerpF(SWEEP_WIND_LEAN, SWEEP_HIT_LEAN, k);
+        self.twist = lerpF(SWEEP_WIND_TWIST, SWEEP_HIT_TWIST, kW);
+        self.headPitch = lerpF(-4.0, 10.0, kW);
+        self.legBrace = lerpF(0.58, 0.72, k);
+    }
+
     fn setLungeSwing(self: *Warrior, kW: f32, k: f32) void {
         const back = self.stroke > 0;
         const sweepTo: f32 = if (back) -46.0 else LUNGE_HIT_SWEEP;
@@ -1270,50 +1373,67 @@ pub const Warrior = struct {
     fn setRecover(self: *Warrior, u: f32) void {
         const over = 1.0 - mathx.smoothstep(0.30, 1.0, u);
         const heave = mathx.sinf(self.elapsed * 8.0) * 2.4 * over;
-        const a = self.move();
-        if (a.hyper) {
-            self.armSh = lerpF(GS_CARRY_SH, GS_HIT_SH, over) + heave * 0.5;
-            self.armEl = lerpF(CARRY_EL - 10.0, GS_HIT_EL, over);
-            self.armAbd = lerpF(GS_CARRY_ABD, GS_HIT_ABD, over);
-            self.armSweep = lerpF(0, GS_HIT_SWEEP, over);
-            self.wpnTilt = lerpF(GS_CARRY_TILT, GS_END_TILT, over);
-            self.offSh = lerpF(GS_CARRY_SH - 16.0, GS_HIT_SH - 18.0, over);
-            self.offEl = lerpF(-58.0, -30.0, over);
-            self.offAbd = lerpF(-34.0, -44.0, over);
-            self.bodyLean = lerpF(5.0, GS_HIT_LEAN + 6.0, over) + heave;
-            self.twist = lerpF(-8.0, GS_HIT_TWIST, over);
-            self.headPitch = lerpF(2.0, 30.0, over);
-            self.legBrace = lerpF(0, 0.85, over);
-            return;
+        // EXHAUSTIVE, like `setWind` and `setSwing`: written as an if-chain falling through to the mace, a
+        // fifth style silently wore the club's recovery instead of failing to compile.
+        switch (self.move().style) {
+            .sweep => {
+                self.armSh = lerpF(GS_CARRY_SH, SWEEP_HIT_SH, over) + heave * 0.5;
+                self.armEl = lerpF(CARRY_EL - 10.0, SWEEP_HIT_EL, over);
+                self.armAbd = lerpF(GS_CARRY_ABD, SWEEP_HIT_ABD, over);
+                self.armSweep = lerpF(0, SWEEP_HIT_SWEEP, over);
+                self.wpnTilt = lerpF(GS_CARRY_TILT, SWEEP_END_TILT, over);
+                self.offSh = lerpF(GS_CARRY_SH - 16.0, SWEEP_HIT_SH - 22.0, over);
+                self.offEl = lerpF(-58.0, -34.0, over);
+                self.offAbd = lerpF(-34.0, -40.0, over);
+                self.bodyLean = lerpF(5.0, SWEEP_HIT_LEAN + 5.0, over) + heave;
+                self.twist = lerpF(-8.0, SWEEP_HIT_TWIST, over);
+                self.headPitch = lerpF(2.0, 16.0, over);
+                self.legBrace = lerpF(0, 0.70, over);
+            },
+            .slam => {
+                self.armSh = lerpF(GS_CARRY_SH, GS_HIT_SH, over) + heave * 0.5;
+                self.armEl = lerpF(CARRY_EL - 10.0, GS_HIT_EL, over);
+                self.armAbd = lerpF(GS_CARRY_ABD, GS_HIT_ABD, over);
+                self.armSweep = lerpF(0, GS_HIT_SWEEP, over);
+                self.wpnTilt = lerpF(GS_CARRY_TILT, GS_END_TILT, over);
+                self.offSh = lerpF(GS_CARRY_SH - 16.0, GS_HIT_SH - 18.0, over);
+                self.offEl = lerpF(-58.0, -30.0, over);
+                self.offAbd = lerpF(-34.0, -44.0, over);
+                self.bodyLean = lerpF(5.0, GS_HIT_LEAN + 6.0, over) + heave;
+                self.twist = lerpF(-8.0, GS_HIT_TWIST, over);
+                self.headPitch = lerpF(2.0, 30.0, over);
+                self.legBrace = lerpF(0, 0.85, over);
+            },
+            .lunge => {
+                self.armSh = lerpF(GS_CARRY_SH, -30.0, over);
+                self.armEl = lerpF(CARRY_EL - 10.0, -26.0, over);
+                self.armAbd = lerpF(GS_CARRY_ABD, -8.0, over);
+                self.armSweep = lerpF(0, -40.0, over);
+                self.wpnTilt = lerpF(GS_CARRY_TILT, 92.0, over);
+                self.offSh = lerpF(GS_CARRY_SH - 16.0, -40.0, over);
+                self.offEl = lerpF(-58.0, -24.0, over);
+                self.offAbd = lerpF(-34.0, -28.0, over);
+                self.bodyLean = lerpF(5.0, LUNGE_HIT_LEAN + 4.0, over) + heave * 0.6;
+                self.twist = lerpF(-8.0, -18.0, over);
+                self.headPitch = lerpF(2.0, 18.0, over);
+                self.legBrace = lerpF(0, 0.55, over);
+            },
+            .mace => {
+                const rest: f32 = if (self.shieldGone) CARRY_SH - 8.0 else CARRY_SH;
+                self.armSh = lerpF(CARRY_SH, MACE_HIT_SH + 6.0, over);
+                self.armEl = lerpF(CARRY_EL, MACE_HIT_EL, over);
+                self.armAbd = lerpF(CARRY_ABD, MACE_HIT_ABD, over);
+                self.armSweep = lerpF(0, MACE_HIT_SWEEP + 8.0, over);
+                self.wpnTilt = lerpF(MACE_CARRY_TILT, MACE_END_TILT, over);
+                self.offSh = lerpF(rest, -16.0, over);
+                self.offEl = lerpF(CARRY_EL, -36.0, over);
+                self.offAbd = lerpF(-CARRY_ABD, -34.0, over);
+                self.bodyLean = lerpF(4.0, MACE_HIT_LEAN, over) + heave * 0.5;
+                self.twist = lerpF(0, MACE_HIT_TWIST, over);
+                self.headPitch = lerpF(2.0, 22.0, over);
+                self.legBrace = lerpF(0, 0.55, over);
+            },
         }
-        if (a.lunge > 0) {
-            self.armSh = lerpF(GS_CARRY_SH, -30.0, over);
-            self.armEl = lerpF(CARRY_EL - 10.0, -26.0, over);
-            self.armAbd = lerpF(GS_CARRY_ABD, -8.0, over);
-            self.armSweep = lerpF(0, -40.0, over);
-            self.wpnTilt = lerpF(GS_CARRY_TILT, 92.0, over);
-            self.offSh = lerpF(GS_CARRY_SH - 16.0, -40.0, over);
-            self.offEl = lerpF(-58.0, -24.0, over);
-            self.offAbd = lerpF(-34.0, -28.0, over);
-            self.bodyLean = lerpF(5.0, LUNGE_HIT_LEAN + 4.0, over) + heave * 0.6;
-            self.twist = lerpF(-8.0, -18.0, over);
-            self.headPitch = lerpF(2.0, 18.0, over);
-            self.legBrace = lerpF(0, 0.55, over);
-            return;
-        }
-        const rest: f32 = if (self.shieldGone) CARRY_SH - 8.0 else CARRY_SH;
-        self.armSh = lerpF(CARRY_SH, MACE_HIT_SH + 6.0, over);
-        self.armEl = lerpF(CARRY_EL, MACE_HIT_EL, over);
-        self.armAbd = lerpF(CARRY_ABD, MACE_HIT_ABD, over);
-        self.armSweep = lerpF(0, MACE_HIT_SWEEP + 8.0, over);
-        self.wpnTilt = lerpF(MACE_CARRY_TILT, MACE_END_TILT, over);
-        self.offSh = lerpF(rest, -16.0, over);
-        self.offEl = lerpF(CARRY_EL, -36.0, over);
-        self.offAbd = lerpF(-CARRY_ABD, -34.0, over);
-        self.bodyLean = lerpF(4.0, MACE_HIT_LEAN, over) + heave * 0.5;
-        self.twist = lerpF(0, MACE_HIT_TWIST, over);
-        self.headPitch = lerpF(2.0, 22.0, over);
-        self.legBrace = lerpF(0, 0.55, over);
     }
 
     fn stunAmount(self: *const Warrior) f32 {
@@ -2000,27 +2120,77 @@ test "THE LUNGE IS THE QUICK ONE, and it is the one you can stop" {
 }
 
 test "the greatsword answers at his own reach with the slam, and LEAPS the gap with the lunge" {
-    const both = [_]bool{ true, true };
+    const all = [_]bool{ true, true, true };
     try std.testing.expect(triggerR(SLAM, 1.0) < 3.2 and triggerR(LUNGE, 1.0) > 3.2);
-    try std.testing.expectEqual(@as(usize, 1), pick(.greatsword, 3.2, 1.0, &both).?);
-    try std.testing.expect(pick(.greatsword, triggerR(LUNGE, 1.0) + 0.5, 1.0, &both) == null);
-    try std.testing.expectEqual(@as(usize, 0), pick(.greatsword, 1.2, 1.0, &both).?);
-    const slamSpent = [_]bool{ false, true };
-    try std.testing.expectEqual(@as(usize, 1), pick(.greatsword, 1.2, 1.0, &slamSpent).?);
-    const none = [_]bool{ false, false };
+    try std.testing.expect(triggerR(SWEEP, 1.0) < 3.2);
+    try std.testing.expectEqual(@as(usize, 1), pick(.greatsword, 3.2, 1.0, &all).?);
+    try std.testing.expect(pick(.greatsword, triggerR(LUNGE, 1.0) + 0.5, 1.0, &all) == null);
+    try std.testing.expectEqual(@as(usize, 0), pick(.greatsword, 1.2, 1.0, &all).?);
+    // WITH THE SLAM COOLING, THE HORIZONTAL IS THE CLOSE ANSWER and the lunge stays what it is — the
+    // stroke that covers ground. Only when both of those are spent does he throw the leap at his own feet.
+    const slamSpent = [_]bool{ false, true, true };
+    try std.testing.expectEqual(@as(usize, 2), pick(.greatsword, 1.2, 1.0, &slamSpent).?);
+    const swordOnly = [_]bool{ false, true, false };
+    try std.testing.expectEqual(@as(usize, 1), pick(.greatsword, 1.2, 1.0, &swordOnly).?);
+    const none = [_]bool{ false, false, false };
     try std.testing.expect(pick(.greatsword, 1.2, 1.0, &none) == null);
+}
+
+/// THE SECTOR A STROKE ACTUALLY COVERS, in degrees off his facing, measured by standing a hero on a ring at
+/// `r` and asking every 5 deg whether the swept kit reaches him. The tip's own bearing is NOT this number —
+/// a vertical's tip passes over his skull, where a 2 cm radius spins the bearing through 159 deg of nothing.
+fn covered(mv: usize, r: f32) struct { lo: f32, hi: f32, deg: f32 } {
+    var lo: f32 = 999;
+    var hi: f32 = -999;
+    var b: f32 = -100;
+    while (b <= 100) : (b += 5) {
+        const rad = mathx.radians(b);
+        if (!swungAt(.greatsword, mv, 0, v3(mathx.sinf(rad) * r, 0, mathx.cosf(rad) * r)).hit) continue;
+        lo = @min(lo, b);
+        hi = @max(hi, b);
+    }
+    return .{ .lo = lo, .hi = hi, .deg = hi - lo };
+}
+
+test "THE SWEEP IS THE STRAFE TAX: a wide LEVEL sector where the slam and the lunge are both a line" {
+    const sw = swung(.greatsword, 2, 0, 2.0);
+    const slam = swung(.greatsword, 0, 0, 2.0);
+    // MEASURED: 2.79 m of tip, held level between 1.28 m and 2.01 m — never the turf, never over his skull.
+    try std.testing.expect(sw.maxD > 2.7 and sw.lowY > 0.9 and sw.apex < slam.apex);
+    try std.testing.expect(sw.apex - sw.lowY < 1.0);
+    // THE TELL IS LATERAL, which is the one thing this stroke may have instead of a raised weapon: at the top
+    // of the wind the blade is out past a metre and a half on his sword side, and level. MEASURED 1.92 m.
+    try std.testing.expect(sw.windLat > 1.4);
+    try std.testing.expect(@abs(sw.windY - sw.lowY) < 0.9);
+    // AND THE SECTOR IS THE POINT. MEASURED 95 deg at 1.4 m and 85 at 2.0 — where the vertical's own sector
+    // COLLAPSES with distance (65 -> 45), because a line only ever covers the line.
+    const near = covered(2, 1.4);
+    const far = covered(2, 2.0);
+    std.debug.print("\n  sweep: tip {d:.2} m out, {d:.2}..{d:.2} m up, cocked {d:.2} m aside; covers {d:.0} deg at 1.4 m, {d:.0} at 2.0 (slam {d:.0}/{d:.0})\n", .{
+        sw.maxD, sw.lowY, sw.apex, sw.windLat, near.deg, far.deg, covered(0, 1.4).deg, covered(0, 2.0).deg,
+    });
+    try std.testing.expect(near.deg >= 90 and far.deg >= 80);
+    try std.testing.expect(far.deg > covered(0, 2.0).deg * 1.7);
+    try std.testing.expect(far.deg > covered(1, 2.0).deg * 1.7);
+    // …and it is CENTRED on him rather than trailing off one shoulder, so the tax is the same either way
+    // the hero steps.
+    try std.testing.expect(@abs(far.lo + far.hi) < 20.0);
+    // A hero stood the width of a roll off the line the slam comes down is inside this stroke, not that one.
+    const off = v3(1.28, 0, 1.28);
+    try std.testing.expect(swungAt(.greatsword, 2, 0, off).hit);
+    try std.testing.expect(!swungAt(.greatsword, 0, 0, off).hit);
 }
 
 test "range decides the action, and only the shieldman circles" {
     const s: f32 = 1.0;
-    const ready = [_]bool{ true, true };
-    const spent = [_]bool{ false, false };
+    const ready = [_]bool{ true, true, true };
+    const spent = [_]bool{ false, false, false };
     try std.testing.expectEqual(Choice.hold, classify(.shieldman, AGGRO_R + 1, s, ready[0..1]));
     try std.testing.expectEqual(Choice.approach, classify(.shieldman, 8.0, s, ready[0..1]));
     try std.testing.expectEqual(Choice.strike, classify(.shieldman, 1.0, s, ready[0..1]));
     try std.testing.expectEqual(Choice.circle, classify(.shieldman, 1.0, s, spent[0..1]));
-    try std.testing.expectEqual(Choice.wait, classify(.greatsword, 1.0, s, spent[0..2]));
-    try std.testing.expectEqual(Choice.strike, classify(.greatsword, 3.0, s, ready[0..2]));
+    try std.testing.expectEqual(Choice.wait, classify(.greatsword, 1.0, s, spent[0..3]));
+    try std.testing.expectEqual(Choice.strike, classify(.greatsword, 3.0, s, ready[0..3]));
     try std.testing.expectEqual(Choice.approach, classify(.shieldman, 3.0, s, ready[0..1]));
 }
 
@@ -2242,14 +2412,32 @@ test "a shieldman with his boards down takes a blow like anything else" {
 
 /// Drive one whole stroke on the real clock and hand back what it did: whether it reached a hero
 /// standing `at` metres dead ahead, the weapon tip's furthest reach, the height it got to at the top of
-/// the tell, and the lowest the tip ever went. EVERY hurt-shape test below is measured through here,
-/// which is the ogre's law (`clubLowWorld`): re-tune a swing and these numbers move, on purpose.
-const Swung = struct { hit: bool, maxD: f32, apex: f32, lowY: f32 };
+/// the tell, the lowest the tip ever went, and the SECTOR its tip swept (degrees off his own facing,
+/// least to most). EVERY hurt-shape test below is measured through here, which is the ogre's law
+/// (`clubLowWorld`): re-tune a swing and these numbers move, on purpose.
+const Swung = struct {
+    hit: bool,
+    maxD: f32,
+    apex: f32,
+    lowY: f32,
+    bearLo: f32 = 0,
+    bearHi: f32 = 0,
+    /// Where the tip is sitting at the END of the tell, in his own frame: how far OUT TO THE SIDE, and how
+    /// far up. A raised weapon is not the only readable tell — a horizontal's is entirely lateral.
+    windLat: f32 = 0,
+    windY: f32 = 0,
+
+    fn arc(self: Swung) f32 {
+        return self.bearHi - self.bearLo;
+    }
+};
 fn swung(role: Role, mv: usize, stroke: u8, at: f32) Swung {
+    return swungAt(role, mv, stroke, v3(0, 0, at));
+}
+fn swungAt(role: Role, mv: usize, stroke: u8, hero: rl.Vector3) Swung {
     var w = Warrior.spawnAs(role, mathx.zero3, 0, 1.0, 0.3);
     w.atk = mv;
     const a = w.move();
-    const hero = v3(0, 0, at);
     var apex: f32 = 0;
     w.state = .wind;
     var t: f32 = 0;
@@ -2259,9 +2447,19 @@ fn swung(role: Role, mv: usize, stroke: u8, at: f32) Swung {
         w.pose();
         apex = @max(apex, w.weaponSeg()[1].y);
     }
+    const cocked = w.weaponSeg()[1];
     w.enter(.swing);
     w.stroke = stroke;
-    var out = Swung{ .hit = false, .maxD = 0, .apex = apex, .lowY = 99 };
+    var out = Swung{
+        .hit = false,
+        .maxD = 0,
+        .apex = apex,
+        .lowY = 99,
+        .bearLo = 999,
+        .bearHi = -999,
+        .windLat = cocked.x,
+        .windY = cocked.y,
+    };
     t = 0;
     while (t < a.swingDur) : (t += 1.0 / 60.0) {
         w.t = t;
@@ -2270,6 +2468,9 @@ fn swung(role: Role, mv: usize, stroke: u8, at: f32) Swung {
         const tip = w.weaponSeg()[1];
         out.maxD = @max(out.maxD, mathx.distXZ(w.pos, tip));
         out.lowY = @min(out.lowY, tip.y);
+        const bear = mathx.degrees(mathx.headingXZ(mathx.dirXZ(w.pos, tip)));
+        out.bearLo = @min(out.bearLo, bear);
+        out.bearHi = @max(out.bearHi, bear);
         if (t < a.swingDur * a.impactK) continue;
         w.tryReach(hero);
         if (w.heroHit != null) out.hit = true;
@@ -2284,6 +2485,7 @@ test "THE HURT SHAPE IS THE POSED WEAPON: every stroke reaches what its own kit 
         .{ .r = .shieldman, .mv = 0 },
         .{ .r = .greatsword, .mv = 0 },
         .{ .r = .greatsword, .mv = 1 },
+        .{ .r = .greatsword, .mv = 2 },
     }) |c| {
         var w = Warrior.spawnAs(c.r, mathx.zero3, 0, 1.0, 0.3);
         w.atk = c.mv;
@@ -2319,6 +2521,8 @@ test "NO STROKE PLOUGHS THE TURF BESIDE HIM, and the slam's point really does re
     // 0.44 m beneath it, next to his own boot, which is why `swingTilt` drives the attitude instead.
     try std.testing.expect(swung(.shieldman, 0, 0, 1.2).lowY > 0.35);
     try std.testing.expect(swung(.greatsword, 1, 0, 2.0).lowY > 0.35);
+    // The horizontal is held LEVEL, so its floor is the highest of the three and its ceiling is low.
+    try std.testing.expect(swung(.greatsword, 2, 0, 2.0).lowY > 0.60);
     var g = Warrior.spawnAs(.greatsword, mathx.zero3, 0, 1.0, 0.3);
     g.debugSwing(0);
     var t: f32 = 0;

@@ -86,8 +86,29 @@ const SLAM_UP: f32 = 1.30;
 pub const SLAM_R: f32 = 2.05;
 pub const SLAM_HIT = combat.Hit{ .dmg = 38, .poise = 44, .stance = 26 };
 
-/// They do NOT overlap: inside `SMASH_R` it smashes, the slam owns the band beyond. Two moves answering one
-/// distance is one move with a coin flip.
+// **AND THE ANSWER TO WALKING AWAY.** Past the slam's 7.2 m this creature had nothing at all: at 1.05 m/s
+// against a hero who runs at 3.4 the whole band out to its own aggro ring was free, and "wait, then leave"
+// beat it without a swing. A SAC OF SPORES, LOBBED — it does not make the golem faster, it makes standing
+// still cost something. What lands is the SPORELING'S OWN CLOUD (`shroom.Cloud`, one pool and one poison
+// meter), so this is area denial and never a second way to be flattened.
+/// **THE LONGEST TELL IN THE GAME** — a second and a half of the cap splitting and the sac swelling, because
+/// what it answers is a player with all the room in the world to read it.
+pub const SAC_WIND: f32 = 1.55;
+const SAC_THROW: f32 = 0.24;
+const SAC_RECOVER: f32 = 1.30;
+const SAC_CD: f32 = 8.0;
+/// Off the far end of the slam's band, so the three moves still answer three distances and never one.
+const SAC_MIN: f32 = 7.60;
+const SAC_MAX: f32 = 13.0;
+pub const SAC_SPEED: f32 = 12.0;
+/// Small: the cloud is the weapon and a sac to the chest is the tax on standing where it aimed.
+pub const SAC_HIT = combat.Hit{ .dmg = 10, .poise = 14 };
+/// Where it leaves the cap, as a share of stature — over the brim, so the arc starts above its own head.
+const SAC_FROM_Y: f32 = 0.86;
+
+/// **THREE BANDS, AND THEY DO NOT OVERLAP**: inside `SMASH_R` it smashes, the slam owns the band beyond, and
+/// the sac owns everything past the slam's reach out to its own aggro ring. Two moves answering one distance
+/// is one move with a coin flip.
 const SMASH_AT: f32 = 3.10;
 const SLAM_MIN: f32 = 3.40;
 const SLAM_MAX: f32 = 7.20;
@@ -104,6 +125,11 @@ comptime {
     std.debug.assert(SLAM_REACH < SLAM_MAX);
     std.debug.assert(SMASH_HIT.dmg > SLAM_HIT.dmg);
     std.debug.assert(SLAM_HIT.poise > SMASH_HIT.poise);
+    // The lob answers its OWN band, past where the slam can reach, and it tells the longest tale of the three.
+    std.debug.assert(SLAM_MAX < SAC_MIN);
+    std.debug.assert(SAC_MIN < SAC_MAX and SAC_MAX <= AGGRO_R);
+    std.debug.assert(SAC_WIND > SMASH_WIND);
+    std.debug.assert(SAC_HIT.dmg < SLAM_HIT.dmg and SAC_HIT.stance == 0);
 }
 
 // Six bones, the sporeling's layout with an arm each side. NO NECK — the cap sits ON the body, which is what
@@ -140,7 +166,7 @@ fn restPose() [N]rl.Vector3 {
     return r;
 }
 
-const State = enum { idle, walk, smash_wind, smash_fall, smash_rec, slam_wind, slam_air, slam_rec, stunlight, stunheavy, dead };
+const State = enum { idle, walk, smash_wind, smash_fall, smash_rec, slam_wind, slam_air, slam_rec, sac_wind, sac_throw, sac_rec, stunlight, stunheavy, dead };
 
 pub const Golem = struct {
     pos: rl.Vector3 = mathx.zero3,
@@ -167,6 +193,9 @@ pub const Golem = struct {
     shove: rl.Vector3 = mathx.zero3,
     smashCd: f32 = 0,
     slamCd: f32 = 0,
+    sacCd: f32 = 0,
+    /// One-frame, like `burst`: where the sac left the cap, read by the loop the frame it appears.
+    lobFrom: ?rl.Vector3 = null,
     lift: f32 = 0,
     launch: rl.Vector3 = mathx.zero3,
     struck: bool = false,
@@ -270,8 +299,19 @@ pub const Golem = struct {
             self.slamCd = SLAM_CD;
             return self.enter(.slam_wind);
         }
+        // **AND PAST THE SLAM IT THROWS.** Its own band, and it does not stop the trudge being the answer to
+        // everything nearer — a creature this slow needs a reason to be respected from across a field.
+        if (dist >= SAC_MIN and dist <= SAC_MAX and self.sacCd <= 0) {
+            self.sacCd = SAC_CD;
+            return self.enter(.sac_wind);
+        }
         if (dist <= AGGRO_R) return self.enter(.walk);
         self.enter(.idle);
+    }
+
+    /// Where the sac leaves it: over the brim of its own cap, so the arc starts above its head.
+    pub fn sacPoint(self: *const Golem) rl.Vector3 {
+        return foe.bodyPoint(self.pos, SAC_FROM_Y * H, self.scale, self.lift);
     }
 
     pub fn update(self: *Golem, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
@@ -293,8 +333,10 @@ pub const Golem = struct {
         foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
         self.smashCd = mathx.maxF(0, self.smashCd - dt);
         self.slamCd = mathx.maxF(0, self.slamCd - dt);
+        self.sacCd = mathx.maxF(0, self.sacCd - dt);
         self.t += dt;
         self.burst = null;
+        self.lobFrom = null;
         // THE ONE-FRAME FLAG, CLEARED AT THE TOP LIKE EVERY OTHER CREATURE'S. `Host.live` hands out the whole
         // slab with no `gone` filter, so left set this latched for the rest of the map — and `game.anyFoeDied`
         // reads it, so the kill sound, the kill shake and the pad rumble fired EVERY FRAME after the first
@@ -385,6 +427,20 @@ pub const Golem = struct {
                 }
             },
             .slam_rec => if (self.t >= SLAM_RECOVER) self.decide(d),
+            // **THE SAC SWELLS AND IT KEEPS FACING HIM.** The aim is taken at the THROW, so tracking through
+            // the wind is honest — what it cannot do is steer the sac once it is in the air.
+            .sac_wind => {
+                self.face(hero, dt);
+                if (self.t >= SAC_WIND) self.enter(.sac_throw);
+            },
+            .sac_throw => {
+                if (!self.struck) {
+                    self.struck = true;
+                    self.lobFrom = self.sacPoint();
+                }
+                if (self.t >= SAC_THROW) self.enter(.sac_rec);
+            },
+            .sac_rec => if (self.t >= SAC_RECOVER) self.decide(d),
             .stunlight, .stunheavy => if (!self.vit.stunned()) self.decide(d),
             .dead => {},
         }
@@ -439,8 +495,9 @@ pub const Golem = struct {
         // and the slam is the same fold thrown off the ground.
         const rear = self.rearAmt();
         const fold = self.foldAmt();
+        const lob = self.lobAmt();
         const bob = mathx.sinf(self.phase * std.math.tau) * 0.022 * H * self.moving;
-        const trunk = -34.0 * rear + 66.0 * fold - 74.0 * dk;
+        const trunk = -34.0 * rear + 66.0 * fold - 74.0 * dk + 30.0 * lob;
 
         var wx: [N]rl.Matrix = undefined;
         const rootY = self.rest[BODY].y + bob - 0.30 * H * dk;
@@ -451,9 +508,11 @@ pub const Golem = struct {
         );
         // The cap leads the fold and lags the rear, which is what stops the two reading as one rigid board.
         const swing = mathx.sinf(self.phase * std.math.tau) * 16.0 * self.moving;
-        self.limb(&wx, CAP, rx(-12.0 * rear + 24.0 * fold));
-        self.limb(&wx, ARML, rx(swing - 28.0 * rear + 58.0 * fold));
-        self.limb(&wx, ARMR, rx(-swing - 28.0 * rear + 58.0 * fold));
+        self.limb(&wx, CAP, rx(-12.0 * rear + 24.0 * fold + 16.0 * lob));
+        // BOTH ARMS, TOGETHER: it is a two-handed lob over its own brim, and two arms doing the same thing is
+        // what separates the throw from the smash's asymmetric flail.
+        self.limb(&wx, ARML, rx(swing - 28.0 * rear + 58.0 * fold + 74.0 * lob));
+        self.limb(&wx, ARMR, rx(-swing - 28.0 * rear + 58.0 * fold + 74.0 * lob));
         self.limb(&wx, LEGL, rx(-swing * 0.7));
         self.limb(&wx, LEGR, rx(swing * 0.7));
         for (&wx) |*m| m.* = mul(mathx.scaleM(fs, fs, fs), m.*);
@@ -473,6 +532,17 @@ pub const Golem = struct {
             .smash_wind => mathx.smoothstep(0, SMASH_WIND * 0.66, self.t),
             .slam_wind => mathx.smoothstep(0, SLAM_WIND * 0.80, self.t),
             .smash_fall, .slam_air => 1.0 - mathx.clampF(self.t / 0.10, 0, 1),
+            else => 0,
+        };
+    }
+    /// -1 wound right back over itself, +1 thrown through — the LOB's one signed channel, on its own clock.
+    /// Sitting outside `rearAmt`/`foldAmt` on purpose: those two are the vertical blows, and a throw that
+    /// borrowed their curves would tell the player a smash was coming.
+    fn lobAmt(self: *const Golem) f32 {
+        return switch (self.state) {
+            .sac_wind => -mathx.smoothstep(0, SAC_WIND * 0.72, self.t),
+            .sac_throw => mathx.lerpF(-1.0, 1.0, mathx.clampF(self.t / SAC_THROW, 0, 1)),
+            .sac_rec => 1.0 - mathx.smoothstep(0, SAC_RECOVER * 0.6, self.t),
             else => 0,
         };
     }
@@ -577,6 +647,18 @@ pub const Model = struct {
 /// **THE MAP'S OWN PER-KIND CAP, like every other creature's slab** — it was a bare 8, so a map placing a
 /// ninth golem got eight and `foe.resetGroup` dropped the rest in silence.
 pub const CAP_N: usize = wf.MAX_PER_KIND;
+
+/// THE SAC IN FLIGHT — a wet bag off its own cap, and it wears the cap's palette rather than a new one. Not
+/// the mage's ball: that thing is LIGHT, drawn additive; this is a lump with gills showing.
+pub fn sacMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    b.setMat(.skin);
+    b.addBlob(mathx.zero3, v3(0.20, 0.17, 0.22), 8, 10, CAP_COL);
+    b.addBlob(v3(0, -0.05, -0.03), v3(0.13, 0.10, 0.14), 7, 8, CAP_DK);
+    b.setMat(.plain);
+    b.addBlob(v3(0, 0.06, 0.02), v3(0.11, 0.07, 0.11), 7, 8, MOTE);
+    return b.toModel(shader);
+}
 
 pub const Host = struct {
     model: Model,
@@ -711,7 +793,7 @@ test "A DEATH IS ONE FRAME LONG, and the flakes outlive the body that threw them
     try std.testing.expectEqual(@as(usize, 0), Live.count(&g.parts));
 }
 
-test "TWO MOVES THAT COVER EACH OTHER: the smash owns its feet, the slam owns where you back off to" {
+test "THE FIRST TWO BANDS COVER EACH OTHER: the smash owns its feet, the slam owns where you back off to" {
     std.debug.print("  spore golem: smash {d:.2} m at a {d:.2} s tell | slam {d:.1} m from {d:.1}..{d:.1} at a {d:.2} s tell\n", .{ SMASH_R, SMASH_WIND, SLAM_REACH, SLAM_MIN, SLAM_MAX, SLAM_WIND });
     // The quick tell is the one that chases; the long tell is the one that owns the ground it stands on.
     try std.testing.expect(SLAM_WIND * 2.0 < SMASH_WIND);
@@ -720,6 +802,55 @@ test "TWO MOVES THAT COVER EACH OTHER: the smash owns its feet, the slam owns wh
     try std.testing.expect(SLAM_MIN < SMASH_R + 2.0);
     // And it is genuinely slow enough to walk away from between them.
     try std.testing.expect(WALK_SPEED < 1.2);
+}
+
+test "AND A THIRD BAND PAST BOTH: WALKING AWAY IS NOT AN ANSWER ANY MORE" {
+    std.debug.print("  spore golem: sac {d:.1}..{d:.1} m at a {d:.2} s tell, {d:.0} s apart | walks {d:.2} m/s against a hero's 3.40 run\n", .{ SAC_MIN, SAC_MAX, SAC_WIND, SAC_CD, WALK_SPEED });
+    // THE HOLE IT FILLS, in the file's own numbers: past the slam's far edge the creature had nothing, and
+    // it closes ground at less than a third of a run. The band starts where the slam's ends.
+    try std.testing.expect(SLAM_MAX < SAC_MIN);
+    try std.testing.expect(SAC_MAX > SLAM_MAX + 4.0);
+    // …AND IT IS STILL THE SLOWEST TELL ON THE FIELD. It answers a player with room to read it, so it may
+    // not be the thing that punishes him for having room.
+    try std.testing.expect(SAC_WIND > SMASH_WIND and SAC_WIND > SLAM_WIND * 3.0);
+    // It is area denial, not artillery: the sac itself does less than either fist.
+    try std.testing.expect(SAC_HIT.dmg * 3.0 < SMASH_HIT.dmg);
+
+    var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.5);
+    const hero = v3(0, 0, (SAC_MIN + SAC_MAX) * 0.5);
+    var t: f32 = 0;
+    var from: ?rl.Vector3 = null;
+    while (t < 8.0 and from == null) : (t += 1.0 / 60.0) {
+        _ = g.update(1.0 / 60.0, hero, 400, .{});
+        from = g.lobFrom;
+    }
+    const at = from orelse return error.TestUnexpectedResult;
+    // IT LEAVES OVER ITS OWN BRIM, not out of its chest — the arc has to start above the cap it came from.
+    try std.testing.expect(at.y > g.pos.y + CAP_Y * 0.9);
+    // ONE SAC PER THROW: the flag is one frame, like every other creature's.
+    var more: u32 = 0;
+    var k: u32 = 0;
+    while (k < 30) : (k += 1) {
+        _ = g.update(1.0 / 60.0, hero, 400, .{});
+        if (g.lobFrom != null) more += 1;
+    }
+    try std.testing.expectEqual(@as(u32, 0), more);
+    // …and nothing about the throw leaves the ground.
+    try std.testing.expect(!g.airborne());
+}
+
+test "A ROOTED GOLEM CAN STILL THROW — the roots take the leap, not the arm" {
+    var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.5);
+    g.root.grab();
+    const hero = v3(0, 0, (SAC_MIN + SAC_MAX) * 0.5);
+    var lobbed = false;
+    var t: f32 = 0;
+    while (t < combat.ROOT_HOLD * 0.9) : (t += 1.0 / 60.0) {
+        _ = g.update(1.0 / 60.0, hero, 400, .{});
+        if (g.lobFrom != null) lobbed = true;
+        try std.testing.expect(g.state != .slam_air);
+    }
+    try std.testing.expect(lobbed);
 }
 
 test "IT COMMITS TO A SPOT AND CANNOT STEER ONTO HIM IN THE AIR" {
@@ -741,7 +872,9 @@ test "IT COMMITS TO A SPOT AND CANNOT STEER ONTO HIM IN THE AIR" {
 
 test "THE STAMPED WAY IS ACTUALLY READ, and a slam broken in the air comes down" {
     const dt: f32 = 1.0 / 60.0;
-    const hero = v3(0, 0, 12.0);
+    // OUTSIDE THE LOB'S BAND: at 12 m it throws a sac instead of setting off, and a walk test that spends
+    // three seconds in a throw first is measuring the wrong thing.
+    const hero = v3(0, 0, SAC_MAX + 1.2);
 
     // **THE STAMP BENDS THE WALK.** `markWays` asks `navWant` while the body is in its TRAVEL state, so a
     // heading written onto `nav` has to move the creature — a field nothing reads is the silent half of

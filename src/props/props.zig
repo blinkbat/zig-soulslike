@@ -16,6 +16,7 @@ const bone = @import("propbone.zig");
 const ash = @import("propash.zig");
 const fungus = @import("propfungus.zig");
 const coral = @import("propcoral.zig");
+const gold = @import("propgold.zig");
 
 const v3 = mathx.v3;
 
@@ -155,6 +156,18 @@ pub const Kind = enum(u8) {
     bracket,
     glowcap,
     sporepod,
+    // THE GILDED RUINS. **A MAP FILE IS SAFE WHEREVER A KIND GOES** — `worldfmt` reads and writes one by TAG
+    // (`enumFromName`/`@tagName`), never by ordinal, so an insert cannot re-point a saved `at:` line. What IS
+    // ordinal-locked is every `[NK]` table in this file: `INFO` is indexed by the ordinal and comptime-pinned
+    // row for row (`INFO[i].kind == i`), so a kind added anywhere but beside its own row is a compile error.
+    giltarch,
+    muqarnas,
+    giltdome,
+    minaret,
+    jali,
+    giltcolumn,
+    giltbasin,
+    giltfinial,
     pickup,
     foggate,
 };
@@ -162,6 +175,7 @@ pub const Kind = enum(u8) {
 
 pub const Group = enum {
     ruins,
+    gilt,
     buildings,
     village,
     treasure,
@@ -183,6 +197,7 @@ pub const Group = enum {
     pub fn label(g: Group) [:0]const u8 {
         return switch (g) {
             .ruins => "Ruins",
+            .gilt => "Gilded Ruins",
             .buildings => "Buildings",
             .village => "Village",
             .treasure => "Treasure",
@@ -338,6 +353,14 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .bracket => "Bracket Shelves",
         .glowcap => "Glowcap",
         .sporepod => "Spore Pods",
+        .giltarch => "Gilded Gate",
+        .muqarnas => "Muqarnas Block",
+        .giltdome => "Split Dome",
+        .minaret => "Broken Minaret",
+        .jali => "Pierced Screen",
+        .giltcolumn => "Gilded Column",
+        .giltbasin => "Star Basin",
+        .giltfinial => "Fallen Finial",
         .pickup => "Item",
         .foggate => "Fog Gate",
     };
@@ -372,6 +395,7 @@ pub fn group(k: Kind) Group {
         .puffballs, .deadfingers, .crustfungus, .shelfstack, .brainknot, .pipeclutch, .coralcrust => .fungus,
         .rib, .rib2, .rib3, .ribarch, .skull, .vertebra => .bone,
         .ashheap, .ashdune, .cinders, .charspar => .ash,
+        .giltarch, .muqarnas, .giltdome, .minaret, .jali, .giltcolumn, .giltbasin, .giltfinial => .gilt,
     };
 }
 
@@ -380,6 +404,11 @@ pub fn group(k: Kind) Group {
 ///
 /// `any` is not a dustbin — it is the set that reads right ANYWHERE. A kind put there because nobody could
 /// decide will turn up in the ashfall looking wrong.
+///
+/// **NOTHING SOWS BY IT YET.** `biome`/`inBiome` are read by this file's own census test and by no other
+/// module: what actually places a prop is an authored op or a zone's explicit `mix=`, and neither consults
+/// this. It is a classification waiting for the brush that filters on it — say so rather than let a comment
+/// somewhere claim a family lands where it does because of this table.
 pub const Biome = enum {
     any,
     ruins,
@@ -434,7 +463,12 @@ pub fn biome(k: Kind) Biome {
         => .rock,
 
         .reeds, .cattails, .lilypads => .wetland,
-        .ashheap, .ashdune, .cinders, .charspar => .ash,
+        // **THE GILDED CITY STOOD IN THE ASHFALL** (owner: this would look sick on Ash tiles) — filed to the
+        // ash rather than to `.ruins`, which records the region it was authored against. It does not PLACE
+        // it: nothing sows off this table (see `Biome`), so the family still goes down by hand.
+        .ashheap, .ashdune, .cinders, .charspar,
+        .giltarch, .muqarnas, .giltdome, .minaret, .jali, .giltcolumn, .giltbasin, .giltfinial,
+        => .ash,
         .rib, .rib2, .rib3, .ribarch, .skull, .vertebra => .bone,
         .capgiant, .capgiant2, .capgiant3, .capcolossal, .captower, .hyphaarch,
         .glowcluster, .lampstalk, .fleshfold, .sporevent, .glowvein,
@@ -445,8 +479,8 @@ pub fn biome(k: Kind) Biome {
     };
 }
 
-/// Everything that reads right in `b`, plus everything that reads right anywhere — which is what a zone's
-/// `mix=` is actually picking from.
+/// Everything that reads right in `b`, plus everything that reads right anywhere. **NOT what a zone's `mix=`
+/// picks from** — that is an explicit list of kinds in the map file (`worldfmt.parseMix`), picked uniformly.
 pub fn inBiome(k: Kind, b: Biome) bool {
     const own = biome(k);
     return own == b or own == .any;
@@ -721,7 +755,7 @@ pub const INFO = [NK]Info{
     // architecture does not ghost.
     .{ .kind = .obelisk, .build = ruins.obeliskMesh, .bound = 9.2, .top = 8.70, .view = FAR, .parts = circleParts(0.85, 7.0) },
     .{ .kind = .plinth, .build = ruins.plinthMesh, .bound = 2.8, .top = 2.60, .view = 210, .parts = &.{.{ .ax = -0.30, .bx = 0.30, .r = 0.85, .h = 1.70 }} },
-    .{ .kind = .altar, .build = ruins.altarMesh, .bound = 2.9, .top = 1.15, .view = 210, .parts = &.{.{ .ax = -1.35, .bx = 1.35, .r = 0.68, .h = 1.05 }} },
+    .{ .kind = .altar, .build = ruins.altarMesh, .bound = 2.9, .top = ruins.ALTAR_H, .view = 210, .parts = &.{.{ .ax = -1.35, .bx = 1.35, .r = 0.68, .h = 1.05 }} },
 
     .{ .kind = .rotlog, .build = wood.rotLogMesh, .bound = 3.2, .top = 0.95, .view = 175, .parts = &.{.{ .ax = -2.10, .bx = 2.10, .r = 0.40, .h = 0.85 }}, .surf = .wood },
     .{ .kind = .deadfall, .build = wood.deadfallMesh, .bound = 3.4, .top = 2.00, .view = 200, .parts = circleParts(1.10, 1.60), .surf = .wood },
@@ -776,6 +810,26 @@ pub const INFO = [NK]Info{
     // wash, and this region has a great many of them.
     .{ .kind = .glowcap, .build = fungus.glowCapMesh, .bound = 3.0, .top = 2.90, .view = 260, .parts = circleParts(0.22, 2.00), .light = .{ .y = fungus.GLOW_LIGHT_Y, .col = v3(0.26, 0.62, 0.58), .radius = 7.5, .flicker = 0.05 }, .surf = .wood },
     .{ .kind = .sporepod, .build = fungus.sporePodMesh, .bound = 1.3, .top = 1.25, .view = 95, .flora = true, .casts = false },
+
+    // **THE GILDED RUINS.** No `occl` on any of them — dressed stone is architecture and architecture does
+    // not ghost (the ruins family's own rule). Three layers, as a region needs: the minaret is the landmark,
+    // the gate/dome/screen/column are the middle, and the basin and the finial are what you walk over.
+    // THE GATE IS A DOOR: two foot colliders and the gap between them, like `ribarch` and `hyphaarch`.
+    .{ .kind = .giltarch, .build = gold.giltArchMesh, .bound = gold.ARCH_TOP + 0.6, .top = gold.ARCH_TOP, .view = FAR, .parts = &.{
+        .{ .ax = -gold.ARCH_HALF, .bx = -gold.ARCH_HALF, .r = 0.66, .h = gold.ARCH_SPRING },
+        .{ .ax = gold.ARCH_HALF, .bx = gold.ARCH_HALF, .r = 0.66, .h = gold.ARCH_SPRING },
+    } },
+    .{ .kind = .muqarnas, .build = gold.muqarnasBlockMesh, .bound = gold.MUQ_TOP + 0.9, .top = gold.MUQ_TOP, .view = 230, .parts = &.{.{ .ax = -gold.MUQ_W * 0.5, .bx = gold.MUQ_W * 0.5, .r = 0.40, .h = gold.MUQ_WALL }} },
+    // A DOME IS WALKED ROUND: one broad collider on the drum, and the shell over it is roof.
+    .{ .kind = .giltdome, .build = gold.giltDomeMesh, .bound = gold.DOME_R * 2.2, .top = gold.DOME_TOP, .view = FAR, .solid = true, .parts = circleParts(gold.DOME_R * 0.92, gold.DOME_DRUM) },
+    .{ .kind = .minaret, .build = gold.minaretMesh, .bound = gold.MIN_TOP + 0.8, .top = gold.MIN_TOP, .view = FAR, .solid = true, .parts = circleParts(gold.MIN_R * 1.25, gold.MIN_H * 0.92) },
+    // The screen is a WALL you cannot see through even though the light gets through it — `solid`, because
+    // losing the hero behind it is the geometry doing its job.
+    .{ .kind = .jali, .build = gold.jaliScreenMesh, .bound = gold.JALI_W + 1.0, .top = gold.JALI_TOP, .view = 300, .solid = true, .parts = &.{.{ .ax = -gold.JALI_W * 0.5, .bx = gold.JALI_W * 0.5, .r = 0.34, .h = gold.JALI_H }} },
+    .{ .kind = .giltcolumn, .build = gold.giltColumnMesh, .bound = gold.COL_TOP + 0.5, .top = gold.COL_TOP, .view = 320, .parts = circleParts(0.52, gold.COL_H) },
+    .{ .kind = .giltbasin, .build = gold.giltBasinMesh, .bound = gold.BASIN_R * 2.3, .top = gold.BASIN_TOP, .view = 200, .parts = circleParts(gold.BASIN_R * 0.80, 0.50) },
+    // No collider: it is ankle-high and you walk over it (`fleshfold`'s rule). It still casts.
+    .{ .kind = .giltfinial, .build = gold.giltFinialMesh, .bound = 1.7, .top = gold.FINIAL_TOP, .view = 150 },
 
     .{ .kind = .pickup, .build = fx.pickupMesh, .bound = 1.9, .top = fx.PICKUP_TOP, .view = 190, .interact = true, .casts = false, .light = .{ .y = 0.30, .col = v3(0.86, 0.82, 0.58), .radius = 5.4, .flicker = 0.03 } },
     // `build` is the two threshold stones; the sheet is the VEIL, hence the late pass (`env.drawVeils`).

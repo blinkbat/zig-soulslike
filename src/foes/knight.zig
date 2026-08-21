@@ -1016,6 +1016,11 @@ comptime {
         if (!std.meta.eql(MOVES[row[0]], row[1])) @compileError("knight: a *_I index no longer names its own row of MOVES");
     }
     std.debug.assert(CHOOSE_N <= MOVES.len and SWEEP2_I >= CHOOSE_N and SWAT_I >= CHOOSE_N);
+    // …AND EVERY INDEX HAS ITS OWN ANIMATION. `keysFor` and `windFor` switch on a `usize`, so both end in an
+    // `else` that hands back the BASH's — right for `SWAT_I`, silently wrong for anything added after it, and
+    // a wrong-animation bug does not fail a test. The pin above only says the two lists are the same LENGTH,
+    // which a seventh stroke satisfies by growing both. This says how many those two switches actually name.
+    std.debug.assert(MOVES.len == 6);
 }
 const CHOOSE_N = 4;
 
@@ -2401,7 +2406,7 @@ pub const Knight = struct {
     fn tryReach(self: *Knight, hero: rl.Vector3) void {
         if (self.dealt) return;
         const door = self.state == .bash or self.state == .charge;
-        const r = (if (door) SH_RAM_HALF else SW_HALF_W) * self.scale + HERO_REACH;
+        const r = foe.hurtReach(if (door) SH_RAM_HALF else SW_HALF_W, self.scale);
         const was = if (door) self.shWas else self.wpnWas;
         const now = if (door) self.shieldHere() else self.wpnHere();
         if (!foe.weaponReaches(was, now, hero, r)) return;
@@ -2422,7 +2427,7 @@ pub const Knight = struct {
 
     fn trySlam(self: *Knight, hero: rl.Vector3) void {
         const at = self.slamMark();
-        if (mathx.distXZ(at, hero) > SLAM.r * self.scale + HERO_REACH) return;
+        if (mathx.distXZ(at, hero) > foe.hurtReach(SLAM.r, self.scale)) return;
         self.heroHit = SLAM.hit;
         self.leash.noteCombat();
     }
@@ -2440,7 +2445,7 @@ pub const Knight = struct {
         const axial = to.x * back.x + to.z * back.z;
         const lateral = @abs(to.x * back.z - to.z * back.x);
         if (axial < -FALL_BACK_SLACK * self.scale or axial > crushLen(self.scale)) return;
-        if (lateral > FALL_HALF_W * self.scale + HERO_REACH) return;
+        if (lateral > foe.hurtReach(FALL_HALF_W, self.scale)) return;
         self.heroHit = h;
         self.leash.noteCombat();
     }
@@ -2463,7 +2468,7 @@ pub const Knight = struct {
     }
     /// Where the kit ARRIVES at the impact frame, hero footprint included — the MOVE's own, never the creature's.
     fn parryReach(self: *const Knight, a: Attack) f32 {
-        return a.reachOut * self.scale + HERO_REACH;
+        return foe.hurtReach(a.reachOut, self.scale);
     }
 
     fn takeParry(self: *Knight) void {

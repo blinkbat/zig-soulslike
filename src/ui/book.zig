@@ -168,7 +168,7 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     // THE BOARD'S OWN NEGATION **PLUS THE TREE'S**, capped where the fight caps it (`hero.blockHit`, and
     // `combat.GUARD_NEGATE_CAP`) — a page promising 97% behind a door the fight holds to 95 is a page lying
     // about the one number it exists to compare, and one that leaves the guard node out lies the other way.
-    d[@intFromEnum(Der.guard)] = if (guards) @min(combat.GUARD_NEGATE_CAP, combat.GUARD_NEGATE * board.negate + perk.guard) * 100.0 else 0;
+    d[@intFromEnum(Der.guard)] = if (guards) combat.guardNegation(board.negate, perk.guard) * 100.0 else 0;
     d[@intFromEnum(Der.arc)] = if (guards) combat.GUARD_ARC * board.arc else 0;
     d[@intFromEnum(Der.armour)] = 100.0 * (1.0 - combat.armourTaken(armourOf(l.worn), heromod.ATK_HEAVY_HIT.dmg) / heromod.ATK_HEAVY_HIT.dmg);
     // …and what he bought with it. Zero on both rows unless a wand is actually in that hand, because a spell

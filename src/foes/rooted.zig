@@ -421,11 +421,7 @@ pub const Rooted = struct {
     }
 
     pub fn reaches(self: *const Rooted, hero: rl.Vector3, a: Attack) bool {
-        const d = mathx.distXZ(self.pos, hero);
-        if (d > (a.maxR + foe.HERO_REACH) * self.scale) return false;
-        const to = mathx.dirXZ(self.pos, hero);
-        if (mathx.lenXZ(to) < 1e-4) return true;
-        return combat.withinArc(mathx.headingXZ(to), self.facing, a.arc);
+        return foe.inArc(self.pos, self.facing, hero, foe.hurtReach(a.maxR, self.scale), a.arc);
     }
 
     fn faceToward(self: *Rooted, target: rl.Vector3, dt: f32) void {

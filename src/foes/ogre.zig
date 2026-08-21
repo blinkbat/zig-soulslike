@@ -792,10 +792,10 @@ pub const Ogre = struct {
     }
 
     fn slamReach(self: *const Ogre) f32 {
-        return SLAM_LEN * self.scale + HERO_REACH;
+        return foe.hurtReach(SLAM_LEN, self.scale);
     }
     fn swipeReach(self: *const Ogre) f32 {
-        return SWIPE_OUTER * self.scale + HERO_REACH;
+        return foe.hurtReach(SWIPE_OUTER, self.scale);
     }
     fn swipeInner(self: *const Ogre) f32 {
         return SWIPE_INNER * self.scale - HERO_REACH;
@@ -808,7 +808,7 @@ pub const Ogre = struct {
         const axial = to.x * fwd.x + to.z * fwd.z;
         const lateral = @abs(to.x * fwd.z - to.z * fwd.x);
         if (axial < -0.2 or axial > self.slamReach()) return;
-        if (lateral > SLAM_HALF_W * self.scale + HERO_REACH) return;
+        if (lateral > foe.hurtReach(SLAM_HALF_W, self.scale)) return;
         self.heroHit = h;
         self.heroLatch = true;
         self.leash.noteCombat();

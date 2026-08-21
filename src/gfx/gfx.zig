@@ -703,7 +703,7 @@ fn dilateEdges(ids: []const u8, edge: []const u8) []const u8 {
     }
 };
 
-pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble, flame, smoke, ember, bark, fog };
+pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble, flame, smoke, ember, bark, fog, gilt };
 comptime {
     std.debug.assert(@intFromEnum(Mat.water) == 9);
     std.debug.assert(@intFromEnum(Mat.marble) == 10);
@@ -712,6 +712,9 @@ comptime {
     std.debug.assert(@intFromEnum(Mat.ember) == 13);
     std.debug.assert(@intFromEnum(Mat.bark) == 14);
     std.debug.assert(@intFromEnum(Mat.fog) == 15);
+    // GOLD IS NOT STEEL WITH A YELLOW ALBEDO: the steel branch answers with a near-white glint and a COOL
+    // sky fresnel, and gold under it reads as blued silver at every edge. Its own id, its own warm pair.
+    std.debug.assert(@intFromEnum(Mat.gilt) == 16);
 }
 
 pub fn smokeAnim(originY: f32, phase01: f32) f32 {

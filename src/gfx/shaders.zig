@@ -403,6 +403,16 @@ pub const sceneFS =
     \\    base *= (0.94 + 0.11*brush)*(0.95 + 0.10*fvn(q, 0.9, vec2(7.7), px));
     \\    // Old iron is not evenly bright.
     \\    base *= 1.0 - 0.12*smoothstep(0.68, 0.95, fvn(q, 3.3, vec2(27.7), px));
+    \\  } else if (m == 16){ // GILT: burnished swirl + TARNISH, and the tarnish is most of the read
+    \\    // A flat gold leaf face reads as a decal at any distance. What sells a gilded ruin is that the gold
+    \\    // has come OFF in patches and gone dull where the weather sat, so the field is broad and high-contrast
+    \\    // and the fine swirl only carries the near view. Banded like every other frequency here.
+    \\    float swirl = fvn2(q, vec2(21.0, 3.4), vec2(0.0), px);
+    \\    base *= 0.93 + 0.15*swirl;
+    \\    // WORN THROUGH: broad patches down to a third, which is where the stone under it shows.
+    \\    base *= 1.0 - 0.62*smoothstep(0.46, 0.88, fvn(q, 1.35, vec2(19.3), px));
+    \\    // …and the leaf that survives is not evenly bright either.
+    \\    base *= 0.88 + 0.26*fvn(q, 4.1, vec2(41.9), px);
     \\  } else if (m == 5){ // LEATHER: pore stipple + crease mottle + PANEL scale
     \\    base *= (0.90 + 0.17*fvn(q, 13.0, vec2(0.0), px))*(0.92 + 0.15*fvn(q, 3.1, vec2(6.3), px));
     \\    // A bracer, a pauldron and a scabbard are CUT PIECES; one pore field across the lot of them reads as moulded plastic however good the pores are.
@@ -573,6 +583,18 @@ pub const sceneFS =
     \\      lit += sp*vec3(1.5, 1.3, 1.0)*keyAmt*(1.0 - sh);       // hot near-white glint — steel POPS
     \\      float fres = pow(1.0 - nv, 4.0);
     \\      lit += fres*vec3(0.34, 0.40, 0.52)*keyAmt*(1.0 - 0.4*sh); // bright cool reflective sky sheen at the edges
+    \\    }
+    \\    // SHINY GOLD (GILT, id 16): the steel lobe with WARM answers on both terms — an amber hotspot and a
+    \\    // warm rim, because gold's own reflection is gold. Softer exponent than steel's 96: leaf over a
+    \\    // hand-cut face is burnished, not mirror-polished, so the highlight is a broad sheet and not a star.
+    \\    if (mi == 16){
+    \\      vec3 H = normalize(L + V);
+    \\      float nh = max(dot(n, H), 0.0);
+    \\      float w = lobe(pxQ, 8.0);
+    \\      float sp = pow(nh, 54.0*w)*2.4*w + pow(nh, 15.0)*0.9;
+    \\      lit += sp*vec3(1.60, 1.18, 0.54)*keyAmt*(1.0 - sh);
+    \\      float fres = pow(1.0 - nv, 3.4);
+    \\      lit += fres*vec3(0.40, 0.29, 0.11)*keyAmt*(1.0 - 0.4*sh);
     \\    }
     \\    // POLISHED STONE.
     \\    float gloss = (mi == 10) ? 0.55 : (mi == 1) ? 0.09 : 0.0;

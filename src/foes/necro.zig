@@ -264,7 +264,6 @@ pub const Necro = struct {
     leash: foe.Leash = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
-    parry: foe.Parry = .{},
     vigil: Vigil = .{},
     facing: f32 = 0,
     scale: f32 = SCALE,
@@ -636,11 +635,6 @@ pub const Necro = struct {
                 } else self.enter(.idle);
             },
         }
-    }
-
-    fn parryable(self: *const Necro) ?f32 {
-        _ = self;
-        return null;
     }
 
     pub fn tryHit(self: *Necro, blade: foe.Blade) void {
@@ -1257,11 +1251,7 @@ const FROST_THROW_ABD = -6.0;
 const FROST_THROW_LEAN = 24.0;
 
 
-/// The staff is authored pointing UP off the grip in the wrist's frame (the warriors' kit convention), so
-/// the fit FLIPS it. After it, `staffTilt` means degrees the head leads FORWARD of plumb in the world.
-fn staffFit(tilt: f32) rl.Matrix {
-    return mul(ry(180.0), rx(180.0 - tilt));
-}
+const staffFit = heromod.staffFit;
 
 // **BOTH ENDS ARE SOLVED AGAINST THE BODY, not chosen.** The fist rides at `rest[WRR].y` = 0.485·H, which
 // on this rig is 1.17 m off the ground: the ferrule is the drop that puts it ON the ground (0.30·H left it

@@ -41,14 +41,7 @@ const EMBER_MARK_COOL = rgba(158, 40, 14, 120);
 
 const DUST = foe.DUST;
 const CHIP = archermod.BONE_CHIP;
-const CHIP_SPRAY = foe.Spray{
-    .fanLo = 0.2,   .fanHi = 1.2,
-    .upLo = 0.9,    .upHi = 3.2,
-    .lifeLo = 0.34, .lifeHi = 0.64,
-    .rLo = 0.024,   .rHi = 0.055,
-    .r1 = 0.008,    .col = CHIP, .grav = 8.0,
-    .stretch = 0.030, .bounce = 0.42,
-};
+const CHIP_SPRAY = archermod.boneChips(1.2);
 const SPARK = rgba(255, 206, 126, 240);
 const SPARK_COOL = rgba(226, 116, 38, 200);
 
@@ -342,7 +335,7 @@ const SLAM = struct {
     .r = 1.28,
     .hit = SLAM_HIT,
 };
-pub const SLAM_HIT = combat.Hit{ .dmg = 34, .poise = 52, .stance = 24 };
+pub const SLAM_HIT = combat.Hit{ .dmg = 34, .poise = 52, .stance = 24, .launch = combat.SLAM_LAUNCH };
 
 const AWAKEN = struct {
     at: f32,
@@ -591,7 +584,6 @@ const DISSOLVE = foe.Dissolve{ .rate = 82.0, .spread = 1.15, .rise = 0.72, .flak
 
 const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 6.0;
-const HERO_REACH = foe.HERO_REACH;
 const PARRY_LEAD = foe.PARRY_LEAD;
 
 const NPART = 208;
@@ -1247,11 +1239,11 @@ fn classify(sit: Sit) Decision {
 }
 
 fn triggerR(a: Attack, scale: f32) f32 {
-    return a.reachOut * scale + HERO_REACH;
+    return foe.hurtReach(a.reachOut, scale);
 }
 
 fn crushLen(scale: f32) f32 {
-    return FALL_LEN * scale + HERO_REACH;
+    return foe.hurtReach(FALL_LEN, scale);
 }
 
 const FIST_Y = -0.05 * H;
@@ -4695,7 +4687,7 @@ test "THE FALL LANDS BEHIND HIM AND NOWHERE ELSE" {
     k.tryCrush(v3(0, 0, -reach - 1.5), FALL_HIT);
     try std.testing.expect(k.heroHit == null);
     k.heroHit = null;
-    k.tryCrush(v3(FALL_HALF_W * k.scale + HERO_REACH + 1.2, 0, -reach * 0.6), FALL_HIT);
+    k.tryCrush(v3(foe.hurtReach(FALL_HALF_W, k.scale) + 1.2, 0, -reach * 0.6), FALL_HIT);
     try std.testing.expect(k.heroHit == null);
 }
 
@@ -5057,7 +5049,7 @@ test "HE IS OUT-TURNED, which is the only reason a flank exists at all" {
 test "THE SLAM IS OUTRUN, NOT OUT-TRADED — a run clears the crater's disc and a walk does not" {
     const k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
     const tell = SLAM.windDur + SLAM.strikeDur * SLAM.impactK;
-    const ring = SLAM.r * k.scale + HERO_REACH;
+    const ring = foe.hurtReach(SLAM.r, k.scale);
     std.debug.print("\n  slam: disc {d:.2} m, tell {d:.2} s -> run reaches {d:.2}, walk {d:.2}\n", .{
         ring, tell, heromod.RUN_SPEED * tell, heromod.WALK_SPEED * tell,
     });

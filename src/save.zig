@@ -22,25 +22,38 @@ pub const SLOTS: usize = 3;
 /// **THE FILE AND ITS PICTURE ARE ONE NAME AND ONE EXTENSION APART, so they are not two lists.** Written out
 /// they were three stems typed twice in lockstep, and a slot whose `.png` row disagreed with its `.dat` row
 /// shows the picker the WRONG SAVE'S picture — a mislabel with nothing to catch it, since both files exist.
-fn slotNames(comptime ext: []const u8) [SLOTS][:0]const u8 {
+fn slotNames(comptime stem: []const u8, comptime ext: []const u8) [SLOTS][:0]const u8 {
     var out: [SLOTS][:0]const u8 = undefined;
-    for (&out, 0..) |*p, i| p.* = std.fmt.comptimePrint("save{d}." ++ ext, .{i + 1});
+    for (&out, 0..) |*p, i| p.* = std.fmt.comptimePrint(stem ++ "{d}." ++ ext, .{i + 1});
     return out;
 }
 
-const PATHS = slotNames("dat");
-const SHOTS = slotNames("png");
+const PATHS = slotNames("save", "dat");
+const SHOTS = slotNames("save", "png");
+const DEV_PATHS = slotNames("devsave", "dat");
+const DEV_SHOTS = slotNames("devsave", "png");
 
 comptime {
     std.debug.assert(std.mem.eql(u8, PATHS[0], "save1.dat"));
     std.debug.assert(std.mem.eql(u8, SHOTS[SLOTS - 1], "save3.png"));
+    std.debug.assert(std.mem.eql(u8, DEV_PATHS[0], "devsave1.dat"));
+}
+
+/// **A DEV RUN MAY NOT TOUCH THE PLAYED SHELF.** `--map` and `--shot` wrote through these three filenames
+/// too: one rest at a test map's bonfire overwrote `save1.dat`, and because the file then named a map the
+/// shipping boot cannot match, the picker showed that slot EMPTY and New Game finished the character off.
+/// Every reader and writer here goes through `path`/`shotPath`, never the arrays.
+var devShelf = false;
+
+pub fn useDevShelf(on: bool) void {
+    devShelf = on;
 }
 
 pub fn path(i: usize) [:0]const u8 {
-    return PATHS[i];
+    return if (devShelf) DEV_PATHS[i] else PATHS[i];
 }
 pub fn shotPath(i: usize) [:0]const u8 {
-    return SHOTS[i];
+    return if (devShelf) DEV_SHOTS[i] else SHOTS[i];
 }
 
 pub const Error = error{ BadVersion, BadKey, BadField };
@@ -198,7 +211,7 @@ pub fn survey(map: []const u8) Shelf {
 
 pub fn peek(map: []const u8, i: usize) ?Head {
     var d = Data{};
-    if (!parseFile(PATHS[i], &d)) return null;
+    if (!parseFile(path(i), &d)) return null;
     if (!std.mem.eql(u8, d.mapName(), map)) return null;
     var taken: u32 = 0;
     for (d.tree) |t| taken += @intFromBool(t);
@@ -206,19 +219,19 @@ pub fn peek(map: []const u8, i: usize) ?Head {
 }
 
 pub fn write(i: usize, s: Slot) bool {
-    return writeTo(PATHS[i], s);
+    return writeTo(path(i), s);
 }
 
 pub fn read(i: usize, s: Slot) bool {
-    return readFrom(PATHS[i], s);
+    return readFrom(path(i), s);
 }
 
 pub fn erase(i: usize) bool {
     var ok = true;
-    std.fs.cwd().deleteFile(PATHS[i]) catch |e| {
+    std.fs.cwd().deleteFile(path(i)) catch |e| {
         if (e != error.FileNotFound) ok = false;
     };
-    std.fs.cwd().deleteFile(SHOTS[i]) catch {};
+    std.fs.cwd().deleteFile(shotPath(i)) catch {};
     return ok;
 }
 
@@ -232,7 +245,7 @@ pub fn writeShot(i: usize) bool {
     const h = rl.getScreenHeight();
     if (w <= 0 or h <= 0) return false;
     rl.imageResize(&img, THUMB_W, @max(1, @divTrunc(THUMB_W * h, w)));
-    return rl.exportImage(img, SHOTS[i]);
+    return rl.exportImage(img, shotPath(i));
 }
 
 pub fn writeTo(file: []const u8, s: Slot) bool {
@@ -1063,6 +1076,26 @@ test "every slot owns a distinct pair of files" {
             try testing.expect(!std.mem.eql(u8, shotPath(i), shotPath(j)));
         }
         try testing.expect(!std.mem.eql(u8, path(i), shotPath(i)));
+    }
+}
+
+test "A DEV RUN CANNOT NAME A PLAYED FILE" {
+    defer useDevShelf(false);
+    useDevShelf(false);
+    try testing.expectEqualStrings("save1.dat", path(0));
+    try testing.expectEqualStrings("save1.png", shotPath(0));
+    useDevShelf(true);
+    try testing.expectEqualStrings("devsave1.dat", path(0));
+    try testing.expectEqualStrings("devsave3.png", shotPath(SLOTS - 1));
+    for (0..SLOTS) |i| {
+        useDevShelf(true);
+        const devDat = path(i);
+        const devPng = shotPath(i);
+        for (0..SLOTS) |j| {
+            useDevShelf(false);
+            try testing.expect(!std.mem.eql(u8, devDat, path(j)));
+            try testing.expect(!std.mem.eql(u8, devPng, shotPath(j)));
+        }
     }
 }
 

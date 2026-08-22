@@ -113,6 +113,9 @@ const SPOOK_DUR: f32 = 7.0;
 /// somebody it has hold of — tested on distance alone it landed a blow that the shield's own 65° could
 /// never answer and that no frame of the animation showed. A move tests its own band (the ogre's law).
 const GRASP_ARC: f32 = 78.0;
+/// Where in the reach the hand arrives, as a share of the strike — the SAME fraction the grasp itself lands
+/// on, read from one constant so the boards and the blow cannot disagree about when it happened.
+const GRASP_IMPACT_K: f32 = 0.42;
 
 const CIRCLE_DUR: f32 = 1.3;
 const CIRCLE_BAND: f32 = 3.1;
@@ -232,6 +235,9 @@ pub const Shade = struct {
     t: f32 = 0,
     elapsed: f32 = 0,
     atk: usize = GRASP,
+    /// THE HERO'S SHIELD, stamped from outside (`game.markParry`), and the one-frame answer to it.
+    parry: foe.Parry = .{},
+    parried: bool = false,
     dealt: bool = false,
     cds: [MOVES.len]f32 = [_]f32{0} ** MOVES.len,
     blinkCd: f32 = 0,
@@ -328,6 +334,7 @@ pub const Shade = struct {
             return .none;
         }
         self.justDied = false; // one-frame flag, reset at the TOP (the foe contract's own rule)
+        self.parried = false;
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
@@ -396,7 +403,7 @@ pub const Shade = struct {
                 } else {
                     const u = mathx.clampF(self.t / a.strikeDur, 0, 1);
                     self.reach = lerpF(-0.55, 1.0, foe.swingCurve(u));
-                    if (!self.dealt and u >= 0.42 and self.holds(hero)) {
+                    if (!self.dealt and u >= GRASP_IMPACT_K and self.holds(hero)) {
                         self.dealt = true;
                         self.leash.noteCombat();
                         sfx.world(.shade_touch, self.pos);
@@ -454,8 +461,46 @@ pub const Shade = struct {
         self.trailHem(if (self.airborne()) self.pos else was, dt);
         self.pose();
         if (hurling) act = .{ .hurl = self.wispWorld() };
+        if (self.takeParry()) act = .none;
         self.tryHit(blade);
         return act;
+    }
+
+    /// SECONDS BACK FROM THE HAND ARRIVING, or null. **THE GRASP ONLY, NEVER THE WISP** — a shield is braced
+    /// against a stroke, and the hurl is a thing thrown from 12 m away.
+    fn toImpact(self: *const Shade) ?f32 {
+        if (self.atk != GRASP) return null;
+        const a = MOVES[GRASP];
+        const at = a.strikeDur * GRASP_IMPACT_K;
+        return switch (self.state) {
+            .wind => (a.windDur - self.t) + at,
+            .strike => at - self.t,
+            .idle, .drift, .circle, .recover, .blinkout, .blinkin, .stunlight, .stunheavy, .dead => null,
+        };
+    }
+
+    /// THE INSTANT THE HAND CAN BE CAUGHT IN, and how far out it reaches then — `holds`'s OWN extent, so a
+    /// grasp the boards could not have met is never offered as one.
+    fn parryable(self: *const Shade) ?f32 {
+        const left = self.toImpact() orelse return null;
+        if (!foe.inParryWindow(left)) return null;
+        return self.graspReach();
+    }
+
+    /// **THE BOARDS TAKE THE HAND, AND THE FOCUS IS NOT DRAINED** — hence the bool: the caller drops the `Act`
+    /// this returns true for, because the one thing this creature is for is the FP it takes and a caught grasp
+    /// may not take any. `dealt` is spent so the rest of the strike cannot try again.
+    fn takeParry(self: *Shade) bool {
+        const reach = self.parryable() orelse return false;
+        if (!foe.caught(self, reach)) return false;
+        self.cds[GRASP] = MOVES[GRASP].cd;
+        self.dealt = true;
+        switch (self.vit.hit(combat.PARRY_HIT)) {
+            .death => self.enterDeath(),
+            .heavy => self.enterStun(.stunheavy),
+            .light, .none => self.enterStun(.stunlight),
+        }
+        return true;
     }
 
     pub fn graspReach(self: *const Shade) f32 {
@@ -803,6 +848,12 @@ pub const Haunt = struct {
         return blow;
     }
 
+    pub fn setParry(self: *Haunt, p: foe.Parry) void {
+        foe.setParry(self.live(), p);
+    }
+    pub fn anyParried(self: *const Haunt) bool {
+        return foe.anyParried(self.liveConst());
+    }
     pub fn pierce(self: *Haunt, blade: foe.Blade) bool {
         return foe.pierceGroup(self.live(), blade);
     }

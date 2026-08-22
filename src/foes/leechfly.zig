@@ -95,6 +95,9 @@ const FEED_CEIL: f32 = HOVER_LOW + 0.8;
 
 const WIND_DUR: f32 = 0.34; // the rear-back. Clears `foe.TELL_MIN` (0.30) — no attack comes out of nowhere
 const STAB_DUR: f32 = 0.16;
+/// Where in the thrust the beak arrives, as a share of it — the SAME fraction the stab lands on, read from
+/// one constant so the boards and the blow cannot disagree about when it happened.
+const STAB_IMPACT_K: f32 = 0.45;
 const RECOVER_DUR: f32 = 0.45;
 
 
@@ -225,6 +228,9 @@ pub const Leechfly = struct {
     t: f32 = 0,
     elapsed: f32 = 0,
     dealt: bool = false,
+    /// THE HERO'S SHIELD, stamped from outside (`game.markParry`), and the one-frame answer to it.
+    parry: foe.Parry = .{},
+    parried: bool = false,
     feedCd: f32 = 0,
     climbCd: f32 = 0,
     spookLeft: f32 = 0,
@@ -326,6 +332,7 @@ pub const Leechfly = struct {
             return .none;
         }
         self.justDied = false; // one-frame flag, reset at the TOP (the foe contract's own rule)
+        self.parried = false;
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
@@ -376,7 +383,7 @@ pub const Leechfly = struct {
                 const u = mathx.clampF(self.t / STAB_DUR, 0, 1);
                 self.lunge = lerpF(-0.45, 1.0, foe.swingCurve(u));
                 self.pitch = mathx.approach(self.pitch, 16.0, dt * 140.0);
-                if (!self.dealt and u >= 0.45 and self.holds(hero)) {
+                if (!self.dealt and u >= STAB_IMPACT_K and self.holds(hero)) {
                     self.dealt = true;
                     self.leash.noteCombat();
                     sfx.world(.leech_stab, self.beakWorld());
@@ -453,8 +460,44 @@ pub const Leechfly = struct {
         self.flyTo(dt);
         self.beatWings(dt);
         self.pose();
+        if (self.takeParry()) act = .none;
         self.tryHit(blade);
         return act;
+    }
+
+    /// SECONDS BACK FROM THE BEAK ARRIVING, or null. **A FLYER'S THRUST IS STILL A STROKE** — the airborne
+    /// exemption the leaps get (the bone knight's HOP, the ravager's pounce) is about a whole body in flight
+    /// arriving on you, and this creature is never anywhere else: it winds, holds its station and drives the
+    /// beak, which is exactly the thing a shield is braced for.
+    fn toImpact(self: *const Leechfly) ?f32 {
+        const at = STAB_DUR * STAB_IMPACT_K;
+        return switch (self.state) {
+            .wind => (WIND_DUR - self.t) + at,
+            .stab => at - self.t,
+            .idle, .stalk, .circle, .drink, .recover, .climb, .perch, .dive, .stunlight, .stunheavy, .dead => null,
+        };
+    }
+
+    fn parryable(self: *const Leechfly) ?f32 {
+        const left = self.toImpact() orelse return null;
+        if (!foe.inParryWindow(left)) return null;
+        return self.stabReach();
+    }
+
+    /// **THE BOARDS TAKE THE BEAK, AND NOTHING IS DRUNK** — hence the bool: the caller drops the `Act`, because
+    /// what this creature is for is the HP it takes off him and heals itself on, and a caught thrust may take
+    /// none. `dealt` is spent so the rest of the thrust cannot try again, and it is sent to `.recover` rather
+    /// than `.drink` by the same flag.
+    fn takeParry(self: *Leechfly) bool {
+        const reach = self.parryable() orelse return false;
+        if (!foe.caught(self, reach)) return false;
+        self.dealt = false;
+        switch (self.vit.hit(combat.PARRY_HIT)) {
+            .death => self.enterDeath(),
+            .heavy => self.enterStun(.stunheavy),
+            .light, .none => self.enterStun(.stunlight),
+        }
+        return true;
     }
 
     fn sip(self: *Leechfly, dt: f32) combat.Hit {
@@ -950,6 +993,12 @@ pub const Swarm = struct {
         return blow;
     }
 
+    pub fn setParry(self: *Swarm, p: foe.Parry) void {
+        foe.setParry(self.live(), p);
+    }
+    pub fn anyParried(self: *const Swarm) bool {
+        return foe.anyParried(self.liveConst());
+    }
     pub fn pierce(self: *Swarm, blade: foe.Blade) bool {
         return foe.pierceGroup(self.live(), blade);
     }

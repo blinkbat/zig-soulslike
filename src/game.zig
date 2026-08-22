@@ -31,6 +31,9 @@ const ravagermod = @import("foes/ravager.zig");
 const magemod = @import("foes/shroommage.zig");
 const golemmod = @import("foes/sporegolem.zig");
 const fenmod = @import("foes/fenlurker.zig");
+const skittermod = @import("foes/skitterer.zig");
+const priestmod = @import("foes/ancientpriest.zig");
+const hollowmod = @import("foes/hollow.zig");
 const leechmod = @import("foes/leechfly.zig");
 const shademod = @import("foes/shade.zig");
 const chestmod = @import("play/chest.zig");
@@ -97,6 +100,9 @@ const SHAKE_SAC_BURST = 0.34;
 const SHAKE_SURGE = 0.26;
 const SHAKE_RAISE = 0.30;
 const SHAKE_SIGIL = 0.16;
+/// The bell is struck 34 m from bodies that answer it, so what the SHAKE says is the weight of the bronze and
+/// not a hit — under the raise's, over the sigil's.
+const SHAKE_TOLL = 0.26;
 const RESPAWN_HOLD = 0.55;
 const RESPAWN_FADE = 0.9;
 const DEATH_BAND_TOP: f32 = 0.35;
@@ -211,6 +217,9 @@ pub const Game = struct {
     ring: magemod.Ring,
     host: golemmod.Host,
     marsh: fenmod.Marsh,
+    clatter: skittermod.Clatter,
+    crypt: priestmod.Crypt,
+    belfry: hollowmod.Belfry,
     vigil: knightmod.Vigil,
     swarm: leechmod.Swarm,
     haunt: shademod.Haunt,
@@ -259,6 +268,7 @@ pub const Game = struct {
     emberModel: rl.Model,
     sacModel: rl.Model,
     wispModel: rl.Model,
+    sparkModel: rl.Model,
     arrows: [MAX_ARROWS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_ARROWS,
     shafts: [MAX_SHAFTS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_SHAFTS,
     rig: cameramod.CamRig,
@@ -322,6 +332,9 @@ pub const Game = struct {
         g.ring = magemod.Ring.init(g.scene.shader);
         g.host = golemmod.Host.init(g.scene.shader);
         g.marsh = fenmod.Marsh.init(g.scene.shader);
+        g.clatter = skittermod.Clatter.init(g.scene.shader);
+        g.crypt = priestmod.Crypt.init(g.scene.shader);
+        g.belfry = hollowmod.Belfry.init(g.scene.shader);
         g.vigil = knightmod.Vigil.init(g.scene.shader);
         g.swarm = leechmod.Swarm.init(g.scene.shader);
         g.haunt = shademod.Haunt.init(g.scene.shader);
@@ -361,6 +374,7 @@ pub const Game = struct {
         g.emberModel = magemod.emberMesh(g.scene.shader);
         g.sacModel = golemmod.sacMesh(g.scene.shader);
         g.wispModel = shademod.wispMesh(g.scene.shader);
+        g.sparkModel = hollowmod.sparkMesh(g.scene.shader);
         g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
         g.shafts = [_]archermod.Arrow{.{}} ** MAX_SHAFTS;
         phase(&initTimer, "pools");
@@ -606,6 +620,11 @@ pub const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "ring", .kind = .mushroom_mage, .aggro = magemod.AGGRO_R },
     .{ .field = "host", .kind = .spore_golem, .aggro = golemmod.AGGRO_R },
     .{ .field = "marsh", .kind = .fen_lurker, .aggro = fenmod.AGGRO_R, .vsHero = false },
+    // **THE LITTLE BODY IS THE ONE THAT GIVES WAY** — a 0.62 m cage shouldering a priest or a hollow off its
+    // line is the picture arguing with the weights (`vs` is one-way: the row that yields names the other).
+    .{ .field = "clatter", .kind = .bone_skitterer, .aggro = skittermod.AGGRO_R, .vs = &.{ "crypt", "belfry" } },
+    .{ .field = "crypt", .kind = .ancient_priest, .aggro = priestmod.AGGRO_R },
+    .{ .field = "belfry", .kind = .tolling_hollow, .aggro = hollowmod.AGGRO_R },
     .{ .field = "vigil", .kind = .bone_knight, .aggro = knightmod.AGGRO_R, .vsHero = false, .vs = &.{ "line", "muster" } },
 };
 
@@ -613,7 +632,7 @@ const BLOW_GROUPS = [_][]const u8{
     "warren", "grief",  "line",    "band",    "muster", "haunt",
     "swarm",  "grove",  "cluster", "warrens", "vigil",  "brood",
     "rite",   "thicket", "ring",    "marsh",
-    "host",
+    "host",   "clatter", "crypt",   "belfry",
 };
 
 comptime {
@@ -651,6 +670,44 @@ comptime {
     }
 }
 
+/// **THE BODIES WITH NO PARRY WINDOW, AND WHY EACH ONE HAS NONE.** Every other group in `FOE_GROUPS` must
+/// offer `setParry`, or a creature can be added with a melee stroke the boards silently cannot catch — which
+/// is invisible in play and impossible to tell from a mistimed press. The rule the exemptions all share: **A
+/// SHIELD IS BRACED AGAINST A STROKE.** A whole body arriving through the air is not a stroke (the bone
+/// knight's HOP, and his own window test names it), a disc opened at your feet is not a stroke, and a thing
+/// thrown from across the field is not a stroke. **A LARGE SLAM IS NOT ONE EITHER** — it is what THROWS him
+/// (`combat.Hit.launch`), and footwork is its answer.
+const NO_PARRY = [_]struct { field: []const u8, why: []const u8 }{
+    .{ .field = "cluster", .why = "the sporeling FLINGS ITSELF — a leap, and its cloud is not a blow at all" },
+    .{ .field = "rite", .why = "the necromancer never melees" },
+    .{ .field = "ring", .why = "the mushroom mage lobs, and a bouncing fireball is answered sideways" },
+    .{ .field = "host", .why = "a disc at your feet, a leap-slam that throws you, and a thrown sac: no strokes" },
+    .{ .field = "crypt", .why = "the ancient priest never melees; the breath is a cone you walk out of" },
+};
+
+comptime {
+    @setEvalBranchQuota(30000);
+    for (NO_PARRY) |x| {
+        var known = false;
+        for (FOE_GROUPS) |gr| {
+            if (!std.mem.eql(u8, gr.field, x.field)) continue;
+            known = true;
+            if (@hasDecl(@FieldType(Game, gr.field), "setParry")) @compileError("game: NO_PARRY names `" ++
+                x.field ++ "`, which HAS a parry window — take it off the list rather than leaving two answers");
+        }
+        if (!known) @compileError("game: NO_PARRY names `" ++ x.field ++ "`, which is not a FOE_GROUPS field");
+    }
+    for (FOE_GROUPS) |gr| {
+        if (@hasDecl(@FieldType(Game, gr.field), "setParry")) continue;
+        var excused = false;
+        for (NO_PARRY) |x| {
+            if (std.mem.eql(u8, x.field, gr.field)) excused = true;
+        }
+        if (!excused) @compileError("game: `" ++ gr.field ++ "` has no `setParry`, so nothing it swings can " ++
+            "ever be caught. Give it `parryable`/`takeParry` off `foe.inParryWindow`, or say why not in NO_PARRY");
+    }
+}
+
 pub fn inCombat(g: *const Game) bool {
     inline for (FOE_GROUPS) |gr| {
         for (@field(g, gr.field).liveConst()) |*f| {
@@ -663,6 +720,21 @@ pub fn inCombat(g: *const Game) bool {
 fn foeFights(f: anytype, hero: rl.Vector3, aggro: f32) bool {
     if (!foemod.corporeal(f)) return false;
     return f.leash.roused() or mathx.distXZ(hero, f.pos) <= aggro;
+}
+
+test "WHAT THE FRAME COSTS — the group slabs, the biggest bodies, and one Game" {
+    const KB = 1024.0;
+    var total: f64 = 0;
+    inline for (FOE_GROUPS) |gr| {
+        const T = @FieldType(Game, gr.field);
+        const M = std.meta.Child(@TypeOf(@as(*T, undefined).liveConst()));
+        total += @as(f64, @floatFromInt(@sizeOf(T)));
+        std.debug.print("  {s:<9} {d:>7.0} KB slab, {d:>6} B a body\n", .{ gr.field, @as(f64, @floatFromInt(@sizeOf(T))) / KB, @sizeOf(M) });
+    }
+    std.debug.print("  ---- {d:.1} MB of foe slabs, {d:.1} MB for the whole Game\n", .{ total / KB / KB, @as(f64, @floatFromInt(@sizeOf(Game))) / KB / KB });
+    // It is ONE `alloc.create` at startup and never touched again, so what matters is that it FITS: the
+    // slabs are `wf.MAX_PER_KIND` deep by construction and nothing here is per-frame.
+    try std.testing.expect(@sizeOf(Game) < 512 * 1024 * 1024);
 }
 
 test "A FIGHT IS ON while something is roused OR simply near, and is over when the last body stops" {
@@ -695,7 +767,9 @@ test "A LANDED SHOT DETONATES ONCE, not once a frame for the 1.4 s it lies there
     std.debug.print("\n  ember: {d} landing frame(s) over {d} of flight and {d} of rest\n", .{ landings, airborne, i - landings - airborne });
     try std.testing.expect(!a.live);
     try std.testing.expect(airborne > 10);
-    try std.testing.expect(i - landings - airborne > 10);
+    // …and a ball that has DETONATED does not lie on the grass afterwards (`archer.lingerOf`): the landing
+    // frame is billed once and the body is gone within a frame of it.
+    try std.testing.expect(i - landings - airborne <= 2);
     try std.testing.expectEqual(@as(u32, 1), landings);
 }
 
@@ -1220,8 +1294,13 @@ fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?F
     }
 }
 
-/// Off the body point every creature already reports for its own bar.
+/// **THE BODY'S OWN HEIGHT, WHICH IS NOT ALWAYS THE BAR'S.** `topWorld` is where the HP bar rides, and for
+/// most creatures that is a hand over the crown. For one whose WEAPON is carried over its head it is not: the
+/// bone skitterer's bar sits at 2.23 m over a body 0.62 m tall, and read off the bar it would wade into a
+/// metre of water with the whole cage under the surface. A creature that says otherwise is believed.
 fn statureOf(f: anytype) f32 {
+    const T = std.meta.Child(@TypeOf(f));
+    if (comptime @hasDecl(T, "stature")) return @max(f.stature(), 0.2);
     return @max(f.topWorld().y - f.pos.y, 0.2);
 }
 
@@ -1416,6 +1495,12 @@ pub fn spawnClump(g: *Game, from: rl.Vector3) void {
 
 pub fn spawnVenom(g: *Game, from: rl.Vector3) void {
     poolPut(g, archermod.launchShaft(from, heroAimPoint(g), broodmod.SPIT_SPEED, broodmod.M_SPIT_HIT, true, .venom));
+}
+
+/// **THE GREMLIN'S SPARK, ONE PER `sparked` EDGE.** The volley's stagger is the creature's own clock; all this
+/// does is put each shot in the pool as it leaves the fists.
+fn spawnSpark(g: *Game, from: rl.Vector3) void {
+    poolPut(g, archermod.launchShaft(from, heroAimPoint(g), hollowmod.SPARK_SPEED, hollowmod.SPARK_HIT, true, .spark));
 }
 
 pub fn spawnWisp(g: *Game, from: rl.Vector3) void {
@@ -2899,6 +2984,27 @@ fn markWade(g: *Game) void {
     }
 }
 
+/// **HOW MANY OF ITS OWN ARE ALREADY UP**, stamped onto every priest (`ancientpriest.flock`). The creature
+/// reads the field and never reaches into another group's array — the `Leash` law, one creature along.
+fn markFlock(g: *Game) void {
+    // O(priests x skitterers) and both are usually zero: two loads beat the walk.
+    if (g.crypt.n == 0) return;
+    for (g.crypt.live()) |*p| {
+        var n: u32 = 0;
+        for (g.clatter.liveConst()) |*sk| {
+            if (!foemod.corporeal(sk)) continue;
+            if (mathx.distXZ(sk.pos, p.pos) > priestmod.RAISE_KEEP_R) continue;
+            n += 1;
+        }
+        p.flock = n;
+    }
+}
+
+/// **EVERY BODY WITHIN EARSHOT OF A STRUCK BELL COMES** (`hollow.TOLL_R`). One pass over every group.
+fn rouseAll(g: *Game, at: rl.Vector3, r: f32) void {
+    inline for (FOE_GROUPS) |gr| _ = foemod.rouseWithin(@field(g, gr.field).live(), at, r);
+}
+
 fn markParry(g: *Game) void {
     const p = foemod.Parry{ .live = g.hero.parryLive(), .at = g.hero.pos, .facing = g.hero.facing, .arc = g.hero.guardArc() };
     inline for (FOE_GROUPS) |f| {
@@ -3065,7 +3171,7 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
             sfx.world(.shroom_puff, ar.pos);
             g.cluster.spawnCloud(ground);
         },
-        .arrow, .firearrow, .wisp, .crock => {},
+        .arrow, .firearrow, .wisp, .crock, .spark => {},
     }
 }
 
@@ -3076,7 +3182,7 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
 fn shotBuildup(s: archermod.Shot) f32 {
     return switch (s) {
         .venom => broodmod.M_SPIT_BUILD,
-        .arrow, .firearrow, .clump, .crock, .bolt, .wisp, .emberball, .sac => 0,
+        .arrow, .firearrow, .clump, .crock, .bolt, .wisp, .emberball, .sac, .spark => 0,
     };
 }
 
@@ -3149,6 +3255,7 @@ fn drawArrows(g: *Game) void {
                 .emberball => &g.emberModel,
                 .sac => &g.sacModel,
                 .wisp => &g.wispModel,
+                .spark => &g.sparkModel,
             };
             rl.drawMesh(m.meshes[0], m.materials[0], archermod.arrowXform(ar));
         }
@@ -3611,6 +3718,10 @@ pub fn run(mode: Mode) void {
     defer hud_.unloadPortrait();
     defer menumod.unload();
 
+    // BEFORE `init`, which surveys the shelf: a `--map` or `--shot` run gets `devsave<n>` and cannot reach
+    // the played files at all (`save.useDevShelf`'s prohibition).
+    savemod.useDevShelf(shot or !std.mem.eql(u8, worldfmt.startMap(), worldfmt.START_MAP));
+
     const alloc = std.heap.c_allocator;
     const g = alloc.create(Game) catch @panic("game: could not allocate Game");
     defer alloc.destroy(g);
@@ -4047,7 +4158,6 @@ pub fn run(mode: Mode) void {
             snapshotPos(row, &wasPos[gi]);
         }
         if (g.hero.loosed) looseShaft(g);
-        if (g.hero.thrown) releaseSpell(g);
         if (g.hero.rang) summonSpirit(g);
         const hitsBefore = allHits(g);
         markSight(g);
@@ -4056,6 +4166,7 @@ pub fn run(mode: Mode) void {
         markWade(g);
         markParry(g);
         markVigil(g);
+        markFlock(g);
         const bladeNow = heroBlade(g);
         if (g.warren.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.heavy(), true);
@@ -4150,6 +4261,65 @@ pub fn run(mode: Mode) void {
             if (l.yelped) sfx.world(.lurker_hurt, l.pos);
             if (l.justDied) sfx.world(.lurker_die, l.pos);
         }
+        if (g.clatter.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.heavy(), true);
+        }
+        for (g.clatter.live()) |*sk| {
+            if (sk.reared) sfx.world(.skitter_clack, sk.pos);
+            if (sk.sliced) sfx.world(.skitter_slice, sk.pos);
+            if (sk.yelped) sfx.world(.bone_hurt, sk.pos);
+            if (sk.justDied) sfx.world(.bone_die, sk.pos);
+        }
+        // **THE PRIEST NEVER RETURNS A BLOW** — it has no melee, and its cold is a per-frame DRIP on its own
+        // channel (`vigil.gasDose`'s pattern), so it cannot voice and shake the hero sixty times a second.
+        _ = g.crypt.update(dt, g.hero.pos, PLAY_HALF, bladeNow);
+        if (g.crypt.breathDose(dt, g.hero.pos)) |b| {
+            _ = heroTakes(g, b, false, false);
+        }
+        for (g.crypt.live()) |*p| {
+            if (p.called) sfx.world(.priest_call, p.pos);
+            if (p.drewBreath) sfx.world(.priest_breath, p.muzzleWorld());
+            if (p.yelped) sfx.world(.bone_hurt, p.pos);
+            if (p.justDied) sfx.world(.bone_die, p.pos);
+            // …AND THE BODY IT PULLED UP IS PUT IN THE OTHER GROUP HERE. The creature cannot do it: the
+            // skitterers are another array of another type (the necromancer's `applyRaises` law).
+            if (p.raised) {
+                // **ON THE GROUND UNDER THE SPOT, NOT AT THE CASTER'S OWN FEET** (`foe.resetGroup`'s law): the
+                // priest carries its own `pos.y` into `raiseAt`, so on a bank the body came up buried. And
+                // INSIDE THE MOVEMENT CLAMP first: `RAISE_OUT` is 5.6 m in front of a caster that may itself
+                // be standing on the boundary, and a body whose `home` is outside `PLAY_HALF` never walks.
+                const spot = mathx.clampXZ(p.raiseAt, PLAY_HALF);
+                const at = v3(spot.x, g.env.groundAt(spot.x, spot.z), spot.z);
+                g.clatter.raise(at, mathx.headingXZ(mathx.dirXZ(at, g.hero.pos)));
+                sfx.world(.sac_hatch, at);
+                g.rumble.play(rumblemod.hit_heavy);
+                g.rig.addShake(SHAKE_RAISE);
+            }
+        }
+        if (g.belfry.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.heavy(), true);
+        }
+        for (g.belfry.live()) |*h| {
+            if (h.gaped) sfx.world(.toad_gape, h.pos);
+            if (h.snapped) sfx.world(.toad_chomp, h.pos);
+            if (h.heaved) sfx.world(.ogre_heave, h.pos);
+            if (h.clanked) sfx.world(.hollow_clank, h.bellWorld());
+            if (h.sparked) {
+                const at = h.sparkWorld();
+                spawnSpark(g, at);
+                // The rider's own voice: a dry electrical crack, the one sound in this family that is not bronze.
+                sfx.world(.gremlin_spark, at);
+            }
+            if (h.yelped) sfx.world(.bone_hurt, h.pos);
+            if (h.justDied) sfx.world(.bone_die, h.pos);
+            if (h.tolled) {
+                const at = h.bellWorld();
+                sfx.world(.hollow_toll, at);
+                rouseAll(g, at, hollowmod.TOLL_R);
+                g.rumble.play(rumblemod.hit_heavy);
+                g.rig.addShake(SHAKE_TOLL);
+            }
+        }
         applyRaises(g);
         if (g.rite.anyLaid()) {
             g.rumble.play(rumblemod.swing_light);
@@ -4240,6 +4410,10 @@ pub fn run(mode: Mode) void {
             sfx.play(if (g.hero.atkHeavy) .hit_heavy else .hit_light);
             if (g.hero.attacking) _ = g.hero.drinkLeech();
         }
+        // **DAMAGE MAY NOT LAND BEFORE THE BODIES UPDATE.** `justDied` is a one-frame edge each creature
+        // clears at the top of its own update, so a lance/levin/sunder/siphon kill cast before that loop was
+        // dead with nothing paid for it — no souls, no drop, no `trig.died`, no kill sound.
+        if (g.hero.thrown) releaseSpell(g);
         stepShafts(g, dt);
         emberBounces(g);
         if (anyFoeDied(g)) {

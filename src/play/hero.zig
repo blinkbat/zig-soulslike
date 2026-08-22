@@ -172,6 +172,43 @@ pub const JUMP_AIR: f32 = 0.72;
 const JUMP_G: f32 = 8.0 * JUMP_APEX / (JUMP_AIR * JUMP_AIR);
 const JUMP_V0: f32 = JUMP_G * JUMP_AIR * 0.5;
 const AIR_TURN_RATE: f32 = 2.6;
+/// **KNOCKED OFF HIS FEET — THE JUMP'S ARC, NOT A SECOND ONE.** `JUMP_G` is the world's gravity and a thrown
+/// body falls under it exactly as a leaping one does, so the only thing a launch authors is how high and how
+/// far. The apex arrives as `combat.Hit.launch` (the blow says how high) and the speed is SOLVED out of it:
+/// `v = sqrt(2 g h)`, which at the slams' 0.85 m is 5.12 m/s and 0.66 s of air — a hair under his own jump's
+/// 1.0 m and 0.72 s, so being thrown reads as smaller than leaping and lands sooner.
+/// **AND THE DISTANCE IS THE AUTHORED NUMBER, not whatever fell out of the arc**: `airSpeed` is constant
+/// through a flight, so the throw is `LAUNCH_BACK` divided by that flight's own airtime.
+pub const LAUNCH_BACK: f32 = 1.6;
+fn launchV0(apex: f32) f32 {
+    return @sqrt(2.0 * JUMP_G * mathx.maxF(apex, 0.01));
+}
+fn launchSpeed(apex: f32) f32 {
+    return LAUNCH_BACK * JUMP_G / (2.0 * launchV0(apex));
+}
+/// **HOW LONG A GIVEN THROW IS IN THE AIR**, for a harness that has to aim at a fraction of the flight
+/// (`shots.zig`) rather than at a frame count. `2 v / g`, which is the same arithmetic `JUMP_AIR` is.
+pub fn launchAirFor(apex: f32) f32 {
+    return 2.0 * launchV0(apex) / JUMP_G;
+}
+/// Degrees the trunk arches BACK at the top of the throw. Huge, because a reaction that is not huge is a lean
+/// (`AGENTS.md`) — over the heavy stagger's own `STAG_LEAN`, since this is the blow that beat that reaction.
+const LAUNCH_ARCH: f32 = 54.0;
+const LAUNCH_HEAD: f32 = 40.0;
+const LAUNCH_ARM: f32 = 62.0;
+const LAUNCH_HIP: f32 = 34.0;
+const LAUNCH_KNEE: f32 = 46.0;
+/// **WHAT THE POSE NORMALISES ON**, so one launch animation covers every apex a blow can author: the pose
+/// reads `vertVel` against THIS rather than against its own throw's v0, which is why a bigger slam looks like
+/// a bigger throw of the same move instead of an identical one. The four slams in the field all author
+/// `SLAM_LAUNCH`; this is the ceiling they are read against.
+pub const LAUNCH_MAX_APEX: f32 = 1.2;
+comptime {
+    // The one launch in the game lives with the field it feeds (`combat.SLAM_LAUNCH`) so a foe file needs no
+    // import of the hero to author it. Both ends are pinned here, where the arc it has to fit is written.
+    std.debug.assert(combat.SLAM_LAUNCH < JUMP_APEX);
+    std.debug.assert(combat.SLAM_LAUNCH <= LAUNCH_MAX_APEX);
+}
 const LAND_DUR: f32 = 0.34;
 const LAND_SINK = 0.052 * H;
 const LAND_SINK_AT: f32 = 0.22;
@@ -197,8 +234,8 @@ const JUMP_FOLD: f32 = 12.0;
 const JUMP_HEAD_UP: f32 = -10.0;
 const JUMP_LEG_SPLIT: f32 = 5.0;
 
-const ROLL_DUR = 0.70;
-const ROLL_IFRAME_END = 0.46;
+pub const ROLL_DUR = 0.70;
+pub const ROLL_IFRAME_END = 0.46;
 pub const ROLL_DIST = 3.5;
 const ROLL_BALL_Y = 0.50;
 const ROLL_TUCK_IN = 0.16;
@@ -961,6 +998,10 @@ const BLADES = [_]BladeSpec{
     .{ .base = -0.06, .tip = 0.80, .r = 0.42 }, // club: 1.44 m
 };
 
+comptime {
+    if (BLADES.len != @typeInfo(Blade).@"enum".fields.len) @compileError("hero: a Blade has no capsule row");
+}
+
 fn bladeSpec(b: Blade) BladeSpec {
     return BLADES[@intFromEnum(b)];
 }
@@ -1497,6 +1538,10 @@ pub const Hero = struct {
     airY: f32 = 0,
     vertVel: f32 = 0,
     jumping: bool = false,
+    /// **AIRBORNE BECAUSE SOMETHING HIT HIM**, which is a different thing from `jumping` in exactly two ways:
+    /// he cannot steer it and he cannot turn in it, and he lands in a heavy stun rather than on his feet.
+    /// Everything else about it — the integrator, the ground gate, the landing beat — is the jump's.
+    launched: bool = false,
     jumps: u32 = 0,
     airYaw: f32 = 0,
     airSpeed: f32 = 0,
@@ -1727,7 +1772,7 @@ pub const Hero = struct {
         return self.pos.y + self.lift;
     }
     pub fn airborne(self: *const Hero) bool {
-        return self.jumping;
+        return self.jumping or self.launched;
     }
 
     pub fn startJump(self: *Hero, dir: rl.Vector3, speed: f32) bool {
@@ -1742,21 +1787,58 @@ pub const Hero = struct {
         return true;
     }
 
+    /// **THROWN, AND IT INTERRUPTS.** Deliberately NOT gated on `committed()` the way `startJump` is — a swing
+    /// or a roll being taken off him mid-way is the whole of what the move says. The stun is CLEARED on the
+    /// way up, because the loop asks `staggered()` before `airborne()` and a launch that also stunned him
+    /// would never leave the ground; he is stunned on the way down instead (`tickAir`), which is also where a
+    /// player reads it. `held` refuses outright: that flag is the WORLD STOPPED (a menu, the editor, the award
+    /// card — `game.heldFrame`), and `tickAir` will not integrate while it is up, so a launch granted on such a
+    /// frame would strand him mid-flight until the world ran again.
+    pub fn startLaunch(self: *Hero, away: rl.Vector3, apex: f32) bool {
+        if (self.dead or self.held or apex <= 0) return false;
+        self.dropActions();
+        self.stun = .none;
+        self.stunT = 0;
+        self.jumping = false;
+        self.launched = true;
+        self.airY = self.pos.y;
+        self.vertVel = launchV0(apex);
+        self.airSpeed = launchSpeed(apex);
+        self.airYaw = if (mathx.lenXZ(away) > 1e-3) mathx.headingXZ(away) else self.facing + std.math.pi;
+        self.landT = mathx.LONG_AGO;
+        self.startXfade();
+        return true;
+    }
+
     fn tickAir(self: *Hero, dt: f32) void {
         if (self.held) return;
-        if (!self.jumping) {
+        if (!self.airborne()) {
             self.lift = 0;
             return;
         }
         self.airY += self.vertVel * dt - 0.5 * JUMP_G * dt * dt;
         self.vertVel -= JUMP_G * dt;
         if (self.airY <= self.pos.y) {
+            const thrown = self.launched;
             self.airY = self.pos.y;
             self.lift = 0;
             self.vertVel = 0;
             self.jumping = false;
+            self.launched = false;
             self.landed = true;
             self.landT = 0;
+            // A MAN THROWN A BODY'S LENGTH DOES NOT COME UP SWINGING: the landing is where the throw is paid
+            // for, and a queued action may not be fired out of it.
+            //
+            // **BUT IT IS THE LIGHT STUN, NOT THE HEAVY ONE** (owner: "big slam knockback recovery takes too
+            // long"). The FLIGHT is the reaction — 0.66 s of it, on top of which a 1.15 s heavy stun made the
+            // whole thing 1.8 s of no control off one blow, which is longer than the slam that threw him took
+            // to wind up. At 0.46 it comes to 1.12 s, near enough the plain heavy stagger this replaces (1.15)
+            // — so being thrown costs him the same TIME as being staggered and only looks far worse.
+            if (thrown) {
+                self.enterStun(.light);
+                return;
+            }
             self.startXfade();
             self.fireQueued();
             return;
@@ -1765,6 +1847,7 @@ pub const Hero = struct {
     }
 
     pub fn steerAir(self: *Hero, dt: f32, dir: rl.Vector3) void {
+        if (self.launched) return; // a thrown body is not steered
         if (self.airSpeed <= 0.01 or mathx.lenXZ(dir) < 0.01) return;
         self.airYaw = mathx.approachAngle(self.airYaw, mathx.headingXZ(dir), AIR_TURN_RATE * dt);
     }
@@ -1773,8 +1856,12 @@ pub const Hero = struct {
         self.tickClocks(dt);
         self.speed = self.airSpeed;
         self.speedS = mathx.approach(self.speedS, self.airSpeed, dt * SPEED_SMOOTH);
-        const want = faceYaw orelse self.airYaw;
-        self.facing = mathx.approachAngle(self.facing, want, ROLL_YAW_RATE * dt);
+        // THROWN, HE KEEPS THE BEARING HE WAS HIT ON — he travels backwards and goes on facing what hit him,
+        // which is the only way the arch reads as being knocked over rather than as a leap.
+        if (!self.launched) {
+            const want = faceYaw orelse self.airYaw;
+            self.facing = mathx.approachAngle(self.facing, want, ROLL_YAW_RATE * dt);
+        }
         self.pose();
     }
 
@@ -1821,7 +1908,7 @@ pub const Hero = struct {
 
 
     pub fn committed(self: *const Hero) bool {
-        return self.jumping or self.rolling or self.attacking or self.drinking or self.shooting or self.casting or self.parrying or self.ringing;
+        return self.jumping or self.launched or self.rolling or self.attacking or self.drinking or self.shooting or self.casting or self.parrying or self.ringing;
     }
 
     pub fn holds(self: *const Hero, a: Armament) bool {
@@ -3181,6 +3268,10 @@ pub const Hero = struct {
             },
             .none => {},
         }
+        // **THE THROW IS LAST, BECAUSE IT BEATS THE STAGGER IT REPLACES.** `startLaunch` clears the stun it
+        // finds and hands it back on the landing, so a slam reads as one reaction rather than as a flinch
+        // followed by a flight. Nothing happens on a blow that authors no `launch`, which is nearly all of them.
+        if (r != .death) _ = self.startLaunch(mathx.scaleV(fromDir, -1), h.launch);
         return .taken;
     }
 
@@ -3210,6 +3301,9 @@ pub const Hero = struct {
         if (self.stam.cur > 0) return .blocked;
         self.guarding = false;
         self.enterStun(.heavy);
+        // A GUARD THAT HELD KEEPS ITS GROUND; a guard that BROKE did not stop the blow, so the throw is still
+        // owed. `blockHit` has no bearing of its own, so it is taken off his own facing — he was looking at it.
+        if (h.launch > 0) _ = self.startLaunch(mathx.headingDir(self.facing + std.math.pi), h.launch);
         return .guardBroken;
     }
     pub fn tickFlash(self: *Hero, dt: f32) void {
@@ -3267,8 +3361,20 @@ pub const Hero = struct {
         return true;
     }
 
+    /// Puts him back on his feet with no action and no flight in progress — the harness's own reset between
+    /// two staged moves, so one cell cannot leak into the next.
+    pub fn clearForShot(self: *Hero) void {
+        self.dropActions();
+        self.stun = .none;
+        self.stunT = 0;
+        self.clearAir();
+        self.startXfade();
+        self.pose();
+    }
+
     fn clearAir(self: *Hero) void {
         self.jumping = false;
+        self.launched = false;
         self.lift = 0;
         self.airY = self.pos.y;
         self.vertVel = 0;
@@ -3359,6 +3465,7 @@ pub const Hero = struct {
     fn poseBody(self: *Hero) void {
         if (self.dead) return self.poseDeath();
         if (self.stun != .none) return self.poseStun();
+        if (self.launched) return self.poseLaunch();
         if (self.jumping) return self.poseJump();
         if (self.rolling) return self.poseRoll();
         if (self.attacking) return self.poseAttack();
@@ -3604,6 +3711,60 @@ pub const Hero = struct {
         if (self.blendT >= POSE_XFADE) return;
         const k = mathx.smoothstep(0, POSE_XFADE, self.blendT);
         for (0..N) |i| wx[i] = lerpM(self.blendXf[i], wx[i], k);
+    }
+
+    /// **OFF ONE NUMBER, THE SAME ONE THE JUMP READS** — the vertical velocity, normalised on the launch's own
+    /// v0 so a bigger throw is not a different animation. Where the jump TUCKS at the apex this body ARCHES:
+    /// he is going backwards, so the trunk lays over, the head goes with it, the arms fly out and the legs
+    /// come off the ground in front of him. The signature is the OPPOSITE of a leap on purpose — a leap
+    /// gathers and a throw opens.
+    ///
+    /// **AND THE ARCH OVERSHOOTS ITS REST** (`AGENTS.md`): it peaks a little past the apex rather than at it,
+    /// so the body is still laying back while it has already started to fall, which is what mass does.
+    fn poseLaunch(self: *Hero) void {
+        const k = mathx.clampF(self.vertVel / launchV0(LAUNCH_MAX_APEX), -1, 1);
+        const rise = mathx.clampF(k, 0, 1);
+        const fall = mathx.clampF(-k, 0, 1);
+        // The lay-back leads the arc: full by the time he stops rising, and only easing off on the way down.
+        const arch = mathx.maxF(1.0 - rise, 0) * (1.0 - 0.45 * fall);
+        const facingDeg = mathx.degrees(self.facing);
+        const hipY = self.rest[ROOT].y;
+
+        var wx: [N]rl.Matrix = undefined;
+        // The pelvis goes UNDER him as he lays back — a body thrown flat, not a man standing up in mid-air.
+        wx[ROOT] = mul3(
+            rx(-LAUNCH_ARCH * 0.30 * arch),
+            mul(tr(0, hipY - 0.05 * H * arch, 0), ry(facingDeg)),
+            rootAt(self.footPos()),
+        );
+        setLocal(&wx, SPINE, self.rest, rx(-LAUNCH_ARCH * 0.38 * arch));
+        setLocal(&wx, CHEST, self.rest, rx(-LAUNCH_ARCH * 0.32 * arch));
+        setLocal(&wx, NECK, self.rest, rx(-LAUNCH_HEAD * 0.4 * arch));
+        setLocal(&wx, HEAD, self.rest, rx(-LAUNCH_HEAD * 0.6 * arch + HEAD_WALK * fall));
+        // THE ARMS FLY OUT AND ABOVE THE SHOULDER LINE, and they trail the trunk rather than leading it.
+        inline for (.{ SHL, SHR }, .{ ELL, ELR }, .{ WRL, WRR }, .{ 1.0, -1.0 }) |sh, el, wr, side| {
+            setLocal(&wx, sh, self.rest, mul(
+                rx(-LAUNCH_ARM * arch),
+                rz(side * (ARM_ABD + 0.62 * LAUNCH_ARM * arch)),
+            ));
+            setLocal(&wx, el, self.rest, rx(-(IDLE_ELBOW + 24.0 * arch)));
+            setLocal(&wx, wr, self.rest, rl.math.matrixIdentity());
+        }
+        // …AND THE LEGS COME UP IN FRONT. They are what says "off his feet": a launch drawn with the legs
+        // hanging is a man being lifted, which is a different picture entirely.
+        inline for (.{ HIPL, HIPR }, .{ KNEEL, KNEER }, .{ ANKL, ANKR }, .{ 1.0, -1.0 }) |hip, knee, ank, side| {
+            const skew = 1.0 + side * 0.14; // wabi-sabi: the two legs never come up together
+            setLocal(&wx, hip, self.rest, mul(
+                rx(LAUNCH_HIP * arch * skew),
+                rz(side * HIP_ADDUCT),
+            ));
+            setLocal(&wx, knee, self.rest, rx(IDLE_KNEE + LAUNCH_KNEE * arch * skew));
+            setLocal(&wx, ank, self.rest, ry(side * FOOT_TOEOUT));
+        }
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
+        self.poseCarried(&wx);
+        self.applyXfade(&wx);
+        self.xf = wx;
     }
 
     /// Off ONE number, the vertical velocity: DRIVE up, TUCK where it passes through zero — which IS the
@@ -4125,6 +4286,14 @@ const setLocal = setHumanoid;
 
 pub fn placeSword(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, animRot: rl.Matrix, left: bool) void {
     wx[SWORD] = mul(animRot, gripFrame(wx[if (left) WRL else WRR], rest, left));
+}
+
+/// **A POLE IS AUTHORED POINTING UP OFF THE GRIP** (the warriors' kit convention), so the fit FLIPS it. After
+/// this, a caster's `tilt` means degrees the head leads FORWARD of plumb in the WORLD — and the fit bills the
+/// ARM and never the trunk, so a pose that arches the spine pays for it in its own tilt. The necromancer and
+/// the ancient priest both had this written out, which is two chances to get the measured sign wrong.
+pub fn staffFit(tilt: f32) rl.Matrix {
+    return mul(ry(180.0), rx(180.0 - tilt));
 }
 
 pub fn gripFrame(wrist: rl.Matrix, rest: [N]rl.Vector3, left: bool) rl.Matrix {
@@ -5063,6 +5232,69 @@ test "THE AIM BLEND EASES DOWN THROUGH A STAGGER, exactly as the guard's does" {
     r.aimB = 1;
     r.respawnNow();
     try std.testing.expectEqual(@as(f32, 0), r.aimB);
+}
+
+test "A LARGE SLAM TAKES HIM OFF HIS FEET — measured: the apex, the airtime, the throw, and the landing" {
+    var h = testHero();
+    h.vit.hpMax = 900;
+    h.vit.hp = 900;
+    const slam = combat.Hit{ .dmg = 20, .poise = 60, .launch = combat.SLAM_LAUNCH };
+    // He is mid-swing when it lands: the whole point of the move is that it TAKES the swing off him.
+    h.startAttack(.light);
+    try std.testing.expect(h.attacking);
+    const from = mathx.ground(0, 2.0); // in front of him at yaw 0, so he is thrown toward -Z
+    const was = h.pos;
+    try std.testing.expectEqual(combat.HitOutcome.taken, h.takeHit(slam, mathx.dirXZ(h.pos, from)));
+    try std.testing.expect(!h.attacking); // the action is interrupted
+    try std.testing.expect(h.airborne());
+    try std.testing.expect(!h.staggered()); // …and NOT stunned on the way up, or he would never leave the ground
+
+    const dt: f32 = 1.0 / 120.0;
+    var apex: f32 = 0;
+    var air: f32 = 0;
+    while (h.airborne()) : (air += dt) {
+        const dir = mathx.headingDir(h.airYaw);
+        mathx.stepXZ(&h.pos, dir, h.airSpeed * dt, 200.0);
+        h.updateAir(dt, 0);
+        apex = mathx.maxF(apex, h.lift);
+        try std.testing.expect(air < 3.0);
+    }
+    const thrown = mathx.distXZ(was, h.pos);
+    std.debug.print("\n  slam launch: apex {d:.2} m (authored {d:.2}), {d:.2} s of air, thrown {d:.2} m (authored {d:.2})\n", .{ apex, combat.SLAM_LAUNCH, air, thrown, LAUNCH_BACK });
+    try std.testing.expectApproxEqAbs(combat.SLAM_LAUNCH, apex, 0.05);
+    try std.testing.expectApproxEqAbs(LAUNCH_BACK, thrown, 0.12);
+    // He goes BACKWARDS and goes on facing what hit him — the arch only reads as a knock-down that way.
+    try std.testing.expect(h.pos.z < was.z - 1.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), h.facing, 1e-4);
+    // …and the throw is PAID FOR on the landing, not on the way up.
+    try std.testing.expect(h.staggered());
+    // The LIGHT stun, on purpose: the flight already was the reaction, so the whole throw costs him about what
+    // the heavy stagger it replaces did (0.66 + 0.46 against 1.15) rather than that plus a heavy stun on top.
+    try std.testing.expectEqual(combat.StunKind.light, h.stun);
+    const whole = air + combat.heroStunDur(false);
+    std.debug.print("  …the whole throw costs {d:.2} s, against a plain heavy stagger's {d:.2} s\n", .{ whole, combat.HEAVY_STUN_DUR });
+    try std.testing.expect(whole < combat.HEAVY_STUN_DUR * 1.15);
+
+    // A THROWN BODY IS NOT STEERED: the whole flight is a fact about the blow, not about the stick.
+    var g2 = testHero();
+    _ = g2.startLaunch(mathx.headingDir(std.math.pi), combat.SLAM_LAUNCH);
+    const yaw = g2.airYaw;
+    g2.steerAir(0.5, mathx.headingDir(1.2));
+    try std.testing.expectApproxEqAbs(yaw, g2.airYaw, 1e-6);
+
+    // AND NEARLY EVERY BLOW IN THE GAME AUTHORS NONE: a plain heavy stagger keeps his feet on the ground.
+    var flat = testHero();
+    _ = flat.takeHit(.{ .dmg = 20, .poise = 60 }, mathx.ground(0, 1));
+    try std.testing.expect(!flat.airborne());
+    try std.testing.expect(flat.staggered());
+}
+
+test "A STOPPED WORLD BEATS THE THROW — no launch on a held frame, or it hangs in the air until the world runs" {
+    // `tickAir` refuses to integrate while `held`, so a launch granted here would never land.
+    var h = testHero();
+    h.held = true;
+    try std.testing.expect(!h.startLaunch(mathx.headingDir(std.math.pi), combat.SLAM_LAUNCH));
+    try std.testing.expect(!h.airborne());
 }
 
 test "a Cerulean is refused into a full bar rather than pouring a charge away" {

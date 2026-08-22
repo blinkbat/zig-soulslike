@@ -319,7 +319,6 @@ pub const Mage = struct {
     leash: foe.Leash = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
-    parry: foe.Parry = .{},
     threat: foe.Threat = .{},
     nav: foe.Nav = .{},
 
@@ -451,10 +450,6 @@ pub const Mage = struct {
 
     pub fn cupAmt(self: *const Mage) f32 {
         return mathx.clampF(self.cup, 0, 1);
-    }
-
-    fn parryable(_: *const Mage) ?f32 {
-        return null;
     }
 
     fn fdir(self: *const Mage) rl.Vector3 {
@@ -609,6 +604,9 @@ pub const Mage = struct {
             .flick => {
                 // A THIRD OF A TURN ONLY. The flame is committed to the line it was lit on — a cone that
                 // tracked would be a homing attack with no travel time at all.
+                // NOT PARRYABLE, AND THAT IS A DECISION (the priest's breath, one element over): a poured
+                // gout has no swung mass to catch — boards only ever BLOCK fire. The answer is the sidestep
+                // the third-of-a-turn leaves open.
                 self.faceToward(hero, dt * 0.33);
                 const u = mathx.clampF(self.t / FLICK_DUR, 0, 1);
                 self.chanSet(samplePose(&FLICK_KEYS, u));

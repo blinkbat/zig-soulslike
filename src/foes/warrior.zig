@@ -32,14 +32,7 @@ const BLAZON = rgba(74, 32, 30, 255);
 
 const DUST = foe.DUST;
 const CHIP = archermod.BONE_CHIP;
-const CHIP_SPRAY = foe.Spray{
-    .fanLo = 0.2,   .fanHi = 1.1,
-    .upLo = 0.9,    .upHi = 3.0,
-    .lifeLo = 0.32, .lifeHi = 0.60,
-    .rLo = 0.022,   .rHi = 0.050,
-    .r1 = 0.008,    .col = CHIP, .grav = 8.0,
-    .stretch = 0.030, .bounce = 0.42,
-};
+const CHIP_SPRAY = archermod.boneChips(1.1);
 const SPARK = rgba(255, 208, 128, 240);
 const SPARK_COOL = rgba(226, 116, 38, 200);
 const SPLINTER = rgba(86, 64, 44, 240);
@@ -447,7 +440,7 @@ fn classify(r: Role, dist: f32, scale: f32, ready: []const bool) Choice {
 }
 
 fn triggerR(a: Attack, scale: f32) f32 {
-    return a.reachOut * scale + a.lunge * 0.85 * scale + foe.HERO_REACH;
+    return foe.hurtReach(a.reachOut + a.lunge * 0.85, scale);
 }
 
 fn pick(r: Role, dist: f32, scale: f32, ready: []const bool) ?usize {

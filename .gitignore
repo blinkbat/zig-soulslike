@@ -9,3 +9,4 @@ shots/
 *.bak
 settings.cfg
 save*.dat
+devsave*.dat

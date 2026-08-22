@@ -213,9 +213,12 @@ const WHIRL_DUR = 0.70;
 const SLING_CD = 1.9;
 const BITE_R = 1.45;
 const BITE_PREFER_R = 5.0;
-const BITE_DUR = 0.52;
-const BITE_HIT_A = 0.30;
-const BITE_HIT_B = 0.52;
+/// The jaws arrive at `BITE_DUR * BITE_HIT_A` = 0.34 s — over `foe.TELL_MIN`, and with real margin over the
+/// parry window. At the old 0.52 x 0.30 the snap landed at 0.156 s: HALF the tell floor, and the fairness
+/// test never caught it because it compared the FRACTION against the SECONDS.
+const BITE_DUR = 0.62;
+const BITE_HIT_A = 0.55;
+const BITE_HIT_B = 0.76;
 const BITE_CD = 1.15;
 const BITE_COIL_AT = 0.42;
 const BITE_ARCH = 14.0;
@@ -325,6 +328,9 @@ pub const Kobold = struct {
     fade: f32 = 0,
     gone: bool = false,
     dealt: bool = false,
+    /// THE HERO'S SHIELD, stamped from outside (`game.markParry`), and the one-frame answer to it.
+    parry: foe.Parry = .{},
+    parried: bool = false,
 
     phase: f32 = 0,
     moving: f32 = 0,
@@ -467,6 +473,7 @@ pub const Kobold = struct {
             return .none;
         }
         self.justDied = false;
+        self.parried = false;
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
@@ -572,8 +579,43 @@ pub const Kobold = struct {
         const gaitSpeed: f32 = if (movedDist > 0) moveSpeed else 0;
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, gaitSpeed, moveYaw, self.facing);
         self.pose();
+        self.takeParry();
         self.tryHit(blade);
         return act;
+    }
+
+    /// SECONDS BACK FROM THE AXE OR THE JAWS ARRIVING, or null. **THE TWO STROKES THAT HURT, AND NOT THE
+    /// DASH** — the leap is answered by not being where it lands (the bone knight's HOP rule), and the whirl
+    /// and the chant are not blows at all. The impact frame is the OPENING of `hurtOpen`'s own window, which
+    /// is where the axe actually gets there.
+    fn toImpact(self: *const Kobold) ?f32 {
+        return switch (self.state) {
+            .chop => ZERK_CHOP * ZERK_HIT_A - self.t,
+            .bite => BITE_DUR * BITE_HIT_A - self.t,
+            .idle, .approach, .reposition, .dash, .heave, .cast, .whirl, .stunlight, .stunheavy, .dead => null,
+        };
+    }
+
+    /// THE INSTANT IT CAN BE CAUGHT IN, and how far out it reaches then — `hurtReach`'s OWN answer, which is
+    /// already the per-state one, so a stroke the boards could not have met is never offered as one.
+    fn parryable(self: *const Kobold) ?f32 {
+        if (self.dealt) return null;
+        const left = self.toImpact() orelse return null;
+        if (!foe.inParryWindow(left)) return null;
+        return self.hurtReach();
+    }
+
+    /// **THE BOARDS TAKE IT.** `enterStun` already spends `dealt`, which is what stops the rest of the swing
+    /// still billing through `Warband.update`'s own reach test.
+    fn takeParry(self: *Kobold) void {
+        const reach = self.parryable() orelse return;
+        if (!foe.caught(self, reach)) return;
+        if (self.state == .bite) self.biteCd = BITE_CD;
+        switch (self.vit.hit(combat.PARRY_HIT)) {
+            .death => self.enterDeath(),
+            .heavy => self.enterStun(.stunheavy),
+            .light, .none => self.enterStun(.stunlight),
+        }
     }
 
     /// **THE BERSERKER RUNS** (owner: always run unless very close, and faster than the other skels). At
@@ -659,7 +701,10 @@ pub const Kobold = struct {
                     return self.enter(.approach);
                 }
                 if (self.slingCd <= 0) return self.enter(.whirl);
-                return self.enter(.idle);
+                // The sling is cooling: DRIFT (the archer's reload lesson) — a skirmisher between shots
+                // circles his own way, he does not stand on the mark the last clump was thrown from.
+                self.moveDir = mathx.headingDir(self.facing + (if (self.seed < 0.5) @as(f32, 1) else -1) * std.math.pi * 0.5);
+                return self.enter(.reposition);
             },
         }
     }
@@ -1608,7 +1653,7 @@ fn buildMeshes() [N]rl.Mesh {
 
 pub const Model = struct {
     mesh: [N]rl.Mesh,
-    kit: [3]rl.Mesh,
+    kit: [SPEC.len]rl.Mesh,
     offAxe: rl.Mesh,
     jaw: rl.Mesh,
     robe: rl.Mesh,
@@ -1623,12 +1668,12 @@ pub const Model = struct {
         for (0..TAIL_N) |i| tail[i] = tailMesh(i);
         return .{
             .mesh = buildMeshes(),
-            .kit = [3]rl.Mesh{ axeMesh(0xA7E1), staffMesh(), slingMesh() },
+            .kit = [SPEC.len]rl.Mesh{ axeMesh(0xA7E1), staffMesh(), slingMesh() },
             .offAxe = axeMesh(0xA7E2),
             .jaw = jawMesh(),
             .robe = robeMesh(),
             .hat = hatMesh(),
-            .loin = [3]rl.Mesh{ loinMesh(.berserker), loinMesh(.priest), loinMesh(.slinger) },
+            .loin = [SPEC.len]rl.Mesh{ loinMesh(.berserker), loinMesh(.priest), loinMesh(.slinger) },
             .tail = tail,
             .mat = mat,
         };
@@ -1687,6 +1732,12 @@ pub const Warband = struct {
         for (self.liveConst()) |*k| k.drawFx();
     }
 
+    pub fn setParry(self: *Warband, p: foe.Parry) void {
+        foe.setParry(self.live(), p);
+    }
+    pub fn anyParried(self: *const Warband) bool {
+        return foe.anyParried(self.liveConst());
+    }
     pub fn pierce(self: *Warband, blade: foe.Blade) bool {
         return foe.pierceGroup(self.live(), blade);
     }
@@ -1845,11 +1896,64 @@ test "the priest never reaches for an attack window" {
     }
 }
 
+test "BOTH KOBOLD STROKES CAN BE CAUGHT, and the DASH cannot — a leap is not a stroke" {
+    const cases = [_]struct { st: State, at: f32, reach: f32 }{
+        .{ .st = .chop, .at = ZERK_CHOP * ZERK_HIT_A, .reach = ZERK_REACH },
+        .{ .st = .bite, .at = BITE_DUR * BITE_HIT_A, .reach = BITE_R },
+    };
+    for (cases) |c| {
+        var k = Kobold.spawnAs(if (c.st == .chop) .berserker else .slinger, mathx.zero3, 0, 1.0, 0.3);
+        k.state = c.st;
+        k.dealt = false;
+        k.t = c.at - foe.PARRY_LEAD * 0.5;
+        const reach = k.parryable() orelse return error.TestUnexpectedResult;
+        try std.testing.expectApproxEqAbs(foe.hurtReach(c.reach, k.scale), reach, 1e-5);
+        k.parry = .{ .live = true, .at = mathx.ground(0, c.reach * 0.5), .facing = std.math.pi, .arc = combat.GUARD_ARC };
+        k.takeParry();
+        try std.testing.expect(k.parried);
+        try std.testing.expect(k.state == .stunlight or k.state == .stunheavy);
+        // `enterStun` spends `dealt`, which is what stops the rest of the stroke billing through the group.
+        try std.testing.expect(!k.hurtOpen());
+    }
+    var d = Kobold.spawnAs(.berserker, mathx.zero3, 0, 1.0, 0.3);
+    d.state = .dash;
+    d.dealt = false;
+    var t: f32 = 0;
+    while (t < DASH_GATHER + DASH_FLIGHT + DASH_LAND) : (t += 1.0 / 240.0) {
+        d.t = t;
+        try std.testing.expect(d.parryable() == null);
+    }
+}
+
 test "NO ATTACK COMES OUT OF NOWHERE: every kobold move is visible before it can hurt" {
     try std.testing.expect(ZERK_CHOP * ZERK_HIT_A >= foe.TELL_MIN);
     try std.testing.expect(ZERK_CHOP * (ZERK_HIT_B - ZERK_HIT_A) > 0.10);
-    try std.testing.expect(BITE_HIT_A >= foe.TELL_MIN);
+    // IN SECONDS, NOT AS A FRACTION — the old `BITE_HIT_A >= TELL_MIN` compared 0.30 of a clock against
+    // 0.30 of a second and passed while the snap landed at 0.156 s.
+    try std.testing.expect(BITE_DUR * BITE_HIT_A >= foe.TELL_MIN);
+    try std.testing.expect(BITE_DUR * BITE_HIT_A > foe.PARRY_LEAD * 1.5);
     try std.testing.expect(WHIRL_DUR >= foe.TELL_MIN);
     try std.testing.expect(CAST_DUR >= foe.TELL_MIN);
     try std.testing.expect(DASH_GATHER + DASH_FLIGHT >= foe.TELL_MIN);
+}
+
+test "THE SLINGER DRIFTS WHILE THE SLING COOLS — the bearing sweeps and the band holds" {
+    var k = Kobold.spawnAs(.slinger, mathx.ground(0, 0), 0, 1.0, 0.3);
+    k.leash.noteSeen();
+    k.slingCd = 99.0;
+    k.biteCd = 99.0;
+    const hero = mathx.ground(0, 7.5);
+    var swept: f32 = 0;
+    var was = mathx.headingXZ(mathx.dirXZ(hero, k.pos));
+    var t: f32 = 0;
+    while (t < 1.2) : (t += 1.0 / 60.0) {
+        _ = k.update(1.0 / 60.0, hero, 500.0, .{});
+        const now = mathx.headingXZ(mathx.dirXZ(hero, k.pos));
+        swept += @abs(mathx.wrapPi(now - was));
+        was = now;
+    }
+    const d = mathx.distXZ(k.pos, hero);
+    std.debug.print("\n  slinger drift: bearing swept {d:.0} deg, range {d:.1} m (band {d:.1}..{d:.1})\n", .{ mathx.degrees(swept), d, SPEC[2].wantMin, SPEC[2].wantMax });
+    try std.testing.expect(swept > mathx.radians(12.0));
+    try std.testing.expect(d > SPEC[2].wantMin and d < SPEC[2].wantMax + 1.0);
 }

@@ -88,6 +88,9 @@ test {
     _ = @import("foes/shroommage.zig");
     _ = @import("foes/sporegolem.zig");
     _ = @import("foes/fenlurker.zig");
+    _ = @import("foes/skitterer.zig");
+    _ = @import("foes/ancientpriest.zig");
+    _ = @import("foes/hollow.zig");
     _ = @import("foes/wolf.zig");
     _ = @import("play/pickup.zig");
     _ = @import("play/award.zig");

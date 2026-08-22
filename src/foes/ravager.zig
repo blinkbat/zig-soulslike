@@ -109,6 +109,9 @@ const RAKE_WIND: f32 = 0.46;
 const RAKE_STRIKE: f32 = 0.20;
 const RAKE_RECOVER: f32 = 0.62;
 const RAKE_COOL: f32 = 2.0;
+/// Where in the swipe the paw arrives, as a share of it — the ONE frame the boards are asked about
+/// (`foe.PARRY_LEAD` back from here), and where its own signed paw clock crosses zero.
+const RAKE_IMPACT_K: f32 = 0.5;
 /// A paw's reach round its own shoulder — well under the bite's 1.55, and it brings no travel with it.
 const RAKE_R: f32 = 1.15;
 /// HOW FAR OFF ITS NOSE THE HERO HAS TO BE for this to be the answer instead of the leap: cos 55 deg. Inside
@@ -297,6 +300,9 @@ pub const Ravager = struct {
     snapped: bool = false,
     swiped: bool = false,
     yelped: bool = false,
+    /// THE HERO'S SHIELD, stamped from outside (`game.markParry`), and the one-frame answer to it.
+    parry: foe.Parry = .{},
+    parried: bool = false,
 
     fade: f32 = 0,
     gone: bool = false,
@@ -423,11 +429,13 @@ pub const Ravager = struct {
         self.snapped = false;
         self.swiped = false;
         self.yelped = false;
+        self.parried = false;
         if (self.gone) {
             foe.tickParticles(&self.parts, dt, self.pos.y);
             return null;
         }
         self.stateStep(dt, hero, bounds);
+        self.takeParry();
         self.tryHit(blade);
         return self.heroHit;
     }
@@ -569,7 +577,7 @@ pub const Ravager = struct {
 
     fn tryBite(self: *Ravager, hero: rl.Vector3) void {
         if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, hero, BITE_R + foe.HERO_REACH, BITE_FRONT_DOT)) return;
+        if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(BITE_R, self.scale), BITE_FRONT_DOT)) return;
         self.heroHit = BITE_HIT;
         self.heroLatch = true;
         self.snapped = true;
@@ -590,6 +598,40 @@ pub const Ravager = struct {
             .heavy => self.enterStun(true),
             .light => self.enterStun(false),
             .none => {},
+        }
+    }
+
+    /// SECONDS BACK FROM THE PAW ARRIVING, or null. **THE SWIPE ONLY, NEVER THE LEAP** — the same call the
+    /// bone knight's own HOP gets (`knight`'s window test names the four strokes that have none): a shield is
+    /// braced against a stroke, and a whole animal in the air is not a stroke. Walking out of the arc is what
+    /// answers the leap, which is why it has the longer hop and the shorter tell.
+    fn toImpact(self: *const Ravager) ?f32 {
+        const at = RAKE_WIND + RAKE_STRIKE * RAKE_IMPACT_K;
+        return switch (self.state) {
+            .rake => at - self.t,
+            .idle, .move, .bite, .hurt, .dead => null,
+        };
+    }
+
+    /// THE INSTANT THE PAW CAN BE CAUGHT IN, and how far out it reaches then — `tryRake`'s OWN extent through
+    /// the same `foe.hurtReach`, so a swipe the boards could not have met is never offered as one.
+    fn parryable(self: *const Ravager) ?f32 {
+        const left = self.toImpact() orelse return null;
+        if (!foe.inParryWindow(left)) return null;
+        return foe.hurtReach(RAKE_R, self.scale);
+    }
+
+    /// **THE BOARDS TAKE THE PAW.** No sparks of its own: this is meat on wood, and `foe.caught` already lights
+    /// the body's hit flash — the ring and the shake are the hero's own (`game.parryBeat`).
+    fn takeParry(self: *Ravager) void {
+        const reach = self.parryable() orelse return;
+        if (!foe.caught(self, reach)) return;
+        self.rakeCool = RAKE_COOL;
+        self.heroLatch = true;
+        switch (self.vit.hit(combat.PARRY_HIT)) {
+            .death => self.enterDeath(),
+            .heavy => self.enterStun(true),
+            .light, .none => self.enterStun(false),
         }
     }
 
@@ -794,6 +836,12 @@ pub const Thicket = struct {
     }
     pub fn drawFx(self: *const Thicket) void {
         for (self.liveConst()) |*r| r.drawFx();
+    }
+    pub fn setParry(self: *Thicket, p: foe.Parry) void {
+        foe.setParry(self.live(), p);
+    }
+    pub fn anyParried(self: *const Thicket) bool {
+        return foe.anyParried(self.liveConst());
     }
     pub fn pierce(self: *Thicket, blade: foe.Blade) bool {
         return foe.pierceGroup(self.live(), blade);

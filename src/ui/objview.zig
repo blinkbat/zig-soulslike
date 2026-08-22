@@ -28,6 +28,9 @@ const ravagermod = @import("../foes/ravager.zig");
 const magemod = @import("../foes/shroommage.zig");
 const golemmod = @import("../foes/sporegolem.zig");
 const fenmod = @import("../foes/fenlurker.zig");
+const skittermod = @import("../foes/skitterer.zig");
+const priestmod = @import("../foes/ancientpriest.zig");
+const hollowmod = @import("../foes/hollow.zig");
 const combat = @import("../play/combat.zig");
 const foemod = @import("../foes/foe.zig");
 const elemfx = @import("../gfx/elemfx.zig");
@@ -316,6 +319,9 @@ const CharSet = struct {
     ring: magemod.Ring,
     host: golemmod.Host,
     marsh: fenmod.Marsh,
+    clatter: skittermod.Clatter,
+    crypt: priestmod.Crypt,
+    belfry: hollowmod.Belfry,
 };
 var charSet: ?CharSet = null;
 
@@ -339,6 +345,9 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
             .ring = magemod.Ring.init(scene.shader),
             .host = golemmod.Host.init(scene.shader),
             .marsh = fenmod.Marsh.init(scene.shader),
+            .clatter = skittermod.Clatter.init(scene.shader),
+            .crypt = priestmod.Crypt.init(scene.shader),
+            .belfry = hollowmod.Belfry.init(scene.shader),
         };
         var cs = &charSet.?;
         cs.warren.n = 0;
@@ -355,6 +364,9 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
         cs.vigil.n = 0;
         cs.thicket.n = 0;
         cs.ring.n = 0;
+        cs.clatter.n = 0;
+        cs.crypt.n = 0;
+        cs.belfry.n = 0;
     }
     return &charSet.?;
 }
@@ -380,6 +392,9 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         .mushroom_mage => .{ .top = 1.6, .bound = 1.4 },
         .spore_golem => .{ .top = 3.3, .bound = 2.6 },
         .fen_lurker => .{ .top = 2.9, .bound = 1.1 },
+        .bone_skitterer => .{ .top = 2.2, .bound = 1.4 },
+        .ancient_priest => .{ .top = 3.4, .bound = 1.4 },
+        .tolling_hollow => .{ .top = 2.9, .bound = 1.9 },
     };
 }
 
@@ -483,6 +498,26 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
             cs.marsh.live()[0] = fenmod.Lurker.spawn(mathx.zero3, 0, 1.0, seed);
             cs.marsh.live()[0].stageGather(1.0);
             cs.marsh.draw(scene);
+        },
+        // Each of the three is staged MID-TELL: a cell showing a creature standing still shows the one frame
+        // of it that says nothing.
+        .bone_skitterer => {
+            cs.clatter.n = 1;
+            cs.clatter.live()[0] = skittermod.Skitterer.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.clatter.live()[0].stageGather(0.85);
+            cs.clatter.draw(scene);
+        },
+        .ancient_priest => {
+            cs.crypt.n = 1;
+            cs.crypt.live()[0] = priestmod.Ancient.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.crypt.live()[0].stageGather(1.0);
+            cs.crypt.draw(scene);
+        },
+        .tolling_hollow => {
+            cs.belfry.n = 1;
+            cs.belfry.live()[0] = hollowmod.Hollow.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.belfry.live()[0].stageGather(0.9);
+            cs.belfry.draw(scene);
         },
     }
 }

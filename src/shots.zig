@@ -520,6 +520,33 @@ pub fn runShots(g: *Game) void {
     g.rig.follow(jumpGround);
     shoot(g, "shots/9d_jump_land.png");
 
+    // **THE THROW, BESIDE THE JUMP IT IS MEASURED AGAINST** (`hero.startLaunch`). Same three fractions of the
+    // flight and the same framing, because the whole question about this pose is whether it reads as being
+    // KNOCKED OVER rather than as a leap — which is a comparison, so the two have to be shot alike.
+    g.hero.pos = mathx.ground(0, 0);
+    g.hero.facing = 0;
+    g.hero.clearForShot();
+    const launchAir = heromod.launchAirFor(combat.SLAM_LAUNCH);
+    const launchGround = mathx.addV(g.hero.shoulderPoint(), v3(0, 0, heromod.LAUNCH_BACK * 0.5));
+    // Thrown toward -Z while still facing +Z: he goes backwards and goes on facing what hit him.
+    must(g.hero.startLaunch(v3(0, 0, -1), combat.SLAM_LAUNCH), "the launch would not start");
+    const launchStages = [_]struct { name: [:0]const u8, at: f32 }{
+        .{ .name = "shots/9e_launch_off_feet.png", .at = 0.18 },
+        .{ .name = "shots/9f_launch_apex.png", .at = 0.50 },
+        .{ .name = "shots/9g_launch_fall.png", .at = 0.82 },
+    };
+    var thrown: f32 = 0;
+    for (launchStages) |st| {
+        const want = st.at * launchAir;
+        while (thrown < want and g.hero.airborne()) : (thrown += dt) game.stepAirForShot(g, dt);
+        g.rig.follow(launchGround);
+        shoot(g, st.name);
+    }
+    while (g.hero.airborne()) game.stepAirForShot(g, dt);
+    g.rig.follow(launchGround);
+    shoot(g, "shots/9h_launch_down.png");
+    g.hero.clearForShot();
+
     g.hero.pos = mathx.ground(0, 4);
     g.rig.yaw = mathx.radians(30);
     g.rig.pitch = 0.13;

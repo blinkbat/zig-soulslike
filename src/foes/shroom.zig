@@ -437,6 +437,9 @@ pub const Shroom = struct {
                     self.emitPuff(self.pos, FLING_PUFF);
                     sfx.world(.shroom_puff, self.pos);
                     self.burstAt = self.pos;
+                    // NOT PARRYABLE, AND THAT IS A DECISION: the splat is a disc round the landing with the
+                    // CLOUD as its real payload, and boards cannot refuse a gas. The counter is the mark —
+                    // the whole arc is the tell, and a walk clears it.
                     if (mathx.distXZ(self.pos, hero) <= foe.hurtReach(SPLAT_R, self.scale)) {
                         self.heroHit = FLING_HIT;
                         self.leash.noteCombat();

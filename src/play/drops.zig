@@ -72,9 +72,28 @@ pub const TABLE = [_]Row{
 
     .{ .foe = .fen_lurker, .common = .ironwort_tea, .odds = UNCOMMON },
     .{ .foe = .spore_golem, .common = .purgeleaf, .odds = UNCOMMON },
+
+    // **THE ONE BODY A PRIEST CAN MAKE MORE OF LEAVES NOTHING** — the supply is a cooldown
+    // (`ancientpriest.RAISE_CD`), so any odds at all here is a farm with a timer on it rather than a drop.
+    .{ .foe = .bone_skitterer, .common = null },
+    .{ .foe = .ancient_priest, .common = .rimeward_mantle, .odds = UNCOMMON },
+    // …and the hollow leaves the bronze off its own bell, with the jar of lightning that answers it behind.
+    .{ .foe = .tolling_hollow, .common = .gravebell_amulet, .odds = UNCOMMON, .rare = .thundercrock, .chance = 0.16 },
 };
 
 pub const NFOE = @typeInfo(wf.FoeKind).@"enum".fields.len;
+
+/// **THE BODIES THAT ARE ALLOWED TO LEAVE NOTHING, AND WHY** — an egg sac is not a corpse, and a skitterer a
+/// priest clawed out of the ground is a body whose supply is a cooldown. Everything else must say what it
+/// drops or the table refuses to compile.
+pub const LEAVES_NOTHING = [_]wf.FoeKind{ .brood_sac, .bone_skitterer };
+
+pub fn leavesNothing(k: wf.FoeKind) bool {
+    for (LEAVES_NOTHING) |n| {
+        if (n == k) return true;
+    }
+    return false;
+}
 
 comptime {
     if (TABLE.len != NFOE) @compileError("drops: TABLE is not one row per FoeKind");
@@ -83,7 +102,7 @@ comptime {
         if (row.foe != k) {
             @compileError("drops: row " ++ @tagName(row.foe) ++ " sits where " ++ @tagName(k) ++ " should be");
         }
-        if (row.common == null and k != .brood_sac) {
+        if (row.common == null and !leavesNothing(k)) {
             @compileError("drops: " ++ @tagName(k) ++ " leaves nothing — say `.common = null` on purpose");
         }
         if ((row.rare != null) != (row.chance > 0)) {

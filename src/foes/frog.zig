@@ -134,24 +134,33 @@ const STANCE_MAX = 26.0;
 const RESISTS = combat.resists(.{ .fire = 40, .cold = -30, .lightning = -25 });
 const CHOMP_HIT = combat.Hit{ .dmg = 13, .poise = 15 };
 const LUNGE_HIT = combat.Hit{ .dmg = 19, .poise = 26, .stance = 8 };
-const HERO_REACH = foe.HERO_REACH;
 const PARRY_LEAD = foe.PARRY_LEAD;
 
 const LUNGE_IMPACT_R = 1.9;
 const LUNGE_FRONT_DOT = 0.25;
 const LUNGE_IMPACT_FWD = 0.6; // dust-burst / impact-zone centre, this far ahead of the seat (pre-scale)
+/// `BITE_R`/`LUNGE_IMPACT_R` are WORLD metres at the shipped `SCALE` — what `classify` measures a raw
+/// `distXZ` against. A HURT BOX is the creature's OWN metres (`foe.hurtReach`), so it is those divided back
+/// out, and that is what makes a re-scaled placement's reach track its body instead of standing still.
+const BITE_OWN = BITE_R / SCALE;
+const LUNGE_IMPACT_OWN = LUNGE_IMPACT_R / SCALE;
 const TRAIL_RATE: f32 = 150.0;
 const DEATH_DUR = 1.25;
 pub const SOULS: u32 = 60;
 
 const State = enum { idle, hop, lunge, recover, chomp, stunlight, stunheavy, dead };
 
-const Choice = enum { rest, hop, lunge, chomp, wait };
-fn classify(dist: f32, lungeReady: bool, chompReady: bool, rooted: bool) Choice {
+/// Damage banked at one spot (`foe.Sense`) before it startles sideways — under a third of the bar, so one
+/// heavy chop or two pokes scatter it. The LUNGE still outranks it: a toad that can answer, answers.
+const PANIC_AT = 0.28;
+
+const Choice = enum { rest, hop, lunge, chomp, scatter, wait };
+fn classify(dist: f32, lungeReady: bool, chompReady: bool, rooted: bool, pressed: bool) Choice {
     if (dist <= BITE_R) return if (chompReady) .chomp else .wait;
     if (rooted) return .wait;
     if (dist > AGGRO_R) return .rest;
     if (dist <= LUNGE_R and lungeReady) return .lunge;
+    if (pressed) return .scatter;
     return .hop;
 }
 
@@ -223,6 +232,8 @@ pub const Frog = struct {
     /// creature never asks what a spirit is; it is handed a target in the argument it calls `hero`.
     threat: foe.Threat = .{},
     nav: foe.Nav = .{},
+    sense: foe.Sense = .{},
+    panicSide: f32 = 1,
     fade: f32 = 0,
     gone: bool = false,
 
@@ -239,6 +250,7 @@ pub const Frog = struct {
     pub fn spawn(home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32) Frog {
         var f = Frog{ .pos = home, .home = home, .facing = faceYaw, .scale = scale * SCALE, .seed = seed };
         f.fxRng = foe.fxStream(seed, 104729.0, 1);
+        f.panicSide = if (f.fxRng.float() < 0.5) 1 else -1;
         f.idleWait = 1.0 + seed * 2.0;
         f.resolveIdle();
         f.pose();
@@ -326,7 +338,7 @@ pub const Frog = struct {
     fn parryable(self: *const Frog) ?f32 {
         const left = self.toImpact() orelse return null;
         if (!foe.inParryWindow(left)) return null;
-        return LUNGE_IMPACT_R + HERO_REACH;
+        return foe.hurtReach(LUNGE_IMPACT_OWN, self.scale);
     }
 
     /// THE BOARDS TAKE THE LEAP. `enterStun` is what kills it: the `.lunge` state is gone, so `updateHop` never
@@ -358,7 +370,7 @@ pub const Frog = struct {
     }
     fn tryBite(self: *Frog, hero: rl.Vector3, range: f32, h: combat.Hit) void {
         if (self.heroLatch) return;
-        if (mathx.distXZ(self.pos, hero) <= range + HERO_REACH) {
+        if (mathx.distXZ(self.pos, hero) <= foe.hurtReach(range, self.scale)) {
             self.heroHit = h;
             self.heroLatch = true;
             self.leash.noteCombat();
@@ -366,7 +378,7 @@ pub const Frog = struct {
     }
     fn tryImpact(self: *Frog, hero: rl.Vector3, h: combat.Hit) void {
         if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, hero, LUNGE_IMPACT_R + HERO_REACH, LUNGE_FRONT_DOT)) return;
+        if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(LUNGE_IMPACT_OWN, self.scale), LUNGE_FRONT_DOT)) return;
         self.heroHit = h;
         self.heroLatch = true;
         self.leash.noteCombat();
@@ -390,6 +402,11 @@ pub const Frog = struct {
         foe.fadeFlash(&self.flash, dt);
         self.t += dt;
         foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
+        const bearing = mathx.wrapPi(mathx.headingXZ(mathx.dirXZ(self.pos, hero)) - self.facing);
+        self.sense.tick(dt, self.pos, bearing, self.bodyR(), switch (self.state) {
+            .hop, .lunge => false,
+            else => true,
+        });
         self.updateFx(dt);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
         self.takeParry();
@@ -430,7 +447,7 @@ pub const Frog = struct {
 
     fn decide(self: *Frog, hero: rl.Vector3, bounds: f32) void {
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
-        switch (classify(d, self.lungeCd <= 0, self.chompCd <= 0, !foe.canLeap(&self.root))) {
+        switch (classify(d, self.lungeCd <= 0, self.chompCd <= 0, !foe.canLeap(&self.root), self.sense.pressed(HP_MAX, PANIC_AT))) {
             .chomp => {
                 self.chompCd = CHOMP_CD;
                 self.startChomp();
@@ -445,6 +462,14 @@ pub const Frog = struct {
                 const dir = self.nav.along(mathx.dirXZ(self.pos, hero));
                 const reach = mathx.minF(HOP_REACH, mathx.maxF(0, d - KEEP_OFF));
                 self.startHop(v3(self.pos.x + dir.x * reach, 0, self.pos.z + dir.z * reach), bounds, false);
+            },
+            // THE STARTLE: punished where it sits, it scatters a full hop SIDEWAYS off the line — one panic
+            // hop clears `Sense`'s own span, so it startles once and then answers. The side alternates.
+            .scatter => {
+                const to = mathx.dirXZ(self.pos, hero);
+                const dir = self.nav.along(v3(to.z * self.panicSide, 0, -to.x * self.panicSide));
+                self.panicSide = -self.panicSide;
+                self.startHop(v3(self.pos.x + dir.x * HOP_REACH, 0, self.pos.z + dir.z * HOP_REACH), bounds, false);
             },
             .wait => self.enterIdle(0.12),
             .rest => {
@@ -467,7 +492,10 @@ pub const Frog = struct {
     fn updateHop(self: *Frog, dt: f32, hero: rl.Vector3, bounds: f32, coil: f32, flight: f32, land: f32) void {
         const total = coil + flight + land;
         if (self.t < coil) {
-            if (self.isLunge) self.faceToward(self.hopAim, dt) else self.faceToward(hero, dt);
+            // EVERY hop faces its own AIM: `hopStep` launches along the FACING, so a coil that eyed the hero
+            // instead re-bent the hop at the launch — undoing the nav bend and curving a homeward hop back
+            // toward him. The scatter and the walk home only work because the coil turns to where it is GOING.
+            self.faceToward(self.hopAim, dt);
             const k = mathx.smoothstep(0, coil, self.t);
             self.resolveCoil(k, self.isLunge);
             if (self.isLunge) self.emitCoil(dt, k);
@@ -506,7 +534,7 @@ pub const Frog = struct {
                 sfx.world(.toad_chomp, self.pos);
             }
             self.resolveSnap((self.t - CHOMP_GAPE) / CHOMP_SNAP);
-            self.tryBite(hero, BITE_R, CHOMP_HIT);
+            self.tryBite(hero, BITE_OWN, CHOMP_HIT);
         } else {
             self.resolveChompRecover(mathx.smoothstep(0, CHOMP_RECOVER, self.t - CHOMP_GAPE - CHOMP_SNAP));
             if (self.t >= CHOMP_GAPE + CHOMP_SNAP + CHOMP_RECOVER) self.enterIdle(0.1);
@@ -530,6 +558,12 @@ pub const Frog = struct {
         self.sxz = 1.0 - 0.02 * br;
         self.sac = 1.0 + 0.06 * mathx.sinf(self.elapsed * 2.3 + self.seed * 3.0);
         self.jaw = 1.5 + 1.5 * mathx.maxF(0, br);
+        // …and every ~17 s a GULP — the throat balloons and the jaw works once. A discrete event on a slow
+        // clock incommensurate with the breath, which is what stops the idle reading as a loop.
+        const gulp = mathx.smoothstep(0.90, 0.995, mathx.sinf(self.elapsed * 0.37 + self.seed * 9.1));
+        self.sac += 0.55 * gulp;
+        self.jaw += 7.0 * gulp;
+        self.sy -= 0.03 * gulp;
     }
     fn resolveCoil(self: *Frog, k: f32, lunge: bool) void {
         self.base();
@@ -557,9 +591,12 @@ pub const Frog = struct {
     }
     fn resolveLand(self: *Frog, k: f32) void {
         const splat = mathx.pulse(k, 0, 0.45, 0.45, 1.0);
+        // A mass in motion OVERSHOOTS its rest: the squash rebounds PAST 1 and settles back onto it. The
+        // rebound peaks at 0.92, where the splat has decayed to nothing — earlier and the two cancel out.
+        const reb = mathx.pulse(k, 0.72, 0.92, 0.92, 1.0);
         self.lift = 0;
-        self.sy = 1.0 - 0.26 * splat;
-        self.sxz = 1.0 + 0.16 * splat;
+        self.sy = 1.0 - 0.26 * splat + 0.08 * reb;
+        self.sxz = 1.0 + 0.16 * splat - 0.055 * reb;
         self.legExt = mathx.lerpF(0.2, REST_EXT, k);
         self.arm = 1.0 - k;
         self.pitch = 8.0 * (1.0 - k);
@@ -652,6 +689,7 @@ pub const Frog = struct {
     pub fn tryHit(self: *Frog, blade: foe.Blade) void {
         if (self.state == .dead) return;
         const s = foe.reached(self, blade) orelse return;
+        self.sense.hurt(blade.hit.dmg);
         const heavyBlow = foe.wounded(self, s, blade, .{ .light = 1.25, .heavy = 1.9 });
         self.bloodBurst(s.contact, s.dir, if (heavyBlow) BLOOD_HEAVY else BLOOD_LIGHT, if (heavyBlow) BLOOD_SPD_HEAVY else BLOOD_SPD_LIGHT);
         sfx.world(.toad_hurt, self.pos);
@@ -1136,7 +1174,9 @@ test "THE LEAP IS AN INSTANT FROM BEING SWATTED, and nothing else the toad does 
     try std.testing.expect(open > 0);
     try std.testing.expectApproxEqAbs(impact, shut, 2.0 * step);
     try std.testing.expectApproxEqAbs(PARRY_LEAD, shut - open, 3.0 * step);
-    try std.testing.expectApproxEqAbs(LUNGE_IMPACT_R + HERO_REACH, f.parryable().?, 1e-5);
+    // …AT THE BODY'S OWN SCALE, not at 1.0: `foe.hurtReach`'s whole point is that a re-scaled placement's
+    // reach tracks its body, and pinned against the world-metre constant this passed only while SCALE was 1.
+    try std.testing.expectApproxEqAbs(LUNGE_IMPACT_OWN * f.scale + foe.HERO_REACH, f.parryable().?, 1e-5);
 
     for ([_]State{ .idle, .hop, .recover, .chomp, .stunlight, .stunheavy, .dead }) |s| {
         f.state = s;
@@ -1168,19 +1208,62 @@ test "A CAUGHT LEAP NEVER ARRIVES, and the toad comes straight down out of the a
 }
 
 test "classify: ranges pick chomp < lunge < hop < rest, and cooldowns gate" {
-    try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1, true, true, false));
-    try std.testing.expectEqual(Choice.hop, classify((LUNGE_R + AGGRO_R) * 0.5, true, true, false));
-    try std.testing.expectEqual(Choice.lunge, classify(LUNGE_R - 0.5, true, true, false));
-    try std.testing.expectEqual(Choice.hop, classify(LUNGE_R - 0.5, false, true, false));
-    try std.testing.expectEqual(Choice.chomp, classify(BITE_R - 0.2, true, true, false));
-    try std.testing.expectEqual(Choice.wait, classify(BITE_R - 0.2, true, false, false));
+    try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1, true, true, false, false));
+    try std.testing.expectEqual(Choice.hop, classify((LUNGE_R + AGGRO_R) * 0.5, true, true, false, false));
+    try std.testing.expectEqual(Choice.lunge, classify(LUNGE_R - 0.5, true, true, false, false));
+    try std.testing.expectEqual(Choice.hop, classify(LUNGE_R - 0.5, false, true, false, false));
+    try std.testing.expectEqual(Choice.chomp, classify(BITE_R - 0.2, true, true, false, false));
+    try std.testing.expectEqual(Choice.wait, classify(BITE_R - 0.2, true, false, false, false));
 }
 
 test "ROOTED, A TOAD HAS ONLY ITS JAWS — every other move it owns leaves the ground" {
-    try std.testing.expectEqual(Choice.wait, classify(LUNGE_R - 0.5, true, true, true));
-    try std.testing.expectEqual(Choice.wait, classify((LUNGE_R + AGGRO_R) * 0.5, true, true, true));
-    try std.testing.expectEqual(Choice.wait, classify(AGGRO_R + 1, true, true, true));
-    try std.testing.expectEqual(Choice.chomp, classify(BITE_R - 0.2, true, true, true));
+    try std.testing.expectEqual(Choice.wait, classify(LUNGE_R - 0.5, true, true, true, false));
+    try std.testing.expectEqual(Choice.wait, classify((LUNGE_R + AGGRO_R) * 0.5, true, true, true, false));
+    try std.testing.expectEqual(Choice.wait, classify(AGGRO_R + 1, true, true, true, false));
+    try std.testing.expectEqual(Choice.chomp, classify(BITE_R - 0.2, true, true, true, false));
+    try std.testing.expectEqual(Choice.wait, classify(LUNGE_R - 0.5, false, true, true, true));
+}
+
+test "THE STARTLE SCATTERS IT SIDEWAYS, AND ONLY WHEN IT CANNOT ANSWER — the lunge still outranks panic" {
+    // Punished with the lunge ready, it lunges; punished with it cooling, it scatters instead of walking in.
+    try std.testing.expectEqual(Choice.lunge, classify(LUNGE_R - 0.5, true, true, false, true));
+    try std.testing.expectEqual(Choice.scatter, classify(LUNGE_R - 0.5, false, true, false, true));
+    try std.testing.expectEqual(Choice.scatter, classify(AGGRO_R - 1.0, true, true, false, true));
+    try std.testing.expectEqual(Choice.chomp, classify(BITE_R - 0.2, true, true, false, true));
+
+    // …and the hop it takes is OFF THE LINE: bank a heavy blow's damage where it sits, let it decide, and
+    // measure the aim against the bearing to the hero.
+    var f = Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    f.leash.provoke();
+    f.lungeCd = LUNGE_CD;
+    f.sense.hurt(HP_MAX * PANIC_AT + 1.0);
+    const hero = mathx.ground(0, 4.0);
+    f.decide(hero, 200.0);
+    try std.testing.expectEqual(State.hop, f.state);
+    const aim = mathx.dirXZ(f.pos, f.hopAim);
+    const to = mathx.dirXZ(f.pos, hero);
+    try std.testing.expect(@abs(aim.x * to.x + aim.z * to.z) < 0.15);
+    std.debug.print("\n  toad startle: banked {d:.0} dmg at the spot, hop aimed {d:.0} deg off the hero line\n", .{ HP_MAX * PANIC_AT + 1.0, mathx.degrees(std.math.acos(mathx.clampF(aim.x * to.x + aim.z * to.z, -1, 1))) });
+
+    // One scatter clears the meter — the hop crosses its own pressure span, so it startles ONCE.
+    try std.testing.expect(f.hopReach > f.bodyR());
+}
+
+test "THE LANDING REBOUNDS PAST REST AND SETTLES — the overshoot law on the squash" {
+    var f = Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    var lo: f32 = 99;
+    var hi: f32 = 0;
+    var k: f32 = 0;
+    while (k <= 1.0) : (k += 0.02) {
+        f.resolveLand(k);
+        lo = mathx.minF(lo, f.sy);
+        hi = mathx.maxF(hi, f.sy);
+    }
+    f.resolveLand(1.0);
+    std.debug.print("\n  toad landing: squash bottoms at {d:.2}, rebounds to {d:.2}, ends at {d:.2}\n", .{ lo, hi, f.sy });
+    try std.testing.expect(lo < 0.80);
+    try std.testing.expect(hi > 1.02);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), f.sy, 0.01);
 }
 
 test "a held toad never leaves the earth, and pounces again the moment it is let go" {

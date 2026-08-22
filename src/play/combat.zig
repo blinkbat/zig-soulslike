@@ -100,6 +100,11 @@ pub const Hit = struct {
     stance: f32 = 0,
     elem: Elems = .{},
     fp: f32 = 0,
+    /// **METRES OFF THE GROUND THIS BLOW THROWS HIM, AND ZERO FOR NEARLY EVERY BLOW IN THE GAME.** A LARGE
+    /// SLAM ONLY (owner's call). Authored as the APEX rather than a speed, because the height is the thing a
+    /// player can see — `hero.startLaunch` solves the launch speed out of it under the JUMP's own gravity, so
+    /// there is one gravity in the world and a thrown body falls exactly as a leaping one does.
+    launch: f32 = 0,
 
     /// THE WHOLE BLOW BEFORE ANYBODY'S RESISTANCES — what a shield's stamina bill and "which of two blows
     /// was worse" are measured on, since those are about weight rather than about what you resist.
@@ -117,6 +122,9 @@ pub const Hit = struct {
         return out;
     }
 
+    /// **`launch` IS CARRIED, NEVER SCALED.** The others are quantities of harm and a perk that doubles them
+    /// should double them; how far a body is thrown is a fact about the blow's WEIGHT, and a damage multiplier
+    /// that also threw him twice as high would put the picture in the hands of his character sheet.
     pub fn scaled(self: Hit, k: f32) Hit {
         return .{
             .dmg = self.dmg * k,
@@ -124,6 +132,7 @@ pub const Hit = struct {
             .stance = self.stance * k,
             .elem = self.elem.scaled(k),
             .fp = self.fp * k,
+            .launch = self.launch,
         };
     }
 };
@@ -469,6 +478,11 @@ pub const STAM_PARRY: f32 = 9.0;
 /// parry has never been damage — the punish after it is. And NO POISE either, so a catch can never resolve as
 /// a mere flinch: it breaks the stance or it does not, which is the owner's "may heavy stun them" read off the
 /// same bar the sword has been chipping. Sized so the ogre's 90 stance takes two catches and lighter takes one.
+/// **THE ONE LAUNCH IN THE GAME** (owner: only large slams, for now) — metres of apex, authored by every
+/// `SLAM_HIT` in `foes/` and by nothing else. It lives here rather than in `hero.zig` so a creature can say
+/// its blow throws him without importing the man it throws; `hero.LAUNCH_MAX_APEX` pins it against the arc.
+pub const SLAM_LAUNCH: f32 = 0.85;
+
 pub const PARRY_HIT = Hit{ .stance = 46 };
 
 pub const FP_MAX = stats.fpFor(stats.START);

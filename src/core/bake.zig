@@ -160,10 +160,11 @@ pub const Emit = struct {
     }
 };
 
+/// One implementation, `wf.setMix`. It TRUNCATES, though, and a bake that overran the cap would then emit a
+/// mix quietly missing kinds — so the door refuses loudly first and copies through the one writer.
 fn setMix(dst: *[wf.MAX_MIX]Kind, n: *u8, src: []const Kind) void {
     if (src.len > wf.MAX_MIX) @panic("bake: kind mix longer than worldfmt.MAX_MIX");
-    for (src, 0..) |k, i| dst[i] = k;
-    n.* = @intCast(src.len);
+    wf.setMix(dst, n, src);
 }
 
 fn localToWorld(lx: f32, lz: f32, yaw: f32, scale: f32) [2]f32 {
@@ -190,7 +191,6 @@ pub fn build(m: *wf.Map) void {
     theTarn(&p);
     oldWood(&p);
     theDowns(&p);
-    cliffRing(&p);
     groundCover(&p);
     foes(&p);
 }
@@ -507,18 +507,6 @@ fn theDowns(p: *Emit) void {
     p.at(.gibbet, 6.0, 62.0, 30, 1.0);
     p.at(.shrine, -4.5, 88.0, 186, 1.0);
     p.at(.lantern, 3.0, 104.0, 0, 1.0);
-}
-
-fn cliffRing(p: *Emit) void {
-    var o = wf.defaults(.edge);
-    o.kind = .cliff;
-    o.r0 = 6.5;
-    o.n = 90;
-    o.sLo = 0.92;
-    o.sHi = 1.24;
-    o.seed = p.nextSeed();
-    setMix(&o.mix, &o.nmix, &props.CLIFFS);
-    p.push(o);
 }
 
 fn groundCover(p: *Emit) void {

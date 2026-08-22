@@ -189,10 +189,13 @@ const HP_MAX = 300.0;
 const POISE_MAX = 30.0;
 const STANCE_MAX = 90.0;
 const RESISTS = combat.resists(.{ .fire = 30, .cold = 30, .lightning = -15, .chaos = 20 });
-pub const SLAM_HIT = combat.Hit{ .dmg = 36, .poise = 44, .stance = 20 };
+pub const SLAM_HIT = combat.Hit{ .dmg = 36, .poise = 44, .stance = 20, .launch = combat.SLAM_LAUNCH };
 pub const SWIPE_HIT = combat.Hit{ .dmg = 23, .poise = 30, .stance = 11 };
 pub const DRIVE_HIT = combat.Hit{ .dmg = 31, .poise = 40, .stance = 20 };
 const DEATH_DUR = 1.7;
+/// Fraction of `DEATH_DUR` at which the trunk ARRIVES on the earth — the fall accelerates to here
+/// (a mass on a hinge, the knight's law), the settle overshoots past it, and the landing is an EVENT.
+const DEATH_LAND = 0.62;
 pub const SOULS: u32 = 900;
 const DISS_DUR = 1.1;
 const DISSOLVE = foe.Dissolve{ .rate = 70.0, .spread = 1.0, .rise = 0.70 };
@@ -215,8 +218,10 @@ const SWIPE_ARC = 144.0;
 const PARRY_LEAD = foe.PARRY_LEAD;
 
 const HUNCH = 9.0;
-// HE HINGES AT THE WAIST (owner's law): the fraction of any body pitch the PELVIS may take.
-const PELVIS_SHARE = 0.16;
+// HE HINGES AT THE WAIST (owner's law): the fraction of any body pitch the PELVIS may take. **PUBLIC because
+// it is the LAW and not his own number** (`AGENTS.md` names it `ogre.PELVIS_SHARE`) — every big body routes
+// its lean through this, and a second copy of 0.16 is a second thing to forget when the law is retuned.
+pub const PELVIS_SHARE = 0.16;
 // THE CARRY (owner's law): the club is HEFTED AT HIS SIDE, never dragged.
 const CARRY_SH = 5.0;
 const CARRY_EL = -13.0;
@@ -680,6 +685,16 @@ pub const Ogre = struct {
             },
             .dead => {
                 self.easeChannelsNeutral(dt);
+                // THE BODY ARRIVING IS AN EVENT (the knight's law) — four metres of flesh used to reach
+                // the ground in silence with nothing moving. Dust the length of the fallen trunk, once.
+                const land = DEATH_DUR * DEATH_LAND;
+                if (self.t >= land and self.t - dt < land) {
+                    const f = self.fdir();
+                    self.dustBurst(v3(self.pos.x + f.x * 0.5 * self.scale, self.pos.y, self.pos.z + f.z * 0.5 * self.scale), 10, 2.6, 0.30);
+                    self.dustBurst(v3(self.pos.x + f.x * 1.1 * self.scale, self.pos.y, self.pos.z + f.z * 1.1 * self.scale), 8, 2.2, 0.26);
+                    self.judder = 1.0;
+                    sfx.world(.ogre_slam, self.pos);
+                }
                 foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE);
             },
         }
@@ -1195,8 +1210,11 @@ pub const Ogre = struct {
         const dead = self.state == .dead;
         const du = if (dead) mathx.clampF(self.t / DEATH_DUR, 0, 1) else 0;
         const dk1 = mathx.smoothstep(0, 0.32, du);
-        const dk2 = mathx.smoothstep(0.22, 0.62, du);
-        const settle = mathx.pulse(du, 0.62, 0.72, 0.72, 0.88);
+        // HE FALLS, HE IS NOT LOWERED: a mass on a hinge ACCELERATES the whole way down, so the topple is
+        // quadratic to `DEATH_LAND` — a smoothstep is slowest at both ends, which is a body on a wire.
+        const fall = mathx.clampF((du - 0.22) / (DEATH_LAND - 0.22), 0, 1);
+        const dk2 = fall * fall;
+        const settle = mathx.pulse(du, DEATH_LAND, 0.72, 0.72, 0.88);
         const stun = self.stunAmount();
         const light = self.state == .stunlight;
         const heavy = self.state == .stunheavy;
@@ -2192,6 +2210,40 @@ test "A CAUGHT SLAM NEVER LANDS, and the second catch is the punish window" {
     try std.testing.expect(o.parried);
     try std.testing.expectEqual(State.stunheavy, o.state);
     try std.testing.expect(combat.FOE_HEAVY_STUN_DUR > combat.FOE_LIGHT_STUN_DUR);
+}
+
+test "HE FALLS, HE IS NOT LOWERED — the topple accelerates, overshoots flat, and the ground answers" {
+    var o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.2);
+    o.debugKill();
+    const skullAt = struct {
+        fn y(og: *Ogre, du: f32) f32 {
+            og.t = du * DEATH_DUR;
+            og.pose();
+            return foe.markOn(og.xf[SKULL], mathx.zero3).y;
+        }
+    }.y;
+    // The second half of the fall covers far more height than the first — quadratic, not eased.
+    const drop1 = skullAt(&o, 0.22) - skullAt(&o, 0.42);
+    const drop2 = skullAt(&o, 0.42) - skullAt(&o, DEATH_LAND);
+    std.debug.print("\n  ogre death: skull drops {d:.2} m then {d:.2} m — the fall accelerates\n", .{ drop1, drop2 });
+    try std.testing.expect(drop2 > drop1 * 2.0);
+    // …and it OVERSHOOTS its rest and settles back onto it: past the landing the skull dips lower still.
+    try std.testing.expect(skullAt(&o, 0.72) < skullAt(&o, 0.88));
+
+    // THE BODY ARRIVING IS AN EVENT — the landing frame throws dust, once.
+    var g = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.2);
+    g.debugKill();
+    const dt: f32 = 1.0 / 60.0;
+    var burst: usize = 0;
+    var t: f32 = 0;
+    while (t < DEATH_DUR) : (t += dt) {
+        const before = g.fxHead;
+        _ = g.update(dt, mathx.ground(0, 9), 500.0, .{});
+        const emitted = (g.fxHead + FX_MAX - before) % FX_MAX;
+        if (t < DEATH_DUR * DEATH_LAND and t + dt >= DEATH_DUR * DEATH_LAND) burst = emitted;
+    }
+    std.debug.print("  ogre death: the landing frame threw {d} dust\n", .{burst});
+    try std.testing.expect(burst >= 15);
 }
 
 test "THE WOUND OPENS: five frames on, a giant's blood is a spray across the throw and not one blob" {

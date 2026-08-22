@@ -115,8 +115,10 @@ fn worth(d: [ND]f32, k: Der) f32 {
 
 const DerivedRow = struct { name: [:0]const u8, unit: Unit, cost: bool = false };
 
+/// KEYED BY VARIANT, never written down the page in order — but an unnamed row is then the silent failure,
+/// so the rows start blank and the assert below is what says a fifteenth `Der` has said what it is called.
 const DER = blk: {
-    var rows: [ND]DerivedRow = undefined;
+    var rows = [_]DerivedRow{.{ .name = "", .unit = .flat }} ** ND;
     rows[@intFromEnum(Der.light)] = .{ .name = "Light attack", .unit = .flat };
     rows[@intFromEnum(Der.heavy)] = .{ .name = "Heavy attack", .unit = .flat };
     rows[@intFromEnum(Der.fire)] = .{ .name = "Fire damage", .unit = .flat };
@@ -131,6 +133,10 @@ const DER = blk: {
     rows[@intFromEnum(Der.spell_fp)] = .{ .name = "Focus, per cast", .unit = .flat, .cost = true };
     rows[@intFromEnum(Der.quick)] = .{ .name = "Quick item restores", .unit = .flat };
     rows[@intFromEnum(Der.ammo)] = .{ .name = "Ammunition", .unit = .count };
+    for (rows, 0..) |r, i| {
+        if (r.name.len == 0) @compileError("book: `Der." ++ @typeInfo(Der).@"enum".fields[i].name ++
+            "` has no row — the sheet would print a blank line with a number beside it");
+    }
     break :blk rows;
 };
 

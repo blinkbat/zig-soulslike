@@ -197,7 +197,6 @@ at: cairn -30.5 71 0 1.15
 at: gibbet 6 62 30 1
 at: shrine -4.5 88 186 1
 at: lantern 3 104 0 1
-edge: cliff 6.5 90 0.92 1.24 seed=1130 mix=cliff,cliff2,cliff3
 belt: fern 6.163364 5.057564 6.4073987 6.9361725 4 0.85 1.15 seed=1135
 at: cliff4 -6.976265 20.026823 0 1.06
 at: cliff2 -16.332672 11.457226 -65 0.94
@@ -1325,7 +1324,6 @@ at: glowcluster -211.36317 -89.74953 0 1
 at: glowcluster -198.19795 -81.54622 0 1
 at: glowcluster -174.20961 -79.10354 0 1
 at: glowcluster -168.10295 -115.41254 0 1
-edge: cliff 6.5 90 0.92 1.24 seed=1279 mix=cliff,cliff2,cliff3,cliff4,cliff5,cliff6
 at: glowcluster -183.26575 -94.19535 0 1
 at: glowcluster -190.03058 -114.8076 0 1
 at: glowcluster -215.15865 -72.33628 0 1
@@ -13638,7 +13636,6 @@ at: hangcurtain -196.22983 -109.07981 55 1
 at: hangcurtain -179.58484 -69.76919 70 1
 at: tubespire -185.04517 -88.43605 0 1.1499999
 at: tubespire -189.17433 -119.21803 0 1.4499996
-edge: cliff 6.5 90 0.92 1.24 seed=1281 mix=cliff,cliff2,cliff3,cliff4,cliff5,cliff6
 at: bracken -179.28252 -94.53962 0 1
 at: bracken -181.83978 -93.12467 0 1
 at: bracken -186.11612 -112.28828 0 1
@@ -14092,6 +14089,56 @@ at: giltbasin -233.33955 35.746048 0 1
 at: giltfinial -211.48102 36.38523 0 1
 at: giltfinial -209.14543 18.883436 0 1
 at: giltarch -215.23955 39.18695 0 1
+at: capgiant3 -230.95682 -48.684383 0 1
+at: capgiant2 -225.55159 -52.43971 0 1
+at: capgiant2 -234.93301 -44.73868 0 1
+at: capgiant3 -229.50348 -44.474644 0 1
+at: capgiant -235.17265 -48.742405 0 1
+at: bracket -229.38695 -50.129147 0 1
+at: capcluster -228.87823 -52.134113 0 1
+at: capcluster -226.3045 -51.541416 0 1
+at: glowcluster -228.16989 -48.618977 0 1
+at: capgiant2 -230.33664 -48.841854 0 1
+at: capgiant -230.57628 -52.845577 0 1
+at: glowcluster -232.66103 -51.00079 0 1
+at: hyphaarch -230.71764 -43.348232 60 1
+at: antlercoral -230.15399 -46.24361 0 1
+at: antlercoral -231.3033 -51.87264 0 1
+at: capcolossal -228.07388 -49.35175 0 1.4499996
+at: puffballs -228.39783 -44.924953 0 1
+at: capgiant3 -238.01817 -60.18808 0 1
+at: capgiant2 -232.61295 -63.943405 0 1
+at: capgiant2 -241.99437 -56.24238 0 1
+at: capgiant3 -236.56483 -55.97834 0 1
+at: capgiant -242.23401 -60.2461 0 1
+at: bracket -236.4483 -61.632843 0 1
+at: capcluster -235.93959 -63.63781 0 1
+at: capcluster -233.36586 -63.045113 0 1
+at: glowcluster -235.23125 -60.122673 0 1
+at: capgiant2 -237.398 -60.34555 0 1
+at: capgiant -237.63763 -64.34927 0 1
+at: glowcluster -239.72238 -62.504486 0 1
+at: hyphaarch -237.77899 -54.85193 60 1
+at: antlercoral -237.21535 -57.747307 0 1
+at: antlercoral -238.36465 -63.376335 0 1
+at: capcolossal -235.13524 -60.855446 0 1.4499996
+at: puffballs -235.45918 -56.42865 0 1
+at: capgiant3 -233.56819 -95.85915 0 1
+at: capgiant2 -228.16296 -99.61448 0 1
+at: capgiant2 -237.54439 -91.91345 0 1
+at: capgiant3 -232.11485 -91.649414 0 1
+at: capgiant -237.78403 -95.917175 0 1
+at: bracket -231.99832 -97.30392 0 1
+at: capcluster -231.48961 -99.30888 0 1
+at: capcluster -228.91588 -98.71619 0 1
+at: glowcluster -230.78127 -95.79375 0 1
+at: capgiant2 -232.94801 -96.016624 0 1
+at: capgiant -233.18765 -100.02035 0 1
+at: glowcluster -235.2724 -98.17556 0 1
+at: hyphaarch -233.32901 -90.523 60 1
+at: antlercoral -232.76537 -93.41838 0 1
+at: antlercoral -233.91467 -99.04741 0 1
+at: puffballs -231.0092 -92.099724 0 1
 
 soil: 0x1887 1x2 0x62 1x2 0x59 1x2 0x1 1x3 0x58 1x6 0x60 2x2 1x1 0x10 9x5 0x46
 soil: 2x2 1x2 0x44 9x5 0x7 9x4 2x1 9x2 0x86 9x13 0x1 9x13 0x84 9x28 0x80 9x32
@@ -14479,6 +14526,12 @@ foe: spore_golem -220.53 -92.76 0.0 1.00 0.55
 foe: spore_golem -218.19 -58.37 0.0 1.00 0.92
 foe: spore_golem -219.74 -117.11 0.0 1.00 0.29
 foe: rooted 37.06 41.68 0.0 1.00 0.66
+foe: bone_skitterer -222.50 -11.57 0.0 1.00 0.03
+foe: bone_skitterer -228.65 -9.99 0.0 1.00 0.40
+foe: bone_skitterer -222.80 -4.78 0.0 1.00 0.77
+foe: bone_skitterer -233.81 -4.38 0.0 1.00 0.14
+foe: ancient_priest -228.41 1.18 0.0 1.00 0.51
+foe: tolling_hollow -230.21 -35.95 0.0 1.00 0.88
 
 flags: met_wanderer heard_of_gate
 

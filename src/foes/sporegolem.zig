@@ -84,7 +84,7 @@ const SLAM_CD: f32 = 4.4;
 pub const SLAM_REACH: f32 = 5.6;
 const SLAM_UP: f32 = 1.30;
 pub const SLAM_R: f32 = 2.05;
-pub const SLAM_HIT = combat.Hit{ .dmg = 38, .poise = 44, .stance = 26 };
+pub const SLAM_HIT = combat.Hit{ .dmg = 38, .poise = 44, .stance = 26, .launch = combat.SLAM_LAUNCH };
 
 // **AND THE ANSWER TO WALKING AWAY.** Past the slam's 7.2 m this creature had nothing at all: at 1.05 m/s
 // against a hero who runs at 3.4 the whole band out to its own aggro ring was free, and "wait, then leave"
@@ -135,7 +135,14 @@ comptime {
 // Six bones, the sporeling's layout with an arm each side. NO NECK — the cap sits ON the body, which is what
 // makes the smash read as the whole creature falling forward rather than a head being nodded.
 
-const PARTS = 40;
+/// Sized by the RING LAW: the disc tell's residency (`RING_RATE` at its longest life) can share a frame
+/// with the body dying into its own dissolve and the shared wound on top.
+const PARTS = 60;
+/// The disc tell's motes per second — spore-light walked round the blow's own rim.
+const RING_RATE: f32 = 30.0;
+comptime {
+    std.debug.assert(@as(f32, PARTS) >= RING_RATE * 0.55 + DISSOLVE.rate * 0.7 + @as(f32, foe.WOUND_PARTS));
+}
 
 const N = 6;
 const BODY = 0;
@@ -198,6 +205,8 @@ pub const Golem = struct {
     lobFrom: ?rl.Vector3 = null,
     lift: f32 = 0,
     launch: rl.Vector3 = mathx.zero3,
+    /// Where the slam will land — committed with `launch`, and what the flight's disc tell is drawn at.
+    landAt: rl.Vector3 = mathx.zero3,
     struck: bool = false,
     burst: ?rl.Vector3 = null,
     fxAccum: f32 = 0,
@@ -243,6 +252,24 @@ pub const Golem = struct {
     }
     pub fn drawFx(self: *const Golem) void {
         foe.drawParticles(&self.parts);
+    }
+
+    /// The blow's own circle, walked in spore-light — pink on grass, so it reads without the delver's
+    /// tan-on-tan count problem. Soft, additive, and rising a little: a warning, not debris.
+    fn discTell(self: *Golem, dt: f32, at: rl.Vector3, r: f32) void {
+        var owed = foe.emitDue(&self.fxAccum, dt, RING_RATE);
+        while (owed > 0) : (owed -= 1) {
+            const a = self.fxRng.angle();
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(at.x + mathx.cosf(a) * r, self.pos.y + 0.04, at.z + mathx.sinf(a) * r),
+                .v = v3(self.fxRng.signed() * 0.2, self.fxRng.range(0.3, 0.8), self.fxRng.signed() * 0.2),
+                .life = self.fxRng.range(0.38, 0.55),
+                .r0 = 0.055 * self.scale,
+                .r1 = 0.13 * self.scale,
+                .col = MOTE,
+                .add = true,
+            });
+        }
     }
     pub fn flashFrac(self: *const Golem) f32 {
         return foe.flashFrac(self.flash);
@@ -385,6 +412,9 @@ pub const Golem = struct {
             // third is dead still, which is the frame the player is actually reading.
             .smash_wind => {
                 self.face(hero, dt);
+                // **THE DISC IS DRAWN BEFORE IT IS BILLED** (the knight's slam law): the blow's own rim,
+                // walked in spore-light for the whole wind, off the same centre and radius the blow uses.
+                self.discTell(dt, self.reachPoint(SMASH_R * 0.62), SMASH_R * self.scale);
                 if (self.t >= SMASH_WIND) self.enter(.smash_fall);
             },
             .smash_fall => {
@@ -392,6 +422,9 @@ pub const Golem = struct {
                     self.struck = true;
                     const at = self.reachPoint(SMASH_R * 0.62);
                     self.burst = at;
+                    // NOT PARRYABLE, AND THAT IS A DECISION (the delver-burst rule): the blow is a DISC of
+                    // ground with no bearing to catch — boards that stopped it would answer the one creature
+                    // whose whole design is "you may always leave". The counter is your feet, both moves.
                     if (mathx.distXZ(at, hero) <= SMASH_R * self.scale + foe.HERO_R) {
                         blow = SMASH_HIT;
                     }
@@ -408,6 +441,7 @@ pub const Golem = struct {
                     const way = mathx.dirXZ(self.pos, hero);
                     const gap = mathx.minF(mathx.distXZ(self.pos, hero), SLAM_REACH);
                     self.launch = mathx.scaleV(way, gap);
+                    self.landAt = mathx.addV(self.pos, self.launch);
                     self.enter(.slam_air);
                 }
             },
@@ -416,6 +450,9 @@ pub const Golem = struct {
                 const step = mathx.lenV(self.launch) / SLAM_AIR * dt;
                 mathx.stepXZ(&self.pos, mathx.normV(self.launch), step, bounds);
                 moved = step;
+                // The landing ring, drawn at the spot the launch COMMITTED to — the wind cannot show it (the
+                // aim is still tracking there), so the flight does, which is the half-second you dodge in.
+                self.discTell(dt, self.landAt, SLAM_R * self.scale);
                 self.lift = SLAM_UP * mathx.sinf(std.math.pi * u) * self.scale;
                 if (u >= 1.0) {
                     self.lift = 0;
@@ -1015,4 +1052,39 @@ test "IT CANNOT SLAM ITS WAY OUT OF THE ROOTS — the leap is gated where the mo
         if (free.state == .slam_wind or free.state == .slam_air) leapt = true;
     }
     try std.testing.expect(leapt);
+}
+
+test "THE DISC IS DRAWN BEFORE IT IS BILLED — the smash walks its own rim through the whole wind" {
+    var g = Golem.spawn(mathx.ground(0, 0), 0, 1.0, 0.3);
+    g.leash.noteSeen();
+    const hero = mathx.ground(0, 2.0);
+    const dt: f32 = 1.0 / 60.0;
+    var emitted: usize = 0;
+    var wound = false;
+    var t: f32 = 0;
+    while (t < 4.0) : (t += dt) {
+        const before = g.fxHead;
+        _ = g.update(dt, hero, 500.0, .{});
+        if (g.state == .smash_wind) {
+            wound = true;
+            emitted += (g.fxHead + PARTS - before) % PARTS;
+        }
+        if (g.struck) break;
+    }
+    try std.testing.expect(wound);
+    try std.testing.expect(g.struck);
+    // ~30/s across a 0.92 s wind, and every mote sits ON the rim — the blow's own radius off its own centre.
+    const centre = g.reachPoint(SMASH_R * 0.62);
+    const rim = SMASH_R * g.scale;
+    var on: usize = 0;
+    var off: usize = 0;
+    for (&g.parts) |*q| {
+        if (q.life <= 0 or !q.add) continue;
+        const d = mathx.distXZ(q.p, centre);
+        if (@abs(d - rim) < 0.30) on += 1 else off += 1;
+    }
+    std.debug.print("\n  golem smash tell: {d} motes over the wind, {d} on the rim / {d} off it (rim {d:.2} m)\n", .{ emitted, on, off, rim });
+    try std.testing.expect(emitted >= 20);
+    try std.testing.expect(on >= 8);
+    try std.testing.expect(off <= on / 2);
 }

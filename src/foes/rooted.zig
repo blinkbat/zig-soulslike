@@ -69,10 +69,13 @@ const DISS_DUR: f32 = 1.1;
 const DISSOLVE = foe.Dissolve{ .rate = 62.0, .spread = 1.15, .rise = 0.85, .flake = SPLINTER };
 
 
-pub const SLAM_HIT = combat.Hit{ .dmg = 34, .poise = 26, .stance = 10 };
+pub const SLAM_HIT = combat.Hit{ .dmg = 34, .poise = 26, .stance = 10, .launch = combat.SLAM_LAUNCH };
 pub const SWEEP_HIT = combat.Hit{ .dmg = 26, .poise = 20 };
 pub const HOOK_HIT = combat.Hit{ .dmg = 14, .poise = 14 };
 pub const DRAG_PULL: f32 = 3.4;
+/// Where in a stroke the limb arrives, as a share of it — the SAME fraction every one of the three lands on,
+/// read from one constant so the boards and the blow cannot disagree about when it happened.
+const IMPACT_K: f32 = 0.40;
 
 const Attack = struct {
     windDur: f32,
@@ -227,6 +230,9 @@ pub const Rooted = struct {
     elapsed: f32 = 0,
     atk: usize = SLAM,
     dealt: bool = false,
+    /// THE HERO'S SHIELD, stamped from outside (`game.markParry`), and the one-frame answer to it.
+    parry: foe.Parry = .{},
+    parried: bool = false,
     cds: [MOVES.len]f32 = [_]f32{0} ** MOVES.len,
     creakT: f32 = 0,
 
@@ -315,6 +321,7 @@ pub const Rooted = struct {
             return .none;
         }
         self.justDied = false;
+        self.parried = false;
         // THE ROOTS' OWN BITE (foe.grip). The FEET half is a no-op on a thing that never travels, but the
         // grip is also what BILLS the hold's chaos every frame — left out, a cast on this creature was
         // eighteen focus for no damage and a `combat.Root` clock that never ran down.
@@ -364,7 +371,7 @@ pub const Rooted = struct {
                 const a = self.move();
                 const u = mathx.clampF(self.t / a.strikeDur, 0, 1);
                 self.swing = lerpF(-1.0, 1.0, foe.swingCurve(u));
-                if (!self.dealt and u >= 0.40 and self.reaches(hero, a)) {
+                if (!self.dealt and u >= IMPACT_K and self.reaches(hero, a)) {
                     self.dealt = true;
                     self.leash.noteCombat();
                     sfx.world(.wood_hit, self.tipWorld());
@@ -408,8 +415,47 @@ pub const Rooted = struct {
         self.creak(dt);
         self.sway = mathx.sinf((self.elapsed + self.seed * 6.0) * SWAY_HZ * std.math.tau) * SWAY_DEG * self.open;
         self.pose();
+        if (self.takeParry()) act = .none;
         self.tryHit(blade);
         return act;
+    }
+
+    /// SECONDS BACK FROM THE LIMB ARRIVING, or null. **THE SWEEP AND THE HOOK, NEVER THE SLAM** — a large slam
+    /// is the one blow a shield is not the answer to (it is what THROWS him, `combat.Hit.launch`), and the
+    /// bone knight's own window test says the same of his. Footwork answers the slam; the boards answer the
+    /// two that come in low and sideways.
+    fn toImpact(self: *const Rooted) ?f32 {
+        if (self.atk == SLAM) return null;
+        const a = self.move();
+        const at = a.strikeDur * IMPACT_K;
+        return switch (self.state) {
+            .wind => (a.windDur - self.t) + at,
+            .strike => at - self.t,
+            .dormant, .wake, .idle, .recover, .sleep, .stunlight, .stunheavy, .dead => null,
+        };
+    }
+
+    /// THE INSTANT THE LIMB CAN BE CAUGHT IN, and how far out it reaches then — the MOVE's own extent through
+    /// the same `reaches` bound, since the three limbs answer three different rings.
+    fn parryable(self: *const Rooted) ?f32 {
+        const left = self.toImpact() orelse return null;
+        if (!foe.inParryWindow(left)) return null;
+        return foe.hurtReach(self.move().maxR, self.scale);
+    }
+
+    /// **THE BOARDS TAKE THE LIMB.** Returns true so the caller drops the `Act` — a caught hook may not still
+    /// drag him in (`DRAG_PULL`), which is the one thing about this creature that moves the player's body.
+    fn takeParry(self: *Rooted) bool {
+        const reach = self.parryable() orelse return false;
+        if (!foe.caught(self, reach)) return false;
+        self.cds[self.atk] = self.move().cd;
+        self.dealt = true;
+        switch (self.vit.hit(combat.PARRY_HIT)) {
+            .death => self.enterDeath(),
+            .heavy => self.enterStun(.stunheavy),
+            .light, .none => self.enterStun(.stunlight),
+        }
+        return true;
     }
 
     fn wokeAgain(self: *Rooted, hero: rl.Vector3, dt: f32, blade: foe.Blade) Act {
@@ -849,6 +895,12 @@ pub const Grove = struct {
         return blow;
     }
 
+    pub fn setParry(self: *Grove, p: foe.Parry) void {
+        foe.setParry(self.live(), p);
+    }
+    pub fn anyParried(self: *const Grove) bool {
+        return foe.anyParried(self.liveConst());
+    }
     pub fn pierce(self: *Grove, blade: foe.Blade) bool {
         return foe.pierceGroup(self.live(), blade);
     }
@@ -997,6 +1049,38 @@ test "the mark rides the KNOT, and the knot rides the bole" {
     t.pose();
     const awake = t.lockPoint();
     try std.testing.expect(mathx.lenV(mathx.subV(asleep, awake)) > 0.05);
+}
+
+test "THE SWEEP AND THE HOOK CAN BE CAUGHT, AND THE SLAM CANNOT — the launcher is answered on foot" {
+    for ([_]usize{ SWEEP, HOOK }) |mv| {
+        var r = Rooted.spawn(mathx.zero3, 0, 1.0, 0.3);
+        r.state = .strike;
+        r.atk = mv;
+        const a = MOVES[mv];
+        r.t = a.strikeDur * IMPACT_K - foe.PARRY_LEAD * 0.5;
+        const reach = r.parryable() orelse return error.TestUnexpectedResult;
+        try std.testing.expectApproxEqAbs(foe.hurtReach(a.maxR, r.scale), reach, 1e-5);
+        r.parry = .{ .live = true, .at = mathx.ground(0, a.maxR * 0.5), .facing = std.math.pi, .arc = combat.GUARD_ARC };
+        try std.testing.expect(r.takeParry());
+        try std.testing.expect(r.parried);
+        try std.testing.expect(r.cds[mv] > 0);
+        // The stroke is off it: `enterStun` leaves `.strike` entirely, so nothing can still bill.
+        try std.testing.expect(r.state == .stunlight or r.state == .stunheavy);
+        try std.testing.expect(r.parryable() == null);
+    }
+    // …AND THE SLAM HAS NO WINDOW AT ANY POINT IN IT: it is the blow that THROWS him (`combat.Hit.launch`),
+    // and a shield is not its answer. `game.NO_PARRY` carries the same rule for whole creatures.
+    var big = Rooted.spawn(mathx.zero3, 0, 1.0, 0.3);
+    big.atk = SLAM;
+    try std.testing.expect(SLAM_HIT.launch > 0);
+    for ([_]State{ .wind, .strike }) |st| {
+        big.state = st;
+        var t: f32 = 0;
+        while (t < MOVES[SLAM].windDur + MOVES[SLAM].strikeDur) : (t += 1.0 / 240.0) {
+            big.t = t;
+            try std.testing.expect(big.parryable() == null);
+        }
+    }
 }
 
 test "shooting it dead costs the whole quiver, which is what stands in for a ranged answer" {

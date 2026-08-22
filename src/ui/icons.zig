@@ -45,6 +45,9 @@ pub const Icon = enum {
     mushroom_mage,
     fen_lurker,
     spore_golem,
+    bone_skitterer,
+    ancient_priest,
+    tolling_hollow,
     new,
     open,
     save,
@@ -428,6 +431,47 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             hline(cx + s * 0.04, cy - s * 0.38, s * 0.30, w * 1.8, col);
             dot(cx + s * 0.30, cy - s * 0.34, w * 1.2, col);
             dot(cx + s * 0.12, cy - s * 0.42, w * 1.0, d);
+        },
+
+        // A CAGE ON LEGS WITH A BLADE OVER IT — three legs a side now, and the goofy eye on the stalk.
+        .bone_skitterer => {
+            hline(cx - s * 0.30, cy + s * 0.06, s * 0.60, w * 1.5, col);
+            var r: u32 = 0;
+            while (r < 3) : (r += 1) {
+                const x = cx - s * 0.24 + s * 0.24 * @as(f32, @floatFromInt(r));
+                line(x, cy + s * 0.06, x - s * 0.14, cy + s * 0.32, w * 1.1, col);
+                line(x, cy + s * 0.06, x + s * 0.14, cy + s * 0.32, w * 1.1, d);
+                dot(x - s * 0.14, cy + s * 0.32, w * 0.9, col);
+            }
+            line(cx - s * 0.28, cy + s * 0.04, cx - s * 0.34, cy - s * 0.20, w * 1.4, col);
+            line(cx - s * 0.34, cy - s * 0.20, cx - s * 0.10, cy - s * 0.40, w * 1.4, col);
+            line(cx - s * 0.10, cy - s * 0.40, cx + s * 0.24, cy - s * 0.34, w * 1.4, col);
+            dot(cx + s * 0.28, cy - s * 0.34, w * 2.4, col);
+            dot(cx + s * 0.30, cy - s * 0.34, w * 1.1, d);
+        },
+        // A LONG MUZZLE AND TWO TALL EARS over a staff — the jackal head is the whole read.
+        .ancient_priest => {
+            line(cx - s * 0.16, cy - s * 0.14, cx - s * 0.24, cy - s * 0.44, w * 1.2, col);
+            line(cx + s * 0.04, cy - s * 0.14, cx + s * 0.10, cy - s * 0.46, w * 1.2, col);
+            box(cx - s * 0.06, cy - s * 0.10, s * 0.28, s * 0.18, w * 1.2, col);
+            hline(cx + s * 0.06, cy - s * 0.06, s * 0.30, w * 1.3, col);
+            dot(cx + s * 0.22, cy - s * 0.06, w * 1.0, d);
+            vline(cx - s * 0.02, cy + s * 0.24, s * 0.40, w * 1.4, col);
+            vline(cx + s * 0.34, cy + s * 0.02, s * 0.86, w * 1.2, col);
+            arc(cx + s * 0.34, cy - s * 0.40, s * 0.13, 200.0, 340.0, w * 1.3, col);
+        },
+        // A BELL ON A HUNCHED BACK, and the bell is bigger than the head.
+        .tolling_hollow => {
+            arc(cx - s * 0.10, cy - s * 0.30, s * 0.10, 200.0, 340.0, w * 1.2, col);
+            line(cx - s * 0.20, cy - s * 0.26, cx - s * 0.26, cy + s * 0.10, w * 1.6, col);
+            line(cx - s * 0.02, cy - s * 0.24, cx - s * 0.06, cy + s * 0.10, w * 1.6, col);
+            vline(cx - s * 0.26, cy + s * 0.30, s * 0.38, w * 1.5, col);
+            vline(cx - s * 0.06, cy + s * 0.30, s * 0.38, w * 1.5, col);
+            arc(cx + s * 0.22, cy + s * 0.02, s * 0.22, 180.0, 360.0, w * 1.5, col);
+            vline(cx + s * 0.00, cy + s * 0.10, s * 0.16, w * 1.4, col);
+            vline(cx + s * 0.44, cy + s * 0.10, s * 0.16, w * 1.4, col);
+            hline(cx + s * 0.22, cy + s * 0.18, s * 0.48, w * 1.8, col);
+            dot(cx + s * 0.22, cy + s * 0.10, w * 1.4, d);
         },
 
         .new => {

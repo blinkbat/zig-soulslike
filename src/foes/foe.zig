@@ -87,7 +87,7 @@ pub fn traitsOf(k: wf.FoeKind) Traits {
         .shade => .{ .nature = .undead, .gait = .flying },
         .rooted => .{ .nature = .plant, .gait = .rooted },
         .brood_sac => .{ .nature = .beast, .gait = .rooted },
-        .archer, .shieldman, .greatsword, .bone_knight, .necromancer => .{ .nature = .undead },
+        .archer, .shieldman, .greatsword, .bone_knight, .necromancer, .bone_skitterer, .ancient_priest, .tolling_hollow => .{ .nature = .undead },
         .berserker, .priest, .slinger, .ogre => .{ .nature = .humanoid },
         .brood_mother, .broodling, .delver, .florid_ravager => .{ .nature = .beast },
         .shroom, .mushroom_mage, .spore_golem => .{ .nature = .plant },
@@ -205,11 +205,18 @@ pub const Leash = struct {
         return self.sinceSeen > SIGHT_MEMORY and !self.roused();
     }
 
-    pub fn provoke(self: *Leash) void {
+    /// **A SUMMONS, NOT A WOUND** (the tolling hollow's bell). Rouses and re-engages exactly as a blow does
+    /// and never touches `provoked`: the leash BREAK is what three blows buy, and a bell rung four times may
+    /// not buy it for a whole camp at once.
+    pub fn call(self: *Leash) void {
         self.noteCombat();
         self.rouseLeft = PROVOKE_ROUSE;
-        self.provoked += PROVOKE_PER_HIT;
         self.reengage();
+    }
+
+    pub fn provoke(self: *Leash) void {
+        self.call();
+        self.provoked += PROVOKE_PER_HIT;
         if (self.provoked >= PROVOKE_BREAK) self.breakLeft = PROVOKE_HOLD;
     }
 
@@ -232,6 +239,20 @@ pub fn sensedDist(l: *const Leash, real: f32, aggroR: f32) f32 {
     if (l.goingHome()) return mathx.LONG_AGO;
     if (l.roused()) return mathx.minF(real, aggroR);
     return real;
+}
+
+/// **EVERY BODY THAT COULD HAVE HEARD IT COMES**, and the count is what the caller reports. A `call` and not
+/// a `provoke`: see `Leash.call`. The radius is the SOUND's, so it is measured from where the noise was made
+/// and not from the creature that made it.
+pub fn rouseWithin(foes: anytype, at: rl.Vector3, r: f32) u32 {
+    var n: u32 = 0;
+    for (foes) |*f| {
+        if (!corporeal(f)) continue;
+        if (mathx.distXZ(f.pos, at) > r) continue;
+        f.leash.call();
+        n += 1;
+    }
+    return n;
 }
 
 /// `out` and `heroOut` transposed is a tether that releases at the wrong range.

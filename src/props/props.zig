@@ -509,8 +509,6 @@ comptime {
     }
 }
 
-pub const CLIFFS = [_]Kind{ .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6 };
-
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
 
 pub const Stock = enum { decor, props, interact };

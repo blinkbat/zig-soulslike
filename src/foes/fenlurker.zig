@@ -74,6 +74,9 @@ pub const LASH_HIT = combat.Hit{ .dmg = 26, .poise = 24, .stance = 11 };
 /// the test at the foot of this file, never guessed.
 const LASH_R: f32 = 2.35;
 const LASH_FRONT_DOT: f32 = 0.30;
+/// Where in the stroke the limb arrives, as a share of it — where its own `swingCurve` crosses zero, and the
+/// ONE frame the boards are asked about (`foe.PARRY_LEAD` back from here).
+const LASH_IMPACT_K: f32 = 0.5;
 /// Its reach and measured height are both taken over this: a flat skull coming down is a MASS, not a point.
 const HEAD_R: f32 = 0.34;
 
@@ -185,6 +188,9 @@ pub const Lurker = struct {
     lashed: bool = false,
     yelped: bool = false,
     sank: bool = false,
+    /// THE HERO'S SHIELD, stamped from outside (`game.markParry`), and the one-frame answer to it.
+    parry: foe.Parry = .{},
+    parried: bool = false,
 
     fade: f32 = 0,
     gone: bool = false,
@@ -290,13 +296,45 @@ pub const Lurker = struct {
         self.lashed = false;
         self.yelped = false;
         self.sank = false;
+        self.parried = false;
         if (self.gone) {
             foe.tickParticles(&self.parts, dt, self.pos.y);
             return null;
         }
         self.stateStep(dt, hero, bounds);
+        self.takeParry();
         self.tryHit(blade);
         return self.heroHit;
+    }
+
+    /// SECONDS BACK FROM THE LIMB ARRIVING, or null. The surge is the tell and the lash is the stroke, so the
+    /// clock runs continuously across the two — and the surge's own clock is RESUMED part-way on a chained
+    /// stroke, which this reads correctly because it asks the clock rather than counting strokes.
+    fn toImpact(self: *const Lurker) ?f32 {
+        const at = LASH_DUR * LASH_IMPACT_K;
+        return switch (self.state) {
+            .surge => (SURGE_DUR - self.t) + at,
+            .lash => at - self.t,
+            .sunk, .recover, .sink, .hurt, .dead => null,
+        };
+    }
+
+    /// THE INSTANT THE LIMB CAN BE CAUGHT IN, and how far out it reaches then — `tryLash`'s OWN extent
+    /// through the same `foe.hurtReach`, so a stroke the boards could not have met is never offered as one.
+    fn parryable(self: *const Lurker) ?f32 {
+        const left = self.toImpact() orelse return null;
+        if (!foe.inParryWindow(left)) return null;
+        return foe.hurtReach(LASH_R, self.scale);
+    }
+
+    /// **THE BOARDS TAKE THE LASH, AND IT IS THE DRY-LAND ANSWER'S TWIN**: a stroke caught is one that never
+    /// landed, so the latch is spent and `enterStun` drops it where it stands, still in its own water.
+    fn takeParry(self: *Lurker) void {
+        const reach = self.parryable() orelse return;
+        if (!foe.caught(self, reach)) return;
+        self.heroLatch = true;
+        self.splash(foe.markOn(self.xf[HEAD], mathx.zero3), 8);
+        self.enterStun(false);
     }
 
     fn stateStep(self: *Lurker, dt: f32, hero: rl.Vector3, bounds: f32) void {
@@ -645,6 +683,12 @@ pub const Marsh = struct {
     }
     pub fn drawFx(self: *const Marsh) void {
         for (self.liveConst()) |*l| l.drawFx();
+    }
+    pub fn setParry(self: *Marsh, p: foe.Parry) void {
+        foe.setParry(self.live(), p);
+    }
+    pub fn anyParried(self: *const Marsh) bool {
+        return foe.anyParried(self.liveConst());
     }
     pub fn pierce(self: *Marsh, blade: foe.Blade) bool {
         return foe.pierceGroup(self.live(), blade);

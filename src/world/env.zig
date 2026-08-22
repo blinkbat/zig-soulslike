@@ -16,9 +16,8 @@ const Kind = props.Kind;
 const alloc = std.heap.raw_c_allocator;
 
 
-pub const RIM_OUT: f32 = 6.0;
 pub const PLAY_INSET: f32 = 2.0;
-pub const MAX_HALF: f32 = GRID_HALF + CELL - RIM_OUT - CLIFF_BOUND;
+pub const MAX_HALF: f32 = GRID_HALF + CELL - CLIFF_BOUND;
 
 comptime {
     std.debug.assert(MAX_HALF >= wf.MAX_DECLARED_HALF);
@@ -37,8 +36,8 @@ const MAX_SOLID_REFS = 4 * MAX_SOLIDS;
 const MAX_LIGHTS = 192;
 const MAX_DRESSED = 64;
 
-// 40 a side = 640 m, covering a 280 m map's cliff ring (286 + 18 of cliff bound) with room over. The arrays
-// are BSS and the per-frame cost is one loop of four plane tests, so 1,600 cells is not measurable.
+// 40 a side = 640 m, covering a 280 m map's edge-standing cliffs (280 + 18 of cliff bound) with room over.
+// The arrays are BSS and the per-frame cost is one loop of four plane tests, so 1,600 cells is not measurable.
 const CELL: f32 = 16.0;
 const GRID_N: usize = 40;
 const GRID_SPAN: f32 = CELL * @as(f32, @floatFromInt(GRID_N));
@@ -1790,7 +1789,6 @@ const Placer = struct {
             .ring => self.ring(o, &rng),
             .line => self.line(o, &rng),
             .ivy => self.ivy(o, &rng),
-            .edge => self.edge(o, &rng),
         }
     }
 
@@ -1866,38 +1864,6 @@ const Placer = struct {
             const d = nfo.bound * pr.scale * rng.range(0.18, 0.42);
             self.at(o.kind, pr.pos.x + mathx.cosf(a) * d, pr.pos.z + mathx.sinf(a) * d, mathx.degrees(a), rng.range(o.sLo, o.sHi), rng);
         }
-    }
-
-    fn edge(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
-        if (o.r0 < 1e-4) return;
-        const rim = self.m.half + RIM_OUT;
-        var t: f32 = -rim;
-        while (t <= rim) : (t += o.r0) {
-            const jitter = rng.signed() * 1.6;
-            self.at(o.pick(rng), t + jitter, -rim - rng.range(0, 2.5), 180 + rng.signed() * 7, ridge(o, t, rng), rng);
-            self.at(o.pick(rng), t - jitter, rim + rng.range(0, 2.5), 0 + rng.signed() * 7, ridge(o, t + 91, rng), rng);
-            self.at(o.pick(rng), rim + rng.range(0, 2.5), t + jitter, 90 + rng.signed() * 7, ridge(o, t + 213, rng), rng);
-            self.at(o.pick(rng), -rim - rng.range(0, 2.5), t - jitter, 270 + rng.signed() * 7, ridge(o, t + 347, rng), rng);
-        }
-        var i: i32 = 0;
-        while (i < o.n) : (i += 1) {
-            const along = rng.range(-rim, rim);
-            const off = rng.range(self.m.half - 20, self.m.half - 4);
-            const pos: [2]f32 = switch (rng.intn(4)) {
-                0 => .{ along, -off },
-                1 => .{ along, off },
-                2 => .{ off, along },
-                else => .{ -off, along },
-            };
-            const kind: Kind = if (rng.float() < 0.45) .boulder else if (rng.float() < 0.7) .rocks else .bush;
-            self.at(kind, pos[0], pos[1], rng.range(0, 360), rng.range(0.8, 1.5), rng);
-        }
-    }
-
-    fn ridge(o: *const wf.Op, along: f32, rng: *mathx.Rng) f32 {
-        const mid = (o.sLo + o.sHi) * 0.5;
-        const amp = (o.sHi - o.sLo) * 0.5;
-        return mid + amp * (0.62 * mathx.sinf(along * 0.070) + 0.31 * mathx.sinf(along * 0.170 + 1.9)) + rng.signed() * amp * 0.16;
     }
 };
 
@@ -2846,8 +2812,7 @@ test "every generator op in the shipped map has its own seed" {
     }
 }
 
-test "the cliff ring stands outside the movement clamp, and inside the grid" {
-    try std.testing.expect(RIM_OUT > 0);
+test "a cliff stood at the map's edge is still inside the grid" {
     // CLIFF_BOUND is a hand-copied mirror of the mesh's own bound, because MAX_HALF has to be a comptime
     // value and `props.info` is a runtime lookup.
     try std.testing.expectApproxEqAbs(CLIFF_BOUND, props.info(.cliff).bound, 1e-4);

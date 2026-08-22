@@ -178,6 +178,14 @@ const B_LEAP_CD = 1.9;
 const B_LEAP_IMPACT_R = 1.25;
 const B_LEAP_FRONT_DOT = 0.20;
 
+/// The three reaches above are WORLD metres at each role's shipped scale — what `classifyMother`/
+/// `classifyBroodling` measure a raw `distXZ` against. A HURT BOX is the creature's OWN metres
+/// (`foe.hurtReach`), so it is those divided back out by the role's own stature, and that is what makes a
+/// re-scaled placement's reach track its body instead of standing still.
+const M_BITE_OWN = M_BITE_R / M_SCALE;
+const B_BITE_OWN = B_BITE_R / B_SCALE;
+const B_LEAP_IMPACT_OWN = B_LEAP_IMPACT_R / B_SCALE;
+
 pub const B_BITE_HIT = combat.Hit{ .dmg = 3, .poise = 4 };
 pub const B_LEAP_HIT = combat.Hit{ .dmg = 5, .poise = 8 };
 
@@ -186,7 +194,6 @@ const SHOVE_DECAY = 7.5;
 const DEATH_DUR = 1.05;
 const DISS_DUR = 0.9;
 const DISSOLVE = foe.Dissolve{ .rate = 34.0, .spread = 0.60, .rise = 0.40 };
-const HERO_REACH = foe.HERO_REACH;
 
 pub const M_SOULS: u32 = 240;
 pub const B_SOULS: u32 = 25;
@@ -1161,7 +1168,7 @@ pub const Spider = struct {
                         self.fired = true;
                         sfx.world(.spider_bite, self.pos);
                     }
-                    self.tryReach(hero, M_BITE_R, M_BITE_HIT);
+                    self.tryReach(hero, M_BITE_OWN, M_BITE_HIT);
                     if (self.t >= BITE_SNAP) self.enter(.recover);
                 }
             },
@@ -1258,7 +1265,7 @@ pub const Spider = struct {
                     self.fired = true;
                     sfx.world(.brood_bite, self.pos);
                 }
-                self.tryReach(hero, B_BITE_R, B_BITE_HIT);
+                self.tryReach(hero, B_BITE_OWN, B_BITE_HIT);
                 if (self.t >= B_BITE_SNAP) self.enter(.recover);
             },
             .recover => {
@@ -1370,13 +1377,13 @@ pub const Spider = struct {
         };
     }
 
-    /// THE INSTANT THE FANGS CAN BE CAUGHT IN, and how far out they reach then — `tryReach`'s OWN extent, and
-    /// UNSCALED exactly as that test is, so a bite the boards could not possibly have met is never offered as
+    /// THE INSTANT THE FANGS CAN BE CAUGHT IN, and how far out they reach then — `tryReach`'s OWN extent
+    /// through the same `foe.hurtReach`, so a bite the boards could not possibly have met is never offered as
     /// one (the ogre's `slamReach` law: the parry's reach is the blow's reach and not a second number).
     fn parryable(self: *const Spider) ?f32 {
         const left = self.toImpact() orelse return null;
         if (!foe.inParryWindow(left)) return null;
-        return M_BITE_R + HERO_REACH;
+        return foe.hurtReach(M_BITE_OWN, self.scale);
     }
 
     fn takeParry(self: *Spider) void {
@@ -1393,7 +1400,7 @@ pub const Spider = struct {
 
     fn tryReach(self: *Spider, hero: rl.Vector3, range: f32, h: combat.Hit) void {
         if (self.heroLatch) return;
-        if (mathx.distXZ(self.pos, hero) <= range + HERO_REACH) {
+        if (mathx.distXZ(self.pos, hero) <= foe.hurtReach(range, self.scale)) {
             self.heroHit = h;
             self.heroLatch = true;
             self.leash.noteCombat();
@@ -1402,7 +1409,7 @@ pub const Spider = struct {
 
     fn tryImpact(self: *Spider, hero: rl.Vector3, h: combat.Hit) void {
         if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, hero, B_LEAP_IMPACT_R + HERO_REACH, B_LEAP_FRONT_DOT)) return;
+        if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(B_LEAP_IMPACT_OWN, self.scale), B_LEAP_FRONT_DOT)) return;
         self.heroHit = h;
         self.heroLatch = true;
         self.leash.noteCombat();

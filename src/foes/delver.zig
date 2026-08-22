@@ -815,7 +815,7 @@ pub const Delver = struct {
     fn parryable(self: *const Delver) ?f32 {
         const left = self.toImpact() orelse return null;
         if (!foe.inParryWindow(left)) return null;
-        return CLAW_BAND + foe.HERO_REACH;
+        return foe.hurtReach(CLAW_BAND, self.scale);
     }
 
     fn takeParry(self: *Delver) void {

@@ -37,6 +37,10 @@ pub const Step = union(enum) {
     /// reposition that re-derived its target every frame as the quarry moved would be a chase, and what
     /// makes this legible is that you can watch where it has decided to go.
     shift: struct { d: f32, turn: f32 },
+    /// **HOLD THE RANGE YOU ARE ON AND CIRCLE.** An orbit whose radius is taken from where the creature
+    /// ALREADY stands, committed at the first frame (the shift's rule) — so one script serves a skirmisher
+    /// at 9 m and at 19 without walking either of them to an authored ring.
+    strafe: struct { secs: f32 },
 };
 
 pub const Routine = struct {
@@ -45,6 +49,8 @@ pub const Routine = struct {
     t: f32 = 0,
     side: f32 = 1,
     mark: rl.Vector3 = mathx.zero3,
+    /// The strafe's committed radius — the range it stood at when the step began.
+    markR: f32 = 0,
     marked: bool = false,
     running: bool = false,
 
@@ -69,7 +75,7 @@ pub const Routine = struct {
 
     pub fn walkTo(self: *const Routine, at: rl.Vector3, quarry: rl.Vector3) ?rl.Vector3 {
         return switch (self.current() orelse return null) {
-            .close, .orbit => quarry,
+            .close, .orbit, .strafe => quarry,
             .open => mathx.addV(at, mathx.dirXZ(quarry, at)),
             .shift => if (self.marked) self.mark else quarry,
             .dwell => null,
@@ -123,6 +129,17 @@ pub const Routine = struct {
                         continue;
                     }
                     return .{ .go = self.ring(c, c.quarryR + s.r), .look = c.quarry };
+                },
+                .strafe => |s| {
+                    if (!self.marked) {
+                        self.marked = true;
+                        self.markR = mathx.maxF(dist - c.quarryR, 0.5);
+                    }
+                    if (self.t >= s.secs) {
+                        self.advance();
+                        continue;
+                    }
+                    return .{ .go = self.ring(c, c.quarryR + self.markR), .look = c.quarry };
                 },
                 .dwell => |s| {
                     if (self.t >= s.secs) {
@@ -251,6 +268,29 @@ test "A STEP ALREADY ON ITS BAND DOES NOT TWITCH — the slop is an entry tolera
     }
     try std.testing.expect(!r2.running);
     try std.testing.expect(mathx.distXZ(at, q) <= 2.0 + 0.05);
+}
+
+test "A STRAFE CIRCLES AT THE RANGE IT STOOD AT — committed at the first frame, whatever range that was" {
+    for ([_]f32{ 4.0, 9.0, 17.0 }) |start| {
+        var r = Routine{};
+        r.start(&[_]Step{.{ .strafe = .{ .secs = 99 } }}, 1);
+        const quarry = mathx.ground(0, 0);
+        var at = mathx.ground(start, 0);
+        const dt = 1.0 / 60.0;
+        var swept: f32 = 0;
+        var was = mathx.headingXZ(mathx.dirXZ(quarry, at));
+        var k: i32 = 0;
+        while (k < 300) : (k += 1) {
+            const w = r.step(dt, .{ .at = at, .facing = 0, .quarry = quarry });
+            at = mathx.approachV(at, w.go.?, 2.4 * dt);
+            const now = mathx.headingXZ(mathx.dirXZ(quarry, at));
+            swept += @abs(mathx.wrapPi(now - was));
+            was = now;
+        }
+        try std.testing.expectApproxEqAbs(start, mathx.distXZ(at, quarry), 0.4);
+        // Judged as ARC LENGTH — the same metres of walking sweep fewer radians on a wider ring.
+        try std.testing.expect(swept * start > 3.0);
+    }
 }
 
 test "AN ORBIT HOLDS ITS RADIUS rather than spiralling out of the fight" {

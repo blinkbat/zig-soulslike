@@ -218,6 +218,9 @@ const unitTips = [_][:0]const u8{
     "Lobs slow bouncing fireballs. Backing away stays in the bounce line; go sideways",
     "Place in water. Surfaces when you wade; cannot leave water or be hit while down",
     "Very tough against steel, weak to fire and lightning. Slams forward at anyone who backs off",
+    "A ribcage on its ribs. Fastest thing on foot; one long vertical slice you can walk out of",
+    "No melee. Raises skitterers from bare earth far off, breathes cold up close. Weak to fire",
+    "High HP, no armour, feeble bite. Rings the bell on its back and the camp comes; weak to lightning",
     "Sweep to erase ([ ] sets radius)",
 };
 
@@ -259,6 +262,9 @@ const unitIcons = [_]ui.Icon{
     .mushroom_mage,
     .fen_lurker,
     .spore_golem,
+    .bone_skitterer,
+    .ancient_priest,
+    .tolling_hollow,
     .erase,
 };
 
@@ -368,6 +374,9 @@ const UnitBrush = enum {
     mushroom_mage,
     fen_lurker,
     spore_golem,
+    bone_skitterer,
+    ancient_priest,
+    tolling_hollow,
     erase,
 };
 
@@ -447,7 +456,6 @@ fn layerHasGroup(l: Layer, g: props.Group) bool {
 fn layerOf(o: *const wf.Op) Layer {
     return switch (o.op) {
         .ivy => .props,
-        .edge => .props,
         else => switch (props.stock(o.kind)) {
             .decor => .decor,
             .props => .props,
@@ -521,10 +529,6 @@ fn translateOp(o: *wf.Op, dx: f32, dz: f32) void {
         o.x1 += dx;
         o.z1 += dz;
     }
-}
-
-fn isMovable(o: *const wf.Op) bool {
-    return o.op != .edge;
 }
 
 fn eraseMiss(l: Layer) [:0]const u8 {
@@ -984,9 +988,8 @@ pub const Editor = struct {
             .ring => o.r0 * 2,
             .line => mathx.distXZ(v3(o.x, 0, o.z), v3(o.x1, 0, o.z1)),
             .at => AT_SPAN,
-            .edge => m.half,
         };
-        const c = if (isMovable(&o)) opAnchor(&o) else mathx.zero3;
+        const c = opAnchor(&o);
         self.lookAtGround(c.x, c.z, span);
     }
 
@@ -1762,7 +1765,7 @@ pub const Editor = struct {
                 const was = self.sel;
                 if (!self.pickInLayer(m, env)) return false;
                 const s = self.sel orelse return false;
-                if (s >= m.nops or !isMovable(&m.ops[s])) {
+                if (s >= m.nops) {
                     self.sel = was;
                     return false;
                 }
@@ -1796,10 +1799,6 @@ pub const Editor = struct {
         }
         const s = self.sel orelse return;
         if (s >= m.nops) return;
-        if (!isMovable(&m.ops[s])) {
-            self.sayFmt("the {s} op is the whole world's - it cannot be deleted", .{@tagName(m.ops[s].op)});
-            return;
-        }
         self.bank(m);
         self.removeOp(m, env, s);
     }
@@ -1813,7 +1812,7 @@ pub const Editor = struct {
 
     fn duplicateSel(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
         const s = self.sel orelse return;
-        if (s >= m.nops or !isMovable(&m.ops[s])) return;
+        if (s >= m.nops) return;
         if (m.nops >= wf.MAX_OPS) {
             self.say(FULL_MSG);
             return;
@@ -1854,7 +1853,7 @@ pub const Editor = struct {
             // would show a properties panel for something this marquee cannot touch
         } else if (self.layer.opLayer()) {
             for (m.ops[0..m.nops], 0..) |*o, i| {
-                if (layerOf(o) != self.layer or !isMovable(o)) continue;
+                if (layerOf(o) != self.layer) continue;
                 const p = opAnchor(o);
                 if (box.holds(p.x, p.z)) self.mark(i);
             }
@@ -2007,7 +2006,7 @@ pub const Editor = struct {
                 std.mem.copyForwards(wf.Foe, m.foes[i .. m.nfoes - 1], m.foes[i + 1 .. m.nfoes]);
                 m.nfoes -= 1;
             } else {
-                if (i >= m.nops or !isMovable(&m.ops[i])) continue;
+                if (i >= m.nops) continue;
                 m.remove(i);
             }
             removed += 1;
@@ -2293,7 +2292,6 @@ fn drawOpGizmo(o: *const wf.Op, y: f32) void {
         },
         .ring => ringXZ(o.x, o.z, o.r0, y, ui.HOT),
         .line => groundLine(o.x, o.z, o.x1, o.z1, y, ui.HOT),
-        .edge => {},
     }
 }
 
@@ -2331,6 +2329,9 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         .mushroom_mage => ui.col(238, 152, 66, 255),
         .spore_golem => ui.col(214, 96, 132, 255),
         .fen_lurker => ui.col(78, 200, 186, 255),
+        .bone_skitterer => ui.col(232, 228, 206, 255),
+        .ancient_priest => ui.col(180, 148, 72, 255),
+        .tolling_hollow => ui.col(150, 132, 78, 255),
     };
 }
 
@@ -2543,7 +2544,7 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
         ed.menuOpen = false;
         ed.modal = .objects;
     }
-    if (row.button("World", ed.modal == .world, "The map itself - its size, the runway, and the cliff rim")) {
+    if (row.button("World", ed.modal == .world, "The map itself - its size and the runway")) {
         ed.menuOpen = false;
         ed.modal = .world;
     }
@@ -3055,12 +3056,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             changed = ui.slider(ctx, x, y, w, "stands", &o.chance, 0, 1) or changed;
             y += ROW_H + SLIDER_DROP;
         },
-        .edge => {
-            changed = ui.stepperF(ctx, x, y, w, "step", &o.r0, 0.25, 1, 20) or changed;
-            y += ROW_H;
-            changed = ui.stepperI(ctx, x, y, w, "talus", &o.n, 5, 0, 600) or changed;
-            y += ROW_H;
-        },
     }
 
     if (o.op != .at) {
@@ -3177,7 +3172,6 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.C
     }.f;
 
     for (m.ops[0..m.nops]) |*o| {
-        if (o.op == .edge) continue;
         if (!onMap(o.x, o.z, m.half)) continue;
         const p = toMini(o.x, o.z, m.half, px, py, inner);
         const mine = layerOf(o) == ed.layer;
@@ -3565,33 +3559,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 y += ROW_H + 10;
             }
 
-            hud.mono("RIM", x, y, hud.MONO, ui.TITLE);
-            y += ROW_H + 4;
-            var rims: usize = 0;
-            for (m.slice()) |*o| {
-                if (o.op == .edge) rims += 1;
-            }
-            var rb: [64]u8 = undefined;
-            hud.mono(
-                std.fmt.bufPrintZ(&rb, "{d} cliff rim op{s} in the world", .{ rims, if (rims == 1) "" else "s" }) catch "",
-                x,
-                y,
-                hud.MONO,
-                ui.alpha(ui.LABEL, 170),
-            );
-            y += hud.monoLineH(hud.MONO) + 6;
-            if (ui.buttonTip(ctx, ui.rect(x, y, 190, 24), "Add cliff rim", hud.MONO, false, "A ring of cliffs round the world's edge - what a new map is given, and the one op no brush could make")) {
-                if (m.nops >= wf.MAX_OPS) {
-                    ed.say(FULL_MSG);
-                } else {
-                    ed.bank(m);
-                    if (m.add(freshRim(ed, m))) |_| {
-                        ed.rebuild(m, env);
-                        ed.say("+rim");
-                    } else |_| ed.say(FULL_MSG);
-                }
-            }
-
             if (changed) {
                 ed.bankWorld(m, halfBefore, before);
                 // A size change moves the painted grids as well as the props, so it is the FULL rebuild and
@@ -3798,12 +3765,6 @@ const HOUR_MARKS = [_]HourMark{
     .{ .name = "Night", .at = 0.5, .tip = "Moonlight - what the fires have to carry" },
 };
 
-fn freshRim(ed: *Editor, m: *const wf.Map) wf.Op {
-    var rim = wf.Map.defaultRim();
-    rim.seed = ed.freshSeed(m);
-    return rim;
-}
-
 /// The eleven dials, over either a FAMILY or the ONE VOICE the bench has selected. Same rack both ways on
 /// purpose: a filter that behaved differently depending on whose it was would be two things sharing a name.
 fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32, voice: ?sfx.Id) void {
@@ -3895,7 +3856,7 @@ fn menuEnabled(ed: *const Editor, m: *const wf.Map, act: MenuItem) bool {
         .view => op != null,
         .loot => lootOp(ed, m) != null,
         .boss => bossOp(ed, m) != null,
-        .reroll, .duplicate => if (op) |s| isMovable(&m.ops[s]) else false,
+        .reroll, .duplicate => op != null,
         .delete => op != null or (ed.layer == .units and ed.selFoe != null),
     };
 }

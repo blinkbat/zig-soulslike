@@ -404,6 +404,12 @@ const AIR_NEAR_DARKEST: f32 = 2200;
 const AIR_NEAR_GRASS: f32 = 4200;
 
 // Order is the BANK table's order below; the two are pinned at comptime.
+/// **APPEND-ONLY, LIKE `gfx.Mat`, AND FOR A SHARPER REASON: THE BAKE SEEDS OFF THE ORDINAL.**
+/// `bakeTake` builds each take's noise from `0x9E3779B9 *% (idx + 1)`, and `idx` is this enum's own value —
+/// so inserting an id in the MIDDLE silently re-rolls the synthesis of every voice below it. Nothing fails to
+/// compile and nothing sounds broken; the takes just quietly become different takes, and the tests that
+/// compare two creatures' throats measure two new draws. Caught by exactly that: adding `gremlin_spark` next
+/// to the hollow's family moved the bone knight's heave 2% off the cyclops's, under the 3% a test demands.
 pub const Id = enum {
     step_soft,
     step_hard,
@@ -564,6 +570,18 @@ pub const Id = enum {
     fog_felled,
     fog_pass,
     torch_fire,
+    // **APPEND HERE, NEVER IN THE MIDDLE, AND THIS ENUM IS WHY** (see the note above `Id`). The gremlin's spark
+    // belongs beside the rest of the hollow's family and is down here instead, because grouping it there
+    // re-rolled every voice authored after it. The skitterer's, priest's and hollow's families are down here
+    // with it for the same reason: seated beside `ember_burst` they re-rolled every voice from `lurker_break`
+    // to the bone knight's, and the knight-vs-ogre throat test measured two new draws.
+    gremlin_spark,
+    skitter_clack,
+    skitter_slice,
+    priest_call,
+    priest_breath,
+    hollow_toll,
+    hollow_clank,
 };
 const NV = @typeInfo(Id).@"enum".fields.len;
 
@@ -2253,6 +2271,79 @@ fn mkEmberBurst(r: *Rack) void {
 }
 
 
+// THE BONE SKITTERER. Everything it makes is DRY: bone on earth and bone through air, nothing wet and
+// nothing with a chest behind it.
+fn mkSkitterClack(r: *Rack) void {
+    r.tick(0.0, 0.34, 4600);
+    r.ring(0.0, 0.16, 620, 0.16, 7.0, 3);
+    r.grit(0.0, 0.13, 0.22, 3400, 0.35, 4.2);
+    r.body(0.0, 0.09, 240, 120, 0.20, 6.0);
+    r.master(1.7, 5600);
+}
+
+/// The blade going over, not the blade landing: it RESOLVES at the strike, so the sweep has to arrive.
+fn mkSkitterSlice(r: *Rack) void {
+    r.air(0.0, 0.30, 0.52, 900, 4200, 0.62, 1.6);
+    r.air(0.16, 0.20, 0.40, 4200, 1100, 0.58, 2.6);
+    r.ring(0.19, 0.20, 830, 0.13, 5.0, 3);
+    r.tick(0.20, 0.30, 5200);
+    r.master(1.9, 5200);
+}
+
+// THE ANCIENT PRIEST. The call is a voice with nothing in its throat; the breath is all air and rime.
+fn mkPriestCall(r: *Rack) void {
+    r.growl(0.0, 1.10, 84, 62, 0.60, 0.30, 0.30);
+    r.growl(0.14, 0.95, 126, 94, 0.26, 0.22, 0.36);
+    r.air(0.05, 1.20, 0.22, 420, 2600, 0.74, 0.9);
+    r.ring(0.30, 1.00, 196, 0.11, 1.6, 4);
+    r.grit(0.55, 0.85, 0.14, 1400, 0.62, 1.0);
+    r.master(1.5, 4000);
+}
+
+/// A HELD EXHALE, not a blast: it has to last the whole pour (`ancientpriest.BREATH_DUR`), so the envelope
+/// swells and holds rather than cracking and dying.
+fn mkPriestBreath(r: *Rack) void {
+    r.air(0.0, 1.00, 0.50, 2800, 900, 0.30, 0.7);
+    r.air(0.06, 0.94, 0.34, 700, 5200, 0.52, 0.6);
+    r.grit(0.10, 0.86, 0.10, 5600, 0.20, 0.8);
+    r.ring(0.12, 0.80, 1480, 0.07, 1.4, 3);
+    r.master(1.4, 6200);
+}
+
+// THE TOLLING HOLLOW'S BELL. A hundredweight of bronze: the strike is a tenth of it and the HUM is the rest.
+// Inharmonic by construction — `ring`'s partials sit at ~1.48x, which is what a bell has and a string does
+// not, and the two rings a fifth apart are the hum note under the strike note.
+fn mkHollowToll(r: *Rack) void {
+    r.tick(0.0, 0.62, 3800);
+    r.ring(0.0, 3.10, 138, 0.40, 0.75, 5);
+    r.ring(0.006, 2.40, 206, 0.19, 1.05, 4);
+    r.ring(0.010, 1.10, 412, 0.10, 2.40, 3);
+    r.body(0.0, 0.80, 72, 58, 0.20, 1.6);
+    r.air(0.0, 0.26, 0.20, 2600, 520, 0.44, 2.8);
+    r.master(1.6, 5400);
+}
+
+/// …and the walking knock, which is the same bronze barely moved: the clapper touching the wall.
+fn mkHollowClank(r: *Rack) void {
+    r.tick(0.0, 0.22, 3200);
+    r.ring(0.0, 0.44, 142, 0.20, 4.2, 3);
+    r.ring(0.004, 0.30, 208, 0.10, 5.2, 2);
+    r.master(1.4, 4600);
+}
+
+/// THE GREMLIN'S SPARK LEAVING ITS FISTS. **NOTHING WITH A CHEST BEHIND IT AND NOTHING WET** — no `body` at
+/// all, which is what separates a crack of electricity from every impact in the bank: a hard tick, a thin high
+/// ring over it, and a hiss of air closing where it was. Short, because there are THREE of them a volley
+/// (`hollow.SPARK_N`) and a long take would smear them into one noise.
+fn mkGremlinSpark(r: *Rack) void {
+    r.tick(0.0, 0.40, 7200);
+    r.ring(0.0, 0.20, 2600, 0.10, 6.5, 3);
+    r.ring(0.008, 0.13, 4100, 0.06, 8.0, 2);
+    r.air(0.0, 0.22, 0.30, 6200, 2400, 0.34, 4.6);
+    r.grit(0.0, 0.09, 0.16, 5000, 0.30, 5.0);
+    r.master(1.8, 8200);
+}
+
 fn mkLurkerBreak(r: *Rack) void {
     r.air(0.0, 0.46, 0.40, 300, 2600, 0.62, 1.7);
     r.body(0.06, 0.28, 96, 38, 0.72, 3.4);
@@ -2463,6 +2554,20 @@ const BANK = [NV]Row{
     .{ .id = .fog_pass, .make = mkFogPass, .gain = 0.44, .jit = 0.04, .vjit = 0.08, .vars = 2, .poly = 1 },
     // LOUDER THAN THE RAIN and quieter than every call, because a torch is the one bed held at arm's length.
     .{ .id = .torch_fire, .make = mkTorchFire, .gain = 0.075, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
+    // **A SHOT COMING AT YOU FROM 16 M HAS TO BE HEARD FROM 16 M** (`hollow.SPARK_MAX`) — the volley's whole
+    // fairness is three separate arrivals, and one you cannot hear is not one you can answer. `poly` is 4
+    // because three are in the air at once and a second rider may be firing. Down here rather than with the
+    // rest of the hollow's family for the reason written on `Id`.
+    .{ .id = .gremlin_spark, .make = mkGremlinSpark, .gain = battle(0.58), .mix = .combat, .jit = 0.10, .vjit = 0.22, .vars = 4, .poly = 4, .reach = 40 },
+    .{ .id = .skitter_clack, .make = mkSkitterClack, .gain = battle(0.34), .mix = .combat, .jit = 0.18, .vjit = 0.30, .vars = 4, .poly = 6, .reach = 24 },
+    .{ .id = .skitter_slice, .make = mkSkitterSlice, .gain = battle(0.72), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 4, .poly = 4, .reach = 30 },
+    // THE CALL CARRIES: it is a tell, and a tell you cannot hear from where the fight is happening is not one.
+    .{ .id = .priest_call, .make = mkPriestCall, .gain = battle(0.66), .mix = .combat, .jit = 0.08, .vjit = 0.12, .vars = 3, .poly = 3, .reach = 44 },
+    .{ .id = .priest_breath, .make = mkPriestBreath, .gain = battle(0.60), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 26 },
+    // …AND THE BELL CARRIES AS FAR AS IT REACHES (`hollow.TOLL_R` is 34 m): what it is FOR is bodies that
+    // were not in this fight hearing it, so a voice that faded first would be a lie about the mechanic.
+    .{ .id = .hollow_toll, .make = mkHollowToll, .gain = battle(0.92), .mix = .combat, .jit = 0.05, .vjit = 0.06, .vars = 3, .poly = 2, .reach = 40 },
+    .{ .id = .hollow_clank, .make = mkHollowClank, .gain = battle(0.30), .mix = .combat, .jit = 0.16, .vjit = 0.24, .vars = 4, .poly = 4, .reach = 20 },
 };
 
 fn seconds(id: Id) f32 {
@@ -2531,6 +2636,16 @@ fn seconds(id: Id) f32 {
         .delver_surge => 1.25,
         .delver_die => 0.85,
         .leech_die => 0.65, // the run-down, then the body arriving at 0.44
+        // The bell's HUM is the sound; cut to the default 0.5 s it was a hammer on a pipe.
+        .hollow_toll => 3.4,
+        .hollow_clank => 0.55,
+        // The call must cover the raise's own gather (`ancientpriest.RAISE_WIND` is 1.55 s).
+        .priest_call => 1.6,
+        // …and the breath must cover the pour (`BREATH_DUR` 0.95 s) plus the tail off it.
+        .priest_breath => 1.15,
+        .skitter_slice => 0.55,
+        // Short on purpose: three a volley, and a long take smears them into one noise.
+        .gremlin_spark => 0.45,
         .souls_spill => 0.9,
         // The retrigger fires every HUM_EVERY (1.15 s); the take must outlast it or the hum chatters.
         .souls_hum => 1.30,

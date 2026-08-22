@@ -40,7 +40,6 @@ pub const OpKind = enum(u8) {
     ring,
     line,
     ivy,
-    edge,
 };
 
 pub const Avoid = struct {
@@ -120,7 +119,6 @@ fn fieldsOf(comptime k: OpKind) []const []const u8 {
         .ring => &.{ "kind", "x", "z", "r0", "n", "sLo", "sHi" },
         .line => &.{ "kind", "x", "z", "x1", "z1", "r0", "sLo", "sHi" },
         .ivy => &.{ "kind", "x", "z", "x1", "z1", "sLo", "sHi" },
-        .edge => &.{ "kind", "r0", "n", "sLo", "sHi" },
     };
 }
 
@@ -146,7 +144,6 @@ pub fn defaults(k: OpKind) Op {
         .ring => o.skip = -1,
         .line => o.chance = 0.78,
         .ivy => o.chance = 0.55,
-        .edge => {},
     }
     return o;
 }
@@ -236,7 +233,7 @@ pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
 /// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at
 /// comptime, and each `roleOf` reads its own entries as a CONTIGUOUS RUN off the first of them — so
 /// inserting a kind in the middle silently renumbers all of it.
-pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, florid_ravager, mushroom_mage, fen_lurker, spore_golem };
+pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, florid_ravager, mushroom_mage, fen_lurker, spore_golem, bone_skitterer, ancient_priest, tolling_hollow };
 
 pub fn foeName(k: FoeKind) [:0]const u8 {
     return switch (k) {
@@ -262,6 +259,9 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
         .mushroom_mage => "Mushroom Mage",
         .fen_lurker => "Fen Lurker",
         .spore_golem => "Spore Homunculus",
+        .bone_skitterer => "Bone Skitterer",
+        .ancient_priest => "Ancient Priest",
+        .tolling_hollow => "Tolling Hollow",
     };
 }
 
@@ -776,16 +776,6 @@ pub const Map = struct {
         self.height = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS;
     }
 
-    pub fn defaultRim() Op {
-        var rim = defaults(.edge);
-        rim.kind = .cliff;
-        rim.r0 = 6.5;
-        rim.n = 90;
-        rim.sLo = 0.92;
-        rim.sHi = 1.24;
-        setMix(&rim.mix, &rim.nmix, &props.CLIFFS);
-        return rim;
-    }
     pub fn blank(self: *Map, name: []const u8) void {
         self.* = .{};
         self.setName(name);
@@ -797,11 +787,7 @@ pub const Map = struct {
 
         // **NO GROUND COVER.** A blank map used to open with a global `cover:` op, and it grew thirteen
         // thousand plants nobody could select or delete. Cover is ordinary `at:` decor now, painted where he
-        // wants it — so a new map opens EMPTY of it and the rim is the only thing standing.
-        var rim = defaultRim();
-        rim.seed = 1002;
-        self.ops[0] = rim;
-        self.nops = 1;
+        // wants it — so a new map opens with no ops at all.
     }
 
     pub fn add(self: *Map, o: Op) !usize {

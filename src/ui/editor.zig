@@ -108,9 +108,7 @@ const layerTips = [Layer.N][:0]const u8{
     "Foe spawns",
 };
 
-/// **TWO SECTIONS IN ONE LIST, and the split is `GROUND_SOIL_0`** — the sculpt tools first (pinned to
-/// `wf.Sculpt`), then one row per `wf.Soil` past the first, then Water and the eraser. Laid out to SHOW the
-/// seam: the index arithmetic either side of it is why this list cannot simply be appended to.
+/// **TWO SECTIONS IN ONE LIST, and the split is `GROUND_SOIL_0`** — the sculpt tools first (pinned to `wf.Sculpt`), then one row per `wf.Soil` past the first, then Water and the eraser. Laid out to SHOW the seam: the index arithmetic either side of it is why this list cannot simply be appended to.
 const groundBrushes = [_][:0]const u8{
     "Raise",
     "Lower",
@@ -151,8 +149,7 @@ const RAISE_SWATCH = ui.col(126, 100, 62, 255);
 const LOWER_SWATCH = ui.col(74, 60, 44, 255);
 const EVEN_SWATCH = ui.col(96, 100, 104, 255);
 
-// THE SOIL ROWS CARRY NO TIP: `groundBrushes` already names each one, and a tooltip that repeats the label
-// is a hover that costs a read and says nothing.
+// THE SOIL ROWS CARRY NO TIP: `groundBrushes` already names each one, and a tooltip that repeats the label is a hover that costs a read and says nothing.
 const groundTips = [_][:0]const u8{
     "Sweep to raise. [ ] sets size, the panel sets strength",
     "Sweep to lower",
@@ -333,10 +330,8 @@ comptime {
     for (0..wf.Soil.N - 1) |i| {
         std.debug.assert(std.mem.eql(u8, groundBrushes[GROUND_SOIL_0 + i], @tagName(@as(wf.Soil, @enumFromInt(i + 1)))));
     }
-    // …and the sculpt half needs no count assert of its own now: `GROUND_SOIL_0` IS `wf.Sculpt`'s length.
-    // The NAMES are not tag-for-tag there (`Flat` is `wf.Sculpt.flatten`), which is why only the soils are
-    // pinned by tag above.
-    // …and the unit brushes ARE the foe kinds in order, plus the eraser.
+    // `GROUND_SOIL_0` IS `wf.Sculpt`'s length, so the sculpt half needs no count assert of its own. The NAMES
+    // are not tag-for-tag there (`Flat` is `wf.Sculpt.flatten`), which is why only the soils are pinned by tag above.
     std.debug.assert(unitBrushes.len == @typeInfo(wf.FoeKind).@"enum".fields.len + 1);
     for (0..@typeInfo(wf.FoeKind).@"enum".fields.len) |i| {
         const tag = @tagName(@as(wf.FoeKind, @enumFromInt(i)));
@@ -349,8 +344,7 @@ const LocationBrush = enum { clearing, zone, location, erase };
 pub const DecorBrush = enum { single, patch, scatter, erase };
 const PropBrush = enum { stamp, row, ring, cluster, ivy, erase };
 const InteractBrush = enum { stamp, erase };
-/// **`wf.FoeKind`'S OWN TAGS, IN ITS OWN ORDER, PLUS `erase`** — pinned name-for-name by the comptime block
-/// below, so a creature APPENDED to that enum is appended here and nowhere else has to be touched.
+/// **`wf.FoeKind`'S OWN TAGS, IN ITS OWN ORDER, PLUS `erase`** — pinned name-for-name by the comptime block below, so a creature APPENDED to that enum is appended here and nowhere else has to be touched.
 const UnitBrush = enum {
     toad,
     archer,
@@ -468,17 +462,14 @@ pub const Action = enum { none, leave, playtest };
 
 pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot, boss, jukebox, world, zonemix };
 
-/// The bench lists off the AUDIO module's own table (`sfx.NAMES`), which `settings.cfg` is already keyed on.
-/// A second comptime walk over `sfx.Id` here was the same list built twice, and the one it has to agree with
-/// is the one the save writes.
+/// The bench lists off the AUDIO module's own table (`sfx.NAMES`), which `settings.cfg` is already keyed on. A second comptime walk over `sfx.Id` here was the same list built twice.
 const VOICE_NAMES = sfx.NAMES;
 
 const JUKE_W: i32 = 1010;
 const JUKE_H: i32 = 560;
 const JUKE_LIST_W: i32 = 300;
 const JUKE_LIST_H: i32 = JUKE_H - 150;
-/// The bench column between the list and the rack, MEASURED off the modal rather than picked: the rack is
-/// pinned to the right edge, so this is whatever is left after both gutters.
+/// The bench column between the list and the rack, MEASURED off the modal rather than picked: the rack is pinned to the right edge, so this is whatever is left after both gutters.
 const JUKE_COL_W: i32 = JUKE_W - JUKE_LIST_W - RACK_W - 80;
 
 const DLG_PAD: i32 = 24;
@@ -561,13 +552,11 @@ pub const Editor = struct {
 
     selecting: bool = false,
     layer: Layer = .props,
-    /// **WHAT IS ON SCREEN, WHICH IS NOT WHAT IS SELECTED.** One eye per layer plus the sky's own, and the
-    /// two axes stay independent on purpose: you hide the wood to place a wall under it and the Props layer is
-    /// still the one your brush is on. Hiding is a VIEW and never touches the map, so nothing here is saved,
-    /// nothing is undoable and a hidden layer still parses, still builds and still spawns.
+    /// **WHAT IS ON SCREEN, WHICH IS NOT WHAT IS SELECTED.** One eye per layer plus the sky's own, and the two
+    /// axes stay independent on purpose: you hide the wood to place a wall under it and the Props layer is still
+    /// the one your brush is on. Hiding is a VIEW and never touches the map, so nothing here is saved, nothing is undoable and a hidden layer still parses, still builds and still spawns.
     shown: [Layer.N]bool = [_]bool{true} ** Layer.N,
-    /// The rain, the mist and the sporefall — not a layer, because it is not a thing the map places in a
-    /// rectangle. It is the one overlay that hides the GROUND you are trying to sculpt.
+    /// The rain, the mist and the sporefall — not a layer, because it is not a thing the map places in a rectangle. It is the one overlay that hides the GROUND you are trying to sculpt.
     showWeather: bool = true,
     brush: [Layer.N]usize = [_]usize{0} ** Layer.N,
     decorKind: Kind = .fern,
@@ -582,9 +571,7 @@ pub const Editor = struct {
     sel: ?usize = null,
     selFoe: ?usize = null,
     dirty: bool = false,
-    /// BUMPED WHENEVER THE MAP IS REPLACED WHOLESALE — entering, and every Open / New / Reload. What the game
-    /// watches to know its copy of the tables the editor cannot author (the folk) has gone stale, without
-    /// re-deriving them every frame.
+    /// BUMPED WHENEVER THE MAP IS REPLACED WHOLESALE — entering, and every Open / New / Reload. What the game watches to know its copy of the tables the editor cannot author (the folk) has gone stale.
     mapGen: u32 = 0,
 
     kindScroll: i32 = 0,
@@ -622,15 +609,13 @@ pub const Editor = struct {
     jukeWorld: bool = false,
     rackMix: sfx.Submix = .combat,
     rackOnVoice: bool = false,
-    /// WHICH ZONE the name field and the mix modal are editing. A zone is not an `Op`, so it cannot ride
-    /// `sel` — and its mix was the one thing in the whole format the editor could only ever INHERIT.
+    /// WHICH ZONE the name field and the mix modal are editing. A zone is not an `Op`, so it cannot ride `sel` — and its mix was the one thing in the whole format the editor could only ever INHERIT.
     zoneSel: ?usize = null,
     locSel: ?usize = null,
     lootTab: item.Class = .tool,
     zoneNameLen: usize = 0,
     zoneNameBuf: [wf.NAME_CAP]u8 = [_]u8{0} ** wf.NAME_CAP,
-    /// The zone name field owns the keyboard while it is on screen — set by the draw pass, read by
-    /// `update` a frame later, so w/a/s/d, digits, g/r, Tab and Delete type letters instead of firing.
+    /// The zone name field owns the keyboard while it is on screen — set by the draw pass, read by `update` a frame later, so w/a/s/d, digits, g/r, Tab and Delete type letters instead of firing.
     textFocus: bool = false,
     nameBuf: [wf.NAME_CAP]u8 = undefined,
     nameLen: usize = 0,
@@ -841,9 +826,7 @@ pub const Editor = struct {
         self.resolveCursor();
     }
 
-    /// Where the cursor meets the ground, as resolved for THIS frame. `env.rayGround` is a MARCH over the
-    /// height lattice — a ray that never lands walks some 1600 bilinear samples — and five sites ask it a
-    /// frame; the pointer cannot move inside one.
+    /// Where the cursor meets the ground, as resolved for THIS frame. `env.rayGround` is a MARCH over the height lattice — a ray that never lands walks some 1600 bilinear samples — and five sites ask it a frame.
     pub fn groundAt(self: *const Editor) ?rl.Vector3 {
         return self.cursor;
     }
@@ -993,8 +976,7 @@ pub const Editor = struct {
         self.lookAtGround(c.x, c.z, span);
     }
 
-    // Capped well inside the haze: framing a 250 m belt by its full extent puts the eye so far back that
-    // every prop is past its own view distance and all you get is fog with markers in it.
+    // Capped well inside the haze: framing a 250 m belt by its full extent puts the eye so far back that every prop is past its own view distance and all you get is fog with markers in it.
     fn lookAtGround(self: *Editor, cx: f32, cz: f32, span: f32) void {
         self.dist = mathx.clampF(span * 0.8 + 12, 14, 150);
         self.pitch = if (span > 90) -1.05 else -0.72;
@@ -1193,9 +1175,7 @@ pub const Editor = struct {
         @memcpy(self.zoneNameBuf[0..self.zoneNameLen], lab[0..self.zoneNameLen]);
     }
 
-    /// The World panel edits two UNRELATED fields of the map itself, so it cannot use `bankGesture`'s
-    /// single-target trick: it puts both back, banks, and restores the live pair. Same contract otherwise —
-    /// one undo step per gesture, closed by `endGesture` when the mouse lets go.
+    /// The World panel edits two UNRELATED fields of the map itself, so it cannot use `bankGesture`'s single-target trick: it puts both back, banks, and restores the live pair. One undo step per gesture, closed by `endGesture`.
     fn bankWorld(self: *Editor, m: *wf.Map, half: f32, runway: wf.Runway) void {
         if (self.editing) return;
         const liveHalf = m.half;
@@ -1510,9 +1490,7 @@ pub const Editor = struct {
                     var l = wf.Location{ .x = box.x0, .z = box.z0, .x1 = box.x1, .z1 = box.z1 };
                     var nbuf: [wf.NAME_CAP]u8 = undefined;
                     l.setName(std.fmt.bufPrint(&nbuf, "loc{d}", .{m.nlocations + 1}) catch "loc");
-                    // PREPENDED, and that IS the overlap rule: `locationAt` takes the first match, so the
-                    // one you painted last is the one that answers. Any other order makes the rectangle you
-                    // can see disagree with the rectangle that fires.
+                    // PREPENDED, and that IS the overlap rule: `locationAt` takes the first match, so the one you painted last is the one that answers. Any other order makes the rectangle you can see disagree with the rectangle that fires.
                     std.mem.copyBackwards(wf.Location, m.locations[1 .. m.nlocations + 1], m.locations[0..m.nlocations]);
                     m.locations[0] = l;
                     m.nlocations += 1;
@@ -2102,17 +2080,13 @@ pub const Editor = struct {
     }
 
 
-    /// **THE LAYER YOU ARE STANDING ON IS ALWAYS VISIBLE**, whatever its eye says. Hiding the layer your brush
-    /// is on would leave you painting into a layer you cannot see — the cursor, the marquee and the selection
-    /// gizmos would all be drawing for something invisible, which is a way to lose work rather than a view.
-    /// The eye stays as you left it, so selecting away restores the hidden state.
+    /// **THE LAYER YOU ARE STANDING ON IS ALWAYS VISIBLE**, whatever its eye says. Hiding the layer your brush is
+    /// on would leave the cursor, the marquee and the selection gizmos all drawing for something invisible. The eye stays as you left it, so selecting away restores the hidden state.
     pub fn visible(self: *const Editor, l: Layer) bool {
         return self.layer == l or self.shown[@intFromEnum(l)];
     }
 
-    /// **DOES THE TOP STRIP FIT WITH ITS LAYER NAMES SPELLED OUT.** Measured, not guessed at: `BarRow`'s own
-    /// widths for the layers, plus the same arithmetic for the fixed tail that follows them, so a label added
-    /// or a verb added is answered here rather than discovered as a clipped button on the right-hand edge.
+    /// **DOES THE TOP STRIP FIT WITH ITS LAYER NAMES SPELLED OUT.** Measured, not guessed: `BarRow`'s own widths for the layers plus the same arithmetic for the fixed tail, so a label added is answered here rather than discovered as a clipped button on the right-hand edge.
     fn barWide(self: *const Editor, sw: i32) bool {
         _ = self;
         const step = BarRow.GAP;
@@ -2147,8 +2121,7 @@ pub const Editor = struct {
             }
             for (m.clearings[0..m.nclearings]) |c| ringXZ(c.x, c.z, c.r, y, ui.alpha(ui.HOT, locA));
         }
-        // A weather region reads GOLD and a plain one reads cool, so you can see at a glance which
-        // rectangles are doing something to the sky.
+        // A weather region reads GOLD and a plain one reads cool, so you can see at a glance which rectangles are doing something to the sky.
         if (self.visible(.locations)) {
             for (m.locations[0..m.nlocations], 0..) |*l, i| {
                 const on = self.locSel == i;
@@ -2172,9 +2145,7 @@ pub const Editor = struct {
         if (self.sel) |s| {
             if (s < m.nops and self.layer.opLayer()) {
                 drawOpGizmo(&m.ops[s], y);
-                // MEASURED AND LEFT: a whole-list walk (~17k props, ~1 MB) every frame something is
-                // selected. A binary search over `materialize`'s op order would find the run in ~14 steps,
-                // but that buys the gizmo pass a dependence on the placer's append order.
+                // MEASURED AND LEFT: a whole-list walk (~17k props, ~1 MB) every frame something is selected. A binary search over `materialize`'s op order would find the run in ~14 steps, but that buys the gizmo pass a dependence on the placer's append order.
                 for (env.props[0..env.nprops]) |pr| {
                     if (pr.op != s) continue;
                     self.selOwned += 1;
@@ -2492,10 +2463,8 @@ const BarRow = struct {
 fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) void {
     ui.panel(ctx, ui.rect(0, 0, sw, BAR_H), null);
     var row = BarRow{ .ctx = ctx, .x = 8 };
-    // **THE STRIP MEASURES ITSELF AND DROPS THE LABELS RATHER THAN RUN OFF THE WINDOW.** The eyes cost
-    // `EYE_SLOT` apiece and pushed `Sounds` off the right-hand edge at 1280 — and a bar whose last button is
-    // unreachable is worse than one whose names are in the tooltips. `barWide` is the one place the decision
-    // is made, so the widths the layout uses and the widths it measured cannot disagree.
+    // **THE STRIP MEASURES ITSELF AND DROPS THE LABELS RATHER THAN RUN OFF THE WINDOW.** The eyes cost `EYE_SLOT`
+    // apiece and pushed `Sounds` off the right-hand edge at 1280. `barWide` is the one place the decision is made, so the widths the layout uses and the widths it measured cannot disagree.
     const named = ed.barWide(sw);
     inline for (@typeInfo(Layer).@"enum".fields) |f| {
         const l: Layer = @enumFromInt(f.value);
@@ -2523,8 +2492,7 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
     }
     if (row.verb(.reload, "Reload - throw away every unsaved change and re-read the file")) {
         var line: usize = 0;
-        // A failed load leaves `m` untouched (`wf.load` parses into scratch first) — and must not take the rest
-        // of the bar with it, or the frame it fails on has no undo, no Objects and no chrome to claim the pointer.
+        // A failed load leaves `m` untouched (`wf.load` parses into scratch first) — and must not take the rest of the bar with it, or the frame it fails on has no undo, no Objects and no chrome to claim the pointer.
         if (wf.load(ed.curPath(), m, &line)) |_| {
             ed.adopt(m, env, false);
             ed.say("reloaded from disk");
@@ -2768,8 +2736,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             }
             return;
         }
-        // A full scan of the armed brush's grid every frame (12,544 bytes soil / 50,176 water) to print one
-        // number — measured, and deliberately left.
+        // A full scan of the armed brush's grid every frame (12,544 bytes soil / 50,176 water) to print one number — measured, and deliberately left.
         var painted: usize = 0;
         if (wet) {
             for (m.water) |v| {
@@ -2857,9 +2824,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
     }
 
     if (ed.layer == .locations) {
-        // **THE LOCATIONS FIRST, because they are the ones that do something.** Weather is per location and
-        // the ONE sky cross-fades toward whichever one he is standing in (`game.settleSky`), so these three
-        // dials are the whole of a weather region: how wet, how thick, and how long it takes to arrive.
+        // **THE LOCATIONS FIRST, because they are the ones that do something.** Weather is per location and the ONE sky cross-fades toward whichever one he is standing in (`game.settleSky`): how wet, how thick, and how long it takes to arrive.
         if (m.nlocations > 0) {
             hud.mono("LOCATIONS", x, y, hud.MONO, ui.TITLE);
             y += ROW_H + 4;
@@ -2874,8 +2839,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 }
                 y += ROW_H;
                 if (!on) continue;
-                // A location with NO opinion leaves the world's own storm alone, which is not the same as
-                // one that says "dry": the toggle is the difference and it has to be explicit.
+                // A location with NO opinion leaves the world's own storm alone, which is not the same as one that says "dry": the toggle is the difference and it has to be explicit.
                 var wet = l.wet orelse 0;
                 var fog = l.fog orelse 0;
                 var spore = l.spore orelse 0;
@@ -2924,8 +2888,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             var zb: [48]u8 = undefined;
             const lab = std.fmt.bufPrintZ(&zb, "{d} {s} ({d})", .{ i, z.label(), z.nmix }) catch "?";
             changed = ui.slider(ctx, x, y, w - 34, lab, &z.density, 0, 1) or changed;
-            // …and the way IN to the two things a zone carries that nothing here could reach: its NAME and
-            // the MIX it grows. Its own button, so it cannot fight the slider for the same click.
+            // …and the way IN to the two things a zone carries that nothing here could reach: its NAME and the MIX it grows. Its own button, so it cannot fight the slider for the same click.
             if (ui.buttonTip(ctx, ui.rect(x + w - 30, y + 14, 30, 22), "...", hud.MONO, ed.zoneSel == i, "Name this zone and choose what grows in it")) {
                 ed.selectZone(m, i);
                 ed.modal = .zonemix;
@@ -3212,9 +3175,7 @@ comptime {
 }
 
 fn blitField(cells: []const u8, n: usize, px: i32, py: i32, inner: f32, paint: ?rl.Color) void {
-    // Both callers pass a comptime grid width, so this cannot fire today — it is here because the same
-    // shape (a divide by a caller's count) was a live crash in `book.rowStep`, reached through a picker
-    // whose candidate list came back empty. A third caller with a runtime `n` is one line away from it.
+    // Both callers pass a comptime grid width, so this cannot fire today — it is here because the same shape (a divide by a caller's count) was a live crash in `book.rowStep`, reached through a picker whose candidate list came back empty.
     if (n == 0) return;
     const cellPx = inner / @as(f32, @floatFromInt(n));
     for (0..n) |cz| {
@@ -3351,9 +3312,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             }
         },
         .loot => {
-            // **TABBED BY CLASS** (owner: organize the item menus by type). Thirty-seven items in one column
-            // ran off the bottom of a 1080 screen and was unreadable besides — `item.Class` is the shelf a
-            // thing belongs on and it already exists, so the picker uses it rather than inventing an order.
+            // **TABBED BY CLASS** (owner: organize the item menus by type). Thirty-seven items in one column ran off the bottom of a 1080 screen — `item.Class` is the shelf a thing belongs on and it already exists.
             const sPre = lootOp(ed, m) orelse {
                 ed.modal = .none;
                 return;
@@ -3375,8 +3334,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             const total = std.fmt.bufPrintZ(&buf, "{d} / {d} items", .{ o.nloot, wf.MAX_LOOT }) catch "";
             hud.mono(total, box.x + DLG_PAD, box.y + 58, hud.MONO, ui.LABEL);
 
-            // The tabs. A class carrying something already in this container is marked, so you can find what
-            // you put in without walking every shelf.
+            // The tabs. A class carrying something already in this container is marked, so you can find what you put in without walking every shelf.
             const CLASSES = [_]item.Class{ .tool, .gear, .material, .treasure, .key };
             const tabW: i32 = @divTrunc(470 - DLG_PAD * 2, @as(i32, CLASSES.len));
             for (CLASSES, 0..) |c, ci| {
@@ -3433,8 +3391,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 hud.MONO,
                 ui.LABEL,
             );
-            // Row 0 is the OPT-OUT, and it has to exist: a gate with no boss is an ordinary doorway, which is
-            // what a gate hung anywhere but an arena mouth needs to be.
+            // Row 0 is the OPT-OUT, and it has to exist: a gate with no boss is an ordinary doorway, which is what a gate hung anywhere but an arena mouth needs to be.
             var i: usize = 0;
             while (i < rows) : (i += 1) {
                 const pick: ?wf.FoeKind = if (i == 0) null else @enumFromInt(i - 1);
@@ -3528,9 +3485,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             changed = ui.stepperF(ctx, x, y, w, "z1", &m.runway.z1, 0.5, -COORD_LIM, COORD_LIM) or changed;
             y += ROW_H + 10;
 
-            // **THE HOUR, WHERE YOU CAN FIND IT** (owner: add way to change time of day in editor — world
-            // menu). `,`/`.` still scrub it and the crib names them — the editor is AGENTS.md's one keyboard
-            // exception, and sweeping the day is the gesture a stepper cannot be.
+            // **THE HOUR, WHERE YOU CAN FIND IT** (owner: add way to change time of day in editor — world menu). `,`/`.` still scrub it and the crib names them — the editor is AGENTS.md's one keyboard exception.
             hud.mono("LIGHT", x, y, hud.MONO, ui.TITLE);
             y += ROW_H + 4;
             var cb: [10]u8 = undefined;
@@ -3561,8 +3516,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
 
             if (changed) {
                 ed.bankWorld(m, halfBefore, before);
-                // A size change moves the painted grids as well as the props, so it is the FULL rebuild and
-                // not just a re-materialize: `half` is what every one of those uploads is measured in.
+                // A size change moves the painted grids as well as the props, so it is the FULL rebuild and not just a re-materialize: `half` is what every one of those uploads is measured in.
                 ed.rebuild(m, env);
             } else if (!ctx.down) ed.endGesture(m, env);
 
@@ -3585,8 +3539,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             const edited = sfx.voiceEdited(vid);
             if (edited) hud.mono("EDITED", cx + JUKE_COL_W - 60, cy, hud.MONO, ui.HOT);
             cy += ROW_H + 6;
-            // THE DIALS THEMSELVES, not a readout of them. Each answers under the finger — none of these
-            // re-renders the take, which is what separates them from the rack below.
+            // THE DIALS THEMSELVES, not a readout of them. Each answers under the finger — none re-renders the take, which is what separates them from the rack below.
             inline for (@typeInfo(sfx.Dial).@"enum".fields) |dfld| {
                 const d: sfx.Dial = @enumFromInt(dfld.value);
                 const spec = sfx.dialSpec(d);
@@ -3595,8 +3548,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 cy += RACK_ROW;
             }
             cy += 4;
-            // …and what a row IS rather than how it sounds: `vars` and `poly` size the alias table that
-            // frees it, so they are not on the bench at all (`audio.live`).
+            // …and what a row IS rather than how it sounds: `vars` and `poly` size the alias table that frees it, so they are not on the bench at all (`audio.live`).
             const shape = std.fmt.bufPrintZ(&buf, "{d} takes x {d} voices, {s}", .{ nfo.vars, nfo.poly, @tagName(nfo.mix) }) catch "";
             hud.mono(shape, cx, cy, hud.MONO, ui.alpha(ui.LABEL, 170));
             cy += ROW_H + 6;
@@ -3692,8 +3644,7 @@ fn lootOp(ed: *const Editor, m: *const wf.Map) ?usize {
     return if (m.ops[s].op == .at and props.holdsLoot(m.ops[s].kind)) s else null;
 }
 
-/// A GATE'S SEAL IS EDITED WHERE ITS LOOT WOULD BE, and it is offered on the same test the mechanic reads
-/// (`props.Info.ward`) rather than on the kind by name, so a second ward kind gets the panel for free.
+/// A GATE'S SEAL IS EDITED WHERE ITS LOOT WOULD BE, and it is offered on the same test the mechanic reads (`props.Info.ward`) rather than on the kind by name, so a second ward kind gets the panel for free.
 fn bossOp(ed: *const Editor, m: *const wf.Map) ?usize {
     const s = ed.sel orelse return null;
     if (s >= m.nops) return null;
@@ -3755,8 +3706,7 @@ const WORLD_W: i32 = 420;
 const WORLD_H: i32 = 470 + 96;
 
 const HOUR_STEP: f32 = 0.25;
-/// THE HOURS WORTH AUTHORING AT. The anchor is not negotiable (every albedo in the game was measured under
-/// it); the other three are the lights a belt of flora has to survive.
+/// THE HOURS WORTH AUTHORING AT. The anchor is not negotiable (every albedo in the game was measured under it); the other three are the lights a belt of flora has to survive.
 const HourMark = struct { name: [:0]const u8, at: f32, tip: [:0]const u8 };
 const HOUR_MARKS = [_]HourMark{
     .{ .name = "Dawn", .at = 6.5, .tip = "First light - the coldest key in the day" },
@@ -3765,16 +3715,13 @@ const HOUR_MARKS = [_]HourMark{
     .{ .name = "Night", .at = 0.5, .tip = "Moonlight - what the fires have to carry" },
 };
 
-/// The eleven dials, over either a FAMILY or the ONE VOICE the bench has selected. Same rack both ways on
-/// purpose: a filter that behaved differently depending on whose it was would be two things sharing a name.
+/// The eleven dials, over either a FAMILY or the ONE VOICE the bench has selected. Same rack both ways: a filter that behaved differently depending on whose it was would be two things sharing a name.
 fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32, voice: ?sfx.Id) void {
     var y = y0;
     hud.mono("FILTER RACK", x, y, hud.MONO, ui.TITLE);
     y += ROW_H + 4;
 
-    // WHOSE rack. The same three families, in the same order, as the volume sliders in the game's options —
-    // "which slider moves this" and "which rack filters it" must never disagree — plus, on the bench, the
-    // selected voice itself, which is filtered on TOP of its family.
+    // WHOSE rack. The same three families, in the same order, as the volume sliders in the game's options — "which slider moves this" and "which rack filters it" must never disagree — plus the selected voice itself, filtered on TOP of its family.
     var cx = x;
     inline for (@typeInfo(sfx.Submix).@"enum".fields) |fld| {
         const mx: sfx.Submix = @enumFromInt(fld.value);
@@ -3821,9 +3768,7 @@ fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32, voice: ?sfx.Id) void {
         }
     }
     y += 26 * 3 + 4;
-    // A VOICE'S OWN DEFAULT IS OFF, and the caption has to say so. Its rack is applied ON TOP of the
-    // family's, so "the house sound" is what the family is already giving it — the two buttons genuinely do
-    // one thing here, and a tip promising a preset the press does not apply is the lie worth fixing.
+    // A VOICE'S OWN DEFAULT IS OFF, and the caption has to say so. Its rack is applied ON TOP of the family's, so "the house sound" is what the family is already giving it.
     const dflt: [:0]const u8 = if (onVoice)
         "This voice adds nothing of its own - the family's rack still applies"
     else
@@ -3844,8 +3789,7 @@ fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32, voice: ?sfx.Id) void {
     );
 }
 
-/// A slider is a LABEL LINE plus a 12 px bar plus its seat, so the row has to clear both — at 30 the bars
-/// sat on the next label. MEASURED off `ui.slider`'s own layout rather than guessed.
+/// A slider is a LABEL LINE plus a 12 px bar plus its seat, so the row has to clear both — at 30 the bars sat on the next label. MEASURED off `ui.slider`'s own layout.
 const RACK_ROW: i32 = ui.ROW_H + 14;
 
 fn menuEnabled(ed: *const Editor, m: *const wf.Map, act: MenuItem) bool {

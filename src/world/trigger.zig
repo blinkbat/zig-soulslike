@@ -18,8 +18,7 @@ comptime {
     std.debug.assert(wf.MAX_ACTS <= std.math.maxInt(u8) + 1);
 }
 
-/// What the conditions need to know about the world this frame. Handed IN, because the machine must not
-/// reach into the game to find a foe list — the same rule the creatures' `Leash` follows.
+/// What the conditions need to know about the world this frame. Handed IN, because the machine must not reach into the game to find a foe list — the same rule the creatures' `Leash` follows.
 pub const World = struct {
     heroPos: rl.Vector3 = mathx.zero3,
     npcs: []const rl.Vector3 = &.{},
@@ -29,8 +28,7 @@ pub const World = struct {
 pub const Runtime = struct {
     flags: [wf.MAX_FLAGS]bool = [_]bool{false} ** wf.MAX_FLAGS,
     counters: [wf.MAX_COUNTERS]i32 = [_]i32{0} ** wf.MAX_COUNTERS,
-    /// Seconds left on each countdown. A timer nobody started reads as NOT done, so `timer x=done` cannot
-    /// pass before something armed it — the alternative makes every unstarted timer a free `always`.
+    /// Seconds left on each countdown. A timer nobody started reads as NOT done, so `timer x=done` cannot pass before something armed it — the alternative makes every unstarted timer a free `always`.
     timers: [wf.MAX_TIMERS]f32 = [_]f32{0} ** wf.MAX_TIMERS,
     armed: [wf.MAX_TIMERS]bool = [_]bool{false} ** wf.MAX_TIMERS,
     deaths: [NFOE]u32 = [_]u32{0} ** NFOE,
@@ -83,9 +81,7 @@ pub const Runtime = struct {
         return if (self.bannerLeft > 0) self.banner[0..self.bannerLen] else "";
     }
 
-    /// A LINE THE ENGINE ITSELF HAS TO SAY — the binding ring snapping, and nothing else yet. Down the
-    /// `text` action's OWN channel and not a second banner beside it: SC1's Display Text Message is exactly
-    /// this, and one line of prose on screen may only ever come from one place.
+    /// A LINE THE ENGINE ITSELF HAS TO SAY — the binding ring snapping, and nothing else yet. Down the `text` action's OWN channel and not a second banner beside it: SC1's Display Text Message is exactly this, and one line of prose on screen may only ever come from one place.
     pub fn say(self: *Runtime, line: []const u8) void {
         self.bannerLen = @min(line.len, BANNER_CAP);
         @memcpy(self.banner[0..self.bannerLen], line[0..self.bannerLen]);
@@ -128,8 +124,7 @@ pub const Runtime = struct {
     }
 
     fn satisfied(self: *const Runtime, t: *const wf.Trigger, w: World) bool {
-        // AN EMPTY CONDITION LIST NEVER FIRES. `always` is a condition you have to write down — a trigger
-        // whose `when:` lines were still to come would otherwise go off the moment the map loaded.
+        // AN EMPTY CONDITION LIST NEVER FIRES. `always` is a condition you have to write down — a trigger whose `when:` lines were still to come would otherwise go off the moment the map loaded.
         if (t.nconds == 0) return false;
         for (t.condSlice()) |*c| {
             if (!self.holds(c, w)) return false;

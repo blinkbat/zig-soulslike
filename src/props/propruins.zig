@@ -609,9 +609,7 @@ pub fn bonfireGuitarMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// Where the rock and its guitar sit in the camp's local frame — read by BOTH meshes, so the guitar cannot
-/// drift off the rock it leans on. The placement itself is `propart`'s now: the campfire grew one too, and the
-/// lean is not a thing to keep in step in two files.
+/// Where the rock and its guitar sit in the camp's local frame — read by BOTH meshes, so the guitar cannot drift off the rock it leans on. The placement itself is `propart`'s now: the campfire grew one too.
 const GUITAR_CX: f32 = -1.62;
 const GUITAR_CZ: f32 = 1.18;
 const GUITAR_YAW: f32 = -1.56;
@@ -866,8 +864,7 @@ pub fn statueMesh(shader: rl.Shader) rl.Model {
     b.addBlob(v3(rng.range(0.35, 0.62), 0.16, rng.range(-0.7, -0.4)), v3(0.22, 0.16, 0.20), 3, 5, STONE_MOSS);
     var ins: i32 = 0;
     while (ins < 3) : (ins += 1) {
-        // Spaced to stay on the LOWER plinth's face (it tops out at 0.32): the old 0.075 step put the
-        // third line above the stone and 11 cm in front of the upper one — a bar hanging in the air.
+        // Spaced to stay on the LOWER plinth's face (it tops out at 0.32): the old 0.075 step put the third line above the stone and 11 cm in front of the upper one — a bar hanging in the air.
         b.addBox(v3(rng.signed() * 0.10, 0.16 + @as(f32, @floatFromInt(ins)) * 0.05, -0.79), v3(rng.range(0.28, 0.52), 0, 0), v3(0, 0.016, 0), v3(0, 0, 0.02), STONE_DK);
     }
     b.setMat(.marble);
@@ -986,13 +983,11 @@ pub fn rubbleMesh(shader: rl.Shader) rl.Model {
 }
 
 
-// Dressed stone, so `.marble` where a face was worked and `.stone` where it was only laid — the two-material
-// rule, and the reason the obelisk reads as carved and the altar's footings do not.
+// Dressed stone, so `.marble` where a face was worked and `.stone` where it was only laid — the two-material rule, and the reason the obelisk reads as carved and the altar's footings do not.
 
 pub const OBELISK_H: f32 = 8.6;
 
-/// A four-sided shaft on a stepped base, and the LOSS is the point: the pyramidion is off, so it ends in a
-/// broken bench and the last two courses have gone with it. `addCylinder` at four sides IS a tapered prism.
+/// A four-sided shaft on a stepped base, and the LOSS is the point: the pyramidion is off, so it ends in a broken bench and the last two courses have gone with it. `addCylinder` at four sides IS a tapered prism.
 pub fn obeliskMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x0B11);
@@ -1029,8 +1024,7 @@ pub fn obeliskMesh(shader: rl.Shader) rl.Model {
 
 pub const PLINTH_H: f32 = 1.95;
 
-/// **A STATUE BASE WITH NO STATUE.** What sells it is the two feet still standing on it, snapped at the
-/// ankle — an empty block is a block, and the ankles are what make it a loss.
+/// **A STATUE BASE WITH NO STATUE.** What sells it is the two feet still standing on it, snapped at the ankle — an empty block is a block, and the ankles are what make it a loss.
 pub fn plinthMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x0B12);
@@ -1048,7 +1042,6 @@ pub fn plinthMesh(shader: rl.Shader) rl.Model {
         const ank = v3(fx, fy + 0.22, -0.12);
         b.addCylinder(ank, v3(fx + sd * 0.03, fy + 0.44 + sd * 0.05, -0.14), 0.15, 0.13, 7, MARBLE);
         b.addBlob(v3(fx + sd * 0.03, fy + 0.44 + sd * 0.05, -0.14), v3(0.14, 0.035, 0.13), 2, 7, MARBLE_DK);
-        // Toes, blunt and worn to nothing.
         var t: i32 = 0;
         while (t < 4) : (t += 1) {
             const u = (@as(f32, @floatFromInt(t)) - 1.5) * 0.062;
@@ -1073,8 +1066,7 @@ pub fn plinthMesh(shader: rl.Shader) rl.Model {
 
 pub const ALTAR_H: f32 = 1.15;
 
-/// A slab across two footings, with a CHANNEL cut down it and a lip round three sides. The channel is the
-/// only thing that makes it an altar rather than a table, so it is cut properly: sunk, and running OUT.
+/// A slab across two footings, with a CHANNEL cut down it and a lip round three sides. The channel is the only thing that makes it an altar rather than a table, so it is cut properly: sunk, and running OUT.
 pub fn altarMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x0B13);

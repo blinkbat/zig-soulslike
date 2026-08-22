@@ -12,21 +12,15 @@ const DEFAULT_DIST = 4.6;
 const DEFAULT_PITCH = 0.28;
 const ZOOM_STEP = 0.6;
 const LOOK_SENS = 0.0032; // radians per pixel of mouse motion
-/// ~ -22 deg, looking UP from below. Wider than the -0.20 the free look ever asked for, because the LOCK
-/// now tilts the rig onto whatever it is fixed on (`game.lockPitch`): an ogre's chest is two and a half
-/// metres up and eleven degrees of lift clipped short of framing it, which put the one thing you are locked
-/// to against the top edge of the screen.
+/// ~ -22 deg, looking UP from below. Wider than the -0.20 the free look ever asked for, because the LOCK now tilts the rig onto whatever it is fixed on (`game.lockPitch`): an ogre's chest is two and a half metres up and eleven degrees of lift clipped short of framing it.
 const PITCH_MIN = -0.38;
 const PITCH_MAX = 1.15; // ~  66 deg (looking down)
 const SHOULDER = 0.55;
 const TARGET_RAISE = 0.15;
 const GROUND_CLEAR = 0.7;
-/// …and how much boom one probe of that search gives up. Named beside the clearance it is searching for:
-/// the two are only ever chosen against each other, and a bare 0.25 in the loop reads as arbitrary.
+/// …and how much boom one probe of that search gives up. Named beside the clearance it is searching for: the two are only ever chosen against each other, and a bare 0.25 in the loop reads as arbitrary.
 const GROUND_PROBE = 0.25;
-/// How far the ground under the eye must stand PROUD of the ground under the hero before it counts as a
-/// hill worth paying boom for — just under one terrain riser (`wf.HEIGHT_STEP` 0.25), so quantisation
-/// noise never bills a step of zoom.
+/// How far the ground under the eye must stand PROUD of the ground under the hero before it counts as a hill worth paying boom for — just under one terrain riser (`wf.HEIGHT_STEP` 0.25), so quantisation noise never bills a step of zoom.
 const GROUND_RISE = 0.2;
 
 const AIM_DIST = 0.7;
@@ -142,9 +136,7 @@ pub const CamRig = struct {
         return .{ .origin = c.cam.position, .dir = mathx.normV(mathx.subV(c.cam.target, c.cam.position)) };
     }
 
-    /// THE BOOM GIVES WAY TO TERRAIN, NEVER TO ITS OWN PITCH — an up-tilt puts the eye low ON PURPOSE
-    /// (`game.lockPitch`), and shortening to buy that altitude back read as a hard zoom onto every ogre.
-    /// Only ground PROUD of the hero's own level is paid for in boom; the skim clamp does the rest.
+    /// THE BOOM GIVES WAY TO TERRAIN, NEVER TO ITS OWN PITCH — an up-tilt puts the eye low ON PURPOSE (`game.lockPitch`), and shortening to buy that altitude back read as a hard zoom onto every ogre. Only ground PROUD of the hero's own level is paid for in boom.
     pub fn followClear(c: *CamRig, shoulder: rl.Vector3, ctx: anytype, comptime groundAt: fn (@TypeOf(ctx), f32, f32) f32) void {
         const target = c.targetFor(shoulder);
         const back = c.backDir();

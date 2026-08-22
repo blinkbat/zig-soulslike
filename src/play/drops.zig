@@ -13,14 +13,10 @@ pub const BIG: f32 = 0.22;
 pub const BOSS_ALWAYS: f32 = 1.0;
 
 pub const Row = struct {
-    /// WHOSE ROW THIS IS, written out so the table can be read (and reordered) without counting — the
-    /// comptime walk below pins it against `wf.FoeKind`'s own order.
+    /// WHOSE ROW THIS IS, written out so the table can be read (and reordered) without counting — the comptime walk below pins it against `wf.FoeKind`'s own order.
     foe: wf.FoeKind,
     common: ?item.Kind,
-    /// **HOW OFTEN IT ACTUALLY LEAVES IT.** Guaranteed first time out and it was far too much — every corpse
-    /// in a warband a glow, so the ground after a fight was a row of lights and none of them meant anything.
-    /// A drop has to be a small event. The boss is the one row that never rolls (`BOSS_ALWAYS`): a 2400-soul
-    /// body that leaves nothing is the worst outcome this table has.
+    /// **HOW OFTEN IT ACTUALLY LEAVES IT.** Guaranteed first time out and it was far too much — every corpse in a warband a glow. A drop has to be a small event. The boss is the one row that never rolls (`BOSS_ALWAYS`): a 2400-soul body that leaves nothing is the worst outcome this table has.
     odds: f32 = COMMON,
     rare: ?item.Kind = null,
     chance: f32 = 0,
@@ -30,9 +26,7 @@ pub const RARE_CAP: f32 = 0.85;
 
 pub const MAX_PER_BODY: usize = 2;
 
-/// One row per `wf.FoeKind` IN ITS ORDER — a comptime walk pins it, so a creature added to that enum is a
-/// compile error here until it has said what it leaves. **WHAT EACH ONE DROPS IS WHAT IT IS**, and most were
-/// already written into the item's own description long before anything dropped.
+/// One row per `wf.FoeKind` IN ITS ORDER — a comptime walk pins it, so a creature added to that enum is a compile error here until it has said what it leaves. **WHAT EACH ONE DROPS IS WHAT IT IS**, and most were already written into the item's own description long before anything dropped.
 pub const TABLE = [_]Row{
     .{ .foe = .toad, .common = .bloodgrass, .rare = .toadflesh_broth, .chance = 0.14 },
 
@@ -59,8 +53,7 @@ pub const TABLE = [_]Row{
 
     .{ .foe = .shroom, .common = .purgeleaf, .rare = .sporeling_cap, .chance = 0.18 },
 
-    // THE BONE KNIGHT — the one row that never rolls. A 2400-soul body that leaves nothing is the worst
-    // outcome this table has.
+    // THE BONE KNIGHT — the one row that never rolls.
     .{ .foe = .bone_knight, .common = .soul_binding_ring, .odds = BOSS_ALWAYS },
 
     .{ .foe = .delver, .common = .smithing_stone, .odds = UNCOMMON },
@@ -73,8 +66,7 @@ pub const TABLE = [_]Row{
     .{ .foe = .fen_lurker, .common = .ironwort_tea, .odds = UNCOMMON },
     .{ .foe = .spore_golem, .common = .purgeleaf, .odds = UNCOMMON },
 
-    // **THE ONE BODY A PRIEST CAN MAKE MORE OF LEAVES NOTHING** — the supply is a cooldown
-    // (`ancientpriest.RAISE_CD`), so any odds at all here is a farm with a timer on it rather than a drop.
+    // **THE ONE BODY A PRIEST CAN MAKE MORE OF LEAVES NOTHING** — the supply is a cooldown (`ancientpriest.RAISE_CD`), so any odds at all here is a farm with a timer on it rather than a drop.
     .{ .foe = .bone_skitterer, .common = null },
     .{ .foe = .ancient_priest, .common = .rimeward_mantle, .odds = UNCOMMON },
     // …and the hollow leaves the bronze off its own bell, with the jar of lightning that answers it behind.
@@ -83,9 +75,7 @@ pub const TABLE = [_]Row{
 
 pub const NFOE = @typeInfo(wf.FoeKind).@"enum".fields.len;
 
-/// **THE BODIES THAT ARE ALLOWED TO LEAVE NOTHING, AND WHY** — an egg sac is not a corpse, and a skitterer a
-/// priest clawed out of the ground is a body whose supply is a cooldown. Everything else must say what it
-/// drops or the table refuses to compile.
+/// **THE BODIES THAT ARE ALLOWED TO LEAVE NOTHING, AND WHY** — an egg sac is not a corpse, and a skitterer a priest clawed out of the ground is a body whose supply is a cooldown. Everything else must say what it drops or the table refuses to compile.
 pub const LEAVES_NOTHING = [_]wf.FoeKind{ .brood_sac, .bone_skitterer };
 
 pub fn leavesNothing(k: wf.FoeKind) bool {
@@ -168,8 +158,7 @@ test "THE COMMON ROW LANDS AT ABOUT THE ODDS IT ADVERTISES, and a fight is mostl
     }
     const seen = @as(f32, @floatFromInt(hits)) / @as(f32, @floatFromInt(N));
     try std.testing.expectApproxEqAbs(COMMON, seen, 0.01);
-    // …and the thing that made it "way too common" cannot come back: nothing on the rank and file is a
-    // certainty, and a six-body fight leaves a glow well under half the time.
+    // …and the thing that made it "way too common" cannot come back: nothing on the rank and file is a certainty, and a six-body fight leaves a glow well under half the time.
     try std.testing.expect(COMMON < 0.10);
     const emptyFight = std.math.pow(f32, 1.0 - COMMON, 6);
     try std.testing.expect(emptyFight > 0.5);

@@ -18,9 +18,7 @@ const SLOT_SOILEDGE: i32 = 16;
 
 pub const SOIL_N: i32 = 112;
 
-/// THE WATER FIELD's resolution — finer than the soil's, because a coastline is a SHAPE you read. 224 over
-/// a 560 m map is 2.5 m a cell, and the field is BILINEAR (unlike the soil's ids, which must not
-/// interpolate), so the shoreline the shader draws is smooth well under a cell.
+/// THE WATER FIELD's resolution — finer than the soil's, because a coastline is a SHAPE you read. 224 over a 560 m map is 2.5 m a cell, and the field is BILINEAR (unlike the soil's ids, which must not interpolate), so the shoreline the shader draws is smooth well under a cell.
 pub const WATER_N: i32 = 224;
 
 pub const HEIGHT_N: i32 = 224;
@@ -29,14 +27,10 @@ pub const WATER_SHORE: u8 = 128;
 pub const WATER_DEEP_AT: f32 = 11.0;
 pub const WATER_WET_OUT: f32 = 3.4;
 
-/// THE ANCHOR SUN — what the game was authored and photographed under, and the bearing every frame in
-/// `shots/` is framed off (`shots.LIT_YAW`). It is NOT what casts any more (`daynight.keyDir`); it stays
-/// because the cycle is SOLVED THROUGH it and `--shot` pins the hour that reproduces it.
+/// THE ANCHOR SUN — what the game was authored and photographed under, and the bearing every frame in `shots/` is framed off (`shots.LIT_YAW`). It is NOT what casts any more (`daynight.keyDir`); it stays because the cycle is SOLVED THROUGH it.
 pub const SUN_DIR = daynight.ANCHOR_DIR;
 
-/// WHAT IS CASTING THIS FRAME, and it is STILL ONE SOURCE (AGENTS.md): the shader's `sunDir`, the shadow
-/// camera's position and `env`'s shadow-reach cull all read this and nothing else. Written once a frame by
-/// `Scene.setHour` — never by hand, which is what keeps the three from drifting apart mid-frame.
+/// WHAT IS CASTING THIS FRAME, and it is STILL ONE SOURCE (AGENTS.md): the shader's `sunDir`, the shadow camera's position and `env`'s shadow-reach cull all read this and nothing else. Written once a frame by `Scene.setHour` — never by hand.
 pub var sun: rl.Vector3 = SUN_DIR;
 pub var sunReach: f32 = daynight.reachOf(SUN_DIR);
 
@@ -70,17 +64,13 @@ pub const Sky = struct {
     loc_up: i32,
     loc_res: i32,
     loc_time: i32,
-    /// The hour's own uniforms — the two light directions, the eight colours and the star dial. Held as
-    /// locations rather than looked up per push: `getShaderLocation` is a string compare against the program's
-    /// uniform table, and eleven of those a frame for numbers that never move is eleven for nothing.
+    /// The hour's own uniforms. Held as locations rather than looked up per push: `getShaderLocation` is a string compare against the program's uniform table, and eleven of those a frame for numbers that never move is eleven for nothing.
     loc_sun: i32,
     loc_moon: i32,
     loc_stars: i32,
     loc_pal: [PAL_FIELDS.len]i32,
 
-    /// The palette fields the sky colours come off, IN UNIFORM ORDER — the one place the two lists are tied
-    /// together, so a renamed palette field is a compile error instead of a colour that stops arriving. **AND
-    /// THE COUNT IS THIS LIST'S**: written out as three literal `8`s, a ninth colour was three edits.
+    /// The palette fields the sky colours come off, IN UNIFORM ORDER — the one place the two lists are tied together, so a renamed palette field is a compile error instead of a colour that stops arriving. **AND THE COUNT IS THIS LIST'S**: written out as three literal `8`s, a ninth colour was three edits.
     const PAL_FIELDS = [_][:0]const u8{ "skyLow", "skyMid", "skyHigh", "skyBank", "skyGlow", "skyDisc", "cloudDark", "cloudLit" };
     comptime {
         for (PAL_FIELDS) |name| {
@@ -104,8 +94,7 @@ pub const Sky = struct {
             .loc_stars = rl.getShaderLocation(sh, "stars"),
             .loc_pal = pal,
         };
-        // A SKY WITH NO HOUR IN IT IS BLACK, so it is armed at the anchor here rather than left to the first
-        // frame: the menu draws over a live sky before the loop has ticked anything.
+        // A SKY WITH NO HOUR IN IT IS BLACK, so it is armed at the anchor here rather than left to the first frame: the menu draws over a live sky before the loop has ticked anything.
         out.setHour(daynight.SHOT_HOUR, 0, 0);
         return out;
     }
@@ -490,12 +479,10 @@ pub const Scene = struct {
         return out;
     }
 
-    /// The ONE writer of `gfx.sun`/`gfx.sunReach`, keeping the shader key, the shadow camera and `env`'s
-    /// depth cull one source. Called once a frame, before either pass.
+    /// The ONE writer of `gfx.sun`/`gfx.sunReach`, keeping the shader key, the shadow camera and `env`'s depth
+    /// cull one source. Called once a frame, before either pass.
     ///
-    /// **THE STORM IS A LAYER ON TOP** (`daynight.overcast`, owner: affect lighting depending on weather).
-    /// `wet` is `weather.Weather.rain()`, 0 leaving the hour's palette untouched; `fogK` is the DEBUG haze
-    /// override, 1 in the game; `spore` turns the distance PEACH and shortens it.
+    /// **THE STORM IS A LAYER ON TOP** (`daynight.overcast`, owner: affect lighting depending on weather). `wet` is `weather.Weather.rain()`, 0 leaving the hour's palette untouched; `fogK` is the DEBUG haze override, 1 in the game; `spore` turns the distance PEACH and shortens it.
     pub fn setHour(self: *Scene, hour: f32, wet: f32, fogK: f32, spore: f32) void {
         const p = daynight.bloom(daynight.overcast(daynight.paletteAt(hour), wet), spore);
         sun = daynight.keyDir(hour);
@@ -560,9 +547,7 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_time, &t, .float);
     }
 
-    /// TAKE CAST SHADOWS OFF the draws that follow, until the next `bind`. The translate ALONE left a
-    /// live 2 m box at the origin whose fragments still passed the shader's in-range test and sampled a
-    /// stale depth map; the zero scale collapses every world point out of range, which is the point.
+    /// TAKE CAST SHADOWS OFF the draws that follow, until the next `bind`. The translate ALONE left a live 2 m box at the origin whose fragments still passed the shader's in-range test and sampled a stale depth map; the zero scale collapses every world point out of range.
     pub fn shadowsOff(self: *Scene) void {
         const kill = rl.math.matrixMultiply(rl.math.matrixScale(0, 0, 0), rl.math.matrixTranslate(0, 0, 5));
         rl.setShaderValueMatrix(self.shader, self.loc_lightVP, kill);
@@ -712,8 +697,7 @@ comptime {
     std.debug.assert(@intFromEnum(Mat.ember) == 13);
     std.debug.assert(@intFromEnum(Mat.bark) == 14);
     std.debug.assert(@intFromEnum(Mat.fog) == 15);
-    // GOLD IS NOT STEEL WITH A YELLOW ALBEDO: the steel branch answers with a near-white glint and a COOL
-    // sky fresnel, and gold under it reads as blued silver at every edge. Its own id, its own warm pair.
+    // GOLD IS NOT STEEL WITH A YELLOW ALBEDO: the steel branch answers with a near-white glint and a COOL sky fresnel, and gold under it reads as blued silver at every edge.
     std.debug.assert(@intFromEnum(Mat.gilt) == 16);
 }
 
@@ -795,9 +779,7 @@ pub const Builder = struct {
         self.vert(d, n, cd, d.x, d.z);
     }
 
-    /// `quadFade` with the ANIM channel graded across the cell as well. The fog gate's height fraction rides
-    /// `animY` and is read by both the vertex billow and the fade — constant per cell it steps, and a sheet
-    /// that fades in stripes is a sheet with nine edges in it.
+    /// `quadFade` with the ANIM channel graded across the cell as well. The fog gate's height fraction rides `animY` and is read by both the vertex billow and the fade — constant per cell it steps, and a sheet that fades in stripes is a sheet with nine edges in it.
     pub fn quadFadeAnim(self: *Builder, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3, n: rl.Vector3, ab: rl.Color, cd: rl.Color, animAB: f32, animCD: f32) void {
         const keep = self.animY;
         self.animY = animAB;
@@ -943,10 +925,7 @@ pub const Builder = struct {
         }
     }
 
-    /// A superquadric box. The point is what it does NOT move: the six faces stay in exactly `addCube`'s planes,
-    /// so measured extents (on the hero, its anthropometry) are unchanged while the edges round off. `round`
-    /// 0..1 — 1 is a plain ellipsoid, ~0.3 a block taken to with a file. Takes a FULL `size` like `addCube` and
-    /// unlike `addBlob`, so substituting one for the other is exact rather than a silent doubling.
+    /// A superquadric box. The point is what it does NOT move: the six faces stay in exactly `addCube`'s planes, so measured extents are unchanged while the edges round off. `round` 0..1 — 1 is a plain ellipsoid, ~0.3 a block taken to with a file. Takes a FULL `size` like `addCube` and unlike `addBlob`.
     pub fn addRoundBox(self: *Builder, c: rl.Vector3, size: rl.Vector3, round: f32, segs: i32, sides: i32, col: rl.Color) void {
         const h = v3(@abs(size.x) * 0.5, @abs(size.y) * 0.5, @abs(size.z) * 0.5);
         if (h.x < 1e-5 or h.y < 1e-5 or h.z < 1e-5) return;

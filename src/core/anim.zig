@@ -11,8 +11,7 @@ pub const Ease = enum {
     hold,
 };
 
-/// ONE KEY on one channel: `t` is the fraction of the MOVE (0..1, ascending), `v` the channel's own
-/// unit (degrees, or a 0..1 fraction), `ease` how the track gets here from the key before it.
+/// ONE KEY on one channel: `t` is the fraction of the MOVE (0..1, ascending), `v` the channel's own unit (degrees, or a 0..1 fraction), `ease` how the track gets here from the key before it.
 pub const Key = struct { t: f32, v: f32, ease: Ease = .smooth };
 
 pub fn easeAt(e: Ease, f: f32) f32 {
@@ -71,22 +70,15 @@ pub fn Pose(comptime P: type) type {
     };
 }
 
-/// **THE POSE IS A TARGET, NOT THE OUTPUT** — the one idea that separates a body from a puppet, and
-/// the reason a two-pose lerp can never be fixed by tuning it. A spring chases the keyed value with
-/// its own velocity, so it arrives LATE, carries PAST, and settles back: the overshoot law this
-/// codebase already states for props, applied to the thing that needed it most.
+/// **THE POSE IS A TARGET, NOT THE OUTPUT** — the one idea that separates a body from a puppet, and the reason a two-pose lerp can never be fixed by tuning it. A spring chases the keyed value with its own velocity, so it arrives LATE, carries PAST, and settles back.
 pub const Spring = struct {
     v: f32 = 0,
     vel: f32 = 0,
 
-    /// `stiff` is how hard it is pulled (1/s^2-ish); `zeta` is the DAMPING RATIO — 1.0 is critical
-    /// (arrives fast, never overshoots), below 1 overshoots and rings, above 1 is sluggish. Weight
-    /// lives just under 1.
+    /// `stiff` is how hard it is pulled (1/s^2-ish); `zeta` is the DAMPING RATIO — 1.0 is critical (arrives fast, never overshoots), below 1 overshoots and rings, above 1 is sluggish. Weight lives just under 1.
     pub fn step(self: *Spring, target: f32, stiff: f32, zeta: f32, dt: f32) f32 {
         const damp = 2.0 * zeta * @sqrt(mathx.maxF(stiff, 0));
-        // **SUBSTEPPED**: a spring tracking a 200 ms strike has a natural period near 0.1 s, and integrating
-        // that in one frame-sized step lags visibly or detonates. `dt` is clamped, then walked in pieces
-        // small enough that 30 fps and 144 agree.
+        // **SUBSTEPPED**: a spring tracking a 200 ms strike has a natural period near 0.1 s, and integrating that in one frame-sized step lags visibly or detonates. `dt` is clamped, then walked in pieces small enough that 30 fps and 144 agree.
         const total = mathx.minF(dt, 1.0 / 30.0);
         const steps: u32 = @intFromFloat(@max(1.0, @ceil(total * 240.0)));
         const h = total / @as(f32, @floatFromInt(steps));

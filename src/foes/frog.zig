@@ -92,10 +92,7 @@ const SHOVE_DECAY = 7.0;
 const DISS_DUR = 0.95;
 const DISSOLVE = foe.Dissolve{ .rate = 44.0, .spread = 0.55, .rise = 0.35 };
 
-/// Sized by ARITHMETIC over the worst frame (the ring law): a KILLING HEAVY BLOW landing on the frame a
-/// lunge impacts. The lunge lays 32 dust; `tryHit` then fires the heavy spray (`hitParts(18)` = 27), the
-/// death spray on top of it (`hitParts(14)` = 21) and `foe.wounded`'s 3. That is 83, and a ring that
-/// overwrites its oldest does it SILENTLY.
+/// Sized by ARITHMETIC over the worst frame (the ring law): a KILLING HEAVY BLOW landing on the frame a lunge impacts. The lunge lays 32 dust; `tryHit` then fires the heavy spray (27), the death spray (21) and `foe.wounded`'s 3. That is 83, and a ring that overwrites its oldest does it SILENTLY.
 const FX_MAX = 84;
 const DUST = foe.DUST;
 const EMBER = rgba(252, 196, 84, 150);
@@ -104,10 +101,7 @@ const EMBER_COOL = rgba(214, 92, 26, 90);
 const SPIT = rgba(176, 190, 150, 140);
 const SPIT_DRY = rgba(120, 138, 104, 110);
 const BLOOD = rgba(112, 22, 16, 235);
-/// **THE FAN IS WHAT OPENS A WOUND, NOT THE THROW.** At 0.8 m/s of fan against 2.6 of throw every drop went
-/// the same way and five frames on it was still one blob (`shots/29b`); the parry's shower reads because its
-/// tangential spread is the BIGGER number. Drag pays for the speed — 3.6/s, so it is a burst that dies down
-/// inside a body-length instead of a jet crossing the clearing.
+/// **THE FAN IS WHAT OPENS A WOUND, NOT THE THROW.** At 0.8 m/s of fan against 2.6 of throw every drop went the same way and five frames on it was still one blob (`shots/29b`); the parry's shower reads because its tangential spread is the BIGGER number. Drag pays for the speed — 3.6/s, so it dies down inside a body-length.
 const BLOOD_SPRAY = foe.Spray{
     .fanLo = 0.6,  .fanHi = 3.8,
     .upLo = 0.8,   .upHi = 3.6,
@@ -123,8 +117,7 @@ const BLOOD_SPD_LIGHT = 4.6;
 const BLOOD_SPD_HEAVY = 6.4;
 const BLOOD_SPD_DEATH = 5.4;
 comptime {
-    // THE RING LAW, EXECUTABLE: the lunge's 32 dust with a killing heavy blow's two sprays and the shared
-    // wound on top. A count raised without the pool is a burst that silently eats its own oldest.
+    // THE RING LAW, EXECUTABLE: the lunge's 32 dust with a killing heavy blow's two sprays and the shared wound on top. A count raised without the pool is a burst that silently eats its own oldest.
     std.debug.assert(FX_MAX >= 32 + foe.hitParts(BLOOD_HEAVY) + foe.hitParts(BLOOD_DEATH) + foe.WOUND_PARTS);
 }
 
@@ -139,9 +132,7 @@ const PARRY_LEAD = foe.PARRY_LEAD;
 const LUNGE_IMPACT_R = 1.9;
 const LUNGE_FRONT_DOT = 0.25;
 const LUNGE_IMPACT_FWD = 0.6; // dust-burst / impact-zone centre, this far ahead of the seat (pre-scale)
-/// `BITE_R`/`LUNGE_IMPACT_R` are WORLD metres at the shipped `SCALE` — what `classify` measures a raw
-/// `distXZ` against. A HURT BOX is the creature's OWN metres (`foe.hurtReach`), so it is those divided back
-/// out, and that is what makes a re-scaled placement's reach track its body instead of standing still.
+/// `BITE_R`/`LUNGE_IMPACT_R` are WORLD metres at the shipped `SCALE` — what `classify` measures a raw `distXZ` against. A HURT BOX is the creature's OWN metres (`foe.hurtReach`), so it is those divided back out, and that is what makes a re-scaled placement's reach track its body.
 const BITE_OWN = BITE_R / SCALE;
 const LUNGE_IMPACT_OWN = LUNGE_IMPACT_R / SCALE;
 const TRAIL_RATE: f32 = 150.0;
@@ -150,8 +141,7 @@ pub const SOULS: u32 = 60;
 
 const State = enum { idle, hop, lunge, recover, chomp, stunlight, stunheavy, dead };
 
-/// Damage banked at one spot (`foe.Sense`) before it startles sideways — under a third of the bar, so one
-/// heavy chop or two pokes scatter it. The LUNGE still outranks it: a toad that can answer, answers.
+/// Damage banked at one spot (`foe.Sense`) before it startles sideways — under a third of the bar, so one heavy chop or two pokes scatter it. The LUNGE still outranks it: a toad that can answer, answers.
 const PANIC_AT = 0.28;
 
 const Choice = enum { rest, hop, lunge, chomp, scatter, wait };
@@ -228,8 +218,7 @@ pub const Frog = struct {
     heroHit: ?combat.Hit = null,
     heroLatch: bool = false,
     justDied: bool = false,
-    /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law. The
-    /// creature never asks what a spirit is; it is handed a target in the argument it calls `hero`.
+    /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law. The creature never asks what a spirit is; it is handed a target in the argument it calls `hero`.
     threat: foe.Threat = .{},
     nav: foe.Nav = .{},
     sense: foe.Sense = .{},
@@ -241,8 +230,7 @@ pub const Frog = struct {
     fxHead: usize = 0,
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
-    /// Carried ONLY so its blood knows whether the ground under it is dry (`foe.onDryGround`) — a toad in
-    /// the shallows moves and fights exactly as one on the bank.
+    /// Carried ONLY so its blood knows whether the ground under it is dry — a toad in the shallows moves and fights exactly as one on the bank.
     wade: foe.Wade = .{},
 
     xf: [NP]rl.Matrix = undefined,
@@ -257,7 +245,6 @@ pub const Frog = struct {
         return f;
     }
 
-    // Heights measured from `pos.y`
     pub fn centerWorld(self: *const Frog) rl.Vector3 {
         return foe.bodyPoint(self.pos, BODY_CY, self.scale, self.lift);
     }
@@ -325,9 +312,7 @@ pub const Frog = struct {
         self.heroLatch = false;
     }
 
-    /// SECONDS UNTIL THE SLAM LANDS, counted from the start of the leap so the coil and the arc are ONE
-    /// continuous countdown — null when it is not throwing one. `tryImpact` fires the frame the toad touches
-    /// down, so the window shuts there by construction: a caught leap is one that never arrived.
+    /// SECONDS UNTIL THE SLAM LANDS, counted from the start of the leap so the coil and the arc are ONE continuous countdown. `tryImpact` fires the frame the toad touches down, so the window shuts there by construction: a caught leap is one that never arrived.
     fn toImpact(self: *const Frog) ?f32 {
         return switch (self.state) {
             .lunge => (LUNGE_COIL + self.hopDur) - self.t,
@@ -341,9 +326,7 @@ pub const Frog = struct {
         return foe.hurtReach(LUNGE_IMPACT_OWN, self.scale);
     }
 
-    /// THE BOARDS TAKE THE LEAP. `enterStun` is what kills it: the `.lunge` state is gone, so `updateHop` never
-    /// reaches its landing and `tryImpact` never fires. The toad COMES STRAIGHT DOWN — both stun resolvers write
-    /// `lift` from scratch, so a body caught mid-air is on the ground on the frame it is caught.
+    /// THE BOARDS TAKE THE LEAP. `enterStun` is what kills it: the `.lunge` state is gone, so `updateHop` never reaches its landing and `tryImpact` never fires. The toad COMES STRAIGHT DOWN — both stun resolvers write `lift` from scratch.
     fn takeParry(self: *Frog) void {
         const reach = self.parryable() orelse return;
         if (!foe.caught(self, reach)) return;
@@ -463,8 +446,7 @@ pub const Frog = struct {
                 const reach = mathx.minF(HOP_REACH, mathx.maxF(0, d - KEEP_OFF));
                 self.startHop(v3(self.pos.x + dir.x * reach, 0, self.pos.z + dir.z * reach), bounds, false);
             },
-            // THE STARTLE: punished where it sits, it scatters a full hop SIDEWAYS off the line — one panic
-            // hop clears `Sense`'s own span, so it startles once and then answers. The side alternates.
+            // THE STARTLE: punished where it sits, it scatters a full hop SIDEWAYS off the line — one panic hop clears `Sense`'s own span, so it startles once and then answers. The side alternates.
             .scatter => {
                 const to = mathx.dirXZ(self.pos, hero);
                 const dir = self.nav.along(v3(to.z * self.panicSide, 0, -to.x * self.panicSide));
@@ -492,9 +474,7 @@ pub const Frog = struct {
     fn updateHop(self: *Frog, dt: f32, hero: rl.Vector3, bounds: f32, coil: f32, flight: f32, land: f32) void {
         const total = coil + flight + land;
         if (self.t < coil) {
-            // EVERY hop faces its own AIM: `hopStep` launches along the FACING, so a coil that eyed the hero
-            // instead re-bent the hop at the launch — undoing the nav bend and curving a homeward hop back
-            // toward him. The scatter and the walk home only work because the coil turns to where it is GOING.
+            // EVERY hop faces its own AIM: `hopStep` launches along the FACING, so a coil that eyed the hero instead re-bent the hop at the launch — undoing the nav bend and curving a homeward hop back toward him.
             self.faceToward(self.hopAim, dt);
             const k = mathx.smoothstep(0, coil, self.t);
             self.resolveCoil(k, self.isLunge);
@@ -558,8 +538,7 @@ pub const Frog = struct {
         self.sxz = 1.0 - 0.02 * br;
         self.sac = 1.0 + 0.06 * mathx.sinf(self.elapsed * 2.3 + self.seed * 3.0);
         self.jaw = 1.5 + 1.5 * mathx.maxF(0, br);
-        // …and every ~17 s a GULP — the throat balloons and the jaw works once. A discrete event on a slow
-        // clock incommensurate with the breath, which is what stops the idle reading as a loop.
+        // …and every ~17 s a GULP — the throat balloons and the jaw works once. A discrete event on a slow clock incommensurate with the breath, which is what stops the idle reading as a loop.
         const gulp = mathx.smoothstep(0.90, 0.995, mathx.sinf(self.elapsed * 0.37 + self.seed * 9.1));
         self.sac += 0.55 * gulp;
         self.jaw += 7.0 * gulp;
@@ -591,8 +570,7 @@ pub const Frog = struct {
     }
     fn resolveLand(self: *Frog, k: f32) void {
         const splat = mathx.pulse(k, 0, 0.45, 0.45, 1.0);
-        // A mass in motion OVERSHOOTS its rest: the squash rebounds PAST 1 and settles back onto it. The
-        // rebound peaks at 0.92, where the splat has decayed to nothing — earlier and the two cancel out.
+        // A mass in motion OVERSHOOTS its rest: the squash rebounds PAST 1 and settles back onto it. The rebound peaks at 0.92, where the splat has decayed to nothing — earlier and the two cancel out.
         const reb = mathx.pulse(k, 0.72, 0.92, 0.92, 1.0);
         self.lift = 0;
         self.sy = 1.0 - 0.26 * splat + 0.08 * reb;
@@ -1158,8 +1136,7 @@ test "THE LEAP IS AN INSTANT FROM BEING SWATTED, and nothing else the toad does 
     var f = Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     f.startHop(mathx.ground(0, 4), 60.0, true);
     const impact = LUNGE_COIL + f.hopDur;
-    // MEASURED off the state machine: walk the leap from the first frame of its coil and collect the span that
-    // is actually parryable. ONE clock here — coil, arc and landing are all `.lunge`.
+    // MEASURED off the state machine: walk the leap from the first frame of its coil and collect the span that is actually parryable. ONE clock here — coil, arc and landing are all `.lunge`.
     const step = 1.0 / 600.0;
     var open: f32 = -1;
     var shut: f32 = -1;
@@ -1174,8 +1151,7 @@ test "THE LEAP IS AN INSTANT FROM BEING SWATTED, and nothing else the toad does 
     try std.testing.expect(open > 0);
     try std.testing.expectApproxEqAbs(impact, shut, 2.0 * step);
     try std.testing.expectApproxEqAbs(PARRY_LEAD, shut - open, 3.0 * step);
-    // …AT THE BODY'S OWN SCALE, not at 1.0: `foe.hurtReach`'s whole point is that a re-scaled placement's
-    // reach tracks its body, and pinned against the world-metre constant this passed only while SCALE was 1.
+    // …AT THE BODY'S OWN SCALE, not at 1.0: `foe.hurtReach`'s whole point is that a re-scaled placement's reach tracks its body, and pinned against the world-metre constant this passed only while SCALE was 1.
     try std.testing.expectApproxEqAbs(LUNGE_IMPACT_OWN * f.scale + foe.HERO_REACH, f.parryable().?, 1e-5);
 
     for ([_]State{ .idle, .hop, .recover, .chomp, .stunlight, .stunheavy, .dead }) |s| {
@@ -1231,8 +1207,7 @@ test "THE STARTLE SCATTERS IT SIDEWAYS, AND ONLY WHEN IT CANNOT ANSWER — the l
     try std.testing.expectEqual(Choice.scatter, classify(AGGRO_R - 1.0, true, true, false, true));
     try std.testing.expectEqual(Choice.chomp, classify(BITE_R - 0.2, true, true, false, true));
 
-    // …and the hop it takes is OFF THE LINE: bank a heavy blow's damage where it sits, let it decide, and
-    // measure the aim against the bearing to the hero.
+    // …and the hop it takes is OFF THE LINE: bank a heavy blow's damage where it sits, let it decide, and measure the aim against the bearing to the hero.
     var f = Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     f.leash.provoke();
     f.lungeCd = LUNGE_CD;

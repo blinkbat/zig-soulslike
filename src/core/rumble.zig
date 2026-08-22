@@ -28,9 +28,7 @@ pub const parry = Event{ .low = 0.52, .high = 0.92, .dur = 0.15 };
 pub const roll = Event{ .low = 0.16, .high = 0.40, .dur = 0.10 };
 pub const land = Event{ .low = 0.34, .high = 0.14, .dur = 0.12 };
 pub const cast_throw = Event{ .low = 0.28, .high = 0.50, .dur = 0.14 };
-/// A RISING rumble, which a single `Event` cannot be: `Motor` decays from its peak. Pulse this every frame and
-/// the envelope walks UP, since `pulse` re-arms on any peak at or above the live level. Mostly in the HIGH
-/// motor — a spell building is a fizz in the grip, and the low pair belongs to the ogre's footfalls.
+/// A RISING rumble, which a single `Event` cannot be: `Motor` decays from its peak. Pulse this every frame and the envelope walks UP, since `pulse` re-arms on any peak at or above the live level. Mostly in the HIGH motor — a spell building is a fizz in the grip, and the low pair belongs to the ogre's footfalls.
 pub fn castCharge(fill: f32) Event {
     return .{ .low = 0.10 * fill, .high = 0.34 * fill, .dur = 0.10 };
 }

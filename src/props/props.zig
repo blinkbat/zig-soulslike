@@ -157,9 +157,7 @@ pub const Kind = enum(u8) {
     glowcap,
     sporepod,
     // THE GILDED RUINS. **A MAP FILE IS SAFE WHEREVER A KIND GOES** — `worldfmt` reads and writes one by TAG
-    // (`enumFromName`/`@tagName`), never by ordinal, so an insert cannot re-point a saved `at:` line. What IS
-    // ordinal-locked is every `[NK]` table in this file: `INFO` is indexed by the ordinal and comptime-pinned
-    // row for row (`INFO[i].kind == i`), so a kind added anywhere but beside its own row is a compile error.
+    // (`enumFromName`/`@tagName`), never by ordinal. What IS ordinal-locked is every `[NK]` table in this file: `INFO` is comptime-pinned row for row (`INFO[i].kind == i`), so a kind added anywhere but beside its own row is a compile error.
     giltarch,
     muqarnas,
     giltdome,
@@ -400,15 +398,9 @@ pub fn group(k: Kind) Group {
 }
 
 /// `Group` is the editor's palette — how a prop is FILED. This is the other axis: which kingdom it reads as
-/// standing in. They cross, and the crossings are the point.
+/// standing in. `any` is not a dustbin — it is the set that reads right ANYWHERE.
 ///
-/// `any` is not a dustbin — it is the set that reads right ANYWHERE. A kind put there because nobody could
-/// decide will turn up in the ashfall looking wrong.
-///
-/// **NOTHING SOWS BY IT YET.** `biome`/`inBiome` are read by this file's own census test and by no other
-/// module: what actually places a prop is an authored op or a zone's explicit `mix=`, and neither consults
-/// this. It is a classification waiting for the brush that filters on it — say so rather than let a comment
-/// somewhere claim a family lands where it does because of this table.
+/// **NOTHING SOWS BY IT YET.** `biome`/`inBiome` are read by this file's own census test and by no other module: what places a prop is an authored op or a zone's explicit `mix=`, and neither consults this.
 pub const Biome = enum {
     any,
     ruins,
@@ -463,9 +455,7 @@ pub fn biome(k: Kind) Biome {
         => .rock,
 
         .reeds, .cattails, .lilypads => .wetland,
-        // **THE GILDED CITY STOOD IN THE ASHFALL** (owner: this would look sick on Ash tiles) — filed to the
-        // ash rather than to `.ruins`, which records the region it was authored against. It does not PLACE
-        // it: nothing sows off this table (see `Biome`), so the family still goes down by hand.
+        // **THE GILDED CITY STOOD IN THE ASHFALL** (owner: this would look sick on Ash tiles) — filed to the ash rather than to `.ruins`, which records the region it was authored against. It does not PLACE it.
         .ashheap, .ashdune, .cinders, .charspar,
         .giltarch, .muqarnas, .giltdome, .minaret, .jali, .giltcolumn, .giltbasin, .giltfinial,
         => .ash,
@@ -479,15 +469,13 @@ pub fn biome(k: Kind) Biome {
     };
 }
 
-/// Everything that reads right in `b`, plus everything that reads right anywhere. **NOT what a zone's `mix=`
-/// picks from** — that is an explicit list of kinds in the map file (`worldfmt.parseMix`), picked uniformly.
+/// Everything that reads right in `b`, plus everything that reads right anywhere. **NOT what a zone's `mix=` picks from** — that is an explicit list of kinds in the map file (`worldfmt.parseMix`), picked uniformly.
 pub fn inBiome(k: Kind, b: Biome) bool {
     const own = biome(k);
     return own == b or own == .any;
 }
 
-/// **WHAT IVY CLIMBS** — dressed or laid stone with a vertical face, and nothing else. Deliberately NOT
-/// `group(k) == .ruins`, which holds a planted sword and a rubble pile too.
+/// **WHAT IVY CLIMBS** — dressed or laid stone with a vertical face, and nothing else. Deliberately NOT `group(k) == .ruins`, which holds a planted sword and a rubble pile too.
 pub const IVY_HOSTS = [_]Kind{
     .wall,    .pillar,  .broken,     .block,  .arch,
     .statue,  .cottage, .chapel,     .watchtower, .stairs,
@@ -579,13 +567,11 @@ pub const Info = struct {
     view: f32,
     flora: bool = false,
     interact: bool = false,
-    /// NEVER THINS WHEN IT STANDS IN THE CAMERA'S WAY — architecture, cliffs, the water sheet. Losing
-    /// sight of the hero behind a wall is the geometry doing its job, and ER keeps those solid too.
+    /// NEVER THINS WHEN IT STANDS IN THE CAMERA'S WAY — architecture, cliffs, the water sheet. Losing sight of the hero behind a wall is the geometry doing its job, and ER keeps those solid too.
     solid: bool = false,
     occl: []const Blocker = &.{},
     casts: bool = true,
-    /// ITS `parts` ARE WARDS, NOT WALLS (`collision.Solid.ward`) — the hero and the spirit he summons walk
-    /// through, nothing else crosses either way, and no look crosses at all.
+    /// ITS `parts` ARE WARDS, NOT WALLS (`collision.Solid.ward`) — the hero and the spirit he summons walk through, nothing else crosses either way, and no look crosses at all.
     ward: bool = false,
     parts: []const Part = &.{},
     light: ?LightSpec = null,
@@ -673,10 +659,7 @@ pub const INFO = [NK]Info{
     .{ .kind = .torch, .build = fx.torchMesh, .bound = 2.6, .top = 2.35, .view = 200, .parts = circleParts(0.18, 2.0), .light = .{ .y = 1.98, .col = v3(0.64, 0.34, 0.13), .radius = 6.0, .flicker = 0.15 }, .surf = .metal },
     .{ .kind = .brazier, .build = fx.brazierMesh, .bound = 1.9, .top = 1.55, .view = 210, .parts = circleParts(0.50, 1.2), .light = .{ .y = 1.14, .col = v3(1.55, 0.84, 0.29), .radius = 16.0, .flicker = 0.13 }, .surf = .metal },
     .{ .kind = .campfire, .build = fx.deadCampfireMesh, .bound = 1.5, .top = 0.6, .view = 200, .parts = circleParts(0.45, 0.5), .surf = .stone },
-    // …AND ONE YOU CAN SIT AT. `interact` shelves it under the editor's Interactables layer; `rest.isRestKind`
-    // is what makes it a bonfire. `stow` for the bonfire's reason: every fire you can sit at has the guitar
-    // against its rock, and it goes when he picks it up. `bound` is up from 1.5 to hold the rock and the
-    // instrument, which stand outside the ring of stones and would otherwise cull before the hearth does.
+    // …AND ONE YOU CAN SIT AT. `interact` shelves it under the editor's Interactables layer; `rest.isRestKind` is what makes it a bonfire. `stow` for the bonfire's reason. `bound` is up from 1.5 to hold the rock and the instrument, which stand outside the ring of stones.
     .{ .kind = .campfire_lit, .build = fx.campfireMesh, .stow = fx.campfireGuitarMesh, .bound = 2.6, .top = 1.1, .view = 200, .interact = true, .solid = true, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(1.05, 0.52, 0.17), .radius = 13.0, .flicker = 0.18 } },
     .{ .kind = .water, .build = fx.waterMesh, .bound = 30.0, .top = 0.1, .view = FAR, .solid = true, .casts = false },
     .{ .kind = .tuft, .build = flora.tuftMesh, .bound = 0.9, .top = 0.8, .view = 85, .flora = true, .casts = false },
@@ -703,32 +686,23 @@ pub const INFO = [NK]Info{
     .{ .kind = .thicket, .build = flora.thicketMesh, .bound = 2.8, .top = 1.9, .view = 160, .flora = true, .casts = false },
     .{ .kind = .wildflowers, .build = flora.wildflowersMesh, .bound = 1.5, .top = 0.65, .view = 105, .flora = true, .casts = false },
     .{ .kind = .ivy, .build = flora.ivyMesh, .bound = 2.4, .top = 2.0, .view = 150, .flora = true, .casts = false },
-    // BOLE THEN CROWN, and it takes two blockers because one cylinder cannot be narrow at the foot and wide
-    // at the boughs. Sized off `bigTreeMesh`'s own numbers: bole to `spec.trunk`, crown out to the bough tips
-    // (`out` * `spread` plus the canopy blob) and up to `top`. The three specs differ enough to be worth rows
-    // of their own — bigtree2 is squat and broad, bigtree3 tall and narrow.
+    // BOLE THEN CROWN, and it takes two blockers because one cylinder cannot be narrow at the foot and wide at the boughs. Sized off `bigTreeMesh`'s own numbers. The three specs differ enough to be worth rows of their own — bigtree2 is squat and broad, bigtree3 tall and narrow.
     .{ .kind = .bigtree, .build = wood.bigTree1, .bound = 13.5, .top = 11.0, .view = FAR, .parts = circleParts(0.95, 6.0), .occl = &.{ .{ .r = 1.30, .y1 = 5.0 }, .{ .r = 4.80, .y0 = 4.5, .y1 = 11.0 } }, .surf = .wood },
     .{ .kind = .bigtree2, .build = wood.bigTree2, .bound = 13.0, .top = 8.5, .view = FAR, .parts = circleParts(0.95, 5.0), .occl = &.{ .{ .r = 1.30, .y1 = 3.4 }, .{ .r = 5.40, .y0 = 3.2, .y1 = 8.5 } }, .surf = .wood },
     .{ .kind = .bigtree3, .build = wood.bigTree3, .bound = 14.0, .top = 13.5, .view = FAR, .parts = circleParts(0.90, 6.5), .occl = &.{ .{ .r = 1.25, .y1 = 5.6 }, .{ .r = 3.60, .y0 = 5.4, .y1 = 13.5 } }, .surf = .wood },
-    // The curtain HANGS: `willowMesh` drops its fronds to y 0.9 at a reach of 3.2, so the blocking mass starts
-    // near the ground and the bole inside it is beside the point.
+    // The curtain HANGS: `willowMesh` drops its fronds to y 0.9 at a reach of 3.2, so the blocking mass starts near the ground and the bole inside it is beside the point.
     .{ .kind = .willow, .build = wood.willowMesh, .bound = 8.0, .top = 7.1, .view = 300, .parts = circleParts(0.72, 4.4), .occl = &.{ .{ .r = 0.90, .y1 = 3.4 }, .{ .r = 3.60, .y0 = 0.9, .y1 = 5.5 } }, .surf = .wood },
     // A CONE, in three steps: `coniferMesh` whorls from y 0.16H with `reach` 3.1 falling to a spire.
     .{ .kind = .conifer, .build = wood.coniferMesh, .bound = 12.5, .top = 12.0, .view = FAR, .parts = circleParts(0.58, 5.0), .occl = &.{ .{ .r = 0.70, .y1 = 1.6 }, .{ .r = 3.40, .y0 = 1.4, .y1 = 5.0 }, .{ .r = 1.80, .y0 = 5.0, .y1 = 9.0 } }, .surf = .wood },
     .{ .kind = .birch, .build = wood.birchMesh, .bound = 10.0, .top = 9.4, .view = 340, .parts = circleParts(0.44, 5.0), .occl = &.{ .{ .r = 0.55, .y1 = 3.9 }, .{ .r = 3.00, .y0 = 3.5, .y1 = 9.4 } }, .surf = .wood },
     .{ .kind = .snag, .build = wood.snagMesh, .bound = 8.2, .top = 7.8, .view = 320, .parts = circleParts(0.42, 6.0), .occl = &.{.{ .r = 0.75, .y1 = 7.0 }}, .surf = .wood },
-    // A sapling CASTS (3 m of tree with no shadow reads as a decal) and so must not sway — the depth pass
-    // has no wind term.
+    // A sapling CASTS (3 m of tree with no shadow reads as a decal) and so must not sway — the depth pass has no wind term.
     .{ .kind = .sapling, .build = wood.saplingMesh, .bound = 3.8, .top = 3.4, .view = 220, .parts = circleParts(0.16, 2.2), .surf = .wood },
-    // `bound` and `top` are SOLVED off `propbone.ribPath` at comptime — the same walk the mesh is drawn from,
-    // so a retuned curl moves the sphere with the shaft. Typed by hand, the arch's keystone stood 0.29 m
-    // above the `top` it declared.
+    // `bound` and `top` are SOLVED off `propbone.ribPath` at comptime — the same walk the mesh is drawn from, so a retuned curl moves the sphere with the shaft. Typed by hand, the arch's keystone stood 0.29 m above the `top` it declared.
     .{ .kind = .rib, .build = bone.rib1, .bound = bone.ribBound(bone.RIB_TALL), .top = bone.ribTop(bone.RIB_TALL), .view = FAR, .parts = circleParts(0.62, 3.0), .occl = &.{ .{ .r = 0.90, .y1 = 4.0 }, .{ .x = 3.0, .r = 2.60, .y0 = 3.8, .y1 = bone.ribTop(bone.RIB_TALL) } } },
     .{ .kind = .rib2, .build = bone.rib2, .bound = bone.ribBound(bone.RIB_STOUT), .top = bone.ribTop(bone.RIB_STOUT), .view = FAR, .parts = circleParts(0.70, 2.6), .occl = &.{ .{ .r = 1.00, .y1 = 2.8 }, .{ .x = 2.6, .r = 2.20, .y0 = 2.6, .y1 = bone.ribTop(bone.RIB_STOUT) } } },
     .{ .kind = .rib3, .build = bone.rib3, .bound = bone.ribBound(bone.RIB_SPLIT), .top = bone.ribTop(bone.RIB_SPLIT), .view = FAR, .parts = circleParts(0.55, 3.2), .occl = &.{ .{ .r = 0.85, .y1 = 4.0 }, .{ .x = 1.6, .r = 1.60, .y0 = 3.8, .y1 = bone.ribTop(bone.RIB_SPLIT) } } },
-    // TWO LEGS AND A HOLE BETWEEN THEM — the colliders are the feet and nothing else, so it is a gate you
-    // walk through rather than a wall with a picture of an arch on it. Their spacing is the mesh's own
-    // (`bone.ARCH_HALF`), solved from the shaft, so the door cannot drift off the stone.
+    // TWO LEGS AND A HOLE BETWEEN THEM — the colliders are the feet and nothing else, so it is a gate you walk through. Their spacing is the mesh's own (`bone.ARCH_HALF`), solved from the shaft.
     .{ .kind = .ribarch, .build = bone.ribArchMesh, .bound = bone.archBound(), .top = bone.archTop(), .view = FAR, .parts = &.{
         .{ .ax = -bone.ARCH_HALF, .bx = -bone.ARCH_HALF, .r = 0.75, .h = 2.6 },
         .{ .ax = bone.ARCH_HALF, .bx = bone.ARCH_HALF, .r = 0.75, .h = 2.6 },
@@ -736,8 +710,7 @@ pub const INFO = [NK]Info{
     .{ .kind = .skull, .build = bone.skullMesh, .bound = 3.9, .top = 2.3, .view = 300, .parts = &.{.{ .ax = -0.60, .bx = 1.60, .r = 1.05, .h = 1.95 }} },
     .{ .kind = .vertebra, .build = bone.vertebraMesh, .bound = 2.9, .top = 2.5, .view = 220, .parts = circleParts(0.85, 1.60) },
 
-    // A heap is walked OVER and a dune is walked ROUND — and the dune's collider is only 1.4 m tall against
-    // its own 2.2, so a look passes over the ridge a body cannot cross. That gap is the region's one idea.
+    // A heap is walked OVER and a dune is walked ROUND — and the dune's collider is only 1.4 m tall against its own 2.2, so a look passes over the ridge a body cannot cross. That gap is the region's one idea.
     .{ .kind = .ashheap, .build = ash.ashHeapMesh, .bound = 2.0, .top = 0.80, .view = 150 },
     .{ .kind = .ashdune, .build = ash.ashDuneMesh, .bound = 5.8, .top = 2.20, .view = 250, .parts = &.{.{ .ax = -2.40, .bx = 2.40, .r = 1.20, .h = 1.40 }} },
     // Its coals are EMISSIVE vertex alpha, not a light — so a field of them costs nothing and lights nothing.
@@ -749,8 +722,7 @@ pub const INFO = [NK]Info{
     .{ .kind = .balanced, .build = rock.balancedMesh, .bound = 4.6, .top = 4.10, .view = 320, .parts = &.{.{ .ax = 0.0, .bx = 0.62, .r = 1.10, .h = 2.30 }}, .occl = &.{.{ .x = 0.5, .r = 1.70, .y1 = 4.0 }} },
     .{ .kind = .fingers, .build = rock.fingersMesh, .bound = 5.6, .top = 4.80, .view = 320, .parts = &.{.{ .ax = -0.90, .bx = 1.70, .r = 0.60, .h = 3.80 }}, .occl = &.{.{ .x = 0.4, .r = 1.90, .y1 = 4.7 }} },
 
-    // No `occl` on any of the three, which is the ruins family's own rule: dressed stone is architecture and
-    // architecture does not ghost.
+    // No `occl` on any of the three, which is the ruins family's own rule: dressed stone is architecture and architecture does not ghost.
     .{ .kind = .obelisk, .build = ruins.obeliskMesh, .bound = 9.2, .top = 8.70, .view = FAR, .parts = circleParts(0.85, 7.0) },
     .{ .kind = .plinth, .build = ruins.plinthMesh, .bound = 2.8, .top = 2.60, .view = 210, .parts = &.{.{ .ax = -0.30, .bx = 0.30, .r = 0.85, .h = 1.70 }} },
     .{ .kind = .altar, .build = ruins.altarMesh, .bound = 2.9, .top = ruins.ALTAR_H, .view = 210, .parts = &.{.{ .ax = -1.35, .bx = 1.35, .r = 0.68, .h = 1.05 }} },
@@ -758,12 +730,9 @@ pub const INFO = [NK]Info{
     .{ .kind = .rotlog, .build = wood.rotLogMesh, .bound = 3.2, .top = 0.95, .view = 175, .parts = &.{.{ .ax = -2.10, .bx = 2.10, .r = 0.40, .h = 0.85 }}, .surf = .wood },
     .{ .kind = .deadfall, .build = wood.deadfallMesh, .bound = 3.4, .top = 2.00, .view = 200, .parts = circleParts(1.10, 1.60), .surf = .wood },
 
-    // The canopy, and you walk UNDER it: the colliders are the two stipes, so the cap is a roof rather than
-    // a wall. Two blockers for `bigtree`'s reason — one cylinder cannot be narrow at the foot and 3.3 m wide
-    // at the brim.
+    // The canopy, and you walk UNDER it: the colliders are the two stipes, so the cap is a roof rather than a wall. Two blockers for `bigtree`'s reason.
     .{ .kind = .capgiant, .build = fungus.capGiantMesh, .bound = fungus.capBound(fungus.GIANT_BROAD), .top = fungus.capTop(fungus.GIANT_BROAD), .view = FAR, .parts = &fungus.capParts(fungus.GIANT_BROAD), .occl = &fungus.capOccl(fungus.GIANT_BROAD), .surf = .wood },
-    // TWO MORE CANOPIES. Their `bound`/`top` are their own — a parasol is taller and narrower than the broad
-    // one and a table is the other way round, which is the whole reason they exist.
+    // TWO MORE CANOPIES. Their `bound`/`top` are their own — a parasol is taller and narrower than the broad one and a table is the other way round, which is the whole reason they exist.
     .{ .kind = .capgiant2, .build = fungus.capGiant2Mesh, .bound = fungus.capBound(fungus.GIANT_TALL), .top = fungus.capTop(fungus.GIANT_TALL), .view = FAR, .parts = &fungus.capParts(fungus.GIANT_TALL), .occl = &fungus.capOccl(fungus.GIANT_TALL), .surf = .wood },
     .{ .kind = .capgiant3, .build = fungus.capGiant3Mesh, .bound = fungus.capBound(fungus.GIANT_TABLE), .top = fungus.capTop(fungus.GIANT_TABLE), .view = FAR, .parts = &fungus.capParts(fungus.GIANT_TABLE), .occl = &fungus.capOccl(fungus.GIANT_TABLE), .surf = .wood },
     // THE LANDMARK. Seventeen metres, `tower`-scale, and its four numbers come off `CapSpec` like the rest.
@@ -774,12 +743,10 @@ pub const INFO = [NK]Info{
         .{ .ax = -fungus.ARCH_SPAN * 0.5, .bx = -fungus.ARCH_SPAN * 0.5, .r = 0.60, .h = 2.40 },
         .{ .ax = fungus.ARCH_SPAN * 0.5, .bx = fungus.ARCH_SPAN * 0.5, .r = 0.60, .h = 2.40 },
     }, .occl = &.{ .{ .x = -fungus.ARCH_SPAN * 0.5, .r = 0.90, .y1 = 4.4 }, .{ .x = fungus.ARCH_SPAN * 0.5, .r = 0.90, .y1 = 4.4 } }, .surf = .wood },
-    // THE THREE LAMPS, at knee, chest and overhead. Radii kept small on purpose — a light POOLS or it is a
-    // wash, and this kingdom has a great many of them against a sixteen-light budget.
+    // THE THREE LAMPS, at knee, chest and overhead. Radii kept small on purpose — a light POOLS or it is a wash, and this kingdom has a great many of them against a sixteen-light budget.
     .{ .kind = .glowcluster, .build = fungus.glowClusterMesh, .bound = 2.0, .top = 1.80, .view = 220, .parts = circleParts(0.55, 1.10), .light = .{ .y = fungus.CLUSTER_LIGHT_Y, .col = v3(0.62, 0.26, 0.46), .radius = 6.5, .flicker = 0.04 }, .surf = .wood },
     .{ .kind = .lampstalk, .build = fungus.lampStalkMesh, .bound = 4.6, .top = 4.20, .view = 300, .parts = circleParts(0.26, 2.60), .light = .{ .y = fungus.LAMP_LIGHT_Y, .col = v3(0.70, 0.32, 0.52), .radius = 10.0, .flicker = 0.03 }, .surf = .wood },
-    // No collider: a fold is ankle-high and you walk over it. It still casts, because a 1.4 m mass that
-    // lays no shadow reads as a decal.
+    // No collider: a fold is ankle-high and you walk over it. It still casts, because a 1.4 m mass that lays no shadow reads as a decal.
     .{ .kind = .fleshfold, .build = fungus.fleshFoldMesh, .bound = 2.6, .top = 1.40, .view = 180 },
     .{ .kind = .sporevent, .build = fungus.sporeVentMesh, .bound = 4.0, .top = 3.70, .view = 260, .parts = circleParts(1.05, 3.40), .light = .{ .y = fungus.VENT_H - 0.40, .col = v3(0.46, 0.20, 0.36), .radius = 5.0, .flicker = 0.09 }, .surf = .wood },
     // EMISSIVE VERTEX ALPHA AND NOT A LIGHT — the point of it is that you can sow hundreds.
@@ -804,15 +771,13 @@ pub const INFO = [NK]Info{
     .{ .kind = .whaleback, .build = rock.whalebackMesh, .bound = 2.45, .top = rock.WHALE_H + 0.10, .view = 240, .parts = circleParts(0.90, rock.WHALE_H), .surf = .stone },
     .{ .kind = .capcluster, .build = fungus.capClusterMesh, .bound = 3.4, .top = 2.80, .view = 230, .parts = circleParts(0.75, 1.80), .occl = &.{.{ .r = 1.20, .y1 = 2.7 }}, .surf = .wood },
     .{ .kind = .bracket, .build = fungus.bracketMesh, .bound = 2.6, .top = 2.50, .view = 200, .parts = circleParts(0.45, 2.20), .surf = .wood },
-    // THE ONE REAL LIGHT IN THE KINGDOM. Cold, and its radius is small on purpose — a light POOLS or it is a
-    // wash, and this region has a great many of them.
+    // THE ONE REAL LIGHT IN THE KINGDOM. Cold, and its radius is small on purpose — a light POOLS or it is a wash.
     .{ .kind = .glowcap, .build = fungus.glowCapMesh, .bound = 3.0, .top = 2.90, .view = 260, .parts = circleParts(0.22, 2.00), .light = .{ .y = fungus.GLOW_LIGHT_Y, .col = v3(0.26, 0.62, 0.58), .radius = 7.5, .flicker = 0.05 }, .surf = .wood },
     .{ .kind = .sporepod, .build = fungus.sporePodMesh, .bound = 1.3, .top = 1.25, .view = 95, .flora = true, .casts = false },
 
-    // **THE GILDED RUINS.** No `occl` on any of them — dressed stone is architecture and architecture does
-    // not ghost (the ruins family's own rule). Three layers, as a region needs: the minaret is the landmark,
-    // the gate/dome/screen/column are the middle, and the basin and the finial are what you walk over.
-    // THE GATE IS A DOOR: two foot colliders and the gap between them, like `ribarch` and `hyphaarch`.
+    // **THE GILDED RUINS.** No `occl` on any of them — dressed stone is architecture and architecture does not
+    // ghost. Three layers, as a region needs: the minaret is the landmark, the gate/dome/screen/column are the
+    // middle, and the basin and the finial are what you walk over. THE GATE IS A DOOR: two foot colliders and the gap between them, like `ribarch` and `hyphaarch`.
     .{ .kind = .giltarch, .build = gold.giltArchMesh, .bound = gold.ARCH_TOP + 0.6, .top = gold.ARCH_TOP, .view = FAR, .parts = &.{
         .{ .ax = -gold.ARCH_HALF, .bx = -gold.ARCH_HALF, .r = 0.66, .h = gold.ARCH_SPRING },
         .{ .ax = gold.ARCH_HALF, .bx = gold.ARCH_HALF, .r = 0.66, .h = gold.ARCH_SPRING },
@@ -821,8 +786,7 @@ pub const INFO = [NK]Info{
     // A DOME IS WALKED ROUND: one broad collider on the drum, and the shell over it is roof.
     .{ .kind = .giltdome, .build = gold.giltDomeMesh, .bound = gold.DOME_R * 2.2, .top = gold.DOME_TOP, .view = FAR, .solid = true, .parts = circleParts(gold.DOME_R * 0.92, gold.DOME_DRUM) },
     .{ .kind = .minaret, .build = gold.minaretMesh, .bound = gold.MIN_TOP + 0.8, .top = gold.MIN_TOP, .view = FAR, .solid = true, .parts = circleParts(gold.MIN_R * 1.25, gold.MIN_H * 0.92) },
-    // The screen is a WALL you cannot see through even though the light gets through it — `solid`, because
-    // losing the hero behind it is the geometry doing its job.
+    // The screen is a WALL you cannot see through even though the light gets through it — `solid`, because losing the hero behind it is the geometry doing its job.
     .{ .kind = .jali, .build = gold.jaliScreenMesh, .bound = gold.JALI_W + 1.0, .top = gold.JALI_TOP, .view = 300, .solid = true, .parts = &.{.{ .ax = -gold.JALI_W * 0.5, .bx = gold.JALI_W * 0.5, .r = 0.34, .h = gold.JALI_H }} },
     .{ .kind = .giltcolumn, .build = gold.giltColumnMesh, .bound = gold.COL_TOP + 0.5, .top = gold.COL_TOP, .view = 320, .parts = circleParts(0.52, gold.COL_H) },
     .{ .kind = .giltbasin, .build = gold.giltBasinMesh, .bound = gold.BASIN_R * 2.3, .top = gold.BASIN_TOP, .view = 200, .parts = circleParts(gold.BASIN_R * 0.80, 0.50) },
@@ -830,9 +794,7 @@ pub const INFO = [NK]Info{
     .{ .kind = .giltfinial, .build = gold.giltFinialMesh, .bound = 1.7, .top = gold.FINIAL_TOP, .view = 150 },
 
     .{ .kind = .pickup, .build = fx.pickupMesh, .bound = 1.9, .top = fx.PICKUP_TOP, .view = 190, .interact = true, .casts = false, .light = .{ .y = 0.30, .col = v3(0.86, 0.82, 0.58), .radius = 5.4, .flicker = 0.03 } },
-    // `build` is the two threshold stones; the sheet is the VEIL, hence the late pass (`env.drawVeils`).
-    // `solid` because a fog wall must NOT thin between the lens and him, and it casts nothing. `ward` is the
-    // MECHANIC: a capsule the width of its own sheet that no foe and no sight crosses, and that he does.
+    // `build` is the two threshold stones; the sheet is the VEIL, hence the late pass (`env.drawVeils`). `solid` because a fog wall must NOT thin between the lens and him, and it casts nothing. `ward` is the MECHANIC: a capsule the width of its own sheet that no foe and no sight crosses, and that he does.
     .{ .kind = .foggate, .build = fx.fogGateStoneMesh, .veil = fx.fogGateMesh, .bound = 5.4, .top = fx.FOG_H, .view = 320, .solid = true, .interact = true, .casts = false, .ward = true, .parts = &.{.{ .ax = -fx.FOG_W * 0.5, .bx = fx.FOG_W * 0.5, .r = fx.FOG_WARD_R, .h = fx.FOG_H }} },
 };
 
@@ -841,8 +803,7 @@ pub fn info(k: Kind) *const Info {
 }
 
 comptime {
-    // Every row is walked by all of the asserts below. NO COUNT IN THE PROSE: it said 110 rows and five
-    // asserts while the table stood at 136 and ten, which is the one kind of comment that rots on its own.
+    // Every row is walked by all of the asserts below. NO COUNT IN THE PROSE: it said 110 rows and five asserts while the table stood at 136 and ten.
     @setEvalBranchQuota(20000);
     for (INFO, 0..) |row, i| std.debug.assert(@intFromEnum(row.kind) == i);
     for (INFO) |row| std.debug.assert(row.bound >= row.top);
@@ -861,16 +822,14 @@ comptime {
 }
 
 test "EVERY KIND IS FILED UNDER ONE KINGDOM, and `any` is not a dustbin" {
-    // The classification is the whole point of the axis, so it is pinned rather than trusted: the switch is
-    // exhaustive (the compiler sees to that) and this says the answers are not all the same one.
+    // The classification is the whole point of the axis, so it is pinned rather than trusted: the switch is exhaustive and this says the answers are not all the same one.
     var seen = [_]usize{0} ** Biome.N;
     for (0..NK) |i| seen[@intFromEnum(biome(@enumFromInt(i)))] += 1;
     for (seen, 0..) |n, b| {
         if (n == 0) std.debug.print("no kind is filed under {s}\n", .{Biome.label(@enumFromInt(b))});
         try std.testing.expect(n > 0);
     }
-    // …and `any` stays the minority: a kind put there because nobody could decide turns up in the ashfall
-    // looking wrong, so it may never be the biggest set.
+    // …and `any` stays the minority: a kind put there because nobody could decide turns up in the ashfall looking wrong.
     const anyN = seen[@intFromEnum(Biome.any)];
     try std.testing.expect(anyN * 3 < NK);
     // A zone picks from its own kingdom PLUS the ones that read anywhere, and never from another kingdom's.
@@ -880,8 +839,7 @@ test "EVERY KIND IS FILED UNDER ONE KINGDOM, and `any` is not a dustbin" {
 }
 
 test "every kind row sits at its own index and carries a mesh builder" {
-    // The comptime block asserts the index match; this pins the table's SHAPE, so a half-added kind (enum
-    // extended, table not) fails as a test rather than at first draw.
+    // The comptime block asserts the index match; this pins the table's SHAPE, so a half-added kind fails as a test rather than at first draw.
     try std.testing.expectEqual(@as(usize, NK), INFO.len);
     for (INFO) |row| try std.testing.expect(row.bound > 0 and row.view > 0);
 }

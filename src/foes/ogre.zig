@@ -64,8 +64,7 @@ const CLAVR = 23;
 
 const parent = [N]i32{ -1, ROOT, SPINE, HUMP, NECK, ROOT, HIPL, KNEEL, ROOT, HIPR, KNEER, CLAVL, SHL, ELL, CLAVR, SHR, ELR, WRR, SKULL, ANKL, ANKR, CHEST, CHEST, CHEST };
 
-// Where this giant carries his weight, MEASURED off `footMesh`: the fat pad under each ankle, which
-// `hero.legChain` levels every frame so the sole cannot rake through the ground.
+// Where this giant carries his weight, MEASURED off `footMesh`: the fat pad under each ankle, which `hero.legChain` levels every frame so the sole cannot rake through the ground.
 const solePatches = [_]heromod.SolePatch{
     .{ .bone = ANKL, .heel = 0.094 * H, .toe = 0.144 * H, .halfW = 0.082 * H, .drop = 0.039 * H },
     .{ .bone = ANKR, .heel = 0.094 * H, .toe = 0.144 * H, .halfW = 0.082 * H, .drop = 0.039 * H },
@@ -87,9 +86,8 @@ fn restPositions() [N]rl.Vector3 {
     r[SPINE] = v3(0, 0.645, 0);
     r[CHEST] = v3(0, 0.775, 0);
     r[NECK] = v3(0, 0.842, 0.048);
-    r[SKULL] = v3(0, 0.925, 0.104); // MEASURED against the chest barrel's top, not eyeballed: the
-    // skull's centre has to sit clear of it or the head reads as swallowed by the shoulders — and it
-    // JUTS: at 0.070 the whole head sat between the shoulder blobs and vanished from every rear quarter
+    r[SKULL] = v3(0, 0.925, 0.104); // MEASURED against the chest barrel's top: at 0.070 the whole head sat
+    // between the shoulder blobs and vanished from every rear quarter
     r[HIPL] = v3(hx, 0.530, 0);
     r[KNEEL] = v3(hx, 0.285, 0);
     r[ANKL] = v3(hx, 0.039, 0);
@@ -131,8 +129,7 @@ fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix
     heromod.setJoint(wx, &rest, i, @intCast(parent[i]), animRot);
 }
 
-// A hulking giant — ~4.1 m to the crown, a shade over twice the hero. The dial has been walked: 2.5 was
-// rejected as too big, 2.1 as too small, 2.4 read big again, and the owner has now asked for a bit off it.
+// A hulking giant — ~4.1 m to the crown, a shade over twice the hero. The dial has been walked: 2.5 rejected as too big, 2.1 as too small, 2.4 read big again, and the owner has now asked for a bit off it.
 pub const SCALE = 2.3;
 const WALK_SPEED = heromod.WALK_SPEED * 0.72;
 pub const AGGRO_R = 18.0;
@@ -140,9 +137,7 @@ const SLAM_R = 2.3;
 const SWIPE_R = 4.4;
 const TURN_RATE = 3.4; // rad/s (~195 deg/s) — still out-turned by the hero, but no longer a turret
 const SWIPE_TURN = 5.4;
-/// DOWN off the CHEST joint (which sits at the top of the barrel, 0.775·H) — owner's call, the mark rode too
-/// high. Now ~0.715·H, 2.9 m of a 4.1 m creature, inside the hurt sphere (0.8..4.1 m) and clear of the skull
-/// at 0.925·H. It still HINGES with the chest through the slam.
+/// DOWN off the CHEST joint (which sits at the top of the barrel, 0.775·H) — owner's call, the mark rode too high. Now ~0.715·H, 2.9 m of a 4.1 m creature, inside the hurt sphere (0.8..4.1 m) and clear of the skull at 0.925·H. It still HINGES with the chest through the slam.
 const LOCK_AT = v3(0, -0.06 * H, 0);
 const BODY_R = 0.55; // ground footprint (pre-scale) — broad
 const HURT_R = 0.72; // hurt-sphere radius the hero's blade tests against (pre-scale) — a big target
@@ -218,9 +213,7 @@ const SWIPE_ARC = 144.0;
 const PARRY_LEAD = foe.PARRY_LEAD;
 
 const HUNCH = 9.0;
-// HE HINGES AT THE WAIST (owner's law): the fraction of any body pitch the PELVIS may take. **PUBLIC because
-// it is the LAW and not his own number** (`AGENTS.md` names it `ogre.PELVIS_SHARE`) — every big body routes
-// its lean through this, and a second copy of 0.16 is a second thing to forget when the law is retuned.
+// HE HINGES AT THE WAIST (owner's law): the fraction of any body pitch the PELVIS may take. **PUBLIC because it is the LAW and not his own number** (`AGENTS.md` names it `ogre.PELVIS_SHARE`) — a second copy of 0.16 is a second thing to forget when the law is retuned.
 pub const PELVIS_SHARE = 0.16;
 // THE CARRY (owner's law): the club is HEFTED AT HIS SIDE, never dragged.
 const CARRY_SH = 5.0;
@@ -228,8 +221,7 @@ const CARRY_EL = -13.0;
 const CARRY_TILT = 44.0;
 const WIND_TILT = 30.0;
 const SLAM_TILT = -14.0;
-// REACH against DEPTH along one arc: raked further ahead the head lands further out but higher — measured,
-// −30 put the crater 2.1 out and 0.66 in the air, a slam that missed the earth.
+// REACH against DEPTH along one arc: raked further ahead the head lands further out but higher — measured, −30 put the crater 2.1 out and 0.66 in the air, a slam that missed the earth.
 const OVER_SH = -158.0;
 const WIND_EL = -78.0;
 const SLAM_SH = -56.0;
@@ -295,13 +287,10 @@ const BRACE_HIP = 12.0;
 const BRACE_KNEE = 24.0;
 const BRACE_SINK = 0.011 * H;
 
-/// Sized by ARITHMETIC over the worst frame (the ring law): a KILLING HEAVY BLOW landing on the frame the
-/// DRIVE hits. The drive lays 42 dust; `tryHit` then fires the heavy spray (`hitParts(20)` = 30), the death
-/// spray on top of it (`hitParts(16)` = 24) and `foe.wounded`'s 3. That is 99.
+/// Sized by ARITHMETIC over the worst frame (the ring law): a KILLING HEAVY BLOW landing on the frame the DRIVE hits. The drive lays 42 dust; `tryHit` then fires the heavy spray (30), the death spray (24) and `foe.wounded`'s 3. That is 99.
 const FX_MAX = 100;
 const DUST = foe.DUST;
-/// A BIGGER BODY THROWS FURTHER — the toad's dials over a giant's wound read as a nick. Same shape as
-/// `frog.BLOOD_SPRAY`: the fan is the number that opens it, and drag turns the throw into a burst.
+/// A BIGGER BODY THROWS FURTHER — the toad's dials over a giant's wound read as a nick. Same shape as `frog.BLOOD_SPRAY`: the fan is the number that opens it, and drag turns the throw into a burst.
 const BLOOD_SPRAY = foe.Spray{
     .fanLo = 0.8,  .fanHi = 4.6,
     .upLo = 1.0,   .upHi = 4.2,
@@ -328,17 +317,13 @@ const State = enum { idle, approach, windup, slam, swipewind, swipe, backwind, b
 
 const Choice = enum { slam, swipe, drive, approach, wait, idle };
 const SWIPE_BEARING = 32.0;
-/// UP IN HIS FACE THE QUICK ONE WINS (owner's call). Fraction of the sweep band, out from its inner edge,
-/// inside which the swipe beats the slam even squared up with the slam ready — the 0.52 s cock-back rather
-/// than the 1.35 s rear. Outside it the old rule stands and he closes to crush.
+/// UP IN HIS FACE THE QUICK ONE WINS (owner's call). Fraction of the sweep band, out from its inner edge, inside which the swipe beats the slam even squared up with the slam ready — the 0.52 s cock-back rather than the 1.35 s rear.
 const SWIPE_NEAR_K = 0.5;
 fn classify(dist: f32, bearingDeg: f32, slamReady: bool, swipeReady: bool, driveReady: bool, swipeInner: f32) Choice {
     if (dist > AGGRO_R) return .idle;
     const offFront = @abs(bearingDeg) > SWIPE_BEARING;
-    // AND THE SWIPE HAS TO BE ABLE TO LAND. Its arc passes clean OUTSIDE anything hugging his legs, and
-    // collision holds the hero at 1.68 m where the sweep only starts biting at 2.28 — so toe to toe, choosing
-    // it spent two thirds of a second on a guaranteed miss. The pocket at his feet is EARNED; he looms
-    // instead (`.wait`), the same answer he gives to a slam he cannot afford yet.
+    // AND THE SWIPE HAS TO BE ABLE TO LAND. Its arc passes clean OUTSIDE anything hugging his legs, and collision
+    // holds the hero at 1.68 m where the sweep only starts biting at 2.28 — so toe to toe, choosing it spent two thirds of a second on a guaranteed miss. The pocket at his feet is EARNED; he looms instead (`.wait`).
     const inSweep = dist >= swipeInner and dist <= SWIPE_R;
     const near = swipeInner + (SWIPE_R - swipeInner) * SWIPE_NEAR_K;
     if (inSweep and swipeReady and (offFront or !slamReady or dist <= near)) return .swipe;
@@ -396,8 +381,7 @@ pub const Ogre = struct {
     clubTilt: f32 = CARRY_TILT,
     clubAbd: f32 = CLUB_ABD,
     clubSweep: f32 = 0,
-    // The waist twist alone rotates the arc but cannot carry an arm held out right across his centre line.
-    // Without this shoulder swing the "side swipe" only scythes his right flank (measured: −104..−23).
+    // The waist twist alone rotates the arc but cannot carry an arm held out right across his centre line. Without the shoulder swing the "side swipe" only scythes his right flank (measured: −104..−23).
     jawOpen: f32 = JAW_REST,
     girdle: f32 = 0,
     legBrace: f32 = 0,
@@ -431,10 +415,8 @@ pub const Ogre = struct {
     fxHead: usize = 0,
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
-    /// Carried ONLY so its blood knows whether the ground under it is dry (`foe.onDryGround`).
     wade: foe.Wade = .{},
-    /// The DECISION stream — every hold, chain roll and cooldown jitter comes off this, its own stream so
-    /// a dust budget change cannot re-deal the fight (fxRng's law). Seeded, so --shot stays deterministic.
+    /// The DECISION stream — every hold, chain roll and cooldown jitter comes off this, its own stream so a dust budget change cannot re-deal the fight (fxRng's law). Seeded, so --shot stays deterministic.
     aiRng: mathx.Rng = mathx.Rng.init(2),
 
     xf: [N]rl.Matrix = undefined,
@@ -459,10 +441,7 @@ pub const Ogre = struct {
     pub fn bodyR(self: *const Ogre) f32 {
         return BODY_R * self.scale;
     }
-    /// HIS MARK RIDES THE CHEST, NOT THE SKULL — the one creature where that is the right part. His crown is
-    /// 4.4 m up, and a reticle bolted to it would sit at the top of the frame through every exchange. Seated
-    /// high on the barrel (`LOCK_AT`) it reads as the creature and not as its belt, and it still HINGES: he
-    /// folds at the waist through the slam.
+    /// HIS MARK RIDES THE CHEST, NOT THE SKULL — the one creature where that is the right part. His crown is 4.4 m up, and a reticle bolted to it would sit at the top of the frame through every exchange. It still HINGES: he folds at the waist through the slam.
     pub fn lockPoint(self: *const Ogre) rl.Vector3 {
         return foe.markOn(self.xf[CHEST], LOCK_AT);
     }
@@ -541,9 +520,7 @@ pub const Ogre = struct {
             },
             .approach => {
                 const tgt = if (self.homing) self.home else hero;
-                // …AND HE TURNS ROUND WHAT IS IN THE WAY (`foe.Nav`). It goes through the FACING and not the
-                // step, because he walks where he is looking and HE NEVER STRAFES: bent at the step he would
-                // sidle round a wall still square to the hero, which is a different creature.
+                // …AND HE TURNS ROUND WHAT IS IN THE WAY (`foe.Nav`). It goes through the FACING and not the step, because he walks where he is looking and HE NEVER STRAFES: bent at the step he would sidle round a wall still square to the hero.
                 self.faceToward(self.nav.aim(self.pos, tgt), dt);
                 const f = self.fdir();
                 const moved = WALK_SPEED * dt;
@@ -602,9 +579,7 @@ pub const Ogre = struct {
                     }
                 }
                 if (self.t >= SWIPE_DUR) {
-                    // THE TAIL IS NEVER SAFE, ONLY USUALLY SAFE: still in the band, the club sometimes comes
-                    // straight back (`.backwind`). Rolled HERE, at the overswing, so the choice is made where
-                    // the club is — and only where the return could actually land (the cannot-land law).
+                    // THE TAIL IS NEVER SAFE, ONLY USUALLY SAFE: still in the band, the club sometimes comes straight back (`.backwind`). Rolled HERE, at the overswing, so the choice is made where the club is — and only where the return could actually land.
                     if (d >= self.swipeInner() and d <= self.swipeReach() and self.aiRng.float() < BACK_CHANCE) {
                         self.enter(.backwind);
                     } else {
@@ -685,8 +660,7 @@ pub const Ogre = struct {
             },
             .dead => {
                 self.easeChannelsNeutral(dt);
-                // THE BODY ARRIVING IS AN EVENT (the knight's law) — four metres of flesh used to reach
-                // the ground in silence with nothing moving. Dust the length of the fallen trunk, once.
+                // THE BODY ARRIVING IS AN EVENT (the knight's law) — four metres of flesh used to reach the ground in silence with nothing moving. Dust the length of the fallen trunk, once.
                 const land = DEATH_DUR * DEATH_LAND;
                 if (self.t >= land and self.t - dt < land) {
                     const f = self.fdir();
@@ -757,8 +731,7 @@ pub const Ogre = struct {
         self.homing = false;
     }
 
-    // The hero's bearing off his facing, in degrees (0 = dead ahead, ±180 = behind) — what decides whether
-    // he can drop the club on you or has to SWEEP round to reach you.
+    // The hero's bearing off his facing, in degrees (0 = dead ahead, ±180 = behind) — what decides whether he can drop the club on you or has to SWEEP round to reach you.
     fn bearingTo(self: *const Ogre, hero: rl.Vector3) f32 {
         const d = mathx.dirXZ(self.pos, hero);
         if (mathx.lenXZ(d) < 1e-3) return 0;
@@ -777,9 +750,7 @@ pub const Ogre = struct {
             },
             .wait => self.enterIdle(),
             .idle => {
-                // ONE RADIUS DECIDES "AM I AT MY POST", and it is the LEASH's own (`foe.LEASH_HOME_R`),
-                // because that is where the tether stops caring. Setting off at 3 m and arriving at 2 m —
-                // which is how this read — leaves him trudging a metre past the boundary that sent him.
+                // ONE RADIUS DECIDES "AM I AT MY POST", and it is the LEASH's own (`foe.LEASH_HOME_R`), because that is where the tether stops caring. Setting off at 3 m and arriving at 2 m leaves him trudging a metre past the boundary that sent him.
                 if (mathx.distXZ(self.pos, self.home) > foe.LEASH_HOME_R) {
                     self.homing = true;
                     self.enter(.approach);
@@ -979,9 +950,7 @@ pub const Ogre = struct {
         self.jawOpen = mathx.approach(self.jawOpen, JAW_REST + JAW_BREATHE * breathe + 6.0 * sigh + JAW_STALK * stalk, e * 0.8);
         self.girdle = mathx.approach(self.girdle, GIRDLE_HEAVE * mathx.sinf(self.elapsed * BREATHE_RATE + self.seed * 6.28 - 0.7) - 2.0 * sigh, e);
     }
-    /// `mathx.approach` steps in the units of what it moves, so ONE rate cannot serve both an angle and a
-    /// fraction: at the 4 the leg brace wants, the club arm crawled home from OVER_SH at four degrees a
-    /// second — forty seconds for 163. At `STUN_EASE_DEG` it is home in ~0.6 s, inside even the LIGHT stun.
+    /// `mathx.approach` steps in the units of what it moves, so ONE rate cannot serve both an angle and a fraction: at the 4 the leg brace wants, the club arm crawled home from OVER_SH at four degrees a second — forty seconds for 163. At `STUN_EASE_DEG` it is home in ~0.6 s.
     fn easeChannelsNeutral(self: *Ogre, dt: f32) void {
         const d = dt * STUN_EASE_DEG;
         self.clubShoulder = mathx.approach(self.clubShoulder, CARRY_SH, d);
@@ -1022,8 +991,7 @@ pub const Ogre = struct {
         self.clubElbow = lerpF(WIND_EL, SLAM_EL, kArm);
         self.offShoulder = lerpF(-74.0, 8.0, kArm);
         self.offElbow = lerpF(-44.0, -22.0, kArm);
-        // …and the trunk drives DEEP: with the legs planted and the club shortened, the waist fold is the
-        // only thing that can carry the head to the earth (a straight arm leaves it 0.46 short, measured).
+        // …and the trunk drives DEEP: with the legs planted and the club shortened, the waist fold is the only thing that can carry the head to the earth (a straight arm leaves it 0.46 short, measured).
         self.bodyLean = lerpF(-24.0, 62.0, k);
         self.headPitch = lerpF(-20.0, 24.0, kArm);
         self.twist = lerpF(-26.0, 12.0, kArm);
@@ -1066,9 +1034,7 @@ pub const Ogre = struct {
         self.jawOpen = lerpF(JAW_ROAR * 0.55, JAW_GRIT, mathx.smoothstep(0.1, 0.7, k));
         self.girdle = lerpF(9.0, -2.0, kW);
     }
-    // FROM THE OVERSWING, NOT THE CARRY: the swipe ends slung across him (twist 52, sweep 52, kW = 1), so
-    // these lerps start there and the chain is continuous. The re-cock is a DRAG, not a lift — re-shouldered,
-    // the whole return passed over the hero's head and the sector could not bill it.
+    // FROM THE OVERSWING, NOT THE CARRY: the swipe ends slung across him (twist 52, sweep 52, kW = 1), so these lerps start there and the chain is continuous. The re-cock is a DRAG, not a lift — re-shouldered, the whole return passed over the hero's head and the sector could not bill it.
     fn setBackwind(self: *Ogre, k: f32) void {
         self.twist = lerpF(52.0, 52.0, k);
         self.clubShoulder = lerpF(-6.0, -6.0, k);
@@ -1210,8 +1176,7 @@ pub const Ogre = struct {
         const dead = self.state == .dead;
         const du = if (dead) mathx.clampF(self.t / DEATH_DUR, 0, 1) else 0;
         const dk1 = mathx.smoothstep(0, 0.32, du);
-        // HE FALLS, HE IS NOT LOWERED: a mass on a hinge ACCELERATES the whole way down, so the topple is
-        // quadratic to `DEATH_LAND` — a smoothstep is slowest at both ends, which is a body on a wire.
+        // HE FALLS, HE IS NOT LOWERED: a mass on a hinge ACCELERATES the whole way down, so the topple is quadratic to `DEATH_LAND` — a smoothstep is slowest at both ends, which is a body on a wire.
         const fall = mathx.clampF((du - 0.22) / (DEATH_LAND - 0.22), 0, 1);
         const dk2 = fall * fall;
         const settle = mathx.pulse(du, DEATH_LAND, 0.72, 0.72, 0.88);

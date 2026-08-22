@@ -22,8 +22,7 @@ const mul3 = mathx.mul3;
 const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 
-// THE DISGUISE IS THE SNAG'S OWN PALETTE AND THE SNAG'S OWN LIMB BUILDER (`wood.deadLimbInto`). Not a
-// lookalike — the same code, so a `snag` standing beside one of these cannot be told from it.
+// THE DISGUISE IS THE SNAG'S OWN PALETTE AND THE SNAG'S OWN LIMB BUILDER (`wood.deadLimbInto`). Not a lookalike — the same code, so a `snag` standing beside one of these cannot be told from it.
 const BARK_OLD = art.BARK_OLD;
 const BARK_DK = art.BARK_DK;
 const TIMBER = art.TIMBER;
@@ -32,14 +31,11 @@ const MOSS_DK = art.MOSS_DK;
 const EYE_DIM = rgba(120, 42, 14, 255);
 const EYE_LIT = rgba(255, 132, 42, 255);
 const SPLINTER = rgba(84, 66, 44, 235);
-/// A LIMB IS A BIG SMOOTH SUNWARD FACE — 0.28 of a metre thick and near three long — so it needs a
-/// near-black albedo where the snag`s thin 0.13 stubs get away with `BARK_DK` (AGENTS.md). At the stub`s own
-/// tone these came back pale tan beside the real trees they are pretending to be.
+/// A LIMB IS A BIG SMOOTH SUNWARD FACE — 0.28 of a metre thick and near three long — so it needs a near-black albedo where the snag's thin 0.13 stubs get away with `BARK_DK` (AGENTS.md). At the stub's own tone these came back pale tan beside the real trees they are pretending to be.
 const LIMB_BARK = rgba(13, 10, 8, 255);
 const LIMB_LT = rgba(24, 19, 15, 255);
 
-/// Its own stature, in metres — sized against `propwood.snagMesh`'s own 6.0..7.6 so it stands in a line of
-/// them without being the tall one.
+/// Its own stature, in metres — sized against `propwood.snagMesh`'s own 6.0..7.6 so it stands in a line of them without being the tall one.
 pub const H: f32 = 6.9;
 
 pub const AGGRO_R: f32 = 6.8;
@@ -48,16 +44,13 @@ const EYES_R: f32 = 6.5;
 const SLEEP_R: f32 = 8.2;
 
 const BODY_R: f32 = 0.62; // a trunk: you cannot walk through it and it cannot be shouldered off its spot
-/// THE HURT SPHERE IS LOW ON THE BOLE, and it has to be: the hero swings a capsule off his own shoulder, so
-/// a sphere at the middle of a seven-metre tree is one a sword cannot reach. This spans his knees to his
-/// reach, which is the band every other creature is hit in.
+/// THE HURT SPHERE IS LOW ON THE BOLE, and it has to be: the hero swings a capsule off his own shoulder, so a sphere at the middle of a seven-metre tree is one a sword cannot reach. This spans his knees to his reach.
 const HURT_R: f32 = 1.25;
 const CENTER_F: f32 = 0.17;
 const TOP_F: f32 = 0.96;
 const LOCK_AT = v3(0, 0.30 * H, 0.34);
 
-/// TOUGH, AND DELIBERATELY EXPENSIVE TO SHOOT. It cannot chase, so a bow at range is free damage and the only
-/// thing between that and a trivial kill is the size of the bill: at 130 it costs nine of ten plain shafts.
+/// TOUGH, AND DELIBERATELY EXPENSIVE TO SHOOT. It cannot chase, so a bow at range is free damage and the only thing between that and a trivial kill is the size of the bill: at 130 it costs nine of ten plain shafts.
 const HP_MAX: f32 = 130.0;
 const POISE_MAX: f32 = 28.0;
 const STANCE_MAX: f32 = 40.0;
@@ -73,8 +66,7 @@ pub const SLAM_HIT = combat.Hit{ .dmg = 34, .poise = 26, .stance = 10, .launch =
 pub const SWEEP_HIT = combat.Hit{ .dmg = 26, .poise = 20 };
 pub const HOOK_HIT = combat.Hit{ .dmg = 14, .poise = 14 };
 pub const DRAG_PULL: f32 = 3.4;
-/// Where in a stroke the limb arrives, as a share of it — the SAME fraction every one of the three lands on,
-/// read from one constant so the boards and the blow cannot disagree about when it happened.
+/// Where in a stroke the limb arrives, as a share of it — the SAME fraction all three land on, read from one constant so the boards and the blow cannot disagree about when it happened.
 const IMPACT_K: f32 = 0.40;
 
 const Attack = struct {
@@ -92,9 +84,7 @@ const Attack = struct {
 pub const SLAM: usize = 0;
 pub const SWEEP: usize = 1;
 pub const HOOK: usize = 2;
-/// Wind-ups are LONG — it is a tree, and its reach is what makes it dangerous. Every one clears
-/// `foe.TELL_MIN`; the test at the foot of this file pins that. The bands are MEASURED off the posed tip:
-/// the old 7.4 m hook billed a blow off a limb that passed three metres over his head.
+/// Wind-ups are LONG — it is a tree, and its reach is what makes it dangerous. Every one clears `foe.TELL_MIN`. The bands are MEASURED off the posed tip: the old 7.4 m hook billed a blow off a limb that passed three metres over his head.
 const MOVES = [_]Attack{
     .{ .windDur = 0.86, .strikeDur = 0.26, .recoverDur = 0.95, .cd = 3.4, .minR = 0, .maxR = 2.4, .arc = 46.0, .hit = SLAM_HIT, .limb = LIMB_H },
     .{ .windDur = 0.70, .strikeDur = 0.32, .recoverDur = 0.80, .cd = 2.8, .minR = 1.2, .maxR = 3.8, .arc = 82.0, .hit = SWEEP_HIT, .limb = LIMB_L },
@@ -119,8 +109,7 @@ const SLEEP_DUR: f32 = 1.30;
 
 const SWAY_HZ: f32 = 0.21;
 const SWAY_DEG: f32 = 3.2;
-/// …and it is heard on this cadence while it is awake. THINNED from 2.6: the creak is what says the thing is
-/// alive, and once it has said so a second time you know. Its own `wood_creak` is under the floor besides.
+/// …and it is heard on this cadence while it is awake. THINNED from 2.6: the creak is what says the thing is alive, and once it has said so a second time you know.
 const CREAK_EVERY: f32 = 4.4;
 const EYES_RATE: f32 = 0.7;
 const LID_SWING: f32 = 96.0;
@@ -142,9 +131,7 @@ const SEGS = 3;
 /// The three limb ROOTS, and the one list of them — three loops each wrote it out.
 const LIMBS = [_]usize{ LIMB_L, LIMB_R, LIMB_H };
 comptime {
-    // **THE JOINT LAYOUT IS ONE SEGS-LONG RUN PER LIMB, AND THE SPACING IS THE ONLY THING SAYING SO.** Six
-    // tables are indexed by segment and two by limb; both counts are three, so a limb index used on a
-    // segment table reads a real number and nothing catches it.
+    // **THE JOINT LAYOUT IS ONE SEGS-LONG RUN PER LIMB, AND THE SPACING IS THE ONLY THING SAYING SO.** Six tables are indexed by segment and two by limb; both counts are three, so a limb index used on a segment table reads a real number and nothing catches it.
     std.debug.assert(LIMB_R == LIMB_L + SEGS and LIMB_H == LIMB_R + SEGS and CLAW_L == LIMB_H + SEGS);
     std.debug.assert(SEG_LEN.len == SEGS and LIMB_SHUT.len == SEGS and LIMB_OPEN.len == SEGS);
     std.debug.assert(LIMB_ARC.len == SEGS and DIP.len == SEGS and EXT.len == SEGS);
@@ -159,9 +146,7 @@ const BOLE_Y: f32 = 0.42 * H;
 const BOLE2_Y: f32 = 0.34 * H;
 const LIMB_Y = [_]f32{ 0.46 * H, 0.42 * H, 0.60 * H };
 const LIMB_A = [_]f32{ 52.0, -58.0, 6.0 };
-/// THE LIMB IS AS LONG AS ITS REACH SAYS — and no longer. At 0.40/0.36/0.30 the three spanned 7.3 m: poles
-/// crossing the whole clearing, hovering three metres over the hero's head while the hurt test billed him
-/// anyway. 4.1 m of limb plus the bole's own LUNGE covers the hook's 5.0, and the tip test measures it.
+/// THE LIMB IS AS LONG AS ITS REACH SAYS — and no longer. At 0.40/0.36/0.30 the three spanned 7.3 m: poles crossing the whole clearing, hovering three metres over the hero's head while the hurt test billed him anyway. 4.1 m of limb plus the bole's own LUNGE covers the hook's 5.0.
 const SEG_LEN = [_]f32{ 0.24 * H, 0.20 * H, 0.15 * H };
 
 const REST = blk: {
@@ -217,8 +202,7 @@ pub const Rooted = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// Stamped from outside like every creature's. Its FEET are the half that cannot matter here — the thing
-    /// never travels — but the BITE is billed through the same `foe.grip`, so it is taken like everyone else's.
+    /// Stamped from outside like every creature's. Its FEET are the half that cannot matter here — the thing never travels — but the BITE is billed through the same `foe.grip`.
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     facing: f32 = 0,
@@ -230,15 +214,13 @@ pub const Rooted = struct {
     elapsed: f32 = 0,
     atk: usize = SLAM,
     dealt: bool = false,
-    /// THE HERO'S SHIELD, stamped from outside (`game.markParry`), and the one-frame answer to it.
     parry: foe.Parry = .{},
     parried: bool = false,
     cds: [MOVES.len]f32 = [_]f32{0} ** MOVES.len,
     creakT: f32 = 0,
 
     open: f32 = 0,
-    /// …and the LIDS, which are their own channel and open FIRST: the eyes are the warning and the unfold is
-    /// the fight, so one cannot be the other's fraction.
+    /// …and the LIDS, which are their own channel and open FIRST: the eyes are the warning and the unfold is the fight, so one cannot be the other's fraction.
     eyes: f32 = 0,
     swing: f32 = 0,
     swingL1: f32 = 0,
@@ -322,9 +304,7 @@ pub const Rooted = struct {
         }
         self.justDied = false;
         self.parried = false;
-        // THE ROOTS' OWN BITE (foe.grip). The FEET half is a no-op on a thing that never travels, but the
-        // grip is also what BILLS the hold's chaos every frame — left out, a cast on this creature was
-        // eighteen focus for no damage and a `combat.Root` clock that never ran down.
+        // THE ROOTS' OWN BITE (foe.grip). The FEET half is a no-op on a thing that never travels, but the grip is also what BILLS the hold's chaos every frame — left out, a cast on this creature was eighteen focus for no damage.
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
@@ -346,8 +326,7 @@ pub const Rooted = struct {
                 if (d <= WAKE_R) self.beginWake(hero);
             },
             .wake => {
-                // `max`, never a bare assign: woken mid-FOLD (a blade in a sleeping one) the unfold picks
-                // up from wherever the fold had got to — assigned, the limbs snapped shut for a frame first.
+                // `max`, never a bare assign: woken mid-FOLD the unfold picks up from wherever the fold had got to — assigned, the limbs snapped shut for a frame first.
                 self.open = mathx.maxF(self.open, mathx.smoothstep(0, WAKE_DUR, self.t));
                 self.faceToward(hero, dt);
                 if (self.t >= WAKE_DUR) self.enter(.idle);
@@ -420,10 +399,7 @@ pub const Rooted = struct {
         return act;
     }
 
-    /// SECONDS BACK FROM THE LIMB ARRIVING, or null. **THE SWEEP AND THE HOOK, NEVER THE SLAM** — a large slam
-    /// is the one blow a shield is not the answer to (it is what THROWS him, `combat.Hit.launch`), and the
-    /// bone knight's own window test says the same of his. Footwork answers the slam; the boards answer the
-    /// two that come in low and sideways.
+    /// SECONDS BACK FROM THE LIMB ARRIVING, or null. **THE SWEEP AND THE HOOK, NEVER THE SLAM** — a large slam is the one blow a shield is not the answer to (it is what THROWS him, `combat.Hit.launch`). Footwork answers the slam; the boards answer the two that come in low and sideways.
     fn toImpact(self: *const Rooted) ?f32 {
         if (self.atk == SLAM) return null;
         const a = self.move();
@@ -435,16 +411,14 @@ pub const Rooted = struct {
         };
     }
 
-    /// THE INSTANT THE LIMB CAN BE CAUGHT IN, and how far out it reaches then — the MOVE's own extent through
-    /// the same `reaches` bound, since the three limbs answer three different rings.
+    /// THE INSTANT THE LIMB CAN BE CAUGHT IN, and how far out it reaches then — the MOVE's own extent through the same `reaches` bound, since the three limbs answer three different rings.
     fn parryable(self: *const Rooted) ?f32 {
         const left = self.toImpact() orelse return null;
         if (!foe.inParryWindow(left)) return null;
         return foe.hurtReach(self.move().maxR, self.scale);
     }
 
-    /// **THE BOARDS TAKE THE LIMB.** Returns true so the caller drops the `Act` — a caught hook may not still
-    /// drag him in (`DRAG_PULL`), which is the one thing about this creature that moves the player's body.
+    /// **THE BOARDS TAKE THE LIMB.** Returns true so the caller drops the `Act` — a caught hook may not still drag him in (`DRAG_PULL`), which is the one thing about this creature that moves the player's body.
     fn takeParry(self: *Rooted) bool {
         const reach = self.parryable() orelse return false;
         if (!foe.caught(self, reach)) return false;
@@ -544,8 +518,7 @@ pub const Rooted = struct {
         if (self.state == .dead) return;
         const s = foe.reached(self, blade) orelse return;
         if (self.state == .dormant or self.state == .sleep) self.beginWake(mathx.addV(self.pos, mathx.scaleV(s.dir, -1)));
-        // NOTHING SHOVES IT. `foe.wounded` writes the field either way; handed a real number it would slide
-        // a thing whose whole design is that it cannot move.
+        // NOTHING SHOVES IT. `foe.wounded` writes the field either way; handed a real number it would slide a thing whose whole design is that it cannot move.
         const heavy = foe.wounded(self, s, blade, .{ .light = 0, .heavy = 0 });
         self.splinters(s.contact, foe.hitParts(if (heavy) 16 else 9));
         sfx.world(.wood_hurt, s.contact);
@@ -561,7 +534,6 @@ pub const Rooted = struct {
     }
 
 
-    /// MOTES, not a wound's worth of them — the swing sheds these too, and it is not a landed blow.
     fn splinters(self: *Rooted, at: rl.Vector3, motes: i32) void {
         var i: i32 = 0;
         while (i < motes) : (i += 1) {
@@ -581,8 +553,7 @@ pub const Rooted = struct {
         }
     }
 
-    /// THE EMBER, and it is the whole tell. Faint asleep, bright awake, brightest through a wind-up — drawn
-    /// unlit over the opaque pass because the mesh's emissive is a fixed vertex channel and cannot brighten.
+    /// THE EMBER, and it is the whole tell. Faint asleep, bright awake, brightest through a wind-up — drawn unlit over the opaque pass because the mesh's emissive is a fixed vertex channel and cannot brighten.
     pub fn drawFx(self: *const Rooted) void {
         foe.drawParticles(&self.parts);
         if (self.gone or self.eyes <= 0.02) return;
@@ -610,9 +581,7 @@ pub const Rooted = struct {
         );
         self.xf[ROOT] = root;
 
-        // THE BODY ANSWERS PER MOVE, and it is most of the tell: the old wind drifted one limb a few degrees
-        // and left seven metres of tree stone still. The slam REARS the whole bole back and drives it through;
-        // the sweep COILS it on its roots; the hook leans out and hauls back in. The bole's throw is real REACH.
+        // THE BODY ANSWERS PER MOVE, and it is most of the tell: the old wind drifted one limb a few degrees and left seven metres of tree stone still. The slam REARS the whole bole back and drives it through; the sweep COILS it on its roots; the hook leans out and hauls back in.
         const swinging = self.state == .wind or self.state == .strike or self.state == .recover;
         const cock = if (swinging) mathx.clampF(-self.swingL1, 0, 1) else 0;
         const thru = if (swinging) mathx.clampF(self.swingL1, 0, 1) else 0;
@@ -747,8 +716,7 @@ fn boleMesh(seg: usize) rl.Mesh {
             if (rng.float() < 0.7) BARK_DK else TIMBER,
         );
     }
-    // …and the dead limbs, through the ONE builder both leafless trees call, so a snag beside this cannot be
-    // told from it. Short and drooping — they are dressing, not the limbs that reach.
+    // …and the dead limbs, through the ONE builder both leafless trees call, so a snag beside this cannot be told from it. Short and drooping — they are dressing, not the limbs that reach.
     var l: i32 = 0;
     while (l < 3) : (l += 1) {
         const y = rng.range(len * 0.3, len * 0.9);
@@ -1007,9 +975,7 @@ test "every band is answered, so it cannot be kited" {
 }
 
 test "A LIMB GOES WHERE ITS BILL SAYS: the tip crosses the hero column, out near the band's edge" {
-    // The old tree's whole dishonesty in one number: a hook billed at 7.4 m off a limb whose tip hung
-    // 2.8 m over the hero's head. Walk each move's strike and measure the POSED tip — it must come down
-    // into the column a sword-carrier occupies, and it must get near the range it charges for.
+    // The old tree's whole dishonesty in one number: a hook billed at 7.4 m off a limb whose tip hung 2.8 m over the hero's head. Walk each move's strike and measure the POSED tip.
     for (0..MOVES.len) |which| {
         const a = MOVES[which];
         var t = Rooted.spawn(mathx.zero3, 0, 1.0, 0.3);
@@ -1068,8 +1034,7 @@ test "THE SWEEP AND THE HOOK CAN BE CAUGHT, AND THE SLAM CANNOT — the launcher
         try std.testing.expect(r.state == .stunlight or r.state == .stunheavy);
         try std.testing.expect(r.parryable() == null);
     }
-    // …AND THE SLAM HAS NO WINDOW AT ANY POINT IN IT: it is the blow that THROWS him (`combat.Hit.launch`),
-    // and a shield is not its answer. `game.NO_PARRY` carries the same rule for whole creatures.
+    // …AND THE SLAM HAS NO WINDOW AT ANY POINT IN IT: it is the blow that THROWS him (`combat.Hit.launch`). `game.NO_PARRY` carries the same rule for whole creatures.
     var big = Rooted.spawn(mathx.zero3, 0, 1.0, 0.3);
     big.atk = SLAM;
     try std.testing.expect(SLAM_HIT.launch > 0);
@@ -1084,8 +1049,7 @@ test "THE SWEEP AND THE HOOK CAN BE CAUGHT, AND THE SLAM CANNOT — the launcher
 }
 
 test "shooting it dead costs the whole quiver, which is what stands in for a ranged answer" {
-    // It cannot chase, so a bow past its reach is free damage — the only thing between that and a trivial
-    // kill is the bill. Plain shafts: most of a full quiver. Fire: about exactly the five you carry.
+    // It cannot chase, so a bow past its reach is free damage — the only thing between that and a trivial kill is the bill. Plain shafts: most of a full quiver. Fire: about exactly the five you carry.
     const plain = HP_MAX / 16.0;
     try std.testing.expect(plain > 7.0 and plain <= combat.ARROWS_MAX);
     var v = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS);

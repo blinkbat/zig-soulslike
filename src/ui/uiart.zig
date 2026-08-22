@@ -215,10 +215,7 @@ pub fn slotCursor(x: i32, y: i32, w: i32, h: i32, press: f32, travel: f32) void 
     }
 }
 
-/// **THE CURSOR IS A LEADING BAR, AND IT IS THE ONLY THING THAT MARKS A ROW** (owner's call). Every list in
-/// the game used to set a `>` glyph in the row's left margin on TOP of the bar this same wash was already
-/// drawing — one cursor said twice, in two places that had to be kept in step, and a column of arrows down a
-/// menu besides. The bar is drawn HERE and nowhere else, so a list cannot grow a second kind of cursor.
+/// **THE CURSOR IS A LEADING BAR, AND IT IS THE ONLY THING THAT MARKS A ROW** (owner's call). Every list in the game used to set a `>` glyph in the row's left margin on TOP of the bar this same wash was already drawing — one cursor said twice, in two places that had to be kept in step. The bar is drawn HERE and nowhere else.
 pub const CARET_W: i32 = 3;
 
 pub fn caret(x: i32, y: i32, h: i32, a: u8) void {

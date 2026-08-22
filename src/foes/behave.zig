@@ -11,8 +11,7 @@ pub const Ctx = struct {
     at: rl.Vector3,
     facing: f32,
     quarry: rl.Vector3,
-    /// How wide that thing is. EVERY radius in a `Step` is measured to its SKIN, so one script reads the
-    /// same on a toad and on the knight instead of being re-tuned per quarry.
+    /// How wide that thing is. EVERY radius in a `Step` is measured to its SKIN, so one script reads the same on a toad and on the knight instead of being re-tuned per quarry.
     quarryR: f32 = 0,
     nav: foe.Nav = .{},
 };
@@ -32,14 +31,9 @@ pub const Step = union(enum) {
     open: struct { to: f32 },
     orbit: struct { r: f32, secs: f32 },
     dwell: struct { secs: f32 },
-    /// **LEAVE THIS SPOT.** Walk to a place `d` away on a bearing `turn` radians off the line back to the
-    /// quarry, eyes on it the whole way. THE DESTINATION IS COMMITTED AT THE FIRST FRAME (`mark`) — a
-    /// reposition that re-derived its target every frame as the quarry moved would be a chase, and what
-    /// makes this legible is that you can watch where it has decided to go.
+    /// **LEAVE THIS SPOT.** Walk to a place `d` away on a bearing `turn` radians off the line back to the quarry, eyes on it the whole way. THE DESTINATION IS COMMITTED AT THE FIRST FRAME (`mark`) — one that re-derived its target every frame as the quarry moved would be a chase.
     shift: struct { d: f32, turn: f32 },
-    /// **HOLD THE RANGE YOU ARE ON AND CIRCLE.** An orbit whose radius is taken from where the creature
-    /// ALREADY stands, committed at the first frame (the shift's rule) — so one script serves a skirmisher
-    /// at 9 m and at 19 without walking either of them to an authored ring.
+    /// **HOLD THE RANGE YOU ARE ON AND CIRCLE.** An orbit whose radius is taken from where the creature ALREADY stands, committed at the first frame — so one script serves a skirmisher at 9 m and at 19 without walking either of them to an authored ring.
     strafe: struct { secs: f32 },
 };
 
@@ -54,8 +48,7 @@ pub const Routine = struct {
     marked: bool = false,
     running: bool = false,
 
-    /// ARM IT. `side` is +1 or -1 and is what makes two creatures running the same script orbit opposite
-    /// ways — a seeded roll at the call site, never inside here, so a routine stays pure of dice.
+    /// ARM IT. `side` is +1 or -1 and is what makes two creatures running the same script orbit opposite ways — a seeded roll at the call site, never inside here, so a routine stays pure of dice.
     pub fn start(self: *Routine, script: []const Step, side: f32) void {
         self.* = .{
             .script = script,
@@ -244,8 +237,7 @@ test "the bands are measured to the quarry's SKIN, so one script reads the same 
     const thin = Ctx{ .at = mathx.ground(0, 0), .facing = 0, .quarry = mathx.ground(0, 2.0), .quarryR = 0 };
     _ = r.step(1.0 / 60.0, thin);
     try std.testing.expect(r.running);
-    // …and against a body 1.4 m through, the same 2 m is already inside reach of its SKIN and the step is
-    // over. Written as a world distance instead, one script would walk a toad's range into a boss's chest.
+    // …and against a body 1.4 m through, the same 2 m is already inside reach of its SKIN and the step is over. Written as a world distance instead, one script would walk a toad's range into a boss's chest.
     r.start(&script, 1);
     const wide = Ctx{ .at = mathx.ground(0, 0), .facing = 0, .quarry = mathx.ground(0, 2.0), .quarryR = 1.4 };
     _ = r.step(1.0 / 60.0, wide);

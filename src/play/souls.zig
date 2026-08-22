@@ -42,18 +42,14 @@ const TAKE_MOTES: f32 = 34.0;
 const TAKE_PULL: f32 = 0.34;
 const TAKE_INTO: f32 = 1.05;
 
-/// THE HUM IS A RETRIGGER, NOT A LOOP (`leechfly.WHINE_EVERY`'s rule — raylib cannot loop a synthesized
-/// take). Cut a hair SHORTER than the voice itself so consecutive takes overlap: gapped, a standing hum
-/// pulses, and a pulse reads as something arming rather than something waiting.
+/// THE HUM IS A RETRIGGER, NOT A LOOP (`leechfly.WHINE_EVERY`'s rule — raylib cannot loop a synthesized take). Cut a hair SHORTER than the voice itself so consecutive takes overlap: gapped, a standing hum pulses, and a pulse reads as something arming rather than something waiting.
 const HUM_EVERY: f32 = 1.15;
 
 /// It must read as GOLD and not as BONE. Vertex alpha is the emissive channel (255 = lit by the sun, lower =
 /// self-lit), so ONE alpha across all three tones or the shaft bands where the level changes.
 ///
-/// MEASURED, NOT GUESSED. At alpha 58 the chain is screen = 255·(albedo/255 · 1.236)^(1/2.2), so anything
-/// over albedo ~205 clips to 255 — tips authored at 246,220,150 came back a white knuckle and read as bone.
-/// FOUR TONES: the reds step 150 → 214 → 246 → 254 and the blues 24 → 60 → 100 → 170, so it DESATURATES as it
-/// brightens, which is what hot metal does.
+/// MEASURED: at alpha 58 screen = 255·(albedo/255 · 1.236)^(1/2.2), so anything over albedo ~205 clips — tips
+/// authored at 246,220,150 came back a white knuckle and read as bone. FOUR TONES: the reds step 150 → 214 → 246 → 254 and the blues 24 → 60 → 100 → 170, so it DESATURATES as it brightens, which is what hot metal does.
 const EMISSIVE: u8 = 58;
 const GOLD_DEEP = rgba(64, 20, 1, EMISSIVE);
 const GOLD = rgba(141, 73, 8, EMISSIVE);
@@ -62,8 +58,7 @@ const GOLD_HOT = rgba(204, 174, 85, EMISSIVE);
 
 const MOTE = rgba(250, 200, 96, 190);
 
-/// The trunk's own dimensions, in metres. The taper is GENTLE: run 0.085 → 0.045 over half a metre and it is
-/// a carrot, and a cone that steep on a short shaft is most of why the first pass read as one moulded piece.
+/// The trunk's own dimensions, in metres. The taper is GENTLE: run 0.085 → 0.045 over half a metre and it is a carrot, and a cone that steep on a short shaft is most of why the first pass read as one moulded piece.
 const BOLE_R0: f32 = 0.082;
 const BOLE_R1: f32 = 0.038;
 const BOLE_TOP: f32 = 0.68;
@@ -99,9 +94,7 @@ pub const Souls = struct {
     fxAccum: f32 = 0,
     humLeft: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(0x50015),
-    /// THE GROUND THE MOTES CAME OFF, kept apart from the drop: `take` clears the drop on the frame it fires
-    /// the retrieval burst, so reading the floor off `drop.at.y` afterwards floors that whole shower at the
-    /// DATUM instead of at the earth it left — which on ground dug below it snaps the lot up mid-flight.
+    /// THE GROUND THE MOTES CAME OFF, kept apart from the drop: `take` clears the drop on the frame it fires the retrieval burst, so reading the floor off `drop.at.y` afterwards floors that whole shower at the DATUM instead of at the earth it left.
     fxFloor: f32 = 0,
 
     pub fn init(shader: rl.Shader) Souls {

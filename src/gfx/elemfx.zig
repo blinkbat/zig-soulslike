@@ -20,8 +20,7 @@ pub const Sig = struct {
     r1: f32,
     inward: bool = false,
     ash: ?rl.Color = null,
-    /// What the mote COOLS TO across its life — fire dies to ember red, cold whitens to frost, chaos sinks
-    /// to a deeper violet. Null (lightning) is a spark that vanishes at full heat: white has nothing to cool to.
+    /// What the mote COOLS TO across its life — fire dies to ember red, cold whitens to frost, chaos sinks to a deeper violet. Null (lightning) is a spark that vanishes at full heat: white has nothing to cool to.
     cool: ?rl.Color = null,
     /// Air resistance — only fire has any: a flame leaps and then HANGS, which is most of what says "flame".
     drag: f32 = 0,
@@ -29,8 +28,7 @@ pub const Sig = struct {
     stretch: f32 = 0,
 };
 
-// Fire's speeds are SOLVED WITH ITS DRAG, not raised: v0/k·(1−e^(−k·life)) at 5.5 and 2.6 is 1.57 m,
-// the 1.56 m the old 3.0 covered in a straight line — the blast front-loads and then hangs, same reach.
+// Fire's speeds are SOLVED WITH ITS DRAG, not raised: v0/k·(1−e^(−k·life)) at 5.5 and 2.6 is 1.57 m, the 1.56 m the old 3.0 covered in a straight line — the blast front-loads and then hangs, same reach.
 const FIRE = Sig{
     .core = rgba(255, 198, 104, 228),
     .edge = rgba(228, 116, 28, 200),
@@ -60,10 +58,7 @@ const COLD = Sig{
     .stretch = 0.020,
 };
 
-/// LIGHTNING — **THE ONLY COLOURLESS ONE IN THE TABLE.** As the thundercrock's pale blue the hue test refused
-/// it: against COLD, which owns the blues, the two were one substance at two brightnesses. A spark is
-/// white-hot, so it is the achromatic one and separates by having no hue to compare. (The crock's STREAK
-/// stays as it is — a thing in the SKY at range, with no cold up there to confuse it with.)
+/// LIGHTNING — **THE ONLY COLOURLESS ONE IN THE TABLE.** As the thundercrock's pale blue the hue test refused it: against COLD, which owns the blues, the two were one substance at two brightnesses. A spark is white-hot, so it is the achromatic one. (The crock's STREAK stays as it is — a thing in the SKY at range.)
 const LIGHTNING = Sig{
     .core = rgba(255, 255, 224, 255),
     .edge = rgba(226, 230, 232, 245),
@@ -102,8 +97,7 @@ pub fn sig(e: combat.Elem) Sig {
 }
 
 
-/// A gather is an INHALE, not a blast — it converges at the old pace (this factor un-does fire's drag-solved
-/// speed raise) and carries no drag, which would stall the convergence it exists to show.
+/// A gather is an INHALE, not a blast — it converges at the old pace (this factor un-does fire's drag-solved speed raise) and carries no drag, which would stall the convergence it exists to show.
 const GATHER_PACE: f32 = 0.55;
 
 pub fn gather(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3, e: combat.Elem, n: usize, r: f32, scale: f32) void {
@@ -129,13 +123,11 @@ pub fn gather(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector
     }
 }
 
-/// One in this many of a burst's motes is a CORE rather than an edge, and — for the one element that leaves a
-/// residue — the mote at this offset in that cadence is followed by an ash mote.
+/// One in this many of a burst's motes is a CORE rather than an edge, and — for the one element that leaves a residue — the mote at this offset in that cadence is followed by an ash mote.
 const BURST_EVERY: usize = 3;
 const BURST_ASH_AT: usize = 1;
 
-/// How many motes ONE `burst` of `n` actually emits — `pourCount`'s counterpart, and it is not `n`: fire lays
-/// an ASH mote beside every third, so a caller sizing its ring off `n` alone is a third short of the frame.
+/// How many motes ONE `burst` of `n` actually emits — `pourCount`'s counterpart, and it is not `n`: fire lays an ASH mote beside every third, so a caller sizing its ring off `n` alone is a third short of the frame.
 pub fn burstCount(e: combat.Elem, n: usize) usize {
     if (sig(e).ash == null) return n;
     return n + (n + BURST_EVERY - 1 - BURST_ASH_AT) / BURST_EVERY;
@@ -201,9 +193,7 @@ pub fn burst(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3
     }
 }
 
-/// MOTES A SECOND. Part of the LANGUAGE, not of whoever is pouring, so the bench and the fight run the same
-/// rate. MEASURED OFF A RENDER: at 70 the breath came back as eight dots over six metres. What has to be
-/// continuous is the FAR end, where the motes are spread over the widest part of the cone.
+/// MOTES A SECOND. Part of the LANGUAGE, not of whoever is pouring, so the bench and the fight run the same rate. MEASURED OFF A RENDER: at 70 the breath came back as eight dots over six metres. What has to be continuous is the FAR end, where the motes are spread over the widest part of the cone.
 pub const POUR_RATE: f32 = 560.0;
 
 pub const POUR_CAP: usize = foe.emitCap(POUR_RATE);
@@ -213,18 +203,14 @@ const POUR_GRAIN: f32 = 0.62;
 const POUR_SIZE_LO: f32 = 0.45;
 const POUR_SIZE_HI: f32 = 1.55;
 
-/// **EVERY POUR HAS A KNOT AT ITS NOZZLE** — one root mote per this many stream motes, inside this much of
-/// `r0` of the source. Without it a cone is a drift of dots that happens to start near the emitter. Here and
-/// not at the call site because a caller picks the VERB and the ELEMENT, never a colour, life or gravity.
+/// **EVERY POUR HAS A KNOT AT ITS NOZZLE** — one root mote per this many stream motes, inside this much of `r0` of the source. Without it a cone is a drift of dots that happens to start near the emitter. Here and not at the call site because a caller picks the VERB and the ELEMENT, never a colour, life or gravity.
 const POUR_ROOT_EVERY: usize = 4;
 const POUR_ROOT_R: f32 = 1.6;
 const POUR_ROOT_LIFE_LO: f32 = 0.05;
 const POUR_ROOT_LIFE_HI: f32 = 0.13;
 
-/// How many motes ONE `pour` of `n` actually emits, root included — the pool arithmetic every caller sizes
-/// its ring off (`hero.FX_N`). Written here so a change to the root's cadence cannot leave a caller's
-/// comptime assert quietly stale. **It is the count for ONE CALL**: a caller making `k` calls owes
-/// `k * pourCount(n)`, and `pourCount(k * n)` is not the same number — the knot restarts every call.
+/// How many motes ONE `pour` of `n` actually emits, root included — the pool arithmetic every caller sizes its
+/// ring off (`hero.FX_N`). **It is the count for ONE CALL**: a caller making `k` calls owes `k * pourCount(n)`, and `pourCount(k * n)` is not the same number — the knot restarts every call.
 pub fn pourCount(n: usize) usize {
     return n + (n + POUR_ROOT_EVERY - 1) / POUR_ROOT_EVERY;
 }

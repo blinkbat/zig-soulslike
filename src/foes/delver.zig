@@ -60,21 +60,16 @@ pub const BURST_R: f32 = 1.9;
 const WALK_SPEED: f32 = 2.2;
 const CHASE_SPEED: f32 = 3.9;
 const TURN_RATE: f32 = 4.2;
-/// **MEASURED, NOT ARGUED** — a test walks the stroke frame by frame and brackets it from both sides, which
-/// caught the first pass declaring 2.9 m off a limb that arrived at 1.19.
+/// **MEASURED, NOT ARGUED** — a test walks the stroke frame by frame and brackets it from both sides, which caught the first pass declaring 2.9 m off a limb that arrived at 1.19.
 const CLAW_REACH: f32 = 1.75;
 const CLAW_SWEEP_R: f32 = 0.34;
-/// **THE DECISION IS TAKEN AT THE RANGE THE BLOW LANDS AT**, never a number beside it, or it spends half a
-/// second on a guaranteed miss. **AND THAT RANGE IS WHERE THE ARC CROSSES HIM, NOT HOW FAR THE TIP GETS**
-/// (owner: the moles cannot hit me): `CLAW_REACH + CLAW_SWEEP_R` is the tip's RADIAL reach, achieved out to
-/// the SIDE. At 2.09 the outer fifth of the trigger band could not land by construction. MEASURED below.
+/// **THE DECISION IS TAKEN AT THE RANGE THE BLOW LANDS AT**, never a number beside it. **AND THAT RANGE IS WHERE
+/// THE ARC CROSSES HIM, NOT HOW FAR THE TIP GETS** (owner: the moles cannot hit me): `CLAW_REACH + CLAW_SWEEP_R` is the tip's RADIAL reach, achieved out to the SIDE. At 2.09 the outer fifth of the trigger band could not land by construction.
 const CLAW_BAND: f32 = 1.65;
 const CLAW_KEEP: f32 = CLAW_BAND - 0.5;
 pub const CLAW_WIND: f32 = 0.48;
 const CLAW_STRIKE: f32 = 0.20;
-/// **VICIOUS ON ITS FEET, NOT ONLY UNDER THEM** (owner: more vicious even when not underground). One stroke
-/// every 1.9 s off a body walking 2.2 m/s was a punching bag between dives, so the recovery is shorter, the
-/// cooldown most of a second off, and it CLOSES rather than ambling.
+/// **VICIOUS ON ITS FEET, NOT ONLY UNDER THEM** (owner: more vicious even when not underground). One stroke every 1.9 s off a body walking 2.2 m/s was a punching bag between dives.
 const CLAW_RECOVER: f32 = 0.40;
 const CLAW_CD: f32 = 1.05;
 
@@ -91,41 +86,31 @@ const MOUND_TRAVEL_R: f32 = 1.05;
 const MOUND_TRAVEL_H: f32 = 0.28;
 
 /// **THE TELL IS THROWN EARTH, NOT A SWELLING DOME** (owner: instead of distending the bump, steadily add
-/// particles until he jumps out) — a shape held for over a second stops being motion at all. The spray
-/// BUILDS, the disc the blow lands on is exactly `BURST_R`, and the mound HOLDS at its travelling size to the
-/// burst: the ridge stopped there, and that is where it comes out.
+/// particles until he jumps out) — a shape held for over a second stops being motion at all. The spray BUILDS, the disc the blow lands on is exactly `BURST_R`, and the mound HOLDS at its travelling size to the burst.
 const MOUND_SWELL_R: f32 = MOUND_TRAVEL_R;
 const MOUND_SWELL_H: f32 = MOUND_TRAVEL_H;
 const SURGE_SPRAY_0: f32 = 14.0;
 const SURGE_SPRAY_1: f32 = 190.0;
 const SURGE_SPRAY_CURVE: f32 = 2.4;
 const SURGE_SPRAY_LIFT: f32 = 2.6;
-/// THE LONGEST THING IT DOES. Bracketed from below by its own dive wind — the one move arriving from a
-/// direction the camera cannot be turned toward may not be the one you get least warning of — and again by
-/// what it costs to get out of the ring (the assert below).
+/// THE LONGEST THING IT DOES. Bracketed from below by its own dive wind — the one move arriving from a direction the camera cannot be turned toward may not be the one you get least warning of — and again by what it costs to get out of the ring.
 pub const SURGE_DUR: f32 = 1.15;
 pub const BURST_RISE: f32 = 0.28;
 const BURST_RECOVER: f32 = 0.95;
 const DIVE_CD: f32 = 6.5;
-/// **A RETRIGGER, NOT A LOOP** (raylib cannot loop a synthesized take), and the voice is cut a hair longer
-/// than this so consecutive ones overlap.
+/// **A RETRIGGER, NOT A LOOP** (raylib cannot loop a synthesized take), and the voice is cut a hair longer than this so consecutive ones overlap.
 pub const CHURN_EVERY: f32 = 0.72;
 /// The stride the limb phase is measured in — one number, read by the surface walk and by the swim under it.
 const STRIDE: f32 = 0.92;
 
 comptime {
-    // **SUBMERGED IT CANNOT BE STRUCK, AND THAT IS GEOMETRY RATHER THAN A GUARD IN `tryHit`** — at
-    // `UNDER_DEPTH` the top of its hurt sphere sits further under the ground than any blade reaches below
-    // his boots, and the swept test refuses it on its own.
+    // **SUBMERGED IT CANNOT BE STRUCK, AND THAT IS GEOMETRY RATHER THAN A GUARD IN `tryHit`** — at `UNDER_DEPTH`
+    // the top of its hurt sphere sits further under the ground than any blade reaches below his boots.
     //
-    // **`depth` IS IN SCALE-1 METRES** and `ride()` multiplies it (`-depth * scale`), so every term here is
-    // the same multiple of `scale` and the inequality is scale-invariant. Scaling `depth` at its writers to
-    // "fix" that double-scales the burrow and surfaces a small delver.
+    // **`depth` IS IN SCALE-1 METRES** and `ride()` multiplies it (`-depth * scale`), so every term here is the same multiple of `scale`. Scaling `depth` at its writers to "fix" that double-scales the burrow and surfaces a small delver.
     std.debug.assert(UNDER_DEPTH - CENTER_F * H - HURT_R > 0.8);
     std.debug.assert(SURGE_DUR > DIVE_WIND and DIVE_WIND >= foe.TELL_MIN and CLAW_WIND >= foe.TELL_MIN);
-    // He starts at the CENTRE, so he must clear the radius plus his own footprint. A RUN and a ROLL do it; a
-    // WALK covers 1.96 m of the 2.26 and is deliberately not enough. The hero's figures are written out here
-    // because this file sits below `hero.zig`.
+    // He starts at the CENTRE, so he must clear the radius plus his own footprint. A RUN and a ROLL do it; a WALK covers 1.96 m of the 2.26 and is deliberately not enough.
     std.debug.assert(SURGE_DUR * 3.4 > BURST_R + foe.HERO_R);
     std.debug.assert(SURGE_DUR > 0.70 + 0.30);
 }
@@ -143,9 +128,7 @@ const MOUND_PLOUGH_H: f32 = MOUND_TRAVEL_H * 1.45;
 const MOUND_PLOUGH_LONG: f32 = 2.8;
 
 pub const RAKE_HIT = combat.Hit{ .dmg = 12, .poise = 16, .stance = 5 };
-/// **LONG ENOUGH TO BE CAUGHT ON, WHICH IS WHAT SIZES IT FROM BELOW** — `foe.PARRY_LEAD` brackets every wind
-/// from above. At 0.33 the one difficulty dial covered 55% of this tell against under half of the claw's
-/// beside it: the same move at two difficulties.
+/// **LONG ENOUGH TO BE CAUGHT ON, WHICH IS WHAT SIZES IT FROM BELOW** — `foe.PARRY_LEAD` brackets every wind from above. At 0.33 the one difficulty dial covered 55% of this tell against under half of the claw's beside it.
 pub const RAKE_WIND: f32 = 0.40;
 const RAKE_STRIKE: f32 = 0.18;
 const RAKE_CHANCE: f32 = 0.55;
@@ -164,9 +147,7 @@ const DISS_DUR: f32 = 1.05;
 const SHOVE_DECAY: f32 = 7.0;
 const DISSOLVE = foe.Dissolve{ .rate = 58.0, .spread = 0.9, .rise = 0.75, .flake = CLOD };
 
-/// ARITHMETIC over the worst frame (the ring law), and it is the PLOUGH'S LAST frame: the furrow can land its
-/// blow as the run ends, so the 12-clod hit burst and `burstDirt`'s 40 go in together, on the ~22 `emitWake`
-/// (22/s) and `emitSpray` (24/s) leave resident at 0.3-0.7 s lives. 74 against the 72 this used to be.
+/// ARITHMETIC over the worst frame (the ring law), and it is the PLOUGH'S LAST frame: the furrow can land its blow as the run ends, so the 12-clod hit burst and `burstDirt`'s 40 go in together, on the ~22 `emitWake` and `emitSpray` leave resident at 0.3-0.7 s lives.
 const PARTS = 96;
 
 const N = 10;
@@ -194,13 +175,10 @@ const REST = [N]rl.Vector3{
     v3(0, 0, 0),
 };
 
-/// The far end of the middle digging claw, in the claw bone's own frame — what the stroke actually swings,
-/// and what `parryable` hands over as its reach. MEASURED off the mesh, never argued (the ogre's club law).
+/// The far end of the middle digging claw, in the claw bone's own frame — what the stroke actually swings, and what `parryable` hands over as its reach. MEASURED off the mesh, never argued (the ogre's club law).
 const CLAW_TIP = v3(0, -0.16, 0.78);
 
-/// DEGREES at the shoulder — the lateral half of `swing`. The shoulder sits 0.34 m off the axis and the claw
-/// rides ~1.2 m out, so this is SOLVED against the crossing: the tip must pass THROUGH the body's own forward
-/// line inside the strike window. MEASURED by the reach test, never argued.
+/// DEGREES at the shoulder — the lateral half of `swing`. The shoulder sits 0.34 m off the axis and the claw rides ~1.2 m out, so this is SOLVED against the crossing: the tip must pass THROUGH the body's own forward line inside the strike window.
 const SWING_YAW: f32 = 46.0;
 
 const State = enum { idle, walk, claw, rake, recover, dive, under, surge, plough, burst, heave, stunlight, stunheavy, dead };
@@ -258,13 +236,10 @@ pub const Delver = struct {
     heroLatch: bool = false,
     raked: bool = false,
     homing: bool = false,
-    /// It went under this frame, and it broke the surface this frame — one-frame edges the GROUP reads, which
-    /// is what lets the game put a shake and a low rumble under a tell arriving from off screen.
+    /// It went under this frame, and it broke the surface this frame — one-frame edges the GROUP reads, which is what lets the game put a shake and a low rumble under a tell arriving from off screen.
     surged: bool = false,
 
-    /// HOW FAR UNDER ITS OWN GROUND THE BODY IS RIDING, metres. 0 at the surface; every world point on it is
-    /// measured with this as a NEGATIVE lift, so the whole creature goes down together and nothing has to be
-    /// told about it twice.
+    /// HOW FAR UNDER ITS OWN GROUND THE BODY IS RIDING, metres. 0 at the surface; every world point on it is measured with this as a NEGATIVE lift, so the whole creature goes down together.
     depth: f32 = 0,
     moundR: f32 = 0,
     moundH: f32 = 0,
@@ -348,9 +323,7 @@ pub const Delver = struct {
     pub fn mounded(self: *const Delver) bool {
         return self.moundR > 1e-3;
     }
-    /// **YOU CANNOT FIX ON WHAT IS UNDER THE GROUND** (owner's call) — the Rooted's `hidden` predicate, found
-    /// by `@hasDecl` at every targeting site. A held lock DROPS the frame it goes under and coming back up is
-    /// a re-acquire.
+    /// **YOU CANNOT FIX ON WHAT IS UNDER THE GROUND** (owner's call) — the Rooted's `hidden` predicate, found by `@hasDecl` at every targeting site. A held lock DROPS the frame it goes under.
     pub fn hidden(self: *const Delver) bool {
         return self.deep();
     }
@@ -427,8 +400,7 @@ pub const Delver = struct {
             .plough => self.updatePlough(dt, hero, bounds),
             .burst => self.updateBurst(dt, hero),
             .stunlight, .stunheavy => {
-                // KNOCKED BACK ONTO ITS HAUNCHES, forelimbs up and useless. It cannot be flinched while it is
-                // under — nothing down there is taking a blow — so this is always a surfaced pose.
+                // KNOCKED BACK ONTO ITS HAUNCHES, forelimbs up and useless. It cannot be flinched while it is under, so this is always a surfaced pose.
                 self.rear = mathx.approach(self.rear, 0.34 * foe.stunCurve(self.t, self.state == .stunheavy), dt * 6.0);
                 self.crouch = mathx.approach(self.crouch, 0.16, dt * 5.0);
                 self.swing = mathx.approach(self.swing, 0, dt * 4.0);
@@ -468,8 +440,7 @@ pub const Delver = struct {
     fn updateIdle(self: *Delver, dt: f32, hero: rl.Vector3) void {
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         if (d <= AGGRO_R) self.faceToward(self.goingFor(hero), TURN_RATE, dt);
-        // Three clocks that never line up (the wanderer's law): a breath, a shoulder roll, a snout that casts
-        // about. A digger standing still is still SMELLING for you.
+        // Three clocks that never line up (the wanderer's law): a breath, a shoulder roll, a snout that casts about.
         const br = mathx.sinf(self.elapsed * (1.5 + 0.3 * self.seed) + self.seed * 6.28);
         self.crouch = mathx.approach(self.crouch, 0.05 + 0.025 * br, dt * 3.0);
         self.rear = mathx.approach(self.rear, 0.04 + 0.03 * mathx.sinf(self.elapsed * 0.9 + self.seed * 4.0), dt * 2.0);
@@ -573,8 +544,7 @@ pub const Delver = struct {
         self.gait += speed * dt / (STRIDE * self.scale);
         self.emitWake(dt);
         self.emitSpray(dt, 24.0);
-        // **THE FURROW IS A SWEPT SEGMENT.** At nine metres a second it covers fifteen centimetres a frame,
-        // and a point test against a body 0.36 m across steps straight over him about half the time.
+        // **THE FURROW IS A SWEPT SEGMENT.** At nine metres a second it covers fifteen centimetres a frame, and a point test against a body 0.36 m across steps straight over him about half the time.
         if (!self.heroLatch and self.furrowed(was, hero)) {
             self.heroLatch = true;
             self.heroHit = PLOUGH_HIT;
@@ -597,8 +567,7 @@ pub const Delver = struct {
     fn updateDive(self: *Delver, dt: f32, hero: rl.Vector3) void {
         if (self.t < DIVE_WIND) {
             self.faceToward(self.goingFor(hero), TURN_RATE, dt);
-            // UP ON ITS HIND LEGS — the biggest it ever is, and the only frame you can read from across the
-            // field.
+            // UP ON ITS HIND LEGS — the biggest it ever is, and the only frame you can read from across the field.
             const u = mathx.smoothstep(0, DIVE_WIND, self.t);
             self.rear = lerpF(0, 1.0, u);
             self.swing = lerpF(0, -0.7, u);
@@ -680,9 +649,7 @@ pub const Delver = struct {
         self.moundR = lerpF(MOUND_SWELL_R, 0, u);
         self.moundH = lerpF(MOUND_SWELL_H, 0, u * u);
         if ((self.t - dt) <= 0 and self.t > 0) {
-            // The blow is on the OPENING frame, and its reach is a RADIUS — the ground opening has no edge to
-            // sweep. Its `from` is the hole itself, so stood dead on it there is no bearing and the boards
-            // cannot answer it (the zero-`fromDir` rule); caught at the rim, they can.
+            // The blow is on the OPENING frame, and its reach is a RADIUS — the ground opening has no edge to sweep. Its `from` is the hole itself, so stood dead on it there is no bearing and the boards cannot answer it; caught at the rim, they can.
             self.burstDirt();
             if (mathx.distXZ(self.pos, hero) <= BURST_R * self.scale + foe.HERO_R) {
                 self.heroHit = BURST_HIT;
@@ -729,9 +696,7 @@ pub const Delver = struct {
         }
     }
 
-    /// The mound has a life of its own on the way in and the way out — it is a heap of earth, and a heap of
-    /// earth does not appear on one frame. Driven off what the BODY is doing rather than off a clock beside
-    /// it, so the two can never disagree about whether there is anything down there.
+    /// The mound has a life of its own on the way in and the way out — a heap of earth does not appear on one frame. Driven off what the BODY is doing rather than off a clock beside it.
     fn settleMound(self: *Delver, dt: f32) void {
         const wantR: f32 = switch (self.state) {
             .dive => MOUND_TRAVEL_R * mathx.clampF(self.depth / UNDER_DEPTH, 0, 1),
@@ -762,8 +727,7 @@ pub const Delver = struct {
         self.idleWait = wait;
         self.surgeK = 0;
     }
-    /// A BLOW NEVER LANDS ON SOMETHING SUBMERGED, so a stun always finds it on the surface — but the depth is
-    /// cleared here anyway, because a stagger arriving on the rise must not strand it half in the ground.
+    /// A BLOW NEVER LANDS ON SOMETHING SUBMERGED, so a stun always finds it on the surface — but the depth is cleared here anyway, because a stagger arriving on the rise must not strand it half in the ground.
     fn enterStun(self: *Delver, s: State) void {
         self.enter(s);
         self.moundR = 0;
@@ -851,8 +815,6 @@ pub const Delver = struct {
         }
     }
 
-    /// MOTES, not a wound's worth of them — `foe.HIT_PARTS` belongs to a landed blow, and two of the three
-    /// callers here are moves.
     fn dirtBurst(self: *Delver, c: rl.Vector3, motes: i32, spd: f32, big: f32) void {
         const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.3, 0.6);
         var i: i32 = 0;
@@ -1008,9 +970,7 @@ pub const Delver = struct {
             const shoulder = -74.0 * self.rear - 34.0 * own;
             const abd = 16.0 + 26.0 * self.rear + 10.0 * @abs(own);
             const hip = v3(REST[ai].x, REST[ai].y - 0.12 * self.crouch, REST[ai].z);
-            // **THE STROKE NEEDS A LATERAL CHANNEL** (owner: the moles cannot hit me). Spent entirely on
-            // `rx` — a SAGITTAL rake — with `abd` on `@abs(own)`, the claw ran x −0.51 to −1.07 and back and
-            // never crossed the body's own axis, which RADIAL reach tests satisfy perfectly.
+            // **THE STROKE NEEDS A LATERAL CHANNEL** (owner: the moles cannot hit me). Spent entirely on `rx` — a SAGITTAL rake — with `abd` on `@abs(own)`, the claw ran x −0.51 to −1.07 and back and never crossed the body's own axis, which RADIAL reach tests satisfy perfectly.
             const cross = SWING_YAW * own * -sgn;
             self.xf[ai] = mul(mul(mul3(rz(sgn * abd), rx(shoulder), ry(cross)), tr(hip.x, hip.y, hip.z)), root);
             const elbow = 40.0 - 46.0 * own - 26.0 * self.rear;
@@ -1118,8 +1078,7 @@ fn bodyMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xD31E);
     b.setMat(.skin);
-    // LONG AND LOW. A digger is a wedge lying on the ground, not a boulder standing on it: the first pass
-    // was 0.87 m tall on a 1.55 m creature and read as a tortoise.
+    // LONG AND LOW. A digger is a wedge lying on the ground, not a boulder standing on it: the first pass was 0.87 m tall on a 1.55 m creature and read as a tortoise.
     b.addBlob(v3(0, 0.26 * H, -0.08), v3(0.42, 0.17 * H, 0.80), 8, 14, HIDE);
     b.addBlob(v3(0, 0.30 * H, 0.30), v3(0.40, 0.15 * H, 0.38), 7, 13, HIDE);
     b.addBlob(v3(0, 0.14 * H, 0.04), v3(0.36, 0.09 * H, 0.66), 6, 12, HIDE_LO);
@@ -1168,9 +1127,7 @@ fn clawMesh(side: f32) rl.Mesh {
     b.addBlob(v3(side * 0.05, -0.10, 0.44), v3(0.14, 0.11, 0.13), 5, 10, HIDE_LO);
     b.setMat(.plain);
     // **THE CLAWS HAVE TO LOOK LIKE THE CREATURE'S POINT** (owner: more pronounced claws and nails). At 0.04
-    // thick and 0.22 long they were three scratches on a pad. Half again as long and thick, hooked DOWN and
-    // UNDER. **NONE ENDS IN A POINT** — a blunt capsule cap, because a rosette of needles is a hub of spokes;
-    // what reads as sharp is the TAPER (0.062 to 0.020, a hair over 3:1) and the hook.
+    // thick and 0.22 long they were three scratches on a pad. **NONE ENDS IN A POINT** — a blunt capsule cap, because a rosette of needles is a hub of spokes; what reads as sharp is the TAPER (0.062 to 0.020) and the hook.
     inline for (.{
         .{ 0.11, -0.12, 0.50, 0.13, -0.30, 0.92, 0.056, 0.020 },
         .{ 0.00, -0.13, 0.51, 0.00, -0.33, 1.02, 0.062, 0.022 },
@@ -1258,9 +1215,7 @@ test "TWO WAYS OUT OF THE BURROW: under him it BURSTS, out in front of him it PL
         }
         try std.testing.expectEqual(State.surge, d.state);
     }
-    // …and SPRINTING he cannot be — `SPRINT_SPEED` is over `UNDER_SPEED`, so the chase is one it will never
-    // win. It stops trying to get under him and drives the ridge down the ground he is running over instead,
-    // which is the one answer this creature did not have to a player who simply keeps walking.
+    // …and SPRINTING he cannot be — `SPRINT_SPEED` is over `UNDER_SPEED`, so the chase is one it will never win. It drives the ridge down the ground he is running over instead, which is the answer this creature did not have to a player who simply keeps walking.
     {
         var d = Delver.spawn(mathx.zero3, 0, 1.0, 0.3);
         var hero = v3(0, 0, 4.5);
@@ -1276,9 +1231,7 @@ test "TWO WAYS OUT OF THE BURROW: under him it BURSTS, out in front of him it PL
 }
 
 test "SUBMERGED IT IS UNDER THE GROUND AT EVERY SCALE THE MAP CAN POST, not just at 1" {
-    // The comptime block above READS like a check that only speaks for scale 1. It is scale-invariant
-    // (`depth` is scale-1 metres, `ride()` scales it); this walks the band, so a reader who "fixes" the
-    // apparent gap by scaling `depth` at its writers is told that a 0.5 delver surfaces.
+    // The comptime block above READS like a check that only speaks for scale 1. It is scale-invariant (`depth` is scale-1 metres, `ride()` scales it); this walks the band, so a reader who "fixes" the apparent gap by scaling `depth` at its writers is told that a 0.5 delver surfaces.
     for ([_]f32{ wf.FOE_SCALE_LO, 1.0, 1.4, wf.FOE_SCALE_HI }) |sc| {
         var d = Delver.spawn(mathx.zero3, 0, sc, 0.3);
         d.debugDive();
@@ -1328,8 +1281,7 @@ test "THE CLAW COMES BACK — the surfaced window is a trade now, not a free hit
     }
     try std.testing.expect(seen);
 
-    // …AND NEVER AT A MAN WHO HAS ALREADY LEFT. A backhand thrown at empty air is the creature announcing
-    // that the punish was free after all, which is the thing this move exists to stop.
+    // …AND NEVER AT A MAN WHO HAS ALREADY LEFT. A backhand thrown at empty air is the creature announcing that the punish was free after all.
     var far = Delver.spawn(mathx.zero3, 0, 1.0, 0.3);
     const gone = v3(0, 0, CLAW_BAND + 4.0);
     far.debugClaw();
@@ -1342,8 +1294,7 @@ test "THE CLAW COMES BACK — the surfaced window is a trade now, not a free hit
 }
 
 test "THE COOLDOWN IS SURFACE TIME — the burrow does not spend the dial that gates it" {
-    // Armed where it went DOWN, the under, surge, rise and opening ran most of `DIVE_CD` off before it was
-    // ever standing in front of you — at `UNDER_MAX`, nothing at all, so it re-dived as it finished rising.
+    // Armed where it went DOWN, the under, surge, rise and opening ran most of `DIVE_CD` off before it was ever standing in front of you — at `UNDER_MAX`, nothing at all, so it re-dived as it finished rising.
     try std.testing.expect(UNDER_MIN + SURGE_DUR + BURST_RISE + BURST_RECOVER > DIVE_CD * 0.5);
     var d = Delver.spawn(mathx.zero3, 0, 1.0, 0.3);
     const hero = v3(0, 0, 3.0);
@@ -1501,10 +1452,7 @@ test "EVERY REACH IS MEASURED, NOT ARGUED — the claw arrives inside what `parr
     try std.testing.expect(far <= CLAW_REACH);
     try std.testing.expect(far > CLAW_REACH * 0.9);
     try std.testing.expect(CLAW_BAND > BODY_R + foe.HERO_R + 0.3);
-    // **AND HEIGHT IS ITS OWN QUESTION.** Its shoulders sit at 0.40 m, so the stroke only ever crosses a
-    // standing man because the creature REARS for it — which is why the rear is in the wind and not a
-    // flourish. Held flat the rake topped out under his knee, and three claws going past his boots while
-    // `weaponReaches` reported a hit is the mesh and the mechanic saying opposite things.
+    // **AND HEIGHT IS ITS OWN QUESTION.** Its shoulders sit at 0.40 m, so the stroke only ever crosses a standing man because the creature REARS for it — which is why the rear is in the wind and not a flourish. Held flat the rake topped out under his knee.
     var high: f32 = 0;
     var rise: f32 = CLAW_WIND;
     while (rise <= CLAW_WIND + CLAW_STRIKE) : (rise += 1.0 / 240.0) {
@@ -1563,8 +1511,7 @@ test "IT IS VICIOUS ON ITS FEET TOO — it runs him down and its stroke comes ro
     try std.testing.expect(CHASE_SPEED > heromod.RUN_SPEED);
     try std.testing.expect(CHASE_SPEED < heromod.SPRINT_SPEED);
     try std.testing.expect(WALK_SPEED < heromod.RUN_SPEED);
-    // THE STROKE COMES BACK. A claw every 1.9 s off a body that could not close was a punching bag between
-    // dives; the whole cycle now fits inside what the dive alone used to cost.
+    // THE STROKE COMES BACK. A claw every 1.9 s off a body that could not close was a punching bag between dives; the whole cycle now fits inside what the dive alone used to cost.
     const cycle = CLAW_WIND + CLAW_STRIKE + CLAW_RECOVER + CLAW_CD;
     try std.testing.expect(cycle < 2.2);
     // …but the TELL is untouched: faster may never mean harder to read (`foe.TELL_MIN`, and the parry).
@@ -1576,9 +1523,7 @@ test "IT IS VICIOUS ON ITS FEET TOO — it runs him down and its stroke comes ro
 }
 
 test "THE STROKE CROSSES A MAN STANDING IN FRONT — every range inside its own band lands" {
-    // **THE BUG THE REACH TEST COULD NOT SEE**: RADIAL distance and HEIGHT are both satisfied by a swipe
-    // raked down the flank. Does the swept claw cross the man it is aimed at — at x −0.51 to −1.07 the
-    // closest it came on the facing line was 0.50 m against a 0.34 m blade.
+    // **THE BUG THE REACH TEST COULD NOT SEE**: RADIAL distance and HEIGHT are both satisfied by a swipe raked down the flank. At x −0.51 to −1.07 the closest the swept claw came on the facing line was 0.50 m against a 0.34 m blade.
     var dist: f32 = BODY_R + foe.HERO_R;
     var worst: f32 = 0;
     while (dist <= CLAW_BAND + 1e-3) : (dist += 0.05) {

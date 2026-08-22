@@ -42,8 +42,7 @@ const SAC_MEM = rgba(67, 93, 62, 220);
 const SAC_EGG = rgba(48, 70, 38, 255);
 const SAC_VEIN = rgba(26, 22, 16, 255);
 const GORE = rgba(46, 9, 7, 235);
-/// The lightest of the three: it opens WIDE and dies short rather than being thrown far, and `drag` is what
-/// makes it a burst instead of a drift.
+/// The lightest of the three: it opens WIDE and dies short rather than being thrown far, and `drag` is what makes it a burst instead of a drift.
 const GORE_SPRAY = foe.Spray{
     .fanLo = 0.5,  .fanHi = 3.0,
     .upLo = 0.7,   .upHi = 3.0,
@@ -59,8 +58,7 @@ const GORE_SPD_LIGHT = 4.2;
 const GORE_SPD_HEAVY = 5.8;
 const GORE_SPD_DEATH = 5.0;
 comptime {
-    // THE RING LAW, EXECUTABLE: a killing heavy blow's two sprays and the shared wound, on the ~21 the
-    // mother's drag leaves resident (26/s against a 0.8 s life).
+    // THE RING LAW, EXECUTABLE: a killing heavy blow's two sprays and the shared wound, on the ~21 the mother's drag leaves resident (26/s against a 0.8 s life).
     std.debug.assert(SPIDER_PARTS >= 21 + foe.hitParts(GORE_HEAVY) + foe.hitParts(GORE_DEATH) + foe.WOUND_PARTS);
     std.debug.assert(SAC_PARTS >= 14 + foe.WOUND_PARTS);
 }
@@ -163,9 +161,7 @@ const B_HOME_R = 1.8;
 const B_BITE_R = 1.05;
 const B_LEAP_MIN = 2.4;
 const B_LEAP_MAX = 5.4;
-/// Its rear-and-claws-wide tell (`resolveBiteWind` already poses one) — it was 0.20 s, which with a 0.09 s
-/// snap behind it is 17 frames from standing to bitten. Still the quickest thing in the game, but now over
-/// `foe.TELL_MIN`, so the frame it opens up is a frame you can act on.
+/// Its rear-and-claws-wide tell (`resolveBiteWind` already poses one) — it was 0.20 s, which with a 0.09 s snap behind it is 17 frames from standing to bitten. Still the quickest thing in the game, but now over `foe.TELL_MIN`.
 const B_BITE_WINDUP = 0.34;
 const B_BITE_SNAP = 0.09;
 const B_BITE_RECOVER = 0.26;
@@ -178,10 +174,7 @@ const B_LEAP_CD = 1.9;
 const B_LEAP_IMPACT_R = 1.25;
 const B_LEAP_FRONT_DOT = 0.20;
 
-/// The three reaches above are WORLD metres at each role's shipped scale — what `classifyMother`/
-/// `classifyBroodling` measure a raw `distXZ` against. A HURT BOX is the creature's OWN metres
-/// (`foe.hurtReach`), so it is those divided back out by the role's own stature, and that is what makes a
-/// re-scaled placement's reach track its body instead of standing still.
+/// The three reaches above are WORLD metres at each role's shipped scale — what `classifyMother`/`classifyBroodling` measure a raw `distXZ` against. A HURT BOX is the creature's OWN metres (`foe.hurtReach`), so it is those divided back out by the role's own stature.
 const M_BITE_OWN = M_BITE_R / M_SCALE;
 const B_BITE_OWN = B_BITE_R / B_SCALE;
 const B_LEAP_IMPACT_OWN = B_LEAP_IMPACT_R / B_SCALE;
@@ -208,11 +201,8 @@ const SAC_PULSE_HZ = 1.6;
 const SAC_UNFLINCHING: f32 = 1e9;
 const SAC_RESISTS = combat.resists(.{ .fire = -70, .chaos = 75 });
 
-/// **ONE NUMBER CANNOT SIZE THREE UNRELATED RINGS** — sized for the smallest, the spider's ring silently ate
-/// its own blood. Each is arithmetic over its OWN worst frame (the ring law).
-///
-/// SPIDER: a killing heavy blow while dragging — the heavy spray (`hitParts(16)` = 24), the death spray
-/// (`hitParts(12)` = 18) and the wound, on the ~21 `emitDrag` leaves resident (26/s at a 0.8 s life).
+/// **ONE NUMBER CANNOT SIZE THREE UNRELATED RINGS** — sized for the smallest, the spider's ring silently ate its
+/// own blood. Each is arithmetic over its OWN worst frame (the ring law). SPIDER: a killing heavy blow while dragging — the heavy spray (24), the death spray (18) and the wound, on the ~21 `emitDrag` leaves resident (26/s at a 0.8 s life).
 const SPIDER_PARTS = 68;
 /// SAC: its one burst (`burstFx`, 14) plus `foe.wounded`'s 3.
 const SAC_PARTS = 20;
@@ -835,8 +825,7 @@ pub const Sac = struct {
             return false;
         }
         foe.fadeFlash(&self.flash, dt);
-        // A SAC IS A TARGET, so its vitals run like every other target's: `sinceHurt` gates the floating
-        // HP bar, and left frozen at 0 the bar never goes away again.
+        // A SAC IS A TARGET, so its vitals run like every other target's: `sinceHurt` gates the floating HP bar, and left frozen at 0 the bar never goes away again.
         self.vit.tick(dt);
         self.t += dt;
         foe.tickParticles(&self.parts, dt, self.pos.y);
@@ -974,7 +963,6 @@ pub const Spider = struct {
     fxHead: usize = 0,
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
-    /// Carried ONLY so her ichor knows whether the ground under her is dry (`foe.onDryGround`).
     wade: foe.Wade = .{},
 
     xf: [NP]rl.Matrix = undefined,
@@ -1370,16 +1358,13 @@ pub const Spider = struct {
         if (self.role != .mother or self.throwing) return null;
         return switch (self.state) {
             .windup => BITE_WINDUP - self.t,
-            // Already snapping: `t` has been advanced by the time this is asked, so `left` is negative from the
-            // first frame of it and the window is shut. The blow and the catch can never both happen.
+            // Already snapping: `t` has been advanced by the time this is asked, so `left` is negative from the first frame and the window is shut. The blow and the catch can never both happen.
             .strike => -self.t,
             .idle, .walk, .recover, .lay, .leap, .stunlight, .stunheavy, .dead => null,
         };
     }
 
-    /// THE INSTANT THE FANGS CAN BE CAUGHT IN, and how far out they reach then — `tryReach`'s OWN extent
-    /// through the same `foe.hurtReach`, so a bite the boards could not possibly have met is never offered as
-    /// one (the ogre's `slamReach` law: the parry's reach is the blow's reach and not a second number).
+    /// THE INSTANT THE FANGS CAN BE CAUGHT IN, and how far out they reach then — `tryReach`'s OWN extent through the same `foe.hurtReach` (the ogre's `slamReach` law: the parry's reach is the blow's reach and not a second number).
     fn parryable(self: *const Spider) ?f32 {
         const left = self.toImpact() orelse return null;
         if (!foe.inParryWindow(left)) return null;
@@ -1525,8 +1510,7 @@ pub const Spider = struct {
     }
 
 
-    /// `dt`, NOT a baked 1/60: every `approach` here is a rate per SECOND, so a fixed step settles twice as
-    /// fast on a 120 Hz machine as on a 60 Hz one.
+    /// `dt`, NOT a baked 1/60: every `approach` here is a rate per SECOND, so a fixed step settles twice as fast on a 120 Hz machine as on a 60 Hz one.
     fn resolveIdle(self: *Spider, dt: f32) void {
         const breathe = mathx.sinf(self.elapsed * 1.3 + self.seed * 6.0);
         self.crouch = -IDLE_BOB * breathe;
@@ -1653,8 +1637,7 @@ pub const Spider = struct {
         self.rear = 0;
         self.crouch = 0.35 * cramp;
         self.legCurl = 0.55 * cramp + 0.45 * clench;
-        // The ground arrives WITH the fall, not eased under it — and bodyDrop inverts with the frame,
-        // so the cramp's -0.30·crouch lifts the flipped body; the settle pays it back.
+        // The ground arrives WITH the fall, not eased under it — and bodyDrop inverts with the frame, so the cramp's -0.30·crouch lifts the flipped body; the settle pays it back.
         self.settle = (deadRest(sk) * mathx.smoothstep(0.30, 0.54, u) - 0.30 * 0.35 * cramp * fall) * self.scale;
         self.armSpread = 46.0 * rearK - 30.0 * clench;
         self.armDrive = -0.4 * cramp - 0.5 * clench;
@@ -1993,8 +1976,7 @@ test "HER BITE IS AN INSTANT FROM BEING CAUGHT, and nothing else of hers is catc
     try std.testing.expect(PARRY_LEAD < BITE_WINDUP * 0.4);
 
     var m = Spider.spawnAs(.mother, mathx.ground(0, 0), 0, 1.0, 0.0);
-    // MEASURED off the state machine: walk the bite from the first frame of its windup and collect the span
-    // that is actually parryable, plus where the fangs actually arrive.
+    // MEASURED off the state machine: walk the bite from the first frame of its windup and collect the span that is actually parryable, plus where the fangs actually arrive.
     const step = 1.0 / 600.0;
     var open: f32 = -1;
     var shut: f32 = -1;

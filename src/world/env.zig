@@ -29,15 +29,13 @@ const MAX_PROPS = 24576;
 const MAX_SOLIDS = 8192;
 /// A ward is an ARENA DOOR (`props.Info.ward`). A map wanting more than this many is not laid out.
 pub const MAX_WARDS = 64;
-/// How far past a fog gate a crossing puts him down — clear of the sheet AND clear of the prompt's own reach.
-/// That second half is a relationship with a number in another module, so `game.zig` asserts it.
+/// How far past a fog gate a crossing puts him down — clear of the sheet AND clear of the prompt's own reach. That second half is a relationship with a number in another module, so `game.zig` asserts it.
 pub const WARD_CLEAR: f32 = 1.30;
 const MAX_SOLID_REFS = 4 * MAX_SOLIDS;
 const MAX_LIGHTS = 192;
 const MAX_DRESSED = 64;
 
-// 40 a side = 640 m, covering a 280 m map's edge-standing cliffs (280 + 18 of cliff bound) with room over.
-// The arrays are BSS and the per-frame cost is one loop of four plane tests, so 1,600 cells is not measurable.
+// 40 a side = 640 m, covering a 280 m map's edge-standing cliffs (280 + 18 of cliff bound). The arrays are BSS and the per-frame cost is one loop of four plane tests, so 1,600 cells is not measurable.
 const CELL: f32 = 16.0;
 const GRID_N: usize = 40;
 const GRID_SPAN: f32 = CELL * @as(f32, @floatFromInt(GRID_N));
@@ -57,8 +55,7 @@ const FADE_SOLID: f32 = 0.999;
 const GL_ZERO: i32 = 0;
 const GL_ONE: i32 = 1;
 const GL_FUNC_ADD: i32 = 0x8006;
-/// How fast the ramp runs where the value already sits: full speed across the middle, down to this share at
-/// solid and at the floor. Never 0, or a fade would never leave either end.
+/// How fast the ramp runs where the value already sits: full speed across the middle, down to this share at solid and at the floor. Never 0, or a fade would never leave either end.
 const EASE_ENDS = 0.3;
 fn easeAt(u: f64) f64 {
     return EASE_ENDS + (1.0 - EASE_ENDS) * 4.0 * u * (1.0 - u);
@@ -80,14 +77,12 @@ const OCCL_FULL: f32 = 0.55;
 /// The hero's own screen box, in metres — what "a share of him" is measured against.
 const HERO_HALF_W: f32 = 0.42;
 const HERO_HALF_H: f32 = 0.90;
-/// How far past its own collider a standing mass still blocks the view. **ONLY FOR KINDS WITH NO `occl`
-/// LIST**: a fixed skirt cannot describe a canopy, which is why the trees carry their own volumes.
+/// How far past its own collider a standing mass still blocks the view. **ONLY FOR KINDS WITH NO `occl` LIST**: a fixed skirt cannot describe a canopy, which is why the trees carry their own volumes.
 const OCCL_SKIRT: f32 = 0.9;
 const OCCL_GIRTH: f32 = 0.55;
 /// **HOW TALL GROUND COVER HAS TO STAND BEFORE IT THINS AT ALL, in metres** — HIS WAIST, the rig's SPINE at
 /// 0.640·H on the 1.8 m stature. A tuft up against the lens scores 0.54, over three times `OCCL_MIN`, so
-/// ungated the commonest thing in the world ghosts round his boots. TESTED ON THE INSTANCE (`top * scale`),
-/// not the kind — the cover scatter stamps 0.72..1.38. At his HIP this let 316 patches and 303 ferns back in.
+/// ungated the commonest thing in the world ghosts round his boots. TESTED ON THE INSTANCE (`top * scale`), not the kind — the cover scatter stamps 0.72..1.38.
 const OCCL_TALL: f32 = 1.15;
 const OCCL_REACH: f32 = CELL;
 const OCCL_DEPTH_BAND: f32 = 1.6;
@@ -106,9 +101,7 @@ pub const MAX_SLOPE: f32 = 0.839;
 pub const STEP_UP: f32 = 0.55;
 pub const STEP_PROBE: f32 = 0.5;
 
-/// HOW DEEP ANYTHING ON FOOT MAY WADE, in metres — CHEST HEIGHT, the thorax at 0.760·H on the 1.8 m rig.
-/// Past it the water is a WALL. Written out rather than read off `hero.H` because env sits BELOW hero in
-/// the import graph and stays there.
+/// HOW DEEP ANYTHING ON FOOT MAY WADE, in metres — CHEST HEIGHT, the thorax at 0.760·H on the 1.8 m rig. Past it the water is a WALL. Written out rather than read off `hero.H` because env sits BELOW hero in the import graph.
 pub const WADE_MAX: f32 = 1.37;
 
 pub const HERO_R_PIN: f32 = 0.36;
@@ -160,10 +153,8 @@ fn coastBand(e: wf.Edge) f32 {
     };
 }
 
-/// **THE FACET CORNERS, SAMPLED ONCE EACH.** `sampleField` is pure and the three corners a cell reads are
-/// shared with its neighbours: the facet is at least 1.2 cells wide, so every corner was being bilinearly
-/// resampled about six times across the field. MEASURED on the shipped map, this pass was 4.85 ms of
-/// `uploadWater`'s 9.40 — and the editor's water brush pays the whole call on every frame of a drag.
+/// **THE FACET CORNERS, SAMPLED ONCE EACH.** `sampleField` is pure and the three corners a cell reads are shared
+/// with its neighbours: the facet is at least 1.2 cells wide, so every corner was being bilinearly resampled about six times. MEASURED on the shipped map, this pass was 4.85 ms of `uploadWater`'s 9.40.
 const FACET_LAT: usize = @as(usize, @intFromFloat(@ceil(2.0 * wf.MAX_DECLARED_HALF / WATER_FACET))) + 4;
 var facetLat: [FACET_LAT * FACET_LAT]f32 = undefined;
 
@@ -236,8 +227,7 @@ fn facetWater(field: *[wf.WATER_CELLS]u8, half: f32) void {
     for (field, out) |*dst, v| dst.* = mathx.u8f(v);
 }
 
-/// Bilinear, not nearest: the lattice corners are arbitrary world positions rather than cell centres, and
-/// nearest-sampling puts the field's own 2.5 m staircase back into what this pass exists to remove.
+/// Bilinear, not nearest: the lattice corners are arbitrary world positions rather than cell centres, and nearest-sampling puts the field's own 2.5 m staircase back into what this pass exists to remove.
 fn sampleField(field: *const [wf.WATER_CELLS]u8, half: f32, cell: f32, wx: f32, wz: f32) f32 {
     const N = wf.WATER_N;
     const maxI: f32 = @floatFromInt(N - 1);
@@ -264,9 +254,7 @@ const Prop = struct {
     lean: f32 = 0,
     leanDir: f32 = 0,
     op: u16 = 0,
-    /// Its slot in `wardProps` PLUS ONE, 0 for everything else — the same number `collision.Solid.ward`
-    /// carries. Two copies because the two are walked by different traversals: the solid grid answers about
-    /// geometry, this answers about the draw.
+    /// Its slot in `wardProps` PLUS ONE, 0 for everything else — the same number `collision.Solid.ward` carries. Two copies because the two are walked by different traversals: the solid grid answers about geometry, this about the draw.
     ward: u8 = 0,
     fade: f32 = 1,
     fadeTo: f32 = 1,
@@ -307,8 +295,7 @@ pub fn groundY() f32 {
     return GROUND_Y;
 }
 
-/// **A LIGHT BELONGS TO THE PROP THAT PLACED IT** (`prop`, an index into `props`). With no back-reference a
-/// pickup glow's 5.4 m pool went on lighting the ground after the glow had been taken. `lightOf` reads it.
+/// **A LIGHT BELONGS TO THE PROP THAT PLACED IT** (`prop`, an index into `props`). With no back-reference a pickup glow's 5.4 m pool went on lighting the ground after the glow had been taken.
 const WorldLight = struct { base: gfx.Light, flicker: f32, phase: f32, prop: u32 };
 
 const Pool = struct { pos: rl.Vector3, radius: f32 };
@@ -319,8 +306,7 @@ const Index = struct {
     bound: [NCELL]f32 = [_]f32{0} ** NCELL,
     view: [NCELL]f32 = [_]f32{0} ** NCELL,
     top: [NCELL]f32 = [_]f32{0} ** NCELL,
-    // …and the cell's VERTICAL extent: the per-cell reject is a sphere about the cell's centre, and a cell
-    // whose props stand 20 m up a hill is nowhere near a sphere centred at y = 0.
+    // …and the cell's VERTICAL extent: the per-cell reject is a sphere about the cell's centre, and a cell whose props stand 20 m up a hill is nowhere near a sphere centred at y = 0.
     ylo: [NCELL]f32 = [_]f32{0} ** NCELL,
     yhi: [NCELL]f32 = [_]f32{0} ** NCELL,
 };
@@ -333,8 +319,7 @@ pub const View = struct {
         const fwd = mathx.normV(mathx.subV(cam.target, cam.position));
         const right = mathx.normV(cross(fwd, cam.up));
         const up = cross(right, fwd);
-        // A couple of degrees of slack: a plane hugging the frustum exactly pops a prop whose authored
-        // `bound` is a touch tight.
+        // A couple of degrees of slack: a plane hugging the frustum exactly pops a prop whose authored `bound` is a touch tight.
         const vf = mathx.radians(cam.fovy) * 0.5 + mathx.radians(2.5);
         const hf = std.math.atan(@tan(mathx.radians(cam.fovy) * 0.5) * aspect) + mathx.radians(2.5);
         const cv = mathx.cosf(vf);
@@ -388,21 +373,17 @@ pub const Env = struct {
     nprops: usize = 0,
     solid_buf: [MAX_SOLIDS]collision.Solid = undefined,
     nsolids: usize = 0,
-    /// THE FOG GATES, in the order `buildSolids` met them; `collision.Solid.ward` is a slot here PLUS ONE,
-    /// so that 0 can mean "an ordinary solid".
+    /// THE FOG GATES, in the order `buildSolids` met them; `collision.Solid.ward` is a slot here PLUS ONE, so that 0 can mean "an ordinary solid".
     wardProps: [MAX_WARDS]u32 = undefined,
     /// …and where its capsules sit in `solid_buf`, as the contiguous run `buildSolids` emits them in.
     wardSolid0: [MAX_WARDS]u32 = undefined,
     wardSolidN: [MAX_WARDS]u8 = [_]u8{0} ** MAX_WARDS,
     nwards: usize = 0,
-    /// HE HAS BEEN THROUGH IT. Latched by his own step (`game.markWards`), cleared whenever the foes are put
-    /// back, or a respawned boss would shut a door with him on the wrong side of it.
+    /// HE HAS BEEN THROUGH IT. Latched by his own step (`game.markWards`), cleared whenever the foes are put back, or a respawned boss would shut a door with him on the wrong side of it.
     wardIn: [MAX_WARDS]bool = [_]bool{false} ** MAX_WARDS,
     /// …AND ITS BOSS IS STILL STANDING. The only thing that shuts a gate on HIM; stamped by the game.
     wardShut: [MAX_WARDS]bool = [_]bool{false} ** MAX_WARDS,
-    /// 1 WHILE IT STANDS, RUNNING TO 0 ONCE THE FIGHT IT SEALED IS OVER. **At 0 the gate is GONE**, and
-    /// `eachSolid` is where that is enforced — one line there retires it from sight, from feet and from
-    /// arrows together. The fade itself is stamped onto the prop's `shrink`, which is what draws it.
+    /// 1 WHILE IT STANDS, RUNNING TO 0 ONCE THE FIGHT IT SEALED IS OVER. **At 0 the gate is GONE**, and `eachSolid` is where that is enforced — one line there retires it from sight, from feet and from arrows together.
     wardLife: [MAX_WARDS]f32 = [_]f32{1} ** MAX_WARDS,
     stx: Index = .{},
     flx: Index = .{},
@@ -706,8 +687,7 @@ pub const Env = struct {
             }
         }
         const shoreF: f32 = @floatFromInt(gfx.WATER_SHORE);
-        // WALKED AS ROWS AND COLUMNS, not as a flat index divided back apart: every one of the 50,176 cells
-        // paid four integer divisions to recover coordinates the loop already knows.
+        // WALKED AS ROWS AND COLUMNS, not as a flat index divided back apart: every one of the 50,176 cells paid four integer divisions to recover coordinates the loop already knows.
         for (0..N) |cz| {
             const ez = edge(cz, m.half, cell);
             for (0..N) |cx| {
@@ -754,9 +734,7 @@ pub const Env = struct {
         self.noccl = 0;
         @memset(&self.sgrid_start, 0);
 
-        // **ONE PASS NOW.** There used to be two, with `buildSolids` between them, because the global cover
-        // op had to ask `blockedHere` about walls the explicit ops had just put up. Every plant is its own
-        // `at:` op now.
+        // **ONE PASS NOW.** There used to be two, with `buildSolids` between them, because the global cover op had to ask `blockedHere` about walls the explicit ops had just put up. Every plant is its own `at:` op now.
         var p = Placer{ .e = self, .m = m, .flat = !m.anyHeight() };
         for (m.slice(), 0..) |*o, i| {
             p.cur = @intCast(i);
@@ -779,8 +757,7 @@ pub const Env = struct {
             self.nlights = 1;
         }
         buildSolids(self);
-        // `buildSolids` rebuilds `nwards` and `wardProps`; the LATCHES those index are a separate array and
-        // a staged prop inherited the last map's. A gate whose `wardLife` had run out photographs as absent.
+        // `buildSolids` rebuilds `nwards` and `wardProps`; the LATCHES those index are a separate array and a staged prop inherited the last map's. A gate whose `wardLife` had run out photographs as absent.
         self.openWards();
         indexProps(self);
     }
@@ -935,9 +912,7 @@ pub const Env = struct {
         return look.clear;
     }
 
-    /// WHICH FOG GATE THE LINE FROM `a` TO `b` GOES THROUGH, if any. A push-out only answers where a body
-    /// IS, so a move that ARRIVES rather than travels — a blink, a burrow, a leap over the sheet — has to be
-    /// asked about the whole segment or it lands inside the arena having never touched the door.
+    /// WHICH FOG GATE THE LINE FROM `a` TO `b` GOES THROUGH, if any. A push-out only answers where a body IS, so a move that ARRIVES rather than travels — a blink, a burrow, a leap over the sheet — has to be asked about the whole segment.
     pub fn wardCrossed(self: *const Env, a: rl.Vector3, b: rl.Vector3) ?u8 {
         const Look = struct {
             a: rl.Vector3,
@@ -954,17 +929,14 @@ pub const Env = struct {
         return look.slot;
     }
 
-    /// THE ONE WALK. Every question about a particular gate is about ITS OWN capsules; as a filtered pass
-    /// over the whole buffer that was eighteen hundred solids apiece, one of them on the frame the prompt draws.
+    /// THE ONE WALK. Every question about a particular gate is about ITS OWN capsules; as a filtered pass over the whole buffer that was eighteen hundred solids apiece.
     pub fn wardSolids(self: *const Env, i: u8) []const collision.Solid {
         if (i >= self.nwards) return &.{};
         const a = self.wardSolid0[i];
         return self.solid_buf[a .. a + self.wardSolidN[i]];
     }
 
-    /// **A FOG GATE IS A WALL UNTIL HE ASKS TO PASS IT** — which ward, if any, refuses this step, whether or
-    /// not it is shut. `walking` is the ward the scripted crossing (`game.enterGate`) is on, and it is the
-    /// only exemption there is. A SPENT gate never answers: `eachSolid` retires it at `wardLife` 0.
+    /// **A FOG GATE IS A WALL UNTIL HE ASKS TO PASS IT** — which ward, if any, refuses this step, whether or not it is shut. `walking` is the ward the scripted crossing (`game.enterGate`) is on, and it is the only exemption. A SPENT gate never answers: `eachSolid` retires it at `wardLife` 0.
     pub fn wardRefusing(self: *const Env, a: rl.Vector3, b: rl.Vector3, walking: ?u8) ?u8 {
         const w = self.wardCrossed(a, b) orelse return null;
         if (walking) |on| {
@@ -978,8 +950,7 @@ pub const Env = struct {
         return i < self.nwards and !self.wardShut[i] and self.wardLife[i] > 0;
     }
 
-    /// Is `p` STANDING CLEAR of ward `i`? A door may not shut on the man in the doorway — pushed out of a
-    /// gate he is halfway through he can land back on the side he came from, locked OUT of his own fight.
+    /// Is `p` STANDING CLEAR of ward `i`? A door may not shut on the man in the doorway — pushed out of a gate he is halfway through he can land back on the side he came from, locked OUT of his own fight.
     pub fn wardClear(self: *const Env, i: u8, p: rl.Vector3, r: f32) bool {
         for (self.wardSolids(i)) |s| {
             if (collision.blocksPoint(p, r, s)) return false;
@@ -987,8 +958,7 @@ pub const Env = struct {
         return true;
     }
 
-    /// THE GATE HE IS STANDING AT, and only one he could walk through. `margin` is how far off the sheet
-    /// counts as at it.
+    /// THE GATE HE IS STANDING AT, and only one he could walk through. `margin` is how far off the sheet counts as at it.
     pub fn nearWard(self: *const Env, p: rl.Vector3, margin: f32) ?u8 {
         for (0..self.nwards) |wi| {
             const i: u8 = @intCast(wi);
@@ -1001,14 +971,10 @@ pub const Env = struct {
     }
 
     /// **THE WHOLE LINE OF A CROSSING, DERIVED FROM THE SHEET AND NOT FROM WHERE HE HAPPENED TO STOP.** The
-    /// heading is the gate's own normal (off the SOLID, so the walk and the wall cannot disagree), and `to` is
-    /// that heading run far enough to clear the sheet's half-thickness plus the body's radius WHEREVER he
-    /// started — measured, never assumed, or a man who triggered it from a metre back stops inside the door.
+    /// heading is the gate's own normal (off the SOLID, so the walk and the wall cannot disagree), and `to` is that heading run far enough to clear the sheet's half-thickness plus the body's radius WHEREVER he started.
     pub const Crossing = struct { dir: rl.Vector3, to: rl.Vector3 };
 
-    /// **THE SHEET IS THE GATE'S FIRST PART AND THE LINE COMES OFF THAT ONE.** Written as a loop over
-    /// `wardSolids` whose body returned on the first iteration either way, every part after it was dead and
-    /// silently so: a gate given a second capsule would have kept crossing on the first.
+    /// **THE SHEET IS THE GATE'S FIRST PART AND THE LINE COMES OFF THAT ONE.** Written as a loop over `wardSolids` whose body returned on the first iteration either way, every part after it was dead and silently so.
     pub fn wardCross(self: *const Env, i: u8, p: rl.Vector3, r: f32) ?Crossing {
         const parts = self.wardSolids(i);
         if (parts.len == 0) return null;
@@ -1022,8 +988,7 @@ pub const Env = struct {
         return .{ .dir = dir, .to = mathx.addV(p, mathx.scaleV(dir, span)) };
     }
 
-    /// PUT THE DOORS BACK. Called wherever the bestiary is (`game.rehomeFoes`): a spent door and a live boss
-    /// is an arena with no mouth.
+    /// PUT THE DOORS BACK. Called wherever the bestiary is (`game.rehomeFoes`): a spent door and a live boss is an arena with no mouth.
     pub fn openWards(self: *Env) void {
         self.wardIn = [_]bool{false} ** MAX_WARDS;
         self.wardShut = [_]bool{false} ** MAX_WARDS;
@@ -1050,14 +1015,12 @@ pub const Env = struct {
         return probe.hit;
     }
 
-    /// Every solid in the world, the fog gate's ward included — foes, folk, and the steering probe that asks
-    /// on their behalf (`game.wayClear`).
+    /// Every solid in the world, the fog gate's ward included — foes, folk, and the steering probe that asks on their behalf (`game.wayClear`).
     pub fn resolveActor(self: *const Env, p: rl.Vector3, r: f32, footY: f32) rl.Vector3 {
         return self.resolveActorPast(p, r, footY, false);
     }
 
-    /// HIS OWN SIDE — the hero, and the spirit he summons. The one thing a ward lets through; nothing here
-    /// touches SIGHT, which a fog gate stops for him too.
+    /// HIS OWN SIDE — the hero, and the spirit he summons. The one thing a ward lets through; nothing here touches SIGHT, which a fog gate stops for him too.
     pub fn resolveHeroSide(self: *const Env, p: rl.Vector3, r: f32, footY: f32) rl.Vector3 {
         return self.resolveActorPast(p, r, footY, true);
     }
@@ -1076,8 +1039,7 @@ pub const Env = struct {
             }
         };
         const q = r + 1.0;
-        // HIS SIDE WALKS THROUGH A GATE THAT IS STILL OPEN, and through nothing else. An empty slice is
-        // every ward standing: that is what a foe is handed, and what he is handed once one shuts.
+        // HIS SIDE WALKS THROUGH A GATE THAT IS STILL OPEN, and through nothing else. An empty slice is every ward standing: that is what a foe is handed, and what he is handed once one shuts.
         var passable = [_]bool{false} ** MAX_WARDS;
         if (crossesWards) {
             for (0..self.nwards) |i| passable[i] = !self.wardShut[i];
@@ -1119,9 +1081,7 @@ pub const Env = struct {
         return self.walkStepPast(from, dir, dist, WADE_MAX);
     }
 
-    /// **THE STEP A BODY HAS ALREADY TAKEN, ASKED OF THE GROUND** — `walkStepPast` put as the SEGMENT its
-    /// callers actually hold. Both post-step gates had the same four lines solving a heading and a length out
-    /// of `was`→`now` first. A move too small to have a direction is handed straight back.
+    /// **THE STEP A BODY HAS ALREADY TAKEN, ASKED OF THE GROUND** — `walkStepPast` put as the SEGMENT its callers actually hold. Both post-step gates had the same four lines solving a heading and a length out of `was`→`now` first. A move too small to have a direction is handed straight back.
     pub fn walkSegmentPast(self: *const Env, from: rl.Vector3, to: rl.Vector3, wade: f32) rl.Vector3 {
         const dx = to.x - from.x;
         const dz = to.z - from.z;
@@ -1234,8 +1194,7 @@ pub const Env = struct {
         return self.deepRefusedPast(fromX, fromZ, toX, toZ, WADE_MAX);
     }
 
-    /// …AND THE SAME RULE AT A WATERLINE THE CALLER CHOOSES. A creature turns back at its own hips
-    /// (`foe.wadeLimit`), and a thing the water is no obstacle to is handed an infinite one, not a second path.
+    /// …AND THE SAME RULE AT A WATERLINE THE CALLER CHOOSES. A creature turns back at its own hips (`foe.wadeLimit`), and a thing the water is no obstacle to is handed an infinite one, not a second path.
     pub fn deepRefusedPast(self: *const Env, fromX: f32, fromZ: f32, toX: f32, toZ: f32, limit: f32) bool {
         const deep = self.wadeDepth(toX, toZ);
         return deep > limit and deep > self.wadeDepth(fromX, fromZ);
@@ -1395,8 +1354,7 @@ pub const Env = struct {
             const nfo = props.info(pr.kind);
             if (!view.visible(pr.pos, nfo.bound * pr.scale, nfo.view)) continue;
             self.stat_draws += 1;
-            // The SHEET does not shrink as it goes — a wall that got smaller would read as retreating rather
-            // than as thinning — so only the fade is taken and the scale stays the gate's own.
+            // The SHEET does not shrink as it goes — a wall that got smaller would read as retreating rather than as thinning — so only the fade is taken and the scale stays the gate's own.
             const sc = v3(pr.scale, pr.scale, pr.scale);
             const fading = pr.shrink < 1.0;
             if (fading) {
@@ -1416,8 +1374,7 @@ pub const Env = struct {
         while (c < NCELL) : (c += 1) {
             if (idx.start[c] == idx.start[c + 1]) continue;
             var centre = cellCentre(c);
-            // Lifted onto the cell's own props: with elevation the cell is a slab tens of metres off the
-            // datum, and a sphere at y = 0 rejects a hilltop you are looking straight at.
+            // Lifted onto the cell's own props: with elevation the cell is a slab tens of metres off the datum, and a sphere at y = 0 rejects a hilltop you are looking straight at.
             centre.y = (idx.ylo[c] + idx.yhi[c]) * 0.5;
             const vspan = (idx.yhi[c] - idx.ylo[c]) * 0.5;
             switch (cull) {
@@ -1611,10 +1568,8 @@ const PropFrame = struct {
     }
 };
 
-/// 0 (solid) .. 1 (as thin as it gets) — the deepest ask any of its masses makes. Three sources in order:
-/// the kind's declared volumes, the COLLIDERS plus a skirt, and for a kind with neither a share of the bound.
-/// A collider is sized for what you WALK INTO and on a tree it is wrong by metres: a conifer's 1.48 m
-/// cylinder against boughs that block the view at 3.8 m.
+/// 0 (solid) .. 1 (as thin as it gets) — the deepest ask any of its masses makes. Three sources in order: the
+/// kind's declared volumes, the COLLIDERS plus a skirt, and for a kind with neither a share of the bound. A collider is sized for what you WALK INTO and on a tree it is wrong by metres: a conifer's 1.48 m cylinder against boughs that block the view at 3.8 m.
 fn thinFor(pr: *const Prop, nfo: *const props.Info, eye: rl.Vector3, at: rl.Vector3) f32 {
     var thin: f32 = 0;
     const fr = PropFrame.of(pr);
@@ -1647,9 +1602,7 @@ const Cover = struct {
 };
 const NO_COVER = Cover{ .cover = 0, .ahead = 0 };
 
-/// Overlap of two boxes in the EYE'S TANGENT PLANE, before any FOV scale, so the answer is in fractions of
-/// him. Distance to the sight line cannot answer it: a stump on the line covers his boots, a canopy fifteen
-/// metres up covers nothing.
+/// Overlap of two boxes in the EYE'S TANGENT PLANE, before any FOV scale, so the answer is in fractions of him. Distance to the sight line cannot answer it: a stump on the line covers his boots, a canopy fifteen metres up covers nothing.
 fn coverFrac(eye: rl.Vector3, at: rl.Vector3, foot: rl.Vector3, h: f32, r: f32) Cover {
     const toH = mathx.subV(at, eye);
     const dh = mathx.lenV(toH);
@@ -2101,8 +2054,7 @@ test "the culler accepts the full width of the screen, not just the axis" {
 }
 
 test "A CANOPY HIDES HIM AND THE TRUNK IT HANGS OFF DOES NOT — the occluder volume is not the collider" {
-    // A conifer's collider is a 0.58 m pole and its boughs reach 3.4 m, so a camera looking through the
-    // branches scores nothing against the pole.
+    // A conifer's collider is a 0.58 m pole and its boughs reach 3.4 m, so a camera looking through the branches scores nothing against the pole.
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
@@ -2149,8 +2101,7 @@ test "GROUND COVER THINS FROM HIS WAIST UP — a thicket in the way does, a tuft
         .{ .k = .tuft, .sc = 1.0, .thins = false },
         .{ .k = .fern, .sc = 1.0, .thins = false },
         .{ .k = .tuft, .sc = 1.38, .thins = false },
-        // …BUT THE GATE IS ON THE INSTANCE, NOT THE KIND: a bramble is knee-high at nominal scale and a
-        // waist-high mass at 1.38, and what the player has to see past is the second one.
+        // …BUT THE GATE IS ON THE INSTANCE, NOT THE KIND: a bramble is knee-high at nominal scale and a waist-high mass at 1.38, and what the player has to see past is the second one.
         .{ .k = .bramble, .sc = 1.0, .thins = false },
         .{ .k = .bramble, .sc = 1.38, .thins = true },
     }) |row| {
@@ -2452,8 +2403,7 @@ test "A CROSSING CLEARS THE SHEET WHEREVER HE STARTED FROM" {
     const e = try envWithFogGate();
     defer std.testing.allocator.destroy(e);
     const R: f32 = 0.42;
-    // Triggered from hard against it and from a metre and a half back: both have to END clear on the far
-    // side, which is what a fixed travel distance gets wrong at one end or the other.
+    // Triggered from hard against it and from a metre and a half back: both have to END clear on the far side, which is what a fixed travel distance gets wrong at one end or the other.
     for ([_]f32{ -0.55, -1.50, -2.20 }) |z| {
         const at = v3(0.3, 0, z);
         const x = e.wardCross(0, at, R).?;
@@ -2564,8 +2514,7 @@ test "flyStep: a jump crosses what it is OVER, and a cliff is a wall at any alti
     try std.testing.expectApproxEqAbs(at.x, e.flyStep(at, east, 2.0, foot).x, 1e-4);
     try std.testing.expectApproxEqAbs(at.x, e.flyStep(at, east, 2.0, foot + 1.0).x, 1e-4);
     try std.testing.expect(e.flyStep(at, east, 2.0, foot + WALL).x > at.x);
-    // A jump may never travel WORSE than a step: a rise inside the walk's own allowance is taken from the
-    // takeoff frame, feet still on the ground.
+    // A jump may never travel WORSE than a step: a rise inside the walk's own allowance is taken from the takeoff frame, feet still on the ground.
     const low = try envWithRamp(0.30);
     defer std.testing.allocator.destroy(low);
     const g0 = low.groundAt(0, 0);
@@ -2813,8 +2762,7 @@ test "every generator op in the shipped map has its own seed" {
 }
 
 test "a cliff stood at the map's edge is still inside the grid" {
-    // CLIFF_BOUND is a hand-copied mirror of the mesh's own bound, because MAX_HALF has to be a comptime
-    // value and `props.info` is a runtime lookup.
+    // CLIFF_BOUND is a hand-copied mirror of the mesh's own bound, because MAX_HALF has to be a comptime value and `props.info` is a runtime lookup.
     try std.testing.expectApproxEqAbs(CLIFF_BOUND, props.info(.cliff).bound, 1e-4);
     try std.testing.expect(wf.DEFAULT_HALF <= MAX_HALF);
     try std.testing.expect(GROUND_HALF > wf.DEFAULT_HALF + 200);
@@ -2867,9 +2815,7 @@ test "replaying the SHIPPED map produces a stable world" {
     if (props0 != PIN_PROPS or solids0 != PIN_SOLIDS or lights0 != PIN_LIGHTS) {
         std.debug.print("\n  SHIPPED MAP MOVED - re-pin: props {d}, solids {d}, lights {d}\n", .{ props0, solids0, lights0 });
     }
-    // THESE MOVING IS THE POINT OF PINNING THEM: re-pin only when the world was MEANT to change. Anything
-    // touching the waterline shifts the shore scatter by up to half a facet (`facetWater` moved 196 props),
-    // and `materialize` reads the OPS alone, so foe records cannot move any of the three.
+    // THESE MOVING IS THE POINT OF PINNING THEM: re-pin only when the world was MEANT to change. Anything touching the waterline shifts the shore scatter by up to half a facet (`facetWater` moved 196 props), and `materialize` reads the OPS alone, so foe records cannot move any of the three.
     try std.testing.expectEqual(PIN_PROPS, props0);
     try std.testing.expectEqual(PIN_SOLIDS, solids0);
     // An item pickup is a LIGHT with no collider (`props.INFO`), so it moves this and `props0` but never

@@ -5,9 +5,7 @@ const uiart = @import("uiart.zig");
 const item = @import("../play/item.zig");
 const combat = @import("../play/combat.zig");
 
-// Every stroke scales off `k`: the set was tuned in a 34 px box (`TUNED_AT`) and multiplies up, so one picture
-// serves a 33 px bag cell and a 240 px detail plate. Every wabi-sabi offset comes out of a FIXED-SEED
-// `mathx.Rng` re-seeded per call — off a live stream the whole HUD crawls.
+// Every stroke scales off `k`: the set was tuned in a 34 px box (`TUNED_AT`) and multiplies up, so one picture serves a 33 px bag cell and a 240 px detail plate. Every wabi-sabi offset comes out of a FIXED-SEED `mathx.Rng` re-seeded per call — off a live stream the whole HUD crawls.
 
 const rgba = mathx.rgba;
 
@@ -108,9 +106,7 @@ fn dimmed(c: rl.Color, lit: bool) rl.Color {
     return if (lit) c else mathx.withAlpha(c, mathx.u8f(@as(f32, @floatFromInt(c.a)) * UNLIT_SHARE));
 }
 
-/// A filled ellipse at a FLOAT centre. raylib's own takes `i32` there, so every caller was doing the same
-/// `@intFromFloat` pair by hand — and every one of them was quietly snapping the picture to a whole pixel,
-/// which at a 33 px bag cell is a tenth of the cell.
+/// A filled ellipse at a FLOAT centre. raylib's own takes `i32` there, so every caller was doing the same `@intFromFloat` pair by hand — and quietly snapping the picture to a whole pixel, which at a 33 px bag cell is a tenth of the cell.
 fn ellipseV(cx: f32, cy: f32, rx: f32, ry: f32, col: rl.Color) void {
     rl.drawEllipse(@intFromFloat(@round(cx)), @intFromFloat(@round(cy)), rx, ry, col);
 }
@@ -137,9 +133,7 @@ pub fn draw(k: item.Kind, cx: f32, cy: f32, px: f32) void {
     drawHeld(k, cx, cy, px, true);
 }
 
-/// **A SHEAF, NOT ONE ARROW.** Three shafts fanned and tied — a single arrow at this size is a line, and a
-/// line is what every other stick in the tray already looks like. `hot` swaps the heads for tallow-wrapped
-/// rag, which is the only thing that separates the two kinds at 32 px.
+/// **A SHEAF, NOT ONE ARROW.** Three shafts fanned and tied — a single arrow at this size is a line, and a line is what every other stick in the tray already looks like. `hot` swaps the heads for tallow-wrapped rag, the only thing that separates the two kinds at 32 px.
 fn arrowSheaf(cx: f32, cy: f32, px: f32, hot: bool) void {
     const s = px;
     const k = strokeK(px);
@@ -166,7 +160,6 @@ fn arrowSheaf(cx: f32, cy: f32, px: f32, hot: bool) void {
         rl.drawLineEx(fl, v2(fl.x - s * 0.07, fl.y + s * 0.03), 1.6 * k, BONE_DK);
         rl.drawLineEx(v2(fl.x, fl.y + s * 0.05), v2(fl.x - s * 0.06, fl.y + s * 0.08), 1.5 * k, BONE_DK);
     }
-    // The cord that makes it a sheaf.
     rl.drawLineEx(v2(cx - s * 0.16, cy + s * 0.08), v2(cx + s * 0.15, cy + s * 0.05), 2.6 * k, CORD);
 }
 
@@ -302,8 +295,7 @@ fn rimewardMantle(cx: f32, cy: f32, px: f32) void {
         const x = cx - s * 0.24 + @as(f32, @floatFromInt(i)) * s * 0.12;
         rl.drawLineEx(v2(x, cy + s * 0.24), v2(x + rng.range(-1.5, 1.5) * k, cy + s * 0.31), 1.8 * k, rgba(150, 144, 132, 235));
     }
-    // THE COLD ON IT — frost along the shoulder, the rime breath's own crystal, and nothing else in the cell
-    // is blue: what this coat is FOR has to be readable in a 33 px bag cell.
+    // THE COLD ON IT — frost along the shoulder, and nothing else in the cell is blue: what this coat is FOR has to be readable in a 33 px bag cell.
     arc(cx, cy - s * 0.12, s * 0.21, std.math.pi * 1.10, std.math.pi * 1.90, 10, 2.2 * k, 1.0 * k, RIME_ICE);
     rl.drawCircleV(v2(cx - s * 0.13, cy - s * 0.06), 1.7 * k, RIME_LT);
     rl.drawCircleV(v2(cx + s * 0.15, cy - s * 0.02), 1.4 * k, RIME_LT);
@@ -359,9 +351,7 @@ fn gravebellAmulet(cx: f32, cy: f32, px: f32) void {
     arc(cx + s * 0.22, cy + s * 0.02, s * 0.11, std.math.pi * 1.25, std.math.pi * 1.92, 8, 1.6 * k, 0.6 * k, rgba(238, 226, 190, 120));
 }
 
-/// **WHICH PICTURE A SORCERY IS, AND THE ONE PLACE IT IS DECIDED** — `drawHeld`'s own shape one enum along.
-/// One list of five lived at the HUD's cross AND the book's socket, differing only in how each spelled "can he
-/// afford it". `lit` is that affordability: a thing you cannot cast has to LOOK it (the ammo box's rule).
+/// **WHICH PICTURE A SORCERY IS, AND THE ONE PLACE IT IS DECIDED** — `drawHeld`'s own shape one enum along. One list of five lived at the HUD's cross AND the book's socket, differing only in how each spelled "can he afford it". `lit` is that affordability.
 pub fn spellArt(s: combat.Spell, cx: f32, cy: f32, px: f32, lit: bool) void {
     switch (s) {
         .bolt => spell(cx, cy, px, lit),
@@ -499,10 +489,7 @@ fn deftSignet(cx: f32, cy: f32, px: f32) void {
     quad(v2(cx - s * 0.045, cy - s * 0.20), v2(cx + s * 0.045, cy - s * 0.20), v2(cx + s * 0.035, cy - s * 0.13), v2(cx - s * 0.035, cy - s * 0.13), rgba(142, 136, 124, 255));
 }
 
-/// THE SUMMONING BELL — a cross's picture, not a bag row: it is an ARMAMENT, drawn beside `sword` and `bow`
-/// and taking no `item.Kind`. The flare and the OPEN MOUTH are the whole read — a quad whose foot is wider
-/// than its head, an elliptical rim under it, and the bore as a darker ellipse INSIDE that rim, since at
-/// 34 px a bell with a filled bottom is a thimble.
+/// THE SUMMONING BELL — a cross's picture, not a bag row: it is an ARMAMENT, drawn beside `sword` and `bow` and taking no `item.Kind`. The flare and the OPEN MOUTH are the whole read, since at 34 px a bell with a filled bottom is a thimble.
 pub fn bell(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
@@ -580,9 +567,7 @@ fn scrollRoll(cx: f32, cy: f32, px: f32) void {
 
 const SpiritGlyph = enum { wolf };
 
-/// THE DRAWING, IN ONE UNBROKEN LINE — which is the flavour and also the only thing legible at 34 px. A whole
-/// body comes out as twelve pixels of mush, so what is inked is the HEAD IN PROFILE: muzzle, stop, pricked ear
-/// and the nape running off the sheet. The ear is the read; without it this is a dog or a fox.
+/// THE DRAWING, IN ONE UNBROKEN LINE — the flavour, and the only thing legible at 34 px. A whole body comes out as twelve pixels of mush, so what is inked is the HEAD IN PROFILE. The ear is the read; without it this is a dog or a fox.
 fn glyphOn(cx: f32, cy: f32, s: f32, k: f32, glyph: SpiritGlyph) void {
     switch (glyph) {
         .wolf => {
@@ -956,9 +941,7 @@ pub fn sword(cx: f32, cy: f32, px: f32) void {
     const u = 0.70711;
     const lean = rng.range(-0.035, 0.035);
     const gone = v2(cx - u * d * (1.0 + lean), cy - u * d * (1.0 - lean));
-    // THE POMMEL HAS TO FIT ITS OWN SOCKET, and off the diagonal that is not free: at the shipped 150%
-    // equipment scale the obvious 0.92 of the axis put its far side 3 px out over the rim. Held in off
-    // the wheel's own radius, so it cannot spill again at whatever scale the picture is next drawn at.
+    // THE POMMEL HAS TO FIT ITS OWN SOCKET, and off the diagonal that is not free: at the shipped 150% equipment scale the obvious 0.92 of the axis put its far side 3 px out over the rim. Held in off the wheel's own radius.
     const pomR = 2.7 * k;
     const pomOut = @min(u * d * 0.92, s * 0.5 - pomR - 1.5 * k);
     const pom = v2(cx + pomOut, cy + pomOut);
@@ -1008,8 +991,7 @@ pub fn sword(cx: f32, cy: f32, px: f32) void {
         );
     }
 
-    // THE CROSSGUARD — two arms of different length, and WIDE now that it is the read: the hilt is what
-    // this picture is of. The first pass ran it at 0.215·s and 2.9 px, which is a warhammer's head.
+    // THE CROSSGUARD — two arms of different length, and WIDE now that it is the read: the hilt is what this picture is of. The first pass ran it at 0.215·s and 2.9 px, which is a warhammer's head.
     const q = s * 0.17;
     for ([_]f32{ -1, 1 }) |side| {
         const armLen = q * rng.range(0.84, 1.08);
@@ -1156,18 +1138,14 @@ pub fn wand(cx: f32, cy: f32, px: f32) void {
     rl.drawCircleV(v2(head.x - 1.9 * k, head.y - 2.1 * k), sr * 0.15, uiart.CATCH);
 }
 
-/// **WHAT A HAND HAS A PICTURE OF, ASKED ONCE** — the HUD cell, the book's four hand sockets and the doll all
-/// come through here, the way `spellArt` is already the one answer for the sorcery cell. Named apart from
-/// `hero.Armament` because `hud` and this file may not import `hero`: `hud.Held` aliases it and one map
-/// (`book.armPic`) is the only place the two enums meet.
+/// **WHAT A HAND HAS A PICTURE OF, ASKED ONCE** — the HUD cell, the book's four hand sockets and the doll all come through here, the way `spellArt` is already the one answer for the sorcery cell. Named apart from `hero.Armament` because `hud` and this file may not import `hero`.
 pub const Arm = enum { sword, dagger, club, bow, bell, shield, wand, torch };
 
 pub fn heldArt(a: Arm, gear: ?item.Kind, cx: f32, cy: f32, px: f32) void {
     if (gear) |k| return drawHeld(k, cx, cy, px, true);
     switch (a) {
         .sword => sword(cx, cy, px),
-        // THE CLASS PICTURE IS ITS ONE WEAPON'S, because in this world it IS the class — and the hand cell
-        // never offers either of these two bare (`book.candidates`), so this is the fallback and not the view.
+        // THE CLASS PICTURE IS ITS ONE WEAPON'S, because in this world it IS the class — and the hand cell never offers either of these two bare (`book.candidates`), so this is the fallback and not the view.
         .dagger => fangDirk(cx, cy, px),
         .club => greatclub(cx, cy, px),
         .bow => bow(cx, cy, px),
@@ -1178,8 +1156,7 @@ pub fn heldArt(a: Arm, gear: ?item.Kind, cx: f32, cy: f32, px: f32) void {
     }
 }
 
-/// On the ROD'S OWN DIAGONAL, so the two left-hand pictures read as one set — and shorter, because the flame
-/// is what has to fit in the box above it.
+/// On the ROD'S OWN DIAGONAL, so the two left-hand pictures read as one set — and shorter, because the flame is what has to fit in the box above it.
 pub fn torch(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
@@ -1357,10 +1334,7 @@ pub fn siphon(cx: f32, cy: f32, px: f32, on: bool) void {
     var i: u32 = 0;
     while (i < 6) : (i += 1) {
         const ang = (@as(f32, @floatFromInt(i)) + rng.range(-0.34, 0.34)) / 6.0 * std.math.tau;
-        // WIDELY uneven runs: six of a length is a rosette however the bearings are jittered.
-        // **AND THE HEADS STOP WELL SHORT OF THE CORE.** Brought in to 0.13 they overlapped it and each other and
-        // the whole card read as one fuzzy lump with whiskers: the DARK GAP between the ring of heads and the
-        // throat is what says they are still travelling, so it is as load-bearing as the taper.
+        // WIDELY uneven runs: six of a length is a rosette however the bearings are jittered. **AND THE HEADS STOP WELL SHORT OF THE CORE** — brought in to 0.13 they overlapped it and the card read as one fuzzy lump with whiskers; the DARK GAP is what says they are still travelling.
         const far = s * rng.range(0.34, 0.52);
         const nearR = s * rng.range(0.190, 0.250);
         const mid = mathx.lerpF(far, nearR, 0.55);

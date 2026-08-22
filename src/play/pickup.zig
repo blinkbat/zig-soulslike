@@ -13,9 +13,7 @@ const v3 = mathx.v3;
 
 pub const CAP: usize = 96;
 
-/// METRES on XZ from the glow's own origin. **Wider than the box and narrower than the drop**: `souls.REACH`
-/// is 2.6 because you come back for that one under pressure, and this is 2.4 because a wisp of light has no
-/// body to bump into. NOT the widest ring in the game — `rest.REACH` is 3.2.
+/// METRES on XZ from the glow's own origin. **Wider than the box and narrower than the drop**: `souls.REACH` is 2.6 because you come back for that one under pressure, and this is 2.4 because a wisp of light has no body to bump into. NOT the widest ring in the game — `rest.REACH` is 3.2.
 pub const REACH: f32 = 2.4;
 
 pub const FADE_DUR: f32 = 0.42;
@@ -36,8 +34,7 @@ pub const Pickup = struct {
         return v3(self.pos.x, self.pos.y + (fx.PICKUP_H + 0.28) * self.scale, self.pos.z);
     }
 
-    /// **GONE FOR GOOD ONLY ONCE THE FADE IS OUT.** `taken` is the mechanic and this is the picture: the prop
-    /// grid stops drawing it here, so the two cannot disagree about whether there is still something to see.
+    /// **GONE FOR GOOD ONLY ONCE THE FADE IS OUT.** `taken` is the mechanic and this is the picture: the prop grid stops drawing it here, so the two cannot disagree about whether there is still something to see.
     pub fn spent(self: *const Pickup) bool {
         return self.taken and self.fade >= 1.0;
     }
@@ -60,10 +57,7 @@ pub const Pickups = struct {
     list: [CAP]Pickup = undefined,
     n: usize = 0,
     near: ?usize = null,
-    /// **HOW MANY OF THE LIST THE MAP PLACED.** Everything below it has a prop in `env` drawing it (and is fed
-    /// `sizeLeft`/`spent` through `env.setPickupDraw`, which is indexed by exactly this order); everything at
-    /// or above it was dropped by a body and is drawn by the loop instead. Written by `reset` and by nothing
-    /// else, so the two halves cannot get interleaved.
+    /// **HOW MANY OF THE LIST THE MAP PLACED.** Everything below it has a prop in `env` drawing it (fed `sizeLeft`/`spent` through `env.setPickupDraw`, which is indexed by exactly this order); everything at or above it was dropped by a body and is drawn by the loop. Written by `reset` and by nothing else.
     mapped: usize = 0,
 
     pub fn live(self: *Pickups) []Pickup {
@@ -84,10 +78,7 @@ pub const Pickups = struct {
         self.mapped = self.n;
     }
 
-    /// **THE MAP'S HALF ALONE, AND IT IS ONE ACCESSOR BECAUSE TWO CALLERS NEED EXACTLY IT.** Its ORDER is the
-    /// placing order — which is what `env.setPickupDraw` is indexed by (`game.hidePickups`) and what a save
-    /// slot's `pickups` bits are keyed to (`save.gather`/`scatter`). Handed the whole list, both of those walk
-    /// off the end of the thing they mean and start reading body drops as map glows.
+    /// **THE MAP'S HALF ALONE, AND IT IS ONE ACCESSOR BECAUSE TWO CALLERS NEED EXACTLY IT.** Its ORDER is the placing order — what `env.setPickupDraw` is indexed by and what a save slot's `pickups` bits are keyed to. Handed the whole list, both walk off the end and start reading body drops as map glows.
     pub fn mappedOnes(self: *Pickups) []Pickup {
         return self.list[0..@min(self.mapped, self.n)];
     }
@@ -108,9 +99,7 @@ pub const Pickups = struct {
 
     /// Refuses an empty list, so `nloot > 0` stays the honest test for "this one is a drop".
     ///
-    /// **A FULL LIST RECYCLES A SPENT SLOT BEFORE IT REFUSES** — a session kills far more than the 96 the cap
-    /// shares with the map's glows, and a picked-up glow is a slot nobody can see. With none spendable the
-    /// drop is DROPPED rather than overwriting a glow standing in front of you.
+    /// **A FULL LIST RECYCLES A SPENT SLOT BEFORE IT REFUSES** — a session kills far more than the 96 the cap shares with the map's glows, and a picked-up glow is a slot nobody can see. With none spendable the drop is DROPPED rather than overwriting a glow standing in front of you.
     pub fn spawn(self: *Pickups, at: rl.Vector3, kinds: []const item.Kind) void {
         if (kinds.len == 0) return;
         const n = @min(kinds.len, DROP_MAX);

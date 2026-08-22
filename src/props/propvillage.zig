@@ -574,8 +574,7 @@ pub fn chestMesh(shader: rl.Shader) rl.Model {
 const CHEST_GLOW_EMISSIVE: u8 = 26;
 const CHEST_GLOW = mathx.rgba(226, 170, 78, CHEST_GLOW_EMISSIVE);
 const CHEST_GLOW_HOT = mathx.rgba(244, 216, 152, CHEST_GLOW_EMISSIVE);
-/// How far the seam plate stands PROUD of the carcase's outer face. The iron bands' own 0.010 — this has to
-/// clear the wood to be seen at all, and any more is a lit flange round a box rather than a leaking joint.
+/// How far the seam plate stands PROUD of the carcase's outer face. The iron bands' own 0.010 — this has to clear the wood to be seen at all, and any more is a lit flange round a box rather than a leaking joint.
 const CHEST_SEAM_PROUD: f32 = 0.010;
 const CHEST_SEAM_H: f32 = 0.034;
 

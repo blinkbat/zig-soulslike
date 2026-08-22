@@ -40,9 +40,7 @@ pub fn governs(a: Attr) [:0]const u8 {
     };
 }
 
-/// **AN ATTRIBUTE NOTHING READS, AND TODAY THERE IS NONE** — it was LUCK until the drop tables gave it a job.
-/// The predicate STAYS because the next attribute arrives dead the way that one did, and a row nothing reads
-/// has to be greyed (`book.drawAttributes`, and `item`'s comptime refusal to write a boon of one).
+/// **AN ATTRIBUTE NOTHING READS, AND TODAY THERE IS NONE** — it was LUCK until the drop tables gave it a job. The predicate STAYS because the next attribute arrives dead the way that one did, and a row nothing reads has to be greyed.
 pub fn inert(a: Attr) bool {
     _ = a;
     return false;
@@ -77,9 +75,7 @@ const STAM_SEGS = [_]Seg{
     .{ .upTo = MAX, .per = 15.0 / 49.0 },
 };
 
-// ONE curve for strength, dexterity and intelligence — nothing about the three differs but which weapon asks.
-// 1.0 at `START`: putting damage behind an attribute may not move the damage the game is tuned around. 0.72
-// at a single point, ~1.71x maxed. Caps are ER's weapon-scaling ones (`docs/ELDEN_RING.md` §2), 20/55/80.
+// ONE curve for strength, dexterity and intelligence — nothing about the three differs but which weapon asks. 1.0 at `START`: putting damage behind an attribute may not move the damage the game is tuned around. 0.72 at a single point, ~1.71x maxed. Caps are ER's weapon-scaling ones (§2), 20/55/80.
 const SCALE_BASE: f32 = 0.72;
 const SCALE_SEGS = [_]Seg{
     .{ .upTo = 20, .per = 0.020 },
@@ -92,14 +88,10 @@ pub fn scaleFor(pts: u8) f32 {
     return yield(pts, SCALE_BASE, &SCALE_SEGS);
 }
 
-// It multiplies a RARE row's weight and NOTHING ELSE — scale every row and luck does nothing, the weights
-// being relative. 1.0 at `START` like every curve here. Under-invested takes nearly half the rare chance;
-// maxed is about two and a half times.
+// It multiplies a RARE row's weight and NOTHING ELSE — scale every row and luck does nothing, the weights being relative. 1.0 at `START`. Under-invested takes nearly half the rare chance; maxed is about two and a half times.
 const FIND_BASE: f32 = 0.60;
 const FIND_SEGS = [_]Seg{
-    // WRITTEN AS THE DIVISION IT IS (`STAM_SEGS`' idiom): the RATE is what carries 0.60 → 1.00 across the
-    // fourteen points from 1 to `START`, and a rounded decimal lands at 1.0004 — a curve that moved the drops
-    // it promised not to, by four ten-thousandths. The leg itself runs on to the softcap at 30.
+    // WRITTEN AS THE DIVISION IT IS (`STAM_SEGS`' idiom): the RATE is what carries 0.60 → 1.00 across the fourteen points from 1 to `START`, and a rounded decimal lands at 1.0004 — a curve that moved the drops it promised not to.
     .{ .upTo = 30, .per = 0.40 / 14.0 },
     .{ .upTo = 60, .per = 0.020 },
     .{ .upTo = MAX, .per = 0.0125 },
@@ -152,8 +144,7 @@ pub const Sheet = struct {
         return staminaFor(self.at(.endurance));
     }
 
-    /// WHAT HIS LUCK IS MULTIPLYING A RARE ROW BY right now — the sheet's own read of `findFor`, so the page
-    /// and `drops.roll` cannot print and roll two different numbers.
+    /// WHAT HIS LUCK IS MULTIPLYING A RARE ROW BY right now — the sheet's own read of `findFor`, so the page and `drops.roll` cannot print and roll two different numbers.
     pub fn finds(self: *const Sheet) f32 {
         return findFor(self.at(.luck));
     }

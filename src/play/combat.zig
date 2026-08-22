@@ -24,9 +24,7 @@ pub fn elemName(e: Elem) [:0]const u8 {
     };
 }
 
-/// A number per element, WRITTEN BY NAME — damage on a `Hit`, percent on a `Resists`. Field names are
-/// matched against the enum at comptime, so a rename is a compile error and an omitted element is a 0;
-/// an array literal would silently shift when the enum gains a fifth.
+/// A number per element, WRITTEN BY NAME. Field names are matched against the enum at comptime, so a rename is a compile error and an omitted element is a 0; an array literal would silently shift on a fifth.
 pub const Spread = struct { fire: f32 = 0, cold: f32 = 0, lightning: f32 = 0, chaos: f32 = 0 };
 
 fn pack(s: Spread) [NELEM]f32 {
@@ -100,14 +98,11 @@ pub const Hit = struct {
     stance: f32 = 0,
     elem: Elems = .{},
     fp: f32 = 0,
-    /// **METRES OFF THE GROUND THIS BLOW THROWS HIM, AND ZERO FOR NEARLY EVERY BLOW IN THE GAME.** A LARGE
-    /// SLAM ONLY (owner's call). Authored as the APEX rather than a speed, because the height is the thing a
-    /// player can see — `hero.startLaunch` solves the launch speed out of it under the JUMP's own gravity, so
-    /// there is one gravity in the world and a thrown body falls exactly as a leaping one does.
+    /// **METRES OFF THE GROUND THIS BLOW THROWS HIM, AND ZERO FOR NEARLY EVERY BLOW IN THE GAME.** A LARGE SLAM
+    /// ONLY (owner's call). Authored as the APEX rather than a speed: `hero.startLaunch` solves the launch speed out of it under the JUMP's own gravity, so a thrown body falls exactly as a leaping one does.
     launch: f32 = 0,
 
-    /// THE WHOLE BLOW BEFORE ANYBODY'S RESISTANCES — what a shield's stamina bill and "which of two blows
-    /// was worse" are measured on, since those are about weight rather than about what you resist.
+    /// THE WHOLE BLOW BEFORE ANYBODY'S RESISTANCES — what a shield's stamina bill and "which of two blows was worse" are measured on.
     pub fn raw(self: Hit) f32 {
         return self.dmg + self.elem.total();
     }
@@ -122,9 +117,7 @@ pub const Hit = struct {
         return out;
     }
 
-    /// **`launch` IS CARRIED, NEVER SCALED.** The others are quantities of harm and a perk that doubles them
-    /// should double them; how far a body is thrown is a fact about the blow's WEIGHT, and a damage multiplier
-    /// that also threw him twice as high would put the picture in the hands of his character sheet.
+    /// **`launch` IS CARRIED, NEVER SCALED.** How far a body is thrown is a fact about the blow's WEIGHT, and a damage multiplier that also threw him twice as high would put the picture in his character sheet.
     pub fn scaled(self: Hit, k: f32) Hit {
         return .{
             .dmg = self.dmg * k,
@@ -177,10 +170,7 @@ pub const Vitals = struct {
     lightStun: f32 = LIGHT_STUN_DUR,
     heavyStun: f32 = HEAVY_STUN_DUR,
     res: Resists = .{},
-    /// **THE PHYSICAL HALF OF `res`** (`armourTaken`'s own note: "the thing they were always the other half
-    /// of"). Written for the hero and never worn by a foe until the spore homunculus, which is meant to be
-    /// answered with fire rather than with a sword — resistances alone could not say that, because there is
-    /// no `.physical` element to give a resistance to.
+    /// **THE PHYSICAL HALF OF `res`.** Written for the hero and never worn by a foe until the spore homunculus, which is meant to be answered with fire — resistances alone could not say that, because there is no `.physical` element.
     armour: f32 = 0,
 
     pub fn init(hpMax: f32, poiseMax: f32, stanceMax: f32) Vitals {
@@ -223,9 +213,7 @@ pub const Vitals = struct {
         return self.stunLeft > 0;
     }
 
-    /// **WHICH STAGGER IS IN FLIGHT** — STORED, because it cannot be recovered from the bars afterwards: `hit`
-    /// refills `stance` to full on the frame it breaks, so a `stance <= 0` test for "was that the heavy one"
-    /// is a condition that is never true. Read by a creature whose state machine has a pose per severity.
+    /// **WHICH STAGGER IS IN FLIGHT** — STORED, because it cannot be recovered from the bars: `hit` refills `stance` to full on the frame it breaks, so a `stance <= 0` test for "was that the heavy one" is never true.
     pub fn stunHeavy(self: *const Vitals) bool {
         return self.stunAs == .heavy;
     }
@@ -281,10 +269,8 @@ pub const Vitals = struct {
         self.stance = mathx.minF(self.stanceMax, self.stance + self.stanceMax / STANCE_REFILL * self.regenRate * dt);
     }
 
-    /// A DRIP — damage billed EVERY FRAME by something that holds (`Root`), as opposed to a blow. `hit` in
-    /// every respect but the REGEN CLOCK: stamped afresh every frame for a whole `ROOT_HOLD`, `sinceHit`
-    /// never opens the poise/stance refill, so a grip carrying no poise would deny most of a poise bar
-    /// anyway. `sinceHurt` IS stamped, so the bar shows it. Poise-free drips only.
+    /// A DRIP — damage billed EVERY FRAME by something that holds (`Root`). `hit` in every respect but the REGEN
+    /// CLOCK: stamped afresh every frame, `sinceHit` never opens the poise/stance refill, so a grip carrying no poise would deny most of a poise bar anyway. `sinceHurt` IS stamped. Poise-free drips only.
     pub fn drip(self: *Vitals, h: Hit) HitResult {
         const clock = self.sinceHit;
         const r = self.hit(h);
@@ -324,8 +310,7 @@ pub const Vitals = struct {
     }
 };
 
-// ER's shallow, fast-refilling pool (docs/ELDEN_RING.md §3 — its Endurance-15 numbers): a flat bite per
-// action, pouring back ~4x as fast as a roll spends it, so it paces a FLURRY and not a whole fight.
+// ER's shallow, fast-refilling pool (docs/ELDEN_RING.md §3 — its Endurance-15 numbers): a flat bite per action, pouring back ~4x as fast as a roll spends it, so it paces a FLURRY and not a whole fight.
 pub const STAM_MAX = stats.staminaFor(stats.START); // 105 — ENDURANCE owns the pool size now (`stats.zig`); about eight rolls from full
 pub const STAM_ROLL = 12.0;
 pub const STAM_LIGHT = 10.0;
@@ -349,9 +334,7 @@ pub const Stamina = struct {
     sinceSpend: f32 = LONG_AGO,
     winded: bool = false,
     regenRate: f32 = 1.0,
-    /// THE TOADFLESH BROTH — the refill runs `brew.amount`× while its clock runs. One clock, refreshed
-    /// never stacked (the status law); it speeds the trickle and touches nothing else, so the delay,
-    /// the winded latch and the panic rule all mean what they always did.
+    /// THE TOADFLESH BROTH — the refill runs `brew.amount`× while its clock runs. One clock, refreshed never stacked (the status law); it speeds the trickle and touches nothing else.
     brew: Timed = .{},
 
     pub fn initFoe(max: f32) Stamina {
@@ -434,9 +417,7 @@ pub fn withinArc(bearing: f32, facing: f32, arc: f32) bool {
 }
 
 /// **HOW WIDE A THING OF HALF-WIDTH `half` IS FROM `dist` AWAY** — degrees, `withinArc`'s own unit, so an arc
-/// test can be widened by the width of the body it is testing rather than by a fudge. The knight's door
-/// against his own axis, the rime cone against a giant's flank and the ogre's sweep against the man's own
-/// radius are one triangle written three ways; this is the one way.
+/// test can be widened by the width of the body it is testing rather than by a fudge. The knight's door, the rime cone against a giant's flank and the ogre's sweep are one triangle written three ways.
 pub fn subtendedArc(half: f32, dist: f32) f32 {
     return mathx.degrees(std.math.atan2(half, mathx.maxF(dist, 1e-4)));
 }
@@ -444,25 +425,19 @@ pub fn subtendedArc(half: f32, dist: f32) f32 {
 pub fn guardStamina(h: Hit) f32 {
     return GUARD_STAM_FLAT + GUARD_STAM_PER_DMG * h.raw();
 }
-/// WHAT GETS THROUGH — still a `Hit`, so the chip's elemental share meets the blocker's resistances instead of arriving as raw HP. DAMAGE ONLY: poise and stance are what the shield is FOR, and a chip that carried the blow's stagger through would flinch him behind his own guard.
-/// **A CURVE, NOT A PERCENTAGE** (PoE2's own): `A/(A + 5*dmg)` of a blow is turned aside, so the same coat is
-/// worth a fifth of a middling blow and a tenth of the one that was going to kill you — which is why it can
-/// never become immunity and needs no cap. **PHYSICAL ONLY**, the other half of `Resists`. **AND IT TOUCHES
-/// NEITHER POISE NOR STANCE** — those belong to the BLOW, not to the body it lands on (`guardChip`'s law).
+/// WHAT GETS THROUGH — still a `Hit`, so the chip's elemental share meets the blocker's resistances instead of
+/// arriving as raw HP. DAMAGE ONLY: poise and stance are what the shield is FOR. **A CURVE, NOT A PERCENTAGE**
+/// (PoE2's own): `A/(A + 5*dmg)` is turned aside, so the same coat is worth a fifth of a middling blow and a
+/// tenth of the one that was going to kill you — which is why it can never become immunity and needs no cap. **PHYSICAL ONLY.**
 pub fn armourTaken(a: f32, dmg: f32) f32 {
     if (a <= 0 or dmg <= 0) return dmg;
     return dmg * (1.0 - a / (a + 5.0 * dmg));
 }
 
-/// **A BOARD MAY NEVER STOP A BLOW OUTRIGHT** — the chip is the entire reason a guard is not a wall, and with a
-/// shield ROW (`item.Arm.negate`) multiplying the base and a tree node adding to it, the two could sum past 1
-/// and make blocking free. `guardChip` clamps at 1; this stops it ever getting there.
+/// **A BOARD MAY NEVER STOP A BLOW OUTRIGHT.** With a shield ROW (`item.Arm.negate`) multiplying the base and a tree node adding to it, the two could sum past 1 and make blocking free.
 pub const GUARD_NEGATE_CAP: f32 = 0.95;
 
-/// **WHAT A BOARD ACTUALLY TURNS ASIDE, NAMED ONCE.** The shield row multiplies the base, the tree node adds
-/// to it, and the cap holds the sum under 1 (`GUARD_NEGATE_CAP`'s own note). `hero.blockHit` and the
-/// character book's `guard` row both need this number and both spelled it out — two copies of the one figure
-/// the page exists to compare, and a page promising 97% behind a door the fight holds to 95 is a page lying.
+/// **WHAT A BOARD ACTUALLY TURNS ASIDE, NAMED ONCE.** `hero.blockHit` and the character book's `guard` row both spelled it out — two copies of the one figure the page exists to compare, and a page promising 97% behind a door the fight holds to 95 is a page lying.
 pub fn guardNegation(boardNegate: f32, perkGuard: f32) f32 {
     return mathx.minF(GUARD_NEGATE_CAP, GUARD_NEGATE * boardNegate + perkGuard);
 }
@@ -474,13 +449,11 @@ pub fn guardChip(h: Hit, negate: f32) Hit {
 
 
 pub const STAM_PARRY: f32 = 9.0;
-/// WHAT THE BOARDS DEAL WHEN THEY CATCH: nothing to the health, everything to the FOOTING. No `dmg`, because a
-/// parry has never been damage — the punish after it is. And NO POISE either, so a catch can never resolve as
-/// a mere flinch: it breaks the stance or it does not, which is the owner's "may heavy stun them" read off the
-/// same bar the sword has been chipping. Sized so the ogre's 90 stance takes two catches and lighter takes one.
+/// WHAT THE BOARDS DEAL WHEN THEY CATCH: nothing to the health, everything to the FOOTING. No `dmg` — a parry
+/// has never been damage, the punish after it is. And NO POISE, so a catch can never resolve as a mere flinch.
+/// Sized so the ogre's 90 stance takes two catches and lighter takes one.
 /// **THE ONE LAUNCH IN THE GAME** (owner: only large slams, for now) — metres of apex, authored by every
-/// `SLAM_HIT` in `foes/` and by nothing else. It lives here rather than in `hero.zig` so a creature can say
-/// its blow throws him without importing the man it throws; `hero.LAUNCH_MAX_APEX` pins it against the arc.
+/// `SLAM_HIT` in `foes/` and by nothing else. Here rather than in `hero.zig` so a creature can say its blow throws him without importing the man it throws.
 pub const SLAM_LAUNCH: f32 = 0.85;
 
 pub const PARRY_HIT = Hit{ .stance = 46 };
@@ -502,9 +475,7 @@ pub const Focus = struct {
         self.cur = minF(self.max, self.cur + amt);
         return true;
     }
-    /// PAY THE WHOLE COST OR CAST NOTHING — the exact OPPOSITE of `Stamina.canAct`'s panic rule, and the
-    /// difference is deliberate: the bottom of the stamina bar buys a roll you cannot afford because that is the
-    /// genre's most important move, where a half-paid spell would be a spell that half exists (ER's rule too).
+    /// PAY THE WHOLE COST OR CAST NOTHING — the OPPOSITE of `Stamina.canAct`'s panic rule, and deliberately: the bottom of the stamina bar buys a roll you cannot afford, where a half-paid spell would half exist.
     pub fn spend(self: *Focus, amt: f32) bool {
         if (self.cur < amt) return false;
         self.cur -= amt;
@@ -544,11 +515,9 @@ pub const SUMMON_MAX: usize = 1;
 
 pub const BOLT_HIT = Hit{ .poise = 14, .stance = 6, .elem = elems(.{ .chaos = 25 }) };
 
-/// **THE HOLD IS WHAT THE SPELL SELLS** (owner: make it last longer) — 3.5 s to 5.0. The DRIP came down to
-/// pay for it: `SPELLS`' ladder is monotone, so 12 FP has a window of (18, 22) between the siphon under it and
-/// the levin over it, and the same hold at the old 5.6/s would have billed 28 and broken the price list at
-/// comptime. That is the ladder working: every rung up in FP buys a stagger, a HOLD, HP back or a body —
-/// never more damage.
+/// **THE HOLD IS WHAT THE SPELL SELLS** (owner: make it last longer) — 3.5 s to 5.0. The DRIP came down to pay
+/// for it: `SPELLS`' ladder is monotone, so 12 FP has a window of (18, 22) between the siphon under it and the
+/// levin over it, and the same hold at the old 5.6/s would have billed 28 and broken the price list at comptime.
 pub const ROOT_HOLD: f32 = 5.0;
 pub const ROOT_DPS: f32 = 4.0;
 pub const ROOT_R: f32 = 2.6;
@@ -574,26 +543,19 @@ pub const Root = struct {
     }
 };
 
-/// THE RIME BREATH — the rod's third sorcery, and **THE FIRST THING IN THE GAME THAT REACHES MORE THAN ONE
-/// BODY WITHOUT BEING A SWING** (owner's call; it overturns the no-area-spells law — see AGENTS.md). A CONE
-/// poured out of him for `RIME_DUR`, not a blast at a mark, so its area is a thing he aims and holds and a
-/// body walks out of it the way a body walks out of a swing.
+/// THE RIME BREATH — the rod's third sorcery, and **THE FIRST THING IN THE GAME THAT REACHES MORE THAN ONE BODY
+/// WITHOUT BEING A SWING** (owner's call; it overturns the no-area-spells law — see AGENTS.md). A CONE poured for `RIME_DUR`, so its area is a thing he aims and holds and a body walks out of it.
 pub const RIME_DUR: f32 = 0.85;
 pub const RIME_REACH: f32 = 6.0;
 pub const RIME_ARC: f32 = 30.0;
 pub const RIME_DPS: f32 = 18.0;
 
 pub const CHILL_HOLD: f32 = 4.0;
-/// WHAT A CHILLED BODY'S TRAVEL IS MULTIPLIED BY. **The feet, and nothing else** — `Root`'s own law, which
-/// this is the partial case of: the state machine still runs, the kit still swings at its own speed and the
-/// blows land as hard. A chilled thing is not a slowed thing, it is a thing that cannot close.
+/// WHAT A CHILLED BODY'S TRAVEL IS MULTIPLIED BY. **The feet, and nothing else** — `Root`'s own law. A chilled thing is not a slowed thing, it is a thing that cannot close.
 pub const CHILL_TRAVEL: f32 = 0.55;
 
 comptime {
-    // IT COSTS MORE THAN THE ROOTS AND DEALS LESS, which is the whole shape of it: reach across a field is
-    // what it sells, and it may not also be the better single-target spell. The PRICE half of that pair now
-    // lives in the `SPELLS` ladder's own monotonicity assert; this is the half about the two DRIPS, which is
-    // the comparison that table cannot make for itself.
+    // IT COSTS MORE THAN THE ROOTS AND DEALS LESS: reach across a field is what it sells, and it may not also be the better single-target spell. This is the half about the two DRIPS, which the `SPELLS` ladder cannot make for itself.
     std.debug.assert(RIME_DUR * RIME_DPS < ROOT_HOLD * ROOT_DPS);
     std.debug.assert(CHILL_HOLD > 3.0 * RIME_DUR);
     std.debug.assert(CHILL_TRAVEL > 0 and CHILL_TRAVEL < 1);
@@ -618,8 +580,7 @@ pub const Chill = struct {
         self.left = 0;
         self.owed = 0;
     }
-    /// The bite owed this frame, or null. A DRIP and never a blow — no poise and no stance, `Root.tick`'s
-    /// reason: a cone that flinched would flinch everything in front of him at once.
+    /// The bite owed this frame, or null. A DRIP and never a blow — no poise and no stance (`Root.tick`'s reason): a cone that flinched would flinch everything in front of him at once.
     pub fn tick(self: *Chill, dt: f32) ?Hit {
         self.left = maxF(0, self.left - dt);
         if (self.owed <= 0) return null;
@@ -635,41 +596,31 @@ pub const Chill = struct {
     }
 };
 
-/// **THE TWO THAT DO NOT CROSS THE GROUND** — they arrive on ONE named body on the frame they are cast, so
-/// they need a REACH and an ARC rather than a speed. The arc is narrower than the rime cone's 30 on purpose:
-/// that spell is a wash poured over what is in front of him, and these are aimed at somebody.
+/// **THE TWO THAT DO NOT CROSS THE GROUND** — they arrive on ONE named body on the frame they are cast, so they need a REACH and an ARC rather than a speed. Narrower than the rime cone's 30 on purpose: that is a wash, these are aimed.
 pub const STRIKE_ARC: f32 = 22.0;
 
 /// **THE ONE THAT DOES NOT TRAVEL** — lightning's signature is the shortest-lived in `elemfx`, so a bolt of it
 /// sailing six metres as a thrown stone is a picture arguing with its element. What it sells is the INTERRUPT.
-/// POISE PAST EVERY CREATURE'S `POISE_MAX` BAR THE BONE KNIGHT'S 78 (the ogre's 30 is the next), so one cast
-/// flinches anything that is not a boss, where his heavy swing at 22 leaves the giants standing. STANCE
-/// deliberately UNDER that swing's 14: a spell thrown from across the room may not be the better
-/// guard-breaker than a stroke committed inside reach.
+/// POISE PAST EVERY CREATURE'S `POISE_MAX` BAR THE BONE KNIGHT'S 78 (the ogre's 30 is next), where his heavy
+/// swing at 22 leaves the giants standing. STANCE deliberately UNDER that swing's 14: a spell thrown from across the room may not be the better guard-breaker.
 pub const LEVIN_HIT = Hit{ .poise = 34, .stance = 10, .elem = elems(.{ .lightning = 22 }) };
-/// Well past the roots' 7 m throw, since nothing has to cross the ground to get there, and far short of the
-/// bolt's 55: an interrupt thrown from outside the fight is not an interrupt.
+/// Well past the roots' 7 m throw, since nothing has to cross the ground, and far short of the bolt's 55: an interrupt thrown from outside the fight is not an interrupt.
 pub const LEVIN_REACH: f32 = 16.0;
 
 pub const SIPHON_HIT = Hit{ .elem = elems(.{ .chaos = 18 }) };
 pub const SIPHON_SHARE: f32 = 0.55;
 pub const SIPHON_REACH: f32 = 12.0;
 
-/// **THE FIRST FIRE ON HIS SIDE OF THE FIGHT**, and the only spell that does not stop at the first body: a
-/// LANCE goes THROUGH, so it is for a line of them. PER BODY and deliberately small, priced where the rime
-/// is — what it buys is the SECOND body and the third, never the number on the first. Poise under the levin's
-/// 34 and over a hero light's, so a line of small things all flinch at once.
+/// **THE FIRST FIRE ON HIS SIDE OF THE FIGHT**, and the only spell that does not stop at the first body: a LANCE
+/// goes THROUGH. PER BODY and deliberately small, priced where the rime is — what it buys is the SECOND body and the third. Poise under the levin's 34 and over a hero light's.
 pub const LANCE_HIT = Hit{ .poise = 18, .stance = 6, .elem = elems(.{ .fire = 16.5 }) };
 pub const LANCE_REACH: f32 = 20.0;
 pub const LANCE_R: f32 = 0.55;
 
-/// **THE ROD'S ANSWER TO A SHIELD** — stance decides whether a guard holds, and nothing but a committed
-/// stroke inside reach moved it in quantity. **CAST IN MELEE RANGE ON PURPOSE** (`SUNDER_REACH`, inside a
-/// sword's own), keeping `LEVIN_HIT`'s law: it carries a parry's worth of stance and you have to be standing
-/// there to spend it. PHYSICAL, NO ELEMENT, and the lowest damage of the seven — the ladder paying for stance.
+/// **THE ROD'S ANSWER TO A SHIELD** — stance decides whether a guard holds, and nothing but a committed stroke
+/// inside reach moved it in quantity. **CAST IN MELEE RANGE ON PURPOSE** (`SUNDER_REACH`): it carries a parry's worth of stance and you have to be standing there to spend it. PHYSICAL, and the lowest damage of the seven.
 pub const SUNDER_HIT = Hit{ .dmg = 14, .poise = 12, .stance = 40 };
-/// INSIDE THE SWORD'S OWN REACH (`game.MELEE_AIM_R` is 3.6). This is the one sorcery that is not a way to
-/// avoid being in the fight.
+/// INSIDE THE SWORD'S OWN REACH (`game.MELEE_AIM_R` is 3.6). The one sorcery that is not a way to avoid being in the fight.
 pub const SUNDER_REACH: f32 = 4.0;
 
 pub const Spell = enum { bolt, roots, rime, levin, siphon, lance, sunder };
@@ -686,10 +637,8 @@ pub const SpellRow = struct {
     drip: f32 = 0,
 };
 
-/// **THE ROD'S SEVEN, AS ONE TABLE YOU CAN READ DOWN.** The FP column is the LADDER, which is what the
-/// monotonicity assert below checks. **ROW ORDER IS `Spell`'S OWN**, pinned at comptime: an eighth spell is a
-/// compile error until it has said what it costs and what it does. The MECHANICS stay beside their own spell —
-/// this is the price, not the physics.
+/// **THE ROD'S SEVEN, AS ONE TABLE YOU CAN READ DOWN.** The FP column is the LADDER (the monotonicity assert
+/// below). **ROW ORDER IS `Spell`'S OWN**, pinned at comptime: an eighth spell is a compile error until it has said what it costs and what it does. This is the price, not the physics.
 pub const SPELLS = [_]SpellRow{
     .{ .spell = .bolt,   .name = "Chaos Bolt",   .fp = 8,  .scroll = .scroll_bolt,   .says = "A thrown stone of chaos. Crosses the ground, and cover stops it.",     .blow = BOLT_HIT },
     .{ .spell = .roots,  .name = "Roots",        .fp = 12, .scroll = .scroll_roots,  .says = "Holds a body where it stands and bleeds it while it is held.",        .drip = ROOT_HOLD * ROOT_DPS },
@@ -762,8 +711,7 @@ pub fn spellDamage(s: Spell) f32 {
     return if (row.blow) |b| b.raw() else row.drip;
 }
 
-/// ER's memory slots: how many sorceries he may have about him at once. Owning a scroll is not casting off
-/// it, and this is the only limit on the rod.
+/// ER's memory slots: how many sorceries he may have about him at once. Owning a scroll is not casting off it.
 pub const MEM_SLOTS: usize = 3;
 
 comptime {
@@ -772,8 +720,7 @@ comptime {
         "nothing, and past eight the screens have no numeral to call a slot by");
 }
 
-/// What is memorized, filled at a bonfire. **THE RING IS THE SLOT ORDER, NOT `SPELLS`'** — the rack is what
-/// the player arranged himself, and a list that re-sorts under him is one he cannot learn (`Quick.slots`).
+/// What is memorized, filled at a bonfire. **THE RING IS THE SLOT ORDER, NOT `SPELLS`'** — the rack is what the player arranged himself, and a list that re-sorts under him is one he cannot learn.
 pub const Memory = struct {
     slots: [MEM_SLOTS]?Spell = blk: {
         var s = [_]?Spell{null} ** MEM_SLOTS;
@@ -820,8 +767,7 @@ pub const Memory = struct {
         self.slots[i] = s;
     }
 
-    /// Null if nothing is memorized; `from` itself when it is the only one, so a caller can tell a cycle
-    /// that moved from one that could not.
+    /// Null if nothing is memorized; `from` itself when it is the only one, so a caller can tell a cycle that moved from one that could not.
     pub fn next(self: *const Memory, from: Spell) ?Spell {
         const start = self.slotOf(from) orelse return self.first();
         for (1..MEM_SLOTS + 1) |step| {
@@ -835,10 +781,8 @@ pub const BOLT_FP: f32 = spellFp(.bolt);
 
 comptime {
     // **THE LADDER IS MONOTONE, AND THAT IS THE WHOLE PRICE LIST**: 8→25, 11→22, 12→19.6, 13→18, 14→16.5,
-    // 15→15.3, 16→14. **AND EVERY RUNG CLEARS A FREE LIGHT SWING** (`hero.ATK_LIGHT_HIT`, 13) — five of the
-    // seven sat under it while costing a third of the pool. Every step up in FP is a step DOWN in raw damage:
-    // what the difference buys is a stagger, a hold, HP back or a second body. Asserted over every PAIR, so an
-    // eighth spell is priced by the rule without editing it.
+    // 15→15.3, 16→14. **AND EVERY RUNG CLEARS A FREE LIGHT SWING** (`hero.ATK_LIGHT_HIT`, 13) — five of the seven
+    // sat under it while costing a third of the pool. Asserted over every PAIR, so an eighth spell is priced by the rule without editing it.
     for (std.enums.values(Spell)) |a| {
         for (std.enums.values(Spell)) |b| {
             if (spellFp(a) < spellFp(b)) std.debug.assert(spellDamage(a) > spellDamage(b));
@@ -952,9 +896,7 @@ pub fn quickCount(k: item.Kind, flasks: *const Flasks, bag: *const item.Bag) u8 
 pub const QUICK_SLOTS: usize = 10;
 
 pub const Quick = struct {
-    /// ORDERED, and a removal leaves its hole rather than compacting: the bar is cycled by muscle memory in
-    /// the middle of a fight, and a list that shuffles under you every time you drop something is one you
-    /// cannot learn. `add` takes the first free slot.
+    /// ORDERED, and a removal leaves its hole rather than compacting: the bar is cycled by muscle memory mid-fight, and a list that shuffles under you is one you cannot learn. `add` takes the first free slot.
     slots: [QUICK_SLOTS]?item.Kind = blk: {
         var s = [_]?item.Kind{null} ** QUICK_SLOTS;
         s[0] = .crimson_flask;
@@ -1253,9 +1195,7 @@ pub const Souls = struct {
         self.shown = minF(goal, self.shown + maxF((goal - self.shown) * SOUL_ROLL_RATE, SOUL_ROLL_FLOOR) * dt);
     }
 
-    /// **THROUGH A `u64` AND CAPPED ON THE TOTAL.** `maxInt(u32)` has no f32 that represents it — the nearest
-    /// is 2^32 — so a saturated total rolls `shown` to a float ONE PAST the type it was being cast into, and
-    /// that cast is illegal rather than merely wrong. `maxF` is the NaN guard (`clampF`'s reason).
+    /// **THROUGH A `u64` AND CAPPED ON THE TOTAL.** `maxInt(u32)` has no f32 that represents it — the nearest is 2^32 — so a saturated total rolls `shown` to a float ONE PAST the type it was being cast into, and that cast is illegal rather than merely wrong. `maxF` is the NaN guard.
     pub fn display(self: *const Souls) u32 {
         const n: u64 = @intFromFloat(@floor(maxF(self.shown, 0)));
         return @intCast(@min(n, self.total));
@@ -1352,8 +1292,7 @@ test "the grip is ALL CHAOS and carries no stagger — a hold is not a flinch" {
 }
 
 test "THE GRIP DOES NOT DENY THE REFILL — a drip bills HP and leaves the regen clock alone" {
-    // Billed through `hit`, the bite re-stamps `sinceHit` every frame and the gate never opens, so a foe held
-    // for its whole span comes out of the roots with the poise it went in with. That is a stagger tool.
+    // Billed through `hit`, the bite re-stamps `sinceHit` every frame and the gate never opens, so a foe held for its whole span comes out of the roots with the poise it went in with.
     var held = Vitals.initFoe(100, 20, 40);
     var loose = Vitals.initFoe(100, 20, 40);
     for ([_]*Vitals{ &held, &loose }) |v| _ = v.hit(.{ .poise = 15 });
@@ -1934,8 +1873,7 @@ test "the quiver holds two kinds, and the SELECTED one is the one that flies" {
     try std.testing.expectEqual(ArrowKind.plain, q.sel);
 }
 
-/// How many kinds the quiver holds — off the enum, so a third arrow moves the round trip and the walk below
-/// with it rather than leaving two tests asserting a 2 that stopped being the count.
+/// How many kinds the quiver holds — off the enum, so a third arrow moves the round trip and the walk below with it rather than leaving two tests asserting a 2 that stopped being the count.
 const NARROW = @typeInfo(ArrowKind).@"enum".fields.len;
 
 test "fire arrows are the SCARCE ones" {
@@ -2032,8 +1970,7 @@ test "…and shedding the row it was TURNED TO lands the selection on something 
 }
 
 test "A SHEAF NEVER CARRIES MORE THAN THE QUIVER HOLDS" {
-    // `item.zig` imports nothing but std, so the two halves of this contract are checked from THIS side —
-    // a sheaf worth more than the bank it fills silently bins the surplus the moment it is picked up.
+    // `item.zig` imports nothing but std, so the two halves of this contract are checked from THIS side — a sheaf worth more than the bank it fills silently bins the surplus the moment it is picked up.
     inline for (@typeInfo(item.Kind).@"enum".fields) |f| {
         const k: item.Kind = @enumFromInt(f.value);
         switch (item.use(k)) {

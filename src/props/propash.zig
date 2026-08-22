@@ -15,9 +15,7 @@ const CHAR_LT = art.CHAR_LT;
 const CINDER_GREY = art.CINDER_GREY;
 const EMBER_LIVE = art.EMBER_LIVE;
 
-// **A DRIFT HAS A WINDWARD SIDE AND A LEE, AND THAT IS THE WHOLE OF WHY IT READS AS ASH** — a symmetrical
-// mound is a pile of anything. Every heap below is laid on the same +X wind, so a field of them agrees about
-// which way the weather came from.
+// **A DRIFT HAS A WINDWARD SIDE AND A LEE, AND THAT IS THE WHOLE OF WHY IT READS AS ASH** — a symmetrical mound is a pile of anything. Every heap below is laid on the same +X wind, so a field of them agrees about which way the weather came from.
 
 const Drift = struct {
     /// Along the RIDGE, which runs across the wind.
@@ -25,16 +23,14 @@ const Drift = struct {
     /// Across it, which is the axis the asymmetry lives on.
     wide: f32,
     high: f32,
-    /// Where the crest sits across the section, -1 (windward toe) to 1 (lee toe). Positive: the long ramp is
-    /// on the windward side and the short slip face on the lee, which is the whole silhouette.
+    /// Where the crest sits across the section, -1 (windward toe) to 1 (lee toe). Positive: the long ramp is on the windward side and the short slip face on the lee, which is the whole silhouette.
     crest: f32 = 0.18,
     /// How far the windward toe reaches. The lee toe is fixed just past the crest — that IS the slip face.
     toe: f32 = -0.80,
     seed: u64 = 1,
 };
 
-/// Height of the drift's surface at (`u` across, `v` along), both -1..1 / 0..1. A PURE FUNCTION, so the mesh
-/// and its normals come off the same shape and the test below can measure the profile without a builder.
+/// Height of the drift's surface at (`u` across, `v` along), both -1..1 / 0..1. A PURE FUNCTION, so the mesh and its normals come off the same shape and the test below can measure the profile without a builder.
 fn duneH(d: Drift, u: f32, v: f32, jitter: f32) f32 {
     // Along the ridge it swells and dies at both ends, off centre so it is not a sausage.
     const env = std.math.pow(f32, mathx.clampF(mathx.sinf(v * std.math.pi), 0, 1), 0.62) *
@@ -50,9 +46,7 @@ fn duneH(d: Drift, u: f32, v: f32, jitter: f32) f32 {
 const DUNE_NV: usize = 15;
 const DUNE_NU: usize = 13;
 
-/// **ONE CONTINUOUS SURFACE.** Built as a row of blobs it was a line of loaves however far they overlapped —
-/// each one keeps its own crown, and a dune has exactly one. So it is swept: a profile walked along the ridge
-/// with smoothed normals, which is the only way the long ramp and the slip face can meet in a single edge.
+/// **ONE CONTINUOUS SURFACE.** Built as a row of blobs it was a line of loaves however far they overlapped — each one keeps its own crown, and a dune has exactly one. So it is swept: a profile walked along the ridge with smoothed normals.
 fn driftInto(b: *Builder, rng: *mathx.Rng, d: Drift, cx: f32, cz: f32, yaw: f32) void {
     b.setMat(.stone);
     const c = mathx.cosf(yaw);
@@ -87,9 +81,7 @@ fn driftInto(b: *Builder, rng: *mathx.Rng, d: Drift, cx: f32, cz: f32, yaw: f32)
             const p10 = at(d, ub, v0, jit, cx, cz, c, sn);
             const p11 = at(d, ub, v1, jit, cx, cz, c, sn);
             const p01 = at(d, ua, v1, jit, cx, cz, c, sn);
-            // TONE FOLLOWS THE HEIGHT, not the station: a gradient across the slope, never a band along it.
-            // A CONTINUOUS TWO-STOP GRADIENT — switching the lerp's TARGET at a threshold puts a hard ring
-            // round the crest. Toes to body, then body to the catch of light, meeting at 0.80.
+            // TONE FOLLOWS THE HEIGHT, not the station: a gradient across the slope, never a band along it. A CONTINUOUS TWO-STOP GRADIENT — switching the lerp's TARGET at a threshold puts a hard ring round the crest.
             const t = mathx.clampF(0.5 * (p00.y + p11.y) / mathx.maxF(d.high, 0.01), 0, 1);
             const CREST: f32 = 0.80;
             const tone = if (t < CREST)
@@ -137,9 +129,7 @@ pub fn ashDuneMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// **THE ONE GROUND-LEVEL THING IN THE GAME THAT IS ITS OWN LIGHT.** The coals carry a low vertex ALPHA,
-/// which the scene shader reads as EMISSIVE — so they hold their glow at any hour without costing a
-/// `LightSpec`, and a field of them can be sown by the hundred where sixteen real lights is the whole budget.
+/// **THE ONE GROUND-LEVEL THING IN THE GAME THAT IS ITS OWN LIGHT.** The coals carry a low vertex ALPHA, which the scene shader reads as EMISSIVE — so they hold their glow at any hour without costing a `LightSpec`, and a field of them can be sown by the hundred where sixteen real lights is the whole budget.
 pub fn cindersMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xA513);
@@ -178,9 +168,7 @@ pub fn cindersMesh(shader: rl.Shader) rl.Model {
 
 pub const SPAR_H: f32 = 5.4;
 
-/// A tree that burned standing. Charcoal is the darkest albedo in the world and it needs to be: this is a
-/// tall smooth mass and anything lighter comes back grey. The limbs are `propwood`'s own — the dead-growth
-/// law is the same whether the limb rotted off or burned off.
+/// A tree that burned standing. Charcoal is the darkest albedo in the world and it needs to be: this is a tall smooth mass and anything lighter comes back grey. The limbs are `propwood`'s own — the dead-growth law is the same whether the limb rotted off or burned off.
 pub fn charSparMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xA514);
@@ -241,8 +229,7 @@ test "A DUNE IS ASYMMETRIC OR IT IS A PUDDING — the long ramp and the short sl
 }
 
 test "the coals are EMISSIVE and the ash around them is not" {
-    // Vertex alpha is the emissive channel (255 = fully lit), so a coal must sit well under it and the
-    // crust it lies in must not — the two together are the whole effect.
+    // Vertex alpha is the emissive channel (255 = fully lit), so a coal must sit well under it and the crust it lies in must not — the two together are the whole effect.
     try std.testing.expect(EMBER_LIVE.a < 128);
     try std.testing.expectEqual(@as(u8, 255), CINDER_GREY.a);
     try std.testing.expectEqual(@as(u8, 255), DRIFT_DK.a);

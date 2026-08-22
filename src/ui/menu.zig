@@ -55,9 +55,7 @@ const DBG_HITBOX = 3;
 const DBG_HOUR = 4;
 const DBG_DAYRATE = 5;
 const DBG_TIMESCALE = 6;
-/// Weather arrives on a clock measured in MINUTES, so "is the rain working" is not a question anybody can sit
-/// and answer. Confirm cycles dry → gentle → moderate → dry (`weather.Weather.cycleForce`), as a row and not
-/// a submenu because the point is to watch the sky while you turn it.
+/// Weather arrives on a clock measured in MINUTES, so "is the rain working" is not a question anybody can sit and answer. Confirm cycles dry → gentle → moderate → dry (`weather.Weather.cycleForce`), as a row and not a submenu because the point is to watch the sky while you turn it.
 const DBG_WEATHER = 7;
 const DBG_FOG = 8;
 const DBG_CLOSE = 9;
@@ -117,15 +115,13 @@ const SLOT_THUMB_H: i32 = 90;
 const SLOT_H: i32 = SLOT_THUMB_H + 16;
 const SLOT_GAP: i32 = 8;
 const SLOT_TEXT_GAP: i32 = 18;
-/// From the HILITE's left edge, shared by both kinds of card, so a picker's thumbnail starts where an
-/// ordinary row's label starts. At the hilite inset instead, the picture came out over the cursor bar.
+/// From the HILITE's left edge, shared by both kinds of card, so a picker's thumbnail starts where an ordinary row's label starts. At the hilite inset instead, the picture came out over the cursor bar.
 const ROW_LABEL: i32 = 26;
 
 const VEIL = rgba(6, 6, 9, 150);
 const BOOT_VEIL = rgba(5, 5, 8, 168);
 const CARD = rgba(16, 15, 13, 232);
-// THE INK IS `uiart`'s, not a second copy of it — that file's four weights exist so the menu card and the
-// character book cannot drift into two greys.
+// THE INK IS `uiart`'s, not a second copy of it — that file's four weights exist so the menu card and the character book cannot drift into two greys.
 const TEXT_DIM = uiart.TEXT_DIM;
 /// A row that cannot be pressed, at the character book's own inert weight rather than a fifth grey.
 const TEXT_OFF = mathx.withAlpha(uiart.TEXT_DIM, 70);
@@ -307,8 +303,7 @@ pub const Menu = struct {
         if (self.screen == .debug and self.cursor == DBG_FOG) {
             if (adjTapped(.left) or adjTapped(.right)) self.cycleFog();
         }
-        // THE HOUR. Its own delta rather than `adjustDelta`'s, which is scaled for a 0..1 dial: an hour is not
-        // a hundredth of anything, and a tap of 0.01 h is nine game seconds — a control that does nothing.
+        // THE HOUR. Its own delta rather than `adjustDelta`'s, which is scaled for a 0..1 dial: an hour is not a hundredth of anything, and a tap of 0.01 h is nine game seconds — a control that does nothing.
         if (self.screen == .debug and self.cursor == DBG_HOUR) {
             const step: f32 = if (coarseHeld()) HOUR_COARSE else HOUR_TAP;
             if (adjTapped(.left)) day.nudge(-step);
@@ -527,8 +522,7 @@ pub const Menu = struct {
             daynight.phaseName(day.hour),
             if (day.frozen()) " (held)" else "",
         }) catch "?";
-        // …and the SPEED, said as a day's length rather than as a multiplier: what you are about to watch is the
-        // sky going round, and "10 s/day" is that where "120x" is arithmetic.
+        // …and the SPEED, said as a day's length rather than as a multiplier: what you are about to watch is the sky going round, and "10 s/day" is that where "120x" is arithmetic.
         var len: [12]u8 = undefined;
         out[DBG_DAYRATE] = std.fmt.bufPrintZ(&dbgRateBuf, "Day Speed: {d:.0}x — {s}/day{s}", .{
             day.speed(),
@@ -536,8 +530,7 @@ pub const Menu = struct {
             if (day.frozen()) " (held)" else "",
         }) catch "?";
         out[DBG_TIMESCALE] = std.fmt.bufPrintZ(&dbgTimeBuf, "Time Scale: {d:.0}%", .{self.timeScale * 100}) catch "?";
-        // Read off the STORM itself rather than a flag kept here, so the row cannot say one thing while the
-        // sky does another — `DBG_HOUR`'s own rule, which reads the clock rather than remembering it.
+        // Read off the STORM itself rather than a flag kept here, so the row cannot say one thing while the sky does another — `DBG_HOUR`'s own rule, which reads the clock rather than remembering it.
         out[DBG_WEATHER] = sky.says();
         out[DBG_FOG] = switch (self.fog) {
             .auto => "Fog: Auto (weather)",
@@ -736,8 +729,7 @@ pub const Menu = struct {
 const Card = struct {
     gauges: ?[]const f32 = null,
     note: ?[:0]const u8 = null,
-    /// Drawn faint and with no hilite under it, but the cursor still LANDS on it: a row the cursor skips is
-    /// a row you cannot read the reason for, and the reason is the whole of what the footnote is saying.
+    /// Drawn faint and with no hilite under it, but the cursor still LANDS on it: a row the cursor skips is a row you cannot read the reason for, and the reason is the whole of what the footnote is saying.
     dim: ?[]const bool = null,
 };
 
@@ -802,8 +794,7 @@ pub fn unload() void {
     unloadShots();
 }
 
-/// "2h 14m" — hours and minutes, never seconds. What a slot row is answering is "which of these have I
-/// played", and a number that ticks is not what that question is asking.
+/// "2h 14m" — hours and minutes, never seconds. What a slot row answers is "which of these have I played", and a number that ticks is not what that question is asking.
 fn playtimeText(secs: f32, buf: []u8) [:0]const u8 {
     const total: u32 = @intFromFloat(@max(0, secs));
     const h = total / 3600;
@@ -907,10 +898,7 @@ pub fn navPressed(dir: NavDir) bool {
     return dirPressed(dir, true);
 }
 
-// A stick is a LEVEL where a walk wants EDGES, so a naive reading fires a step every frame it is off centre.
-// Four standard pieces:
-//  1. A RADIAL magnitude, never per-axis — the corner of the square passes at 0.62 on each axis while the
-//     true deflection is 0.88, so a lazy diagonal reads as a hard push.
+// A stick is a LEVEL where a walk wants EDGES, so a naive reading fires a step every frame it is off centre. A RADIAL magnitude, never per-axis — the corner of the square passes at 0.62 on each axis while the true deflection is 0.88, so a lazy diagonal reads as a hard push.
 const STICK_FIRE: f32 = 0.72;
 const STICK_REARM: f32 = 0.42;
 const STICK_CONE: f32 = 0.848;
@@ -1014,8 +1002,7 @@ fn coarseHeld() bool {
     return padDown(.left_trigger_1);
 }
 
-/// THE PAGE TURN — the shoulders, and Q/E for the keyboard. It cannot be Left/Right: those move a grid
-/// cursor in the book, and on the stats page they turn him on the spot.
+/// THE PAGE TURN — the shoulders, and Q/E for the keyboard. It cannot be Left/Right: those move a grid cursor in the book, and on the stats page they turn him on the spot.
 fn tabPressed(dir: i32) bool {
     const back = dir < 0;
     if (rl.isKeyPressed(if (back) .q else .e)) return true;

@@ -12,9 +12,7 @@ const BONE_DK = art.BONE_DK;
 const MARROW = art.MARROW;
 const ASH_DK = art.ASH_DK;
 
-// The only props at architecture scale that were never BUILT, so they keep the DEAD-GROWTH laws and not the
-// masonry ones: nothing dead is straight, nothing ends in a point, and a curved shaft draws its curl ONCE and
-// applies it every segment (`propwood.deadLimbInto`'s rule).
+// The only props at architecture scale that were never BUILT, so they keep the DEAD-GROWTH laws and not the masonry ones: nothing dead is straight, nothing ends in a point, and a curved shaft draws its curl ONCE and applies it every segment (`propwood.deadLimbInto`'s rule).
 
 pub const RibKind = struct {
     /// Arc LENGTH along the shaft, not height — the height falls out of the curl and is measured, never typed.
@@ -26,18 +24,15 @@ pub const RibKind = struct {
     r0: f32,
     r1: f32,
     segs: i32,
-    /// The pair the shaft is weathered BETWEEN — dark and damp at the socket, bleached at the snap. Each
-    /// kind carries its own, which is where the variation lives: never along one shaft.
+    /// The pair the shaft is weathered BETWEEN — dark and damp at the socket, bleached at the snap. Each kind carries its own, which is where the variation lives: never along one shaft.
     foot: rl.Color = BONE_DK,
     tip: rl.Color = BONE_LT,
     /// Sideways drift per segment, degrees — a rib that curves in ONE plane is a croquet hoop.
     yawPer: f32 = 0,
 };
 
-// SOLVED, NOT PICKED. `curl` is what decides the height-to-reach ratio and nothing else does: at 88 degrees
-// the shaft ends horizontal and two of them make a SEMICIRCLE (span = twice the crown, which is an arch you
-// walk under); under 60 it stays steep and stands alone. The measured figures are in the tests below and the
-// table's `bound`/`top` come off the same solve.
+// SOLVED, NOT PICKED. `curl` is what decides the height-to-reach ratio: at 88 degrees the shaft ends horizontal
+// and two of them make a SEMICIRCLE (span = twice the crown, an arch you walk under); under 60 it stays steep and stands alone. The table's `bound`/`top` come off the same solve.
 pub const RIB_TALL = RibKind{ .arc = 10.4, .curl = 58.0, .tilt0 = 6.0, .r0 = 0.52, .r1 = 0.20, .segs = 11, .yawPer = 0.9, .foot = BONE_DK, .tip = BONE_LT };
 pub const RIB_STOUT = RibKind{ .arc = 7.6, .curl = 88.0, .tilt0 = 2.0, .r0 = 0.60, .r1 = 0.26, .segs = 10, .yawPer = -1.1, .foot = BONE_DK, .tip = BONE_OLD };
 pub const RIB_SPLIT = RibKind{ .arc = 7.2, .curl = 42.0, .tilt0 = 4.0, .r0 = 0.44, .r1 = 0.17, .segs = 9, .yawPer = 2.1, .foot = BONE_OLD, .tip = MARROW };
@@ -64,13 +59,11 @@ pub const RibPath = struct {
     }
 };
 
-/// THE SHAFT'S LINE, SOLVED ONCE — the mesh draws it and the table's `bound`/`top` are measured off it, so a
-/// re-tuned curl cannot leave a rib poking out of its own bounding sphere.
+/// THE SHAFT'S LINE, SOLVED ONCE — the mesh draws it and the table's `bound`/`top` are measured off it, so a re-tuned curl cannot leave a rib poking out of its own bounding sphere.
 pub fn ribPath(k: RibKind) RibPath {
     // The table's `bound`/`top` are four of these solved at COMPTIME, and a shaft is a dozen trig steps.
     @setEvalBranchQuota(40000);
-    // CLAMPED AT BOTH ENDS. `segs` is an i32 on a public spec: at 0 the two divisions below are a divide by
-    // zero, and below that the cast itself traps.
+    // CLAMPED AT BOTH ENDS. `segs` is an i32 on a public spec: at 0 the two divisions below are a divide by zero, and below that the cast itself traps.
     const segs: usize = @intCast(mathx.clampI(k.segs, 1, RIB_MAX_SEGS));
     const step = k.arc / @as(f32, @floatFromInt(segs));
     const dA = mathx.radians(k.curl) / @as(f32, @floatFromInt(segs));
@@ -90,14 +83,12 @@ pub fn ribPath(k: RibKind) RibPath {
 }
 
 fn ribR(k: RibKind, t: f32) f32 {
-    // Thickest a THIRD of the way up rather than at the socket: a rib is a blade, and one that only tapers
-    // reads as a horn.
+    // Thickest a THIRD of the way up rather than at the socket: a rib is a blade, and one that only tapers reads as a horn.
     const swell = 1.0 + 0.22 * mathx.sinf(mathx.clampF(t, 0, 1) * std.math.pi);
     return mathx.lerpF(k.r0, k.r1, mathx.clampF(t, 0, 1)) * swell;
 }
 
-/// Spin a local point about Y and drop it at `base`. Shared by the rib and the skull because BOTH are
-/// authored along one axis and then faced wherever the map (or the swatch) wants them.
+/// Spin a local point about Y and drop it at `base`. Shared by the rib and the skull because BOTH are authored along one axis and then faced wherever the map (or the swatch) wants them.
 fn put(base: rl.Vector3, cc: f32, ss: f32, q: rl.Vector3) rl.Vector3 {
     return v3(base.x + q.x * cc - q.z * ss, base.y + q.y, base.z + q.x * ss + q.z * cc);
 }
@@ -150,10 +141,7 @@ fn ribModel(shader: rl.Shader, seed: u64, k: RibKind) rl.Model {
     return b.toModel(shader);
 }
 
-/// **THE TABLE'S NUMBERS COME OFF THE SOLVE, NOT OFF A RULER.** `props.INFO` had them typed beside a
-/// comment claiming they were measured — which was true when they were written and false the moment a curl
-/// moved. The arch was the one that proved it: its keystone stands above the crown, so its `top` was short
-/// by 0.29 m and the shadow pass could drop it while you were standing under it.
+/// **THE TABLE'S NUMBERS COME OFF THE SOLVE, NOT OFF A RULER.** `props.INFO` had them typed beside a comment claiming they were measured — true when written and false the moment a curl moved. The arch proved it: its keystone stands above the crown, so its `top` was short by 0.29 m and the shadow pass could drop it while you were standing under it.
 pub fn ribTop(k: RibKind) f32 {
     return ribPath(k).height() + k.r1;
 }
@@ -186,8 +174,7 @@ pub fn rib3(shader: rl.Shader) rl.Model {
     return ribModel(shader, 0xB0E3, RIB_SPLIT);
 }
 
-/// **THE PAIR THAT STILL MEET** — the only gate in the world nobody built. Both halves are the same shaft
-/// solved twice and faced at each other, so the span is the path's own reach and not a number typed here.
+/// **THE PAIR THAT STILL MEET** — the only gate in the world nobody built. Both halves are the same shaft solved twice and faced at each other, so the span is the path's own reach and not a number typed here.
 pub fn ribArchMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xB0E4);
@@ -196,7 +183,6 @@ pub fn ribArchMesh(shader: rl.Shader) rl.Model {
     const half = mathx.lenXZ(path.tip());
     ribInto(&b, &rng, k, v3(-half, 0, 0), 0);
     ribInto(&b, &rng, k, v3(half, 0, 0), std.math.pi);
-    // The keystone: where two snapped ends were driven back together and fused.
     b.setMat(.stone);
     const y = path.tip().y;
     b.addBlob(v3(0, y, 0), v3(k.r1 * 2.3, k.r1 * 1.5, k.r1 * 1.9), 4, 8, MARROW);
@@ -210,9 +196,7 @@ pub const ARCH_HALF: f32 = blk: {
 };
 
 
-/// Half sunk and canted. Sockets are RELIEF INWARD — sunk blobs in shadow, not holes: a hole in a closed hull
-/// is a hole you can see the inside of. **THE SWATCH IS PART OF THE TEST** — `runPropShots` frames every kind
-/// from yaw 35, looking up +Z, so a head authored muzzle-on-+X shows the harness the back of its own skull.
+/// Half sunk and canted. Sockets are RELIEF INWARD — sunk blobs in shadow, not holes: a hole in a closed hull is a hole you can see the inside of. **THE SWATCH IS PART OF THE TEST** — `runPropShots` frames every kind from yaw 35, looking up +Z, so a head authored muzzle-on-+X shows the harness the back of its own skull.
 const SKULL_YAW: f32 = 2.53;
 
 pub fn skullMesh(shader: rl.Shader) rl.Model {
@@ -223,18 +207,14 @@ pub fn skullMesh(shader: rl.Shader) rl.Model {
     const o = mathx.zero3;
     b.setMat(.stone);
 
-    // **WHAT MAKES A SKULL A SKULL IS THE HOLES AND THE ARCHES, NOT THE DOME** — one smooth cranium came back
-    // an igloo. The mass is dark, the muzzle stands clear of the braincase, the cheek arches carry daylight
-    // under them, and the sockets are RIDGE PLUS SHADOW: a depression in a closed hull is invisible outside.
+    // **WHAT MAKES A SKULL A SKULL IS THE HOLES AND THE ARCHES, NOT THE DOME** — one smooth cranium came back an igloo. The muzzle stands clear of the braincase, the cheek arches carry daylight under them, and the sockets are RIDGE PLUS SHADOW: a depression in a closed hull is invisible outside.
 
     // The braincase, canted and half into the ground. Darkest thing on the prop: it is the biggest face.
     b.addBlob(put(o, c, sn, v3(-0.70, 1.06, 0)), v3(1.38, 1.00, 1.24), 6, 11, BONE_DK);
     b.addBlob(put(o, c, sn, v3(-1.05, 1.34, 0)), v3(0.96, 0.72, 0.92), 5, 9, BONE_OLD);
-    // The crest down the midline — one ridge, sunk most of the way in.
     b.addBlob(put(o, c, sn, v3(-0.75, 1.94, 0)), v3(0.86, 0.16, 0.14), 3, 6, BONE_LT);
 
-    // THE NECK. Narrower than both the things either side of it, which is the whole reason the muzzle reads
-    // as a separate mass rather than as more dome.
+    // THE NECK. Narrower than both the things either side of it, which is why the muzzle reads as a separate mass rather than as more dome.
     b.addCapsule(put(o, c, sn, v3(0.30, 1.10, 0)), put(o, c, sn, v3(0.92, 0.94, 0)), 0.62, 0.54, 9, BONE_DK);
 
     // The muzzle, DIPPING into the ground — a head that died face-down.
@@ -243,14 +223,11 @@ pub fn skullMesh(shader: rl.Shader) rl.Model {
     b.addBlob(put(o, c, sn, v3(1.72, 0.86, 0)), v3(0.30, 0.22, 0.16), 3, 6, BONE_DK); // the nasal opening
 
     for ([_]f32{ -1.0, 1.0 }) |sd| {
-        // THE CHEEK ARCH, and it is the one piece with real daylight under it: it leaves the braincase, bows
-        // OUT past the widest part of the skull and lands on the muzzle. That gap is worth more to the
-        // silhouette than any amount of surface detail.
+        // THE CHEEK ARCH, the one piece with real daylight under it: it leaves the braincase, bows OUT past the widest part of the skull and lands on the muzzle. That gap is worth more to the silhouette than any amount of surface detail.
         b.addCapsule(put(o, c, sn, v3(-0.35, 1.14, sd * 1.02)), put(o, c, sn, v3(0.62, 0.96, sd * 1.34)), 0.19, 0.15, 7, BONE_OLD);
         b.addCapsule(put(o, c, sn, v3(0.62, 0.96, sd * 1.34)), put(o, c, sn, v3(1.24, 0.80, sd * 0.66)), 0.15, 0.13, 7, BONE_LT);
 
-        // THE SOCKET: a proud brow above it and a dark disc standing a hair off the surface below. Sunk
-        // INTO the hull it was invisible — a closed mesh has no inside to see.
+        // THE SOCKET: a proud brow above it and a dark disc standing a hair off the surface below. Sunk INTO the hull it was invisible — a closed mesh has no inside to see.
         b.addBlob(put(o, c, sn, v3(0.30, 1.62, sd * 0.72)), v3(0.46, 0.15, 0.30), 3, 7, BONE_LT);
         b.addBlob(put(o, c, sn, v3(0.34, 1.26, sd * 0.80)), v3(0.40, 0.34, 0.30), 4, 8, BONE_DK);
         b.addBlob(put(o, c, sn, v3(0.42, 1.22, sd * 0.86)), v3(0.26, 0.23, 0.20), 3, 6, ASH_DK);
@@ -279,7 +256,6 @@ pub fn skullMesh(shader: rl.Shader) rl.Model {
         b.addBlob(v3(mathx.lerpF(0.5, 2.0, u), 0.31, mathx.lerpF(-1.42, -0.86, u)), v3(0.075, 0.11, 0.075), 2, 5, MARROW);
     }
 
-    // A crack across the crown, and the drift banked up the windward side of it.
     art.crackInto(&b, put(o, c, sn, v3(-1.55, 1.70, -0.60)), put(mathx.zero3, c, sn, v3(0.75, -0.15, 1.0)), put(mathx.zero3, c, sn, v3(1, 0, 0)), 1.9, 0.09, 0.15);
     var sct: i32 = 0;
     while (sct < 9) : (sct += 1) {
@@ -292,8 +268,7 @@ pub fn skullMesh(shader: rl.Shader) rl.Model {
 }
 
 
-/// One knuckle of the spine, boulder-sized: a drum, a blade of neural spine over it and two processes out
-/// the sides. It is the piece that says the ribs had something to hang off.
+/// One knuckle of the spine, boulder-sized. It is the piece that says the ribs had something to hang off.
 pub fn vertebraMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xB0E6);

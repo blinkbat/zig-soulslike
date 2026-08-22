@@ -115,8 +115,7 @@ fn worth(d: [ND]f32, k: Der) f32 {
 
 const DerivedRow = struct { name: [:0]const u8, unit: Unit, cost: bool = false };
 
-/// KEYED BY VARIANT, never written down the page in order — but an unnamed row is then the silent failure,
-/// so the rows start blank and the assert below is what says a fifteenth `Der` has said what it is called.
+/// KEYED BY VARIANT, never written down the page in order — but an unnamed row is then the silent failure, so the rows start blank and the assert below is what says a fifteenth `Der` has said what it is called.
 const DER = blk: {
     var rows = [_]DerivedRow{.{ .name = "", .unit = .flat }} ** ND;
     rows[@intFromEnum(Der.light)] = .{ .name = "Light attack", .unit = .flat };
@@ -154,13 +153,9 @@ fn castFp(s: combat.Spell, perk: ptree.Bonus) f32 {
 
 fn derive(l: Loadout, v: View) [ND]f32 {
     const bow = heromod.handsHold(l.arm, l.off, .bow);
-    // …AND WHETHER THAT HAND HAS AN ATTACK AT ALL (`hero.armSwings`). `bow` alone was the whole question while
-    // there were two armaments; the BELL has neither a light nor a heavy, so every row below came off the
-    // SWORD and the page priced a swing he cannot take. Zero is the honest figure, and the arm's own tip
-    // already says it in words.
+    // …AND WHETHER THAT HAND HAS AN ATTACK AT ALL (`hero.armSwings`). `bow` alone was the whole question while there were two armaments; the BELL has neither a light nor a heavy, so every row below came off the SWORD and the page priced a swing he cannot take.
     const attacks = bow or heromod.armSwings(l.arm) or heromod.armSwings(l.off);
-    // WHICH SOCKET THE SWING IS PRICED FROM. `hand_sword` while there were three weapons in one socket; a
-    // dagger and a club have their own now, and reading the sword's here priced every club as a bare sword.
+    // WHICH SOCKET THE SWING IS PRICED FROM. `hand_sword` while there were three weapons in one socket; a dagger and a club have their own now, and reading the sword's here priced every club as a bare sword.
     const row = heromod.armRow(l.worn, if (bow) .hand_bow else heromod.swingSocket(l.arm, l.off));
     const perk = v.tree.bonus();
     const sheet = sheetOf(l, perk);
@@ -176,20 +171,13 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     d[@intFromEnum(Der.stam_heavy)] = if (!attacks) 0 else @as(f32, if (bow) combat.STAM_AIMED else combat.STAM_HEAVY) * row.stam;
     const guards = heromod.handsHold(l.arm, l.off, .shield);
     const board = heromod.armRow(l.worn, .hand_shield);
-    // THE BOARD'S OWN NEGATION **PLUS THE TREE'S**, capped where the fight caps it (`hero.blockHit`, and
-    // `combat.GUARD_NEGATE_CAP`) — a page promising 97% behind a door the fight holds to 95 is a page lying
-    // about the one number it exists to compare, and one that leaves the guard node out lies the other way.
+    // THE BOARD'S OWN NEGATION **PLUS THE TREE'S**, capped where the fight caps it (`combat.GUARD_NEGATE_CAP`) — a page promising 97% behind a door the fight holds to 95 is a page lying about the one number it exists to compare.
     d[@intFromEnum(Der.guard)] = if (guards) combat.guardNegation(board.negate, perk.guard) * 100.0 else 0;
     d[@intFromEnum(Der.arc)] = if (guards) combat.GUARD_ARC * board.arc else 0;
     d[@intFromEnum(Der.armour)] = 100.0 * (1.0 - combat.armourTaken(armourOf(l.worn), heromod.ATK_HEAVY_HIT.dmg) / heromod.ATK_HEAVY_HIT.dmg);
-    // …and what he bought with it. Zero on both rows unless a wand is actually in that hand, because a spell
-    // he cannot cast is not worth a number — and it is the SORCERY THAT IS LOADED that is priced, through
-    // `combat`'s own two answers: no two rungs of the ladder cost or deal the same (`combat.SPELLS`).
+    // …and what he bought with it. Zero on both rows unless a wand is actually in that hand, and it is the SORCERY THAT IS LOADED that is priced: no two rungs of the ladder cost or deal the same (`combat.SPELLS`).
     const casts = heromod.handsHold(l.arm, l.off, .wand);
-    // …through the WHOLE multiple the cast takes (`hero.castBlow`), and **ONLY FOR THE THREE THAT ARE SCALED
-    // AT ALL**: `spellBlow` is null for the roots and the rime, which are billed flat a frame at a time by
-    // `combat.Root.tick`/`Chill.tick` and read no sheet. Multiplied here, the page promised a stronger grip
-    // and a colder breath than the fight gives.
+    // …through the WHOLE multiple the cast takes (`hero.castBlow`), and **ONLY FOR THE THREE THAT ARE SCALED AT ALL**: `spellBlow` is null for the roots and the rime, which are billed flat a frame at a time and read no sheet. Multiplied here, the page promised a stronger grip and a colder breath than the fight gives.
     const spellK: f32 = if (combat.spellBlow(l.spell) != null) perk.spellDmg * sheet.scale(.intelligence) else 1.0;
     d[@intFromEnum(Der.spell)] = if (casts) combat.spellDamage(l.spell) * spellK else 0;
     d[@intFromEnum(Der.spell_fp)] = if (casts) castFp(l.spell, perk) else 0;
@@ -226,7 +214,7 @@ pub const SlotId = enum {
 };
 const NSLOT = @typeInfo(SlotId).@"enum".fields.len;
 
-/// A socket`s ordinal, for the shot harness — so a frame is aimed at a NAME and not at a number that moves.
+/// A socket's ordinal, for the shot harness — so a frame is aimed at a NAME and not at a number that moves.
 pub fn slotOrdinal(s: SlotId) usize {
     return @intFromEnum(s);
 }
@@ -336,8 +324,7 @@ fn locked(s: SlotId, v: View) ?[:0]const u8 {
         else if (heromod.armTwoHanded(v.arm) or heromod.armTwoHanded(v.off))
             "The bow takes both hands."
         else
-            // THE WEAPON HAND IS ONE HAND (`hero.handsHold`) — say so, rather than draw a second weapon the
-            // rig has no bone for.
+            // THE WEAPON HAND IS ONE HAND (`hero.handsHold`) — say so, rather than draw a second weapon the rig has no bone for.
             "One weapon hand. The right takes it.",
         // AN ALTERNATE IS NEVER LOCKED: it is what he is NOT holding, so nothing he is holding can deny it.
         .left2, .right2 => null,
@@ -452,8 +439,7 @@ fn castsLeft(fp: f32, s: combat.Spell, v: View) u8 {
 
 const Cand = struct { name: [:0]const u8, tally: ?u8 = null, act: Action };
 
-/// The longest candidate list any slot can offer, off the enums themselves — the scratch every caller
-/// hands `candidates` is sized from this, so a third arrow cannot write past the end of one.
+/// The longest candidate list any slot can offer, off the enums themselves — the scratch every caller hands `candidates` is sized from this, so a third arrow cannot write past the end of one.
 const CAND_MAX = blk: {
     var n: usize = item.NK + 1;
     for ([_]type{ heromod.Arm, heromod.Off, combat.ArrowKind }) |T| {
@@ -476,9 +462,7 @@ fn handAct(s: SlotId, h: Hand) Action {
 fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
     if (locked(s, v) != null) return out[0..0];
     // THE WORN SOCKETS, ASKED THROUGH `wearOf` AND NOT LISTED AGAIN — `locked`, `slotHas`, `slotFilled` and
-    // `slotTally` all open on exactly this line. Written out as a seven-tag prong instead, a socket added to
-    // `wearOf` fell through to the `else` below and offered a helm the QUICK BAR's rows.
-    // What he carries for it, plus an EMPTY row: a coat you cannot take off is a coat the player is stuck in.
+    // `slotTally` all open on exactly this line. Written out as a seven-tag prong instead, a socket added to `wearOf` fell through to the `else` below and offered a helm the QUICK BAR's rows. What he carries for it, plus an EMPTY row: a coat you cannot take off is a coat the player is stuck in.
     if (wearOf(s)) |w| {
         var n: usize = 1;
         out[0] = .{ .name = "(nothing)", .act = .{ .wear = .{ .slot = w, .kind = null } } };
@@ -496,12 +480,10 @@ fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
             var n: usize = 0;
             inline for (@typeInfo(heromod.Armament).@"enum".fields) |f| {
                 const a: heromod.Armament = @enumFromInt(f.value);
-                // **THE DAGGER AND THE CLUB ARE NEVER OFFERED BARE.** The straight sword is the one he was
-                // born holding, so its row stands whatever its socket holds; those two are things you FIND,
-                // and a selectable empty class both hands him one for free and offers an "unequip" that
-                // swaps the weapon for a mechanically identical copy of itself (`item.bareArm` IS their row).
-                // The weapon rows below are the only way into either class, and they are enough: picking one
-                // sets the armament AND fills its socket (`wearInto`).
+                // **THE DAGGER AND THE CLUB ARE NEVER OFFERED BARE.** The straight sword is the one he was born
+                // holding; those two are things you FIND, and a selectable empty class both hands him one for free
+                // and offers an "unequip" that swaps the weapon for a mechanically identical copy of itself
+                // (`item.bareArm` IS their row). The weapon rows below are the only way in, and they are enough: picking one sets the armament AND fills its socket (`wearInto`).
                 if (comptime !heromod.armSwings(a) or a == .sword) {
                     out[n] = .{ .name = armName(a), .act = handAct(s, .{ .a = a }) };
                     n += 1;
@@ -548,9 +530,7 @@ fn wearInto(worn: *heromod.Worn, h: Hand) void {
 }
 
 /// **THE SET ACTUALLY IN FORCE** — what the NOW column prices, and `withCand`'s starting point. Named because it
-/// is every axis of the loadout and leaving ONE of them out is silent: built inline with `worn` left at its
-/// default, the whole column priced a bare body, so a greatclub in his fist read the plain sword's damage, a door
-/// read the small shield's negation and arc, and "Armour, vs heavy" read 0% over a full suit.
+/// is every axis of the loadout and leaving ONE of them out is silent: built inline with `worn` left at its default, the whole column priced a bare body, so a greatclub in his fist read the plain sword's damage.
 fn inForce(v: View) Loadout {
     return .{
         .arm = v.arm,
@@ -600,10 +580,8 @@ fn heldSame(h: Hand, v: View) bool {
     return v.worn.at(w) == h.kind;
 }
 
-/// On what is ALREADY equipped, never row 0 — a cursor landing anywhere else tricks you into swapping
-/// something you meant to look at. **ASKED OF THE LIST ITSELF, NEVER COUNTED A SECOND TIME**: three
-/// hand-walked copies of `candidates`' ordering were parallel lists kept in lockstep by hand. `equipped`
-/// already answers "is THIS row in force", so the row is where that first says yes.
+/// On what is ALREADY equipped, never row 0 — a cursor landing anywhere else tricks you into swapping something
+/// you meant to look at. **ASKED OF THE LIST ITSELF, NEVER COUNTED A SECOND TIME**: three hand-walked copies of `candidates`' ordering were parallel lists kept in lockstep by hand.
 fn pickIndexOf(s: SlotId, v: View) usize {
     var out: [CAND_MAX]Cand = undefined;
     for (candidates(s, v, &out), 0..) |c, i| {
@@ -791,8 +769,7 @@ pub const Book = struct {
         return .none;
     }
 
-    /// Stage a page for the shot harness, `ogre.debugStagger`'s pattern: a photograph of the picker open
-    /// on the second candidate cannot be got by pretending to press buttons at 1/60 s a frame.
+    /// Stage a page for the shot harness, `ogre.debugStagger`'s pattern: a photograph of the picker open on the second candidate cannot be got by pretending to press buttons at 1/60 s a frame.
     pub fn debugShow(self: *Book, p: Page, cursor: usize, pickSlot: ?usize, row: usize) void {
         self.page = p;
         self.cur[idx(p)] = cursor;
@@ -961,8 +938,7 @@ fn slotFit(body: Box) SlotFit {
     };
 }
 
-/// Where socket `i` sits. One table (`SLOT_CELL`) feeds this and the cursor, so the picture and the walk
-/// cannot disagree.
+/// Where socket `i` sits. One table (`SLOT_CELL`) feeds this and the cursor, so the picture and the walk cannot disagree.
 fn slotRect(body: Box, i: usize) rl.Rectangle {
     const f = slotFit(body);
     const c = SLOT_CELL[i];
@@ -1005,8 +981,7 @@ fn derivedNeedH() i32 {
 
 fn pickBox(col: Box, n: usize) Box {
     const want = pickRowH() * @as(i32, @intCast(n)) + titleH() + 24;
-    // …and never under a quarter of the column, or a narrow window squeezes the list being chosen FROM to
-    // nothing in order to protect numbers nobody can read on it either.
+    // …and never under a quarter of the column, or a narrow window squeezes the list being chosen FROM to nothing in order to protect numbers nobody can read on it either.
     const room = @max(@divTrunc(col.h, 4), col.h - derivedNeedH() - GUTTER);
     return .{ .x = col.x, .y = col.y, .w = col.w, .h = @min(room, want) };
 }
@@ -1078,18 +1053,11 @@ fn attrRow(col: Box, i: usize) rl.Rectangle {
 }
 
 
-var scratch: [16][160]u8 = undefined;
-var scratchAt: usize = 0;
-
-fn fmt(comptime f: []const u8, args: anytype) [:0]const u8 {
-    scratchAt = (scratchAt + 1) % scratch.len;
-    return std.fmt.bufPrintZ(&scratch[scratchAt], f, args) catch "?";
-}
+const fmt = hud.fmt;
 
 var saysBuf: [256]u8 = undefined;
 
-/// A copy that outlives `fmt`'s rotating scratch. Anything drawn AFTER a run of `fmt` calls has to own its
-/// bytes; a slice into slot N is only good for the next fifteen.
+/// A copy that outlives `fmt`'s rotating scratch. Anything drawn AFTER a run of `fmt` calls has to own its bytes; a slice into slot N is only good for the next fifteen.
 fn saysOwn(s: []const u8) [:0]const u8 {
     const n = @min(s.len, saysBuf.len - 1);
     @memcpy(saysBuf[0..n], s[0..n]);
@@ -1107,13 +1075,10 @@ fn panel(b: Box, title: [:0]const u8) Box {
     return panelInner(b, title.len > 0);
 }
 
-/// Their natural pitch, tightened to fit, and NEVER under the GLYPH height: too short spills off the bottom,
-/// where a NEGATIVE pitch stacks them backwards up through the heading. The floor was `lineH`, which twelve
-/// rows cannot fit in the half-panel a picker leaves them.
+/// Their natural pitch, tightened to fit, and NEVER under the GLYPH height: too short spills off the bottom, where a NEGATIVE pitch stacks them backwards up through the heading. The floor was `lineH`, which twelve rows cannot fit in the half-panel a picker leaves them.
 fn rowStep(space: i32, n: usize) i32 {
     const natural = hud.lineH(hud.SMALL) + 7;
-    // A picker CAN be open on a slot with nothing to offer (`candidates` returns an empty slice for a locked
-    // one), and that reaches here through `pickStep` as a divide by zero.
+    // A picker CAN be open on a slot with nothing to offer (`candidates` returns an empty slice for a locked one), and that reaches here through `pickStep` as a divide by zero.
     return mathx.clampI(@divTrunc(space, @as(i32, @intCast(@max(n, 1)))), rowFloor(), natural);
 }
 
@@ -1343,9 +1308,7 @@ fn drawDerived(box: Box, v: View, cand: ?Cand) void {
     const now = derive(base, v);
     const then = if (cand) |c| derive(withCand(base, c), v) else now;
 
-    // **TAKEN OFF THE ROTATING SCRATCH BEFORE THE ROWS RUN.** `gearSays` builds through `fmt`, which cycles a
-    // 16-slot buffer, and the loop below spends 28 slots on `unitStr` — so by the time this is drawn the slot
-    // it pointed at holds the tail of a stat value. It printed as a bare "65" under the table.
+    // **TAKEN OFF THE ROTATING SCRATCH BEFORE THE ROWS RUN.** `gearSays` builds through `fmt`, which cycles a 16-slot buffer, and the loop below spends 28 slots on `unitStr` — so by the time this is drawn the slot it pointed at holds the tail of a stat value.
     const says = saysOwn(if (cand) |c| candSays(c, v) else armSays(v.arm, v.off));
     const foot = hud.proseH(says, inner.w, hud.HINT) + 22;
     const step0 = rowStep(inner.h - foot - hud.lineH(hud.SMALL) - 4, ND);
@@ -1380,9 +1343,7 @@ fn drawDerived(box: Box, v: View, cand: ?Cand) void {
 }
 
 comptime {
-    // AND THE ONE PLACE THE PAIR IS CHECKED. Two enums in lockstep with nothing asserting it is the trap
-    // `item.ORDER` and `warrior`'s contiguous run are each guarded against; `armPic` being exhaustive catches
-    // a MISSING row but not a renamed or reordered one, and the pictures are indexed by name nowhere else.
+    // AND THE ONE PLACE THE PAIR IS CHECKED. Two enums in lockstep with nothing asserting it is the trap `item.ORDER` and `warrior`'s contiguous run are each guarded against; `armPic` being exhaustive catches a MISSING row but not a renamed or reordered one.
     const A = @typeInfo(heromod.Armament).@"enum".fields;
     const B = @typeInfo(itemart.Arm).@"enum".fields;
     if (A.len != B.len) @compileError("book: hero.Armament and itemart.Arm have drifted in LENGTH");
@@ -1394,9 +1355,7 @@ comptime {
     }
 }
 
-/// **THE ONE PLACE THE TWO ENUMS MEET.** `itemart.Arm` is the picture's name for a thing in a hand and
-/// `hero.Armament` is the fight's, and they are separate because neither `hud` nor `itemart` may import
-/// `hero`. Exhaustive, so a NEW armament is a compile error HERE and nowhere else.
+/// **THE ONE PLACE THE TWO ENUMS MEET.** `itemart.Arm` is the picture's name for a thing in a hand and `hero.Armament` is the fight's, and they are separate because neither `hud` nor `itemart` may import `hero`. Exhaustive, so a NEW armament is a compile error HERE and nowhere else.
 pub fn armPic(a: heromod.Armament) itemart.Arm {
     return switch (a) {
         .sword => .sword,
@@ -1728,8 +1687,7 @@ fn drawBody(col: Box, v: View) void {
     else
         "";
 
-    // THE THREE BLOCKS ARE FITTED TO THE COLUMN. Fifteen rows at a fixed pitch ran off the bottom of it,
-    // which is a readout the player cannot read — so the pitch gives way before the content does.
+    // THE THREE BLOCKS ARE FITTED TO THE COLUMN. Fifteen rows at a fixed pitch ran off the bottom of it, so the pitch gives way before the content does.
     const sect = hud.lineH(hud.TINY) + 6 + 22;
     const nRows = pools.len + costs.len + combat.NELEM;
     const fixed = sect * 2 + hud.proseH(says, inner.w, hud.HINT) + 10;
@@ -1769,8 +1727,7 @@ fn section(inner: Box, y: i32, title: [:0]const u8) i32 {
     return y + 14 + hud.lineH(hud.TINY) + 6;
 }
 
-// The hero himself, rendered off-screen and blitted into the panel — the trick the editor's object viewer
-// plays, for the same reason: it is the actual model in the actual pose, so it cannot go stale.
+// The hero himself, rendered off-screen and blitted into the panel — the trick the editor's object viewer plays, for the same reason: it is the actual model in the actual pose, so it cannot go stale.
 
 const PORT_W: i32 = 460;
 const PORT_H: i32 = 760;
@@ -1813,9 +1770,7 @@ fn drawPortrait(self: *const Book, col: Box, portrait: ?Portrait, caption: [:0]c
     if (portRT == null) portRT = rl.loadRenderTexture(PORT_W, PORT_H) catch null;
     const rt = portRT orelse return;
 
-    // THROUGH THE ONE PATH (`hud.renderIntoTarget`), which is the law AGENTS.md already states — the book's
-    // doll, the conversation's speaker and the spirit panel are one way of photographing a body. Only the
-    // TARGET is the book's, because a full-length doll is not a head shot's aspect.
+    // THROUGH THE ONE PATH (`hud.renderIntoTarget`), which is the law AGENTS.md already states — the book's doll, the conversation's speaker and the spirit panel are one way of photographing a body. Only the TARGET is the book's, because a full-length doll is not a head shot's aspect.
     hud.renderIntoTarget(rt, .{
         .scene = p.scene,
         .focus = v3(p.hero.pos.x, p.hero.pos.y + DOLL_EYE, p.hero.pos.z),
@@ -1937,8 +1892,7 @@ test "THE NOW COLUMN PRICES WHAT HE HAS ON — every axis of the set in force, `
     var v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
     const bareRows = derive(inForce(v), v);
 
-    // THE ARMAMENT AS WELL AS THE SOCKET: the club has its own socket now, and a club sitting in it while
-    // the sword is the thing in his fist prices the sword (`swingSocket`), which is the bug not the test.
+    // THE ARMAMENT AS WELL AS THE SOCKET: the club has its own socket now, and a club sitting in it while the sword is the thing in his fist prices the sword (`swingSocket`), which is the bug not the test.
     v.arm = .club;
     v.worn.put(.hand_club, .greatclub);
     v.worn.put(.hand_shield, .tower_shield);
@@ -2113,9 +2067,7 @@ test "THE DERIVED COLUMN PRICES THE TREE'S OWN MULTIPLES, not only its attribute
     rod.off = .wand;
     const bolt = derive(rod, v);
     try std.testing.expectApproxEqAbs(combat.BOLT_FP * perk.spellCost, worth(bolt, .spell_fp), 1e-3);
-    // **THE SCALING READS THE PERKED SHEET, NOT THE BARE ONE** — a `spellDmg` node that also rides a stat-up
-    // (`passivetree.Bump`) raises INTELLIGENCE as well, so priced off `stats.Sheet{}` the row came out under
-    // what the page shows. Two multipliers off one node, and the column has to carry both.
+    // **THE SCALING READS THE PERKED SHEET, NOT THE BARE ONE** — a `spellDmg` node that also rides a stat-up (`passivetree.Bump`) raises INTELLIGENCE as well, so priced off `stats.Sheet{}` the row came out under what the page shows.
     const perked = sheetOf(rod, perk);
     try std.testing.expect(perked.at(.intelligence) > sheet.at(.intelligence));
     try std.testing.expectApproxEqAbs(
@@ -2205,9 +2157,7 @@ test "THE QUICK PICKER OFFERS ONLY WHAT HE HAS — and the flasks, which are nev
 }
 
 test "THE SCRATCH FITS THE LONGEST LIST ANY SOCKET CAN OFFER, empty row and all" {
-    // `CAND_MAX` sized the buffer at `item.NK` and the quick picker writes `item.NK + 1` rows in the worst
-    // case — the "(empty)" one is a row like the others. It cannot be reached with today's six quickable
-    // kinds, which is exactly why it has to be arithmetic and not a count of what happens to be in the table.
+    // `CAND_MAX` sized the buffer at `item.NK` and the quick picker writes `item.NK + 1` rows in the worst case — the "(empty)" one is a row like the others. It cannot be reached with today's six quickable kinds, which is why it has to be arithmetic.
     try std.testing.expect(CAND_MAX >= item.NK + 1);
     var bag = item.Bag{};
     for (0..item.NK) |i| bag.add(@enumFromInt(i), 1);

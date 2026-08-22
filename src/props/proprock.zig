@@ -504,12 +504,9 @@ pub fn screeMesh(shader: rl.Shader) rl.Model {
 }
 
 
-// Weathered rock, not laid rock — all four are a hard bed over a soft one, differing in what the soft bed
-// does: undercut, split, isolate, or fail on one side. The BANDING is what says weathered: the three cliff
-// tones disagree in HUE, so alternating them per bed reads as strata under a sun that flattens value pairs.
+// Weathered rock, not laid rock — all four are a hard bed over a soft one, differing in what the soft bed does: undercut, split, isolate, or fail on one side. The BANDING is what says weathered: the three cliff tones disagree in HUE, so alternating them per bed reads as strata under a sun that flattens value pairs.
 
-/// One tone up a stack, with a single darker seam every fourth bed — `art.weathered`'s rule and `art.seam`'s
-/// exception. Alternated per bed instead (which is what this was) a hoodoo is a stack of poker chips.
+/// One tone up a stack, with a single darker seam every fourth bed — `art.weathered`'s rule and `art.seam`'s exception. Alternated per bed instead (which is what this was) a hoodoo is a stack of poker chips.
 fn stratumCol(i: i32, n: i32) rl.Color {
     const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(@max(n - 1, 1)));
     return art.seam(art.weathered(ROCK_DEEP, CLIFF_LT, t), CLIFF_DK, i, 4);
@@ -535,8 +532,7 @@ fn bedsInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, y0: f32, h: f32, r0:
 
 pub const HOODOO_H: f32 = 5.6;
 
-/// **THE UNDERCUT ONE.** A hard capstone the weather could not take, over a neck it took nearly all of —
-/// so the silhouette is top-heavy, which is the whole reason it stops you looking at it.
+/// **THE UNDERCUT ONE.** A hard capstone the weather could not take, over a neck it took nearly all of — so the silhouette is top-heavy, which is the whole reason it stops you looking at it.
 pub fn hoodooMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x0C1);
@@ -555,8 +551,7 @@ pub fn hoodooMesh(shader: rl.Shader) rl.Model {
 
 pub const SPIRE_H: f32 = 9.2;
 
-/// **THE SPLIT ONE.** A needle that lost its point long ago — a rock spire ends in a snapped bench, not a
-/// spike, and the crack that will take the next piece off it is already open down one side.
+/// **THE SPLIT ONE.** A needle that lost its point long ago — a rock spire ends in a snapped bench, not a spike, and the crack that will take the next piece off it is already open down one side.
 pub fn spireMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x0C2);
@@ -591,8 +586,7 @@ pub fn spireMesh(shader: rl.Shader) rl.Model {
 
 pub const BALANCED_H: f32 = 3.9;
 
-/// **THE ISOLATED ONE.** Everything round it went; this did not, and it is resting on a contact you can see
-/// daylight through. Off centre on purpose — a boulder balanced on its own axis is a ball on a tee.
+/// **THE ISOLATED ONE.** Everything round it went; this did not, and it is resting on a contact you can see daylight through. Off centre on purpose — a boulder balanced on its own axis is a ball on a tee.
 pub fn balancedMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x0C3);
@@ -615,8 +609,7 @@ pub fn balancedMesh(shader: rl.Shader) rl.Model {
 
 pub const FINGERS_H: f32 = 4.6;
 
-/// **THE ONE THAT FAILED ON ONE SIDE.** A bed that split along its joints and slid: five slabs still in
-/// order, each leaning a little further than the last. The ORDER is what reads — a fan, not a scatter.
+/// **THE ONE THAT FAILED ON ONE SIDE.** A bed that split along its joints and slid: five slabs still in order, each leaning a little further than the last. The ORDER is what reads — a fan, not a scatter.
 pub fn fingersMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x0C4);
@@ -646,8 +639,7 @@ pub fn fingersMesh(shader: rl.Shader) rl.Model {
 }
 
 test "a formation is top-heavy, a spire is not, and both know their own height" {
-    // The hoodoo's whole silhouette is the cap being wider than the neck it stands on; asserted here so a
-    // retune of either cannot quietly turn it into a post.
+    // The hoodoo's whole silhouette is the cap being wider than the neck it stands on.
     try std.testing.expect(HOODOO_H > 4.0);
     try std.testing.expect(SPIRE_H > HOODOO_H);
     try std.testing.expect(BALANCED_H < HOODOO_H);
@@ -655,20 +647,15 @@ test "a formation is top-heavy, a spire is not, and both know their own height" 
 }
 
 
-// A region with cliffs and nothing under a metre reads as a diorama, so the ground between the landmarks is
-// the same rock broken smaller. Every one is under knee height and none collide. **FOUR DIFFERENT BREAKS,
-// NOT FOUR SIZES OF ONE** — split, cleave, tumble, and the one that never broke.
+// A region with cliffs and nothing under a metre reads as a diorama, so the ground between the landmarks is the same rock broken smaller. Every one is under knee height and none collide. **FOUR DIFFERENT BREAKS, NOT FOUR SIZES OF ONE** — split, cleave, tumble, and the one that never broke.
 
 pub const SHARD_H: f32 = 0.58;
 
 /// SPLIT. Angular slivers stood on end, leaning off one plane the way a frost-shattered bed does.
 ///
-/// **A 4-SIDED TAPERED CYLINDER, NOT A BOX** (`fingersMesh`'s reason): a box face square-on to the key takes
-/// the whole of it, so `ROCK_DEEP` at 23,22,21 renders light grey, and boxes sharing the lean plane z-fought
-/// where they touched. The prism's faces disagree with each other, which is what makes one albedo shade.
-///
-/// The LEAN is shared because one bed failed; the YAW is not, or it is the barber's pole stood on end. **AND
-/// THEY LEAN HARD AND STAY LOW** — at 0.86 m upright with a fat cap they were a row of gravestones.
+/// **A 4-SIDED TAPERED CYLINDER, NOT A BOX** (`fingersMesh`'s reason): a box face square-on to the key takes the
+/// whole of it, so `ROCK_DEEP` at 23,22,21 renders light grey, and boxes sharing the lean plane z-fought where
+/// they touched. The LEAN is shared because one bed failed; the YAW is not, or it is the barber's pole stood on end. **AND THEY LEAN HARD AND STAY LOW** — at 0.86 m upright with a fat cap they were a row of gravestones.
 pub fn shardsMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5A11D);
@@ -687,8 +674,7 @@ pub fn shardsMesh(shader: rl.Shader) rl.Model {
         const foot = v3(x, -0.04, z);
         const head = v3(x + mathx.cosf(plane) * h * lean, h, z + mathx.sinf(plane) * h * lean);
         b.addCylinder(foot, head, w, w * rng.range(0.12, 0.30), 4, stratumCol(i, N));
-        // A broken crown — nothing dead ends in a point, and it kills the flat top face as well.
-        // Just enough to knock the point off. At 0.62 of the width these read as headstones.
+        // A broken crown — nothing dead ends in a point, and it kills the flat top face as well. At 0.62 of the width these read as headstones.
         b.addDome(head, mathx.normV(mathx.subV(head, foot)), w * 0.26, 5, CLIFF_DK);
     }
     art.chipsInto(&b, &rng, 0, 0, 1.15, 0.05, 0.13, 9);
@@ -697,8 +683,7 @@ pub fn shardsMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// CLEAVE. Flat shale plates lying over one another, each one a hair off its neighbour's angle — a stack of
-/// parallel slabs is a pavement, and this is a bed that failed.
+/// CLEAVE. Flat shale plates lying over one another, each one a hair off its neighbour's angle — a stack of parallel slabs is a pavement, and this is a bed that failed.
 pub fn slabsMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x51AB5);
@@ -725,8 +710,7 @@ pub fn slabsMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// TUMBLE. Rounded river cobbles, packed. **NO TUFT ON THIS ONE** — cobbles are what is left where water
-/// took the soil away, and a clump of grass in the middle of them says the water never ran.
+/// TUMBLE. Rounded river cobbles, packed. **NO TUFT ON THIS ONE** — cobbles are what is left where water took the soil away, and a clump of grass in the middle of them says the water never ran.
 pub fn cobblesMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xC0BB1E);
@@ -749,8 +733,7 @@ pub fn cobblesMesh(shader: rl.Shader) rl.Model {
 
 pub const WHALE_H: f32 = 0.92;
 
-/// AND THE ONE THAT NEVER BROKE. A whaleback: bedrock the soil washed off, worn smooth, mossed on top and
-/// bare down the flanks — the moss line is what says it has been there longer than everything around it.
+/// AND THE ONE THAT NEVER BROKE. A whaleback: bedrock the soil washed off, worn smooth, mossed on top and bare down the flanks — the moss line is what says it has been there longer than everything around it.
 pub fn whalebackMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x3A1E);
@@ -771,17 +754,14 @@ pub fn whalebackMesh(shader: rl.Shader) rl.Model {
             art.weathered(ROCK_DEEP, CLIFF_ROCK, t),
         );
     }
-    // **THE MOSS IS SUNK INTO THE ROCK, NOT LAID ON IT** — a flat pad's top takes the full key while the dome
-    // around it curves away, so the same near-black green came out a bright sage. Spheres buried to `SINK` of
-    // their radius show a CURVED cap that shades with the surface.
+    // **THE MOSS IS SUNK INTO THE ROCK, NOT LAID ON IT** — a flat pad's top takes the full key while the dome around it curves away, so the same near-black green came out a bright sage. Spheres buried to `SINK` of their radius show a CURVED cap that shades with the surface.
     const SINK: f32 = 0.62;
     i = 0;
     while (i < 17) : (i += 1) {
         const t = rng.range(0.10, 0.90);
         const bulge = mathx.sinf(std.math.pi * mathx.clampF(t * 0.88 + 0.06, 0, 1));
         const along = (t - 0.5) * L * 2.0;
-        // Across the back, never down the flanks — a mossed sphere is a green rock, and the bare sides are
-        // what say water still runs off it.
+        // Across the back, never down the flanks — a mossed sphere is a green rock, and the bare sides are what say water still runs off it.
         const across = rng.signed() * 0.46;
         const surf = WHALE_H * bulge * 0.44 + WHALE_H * bulge * 0.62 * @sqrt(mathx.maxF(1.0 - across * across, 0.02));
         const r = rng.range(0.13, 0.27);

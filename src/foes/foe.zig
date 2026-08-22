@@ -13,9 +13,8 @@ pub const FLASH_GAIN: f32 = 0.85;
 pub const FROST_GAIN: f32 = 0.55;
 pub const HERO_R: f32 = 0.36;
 pub const HERO_REACH: f32 = 0.55;
-/// **TOO CLOSE TO HAVE A FRONT.** Inside this every close blow lands whatever the bearing says — a body
-/// standing ON a creature is not behind it, and without the exemption hugging a flank is a way to stand
-/// inside a jaw and take nothing. Six creatures wrote this out by hand and one of them had drifted to 0.30.
+/// **TOO CLOSE TO HAVE A FRONT.** Inside this every close blow lands whatever the bearing says. Six creatures
+/// wrote this out by hand and one had drifted to 0.30.
 pub const POINT_BLANK: f32 = 0.35;
 pub const HERO_LOW: f32 = -0.10;
 pub const HERO_HIGH: f32 = 1.71; // 0.95 of his 1.8 m stature
@@ -24,12 +23,10 @@ pub fn closestApproach(bodyR: f32) f32 {
     return bodyR + HERO_R;
 }
 
-/// **THE WHOLE REACH OF A CLOSE BLOW** — the creature's own metres, scaled with the body, plus the hero's
-/// standing footprint, which is HIS and does not grow with the thing swinging at him. Twenty-two sites wrote
-/// this out and FOUR had drifted to `(own + HERO_REACH) * scale`, which bills the man's own 0.55 m at the
-/// creature's scale: +0.55 m of reach on a scale-2 body and -0.28 m on a scale-0.5 one, invisible at 1.0
-/// where every test spawns. `closestApproach` is the same triangle for COLLISION and uses `HERO_R`; this is
-/// the one for a HURT BOX.
+/// **THE WHOLE REACH OF A CLOSE BLOW** — the creature's metres scaled with the body, plus the hero's standing
+/// footprint, which is HIS and does not grow with the thing swinging. Twenty-two sites wrote this out and FOUR
+/// had drifted to `(own + HERO_REACH) * scale`: +0.55 m of reach on a scale-2 body, -0.28 m on a scale-0.5 one,
+/// invisible at 1.0 where every test spawns. `closestApproach` is the same triangle for COLLISION (`HERO_R`).
 pub fn hurtReach(own: f32, scale: f32) f32 {
     return own * scale + HERO_REACH;
 }
@@ -104,12 +101,10 @@ pub fn wadeLimit(k: wf.FoeKind, stature: f32) f32 {
     };
 }
 
-/// **NO ATTACK COMES OUT OF NOWHERE**: seconds the kit must be VISIBLY MOVING first. A chop at 0.14 and a
-/// bite at 0.20 read as INSTANT. A FLOOR under the winds, never the length of one.
+/// **NO ATTACK COMES OUT OF NOWHERE**: seconds the kit must be VISIBLY MOVING first. A chop at 0.14 and a bite at 0.20 read as INSTANT. A FLOOR under the winds, never the length of one.
 pub const TELL_MIN: f32 = 0.30;
 
-/// SECONDS back from the move's own impact frame, and it IS the parry's difficulty. Every creature with a
-/// window reads THIS one, so every weapon in the field teaches one rule (`ogre.parryable`).
+/// SECONDS back from the move's own impact frame, and it IS the parry's difficulty. Every creature with a window reads THIS one (`ogre.parryable`).
 pub const PARRY_LEAD: f32 = 0.18;
 
 pub fn inParryWindow(left: f32) bool {
@@ -132,8 +127,7 @@ pub fn corporeal(f: anytype) bool {
 }
 
 
-/// Past its own notice ring, before turning for home. Per-creature: one flat 30 m was 2.7x the toad's aggro
-/// and the spacing between camps in `worlds/`.
+/// Past its own notice ring, before turning for home. Per-creature: one flat 30 m was 2.7x the toad's aggro and the spacing between camps in `worlds/`.
 pub const LEASH_SLACK: f32 = 6.0;
 /// …and it is home again only this close — the hysteresis, so a foe at the boundary cannot flap.
 pub const LEASH_HOME_R: f32 = 3.0;
@@ -164,8 +158,7 @@ pub const Leash = struct {
     returning: bool = false,
 
     /// Per frame, BEFORE the state machine decides anything. **BOTH RANGES ARE MEASURED FROM THE POST** —
-    /// `out` for the creature, `heroOut` for the hero. As the gap between the two BODIES, tethers nominally
-    /// 17–30 m long released at 34 m (ogre) to 176 m (leechfly).
+    /// `out` for the creature, `heroOut` for the hero. Tethers nominally 17–30 m long release at 34 m (ogre) to 176 m (leechfly).
     pub fn tick(self: *Leash, dt: f32, out: f32, heroOut: f32, aggroR: f32) void {
         self.sinceCombat += dt;
         self.sinceSeen += dt;
@@ -205,9 +198,7 @@ pub const Leash = struct {
         return self.sinceSeen > SIGHT_MEMORY and !self.roused();
     }
 
-    /// **A SUMMONS, NOT A WOUND** (the tolling hollow's bell). Rouses and re-engages exactly as a blow does
-    /// and never touches `provoked`: the leash BREAK is what three blows buy, and a bell rung four times may
-    /// not buy it for a whole camp at once.
+    /// **A SUMMONS, NOT A WOUND** (the tolling hollow's bell). Never touches `provoked`: the leash BREAK is what three blows buy, and a bell rung four times may not buy it for a whole camp.
     pub fn call(self: *Leash) void {
         self.noteCombat();
         self.rouseLeft = PROVOKE_ROUSE;
@@ -241,9 +232,7 @@ pub fn sensedDist(l: *const Leash, real: f32, aggroR: f32) f32 {
     return real;
 }
 
-/// **EVERY BODY THAT COULD HAVE HEARD IT COMES**, and the count is what the caller reports. A `call` and not
-/// a `provoke`: see `Leash.call`. The radius is the SOUND's, so it is measured from where the noise was made
-/// and not from the creature that made it.
+/// A `call` and not a `provoke` (see `Leash.call`). The radius is the SOUND's, so it is measured from where the noise was made and not from the creature that made it.
 pub fn rouseWithin(foes: anytype, at: rl.Vector3, r: f32) u32 {
     var n: u32 = 0;
     for (foes) |*f| {
@@ -269,9 +258,8 @@ pub fn senseHero(l: *const Leash, at: rl.Vector3, hero: rl.Vector3, aggroR: f32)
     return sensedDist(l, mathx.distXZ(at, hero), aggroR);
 }
 
-/// **THE FRONTAL CONE EVERY CLOSE BLOW ANSWERS FOR**: inside `reach`, and inside `dot` of the way the body is
-/// looking, with `POINT_BLANK` exempt. Six creatures had this written out with the dot product by hand — a
-/// jab, a lash, two leaps, a bite and a swipe — which is six chances to get a sign wrong and one of them had
+/// **THE FRONTAL CONE EVERY CLOSE BLOW ANSWERS FOR**: inside `reach`, inside `dot` of the way the body looks,
+/// with `POINT_BLANK` exempt. Six creatures had this written out with the dot product by hand and one had
 /// already drifted on the exemption. `reach` is the whole reach, the hero's own footprint included.
 pub fn inFront(pos: rl.Vector3, facing: f32, at: rl.Vector3, reach: f32, dot: f32) bool {
     const d = mathx.distXZ(pos, at);
@@ -282,10 +270,9 @@ pub fn inFront(pos: rl.Vector3, facing: f32, at: rl.Vector3, reach: f32, dot: f3
     return to.x * fwd.x + to.z * fwd.z >= dot;
 }
 
-/// **THE SAME QUESTION IN DEGREES** — `inFront`'s twin, for the callers whose sector is authored as an ARC
-/// (`combat.withinArc`'s unit) rather than as a dot: the shield, the snag's three limbs, the shade's grasp.
-/// The exemption is DIFFERENT on purpose and it is the degenerate one — a bearing off a zero-length vector is
-/// not a bearing — where `inFront`'s is the metre of `POINT_BLANK`. Three files had this written out by hand.
+/// **THE SAME QUESTION IN DEGREES** — for callers whose sector is authored as an ARC (`combat.withinArc`'s
+/// unit) rather than a dot. The exemption is DIFFERENT on purpose and is the degenerate one — a bearing off a
+/// zero-length vector is not a bearing — where `inFront`'s is the metre of `POINT_BLANK`.
 pub fn inArc(pos: rl.Vector3, facing: f32, at: rl.Vector3, reach: f32, arcDeg: f32) bool {
     if (mathx.distXZ(pos, at) > reach) return false;
     const to = mathx.dirXZ(pos, at);
@@ -301,9 +288,8 @@ pub fn faceToward(pos: rl.Vector3, facing: *f32, target: rl.Vector3, rate: f32, 
 
 pub const Nav = struct {
     dir: ?rl.Vector3 = null,
-    /// WHICH WAY ROUND IT WENT LAST TIME, and this is the whole of why it does not dither: with both sides
-    /// of an obstacle equally open, the side it already committed to wins. Re-set to whichever side actually
-    /// worked every time a detour is taken, so it cannot commit to a wrong one for good.
+    /// WHICH WAY ROUND IT WENT LAST TIME, and this is why it does not dither: with both sides equally open, the
+    /// side it already committed to wins. Re-set to whichever side actually worked, so it cannot commit to a wrong one for good.
     side: f32 = 1,
 
     pub fn aim(self: *const Nav, from: rl.Vector3, want: rl.Vector3) rl.Vector3 {
@@ -332,9 +318,8 @@ test "AN UNSTAMPED WAY CHANGES NOTHING — steering is a bend on a refused headi
 pub const SENSE_SMOOTH: f32 = 6.0;
 pub const PRESSURE_HALFLIFE: f32 = 3.2;
 
-/// ALL WORLD STATE — a measured bearing rate and damage taken since it last stood somewhere else, so NO
-/// INPUT READING holds by construction. **PRESSURE IS PER SPOT, NOT PER FIGHT** (`stood`): travelling past
-/// `spanR` wipes the meter, or one reposition arrives already convinced it should reposition again.
+/// ALL WORLD STATE — a measured bearing rate and damage taken since it last stood somewhere else, so NO INPUT
+/// READING holds by construction. **PRESSURE IS PER SPOT, NOT PER FIGHT** (`stood`): travelling past `spanR` wipes the meter.
 pub const Sense = struct {
     bearingWas: f32 = 0,
     circleRate: f32 = 0,
@@ -342,8 +327,7 @@ pub const Sense = struct {
     stood: rl.Vector3 = mathx.zero3,
 
     /// ONE FRAME, before the state machine decides anything (`Leash.tick`'s slot). `bearing` is the quarry's
-    /// bearing off the creature's own facing, in radians. `settled` is false while the creature's OWN
-    /// movement is what is sweeping the bearing — measured through a hop it reads its own travel as an orbit.
+    /// bearing off the creature's own facing, in RADIANS. `settled` is false while the creature's OWN movement is what sweeps it.
     pub fn tick(self: *Sense, dt: f32, at: rl.Vector3, bearing: f32, spanR: f32, settled: bool) void {
         const rate = @abs(mathx.wrapPi(bearing - self.bearingWas)) / mathx.maxF(dt, 1e-4);
         self.bearingWas = bearing;
@@ -403,8 +387,7 @@ test "IT DOES NOT READ ITS OWN TRAVEL AS AN ORBIT" {
     try std.testing.expect(s.circling(0.45));
 }
 
-/// **HOW MANY MOTES A WOUND ACTUALLY THROWS** — ONE DIAL FOR THE WHOLE FIELD. What each creature sheds and
-/// in what proportion stays in its own file; how heavy a landed blow reads overall is this.
+/// ONE DIAL FOR THE WHOLE FIELD. What each creature sheds and in what proportion stays in its own file.
 pub const HIT_PARTS: f32 = 1.5;
 
 pub fn hitParts(n: i32) i32 {
@@ -420,14 +403,12 @@ pub fn fadeFlash(flash: *f32, dt: f32) void {
     flash.* = mathx.maxF(0, flash.* - dt);
 }
 
-/// `h` metres of ITS OWN SCALE above the ground under it, plus this frame's `lift`. **EVERY WORLD POINT ON AN
-/// ACTOR IS MEASURED FROM `pos.y`** — off the datum, a foe on a bank keeps its bar down in the field.
+/// `h` metres of ITS OWN SCALE above the ground under it, plus this frame's `lift`. **EVERY WORLD POINT ON AN ACTOR IS MEASURED FROM `pos.y`** — off the datum, a foe on a bank keeps its bar down in the field.
 pub fn bodyPoint(pos: rl.Vector3, h: f32, scale: f32, lift: f32) rl.Vector3 {
     return v3(pos.x, pos.y + h * scale + lift, pos.z);
 }
 
-/// `at` is in the BONE's own frame, which already carries the rig's scale, the facing and `pos`; every
-/// `spawn` poses before it returns, so the matrix is never undefined. THE RETICLE RIDES THIS.
+/// `at` is in the BONE's own frame, which already carries the rig's scale, the facing and `pos`; every `spawn` poses before it returns, so the matrix is never undefined.
 pub fn markOn(bone: rl.Matrix, at: rl.Vector3) rl.Vector3 {
     return rl.math.vector3Transform(at, bone);
 }
@@ -453,8 +434,7 @@ pub fn moveClock(row: anytype) Clock {
 pub fn reached(self: anytype, blade: Blade) ?Strike {
     const s = strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return null;
     self.leash.provoke();
-    // **AND WHOEVER SWUNG IT JUST BOUGHT ITS ATTENTION.** The ONE place damage-threat is written: the hero's
-    // blade and a spirit's jaws come through this same door. The blade says who it belongs to (`Blade.by`).
+    // **AND WHOEVER SWUNG IT JUST BOUGHT ITS ATTENTION.** The ONE place damage-threat is written; the blade says who it belongs to (`Blade.by`).
     self.threat.hurtBy(blade.by, blade.hit.raw());
     if (blade.pierce) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
     return s;
@@ -474,12 +454,10 @@ const HIT_HAZE = mathx.rgba(64, 52, 42, 92);
 
 const WOUND_HAZE_HEAVY = 3;
 const WOUND_HAZE_LIGHT = 2;
-/// **WHAT THE WOUND ITSELF COSTS THE RING**, worst case — the flash plus the heavy blow's haze. Every pool
-/// asserted over its worst frame carries a landed blow in that frame.
+/// Worst case — the flash plus the heavy blow's haze. Every pool asserted over its worst frame carries a landed blow in that frame.
 pub const WOUND_PARTS = 1 + WOUND_HAZE_HEAVY;
 
-/// The FLASH (gone in four frames) and the HAZE that hangs after; the middle layer — blood, bone, gore —
-/// stays the creature's own. FIELDS ONLY: `parts`/`fxHead`/`fxRng`/`scale`.
+/// The FLASH (gone in four frames) and the HAZE that hangs after; blood, bone and gore stay the creature's own. FIELDS ONLY: `parts`/`fxHead`/`fxRng`/`scale`.
 fn woundImpact(self: anytype, s: Strike, heavy: bool) void {
     if (comptime !@hasField(std.meta.Child(@TypeOf(self)), "parts")) return;
     const fr: f32 = if (heavy) 0.15 else 0.10;
@@ -529,18 +507,12 @@ pub const Grip = struct {
     }
 };
 
-/// ONE FRAME OF THE WAND'S GRIP, for every creature that can be caught in it. Taken at the TOP of `update`
-/// and held through a `defer` there, so the pin covers whatever the state machine goes on to do:
-///
-///     const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
-///     defer if (!self.airborne()) grip.hold(&self.pos);
-///     if (grip.killed) self.enterDeath();
-///
-/// The bite is billed as a DRIP, never as a blow.
 pub fn canLeap(root: *const combat.Root) bool {
     return !root.held();
 }
 
+/// ONE FRAME OF THE WAND'S GRIP. Taken at the TOP of `update` and held through a `defer` there, so the pin
+/// covers whatever the state machine goes on to do. The bite is billed as a DRIP, never as a blow.
 pub fn grip(root: *combat.Root, chill: *combat.Chill, vit: *combat.Vitals, dt: f32, at: rl.Vector3) Grip {
     const on = root.held();
     const bitten = if (root.tick(dt)) |bite| vit.drip(bite) == .death else false;
@@ -561,8 +533,7 @@ pub const Parry = struct {
     }
 };
 
-/// FIELDS ONLY (`parry`, `pos`, `parried`, `flash`, `leash`): the cooldown, the sparks, the voice and the
-/// stun stay in the creature's own file.
+/// FIELDS ONLY (`parry`, `pos`, `parried`, `flash`, `leash`): the cooldown, the sparks, the voice and the stun stay in the creature's own file.
 pub fn caught(self: anytype, reach: f32) bool {
     if (!self.parry.catches(self.pos, reach)) return false;
     self.parried = true;
@@ -571,8 +542,7 @@ pub fn caught(self: anytype, reach: f32) bool {
     return true;
 }
 
-/// Stamped every frame (`game.markWade`) — only `game.zig` sees the creature and `env`'s water at once.
-/// `quarry` is the depth where the HERO IS STANDING: a fact about the ground, so NO INPUT READING holds.
+/// Stamped every frame (`game.markWade`) — only `game.zig` sees the creature and `env`'s water at once. `quarry` is the depth where the HERO IS STANDING: a fact about the ground, so NO INPUT READING holds.
 pub const Wade = struct {
     here: f32 = 0,
     quarry: f32 = 0,
@@ -582,8 +552,7 @@ pub fn setWade(foes: anytype, at: anytype, quarry: f32, comptime depthAt: anytyp
     for (foes) |*f| f.wade = .{ .here = depthAt(at, f.pos), .quarry = quarry };
 }
 
-/// **A STAIN NEEDS DRY GROUND** — a splat lands at TERRAIN height, so a drop shed over water is blood on the
-/// riverbed. Opt-in on the `wade` field: a creature that never sees water is dry by construction.
+/// **A STAIN NEEDS DRY GROUND** — a splat lands at TERRAIN height, so a drop shed over water is blood on the riverbed. Opt-in on the `wade` field.
 pub const SPLAT_DRY_MAX: f32 = 0.05;
 pub fn onDryGround(self: anytype) bool {
     if (comptime !@hasField(std.meta.Child(@TypeOf(self)), "wade")) return true;
@@ -601,8 +570,7 @@ test "A CREATURE THAT NEVER SEES WATER IS DRY BY CONSTRUCTION, and a wading one 
     try std.testing.expect(!onDryGround(&w));
 }
 
-/// The landing spot is solved ONCE at the launch and clamped THERE, not every frame — clamped per frame, a
-/// hop into the rim shortens under you. FIELDS ONLY: `launched`/`hopFrom`/`hopTo`/`hopReach`.
+/// The landing spot is solved ONCE at the launch and clamped THERE: clamped per frame, a hop into the rim shortens under you. FIELDS ONLY: `launched`/`hopFrom`/`hopTo`/`hopReach`.
 pub fn hopStep(self: anytype, dt: f32, bounds: f32, dir: rl.Vector3, coil: f32, flight: f32) f32 {
     if (!self.launched) {
         self.launched = true;
@@ -625,31 +593,25 @@ pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32,
 pub const DUST = mathx.rgba(150, 132, 96, 175);
 /// What a cloud THINS TO — paler and cooler as it disperses and takes the sky's light instead of the ground's.
 pub const DUST_THIN = mathx.rgba(176, 168, 150, 96);
-/// **DUST IS FINE PARTICULATE, NOT FLUNG GRAVEL.** It leaves the ground fast, stalls inside a body-length
-/// and then HANGS while it thins: high drag is what makes it dust, low gravity is what lets it hang.
+/// **DUST IS FINE PARTICULATE, NOT FLUNG GRAVEL.** High drag is what makes it dust, low gravity is what lets it hang.
 pub const DUST_DRAG: f32 = 4.5;
 pub const DUST_GRAV: f32 = 1.6;
 
-/// **BLOOD IS DROPLETS, AND THE PHYSICS OF A DROPLET IS NOT THE CREATURE'S TO PICK.** It leaves the wound
-/// fast, loses the throw inside a body-length and then falls at a real weight. The COLOUR stays each
-/// creature's own (a toad's is not a spider's), and so does how far it is thrown.
+/// **BLOOD IS DROPLETS, AND THE PHYSICS OF A DROPLET IS NOT THE CREATURE'S TO PICK.** The COLOUR stays each creature's own (a toad's is not a spider's), and so does how far it is thrown.
 pub const BLOOD_DRAG: f32 = 3.6;
 pub const BLOOD_GRAV: f32 = 14.0;
 pub const BLOOD_STRETCH: f32 = 0.045;
 pub const MOTE = mathx.rgba(252, 198, 92, 170);
 pub const WAKE = mathx.rgba(224, 230, 244, 255);
 
-/// **DRAG COSTS REACH, SO THE SPEED HAS TO BUY IT BACK** — the relation fire's numbers were re-solved by
-/// hand with. Under drag `k` a mote covers v0/k·(1−e^(−k·t)) where a free one covers v0·t; a burst moved onto
-/// drag without this arrives at a third of where it was aimed, and every count and radius around it is a lie.
+/// **DRAG COSTS REACH, SO THE SPEED HAS TO BUY IT BACK.** Under drag `k` a mote covers v0/k·(1−e^(−k·t)) where
+/// a free one covers v0·t; a burst moved onto drag without this arrives at a third of where it was aimed.
 pub fn dragBoost(k: f32, life: f32) f32 {
     if (k <= 0 or life <= 0) return 1.0;
     return k * life / (1.0 - @exp(-k * life));
 }
 
-/// **THE LIFE, THE DRAG AND THE BOOST ARE ONE NUMBER IN THREE PARTS, SO THEY TRAVEL TOGETHER** — split up,
-/// a retuned range leaves the speed solved for the old one, silently. Built at comptime:
-/// `const B = Blast.of(DUST_DRAG, 0.4, 0.7)`, then `B.boost` on every speed, `B.life(rng)`, `B.k` on `.drag`.
+/// **THE LIFE, THE DRAG AND THE BOOST ARE ONE NUMBER IN THREE PARTS, SO THEY TRAVEL TOGETHER** — split up, a retuned range leaves the speed solved for the old one, silently. Built at comptime.
 pub const Blast = struct {
     lo: f32,
     hi: f32,
@@ -713,13 +675,11 @@ pub const Particle = struct {
     stretch: f32 = 0,
     /// Floor restitution — hard debris (bone chips, sparks) skitters instead of sticking.
     bounce: f32 = 0,
-    /// >0: a drop that reaches the floor stops and lies as a stain this many times its radius.
-    /// ONE-OFF BURSTS ONLY — a landed mote holds `SPLAT_HOLD`, so a continuous drip parks its whole rate
-    /// in the ring (brood drool at 8-34/s was 40+ resident stains, eating the blood behind them).
+    /// >0: a drop that reaches the floor stops and lies as a stain this many times its radius. ONE-OFF BURSTS
+    /// ONLY — a landed mote holds `SPLAT_HOLD`, so brood drool at 8-34/s was 40+ resident stains eating the blood behind them.
     splat: f32 = 0,
-    /// LIGHT, not matter — drawn additive, so overlapping motes brighten into a glow. Sparks, flames,
-    /// frost, magic. Matter (blood, dust, gas, chips) stays alpha-blended: additive can only brighten,
-    /// and a dark thing drawn additive disappears.
+    /// LIGHT, not matter — drawn additive, so overlapping motes brighten into a glow. Matter (blood, dust, gas,
+    /// chips) stays alpha-blended: additive can only brighten, and a dark thing drawn additive disappears.
     add: bool = false,
     landed: bool = false,
     floor: ?f32 = null,
@@ -729,23 +689,18 @@ pub fn emitTicks(acc: *f32, dt: f32, rate: f32, cap: usize) usize {
     acc.* += dt * rate;
     var n: usize = 0;
     while (acc.* >= 1.0 and n < cap) : (n += 1) acc.* -= 1.0;
-    // **A HITCH IS A WHOLE MOTE STILL OWED AFTER THE CAP — NOT MERELY REACHING IT.** `emitCap` FLOORS AT
-    // ONE, so at any rate under ~24/s the cap *is* one and every ordinary mote tripped it: the fenlurker's
-    // 16/s wake ran at 15. What is dropped is only what could not be paid.
+    // **A HITCH IS A WHOLE MOTE STILL OWED AFTER THE CAP — NOT MERELY REACHING IT.** `emitCap` FLOORS AT ONE,
+    // so at any rate under ~24/s the cap *is* one and every ordinary mote tripped it: the fenlurker's 16/s wake ran at 15.
     if (acc.* >= 1.0) acc.* = 0;
     return n;
 }
 
-/// **THE RATE AND ITS CEILING TRAVEL TOGETHER** — a cap that does not match its rate is an emitter quietly
-/// running slow. Pass a cap yourself only to mean something OTHER than this rate's own ceiling
-/// (`hero.CAST_MOTE_CAP`, or `dissolveMotes`, whose cap is the UNTHINNED rate's).
+/// **THE RATE AND ITS CEILING TRAVEL TOGETHER** — a cap that does not match its rate is an emitter quietly running slow. Pass a cap yourself only to mean something OTHER than this rate's own ceiling.
 pub fn emitDue(acc: *f32, dt: f32, rate: f32) usize {
     return emitTicks(acc, dt, rate, emitCap(rate));
 }
 
-/// …AND THE CEILING ITSELF, off the rate — where "a couple of frames' arrears at 60 fps" is written down.
-/// Floored at ONE, or an emitter could never pay a single mote — **and a cap of one is the NORMAL case**,
-/// every rate under ~24/s, which is why `emitTicks` may not read reaching the cap as a hitch.
+/// …AND THE CEILING ITSELF, off the rate. Floored at ONE, or an emitter could never pay a single mote — **and a cap of one is the NORMAL case**, every rate under ~24/s.
 const EMIT_CAP_FRAMES: f32 = 2.5;
 pub fn emitCap(rate: f32) usize {
     return @max(1, @as(usize, @intFromFloat(@ceil(mathx.maxF(rate, 0) / 60.0 * EMIT_CAP_FRAMES))));
@@ -813,8 +768,7 @@ pub const Spray = struct {
     drag: f32 = 0,
 };
 
-/// **THE DRAW ORDER IS LOAD-BEARING** — angle, speed, the fan on X, the lift, the fan on Z, the life, the
-/// radius. The same numbers in another order give every caller a different wound off the very same seed.
+/// **THE DRAW ORDER IS LOAD-BEARING** — angle, speed, the fan on X, the lift, the fan on Z, the life, the radius. The same numbers in another order give every caller a different wound off the same seed.
 pub fn spray(pool: []Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32, scale: f32, s: Spray) void {
     const parts = hitParts(n);
     var i: i32 = 0;
@@ -887,9 +841,7 @@ test "THE SPRAY IS THE FIVE HAND-WRITTEN LOOPS, MOTE FOR MOTE — the draw order
     std.debug.print("\n  spray: {d} motes, identical to the hand-written loop mote for mote\n", .{gotHead});
 }
 
-/// **A BURST IS JUDGED BY ITS CROSS-SECTION, NOT BY ITS SPEED** — a fast cloud all going one way is one blob.
-/// `open` is the widest separation perpendicular to `dir`, `reach` the furthest any mote got, both at
-/// `sampleAt`; `splats` is counted once the flight is over.
+/// **A BURST IS JUDGED BY ITS CROSS-SECTION, NOT BY ITS SPEED.** `open` is the widest separation perpendicular to `dir`, `reach` the furthest any mote got, both at `sampleAt`; `splats` is counted once the flight is over.
 pub const SprayShape = struct { open: f32, reach: f32, splats: usize, motes: usize, sink: f32 };
 
 pub fn measureSpray(pool: []Particle, s: Spray, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32, scale: f32, seed: u64, sampleAt: f32, floor: f32) SprayShape {
@@ -945,8 +897,7 @@ pub fn floorBurst(pool: []Particle, from: usize, to: usize, floor: f32) void {
     while (i != to) : (i = (i + 1) % pool.len) pool[i].floor = floor;
 }
 
-/// **A BODY GOES BY GOING TRANSPARENT, NOT BY GETTING SMALL** — at the 55-85% shrink it had, a corpse walks
-/// off into the ground. What is left is a SETTLE, a tenth; the vanish is the alpha `drawGroup` hands over.
+/// **A BODY GOES BY GOING TRANSPARENT, NOT BY GETTING SMALL** — at the 55-85% shrink it had, a corpse walks off into the ground. What is left is a SETTLE, a tenth.
 pub const DEATH_SHRINK: f32 = 0.10;
 pub fn rigScale(scale: f32, fade: f32) f32 {
     return scale * (1.0 - DEATH_SHRINK * fade);
@@ -985,8 +936,7 @@ pub fn dissolveMotes(self: anytype, dt: f32, d: Dissolve) void {
                 .add = true,
             });
         } else {
-            // The ASH half — alpha, and it goes out by thinning where the mote above goes out by cooling.
-            // Its drag is what stops the two halves drifting apart into two effects.
+            // The ASH half — alpha, and it goes out by thinning where the mote above goes out by cooling. Its drag is what stops the two halves drifting apart.
             emitPart(&self.parts, &self.fxHead, .{
                 .p = p,
                 .v = mathx.v3(self.fxRng.signed() * 0.35, self.fxRng.range(0.1, 0.45), self.fxRng.signed() * 0.35),
@@ -1002,8 +952,7 @@ pub fn dissolveMotes(self: anytype, dt: f32, d: Dissolve) void {
     }
 }
 
-/// **A CORPSE SOMETHING IS STANDING OVER DOES NOT GO** — `heldOpen`, stamped by `game.markVigil` and read as
-/// an OPT-IN (`@hasField`): gaining a behaviour is a FIELD on the creature, never an edit to a shared pass.
+/// **A CORPSE SOMETHING IS STANDING OVER DOES NOT GO** — `heldOpen`, read as an OPT-IN (`@hasField`): gaining a behaviour is a FIELD on the creature, never an edit to a shared pass.
 fn stayed(self: anytype) bool {
     if (comptime @hasField(std.meta.Child(@TypeOf(self)), "heldOpen")) return self.heldOpen;
     return false;
@@ -1018,8 +967,7 @@ pub fn dissipate(self: anytype, dt: f32, still: f32, diss: f32, d: Dissolve) voi
 }
 
 /// **THE BODY COMING BACK UP** — `dissipate` run backwards. FIELDS ONLY: `vit`, `fade`, `gone`, `hitLatch`,
-/// `flash`, `shove`, `justDied`, `heldOpen`, `t`. `hits` is deliberately NOT among them: `game.allHits` diffs
-/// it across a frame, and a body that reset it would take the total DOWN.
+/// `flash`, `shove`, `justDied`, `heldOpen`, `t`. `hits` is deliberately NOT among them: `game.allHits` diffs it across a frame.
 pub fn rekindle(self: anytype, frac: f32) void {
     self.vit.revive(frac);
     self.fade = 0;
@@ -1111,8 +1059,7 @@ test "EVERY LANDED BLOW IS THREE LAYERS — the flash on the impact frame, the h
 
 const TrailSample = struct { a: rl.Vector3 = mathx.zero3, b: rl.Vector3 = mathx.zero3, age: f32 = mathx.LONG_AGO };
 
-/// Metres per frame worth a sample. A DEGENERACY GUARD, not a per-weapon dial — 0.05 m at 60 fps is 3 m/s of
-/// tip and nothing slower is a swing, so callers do not pass their own.
+/// Metres per frame worth a sample. A DEGENERACY GUARD, not a per-weapon dial — 0.05 m at 60 fps is 3 m/s of tip and nothing slower is a swing.
 pub const TRAIL_SWEEP_MIN: f32 = 0.05;
 
 pub fn Trail(comptime N: usize) type {
@@ -1121,8 +1068,7 @@ pub fn Trail(comptime N: usize) type {
         s: [N]TrailSample = [_]TrailSample{.{}} ** N,
         head: usize = 0,
 
-        /// The segment `root`..1 of `base`→`tip`, kept only if the tip actually MOVED — a stationary blade
-        /// fills the ring with identical quads and the ribbon never fades.
+        /// The segment `root`..1 of `base`→`tip`, kept only if the tip actually MOVED — a stationary blade fills the ring with identical quads and the ribbon never fades.
         pub fn push(self: *Self, base: rl.Vector3, tip: rl.Vector3, prevTip: rl.Vector3, root: f32) void {
             if (mathx.lenV(mathx.subV(tip, prevTip)) <= TRAIL_SWEEP_MIN) return;
             self.head = (self.head + 1) % N;
@@ -1151,14 +1097,12 @@ pub fn Trail(comptime N: usize) type {
     };
 }
 
-/// A streak is only drawn while it is one — tail shorter than this many radii collapses back to a dot,
-/// so a drag-slowed spark dies as a glowing point rather than a smear standing still.
+/// A tail shorter than this many radii collapses back to a dot, so a drag-slowed spark dies as a glowing point rather than a smear standing still.
 const STREAK_MIN_RADII: f32 = 1.6;
 
-// **A MOTE IS A TEXTURED BILLBOARD, NEVER A SOLID SPHERE** — a hard-edged Lambert ball reads as a flat
-// circle however it moves, and a quad costs a tenth of it. Two sprites, lazily built on the first draw:
-// SOFT is the glow (light, smoke, stains); GRAIN keeps a near-solid core for matter in flight (blood,
-// chips, clods), which drawn fully soft reads as vapour.
+// **A MOTE IS A TEXTURED BILLBOARD, NEVER A SOLID SPHERE** — a hard-edged Lambert ball reads as a flat circle
+// however it moves, and a quad costs a tenth of it. SOFT is the glow (light, smoke, stains); GRAIN keeps a
+// near-solid core for matter in flight (blood, chips, clods), which drawn fully soft reads as vapour.
 var moteSoft: ?rl.Texture2D = null;
 var moteGrain: ?rl.Texture2D = null;
 
@@ -1186,8 +1130,7 @@ pub fn drawParticles(pool: []const Particle) void {
     rl.gl.rlEnableBackfaceCulling();
 }
 
-/// Which sprite a mote draws through — ONE predicate, so the draw and anything measuring its batching
-/// cannot disagree. Light and anything that DIFFUSES (smoke, a stain) is soft; matter in flight keeps a core.
+/// ONE predicate, so the draw and anything measuring its batching cannot disagree. Light and anything that DIFFUSES (smoke, a stain) is soft; matter in flight keeps a core.
 fn wantsSoft(q: *const Particle) bool {
     return q.add or q.landed or q.r1 > q.r0;
 }
@@ -1271,8 +1214,7 @@ pub fn resetGroup(comptime T: type, out: []T, n: *usize, m: *const wf.Map, want:
     n.* = 0;
     for (m.foes[0..m.nfoes]) |h| {
         if (h.kind != want or n.* >= out.len) continue;
-        // ON THE GROUND: a spawn table stores x/z only, so a foe on a sculpted rise dropped at y = 0 is
-        // buried to the waist.
+        // ON THE GROUND: a spawn table stores x/z only, so a foe on a sculpted rise dropped at y = 0 is buried to the waist.
         out[n.*] = T.spawn(v3(h.x, m.heightAt(h.x, h.z), h.z), mathx.radians(h.yaw), h.scale, h.seed);
         n.* += 1;
     }
@@ -1314,8 +1256,7 @@ pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
                     iced = cold;
                 }
             }
-            // …AND THE DISSOLVE IS AN ALPHA (`DEATH_SHRINK`). VIEW PASS ONLY: the depth pass has no fade
-            // uniform to answer, and a body keeps its shadow while any of it is left.
+            // …AND THE DISSOLVE IS AN ALPHA (`DEATH_SHRINK`). VIEW PASS ONLY: the depth pass has no fade uniform, and a body keeps its shadow while any of it is left.
             if (comptime @hasField(@TypeOf(f.*), "fade")) thin = 1.0 - f.fade;
             if (thin < 0.999) sc.beginFade(thin);
         }
@@ -1447,8 +1388,7 @@ pub const Threat = struct {
             return;
         }
         if (self.since < THREAT_DWELL) return;
-        // …and the scores are solved BELOW the dwell, not above it: they are pure, so every creature on the
-        // field was computing a pair it threw away for the whole 0.65 s after any change of mind.
+        // …and the scores are solved BELOW the dwell, not above it: they are pure, so every creature on the field was computing a pair it threw away for the whole 0.65 s after any change of mind.
         const h = score(self.dmgHero, distHero, 1.0);
         const s = score(self.dmgSpirit, distSpirit, SPIRIT_TAUNT);
         const want: Victim = switch (self.on) {
@@ -1592,8 +1532,7 @@ pub fn strike(vit: *combat.Vitals, hitLatch: *bool, center: rl.Vector3, hurtR: f
     const dir = if (mathx.lenXZ(sweep) > 0.03) mathx.normV(sweep) else mathx.dirXZ(contact, center);
     // **THE CULL IS READ BEFORE THE BLOW, NEVER AFTER IT.** Asked of the HP the body walked into the swing
     // with, so it is a threshold a player can see on the bar and aim for. It kills through the ordinary path
-    // (`Vitals.hit` with the rest of its health), so the death, the reaction, the souls and the drop are the
-    // blow's own.
+    // (`Vitals.hit`), so the death, the reaction, the souls and the drop are the blow's own.
     if (blade.cullAt > 0 and !vit.dead and vit.hpFrac() <= blade.cullAt) {
         var out = blade.hit;
         out.dmg += vit.hp;
@@ -1778,8 +1717,7 @@ test "NOTHING NOTICES WHAT IT CANNOT SEE, and it keeps at him a while after it l
     while (t < SIGHT_MEMORY + 0.5) : (t += 1.0 / 60.0) l.tick(1.0 / 60.0, 0, 1.0, aggro);
     try std.testing.expect(l.blind());
 
-    // A BLOW STILL FINDS IT THROUGH COVER: being shot from somewhere it cannot see is exactly when a foe
-    // must come looking, so the rouse outranks blindness.
+    // A BLOW STILL FINDS IT THROUGH COVER: being shot from somewhere it cannot see is exactly when a foe must come looking, so the rouse outranks blindness.
     var shot = Leash{};
     shot.blindNow();
     shot.provoke();
@@ -1876,8 +1814,7 @@ test "THE SWING RIBBON ONLY RECORDS A BLADE THAT MOVED, and it expires" {
 test "A SWING STARTS SLOW ENOUGH TO BE SEEN, then whips" {
     try std.testing.expectApproxEqAbs(@as(f32, 0), swingCurve(0), 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 1), swingCurve(1), 1e-5);
-    // The first quarter of the window moves the limb a TWELFTH of its arc. Front-loaded it moved 58% of it,
-    // which is why a parry could only ever be timed off the sound and the clock.
+    // The first quarter of the window moves the limb a TWELFTH of its arc. Front-loaded it moved 58% of it, which is why a parry could only ever be timed off the sound and the clock.
     try std.testing.expect(swingCurve(0.25) < 0.10);
     try std.testing.expect(1.0 - swingCurve(0.75) > 2.0 * swingCurve(0.25));
     var prev: f32 = -1;
@@ -1890,11 +1827,11 @@ test "A SWING STARTS SLOW ENOUGH TO BE SEEN, then whips" {
     try std.testing.expect(swingCurve(0.5) < 0.5);
 }
 
-// **THIS GATE IS ABOUT COUNT, NOT COST PER MOTE** — a boss in phase two stands in a lane of twelve
-// `GAS_PARTS` pools (132 each), and every one walks its whole array and appends quads for motes nobody sees.
+// **THIS GATE IS ABOUT COUNT, NOT COST PER MOTE** — a boss in phase two stands in a lane of twelve `GAS_PARTS`
+// pools (132 each), and every one walks its whole array and appends quads for motes nobody sees.
 //
-// **IT IS NOT THE FRUSTUM AND MUST NEVER BECOME ONE.** `env.View` is the frustum, there is exactly one, and
-// a second culler is the bug AGENTS.md names outright. This is a reach and a HEMISPHERE — nothing inside any
+// **IT IS NOT THE FRUSTUM AND MUST NEVER BECOME ONE.** `env.View` is the frustum, there is exactly one, and a
+// second culler is the bug AGENTS.md names outright. This is a reach and a HEMISPHERE — nothing inside any
 // field of view this game uses can fail either test, which is what makes it safe to be approximate.
 
 var lensAt: rl.Vector3 = mathx.zero3;
@@ -1902,8 +1839,7 @@ var lensFwd: rl.Vector3 = v3(0, 0, 1);
 var lensRight: rl.Vector3 = v3(1, 0, 0);
 var lensUp: rl.Vector3 = v3(0, 1, 0);
 
-/// Set ONCE a frame, before anything draws its motes (`game.drawScene`). The basis is what every
-/// billboard faces — solved here rather than per mote.
+/// Set ONCE a frame, before anything draws its motes (`game.drawScene`). The basis every billboard faces — solved here rather than per mote.
 pub fn setLens(at: rl.Vector3, fwd: rl.Vector3) void {
     lensAt = at;
     lensFwd = fwd;
@@ -1916,11 +1852,9 @@ pub fn setLens(at: rl.Vector3, fwd: rl.Vector3) void {
     }
 }
 
-/// How far out a pool of motes is still worth the vertices. Past this a mote of any size is under a pixel and
-/// the haze has most of it (`gfx.HAZE_DENSITY` at 60 m is over half, and more in a storm).
+/// Past this a mote of any size is under a pixel and the haze has most of it (`gfx.HAZE_DENSITY` at 60 m is over half, and more in a storm).
 pub const MOTE_REACH: f32 = 60.0;
-/// …and how far off the view axis a pool has to be before it is dropped, as a cosine. -0.45 is 117 degrees
-/// off the lens: past the corner of any frustum this game can produce.
+/// …and how far off the view axis a pool has to be before it is dropped, as a COSINE. -0.45 is 117 degrees off the lens: past the corner of any frustum this game can produce.
 const MOTE_BEHIND: f32 = -0.45;
 
 /// **IS THIS WHOLE CLOUD OF MOTES WORTH DRAWING** — `at` its centre, `r` how far its motes reach from it.
@@ -1929,8 +1863,7 @@ pub fn motesVisible(at: rl.Vector3, r: f32) bool {
     const dist2 = d.x * d.x + d.y * d.y + d.z * d.z;
     const reach = MOTE_REACH + r;
     if (dist2 > reach * reach) return false;
-    // THE LENS IS IN IT, or close enough that the angle test is meaningless there, so it draws. This is the
-    // branch that keeps the gate honest.
+    // THE LENS IS IN IT, or close enough that the angle test is meaningless there. This branch keeps the gate honest.
     if (dist2 <= r * r * 2.25) return true;
     const dist = @sqrt(@max(dist2, 1e-6));
     return (d.x * lensFwd.x + d.y * lensFwd.y + d.z * lensFwd.z) / dist > MOTE_BEHIND;
@@ -1940,8 +1873,7 @@ test "THE MOTE GATE NEVER DROPS SOMETHING YOU COULD SEE" {
     setLens(mathx.zero3, v3(0, 0, 1));
     var d: f32 = 1.0;
     while (d < MOTE_REACH) : (d += 1.0) try std.testing.expect(motesVisible(v3(0, 0, d), 1.5));
-    // …and off to the side as far as any frustum corner reaches — 60 degrees off axis is well past the widest
-    // half-angle this game renders at, and it still draws.
+    // …and off to the side as far as any frustum corner reaches — 60 degrees off axis is well past the widest half-angle this game renders at.
     var deg: f32 = 0;
     while (deg <= 90.0) : (deg += 5.0) {
         const a = mathx.radians(deg);
@@ -1954,8 +1886,7 @@ test "THE MOTE GATE NEVER DROPS SOMETHING YOU COULD SEE" {
 }
 
 test "EVERY CREATURE IS CLASSIFIED, and the water is only home to the two it belongs to" {
-        // The hero's own waterline, read where it is written rather than copied: this file sits below `env`
-        // in the import graph.
+        // The hero's own waterline, read where it is written rather than copied: this file sits below `env` in the import graph.
     const envWadePin = @import("../world/env.zig").WADE_MAX;
     var waterfaring: usize = 0;
     var still: usize = 0;
@@ -1987,11 +1918,9 @@ test "EVERY CREATURE IS CLASSIFIED, and the water is only home to the two it bel
 
 // **A GAS BILLS YOU THE MOMENT YOU STEP IN, AND THE CLOCK STARTS AFTER**, or clipping the edge of one costs
 // nothing. A DOSE on an interval (`knight.Vigil.gasDose`) seeds the accumulator AT the interval; a BUILD per
-// second (poison, acid) has no interval to seed, so entering pays `ENTRY_BOLUS` seconds of the rate up front
-// and every frame after is the honest `rate * dt`.
+// second (poison, acid) has no interval to seed, so entering pays `ENTRY_BOLUS` seconds of the rate up front.
 
-/// Seconds of the rate handed over the instant you cross into a cloud. A third: enough that clipping the rim
-/// is a real cost, not so much that the entry frame is worse than the second you spend in there.
+/// Seconds of the rate handed over the instant you cross into a cloud. A third: enough that clipping the rim is a real cost, not so much that the entry frame is worse than a second in there.
 pub const ENTRY_BOLUS: f32 = 0.34;
 
 pub const Soak = struct {
@@ -2024,8 +1953,7 @@ test "A CLOUD BILLS YOU ON ENTRY AND THEN ON THE CLOCK" {
 
 
 test "THE RING KEEPS A BURST CONTIGUOUS, so the draw does not flip sprite per mote" {
-    // A frog mid-fight: a dust burst, then a wound, then another dust burst — emitted as runs, which is how
-    // every emitter here works. Each `rlEnd`/`rlSetTexture`/`rlBegin` flush costs far more than the walk.
+    // Emitted as RUNS, which is how every emitter here works: each `rlEnd`/`rlSetTexture`/`rlBegin` flush costs far more than the walk.
     var pool = [_]Particle{.{}} ** 84;
     var head: usize = 0;
     var rng = mathx.Rng.init(0xFEED);

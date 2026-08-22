@@ -23,34 +23,25 @@ const scaleM = mathx.scaleM;
 // THE FLORID RAVAGER (owner's creature, owner's name) — a big hound with an open flower for a head.
 //
 // **THE QUADRUPED RIG'S SECOND USER**: the bone layout, rest chain, gait dials, limb solver and leap all come
-// from `wolf.zig`. Its own are a STATURE and a HEAD — anything else would be a transcription, which the rig
-// law forbids.
+// from `wolf.zig`. Its own are a STATURE and a HEAD.
 //
-// **THE BLOOM IS THE TELL AND THE TELL IS THE WHOLE FIGHT.** One scalar (`open`), read off the bite's own
-// clock and never a second timer, so the picture cannot promise a lunge the mechanic is not throwing.
+// **THE BLOOM IS THE TELL AND THE TELL IS THE WHOLE FIGHT.** One scalar (`open`), read off the bite's own clock and never a second timer.
 
-/// Height at the WITHERS. Over Hildebrand's 1.12 (owner: LARGE dogs) — it stands about as tall as the hero's
-/// chest, which is what makes the head coming at you a head and not a knee.
+/// Height at the WITHERS. Over Hildebrand's 1.12 (owner: LARGE dogs) — it stands about as tall as the hero's chest, which is what makes the head coming at you a head and not a knee.
 pub const W: f32 = 1.34;
 
 pub const AGGRO_R: f32 = 11.0;
 const HOME_R: f32 = 1.2;
 
 const BODY_R: f32 = 0.46;
-/// **IT HAS TO HOLD THE STALK AS WELL AS THE BODY.** Sized for a ribcage it stopped at 1.4 m and the neck and
-/// bloom — a third of the creature, and what the player aims at — were outside any sword. Solved to span the
-/// barrel's middle (0.83 m) up to the bloom (2.17 m).
+/// **IT HAS TO HOLD THE STALK AS WELL AS THE BODY.** Sized for a ribcage it stopped at 1.4 m and the neck and bloom — a third of the creature — were outside any sword. Solved to span 0.83 m up to 2.17 m.
 const HURT_R: f32 = 0.92;
 const CENTER_F: f32 = 1.05;
 const TOP_F: f32 = 1.66;
 
-/// **TOUGH IN THE BODY, NOTHING IN THE STALK** (owner: tougher but poisebreak easily). The two numbers say
-/// the same thing from opposite ends: it takes a long time to kill and it comes apart the moment you
-/// interrupt it, so the fight is about catching the rear rather than about out-trading it.
+/// **TOUGH IN THE BODY, NOTHING IN THE STALK** (owner: tougher but poisebreak easily) — a long time to kill, and it comes apart the moment you interrupt it.
 const HP_MAX: f32 = 88.0;
-/// **AND IT HAS TO SIT BETWEEN THE HERO'S TWO SWINGS**, not under both: at 9 a light poke flinched it, and a
-/// creature you can stunlock with the fast button is not dangerous, it is furniture. The hero's light is 10
-/// poise and his heavy is 22, so 12 is as low as "breaks easily" can go and still mean the HEAVY breaks it.
+/// **AND IT HAS TO SIT BETWEEN THE HERO'S TWO SWINGS**, not under both: at 9 a light poke flinched it. His light is 10 poise and his heavy 22, so 12 is as low as "breaks easily" can go and still mean the HEAVY breaks it.
 const POISE_MAX: f32 = 12.0;
 const STANCE_MAX: f32 = 40.0;
 const RESISTS = combat.resists(.{ .fire = -45, .cold = 30, .lightning = 0, .chaos = 20 });
@@ -61,24 +52,20 @@ const DEATH_DUR: f32 = 1.25;
 const DISS_DUR: f32 = 1.05;
 const DISSOLVE = foe.Dissolve{ .rate = 58.0, .spread = 0.9, .rise = 0.85, .flake = PETAL_LT };
 
-/// Sized off what feeds it: `DISSOLVE.rate` 58/s against a mean mote life of ~0.72 s stands about 42 at the
-/// fade's start, and the bloom's own puff is at most 8 in a frame.
+/// Sized off what feeds it: `DISSOLVE.rate` 58/s against a mean mote life of ~0.72 s stands about 42 at the fade's start, and the bloom's own puff is at most 8 in a frame.
 const PARTS = 56;
 
 const BITE_WIND: f32 = 0.38;
 const BITE_STRIKE: f32 = 0.18;
 const BITE_RECOVER: f32 = 0.46;
 const BITE_COOL: f32 = 0.85;
-/// Metres of forward travel across the wind and the strike — further than the wolf's 0.62, because this is a
-/// bigger animal and the leap is the move.
+/// Metres of forward travel across the wind and the strike — further than the wolf's 0.62, because this is a bigger animal and the leap is the move.
 const BITE_HOP: f32 = 0.86;
 const BITE_R: f32 = 1.55;
 const BITE_TRIGGER_R: f32 = BITE_R + BITE_HOP * 0.8;
 
-/// **THE LEAP'S THREE INSTANTS, NAMED ONCE.** `LAUNCH_T` is the frame it leaves the earth, `HOP_END` the
-/// frame it is back on it, and `APEX_T` the top of the arc between them. Written out as
-/// `BITE_WIND + BITE_STRIKE` at six sites and `BITE_WIND * 0.55` at three, the pose, the mechanic, the
-/// airborne gate and the staged photograph were four copies of one clock that had to agree by hand.
+/// **THE LEAP'S THREE INSTANTS, NAMED ONCE.** Written out as `BITE_WIND + BITE_STRIKE` at six sites and
+/// `BITE_WIND * 0.55` at three, the pose, the mechanic, the airborne gate and the staged photograph were four copies of one clock that had to agree by hand.
 const LAUNCH_T: f32 = BITE_WIND * 0.55;
 const HOP_END: f32 = BITE_WIND + BITE_STRIKE;
 const APEX_T: f32 = (LAUNCH_T + HOP_END) * 0.5;
@@ -88,9 +75,7 @@ comptime {
     std.debug.assert(OPEN_BY < 1.0);
 }
 
-/// **THE GATE IS MEASURED FROM THE QUARRY'S HIDE** (`wolf.triggerR`'s law, and for its reason: asked
-/// centre-to-centre a flat radius is unsatisfiable on anything broad, because `env.resolveActor` holds the
-/// body `bodyR + its own` out and it circles a creature it can never trigger on).
+/// **THE GATE IS MEASURED FROM THE QUARRY'S HIDE** (`wolf.triggerR`'s law): asked centre-to-centre a flat radius is unsatisfiable on anything broad, because `env.resolveActor` holds the body `bodyR + its own` out.
 pub fn triggerR(quarryR: f32) f32 {
     return BITE_TRIGGER_R + quarryR;
 }
@@ -101,32 +86,24 @@ fn stopR(quarryR: f32) f32 {
 const BITE_HIT = combat.Hit{ .dmg = 24, .poise = 20, .stance = 9 };
 
 // **THE CLAWS, WHICH IT HAS AND NEVER USED.** The leap is committed at the launch and steers not at all, so
-// the safe ground was always its FLANK: stand off the nose and the bloom cannot answer without spending a
-// turn first. This is what answers there, and it answers ONLY there — off the front, close, paws down. The
-// bloom stays at its approach tier through the whole thing (every bloom clock gates on `.bite`), so the tell
-// is the SHOULDER DROPPING and never a flower promising a leap.
+// the safe ground was always its FLANK. This answers there and ONLY there — off the front, close, paws down.
+// The bloom stays at its approach tier through the whole thing (every bloom clock gates on `.bite`), so the tell is the SHOULDER DROPPING.
 const RAKE_WIND: f32 = 0.46;
 const RAKE_STRIKE: f32 = 0.20;
 const RAKE_RECOVER: f32 = 0.62;
 const RAKE_COOL: f32 = 2.0;
-/// Where in the swipe the paw arrives, as a share of it — the ONE frame the boards are asked about
-/// (`foe.PARRY_LEAD` back from here), and where its own signed paw clock crosses zero.
+/// Where in the swipe the paw arrives, as a share of it — the ONE frame the boards are asked about (`foe.PARRY_LEAD` back from here), and where its signed paw clock crosses zero.
 const RAKE_IMPACT_K: f32 = 0.5;
 /// A paw's reach round its own shoulder — well under the bite's 1.55, and it brings no travel with it.
 const RAKE_R: f32 = 1.15;
-/// HOW FAR OFF ITS NOSE THE HERO HAS TO BE for this to be the answer instead of the leap: cos 55 deg. Inside
-/// that cone the bloom is the move and this may not fire at all.
+/// HOW FAR OFF ITS NOSE THE HERO HAS TO BE for this to be the answer instead of the leap: cos 55 deg. Inside that cone the bloom is the move and this may not fire at all.
 const RAKE_OFF_DOT: f32 = 0.574;
-/// …and how wide the swept paw itself answers for, cos 84 deg — a foreleg dragged across the front covers
-/// most of one side of the animal.
+/// …and how wide the swept paw answers for, cos 84 deg — a foreleg dragged across the front covers most of one side of the animal.
 const RAKE_FRONT_DOT: f32 = 0.10;
-/// The fast one. The bloom is the heavy blow (`stance` 9) and this has no stance at all: it is the tax on
-/// standing at its shoulder, not a second way to be flattened.
+/// The fast one. The bloom is the heavy blow (`stance` 9) and this has no stance at all: it is the tax on standing at its shoulder, not a second way to be flattened.
 const RAKE_HIT = combat.Hit{ .dmg = 12, .poise = 14 };
 
-// The swipe's pose, in degrees. `RAKE_SWING` is the paw's travel either side of straight down, `RAKE_LIFT`
-// how far the whole leg comes off the earth, and the last three are the fold that opens through the blow —
-// the foreleg goes LONG at the paw's arrival, which is the warrior's lesson on another animal.
+// Degrees. `RAKE_SWING` is the paw's travel either side of straight down, `RAKE_LIFT` how far the leg comes off the earth, and the last three the fold that opens through the blow — the foreleg goes LONG at the arrival.
 const RAKE_SWING: f32 = 62.0;
 const RAKE_LIFT: f32 = 46.0;
 const RAKE_ELBOW: f32 = 54.0;
@@ -140,12 +117,9 @@ comptime {
 
 const OPEN_BY: f32 = 0.62;
 const SHUT_BY: f32 = 0.75;
-/// **AND IT OPENS FURTHER WHEN IT COMES AT YOU** (owner). The approach tier is unchanged; this is the leap's
-/// own, and widening only the top of the range keeps the two tiers distinct instead of flattening them.
+/// **AND IT OPENS FURTHER WHEN IT COMES AT YOU** (owner). The approach tier is unchanged; widening only the top of the range keeps the two tiers distinct.
 const ATTACK_OPEN: f32 = 2.10;
-/// WHERE THE BLOOM STARTS TO WAKE and where it is at its full approach gape. The near end is the leap's own
-/// trigger ring, so it is ALREADY at its widest on the frame the leap can be chosen: the attack tier then has
-/// somewhere to go, and the opening is never news that arrives with the blow.
+/// The near end is the leap's own trigger ring, so the bloom is ALREADY at its widest on the frame the leap can be chosen: the attack tier then has somewhere to go, and the opening is never news that arrives with the blow.
 const NEAR_FAR: f32 = AGGRO_R * 0.8;
 const NEAR_WIDE: f32 = BITE_TRIGGER_R + foe.HERO_R;
 const NEAR_RATE: f32 = 2.4;
@@ -159,15 +133,11 @@ const CHASE_SPEED: f32 = wolf.GALLOP_SPEED * 0.78;
 pub const SHOVE = foe.Push{ .light = 1.20, .heavy = 2.90 };
 const SHOVE_DECAY: f32 = 6.0;
 
-/// How far down the jaw bone the bloom's throat sits, as a fraction of `W` — the point the mouth's height is
-/// measured at, the wolf's `JAW_REACH` one creature along.
+/// How far down the jaw bone the bloom's throat sits, as a fraction of `W` — the wolf's `JAW_REACH` one creature along.
 const JAW_REACH: f32 = 0.13;
-/// …AND THE BLOOM'S OWN HALF-WIDTH, which its reach and measured height are both taken over: the mouth is a
-/// RADIUS, not a point. Bigger head (owner) — this moves the silhouette, the reticle and the strike's reach
-/// together.
+/// …AND THE BLOOM'S OWN HALF-WIDTH, which its reach and measured height are both taken over: the mouth is a RADIUS, not a point. Bigger head (owner) — this moves the silhouette, the reticle and the reach together.
 const BLOOM_R: f32 = 0.40;
-/// HOW FAR OFF ITS NOSE THE BLOOM STILL CATCHES HIM — the cosine of the frontal cone (the toad's own dial).
-/// 0.25 is about 76 degrees either side, which is a ring of petals rather than a point.
+/// The cosine of the frontal cone (the toad's own dial). 0.25 is about 76 degrees either side, which is a ring of petals rather than a point.
 const BITE_FRONT_DOT: f32 = 0.25;
 
 const N = wolf.N;
@@ -190,20 +160,16 @@ const LOCK_AT = v3(0, 0.335 * W, 0.15 * W);
 
 const NECK_UP: f32 = 1.62;
 const NECK_OUT: f32 = 0.30;
-/// Where the neck's own midpoint sits, as a share of the way from the shoulder to the head. Under 0.5 puts the
-/// bend low and the top run long, which is what a stalk looks like and a swan's neck does not.
+/// Share of the way from shoulder to head. Under 0.5 puts the bend low and the top run long, which is what a stalk looks like and a swan's neck does not.
 const NECK_MID: f32 = 0.42;
 
 const NECK_STRETCH: f32 = 0.26;
 
-/// **AND THEN IT STRIKES DOWN, WHICH IS THE OTHER HALF OF HAVING A NECK LIKE THAT.** Degrees the whole head
-/// chain pitches forward and under across the strike. It has to be big: reared and stretched the bloom rides
-/// at 3.3 m, which is a metre and a half over the top of his head — a creature that leapt from there would
-/// pass clean over him every time. The rear is the TELL and the dive is the BLOW, and both are the neck.
+/// Degrees the whole head chain pitches forward and under across the strike. It has to be big: reared and
+/// stretched the bloom rides at 3.3 m, a metre and a half over the top of his head, and a creature that leapt from there would pass clean over him. The rear is the TELL and the dive is the BLOW.
 const STRIKE_DIVE: f32 = 108.0;
 const DIVE_BY: f32 = 0.55;
-/// How much of the neck's reach the dive takes back. High: the gather is the extension and the blow is the
-/// fold, and the two sharing the same 0..1 is what keeps them from telling different stories.
+/// How much of the neck's reach the dive takes back. High: the gather is the extension and the blow is the fold, and the two sharing one 0..1 is what keeps them from telling different stories.
 const DIVE_COIL: f32 = 0.50;
 const BODY_DIVE: f32 = 26.0;
 
@@ -218,10 +184,9 @@ fn restPose() [N]rl.Vector3 {
     return r;
 }
 
-// **AUTHOR DARK, AND SOLVE IT RATHER THAN GUESS** — screen goes as albedo^(1/2.2), so a factor you want on
-// screen is that factor^2.2 on the albedo. MEASURED: at (38, 34, 30) the hide came back at 144 against ground
-// at 112 — BRIGHTER than its field. Wanted ~78, i.e. 0.54 on screen, 0.54^2.2 = 0.264 on the albedo. The
-// bloom is the one thing allowed to be bright, because it is the read.
+// **AUTHOR DARK, AND SOLVE IT RATHER THAN GUESS** — screen goes as albedo^(1/2.2). MEASURED: at (38, 34, 30)
+// the hide came back at 144 against ground at 112, BRIGHTER than its field. Wanted ~78, i.e. 0.54 on screen,
+// 0.54^2.2 = 0.264 on the albedo. The bloom is the one thing allowed to be bright.
 const HIDE = rgba(10, 9, 8, 206);
 const HIDE_LT = rgba(15, 13, 11, 190);
 const HIDE_DK = rgba(6, 6, 5, 210);
@@ -266,17 +231,14 @@ pub const Ravager = struct {
     seed: f32 = 0,
     state: State = .idle,
     t: f32 = 0,
-    /// Gait phase, 0..1, advanced by DISTANCE and never by time — the hero's law, and why the paws do not skate.
     phase: f32 = 0,
     speed: f32 = 0,
     speedS: f32 = 0,
     biteCool: f32 = 0,
     rakeCool: f32 = 0,
-    /// WHICH PAW ANSWERS: +1 its left, -1 its right, latched at the commit off the side the hero is standing.
-    /// A side re-read per frame would swap legs mid-swipe.
+    /// +1 its left, -1 its right, latched at the commit off the side the hero is standing. A side re-read per frame would swap legs mid-swipe.
     rakeSide: f32 = 1,
-    /// **HOW AWAKE THE BLOOM IS**, 0..1, eased toward what the distance asks for (`NEAR_FAR`..`NEAR_WIDE`).
-    /// A LEVEL and not an event: it has to be able to fall again when he backs off, and it may not step.
+    /// **HOW AWAKE THE BLOOM IS**, 0..1, eased toward what the distance asks for (`NEAR_FAR`..`NEAR_WIDE`). A LEVEL and not an event: it has to be able to fall again when he backs off, and it may not step.
     nearK: f32 = 0,
     pounce: f32 = 0,
 
@@ -284,23 +246,18 @@ pub const Ravager = struct {
     hits: u32 = 0,
     hitLatch: bool = false,
     heroLatch: bool = false,
-    /// THIS FRAME'S BLOW ON WHOEVER IT IS FIGHTING, read straight back out of `update`. **A FOE HURTS THE HERO
-    /// BY RETURNING A `Hit`**, never by carrying a `foe.Blade` — that type is the other direction entirely
-    /// (what HIS sword sweeps against a body). Built the wrong way round the creature leapt all day and could
-    /// not take a point off him, and the swept capsule it maintained per frame fed nothing at all.
+    /// **A FOE HURTS THE HERO BY RETURNING A `Hit`**, never by carrying a `foe.Blade` — that type is the other
+    /// direction entirely (what HIS sword sweeps against a body). Built the wrong way round the creature leapt all day and could not take a point off him.
     heroHit: ?combat.Hit = null,
     heavyStun: bool = false,
     flash: f32 = 0,
     shove: rl.Vector3 = mathx.zero3,
     justDied: bool = false,
-    /// Its voices' one-frame edges, cleared with `justDied` at the top of `update`. The creature says WHEN;
-    /// `game.zig` owns the speaker, or a creature would play through the pause card and the shot harness.
     opened: bool = false,
     leapt: bool = false,
     snapped: bool = false,
     swiped: bool = false,
     yelped: bool = false,
-    /// THE HERO'S SHIELD, stamped from outside (`game.markParry`), and the one-frame answer to it.
     parry: foe.Parry = .{},
     parried: bool = false,
 
@@ -336,9 +293,8 @@ pub const Ravager = struct {
     pub fn centerWorld(self: *const Ravager) rl.Vector3 {
         return foe.bodyPoint(self.pos, CENTER_F * W, self.scale, 0);
     }
-    /// **THE MARK RIDES THE BODY, NOT THE BLOOM** (owner's call) — on the head it rode a stalk that rears
-    /// 1.6 `W`, stretches a quarter more and DIVES 152 degrees, so the reticle travelled a metre and a half a
-    /// strike. Off `CHEST` and not `centerWorld`, so it still rides the POSE (`foe.markOn`'s reason).
+    /// **THE MARK RIDES THE BODY, NOT THE BLOOM** (owner's call) — on the head it rode a stalk that rears 1.6 `W`,
+    /// stretches a quarter more and DIVES 152 degrees, so the reticle travelled a metre and a half a strike. Off `CHEST` and not `centerWorld`, so it still rides the POSE.
     pub fn lockPoint(self: *const Ravager) rl.Vector3 {
         return foe.markOn(self.xf[SPINE], LOCK_AT);
     }
@@ -371,10 +327,9 @@ pub const Ravager = struct {
         return foe.markOn(self.xf[JAW], v3(0, 0, JAW_REACH * W));
     }
 
-    /// 0..1, **read off the bite's own clock and nowhere else**, so the picture and the mechanic cannot
-    /// disagree. **TWO TIERS, AND THE SECOND IS THE TELL** (owner: open as he gets close, very wide; wider
-    /// still when it attacks) — 0 shut, 1 the wide-awake gape while he is near, past 1 to `ATTACK_OPEN` for
-    /// the leap. A RANGE and not a switch. The approach tier is SMOOTHED (`nearK`) so it cannot pop.
+    /// 0..1, **read off the bite's own clock and nowhere else**. **TWO TIERS, AND THE SECOND IS THE TELL** (owner:
+    /// open as he gets close, very wide; wider still when it attacks) — 0 shut, 1 the wide-awake gape while he is
+    /// near, past 1 to `ATTACK_OPEN` for the leap. A RANGE, not a switch; the approach tier is SMOOTHED (`nearK`).
     pub fn openAmt(self: *const Ravager) f32 {
         const near = self.nearK;
         if (self.state != .bite) return near;
@@ -387,15 +342,12 @@ pub const Ravager = struct {
         return mathx.lerpF(near, ATTACK_OPEN, k);
     }
 
-    /// **HOW FAR THE NECK IS REACHING**, 0..1 — the bloom's own dial normalised, so the stalk rears as the
-    /// flower opens and the two can never tell different stories. Past the approach gape it keeps going: the
-    /// leap is the head arriving, and the neck going with it is most of what makes it arrive.
+    /// **HOW FAR THE NECK IS REACHING**, 0..1 — the bloom's own dial normalised, so the stalk rears as the flower opens. Past the approach gape it keeps going: the leap is the head arriving.
     pub fn stretchAmt(self: *const Ravager) f32 {
         return mathx.clampF(self.openAmt() / ATTACK_OPEN, 0, 1);
     }
 
-    /// **HOW FAR INTO THE DIVE IT IS**, 0..1. Off the strike's own window, not the whole bite: the rear and
-    /// the stretch own the gather, and this owns the frames the blow is live in.
+    /// **HOW FAR INTO THE DIVE IT IS**, 0..1. Off the strike's own window, not the whole bite: the rear and the stretch own the gather, and this owns the frames the blow is live in.
     pub fn diveAmt(self: *const Ravager) f32 {
         if (self.state != .bite) return 0;
         if (self.t < BITE_WIND) return 0;
@@ -472,10 +424,8 @@ pub const Ravager = struct {
         if (self.state == .bite) {
             if (self.t < BITE_WIND) self.faceToward(hero, dt);
             self.speed = 0;
-            // THE LEAP CARRIES IT IN, through `stepXZ` like any other committed travel so the terrain gate
-            // still gets the last word.
-            // THE LAUNCH IS AN EDGE, caught by the clock CROSSING it — a long frame cannot fire it twice and
-            // a short one cannot miss it (`hero.updateShot`'s rule).
+            // Through `stepXZ` like any other committed travel, so the terrain gate still gets the last word. The
+            // launch is an EDGE on the clock crossing, so a long frame cannot fire it twice.
             if (self.t - dt < LAUNCH_T and self.t >= LAUNCH_T) self.leapt = true;
             if (self.t < HOP_END) {
                 mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), BITE_HOP * (dt / HOP_END), bounds);
@@ -492,8 +442,7 @@ pub const Ravager = struct {
         }
 
         if (self.state == .rake) {
-            // IT DOES NOT TURN INTO IT. The swipe is committed to the ground it was chosen for, which is what
-            // stops it being a leap with a shorter tell — walk out of the arc and it costs him nothing.
+            // IT DOES NOT TURN INTO IT. Committed to the ground it was chosen for, so walking out of the arc costs him nothing.
             if (self.t >= RAKE_WIND and self.t < RAKE_WIND + RAKE_STRIKE) self.tryRake(hero);
             if (self.t >= RAKE_WIND + RAKE_STRIKE + RAKE_RECOVER) {
                 self.state = .idle;
@@ -512,9 +461,7 @@ pub const Ravager = struct {
         const gap = mathx.distXZ(self.pos, want);
         const stop: f32 = if (hunting) stopR(foe.HERO_R) else HOME_R;
 
-        // **THE JUMP IS GATED WHERE THE MOVE IS CHOSEN** — the one place a post-step gate cannot reach. Held
-        // by the ankles it may not leap, and denying only its distance leaves it hopping on the spot inside a
-        // fist of roots.
+        // **THE JUMP IS GATED WHERE THE MOVE IS CHOSEN** — the one place a post-step gate cannot reach. Denying only its distance leaves it hopping on the spot inside a fist of roots.
         if (hunting and gap <= triggerR(foe.HERO_R) and self.biteCool <= 0 and foe.canLeap(&self.root)) {
             self.state = .bite;
             self.t = 0;
@@ -527,7 +474,7 @@ pub const Ravager = struct {
             self.t = 0;
             self.heroLatch = false;
             self.speed = 0;
-            // The paw on the hero's own side: `sideOf` is his bearing, and the sign of it IS which leg.
+            // `sideOf` is his bearing, and the sign of it IS which leg.
             self.rakeSide = if (self.sideOf(hero) >= 0) 1.0 else -1.0;
             self.swiped = true;
         } else if (gap > stop) {
@@ -547,16 +494,14 @@ pub const Ravager = struct {
         self.pose();
     }
 
-    /// Which side of its nose the hero is standing on: +1 its left, -1 its right, and the magnitude is how
-    /// far round. Reads POSITION and BEARING and nothing else.
+    /// +1 its left, -1 its right, and the magnitude is how far round. Reads POSITION and BEARING and nothing else.
     fn sideOf(self: *const Ravager, hero: rl.Vector3) f32 {
         const to = mathx.dirXZ(self.pos, hero);
         const fwd = mathx.headingDir(self.facing);
         return fwd.z * to.x - fwd.x * to.z;
     }
 
-    /// CLOSE, OFF THE FRONT, PAWS DOWN, AND OFF COOLDOWN. Inside the frontal cone the bloom is the answer and
-    /// this refuses — the two moves own different ground, which is the whole point of adding one.
+    /// CLOSE, OFF THE FRONT, PAWS DOWN, AND OFF COOLDOWN. Inside the frontal cone the bloom is the answer and this refuses — the two moves own different ground.
     fn wantsRake(self: *const Ravager, hero: rl.Vector3, gap: f32) bool {
         if (self.rakeCool > 0) return false;
         if (gap > RAKE_R * self.scale + foe.HERO_R) return false;
@@ -601,10 +546,8 @@ pub const Ravager = struct {
         }
     }
 
-    /// SECONDS BACK FROM THE PAW ARRIVING, or null. **THE SWIPE ONLY, NEVER THE LEAP** — the same call the
-    /// bone knight's own HOP gets (`knight`'s window test names the four strokes that have none): a shield is
-    /// braced against a stroke, and a whole animal in the air is not a stroke. Walking out of the arc is what
-    /// answers the leap, which is why it has the longer hop and the shorter tell.
+    /// SECONDS BACK FROM THE PAW ARRIVING, or null. **THE SWIPE ONLY, NEVER THE LEAP** — the same call the bone
+    /// knight's HOP gets: a shield is braced against a stroke, and a whole animal in the air is not a stroke.
     fn toImpact(self: *const Ravager) ?f32 {
         const at = RAKE_WIND + RAKE_STRIKE * RAKE_IMPACT_K;
         return switch (self.state) {
@@ -613,16 +556,14 @@ pub const Ravager = struct {
         };
     }
 
-    /// THE INSTANT THE PAW CAN BE CAUGHT IN, and how far out it reaches then — `tryRake`'s OWN extent through
-    /// the same `foe.hurtReach`, so a swipe the boards could not have met is never offered as one.
+    /// THE INSTANT THE PAW CAN BE CAUGHT IN, and how far out it reaches then — `tryRake`'s OWN extent through the same `foe.hurtReach`, so a swipe the boards could not have met is never offered as one.
     fn parryable(self: *const Ravager) ?f32 {
         const left = self.toImpact() orelse return null;
         if (!foe.inParryWindow(left)) return null;
         return foe.hurtReach(RAKE_R, self.scale);
     }
 
-    /// **THE BOARDS TAKE THE PAW.** No sparks of its own: this is meat on wood, and `foe.caught` already lights
-    /// the body's hit flash — the ring and the shake are the hero's own (`game.parryBeat`).
+    /// **THE BOARDS TAKE THE PAW.** No sparks of its own: this is meat on wood, and the ring and the shake are the hero's own (`game.parryBeat`).
     fn takeParry(self: *Ravager) void {
         const reach = self.parryable() orelse return;
         if (!foe.caught(self, reach)) return;
@@ -678,7 +619,7 @@ pub const Ravager = struct {
                 .r1 = 0.006,
                 .col = if (self.fxRng.float() < 0.5) PETAL else PETAL_LT,
                 .grav = 2.2,
-                // Petals FLUTTER — heavy drag against a light pull, so they leap off the bloom and then drift down.
+                // Petals FLUTTER — heavy drag against a light pull.
                 .drag = 2.8,
             });
         }
@@ -713,8 +654,7 @@ pub const Ravager = struct {
 
         var wx: [N]rl.Matrix = undefined;
         // **THE WHOLE RIG TAKES THE MAP'S SCALE, NOT JUST THE PELVIS HEIGHT** — `centerWorld`, `topWorld`,
-        // `hurtRadius` and `bodyR` are all `self.scale`'d, so a rig drawn at 1 hangs a bigger hurt sphere and
-        // bar round a body that never grew. INNERMOST, so every child bone inherits it through the chain.
+        // `hurtRadius` and `bodyR` are all `self.scale`'d. INNERMOST, so every child bone inherits it.
         wx[ROOT] = mul3(
             mul(scaleM(s, s, s), mul(rx(-pitch), rz(-70.0 * mathx.smoothstep(0, 1, fall)))),
             mul(tr(0, (self.rest[ROOT].y + breath + lift - crouch * W - 0.10 * W * fall) * s, 0), ry(mathx.degrees(self.facing))),
@@ -724,16 +664,12 @@ pub const Ravager = struct {
         const duck: f32 = 8.0 * react;
         heromod.setJoint(&wx, &self.rest, SPINE, ROOT, rx(-flex * 0.5 - duck * 0.3));
         heromod.setJoint(&wx, &self.rest, CHEST, SPINE, rx(-flex * 0.5 - duck * 0.3));
-        // THE NECK, and it is UPRIGHT: the canid's forward reach is gone, so what the gait does to it is a
-        // sway rather than a nod. It still ducks hard on a reaction — a stalk hit in the middle folds.
-        // …AND IT DIVES ON THE STRIKE. Negative about X at the neck brings the head DOWN and forward (the
-        // root's own sign, one joint along), which is what puts a bloom carried at 2.2 m into a man's chest.
+        // THE NECK IS UPRIGHT: the canid's forward reach is gone, so the gait gives it a sway rather than a nod.
+        // Negative about X at the neck brings the head DOWN and forward (the root's own sign, one joint along).
         heromod.setJoint(&wx, &self.rest, NECK, CHEST, rx(flex * 0.5 + 3.0 * m - duck * 1.4 - STRIKE_DIVE * self.diveAmt()));
-        // **THE HEAD STRETCHES UP THE NECK'S OWN AXIS**, not the world's: `setJoint` takes the bone length
-        // from the DISTANCE between two rest points, so the reach is a translate on top and `jawPoint` comes
-        // with it. **AND IT COILS BACK AS IT STRIKES** (owner: the neck goes crazy) — at full stretch through
-        // 108 degrees of dive the bloom swept a metre and a half and read as a whip; `diveAmt` takes most of
-        // the reach back over the blow.
+        // **THE HEAD STRETCHES UP THE NECK'S OWN AXIS**, not the world's: `setJoint` takes the bone length from
+        // the DISTANCE between two rest points, so the reach is a translate on top and `jawPoint` comes with it.
+        // **AND IT COILS BACK AS IT STRIKES** (owner: the neck goes crazy) — at full stretch through 108 degrees of dive the bloom swept a metre and a half and read as a whip.
         const reach = NECK_STRETCH * W * self.stretchAmt() * (1.0 - DIVE_COIL * self.diveAmt());
         const neckOff = mathx.subV(self.rest[HEAD], self.rest[NECK]);
         const up = if (mathx.lenV(neckOff) > 1e-5) mathx.normV(neckOff) else v3(0, 1, 0);
@@ -757,9 +693,7 @@ pub const Ravager = struct {
         self.xf = wx;
     }
 
-    /// **THE SWIPE IS AUTHORED OVER THE GAIT SOLVER, NOT INSIDE IT** — `wolf.legs` has run and planted all
-    /// four, and this takes ONE foreleg back off it. Re-setting the chain from the shoulder down is exactly
-    /// what `setJoint` does, so the paw's own transform comes along and nothing else on the rig moves.
+    /// **AUTHORED OVER THE GAIT SOLVER, NOT INSIDE IT** — `wolf.legs` has run and planted all four, and this takes ONE foreleg back off it. `setJoint` brings the paw's own transform along and nothing else moves.
     fn poseRake(self: *const Ravager, wx: *[N]rl.Matrix) void {
         if (self.state != .rake) return;
         const k = self.rakeAmt();
@@ -774,8 +708,7 @@ pub const Ravager = struct {
         const ca = chain[2];
         const paw = chain[3];
         const side: f32 = if (left) 1.0 else -1.0;
-        // Cocked (-1) the paw comes UP and ACROSS its own chest; driven (+1) it is out past the shoulder and
-        // low. One signed channel, so the cock cannot promise a side the swipe does not come from.
+        // Cocked (-1) the paw comes UP and ACROSS its chest; driven (+1) it is out past the shoulder and low. One signed channel, so the cock cannot promise a side the swipe does not come from.
         const swing = RAKE_SWING * k;
         const lift = RAKE_LIFT * (1.0 - @abs(k) * 0.55);
         heromod.setJoint(wx, &self.rest, sh, CHEST, mul3(rx(-lift), rz(side * swing), ry(-side * swing * 0.45)));
@@ -784,8 +717,7 @@ pub const Ravager = struct {
         heromod.setJoint(wx, &self.rest, paw, ca, rx(RAKE_PAW * (0.5 + k * 0.5)));
     }
 
-    /// -1 fully cocked, +1 fully through — the swipe's ONE clock, on the rake's own window and never the
-    /// bite's. Zero outside the move, so the same channel poses the settle back to the gait.
+    /// -1 fully cocked, +1 fully through — on the rake's own window and never the bite's. Zero outside the move, so the same channel poses the settle back to the gait.
     fn rakeAmt(self: *const Ravager) f32 {
         if (self.state != .rake) return 0;
         if (self.t < RAKE_WIND) return -mathx.smoothstep(0, RAKE_WIND * 0.85, self.t);
@@ -796,8 +728,7 @@ pub const Ravager = struct {
     }
 };
 
-/// How far the whole animal sinks through the gather, as a fraction of `W` — deeper than the spirit's 0.09
-/// because it is a bigger body loading a longer leap, and the sink IS the wind-up you read the leap off.
+/// Fraction of `W` the whole animal sinks through the gather — deeper than the spirit's 0.09 because it is a bigger body loading a longer leap, and the sink IS the wind-up.
 const CROUCH: f32 = 0.13;
 const PETAL_GAPE: f32 = 86.0;
 const PETAL_SPLAY: f32 = 74.0;
@@ -910,10 +841,8 @@ fn buildBone(b: *Builder, i: usize, rest: [N]rl.Vector3) void {
         },
         HEAD => {
             b.addBlob(v3(0, 0, 0.02 * W), v3(0.115 * W, 0.115 * W, 0.13 * W), 9, 7, PETAL_BACK);
-            // THE THROAT, emissive, sunk most of the way in — relief is a few percent (`AGENTS.md`), and what
-            // is wanted here is a glow out of a hollow rather than a proud ball. THREE SHELLS, deep to hot:
-            // the deep one is the hole, the halo washes the petal bases so the light looks like it is coming
-            // OUT of something, and the core is the only truly bright thing on the animal.
+            // Sunk most of the way in — relief is a few percent (`AGENTS.md`). THREE SHELLS, deep to hot: the
+            // deep one is the hole, the halo washes the petal bases so the light looks like it comes OUT of something, and the core is the only truly bright thing.
             b.addBlob(v3(0, 0, 0.055 * W), v3(0.105 * W, 0.105 * W, 0.045 * W), 9, 7, THROAT_HALO);
             b.addBlob(v3(0, 0, 0.085 * W), v3(0.078 * W, 0.078 * W, 0.050 * W), 8, 6, THROAT_DEEP);
             b.addBlob(v3(0, 0, 0.108 * W), v3(0.050 * W, 0.050 * W, 0.040 * W), 8, 6, THROAT);
@@ -981,8 +910,7 @@ fn petalFan(b: *Builder, rng: *mathx.Rng, side: f32, n: u32) void {
     }
 }
 
-/// THE LEGS, off the rest chain's own segment lengths so a resized animal cannot grow a leg the solver does
-/// not believe in.
+/// Off the rest chain's own segment lengths, so a resized animal cannot grow a leg the solver does not believe in.
 fn buildLimbBone(b: *Builder, i: usize, rest: [N]rl.Vector3, rng: *mathx.Rng) void {
     const child: ?usize = blk: {
         for (0..N) |c| {
@@ -1041,12 +969,9 @@ test "THE CLAW OWNS THE FLANK AND THE BLOOM OWNS THE FRONT — neither answers t
     const near = RAKE_R * r.scale + foe.HERO_R - 0.1;
     // Square in front, at the claw's own range: the claw REFUSES. That is the leap's ground.
     try std.testing.expect(!r.wantsRake(v3(0, 0, near), near));
-    // Off the shoulder at the same range: the claw is the answer, because the leap would have to turn first.
     const side = v3(near * 0.94, 0, near * 0.34);
     try std.testing.expect(r.wantsRake(side, mathx.lenXZ(side)));
-    // Behind it too — a hero at its tail is inside the swipe's cone.
     try std.testing.expect(r.wantsRake(v3(0, 0, -near), near));
-    // Out past a paw's reach, nothing.
     try std.testing.expect(!r.wantsRake(v3(0, 0, -(near + 1.5)), near + 1.5));
     r.rakeCool = 1.0;
     try std.testing.expect(!r.wantsRake(side, mathx.lenXZ(side)));
@@ -1079,8 +1004,7 @@ test "THE SWIPE LANDS ONCE, ON ITS OWN SIDE, AND ONLY AFTER THE TELL — and the
     var widest: f32 = 0;
     var t: f32 = 0;
     while (t < RAKE_WIND + RAKE_STRIKE + RAKE_RECOVER + 0.1) : (t += 1.0 / 60.0) {
-        // The bloom may still WAKE — that is the approach tier, a level off the distance. What it may not do
-        // is go past it, because past it is the leap's own gape.
+        // The bloom may still WAKE — the approach tier is a level off the distance. What it may not do is go past it, because past it is the leap's own gape.
         if (r.state == .rake) {
             if (@abs(r.openAmt() - r.nearK) > 1e-5) bloomPromised = true;
             widest = @max(widest, r.openAmt());
@@ -1094,11 +1018,10 @@ test "THE SWIPE LANDS ONCE, ON ITS OWN SIDE, AND ONLY AFTER THE TELL — and the
     }
     try std.testing.expectEqual(@as(u32, 1), lands);
     try std.testing.expectEqual(@as(u32, 0), duringWind);
-    // THE FLOWER IS NOT IN IT. Every bloom clock gates on `.bite`, so the swipe cannot promise a leap.
+    // Every bloom clock gates on `.bite`, so the swipe cannot promise a leap.
     try std.testing.expect(!bloomPromised);
     try std.testing.expect(widest < ATTACK_OPEN * 0.6);
 
-    // The OTHER paw's swipe does not reach a hero on this side.
     var q = Ravager.spawn(mathx.zero3, 0, 1.0, 0.3);
     q.rakeSide = -1;
     q.state = .rake;
@@ -1106,7 +1029,6 @@ test "THE SWIPE LANDS ONCE, ON ITS OWN SIDE, AND ONLY AFTER THE TELL — and the
     q.tryRake(at);
     try std.testing.expect(q.heroHit == null);
 
-    // And the swipe is the FAST one: the bloom is the blow that flattens you.
     try std.testing.expect(RAKE_HIT.stance == 0 and BITE_HIT.stance > 0);
     try std.testing.expect(RAKE_HIT.raw() < BITE_HIT.raw());
     try std.testing.expect(RAKE_WIND + RAKE_STRIKE < BITE_WIND + BITE_STRIKE + BITE_RECOVER);
@@ -1126,7 +1048,7 @@ test "THE PAW LEAVES THE EARTH AND COMES BACK — one signed clock, and it cross
     r.state = .idle;
     try std.testing.expectApproxEqAbs(@as(f32, 0), r.rakeAmt(), 1e-6);
 
-    // MEASURED off the posed rig: the swiping paw really does travel, and it travels ACROSS rather than up.
+    // MEASURED off the posed rig: the swiping paw travels, and it travels ACROSS rather than up.
     var lo = v3(999, 999, 999);
     var hi = v3(-999, -999, -999);
     r.state = .rake;
@@ -1201,8 +1123,7 @@ test "IT IS A FOE, NOT A SPIRIT — its own tether, its own souls, and it answer
     var r = Ravager.spawn(mathx.zero3, 0, 1.0, 0.3);
     try std.testing.expectEqual(wf.FoeKind.florid_ravager, r.kind());
     try std.testing.expect(r.alive() and !r.dying() and !r.staggered());
-    // The contract's accessors all answer off ONE body, so a bar anchored on one and a reticle on another
-    // cannot drift: the hurt sphere has to contain the mark.
+    // The contract's accessors all answer off ONE body, so a bar anchored on one and a reticle on another cannot drift.
     try std.testing.expect(r.hurtRadius() > r.bodyR());
     try std.testing.expect(r.topWorld().y > r.centerWorld().y);
     const markOut = mathx.lenV(mathx.subV(r.centerWorld(), r.lockPoint()));
@@ -1312,8 +1233,7 @@ test "THE INCOMING LATCH IS NOT THE OUTGOING ONE — one swing of his may not wo
     try std.testing.expectEqual(@as(u32, 1), r.hits);
     r.tryHit(swing);
     try std.testing.expectEqual(@as(u32, 1), r.hits);
-    // …and its own leap's clock may not clear that latch — it clears `heroLatch`, which is a different fact.
-    // The SAME swing is still live across the frame, so it stays one wound.
+    // Its own leap's clock may not clear that latch — it clears `heroLatch`, a different fact. The SAME swing is still live across the frame, so it stays one wound.
     r.state = .bite;
     r.t = BITE_WIND + BITE_STRIKE + BITE_RECOVER;
     _ = r.update(1.0 / 60.0, mathx.ground(0, 40), 200.0, swing);

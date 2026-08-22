@@ -25,18 +25,9 @@ const lerpF = mathx.lerpF;
 const approach = mathx.approach;
 const setLocal = heromod.setHumanoid;
 
-// THE TOLLING HOLLOW (owner's creature, owner's name) — a big hollow brute with a BRONZE BELL strapped across
-// its back. It has one blow, a bite, and it only throws it at somebody already standing in front of it.
-//
-// **THE BELL IS THE THREAT AND THE BODY IS ONLY THE TIMER** (owner: high hp, low def, low dmg). Its bite is
-// the weakest close blow in the field on the biggest health bar in it outside a boss, and its defence is
-// nothing at all: no armour, and the bronze on its back is a hole a bolt of lightning walks straight into.
-// Left alone at range it HEAVES ITS SHOULDERS and rings, and every body inside 34 m turns and comes
-// (`foe.rouseWithin`). So the fight is a choice with two bad ends: stand in its face where the bell cannot be
-// rung and be bitten for as long as its 340 HP lasts, or back off and answer the camp it just called.
-//
-// **AND THE ANSWER IS ITS OWN RANGE, NOT A COOLDOWN.** The toll is refused while he is inside bite reach — one
-// world fact, one rule, and nothing about it reads his inputs.
+// THE TOLLING HOLLOW (owner's creature, owner's name). One blow, a bite, and a BRONZE BELL on its back: left
+// alone past bite reach it rings and every body inside 34 m turns and comes (`foe.rouseWithin`). 340 HP, no
+// armour. **THE TOLL IS REFUSED WHILE HE IS INSIDE BITE REACH** — a range, not a cooldown, and it reads no inputs.
 
 const N = heromod.N;
 const ROOT = heromod.ROOT;
@@ -56,23 +47,18 @@ const WRL = heromod.WRL;
 const SHR = heromod.SHR;
 const ELR = heromod.ELR;
 const WRR = heromod.WRR;
-/// The rig's spare bone, and on this body it is the CLAPPER — the only thing on it that swings on its own.
+/// The rig's spare bone; on this body it is the CLAPPER.
 const CLAPPER = heromod.HELD;
 
 const H: f32 = heromod.H;
 
-/// **BIG, AND IT NEVER STANDS UP** (owner: make it larger and hunched way over). 3.25 m of stature bent
-/// through `HUNCH`'s 52 degrees at the waist, which puts the crown at about 2.4 m and the shoulders at 2.2 —
-/// a body whose head is at the hero's own reach on a frame half again his height. The hunch is not decoration:
-/// it is what turns the bell on its back from a lump into a near-level PLATFORM, and the platform is what the
-/// gremlin sits on.
+/// 3.25 m of stature bent through `HUNCH`'s 52 degrees at the waist: crown at ~2.4 m, shoulders at 2.2 —
+/// the head at the hero's own reach on a frame half again his height. The hunch is what makes the bell a PLATFORM.
 pub const SCALE = (H + 1.45) / H;
 const HIP_HALF = heromod.HIP_HALF * 1.55;
 const SHOULDER_HALF = heromod.SHOULDER_HALF * 1.62;
-/// **THE HEAD IS LOW AND THRUST FORWARD, NOT STACKED ON TOP.** `restHumanoid` gives a man a 0.07 H neck, and
-/// on a body this heavy through the chest the skull sat INSIDE the ribcage mass — a hollow with no head. This
-/// is a bull's neck: the joint comes up a little and the skull goes out in FRONT of the chest, which is also
-/// what puts the jaws where the bite says they are.
+/// `restHumanoid` gives a man a 0.07 H neck, and on a chest this heavy the skull sat INSIDE the ribcage mass.
+/// A bull's neck: the joint comes up a little and the skull goes out in FRONT of the chest, where the bite says the jaws are.
 const REST = blk: {
     var r = heromod.restHumanoid(HIP_HALF, SHOULDER_HALF, H);
     r[heromod.NECK] = v3(0, 0.828 * H, 0.022 * H);
@@ -94,29 +80,22 @@ const BODY_R: f32 = 0.62;
 const HURT_R: f32 = 0.78;
 pub const SOULS: u32 = 420;
 
-/// **THE BIGGEST BAR IN THE FIELD OUTSIDE A BOSS** — over the cyclops's 300, and it is the whole creature:
-/// there is nothing else to get through, because there is no armour under it.
+/// Over the cyclops's 300, and it is the whole creature: there is no armour under it.
 const HP_MAX: f32 = 340.0;
-/// …AND YOU CANNOT STUNLOCK IT. Over the cyclops's 30 and well under the bone knight's 78: the hero's heavy
-/// swing at 22 does not flinch it, so chewing through the bar is a thing you commit to rather than a thing
-/// you do for free.
+/// Over the cyclops's 30 and well under the bone knight's 78: the hero's heavy swing at 22 does not flinch it.
 const POISE_MAX: f32 = 34.0;
 const STANCE_MAX: f32 = 62.0;
-/// **THE BELL IS THE HOLE.** A hundredweight of bronze lashed to a body with no earth under it: lightning is
-/// the worst weakness carried by anything in the field. Fire finds dry hollow hide; cold and chaos are the
-/// skeleton family's own answer, because whatever this used to be, it is dead.
+/// A hundredweight of bronze with no earth under it — the worst lightning weakness in the field. Cold and chaos are the skeleton family's own answer.
 const RESISTS = combat.resists(.{ .fire = -30, .cold = 55, .lightning = -70, .chaos = 40 });
 
 const DEATH_DUR: f32 = 1.55;
 const DISS_DUR: f32 = 1.10;
 const SHOVE_DECAY: f32 = 6.0;
 const A_PROT: f32 = 3.0;
-/// A BIG BODY HINGES AT THE WAIST AND ITS LEGS STAY PLANTED — the law, and its one number
-/// (`ogre.PELVIS_SHARE`).
+/// A BIG BODY HINGES AT THE WAIST AND ITS LEGS STAY PLANTED — the law's one number (`ogre.PELVIS_SHARE`).
 const PELVIS_SHARE = ogremod.PELVIS_SHARE;
-/// Degrees of permanent stoop, and it is most of the creature (owner: "hunched way over"). Carried at the
-/// WAIST — leaned at the root the legs rotate with it and the whole thing lurches (`ogre.PELVIS_SHARE`).
-/// At 52 the spine is nearer horizontal than vertical, which is what lays the bell out flat enough to ride.
+/// Degrees of permanent stoop, carried at the WAIST — leaned at the root the legs rotate with it and the whole
+/// thing lurches. At 52 the spine is nearer horizontal than vertical, which lays the bell flat enough to ride.
 const HUNCH: f32 = 52.0;
 
 const CHIP_SPRAY = archermod.boneChips(1.25);
@@ -125,61 +104,46 @@ const CHIP_HEAVY = 18;
 const CHIP_DEATH = 22;
 const NPART = 84;
 
-// **THE BITE.** The head goes back, the jaw opens, and the whole body lunges half a metre onto it.
 const BITE_WIND: f32 = 0.46;
 const BITE_STRIKE: f32 = 0.20;
 const BITE_RECOVER: f32 = 0.62;
 const BITE_COOL: f32 = 1.55;
 const BITE_LUNGE: f32 = 0.62;
-/// **MEASURED AGAINST THE FIELD, NOT CHOSEN.** At 1.85 the whole reach came to 3.17 m at this creature's
-/// scale — further than the cyclops's slam, on the weakest blow in the game. 1.25 lands it at 2.32 m, which
-/// is a big head on a short neck plus the lunge that carries it. And then MEASURED AGAIN off the posed jaws:
-/// they arrive 1.55 m out, so at 1.25 the cone still answered for 0.77 m of clear air past them. 1.10 lands
-/// the promise at 2.11 m against a 1.55 m arrival plus the hero's own 0.55 m footprint, which is the whole of
-/// it. The test prints both.
+/// **MEASURED AGAINST THE FIELD, NOT CHOSEN.** At 1.85 the whole reach came to 3.17 m at this scale — further
+/// than the cyclops's slam, on the weakest blow in the game. Then measured off the posed jaws: they arrive
+/// 1.55 m out, so 1.25 still answered for 0.77 m of clear air past them. 1.10 promises 2.11 m against a
+/// 1.55 m arrival plus the hero's own 0.55 m footprint. The test prints both.
 const BITE_R: f32 = 1.10;
 const BITE_TRIGGER_R: f32 = BITE_R + BITE_LUNGE * 0.7;
-/// How far INSIDE its own trigger ring it walks before standing still (`stopR`).
+/// Share of `BITE_R`, not of the trigger ring. The skitterer's same-named dial is a share of ITS trigger ring.
 const STOP_FRAC: f32 = 0.8;
-/// The frontal cone the jaws answer for — cos 66 degrees. A head on a neck this short cannot reach its own
-/// flank, which is what makes standing at its hip the safe ground.
+/// cos 66 degrees. A head on a neck this short cannot reach its own flank, which is what makes its hip safe ground.
 const BITE_FRONT_DOT: f32 = 0.40;
-/// **THE WEAKEST CLOSE BLOW IN THE FIELD** (owner: low dmg) — under the kobold berserker's chop and half the
-/// cyclops's swipe. The POISE is a big body's, though: it will put him on the back foot every time, which is
-/// what stops "low damage" reading as "harmless".
+/// Under the kobold berserker's chop and half the cyclops's swipe. The POISE is a big body's, which is what stops "low damage" reading as "harmless".
 const BITE_HIT = combat.Hit{ .dmg = 13, .poise = 26, .stance = 9 };
 
-// **THE TOLL.** It rears, hauls its shoulders round, and the bell on its back swings through.
 const TOLL_WIND: f32 = 1.10;
 const TOLL_SWING: f32 = 0.42;
 const TOLL_RECOVER: f32 = 1.25;
 const TOLL_COOL: f32 = 12.0;
-/// **HOW FAR THE BELL CARRIES.** Two and a half times its own notice ring, and wider than the spacing between
-/// camps in `worlds/` — the point of it is bodies that were not in this fight arriving in it.
+/// Two and a half times its own notice ring, and wider than the spacing between camps in `worlds/`.
 pub const TOLL_R: f32 = 34.0;
 /// The frame the clapper strikes, as a share of the swing.
 const TOLL_HIT_AT: f32 = 0.38;
 
-// **THE GREMLIN'S VOLLEY** (owner: "the gremlin can shoot a spark at range… a staggered 3-spark volley"). The
-// host has nothing at all past its own jaws; this is the answer to standing off it, and the STAGGER is the
-// whole of what makes it fair — three separate things to dodge, spaced far enough apart to be dodged
-// separately, rather than one wall of light you either eat or do not.
+// **THE GREMLIN'S VOLLEY** (owner: "a staggered 3-spark volley"). The host has nothing past its own jaws. The
+// STAGGER is what makes it fair: three things to dodge separately, not one wall of light.
 const SPARK_WIND: f32 = 0.72;
 pub const SPARK_N: u8 = 3;
-/// Seconds between one spark leaving and the next. **OVER THE ROLL'S INVULNERABLE WINDOW**
-/// (`hero.ROLL_IFRAME_END`, 0.46 s) and not merely over its animation: what makes two sparks one blow is
-/// arriving inside one set of i-frames, so that window is the bar the gap has to clear. Under it the volley is
-/// a single hitbox with a fatter shape; over it each spark is a thing he has to answer on its own.
+/// Seconds between one spark leaving and the next. **OVER THE ROLL'S INVULNERABLE WINDOW** (`hero.ROLL_IFRAME_END`,
+/// 0.46 s) and not merely over its animation: two sparks inside one set of i-frames are one blow with a fatter shape.
 const SPARK_GAP: f32 = 0.58;
 const SPARK_RECOVER: f32 = 0.70;
 const SPARK_CD: f32 = 5.5;
-/// The band it owns. Inside `AGGRO_R` with room, and past the bite ring by a wide margin — two moves answering
-/// one distance is one move with a coin flip.
+/// Inside `AGGRO_R` with room and past the bite ring by a wide margin — two moves answering one distance is one move with a coin flip.
 pub const SPARK_MAX: f32 = 16.0;
 pub const SPARK_SPEED: f32 = 17.0;
-/// **SMALL, AND THAT IS THE POINT.** Three of these is 27 through no armour, against the host's own 13 a bite:
-/// what the volley sells is that you cannot stand still and read the bell, not that it kills you at range.
-/// Pure lightning, so the resist rows the player has been collecting are the answer to it.
+/// Three of these is 27 through no armour, against the host's own 13 a bite. Pure lightning, so the resist rows are the answer.
 pub const SPARK_HIT = combat.Hit{ .poise = 8, .elem = combat.elems(.{ .lightning = 9 }) };
 
 fn volleySpan() f32 {
@@ -190,14 +154,11 @@ comptime {
     std.debug.assert(BITE_WIND >= foe.TELL_MIN and TOLL_WIND >= foe.TELL_MIN);
     std.debug.assert(BITE_COOL > BITE_STRIKE + BITE_RECOVER);
     std.debug.assert(TOLL_R > AGGRO_R * 1.5);
-    // **THE BELL COSTS IT MORE THAN THE BITE DOES** — the whole toll is longer than the whole bite, so the
-    // window it hands him for backing off and answering the camp is real.
     std.debug.assert(TOLL_WIND + TOLL_SWING + TOLL_RECOVER > BITE_WIND + BITE_STRIKE + BITE_RECOVER);
     std.debug.assert(TOLL_HIT_AT > 0 and TOLL_HIT_AT < 1);
     std.debug.assert(SPARK_WIND >= foe.TELL_MIN);
     std.debug.assert(SPARK_GAP > heromod.ROLL_IFRAME_END); // …or two arrive inside one set of i-frames
     std.debug.assert(SPARK_CD > SPARK_WIND + volleySpan() + SPARK_RECOVER);
-    // The two ranged answers may not both own the near band: the spark starts where the jaws stop.
     std.debug.assert(BITE_TRIGGER_R + foe.HERO_R < SPARK_MAX);
     std.debug.assert(SPARK_MAX < AGGRO_R);
     std.debug.assert(SPARK_N >= 2);
@@ -211,12 +172,9 @@ const HIDE_DK = rgba(30, 27, 25, 255);
 const GUT = rgba(22, 18, 17, 255);
 const BONE = archermod.BONE;
 const BONE_DK = archermod.BONE_DK;
-/// BRONZE, not steel and not gold: a green-brown metal that takes the sky warm (`gfx.Mat.gilt`'s row).
-/// **SOLVED OFF THE RENDER, NOT CHOSEN** (`AGENTS.md`): at (104, 88, 46) the lit skirt came back at 182 luma
-/// against the hide's 128 and the ground's 106 — the brightest thing on the screen, on a creature whose bell
-/// is meant to look like a hundredweight of dirty metal. Wanted ~140, i.e. 0.77 on screen, and screen goes as
-/// albedo^(1/2.2), so 0.77^2.2 = 0.56 on the albedo. The gilt branch's own shine is what puts the highlight
-/// back on top.
+/// BRONZE, not steel and not gold (`gfx.Mat.gilt`'s row). **SOLVED OFF THE RENDER** (`AGENTS.md`): at
+/// (104, 88, 46) the lit skirt came back at 182 luma against the hide's 128 and the ground's 106. Wanted ~140,
+/// i.e. 0.77 on screen, and screen goes as albedo^(1/2.2), so 0.77^2.2 = 0.56 on the albedo.
 const BRONZE = rgba(58, 49, 26, 255);
 const BRONZE_DK = rgba(35, 30, 17, 255);
 const BRONZE_LIP = rgba(74, 65, 37, 255);
@@ -225,16 +183,11 @@ const EYE = rgba(196, 168, 96, 90);
 
 const State = enum { idle, walk, bite, toll, spark, stunlight, stunheavy, dead };
 
-/// **THE WHOLE DECISION.** Distance and two clocks — and the toll's refusal is a RANGE, so standing in its
-/// face is what silences it.
 const Choice = enum { bite, toll, spark, walk, hold };
-/// `biteR` is `triggerR`'s own answer and not a second spelling of it — written out here as
-/// `BITE_TRIGGER_R + foe.HERO_R`, the ring the state machine gates on and the ring this decides on were two
-/// copies of one number.
+/// `biteR` is `triggerR`'s own answer, not a second spelling of it: written out as `BITE_TRIGGER_R + foe.HERO_R`
+/// the ring the state machine gates on and the ring this decides on were two copies of one number.
 /// **THE BELL FIRST, THEN THE SPARKS.** Both live past the jaws, so the order between them is the decision and
-/// not a roll: the toll is the headline and it comes off a 12 s clock, so giving it priority is what keeps it
-/// the thing you remember. The volley owns the between-times, which is exactly the ground the creature used to
-/// have no answer on at all.
+/// not a roll; the toll comes off a 12 s clock, and the volley owns the between-times.
 fn classify(dist: f32, biteR: f32, biteReady: bool, tollReady: bool, sparkReady: bool) Choice {
     if (dist > AGGRO_R) return .hold;
     if (dist <= biteR) return if (biteReady) .bite else .walk;
@@ -243,42 +196,29 @@ fn classify(dist: f32, biteR: f32, biteReady: bool, tollReady: bool, sparkReady:
     return .walk;
 }
 
-/// The bell, hung off the back of the chest and free to swing fore-and-aft. `zeta` under 1 so it RINGS on
-/// rather than arriving: a mass in motion overshoots its rest and settles back onto it (`AGENTS.md`).
-/// **SOLVED, NOT GUESSED**: the haul is driven over `TOLL_SWING` (0.42 s), so a spring that cannot follow it
-/// never gets there. Natural frequency is sqrt(stiff) rad/s — at 46 the period was 0.93 s and the bell
-/// reached 37 of the 52 degrees it was pulled through. 165 gives 12.8 rad/s, a 0.49 s period, so the mass
-/// arrives inside the drive and carries PAST it, which is the thing being modelled.
+/// `zeta` under 1 so it RINGS on rather than arriving (`AGENTS.md`). **SOLVED**: the haul is driven over
+/// `TOLL_SWING` (0.42 s) and natural frequency is sqrt(stiff) rad/s — at 46 the period was 0.93 s and the bell
+/// reached 37 of the 52 degrees it was pulled through. 165 gives 12.8 rad/s and a 0.49 s period, so the mass
+/// arrives inside the drive and carries PAST it.
 const BELL_STIFF: f32 = 165.0;
 const BELL_ZETA: f32 = 0.30;
 /// Degrees the bell lags a walking body, per metre-per-second of travel.
 const BELL_DRAG: f32 = 5.2;
-/// …and degrees the toll drives it through, which is 5x anything walking can produce. THE TOLL IS THE ONLY
-/// TIME THE BELL IS A WEAPON, and this is the number that says so.
+/// Degrees the toll drives it through — 5x anything walking can produce. THE TOLL IS THE ONLY TIME THE BELL IS A WEAPON.
 const BELL_HAUL: f32 = 52.0;
-/// **CLEAR OF THE BACK, OR IT IS NOT A BELL, IT IS A LUMP.** Measured: at -0.088 H it sat inside the chest
-/// mass and nothing of it showed at all. -0.215 H hangs the crown a hand's breadth off the spine, and the
-/// skirt then stands proud of the whole silhouette.
+/// **CLEAR OF THE BACK, OR IT IS A LUMP.** Measured: at -0.088 H it sat inside the chest mass and nothing showed. -0.215 H hangs the crown a hand's breadth off the spine.
 const BELL_AT = v3(0, 0.052 * H, -0.215 * H);
 /// The clapper swings further than the skirt it hangs in, which is what makes it strike the wall.
 const CLAPPER_LAG: f32 = 1.35;
 const BELL_R: f32 = 0.150 * H;
 const BELL_DROP: f32 = 0.235 * H;
 
-// ── THE GREMLIN ────────────────────────────────────────────────────────────────────────────────────────────
-// **A SECOND CREATURE ON THE FIRST ONE'S BACK** (owner's call), and the division of labour is the whole read:
-// the hollow is the LEGS and the bar, and the little one on the bell is the BRAIN — it rings the bronze, and
-// it is the only thing here with a ranged answer. The hollow has one blow and no wits; the gremlin has no
-// blow at all and does everything else.
-//
-// **IT IS NOT A SECOND BODY.** No HP of its own, no leash, no place in `FOE_GROUPS`: it is seven bones and six
-// meshes riding the host's own transform, so killing the hollow takes the gremlin with it. A separately
-// killable rider is a different creature and a different ask.
+// **THE GREMLIN IS NOT A SECOND BODY.** No HP of its own, no leash, no place in `FOE_GROUPS`: seven bones and
+// six meshes riding the host's own transform, so killing the hollow takes the gremlin with it. It is the only
+// thing here with a ranged answer; the hollow is the legs and the bar.
 
-/// Its whole stature, in shares of the hero's. **SMALL, MEASURED AGAINST THE BELL AND NOT AGAINST THE HERO**
-/// (owner: "a small gremlin"): at 0.34 H it came out 1.10 m on this host, which is as tall as the bronze is
-/// wide and read as a second creature rather than a passenger. 0.20 H is 0.65 m — a thing that fits ON the
-/// crown, and the bell still wins the silhouette.
+/// Stature in shares of the hero's. MEASURED AGAINST THE BELL, not the hero: at 0.34 H it came out 1.10 m —
+/// as tall as the bronze is wide, a second creature rather than a passenger. 0.20 H is 0.65 m.
 const G_H: f32 = 0.20 * H;
 const G_RUMP = 0;
 const G_TORSO = 1;
@@ -289,24 +229,18 @@ const G_LEGL = 5;
 const G_LEGR = 6;
 const G_N = 7;
 
-/// **WHERE ITS RUMP MEETS THE BRONZE**, in the BELL's own frame. The crown blob rises `BELL_R * 0.30` off the
-/// bell's origin, so this is that plus a hair — and `G_REST[G_RUMP]` is the ZERO of the rider's own rig, so
-/// this point IS the seat and nothing can drift between the two. Measured against the mesh rather than chosen:
-/// posed as a standing creature whose FEET were the root plane, the splayed legs lifted the whole thing 0.3 m
-/// clear of the bronze and it read as hovering.
+/// In the BELL's own frame: the crown blob rises `BELL_R * 0.30` off the bell's origin, and `G_REST[G_RUMP]`
+/// is the ZERO of the rider's rig, so this point IS the seat. Posed off the FEET instead, the splayed legs
+/// lifted the whole thing 0.3 m clear of the bronze.
 const G_SEAT: f32 = BELL_R * 0.30 + 0.008 * H;
-/// **HOW MUCH OF THE SWING IT TAKES** (degrees per degree the bell moves). Well under 1: a thing sitting on a
-/// moving mass BRACES against it — mounted rigidly in the bell's frame it lay on its side the moment `HUNCH`
-/// went past forty, and read as welded on rather than perched.
+/// Degrees per degree the bell moves. Well under 1: mounted rigidly in the bell's frame it lay on its side the moment `HUNCH` went past forty.
 const G_BRACE: f32 = 0.34;
-/// Degrees it leans forward at rest. It is a hunched little thing on a hunched big one.
+/// Degrees it leans forward at rest.
 const G_STOOP: f32 = 22.0;
 
-/// **THE RUMP IS THE ORIGIN, BECAUSE THE RUMP IS WHAT TOUCHES THE BELL.** A rig measured off the FEET needs the
-/// feet to be the root plane, and a SEATED creature's feet are wherever its knees put them — so the seat drifted
-/// with every change to the leg pose. Off the rump nothing can: `G_SEAT` is where this zero goes and that is
-/// the whole contract. **And the joints OVERLAP their masses**: the torso's own capsule reaches back down
-/// through the rump, because a quarter of a body length of clear neck between the two read as two creatures.
+/// **THE RUMP IS THE ORIGIN, BECAUSE THE RUMP IS WHAT TOUCHES THE BELL.** A seated creature's feet are wherever
+/// its knees put them, so a rig measured off the feet drifted the seat with every change to the leg pose.
+/// **And the joints OVERLAP their masses**: the torso's capsule reaches back down through the rump.
 const G_REST = [G_N]rl.Vector3{
     v3(0, 0, 0), // rump — the seat
     v3(0, 0.22 * G_H, -0.01 * G_H), // torso, close over it
@@ -317,21 +251,16 @@ const G_REST = [G_N]rl.Vector3{
     v3(-0.11 * G_H, -0.04 * G_H, 0.05 * G_H),
 };
 
-/// The hand, in the arm bone's own frame. Named because THREE things read it: the mesh that draws the fist,
-/// the glow sunk into it, and `sparkWorld` — and a muzzle that disagreed with the picture is a bolt out of
-/// clear air (`hero.Armament`'s law, one creature along).
+/// In the arm bone's own frame. THREE things read it — the fist mesh, the glow sunk into it, and `sparkWorld`; a muzzle that disagrees with the picture is a bolt out of clear air.
 const G_FIST = v3(0.05 * G_H, -0.30 * G_H, 0.06 * G_H);
 
-// **IT HAS TO SILHOUETTE AGAINST THE BELL IT SITS ON, AND IT DID NOT.** SAMPLED, not guessed (`AGENTS.md`):
-// at (64,52,40) the rider came back at 142 luma against bronze reading 139-153 and the host's hide at 112-128 —
-// the same value as its own perch, which is why the first shot read as one lumpy mass. Wanted ~100, i.e. 0.70
-// of what it had on screen, and screen goes as albedo^(1/2.2), so 0.70^2.2 = 0.45 on the albedo. Separated on
-// HUE as well: everything else on this creature is warm, so the rider is the one COOL grey thing in the frame.
+// **IT HAS TO SILHOUETTE AGAINST THE BELL IT SITS ON.** SAMPLED (`AGENTS.md`): at (64,52,40) the rider came
+// back at 142 luma against bronze reading 139-153 and hide at 112-128 — the same value as its own perch.
+// Wanted ~100, i.e. 0.70 on screen, and 0.70^2.2 = 0.45 on the albedo. Separated on HUE too: the one COOL grey.
 const G_HIDE = rgba(28, 26, 27, 255);
 const G_HIDE_LT = rgba(41, 38, 39, 255);
 const G_HIDE_DK = rgba(17, 15, 16, 255);
-/// The one bright thing on it, and it is the same lightning the sparks are — so what you read before the
-/// volley is the same colour as the volley.
+/// The same lightning the sparks are, so what you read before the volley is the volley's own colour.
 const G_SPARK = rgba(196, 214, 255, 255);
 const G_EYE = rgba(226, 236, 255, 110);
 
@@ -416,15 +345,12 @@ pub const Hollow = struct {
     shove: rl.Vector3 = mathx.zero3,
     justDied: bool = false,
     parried: bool = false,
-    /// **THE BELL STRUCK THIS FRAME**, and where. A one-frame edge (`justDied`'s idiom) cleared at the TOP of
-    /// `update`: the creature cannot rouse anything itself, because every other body is in another group,
-    /// another array, another type.
+    /// A one-frame edge (`justDied`'s idiom) cleared at the TOP of `update`: the creature cannot rouse anything
+    /// itself, because every other body is in another group, another array, another type.
     tolled: bool = false,
-    /// One-frame voices. The creature says WHEN; `game.zig` owns the speaker.
     gaped: bool = false,
     snapped: bool = false,
-    /// **A SPARK LEFT THE RIDER'S FISTS THIS FRAME.** The creature says WHEN and `game.zig` puts the shot in the
-    /// pool — the projectile is another array of another type (the necromancer's `applyRaises` law).
+    /// The creature says WHEN and `game.zig` puts the shot in the pool — the projectile is another array of another type.
     sparked: bool = false,
     heaved: bool = false,
     clanked: bool = false,
@@ -436,8 +362,7 @@ pub const Hollow = struct {
     latB: f32 = 0,
     speed: f32 = 0,
     speedS: f32 = 0,
-    /// Which way its shoulders were passing the last time the bell knocked, so a walking clank fires on the
-    /// FOOTFALL rather than on a clock beside it.
+    /// Which way its shoulders were passing last knock, so a walking clank fires on the FOOTFALL rather than on a clock beside it.
     knockWas: f32 = 0,
 
     fade: f32 = 0,
@@ -450,8 +375,7 @@ pub const Hollow = struct {
 
     xf: [N]rl.Matrix = undefined,
     bellMat: rl.Matrix = undefined,
-    /// The rider's own seven, posed off `bellMat` — its own array because it is not on the humanoid rig and
-    /// bolting a second creature's joints into `N` would be a different layout, not a wider one.
+    /// Its own array because it is not on the humanoid rig: bolting a second creature's joints into `N` would be a different layout, not a wider one.
     gxf: [G_N]rl.Matrix = undefined,
     rest: [N]rl.Vector3 = undefined,
 
@@ -516,8 +440,7 @@ pub const Hollow = struct {
     pub fn bellXf(self: *const Hollow) rl.Matrix {
         return self.bellMat;
     }
-    /// Where the sound is made — the bell itself and not the body, because that is what the radius is
-    /// measured from (`foe.rouseWithin`).
+    /// The bell, not the body — that is what the radius is measured from (`foe.rouseWithin`).
     pub fn bellWorld(self: *const Hollow) rl.Vector3 {
         return foe.markOn(self.xf[CHEST], BELL_AT);
     }
@@ -532,8 +455,7 @@ pub const Hollow = struct {
         foe.faceToward(self.pos, &self.facing, at, TURN_RATE, dt);
     }
 
-    /// SECONDS BACK FROM THE JAWS CLOSING, or null. One rule for every weapon in the field
-    /// (`foe.PARRY_LEAD`) — and jaws are a weapon here (the toad's own window).
+    /// SECONDS BACK FROM THE JAWS CLOSING, or null. One rule for every weapon in the field (`foe.PARRY_LEAD`).
     fn toImpact(self: *const Hollow) ?f32 {
         if (self.state != .bite) return null;
         return BITE_WIND + BITE_STRIKE * 0.45 - self.t;
@@ -611,12 +533,10 @@ pub const Hollow = struct {
             .bite => {
                 if (self.t < BITE_WIND) self.faceToward(hero, dt);
                 self.speed = 0;
-                // THE LUNGE CARRIES IT IN, through `stepXZ` like any other committed travel, so the terrain
-                // gate still gets the last word.
+                // Through `stepXZ` like any other committed travel, so the terrain gate still gets the last word.
                 if (self.t >= BITE_WIND * 0.55 and self.t < BITE_WIND + BITE_STRIKE) {
                     const span = BITE_WIND * 0.45 + BITE_STRIKE;
-                    // NOT handed to `advanceGait`: a lunge is one committed shove, and billed as travel it
-                    // advanced the legs' stride phase with the walk speed sitting at zero.
+                    // NOT handed to `advanceGait`: billed as travel it advanced the legs' stride phase with the walk speed sitting at zero.
                     mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), BITE_LUNGE * self.scale * (dt / span), bounds);
                 }
                 if (self.t >= BITE_WIND and self.t < BITE_WIND + BITE_STRIKE) self.tryBite(hero);
@@ -627,15 +547,12 @@ pub const Hollow = struct {
                 }
             },
             .toll => {
-                // IT PLANTS AND HAULS. No travel at all through the whole 2.77 s, which is what makes ringing
-                // the bell a thing it PAYS for.
+                // No travel at all through the whole 2.77 s, which is what makes ringing the bell a thing it PAYS for.
                 self.faceToward(hero, dt * 0.3);
                 self.speed = 0;
                 const swingT = self.t - TOLL_WIND;
                 if (swingT >= 0) {
                     const at = TOLL_SWING * TOLL_HIT_AT;
-                    // THE STRIKE IS AN EDGE, caught by the clock CROSSING it — a long frame cannot fire it
-                    // twice and a short one cannot miss it (`hero.updateShot`'s rule).
                     if (swingT - dt < at and swingT >= at) {
                         self.tolled = true;
                         self.tollCool = TOLL_COOL;
@@ -643,10 +560,7 @@ pub const Hollow = struct {
                 }
                 if (self.t >= TOLL_WIND + TOLL_SWING + TOLL_RECOVER) self.enter(.idle);
             },
-            // **IT PLANTS AND THE RIDER SHOOTS.** The host holds still for the whole volley, which is what makes
-            // three sparks a thing you answer by MOVING rather than by out-trading: the big body is standing
-            // there the whole time. It tracks slowly, so walking round the volley works and standing in it does
-            // not — the same dial the toll uses.
+            // The host holds still for the whole volley and tracks slowly, so walking round it works and standing in it does not.
             .spark => {
                 self.faceToward(hero, dt * 0.5);
                 self.speed = 0;
@@ -723,8 +637,7 @@ pub const Hollow = struct {
         self.pose();
     }
 
-    /// **THE BELL IS DRIVEN, NEVER ASSIGNED.** One spring, one target: the walk hands it a lag off the body's
-    /// own speed and the toll hauls it right through. Below critical damping it rings on after both.
+    /// **THE BELL IS DRIVEN, NEVER ASSIGNED.** One spring, one target; below critical damping it rings on after both the walk's lag and the haul.
     fn tickBell(self: *Hollow, dt: f32) void {
         var want = -BELL_DRAG * self.speedS;
         if (self.state == .toll) {
@@ -736,8 +649,7 @@ pub const Hollow = struct {
                 -BELL_HAUL * foe.swingCurve(mathx.clampF(swingT / TOLL_SWING, 0, 1));
         }
         self.bellAng = self.bell.step(want, BELL_STIFF, BELL_ZETA, dt);
-        // …AND A WALKING KNOCK ON THE CROSSING, not on a clock beside it: the clapper touches the wall when
-        // the swing changes sign, so the clank lands with the footfall that caused it.
+        // The clapper touches the wall when the swing changes SIGN, so the clank lands with the footfall that caused it.
         const crossed = (self.knockWas < 0) != (self.bellAng < 0);
         if (crossed and self.state != .toll and @abs(self.bell.vel) > 6.0) self.clanked = true;
         self.knockWas = self.bellAng;
@@ -781,7 +693,7 @@ pub const Hollow = struct {
             .toll => self.heaved = true,
             .spark => {
                 self.sparksOut = 0;
-                self.heaved = true; // the host braces for it, and that brace is the tell the player reads
+                self.heaved = true;
             },
             else => {},
         }
@@ -812,8 +724,7 @@ pub const Hollow = struct {
         self.heroLatch = false;
         self.enter(.bite);
     }
-    /// Stages the toll at a fraction of its whole clock. `stageGather` and not `stageToll` — the shot harness
-    /// stages every creature's signature move through this one name (`shots.runMapShots`).
+    /// `stageGather` and not `stageToll`: the shot harness stages every creature's signature move through this one name (`shots.runMapShots`).
     pub fn stageGather(self: *Hollow, u: f32) void {
         self.state = .toll;
         self.t = mathx.clampF(u, 0, 1) * (TOLL_WIND + TOLL_SWING);
@@ -837,8 +748,7 @@ pub const Hollow = struct {
         };
     }
 
-    /// -1 fully cocked back, +1 fully through: the bite's ONE clock, so the gape and the snap cannot tell
-    /// different stories. Zero outside the move.
+    /// -1 fully cocked back, +1 fully through: the bite's ONE clock, so the gape and the snap cannot tell different stories. Zero outside the move.
     fn biteAmt(self: *const Hollow) f32 {
         if (self.state != .bite) return 0;
         if (self.t < BITE_WIND) return -mathx.smoothstep(0, BITE_WIND * 0.85, self.t);
@@ -870,8 +780,7 @@ pub const Hollow = struct {
         const bite = self.biteAmt();
         const toll = self.tollAmt();
 
-        // **THE LEAN IS ROUTED THROUGH THE WAIST AND THE PELVIS TAKES A SIXTH OF IT** — leaned at the root the
-        // legs rotate with it and the whole thing lurches (`ogre.PELVIS_SHARE`).
+        // Routed through the WAIST with a sixth at the pelvis — leaned at the root the legs rotate with it (`ogre.PELVIS_SHARE`).
         const bodyPitch = HUNCH + 9.0 * bite + 6.0 * toll - 26.0 * stun + 40.0 * dk;
         const leanX = PELVIS_SHARE * bodyPitch;
         const waist = (1.0 - PELVIS_SHARE) * bodyPitch;
@@ -894,16 +803,12 @@ pub const Hollow = struct {
         }
         self.poseUpper(&wx, waist, bite, toll, stun, dk, pel.prot, lumber, breathe);
         self.xf = wx;
-        // The bell hangs off the CHEST and swings about the chest's own X — so the haul, the walk lag and the
-        // ring on after are all one angle in one place.
         self.bellMat = hungOnChest(self.xf[CHEST], self.bellAng);
         self.poseGremlin(fs, dead, dk);
     }
 
-    /// **THE RIDER SITS PLUMB AND ONLY ITS SEAT RIDES THE BRONZE.** Its position is the bell's crown, so it
-    /// goes exactly where the bell goes; its ORIENTATION is the host's yaw and a `G_BRACE` fraction of the
-    /// swing, because a thing sitting on a moving mass braces against it rather than turning with it. Posed
-    /// in the bell's own frame it lay on its side as soon as `HUNCH` passed forty degrees.
+    /// Its POSITION is the bell's crown, so it goes where the bell goes; its ORIENTATION is the host's yaw plus
+    /// a `G_BRACE` fraction of the swing. Posed in the bell's own frame it lay on its side once `HUNCH` passed forty.
     fn poseGremlin(self: *Hollow, fs: f32, dead: bool, dk: f32) void {
         const seat = foe.markOn(self.bellMat, v3(0, G_SEAT, 0));
         const gs = fs;
@@ -911,9 +816,7 @@ pub const Hollow = struct {
         const swing = mathx.clampF(self.bellAng / BELL_HAUL, -1, 1);
         const haul = self.haulAmt();
         const aim = self.aimAmt();
-        // It works the bell with its whole body: the stoop deepens as it hauls and it sits back up after.
         const stoop = G_STOOP + 34.0 * haul - 16.0 * aim + 40.0 * dk;
-        // The idle is a small fast bob — it is a fidgety little thing, and stillness on a rider reads as cargo.
         const fidget = if (dead) 0 else mathx.sinf(self.elapsed * 5.4 + self.seed * 6.28) * 3.4;
 
         var g: [G_N]rl.Matrix = undefined;
@@ -932,8 +835,6 @@ pub const Hollow = struct {
             ry(fidget * 1.6),
             rz(fidget),
         ));
-        // THE ARMS ARE THE WHOLE JOB. On the haul they go up and come down through the clapper strap; on the
-        // aim they reach out in front with the spark in the hands.
         inline for (.{ G_ARML, G_ARMR }, .{ 1.0, -1.0 }) |arm, side| {
             const lift = -86.0 * haul - 62.0 * aim + 14.0 * side * fidget;
             heromod.setJoint(&g, &G_REST, arm, G_TORSO, mul(
@@ -941,9 +842,7 @@ pub const Hollow = struct {
                 rz(side * (26.0 - 14.0 * aim - 10.0 * haul)),
             ));
         }
-        // **IT IS SEATED, NOT STANDING.** The knees come UP and OUT and the shins go back DOWN onto the bell's
-        // own shoulder, which is what grips: posed as a standing creature the legs kicked backwards and lifted
-        // the whole rider clear of the bronze it is supposed to be sitting on.
+        // **IT IS SEATED, NOT STANDING.** Posed as a standing creature the legs kicked backwards and lifted the whole rider clear of the bronze.
         inline for (.{ G_LEGL, G_LEGR }, .{ 1.0, -1.0 }) |leg, side| {
             heromod.setJoint(&g, &G_REST, leg, G_RUMP, mul(
                 rx(38.0 + 12.0 * haul - 24.0 * dk),
@@ -953,8 +852,7 @@ pub const Hollow = struct {
         self.gxf = g;
     }
 
-    /// **HOW FAR INTO THE AIM THE RIDER IS**, 0..1 — up through the wind, HELD flat across all three sparks
-    /// (the arms do not re-cock between them; that is what "staggered volley" means) and eased off after.
+    /// 0..1, HELD flat across all three sparks — the arms do not re-cock between them, which is what "staggered volley" means.
     fn aimAmt(self: *const Hollow) f32 {
         if (self.state != .spark) return 0;
         if (self.t < SPARK_WIND) return mathx.smoothstep(0, SPARK_WIND * 0.9, self.t);
@@ -963,17 +861,14 @@ pub const Hollow = struct {
         return 1.0 - mathx.smoothstep(0, SPARK_RECOVER * 0.6, after);
     }
 
-    /// **WHERE A SPARK LEAVES FROM** — between the rider's two fists, taken off the POSED arms so it rides the
-    /// aim rather than being guessed from a height. `G_FIST` is the mesh's own hand position, so the glow you
-    /// can see and the point the shot leaves cannot part company.
+    /// Between the rider's two fists, off the POSED arms. `G_FIST` is the mesh's own hand position, so the glow you can see and the point the shot leaves cannot part company.
     pub fn sparkWorld(self: *const Hollow) rl.Vector3 {
         const l = foe.markOn(self.gxf[G_ARML], G_FIST);
         const r = foe.markOn(self.gxf[G_ARMR], v3(-G_FIST.x, G_FIST.y, G_FIST.z));
         return mathx.scaleV(mathx.addV(l, r), 0.5);
     }
 
-    /// **HOW HARD THE RIDER IS PULLING**, 0..1, off the toll's own clock and nothing else — so the arms and the
-    /// bronze cannot tell different stories about when it was rung.
+    /// 0..1 off the toll's own clock and nothing else, so the arms and the bronze cannot tell different stories about when it was rung.
     fn haulAmt(self: *const Hollow) f32 {
         if (self.state != .toll) return 0;
         if (self.t < TOLL_WIND) return mathx.smoothstep(0, TOLL_WIND * 0.92, self.t);
@@ -982,9 +877,7 @@ pub const Hollow = struct {
         return 0;
     }
 
-    /// **ONE MOUNT FOR BOTH HALVES OF THE BELL.** The skirt and the clapper inside it hang off the same point
-    /// on the chest about the same axis and differ only in how far they swing — written out twice, a move of
-    /// `BELL_AT` took the bell off the back and left the clapper where it was.
+    /// **ONE MOUNT FOR BOTH HALVES OF THE BELL** — written out twice, a move of `BELL_AT` took the bell off the back and left the clapper where it was.
     fn hungOnChest(chest: rl.Matrix, ang: f32) rl.Matrix {
         return mul(mul(tr(BELL_AT.x, BELL_AT.y, BELL_AT.z), rx(ang)), chest);
     }
@@ -1006,13 +899,10 @@ pub const Hollow = struct {
         const m = self.moving * (1.0 - dk);
         const wonk = (self.seed - 0.5) * 7.0;
         const nod = 1.8 * mathx.cosf(2.0 * twoPi * self.phase) * m;
-        // The haul is a TWIST at the waist: the shoulders come round and the bell on the back goes with them.
         const twist = 26.0 * toll;
 
         setLocal(wx, SPINE, rest, mul3(rx(waist * 0.44 + nod), ry(-0.35 * prot + twist * 0.45), rz(wonk * 0.5 - 0.3 * lumber)));
         setLocal(wx, CHEST, rest, mul3(rx(waist * 0.56 + nod * 0.6 + 1.2 * breathe), ry(-0.5 * prot + twist * 0.55), rz(-wonk * 0.3 - 0.2 * lumber)));
-        // THE NECK IS SHORT AND THE HEAD RIDES LOW — the whole bite is these two joints going back and then
-        // driving down and through.
         setLocal(wx, NECK, rest, rx(-14.0 * bite + 8.0 * dk - 6.0 * stun));
         setLocal(wx, SKULL, rest, mul3(
             rx(-22.0 * bite + 16.0 * dk - 24.0 * stun + 3.0 * breathe),
@@ -1020,11 +910,10 @@ pub const Hollow = struct {
             rz(wonk),
         ));
 
-        // THE ARMS HANG. They are not weapons and they never come up: a brute with nothing in its hands
-        // reading as a boxer is the lie the swing would tell.
+        // THE ARMS HANG AND NEVER COME UP: they are not weapons, and a brute reading as a boxer is the lie the swing would tell.
         const armStun = -48.0 * stun;
         const swing = -14.0 * heromod.armSwing(self.phase) * m * @abs(self.fwdB);
-        const reach = 34.0 * mathx.maxF(bite, 0); // …except the last of the lunge, where they trail behind it
+        const reach = 34.0 * mathx.maxF(bite, 0);
         inline for (.{ SHL, SHR }, .{ ELL, ELR }, .{ WRL, WRR }, .{ 1.0, -1.0 }) |sh, el, wr, side| {
             const s = if (side > 0) swing else -swing;
             setLocal(wx, sh, rest, mul3(rx(-(4.0 + s - reach) + armStun - 22.0 * dk), ry(0), rz(side * (14.0 + 4.0 * @abs(wonk)))));
@@ -1039,9 +928,8 @@ pub const Hollow = struct {
 pub fn triggerR(quarryR: f32) f32 {
     return BITE_TRIGGER_R + quarryR;
 }
-/// **THE SAME RING THE TRIGGER IS, SHRUNK** (the ravager's `stopR`) — and NEITHER is scaled by the body, or
-/// the two invert: at `BITE_R * scale * STOP_FRAC` a placement at 1.25 halted 3.0 m out with a trigger ring
-/// still standing at 2.08, so it walked up, stopped short and never bit once.
+/// The ravager's `stopR` form, not the skitterer's trigger-ring one — and NEITHER ring is scaled by the body,
+/// or the two invert: at `BITE_R * scale * STOP_FRAC` a placement at 1.25 halted 3.0 m out with a trigger ring at 2.08.
 fn stopR(quarryR: f32) f32 {
     return BITE_R * STOP_FRAC + quarryR;
 }
@@ -1106,26 +994,16 @@ pub const Belfry = struct {
     }
 };
 
-// ── the body ───────────────────────────────────────────────────────────────────────────────────────────────
-// A HOLLOW: heavy shoulders, a caved chest and nothing inside it. Flesh is round — every mass here is a blob
-// or a capsule, and the only boxes are the bell's straps and the bronze.
 
-/// **THE SPARK IN FLIGHT.** A tiny hard core in a soft shell, drawn LONG down its own axis — a round ball
-/// reads as a thrown pebble however fast it goes, where a stretched one reads as something that arrived.
-/// Vertex alpha is the emissive channel, so the core is authored near-transparent to make it burn.
-/// **A SPARK CRACKLES — IT IS NOT A GLOWING PILL** (owner: they don't look like sparks). Lightning's own
-/// signature (`elemfx`): a near-COLOURLESS blinding core, with the blue only in the faint fringe — and
-/// JAGGED arms kinked off the flight axis, no two alike, blunt-ended. The mesh is asymmetric on purpose:
-/// oriented down the velocity it tumbles its crooked arms as it flies, which is most of the crackle.
+/// **A SPARK CRACKLES — IT IS NOT A GLOWING PILL** (owner: they don't look like sparks). Lightning's signature
+/// (`elemfx`): a near-COLOURLESS core, blue only in the fringe, jagged blunt-ended arms off the flight axis.
+/// **Vertex alpha is the emissive channel**, so the core is authored near-transparent to make it burn.
 pub fn sparkMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5AA7);
     b.setMat(.plain);
-    // The fringe first, faint and cold; the white-hot core inside it (low alpha = self-lit).
     b.addBlob(mathx.zero3, v3(0.062, 0.058, 0.088), 6, 9, rgba(140, 164, 230, 96));
     b.addBlob(v3(0, 0, 0.012), v3(0.034, 0.032, 0.052), 5, 8, rgba(250, 252, 255, 18));
-    // Four crooked arms — out, KINK, and stop blunt. An arm is two thin segments at an angle, never one
-    // straight needle, and each leaves on its own bearing.
     var arm: u32 = 0;
     while (arm < 4) : (arm += 1) {
         const a = rng.range(0, std.math.tau);
@@ -1144,9 +1022,6 @@ pub fn sparkMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// ── the gremlin's body ─────────────────────────────────────────────────────────────────────────────────────
-// A knot of a thing: no neck, a head half as wide as its body, and long arms. Flesh is round, so every mass
-// is a blob or a capsule — the only hard edges on it are the strap it grips and the spark in its hands.
 
 fn gRumpMesh() rl.Mesh {
     var b = Builder.init();
@@ -1154,7 +1029,6 @@ fn gRumpMesh() rl.Mesh {
     b.setMat(.hide);
     b.addBlob(v3(0, 0.02 * G_H, 0), v3(0.22 * G_H, 0.18 * G_H, 0.21 * G_H), 5, 8, G_HIDE);
     b.addBlob(v3(0, -0.06 * G_H, -0.03 * G_H), v3(0.17 * G_H, 0.10 * G_H, 0.15 * G_H), 4, 7, G_HIDE_DK);
-    // A stub of a tail, drooping off the line and blunt at the end — nothing dead ends in a point.
     b.addCapsule(
         v3(0, -0.02 * G_H, -0.14 * G_H),
         v3(0.03 * G_H * rng.signed(), -0.16 * G_H, -0.30 * G_H),
@@ -1171,10 +1045,8 @@ fn gTorsoMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xB402);
     b.setMat(.hide);
-    // **IT REACHES BACK DOWN INTO THE RUMP.** Overlap the joint well past it or the two masses show daylight
-    // between them and read as two creatures (`propart.courseInto`'s rule, on a body).
+    // Overlap the joint well past it or the two masses show daylight and read as two creatures (`propart.courseInto`'s rule, on a body).
     b.addCapsule(v3(0, -0.10 * G_H, 0), v3(0, 0.16 * G_H, 0.02 * G_H), 0.17 * G_H, 0.18 * G_H, 9, G_HIDE);
-    // The ribs proud by a few percent of the mass and no more, and not one of them level.
     var i: u32 = 0;
     while (i < 3) : (i += 1) {
         const y = -0.02 * G_H + 0.06 * G_H * @as(f32, @floatFromInt(i));
@@ -1188,7 +1060,6 @@ fn gTorsoMesh() rl.Mesh {
         );
     }
     b.setMat(.leather);
-    // THE STRAP IT HOLDS ON BY, over one shoulder: the one square-edged thing on it.
     b.addBox(v3(0.04 * G_H, 0.10 * G_H, 0.09 * G_H), v3(0.15 * G_H, 0.13 * G_H, 0), v3(-0.05 * G_H, 0.06 * G_H, 0), v3(0, 0, 0.03 * G_H), STRAP);
     return b.toMesh();
 }
@@ -1197,10 +1068,8 @@ fn gHeadMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xB403);
     b.setMat(.hide);
-    // Half the body's width and most of its height: a big dumb skull is the read.
     b.addBlob(v3(0, 0.04 * G_H, 0), v3(0.17 * G_H, 0.15 * G_H, 0.18 * G_H), 6, 9, G_HIDE);
     b.addBlob(v3(0, -0.02 * G_H, 0.12 * G_H), v3(0.10 * G_H, 0.075 * G_H, 0.08 * G_H), 5, 8, G_HIDE_LT);
-    // EARS — the wabi-sabi is BETWEEN them, not along one: two different ears, not two of one.
     inline for (.{ 1.0, -1.0 }, .{ 1.0, 0.82 }) |side, grade| {
         const tip = v3(side * 0.20 * G_H * grade, (0.24 + 0.06 * grade) * G_H, -0.05 * G_H + 0.02 * G_H * rng.signed());
         b.addCapsule(v3(side * 0.11 * G_H, 0.11 * G_H, -0.01 * G_H), tip, 0.055 * G_H * grade, 0.022 * G_H, 6, G_HIDE);
@@ -1222,10 +1091,7 @@ fn gArmMesh(side: f32) rl.Mesh {
     b.addCapsule(mathx.zero3, elbow, 0.058 * G_H, 0.046 * G_H, 7, G_HIDE);
     b.addCapsule(elbow, drop, 0.046 * G_H, 0.036 * G_H, 7, G_HIDE);
     b.addBlob(elbow, v3(0.055 * G_H, 0.050 * G_H, 0.055 * G_H), 4, 7, G_HIDE_LT);
-    // The fist, and it is oversized like the head.
     b.addBlob(drop, v3(0.070 * G_H * rng.range(0.94, 1.08), 0.062 * G_H, 0.066 * G_H), 5, 8, G_HIDE);
-    // **THE SPARK IT CARRIES**, sunk most of the way into the fist so it is a glow in the hand rather than a
-    // bead beside it. Its own emissive material, and the same blue the volley flies as.
     b.setMat(.flame);
     b.addBlob(v3(drop.x, drop.y + 0.02 * G_H, drop.z + 0.045 * G_H), v3(0.036 * G_H, 0.036 * G_H, 0.030 * G_H), 4, 7, G_SPARK);
     return b.toMesh();
@@ -1234,13 +1100,10 @@ fn gArmMesh(side: f32) rl.Mesh {
 fn gLegMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
-    // Out to the knee, then BACK AND DOWN to the foot — a seated leg, so the shin returns under the body it is
-    // holding on to rather than dangling forward off it.
     const knee = v3(side * 0.10 * G_H, 0.04 * G_H, 0.20 * G_H);
     const foot = v3(side * 0.12 * G_H, -0.24 * G_H, 0.14 * G_H);
     b.addCapsule(mathx.zero3, knee, 0.062 * G_H, 0.050 * G_H, 7, G_HIDE);
     b.addCapsule(knee, foot, 0.048 * G_H, 0.038 * G_H, 6, G_HIDE);
-    // A splayed foot that grips the crown — wide, blunt, and nothing on it ends in a point.
     b.addBlob(foot, v3(0.070 * G_H, 0.040 * G_H, 0.085 * G_H), 5, 8, G_HIDE_LT);
     return b.toMesh();
 }
@@ -1249,13 +1112,11 @@ fn pelvisMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xB301);
     b.setMat(.hide);
-    // CHUBSY (owner: it looked anemic, no mass) — a haunch, not a bracket. The seat is broad and the two
-    // glutes overlap the thighs' own sockets, which is the connective tissue the joints were missing.
+    // CHUBSY (owner: it looked anemic, no mass) — the glutes overlap the thighs' own sockets.
     b.addBlob(v3(0, 0.010 * H, 0), v3(0.142 * H, 0.094 * H, 0.114 * H), 6, 10, HIDE);
     b.addBlob(v3(0, -0.030 * H, 0.008 * H), v3(0.122 * H, 0.064 * H, 0.094 * H), 5, 9, HIDE_DK);
     inline for (.{ 1.0, -1.0 }) |side| {
         b.addBlob(v3(side * 0.070 * H, -0.030 * H, -0.062 * H), v3(0.062 * H, 0.056 * H * rng.range(0.92, 1.08), 0.058 * H), 5, 8, HIDE);
-        // The hip crests, proud by a few percent of the mass and no more (relief is subtle).
         b.addBlob(v3(side * 0.108 * H, 0.030 * H, 0), v3(0.036 * H, 0.030 * H * rng.range(0.9, 1.1), 0.042 * H), 4, 7, HIDE_LT);
     }
     return b.toMesh();
@@ -1265,15 +1126,12 @@ fn abdomenMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xB302);
     b.setMat(.hide);
-    // THE BELLY IS THE MASS (owner: chubsy). A real gut hanging forward and two love handles bridging down
-    // into the pelvis…
+    // THE BELLY IS THE MASS (owner: chubsy).
     b.addCapsule(v3(0, -0.012 * H, 0), v3(0, 0.070 * H, -0.004 * H), 0.124 * H, 0.132 * H, 11, HIDE);
     b.addBlob(v3(0, 0.008 * H, 0.062 * H), v3(0.108 * H, 0.088 * H, 0.070 * H), 6, 10, HIDE);
     inline for (.{ 1.0, -1.0 }) |side| {
         b.addBlob(v3(side * 0.105 * H, -0.020 * H, 0.010 * H), v3(0.050 * H, 0.056 * H * rng.range(0.9, 1.1), 0.062 * H), 5, 8, HIDE_DK);
     }
-    // …and the HOLLOW is still in it: a navel pit sunk into the fat, the darkest thing on the body — a fat
-    // man with a hole in him, which is the name.
     b.addBlob(v3(0, 0.026 * H, 0.128 * H), v3(0.046 * H, 0.038 * H, 0.020 * H), 5, 8, GUT);
     b.addBlob(v3(0, 0.020 * H, 0.136 * H), v3(0.030 * H, 0.026 * H, 0.013 * H), 4, 7, rgba(12, 10, 10, 255));
     return b.toMesh();
@@ -1283,18 +1141,13 @@ fn chestMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xB303);
     b.setMat(.hide);
-    // A BARREL WITH THE SHOULDERS ON IT (owner: chubsy — the old narrow trunk read anemic). The trunk is
-    // fat, the pectoral rolls hang off its front, and the shoulder masses now OVERLAP the arm sockets so
-    // there is flesh across every joint.
+    // A BARREL WITH THE SHOULDERS ON IT (owner: chubsy — the old narrow trunk read anemic). The shoulder masses OVERLAP the arm sockets.
     b.addCapsule(v3(0, -0.006 * H, -0.004 * H), v3(0, 0.058 * H, -0.008 * H), 0.112 * H, 0.120 * H, 12, HIDE);
-    // THE SHOULDERS ARE STILL NOT A MATCHED PAIR — one rides a fifth higher (wabi-sabi between the two).
     b.addBlob(v3(0.128 * H, 0.052 * H, -0.006 * H), v3(0.068 * H, 0.056 * H, 0.060 * H), 5, 9, HIDE_LT);
     b.addBlob(v3(-0.128 * H, 0.038 * H, -0.002 * H), v3(0.062 * H, 0.050 * H, 0.056 * H), 5, 9, HIDE_LT);
-    // The chest fat, two soft rolls and neither of them level.
     inline for (.{ 1.0, -1.0 }, .{ 0.0, -0.008 }) |side, sag| {
         b.addBlob(v3(side * 0.058 * H, (0.012 + sag) * H, 0.084 * H), v3(0.058 * H, 0.048 * H * rng.range(0.92, 1.1), 0.040 * H), 5, 8, HIDE);
     }
-    // The straps the bell hangs from — over both shoulders and crossed at the back. Leather, so boxes.
     b.setMat(.leather);
     inline for (.{ 1.0, -1.0 }) |side| {
         b.addBox(
@@ -1311,25 +1164,20 @@ fn chestMesh() rl.Mesh {
 fn neckMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
-    // Along its OWN axis to the skull joint, which on this body leads forward as much as up — and THICK,
-    // with a fat roll at its base: a chubby thing has no visible neck to speak of.
     b.addCapsule(v3(0, -0.012 * H, -0.004 * H), v3(0, 0.030 * H, 0.070 * H), 0.062 * H, 0.050 * H, 10, HIDE);
     b.addBlob(v3(0, -0.008 * H, -0.024 * H), v3(0.066 * H, 0.042 * H, 0.040 * H), 5, 8, HIDE_DK);
     return b.toMesh();
 }
 
-/// A heavy jaw and a low brow, and the sockets are EMPTY but for a light in them.
 fn skullMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xB305);
     b.setMat(.hide);
     b.addBlob(v3(0, 0.006 * H, 0), v3(0.052 * H, 0.050 * H, 0.056 * H), 6, 10, HIDE);
     b.addBlob(v3(0, 0.030 * H, 0.026 * H), v3(0.048 * H, 0.014 * H, 0.026 * H), 4, 8, HIDE_LT);
-    // CHUBBY CHEEKS and a double chin — the fat face is half of "chubsy", and neither cheek matches.
     b.addBlob(v3(0.040 * H, -0.010 * H, 0.030 * H), v3(0.026 * H, 0.024 * H, 0.024 * H), 4, 7, HIDE);
     b.addBlob(v3(-0.038 * H, -0.012 * H, 0.032 * H), v3(0.023 * H, 0.021 * H, 0.022 * H), 4, 7, HIDE);
     b.addBlob(v3(0, -0.044 * H, 0.028 * H), v3(0.036 * H, 0.020 * H, 0.028 * H), 4, 7, HIDE_DK);
-    // The jaw: wide, blunt, and hung a little open — nothing dead is shut.
     b.addCapsule(v3(-0.034 * H, -0.026 * H, 0.030 * H), v3(0.034 * H, -0.028 * H, 0.030 * H), 0.022 * H, 0.022 * H, 7, HIDE_DK);
     b.addBlob(v3(0, -0.024 * H, 0.062 * H), v3(0.032 * H, 0.020 * H, 0.020 * H), 4, 7, HIDE_DK);
     var i: u32 = 0;
@@ -1348,7 +1196,6 @@ fn thighMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
     const len = heromod.SEG_THIGH * H;
-    // A HAM, not a strut — and the top blob reaches back up into the pelvis, so the hip has flesh over it.
     b.addCapsule(v3(0, 0, 0), v3(0, -len, 0), 0.076 * H, 0.056 * H, 10, HIDE);
     b.addBlob(v3(0, 0.014 * H, -0.006 * H), v3(0.082 * H, 0.068 * H, 0.078 * H), 5, 8, HIDE);
     b.addBlob(v3(0, -len * 0.35, -0.010 * H), v3(0.056 * H, 0.062 * H, 0.052 * H), 4, 8, HIDE_DK);
@@ -1359,7 +1206,6 @@ fn shankMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
     const len = heromod.SEG_SHANK * H;
-    // The knee blob overlaps up into the thigh — connective tissue at the joint, not daylight.
     b.addCapsule(v3(0, 0, 0), v3(0, -len, 0), 0.058 * H, 0.038 * H, 9, HIDE);
     b.addBlob(v3(0, 0.008 * H, -0.004 * H), v3(0.062 * H, 0.056 * H, 0.058 * H), 5, 8, HIDE);
     b.addBlob(v3(0, -len * 0.25, -0.016 * H), v3(0.048 * H, 0.056 * H, 0.044 * H), 4, 7, HIDE_LT);
@@ -1379,7 +1225,6 @@ fn upperArmMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
     const len = heromod.SEG_UPARM * H;
-    // The deltoid cap overlaps up into the shoulder mass — flesh across the socket.
     b.addCapsule(v3(0, 0, 0), v3(0, -len, 0), 0.048 * H, 0.038 * H, 9, HIDE);
     b.addBlob(v3(0, 0.010 * H, 0), v3(0.056 * H, 0.052 * H, 0.054 * H), 5, 8, HIDE);
     return b.toMesh();
@@ -1389,9 +1234,6 @@ fn forearmMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
     const len = heromod.SEG_FOREARM * H;
-    // LONG ARMS on a hunched body: the forearm is drawn a third past its own bone so the knuckles hang near
-    // the knee, which is the silhouette of something that no longer stands up straight. The elbow blob
-    // bridges back into the upper arm.
     b.addCapsule(v3(0, 0, 0), v3(0, -len * 1.34, 0), 0.040 * H, 0.030 * H, 9, HIDE);
     b.addBlob(v3(0, 0.006 * H, 0), v3(0.046 * H, 0.044 * H, 0.045 * H), 4, 7, HIDE);
     return b.toMesh();
@@ -1411,22 +1253,17 @@ fn handMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// THE BELL. A skirt that flares to a thick lip, cast in bronze, hung mouth-down. Sides over relief
-/// (`AGENTS.md`) — the bands are a couple of percent proud and the count of sides is what makes it round.
+/// Sides over relief (`AGENTS.md`): the bands are a couple of percent proud and the side count is what makes it round.
 fn bellMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xB30B);
     b.setMat(.gilt);
     const drop = BELL_DROP;
     const r = BELL_R;
-    // The crown and the shoulder, then the skirt out to the lip. Graded radii, each course overlapping the
-    // one under it well past the joint.
     b.addBlob(v3(0, 0, 0), v3(r * 0.44, r * 0.30, r * 0.44), 5, 12, BRONZE_DK);
     b.addCapsule(v3(0, -r * 0.12, 0), v3(0, -drop * 0.46, 0), r * 0.52, r * 0.82, 14, BRONZE);
     b.addCapsule(v3(0, -drop * 0.44, 0), v3(0, -drop * 0.88, 0), r * 0.84, r * 1.0, 14, BRONZE);
-    // THE LIP is the heaviest ring on it, and it is what the eye reads as bronze.
     b.addCapsule(v3(0, -drop * 0.86, 0), v3(0, -drop, 0), r * 1.02, r * 0.98, 14, BRONZE_LIP);
-    // Two raised bands, each a couple of percent of the radius, and neither of them level.
     inline for (.{ 0.34, 0.66 }) |u| {
         const y = -drop * u;
         b.addCapsule(
@@ -1465,16 +1302,12 @@ test "IT IS A FOE — its own tether, its own souls, and it answers for its own 
 
 test "HIGH HP, LOW DEF, LOW DAMAGE — the three numbers the creature IS" {
     var h = Hollow.spawn(mathx.zero3, 0, 1.0, 0.3);
-    // The biggest bar outside a boss…
     try std.testing.expect(HP_MAX > 300.0);
-    // …with nothing under it: no armour at all, so every point of the bar is chewed at face value.
     try std.testing.expectApproxEqAbs(@as(f32, 0), h.vit.armour, 1e-6);
     const raw = combat.Hit{ .dmg = 40 };
     try std.testing.expectApproxEqAbs(@as(f32, 40), h.vit.damageFrom(raw), 1e-4);
-    // …and the weakest close blow in the field.
     std.debug.print("\n  hollow: {d:.0} HP, {d:.0} armour, bite {d:.0} dmg / {d:.0} poise\n", .{ HP_MAX, h.vit.armour, BITE_HIT.dmg, BITE_HIT.poise });
     try std.testing.expect(BITE_HIT.dmg < 16.0);
-    // The POISE is a big body's, though — low damage may not read as harmless.
     try std.testing.expect(BITE_HIT.poise > 20.0);
 }
 
@@ -1486,7 +1319,6 @@ test "THE BELL IS THE HOLE — lightning is the worst weakness in the field" {
     try std.testing.expectApproxEqAbs(@as(f32, 34.0), h.vit.damageFrom(levin), 1e-3);
     try std.testing.expect(h.vit.damageFrom(fire) > 20.0);
     try std.testing.expect(h.vit.damageFrom(cold) < 20.0);
-    // …and it is worse than the wet ones', which is the point: it is carrying the conductor.
     try std.testing.expect(h.vit.res.at(.lightning) < -60.0);
 }
 
@@ -1500,18 +1332,13 @@ test "YOU CANNOT STUNLOCK IT — the hero's heavy swing does not flinch it" {
 
 test "STANDING IN ITS FACE SILENCES THE BELL AND THE SPARKS BOTH" {
     const ring = triggerR(foe.HERO_R);
-    // Inside bite reach neither ranged answer is on the menu at any cooldown…
     try std.testing.expectEqual(Choice.bite, classify(1.0, ring, true, true, true));
     try std.testing.expectEqual(Choice.walk, classify(1.0, ring, false, true, true));
-    // …and outside it, the bell has first claim: it is the headline and it comes off a 12 s clock.
     try std.testing.expectEqual(Choice.toll, classify(9.0, ring, true, true, true));
-    // **THE VOLLEY OWNS THE BETWEEN-TIMES**, which is the ground this creature had no answer on at all.
     try std.testing.expectEqual(Choice.spark, classify(9.0, ring, true, false, true));
     try std.testing.expectEqual(Choice.walk, classify(9.0, ring, true, false, false));
-    // …and it cannot reach past its own band, so there is still a range where walking in is the only move.
     try std.testing.expectEqual(Choice.walk, classify(SPARK_MAX + 1.0, ring, true, false, true));
     try std.testing.expectEqual(Choice.hold, classify(AGGRO_R + 1.0, ring, true, true, true));
-    // The ring the decision uses IS the one the state machine gates on.
     try std.testing.expectApproxEqAbs(BITE_TRIGGER_R + foe.HERO_R, ring, 1e-6);
 }
 
@@ -1530,8 +1357,7 @@ test "A STAGGERED THREE — the volley fires exactly `SPARK_N`, one at a time, a
             const wasState = h.state;
             _ = h.update(dt, mathx.ground(0, 9.0), 200.0, .{});
             if (h.sparked) {
-                // NEVER TWO ON ONE FRAME: `sparksOut` is a count, not an edge, so a long frame catches up
-                // rather than firing the rest of the volley at once.
+                // `sparksOut` is a COUNT, not an edge, so a long frame catches up rather than firing the rest of the volley at once.
                 if (lastAt >= 0) gaps[fired - 1] = t - lastAt;
                 lastAt = t;
                 fired += 1;
@@ -1557,20 +1383,14 @@ test "THE RIDER SITS ON THE BELL AND THE SPARK LEAVES ITS FISTS — both measure
     const head = foe.markOn(h.gxf[G_HEAD], mathx.zero3);
     const fists = h.sparkWorld();
     std.debug.print("\n  hollow {d:.2} m tall, hunched {d:.0} deg; bell at {d:.2} m, rider's rump {d:.2} m, its head {d:.2} m\n", .{ h.topWorld().y - h.pos.y, HUNCH, bell.y, rump.y, head.y });
-    // IT SITS ON THE BRONZE, not in it and not beside it: the rump is at the seat and the head is above it.
-    // **ITS RUMP IS THE SEAT**, to the millimetre: `G_REST[G_RUMP]` is the rig's zero, so nothing about the leg
-    // pose can lift the rider off the bronze the way a feet-rooted rig did (0.3 m of daylight, and it hovered).
+    // **ITS RUMP IS THE SEAT**, to the millimetre: `G_REST[G_RUMP]` is the rig's zero, so no leg pose can lift the rider off the bronze (a feet-rooted rig left 0.3 m of daylight).
     try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.lenV(mathx.subV(rump, seat)), 1e-4);
-    // …and it is ON the bronze rather than inside it: the seat clears the crown blob's own top.
     const crownTop = foe.markOn(h.bellMat, v3(0, BELL_R * 0.30, 0));
     try std.testing.expect(seat.y >= crownTop.y - 1e-4);
-    // NO DAYLIGHT AT THE WAIST: the torso's capsule reaches back down past the rump's own top.
     const torso = foe.markOn(h.gxf[G_TORSO], mathx.zero3);
     try std.testing.expect(mathx.lenV(mathx.subV(torso, rump)) < G_H * h.scale * 0.35);
     try std.testing.expect(head.y > rump.y);
-    // …and it is a SMALL thing on a BIG one: the whole rider is a fraction of the host it rides.
     try std.testing.expect(G_H * 3.0 < H * SCALE);
-    // The spark leaves the FISTS, which are out in front of the rider and not at its centre.
     std.debug.print("  …spark leaves the fists {d:.2} m up, {d:.2} m off the rider's own rump\n", .{ fists.y, mathx.lenV(mathx.subV(fists, rump)) });
     try std.testing.expect(mathx.lenV(mathx.subV(fists, rump)) > G_H * 0.15);
     try std.testing.expect(fists.y > h.pos.y + 1.0);
@@ -1641,9 +1461,7 @@ test "THE BELL IS SPRUNG, NOT ASSIGNED — it overshoots the haul and settles ba
         lo = mathx.minF(lo, h.bellAng);
     }
     std.debug.print("\n  bell hauled to {d:.1} deg against a {d:.1} deg drive\n", .{ lo, -BELL_HAUL });
-    // A MASS IN MOTION OVERSHOOTS ITS DRIVE (`AGENTS.md`) — it goes PAST the degrees it was pulled through.
     try std.testing.expect(lo < -BELL_HAUL);
-    // …and it RINGS ON: the mass keeps moving after the drive stops, then comes back to rest.
     var crossings: usize = 0;
     var was = h.bellAng;
     t = 0;
@@ -1683,8 +1501,7 @@ test "IT BITES ONCE PER GAPE, and only what is in front of it" {
 }
 
 test "A BIG PLACEMENT STILL BITES — the stop ring may never grow past the trigger ring" {
-    // The bug this pins: a `stop` scaled by the body against a `triggerR` that is not. It walked up, halted
-    // outside its own bite ring and only ever rang the bell, at every map scale over ~1.23.
+    // The bug this pins: a `stop` scaled by the body against a `triggerR` that is not. It halted outside its own bite ring at every map scale over ~1.23.
     for ([_]f32{ wf.FOE_SCALE_LO, 1.0, 1.3, wf.FOE_SCALE_HI }) |sc| {
         var h = Hollow.spawn(mathx.zero3, 0, sc, 0.3);
         h.leash.noteSeen();
@@ -1736,7 +1553,6 @@ test "IT HAS A HEAD AND A BELL YOU CAN SEE — both stand clear of the chest's o
     std.debug.print("\n  hollow: head {d:.2} m and bell {d:.2} m off the chest centre, against a {d:.2} m barrel\n", .{ headOut, bellOut, CHEST_R });
     try std.testing.expect(headOut > CHEST_R);
     try std.testing.expect(bellOut > CHEST_R);
-    // …and the JAWS are out in front of the body, which is also where the bite says they are.
     const jaw = h.jawWorld();
     std.debug.print("  …jaws {d:.2} m up and {d:.2} m forward of its own feet (bite reach {d:.2} m)\n", .{ jaw.y, mathx.distXZ(h.pos, jaw), foe.hurtReach(BITE_R, h.scale) });
     try std.testing.expect(mathx.distXZ(h.pos, jaw) > 0.2);
@@ -1758,7 +1574,6 @@ test "THE JAWS ARRIVE INSIDE WHAT THE PARRY WINDOW PROMISES — measured off the
     std.debug.print("\n  hollow jaws arrive {d:.2} m out (lunge included); the parry promises {d:.2} m\n", .{ worst, promised });
     try std.testing.expect(worst <= promised);
     try std.testing.expect(worst > promised * 0.7);
-    // …and it is the WEAKEST blow in the field on the LONGEST bar, which is the whole creature.
     try std.testing.expect(BITE_HIT.dmg < ogremod.SLAM_HIT.dmg * 0.5);
 }
 
@@ -1767,7 +1582,6 @@ test "IT HINGES AT THE WAIST AND ITS LEGS STAY PLANTED" {
     try std.testing.expect(PELVIS_SHARE < 0.25);
     var h = Hollow.spawn(mathx.zero3, 0, 1.0, 0.3);
     h.pose();
-    // The hunch is real and it is carried above the pelvis: the feet stay where the rest pose put them.
     const heelL = foe.markOn(h.xf[ANKL], mathx.zero3);
     const heelR = foe.markOn(h.xf[ANKR], mathx.zero3);
     std.debug.print("\n  hollow hunch {d:.0} deg: pelvis takes {d:.0} deg, the waist {d:.0}; heels at {d:.2} m / {d:.2} m\n", .{ HUNCH, PELVIS_SHARE * HUNCH, (1.0 - PELVIS_SHARE) * HUNCH, heelL.y, heelR.y });

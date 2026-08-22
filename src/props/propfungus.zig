@@ -20,18 +20,14 @@ const PUNK_DK = art.PUNK_DK;
 const BARK_OLD = art.BARK_OLD;
 
 
-// A wood with no wood in it, and all three layers a region owes are fungal. **THE GILLS ARE THE WHOLE THING**
-// — the one surface permanently in its own shade, so `GILL` is authored PALE where every other albedo here is
-// near-black.
+// A wood with no wood in it, and all three layers a region owes are fungal. **THE GILLS ARE THE WHOLE THING** — the one surface permanently in its own shade, so `GILL` is authored PALE where every other albedo here is near-black.
 
-/// How far under the cap the gills are laid, as a share of the cap's own drop. Deep enough to be in shadow
-/// from any angle you can stand at, shallow enough that the rim still reads as an edge.
+/// Share of the cap's own drop. Deep enough to be in shadow from any angle you can stand at, shallow enough that the rim still reads as an edge.
 const GILL_IN: f32 = 0.62;
 
 // **A HANGING THING SWINGS, AND IT IS THE ONLY THING HERE THAT MOVES** — caps are roofs and stalks are
-// structure, so only what has nothing under it sways. `Builder.setAnimY` carries the MODEL-SPACE HEIGHT OF
-// THE POINT A VERTEX HANGS FROM and the shader's `plant` branch throws it sideways in proportion to the drop
-// below that anchor. Zero means rigid, so nothing else in the world is touched.
+// structure. `Builder.setAnimY` carries the MODEL-SPACE HEIGHT OF THE POINT A VERTEX HANGS FROM and the
+// shader's `plant` branch throws it sideways in proportion to the drop below that anchor. Zero means rigid.
 
 /// The mote radius every spore bead here is drawn at the top of — the deepest hang is a bead's underside.
 const SPORE_R_HI: f32 = 0.045;
@@ -44,17 +40,13 @@ const LAMP_BULB_DROP: f32 = 0.46;
 /// THE DEEPEST HANG IN THE KINGDOM, solved off the two meshes that author one rather than typed beside them.
 pub const DANGLE_DROP_MAX: f32 = @max(GLOW_SPORE_DROP_HI, LAMP_BULB_DROP + LAMP_SPORE_DROP_HI) + SPORE_R_HI;
 
-/// Lateral metres per metre of drop. **THE SCENE SHADER CARRIES THIS SAME LITERAL** (`shaders.sceneVS`, the
-/// `plant` branch); the test below is what stops a deepened hang turning a sway into a swing.
+/// Lateral metres per metre of drop. **THE SCENE SHADER CARRIES THIS SAME LITERAL** (`shaders.sceneVS`, the `plant` branch); the test below is what stops a deepened hang turning a sway into a swing.
 pub const DANGLE_PER_M: f32 = 0.017;
 
 /// What the two sine terms peak at together.
 const DANGLE_PEAK: f32 = 1.3;
 
-/// **AT THE CAP'S OWN CENTRE, NOT AT THE ORIGIN.** Every cap here LEANS, so its crown sits off the axis its
-/// stalk came out of — and the gills were being laid at 0,0 regardless. On a 6-degree lean over 6.4 m that is
-/// half a metre of offset, which is why they came out of one side of the brim as a saw blade. Pulling the
-/// radius in hid it; this is the reason.
+/// **AT THE CAP'S OWN CENTRE, NOT AT THE ORIGIN.** Every cap here LEANS, so its crown sits off the axis its stalk came out of — and the gills were being laid at 0,0 regardless. On a 6-degree lean over 6.4 m that is half a metre of offset, which is why they came out of one side of the brim as a saw blade.
 fn gillsInto(b: *Builder, cx: f32, cz: f32, r: f32, y: f32, drop: f32, n: i32, col: rl.Color) void {
     b.setMat(.plant);
     var i: i32 = 0;
@@ -62,12 +54,10 @@ fn gillsInto(b: *Builder, cx: f32, cz: f32, r: f32, y: f32, drop: f32, n: i32, c
         const a = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(@max(n, 1)));
         const c = mathx.cosf(a);
         const s = mathx.sinf(a);
-        // INSIDE THE RIM. At 0.94 plus the blob's own padding these stood proud of the cap's edge and read
-        // as a saw blade; the rim shell is at 1.01, so the gills have to stop well short of it.
+        // INSIDE THE RIM. At 0.94 plus the blob's own padding these stood proud of the cap's edge and read as a saw blade; the rim shell is at 1.01.
         const inner = r * 0.18;
         const outer = r * 0.88;
         const mid = (inner + outer) * 0.5;
-        // A blade, radial: thin across, deep along, and it hangs BELOW the cap's own underside.
         b.addBlob(
             v3(cx + c * mid, y - drop * GILL_IN, cz + s * mid),
             v3(@abs(c) * (outer - inner) * 0.5 + r * 0.012, drop * 0.11, @abs(s) * (outer - inner) * 0.5 + r * 0.012),
@@ -89,9 +79,7 @@ pub const CapSpec = struct {
     gills: i32 = 16,
     warts: i32 = 0,
     glow: bool = false,
-    /// **THE VARIATION LIVES HERE.** One canopy mesh placed a dozen times reads as a periodic pattern and
-    /// yaw and scale do not hide it (the `bigtree` law) — so the three great caps differ in proportion AND
-    /// in tone, and neither is varied along a single cap.
+    /// **THE VARIATION LIVES HERE.** One canopy mesh placed a dozen times reads as a periodic pattern and yaw and scale do not hide it (the `bigtree` law) — so the three great caps differ in proportion AND in tone.
     flesh: rl.Color = CAP_FLESH,
     fleshDk: rl.Color = CAP_FLESH_DK,
     rim: rl.Color = CAP_RIM,
@@ -104,7 +92,6 @@ fn capInto(b: *Builder, rng: *mathx.Rng, sp: CapSpec, cx: f32, cz: f32, yaw: f32
     const head = mathx.addV(foot, mathx.scaleV(dir, sp.h));
 
     b.setMat(.plant);
-    // The BULB it comes out of the ground on, then a stipe that narrows and flares again under the cap.
     b.addBlob(v3(cx, sp.stipeR * 0.85, cz), v3(sp.stipeR * 1.75, sp.stipeR * 1.05, sp.stipeR * 1.65), 3, 8, STIPE_DK);
     const waist = mathx.addV(foot, mathx.scaleV(dir, sp.h * 0.55));
     b.addCapsule(foot, waist, sp.stipeR * 1.15, sp.stipeR * 0.82, 8, STIPE);
@@ -116,7 +103,7 @@ fn capInto(b: *Builder, rng: *mathx.Rng, sp: CapSpec, cx: f32, cz: f32, yaw: f32
 
     gillsInto(b, head.x, head.z, sp.capR, head.y, sp.drop, sp.gills, if (sp.glow) CAP_GLOW else GILL);
 
-    // The cap itself, as two shells: the crown, and a rim that turns DOWN under it.
+    // Two shells: the crown, and a rim that turns DOWN under it.
     b.setMat(.plant);
     b.addBlob(v3(head.x, head.y, head.z), v3(sp.capR, sp.drop * 1.35, sp.capR), 5, 12, sp.fleshDk);
     b.addBlob(v3(head.x, head.y + sp.drop * 0.30, head.z), v3(sp.capR * 0.74, sp.drop * 1.15, sp.capR * 0.74), 4, 11, sp.flesh);
@@ -144,9 +131,7 @@ pub const GIANT_R: f32 = 3.3;
 pub const GIANT_DROP: f32 = 0.95;
 pub const GIANT_STIPE: f32 = 0.52;
 
-/// **THREE CANOPIES, NOT ONE AT THREE SCALES** — `bigtree`/`bigtree2`/`bigtree3`'s reason exactly. A parasol,
-/// a broad one and a squat table, and they separate on HUE as well as proportion because a wood of one
-/// silhouette at three sizes still reads as a pattern from any distance you can see the crowns at.
+/// **THREE CANOPIES, NOT ONE AT THREE SCALES** — `bigtree`'s reason exactly. A parasol, a broad one and a squat table, separating on HUE as well as proportion because one silhouette at three sizes still reads as a pattern.
 pub const GIANT_BROAD = CapSpec{ .h = GIANT_H, .capR = GIANT_R, .drop = GIANT_DROP, .stipeR = GIANT_STIPE, .lean = 6.0, .gills = 40, .warts = 14 };
 pub const GIANT_TALL = CapSpec{
     .h = 8.3,
@@ -173,10 +158,9 @@ pub const GIANT_TABLE = CapSpec{
     .rim = rgba(64, 53, 43, 255),
 };
 
-// **THE YOUNG ONE'S PLACE IS THE MESH'S, AND SO IS EVERY NUMBER THE TABLE CARRIES.** All four were typed
-// into `props.INFO` by hand next to a mesh that computes them, and they drifted the moment a spec moved: the
-// broad cap's second collider sat 0.10 m off the stipe it is meant to be, and the parasol under-declared its
-// own `top` by a metre — which culls a 10 m mushroom out of the shadow pass while you are standing under it.
+// **THE YOUNG ONE'S PLACE IS THE MESH'S, AND SO IS EVERY NUMBER THE TABLE CARRIES.** All four were typed into
+// `props.INFO` by hand next to a mesh that computes them, and they drifted the moment a spec moved: the broad
+// cap's second collider sat 0.10 m off the stipe, and the parasol under-declared its own `top` by a metre — which culls a 10 m mushroom out of the shadow pass while you are standing under it.
 pub const YOUNG_OUT: f32 = 0.68;
 pub const YOUNG_SIDE: f32 = -0.40;
 pub const YOUNG_H: f32 = 0.32;
@@ -266,8 +250,7 @@ pub fn capClusterMesh(shader: rl.Shader) rl.Model {
 
 pub const BRACKET_H: f32 = 2.4;
 
-/// Shelves stepping up a rotted stub — the one fungus here that needs something dead to stand on, so it
-/// brings its own.
+/// Shelves stepping up a rotted stub — the one fungus here that needs something dead to stand on, so it brings its own.
 pub fn bracketMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0A3);
@@ -290,7 +273,7 @@ pub fn bracketMesh(shader: rl.Shader) rl.Model {
         const s = mathx.sinf(a);
         const cx = c * (stub + out * 0.55);
         const cz = s * (stub + out * 0.55);
-        // A HALF-DISC ON EDGE, not a plate: it is thick where it meets the wood and thin at its lip.
+        // A HALF-DISC ON EDGE, not a plate: thick where it meets the wood and thin at its lip.
         b.addBlob(v3(cx, y, cz), v3(out * (0.55 + 0.45 * @abs(c)), rng.range(0.05, 0.10), out * (0.55 + 0.45 * @abs(s))), 2, 8, art.weathered(CAP_FLESH_DK, CAP_FLESH, t));
         b.addBlob(v3(cx, y - 0.035, cz), v3(out * 0.86 * (0.55 + 0.45 * @abs(c)), 0.028, out * 0.86 * (0.55 + 0.45 * @abs(s))), 2, 7, GILL);
     }
@@ -300,9 +283,7 @@ pub fn bracketMesh(shader: rl.Shader) rl.Model {
 pub const GLOW_H: f32 = 2.5;
 pub const GLOW_LIGHT_Y: f32 = GLOW_H - 0.30;
 
-/// **THE ONE THING IN THE REGION THAT IS ACTUALLY A LIGHT.** Everything else here glows through its vertex
-/// alpha, which costs nothing and lights nothing; this carries a real `LightSpec` so the ground under it
-/// takes a pool. Cold, and barely flickering — a fungus does not gutter.
+/// **THE ONE THING IN THE REGION THAT IS ACTUALLY A LIGHT.** Everything else here glows through its vertex alpha, which costs nothing and lights nothing; this carries a real `LightSpec`. Cold, and barely flickering — a fungus does not gutter.
 pub fn glowCapMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0A4);
@@ -316,7 +297,6 @@ pub fn glowCapMesh(shader: rl.Shader) rl.Model {
         .warts = 6,
         .glow = true,
     }, 0, 0, 1.9);
-    // Spores coming off the gills, hanging in the still air under the cap.
     b.setMat(.plant);
     b.setAnimY(GLOW_H);
     var i: i32 = 0;
@@ -332,8 +312,7 @@ pub fn glowCapMesh(shader: rl.Shader) rl.Model {
 
 pub const POD_H: f32 = 1.15;
 
-/// Ground cover, and the one fungus that takes the FLORA sway — `flora = true` in the INFO row is what puts
-/// it in the wind, and the stalk is thin enough to earn it where a cap the size of a roof is not.
+/// The one fungus that takes the FLORA sway — `flora = true` in the INFO row is what puts it in the wind, and the stalk is thin enough to earn it where a cap the size of a roof is not.
 pub fn sporePodMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0A5);
@@ -355,22 +334,19 @@ pub fn sporePodMesh(shader: rl.Shader) rl.Model {
 }
 
 test "a cap hangs its gills in its own shade, and they are the one pale albedo here" {
-    // The gills sit BELOW the cap's underside by most of its drop, which is what keeps them unlit from any
-    // angle a body can stand at — and why they may be authored light when everything outdoors is authored dark.
+    // The gills sit BELOW the cap's underside by most of its drop, which keeps them unlit from any angle a body can stand at — and why they may be authored light when everything outdoors is authored dark.
     try std.testing.expect(GILL_IN > 0.5 and GILL_IN < 1.0);
     try std.testing.expect(@as(f32, @floatFromInt(GILL.r)) > @as(f32, @floatFromInt(CAP_FLESH.r)) * 1.5);
     try std.testing.expect(CAP_FLESH_DK.r < CAP_FLESH.r);
 }
 
 test "THE THREE LAYERS ARE ALL FUNGAL — canopy, understorey and floor, and they do not overlap" {
-    // A region needs a ground-hugger, an understorey and a canopy or it reads sparse however many props are
-    // in it. This kingdom has no wood at all, so all three have to come out of this file.
+    // A region needs a ground-hugger, an understorey and a canopy or it reads sparse. This kingdom has no wood at all, so all three come out of this file.
     try std.testing.expect(POD_H < BRACKET_H);
     try std.testing.expect(BRACKET_H < GIANT_H * 0.5);
     try std.testing.expect(GLOW_H < GIANT_H * 0.5);
     // …and you walk UNDER the canopy: the cap's underside clears a 1.8 m man with room over him.
     try std.testing.expect(GIANT_H - GIANT_DROP * 1.35 > 1.8 + 0.4);
-    // …and so does every other canopy kind, or one of the three is a ceiling you walk into.
     inline for (.{ GIANT_BROAD, GIANT_TALL, GIANT_TABLE }) |sp| {
         try std.testing.expect(sp.h - sp.drop * 1.35 > 2.2);
     }
@@ -385,8 +361,7 @@ test "a hanging thing sways a BIT: the deepest bead's throw stays inside its own
     // 3.0 cm on a 4.5 cm bead. Under half its own width it reads as alive; over it, as blowing away.
     try std.testing.expect(throw < SPORE_R_HI * 2.0 * 0.75);
     try std.testing.expect(throw > 0.015);
-    // …AND IT IS THE WHOLE MESH-TO-SHADOW DIVORCE, because the depth pass has no wind term (`props.INFO`'s
-    // sapling note). Under three texels of the sun's map, which is 108 m over 8192.
+    // …AND IT IS THE WHOLE MESH-TO-SHADOW DIVORCE, because the depth pass has no wind term. Under three texels of the sun's map, which is 108 m over 8192.
     const texel = gfx.SHADOW_ORTHO / @as(f32, gfx.SHADOWMAP_RES);
     try std.testing.expect(throw < texel * 3.0);
     // The lamp's bulb hangs on the shallower of the two, so the arc it swings on is the gentler one.
@@ -400,11 +375,9 @@ test "the glow's light sits under its own cap rather than on top of it" {
     try std.testing.expect(CAP_GLOW.a < 255 and SPORE_GLOW.a < 255);
 }
 
-// The three great caps are a wood. These are the things that make it a KINGDOM: one cap at landmark scale,
-// two structures nothing grew on purpose, and three more sources of light so the floor is never black.
+// The three great caps are a wood. These are what make it a KINGDOM: one cap at landmark scale, two structures nothing grew on purpose, and three more sources of light so the floor is never black.
 
-/// **THE COLOSSAL CAP.** Seventeen metres to the crown — `tower` scale, and the only fungus you navigate by.
-/// It is the same `CapSpec` as the other three, so its table numbers come off the same solve.
+/// **THE COLOSSAL CAP.** Seventeen metres to the crown — `tower` scale, and the only fungus you navigate by. The same `CapSpec` as the other three, so its table numbers come off the same solve.
 pub const GIANT_COLOSSAL = CapSpec{
     .h = 14.5,
     .capR = 7.2,
@@ -425,9 +398,7 @@ pub fn capColossalMesh(shader: rl.Shader) rl.Model {
 pub const TOWER_H: f32 = 9.4;
 pub const TOWER_R: f32 = 1.9;
 
-/// **A COLUMN OF FUSED CAPS.** Six grown through one another, each smaller than the last, so it reads as a
-/// thing that kept going rather than a thing that was built. Weathered foot to tip on `art.weathered` and
-/// never banded per tier — that is the barber's pole the whole prop set was just cleaned of.
+/// **A COLUMN OF FUSED CAPS.** Six grown through one another, each smaller than the last, so it reads as a thing that kept going rather than a thing that was built. Weathered foot to tip and never banded per tier — that is the barber's pole.
 pub fn capTowerMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0A9);
@@ -457,9 +428,7 @@ pub fn capTowerMesh(shader: rl.Shader) rl.Model {
 pub const ARCH_SPAN: f32 = 6.6;
 pub const ARCH_H: f32 = 5.4;
 
-/// **AN ARCH NOBODY GREW ON PURPOSE** — two stalks that leant into each other and fused, with a fan of gills
-/// hanging under the join. The rib arch is a semicircle solved from one shaft; this is two straight leans
-/// meeting at a knuckle, which is what keeps the two structures from reading as the same idea twice.
+/// **AN ARCH NOBODY GREW ON PURPOSE** — two stalks that leant into each other and fused, with a fan of gills hanging under the join. The rib arch is a semicircle solved from one shaft; this is two straight leans meeting at a knuckle.
 pub fn hyphaArchMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0AA);
@@ -490,8 +459,7 @@ pub fn hyphaArchMesh(shader: rl.Shader) rl.Model {
 pub const CLUSTER_GLOW_H: f32 = 1.55;
 pub const CLUSTER_LIGHT_Y: f32 = 1.05;
 
-/// **A KNOT OF LIT CAPS.** Where `glowcap` is one lamp on a stalk, this is a fistful low to the ground — the
-/// thing you sow along a path so the floor is legible without a torch.
+/// **A KNOT OF LIT CAPS.** Where `glowcap` is one lamp on a stalk, this is a fistful low to the ground — the thing you sow along a path so the floor is legible without a torch.
 pub fn glowClusterMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0AB);
@@ -520,9 +488,7 @@ pub fn glowClusterMesh(shader: rl.Shader) rl.Model {
 pub const LAMP_H: f32 = 4.2;
 pub const LAMP_LIGHT_Y: f32 = 3.0;
 
-/// **A STALK THAT ARCS OVER AND HANGS A LIGHT OFF ITS END.** The tallest lamp in the kingdom and the only
-/// one above head height, so it lights the ground rather than your knees. The bulb hangs BELOW the arc —
-/// nothing living hangs a weight on a straight stem.
+/// **A STALK THAT ARCS OVER AND HANGS A LIGHT OFF ITS END.** The tallest lamp in the kingdom and the only one above head height. The bulb hangs BELOW the arc — nothing living hangs a weight on a straight stem.
 pub fn lampStalkMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0AC);
@@ -541,8 +507,7 @@ pub fn lampStalkMesh(shader: rl.Shader) rl.Model {
         prev = next;
         a += dA;
     }
-    // The arc is 4.2 m of structure and stays rigid; everything below its tip hangs off it, so the tip is the
-    // pivot for the thread, the bulb and the spores together — one arc rather than three.
+    // The arc is 4.2 m of structure and stays rigid; everything below its tip hangs off it, so the tip is the pivot for the thread, the bulb and the spores together.
     const hang = v3(prev.x, prev.y - LAMP_BULB_DROP, prev.z);
     b.setAnimY(prev.y);
     b.addCapsule(prev, hang, 0.045, 0.035, 5, STIPE_DK);
@@ -563,9 +528,7 @@ pub fn lampStalkMesh(shader: rl.Shader) rl.Model {
 pub const FOLD_H: f32 = 1.35;
 pub const FOLD_L: f32 = 3.4;
 
-/// **A FOLDED MASS ON THE GROUND, AND IT IS NOT A MUSHROOM AT ALL.** Overlapping lobes packed along a
-/// wandering seam, like a morel laid flat — the region's one thing with no stalk, no cap and no symmetry,
-/// which is what stops the kingdom reading as a single shape at nine sizes.
+/// **A FOLDED MASS ON THE GROUND, AND IT IS NOT A MUSHROOM AT ALL.** Overlapping lobes packed along a wandering seam, like a morel laid flat — the region's one thing with no stalk, no cap and no symmetry.
 pub fn fleshFoldMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0AD);
@@ -599,9 +562,7 @@ pub fn fleshFoldMesh(shader: rl.Shader) rl.Model {
 
 pub const VENT_H: f32 = 3.6;
 
-/// **A CHIMNEY THAT BREATHES.** Stacked collars of fused hyphae with a dark throat and a lit gullet. A
-/// cylinder is CAPLESS and this one is supposed to be — the mouth is the point, so it is ringed rather than
-/// domed, and the glow sits BELOW the rim so you have to walk up to it to see the light.
+/// **A CHIMNEY THAT BREATHES.** Stacked collars of fused hyphae with a dark throat and a lit gullet. A cylinder is CAPLESS and this one is supposed to be — the mouth is the point, and the glow sits BELOW the rim so you have to walk up to it.
 pub fn sporeVentMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0AE);
@@ -640,8 +601,7 @@ pub fn sporeVentMesh(shader: rl.Shader) rl.Model {
 
 pub const VEIN_R: f32 = 2.1;
 
-/// Ground cover, and the region's cheapest light: mycelial cord running over the floor, emissive, with no
-/// `LightSpec` at all. Sown by the hundred where sixteen real lights is the whole budget.
+/// Ground cover, and the region's cheapest light: mycelial cord over the floor, emissive, with no `LightSpec` at all. Sown by the hundred where sixteen real lights is the whole budget.
 pub fn glowVeinMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0AF);
@@ -668,7 +628,6 @@ pub fn glowVeinMesh(shader: rl.Shader) rl.Model {
 test "THE KINGDOM IS FOUR CANOPY SILHOUETTES AND THREE KINDS OF LIGHT, not one shape at nine sizes" {
     // The colossal one is a landmark: it must clear the others by enough that you navigate by it.
     try std.testing.expect(capTop(GIANT_COLOSSAL) > capTop(GIANT_TALL) * 1.6);
-    // …and you still walk under every one of them.
     inline for (.{ GIANT_BROAD, GIANT_TALL, GIANT_TABLE, GIANT_COLOSSAL }) |sp| {
         try std.testing.expect(sp.h - sp.drop * 1.35 > 2.2);
     }
@@ -682,14 +641,11 @@ test "THE KINGDOM IS FOUR CANOPY SILHOUETTES AND THREE KINDS OF LIGHT, not one s
 }
 
 
-// **A REGION OWES THREE LAYERS AND THE LOWEST ONE IS THE EASIEST TO SKIP** — the canopy got nine props and
-// the floor two, which is why the mycelian photographed as furniture on a lawn. Four different HABITS rather
-// than four sizes: a sphere, a spike, a crust and a shelf, none of them a small mushroom (`mushrooms` is).
+// **A REGION OWES THREE LAYERS AND THE LOWEST ONE IS THE EASIEST TO SKIP** — the canopy got nine props and the floor two, which is why the mycelian photographed as furniture on a lawn. Four different HABITS rather than four sizes: a sphere, a spike, a crust and a shelf.
 
 pub const PUFF_R: f32 = 0.62;
 
-/// SPHERES, and one of them has GONE. A clutch of puffballs where the biggest has split and is venting —
-/// the burst one is the whole prop, because eight intact spheres is a bag of marbles.
+/// SPHERES, and one of them has GONE. A clutch of puffballs where the biggest has split and is venting — the burst one is the whole prop, because eight intact spheres is a bag of marbles.
 pub fn puffballsMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0FF1);
@@ -722,9 +678,7 @@ pub fn puffballsMesh(shader: rl.Shader) rl.Model {
 
 pub const FINGER_H: f32 = 0.54;
 
-/// SPIKES. Dead men's fingers: blunt black clubs pushing straight up out of the litter, pale only at the
-/// very tip. **NOT POINTED** — nothing dead in this game ends in a point (AGENTS.md), and a club that
-/// tapers to nothing is a spike anyway, which reads as a hazard.
+/// SPIKES. Dead men's fingers: blunt black clubs pushing straight up out of the litter, pale only at the very tip. **NOT POINTED** — nothing dead in this game ends in a point (AGENTS.md).
 pub fn deadFingersMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF17E5);
@@ -746,8 +700,7 @@ pub fn deadFingersMesh(shader: rl.Shader) rl.Model {
 
 pub const CRUST_R: f32 = 1.35;
 
-/// A CRUST. Encrusting fungus spreading flat over the ground in wrinkled lobes — the one thing here with no
-/// height at all, and the layer that makes the other three look like they grew out of something.
+/// A CRUST. Encrusting fungus spreading flat over the ground in wrinkled lobes — the one thing here with no height at all, and the layer that makes the other three look like they grew out of something.
 pub fn crustFungusMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xC2057);
@@ -777,8 +730,7 @@ pub fn crustFungusMesh(shader: rl.Shader) rl.Model {
 
 pub const SHELF_H: f32 = 1.15;
 
-/// A SHELF, CLIMBING. Brackets up a rotted stub, each one WIDER than the one above it — that is what a real
-/// shelf fungus does and it is also what makes the stack read as a staircase rather than a stack of discs.
+/// A SHELF, CLIMBING. Brackets up a rotted stub, each one WIDER than the one above it — what a real shelf fungus does, and what makes the stack read as a staircase rather than a stack of discs.
 pub fn shelfStackMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5431F);

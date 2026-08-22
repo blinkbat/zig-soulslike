@@ -94,8 +94,7 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
             const z = -1.9 + @as(f32, @floatFromInt(ci)) * 1.9;
             const h = rng.range(1.1, 2.4);
             b.addCylinder(v3(cx, 0.16, z), v3(cx + rng.signed() * 0.04, 0.16 + h, z), 0.24, 0.21, 8, STONE);
-            // The broken tops are ALWAYS capped — the capital below is only a 40% variant, and the other
-            // 60% left an open tube inside a room the camera rides above head height in.
+            // The broken tops are ALWAYS capped — the capital below is only a 40% variant, and the other 60% left an open tube inside a room the camera rides above head height in.
             b.addBlob(v3(cx + rng.signed() * 0.04, 0.16 + h, z), v3(0.21, 0.03, 0.21), 3, 8, STONE_DK);
             if (rng.float() < 0.4) b.addCube(v3(cx, 0.16 + h + 0.08, z), v3(0.6, 0.16, 0.6), STONE_LT);
         }

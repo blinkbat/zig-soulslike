@@ -76,8 +76,7 @@ pub fn treeMesh(shader: rl.Shader) rl.Model {
     b.addCapsule(j1, j2, 0.165, 0.095, 7, BARK_OLD);
     b.addCapsule(j2, j3, 0.095, 0.035, 6, BARK_DK);
     b.addBlob(j3, v3(0.045, 0.030, 0.045), 3, 5, TIMBER);
-    // Peeling bark: strips SUNK so only an edge breaks the surface, and the loose one curls off at its TOP
-    // only. Stood clear along its whole length (0.16 off a bole of radius 0.2) a strip is a dark floating tube.
+    // Peeling bark: strips SUNK so only an edge breaks the surface, and the loose one curls off at its TOP only. Stood clear along its whole length (0.16 off a bole of radius 0.2) a strip is a dark floating tube.
     var s: i32 = 0;
     while (s < 7) : (s += 1) {
         const a = rng.angle();
@@ -529,9 +528,7 @@ pub fn snagMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.45) TIMBER else BARK_DK,
         );
     }
-    // Broken limb stubs, and one long branch still on — all through `deadLimbInto`, so they elbow, droop
-    // and snap blunt instead of standing out as horizontal spears, and all rooted on the trunk's OWN axis
-    // (`onTrunk` at full sink), which is the point the lean already knows about and `lean * 0.4` guessed at.
+    // Broken limb stubs, and one long branch still on — all through `deadLimbInto`, so they elbow, droop and snap blunt instead of standing out as horizontal spears, and all rooted on the trunk's OWN axis (`onTrunk` at full sink), which `lean * 0.4` guessed at.
     var l: i32 = 0;
     while (l < 4) : (l += 1) {
         const y = rng.range(H * 0.35, H * 0.9);
@@ -544,9 +541,7 @@ pub fn snagMesh(shader: rl.Shader) rl.Model {
         b.addCapsule(v3(0, 0.5, 0), v3(mathx.cosf(a) * rng.range(0.7, 1.2), 0.03, mathx.sinf(a) * rng.range(0.7, 1.2)), 0.15, 0.05, 5, BARK_OLD);
     }
     b.setMat(.plant);
-    // Moss up the weather side, SEATED on the trunk with only a cushion of it proud. Parked at a random
-    // offset from the AXIS instead it was a green hexagon bolted to the bark — the offset can exceed the
-    // trunk's own radius, and even inside it a 0.28 blob on a 0.48 trunk stands most of the way clear.
+    // Moss up the weather side, SEATED on the trunk with only a cushion of it proud. Parked at a random offset from the AXIS instead it was a green hexagon bolted to the bark — the offset can exceed the trunk's own radius, and even inside it a 0.28 blob on a 0.48 trunk stands most of the way clear.
     b.addBlob(onTrunk(H, lean, rng.range(0.6, 2.2), rng.angle(), 0.55), v3(0.26, 0.34, 0.22), 3, 6, MOSS_DK);
     var g: i32 = 0;
     while (g < 3) : (g += 1) tuftInto(&b, &rng, rng.signed() * 1.2, rng.signed() * 1.2, 0.85);
@@ -600,13 +595,11 @@ pub fn saplingMesh(shader: rl.Shader) rl.Model {
 }
 
 
-// `logMesh` is a log; these two are what a log becomes. A rotted mass has LOST ITS LINE — it sags between its
-// bearing points, splits ALONG the grain rather than across, and the pale punk inside is the one bright thing.
+// `logMesh` is a log; these two are what a log becomes. A rotted mass has LOST ITS LINE — it sags between its bearing points, splits ALONG the grain rather than across, and the pale punk inside is the one bright thing.
 
 pub const ROTLOG_L: f32 = 4.2;
 
-/// A bole gone soft. It SAGS: the ends still carry, the middle has settled, and it has split open along the
-/// top where the rain got in. Nothing about it is a cylinder any more.
+/// A bole gone soft. It SAGS: the ends still carry, the middle has settled, and it has split open along the top where the rain got in. Nothing about it is a cylinder any more.
 pub fn rotLogMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x0D01);
@@ -659,8 +652,7 @@ pub fn rotLogMesh(shader: rl.Shader) rl.Model {
 
 pub const DEADFALL_H: f32 = 1.9;
 
-/// **A TANGLE, AND A TANGLE IS NOT A HEAP.** What makes it read is that the limbs LEAN ON EACH OTHER — every
-/// one runs from the ground up to a common bearing near the middle, so there is a real void underneath it.
+/// **A TANGLE, AND A TANGLE IS NOT A HEAP.** What makes it read is that the limbs LEAN ON EACH OTHER — every one runs from the ground up to a common bearing near the middle, so there is a real void underneath it.
 pub fn deadfallMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x0D02);
@@ -706,8 +698,7 @@ pub fn deadfallMesh(shader: rl.Shader) rl.Model {
 }
 
 test "rot has lost its line — the log sags and the tangle has a void under it" {
-    // A rotted bole is lower in the middle than at its bearings; a fresh one is a cylinder. And the hub of
-    // the deadfall sits well up, or the limbs are lying flat and it is a heap.
+    // A rotted bole is lower in the middle than at its bearings; a fresh one is a cylinder. And the hub of the deadfall sits well up, or the limbs are lying flat and it is a heap.
     try std.testing.expect(ROTLOG_L > 3.0);
     try std.testing.expect(DEADFALL_H * 0.62 > 0.9);
 }

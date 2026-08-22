@@ -52,8 +52,7 @@ const RESISTS = combat.resists(.{ .fire = -50, .cold = 15, .chaos = 75 });
 pub const SOULS: u32 = 70;
 
 pub const FLING_HIT = combat.Hit{ .dmg = 12, .poise = 20, .stance = 8 };
-/// **POISON PER SECOND STANDING IN IT** (owner: accrue more rapidly). Nearly double: at 24 a sporeling's
-/// cloud was something you could walk through while reading the room, which is not what a gas is for.
+/// **POISON PER SECOND STANDING IN IT** (owner: accrue more rapidly). Nearly double: at 24 a sporeling's cloud was something you could walk through while reading the room, which is not what a gas is for.
 pub const SPORE_BUILD: f32 = 42.0;
 
 const HOP_REACH: f32 = 1.05;
@@ -63,9 +62,7 @@ const HOP_FLIGHT: f32 = 0.34;
 const HOP_LAND: f32 = 0.14;
 const HOP_SETTLE: f32 = 0.10;
 
-/// THE FLING. It gathers (deep squat, cap tipped back, trembling), then throws its whole body in a high
-/// arc and pops its cloud where it lands. Chosen ONLY inside its own reach (the cannot-land law): from
-/// farther out it hops in first.
+/// THE FLING. It gathers (deep squat, cap tipped back, trembling), then throws its whole body in a high arc and pops its cloud where it lands. Chosen ONLY inside its own reach (the cannot-land law).
 const FLING_MAX: f32 = 5.4;
 const GATHER_DUR: f32 = 0.62;
 const FLING_FLIGHT: f32 = 0.55;
@@ -98,9 +95,7 @@ const FLING_PUFF = 24;
 const TRIP_PUFF = 6;
 const HIT_PUFF_LIGHT = 3;
 const HIT_PUFF_HEAVY = 6;
-/// Sized by ARITHMETIC over the emitters' worst frame (the ring law), and WRITTEN AS ARITHMETIC because at
-/// 48 the prose got it wrong: the fling's puff is `hitParts`-scaled, so it is 24 motes and not the 16 asked
-/// for, and the landing already stacked 24 + 14 dust + the flight trail's ≈ 14 before a blow was in it.
+/// Sized by ARITHMETIC over the emitters' worst frame (the ring law), and WRITTEN AS ARITHMETIC because at 48 the prose got it wrong: the fling's puff is `hitParts`-scaled, so it is 24 motes and not the 16 asked for, and the landing already stacked 24 + 14 dust + the flight trail's ≈ 14 before a blow was in it.
 const PARTS = 68;
 comptime {
     std.debug.assert(@as(f32, PARTS) >= TRAIL_RATE * TRAIL_LIFE_HI +
@@ -297,8 +292,7 @@ pub const Shroom = struct {
                 if (self.t >= GATHER_DUR * 0.7) self.emitTremble(dt);
                 if (self.t >= GATHER_DUR) {
                     if (self.tripping or !foe.canLeap(&self.root)) {
-                        // THE ROOT IT CAUGHT. Same gather to the last frame — the difference is only
-                        // ever visible one frame too late, which is the whole joke and the whole tax.
+                        // THE ROOT IT CAUGHT. Same gather to the last frame — the difference is only ever visible one frame too late, which is the whole joke and the whole tax.
                         sfx.world(.shroom_hurt, self.pos);
                         self.enter(.trip);
                     } else {
@@ -399,8 +393,7 @@ pub const Shroom = struct {
     }
 
     fn beginFling(self: *Shroom, hero: rl.Vector3) void {
-        // Committed AT THE DECISION: where it goes, and whether it goes at all (`tripping`) — rolled here
-        // so the gather cannot leak the outcome.
+        // Committed AT THE DECISION: where it goes, and whether it goes at all (`tripping`) — rolled here so the gather cannot leak the outcome.
         self.hopAim = hero;
         self.hopReach = mathx.clampF(mathx.distXZ(self.pos, hero), 0.8, FLING_MAX);
         self.hopDur = FLING_FLIGHT;
@@ -437,9 +430,7 @@ pub const Shroom = struct {
                     self.emitPuff(self.pos, FLING_PUFF);
                     sfx.world(.shroom_puff, self.pos);
                     self.burstAt = self.pos;
-                    // NOT PARRYABLE, AND THAT IS A DECISION: the splat is a disc round the landing with the
-                    // CLOUD as its real payload, and boards cannot refuse a gas. The counter is the mark —
-                    // the whole arc is the tell, and a walk clears it.
+                    // NOT PARRYABLE, AND THAT IS A DECISION: the splat is a disc round the landing with the CLOUD as its real payload, and boards cannot refuse a gas. The counter is the mark — the whole arc is the tell, and a walk clears it.
                     if (mathx.distXZ(self.pos, hero) <= foe.hurtReach(SPLAT_R, self.scale)) {
                         self.heroHit = FLING_HIT;
                         self.leash.noteCombat();
@@ -534,8 +525,7 @@ pub const Shroom = struct {
             });
         }
     }
-    /// MOTES, not a wound's worth of them: `foe.HIT_PARTS` is how heavy a LANDED BLOW reads, and a fling
-    /// landing is not a blow. Read off it, the field-wide dial silently rescaled a trip and a fling too.
+    /// MOTES, not a wound's worth of them: `foe.HIT_PARTS` is how heavy a LANDED BLOW reads, and a fling landing is not a blow. Read off it, the field-wide dial silently rescaled a trip and a fling too.
     fn emitPuff(self: *Shroom, at: rl.Vector3, motes: i32) void {
         var i: i32 = 0;
         while (i < motes) : (i += 1) {
@@ -627,9 +617,7 @@ const CLOUD_RATE_FRESH: f32 = 26.0;
 const CLOUD_PUFF_MIN: f32 = 1.1;
 const CLOUD_PUFF_MAX: f32 = 1.7;
 const CLOUD_PARTS = 112;
-// **WHAT THE CLOUDS COST, MEASURED.** Worst case is `CLOUD_CAP` live clouds of `CLOUD_PARTS` motes. Eight at
-// once needs eight flings inside one `CLOUD_LIFE` against a `FLING_CD` of 4.6 s — more sporelings than a
-// cluster fields; two or three is the real number.
+// **WHAT THE CLOUDS COST, MEASURED.** Worst case is `CLOUD_CAP` live clouds of `CLOUD_PARTS` motes. Eight at once needs eight flings inside one `CLOUD_LIFE` against a `FLING_CD` of 4.6 s — more sporelings than a cluster fields; two or three is the real number.
 comptime {
     std.debug.assert(@as(f32, @floatFromInt(CLOUD_PARTS)) >= (CLOUD_RATE + CLOUD_RATE_FRESH) * CLOUD_PUFF_MAX);
 }
@@ -641,10 +629,7 @@ pub const Cloud = struct {
     parts: [CLOUD_PARTS]foe.Particle = [_]foe.Particle{.{}} ** CLOUD_PARTS,
     fxHead: usize = 0,
     fxAccum: f32 = 0,
-    /// Which puff this is over the cloud's WHOLE LIFE, and it has to be that rather than an index within the
-    /// frame: the emitter lays about one puff a frame at 60, so a per-frame counter never reached the third
-    /// and the boundary was drawn only on a frame long enough to emit three at once — which is to say never,
-    /// and worse, never in a way that looked like a tuning problem.
+    /// Which puff this is over the cloud's WHOLE LIFE, and it has to be that rather than an index within the frame: the emitter lays about one puff a frame at 60, so a per-frame counter never reached the third and the boundary was drawn only on a frame long enough to emit three at once.
     rimTick: u32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(0x0C10),
 
@@ -664,10 +649,8 @@ pub const Cloud = struct {
             self.live = false;
             return;
         }
-        // **IT HAS TO BE A VOLUME, AND IT HAS TO HAVE AN EDGE** (owner's call). Thirty-odd puffs over a 1.9 m
-        // disc was a few translucent blobs. HEIGHT: spores to a metre and a half, his own chest, so it is
-        // something you are IN rather than step over. A RIM: one puff in three is laid on the boundary, so the
-        // cloud says where it STOPS — a gradient has no line to be on the safe side of.
+        // **IT HAS TO BE A VOLUME, AND IT HAS TO HAVE AN EDGE** (owner's call). Thirty-odd puffs over a 1.9 m disc
+        // was a few translucent blobs. HEIGHT: spores to a metre and a half, his own chest. A RIM: one puff in three is laid on the boundary, so the cloud says where it STOPS — a gradient has no line to be on the safe side of.
         const emitRate = (CLOUD_RATE + CLOUD_RATE_FRESH * (1.0 - self.t / CLOUD_LIFE));
         var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
@@ -729,8 +712,7 @@ pub const Cluster = struct {
         self.model.setShader(sh);
     }
 
-    /// PUBLIC because the SPORE GOLEM's lobbed sac lands in this pool too — one cloud pool and one poison
-    /// meter for every spore in the game, or `spores` would be two accumulators filling one bar.
+    /// PUBLIC because the SPORE GOLEM's lobbed sac lands in this pool too — one cloud pool and one poison meter for every spore in the game, or `spores` would be two accumulators filling one bar.
     pub fn spawnCloud(self: *Cluster, at: rl.Vector3) void {
         self.clouds[self.cloudHead] = .{ .pos = at, .live = true, .fxRng = foe.fxStream(at.x + at.z, 977.0, 0xC10D) };
         self.cloudHead = (self.cloudHead + 1) % CLOUD_CAP;
@@ -920,9 +902,7 @@ test "THE CLOUD POISONS, IT DOES NOT BURN: linger and the meter fills, step out 
         _ = psn.tick(1.0 / 60.0, 70);
         if (psn.active()) broke = true;
     }
-    // **IT BREAKS NOW, AND IT DID NOT BEFORE** (owner: accrue more rapidly). At `SPORE_BUILD` 24 a whole
-    // cloud lifetime left the meter half full and nothing happened; at 42, plus the entry bolus
-    // (`foe.Soak`), standing in one to the end poisons you. That is the point of a poison cloud.
+    // **IT BREAKS NOW, AND IT DID NOT BEFORE** (owner: accrue more rapidly). At `SPORE_BUILD` 24 a whole cloud lifetime left the meter half full; at 42, plus the entry bolus (`foe.Soak`), standing in one to the end poisons you.
         std.debug.print("  sporeling cloud: {d:.0}/s over {d:.1} s of cloud -> poison {s}\n", .{ SPORE_BUILD, CLOUD_LIFE, if (broke) "BROKE" else "held" });
     try std.testing.expect(broke);
     try std.testing.expectApproxEqAbs(@as(f32, 0), c.spores(1.0 / 60.0, outside), 1e-6);

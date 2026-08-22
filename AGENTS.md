@@ -1709,8 +1709,8 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   turns any mid-dark value pale on a large sunward face. The bigger the face, the darker it must start.
 - **TWO STONE MATERIALS.** `.stone` is rubble masonry, matte; `.marble` is dressed stone, veined, with the only
   real gloss besides steel and water — kept LOW. Marble = columns/arches/statues; stone = walls/towers/rubble.
-- **`gfx.Mat` is APPEND-ONLY** — the shader branches on the raw ordinal from 1 to 15, and the comptime asserts
-  pin the TAIL (water 9 through fog 15). Pinning `water == 9` is what catches an insert below it. **The
+- **`gfx.Mat` is APPEND-ONLY** — the shader branches on the raw ordinal from 1 to 16, and the comptime asserts
+  pin the TAIL (water 9 through gilt 16). Pinning `water == 9` is what catches an insert below it. **The
   VERTEX-ANIMATED ids are bounded at BOTH ends** (`> 11.5 && < 13.5`, and fog's `> 14.5 && < 15.5`): an
   open-ended test claims every id added after it, which is how `bark` went in and every trunk started climbing
   like an ember.

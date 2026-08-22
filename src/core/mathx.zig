@@ -195,10 +195,7 @@ test "pulse rises, holds and falls, and is flat outside its span" {
     try std.testing.expect(pulse(0.6, 0, 0.5, 0.5, 1.0) < 1.0);
 }
 
-/// Ease `cur` toward `target` by a rate-limited step of `rate*dt` (frame-rate independent enough for
-/// smoothing camera/gait blends), landing exactly ON it — where `lerpF(cur, target, k)` is an exponential
-/// ease that never quite arrives. THE ONE COPY: an `approachF` with the identical contract sat beside this
-/// for one caller, which is one more place for a rate-limited ease to acquire its own edge case.
+/// Ease `cur` toward `target` by a rate-limited step of `rate*dt`, landing exactly ON it — where `lerpF(cur, target, k)` is an exponential ease that never quite arrives. THE ONE COPY: an `approachF` with the identical contract sat beside this for one caller.
 pub fn approach(cur: f32, target: f32, maxStep: f32) f32 {
     const d = target - cur;
     if (@abs(d) <= maxStep) return target;
@@ -219,10 +216,7 @@ pub fn approachV(cur: rl.Vector3, target: rl.Vector3, maxStep: f32) rl.Vector3 {
 pub fn wrapPi(a: f32) f32 {
     if (!std.math.isFinite(a)) return 0;
     var x = a;
-    // A REDUCTION FIRST FOR ANYTHING THE LOOP CANNOT WALK. Past ~2^23·tau an f32 subtraction of tau is a
-    // no-op and the loop never terminates; well below that it is millions of iterations. The threshold sits
-    // far above every live caller (all of them wrap a difference of two bounded angles), so the loop is
-    // still what handles every real input and the arithmetic below it has not moved.
+    // A REDUCTION FIRST FOR ANYTHING THE LOOP CANNOT WALK. Past ~2^23·tau an f32 subtraction of tau is a no-op and the loop never terminates; well below that it is millions of iterations. The threshold sits far above every live caller, so the loop still handles every real input.
     const REDUCE_OVER: f32 = std.math.tau * 1024.0;
     if (@abs(x) > REDUCE_OVER) x = @rem(x, std.math.tau);
     while (x > std.math.pi) x -= std.math.tau;
@@ -241,10 +235,7 @@ pub fn approachAngle(cur: f32, target: f32, maxStep: f32) f32 {
     return cur + std.math.sign(d) * maxStep;
 }
 
-/// HOW FAR THE SEGMENT `a`→`b` LEANS OFF WORLD UP, in degrees — 0 is plumb, 90 is flat, past 90 is upside
-/// down. `headingXZ`'s companion: that one asks which way a thing points on the ground, this one how far off
-/// vertical it stands. The staff's plumb test, the trunk's tilt through a jump and the necromancer's three
-/// were one arctangent written four ways.
+/// HOW FAR THE SEGMENT `a`→`b` LEANS OFF WORLD UP, in degrees — 0 is plumb, 90 is flat, past 90 is upside down. `headingXZ`'s companion: that one asks which way a thing points on the ground, this one how far off vertical it stands. The staff's plumb test, the trunk's tilt and the necromancer's three were one arctangent written four ways.
 pub fn tiltDeg(a: rl.Vector3, b: rl.Vector3) f32 {
     const d = subV(b, a);
     return degrees(std.math.atan2(lenXZ(d), d.y));

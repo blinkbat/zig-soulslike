@@ -12,8 +12,7 @@ var work: [MAX_N]f32 = undefined;
 var tape: [MAX_N]f32 = undefined;
 var pcm: [MAX_N]i16 = undefined;
 
-/// Chamberlin state-variable filter coefficients. Separate from the filter step because for a FIXED cutoff
-/// they never change, and the per-sample `sin` was 90 ms of the heal's bake time (measured).
+/// Chamberlin state-variable filter coefficients. Separate from the filter step because for a FIXED cutoff they never change, and the per-sample `sin` was 90 ms of the heal's bake time (measured).
 const SvfCoef = struct { f: f32, q: f32 };
 
 fn svfCoef(cut: f32, res: f32) SvfCoef {
@@ -72,8 +71,7 @@ const Span = struct {
 const Rack = struct {
     n: usize = 0,
     rng: mathx.Rng,
-    /// Layers that rendered nothing — authored past the voice's own length, so they emit zero samples
-    /// silently. A test bakes the bank and asserts this stays 0.
+    /// Layers that rendered nothing — authored past the voice's own length, so they emit zero samples silently. A test bakes the bank and asserts this stays 0.
     dropped: usize = 0,
 
     fn init(seed: u64, secs: f32) Rack {
@@ -178,9 +176,8 @@ const Rack = struct {
         r.grit(t0, 0.012, amp, cut, 0.0, 5.0);
     }
 
-    /// Detuned unison "ahh"s. What makes it voices rather than an organ: formants (~730 and ~1090 Hz for
-    /// "ah") plus per-voice detune/vibrato/entry, whose beating IS the choral sound. The bank's most
-    /// expensive layer (~70 ms of the heal's bake, Debug); a table LFO would trade that beating away.
+    /// Detuned unison "ahh"s. Formants (~730 and ~1090 Hz for "ah") plus per-voice detune/vibrato/entry, whose
+    /// BEATING is the choral sound. The bank's most expensive layer (~70 ms of the heal's bake, Debug); a table LFO would trade that beating away.
     fn choir(r: *Rack, t0: f32, dur: f32, f0: f32, amp: f32, voices: u32, peak: f32) void {
         const s = r.span(t0, dur) orelse return;
         const a = s.a;
@@ -225,9 +222,8 @@ const Rack = struct {
         }
     }
 
-    /// Three feedback combs, each fed back through a one-pole so the tail darkens as it dies — that
-    /// darkening is what separates a reverb from a stack of echoes. Feed-forward in time (sample i reads
-    /// only earlier samples), so it cannot blow up and needs no second buffer.
+    /// Three feedback combs, each fed back through a one-pole so the tail DARKENS as it dies — that darkening
+    /// is what separates a reverb from a stack of echoes. Feed-forward in time, so it cannot blow up and needs no second buffer.
     fn hall(r: *Rack, secs: f32, cut: f32) void {
         const taps = [_]f32{ 0.0297, 0.0371, 0.0411 };
         for (taps) |d| {
@@ -337,8 +333,7 @@ const Rack = struct {
         }
     }
 
-    /// A band ADDED rather than blended in — `band` lerps, which cannot boost. This is the bite a muffled
-    /// voice gets its legibility back from.
+    /// ADDED rather than blended — `band` lerps, which cannot boost. This is the bite a muffled voice gets its legibility back from.
     fn lift(r: *Rack, cut: f32, res: f32, amt: f32) void {
         const c = svfCoef(cut, res);
         var f = Svf{};
@@ -404,12 +399,10 @@ const AIR_NEAR_DARKEST: f32 = 2200;
 const AIR_NEAR_GRASS: f32 = 4200;
 
 // Order is the BANK table's order below; the two are pinned at comptime.
-/// **APPEND-ONLY, LIKE `gfx.Mat`, AND FOR A SHARPER REASON: THE BAKE SEEDS OFF THE ORDINAL.**
-/// `bakeTake` builds each take's noise from `0x9E3779B9 *% (idx + 1)`, and `idx` is this enum's own value —
-/// so inserting an id in the MIDDLE silently re-rolls the synthesis of every voice below it. Nothing fails to
-/// compile and nothing sounds broken; the takes just quietly become different takes, and the tests that
-/// compare two creatures' throats measure two new draws. Caught by exactly that: adding `gremlin_spark` next
-/// to the hollow's family moved the bone knight's heave 2% off the cyclops's, under the 3% a test demands.
+/// **APPEND-ONLY, AND FOR A SHARPER REASON THAN `gfx.Mat`: THE BAKE SEEDS OFF THE ORDINAL.** `bakeTake` builds
+/// each take's noise from `0x9E3779B9 *% (idx + 1)`, so inserting an id in the MIDDLE silently re-rolls the
+/// synthesis of every voice below it — nothing fails to compile and nothing sounds broken. Caught by exactly
+/// that: adding `gremlin_spark` beside the hollow's family moved the knight's heave 2% off the cyclops's, under the 3% a test demands.
 pub const Id = enum {
     step_soft,
     step_hard,
@@ -570,11 +563,8 @@ pub const Id = enum {
     fog_felled,
     fog_pass,
     torch_fire,
-    // **APPEND HERE, NEVER IN THE MIDDLE, AND THIS ENUM IS WHY** (see the note above `Id`). The gremlin's spark
-    // belongs beside the rest of the hollow's family and is down here instead, because grouping it there
-    // re-rolled every voice authored after it. The skitterer's, priest's and hollow's families are down here
-    // with it for the same reason: seated beside `ember_burst` they re-rolled every voice from `lurker_break`
-    // to the bone knight's, and the knight-vs-ogre throat test measured two new draws.
+    // **APPEND HERE, NEVER IN THE MIDDLE** (see the note above `Id`). The skitterer's, priest's and hollow's
+    // families are down here rather than beside their kin because grouping them re-rolled every voice from `lurker_break` to the bone knight's.
     gremlin_spark,
     skitter_clack,
     skitter_slice,
@@ -664,8 +654,7 @@ comptime {
 pub const FxPreset = struct { idx: usize, val: f32 };
 pub const FX_VINYL = [_]FxPreset{ .{ .idx = AF_CRACKLE, .val = 0.55 }, .{ .idx = AF_HISS, .val = 0.30 }, .{ .idx = AF_WOBBLE, .val = 0.35 }, .{ .idx = AF_MUFFLE, .val = 0.22 } };
 pub const FX_RADIO = [_]FxPreset{ .{ .idx = AF_TELEPHONE, .val = 0.85 }, .{ .idx = AF_DRIVE, .val = 0.40 }, .{ .idx = AF_HISS, .val = 0.22 } };
-/// The house sound (owner's call): what the game LAUNCHES as, on all three families. `AFX_DEFAULTS` is
-/// derived from this row, so "Reset to Default" and "Preset: Worn Tape" cannot come to mean two things.
+/// The house sound (owner's call). `AFX_DEFAULTS` is derived from this row, so "Reset to Default" and "Preset: Worn Tape" cannot come to mean two things.
 pub const FX_TAPE = [_]FxPreset{ .{ .idx = AF_WOBBLE, .val = 0.55 }, .{ .idx = AF_HISS, .val = 0.35 }, .{ .idx = AF_MUFFLE, .val = 0.30 }, .{ .idx = AF_DRIVE, .val = 0.25 } };
 pub const FX_CRUSHED = [_]FxPreset{ .{ .idx = AF_CRUSH, .val = 0.70 }, .{ .idx = AF_ALIAS, .val = 0.55 }, .{ .idx = AF_DRIVE, .val = 0.30 } };
 pub const FX_BROKEN = [_]FxPreset{ .{ .idx = AF_DRIVE, .val = 0.85 }, .{ .idx = AF_TELEPHONE, .val = 0.50 }, .{ .idx = AF_CRACKLE, .val = 0.40 }, .{ .idx = AF_ALIAS, .val = 0.35 } };
@@ -760,9 +749,7 @@ pub fn tickFx(dt: f32) void {
         d.* = false;
         rebakeMix(@enumFromInt(mi));
     }
-    // THE FLAG IS SPENT BY THE REBAKE, NEVER BEFORE IT. Cleared above the `ready` gate it was the
-    // silent-failure `justDied` warns about: an edit queued while the bank is not up is dropped and the
-    // voice plays on with the old take, with nothing anywhere looking wrong.
+    // THE FLAG IS SPENT BY THE REBAKE, NEVER BEFORE IT. Cleared above the `ready` gate, an edit queued while the bank is down is dropped and the voice plays on with the old take.
     if (!ready) return;
     for (&voiceDirty, 0..) |*d, idx| {
         if (!d.*) continue;
@@ -904,10 +891,8 @@ fn mkStagger(r: *Rack) void {
     r.master(1.35, 2000);
 }
 
-/// **THE BOARDS ARE IRON-BOUND, AND YOU HEAR THE BAND** (owner: a more metallic sound). It was one short
-/// 940 Hz partial pair dead inside 90 ms, which is a knock on wood — the band now rings where a struck rim
-/// does and takes a quarter-second to go, with a bright harmonic over it for the edge itself. The master
-/// lowpass opens with it: at 4200 the partials that make it metal never left the rack.
+/// **THE BOARDS ARE IRON-BOUND, AND YOU HEAR THE BAND** (owner: a more metallic sound). It was one short 940 Hz
+/// partial pair dead inside 90 ms, which is a knock on wood. The master lowpass opens with it: at 4200 the partials that make it metal never left the rack.
 fn mkGuardBlock(r: *Rack) void {
     r.tick(0.0, 0.42, 4200);
     r.body(0.0, 0.13, 190, 78, 0.95, 5.0);
@@ -1194,8 +1179,7 @@ fn mkWandCharge(r: *Rack) void {
     r.master(1.5, 4400);
 }
 
-/// A CRACK, not a boom: the bolt is 24 damage of the most-resisted element, and a cannon would promise a
-/// hit the numbers cannot pay for.
+/// A CRACK, not a boom: the bolt is 24 damage of the most-resisted element, and a cannon would promise a hit the numbers cannot pay for.
 fn mkWandCast(r: *Rack) void {
     r.tick(0.0, 0.44, 5200);
     r.ring(0.0, 0.26, 620, 0.24, 5.5, 3);
@@ -1429,8 +1413,7 @@ fn mkOgreDie(r: *Rack) void {
     r.ends(0.006, 0.20);
 }
 
-// **IRON OVER BONE, NOTHING ALIVE INSIDE IT.** Every cue carries a `ring` — struck plate, the one layer the
-// ogre never uses — over `grit` that is dry bone rather than a wet thump.
+// **IRON OVER BONE, NOTHING ALIVE INSIDE IT.** Every cue carries a `ring` — struck plate, the one layer the ogre never uses — over `grit` that is dry bone rather than a wet thump.
 
 fn mkKnightStep(r: *Rack) void {
     r.body(0.0, 0.46, 70, 25, 1.15, 2.3);
@@ -1867,8 +1850,7 @@ fn mkSoulsTake(r: *Rack) void {
     r.master(2.0, 6400);
 }
 
-/// A long inhale rather than an event, with NO TRANSIENT: a tick at the head is a door latching, which is the
-/// sound the SEAL owns.
+/// A long inhale rather than an event, with NO TRANSIENT: a tick at the head is a door latching, which is the sound the SEAL owns.
 fn mkFogPass(r: *Rack) void {
     r.air(0.00, 1.55, 0.34, 260, 1500, 0.30, 1.1);
     r.air(0.10, 1.35, 0.24, 1700, 320, 0.34, 1.3);
@@ -1880,9 +1862,8 @@ fn mkFogPass(r: *Rack) void {
 }
 
 /// THE FOG GATE SHUTTING ON A BOSS FIGHT (owner: an ominous, low tone arrangement, about 5 s). Built on the
-/// interval rather than on the timbre: A1 (55 Hz) against E-flat above it is a TRITONE, which is the one
-/// interval nobody hears as resolved, and the two are laid a beat apart so the dissonance ARRIVES. The sub
-/// sags a semitone across the take — a pitch that settles reads as a chord, one that keeps falling does not.
+/// INTERVAL, not the timbre: A1 (55 Hz) against E-flat above it is a TRITONE, the one interval nobody hears as
+/// resolved, and the two are laid a beat apart so the dissonance ARRIVES. The sub sags a semitone across the take.
 fn mkFogSeal(r: *Rack) void {
     r.body(0.00, 1.60, 96, 44, 0.55, 2.2); // the stone hitting its seat
     r.grit(0.00, 0.90, 0.30, 520, 0.85, 2.6);
@@ -1897,9 +1878,8 @@ fn mkFogSeal(r: *Rack) void {
 }
 
 /// THE BOSS DOWN AND THE DOOR SPENT (owner: still deep and dark but MORE HOPEFUL, not scary). `mkFogSeal`'s
-/// architecture, opposite interval: root A1 55 Hz, then the PERFECT FIFTH (E2, 82.41) instead of the
-/// tritone and the MAJOR THIRD (C#2, 69.30) last — an A major triad. DARK is not the same dial as
-/// FRIGHTENING, so the register does not move; the sub RISES the semitone the seal's sags.
+/// architecture, opposite interval: root A1 55 Hz, then the PERFECT FIFTH (E2, 82.41) and the MAJOR THIRD
+/// (C#2, 69.30) last — an A major triad. DARK is not the same dial as FRIGHTENING, so the register does not move.
 fn mkFogFelled(r: *Rack) void {
     r.body(0.00, 1.40, 82, 55, 0.42, 2.0);      // the weight coming off — not a stone finding its seat
     r.body(0.05, 4.90, 38.9, 41.2, 0.60, 0.8);  // the sub, rising the semitone
@@ -2135,7 +2115,7 @@ fn mkCrickets(r: *Rack) void {
     var at: [CRICKETS]f32 = undefined;
     var amp: [CRICKETS]f32 = undefined;
     var pulses: [CRICKETS]f32 = undefined;
-    var ph: [CRICKETS]f32 = [_]f32{0} ** CRICKETS; // accumulated, not f*t: at 8 s an f32 product of a
+    var ph: [CRICKETS]f32 = [_]f32{0} ** CRICKETS; // accumulated, not f*t: an f32 product loses phase by 8 s
     for (0..CRICKETS) |k| {
         hz[k] = r.rng.range(3500, 5200);
         rate[k] = r.rng.range(1.7, 3.1);
@@ -2271,8 +2251,7 @@ fn mkEmberBurst(r: *Rack) void {
 }
 
 
-// THE BONE SKITTERER. Everything it makes is DRY: bone on earth and bone through air, nothing wet and
-// nothing with a chest behind it.
+// THE BONE SKITTERER. Everything it makes is DRY: bone on earth and bone through air, nothing wet and nothing with a chest behind it.
 fn mkSkitterClack(r: *Rack) void {
     r.tick(0.0, 0.34, 4600);
     r.ring(0.0, 0.16, 620, 0.16, 7.0, 3);
@@ -2300,8 +2279,7 @@ fn mkPriestCall(r: *Rack) void {
     r.master(1.5, 4000);
 }
 
-/// A HELD EXHALE, not a blast: it has to last the whole pour (`ancientpriest.BREATH_DUR`), so the envelope
-/// swells and holds rather than cracking and dying.
+/// A HELD EXHALE, not a blast: it has to last the whole pour (`ancientpriest.BREATH_DUR`), so the envelope swells and holds rather than cracking and dying.
 fn mkPriestBreath(r: *Rack) void {
     r.air(0.0, 1.00, 0.50, 2800, 900, 0.30, 0.7);
     r.air(0.06, 0.94, 0.34, 700, 5200, 0.52, 0.6);
@@ -2310,9 +2288,8 @@ fn mkPriestBreath(r: *Rack) void {
     r.master(1.4, 6200);
 }
 
-// THE TOLLING HOLLOW'S BELL. A hundredweight of bronze: the strike is a tenth of it and the HUM is the rest.
-// Inharmonic by construction — `ring`'s partials sit at ~1.48x, which is what a bell has and a string does
-// not, and the two rings a fifth apart are the hum note under the strike note.
+// THE TOLLING HOLLOW'S BELL. The strike is a tenth of it and the HUM is the rest. Inharmonic by construction —
+// `ring`'s partials sit at ~1.48x, which is what a bell has and a string does not; the two rings a fifth apart are the hum note under the strike note.
 fn mkHollowToll(r: *Rack) void {
     r.tick(0.0, 0.62, 3800);
     r.ring(0.0, 3.10, 138, 0.40, 0.75, 5);
@@ -2331,10 +2308,8 @@ fn mkHollowClank(r: *Rack) void {
     r.master(1.4, 4600);
 }
 
-/// THE GREMLIN'S SPARK LEAVING ITS FISTS. **NOTHING WITH A CHEST BEHIND IT AND NOTHING WET** — no `body` at
-/// all, which is what separates a crack of electricity from every impact in the bank: a hard tick, a thin high
-/// ring over it, and a hiss of air closing where it was. Short, because there are THREE of them a volley
-/// (`hollow.SPARK_N`) and a long take would smear them into one noise.
+/// **NOTHING WITH A CHEST BEHIND IT AND NOTHING WET** — no `body` at all, which is what separates a crack of
+/// electricity from every impact in the bank. Short, because there are THREE a volley (`hollow.SPARK_N`).
 fn mkGremlinSpark(r: *Rack) void {
     r.tick(0.0, 0.40, 7200);
     r.ring(0.0, 0.20, 2600, 0.10, 6.5, 3);
@@ -2426,8 +2401,7 @@ const BANK = [NV]Row{
     .{ .id = .ravager_snap, .make = mkRavagerSnap, .gain = battle(0.82), .mix = .combat, .jit = 0.08, .vjit = 0.14, .vars = 4, .poly = 4, .reach = 30 },
     .{ .id = .ravager_hurt, .make = mkRavagerHurt, .gain = battle(0.50), .mix = .combat, .jit = 0.16, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 26 },
     .{ .id = .ravager_die, .make = mkRavagerDie, .gain = battle(0.58), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 32 },
-    // THE MUSHROOM MAGE. The GATHER carries furthest of the four by a clear margin — it is a tell, and a
-    // tell you cannot hear from where the fight is happening is not one.
+    // THE MUSHROOM MAGE. The GATHER carries furthest of the four by a clear margin — a tell you cannot hear from where the fight is happening is not one.
     .{ .id = .mage_kindle, .make = mkMageKindle, .gain = battle(0.62), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 4, .poly = 4, .reach = 38 },
     .{ .id = .mage_throw, .make = mkMageThrow, .gain = battle(0.58), .mix = .combat, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 4, .reach = 32 },
     .{ .id = .mage_hurt, .make = mkMageHurt, .gain = battle(0.50), .mix = .combat, .jit = 0.16, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 26 },
@@ -2538,34 +2512,29 @@ const BANK = [NV]Row{
     .{ .id = .crickets, .make = mkCrickets, .gain = 0.015, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
     .{ .id = .rain, .make = mkRain, .gain = 0.052, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
     .{ .id = .thunder, .make = mkThunder, .gain = 0.30, .mix = .ambience, .jit = 0.04, .vjit = 0.10, .vars = 2, .poly = 2 },
-    // Quieter up close than a kobold: a thing on YOUR side must never fight the creature it is biting for
-    // the frame. The HOWL is the exception — thirty focus spent, and the player has to know it landed.
+    // Quieter up close than a kobold: a thing on YOUR side must never fight the creature it is biting for the frame. The HOWL is the exception — thirty focus spent.
     .{ .id = .wolf_howl, .make = mkWolfHowl, .gain = battle(0.44), .mix = .combat, .jit = 0.05, .vjit = 0.09, .vars = 3, .poly = 1, .reach = 110 },
     .{ .id = .wolf_growl, .make = mkWolfGrowl, .gain = battle(0.30), .mix = .combat, .jit = 0.18, .vjit = 0.24, .vars = 5, .poly = 2, .reach = 46 },
     .{ .id = .wolf_bite, .make = mkWolfBite, .gain = battle(0.52), .mix = .combat, .jit = 0.16, .vjit = 0.22, .vars = 5, .poly = 3, .reach = 52 },
     .{ .id = .wolf_hurt, .make = mkWolfHurt, .gain = battle(0.54), .mix = .combat, .jit = 0.20, .vjit = 0.26, .vars = 5, .poly = 3, .reach = 56 },
     .{ .id = .wolf_die, .make = mkWolfDie, .gain = battle(0.70), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 1, .reach = 90 },
-    // ONE TAKE, NO JITTER, ONE VOICE. A sting is a fixed event and the same door twice must sound the same
-    // twice; and it is played flat (`sfx.play`) rather than placed, so `reach` never enters into it.
-    // On `.sfx` with `ring_snap`, NOT in the fight's own band: a stinger that announces a fight has to sit
-    // ABOVE it, and the combat submix is deliberately compressed flat (`battle`).
+    // ONE TAKE, NO JITTER, ONE VOICE: a sting is a fixed event and the same door twice must sound the same twice;
+    // played flat (`sfx.play`) rather than placed, so `reach` never enters into it. On `.sfx` with `ring_snap` and
+    // NOT the fight's band — a stinger announcing a fight sits ABOVE it, and the combat submix is compressed flat.
     .{ .id = .fog_seal, .make = mkFogSeal, .gain = 0.60, .jit = 0.0, .vjit = 0.0, .vars = 1, .poly = 1 },
     .{ .id = .fog_felled, .make = mkFogFelled, .gain = 0.60, .jit = 0.0, .vjit = 0.0, .vars = 1, .poly = 1 },
     .{ .id = .fog_pass, .make = mkFogPass, .gain = 0.44, .jit = 0.04, .vjit = 0.08, .vars = 2, .poly = 1 },
     // LOUDER THAN THE RAIN and quieter than every call, because a torch is the one bed held at arm's length.
     .{ .id = .torch_fire, .make = mkTorchFire, .gain = 0.075, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
-    // **A SHOT COMING AT YOU FROM 16 M HAS TO BE HEARD FROM 16 M** (`hollow.SPARK_MAX`) — the volley's whole
-    // fairness is three separate arrivals, and one you cannot hear is not one you can answer. `poly` is 4
-    // because three are in the air at once and a second rider may be firing. Down here rather than with the
-    // rest of the hollow's family for the reason written on `Id`.
+    // **A SHOT COMING AT YOU FROM 16 M HAS TO BE HEARD FROM 16 M** (`hollow.SPARK_MAX`) — the volley's fairness
+    // is three separate arrivals. `poly` is 4 because three are in the air at once and a second rider may fire.
     .{ .id = .gremlin_spark, .make = mkGremlinSpark, .gain = battle(0.58), .mix = .combat, .jit = 0.10, .vjit = 0.22, .vars = 4, .poly = 4, .reach = 40 },
     .{ .id = .skitter_clack, .make = mkSkitterClack, .gain = battle(0.34), .mix = .combat, .jit = 0.18, .vjit = 0.30, .vars = 4, .poly = 6, .reach = 24 },
     .{ .id = .skitter_slice, .make = mkSkitterSlice, .gain = battle(0.72), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 4, .poly = 4, .reach = 30 },
     // THE CALL CARRIES: it is a tell, and a tell you cannot hear from where the fight is happening is not one.
     .{ .id = .priest_call, .make = mkPriestCall, .gain = battle(0.66), .mix = .combat, .jit = 0.08, .vjit = 0.12, .vars = 3, .poly = 3, .reach = 44 },
     .{ .id = .priest_breath, .make = mkPriestBreath, .gain = battle(0.60), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 26 },
-    // …AND THE BELL CARRIES AS FAR AS IT REACHES (`hollow.TOLL_R` is 34 m): what it is FOR is bodies that
-    // were not in this fight hearing it, so a voice that faded first would be a lie about the mechanic.
+    // …AND THE BELL CARRIES AS FAR AS IT REACHES (`hollow.TOLL_R` is 34 m): a voice that faded first would be a lie about the mechanic.
     .{ .id = .hollow_toll, .make = mkHollowToll, .gain = battle(0.92), .mix = .combat, .jit = 0.05, .vjit = 0.06, .vars = 3, .poly = 2, .reach = 40 },
     .{ .id = .hollow_clank, .make = mkHollowClank, .gain = battle(0.30), .mix = .combat, .jit = 0.16, .vjit = 0.24, .vars = 4, .poly = 4, .reach = 20 },
 };
@@ -2580,8 +2549,7 @@ fn seconds(id: Id) f32 {
         .fog_pass => 1.7,
         .wind => 8.0,
         .crickets => 7.3,
-        // A BED HAS TO OUTLAST ITS OWN PATTERN or the loop point is the thing you hear. The longest take here —
-        // and it may not equal another bed's, or the two retrigger on one frame forever (`BEDS`' own test).
+        // A BED HAS TO OUTLAST ITS OWN PATTERN or the loop point is the thing you hear — and it may not equal another bed's, or the two retrigger on one frame forever.
         .rain => 8.6,
         .torch_fire => 7.9,
         .thunder => 3.4,
@@ -2686,8 +2654,7 @@ fn panFor(side: f32, width: f32) f32 {
     return mathx.clampF(0.5 - width * side, 0.04, 0.96);
 }
 
-/// The ONE copy of the recipe→sound path, shared by `init`, `pump` and `rebakeMix`, so a voice cannot come
-/// back from a filter change built differently. Takes append in order, so `varsReady` is also the next index.
+/// The ONE copy of the recipe→sound path, shared by `init`, `pump` and `rebakeMix`. Takes append in order, so `varsReady` is also the next index.
 fn bakeTake(id: Id, idx: usize) void {
     const row = BANK[idx];
     const v = slots[idx].varsReady;
@@ -2710,9 +2677,8 @@ fn bakeTake(id: Id, idx: usize) void {
     slots[idx].next = 0;
 }
 
-/// A few ms a frame behind the menu; whole, it was 4.4 s of synthesis on the main thread. A TAKE IS
-/// INDIVISIBLE — the budget bounds what we START, so one 8 s bed take is a ~300 ms hole in the frame that
-/// picks it up, hence `longOk`. `LONG_TAKE` is in seconds of AUDIO, the cheap proxy for cost.
+/// A few ms a frame behind the menu; whole, it was 4.4 s of synthesis on the main thread. A TAKE IS INDIVISIBLE
+/// — the budget bounds what we START, so one 8 s bed take is a ~300 ms hole in the frame that picks it up, hence `longOk`. Seconds of AUDIO, the cheap proxy for cost.
 const LONG_TAKE: f32 = 1.4;
 
 pub fn pump(budgetNs: u64, longOk: bool) bool {
@@ -2906,8 +2872,7 @@ pub fn tickStreams() void {
     if (rl.isMusicStreamPlaying(m)) rl.updateMusicStream(m);
 }
 
-/// The CLAMP is what makes this a function rather than a multiply: a sample past ±1.024 is not a clipped
-/// take but an out-of-range `@intFromFloat`. Both float-out sites share it so they cannot disagree.
+/// The CLAMP is what makes this a function rather than a multiply: a sample past ±1.024 is not a clipped take but an out-of-range `@intFromFloat`.
 fn pcm16(s: f32) i16 {
     return @intFromFloat(mathx.clampF(s, -1, 1) * 32000.0);
 }
@@ -2957,24 +2922,19 @@ pub fn voiceInfo(id: Id) VoiceInfo {
 }
 
 // (owner: let me edit basic things on sound fx and save over them, keep your originals for a revert.)
-// `BANK` is the original and NEVER moves — that IS the revert. `live` is what every play path reads and all
-// the editor writes; `settings.cfg` carries the DIFFERENCE only, so a voice re-authored in code flows
-// through to a save that never mentioned it.
+// `BANK` is the original and NEVER moves — that IS the revert. `live` is what every play path reads and all the
+// editor writes; `settings.cfg` carries the DIFFERENCE only, so a voice re-authored in code flows through.
 //
-// **THE SHAPE OF A ROW IS NOT ON THE BENCH.** `vars` and `poly` size the alias table `freeRow` walks, so a
-// dial that moved either between a bake and its free would leak or double-free; those two, `mix`, `id` and
-// `make` have no setter.
+// **THE SHAPE OF A ROW IS NOT ON THE BENCH.** `vars` and `poly` size the alias table `freeRow` walks, so a dial
+// that moved either between a bake and its free would leak or double-free; those two, `mix`, `id` and `make` have no setter.
 var live: [NV]Row = BANK;
 var voiceFx: [NV][AFX_COUNT]f32 = [_][AFX_COUNT]f32{[_]f32{0} ** AFX_COUNT} ** NV;
 var voiceDirty: [NV]bool = [_]bool{false} ** NV;
 
-/// Each is a plain multiplier or an angle on the take — none re-bakes, which is why they answer under the
-/// finger while the filters take `FX_SETTLE`.
+/// Each is a plain multiplier or an angle on the take — none re-bakes, which is why they answer under the finger while the filters take `FX_SETTLE`.
 pub const Dial = enum { gain, pitch, reach, jit, vjit };
 
-/// Every voice's name, once, as a runtime table — the bench lists off it and `settings.cfg` is keyed on it.
-/// An `inline for` over the enum instead unrolls its whole body ~190 times per call site and blows the
-/// comptime branch quota doing it.
+/// A runtime table: the bench lists off it and `settings.cfg` is keyed on it. An `inline for` over the enum instead unrolls its whole body ~190 times per call site and blows the comptime branch quota.
 pub const NAMES: [NV][:0]const u8 = blk: {
     var out: [NV][:0]const u8 = undefined;
     for (@typeInfo(Id).@"enum".fields, 0..) |f, i| out[i] = f.name;
@@ -3128,9 +3088,8 @@ pub fn setVolume(m: Submix, v: f32) void {
 }
 
 /// **A BED'S LEVEL IS SET AT ITS TRIGGER AND THEN NEVER AGAIN**, so a dial moved mid-take went unheard until
-/// the loop came round — up to 8.6 s of it. The rain's own dial is a cross-fade and survived that; a torch is
-/// an F-press, and it went on crackling for the rest of the take after he put it away. Held every frame
-/// instead. Volume ONLY: `trigger` owns the pan, and re-centring a bed here would collapse its stereo.
+/// the loop came round — up to 8.6 s. A torch is an F-press, and it crackled on for the rest of the take after
+/// he put it away. Held every frame instead. Volume ONLY: `trigger` owns the pan, and re-centring here would collapse its stereo.
 fn holdBed(b: Bed) void {
     const s = &slots[@intFromEnum(b.id)];
     const lvl = bedLevel(live[@intFromEnum(b.id)], b.hour) * bedDial(b);
@@ -3183,8 +3142,7 @@ pub fn loadSettings() void {
             for (NAMES, 0..) |nm, vi| {
                 if (!std.mem.eql(u8, name, nm)) continue;
                 const id: Id = @enumFromInt(vi);
-                // Against the AUTHORED row: a short or damaged line leaves the rest of the voice where the
-                // code has it rather than at zero.
+                // Against the AUTHORED row: a short or damaged line leaves the rest of the voice where the code has it rather than at zero.
                 live[vi] = BANK[vi];
                 inline for (@typeInfo(Dial).@"enum".fields) |dfld| {
                     if (it.next()) |tok| {

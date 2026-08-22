@@ -14,19 +14,16 @@ pub const DEFAULT_HALF: f32 = 280.0;
 
 pub const MAX_DECLARED_HALF: f32 = 312.0;
 
-/// **RAISED FROM 2048 WHEN THE GLOBAL COVER OP WAS BAKED INTO ORDINARY DECOR** — one `cover:` line grew 13,228
-/// plants a man could not select or delete, each its own `at:` op now on top of the map's ~1,290. This number
-/// IS memory: the editor's 24-deep undo ring is whole-`Map` copies, and a test prints the cost.
+/// **RAISED FROM 2048 WHEN THE GLOBAL COVER OP WAS BAKED INTO ORDINARY DECOR** — one `cover:` line grew 13,228 plants a man could not select or delete, each its own `at:` op now on top of the map's ~1,290. This number IS memory: the editor's 24-deep undo ring is whole-`Map` copies.
 pub const MAX_OPS: usize = 16384;
 pub const MAX_MIX: usize = 24;
 pub const MAX_LOOT: usize = 8;
 pub const MAX_ZONES: usize = 16;
 pub const MAX_CLEARINGS: usize = 32;
 /// **THE ONE FOE LIMIT** (owner: can u make it 512, this map is huge). Every group's slab is this wide too
-/// (`MAX_PER_KIND`), so the cost of raising it is 17 slabs' worth: 512 puts the roster at ~52 MB of the one
-/// startup allocation, and `build.zig`'s stack reserve carries the same figure again because startup builds
-/// those groups BY VALUE. Both are address space rather than resident memory; the frame cost is nil, since
-/// every pass walks `live()` — the bodies actually placed — and never the slab.
+/// (`MAX_PER_KIND`), so raising it costs 17 slabs' worth: 512 puts the roster at ~52 MB of the one startup
+/// allocation, and `build.zig`'s stack reserve carries the same figure again because startup builds those
+/// groups BY VALUE. Both are address space rather than resident memory; the frame cost is nil, since every pass walks `live()`.
 pub const MAX_FOES: usize = 512;
 pub const FOE_SCALE_LO: f32 = 0.5;
 pub const FOE_SCALE_HI: f32 = 2.0;
@@ -59,9 +56,7 @@ pub const Op = struct {
     x1: f32 = 0,
     z1: f32 = 0,
     r0: f32 = 0,
-    /// disc outer radius — and, for an `at`, HOW FAR OFF THE GROUND the one prop is lifted, in metres
-    /// (`env.Placer.expand`). It is not one of `at`'s positionals, so it only ever arrives as an `r1=` tail;
-    /// named here because a field doing two jobs under one comment is a field the next reader gets wrong.
+    /// disc outer radius — and, for an `at`, HOW FAR OFF THE GROUND the one prop is lifted, in metres (`env.Placer.expand`). It is not one of `at`'s positionals, so it only ever arrives as an `r1=` tail.
     r1: f32 = 0,
     yaw: f32 = 0,
     scale: f32 = 1,
@@ -83,13 +78,10 @@ pub const Op = struct {
     avoid: Avoid = .{},
     mix: [MAX_MIX]Kind = undefined,
     nmix: u8 = 0,
-    /// What is in the CONTAINER this op placed — a chest, or an item pickup (`props.holdsLoot`). Written and
-    /// parsed on `nloot > 0` alone and never on the kind, which is why the glow needed no format change.
+    /// What is in the CONTAINER this op placed — a chest, or an item pickup (`props.holdsLoot`). Written and parsed on `nloot > 0` alone and never on the kind, which is why the glow needed no format change.
     loot: [MAX_LOOT]item.Kind = undefined,
     nloot: u8 = 0,
-    /// WHAT MUST DIE BEFORE A FOG GATE OPENS AGAIN — read by `ward` kinds alone (`props.Info.ward`), the way
-    /// `loot` is read by containers alone. `-` in the file is a gate that never shuts: a doorway, not an
-    /// arena. The default is the only boss in the game, so a stamped gate works with nothing typed.
+    /// WHAT MUST DIE BEFORE A FOG GATE OPENS AGAIN — read by `ward` kinds alone (`props.Info.ward`), the way `loot` is read by containers alone. `-` in the file is a gate that never shuts: a doorway, not an arena. The default is the only boss in the game, so a stamped gate works with nothing typed.
     boss: ?FoeKind = .bone_knight,
 
     pub fn pick(self: *const Op, r: *mathx.Rng) Kind {
@@ -154,24 +146,17 @@ pub const MAX_LOCATIONS: usize = 64;
 /// StarEdit's Location: declared ONCE and referred to by name, where `Cond.region`'s inline coordinates meant
 /// two triggers about one doorway held two copies of it.
 ///
-/// **THEY OVERLAP FREELY AND THE MOST RECENTLY PAINTED ONE WINS** — `locationAt` takes the FIRST match and the
-/// editor prepends. Any other rule (smallest-wins, largest-wins) makes a location you can see disagree with
-/// the one that answers.
+/// **THEY OVERLAP FREELY AND THE MOST RECENTLY PAINTED ONE WINS** — `locationAt` takes the FIRST match and the editor prepends. Any other rule makes a location you can see disagree with the one that answers.
 pub const Location = struct {
     name: [NAME_CAP]u8 = [_]u8{0} ** NAME_CAP,
     x: f32 = 0,
     z: f32 = 0,
     x1: f32 = 0,
     z1: f32 = 0,
-    /// **THE WEATHER THIS PLACE KEEPS**, or null for "no opinion" — the world's own storm clock stands.
-    /// There is ONE sky, ONE sun and ONE rain sheet drawn round the camera, so a location cannot make it
-    /// rain over there while it is dry here: what it does is drive the GLOBAL level while he is inside it,
-    /// cross-faded over `blend`. Walking into a storm, not looking at one.
+    /// **THE WEATHER THIS PLACE KEEPS**, or null for "no opinion". There is ONE sky, ONE sun and ONE rain sheet drawn round the camera, so a location cannot make it rain over there while it is dry here: what it does is drive the GLOBAL level while he is inside it, cross-faded over `blend`.
     wet: ?f32 = null,
     fog: ?f32 = null,
-    /// **SPOREFALL** — fog's third channel, and a DIFFERENT weather rather than a tint on the same one: it
-    /// carries the peach haze, the lit banks and the motes in the air together, and it is the only one of
-    /// the three that reads at all on a clear bright hour.
+    /// **SPOREFALL** — fog's third channel, and a DIFFERENT weather rather than a tint on the same one: it carries the peach haze, the lit banks and the motes together, and it is the only one of the three that reads at all on a clear bright hour.
     spore: ?f32 = null,
     /// Seconds the cross-fade takes, in or out. A hard switch at the boundary is a pop.
     blend: f32 = 6.0,
@@ -180,8 +165,7 @@ pub const Location = struct {
         return px >= @min(self.x, self.x1) and px <= @max(self.x, self.x1) and
             pz >= @min(self.z, self.z1) and pz <= @max(self.z, self.z1);
     }
-    /// Does it say anything about the sky at all? A location with no weather is still a perfectly good
-    /// location — it is a name for a place, and the script layer is its other customer.
+    /// Does it say anything about the sky at all? A location with no weather is still a perfectly good location — it is a name for a place, and the script layer is its other customer.
     pub fn hasWeather(self: *const Location) bool {
         return self.wet != null or self.fog != null or self.spore != null;
     }
@@ -230,9 +214,7 @@ pub fn setMix(dst: *[MAX_MIX]Kind, n: *u8, mix: []const Kind) void {
 
 pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
 
-/// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at
-/// comptime, and each `roleOf` reads its own entries as a CONTIGUOUS RUN off the first of them — so
-/// inserting a kind in the middle silently renumbers all of it.
+/// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at comptime, and each `roleOf` reads its own entries as a CONTIGUOUS RUN off the first of them.
 pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, florid_ravager, mushroom_mage, fen_lurker, spore_golem, bone_skitterer, ancient_priest, tolling_hollow };
 
 pub fn foeName(k: FoeKind) [:0]const u8 {
@@ -265,8 +247,7 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
     };
 }
 
-/// Optionals do not compare with `==` in every Zig version this has been built on, and the editor asks this
-/// once per row per frame; one spelling of it beats three.
+/// Optionals do not compare with `==` in every Zig version this has been built on, and the editor asks this once per row per frame; one spelling of it beats three.
 pub fn eqlBoss(a: ?FoeKind, b: ?FoeKind) bool {
     return std.meta.eql(a, b);
 }
@@ -283,11 +264,7 @@ pub const Foe = struct {
 /// **THERE IS ONE FOE LIMIT AND IT IS `MAX_FOES`** (owner: remove the foe limits, seems dumb to have). At 24 a
 /// per-kind cap sat under the global one: `foe.resetGroup` fills a fixed slab and `continue`s past the
 /// overflow, so a 25th shroom was a body the map placed, the editor drew, the save counted and the level never
-/// spawned — and `01_fallen_plain` stands on exactly 24.
-///
-/// Set to the whole budget it cannot bite: anything fitting `MAX_FOES` fits one group. It costs memory — the
-/// 17 slabs go from 2.65 MB to ~28 MB of one startup allocation — and a comptime walk in `game.zig` pins every
-/// slab at this width.
+/// spawned — and `01_fallen_plain` stands on exactly 24. Set to the whole budget it cannot bite. It costs memory — the 17 slabs go from 2.65 MB to ~28 MB of one startup allocation.
 pub const MAX_PER_KIND: usize = MAX_FOES;
 
 pub const Runway = struct { x: f32 = -3.4, z: f32 = -44, x1: f32 = 3.4, z1: f32 = 30 };
@@ -480,9 +457,7 @@ pub const Dialog = struct {
     }
 };
 
-/// APPEND-ONLY, for `FoeKind`'s reason: it is an `enum(u8)` and the editor's own picker indexes it by
-/// ordinal. The MAP FILE is safe either way — `parseScript` reads the kind back by TAG (`enumFromName`), so
-/// a reorder cannot re-point a `npc:` row the way it would a positional one.
+/// APPEND-ONLY, for `FoeKind`'s reason: it is an `enum(u8)` and the editor's own picker indexes it by ordinal. The MAP FILE is safe either way — `parseScript` reads the kind back by TAG (`enumFromName`).
 pub const NpcKind = enum(u8) { wanderer };
 
 pub fn npcName(k: NpcKind) [:0]const u8 {
@@ -536,9 +511,7 @@ pub const Soil = enum(u8) {
     }
 };
 
-/// **HOW A PAINTED PATCH ENDS.** One authored property per CELL, beside its material and its coverage —
-/// not a property of the material, since six materials cannot carry eight shapes and the point is to lay a
-/// tiled courtyard and a torn scree of the same stone in one world.
+/// **HOW A PAINTED PATCH ENDS.** One authored property per CELL, beside its material and its coverage — not a property of the material, since six materials cannot carry eight shapes and the point is to lay a tiled courtyard and a torn scree of the same stone in one world.
 pub const Edge = enum(u8) {
     blend,
     natural,
@@ -570,11 +543,9 @@ pub const Edge = enum(u8) {
 };
 
 comptime {
-    // `shaders.zig`'s `soilColor(id)` carries one branch per id from 1 up; a soil added without a colour
-    // there comes out as the fallback, which is a new material that draws as moss.
+    // `shaders.zig`'s `soilColor(id)` carries one branch per id from 1 up; a soil added without a colour there comes out as the fallback, which is a new material that draws as moss.
     std.debug.assert(Soil.N == 11);
-    // …AND `shaders.zig`'s `edgeShape(e)` BRANCHES ON THESE ORDINALS, 0..7 in this order: an inserted row
-    // would silently re-point every stroke in every map at the wrong shape.
+    // …AND `shaders.zig`'s `edgeShape(e)` BRANCHES ON THESE ORDINALS, 0..7 in this order: an inserted row would silently re-point every stroke in every map at the wrong shape.
     std.debug.assert(Edge.N == 8);
     std.debug.assert(@intFromEnum(Edge.blend) == 0);
     std.debug.assert(@intFromEnum(Edge.natural) == 1);
@@ -586,9 +557,7 @@ comptime {
     std.debug.assert(@intFromEnum(Edge.speckle) == 7);
 }
 
-/// **IS EVERY CELL'S EDGE THE ONE ITS MATERIAL WOULD HAVE CHOSEN** — what decides whether the grid is worth
-/// a row in the file, and the exact inverse of `fillLegacyEdges`. One predicate, so the writer and the
-/// loader cannot disagree about "default"; as a `!= .natural` test every map with stone in it grew a row.
+/// **IS EVERY CELL'S EDGE THE ONE ITS MATERIAL WOULD HAVE CHOSEN** — what decides whether the grid is worth a row in the file, and the exact inverse of `fillLegacyEdges`. As a `!= .natural` test every map with stone in it grew a row.
 fn edgesAllDefault(m: *const Map) bool {
     for (m.soil, m.soilEdge) |id, e| {
         const want: u8 = @intFromEnum(@as(Soil, @enumFromInt(@min(id, Soil.N - 1))).defaultEdge());
@@ -609,8 +578,7 @@ pub fn covF(v: u8) f32 {
     return @as(f32, @floatFromInt(v)) / 255.0;
 }
 
-/// `mathx.clampF` and not `std.math.clamp`: that one PROPAGATES a NaN, and a NaN reaching `@intFromFloat` on
-/// a `u8` is illegal behaviour rather than a bad byte.
+/// `mathx.clampF` and not `std.math.clamp`: that one PROPAGATES a NaN, and a NaN reaching `@intFromFloat` on a `u8` is illegal behaviour rather than a bad byte.
 pub fn covByte(v: f32) u8 {
     return @intFromFloat(mathx.clampF(v, 0, 1) * 255.0 + 0.5);
 }
@@ -625,9 +593,7 @@ fn brushFalloff(d: f32, radius: f32) f32 {
     return u * u * (3.0 - 2.0 * u);
 }
 
-/// THE ONE PAINTED-GRID SAMPLER — world position → cell index over an `n`-a-side grid spanning
-/// `-half..+half`, or null outside it. The soil grid, the water mask and `env`'s water field all read it,
-/// so where the clamp happens relative to the cast cannot be written two ways.
+/// THE ONE PAINTED-GRID SAMPLER — world position → cell index over an `n`-a-side grid spanning `-half..+half`, or null outside it. The soil grid, the water mask and `env`'s water field all read it, so where the clamp happens relative to the cast cannot be written two ways.
 pub fn gridIndex(half: f32, n: usize, px: f32, pz: f32) ?usize {
     if (half <= 0) return null;
     const t = (px + half) / (2 * half);
@@ -746,8 +712,7 @@ pub const Map = struct {
     soilCov: [SOIL_CELLS]u8 = [_]u8{COV_FULL} ** SOIL_CELLS,
     soilEdge: [SOIL_CELLS]u8 = [_]u8{@intFromEnum(Edge.natural)} ** SOIL_CELLS,
     water: [WATER_CELLS]u8 = [_]u8{0} ** WATER_CELLS,
-    /// …AND HOW ITS COAST RUNS, one `Edge` per cell, painted with the water brush as the soil's is. Baked
-    /// into the field by `env.uploadWater` and never read at draw time — see the note there.
+    /// …AND HOW ITS COAST RUNS, one `Edge` per cell, painted with the water brush as the soil's is. Baked into the field by `env.uploadWater` and never read at draw time.
     waterEdge: [WATER_CELLS]u8 = [_]u8{@intFromEnum(Edge.natural)} ** WATER_CELLS,
     height: [HEIGHT_CELLS]u8 = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS,
 
@@ -785,9 +750,7 @@ pub const Map = struct {
         self.zones[0] = z;
         self.nzones = 1;
 
-        // **NO GROUND COVER.** A blank map used to open with a global `cover:` op, and it grew thirteen
-        // thousand plants nobody could select or delete. Cover is ordinary `at:` decor now, painted where he
-        // wants it — so a new map opens with no ops at all.
+        // **NO GROUND COVER.** A blank map used to open with a global `cover:` op, and it grew thirteen thousand plants nobody could select or delete. Cover is ordinary `at:` decor now.
     }
 
     pub fn add(self: *Map, o: Op) !usize {
@@ -892,8 +855,7 @@ pub const Map = struct {
         return self.nzones > 0 and i + 1 == self.nzones;
     }
 
-    /// FIRST MATCH, which is the most recently painted (the editor prepends). Null outside them all —
-    /// unlike `zoneAt`, a location has no last-resort fallback: being nowhere in particular is a real answer.
+    /// FIRST MATCH, which is the most recently painted (the editor prepends). Null outside them all — unlike `zoneAt`, a location has no last-resort fallback: being nowhere in particular is a real answer.
     pub fn locationAt(self: *const Map, px: f32, pz: f32) ?*const Location {
         for (self.locations[0..self.nlocations]) |*l| {
             if (l.contains(px, pz)) return l;
@@ -901,8 +863,7 @@ pub const Map = struct {
         return null;
     }
 
-    /// …and the first one that actually has an opinion about the sky. A weatherless location standing over a
-    /// rainy one may not silence it — it is a name for a place, not a hole in the storm.
+    /// …and the first one that actually has an opinion about the sky. A weatherless location standing over a rainy one may not silence it — it is a name for a place, not a hole in the storm.
     pub fn weatherAt(self: *const Map, px: f32, pz: f32) ?*const Location {
         for (self.locations[0..self.nlocations]) |*l| {
             if (l.hasWeather() and l.contains(px, pz)) return l;
@@ -1804,8 +1765,7 @@ fn link(m: *Map) !void {
     }
 }
 
-/// One condition's forward references — `talked` names a dialog, `near` indexes the npc table. Every pool a
-/// `Cond` can live in goes through here, so a new pool cannot inherit half the resolution.
+/// One condition's forward references — `talked` names a dialog, `near` indexes the npc table. Every pool a `Cond` can live in goes through here, so a new pool cannot inherit half the resolution.
 fn linkCond(m: *Map, c: *Cond) !void {
     if (c.kind == .near and c.slot >= m.nnpcs) return ParseError.UnknownRef;
     if (c.kind != .talked) return;
@@ -1819,8 +1779,7 @@ fn nodeIn(m: *const Map, d: *const Dialog, name: []const u8) !u16 {
     return ParseError.UnknownRef;
 }
 
-/// `location: <name> <x> <z> <x1> <z1> [wet=..] [fog=..] [spore=..] [blend=..]` — the rectangle is positional and the
-/// sky is optional, because most locations will never have anything to do with the weather.
+/// `location: <name> <x> <z> <x1> <z1> [wet=..] [fog=..] [spore=..] [blend=..]` — the rectangle is positional and the sky is optional, because most locations will never have anything to do with the weather.
 fn parseLocation(it: *std.mem.TokenIterator(u8, .any)) !Location {
     var l = Location{};
     l.setName(it.next() orelse return ParseError.MissingField);
@@ -1868,8 +1827,7 @@ test "LOCATIONS OVERLAP AND THE LAST PAINTED WINS, and a weatherless one does no
     try std.testing.expect(m.locationAt(80, 80) == null);
     try std.testing.expectApproxEqAbs(@as(f32, 0.9), m.weatherAt(0, 0).?.wet.?, 1e-6);
 
-    // A NAMED PLACE WITH NO SKY OPINION IS STILL A PLACE. Standing over a wet one it must not answer for the
-    // weather, or every trigger rectangle you draw punches a dry hole in the storm.
+    // A NAMED PLACE WITH NO SKY OPINION IS STILL A PLACE. Standing over a wet one it must not answer for the weather, or every trigger rectangle you draw punches a dry hole in the storm.
     m.locations[0].wet = null;
     m.locations[0].fog = null;
     try std.testing.expectEqualStrings("inner", m.locationAt(0, 0).?.label());
@@ -2198,8 +2156,7 @@ pub const TEST_HEAD =
 ;
 const SCRIPT_HEAD = TEST_HEAD;
 
-/// …and the parse behind it, reporting the LINE a failure landed on. The caller owns the `Map` (it is far too
-/// big for a stack frame) and destroys it.
+/// …and the parse behind it, reporting the LINE a failure landed on. The caller owns the `Map` (it is far too big for a stack frame) and destroys it.
 pub fn testMap(alloc: std.mem.Allocator, text: []const u8) !*Map {
     const m = try alloc.create(Map);
     errdefer alloc.destroy(m);
@@ -2733,7 +2690,7 @@ test "ONE FOE LIMIT, AND A MAP MAY SPEND ALL OF IT ON ONE KIND" {
     try parse(try std.fmt.bufPrint(&doc, "{s}{s}", .{ head, rows[0..at] }), &m, &ln);
     try std.testing.expectEqual(MAX_FOES, m.nfoes);
 
-    // …and every one of them fits the group that will have to hold it, which is the whole point of the change.
+    // …and every one of them fits the group that will have to hold it.
     try std.testing.expect(MAX_PER_KIND >= MAX_FOES);
 
     // One past the global budget is still a refusal, because that one is the map's own table.

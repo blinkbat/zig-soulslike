@@ -25,18 +25,15 @@ const lerpF = mathx.lerpF;
 const approach = mathx.approach;
 const setLocal = heromod.setHumanoid;
 
-// THE ANCIENT PRIEST (owner's creature, owner's name) — a lanky jackal-headed thing in rotted wrappings with
-// a long staff. It has NO melee at all and it never wants to be near you.
+// THE ANCIENT PRIEST (owner's creature, owner's name) — a lanky jackal-headed thing in rotted wrappings with a
+// long staff. NO melee at all, and it never wants to be near you.
 //
-// **TWO ANSWERS AND THEY OWN DIFFERENT GROUND.** Far off, it plants the staff and CLAWS A SKITTERER OUT OF
-// BARE EARTH — no corpse, nothing to interrupt but the priest itself. Close, it lays its muzzle open and
-// breathes a cone of cold over the ground it is standing on, then withdraws. The two ranges are disjoint by
-// construction (the assert below), so it can never walk to the one place it has no move.
+// **TWO ANSWERS AND THEY OWN DIFFERENT GROUND.** Far off it plants the staff and CLAWS A SKITTERER OUT OF BARE
+// EARTH; close it breathes a cone of cold and withdraws. The two ranges are disjoint by construction (the
+// assert below), so it can never walk to the one place it has no move.
 //
-// **THE NECROMANCER'S OPPOSITE, ON PURPOSE.** That one is a SCAVENGER: its raise needs a body on the ground
-// and `game.markVigil` holds one open for it. This one needs nothing, so what limits it is a live COUNT
-// (`flock`, stamped from outside) rather than a corpse — kill the pack and the raise comes off cooldown, walk
-// away from the pack and it stays on.
+// **THE NECROMANCER'S OPPOSITE.** That one is a SCAVENGER and needs a body `game.markVigil` holds open. This
+// one needs nothing, so what limits it is a live COUNT (`flock`, stamped from outside) rather than a corpse.
 
 const N = heromod.N;
 const ROOT = heromod.ROOT;
@@ -60,8 +57,7 @@ const STAFF = heromod.HELD;
 
 const H: f32 = heromod.H;
 
-/// 2.95 m to the crown of the ears against the hero's 1.8 — half a head over the necromancer, and it is all
-/// neck and shin. It looks DOWN the length of a field at him.
+/// 2.95 m to the crown of the ears against the hero's 1.8 — half a head over the necromancer, and it is all neck and shin.
 pub const SCALE = (H + 1.15) / H;
 /// Narrow through the hips and the shoulders both: the whole read is a body too long for its width.
 const HIP_HALF = heromod.HIP_HALF * 0.54;
@@ -78,15 +74,11 @@ const CENTER_F: f32 = 0.58;
 pub const SOULS: u32 = 480;
 
 const HP_MAX: f32 = 96.0;
-/// **ALMOST NONE** (the necromancer's rule, and for its reason): under the hero's light poke, so anything
-/// that lands drops the cast. A creature whose whole threat is a 1.55 s ritual must be answerable by
-/// reaching it.
+/// **ALMOST NONE** (the necromancer's rule): under the hero's light poke, so anything that lands drops the cast. A creature whose threat is a 1.55 s ritual must be answerable by reaching it.
 const POISE_MAX: f32 = 6.0;
 const STANCE_MAX: f32 = 30.0;
 
-/// **LINEN, DRY HIDE AND GOLD.** Fire is the answer to a wrapped body and it is the worst weakness in the
-/// field bar the homunculus; cold is what it BREATHES, so it is capped against it; the collar and the staff
-/// ferrule are metal on a body with no earth under it, which is what the lightning row is.
+/// **LINEN, DRY HIDE AND GOLD.** Fire is the worst weakness in the field bar the homunculus; cold is what it BREATHES, so it is capped; the collar and ferrule are metal on a body with no earth under it.
 const RESISTS = combat.resists(.{ .fire = -55, .cold = combat.RES_CAP, .lightning = -25, .chaos = 45 });
 
 const DEATH_DUR = archermod.DEATH_DUR;
@@ -99,41 +91,32 @@ const CHIP_LIGHT = 11;
 const CHIP_HEAVY = 17;
 const CHIP_DEATH = 19;
 
-// **THE RAISE.** The staff goes up and comes down through the earth, and what stands up is a bone skitterer
-// (`skitterer.zig`) at a spot committed on the FIRST frame of the gather.
+// **THE RAISE.** The staff goes up and comes down through the earth, and what stands up is a bone skitterer at a spot committed on the FIRST frame of the gather.
 pub const RAISE_WIND: f32 = 1.55;
 const RAISE_CAST: f32 = 0.38;
 const RAISE_RECOVER: f32 = 1.05;
 const RAISE_CD: f32 = 8.5;
-/// How far in front of itself the ground opens, and WHY IT IS NOT AT THE HERO'S FEET: a body arriving inside
-/// his guard is a blow with no tell, and the walk from here to him is the rest of the announcement.
+/// How far in front of itself the ground opens, and WHY IT IS NOT AT THE HERO'S FEET: a body arriving inside his guard is a blow with no tell, and the walk from here to him is the rest of the announcement.
 const RAISE_OUT: f32 = 3.4;
-/// **HOW MANY OF ITS OWN IT WILL KEEP ON THE FIELD**, counted inside `RAISE_KEEP_R` and STAMPED FROM OUTSIDE
-/// (`flock`) — a creature reads the field, it never reaches into another group's array. Without a ceiling one
-/// priest left alone for a minute is seven skitterers, which is not a fight, it is a tide.
+/// **HOW MANY OF ITS OWN IT WILL KEEP ON THE FIELD**, counted inside `RAISE_KEEP_R` and STAMPED FROM OUTSIDE (`flock`). Without a ceiling one priest left alone for a minute is seven skitterers.
 pub const RAISE_KEEP: u32 = 3;
 pub const RAISE_KEEP_R: f32 = 26.0;
 
-// **THE CHILLING BREATH.** A cone POURED, not a blast thrown — its area is a thing it aims and holds, and a
-// body walks out of it the way a body walks out of a swing (`combat.RIME_DUR`'s law, one creature along).
+// **THE CHILLING BREATH.** A cone POURED, not a blast thrown — its area is a thing it aims and holds, and a body walks out of it the way a body walks out of a swing.
 pub const BREATH_WIND: f32 = 0.66;
 pub const BREATH_DUR: f32 = 0.95;
 const BREATH_RECOVER: f32 = 0.85;
 const BREATH_CD: f32 = 5.2;
 pub const BREATH_REACH: f32 = 6.2;
 pub const BREATH_ARC: f32 = 26.0;
-/// Cold per second. **BILLED ON AN INTERVAL AND NOT PER FRAME** (`knight.gasDose`'s law, and it is not a
-/// nicety): a per-frame bill against a raised shield is `combat.guardStamina`'s FLAT charge sixty times a
-/// second, which breaks the guard in a blink and machine-guns the block voice with it. Four doses over the
-/// pour. No poise and no stance either way — a cone that flinched would flinch him for as long as he stood
-/// in it, which is a stunlock and not a threat.
+/// Cold per second. **BILLED ON AN INTERVAL AND NOT PER FRAME** (`knight.gasDose`'s law): a per-frame bill
+/// against a raised shield is `combat.guardStamina`'s FLAT charge sixty times a second, which breaks the guard
+/// in a blink and machine-guns the block voice. Four doses over the pour. No poise and no stance either way.
 const BREATH_DPS: f32 = 26.0;
 pub const BREATH_DOSE_EVERY: f32 = 0.22;
 const BREATH_DOSE = combat.Hit{ .elem = combat.elems(.{ .cold = BREATH_DPS * BREATH_DOSE_EVERY }) };
 
-/// Where it wants to stand. **OUTSIDE THE CONE IT ACTUALLY THROWS**, which is `BREATH_REACH * SCALE` = 10.2 m
-/// and not the bare 6.2: the near band is the breath's ground and this is the raise's, so there is no range at
-/// which it has nothing to do and no range at which it stands in its own cone's way.
+/// Where it wants to stand. **OUTSIDE THE CONE IT ACTUALLY THROWS**, which is `BREATH_REACH * SCALE` = 10.2 m and not the bare 6.2: the near band is the breath's ground and this is the raise's.
 const WANT_MIN: f32 = 12.0;
 const WANT_MAX: f32 = 19.0;
 
@@ -143,21 +126,21 @@ comptime {
     std.debug.assert(WANT_MAX < AGGRO_R);
     std.debug.assert(RAISE_CD > RAISE_WIND + RAISE_CAST + RAISE_RECOVER);
     std.debug.assert(BREATH_CD > BREATH_WIND + BREATH_DUR + BREATH_RECOVER);
-    // The raise is the LONGER tell of the two, because it is the one that costs him the rest of the fight.
     std.debug.assert(RAISE_WIND > BREATH_WIND * 2.0);
     std.debug.assert(RAISE_OUT > 2.0);
 }
 
-/// Sized by ARITHMETIC over the worst FRAME (the necromancer's law): the pour is laying `BREATH_RATE` a
-/// second at a mean life of ~0.5 s, and that frame can also carry the blow that kills the caster — both chip
-/// sprays and the shared wound.
+/// Sized by ARITHMETIC over the worst FRAME (the necromancer's law): the pour lays `BREATH_RATE` a second at a mean life of ~0.5 s, and that frame can also carry the blow that kills the caster.
 const NPART = 140;
 const BREATH_RATE: f32 = 48.0;
 const RAISE_BLOOM: usize = 26;
 comptime {
-    // Cold has the LONGEST mote life in `elemfx` by 2x, so the pour's resident count is what sizes this ring.
-    // The 1.25 is the root puff `elemfx.pour` lays every fourth mote, billed at the full life it never gets.
-    const resident = BREATH_RATE * elemfx.sig(.cold).lifeHi * 1.25;
+    // Cold has the LONGEST mote life in `elemfx` by 2x, so the pour's resident count sizes this ring — the whole
+    // owed through `pourCount` once. **THROUGH THE FUNCTION AND NOT A FACTOR COPIED OUT OF IT**: as a hand-written
+    // 1.25 this mirrored `elemfx.POUR_ROOT_EVERY` in a second file.
+    const resident: f32 = @floatFromInt(elemfx.pourCount(
+        @as(usize, @intFromFloat(@ceil(BREATH_RATE * elemfx.sig(.cold).lifeHi))),
+    ));
     std.debug.assert(@as(f32, NPART) >= resident +
         @as(f32, @floatFromInt(foe.hitParts(CHIP_HEAVY) + foe.hitParts(CHIP_DEATH))) + foe.WOUND_PARTS);
     std.debug.assert(RAISE_BLOOM < NPART / 2);
@@ -165,16 +148,13 @@ comptime {
 
 const State = enum { idle, drift, raise_wind, raise_cast, breath_wind, breath_pour, recover, stunlight, stunheavy, dead };
 
-/// Its own type rather than a bool: the recovery reads it through an exhaustive switch, so a third move
-/// cannot be added without saying how long its opening is.
+/// Its own type rather than a bool: the recovery reads it through an exhaustive switch, so a third move cannot be added without saying how long its opening is.
 const Spent = enum { raise, breath };
 
 const Choice = enum { raise, breath, keep, hold };
 
-/// **THE WHOLE DECISION, AND IT READS FIVE NUMBERS.** Distance, the cone's own reach, two clocks and a count
-/// — no state of his, no action of his, nothing but the world as a body standing here could see it.
-/// **`breathR` IS PASSED IN AND NOT READ OFF THE CONSTANT**: the cone lands at `BREATH_REACH * scale`, so a
-/// body the map placed at 0.7 would have decided to breathe from a range its breath never reached.
+/// **THE WHOLE DECISION, AND IT READS FIVE NUMBERS.** Distance, the cone's own reach, two clocks and a count.
+/// **`breathR` IS PASSED IN AND NOT READ OFF THE CONSTANT**: the cone lands at `BREATH_REACH * scale`, so a body the map placed at 0.7 would have decided to breathe from a range its breath never reached.
 fn classify(dist: f32, breathR: f32, flock: u32, raiseReady: bool, breathReady: bool) Choice {
     if (dist > AGGRO_R) return .hold;
     if (dist <= breathR and breathReady) return .breath;
@@ -229,9 +209,7 @@ pub const Model = struct {
     }
 };
 
-/// **EVERY POSTURE CHANNEL IN ONE ROW, SO A MOVE IS A ROW AND NOT SEVEN ASSIGNMENTS.** Degrees. The
-/// necromancer has this as six near-identical `setXxx` functions per move; one struct and one `lerp` is the
-/// same thing with nowhere for a retune to land on three of four moves.
+/// **EVERY POSTURE CHANNEL IN ONE ROW, SO A MOVE IS A ROW AND NOT SEVEN ASSIGNMENTS.** Degrees. The necromancer has this as six near-identical `setXxx` functions per move.
 const Posture = struct {
     staffSh: f32,
     staffEl: f32,
@@ -260,21 +238,18 @@ const Posture = struct {
 };
 
 // Sign is POSITIVE-IS-FORWARD on both shoulders — `poseUpper` negates on the way in (the warriors' rule),
-// because authored the obvious way round the arms hang behind it. `staffTilt` is degrees off plumb in the
-// WORLD, and the arm's own flexion is billed back out of it in `poseUpper` (`hero.shieldFit`'s law).
+// because authored the obvious way round the arms hang behind it. `staffTilt` is degrees off plumb in the WORLD, and the arm's own flexion is billed back out of it in `poseUpper`.
 const CARRY = Posture{
     .staffSh = -12.0, .staffEl = -22.0, .staffAbd = 8.0, .staffTilt = 174.0,
     .freeSh = -5.0,   .freeEl = -18.0,  .freeAbd = 6.0,
     .lean = 5.0,      .twist = 0,       .headPitch = 3.0, .headYaw = 0,
 };
-/// THE STAFF GOES UP AND THE WHOLE BODY GOES BACK WITH IT — the gather travels away from where it ends
-/// (the knight's tell lesson), so the plant that follows has somewhere to fall from.
+/// THE STAFF GOES UP AND THE WHOLE BODY GOES BACK WITH IT — the gather travels away from where it ends (the knight's tell lesson).
 const RAISE_UP = Posture{
     .staffSh = 62.0,  .staffEl = -8.0,  .staffAbd = 12.0, .staffTilt = 146.0,
     .freeSh = -96.0,  .freeEl = -52.0,  .freeAbd = 30.0,
     .lean = -20.0,    .twist = -22.0,   .headPitch = 24.0, .headYaw = -12.0,
 };
-/// …AND THE PLANT. The ferrule goes into the earth ahead of it and the trunk folds over the pole.
 const RAISE_PLANT = Posture{
     .staffSh = -58.0, .staffEl = -30.0, .staffAbd = 4.0,  .staffTilt = 196.0,
     .freeSh = 40.0,   .freeEl = -14.0,  .freeAbd = -6.0,
@@ -293,8 +268,7 @@ const BREATH_OUT = Posture{
     .lean = 15.0,     .twist = -4.0,    .headPitch = 14.0, .headYaw = 0,
 };
 
-/// How far the muzzle stands off the skull joint, and the breath leaves from THERE — measured off the mesh,
-/// never a height above the feet (the ogre's club law).
+/// How far the muzzle stands off the skull joint, and the breath leaves from THERE — measured off the mesh, never a height above the feet (the ogre's club law).
 const MUZZLE_OUT: f32 = 0.135 * H;
 const MUZZLE_DROP: f32 = 0.030 * H;
 
@@ -321,18 +295,15 @@ pub const Ancient = struct {
     elapsed: f32 = 0,
     raiseCd: f32 = 0,
     breathCd: f32 = 0,
-    /// The dose clock, seeded at the interval so the frame he enters the cone is the frame it bills.
+    /// Seeded at the interval so the frame he enters the cone is the frame it bills.
     breathT: f32 = BREATH_DOSE_EVERY,
     spent: Spent = .breath,
 
-    /// **HOW MANY OF ITS OWN ARE ALREADY UP**, within `RAISE_KEEP_R`, stamped every frame by `game.zig`. A
-    /// fact about the field, so NO INPUT READING holds by construction.
+    /// **HOW MANY OF ITS OWN ARE ALREADY UP**, within `RAISE_KEEP_R`, stamped every frame by `game.zig`. A fact about the field, so NO INPUT READING holds by construction.
     flock: u32 = 0,
-    /// The ground it committed to on the FIRST frame of the gather — a spot re-derived per frame as he moved
-    /// would swing 1.55 s of announcement onto somewhere else.
+    /// The ground it committed to on the FIRST frame of the gather — a spot re-derived per frame as he moved would swing 1.55 s of announcement onto somewhere else.
     raiseAt: rl.Vector3 = mathx.zero3,
-    /// **A BODY CAME UP THIS FRAME** — a one-frame edge (`justDied`'s idiom), cleared at the TOP of `update`.
-    /// The priest cannot do the raising itself: the body is in another group, another array, another type.
+    /// **A BODY CAME UP THIS FRAME** — a one-frame edge, cleared at the TOP of `update`. The priest cannot do the raising itself: the body is in another group, another array, another type.
     raised: bool = false,
     homing: bool = false,
 
@@ -350,8 +321,6 @@ pub const Ancient = struct {
     flash: f32 = 0,
     shove: rl.Vector3 = mathx.zero3,
     justDied: bool = false,
-    parried: bool = false,
-    /// One-frame voices. The creature says WHEN; `game.zig` owns the speaker.
     called: bool = false,
     drewBreath: bool = false,
     yelped: bool = false,
@@ -388,10 +357,9 @@ pub const Ancient = struct {
         return .ancient_priest;
     }
 
-    /// **NOT THE SKELETON FAMILY'S 0.95 H** (`archer.CENTER_F`), and this is why: at a scale of 1.64 that
-    /// puts the sphere's centre 2.80 m up and its FLOOR at 2.08 m, which is over the top of every swing the
-    /// hero owns. 0.58 H is the trunk — the cyclops's own choice (`ogre.centerWorld`) on a second tall body —
-    /// and it lands the sphere at 0.99..2.43 m. The BAR still rides the skeletons' `TOP_F` above the crown.
+    /// **NOT THE SKELETON FAMILY'S 0.95 H** (`archer.CENTER_F`): at a scale of 1.64 that puts the sphere's centre
+    /// 2.80 m up and its FLOOR at 2.08 m, over the top of every swing the hero owns. 0.58 H is the trunk — the
+    /// cyclops's own choice — and it lands the sphere at 0.99..2.43 m. The BAR still rides `TOP_F` above the crown.
     pub fn centerWorld(self: *const Ancient) rl.Vector3 {
         return foe.bodyPoint(self.pos, CENTER_F * H, self.scale, 0);
     }
@@ -432,8 +400,7 @@ pub const Ancient = struct {
         return self.state == .breath_pour;
     }
 
-    /// WHERE THE BREATH LEAVES FROM — the muzzle, in the skull's own frame, so it rides the pose. The whole
-    /// cone is measured off this and off `facing`, and nothing about it is guessed from a height.
+    /// The muzzle, in the skull's own frame, so it rides the pose. The whole cone is measured off this and off `facing`, and nothing about it is guessed from a height.
     pub fn muzzleWorld(self: *const Ancient) rl.Vector3 {
         return foe.markOn(self.xf[SKULL], v3(0, MUZZLE_DROP, MUZZLE_OUT));
     }
@@ -444,11 +411,9 @@ pub const Ancient = struct {
         };
     }
 
-    /// **THE COLD IT OWES THIS FRAME, OR NULL** — asked once per frame by the group and billed through the
-    /// hero's ordinary door. The arc is measured from the BODY's bearing rather than the muzzle's, because
-    /// what the player is dodging is the creature's facing (`foe.inArc`).
-    /// HOW FAR THE CONE ACTUALLY LANDS — ONE READER, so the decision and the blow cannot disagree about the
-    /// creature's own metres (`ogre`'s club law, on a cone).
+    /// **THE COLD IT OWES THIS FRAME, OR NULL** — billed through the hero's ordinary door. The arc is measured
+    /// from the BODY's bearing rather than the muzzle's, because what the player is dodging is the creature's
+    /// facing (`foe.inArc`). ONE READER for the reach, so the decision and the blow cannot disagree.
     pub fn breathReach(self: *const Ancient) f32 {
         return BREATH_REACH * self.scale;
     }
@@ -457,8 +422,7 @@ pub const Ancient = struct {
         const inIt = self.breathing() and
             foe.inArc(self.pos, self.facing, hero, self.breathReach() + foe.HERO_R, BREATH_ARC);
         if (!inIt) {
-            // **SEEDED AT THE INTERVAL, NOT AT ZERO** (`knight.gasDose`'s note): the frame he walks into the
-            // cone is the frame it bills, and stepping out and back in cannot buy him a free window.
+            // **SEEDED AT THE INTERVAL, NOT AT ZERO**: the frame he walks into the cone is the frame it bills, and stepping out and back in cannot buy him a free window.
             self.breathT = BREATH_DOSE_EVERY;
             return null;
         }
@@ -492,7 +456,6 @@ pub const Ancient = struct {
             return null;
         }
         self.justDied = false;
-        self.parried = false;
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
@@ -549,8 +512,7 @@ pub const Ancient = struct {
                 }
             },
             .raise_wind => {
-                // **IT TURNS TO THE GROUND IT COMMITTED TO, NOT TO HIM** — and that IS the tell: the spot the
-                // priest is staring at is the spot that is about to open.
+                // **IT TURNS TO THE GROUND IT COMMITTED TO, NOT TO HIM** — and that IS the tell.
                 self.faceToward(self.raiseAt, dt);
                 const u = mathx.clampF(self.t / RAISE_WIND, 0, 1);
                 self.pose_ = Posture.lerp(CARRY, RAISE_UP, mathx.smoothstep(0, 0.94, u));
@@ -576,8 +538,7 @@ pub const Ancient = struct {
                 if (self.t >= BREATH_WIND) self.enter(.breath_pour);
             },
             .breath_pour => {
-                // IT TRACKS SLOWLY THROUGH THE POUR — a cone is aimed and HELD, so walking round it works and
-                // standing in front of it does not. A quarter of its turn rate, which is the whole dodge.
+                // IT TRACKS SLOWLY THROUGH THE POUR — a cone is aimed and HELD. A quarter of its turn rate, which is the whole dodge.
                 self.faceToward(hero, dt * 0.25);
                 const u = mathx.clampF(self.t / BREATH_DUR, 0, 1);
                 self.pose_ = Posture.lerp(BREATH_GATHER, BREATH_OUT, mathx.smoothstep(0, 1, u));
@@ -609,8 +570,7 @@ pub const Ancient = struct {
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, moveSpeed, moveYaw, self.facing);
         self.pose();
         self.tryHit(blade);
-        // NO MELEE AT ALL: the breath is billed through `breathDose` on its own clock, so this creature never
-        // returns a blow from `update`. The signature stays the group contract's.
+        // NO MELEE AT ALL: the breath is billed through `breathDose` on its own clock. The signature stays the group contract's.
         return null;
     }
 
@@ -657,9 +617,7 @@ pub const Ancient = struct {
             .raise => self.enter(.raise_wind),
             .breath => self.enter(.breath_wind),
             .keep => {
-                // **IT WALKS BACK OUT TO ITS OWN BAND AND NEVER TOWARD HIM** — except from outside the band
-                // altogether, which is the one script it has that closes. The kite is the archer's own; the
-                // side is a seeded roll at the call site, so two priests in one camp part company.
+                // **IT WALKS BACK OUT TO ITS OWN BAND AND NEVER TOWARD HIM** — except from outside the band altogether. The side is a seeded roll at the call site, so two priests in one camp part company.
                 const side: f32 = if (self.seed < 0.5) 1.0 else -1.0;
                 self.routine.start(if (dist > WANT_MAX) &CLOSE_UP else &WITHDRAW, side);
                 self.enter(.drift);
@@ -702,9 +660,7 @@ pub const Ancient = struct {
         self.breathCd = 0;
         self.enter(.breath_wind);
     }
-    /// Stages either cast at a fraction of its own gather, for the shot harness and the object viewer — the
-    /// POSTURE and not merely the state, or a staged cell photographs a creature standing at ease. The RAISE
-    /// carries the harness's shared name (`shots.runMapShots`), because it is the signature move.
+    /// Stages either cast at a fraction of its own gather — the POSTURE and not merely the state, or a staged cell photographs a creature standing at ease. The RAISE carries the harness's shared name (`shots.runMapShots`).
     pub fn stageGather(self: *Ancient, u: f32) void {
         self.enter(.raise_wind);
         const k = mathx.clampF(u, 0, 1);
@@ -727,8 +683,7 @@ pub const Ancient = struct {
         self.enterDeath();
     }
 
-    /// The staff hand gathers nothing; the GROUND does. Dust and a cold light out of the spot itself, so what
-    /// the player reads is the place rather than the caster.
+    /// The staff hand gathers nothing; the GROUND does. So what the player reads is the place rather than the caster.
     fn gather(self: *Ancient, dt: f32, u: f32) void {
         const at = self.raiseAt;
         var owed = foe.emitDue(&self.fxAccum, dt, 8.0 + 26.0 * u);
@@ -759,8 +714,7 @@ pub const Ancient = struct {
         if (owed > 0) elemfx.gather(&self.parts, &self.fxHead, &self.fxRng, at, .cold, owed, 0.55, self.scale);
     }
 
-    /// **THE POUR IS THE PICTURE OF THE CONE, SO ITS SPREAD AND ITS REACH ARE THE CONE'S OWN NUMBERS** — a
-    /// breath drawn narrower than what it bills is a blow arriving out of clear air.
+    /// **THE POUR IS THE PICTURE OF THE CONE, SO ITS SPREAD AND ITS REACH ARE THE CONE'S OWN NUMBERS** — a breath drawn narrower than what it bills is a blow arriving out of clear air.
     fn breathe(self: *Ancient, dt: f32) void {
         const owed = foe.emitDue(&self.fxAccum, dt, BREATH_RATE);
         if (owed == 0) return;
@@ -830,8 +784,7 @@ pub const Ancient = struct {
         const twoPi = std.math.tau;
         const m = self.moving * (1.0 - dk);
         const p = self.pose_;
-        // ITS OWN LEAN, off its own seed — no two of them stand the same way (`AGENTS.md`'s wabi-sabi, between
-        // the instances and never along one bone).
+        // ITS OWN LEAN, off its own seed — no two of them stand the same way (wabi-sabi BETWEEN the instances).
         const wonk = (self.seed - 0.5) * 6.0;
         const idleAmt = (1.0 - mathx.clampF(self.moving * 2.0, 0, 1)) * (1.0 - dk);
         const swayArg = self.elapsed * (0.36 + 0.18 * (0.5 + 0.5 * mathx.sinf(self.seed * 21.7))) + self.seed * 6.28;
@@ -842,8 +795,7 @@ pub const Ancient = struct {
 
         setLocal(wx, SPINE, rest, mul3(rx(lean * 0.45 + nod + 0.7 * swy), ry(-0.35 * prot + p.twist * 0.4), rz(wonk * 0.5 + swy)));
         setLocal(wx, CHEST, rest, mul3(rx(lean * 0.55 + nod * 0.6 + 0.5 * swyLag), ry(-0.5 * prot + p.twist * 0.6), rz(-wonk * 0.3 - 0.7 * swyLag)));
-        // THE NECK CARRIES MOST OF THE HEAD PITCH on this body, not the skull: it is a long neck, and a muzzle
-        // that swung on the joint alone read as a nodding dog.
+        // THE NECK CARRIES MOST OF THE HEAD PITCH on this body, not the skull: it is a long neck, and a muzzle that swung on the joint alone read as a nodding dog.
         setLocal(wx, NECK, rest, rx(p.headPitch * 0.55 + 9.0 * dk - 7.0 * stun));
         setLocal(wx, SKULL, rest, mul3(rx(p.headPitch * 0.45 + 16.0 * dk - 26.0 * stun), ry(p.headYaw - 0.5 * prot), rz(wonk - 1.2 * swyLag)));
 
@@ -863,16 +815,13 @@ pub const Ancient = struct {
         setLocal(wx, SHR, rest, mul3(rx(-staffSh), ry(0), rz(-p.staffAbd - wonk * 0.4)));
         setLocal(wx, ELR, rest, rx(-staffEl));
         setLocal(wx, WRR, rest, rz(4.0));
-        // The fit BILLS THE ARM for its own flexion, so `staffTilt` means degrees the head leads FORWARD of
-        // plumb in the WORLD (`hero.shieldFit`'s law, and the necromancer's measured sign).
+        // The fit BILLS THE ARM for its own flexion, so `staffTilt` means degrees the head leads FORWARD of plumb in the WORLD (`hero.shieldFit`'s law).
         setLocal(wx, STAFF, rest, heromod.staffFit(p.staffTilt - staffSh - staffEl));
     }
 };
 
-/// **THE TWO SCRIPTS ARE ITS OWN BAND, NOT THE ARCHER'S.** `behave.KITE` opens to 9 m, which is inside the
-/// cone this creature throws — it would retreat to a range it had already decided was the breath's. Both are
-/// written off `WANT_MIN`/`WANT_MAX`, so the band exists in one place, and both stop a `BAND_SLACK` short of
-/// the edge they are walking to, or the next `decide` sends it straight back out again.
+/// **THE TWO SCRIPTS ARE ITS OWN BAND, NOT THE ARCHER'S.** `behave.KITE` opens to 9 m, inside the cone this
+/// creature throws. Both are written off `WANT_MIN`/`WANT_MAX` and both stop a `BAND_SLACK` short of the edge they walk to, or the next `decide` sends it straight back out.
 const BAND_SLACK: f32 = 1.5;
 const WITHDRAW = [_]behave.Step{
     .{ .open = .{ .to = WANT_MIN + BAND_SLACK } },
@@ -911,8 +860,7 @@ pub const Crypt = struct {
     pub fn update(self: *Crypt, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {
         return foe.groupBlow(self.live(), dt, hero, bounds, blade);
     }
-    /// **THE COLD ON ITS OWN CLOCK, WORST FIRST** — its own channel and not the group's blow, and billed at
-    /// `BREATH_DOSE_EVERY` rather than per frame (`vigil.gasDose`'s law).
+    /// **THE COLD ON ITS OWN CLOCK, WORST FIRST** — its own channel and not the group's blow, billed at `BREATH_DOSE_EVERY` rather than per frame.
     pub fn breathDose(self: *Crypt, dt: f32, hero: rl.Vector3) ?foe.Blow {
         var worst: ?foe.Blow = null;
         for (self.live()) |*p| {
@@ -944,10 +892,7 @@ pub const Crypt = struct {
     }
 };
 
-// ── the body ───────────────────────────────────────────────────────────────────────────────────────────────
-// Wrappings over a frame with nothing in between: every mass is a capsule or a blob (flesh is round), and the
-// only boxes on it are the gold. The linen is banded BETWEEN the limbs rather than along one, so the two arms
-// read as two different ages of cloth instead of one barber's pole.
+// Wrappings over a frame with nothing in between: every mass is a capsule or a blob, and the only boxes are the gold. The linen is banded BETWEEN the limbs rather than along one, so the two arms read as two ages of cloth.
 
 fn wrapBand(b: *Builder, rng: *mathx.Rng, a: rl.Vector3, to: rl.Vector3, r: f32, n: u32, col: rl.Color) void {
     const off = mathx.subV(to, a);
@@ -955,7 +900,6 @@ fn wrapBand(b: *Builder, rng: *mathx.Rng, a: rl.Vector3, to: rl.Vector3, r: f32,
     while (i < n) : (i += 1) {
         const u = (@as(f32, @floatFromInt(i)) + 0.5) / @as(f32, @floatFromInt(n)) + rng.signed() * 0.05;
         const c = v3(a.x + off.x * u, a.y + off.y * u, a.z + off.z * u);
-        // A LOOSE END, and it is what stops the wrap reading as a machined sleeve. A few percent of the mass.
         b.addBlob(c, v3(r * rng.range(1.02, 1.13), r * rng.range(0.20, 0.34), r * rng.range(1.02, 1.13)), 5, 7, col);
     }
     if (rng.float() < 0.7) {
@@ -979,8 +923,7 @@ fn abdomenMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xA902);
     b.setMat(.cloth);
-    // **NARROW AND HOLLOW.** The waist is thinner than the pelvis above and below it, which is the whole of
-    // "lanky": a trunk graded straight from hip to shoulder reads as a man in a robe.
+    // **NARROW AND HOLLOW.** The waist is thinner than the pelvis above and below it, which is the whole of "lanky": a trunk graded straight from hip to shoulder reads as a man in a robe.
     b.addCapsule(v3(0, -0.010 * H, 0), v3(0, 0.075 * H, 0), 0.050 * H, 0.058 * H, 9, LINEN);
     b.addBlob(v3(0, 0.030 * H, -0.014 * H), v3(0.044 * H, 0.048 * H, 0.030 * H), 5, 8, LINEN_DK);
     wrapBand(&b, &rng, v3(0, -0.010 * H, 0), v3(0, 0.075 * H, 0), 0.054 * H, 4, LINEN_LT);
@@ -993,7 +936,7 @@ fn chestMesh() rl.Mesh {
     b.setMat(.cloth);
     b.addCapsule(v3(0, -0.006 * H, 0), v3(0, 0.062 * H, 0), 0.062 * H, 0.070 * H, 10, LINEN);
     b.addBlob(v3(0, 0.030 * H, 0.020 * H), v3(0.058 * H, 0.040 * H, 0.034 * H), 5, 8, LINEN_LT);
-    // The ribs UNDER the wrapping: sunk most of the way in, a few percent proud. Relief is subtle.
+    // Sunk most of the way in, a few percent proud. Relief is subtle.
     var i: u32 = 0;
     while (i < 4) : (i += 1) {
         const y = 0.006 * H + 0.016 * H * @as(f32, @floatFromInt(i));
@@ -1025,18 +968,17 @@ fn neckMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// THE JACKAL HEAD. A long muzzle off a narrow skull and two tall ears — and the ears are what carries it at
-/// range, so they are the biggest thing on the head.
+/// THE JACKAL HEAD. The EARS are what carries it at range, so they are the biggest thing on the head.
 fn jackalMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xA905);
     b.setMat(.hide);
     b.addBlob(v3(0, 0.008 * H, -0.004 * H), v3(0.032 * H, 0.034 * H, 0.040 * H), 6, 9, HIDE);
     b.addBlob(v3(0, -0.004 * H, 0.030 * H), v3(0.024 * H, 0.022 * H, 0.030 * H), 5, 8, HIDE_LT);
-    // The muzzle: a long capsule that does NOT end in a point — a blunt nose pad closes it.
+    // A long capsule that does NOT end in a point — a blunt nose pad closes it.
     b.addCapsule(v3(0, MUZZLE_DROP * 0.4, 0.030 * H), v3(0, MUZZLE_DROP, MUZZLE_OUT), 0.020 * H, 0.013 * H, 8, HIDE);
     b.addBlob(v3(0, MUZZLE_DROP, MUZZLE_OUT), v3(0.013 * H, 0.011 * H, 0.010 * H), 4, 7, rgba(16, 15, 14, 255));
-    // The jaw, and it hangs a little open at rest — a shut muzzle on a dead face reads as a mask.
+    // The jaw hangs a little open at rest — a shut muzzle on a dead face reads as a mask.
     b.addCapsule(v3(0, MUZZLE_DROP * 0.3 - 0.012 * H, 0.030 * H), v3(0, MUZZLE_DROP - 0.016 * H, MUZZLE_OUT * 0.92), 0.013 * H, 0.008 * H, 6, HIDE_LT);
     var i: u32 = 0;
     while (i < 5) : (i += 1) {
@@ -1056,7 +998,7 @@ fn jackalMesh() rl.Mesh {
             BONE,
         );
     }
-    // THE EARS — tall, back-swept, and NOT a matched pair: one stands a fifth taller and leans out further.
+    // Tall, back-swept, and NOT a matched pair: one stands a fifth taller and leans out further.
     inline for (.{ 1.0, -1.0 }, .{ 1.0, 0.82 }) |side, tall| {
         const base = v3(side * 0.022 * H, 0.032 * H, -0.010 * H);
         const tip = v3(side * (0.034 * H + 0.010 * H * tall), 0.032 * H + 0.098 * H * tall, -0.030 * H);
@@ -1114,7 +1056,6 @@ fn handMesh() rl.Mesh {
     var rng = mathx.Rng.init(0xA90A);
     b.setMat(.hide);
     b.addBlob(v3(0, -0.014 * H, 0.004 * H), v3(0.014 * H, 0.020 * H, 0.012 * H), 4, 7, HIDE);
-    // Long fingers, and no two the same length.
     var i: u32 = 0;
     while (i < 4) : (i += 1) {
         const x = (-0.008 * H) + 0.0055 * H * @as(f32, @floatFromInt(i));
@@ -1126,15 +1067,14 @@ fn handMesh() rl.Mesh {
 
 const STAFF_SEGS = 7;
 
-/// The staff: a long pole, gold-ringed, with a jackal-eared standard at the head. Authored pointing UP off
-/// the grip; `staffFit` is what turns it into the world.
+/// Authored pointing UP off the grip; `staffFit` is what turns it into the world.
 fn staffMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xA90B);
     b.setMat(.wood);
     const lo = FIST_Y - STAFF_DOWN;
     const hi = FIST_Y + STAFF_UP;
-    // A pole in SEGMENTS with a lean on each — a single straight capsule from end to end is a broom handle.
+    // A pole in SEGMENTS with a lean on each — a single straight capsule end to end is a broom handle.
     var i: u32 = 0;
     while (i < STAFF_SEGS) : (i += 1) {
         const a = @as(f32, @floatFromInt(i)) / STAFF_SEGS;
@@ -1154,7 +1094,7 @@ fn staffMesh() rl.Mesh {
         const y = lerpF(lo, hi, u);
         b.addCapsule(v3(0, y - 0.006 * H, FIST_Z), v3(0, y + 0.006 * H, FIST_Z), 0.0135 * H, 0.0135 * H, 7, GOLD_DK);
     }
-    // THE HEAD: a gold crescent standing on the pole, and its two horns are NOT the same height.
+    // A gold crescent standing on the pole, and its two horns are NOT the same height.
     const top = hi;
     b.addBlob(v3(0, top - 0.010 * H, FIST_Z), v3(0.020 * H, 0.018 * H, 0.014 * H), 4, 7, GOLD);
     inline for (.{ 1.0, -1.0 }, .{ 1.0, 0.78 }) |side, tall| {

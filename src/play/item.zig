@@ -145,8 +145,7 @@ pub const Class = enum {
 
 pub fn class(k: Kind) Class {
     return switch (k) {
-        // **ONE PER LINE.** This is the table you read to find out where a thing shelves, and both of the long
-        // arms ran past 200 columns — a row you cannot find is a row you re-add by mistake.
+        // **ONE PER LINE.** This is the table you read to find out where a thing shelves, and both of the long arms ran past 200 columns.
         .crimson_flask,
         .cerulean_flask,
         .mushroom_jerky,
@@ -262,11 +261,8 @@ pub const Use = union(enum) {
 
 /// `book.SlotId`'s own subset, named HERE because which socket a thing belongs in is a fact about the THING.
 /// This file imports nothing but std, so `hero.wearFor` is the one place the two are matched up.
-/// **APPEND-ONLY, for `save.Data.worn`'s sake** — the `worn:` line is one word per socket in THIS order and
-/// the parser stops at the end of a short line, so an older save loads with the new sockets empty. Inserting
-/// a tag re-points every word on every line on disk.
-/// **APPENDED, NEVER INSERTED** — a save's `worn:` run is positional over these fields (`save.zig`), so a
-/// socket added in the middle re-points every equipped item in every file on disk.
+/// **APPENDED, NEVER INSERTED** — a save's `worn:` line is one word per socket in THIS order and the parser
+/// stops at the end of a short line, so an older save loads with the new sockets empty. Inserting a tag re-points every equipped item in every file on disk.
 pub const Wear = enum {
     hand_sword,
     hand_bow,
@@ -281,8 +277,7 @@ pub const Wear = enum {
     hand_dagger,
     hand_club,
 
-    /// Read by the comptime gear check below (an `.arm` equip must live in a held socket) and by the two tests
-    /// that ask about the WORN sockets — extending it is what let `item.DAGGER`/`item.CLUB` exist at all.
+    /// Read by the comptime gear check below (an `.arm` equip must live in a held socket) and by the two tests that ask about the WORN sockets — extending it is what let `item.DAGGER`/`item.CLUB` exist at all.
     pub fn held(w: Wear) bool {
         return switch (w) {
             .hand_sword, .hand_dagger, .hand_club, .hand_bow, .hand_shield => true,
@@ -292,18 +287,14 @@ pub const Wear = enum {
 };
 
 /// **PRICED AS MULTIPLIERS ON THE ONE IT REPLACES**, never a fresh set of absolutes: `hero.ATK_*_HIT`,
-/// `combat.STAM_*` and `combat.GUARD_*` stay the single place a swing, a block and their bills are written,
-/// and a weapon says only how it DIFFERS. Bare-handed every dial is 1.
-/// **WHICH SKILL DRIVES A WEAPON** — ER's scaling letters, ONE per armament rather than one per attribute.
-/// `quality` is the MEAN of the two curves, so either build carries the starting sword and neither is best
-/// with it. `hero.scaleOf` maps to a `stats.Attr`, `stats.scaleFor` is the curve.
+/// `combat.STAM_*` and `combat.GUARD_*` stay the single place a swing, a block and their bills are written, and a
+/// weapon says only how it DIFFERS. Bare-handed every dial is 1.
+/// **WHICH SKILL DRIVES A WEAPON** — ER's scaling letters, ONE per armament. `quality` is the MEAN of the two curves, so either build carries the starting sword and neither is best with it.
 pub const Scaling = enum { strength, dexterity, quality };
 
-/// **WHAT KIND OF WEAPON IT IS, ON THE TWO AXES A FIGHT ACTUALLY ASKS ABOUT.** `reach` is where the blow
-/// lands from and is pinned to the socket below — a thing in the bow hand is the ranged one, and there is no
-/// third answer. `heft` is how much of the body goes into it: the multipliers say a club is slower and hits
-/// harder, but only this says it is swung like a club. The STROKES themselves are the armament's, not this
-/// dial's (`hero.MOVES`); what reads `heft` is the book's own wording, and a test pins the two agreeing.
+/// **WHAT KIND OF WEAPON IT IS, ON THE TWO AXES A FIGHT ACTUALLY ASKS ABOUT.** `reach` is where the blow lands
+/// from and is pinned to the socket below — a thing in the bow hand is the ranged one. `heft` is how much of the
+/// body goes into it: the multipliers say a club is slower and hits harder, but only this says it is swung like a club. The STROKES are the armament's (`hero.MOVES`); what reads `heft` is the book's own wording.
 pub const Heft = enum {
     light,
     heavy,
@@ -344,8 +335,7 @@ pub const Arm = struct {
 
 pub const Res = struct { fire: f32 = 0, cold: f32 = 0, lightning: f32 = 0, chaos: f32 = 0 };
 
-/// `a` is the armour value in `A/(A + 5*dmg)` (`combat.armourTaken`), `res` the four elemental columns, and
-/// `poison` a MULTIPLIER on how fast a status meter fills — one row, not three verbs each stacked separately.
+/// `a` is the armour value in `A/(A + 5*dmg)` (`combat.armourTaken`), `res` the four elemental columns, and `poison` a MULTIPLIER on how fast a status meter fills — one row, not three verbs each stacked separately.
 pub const Plate = struct { slot: Wear, a: f32 = 0, res: Res = .{}, poison: f32 = 1 };
 
 pub const Charm = struct { slot: Wear, leech: f32 = 0, hpFrac: f32 = 0, spiritFp: f32 = 1, fpFrac: f32 = 0 };
@@ -363,15 +353,11 @@ pub const Equip = union(enum) {
     bind: Bind,
 };
 
-/// **A MELEE CLASS'S OWN ROW, WRITTEN ONCE.** The straight sword is the reference and is 1 on every dial —
-/// `hero.ATK_LIGHT_HIT`/`ATK_HEAVY_HIT` are literally its blow — and the other two classes say only how they
-/// differ from it. The two weapons standing in those sockets ARE these rows, so the numbers exist in one
-/// place and a SECOND dagger written later differs from a figure already on the page.
+/// **A MELEE CLASS'S OWN ROW, WRITTEN ONCE.** The straight sword is the reference and is 1 on every dial — `hero.ATK_LIGHT_HIT`/`ATK_HEAVY_HIT` are literally its blow — and the other two classes say only how they differ. The two weapons standing in those sockets ARE these rows.
 pub const DAGGER = Arm{ .slot = .hand_dagger, .heft = .light, .dmg = 0.74, .poise = 0.72, .dur = 0.78, .stam = 0.76, .scales = .dexterity };
 pub const CLUB = Arm{ .slot = .hand_club, .heft = .heavy, .dmg = 1.48, .poise = 1.60, .dur = 1.34, .stam = 1.48, .scales = .strength };
 
-/// **THE BARE ARMAMENT'S ROW** — every dial 1, and the skill that drives the thing he was born holding. An empty
-/// socket may not inherit the sword's `quality` default and quietly pay a bowman for his strength.
+/// **THE BARE ARMAMENT'S ROW** — every dial 1, and the skill that drives the thing he was born holding. An empty socket may not inherit the sword's `quality` default and quietly pay a bowman for his strength.
 pub fn bareArm(w: Wear) Arm {
     return switch (w) {
         .hand_dagger => DAGGER,
@@ -394,10 +380,8 @@ pub const GEAR = [_]Gear{
     .{ .kind = .fang_dirk, .equip = .{ .arm = DAGGER } },
     .{ .kind = .greatclub, .equip = .{ .arm = CLUB } },
     .{ .kind = .grave_warbow, .equip = .{ .arm = .{ .slot = .hand_bow, .heft = .heavy, .reach = .ranged, .dmg = 1.62, .poise = 1.45, .dur = 1.28, .stam = 1.34, .scales = .dexterity } } },
-    // A DOOR — half again the compass of the small shield, at four fifths of the speed and more per blow.
-    // **THE NEGATION DIAL STOPS UNDER THE CAP ON PURPOSE**: `combat.GUARD_NEGATE_CAP` is 0.95 on a 0.85 base,
-    // so anything past ~1.118 is silently clamped — and `effect` PRINTS this figure, so a clamped dial is a
-    // number the fight does not honour. The cap is for stopping a shield PLUS a tree node being free.
+    // A DOOR — half again the compass of the small shield, at four fifths of the speed and more per blow. **THE
+    // NEGATION DIAL STOPS UNDER THE CAP ON PURPOSE**: `combat.GUARD_NEGATE_CAP` is 0.95 on a 0.85 base, so anything past ~1.118 is silently clamped — and `effect` PRINTS this figure.
     .{ .kind = .tower_shield, .equip = .{ .arm = .{ .slot = .hand_shield, .heft = .heavy, .negate = 1.10, .arc = 1.45, .walk = 0.80, .stam = 1.30 } } },
     .{ .kind = .quilted_gambeson, .equip = .{ .plate = .{ .slot = .chest, .a = 22.0 } } },
     .{ .kind = .leech_signet, .equip = .{ .charm = .{ .slot = .ring, .leech = 2.0, .hpFrac = 0.06 } } },
@@ -406,9 +390,7 @@ pub const GEAR = [_]Gear{
     .{ .kind = .banded_warbelt, .equip = .{ .boon = .{ .slot = .belt, .attr = .strength, .n = 3 } } },
     .{ .kind = .deft_signet, .equip = .{ .boon = .{ .slot = .ring2, .attr = .dexterity, .n = 3 } } },
     .{ .kind = .ashen_amulet, .equip = .{ .boon = .{ .slot = .neck, .attr = .intelligence, .n = 3 } } },
-    // **THE FIRST COLD RESISTANCE ANYWHERE ON HIS SIDE** — the necromancer's rune ring is the game's one
-    // source of cold and the sheet showed 0%. PHYSICAL under the gambeson's on purpose: a chest socket
-    // strictly better than the coat already in it retires that coat instead of competing with it.
+    // **THE FIRST COLD RESISTANCE ANYWHERE ON HIS SIDE** — the necromancer's rune ring is the game's one source of cold and the sheet showed 0%. PHYSICAL under the gambeson's on purpose: a chest socket strictly better than the coat already in it retires that coat instead of competing with it.
     .{ .kind = .rimeward_mantle, .equip = .{ .plate = .{ .slot = .chest, .a = 13.0, .res = .{ .cold = 35 } } } },
     .{ .kind = .sporecrown, .equip = .{ .plate = .{ .slot = .helm, .a = 8.0, .poison = 0.55 } } },
     .{ .kind = .gravebell_amulet, .equip = .{ .charm = .{ .slot = .neck, .spiritFp = 0.60, .fpFrac = 0.10 } } },
@@ -424,9 +406,7 @@ pub const GEAR = [_]Gear{
     .{ .kind = .purgeleaf, .use = .purge },
     .{ .kind = .pilgrims_salt, .use = .{ .souls = .{ .n = 600 } } },
     .{ .kind = .ironwort_tea, .use = .{ .steady = .{ .mult = 2.2, .secs = 40 } } },
-    // **AMMUNITION IS AN ITEM NOW** (owner: arrows need to be droppable, placeable, all kinds) — both banks.
-    // **SIZED TO THE BANK, NOT GUESSED**: 12 into a quiver of 10 wasted two shafts on every pickup. This file
-    // imports nothing but std, so it cannot read `combat.ARROWS_MAX` and a test holds the two together.
+    // **AMMUNITION IS AN ITEM NOW** (owner: arrows need to be droppable, placeable, all kinds) — both banks. **SIZED TO THE BANK, NOT GUESSED**: 12 into a quiver of 10 wasted two shafts on every pickup. This file imports nothing but std, so a test holds the two together.
     .{ .kind = .plain_arrows, .use = .{ .arrows = .{ .fire = false, .n = 10 } } },
     .{ .kind = .fire_arrows, .use = .{ .arrows = .{ .fire = true, .n = 5 } } },
 };
@@ -559,9 +539,7 @@ pub fn dosed(k: Kind) bool {
     };
 }
 
-/// **WHAT IT DOES, IN ONE LINE OF MECHANIC** — the answer to "which of these two flasks did I just put in the
-/// box", which the flavour prose (`describe`) deliberately does not give. Read off `use` wherever there is a
-/// `Use` to read, so a dose retuned there reads here and the two cannot drift.
+/// **WHAT IT DOES, IN ONE LINE OF MECHANIC** — the answer to "which of these two flasks did I just put in the box", which the flavour prose (`describe`) deliberately does not give. Read off `use` wherever there is a `Use` to read, so a dose retuned there reads here.
 pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
     if (isFlask(k)) return switch (k) {
         .crimson_flask => "Heals. Charges refill at a bonfire, not from the bag.",
@@ -571,8 +549,7 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
     // This file cannot import `combat`, so it will not write a second copy of the spell's name to say which.
     if (isSpellScroll(k)) return "Carried: memorize it at a bonfire to cast it.";
     if (k == .iron_key) return "Opens the one lock it was cut for.";
-    // GEAR SAYS WHAT IT DOES IN THE SAME PLACE A TOOL DOES, off `equip` for the same reason the tools read
-    // `use`: a dial retuned in the table reads here, and the two cannot drift.
+    // GEAR SAYS WHAT IT DOES IN THE SAME PLACE A TOOL DOES, off `equip` for the same reason the tools read `use`: a dial retuned in the table reads here.
     switch (equip(k)) {
         .none => {},
         .arm => |a| return switch (a.slot) {
@@ -592,9 +569,7 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
                 if (a.reach == .ranged) @as([]const u8, "draw") else "swing",
             }) catch "Held: its own weight and speed.",
         },
-        // **THE ROW PRINTS WHAT IT ACTUALLY CARRIES, NOT ALL FOUR COLUMNS.** A coat that turns no cold has no
-        // business saying "0% cold" on the one panel a player compares two coats on, and a helm whose whole
-        // point is the spore meter cannot have that hidden behind an armour figure it barely has.
+        // **THE ROW PRINTS WHAT IT ACTUALLY CARRIES, NOT ALL FOUR COLUMNS.** A coat that turns no cold has no business saying "0% cold" on the one panel a player compares two coats on.
         .plate => |p| {
             const el = plateElem(p.res);
             if (el != null and p.poison != 1) return std.fmt.bufPrintZ(buf, "Worn: {d:.0} armour, {d:.0}% {s}, poison fills at {d:.0}%.", .{
@@ -604,8 +579,7 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
             if (p.poison != 1) return std.fmt.bufPrintZ(buf, "Worn: {d:.0} armour, poison fills at {d:.0}%.", .{ p.a, p.poison * 100 }) catch "Worn: armour.";
             return std.fmt.bufPrintZ(buf, "Worn: {d:.0} armour against physical damage.", .{p.a}) catch "Worn: armour.";
         },
-        // …AND THE CHARM SAYS WHICHEVER BARGAIN IT IS. Both halves on one line would price the gravebell's
-        // leech at zero and the signet's call at 100%, which is two numbers that mean "this row does nothing".
+        // …AND THE CHARM SAYS WHICHEVER BARGAIN IT IS. Both halves on one line would price the gravebell's leech at zero and the signet's call at 100%.
         .charm => |c| {
             if (c.spiritFp != 1 or c.fpFrac > 0) return std.fmt.bufPrintZ(buf, "Worn: a spirit costs {d:.0}% focus, -{d:.0}% max focus.", .{
                 c.spiritFp * 100,
@@ -644,10 +618,7 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
 
 pub const EFFECT_BUF: usize = 128;
 
-/// THE TWO THE FLASK SYSTEM OWNS. They sit on the quick bar like anything else, but their charges live in
-/// `combat.Flasks` and come back at a bonfire, so spending one never touches the bag. Named here rather than
-/// in `combat` because it is a fact about the ITEM; `combat.flaskOf` is the same question answered as a
-/// `FlaskKind`, and it cannot live here — `combat` imports this file and not the other way about.
+/// THE TWO THE FLASK SYSTEM OWNS. They sit on the quick bar like anything else, but their charges live in `combat.Flasks` and come back at a bonfire, so spending one never touches the bag. Named here rather than in `combat` because it is a fact about the ITEM.
 pub fn isFlask(k: Kind) bool {
     return k == .crimson_flask or k == .cerulean_flask;
 }
@@ -662,9 +633,7 @@ pub fn quickable(k: Kind) bool {
 
 pub const TAG_MAX: usize = @tagName(LONGEST_TAG).len;
 
-/// The kind whose tag IS `TAG_MAX`. `save.CAP`'s worst case is sized off the longest tag, so the test that
-/// proves the buffer holds it has to WRITE that tag — hand-picking a plausible one understated the row by two
-/// characters a slot, silently, and every new item is a chance to understate it again.
+/// The kind whose tag IS `TAG_MAX`. `save.CAP`'s worst case is sized off the longest tag, so the test that proves the buffer holds it has to WRITE that tag — hand-picking a plausible one understated the row by two characters a slot, silently.
 pub const LONGEST_TAG: Kind = blk: {
     var worst: Kind = @enumFromInt(0);
     for (@typeInfo(Kind).@"enum".fields) |f| {
@@ -674,8 +643,7 @@ pub const LONGEST_TAG: Kind = blk: {
 };
 
 comptime {
-    // `TAG_MAX` is now DERIVED from `LONGEST_TAG`, so the two cannot disagree — which also means a wrong
-    // argmax would go unnoticed. This is the independent pass the derivation replaced.
+    // `TAG_MAX` is now DERIVED from `LONGEST_TAG`, so the two cannot disagree — which also means a wrong argmax would go unnoticed. This is the independent pass the derivation replaced.
     for (@typeInfo(Kind).@"enum".fields) |f| std.debug.assert(f.name.len <= TAG_MAX);
 }
 
@@ -809,9 +777,7 @@ test "every usable kind carries its OWN dose, and the rest do nothing" {
             .arrows => |a| {
                 found += 1;
                 try std.testing.expect(usable(k));
-                // A sheaf worth nothing is a sheaf that shelves as clutter. The upper bound is checked
-                // against `combat.Quiver.cap` where the two can see each other — this file imports nothing
-                // but std on purpose, so all it can say here is that the number is a number.
+                // A sheaf worth nothing is a sheaf that shelves as clutter. The upper bound is checked against `combat.Quiver.cap` where the two can see each other.
                 try std.testing.expect(a.n > 0 and a.n < 100);
             },
             .ward => |w| {
@@ -976,8 +942,7 @@ test "A WEAPON ROW TRADES: nothing is better than the plain thing on every dial 
         const k: Kind = @enumFromInt(i);
         switch (equip(k)) {
             .arm => |a| {
-                // Every dial is a multiple of what the bare armament already does, so a row of all 1s is a piece
-                // of gear that exists and changes nothing — the one thing a weapon list may not contain.
+                // Every dial is a multiple of what the bare armament already does, so a row of all 1s is a piece of gear that exists and changes nothing.
                 try std.testing.expect(a.dmg > 0 and a.poise > 0 and a.dur > 0 and a.stam > 0);
                 try std.testing.expect(a.negate > 0 and a.arc > 0 and a.walk > 0);
                 const gains = (a.dmg > 1) or (a.poise > 1) or (a.negate > 1) or (a.arc > 1) or (a.dur < 1) or (a.stam < 1) or (a.walk > 1);
@@ -991,8 +956,7 @@ test "A WEAPON ROW TRADES: nothing is better than the plain thing on every dial 
                 try std.testing.expect(gives and takes);
             },
             .boon => |b| try std.testing.expect(b.n > 0),
-            // A BIND HAS NO DIALS TO TRADE — the socket is the price, and it is spent by dying. What it owes
-            // instead is a finger, which the comptime block over `GEAR` already refuses to let it skip.
+            // A BIND HAS NO DIALS TO TRADE — the socket is the price, and it is spent by dying. What it owes instead is a finger, which the comptime block over `GEAR` already refuses to let it skip.
             .bind => {},
             .none => {},
         }

@@ -20,8 +20,7 @@ const mul3 = mathx.mul3;
 const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 
-// THE PALETTE. A BIG SMOOTH MASS NEEDS A NEARLY-BLACK ALBEDO (AGENTS.md) and this thing is four smooth
-// masses, so the separation is HUE — cold blue-black chitin against a warm blood-brown abdomen.
+// THE PALETTE. A BIG SMOOTH MASS NEEDS A NEARLY-BLACK ALBEDO (AGENTS.md) and this thing is four smooth masses, so the separation is HUE — cold blue-black chitin against a warm blood-brown abdomen.
 const CHITIN = rgba(21, 20, 26, 255);
 const CHITIN_LT = rgba(38, 36, 46, 255);
 const CHITIN_DK = rgba(9, 9, 12, 255);
@@ -31,10 +30,8 @@ const SAC_DK = rgba(20, 11, 10, 255);
 const BEAK = rgba(30, 24, 20, 255);
 const BEAK_TIP = rgba(58, 46, 38, 255);
 const LEG = rgba(16, 15, 20, 255);
-/// THE WING. NEARLY BLACK and NORMALLY LIT (alpha 255): the emissive channel runs the other way — a low
-/// alpha is SELF-lit, and at 74 the membrane ignored the sun and came back a pale feather. A big smooth
-/// face has to start near-black on this key (AGENTS.md), and what makes it read as a membrane rather than a
-/// paddle is the VEINS across it, which are the one thing on a wing that is not see-through.
+/// THE WING. NEARLY BLACK and NORMALLY LIT (alpha 255): the emissive channel runs the other way — a low alpha
+/// is SELF-lit, and at 74 the membrane ignored the sun and came back a pale feather. What makes it read as a membrane rather than a paddle is the VEINS across it.
 const WING = rgba(27, 29, 39, 255);
 const WING_RIB = rgba(72, 74, 92, 255);
 const EYE = rgba(38, 9, 10, 255);
@@ -43,14 +40,12 @@ const BLOOD = rgba(126, 20, 18, 235);
 const BLOOD_DRY = rgba(56, 9, 8, 225);
 const CHIP = rgba(74, 70, 86, 235);
 
-/// ITS OWN STATURE — nose to tail, and NOT the shared humanoid scaffold: it has no legs to walk on. SIZED
-/// AGAINST A TOAD, then grown (owner): 1.3 m of body with a wingspan half again as wide.
+/// ITS OWN STATURE — nose to tail, and NOT the shared humanoid scaffold: it has no legs to walk on. SIZED AGAINST A TOAD, then grown (owner): 1.3 m of body with a wingspan half again as wide.
 pub const H: f32 = 1.3;
 
 const HOVER_LOW: f32 = 1.18;
 const HOVER_IDLE: f32 = 1.75;
-/// **OUT OF YOUR RANGE** (owner's whole point). The hero's blade sweeps a capsule off his own shoulder and
-/// cannot reach a body four and a half metres up — but an ARROW can, and so can a bolt. That is the trade.
+/// **OUT OF YOUR RANGE** (owner's whole point). The hero's blade sweeps a capsule off his own shoulder and cannot reach a body four and a half metres up — but an ARROW can, and so can a bolt. That is the trade.
 const HOVER_HIGH: f32 = 4.6;
 const CLIMB_RATE: f32 = 8.5;
 const DIVE_RATE: f32 = 7.0;
@@ -83,20 +78,17 @@ pub const STAB_HIT = combat.Hit{ .dmg = 6, .poise = 9 };
 pub const DRINK_DPS: f32 = 10.0;
 const LEECH_SHARE: f32 = 0.55;
 const DRINK_DUR: f32 = 1.45;
-/// …and how often the pull of it is heard under the wingbeat. THINNED from 0.48: a hold runs for seconds and
-/// a swallow twice a second is texture pretending to be an event. The BEAK GOING IN is the event.
+/// …and how often the pull of it is heard under the wingbeat. THINNED from 0.48: a hold runs for seconds and a swallow twice a second is texture pretending to be an event. The BEAK GOING IN is the event.
 const DRINK_EVERY: f32 = 0.80;
 const FEED_CD: f32 = 3.4;
 const STAB_R: f32 = 1.30;
-/// …and the arc it reaches through. A mosquito on your back is not one you can be stabbed by: the move
-/// tests its OWN band (the ogre's law), and a wide-open bubble landed blows the shield could never answer.
+/// …and the arc it reaches through. A mosquito on your back is not one you can be stabbed by: the move tests its OWN band (the ogre's law), and a wide-open bubble landed blows the shield could never answer.
 const FEED_ARC: f32 = 62.0;
 const FEED_CEIL: f32 = HOVER_LOW + 0.8;
 
 const WIND_DUR: f32 = 0.34; // the rear-back. Clears `foe.TELL_MIN` (0.30) — no attack comes out of nowhere
 const STAB_DUR: f32 = 0.16;
-/// Where in the thrust the beak arrives, as a share of it — the SAME fraction the stab lands on, read from
-/// one constant so the boards and the blow cannot disagree about when it happened.
+/// Where in the thrust the beak arrives, as a share of it — the SAME fraction the stab lands on, read from one constant so the boards and the blow cannot disagree about when it happened.
 const STAB_IMPACT_K: f32 = 0.45;
 const RECOVER_DUR: f32 = 0.45;
 
@@ -113,9 +105,7 @@ const BANK_MAX: f32 = 26.0;
 const PITCH_MAX: f32 = 22.0;
 const BOB_AMP: f32 = 0.035 * H;
 const BOB_HZ: f32 = 3.1;
-/// THE WHINE COMES AND GOES (owner: it was too constant). raylib cannot loop a synthesized take, so a note
-/// is a short voice retriggered — but retriggered forever it is a drill. A phrase is a run of overlapping
-/// takes, and between phrases it says nothing; hushes outlast phrases, so mostly you should not hear it.
+/// THE WHINE COMES AND GOES (owner: it was too constant). raylib cannot loop a synthesized take, so a note is a short voice retriggered — but retriggered forever it is a drill. A phrase is a run of overlapping takes, and hushes outlast phrases, so mostly you should not hear it.
 const WHINE_EVERY: f32 = 0.26; // the retrigger INSIDE a phrase, under the take's own 0.32 so they overlap
 const PHRASE_MIN: f32 = 0.30;
 const PHRASE_MAX: f32 = 0.95;
@@ -216,8 +206,7 @@ pub const Leechfly = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// THE WAND'S ROOTS, when they have hold of it — stamped from outside, like the leash's eyes. On this
-    /// creature they are the counter to the whole design: rooted, it cannot climb (`wantsClimb`).
+    /// THE WAND'S ROOTS, when they have hold of it — stamped from outside, like the leash's eyes. On this creature they are the counter to the whole design: rooted, it cannot climb (`wantsClimb`).
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     facing: f32 = 0,
@@ -228,7 +217,6 @@ pub const Leechfly = struct {
     t: f32 = 0,
     elapsed: f32 = 0,
     dealt: bool = false,
-    /// THE HERO'S SHIELD, stamped from outside (`game.markParry`), and the one-frame answer to it.
     parry: foe.Parry = .{},
     parried: bool = false,
     feedCd: f32 = 0,
@@ -239,8 +227,7 @@ pub const Leechfly = struct {
     whineT: f32 = 0,
     phraseLeft: f32 = 0,
 
-    /// HOW HIGH IT IS FLYING, in metres off the ground under it. The one field that makes this creature what
-    /// it is: every world point it has is measured off `pos.y + hover`.
+    /// HOW HIGH IT IS FLYING, in metres off the ground under it. The one field that makes this creature what it is: every world point it has is measured off `pos.y + hover`.
     hover: f32 = HOVER_IDLE,
     hoverTo: f32 = HOVER_IDLE,
 
@@ -257,9 +244,7 @@ pub const Leechfly = struct {
     flash: f32 = 0,
     shove: rl.Vector3 = mathx.zero3,
     justDied: bool = false,
-    /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law. It is
-    /// carried like every other creature's, but a FLYER is never handed the spirit (`game.markThreat`): the
-    /// wolf cannot reach it and it drinking from something that cannot swat it is a stalemate with no clock.
+    /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law. A FLYER is never handed the spirit (`game.markThreat`): the wolf cannot reach it, and it drinking from something that cannot swat it is a stalemate with no clock.
     threat: foe.Threat = .{},
     fade: f32 = 0,
     gone: bool = false,
@@ -268,8 +253,7 @@ pub const Leechfly = struct {
     fxHead: usize = 0,
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
-    /// Carried ONLY so the blood it sheds and drinks knows whether the ground under it is dry
-    /// (`foe.onDryGround`) — it flies, so this is the water it is flying OVER.
+    /// Carried ONLY so the blood it sheds and drinks knows whether the ground under it is dry — it flies, so this is the water it is flying OVER.
     wade: foe.Wade = .{},
 
     xf: [N]rl.Matrix = undefined,
@@ -286,8 +270,7 @@ pub const Leechfly = struct {
         return f;
     }
 
-    // EVERY WORLD POINT IS MEASURED OFF `pos.y` PLUS THE HOVER — `pos.y` is the ground under it and `hover`
-    // is how far it is flying above that, so one over a bank keeps its bar over its own head.
+    // EVERY WORLD POINT IS MEASURED OFF `pos.y` PLUS THE HOVER — `pos.y` is the ground under it and `hover` is how far it is flying above that, so one over a bank keeps its bar over its own head.
     fn lift(self: *const Leechfly) f32 {
         return self.hover * self.scale;
     }
@@ -331,7 +314,7 @@ pub const Leechfly = struct {
             foe.tickParticles(&self.parts, dt, self.pos.y);
             return .none;
         }
-        self.justDied = false; // one-frame flag, reset at the TOP (the foe contract's own rule)
+        self.justDied = false;
         self.parried = false;
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
@@ -465,10 +448,7 @@ pub const Leechfly = struct {
         return act;
     }
 
-    /// SECONDS BACK FROM THE BEAK ARRIVING, or null. **A FLYER'S THRUST IS STILL A STROKE** — the airborne
-    /// exemption the leaps get (the bone knight's HOP, the ravager's pounce) is about a whole body in flight
-    /// arriving on you, and this creature is never anywhere else: it winds, holds its station and drives the
-    /// beak, which is exactly the thing a shield is braced for.
+    /// SECONDS BACK FROM THE BEAK ARRIVING, or null. **A FLYER'S THRUST IS STILL A STROKE** — the airborne exemption the leaps get is about a whole body in flight arriving on you, and this creature is never anywhere else: it winds, holds its station and drives the beak, which is exactly what a shield is braced for.
     fn toImpact(self: *const Leechfly) ?f32 {
         const at = STAB_DUR * STAB_IMPACT_K;
         return switch (self.state) {
@@ -484,10 +464,7 @@ pub const Leechfly = struct {
         return self.stabReach();
     }
 
-    /// **THE BOARDS TAKE THE BEAK, AND NOTHING IS DRUNK** — hence the bool: the caller drops the `Act`, because
-    /// what this creature is for is the HP it takes off him and heals itself on, and a caught thrust may take
-    /// none. `dealt` is spent so the rest of the thrust cannot try again, and it is sent to `.recover` rather
-    /// than `.drink` by the same flag.
+    /// **THE BOARDS TAKE THE BEAK, AND NOTHING IS DRUNK** — hence the bool: the caller drops the `Act`, because what this creature is for is the HP it takes off him and heals itself on. `dealt` is spent so the rest of the thrust cannot try again.
     fn takeParry(self: *Leechfly) bool {
         const reach = self.parryable() orelse return false;
         if (!foe.caught(self, reach)) return false;
@@ -708,9 +685,7 @@ pub const Leechfly = struct {
         });
     }
 
-    /// UNLIT OVER THE OPAQUE PASS, like every group's — the particles, and the EYES coming alight while it
-    /// drinks. The eyes are drawn here rather than lit in the mesh because the mesh's own emissive is a fixed
-    /// vertex channel: it cannot brighten, and brightening is the entire cue.
+    /// UNLIT OVER THE OPAQUE PASS, like every group's — the particles, and the EYES coming alight while it drinks. Drawn here rather than lit in the mesh because the mesh's own emissive is a fixed vertex channel: it cannot brighten, and brightening is the entire cue.
     pub fn drawFx(self: *const Leechfly) void {
         foe.drawParticles(&self.parts);
         if (self.glow <= 0.02 or self.gone) return;
@@ -727,8 +702,7 @@ pub const Leechfly = struct {
         model.draw(self);
     }
 
-    /// ONE WORLD MATRIX PER BONE, once a frame. `draw` only replays them, so the silhouette and the shadow
-    /// can never disagree (the hero's law, and it holds for everything with a rig).
+    /// ONE WORLD MATRIX PER BONE, once a frame. `draw` only replays them, so the silhouette and the shadow can never disagree (the hero's law).
     pub fn pose(self: *Leechfly) void {
         const fs = foe.rigScale(self.scale, self.fade);
         const bob = mathx.sinf((self.elapsed + self.seed) * BOB_HZ * std.math.tau) * BOB_AMP * self.scale;
@@ -776,11 +750,9 @@ fn place(p: rl.Vector3) rl.Matrix {
     return tr(p.x, p.y, p.z);
 }
 
-// FLESH IS ROUND (AGENTS.md): every mass here is `addBlob`/`addCapsule`. The only flat things on the
-// creature are the wing membranes, which are flat because a wing is.
+// FLESH IS ROUND (AGENTS.md): every mass here is `addBlob`/`addCapsule`. The only flat things on the creature are the wing membranes, which are flat because a wing is.
 
-/// How long the proboscis is, in stature. Read by `beakWorld` as well as by the builder, so the point the
-/// feed is measured from IS the point the mesh draws (the ogre's `clubLowWorld` law).
+/// How long the proboscis is, in stature. Read by `beakWorld` as well as by the builder, so the point the feed is measured from IS the point the mesh draws (the ogre's `clubLowWorld` law).
 const PROB_LEN: f32 = 0.30;
 const EYE_R: f32 = 0.048;
 
@@ -806,8 +778,7 @@ fn thoraxMesh() rl.Mesh {
     b.addBlob(v3(0, 0.058 * H, -0.010 * H), v3(0.066 * H, 0.052 * H, 0.086 * H), 7, 12, CHITIN_LT);
     b.addBlob(v3(0, 0.004 * H, 0.104 * H), v3(0.062 * H, 0.062 * H, 0.040 * H), 6, 12, CHITIN_DK);
     b.addBlob(v3(0, -0.014 * H, -0.126 * H), v3(0.050 * H, 0.048 * H, 0.036 * H), 6, 12, CHITIN_DK);
-    // Two bristle ridges down the back, uneven — the shell's own break-up (a dark smooth mass reads as
-    // plastic without breaks, AGENTS.md).
+    // Two bristle ridges down the back, uneven — the shell's own break-up (a dark smooth mass reads as plastic without breaks).
     var i: u32 = 0;
     while (i < 5) : (i += 1) {
         const t = -0.06 + 0.032 * @as(f32, @floatFromInt(i));
@@ -820,8 +791,7 @@ fn thoraxMesh() rl.Mesh {
 fn abdomenMesh(seg: usize) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5AC0 + @as(u64, seg));
-    // LONG AND SLENDER, not a sausage. At 0.070 radius over 0.27 of stature the first segment was as thick
-    // as it was long and the creature read as a bee — the taper is what says which insect this is.
+    // LONG AND SLENDER, not a sausage. At 0.070 radius over 0.27 of stature the first segment was as thick as it was long and the creature read as a bee — the taper is what says which insect this is.
     const fat: f32 = if (seg == 0) 1.0 else 0.72;
     const len: f32 = if (seg == 0) 0.175 else 0.165;
     b.addCapsule(

@@ -127,9 +127,7 @@ pub const Mode = enum {
     }
 };
 
-/// **THE GROUND VOLUMES, PLAYING, WITH THEIR OWN NUMBERS BESIDE THEM** (owner: a particle viewer, gas viewer,
-/// aoes) — a cloud is a RADIUS, a LIFE and a DOSE at once and none of the three reads off a source file. Every
-/// entry runs the real object on a loop over real ground, ringed at its true radius.
+/// **THE GROUND VOLUMES, PLAYING, WITH THEIR OWN NUMBERS BESIDE THEM** (owner: a particle viewer, gas viewer, aoes) — a cloud is a RADIUS, a LIFE and a DOSE at once and none of the three reads off a source file. Every entry runs the real object on a loop over real ground, ringed at its true radius.
 const Volume = enum {
     spore_cloud,
     acid_pool,
@@ -152,10 +150,7 @@ const Volume = enum {
     }
 };
 
-/// **THE FX BENCH — `elemfx`'s twelve cells, PLAYING.** The jukebox's arrangement one gallery along: the
-/// sounds are auditioned there because a waveform on a page tells you nothing, and a particle signature is
-/// the same problem — `lifeHi 1.15` is not a thing anybody can picture. Four elements against three verbs,
-/// side by side and on a loop, with the numbers being tuned printed beside them.
+/// **THE FX BENCH — `elemfx`'s twelve cells, PLAYING.** The jukebox's arrangement one gallery along: the sounds are auditioned there because a waveform on a page tells you nothing, and `lifeHi 1.15` is not a thing anybody can picture. Four elements against three verbs, side by side and on a loop.
 const Verb = enum {
     gather,
     burst,
@@ -183,10 +178,7 @@ const BENCH_FX_N = blk: {
     const worst = @as(f32, @floatFromInt(elemfx.pourCount(1))) * elemfx.POUR_RATE * life;
     break :blk @as(usize, @intFromFloat(@ceil(worst))) + 32;
 };
-/// …and the hitch ceiling on ONE frame of it — `elemfx.POUR_CAP`, the same number the fight runs at, because
-/// a bench throttled differently from the thing it is tuning is a bench that lies. As a bare `8` it was UNDER
-/// what a 60 fps frame owes at `POUR_RATE` (9.3), so it was in permanent hitch: dropping arrears every frame
-/// and drawing a stream at 480 motes a second against the fight's 560.
+/// …and the hitch ceiling on ONE frame of it — `elemfx.POUR_CAP`, the same number the fight runs at, because a bench throttled differently from the thing it is tuning is a bench that lies. As a bare `8` it was UNDER what a 60 fps frame owes at `POUR_RATE` (9.3), so it was in permanent hitch: drawing a stream at 480 motes a second against the fight's 560.
 const BENCH_POUR_CAP: usize = elemfx.POUR_CAP;
 const BENCH_AT = v3(0, 1.05, 0);
 const BENCH_DIR = v3(0, 0, -1);
@@ -298,9 +290,7 @@ fn render(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, kind: Kin
     rl.endTextureMode();
 }
 
-// ONE GROUP OF EACH, exactly as the game holds them — the group is every creature's own draw contract
-// (model, flash, scale), so the viewer cannot drift from what the field shows. Members are respawned into
-// slot 0 per render; a spawn poses before it returns, so the cell is the creature's own first frame.
+// ONE GROUP OF EACH, exactly as the game holds them — the group is every creature's own draw contract (model, flash, scale), so the viewer cannot drift from what the field shows. Members are respawned into slot 0 per render; a spawn poses before it returns, so the cell is the creature's own first frame.
 const CharSet = struct {
     warren: frogmod.Knot,
     line: archermod.Line,
@@ -499,8 +489,7 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
             cs.marsh.live()[0].stageGather(1.0);
             cs.marsh.draw(scene);
         },
-        // Each of the three is staged MID-TELL: a cell showing a creature standing still shows the one frame
-        // of it that says nothing.
+        // Each of the three is staged MID-TELL: a cell showing a creature standing still shows the one frame of it that says nothing.
         .bone_skitterer => {
             cs.clatter.n = 1;
             cs.clatter.live()[0] = skittermod.Skitterer.spawn(mathx.zero3, 0, 1.0, seed);
@@ -741,9 +730,7 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
 const BIG_PAD: i32 = 16;
 const INFO_W: i32 = 250;
 
-/// **DRAG SPINS, WHEEL ZOOMS — ONE COPY.** The three modals (a prop, a creature, the FX bench) each had this
-/// nine-line block written out, so a rate or a clamp retuned in one of them left the other two turning
-/// differently.
+/// **DRAG SPINS, WHEEL ZOOMS — ONE COPY.** The three modals (a prop, a creature, the FX bench) each had this nine-line block written out, so a rate or a clamp retuned in one left the other two turning differently.
 fn spinView(st: *State, ctx: *ui.Ctx, p: *Pose, viewR: rl.Rectangle) void {
     const overView = rl.checkCollisionPointRec(ctx.mouse, viewR);
     if (overView and ctx.wheel != 0) p.zoom = mathx.clampF(p.zoom * (1.0 + ZOOM_RATE * ctx.wheel), MIN_ZOOM, MAX_ZOOM);
@@ -1101,8 +1088,7 @@ fn volDrawFx(st: *const State) void {
 
 fn renderVolume(st: *State, rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene) void {
     const aspect = @as(f32, @floatFromInt(rt.texture.width)) / @as(f32, @floatFromInt(rt.texture.height));
-    // Framed on the volume's OWN reach, not on a fixed box: a 1.55 m pool and a 1.9 m cloud want different
-    // cameras, and the whole point of the bench is comparing what they actually cover.
+    // Framed on the volume's OWN reach, not on a fixed box: a 1.55 m pool and a 1.9 m cloud want different cameras, and the whole point of the bench is comparing what they actually cover.
     const reach = mathx.maxF(volRadius(st), 0.5) * 2.2;
     const cam = fitCam(reach * 0.5, reach, st.volPose, aspect);
     rl.beginTextureMode(rt);
@@ -1115,8 +1101,7 @@ fn renderVolume(st: *State, rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gf
     const view = envmod.View.fromCamera(cam, aspect);
     env.drawGround(&view);
     scene.setGround(false);
-    // **THE RING IS THE POINT.** A cloud is a soft mass with no edge you can see, and where its edge is IS
-    // the mechanic — inside it you are being dosed and outside you are not.
+    // **THE RING IS THE POINT.** A cloud is a soft mass with no edge you can see, and where its edge is IS the mechanic — inside it you are being dosed and outside you are not.
     ringOnGround(volRadius(st), ui.LIVE);
     volDrawFx(st);
     rl.endMode3D();
@@ -1210,8 +1195,7 @@ fn benchPanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) boo
     const box = ui.beginModal(ctx, w, h, "Effects bench");
     if (modeTabs(st, ctx, box.x + 16, box.y + 44).changed) return true;
 
-    // THE GRID ITSELF, as two rows of chips: the element down one and the verb down the other, which is
-    // twelve cells reachable in two clicks rather than a page of thumbnails that cannot move.
+    // THE GRID ITSELF, as two rows of chips: the element down one and the verb down the other, which is twelve cells reachable in two clicks rather than a page of thumbnails that cannot move.
     var tx = box.x + 16;
     const ey = box.y + 78;
     inline for (@typeInfo(combat.Elem).@"enum".fields) |f| {

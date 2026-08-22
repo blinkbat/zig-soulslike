@@ -23,8 +23,7 @@ pub const LABEL = uiart.TEXT_DIM;
 pub const VALUE = rgba(228, 216, 194, 255);
 pub const TITLE = rgba(236, 226, 202, 255);
 pub const HOT = uiart.HOT;
-/// A gizmo that is DOING something as well as sitting there — a location that carries weather, against the
-/// plain ones drawn in `TRIM`. Cool against the whole rack's gilt, so it reads as a different KIND of thing.
+/// A gizmo that is DOING something as well as sitting there — a location that carries weather, against the plain ones drawn in `TRIM`. Cool against the whole rack's gilt, so it reads as a different KIND of thing.
 pub const LIVE = rgba(110, 178, 168, 255);
 pub const ACTIVE_FILL = rgba(96, 74, 40, 235);
 pub const IDLE_FILL = rgba(26, 22, 18, 228);
@@ -150,20 +149,16 @@ pub fn iconButton(ctx: *Ctx, r: rl.Rectangle, ic: Icon, label: [:0]const u8, siz
     return h and ctx.pressed;
 }
 
-/// **A LAYER BUTTON WITH ITS OWN EYE IN IT** — Tiled's arrangement. One widget and not two for WIDTH: six
-/// separate eye buttons pushed the editor's top strip off the right-hand edge. Returns which HALF was
-/// pressed, never both — the eye's rect is tested FIRST, so the selection half is the button minus it.
+/// **A LAYER BUTTON WITH ITS OWN EYE IN IT** — Tiled's arrangement. One widget and not two for WIDTH: six separate eye buttons pushed the editor's top strip off the right-hand edge. Returns which HALF was pressed, never both — the eye's rect is tested FIRST.
 pub const LayerHit = enum { none, select, toggle };
 
-/// An EMPTY label is the narrow form — icon, eye, and the name in the tooltip. `drawTopBar` measures the
-/// strip and falls back to it rather than letting the right-hand end run off the window.
+/// An EMPTY label is the narrow form — icon, eye, and the name in the tooltip. `drawTopBar` measures the strip and falls back to it rather than letting the right-hand end run off the window.
 pub fn layerButtonW(label: [:0]const u8, size: i32) i32 {
     if (label.len == 0) return ICON_PAD * 2 + size + EYE_SLOT;
     return iconButtonW(label, size) + EYE_SLOT;
 }
 
-/// **THE SLOT IS THE HIT AREA; THE GLYPH IS DRAWN BIGGER THAN IT.** The glyph overhangs into the label's own
-/// right-hand `ICON_PAD`, so the eye reads at `EYE_DRAW` while the layout only pays `EYE_SLOT`.
+/// **THE SLOT IS THE HIT AREA; THE GLYPH IS DRAWN BIGGER THAN IT.** The glyph overhangs into the label's own right-hand `ICON_PAD`, so the eye reads at `EYE_DRAW` while the layout only pays `EYE_SLOT`.
 const EYE_SLOT: i32 = 15;
 const EYE_DRAW: f32 = 19.0;
 
@@ -175,8 +170,7 @@ pub fn layerButton(ctx: *Ctx, r: rl.Rectangle, ic: Icon, label: [:0]const u8, si
     const face = if (active) ACTIVE_FILL else if (h) HOVER_FILL else IDLE_FILL;
     rl.drawRectangleRec(r, face);
     rl.drawRectangleLinesEx(r, 1, alpha(TRIM, if (active) 220 else if (h) 170 else 80));
-    // A HIDDEN LAYER READS AS HIDDEN FROM THE LABEL, not only from the glyph: the whole row goes dim, which is
-    // the state you need to spot at a glance when you have forgotten why the wood is missing.
+    // A HIDDEN LAYER READS AS HIDDEN FROM THE LABEL, not only from the glyph: the whole row goes dim, which is the state you need to spot at a glance when you have forgotten why the wood is missing.
     const fg = if (!shown) LABEL else if (active) HOT else VALUE;
     const isz: f32 = @floatFromInt(size);
     icons.draw(ic, r.x + @as(f32, @floatFromInt(ICON_PAD)) + isz * 0.5, r.y + r.height * 0.5, isz, fg);

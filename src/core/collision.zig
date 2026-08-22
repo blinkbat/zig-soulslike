@@ -13,10 +13,7 @@ pub const Solid = struct {
     r: f32,
     h: f32 = 1e9,
     surf: Surface = .stone,
-    /// THE FOG GATE'S RULE, and the only thing in the world that has one: a wall to every BODY but the
-    /// hero's own side, in both directions, and a wall to every LOOK without exception. It is the gate's
-    /// slot in `env.wardProps` PLUS ONE, so 0 is an ordinary solid; `sees`, `blocksPoint` and the arrow's
-    /// cover do not ask, and only `env.resolveHeroSide` lets an OPEN one through.
+    /// THE FOG GATE'S RULE, and the only thing in the world that has one: a wall to every BODY but the hero's own side, in both directions, and a wall to every LOOK without exception. It is the gate's slot in `env.wardProps` PLUS ONE, so 0 is an ordinary solid; only `env.resolveHeroSide` lets an OPEN one through.
     ward: u8 = 0,
 };
 
@@ -45,10 +42,7 @@ pub fn pushOutCircle(p: rl.Vector3, pr: f32, c: rl.Vector3, cr: f32) rl.Vector3 
     return pushOut(p, pr, .{ .a = c, .b = c, .r = cr });
 }
 
-/// THE SECOND PASS IS WHAT SETTLES A BODY PUSHED OUT OF ONE SOLID AND INTO THE NEXT — and it is only ever
-/// worth anything if the FIRST one moved him. `pushOut` returns its input untouched when nothing overlapped, so
-/// on a frame he is standing clear the second sweep is bit-for-bit a no-op over every capsule in his cells: up
-/// to `env.MAX_NEAR` closest-point-on-segment tests, per actor, per frame, for nothing.
+/// THE SECOND PASS IS WHAT SETTLES A BODY PUSHED OUT OF ONE SOLID AND INTO THE NEXT — and it is only ever worth anything if the FIRST one moved him. `pushOut` returns its input untouched when nothing overlapped, so on a frame he is standing clear the second sweep is bit-for-bit a no-op over every capsule in his cells.
 pub fn resolve(p: rl.Vector3, pr: f32, solids: []const Solid) rl.Vector3 {
     var out = p;
     for (solids) |s| out = pushOut(out, pr, s);
@@ -77,9 +71,7 @@ pub fn blockerAt(p: rl.Vector3, margin: f32, solids: []const Solid) ?Surface {
     return null;
 }
 
-// A LOOK IS A SEGMENT, AND IT IS TESTED EXACTLY. An arrow's flight is walked in steps because it is a
-// path being simulated anyway (`archer.coverHit`); a sight line is one question, and sampling it would
-// mean either a step fine enough to cost real time over 20 m or a step a fence post fits through.
+// A LOOK IS A SEGMENT, AND IT IS TESTED EXACTLY. An arrow's flight is walked in steps because it is a path being simulated anyway (`archer.coverHit`); a sight line is one question, and sampling it would mean either a step fine enough to cost real time over 20 m or a step a fence post fits through.
 
 fn segDistXZ(a0: rl.Vector3, a1: rl.Vector3, b0: rl.Vector3, b1: rl.Vector3) f32 {
     if (segsCrossXZ(a0, a1, b0, b1)) return 0;

@@ -38,8 +38,7 @@ const SPARK_COOL = rgba(226, 116, 38, 200);
 const SPLINTER = rgba(86, 64, 44, 240);
 
 const TRAIL_N = 22;
-/// Outlasts the 0.26 s stroke on purpose — the whip curve spends the travel in its first third, so a
-/// tighter life leaves the ribbon gone by the frame the point arrives.
+/// Outlasts the 0.26 s stroke on purpose — the whip curve spends the travel in its first third, so a tighter life leaves the ribbon gone by the frame the point arrives.
 const TRAIL_LIFE = 0.30;
 const TRAIL_ROOT = 0.24;
 const TRAIL_PEAK = 158.0;
@@ -66,9 +65,7 @@ const WPN = heromod.HELD;
 
 const H: f32 = heromod.H;
 const REST = heromod.restHumanoid(heromod.HIP_HALF, heromod.SHOULDER_HALF, H);
-/// A HAND TALLER AGAIN THAN THE ARCHER (owner: "make them a bit bigger too") — the same corpses out of
-/// the same ground, but the ones buried holding iron were the big men. DERIVED off the archer's own
-/// stature, which is itself derived off the hero's, so nothing here is a magic 1.26.
+/// A HAND TALLER AGAIN THAN THE ARCHER (owner: "make them a bit bigger too"). DERIVED off the archer's own stature, which is itself derived off the hero's, so nothing here is a magic 1.26.
 pub const SCALE = archermod.SCALE + 0.155 / H;
 const solePatches = archermod.solePatches;
 
@@ -85,24 +82,18 @@ const setLocal = heromod.setHumanoid;
 const FIST_Y = -0.05 * H;
 const FIST_Z = 0.02 * H;
 
-/// Both kits are authored pointing UP off the grip (built in the archer's bow frame, whose +Y runs back up the
-/// forearm), so the fit FLIPS them. After it, `wpnTilt` means what `hero.GRIP_PITCH` means: degrees the weapon
-/// leads forward of the forearm line, 0 straight down it and away from the elbow.
+/// Both kits are authored pointing UP off the grip (built in the archer's bow frame, whose +Y runs back up the forearm), so the fit FLIPS them. After it, `wpnTilt` means degrees the weapon leads forward of the forearm line.
 fn wpnFit(tilt: f32) rl.Matrix {
     return mul(ry(180.0), rx(180.0 - tilt));
 }
 
-/// Authors where the kit POINTS in the world (deg forward of straight down: 0 down, 90 level, 180 on end)
-/// and hands the wrist whatever that costs. A `wpnTilt` held steady through a 220-deg sweep leaves the
-/// weapon radial to the arm at the bottom of the arc — measured 0.44 m under the turf beside his own boot.
-/// The LUNGE opts out: a thrust is the arm travelling, so its wrist angle is the honest thing to author.
+/// Authors where the kit POINTS in the world (deg forward of straight down: 0 down, 90 level, 180 on end) and
+/// hands the wrist whatever that costs. A `wpnTilt` held steady through a 220-deg sweep leaves the weapon radial to the arm at the bottom — measured 0.44 m under the turf beside his own boot. The LUNGE opts out.
 fn swingTilt(windAtt: f32, endAtt: f32, k: f32, armSh: f32) f32 {
     return lerpF(windAtt, endAtt, k) - armSh;
 }
 
-/// The same trick with the ELBOW PAID FOR TOO. `swingTilt` reads the shoulder alone, which is honest while a
-/// wind keeps the elbow near straight (the mace's is -22) — the horizontal's is not, and it MEASURED 0.8 m of
-/// blade height for 18 deg of fold. MEASURED relation: attitude = tilt + shoulder - elbow.
+/// The same trick with the ELBOW PAID FOR TOO. `swingTilt` reads the shoulder alone, honest while a wind keeps the elbow near straight (the mace's is -22); the horizontal's is not, and it MEASURED 0.8 m of blade height for 18 deg of fold. Relation: attitude = tilt + shoulder - elbow.
 fn levelTilt(windAtt: f32, endAtt: f32, k: f32, armSh: f32, armEl: f32) f32 {
     return lerpF(windAtt, endAtt, k) - armSh + armEl;
 }
@@ -123,9 +114,7 @@ const KIT_R = [SPEC.len]f32{ MACE_FLANGE, GS_HALF_W };
 pub const Role = enum { shieldman, greatsword };
 
 comptime {
-    // …and a SPEC ROW PER ROLE, which `kobold.zig` and `brood.zig` both pin and this did not: `roleOf`
-    // measures the run with `SPEC.len`, so a role added without a row returns null for its own kind (the
-    // creature never spawns) and `spec()` walks off the end.
+    // …and a SPEC ROW PER ROLE, which `kobold.zig` and `brood.zig` both pin and this did not: `roleOf` measures the run with `SPEC.len`, so a role added without a row returns null for its own kind and `spec()` walks off the end.
     if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("warrior: a Role with no spec row");
     // A CONTIGUOUS RUN off `shieldman`, in role order — `roleOf`/`kindOf` are an ordinal shift.
     for (@typeInfo(Role).@"enum".fields, 0..) |f, i| {
@@ -147,16 +136,12 @@ pub fn kindOf(r: Role) wf.FoeKind {
     return @enumFromInt(@intFromEnum(wf.FoeKind.shieldman) + @intFromEnum(r));
 }
 
-/// WHICH ANIMATION A ROW WEARS, and nothing else — `hyper`/`lunge`/`crash` still carry the MECHANICS.
-/// The pose functions used to sniff those columns for identity, which left a third greatsword stroke with
-/// no way to be anything but a slam.
+/// WHICH ANIMATION A ROW WEARS, and nothing else — `hyper`/`lunge`/`crash` still carry the MECHANICS. The pose functions used to sniff those columns for identity, which left a third greatsword stroke with no way to be anything but a slam.
 const Style = enum { mace, slam, lunge, sweep };
 
 const Attack = struct {
     style: Style,
-    /// The AI's TRIGGER RANGE only, pre-scale and measured off the posed kit. What the blow hits is the
-    /// swept weapon (`tryReach`), so this cannot grow a hurt box the swing never enters — it shipped that
-    /// way once, a mace head that never left 0.6 m of his own axis firing a 2.8 m sector.
+    /// The AI's TRIGGER RANGE only, pre-scale and measured off the posed kit. What the blow hits is the swept weapon (`tryReach`), so this cannot grow a hurt box the swing never enters — it shipped that way once, a mace head that never left 0.6 m of his own axis firing a 2.8 m sector.
     reachOut: f32,
     windDur: f32,
     swingDur: f32,
@@ -202,8 +187,7 @@ const SLAM = Attack{
 const LUNGE = Attack{
     .style = .lunge,
     .reachOut = 1.98, // MEASURED: the point driven straight out — shorter than the slam's whole arc
-    // Was 0.34, which is a two-metre thrust arriving barely over the tell floor. It stays UNDER 0.4 of the
-    // slam's haul, because "the lunge is the quick one" is the pair's whole shape (and a test says so).
+    // Was 0.34, which is a two-metre thrust arriving barely over the tell floor. It stays UNDER 0.4 of the slam's haul, because "the lunge is the quick one" is the pair's whole shape.
     .windDur = 0.52,
     .swingDur = 0.26,
     .impactK = 0.46,
@@ -216,13 +200,10 @@ const LUNGE = Attack{
     .hop = 0.40,
 };
 
-/// THE STRAFE TAX. The slam is a vertical and the lunge is a straight line: one sidestep answered the whole
-/// kit, so this is the stroke that owns the ground BESIDE him. `reachOut` is MEASURED off the pose like every
-/// other row, and the arc it sweeps is measured too (`swung`).
+/// THE STRAFE TAX. The slam is a vertical and the lunge a straight line: one sidestep answered the whole kit, so this is the stroke that owns the ground BESIDE him. `reachOut` and the arc it sweeps are both MEASURED (`swung`).
 const SWEEP = Attack{
     .style = .sweep,
-    // MEASURED: the tip gets 2.79 m out at full stretch. Held a hair UNDER the slam's 2.18 on purpose —
-    // `pick` answers at the longest reach in range, and the slam stays the greatsword's first word.
+    // MEASURED: the tip gets 2.79 m out at full stretch. Held a hair UNDER the slam's 2.18 — `pick` answers at the longest reach in range, and the slam stays the greatsword's first word.
     .reachOut = 2.15,
     .windDur = 0.98,
     .swingDur = 0.34,
@@ -236,9 +217,7 @@ const SWEEP = Attack{
 const MOVES_SHIELDMAN = [_]Attack{MACE};
 const MOVES_GREATSWORD = [_]Attack{ SLAM, LUNGE, SWEEP };
 
-/// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT — the game's own number (`foe.PARRY_LEAD`), the SAME
-/// one for all three moves: what you read is the BLOW, not the animation in front of it. In SECONDS BEFORE
-/// THE HIT, since the impact frames differ wildly (mace 0.078 s into its stroke, slam 0.072, lunge 0.120).
+/// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT — the game's own number (`foe.PARRY_LEAD`), the SAME one for all three moves. In SECONDS BEFORE THE HIT, since the impact frames differ wildly (mace 0.078 s into its stroke, slam 0.072, lunge 0.120).
 const PARRY_LEAD = foe.PARRY_LEAD;
 
 const Spec = struct {
@@ -266,8 +245,7 @@ comptime {
     for (SPEC) |s| std.debug.assert(s.moves.len > 0);
 }
 
-/// THE WIDEST MOVESET ANY ROLE HAS, off the table itself — the per-move cooldowns and the readiness
-/// scratch are sized from this, so giving a role a third move cannot silently index past either.
+/// THE WIDEST MOVESET ANY ROLE HAS, off the table itself — the per-move cooldowns and the readiness scratch are sized from this, so giving a role a third move cannot silently index past either.
 const MAX_MOVES = blk: {
     var m: usize = 0;
     for (SPEC) |s| m = @max(m, s.moves.len);
@@ -292,8 +270,7 @@ const SHOVE_DECAY = 7.0;
 const A_BOB = heromod.A_BOB;
 const A_PROT = 3.8;
 
-/// DRY BONE AND NOTHING ELSE — the archer's table, because it is the archer's body (see AGENTS.md's
-/// resistance table): it burns, and there is no flesh in it for cold to bite or a poison to find.
+/// DRY BONE AND NOTHING ELSE — the archer's table, because it is the archer's body: it burns, and there is no flesh in it for cold to bite or a poison to find.
 const RESISTS = combat.resists(.{ .fire = -35, .cold = 60, .chaos = 45 });
 
 const SHIELD_STAM: f32 = 62.0;
@@ -303,8 +280,7 @@ const PELVIS_SHARE: f32 = 0.15;
 const CARRY_SH = 6.0;
 const CARRY_EL = -18.0;
 const CARRY_ABD = 12.0;
-/// `wpnTilt` is degrees the weapon leads FORWARD of the forearm line (0 = straight down it, away from the
-/// elbow), so a shouldered carry is a big number and a blow — the weapon out on the arm's end — is small.
+/// `wpnTilt` is degrees the weapon leads FORWARD of the forearm line (0 = straight down it), so a shouldered carry is a big number and a blow — the weapon out on the arm's end — is small.
 const MACE_CARRY_TILT = 142.0;
 const GS_CARRY_TILT = 118.0;
 const GS_CARRY_SH = -22.0;
@@ -319,9 +295,7 @@ const GUARD_SH = 24.0;
 const GUARD_EL = -52.0;
 const NAKED_TWIST = -6.0;
 
-// THE MACE SWING, in four beats: gather, cock, step into it, follow through past his centre line. THE ARM
-// GOES LONG AT THE BLOW — a folded elbow at impact keeps the head inside his own silhouette, which is what
-// "the weapon barely moves but I get hit" was: 0.20 m of head travel behind a 2.8 m hurt box.
+// THE MACE SWING, in four beats: gather, cock, step into it, follow through past his centre line. THE ARM GOES LONG AT THE BLOW — a folded elbow at impact keeps the head inside his own silhouette, which is what "the weapon barely moves but I get hit" was: 0.20 m of head travel behind a 2.8 m hurt box.
 const MACE_GATHER_SH = -22.0;
 const MACE_GATHER_EL = -38.0;
 const MACE_WIND_SH = -140.0;
@@ -358,9 +332,7 @@ const GS_WIND_ATT = GS_WIND_SH + GS_WIND_TILT + 360.0;
 const MACE_END_TILT = MACE_END_ATT - (MACE_HIT_SH + MACE_OVER_SH);
 const GS_END_TILT = GS_END_ATT - GS_HIT_SH;
 
-// THE HORIZONTAL. The blade is held LEVEL the whole way through — the attitude barely moves (96 deg to 88,
-// where 90 is level) and what travels is the SHOULDER'S YAW, `armSweep`, from behind his off hip to past his
-// sword side. That is why it is the one stroke a sidestep does not answer, and why it never touches the turf.
+// THE HORIZONTAL. The blade is held LEVEL the whole way (the attitude barely moves, 96 deg to 88) and what travels is the SHOULDER'S YAW, `armSweep`, from behind his off hip to past his sword side. That is why a sidestep does not answer it, and why it never touches the turf.
 const SWEEP_WIND_SH = 68.0;
 const SWEEP_WIND_EL = -66.0;
 const SWEEP_WIND_ABD = 28.0;
@@ -376,9 +348,7 @@ const SWEEP_HIT_LEAN = 15.0;
 const SWEEP_HIT_SWEEP = 84.0;
 const SWEEP_END_ATT = 74.0;
 const SWEEP_STEP = 0.52; // metres the stroke carries him forward, pre-scale
-/// The two ends of the horizontal's tilt, SOLVED rather than typed: `levelTilt`'s own arithmetic
-/// (attitude - shoulder + elbow) at each end of the stroke. The wind and the recover both need an endpoint and
-/// both had it written out by hand, which is two places to retune a level blade and get one of them.
+/// The two ends of the horizontal's tilt, SOLVED rather than typed: `levelTilt`'s own arithmetic (attitude - shoulder + elbow) at each end. Both the wind and the recover had it written out by hand.
 const SWEEP_WIND_TILT = SWEEP_WIND_ATT - SWEEP_WIND_SH + SWEEP_WIND_EL;
 const SWEEP_END_TILT = SWEEP_END_ATT - SWEEP_HIT_SH + SWEEP_HIT_EL;
 
@@ -413,13 +383,10 @@ const KNEEL_TRAIL_KNEE = 122.0;
 const KNEEL_FOLD = 19.0;
 const KNEEL_HEAD = 40.0;
 
-/// ARITHMETIC over the worst frame (the ring law). At 56 A KILLING BLOW OVERFLOWED IT ON ITS OWN: `chips(20)`
-/// (`hitParts` = 30) + the death `chips(22)` (= 33) + the wound = 66 into 56. The real worst frame is that
-/// blow landing on the KICK, which lays `kickBurst`'s 36 and `grit`'s 18 together: 54 + 66 = 120.
+/// ARITHMETIC over the worst frame (the ring law). At 56 A KILLING BLOW OVERFLOWED IT ON ITS OWN: `chips(20)` (30) + the death `chips(22)` (33) + the wound = 66 into 56. The real worst frame is that blow landing on the KICK, which lays `kickBurst`'s 36 and `grit`'s 18 together: 54 + 66 = 120.
 const NPART = 124;
 comptime {
-    // THE RING LAW, EXECUTABLE: the kick's 36 + 18 with a killing heavy blow's two chip sprays and the
-    // shared wound. At 56 the blow alone did not fit.
+    // THE RING LAW, EXECUTABLE: the kick's 36 + 18 with a killing heavy blow's two chip sprays and the shared wound.
     std.debug.assert(NPART >= 36 + 18 + foe.hitParts(20) + foe.hitParts(22) + foe.WOUND_PARTS);
 }
 
@@ -457,8 +424,7 @@ fn pick(r: Role, dist: f32, scale: f32, ready: []const bool) ?usize {
     return best;
 }
 
-/// For the shot harness to aim its beats WITH: a portrait pinned to a literal 0.58 s silently photographs
-/// a different beat the next time the timing is tuned.
+/// For the shot harness to aim its beats WITH: a portrait pinned to a literal 0.58 s silently photographs a different beat the next time the timing is tuned.
 pub const Clock = struct { wind: f32, swing: f32, chain: f32, recover: f32 };
 pub fn moveClock(role: Role, mv: usize) Clock {
     const moves = spec(role).moves;
@@ -518,8 +484,7 @@ pub const Warrior = struct {
     leapDone: f32 = 0,
     hop: f32 = 0,
     leapt: bool = false,
-    /// THE SHIELD CAUGHT HIS STROKE THIS FRAME — the one-frame flag, reset at the top of `update` and read by
-    /// the group after. A latch would bill the beat sixty times a second for the whole stumble.
+    /// THE SHIELD CAUGHT HIS STROKE THIS FRAME — a one-frame flag, reset at the top of `update`. A latch would bill the beat sixty times a second for the whole stumble.
     parried: bool = false,
     covered: bool = false,
     shieldGone: bool = false,
@@ -558,8 +523,7 @@ pub const Warrior = struct {
     threat: foe.Threat = .{},
     nav: foe.Nav = .{},
     heldOpen: bool = false,
-    /// …AND A BODY MAY BE RAISED ONCE. A latch nothing clears, `shieldGone`'s arrangement: twice is a fight
-    /// that cannot be won by killing things, which is the only thing the player is holding.
+    /// …AND A BODY MAY BE RAISED ONCE. A latch nothing clears (`shieldGone`'s arrangement): twice is a fight that cannot be won by killing things.
     wasRaised: bool = false,
     fade: f32 = 0,
     gone: bool = false,
@@ -573,8 +537,7 @@ pub const Warrior = struct {
     rest: [N]rl.Vector3 = undefined,
     wpnWas: [2]rl.Vector3 = .{ mathx.zero3, mathx.zero3 },
     wpnIs: ?[2]rl.Vector3 = null,
-    /// Set by the swing, spent AFTER `pose()`: the hurt shape IS the posed weapon, so it cannot be tested
-    /// before the pose it is measured off exists.
+    /// Set by the swing, spent AFTER `pose()`: the hurt shape IS the posed weapon, so it cannot be tested before the pose it is measured off exists.
     live: bool = false,
     trail: foe.Trail(TRAIL_N) = .{},
 
@@ -677,7 +640,7 @@ pub const Warrior = struct {
             return null;
         }
         self.heroHit = null;
-        self.justDied = false; // one-frame flag: re-set below only if this frame's blade kills it
+        self.justDied = false;
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
@@ -822,10 +785,7 @@ pub const Warrior = struct {
     fn walkInR(self: *const Warrior) f32 {
         return self.longestTrigger() + WALK_IN * self.scale;
     }
-    /// Inside `walkInR`, or homeward, he walks. Slower than the hero's run either way.
-    /// PUBLIC because it is one half of a CROSS-CREATURE comparison — the berserker is pinned above every
-    /// skeleton that charges (`game.zig`, "THE BERSERKER IS THE FASTEST THING ON FOOT"), and a number that
-    /// only one file can read is a number nothing can be measured against.
+    /// Inside `walkInR`, or homeward, he walks. Slower than the hero's run either way. PUBLIC because it is one half of a CROSS-CREATURE comparison — the berserker is pinned above every skeleton that charges (`game.zig`).
     pub fn approachSpeed(self: *const Warrior, dist: f32) f32 {
         const base = spec(self.role).speed;
         if (self.homing or dist <= self.walkInR()) return WALK_SPEED * base;
@@ -989,8 +949,7 @@ pub const Warrior = struct {
         };
     }
 
-    /// HOW FAR OUT THE KIT ACTUALLY ARRIVES at the impact frame, hero footprint included — the parry window's
-    /// reach, and the MOVE's own rather than one number per warrior: a mace lands at 1.23 m, the slam at 2.18.
+    /// HOW FAR OUT THE KIT ACTUALLY ARRIVES at the impact frame, hero footprint included — the MOVE's own rather than one number per warrior: a mace lands at 1.23 m, the slam at 2.18.
     fn parryReach(self: *const Warrior, a: Attack) f32 {
         return foe.hurtReach(a.reachOut, self.scale);
     }
@@ -1005,18 +964,14 @@ pub const Warrior = struct {
         };
     }
 
-    /// THE INSTANT THE KIT CAN BE CAUGHT IN, and how far out it reaches then — null when there is nothing to
-    /// catch. The window is the last `PARRY_LEAD` seconds of the blow's approach and nothing else, so it shuts
-    /// AT the impact frame by construction and a caught stroke is one that never landed.
+    /// THE INSTANT THE KIT CAN BE CAUGHT IN, and how far out it reaches then — null when there is nothing to catch. The window is the last `PARRY_LEAD` seconds of the blow's approach, so it shuts AT the impact frame by construction.
     fn parryable(self: *const Warrior) ?f32 {
         const left = self.toImpact() orelse return null;
         if (!foe.inParryWindow(left)) return null;
         return self.parryReach(self.move());
     }
 
-    /// THE SHIELD TAKES THE STROKE, and HYPER ARMOUR IS NO DEFENCE AGAINST IT — `hyperArmor` refuses POISE
-    /// off the blade and a parry deals none, so the one move you cannot interrupt is the one the boards can
-    /// still stop outright. `enterStun` drops the stroke, clears `live` and puts a leap back on the ground.
+    /// THE SHIELD TAKES THE STROKE, and HYPER ARMOUR IS NO DEFENCE AGAINST IT — `hyperArmor` refuses POISE off the blade and a parry deals none, so the one move you cannot interrupt is the one the boards can still stop outright.
     fn takeParry(self: *Warrior) void {
         const reach = self.parryable() orelse return;
         if (!foe.caught(self, reach)) return;
@@ -1030,8 +985,7 @@ pub const Warrior = struct {
         }
     }
 
-    /// The hurt shape IS the kit: what it swept this frame, against the column the hero stands in, latched
-    /// to one blow per stroke — never a yaw-guessed sector.
+    /// The hurt shape IS the kit: what it swept this frame, against the column the hero stands in, latched to one blow per stroke — never a yaw-guessed sector.
     fn tryReach(self: *Warrior, hero: rl.Vector3) void {
         if (self.dealt) return;
         const r = foe.hurtReach(KIT_R[@intFromEnum(self.role)], self.scale);
@@ -1366,8 +1320,7 @@ pub const Warrior = struct {
     fn setRecover(self: *Warrior, u: f32) void {
         const over = 1.0 - mathx.smoothstep(0.30, 1.0, u);
         const heave = mathx.sinf(self.elapsed * 8.0) * 2.4 * over;
-        // EXHAUSTIVE, like `setWind` and `setSwing`: written as an if-chain falling through to the mace, a
-        // fifth style silently wore the club's recovery instead of failing to compile.
+        // EXHAUSTIVE, like `setWind` and `setSwing`: written as an if-chain falling through to the mace, a fifth style silently wore the club's recovery instead of failing to compile.
         switch (self.move().style) {
             .sweep => {
                 self.armSh = lerpF(GS_CARRY_SH, SWEEP_HIT_SH, over) + heave * 0.5;
@@ -1467,8 +1420,7 @@ pub const Warrior = struct {
         const prot = A_PROT * mathx.sinf(twoPi * self.phase) * m * @abs(self.fwdB) +
             heromod.strafeProt(self.phase, self.latB, m);
         const dip = heromod.STRAFE_DIP * latW;
-        // THE LEGS TAKE THE BRACE IN THE KNEES, they do not squat (owner's law) — this is only the
-        // small pelvis drop that a real knee bend costs. The KNEEL's drop is a different order of thing.
+        // THE LEGS TAKE THE BRACE IN THE KNEES, they do not squat (owner's law) — only the small pelvis drop a real knee bend costs.
         const braceSink = 0.030 * H * self.legBrace + KNEEL_SINK * H * kn;
 
         var wx: [N]rl.Matrix = undefined;
@@ -1727,8 +1679,7 @@ pub const Muster = struct {
     pub fn aliveCount(self: *const Muster) u32 {
         return foe.aliveCount(self.liveConst());
     }
-    /// ONE OF THEM LEFT THE GROUND THIS FRAME. The lunge is only ever thrown from inside its own trigger
-    /// radius, so a leap is always near enough for the frame to be allowed to feel it.
+    /// ONE OF THEM LEFT THE GROUND THIS FRAME. The lunge is only ever thrown from inside its own trigger radius, so a leap is always near enough for the frame to be allowed to feel it.
     pub fn anyLeapt(self: *const Muster) bool {
         for (self.liveConst()) |*w| {
             if (w.leapt) return true;
@@ -1792,8 +1743,7 @@ fn greatswordMesh() rl.Mesh {
     const fy = FIST_Y;
     const fz = FIST_Z;
     const guardY = fy + GS_GUARD;
-    // ABOVE THE GUARD, like every other feature of this blade — measured off the FIST it lands BELOW the
-    // last blade segment's top, drawing the point inside the steel and cutting the hurt segment 0.12 m short.
+    // ABOVE THE GUARD, like every other feature of this blade — measured off the FIST it lands BELOW the last blade segment's top, drawing the point inside the steel and cutting the hurt segment 0.12 m short.
     const tipY = guardY + GS_BLADE;
 
     b.setMat(.wood);
@@ -1958,9 +1908,7 @@ fn shieldMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// THE SHIELD IS NOT A BONE (hero.zig's rule, and its pattern): it rides the LEFT WRIST's matrix. The long
-/// axis of a strapped kite shield runs DOWN the forearm — the wrist frame's own −Y — so the boards need no
-/// turning, only standing off the fist and raked a few degrees off the arm.
+/// THE SHIELD IS NOT A BONE (hero.zig's rule): it rides the LEFT WRIST's matrix. The long axis of a strapped kite shield runs DOWN the forearm — the wrist frame's own −Y — so the boards need no turning, only standing off the fist and raked a few degrees off the arm.
 const SH_HUB = v3(-0.028 * H, FIST_Y + 0.175 * H, FIST_Z + SH_STANDOFF);
 const SH_RAKE_X = -9.0;
 const SH_RAKE_Z = 4.0;
@@ -1996,8 +1944,7 @@ test "THE WINDOW IS AN INSTANT BEFORE THE HIT, on every stroke a warrior throws"
             const impact = a.swingDur * a.impactK;
             // It is an INSTANT, not a slice of the tell — a 1.34 s haul must not be catchable for a fifth of it.
             try std.testing.expect(PARRY_LEAD < a.windDur * 0.4);
-            // MEASURED off the state machine rather than asserted about the constants: walk the move frame by
-            // frame from the first of its windup and collect the span that is actually parryable.
+            // MEASURED off the state machine rather than asserted about the constants: walk the move frame by frame from the first of its windup and collect the span that is actually parryable.
             const step = 1.0 / 600.0;
             var open: f32 = -1;
             var shut: f32 = -1;
@@ -2032,11 +1979,9 @@ test "THE WINDOW IS AN INSTANT BEFORE THE HIT, on every stroke a warrior throws"
             const first = w.toImpact().?;
             w.stroke = 1;
             const chained = w.toImpact().?;
-            // The follow-up's blow is nearer BY THE WHOLE DIFFERENCE between the two winds, which is exactly
-            // what reading `windDur()` rather than `a.windDur` buys — and it is 0.22 s of it.
+            // The follow-up's blow is nearer BY THE WHOLE DIFFERENCE between the two winds — 0.22 s of it — which is exactly what reading `windDur()` rather than `a.windDur` buys.
             try std.testing.expectApproxEqAbs(a.windDur - a.chainWind, first - chained, 1e-5);
-            // …and it really is catchable. Both of its windows land inside the STROKE rather than the wind,
-            // because the point goes live 0.12 s in and the lead is shorter than that.
+            // …and it really is catchable. Both windows land inside the STROKE rather than the wind, because the point goes live 0.12 s in and the lead is shorter than that.
             w.state = .swing;
             w.t = a.swingDur * a.impactK - PARRY_LEAD * 0.5;
             try std.testing.expect(w.parryable() != null);
@@ -2052,8 +1997,7 @@ test "THE WINDOW IS AN INSTANT BEFORE THE HIT, on every stroke a warrior throws"
 }
 
 test "A CAUGHT STROKE NEVER LANDS, and HYPER ARMOUR is no defence against the boards" {
-    // The slam cannot be TRADED with (`hyperArmor` refuses its poise), which is the whole reason it is worth
-    // being able to refuse outright — the parry is the answer to the one move the sword has none for.
+    // The slam cannot be TRADED with (`hyperArmor` refuses its poise), which is why being able to refuse it outright is worth having.
     var w = Warrior.spawnAs(.greatsword, mathx.ground(0, 0), 0, 1.0, 0.0);
     const hero = mathx.v3(0, 0, 1.6);
     w.atk = 0;
@@ -2119,8 +2063,7 @@ test "the greatsword answers at his own reach with the slam, and LEAPS the gap w
     try std.testing.expectEqual(@as(usize, 1), pick(.greatsword, 3.2, 1.0, &all).?);
     try std.testing.expect(pick(.greatsword, triggerR(LUNGE, 1.0) + 0.5, 1.0, &all) == null);
     try std.testing.expectEqual(@as(usize, 0), pick(.greatsword, 1.2, 1.0, &all).?);
-    // WITH THE SLAM COOLING, THE HORIZONTAL IS THE CLOSE ANSWER and the lunge stays what it is — the
-    // stroke that covers ground. Only when both of those are spent does he throw the leap at his own feet.
+    // WITH THE SLAM COOLING, THE HORIZONTAL IS THE CLOSE ANSWER and the lunge stays the stroke that covers ground. Only when both are spent does he throw the leap at his own feet.
     const slamSpent = [_]bool{ false, true, true };
     try std.testing.expectEqual(@as(usize, 2), pick(.greatsword, 1.2, 1.0, &slamSpent).?);
     const swordOnly = [_]bool{ false, true, false };
@@ -2129,9 +2072,7 @@ test "the greatsword answers at his own reach with the slam, and LEAPS the gap w
     try std.testing.expect(pick(.greatsword, 1.2, 1.0, &none) == null);
 }
 
-/// THE SECTOR A STROKE ACTUALLY COVERS, in degrees off his facing, measured by standing a hero on a ring at
-/// `r` and asking every 5 deg whether the swept kit reaches him. The tip's own bearing is NOT this number —
-/// a vertical's tip passes over his skull, where a 2 cm radius spins the bearing through 159 deg of nothing.
+/// THE SECTOR A STROKE ACTUALLY COVERS, in degrees off his facing, measured by standing a hero on a ring at `r` and asking every 5 deg whether the swept kit reaches him. The tip's own bearing is NOT this number — a vertical's tip passes over his skull, where a 2 cm radius spins the bearing through 159 deg of nothing.
 fn covered(mv: usize, r: f32) struct { lo: f32, hi: f32, deg: f32 } {
     var lo: f32 = 999;
     var hi: f32 = -999;
@@ -2151,12 +2092,10 @@ test "THE SWEEP IS THE STRAFE TAX: a wide LEVEL sector where the slam and the lu
     // MEASURED: 2.79 m of tip, held level between 1.28 m and 2.01 m — never the turf, never over his skull.
     try std.testing.expect(sw.maxD > 2.7 and sw.lowY > 0.9 and sw.apex < slam.apex);
     try std.testing.expect(sw.apex - sw.lowY < 1.0);
-    // THE TELL IS LATERAL, which is the one thing this stroke may have instead of a raised weapon: at the top
-    // of the wind the blade is out past a metre and a half on his sword side, and level. MEASURED 1.92 m.
+    // THE TELL IS LATERAL, the one thing this stroke may have instead of a raised weapon: at the top of the wind the blade is out past a metre and a half on his sword side, and level. MEASURED 1.92 m.
     try std.testing.expect(sw.windLat > 1.4);
     try std.testing.expect(@abs(sw.windY - sw.lowY) < 0.9);
-    // AND THE SECTOR IS THE POINT. MEASURED 95 deg at 1.4 m and 85 at 2.0 — where the vertical's own sector
-    // COLLAPSES with distance (65 -> 45), because a line only ever covers the line.
+    // AND THE SECTOR IS THE POINT. MEASURED 95 deg at 1.4 m and 85 at 2.0 — where the vertical's own sector COLLAPSES with distance (65 -> 45), because a line only ever covers the line.
     const near = covered(2, 1.4);
     const far = covered(2, 2.0);
     std.debug.print("\n  sweep: tip {d:.2} m out, {d:.2}..{d:.2} m up, cocked {d:.2} m aside; covers {d:.0} deg at 1.4 m, {d:.0} at 2.0 (slam {d:.0}/{d:.0})\n", .{
@@ -2165,8 +2104,7 @@ test "THE SWEEP IS THE STRAFE TAX: a wide LEVEL sector where the slam and the lu
     try std.testing.expect(near.deg >= 90 and far.deg >= 80);
     try std.testing.expect(far.deg > covered(0, 2.0).deg * 1.7);
     try std.testing.expect(far.deg > covered(1, 2.0).deg * 1.7);
-    // …and it is CENTRED on him rather than trailing off one shoulder, so the tax is the same either way
-    // the hero steps.
+    // …and it is CENTRED on him rather than trailing off one shoulder, so the tax is the same either way he steps.
     try std.testing.expect(@abs(far.lo + far.hi) < 20.0);
     // A hero stood the width of a roll off the line the slam comes down is inside this stroke, not that one.
     const off = v3(1.28, 0, 1.28);
@@ -2403,11 +2341,9 @@ test "a shieldman with his boards down takes a blow like anything else" {
     try std.testing.expectApproxEqAbs(w.stam.max, w.stam.cur, 1e-5);
 }
 
-/// Drive one whole stroke on the real clock and hand back what it did: whether it reached a hero
-/// standing `at` metres dead ahead, the weapon tip's furthest reach, the height it got to at the top of
-/// the tell, the lowest the tip ever went, and the SECTOR its tip swept (degrees off his own facing,
-/// least to most). EVERY hurt-shape test below is measured through here, which is the ogre's law
-/// (`clubLowWorld`): re-tune a swing and these numbers move, on purpose.
+/// Drive one whole stroke on the real clock and hand back what it did: whether it reached a hero standing `at`
+/// metres dead ahead, the tip's furthest reach, the height at the top of the tell, the lowest the tip went, and
+/// the SECTOR its tip swept (degrees off his facing, least to most). EVERY hurt-shape test below measures through here, which is the ogre's law (`clubLowWorld`).
 const Swung = struct {
     hit: bool,
     maxD: f32,
@@ -2415,8 +2351,7 @@ const Swung = struct {
     lowY: f32,
     bearLo: f32 = 0,
     bearHi: f32 = 0,
-    /// Where the tip is sitting at the END of the tell, in his own frame: how far OUT TO THE SIDE, and how
-    /// far up. A raised weapon is not the only readable tell — a horizontal's is entirely lateral.
+    /// Where the tip sits at the END of the tell, in his own frame: how far OUT TO THE SIDE, and how far up. A raised weapon is not the only readable tell — a horizontal's is entirely lateral.
     windLat: f32 = 0,
     windY: f32 = 0,
 
@@ -2472,8 +2407,7 @@ fn swungAt(role: Role, mv: usize, stroke: u8, hero: rl.Vector3) Swung {
 }
 
 test "THE HURT SHAPE IS THE POSED WEAPON: every stroke reaches what its own kit reaches, and no further" {
-    // THE BUG THIS FILE SHIPPED WITH: a mace whose head never left 0.6 m of his own chest, firing an
-    // annulus at 2.8 m. So the contract is now geometric — `reachOut` is a MEASUREMENT of the swing.
+    // THE BUG THIS FILE SHIPPED WITH: a mace whose head never left 0.6 m of his own chest, firing an annulus at 2.8 m. So the contract is now geometric — `reachOut` is a MEASUREMENT of the swing.
     for ([_]struct { r: Role, mv: usize }{
         .{ .r = .shieldman, .mv = 0 },
         .{ .r = .greatsword, .mv = 0 },
@@ -2498,9 +2432,7 @@ test "THE HURT SHAPE IS THE POSED WEAPON: every stroke reaches what its own kit 
 }
 
 test "A TELL YOU CAN SEE: both kits are carried ABOVE THE SKULL at the top of the windup" {
-    // Owner: "windup hard to see". It shipped with the mace head at 1.34 m — chest height on its own
-    // owner — so the cock did not break his silhouette at all. Judged against the SHOULDER line, which
-    // is the thing a raised weapon has to clear to read as raised.
+    // Owner: "windup hard to see". It shipped with the mace head at 1.34 m — chest height on its own owner — so the cock did not break his silhouette at all. Judged against the SHOULDER line.
     const shoulder = REST[CHEST].y * SCALE;
     const mace = swung(.shieldman, 0, 0, 1.2);
     const slam = swung(.greatsword, 0, 0, 2.0);

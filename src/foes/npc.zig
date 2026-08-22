@@ -47,18 +47,14 @@ const FACE_AT = mathx.v3(0, 0.045 * H, 0.02 * H);
 pub const PORTRAIT_DIST: f32 = 0.86;
 const REST = heromod.restHumanoid(heromod.HIP_HALF, heromod.SHOULDER_HALF * 0.96, H);
 
-// SOLVED AGAINST THE RENDER, NOT PICKED. Every material sampled 30-36 on screen — a lit figure at the value
-// of ground in SHADOW — where the hero spans 29-50 plus skin near 90: what separates a body is RANGE. On this
-// sun albedo 40 comes back at 142 and 58 at 168, so the layering is on HUE (warm wool, COLD cloak) and the
-// value contrast is spent only on `LINEN`.
+// SOLVED AGAINST THE RENDER, NOT PICKED. Every material sampled 30-36 on screen — a lit figure at the value of ground in SHADOW — where the hero spans 29-50 plus skin near 90: what separates a body is RANGE. On this sun albedo 40 comes back at 142 and 58 at 168, so the layering is on HUE (warm wool, COLD cloak).
 const ROBE = rgba(50, 42, 33, 255);
 const ROBE_LT = rgba(68, 58, 45, 255);
 const ROBE_DK = rgba(30, 25, 20, 255);
 const CLOAK = rgba(58, 57, 66, 255);
 const CLOAK_LT = rgba(74, 72, 80, 255);
 const CLOAK_DK = rgba(40, 39, 46, 255);
-/// The inside of the cowl — near-black, and the one place a hard value break is free: it is a hole, so it
-/// cannot blow out, and the contrast against the shell is the whole read of a hood.
+/// The inside of the cowl — near-black, and the one place a hard value break is free: it is a hole, so it cannot blow out, and the contrast against the shell is the whole read of a hood.
 const HOOD_IN = rgba(10, 9, 8, 255);
 const SASH = rgba(110, 72, 38, 255);
 const LINEN = rgba(132, 122, 100, 255);
@@ -102,9 +98,7 @@ const STAFF_EL = -34.0;
 const STAFF_ABD = 15.0;
 const STAFF_TILT = 8.0;
 const STAFF_PLANT_SH = 16.0;
-/// FIST → FERRULE. The wrist rides at 0.485·H and the pole is raked a few degrees off plumb, so this is that
-/// height less the rake's cost: longer and it drives through the floor and out the far side, which is what
-/// 0.66·H did.
+/// FIST → FERRULE. The wrist rides at 0.485·H and the pole is raked a few degrees off plumb, so this is that height less the rake's cost: longer and it drives through the floor and out the far side, which is what 0.66·H did.
 const STAFF_LEN = 0.455 * H;
 const STAFF_UP = 0.32 * H;
 const STAFF_R = 0.020 * H;
@@ -377,10 +371,7 @@ pub const Wanderer = struct {
         setLocal(wx, SHR, rest, mul3(rx(-(STAFF_SH + push)), rz(-STAFF_ABD - wonk * 0.4), ry(-4.0 * plant)));
         setLocal(wx, ELR, rest, rx(STAFF_EL - 10.0 * plant));
         setLocal(wx, WRR, rest, rz(-6.0));
-        // THE POLE IS NOT A BONE, AND WHERE IT POINTS IS AUTHORED IN THE WORLD, NOT IN THE WRIST. Built down
-        // the wrist's own −Y, left alone it inherits the entire arm chain and the plant laid the staff flat out
-        // in front of him like a lance. So the fit BILLS THE ARM for its own angles (`hero.shieldFit`'s law),
-        // leaving `STAFF_TILT` to mean degrees off plumb IN THE WORLD.
+        // THE POLE IS NOT A BONE, AND WHERE IT POINTS IS AUTHORED IN THE WORLD, NOT IN THE WRIST. Built down the wrist's own −Y, left alone it inherits the entire arm chain and the plant laid the staff flat out in front of him like a lance. So the fit BILLS THE ARM for its own angles (`hero.shieldFit`'s law).
         const armPitch = -(STAFF_SH + push) + (STAFF_EL - 10.0 * plant);
         setLocal(wx, STAFF, rest, mul3(
             rz(STAFF_ABD + wonk * 0.4),
@@ -441,8 +432,7 @@ pub const Folk = struct {
         return self.list[0..self.n];
     }
 
-    /// POSTED FROM THE MAP, on the ground the map's own height field puts under them — a spawn table stores
-    /// x/z only, and dropping a man at y = 0 on a sculpted rise buries him to the waist (`foe.resetGroup`).
+    /// POSTED FROM THE MAP, on the ground the map's own height field puts under them — a spawn table stores x/z only, and dropping a man at y = 0 on a sculpted rise buries him to the waist (`foe.resetGroup`).
     pub fn reset(self: *Folk, m: *const wf.Map) void {
         self.n = 0;
         self.near = null;
@@ -485,9 +475,7 @@ pub const Folk = struct {
         for (self.liveConst()) |*p| self.model.draw(p);
     }
 
-    /// ONE of them, for the PORTRAIT: the conversation panel photographs the man you are talking to, and it
-    /// is the ACTUAL MODEL in his ACTUAL POSE (`book.drawPortrait`'s trick, one rig along) — so it cannot go
-    /// stale, and a head that turns to look at you turns in the panel too.
+    /// ONE of them, for the PORTRAIT: the conversation panel photographs the man you are talking to, and it is the ACTUAL MODEL in his ACTUAL POSE (`book.drawPortrait`'s trick) — so it cannot go stale, and a head that turns to look at you turns in the panel too.
     pub fn drawOne(self: *const Folk, i: usize) void {
         if (i >= self.n) return;
         self.model.draw(&self.list[i]);
@@ -617,10 +605,7 @@ fn shankMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// THE BOOT IS THE HERO'S FOOTPRINT EXACTLY — z −0.05·H…+0.14·H, x ±0.0425·H, sole on the ankle plane. Not a
-/// style choice: the gait curves plantarflex the ankle to a fixed angle at toe-off, so a longer toe is a
-/// longer lever below the plane and `legChain` can only level the ankle, never lift the body off it. A boot
-/// three centimetres longer than his rakes three times as deep through the floor on the same walk.
+/// THE BOOT IS THE HERO'S FOOTPRINT EXACTLY — z −0.05·H…+0.14·H, x ±0.0425·H, sole on the ankle plane. Not a style choice: the gait curves plantarflex the ankle to a fixed angle at toe-off, so a longer toe is a longer lever below the plane and `legChain` can only level the ankle, never lift the body off it.
 fn footMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.leather);
@@ -771,8 +756,7 @@ test "he turns before he sets off, so his amble is never a sidestep" {
         p.update(1.0 / 60.0, v3(0, 0, 500), 200);
         worstLat = @max(worstLat, @abs(p.latB) * p.moving);
     }
-    // A CRAB-WALK IS A STRAFE, and the strafe path's foot clearance carries eight centimetres of tolerance
-    // (`hero`'s own budget at lat 0.7). Nothing here has any business needing it.
+    // A CRAB-WALK IS A STRAFE, and the strafe path's foot clearance carries eight centimetres of tolerance (`hero`'s own budget at lat 0.7). Nothing here has any business needing it.
     try std.testing.expect(worstLat < 0.12);
 }
 
@@ -789,8 +773,7 @@ test "the idle weight shift does not slide him along the ground" {
             maxX = @max(maxX, x);
         }
     }
-    // Both ankles live inside the stance width and nothing else. A LIST moves them by the sine of a couple of
-    // degrees; a pelvis TRANSLATION would carry them the full `A_LIST`-worth of metres and read as skating.
+    // Both ankles live inside the stance width and nothing else. A LIST moves them by the sine of a couple of degrees; a pelvis TRANSLATION would carry them the full `A_LIST`-worth of metres and read as skating.
     const stance = 2.0 * heromod.HIP_HALF * H * p.scale;
     try std.testing.expect(maxX - minX < stance + 0.02);
 }

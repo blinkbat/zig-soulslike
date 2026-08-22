@@ -82,9 +82,7 @@ fn hearthInto(b: *Builder, rng: *mathx.Rng, cold: bool) void {
     while (l < 4) : (l += 1) {
         const a = rng.angle();
         const lift = rng.range(0.10, 0.30);
-        // DRAWN UNCONDITIONALLY. `cold or rng.float() < 0.5` SHORT-CIRCUITS, so the cold hearth would
-        // pull one fewer number per log and every stone after it would land somewhere else — which is
-        // the one thing the shared seed exists to prevent.
+        // DRAWN UNCONDITIONALLY. `cold or rng.float() < 0.5` SHORT-CIRCUITS, so the cold hearth would pull one fewer number per log and every stone after it would land somewhere else.
         const charred = rng.float() < 0.5;
         b.addCapsule(
             v3(mathx.cosf(a) * 0.55, 0.10, mathx.sinf(a) * 0.55),
@@ -109,14 +107,11 @@ pub fn campfireMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// Where this camp's rock and guitar sit, in the campfire's own local frame — read by BOTH meshes, exactly as
-/// the bonfire's are, so the instrument cannot drift off the rock. **Further out than the bonfire's**: this
-/// hearth's kicked stone reaches 1.15 m, so a guitar at the bonfire's 1.62 m radius would be standing in it.
+/// Where this camp's rock and guitar sit, in the campfire's own local frame — read by BOTH meshes, so the instrument cannot drift off the rock. **Further out than the bonfire's**: this hearth's kicked stone reaches 1.15 m, so a guitar at the bonfire's 1.62 m radius would be standing in it.
 const GUITAR_CX: f32 = -1.44;
 const GUITAR_CZ: f32 = 0.98;
 const GUITAR_YAW: f32 = -1.56;
-/// …and SMALLER than the bonfire's 1.5. A camp you pitch anywhere is a smaller stage than a lit landmark, and
-/// at the bonfire's scale the instrument was taller than the ring of stones it sat beside.
+/// …and SMALLER than the bonfire's 1.5. At the bonfire's scale the instrument was taller than the ring of stones it sat beside.
 const GUITAR_S: f32 = 1.18;
 
 pub fn campfireGuitarMesh(shader: rl.Shader) rl.Model {
@@ -130,23 +125,18 @@ const GLOW_HOT = mathx.rgba(240, 236, 212, GLOW_EMISSIVE);
 const GLOW = mathx.rgba(204, 200, 166, GLOW_EMISSIVE);
 const GLOW_DIM = mathx.rgba(150, 146, 112, GLOW_EMISSIVE);
 pub const PICKUP_H: f32 = 0.62;
-/// **AND IT IS A WISP, NOT A POST.** The first pass ran 0.048 of radius the whole way up and read as a bollard
-/// — the shape said "solid thing" and no amount of brightness argues with a silhouette. It is thin at the foot,
-/// thinner still at the head, and most of what the eye finds is the CORE and the motes.
+/// **AND IT IS A WISP, NOT A POST.** The first pass ran 0.048 of radius the whole way up and read as a bollard — the shape said "solid thing" and no amount of brightness argues with a silhouette.
 const GLOW_R0: f32 = 0.022;
 const GLOW_R1: f32 = 0.007;
 
-/// **THE PILLAR: A SHAFT OF LIGHT STANDING IN THE AIR OVER IT** (owner's call). What the wisp cannot do is say
-/// "here" from behind a rock or across a rise, and a taller wisp would only be the bollard again — so the thing
-/// that carries the distance is a column you can see THROUGH.
+/// **THE PILLAR: A SHAFT OF LIGHT STANDING IN THE AIR OVER IT** (owner's call). What the wisp cannot do is say "here" from behind a rock, and a taller wisp would only be the bollard again — so the thing that carries the distance is a column you can see THROUGH.
 const PILLAR_H: f32 = 1.48;
 const PILLAR_R0: f32 = 0.105;
 const PILLAR_R1: f32 = 0.048;
 /// **THE ALPHA IS SOLVED AGAINST THE SHADER'S OWN STEP, NOT CHOSEN.** `outA` lerps TIP→CORE across
 /// `smoothstep(0.62, 0.90, emis)` with `emis = 1 - a/255`, so the translucent end wants `emis <= 0.62`, any
-/// `a >= 97`. **AND IT FADES OUT AS IT GOES UP** (owner's call): the shader FLOORS opacity at the tip value,
-/// so the gradient has to come from a more solid FOOT — `a = 63` → `emis = 0.753` → `outA ≈ 0.62`, easing to
-/// the tip's 0.42. Deliberately short of `FLAME_A_CORE` (0.86): you still see THROUGH it.
+/// `a >= 97`. **AND IT FADES OUT AS IT GOES UP** (owner's call): the shader FLOORS opacity at the tip value, so
+/// the gradient comes from a more solid FOOT — `a = 63` → `emis = 0.753` → `outA ≈ 0.62`, easing to the tip's 0.42.
 const PILLAR_A_FOOT: u8 = 63;
 const PILLAR_A_HEAD: u8 = 104;
 const PILLAR = mathx.rgba(212, 208, 176, PILLAR_A_FOOT);
@@ -209,10 +199,7 @@ pub fn pickupMesh(shader: rl.Shader) rl.Model {
             prevP.y + PILLAR_H / PSEGF,
             prevP.z + rng.signed() * 0.016,
         );
-        // **THE SEGMENT'S MIDDLE, EASED.** Taken at its FOOT the last segment sampled 0.8 and the head never
-        // reached the top colour — the shaft stopped one band short of gone. The ease holds near full through
-        // the lower third and reaches the shader's translucent floor before the tip, so the head goes to
-        // nothing instead of ending on a rim.
+        // **THE SEGMENT'S MIDDLE, EASED.** Taken at its FOOT the last segment sampled 0.8 and the head never reached the top colour — the shaft stopped one band short of gone. The ease holds near full through the lower third and reaches the shader's translucent floor before the tip.
         const fm = (f + 0.5 / PSEGF);
         const t = fm * @sqrt(fm);
         b.addCapsule(
@@ -304,47 +291,35 @@ pub fn waterMesh(shader: rl.Shader) rl.Model {
 
 // Authored at the size of a real door (`FOG_W` x `FOG_H`), so the editor's `scale` reads as a multiple of one.
 //
-// **IT IS A VEIL, NOT A PROP MESH** (`props.INFO`): laid down AFTER everything opaque, or its own depth
-// punches a hole in what stands behind it — at the faded head of the gate, a rectangle of missing world.
+// **IT IS A VEIL, NOT A PROP MESH** (`props.INFO`): laid down AFTER everything opaque, or its own depth punches a hole in what stands behind it.
 pub const FOG_W: f32 = 3.4;
 pub const FOG_H: f32 = 4.2;
-/// Half-thickness of the WARD behind the sheet (`props.Info.ward`) — not of the curtain, whose three
-/// panes span 0.22 m. A push-out is a position test, so a wall thinner than one frame of travel is one a
-/// charge steps clean through: the knight's 12.4 m/s covers 0.21 m at 60 fps and 0.41 m at 30.
+/// Half-thickness of the WARD behind the sheet (`props.Info.ward`) — not of the curtain, whose three panes span 0.22 m. A push-out is a position test, so a wall thinner than one frame of travel is one a charge steps clean through: the knight's 12.4 m/s covers 0.21 m at 60 fps and 0.41 m at 30.
 pub const FOG_WARD_R: f32 = 0.40;
-// THE UNDULATION IS PER-VERTEX, so the grid IS the amplitude it can carry: at 10x9 the roll had two and a
-// half cells to bend through and read as a flag.
+// THE UNDULATION IS PER-VERTEX, so the grid IS the amplitude it can carry: at 10x9 the roll had two and a half
+// cells to bend through and read as a flag.
 //
-// **AND THIS IS THE EXPENSIVE PROP IN THE GAME, ON PURPOSE**: 16x14x5x2 = 2240 quads, 4480 tris (it was
-// 1080), five ALPHA-BLENDED layers over three value-noise octaves, on a sheet that fills the frame. If it
-// has to come down, the sheet COUNT is the dial — it multiplies fill, where the grid only costs vertices.
+// **AND THIS IS THE EXPENSIVE PROP IN THE GAME, ON PURPOSE**: 16x14x5x2 = 2240 quads, 4480 tris (it was 1080),
+// five ALPHA-BLENDED layers over three value-noise octaves, on a sheet that fills the frame. If it has to come down, the sheet COUNT is the dial — it multiplies fill, where the grid only costs vertices.
 const FOG_COLS: i32 = 16;
 const FOG_ROWS: i32 = 14;
 const FOG_SHEETS: i32 = 5; // depth: five curtains a hand apart, so the billow has something to move THROUGH
-// COLD AND HEAVY: everything outdoors here is warm, so the one thing between you and a boss is the one that
-// is not. **SOLVED AGAINST THE RENDER, NOT PICKED** — at (190,198,210) it measured 220,209,201 beside a cliff
-// at 151,137,105, so far up the curve that the curdle and billow clipped flat. 220 → 130 wants
-// (130/220)^2.2 = 0.314 on the albedo, and the BLUE is pushed past neutral because the warm key drags it
-// back: an albedo B/R of 1.18 came out at 0.91. Alpha is EMISSIVE, not opacity (the shader reads `1 - alpha`).
+// COLD AND HEAVY: everything outdoors here is warm, so the one thing between you and a boss is the one that is
+// not. **SOLVED AGAINST THE RENDER** — at (190,198,210) it measured 220,209,201 beside a cliff at 151,137,105,
+// so far up the curve that the curdle and billow clipped flat. 220 → 130 wants (130/220)^2.2 = 0.314 on the
+// albedo, and the BLUE is pushed past neutral because the warm key drags it back. Alpha is EMISSIVE, not opacity.
 const FOG_PALE = mathx.rgba(38, 44, 58, 176);
 const FOG_DEEP = mathx.rgba(20, 24, 36, 176);
-/// **THE MOTES THE SHEET SHEDS AS HE CROSSES** (`hero.fogWake`), DERIVED from the curtain's own colours or a
-/// retune of the wall leaves them the wrong colour silently. A mote draws lit and the sheet translucent
-/// emissive, so the same albedo reads several times darker on the mote and the lift puts them back on one
-/// value. The ALPHA is the mote's own opacity and NOT the sheet's emissive channel.
+/// **THE MOTES THE SHEET SHEDS AS HE CROSSES** (`hero.fogWake`), DERIVED from the curtain's own colours or a retune of the wall leaves them the wrong colour silently. A mote draws lit and the sheet translucent emissive, so the same albedo reads several times darker on the mote and the lift puts them back on one value.
 const WAKE_LIFT: f32 = 0.40;
 const WHITE = mathx.rgba(255, 255, 255, 255);
 pub const FOG_WAKE_PALE = mathx.withAlpha(mathx.lerpColor(FOG_PALE, WHITE, WAKE_LIFT), 168);
 pub const FOG_WAKE_DEEP = mathx.withAlpha(mathx.lerpColor(FOG_DEEP, WHITE, WAKE_LIFT), 148);
 
-/// **WHAT A SHUT GATE IS TINTED** (owner: gate changes colour to signify it's closed) — a per-draw multiply on
-/// the sheet's albedo (`shaders.sceneVS`'s `colDiffuse`), so it is the same wall in a different light. Red
-/// stays, blue is cut to a third, and alpha MUST be 255: the shader reads that channel as emissive.
+/// **WHAT A SHUT GATE IS TINTED** (owner: gate changes colour to signify it's closed) — a per-draw multiply on the sheet's albedo, so it is the same wall in a different light. Alpha MUST be 255: the shader reads that channel as emissive.
 pub const FOG_SHUT_TINT = mathx.rgba(255, 132, 58, 255);
 
-/// The curtain. Vertex ALPHA is left near-solid on purpose — the scene shader reads `1 - alpha` as emissive
-/// (`shaders.sceneFS`), and a fog wall lit only by the sun goes black at night. What actually fades is the
-/// OUTPUT alpha, off the height fraction this mesh writes into `animY`.
+/// The curtain. Vertex ALPHA is left near-solid on purpose — the scene shader reads `1 - alpha` as emissive, and a fog wall lit only by the sun goes black at night. What actually fades is the OUTPUT alpha, off the height fraction this mesh writes into `animY`.
 pub fn fogGateMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     b.setMat(.fog);
@@ -363,8 +338,7 @@ pub fn fogGateMesh(shader: rl.Shader) rl.Model {
             while (c < FOG_COLS) : (c += 1) {
                 const x0 = (@as(f32, @floatFromInt(c)) / @as(f32, FOG_COLS) - 0.5) * FOG_W;
                 const x1 = (@as(f32, @floatFromInt(c + 1)) / @as(f32, FOG_COLS) - 0.5) * FOG_W;
-                // BOTH FACES, because a gate is walked at from both sides and a one-sided sheet vanishes
-                // the moment you turn round inside it.
+                // BOTH FACES, because a gate is walked at from both sides and a one-sided sheet vanishes the moment you turn round inside it.
                 b.quadFadeAnim(v3(x0, y0, z), v3(x1, y0, z), v3(x1, y1, z), v3(x0, y1, z), v3(0, 0, 1), c0, c1, t0, t1);
                 b.quadFadeAnim(v3(x1, y0, z), v3(x0, y0, z), v3(x0, y1, z), v3(x1, y1, z), v3(0, 0, -1), c0, c1, t0, t1);
             }
@@ -374,8 +348,7 @@ pub fn fogGateMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// …AND THE THRESHOLD IT HANGS IN. Two worn stones at the jambs and nothing overhead: a fog gate is dropped
-/// into somebody else's archway as often as it stands on its own, and a lintel of mine would fight theirs.
+/// …AND THE THRESHOLD IT HANGS IN. Two worn stones at the jambs and nothing overhead: a fog gate is dropped into somebody else's archway as often as it stands on its own, and a lintel of mine would fight theirs.
 pub fn fogGateStoneMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0A7E);

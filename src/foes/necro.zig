@@ -100,10 +100,9 @@ const DISS_DUR = archermod.DISS_DUR;
 const SHOVE_DECAY = 7.0;
 const A_PROT = 2.6;
 
-// **THE CORPSE IS THE MECHANIC, AND THE WINDOW HAD TO BE MADE TO EXIST.** A skeleton is 2.05 s from the
-// killing blow to its last mote and a readable tell does not fit inside that, so a body inside `RAISE_R` of
-// a living necromancer **STOPS DISSIPATING** (`vigil`, stamped by `game.markVigil`, read by `foe.dissipate`).
-// The held corpse IS the tell, and it lands before the cast does.
+// **THE CORPSE IS THE MECHANIC, AND THE WINDOW HAD TO BE MADE TO EXIST.** A skeleton is 2.05 s from the killing
+// blow to its last mote and a readable tell does not fit inside that, so a body inside `RAISE_R` of a living
+// necromancer **STOPS DISSIPATING** (`vigil`, stamped by `game.markVigil`, read by `foe.dissipate`).
 pub const RAISE_R: f32 = 11.0;
 pub const RAISE_WIND: f32 = 1.90;
 const RAISE_DUR: f32 = 0.42;
@@ -114,39 +113,32 @@ pub const RAISE_MATCH_R: f32 = 1.2;
 
 pub const FROST_HIT = combat.Hit{ .poise = 18, .stance = 8, .elem = combat.elems(.{ .cold = 26 }) };
 pub const FROST_R: f32 = 2.4;
-/// The cast — the staff comes up and the hand goes out over the mark. PUBLIC because the harness aims a beat
-/// with it (`shots.FROST_TELL_AT`): a portrait pinned to a literal 0.65 s photographs somewhere else later.
+/// The cast — the staff comes up and the hand goes out over the mark. PUBLIC because the harness aims a beat with it (`shots.FROST_TELL_AT`): a portrait pinned to a literal 0.65 s photographs somewhere else later.
 pub const FROST_WIND: f32 = 0.72;
 const FROST_CAST_DUR: f32 = 0.30;
 const FROST_RECOVER: f32 = 0.70;
-/// **AND IT GREW WITH THE CASTER.** The ring lands at `FROST_R * SCALE`, so making the necromancer taller
-/// widened it from 3.80 m to 4.16 m of ground to clear. 2.4 m/s of walking over 2.7 s clears 4.59 m.
+/// **AND IT GREW WITH THE CASTER.** The ring lands at `FROST_R * SCALE`, so making the necromancer taller widened it from 3.80 m to 4.16 m of ground to clear. 2.4 m/s of walking over 2.7 s clears 4.59 m.
 pub const FROST_FUSE: f32 = 2.70;
 const FROST_CD: f32 = 4.2;
 const FROST_R_MIN: f32 = 3.0;
 const FROST_R_MAX: f32 = 18.0;
 
 comptime {
-    // The ring lands centred on him, so he must clear its radius plus his own footprint. **MEASURED AT THE
-    // SCALE IT IS DRAWN AT** — the field radius is `FROST_R * scale`, and asserting the bare `FROST_R` would
-    // pass on a ring a third wider. The hero's figures are inline: this file sits below `hero.zig`.
+    // The ring lands centred on him, so he must clear its radius plus his own footprint. **MEASURED AT THE SCALE IT IS DRAWN AT** — the field radius is `FROST_R * scale`, and asserting the bare `FROST_R` would pass on a ring a third wider.
     std.debug.assert(FROST_FUSE * 1.7 > FROST_R * SCALE + foe.HERO_R);
     std.debug.assert(FROST_WIND >= foe.TELL_MIN);
     std.debug.assert(RAISE_WIND > FROST_WIND + FROST_CAST_DUR);
     std.debug.assert(RAISE_CD > RAISE_WIND + RAISE_DUR + RAISE_RECOVER);
     std.debug.assert(FROST_HIT.dmg == 0 and FROST_HIT.elem.at(.cold) > 0);
     std.debug.assert(RAISE_R > FROST_R_MIN);
-    // **THE RANGE IT WANTS TO STAND AT MUST SIT INSIDE THE RANGE IT CAN CAST FROM.** Two independently
-    // authored bands that only happen to overlap is a creature that walks to the one place it cannot cast.
+    // **THE RANGE IT WANTS TO STAND AT MUST SIT INSIDE THE RANGE IT CAN CAST FROM.** Two independently authored bands that only happen to overlap is a creature that walks to the one place it cannot cast.
     std.debug.assert(WANT_MIN >= FROST_R_MIN and WANT_MAX <= FROST_R_MAX);
     std.debug.assert(WANT_MIN < WANT_MAX);
     std.debug.assert(WANT_MIN > FROST_R * SCALE);
 }
 
-/// Sized by ARITHMETIC over the worst FRAME, not over the biggest burst — which is what 104 was, and the
-/// two do not meet here: the sigil's fuse runs on its own clock, so the ring going off (60) lands on the
-/// creep it has been laying the whole 2.70 s (22/s at a 1.0 s life) and can share that frame with the blow
-/// that kills the caster (both chip sprays and the wound). At 104 that frame overwrote 34 of its own motes.
+/// Sized by ARITHMETIC over the worst FRAME, not over the biggest burst — which is what 104 was. The sigil's
+/// fuse runs on its own clock, so the ring going off (60) lands on the creep it has been laying the whole 2.70 s (22/s at a 1.0 s life) and can share that frame with the blow that kills the caster. At 104 that frame overwrote 34 of its own motes.
 const NPART = 144;
 const RAISE_BLOOM: u32 = 40;
 const FROST_BLOOM: u32 = 30;
@@ -170,8 +162,7 @@ const HEM_SWAY = 2.2;
 
 const State = enum { idle, drift, leap, raise_wind, raise_up, frost_wind, frost_cast, recover, stunlight, stunheavy, dead };
 
-/// Its own type rather than a bool, because the recovery reads it through an exhaustive switch — a third
-/// move then cannot be added without saying how long its opening is.
+/// Its own type rather than a bool, because the recovery reads it through an exhaustive switch — a third move then cannot be added without saying how long its opening is.
 const Spent = enum { raise, frost };
 
 const Choice = enum { raise, frost, keep, hold };
@@ -182,22 +173,19 @@ fn classify(dist: f32, hasBody: bool, raiseReady: bool, frostReady: bool) Choice
     return .keep;
 }
 
-// **AND IT LEAPS AWAY RATHER THAN BACKING UP.** Inside `LEAP_R` it goes backwards in one burst — four times
-// its own walk for a third of a second, which buys most of the band it wants in less time than a swing takes.
+// **AND IT LEAPS AWAY RATHER THAN BACKING UP.** Inside `LEAP_R` it goes backwards in one burst — four times its own walk for a third of a second, which buys most of the band it wants in less time than a swing takes.
 const LEAP_R: f32 = 4.2;
 const LEAP_DUR: f32 = 0.34;
 const LEAP_SPEED: f32 = 4.6;
 const LEAP_CD: f32 = 2.2;
-/// A hop, not a glide. Metres at the top of the arc — enough to read as leaving the ground and not enough
-/// to clear anything.
+/// A hop, not a glide. Metres at the top of the arc — enough to read as leaving the ground and not enough to clear anything.
 const LEAP_UP: f32 = 0.55;
 
 const WANT_MIN: f32 = 8.0;
 const WANT_MAX: f32 = 15.0;
 const DRIFT_DUR: f32 = 0.9;
 
-/// A CORPSE THIS CREATURE IS HOLDING OPEN, stamped by the game (`game.markVigil`) — `Leash`'s law: the
-/// creature reads the field and never reaches out for the state. Null means nothing worth standing over.
+/// A CORPSE THIS CREATURE IS HOLDING OPEN, stamped by the game (`game.markVigil`) — `Leash`'s law: the creature reads the field and never reaches out for the state. Null means nothing worth standing over.
 pub const Vigil = struct {
     at: ?rl.Vector3 = null,
 
@@ -214,8 +202,7 @@ const Sigil = struct {
     fn live(self: *const Sigil) bool {
         return self.left > 0;
     }
-    /// **0 AT THE CAST, 1 AT THE BURST** — what the ring on the ground is drawn off, so the picture and the
-    /// fuse are one number.
+    /// **0 AT THE CAST, 1 AT THE BURST** — what the ring on the ground is drawn off, so the picture and the fuse are one number.
     fn fill(self: *const Sigil) f32 {
         return mathx.clampF(1.0 - self.left / FROST_FUSE, 0, 1);
     }
@@ -274,14 +261,12 @@ pub const Necro = struct {
     elapsed: f32 = 0,
     raiseCd: f32 = 0,
     frostCd: f32 = 0,
-    /// **THE BODY IT RAISED THIS FRAME** — a one-frame flag (`justDied`'s rule), reset at the TOP of `update`.
-    /// The creature cannot do the raising itself: the body is in another group, another array, another type.
+    /// **THE BODY IT RAISED THIS FRAME** — a one-frame flag, reset at the TOP of `update`. The creature cannot do the raising itself: the body is in another group, another array, another type.
     raised: bool = false,
     raiseAt: rl.Vector3 = mathx.zero3,
     spent: Spent = .frost,
     sigil: Sigil = .{},
-    /// **A RING WENT INTO THE GROUND THIS FRAME** — a one-frame edge, reset at the TOP of `update`. As a
-    /// window on the fuse's own clock it read true for three frames at 60 fps: one cast, three shakes.
+    /// **A RING WENT INTO THE GROUND THIS FRAME** — a one-frame edge, reset at the TOP of `update`. As a window on the fuse's own clock it read true for three frames at 60 fps: one cast, three shakes.
     laid: bool = false,
     heroHit: ?combat.Hit = null,
     hitFrom: rl.Vector3 = mathx.zero3,
@@ -289,7 +274,6 @@ pub const Necro = struct {
     homing: bool = false,
     parried: bool = false,
 
-    // posture channels, degrees
     staffSh: f32 = STAFF_CARRY_SH,
     staffEl: f32 = STAFF_CARRY_EL,
     staffAbd: f32 = STAFF_CARRY_ABD,
@@ -406,9 +390,7 @@ pub const Necro = struct {
     }
 
     pub fn update(self: *Necro, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
-        // **CLEARED BEFORE THE `gone` BRANCH, NOT AFTER IT.** The ring outlives its caster, so reset only on
-        // the live path the corpse's own branch returned the SAME hit every frame from the burst onward —
-        // cold damage forever, off one ring, silently.
+        // **CLEARED BEFORE THE `gone` BRANCH, NOT AFTER IT.** The ring outlives its caster, so reset only on the live path the corpse's own branch returned the SAME hit every frame from the burst onward — cold damage forever, off one ring, silently.
         self.heroHit = null;
         self.laid = false;
         if (self.gone) {
@@ -475,9 +457,7 @@ pub const Necro = struct {
                 } else if (self.t >= DRIFT_DUR) self.decide(d);
             },
             .raise_wind => {
-                // **IT TURNS TO THE BODY IT COMMITTED TO, NOT TO HIM** — and that IS the tell. `raiseAt` and
-                // never `vigil.at`: the spot is committed at the START of the gather, so a nearer body falling
-                // mid-tell cannot swing 1.9 s of announcement onto somewhere else.
+                // **IT TURNS TO THE BODY IT COMMITTED TO, NOT TO HIM** — and that IS the tell. `raiseAt` and never `vigil.at`: the spot is committed at the START of the gather, so a nearer body falling mid-tell cannot swing 1.9 s of announcement onto somewhere else.
                 self.faceToward(self.raiseAt, dt);
                 const u = mathx.clampF(self.t / RAISE_WIND, 0, 1);
                 self.setRaiseWind(u);
@@ -555,15 +535,12 @@ pub const Necro = struct {
         self.sigil.blew = 0;
         self.burst();
         if (mathx.distXZ(self.sigil.at, hero) <= FROST_R * self.scale + foe.HERO_R) {
-            // THE ORIGIN IS THE RING, NOT THE CASTER (the delver's burst): stood on the mark there is no
-            // bearing, so the boards cannot answer it, and caught at the rim they can.
+            // THE ORIGIN IS THE RING, NOT THE CASTER (the delver's burst): stood on the mark there is no bearing, so the boards cannot answer it, and caught at the rim they can.
             self.bill(FROST_HIT, self.sigil.at);
         }
     }
 
-    /// **A BLOW AND WHERE IT CAME FROM, SET TOGETHER OR NOT AT ALL.** A move that set `heroHit` and forgot
-    /// the other half would bill from the WORLD ORIGIN — a bearing the shield can answer, on the one blow
-    /// that must never have one. One writer, so the pair cannot come apart.
+    /// **A BLOW AND WHERE IT CAME FROM, SET TOGETHER OR NOT AT ALL.** A move that set `heroHit` and forgot the other half would bill from the WORLD ORIGIN — a bearing the shield can answer, on the one blow that must never have one.
     fn bill(self: *Necro, hit: combat.Hit, from: rl.Vector3) void {
         self.heroHit = hit;
         self.hitFrom = from;
@@ -690,8 +667,7 @@ pub const Necro = struct {
         self.headYaw = approach(self.headYaw, 0, e);
     }
 
-    /// **THE GATHER TRAVELS HARD, AND IT TRAVELS AWAY FROM WHERE IT ENDS** (the knight's tell lesson). Every
-    /// channel is moving for the whole 1.9 s, because a committed action that shows nothing never began.
+    /// **THE GATHER TRAVELS HARD, AND IT TRAVELS AWAY FROM WHERE IT ENDS** (the knight's tell lesson). Every channel is moving for the whole 1.9 s, because a committed action that shows nothing never began.
     fn setRaiseWind(self: *Necro, u: f32) void {
         const e = mathx.smoothstep(0, 0.92, u);
         self.staffSh = lerpF(STAFF_CARRY_SH, RAISE_STAFF_SH, e);
@@ -867,9 +843,8 @@ pub const Necro = struct {
         setLocal(wx, ELR, rest, rx(-staffEl));
         setLocal(wx, WRR, rest, rz(4.0));
         // WHERE THE STAFF POINTS IS AUTHORED IN THE WORLD, NOT IN THE WRIST (`hero.shieldFit`'s law): the fit
-        // BILLS THE ARM for its own flexion, so `staffTilt` means degrees the head leads FORWARD OF PLUMB in
-        // the world. The arm's own rx down this chain is `-(staffSh + staffEl)`, so that is what is BILLED
-        // BACK — and the sign was measured: added instead, the pole read out at 93 degrees, flat like a lance.
+        // BILLS THE ARM for its own flexion, so `staffTilt` means degrees the head leads FORWARD OF PLUMB in the
+        // world. The arm's own rx down this chain is `-(staffSh + staffEl)`, and the sign was measured: added instead, the pole read out at 93 degrees, flat like a lance.
         setLocal(wx, STAFF, rest, staffFit(self.staffTilt - staffSh - staffEl));
     }
 
@@ -877,18 +852,14 @@ pub const Necro = struct {
         model.draw(self);
     }
 
-    /// The unlit pass — the sigil, the gather at the free hand, and the particles. Drawn here rather than in
-    /// the mesh for the leechfly's reason: vertex alpha is a FIXED emissive channel and cannot brighten.
+    /// The unlit pass — the sigil, the gather at the free hand, and the particles. Drawn here rather than in the mesh for the leechfly's reason: vertex alpha is a FIXED emissive channel and cannot brighten.
     pub fn drawFx(self: *const Necro) void {
         self.drawSigil();
         self.drawGather();
         foe.drawParticles(&self.parts);
     }
 
-    /// **THE RING SAYS HOW LONG IS LEFT IN ITS OWN PICTURE.** The rim sits at the full radius from the first
-    /// frame, so what is drawn is exactly the ground that is about to go — a ring that grew to its reach would
-    /// promise safety at a rim it had not got to yet. Inside it the BAND (`RING_INNER`) the runes take one by
-    /// one, and the ground under it is lit besides (`sigilLight`).
+    /// **THE RING SAYS HOW LONG IS LEFT IN ITS OWN PICTURE.** The rim sits at the full radius from the first frame, so what is drawn is exactly the ground that is about to go — a ring that grew to its reach would promise safety at a rim it had not got to yet.
     fn drawSigil(self: *const Necro) void {
         const r = FROST_R * self.scale;
         const at = self.sigil.at;
@@ -965,8 +936,7 @@ pub const Necro = struct {
     pub fn castPoint(self: *const Necro) rl.Vector3 {
         return foe.markOn(self.xf[WRL], v3(0, FIST_Y, FIST_Z));
     }
-    /// …and THE STAFF, as the segment it occupies — ferrule to head, measured off the mesh's own constants
-    /// (the ogre's `clubLowWorld` law). Nothing about where the pole is may be guessed from a yaw.
+    /// …and THE STAFF, as the segment it occupies — ferrule to head, measured off the mesh's own constants (the ogre's `clubLowWorld` law). Nothing about where the pole is may be guessed from a yaw.
     pub fn staffSeg(self: *const Necro) [2]rl.Vector3 {
         return .{
             foe.markOn(self.xf[STAFF], v3(0, FIST_Y - STAFF_DOWN, FIST_Z)),
@@ -1114,8 +1084,7 @@ pub const Necro = struct {
         }
     }
 
-    /// The hem sweeping the ground rather than a boot striking it — barefoot bone under a metre of wet cloth,
-    /// so the footfall is a DRAG. At or under the fight's floor (the audio law).
+    /// The hem sweeping the ground rather than a boot striking it — barefoot bone under a metre of wet cloth, so the footfall is a DRAG. At or under the fight's floor (the audio law).
     fn footfalls(self: *Necro) void {
         const ph = self.phase;
         const crossed = @floor(ph * 2.0) != @floor(self.prevPhase * 2.0);
@@ -1146,18 +1115,14 @@ fn approach(cur: f32, want: f32, e: f32) f32 {
     return lerpF(cur, want, mathx.clampF(e, 0, 1));
 }
 
-// **BUILT OUT OF `drawSphereEx` AND NOTHING ELSE.** Do not replace it with line or strip geometry:
-// `rl.drawLine3D` is one pixel however close you stand, and a `drawTriangleStrip3D` annulus came back
-// INVISIBLE beside particles on the same spot. **THE FUSE BURNS ROUND THE RING RATHER THAN FILLING IT** —
-// runes lighting one by one are a countdown you can COUNT from any bearing.
-//
-// **MEASURED:** 157 `drawSphereEx` calls at 4x6, ~7.5k CPU-transformed triangles a frame per live sigil,
-// ~23k for three casters. Early-outs to nothing when none is live.
+// **BUILT OUT OF `drawSphereEx` AND NOTHING ELSE.** Do not replace it with line or strip geometry: `rl.drawLine3D`
+// is one pixel however close you stand, and a `drawTriangleStrip3D` annulus came back INVISIBLE beside particles
+// on the same spot. **THE FUSE BURNS ROUND THE RING RATHER THAN FILLING IT** — runes lighting one by one are a
+// countdown you can COUNT from any bearing. **MEASURED:** 157 `drawSphereEx` calls at 4x6, ~7.5k CPU-transformed triangles a frame per live sigil, ~23k for three casters.
 const RUNE_N: i32 = 14;
 const RUNE_R: f32 = 0.89;
 const RING_INNER: f32 = 0.78;
-/// A small rosette at dead centre. Six grains, and it answers the one question the rim cannot: which way is
-/// OUT — stood on the mark you cannot see the whole rim at once, but you can always see the middle.
+/// A small rosette at dead centre. Six grains, and it answers the one question the rim cannot: which way is OUT — stood on the mark you cannot see the whole rim at once, but you can always see the middle.
 const RING_EYE: f32 = 0.18;
 const RING_DOTS: i32 = 46;
 const RING_DOTS_IN: i32 = @intFromFloat(@as(f32, @floatFromInt(RING_DOTS)) * RING_INNER);
@@ -1205,8 +1170,7 @@ fn ringOfGrains(at: rl.Vector3, r: f32, size: f32, col: rl.Color, n: i32) void {
     }
 }
 
-// Sign is POSITIVE-IS-FORWARD on both shoulders — `poseUpper` negates on the way in, exactly as the
-// warriors' does, because authored the obvious way round the arms hang behind him.
+// Sign is POSITIVE-IS-FORWARD on both shoulders — `poseUpper` negates on the way in, exactly as the warriors' does, because authored the obvious way round the arms hang behind him.
 
 const STAFF_CARRY_SH = -14.0;
 const STAFF_CARRY_EL = -26.0;
@@ -1220,9 +1184,7 @@ const FREE_CARRY_ABD = 7.0;
 const RAISE_STAFF_SH = 26.0;
 const RAISE_STAFF_EL = -12.0;
 const RAISE_STAFF_ABD = 8.0;
-/// **THE TRUNK IS NOT BILLED BY THE FIT, ONLY THE ARM IS — so a pose that arches the spine pays for it
-/// here.** `RAISE_LEAN` takes the chest back 22 degrees and the staff inherits every one of them, so the
-/// same 180-is-plumb number that stands the pole up at the carry laid it out at nearly 50 degrees.
+/// **THE TRUNK IS NOT BILLED BY THE FIT, ONLY THE ARM IS — so a pose that arches the spine pays for it here.** `RAISE_LEAN` takes the chest back 22 degrees and the staff inherits every one of them, so the same 180-is-plumb number that stands the pole up at the carry laid it out at nearly 50 degrees.
 const RAISE_STAFF_TILT = 150.0;
 const RAISE_FREE_SH = -128.0;
 const RAISE_FREE_EL = -58.0;
@@ -1253,9 +1215,7 @@ const FROST_THROW_LEAN = 24.0;
 
 const staffFit = heromod.staffFit;
 
-// **BOTH ENDS ARE SOLVED AGAINST THE BODY, not chosen.** The fist rides at `rest[WRR].y` = 0.485·H, which
-// on this rig is 1.17 m off the ground: the ferrule is the drop that puts it ON the ground (0.30·H left it
-// floating half a metre up) and the head is the rise that puts it just over the helm. A test brackets both.
+// **BOTH ENDS ARE SOLVED AGAINST THE BODY, not chosen.** The fist rides at `rest[WRR].y` = 0.485·H, which on this rig is 1.17 m off the ground: the ferrule is the drop that puts it ON the ground (0.30·H left it floating half a metre up) and the head is the rise that puts it just over the helm.
 const STAFF_UP = 0.65 * H; // fist → the head, landing ~2.74 m: a hand over the crown
 const STAFF_DOWN = 0.46 * H; // …and down past the fist to the ferrule, landing ~0.06 m: on the ground
 const STAFF_SEGS = 7;
@@ -1308,9 +1268,7 @@ fn chestMesh() rl.Mesh {
     b.setMat(.cloth);
     b.addBlob(v3(0, -0.012 * H, 0), v3(0.072 * H, 0.082 * H, 0.056 * H), 4, 10, ROBE);
     b.addBlob(v3(0, 0.048 * H, 0), v3(0.082 * H, 0.052 * H, 0.060 * H), 4, 10, ROBE_LT);
-    // **THE YOKE, and without it the arms hang in mid-air.** `restHumanoid` puts the shoulder joints at
-    // ±0.117·H while this chest is 0.072·H across, so there is 0.045·H of daylight either side of a sleeve
-    // 0.023·H thick. It is the ONE place this creature may carry width: a shoulder line is not a pauldron.
+    // **THE YOKE, and without it the arms hang in mid-air.** `restHumanoid` puts the shoulder joints at ±0.117·H while this chest is 0.072·H across, so there is 0.045·H of daylight either side of a sleeve 0.023·H thick. The ONE place this creature may carry width.
     const shx = SHOULDER_HALF * H;
     const shy = (0.818 - 0.760) * H;
     b.addCapsule(v3(-shx, shy, 0), v3(shx, shy, 0), 0.030 * H, 0.030 * H, 8, ROBE);
@@ -1342,8 +1300,7 @@ fn hemMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(7717);
     b.setMat(.cloth);
-    // From the hip down past the feet. `-0.030·H` is BELOW the sole plane on purpose: that is the drag, and
-    // a hem stopping at the ankle is a dress.
+    // From the hip down past the feet. `-0.030·H` is BELOW the sole plane on purpose: that is the drag, and a hem stopping at the ankle is a dress.
     const top = 0.010 * H;
     const bot = -0.030 * H - REST[ROOT].y;
     const hip = -0.20 * REST[ROOT].y;
@@ -1408,8 +1365,7 @@ fn neckMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// **THE BONE HELM.** The eye sockets are left as HOLES, and a hole is the one place a hard value break is
-/// free (the wanderer's `HOOD_IN` law): it cannot blow out, and the contrast is the whole read of a face.
+/// **THE BONE HELM.** The eye sockets are left as HOLES, and a hole is the one place a hard value break is free (the wanderer's `HOOD_IN` law): it cannot blow out, and the contrast is the whole read of a face.
 fn helmMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(5153);
@@ -1479,8 +1435,7 @@ fn shankMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// **THE SLEEVES ARE THE THINNEST THING ON HIM.** At 0.038·H of radius each arm was 0.14 wide against a 0.26
-/// chest, so the pair hung off the shoulders as bolsters — a robe on a skeleton has almost nothing inside it.
+/// **THE SLEEVES ARE THE THINNEST THING ON HIM.** At 0.038·H of radius each arm was 0.14 wide against a 0.26 chest, so the pair hung off the shoulders as bolsters.
 fn sleeveMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.cloth);
@@ -1601,8 +1556,7 @@ test "TALL AND SKINNY is two dials, and the RATIO is what either of them alone c
     const scaffold = heromod.restHumanoid(heromod.HIP_HALF, heromod.SHOULDER_HALF, H);
     try std.testing.expect(SCALE > archermod.SCALE);
     try std.testing.expect(SCALE * H > 2.3);
-    // SKINNY: narrower than the shared scaffold at the shoulder AND at the hip. Measured off the rest pose
-    // rather than off the constants, and against the SCAFFOLD's own rest, never against the bare fraction.
+    // SKINNY: narrower than the shared scaffold at the shoulder AND at the hip. Measured off the rest pose rather than off the constants, and against the SCAFFOLD's own rest.
     try std.testing.expect(REST[SHL].x < scaffold[SHL].x);
     try std.testing.expect(@abs(REST[HIPL].x) < @abs(scaffold[HIPL].x));
     const mySpan = 2.0 * REST[SHL].x * SCALE;
@@ -1632,8 +1586,7 @@ test "THE STAFF STANDS UP, ON ITS OWN SIDE, AND ITS FOOT IS ON THE GROUND — me
         },
     );
     try std.testing.expect(head.y > foot.y);
-    // **SHARES OF THE CREATURE, NOT METRE MARKS.** Both of these were the OLD necromancer's proportions
-    // written down as absolutes — 0.30 m of ground clearance and 0.90 m of reach.
+    // **SHARES OF THE CREATURE, NOT METRE MARKS.** Both of these were the OLD necromancer's proportions written down as absolutes — 0.30 m of ground clearance and 0.90 m of reach.
     try std.testing.expect(foot.y < crown * 0.13);
     try std.testing.expect(mathx.lenXZ(mathx.subV(foot, k.pos)) < crown * 0.36);
     try std.testing.expect(head.y > k.centerWorld().y);

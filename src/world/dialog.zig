@@ -179,9 +179,7 @@ pub const Session = struct {
 
         const x = SIDE_MARGIN;
         const wpx = sw - SIDE_MARGIN * 2;
-        // THE PICTURE TAKES ITS COLUMN OUT OF THE PROSE'S: the wrap is measured against what is LEFT, so a
-        // portrait cannot push a line past the frame. …AND IT IS DROPPED ENTIRELY RATHER THAN STARVING THE
-        // WORDS — without that, the wrap gets a negative width and the plate a negative-sided rectangle.
+        // THE PICTURE TAKES ITS COLUMN OUT OF THE PROSE'S: the wrap is measured against what is LEFT, so a portrait cannot push a line past the frame. …AND IT IS DROPPED ENTIRELY RATHER THAN STARVING THE WORDS — without that, the wrap gets a negative width and the plate a negative-sided rectangle.
         const room = wpx - PAD * 2 - (PORT_W + PORT_GAP) >= PROSE_MIN_W;
         const showPort = port != null and room;
         const portCol: i32 = if (showPort) PORT_W + PORT_GAP else 0;
@@ -198,8 +196,7 @@ pub const Session = struct {
         var buf: [wf.MAX_CHOICES]usize = undefined;
         const shown = self.offered(m, rt, w, &buf);
 
-        // THE MEASURE, in the same order the draw walks it — one pass ahead of the other, so a row added below
-        // cannot silently overflow a box laid out for the row count before it.
+        // THE MEASURE, in the same order the draw walks it — one pass ahead of the other, so a row added below cannot silently overflow a box laid out for the row count before it.
         var need: i32 = PAD * 2;
         if (who.len > 0) need += bodyH + RULE_GAP * 2;
         need += @as(i32, @intCast(lines.len)) * bodyH;
@@ -231,9 +228,7 @@ pub const Session = struct {
             cy += RULE_GAP;
         }
 
-        // THE FOOTER IS THE FLOOR EVERYTHING INSIDE THE PLATE IS MEASURED AGAINST — the prose as much as the
-        // rows. `need` asked for the height it wanted and `MAX_FRAC` may have refused it on a short window, and
-        // a line that will not fit is not drawn OUTSIDE the plate.
+        // THE FOOTER IS THE FLOOR EVERYTHING INSIDE THE PLATE IS MEASURED AGAINST — the prose as much as the rows. `need` asked for the height it wanted and `MAX_FRAC` may have refused it on a short window, and a line that will not fit is not drawn OUTSIDE the plate.
         const footer = y + hpx - PAD - hud.lineH(hud.HINT);
         for (lines) |ln| {
             if (cy + bodyH > footer) break;

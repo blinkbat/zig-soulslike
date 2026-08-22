@@ -15,10 +15,7 @@ pub const MORTAR = rgba(36, 33, 29, 255);
 pub const MARBLE = rgba(54, 54, 52, 255);
 pub const MARBLE_LT = rgba(70, 70, 68, 255);
 pub const MARBLE_DK = rgba(34, 34, 34, 255);
-// Living rock — and the three tones separate on HUE, not value alone: the noon sun flattens any value
-// pair on a face this big (AGENTS.md), so as three neutral greys every cliff came back one slab of pale
-// concrete. Warm base, COOL shadow seams, buff caught-light — the strata banding the builder already
-// deals only reads at all because these disagree in hue.
+// Living rock — and the three tones separate on HUE, not value alone: the noon sun flattens any value pair on a face this big (AGENTS.md), so as three neutral greys every cliff came back one slab of pale concrete. Warm base, COOL shadow seams, buff caught-light.
 pub const CLIFF_ROCK = rgba(46, 42, 36, 255);
 pub const CLIFF_DK = rgba(27, 27, 29, 255);
 pub const CLIFF_LT = rgba(56, 51, 42, 255);
@@ -62,9 +59,7 @@ pub const STEM = rgba(44, 54, 28, 255);
 pub const PETAL = rgba(210, 196, 152, 255);
 pub const SEED = rgba(118, 94, 46, 255);
 pub const PETAL_GLOW = rgba(242, 206, 118, 200);
-// The leaf family spans a real HUE range now, not one olive at five values: the canopy builders already
-// put light on top and dark below, but sun-flattened value was all that said so — the undersides go COOL
-// blue-green and the crowns warm lime, which is the split daylight cannot take away.
+// The leaf family spans a real HUE range, not one olive at five values: the undersides go COOL blue-green and the crowns warm lime, which is the split daylight cannot take away.
 pub const LEAF_DK = rgba(19, 32, 24, 255);
 pub const LEAF = rgba(35, 46, 25, 255);
 pub const LEAF_LT = rgba(55, 58, 25, 255);
@@ -92,44 +87,35 @@ pub const NEEDLE_DK = rgba(15, 24, 21, 255);
 pub const BIRCH_BARK = rgba(104, 100, 90, 255);
 pub const BIRCH_SCAR = rgba(44, 42, 38, 255);
 pub const BONE = rgba(108, 104, 92, 255);
-// **GREAT BONE IS NOT SCATTERED BONE** — a rib nine metres tall is a BIG SMOOTH MASS, and at albedo 108 the
-// key and the gamma lift bring it back at 221/255, a white plastic tube. 60 comes back at 172, and NEUTRAL,
-// since every other outdoor albedo here is warm.
+// **GREAT BONE IS NOT SCATTERED BONE** — a rib nine metres tall is a BIG SMOOTH MASS, and at albedo 108 the key and the gamma lift bring it back at 221/255, a white plastic tube. 60 comes back at 172, and NEUTRAL, since every other outdoor albedo here is warm.
 pub const BONE_OLD = rgba(44, 45, 41, 255);
 pub const BONE_LT = rgba(58, 59, 53, 255);
 pub const BONE_DK = rgba(28, 29, 27, 255);
 /// The snap face, and the ONE warm tone on a bone — small enough an area to carry it.
 pub const MARROW = rgba(70, 63, 50, 255);
-// **CHARCOAL IS THE DARKEST ALBEDO IN THE WORLD** and has to be: a burnt spar is a tall smooth mass, and
-// anything above the oldest bark comes back off the hot key as grey. 18 lands at 98/255 on screen.
+// **CHARCOAL IS THE DARKEST ALBEDO IN THE WORLD** and has to be: a burnt spar is a tall smooth mass, and anything above the oldest bark comes back off the hot key as grey. 18 lands at 98/255 on screen.
 pub const CHAR = rgba(18, 16, 15, 255);
 pub const CHAR_LT = rgba(30, 27, 24, 255);
 /// A live coal in a crust. Its ALPHA is the emissive channel, not its opacity.
 pub const EMBER_LIVE = rgba(198, 92, 26, 60);
 pub const CINDER_GREY = rgba(46, 42, 39, 255);
-// **A DRIFT IS NOT THE CAMPFIRE'S ASH.** `ASH`/`ASH_LT` are a handful in a hearth and are authored for that;
-// a two-metre dune is a BIG SMOOTH MASS and at 96 it came back at 214/255 — a snowbank. These are the same
-// material solved for the size it is actually drawn at.
+// **A DRIFT IS NOT THE CAMPFIRE'S ASH.** `ASH`/`ASH_LT` are a handful in a hearth; a two-metre dune is a BIG SMOOTH MASS and at 96 it came back at 214/255 — a snowbank. Same material solved for the size it is drawn at.
 pub const DRIFT = rgba(54, 50, 47, 255);
 pub const DRIFT_LT = rgba(70, 66, 62, 255);
 pub const DRIFT_DK = rgba(37, 34, 32, 255);
 pub const PUNK = rgba(66, 54, 36, 255);
 pub const PUNK_DK = rgba(42, 34, 23, 255);
-// The Mycelian. Caps read against a wood by being COOL and slightly violet where bark is warm brown; the
-// gills stay pale because they are always in the cap's own shade and never take the sun.
+// The Mycelian. Caps read against a wood by being COOL and slightly violet where bark is warm brown; the gills stay pale because they are always in the cap's own shade and never take the sun.
 pub const CAP_FLESH = rgba(44, 35, 40, 255);
 pub const CAP_FLESH_DK = rgba(29, 23, 28, 255);
-/// **A FUNGUS STANDS IN NOTHING.** A horizontal disc of any colour that is not the ground's takes the key
-/// square-on and reads as a PLATE THE PROP IS STANDING ON, so the pads at every stipe's foot are gone and
-/// the colour they were drawn in went with them. Moss on STONE is still moss — that is the rock palette.
+/// **A FUNGUS STANDS IN NOTHING.** A horizontal disc of any colour that is not the ground's takes the key square-on and reads as a PLATE THE PROP IS STANDING ON, so the pads at every stipe's foot are gone. Moss on STONE is still moss — that is the rock palette.
 pub const CAP_RIM = rgba(58, 46, 50, 255);
 pub const GILL = rgba(104, 96, 88, 255);
 pub const STIPE = rgba(72, 66, 58, 255);
 pub const STIPE_DK = rgba(46, 42, 37, 255);
 pub const SPORE_GLOW = rgba(150, 206, 198, 120);
 pub const CAP_GLOW = rgba(96, 168, 160, 150);
-// The warm half of the Mycelian's light. Alpha is EMISSIVE, so these are how bright they burn, not how
-// see-through they are — and a low number is a strong glow.
+// The warm half of the Mycelian's light. Alpha is EMISSIVE, so these are how bright they burn, not how see-through they are — and a low number is a strong glow.
 pub const BLOOM_GLOW = rgba(206, 112, 158, 105);
 pub const BLOOM_CORE = rgba(236, 172, 200, 70);
 pub const FLESH_PINK = rgba(74, 44, 54, 255);
@@ -145,9 +131,7 @@ pub const WATER_MUD = rgba(40, 35, 25, 255);
 
 pub const Part = struct { ax: f32 = 0, az: f32 = 0, bx: f32 = 0, bz: f32 = 0, r: f32, h: f32 };
 
-/// A volume a prop blocks the VIEW with (`props.Info.occl`). It lives here beside `Part` rather than in
-/// `props.zig` because a family file that builds its own colliders needs to build its own occluders too, and
-/// `props.zig` imports the families — so declaring it there means every family mirroring the struct back.
+/// A volume a prop blocks the VIEW with (`props.Info.occl`). Here beside `Part` rather than in `props.zig` because a family file that builds its own colliders needs to build its own occluders too, and `props.zig` imports the families.
 pub const Blocker = struct { r: f32, y0: f32 = 0, y1: f32, x: f32 = 0, z: f32 = 0 };
 
 pub const TOWER_R: f32 = 2.35;
@@ -366,15 +350,12 @@ pub fn flameInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, s: f32
     }
     b.setAnimY(0);
 }
-/// **WABI-SABI GOES BETWEEN THE INSTANCES, NOT ALONG ONE** (the house rule) — two tones alternated segment by
-/// segment band a shaft like a barber's pole; the same two as a slow lerp foot to tip read as weathering.
-/// `t` is 0 at the foot and 1 at the tip.
+/// **WABI-SABI GOES BETWEEN THE INSTANCES, NOT ALONG ONE** (the house rule) — two tones alternated segment by segment band a shaft like a barber's pole; the same two as a slow lerp foot to tip read as weathering. `t` is 0 at the foot and 1 at the tip.
 pub fn weathered(foot: rl.Color, tip: rl.Color, t: f32) rl.Color {
     return mathx.lerpColor(foot, tip, mathx.smoothstep(0.0, 1.0, t));
 }
 
-/// …and the ONE seam a stack is allowed, so strata still read: a single darker bed every `every` courses.
-/// Anything more often than that is the barber's pole again wearing a geologist's hat.
+/// …and the ONE seam a stack is allowed, so strata still read: a single darker bed every `every` courses. Anything more often is the barber's pole again wearing a geologist's hat.
 pub fn seam(base: rl.Color, dark: rl.Color, i: i32, every: i32) rl.Color {
     return if (@mod(i, every) == every - 1) dark else base;
 }

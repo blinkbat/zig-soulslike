@@ -22,21 +22,12 @@ const mul3 = mathx.mul3;
 const scaleM = mathx.scaleM;
 
 // THE BONE SKITTERER (owner's creature, owner's name) — a splayed ribcage that walks ON ITS RIBS, with a long
-// spine rising off the cage to a HEAD THAT IS ONE BIG EYE. It has no jaw and no legs of its own: the RIBS
-// are the legs and the SPINE is the weapon — it CLOSES the eye and slams it into you.
-//
-// **AND IT IS GOOFY, NOT HORRIBLE** (owner: much cuter and less scary — it was scaring his wife; then: just
-// a forward-facing big almond-shaped green EYE, no blade). SIX walking ribs, not eight; the dangling false
-// ribs tucked up; and the head is the eye, which BLINKS SHUT for the whole wind and strike — the blink is
-// the tell, and what arrives is a bone eyelid the size of a fist.
-//
-// **FAST ON THE GROUND, SLOW IN THE SWING** (owner: really fast, but attack spd moderate). It crosses ground
-// quicker than anything else in the field — over the spirit wolf's gallop — and then spends the longest close
-// wind-up of any small body on one vertical slice. The whole creature is that trade: it arrives before you
-// have finished the last fight and then hands you half a second to answer.
+// spine rising to a head that is one big EYE. The RIBS are the legs and the SPINE is the weapon: it CLOSES the
+// eye and slams it into you, and the blink is the tell (owner: much cuter and less scary; six ribs, not eight).
+// **FAST ON THE GROUND, SLOW IN THE SWING** (owner: really fast, but attack spd moderate) — it crosses ground
+// quicker than the spirit wolf's gallop and then spends the longest close wind-up of any small body.
 
-/// KEEL HEIGHT — the spine ridge the cage hangs off, and every fraction in this file is a share of it. Low:
-/// a body at the hero's knee, so what you actually read against the sky is the blade above it.
+/// KEEL HEIGHT — every fraction in this file is a share of it. Low: a body at the hero's knee.
 pub const W: f32 = 0.62;
 
 pub const AGGRO_R: f32 = 15.0;
@@ -44,29 +35,22 @@ const HOME_R: f32 = 1.0;
 
 const BODY_R: f32 = 0.42;
 /// **THE SPHERE IS THE CAGE, AND THE BLADE IS DELIBERATELY OUTSIDE IT.** Measured: the cage runs 0 to 1.06 W
-/// and the spine's base to 1.8 W, while the reared tip stands at 3.5 W — 2.2 m. A sphere big enough to hold
-/// the tip is 1.1 m of radius on a body 0.99 m across, so half of every swing at it would connect with air a
-/// metre off the creature. What you hit is the BODY; the blade is a thin edge that is only ever a threat.
+/// and the spine's base to 1.8 W, while the reared tip stands at 3.5 W — 2.2 m. A sphere big enough to hold the
+/// tip is 1.1 m of radius on a body 0.99 m across, so half of every swing would connect with air a metre off it.
 /// Centre 0.90 W, radius 1.00 W spans -0.10 W to 1.90 W.
 const HURT_R: f32 = 1.00;
 const CENTER_F: f32 = 0.90;
 const TOP_F: f32 = 3.60;
 
-/// **IT DIES TO ANYTHING AND IT DIES FAST.** A frame of dry bone with no meat on it: half the ravager's HP,
-/// poise under the hero's LIGHT poke (10), so every single connection interrupts the slice. The danger is the
-/// number of them and the speed they close at, never one of them out-trading him.
+/// Half the ravager's HP, poise under the hero's LIGHT poke (10), so every single connection interrupts the slice.
 const HP_MAX: f32 = 46.0;
 const POISE_MAX: f32 = 7.0;
 const STANCE_MAX: f32 = 22.0;
-/// **DRY BONE AND MARROW — FIRE IS THE ANSWER.** Nothing to freeze (the skeleton family's own 60-75 cold) and
-/// nothing to poison; lightning finds no wet mass and no metal on it at all, so it is the one element this
-/// creature is simply indifferent to.
+/// Dry bone and marrow: nothing to freeze (the skeleton family's own 60-75 cold), nothing to poison, and no wet mass or metal for lightning to find.
 const RESISTS = combat.resists(.{ .fire = -55, .cold = 70, .lightning = 0, .chaos = 50 });
 
 const SOULS: u32 = 120;
-/// **WHAT A CONJURED ONE IS WORTH**, and it is a quarter. The ancient priest can make these all day
-/// (`ancientpriest.RAISE_CD`), so a body it clawed out of the ground paying full price is a soul farm with a
-/// timer on it rather than a fight. What was PLACED on the map is a real body and pays in full.
+/// A quarter. The ancient priest can make these all day (`ancientpriest.RAISE_CD`), so full price is a soul farm with a timer on it. What was PLACED on the map pays in full.
 const SOULS_RAISED: u32 = 30;
 
 const DEATH_DUR = archermod.DEATH_DUR;
@@ -79,30 +63,24 @@ const CHIP_HEAVY = 13;
 const CHIP_DEATH = 15;
 const NPART = 48;
 comptime {
-    // THE RING LAW, EXECUTABLE (the archer's): a killing heavy blow is both chip sprays and the shared wound
-    // on one frame, and nothing else emits into this pool — the dissolve waits out `DEATH_DUR`.
+    // THE RING LAW, EXECUTABLE (the archer's): a killing heavy blow is both chip sprays and the shared wound on one frame, and the dissolve waits out `DEATH_DUR`.
     std.debug.assert(NPART >= foe.hitParts(CHIP_HEAVY) + foe.hitParts(CHIP_DEATH) + foe.WOUND_PARTS);
 }
 
-// **THE SLICE.** One move, straight down a vertical plane out in front of it — the spine rears back and over,
-// then whips the tip through the ground ahead. `SLICE_WIND` is the longest close-range tell any small body in
-// the field carries, and it is the whole of what makes a fast creature fair.
+// **THE SLICE.** One move, straight down a vertical plane out in front of it. `SLICE_WIND` is the longest
+// close-range tell any small body in the field carries, and it is what makes a fast creature fair.
 const SLICE_WIND: f32 = 0.52;
 const SLICE_STRIKE: f32 = 0.16;
 const SLICE_RECOVER: f32 = 0.54;
 const SLICE_COOL: f32 = 1.30;
-/// Where the tip arrives, measured off the posed rig rather than argued (the ogre's club law) — the test
-/// prints it. The trigger ring is shorter than the reach so it commits with him already inside it.
+/// Where the tip arrives, measured off the posed rig rather than argued (the ogre's club law) — the test prints it. The trigger ring is shorter, so it commits with him already inside.
 const SLICE_R: f32 = 1.62;
 const SLICE_TRIGGER_R: f32 = 1.35;
-/// How far INSIDE its own trigger ring it walks before standing still — under 1, so a creature that has
-/// arrived is already committed rather than shuffling on the boundary. Named because it is a share of that
-/// ring and not a distance of its own.
+/// A share of the trigger ring, not a distance of its own. Under 1, so a creature that has arrived is already committed rather than shuffling on the boundary.
 const STOP_FRAC: f32 = 0.72;
 /// The head's own thickness for the swept test — a shut eye the size of a fist, not a honed edge.
 const TIP_R: f32 = 0.19;
-/// A REAL BLADE ON A LIGHT BODY: the ravager's bite is 24 off 88 HP, this is 20 off 46. Poise past the
-/// hero's own light stun so a connection matters, stance under his heavy so it is not a guard-breaker.
+/// The ravager's bite is 24 off 88 HP, this is 20 off 46. Poise past the hero's own light stun so a connection matters, stance under his heavy so it is not a guard-breaker.
 const SLICE_HIT = combat.Hit{ .dmg = 20, .poise = 18, .stance = 9 };
 
 comptime {
@@ -111,11 +89,9 @@ comptime {
     std.debug.assert(SLICE_COOL > SLICE_STRIKE + SLICE_RECOVER);
 }
 
-/// Degrees the spine chain lays BACK over the cage across the wind — the tell, and it has to be huge because
-/// the creature is small: at 34 the blade moved less than the hero's own shoulder does walking.
+/// Degrees the spine chain lays BACK across the wind. Huge because the creature is small: at 34 the blade moved less than the hero's own shoulder does walking.
 const REAR_BACK: f32 = 62.0;
-/// …and degrees it drives THROUGH from there. The sum is what the tip sweeps: back over the hips and down
-/// past the ground line ahead, which is what makes it a slice and not a jab.
+/// Degrees it drives THROUGH from there. The sum is what the tip sweeps — back over the hips and down past the ground line ahead, which is what makes it a slice and not a jab.
 const SLICE_THROUGH: f32 = 158.0;
 /// How far back through the recovery the chain is still carrying the follow-through.
 const SLICE_SETTLE: f32 = 0.62;
@@ -128,24 +104,19 @@ const ACCEL: f32 = 16.0;
 const TURN_RATE: f32 = 7.2;
 const GAIT_BLEND: f32 = 11.0;
 
-/// **METRES OF GROUND PER FULL WAVE OF THE EIGHT RIBS, AND IT IS THE ANIMATION'S WHOLE PROBLEM WHEN IT IS
-/// TOO SHORT** (owner: "their anim is off… they move way too freaky rapidly", and separately: "speed itself
-/// is ok"). Phase advances by DISTANCE, so the wave's FREQUENCY is `RUN_SPEED / STRIDE` and nothing else: at
-/// 0.52 m that was 12.3 waves a second under a body travelling 6.4 m/s, which is not a gait, it is a vibration
-/// — and the cage rocking on the same phase made the whole creature shimmer. At 1.10 m it is 5.8 a second, and
-/// the body is covering ground with big loping throws instead of buzzing over it at the same speed.
+/// **METRES OF GROUND PER FULL WAVE OF THE SIX RIBS** (owner: "their anim is off… they move way too freaky
+/// rapidly", and separately: "speed itself is ok"). Phase advances by DISTANCE, so the wave's FREQUENCY is
+/// `RUN_SPEED / STRIDE` and nothing else: at 0.52 m that was 12.3 waves a second under a body travelling
+/// 6.4 m/s — a vibration, not a gait. At 1.10 m it is 5.8 a second.
 ///
-/// **THE LOWER RIB HAD TO GROW WITH IT.** A tip at radius `R` swept through ±θ covers `2·R·sin θ`, so a stride
-/// this long off the old 0.31 m rib asked for `sin θ = 1.21` — unsatisfiable, and `RIB`'s clamp would have
-/// silently delivered a short swing under a long stride, which is the skate the solve exists to prevent.
-/// `RIB_KNEE_Y` 0.78 puts the rib at 0.48 m and lands the solve at `sin θ = 0.77`, inside the clamp with room.
+/// **THE LOWER RIB HAD TO GROW WITH IT.** A tip at radius `R` swept through ±θ covers `2·R·sin θ`, so this
+/// stride off the old 0.31 m rib asked for `sin θ = 1.21` — unsatisfiable, and `RIB`'s clamp would have
+/// silently delivered a short swing under a long stride. `RIB_KNEE_Y` 0.78 puts the rib at 0.48 m and lands the solve at `sin θ = 0.77`.
 const STRIDE: f32 = 1.10;
-/// Fraction of the wave each rib is DOWN. Over 0.5 by a wide margin — with eight legs and a metachronal
-/// wave, most of them are always planted, which is what stops it reading as a hopping thing.
+/// Fraction of the wave each rib is DOWN. Over 0.5 by a wide margin — with six legs and a metachronal wave most are always planted, which is what stops it hopping.
 const RIB_DUTY: f32 = 0.68;
-/// How far along the body the wave lags from one rib pair to the next, as a fraction of the wave. The RIPPLE
-/// is the gait: pairs firing together is a pogo stick and 0.5 is a trot. A third — with the side lag it
-/// spreads SIX phases evenly round the wave, the alternating-tripod stagger every real hexapod walks on.
+/// Fraction of the wave the lag runs from one rib pair to the next. Pairs firing together is a pogo stick and
+/// 0.5 is a trot; a third, with the side lag, spreads SIX phases evenly — the alternating-tripod stagger every real hexapod walks on.
 const RIB_LAG: f32 = 1.0 / 3.0;
 /// …and the two sides half a wave apart, so a plant is never symmetric.
 const RIB_SIDE_LAG: f32 = 0.5;
@@ -153,13 +124,10 @@ const RIB_SIDE_LAG: f32 = 0.5;
 pub const SHOVE = foe.Push{ .light = 1.05, .heavy = 2.40 };
 const SHOVE_DECAY: f32 = 8.0;
 
-/// THREE PAIRS, NOT FOUR (owner: less legs). Six legs on a hexapod wave is still visibly a skitter — and it
-/// stopped being a spider, which was most of what frightened.
+/// THREE PAIRS, NOT FOUR (owner: less legs) — and it stopped being a spider, which was most of what frightened.
 const PAIRS = 3;
 const LEGS = PAIRS * 2;
-/// Ribs that are only ribs — they hang in the air between the walkers and close the vault up. Static
-/// geometry on the keel, so they cost one mesh and no bones. Few and TUCKED UP: at seven full-drop arcs
-/// they read as a second set of legs, which is the spider coming back in through the scenery.
+/// Static geometry on the keel, so they cost one mesh and no bones. Few and TUCKED UP: at seven full-drop arcs they read as a second set of legs.
 const FALSE_RIBS = 5;
 
 pub const KEEL = 0;
@@ -186,17 +154,14 @@ fn ribPair(i: usize) usize {
     return if (i < PAIRS) i else i - PAIRS;
 }
 
-// The cage, in shares of `W`. It is LONGER THAN IT IS TALL and the ribs splay WIDE — a cage as deep as it is
-// wide reads as a barrel, and what is wanted is something that could not possibly hold organs.
+// The cage, in shares of `W`. LONGER THAN IT IS TALL with the ribs splayed WIDE — a cage as deep as it is wide reads as a barrel.
 const CAGE_Z = [PAIRS]f32{ 0.58, 0.04, -0.54 };
 const RIB_ROOT_X: f32 = 0.11;
 const RIB_KNEE_X: f32 = 0.64;
-/// Raised for the stride (`STRIDE`'s note): a longer lower rib is what lets one swing cover more ground
-/// without the tip skating, and gangly legs under a small cage are also most of what reads as goofy.
+/// Raised for the stride (`STRIDE`'s note): a longer lower rib is what lets one swing cover more ground without the tip skating.
 const RIB_KNEE_Y: f32 = 0.78;
 const RIB_FOOT_X: f32 = 0.80;
-/// The rib tips do NOT all reach the same ring — wabi-sabi, authored between the three pairs and never along
-/// one rib. Multiplies `RIB_FOOT_X` and the pair's own `CAGE_Z` spread.
+/// The rib tips do NOT all reach the same ring — wabi-sabi between the three pairs, never along one rib. Multiplies `RIB_FOOT_X` and the pair's own `CAGE_Z` spread.
 const PAIR_REACH = [PAIRS]f32{ 1.06, 0.90, 0.98 };
 
 const SPINE_AT = [5]rl.Vector3{
@@ -222,14 +187,12 @@ fn restPose() [N]rl.Vector3 {
     return r;
 }
 
-/// THE LOWER RIB'S OWN LENGTH, from the knee to the tip on the ground, and **DEGREES OF SWING THAT MAKE THE
-/// TIP TRAVEL THE STRIDE AND NOT A METRE MORE**: a tip at radius `R` swept through ±θ covers `2·R·sin θ` of
-/// ground, so the stance half of a stride of `STRIDE` asks for `θ = asin(STRIDE·RIB_DUTY / 2R)`. Guessed
-/// instead of solved, the feet skate — the one thing the hero's own gait law forbids.
+/// THE LOWER RIB'S LENGTH, knee to tip, and **DEGREES OF SWING THAT MAKE THE TIP TRAVEL THE STRIDE AND NOT A
+/// METRE MORE**: a tip at radius `R` swept through ±θ covers `2·R·sin θ`, so the stance half of a stride asks
+/// for `θ = asin(STRIDE·RIB_DUTY / 2R)`. Guessed instead of solved, the feet skate.
 ///
-/// **SOLVED AT COMPTIME, EIGHT ROWS, ONCE.** As two functions off the rest pose this was eight `asin` calls
-/// and eight materialisations of the whole 22-bone rest array per creature per frame, for eight numbers that
-/// cannot change while the game is running.
+/// **SOLVED AT COMPTIME, SIX ROWS, ONCE.** As two functions off the rest pose this was six `asin` calls and six
+/// materialisations of the whole 18-bone rest array per creature per frame, for six numbers that cannot change.
 const RIB = blk: {
     @setEvalBranchQuota(4000);
     const rest = restPose();
@@ -244,8 +207,7 @@ const RIB = blk: {
     break :blk .{ .reach = reach, .swing = swing };
 };
 
-/// How far the tip comes off the earth on its swing, in shares of `W`. Big, and deliberately so: a long
-/// loping throw with real daylight under it is the difference between goofy and horrible.
+/// How far the tip comes off the earth, in shares of `W`. Big on purpose: a long loping throw with real daylight under it is the difference between goofy and horrible.
 const RIB_LIFT: f32 = 0.52;
 /// Degrees the rib FOLDS at the knee as it lifts — a leg that swings without folding is a compass arm.
 const RIB_FOLD: f32 = 44.0;
@@ -253,12 +215,10 @@ const RIB_FOLD: f32 = 44.0;
 const BONE = archermod.BONE;
 const BONE_DK = archermod.BONE_DK;
 const BONE_LT = archermod.BONE_LT;
-/// THE EYE IS GREEN AND IT GLOWS A LITTLE (alpha is the emissive channel) — the one green light in the
-/// field, so an open eye reads at fight distance and a shut one reads as gone. The pupil is big and dark,
-/// which is the kindchenschema half of "cuter": a small pupil is a stare.
+/// Alpha is the emissive channel. The one green light in the field, so an open eye reads at fight distance and a shut one reads as gone. Big dark pupil: a small one is a stare.
 const EYE_GREEN = rgba(98, 190, 96, 96);
 const PUPIL = rgba(14, 18, 12, 255);
-/// The slam's wake — the eye's own green, paled: what whips is the head, so its ribbon carries its colour.
+/// The slam's wake — the eye's own green, paled.
 const EYE_TRAIL = rgba(150, 212, 142, 255);
 const MARROW = rgba(58, 46, 38, 255);
 const SINEW = rgba(96, 82, 62, 220);
@@ -299,13 +259,11 @@ pub const Skitterer = struct {
     seed: f32 = 0,
     state: State = .idle,
     t: f32 = 0,
-    /// Gait phase, 0..1, advanced by DISTANCE and never by time — the hero's law, and why the ribs do not skate.
     phase: f32 = 0,
     speed: f32 = 0,
     speedS: f32 = 0,
     sliceCool: f32 = 0,
-    /// **CLAWED OUT OF THE GROUND RATHER THAN PLACED ON THE MAP** — it is worth less (`SOULS_RAISED`) and the
-    /// drop table gives the whole kind nothing, because the supply is a priest's cooldown.
+    /// **CLAWED OUT OF THE GROUND RATHER THAN PLACED** — worth less (`SOULS_RAISED`), and the drop table gives the whole kind nothing, because the supply is a priest's cooldown.
     bornRaised: bool = false,
 
     vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
@@ -318,8 +276,6 @@ pub const Skitterer = struct {
     flash: f32 = 0,
     shove: rl.Vector3 = mathx.zero3,
     justDied: bool = false,
-    /// One-frame voice edges, cleared at the top of `update`. The creature says WHEN; `game.zig` owns the
-    /// speaker, or a creature would play through the pause card and the shot harness.
     reared: bool = false,
     sliced: bool = false,
     yelped: bool = false,
@@ -332,8 +288,7 @@ pub const Skitterer = struct {
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
 
-    /// The blade segment last frame, for the swept test. **THE HURT SHAPE IS THE POSED KIT** and never a
-    /// yaw-guessed sector, so it is read after `pose` (the warrior's `wpnWas`).
+    /// **THE HURT SHAPE IS THE POSED KIT** and never a yaw-guessed sector, so it is read after `pose` (the warrior's `wpnWas`).
     tipWas: [2]rl.Vector3 = .{ mathx.zero3, mathx.zero3 },
     trail: foe.Trail(18) = .{},
 
@@ -363,8 +318,7 @@ pub const Skitterer = struct {
     pub fn centerWorld(self: *const Skitterer) rl.Vector3 {
         return foe.bodyPoint(self.pos, CENTER_F * W, self.scale, 0);
     }
-    /// **THE MARK RIDES THE CAGE, NOT THE BLADE** (the ravager's call): the tip travels 158 degrees of arc in
-    /// 0.16 s, and a reticle on it would be unaimable. Off `KEEL` so it still rides the POSE.
+    /// **THE MARK RIDES THE CAGE, NOT THE BLADE**: the tip travels 158 degrees of arc in 0.16 s, and a reticle on it would be unaimable. Off `KEEL` so it still rides the POSE.
     pub fn lockPoint(self: *const Skitterer) rl.Vector3 {
         return foe.markOn(self.xf[KEEL], v3(0, 0.10 * W, 0));
     }
@@ -399,22 +353,19 @@ pub const Skitterer = struct {
         return W * self.scale;
     }
 
-    /// THE HEAD, in world: the segment through the eye's own mass, which is what gets slammed into you.
+    /// The segment through the eye's own mass, which is what gets slammed into you.
     pub fn tipSeg(self: *const Skitterer) [2]rl.Vector3 {
         const base = foe.markOn(self.xf[BLADE], v3(0, EYE_C.y, EYE_C.z - 0.26 * W));
         const tip = foe.markOn(self.xf[BLADE], v3(0, EYE_C.y, EYE_C.z + 0.24 * W));
         return .{ base, tip };
     }
 
-    /// **THE BLINK IS THE TELL** — shut for the whole wind and strike, open everywhere else. One predicate,
-    /// read by the draw, so the picture and the clock cannot disagree.
+    /// **THE BLINK IS THE TELL** — shut for the whole wind and strike. One predicate, read by the draw, so the picture and the clock cannot disagree.
     pub fn eyeShut(self: *const Skitterer) bool {
         return self.state == .slice and self.t < SLICE_WIND + SLICE_STRIKE;
     }
 
-    /// **THE SLICE'S ONE CLOCK**, -1 fully reared back to +1 fully through, and zero outside the move — so the
-    /// same channel poses the settle back to a standing spine. The picture and the mechanic cannot disagree
-    /// because there is no second timer for either to read.
+    /// -1 fully reared back to +1 fully through, zero outside the move, so the same channel poses the settle back to a standing spine. No second timer for either to read.
     pub fn sliceAmt(self: *const Skitterer) f32 {
         if (self.state != .slice) return 0;
         if (self.t < SLICE_WIND) return -mathx.smoothstep(0, SLICE_WIND * 0.88, self.t);
@@ -438,9 +389,7 @@ pub const Skitterer = struct {
         foe.faceToward(self.pos, &self.facing, at, TURN_RATE, dt);
     }
 
-    /// SECONDS BACK FROM THE TIP'S ARRIVAL, or null — one blade in the field teaches one rule
-    /// (`foe.PARRY_LEAD`). The impact frame is the middle of the strike window, where the arc crosses the
-    /// ground line in front of it.
+    /// SECONDS BACK FROM THE TIP'S ARRIVAL, or null (`foe.PARRY_LEAD`). The impact frame is the middle of the strike window, where the arc crosses the ground line.
     fn toImpact(self: *const Skitterer) ?f32 {
         if (self.state != .slice) return null;
         return SLICE_WIND + SLICE_STRIKE * 0.5 - self.t;
@@ -477,12 +426,10 @@ pub const Skitterer = struct {
         }
         self.tipWas = self.tipSeg();
         self.stateStep(dt, hero, bounds);
-        // THE HURT SHAPE IS TESTED AFTER THE POSE IT IS MEASURED OFF EXISTS, and the ribbon is pushed off the
-        // same two points, so what you see is what answered.
+        // Tested AFTER the pose it is measured off exists, and the ribbon is pushed off the same two points.
         if (self.state == .slice and self.t >= SLICE_WIND and self.t < SLICE_WIND + SLICE_STRIKE) {
-            // **THE SWING IS HEARD WHETHER OR NOT IT LANDS.** Fired off the hit it was silent on every miss,
-            // which is a blade going through the air where the player stood a moment ago and making no sound.
-            // An EDGE on the clock crossing, so a long frame cannot fire it twice (`hero.updateShot`'s rule).
+            // **THE SWING IS HEARD WHETHER OR NOT IT LANDS.** Fired off the hit it was silent on every miss. An
+            // EDGE on the clock crossing, so a long frame cannot fire it twice.
             if (self.t - dt < SLICE_WIND) self.sliced = true;
             const seg = self.tipSeg();
             self.trail.push(seg[0], seg[1], self.tipWas[1], 0.25);
@@ -520,8 +467,7 @@ pub const Skitterer = struct {
             return self.pose();
         }
         if (self.state == .slice) {
-            // IT AIMS WHILE THE SPINE LAYS BACK AND STEERS NOT AT ALL AFTER — the commit is the tell's end,
-            // so the safe ground is a step to either side of a creature that has already chosen its line.
+            // IT AIMS WHILE THE SPINE LAYS BACK AND STEERS NOT AT ALL AFTER — the commit is the tell's end, so the safe ground is a step to either side.
             if (self.t < SLICE_WIND) self.faceToward(hero, dt);
             self.speed = 0;
             if (self.t >= SLICE_WIND + SLICE_STRIKE + SLICE_RECOVER) {
@@ -567,8 +513,7 @@ pub const Skitterer = struct {
         self.speedS = mathx.approach(self.speedS, self.speed, GAIT_BLEND * dt);
     }
 
-    /// The hurt shape IS the kit: what the tip swept this frame against the column the hero stands in,
-    /// latched to one blow per slice.
+    /// The hurt shape IS the kit: what the tip swept this frame against the column the hero stands in, latched to one blow per slice.
     fn tryReach(self: *Skitterer, hero: rl.Vector3) void {
         if (self.dealt) return;
         if (!foe.weaponReaches(self.tipWas, self.tipSeg(), hero, TIP_R * self.scale + foe.HERO_R)) return;
@@ -618,9 +563,7 @@ pub const Skitterer = struct {
         self.enterStun(heavy);
     }
 
-    /// Stages the slice at a fraction of its whole clock. **`stageGather` AND NOT `stageSlice`**: the shot
-    /// harness stages every creature's signature move through this one name (`shots.runMapShots`), so a
-    /// creature that spelled its own would be photographed standing still.
+    /// **`stageGather` AND NOT `stageSlice`**: the shot harness stages every creature's signature move through this one name (`shots.runMapShots`).
     pub fn stageGather(self: *Skitterer, u: f32) void {
         self.state = .slice;
         self.t = mathx.clampF(u, 0, 1) * (SLICE_WIND + SLICE_STRIKE);
@@ -645,14 +588,11 @@ pub const Skitterer = struct {
         const fall: f32 = if (self.state == .dead) mathx.clampF(self.t / (DEATH_DUR * 0.7), 0, 1) else 0;
         const k = self.sliceAmt();
 
-        // THE CAGE RIDES THE WAVE — the six ribs plant in sequence, so the keel rocks on its own axis. A
-        // body held rigid over a rippling gait is the thing that reads as a puppet on rails.
-        // **THE CAGE ROCKS ON THE WAVE PASSING DOWN IT, NOT ONCE PER RIB.** Read at the leg wave's own rate
-        // this was 12 rolls a second and the body SHIMMERED; a travelling wave down a long body shows up as one
-        // slow lean, so it is read at half the phase and the heave at the phase itself rather than double it.
+        // **THE CAGE ROCKS ON THE WAVE PASSING DOWN IT, NOT ONCE PER RIB.** Read at the leg wave's own rate this
+        // was 12 rolls a second and the body SHIMMERED; a travelling wave down a long body shows up as one slow
+        // lean, so the roll is read at half the phase and the heave at the phase itself.
         const roll = mathx.sinf(self.phase * std.math.pi) * 7.0 * m;
         const heave = mathx.sinf(self.phase * std.math.tau) * 0.030 * W * m;
-        // …and the whole cage pitches nose-down under the drive and nose-up under the rear.
         const pitch = 16.0 * k - 22.0 * react;
         const sink = (0.34 * W * fall) + (0.05 * W * react);
 
@@ -663,9 +603,7 @@ pub const Skitterer = struct {
             heromod.rootAt(self.pos),
         );
 
-        // THE SPINE, and the whole weapon is these four joints. The rear and the drive are ONE signed channel
-        // spread down the chain — the base carries most of it and the tip the least, which is what makes the
-        // tip WHIP rather than swing as one bar.
+        // The rear and the drive are ONE signed channel spread down the chain — the base carries most of it and the tip the least, which is what makes the tip WHIP.
         const drive = SLICE_THROUGH * 0.5 * (k + 1.0) - REAR_BACK;
         const bend = [4]f32{ 0.42, 0.28, 0.19, 0.11 };
         const sway = mathx.sinf(self.phase * std.math.pi + 0.7) * 5.5 * m;
@@ -682,8 +620,7 @@ pub const Skitterer = struct {
         self.xf = wx;
     }
 
-    /// The metachronal wave. Rotation-only: the ribs are one arc each and the swing amplitude is SOLVED off
-    /// the stride (`ribSwing`), so a planted tip travels backwards at the body's own speed instead of skating.
+    /// The metachronal wave. Rotation-only: the swing amplitude is SOLVED off the stride (`ribSwing`), so a planted tip travels backwards at the body's own speed instead of skating.
     fn poseRibs(self: *const Skitterer, wx: *[N]rl.Matrix, m: f32, react: f32, fall: f32) void {
         const g = wolf.Gait{ .duty = RIB_DUTY, .lag = RIB_LAG };
         for (0..LEGS) |i| {
@@ -698,12 +635,10 @@ pub const Skitterer = struct {
                 1.0 - 2.0 * (ph / g.duty)
             else
                 -1.0 + 2.0 * ((ph - g.duty) / (1.0 - g.duty));
-            // **A STANDING BODY HAS ALL EIGHT DOWN.** `phase` advances by DISTANCE, so a creature at rest is
-            // frozen wherever the wave stopped — and ungated by `m` that froze two or three ribs in mid-air.
+            // **A STANDING BODY HAS ALL SIX DOWN.** `phase` advances by DISTANCE, so a creature at rest is frozen wherever the wave stopped — ungated by `m` that froze two or three ribs in mid-air.
             const lift: f32 = if (down) 0 else mathx.sinf((ph - g.duty) / (1.0 - g.duty) * std.math.pi) * m;
             const swing = RIB.swing[i] * along * m;
-            // A LIFT IS A RIB CURLING IN, not a leg lifting off: the tip comes up by folding toward the keel,
-            // which is the only way an arc rooted on the spine can leave the ground at all.
+            // A LIFT IS A RIB CURLING IN, not a leg lifting off: an arc rooted on the spine can only leave the ground by folding toward the keel.
             const curl = (RIB_LIFT * 34.0 * lift + 16.0 * react + 42.0 * fall) * mathx.maxF(m, if (down) 1.0 else 0.35);
             heromod.setJoint(wx, &self.rest, ribUp(i), KEEL, mul(rx(swing), rz(-side * curl)));
             heromod.setJoint(wx, &self.rest, ribLo(i), ribUp(i), mul(
@@ -717,9 +652,8 @@ pub const Skitterer = struct {
 pub fn triggerR(quarryR: f32) f32 {
     return SLICE_TRIGGER_R + quarryR;
 }
-/// **THE SAME RING THE TRIGGER IS, SHRUNK** (the ravager's `stopR`) — and NEITHER is scaled by the body, or
-/// the two invert: at `SLICE_TRIGGER_R * scale * STOP_FRAC` a placement at 1.4 halted at 1.91 m outside a
-/// trigger ring still standing at 1.90, and the creature stood still for the whole fight.
+/// **THE SAME RING THE TRIGGER IS, SHRUNK** (the ravager's `stopR`) — and NEITHER is scaled by the body, or the
+/// two invert: at `SLICE_TRIGGER_R * scale * STOP_FRAC` a placement at 1.4 halted at 1.91 m outside a trigger ring standing at 1.90.
 fn stopR(quarryR: f32) f32 {
     return SLICE_TRIGGER_R * STOP_FRAC + quarryR;
 }
@@ -727,8 +661,7 @@ comptime {
     std.debug.assert(stopR(foe.HERO_R) < triggerR(foe.HERO_R));
 }
 
-/// Where the eye sits in the head bone's own frame — capping the stalk, face out along +z (the creature's
-/// forward). ONE definition, shared by the two head meshes, the swept `tipSeg` and the test.
+/// In the head bone's own frame, face out along +z. ONE definition, shared by the two head meshes, the swept `tipSeg` and the test.
 const EYE_C = v3(0, 0.05 * W, 0.10 * W);
 
 const CAP_N = wf.MAX_PER_KIND;
@@ -737,8 +670,7 @@ pub const Clatter = struct {
     model: Model,
     band: [CAP_N]Skitterer = undefined,
     n: usize = 0,
-    /// Every body the ancient priest has clawed out of the ground since the level loaded, so a raise can be
-    /// seeded and counted without either side reaching into the other.
+    /// Every body the ancient priest has clawed out since the level loaded, so a raise can be seeded and counted without either side reaching into the other.
     raised: u32 = 0,
     raiseRng: mathx.Rng = mathx.Rng.init(0x5C17),
 
@@ -764,9 +696,8 @@ pub const Clatter = struct {
         self.model.setShader(sh);
     }
 
-    /// **A RAISED BODY IS A BODY, NOT A SPECIAL CASE** — same spawn, same tether, same souls; its post is
-    /// where it came up. Dead slots are reused before the roster grows (the brood's law), so a priest that
-    /// works all fight cannot walk the group off the end of its slab.
+    /// **A RAISED BODY IS A BODY, NOT A SPECIAL CASE** — same spawn, same tether, same souls; its post is where
+    /// it came up. Dead slots are reused before the roster grows (the brood's law).
     pub fn raise(self: *Clatter, at: rl.Vector3, faceYaw: f32) void {
         const seed = self.raiseRng.float() * 64.0;
         for (self.live()) |*sk| {
@@ -776,8 +707,7 @@ pub const Clatter = struct {
             self.raised += 1;
             return;
         }
-        // COUNTED ONLY WHEN A BODY ACTUALLY STANDS UP: bumped ahead of this guard, a full slab reported
-        // raises it had refused.
+        // COUNTED ONLY WHEN A BODY ACTUALLY STANDS UP: bumped ahead of this guard, a full slab reported raises it had refused.
         if (self.n >= CAP_N) return;
         self.band[self.n] = Skitterer.spawn(at, faceYaw, 1.0, seed);
         self.band[self.n].bornRaised = true;
@@ -828,12 +758,10 @@ fn buildMeshes() [N]rl.Mesh {
     return mesh;
 }
 
-/// The head's BONE — the socket shell behind the green and the brow/cheek arcs that pinch the almond's
-/// corners — shared by the open face and the shut one, so a blink cannot move the skull.
+/// Shared by the open face and the shut one, so a blink cannot move the skull.
 fn headBase(b: *Builder, rng: *mathx.Rng) void {
     b.addBlob(v3(0, 0.005 * W, -0.055 * W), v3(0.195 * W, 0.150 * W, 0.130 * W), 6, 9, BONE);
     b.addBlob(v3(EYE_C.x, EYE_C.y, EYE_C.z - 0.058 * W), v3(0.268 * W, 0.158 * W, 0.085 * W), 6, 10, BONE_LT);
-    // The BROW and the CHEEK — two arcs each meeting at the corners, which is what makes it an ALMOND.
     inline for (.{ 1.0, -1.0 }) |sgn| {
         const rr = 0.040 * W * rng.range(0.90, 1.10);
         b.addCapsule(
@@ -855,7 +783,7 @@ fn headBase(b: *Builder, rng: *mathx.Rng) void {
     }
 }
 
-/// The head with the LID DOWN — all bone, one dark seam where the green was. What actually hits you.
+/// The head with the LID DOWN. What actually hits you.
 fn headShutMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5C17 + @as(u64, BLADE));
@@ -873,9 +801,7 @@ fn headShutMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// A VERTEBRA — a centrum with its two processes, which is what stops the spine reading as a length of pipe.
-/// Round mass, blunt ends: nothing dead is straight and nothing ends in a point (`AGENTS.md`). `fins` is off
-/// for the top segment: the eye sits there, and a row of spikes around a googly eye argues with it.
+/// Round mass, blunt ends: nothing dead is straight and nothing ends in a point (`AGENTS.md`). `fins` is off for the top segment — a row of spikes around a googly eye argues with it.
 fn vertebra(b: *Builder, rng: *mathx.Rng, at: rl.Vector3, dir: rl.Vector3, len: f32, r: f32, fins: bool) void {
     const to = v3(at.x + dir.x * len, at.y + dir.y * len, at.z + dir.z * len);
     b.addCapsule(at, to, r, r * 0.86, 8, BONE);
@@ -886,7 +812,6 @@ fn vertebra(b: *Builder, rng: *mathx.Rng, at: rl.Vector3, dir: rl.Vector3, len: 
         const c = v3(at.x + dir.x * len * u, at.y + dir.y * len * u, at.z + dir.z * len * u);
         const wobble = rng.range(0.82, 1.22);
         b.addBlob(c, v3(r * 1.24 * wobble, r * 0.62, r * 0.70 * wobble), 5, 7, BONE_LT);
-        // The neural spine, off the back of each centrum and LEANING — a row of identical fins is a comb.
         if (fins) b.addCapsule(
             c,
             v3(c.x + rng.signed() * r * 0.30, c.y + r * 1.55 * rng.range(0.72, 1.25), c.z - r * 0.55),
@@ -902,27 +827,22 @@ fn buildBone(b: *Builder, i: usize, rest: [N]rl.Vector3) void {
     var rng = mathx.Rng.init(0x5C17 + @as(u64, @intCast(i)));
     b.setMat(.plain);
     switch (i) {
-        // THE KEEL: a sternum plate with the cage's first course of bone packed round it. The plate OVERLAPS
-        // every rib root well past the joint, or the cage leaks sky at eight seams (the packed-stone rule).
+        // The plate OVERLAPS every rib root well past the joint, or the cage leaks sky at six seams (the packed-stone rule).
         KEEL => {
             b.addCapsule(v3(0, 0, CAGE_Z[PAIRS - 1] * W * 1.05), v3(0, 0, CAGE_Z[0] * W * 1.05), 0.115 * W, 0.135 * W, 9, BONE);
             b.addBlob(v3(0, -0.055 * W, 0.05 * W), v3(0.150 * W, 0.085 * W, 0.62 * W), 7, 8, BONE_DK);
-            // …and the marrow hollow you can see up into where the cage is open. It is the only dark on it.
             b.addBlob(v3(0, -0.010 * W, -0.30 * W), v3(0.100 * W, 0.060 * W, 0.28 * W), 6, 7, MARROW);
             for (0..PAIRS) |p| {
                 const z = CAGE_Z[p] * W;
                 b.addBlob(v3(0, 0.055 * W, z), v3(0.135 * W * rng.range(0.86, 1.14), 0.070 * W, 0.085 * W), 5, 7, BONE_LT);
             }
-            // **THE CAGE IS THE FALSE RIBS, AND THEY ARE WHAT MAKE IT A RIBCAGE AND NOT A CENTIPEDE.** The
-            // eight that WALK are spaced for a gait, so between them the body was open sky and the creature
-            // read as a bar on legs. These are short, tight and static: they arc out to two thirds of the
-            // walkers' spread and stop in the air, which is what a cage with its bottom broken off looks like.
+            // **THE CAGE IS THE FALSE RIBS, AND THEY ARE WHAT MAKE IT A RIBCAGE AND NOT A CENTIPEDE.** The six
+            // that WALK are spaced for a gait, so between them the body was open sky. These arc out to two thirds of the walkers' spread and stop in the air.
             var f: u32 = 0;
             while (f < FALSE_RIBS) : (f += 1) {
                 const t = (@as(f32, @floatFromInt(f)) + 0.5) / @as(f32, FALSE_RIBS);
                 const z = mathx.lerpF(CAGE_Z[0] + 0.10, CAGE_Z[PAIRS - 1] - 0.06, t) * W;
-                // TUCKED UP (owner: less legs): at 0.52+ of drop these dangled to the walkers' own knee line
-                // and read as a second set of legs. They stop well above it now — a cage, not more limbs.
+                // TUCKED UP (owner: less legs): at 0.52+ of drop these dangled to the walkers' own knee line and read as a second set of legs.
                 const drop = (0.40 + 0.13 * mathx.sinf(t * std.math.pi)) * W * rng.range(0.94, 1.06);
                 const out = (0.36 + 0.14 * mathx.sinf(t * std.math.pi)) * W * rng.range(0.92, 1.08);
                 const r = mathx.lerpF(0.042, 0.030, t) * W;
@@ -931,7 +851,6 @@ fn buildBone(b: *Builder, i: usize, rest: [N]rl.Vector3) void {
                     const foot = v3(side * out, -drop, z + 0.03 * W * rng.signed());
                     b.addCapsule(v3(side * 0.075 * W, 0.010 * W, z), knee, r, r * 0.86, 6, BONE);
                     b.addCapsule(knee, foot, r * 0.86, r * 0.52, 6, BONE_LT);
-                    // A BROKEN-OFF END, blunt and pale: nothing dead ends in a point (`AGENTS.md`).
                     b.addBlob(foot, v3(r * 0.80, r * 0.66, r * 0.80), 4, 6, BONE_DK);
                 }
             }
@@ -949,20 +868,16 @@ fn buildBone(b: *Builder, i: usize, rest: [N]rl.Vector3) void {
             };
             vertebra(b, &rng, mathx.zero3, dir, len * 0.98, r, i != SP3);
             if (i == SP0) {
-                // The sacrum — where the spine leaves the cage, and it is thick.
                 b.addBlob(v3(0, 0.02 * W, 0.05 * W), v3(0.155 * W, 0.130 * W, 0.150 * W), 6, 8, BONE);
                 b.addBlob(v3(0.075 * W, -0.02 * W, 0.02 * W), v3(0.060 * W, 0.090 * W, 0.075 * W), 5, 6, SINEW);
                 b.addBlob(v3(-0.075 * W, -0.02 * W, 0.02 * W), v3(0.060 * W, 0.090 * W, 0.075 * W), 5, 6, SINEW);
             }
         },
-        // **THE HEAD IS ONE BIG EYE AND NOTHING ELSE** (owner: a forward-facing big almond-shaped green
-        // eye, no blade — they close it and slam it into you). The OPEN face lives here; the shut head is
-        // `headShutMesh`, swapped in by the draw for the whole wind and strike.
+        // **THE HEAD IS ONE BIG EYE AND NOTHING ELSE** (owner: a forward-facing big almond-shaped green eye, no
+        // blade — they close it and slam it into you). The shut head is `headShutMesh`, swapped in by the draw.
         BLADE => {
             headBase(b, &rng);
-            // The green — a wide almond, pinched at both corners by the rims above, glowing gently.
             b.addBlob(EYE_C, v3(0.245 * W, 0.140 * W, 0.100 * W), 7, 12, EYE_GREEN);
-            // …and a heavy round pupil proud on the front face, dead ahead: it looks AT you.
             b.addBlob(v3(EYE_C.x, EYE_C.y + 0.005 * W, EYE_C.z + 0.088 * W), v3(0.088 * W, 0.096 * W, 0.038 * W), 5, 9, PUPIL);
         },
         else => {
@@ -973,8 +888,6 @@ fn buildBone(b: *Builder, i: usize, rest: [N]rl.Vector3) void {
             const thick: f32 = mathx.lerpF(0.058, 0.044, @as(f32, @floatFromInt(p)) / @as(f32, PAIRS - 1)) * W;
             if (!lower) {
                 const off = mathx.subV(rest[ribLo(leg)], rest[ribUp(leg)]);
-                // The rib CURVES: two capsules with the joint bowed outward, since one straight run from the
-                // keel to the knee is a strut and a rib is an arc.
                 const mid = v3(off.x * 0.52 + side * 0.10 * W, off.y * 0.60, off.z + side * 0.0);
                 b.addCapsule(mathx.zero3, mid, thick, thick * 0.92, 7, BONE);
                 b.addCapsule(mid, off, thick * 0.92, thick * 0.80, 7, BONE_LT);
@@ -988,7 +901,6 @@ fn buildBone(b: *Builder, i: usize, rest: [N]rl.Vector3) void {
                 const mid = v3(tip.x * 0.55 + side * 0.06 * W, tip.y * 0.42, tip.z * 0.55);
                 b.addCapsule(mathx.zero3, mid, thick * 0.80, thick * 0.62, 7, BONE);
                 b.addCapsule(mid, tip, thick * 0.62, thick * 0.30, 6, BONE_LT);
-                // The tip it stands on is a WORN KNUCKLE, not a spike: eight needles read as a hub of spokes.
                 b.addBlob(tip, v3(thick * 0.52, thick * 0.44, thick * 0.52), 4, 6, BONE_DK);
             }
         },
@@ -1017,22 +929,17 @@ test "THE HURT SPHERE IS THE CAGE — you hit the body, and the blade over it is
     const r = s.hurtRadius();
     const restTip = s.tipSeg()[1];
     std.debug.print("\n  cage centre {d:.2} m, sphere r {d:.2} m ({d:.2}..{d:.2}); blade tip {d:.2} m up\n", .{ c.y, r, c.y - r, c.y + r, restTip.y });
-    // **THE GAIT'S OWN FREQUENCY, WHICH IS THE THING THAT READ AS FREAKY** — `RUN_SPEED / STRIDE` and
-    // nothing else, since phase advances by distance. Under 7 a second, or the cage buzzes instead of loping.
+    // **THE GAIT'S OWN FREQUENCY, WHICH IS WHAT READ AS FREAKY** — `RUN_SPEED / STRIDE` and nothing else. Under 7 a second, or the cage buzzes instead of loping.
     const waveHz = RUN_SPEED / STRIDE;
     std.debug.print("  …rib wave {d:.1} a second at {d:.1} m/s, swing {d:.0} deg off a {d:.2} m rib (the clamp bites at 58)\n", .{ waveHz, RUN_SPEED, RIB.swing[0], RIB.reach[0] });
     try std.testing.expect(waveHz < 7.0);
-    // A SOLVE THAT HIT ITS CLAMP IS A SKATE: the pose would deliver a stride short of the one `phase` is
-    // being advanced by, and the tips would slide.
+    // A SOLVE THAT HIT ITS CLAMP IS A SKATE: the pose would deliver a stride short of the one `phase` is being advanced by.
     for (RIB.swing) |sw| try std.testing.expect(sw < 57.0);
-    // It holds the cage from under the rib tips up past the spine's second joint…
     try std.testing.expect(c.y - r <= 0.02);
     try std.testing.expect(c.y + r > s.rest[SP1].y);
-    // …and the reared tip stands OUTSIDE it, which is the whole reason the radius is not 1.1 m: a sphere that
-    // held the blade would be wider than the creature and half of every swing would connect with air.
+    // …and the reared tip stands OUTSIDE it, which is why the radius is not 1.1 m.
     s.stageGather(1.0);
     try std.testing.expect(mathx.lenV(mathx.subV(s.tipSeg()[1], s.centerWorld())) > r);
-    // A sword that can reach the body reaches it: the sphere is wider than the collision hull.
     try std.testing.expect(r > s.bodyR());
 }
 
@@ -1087,7 +994,6 @@ test "IT IS THE FASTEST THING ON FOOT AND THE SLOWEST TO SWING" {
     try std.testing.expect(RUN_SPEED > wolf.GALLOP_SPEED);
     try std.testing.expect(SLICE_WIND > foe.TELL_MIN);
     std.debug.print("\n  skitterer: {d:.1} m/s chase against the wolf's {d:.1}; a {d:.2} s wind on a {d:.2} s strike\n", .{ RUN_SPEED, wolf.GALLOP_SPEED, SLICE_WIND, SLICE_STRIKE });
-    // A creature that closes this fast may not ALSO be quick to the blow.
     var s = Skitterer.spawn(mathx.zero3, 0, 1.0, 0.3);
     s.state = .slice;
     s.t = 0;
@@ -1104,8 +1010,7 @@ test "THE SLICE IS COMMITTED AT THE END OF THE REAR — it aims while the spine 
     s.t = 0;
     const side = mathx.ground(5, 0);
     var t: f32 = 0;
-    // Past the whole wind, so what is captured is the heading it COMMITTED — a frame short of that and the
-    // test is asserting the last turn of the aim rather than the commit.
+    // Past the whole wind, so what is captured is the heading it COMMITTED and not the last turn of the aim.
     while (t < SLICE_WIND + 0.01) : (t += 1.0 / 60.0) _ = s.update(1.0 / 60.0, side, 200.0, .{});
     const aimed = s.facing;
     try std.testing.expect(@abs(mathx.wrapPi(aimed - mathx.headingXZ(mathx.dirXZ(s.pos, side)))) < 0.5);
@@ -1204,15 +1109,13 @@ test "A RAISED BODY IS A BODY — same spawn, and a dead slot is reused before t
     c.raise(mathx.ground(1, 1), 0);
     try std.testing.expectEqual(@as(usize, 2), c.n);
     try std.testing.expectEqual(@as(u32, 3), c.raised);
-    // …AND A CONJURED BODY IS WORTH A QUARTER: the supply is a cooldown, so full price is a farm.
     for (c.live()) |*sk| try std.testing.expectEqual(SOULS_RAISED, sk.soulValue());
     const placed = Skitterer.spawn(mathx.zero3, 0, 1.0, 0.3);
     try std.testing.expectEqual(SOULS, placed.soulValue());
 }
 
 test "A BIG PLACEMENT STILL ATTACKS — the stop ring may never grow past the trigger ring" {
-    // The bug this pins: a `stop` scaled by the body against a `triggerR` that is not. It walked up, halted
-    // outside its own attack ring and stood there for the whole fight, at every scale over ~1.4.
+    // The bug this pins: a `stop` scaled by the body against a `triggerR` that is not. It halted outside its own attack ring at every scale over ~1.4.
     for ([_]f32{ wf.FOE_SCALE_LO, 1.0, 1.4, wf.FOE_SCALE_HI }) |sc| {
         var s = Skitterer.spawn(mathx.zero3, 0, sc, 0.3);
         s.leash.noteSeen();
@@ -1231,18 +1134,15 @@ test "A BIG PLACEMENT STILL ATTACKS — the stop ring may never grow past the tr
 test "THE HEAD IS THE EYE, IT RIDES THE TOP OF THE STALK, AND THE BLINK IS THE TELL" {
     var s = Skitterer.spawn(mathx.zero3, 0, 1.0, 0.3);
     const standing = foe.markOn(s.xf[BLADE], EYE_C);
-    // ON TOP: over the whole cage, up at the stalk's crown, and OPEN while nothing is happening.
     try std.testing.expect(standing.y > s.rest[SP2].y);
     try std.testing.expect(standing.y > 2.6 * W);
     try std.testing.expect(!s.eyeShut());
-    // The wind SHUTS it and CARRIES it — the blink and the travel are the tell together.
     s.stageGather(SLICE_WIND / (SLICE_WIND + SLICE_STRIKE));
     try std.testing.expect(s.eyeShut());
     const reared = foe.markOn(s.xf[BLADE], EYE_C);
     const travel = mathx.lenV(mathx.subV(reared, standing));
     std.debug.print("\n  skitterer eye-head: {d:.2} m up standing, travels {d:.2} m shut through the wind; {d} legs\n", .{ standing.y, travel, LEGS });
     try std.testing.expect(travel > 0.5);
-    // …and it opens again the moment the strike is spent.
     s.state = .slice;
     s.t = SLICE_WIND + SLICE_STRIKE + 0.01;
     try std.testing.expect(!s.eyeShut());
@@ -1258,7 +1158,6 @@ test "THE CAGE IS LONGER THAN IT IS TALL AND WIDER THAN IT IS DEEP — a frame, 
     try std.testing.expect(long > tall);
     try std.testing.expect(wide > long);
     try std.testing.expect(rest[BLADE].y > tall * 2.5);
-    // Every pair reaches a DIFFERENT ring — the variation is between the instances, not along one rib.
     var same: usize = 0;
     for (PAIR_REACH, 0..) |a, i| {
         for (PAIR_REACH[i + 1 ..]) |c| {

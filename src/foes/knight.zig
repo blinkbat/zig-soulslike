@@ -137,8 +137,7 @@ const SWIPE_YAW: f32 = 58.0;
 
 const FALL_SECTOR = 70.0;
 
-/// Gates nothing by itself — each move answers for its own front (`Attack.bearing`, `weigh`); the law at
-/// the foot of this file is pinned on it (`mathx.radians(SWING_BEARING) <= kitHalf`).
+/// Gates nothing by itself — each move answers for its own front (`Attack.bearing`, `weigh`); the law at the foot of this file is pinned on it.
 const SWING_BEARING = 24.0;
 
 
@@ -1009,16 +1008,14 @@ comptime {
     }
     std.debug.assert(CHOOSE_N <= MOVES.len and SWEEP2_I >= CHOOSE_N and SWAT_I >= CHOOSE_N);
     // …AND EVERY INDEX HAS ITS OWN ANIMATION. `keysFor` and `windFor` switch on a `usize`, so both end in an
-    // `else` that hands back the BASH's — right for `SWAT_I`, silently wrong for anything added after it, and
-    // a wrong-animation bug does not fail a test. The pin above only says the two lists are the same LENGTH,
-    // which a seventh stroke satisfies by growing both. This says how many those two switches actually name.
+    // `else` that hands back the BASH's — right for `SWAT_I`, silently wrong for anything added after it, and a
+    // wrong-animation bug does not fail a test. The pin above only says the two lists are the same LENGTH.
     std.debug.assert(MOVES.len == 6);
 }
 const CHOOSE_N = 4;
 
 const SWEEP_BEARING = 72.0;
-/// `sweepwind` turns at full `TURN_RATE` for its whole 1.15 s, about 38 deg, so a sweep begun out here
-/// arrives inside `SWEEP_BEARING` under its own steam.
+/// `sweepwind` turns at full `TURN_RATE` for its whole 1.15 s, about 38 deg, so a sweep begun out here arrives inside `SWEEP_BEARING` under its own steam.
 const FLANK_BEARING = SWEEP_BEARING + 28.0;
 
 /// docs/ELDEN_RING.md §7: strings run "1-4 hits, variable", recovery "3-4 frames mid-combo, 23-24 at combo end".
@@ -1371,7 +1368,6 @@ pub const Knight = struct {
     blocks: u32 = 0,
     blockT: f32 = mathx.LONG_AGO,
 
-    // posture channels, degrees
     armSh: f32 = CARRY_SH,
     armEl: f32 = CARRY_EL,
     armAbd: f32 = CARRY_ABD,
@@ -1445,9 +1441,7 @@ pub const Knight = struct {
     pub fn bodyR(self: *const Knight) f32 {
         return BODY_R * self.scale;
     }
-    /// **ON THE GROUND HE IS A CAPSULE, NOT THE RING UNDER HIS BOOTS** (`game.bodyOf`). Taken off the SKULL's
-    /// own mark, not a length constant; the topple pivots on the ground point at `pos`, so the near cap is
-    /// exactly the standing ring.
+    /// **ON THE GROUND HE IS A CAPSULE, NOT THE RING UNDER HIS BOOTS** (`game.bodyOf`). Taken off the SKULL's own mark, not a length constant; the topple pivots on the ground point at `pos`, so the near cap is exactly the standing ring.
     pub fn bodySeg(self: *const Knight) ?[2]rl.Vector3 {
         if (!self.floored()) return null;
         const head = self.topWorld();
@@ -1484,8 +1478,7 @@ pub const Knight = struct {
     pub fn blocksTaken(self: *const Knight) u32 {
         return self.blocks;
     }
-    /// GIANT_KNIGHTS.md: "basically impossible to kill when attacking from the front IF THEY'RE NOT IN AN
-    /// ATTACK ANIMATION". The SLAM is the other way in (`swipeOpen`, `slamLift`).
+    /// GIANT_KNIGHTS.md: "basically impossible to kill when attacking from the front IF THEY'RE NOT IN AN ATTACK ANIMATION". The SLAM is the other way in (`swipeOpen`, `slamLift`).
     pub fn guardUp(self: *const Knight) bool {
         if (self.gone) return false;
         return switch (self.state) {
@@ -1543,8 +1536,7 @@ pub const Knight = struct {
         const dur = self.recoverDur();
         return 1.0 - mathx.smoothstep(dur * SWIPE_SHUT_K0, dur * SWIPE_SHUT_K1, self.t);
     }
-    /// 0 standing, 1 flat on his back, NEGATIVE forward. ONE channel, so the picture, the mark, the bar and
-    /// the crush strip cannot tell four different stories.
+    /// 0 standing, 1 flat on his back, NEGATIVE forward. ONE channel, so the picture, the mark, the bar and the crush strip cannot tell four different stories.
     fn toppleAmt(self: *const Knight) f32 {
         return switch (self.state) {
             .fall => mathx.minF(1.0, mathx.clampF(self.t / FALL_DUR, 0, 1) * mathx.clampF(self.t / FALL_DUR, 0, 1) * 1.08),
@@ -1555,8 +1547,7 @@ pub const Knight = struct {
             else => 0,
         };
     }
-    /// **HE FALLS, HE IS NOT LOWERED** — quadratic to `DEATH_LAND`, never a smoothstep, then `DEATH_BOUNCE`
-    /// of overshoot settling back onto its rest.
+    /// **HE FALLS, HE IS NOT LOWERED** — quadratic to `DEATH_LAND`, never a smoothstep, then `DEATH_BOUNCE` of overshoot settling back onto its rest.
     fn deathTopple(from: f32, t: f32) f32 {
         if (t < DEATH_LAND) {
             const u = t / DEATH_LAND;
@@ -1574,8 +1565,7 @@ pub const Knight = struct {
             else => 0,
         };
     }
-    /// 0 on guard, 1 hauled fully up. THE PICTURE OF `guardUp` and may never disagree with it; this channel
-    /// drives the door's own PITCH.
+    /// 0 on guard, 1 hauled fully up. THE PICTURE OF `guardUp` and may never disagree with it; this channel drives the door's own PITCH.
     fn slamLift(self: *const Knight) f32 {
         return switch (self.state) {
             .slamwind => mathx.smoothstep(SLAM.windDur * 0.10, SLAM.windDur * 0.70, self.t),
@@ -1702,8 +1692,7 @@ pub const Knight = struct {
             self.farT = mathx.maxF(0, self.farT - dt * 2.0);
         }
 
-        // Measured off the world, never the stick. `settled` is false through the moves that carry HIM, or
-        // his own travel reads as an orbit.
+        // Measured off the world, never the stick. `settled` is false through the moves that carry HIM, or his own travel reads as an orbit.
         self.sense.tick(dt, self.pos, mathx.radians(bearing), self.bodyR(), switch (self.state) {
             .hop, .leapwind, .leap, .chargewind, .charge, .brake => false,
             else => true,
@@ -1821,8 +1810,7 @@ pub const Knight = struct {
                 const windTurn: f32 = if (self.state == .sweepwind) 1.0 else 0.45;
                 self.faceToward(hero, dt * windTurn);
                 const dur = self.windDur();
-                // ACROSS THE WHOLE GATHER: the track owns its own shape, and an outer easing curve laid over
-                // a keyed one is two animators fighting.
+                // ACROSS THE WHOLE GATHER: the track owns its own shape, and an outer easing curve laid over a keyed one is two animators fighting.
                 self.setWindKeys(self.t / dur);
                 const w = a.weight;
                 const load: f32 = if (w == .light) GATHER_PLAIN else GATHER_HEAVY;
@@ -2079,8 +2067,7 @@ pub const Knight = struct {
     fn cdSlot(self: *const Knight) usize {
         return if (self.atk == SWEEP2_I) SWEEP_I else self.atk;
     }
-    /// THE DEBT, PAID ONCE, AT THE END OF THE STRING — dearer the longer it ran (`STRING_CD_PER_LINK`), with
-    /// the jitter every cooldown in this file carries.
+    /// THE DEBT, PAID ONCE, AT THE END OF THE STRING — dearer the longer it ran (`STRING_CD_PER_LINK`), with the jitter every cooldown in this file carries.
     fn billString(self: *Knight) void {
         const dearer = 1.0 + STRING_CD_PER_LINK * @as(f32, @floatFromInt(self.strung));
         for (&self.strungUsed, 0..) |*u, i| {
@@ -2276,15 +2263,12 @@ pub const Knight = struct {
         self.t = 0;
         self.homing = false;
     }
-    /// **THE ONE MOVE THAT IS NOT A MOVE.** The roar is a phase CHANGE, not an attack, and a phase change
-    /// that can be stagger-cancelled is a phase change the player never sees land.
+    /// **THE ONE MOVE THAT IS NOT A MOVE.** The roar is a phase CHANGE, and a phase change that can be stagger-cancelled is one the player never sees land.
     pub fn transforming(self: *const Knight) bool {
         return self.state == .awaken;
     }
 
-    /// **A SPENT TRANSFORMATION IS ALWAYS A LIT ONE.** `awoken` latches when he COMMITS; `lit` lands 2.7 s
-    /// later, so anything taking him out of `.awaken` between the two spent his one phase change without
-    /// entering phase two. EVERY path out of the state goes through here.
+    /// **A SPENT TRANSFORMATION IS ALWAYS A LIT ONE.** `awoken` latches when he COMMITS; `lit` lands 2.7 s later, so anything taking him out of `.awaken` between the two spent his one phase change. EVERY path out goes through here.
     fn leaveAwaken(self: *Knight) void {
         if (self.transforming() and self.awoken) self.lit = true;
     }
@@ -2392,9 +2376,7 @@ pub const Knight = struct {
         };
     }
 
-    /// The hurt shape IS the kit: what it swept this frame against the column the hero stands in, latched to
-    /// one blow per stroke — never a yaw-guessed sector. **THE DOOR'S HURT WIDTH IS THE RAM, NOT THE WRAP**
-    /// (`SH_RAM_HALF`).
+    /// The hurt shape IS the kit: what it swept this frame against the column the hero stands in, latched to one blow per stroke. **THE DOOR'S HURT WIDTH IS THE RAM, NOT THE WRAP** (`SH_RAM_HALF`).
     fn tryReach(self: *Knight, hero: rl.Vector3) void {
         if (self.dealt) return;
         const door = self.state == .bash or self.state == .charge;
@@ -2551,8 +2533,7 @@ pub const Knight = struct {
         sfx.world(.knight_repel, self.pos);
         self.quake = mathx.maxF(self.quake, QUAKE_REPEL);
         self.dustBurst(s.contact, 6, 1.2, 0.14);
-        // The SHIELD is untouched — it never breaks. The stance bar behind it does, and a break outranks
-        // the riposte, since he cannot throw it.
+        // The SHIELD is untouched — it never breaks. The stance bar behind it does, and a break outranks the riposte, since he cannot throw it.
         if (s.reaction == .heavy) {
             self.hits += 1;
             self.flash = FLASH_DUR;
@@ -2960,8 +2941,7 @@ pub const Knight = struct {
         ));
 
         if (dead) {
-            // **A FELLED STATUE DOES NOT CURL** — flat, both legs are STRAIGHT. Hip/knee bend threw both
-            // boots 3.30 m in the air behind him, twice his own knee.
+            // **A FELLED STATUE DOES NOT CURL** — flat, both legs are STRAIGHT. Hip/knee bend threw both boots 3.30 m in the air behind him, twice his own knee.
             setLocal(wx, HIPL, rest, mul(rx(-5.0 * dk), rz(-6.0)));
             setLocal(wx, KNEEL, rest, rx(6.0 + 5.0 * dk));
             setLocal(wx, ANKL, rest, rx(-9.0 * dk));
@@ -3102,8 +3082,7 @@ pub const Knight = struct {
         }
     }
 
-    /// The picture and the blow share `SLAM.r` and `slamMark`, so the FX cannot promise a smaller ring than
-    /// the mechanic bills.
+    /// The picture and the blow share `SLAM.r` and `slamMark`, so the FX cannot promise a smaller ring than the mechanic bills.
     fn slamCrater(self: *Knight) void {
         const at = self.slamMark();
         const reach = SLAM.r * self.scale;
@@ -3112,10 +3091,8 @@ pub const Knight = struct {
             const a = self.fxRng.angle();
             const life = self.fxRng.range(0.40, 0.62);
             const sp = reach / life * self.fxRng.range(0.75, 1.0);
-            // NO DRAG and NOT `foe.DUST_GRAV` — the crater is the one dust in the game that is not free to
-            // be dust. Its speed is solved as reach/life to land exactly on `SLAM.r`, so drag would take
-            // back the reach the ring already promised the player, and a hanging gravity would leave it
-            // there after the blow is over. It is a ring drawn in dust, and it keeps its own numbers.
+            // NO DRAG and NOT `foe.DUST_GRAV`. Its speed is solved as reach/life to land exactly on `SLAM.r`, so
+            // drag would take back the reach the ring already promised, and a hanging gravity would leave it there after the blow is over.
             foe.emitPart(&self.parts, &self.fxHead, .{
                 .p = v3(at.x + mathx.cosf(a) * 0.4 * self.scale, self.pos.y + 0.10, at.z + mathx.sinf(a) * 0.4 * self.scale),
                 .v = v3(mathx.cosf(a) * sp, self.fxRng.range(0.5, 1.7), mathx.sinf(a) * sp),
@@ -3230,8 +3207,7 @@ pub const Knight = struct {
         model.draw(self);
     }
 
-    /// A boss slain in an earlier session comes back already gone (`save.scatter`) — straight to the terminal
-    /// state `foe.dissipate` leaves. `gone` is what `update`, `alive` and `foe.drawGroup` each early-out on.
+    /// A boss slain in an earlier session comes back already gone (`save.scatter`) — straight to the terminal state `foe.dissipate` leaves. `gone` is what `update`, `alive` and `foe.drawGroup` each early-out on.
     pub fn markSlain(self: *Knight) void {
         self.vit.hp = 0;
         self.vit.dead = true;
@@ -3289,8 +3265,7 @@ pub const Vigil = struct {
             if (g.covers(hero)) inIt = g.pos;
         }
         const at = inIt orelse {
-            // **SEEDED AT THE INTERVAL, NOT AT ZERO** (`foe.Soak`'s note): the frame you cross is the frame
-            // it bills.
+            // **SEEDED AT THE INTERVAL, NOT AT ZERO** (`foe.Soak`'s note): the frame you cross is the frame it bills.
             self.gasT = GAS_DOSE_EVERY;
             return null;
         };
@@ -3423,8 +3398,7 @@ fn pelvisMesh() rl.Mesh {
     }
     b.addBlob(v3(mathx.cosf(4.5 / 7.0 * std.math.tau) * 0.118 * H, -0.128 * H, mathx.sinf(4.5 / 7.0 * std.math.tau) * 0.118 * H), v3(0.030 * H, 0.052 * H, 0.028 * H), 6, 10, KBONE);
     b.setMat(.leather);
-    // A BELT GOES ROUND HIM, SO ITS AXIS IS VERTICAL — across his hips it was a 1.5 m drum whose two flat
-    // sunlit caps filled his whole back.
+    // A BELT GOES ROUND HIM, SO ITS AXIS IS VERTICAL — across his hips it was a 1.5 m drum whose two flat sunlit caps filled his whole back.
     b.addCylinder(v3(0, 0.034 * H, 0), v3(0, 0.078 * H, 0), 0.140 * H, 0.140 * H, 11, STRAP);
     b.setMat(BRIGHT);
     b.addBox(v3(0, 0.056 * H, 0.138 * H), v3(0.036 * H, 0, 0), v3(0, 0.030 * H, 0), v3(0, 0, 0.010 * H), BRASS);
@@ -3448,9 +3422,7 @@ fn lumbarMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// Its own box is NAMED because the DOOR is measured against its front face; a hand-derived
-/// `0.208/2 − 0.006` at the test site stops describing his chest the first time the breastplate is
-/// re-authored. `addRoundBox` takes a FULL size (`addCube`'s rule), hence the halving.
+/// NAMED because the DOOR is measured against its front face; a hand-derived `0.208/2 − 0.006` at the test site stops describing his chest the first time the breastplate is re-authored. `addRoundBox` takes a FULL size, hence the halving.
 const CUIRASS_C = v3(0, 0.016 * H, -0.006 * H);
 const CUIRASS_SIZE = v3(0.318 * H, 0.176 * H, 0.208 * H);
 pub const CHEST_FRONT_Z = CUIRASS_C.z + CUIRASS_SIZE.z * 0.5;

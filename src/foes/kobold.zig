@@ -76,8 +76,7 @@ const KIT = heromod.HELD;
 
 
 const H: f32 = heromod.H;
-// The LEGS and ARMS take the hero's fractions from the shared source: `legChain`'s strafe geometry is
-// measured off the leg pair, so a local copy that drifted would make a kobold's planted feet skate.
+// The LEGS and ARMS take the hero's fractions from the shared source: `legChain`'s strafe geometry is measured off the leg pair, so a local copy that drifted would make a kobold's planted feet skate.
 const SEG_THIGH = heromod.SEG_THIGH;
 const SEG_SHANK = heromod.SEG_SHANK;
 const SEG_UPARM = heromod.SEG_UPARM;
@@ -102,8 +101,7 @@ const setLocal = heromod.setHumanoid;
 
 const LOCK_AT = v3(0, 0.02 * H, 0.05 * H);
 
-/// The kobold's PAW footprint, measured off `footMesh` below: the pad spans z −0.041·H…+0.206·H and
-/// x ±0.052·H, its underside on the ankle plane.
+/// The kobold's PAW footprint, measured off `footMesh` below: the pad spans z −0.041·H…+0.206·H and x ±0.052·H, its underside on the ankle plane.
 const solePatches = [_]heromod.SolePatch{
     .{ .bone = ANKL, .heel = 0.041 * H, .toe = 0.206 * H, .halfW = 0.052 * H, .drop = 0.042 * H },
     .{ .bone = ANKR, .heel = 0.041 * H, .toe = 0.206 * H, .halfW = 0.052 * H, .drop = 0.042 * H },
@@ -137,9 +135,7 @@ fn spec(r: Role) *const Spec {
 
 comptime {
     if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("kobold: a Role with no spec row");
-    // …and the kinds are a CONTIGUOUS RUN off `berserker` in role order, since `roleOf`/`kindOf` are an ordinal
-    // shift (warrior.zig and brood.zig pin theirs the same way). Unpinned, a kind inserted mid-run silently
-    // posts the wrong role — the priest spawns as a berserker and nothing fails to compile.
+    // …and the kinds are a CONTIGUOUS RUN off `berserker` in role order, since `roleOf`/`kindOf` are an ordinal shift. Unpinned, a kind inserted mid-run silently posts the wrong role — the priest spawns as a berserker and nothing fails to compile.
     for (@typeInfo(Role).@"enum".fields, 0..) |f, i| {
         const fk: wf.FoeKind = @enumFromInt(@intFromEnum(wf.FoeKind.berserker) + i);
         if (!std.mem.eql(u8, f.name, @tagName(fk))) {
@@ -163,9 +159,7 @@ pub const AGGRO_R = 16.0;
 const HOME_R = 1.5;
 const TURN_RATE = 5.2;
 const WALK_SPEED = heromod.WALK_SPEED;
-/// …and what the BERSERKER closes at, which is the hero's own run scaled by his spec (`approachSpeed`). At
-/// 1.22 of it that is 4.15 m/s: past the hero's run (3.4) so backing off on foot does not shake him, and well
-/// under the sprint (5.1) so the sprint still does. The escape stays real; the stroll does not.
+/// …and what the BERSERKER closes at, which is the hero's own run scaled by his spec (`approachSpeed`). At 1.22 of it that is 4.15 m/s: past the hero's run (3.4) so backing off on foot does not shake him, and well under the sprint (5.1) so the sprint still does.
 const RUN_SPEED = heromod.RUN_SPEED;
 const ZERK_WALK_IN = 0.9;
 const DEATH_DUR = 1.0;
@@ -213,17 +207,14 @@ const WHIRL_DUR = 0.70;
 const SLING_CD = 1.9;
 const BITE_R = 1.45;
 const BITE_PREFER_R = 5.0;
-/// The jaws arrive at `BITE_DUR * BITE_HIT_A` = 0.34 s — over `foe.TELL_MIN`, and with real margin over the
-/// parry window. At the old 0.52 x 0.30 the snap landed at 0.156 s: HALF the tell floor, and the fairness
-/// test never caught it because it compared the FRACTION against the SECONDS.
+/// The jaws arrive at `BITE_DUR * BITE_HIT_A` = 0.34 s — over `foe.TELL_MIN`, and with real margin over the parry window. At the old 0.52 x 0.30 the snap landed at 0.156 s: HALF the tell floor, and the fairness test never caught it because it compared the FRACTION against the SECONDS.
 const BITE_DUR = 0.62;
 const BITE_HIT_A = 0.55;
 const BITE_HIT_B = 0.76;
 const BITE_CD = 1.15;
 const BITE_COIL_AT = 0.42;
 const BITE_ARCH = 14.0;
-// The snap: the waist throwing the whole head at you (degrees through the lumbar; the chest adds 0.65 of
-// it again and the pelvis its small share).
+// The snap: the waist throwing the whole head at you (degrees through the lumbar; the chest adds 0.65 of it again and the pelvis its small share).
 const BITE_FOLD = 18.0;
 const BITE_GAZE = 26.0;
 const BITE_ARM_BACK = 30.0;
@@ -256,13 +247,10 @@ fn legSink(crouch: f32) f32 {
     return (SEG_THIGH + SEG_SHANK) * H * (1.0 - mathx.cosf(mathx.radians(crouch)));
 }
 
-/// ARITHMETIC over the worst frame (the ring law): at 22 the HEAL BLOOM ALONE OVERFLOWED IT, 34 motes on one
-/// frame into 22 slots. Worst frame is the bloom's 34 on the ~14 `emitCastMotes` leaves resident (34/s at a
-/// 0.42 s life), with a blow landing the same frame for `emitBlood`'s 14 and the wound — 65. The whirl's
-/// path is under it at 59.
+/// ARITHMETIC over the worst frame (the ring law): at 22 the HEAL BLOOM ALONE OVERFLOWED IT, 34 motes on one frame into 22 slots. Worst frame is the bloom's 34 on the ~14 `emitCastMotes` leaves resident (34/s at a 0.42 s life), with a blow landing the same frame for `emitBlood`'s 14 and the wound — 65.
 const NPART = 68;
 comptime {
-    // THE RING LAW, EXECUTABLE — this is the assert that was missing when 22 could not hold HEAL_BLOOM's 34.
+    // THE RING LAW, EXECUTABLE — the assert that was missing when 22 could not hold HEAL_BLOOM's 34.
     std.debug.assert(NPART >= HEAL_BLOOM + 14 + foe.hitParts(9) + foe.WOUND_PARTS);
 }
 const BLOOD = rgba(104, 26, 22, 200);
@@ -328,7 +316,6 @@ pub const Kobold = struct {
     fade: f32 = 0,
     gone: bool = false,
     dealt: bool = false,
-    /// THE HERO'S SHIELD, stamped from outside (`game.markParry`), and the one-frame answer to it.
     parry: foe.Parry = .{},
     parried: bool = false,
 
@@ -342,7 +329,6 @@ pub const Kobold = struct {
     fxHead: usize = 0,
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
-    /// Carried ONLY so its blood knows whether the ground under it is dry (`foe.onDryGround`).
     wade: foe.Wade = .{},
 
     xf: [N]rl.Matrix = undefined,
@@ -376,7 +362,6 @@ pub const Kobold = struct {
         return k;
     }
 
-    // Every height is measured from `pos.y`
     pub fn alive(self: *const Kobold) bool {
         return !self.gone;
     }
@@ -386,8 +371,7 @@ pub const Kobold = struct {
     pub fn staggered(self: *const Kobold) bool {
         return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
     }
-    /// OFF THE GROUND only during the berserker's dash, and only for the FLIGHT of it — measured off the
-    /// same `hop` the pelvis rides, against the threshold the toad and the archer share.
+    /// OFF THE GROUND only during the berserker's dash, and only for the FLIGHT of it — measured off the same `hop` the pelvis rides, against the threshold the toad and the archer share.
     pub fn airborne(self: *const Kobold) bool {
         return self.state == .dash and self.hop > foe.AIRBORNE_LIFT;
     }
@@ -400,9 +384,7 @@ pub const Kobold = struct {
     pub fn centerWorld(self: *const Kobold) rl.Vector3 {
         return foe.bodyPoint(self.pos, 0.80 * H, self.scale, 0);
     }
-    /// THE MARK RIDES THE SKULL, and this is the creature it matters most on: a kobold is HUNCHED, so its head
-    /// sits well below the 0.885·H the shared rest puts the joint at, and the flat 0.78·H this used to be was a
-    /// guess. It also ducks, lunges and whips its head through a flurry, all of which the old mark sat still for.
+    /// THE MARK RIDES THE SKULL, and this is the creature it matters most on: a kobold is HUNCHED, so its head sits well below the 0.885·H the shared rest puts the joint at, and the flat 0.78·H this used to be was a guess. It also ducks, lunges and whips its head through a flurry.
     pub fn lockPoint(self: *const Kobold) rl.Vector3 {
         return foe.markOn(self.xf[SKULL], LOCK_AT);
     }
@@ -536,8 +518,7 @@ pub const Kobold = struct {
                 self.hop = DASH_RISE * mathx.sinf(dashU(self.t) * std.math.pi);
                 if (self.t >= DASH_GATHER + DASH_FLIGHT + DASH_LAND) {
                     self.hop = 0;
-                    // RE-MEASURED (it moved), BUT STILL THROUGH THE LEASH: on the raw distance a dash was
-                    // the one exit that re-engaged a foe walking home, or one that cannot see him.
+                    // RE-MEASURED (it moved), BUT STILL THROUGH THE LEASH: on the raw distance a dash was the one exit that re-engaged a foe walking home, or one that cannot see him.
                     self.decide(foe.senseHero(&self.leash, self.pos, hero, AGGRO_R));
                 }
             },
@@ -584,10 +565,7 @@ pub const Kobold = struct {
         return act;
     }
 
-    /// SECONDS BACK FROM THE AXE OR THE JAWS ARRIVING, or null. **THE TWO STROKES THAT HURT, AND NOT THE
-    /// DASH** — the leap is answered by not being where it lands (the bone knight's HOP rule), and the whirl
-    /// and the chant are not blows at all. The impact frame is the OPENING of `hurtOpen`'s own window, which
-    /// is where the axe actually gets there.
+    /// SECONDS BACK FROM THE AXE OR THE JAWS ARRIVING, or null. **THE TWO STROKES THAT HURT, AND NOT THE DASH** — the leap is answered by not being where it lands (the bone knight's HOP rule), and the whirl and the chant are not blows at all. The impact frame is the OPENING of `hurtOpen`'s own window.
     fn toImpact(self: *const Kobold) ?f32 {
         return switch (self.state) {
             .chop => ZERK_CHOP * ZERK_HIT_A - self.t,
@@ -596,8 +574,7 @@ pub const Kobold = struct {
         };
     }
 
-    /// THE INSTANT IT CAN BE CAUGHT IN, and how far out it reaches then — `hurtReach`'s OWN answer, which is
-    /// already the per-state one, so a stroke the boards could not have met is never offered as one.
+    /// THE INSTANT IT CAN BE CAUGHT IN, and how far out it reaches then — `hurtReach`'s OWN answer, which is already the per-state one, so a stroke the boards could not have met is never offered as one.
     fn parryable(self: *const Kobold) ?f32 {
         if (self.dealt) return null;
         const left = self.toImpact() orelse return null;
@@ -605,8 +582,7 @@ pub const Kobold = struct {
         return self.hurtReach();
     }
 
-    /// **THE BOARDS TAKE IT.** `enterStun` already spends `dealt`, which is what stops the rest of the swing
-    /// still billing through `Warband.update`'s own reach test.
+    /// **THE BOARDS TAKE IT.** `enterStun` already spends `dealt`, which is what stops the rest of the swing still billing through `Warband.update`'s own reach test.
     fn takeParry(self: *Kobold) void {
         const reach = self.parryable() orelse return;
         if (!foe.caught(self, reach)) return;
@@ -618,9 +594,7 @@ pub const Kobold = struct {
         }
     }
 
-    /// **THE BERSERKER RUNS** (owner: always run unless very close, and faster than the other skels). At
-    /// `WALK_SPEED * 1.22` he closed at 2.07 m/s against a shieldman charging at 2.92 and a greatsword at
-    /// 2.52. `warrior.approachSpeed`'s shape: run at distance, walk the last stride in.
+    /// **THE BERSERKER RUNS** (owner: always run unless very close, and faster than the other skels). At `WALK_SPEED * 1.22` he closed at 2.07 m/s against a shieldman charging at 2.92 and a greatsword at 2.52. `warrior.approachSpeed`'s shape: run at distance, walk the last stride in.
     pub fn approachSpeed(self: *const Kobold, dist: f32) f32 {
         const base = spec(self.role).speed;
         if (self.role != .berserker or dist > AGGRO_R or dist <= self.walkInR()) return WALK_SPEED * base;
@@ -701,8 +675,7 @@ pub const Kobold = struct {
                     return self.enter(.approach);
                 }
                 if (self.slingCd <= 0) return self.enter(.whirl);
-                // The sling is cooling: DRIFT (the archer's reload lesson) — a skirmisher between shots
-                // circles his own way, he does not stand on the mark the last clump was thrown from.
+                // The sling is cooling: DRIFT (the archer's reload lesson) — a skirmisher between shots circles his own way, he does not stand on the mark the last clump was thrown from.
                 self.moveDir = mathx.headingDir(self.facing + (if (self.seed < 0.5) @as(f32, 1) else -1) * std.math.pi * 0.5);
                 return self.enter(.reposition);
             },
@@ -896,9 +869,7 @@ pub const Kobold = struct {
         self.justDied = true;
     }
 
-    /// THE IDLE'S CLOCKS (the wanderer's law): breath, its lagged echo one joint down, and a slow weight rock —
-    /// every RATE and PHASE dealt off the seed, at rates that never line up. Three identical mannequins
-    /// PHASE-LOCKED is what a warband at its post read as. All three go to zero on the move and the collapse.
+    /// THE IDLE'S CLOCKS (the wanderer's law): breath, its lagged echo one joint down, and a slow weight rock — every RATE and PHASE dealt off the seed, at rates that never line up. Three identical mannequins PHASE-LOCKED is what a warband at its post read as.
     fn idleSway(self: *const Kobold, m: f32, dk: f32) struct { br: f32, brLag: f32, rock: f32, deal: f32 } {
         const s1 = 0.5 + 0.5 * mathx.sinf(self.seed * 12.98);
         const s2 = 0.5 + 0.5 * mathx.sinf(self.seed * 78.23);
@@ -1086,7 +1057,8 @@ pub const Kobold = struct {
 
         const nod = 3.6 * mathx.sinf(2.0 * twoPi * ph) * m;
         const counter = -0.62 * prot;
-        // THE WAIST TAKES THE FOLD, over knees that pay for it (`legCrouch`). 46 deg through the lumbar and 30 more through the chest: the spine leads and the chest follows, which is what makes it a fold rather than a hinge.
+        // THE WAIST TAKES THE FOLD, over knees that pay for it (`legCrouch`). 46 deg through the lumbar and 30
+        // more through the chest: the spine leads and the chest follows, which makes it a fold rather than a hinge.
         const lunge = self.biteLunge();
         const coil = self.biteCoil();
         const fold = 46.0 * heave + BITE_FOLD * lunge - BITE_ARCH * coil + DASH_LEAN * self.dashFly();
@@ -1827,14 +1799,16 @@ pub const Warband = struct {
 
 
 test "the role table, the enum and the map's foe kinds agree" {
-    // The comptime block above pins the ordinal shift; this pins the accessor built on it, and that non-kobold kinds are rejected rather than folded into a role.
+    // The comptime block above pins the ordinal shift; this pins the accessor built on it, and that non-kobold
+    // kinds are rejected rather than folded into a role.
     try std.testing.expectEqual(Role.berserker, roleOf(.berserker).?);
     try std.testing.expectEqual(Role.priest, roleOf(.priest).?);
     try std.testing.expectEqual(Role.slinger, roleOf(.slinger).?);
     try std.testing.expect(roleOf(.toad) == null);
     try std.testing.expect(roleOf(.archer) == null);
     try std.testing.expect(roleOf(.ogre) == null);
-    // …and `kindOf` is its INVERSE, which is the direction the lock-on takes: game.zig used to spell this arithmetic out a second time, where the comptime block above could not reach it.
+    // …and `kindOf` is its INVERSE, the direction the lock-on takes: game.zig used to spell this arithmetic
+    // out a second time, where the comptime block above could not reach it.
     for (0..SPEC.len) |i| {
         const r: Role = @enumFromInt(i);
         try std.testing.expectEqual(r, roleOf(kindOf(r)).?);

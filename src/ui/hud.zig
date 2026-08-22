@@ -121,8 +121,7 @@ pub fn lineH(size: i32) i32 {
     return size + @divTrunc(size, 3);
 }
 
-/// Metal-leaf engraving: the same string re-drawn through two scissored bands so
-/// the grade rides the letterforms. Collapses below ~20 px — titles only.
+/// Metal-leaf engraving: the same string re-drawn through two scissored bands so the grade rides the letterforms. Collapses below ~20 px — titles only.
 pub fn engraved(s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
     text(s, x, y, size, col);
     const w = textW(s, size);
@@ -208,8 +207,7 @@ pub const Glyph = union(enum) {
 
 pub const Hint = struct { glyph: Glyph, label: [:0]const u8 };
 
-/// THE BUTTONS THE GAME ACTUALLY BINDS, named once so a caption and the press cannot drift. `game.zig` reads
-/// these for its own bindings, and every crib in the UI draws them.
+/// THE BUTTONS THE GAME ACTUALLY BINDS, named once so a caption and the press cannot drift.
 pub const BTN_INTERACT: PadBtn = .y;
 pub const BTN_CONFIRM: PadBtn = .a;
 pub const BTN_JUMP: PadBtn = .a;
@@ -409,10 +407,7 @@ const ST_HI = rgba(112, 136, 58, 255);
 const ST_LO = rgba(60, 78, 28, 255);
 const ST_TP = rgba(154, 178, 88, 255);
 /// TWO faces off ONE number: violet while it FILLS (a threat), hot YELLOW once it has GONE OFF. The number
-/// means opposite things either side of the proc, so the two may not read as one bar at two lengths.
-///
-/// AND THE ACTIVE FACE IS NOT GREEN, the genre's own: measured (108,150,44 against stamina's 112,136,58) it
-/// was the same bar as the stamina directly above it. Separated on HUE *and* VALUE.
+/// means opposite things either side of the proc. AND THE ACTIVE FACE IS NOT GREEN, the genre's own: measured (108,150,44 against stamina's 112,136,58) it was the same bar as the stamina directly above it.
 const PSN_HI = rgba(96, 62, 118, 255);
 const PSN_LO = rgba(52, 32, 66, 255);
 const PSN_TP = rgba(146, 106, 172, 255);
@@ -466,9 +461,7 @@ pub fn unloadPortrait() void {
     spiritHeld = false;
 }
 
-/// WHAT IT TAKES TO PHOTOGRAPH A BODY: the scene to draw it through, the point to frame on, where the camera
-/// stands relative to that point, and how to draw the thing. `drawFn` is a callback so this file never has to
-/// know what a wanderer or a wolf is — the same reason `dialog.zig` does not import one.
+/// WHAT IT TAKES TO PHOTOGRAPH A BODY: the scene to draw it through, the point to frame on, where the camera stands relative to that point, and how to draw the thing. `drawFn` is a callback so this file never has to know what a wanderer or a wolf is.
 pub const LivePortrait = struct {
     scene: *gfx.Scene,
     focus: rl.Vector3,
@@ -476,9 +469,7 @@ pub const LivePortrait = struct {
     pitch: f32,
     dist: f32,
     fov: f32 = 34.0,
-    /// What the target is wiped to before the subject goes in. A FIELD because the book's doll stands
-    /// against its own near-black and the head shots against theirs, and one path photographing both may
-    /// not quietly change either.
+    /// What the target is wiped to before the subject goes in. A FIELD because the book's doll stands against its own near-black and the head shots against theirs.
     clear: rl.Color = PORT_CLEAR,
     ctx: *const anyopaque,
     drawFn: *const fn (*const anyopaque) void,
@@ -487,13 +478,10 @@ pub const LivePortrait = struct {
 const PORT_CLEAR = rgba(13, 12, 11, 255);
 
 /// **TAKING THE PICTURE AND MOUNTING IT ARE TWO CALLS, AND THE SPLIT IS LOAD-BEARING.** `endTextureMode`
-/// restores the DEFAULT framebuffer, not whatever was bound before it, so a render nested inside another
-/// target redirects the rest of the frame at the backbuffer. The chrome fade is such a target, so the toast
-/// RENDERS before it opens and only BLITS within. Returns false when the target could not be made.
-///
-/// **RE-TAKEN EVERY FRAME, AND THAT IS MEASURED**: one target switch, one shader bind and the subject's own
-/// meshes — 27 for the wolf, 18 for a wanderer — against a full shadow pass over hundreds. A refresh clock is
-/// REFUSED: the target is shared, so a throttle needs a subject tag to avoid mounting the wrong face.
+/// restores the DEFAULT framebuffer, not whatever was bound before it, so a render nested inside another target
+/// redirects the rest of the frame at the backbuffer. The chrome fade is such a target, so the toast RENDERS
+/// before it opens and only BLITS within. **RE-TAKEN EVERY FRAME, AND THAT IS MEASURED**: one target switch, one
+/// shader bind and the subject's own meshes — 27 for the wolf, 18 for a wanderer — against a full shadow pass over hundreds.
 pub fn renderPortrait(p: LivePortrait) bool {
     if (portRT == null) portRT = rl.loadRenderTexture(PORT_RT_W, PORT_RT_H) catch null;
     const rt = portRT orelse return false;
@@ -501,10 +489,7 @@ pub fn renderPortrait(p: LivePortrait) bool {
     return true;
 }
 
-/// **THE PHOTOGRAPH ITSELF, INTO WHATEVER TARGET THE CALLER OWNS.** `renderPortrait` and `takeSpiritFace`
-/// are this plus a target of their own size; the character book's doll is 460x760 against their 320x360 and
-/// so has to keep its own, but it may not keep its own COPY of the nine calls — as one it had already
-/// drifted a value on the wipe colour, and the `endTextureMode` law above is stated in exactly one place.
+/// **THE PHOTOGRAPH ITSELF, INTO WHATEVER TARGET THE CALLER OWNS.** `renderPortrait` and `takeSpiritFace` are this plus a target of their own size; the book's doll is 460x760 against their 320x360 and so keeps its own — but it may not keep its own COPY of the nine calls, and the `endTextureMode` law is stated in exactly one place.
 pub fn renderIntoTarget(rt: rl.RenderTexture2D, p: LivePortrait) void {
     renderInto(rt, p);
 }
@@ -577,9 +562,7 @@ pub fn livePortrait(p: LivePortrait, dst: rl.Rectangle, tint: rl.Color) void {
 }
 
 
-/// The portrait square (owner: shrink the summon's portrait and bar). It was 52 against a 268 px HP bar — a
-/// companion taking a third of the width of the thing keeping you alive. A summon is a thing standing WITH
-/// you; the four bars above it are you, and the chrome has to say which is which at a glance.
+/// The portrait square (owner: shrink the summon's portrait and bar). It was 52 against a 268 px HP bar — a companion taking a third of the width of the thing keeping you alive.
 const SP_FACE: i32 = 34;
 const SP_BAR_H: i32 = 9;
 const SP_BAR_W: i32 = @divTrunc(HP_W, 2);
@@ -592,8 +575,7 @@ const SP_LIFE_TP = rgba(206, 234, 248, 255);
 
 const BARS_BOTTOM: i32 = BAR_TOP + BARS_H + BAR_GAP + 2 + PSN_H;
 
-/// `k` is the fade, 0..1 — held by the game because the spirit's body is gone before the toast has finished
-/// leaving, and a panel that reads its own subject cannot outlive it.
+/// `k` is the fade, 0..1 — held by the game because the spirit's body is gone before the toast has finished leaving, and a panel that reads its own subject cannot outlive it.
 pub fn spiritPanel(hasFace: bool, name: [:0]const u8, hp: f32, k: f32) void {
     if (k <= 0.004) return;
     const kk = mathx.clampF(k, 0, 1);
@@ -654,9 +636,7 @@ const DIAL_GROUND = rgba(20, 17, 14, 214);
 const SUN_COL = rgba(244, 206, 118, 255);
 const MOON_COL = rgba(206, 216, 234, 255);
 
-/// THE WORLD CLOCK, drawn as the thing it actually is: a horizon, and the key light travelling across it left to
-/// right. The hour is the ONLY input and every shape here comes off `daynight`'s own arithmetic (`spanU`,
-/// `isDay`, `dayAmt`), so the dial cannot tell a different time than the sun the scene is lit by.
+/// THE WORLD CLOCK, drawn as the thing it actually is: a horizon, and the key light travelling across it left to right. The hour is the ONLY input and every shape comes off `daynight`'s own arithmetic, so the dial cannot tell a different time than the sun the scene is lit by.
 pub fn dayDial(hour: f32) void {
     const cx = MARGIN + DIAL_R;
     const cy = BAR_TOP + @divTrunc(BARS_H, 2);
@@ -726,10 +706,8 @@ const FOE_LIFT: i32 = 16;
 const FOE_TRACK = rgba(38, 12, 10, 230);
 const STAGGER_RIM = rgba(232, 196, 90, 255);
 const CHILL_STRIP = rgba(148, 202, 232, 235);
-/// A BAR MAY NOT CLIMB OUT OF THE FRAME. Over the head is right at every distance you can see the whole
-/// creature at, and wrong the moment you close on a TALL one: the ogre's crown is 4.4 m up, so through the
-/// whole fight it is drawn off the top of the screen, gold rim and all. So the bar has a CEILING in screen
-/// space — far off it rides the head, walking in it stops climbing and hangs against the body.
+/// A BAR MAY NOT CLIMB OUT OF THE FRAME. Over the head is right at every distance you can see the whole creature
+/// at, and wrong the moment you close on a TALL one: the ogre's crown is 4.4 m up. So the bar has a CEILING in screen space — far off it rides the head, walking in it stops climbing and hangs against the body.
 const FOE_CEIL: f32 = 0.25; // …measured from the TOP, so 0.25 is three quarters up
 
 pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool, chill: f32) void {
@@ -743,8 +721,7 @@ pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool, chill: f32) void {
     const fw: i32 = @intFromFloat(wf * mathx.clampF(frac, 0, 1));
     // 5 px tall, so the shade band is 2 rather than the vitals bars' third and the tip is a single column.
     fillThree(x, y, fw, FOE_H, frac, HP_HI, HP_LO, mathx.withAlpha(HP_TP, 200), 2, 1, 120);
-    // THE COLD ON IT, under the health: a rime strip draining with the hold (`combat.Chill.frac`). Its own
-    // row rather than a tint on the fill — a tint on a red bar at 54 px is a hue nobody can name.
+    // THE COLD ON IT, under the health (`combat.Chill.frac`). Its own row rather than a tint on the fill — a tint on a red bar at 54 px is a hue nobody can name.
     if (chill > 0.001) {
         const cw: i32 = @intFromFloat(wf * mathx.clampF(chill, 0, 1));
         rl.drawRectangle(x, y + FOE_H + 1, cw, 2, CHILL_STRIP);
@@ -825,17 +802,14 @@ pub fn souls(n: u32) void {
     text(s, x + SOUL_W - textW(s, BODY) - 11, y + @divTrunc(SOUL_H - lineH(BODY), 2) + 1, BODY, SOUL_TEXT);
 }
 
-// **THE ONE THING THAT SAYS THE DISK WAS TOUCHED** (owner: a save spinner, bottom right — a tree that grows;
-// a DEAD one). Not a spinner: the file is on disk before the first frame of this draws, so it says "that
-// happened", which is a thing that finishes.
+// **THE ONE THING THAT SAYS THE DISK WAS TOUCHED** (owner: a save spinner, bottom right — a tree that grows; a
+// DEAD one). Not a spinner: the file is on disk before the first frame of this draws.
 //
-// **IT IS FORLORN AND IT DOES NOT BOUNCE** (owner's call, and the one place in this codebase where **A MASS
-// IN MOTION OVERSHOOTS ITS REST** does NOT apply — do not put the overshoot back).
+// **IT IS FORLORN AND IT DOES NOT BOUNCE** (owner's call, and the one place in this codebase where **A MASS IN
+// MOTION OVERSHOOTS ITS REST** does NOT apply — do not put the overshoot back).
 //
-// **AND IT IS BUILT TO THE DEAD-GROWTH LAW** (`propwood.deadLimbInto`, at HUD scale in two dimensions):
-// NOTHING DEAD IS STRAIGHT AND NOTHING ENDS IN A POINT. A limb leaves the bole on its own axis, rises to an
-// elbow, DROOPS off that line and ends in a BLUNT SNAP of pale heartwood; twigs root on the OUTER half. No
-// crown and no leaf anywhere — the fork at the top is finer limbs, not foliage.
+// **AND IT IS BUILT TO THE DEAD-GROWTH LAW** (`propwood.deadLimbInto`, at HUD scale in two dimensions): NOTHING
+// DEAD IS STRAIGHT AND NOTHING ENDS IN A POINT. No crown and no leaf anywhere — the fork at the top is finer limbs.
 
 pub const SAVE_GROW: f32 = 0.92;
 pub const SAVE_HOLD: f32 = 0.50;
@@ -850,8 +824,7 @@ const SAVE_BARK = rgba(58, 47, 38, 255);
 const SAVE_BARK_LT = rgba(92, 76, 58, 255);
 const SAVE_HEART = rgba(142, 126, 100, 255);
 
-/// **NO OVERSHOOT** (see above — the owner's exemption from the house law). Slow off the mark, slow onto its
-/// rest, and it never goes past it: what this says is "that happened", not "look at me".
+/// **NO OVERSHOOT** (see above — the owner's exemption from the house law). Slow off the mark, slow onto its rest, and it never goes past it.
 fn saveEase(p: f32) f32 {
     return mathx.smoothstep(0, 1, p);
 }
@@ -939,8 +912,7 @@ pub fn saveTree(left: f32) void {
 
 const PROMPT_LIFT: i32 = 76;
 
-/// WHAT THE BUTTON IN REACH WOULD DO — the picture of the button, then the verb. The band is measured off
-/// BOTH, so a longer verb or a wider glyph moves the plate rather than spilling off it.
+/// WHAT THE BUTTON IN REACH WOULD DO — the picture of the button, then the verb. The band is measured off BOTH, so a longer verb or a wider glyph moves the plate rather than spilling off it.
 pub fn prompt(h: Hint) void {
     const gw = glyphW(h.glyph, GLYPH_R);
     const w = gw + GLYPH_GAP + textW(h.label, BODY);
@@ -969,9 +941,7 @@ const BANNER_TOP: i32 = 96;
 const BANNER_ROWS: usize = 3;
 const BANNER_WIDE: i32 = 620;
 
-/// A LINE THE WORLD IS SAYING, not a thing you can answer — no frame, no plate, just words with a shadow
-/// under them, so it never reads as a panel you have missed a button on. Wrapped with the real face, since a
-/// script's sentence is written to be read and not to fit.
+/// A LINE THE WORLD IS SAYING, not a thing you can answer — no frame, no plate, just words with a shadow under them. Wrapped with the real face, since a script's sentence is written to be read and not to fit.
 pub fn banner(s: []const u8) void {
     var buf: [320]u8 = undefined;
     var rows: [BANNER_ROWS][:0]const u8 = undefined;
@@ -997,9 +967,7 @@ const BOTTOM: i32 = 26;
 
 pub const Held = itemart.Arm;
 
-/// **A HAND'S CELL KNOWS WHICH WEAPON IS IN IT, NOT JUST WHICH ARM.** The glyph was the armament's, so a dirk,
-/// a club and a warbow all drew as the plain sword and bow down here while the character book — which asks
-/// `hero.heldGear` — drew the gear. One question, one answer, both pages.
+/// **A HAND'S CELL KNOWS WHICH WEAPON IS IN IT, NOT JUST WHICH ARM.** The glyph was the armament's, so a dirk, a club and a warbow all drew as the plain sword and bow down here while the character book — which asks `hero.heldGear` — drew the gear.
 pub const Slot = union(enum) { empty, held: struct { arm: Held, gear: ?item.Kind = null }, sorcery: combat.Spell };
 
 pub fn equipment(left_hand: Slot, right_hand: Slot, up: Slot, castable: bool, quick: ?item.Kind, charges: u8, ammo: ?Ammo) void {
@@ -1034,8 +1002,7 @@ const TALLY_OK = rgba(232, 224, 202, 255);
 pub const Ammo = struct { n: u8, fire: bool = false };
 
 
-/// A count in a slot's bottom-right corner (flask charges, quiver shafts, bag stacks). Laid off the CORNER, not
-/// off the text's own height: the glyphs have descenders, and measured that way every tally sat on its rim.
+/// A count in a slot's bottom-right corner. Laid off the CORNER, not off the text's own height: the glyphs have descenders, and measured that way every tally sat on its rim.
 pub fn tally(s: [:0]const u8, rightX: i32, bottomY: i32, size: i32, col: rl.Color) void {
     const tw = textW(s, size);
     const h = lineH(size);
@@ -1065,9 +1032,7 @@ fn slot(x: i32, y: i32, holds: Slot, charges: u8) void {
     switch (holds) {
         .empty => {},
         .held => |h| itemart.heldArt(h.arm, h.gear, cx, cy, px),
-        // The sorcery cell's picture greys out when the FP will not cover a cast, which is the ammo box's own
-        // rule: a thing you cannot use has to LOOK like a thing you cannot use. WHICH picture is `itemart`'s
-        // one answer, shared with the character book's own socket.
+        // The sorcery cell's picture greys out when the FP will not cover a cast, which is the ammo box's own rule. WHICH picture is `itemart`'s one answer, shared with the character book's socket.
         .sorcery => |sp| itemart.spellArt(sp, cx, cy, px, charges > 0),
     }
 }
@@ -1094,11 +1059,18 @@ pub fn reticle(k: f32) void {
     }
 }
 
-/// Break `s` to `maxW` pixels at `size`, writing NUL-terminated lines into `buf` and returning the filled ones.
-/// MEASURED WITH THE REAL FACE per candidate word, not a characters-per-line guess: Balthazar is proportional.
-/// A word wider than the whole column is taken anyway and overhangs; running out of either buffer stops cleanly.
+/// Break `s` to `maxW` pixels at `size`, writing NUL-terminated lines into `buf`. MEASURED WITH THE REAL FACE per candidate word, not a characters-per-line guess: Balthazar is proportional. A word wider than the whole column is taken anyway and overhangs.
 pub fn wrap(s: []const u8, size: i32, maxW: i32, buf: []u8, lines: [][:0]const u8) [][:0]const u8 {
     return wrapBy(textW, s, size, maxW, buf, lines);
+}
+
+/// **ONE ROTATING SCRATCH FOR EVERY PANEL'S LABELS.** The book, the bonfire and the passive tree each kept their own copy — and a slice into slot N is only good for the next fifteen calls, which is a rule worth having in ONE place next to the drawing it feeds.
+var scratch: [16][160]u8 = undefined;
+var scratchAt: usize = 0;
+
+pub fn fmt(comptime f: []const u8, args: anytype) [:0]const u8 {
+    scratchAt = (scratchAt + 1) % scratch.len;
+    return std.fmt.bufPrintZ(&scratch[scratchAt], f, args) catch "?";
 }
 
 const PROSE_LINES = 8;
@@ -1125,15 +1097,12 @@ pub fn proseWrap(s: []const u8, w: i32, size: i32) []const [:0]const u8 {
     return wrap(s, size, w, &proseBuf, &proseLines);
 }
 
-/// …and the same wrap measured in the MONO face, for the editor's own chrome (`ui.drawTip`). Its own entry
-/// point rather than a flag, because which font a string will be DRAWN in is not something a wrap may guess.
+/// …and the same wrap measured in the MONO face, for the editor's own chrome. Its own entry point rather than a flag, because which font a string will be DRAWN in is not something a wrap may guess.
 pub fn wrapMono(s: []const u8, size: i32, maxW: i32, buf: []u8, lines: [][:0]const u8) [][:0]const u8 {
     return wrapBy(monoW, s, size, maxW, buf, lines);
 }
 
-/// …measured by whatever is passed in. A test binary opens no window and so loads no font, which makes
-/// every string zero wide and every wrap one line: the algorithm is only checkable against a ruler the
-/// test brings itself.
+/// …measured by whatever is passed in. A test binary opens no window and so loads no font, which makes every string zero wide and every wrap one line: the algorithm is only checkable against a ruler the test brings itself.
 fn wrapBy(comptime measure: fn ([:0]const u8, i32) i32, s: []const u8, size: i32, maxW: i32, buf: []u8, lines: [][:0]const u8) [][:0]const u8 {
     var n: usize = 0;
     var used: usize = 0;

@@ -19,9 +19,7 @@ pub const VERSION: u32 = 1;
 
 pub const SLOTS: usize = 3;
 
-/// **THE FILE AND ITS PICTURE ARE ONE NAME AND ONE EXTENSION APART, so they are not two lists.** Written out
-/// they were three stems typed twice in lockstep, and a slot whose `.png` row disagreed with its `.dat` row
-/// shows the picker the WRONG SAVE'S picture — a mislabel with nothing to catch it, since both files exist.
+/// **THE FILE AND ITS PICTURE ARE ONE NAME AND ONE EXTENSION APART, so they are not two lists.** Written out they were three stems typed twice in lockstep, and a slot whose `.png` row disagreed with its `.dat` row shows the picker the WRONG SAVE'S picture — a mislabel with nothing to catch it, since both files exist.
 fn slotNames(comptime stem: []const u8, comptime ext: []const u8) [SLOTS][:0]const u8 {
     var out: [SLOTS][:0]const u8 = undefined;
     for (&out, 0..) |*p, i| p.* = std.fmt.comptimePrint(stem ++ "{d}." ++ ext, .{i + 1});
@@ -39,10 +37,9 @@ comptime {
     std.debug.assert(std.mem.eql(u8, DEV_PATHS[0], "devsave1.dat"));
 }
 
-/// **A DEV RUN MAY NOT TOUCH THE PLAYED SHELF.** `--map` and `--shot` wrote through these three filenames
-/// too: one rest at a test map's bonfire overwrote `save1.dat`, and because the file then named a map the
-/// shipping boot cannot match, the picker showed that slot EMPTY and New Game finished the character off.
-/// Every reader and writer here goes through `path`/`shotPath`, never the arrays.
+/// **A DEV RUN MAY NOT TOUCH THE PLAYED SHELF.** `--map` and `--shot` wrote through these three filenames too:
+/// one rest at a test map's bonfire overwrote `save1.dat`, and because the file then named a map the shipping
+/// boot cannot match, the picker showed that slot EMPTY and New Game finished the character off. Every reader and writer here goes through `path`/`shotPath`, never the arrays.
 var devShelf = false;
 
 pub fn useDevShelf(on: bool) void {
@@ -67,9 +64,7 @@ pub const Slot = struct {
     trig: *trigmod.Runtime,
     chests: *chestmod.Chests,
     pickups: *pickupmod.Pickups,
-    /// **THE BOSS STAYS DEAD** (owner's call). The GROUP'S MEMBERS, not the group: its meshes want a shader
-    /// and this has to run headless. Keyed to placing order, which `foe.resetGroup` fills in the map's own
-    /// foe-table order — the same stable index the chest and pickup bits use.
+    /// **THE BOSS STAYS DEAD** (owner's call). The GROUP'S MEMBERS, not the group: its meshes want a shader and this has to run headless. Keyed to placing order, which `foe.resetGroup` fills in the map's own foe-table order — the same stable index the chest and pickup bits use.
     bosses: []knightmod.Knight,
     award: *awardmod.Award,
     map: []const u8,
@@ -101,8 +96,7 @@ pub const Data = struct {
     armAlt: heromod.Armament = .bow,
     offAlt: heromod.Armament = .wand,
     spell: combat.Spell = .bolt,
-    /// ABSENT FROM AN OLDER FILE, which loads as the starting rack (`worn:`' rule); `hero.tidySpells` then
-    /// re-seats the selection.
+    /// ABSENT FROM AN OLDER FILE, which loads as the starting rack (`worn:`'s rule); `hero.tidySpells` then re-seats the selection.
     memory: [combat.MEM_SLOTS]?combat.Spell = (combat.Memory{}).slots,
     arrow: combat.ArrowKind = .plain,
     flask: combat.FlaskKind = .crimson,
@@ -135,8 +129,7 @@ pub const Data = struct {
     pickupTaken: [pickupmod.CAP]bool = [_]bool{false} ** pickupmod.CAP,
     ground: [pickupmod.CAP]Drop = [_]Drop{.{}} ** pickupmod.CAP,
     groundN: usize = 0,
-    /// One bit per boss the map placed, in placing order. A missing row leaves them all standing, which is
-    /// honestly what a save written before bosses stayed dead describes.
+    /// One bit per boss the map placed, in placing order. A missing row leaves them all standing, which is honestly what a save written before bosses stayed dead describes.
     bossDead: [wf.MAX_PER_KIND]bool = [_]bool{false} ** wf.MAX_PER_KIND,
     seen: [item.NK]bool = [_]bool{false} ** item.NK,
 
@@ -200,9 +193,7 @@ pub const Shelf = struct {
     }
 };
 
-/// **A SLOT ONLY LISTS IF IT WOULD ACTUALLY LOAD**, which is why the map is asked for here and not just at
-/// `readFrom`. A file this build cannot honestly read is not a row with a level on it that dies when pressed
-/// — that is precisely the "looks available and does nothing" the picker's own greying law refuses.
+/// **A SLOT ONLY LISTS IF IT WOULD ACTUALLY LOAD**, which is why the map is asked for here and not just at `readFrom`. A file this build cannot honestly read is not a row with a level on it that dies when pressed — that is the "looks available and does nothing" the picker's own greying law refuses.
 pub fn survey(map: []const u8) Shelf {
     var sh = Shelf{};
     for (0..SLOTS) |i| sh.head[i] = peek(map, i);
@@ -249,9 +240,7 @@ pub fn writeShot(i: usize) bool {
 }
 
 pub fn writeTo(file: []const u8, s: Slot) bool {
-    // A NAME THAT DOES NOT FIT IS A REFUSED SAVE, NEVER A TRUNCATED ONE. `gather` clips to `MAP_CAP`, and a
-    // clipped name is one `readFrom` can never match again — every save silently unloadable, which is the
-    // worst failure this file has. The comptime assert below is what says it cannot happen today.
+    // A NAME THAT DOES NOT FIT IS A REFUSED SAVE, NEVER A TRUNCATED ONE. `gather` clips to `MAP_CAP`, and a clipped name is one `readFrom` can never match again — every save silently unloadable, which is the worst failure this file has.
     if (s.map.len > MAP_CAP) return false;
     const d = gather(s);
     const f = std.fs.cwd().createFile(file, .{}) catch return false;
@@ -333,8 +322,7 @@ pub fn gather(s: Slot) Data {
         d.ground[d.groundN] = .{ .at = p.pos, .n = p.nloot, .loot = p.loot };
         d.groundN += 1;
     }
-    // From the frame the killing blow lands, not the frame the body finishes dissolving: `vit.dead` is the
-    // mechanic and `gone` is only the picture catching up with it.
+    // From the frame the killing blow lands, not the frame the body finishes dissolving: `vit.dead` is the mechanic and `gone` is only the picture catching up with it.
     for (s.bosses, 0..) |k, i| d.bossDead[i] = k.vit.dead;
     d.seen = s.award.seen;
     return d;
@@ -513,14 +501,14 @@ pub fn parse(text: []const u8, d: *Data) !void {
             d.quickSel = try int(usize, &it);
         } else if (std.mem.eql(u8, key, "worn:")) {
             // **THE KIND NAMES ITS OWN SOCKET; THE POSITION IS ONLY A CURSOR FOR THE DASHES.** Every kind has
-            // exactly one `wearSlot`, so for a named item the position carries nothing the kind does not — and
-            // a positional mismatch is a socket that MOVED under a file already on disk, not corruption.
-            // Refusing it cost a real save: `fang_dirk` was written at `hand_sword` and re-socketed to
-            // `hand_dagger`, and the guard threw out the whole file — position, souls, tree and bag with it.
-            // A file may not be lost because the game grew a socket. What is still refused is a tag this
-            // build does not know (`fromTag`) and an item with no socket at all.
+            // exactly one `wearSlot`, so for a named item the position carries nothing the kind does not — and a
+            // positional mismatch is a socket that MOVED under a file already on disk, not corruption. Refusing
+            // it cost a real save: `fang_dirk` was written at `hand_sword` and re-socketed to `hand_dagger`, and
+            // the guard threw out the whole file. What is still refused is a tag this build does not know (`fromTag`) and an item with no socket at all.
             d.worn = .{};
-            inline for (@typeInfo(item.Wear).@"enum".fields) |_| {
+            // The position is only a CURSOR for the dashes now, so this counts to `NWEAR` rather than walking the enum: an `inline for` whose index nothing reads is `NWEAR` copies of the body for nothing.
+            var wi: usize = 0;
+            while (wi < NWEAR) : (wi += 1) {
                 const tok = it.next() orelse break;
                 if (!std.mem.eql(u8, tok, "-")) {
                     const k = item.fromTag(tok) orelse return Error.BadField;
@@ -596,10 +584,7 @@ pub fn parse(text: []const u8, d: *Data) !void {
 
 const Tok = std.mem.TokenIterator(u8, .any);
 
-/// **NON-FINITE IS A BAD FIELD** (`worldfmt.finiteFloat`'s rule, and this parser is the other door into the
-/// same runtime). `parseFloat` accepts `nan` and `inf`, and a NaN through here is not a wrong number, it is a
-/// number nothing downstream can refuse: a NaN `at:` clamps to the corner of the world and a NaN facing poses
-/// the whole rig off-screen. Refuse the file instead.
+/// **NON-FINITE IS A BAD FIELD** (`worldfmt.finiteFloat`'s rule, and this parser is the other door into the same runtime). `parseFloat` accepts `nan` and `inf`, and a NaN through here is a number nothing downstream can refuse: a NaN `at:` clamps to the corner of the world and a NaN facing poses the whole rig off-screen.
 fn float(it: *Tok) !f32 {
     const v = std.fmt.parseFloat(f32, it.next() orelse return Error.BadField) catch return Error.BadField;
     if (!std.math.isFinite(v)) return Error.BadField;
@@ -624,9 +609,7 @@ fn bits(w: anytype, key: []const u8, run: []const bool) !void {
     try w.writeByte('\n');
 }
 
-/// A SHORT RUN IS LEGAL AND A LONG ONE IS NOT. Every run here defaults to zero, so a file written before a
-/// cap grew loads its tail at exactly what a fresh runtime has; one written after it grew is from a build
-/// this one cannot honestly read, and guessing which end to cut is how a save loads as a different game.
+/// A SHORT RUN IS LEGAL AND A LONG ONE IS NOT. Every run here defaults to zero, so a file written before a cap grew loads its tail at exactly what a fresh runtime has; one written after it grew is from a build this one cannot honestly read, and guessing which end to cut is how a save loads as a different game.
 fn readBits(it: *Tok, out: []bool) !void {
     @memset(out, false);
     const txt = it.next() orelse return;
@@ -794,9 +777,7 @@ test "a save round-trips through its own text" {
 test "the buffer holds the biggest save this build can write" {
     var d = sample();
     for (&d.bag) |*c| c.* = item.CAP;
-    // THE LONGEST TAG, ASKED FOR RATHER THAN NAMED. `CAP` sizes both these rows off `item.TAG_MAX`, so a
-    // hand-picked kind understates them by however far it is off the longest — silently, and again on the
-    // next item added.
+    // THE LONGEST TAG, ASKED FOR RATHER THAN NAMED. `CAP` sizes both these rows off `item.TAG_MAX`, so a hand-picked kind understates them by however far it is off the longest — silently, and again on the next item added.
     for (&d.quick) |*q| q.* = item.LONGEST_TAG;
     for (&d.counters) |*c| c.* = std.math.minInt(i32);
     for (&d.waitLeft) |*v| v.* = -99999.5;
@@ -853,8 +834,7 @@ test "WHAT HE WAS WEARING SURVIVES THE FILE, a short line loads bare, and a MOVE
         try testing.expectEqual(sample().worn.at(w), back.worn.at(w));
     }
 
-    // **A LINE SHORTER THAN THE SOCKET LIST LOADS WHAT IT NAMES AND CLEARS THE REST** — which is what makes
-    // `item.Wear` safe to APPEND to.
+    // **A LINE SHORTER THAN THE SOCKET LIST LOADS WHAT IT NAMES AND CLEARS THE REST** — which is what makes `item.Wear` safe to APPEND to.
     var short = Data{};
     short.worn.put(.ring2, .deft_signet);
     try parse("version: 1\nworn: - grave_warbow\n", &short);
@@ -862,9 +842,7 @@ test "WHAT HE WAS WEARING SURVIVES THE FILE, a short line loads bare, and a MOVE
     try testing.expect(short.worn.at(.ring2) == null);
     try testing.expect(short.worn.at(.hand_club) == null);
 
-    // **AND A SOCKET THAT MOVED UNDER A FILE ALREADY ON DISK STILL LOADS IT** — this is a REAL save, written
-    // when the dagger and the club shared `hand_sword`. Refusing it threw away the position, the souls, the
-    // tree and the bag along with the weapon.
+    // **AND A SOCKET THAT MOVED UNDER A FILE ALREADY ON DISK STILL LOADS IT** — this is a REAL save, written when the dagger and the club shared `hand_sword`. Refusing it threw away the position, the souls, the tree and the bag along with the weapon.
     var moved = Data{};
     try parse("version: 1\nworn: fang_dirk - - quilted_gambeson\nsouls: 3558\n", &moved);
     try testing.expectEqual(item.Kind.fang_dirk, moved.worn.at(.hand_dagger).?);
@@ -872,8 +850,7 @@ test "WHAT HE WAS WEARING SURVIVES THE FILE, a short line loads bare, and a MOVE
     try testing.expectEqual(item.Kind.quilted_gambeson, moved.worn.at(.chest).?);
     try testing.expectEqual(@as(u32, 3558), moved.souls);
 
-    // A coat at the sword's position is a MOVED socket as far as the file can tell, so it lands in the one
-    // socket it fits. A TAG THIS BUILD DOES NOT KNOW, and an item with no socket at all, are still refused.
+    // A coat at the sword's position is a MOVED socket as far as the file can tell, so it lands in the one socket it fits. A TAG THIS BUILD DOES NOT KNOW, and an item with no socket at all, are still refused.
     var wrong = Data{};
     try parse("version: 1\nworn: quilted_gambeson\n", &wrong);
     try testing.expectEqual(item.Kind.quilted_gambeson, wrong.worn.at(.chest).?);
@@ -881,8 +858,7 @@ test "WHAT HE WAS WEARING SURVIVES THE FILE, a short line loads bare, and a MOVE
     try testing.expectError(Error.BadField, parse("version: 1\nworn: crimson_flask\n", &wrong));
 }
 
-/// The live objects a `Slot` points at, with only the fields `gather`/`scatter` touch made real. The three
-/// mesh-bearing ones cannot be `init`ed without a GL context, and none of their meshes is read here.
+/// The live objects a `Slot` points at, with only the fields `gather`/`scatter` touch made real. The three mesh-bearing ones cannot be `init`ed without a GL context, and none of their meshes is read here.
 const Live = struct {
     hero: heromod.Hero = undefined,
     bag: item.Bag = .{},

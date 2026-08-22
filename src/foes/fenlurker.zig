@@ -20,22 +20,17 @@ const mul3 = mathx.mul3;
 const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 
-// THE FEN LURKER (owner's creature, owner's brief) — lives UNDER the painted water and comes up when you
-// wade. **THE COUNTER IS DRY LAND**: a FIXTURE (the rooted's shelf), it never travels and cannot follow you
-// out. **AND IT IS ONLY THERE WHILE IT IS UP** — sunk it is a wake, with no bar, no reticle, and a sword
-// through it hits water (the delver's `hidden`).
+// THE FEN LURKER (owner's creature, owner's brief) — lives UNDER the painted water and comes up when you wade.
+// **THE COUNTER IS DRY LAND**: a FIXTURE (the rooted's shelf), it never travels and cannot follow you out. **AND
+// IT IS ONLY THERE WHILE IT IS UP** — sunk it is a wake, with no bar, no reticle, and a sword through it hits water.
 
-/// How far out of the water the head rides at full surge, in metres — its own stature, and everything on the
-/// rig is a fraction of it. Over the hero's own 1.8 so the thing that comes up is looking DOWN at him.
+/// How far out of the water the head rides at full surge, in metres — its own stature, and everything on the rig is a fraction of it. Over the hero's own 1.8 so the thing that comes up is looking DOWN at him.
 pub const H: f32 = 2.55;
 
-/// It feels this far through the water. Generous, because it cannot come after you: the ring is what makes
-/// crossing a pool a decision rather than a surprise.
+/// It feels this far through the water. Generous, because it cannot come after you: the ring is what makes crossing a pool a decision rather than a surprise.
 pub const AGGRO_R: f32 = 9.0;
 
-/// **HOW DEEP HE HAS TO BE STANDING FOR IT TO FEEL HIM AT ALL.** Ankle-deep is enough: the trigger is being
-/// IN the water rather than being far into it, or the creature would only ever answer the one strip of pool
-/// nobody crosses anyway. Well under `env.WADE_MAX` (1.37), which is the depth that refuses him outright.
+/// **HOW DEEP HE HAS TO BE STANDING FOR IT TO FEEL HIM AT ALL.** Ankle-deep is enough: the trigger is being IN the water rather than far into it. Well under `env.WADE_MAX` (1.37), which is the depth that refuses him outright.
 pub const WADE_MIN: f32 = 0.30;
 
 pub const POOL_MIN: f32 = 0.22;
@@ -46,8 +41,7 @@ const CENTER_F: f32 = 0.62;
 const TOP_F: f32 = 1.12;
 
 const HP_MAX: f32 = 78.0;
-/// It flinches off a hero heavy (22) and not off a light (10) — the ravager's own sizing, because a thing
-/// with a window this narrow may not be stunlockable inside it.
+/// It flinches off a hero heavy (22) and not off a light (10) — the ravager's own sizing, because a thing with a window this narrow may not be stunlockable inside it.
 const POISE_MAX: f32 = 20.0;
 const STANCE_MAX: f32 = 36.0;
 const RESISTS = combat.resists(.{ .fire = 45, .cold = 25, .lightning = -60, .chaos = 0 });
@@ -66,16 +60,13 @@ const RECOVER_DUR: f32 = 0.62;
 const SINK_DUR: f32 = 0.85;
 const REST_DUR: f32 = 1.10;
 
-/// WHAT THE HEAD DOES. Heavy on poise and it carries stance: it is a mass falling out of the air, and the
-/// thing it is meant to punish is being caught mid-swing in water you cannot roll in.
+/// WHAT THE HEAD DOES. Heavy on poise and it carries stance: it is a mass falling out of the air, and what it punishes is being caught mid-swing in water you cannot roll in.
 pub const LASH_HIT = combat.Hit{ .dmg = 26, .poise = 24, .stance = 11 };
 
-/// How far out the head reaches at the strike, off the creature's own centre — MEASURED off the posed rig by
-/// the test at the foot of this file, never guessed.
+/// How far out the head reaches at the strike, off the creature's own centre — MEASURED off the posed rig by the test at the foot of this file, never guessed.
 const LASH_R: f32 = 2.35;
 const LASH_FRONT_DOT: f32 = 0.30;
-/// Where in the stroke the limb arrives, as a share of it — where its own `swingCurve` crosses zero, and the
-/// ONE frame the boards are asked about (`foe.PARRY_LEAD` back from here).
+/// Where in the stroke the limb arrives, as a share of it — where its own `swingCurve` crosses zero, and the ONE frame the boards are asked about (`foe.PARRY_LEAD` back from here).
 const LASH_IMPACT_K: f32 = 0.5;
 /// Its reach and measured height are both taken over this: a flat skull coming down is a MASS, not a point.
 const HEAD_R: f32 = 0.34;
@@ -117,9 +108,7 @@ fn restPose() [N]rl.Vector3 {
     return r;
 }
 
-// **AUTHOR DARK, AND SOLVE IT** — albedo x 1.72 -> linear -> gamma 1/2.2, so screen goes as albedo^(1/2.2)
-// and the bigger and smoother the mass the darker it must start. This hide comes up against the WATER SHEET,
-// the brighter backdrop, so it is authored UNDER the ravager's.
+// **AUTHOR DARK, AND SOLVE IT** — screen goes as albedo^(1/2.2), so the bigger and smoother the mass the darker it must start. This hide comes up against the WATER SHEET, the brighter backdrop, so it is authored UNDER the ravager's.
 
 const HIDE = rgba(9, 13, 11, 208);
 const HIDE_LT = rgba(14, 19, 16, 194);
@@ -165,9 +154,7 @@ pub const Lurker = struct {
     elapsed: f32 = 0,
     restT: f32 = 0,
 
-    /// **HOW FAR OUT OF THE WATER IT IS**, 0..1 — one scalar, read off the state's own clock and nowhere
-    /// else, so the picture cannot promise a body the mechanic says is not there. It is what the pose rides,
-    /// what `hidden` is asked of, and what decides whether a sword can reach it.
+    /// **HOW FAR OUT OF THE WATER IT IS**, 0..1 — one scalar, read off the state's own clock and nowhere else, so the picture cannot promise a body the mechanic says is not there. It is what the pose rides, what `hidden` is asked of, and what decides whether a sword can reach it.
     up: f32 = 0,
     swing: f32 = 0,
     swingL1: f32 = 0,
@@ -182,13 +169,10 @@ pub const Lurker = struct {
     flash: f32 = 0,
     shove: rl.Vector3 = mathx.zero3,
     justDied: bool = false,
-    /// One-frame edges, cleared at the top of `update`. The creature says WHEN and `game.zig` owns the
-    /// speaker, or it plays through the pause card and the shot harness.
     broke: bool = false,
     lashed: bool = false,
     yelped: bool = false,
     sank: bool = false,
-    /// THE HERO'S SHIELD, stamped from outside (`game.markParry`), and the one-frame answer to it.
     parry: foe.Parry = .{},
     parried: bool = false,
 
@@ -228,9 +212,7 @@ pub const Lurker = struct {
     pub fn lockPoint(self: *const Lurker) rl.Vector3 {
         return foe.markOn(self.xf[HEAD], v3(0, 0.02 * H, 0.05 * H));
     }
-    /// **HOW TALL THE CREATURE IS, NOT HOW FAR UP IT HAPPENS TO BE.** Scaled by `up` it answered 0.43 m while
-    /// down, and `shots.runMapShots` solves its camera off this BEFORE the pose — it framed a stone and the
-    /// real one rose 2.5 m out of frame. A sunk one needs no scaling: `disguised` reads `hidden` and skips it.
+    /// **HOW TALL THE CREATURE IS, NOT HOW FAR UP IT HAPPENS TO BE.** Scaled by `up` it answered 0.43 m while down, and `shots.runMapShots` solves its camera off this BEFORE the pose — it framed a stone and the real one rose 2.5 m out of frame.
     pub fn topWorld(self: *const Lurker) rl.Vector3 {
         return foe.bodyPoint(self.pos, TOP_F * H, self.scale, 0);
     }
@@ -260,9 +242,7 @@ pub const Lurker = struct {
         return self.up <= SHOW_AT;
     }
 
-    /// SEPARATE from `hidden`, which is about being SEEN where this is about being SOLID — the rooted answers
-    /// them differently, a dormant snag being invisible and still a tree you walk into. Without it
-    /// `game.collideActors` pushes him out of a sunk lurker's full 2.9 m crown.
+    /// SEPARATE from `hidden`, which is about being SEEN where this is about being SOLID — the rooted answers them differently, a dormant snag being invisible and still a tree you walk into. Without it `game.collideActors` pushes him out of a sunk lurker's full 2.9 m crown.
     pub fn phased(self: *const Lurker) bool {
         return self.hidden();
     }
@@ -307,9 +287,7 @@ pub const Lurker = struct {
         return self.heroHit;
     }
 
-    /// SECONDS BACK FROM THE LIMB ARRIVING, or null. The surge is the tell and the lash is the stroke, so the
-    /// clock runs continuously across the two — and the surge's own clock is RESUMED part-way on a chained
-    /// stroke, which this reads correctly because it asks the clock rather than counting strokes.
+    /// SECONDS BACK FROM THE LIMB ARRIVING, or null. The surge is the tell and the lash is the stroke, so the clock runs continuously across the two — and the surge's clock is RESUMED part-way on a chained stroke, which this reads correctly because it asks the clock rather than counting strokes.
     fn toImpact(self: *const Lurker) ?f32 {
         const at = LASH_DUR * LASH_IMPACT_K;
         return switch (self.state) {
@@ -319,16 +297,14 @@ pub const Lurker = struct {
         };
     }
 
-    /// THE INSTANT THE LIMB CAN BE CAUGHT IN, and how far out it reaches then — `tryLash`'s OWN extent
-    /// through the same `foe.hurtReach`, so a stroke the boards could not have met is never offered as one.
+    /// THE INSTANT THE LIMB CAN BE CAUGHT IN, and how far out it reaches then — `tryLash`'s OWN extent through the same `foe.hurtReach`, so a stroke the boards could not have met is never offered as one.
     fn parryable(self: *const Lurker) ?f32 {
         const left = self.toImpact() orelse return null;
         if (!foe.inParryWindow(left)) return null;
         return foe.hurtReach(LASH_R, self.scale);
     }
 
-    /// **THE BOARDS TAKE THE LASH, AND IT IS THE DRY-LAND ANSWER'S TWIN**: a stroke caught is one that never
-    /// landed, so the latch is spent and `enterStun` drops it where it stands, still in its own water.
+    /// **THE BOARDS TAKE THE LASH**: a stroke caught is one that never landed, so the latch is spent and `enterStun` drops it where it stands, still in its own water.
     fn takeParry(self: *Lurker) void {
         const reach = self.parryable() orelse return;
         if (!foe.caught(self, reach)) return;
@@ -360,8 +336,7 @@ pub const Lurker = struct {
                 self.up = mathx.approach(self.up, 1.0, dt * 2.2);
                 if (self.t >= combat.foeStunDur(self.heavyStun)) self.enter(.recover);
             },
-            // NOTHING BUT A WAKE. It does not turn, it does not rise, and it is not a creature until he is
-            // standing in its water — or until a blade finds it, which cannot happen while it is down.
+            // NOTHING BUT A WAKE. It does not turn, it does not rise, and it is not a creature until he is standing in its water — or until a blade finds it, which cannot happen while it is down.
             .sunk => {
                 if (!self.pooled()) {
                     self.up = mathx.approach(self.up, 1.0, dt / SINK_DUR);
@@ -373,9 +348,7 @@ pub const Lurker = struct {
             },
             .surge => {
                 self.faceToward(hero, dt);
-                // **A SURGE ONLY EVER RISES.** The clock is resumed part-way through on a chained stroke
-                // (`.recover`) and on a resurface (`.sink`), and read straight off it a body already up
-                // teleported back DOWN 1.7 m the frame the second stroke was chosen.
+                // **A SURGE ONLY EVER RISES.** The clock is resumed part-way through on a chained stroke and on a resurface, and read straight off it a body already up teleported back DOWN 1.7 m the frame the second stroke was chosen.
                 self.up = mathx.maxF(self.up, mathx.smoothstep(0, SURGE_DUR, self.t));
                 self.swing = -mathx.smoothstep(SURGE_DUR * 0.35, SURGE_DUR, self.t);
                 if (self.t >= SURGE_DUR) {
@@ -431,8 +404,7 @@ pub const Lurker = struct {
         return mathx.distXZ(self.pos, hero) <= AGGRO_R;
     }
 
-    /// Would it come up for him from here — the ONE question the surge, the resurface and the sink all ask,
-    /// so the three cannot disagree about what "he is in my water" means.
+    /// Would it come up for him from here — the ONE question the surge, the resurface and the sink all ask, so the three cannot disagree about what "he is in my water" means.
     fn canReach(self: *const Lurker, hero: rl.Vector3) bool {
         if (self.leash.goingHome()) return false;
         return if (self.pooled()) self.feels(hero) else self.feelsDry(hero);
@@ -527,9 +499,7 @@ pub const Lurker = struct {
         }
     }
 
-    /// **THE WAKE — the only thing there is to see while it is down**, and it is emitted rather than posed
-    /// because the body is not drawn at all down there. Off the accumulator (`foe.emitTicks`) so the ring is
-    /// a RATE rather than a per-frame chance, and capped so one long frame cannot empty the pool.
+    /// **THE WAKE — the only thing there is to see while it is down**, and it is emitted rather than posed because the body is not drawn at all down there. Off the accumulator so the ring is a RATE rather than a per-frame chance, and capped so one long frame cannot empty the pool.
     fn ripple(self: *Lurker, dt: f32) void {
         const n = foe.emitDue(&self.fxAccum, dt, WAKE_RATE);
         var i: usize = 0;
@@ -556,9 +526,7 @@ pub const Lurker = struct {
     }
 
     pub fn draw(self: *const Lurker, model: *const Model) void {
-        // **NOTHING IS DRAWN WHILE IT IS UNDER.** The water sheet is opaque from above, so a body left drawn
-        // down there is a creature lying in plain sight through the one surface that is meant to hide it —
-        // and `hidden` is the same predicate the reticle and `tryHit` ask, so the three cannot disagree.
+        // **NOTHING IS DRAWN WHILE IT IS UNDER.** The water sheet is opaque from above, and `hidden` is the same predicate the reticle and `tryHit` ask, so the three cannot disagree.
         if (self.gone or self.hidden()) return;
         model.draw(self);
     }
@@ -570,9 +538,7 @@ pub const Lurker = struct {
         const sink = -(1.0 - self.up) * SUBMERGE * H;
         const breath = mathx.sinf(self.elapsed * 1.35 + self.seed * 6.28) * 0.010 * H * self.up;
 
-        // **THE WHOLE BODY DIVES WITH THE STROKE.** A curled chain moves the head SIDEWAYS more than down —
-        // MEASURED off the posed rig, five distributed bends finished the lash at 2.04 m, over his head. The
-        // neck rears and the BODY arrives, forward only.
+        // **THE WHOLE BODY DIVES WITH THE STROKE.** A curled chain moves the head SIDEWAYS more than down — MEASURED off the posed rig, five distributed bends finished the lash at 2.04 m, over his head.
         const dive = LASH_DIVE * mathx.maxF(0, self.swing);
         var wx: [N]rl.Matrix = undefined;
         wx[ROOT] = mul3(
@@ -605,9 +571,7 @@ pub const Lurker = struct {
 const SUBMERGE: f32 = 1.18;
 const SHOW_AT: f32 = 0.06;
 
-/// **THESE COMPOUND** — each joint rotates relative to its PARENT, so the head ends up at the SUM down the
-/// chain. Authored as absolutes (9 rising to 27, plus 34) the rear came to 124 degrees and the creature lay
-/// flat on the water. `TOTAL_BEND` is the sum and a test pins it.
+/// **THESE COMPOUND** — each joint rotates relative to its PARENT, so the head ends up at the SUM down the chain. Authored as absolutes (9 rising to 27, plus 34) the rear came to 124 degrees and the creature lay flat on the water. `TOTAL_BEND` is the sum and a test pins it.
 const SEG_BEND_LO: f32 = 3.5;
 const SEG_BEND_HI: f32 = 11.0;
 const HEAD_BEND: f32 = 15.0;
@@ -620,13 +584,10 @@ const TOTAL_BEND: f32 = blk: {
     break :blk sum + HEAD_BEND;
 };
 comptime {
-    // A REAR, NOT A COLLAPSE. Under a right angle by a clear margin at one end, and enough to be read as a
-    // cocked stroke at the other — the tell is the head going the WRONG WAY first, and five degrees is not one.
+    // A REAR, NOT A COLLAPSE. Under a right angle by a clear margin at one end, and enough to be read as a cocked stroke at the other.
     std.debug.assert(TOTAL_BEND > 35.0 and TOTAL_BEND < 80.0);
 }
-/// **HOW FAR THE WHOLE COIL TIPS OVER ACROSS THE STROKE.** Comparable to the chain's own total, because it
-/// is doing comparable work: the neck rears and the body arrives. Solved against the measured jaw height, not
-/// picked — at 0 the lash finished at 2.04 m, a third of a metre over his crown.
+/// **HOW FAR THE WHOLE COIL TIPS OVER ACROSS THE STROKE.** Comparable to the chain's own total, because it is doing comparable work. Solved against the measured jaw height — at 0 the lash finished at 2.04 m, a third of a metre over his crown.
 const LASH_DIVE: f32 = 46.0;
 const LAG_1: f32 = 15.0;
 const LAG_2: f32 = 9.0;
@@ -671,8 +632,7 @@ pub const Marsh = struct {
         self.model.setShader(sh);
     }
     pub fn update(self: *Marsh, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {
-        // **THE WAKE IS TICKED FOR EVERY MEMBER, INCLUDING THE ONES DOING NOTHING** — it is the whole of what
-        // a sunk lurker is, so it cannot live inside a state arm that only runs while something is happening.
+        // **THE WAKE IS TICKED FOR EVERY MEMBER, INCLUDING THE ONES DOING NOTHING** — it is the whole of what a sunk lurker is, so it cannot live inside a state arm that only runs while something is happening.
         for (self.live()) |*l| {
             if (foe.corporeal(l) and l.hidden() and l.pooled()) l.ripple(dt);
         }
@@ -740,13 +700,10 @@ fn buildBone(b: *Builder, i: usize, rest: [N]rl.Vector3) void {
         },
         S0, S1, S2, S3, S4 => {
             const above: usize = if (i == S4) HEAD else i + 1;
-            // OFF THE DIFFERENCE, because the rest chain is ABSOLUTE (`restPose`) — the ravager's own idiom,
-            // and the reason a resized rig cannot grow a mesh the solver does not believe in.
+            // OFF THE DIFFERENCE, because the rest chain is ABSOLUTE (`restPose`) — the ravager's own idiom, and the reason a resized rig cannot grow a mesh the solver does not believe in.
             const len = mathx.lenV(mathx.subV(rest[above], rest[i]));
             const t = @as(f32, @floatFromInt(i - S0)) / @as(f32, @floatFromInt(NECK.len - 1));
-            // **A NECK, NOT A TENTACLE.** At 0.135·H the base was 0.69 m through on a creature whose skull is
-            // 0.75 m wide — measured off the render it read as an arm rather than as something with a head on
-            // it. Sized against the HEAD instead: a neck is visibly narrower than the thing it carries.
+            // **A NECK, NOT A TENTACLE.** At 0.135·H the base was 0.69 m through on a creature whose skull is 0.75 m wide, and measured off the render it read as an arm. Sized against the HEAD instead.
             const r0 = lerpF(0.082, 0.058, t) * H;
             const r1 = lerpF(0.074, 0.052, t) * H;
             b.addCapsule(v3(0, 0, 0), v3(0, len * 0.98, 0), r0, r1, 10, HIDE);
@@ -767,9 +724,7 @@ fn buildBone(b: *Builder, i: usize, rest: [N]rl.Vector3) void {
             b.addBlob(v3(0, 0.010 * H, 0.055 * H), v3(HEAD_R * H * 0.86, 0.062 * H, 0.155 * H), 11, 7, HIDE);
             b.addBlob(v3(0, -0.012 * H, 0.030 * H), v3(HEAD_R * H * 0.72, 0.042 * H, 0.120 * H), 9, 6, BELLY);
             b.addBlob(v3(0, 0.004 * H, 0.150 * H), v3(0.082 * H, 0.046 * H, 0.058 * H), 8, 6, HIDE_LT);
-            // **THE EYES SIT PROUD OF THE DOME — THE ONE PLACE THE RELIEF LAW DOES NOT APPLY.** Sunk the few
-            // percent everything else is (y 0.048 against a crown at 0.072) they were INSIDE the mass and the
-            // render showed two dark slots. A surface that lights ITSELF has to be visible.
+            // **THE EYES SIT PROUD OF THE DOME — THE ONE PLACE THE RELIEF LAW DOES NOT APPLY.** Sunk the few percent everything else is (y 0.048 against a crown at 0.072) they were INSIDE the mass and the render showed two dark slots.
             b.addBlob(v3(0.086 * H, 0.064 * H, 0.058 * H), v3(0.030 * H, 0.028 * H, 0.030 * H), 6, 5, EYE);
             b.addBlob(v3(-0.084 * H, 0.063 * H, 0.056 * H), v3(0.029 * H, 0.027 * H, 0.029 * H), 6, 5, EYE);
             b.addBlob(v3(0.094 * H, 0.050 * H, 0.010 * H), v3(0.038 * H, 0.020 * H, 0.048 * H), 6, 4, HIDE_DK);
@@ -1049,8 +1004,7 @@ test "A LURKER WITH NO POOL IS STILL THERE WHEN NOBODY IS LOOKING" {
 }
 
 test "A CHAINED SECOND STROKE DOES NOT DROP THE BODY BACK IN THE WATER" {
-    // The surge's clock is RESUMED part-way through for a second stroke, and `up` is read off that clock —
-    // so read straight it took a creature standing at full height and put it back down 1.7 m for one frame.
+    // The surge's clock is RESUMED part-way through for a second stroke, and `up` is read off that clock — so read straight it took a creature standing at full height and put it back down 1.7 m for one frame.
     const dt: f32 = 1.0 / 60.0;
     var l = Lurker.spawn(mathx.zero3, 0, 1.0, 0.3);
     l.wade = .{ .here = 1.0, .quarry = 1.0 };

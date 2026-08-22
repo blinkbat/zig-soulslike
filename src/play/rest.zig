@@ -27,17 +27,12 @@ const BED_OUT: f32 = 0.55;
 const SEAT_TURN: f32 = 0.20;
 
 // THE BONFIRE IS A SCREEN NOW, not a pause with a fade. He sits on the RIGHT of the frame and the fire's own
-// menu is a list down the LEFT — the shape every bonfire in the genre has. GETTING UP IS A ROW ON THAT LIST
-// **OR BACK** (owner's call), and never "any button": what the old any-button rule guaranteed was a press
-// that both chose a row and stood him up, and Back is the one button that can never also pick.
+// menu is a list down the LEFT. GETTING UP IS A ROW ON THAT LIST **OR BACK** (owner's call), never "any button": what the old any-button rule guaranteed was a press that both chose a row and stood him up.
 
 pub const Row = enum {
     level,
     memorize,
-    /// **WAIT OUT THE CLOCK.** A bonfire is where you stop, so it is the one place that may spend HOURS: the
-    /// world's light is a thing you can now be in the wrong half of, and a fire you cannot wait at is a night
-    /// you have to walk off. Two, and they are the two hours worth naming (`daynight.Until`) rather than a
-    /// scrub — the fire is not an authoring tool, and "which light do I want to fight in" has two answers.
+    /// **WAIT OUT THE CLOCK.** A bonfire is where you stop, so it is the one place that may spend HOURS. Two, and they are the two hours worth naming (`daynight.Until`) rather than a scrub — the fire is not an authoring tool, and "which light do I want to fight in" has two answers.
     untilMorning,
     untilEvening,
     leave,
@@ -378,8 +373,7 @@ pub fn back(self: *Rest) void {
 
 const Tree = ptree.Tree;
 
-/// Stage a screen for the shot harness (`book.debugShow`'s pattern): a photograph of the wheel zoomed onto
-/// a keystone cannot be got by pretending to press buttons at 1/60 s a frame.
+/// Stage a screen for the shot harness (`book.debugShow`'s pattern): a photograph of the wheel zoomed onto a keystone cannot be got by pretending to press buttons at 1/60 s a frame.
 pub fn debugShow(self: *Rest, screen: Screen, row: usize, node: usize, mag: f32) void {
     self.screen = screen;
     self.row = @min(row, NROW - 1);
@@ -507,13 +501,7 @@ fn drawTree(self: *const Rest, t: *const Tree, souls: u32, a: f32) void {
 const RACK_CELL: i32 = 84;
 const RACK_GAP: i32 = 16;
 
-var scratch: [8][160]u8 = undefined;
-var scratchAt: usize = 0;
-
-fn fmt(comptime f: []const u8, args: anytype) [:0]const u8 {
-    scratchAt = (scratchAt + 1) % scratch.len;
-    return std.fmt.bufPrintZ(&scratch[scratchAt], f, args) catch "?";
-}
+const fmt = hud.fmt;
 
 fn drawSpells(self: *const Rest, v: View, a: f32) void {
     const foot = footH();

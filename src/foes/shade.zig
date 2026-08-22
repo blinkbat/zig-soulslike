@@ -20,9 +20,7 @@ const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 const placeAt = mathx.placeAt;
 
-// A BIG SMOOTH MASS NEEDS A NEARLY-BLACK ALBEDO (AGENTS.md): the hot key plus the gamma lift turns any
-// mid-dark value pale on a sunward face, and this thing is one sunward face from the shoulders down. What
-// separates the three tones is therefore HUE — cold violet against cold blue — and not value.
+// A BIG SMOOTH MASS NEEDS A NEARLY-BLACK ALBEDO (AGENTS.md): the hot key plus the gamma lift turns any mid-dark value pale on a sunward face, and this thing is one sunward face from the shoulders down. What separates the three tones is therefore HUE — cold violet against cold blue — and not value.
 const SHROUD = rgba(13, 12, 19, 255);
 const SHROUD_LT = rgba(26, 24, 38, 255);
 const SHROUD_DK = rgba(6, 6, 10, 255);
@@ -66,8 +64,7 @@ pub const GRASP_HIT = combat.Hit{ .dmg = 7, .poise = 12, .fp = 14 };
 pub const WISP_HIT = combat.Hit{ .dmg = 20, .poise = 10 };
 pub const WISP_SPEED: f32 = 13.5;
 
-/// One row per move. Every window here clears `foe.TELL_MIN` (0.30) — the law that no attack comes out of
-/// nowhere — and the test at the foot of this file pins that rather than trusting the reading.
+/// One row per move. Every window here clears `foe.TELL_MIN` (0.30) — the law that no attack comes out of nowhere — and the test at the foot of this file pins that rather than trusting the reading.
 const Attack = struct {
     windDur: f32,
     strikeDur: f32,
@@ -109,12 +106,9 @@ const BLINK_TURN_MIN: f32 = 105.0;
 const BLINK_TURN_MAX: f32 = 165.0; // which is what puts it off the shoulder a guard cannot cover.
 const SPOOK_DUR: f32 = 7.0;
 
-/// THE ARMS' OWN ARC. The grasp is both hands closing in FRONT of it, so a hero at its back is not
-/// somebody it has hold of — tested on distance alone it landed a blow that the shield's own 65° could
-/// never answer and that no frame of the animation showed. A move tests its own band (the ogre's law).
+/// THE ARMS' OWN ARC. The grasp is both hands closing in FRONT of it, so a hero at its back is not somebody it has hold of — tested on distance alone it landed a blow that the shield's own 65° could never answer and that no frame of the animation showed.
 const GRASP_ARC: f32 = 78.0;
-/// Where in the reach the hand arrives, as a share of the strike — the SAME fraction the grasp itself lands
-/// on, read from one constant so the boards and the blow cannot disagree about when it happened.
+/// Where in the reach the hand arrives, as a share of the strike — the SAME fraction the grasp lands on, read from one constant so the boards and the blow cannot disagree about when it happened.
 const GRASP_IMPACT_K: f32 = 0.42;
 
 const CIRCLE_DUR: f32 = 1.3;
@@ -131,10 +125,7 @@ const RIFT_N = 14;
 const DRAIN_N = 12;
 const TORN_N = 10;
 const UNRAVEL_N = 26;
-/// Sized by ARITHMETIC over the worst frame (the ring law). At 48 THE DEATH DID NOT FIT ITS OWN BLOW: the
-/// killing strike lays `tornMotes` (15) and the shared wound, then `enterDeath` unravels the body over the
-/// same frame — 45 on its own, with a blink's rift (14, still up at a 0.30 s life) or the drain it was
-/// mid-touch of under it, so the unravel ate the very motes the body is made of going.
+/// Sized by ARITHMETIC over the worst frame (the ring law). At 48 THE DEATH DID NOT FIT ITS OWN BLOW: the killing strike lays `tornMotes` (15) and the shared wound, then `enterDeath` unravels the body over the same frame — 45 on its own, with a blink's rift (14, still up at a 0.30 s life) or the drain under it.
 const PARTS = 64;
 comptime {
     std.debug.assert(PARTS >= RIFT_N + foe.hitParts(TORN_N) + UNRAVEL_N + foe.WOUND_PARTS);
@@ -156,8 +147,7 @@ const HEM_N = 8;
 const HEM_R: f32 = 0.074 * H;
 const HEM_Y: f32 = -0.118 * H;
 
-/// The shoulder's half-width. Inside the shroud's own, so the arms hang CLEAR of the mass rather than
-/// inside its silhouette — an arm you cannot see is an arm the reach cannot tell you about.
+/// The shoulder's half-width. Inside the shroud's own, so the arms hang CLEAR of the mass rather than inside its silhouette — an arm you cannot see is an arm the reach cannot tell you about.
 const SH_HALF: f32 = 0.118 * H;
 const SH_Y: f32 = 0.190 * H;
 
@@ -235,15 +225,13 @@ pub const Shade = struct {
     t: f32 = 0,
     elapsed: f32 = 0,
     atk: usize = GRASP,
-    /// THE HERO'S SHIELD, stamped from outside (`game.markParry`), and the one-frame answer to it.
     parry: foe.Parry = .{},
     parried: bool = false,
     dealt: bool = false,
     cds: [MOVES.len]f32 = [_]f32{0} ** MOVES.len,
     blinkCd: f32 = 0,
     spookLeft: f32 = 0,
-    /// Where the current blink is putting it down. Committed at `blinkout` so the arrival cannot chase a
-    /// hero who moved during the fade, which would read as a lunge rather than as a place it went to.
+    /// Where the current blink is putting it down. Committed at `blinkout` so the arrival cannot chase a hero who moved during the fade, which would read as a lunge rather than as a place it went to.
     blinkTo: rl.Vector3 = mathx.zero3,
     driftDir: rl.Vector3 = mathx.zero3,
     orbitSign: f32 = 1,
@@ -279,9 +267,7 @@ pub const Shade = struct {
         return s;
     }
 
-    // EVERY WORLD POINT IS MEASURED OFF `pos.y` PLUS THE HOVER, so a shade over a bank keeps its own head.
-    /// What it is holding itself off the ground by — the `lift` every other creature passes a hop or a leap
-    /// as, which for this one is simply always there.
+    /// What it is holding itself off the ground by — the `lift` every other creature passes a hop or a leap as, which for this one is simply always there. EVERY WORLD POINT IS MEASURED OFF `pos.y` PLUS THIS, so a shade over a bank keeps its own head.
     fn hover(self: *const Shade) f32 {
         return HOVER * self.scale;
     }
@@ -309,8 +295,7 @@ pub const Shade = struct {
     pub fn staggered(self: *const Shade) bool {
         return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
     }
-    /// HALFWAY THROUGH A BLINK IT IS NOWHERE — which is what exempts the jump from the terrain gate
-    /// (`game.gateTerrain`) and from being shouldered. A step it never took cannot be walked back.
+    /// HALFWAY THROUGH A BLINK IT IS NOWHERE — which is what exempts the jump from the terrain gate (`game.gateTerrain`) and from being shouldered. A step it never took cannot be walked back.
     pub fn airborne(self: *const Shade) bool {
         return self.state == .blinkout or self.state == .blinkin;
     }
@@ -333,7 +318,7 @@ pub const Shade = struct {
             foe.tickParticles(&self.parts, dt, self.pos.y);
             return .none;
         }
-        self.justDied = false; // one-frame flag, reset at the TOP (the foe contract's own rule)
+        self.justDied = false;
         self.parried = false;
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
@@ -350,9 +335,7 @@ pub const Shade = struct {
         foe.tickParticles(&self.parts, dt, self.pos.y);
 
         var act: Act = .none;
-        // WHERE THE WISP LEAVES FROM IS READ AFTER THE POSE, not at the release: `reach` snaps from the wind's
-        // 0.30 to 1.0 on this exact frame, swinging the shoulder through 94 degrees — so `wispWorld()` taken
-        // here answers with the hands still furled at the chest, a metre behind where the frame shows them.
+        // WHERE THE WISP LEAVES FROM IS READ AFTER THE POSE, not at the release: `reach` snaps from the wind's 0.30 to 1.0 on this exact frame, swinging the shoulder through 94 degrees — so `wispWorld()` taken here answers with the hands still furled at the chest, a metre behind where the frame shows them.
         var hurling = false;
         const was = self.pos;
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
@@ -446,9 +429,7 @@ pub const Shade = struct {
                 self.easeRest(dt);
                 if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enter(.idle);
             },
-            // THE ONE BODY THAT DOES NOT DISSIPATE (`foe.dissipate`, which every other death runs through). It
-            // has no collapse to be still after and nothing to shed: it does not fall over, it comes APART —
-            // `thin` from the first frame, and motes off a thing made of nothing is a substance it never had.
+            // THE ONE BODY THAT DOES NOT DISSIPATE (`foe.dissipate`, which every other death runs through). It has nothing to shed: it does not fall over, it comes APART — `thin` from the first frame, and motes off a thing made of nothing is a substance it never had.
             .dead => {
                 self.reach = mathx.approach(self.reach, -0.2, dt * 2.0);
                 self.thin = mathx.smoothstep(0, DEATH_DUR + DISS_DUR, self.t);
@@ -466,8 +447,7 @@ pub const Shade = struct {
         return act;
     }
 
-    /// SECONDS BACK FROM THE HAND ARRIVING, or null. **THE GRASP ONLY, NEVER THE WISP** — a shield is braced
-    /// against a stroke, and the hurl is a thing thrown from 12 m away.
+    /// SECONDS BACK FROM THE HAND ARRIVING, or null. **THE GRASP ONLY, NEVER THE WISP** — a shield is braced against a stroke, and the hurl is a thing thrown from 12 m away.
     fn toImpact(self: *const Shade) ?f32 {
         if (self.atk != GRASP) return null;
         const a = MOVES[GRASP];
@@ -479,17 +459,14 @@ pub const Shade = struct {
         };
     }
 
-    /// THE INSTANT THE HAND CAN BE CAUGHT IN, and how far out it reaches then — `holds`'s OWN extent, so a
-    /// grasp the boards could not have met is never offered as one.
+    /// THE INSTANT THE HAND CAN BE CAUGHT IN, and how far out it reaches then — `holds`'s OWN extent, so a grasp the boards could not have met is never offered as one.
     fn parryable(self: *const Shade) ?f32 {
         const left = self.toImpact() orelse return null;
         if (!foe.inParryWindow(left)) return null;
         return self.graspReach();
     }
 
-    /// **THE BOARDS TAKE THE HAND, AND THE FOCUS IS NOT DRAINED** — hence the bool: the caller drops the `Act`
-    /// this returns true for, because the one thing this creature is for is the FP it takes and a caught grasp
-    /// may not take any. `dealt` is spent so the rest of the strike cannot try again.
+    /// **THE BOARDS TAKE THE HAND, AND THE FOCUS IS NOT DRAINED** — hence the bool: the caller drops the `Act` this returns true for, because the one thing this creature is for is the FP it takes. `dealt` is spent so the rest of the strike cannot try again.
     fn takeParry(self: *Shade) bool {
         const reach = self.parryable() orelse return false;
         if (!foe.caught(self, reach)) return false;
@@ -674,8 +651,7 @@ pub const Shade = struct {
                 .p = from,
                 .v = mathx.scaleV(d, 1.0 / life),
                 .life = life,
-                // SIZED BETWEEN TWO FAILURES (AGENTS.md): at 0.09 the stream was a row of beach balls with
-                // the arm that caused it hidden behind them. Judged against the CREATURE, not the hero.
+                // SIZED BETWEEN TWO FAILURES (AGENTS.md): at 0.09 the stream was a row of beach balls with the arm that caused it hidden behind them. Judged against the CREATURE, not the hero.
                 .r0 = self.fxRng.range(0.026, 0.046),
                 .r1 = 0.008,
                 .col = DRAIN,
@@ -733,8 +709,7 @@ pub const Shade = struct {
     }
 
 
-    /// The hem's trail, updated off the distance actually covered: a mass in motion OVERSHOOTS its rest and
-    /// settles back onto it, so this is an eased lag and never the frame's travel read straight.
+    /// The hem's trail, updated off the distance actually covered: a mass in motion OVERSHOOTS its rest and settles back onto it, so this is an eased lag and never the frame's travel read straight.
     fn trailHem(self: *Shade, was: rl.Vector3, dt: f32) void {
         const step = mathx.subV(self.pos, was);
         const want = if (dt > 1e-5) mathx.scaleV(v3(step.x, 0, step.z), -1.0 / dt) else mathx.zero3;
@@ -883,8 +858,7 @@ fn buildMeshes() [N]rl.Mesh {
     mesh[SHR] = armMesh(314);
     mesh[ELR] = forearmMesh(315);
     mesh[WRR] = handMesh(-1.0, 316);
-    // NO TWO THE SAME LENGTH, and the ring of them is where the wabi-sabi lives on this creature: one mesh
-    // is shared by every instance, so the variation cannot be BETWEEN shades — it is between the tatters.
+    // NO TWO THE SAME LENGTH, and the ring of them is where the wabi-sabi lives on this creature: one mesh is shared by every instance, so the variation cannot be BETWEEN shades — it is between the tatters.
     const len = [HEM_N]f32{ 0.40, 0.29, 0.43, 0.34, 0.38, 0.26, 0.42, 0.31 };
     for (0..HEM_N) |i| {
         const a = std.math.tau * @as(f32, @floatFromInt(i)) / HEM_N;
@@ -947,8 +921,7 @@ fn shroudMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// The shroud's half-width at height `y` (in stature): the profile above, interpolated, with the hem's own
-/// dome taking over under the waist. One answer, so a fold cannot sit beside the mass it belongs to.
+/// The shroud's half-width at height `y` (in stature): the profile above, interpolated, with the hem's own dome taking over under the waist. One answer, so a fold cannot sit beside the mass it belongs to.
 fn shroudHalf(y: f32) f32 {
     if (y <= PROF[PROF.len - 1][0]) {
         const t = mathx.clampF((PROF[PROF.len - 1][0] - y) / (PROF[PROF.len - 1][0] - HEM_DOME_Y), 0, 1);
@@ -1149,8 +1122,7 @@ test "a blink puts it down where it said it would, and it is nowhere in between"
         _ = s.update(1.0 / 60.0, hero, 400, .{});
         try std.testing.expect(s.airborne());
     }
-    // MEASURED THE FRAME IT LANDS, not some frames later: the moment it is down it starts orbiting again,
-    // and a couple of centimetres of that is not the jump missing its mark.
+    // MEASURED THE FRAME IT LANDS, not some frames later: the moment it is down it starts orbiting again, and a couple of centimetres of that is not the jump missing its mark.
     while (s.airborne() and t < 2.0) : (t += 1.0 / 60.0) _ = s.update(1.0 / 60.0, hero, 400, .{});
     try std.testing.expectApproxEqAbs(want.x, s.pos.x, 1e-3);
     try std.testing.expectApproxEqAbs(want.z, s.pos.z, 1e-3);

@@ -24,10 +24,8 @@ pub fn build(b: *std.Build) void {
     // `Group.init(shader)` results and `objview` builds all seventeen in ONE struct literal; a Debug frame
     // reserves every temporary up front, so that is `sizeOf` of the whole roster on the stack at once — 26 MB
     // now that a group holds `worldfmt.MAX_FOES` bodies rather than 24, and it overflowed the default at boot.
-    // Windows COMMITS stack lazily, so this reserves address space and not memory. The alternative was
-    // threading a destination pointer through nineteen files to keep a number nobody will reach reachable.
-    // **IT HAS TO CLEAR THE WHOLE ROSTER WITH ROOM OVER** — ~52 MB at `MAX_FOES` 512, and raising that number
-    // again means raising this one with it, or the game stack-overflows in `init` before it draws a frame.
+    // Windows COMMITS stack lazily, so this reserves address space and not memory. **IT HAS TO CLEAR THE WHOLE
+    // ROSTER WITH ROOM OVER** — ~52 MB at `MAX_FOES` 512, and raising that number again means raising this one.
     exe.stack_size = 192 * 1024 * 1024;
     exe.linkLibrary(raylib_artifact);
     exe.root_module.addImport("raylib", raylib);
@@ -57,18 +55,15 @@ pub fn build(b: *std.Build) void {
 }
 
 /// THE TEST ROSTER IS A LOCKSTEP LIST, AND NOTHING WAS CHECKING IT. `main.zig`'s `test { _ = @import(…) }`
-/// block is what pulls a module's tests into the binary — a module missing from it compiles, ships and
-/// reports "all tests passed" while every test it carries goes unrun. `shade.zig` went in with seventeen of
-/// them and the suite total did not move; two were failing.
+/// block is what pulls a module's tests into the binary — a module missing from it compiles, ships and reports
+/// "all tests passed" while every test it carries goes unrun. `shade.zig` went in with seventeen of them and
+/// the suite total did not move; two were failing.
 ///
-/// A comptime assert cannot see the filesystem, so the check lives HERE, where the build runs on the host
-/// and can simply read the directory. Every `src/**/*.zig` must be named in that block, by the path
-/// `main.zig` imports it as (`foes/knight.zig`), or the build fails with
-/// the name of the one that is not.
+/// A comptime assert cannot see the filesystem, so the check lives HERE. Every `src/**/*.zig` must be named in
+/// that block, by the path `main.zig` imports it as (`foes/knight.zig`).
 ///
-/// **AND IT IS SCOPED TO THE BLOCK, NOT TO THE FILE.** Searching the whole of `main.zig` counted the
-/// ORDINARY imports at the top of it, so `bake.zig` — imported there for `--bake` — passed this check while
-/// a top-level import pulls no tests in: a failing test planted in it ran nowhere and the suite said OK.
+/// **AND IT IS SCOPED TO THE BLOCK, NOT TO THE FILE.** Searching the whole of `main.zig` counted the ORDINARY
+/// imports at the top of it, so `bake.zig` passed this check while a top-level import pulls no tests in.
 fn checkTestRoster(b: *std.Build) void {
     const file = b.build_root.handle.readFileAlloc(b.allocator, "src/main.zig", 1 << 20) catch return;
     const at = std.mem.indexOf(u8, file, "\ntest {") orelse
@@ -76,15 +71,13 @@ fn checkTestRoster(b: *std.Build) void {
     const root = file[at..];
     var dir = b.build_root.handle.openDir("src", .{ .iterate = true }) catch return;
     defer dir.close();
-    // WALKED, not iterated: `src` is in subdirectories now, and a flat `iterate` sees four files and passes
-    // every module in them silently unrun — the exact failure this check exists for.
+    // WALKED, not iterated: `src` is in subdirectories now, and a flat `iterate` sees four files and passes every module in them silently unrun — the exact failure this check exists for.
     var it = dir.walk(b.allocator) catch return;
     defer it.deinit();
     while (it.next() catch null) |ent| {
         if (ent.kind != .file or !std.mem.endsWith(u8, ent.path, ".zig")) continue;
         if (std.mem.eql(u8, ent.path, "main.zig")) continue;
-        // The roster names a module by the path `main.zig` imports it as, which on Windows comes back off
-        // the walker with backslashes.
+        // The roster names a module by the path `main.zig` imports it as, which on Windows comes back off the walker with backslashes.
         const slashed = b.allocator.dupe(u8, ent.path) catch return;
         std.mem.replaceScalar(u8, slashed, '\\', '/');
         const want = b.fmt("@import(\"{s}\")", .{slashed});

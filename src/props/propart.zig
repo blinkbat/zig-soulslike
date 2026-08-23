@@ -314,6 +314,216 @@ pub fn crackInto(bb: *Builder, a: rl.Vector3, dir: rl.Vector3, side: rl.Vector3,
     );
 }
 
+/// **THE ONE LOOM.** The caravaneer wears this and his stall is hung with it (`npc`, `propmarket`) — both files
+/// held their own copy of the same four literals, one of them under a comment claiming they came from here.
+/// The warm weave is the body of the cloth and the COLD one is the stripe on it; the madder is the trim.
+pub const WEAVE = rgba(88, 80, 62, 255);
+pub const WEAVE_DK = rgba(28, 32, 44, 255);
+pub const MADDER = rgba(66, 34, 28, 255);
+pub const MADDER_LT = rgba(86, 48, 38, 255);
+
+/// **WHAT A HEARTH'S FLAMES ARE, ONCE.** Three tongues, tallest first. The bonfire had them as literals and the
+/// campfire re-derived the same three off its own scale — a retune of the fire meant editing two files, and one
+/// of them would have been missed.
+pub const HEARTH_FLAMES = [3]f32{ 2.20, 1.45, 1.05 };
+
+// **THE CAMP'S OWN FURNITURE LIVES BESIDE ITS FLAME.** `flameInto` is here for the same reason: every fire in the
+// game — the bonfire, the campfire, whatever is lit next — wants the same bedroll and the same smoke column, and
+// two copies of either is two things to retune.
+
+/// Drab, because a bedroll is not a banner. Solved (`albedo = screen^2.2 / 1.72`): mat 157 -> 52, wool 141 -> 40,
+/// sack 131 -> 34. **THE ONE WARM STRIPE IS THE WHOLE ACCENT** — authored in the hero's crimson (`CLOTH`, 76,20,12)
+/// the thing was a salmon-pink caterpillar beside the fire, and the fire is what the eye is supposed to find.
+pub const MAT = rgba(52, 46, 32, 255);
+pub const MAT_DK = rgba(34, 30, 21, 255);
+pub const WOOL = rgba(40, 38, 34, 255);
+pub const WOOL_LT = rgba(56, 53, 47, 255);
+pub const WOOL_STRIPE = rgba(86, 44, 34, 255);
+pub const KIT = rgba(34, 28, 21, 255);
+pub const KIT_LT = rgba(48, 40, 30, 255);
+
+/// **FLAT WITH A STEP ON IT, NOT A PLANK.** Two failed passes are in these numbers. Nine spheres in a row read as
+/// a caterpillar; a single 6 cm slab read as a BOARD. What says "bed" is the SECTION: a groundsheet on the earth,
+/// a mattress standing a clear step proud of it, and a fold-back roll across the head of that — three heights,
+/// visible from any bearing, and the only round things are the roll, the pillow and the pack.
+///
+/// **`yaw` LIES ALONG THE SLEEPER, HEAD AT +u, AND IT IS TANGENTIAL TO THE FIRE AT EVERY CALL SITE.** Pointed at
+/// the hearth the head end lay in the flames. You sleep BESIDE a fire.
+pub fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) void {
+    const ux = mathx.cosf(yaw);
+    const uz = mathx.sinf(yaw);
+    const vx = -uz;
+    const vz = ux;
+    const HALF: f32 = 0.88;
+    const WIDE: f32 = 0.34;
+
+    // THE GROUNDSHEET, on the earth. 10 cm, because the step above it has to have something to stand on.
+    b.setMat(.cloth);
+    b.addBox(
+        v3(cx, 0.048, cz),
+        v3(ux * HALF, rng.signed() * 0.010, uz * HALF),
+        v3(0, 0.048, 0),
+        v3(vx * WIDE, rng.signed() * 0.008, vz * WIDE),
+        MAT_DK,
+    );
+    // …with NEITHER LONG EDGE STRAIGHT. A hemmed rectangle on grass is a doormat.
+    for ([_]f32{ -1.0, 1.0 }) |side| {
+        var i: i32 = 0;
+        while (i < 5) : (i += 1) {
+            const t = (@as(f32, @floatFromInt(i)) / 4.0 - 0.5) * 1.82;
+            const bulge = rng.range(0.98, 1.16);
+            b.addCapsule(
+                v3(cx + ux * HALF * t + vx * WIDE * side * bulge, 0.052, cz + uz * HALF * t + vz * WIDE * side * bulge),
+                v3(cx + ux * HALF * (t + 0.22) + vx * WIDE * side * bulge * 0.94, 0.046, cz + uz * HALF * (t + 0.22) + vz * WIDE * side * bulge * 0.94),
+                rng.range(0.040, 0.062),
+                rng.range(0.034, 0.052),
+                5,
+                if (rng.float() < 0.3) MAT else MAT_DK,
+            );
+        }
+    }
+
+    // **THE MATTRESS — THE STEP, AND THE WHOLE READ.** It sits 9 cm proud of the sheet and stops short of the
+    // head, so there is a lip you can see over from any angle.
+    b.addBox(
+        v3(cx - ux * HALF * 0.16, 0.140, cz - uz * HALF * 0.16),
+        v3(ux * HALF * 0.78, rng.signed() * 0.012, uz * HALF * 0.78),
+        v3(0, 0.046, 0),
+        v3(vx * WIDE * 0.90, rng.signed() * 0.010, vz * WIDE * 0.90),
+        WOOL,
+    );
+    // Its own edges lumpy too, and lower down the sides, so the blanket drapes rather than sits.
+    for ([_]f32{ -1.0, 1.0 }) |side| {
+        var i: i32 = 0;
+        while (i < 4) : (i += 1) {
+            const t = (@as(f32, @floatFromInt(i)) / 3.0 - 0.62) * 1.34;
+            b.addCapsule(
+                v3(cx + ux * HALF * t + vx * WIDE * side * 0.88, 0.132, cz + uz * HALF * t + vz * WIDE * side * 0.88),
+                v3(cx + ux * HALF * t + vx * WIDE * side * 1.00, 0.096, cz + uz * HALF * t + vz * WIDE * side * 1.00),
+                rng.range(0.038, 0.058),
+                rng.range(0.030, 0.046),
+                5,
+                if (rng.float() < 0.35) WOOL_LT else WOOL,
+            );
+        }
+    }
+    // TWO STRIPES, and they are the only warm thing on it. Across the weave, never along.
+    for ([_]f32{ -0.56, -0.18 }) |t| {
+        b.addBox(
+            v3(cx + ux * HALF * t, 0.148, cz + uz * HALF * t),
+            v3(ux * 0.050, 0, uz * 0.050),
+            v3(0, 0.042, 0),
+            v3(vx * WIDE * 0.91, 0, vz * WIDE * 0.91),
+            WOOL_STRIPE,
+        );
+    }
+    // **THE FOLD-BACK** across the head of the mattress — the turned-down edge you get in under, and the second
+    // step. A bed with a flat top is a bench.
+    b.addCylinder(
+        v3(cx + ux * HALF * 0.60 + vx * WIDE * 0.86, 0.188, cz + uz * HALF * 0.60 + vz * WIDE * 0.86),
+        v3(cx + ux * HALF * 0.64 - vx * WIDE * 0.86, 0.182, cz + uz * HALF * 0.64 - vz * WIDE * 0.86),
+        0.072,
+        0.066,
+        8,
+        WOOL_LT,
+    );
+
+    // THE PILLOW: bunched cloth, not a cushion — two lumps, off centre.
+    b.addBlob(v3(cx + ux * HALF * 0.80 - vx * 0.05, 0.150, cz + uz * HALF * 0.80 - vz * 0.05), v3(0.155, 0.070, 0.140), 4, 9, WOOL_LT);
+    b.addBlob(v3(cx + ux * HALF * 0.86 + vx * 0.08, 0.170, cz + uz * HALF * 0.86 + vz * 0.08), v3(0.105, 0.055, 0.095), 3, 8, WOOL);
+
+    // THE ROLL at the foot, tied: the spare blanket, and the only cylinder that reads as rolled.
+    const rfx = cx - ux * (HALF + 0.06);
+    const rfz = cz - uz * (HALF + 0.06);
+    b.addCylinder(
+        v3(rfx + vx * WIDE * 0.86, 0.128, rfz + vz * WIDE * 0.86),
+        v3(rfx - vx * WIDE * 0.86, 0.122, rfz - vz * WIDE * 0.86),
+        0.110,
+        0.104,
+        9,
+        MAT,
+    );
+    b.addBlob(v3(rfx + vx * WIDE * 0.88, 0.128, rfz + vz * WIDE * 0.88), v3(0.028, 0.104, 0.104), 3, 9, MAT_DK);
+    b.addBlob(v3(rfx + vx * WIDE * 0.92, 0.128, rfz + vz * WIDE * 0.92), v3(0.020, 0.046, 0.046), 3, 7, WOOL_STRIPE);
+    b.addCylinder(
+        v3(rfx + vx * WIDE * 0.16, 0.128, rfz + vz * WIDE * 0.16),
+        v3(rfx + vx * WIDE * 0.02, 0.126, rfz + vz * WIDE * 0.02),
+        0.115,
+        0.115,
+        9,
+        KIT,
+    );
+
+    // THE PACK, OFF the mat at the head: what makes it a camp and not a bed. Lumpy, roped, leaning.
+    b.setMat(.leather);
+    const hx = cx + ux * (HALF + 0.24) + vx * 0.30;
+    const hz = cz + uz * (HALF + 0.24) + vz * 0.30;
+    b.addBlob(v3(hx, 0.135, hz), v3(0.185, 0.130, 0.160), 4, 9, KIT);
+    b.addBlob(v3(hx + ux * 0.09, 0.185, hz + uz * 0.09), v3(0.110, 0.080, 0.100), 4, 8, KIT_LT);
+    b.addCylinder(
+        v3(hx + vx * 0.185, 0.140, hz + vz * 0.185),
+        v3(hx - vx * 0.185, 0.136, hz - vz * 0.185),
+        0.028,
+        0.026,
+        6,
+        MAT_DK,
+    );
+    // …and the BOOTS off, on their sides, because whoever this is went to sleep.
+    for ([_]f32{ -1.0, 1.0 }) |side| {
+        const bx = cx + ux * (HALF + 0.10) - vx * (0.44 + side * 0.11);
+        const bz = cz + uz * (HALF + 0.10) - vz * (0.44 + side * 0.11);
+        b.addCapsule(
+            v3(bx, 0.052, bz),
+            v3(bx - ux * 0.17, 0.048, bz - uz * 0.17),
+            0.058,
+            0.047,
+            6,
+            KIT,
+        );
+        b.addBlob(v3(bx - ux * 0.20, 0.046, bz - uz * 0.20), v3(0.054, 0.042, 0.070), 3, 7, KIT_LT);
+    }
+    b.setMat(.plain);
+}
+
+/// **THE COLUMN, AND EVERY FIRE THAT IS LIT GETS THE SAME ONE.** Smoke on `Mat.smoke`'s own scroll (`gfx.smokeAnim`)
+/// with embers riding under it, so the whole thing is one mesh and costs one draw. `src` is the height it leaves
+/// from and `s` scales the puffs — the bonfire's 1.0 against a hearth that sits lower and burns smaller.
+pub fn smokeInto(b: *Builder, rng: *mathx.Rng, src: f32, s: f32) void {
+    const PUFFS = 14;
+    b.setMat(.smoke);
+    var i: i32 = 0;
+    while (i < PUFFS) : (i += 1) {
+        const phase = (@as(f32, @floatFromInt(i)) + rng.range(0, 0.55)) / @as(f32, @floatFromInt(PUFFS));
+        b.setAnimY(gfx.smokeAnim(src, phase));
+        const r = rng.range(0.135, 0.235) * s;
+        b.addBlob(
+            v3(rng.signed() * 0.10 * s, src + rng.signed() * 0.06, rng.signed() * 0.10 * s),
+            v3(r, r * rng.range(0.72, 0.98), r * rng.range(0.85, 1.20)),
+            3,
+            7,
+            if (phase < 0.3) SMOKE_HOT else if (phase < 0.65) SMOKE_MID else SMOKE_COLD,
+        );
+    }
+    b.setMat(.ember);
+    var e: i32 = 0;
+    while (e < 26) : (e += 1) {
+        const phase = (@as(f32, @floatFromInt(e)) + rng.range(0, 0.9)) / 26.0;
+        b.setAnimY(gfx.smokeAnim(src, phase));
+        const a = rng.angle();
+        const dd = rng.range(0.04, 0.30) * s;
+        const sz = rng.range(0.018, 0.038) * s;
+        b.addBlob(
+            v3(mathx.cosf(a) * dd, src - rng.range(0.18, 0.34), mathx.sinf(a) * dd),
+            v3(sz, sz, sz),
+            2,
+            5,
+            if (rng.float() < 0.75) EMBER else WISP,
+        );
+    }
+    b.setAnimY(0);
+    b.setMat(.plain);
+}
+
 pub fn flameInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, s: f32) void {
     b.setMat(.flame);
     b.setAnimY(cy);

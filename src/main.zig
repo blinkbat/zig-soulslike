@@ -92,6 +92,7 @@ test {
     _ = @import("foes/ancientpriest.zig");
     _ = @import("foes/hollow.zig");
     _ = @import("foes/slumberbloom.zig");
+    _ = @import("props/propmarket.zig");
     _ = @import("foes/wolf.zig");
     _ = @import("play/pickup.zig");
     _ = @import("play/award.zig");

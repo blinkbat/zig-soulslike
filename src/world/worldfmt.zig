@@ -468,11 +468,12 @@ pub const Dialog = struct {
 };
 
 /// APPEND-ONLY, for `FoeKind`'s reason: it is an `enum(u8)` and the editor's own picker indexes it by ordinal. The MAP FILE is safe either way — `parseScript` reads the kind back by TAG (`enumFromName`).
-pub const NpcKind = enum(u8) { wanderer };
+pub const NpcKind = enum(u8) { wanderer, merchant };
 
 pub fn npcName(k: NpcKind) [:0]const u8 {
     return switch (k) {
         .wanderer => "Wanderer",
+        .merchant => "Caravaneer",
     };
 }
 

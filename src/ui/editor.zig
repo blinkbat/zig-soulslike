@@ -26,12 +26,21 @@ const ERASE_HZ: f32 = 5.0;
 const ERASE_STEP: f32 = 0.6;
 const MAX_MARKERS: usize = 500;
 
-const Hover = union(enum) { none, prop: usize, foe: usize };
+/// **WHAT THE UNITS LAYER IS POINTING AT.** A foe and an NPC are two arrays on the map and two index spaces, so
+/// the cursor and the selection carry WHICH — an untagged `usize` would delete a caravaneer by a foe's number.
+const Unit = union(enum) { foe: usize, npc: usize };
+const Hover = union(enum) { none, prop: usize, foe: usize, npc: usize };
+
+const NFOE_KIND = @typeInfo(wf.FoeKind).@"enum".fields.len;
+const NNPC_KIND = @typeInfo(wf.NpcKind).@"enum".fields.len;
 
 const MAX_MARKED: usize = 512;
 
 const FULL_MSG = "map is full - worldfmt.MAX_OPS reached";
 const FOES_FULL_MSG = "foe cap reached";
+/// Its own message, beside the foes' — the two arrays fill independently and "foe cap reached" on a full npc
+/// list is a lie the editor tells about which limit was hit.
+const FOLK_FULL_MSG = "folk cap reached";
 
 const DUPE_OFFSET: f32 = 6.0;
 
@@ -131,11 +140,13 @@ const locationBrushes = [_][:0]const u8{ "Clearing", "Zone", "Location", "Erase"
 const decorBrushes = [_][:0]const u8{ "Single", "Patch", "Scatter", "Erase" };
 const propBrushes = [_][:0]const u8{ "Stamp", "Row", "Ring", "Cluster", "Ivy", "Erase" };
 const interactBrushes = [_][:0]const u8{ "Stamp", "Erase" };
+/// **THE FOE NAMES, THEN THE NPC NAMES, THEN THE ERASER** — one palette, because the units layer places both and
+/// one eraser has to take either back off. `brushIdx` splits on `NFOE_KIND`.
 const unitBrushes = blk: {
-    const N = @typeInfo(wf.FoeKind).@"enum".fields.len;
-    var out: [N + 1][:0]const u8 = undefined;
-    for (0..N) |i| out[i] = wf.foeName(@enumFromInt(i));
-    out[N] = "Erase";
+    var out: [NFOE_KIND + NNPC_KIND + 1][:0]const u8 = undefined;
+    for (0..NFOE_KIND) |i| out[i] = wf.foeName(@enumFromInt(i));
+    for (0..NNPC_KIND) |i| out[NFOE_KIND + i] = wf.npcName(@enumFromInt(i));
+    out[NFOE_KIND + NNPC_KIND] = "Erase";
     break :blk out;
 };
 
@@ -220,6 +231,8 @@ const unitTips = [_][:0]const u8{
     "High HP, no armour, feeble bite. Rings the bell on its back and the camp comes; weak to lightning",
     "A shade twice over, slower. Its grip leaves a STUPOR: thin focus and dragged feet. Stand off it",
     "Never moves, never strikes. Swells, then vents SLEEP over 5 m. Walk out of the ring",
+    "Talks. Roams its own leash, carries a staff. Give it a `dlg=` in the file to say anything",
+    "Talks. Camel-humanoid trader; the caravan props are its own family",
     "Sweep to erase ([ ] sets radius)",
 };
 
@@ -266,6 +279,8 @@ const unitIcons = [_]ui.Icon{
     .tolling_hollow,
     .mourner,
     .slumber_bloom,
+    .wanderer,
+    .merchant,
     .erase,
 };
 
@@ -336,10 +351,14 @@ comptime {
     }
     // `GROUND_SOIL_0` IS `wf.Sculpt`'s length, so the sculpt half needs no count assert of its own. The NAMES
     // are not tag-for-tag there (`Flat` is `wf.Sculpt.flatten`), which is why only the soils are pinned by tag above.
-    std.debug.assert(unitBrushes.len == @typeInfo(wf.FoeKind).@"enum".fields.len + 1);
-    for (0..@typeInfo(wf.FoeKind).@"enum".fields.len) |i| {
+    std.debug.assert(unitBrushes.len == NFOE_KIND + NNPC_KIND + 1);
+    for (0..NFOE_KIND) |i| {
         const tag = @tagName(@as(wf.FoeKind, @enumFromInt(i)));
         std.debug.assert(std.mem.eql(u8, @tagName(unitIcons[i]), tag));
+    }
+    for (0..NNPC_KIND) |i| {
+        const tag = @tagName(@as(wf.NpcKind, @enumFromInt(i)));
+        std.debug.assert(std.mem.eql(u8, @tagName(unitIcons[NFOE_KIND + i]), tag));
     }
 }
 
@@ -377,6 +396,10 @@ const UnitBrush = enum {
     tolling_hollow,
     mourner,
     slumber_bloom,
+    // **THE FOLK COME AFTER THE FOES AND BEFORE THE ERASER**, which is what `brushIdx` splits on: under
+    // `NFOE_KIND` it is a creature, over it a body that talks.
+    wanderer,
+    merchant,
     erase,
 };
 
@@ -387,10 +410,14 @@ comptime {
     pinBrushes(InteractBrush, &interactBrushes);
     pinBrushes(GroundBrush, &groundBrushes);
     const foeFields = @typeInfo(wf.FoeKind).@"enum".fields;
+    const npcFields = @typeInfo(wf.NpcKind).@"enum".fields;
     const unitFields = @typeInfo(UnitBrush).@"enum".fields;
-    if (unitFields.len != foeFields.len + 1) @compileError("editor: UnitBrush is not the foe kinds plus an eraser");
+    if (unitFields.len != foeFields.len + npcFields.len + 1) @compileError("editor: UnitBrush is not the foe kinds, then the npc kinds, then an eraser");
     for (foeFields, unitFields[0..foeFields.len]) |f, u| {
         if (!std.mem.eql(u8, f.name, u.name)) @compileError("editor: UnitBrush." ++ u.name ++ " is not wf.FoeKind." ++ f.name);
+    }
+    for (npcFields, unitFields[foeFields.len..][0..npcFields.len]) |f, u| {
+        if (!std.mem.eql(u8, f.name, u.name)) @compileError("editor: UnitBrush." ++ u.name ++ " is not wf.NpcKind." ++ f.name);
     }
     if (!std.mem.eql(u8, unitFields[unitFields.len - 1].name, "erase")) @compileError("editor: UnitBrush must end in `erase`");
 }
@@ -575,7 +602,7 @@ pub const Editor = struct {
     snap: bool = false,
 
     sel: ?usize = null,
-    selFoe: ?usize = null,
+    selUnit: ?Unit = null,
     dirty: bool = false,
     /// BUMPED WHENEVER THE MAP IS REPLACED WHOLESALE — entering, and every Open / New / Reload. What the game watches to know its copy of the tables the editor cannot author (the folk) has gone stale.
     mapGen: u32 = 0,
@@ -903,7 +930,7 @@ pub const Editor = struct {
 
     fn dropSelection(self: *Editor) void {
         self.sel = null;
-        self.selFoe = null;
+        self.selUnit = null;
         self.nMarked = 0;
         self.zoneSel = null;
         self.locSel = null;
@@ -1087,9 +1114,9 @@ pub const Editor = struct {
                 self.say("select");
                 return .none;
             }
-            if (self.sel != null or self.selFoe != null or self.nMarked > 0) {
+            if (self.sel != null or self.selUnit != null or self.nMarked > 0) {
                 self.sel = null;
-                self.selFoe = null;
+                self.selUnit = null;
                 self.nMarked = 0;
                 self.say("deselect");
                 return .none;
@@ -1237,7 +1264,7 @@ pub const Editor = struct {
                     self.menuAt = rl.getMousePosition();
                 } else {
                     self.sel = null;
-                    self.selFoe = null;
+                    self.selUnit = null;
                     self.nMarked = 0;
                 }
             }
@@ -1341,7 +1368,7 @@ pub const Editor = struct {
             }
             switch (self.layer) {
                 .units => {
-                    if (ground) |g| self.addFoe(m, g);
+                    if (ground) |g| self.addUnit(m, g);
                 },
                 .locations, .decor, .props, .interact => {
                     if (ground) |g| {
@@ -1399,7 +1426,7 @@ pub const Editor = struct {
         }
         return switch (self.underCursor(m, env)) {
             .prop => |pi| self.isMarked(env.props[pi].op),
-            .foe, .none => false,
+            .foe, .npc, .none => false,
         };
     }
 
@@ -1416,9 +1443,13 @@ pub const Editor = struct {
         }
         if (self.layer == .units) {
             const g = self.groundAt() orelse return .none;
+            // **BOTH ARRAYS THROUGH ONE `Nearest`.** The npc indices are offered offset past the foes so a single
+            // winner comes out; splitting it into two searches picks whichever list was asked second.
             var near = mathx.Nearest.within(FOE_PICK_R);
             for (m.foes[0..m.nfoes], 0..) |f, i| near.offer(i, v3(f.x, 0, f.z), g);
-            return if (near.best) |i| .{ .foe = i } else .none;
+            for (m.npcs[0..m.nnpcs], 0..) |nn, i| near.offer(wf.MAX_FOES + i, v3(nn.x, 0, nn.z), g);
+            const w = near.best orelse return .none;
+            return if (w >= wf.MAX_FOES) .{ .npc = w - wf.MAX_FOES } else .{ .foe = w };
         }
         return .none;
     }
@@ -1428,15 +1459,21 @@ pub const Editor = struct {
             .prop => |pi| {
                 const o = env.props[pi].op;
                 self.sel = o;
-                self.selFoe = null;
+                self.selUnit = null;
                 const op = m.ops[o];
                 self.sayFmt("#{d} {s} {s}", .{ o, @tagName(op.op), @tagName(op.kind) });
                 return true;
             },
             .foe => |i| {
-                self.selFoe = i;
+                self.selUnit = .{ .foe = i };
                 self.sel = null;
                 self.sayFmt("#{d} {s}", .{ i, wf.foeName(m.foes[i].kind) });
+                return true;
+            },
+            .npc => |i| {
+                self.selUnit = .{ .npc = i };
+                self.sel = null;
+                self.sayFmt("#{d} {s}", .{ i, wf.npcName(m.npcs[i].kind) });
                 return true;
             },
             .none => {},
@@ -1606,7 +1643,7 @@ pub const Editor = struct {
         };
         const at = idx;
         self.sel = at;
-        self.selFoe = null;
+        self.selUnit = null;
         self.rebuild(m, env);
         self.sayFmt("+{s} {s} #{d}", .{ @tagName(o.op), @tagName(o.kind), at });
     }
@@ -1654,17 +1691,35 @@ pub const Editor = struct {
         return s + 1;
     }
 
-    fn addFoe(self: *Editor, m: *wf.Map, at: rl.Vector3) void {
+    /// **ONE BRUSH INDEX, TWO ARRAYS.** Under `NFOE_KIND` the palette is placing a creature and over it a body
+    /// that talks; the seed is spread off the array's own length either way, so two posted side by side do not
+    /// come up identical.
+    fn addUnit(self: *Editor, m: *wf.Map, at: rl.Vector3) void {
         if (self.erasing()) return;
+        const bi = self.brushIdx();
+        if (bi >= NFOE_KIND) {
+            if (m.nnpcs >= wf.MAX_NPCS) {
+                self.say(FOLK_FULL_MSG);
+                return;
+            }
+            const kind: wf.NpcKind = @enumFromInt(bi - NFOE_KIND);
+            self.bank(m);
+            const seed = @as(f32, @floatFromInt((m.nnpcs * 53) % 100)) / 100.0;
+            m.npcs[m.nnpcs] = .{ .kind = kind, .x = at.x, .z = at.z, .yaw = 0, .scale = 1, .seed = seed };
+            self.selUnit = .{ .npc = m.nnpcs };
+            m.nnpcs += 1;
+            self.sayFmt("+{s} ({d:.0}, {d:.0})", .{ wf.npcName(kind), at.x, at.z });
+            return;
+        }
         if (m.nfoes >= wf.MAX_FOES) {
             self.say(FOES_FULL_MSG);
             return;
         }
-        const kind: wf.FoeKind = @enumFromInt(self.brushIdx());
+        const kind: wf.FoeKind = @enumFromInt(bi);
         self.bank(m);
         const seed = @as(f32, @floatFromInt((m.nfoes * 37) % 100)) / 100.0;
         m.foes[m.nfoes] = .{ .kind = kind, .x = at.x, .z = at.z, .yaw = 0, .scale = 1, .seed = seed };
-        self.selFoe = m.nfoes;
+        self.selUnit = .{ .foe = m.nfoes };
         m.nfoes += 1;
         self.sayFmt("+{s} ({d:.0}, {d:.0})", .{ wf.foeName(kind), at.x, at.z });
     }
@@ -1708,6 +1763,19 @@ pub const Editor = struct {
                     m.nfoes -= 1;
                     self.dropSelection();
                     self.sayFmt("-foe ({d:.0}, {d:.0})", .{ f.x, f.z });
+                    return true;
+                }
+                // **THE FOLK ARE ERASED BY THE SAME SWEEP.** One eraser for the layer, or he wipes a camp and the
+                // caravaneer is still standing in it.
+                var j: usize = m.nnpcs;
+                while (j > 0) : (j -= 1) {
+                    const nn = m.npcs[j - 1];
+                    if (mathx.dist2XZ(v3(nn.x, 0, nn.z), g) > self.radius * self.radius) continue;
+                    self.bankStroke(m);
+                    std.mem.copyForwards(wf.Npc, m.npcs[j - 1 .. m.nnpcs - 1], m.npcs[j..m.nnpcs]);
+                    m.nnpcs -= 1;
+                    self.dropSelection();
+                    self.sayFmt("-npc ({d:.0}, {d:.0})", .{ nn.x, nn.z });
                     return true;
                 }
             },
@@ -1772,13 +1840,22 @@ pub const Editor = struct {
 
     fn deleteSel(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
         if (self.layer == .units) {
-            const f = self.selFoe orelse return;
-            if (f >= m.nfoes) return;
-            self.bank(m);
-            std.mem.copyForwards(wf.Foe, m.foes[f .. m.nfoes - 1], m.foes[f + 1 .. m.nfoes]);
-            m.nfoes -= 1;
+            switch (self.selUnit orelse return) {
+                .foe => |f| {
+                    if (f >= m.nfoes) return;
+                    self.bank(m);
+                    std.mem.copyForwards(wf.Foe, m.foes[f .. m.nfoes - 1], m.foes[f + 1 .. m.nfoes]);
+                    m.nfoes -= 1;
+                },
+                .npc => |i| {
+                    if (i >= m.nnpcs) return;
+                    self.bank(m);
+                    std.mem.copyForwards(wf.Npc, m.npcs[i .. m.nnpcs - 1], m.npcs[i + 1 .. m.nnpcs]);
+                    m.nnpcs -= 1;
+                },
+            }
             self.dropSelection();
-            self.say("-foe");
+            self.say("-unit");
             return;
         }
         const s = self.sel orelse return;
@@ -1832,7 +1909,8 @@ pub const Editor = struct {
             for (m.foes[0..m.nfoes], 0..) |f, i| {
                 if (box.holds(f.x, f.z)) self.mark(i);
             }
-            self.selFoe = if (self.nMarked > 0) self.marked[0] else null;
+            // `marked` is the FOE index space (the marquee walks `m.foes`), so a marquee hand-off is a foe.
+            self.selUnit = if (self.nMarked > 0) Unit{ .foe = self.marked[0] } else null;
             self.sel = null;
             // would show a properties panel for something this marquee cannot touch
         } else if (self.layer.opLayer()) {
@@ -1842,7 +1920,7 @@ pub const Editor = struct {
                 if (box.holds(p.x, p.z)) self.mark(i);
             }
             self.sel = if (self.nMarked > 0) self.marked[0] else null;
-            self.selFoe = null;
+            self.selUnit = null;
         }
         self.sayFmt("{d} selected", .{self.nMarked});
     }
@@ -2139,7 +2217,7 @@ pub const Editor = struct {
         const unitA: u8 = if (self.layer == .units) 235 else 70;
         if (self.visible(.units)) {
             for (m.foes[0..m.nfoes], 0..) |f, i| {
-                const sel = self.layer == .units and self.selFoe == i;
+                const sel = self.layer == .units and self.selUnit != null and self.selUnit.? == .foe and self.selUnit.?.foe == i;
                 const col = if (sel) ui.HOT else ui.alpha(foeSwatch(f.kind), unitA);
                 const at = liftAt(f.x, f.z, y + FOE_BOX_H * 0.5);
                 rl.drawCubeWires(at, FOE_BOX_W, FOE_BOX_H, FOE_BOX_W, col);
@@ -2192,6 +2270,12 @@ pub const Editor = struct {
                 if (i < m.nfoes) {
                     const f = m.foes[i];
                     rl.drawCubeWires(liftAt(f.x, f.z, y + MARK_BOX_H * 0.5), MARK_BOX_W * 1.2, MARK_BOX_H * 1.1, MARK_BOX_W * 1.2, ui.HOT);
+                }
+            },
+            .npc => |i| {
+                if (i < m.nnpcs) {
+                    const nn = m.npcs[i];
+                    rl.drawCubeWires(liftAt(nn.x, nn.z, y + MARK_BOX_H * 0.5), MARK_BOX_W * 1.2, MARK_BOX_H * 1.1, MARK_BOX_W * 1.2, ui.HOT);
                 }
             },
         }
@@ -2795,39 +2879,75 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
     if (ed.layer == .units) {
         hud.mono("SPAWNS", x, y, hud.MONO, ui.TITLE);
         y += ROW_H + 4;
-        const f = ed.selFoe orelse {
+        const which = ed.selUnit orelse {
             var buf: [64]u8 = undefined;
-            const s = std.fmt.bufPrintZ(&buf, "{d} posted", .{m.nfoes}) catch "";
+            const s = std.fmt.bufPrintZ(&buf, "{d} foes, {d} folk", .{ m.nfoes, m.nnpcs }) catch "";
             hud.mono(s, x, y, hud.MONO, ui.LABEL);
             y += ROW_H;
             hud.mono("click one to edit it", x, y, hud.MONO, ui.alpha(ui.LABEL, 160));
             return;
         };
-        if (f >= m.nfoes) return;
-        const fo = &m.foes[f];
-        var head: [48]u8 = undefined;
-        const title = std.fmt.bufPrintZ(&head, "#{d} {s}", .{ f, @tagName(fo.kind) }) catch "";
-        hud.mono(title, x, y, hud.MONO, ui.TITLE);
-        y += ROW_H + 4;
-        var changed = false;
-        const before = fo.*;
-        changed = ui.stepperF(ctx, x, y, w, "x", &fo.x, 0.5, -COORD_LIM, COORD_LIM) or changed;
-        y += ROW_H;
-        changed = ui.stepperF(ctx, x, y, w, "z", &fo.z, 0.5, -COORD_LIM, COORD_LIM) or changed;
-        y += ROW_H;
-        changed = ui.stepperF(ctx, x, y, w, "yaw", &fo.yaw, 15, -360, 720) or changed;
-        y += ROW_H;
-        changed = ui.stepperF(ctx, x, y, w, "scale", &fo.scale, 0.02, wf.FOE_SCALE_LO, wf.FOE_SCALE_HI) or changed;
-        y += ROW_H;
-        changed = ui.stepperF(ctx, x, y, w, "phase", &fo.seed, 0.05, 0, 1) or changed;
-        y += ROW_H + 6;
-        if (ui.buttonTip(ctx, ui.rect(x, y, 80, 24), "delete", hud.MONO, false, "Remove this spawn (Del)")) {
-            ed.deleteSel(m, env);
-            return;
+        switch (which) {
+            .foe => |f| {
+                if (f >= m.nfoes) return;
+                const fo = &m.foes[f];
+                var head: [48]u8 = undefined;
+                const title = std.fmt.bufPrintZ(&head, "#{d} {s}", .{ f, @tagName(fo.kind) }) catch "";
+                hud.mono(title, x, y, hud.MONO, ui.TITLE);
+                y += ROW_H + 4;
+                var changed = false;
+                const before = fo.*;
+                changed = ui.stepperF(ctx, x, y, w, "x", &fo.x, 0.5, -COORD_LIM, COORD_LIM) or changed;
+                y += ROW_H;
+                changed = ui.stepperF(ctx, x, y, w, "z", &fo.z, 0.5, -COORD_LIM, COORD_LIM) or changed;
+                y += ROW_H;
+                changed = ui.stepperF(ctx, x, y, w, "yaw", &fo.yaw, 15, -360, 720) or changed;
+                y += ROW_H;
+                changed = ui.stepperF(ctx, x, y, w, "scale", &fo.scale, 0.02, wf.FOE_SCALE_LO, wf.FOE_SCALE_HI) or changed;
+                y += ROW_H;
+                changed = ui.stepperF(ctx, x, y, w, "phase", &fo.seed, 0.05, 0, 1) or changed;
+                y += ROW_H + 6;
+                if (ui.buttonTip(ctx, ui.rect(x, y, 80, 24), "delete", hud.MONO, false, "Remove this spawn (Del)")) {
+                    ed.deleteSel(m, env);
+                    return;
+                }
+                if (changed) {
+                    ed.bankGesture(wf.Foe, m, fo, before);
+                } else if (!ctx.down) ed.endGesture(m, env);
+            },
+            // **THE FOLK GET `roam` AND THE FOES DO NOT** — it is the one dial that is theirs (`npc.Wanderer.roamR`),
+            // and at 0 the body stands on its post. The `call:` name and the `dlg=` it opens are still file-only
+            // (see the editor audit): what this panel owns is where a body stands and how far it wanders.
+            .npc => |i| {
+                if (i >= m.nnpcs) return;
+                const np = &m.npcs[i];
+                var head: [48]u8 = undefined;
+                const title = std.fmt.bufPrintZ(&head, "#{d} {s}", .{ i, @tagName(np.kind) }) catch "";
+                hud.mono(title, x, y, hud.MONO, ui.TITLE);
+                y += ROW_H + 4;
+                var changed = false;
+                const before = np.*;
+                changed = ui.stepperF(ctx, x, y, w, "x", &np.x, 0.5, -COORD_LIM, COORD_LIM) or changed;
+                y += ROW_H;
+                changed = ui.stepperF(ctx, x, y, w, "z", &np.z, 0.5, -COORD_LIM, COORD_LIM) or changed;
+                y += ROW_H;
+                changed = ui.stepperF(ctx, x, y, w, "yaw", &np.yaw, 15, -360, 720) or changed;
+                y += ROW_H;
+                changed = ui.stepperF(ctx, x, y, w, "scale", &np.scale, 0.02, wf.FOE_SCALE_LO, wf.FOE_SCALE_HI) or changed;
+                y += ROW_H;
+                changed = ui.stepperF(ctx, x, y, w, "phase", &np.seed, 0.05, 0, 1) or changed;
+                y += ROW_H;
+                changed = ui.stepperF(ctx, x, y, w, "roam", &np.roam, 0.5, 0, wf.NPC_ROAM_MAX) or changed;
+                y += ROW_H + 6;
+                if (ui.buttonTip(ctx, ui.rect(x, y, 80, 24), "delete", hud.MONO, false, "Remove this body (Del)")) {
+                    ed.deleteSel(m, env);
+                    return;
+                }
+                if (changed) {
+                    ed.bankGesture(wf.Npc, m, np, before);
+                } else if (!ctx.down) ed.endGesture(m, env);
+            },
         }
-        if (changed) {
-            ed.bankGesture(wf.Foe, m, fo, before);
-        } else if (!ctx.down) ed.endGesture(m, env);
         return;
     }
 
@@ -3809,7 +3929,7 @@ fn menuEnabled(ed: *const Editor, m: *const wf.Map, act: MenuItem) bool {
         .loot => lootOp(ed, m) != null,
         .boss => bossOp(ed, m) != null,
         .reroll, .duplicate => op != null,
-        .delete => op != null or (ed.layer == .units and ed.selFoe != null),
+        .delete => op != null or (ed.layer == .units and ed.selUnit != null),
     };
 }
 
@@ -3940,3 +4060,44 @@ test "the rate gate paces a sweep, and an empty sweep costs no undo step" {
     try std.testing.expect(!idle.dirty);
 }
 
+
+test "THE UNITS PALETTE SPLITS AT `NFOE_KIND` — a creature on one side, a body that talks on the other" {
+    // The pin above is name-for-name; this is the arithmetic `addUnit` and the inspector both branch on, and it
+    // is the thing that would silently post a caravaneer as a toad.
+    try std.testing.expectEqual(unitBrushes.len, NFOE_KIND + NNPC_KIND + 1);
+    try std.testing.expectEqualStrings(wf.foeName(@enumFromInt(0)), unitBrushes[0]);
+    try std.testing.expectEqualStrings(wf.foeName(@enumFromInt(NFOE_KIND - 1)), unitBrushes[NFOE_KIND - 1]);
+    try std.testing.expectEqualStrings(wf.npcName(.wanderer), unitBrushes[NFOE_KIND]);
+    try std.testing.expectEqualStrings(wf.npcName(.merchant), unitBrushes[NFOE_KIND + 1]);
+    try std.testing.expectEqualStrings("Erase", unitBrushes[unitBrushes.len - 1]);
+}
+
+test "the units layer POSTS and ERASES both kinds, and the eraser does not care which" {
+    undoReset();
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    const env = try testEnv(std.testing.allocator);
+    defer std.testing.allocator.destroy(env);
+    m.blank("folk");
+    var ed = Editor{};
+    ed.layer = .units;
+    ed.radius = 2.0;
+
+    // A foe from the low half of the palette, a caravaneer from the high half.
+    ed.setBrush(0);
+    ed.addUnit(m, v3(0, 0, 0));
+    ed.setBrush(NFOE_KIND + 1);
+    ed.addUnit(m, v3(4, 0, 0));
+    try std.testing.expectEqual(@as(usize, 1), m.nfoes);
+    try std.testing.expectEqual(@as(usize, 1), m.nnpcs);
+    try std.testing.expectEqual(wf.NpcKind.merchant, m.npcs[0].kind);
+    // The selection carries WHICH, or a delete would take the wrong body.
+    try std.testing.expect(ed.selUnit != null and ed.selUnit.? == .npc);
+
+    // ONE eraser for the layer: the same sweep takes either off.
+    try std.testing.expect(ed.eraseAt(m, env, v3(4, 0, 0)));
+    try std.testing.expectEqual(@as(usize, 0), m.nnpcs);
+    try std.testing.expectEqual(@as(usize, 1), m.nfoes);
+    try std.testing.expect(ed.eraseAt(m, env, v3(0, 0, 0)));
+    try std.testing.expectEqual(@as(usize, 0), m.nfoes);
+}

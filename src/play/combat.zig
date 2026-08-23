@@ -411,9 +411,10 @@ pub const Vitals = struct {
     pub fn tick(self: *Vitals, dt: f32) void {
         self.sinceHit += dt;
         self.sinceHurt += dt;
-        // **A SLEEPER IS HELD BY THE STAGGER IT IS ALREADY IN**, which is why sleep works on a creature at all:
-        // twenty state machines have an "I am staggered" branch and none has an "I am asleep", so topping the
-        // heavy stun up here holds every body with the pose it already draws (`hero.tickPoison`'s own trick).
+        // **THE HOLD, AND IT IS NOT WHAT MAKES SLEEP WORK ON A CREATURE.** Almost nothing reads `stunned()` — the
+        // creature that goes down does it through `foe.grip`'s `downed`, which is where the sleep proc is answered.
+        // What this buys is the two bodies that DO read it (`sporegolem`, and the bloom's own stun state) staying
+        // down for the whole clock instead of one stagger, and the hero's refusal to stand up (`hero.tickPoison`).
         // REFRESHED, NEVER ADDED (the status law): set to the length, not lengthened.
         if (!self.dead and self.asleep()) {
             self.stunAs = .heavy;
@@ -1261,10 +1262,6 @@ pub const Quiver = struct {
             .fire => self.fire = @min(cap(.fire), self.fire +| n),
         }
     }
-    pub fn refill(self: *Quiver) void {
-        self.arrows = cap(.plain);
-        self.fire = cap(.fire);
-    }
 };
 
 
@@ -1446,10 +1443,6 @@ comptime {
 
 pub fn ailOfName(a: item.AilName) Ail {
     return @enumFromInt(@intFromEnum(a));
-}
-
-pub fn dosesOf(d: item.AilDose) Doses {
-    return Doses.one(ailOfName(d.ail), d.amt);
 }
 
 pub fn ailRow(a: Ail) AilRow {
@@ -2507,9 +2500,12 @@ test "the quiver holds two kinds, and the SELECTED one is the one that flies" {
     q.add(.plain, 200);
     try std.testing.expectEqual(FIRE_ARROWS_MAX, q.count(.fire));
     try std.testing.expectEqual(ARROWS_MAX, q.count(.plain));
+    // **NOTHING REFILLS A QUIVER ANY MORE** (owner: arrows are found or bought). What used to be a `refill`
+    // here is the sheaf going back in through `add`, which is the only door left.
     q.fire = 0;
     q.arrows = 0;
-    q.refill();
+    q.add(.plain, ARROWS_MAX);
+    q.add(.fire, FIRE_ARROWS_MAX);
     try std.testing.expectEqual(FIRE_ARROWS_MAX, q.count(.fire));
     try std.testing.expectEqual(ARROWS_MAX, q.count(.plain));
     for (0..NARROW) |_| q.cycle();

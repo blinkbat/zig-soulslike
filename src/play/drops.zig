@@ -30,7 +30,11 @@ pub const MAX_PER_BODY: usize = 2;
 pub const TABLE = [_]Row{
     .{ .foe = .toad, .common = .bloodgrass, .rare = .toadflesh_broth, .chance = 0.14 },
 
-    .{ .foe = .archer, .common = .bloodgrass },
+    // **THE ONE BODY IN THE GAME THAT IS CARRYING ARROWS.** Nothing dropped them at all, and with the bonfire's
+    // free refill gone that left the whole map holding four sheaves in two containers — a bow with 40 shots in it
+    // and then never again. `BIG` because this is the only tap: a sheaf is 10, and the archer is common.
+    // Bloodgrass is not lost with it — the toad, the broodling and the ravager all still leave it.
+    .{ .foe = .archer, .common = .plain_arrows, .odds = BIG, .rare = .fire_arrows, .chance = 0.14 },
 
     .{ .foe = .ogre, .common = .second_wind, .odds = BIG, .rare = .bloodtinge_signet, .chance = 0.12 },
 
@@ -179,8 +183,9 @@ test "THE COMMON ROW LANDS AT ABOUT THE ODDS IT ADVERTISES, and a fight is mostl
 test "LUCK IS THE RARE ROW AND NOTHING ELSE — the common's odds do not move with it" {
     try std.testing.expect(rareOdds(.toad, 1) < rareOdds(.toad, stats.START));
     try std.testing.expect(rareOdds(.toad, stats.START) < rareOdds(.toad, stats.MAX));
-    // A row with no rare on it stays at zero however lucky he is — the archer leaves grass and nothing else.
-    try std.testing.expectEqual(@as(f32, 0), rareOdds(.archer, stats.MAX));
+    // A row with no rare on it stays at zero however lucky he is. **NOT THE ARCHER ANY MORE** — it carries the
+    // fire sheaf now that it is the only body in the game dropping arrows at all; the broodling leaves grass.
+    try std.testing.expectEqual(@as(f32, 0), rareOdds(.broodling, stats.MAX));
     for (0..NFOE) |i| try std.testing.expect(rareOdds(@enumFromInt(i), stats.MAX) <= RARE_CAP);
     std.debug.print(
         "  rares: toad broth {d:.1}% -> {d:.1}%, sporeling cap {d:.1}% -> {d:.1}%\n",

@@ -95,15 +95,60 @@ fn hearthInto(b: *Builder, rng: *mathx.Rng, cold: bool) void {
     }
 }
 
+/// **A LIT CAMPFIRE IS A BONFIRE, SO IT GETS THE BONFIRE'S DRESSING** — `rest.isRestKind` says both of these are
+/// places you sit down, and one of them was a ring of stones with a candle in it. What that promise is worth is
+/// the same everywhere: a column of smoke you can see from across the field, embers going up it, a bedroll, and a
+/// flame that reads as a fire rather than a campstove.
+///
+/// **IT IS NOT A COPY OF THE BONFIRE.** This hearth is smaller — its stones ring at 0.68 against the bonfire's
+/// 1.08 — so the ash bed, the flame and the smoke are all scaled to it (`CAMP_S`); the same OBJECT, at the size
+/// of the fire that is actually burning.
+const CAMP_S: f32 = 0.72;
+const SMOKE_SRC: f32 = 0.62;
 pub fn campfireMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(9003);
     hearthInto(&b, &rng, false);
+    // THE ASH BED, three layers deep like the bonfire's, and the drifts on top of it: a fire that has been
+    // burning has burnt something, and a bare stone ring says it was lit a minute ago.
     b.setMat(.plain);
-    b.addBlob(v3(0, 0.06, 0), v3(0.34, 0.06, 0.34), 3, 7, COAL);
-    flameInto(&b, &rng, 0, 0.10, 0, 1.15);
-    flameInto(&b, &rng, -0.13, 0.08, 0.10, 0.7);
+    b.addBlob(v3(0, 0.040, 0), v3(0.56 * CAMP_S, 0.055, 0.56 * CAMP_S), 3, 11, ASH_DK);
+    b.addBlob(v3(rng.signed() * 0.05, 0.068, rng.signed() * 0.05), v3(0.44 * CAMP_S, 0.050, 0.42 * CAMP_S), 3, 10, ASH);
+    b.addBlob(v3(rng.signed() * 0.07, 0.092, rng.signed() * 0.07), v3(0.27 * CAMP_S, 0.040, 0.26 * CAMP_S), 3, 9, ASH_LT);
+    var dr: i32 = 0;
+    while (dr < 5) : (dr += 1) {
+        const a = rng.angle();
+        const dd = rng.range(0.12, 0.46) * CAMP_S;
+        const rr = rng.range(0.06, 0.14) * CAMP_S;
+        b.addBlob(
+            v3(mathx.cosf(a) * dd, 0.086 + rng.range(0, 0.022), mathx.sinf(a) * dd),
+            v3(rr, rng.range(0.014, 0.028), rr * rng.range(0.7, 1.2)),
+            3,
+            6,
+            if (rng.float() < 0.4) ASH_LT else if (rng.float() < 0.6) ASH_DK else ASH,
+        );
+    }
+    b.addBlob(v3(0, 0.10, 0), v3(0.30, 0.05, 0.30), 3, 7, COAL);
+    // **THE FLAME IS THE HEARTH'S OWN TRIPLE, SCALED** (`art.HEARTH_FLAMES`, which the bonfire reads too). At
+    // 1.15 it sat inside the stones and read as a candle in a bucket; the tallest through `CAMP_S` is 1.58,
+    // which clears the ring.
+    const F = art.HEARTH_FLAMES;
+    flameInto(&b, &rng, rng.signed() * 0.04, 0.11, rng.signed() * 0.04, F[0] * CAMP_S);
+    flameInto(&b, &rng, rng.signed() * 0.22, 0.09, rng.signed() * 0.22, F[1] * CAMP_S);
+    flameInto(&b, &rng, rng.signed() * 0.25, 0.08, rng.signed() * 0.25, F[2] * CAMP_S);
+    // THE BEDROLL, opposite the guitar so the two do not fight over the same side of the hearth.
+    // Its near edge 1.35 m out, which clears this hearth's kicked stone at 1.15, and on the far side from the
+    // guitar rock at (-1.44, 0.98).
+    art.bedrollInto(&b, &rng, 1.45, -0.90, 1.02);
     art.guitarRockInto(&b, &rng, GUITAR_CX, GUITAR_CZ);
+    return b.toModel(shader);
+}
+
+/// The column, off `propart` — the same mesh the bonfire's veil is, at this hearth's own height and scale.
+pub fn campfireVeilMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(9013);
+    art.smokeInto(&b, &rng, SMOKE_SRC, CAMP_S);
     return b.toModel(shader);
 }
 

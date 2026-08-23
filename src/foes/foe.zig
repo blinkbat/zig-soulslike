@@ -527,7 +527,12 @@ pub fn grip(root: *combat.Root, chill: *combat.Chill, vit: *combat.Vitals, dt: f
     // **THE COLD METER IS THE GATE IN FRONT OF THE HOLD IT ALREADY HAD.** Cold damage fills the meter and a
     // full meter takes the feet — so the buildup law reaches the chill without the chill growing a second clock.
     if (vit.ailProcced(.chill)) chill.touch();
-    return .{ .was = at, .on = on, .killed = bitten or frozen or rotted, .downed = vit.ailProcced(.stun) };
+    // **A SLEEP PROC GOES DOWN THE SAME DOOR THE LIGHTNING'S STUN DOES.** Only `sporegolem` reads
+    // `vit.stunned()`; every other creature enters its stagger from `tryHit`'s reaction or from `grip.downed`,
+    // and twenty of them handle this field. Pinning `vit.stunLeft` from `Vitals.tick` alone left sleep doing
+    // NOTHING to nineteen groups — the coating and the bloom both landed a meter that no body answered.
+    // One heavy stagger, which is exactly what the hero's own sleep proc buys (`hero.tickPoison`).
+    return .{ .was = at, .on = on, .killed = bitten or frozen or rotted, .downed = vit.ailProcced(.stun) or vit.ailProcced(.sleep) };
 }
 
 /// Stamped from outside every frame (`game.markParry`): the ARC belongs to the shield, not to what is caught.
@@ -1516,7 +1521,11 @@ pub const Threat = struct {
         // could out-argue. CHARM PICKS THE OTHER BODY and STANDS when there is none: falling back to the hero
         // would make a charm in an empty room a free aggro.
         if (self.charmed) {
-            self.on = if (self.hasFoe) .foe else .hero;
+            // **AND IT NEVER FALLS BACK TO THE HERO.** It did, which made a 24 FP Bidding on a lone body buy
+            // exactly nothing — the creature carried on attacking him with a charm meter running. With no
+            // neighbour, `game.markThreat` stamps `atFoe` at its OWN feet: it disengages, mills about, and any
+            // swing it makes is dropped by `game.spendTurnedBlows` for being aimed at itself.
+            self.on = .foe;
             return;
         }
         // …AND CONFUSION SWINGS AT WHATEVER IS NEAREST (`combat.AILS`' own line). No dwell and no switch margin:
@@ -1571,10 +1580,12 @@ fn pushTurned(b: Blow) void {
     turnedN += 1;
 }
 
+/// **THE COUNT IS NOT RESET HERE.** It was, and the returned slice aliased a buffer that `pushTurned` was then
+/// free to overwrite from under the caller mid-drain. Nothing pushes during a drain today (`tryHit` does not
+/// reach `worseBlow`), which is exactly the kind of "safe until somebody adds a line" this could not stay.
+/// The caller drains and then calls `clearTurned`.
 pub fn takeTurned() []const Blow {
-    const out = turned[0..turnedN];
-    turnedN = 0;
-    return out;
+    return turned[0..turnedN];
 }
 
 pub fn clearTurned() void {
@@ -2204,4 +2215,51 @@ test "THE RING KEEPS A BURST CONTIGUOUS, so the draw does not flip sprite per mo
     // Runs, not motes: one per burst plus the pass boundary, nowhere near one per mote.
     try std.testing.expect(flips <= 6);
     try std.testing.expect(live > 55);
+}
+
+test "A SLEEP PROC PUTS A CREATURE DOWN — through `grip.downed`, which is the door twenty of them handle" {
+    // The bug this pins: the hold lived in `combat.Vitals.tick` alone, and almost nothing reads `vit.stunned()`,
+    // so a full sleep meter on a creature did absolutely nothing. Nineteen groups ignored it.
+    var vit = combat.Vitals.initFoe(400, 999, 999);
+    var root = combat.Root{};
+    var chill = combat.Chill{};
+    const dt: f32 = 1.0 / 60.0;
+
+    // Half a meter is not a proc, and nothing goes down for it.
+    vit.build(.sleep, combat.ailRow(.sleep).max * 0.5);
+    var g = grip(&root, &chill, &vit, dt, mathx.zero3);
+    try std.testing.expect(!g.downed);
+    try std.testing.expect(!vit.asleep());
+
+    // …and the frame it fills, it does.
+    vit.build(.sleep, combat.ailRow(.sleep).max);
+    g = grip(&root, &chill, &vit, dt, mathx.zero3);
+    try std.testing.expect(g.downed);
+    try std.testing.expect(vit.asleep());
+    // ONE proc, not one a frame: `justProcced` is the edge, so the stagger is not re-entered every frame of it.
+    g = grip(&root, &chill, &vit, dt, mathx.zero3);
+    try std.testing.expect(!g.downed);
+    try std.testing.expect(vit.asleep());
+
+    // …and the clock lets go on its own.
+    var t: f32 = 0;
+    while (t < combat.ailRow(.sleep).dur + 0.2) : (t += dt) _ = grip(&root, &chill, &vit, dt, mathx.zero3);
+    std.debug.print("\n  sleep: down on the proc, {d:.1} s of clock, then awake\n", .{combat.ailRow(.sleep).dur});
+    try std.testing.expect(!vit.asleep());
+}
+
+test "A CHARMED BODY WITH NOTHING TO TURN ON DOES NOT TURN BACK ON HIM" {
+    // The bug this pins: `.hero` on the no-neighbour branch, which made a 24 FP Bidding on a lone foe buy
+    // nothing at all — it kept attacking the player with a charm meter running.
+    var t = Threat{ .charmed = true, .hasFoe = false };
+    t.tick(1.0 / 60.0, 4.0, mathx.LONG_AGO, false);
+    try std.testing.expectEqual(Victim.foe, t.on);
+
+    // With a neighbour it turns on that instead, and confusion picks whichever is NEARER.
+    var c = Threat{ .confused = true, .hasFoe = true, .distFoe = 2.0 };
+    c.tick(1.0 / 60.0, 9.0, mathx.LONG_AGO, false);
+    try std.testing.expectEqual(Victim.foe, c.on);
+    c.distFoe = 12.0;
+    c.tick(1.0 / 60.0, 3.0, mathx.LONG_AGO, false);
+    try std.testing.expectEqual(Victim.hero, c.on);
 }

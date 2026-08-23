@@ -1,0 +1,37 @@
+version: 1
+name: Caravan Test
+half: 70.0
+runway: -6.00 -26.00 6.00 -14.00
+
+zone: plain -400.0 -400.0 400.0 400.0 0.520 grasstall,grasstall,patch,tuft,clover,moss,nettles,wildflowers
+clear: 0.0 0.0 34.0
+
+at: bonfire -2 -24 0 1
+
+# THE CAMP. The booth faces the runway, so you walk up on the counter and not on its back.
+at: merchanthut 0 6 0 1
+at: awning -5.5 3.5 20 1
+at: trestletable 3.8 2.0 165 1
+at: goodsrack 6.5 8.0 100 1
+at: packstack -4.2 9.5 0 1
+at: rugpile 2.2 -1.0 40 1
+at: scalepost -1.8 -2.2 0 1
+at: waterjars 5.6 -2.6 210 1
+at: hitchrail -8.5 -3.0 75 1
+
+# A second, poorer pitch further out, to see the pieces read at distance and in a different mix.
+at: awning 22 14 130 1.15
+at: packstack 20.5 17.0 40 1
+at: rugpile 24.5 12.0 10 0.9
+at: waterjars 19.0 11.5 300 1
+at: hitchrail 26.5 17.5 15 1
+
+# THE CARAVANEERS. One behind the counter, one bare-headed by the freight, one out at the far pitch.
+# `seed` picks the head variant: under 0.5 is the headcloth, over is the cap. `roam` is a key, not positional.
+npc: merchant 0.00 3.60 180.0 1.00 0.22
+call: Salt-Factor
+npc: merchant -4.60 11.20 200.0 1.02 0.81 roam=1.5
+npc: merchant 21.50 15.80 150.0 0.98 0.34 roam=2.0
+
+# …and a wanderer beside them, because the two kinds have to be told apart at a glance.
+npc: wanderer 3.20 -3.80 340.0 1.00 0.41

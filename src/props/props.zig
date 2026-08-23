@@ -17,6 +17,7 @@ const ash = @import("propash.zig");
 const fungus = @import("propfungus.zig");
 const coral = @import("propcoral.zig");
 const gold = @import("propgold.zig");
+const market = @import("propmarket.zig");
 
 const v3 = mathx.v3;
 
@@ -174,6 +175,15 @@ pub const Kind = enum(u8) {
     stalagmite,
     menhir,
     stonecarve,
+    merchanthut,
+    packstack,
+    trestletable,
+    goodsrack,
+    awning,
+    rugpile,
+    scalepost,
+    waterjars,
+    hitchrail,
     pickup,
     foggate,
 };
@@ -197,6 +207,7 @@ pub const Group = enum {
     fungus,
     bone,
     ash,
+    market,
 
     pub const N = @typeInfo(Group).@"enum".fields.len;
 
@@ -219,6 +230,7 @@ pub const Group = enum {
             .fungus => "Fungus",
             .bone => "Great Bones",
             .ash => "Ashfall",
+            .market => "Caravan",
         };
     }
 };
@@ -375,6 +387,15 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .stalagmite => "Stalagmites",
         .menhir => "Raised Stone",
         .stonecarve => "Carved Stone",
+        .merchanthut => "Merchant's Booth",
+        .packstack => "Roped Freight",
+        .trestletable => "Trestle Table",
+        .goodsrack => "Goods Rack",
+        .awning => "Awning",
+        .rugpile => "Stacked Rugs",
+        .scalepost => "Weighing Post",
+        .waterjars => "Water Jars",
+        .hitchrail => "Hitching Rail",
         .pickup => "Item",
         .foggate => "Fog Gate",
     };
@@ -413,6 +434,8 @@ pub fn group(k: Kind) Group {
         .giltleaf, .marblefloor, .marbleslab, .marblestair => .gilt,
         // Filed `.ash` and not `.rock`: they carry that region's own wind (`propash.bankInto`).
         .ashcrag, .stalagmite, .menhir, .stonecarve => .ash,
+        .merchanthut, .packstack, .trestletable, .goodsrack, .awning,
+        .rugpile, .scalepost, .waterjars, .hitchrail => .market,
     };
 }
 
@@ -479,6 +502,8 @@ pub fn biome(k: Kind) Biome {
         .ashcrag, .stalagmite, .menhir, .stonecarve,
         .giltarch, .muqarnas, .giltdome, .minaret, .jali, .giltcolumn, .giltbasin, .giltfinial,
         .giltleaf, .marblefloor, .marbleslab, .marblestair,
+        .merchanthut, .packstack, .trestletable, .goodsrack, .awning,
+        .rugpile, .scalepost, .waterjars, .hitchrail,
         => .ash,
         .rib, .rib2, .rib3, .ribarch, .skull, .vertebra => .bone,
         .capgiant, .capgiant2, .capgiant3, .capcolossal, .captower, .hyphaarch,
@@ -681,7 +706,10 @@ pub const INFO = [NK]Info{
     .{ .kind = .brazier, .build = fx.brazierMesh, .bound = 1.9, .top = 1.55, .view = 210, .parts = circleParts(0.50, 1.2), .light = .{ .y = 1.14, .col = v3(1.55, 0.84, 0.29), .radius = 16.0, .flicker = 0.13 }, .surf = .metal },
     .{ .kind = .campfire, .build = fx.deadCampfireMesh, .bound = 1.5, .top = 0.6, .view = 200, .parts = circleParts(0.45, 0.5), .surf = .stone },
     // …AND ONE YOU CAN SIT AT. `interact` shelves it under the editor's Interactables layer; `rest.isRestKind` is what makes it a bonfire. `stow` for the bonfire's reason. `bound` is up from 1.5 to hold the rock and the instrument, which stand outside the ring of stones.
-    .{ .kind = .campfire_lit, .build = fx.campfireMesh, .stow = fx.campfireGuitarMesh, .bound = 2.6, .top = 1.1, .view = 200, .interact = true, .solid = true, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(1.05, 0.52, 0.17), .radius = 13.0, .flicker = 0.18 } },
+    // **THE BOUND AND THE VIEW ARE THE SMOKE'S NOW, NOT THE STONES'.** At 2.6/1.1 the column was culled the moment
+    // the hearth left frame and the fire read as unlit from any distance; the bonfire's row is 7.2/5.4/300 for the
+    // same reason. `veil` is the late pass the smoke has to be drawn in (`env.drawVeils`), the fog gate's rule.
+    .{ .kind = .campfire_lit, .build = fx.campfireMesh, .veil = fx.campfireVeilMesh, .stow = fx.campfireGuitarMesh, .bound = 5.6, .top = 4.2, .view = 300, .interact = true, .solid = true, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(1.05, 0.52, 0.17), .radius = 13.0, .flicker = 0.18 } },
     .{ .kind = .water, .build = fx.waterMesh, .bound = 30.0, .top = 0.1, .view = FAR, .solid = true, .casts = false },
     .{ .kind = .tuft, .build = flora.tuftMesh, .bound = 0.9, .top = 0.8, .view = 85, .flora = true, .casts = false },
     .{ .kind = .patch, .build = flora.patchMesh, .bound = 2.2, .top = 0.8, .view = 95, .flora = true, .casts = false },
@@ -828,6 +856,33 @@ pub const INFO = [NK]Info{
     .{ .kind = .stalagmite, .build = ash.stalagmiteMesh, .bound = ash.STAL_TOP + 0.40, .top = ash.STAL_TOP, .view = 200 },
     .{ .kind = .menhir, .build = ash.menhirMesh, .bound = ash.MENHIR_TOP + 0.6, .top = ash.MENHIR_TOP, .view = FAR, .parts = circleParts(0.62, ash.MENHIR_TOP * 0.90), .occl = &.{.{ .r = 0.90, .y1 = ash.MENHIR_TOP }} },
     .{ .kind = .stonecarve, .build = ash.stoneCarveMesh, .bound = ash.CARVE_R * 1.6, .top = ash.CARVE_TOP, .view = 230, .parts = circleParts(ash.CARVE_R * 0.80, ash.CARVE_TOP * 0.88) },
+
+    // **THE CARAVAN'S GOODS.** Three layers, as a region needs: the booth and the rack break the horizon, the
+    // table, freight, jars and post are the middle, and the rugs are what you walk round.
+    // **THE BOOTH IS SOLID** — losing the hero behind a wall of cloth is the geometry doing its job, and its
+    // collider is the three closed sides with the open front left as the door (`hyphaarch`'s rule).
+    .{ .kind = .merchanthut, .build = market.merchantHutMesh, .bound = market.HUT_TOP + 0.6, .top = market.HUT_TOP, .view = FAR, .solid = true, .parts = &.{
+        .{ .ax = -market.HUT_W * 0.5, .bx = market.HUT_W * 0.5, .az = market.HUT_D * 0.5, .bz = market.HUT_D * 0.5, .r = 0.34, .h = 1.90 },
+        .{ .ax = -market.HUT_W * 0.5, .bx = -market.HUT_W * 0.5, .az = -market.HUT_D * 0.5, .bz = market.HUT_D * 0.5, .r = 0.34, .h = 1.90 },
+        .{ .ax = market.HUT_W * 0.5, .bx = market.HUT_W * 0.5, .az = -market.HUT_D * 0.5, .bz = market.HUT_D * 0.5, .r = 0.34, .h = 1.90 },
+    } },
+    .{ .kind = .packstack, .build = market.packStackMesh, .bound = market.PACK_R * 1.9, .top = market.PACK_TOP, .view = 220, .parts = circleParts(0.46, market.PACK_TOP * 0.88) },
+    .{ .kind = .trestletable, .build = market.trestleTableMesh, .bound = market.TABLE_W * 1.15, .top = market.TABLE_TOP + 0.22, .view = 230, .parts = &.{.{ .ax = -market.TABLE_W * 0.42, .bx = market.TABLE_W * 0.42, .r = 0.40, .h = market.TABLE_TOP }} },
+    .{ .kind = .goodsrack, .build = market.goodsRackMesh, .bound = market.RACK_TOP + 0.5, .top = market.RACK_TOP, .view = 320, .parts = &.{
+        .{ .ax = -market.RACK_W * 0.5, .bx = -market.RACK_W * 0.5, .r = 0.42, .h = 1.60 },
+        .{ .ax = market.RACK_W * 0.5, .bx = market.RACK_W * 0.5, .r = 0.42, .h = 1.60 },
+    } },
+    // **YOU WALK UNDER AN AWNING** — the colliders are the four poles and the shade between them is the point,
+    // so it does NOT thin when it stands in the camera's way and it does not wall you out either.
+    .{ .kind = .awning, .build = market.awningMesh, .bound = market.AWNING_TOP + 0.5, .top = market.AWNING_TOP, .view = 300, .parts = &.{
+        .{ .ax = -1.55, .bx = -1.55, .az = -1.25, .bz = 1.25, .r = 0.13, .h = 2.30 },
+        .{ .ax = 1.55, .bx = 1.55, .az = -1.25, .bz = 1.25, .r = 0.13, .h = 2.30 },
+    } },
+    // Knee-high and walked ROUND, not over: a pile of rugs you can step onto is a ramp.
+    .{ .kind = .rugpile, .build = market.rugPileMesh, .bound = market.RUGS_R * 1.6, .top = market.RUGS_TOP, .view = 180, .parts = circleParts(0.58, market.RUGS_TOP * 0.9) },
+    .{ .kind = .scalepost, .build = market.scalePostMesh, .bound = market.SCALE_TOP + 0.5, .top = market.SCALE_TOP, .view = 280, .parts = circleParts(0.30, market.SCALE_TOP * 0.82) },
+    .{ .kind = .waterjars, .build = market.waterJarsMesh, .bound = market.JARS_R * 1.7, .top = market.JARS_TOP, .view = 200, .parts = circleParts(0.52, market.JARS_TOP * 0.85) },
+    .{ .kind = .hitchrail, .build = market.hitchRailMesh, .bound = market.HITCH_R * 1.5, .top = market.HITCH_TOP, .view = 260, .parts = &.{.{ .ax = -1.30, .bx = 1.30, .r = 0.16, .h = market.HITCH_TOP * 0.92 }} },
 
     .{ .kind = .pickup, .build = fx.pickupMesh, .bound = 1.9, .top = fx.PICKUP_TOP, .view = 190, .interact = true, .casts = false, .light = .{ .y = 0.30, .col = v3(0.86, 0.82, 0.58), .radius = 5.4, .flicker = 0.03 } },
     // `build` is the two threshold stones; the sheet is the VEIL, hence the late pass (`env.drawVeils`). `solid` because a fog wall must NOT thin between the lens and him, and it casts nothing. `ward` is the MECHANIC: a capsule the width of its own sheet that no foe and no sight crosses, and that he does.

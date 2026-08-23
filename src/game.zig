@@ -2971,8 +2971,12 @@ fn markThreat(g: *Game, dt: f32) void {
                     f.threat.distFoe = o.dist;
                     f.threat.hasFoe = true;
                 } else {
+                    // **NOTHING TO TURN ON, SO IT TURNS ON NOTHING.** Its own feet: `Threat.aim` hands the
+                    // creature a point it is already standing on, so it stops closing on the hero, and the
+                    // swing it takes there is dropped for being aimed at itself.
+                    f.threat.atFoe = f.pos;
+                    f.threat.distFoe = 0;
                     f.threat.hasFoe = false;
-                    f.threat.distFoe = mathx.LONG_AGO;
                 }
             } else {
                 f.threat.hasFoe = false;
@@ -3015,8 +3019,12 @@ fn nearestOther(g: *const Game, from: rl.Vector3, r: f32) ?Nearest {
 /// HERO's sword's — alone.
 fn spendTurnedBlows(g: *Game) void {
     const blows = foemod.takeTurned();
+    defer foemod.clearTurned();
     for (blows) |b| {
         const at = b.at;
+        // **A SWING AIMED AT ITS OWN FEET LANDS ON NOBODY.** That is what a charmed body with no neighbour does
+        // (`markThreat`), and billed it would open its own throat on a blade centred on itself.
+        if (mathx.dist2XZ(at, b.from) < TURNED_SELF * TURNED_SELF) continue;
         if (pierceFoes(g, .{
             .active = true,
             .pierce = true,
@@ -3035,6 +3043,9 @@ fn spendTurnedBlows(g: *Game) void {
 
 /// Tight on the body it was aimed at, so a turned swing cannot sweep up a third party standing behind it.
 const TURNED_R: f32 = 0.45;
+/// Inside this of its own feet, a turned swing was aimed at nothing. Under `TURNED_R`, so a blow that would have
+/// hit the striker is dropped before the blade is ever built.
+const TURNED_SELF: f32 = 0.30;
 
 fn markWade(g: *Game) void {
     const quarry = g.env.wadeDepth(g.hero.pos.x, g.hero.pos.z);

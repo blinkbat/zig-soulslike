@@ -4,6 +4,7 @@ const gfx = @import("../gfx/gfx.zig");
 const mathx = @import("../core/mathx.zig");
 const heromod = @import("../play/hero.zig");
 const wf = @import("../world/worldfmt.zig");
+const art = @import("../props/propart.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -71,6 +72,78 @@ const WOOD_LT = rgba(62, 46, 28, 255);
 const GOURD = rgba(98, 78, 44, 255);
 const IRON = rgba(44, 42, 40, 255);
 
+// **THE CARAVANEER** — a camel-humanoid, and the desert's merchant. Same rig as the wanderer to the bone
+// (`heromod`'s humanoid), because it walks on two legs in a robe; what makes it a camel is the MUZZLE, the HUMP
+// and the long NECK, and all three are mesh and none is a new joint.
+//
+// **THE NECK IS BUILT INTO THE MESH, NOT INTO THE SKELETON.** `restHumanoid` fixes where the skull bone hangs,
+// so the extra length goes up out of `neckMesh` and the head's own contents are pushed up to sit on top of it
+// (`MERCH_NECK`). Head rotations then pivot at the base of the extension, which is what a long neck does anyway.
+//
+// **SOLVED, AND WIDER THAN THE WANDERER ON PURPOSE.** That palette's own note is that every material sampled
+// 30-36 albedo and the figure read flat; this one spans 24 to 100, which is 111 to 213 on screen. Layered on HUE
+// too: warm hide and a madder sash against a COLD indigo stripe.
+//   hide 72 -> 183    stripe 88 -> 201    indigo 34 -> 131    hump 38 -> 137    strap 24 -> 111
+const HIDE = rgba(78, 66, 46, 255);
+const HIDE_DK = rgba(48, 40, 30, 255);
+/// Shaggier and darker than the flank: a hump carries the coat the rest of the body has rubbed off.
+const HUMP = rgba(40, 34, 26, 255);
+const HUMP_LT = rgba(56, 48, 36, 255);
+/// **THE STRIPE IS BANDED ALONG THE ROBE ON PURPOSE** — the barber's-pole warning is about accidental banding on
+/// a shaft, and a striped weave is the one place the alternation IS the design. Off `propart`, which is also
+/// where his stall gets it (`propmarket`): one loom, one place to retune it.
+const STRIPE = art.WEAVE;
+const STRIPE_DK = art.WEAVE_DK;
+const MADDER = art.MADDER;
+const MADDER_LT = art.MADDER_LT;
+const STRAP = rgba(24, 19, 14, 255);
+const HOOF = rgba(34, 30, 26, 255);
+const MUZZLE = rgba(96, 84, 62, 255);
+const LASH = rgba(20, 17, 13, 255);
+/// Brass borrowing the warm branch (`Mat.gilt`): under `steel` a yellow albedo comes back blued silver, which is
+/// the note at the top of `propgold`. It is a pan and a chain, so the lie costs nothing.
+const BRASS = rgba(108, 82, 34, 255);
+
+/// How much taller the caravaneer's neck is than the wanderer's, in stature. The head mesh is offset by the same
+/// figure, so the two cannot drift apart.
+const MERCH_NECK: f32 = 0.100 * H;
+
+pub const NKIND = @typeInfo(wf.NpcKind).@"enum".fields.len;
+
+/// One row per `wf.NpcKind`, pinned in its order. `stoop` and `headFwd` are the CARRIAGE, and they are most of
+/// what tells the two apart at distance: the wanderer is bent over his staff, the caravaneer stands up and holds
+/// his head back over that neck.
+const Spec = struct {
+    kind: wf.NpcKind,
+    /// On top of `SCALE`.
+    size: f32 = 1.0,
+    stoop: f32,
+    headFwd: f32,
+    /// Where the conversation panel photographs (`facePoint`), in the SKULL's own frame — a muzzle that projects
+    /// 0.1 of a stature forward is not framed by the wanderer's point.
+    faceAt: rl.Vector3,
+    /// Stature to the crown, for the dialog marker and the talk reticle.
+    top: f32,
+};
+
+const SPEC = [NKIND]Spec{
+    .{ .kind = .wanderer, .stoop = 7.5, .headFwd = 5.0, .faceAt = FACE_AT, .top = 1.02 },
+    .{ .kind = .merchant, .size = 1.06, .stoop = -3.0, .headFwd = -7.0, .faceAt = v3(0, 0.045 * H + MERCH_NECK, 0.085 * H), .top = 1.16 },
+};
+
+comptime {
+    for (SPEC, 0..) |sp, i| {
+        if (@intFromEnum(sp.kind) != i) @compileError("npc: SPEC is out of `wf.NpcKind` order");
+    }
+    // **THE TWO CARRIAGES MUST DISAGREE**, or one kind is the other in a different coat.
+    std.debug.assert(SPEC[1].stoop < SPEC[0].stoop and SPEC[1].headFwd < SPEC[0].headFwd);
+    std.debug.assert(SPEC[1].top > SPEC[0].top);
+}
+
+pub fn spec(k: wf.NpcKind) Spec {
+    return SPEC[@intFromEnum(k)];
+}
+
 pub const NOTICE_R: f32 = 7.0;
 pub const REACH: f32 = 2.4;
 const TURN_RATE = 3.2;
@@ -90,8 +163,6 @@ const A_LIST = 1.3;
 const A_DRIFT_YAW = 7.5;
 const A_DRIFT_PITCH = 3.0;
 
-const STOOP = 7.5;
-const HEAD_FWD = 5.0;
 
 const STAFF_SH = 12.0;
 const STAFF_EL = -34.0;
@@ -123,32 +194,20 @@ const DWELL: f32 = 2.6;
 const ARRIVE: f32 = 0.35;
 
 pub const Model = struct {
-    bone: [N]rl.Mesh,
-    heads: [2]rl.Mesh,
+    /// **ONE SET PER KIND, BECAUSE THE COLOUR AND THE SHAPE ARE BOTH IN THE VERTICES.** The rig, every pose curve
+    /// and `legChain` are shared; what a kind owns is seventeen meshes and a pair of heads.
+    bone: [NKIND][N]rl.Mesh,
+    heads: [NKIND][2]rl.Mesh,
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
         const mat = gfx.material(shader, "npc");
-        const heads = [_]rl.Mesh{ hoodedHeadMesh(), bareHeadMesh() };
-        var bone: [N]rl.Mesh = undefined;
-        bone[ROOT] = pelvisMesh();
-        bone[SPINE] = abdomenMesh();
-        bone[CHEST] = chestMesh();
-        bone[NECK] = neckMesh();
-        bone[SKULL] = heads[0];
-        bone[HIPL] = thighMesh();
-        bone[KNEEL] = shankMesh();
-        bone[ANKL] = footMesh();
-        bone[HIPR] = thighMesh();
-        bone[KNEER] = shankMesh();
-        bone[ANKR] = footMesh();
-        bone[SHL] = sleeveMesh();
-        bone[ELL] = forearmMesh();
-        bone[WRL] = handMesh();
-        bone[SHR] = sleeveMesh();
-        bone[ELR] = forearmMesh();
-        bone[WRR] = handMesh();
-        bone[STAFF] = staffMesh();
+        var heads: [NKIND][2]rl.Mesh = undefined;
+        heads[0] = .{ hoodedHeadMesh(), bareHeadMesh() };
+        heads[1] = .{ merchHeadMesh(true), merchHeadMesh(false) };
+        var bone: [NKIND][N]rl.Mesh = undefined;
+        bone[0] = wandererBones(heads[0][0]);
+        bone[1] = merchantBones(heads[1][0]);
         return .{ .bone = bone, .heads = heads, .mat = mat };
     }
 
@@ -157,15 +216,62 @@ pub const Model = struct {
     }
 
     pub fn draw(self: *const Model, p: *const Wanderer) void {
+        const k = @intFromEnum(p.kind);
         for (0..N) |i| {
             if (i == SKULL) {
-                rl.drawMesh(self.heads[p.variant], self.mat, p.xf[SKULL]);
+                rl.drawMesh(self.heads[k][p.variant], self.mat, p.xf[SKULL]);
                 continue;
             }
-            rl.drawMesh(self.bone[i], self.mat, p.xf[i]);
+            rl.drawMesh(self.bone[k][i], self.mat, p.xf[i]);
         }
     }
 };
+
+fn wandererBones(head: rl.Mesh) [N]rl.Mesh {
+    var bone: [N]rl.Mesh = undefined;
+    bone[ROOT] = pelvisMesh();
+    bone[SPINE] = abdomenMesh();
+    bone[CHEST] = chestMesh();
+    bone[NECK] = neckMesh();
+    bone[SKULL] = head;
+    bone[HIPL] = thighMesh();
+    bone[KNEEL] = shankMesh();
+    bone[ANKL] = footMesh();
+    bone[HIPR] = thighMesh();
+    bone[KNEER] = shankMesh();
+    bone[ANKR] = footMesh();
+    bone[SHL] = sleeveMesh();
+    bone[ELL] = forearmMesh();
+    bone[WRL] = handMesh();
+    bone[SHR] = sleeveMesh();
+    bone[ELR] = forearmMesh();
+    bone[WRR] = handMesh();
+    bone[STAFF] = staffMesh();
+    return bone;
+}
+
+fn merchantBones(head: rl.Mesh) [N]rl.Mesh {
+    var bone: [N]rl.Mesh = undefined;
+    bone[ROOT] = merchPelvisMesh();
+    bone[SPINE] = merchAbdomenMesh();
+    bone[CHEST] = merchChestMesh();
+    bone[NECK] = merchNeckMesh();
+    bone[SKULL] = head;
+    bone[HIPL] = merchThighMesh();
+    bone[KNEEL] = merchShankMesh();
+    bone[ANKL] = merchFootMesh();
+    bone[HIPR] = merchThighMesh();
+    bone[KNEER] = merchShankMesh();
+    bone[ANKR] = merchFootMesh();
+    bone[SHL] = merchSleeveMesh();
+    bone[ELL] = merchForearmMesh();
+    bone[WRL] = merchHandMesh();
+    bone[SHR] = merchSleeveMesh();
+    bone[ELR] = merchForearmMesh();
+    bone[WRR] = merchHandMesh();
+    bone[STAFF] = scaleBeamMesh();
+    return bone;
+}
 
 pub const Wanderer = struct {
     pos: rl.Vector3 = mathx.zero3,
@@ -175,6 +281,7 @@ pub const Wanderer = struct {
     scale: f32 = SCALE,
     seed: f32 = 0,
     variant: usize = 0,
+    kind: wf.NpcKind = .wanderer,
     rec: u16 = 0,
     roamR: f32 = 0,
 
@@ -202,17 +309,23 @@ pub const Wanderer = struct {
     rest: [N]rl.Vector3 = undefined,
 
     pub fn facePoint(self: *const Wanderer) rl.Vector3 {
-        return rl.math.vector3Transform(FACE_AT, self.xf[SKULL]);
+        return rl.math.vector3Transform(spec(self.kind).faceAt, self.xf[SKULL]);
     }
 
     pub fn spawn(rec: u16, home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32, roam: f32) Wanderer {
+        return spawnAs(.wanderer, rec, home, faceYaw, scale, seed, roam);
+    }
+
+    /// **THE ONE DOOR**, so a kind cannot be posted without its own carriage, its own reach and its own meshes.
+    pub fn spawnAs(kind: wf.NpcKind, rec: u16, home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32, roam: f32) Wanderer {
         var p = Wanderer{
+            .kind = kind,
             .pos = home,
             .home = home,
             .postYaw = faceYaw,
             .facing = faceYaw,
             .wantYaw = faceYaw,
-            .scale = SCALE * scale,
+            .scale = SCALE * scale * spec(kind).size,
             .seed = seed,
             .variant = if (seed < 0.5) 0 else 1,
             .rec = rec,
@@ -231,7 +344,7 @@ pub const Wanderer = struct {
     }
 
     pub fn topWorld(self: *const Wanderer) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + 1.02 * H * self.scale, self.pos.z);
+        return v3(self.pos.x, self.pos.y + spec(self.kind).top * H * self.scale, self.pos.z);
     }
 
     pub fn greet(self: *Wanderer) void {
@@ -327,7 +440,7 @@ pub const Wanderer = struct {
         const prot = A_PROT * mathx.sinf(twoPi * self.phase) * m * @abs(self.fwdB) +
             heromod.strafeProt(self.phase, self.latB, m);
 
-        const lean = STOOP + wonk * 0.6 + 16.0 * bowK;
+        const lean = spec(self.kind).stoop + wonk * 0.6 + 16.0 * bowK;
         const list = shift * A_LIST;
         const listLift = heromod.HIP_HALF * H * @abs(mathx.sinf(mathx.radians(list)));
         var wx: [N]rl.Matrix = undefined;
@@ -354,13 +467,14 @@ pub const Wanderer = struct {
         const lagN = mathx.sinf(twoPi * (self.phase - 0.12)) * m;
         setLocal(wx, SPINE, rest, mul3(rx(trunk * 0.42 + nod + breath * A_BREATH * 0.5), ry(-0.35 * prot), rz(wonk * 0.5 - shift * A_LIST * 0.9)));
         setLocal(wx, CHEST, rest, mul3(rx(trunk * 0.58 + breath * A_BREATH), ry(-0.55 * prot + 1.4 * lagC), rz(-wonk * 0.3)));
-        setLocal(wx, NECK, rest, rx(HEAD_FWD * 0.4 + 8.0 * bowK - nod * 0.5));
+        const fwd = spec(self.kind).headFwd;
+        setLocal(wx, NECK, rest, rx(fwd * 0.4 + 8.0 * bowK - nod * 0.5));
 
         const still = 1.0 - m;
         const driftY = mathx.sinf(self.t * twoPi * DRIFT_RATE) * A_DRIFT_YAW * still;
         const driftX = mathx.cosf(self.t * twoPi * DRIFT_RATE * 1.7 + 1.3) * A_DRIFT_PITCH * still;
         setLocal(wx, SKULL, rest, mul3(
-            rx(HEAD_FWD * 0.6 + driftX - nod * 0.8 + 22.0 * bowK),
+            rx(fwd * 0.6 + driftX - nod * 0.8 + 22.0 * bowK),
             ry(driftY - prot * 0.4 - 1.2 * lagN),
             rz(wonk + shift * A_LIST * 1.2),
         ));
@@ -408,6 +522,354 @@ pub const Wanderer = struct {
     }
 };
 
+// ---------------------------------------------------------------------------------------------------------
+// THE CARAVANEER'S SEVENTEEN. Same bones, same order, same segment lengths — `heromod.SEG_*` is what `legChain`
+// solves against and a limb that disagrees with it walks on its shins.
+
+/// A run of stripes down a wrapped body, banded across `axis` — the weave, and the one intended alternation.
+fn striped(b: *Builder, c: rl.Vector3, size: rl.Vector3, bands: i32, rng: *mathx.Rng) void {
+    const n = @as(f32, @floatFromInt(bands));
+    var i: i32 = 0;
+    while (i < bands) : (i += 1) {
+        const fi = @as(f32, @floatFromInt(i));
+        // **THE BANDS OVERLAP THEIR OWN PITCH.** Uneven widths, so it is a hand-loom and not a barcode — but
+        // never NARROWER than the pitch: at 0.80 the gaps between them read as segmented plate armour and the
+        // robe stopped being cloth.
+        const w = size.y * 2.0 / n * rng.range(1.06, 1.34);
+        const y = c.y + size.y - (fi + 0.5) * (size.y * 2.0 / n);
+        // **ONE DARK BAND IN THREE, NOT ONE IN TWO.** Alternating evenly, a single cold stripe fills the frame at
+        // portrait range and the robe reads as banded metal; at one in three the weave is warm and the dark is a
+        // stripe ON it.
+        slab(b, v3(c.x, y, c.z), v3(size.x, w * 0.5, size.z), if (@mod(i, 3) == 1) STRIPE_DK else STRIPE);
+    }
+}
+
+fn merchPelvisMesh() rl.Mesh {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0xCA30);
+    b.setMat(.cloth);
+    // **THE COLD TONE IS ONLY EVER A BAND.** As the base it showed through wherever `striped` did not reach and
+    // a whole indigo panel at portrait range reads as plate armour, not cloth.
+    slab(&b, v3(0, 0.005 * H, 0), v3(0.212 * H, 0.135 * H, 0.158 * H), STRIPE);
+    // SHORTER THAN THE WANDERER'S SKIRT: he walks a caravan, so the hem is hitched and there are wraps under it.
+    skirt(&b, v3(0, 0.045 * H, 0), 0.185 * H, 0.115 * H, 0.190 * H, 12, STRIPE);
+    b.setMat(.leather);
+    slab(&b, v3(0, 0.058 * H, 0), v3(0.226 * H, 0.042 * H, 0.170 * H), MADDER);
+    slab(&b, v3(0, 0.058 * H, 0.090 * H), v3(0.034 * H, 0.034 * H, 0.010 * H), BRASS);
+    // **THE PURSES ARE THE TRADE.** Four of them, no two the same size and none of them level, because they are
+    // hung on a belt and full of different things.
+    var i: i32 = 0;
+    while (i < 4) : (i += 1) {
+        const a = rng.range(-2.4, 2.4);
+        const r = rng.range(0.030, 0.052) * H;
+        const px = mathx.cosf(a) * 0.185 * H;
+        const pz = mathx.sinf(a) * 0.140 * H;
+        b.addBlob(v3(px, -0.012 * H - r * rng.range(0.4, 1.1), pz), v3(r, r * rng.range(0.85, 1.25), r * 0.72), 4, 8, if (rng.float() < 0.4) LEATHER_LT else LEATHER);
+        b.addCylinder(v3(px, 0.040 * H, pz), v3(px, -0.008 * H, pz), 0.006 * H, 0.005 * H, 5, STRAP);
+    }
+    b.setMat(.gilt);
+    b.addBlob(v3(0.150 * H, -0.052 * H, 0.078 * H), v3(0.014 * H, 0.014 * H, 0.005 * H), 3, 8, BRASS);
+    return b.toMesh();
+}
+
+fn merchAbdomenMesh() rl.Mesh {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0xCA31);
+    b.setMat(.cloth);
+    striped(&b, v3(0, 0.010 * H, 0), v3(0.208 * H, 0.132 * H, 0.150 * H), 5, &rng);
+    b.setMat(.leather);
+    slab(&b, v3(0, -0.038 * H, 0.004 * H), v3(0.210 * H, 0.030 * H, 0.150 * H), MADDER);
+    // THE TALLY on his hip — a notched stick on a thong, which is a ledger before anybody could write.
+    b.setMat(.wood);
+    b.addCylinder(v3(-0.135 * H, -0.030 * H, 0.070 * H), v3(-0.150 * H, -0.135 * H, 0.062 * H), 0.011 * H, 0.009 * H, 6, WOOD);
+    var i: i32 = 0;
+    while (i < 5) : (i += 1) {
+        const t = (@as(f32, @floatFromInt(i)) + 0.5) / 5.0;
+        b.addBlob(
+            mathx.lerpV(v3(-0.135 * H, -0.030 * H, 0.070 * H), v3(-0.150 * H, -0.135 * H, 0.062 * H), t),
+            v3(0.013 * H, 0.004 * H, 0.013 * H),
+            2,
+            6,
+            WOOD_LT,
+        );
+    }
+    return b.toMesh();
+}
+
+fn merchChestMesh() rl.Mesh {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0xCA32);
+    b.setMat(.cloth);
+    slab(&b, v3(0, -0.005 * H, 0), v3(0.258 * H, 0.118 * H, 0.156 * H), STRIPE);
+    // …and the bands COVER the base rather than sitting in the middle of it: same half-height, a hair wider.
+    striped(&b, v3(0, -0.005 * H, 0), v3(0.262 * H, 0.118 * H, 0.159 * H), 5, &rng);
+    // **THE HUMP, AND IT IS THE SILHOUETTE.** Behind the shoulders and ABOVE them, so it breaks the line of the
+    // back against the sky — sat between the blades it read as a rucksack. Two lobes, the rear one smaller and
+    // slumped: a hump that has been across a desert leans.
+    // **BEHIND THE SHOULDERS AND BELOW THE HEAD.** At 0.108 up and 0.086 back its crown stood 1.72 m against a
+    // skull centred at 1.78 and it read as a second head; 0.052 up and 0.128 back puts it where a hump goes,
+    // which is on the BACK.
+    b.setMat(.hide);
+    b.addBlob(v3(0.008 * H, 0.052 * H, -0.128 * H), v3(0.112 * H, 0.098 * H, 0.106 * H), 6, 12, HUMP);
+    b.addBlob(v3(-0.014 * H, 0.020 * H, -0.160 * H), v3(0.074 * H, 0.062 * H, 0.068 * H), 5, 10, HUMP_LT);
+    // The coat on it: A FEW PERCENT OF THE MASS (the relief law). At 0.026 on a 0.112 radius these were a fifth
+    // of it and read as grey PLATES stuck to a ball, so they are halved and seated inside the surface.
+    var i: i32 = 0;
+    while (i < 11) : (i += 1) {
+        const a = rng.angle();
+        const el = rng.range(-0.2, 1.1);
+        const rr = rng.range(0.007, 0.013) * H;
+        b.addBlob(
+            v3(0.008 * H + mathx.cosf(a) * 0.100 * H * @cos(el), 0.052 * H + 0.086 * H * @sin(el), -0.128 * H + mathx.sinf(a) * 0.094 * H * @cos(el)),
+            v3(rr, rr * rng.range(0.7, 1.5), rr * 0.8),
+            3,
+            7,
+            if (rng.float() < 0.5) HUMP_LT else HIDE_DK,
+        );
+    }
+    // THE STRAPS the packs hung off, crossed over the chest and still on him.
+    b.setMat(.leather);
+    slab(&b, v3(0.068 * H, -0.010 * H, 0.078 * H), v3(0.030 * H, 0.140 * H, 0.012 * H), STRAP);
+    slab(&b, v3(-0.072 * H, -0.004 * H, 0.076 * H), v3(0.026 * H, 0.132 * H, 0.012 * H), STRAP);
+    b.setMat(.gilt);
+    b.addBlob(v3(0.068 * H, 0.052 * H, 0.086 * H), v3(0.016 * H, 0.016 * H, 0.006 * H), 3, 8, BRASS);
+    return b.toMesh();
+}
+
+/// **THE LONG NECK.** `MERCH_NECK` of extra column on top of the wanderer's, and the head mesh is offset by the
+/// same figure — the two are one number so they cannot part company. A shaggy ruff at the base, thinning to bare
+/// hide at the throat, because that is where a working animal wears through.
+fn merchNeckMesh() rl.Mesh {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0xCA33);
+    const top = 0.068 * H + MERCH_NECK;
+    b.setMat(.hide);
+    // Not plumb: it rises and carries FORWARD, which is the whole line of a camel's neck.
+    b.addCylinder(v3(0, 0, 0), v3(0, top * 0.55, 0.014 * H), 0.040 * H, 0.034 * H, 9, HIDE_DK);
+    b.addCylinder(v3(0, top * 0.55, 0.014 * H), v3(0, top, 0.008 * H), 0.034 * H, 0.030 * H, 9, HIDE);
+    b.addDome(v3(0, top, 0.008 * H), v3(0, 1, 0), 0.030 * H, 8, HIDE);
+    // THE RUFF at the base — shaggy, and it is what stops the neck reading as a pipe.
+    var i: i32 = 0;
+    while (i < 8) : (i += 1) {
+        const a = std.math.tau * @as(f32, @floatFromInt(i)) / 8.0 + rng.signed() * 0.2;
+        const rr = rng.range(0.016, 0.030) * H;
+        b.addBlob(
+            v3(mathx.cosf(a) * 0.040 * H, rng.range(0.004, 0.030) * H, mathx.sinf(a) * 0.036 * H),
+            v3(rr, rr * rng.range(0.9, 1.7), rr * 0.9),
+            3,
+            7,
+            if (@mod(i, 2) == 0) HUMP else HUMP_LT,
+        );
+    }
+    b.setMat(.cloth);
+    b.addCylinder(v3(0, 0.006 * H, 0), v3(0, 0.032 * H, 0.004 * H), 0.046 * H, 0.042 * H, 9, STRIPE);
+    return b.toMesh();
+}
+
+/// **THE MUZZLE IS THE CREATURE.** Everything else could be a tall man in a striped robe; a head that projects a
+/// tenth of a stature forward and ends in a split lip cannot. Built up `MERCH_NECK` so it sits on its own neck.
+///
+/// `wrapped` is the headcloth variant — over the crown and down the sides, with the muzzle bare either way,
+/// because a covered muzzle is a sack.
+fn merchHeadMesh(wrapped: bool) rl.Mesh {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(if (wrapped) 0xCA34 else 0xCA35);
+    const y = MERCH_NECK;
+    b.setMat(.hide);
+    // THE SKULL — narrow and long, not a ball: two blobs, the rear one the braincase and the front the jaw line.
+    b.addBlob(v3(0, y + 0.074 * H, -0.014 * H), v3(0.058 * H, 0.062 * H, 0.070 * H), 6, 10, HIDE);
+    b.addBlob(v3(0, y + 0.056 * H, 0.040 * H), v3(0.048 * H, 0.046 * H, 0.058 * H), 5, 10, HIDE);
+    // THE MUZZLE, tapering forward and DOWN — a camel's nose falls away from the brow.
+    b.addCapsule(v3(0, y + 0.058 * H, 0.062 * H), v3(0, y + 0.036 * H, 0.132 * H), 0.040 * H, 0.028 * H, 9, HIDE);
+    b.addBlob(v3(0, y + 0.033 * H, 0.140 * H), v3(0.030 * H, 0.026 * H, 0.024 * H), 4, 9, MUZZLE);
+    // THE SPLIT LIP — two lobes with a gap down the middle. This is the read, and it is worth two primitives.
+    for ([_]f32{ -1.0, 1.0 }) |side| {
+        b.addBlob(v3(side * 0.014 * H, y + 0.024 * H, 0.146 * H), v3(0.014 * H, 0.014 * H, 0.013 * H), 3, 8, MUZZLE);
+    }
+    // NOSTRIL SLITS, sunk: dark, narrow, and set high on the muzzle where a camel closes them against sand.
+    for ([_]f32{ -1.0, 1.0 }) |side| {
+        b.addCapsule(
+            v3(side * 0.020 * H, y + 0.046 * H, 0.136 * H),
+            v3(side * 0.024 * H, y + 0.036 * H, 0.138 * H),
+            0.006 * H,
+            0.004 * H,
+            5,
+            HOOF,
+        );
+    }
+    // THE BROW — heavy, and it OVERHANGS, which is where the shade for the eye comes from.
+    b.addBlob(v3(0, y + 0.092 * H, 0.038 * H), v3(0.056 * H, 0.020 * H, 0.040 * H), 4, 9, HIDE_DK);
+    for ([_]f32{ -1.0, 1.0 }) |side| {
+        // The eye, set WIDE and to the side of the skull the way a prey animal's is.
+        b.addBlob(v3(side * 0.046 * H, y + 0.074 * H, 0.030 * H), v3(0.015 * H, 0.016 * H, 0.014 * H), 3, 8, HOOF);
+        b.addBlob(v3(side * 0.049 * H, y + 0.077 * H, 0.034 * H), v3(0.007 * H, 0.007 * H, 0.006 * H), 3, 6, MUZZLE);
+        // **THE LASHES**, and they are absurd on a real camel, so they are three capsules here rather than one.
+        var l: i32 = 0;
+        while (l < 3) : (l += 1) {
+            const fl = @as(f32, @floatFromInt(l)) - 1.0;
+            const from = v3(side * (0.044 * H + fl * 0.006 * H), y + 0.086 * H, 0.030 * H + fl * 0.004 * H);
+            b.addCapsule(from, mathx.addV(from, v3(side * 0.008 * H, 0.020 * H, 0.014 * H)), 0.0035 * H, 0.0015 * H, 4, LASH);
+        }
+        // The ear: SMALL and set back, which is the other half of "not a horse".
+        b.addBlob(v3(side * 0.050 * H, y + 0.098 * H, -0.038 * H), v3(0.012 * H, 0.020 * H, 0.010 * H), 3, 7, HIDE_DK);
+    }
+    if (wrapped) {
+        // THE HEADCLOTH over the crown and down past the ear, muzzle left bare. Its fall is uneven — one side is
+        // thrown back over the shoulder and the other hangs.
+        b.setMat(.cloth);
+        b.addBlob(v3(0, y + 0.096 * H, -0.020 * H), v3(0.072 * H, 0.054 * H, 0.080 * H), 5, 11, STRIPE);
+        // **THE FALLS HUG THE SKULL.** Authored as two slabs they stood off it as flat plates — the one thing a
+        // cloth over a head cannot be. Capsules down the sides instead, each following the jaw and each its own
+        // length, because a headcloth is thrown on and not fitted.
+        for ([_]f32{ -1.0, 1.0 }) |side| {
+            const drop = if (side > 0) 0.052 * H else 0.104 * H;
+            b.addCapsule(
+                v3(side * 0.056 * H, y + 0.092 * H, -0.016 * H),
+                v3(side * 0.062 * H, y + 0.092 * H - drop, -0.006 * H),
+                0.030 * H,
+                0.024 * H,
+                7,
+                STRIPE,
+            );
+        }
+        // The back fall, over the nape, and it is the one place the dark weave shows on the head.
+        b.addCapsule(v3(0, y + 0.094 * H, -0.052 * H), v3(0, y + 0.020 * H, -0.062 * H), 0.048 * H, 0.036 * H, 9, STRIPE_DK);
+        b.addBlob(v3(0, y + 0.104 * H, -0.052 * H), v3(0.050 * H, 0.028 * H, 0.040 * H), 4, 9, MADDER);
+        // The cord round the crown that holds it on.
+        b.setMat(.leather);
+        b.addCylinder(v3(-0.062 * H, y + 0.098 * H, 0), v3(0.062 * H, y + 0.098 * H, 0), 0.007 * H, 0.007 * H, 6, STRAP);
+    } else {
+        // Bare-headed: a low brimless cap, and the crown-tuft that the cloth would have flattened.
+        b.setMat(.cloth);
+        b.addCylinder(v3(0, y + 0.112 * H, -0.016 * H), v3(0, y + 0.148 * H, -0.020 * H), 0.050 * H, 0.046 * H, 10, MADDER);
+        b.addDome(v3(0, y + 0.148 * H, -0.020 * H), v3(0, 1, 0), 0.046 * H, 10, MADDER_LT);
+        b.setMat(.hide);
+        var t: i32 = 0;
+        while (t < 5) : (t += 1) {
+            const a = rng.angle();
+            const rr = rng.range(0.010, 0.020) * H;
+            b.addBlob(v3(mathx.cosf(a) * 0.030 * H, y + 0.112 * H, -0.016 * H + mathx.sinf(a) * 0.028 * H), v3(rr, rr * 1.4, rr), 3, 7, HUMP);
+        }
+    }
+    return b.toMesh();
+}
+
+fn merchThighMesh() rl.Mesh {
+    var b = Builder.init();
+    b.setMat(.cloth);
+    b.addCylinder(v3(0, 0, 0), v3(0, -0.070 * H, 0), 0.068 * H, 0.050 * H, 9, STRIPE);
+    b.addDome(v3(0, 0, 0), v3(0, 1, 0), 0.068 * H, 9, STRIPE);
+    // BARE BELOW THE HITCHED HEM, and thin — the leg of a thing built for distance and not for carrying.
+    b.setMat(.hide);
+    b.addCylinder(v3(0, -0.066 * H, 0), v3(0, -heromod.SEG_THIGH * H, 0), 0.044 * H, 0.034 * H, 9, HIDE_DK);
+    return b.toMesh();
+}
+
+fn merchShankMesh() rl.Mesh {
+    var b = Builder.init();
+    b.setMat(.hide);
+    // **THE KNOB AT THE KNEE**, which on a camel is a callus and is the one lumpy thing on the leg.
+    b.addBlob(v3(0, -0.006 * H, 0.008 * H), v3(0.040 * H, 0.034 * H, 0.036 * H), 4, 9, HIDE_DK);
+    b.addCylinder(v3(0, -0.020 * H, 0), v3(0, -heromod.SEG_SHANK * H, 0), 0.030 * H, 0.026 * H, 9, HIDE);
+    b.setMat(.cloth);
+    // Puttees, wrapped and UNEVEN: three bands, none the same width.
+    for ([_]f32{ 0.30, 0.52, 0.74 }) |t| {
+        const yy = -heromod.SEG_SHANK * H * t;
+        b.addCylinder(v3(0, yy, 0), v3(0, yy - 0.022 * H, 0), 0.032 * H, 0.031 * H, 9, if (t > 0.5) LINEN_DK else LINEN);
+    }
+    return b.toMesh();
+}
+
+/// **THE PAD IS BROAD AND SPLAYED AND STILL INSIDE THE HERO'S FOOTPRINT** — `footMesh`'s own note is that the
+/// envelope is fixed by the gait curves, so this reshapes within z -0.05..+0.14 and x +-0.0425 of a stature and
+/// never past it. Two toes at the front, and the pad squashed flat because a camel walks on a cushion.
+fn merchFootMesh() rl.Mesh {
+    var b = Builder.init();
+    const ay = 0.039 * H;
+    b.setMat(.hide);
+    b.addBlob(v3(0, -ay + 0.026 * H, 0.038 * H), v3(0.084 * H, 0.026 * H, 0.150 * H), 4, 11, HIDE_DK);
+    b.addBlob(v3(0, -ay + 0.062 * H, -0.014 * H), v3(0.062 * H, 0.044 * H, 0.070 * H), 4, 9, HIDE);
+    b.setMat(.leather);
+    for ([_]f32{ -1.0, 1.0 }) |side| {
+        b.addBlob(v3(side * 0.034 * H, -ay + 0.022 * H, 0.126 * H), v3(0.036 * H, 0.022 * H, 0.040 * H), 3, 8, HOOF);
+    }
+    return b.toMesh();
+}
+
+fn merchSleeveMesh() rl.Mesh {
+    var b = Builder.init();
+    b.setMat(.cloth);
+    b.addBlob(v3(0, 0.002 * H, 0), v3(0.052 * H, 0.046 * H, 0.050 * H), 4, 9, STRIPE);
+    b.addCylinder(v3(0, 0, 0), v3(0, -heromod.SEG_UPARM * H, 0), 0.054 * H, 0.042 * H, 9, STRIPE);
+    return b.toMesh();
+}
+
+fn merchForearmMesh() rl.Mesh {
+    var b = Builder.init();
+    b.setMat(.hide);
+    b.addCylinder(v3(0, 0, 0), v3(0, -heromod.SEG_FOREARM * H, 0), 0.038 * H, 0.028 * H, 9, HIDE);
+    b.setMat(.gilt);
+    // Bangles, which is where a merchant keeps what he cannot bank.
+    for ([_]f32{ 0.34, 0.50, 0.80 }) |t| {
+        const yy = -heromod.SEG_FOREARM * H * t;
+        b.addCylinder(v3(0, yy, 0), v3(0, yy - 0.008 * H, 0), 0.037 * H, 0.036 * H, 9, BRASS);
+    }
+    return b.toMesh();
+}
+
+fn merchHandMesh() rl.Mesh {
+    var b = Builder.init();
+    b.setMat(.hide);
+    b.addBlob(v3(0, -0.040 * H, 0.004 * H), v3(0.026 * H, 0.045 * H, 0.021 * H), 4, 8, HIDE);
+    b.addBlob(v3(0.014 * H, -0.020 * H, 0.008 * H), v3(0.013 * H, 0.020 * H, 0.014 * H), 3, 7, HIDE_DK);
+    return b.toMesh();
+}
+
+/// **A BEAM SCALE WHERE THE WANDERER HAS A STAFF**, so the held bone says the trade without a word. Built down
+/// the wrist's own -Y like the staff, and `poseUpper` bills the arm for its angles, so it hangs level whatever
+/// the arm is doing.
+const SCALE_ARM: f32 = 0.115 * H;
+const SCALE_DROP: f32 = 0.105 * H;
+fn scaleBeamMesh() rl.Mesh {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0xCA36);
+    const grip = 0.070 * H;
+    b.setMat(.wood);
+    // The handle, down out of the fist.
+    b.addCylinder(v3(0, 0, 0), v3(0, -grip, 0), 0.011 * H, 0.010 * H, 6, WOOD);
+    b.setMat(.gilt);
+    // THE BEAM, and it hangs OFF LEVEL, because one pan has something in it. That tilt is the whole picture.
+    const tilt = mathx.radians(rng.range(5.0, 9.0));
+    const dy = SCALE_ARM * mathx.sinf(tilt);
+    b.addCylinder(v3(-SCALE_ARM, -grip - dy, 0), v3(SCALE_ARM, -grip + dy, 0), 0.006 * H, 0.006 * H, 6, BRASS);
+    b.addBlob(v3(0, -grip, 0), v3(0.013 * H, 0.013 * H, 0.011 * H), 3, 8, BRASS);
+    for ([_]f32{ -1.0, 1.0 }) |side| {
+        const ex = side * SCALE_ARM;
+        const ey = -grip + side * dy;
+        // The cords, three to a pan, and the pan under them. The loaded side hangs lower and is the DEEPER dish.
+        const drop = SCALE_DROP * (if (side > 0) @as(f32, 1.0) else 0.86);
+        var i: i32 = 0;
+        while (i < 3) : (i += 1) {
+            const a = std.math.tau * @as(f32, @floatFromInt(i)) / 3.0;
+            b.addCapsule(
+                v3(ex, ey, 0),
+                v3(ex + mathx.cosf(a) * 0.026 * H, ey - drop, mathx.sinf(a) * 0.026 * H),
+                0.0022 * H,
+                0.0022 * H,
+                4,
+                BRASS,
+            );
+        }
+        b.addBlob(v3(ex, ey - drop - 0.006 * H, 0), v3(0.030 * H, 0.008 * H, 0.030 * H), 3, 10, BRASS);
+        if (side > 0) {
+            b.setMat(.stone);
+            b.addBlob(v3(ex, ey - drop + 0.008 * H, 0), v3(0.014 * H, 0.010 * H, 0.014 * H), 3, 7, HOOF);
+            b.setMat(.gilt);
+        }
+    }
+    return b.toMesh();
+}
+
 pub const solePatches = heromod.BOOT_SOLE;
 
 pub const CAP: usize = wf.MAX_NPCS;
@@ -438,7 +900,8 @@ pub const Folk = struct {
         self.near = null;
         for (m.npcSlice(), 0..) |p, i| {
             if (self.n >= CAP) break;
-            self.list[self.n] = Wanderer.spawn(
+            self.list[self.n] = Wanderer.spawnAs(
+                p.kind,
                 @intCast(i),
                 v3(p.x, m.heightAt(p.x, p.z), p.z),
                 mathx.radians(p.yaw),
@@ -789,4 +1252,48 @@ test "the name comes off the record, and falls back to the kind" {
     try std.testing.expectEqualStrings("Wanderer", nameOf(m, 0));
     try std.testing.expectEqualStrings("The Wandering Pilgrim", nameOf(m, 1));
     try std.testing.expectEqualStrings("Wanderer", nameOf(m, 99));
+}
+
+test "THE CARAVANEER CARRIES ITS HEAD ON A LONGER NECK, and the face point is on the muzzle" {
+    var w = Wanderer.spawnAs(.wanderer, 0, mathx.zero3, 0, 1.0, 0.3, 0);
+    var c = Wanderer.spawnAs(.merchant, 1, mathx.zero3, 0, 1.0, 0.3, 0);
+    w.pose();
+    c.pose();
+
+    // The skull BONE hangs at the same rest offset on both — the skeleton is shared, and that is the point.
+    const wSkull = rl.math.vector3Transform(mathx.zero3, w.xf[SKULL]);
+    const cSkull = rl.math.vector3Transform(mathx.zero3, c.xf[SKULL]);
+    const wFace = w.facePoint();
+    const cFace = c.facePoint();
+    std.debug.print("\n  skull bone: wanderer {d:.3} m, caravaneer {d:.3} m (rig is shared)\n", .{ wSkull.y, cSkull.y });
+    std.debug.print("  face point: wanderer {d:.3} m up / {d:.3} m out, caravaneer {d:.3} / {d:.3}\n", .{
+        wFace.y, wFace.z, cFace.y, cFace.z,
+    });
+
+    // **THE LENGTH IS IN THE MESH, SO IT IS THE FACE POINT THAT MOVES AND NOT THE BONE.** If the bone rose with
+    // it the shared rig would have forked, and every pose curve with it.
+    try std.testing.expect(@abs(cSkull.y - wSkull.y) < 0.12);
+    try std.testing.expect(cFace.y > wFace.y + MERCH_NECK * 0.8);
+    // …and the muzzle PROJECTS, measured from its OWN BONE and not in world z: the caravaneer carries its head
+    // pitched BACK (`SPEC.headFwd` is negative), which swings a forward offset upward and shrinks the world-z
+    // reading even as the muzzle sticks further out. The distance from the bone is what actually says muzzle.
+    const wReach = mathx.lenV(mathx.subV(wFace, wSkull));
+    const cReach = mathx.lenV(mathx.subV(cFace, cSkull));
+    std.debug.print("  face is {d:.3} m off the bone on the wanderer, {d:.3} m on the caravaneer\n", .{ wReach, cReach });
+    try std.testing.expect(cReach > wReach + 0.10);
+
+    // THE CROWN clears the wanderer's, which is what makes them tell apart in a crowd.
+    std.debug.print("  crown: wanderer {d:.2} m, caravaneer {d:.2} m\n", .{ w.topWorld().y, c.topWorld().y });
+    try std.testing.expect(c.topWorld().y > w.topWorld().y + 0.10);
+}
+
+test "the two carriages disagree — one stoops over a staff, the other stands up over a neck" {
+    const w = spec(.wanderer);
+    const c = spec(.merchant);
+    std.debug.print("\n  carriage: wanderer stoop {d:.1} head {d:.1}, caravaneer stoop {d:.1} head {d:.1}\n", .{
+        w.stoop, w.headFwd, c.stoop, c.headFwd,
+    });
+    // The caravaneer leans BACK where the wanderer leans forward: opposite signs, not a smaller number.
+    try std.testing.expect(w.stoop > 0 and c.stoop < 0);
+    try std.testing.expect(w.headFwd > 0 and c.headFwd < 0);
 }

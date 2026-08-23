@@ -334,7 +334,28 @@ pub fn runMapShots(g: *Game) void {
             n += 1;
         }
     }
-    std.debug.print("MAP SHOTS: {d} creature(s) into " ++ DIR_MAP ++ "/\n", .{n});
+    // …AND THE FOLK, which the loop above cannot reach: an NPC is not in `FOE_GROUPS`. One per KIND, framed off
+    // its own `topWorld` like a creature, so a new npc kind is inspectable the moment a map posts one.
+    var npcShot = [_]bool{false} ** @typeInfo(worldfmt.NpcKind).@"enum".fields.len;
+    for (g.folk.live()) |*f| {
+        const ki = @intFromEnum(f.kind);
+        if (npcShot[ki]) continue;
+        npcShot[ki] = true;
+        const top = f.topWorld().y - f.pos.y;
+        standHero(g, f.pos.x + 4.5, f.pos.z + 3.4, mathx.radians(215));
+        f.pose();
+        const aim = v3(f.pos.x, f.pos.y + top * 0.55, f.pos.z);
+        const dist = mathx.clampF(mathx.maxF(f.bodyR() * 7.0, top * 4.2), 4.0, 34.0);
+        var buf: [96]u8 = undefined;
+        const stand = std.fmt.bufPrintZ(&buf, DIR_MAP ++ "/{d:0>2}_{s}_stand.png", .{ n, @tagName(f.kind) }) catch unreachable;
+        shootAt(g, stand, aim, 53, 0.16, dist);
+        // …and the FACE, off its own `facePoint`, because a head is where a new npc kind lives or dies.
+        var b2: [96]u8 = undefined;
+        const face = std.fmt.bufPrintZ(&b2, DIR_MAP ++ "/{d:0>2}_{s}_face.png", .{ n, @tagName(f.kind) }) catch unreachable;
+        shootAt(g, face, f.facePoint(), 53, 0.02, 1.35);
+        n += 1;
+    }
+    std.debug.print("MAP SHOTS: {d} body(s) into " ++ DIR_MAP ++ "/\n", .{n});
 }
 
 /// **PHOTOGRAPH THE PLACE, NOT THE CREATURES IN IT.** Seven frames off any map `--map` can load: one steep

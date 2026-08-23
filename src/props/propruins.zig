@@ -510,10 +510,13 @@ pub fn bonfireMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.4) BARK_DK else TIMBER_DK,
         );
     }
-    flameInto(&b, &rng, rng.signed() * 0.05, 0.16, rng.signed() * 0.05, 2.20);
-    flameInto(&b, &rng, rng.signed() * 0.30, 0.13, rng.signed() * 0.30, 1.45);
-    flameInto(&b, &rng, rng.signed() * 0.34, 0.12, rng.signed() * 0.34, 1.05);
-    bedrollInto(&b, &rng, 1.28, -0.62, 2.42);
+    const F = art.HEARTH_FLAMES;
+    flameInto(&b, &rng, rng.signed() * 0.05, 0.16, rng.signed() * 0.05, F[0]);
+    flameInto(&b, &rng, rng.signed() * 0.30, 0.13, rng.signed() * 0.30, F[1]);
+    flameInto(&b, &rng, rng.signed() * 0.34, 0.12, rng.signed() * 0.34, F[2]);
+    // Tangential to the ring, its near edge 1.55 m out against a stone circle that reaches 1.08: pointed AT the
+    // fire (yaw 2.42) the head end lay in the flames.
+    art.bedrollInto(&b, &rng, 1.62, -1.02, 1.02);
     art.guitarRockInto(&b, &rng, GUITAR_CX, GUITAR_CZ);
     b.setMat(.plant);
     tuftInto(&b, &rng, rng.signed() * 1.05, rng.signed() * 1.05, 0.55);
@@ -521,86 +524,12 @@ pub fn bonfireMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
+const SMOKE_SRC: f32 = 1.0;
 pub fn bonfireVeilMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4811);
-    smokeInto(&b, &rng);
+    art.smokeInto(&b, &rng, SMOKE_SRC, 1.0);
     return b.toModel(shader);
-}
-
-fn smokeInto(b: *Builder, rng: *mathx.Rng) void {
-    const SRC: f32 = 1.0;
-    const PUFFS = 14;
-    b.setMat(.smoke);
-    var s: i32 = 0;
-    while (s < PUFFS) : (s += 1) {
-        const phase = (@as(f32, @floatFromInt(s)) + rng.range(0, 0.55)) / @as(f32, @floatFromInt(PUFFS));
-        b.setAnimY(gfx.smokeAnim(SRC, phase));
-        const r = rng.range(0.135, 0.235);
-        b.addBlob(
-            v3(rng.signed() * 0.10, SRC + rng.signed() * 0.06, rng.signed() * 0.10),
-            v3(r, r * rng.range(0.72, 0.98), r * rng.range(0.85, 1.20)),
-            3,
-            7,
-            if (phase < 0.3) art.SMOKE_HOT else if (phase < 0.65) art.SMOKE_MID else art.SMOKE_COLD,
-        );
-    }
-
-    b.setMat(.ember);
-    var e: i32 = 0;
-    while (e < 26) : (e += 1) {
-        const phase = (@as(f32, @floatFromInt(e)) + rng.range(0, 0.9)) / 26.0;
-        b.setAnimY(gfx.smokeAnim(SRC, phase));
-        const a = rng.angle();
-        const dd = rng.range(0.04, 0.30);
-        const sz = rng.range(0.018, 0.038);
-        b.addBlob(
-            v3(mathx.cosf(a) * dd, SRC - rng.range(0.18, 0.34), mathx.sinf(a) * dd),
-            v3(sz, sz, sz),
-            2,
-            5,
-            if (rng.float() < 0.75) art.EMBER else WISP,
-        );
-    }
-    b.setAnimY(0);
-    b.setMat(.plain);
-}
-
-fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) void {
-    const ux = mathx.cosf(yaw);
-    const uz = mathx.sinf(yaw);
-    b.setMat(.cloth);
-    var i: i32 = 0;
-    while (i < 5) : (i += 1) {
-        const t = (@as(f32, @floatFromInt(i)) / 4.0 - 0.5) * 0.92;
-        const r = 0.185 * (1.0 - 0.18 * @abs(t) / 0.46);
-        b.addBlob(
-            v3(cx + ux * t, 0.055 + rng.range(0, 0.012), cz + uz * t),
-            v3(r, 0.052, r),
-            3,
-            7,
-            if (rng.float() < 0.4) THATCH_DK else TIMBER_DK,
-        );
-    }
-    var k: i32 = 0;
-    while (k < 4) : (k += 1) {
-        const t = (@as(f32, @floatFromInt(k)) / 3.0 - 0.55) * 0.70;
-        b.addBlob(
-            v3(cx + ux * t - uz * 0.055, 0.105 + rng.range(0, 0.03), cz + uz * t + ux * 0.055),
-            v3(rng.range(0.130, 0.175), rng.range(0.045, 0.070), rng.range(0.130, 0.175)),
-            3,
-            6,
-            if (rng.float() < 0.5) CLOTH_DK else CLOTH,
-        );
-    }
-    b.addCapsule(
-        v3(cx + ux * 0.50 - uz * 0.15, 0.115, cz + uz * 0.50 + ux * 0.15),
-        v3(cx + ux * 0.50 + uz * 0.15, 0.115, cz + uz * 0.50 - ux * 0.15),
-        0.105,
-        0.095,
-        7,
-        CLOTH_SUN,
-    );
 }
 
 pub fn bonfireGuitarMesh(shader: rl.Shader) rl.Model {

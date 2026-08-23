@@ -714,10 +714,6 @@ pub fn resistOf(worn: Worn) item.Res {
     return plateOf(worn).res;
 }
 
-pub fn ailRateOf(worn: Worn, a: combat.Ail) f32 {
-    return suitOf(worn).rates[@intFromEnum(a)];
-}
-
 /// **HOW FAST HE WALKS, ALL OF IT IN ONE PLACE** — the tree's node and what is on his feet. `game.moveHero` is
 /// the only caller, so a shoe that hurries him cannot be applied on one movement path and not the others.
 pub fn moveRateOf(worn: Worn, perk: ptree.Bonus) f32 {
@@ -1634,8 +1630,10 @@ pub const Hero = struct {
         self.steady.reset();
         self.vit.poiseRate = 1;
         self.settleBody();
+        // **THE FLASKS COME BACK AND THE ARROWS DO NOT** (owner: arrows are found or bought, never granted). This
+        // is the one line that made the bow free: `makeWhole` runs on a rest, on a death and on a load, so a
+        // refill here meant a full quiver three ways and the arrow economy was decoration.
         self.flasks.refill();
-        self.quiver.refill();
     }
 
     fn tickClocks(self: *Hero, dt: f32) void {
@@ -5036,8 +5034,10 @@ test "AN EMPTY QUIVER REFUSES THE SHOT, and it does not bill him for the one tha
     try std.testing.expect(!h.shooting);
     try std.testing.expect(h.stamRefused > 0);
     try std.testing.expectApproxEqAbs(stamBefore, h.stam.cur, 1e-5);
+    // **AND DYING DOES NOT GIVE THEM BACK** (owner: found or bought, never granted). This asserted a refill, so
+    // the cheapest way to restock was to walk into something — the whole arrow economy for one death.
     h.respawnNow();
-    try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.ready());
+    try std.testing.expectEqual(@as(u8, 0), h.quiver.ready());
 }
 
 test "THE FIRE ARROW ADDS FIRE and takes nothing off the shaft's own physical" {
@@ -5091,9 +5091,11 @@ test "A DRY FIRE QUIVER REFUSES, with plain shafts still on his back" {
     try std.testing.expect(!h.shooting and h.stamRefused > 0);
     try std.testing.expectApproxEqAbs(stamBefore, h.stam.cur, 1e-5);
     try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.count(.plain));
+    // …and a death leaves the dry bank dry. The FLASKS come back; the arrows do not.
     h.respawnNow();
-    try std.testing.expectEqual(combat.FIRE_ARROWS_MAX, h.quiver.count(.fire));
+    try std.testing.expectEqual(@as(u8, 0), h.quiver.count(.fire));
     try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.count(.plain));
+    try std.testing.expectEqual(combat.FLASK_CRIMSON, h.flasks.charges(.crimson));
 }
 
 test "the two shots are a jab and a payoff, and every number says which is which" {

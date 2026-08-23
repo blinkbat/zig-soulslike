@@ -101,6 +101,11 @@ pub const Data = struct {
     /// ABSENT FROM AN OLDER FILE, which loads as the starting rack (`worn:`'s rule); `hero.tidySpells` then re-seats the selection.
     memory: [combat.MEM_SLOTS]?combat.Spell = (combat.Memory{}).slots,
     arrow: combat.ArrowKind = .plain,
+    /// **THE COUNTS, NOT JUST WHICH BANK IS SELECTED.** Nothing refills a quiver any more, so leaving these out
+    /// meant a reload handed back a full one — the same free arrows the bonfire used to, through a different door.
+    /// Absent from an older save they default to `Quiver{}`'s own full load, which is what that save described.
+    arrows: u8 = combat.ARROWS_MAX,
+    fireArrows: u8 = combat.FIRE_ARROWS_MAX,
     flask: combat.FlaskKind = .crimson,
     quick: [combat.QUICK_SLOTS]?item.Kind = [_]?item.Kind{null} ** combat.QUICK_SLOTS,
     quickSel: usize = 0,
@@ -145,6 +150,9 @@ const NWEAR = @typeInfo(item.Wear).@"enum".fields.len;
 
 const CAP: usize =
     64 + MAP_CAP +
+    // `quiver: 255 255` and its newline. Its own term rather than eaten out of the 64 above, so the next line
+    // added does not quietly run the buffer dry (the test at the foot of this file is what would catch it).
+    20 +
     3 * 48 +
     5 * 32 +
     combat.QUICK_SLOTS * 28 + 16 +
@@ -288,6 +296,8 @@ pub fn gather(s: Slot) Data {
     d.spell = h.spell;
     d.memory = h.mem.slots;
     d.arrow = h.quiver.sel;
+    d.arrows = h.quiver.arrows;
+    d.fireArrows = h.quiver.fire;
     d.flask = h.flasks.sel;
     d.quick = h.quick.slots;
     d.quickSel = h.quick.sel;
@@ -347,6 +357,8 @@ pub fn scatter(d: *const Data, s: Slot) void {
     h.mem.slots = d.memory;
     h.tidySpells();
     h.quiver.sel = d.arrow;
+    h.quiver.arrows = @min(d.arrows, combat.Quiver.cap(.plain));
+    h.quiver.fire = @min(d.fireArrows, combat.Quiver.cap(.fire));
     h.flasks.sel = d.flask;
     h.quick.slots = d.quick;
     h.quick.sel = @min(d.quickSel, combat.QUICK_SLOTS - 1);
@@ -400,6 +412,10 @@ pub fn render(w: anytype, d: *const Data) !void {
     try w.print("souls: {d}\n", .{d.souls});
     try w.print("hands: {s} {s} {s} {s} {s}\n", .{ @tagName(d.arm), @tagName(d.off), @tagName(d.spell), @tagName(d.armAlt), @tagName(d.offAlt) });
     try w.print("ready: {s} {s}\n", .{ @tagName(d.arrow), @tagName(d.flask) });
+    // **ITS OWN LINE, NOT A THIRD TOKEN ON `ready:`.** A reader expecting two tokens there and finding four
+    // fails the field; absent, this key just leaves the two counts at `Quiver{}`'s full load, which is what a
+    // save written before arrows were finite actually described.
+    try w.print("quiver: {d} {d}\n", .{ d.arrows, d.fireArrows });
     try w.writeAll("memory:");
     for (d.memory) |m| try w.print(" {s}", .{if (m) |sp| @tagName(sp) else "-"});
     try w.writeByte('\n');
@@ -485,6 +501,9 @@ pub fn parse(text: []const u8, d: *Data) !void {
         } else if (std.mem.eql(u8, key, "ready:")) {
             d.arrow = try tagged(combat.ArrowKind, &it);
             d.flask = try tagged(combat.FlaskKind, &it);
+        } else if (std.mem.eql(u8, key, "quiver:")) {
+            d.arrows = try int(u8, &it);
+            d.fireArrows = try int(u8, &it);
         } else if (std.mem.eql(u8, key, "quick:")) {
             d.quick = [_]?item.Kind{null} ** combat.QUICK_SLOTS;
             var i: usize = 0;
@@ -1124,4 +1143,40 @@ test "AN OLDER FILE'S `spawn:` ROW IS READ AND DROPPED, and the checkpoint is wh
     try testing.expectApproxEqAbs(@as(f32, 4.250), l.hero.spawnPos.x, 1e-3);
     try testing.expectApproxEqAbs(@as(f32, 4.550), l.hero.spawnPos.z, 1e-3);
     try testing.expectApproxEqAbs(@as(f32, -0.37), l.hero.spawnFacing, 1e-4);
+}
+
+test "ARROWS ARE FOUND OR BOUGHT, NEVER GRANTED — a spent quiver survives the round trip" {
+    var l = Live.blank(1);
+    l.hero.quiver.arrows = 3;
+    l.hero.quiver.fire = 1;
+    l.hero.quiver.sel = .fire;
+    var d = gather(l.slot());
+
+    var buf: [CAP]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try render(fbs.writer(), &d);
+    try testing.expect(fbs.getWritten().len < CAP);
+
+    var back = Data{};
+    try parse(fbs.getWritten(), &back);
+    try testing.expectEqual(@as(u8, 3), back.arrows);
+    try testing.expectEqual(@as(u8, 1), back.fireArrows);
+
+    var b = Live.blank(1);
+    scatter(&back, b.slot());
+    std.debug.print("\n  quiver: saved 3/1, loaded {d}/{d}\n", .{ b.hero.quiver.arrows, b.hero.quiver.fire });
+    try testing.expectEqual(@as(u8, 3), b.hero.quiver.arrows);
+    try testing.expectEqual(@as(u8, 1), b.hero.quiver.fire);
+    try testing.expectEqual(combat.ArrowKind.fire, b.hero.quiver.sel);
+}
+
+test "A SAVE WRITTEN BEFORE ARROWS WERE FINITE LOADS FULL, which is what it described" {
+    // No `quiver:` line at all: the two counts fall to `Quiver{}`'s own load rather than to zero, or every save
+    // already on disk would come back with a dead bow.
+    // `parse` writes only what the file HOLDS — it does not reset the struct — so the DEFAULTS are the whole
+    // mechanism, and they are `Quiver{}`'s own full load rather than zero.
+    var d = Data{};
+    try parse("version: 1\nmap: " ++ wf.START_MAP ++ "\n", &d);
+    try testing.expectEqual(combat.ARROWS_MAX, d.arrows);
+    try testing.expectEqual(combat.FIRE_ARROWS_MAX, d.fireArrows);
 }

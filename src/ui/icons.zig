@@ -50,6 +50,8 @@ pub const Icon = enum {
     tolling_hollow,
     mourner,
     slumber_bloom,
+    wanderer,
+    merchant,
     new,
     open,
     save,
@@ -322,6 +324,29 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             line(cx - s * 0.34, cy + s * 0.30, cx - s * 0.28, cy + s * 0.48, w * 0.8, d);
             line(cx - s * 0.08, cy + s * 0.32, cx - s * 0.02, cy + s * 0.46, w * 0.8, d);
             line(cx + s * 0.20, cy + s * 0.32, cx + s * 0.26, cy + s * 0.44, w * 0.8, d);
+        },
+
+        // A HOODED FIGURE ON A STAFF, and the staff is the whole tell: it is the one unit that is not a threat.
+        .wanderer => {
+            arc(cx - s * 0.06, cy - s * 0.22, s * 0.17, 180, 360, w * 1.4, col);
+            line(cx - s * 0.23, cy - s * 0.22, cx - s * 0.17, cy + s * 0.30, w * 1.2, col);
+            line(cx + s * 0.11, cy - s * 0.22, cx + s * 0.07, cy + s * 0.30, w * 1.2, col);
+            hline(cx - s * 0.06, cy + s * 0.30, s * 0.34, w, d);
+            vline(cx + s * 0.28, cy + s * 0.02, s * 0.80, w * 1.1, d);
+            dot(cx - s * 0.06, cy - s * 0.20, w * 1.2, d);
+        },
+
+        // …AND THE CARAVANEER IS ITS MUZZLE. A long head off a long neck, over a hump: the silhouette, nothing else.
+        .merchant => {
+            line(cx - s * 0.40, cy - s * 0.26, cx - s * 0.06, cy - s * 0.34, w * 1.8, col);
+            line(cx - s * 0.06, cy - s * 0.34, cx + s * 0.04, cy - s * 0.16, w * 1.6, col);
+            dot(cx - s * 0.38, cy - s * 0.24, w * 1.1, d);
+            dot(cx - s * 0.12, cy - s * 0.31, w * 1.0, d);
+            line(cx + s * 0.02, cy - s * 0.16, cx + s * 0.06, cy + s * 0.10, w * 1.6, col);
+            arc(cx + s * 0.22, cy + s * 0.10, s * 0.20, 180, 360, w * 1.6, col);
+            hline(cx + s * 0.06, cy + s * 0.14, s * 0.44, w * 1.2, col);
+            vline(cx - s * 0.02, cy + s * 0.32, s * 0.34, w * 1.2, d);
+            vline(cx + s * 0.20, cy + s * 0.32, s * 0.34, w * 1.2, d);
         },
 
         .rooted => {

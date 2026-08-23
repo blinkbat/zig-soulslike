@@ -3947,15 +3947,11 @@ test "THE ANSWER TO THE SEAL IS THE SAME DEPTH AND NOT THE SAME MOOD" {
     std.debug.print("\n  fog gate: seal {d:.0} crossings/s, felled {d:.0} — both under a struck helm at {d:.0}\n", .{ seal, felled, crossingsPerSec(.knight_hurt) });
     try std.testing.expect(felled > seal * 1.5);
     try std.testing.expect(felled < 0.25 * crossingsPerSec(.knight_hurt));
-    // The last thing it does is let go, so it outlasts the door shutting.
     try std.testing.expect(seconds(.fog_felled) > seconds(.fog_seal));
     try std.testing.expectEqual(BANK[@intFromEnum(Id.fog_seal)].gain, BANK[@intFromEnum(Id.fog_felled)].gain);
 }
 
 test "THE BENCH NEVER OVERWRITES THE ORIGINAL — that is what makes revert free" {
-    // Owner: let me edit basic things on sound fx and save over them, and keep your originals for a revert.
-    // The original is `BANK`, which is const data in the binary — so revert cannot fail, cannot be lost with
-    // a settings file, and nothing has to be backed up before an edit.
     const id: Id = .knight_roar;
     const i: usize = @intFromEnum(id);
     const was = BANK[i];
@@ -3979,8 +3975,6 @@ test "THE BENCH NEVER OVERWRITES THE ORIGINAL — that is what makes revert free
     try std.testing.expectEqual(was.gain, dialOf(id, .gain));
     try std.testing.expectEqual(was.reach, dialOf(id, .reach));
     for (voiceFxValues(id)) |v| try std.testing.expectEqual(@as(f32, 0), v);
-    // THE SHAPE OF A ROW IS NOT ON THE BENCH: `vars`/`poly` size the alias table `freeRow` walks, so a dial
-    // that moved either between a bake and its free would leak or double-free. No setter reaches them.
     for (0..NV) |k| {
         try std.testing.expectEqual(BANK[k].vars, live[k].vars);
         try std.testing.expectEqual(BANK[k].poly, live[k].poly);

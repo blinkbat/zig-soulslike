@@ -336,7 +336,7 @@ pub const Necro = struct {
     }
 
     pub fn centerWorld(self: *const Necro) rl.Vector3 {
-        return foe.bodyPoint(self.pos, archermod.CENTER_F * H, self.scale, 0);
+        return foe.markOn(self.xf[CHEST], mathx.zero3);
     }
     pub fn hurtRadius(self: *const Necro) f32 {
         return HURT_R * self.scale;

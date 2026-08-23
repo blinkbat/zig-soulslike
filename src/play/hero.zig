@@ -791,7 +791,6 @@ pub fn weigh(h: combat.Hit, row: item.Arm, sheet: statsmod.Sheet) combat.Hit {
         .stance = h.stance * row.poise,
         .elem = h.elem.scaled(row.dmg * skill),
         .fp = h.fp,
-        // THE DOSE IS THE COATING'S — neither the stroke's weight nor the arm swinging it changes what is on the edge.
         .venom = row.venom,
     };
 }

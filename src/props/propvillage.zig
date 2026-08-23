@@ -600,10 +600,7 @@ pub fn chestLidMesh(shader: rl.Shader) rl.Model {
     const R = CHEST_LID_R;
     b.addCube(v3(0, axis * 0.5, d * 0.5), v3(hx * 2.0 - 0.02, axis, d - 0.02), TIMBER_DK);
     const ex = hx - 0.01;
-    b.addCylinder(v3(-ex, axis, d * 0.5), v3(ex, axis, d * 0.5), R, R, 9, TIMBER_DK);
-    for ([_]f32{ -1, 1 }) |sx| {
-        b.addBlob(v3(sx * ex, axis, d * 0.5), v3(0.012, R, R), 3, 9, TIMBER_DK);
-    }
+    barrelHalf(&b, ex, axis, d * 0.5, R, TIMBER_DK);
     var i: i32 = 0;
     while (i < 5) : (i += 1) {
         const a = -0.9 + @as(f32, @floatFromInt(i)) * 0.45 + rng.signed() * 0.06;
@@ -629,16 +626,35 @@ pub fn chestLidMesh(shader: rl.Shader) rl.Model {
     b.setMat(.wood);
     var u: i32 = 0;
     while (u < 6) : (u += 1) {
-        const a = (std.math.pi - 0.95) + @as(f32, @floatFromInt(u)) * 0.38;
-        const r = R * 1.02;
-        b.addCube(
-            v3(0, axis + mathx.cosf(a) * r, d * 0.5 + mathx.sinf(a) * r),
-            v3(hx * 2.0 - 0.05, 0.030, d * 0.20),
-            CHEST_INSIDE,
-        );
+        const z = d * 0.5 + (@as(f32, @floatFromInt(u)) - 2.5) * (R * 2.0 / 6.0);
+        b.addCube(v3(0, -0.015, z), v3(hx * 2.0 - 0.05, 0.030, R * 2.0 / 6.0 - 0.012), CHEST_INSIDE);
     }
     for ([_]f32{ -1, 1 }) |sx| {
-        b.addCube(v3(sx * (hx * 0.56), axis - R * 1.045, d * 0.5), v3(0.12, 0.055, d * 0.66), TIMBER);
+        b.addCube(v3(sx * (hx * 0.56), -0.055, d * 0.5), v3(0.12, 0.055, d * 0.66), TIMBER);
     }
     return b.toModel(shader);
+}
+
+/// **THE LID IS A HALF-ROUND, NOT A BARREL** (owner: the inside bulges). A full `addCylinder` at the hinge line
+/// puts its lower half inside the box, so the arc is swept over the TOP semicircle only and the ends are closed
+/// down to the chord. Winding follows `ringBand`'s: -x rim first, then +x, or the shell faces inward and vanishes.
+fn barrelHalf(b: *Builder, ex: f32, axis: f32, cz: f32, r: f32, col: rl.Color) void {
+    const SEGS = 9;
+    const at = struct {
+        fn p(x: f32, ax: f32, z: f32, rr: f32, a: f32) rl.Vector3 {
+            return v3(x, ax + mathx.cosf(a) * rr, z + mathx.sinf(a) * rr);
+        }
+    }.p;
+    var i: i32 = 0;
+    while (i < SEGS) : (i += 1) {
+        const a0 = -std.math.pi * 0.5 + std.math.pi * @as(f32, @floatFromInt(i)) / SEGS;
+        const a1 = -std.math.pi * 0.5 + std.math.pi * @as(f32, @floatFromInt(i + 1)) / SEGS;
+        const n = v3(0, mathx.cosf((a0 + a1) * 0.5), mathx.sinf((a0 + a1) * 0.5));
+        b.quad(at(-ex, axis, cz, r, a0), at(-ex, axis, cz, r, a1), at(ex, axis, cz, r, a1), at(ex, axis, cz, r, a0), n, col);
+        // The end plates, chord to arc — a fan of quads rather than a triangle fan, which this builder has no vertex for.
+        const c0 = v3(0, axis, cz + mathx.sinf(a0) * r);
+        const c1 = v3(0, axis, cz + mathx.sinf(a1) * r);
+        b.quad(v3(ex, c0.y, c0.z), at(ex, axis, cz, r, a0), at(ex, axis, cz, r, a1), v3(ex, c1.y, c1.z), v3(1, 0, 0), col);
+        b.quad(v3(-ex, c1.y, c1.z), at(-ex, axis, cz, r, a1), at(-ex, axis, cz, r, a0), v3(-ex, c0.y, c0.z), v3(-1, 0, 0), col);
+    }
 }

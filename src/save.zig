@@ -640,7 +640,14 @@ fn readNums(comptime T: type, it: *Tok, out: []T) !void {
     while (it.next()) |tok| : (i += 1) {
         if (i >= out.len) return Error.BadField;
         out[i] = switch (@typeInfo(T)) {
-            .float => std.fmt.parseFloat(T, tok) catch return Error.BadField,
+            // NON-FINITE IS A BAD FIELD HERE TOO — `float` above states the rule and these runs came in under it:
+            // a NaN `timers:` row is neither running nor done (both compares are false), so the trigger waiting on
+            // it never fires again and nothing reports why.
+            .float => blk: {
+                const v = std.fmt.parseFloat(T, tok) catch return Error.BadField;
+                if (!std.math.isFinite(v)) return Error.BadField;
+                break :blk v;
+            },
             else => std.fmt.parseInt(T, tok, 10) catch return Error.BadField,
         };
     }
@@ -822,6 +829,18 @@ test "a short run pads with the default and a long one is refused" {
     var buf: [wf.MAX_FLAGS + 32]u8 = undefined;
     const text = try std.fmt.bufPrint(&buf, "version: 1\nflags: {s}\n", .{&long});
     try testing.expectError(Error.BadField, parse(text, &d));
+}
+
+test "A NON-FINITE NUMBER IS REFUSED IN EVERY RUN, not just the scalar rows" {
+    var d = Data{};
+    try testing.expectError(Error.BadField, parse("version: 1\nat: nan 0 0 0\n", &d));
+    try testing.expectError(Error.BadField, parse("version: 1\nhour: inf\n", &d));
+    // …and the RUNS, which read through `readNums`: a NaN there is neither running nor done, so the trigger
+    // waiting on the timer hangs forever and nothing on screen says why.
+    try testing.expectError(Error.BadField, parse("version: 1\ntimers: nan 0 0\n", &d));
+    try testing.expectError(Error.BadField, parse("version: 1\nwaitleft: 1.0 -inf\n", &d));
+    try parse("version: 1\ntimers: 1.5 0 0\n", &d);
+    try testing.expectApproxEqAbs(@as(f32, 1.5), d.timers[0], 1e-6);
 }
 
 test "a bag tag this build does not know is a load error" {

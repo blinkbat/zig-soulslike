@@ -401,6 +401,12 @@ pub fn runShots(g: *Game) void {
     var i: i32 = 0;
     while (i < 40) : (i += 1) stepWorld(g, dt, WALK_SPEED);
 
+    // **THE CULLER COUNTS, CAPTURED** (AGENTS.md says the harness takes them and nothing here was turning them
+    // on). If `drawn` closes on `props` a culler has been defeated, and that is not something the eye can spot.
+    g.menu.stats = true;
+    shootAt(g, "shots/0_stats.png", v3(g.hero.pos.x, 1.15, g.hero.pos.z), LIT_YAW, 0.10, 6.0);
+    g.menu.stats = false;
+
     const stages = [_]struct { name: [:0]const u8, yaw: f32, pitch: f32, dist: f32, adv: i32, speed: f32 }{
         .{ .name = "shots/1_walk_side.png", .yaw = 90, .pitch = 0.10, .dist = 4.0, .adv = 0, .speed = WALK_SPEED },
         .{ .name = "shots/2_walk_front.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .adv = 22, .speed = WALK_SPEED },
@@ -2017,6 +2023,11 @@ fn warriorShots(g: *Game) void {
     const kneelAt = v3(sm.pos.x, sm.pos.y + 0.55, sm.pos.z);
     shootPortrait(g, "shots/113h_shield_kneel.png", kneelAt, LIT_YAW + 12, 0.02, 4.0);
     shootPortrait(g, "shots/113i_shield_kneel_side.png", kneelAt, LIT_YAW + 66, 0.02, 4.0);
+    // THE HURT SPHERE OVER THE POSE IT IS SUPPOSED TO COVER. A kneeling body is the case that caught the old flat
+    // 0.95·H centre — it stayed standing while the man went down — so the wire goes on the KNEEL and not the idle.
+    g.menu.hitboxes = true;
+    shootPortrait(g, "shots/113h2_shield_kneel_hurt.png", kneelAt, LIT_YAW + 66, 0.02, 4.2);
+    g.menu.hitboxes = false;
     var bf: i32 = 0;
     while (sm.state == .guardbreak and bf < 900) : (bf += 1) _ = sm.update(SHOT_DT, far, game.PLAY_HALF, .{});
     stepFoe(sm, 30, near);
@@ -3013,6 +3024,9 @@ fn chestShots(g: *Game) void {
     g.hero.arm = .club;
     bookShot(g, "shots/106e2_book_geared.png", .equipment, bookmod.slotOrdinal(.chest), null, 0);
     bookShot(g, "shots/106e3_book_geared_pick.png", .equipment, bookmod.slotOrdinal(.right), bookmod.slotOrdinal(.right), 0);
+    // A WORN socket as well as a held one: the compare panel's plate rows (armour, the one resistance, the two
+    // multipliers) share nothing with a weapon's but the loop that draws them.
+    bookShot(g, "shots/106e4_book_wear_pick.png", .equipment, bookmod.slotOrdinal(.chest), bookmod.slotOrdinal(.chest), 2);
     inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
         const w: item.Wear = @enumFromInt(f.value);
         _ = g.hero.wear(w, wornWas.at(w));

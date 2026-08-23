@@ -980,9 +980,14 @@ fn derivedNeedH() i32 {
 }
 
 fn pickBox(col: Box, n: usize) Box {
-    const want = pickRowH() * @as(i32, @intCast(n)) + titleH() + 24;
-    // …and never under a quarter of the column, or a narrow window squeezes the list being chosen FROM to nothing in order to protect numbers nobody can read on it either.
-    const room = @max(@divTrunc(col.h, 4), col.h - derivedNeedH() - GUTTER);
+    const rows: i32 = @intCast(n);
+    const want = pickRowH() * rows + titleH() + 24;
+    // **THE LIST MAY NEVER DRAW OUTSIDE ITS OWN PANEL.** `rowStep` will not pitch a row under `rowFloor`, so a
+    // box shorter than `n` rows at that floor puts the tail of the list on top of whatever is below it — the R
+    // hand offers eleven and the last two landed in the panel under it. That height is owed to the list before
+    // anything below gets a share; a quarter of the column was a guess that happened to be enough for nine.
+    const least = @min(@min(want, col.h), rowFloor() * rows + titleH() + 24);
+    const room = @max(least, col.h - derivedNeedH() - GUTTER);
     return .{ .x = col.x, .y = col.y, .w = col.w, .h = @min(room, want) };
 }
 
@@ -1063,6 +1068,17 @@ fn saysOwn(s: []const u8) [:0]const u8 {
     @memcpy(saysBuf[0..n], s[0..n]);
     saysBuf[n] = 0;
     return saysBuf[0..n :0];
+}
+
+var heldBuf: [256]u8 = undefined;
+
+/// …and a SECOND one, because the picker holds two of these alive at once — the worn piece's line and the
+/// candidate's — and one buffer means the first is overwritten by the second before either is drawn.
+fn saysHeld(s: []const u8) [:0]const u8 {
+    const n = @min(s.len, heldBuf.len - 1);
+    @memcpy(heldBuf[0..n], s[0..n]);
+    heldBuf[n] = 0;
+    return heldBuf[0..n :0];
 }
 
 fn panel(b: Box, title: [:0]const u8) Box {
@@ -1249,7 +1265,14 @@ fn drawEquipment(self: *const Book, body: Box, v: View) void {
     var buf: [CAND_MAX]Cand = undefined;
     const cs = if (self.picking) |s| candidates(s, v, &buf) else buf[0..0];
     if (self.picking) |s| drawPicker(self, cols[1], s, v);
-    drawDerived(derivedBox(body, cs.len), v, if (self.pick < cs.len) cs[self.pick] else null);
+    const cand: ?Cand = if (self.pick < cs.len) cs[self.pick] else null;
+    const box = derivedBox(body, cs.len);
+    // A GEAR PICKER SHOWS THE TWO OBJECTS, EVERYTHING ELSE SHOWS THE SHEET (owner's call). `facing` is null for an
+    // arrow, a quick item or a sorcery — none of which is a thing with dials to set beside another one.
+    if (cand) |c| {
+        if (facing(v, c)) |f| return drawGearCompare(box, v, c, f);
+    }
+    drawDerived(box, v, cand);
 }
 
 fn derivedBox(body: Box, cands: usize) Box {
@@ -1300,6 +1323,213 @@ fn drawSlotArt(s: SlotId, v: View, cx: f32, cy: f32, px: f32) void {
 
 fn handArt(a: heromod.Armament, worn: heromod.Worn, cx: f32, cy: f32, px: f32) void {
     itemart.heldArt(armPic(a), heromod.heldGear(a, worn), cx, cy, px);
+}
+
+/// **WHAT A PIECE OF GEAR SAYS ABOUT ITSELF** — its own dials, not the sheet they end up moving. The picker
+/// compares two OBJECTS (owner's call), and the derived sheet cannot do that job: half its rows are the swing in
+/// the other hand, and a coat and a ring both land on "Armour, vs heavy" as one moved number.
+const GDial = enum {
+    dmg,
+    poise,
+    swing,
+    stam,
+    venom,
+    negate,
+    arc,
+    armour,
+    res_fire,
+    res_cold,
+    res_lightning,
+    res_chaos,
+    poison,
+    walk,
+    leech,
+    hp_frac,
+    spirit_fp,
+    fp_frac,
+    boon,
+};
+
+const NGD = @typeInfo(GDial).@"enum".fields.len;
+
+/// Keyed by variant for `DER`'s reason, and asserted whole: a dial with no row prints a bare number.
+const GROW = blk: {
+    var rows = [_]DerivedRow{.{ .name = "", .unit = .flat }} ** NGD;
+    rows[@intFromEnum(GDial.dmg)] = .{ .name = "Damage", .unit = .pct };
+    rows[@intFromEnum(GDial.poise)] = .{ .name = "Poise damage", .unit = .pct };
+    rows[@intFromEnum(GDial.swing)] = .{ .name = "Swing time", .unit = .pct, .cost = true };
+    rows[@intFromEnum(GDial.stam)] = .{ .name = "Stamina a swing", .unit = .pct, .cost = true };
+    rows[@intFromEnum(GDial.venom)] = .{ .name = "Poison a hit", .unit = .flat };
+    rows[@intFromEnum(GDial.negate)] = .{ .name = "Guard negation", .unit = .pct };
+    rows[@intFromEnum(GDial.arc)] = .{ .name = "Guard arc", .unit = .pct };
+    rows[@intFromEnum(GDial.armour)] = .{ .name = "Armour", .unit = .flat };
+    rows[@intFromEnum(GDial.res_fire)] = .{ .name = "Fire resistance", .unit = .pct };
+    rows[@intFromEnum(GDial.res_cold)] = .{ .name = "Cold resistance", .unit = .pct };
+    rows[@intFromEnum(GDial.res_lightning)] = .{ .name = "Lightning resistance", .unit = .pct };
+    rows[@intFromEnum(GDial.res_chaos)] = .{ .name = "Chaos resistance", .unit = .pct };
+    rows[@intFromEnum(GDial.poison)] = .{ .name = "Poison fills at", .unit = .pct, .cost = true };
+    rows[@intFromEnum(GDial.walk)] = .{ .name = "Walk speed", .unit = .pct };
+    rows[@intFromEnum(GDial.leech)] = .{ .name = "HP a swing landed", .unit = .flat };
+    rows[@intFromEnum(GDial.hp_frac)] = .{ .name = "Max HP", .unit = .pct };
+    rows[@intFromEnum(GDial.spirit_fp)] = .{ .name = "Spirit costs", .unit = .pct, .cost = true };
+    rows[@intFromEnum(GDial.fp_frac)] = .{ .name = "Max Focus", .unit = .pct };
+    rows[@intFromEnum(GDial.boon)] = .{ .name = "Attribute", .unit = .flat };
+    for (rows, 0..) |r, i| {
+        if (r.name.len == 0) @compileError("book: `GDial." ++ @typeInfo(GDial).@"enum".fields[i].name ++
+            "` has no row — the picker would print a number with no name beside it");
+    }
+    break :blk rows;
+};
+
+const Dials = struct {
+    v: [NGD]?f32 = [_]?f32{null} ** NGD,
+    /// The boon row names the attribute it raises, so its label is the ITEM's and not the table's.
+    boonName: ?[:0]const u8 = null,
+
+    fn set(self: *Dials, d: GDial, x: f32) void {
+        self.v[@intFromEnum(d)] = x;
+    }
+};
+
+/// A piece's dials, or a BARE socket's — an empty hand still swings, so what it is compared against is
+/// `item.bareArm`'s row and not a column of blanks. An empty WORN socket carries nothing and says so.
+fn dialsOf(k: ?item.Kind, socket: ?item.Wear) Dials {
+    var d = Dials{};
+    const eq: item.Equip = if (k) |kk|
+        item.equip(kk)
+    else if (socket) |w|
+        (if (w.held()) item.Equip{ .arm = item.bareArm(w) } else .none)
+    else
+        .none;
+    switch (eq) {
+        .none, .bind => {},
+        .arm => |a| {
+            d.set(.dmg, a.dmg * 100);
+            d.set(.poise, a.poise * 100);
+            d.set(.swing, a.dur * 100);
+            d.set(.stam, a.stam * 100);
+            if (a.venom > 0) d.set(.venom, a.venom);
+            if (a.slot == .hand_shield) {
+                d.set(.negate, a.negate * 100);
+                d.set(.arc, a.arc * 100);
+                d.set(.walk, a.walk * 100);
+            }
+        },
+        .plate => |pl| {
+            d.set(.armour, pl.a);
+            if (pl.res.fire != 0) d.set(.res_fire, pl.res.fire);
+            if (pl.res.cold != 0) d.set(.res_cold, pl.res.cold);
+            if (pl.res.lightning != 0) d.set(.res_lightning, pl.res.lightning);
+            if (pl.res.chaos != 0) d.set(.res_chaos, pl.res.chaos);
+            d.set(.poison, pl.poison * 100);
+            d.set(.walk, pl.move * 100);
+        },
+        .charm => |c| {
+            if (c.leech != 0) d.set(.leech, c.leech);
+            if (c.hpFrac != 0) d.set(.hp_frac, (1.0 - c.hpFrac) * 100);
+            if (c.spiritFp != 1) d.set(.spirit_fp, c.spiritFp * 100);
+            if (c.fpFrac != 0) d.set(.fp_frac, (1.0 - c.fpFrac) * 100);
+        },
+        .boon => |b| {
+            d.set(.boon, @floatFromInt(b.n));
+            d.boonName = stats.displayName(b.attr);
+        },
+    }
+    return d;
+}
+
+const Facing = struct { now: ?item.Kind, then: ?item.Kind, socket: ?item.Wear };
+
+/// **WHAT IS IN THE SLOT AGAINST WHAT THE CURSOR IS ON.** Null when the candidate is not a piece of gear at all
+/// — an arrow, a quick item, a sorcery — which is what sends the panel back to the derived sheet.
+fn facing(v: View, c: Cand) ?Facing {
+    const held = struct {
+        fn of(live: heromod.Armament, h: Hand, w: heromod.Worn) Facing {
+            return .{
+                .now = heromod.heldGear(live, w),
+                .then = h.kind,
+                .socket = heromod.wearFor(h.a) orelse heromod.wearFor(live),
+            };
+        }
+    }.of;
+    return switch (c.act) {
+        .arm => |h| held(v.arm, h, v.worn),
+        .off => |h| held(v.off, h, v.worn),
+        .armAlt => |h| held(v.armAlt, h, v.worn),
+        .offAlt => |h| held(v.offAlt, h, v.worn),
+        .wear => |wr| .{ .now = v.worn.at(wr.slot), .then = wr.kind, .socket = wr.slot },
+        else => null,
+    };
+}
+
+/// **ALWAYS THE NUMBER, NEVER A DASH** — `unitStr` hides a zero, and a zero facing a 26 is the whole of what a
+/// coated edge buys. A blank is for a row the piece has NOTHING to say on, which is a different fact.
+fn dialStr(u: Unit, x: ?f32) [:0]const u8 {
+    const val = x orelse return "-";
+    return switch (u) {
+        .pct => fmt("{d:.0}%", .{val}),
+        else => fmt("{d:.0}", .{val}),
+    };
+}
+
+/// **THE PICKER COMPARES TWO OBJECTS, NOT TWO SHEETS** (owner's call): the piece in the socket beside the piece
+/// under the cursor, dial for dial, with both their one-line characters under the rule. A row neither of them has
+/// anything to say on is not drawn at all.
+fn drawGearCompare(box: Box, v: View, c: Cand, f: Facing) void {
+    const inner = panel(box, "");
+    const a = dialsOf(f.now, f.socket);
+    const b = dialsOf(f.then, f.socket);
+
+    var shown: usize = 0;
+    for (0..NGD) |i| {
+        if (a.v[i] != null or b.v[i] != null) shown += 1;
+    }
+
+    // **BOTH LINES OFF THE ROTATING SCRATCH BEFORE ANY ROW RUNS** (`drawDerived`'s reason): `fmt` cycles 16 slots
+    // and the rows below spend two apiece, so a `says` taken after them is the tail of a percentage.
+    const saysThen = saysOwn(candSays(c, v));
+    const saysNow = saysHeld(if (f.now) |k| rowSays(k) else "");
+
+    const capH = hud.lineH(hud.SMALL) + 4;
+    const legH = hud.lineH(hud.TINY) + 2;
+    const nowH = if (saysNow.len > 0) hud.proseH(saysNow, inner.w, hud.HINT) + legH + 6 else 0;
+    const thenH = if (saysThen.len > 0) hud.proseH(saysThen, inner.w, hud.HINT) + legH + 6 else 0;
+    const foot = nowH + thenH + 18;
+    const step = rowStep(inner.h - foot - capH, @max(shown, 1));
+    const size = rowSize(step);
+    const colB = inner.right();
+    const colA = colB - @divTrunc(inner.w, 3);
+
+    var y = inner.y;
+    rowValueAt("NOW", colA, y, size, uiart.TEXT_DIM);
+    rowValueAt("THEN", colB, y, size, mathx.withAlpha(uiart.GILT, 220));
+    y += capH;
+
+    for (GROW, 0..) |row, i| {
+        const av = a.v[i];
+        const bv = b.v[i];
+        if (av == null and bv == null) continue;
+        const moved = @abs((bv orelse 0) - (av orelse 0)) > 0.005;
+        const label = b.boonName orelse a.boonName orelse row.name;
+        rowLabelAt(if (i == @intFromEnum(GDial.boon)) label else row.name, inner.x, y, size, if (moved) uiart.TEXT_VALUE else uiart.TEXT_DIM);
+        rowValueAt(dialStr(row.unit, av), colA, y, size, mathx.withAlpha(uiart.TEXT_DIM, 200));
+        const rose = (bv orelse 0) > (av orelse 0);
+        const col = if (!moved) uiart.TEXT_DIM else if (rose != row.cost) uiart.GOOD else uiart.BAD;
+        rowValueAt(dialStr(row.unit, bv), colB, y, size, col);
+        if (moved) uiart.diamond(fi(colA + 20), fi(y) + fi(hud.lineH(size)) * 0.45, if (rose) 3.4 else 2.2, col);
+        y += step;
+    }
+
+    var footY = @max(inner.y + inner.h - foot + 18, y + 8);
+    uiart.divider(inner.x + @divTrunc(inner.w, 2), @max(footY - 10, y + 2), @divTrunc(inner.w, 2) - 10, 120);
+    if (saysNow.len > 0) {
+        hud.text("NOW", inner.x, footY, hud.TINY, uiart.TEXT_DIM);
+        footY = hud.prose(saysNow, inner.x, footY + legH, inner.w, hud.HINT, uiart.TEXT_HINT) + 6;
+    }
+    if (saysThen.len > 0) {
+        hud.text("THEN", inner.x, footY, hud.TINY, mathx.withAlpha(uiart.GILT, 220));
+        _ = hud.prose(saysThen, inner.x, footY + legH, inner.w, hud.HINT, uiart.TEXT_VALUE);
+    }
 }
 
 fn drawDerived(box: Box, v: View, cand: ?Cand) void {

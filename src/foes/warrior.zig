@@ -566,7 +566,7 @@ pub const Warrior = struct {
     }
 
     pub fn centerWorld(self: *const Warrior) rl.Vector3 {
-        return foe.bodyPoint(self.pos, archermod.CENTER_F * H, self.scale, self.hop);
+        return foe.markOn(self.xf[CHEST], mathx.zero3);
     }
     pub fn hurtRadius(self: *const Warrior) f32 {
         return spec(self.role).hurtR * self.scale;
@@ -2624,6 +2624,31 @@ test "THE LEAP IS FELT ONCE: one launch flag per lunge, and only the lunge raise
         _ = s.update(1.0 / 60.0, v3(0, 0, 2.2), 500.0, .{});
     }
     try std.testing.expectEqual(@as(usize, 0), ribbonSamples(&s));
+}
+
+test "THE HURT SPHERE IS ON THE BODY, AND IT KNEELS WHEN HE DOES" {
+    var w = Warrior.spawnAs(.shieldman, mathx.zero3, 0, 1.0, 0.4);
+    // `rest` is the bare 1.8 m skeleton; the rig is drawn through `SCALE`, so the bar has to be scaled to meet it.
+    const hip = w.rest[heromod.ROOT].y * w.scale;
+    const skull = w.rest[SKULL].y * w.scale;
+    const r = w.hurtRadius();
+
+    // Standing: the sphere has to REACH the pelvis and not overshoot the skull by its own radius — a centre at
+    // 0.95*H put its floor at 1.29 m, above the hips, and half of it in the air over his head.
+    const up = w.centerWorld().y - w.pos.y;
+    try std.testing.expect(up - r <= hip);
+    try std.testing.expect(up + r >= skull);
+    try std.testing.expect(up < skull);
+
+    // …and kneeling it comes DOWN with him. `KNEEL_SINK` drops the pelvis 0.315*H; a sphere that stayed put left
+    // a broken shieldman standing in a hitbox he was no longer inside.
+    w.debugBreak();
+    var f: i32 = 0;
+    while (f < 40) : (f += 1) _ = w.update(1.0 / 60.0, mathx.ground(0, 40), 200, .{});
+    const down = w.centerWorld().y - w.pos.y;
+    std.debug.print("\n  shieldman hurt sphere: standing {d:.2} m, kneeling {d:.2} m (r {d:.2}, hips {d:.2}, skull {d:.2})\n", .{ up, down, r, hip, skull });
+    try std.testing.expect(down < up - 0.25);
+    try std.testing.expect(down > 0.2);
 }
 
 test "a skeleton burns and does not freeze, whatever is in its hands" {

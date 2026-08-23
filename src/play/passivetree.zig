@@ -506,9 +506,9 @@ pub const Bonus = struct {
 };
 
 /// Off the level you are standing on. Quadratic, ER's shape, and MEASURED against what a body is worth: a toad
-/// is 60, an archer 130, a brood mother 240. **THE FIRST NODE COSTS `costAt(1)`, WHICH IS 360** — never `costAt(0)`.
+/// is 60, an archer 130, a brood mother 240. **THE FIRST NODE COSTS `costAt(1)`, WHICH IS 758** — never `costAt(0)`.
 pub fn costAt(level: u32) u32 {
-    return 280 + 62 * level + 18 * level * level;
+    return 600 + 140 * level + 18 * level * level;
 }
 
 pub const Tree = struct {
@@ -958,7 +958,7 @@ pub fn drawPage(t: *const Tree, wh: Wheel, x: i32, y: i32, w: i32, h: i32, spend
     hud.text(n.name, ix, yy, hud.BODY, if (t.taken[i]) uiart.HOT else uiart.TEXT_TITLE);
     yy += hud.lineH(hud.BODY) + 6;
     yy = hud.prose(grantSays(n.grant), ix, yy, iw, hud.SMALL, uiart.TEXT_VALUE);
-    if (n.bump) |bp| yy = hud.prose(bumpSays(bp), ix, yy, iw, hud.SMALL, uiart.GOOD);
+    if (n.bump) |bp| yy = hud.prose(bumpSays(bp), ix, yy, iw, hud.SMALL, uiart.TEXT_VALUE);
     yy += 8;
 
     if (t.taken[i]) {

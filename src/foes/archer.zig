@@ -125,9 +125,8 @@ const TURN_RATE = 6.0;
 const BODY_R = 0.34;
 const HURT_R = 0.42;
 // MEASURED off `footMesh`: the metatarsal plate and heel, with the toe bones fanning out to ~0.245·H ahead.
-/// A skeleton's body points as fractions of stature: hurt-sphere centre, lock-on mark, HP-bar top. Shared with
-/// `warrior.zig` — literally the same body, and three copies of "0.95" is three chances to retune one alone.
-pub const CENTER_F: f32 = 0.95;
+/// WHERE THE HP BAR HANGS, as a fraction of stature. Shared with `warrior.zig` and `necro.zig` — literally the
+/// same body. The hurt sphere is NOT here any more: it rides the chest bone, so it follows the pose.
 pub const TOP_F: f32 = 1.15;
 /// WHERE THE RETICLE SITS IN THE SKULL'S OWN FRAME — the middle of the head, a hair above the joint the neck ends at. Expressed here and not as a height, because a height is exactly what it must stop being.
 pub const LOCK_AT = v3(0, 0.015 * H, 0);
@@ -672,8 +671,12 @@ pub const Archer = struct {
 
     // All three ride `hop`: the backstep lifts the whole rig off the earth (`pose` adds it to the pelvis), so a
     // hurt sphere / reticle / HP bar pinned to ground height DETACHES from the body for the whole 0.44 s leap.
+    /// **THE HURT SPHERE RIDES THE CHEST BONE, NOT A FRACTION OF STATURE.** At a flat 0.95·H it sat at 1.71 m
+    /// — above the skull joint's own 1.593 — so half of it was empty air and everything under 1.29 m, pelvis
+    /// included, could not be hit at all. Off the bone it also FOLLOWS THE POSE, which is the whole of why a
+    /// kneeling body (`KNEEL_SINK`, 0.567 m) was unreachable: the sphere stayed standing while the man went down.
     pub fn centerWorld(self: *const Archer) rl.Vector3 {
-        return foe.bodyPoint(self.pos, CENTER_F * H, self.scale, self.hop);
+        return foe.markOn(self.xf[CHEST], mathx.zero3);
     }
     pub fn hurtRadius(self: *const Archer) f32 {
         return HURT_R * self.scale;

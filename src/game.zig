@@ -34,6 +34,7 @@ const fenmod = @import("foes/fenlurker.zig");
 const skittermod = @import("foes/skitterer.zig");
 const priestmod = @import("foes/ancientpriest.zig");
 const hollowmod = @import("foes/hollow.zig");
+const bloommod = @import("foes/slumberbloom.zig");
 const leechmod = @import("foes/leechfly.zig");
 const shademod = @import("foes/shade.zig");
 const chestmod = @import("play/chest.zig");
@@ -217,6 +218,7 @@ pub const Game = struct {
     clatter: skittermod.Clatter,
     crypt: priestmod.Crypt,
     belfry: hollowmod.Belfry,
+    bed: bloommod.Bed,
     vigil: knightmod.Vigil,
     swarm: leechmod.Swarm,
     haunt: shademod.Haunt,
@@ -259,6 +261,7 @@ pub const Game = struct {
     arrowModel: rl.Model,
     clumpModel: rl.Model,
     crockModel: rl.Model,
+    powderModel: rl.Model,
     venomModel: rl.Model,
     fireArrowModel: rl.Model,
     boltModel: rl.Model,
@@ -331,6 +334,7 @@ pub const Game = struct {
         g.clatter = skittermod.Clatter.init(g.scene.shader);
         g.crypt = priestmod.Crypt.init(g.scene.shader);
         g.belfry = hollowmod.Belfry.init(g.scene.shader);
+        g.bed = bloommod.Bed.init(g.scene.shader);
         g.vigil = knightmod.Vigil.init(g.scene.shader);
         g.swarm = leechmod.Swarm.init(g.scene.shader);
         g.haunt = shademod.Haunt.init(g.scene.shader);
@@ -364,6 +368,7 @@ pub const Game = struct {
         g.arrowModel = archermod.arrowMesh(g.scene.shader);
         g.clumpModel = koboldmod.clumpMesh(g.scene.shader);
         g.crockModel = archermod.crockMesh(g.scene.shader);
+        g.powderModel = archermod.powderMesh(g.scene.shader);
         g.venomModel = broodmod.venomMesh(g.scene.shader);
         g.fireArrowModel = archermod.fireArrowMesh(g.scene.shader);
         g.boltModel = heromod.boltMesh(g.scene.shader);
@@ -605,7 +610,7 @@ pub const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "band", .kind = null, .aggro = koboldmod.AGGRO_R },
     .{ .field = "brood", .kind = null, .aggro = broodmod.AGGRO_R },
     .{ .field = "muster", .kind = null, .aggro = warriormod.AGGRO_R, .vs = &.{"line"} },
-    .{ .field = "haunt", .kind = .shade, .aggro = shademod.AGGRO_R, .vs = &.{ "warren", "line", "muster" } },
+    .{ .field = "haunt", .kind = null, .aggro = shademod.AGGRO_R, .vs = &.{ "warren", "line", "muster" } },
     .{ .field = "swarm", .kind = .leechfly, .aggro = leechmod.AGGRO_R },
     .{ .field = "grove", .kind = .rooted, .aggro = rootedmod.AGGRO_R, .vsHero = false },
     .{ .field = "cluster", .kind = .shroom, .aggro = shroommod.AGGRO_R, .vs = &.{"thicket"} },
@@ -620,6 +625,7 @@ pub const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "clatter", .kind = .bone_skitterer, .aggro = skittermod.AGGRO_R, .vs = &.{ "crypt", "belfry" } },
     .{ .field = "crypt", .kind = .ancient_priest, .aggro = priestmod.AGGRO_R },
     .{ .field = "belfry", .kind = .tolling_hollow, .aggro = hollowmod.AGGRO_R },
+    .{ .field = "bed", .kind = .slumber_bloom, .aggro = bloommod.AGGRO_R, .vsHero = false },
     .{ .field = "vigil", .kind = .bone_knight, .aggro = knightmod.AGGRO_R, .vsHero = false, .vs = &.{ "line", "muster" } },
 };
 
@@ -628,6 +634,7 @@ const BLOW_GROUPS = [_][]const u8{
     "swarm",  "grove",  "cluster", "warrens", "vigil",  "brood",
     "rite",   "thicket", "ring",    "marsh",
     "host",   "clatter", "crypt",   "belfry",
+    "bed",
 };
 
 comptime {
@@ -676,6 +683,7 @@ const NO_PARRY = [_]struct { field: []const u8, why: []const u8 }{
     .{ .field = "ring", .why = "the mushroom mage lobs, and a bouncing fireball is answered sideways" },
     .{ .field = "host", .why = "a disc at your feet, a leap-slam that throws you, and a thrown sac: no strokes" },
     .{ .field = "crypt", .why = "the ancient priest never melees; the breath is a cone you walk out of" },
+    .{ .field = "bed", .why = "the slumber bloom has no blow at all — the gas is a ring you walk out of" },
 };
 
 comptime {
@@ -831,6 +839,8 @@ const Sighted = enum { blind, seen };
 
 fn rehomeFoes(g: *Game, sighted: Sighted) void {
     g.env.openWards();
+    // A swing left in the sink across a tear-down bills into a body that has since been re-homed.
+    foemod.clearTurned();
     inline for (FOE_GROUPS) |f| {
         @field(g, f.field).reset(&g.map);
         if (sighted == .blind) {
@@ -2473,7 +2483,37 @@ fn releaseSpell(g: *Game) void {
         .siphon => drawSiphon(g),
         .lance => throwLance(g),
         .sunder => strikeSunder(g),
+        .babble, .bidding => whisperAt(g),
     }
+}
+
+/// **THE TWO DOSERS SHARE ONE CAST** — they differ only in the `SPELLS` row, and the delivery is the sunder's
+/// (`strikeOne`, so a body's own `tryHit` bills it). No damage, poise or stance lands, so the burst at its feet
+/// and the meter on its bar are the whole tell, and a MISS has to say so too.
+fn whisperAt(g: *Game) void {
+    const blow = g.hero.castBlow() orelse return;
+    const reach = combat.spellReach(g.hero.spell) orelse return;
+    sfx.play(.wand_cast);
+    g.rumble.play(rumblemod.cast_throw);
+    g.rig.addShake(SHAKE_CAST);
+    const tint = whisperTint(g.hero.spell);
+    const pick = strikeVictim(g, reach) orelse {
+        g.hero.dustPuff(strikeMissAt(g, reach), WHISPER_R, tint, g.hero.casts);
+        return;
+    };
+    const hit = strikeOne(g, pick, blow) orelse return;
+    g.hero.dustPuff(v3(hit.at.x, g.env.groundAt(hit.at.x, hit.at.z), hit.at.z), WHISPER_R, tint, g.hero.casts);
+    sfx.play(.hollow_toll);
+}
+
+/// Tight — this lands ON a body, where the powder's ring lands on a crowd.
+const WHISPER_R: f32 = 1.1;
+
+fn whisperTint(s: combat.Spell) rl.Color {
+    return hud_.ailTint(switch (s) {
+        .bidding => .charm,
+        else => .confusion,
+    });
 }
 
 fn throwLance(g: *Game) void {
@@ -2922,6 +2962,21 @@ fn markThreat(g: *Game, dt: f32) void {
                 break :blk spirit;
             };
             f.threat.at = mine orelse g.hero.pos;
+            // STAMPED, not looked up: `foe.Threat` cannot see a `Vitals` and must not.
+            f.threat.charmed = f.vit.ailOn(.charm);
+            f.threat.confused = f.vit.ailOn(.confusion);
+            if (f.threat.charmed or f.threat.confused) {
+                if (nearestOther(g, f.pos, TURN_R)) |o| {
+                    f.threat.atFoe = o.at;
+                    f.threat.distFoe = o.dist;
+                    f.threat.hasFoe = true;
+                } else {
+                    f.threat.hasFoe = false;
+                    f.threat.distFoe = mathx.LONG_AGO;
+                }
+            } else {
+                f.threat.hasFoe = false;
+            }
             f.threat.tick(
                 dt,
                 mathx.distXZ(f.pos, g.hero.pos),
@@ -2931,6 +2986,55 @@ fn markThreat(g: *Game, dt: f32) void {
         }
     }
 }
+
+/// **HOW FAR A TURNED BODY WILL GO LOOKING**, past which it stands. A charmed body crossing the field spends its
+/// whole clock walking, which reads as the charm having done nothing.
+const TURN_R: f32 = 22.0;
+
+const Nearest = struct { at: rl.Vector3, dist: f32 };
+
+/// The nearest live body that is NOT the one asking. **IDENTITY IS BY POSITION, EXACT AND NOT NEAR**: `from` is
+/// the caller's own `pos` verbatim, and `collideActors` is what stops two bodies sharing coordinates.
+fn nearestOther(g: *const Game, from: rl.Vector3, r: f32) ?Nearest {
+    var best: ?Nearest = null;
+    inline for (FOE_GROUPS) |gr| {
+        for (@field(g, gr.field).liveConst()) |*o| {
+            if (!foemod.corporeal(o)) continue;
+            if (o.pos.x == from.x and o.pos.z == from.z) continue;
+            const d = mathx.distXZ(from, o.pos);
+            if (d > r) continue;
+            if (best == null or d < best.?.dist) best = .{ .at = o.lockPoint(), .dist = d };
+        }
+    }
+    return best;
+}
+
+/// **DRAINED AFTER EVERY GROUP HAS UPDATED, NEVER DURING** — a turned swing has to reach a group not yet stepped.
+/// Delivered as a PIERCING blade on the body aimed at: `tryHit` is every creature's own door (so the flash, the
+/// stagger, the death and the drop are the blow's own), and `pierce` is the one mode that leaves `hitLatch` — the
+/// HERO's sword's — alone.
+fn spendTurnedBlows(g: *Game) void {
+    const blows = foemod.takeTurned();
+    for (blows) |b| {
+        const at = b.at;
+        if (pierceFoes(g, .{
+            .active = true,
+            .pierce = true,
+            .r = TURNED_R,
+            .a = at,
+            .b = at,
+            .a0 = at,
+            .b0 = at,
+            .hit = b.hit,
+            .by = .foe,
+        })) {
+            sfx.playAt(.hit_light, 0.7);
+        }
+    }
+}
+
+/// Tight on the body it was aimed at, so a turned swing cannot sweep up a third party standing behind it.
+const TURNED_R: f32 = 0.45;
 
 fn markWade(g: *Game) void {
     const quarry = g.env.wadeDepth(g.hero.pos.x, g.hero.pos.z);
@@ -3127,6 +3231,8 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
             sfx.world(.shroom_puff, ar.pos);
             g.cluster.spawnCloud(ground);
         },
+        // **THE TWIST BURSTS WHERE IT LANDS AND BILLS NOTHING** — the ring is the whole weapon.
+        .powder => powderBurst(g, ground),
         .arrow, .firearrow, .wisp, .crock, .spark => {},
     }
 }
@@ -3137,7 +3243,7 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
 fn shotBuildup(s: archermod.Shot) f32 {
     return switch (s) {
         .venom => broodmod.M_SPIT_BUILD,
-        .arrow, .firearrow, .clump, .crock, .bolt, .wisp, .emberball, .sac, .spark => 0,
+        .arrow, .firearrow, .clump, .crock, .bolt, .wisp, .emberball, .sac, .spark, .powder => 0,
     };
 }
 
@@ -3199,6 +3305,7 @@ fn drawArrows(g: *Game) void {
                 .arrow => &g.arrowModel,
                 .clump => &g.clumpModel,
                 .crock => &g.crockModel,
+                .powder => &g.powderModel,
                 .venom => &g.venomModel,
                 .firearrow => &g.fireArrowModel,
                 .bolt => &g.boltModel,
@@ -4211,6 +4318,14 @@ pub fn run(mode: Mode) void {
             if (sk.yelped) sfx.world(.bone_hurt, sk.pos);
             if (sk.justDied) sfx.world(.bone_die, sk.pos);
         }
+        // **NOR DOES THE BLOOM** — its gas is taken below, beside the sporeling's spores.
+        g.bed.update(dt, g.hero.pos, PLAY_HALF, bladeNow);
+        for (g.bed.live()) |*b| {
+            if (b.swelled) sfx.world(.shroom_puff, b.centerWorld());
+            if (b.vented) sfx.world(.shroom_fling, b.ventWorld());
+            if (b.yelped) sfx.world(.shroom_hurt, b.pos);
+            if (b.justDied) sfx.world(.shroom_die, b.pos);
+        }
         // **THE PRIEST NEVER RETURNS A BLOW** — no melee, and its cold is a per-frame DRIP on its own channel, so it cannot voice and shake the hero sixty times a second.
         _ = g.crypt.update(dt, g.hero.pos, PLAY_HALF, bladeNow);
         if (g.crypt.breathDose(dt, g.hero.pos)) |b| {
@@ -4297,8 +4412,12 @@ pub fn run(mode: Mode) void {
             while (burst < g.brood.bursts) : (burst += 1) g.trig.died(.brood_sac);
         }
         if (anyParried(g)) parryBeat(g);
+        // AFTER EVERY GROUP AND BEFORE ANYTHING READS A BODY'S HP (`foe.takeTurned`).
+        spendTurnedBlows(g);
         g.hero.poisonBy(g.brood.burn(dt, g.hero.pos));
         g.hero.poisonBy(g.cluster.spores(dt, g.hero.pos));
+        // THE GAS, ON THE SPORES' OWN CHANNEL: unblockable, unparryable, and rate-gated in `Vitals.build`.
+        g.hero.doseSelf(.sleep, g.bed.breath(g.hero.pos) * dt);
         _ = g.hero.tickPoison(dt);
         if (g.hero.vit.ailProcced(.poison)) {
             sfx.play(.acid_burn);
@@ -4594,8 +4713,9 @@ fn useItem(g: *Game, k: item.Kind) void {
         .lob => |l| {
             if (g.bag.take(k, 1) == 0) return;
             const from = mathx.addV(heroAimPoint(g), mathx.scaleV(mathx.headingDir(g.hero.facing), 0.4));
+            // A dose is not scaled (`Hit.scaled`'s law), so the twist rides `thrownDmg` for a zero either way.
             const hit = (combat.Hit{ .dmg = l.dmg, .poise = l.poise, .elem = combat.elems(.{ .fire = l.fire, .lightning = l.lightning }) }).scaled(g.hero.perk.thrownDmg * g.hero.perk.dmg);
-            const shot: archermod.Shot = if (l.lightning > 0) .crock else .clump;
+            const shot: archermod.Shot = if (l.dose != null) .powder else if (l.lightning > 0) .crock else .clump;
             putIn(&g.shafts, archermod.launchShaft(from, camAimPoint(g), koboldmod.CLUMP_SPEED, hit, true, shot));
             sfx.play(.wand_cast);
         },
@@ -4639,7 +4759,57 @@ fn useItem(g: *Game, k: item.Kind) void {
             g.hero.startSteady(s.mult, s.secs);
             sfx.play(.flask_drink);
         },
+        .dose => |d| {
+            if (g.bag.take(k, 1) == 0) return;
+            g.hero.doseSelf(combat.ailOfName(d.ail), d.amt);
+            sfx.play(.flask_drink);
+        },
+        .coat => |c| {
+            if (g.bag.take(k, 1) == 0) return;
+            g.hero.startCoat(combat.ailOfName(c.ail), c.amt, c.secs);
+            sfx.play(.eat);
+        },
+        // **THE BELL IS NOT SPENT, SO THERE IS NO `take` HERE** — the focus IS the charge.
+        .toll => |t| {
+            if (!g.hero.fp.spend(t.fp)) return;
+            const n = doseRing(g, g.hero.pos, t.r, combat.ailOfName(t.ail), t.amt);
+            const at = v3(g.hero.pos.x, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), g.hero.pos.z);
+            g.hero.sunderBurst(at, n > 0, g.hero.casts);
+            sfx.play(.hollow_toll);
+            g.rumble.play(rumblemod.cast_throw);
+            g.rig.addShake(SHAKE_CAST);
+        },
     }
+}
+
+/// **THE POWDER'S OWN ROW IS THE ONLY PLACE ITS NUMBERS LIVE** — read back off `item.use`, the way the sac's
+/// cloud belongs to the sporeling.
+fn powderBurst(g: *Game, ground: rl.Vector3) void {
+    const row = switch (item.use(.madcap_powder)) {
+        .lob => |l| l,
+        else => return,
+    };
+    const d = row.dose orelse return;
+    const a = combat.ailOfName(d.ail);
+    sfx.world(.shroom_puff, ground);
+    g.hero.dustPuff(ground, row.r, hud_.ailTint(a), g.hero.casts);
+    _ = doseRing(g, ground, row.r, a, d.amt);
+}
+
+/// **ONE DOSE INTO EVERY BODY IN A RING**, and `Vitals.build`'s side gate decides which can carry it — a charm
+/// reaching the hero is refused there and not by a list here. Returns how many took it.
+fn doseRing(g: *Game, at: rl.Vector3, r: f32, a: combat.Ail, amt: f32) u32 {
+    var n: u32 = 0;
+    inline for (FOE_GROUPS) |gr| {
+        for (@field(g, gr.field).live()) |*f| {
+            if (!foemod.corporeal(f)) continue;
+            if (mathx.distXZ(at, f.pos) - f.bodyR() > r) continue;
+            const was = f.vit.ail(a).meter;
+            f.vit.build(a, amt);
+            if (f.vit.ail(a).meter > was) n += 1;
+        }
+    }
+    return n;
 }
 
 fn heroTakes(g: *Game, b: foemod.Blow, heavy: bool, voice: bool) combat.HitOutcome {
@@ -4892,6 +5062,7 @@ const FoeKind = worldfmt.FoeKind;
 const FoeRef = struct { kind: FoeKind, idx: usize };
 const ROLE_GROUPS = .{
     .{ "band", koboldmod },
+    .{ "haunt", shademod },
     .{ "brood", broodmod },
     .{ "muster", warriormod },
 };

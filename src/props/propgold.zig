@@ -202,6 +202,252 @@ pub const ARCH_SPRING: f32 = 3.10;
 pub const ARCH_R: f32 = 2.35;
 pub const ARCH_TOP: f32 = ARCH_SPRING + ARCH_R + 1.05;
 
+// **MARBLE, AND IT IS NOT `propart.MARBLE`** — that one comes back at 160 screen, DARKER than this family's own
+// ashlar at 188, which makes marble in a gilded city read as the dirty stone. Solved through the same chain
+// (`albedo = screen^2.2 / 1.72`): body 208 -> 95, lit 222 -> 109, break 168 -> 59.
+pub const MARBLE = rgba(95, 93, 88, 255);
+pub const MARBLE_LT = rgba(109, 107, 101, 255);
+/// The inside of a break, where marble is DARKEST: a fresh fracture is in shadow all day.
+pub const MARBLE_DK = rgba(59, 57, 54, 255);
+/// **THE VEINING IS COOL AND EVERYTHING ELSE HERE IS WARM.** Solved to 132, and separated on HUE from the
+/// ashlar as much as on value (AGENTS.md) — grey-blue against a warm limestone gold.
+pub const VEIN = rgba(32, 35, 40, 255);
+
+fn marbleTone(r: *mathx.Rng) rl.Color {
+    const f = r.float();
+    if (f < 0.22) return MARBLE_LT;
+    if (f < 0.36) return MARBLE_DK;
+    return MARBLE;
+}
+
+/// One vein across a flag or a face. **A CAPSULE AND NOT A SECOND FLAG**: geometry the flag's own size is a
+/// stripe, and a stripe is a painted line. Sunk `depth` in so only its crown shows (the relief law).
+fn veinAcross(b: *Builder, r: *mathx.Rng, c: rl.Vector3, half: f32, y: f32, depth: f32) void {
+    const a = r.angle();
+    const d = v3(mathx.cosf(a), 0, mathx.sinf(a));
+    const kink = r.range(0.18, 0.46);
+    const mid = v3(c.x + d.z * kink * half, y - depth, c.z - d.x * kink * half);
+    const w = half * r.range(0.028, 0.055);
+    b.addCapsule(v3(c.x - d.x * half, y - depth, c.z - d.z * half), mid, w, w * 0.8, 5, VEIN);
+    b.addCapsule(mid, v3(c.x + d.x * half, y - depth, c.z + d.z * half), w * 0.8, w * 0.55, 5, VEIN);
+}
+
+/// **THIS FAMILY'S THESIS AS AN OBJECT** — the note at the top of the file: the gold is a skin and the skin has
+/// come off. Ankle-high, so no collider; it still casts, because a 0.3 m mass with no shadow is a decal.
+pub const LEAF_R: f32 = 1.30;
+pub const LEAF_TOP: f32 = 0.34;
+pub fn giltLeafMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x601D);
+    b.setMat(.stone);
+    b.addBlob(v3(0, 0.020, 0), v3(LEAF_R * 0.86, 0.036, LEAF_R * 0.72), 3, 11, ASHLAR_DK);
+    b.setMat(.gilt);
+    // **CURLED, NEVER FLAT** — a flat quad of leaf is a sticker; the ROLL at one edge is what says thin metal.
+    var i: i32 = 0;
+    while (i < 14) : (i += 1) {
+        const a = rng.angle();
+        const d = rng.range(0.06, 0.94) * LEAF_R;
+        const cx = mathx.cosf(a) * d;
+        const cz = mathx.sinf(a) * d * 0.82;
+        const yaw = rng.angle();
+        const half = rng.range(0.10, 0.27);
+        const rise = rng.range(0.012, 0.055);
+        const lift = rng.range(0.030, 0.185);
+        const u = v3(mathx.cosf(yaw), 0, mathx.sinf(yaw));
+        const w = v3(-u.z, 0, u.x);
+        const tone = goldTone(&rng);
+        b.addBox(
+            v3(cx, lift, cz),
+            v3(u.x * half, rng.signed() * 0.02, u.z * half),
+            v3(0, rise, 0),
+            v3(w.x * half * rng.range(0.42, 0.86), rng.signed() * 0.03, w.z * half * rng.range(0.42, 0.86)),
+            tone,
+        );
+        // On ONE side only, whichever way the sheet lifted.
+        const side: f32 = if (rng.float() < 0.5) 1.0 else -1.0;
+        b.addCapsule(
+            v3(cx - u.x * half + w.x * side * half * 0.5, lift + rise * 1.1, cz - u.z * half + w.z * side * half * 0.5),
+            v3(cx + u.x * half + w.x * side * half * 0.62, lift + rise * 1.5, cz + u.z * half + w.z * side * half * 0.62),
+            rng.range(0.014, 0.030),
+            rng.range(0.010, 0.022),
+            5,
+            if (rng.float() < 0.4) GOLD_LT else tone,
+        );
+    }
+    var f: i32 = 0;
+    while (f < 22) : (f += 1) {
+        const a = rng.angle();
+        const d = rng.range(0.2, 1.15) * LEAF_R;
+        const rr = rng.range(0.014, 0.040);
+        b.addBlob(v3(mathx.cosf(a) * d, rng.range(0.024, 0.070), mathx.sinf(a) * d * 0.8), v3(rr, rr * 0.30, rr), 2, 6, goldTone(&rng));
+    }
+    return b.toModel(shader);
+}
+
+/// **FLAGS WITH GAPS, NOT A SLAB WITH LINES ON IT.** Each flag has its own height and its own hair of yaw, so
+/// the joints are real geometry. Walked over: no collider, and `casts = false` — paving shadow on paving is mud.
+pub const FLOOR_R: f32 = 2.60;
+pub fn marbleFloorMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x601E);
+    b.setMat(.stone);
+    // THE BED under the flags — without it the joints leak sky (the packed-stone law).
+    b.addBox(v3(0, -0.055, 0), v3(FLOOR_R * 0.98, 0, 0), v3(0, 0.055, 0), v3(0, 0, FLOOR_R * 0.94), ASHLAR_DK);
+    const grid = 4;
+    var ix: i32 = 0;
+    while (ix < grid) : (ix += 1) {
+        var iz: i32 = 0;
+        while (iz < grid) : (iz += 1) {
+            // A quarter GONE: a floor with every flag in it was never walked on.
+            if (rng.float() < 0.24) continue;
+            const ux = (@as(f32, @floatFromInt(ix)) + 0.5) / grid * 2.0 - 1.0;
+            const uz = (@as(f32, @floatFromInt(iz)) + 0.5) / grid * 2.0 - 1.0;
+            const pitch = FLOOR_R * 2.0 / grid;
+            const half = pitch * 0.5 * rng.range(0.80, 0.94);
+            const cx = ux * FLOOR_R + rng.signed() * 0.05;
+            const cz = uz * FLOOR_R + rng.signed() * 0.05;
+            const y = rng.range(0.004, 0.048);
+            const yaw = rng.signed() * 0.10;
+            const u = v3(mathx.cosf(yaw), 0, mathx.sinf(yaw));
+            const w = v3(-u.z, 0, u.x);
+            b.addBox(
+                v3(cx, y * 0.5, cz),
+                v3(u.x * half, rng.signed() * 0.008, u.z * half),
+                v3(0, y * 0.5 + 0.010, 0),
+                v3(w.x * half, rng.signed() * 0.008, w.z * half),
+                marbleTone(&rng),
+            );
+            if (rng.float() < 0.55) veinAcross(&b, &rng, v3(cx, 0, cz), half * 0.92, y + 0.006, 0.004);
+        }
+    }
+    return b.toModel(shader);
+}
+
+/// Two pieces parted along one crack, the smaller tipped off the line: a single tidy box is a crate.
+pub const SLAB_TOP: f32 = 1.05;
+pub fn marbleSlabMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x601F);
+    b.setMat(.stone);
+    const L: f32 = 1.62;
+    const W: f32 = 0.78;
+    const Hh: f32 = 0.46;
+    const lean = rng.range(0.03, 0.09);
+    b.addBox(
+        v3(-0.16, Hh * 0.52, 0),
+        v3(L * 0.62, lean, rng.signed() * 0.04),
+        v3(-lean * L, Hh * 0.52, 0),
+        v3(0, rng.signed() * 0.03, W * 0.5),
+        MARBLE,
+    );
+    // Tipped up on the greater's shoulder: this is the whole silhouette.
+    const tip = rng.range(0.20, 0.34);
+    b.addBox(
+        v3(L * 0.52, Hh * 0.86, rng.signed() * 0.10),
+        v3(L * 0.34, tip, rng.signed() * 0.05),
+        v3(-tip * L * 0.5, Hh * 0.42, 0),
+        v3(0, 0, W * 0.42),
+        MARBLE_LT,
+    );
+    // The break face: the one thing that says stone and not a casting.
+    var i: i32 = 0;
+    while (i < 7) : (i += 1) {
+        const t = (@as(f32, @floatFromInt(i)) + 0.5) / 7.0;
+        const rr = rng.range(0.045, 0.105);
+        b.addBlob(
+            v3(L * 0.30 + rng.signed() * 0.05, Hh * (0.24 + 0.72 * t), (t - 0.5) * W * 0.88),
+            v3(rr * 0.7, rr, rr),
+            3,
+            7,
+            MARBLE_DK,
+        );
+    }
+    veinAcross(&b, &rng, v3(-0.16, 0, 0), L * 0.55, Hh * 1.04, 0.010);
+    veinAcross(&b, &rng, v3(L * 0.50, 0, 0), L * 0.28, Hh * 1.28, 0.008);
+    // It was gilt once.
+    b.setMat(.gilt);
+    b.addBox(
+        v3(rng.range(-0.5, 0.2), Hh * 1.05, rng.signed() * 0.18),
+        v3(rng.range(0.16, 0.34), 0.004, 0),
+        v3(0, 0.008, 0),
+        v3(0, 0.003, rng.range(0.08, 0.19)),
+        GOLD_DK,
+    );
+    return b.toModel(shader);
+}
+
+/// **A FLIGHT THAT ARRIVES NOWHERE** — the top treads carried away, so the run stops in mid-air, which is the
+/// only thing separating a ruin's stair from a building's. The risers are the ashlar core showing through.
+pub const STAIR_RISE: f32 = 0.26;
+pub const STAIR_N: i32 = 6;
+pub const STAIR_TOP: f32 = STAIR_RISE * @as(f32, @floatFromInt(STAIR_N));
+pub const STAIR_W: f32 = 2.05;
+pub fn marbleStairMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x6010);
+    // **THE TREADS OVERLAP THEIR RISERS OR IT IS NOT A STAIR.** With a gap between each tread and its core, six
+    // steps read as six crates: a run reads as a run because each nosing HANGS OVER the riser below.
+    const tread: f32 = 0.52;
+    var i: i32 = 0;
+    while (i < STAIR_N) : (i += 1) {
+        const fi = @as(f32, @floatFromInt(i));
+        const y = STAIR_RISE * fi;
+        // Only the top TWO, and only their ends: a flight that narrows all the way up is a ziggurat.
+        const gone = if (i >= STAIR_N - 2) rng.range(0.20, 0.44) else 0;
+        const half = STAIR_W * 0.5 * (1.0 - gone);
+        const off = if (gone > 0) rng.signed() * STAIR_W * 0.10 else 0;
+        // From the ground up, so no joint can leak sky (the packed-stone law).
+        b.setMat(.stone);
+        b.addBox(
+            v3(off, (y + STAIR_RISE) * 0.5, -fi * tread),
+            v3(half * 1.01, 0, 0),
+            v3(0, (y + STAIR_RISE) * 0.5, 0),
+            v3(0, 0, tread * 0.52),
+            ashlarTone(&rng),
+        );
+        // NOSING OUT past the riser by a fifth of its own depth.
+        b.addBox(
+            v3(off + rng.signed() * 0.015, y + STAIR_RISE + 0.022, -fi * tread + tread * 0.14),
+            v3(half * rng.range(0.96, 1.00), rng.signed() * 0.005, 0),
+            v3(0, 0.024, 0),
+            v3(0, rng.signed() * 0.005, tread * 0.66),
+            marbleTone(&rng),
+        );
+        if (rng.float() < 0.6) veinAcross(&b, &rng, v3(off, 0, -fi * tread + tread * 0.14), half * 0.66, y + STAIR_RISE + 0.044, 0.006);
+    }
+    // THE CHEEKS: what stops the flight reading as a stack of slabs end-on. Broken at different heights.
+    b.setMat(.stone);
+    for ([_]f32{ -1.0, 1.0 }) |side| {
+        const upto = rng.range(0.55, 0.80);
+        const n = @as(i32, @intFromFloat(@floor(@as(f32, @floatFromInt(STAIR_N)) * upto)));
+        var k: i32 = 0;
+        while (k < n) : (k += 1) {
+            const fk = @as(f32, @floatFromInt(k));
+            const h = STAIR_RISE * (fk + 1.0) + 0.30;
+            b.addBox(
+                v3(side * (STAIR_W * 0.5 + 0.16), h * 0.5, -fk * tread),
+                v3(0.15, 0, 0),
+                v3(0, h * 0.5, 0),
+                v3(0, 0, tread * 0.52),
+                if (rng.float() < 0.3) ASHLAR_LT else ASHLAR,
+            );
+        }
+    }
+    b.setMat(.stone);
+    var j: i32 = 0;
+    while (j < 6) : (j += 1) {
+        const rr = rng.range(0.07, 0.17);
+        b.addBlob(
+            v3(rng.signed() * STAIR_W * 0.6, rr * 0.7, rng.range(0.35, 1.25)),
+            v3(rr, rr * 0.7, rr * rng.range(0.8, 1.3)),
+            3,
+            7,
+            if (rng.float() < 0.5) MARBLE_DK else ASHLAR_DK,
+        );
+    }
+    return b.toModel(shader);
+}
+
 pub fn giltArchMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x60_1D_A1);

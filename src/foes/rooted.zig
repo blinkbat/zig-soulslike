@@ -856,7 +856,7 @@ pub const Grove = struct {
             switch (t.update(dt, t.threat.aim(hero), bounds, blade)) {
                 .none => {},
                 .struck => |s| {
-                    foe.worseBlow(&blow, s.hit, t.pos, t.threat.on);
+                    foe.worseBlow(&blow, s.hit, t.pos, &t.threat);
                     if (s.pull > 0) yank(ctx, t.pos, s.pull);
                 },
             }

@@ -227,6 +227,9 @@ const WISP_GRAV: f32 = 1.1;
 const EMBER_GRAV: f32 = 10.5;
 /// A wet sac lobbed by something enormous: heavier than the mage's ball, so the arc is high and short and reading where it will land is the whole of dodging it.
 const SAC_GRAV: f32 = 12.0;
+/// **THE LIGHTEST THING THROWN IN THIS GAME**, between the spark's flat line and the crock's arc: it is lobbed
+/// INTO a group, so where it lands must be readable while it is still up.
+const POWDER_GRAV: f32 = 10.0;
 /// **A SPARK BARELY DROPS.** Light and fast, so it flies nearly flat — which is what makes it a thing you sidestep rather than a thing you get under.
 const SPARK_GRAV: f32 = 3.0;
 const ARROW_LIFE = 3.5;
@@ -236,7 +239,7 @@ const ARROW_STICK_FADE = 1.4;
 pub fn lingerOf(s: Shot) f32 {
     return switch (s) {
         .arrow, .firearrow => ARROW_STICK_FADE,
-        .clump, .crock, .venom, .bolt, .wisp, .emberball, .sac, .spark => 0,
+        .clump, .crock, .venom, .bolt, .wisp, .emberball, .sac, .spark, .powder => 0,
     };
 }
 pub const ARROW_COVER_MARGIN: f32 = 0.04;
@@ -257,6 +260,8 @@ const TRAIL_CROCK = rgba(198, 228, 252, 255);
 
 /// …AND THE GOLEM'S SAC IS NOT THE MAGE'S DETONATOR. Both are fungal and both come over your head, so they may not read alike: dusty and pale against that one's hot pink.
 const TRAIL_SAC = rgba(206, 186, 202, 255);
+/// …AND THE POWDER READS AS FUNGAL, NOT as any of the four elements: the sporeling's own yellow-green.
+const TRAIL_POWDER = rgba(186, 208, 96, 255);
 /// …AND THE GREMLIN'S SPARK IS THE ONLY COLD-BLUE THING IN THE AIR: the one lightning shot in the game may not be mistaken for an arrow at a glance.
 const TRAIL_SPARK = rgba(196, 214, 255, 255);
 
@@ -269,11 +274,12 @@ fn trailCol(s: Shot) rl.Color {
         .crock => TRAIL_CROCK,
         .sac => TRAIL_SAC,
         .spark => TRAIL_SPARK,
+        .powder => TRAIL_POWDER,
         .arrow, .venom => TRAIL_COL,
     };
 }
 
-pub const Shot = enum { arrow, clump, venom, firearrow, bolt, wisp, crock, emberball, sac, spark };
+pub const Shot = enum { arrow, clump, venom, firearrow, bolt, wisp, crock, emberball, sac, spark, powder };
 
 pub fn dropOf(s: Shot) f32 {
     return switch (s) {
@@ -285,6 +291,7 @@ pub fn dropOf(s: Shot) f32 {
         .bolt => BOLT_GRAV,
         .wisp => WISP_GRAV,
         .emberball => EMBER_GRAV,
+        .powder => POWDER_GRAV,
     };
 }
 
@@ -293,7 +300,7 @@ pub fn dropOf(s: Shot) f32 {
 fn loftOf(s: Shot) f32 {
     return switch (s) {
         .emberball => EMBER_LOFT,
-        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark => 1.0,
+        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder => 1.0,
     };
 }
 pub const EMBER_LOFT: f32 = 0.52;
@@ -311,7 +318,7 @@ const EMBER_KEEP_XZ: f32 = 0.66;
 pub fn bouncesOf(s: Shot) u8 {
     return switch (s) {
         .emberball => EMBER_BOUNCES,
-        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark => 0,
+        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder => 0,
     };
 }
 const EMBER_BOUNCES: u8 = 3;
@@ -329,7 +336,7 @@ fn minUp(s: Shot) f32 {
 fn lifeOf(s: Shot) f32 {
     return switch (s) {
         .emberball => EMBER_LIFE,
-        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark => ARROW_LIFE,
+        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder => ARROW_LIFE,
     };
 }
 const EMBER_LIFE: f32 = 6.0;
@@ -493,7 +500,7 @@ fn hitBoxOf(s: Shot) struct { r: f32, halfH: f32 } {
     return switch (s) {
         .emberball => .{ .r = EMBER_HIT_R, .halfH = EMBER_HIT_HALF_H },
         .sac => .{ .r = SAC_HIT_R, .halfH = SAC_HIT_HALF_H },
-        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .spark => .{ .r = ARROW_HIT_R, .halfH = ARROW_HIT_HALF_H },
+        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .spark, .powder => .{ .r = ARROW_HIT_R, .halfH = ARROW_HIT_HALF_H },
     };
 }
 const EMBER_HIT_R: f32 = 0.62;
@@ -1531,6 +1538,35 @@ pub fn crockMesh(shader: rl.Shader) rl.Model {
     b.addBlob(v3(0, 0.048, 0), v3(0.023, 0.017, 0.023), 3, 6, clayDk);
     b.addCapsule(v3(-0.048, 0.010, 0.018), v3(-0.004, -0.012, 0.052), 0.006, 0.005, 5, spark);
     b.addCapsule(v3(-0.004, -0.012, 0.052), v3(0.040, 0.004, 0.030), 0.005, 0.004, 5, spark);
+    return b.toModel(shader);
+}
+
+/// **PAPER IS THE ONE THING HERE THAT IS NOT ROUND** — the flesh law is for flesh.
+pub fn powderMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0x9A5D);
+    const paper = rgba(206, 192, 156, 255);
+    const paperDk = rgba(168, 152, 118, 255);
+    const dust = rgba(186, 208, 96, 120);
+    b.setMat(.cloth);
+    var i: i32 = 0;
+    while (i < 3) : (i += 1) {
+        const t = @as(f32, @floatFromInt(i)) - 1.0;
+        const w = 0.036 * rng.range(0.86, 1.14);
+        b.addBox(
+            v3(t * 0.012, 0, 0),
+            v3(0.011, 0, 0),
+            v3(rng.signed() * 0.006, w, 0),
+            v3(0, rng.signed() * 0.005, 0.044 * rng.range(0.9, 1.1)),
+            if (i == 1) paper else paperDk,
+        );
+    }
+    // Pinched off-axis: nothing dead is straight and nothing ends in a point.
+    b.addCapsule(v3(0.004, 0.006, 0.042), v3(-0.006, -0.010, 0.070), 0.011, 0.006, 5, paperDk);
+    b.addCapsule(v3(-0.003, -0.005, -0.042), v3(0.008, 0.009, -0.066), 0.011, 0.006, 5, paperDk);
+    b.setMat(.flame);
+    b.setAnimY(0);
+    b.addBlob(v3(0.010, -0.012, 0.020), v3(0.020, 0.014, 0.022), 3, 6, dust);
     return b.toModel(shader);
 }
 

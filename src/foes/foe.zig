@@ -81,8 +81,9 @@ pub fn traitsOf(k: wf.FoeKind) Traits {
         .toad => .{ .nature = .beast, .gait = .waterfaring },
         .fen_lurker => .{ .nature = .demon, .gait = .waterfaring },
         .leechfly => .{ .nature = .beast, .gait = .flying },
-        .shade => .{ .nature = .undead, .gait = .flying },
+        .shade, .mourner => .{ .nature = .undead, .gait = .flying },
         .rooted => .{ .nature = .plant, .gait = .rooted },
+        .slumber_bloom => .{ .nature = .plant, .gait = .rooted },
         .brood_sac => .{ .nature = .beast, .gait = .rooted },
         .archer, .shieldman, .greatsword, .bone_knight, .necromancer, .bone_skitterer, .ancient_priest, .tolling_hollow => .{ .nature = .undead },
         .berserker, .priest, .slinger, .ogre => .{ .nature = .humanoid },
@@ -1451,7 +1452,9 @@ pub const Blade = struct {
 };
 
 
-pub const Victim = enum { hero, spirit };
+/// **WHO A CREATURE IS SWINGING AT**, and `foe` is what confusion and charm ARE: nothing in the state machine
+/// changes, only the point it was handed (`Threat.aim`) and where the blow is billed.
+pub const Victim = enum { hero, spirit, foe };
 
 pub const THREAT_HALFLIFE: f32 = 5.0;
 /// Only the RATIO to `THREAT_PROX` matters; 1.0 so damage numbers read directly as threat.
@@ -1470,8 +1473,18 @@ pub const Threat = struct {
     /// Stamped each frame (`game.markThreat`) — the creature never asks what a spirit is.
     at: rl.Vector3 = mathx.zero3,
     hasSpirit: bool = false,
+    /// The nearest other body, stamped like the spirit's point (`game.markThreat`).
+    atFoe: rl.Vector3 = mathx.zero3,
+    hasFoe: bool = false,
+    /// Stored, because `tick` makes the CONFUSED choice between them and re-measuring is a second answer.
+    distHero: f32 = mathx.LONG_AGO,
+    distFoe: f32 = mathx.LONG_AGO,
+    /// STAMPED, not looked up: `Threat` cannot see a body's `Vitals` and must not.
+    charmed: bool = false,
+    confused: bool = false,
 
     pub fn aim(self: *const Threat, heroPos: rl.Vector3) rl.Vector3 {
+        if (self.on == .foe) return self.atFoe;
         if (!self.hasSpirit or self.on == .hero) return heroPos;
         return self.at;
     }
@@ -1481,6 +1494,9 @@ pub const Threat = struct {
         switch (who) {
             .hero => self.dmgHero += t,
             .spirit => self.dmgSpirit += t,
+            // **A CHARMED BODY'S BLOWS BUY IT NOTHING.** Credited, the two lock onto each other and fight to a
+            // finish while the player watches, and the clock running out leaves one aggroed onto a friend.
+            .foe => {},
         }
     }
 
@@ -1492,9 +1508,24 @@ pub const Threat = struct {
     pub fn tick(self: *Threat, dt: f32, distHero: f32, distSpirit: f32, spirit: bool) void {
         self.hasSpirit = spirit;
         self.since += dt;
+        self.distHero = distHero;
         const k = std.math.pow(f32, 0.5, dt / THREAT_HALFLIFE);
         self.dmgHero *= k;
         self.dmgSpirit *= k;
+        // **THE TWO METERS OUTRANK EVERY SCORE BELOW.** Charm and confusion are not a heavier taunt that damage
+        // could out-argue. CHARM PICKS THE OTHER BODY and STANDS when there is none: falling back to the hero
+        // would make a charm in an empty room a free aggro.
+        if (self.charmed) {
+            self.on = if (self.hasFoe) .foe else .hero;
+            return;
+        }
+        // …AND CONFUSION SWINGS AT WHATEVER IS NEAREST (`combat.AILS`' own line). No dwell and no switch margin:
+        // it is not making a decision.
+        if (self.confused) {
+            self.on = if (self.hasFoe and self.distFoe < distHero) .foe else .hero;
+            return;
+        }
+        if (self.on == .foe) self.on = .hero;
         if (!spirit) {
             self.on = .hero;
             self.dmgSpirit = 0;
@@ -1507,6 +1538,8 @@ pub const Threat = struct {
         const want: Victim = switch (self.on) {
             .hero => if (s > h * THREAT_SWITCH) .spirit else .hero,
             .spirit => if (h > s * THREAT_SWITCH) .hero else .spirit,
+            // Unreachable: the two meters return above. The score below never picks `.foe`.
+            .foe => .hero,
         };
         if (want != self.on) {
             self.on = want;
@@ -1519,9 +1552,43 @@ pub const Blow = struct {
     hit: combat.Hit,
     from: rl.Vector3,
     on: Victim = .hero,
+    /// **WHERE IT WAS AIMED, NOT WHERE IT CAME FROM.** Only a `.foe` blow reads it: `from` is the swinger.
+    at: rl.Vector3 = mathx.zero3,
 };
 
-pub fn worseBlow(worst: *?Blow, h: combat.Hit, from: rl.Vector3, on: Victim) void {
+/// **A GROUP HANDS BACK ONE BLOW A FRAME AND `worseBlow` PUTS THE HERO FIRST**, so a charmed body's swing ranked
+/// against his would be the one thrown away. `.foe` blows skip the ranking entirely: pushed here, drained by
+/// `game.spendTurnedBlows` once every group has stepped — which is also what lets one reach another group.
+/// Module scratch, drained to empty every frame.
+pub const TURNED_CAP: usize = 32;
+pub var turned: [TURNED_CAP]Blow = undefined;
+pub var turnedN: usize = 0;
+
+fn pushTurned(b: Blow) void {
+    // DROPPED, never wrapped: wrapping bills the newest blow onto a body nobody swung at.
+    if (turnedN >= TURNED_CAP) return;
+    turned[turnedN] = b;
+    turnedN += 1;
+}
+
+pub fn takeTurned() []const Blow {
+    const out = turned[0..turnedN];
+    turnedN = 0;
+    return out;
+}
+
+pub fn clearTurned() void {
+    turnedN = 0;
+}
+
+/// Takes the THREAT and not just its victim: a turned blow has to say where it was aimed, and the aim point
+/// lives on the same struct that chose the victim.
+pub fn worseBlow(worst: *?Blow, h: combat.Hit, from: rl.Vector3, th: *const Threat) void {
+    const on = th.on;
+    if (on == .foe) {
+        pushTurned(.{ .hit = h, .from = from, .on = on, .at = th.atFoe });
+        return;
+    }
     const cand = Blow{ .hit = h, .from = from, .on = on };
     const had = worst.* orelse {
         worst.* = cand;
@@ -1540,7 +1607,7 @@ pub fn worseBlow(worst: *?Blow, h: combat.Hit, from: rl.Vector3, on: Victim) voi
 pub fn groupBlow(foes: anytype, dt: f32, hero: rl.Vector3, bounds: f32, blade: Blade) ?Blow {
     var worst: ?Blow = null;
     for (foes) |*f| {
-        if (f.update(dt, f.threat.aim(hero), bounds, blade)) |h| worseBlow(&worst, h, f.pos, f.threat.on);
+        if (f.update(dt, f.threat.aim(hero), bounds, blade)) |h| worseBlow(&worst, h, f.pos, &f.threat);
     }
     return worst;
 }
@@ -1611,23 +1678,25 @@ test "ONE BLOW A FRAME, AND A SPIRIT'S MAY NOT EAT THE HERO'S" {
     const small = combat.Hit{ .dmg = 5 };
     const big = combat.Hit{ .dmg = 90 };
     var a: ?Blow = null;
-    worseBlow(&a, big, mathx.zero3, .spirit);
-    worseBlow(&a, small, mathx.zero3, .hero);
+    const SP = Threat{ .on = .spirit };
+    const HE = Threat{ .on = .hero };
+    worseBlow(&a, big, mathx.zero3, &SP);
+    worseBlow(&a, small, mathx.zero3, &HE);
     try std.testing.expectEqual(Victim.hero, a.?.on);
     try std.testing.expectApproxEqAbs(small.dmg, a.?.hit.dmg, 1e-6);
 
     var b: ?Blow = null;
-    worseBlow(&b, small, mathx.zero3, .hero);
-    worseBlow(&b, big, mathx.zero3, .spirit);
+    worseBlow(&b, small, mathx.zero3, &HE);
+    worseBlow(&b, big, mathx.zero3, &SP);
     try std.testing.expectEqual(Victim.hero, b.?.on);
 
     var c: ?Blow = null;
-    worseBlow(&c, small, mathx.zero3, .hero);
-    worseBlow(&c, big, mathx.zero3, .hero);
+    worseBlow(&c, small, mathx.zero3, &HE);
+    worseBlow(&c, big, mathx.zero3, &HE);
     try std.testing.expectApproxEqAbs(big.dmg, c.?.hit.dmg, 1e-6);
     var d: ?Blow = null;
-    worseBlow(&d, big, mathx.zero3, .spirit);
-    worseBlow(&d, small, mathx.zero3, .spirit);
+    worseBlow(&d, big, mathx.zero3, &SP);
+    worseBlow(&d, small, mathx.zero3, &SP);
     try std.testing.expectEqual(Victim.spirit, d.?.on);
     try std.testing.expectApproxEqAbs(big.dmg, d.?.hit.dmg, 1e-6);
 }

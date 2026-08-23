@@ -21,14 +21,42 @@ const lerpF = mathx.lerpF;
 const placeAt = mathx.placeAt;
 
 // A BIG SMOOTH MASS NEEDS A NEARLY-BLACK ALBEDO (AGENTS.md): the hot key plus the gamma lift turns any mid-dark value pale on a sunward face, and this thing is one sunward face from the shoulders down. What separates the three tones is therefore HUE — cold violet against cold blue — and not value.
-const SHROUD = rgba(13, 12, 19, 255);
-const SHROUD_LT = rgba(26, 24, 38, 255);
-const SHROUD_DK = rgba(6, 6, 10, 255);
-const HOLLOW = rgba(2, 2, 4, 255);
-const LIMB = rgba(19, 17, 30, 255);
-const LIMB_DK = rgba(9, 8, 15, 255);
-const EYE = rgba(126, 92, 206, 70);
-const EYE_CORE = rgba(206, 180, 255, 30);
+/// **HUE IS THE ONLY THING THAT SEPARATES THE TWO** — at this albedo value differences vanish under the key
+/// (the note above). Shade: cold violet. Mourner: wet-ash grey, eyes in the stupor meter's own colour
+/// (`hud.ailTint(.stupefy)`).
+const Pal = struct {
+    shroud: rl.Color,
+    shroudLt: rl.Color,
+    shroudDk: rl.Color,
+    hollow: rl.Color,
+    limb: rl.Color,
+    limbDk: rl.Color,
+    eye: rl.Color,
+    eyeCore: rl.Color,
+};
+
+const PAL = [NROLE]Pal{
+    .{
+        .shroud = rgba(13, 12, 19, 255),
+        .shroudLt = rgba(26, 24, 38, 255),
+        .shroudDk = rgba(6, 6, 10, 255),
+        .hollow = rgba(2, 2, 4, 255),
+        .limb = rgba(19, 17, 30, 255),
+        .limbDk = rgba(9, 8, 15, 255),
+        .eye = rgba(126, 92, 206, 70),
+        .eyeCore = rgba(206, 180, 255, 30),
+    },
+    .{
+        .shroud = rgba(17, 17, 19, 255),
+        .shroudLt = rgba(33, 33, 36, 255),
+        .shroudDk = rgba(8, 8, 9, 255),
+        .hollow = rgba(2, 2, 2, 255),
+        .limb = rgba(24, 23, 25, 255),
+        .limbDk = rgba(11, 11, 12, 255),
+        .eye = rgba(174, 162, 194, 78),
+        .eyeCore = rgba(228, 222, 240, 34),
+    },
+};
 
 const WISP_COL = rgba(96, 118, 176, 210);
 const WISP_DK = rgba(46, 58, 96, 190);
@@ -61,6 +89,72 @@ const DISS_DUR: f32 = 0.75;
 const SHOVE_DECAY: f32 = 9.0;
 
 pub const GRASP_HIT = combat.Hit{ .dmg = 7, .poise = 12, .fp = 14 };
+
+/// **THE MOURNER — THE SAME HAND, AND A DRAIN THAT DOES NOT LET GO.** The shade takes focus in one bite
+/// (`GRASP_HIT.fp`); this leaves the STUPOR (`combat.STUPEFY_FOCUS`/`STUPEFY_TRAVEL`), and is the only source
+/// of it. **TWO GRASPS, NOT ONE**: 52 against a 100 meter decaying 20/s after 1.1 s quiet, so the second has
+/// to land inside about three seconds of the first.
+pub const MOURN_STUPEFY: f32 = 52.0;
+pub const MOURN_GRASP_HIT = blk: {
+    var h = GRASP_HIT;
+    h.dmg = 11;
+    h.poise = 20;
+    h.dose = combat.Doses.one(.stupefy, MOURN_STUPEFY);
+    break :blk h;
+};
+
+pub const Role = enum { shade, mourner };
+pub const NROLE = @typeInfo(Role).@"enum".fields.len;
+
+pub fn roleOf(k: wf.FoeKind) ?Role {
+    return switch (k) {
+        .shade => .shade,
+        .mourner => .mourner,
+        else => null,
+    };
+}
+
+pub fn kindOf(r: Role) wf.FoeKind {
+    return switch (r) {
+        .shade => .shade,
+        .mourner => .mourner,
+    };
+}
+
+/// `grasp` is the only mechanic that differs; the rest is the price of being twice the body. Row order is
+/// `Role`'s own, pinned below.
+const Spec = struct {
+    role: Role,
+    hp: f32,
+    souls: u32,
+    /// A MULTIPLIER on whatever the map placed it at, so a mourner scaled down is still the bigger of the two.
+    size: f32,
+    /// Its own clocks, divided. Over 1 is SLOWER.
+    slow: f32,
+    grasp: combat.Hit,
+};
+
+const SPEC = [NROLE]Spec{
+    .{ .role = .shade, .hp = HP_MAX, .souls = 110, .size = 1.0, .slow = 1.0, .grasp = GRASP_HIT },
+    .{ .role = .mourner, .hp = 96.0, .souls = 265, .size = 1.28, .slow = 1.24, .grasp = MOURN_GRASP_HIT },
+};
+
+comptime {
+    for (SPEC, 0..) |sp, i| {
+        if (@intFromEnum(sp.role) != i) @compileError("shade: SPEC is out of `Role` order");
+        if (sp.hp <= 0 or sp.size <= 0 or sp.slow <= 0) @compileError("shade: a role with no body");
+    }
+    // **THE BIGGER BODY IS THE SLOWER ONE AND IS WORTH MORE**, or it is simply a shade with more HP.
+    std.debug.assert(SPEC[1].size > SPEC[0].size and SPEC[1].slow > SPEC[0].slow);
+    std.debug.assert(SPEC[1].souls > SPEC[0].souls and SPEC[1].hp > SPEC[0].hp);
+    // …and only the mourner builds the stupor. Two sources of a hero-only meter and neither is the tell.
+    std.debug.assert(SPEC[0].grasp.dose.at(.stupefy) == 0);
+    std.debug.assert(SPEC[1].grasp.dose.at(.stupefy) > 0);
+}
+
+pub fn spec(r: Role) Spec {
+    return SPEC[@intFromEnum(r)];
+}
 pub const WISP_HIT = combat.Hit{ .dmg = 20, .poise = 10 };
 pub const WISP_SPEED: f32 = 13.5;
 
@@ -120,6 +214,10 @@ const LEAN_MAX: f32 = 15.0; // degrees it tips into its travel — from the WAIS
 const HEM_LAG_RATE: f32 = 5.2;
 const HEM_SWING: f32 = 34.0; // degrees of tatter throw at full travel
 const HEM_WOBBLE: f32 = 6.0;
+/// **THE SHARE OF THE THROW A WINDWARD TATTER GETS.** Cloth in front of a moving body pins against it; cloth
+/// behind streams. At full travel: 47.6 deg of throw on the lee side against 16.2 windward, about 9 cm between
+/// the two tips — the test at the foot of this file prints it.
+const HEM_LEE: f32 = 0.34;
 
 const RIFT_N = 14;
 const DRAIN_N = 12;
@@ -196,18 +294,23 @@ pub const Act = union(enum) {
 };
 
 pub const Model = struct {
-    mesh: [N]rl.Mesh,
+    /// **ONE SET PER ROLE, BECAUSE THE COLOUR IS IN THE VERTICES** (`gfx.Builder`) — there is no material tint
+    /// to swap at draw time. The rig and every pose stay shared.
+    mesh: [NROLE][N]rl.Mesh,
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
         const mat = gfx.material(shader, "shade");
-        return .{ .mesh = buildMeshes(), .mat = mat };
+        var mesh: [NROLE][N]rl.Mesh = undefined;
+        for (0..NROLE) |r| mesh[r] = buildMeshes(PAL[r]);
+        return .{ .mesh = mesh, .mat = mat };
     }
     pub fn setShader(self: *Model, sh: rl.Shader) void {
         self.mat.shader = sh;
     }
     pub fn draw(self: *const Model, s: *const Shade) void {
-        for (0..N) |i| rl.drawMesh(self.mesh[i], self.mat, s.xf[i]);
+        const set = &self.mesh[@intFromEnum(s.role)];
+        for (0..N) |i| rl.drawMesh(set[i], self.mat, s.xf[i]);
     }
 };
 
@@ -239,10 +342,11 @@ pub const Shade = struct {
     lean: f32 = 0,
     reach: f32 = 0,
     gather: f32 = 0,
-    hemLag: rl.Vector3 = mathx.zero3,
+    hemVel: rl.Vector3 = mathx.zero3,
     thin: f32 = 0,
 
     vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
+    role: Role = .shade,
     hits: u32 = 0,
     hitLatch: bool = false,
     flash: f32 = 0,
@@ -259,12 +363,27 @@ pub const Shade = struct {
     xf: [N]rl.Matrix = undefined,
 
     pub fn spawn(home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32) Shade {
-        var s = Shade{ .pos = home, .home = home, .facing = faceYaw, .scale = scale, .seed = seed };
+        return spawnAs(.shade, home, faceYaw, scale, seed);
+    }
+
+    /// **THE ONE DOOR**, so a mourner cannot be stood up without its own bar and weight. The map comes through
+    /// `foe.resetRoles`.
+    pub fn spawnAs(role: Role, home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32) Shade {
+        const sp = spec(role);
+        var s = Shade{ .pos = home, .home = home, .facing = faceYaw, .scale = scale * sp.size, .seed = seed, .role = role };
+        s.vit = combat.Vitals.initFoe(sp.hp, POISE_MAX, STANCE_MAX).withRes(RESISTS);
         s.fxRng = foe.fxStream(seed, 7331.0, 0x5EED);
         s.orbitSign = if (seed < 0.5) 1 else -1;
         s.cds[WISP] = seed * MOVES[WISP].cd;
         s.pose();
         return s;
+    }
+
+    pub fn kind(self: *const Shade) wf.FoeKind {
+        return kindOf(self.role);
+    }
+    pub fn soulValue(self: *const Shade) u32 {
+        return spec(self.role).souls;
     }
 
     /// What it is holding itself off the ground by — the `lift` every other creature passes a hop or a leap as, which for this one is simply always there. EVERY WORLD POINT IS MEASURED OFF `pos.y` PLUS THIS, so a shade over a bank keeps its own head.
@@ -309,8 +428,11 @@ pub const Shade = struct {
         return mathx.lerpV(l, r, 0.5);
     }
 
+    /// One table of moves for both bodies; the only thing a mourner swaps is what the hand LEAVES (`SPEC.grasp`).
     fn move(self: *const Shade) Attack {
-        return MOVES[@min(self.atk, MOVES.len - 1)];
+        var a = MOVES[@min(self.atk, MOVES.len - 1)];
+        if (self.atk == GRASP) a.hit = spec(self.role).grasp;
+        return a;
     }
 
     pub fn update(self: *Shade, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) Act {
@@ -325,7 +447,8 @@ pub const Shade = struct {
         if (grip.killed) self.enterDeath();
         if (grip.downed) self.stagger(true);
         self.elapsed += dt;
-        self.t += dt;
+        // ITS OWN CLOCK, never the world's. The mourner's longer wind is what makes the second grasp escapable.
+        self.t += dt / spec(self.role).slow;
         self.vit.tick(dt);
         foe.fadeFlash(&self.flash, dt);
         for (&self.cds) |*c| c.* = mathx.maxF(0, c.* - dt);
@@ -710,11 +833,14 @@ pub const Shade = struct {
     }
 
 
-    /// The hem's trail, updated off the distance actually covered: a mass in motion OVERSHOOTS its rest and settles back onto it, so this is an eased lag and never the frame's travel read straight.
+    /// **THE TRAVEL, NOT ITS NEGATIVE** — held as `-velocity` and rotated against in `poseHem`, the gown blew
+    /// FORWARD. `rx(+deg)` carries a hanging tatter to local -Z (raylib's `MatrixRotateX`) and local +Z is
+    /// forward (`mathx.headingDir` against `ry`), so the term that TRAILS cloth is `rx(+vz)`: one sign, in the
+    /// pose, where it can be read against its own rotation. Eased, because a mass in motion overshoots.
     fn trailHem(self: *Shade, was: rl.Vector3, dt: f32) void {
         const step = mathx.subV(self.pos, was);
-        const want = if (dt > 1e-5) mathx.scaleV(v3(step.x, 0, step.z), -1.0 / dt) else mathx.zero3;
-        self.hemLag = mathx.approachV(self.hemLag, want, HEM_LAG_RATE * dt * DRIFT_SPEED);
+        const want = if (dt > 1e-5) mathx.scaleV(v3(step.x, 0, step.z), 1.0 / dt) else mathx.zero3;
+        self.hemVel = mathx.approachV(self.hemVel, want, HEM_LAG_RATE * dt * DRIFT_SPEED);
     }
 
     pub fn pose(self: *Shade) void {
@@ -755,21 +881,33 @@ pub const Shade = struct {
         wx[wr] = placeAt(REST[wr], mul(scaleM(1, 1.0 / stretch, 1), rz(side * -12.0 * out)), wx[el]);
     }
 
+    /// **THE SKIRT BLOWS DOWNWIND AS ONE THING, THEN EACH TATTER ANSWERS THE WIND ON ITS OWN SIDE.** The
+    /// downwind term alone gives all eight an identical throw, which is a cone being dragged: cloth is the
+    /// TRAILING edge streaming while the LEADING edge presses flat. One dot a tatter, no second clock.
     fn poseHem(self: *Shade, wx: *[N]rl.Matrix) void {
-        const lagX = mathx.clampF(self.hemLag.x, -1.4, 1.4);
-        const lagZ = mathx.clampF(self.hemLag.z, -1.4, 1.4);
+        const velX = mathx.clampF(self.hemVel.x, -1.4, 1.4);
+        const velZ = mathx.clampF(self.hemVel.z, -1.4, 1.4);
         const c = mathx.cosf(-self.facing);
         const s = mathx.sinf(-self.facing);
-        const localX = lagX * c + lagZ * s;
-        const localZ = -lagX * s + lagZ * c;
+        const localX = velX * c + velZ * s;
+        const localZ = -velX * s + velZ * c;
+        const speed = @sqrt(localX * localX + localZ * localZ);
         for (0..HEM_N) |i| {
             const b = HEM_0 + i;
             const fi: f32 = @floatFromInt(i);
+            const a = std.math.tau * fi / HEM_N;
+            // Its own outward bearing on the ring, ellipse and all (`REST` uses the same 0.86 on Z).
+            const outX = mathx.cosf(a);
+            const outZ = mathx.sinf(a) * 0.86;
+            // -1 dead astern, +1 dead ahead. Normalised, so the SHAPE of the skirt does not change with speed —
+            // only how far it goes, which is the throw's own job.
+            const facingWind = if (speed > 1e-4) (outX * localX + outZ * localZ) / speed else 0;
+            const gain = lerpF(1.0, HEM_LEE, 0.5 + 0.5 * facingWind);
             const phase = self.elapsed * (0.79 + 0.13 * fi) + self.seed * 5.0 + fi * 1.7;
             const wobble = mathx.sinf(phase) * HEM_WOBBLE;
             wx[b] = placeAt(REST[b], mul(
-                rx(localZ * HEM_SWING + wobble),
-                rz(-localX * HEM_SWING + mathx.cosf(phase * 0.7) * HEM_WOBBLE * 0.6),
+                rx(gain * localZ * HEM_SWING + wobble),
+                rz(-gain * localX * HEM_SWING + mathx.cosf(phase * 0.7) * HEM_WOBBLE * 0.6),
             ), wx[ROOT]);
         }
     }
@@ -792,7 +930,7 @@ pub const Haunt = struct {
         return self.shades[0..self.n];
     }
     pub fn reset(self: *Haunt, m: *const wf.Map) void {
-        foe.resetGroup(Shade, &self.shades, &self.n, m, .shade);
+        foe.resetRoles(Shade, Role, &self.shades, &self.n, m, roleOf);
     }
     pub fn setShader(self: *Haunt, sh: rl.Shader) void {
         self.model.setShader(sh);
@@ -818,7 +956,7 @@ pub const Haunt = struct {
             switch (s.update(dt, s.threat.aim(hero), bounds, blade)) {
                 .none => {},
                 .hurl => |from| hurl(ctx, from),
-                .grasp => |h| foe.worseBlow(&blow, h, s.pos, s.threat.on),
+                .grasp => |h| foe.worseBlow(&blow, h, s.pos, &s.threat),
             }
         }
         return blow;
@@ -837,7 +975,7 @@ pub const Haunt = struct {
         return foe.anyDied(self.liveConst());
     }
     pub fn soulsDropped(self: *const Haunt) u32 {
-        return foe.soulsDropped(self.liveConst(), SOULS);
+        return foe.soulsEach(self.liveConst());
     }
     pub fn totalHits(self: *const Haunt) u32 {
         return foe.totalHits(self.liveConst());
@@ -848,30 +986,30 @@ pub const Haunt = struct {
 };
 
 
-fn buildMeshes() [N]rl.Mesh {
+fn buildMeshes(pal: Pal) [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
-    mesh[ROOT] = emptyMesh();
-    mesh[TORSO] = shroudMesh();
-    mesh[COWL] = cowlMesh();
-    mesh[SHL] = armMesh(311);
-    mesh[ELL] = forearmMesh(312);
-    mesh[WRL] = handMesh(1.0, 313);
-    mesh[SHR] = armMesh(314);
-    mesh[ELR] = forearmMesh(315);
-    mesh[WRR] = handMesh(-1.0, 316);
+    mesh[ROOT] = emptyMesh(pal);
+    mesh[TORSO] = shroudMesh(pal);
+    mesh[COWL] = cowlMesh(pal);
+    mesh[SHL] = armMesh(pal, 311);
+    mesh[ELL] = forearmMesh(pal, 312);
+    mesh[WRL] = handMesh(pal, 1.0, 313);
+    mesh[SHR] = armMesh(pal, 314);
+    mesh[ELR] = forearmMesh(pal, 315);
+    mesh[WRR] = handMesh(pal, -1.0, 316);
     // NO TWO THE SAME LENGTH, and the ring of them is where the wabi-sabi lives on this creature: one mesh is shared by every instance, so the variation cannot be BETWEEN shades — it is between the tatters.
     const len = [HEM_N]f32{ 0.40, 0.29, 0.43, 0.34, 0.38, 0.26, 0.42, 0.31 };
     for (0..HEM_N) |i| {
         const a = std.math.tau * @as(f32, @floatFromInt(i)) / HEM_N;
-        mesh[HEM_0 + i] = tatterMesh(len[i], a, 321 + @as(u64, i));
+        mesh[HEM_0 + i] = tatterMesh(pal, len[i], a, 321 + @as(u64, i));
     }
     return mesh;
 }
 
-fn emptyMesh() rl.Mesh {
+fn emptyMesh(pal: Pal) rl.Mesh {
     var b = Builder.init();
     b.setMat(.cloth);
-    b.addBlob(v3(0, 0, 0), v3(0.004, 0.004, 0.004), 3, 4, SHROUD_DK);
+    b.addBlob(v3(0, 0, 0), v3(0.004, 0.004, 0.004), 3, 4, pal.shroudDk);
     return b.toMesh();
 }
 
@@ -884,7 +1022,7 @@ const PROF = [_][2]f32{
 const HEM_FLARE: f32 = 0.150;
 const HEM_DOME_Y: f32 = -0.078;
 
-fn shroudMesh() rl.Mesh {
+fn shroudMesh(pal: Pal) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(4409);
     b.setMat(.cloth);
@@ -896,10 +1034,10 @@ fn shroudMesh() rl.Mesh {
             PROF[i][1] * H,
             PROF[i + 1][1] * H,
             13,
-            SHROUD,
+            pal.shroud,
         );
     }
-    b.addBlob(v3(0, HEM_DOME_Y * H, 0), v3(HEM_FLARE * H, 0.098 * H, HEM_FLARE * H * 0.86), 6, 13, SHROUD);
+    b.addBlob(v3(0, HEM_DOME_Y * H, 0), v3(HEM_FLARE * H, 0.098 * H, HEM_FLARE * H * 0.86), 6, 13, pal.shroud);
     var f: usize = 0;
     while (f < 10) : (f += 1) {
         const a = rng.range(0, std.math.tau);
@@ -915,10 +1053,10 @@ fn shroudMesh() rl.Mesh {
             0.0080 * H * rng.range(0.8, 1.25),
             0.0055 * H,
             5,
-            if (rng.float() < 0.5) SHROUD_LT else SHROUD_DK,
+            if (rng.float() < 0.5) pal.shroudLt else pal.shroudDk,
         );
     }
-    b.addBlob(v3(0, 0.244 * H, -0.006 * H), v3(0.080 * H, 0.036 * H, 0.072 * H), 5, 11, SHROUD_LT);
+    b.addBlob(v3(0, 0.244 * H, -0.006 * H), v3(0.080 * H, 0.036 * H, 0.072 * H), 5, 11, pal.shroudLt);
     return b.toMesh();
 }
 
@@ -938,25 +1076,25 @@ fn shroudHalf(y: f32) f32 {
     return PROF[0][1];
 }
 
-fn cowlMesh() rl.Mesh {
+fn cowlMesh(pal: Pal) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(9127);
     b.setMat(.cloth);
-    b.addBlob(v3(0, 0.055 * H, -0.010 * H), v3(0.083 * H, 0.098 * H, 0.086 * H), 5, 10, SHROUD);
-    b.addBlob(v3(rng.range(-0.006, 0.006) * H, 0.118 * H, -0.030 * H), v3(0.050 * H, 0.052 * H, 0.048 * H), 4, 8, SHROUD_LT);
-    b.addBlob(v3(0, 0.010 * H, -0.056 * H), v3(0.072 * H, 0.070 * H, 0.048 * H), 4, 8, SHROUD_DK);
-    b.addBlob(v3(0, 0.048 * H, 0.052 * H), v3(0.056 * H, 0.062 * H, 0.048 * H), 5, 9, HOLLOW);
+    b.addBlob(v3(0, 0.055 * H, -0.010 * H), v3(0.083 * H, 0.098 * H, 0.086 * H), 5, 10, pal.shroud);
+    b.addBlob(v3(rng.range(-0.006, 0.006) * H, 0.118 * H, -0.030 * H), v3(0.050 * H, 0.052 * H, 0.048 * H), 4, 8, pal.shroudLt);
+    b.addBlob(v3(0, 0.010 * H, -0.056 * H), v3(0.072 * H, 0.070 * H, 0.048 * H), 4, 8, pal.shroudDk);
+    b.addBlob(v3(0, 0.048 * H, 0.052 * H), v3(0.056 * H, 0.062 * H, 0.048 * H), 5, 9, pal.hollow);
     b.setMat(.plain);
     for ([_]f32{ 1, -1 }) |side| {
         const ex = side * 0.024 * H * rng.range(0.92, 1.08);
         const ey = (0.052 + rng.range(-0.006, 0.006)) * H;
-        b.addBlob(v3(ex, ey, 0.092 * H), v3(0.0125 * H, 0.0165 * H, 0.011 * H), 4, 8, EYE);
-        b.addBlob(v3(ex, ey, 0.100 * H), v3(0.0058 * H, 0.0080 * H, 0.005 * H), 3, 7, EYE_CORE);
+        b.addBlob(v3(ex, ey, 0.092 * H), v3(0.0125 * H, 0.0165 * H, 0.011 * H), 4, 8, pal.eye);
+        b.addBlob(v3(ex, ey, 0.100 * H), v3(0.0058 * H, 0.0080 * H, 0.005 * H), 3, 7, pal.eyeCore);
     }
     return b.toMesh();
 }
 
-fn armMesh(seed: u64) rl.Mesh {
+fn armMesh(pal: Pal, seed: u64) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(seed);
     b.setMat(.cloth);
@@ -966,13 +1104,13 @@ fn armMesh(seed: u64) rl.Mesh {
         0.038 * H * rng.range(0.94, 1.06),
         0.028 * H,
         8,
-        LIMB,
+        pal.limb,
     );
-    b.addBlob(v3(0, -0.030 * H, -0.010 * H), v3(0.046 * H, 0.055 * H, 0.040 * H), 4, 8, SHROUD_DK);
+    b.addBlob(v3(0, -0.030 * H, -0.010 * H), v3(0.046 * H, 0.055 * H, 0.040 * H), 4, 8, pal.shroudDk);
     return b.toMesh();
 }
 
-fn forearmMesh(seed: u64) rl.Mesh {
+fn forearmMesh(pal: Pal, seed: u64) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(seed);
     b.setMat(.cloth);
@@ -982,16 +1120,16 @@ fn forearmMesh(seed: u64) rl.Mesh {
         0.028 * H * rng.range(0.94, 1.06),
         0.020 * H,
         7,
-        LIMB_DK,
+        pal.limbDk,
     );
     return b.toMesh();
 }
 
-fn handMesh(side: f32, seed: u64) rl.Mesh {
+fn handMesh(pal: Pal, side: f32, seed: u64) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(seed);
     b.setMat(.cloth);
-    b.addBlob(v3(0, -0.012 * H, 0.004 * H), v3(0.026 * H, 0.024 * H, 0.020 * H), 4, 8, LIMB);
+    b.addBlob(v3(0, -0.012 * H, 0.004 * H), v3(0.026 * H, 0.024 * H, 0.020 * H), 4, 8, pal.limb);
     var i: i32 = 0;
     while (i < 3) : (i += 1) {
         const fi: f32 = @floatFromInt(i);
@@ -999,14 +1137,14 @@ fn handMesh(side: f32, seed: u64) rl.Mesh {
         const knuckle = v3(spread, -0.030 * H, 0.010 * H);
         const mid = v3(spread * 1.5, -0.058 * H * rng.range(0.85, 1.1), 0.030 * H);
         const tip = v3(spread * 1.7, -0.062 * H, 0.056 * H);
-        b.addCapsule(knuckle, mid, 0.0090 * H, 0.0074 * H, 5, LIMB_DK);
-        b.addCapsule(mid, tip, 0.0074 * H, 0.0068 * H, 5, LIMB_DK);
-        b.addBlob(tip, v3(0.0072 * H, 0.0072 * H, 0.0072 * H), 3, 6, LIMB);
+        b.addCapsule(knuckle, mid, 0.0090 * H, 0.0074 * H, 5, pal.limbDk);
+        b.addCapsule(mid, tip, 0.0074 * H, 0.0068 * H, 5, pal.limbDk);
+        b.addBlob(tip, v3(0.0072 * H, 0.0072 * H, 0.0072 * H), 3, 6, pal.limb);
     }
     return b.toMesh();
 }
 
-fn tatterMesh(len: f32, ang: f32, seed: u64) rl.Mesh {
+fn tatterMesh(pal: Pal, len: f32, ang: f32, seed: u64) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(seed);
     b.setMat(.cloth);
@@ -1031,11 +1169,11 @@ fn tatterMesh(len: f32, ang: f32, seed: u64) rl.Mesh {
         const mid = mathx.lerpV(p, q, 0.5);
         const half = mathx.scaleV(mathx.subV(q, p), 0.5);
         const w = (hw + hw1) * 0.5;
-        b.addBox(mid, mathx.scaleV(tan, w), half, mathx.scaleV(rad, THICK), SHROUD);
+        b.addBox(mid, mathx.scaleV(tan, w), half, mathx.scaleV(rad, THICK), pal.shroud);
         p = q;
         hw = hw1;
     }
-    b.addBlob(p, v3(hw * 0.9, THICK * 2.2, hw * 0.9), 3, 7, SHROUD_LT);
+    b.addBlob(p, v3(hw * 0.9, THICK * 2.2, hw * 0.9), 3, 7, pal.shroudLt);
     return b.toMesh();
 }
 
@@ -1163,7 +1301,7 @@ test "A JUMP IS NOT TRAVEL: the hem does not swing off a teleport" {
     var t: f32 = 0;
     while (s.airborne() and t < 2.0) : (t += 1.0 / 60.0) {
         _ = s.update(1.0 / 60.0, hero, 400, .{});
-        try std.testing.expect(mathx.lenXZ(s.hemLag) < 0.1);
+        try std.testing.expect(mathx.lenXZ(s.hemVel) < 0.1);
     }
     try std.testing.expect(t < 1.0);
 }
@@ -1320,11 +1458,48 @@ test "the hem TRAILS the drift and settles back through its own rest" {
         s.pos.z += DRIFT_SPEED * dt;
         s.trailHem(was, dt);
     }
-    try std.testing.expect(s.hemLag.z < -0.5);
-    const held = s.hemLag.z;
+    try std.testing.expect(s.hemVel.z > 0.5);
+    const held = s.hemVel.z;
     s.trailHem(s.pos, dt);
-    try std.testing.expect(s.hemLag.z > held and s.hemLag.z < 0);
+    try std.testing.expect(s.hemVel.z < held and s.hemVel.z > 0);
     t = 0;
     while (t < 2.0) : (t += dt) s.trailHem(s.pos, dt);
-    try std.testing.expectApproxEqAbs(@as(f32, 0), s.hemLag.z, 1e-3);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), s.hemVel.z, 1e-3);
+}
+
+// **THE ONE THAT WOULD HAVE CAUGHT IT.** The test above pins the stored vector; the sign error was between the
+// vector and the rotation, so it asks the posed matrices where the cloth ended up.
+test "a shade flying forward leaves its gown BEHIND it, and the trailing edge is the one that lifts" {
+    var s = Shade.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const dt = 1.0 / 60.0;
+    var t: f32 = 0;
+    while (t < 0.6) : (t += dt) {
+        const was = s.pos;
+        s.pos.z += DRIFT_SPEED * dt;
+        s.trailHem(was, dt);
+    }
+    s.pose();
+
+    // Facing 0, so the shade's own forward IS world +Z and the tips can be read straight off the matrices.
+    const TIP = v3(0, -0.33, 0);
+    var lead: f32 = 0;
+    var trail: f32 = 0;
+    var pushed: usize = 0;
+    for (0..HEM_N) |i| {
+        const bone = s.xf[HEM_0 + i];
+        const root = rl.math.vector3Transform(mathx.zero3, bone);
+        const tip = rl.math.vector3Transform(TIP, bone);
+        if (tip.z < root.z - 0.01) pushed += 1;
+        const a = std.math.tau * @as(f32, @floatFromInt(i)) / HEM_N;
+        // The ring's own bearings: index 2 of 8 is +Z (the leading edge), index 6 is -Z (the trailing edge).
+        if (mathx.sinf(a) > 0.9) lead = tip.y - root.y;
+        if (mathx.sinf(a) < -0.9) trail = tip.y - root.y;
+    }
+    std.debug.print("\n  hem at {d:.2} m/s: {d}/{d} tatters downwind, leading tip {d:.3} m, trailing {d:.3} m\n", .{
+        s.hemVel.z, pushed, HEM_N, lead, trail,
+    });
+    try std.testing.expectEqual(HEM_N, pushed);
+    // …AND THE SKIRT HAS A SHAPE. Both are negative (they hang DOWN), so streaming means the GREATER.
+    try std.testing.expect(trail > lead + 0.05);
+    try std.testing.expect(lead < 0 and trail < 0);
 }

@@ -216,6 +216,149 @@ pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
         .spidersilk_moccasins => spidersilkMoccasins(cx, cy, px),
         .bloodtinge_signet => bloodtingeSignet(cx, cy, px),
         .loop_of_chance => loopOfChance(cx, cy, px),
+        .nightcap_grease => nightcapGrease(cx, cy, px),
+        .wakers_nail => wakersNail(cx, cy, px),
+        .madcap_powder => madcapPowder(cx, cy, px),
+        .stolen_gravebell => stolenGravebell(cx, cy, px),
+        .bloodwine => bloodwine(cx, cy, px),
+        .wax_stopped_hood => waxStoppedHood(cx, cy, px),
+        .scroll_babble => sorceryScroll(cx, cy, px, .babble),
+        .scroll_bidding => sorceryScroll(cx, cy, px, .bidding),
+    }
+}
+
+const SLEEP_WAX = rgba(150, 158, 206, 255);
+const SLEEP_WAX_DK = rgba(96, 104, 152, 255);
+const GILL_DUST = rgba(186, 208, 96, 255);
+const GILL_DUST_DK = rgba(126, 144, 58, 255);
+const CHARM_ROSE = rgba(228, 122, 172, 255);
+const WINE_BLACK = rgba(46, 18, 26, 255);
+const WINE_RED = rgba(140, 26, 40, 255);
+const PAPER = rgba(206, 192, 156, 255);
+const PAPER_DK = rgba(160, 144, 112, 255);
+
+/// **THE THIRD JAR ON THE TALLOW'S SHELF AND IT READS AS THE THIRD** (`rimewax`'s law) — same cloth, same cord,
+/// only the fat swapped.
+fn nightcapGrease(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x51EE);
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.12 + 1.2 * k), s * 0.25, rgba(0, 0, 0, 115));
+    quad(v2(cx - s * 0.23, cy + s * 0.02), v2(cx + s * 0.22, cy + s * 0.05), v2(cx + s * 0.15, cy + s * 0.30), v2(cx - s * 0.17, cy + s * 0.27), SALT);
+    rl.drawLineEx(v2(cx - s * 0.23, cy + s * 0.04), v2(cx - s * 0.33, cy - s * 0.04), 3.4 * k, CORD);
+    rl.drawCircleV(v2(cx - s * 0.02, cy - s * 0.03), s * 0.165, SLEEP_WAX);
+    rl.drawCircleV(v2(cx + s * 0.11 + rng.range(-1.2, 1.2) * k, cy + s * 0.01), s * 0.115, SLEEP_WAX_DK);
+    rl.drawCircleV(v2(cx - s * 0.09, cy - s * 0.08), s * 0.05, rgba(216, 222, 250, 255));
+    rl.drawLineEx(v2(cx + s * 0.04, cy + s * 0.09), v2(cx + s * 0.06, cy + s * 0.26), 2.0 * k, SLEEP_WAX_DK);
+}
+
+/// A NAIL BENT INTO A RING and not a cast band — the head still stands proud of the circle.
+fn wakersNail(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.04 + 1.0 * k), s * 0.20, rgba(0, 0, 0, 110));
+    arc(cx, cy + s * 0.03, s * 0.175, std.math.pi * 0.10, std.math.tau * 0.97, 20, s * 0.052, s * 0.030, IRON_DK);
+    arc(cx - s * 0.02, cy + s * 0.01, s * 0.150, std.math.pi * 1.00, std.math.pi * 1.55, 8, 1.6 * k, 0.9 * k, rgba(158, 150, 138, 220));
+    quad(
+        v2(cx + s * 0.14, cy - s * 0.19),
+        v2(cx + s * 0.26, cy - s * 0.15),
+        v2(cx + s * 0.23, cy - s * 0.05),
+        v2(cx + s * 0.12, cy - s * 0.09),
+        RUST,
+    );
+    rl.drawLineEx(v2(cx + s * 0.15, cy - s * 0.16), v2(cx + s * 0.24, cy - s * 0.13), 1.3 * k, rgba(176, 122, 82, 255));
+    rl.drawLineEx(v2(cx - s * 0.15, cy + s * 0.16), v2(cx - s * 0.05, cy + s * 0.20), 1.4 * k, rgba(96, 88, 78, 255));
+}
+
+/// A PAPER TWIST WITH ITS SEAM ALREADY GOING — the dust leaking out is the only thing that says which powder.
+fn madcapPowder(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x9A5D);
+    rl.drawCircleV(v2(cx + 1.1 * k, cy + s * 0.10 + 1.3 * k), s * 0.23, rgba(0, 0, 0, 112));
+    quad(v2(cx - s * 0.19, cy - s * 0.09), v2(cx + s * 0.20, cy - s * 0.13), v2(cx + s * 0.17, cy + s * 0.21), v2(cx - s * 0.21, cy + s * 0.17), PAPER);
+    quad(v2(cx - s * 0.19, cy - s * 0.09), v2(cx - s * 0.02, cy - s * 0.11), v2(cx - s * 0.04, cy + s * 0.19), v2(cx - s * 0.21, cy + s * 0.17), PAPER_DK);
+    // Neither on the axis and neither the same length.
+    rl.drawLineEx(v2(cx - s * 0.03, cy - s * 0.11), v2(cx + s * 0.05, cy - s * 0.30), 3.2 * k, PAPER_DK);
+    rl.drawLineEx(v2(cx - s * 0.06, cy + s * 0.18), v2(cx - s * 0.16, cy + s * 0.32), 2.8 * k, PAPER_DK);
+    rl.drawLineEx(v2(cx - s * 0.10, cy - s * 0.05), v2(cx + s * 0.09, cy + s * 0.15), 1.2 * k, rgba(140, 126, 96, 200));
+    var i: u32 = 0;
+    while (i < 7) : (i += 1) {
+        const a = rng.angle();
+        const r = s * rng.range(0.20, 0.34);
+        rl.drawCircleV(v2(cx + mathx.cosf(a) * r, cy + s * 0.04 + mathx.sinf(a) * r * 0.7), s * rng.range(0.018, 0.040), if (i % 2 == 0) GILL_DUST else GILL_DUST_DK);
+    }
+}
+
+/// A HAND-BELL, not the summoning bell (`bell`): a HANDLE where that one has a crown.
+fn stolenGravebell(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x6BE1);
+    const lean = rng.range(-0.7, 0.7) * k;
+    const mouthY = cy + s * 0.22;
+    const hw = s * 0.195;
+    rl.drawCircleV(v2(cx + 1.2 * k, mouthY + 1.4 * k), s * 0.22, rgba(0, 0, 0, 112));
+    quad(
+        v2(cx - s * 0.085 + lean, cy - s * 0.14),
+        v2(cx + s * 0.085 + lean, cy - s * 0.14),
+        v2(cx + hw, mouthY),
+        v2(cx - hw, mouthY),
+        BRONZE,
+    );
+    quad(
+        v2(cx - s * 0.085 + lean, cy - s * 0.14),
+        v2(cx - s * 0.010 + lean, cy - s * 0.14),
+        v2(cx - hw * 0.40, mouthY),
+        v2(cx - hw, mouthY),
+        BRONZE_DK,
+    );
+    ellipseV(cx, mouthY, hw, s * 0.036, BRONZE_BORE);
+    arc(cx + lean * 0.5, cy - s * 0.22, s * 0.070, std.math.pi * 1.02, std.math.tau * 0.99, 10, 2.9 * k, 2.4 * k, BRONZE_LT);
+    rl.drawLineEx(v2(cx + lean * 0.5, cy - s * 0.29), v2(cx + lean * 0.5 + s * 0.02, cy - s * 0.36), 3.0 * k, rgba(120, 92, 52, 255));
+    // Off the middle: a bell hanging true is a bell nobody has rung.
+    rl.drawCircleV(v2(cx + s * 0.045, mouthY - s * 0.045), s * 0.042, rgba(84, 62, 30, 255));
+    arc(cx + s * 0.09, cy - s * 0.02, s * 0.10, std.math.pi * 1.30, std.math.pi * 1.94, 8, 1.5 * k, 0.6 * k, rgba(238, 220, 176, 130));
+}
+
+/// A BOTTLE WITH THE RED SETTLED OUT OF IT: the sediment in the bottom is the whole picture.
+fn bloodwine(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    rl.drawCircleV(v2(cx + 1.1 * k, cy + s * 0.20 + 1.3 * k), s * 0.22, rgba(0, 0, 0, 118));
+    quad(v2(cx - s * 0.155, cy - s * 0.05), v2(cx + s * 0.155, cy - s * 0.05), v2(cx + s * 0.175, cy + s * 0.30), v2(cx - s * 0.175, cy + s * 0.30), WINE_BLACK);
+    quad(v2(cx - s * 0.155, cy + s * 0.13), v2(cx + s * 0.165, cy + s * 0.13), v2(cx + s * 0.175, cy + s * 0.30), v2(cx - s * 0.175, cy + s * 0.30), WINE_RED);
+    rl.drawLineEx(v2(cx - s * 0.09, cy + s * 0.00), v2(cx - s * 0.10, cy + s * 0.26), 2.0 * k, rgba(96, 34, 44, 200));
+    quad(v2(cx - s * 0.055, cy - s * 0.28), v2(cx + s * 0.055, cy - s * 0.28), v2(cx + s * 0.075, cy - s * 0.05), v2(cx - s * 0.075, cy - s * 0.05), rgba(62, 26, 32, 255));
+    rl.drawCircleV(v2(cx, cy - s * 0.30), s * 0.062, CORK);
+    rl.drawLineEx(v2(cx - s * 0.05, cy - s * 0.31), v2(cx + s * 0.05, cy - s * 0.29), 1.2 * k, rgba(112, 86, 52, 255));
+    rl.drawCircleV(v2(cx - s * 0.055, cy - s * 0.13), s * 0.030, rgba(196, 120, 118, 120));
+}
+
+/// **THE EARS ARE THE ITEM** — a hood is a hood at 34 px, so the two wax plugs and the stitching carry it.
+fn waxStoppedHood(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    const cloth = rgba(118, 108, 92, 255);
+    const clothLo = rgba(76, 70, 60, 255);
+    const wax = rgba(232, 222, 186, 255);
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.08 + 1.4 * k), s * 0.25, rgba(0, 0, 0, 112));
+    arc(cx, cy + s * 0.06, s * 0.235, std.math.pi * 0.98, std.math.tau * 1.02, 16, s * 0.24, s * 0.15, clothLo);
+    arc(cx - s * 0.02, cy + s * 0.05, s * 0.195, std.math.pi * 1.06, std.math.pi * 1.90, 12, s * 0.17, s * 0.09, cloth);
+    quad(v2(cx - s * 0.24, cy + s * 0.05), v2(cx - s * 0.11, cy + s * 0.05), v2(cx - s * 0.15, cy + s * 0.31), v2(cx - s * 0.29, cy + s * 0.26), clothLo);
+    quad(v2(cx + s * 0.11, cy + s * 0.05), v2(cx + s * 0.24, cy + s * 0.05), v2(cx + s * 0.27, cy + s * 0.22), v2(cx + s * 0.14, cy + s * 0.26), cloth);
+    var e: u32 = 0;
+    while (e < 2) : (e += 1) {
+        const sx: f32 = if (e == 0) -1.0 else 1.0;
+        const x = cx + sx * s * 0.185;
+        const y = cy + s * 0.015 + sx * s * 0.012;
+        rl.drawCircleV(v2(x, y), s * 0.072, wax);
+        rl.drawCircleV(v2(x - sx * s * 0.018, y - s * 0.018), s * 0.030, rgba(250, 244, 218, 255));
+        var t: u32 = 0;
+        while (t < 4) : (t += 1) {
+            const ty = y - s * 0.055 + @as(f32, @floatFromInt(t)) * s * 0.037;
+            rl.drawLineEx(v2(x - s * 0.075, ty), v2(x + s * 0.075, ty - s * 0.008), 1.2 * k, rgba(52, 46, 38, 210));
+        }
     }
 }
 
@@ -368,7 +511,49 @@ pub fn spellArt(s: combat.Spell, cx: f32, cy: f32, px: f32, lit: bool) void {
         .siphon => siphon(cx, cy, px, lit),
         .lance => lance(cx, cy, px, lit),
         .sunder => sunder(cx, cy, px, lit),
+        .babble => babble(cx, cy, px, lit),
+        .bidding => bidding(cx, cy, px, lit),
     }
+}
+
+/// **THREE MOUTHS AND NO TWO SAYING THE SAME THING.** The confusion meter's colour, so the icon and the bar agree.
+fn babble(cx: f32, cy: f32, px: f32, lit: bool) void {
+    const s = px;
+    const k = strokeK(px);
+    const hot = dimmed(rgba(172, 202, 82, 255), lit);
+    const cool = dimmed(rgba(112, 138, 46, 255), lit);
+    const rows = [_][4]f32{ .{ -0.16, -0.14, 0.20, 0.20 }, .{ 0.10, 0.02, 0.27, -0.35 }, .{ -0.04, 0.22, 0.15, 0.70 } };
+    for (rows, 0..) |r, i| {
+        const ox = cx + s * r[0];
+        const oy = cy + s * r[1];
+        const rr = s * r[2];
+        const tilt = r[3];
+        arc(ox, oy, rr, std.math.pi * (0.20 + tilt), std.math.pi * (0.86 + tilt), 9, 2.6 * k, 1.5 * k, if (i == 1) hot else cool);
+        arc(ox, oy, rr * 0.58, std.math.pi * (0.28 + tilt), std.math.pi * (0.80 + tilt), 7, 1.8 * k, 1.0 * k, if (i == 1) cool else hot);
+    }
+    rl.drawCircleV(v2(cx + s * 0.30, cy - s * 0.24), 1.9 * k, hot);
+    rl.drawCircleV(v2(cx - s * 0.30, cy + s * 0.28), 1.6 * k, cool);
+}
+
+/// **A HAND HELD OUT WITH A COIN IN IT.** Not a crown and not a chain: this spell PAYS. Charm's rose, for the
+/// babble's reason.
+fn bidding(cx: f32, cy: f32, px: f32, lit: bool) void {
+    const s = px;
+    const k = strokeK(px);
+    const rose = dimmed(CHARM_ROSE, lit);
+    const roseLo = dimmed(rgba(158, 74, 112, 255), lit);
+    const coin = dimmed(rgba(240, 216, 148, 255), lit);
+    arc(cx - s * 0.02, cy + s * 0.10, s * 0.235, std.math.pi * 0.06, std.math.pi * 0.96, 12, 4.6 * k, 3.0 * k, roseLo);
+    arc(cx - s * 0.02, cy + s * 0.08, s * 0.190, std.math.pi * 0.12, std.math.pi * 0.90, 10, 2.2 * k, 1.4 * k, rose);
+    rl.drawLineEx(v2(cx - s * 0.25, cy + s * 0.07), v2(cx - s * 0.31, cy - s * 0.08), 3.4 * k, roseLo);
+    var f: u32 = 0;
+    while (f < 3) : (f += 1) {
+        const x = cx - s * 0.06 + @as(f32, @floatFromInt(f)) * s * 0.115;
+        rl.drawLineEx(v2(x, cy + s * 0.30), v2(x + s * 0.02, cy + s * 0.34), 1.6 * k, roseLo);
+    }
+    rl.drawCircleV(v2(cx + s * 0.03, cy - s * 0.12), s * 0.105, coin);
+    rl.drawCircleV(v2(cx + s * 0.03, cy - s * 0.12), s * 0.042, dimmed(rgba(150, 116, 52, 255), lit));
+    arc(cx + s * 0.03, cy - s * 0.12, s * 0.155, std.math.pi * 1.10, std.math.pi * 1.80, 8, 1.5 * k, 0.6 * k, dimmed(rgba(252, 240, 200, 150), lit));
 }
 
 fn lance(cx: f32, cy: f32, px: f32, lit: bool) void {

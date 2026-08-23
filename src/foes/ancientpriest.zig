@@ -866,7 +866,7 @@ pub const Crypt = struct {
         var worst: ?foe.Blow = null;
         for (self.live()) |*p| {
             if (!foe.corporeal(p)) continue;
-            if (p.breathDose(dt, hero)) |h| foe.worseBlow(&worst, h, p.pos, .hero);
+            if (p.breathDose(dt, hero)) |h| foe.worseBlow(&worst, h, p.pos, &p.threat);
         }
         return worst;
     }

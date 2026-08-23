@@ -588,7 +588,11 @@ const BREATH_SH_LEVEL = 40.0;
 const BREATH_SHIVER = 1.5;
 const BREATH_SHIVER_HZ = 12.0;
 
-const FX_N = 1472;
+/// **SIZED FOR THE DISC, NOT THE POINT.** A burst affords two dozen because they leave one place; a 3.4 m ring
+/// at that count is a scatter of specks.
+const DUST_MOTES = 96;
+
+const FX_N = 1536;
 
 comptime {
     const gather = CAST_MOTE_RATE_HI * CAST_MOTE_LIFE_HI;
@@ -603,7 +607,7 @@ comptime {
     const blocked = BLOCK_GRIT_MAX + BLOCK_SPARK_MAX + 1;
     const wake = FOG_WAKE_RATE * FOG_WAKE_LIFE_HI;
     const worst = gather + breath + wake +
-        @as(f32, release + erupt + caught + struck + 2 * BOLT_BURST + lance + blocked);
+        @as(f32, release + erupt + caught + struck + 2 * BOLT_BURST + lance + blocked + DUST_MOTES);
     if (@as(f32, FX_N) < worst) @compileError(std.fmt.comptimePrint(
         "hero: FX_N = {d} but a cast can have {d} particles in the air — raise it",
         .{ FX_N, worst },
@@ -668,7 +672,9 @@ pub fn armourOf(worn: Worn) f32 {
     return plateOf(worn).a;
 }
 
-pub const Suit = struct { plate: item.Plate, charm: item.Charm };
+/// **TEN NUMBERS, NOT ONE `Plate` FIELD.** A piece names ONE meter (`item.AilRate`), and a single `Plate` has
+/// nowhere to put a sporecrown and a waker's nail at once.
+pub const Suit = struct { plate: item.Plate, charm: item.Charm, rates: [combat.NAIL]f32 = [_]f32{1} ** combat.NAIL };
 
 /// **ONE WALK OF THE SOCKETS FOR BOTH TABLES.** `settleBody` asks every frame, and a walk apiece is two
 /// `item.equip` lookups per socket for one answer.
@@ -677,13 +683,14 @@ pub const Suit = struct { plate: item.Plate, charm: item.Charm };
 pub fn suitOf(worn: Worn) Suit {
     var pl = item.Plate{ .slot = .chest };
     var ch = item.Charm{ .slot = .ring };
+    var rates = [_]f32{1} ** combat.NAIL;
     inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
         if (worn.at(@enumFromInt(f.value))) |k| {
             switch (item.equip(k)) {
                 .plate => |p| {
                     pl.a += p.a;
                     pl.res = pl.res.plus(p.res);
-                    pl.poison *= p.poison;
+                    if (p.rate) |r| rates[@intFromEnum(combat.ailOfName(r.ail))] *= r.k;
                     pl.move *= p.move;
                 },
                 .charm => |c| {
@@ -696,7 +703,7 @@ pub fn suitOf(worn: Worn) Suit {
             }
         }
     }
-    return .{ .plate = pl, .charm = ch };
+    return .{ .plate = pl, .charm = ch, .rates = rates };
 }
 
 pub fn plateOf(worn: Worn) item.Plate {
@@ -707,8 +714,8 @@ pub fn resistOf(worn: Worn) item.Res {
     return plateOf(worn).res;
 }
 
-pub fn poisonRateOf(worn: Worn) f32 {
-    return plateOf(worn).poison;
+pub fn ailRateOf(worn: Worn, a: combat.Ail) f32 {
+    return suitOf(worn).rates[@intFromEnum(a)];
 }
 
 /// **HOW FAST HE WALKS, ALL OF IT IN ONE PLACE** — the tree's node and what is on his feet. `game.moveHero` is
@@ -1482,6 +1489,11 @@ pub const Hero = struct {
     grease: combat.Timed = .{},
     /// WHICH ELEMENT IS ON THE EDGE. Same rule — one coating, and the last one wiped on is the one that is there.
     greaseElem: combat.Elem = .fire,
+    /// **A SECOND CLOCK, NOT THE GREASE'S** — a grease hangs an element on the blow, a coat leaves a DOSE in the
+    /// wound, and both may be on the edge at once. One `Timed` for the two would have the nightcap wipe the
+    /// tallow off.
+    coat: combat.Timed = .{},
+    coatAil: combat.Ail = .sleep,
     steady: combat.Timed = .{},
     drinking: bool = false,
     drinkT: f32 = 0,
@@ -1618,6 +1630,7 @@ pub const Hero = struct {
         self.regen.reset();
         self.ward.reset();
         self.grease.reset();
+        self.coat.reset();
         self.steady.reset();
         self.vit.poiseRate = 1;
         self.settleBody();
@@ -2858,6 +2871,31 @@ pub const Hero = struct {
         }
     }
 
+    /// **A CLOUD IS NOT A BURST: IT HANGS.** Barely any gravity, heavy drag, a long life — so the ring the
+    /// powder doses is something you can see the edge of. TINTED by the caller: it has to agree with the meter
+    /// it fills (`hud.ailTint`).
+    pub fn dustPuff(self: *Hero, at: rl.Vector3, r: f32, col: rl.Color, salt: u32) void {
+        var rng = foemod.fxStream(@floatFromInt(salt), 619.0, 0x5D2A);
+        var i: u32 = 0;
+        while (i < DUST_MOTES) : (i += 1) {
+            const a = rng.angle();
+            // sqrt spreads the motes EVENLY over the disc; linear in radius piles them at the middle.
+            const rad = r * @sqrt(rng.float());
+            const p = v3(at.x + mathx.cosf(a) * rad, at.y + rng.range(0.05, 1.15), at.z + mathx.sinf(a) * rad);
+            foemod.emitPart(&self.fx, &self.fxHead, .{
+                .p = p,
+                .v = v3(mathx.cosf(a) * rng.range(0.25, 1.10), rng.range(0.15, 0.75), mathx.sinf(a) * rng.range(0.25, 1.10)),
+                .life = rng.range(0.9, 1.9),
+                .r0 = rng.range(0.075, 0.190),
+                .r1 = rng.range(0.030, 0.090),
+                .col = col,
+                .col1 = mathx.withAlpha(col, 0),
+                .grav = 0.28,
+                .drag = 2.6,
+            });
+        }
+    }
+
     /// `from`/`to` are the blow's OWN segment (`game.strikeSegment`), never a line derived a second time: the flash has to be where the blade was.
     pub fn levinStroke(self: *Hero, from: rl.Vector3, to: rl.Vector3, groundY: f32, salt: u32) void {
         // THE FLOOR IS THE EARTH UNDER THE STRIKE, not his feet and not the contact (`boltBurst`'s law) — the
@@ -2976,9 +3014,12 @@ pub const Hero = struct {
 
     pub fn attackHit(self: *const Hero) combat.Hit {
         const base = weigh(if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT, self.swingRow(), self.sheet).scaled(self.perk.dmg * self.vit.dmgMult());
-        if (!self.grease.on()) return base;
+        if (!self.grease.on() and !self.coat.on()) return base;
         var out = base;
-        out.elem.v[@intFromEnum(self.greaseElem)] += base.dmg * self.grease.value(0);
+        if (self.grease.on()) out.elem.v[@intFromEnum(self.greaseElem)] += base.dmg * self.grease.value(0);
+        // **ADDS TO THE EDGE'S OWN, NEVER REPLACES IT** (`weigh` writes the venom in): an envenomed dirk under
+        // the nightcap carries both, in two meters.
+        if (self.coat.on()) out.dose.v[@intFromEnum(self.coatAil)] += self.coat.value(0);
         return out;
     }
     pub fn setSpawn(self: *Hero, pos: rl.Vector3, facing: f32) void {
@@ -3195,6 +3236,18 @@ pub const Hero = struct {
         self.grease.start(frac, secs);
     }
 
+    pub fn startCoat(self: *Hero, a: combat.Ail, amt: f32, secs: f32) void {
+        self.coatAil = a;
+        self.coat.start(amt, secs);
+    }
+
+    /// The side gate is what makes this safe (`Vitals.build` refuses a foe-only row), so a `dose` use may name
+    /// any of the ten without a second list here.
+    pub fn doseSelf(self: *Hero, a: combat.Ail, amt: f32) void {
+        if (self.dead) return;
+        self.vit.build(a, amt);
+    }
+
     pub fn startSteady(self: *Hero, mult: f32, secs: f32) void {
         self.steady.start(mult, secs);
         self.vit.poiseRate = self.steady.value(1);
@@ -3207,6 +3260,7 @@ pub const Hero = struct {
     pub fn tickTimed(self: *Hero, dt: f32) void {
         self.ward.tick(dt);
         self.grease.tick(dt);
+        self.coat.tick(dt);
         self.steady.tick(dt);
         self.vit.poiseRate = self.steady.value(1);
         self.settleBody();
@@ -3224,7 +3278,12 @@ pub const Hero = struct {
         const worn = combat.resistsOf(suit.plate.res);
         for (&r.v, worn.v) |*x, w| x.* += w;
         self.vit.res = r;
-        self.vit.setAilRate(.poison, self.perk.poison * suit.plate.poison);
+        // **ALL TEN, EVERY FRAME.** The tree's one node is poison's alone (`ptree.Bonus.poison`). A walk rather
+        // than a line per meter, so a helm for a new ailment needs no edit here.
+        for (0..combat.NAIL) |i| {
+            const perked: f32 = if (i == @intFromEnum(combat.Ail.poison)) self.perk.poison else 1.0;
+            self.vit.ailRate[i] = perked * suit.rates[i];
+        }
         // **THE STUPEFIED POOL IS SHORTER, NOT DRAINED.** Refit rather than spend, so letting it go hands the
         // focus back at the share he had — the same rule a lengthened HP bar comes up on (`refitHp`).
         refitPool(&self.fp.cur, &self.fp.max, fpMaxFrom(self.sheet, suit.charm, self.perk) * self.vit.focusMult());

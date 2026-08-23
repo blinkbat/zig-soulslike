@@ -223,7 +223,7 @@ pub fn setMix(dst: *[MAX_MIX]Kind, n: *u8, mix: []const Kind) void {
 pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
 
 /// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at comptime, and each `roleOf` reads its own entries as a CONTIGUOUS RUN off the first of them.
-pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, florid_ravager, mushroom_mage, fen_lurker, spore_golem, bone_skitterer, ancient_priest, tolling_hollow };
+pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, florid_ravager, mushroom_mage, fen_lurker, spore_golem, bone_skitterer, ancient_priest, tolling_hollow, mourner, slumber_bloom };
 
 pub fn foeName(k: FoeKind) [:0]const u8 {
     return switch (k) {
@@ -252,6 +252,8 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
         .bone_skitterer => "Bone Skitterer",
         .ancient_priest => "Ancient Priest",
         .tolling_hollow => "Tolling Hollow",
+        .mourner => "Mourner",
+        .slumber_bloom => "Slumber Bloom",
     };
 }
 

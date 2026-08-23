@@ -1686,7 +1686,7 @@ pub const Muster = struct {
     pub fn update(self: *Muster, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {
         var blow: ?foe.Blow = null;
         for (self.live()) |*w| {
-            if (w.update(dt, w.threat.aim(hero), bounds, blade)) |h| foe.worseBlow(&blow, h, w.pos, w.threat.on);
+            if (w.update(dt, w.threat.aim(hero), bounds, blade)) |h| foe.worseBlow(&blow, h, w.pos, &w.threat);
         }
         return blow;
     }

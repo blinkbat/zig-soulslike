@@ -48,6 +48,8 @@ pub const Icon = enum {
     bone_skitterer,
     ancient_priest,
     tolling_hollow,
+    mourner,
+    slumber_bloom,
     new,
     open,
     save,
@@ -309,6 +311,19 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             line(cx + s * 0.30, cy + s * 0.18, cx + s * 0.24, cy + s * 0.34, w * 0.8, d);
         },
 
+        // The shade's cowl BOWED and a great deal wider, with the head sunk into it: a mourner is a posture.
+        .mourner => {
+            arc(cx - s * 0.04, cy - s * 0.10, s * 0.26, 170, 350, w * 1.5, col);
+            line(cx - s * 0.30, cy - s * 0.10, cx - s * 0.42, cy + s * 0.30, w * 1.2, col);
+            line(cx + s * 0.22, cy - s * 0.10, cx + s * 0.36, cy + s * 0.30, w * 1.2, col);
+            dot(cx - s * 0.10, cy - s * 0.02, w * 1.4, d);
+            dot(cx + s * 0.06, cy - s * 0.04, w * 1.4, d);
+            hline(cx - s * 0.04, cy + s * 0.30, s * 0.78, w, d);
+            line(cx - s * 0.34, cy + s * 0.30, cx - s * 0.28, cy + s * 0.48, w * 0.8, d);
+            line(cx - s * 0.08, cy + s * 0.32, cx - s * 0.02, cy + s * 0.46, w * 0.8, d);
+            line(cx + s * 0.20, cy + s * 0.32, cx + s * 0.26, cy + s * 0.44, w * 0.8, d);
+        },
+
         .rooted => {
             vline(cx, cy + s * 0.10, s * 0.74, w * 2.4, col);
             dot(cx - s * 0.09, cy - s * 0.06, w * 1.5, col);
@@ -319,6 +334,19 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             line(cx + s * 0.02, cy - s * 0.10, cx + s * 0.28, cy - s * 0.22, w, col);
             line(cx + s * 0.28, cy - s * 0.22, cx + s * 0.40, cy - s * 0.04, w * 0.8, col);
             line(cx, cy - s * 0.26, cx + s * 0.06, cy - s * 0.44, w * 0.8, d);
+        },
+
+        // The shroom's cap turned into a BAG: the whole difference between the two fungal creatures at a glance.
+        .slumber_bloom => {
+            arc(cx, cy - s * 0.16, s * 0.30, 180, 360, w * 2.2, col);
+            hline(cx, cy - s * 0.16, s * 0.56, w * 1.4, col);
+            vline(cx, cy + s * 0.16, s * 0.44, w * 1.8, col);
+            line(cx - s * 0.26, cy - s * 0.14, cx - s * 0.34, cy + s * 0.12, w, d);
+            line(cx + s * 0.26, cy - s * 0.14, cx + s * 0.34, cy + s * 0.10, w, d);
+            line(cx - s * 0.10, cy - s * 0.12, cx - s * 0.14, cy + s * 0.16, w * 0.8, d);
+            line(cx + s * 0.10, cy - s * 0.12, cx + s * 0.16, cy + s * 0.14, w * 0.8, d);
+            dot(cx, cy - s * 0.42, w * 1.3, d);
+            hline(cx, cy + s * 0.42, s * 0.34, w * 0.8, d);
         },
 
         .shroom => {

@@ -1546,7 +1546,7 @@ pub const Rite = struct {
     pub fn update(self: *Rite, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {
         var blow: ?foe.Blow = null;
         for (self.live()) |*k| {
-            if (k.update(dt, k.threat.aim(hero), bounds, blade)) |h| foe.worseBlow(&blow, h, k.hitFrom, k.threat.on);
+            if (k.update(dt, k.threat.aim(hero), bounds, blade)) |h| foe.worseBlow(&blow, h, k.hitFrom, &k.threat);
         }
         return blow;
     }

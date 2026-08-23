@@ -166,6 +166,14 @@ pub const Kind = enum(u8) {
     giltcolumn,
     giltbasin,
     giltfinial,
+    giltleaf,
+    marblefloor,
+    marbleslab,
+    marblestair,
+    ashcrag,
+    stalagmite,
+    menhir,
+    stonecarve,
     pickup,
     foggate,
 };
@@ -359,6 +367,14 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .giltcolumn => "Gilded Column",
         .giltbasin => "Star Basin",
         .giltfinial => "Fallen Finial",
+        .giltleaf => "Drift of Gold Leaf",
+        .marblefloor => "Marble Paving",
+        .marbleslab => "Broken Marble Block",
+        .marblestair => "Marble Stair",
+        .ashcrag => "Clinker Crag",
+        .stalagmite => "Stalagmites",
+        .menhir => "Raised Stone",
+        .stonecarve => "Carved Stone",
         .pickup => "Item",
         .foggate => "Fog Gate",
     };
@@ -393,7 +409,10 @@ pub fn group(k: Kind) Group {
         .puffballs, .deadfingers, .crustfungus, .shelfstack, .brainknot, .pipeclutch, .coralcrust => .fungus,
         .rib, .rib2, .rib3, .ribarch, .skull, .vertebra => .bone,
         .ashheap, .ashdune, .cinders, .charspar => .ash,
-        .giltarch, .muqarnas, .giltdome, .minaret, .jali, .giltcolumn, .giltbasin, .giltfinial => .gilt,
+        .giltarch, .muqarnas, .giltdome, .minaret, .jali, .giltcolumn, .giltbasin, .giltfinial,
+        .giltleaf, .marblefloor, .marbleslab, .marblestair => .gilt,
+        // Filed `.ash` and not `.rock`: they carry that region's own wind (`propash.bankInto`).
+        .ashcrag, .stalagmite, .menhir, .stonecarve => .ash,
     };
 }
 
@@ -457,7 +476,9 @@ pub fn biome(k: Kind) Biome {
         .reeds, .cattails, .lilypads => .wetland,
         // **THE GILDED CITY STOOD IN THE ASHFALL** (owner: this would look sick on Ash tiles) — filed to the ash rather than to `.ruins`, which records the region it was authored against. It does not PLACE it.
         .ashheap, .ashdune, .cinders, .charspar,
+        .ashcrag, .stalagmite, .menhir, .stonecarve,
         .giltarch, .muqarnas, .giltdome, .minaret, .jali, .giltcolumn, .giltbasin, .giltfinial,
+        .giltleaf, .marblefloor, .marbleslab, .marblestair,
         => .ash,
         .rib, .rib2, .rib3, .ribarch, .skull, .vertebra => .bone,
         .capgiant, .capgiant2, .capgiant3, .capcolossal, .captower, .hyphaarch,
@@ -792,6 +813,21 @@ pub const INFO = [NK]Info{
     .{ .kind = .giltbasin, .build = gold.giltBasinMesh, .bound = gold.BASIN_R * 2.3, .top = gold.BASIN_TOP, .view = 200, .parts = circleParts(gold.BASIN_R * 0.80, 0.50) },
     // No collider: it is ankle-high and you walk over it (`fleshfold`'s rule). It still casts.
     .{ .kind = .giltfinial, .build = gold.giltFinialMesh, .bound = 1.7, .top = gold.FINIAL_TOP, .view = 150 },
+    // Ankle-high, so no collider (`fleshfold`'s rule), and it still casts.
+    .{ .kind = .giltleaf, .build = gold.giltLeafMesh, .bound = gold.LEAF_R * 1.25, .top = gold.LEAF_TOP, .view = 160 },
+    // Paving casts NOTHING: a flagstone's shadow falling on flagstones is mud, and it is walked straight over.
+    .{ .kind = .marblefloor, .build = gold.marbleFloorMesh, .bound = gold.FLOOR_R * 1.45, .top = 0.10, .view = 200, .casts = false },
+    .{ .kind = .marbleslab, .build = gold.marbleSlabMesh, .bound = 2.4, .top = gold.SLAB_TOP, .view = 190, .parts = &.{.{ .ax = -0.95, .bx = 1.00, .r = 0.52, .h = 0.90 }} },
+    // A STAIR IS WALKED ROUND, not up — the collider is the whole mass, because nothing in this game climbs.
+    .{ .kind = .marblestair, .build = gold.marbleStairMesh, .bound = 3.6, .top = gold.STAIR_TOP + 0.10, .view = 260, .parts = &.{.{ .ax = -gold.STAIR_W * 0.4, .bx = gold.STAIR_W * 0.4, .az = -1.05, .bz = 0.20, .r = 0.60, .h = gold.STAIR_TOP }} },
+
+    // **THE ASHFIELD'S HARD LAYER.** The crag is the landmark, the menhir and the carved stone the middle, the
+    // stalagmites what you pick your way through.
+    .{ .kind = .ashcrag, .build = ash.ashCragMesh, .bound = ash.CRAG_TOP + 0.7, .top = ash.CRAG_TOP, .view = FAR, .parts = circleParts(0.95, ash.CRAG_TOP * 0.86), .occl = &.{.{ .r = 1.40, .y1 = ash.CRAG_TOP }} },
+    // No collider: you walk BETWEEN them, and a capsule round the cluster makes a field of them a maze.
+    .{ .kind = .stalagmite, .build = ash.stalagmiteMesh, .bound = ash.STAL_TOP + 0.40, .top = ash.STAL_TOP, .view = 200 },
+    .{ .kind = .menhir, .build = ash.menhirMesh, .bound = ash.MENHIR_TOP + 0.6, .top = ash.MENHIR_TOP, .view = FAR, .parts = circleParts(0.62, ash.MENHIR_TOP * 0.90), .occl = &.{.{ .r = 0.90, .y1 = ash.MENHIR_TOP }} },
+    .{ .kind = .stonecarve, .build = ash.stoneCarveMesh, .bound = ash.CARVE_R * 1.6, .top = ash.CARVE_TOP, .view = 230, .parts = circleParts(ash.CARVE_R * 0.80, ash.CARVE_TOP * 0.88) },
 
     .{ .kind = .pickup, .build = fx.pickupMesh, .bound = 1.9, .top = fx.PICKUP_TOP, .view = 190, .interact = true, .casts = false, .light = .{ .y = 0.30, .col = v3(0.86, 0.82, 0.58), .radius = 5.4, .flicker = 0.03 } },
     // `build` is the two threshold stones; the sheet is the VEIL, hence the late pass (`env.drawVeils`). `solid` because a fog wall must NOT thin between the lens and him, and it casts nothing. `ward` is the MECHANIC: a capsule the width of its own sheet that no foe and no sight crosses, and that he does.

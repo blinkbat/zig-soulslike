@@ -721,7 +721,7 @@ pub const Cluster = struct {
                 .none => {},
                 .burst => |b| {
                     self.spawnCloud(b.at);
-                    if (b.hit) |h| foe.worseBlow(&blow, h, s.pos, s.threat.on);
+                    if (b.hit) |h| foe.worseBlow(&blow, h, s.pos, &s.threat);
                 },
             }
         }

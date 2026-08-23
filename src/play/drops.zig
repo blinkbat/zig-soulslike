@@ -75,6 +75,10 @@ pub const TABLE = [_]Row{
     .{ .foe = .ancient_priest, .common = .rimeward_mantle, .odds = UNCOMMON },
     // …and the hollow leaves the bronze off its own bell, with the jar of lightning that answers it behind.
     .{ .foe = .tolling_hollow, .common = .gravebell_amulet, .odds = UNCOMMON, .rare = .thundercrock, .chance = 0.16 },
+    // **THE THING THAT ADDLES YOU CARRIES WHAT STOPS IT** — the hood came off a body a mile from any bell.
+    .{ .foe = .mourner, .common = .wax_stopped_hood, .odds = UNCOMMON, .rare = .wakers_nail, .chance = 0.12 },
+    // **THE FAT IN THE JAR IS RENDERED OFF ONE OF THESE** (`item.describe`).
+    .{ .foe = .slumber_bloom, .common = .purgeleaf, .rare = .nightcap_grease, .chance = 0.20 },
 };
 
 pub const NFOE = @typeInfo(wf.FoeKind).@"enum".fields.len;

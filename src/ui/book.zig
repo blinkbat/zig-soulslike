@@ -418,7 +418,9 @@ fn quickWorth(kind: ?item.Kind, worn: heromod.Worn, sheet: stats.Sheet, perk: pt
         .none => 0,
         .regen => |r| hpMax * r.frac,
         .lob => |b| b.dmg + b.fire + b.lightning,
-        .ward, .wind, .grease, .souls, .brew, .purge, .steady, .arrows => 0,
+        // **A METER IS NOT A NUMBER OFF THE BAR** — the picker ranks by damage or healing, and a powder, a coat,
+        // a bottle and the bell cannot be weighed against a flask on that axis.
+        .ward, .wind, .grease, .souls, .brew, .purge, .steady, .arrows, .dose, .coat, .toll => 0,
     };
 }
 
@@ -513,6 +515,7 @@ fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
             const qi = quickIndex(s) orelse return out[0..0];
             var n: usize = 1;
             out[0] = .{ .name = "(empty)", .act = .{ .quick = .{ .slot = qi, .kind = null } } };
+            @setEvalBranchQuota(6000);
             inline for (@typeInfo(item.Kind).@"enum".fields) |f| {
                 const k: item.Kind = @enumFromInt(f.value);
                 if (quickOffered(k, v)) {
@@ -1341,7 +1344,18 @@ const GDial = enum {
     res_cold,
     res_lightning,
     res_chaos,
-    poison,
+    // **ONE ROW PER METER, NOT ONE CALLED "STATUS"** — two helms slowing different meters on one line reads as
+    // one being strictly better. `Ail`'s own order, pinned below.
+    rate_poison,
+    rate_burning,
+    rate_chill,
+    rate_stun,
+    rate_bleed,
+    rate_sleep,
+    rate_confusion,
+    rate_charm,
+    rate_berserk,
+    rate_stupefy,
     walk,
     leech,
     hp_frac,
@@ -1367,7 +1381,10 @@ const GROW = blk: {
     rows[@intFromEnum(GDial.res_cold)] = .{ .name = "Cold resistance", .unit = .pct };
     rows[@intFromEnum(GDial.res_lightning)] = .{ .name = "Lightning resistance", .unit = .pct };
     rows[@intFromEnum(GDial.res_chaos)] = .{ .name = "Chaos resistance", .unit = .pct };
-    rows[@intFromEnum(GDial.poison)] = .{ .name = "Poison fills at", .unit = .pct, .cost = true };
+    // Off `combat.ailName`, so a retuned or renamed ailment cannot leave a stale word on this panel.
+    for (0..combat.NAIL) |i| {
+        rows[@intFromEnum(GDial.rate_poison) + i] = .{ .name = combat.ailName(@enumFromInt(i)) ++ " fills at", .unit = .pct, .cost = true };
+    }
     rows[@intFromEnum(GDial.walk)] = .{ .name = "Walk speed", .unit = .pct };
     rows[@intFromEnum(GDial.leech)] = .{ .name = "HP a swing landed", .unit = .flat };
     rows[@intFromEnum(GDial.hp_frac)] = .{ .name = "Max HP", .unit = .pct };
@@ -1389,7 +1406,21 @@ const Dials = struct {
     fn set(self: *Dials, d: GDial, x: f32) void {
         self.v[@intFromEnum(d)] = x;
     }
+    /// The rate rows are reached by INDEX (`rateDial`), because which of the ten a piece slows is a runtime fact.
+    fn setAt(self: *Dials, i: usize, x: f32) void {
+        self.v[i] = x;
+    }
 };
+
+/// The ten rate rows are `Ail`'s own order laid down contiguously, pinned here rather than trusted.
+fn rateDial(a: combat.Ail) usize {
+    return @intFromEnum(GDial.rate_poison) + @intFromEnum(a);
+}
+
+comptime {
+    if (@intFromEnum(GDial.rate_stupefy) - @intFromEnum(GDial.rate_poison) != combat.NAIL - 1)
+        @compileError("book: the `rate_*` dials are not one contiguous run of `combat.NAIL` — `rateDial` indexes off the first");
+}
 
 /// A piece's dials, or a BARE socket's — an empty hand still swings, so what it is compared against is
 /// `item.bareArm`'s row and not a column of blanks. An empty WORN socket carries nothing and says so.
@@ -1421,7 +1452,7 @@ fn dialsOf(k: ?item.Kind, socket: ?item.Wear) Dials {
             if (pl.res.cold != 0) d.set(.res_cold, pl.res.cold);
             if (pl.res.lightning != 0) d.set(.res_lightning, pl.res.lightning);
             if (pl.res.chaos != 0) d.set(.res_chaos, pl.res.chaos);
-            d.set(.poison, pl.poison * 100);
+            if (pl.rate) |r| d.setAt(rateDial(combat.ailOfName(r.ail)), r.k * 100);
             d.set(.walk, pl.move * 100);
         },
         .charm => |c| {

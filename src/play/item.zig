@@ -7,6 +7,33 @@ const stats = @import("stats.zig");
 /// pinned field for field against `combat.Elem` at comptime there.
 pub const ElemName = enum(u8) { fire, cold, lightning, chaos };
 
+/// **THE TEN BY NAME, FOR `ElemName`'S REASON** — this file is a leaf and cannot see `combat.Ail`. Pinned tag
+/// for tag at comptime there (`combat.ailOfName`).
+pub const AilName = enum(u8) { poison, burning, chill, stun, bleed, sleep, confusion, charm, berserk, stupefy };
+
+/// What a source puts in ONE meter, out of that row's own `max`.
+pub const AilDose = struct { ail: AilName, amt: f32 };
+
+/// A MULTIPLIER on how fast one meter fills on the wearer. Named, so a helm cannot slow all ten at once by accident.
+pub const AilRate = struct { ail: AilName, k: f32 };
+
+/// **LOWER CASE, BECAUSE IT LANDS MID-SENTENCE** — `combat.ailName` is the capitalised bar label; a gear line
+/// reads "sleep fills at 40%".
+pub fn ailWord(a: AilName) [:0]const u8 {
+    return switch (a) {
+        .poison => "poison",
+        .burning => "burning",
+        .chill => "chill",
+        .stun => "stun",
+        .bleed => "bleed",
+        .sleep => "sleep",
+        .confusion => "confusion",
+        .charm => "charm",
+        .berserk => "berserk",
+        .stupefy => "stupor",
+    };
+}
+
 pub const Kind = enum(u8) {
     crimson_flask,
     cerulean_flask,
@@ -59,6 +86,14 @@ pub const Kind = enum(u8) {
     spidersilk_moccasins,
     bloodtinge_signet,
     loop_of_chance,
+    nightcap_grease,
+    wakers_nail,
+    madcap_powder,
+    stolen_gravebell,
+    bloodwine,
+    wax_stopped_hood,
+    scroll_babble,
+    scroll_bidding,
 };
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
@@ -77,6 +112,8 @@ const ORDER = [_][]const u8{
     "scroll_levin",    "scroll_siphon",  "scroll_lance",   "scroll_sunder",
     "kiln_draught",    "rimewax",        "pilgrims_offering", "envenomed_dagger",
     "spidersilk_moccasins", "bloodtinge_signet", "loop_of_chance",
+    "nightcap_grease", "wakers_nail",       "madcap_powder",  "stolen_gravebell",
+    "bloodwine",       "wax_stopped_hood",  "scroll_babble",  "scroll_bidding",
 };
 
 comptime {
@@ -143,6 +180,14 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .spidersilk_moccasins => "Spidersilk Moccasins",
         .bloodtinge_signet => "Bloodtinge Signet",
         .loop_of_chance => "Loop of Chance",
+        .nightcap_grease => "Nightcap Grease",
+        .wakers_nail => "Waker's Nail",
+        .madcap_powder => "Madcap Powder",
+        .stolen_gravebell => "Stolen Gravebell",
+        .bloodwine => "Bloodwine",
+        .wax_stopped_hood => "Wax-Stopped Hood",
+        .scroll_babble => "Sorcery Scroll: Babble",
+        .scroll_bidding => "Sorcery Scroll: Bidding",
     };
 }
 
@@ -183,6 +228,10 @@ pub fn class(k: Kind) Class {
         .kiln_draught,
         .rimewax,
         .pilgrims_offering,
+        .nightcap_grease,
+        .madcap_powder,
+        .stolen_gravebell,
+        .bloodwine,
         => .tool,
         .rune_arc,
         .golden_seed,
@@ -205,6 +254,8 @@ pub fn class(k: Kind) Class {
         .spidersilk_moccasins,
         .bloodtinge_signet,
         .loop_of_chance,
+        .wakers_nail,
+        .wax_stopped_hood,
         => .gear,
         .soul_binding_ring => .gear,
         .spirit_scroll_wolf => .treasure,
@@ -215,6 +266,8 @@ pub fn class(k: Kind) Class {
         .scroll_siphon,
         .scroll_lance,
         .scroll_sunder,
+        .scroll_babble,
+        .scroll_bidding,
         => .treasure,
         .plain_arrows, .fire_arrows => .tool,
         .smithing_stone, .bloodgrass, .kobold_fang => .material,
@@ -275,6 +328,14 @@ pub fn describe(k: Kind) [:0]const u8 {
         .bloodtinge_signet => "A signet with a garnet gone almost black, set so deep the band has closed over the stone. Wearing it your blood runs thicker than it has any right to.",
         .loop_of_chance => "A loop of wire twisted through a holed coin, the kind pressed into a dead man's hand for the toll he owed. What it buys is nothing you can point at until something turns up that should not have.",
         .scroll_sunder => "Half a sheet, the tear old and clean. What is left shows a rod brought down close in, inside the length of a sword - which is the whole of what this one asks of you.",
+        .nightcap_grease => "A jar of pale fat rendered off a dreaming cap, in the same waxed cloth the tallow comes in. Wiped along an edge it goes on thin and stays cold, and what it puts in a wound is not pain - it is the want of sleep, four strokes of it, and the body goes down where it stands.",
+        .wakers_nail => "An iron nail bent round into a ring, filed flat where a thumb would rub it. The old orders wore them to keep a vigil honest: it sits against the bone and will not let you settle.",
+        .madcap_powder => "Dried gill-dust off a ring of caps that grew too close together, ground fine and folded into a paper twist. Thrown, it hangs in the air about as long as a held breath, and everything inside it stops being sure which of the shapes around it it came in with.",
+        .stolen_gravebell => "A hand-bell lifted off a hollow that was still swinging it, the bronze thin as a leaf and the clapper worn to a nub. It was cast to call the dead to their work. It never asked whose work, and it does not ask now - but ringing it takes the same thing out of you that a sorcery does.",
+        .bloodwine => "Black wine gone to syrup in the neck of the bottle, cut with something that settles out red if you let it stand. Drink it and everything comes easier and faster for a while, and you pay for the while twice: once going, and once when it lets go of you.",
+        .wax_stopped_hood => "A pilgrim's hood with the ears sewn shut and packed with candle-wax, done from the inside by somebody who wanted it that way. It came off a body a mile from the nearest bell, still walking a straight line.",
+        .scroll_babble => "A sheet written over three times in three hands, none of them agreeing, and the last one going round the margin. Read aloud it does nothing to you. What it does is to whatever is listening.",
+        .scroll_bidding => "One line, very large, very carefully drawn, and no words in it at all. Below it, small, in a different ink: WHAT IS OWED IS OWED TO WHOEVER HOLDS THE DEBT.",
     };
 }
 
@@ -283,7 +344,9 @@ pub const Use = union(enum) {
     /// Refills one bank of the quiver (`combat.Quiver`). `n` is arrows, and the quiver caps it.
     arrows: struct { fire: bool, n: u8 },
     regen: struct { frac: f32, secs: f32 },
-    lob: struct { dmg: f32, fire: f32 = 0, lightning: f32 = 0, poise: f32 },
+    /// `r` and `dose` together are the POWDER: no damage, one meter filled in everything inside the ring where
+    /// it lands. `r` of 0 is the candle and the crock — the blow is the shaft's own and nothing spreads.
+    lob: struct { dmg: f32, fire: f32 = 0, lightning: f32 = 0, poise: f32, dose: ?AilDose = null, r: f32 = 0 },
     /// A timed ward: `amount` of resistance in ONE named column for `secs` seconds. Refreshes, never stacks (the status law). **ONE COLUMN, NOT A SPREAD** — two tonics that each ward two things is a resistance sheet nobody can read off the bag.
     ward: struct { elem: ElemName, amount: f32, secs: f32 },
     wind: struct { share: f32 },
@@ -293,6 +356,14 @@ pub const Use = union(enum) {
     brew: struct { mult: f32, secs: f32 },
     purge,
     steady: struct { mult: f32, secs: f32 },
+    /// **THE ONE USE THAT DOSES THE DRINKER.** `combat.Bearer` refusing a foe-only row in one place
+    /// (`Vitals.build`) is what keeps a bottle of charm off the shelf.
+    dose: AilDose,
+    /// A COATING, not a grease (`grease` hangs an element on the blow). Both may run at once.
+    coat: struct { ail: AilName, amt: f32, secs: f32 },
+    /// **THE BELL — THE ONE ITEM THAT IS NOT SPENT.** Bills FOCUS instead of a charge, so what limits it is the
+    /// pool and the walk in, not the count in the bag.
+    toll: struct { ail: AilName, amt: f32, fp: f32, r: f32 },
 };
 
 /// `book.SlotId`'s own subset, named HERE because which socket a thing belongs in is a fact about the THING.
@@ -386,8 +457,12 @@ pub const Res = struct {
     }
 };
 
-/// `a` is the armour value in `A/(A + 5*dmg)` (`combat.armourTaken`), `res` the four elemental columns, `poison` a MULTIPLIER on how fast a status meter fills, and `move` one on how fast he walks — one row, not four verbs each stacked separately.
-pub const Plate = struct { slot: Wear, a: f32 = 0, res: Res = .{}, poison: f32 = 1, move: f32 = 1 };
+/// `a` is the armour value in `A/(A + 5*dmg)` (`combat.armourTaken`), `res` the four elemental columns, `rate`
+/// the ONE meter this piece slows and by how much, and `move` a multiplier on how fast he walks — one row, not
+/// four verbs each stacked separately.
+/// **THE RATE NAMES ITS METER** — a bare `poison: f32` was fine while poison was the only meter; at ten, a piece
+/// that slowed "the status meter" slows all ten for free.
+pub const Plate = struct { slot: Wear, a: f32 = 0, res: Res = .{}, rate: ?AilRate = null, move: f32 = 1 };
 
 pub const Charm = struct { slot: Wear, leech: f32 = 0, hpFrac: f32 = 0, spiritFp: f32 = 1, fpFrac: f32 = 0 };
 
@@ -460,7 +535,7 @@ pub const GEAR = [_]Gear{
     .{ .kind = .ashen_amulet, .equip = .{ .boon = .{ .slot = .neck, .attr = .intelligence, .n = 3 } } },
     // **THE FIRST COLD RESISTANCE ANYWHERE ON HIS SIDE** — the necromancer's rune ring is the game's one source of cold and the sheet showed 0%. PHYSICAL under the gambeson's on purpose: a chest socket strictly better than the coat already in it retires that coat instead of competing with it.
     .{ .kind = .rimeward_mantle, .equip = .{ .plate = .{ .slot = .chest, .a = 13.0, .res = .{ .cold = 35 } } } },
-    .{ .kind = .sporecrown, .equip = .{ .plate = .{ .slot = .helm, .a = 8.0, .poison = 0.55 } } },
+    .{ .kind = .sporecrown, .equip = .{ .plate = .{ .slot = .helm, .a = 8.0, .rate = .{ .ail = .poison, .k = 0.55 } } } },
     .{ .kind = .gravebell_amulet, .equip = .{ .charm = .{ .slot = .neck, .spiritFp = 0.60, .fpFrac = 0.10 } } },
     .{ .kind = .soul_binding_ring, .equip = .{ .bind = .{ .slot = .ring } } },
     .{ .kind = .mushroom_jerky, .use = .{ .regen = .{ .frac = 0.60, .secs = 20.0 } } },
@@ -482,6 +557,15 @@ pub const GEAR = [_]Gear{
     // **AMMUNITION IS AN ITEM NOW** (owner: arrows need to be droppable, placeable, all kinds) — both banks. **SIZED TO THE BANK, NOT GUESSED**: 12 into a quiver of 10 wasted two shafts on every pickup. This file imports nothing but std, so a test holds the two together.
     .{ .kind = .plain_arrows, .use = .{ .arrows = .{ .fire = false, .n = 10 } } },
     .{ .kind = .fire_arrows, .use = .{ .arrows = .{ .fire = true, .n = 5 } } },
+    // FOUR STROKES TO A FULL METER — the dirk's own arithmetic (`ENVENOMED`), pinned in `combat`. A minute is
+    // the tallow's clock.
+    .{ .kind = .nightcap_grease, .use = .{ .coat = .{ .ail = .sleep, .amt = 26, .secs = 60 } } },
+    .{ .kind = .wakers_nail, .equip = .{ .plate = .{ .slot = .ring, .rate = .{ .ail = .sleep, .k = 0.40 } } } },
+    // **THE WHOLE METER IN ONE THROW.** Half-filling one nothing else can build never procs (`combat.AILS`).
+    .{ .kind = .madcap_powder, .use = .{ .lob = .{ .dmg = 0, .poise = 0, .dose = .{ .ail = .confusion, .amt = 100 }, .r = 3.4 } } },
+    .{ .kind = .stolen_gravebell, .use = .{ .toll = .{ .ail = .charm, .amt = 100, .fp = 24, .r = 5.0 } } },
+    .{ .kind = .bloodwine, .use = .{ .dose = .{ .ail = .berserk, .amt = 100 } } },
+    .{ .kind = .wax_stopped_hood, .equip = .{ .plate = .{ .slot = .helm, .a = 10.0, .rate = .{ .ail = .stupefy, .k = 0.40 } } } },
 };
 
 pub const INERT = [_]Kind{
@@ -491,6 +575,7 @@ pub const INERT = [_]Kind{
     // Inert on purpose: a scroll is neither worn nor used — it is CARRIED to a bonfire and racked there.
     .scroll_bolt,    .scroll_roots,   .scroll_rime, .scroll_levin,
     .scroll_siphon,  .scroll_lance,   .scroll_sunder,
+    .scroll_babble,  .scroll_bidding,
 };
 
 comptime {
@@ -605,6 +690,8 @@ pub fn isSpellScroll(k: Kind) bool {
         .scroll_siphon,
         .scroll_lance,
         .scroll_sunder,
+        .scroll_babble,
+        .scroll_bidding,
         => true,
         else => false,
     };
@@ -654,10 +741,14 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
         },
         // **THE ROW PRINTS WHAT IT ACTUALLY CARRIES, NOT ALL FOUR COLUMNS.** A coat that turns no cold has no business saying "0% cold" on the one panel a player compares two coats on. A CLAUSE PER DIAL rather than a branch per combination — four dials is sixteen sentences to write out.
         .plate => |p| {
-            const head = std.fmt.bufPrint(buf, "Worn: {d:.0} armour", .{p.a}) catch return "Worn: armour.";
+            // **A PIECE THAT TURNS NO DAMAGE DOES NOT OPEN WITH "0 ARMOUR."**
+            const head = if (p.a > 0)
+                std.fmt.bufPrint(buf, "Worn: {d:.0} armour", .{p.a}) catch return "Worn: armour."
+            else
+                std.fmt.bufPrint(buf, "Worn:", .{}) catch return "Worn: a ward.";
             var n = head.len;
-            if (plateElem(p.res)) |e| n += (std.fmt.bufPrint(buf[n..], ", {d:.0}% {s} resistance", .{ e.amount, e.name }) catch return "Worn: armour and a ward.").len;
-            if (p.poison != 1) n += (std.fmt.bufPrint(buf[n..], ", poison fills at {d:.0}%", .{p.poison * 100}) catch return "Worn: armour and a ward.").len;
+            if (plateElem(p.res)) |e| n += (std.fmt.bufPrint(buf[n..], "{s}{d:.0}% {s} resistance", .{ if (p.a > 0) @as([]const u8, ", ") else " ", e.amount, e.name }) catch return "Worn: armour and a ward.").len;
+            if (p.rate) |r| n += (std.fmt.bufPrint(buf[n..], "{s}{s} fills at {d:.0}%", .{ if (n > head.len or p.a > 0) @as([]const u8, ", ") else " ", ailWord(r.ail), r.k * 100 }) catch return "Worn: armour and a ward.").len;
             if (p.move != 1) n += (std.fmt.bufPrint(buf[n..], ", walks at {d:.0}%", .{p.move * 100}) catch return "Worn: armour and a ward.").len;
             if (n == head.len) n += (std.fmt.bufPrint(buf[n..], " against physical damage", .{}) catch return "Worn: armour.").len;
             return sentence(buf, n) orelse "Worn: armour.";
@@ -682,7 +773,11 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
     return switch (use(k)) {
         .none => "No effect yet.",
         .regen => |r| std.fmt.bufPrintZ(buf, "Heals {d:.0}% of max HP over {d:.0}s.", .{ r.frac * 100, r.secs }) catch "Heals over time.",
-        .lob => |l| std.fmt.bufPrintZ(buf, "Thrown at the reticle: {d:.0} physical + {d:.0} {s}, {d:.0} poise.", .{
+        .lob => |l| if (l.dose) |d| std.fmt.bufPrintZ(buf, "Thrown at the reticle: bursts for {d:.0} {s} on everything inside {d:.1}m. No damage.", .{
+            d.amt,
+            ailWord(d.ail),
+            l.r,
+        }) catch "Thrown to fill a meter." else std.fmt.bufPrintZ(buf, "Thrown at the reticle: {d:.0} physical + {d:.0} {s}, {d:.0} poise.", .{
             l.dmg,
             l.fire + l.lightning,
             if (l.lightning > 0) @as([]const u8, "lightning") else "fire",
@@ -694,8 +789,11 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
         .souls => |s| std.fmt.bufPrintZ(buf, "Crushed for {d} souls, on the spot.", .{s.n}) catch "Worth souls.",
         .arrows => |a| std.fmt.bufPrintZ(buf, "Puts {d} {s} arrows back in the quiver.", .{ a.n, if (a.fire) @as([]const u8, "fire") else "plain" }) catch "Refills the quiver.",
         .brew => |b| std.fmt.bufPrintZ(buf, "Stamina comes back {d:.1}x as fast for {d:.0}s. Refreshes, never stacks.", .{ b.mult, b.secs }) catch "Stamina returns faster.",
-        .purge => "Clears poison outright, filling or already running.",
+        .purge => "Clears every meter outright, filling or already running.",
         .steady => |s| std.fmt.bufPrintZ(buf, "Poise comes back {d:.1}x as fast for {d:.0}s. Refreshes, never stacks.", .{ s.mult, s.secs }) catch "Poise returns faster.",
+        .dose => |d| std.fmt.bufPrintZ(buf, "Puts {d:.0} {s} in YOUR OWN meter, at once.", .{ d.amt, ailWord(d.ail) }) catch "Fills one of your own meters.",
+        .coat => |c| std.fmt.bufPrintZ(buf, "Edge carries +{d:.0} {s} a hit for {d:.0}s. Refreshes, never stacks.", .{ c.amt, ailWord(c.ail), c.secs }) catch "Coats the blade.",
+        .toll => |t| std.fmt.bufPrintZ(buf, "Rung for {d:.0} focus: {d:.0} {s} into everything inside {d:.1}m. Not spent.", .{ t.fp, t.amt, ailWord(t.ail), t.r }) catch "Rung for focus.",
     };
 }
 
@@ -852,10 +950,19 @@ test "every usable kind carries its OWN dose, and the rest do nothing" {
                 try std.testing.expect(r.frac > 0 and r.frac <= 1.0);
                 try std.testing.expect(r.secs > 0);
             },
+            // **DAMAGE OR A DOSE, AND EXACTLY ONE OF THE TWO.** A lob that does neither is the real mistake, and
+            // one that doses without a ring puts its whole worth on a direct hit with a lobbed projectile.
             .lob => |l| {
                 found += 1;
                 try std.testing.expect(usable(k));
-                try std.testing.expect(l.dmg + l.fire + l.lightning > 0);
+                if (l.dose) |d| {
+                    try std.testing.expectApproxEqAbs(@as(f32, 0), l.dmg + l.fire + l.lightning, 1e-6);
+                    try std.testing.expect(d.amt > 0);
+                    try std.testing.expect(l.r > 0);
+                } else {
+                    try std.testing.expect(l.dmg + l.fire + l.lightning > 0);
+                    try std.testing.expectApproxEqAbs(@as(f32, 0), l.r, 1e-6);
+                }
             },
             .arrows => |a| {
                 found += 1;
@@ -899,6 +1006,23 @@ test "every usable kind carries its OWN dose, and the rest do nothing" {
                 try std.testing.expect(usable(k));
                 try std.testing.expect(s.mult > 1.0);
                 try std.testing.expect(s.secs > 0);
+            },
+            .dose => |d| {
+                found += 1;
+                try std.testing.expect(usable(k));
+                try std.testing.expect(d.amt > 0);
+            },
+            .coat => |c| {
+                found += 1;
+                try std.testing.expect(usable(k));
+                try std.testing.expect(c.amt > 0 and c.secs > 0);
+            },
+            // **THE BELL IS THE ONE USE WITH A PRICE ON IT** — free, there is no reason not to stand ringing it.
+            .toll => |t| {
+                found += 1;
+                try std.testing.expect(usable(k));
+                try std.testing.expect(t.amt > 0 and t.r > 0);
+                try std.testing.expect(t.fp > 0);
             },
         }
     }
@@ -975,7 +1099,7 @@ test "EVERY PIECE OF GEAR GOES IN A SOCKET, SAYS WHAT IT DOES IN NUMBERS, AND SH
         }
         try std.testing.expect(std.mem.indexOf(u8, describe(k), " yet.") == null);
     }
-    try std.testing.expectEqual(@as(usize, 19), worn);
+    try std.testing.expectEqual(@as(usize, 21), worn);
 }
 
 test "EVERY SOCKET HAS SOMETHING THAT GOES IN IT, and no worn socket is a hand" {
@@ -1032,7 +1156,13 @@ test "A WEAPON ROW TRADES: nothing is better than the plain thing on every dial 
                 const costs = (a.dmg < 1) or (a.poise < 1) or (a.negate < 1) or (a.arc < 1) or (a.dur > 1) or (a.stam > 1) or (a.walk < 1);
                 try std.testing.expect(gains and costs);
             },
-            .plate => |p| try std.testing.expect(p.a > 0),
+            // **A PIECE MUST CARRY SOMETHING, AND ARMOUR IS ONE OF FOUR THINGS IT CAN BE.** Asking `a > 0` means
+            // writing 0 armour on a ring whose whole worth is a rate, just to get it past this.
+            .plate => |p| {
+                const res = p.res.fire != 0 or p.res.cold != 0 or p.res.lightning != 0 or p.res.chaos != 0;
+                try std.testing.expect(p.a > 0 or res or p.rate != null or p.move != 1);
+                if (p.rate) |r| try std.testing.expect(r.k > 0 and r.k != 1);
+            },
             .charm => |c| {
                 const gives = c.leech > 0 or c.spiritFp < 1;
                 const takes = c.hpFrac > 0 or c.fpFrac > 0;

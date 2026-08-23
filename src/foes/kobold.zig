@@ -199,6 +199,9 @@ pub const ZERK_HIT = combat.Hit{ .dmg = 11, .poise = 9 };
 const CAST_DUR = 1.25;
 const CAST_CD = 9.0;
 const HEAL_AMT = 30.0;
+/// **A FULL METER IN ONE RITE.** Half of one would decay away before a second cast could land on it
+/// (`combat.AILS`' berserk row decays at 16/s), so the rite would visibly do nothing.
+const RITE_ZERK = combat.ailRow(.berserk).max;
 const HEAL_SLACK = 4.0;
 const HEAL_RANGE = 14.0;
 const HEAL_BLOOM: u32 = 34;
@@ -438,11 +441,14 @@ pub const Kobold = struct {
             else => 0,
         };
     }
+    /// **THE FIRST CREATURE TO TAKE THE BARGAIN, AND IT READS THE HERO'S OWN THREE DIALS**
+    /// (`combat.Vitals.dmgMult`/`hasteMult`/`travelMult`). The price too: `AILS`' `hpFrac`, then `justEnded`.
     pub fn hurtBlow(self: *const Kobold) combat.Hit {
-        return switch (self.state) {
+        const base: combat.Hit = switch (self.state) {
             .chop => ZERK_HIT,
             else => BITE_HIT,
         };
+        return base.scaled(self.vit.dmgMult());
     }
     pub fn markDealt(self: *Kobold) void {
         self.dealt = true;
@@ -461,8 +467,11 @@ pub const Kobold = struct {
         if (grip.killed) self.enterDeath();
         if (grip.downed) self.stagger(true);
         self.elapsed += dt;
-        self.t += dt;
+        // **ITS OWN CLOCK, NEVER THE WORLD'S** (the chill's law) — nothing else in the frame changes rate.
+        self.t += dt * self.vit.hasteMult();
         self.vit.tick(dt);
+        // THE BILL COMES DUE ON THE WAY OUT: the one stagger nothing hit it for (`hero.tickPoison`'s beat).
+        if (self.vit.ailEnded(.berserk) and !self.gone) self.stagger(true);
         foe.fadeFlash(&self.flash, dt);
         foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
         self.castCd = mathx.maxF(0, self.castCd - dt);
@@ -597,7 +606,7 @@ pub const Kobold = struct {
 
     /// **THE BERSERKER RUNS** (owner: always run unless very close, and faster than the other skels). At `WALK_SPEED * 1.22` he closed at 2.07 m/s against a shieldman charging at 2.92 and a greatsword at 2.52. `warrior.approachSpeed`'s shape: run at distance, walk the last stride in.
     pub fn approachSpeed(self: *const Kobold, dist: f32) f32 {
-        const base = spec(self.role).speed;
+        const base = spec(self.role).speed * self.vit.travelMult();
         if (self.role != .berserker or dist > AGGRO_R or dist <= self.walkInR()) return WALK_SPEED * base;
         return RUN_SPEED * base;
     }
@@ -1752,13 +1761,16 @@ pub const Warband = struct {
     ) ?foe.Blow {
         for (self.live()) |*k| {
             if (k.role != .priest) continue;
-            k.healWanted = self.neediest(k.pos) != null;
+            // **ONE RITE, ONE COOLDOWN, TWO THINGS IT CAN BE** — a full-health band is what it spends the cast
+            // on, which is what makes killing it FIRST the read.
+            k.healWanted = self.neediest(k.pos) != null or self.unrousedIdx(k.pos) != null;
         }
         var blow: ?foe.Blow = null;
         for (self.live()) |*k| {
             switch (k.update(dt, k.threat.aim(hero), bounds, blade)) {
                 .none => {},
                 .sling => |from| loose(ctx, from),
+                // **THE WOUND COMES FIRST** — the bargain bills a share of the bar on top of whatever opened it.
                 .healed => {
                     if (self.neediestIdx(k.pos)) |ti| {
                         if (self.band[ti].vit.heal(HEAL_AMT) > 0) {
@@ -1766,12 +1778,17 @@ pub const Warband = struct {
                             k.healBloom(k.staffTop(), 0.26);
                             self.band[ti].healBloom(self.band[ti].centerWorld(), 0.46);
                         }
+                    } else if (self.unrousedIdx(k.pos)) |ti| {
+                        self.band[ti].vit.build(.berserk, RITE_ZERK);
+                        sfx.world(.kobold_snarl, self.band[ti].pos);
+                        k.healBloom(k.staffTop(), 0.26);
+                        self.band[ti].healBloom(self.band[ti].centerWorld(), 0.52);
                     }
                 },
             }
             if (k.hurtOpen() and mathx.distXZ(k.pos, hero) <= k.hurtReach()) {
                 k.markDealt();
-                foe.worseBlow(&blow, k.hurtBlow(), k.pos, k.threat.on);
+                foe.worseBlow(&blow, k.hurtBlow(), k.pos, &k.threat);
             }
         }
         return blow;
@@ -1792,6 +1809,23 @@ pub const Warband = struct {
         }
         return best;
     }
+    /// Nearest rather than healthiest: the one standing next to it is the one the player is fighting. Anything
+    /// at all in the meter is skipped — refresh-not-stack, so a second rite would spend the cast for nothing.
+    fn unrousedIdx(self: *const Warband, from: rl.Vector3) ?usize {
+        var best: ?usize = null;
+        var near: f32 = HEAL_RANGE;
+        for (self.liveConst(), 0..) |*k, i| {
+            if (!foe.corporeal(k)) continue;
+            if (k.role == .priest) continue;
+            if (k.vit.ail(.berserk).meter > 0 or k.vit.ailOn(.berserk)) continue;
+            const d = mathx.distXZ(from, k.pos);
+            if (d > near) continue;
+            near = d;
+            best = i;
+        }
+        return best;
+    }
+
     fn neediest(self: *const Warband, from: rl.Vector3) ?*const Kobold {
         const i = self.neediestIdx(from) orelse return null;
         return &self.band[i];

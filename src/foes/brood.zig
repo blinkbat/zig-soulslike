@@ -1949,7 +1949,7 @@ pub const Brood = struct {
                 .spit => |from| spit(ctx, from),
                 .lay => |at| self.addSac(at, sp.seed + sp.elapsed, sp.scale / M_SCALE),
             }
-            if (sp.heroHit) |h| foe.worseBlow(&blow, h, sp.pos, sp.threat.on);
+            if (sp.heroHit) |h| foe.worseBlow(&blow, h, sp.pos, &sp.threat);
         }
         return blow;
     }

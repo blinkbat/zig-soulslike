@@ -31,6 +31,7 @@ const fenmod = @import("../foes/fenlurker.zig");
 const skittermod = @import("../foes/skitterer.zig");
 const priestmod = @import("../foes/ancientpriest.zig");
 const hollowmod = @import("../foes/hollow.zig");
+const bloommod = @import("../foes/slumberbloom.zig");
 const combat = @import("../play/combat.zig");
 const foemod = @import("../foes/foe.zig");
 const elemfx = @import("../gfx/elemfx.zig");
@@ -327,6 +328,7 @@ const CharSet = struct {
     clatter: skittermod.Clatter,
     crypt: priestmod.Crypt,
     belfry: hollowmod.Belfry,
+    bed: bloommod.Bed,
 };
 var charSet: ?CharSet = null;
 
@@ -353,6 +355,7 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
             .clatter = skittermod.Clatter.init(scene.shader),
             .crypt = priestmod.Crypt.init(scene.shader),
             .belfry = hollowmod.Belfry.init(scene.shader),
+            .bed = bloommod.Bed.init(scene.shader),
         };
         var cs = &charSet.?;
         cs.warren.n = 0;
@@ -372,6 +375,7 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
         cs.clatter.n = 0;
         cs.crypt.n = 0;
         cs.belfry.n = 0;
+        cs.bed.n = 0;
     }
     return &charSet.?;
 }
@@ -387,6 +391,9 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         .brood_sac => .{ .top = 1.2, .bound = 1.0 },
         .shieldman, .greatsword => .{ .top = 2.1, .bound = 1.2 },
         .shade => .{ .top = 2.4, .bound = 1.2 },
+        // The same rig at `shade.SPEC`'s own 1.28, so the viewer frames the body it draws.
+        .mourner => .{ .top = 3.1, .bound = 1.6 },
+        .slumber_bloom => .{ .top = 1.6, .bound = 1.3 },
         .leechfly => .{ .top = 2.9, .bound = 1.8 },
         .rooted => .{ .top = 7.2, .bound = 3.6 },
         .shroom => .{ .top = 1.2, .bound = 1.0 },
@@ -442,9 +449,17 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
             cs.muster.live()[0] = warriormod.Warrior.spawnAs(if (k == .shieldman) .shieldman else .greatsword, mathx.zero3, 0, 1.0, seed);
             cs.muster.draw(scene);
         },
-        .shade => {
+        .slumber_bloom => {
+            cs.bed.n = 1;
+            cs.bed.live()[0] = bloommod.Bloom.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.bed.live()[0].debugWake();
+            cs.bed.live()[0].open = 1;
+            cs.bed.live()[0].pose();
+            cs.bed.draw(scene);
+        },
+        .shade, .mourner => {
             cs.haunt.n = 1;
-            cs.haunt.live()[0] = shademod.Shade.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.haunt.live()[0] = shademod.Shade.spawnAs(if (k == .mourner) .mourner else .shade, mathx.zero3, 0, 1.0, seed);
             cs.haunt.draw(scene);
         },
         .leechfly => {

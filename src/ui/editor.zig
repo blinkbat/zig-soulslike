@@ -218,6 +218,8 @@ const unitTips = [_][:0]const u8{
     "A ribcage on its ribs. Fastest thing on foot; one long vertical slice you can walk out of",
     "No melee. Raises skitterers from bare earth far off, breathes cold up close. Weak to fire",
     "High HP, no armour, feeble bite. Rings the bell on its back and the camp comes; weak to lightning",
+    "A shade twice over, slower. Its grip leaves a STUPOR: thin focus and dragged feet. Stand off it",
+    "Never moves, never strikes. Swells, then vents SLEEP over 5 m. Walk out of the ring",
     "Sweep to erase ([ ] sets radius)",
 };
 
@@ -262,6 +264,8 @@ const unitIcons = [_]ui.Icon{
     .bone_skitterer,
     .ancient_priest,
     .tolling_hollow,
+    .mourner,
+    .slumber_bloom,
     .erase,
 };
 
@@ -371,6 +375,8 @@ const UnitBrush = enum {
     bone_skitterer,
     ancient_priest,
     tolling_hollow,
+    mourner,
+    slumber_bloom,
     erase,
 };
 
@@ -2290,6 +2296,8 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         .shieldman => ui.col(176, 178, 190, 255),
         .greatsword => ui.col(214, 216, 232, 255),
         .shade => ui.col(138, 116, 208, 255),
+        .mourner => ui.col(174, 162, 194, 255),
+        .slumber_bloom => ui.col(142, 152, 212, 255),
         .leechfly => ui.col(196, 66, 58, 255),
         .rooted => ui.col(140, 96, 52, 255),
         .shroom => ui.col(214, 130, 118, 255),

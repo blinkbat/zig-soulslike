@@ -411,6 +411,14 @@ pub const Vitals = struct {
     pub fn tick(self: *Vitals, dt: f32) void {
         self.sinceHit += dt;
         self.sinceHurt += dt;
+        // **A SLEEPER IS HELD BY THE STAGGER IT IS ALREADY IN**, which is why sleep works on a creature at all:
+        // twenty state machines have an "I am staggered" branch and none has an "I am asleep", so topping the
+        // heavy stun up here holds every body with the pose it already draws (`hero.tickPoison`'s own trick).
+        // REFRESHED, NEVER ADDED (the status law): set to the length, not lengthened.
+        if (!self.dead and self.asleep()) {
+            self.stunAs = .heavy;
+            self.stunLeft = self.heavyStun;
+        }
         if (self.stunLeft > 0) {
             self.stunLeft -= dt;
             if (self.stunLeft <= 0) {
@@ -817,7 +825,18 @@ pub const SUNDER_HIT = Hit{ .dmg = 14, .poise = 12, .stance = 40 };
 /// INSIDE THE SWORD'S OWN REACH (`game.MELEE_AIM_R` is 3.6). The one sorcery that is not a way to avoid being in the fight.
 pub const SUNDER_REACH: f32 = 4.0;
 
-pub const Spell = enum { bolt, roots, rime, levin, siphon, lance, sunder };
+/// **THE TWO THAT DO NOTHING TO A BODY AND EVERYTHING TO WHOSE SIDE IT IS ON.** The whole blow is the dose,
+/// which is why they sit OUTSIDE the damage ladder and above all of it. A meter apiece in ONE cast: nothing else
+/// builds confusion or charm, so a half-filling spell would have no second source and would never proc.
+pub const BABBLE_HIT = Hit{ .dose = Doses.one(.confusion, ailRow(.confusion).max) };
+/// PAST THE ROOTS' 7 m AND WELL SHORT OF THE BOLT'S 55 — cast INTO the room, not across the field.
+pub const BABBLE_REACH: f32 = 13.0;
+
+pub const BIDDING_HIT = Hit{ .dose = Doses.one(.charm, ailRow(.charm).max) };
+/// **INSIDE THE BABBLE'S**, because charm is the better of the two: the price is the walk in as well as the FP.
+pub const BIDDING_REACH: f32 = 9.0;
+
+pub const Spell = enum { bolt, roots, rime, levin, siphon, lance, sunder, babble, bidding };
 
 pub const SpellRow = struct {
     spell: Spell,
@@ -841,6 +860,8 @@ pub const SPELLS = [_]SpellRow{
     .{ .spell = .siphon, .name = "Siphon",       .fp = 13, .scroll = .scroll_siphon, .says = "Drinks a share of what the body actually loses. No stagger.",          .blow = SIPHON_HIT, .reach = SIPHON_REACH },
     .{ .spell = .lance,  .name = "Ember Lance",  .fp = 14, .scroll = .scroll_lance,  .says = "A held line of fire that spits every body standing in it.",           .blow = LANCE_HIT,  .reach = LANCE_REACH },
     .{ .spell = .sunder, .name = "Sunder",       .fp = 16, .scroll = .scroll_sunder, .says = "Breaks a guard inside sword reach. The one sorcery cast in the fight.", .blow = SUNDER_HIT, .reach = SUNDER_REACH },
+    .{ .spell = .babble, .name = "Babble",       .fp = 19, .scroll = .scroll_babble, .says = "Takes a body's aim away. It swings at whatever is nearest, you included.", .blow = BABBLE_HIT,  .reach = BABBLE_REACH },
+    .{ .spell = .bidding, .name = "Bidding",     .fp = 24, .scroll = .scroll_bidding, .says = "Turns a body on the ones it came with. The dearest thing the rod does.", .blow = BIDDING_HIT, .reach = BIDDING_REACH },
 };
 
 comptime {
@@ -903,6 +924,12 @@ pub fn spellReach(s: Spell) ?f32 {
 pub fn spellDamage(s: Spell) f32 {
     const row = rowFor(s);
     return if (row.blow) |b| b.raw() else row.drip;
+}
+
+/// A spell whose worth is a DOSE and not damage, so the ladder cannot price it. Its own rule sits beside it.
+pub fn spellDoses(s: Spell) bool {
+    const row = rowFor(s);
+    return if (row.blow) |b| b.dose.any() else false;
 }
 
 /// ER's memory slots: how many sorceries he may have about him at once. Owning a scroll is not casting off it.
@@ -977,9 +1004,21 @@ comptime {
     // **THE LADDER IS MONOTONE, AND THAT IS THE WHOLE PRICE LIST**: 8→25, 11→22, 12→19.6, 13→18, 14→16.5,
     // 15→15.3, 16→14. **AND EVERY RUNG CLEARS A FREE LIGHT SWING** (`hero.ATK_LIGHT_HIT`, 13) — five of the seven
     // sat under it while costing a third of the pool. Asserted over every PAIR, so an eighth spell is priced by the rule without editing it.
+    @setEvalBranchQuota(8000);
     for (std.enums.values(Spell)) |a| {
         for (std.enums.values(Spell)) |b| {
+            if (spellDoses(a) or spellDoses(b)) continue;
             if (spellFp(a) < spellFp(b)) std.debug.assert(spellDamage(a) > spellDamage(b));
+        }
+    }
+    // **AND A DOSER IS DEARER THAN EVERY SPELL THAT HURTS SOMETHING.** The ladder ranks worth as damage and a
+    // doser has none, so it is exempt from that and answers to this instead.
+    for (std.enums.values(Spell)) |d| {
+        if (!spellDoses(d)) continue;
+        std.debug.assert(spellDamage(d) == 0);
+        for (std.enums.values(Spell)) |s| {
+            if (spellDoses(s)) continue;
+            std.debug.assert(spellFp(d) > spellFp(s));
         }
     }
     // …and every one of them is castable off a full pool, or the sheet's Mind curve promises what it cannot pay.
@@ -1390,6 +1429,27 @@ comptime {
     // **THE ONE SPELL BUILT TO CHILL MUST FILL THE CHILL METER** — the pour is 15.3 cold and the meter is
     // authored under it, so retuning either without the other is a compile error rather than a dead spell.
     if (RIME_DUR * RIME_DPS < ailRow(.chill).max) @compileError("combat: the rime breath no longer fills a chill meter");
+}
+
+comptime {
+    @setEvalBranchQuota(4000);
+    // **`item` NAMES THE TEN TOO, BECAUSE IT IS A LEAF** (`item.AilName`). Pinned tag for tag: a row added to
+    // one enum and not the other doses the meter one place along.
+    const N = @typeInfo(item.AilName).@"enum".fields.len;
+    if (N != NAIL) @compileError("combat: `item.AilName` is not one tag per `Ail`");
+    for (@typeInfo(item.AilName).@"enum".fields, 0..) |f, i| {
+        if (!std.mem.eql(u8, f.name, @tagName(@as(Ail, @enumFromInt(i)))))
+            @compileError("combat: `item.AilName." ++ f.name ++ "` is at index " ++
+                std.fmt.comptimePrint("{d}", .{i}) ++ " where `Ail` has " ++ @tagName(@as(Ail, @enumFromInt(i))));
+    }
+}
+
+pub fn ailOfName(a: item.AilName) Ail {
+    return @enumFromInt(@intFromEnum(a));
+}
+
+pub fn dosesOf(d: item.AilDose) Doses {
+    return Doses.one(ailOfName(d.ail), d.amt);
 }
 
 pub fn ailRow(a: Ail) AilRow {
@@ -1919,7 +1979,8 @@ test "THE ROOTS COST MORE THAN THE BOLT AND DEAL LESS — a control tool, not a 
         const s: Spell = @enumFromInt(i);
         try std.testing.expect(spellName(s).len > 0);
         try std.testing.expect(spellFp(s) > 0);
-        try std.testing.expect(spellDamage(s) > 0);
+        // A doser bills nothing off the bar (`spellDoses`), so what it must have instead is the dose.
+        if (spellDoses(s)) try std.testing.expect(spellBlow(s).?.dose.any()) else try std.testing.expect(spellDamage(s) > 0);
     }
     try std.testing.expect(spellDamage(.roots) < spellDamage(.bolt));
 }

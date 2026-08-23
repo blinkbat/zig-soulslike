@@ -957,7 +957,7 @@ pub const Swarm = struct {
         for (self.live()) |*f| {
             switch (f.update(dt, f.threat.aim(hero), bounds, blade)) {
                 .none => {},
-                .stab => |h| foe.worseBlow(&blow, h, f.pos, f.threat.on),
+                .stab => |h| foe.worseBlow(&blow, h, f.pos, &f.threat),
                 .drink => |h| sip(ctx, h),
             }
         }

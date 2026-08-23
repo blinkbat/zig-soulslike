@@ -27,6 +27,30 @@ pub fn elemName(e: Elem) [:0]const u8 {
 /// A number per element, WRITTEN BY NAME. Field names are matched against the enum at comptime, so a rename is a compile error and an omitted element is a 0; an array literal would silently shift on a fifth.
 pub const Spread = struct { fire: f32 = 0, cold: f32 = 0, lightning: f32 = 0, chaos: f32 = 0 };
 
+comptime {
+    // `item` is a LEAF (this file imports it, never the other way round), so a ward or a grease names its
+    // element with `item.ElemName`. The two enums are pinned here: a rename or a reorder either side is a
+    // compile error, never a tonic that silently wards the wrong column.
+    const mine = @typeInfo(Elem).@"enum".fields;
+    const theirs = @typeInfo(item.ElemName).@"enum".fields;
+    if (mine.len != theirs.len) @compileError("combat: item.ElemName is not the four elements");
+    for (mine, theirs) |a, b| {
+        if (a.value != b.value or !std.mem.eql(u8, a.name, b.name))
+            @compileError("combat: item.ElemName." ++ b.name ++ " does not line up with Elem." ++ a.name);
+    }
+}
+
+/// The one crossing between the leaf's element name and this file's, pinned above.
+pub fn elemOf(n: item.ElemName) Elem {
+    return @enumFromInt(@intFromEnum(n));
+}
+
+/// The four columns of an `item.Res` as this file's own spread — `Resists` for a coat, and the same crossing
+/// the ward uses. Written by name for `Spread`'s reason.
+pub fn resistsOf(r: item.Res) Resists {
+    return resists(.{ .fire = r.fire, .cold = r.cold, .lightning = r.lightning, .chaos = r.chaos });
+}
+
 fn pack(s: Spread) [NELEM]f32 {
     var out = [_]f32{0} ** NELEM;
     inline for (@typeInfo(Elem).@"enum".fields) |f| out[f.value] = @field(s, f.name);
@@ -101,6 +125,9 @@ pub const Hit = struct {
     /// **METRES OFF THE GROUND THIS BLOW THROWS HIM, AND ZERO FOR NEARLY EVERY BLOW IN THE GAME.** A LARGE SLAM
     /// ONLY (owner's call). Authored as the APEX rather than a speed: `hero.startLaunch` solves the launch speed out of it under the JUMP's own gravity, so a thrown body falls exactly as a leaping one does.
     launch: f32 = 0,
+    /// **WHAT THIS BLOW PUTS IN THE BODY'S POISON METER, and zero for every blow but an envenomed edge's.**
+    /// Billed by `Vitals.hit` into `Vitals.venom` — the dose, never the damage: what it becomes is `poisonPulse`.
+    venom: f32 = 0,
 
     /// THE WHOLE BLOW BEFORE ANYBODY'S RESISTANCES — what a shield's stamina bill and "which of two blows was worse" are measured on.
     pub fn raw(self: Hit) f32 {
@@ -117,7 +144,7 @@ pub const Hit = struct {
         return out;
     }
 
-    /// **`launch` IS CARRIED, NEVER SCALED.** How far a body is thrown is a fact about the blow's WEIGHT, and a damage multiplier that also threw him twice as high would put the picture in his character sheet.
+    /// **`launch` AND `venom` ARE CARRIED, NEVER SCALED.** How far a body is thrown is a fact about the blow's WEIGHT, and a damage multiplier that also threw him twice as high would put the picture in his character sheet. A dose is the EDGE's, not the swing's: a heavy stroke does not carry more venom than a light one.
     pub fn scaled(self: Hit, k: f32) Hit {
         return .{
             .dmg = self.dmg * k,
@@ -126,6 +153,7 @@ pub const Hit = struct {
             .elem = self.elem.scaled(k),
             .fp = self.fp * k,
             .launch = self.launch,
+            .venom = self.venom,
         };
     }
 };
@@ -172,6 +200,12 @@ pub const Vitals = struct {
     res: Resists = .{},
     /// **THE PHYSICAL HALF OF `res`.** Written for the hero and never worn by a foe until the spore homunculus, which is meant to be answered with fire — resistances alone could not say that, because there is no `.physical` element.
     armour: f32 = 0,
+    /// **THE ONE POISON METER IN THE GAME, AND IT SITS ON THE BODY** — his and every creature's. `hit` fills it
+    /// off `Hit.venom`, `tickVenom` bills it as `poisonPulse`, so a chaos resistance already answers it.
+    venom: Status = .{},
+    /// How fast this body's meter fills: the hero's perks and what he is wearing, 1 for a creature. The ONE
+    /// place the dose is multiplied, so the spores' door (`hero.poisonBy`) and an edge's cannot disagree.
+    venomRate: f32 = 1,
 
     pub fn init(hpMax: f32, poiseMax: f32, stanceMax: f32) Vitals {
         return .{
@@ -278,6 +312,14 @@ pub const Vitals = struct {
         return r;
     }
 
+    /// One frame of what is already in the body. TRUE on the frame it killed — the caller owns the death, the
+    /// way `foe.grip` owns the wand's. The bite is a DRIP, so a poison tick never reads as a fresh blow.
+    pub fn tickVenom(self: *Vitals, dt: f32) bool {
+        const due = self.venom.tick(dt, self.hpMax);
+        if (due <= 0 or self.dead) return false;
+        return self.drip(poisonPulse(due)) == .death;
+    }
+
     pub fn hit(self: *Vitals, h: Hit) HitResult {
         if (self.dead) return .none;
         self.sinceHurt = 0;
@@ -287,6 +329,8 @@ pub const Vitals = struct {
             return .death;
         }
         self.sinceHit = 0;
+        // A blow that KILLED carries no dose — the death returned above, so nothing poisons a corpse.
+        self.venom.add(h.venom * self.venomRate);
         self.stance -= h.stance;
         var light = false;
         if (!self.stunned()) {
@@ -1037,6 +1081,15 @@ pub const Quiver = struct {
 
 
 pub const POISON_MAX: f32 = 100.0;
+
+comptime {
+    // **THE DIRK'S DOSE IS AUTHORED IN STROKES, AND `item` CANNOT SEE THIS NUMBER** (it is a leaf). Pinned here
+    // instead: four landed strokes fill a meter and three do not, so raising the cap without retuning the
+    // coating is a compile error rather than a weapon that quietly stopped working.
+    const strokes = 4;
+    if (item.ENVENOMED.venom * strokes < POISON_MAX) @compileError("combat: the envenomed edge no longer fills a meter in four strokes");
+    if (item.ENVENOMED.venom * (strokes - 1) >= POISON_MAX) @compileError("combat: the envenomed edge fills a meter in three strokes or fewer");
+}
 pub const POISON_DECAY_DELAY: f32 = 1.1;
 pub const POISON_DECAY: f32 = 24.0;
 pub const POISON_DUR: f32 = 14.0;

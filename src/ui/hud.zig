@@ -706,11 +706,14 @@ const FOE_LIFT: i32 = 16;
 const FOE_TRACK = rgba(38, 12, 10, 230);
 const STAGGER_RIM = rgba(232, 196, 90, 255);
 const CHILL_STRIP = rgba(148, 202, 232, 235);
+/// A STATUS ROW under a foe's health: 2 px tall on a 5 px bar, one clear pixel above each.
+const STRIP_H: i32 = 2;
+const STRIP_GAP: i32 = 1;
 /// A BAR MAY NOT CLIMB OUT OF THE FRAME. Over the head is right at every distance you can see the whole creature
 /// at, and wrong the moment you close on a TALL one: the ogre's crown is 4.4 m up. So the bar has a CEILING in screen space — far off it rides the head, walking in it stops climbing and hangs against the body.
 const FOE_CEIL: f32 = 0.25; // …measured from the TOP, so 0.25 is three quarters up
 
-pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool, chill: f32) void {
+pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool, chill: f32, venom: Status) void {
     const wf: f32 = @floatFromInt(FOE_W);
     const x: i32 = @intFromFloat(sx - wf * 0.5);
     const ceiling = @as(f32, @floatFromInt(rl.getScreenHeight())) * FOE_CEIL;
@@ -721,10 +724,16 @@ pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool, chill: f32) void {
     const fw: i32 = @intFromFloat(wf * mathx.clampF(frac, 0, 1));
     // 5 px tall, so the shade band is 2 rather than the vitals bars' third and the tip is a single column.
     fillThree(x, y, fw, FOE_H, frac, HP_HI, HP_LO, mathx.withAlpha(HP_TP, 200), 2, 1, 120);
-    // THE COLD ON IT, under the health (`combat.Chill.frac`). Its own row rather than a tint on the fill — a tint on a red bar at 54 px is a hue nobody can name.
+    // WHAT IS IN IT, A ROW PER STATUS under the health — a tint on a red bar at 54 px is a hue nobody can name.
+    // The cold first (`combat.Chill.frac`), the poison under it, and the poison's colour flips once it is no
+    // longer filling but ticking, which is the only difference a player has to see.
     if (chill > 0.001) {
         const cw: i32 = @intFromFloat(wf * mathx.clampF(chill, 0, 1));
-        rl.drawRectangle(x, y + FOE_H + 1, cw, 2, CHILL_STRIP);
+        rl.drawRectangle(x, y + FOE_H + STRIP_GAP, cw, STRIP_H, CHILL_STRIP);
+    }
+    if (venom.frac > 0.001) {
+        const vw: i32 = @intFromFloat(wf * mathx.clampF(venom.frac, 0, 1));
+        rl.drawRectangle(x, y + FOE_H + STRIP_GAP * 2 + STRIP_H, vw, STRIP_H, if (venom.on) PSN_ON_HI else PSN_HI);
     }
     if (staggered) rl.drawRectangleLines(x - 1, y - 1, FOE_W + 2, FOE_H + 2, STAGGER_RIM);
 }

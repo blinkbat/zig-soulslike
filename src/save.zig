@@ -85,10 +85,12 @@ pub const Data = struct {
     map: [MAP_CAP]u8 = [_]u8{0} ** MAP_CAP,
     mapLen: usize = 0,
 
+    /// **WHERE THE SAVE WAS TAKEN, WHICH IS A BONFIRE SEAT AND THE CHECKPOINT BOTH.** Every write in the game is
+    /// inside the rest flow (`game.tickRest`), so there is nothing else this point could be — the file used to
+    /// carry a second copy of it in a `spawn:` row, and that copy held the MAP ENTRY in every file written
+    /// before the checkpoint existed.
     at: rl.Vector3 = mathx.zero3,
     facing: f32 = 0,
-    spawnAt: rl.Vector3 = mathx.zero3,
-    spawnFacing: f32 = 0,
     souls: u32 = 0,
 
     arm: heromod.Armament = .sword,
@@ -143,7 +145,7 @@ const NWEAR = @typeInfo(item.Wear).@"enum".fields.len;
 
 const CAP: usize =
     64 + MAP_CAP +
-    4 * 48 +
+    3 * 48 +
     5 * 32 +
     combat.QUICK_SLOTS * 28 + 16 +
     combat.MEM_SLOTS * 14 + 10 +
@@ -278,8 +280,6 @@ pub fn gather(s: Slot) Data {
     const h = s.hero;
     d.at = h.pos;
     d.facing = h.facing;
-    d.spawnAt = h.spawnPos;
-    d.spawnFacing = h.spawnFacing;
     d.souls = h.souls.total;
     d.arm = h.arm;
     d.off = h.off;
@@ -332,7 +332,10 @@ pub fn scatter(d: *const Data, s: Slot) void {
     const h = s.hero;
     h.pos = d.at;
     h.facing = d.facing;
-    h.setSpawn(d.spawnAt, d.spawnFacing);
+    // **LOADING AT A FIRE MAKES IT THE FIRE HE COMES BACK TO.** Taken off `at:` rather than a stored spawn: the
+    // two were always the same point in any file this game writes, and where they disagreed the stored one was
+    // the stale one.
+    h.setSpawn(d.at, d.facing);
     h.souls.total = d.souls;
     h.souls.shown = @floatFromInt(d.souls);
     h.arm = d.arm;
@@ -394,7 +397,6 @@ pub fn render(w: anytype, d: *const Data) !void {
     try w.print("version: {d}\n", .{VERSION});
     try w.print("map: {s}\n", .{d.mapName()});
     try w.print("at: {d:.3} {d:.3} {d:.3} {d:.4}\n", .{ d.at.x, d.at.y, d.at.z, d.facing });
-    try w.print("spawn: {d:.3} {d:.3} {d:.3} {d:.4}\n", .{ d.spawnAt.x, d.spawnAt.y, d.spawnAt.z, d.spawnFacing });
     try w.print("souls: {d}\n", .{d.souls});
     try w.print("hands: {s} {s} {s} {s} {s}\n", .{ @tagName(d.arm), @tagName(d.off), @tagName(d.spell), @tagName(d.armAlt), @tagName(d.offAlt) });
     try w.print("ready: {s} {s}\n", .{ @tagName(d.arrow), @tagName(d.flask) });
@@ -467,8 +469,11 @@ pub fn parse(text: []const u8, d: *Data) !void {
             d.at = try vec(&it);
             d.facing = try float(&it);
         } else if (std.mem.eql(u8, key, "spawn:")) {
-            d.spawnAt = try vec(&it);
-            d.spawnFacing = try float(&it);
+            // **READ AND DROPPED, AND THE KEY MAY NEVER BE DELETED FROM THIS PARSER**: an unknown key is a
+            // REFUSED save (whole, not in half), and every file already on disk carries this row. The
+            // checkpoint is `at:` now — see `scatter`.
+            _ = try vec(&it);
+            _ = try float(&it);
         } else if (std.mem.eql(u8, key, "souls:")) {
             d.souls = try int(u32, &it);
         } else if (std.mem.eql(u8, key, "hands:")) {
@@ -660,8 +665,6 @@ fn sample() Data {
     @memcpy(d.map[0..name.len], name);
     d.at = .{ .x = -4.5, .y = 0.31, .z = 7.25 };
     d.facing = 3.1416;
-    d.spawnAt = .{ .x = 1.5, .y = 0.01, .z = -2.0 };
-    d.spawnFacing = -1.25;
     d.souls = 12345;
     d.arm = .bow;
     d.off = .wand;
@@ -735,7 +738,6 @@ test "a save round-trips through its own text" {
     try testing.expectApproxEqAbs(d.at.x, back.at.x, 1e-3);
     try testing.expectApproxEqAbs(d.at.z, back.at.z, 1e-3);
     try testing.expectApproxEqAbs(d.facing, back.facing, 1e-4);
-    try testing.expectApproxEqAbs(d.spawnFacing, back.spawnFacing, 1e-4);
     try testing.expectEqual(d.souls, back.souls);
     try testing.expectEqual(d.arm, back.arm);
     try testing.expectEqual(d.off, back.off);
@@ -913,8 +915,6 @@ test "THE SLOT CARRIES EVERY FIELD IT NAMES — live game out, text, live game b
     var a = Live.blank(N_CHESTS);
     a.hero.pos = .{ .x = -4.5, .y = 0.25, .z = 7.125 };
     a.hero.facing = 1.5;
-    a.hero.spawnPos = .{ .x = 12.5, .y = 1.5, .z = -30.25 };
-    a.hero.spawnFacing = -0.75;
     a.hero.souls.total = 4321;
     a.hero.arm = .bell;
     a.hero.off = .wand;
@@ -953,6 +953,11 @@ test "THE SLOT CARRIES EVERY FIELD IT NAMES — live game out, text, live game b
 
     // …and the things `scatter` derives rather than copies, which a re-gather cannot see.
     try testing.expectEqual(@as(f32, 4321), b.hero.souls.shown);
+    // **THE FIRE HE LOADED AT IS THE FIRE HE COMES BACK TO** — a save is only ever written sitting at one, so
+    // the checkpoint is the position in the file and never a second stored point that could be a stale map entry.
+    try testing.expectApproxEqAbs(b.hero.pos.x, b.hero.spawnPos.x, 1e-4);
+    try testing.expectApproxEqAbs(b.hero.pos.z, b.hero.spawnPos.z, 1e-4);
+    try testing.expectApproxEqAbs(b.hero.facing, b.hero.spawnFacing, 1e-4);
     try testing.expect(b.chests.list[2].swing == 1 and b.chests.list[0].swing == 0);
     // **THE BOSS COMES BACK ALREADY GONE, NOT DYING.** A load that re-played the collapse would pay the
     // souls, the quake and the dissolve a second time, and leave a body standing in the arena while it did.
@@ -1080,4 +1085,24 @@ test "an empty bag line clears the bag rather than leaving the last one" {
     d.bag[0] = 9;
     try parse("version: 1\nbag:\n", &d);
     try testing.expectEqual(@as(u16, 0), d.bag[0]);
+}
+
+test "AN OLDER FILE'S `spawn:` ROW IS READ AND DROPPED, and the checkpoint is where the save was taken" {
+    // What every file on disk written before the checkpoint existed looks like: a `spawn:` holding the MAP
+    // ENTRY, metres away from the fire the save was actually taken at.
+    const older =
+        "version: 1\n" ++
+        "map: " ++ wf.START_MAP ++ "\n" ++
+        "at: 4.250 0.305 4.550 -0.3700\n" ++
+        "spawn: 0.000 4.000 4.000 3.1416\n" ++
+        "souls: 1020\n";
+    var d = Data{};
+    try parse(older, &d);
+
+    var l = Live.blank(1);
+    scatter(&d, l.slot());
+    try testing.expectApproxEqAbs(@as(f32, 4.250), l.hero.pos.x, 1e-3);
+    try testing.expectApproxEqAbs(@as(f32, 4.250), l.hero.spawnPos.x, 1e-3);
+    try testing.expectApproxEqAbs(@as(f32, 4.550), l.hero.spawnPos.z, 1e-3);
+    try testing.expectApproxEqAbs(@as(f32, -0.37), l.hero.spawnFacing, 1e-4);
 }

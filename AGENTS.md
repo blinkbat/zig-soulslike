@@ -848,7 +848,17 @@ where a BURST status (bleed) resets to nothing and re-procs at once.
 - **TWO SOURCES, ONE FLUID** — the sporeling's cloud (`SPORE_BUILD`), the mother's spit (`M_SPIT_BUILD`) and
   acid pools (`ACID_BUILD`). Neither floor deals damage. Spores and acid at once dose as **both** — two `add`
   calls, not a max.
-- **THE HERO ALONE CARRIES ONE.** Nothing applies a status to a foe, so nothing on a foe reads one.
+- **THE METER SITS ON THE BODY, NOT ON HIM** (`combat.Vitals.venom`) — his and every creature's, filled by
+  `Hit.venom` through the one `Vitals.hit` and ticked for a creature in `foe.grip` (which EVERY creature
+  already called, so no foe grew a field). `venomRate` is the dose multiplier and the ONE place it is
+  applied: the tree's node and what is on his head land there through `hero.settleBody`, so the spores' door
+  (`hero.poisonBy`) and an edge's cannot disagree.
+- **AN ENVENOMED EDGE IS WHAT PUTS ONE IN A FOE** (`item.Arm.venom`, `item.ENVENOMED`). The dose is CARRIED
+  through `Hit.scaled` rather than multiplied, like `launch`: it belongs to the coating, not to the stroke,
+  so a heavy swing does not poison harder. A blow that KILLED doses nothing. Since the proc is CHAOS, every
+  creature's own column already answers it — the brood's +75 takes a quarter of it, measured in a test.
+- **THE FOE'S BAR SHOWS IT** (`hud.foeBar`), its own 2 px row under the cold's, violet filling and yellow
+  running — a tint on a 54 px red bar is a hue nobody can name.
 
 ### Resistances — PoE2's four
 
@@ -890,8 +900,14 @@ where a BURST status (bleed) resets to nothing and re-procs at once.
   | Delver | +20 | −30 | −40 | 0 | packed earth over a damp hide; a bolt EARTHS |
   | Necromancer | −35 | **+75** | 0 | +45 | cold at the cap — it is the one thing that deals cold |
 
-- **NOTHING GRANTS THE HERO ANY YET, AND THE SHEET SAYS SO** — the book's STATS page shows all four at 0%.
-  `makeWhole` CARRIES RESISTANCES ACROSS a bonfire.
+- **WHAT HE OWNS ANSWERS THREE OF THE FOUR NOW** — cold off the rimeward mantle (35), chaos off the spidersilk
+  moccasins (25) and the sporeling cap's ward (40), fire off the kiln draught's (40). LIGHTNING IS STILL 0 ON
+  PURPOSE: nothing deals it at him, so a piece that turned it would be honestly inert.
+- **A WARD AND A COATING NAME THEIR OWN ELEMENT** (`item.Use.ward`, `item.Use.grease`, both an `item.ElemName`).
+  ONE column each and one at a time: a second tonic MOVES the ward rather than opening a second column, the way
+  `Timed` refreshes rather than stacks. `item` is a leaf, so `combat.elemOf` is the crossing and a comptime walk
+  in `combat` pins the two enums field for field.
+- `makeWhole` CARRIES RESISTANCES ACROSS a bonfire.
 
 ### The character sheet (`stats.zig`)
 
@@ -1039,11 +1055,19 @@ new one is a compile error until it has said what it costs and what it does.
 **BARE IS THE GAME EXACTLY AS IT WAS.** Every dial on an `item.Arm` defaults to 1 and the armour curve of 0
 armour is the blow itself. A new game is bare-handed (`STARTING_KIT` is the wolf scroll alone).
 
-- **ONE TABLE, ONE ROW PER THING** (`item.equip`) — eleven pieces, and the numbers are all any of them is. Gear
-  shelves as `Class.gear`, and the bag panel prints the row (`book.gearSays`).
+- **ONE TABLE, ONE ROW PER THING** (`item.equip`) — nineteen pieces, and the numbers are all any of them is (a
+  test counts the worn ones). Gear shelves as `Class.gear`, and the bag panel prints the row (`book.gearSays`),
+  A CLAUSE PER DIAL rather than a sentence per combination — four dials on a `Plate` is sixteen sentences.
+- **A PLATE MAY MOVE HIM TOO** (`item.Plate.move`, the spidersilk moccasins' 1.06). Multiplied onto the tree's
+  node in `hero.moveRateOf`, which `game.moveHero` is the only caller of, so a shoe that hurries him cannot
+  reach one movement path and miss the others. **STRICTLY WORSE ARMOUR ON PURPOSE** where it buys a column and a
+  pace: a piece better than the boots beside it on every dial retires them instead of competing.
 - **EVERY SOCKET ON THE DOLL IS REAL, AND A COMPTIME WALK KEEPS IT THAT WAY.** `item.zig` fails to compile if a
   non-hand `Wear` has no kind that goes in it, and `book.wearOf` is the ONE place a doll slot becomes an
   `item.Wear`. A faint socket is a fact about his BAG, not about the world.
+- **BOTH FINGERS ARE THEIR OWN SOCKET, AND THE RINGS ARE SPLIT ACROSS THEM** — the bloodtinge signet (+5
+  Vitality) is a `ring` and the loop of chance (+4 Luck, the only thing that moves `stats.findFor`) a `ring2`,
+  so the pair can be worn at once and neither shares a socket with the other's attribute.
 - **A SOCKET MAY BUY A SKILL** (`item.Boon`) — `n` points of an attribute, folded onto the live sheet by
   `hero.boonsOnto` through `hero.resheet`, which is THE place the sheet is built: the tree plus what he has on.
   `applyPerks` assigning the sheet straight from the bonus is how a belt got wiped off it by buying a node. A
@@ -1607,6 +1631,12 @@ a second on a guaranteed miss. A choose site tests the move's OWN band, not just
 
 - **THE FILE IS TEXT IN THE MAP'S OWN GRAMMAR** (`key: value`, `version:` first). Unknown key, bad version or
   another map's name are LOAD ERRORS — a save is refused whole rather than applied in half.
+- **THE FIRE HE SAT AT IS WHERE HE COMES BACK, AND SO IS THE ONE HE LOADED AT.** `tickRest`'s `justEntered`
+  stamps `hero.setSpawn` at the SEAT for the live session, and `save.scatter` takes the checkpoint off `at:` —
+  the position IN THE FILE — because every write in the game is inside the rest flow, so a save's position IS a
+  bonfire seat and a second stored point can only ever be the stale one. The file's `spawn:` row is READ AND
+  DROPPED and the key may never leave the parser: an unknown key is a refused save and every file on disk has
+  that row. `enterMap` still stamps the entry, so a new map is its own checkpoint until he next sits down.
 - **THE BARS ARE NOT IN THE FILE, AND THAT IS THE POINT.** `hero.sit` runs `makeWhole` before the write. The
   SHEET is out for the same reason: it is `ptree.Bonus.sheet()` of the tree below, and `game.applyTree`
   re-derives it on the way back in.
@@ -1855,8 +1885,10 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   sockets, no second grant on a node. Every attribute is raised by at least one node (test-pinned) and NO
   attribute is inert; `stats.inert` stays and answers false for all seven, because the next attribute arrives
   dead the way LUCK did.
-- **POISON is the only status effect and it is the HERO's alone** (nothing applies one to a foe, no foe reads
-  one) — but it is CHAOS now, so the sporeling cap's ward and the tree's Veil answer it.
+- **POISON is the only status effect, and BOTH SIDES carry it now** (`combat.Vitals.venom`) — but the only thing
+  that doses a foe is the envenomed dagger, and no foe doses HIM with an edge (the spore floors and the mother's
+  spit are still the only sources pointed his way). Nothing else reads a meter: no creature flees, slows or
+  changes state for being poisoned, it only loses HP.
 - **Equipment:** every registered piece is live and the SWORD HAND draws what is in it (`hero.Blade`/`bladeFor`,
   three shapes on one bone) — but the **WARBOW and the DOOR are still the plain bow and the small shield**. The
   door has a mesh to borrow (`knight`'s bowed wall); the warbow is the bow at another scale. **NOTHING WORN

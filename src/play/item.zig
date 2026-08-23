@@ -2,6 +2,11 @@ const std = @import("std");
 const stats = @import("stats.zig");
 
 
+/// **THE FOUR ELEMENTS BY NAME, FOR A FILE THAT CANNOT SEE `combat`.** This one is a leaf on purpose (`combat`
+/// imports it), so a ward or a grease says which column it is in these terms and `combat.elemOf` crosses over —
+/// pinned field for field against `combat.Elem` at comptime there.
+pub const ElemName = enum(u8) { fire, cold, lightning, chaos };
+
 pub const Kind = enum(u8) {
     crimson_flask,
     cerulean_flask,
@@ -47,6 +52,13 @@ pub const Kind = enum(u8) {
     scroll_siphon,
     scroll_lance,
     scroll_sunder,
+    kiln_draught,
+    rimewax,
+    pilgrims_offering,
+    envenomed_dagger,
+    spidersilk_moccasins,
+    bloodtinge_signet,
+    loop_of_chance,
 };
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
@@ -63,6 +75,8 @@ const ORDER = [_][]const u8{
     "rimeward_mantle", "sporecrown",     "gravebell_amulet", "plain_arrows",
     "fire_arrows",     "scroll_bolt",    "scroll_roots",   "scroll_rime",
     "scroll_levin",    "scroll_siphon",  "scroll_lance",   "scroll_sunder",
+    "kiln_draught",    "rimewax",        "pilgrims_offering", "envenomed_dagger",
+    "spidersilk_moccasins", "bloodtinge_signet", "loop_of_chance",
 };
 
 comptime {
@@ -122,6 +136,13 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .scroll_siphon => "Sorcery Scroll: Siphon",
         .scroll_lance => "Sorcery Scroll: Ember Lance",
         .scroll_sunder => "Sorcery Scroll: Sunder",
+        .kiln_draught => "Kiln Draught",
+        .rimewax => "Rimewax",
+        .pilgrims_offering => "Pilgrim's Offering",
+        .envenomed_dagger => "Envenomed Dagger",
+        .spidersilk_moccasins => "Spidersilk Moccasins",
+        .bloodtinge_signet => "Bloodtinge Signet",
+        .loop_of_chance => "Loop of Chance",
     };
 }
 
@@ -159,6 +180,9 @@ pub fn class(k: Kind) Class {
         .purgeleaf,
         .pilgrims_salt,
         .ironwort_tea,
+        .kiln_draught,
+        .rimewax,
+        .pilgrims_offering,
         => .tool,
         .rune_arc,
         .golden_seed,
@@ -177,6 +201,10 @@ pub fn class(k: Kind) Class {
         .rimeward_mantle,
         .sporecrown,
         .gravebell_amulet,
+        .envenomed_dagger,
+        .spidersilk_moccasins,
+        .bloodtinge_signet,
+        .loop_of_chance,
         => .gear,
         .soul_binding_ring => .gear,
         .spirit_scroll_wolf => .treasure,
@@ -239,6 +267,13 @@ pub fn describe(k: Kind) [:0]const u8 {
         .scroll_levin => "A sheet burned through in one place, the hole the shape of a struck line. Whoever copied this out got it right once and never dared copy it again.",
         .scroll_siphon => "Skin, and thinner than it ought to be, as though something had already drunk out of it. The figure drawn on it is fuller than the figure drawn opposite, and the line between them runs the wrong way.",
         .scroll_lance => "Scorched down one edge and rolled tight against the draught. The mark on it is a straight run of fire held level, which is a thing to be aimed rather than thrown.",
+        .kiln_draught => "Grit and kiln-ash steeped in oil, drunk warm and swallowed fast before it settles. For a minute fire goes into you slower than it means to.",
+        .rimewax => "Wax gone cloudy with the cold still shut in it, in a waxed twist of cloth like the tallow. Wiped along an edge it clings and bites: for a minute the sword hangs cold on top of what it always did.",
+        .pilgrims_offering => "What a shrine was owed and never got - coin, a tooth and a cut lock of hair, pressed into one cold lump. There is more of somebody in this than in a brick of salt, and it went the same way.",
+        .envenomed_dagger => "A dirk with its groove packed and packed again with leechfly gut, black to the hilt and sticky in the hand. It takes less with it than a clean edge does, and what it leaves in the wound finishes the work.",
+        .spidersilk_moccasins => "Shoes bound out of silk cut off a brood sac's shelf, light enough that you forget you have them on. What the spore beds put out does not stick to them, and they walk a little quicker than boots do.",
+        .bloodtinge_signet => "A signet with a garnet gone almost black, set so deep the band has closed over the stone. Wearing it your blood runs thicker than it has any right to.",
+        .loop_of_chance => "A loop of wire twisted through a holed coin, the kind pressed into a dead man's hand for the toll he owed. What it buys is nothing you can point at until something turns up that should not have.",
         .scroll_sunder => "Half a sheet, the tear old and clean. What is left shows a rod brought down close in, inside the length of a sword - which is the whole of what this one asks of you.",
     };
 }
@@ -249,10 +284,11 @@ pub const Use = union(enum) {
     arrows: struct { fire: bool, n: u8 },
     regen: struct { frac: f32, secs: f32 },
     lob: struct { dmg: f32, fire: f32 = 0, lightning: f32 = 0, poise: f32 },
-    /// A timed ward: `chaos` resistance for `secs` seconds. Refreshes, never stacks (the status law).
-    ward: struct { chaos: f32, secs: f32 },
+    /// A timed ward: `amount` of resistance in ONE named column for `secs` seconds. Refreshes, never stacks (the status law). **ONE COLUMN, NOT A SPREAD** — two tonics that each ward two things is a resistance sheet nobody can read off the bag.
+    ward: struct { elem: ElemName, amount: f32, secs: f32 },
     wind: struct { share: f32 },
-    grease: struct { frac: f32, secs: f32 },
+    /// `frac` of the blow hung on the edge as `elem`, on TOP of what the sword already did.
+    grease: struct { elem: ElemName, frac: f32, secs: f32 },
     souls: struct { n: u32 },
     brew: struct { mult: f32, secs: f32 },
     purge,
@@ -331,12 +367,27 @@ pub const Arm = struct {
     negate: f32 = 1,
     arc: f32 = 1,
     walk: f32 = 1,
+    /// **WHAT A LANDED STROKE PUTS IN THE BODY'S POISON METER** (`combat.Hit.venom`, out of `combat.POISON_MAX`), and 0 for every clean edge. An ABSOLUTE, not a multiplier: the dose is the coating's, so it does not ride the damage dial or the skill.
+    venom: f32 = 0,
 };
 
-pub const Res = struct { fire: f32 = 0, cold: f32 = 0, lightning: f32 = 0, chaos: f32 = 0 };
+pub const Res = struct {
+    fire: f32 = 0,
+    cold: f32 = 0,
+    lightning: f32 = 0,
+    chaos: f32 = 0,
 
-/// `a` is the armour value in `A/(A + 5*dmg)` (`combat.armourTaken`), `res` the four elemental columns, and `poison` a MULTIPLIER on how fast a status meter fills — one row, not three verbs each stacked separately.
-pub const Plate = struct { slot: Wear, a: f32 = 0, res: Res = .{}, poison: f32 = 1 };
+    /// **THE COLUMNS ADD** (the plate law), walked rather than written out four times — a fifth element added to
+    /// this struct is summed by every caller for free instead of being silently dropped by whoever forgot a line.
+    pub fn plus(self: Res, other: Res) Res {
+        var out = self;
+        inline for (@typeInfo(Res).@"struct".fields) |f| @field(out, f.name) += @field(other, f.name);
+        return out;
+    }
+};
+
+/// `a` is the armour value in `A/(A + 5*dmg)` (`combat.armourTaken`), `res` the four elemental columns, `poison` a MULTIPLIER on how fast a status meter fills, and `move` one on how fast he walks — one row, not four verbs each stacked separately.
+pub const Plate = struct { slot: Wear, a: f32 = 0, res: Res = .{}, poison: f32 = 1, move: f32 = 1 };
 
 pub const Charm = struct { slot: Wear, leech: f32 = 0, hpFrac: f32 = 0, spiritFp: f32 = 1, fpFrac: f32 = 0 };
 
@@ -356,6 +407,16 @@ pub const Equip = union(enum) {
 /// **A MELEE CLASS'S OWN ROW, WRITTEN ONCE.** The straight sword is the reference and is 1 on every dial — `hero.ATK_LIGHT_HIT`/`ATK_HEAVY_HIT` are literally its blow — and the other two classes say only how they differ. The two weapons standing in those sockets ARE these rows.
 pub const DAGGER = Arm{ .slot = .hand_dagger, .heft = .light, .dmg = 0.74, .poise = 0.72, .dur = 0.78, .stam = 0.76, .scales = .dexterity };
 pub const CLUB = Arm{ .slot = .hand_club, .heft = .heavy, .dmg = 1.48, .poise = 1.60, .dur = 1.34, .stam = 1.48, .scales = .strength };
+
+/// **DERIVED FROM THE DAGGER'S ROW, NOT WRITTEN BESIDE IT** — a dirk retuned above retunes this one, and the two
+/// dials named here are the whole of what the coating costs and buys: a duller edge, and four landed strokes to
+/// a full meter (`combat.POISON_MAX` is 100).
+pub const ENVENOMED = blk: {
+    var a = DAGGER;
+    a.dmg = 0.66;
+    a.venom = 26;
+    break :blk a;
+};
 
 /// **THE BARE ARMAMENT'S ROW** — every dial 1, and the skill that drives the thing he was born holding. An empty socket may not inherit the sword's `quality` default and quietly pay a bowman for his strength.
 pub fn bareArm(w: Wear) Arm {
@@ -378,6 +439,8 @@ pub const Gear = struct {
 
 pub const GEAR = [_]Gear{
     .{ .kind = .fang_dirk, .equip = .{ .arm = DAGGER } },
+    // **THE FIRST EDGE IN THE GAME THAT LEAVES SOMETHING BEHIND.** Poison was the HERO's alone until this row.
+    .{ .kind = .envenomed_dagger, .equip = .{ .arm = ENVENOMED } },
     .{ .kind = .greatclub, .equip = .{ .arm = CLUB } },
     .{ .kind = .grave_warbow, .equip = .{ .arm = .{ .slot = .hand_bow, .heft = .heavy, .reach = .ranged, .dmg = 1.62, .poise = 1.45, .dur = 1.28, .stam = 1.34, .scales = .dexterity } } },
     // A DOOR — half again the compass of the small shield, at four fifths of the speed and more per blow. **THE
@@ -387,8 +450,13 @@ pub const GEAR = [_]Gear{
     .{ .kind = .leech_signet, .equip = .{ .charm = .{ .slot = .ring, .leech = 2.0, .hpFrac = 0.06 } } },
     .{ .kind = .pitted_helm, .equip = .{ .plate = .{ .slot = .helm, .a = 14.0 } } },
     .{ .kind = .marchboots, .equip = .{ .plate = .{ .slot = .feet, .a = 9.0 } } },
+    // **CHAOS IS WHAT HE MEETS MOST AND NOTHING ON HIS SIDE ANSWERED IT** — the wand's bolt and roots, the knight's lit blow and gas, and what poison itself is billed as. LESS armour than the boots beside them on purpose: the trade is the column and the pace, not a strictly better shoe.
+    .{ .kind = .spidersilk_moccasins, .equip = .{ .plate = .{ .slot = .feet, .a = 8.0, .res = .{ .chaos = 25 }, .move = 1.06 } } },
     .{ .kind = .banded_warbelt, .equip = .{ .boon = .{ .slot = .belt, .attr = .strength, .n = 3 } } },
     .{ .kind = .deft_signet, .equip = .{ .boon = .{ .slot = .ring2, .attr = .dexterity, .n = 3 } } },
+    // THE TWO FINGERS TAKE ONE EACH so both can be on at once, and neither shares a socket with the other's attribute.
+    .{ .kind = .bloodtinge_signet, .equip = .{ .boon = .{ .slot = .ring, .attr = .vitality, .n = 5 } } },
+    .{ .kind = .loop_of_chance, .equip = .{ .boon = .{ .slot = .ring2, .attr = .luck, .n = 4 } } },
     .{ .kind = .ashen_amulet, .equip = .{ .boon = .{ .slot = .neck, .attr = .intelligence, .n = 3 } } },
     // **THE FIRST COLD RESISTANCE ANYWHERE ON HIS SIDE** — the necromancer's rune ring is the game's one source of cold and the sheet showed 0%. PHYSICAL under the gambeson's on purpose: a chest socket strictly better than the coat already in it retires that coat instead of competing with it.
     .{ .kind = .rimeward_mantle, .equip = .{ .plate = .{ .slot = .chest, .a = 13.0, .res = .{ .cold = 35 } } } },
@@ -397,15 +465,20 @@ pub const GEAR = [_]Gear{
     .{ .kind = .soul_binding_ring, .equip = .{ .bind = .{ .slot = .ring } } },
     .{ .kind = .mushroom_jerky, .use = .{ .regen = .{ .frac = 0.60, .secs = 20.0 } } },
     .{ .kind = .ember_candle, .use = .{ .lob = .{ .dmg = 8, .fire = 22, .poise = 12 } } },
-    .{ .kind = .sporeling_cap, .use = .{ .ward = .{ .chaos = 40, .secs = 60 } } },
+    .{ .kind = .sporeling_cap, .use = .{ .ward = .{ .elem = .chaos, .amount = 40, .secs = 60 } } },
     .{ .kind = .second_wind, .use = .{ .wind = .{ .share = 0.5 } } },
-    .{ .kind = .fire_tallow, .use = .{ .grease = .{ .frac = 0.5, .secs = 60 } } },
+    .{ .kind = .fire_tallow, .use = .{ .grease = .{ .elem = .fire, .frac = 0.5, .secs = 60 } } },
     .{ .kind = .thundercrock, .use = .{ .lob = .{ .dmg = 8, .lightning = 22, .poise = 12 } } },
     .{ .kind = .nameless_soul, .use = .{ .souls = .{ .n = 150 } } },
     .{ .kind = .toadflesh_broth, .use = .{ .brew = .{ .mult = 1.5, .secs = 60 } } },
     .{ .kind = .purgeleaf, .use = .purge },
     .{ .kind = .pilgrims_salt, .use = .{ .souls = .{ .n = 600 } } },
     .{ .kind = .ironwort_tea, .use = .{ .steady = .{ .mult = 2.2, .secs = 40 } } },
+    // THE SPORELING CAP'S TWO SIBLINGS, one column over each: the same 40 for the same minute, so which element
+    // a fight is made of is the only question the bag asks.
+    .{ .kind = .kiln_draught, .use = .{ .ward = .{ .elem = .fire, .amount = 40, .secs = 60 } } },
+    .{ .kind = .rimewax, .use = .{ .grease = .{ .elem = .cold, .frac = 0.5, .secs = 60 } } },
+    .{ .kind = .pilgrims_offering, .use = .{ .souls = .{ .n = 2000 } } },
     // **AMMUNITION IS AN ITEM NOW** (owner: arrows need to be droppable, placeable, all kinds) — both banks. **SIZED TO THE BANK, NOT GUESSED**: 12 into a quiver of 10 wasted two shafts on every pickup. This file imports nothing but std, so a test holds the two together.
     .{ .kind = .plain_arrows, .use = .{ .arrows = .{ .fire = false, .n = 10 } } },
     .{ .kind = .fire_arrows, .use = .{ .arrows = .{ .fire = true, .n = 5 } } },
@@ -470,9 +543,9 @@ comptime {
         switch (equip(k)) {
             .arm => |a| {
                 const guardDials = a.negate != 1 or a.arc != 1 or a.walk != 1;
-                const bladeDials = a.dmg != 1 or a.poise != 1;
+                const bladeDials = a.dmg != 1 or a.poise != 1 or a.venom != 0;
                 if (a.slot == .hand_shield and bladeDials) @compileError("item: " ++ @tagName(k) ++
-                    " is a shield with damage or poise on it — a board does not swing, and those dials are dead here");
+                    " is a shield with damage, poise or venom on it — a board does not swing, and those dials are dead here");
                 if (a.slot != .hand_shield and guardDials) @compileError("item: " ++ @tagName(k) ++
                     " sets shield dials but is not a shield — `negate`/`arc`/`walk` are only read of the guard");
                 if (!a.slot.held()) @compileError("item: " ++ @tagName(k) ++ " is an armament in a worn socket");
@@ -504,6 +577,14 @@ comptime {
         if (!any) @compileError("item: nothing in the world goes in the " ++ wf.name ++
             " socket — the book would draw a hole that can never be filled");
     }
+}
+
+/// Closes a line built up clause by clause: the full stop and the NUL, in ONE place, or null if the buffer is out.
+fn sentence(buf: []u8, n: usize) ?[:0]const u8 {
+    if (n + 2 > buf.len) return null;
+    buf[n] = '.';
+    buf[n + 1] = 0;
+    return buf[0 .. n + 1 :0];
 }
 
 fn plateElem(r: Res) ?struct { name: []const u8, amount: f32 } {
@@ -552,32 +633,34 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
     // GEAR SAYS WHAT IT DOES IN THE SAME PLACE A TOOL DOES, off `equip` for the same reason the tools read `use`: a dial retuned in the table reads here.
     switch (equip(k)) {
         .none => {},
-        .arm => |a| return switch (a.slot) {
-            .hand_shield => std.fmt.bufPrintZ(buf, "{s} {s}: blocks {d:.0}% more, covers {d:.0}% wider, walks at {d:.0}%.", .{
+        .arm => |a| {
+            if (a.slot == .hand_shield) return std.fmt.bufPrintZ(buf, "{s} {s}: blocks {d:.0}% more, covers {d:.0}% wider, walks at {d:.0}%.", .{
                 a.heft.label(),
                 a.reach.label(),
                 (a.negate - 1) * 100,
                 (a.arc - 1) * 100,
                 a.walk * 100,
-            }) catch "Held: a bigger shield.",
-            else => std.fmt.bufPrintZ(buf, "{s} {s}: {d:.0}% damage, {d:.0}% poise, {d:.0}% {s} time.", .{
+            }) catch "Held: a bigger shield.";
+            var n = (std.fmt.bufPrint(buf, "{s} {s}: {d:.0}% damage, {d:.0}% poise, {d:.0}% {s} time", .{
                 a.heft.label(),
                 a.reach.label(),
                 a.dmg * 100,
                 a.poise * 100,
                 a.dur * 100,
                 if (a.reach == .ranged) @as([]const u8, "draw") else "swing",
-            }) catch "Held: its own weight and speed.",
+            }) catch return "Held: its own weight and speed.").len;
+            if (a.venom > 0) n += (std.fmt.bufPrint(buf[n..], ", +{d:.0} poison a hit", .{a.venom}) catch return "Held: a coated edge.").len;
+            return sentence(buf, n) orelse "Held: its own weight and speed.";
         },
-        // **THE ROW PRINTS WHAT IT ACTUALLY CARRIES, NOT ALL FOUR COLUMNS.** A coat that turns no cold has no business saying "0% cold" on the one panel a player compares two coats on.
+        // **THE ROW PRINTS WHAT IT ACTUALLY CARRIES, NOT ALL FOUR COLUMNS.** A coat that turns no cold has no business saying "0% cold" on the one panel a player compares two coats on. A CLAUSE PER DIAL rather than a branch per combination — four dials is sixteen sentences to write out.
         .plate => |p| {
-            const el = plateElem(p.res);
-            if (el != null and p.poison != 1) return std.fmt.bufPrintZ(buf, "Worn: {d:.0} armour, {d:.0}% {s}, poison fills at {d:.0}%.", .{
-                p.a, el.?.amount, el.?.name, p.poison * 100,
-            }) catch "Worn: armour and a ward.";
-            if (el) |e| return std.fmt.bufPrintZ(buf, "Worn: {d:.0} armour, {d:.0}% {s} resistance.", .{ p.a, e.amount, e.name }) catch "Worn: armour and a ward.";
-            if (p.poison != 1) return std.fmt.bufPrintZ(buf, "Worn: {d:.0} armour, poison fills at {d:.0}%.", .{ p.a, p.poison * 100 }) catch "Worn: armour.";
-            return std.fmt.bufPrintZ(buf, "Worn: {d:.0} armour against physical damage.", .{p.a}) catch "Worn: armour.";
+            const head = std.fmt.bufPrint(buf, "Worn: {d:.0} armour", .{p.a}) catch return "Worn: armour.";
+            var n = head.len;
+            if (plateElem(p.res)) |e| n += (std.fmt.bufPrint(buf[n..], ", {d:.0}% {s} resistance", .{ e.amount, e.name }) catch return "Worn: armour and a ward.").len;
+            if (p.poison != 1) n += (std.fmt.bufPrint(buf[n..], ", poison fills at {d:.0}%", .{p.poison * 100}) catch return "Worn: armour and a ward.").len;
+            if (p.move != 1) n += (std.fmt.bufPrint(buf[n..], ", walks at {d:.0}%", .{p.move * 100}) catch return "Worn: armour and a ward.").len;
+            if (n == head.len) n += (std.fmt.bufPrint(buf[n..], " against physical damage", .{}) catch return "Worn: armour.").len;
+            return sentence(buf, n) orelse "Worn: armour.";
         },
         // …AND THE CHARM SAYS WHICHEVER BARGAIN IT IS. Both halves on one line would price the gravebell's leech at zero and the signet's call at 100%.
         .charm => |c| {
@@ -605,9 +688,9 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
             if (l.lightning > 0) @as([]const u8, "lightning") else "fire",
             l.poise,
         }) catch "Thrown for damage.",
-        .ward => |w| std.fmt.bufPrintZ(buf, "+{d:.0} Chaos resistance for {d:.0}s. Refreshes, never stacks.", .{ w.chaos, w.secs }) catch "Wards off Chaos.",
+        .ward => |w| std.fmt.bufPrintZ(buf, "+{d:.0}% {s} resistance for {d:.0}s. Refreshes, never stacks.", .{ w.amount, @tagName(w.elem), w.secs }) catch "Wards off an element.",
         .wind => |w| std.fmt.bufPrintZ(buf, "Gives back {d:.0}% of stamina at once, and lets the winded lockout go.", .{w.share * 100}) catch "Gives stamina back.",
-        .grease => |gr| std.fmt.bufPrintZ(buf, "Sword hangs +{d:.0}% of its blow as fire for {d:.0}s. Refreshes, never stacks.", .{ gr.frac * 100, gr.secs }) catch "Sets the blade alight.",
+        .grease => |gr| std.fmt.bufPrintZ(buf, "Sword hangs +{d:.0}% of its blow as {s} for {d:.0}s. Refreshes, never stacks.", .{ gr.frac * 100, @tagName(gr.elem), gr.secs }) catch "Coats the blade.",
         .souls => |s| std.fmt.bufPrintZ(buf, "Crushed for {d} souls, on the spot.", .{s.n}) catch "Worth souls.",
         .arrows => |a| std.fmt.bufPrintZ(buf, "Puts {d} {s} arrows back in the quiver.", .{ a.n, if (a.fire) @as([]const u8, "fire") else "plain" }) catch "Refills the quiver.",
         .brew => |b| std.fmt.bufPrintZ(buf, "Stamina comes back {d:.1}x as fast for {d:.0}s. Refreshes, never stacks.", .{ b.mult, b.secs }) catch "Stamina returns faster.",
@@ -783,7 +866,7 @@ test "every usable kind carries its OWN dose, and the rest do nothing" {
             .ward => |w| {
                 found += 1;
                 try std.testing.expect(usable(k));
-                try std.testing.expect(w.chaos > 0 and w.secs > 0);
+                try std.testing.expect(w.amount > 0 and w.secs > 0);
             },
             .wind => |w| {
                 found += 1;
@@ -892,7 +975,7 @@ test "EVERY PIECE OF GEAR GOES IN A SOCKET, SAYS WHAT IT DOES IN NUMBERS, AND SH
         }
         try std.testing.expect(std.mem.indexOf(u8, describe(k), " yet.") == null);
     }
-    try std.testing.expectEqual(@as(usize, 15), worn);
+    try std.testing.expectEqual(@as(usize, 19), worn);
 }
 
 test "EVERY SOCKET HAS SOMETHING THAT GOES IN IT, and no worn socket is a hand" {
@@ -923,7 +1006,7 @@ test "A BOON GRANTS A SKILL SOMETHING ACTUALLY READS, and says so in points" {
             else => {},
         }
     }
-    try std.testing.expectEqual(@as(usize, 3), boons);
+    try std.testing.expectEqual(@as(usize, 5), boons);
 }
 
 test "A WEAPON'S SCALING MATCHES WHAT IT IS — and an EMPTY bow socket is still a bow" {

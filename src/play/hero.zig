@@ -677,11 +677,9 @@ pub fn plateOf(worn: Worn) item.Plate {
             switch (item.equip(k)) {
                 .plate => |p| {
                     out.a += p.a;
-                    out.res.fire += p.res.fire;
-                    out.res.cold += p.res.cold;
-                    out.res.lightning += p.res.lightning;
-                    out.res.chaos += p.res.chaos;
+                    out.res = out.res.plus(p.res);
                     out.poison *= p.poison;
+                    out.move *= p.move;
                 },
                 else => {},
             }
@@ -696,6 +694,12 @@ pub fn resistOf(worn: Worn) item.Res {
 
 pub fn poisonRateOf(worn: Worn) f32 {
     return plateOf(worn).poison;
+}
+
+/// **HOW FAST HE WALKS, ALL OF IT IN ONE PLACE** — the tree's node and what is on his feet. `game.moveHero` is
+/// the only caller, so a shoe that hurries him cannot be applied on one movement path and not the others.
+pub fn moveRateOf(worn: Worn, perk: ptree.Bonus) f32 {
+    return perk.moveSpeed * plateOf(worn).move;
 }
 
 pub fn charmOf(worn: Worn) item.Charm {
@@ -787,6 +791,8 @@ pub fn weigh(h: combat.Hit, row: item.Arm, sheet: statsmod.Sheet) combat.Hit {
         .stance = h.stance * row.poise,
         .elem = h.elem.scaled(row.dmg * skill),
         .fp = h.fp,
+        // THE DOSE IS THE COATING'S — neither the stroke's weight nor the arm swinging it changes what is on the edge.
+        .venom = row.venom,
     };
 }
 
@@ -1464,9 +1470,13 @@ pub const Hero = struct {
     regen: combat.Regen = .{},
     baseRes: combat.Resists = .{},
     ward: combat.Timed = .{},
+    /// WHICH COLUMN THE WARD RUNNING IS IN. One ward at a time by construction: a second tonic replaces the
+    /// first the way `Timed` refreshes rather than stacks.
+    wardElem: combat.Elem = .chaos,
     grease: combat.Timed = .{},
+    /// WHICH ELEMENT IS ON THE EDGE. Same rule — one coating, and the last one wiped on is the one that is there.
+    greaseElem: combat.Elem = .fire,
     steady: combat.Timed = .{},
-    poison: combat.Status = .{},
     drinking: bool = false,
     drinkT: f32 = 0,
     poured: bool = false,
@@ -1600,12 +1610,11 @@ pub const Hero = struct {
         self.stam.reset();
         self.fp.reset();
         self.regen.reset();
-        self.poison.reset();
         self.ward.reset();
         self.grease.reset();
         self.steady.reset();
         self.vit.poiseRate = 1;
-        self.settleResists();
+        self.settleBody();
         self.flasks.refill();
         self.quiver.refill();
     }
@@ -2955,7 +2964,7 @@ pub const Hero = struct {
         const base = weigh(if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT, self.swingRow(), self.sheet).scaled(self.perk.dmg);
         if (!self.grease.on()) return base;
         var out = base;
-        out.elem = combat.elems(.{ .fire = base.dmg * self.grease.value(0) });
+        out.elem.v[@intFromEnum(self.greaseElem)] += base.dmg * self.grease.value(0);
         return out;
     }
     pub fn setSpawn(self: *Hero, pos: rl.Vector3, facing: f32) void {
@@ -3036,6 +3045,9 @@ pub const Hero = struct {
         self.worn.put(w, k);
         self.resheet();
         self.refitBars();
+        // The dials that live on the BODY are stamped here as well as per frame: a dose taken between putting a
+        // cap on and the next `tickTimed` was billed at the old rate.
+        self.settleBody();
         return true;
     }
 
@@ -3144,12 +3156,14 @@ pub const Hero = struct {
         self.hurtFlash = mathx.maxF(0, self.hurtFlash - dt * 2.6);
     }
 
-    pub fn startWard(self: *Hero, chaos: f32, secs: f32) void {
-        self.ward.start(chaos, secs);
-        self.settleResists();
+    pub fn startWard(self: *Hero, e: combat.Elem, amount: f32, secs: f32) void {
+        self.wardElem = e;
+        self.ward.start(amount, secs);
+        self.settleBody();
     }
 
-    pub fn startGrease(self: *Hero, frac: f32, secs: f32) void {
+    pub fn startGrease(self: *Hero, e: combat.Elem, frac: f32, secs: f32) void {
+        self.greaseElem = e;
         self.grease.start(frac, secs);
     }
 
@@ -3159,7 +3173,7 @@ pub const Hero = struct {
     }
 
     pub fn purgePoison(self: *Hero) void {
-        self.poison.reset();
+        self.vit.venom.reset();
     }
 
     pub fn tickTimed(self: *Hero, dt: f32) void {
@@ -3167,31 +3181,36 @@ pub const Hero = struct {
         self.grease.tick(dt);
         self.steady.tick(dt);
         self.vit.poiseRate = self.steady.value(1);
-        self.settleResists();
+        self.settleBody();
     }
 
-    fn settleResists(self: *Hero) void {
+    /// **THE ONE PLACE THE DIALS ON HIS BODY ARE WRITTEN** — asked every frame (`tickTimed`), because `wear`
+    /// changes what is on him without going anywhere near here. A coat taken off may not leave its column
+    /// behind, and a cap taken off may not leave its poison rate behind either.
+    fn settleBody(self: *Hero) void {
+        // ONE WALK OF THE SOCKETS, not one per dial — `resistOf` and `poisonRateOf` are both `plateOf`, and this
+        // runs every frame.
+        const suit = plateOf(self.worn);
         var r = self.baseRes;
-        r.v[@intFromEnum(combat.Elem.chaos)] += self.ward.value(0);
-        // The ONE place `vit.res` is written, so a coat taken off cannot leave its column behind.
-        const worn = resistOf(self.worn);
-        r.v[@intFromEnum(combat.Elem.fire)] += worn.fire;
-        r.v[@intFromEnum(combat.Elem.cold)] += worn.cold;
-        r.v[@intFromEnum(combat.Elem.lightning)] += worn.lightning;
-        r.v[@intFromEnum(combat.Elem.chaos)] += worn.chaos;
+        r.v[@intFromEnum(self.wardElem)] += self.ward.value(0);
+        const worn = combat.resistsOf(suit.res);
+        for (&r.v, worn.v) |*x, w| x.* += w;
         self.vit.res = r;
+        self.vit.venomRate = self.perk.poison * suit.poison;
     }
 
     pub fn poisonBy(self: *Hero, amt: f32) void {
         if (self.dead) return;
-        self.poison.add(amt * self.perk.poison * poisonRateOf(self.worn));
+        self.vit.venom.add(amt * self.vit.venomRate);
     }
 
+    /// **THE METER IS TICKED EVEN WHILE HE IS DEAD**, and `tickVenom` is what refuses the bite. Gated up here
+    /// instead, `justProcced` never cleared and the proc's beat (`game`'s shake, voice and flash) re-fired on
+    /// every frame of the death animation.
     pub fn tickPoison(self: *Hero, dt: f32) bool {
-        const due = self.poison.tick(dt, self.vit.hpMax);
-        if (due <= 0 or self.dead) return false;
-        if (self.vit.drip(combat.poisonPulse(due)) == .death) self.enterDeath();
-        return true;
+        const was = self.vit.hp;
+        if (self.vit.tickVenom(dt)) self.enterDeath();
+        return self.vit.hp < was;
     }
 
     /// The harness's own reset between two staged moves, so one cell cannot leak into the next.
@@ -6569,4 +6588,122 @@ test "EVERY STROKE AIMS AT A BODY — except the one whose target is the ground"
     // The smash's MEAN sits well under the club's own horizontal because the window opens overhead and closes on the earth; where it FINISHES is measured next door, at -0.01 m.
     try std.testing.expect(smash < sweep);
     try std.testing.expect(smash < 0.7 * slash);
+}
+
+test "AN ENVENOMED EDGE FILLS A BODY IN FOUR STROKES, and what it becomes is CHAOS" {
+    var h = testHero();
+    try std.testing.expect(h.wear(.hand_dagger, .envenomed_dagger));
+    h.arm = .dagger;
+    const dose = h.attackHit().venom;
+    std.debug.print("\n  envenomed dirk: {d:.0} venom a hit, {d:.0} to fill (`combat.POISON_MAX`)\n", .{ dose, combat.POISON_MAX });
+    try std.testing.expect(dose > 0);
+    // The clean dirk beside it leaves nothing behind, and hits harder for it.
+    var clean = testHero();
+    try std.testing.expect(clean.wear(.hand_dagger, .fang_dirk));
+    clean.arm = .dagger;
+    try std.testing.expectApproxEqAbs(@as(f32, 0), clean.attackHit().venom, 1e-6);
+    try std.testing.expect(clean.attackHit().dmg > h.attackHit().dmg);
+
+    // FOUR landed strokes and the fifth frame it is running, on a body that is not the hero's.
+    var body = combat.Vitals.initFoe(400, 999, 999);
+    var strokes: u32 = 0;
+    while (strokes < 4) : (strokes += 1) {
+        _ = body.hit(h.attackHit());
+        try std.testing.expect(!body.venom.active());
+    }
+    _ = body.tickVenom(1.0 / 60.0);
+    try std.testing.expect(body.venom.active());
+
+    // …and the bite it turns into is CHAOS, so a creature's own column answers it. The brood's +75 is the cap.
+    const hpWas = body.hp;
+    _ = body.tickVenom(1.0);
+    const bare = hpWas - body.hp;
+    var warded = combat.Vitals.initFoe(400, 999, 999).withRes(combat.resists(.{ .chaos = 75 }));
+    strokes = 0;
+    while (strokes < 4) : (strokes += 1) _ = warded.hit(h.attackHit());
+    _ = warded.tickVenom(1.0 / 60.0);
+    const wardedWas = warded.hp;
+    _ = warded.tickVenom(1.0);
+    const through = wardedWas - warded.hp;
+    std.debug.print("  one second of it: {d:.2} HP bare, {d:.2} at 75% chaos ({d:.0}%)\n", .{ bare, through, through / bare * 100 });
+    try std.testing.expectApproxEqAbs(0.25, through / bare, 0.02);
+}
+
+test "A WARD AND A COATING NAME THEIR OWN ELEMENT — and the last one wiped on is the one that is there" {
+    var h = testHero();
+    h.startWard(.fire, 40, 60);
+    h.tickTimed(1.0 / 60.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 40), h.vit.res.raw(.fire), 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), h.vit.res.raw(.chaos), 1e-4);
+    // REFRESHED, NEVER STACKED, and a second tonic moves the whole ward rather than opening a second column.
+    h.startWard(.chaos, 40, 60);
+    h.tickTimed(1.0 / 60.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), h.vit.res.raw(.fire), 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 40), h.vit.res.raw(.chaos), 1e-4);
+
+    const dry = h.attackHit();
+    try std.testing.expectApproxEqAbs(@as(f32, 0), dry.elem.total(), 1e-6);
+    h.startGrease(.cold, 0.5, 60);
+    const iced = h.attackHit();
+    try std.testing.expectApproxEqAbs(dry.dmg * 0.5, iced.elem.at(.cold), 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), iced.elem.at(.fire), 1e-6);
+    h.startGrease(.fire, 0.5, 60);
+    const lit = h.attackHit();
+    try std.testing.expectApproxEqAbs(dry.dmg * 0.5, lit.elem.at(.fire), 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), lit.elem.at(.cold), 1e-6);
+    // The physical half is untouched either way: a coating is hung ON TOP of the blow.
+    try std.testing.expectApproxEqAbs(dry.dmg, lit.dmg, 1e-6);
+}
+
+test "WHAT IS ON HIS FEET REACHES HOW FAST HE WALKS, and a cap reaches how fast he fills" {
+    var h = testHero();
+    const bare = moveRateOf(h.worn, h.perk);
+    try std.testing.expect(h.wear(.feet, .spidersilk_moccasins));
+    const silk = moveRateOf(h.worn, h.perk);
+    std.debug.print("\n  pace: bare {d:.3}, moccasins {d:.3} (+{d:.1}%)\n", .{ bare, silk, (silk / bare - 1) * 100 });
+    try std.testing.expect(silk > bare);
+    // The boots beside them are the plain shoe — armour only, and the pace is the bare one.
+    try std.testing.expect(h.wear(.feet, .marchboots));
+    try std.testing.expectApproxEqAbs(bare, moveRateOf(h.worn, h.perk), 1e-6);
+
+    // …and the rate a status meter fills is settled on the BODY, off the same table (`settleBody`).
+    var cap = testHero();
+    cap.tickTimed(1.0 / 60.0);
+    const openRate = cap.vit.venomRate;
+    try std.testing.expect(cap.wear(.helm, .sporecrown));
+    cap.tickTimed(1.0 / 60.0);
+    try std.testing.expect(cap.vit.venomRate < openRate);
+    cap.poisonBy(50);
+    const slowed = cap.vit.venom.meter;
+    var open = testHero();
+    open.tickTimed(1.0 / 60.0);
+    open.poisonBy(50);
+    std.debug.print("  a 50 dose: {d:.1} open-headed, {d:.1} under the sporecrown\n", .{ open.vit.venom.meter, slowed });
+    try std.testing.expect(slowed < open.vit.venom.meter);
+}
+
+test "DEATH PUTS HIM BACK WHERE HE LAST SAT DOWN — the stamped spawn, not the spot the map was entered at" {
+    var h = testHero();
+    const entry = mathx.ground(0, 4);
+    h.setSpawn(entry, std.math.pi);
+
+    // The fire he sat at (`game.tickRest` stamps the seat), a long way from the entry.
+    const fire = mathx.ground(-38.5, 61.25);
+    h.setSpawn(fire, 1.25);
+    h.pos = v3(12, 0, -3);
+    h.vit.hp = 1;
+    h.poisonBy(combat.POISON_MAX);
+    try std.testing.expect(h.vit.venom.frac() > 0.9);
+    _ = h.takeHit(.{ .dmg = 999 }, v3(1, 0, 0));
+    try std.testing.expect(h.dead);
+    var t: f32 = 0;
+    while (t < DEATH_DUR + 0.1) : (t += 1.0 / 60.0) h.updateDeath(1.0 / 60.0);
+    try std.testing.expect(!h.dead);
+    try std.testing.expectApproxEqAbs(fire.x, h.pos.x, 1e-4);
+    try std.testing.expectApproxEqAbs(fire.z, h.pos.z, 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.25), h.facing, 1e-4);
+    try std.testing.expect(mathx.distXZ(h.pos, entry) > 60);
+    // He comes back WHOLE, and nothing he was carrying in his blood comes back with him.
+    try std.testing.expectApproxEqAbs(h.vit.hpMax, h.vit.hp, 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), h.vit.venom.frac(), 1e-6);
 }

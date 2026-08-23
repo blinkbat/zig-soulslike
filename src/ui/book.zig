@@ -1308,7 +1308,7 @@ fn drawDerived(box: Box, v: View, cand: ?Cand) void {
     const now = derive(base, v);
     const then = if (cand) |c| derive(withCand(base, c), v) else now;
 
-    // **TAKEN OFF THE ROTATING SCRATCH BEFORE THE ROWS RUN.** `gearSays` builds through `fmt`, which cycles a 16-slot buffer, and the loop below spends 28 slots on `unitStr` — so by the time this is drawn the slot it pointed at holds the tail of a stat value.
+    // **TAKEN OFF THE ROTATING SCRATCH BEFORE THE ROWS RUN.** `rowSays` builds through `fmt`, which cycles a 16-slot buffer, and the loop below spends 28 slots on `unitStr` — so by the time this is drawn the slot it pointed at holds the tail of a stat value.
     const says = saysOwn(if (cand) |c| candSays(c, v) else armSays(v.arm, v.off));
     const foot = hud.proseH(says, inner.w, hud.HINT) + 22;
     const step0 = rowStep(inner.h - foot - hud.lineH(hud.SMALL) - 4, ND);
@@ -1390,15 +1390,16 @@ fn armCandSays(a: heromod.Armament) []const u8 {
     };
 }
 
-fn gearSays(k: item.Kind) [:0]const u8 {
+/// **THE ONE PLACE A THING'S ROW BECOMES A LINE ON A PANEL** — gear and tools both (`item.effect`).
+fn rowSays(k: item.Kind) [:0]const u8 {
     var tmp: [item.EFFECT_BUF]u8 = undefined;
     return fmt("{s}", .{item.effect(k, &tmp)});
 }
 
 fn candSays(c: Cand, _: View) []const u8 {
     return switch (c.act) {
-        .arm, .off, .armAlt, .offAlt => |h| if (h.kind) |k| gearSays(k) else armCandSays(h.a),
-        .wear => |wr| if (wr.kind) |k| gearSays(k) else "Take it off.",
+        .arm, .off, .armAlt, .offAlt => |h| if (h.kind) |k| rowSays(k) else armCandSays(h.a),
+        .wear => |wr| if (wr.kind) |k| rowSays(k) else "Take it off.",
         .ammo => |a| switch (a) {
             .plain => "",
             .fire => "Adds fire to the shaft's damage.",
@@ -1493,27 +1494,27 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
     y = hud.prose(item.describe(k), inner.x, inner.y + plateH + 16, inner.w, hud.SMALL, uiart.TEXT_VALUE) + 10;
     uiart.divider(inner.x + @divTrunc(inner.w, 2), y, @divTrunc(inner.w, 2) - 10, 120);
     y += 12;
+    // **THE ROW IS WRAPPED, NOT CLIPPED, AND WHAT SITS UNDER IT IS PLACED OFF WHERE THE WRAP ENDED.** A row
+    // carrying four dials (the envenomed dirk's, a coated blade's) runs past this panel's width, and `hud.text`
+    // would draw it straight out through the frame.
     if (item.wearable(k)) {
-        hud.text(gearSays(k), inner.x, y, hud.SMALL, uiart.GOOD);
-        const hy = y + hud.lineH(hud.SMALL) + 6;
+        const hy = hud.prose(rowSays(k), inner.x, y, inner.w, hud.SMALL, uiart.GOOD) + 6;
         hud.text("Put it on from the Equipment page.", inner.x, hy, hud.HINT, uiart.TEXT_HINT);
         return;
     }
+    var after = y + hud.lineH(hud.SMALL);
     switch (item.use(k)) {
         .none => hud.text("Nothing to use here.", inner.x, y, hud.HINT, uiart.TEXT_HINT),
+        // **THE TWO WORTH HIS OWN NUMBERS** — a heal and a wind are a FRACTION of a bar, so this panel prints
+        // what they are worth on the live sheet where the item's row can only print the fraction.
         .regen => |r| hud.text(fmt("+{d:.0} HP over {d:.0}s", .{ v.sheet.hp() * r.frac, r.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
-        .lob => |l| hud.text(fmt("Thrown. Bursts for {d:.0} + {d:.0} {s}", .{ l.dmg, l.fire + l.lightning, if (l.lightning > 0) @as([]const u8, "lightning") else "fire" }), inner.x, y, hud.SMALL, uiart.GOOD),
-        .ward => |w| hud.text(fmt("+{d:.0} chaos resistance for {d:.0}s", .{ w.chaos, w.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
         .wind => |w| hud.text(fmt("+{d:.0} stamina, clears the lockout", .{v.sheet.stamina() * w.share}), inner.x, y, hud.SMALL, uiart.GOOD),
-        .grease => |gr| hud.text(fmt("Sword deals +{d:.0}% as fire for {d:.0}s", .{ gr.frac * 100, gr.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
-        .souls => |so| hud.text(fmt("+{d} souls", .{so.n}), inner.x, y, hud.SMALL, uiart.GOOD),
-        .brew => |b| hud.text(fmt("Stamina regen x{d:.1} for {d:.0}s", .{ b.mult, b.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
-        .purge => hud.text("Clears poison.", inner.x, y, hud.SMALL, uiart.GOOD),
-        .steady => |s| hud.text(fmt("Poise regen x{d:.1} for {d:.0}s", .{ s.mult, s.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
-        .arrows => |a| hud.text(fmt("+{d} {s} arrows", .{ a.n, if (a.fire) @as([]const u8, "fire") else "plain" }), inner.x, y, hud.SMALL, uiart.GOOD),
+        // …and every other tool says what its ROW says, which is the line the gear branch above prints too.
+        // Written out a second time here, an element added to a ward reached one panel and not the other.
+        else => after = hud.prose(rowSays(k), inner.x, y, inner.w, hud.SMALL, uiart.GOOD),
     }
     if (item.usable(k)) {
-        const hy = y + hud.lineH(hud.SMALL) + 6;
+        const hy = after + 6;
         if (v.inCombat) {
             hud.text("Load it on the quick bar.", inner.x, hy, hud.HINT, uiart.BAD);
         } else {

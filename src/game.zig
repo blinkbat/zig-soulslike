@@ -1357,7 +1357,7 @@ fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
     const sprinting = isMoving and sprintingMove(mv);
     if (isMoving) {
         dir = v3(dir.x / l, 0, dir.z / l);
-        speed = mv.speed * g.hero.perk.moveSpeed;
+        speed = mv.speed * heromod.moveRateOf(g.hero.worn, g.hero.perk);
         moveYaw = mathx.headingXZ(dir);
         if (faceYaw != null and !sprinting) {
             const latAmt = @abs(mathx.sinf(mathx.wrapPi(moveYaw.? - g.hero.facing)));
@@ -2271,6 +2271,10 @@ fn tickRest(g: *Game, dt: f32) void {
         var at = s.pos;
         plantActor(g, &at);
         g.hero.sit(true, at, s.facing);
+        // **THE FIRE HE SAT AT IS WHERE HE COMES BACK.** Stamped at the seat, which is where standing up puts
+        // him anyway, and the save below carries it — so a death after a reload still returns to this fire and
+        // not to the spot the map was entered at.
+        g.hero.setSpawn(at, s.facing);
         saveNow(g, .withShot);
     }
     if (g.rest.justLeft) {
@@ -3471,7 +3475,7 @@ pub fn hud(g: *Game, dt: f32) void {
                 g.hero.stamRefused / combat.STAM_REFUSE_FLASH,
                 g.hero.fpRefused / combat.STAM_REFUSE_FLASH,
                 g.hero.stam.windedTo(),
-                .{ .frac = g.hero.poison.frac(), .on = g.hero.poison.active() },
+                .{ .frac = g.hero.vit.venom.frac(), .on = g.hero.vit.venom.active() },
             );
             hud_.dayDial(g.day.hour);
             const bowUp = g.hero.bowOut();
@@ -4287,7 +4291,7 @@ pub fn run(mode: Mode) void {
         g.hero.poisonBy(g.brood.burn(dt, g.hero.pos));
         g.hero.poisonBy(g.cluster.spores(dt, g.hero.pos));
         _ = g.hero.tickPoison(dt);
-        if (g.hero.poison.justProcced) {
+        if (g.hero.vit.venom.justProcced) {
             sfx.play(.acid_burn);
             g.rig.addShake(SHAKE_HURT);
             g.rumble.play(rumblemod.hurt);
@@ -4588,7 +4592,7 @@ fn useItem(g: *Game, k: item.Kind) void {
         },
         .ward => |w| {
             if (g.bag.take(k, 1) == 0) return;
-            g.hero.startWard(w.chaos, w.secs);
+            g.hero.startWard(combat.elemOf(w.elem), w.amount, w.secs);
             sfx.play(.eat);
         },
         .wind => |w| {
@@ -4603,7 +4607,7 @@ fn useItem(g: *Game, k: item.Kind) void {
         },
         .grease => |gr| {
             if (g.bag.take(k, 1) == 0) return;
-            g.hero.startGrease(gr.frac, gr.secs);
+            g.hero.startGrease(combat.elemOf(gr.elem), gr.frac, gr.secs);
             sfx.play(.eat);
         },
         .souls => |s| {
@@ -5158,7 +5162,7 @@ const BarCtx = struct {
             if (!fixed and f.vit.sinceHurt > HURT_BAR_WINDOW) continue;
             const s = projectToScreen(self.cam, f.topWorld()) orelse
                 projectToScreen(self.cam, f.centerWorld()) orelse continue;
-            hud_.foeBar(s.x, s.y, f.vit.hpFrac(), f.staggered(), chillOf(f));
+            hud_.foeBar(s.x, s.y, f.vit.hpFrac(), f.staggered(), chillOf(f), .{ .frac = f.vit.venom.frac(), .on = f.vit.venom.active() });
         }
     }
 };

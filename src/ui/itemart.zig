@@ -209,6 +209,13 @@ pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
         .scroll_siphon => sorceryScroll(cx, cy, px, .siphon),
         .scroll_lance => sorceryScroll(cx, cy, px, .lance),
         .scroll_sunder => sorceryScroll(cx, cy, px, .sunder),
+        .kiln_draught => kilnDraught(cx, cy, px),
+        .rimewax => rimewax(cx, cy, px),
+        .pilgrims_offering => pilgrimsOffering(cx, cy, px),
+        .envenomed_dagger => envenomedDagger(cx, cy, px),
+        .spidersilk_moccasins => spidersilkMoccasins(cx, cy, px),
+        .bloodtinge_signet => bloodtingeSignet(cx, cy, px),
+        .loop_of_chance => loopOfChance(cx, cy, px),
     }
 }
 
@@ -715,6 +722,179 @@ fn fireTallow(cx: f32, cy: f32, px: f32) void {
     rl.drawCircleV(v2(cx + s * 0.11 + rng.range(-1.2, 1.2) * k, cy + s * 0.01), s * 0.115, EMBER_FAT_DK);
     rl.drawCircleV(v2(cx - s * 0.09, cy - s * 0.08), s * 0.05, rgba(246, 222, 164, 255));
     rl.drawLineEx(v2(cx + s * 0.05, cy + s * 0.08), v2(cx + s * 0.07 + rng.range(0, 2) * k, cy + s * 0.25), 2.2 * k, EMBER_FAT_DK);
+}
+
+/// **THE TALLOW'S COLD TWIN, AND IT HAS TO READ AS THE TWIN** — same twist of waxed cloth, same cord, and the
+/// only thing swapped is the fat for rime-clouded wax. Two greases that look nothing alike is two pictures to
+/// learn where one would have done.
+fn rimewax(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x21CE);
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.12 + 1.2 * k), s * 0.25, rgba(0, 0, 0, 115));
+    quad(v2(cx - s * 0.23, cy + s * 0.02), v2(cx + s * 0.22, cy + s * 0.05), v2(cx + s * 0.15, cy + s * 0.30), v2(cx - s * 0.17, cy + s * 0.27), SALT);
+    rl.drawLineEx(v2(cx - s * 0.23, cy + s * 0.04), v2(cx - s * 0.33, cy - s * 0.04), 3.4 * k, CORD);
+    rl.drawCircleV(v2(cx - s * 0.02, cy - s * 0.03), s * 0.165, RIME_ICE);
+    rl.drawCircleV(v2(cx + s * 0.11 + rng.range(-1.2, 1.2) * k, cy + s * 0.01), s * 0.115, rgba(104, 152, 184, 255));
+    rl.drawCircleV(v2(cx - s * 0.09, cy - s * 0.08), s * 0.05, RIME_LT);
+    // Three frost needles off the lump — the only part of the picture the tallow does not have.
+    var i: u32 = 0;
+    while (i < 3) : (i += 1) {
+        const a = std.math.pi * (1.15 + 0.28 * @as(f32, @floatFromInt(i)));
+        const from = v2(cx - s * 0.02 + mathx.cosf(a) * s * 0.10, cy - s * 0.03 + mathx.sinf(a) * s * 0.10);
+        rl.drawLineEx(from, v2(from.x + mathx.cosf(a) * s * 0.12, from.y + mathx.sinf(a) * s * 0.12), 1.3 * k, RIME_LT);
+    }
+    rl.drawLineEx(v2(cx + s * 0.05, cy + s * 0.08), v2(cx + s * 0.07 + rng.range(0, 2) * k, cy + s * 0.25), 2.2 * k, rgba(104, 152, 184, 255));
+}
+
+/// A horn cup of kiln-grit in oil, the ash settled in a band and one ember still live in it. The BAND is the
+/// read: a cup of plain dark liquid is the toad broth already in the tray.
+fn kilnDraught(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x4C17);
+    const horn = rgba(96, 82, 66, 255);
+    const hornLo = rgba(62, 52, 42, 255);
+    const ash = rgba(148, 142, 134, 255);
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.14 + 1.4 * k), s * 0.26, rgba(0, 0, 0, 110));
+    quad(v2(cx - s * 0.24, cy - s * 0.06), v2(cx + s * 0.25, cy - s * 0.08), v2(cx + s * 0.13, cy + s * 0.30), v2(cx - s * 0.11, cy + s * 0.29), horn);
+    quad(v2(cx + s * 0.06, cy - s * 0.07), v2(cx + s * 0.25, cy - s * 0.08), v2(cx + s * 0.13, cy + s * 0.30), v2(cx + s * 0.02, cy + s * 0.30), hornLo);
+    ellipseV(cx + s * 0.005, cy - s * 0.07, s * 0.245, s * 0.070, rgba(52, 44, 38, 255));
+    ellipseV(cx - s * 0.01, cy - s * 0.08, s * 0.185, s * 0.048, ash);
+    // The ember: the one warm mark, and it sits IN the ash rather than over the rim.
+    rl.drawCircleV(v2(cx + s * 0.05 + rng.range(-1.0, 1.0) * k, cy - s * 0.085), s * 0.052, FIRE);
+    rl.drawCircleV(v2(cx + s * 0.045, cy - s * 0.095), s * 0.026, rgba(255, 226, 168, 255));
+    var i: u32 = 0;
+    while (i < 3) : (i += 1) {
+        rl.drawCircleV(v2(cx - s * 0.10 + @as(f32, @floatFromInt(i)) * s * 0.075, cy - s * 0.075 + rng.range(-1.2, 1.2) * k), s * rng.range(0.016, 0.030), rgba(196, 190, 180, 235));
+    }
+    rl.drawLineEx(v2(cx - s * 0.22, cy - s * 0.03), v2(cx - s * 0.10, cy + s * 0.27), 1.4 * k, hornLo);
+}
+
+/// **THE THIRD RUNG OF THE SOUL LADDER, AND THE PICTURE SAYS SO** — the nameless soul is a cracked lump and the
+/// salt is a brick; this is a TIED PURSE with the lump inside and a coin at the knot, so the tray reads a tier
+/// off the shape and never off the number.
+fn pilgrimsOffering(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x0FFE);
+    const cloth = rgba(126, 106, 84, 255);
+    const clothLo = rgba(86, 70, 54, 255);
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.14 + 1.4 * k), s * 0.27, rgba(0, 0, 0, 115));
+    rl.drawCircleV(v2(cx, cy + s * 0.10), s * 0.255, cloth);
+    rl.drawCircleV(v2(cx + s * 0.09, cy + s * 0.15), s * 0.175, clothLo);
+    // The glow through the weave: what is inside is somebody, and it is the only lit part.
+    rl.drawCircleV(v2(cx - s * 0.05, cy + s * 0.05), s * 0.105, rgba(206, 178, 118, 200));
+    rl.drawCircleV(v2(cx - s * 0.05, cy + s * 0.04), s * 0.055, RING_SOUL);
+    // The neck, gathered and tied.
+    quad(v2(cx - s * 0.10, cy - s * 0.20), v2(cx + s * 0.10, cy - s * 0.20), v2(cx + s * 0.14, cy - s * 0.04), v2(cx - s * 0.14, cy - s * 0.04), cloth);
+    rl.drawLineEx(v2(cx - s * 0.13, cy - s * 0.11), v2(cx + s * 0.13, cy - s * 0.13), 2.8 * k, CORD);
+    rl.drawLineEx(v2(cx + s * 0.11, cy - s * 0.13), v2(cx + s * 0.24, cy - s * 0.22 + rng.range(-1.4, 1.4) * k), 1.6 * k, CORD);
+    // The coin on the tie, edge-on so it is a coin and not a bead.
+    ellipseV(cx - s * 0.20, cy - s * 0.16, s * 0.075, s * 0.095, BRONZE);
+    ellipseV(cx - s * 0.205, cy - s * 0.165, s * 0.045, s * 0.060, BRONZE_LT);
+    var i: u32 = 0;
+    while (i < 3) : (i += 1) {
+        const a = std.math.pi * (0.15 + 0.30 * @as(f32, @floatFromInt(i)));
+        rl.drawLineEx(v2(cx + mathx.cosf(a) * s * 0.06, cy + s * 0.06 + mathx.sinf(a) * s * 0.06), v2(cx + mathx.cosf(a) * s * 0.20, cy + s * 0.10 + mathx.sinf(a) * s * 0.20), 1.2 * k, clothLo);
+    }
+}
+
+/// **THE DIRK'S SILHOUETTE, THE COATING'S COLOUR** — same fang, same corded haft, and the blade carried in the
+/// poison violet the meter is drawn in (`hud.PSN_HI`), with the bead at the point that says it is WET.
+fn envenomedDagger(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x0E2D);
+    const coat = rgba(96, 62, 118, 255);
+    const coatLt = rgba(158, 118, 186, 255);
+    const rootP = v2(cx - s * 0.10, cy + s * 0.14);
+    const tipP = v2(cx + s * 0.24, cy - s * 0.34);
+    const bend = rng.range(0.12, 0.18);
+    const SEGS = 12;
+    var prev = rootP;
+    for (0..SEGS + 1) |i| {
+        const t = @as(f32, @floatFromInt(i)) / SEGS;
+        const p = onAxis(rootP, tipP, t, -bend * s * (4.0 * t * (1.0 - t)));
+        const w = mathx.lerpF(5.2, 0.5, t * t * 0.85 + t * 0.15) * k;
+        if (i > 0) rl.drawLineEx(prev, p, w, mathx.lerpColor(BONE_DK, coat, mathx.clampF(t * 1.25, 0, 1)));
+        prev = p;
+    }
+    rl.drawLineEx(onAxis(rootP, tipP, 0.15, 1.2 * k), onAxis(rootP, tipP, 0.88, 0.3 * k), 1.1 * k, coatLt);
+    const buttP = v2(cx - s * 0.24, cy + s * 0.30);
+    rl.drawLineEx(rootP, buttP, 5.0 * k, GRIP);
+    rl.drawCircleV(v2(rootP.x, rootP.y), 3.2 * k, IRON_DK);
+    var i: u32 = 0;
+    while (i < 3) : (i += 1) {
+        const t = 0.25 + 0.25 * @as(f32, @floatFromInt(i)) + rng.range(-0.03, 0.03);
+        rl.drawLineEx(onAxis(rootP, buttP, t, -3.0 * k), onAxis(rootP, buttP, t + 0.07, 3.0 * k), 1.5 * k, CORD);
+    }
+    rl.drawCircleV(buttP, 2.4 * k, GRIP_LT);
+    // The drop hanging off the point: two circles, because one is a dot on a line.
+    rl.drawCircleV(v2(tipP.x + s * 0.03, tipP.y + s * 0.05), s * 0.048, coat);
+    rl.drawCircleV(v2(tipP.x + s * 0.025, tipP.y + s * 0.040), s * 0.024, coatLt);
+}
+
+/// **THE BOOTS' SILHOUETTE IN SILK** — the pair reads as the pair (same two uppers, same sole line) and what is
+/// swapped is hide for pale spider-silk, plus the strand still off the heel. The moccasin has NO hard sole:
+/// that is the whole difference a player can see at 32 px.
+fn spidersilkMoccasins(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0x5117);
+    const silk = rgba(206, 202, 212, 255);
+    const silkDk = rgba(150, 146, 162, 255);
+    const bind = rgba(176, 168, 150, 255);
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.18 + 1.4 * k), s * 0.26, rgba(0, 0, 0, 100));
+    quad(v2(cx - s * 0.02, cy - s * 0.22), v2(cx + s * 0.15, cy - s * 0.22), v2(cx + s * 0.17, cy + s * 0.10), v2(cx - s * 0.01, cy + s * 0.10), silkDk);
+    quad(v2(cx - s * 0.01, cy + s * 0.05), v2(cx + s * 0.29, cy + s * 0.09), v2(cx + s * 0.29, cy + s * 0.16), v2(cx - s * 0.01, cy + s * 0.15), silkDk);
+    quad(v2(cx - s * 0.26, cy - s * 0.19), v2(cx - s * 0.07, cy - s * 0.21), v2(cx - s * 0.05, cy + s * 0.14), v2(cx - s * 0.24, cy + s * 0.14), silk);
+    quad(v2(cx - s * 0.25, cy + s * 0.09), v2(cx + s * 0.08, cy + s * 0.13), v2(cx + s * 0.08, cy + s * 0.21), v2(cx - s * 0.25, cy + s * 0.19), silk);
+    rl.drawLineEx(v2(cx - s * 0.26, cy + s * 0.21), v2(cx + s * 0.09, cy + s * 0.23), 1.6 * k, silkDk);
+    // The binding round the ankle, and one loose strand: silk, not leather.
+    rl.drawLineEx(v2(cx - s * 0.27, cy - s * 0.10), v2(cx - s * 0.04, cy - s * 0.12), 1.7 * k, bind);
+    rl.drawLineEx(v2(cx - s * 0.27, cy - s * 0.02), v2(cx - s * 0.04, cy - s * 0.04), 1.5 * k, bind);
+    var prev = v2(cx - s * 0.25, cy + s * 0.20);
+    var i: u32 = 0;
+    while (i < 4) : (i += 1) {
+        const p = v2(prev.x - s * 0.05, prev.y + s * 0.035 + rng.range(-1.0, 1.0) * k);
+        rl.drawLineEx(prev, p, 1.1 * k, rgba(226, 224, 232, 210));
+        prev = p;
+    }
+}
+
+/// The deft signet's band with the stone SET INTO it rather than perched on top, and the stone dark enough that
+/// the two rings are never the same picture. A garnet gone black reads as a hole, so it keeps one red highlight.
+fn bloodtingeSignet(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.03 + 1.0 * k), s * 0.20, rgba(0, 0, 0, 110));
+    arc(cx, cy + s * 0.02, s * 0.175, 0, std.math.tau, 20, s * 0.066, s * 0.066, rgba(96, 74, 66, 255));
+    arc(cx, cy + s * 0.02, s * 0.145, std.math.pi * 0.15, std.math.pi * 1.05, 12, 1.3 * k, 1.3 * k, rgba(168, 140, 128, 255));
+    rl.drawCircleV(v2(cx, cy - s * 0.17), s * 0.105, rgba(74, 56, 52, 255));
+    rl.drawCircleV(v2(cx, cy - s * 0.175), s * 0.072, WEED_DK);
+    rl.drawCircleV(v2(cx - s * 0.02, cy - s * 0.195), s * 0.030, WEED_LT);
+}
+
+/// A holed coin on a twist of wire — the hole is the whole read, and it is drawn as a RING of coin rather than
+/// a disc with a dot so it survives the tray at 32 px.
+fn loopOfChance(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0xC0FF);
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.06 + 1.2 * k), s * 0.23, rgba(0, 0, 0, 110));
+    arc(cx, cy + s * 0.05, s * 0.19, 0, std.math.tau, 22, s * 0.105, s * 0.105, BRONZE);
+    arc(cx - s * 0.02, cy + s * 0.03, s * 0.19, std.math.pi * 0.55, std.math.pi * 1.35, 12, s * 0.055, s * 0.045, BRONZE_LT);
+    arc(cx, cy + s * 0.05, s * 0.135, 0, std.math.tau, 18, 1.4 * k, 1.4 * k, BRONZE_BORE);
+    // The wire through the hole, closed at the top with a twist rather than a bead.
+    const top = v2(cx + s * 0.02, cy - s * 0.28);
+    arc(cx + s * 0.01, cy - s * 0.20, s * 0.095, std.math.pi * 0.20, std.math.pi * 1.80, 12, 1.5 * k, 1.5 * k, STEEL_MID);
+    rl.drawLineEx(v2(top.x - s * 0.03, top.y + s * 0.02 + rng.range(-1.0, 1.0) * k), v2(top.x + s * 0.04, top.y - s * 0.02), 1.4 * k, STONE_LT);
+    var i: u32 = 0;
+    while (i < 3) : (i += 1) {
+        const a = std.math.pi * (1.55 + 0.16 * @as(f32, @floatFromInt(i)));
+        rl.drawCircleV(v2(cx + mathx.cosf(a) * s * 0.165, cy + s * 0.05 + mathx.sinf(a) * s * 0.165), 1.2 * k, BRONZE_DK);
+    }
 }
 
 fn thundercrock(cx: f32, cy: f32, px: f32) void {

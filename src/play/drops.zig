@@ -32,22 +32,25 @@ pub const TABLE = [_]Row{
 
     .{ .foe = .archer, .common = .bloodgrass },
 
-    .{ .foe = .ogre, .common = .second_wind, .odds = BIG },
+    .{ .foe = .ogre, .common = .second_wind, .odds = BIG, .rare = .bloodtinge_signet, .chance = 0.12 },
 
     .{ .foe = .berserker, .common = .kobold_fang },
-    .{ .foe = .priest, .common = .pilgrims_salt, .odds = UNCOMMON },
-    .{ .foe = .slinger, .common = .kobold_fang },
+    // The same purse a rung up: the body that leaves a brick of salt is the one that sometimes leaves the whole offering.
+    .{ .foe = .priest, .common = .pilgrims_salt, .odds = UNCOMMON, .rare = .pilgrims_offering, .chance = 0.10 },
+    // THE ANSWER TO THE SLING IS ON THE SLINGER — the one body in the warband that throws fire is where the draught that turns it comes from.
+    .{ .foe = .slinger, .common = .kobold_fang, .rare = .kiln_draught, .chance = 0.16 },
 
-    .{ .foe = .brood_mother, .common = .purgeleaf, .odds = UNCOMMON },
+    .{ .foe = .brood_mother, .common = .purgeleaf, .odds = UNCOMMON, .rare = .spidersilk_moccasins, .chance = 0.14 },
     .{ .foe = .broodling, .common = .bloodgrass },
     .{ .foe = .brood_sac, .common = null },
 
     .{ .foe = .shieldman, .common = .pitted_helm, .odds = UNCOMMON },
     .{ .foe = .greatsword, .common = .quilted_gambeson, .odds = UNCOMMON },
 
-    .{ .foe = .shade, .common = .nameless_soul, .odds = UNCOMMON },
+    .{ .foe = .shade, .common = .nameless_soul, .odds = UNCOMMON, .rare = .loop_of_chance, .chance = 0.14 },
 
-    .{ .foe = .leechfly, .common = .bloodgrass },
+    // …and the gut packed into the dirk's groove is the leechfly's own (`item.describe`).
+    .{ .foe = .leechfly, .common = .bloodgrass, .rare = .envenomed_dagger, .chance = 0.12 },
 
     .{ .foe = .rooted, .common = .fire_tallow, .odds = UNCOMMON },
 
@@ -58,7 +61,8 @@ pub const TABLE = [_]Row{
 
     .{ .foe = .delver, .common = .smithing_stone, .odds = UNCOMMON },
 
-    .{ .foe = .necromancer, .common = .nameless_soul, .odds = BIG },
+    // The one thing in the world that deals cold carries the coating that gives it back.
+    .{ .foe = .necromancer, .common = .nameless_soul, .odds = BIG, .rare = .rimewax, .chance = 0.20 },
 
     .{ .foe = .florid_ravager, .common = .bloodgrass },
     .{ .foe = .mushroom_mage, .common = .purgeleaf, .odds = UNCOMMON },
@@ -171,7 +175,8 @@ test "THE COMMON ROW LANDS AT ABOUT THE ODDS IT ADVERTISES, and a fight is mostl
 test "LUCK IS THE RARE ROW AND NOTHING ELSE — the common's odds do not move with it" {
     try std.testing.expect(rareOdds(.toad, 1) < rareOdds(.toad, stats.START));
     try std.testing.expect(rareOdds(.toad, stats.START) < rareOdds(.toad, stats.MAX));
-    try std.testing.expectEqual(@as(f32, 0), rareOdds(.ogre, stats.MAX));
+    // A row with no rare on it stays at zero however lucky he is — the archer leaves grass and nothing else.
+    try std.testing.expectEqual(@as(f32, 0), rareOdds(.archer, stats.MAX));
     for (0..NFOE) |i| try std.testing.expect(rareOdds(@enumFromInt(i), stats.MAX) <= RARE_CAP);
     std.debug.print(
         "  rares: toad broth {d:.1}% -> {d:.1}%, sporeling cap {d:.1}% -> {d:.1}%\n",

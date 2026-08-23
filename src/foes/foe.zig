@@ -511,13 +511,16 @@ pub fn canLeap(root: *const combat.Root) bool {
     return !root.held();
 }
 
-/// ONE FRAME OF THE WAND'S GRIP. Taken at the TOP of `update` and held through a `defer` there, so the pin
-/// covers whatever the state machine goes on to do. The bite is billed as a DRIP, never as a blow.
+/// ONE FRAME OF WHAT IS ALREADY IN THE BODY — the wand's grip, the cold, and the poison off an envenomed edge.
+/// Taken at the TOP of `update` and held through a `defer` there, so the pin covers whatever the state machine
+/// goes on to do. Every bite is billed as a DRIP, never as a blow. **EVERY CREATURE IN THE GAME CALLS THIS**,
+/// which is why a poison meter on `combat.Vitals` needed no field on any of them.
 pub fn grip(root: *combat.Root, chill: *combat.Chill, vit: *combat.Vitals, dt: f32, at: rl.Vector3) Grip {
     const on = root.held();
     const bitten = if (root.tick(dt)) |bite| vit.drip(bite) == .death else false;
     const frozen = if (chill.tick(dt)) |bite| vit.drip(bite) == .death else false;
-    return .{ .was = at, .on = on, .killed = bitten or frozen };
+    const rotted = vit.tickVenom(dt);
+    return .{ .was = at, .on = on, .killed = bitten or frozen or rotted };
 }
 
 /// Stamped from outside every frame (`game.markParry`): the ARC belongs to the shield, not to what is caught.

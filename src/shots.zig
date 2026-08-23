@@ -2688,7 +2688,7 @@ fn poisonShots(g: *Game, mark: rl.Vector3) void {
     m.* = shroommod.Shroom.spawn(mathx.ground(mark.x - 6.0, mark.z), 0, 1.0, 0.23);
     m.debugFling(g.hero.pos);
     var k: i32 = 0;
-    while (k < 60 * 6 and !g.hero.poison.active()) : (k += 1) {
+    while (k < 60 * 6 and !g.hero.vit.venom.active()) : (k += 1) {
         _ = g.cluster.update(SHOT_DT, g.hero.pos, game.PLAY_HALF, .{});
         game.tickPoisonForShot(g, SHOT_DT);
     }
@@ -2964,6 +2964,10 @@ fn chestShots(g: *Game) void {
     for (0..item.NK) |i| {
         const k: item.Kind = @enumFromInt(i);
         if (item.wearable(k) and g.bag.count(k) == 0) g.bag.add(k, 1);
+        // …AND EVERY TOOL, ASKED FOR RATHER THAN LISTED. The hand-written row above it is the curiosities that
+        // do nothing (`usable` is false for those); a new consumable added to the game photographed itself as
+        // nothing at all until this line, because it was not in anybody's list.
+        if (item.usable(k) and !item.isFlask(k) and g.bag.count(k) == 0) g.bag.add(k, 3);
     }
     // …AND EVERY SORCERY SCROLL, or the spell page photographs seven dimmed rows and says 0 of 7 carried.
     for (combat.SPELLS) |row| {
@@ -2978,6 +2982,9 @@ fn chestShots(g: *Game) void {
     // …AND THE PAGE THE NEWEST GEAR IS ON. A bag with every kind in it runs past one grid, so the frame
     // staged at cursor 0 shows the oldest twenty rows and nothing else.
     bookShot(g, "shots/106g2_book_inventory_p2.png", .inventory, item.NK - 1, null, 0);
+    // …AND THE LONGEST ROW IN THE GAME, which is the one that proves the panel WRAPS it: four dials plus a dose
+    // (`item.effect` of the envenomed dirk) runs past the pane's width and used to draw out through the frame.
+    bookShot(g, "shots/106g3_book_longest_row.png", .inventory, bagOrdinalOf(g, .envenomed_dagger), null, 0);
     bookShot(g, "shots/106h_book_stats.png", .stats, @intFromEnum(stats.Attr.endurance), null, 0);
     // …AND A SKILL, which answers in a MULTIPLE rather than a bar's length (`stats.scaleFor`).
     bookShot(g, "shots/106h2_book_stats_skill.png", .stats, @intFromEnum(stats.Attr.strength), null, 0);
@@ -3415,6 +3422,16 @@ fn elevationShots(g: *Game) void {
     g.map.height = before;
     g.env.uploadHeight(&g.map);
     g.env.materialize(&g.map);
+}
+
+/// The bag CURSOR for a kind. The panel is staged by ordinal, and a kind's ordinal is where it falls among what
+/// he is CARRYING — never its place in the enum (`item.Bag.nth`'s own rule).
+fn bagOrdinalOf(g: *const Game, want: item.Kind) usize {
+    var i: usize = 0;
+    while (g.bag.nth(i)) |k| : (i += 1) {
+        if (k == want) return i;
+    }
+    return 0;
 }
 
 fn bookShot(g: *Game, name: [:0]const u8, page: bookmod.Page, cursor: usize, pickSlot: ?usize, row: usize) void {

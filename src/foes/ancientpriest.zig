@@ -459,6 +459,7 @@ pub const Ancient = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
+        if (grip.downed) self.stagger(true);
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);
@@ -676,7 +677,7 @@ pub const Ancient = struct {
         self.pose();
     }
 
-    pub fn debugStagger(self: *Ancient, heavy: bool) void {
+    pub fn stagger(self: *Ancient, heavy: bool) void {
         self.enterStun(if (heavy) .stunheavy else .stunlight);
     }
     pub fn debugKill(self: *Ancient) void {

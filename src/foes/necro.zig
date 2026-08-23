@@ -404,6 +404,7 @@ pub const Necro = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
+        if (grip.downed) self.stagger(true);
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);
@@ -644,7 +645,7 @@ pub const Necro = struct {
     pub fn debugLay(self: *Necro, hero: rl.Vector3) void {
         self.lay(hero);
     }
-    pub fn debugStagger(self: *Necro, heavy: bool) void {
+    pub fn stagger(self: *Necro, heavy: bool) void {
         self.enterStun(if (heavy) .stunheavy else .stunlight);
     }
     pub fn debugKill(self: *Necro) void {
@@ -1831,7 +1832,7 @@ test "INTERRUPTING THE GATHER SPENDS IT — a staggered necromancer raises nothi
         _ = k.update(dt, v3(0, 0, 9), 400, .{});
     }
     try std.testing.expect(k.casting());
-    k.debugStagger(true);
+    k.stagger(true);
     try std.testing.expect(!k.casting());
     var raisedEver = false;
     t = 0;

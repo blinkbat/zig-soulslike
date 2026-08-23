@@ -319,6 +319,7 @@ pub const Leechfly = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
+        if (grip.downed) self.stagger(true);
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);
@@ -601,7 +602,7 @@ pub const Leechfly = struct {
         self.enterDeath();
     }
 
-    pub fn debugStagger(self: *Leechfly, heavy: bool) void {
+    pub fn stagger(self: *Leechfly, heavy: bool) void {
         self.enterStun(if (heavy) .stunheavy else .stunlight);
     }
 

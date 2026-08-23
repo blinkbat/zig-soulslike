@@ -345,7 +345,7 @@ pub const Frog = struct {
         self.heroLatch = false;
         self.justDied = true;
     }
-    pub fn debugStagger(self: *Frog, heavy: bool) void {
+    pub fn stagger(self: *Frog, heavy: bool) void {
         self.enterStun(if (heavy) .stunheavy else .stunlight);
     }
     pub fn debugKill(self: *Frog) void {
@@ -378,6 +378,7 @@ pub const Frog = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
+        if (grip.downed) self.stagger(true);
         self.vit.tick(dt);
         self.elapsed += dt;
         self.lungeCd = mathx.maxF(0, self.lungeCd - dt);
@@ -741,24 +742,16 @@ pub const Frog = struct {
     fn updateFx(self: *Frog, dt: f32) void {
         foe.tickParticles(&self.parts, dt, self.pos.y);
     }
+    const PUFF = foe.Puff{
+        .blast = foe.Blast.of(foe.DUST_DRAG, 0.35, 0.62),
+        .spdLo = 0.5,
+        .upLo = 0.6,
+        .upHi = 2.2,
+        .rLo = 0.06,
+        .rHi = 0.12,
+    };
     fn dustBurst(self: *Frog, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
-        const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.35, 0.62);
-        var i: i32 = 0;
-        while (i < n) : (i += 1) {
-            const a = self.fxRng.angle();
-            const s = self.fxRng.range(0.5, 1.0) * spd * self.scale * B.boost;
-            foe.emitPart(&self.parts, &self.fxHead, .{
-                .p = v3(c.x, self.pos.y + 0.05, c.z),
-                .v = v3(mathx.cosf(a) * s, self.fxRng.range(0.6, 2.2) * B.boost, mathx.sinf(a) * s),
-                .life = B.life(&self.fxRng),
-                .r0 = self.fxRng.range(0.06, 0.12) * self.scale,
-                .r1 = big * self.fxRng.range(0.8, 1.3) * self.scale,
-                .col = DUST,
-                .col1 = foe.DUST_THIN,
-                .grav = foe.DUST_GRAV,
-                .drag = foe.DUST_DRAG,
-            });
-        }
+        foe.puff(&self.parts, &self.fxHead, &self.fxRng, v3(c.x, self.pos.y + 0.05, c.z), n, spd, big, self.scale, PUFF);
     }
     fn emitCoil(self: *Frog, dt: f32, k: f32) void {
         const emitRate = (12.0 + 40.0 * k);

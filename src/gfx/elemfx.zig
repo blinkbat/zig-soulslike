@@ -136,7 +136,7 @@ pub fn burstCount(e: combat.Elem, n: usize) usize {
 test "A BURST OF n IS NOT n MOTES — fire's ash rides along, and the count says so" {
     var pool = [_]foe.Particle{.{}} ** 256;
     var rng = mathx.Rng.init(0xA5F1);
-    for ([_]combat.Elem{ .fire, .cold, .lightning, .chaos }) |e| {
+    for (std.enums.values(combat.Elem)) |e| {
         for ([_]usize{ 0, 1, 2, 3, 4, 5, 14, 22 }) |n| {
             for (&pool) |*q| q.life = 0;
             var head: usize = 0;

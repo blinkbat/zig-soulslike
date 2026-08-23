@@ -770,7 +770,9 @@ test "EVERY GROUP HOLDS EVERYTHING THE MAP CAN PLACE — the per-kind limit is g
         try std.testing.expect(comptime groupCap(gr.field) >= worldfmt.MAX_FOES);
         total += @sizeOf(@FieldType(Game, gr.field));
     }
-    std.debug.print("\n  foes: 17 slabs {d:.1} MB, Game {d:.1} MB, frame scratch {d:.0} KB - any {d} of one kind fits\n", .{
+    // OFF THE TABLE'S OWN LENGTH: written out as a literal the count read 17 against twenty rows, in the one print the memory figure is judged on.
+    std.debug.print("\n  foes: {d} slabs {d:.1} MB, Game {d:.1} MB, frame scratch {d:.0} KB - any {d} of one kind fits\n", .{
+        FOE_GROUPS.len,
         @as(f64, @floatFromInt(total)) / (1024.0 * 1024.0),
         @as(f64, @floatFromInt(@sizeOf(Game))) / (1024.0 * 1024.0),
         @as(f64, @floatFromInt(@sizeOf(@TypeOf(frameWasPos)))) / 1024.0,
@@ -1357,7 +1359,7 @@ fn moveHero(g: *Game, dt: f32, mv: Move, faceYaw: ?f32) void {
     const sprinting = isMoving and sprintingMove(mv);
     if (isMoving) {
         dir = v3(dir.x / l, 0, dir.z / l);
-        speed = mv.speed * heromod.moveRateOf(g.hero.worn, g.hero.perk);
+        speed = mv.speed * g.hero.moveRate();
         moveYaw = mathx.headingXZ(dir);
         if (faceYaw != null and !sprinting) {
             const latAmt = @abs(mathx.sinf(mathx.wrapPi(moveYaw.? - g.hero.facing)));
@@ -2364,9 +2366,12 @@ fn applyStow(g: *Game) void {
 }
 
 fn applyHour(g: *Game) void {
-    // **ONLY WHEN THE HOUR HAS ACTUALLY MOVED**: two `paletteAt` walks, three `keyDir`-class solves and EIGHTEEN
-    // `setShaderValue` calls, each a `glUseProgram` plus a `glUniform`. The guard is the VALUE, not a flag, and
-    // nothing else writes these uniforms. Quantized to a sixty-fourth — ~7 uploads a second through the fastest ramp.
+    // **ONLY WHEN SOMETHING HAS ACTUALLY MOVED**: two `paletteAt` walks, three `keyDir`-class solves and
+    // EIGHTEEN `setShaderValue` calls, each a `glUseProgram` plus a `glUniform`. The guard is the VALUE, not a
+    // flag, and nothing else writes these uniforms. **THE WEATHER TERMS ARE QUANTIZED TO A SIXTY-FOURTH AND THE
+    // HOUR IS NOT**, so on a running clock this reloads every frame and only a HELD clock (`--shot`, the pause,
+    // the editor) is spared. Deliberate: a `@round` on the hour is a step in the sun's own bearing, and light
+    // here is never stepped. The cost is 18 uniform uploads a frame on a path already drawing hundreds.
     const wet = @round(g.wetNow * WET_STEPS) / WET_STEPS;
     const fog = g.menu.fogK();
     const spore = @round(g.sporeNow * WET_STEPS) / WET_STEPS;
@@ -2595,6 +2600,7 @@ fn openBreath(g: *Game) void {
 fn rimeBreathe(g: *Game, dt: f32) void {
     const apex = g.hero.breathMouth();
     const facing = g.hero.facing;
+    const dose = g.hero.breathDose(dt);
     inline for (FOE_GROUPS) |f| {
         for (@field(g, f.field).live()) |*a| {
             if (!foemod.corporeal(a)) continue;
@@ -2607,7 +2613,7 @@ fn rimeBreathe(g: *Game, dt: f32) void {
                 const spread = if (d > r) combat.subtendedArc(r, d) else 180.0;
                 if (!combat.withinArc(mathx.headingXZ(to), facing, combat.RIME_ARC + spread)) continue;
             }
-            a.chill.breathe(dt);
+            a.chill.breathe(dose);
             a.leash.provoke();
         }
     }
@@ -3475,7 +3481,7 @@ pub fn hud(g: *Game, dt: f32) void {
                 g.hero.stamRefused / combat.STAM_REFUSE_FLASH,
                 g.hero.fpRefused / combat.STAM_REFUSE_FLASH,
                 g.hero.stam.windedTo(),
-                .{ .frac = g.hero.vit.venom.frac(), .on = g.hero.vit.venom.active() },
+                hudAils(&g.hero.vit),
             );
             hud_.dayDial(g.day.hour);
             const bowUp = g.hero.bowOut();
@@ -3820,7 +3826,7 @@ pub fn run(mode: Mode) void {
             var pressed = rl.getKeyPressed() != .null;
             if (rl.isMouseButtonPressed(.left) or rl.isMouseButtonPressed(.right)) pressed = true;
             inline for (.{ .right_face_down, .right_face_right, .right_face_left, .right_face_up, .middle_right, .middle_left }) |b| {
-                if (rl.isGamepadButtonPressed(0, b)) pressed = true;
+                if (rl.isGamepadButtonPressed(PAD, b)) pressed = true;
             }
             if (pressed) g.award.dismiss();
             heldFrame(g, rawDt, &bWasDown, &bHeldT, &wasInside);
@@ -4107,12 +4113,15 @@ pub fn run(mode: Mode) void {
         if (g.grief.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.stance >= ogremod.SLAM_HIT.stance, true);
         }
+        // **THREAD BY HAND AND IT GOES OUT OF STEP**: `markWays` steers every creature at `threat.aim`, so an
+        // archer handed the hero here kited round the wolf while it ranged on the man. The arrow still flies at
+        // him — no projectile in the game takes the spirit (`spawnClump`'s shape).
         for (g.line.live()) |*a| {
-            if (a.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) {
+            if (a.update(dt, a.threat.aim(g.hero.pos), PLAY_HALF, bladeNow)) {
                 spawnArrow(g, a.nockWorld(), heroAimPoint(g));
             }
             if (a.heroHit) |h| {
-                const out = heroTakes(g, .{ .hit = h, .from = a.pos }, false, true);
+                const out = heroTakes(g, .{ .hit = h, .from = a.pos, .on = a.threat.on }, false, true);
                 heroShoved(g, a.pos, archermod.BUTT_SHOVE, out);
             }
         }
@@ -4291,7 +4300,7 @@ pub fn run(mode: Mode) void {
         g.hero.poisonBy(g.brood.burn(dt, g.hero.pos));
         g.hero.poisonBy(g.cluster.spores(dt, g.hero.pos));
         _ = g.hero.tickPoison(dt);
-        if (g.hero.vit.venom.justProcced) {
+        if (g.hero.vit.ailProcced(.poison)) {
             sfx.play(.acid_burn);
             g.rig.addShake(SHAKE_HURT);
             g.rumble.play(rumblemod.hurt);
@@ -4650,6 +4659,12 @@ fn heroTakes(g: *Game, b: foemod.Blow, heavy: bool, voice: bool) combat.HitOutco
     return out;
 }
 
+comptime {
+    // **THE BLOW NAMES A VICTIM, NOT AN INDEX**, so the first corporeal spirit is the only one it can land on.
+    // At two out, every blow aimed at the pack would bill the same animal.
+    if (combat.SUMMON_MAX != 1) @compileError("game: `spiritTakes` bills the FIRST live spirit — a second one " ++
+        "needs `foe.Blow` to carry which, not just that it was a spirit");
+}
 fn spiritTakes(g: *Game, b: foemod.Blow, heavy: bool) combat.HitOutcome {
     for (g.pack.live()) |*w| {
         if (!foemod.corporeal(w)) continue;
@@ -5051,9 +5066,16 @@ fn bodyOf(f: anytype) collision.Solid {
     return collision.circle(f.pos.x, f.pos.z, f.bodyR());
 }
 
-fn chillOf(f: anytype) f32 {
-    if (comptime @hasField(std.meta.Child(@TypeOf(f)), "chill")) return f.chill.frac();
-    return 0;
+/// **THE BODY'S METERS AS A BAR WANTS THEM, IN ONE PLACE** — so his strip and a creature's rows cannot disagree
+/// about what filling and running look like. Reads the meters and not the effects they drive: the chill's own
+/// hold (`combat.Chill`) is what takes the feet, but the METER is what the row is about.
+fn hudAils(v: *const combat.Vitals) hud_.Ails {
+    var out: hud_.Ails = undefined;
+    for (&out, 0..) |*s, i| {
+        const a: combat.Ail = @enumFromInt(i);
+        s.* = .{ .frac = v.ailFrac(a), .on = v.ailOn(a) };
+    }
+    return out;
 }
 
 test "THE BURROW TAKES THE LOCK OFF YOU, and gives it back when it surfaces" {
@@ -5162,7 +5184,7 @@ const BarCtx = struct {
             if (!fixed and f.vit.sinceHurt > HURT_BAR_WINDOW) continue;
             const s = projectToScreen(self.cam, f.topWorld()) orelse
                 projectToScreen(self.cam, f.centerWorld()) orelse continue;
-            hud_.foeBar(s.x, s.y, f.vit.hpFrac(), f.staggered(), chillOf(f), .{ .frac = f.vit.venom.frac(), .on = f.vit.venom.active() });
+            hud_.foeBar(s.x, s.y, f.vit.hpFrac(), f.staggered(), hudAils(&f.vit));
         }
     }
 };

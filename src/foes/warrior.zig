@@ -644,6 +644,7 @@ pub const Warrior = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
+        if (grip.downed) self.stagger(true);
         self.leapt = false;
         self.parried = false;
         self.live = false;
@@ -1082,7 +1083,7 @@ pub const Warrior = struct {
         self.stam.winded = true;
         self.breakGuard(self.centerWorld());
     }
-    pub fn debugStagger(self: *Warrior, heavy: bool) void {
+    pub fn stagger(self: *Warrior, heavy: bool) void {
         self.enterStun(if (heavy) .stunheavy else .stunlight);
     }
     pub fn debugKill(self: *Warrior) void {
@@ -1506,24 +1507,16 @@ pub const Warrior = struct {
 
 
 
+    const PUFF = foe.Puff{
+        .blast = foe.Blast.of(foe.DUST_DRAG, 0.38, 0.68),
+        .spdLo = 0.45,
+        .upLo = 0.7,
+        .upHi = 2.6,
+        .rLo = 0.07,
+        .rHi = 0.15,
+    };
     fn dustBurst(self: *Warrior, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
-        const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.38, 0.68);
-        var i: i32 = 0;
-        while (i < n) : (i += 1) {
-            const a = self.fxRng.angle();
-            const s = self.fxRng.range(0.45, 1.0) * spd * self.scale * B.boost;
-            foe.emitPart(&self.parts, &self.fxHead, .{
-                .p = v3(c.x, self.pos.y + 0.05, c.z),
-                .v = v3(mathx.cosf(a) * s, self.fxRng.range(0.7, 2.6) * B.boost, mathx.sinf(a) * s),
-                .life = B.life(&self.fxRng),
-                .r0 = self.fxRng.range(0.07, 0.15) * self.scale,
-                .r1 = big * self.fxRng.range(0.8, 1.3) * self.scale,
-                .col = DUST,
-                .col1 = foe.DUST_THIN,
-                .grav = foe.DUST_GRAV,
-                .drag = foe.DUST_DRAG,
-            });
-        }
+        foe.puff(&self.parts, &self.fxHead, &self.fxRng, v3(c.x, self.pos.y + 0.05, c.z), n, spd, big, self.scale, PUFF);
     }
     fn grit(self: *Warrior, c: rl.Vector3, n: i32) void {
         var i: i32 = 0;

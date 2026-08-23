@@ -494,6 +494,7 @@ pub const Ogre = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
+        if (grip.downed) self.stagger(true);
         self.vit.tick(dt);
         self.elapsed += dt;
         self.slamCd = mathx.maxF(0, self.slamCd - dt);
@@ -906,7 +907,7 @@ pub const Ogre = struct {
     pub fn debugDrive(self: *Ogre) void {
         self.enter(.drivewind);
     }
-    pub fn debugStagger(self: *Ogre, heavy: bool) void {
+    pub fn stagger(self: *Ogre, heavy: bool) void {
         self.enterStun(if (heavy) .stunheavy else .stunlight);
     }
     pub fn debugKill(self: *Ogre) void {
@@ -1317,24 +1318,16 @@ pub const Ogre = struct {
     fn updateFx(self: *Ogre, dt: f32) void {
         foe.tickParticles(&self.parts, dt, self.pos.y);
     }
+    const PUFF = foe.Puff{
+        .blast = foe.Blast.of(foe.DUST_DRAG, 0.4, 0.7),
+        .spdLo = 0.5,
+        .upLo = 0.8,
+        .upHi = 3.0,
+        .rLo = 0.08,
+        .rHi = 0.16,
+    };
     fn dustBurst(self: *Ogre, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
-        const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.4, 0.7);
-        var i: i32 = 0;
-        while (i < n) : (i += 1) {
-            const a = self.fxRng.angle();
-            const s = self.fxRng.range(0.5, 1.0) * spd * self.scale * B.boost;
-            foe.emitPart(&self.parts, &self.fxHead, .{
-                .p = v3(c.x, self.pos.y + 0.06, c.z),
-                .v = v3(mathx.cosf(a) * s, self.fxRng.range(0.8, 3.0) * B.boost, mathx.sinf(a) * s),
-                .life = B.life(&self.fxRng),
-                .r0 = self.fxRng.range(0.08, 0.16) * self.scale,
-                .r1 = big * self.fxRng.range(0.8, 1.3) * self.scale,
-                .col = DUST,
-                .col1 = foe.DUST_THIN,
-                .grav = foe.DUST_GRAV,
-                .drag = foe.DUST_DRAG,
-            });
-        }
+        foe.puff(&self.parts, &self.fxHead, &self.fxRng, v3(c.x, self.pos.y + 0.06, c.z), n, spd, big, self.scale, PUFF);
     }
     fn plantBurst(self: *Ogre) void {
         const f = mathx.headingDir(self.facing);

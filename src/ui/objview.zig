@@ -268,10 +268,15 @@ fn fitCam(top: f32, bound: f32, pose: Pose, aspect: f32) rl.Camera3D {
     };
 }
 
-fn render(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, kind: Kind, pose: Pose) void {
-    const nfo = props.info(kind);
-    const aspect = @as(f32, @floatFromInt(rt.texture.width)) / @as(f32, @floatFromInt(rt.texture.height));
-    const cam = camFor(nfo, pose, aspect);
+fn rtAspect(rt: rl.RenderTexture2D) f32 {
+    return @as(f32, @floatFromInt(rt.texture.width)) / @as(f32, @floatFromInt(rt.texture.height));
+}
+
+/// **ONE STAGE, FOUR SUBJECTS.** Every cell in this file is the same lit box — a target opened on the backdrop,
+/// the scene bound with the shadow pass and the lights off, the ground drawn against this camera's own frustum
+/// — and only the CAMERA and the one thing drawn differ. Written out four times, the four drifted on which of
+/// the switches got put back.
+fn openStage(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, cam: rl.Camera3D, aspect: f32) void {
     rl.beginTextureMode(rt);
     rl.clearBackground(BACKDROP);
     rl.beginMode3D(cam);
@@ -282,12 +287,22 @@ fn render(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, kind: Kin
     const view = envmod.View.fromCamera(cam, aspect);
     env.drawGround(&view);
     scene.setGround(false);
+}
+
+fn closeStage() void {
+    rl.endMode3D();
+    rl.endTextureMode();
+}
+
+fn render(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, kind: Kind, pose: Pose) void {
+    const nfo = props.info(kind);
+    const aspect = rtAspect(rt);
+    openStage(rt, env, scene, camFor(nfo, pose, aspect), aspect);
     scene.setWind(nfo.flora);
     rl.drawModel(env.model(kind), mathx.zero3, 1.0, rl.Color.white);
     if (env.veil(kind)) |v| rl.drawModel(v, mathx.zero3, 1.0, rl.Color.white);
     scene.setWind(false);
-    rl.endMode3D();
-    rl.endTextureMode();
+    closeStage();
 }
 
 // ONE GROUP OF EACH, exactly as the game holds them — the group is every creature's own draw contract (model, flash, scale), so the viewer cannot drift from what the field shows. Members are respawned into slot 0 per render; a spawn poses before it returns, so the cell is the creature's own first frame.
@@ -514,21 +529,10 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
 fn renderChar(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, k: wf.FoeKind, pose: Pose) void {
     const cs = ensureChars(scene);
     const dims = charDims(k);
-    const aspect = @as(f32, @floatFromInt(rt.texture.width)) / @as(f32, @floatFromInt(rt.texture.height));
-    const cam = fitCam(dims.top, dims.bound, pose, aspect);
-    rl.beginTextureMode(rt);
-    rl.clearBackground(BACKDROP);
-    rl.beginMode3D(cam);
-    scene.bind(cam.position);
-    scene.shadowsOff();
-    scene.setLights(&.{});
-    scene.setGround(true);
-    const view = envmod.View.fromCamera(cam, aspect);
-    env.drawGround(&view);
-    scene.setGround(false);
+    const aspect = rtAspect(rt);
+    openStage(rt, env, scene, fitCam(dims.top, dims.bound, pose, aspect), aspect);
     drawChar(cs, k, scene);
-    rl.endMode3D();
-    rl.endTextureMode();
+    closeStage();
 }
 
 
@@ -1034,22 +1038,11 @@ fn benchStep(st: *State, dt: f32) void {
 }
 
 fn renderBench(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, st: *const State) void {
-    const aspect = @as(f32, @floatFromInt(rt.texture.width)) / @as(f32, @floatFromInt(rt.texture.height));
+    const aspect = rtAspect(rt);
     const wide = st.verb == .pour;
-    const cam = fitCam(if (wide) 2.4 else 1.7, if (wide) combat.RIME_REACH * 0.62 else 1.1, st.fxPose, aspect);
-    rl.beginTextureMode(rt);
-    rl.clearBackground(BACKDROP);
-    rl.beginMode3D(cam);
-    scene.bind(cam.position);
-    scene.shadowsOff();
-    scene.setLights(&.{});
-    scene.setGround(true);
-    const view = envmod.View.fromCamera(cam, aspect);
-    env.drawGround(&view);
-    scene.setGround(false);
+    openStage(rt, env, scene, fitCam(if (wide) 2.4 else 1.7, if (wide) combat.RIME_REACH * 0.62 else 1.1, st.fxPose, aspect), aspect);
     foemod.drawParticles(&st.fx);
-    rl.endMode3D();
-    rl.endTextureMode();
+    closeStage();
 }
 
 
@@ -1087,25 +1080,14 @@ fn volDrawFx(st: *const State) void {
 }
 
 fn renderVolume(st: *State, rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene) void {
-    const aspect = @as(f32, @floatFromInt(rt.texture.width)) / @as(f32, @floatFromInt(rt.texture.height));
+    const aspect = rtAspect(rt);
     // Framed on the volume's OWN reach, not on a fixed box: a 1.55 m pool and a 1.9 m cloud want different cameras, and the whole point of the bench is comparing what they actually cover.
     const reach = mathx.maxF(volRadius(st), 0.5) * 2.2;
-    const cam = fitCam(reach * 0.5, reach, st.volPose, aspect);
-    rl.beginTextureMode(rt);
-    rl.clearBackground(BACKDROP);
-    rl.beginMode3D(cam);
-    scene.bind(cam.position);
-    scene.shadowsOff();
-    scene.setLights(&.{});
-    scene.setGround(true);
-    const view = envmod.View.fromCamera(cam, aspect);
-    env.drawGround(&view);
-    scene.setGround(false);
+    openStage(rt, env, scene, fitCam(reach * 0.5, reach, st.volPose, aspect), aspect);
     // **THE RING IS THE POINT.** A cloud is a soft mass with no edge you can see, and where its edge is IS the mechanic — inside it you are being dosed and outside you are not.
     ringOnGround(volRadius(st), ui.LIVE);
     volDrawFx(st);
-    rl.endMode3D();
-    rl.endTextureMode();
+    closeStage();
 }
 
 fn ringOnGround(r: f32, col: rl.Color) void {

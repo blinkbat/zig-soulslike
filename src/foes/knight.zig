@@ -1657,6 +1657,7 @@ pub const Knight = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
+        if (grip.downed) self.stagger(true);
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);
@@ -2606,7 +2607,7 @@ pub const Knight = struct {
     pub fn debugFall(self: *Knight) void {
         self.enter(.fallwind);
     }
-    pub fn debugStagger(self: *Knight, heavy: bool) void {
+    pub fn stagger(self: *Knight, heavy: bool) void {
         self.enterStun(if (heavy) .stunheavy else .stunlight);
     }
     pub fn debugKill(self: *Knight) void {
@@ -2982,24 +2983,17 @@ pub const Knight = struct {
 
 
 
+    const PUFF = foe.Puff{
+        .blast = foe.Blast.of(foe.DUST_DRAG, 0.42, 0.76),
+        .spdLo = 0.45,
+        .upLo = 0.8,
+        .upHi = 3.0,
+        .rLo = 0.08,
+        .rHi = 0.17,
+        .bigJit = .{ 0.8, 1.35 },
+    };
     fn dustBurst(self: *Knight, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
-        const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.42, 0.76);
-        var i: i32 = 0;
-        while (i < n) : (i += 1) {
-            const a = self.fxRng.angle();
-            const s = self.fxRng.range(0.45, 1.0) * spd * self.scale * B.boost;
-            foe.emitPart(&self.parts, &self.fxHead, .{
-                .p = v3(c.x, self.pos.y + 0.06, c.z),
-                .v = v3(mathx.cosf(a) * s, self.fxRng.range(0.8, 3.0) * B.boost, mathx.sinf(a) * s),
-                .life = B.life(&self.fxRng),
-                .r0 = self.fxRng.range(0.08, 0.17) * self.scale,
-                .r1 = big * self.fxRng.range(0.8, 1.35) * self.scale,
-                .col = DUST,
-                .col1 = foe.DUST_THIN,
-                .grav = foe.DUST_GRAV,
-                .drag = foe.DUST_DRAG,
-            });
-        }
+        foe.puff(&self.parts, &self.fxHead, &self.fxRng, v3(c.x, self.pos.y + 0.06, c.z), n, spd, big, self.scale, PUFF);
     }
     fn grit(self: *Knight, c: rl.Vector3, n: i32) void {
         var i: i32 = 0;

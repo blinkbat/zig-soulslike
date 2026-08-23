@@ -499,6 +499,9 @@ pub const Grip = struct {
     was: rl.Vector3,
     on: bool,
     killed: bool,
+    /// **A METER PUT IT ON THE FLOOR THIS FRAME** — the lightning's stun, full. A ONE-FRAME EDGE, so the
+    /// creature's own stagger (and its voice) fires once and then runs its clock like any other.
+    downed: bool = false,
 
     pub fn hold(self: Grip, pos: *rl.Vector3) void {
         if (!self.on) return;
@@ -519,8 +522,11 @@ pub fn grip(root: *combat.Root, chill: *combat.Chill, vit: *combat.Vitals, dt: f
     const on = root.held();
     const bitten = if (root.tick(dt)) |bite| vit.drip(bite) == .death else false;
     const frozen = if (chill.tick(dt)) |bite| vit.drip(bite) == .death else false;
-    const rotted = vit.tickVenom(dt);
-    return .{ .was = at, .on = on, .killed = bitten or frozen or rotted };
+    const rotted = vit.tickAils(dt);
+    // **THE COLD METER IS THE GATE IN FRONT OF THE HOLD IT ALREADY HAD.** Cold damage fills the meter and a
+    // full meter takes the feet — so the buildup law reaches the chill without the chill growing a second clock.
+    if (vit.ailProcced(.chill)) chill.touch();
+    return .{ .was = at, .on = on, .killed = bitten or frozen or rotted, .downed = vit.ailProcced(.stun) };
 }
 
 /// Stamped from outside every frame (`game.markParry`): the ARC belongs to the shield, not to what is caught.
@@ -842,6 +848,110 @@ test "THE SPRAY IS THE FIVE HAND-WRITTEN LOOPS, MOTE FOR MOTE — the draw order
         try std.testing.expectEqual(w.r0, g.r0);
     }
     std.debug.print("\n  spray: {d} motes, identical to the hand-written loop mote for mote\n", .{gotHead});
+}
+
+/// **A FOOTFALL'S DUST IS A RING, NOT A FAN**, so `Spray`'s `dir` cannot say it — and the count is the
+/// caller's own, never through `hitParts`: that dial is how heavy a WOUND reads, and a landing rescaled by it
+/// is the bug `shroom.emitPuff` records. Six creatures each wrote this loop out. **THE DRAW ORDER IS
+/// LOAD-BEARING** exactly as `spray`'s is — angle, speed, lift, life, radius, then the flare only if the
+/// caller asked for one, so `bigJit` is part of the stream and not a cosmetic switch.
+pub const Puff = struct {
+    blast: Blast,
+    spdLo: f32,
+    upLo: f32,
+    upHi: f32,
+    rLo: f32,
+    rHi: f32,
+    /// Null is a flat `big` and ONE DRAW FEWER per mote, so it moves the stream and is not cosmetic.
+    bigJit: ?[2]f32 = .{ 0.8, 1.3 },
+    col: rl.Color = DUST,
+    col1: rl.Color = DUST_THIN,
+};
+
+/// `at` is the mote's origin ALREADY LIFTED off the ground: whose Y the lift is measured from is the
+/// creature's business (the brood's is the burst point, everyone else's is their own feet).
+pub fn puff(pool: []Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3, n: i32, spd: f32, big: f32, scale: f32, p: Puff) void {
+    var i: i32 = 0;
+    while (i < n) : (i += 1) {
+        const a = rng.angle();
+        const sp = rng.range(p.spdLo, 1.0) * spd * scale * p.blast.boost;
+        emitPart(pool, head, .{
+            .p = at,
+            .v = v3(mathx.cosf(a) * sp, rng.range(p.upLo, p.upHi) * p.blast.boost, mathx.sinf(a) * sp),
+            .life = p.blast.life(rng),
+            .r0 = rng.range(p.rLo, p.rHi) * scale,
+            .r1 = if (p.bigJit) |j| big * rng.range(j[0], j[1]) * scale else big,
+            .col = p.col,
+            .col1 = p.col1,
+            .grav = DUST_GRAV,
+            .drag = DUST_DRAG,
+        });
+    }
+}
+
+test "THE PUFF IS THE SIX HAND-WRITTEN LOOPS, MOTE FOR MOTE — and the flat flare draws one number fewer" {
+    const P = Puff{
+        .blast = Blast.of(DUST_DRAG, 0.4, 0.7),
+        .spdLo = 0.5,
+        .upLo = 0.8,
+        .upHi = 3.0,
+        .rLo = 0.08,
+        .rHi = 0.16,
+    };
+    const at = v3(2, 0.06, -1);
+    const scale: f32 = 1.3;
+    const big: f32 = 0.20;
+
+    var wantPool = [_]Particle{.{}} ** 64;
+    var wantHead: usize = 0;
+    var r = mathx.Rng.init(0xD057);
+    var i: i32 = 0;
+    while (i < 9) : (i += 1) {
+        const a = r.angle();
+        const s = r.range(0.5, 1.0) * 2.0 * scale * P.blast.boost;
+        emitPart(&wantPool, &wantHead, .{
+            .p = at,
+            .v = v3(mathx.cosf(a) * s, r.range(0.8, 3.0) * P.blast.boost, mathx.sinf(a) * s),
+            .life = P.blast.life(&r),
+            .r0 = r.range(0.08, 0.16) * scale,
+            .r1 = big * r.range(0.8, 1.3) * scale,
+            .col = DUST,
+            .col1 = DUST_THIN,
+            .grav = DUST_GRAV,
+            .drag = DUST_DRAG,
+        });
+    }
+
+    var gotPool = [_]Particle{.{}} ** 64;
+    var gotHead: usize = 0;
+    var r2 = mathx.Rng.init(0xD057);
+    puff(&gotPool, &gotHead, &r2, at, 9, 2.0, big, scale, P);
+
+    try std.testing.expectEqual(wantHead, gotHead);
+    try std.testing.expect(gotHead > 0);
+    for (wantPool, gotPool) |w, g| {
+        try std.testing.expectEqual(w.v.x, g.v.x);
+        try std.testing.expectEqual(w.v.y, g.v.y);
+        try std.testing.expectEqual(w.v.z, g.v.z);
+        try std.testing.expectEqual(w.life, g.life);
+        try std.testing.expectEqual(w.r0, g.r0);
+        try std.testing.expectEqual(w.r1, g.r1);
+    }
+
+    // A flat flare is one number fewer, which moves every mote after it — so it is pinned, not assumed.
+    var flat = P;
+    flat.bigJit = null;
+    var a1 = [_]Particle{.{}} ** 64;
+    var h1: usize = 0;
+    var ra = mathx.Rng.init(0x51AB);
+    puff(&a1, &h1, &ra, at, 3, 2.0, big, scale, flat);
+    var a2 = [_]Particle{.{}} ** 64;
+    var h2: usize = 0;
+    var rb = mathx.Rng.init(0x51AB);
+    puff(&a2, &h2, &rb, at, 3, 2.0, big, scale, P);
+    try std.testing.expectEqual(big, a1[0].r1);
+    try std.testing.expect(a1[1].life != a2[1].life);
+    std.debug.print("\n  puff: {d} motes identical to the hand-written loop; a flat flare shifts the stream\n", .{gotHead});
 }
 
 /// **A BURST IS JUDGED BY ITS CROSS-SECTION, NOT BY ITS SPEED.** `open` is the widest separation perpendicular to `dir`, `reach` the furthest any mote got, both at `sampleAt`; `splats` is counted once the flight is over.
@@ -1412,7 +1522,19 @@ pub const Blow = struct {
 };
 
 pub fn worseBlow(worst: *?Blow, h: combat.Hit, from: rl.Vector3, on: Victim) void {
-    if (worst.* == null or h.raw() > worst.*.?.hit.raw()) worst.* = .{ .hit = h, .from = from, .on = on };
+    const cand = Blow{ .hit = h, .from = from, .on = on };
+    const had = worst.* orelse {
+        worst.* = cand;
+        return;
+    };
+    // **THE HERO'S BLOW OUTRANKS A SPIRIT'S, AND NOT BY DAMAGE.** A group hands back ONE blow a frame, so
+    // ranking two victims' blows on `raw()` weighed two different bars against each other and threw the
+    // smaller number away — including the one the player was standing in front of.
+    if (had.on != on) {
+        if (on == .hero) worst.* = cand;
+        return;
+    }
+    if (h.raw() > had.hit.raw()) worst.* = cand;
 }
 
 pub fn groupBlow(foes: anytype, dt: f32, hero: rl.Vector3, bounds: f32, blade: Blade) ?Blow {
@@ -1483,6 +1605,31 @@ test "WITH NO SPIRIT ON THE FIELD it is the hero, exactly as it always was" {
     try std.testing.expectApproxEqAbs(@as(f32, 0), t.dmgSpirit, 1e-6);
     const hero = v3(1, 0, 2);
     try std.testing.expectEqual(hero.x, t.aim(hero).x);
+}
+
+test "ONE BLOW A FRAME, AND A SPIRIT'S MAY NOT EAT THE HERO'S" {
+    const small = combat.Hit{ .dmg = 5 };
+    const big = combat.Hit{ .dmg = 90 };
+    var a: ?Blow = null;
+    worseBlow(&a, big, mathx.zero3, .spirit);
+    worseBlow(&a, small, mathx.zero3, .hero);
+    try std.testing.expectEqual(Victim.hero, a.?.on);
+    try std.testing.expectApproxEqAbs(small.dmg, a.?.hit.dmg, 1e-6);
+
+    var b: ?Blow = null;
+    worseBlow(&b, small, mathx.zero3, .hero);
+    worseBlow(&b, big, mathx.zero3, .spirit);
+    try std.testing.expectEqual(Victim.hero, b.?.on);
+
+    var c: ?Blow = null;
+    worseBlow(&c, small, mathx.zero3, .hero);
+    worseBlow(&c, big, mathx.zero3, .hero);
+    try std.testing.expectApproxEqAbs(big.dmg, c.?.hit.dmg, 1e-6);
+    var d: ?Blow = null;
+    worseBlow(&d, big, mathx.zero3, .spirit);
+    worseBlow(&d, small, mathx.zero3, .spirit);
+    try std.testing.expectEqual(Victim.spirit, d.?.on);
+    try std.testing.expectApproxEqAbs(big.dmg, d.?.hit.dmg, 1e-6);
 }
 
 fn blocksOf(f: anytype) u32 {

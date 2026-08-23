@@ -364,6 +364,7 @@ pub const Delver = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
+        if (grip.downed) self.stagger(true);
         self.vit.tick(dt);
         self.elapsed += dt;
         self.t += dt;
@@ -764,7 +765,7 @@ pub const Delver = struct {
     pub fn debugKill(self: *Delver) void {
         self.enterDeath();
     }
-    pub fn debugStagger(self: *Delver, heavy: bool) void {
+    pub fn stagger(self: *Delver, heavy: bool) void {
         self.enterStun(if (heavy) .stunheavy else .stunlight);
     }
 
@@ -1311,7 +1312,7 @@ test "A BLOW ON THE RISE DOES NOT HAUL IT OUT OF THE GROUND" {
     d.t = 0;
     d.depth = UNDER_DEPTH * 0.6;
     const was = d.depth;
-    d.debugStagger(true);
+    d.stagger(true);
     try std.testing.expectApproxEqAbs(was, d.depth, 1e-5);
     _ = d.update(1.0 / 60.0, v3(0, 0, 3), 400, .{});
     try std.testing.expect(d.depth < was);

@@ -394,8 +394,13 @@ pub fn triggerR(quarryR: f32) f32 {
     return BITE_TRIGGER_R + quarryR;
 }
 
+/// The one dial the halt sits on, named for the same reason the skitterer's and the hollow's are.
+const STOP_FRAC: f32 = 0.85;
 fn stopR(quarryR: f32) f32 {
-    return BITE_R * 0.85 + quarryR;
+    return BITE_R * STOP_FRAC + quarryR;
+}
+comptime {
+    std.debug.assert(stopR(foe.HERO_R) < triggerR(foe.HERO_R));
 }
 /// **WHAT THE LEAP BUYS IS HEIGHT**, as a fraction of `W`. At 0.14 it lifted the teeth 0.16 m onto a resting 1.08 — 0.25 m inside the BOTTOM of an ogre's hurt sphere, a 0.89 m window against a collider holding her 1.61 m out. MEASURED: `POUNCE_INTO` says how far up the mass the teeth must arrive.
 pub const BITE_HOP_UP: f32 = 0.40;

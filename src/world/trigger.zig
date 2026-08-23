@@ -143,8 +143,7 @@ pub const Runtime = struct {
             else
                 c.slot < wf.MAX_TIMERS and self.armed[c.slot] and self.timers[c.slot] > 0,
             .elapsed => c.cmp.holdsF(self.elapsed, c.r),
-            .region => w.heroPos.x >= @min(c.x, c.x1) and w.heroPos.x <= @max(c.x, c.x1) and
-                w.heroPos.z >= @min(c.z, c.z1) and w.heroPos.z <= @max(c.z, c.z1),
+            .region => wf.inRect(w.heroPos.x, w.heroPos.z, c.x, c.z, c.x1, c.z1),
             .near => c.slot < w.npcs.len and mathx.dist2XZ(w.npcs[c.slot], w.heroPos) <= c.r * c.r,
             .talked => c.slot < wf.MAX_DIALOGS and self.talked[c.slot],
             .deaths => c.cmp.holds(self.deaths[@intFromEnum(c.foe)], c.n),

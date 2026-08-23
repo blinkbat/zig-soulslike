@@ -323,6 +323,7 @@ pub const Shade = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
+        if (grip.downed) self.stagger(true);
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);
@@ -606,7 +607,7 @@ pub const Shade = struct {
         self.blinkCd = 0;
         self.enterBlink(hero);
     }
-    pub fn debugStagger(self: *Shade, heavy: bool) void {
+    pub fn stagger(self: *Shade, heavy: bool) void {
         self.enterStun(if (heavy) .stunheavy else .stunlight);
     }
     pub fn debugKill(self: *Shade) void {
@@ -1132,7 +1133,7 @@ test "a blink puts it down where it said it would, and it is nowhere in between"
 test "a hit spooks it, a stagger holds it there, and the punish window is not teleported out of" {
     var s = Shade.spawn(v3(0, 0, 2), 0, 1.0, 0.3);
     const hero = mathx.zero3;
-    s.debugStagger(true);
+    s.stagger(true);
     s.spookLeft = SPOOK_DUR;
     var t: f32 = 0;
     while (t < combat.FOE_HEAVY_STUN_DUR - 0.05) : (t += 1.0 / 60.0) {

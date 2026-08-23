@@ -270,6 +270,7 @@ pub const Shroom = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
+        if (grip.downed) self.stagger(true);
         self.vit.tick(dt);
         self.elapsed += dt;
         self.t += dt;
@@ -485,7 +486,7 @@ pub const Shroom = struct {
     pub fn debugKill(self: *Shroom) void {
         self.enterDeath();
     }
-    pub fn debugStagger(self: *Shroom, heavy: bool) void {
+    pub fn stagger(self: *Shroom, heavy: bool) void {
         self.enterStun(if (heavy) .stunheavy else .stunlight);
     }
 
@@ -506,24 +507,19 @@ pub const Shroom = struct {
         }
     }
 
+    /// **THE ONE PUFF THE BODY DOES NOT SCALE**, flare included: a sporeling is small enough that a placement
+    /// dial on its dust made the mote read as the creature rather than as the ground it landed on.
+    const PUFF = foe.Puff{
+        .blast = foe.Blast.of(foe.DUST_DRAG, 0.3, 0.5),
+        .spdLo = 0.5,
+        .upLo = 0.5,
+        .upHi = 1.6,
+        .rLo = 0.04,
+        .rHi = 0.08,
+        .bigJit = null,
+    };
     fn dustBurst(self: *Shroom, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
-        const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.3, 0.5);
-        var i: i32 = 0;
-        while (i < n) : (i += 1) {
-            const a = self.fxRng.angle();
-            const sp = self.fxRng.range(0.5, 1.0) * spd * B.boost;
-            foe.emitPart(&self.parts, &self.fxHead, .{
-                .p = v3(c.x, self.pos.y + 0.04, c.z),
-                .v = v3(mathx.cosf(a) * sp, self.fxRng.range(0.5, 1.6) * B.boost, mathx.sinf(a) * sp),
-                .life = B.life(&self.fxRng),
-                .r0 = self.fxRng.range(0.04, 0.08),
-                .r1 = big,
-                .col = foe.DUST,
-                .col1 = foe.DUST_THIN,
-                .grav = foe.DUST_GRAV,
-                .drag = foe.DUST_DRAG,
-            });
-        }
+        foe.puff(&self.parts, &self.fxHead, &self.fxRng, v3(c.x, self.pos.y + 0.04, c.z), n, spd, big, 1.0, PUFF);
     }
     /// MOTES, not a wound's worth of them: `foe.HIT_PARTS` is how heavy a LANDED BLOW reads, and a fling landing is not a blow. Read off it, the field-wide dial silently rescaled a trip and a fling too.
     fn emitPuff(self: *Shroom, at: rl.Vector3, motes: i32) void {
@@ -893,13 +889,14 @@ test "THE CLOUD POISONS, IT DOES NOT BURN: linger and the meter fills, step out 
     c.spawnCloud(mathx.zero3);
     const inside = v3(0.4, 0, 0.2);
     const outside = v3(9, 0, 9);
+    const P = combat.ailRow(.poison);
     var psn = combat.Status{};
     var broke = false;
     var t: f32 = 0;
     while (t < CLOUD_LIFE) : (t += 1.0 / 60.0) {
         for (&c.clouds) |*cl| cl.update(1.0 / 60.0);
-        psn.add(c.spores(1.0 / 60.0, inside));
-        _ = psn.tick(1.0 / 60.0, 70);
+        psn.add(P, c.spores(1.0 / 60.0, inside));
+        _ = psn.tick(P, 1.0 / 60.0, 70);
         if (psn.active()) broke = true;
     }
     // **IT BREAKS NOW, AND IT DID NOT BEFORE** (owner: accrue more rapidly). At `SPORE_BUILD` 24 a whole cloud lifetime left the meter half full; at 42, plus the entry bolus (`foe.Soak`), standing in one to the end poisons you.
@@ -920,8 +917,8 @@ test "THE CLOUD POISONS, IT DOES NOT BURN: linger and the meter fills, step out 
     while (t < CLOUD_LIFE * 2.0) : (t += 1.0 / 60.0) {
         if (t > CLOUD_LIFE - 0.5 and !pair.clouds[1].live) pair.spawnCloud(mathx.zero3);
         for (&pair.clouds) |*cl| cl.update(1.0 / 60.0);
-        p2.add(pair.spores(1.0 / 60.0, inside));
-        _ = p2.tick(1.0 / 60.0, 70);
+        p2.add(P, pair.spores(1.0 / 60.0, inside));
+        _ = p2.tick(P, 1.0 / 60.0, 70);
     }
     try std.testing.expect(p2.active());
 }

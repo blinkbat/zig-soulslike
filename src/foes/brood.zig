@@ -1068,7 +1068,7 @@ pub const Spider = struct {
         self.justDied = true;
         sfx.world(if (self.role == .mother) .spider_die else .brood_die, self.pos);
     }
-    pub fn debugStagger(self: *Spider, heavy: bool) void {
+    pub fn stagger(self: *Spider, heavy: bool) void {
         self.enter(if (heavy) .stunheavy else .stunlight);
     }
     pub fn debugKill(self: *Spider) void {
@@ -1093,6 +1093,7 @@ pub const Spider = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
+        if (grip.downed) self.stagger(true);
         self.vit.tick(dt);
         self.elapsed += dt;
         self.t += dt;
@@ -1447,24 +1448,17 @@ pub const Spider = struct {
         }
     }
 
+    /// **THE LIFT IS OFF THE BURST POINT, NOT ITS FEET** — a sac popping at chest height does not spray dust off the floor.
+    const PUFF = foe.Puff{
+        .blast = foe.Blast.of(foe.DUST_DRAG, 0.32, 0.6),
+        .spdLo = 0.5,
+        .upLo = 0.5,
+        .upHi = 2.0,
+        .rLo = 0.05,
+        .rHi = 0.11,
+    };
     fn dustBurst(self: *Spider, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
-        const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.32, 0.6);
-        var i: i32 = 0;
-        while (i < n) : (i += 1) {
-            const a = self.fxRng.angle();
-            const sp = self.fxRng.range(0.5, 1.0) * spd * self.scale * B.boost;
-            foe.emitPart(&self.parts, &self.fxHead, .{
-                .p = v3(c.x, c.y + 0.04, c.z),
-                .v = v3(mathx.cosf(a) * sp, self.fxRng.range(0.5, 2.0) * B.boost, mathx.sinf(a) * sp),
-                .life = B.life(&self.fxRng),
-                .r0 = self.fxRng.range(0.05, 0.11) * self.scale,
-                .r1 = big * self.fxRng.range(0.8, 1.3) * self.scale,
-                .col = DUST,
-                .col1 = foe.DUST_THIN,
-                .grav = foe.DUST_GRAV,
-                .drag = foe.DUST_DRAG,
-            });
-        }
+        foe.puff(&self.parts, &self.fxHead, &self.fxRng, v3(c.x, c.y + 0.04, c.z), n, spd, big, self.scale, PUFF);
     }
 
     fn emitDrool(self: *Spider, dt: f32, k: f32) void {
@@ -2183,13 +2177,14 @@ test "THE GLOB IS NOT THE WEAPON, THE METER IS: a hit is cheap, standing in it i
 }
 
 test "HER VENOM IS ONE FLUID: the spit and the puddle fill the SAME meter" {
+    const P = combat.ailRow(.poison);
     var psn = combat.Status{};
-    psn.add(M_SPIT_BUILD);
-    const oneGlob = psn.frac();
+    psn.add(P, M_SPIT_BUILD);
+    const oneGlob = psn.frac(P);
     try std.testing.expect(oneGlob > 0.3 and !psn.active());
-    psn.add(M_SPIT_BUILD);
-    psn.add(M_SPIT_BUILD);
-    _ = psn.tick(1.0 / 60.0, 70);
+    psn.add(P, M_SPIT_BUILD);
+    psn.add(P, M_SPIT_BUILD);
+    _ = psn.tick(P, 1.0 / 60.0, 70);
     try std.testing.expect(psn.active());
 
     var b = Brood{ .model = undefined };
@@ -2201,8 +2196,8 @@ test "HER VENOM IS ONE FLUID: the spit and the puddle fill the SAME meter" {
     var floor = combat.Status{};
     t = 0;
     while (t < 3.0 and !floor.active()) : (t += 1.0 / 60.0) {
-        floor.add(b.burn(1.0 / 60.0, at));
-        _ = floor.tick(1.0 / 60.0, 70);
+        floor.add(P, b.burn(1.0 / 60.0, at));
+        _ = floor.tick(P, 1.0 / 60.0, 70);
     }
     try std.testing.expect(floor.active());
     try std.testing.expect(t < 3.0);

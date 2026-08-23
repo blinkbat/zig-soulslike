@@ -504,6 +504,7 @@ pub const Hollow = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
+        if (grip.downed) self.stagger(true);
 
         self.t += dt;
         self.elapsed += dt;
@@ -709,7 +710,7 @@ pub const Hollow = struct {
         self.justDied = true;
     }
 
-    pub fn debugStagger(self: *Hollow, heavy: bool) void {
+    pub fn stagger(self: *Hollow, heavy: bool) void {
         self.enterStun(if (heavy) .stunheavy else .stunlight);
     }
     pub fn debugKill(self: *Hollow) void {

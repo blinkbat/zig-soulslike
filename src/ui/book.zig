@@ -769,7 +769,7 @@ pub const Book = struct {
         return .none;
     }
 
-    /// Stage a page for the shot harness, `ogre.debugStagger`'s pattern: a photograph of the picker open on the second candidate cannot be got by pretending to press buttons at 1/60 s a frame.
+    /// Stage a page for the shot harness, `ogre.stagger`'s pattern: a photograph of the picker open on the second candidate cannot be got by pretending to press buttons at 1/60 s a frame.
     pub fn debugShow(self: *Book, p: Page, cursor: usize, pickSlot: ?usize, row: usize) void {
         self.page = p;
         self.cur[idx(p)] = cursor;

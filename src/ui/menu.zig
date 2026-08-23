@@ -911,13 +911,13 @@ var stickWait: f32 = 0;
 var stickArmed: bool = true;
 
 pub fn stickPush(dt: f32, radial: bool) ?rl.Vector2 {
-    if (!rl.isGamepadAvailable(0)) {
+    if (!rl.isGamepadAvailable(rumblemod.PAD)) {
         stickDir = null;
         stickArmed = true;
         return null;
     }
-    const x = rl.getGamepadAxisMovement(0, .left_x);
-    const y = rl.getGamepadAxisMovement(0, .left_y);
+    const x = rl.getGamepadAxisMovement(rumblemod.PAD, .left_x);
+    const y = rl.getGamepadAxisMovement(rumblemod.PAD, .left_y);
     const mag = @sqrt(x * x + y * y);
     if (mag < STICK_REARM) {
         stickDir = null;
@@ -954,9 +954,9 @@ pub fn stickPush(dt: f32, radial: bool) ?rl.Vector2 {
 
 const PAN_DEAD: f32 = 0.18;
 pub fn stickPan() rl.Vector2 {
-    if (!rl.isGamepadAvailable(0)) return .{ .x = 0, .y = 0 };
-    const x = rl.getGamepadAxisMovement(0, .right_x);
-    const y = rl.getGamepadAxisMovement(0, .right_y);
+    if (!rl.isGamepadAvailable(rumblemod.PAD)) return .{ .x = 0, .y = 0 };
+    const x = rl.getGamepadAxisMovement(rumblemod.PAD, .right_x);
+    const y = rl.getGamepadAxisMovement(rumblemod.PAD, .right_y);
     const m = @sqrt(x * x + y * y);
     if (m < PAN_DEAD) return .{ .x = 0, .y = 0 };
     return .{ .x = x, .y = y };

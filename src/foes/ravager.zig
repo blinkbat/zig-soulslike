@@ -79,8 +79,13 @@ comptime {
 pub fn triggerR(quarryR: f32) f32 {
     return BITE_TRIGGER_R + quarryR;
 }
+/// The one dial the halt sits on, named for the same reason the skitterer's and the hollow's are.
+const STOP_FRAC: f32 = 0.85;
 fn stopR(quarryR: f32) f32 {
-    return BITE_R * 0.85 + quarryR;
+    return BITE_R * STOP_FRAC + quarryR;
+}
+comptime {
+    std.debug.assert(stopR(foe.HERO_R) < triggerR(foe.HERO_R));
 }
 
 const BITE_HIT = combat.Hit{ .dmg = 24, .poise = 20, .stance = 9 };
@@ -396,6 +401,7 @@ pub const Ravager = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
+        if (grip.downed) self.stagger(true);
 
         self.t += dt;
         self.vit.tick(dt);
@@ -590,7 +596,7 @@ pub const Ravager = struct {
         self.justDied = true;
     }
 
-    pub fn debugStagger(self: *Ravager, heavy: bool) void {
+    pub fn stagger(self: *Ravager, heavy: bool) void {
         self.enterStun(heavy);
     }
 
@@ -1134,7 +1140,7 @@ test "IT IS A FOE, NOT A SPIRIT — its own tether, its own souls, and it answer
     try std.testing.expect(reared < r.hurtRadius());
     std.debug.print("  …and {d:.2} m reared, where the bloom's own mark stood {d:.2} m out\n", .{ reared, mathx.lenV(mathx.subV(r.centerWorld(), foe.markOn(r.xf[HEAD], v3(0, 0.06 * W, 0.04 * W)))) });
     _ = r.vit.hit(.{ .dmg = 5, .poise = POISE_MAX + 1 });
-    r.debugStagger(true);
+    r.stagger(true);
     try std.testing.expect(r.staggered());
     r.vit.hp = 0;
     r.enterDeath();

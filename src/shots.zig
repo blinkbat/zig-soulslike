@@ -1176,11 +1176,11 @@ pub fn runShots(g: *Game) void {
         const front = mathx.ground(0, 60);
 
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-        f.debugStagger(false);
+        f.stagger(false);
         stepFoe(f, 13, front);
         shootFoe(g, f, "shots/31_frog_flinch.png", 70, 0.12, 3.2);
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-        f.debugStagger(true);
+        f.stagger(true);
         stepFoe(f, 24, front);
         shootFoe(g, f, "shots/32_frog_stagger.png", 55, 0.12, 3.4);
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
@@ -1425,18 +1425,18 @@ pub fn runShots(g: *Game) void {
         }
 
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
-        o.debugStagger(false);
+        o.stagger(false);
         stepFoe(o, 13, far);
         shootFoe(g, o, "shots/52_ogre_flinch.png", 55, 0.04, 12.5);
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
-        o.debugStagger(true);
+        o.stagger(true);
         stepFoe(o, 42, far);
         shootFoe(g, o, "shots/53_ogre_stagger.png", 50, 0.10, 13.0);
         // STAGGERED OUT OF A RAISED CLUB: interrupted at the top of a windup the posture channels have 163 degrees of shoulder to unwind, and at four degrees a second he reels with the club still overhead.
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
         o.debugSlam();
         stepFoe(o, 64, far);
-        o.debugStagger(true);
+        o.stagger(true);
         stepFoe(o, 10, far);
         shootFoe(g, o, "shots/53b_ogre_stagger_armed.png", 50, 0.10, 13.0);
         stepFoe(o, 32, far);
@@ -1528,7 +1528,7 @@ pub fn runShots(g: *Game) void {
         }
 
         zerk.* = koboldmod.Kobold.spawnAs(.berserker, kc, 0, 1.0, 0.15);
-        zerk.debugStagger(true);
+        zerk.stagger(true);
         stepFoe(zerk, 10, far);
         shootFoe(g, zerk, "shots/66b_kobold_stagger.png", LIT_YAW + 22, 0.06, 3.8);
         zerk.* = koboldmod.Kobold.spawnAs(.berserker, kc, 0, 1.0, 0.15);
@@ -2063,7 +2063,7 @@ fn warriorShots(g: *Game) void {
 
     spawnGs(gs, away, faceCam);
     spawnSm(sm, wc, faceCam);
-    sm.debugStagger(true);
+    sm.stagger(true);
     stepFoe(sm, 14, far);
     shootFoe(g, sm, "shots/113t_shield_stagger.png", LIT_YAW + 22, 0.06, 4.2);
     spawnSm(sm, away, faceCam);
@@ -2151,7 +2151,7 @@ fn rootedShots(g: *Game) void {
     g.hero.update(SHOT_DT, 0, 0, null);
     g.hero.pose();
     spawn(t, sc, faceCam, 0.21);
-    t.debugStagger(true);
+    t.stagger(true);
     stepFoe(t, 16, far);
     shootAt(g, "shots/118i_rooted_stagger.png", v3(sc.x, sc.y + 2.8, sc.z), LIT_YAW + 20, 0.10, 11.0);
 
@@ -2699,7 +2699,7 @@ fn poisonShots(g: *Game, mark: rl.Vector3) void {
     m.* = shroommod.Shroom.spawn(mathx.ground(mark.x - 6.0, mark.z), 0, 1.0, 0.23);
     m.debugFling(g.hero.pos);
     var k: i32 = 0;
-    while (k < 60 * 6 and !g.hero.vit.venom.active()) : (k += 1) {
+    while (k < 60 * 6 and !g.hero.vit.ailOn(.poison)) : (k += 1) {
         _ = g.cluster.update(SHOT_DT, g.hero.pos, game.PLAY_HALF, .{});
         game.tickPoisonForShot(g, SHOT_DT);
     }
@@ -2773,7 +2773,7 @@ fn leechShots(g: *Game) void {
     shootAt(g, "shots/117i_leech_climb.png", v3(sc.x, sc.y + 3.1, sc.z), LIT_YAW, 0.12, 7.6);
 
     spawn(f, sc, faceCam, 0.18);
-    f.debugStagger(true);
+    f.stagger(true);
     stepFoe(f, 14, far);
     shootFoe(g, f, "shots/117j_leech_stagger.png", LIT_YAW + 20, 0.05, 3.6);
 
@@ -2847,7 +2847,7 @@ fn shadeShots(g: *Game) void {
     shootFoe(g, s, "shots/116i_blink_in.png", LIT_YAW, 0.05, 4.4);
 
     spawn(s, sc, faceCam, 0.18);
-    s.debugStagger(true);
+    s.stagger(true);
     stepFoe(s, 16, far);
     shootFoe(g, s, "shots/116j_shade_stagger.png", LIT_YAW + 20, 0.06, 4.4);
 

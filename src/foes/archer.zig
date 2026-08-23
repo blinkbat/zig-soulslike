@@ -731,6 +731,7 @@ pub const Archer = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
+        if (grip.downed) self.stagger(true);
         self.elapsed += dt;
         self.vit.tick(dt);
         self.reloadCd = mathx.maxF(0, self.reloadCd - dt);
@@ -996,6 +997,12 @@ pub const Archer = struct {
         self.t = 0;
         self.hop = 0;
         self.justDied = true;
+    }
+
+    /// The one hook every creature carries, so a meter that puts a body on the floor (`foe.Grip.downed`) needs
+    /// to know nothing about which body it is.
+    pub fn stagger(self: *Archer, heavy: bool) void {
+        self.enterStun(if (heavy) .stunheavy else .stunlight);
     }
 
     pub fn raisable(self: *const Archer) bool {

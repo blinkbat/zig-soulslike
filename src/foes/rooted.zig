@@ -308,6 +308,7 @@ pub const Rooted = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
+        if (grip.downed) self.stagger(true);
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);
@@ -501,7 +502,7 @@ pub const Rooted = struct {
     pub fn debugKill(self: *Rooted) void {
         self.enterDeath();
     }
-    pub fn debugStagger(self: *Rooted, heavy: bool) void {
+    pub fn stagger(self: *Rooted, heavy: bool) void {
         self.open = 1;
         self.enterStun(if (heavy) .stunheavy else .stunlight);
     }

@@ -317,6 +317,7 @@ pub const Lurker = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
+        if (grip.downed) self.stagger(true);
 
         self.elapsed += dt;
         self.t += dt;
@@ -454,7 +455,7 @@ pub const Lurker = struct {
         self.justDied = true;
     }
 
-    pub fn debugStagger(self: *Lurker, heavy: bool) void {
+    pub fn stagger(self: *Lurker, heavy: bool) void {
         self.enterStun(heavy);
     }
 
@@ -788,7 +789,7 @@ test "IT IS A FOE, AND IT ANSWERS THE SHARED CONTRACT OFF ONE BODY" {
     try std.testing.expect(!l.airborne());
     try std.testing.expect(l.hurtRadius() > l.bodyR());
     _ = l.vit.hit(.{ .dmg = 5, .poise = POISE_MAX + 1 });
-    l.debugStagger(true);
+    l.stagger(true);
     try std.testing.expect(l.staggered());
     l.vit.hp = 0;
     l.enterDeath();
@@ -958,7 +959,7 @@ test "A STAGGER DOES NOT PUT IT UNDER — the flinch is the punish window, not i
     var l = Lurker.spawn(mathx.zero3, 0, 1.0, 0.3);
     l.wade = .{ .here = 1.0, .quarry = 1.0 };
     l.stageLash(0.5);
-    l.debugStagger(true);
+    l.stagger(true);
     var t: f32 = 0;
     while (t < combat.FOE_HEAVY_STUN_DUR * 0.8) : (t += dt) _ = l.update(dt, mathx.ground(0, 2.0), 200.0, .{});
     try std.testing.expect(!l.hidden());

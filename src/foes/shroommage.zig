@@ -497,6 +497,7 @@ pub const Mage = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
+        if (grip.downed) self.stagger(true);
 
         self.elapsed += dt;
         self.t += dt;
@@ -717,7 +718,7 @@ pub const Mage = struct {
         self.justDied = true;
     }
 
-    pub fn debugStagger(self: *Mage, heavy: bool) void {
+    pub fn stagger(self: *Mage, heavy: bool) void {
         self.enterStun(heavy);
     }
 
@@ -1301,7 +1302,7 @@ test "AN INTERRUPTED MAGE DROPS WHAT IT WAS HOLDING — the picture may not keep
     var k = Mage.spawn(mathx.zero3, 0, 1.0, 0.4);
     k.stageGather(1.0);
     try std.testing.expect(k.cupAmt() > 0.9);
-    k.debugStagger(false);
+    k.stagger(false);
     try std.testing.expectApproxEqAbs(@as(f32, 0), k.cupAmt(), 1e-6);
     try std.testing.expect(k.staggered());
 }

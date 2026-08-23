@@ -668,24 +668,39 @@ pub fn armourOf(worn: Worn) f32 {
     return plateOf(worn).a;
 }
 
-/// **PHYSICAL AND THE FOUR COLUMNS ADD; THE STATUS RATE MULTIPLIES** — halving twice leaves a quarter, where
+pub const Suit = struct { plate: item.Plate, charm: item.Charm };
+
+/// **ONE WALK OF THE SOCKETS FOR BOTH TABLES.** `settleBody` asks every frame, and a walk apiece is two
+/// `item.equip` lookups per socket for one answer.
+/// **PHYSICAL AND THE FOUR COLUMNS ADD; THE RATES MULTIPLY** — halving twice leaves a quarter, where
 /// subtracting 0.5 twice leaves nothing and makes the second piece free immunity.
-pub fn plateOf(worn: Worn) item.Plate {
-    var out = item.Plate{ .slot = .chest };
+pub fn suitOf(worn: Worn) Suit {
+    var pl = item.Plate{ .slot = .chest };
+    var ch = item.Charm{ .slot = .ring };
     inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
         if (worn.at(@enumFromInt(f.value))) |k| {
             switch (item.equip(k)) {
                 .plate => |p| {
-                    out.a += p.a;
-                    out.res = out.res.plus(p.res);
-                    out.poison *= p.poison;
-                    out.move *= p.move;
+                    pl.a += p.a;
+                    pl.res = pl.res.plus(p.res);
+                    pl.poison *= p.poison;
+                    pl.move *= p.move;
+                },
+                .charm => |c| {
+                    ch.leech += c.leech;
+                    ch.hpFrac += c.hpFrac;
+                    ch.fpFrac += c.fpFrac;
+                    ch.spiritFp *= c.spiritFp;
                 },
                 else => {},
             }
         }
     }
-    return out;
+    return .{ .plate = pl, .charm = ch };
+}
+
+pub fn plateOf(worn: Worn) item.Plate {
+    return suitOf(worn).plate;
 }
 
 pub fn resistOf(worn: Worn) item.Res {
@@ -703,21 +718,12 @@ pub fn moveRateOf(worn: Worn, perk: ptree.Bonus) f32 {
 }
 
 pub fn charmOf(worn: Worn) item.Charm {
-    var out = item.Charm{ .slot = .ring };
-    inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
-        if (worn.at(@enumFromInt(f.value))) |k| {
-            switch (item.equip(k)) {
-                .charm => |c| {
-                    out.leech += c.leech;
-                    out.hpFrac += c.hpFrac;
-                    out.fpFrac += c.fpFrac;
-                    out.spiritFp *= c.spiritFp;
-                },
-                else => {},
-            }
-        }
-    }
-    return out;
+    return suitOf(worn).charm;
+}
+
+/// The focus pool off an ALREADY-WALKED suit, so `settleBody` can ask for the pool without walking again.
+pub fn fpMaxFrom(sheet: statsmod.Sheet, charm: item.Charm, perk: ptree.Bonus) f32 {
+    return sheet.fp() * (1.0 - mathx.clampF(charm.fpFrac, 0, 0.9)) * perk.fpMax;
 }
 
 pub fn hpMaxOf(sheet: statsmod.Sheet, worn: Worn, perk: ptree.Bonus) f32 {
@@ -791,7 +797,7 @@ pub fn weigh(h: combat.Hit, row: item.Arm, sheet: statsmod.Sheet) combat.Hit {
         .stance = h.stance * row.poise,
         .elem = h.elem.scaled(row.dmg * skill),
         .fp = h.fp,
-        .venom = row.venom,
+        .dose = combat.Doses.one(.poison, row.venom),
     };
 }
 
@@ -970,8 +976,9 @@ pub fn bladeOf(a: Armament) ?Blade {
 pub const Stroke = enum { slash, chop, flick, thrust, sweep, smash };
 
 /// Fractions of the stroke's own clock. `dur` is seconds at dial 1 and `item.Arm.dur` multiplies it (`atkDur`),
-/// so every phase scales together. `hit` is the capsule's live window, `travel` when the body covers `lunge`
-/// metres, `recov` where the pose starts home (and re-tracking resumes), `chain` where a queued press takes over.
+/// so every phase scales together. `hitA`..`hitB` is the capsule's live window, `travelA`..`travelB` when the
+/// body covers `lunge` metres, `recovA` where the pose starts home (and re-tracking resumes), `chain` where a
+/// queued press takes over.
 pub const Timing = struct {
     dur: f32,
     hitA: f32,
@@ -2324,7 +2331,7 @@ pub const Hero = struct {
         self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
         if (faceYaw) |ty| self.facing = mathx.approachAngle(self.facing, ty, TURN_TO_SHOT * dt);
         const was = self.castT / CAST_DUR;
-        self.castT += dt * self.perk.castSpeed;
+        self.castT += dt * self.castRate();
         if (was < CAST_AT and self.castT / CAST_DUR >= CAST_AT) self.thrown = true;
         self.pose();
         if (self.castT / CAST_DUR < CAST_AT) self.gatherMotes(dt);
@@ -2399,6 +2406,14 @@ pub const Hero = struct {
     pub fn breathLive(self: *const Hero) bool {
         if (!self.casting or self.spell != .rime) return false;
         return self.castT >= breathAt() and self.castT < breathAt() + combat.RIME_DUR;
+    }
+
+    /// **THE POUR IS BILLED ON THE CAST CLOCK, NOT THE WALL CLOCK.** `breathLive` is a window in `castT`, which
+    /// `perk.castSpeed` advances faster, so a real-time dose made every point of cast speed a cut to the spell:
+    /// at the tree's 1.45x the cone billed 10.5 cold against the 15.3 `combat.SPELLS` prices it at, quietly
+    /// under the ladder its own comptime assert exists to hold.
+    pub fn breathDose(self: *const Hero, dt: f32) f32 {
+        return dt * self.castRate();
     }
 
     pub fn breathU(self: *const Hero) f32 {
@@ -2960,7 +2975,7 @@ pub const Hero = struct {
     }
 
     pub fn attackHit(self: *const Hero) combat.Hit {
-        const base = weigh(if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT, self.swingRow(), self.sheet).scaled(self.perk.dmg);
+        const base = weigh(if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT, self.swingRow(), self.sheet).scaled(self.perk.dmg * self.vit.dmgMult());
         if (!self.grease.on()) return base;
         var out = base;
         out.elem.v[@intFromEnum(self.greaseElem)] += base.dmg * self.grease.value(0);
@@ -3068,8 +3083,22 @@ pub const Hero = struct {
         return if (back > 0) self.vit.heal(back) else 0;
     }
 
+    /// **HOW FAST A CAST RUNS, IN ONE PLACE** — the tree's node and whatever a meter is doing to him. The
+    /// breath's dose rides the same number (`breathDose`), or every point of cast speed would be a cut to the
+    /// spell it bought.
+    pub fn castRate(self: *const Hero) f32 {
+        return self.perk.castSpeed * self.vit.hasteMult();
+    }
+
+    /// **HOW FAST HE WALKS, ALL OF IT IN ONE PLACE** — the tree's node, what is on his feet, and what his
+    /// meters are doing to him. `game.moveHero` is the only caller, so a slow cannot land on one movement path
+    /// and not the others.
+    pub fn moveRate(self: *const Hero) f32 {
+        return moveRateOf(self.worn, self.perk) * self.vit.travelMult();
+    }
+
     pub fn atkDur(self: *const Hero, heavy: bool) f32 {
-        return moveOf(self.heldBlade(), heavy).t.dur * self.swingRow().dur;
+        return moveOf(self.heldBlade(), heavy).t.dur * self.swingRow().dur / self.vit.hasteMult();
     }
 
     /// ONE answer for the three places that each spelled out the same pair (`updateShot`, `bowLevels`, `shotU`) — the mechanic's knot and the pose's `u` cannot be a shaft apart.
@@ -3172,7 +3201,7 @@ pub const Hero = struct {
     }
 
     pub fn purgePoison(self: *Hero) void {
-        self.vit.venom.reset();
+        self.vit.clearAils();
     }
 
     pub fn tickTimed(self: *Hero, dt: f32) void {
@@ -3187,28 +3216,40 @@ pub const Hero = struct {
     /// changes what is on him without going anywhere near here. A coat taken off may not leave its column
     /// behind, and a cap taken off may not leave its poison rate behind either.
     fn settleBody(self: *Hero) void {
-        // ONE WALK OF THE SOCKETS, not one per dial — `resistOf` and `poisonRateOf` are both `plateOf`, and this
-        // runs every frame.
-        const suit = plateOf(self.worn);
+        // ONE WALK OF THE SOCKETS, not one per dial (`suitOf`) — the columns, the poison rate and the focus
+        // pool all come off it, and this runs every frame.
+        const suit = suitOf(self.worn);
         var r = self.baseRes;
         r.v[@intFromEnum(self.wardElem)] += self.ward.value(0);
-        const worn = combat.resistsOf(suit.res);
+        const worn = combat.resistsOf(suit.plate.res);
         for (&r.v, worn.v) |*x, w| x.* += w;
         self.vit.res = r;
-        self.vit.venomRate = self.perk.poison * suit.poison;
+        self.vit.setAilRate(.poison, self.perk.poison * suit.plate.poison);
+        // **THE STUPEFIED POOL IS SHORTER, NOT DRAINED.** Refit rather than spend, so letting it go hands the
+        // focus back at the share he had — the same rule a lengthened HP bar comes up on (`refitHp`).
+        refitPool(&self.fp.cur, &self.fp.max, fpMaxFrom(self.sheet, suit.charm, self.perk) * self.vit.focusMult());
     }
 
     pub fn poisonBy(self: *Hero, amt: f32) void {
         if (self.dead) return;
-        self.vit.venom.add(amt * self.vit.venomRate);
+        self.vit.build(.poison, amt);
     }
 
-    /// **THE METER IS TICKED EVEN WHILE HE IS DEAD**, and `tickVenom` is what refuses the bite. Gated up here
+    /// **THE METERS ARE TICKED EVEN WHILE HE IS DEAD**, and `tickAils` is what refuses the bite. Gated up here
     /// instead, `justProcced` never cleared and the proc's beat (`game`'s shake, voice and flash) re-fired on
     /// every frame of the death animation.
+    ///
+    /// **AND THE THREE THAT PUT HIM ON THE FLOOR ARE ANSWERED HERE**, because a meter's proc is the only blow in
+    /// the game that arrives from inside the body: the lightning's stun, a sleep taking hold, and the berserk
+    /// bargain coming due at the far end of its own clock.
     pub fn tickPoison(self: *Hero, dt: f32) bool {
         const was = self.vit.hp;
-        if (self.vit.tickVenom(dt)) self.enterDeath();
+        if (self.vit.tickAils(dt)) self.enterDeath();
+        if (!self.dead) {
+            if (self.vit.ailProcced(.stun) or self.vit.ailProcced(.sleep)) self.enterStun(.heavy);
+            // **THE PRICE OF THE BARGAIN IS PAID ON THE WAY OUT** — the one stagger nothing struck him for.
+            if (self.vit.ailEnded(.berserk)) self.enterStun(.heavy);
+        }
         return self.vit.hp < was;
     }
 
@@ -3268,7 +3309,9 @@ pub const Hero = struct {
         self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
         const dur = combat.heroStunDur(self.stun == .heavy);
         self.pose();
-        if (self.stunT >= dur) {
+        // **ASLEEP IS A STAGGER THAT WILL NOT TIME OUT** (owner: unable to act until hit). The wake is on the
+        // blow path (`takeHit`), so a poison tick leaves him lying there and only a real blow gets him up.
+        if (self.stunT >= dur and !self.vit.asleep()) {
             self.stun = .none;
             self.startXfade();
         }
@@ -5628,6 +5671,31 @@ test "A CAST IS BILLED IN FP AND NOTHING ELSE — and pay-or-nothing, unlike the
     try std.testing.expect(dry.requestCast());
 }
 
+test "CAST SPEED SHORTENS THE BREATH, IT DOES NOT SHORTEN THE POUR" {
+    for ([_]f32{ 1.0, 1.18, 1.454 }) |rate| {
+        var h = testHero();
+        h.off = .wand;
+        h.perk.castSpeed = rate;
+        h.memorize(0, .rime);
+        try std.testing.expect(h.requestCast());
+        const dt: f32 = 1.0 / 240.0;
+        var held: f32 = 0;
+        var billed: f32 = 0;
+        var guard: u32 = 0;
+        while (h.casting and guard < 4000) : (guard += 1) {
+            h.updateCast(dt, null);
+            if (h.breathLive()) {
+                held += dt;
+                billed += h.breathDose(dt) * combat.RIME_DPS;
+            }
+        }
+        std.debug.print("\n  cast speed {d:.3}x: breath open {d:.3} s, pours {d:.2} cold", .{ rate, held, billed });
+        try std.testing.expectApproxEqAbs(combat.RIME_DUR / rate, held, 0.02);
+        try std.testing.expectApproxEqAbs(combat.RIME_DUR * combat.RIME_DPS, billed, 0.4);
+    }
+    std.debug.print("\n", .{});
+}
+
 test "A CAST IS COMMITTED: nothing fires through one, and a stagger takes the spell you already paid for" {
     var h = testHero();
     h.off = .wand;
@@ -6593,14 +6661,14 @@ test "AN ENVENOMED EDGE FILLS A BODY IN FOUR STROKES, and what it becomes is CHA
     var h = testHero();
     try std.testing.expect(h.wear(.hand_dagger, .envenomed_dagger));
     h.arm = .dagger;
-    const dose = h.attackHit().venom;
+    const dose = h.attackHit().dose.at(.poison);
     std.debug.print("\n  envenomed dirk: {d:.0} venom a hit, {d:.0} to fill (`combat.POISON_MAX`)\n", .{ dose, combat.POISON_MAX });
     try std.testing.expect(dose > 0);
     // The clean dirk beside it leaves nothing behind, and hits harder for it.
     var clean = testHero();
     try std.testing.expect(clean.wear(.hand_dagger, .fang_dirk));
     clean.arm = .dagger;
-    try std.testing.expectApproxEqAbs(@as(f32, 0), clean.attackHit().venom, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), clean.attackHit().dose.at(.poison), 1e-6);
     try std.testing.expect(clean.attackHit().dmg > h.attackHit().dmg);
 
     // FOUR landed strokes and the fifth frame it is running, on a body that is not the hero's.
@@ -6608,21 +6676,21 @@ test "AN ENVENOMED EDGE FILLS A BODY IN FOUR STROKES, and what it becomes is CHA
     var strokes: u32 = 0;
     while (strokes < 4) : (strokes += 1) {
         _ = body.hit(h.attackHit());
-        try std.testing.expect(!body.venom.active());
+        try std.testing.expect(!body.ailOn(.poison));
     }
-    _ = body.tickVenom(1.0 / 60.0);
-    try std.testing.expect(body.venom.active());
+    _ = body.tickAils(1.0 / 60.0);
+    try std.testing.expect(body.ailOn(.poison));
 
     // …and the bite it turns into is CHAOS, so a creature's own column answers it. The brood's +75 is the cap.
     const hpWas = body.hp;
-    _ = body.tickVenom(1.0);
+    _ = body.tickAils(1.0);
     const bare = hpWas - body.hp;
     var warded = combat.Vitals.initFoe(400, 999, 999).withRes(combat.resists(.{ .chaos = 75 }));
     strokes = 0;
     while (strokes < 4) : (strokes += 1) _ = warded.hit(h.attackHit());
-    _ = warded.tickVenom(1.0 / 60.0);
+    _ = warded.tickAils(1.0 / 60.0);
     const wardedWas = warded.hp;
-    _ = warded.tickVenom(1.0);
+    _ = warded.tickAils(1.0);
     const through = wardedWas - warded.hp;
     std.debug.print("  one second of it: {d:.2} HP bare, {d:.2} at 75% chaos ({d:.0}%)\n", .{ bare, through, through / bare * 100 });
     try std.testing.expectApproxEqAbs(0.25, through / bare, 0.02);
@@ -6668,17 +6736,17 @@ test "WHAT IS ON HIS FEET REACHES HOW FAST HE WALKS, and a cap reaches how fast 
     // …and the rate a status meter fills is settled on the BODY, off the same table (`settleBody`).
     var cap = testHero();
     cap.tickTimed(1.0 / 60.0);
-    const openRate = cap.vit.venomRate;
+    const openRate = cap.vit.ailRateOf(.poison);
     try std.testing.expect(cap.wear(.helm, .sporecrown));
     cap.tickTimed(1.0 / 60.0);
-    try std.testing.expect(cap.vit.venomRate < openRate);
+    try std.testing.expect(cap.vit.ailRateOf(.poison) < openRate);
     cap.poisonBy(50);
-    const slowed = cap.vit.venom.meter;
+    const slowed = cap.vit.ail(.poison).meter;
     var open = testHero();
     open.tickTimed(1.0 / 60.0);
     open.poisonBy(50);
-    std.debug.print("  a 50 dose: {d:.1} open-headed, {d:.1} under the sporecrown\n", .{ open.vit.venom.meter, slowed });
-    try std.testing.expect(slowed < open.vit.venom.meter);
+    std.debug.print("  a 50 dose: {d:.1} open-headed, {d:.1} under the sporecrown\n", .{ open.vit.ail(.poison).meter, slowed });
+    try std.testing.expect(slowed < open.vit.ail(.poison).meter);
 }
 
 test "DEATH PUTS HIM BACK WHERE HE LAST SAT DOWN — the stamped spawn, not the spot the map was entered at" {
@@ -6692,7 +6760,7 @@ test "DEATH PUTS HIM BACK WHERE HE LAST SAT DOWN — the stamped spawn, not the 
     h.pos = v3(12, 0, -3);
     h.vit.hp = 1;
     h.poisonBy(combat.POISON_MAX);
-    try std.testing.expect(h.vit.venom.frac() > 0.9);
+    try std.testing.expect(h.vit.ailFrac(.poison) > 0.9);
     _ = h.takeHit(.{ .dmg = 999 }, v3(1, 0, 0));
     try std.testing.expect(h.dead);
     var t: f32 = 0;
@@ -6704,5 +6772,5 @@ test "DEATH PUTS HIM BACK WHERE HE LAST SAT DOWN — the stamped spawn, not the 
     try std.testing.expect(mathx.distXZ(h.pos, entry) > 60);
     // He comes back WHOLE, and nothing he was carrying in his blood comes back with him.
     try std.testing.expectApproxEqAbs(h.vit.hpMax, h.vit.hp, 1e-4);
-    try std.testing.expectApproxEqAbs(@as(f32, 0), h.vit.venom.frac(), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), h.vit.ailFrac(.poison), 1e-6);
 }

@@ -445,6 +445,7 @@ pub const Skitterer = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
+        if (grip.downed) self.stagger(true);
 
         self.t += dt;
         self.vit.tick(dt);
@@ -559,7 +560,7 @@ pub const Skitterer = struct {
         self.trail.reset();
     }
 
-    pub fn debugStagger(self: *Skitterer, heavy: bool) void {
+    pub fn stagger(self: *Skitterer, heavy: bool) void {
         self.enterStun(heavy);
     }
 
@@ -620,7 +621,7 @@ pub const Skitterer = struct {
         self.xf = wx;
     }
 
-    /// The metachronal wave. Rotation-only: the swing amplitude is SOLVED off the stride (`ribSwing`), so a planted tip travels backwards at the body's own speed instead of skating.
+    /// The metachronal wave. Rotation-only: the swing amplitude is SOLVED off the stride (`RIB.swing`), so a planted tip travels backwards at the body's own speed instead of skating.
     fn poseRibs(self: *const Skitterer, wx: *[N]rl.Matrix, m: f32, react: f32, fall: f32) void {
         const g = wolf.Gait{ .duty = RIB_DUTY, .lag = RIB_LAG };
         for (0..LEGS) |i| {

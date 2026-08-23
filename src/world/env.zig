@@ -1810,7 +1810,7 @@ const Placer = struct {
         const n = self.e.nprops;
         for (self.e.props[0..n]) |pr| {
             if (!props.ivyClimbs(pr.kind)) continue;
-            if (pr.pos.x < o.x or pr.pos.x > o.x1 or pr.pos.z < o.z or pr.pos.z > o.z1) continue;
+            if (!wf.inRect(pr.pos.x, pr.pos.z, o.x, o.z, o.x1, o.z1)) continue;
             if (rng.float() > o.chance) continue;
             const nfo = props.info(pr.kind);
             const a = rng.angle();

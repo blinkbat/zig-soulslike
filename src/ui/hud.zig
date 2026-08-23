@@ -433,16 +433,157 @@ fn refuseRing(x: i32, y: i32, w: i32, h: i32, k: f32) void {
 
 pub const Status = struct { frac: f32 = 0, on: bool = false };
 
+/// **AN AILMENT IS ITS GLYPH.** Ten meters is more rows than any player will read as words, so the icon IS the
+/// name (owner: make it synonymous with that status) — drawn beside its own bar here, and the same call is what
+/// the book and an item's line use, so a status is never described two ways. **HERE AND NOT `uiart`**: that file
+/// is dressing and knows nothing about the game, the same reason the pad glyphs live in this one.
+/// Vector, from primitives, so it reads at 8 px and at 40.
+pub fn ailTint(a: combat.Ail) rl.Color {
+    return switch (a) {
+        .poison => rgba(150, 96, 190, 255),
+        .burning => rgba(236, 126, 48, 255),
+        .chill => CHILL_STRIP,
+        .stun => rgba(240, 228, 122, 255),
+        .bleed => rgba(198, 44, 40, 255),
+        .sleep => rgba(142, 152, 212, 255),
+        .confusion => rgba(172, 202, 82, 255),
+        .charm => rgba(228, 122, 172, 255),
+        .berserk => rgba(242, 82, 40, 255),
+        .stupefy => rgba(174, 162, 194, 255),
+    };
+}
+
+fn gl(x0: f32, y0: f32, x1: f32, y1: f32, w: f32, c: rl.Color) void {
+    rl.drawLineEx(.{ .x = x0, .y = y0 }, .{ .x = x1, .y = y1 }, w, c);
+}
+
+/// One silhouette apiece — told apart by SHAPE with the colour taken away, the way `elemfx`'s four are.
+pub fn ailGlyph(a: combat.Ail, cx: f32, cy: f32, size: f32, col: rl.Color) void {
+    const r = size * 0.5;
+    const w = mathx.maxF(size * 0.13, 1.0);
+    switch (a) {
+        .poison => {
+            rl.drawTriangle(
+                .{ .x = cx, .y = cy - r },
+                .{ .x = cx - r * 0.62, .y = cy + r * 0.15 },
+                .{ .x = cx + r * 0.62, .y = cy + r * 0.15 },
+                col,
+            );
+            rl.drawCircleV(.{ .x = cx, .y = cy + r * 0.22 }, r * 0.62, col);
+        },
+        // THREE drops falling off the line — the same fluid as the poison, told apart by count and slant.
+        .bleed => {
+            for ([_]f32{ -0.55, 0.05, 0.65 }, [_]f32{ 0.5, -0.1, 0.35 }) |dx, dy| {
+                rl.drawCircleV(.{ .x = cx + r * dx, .y = cy + r * dy }, r * 0.28, col);
+                gl(cx + r * dx, cy + r * dy - r * 0.30, cx + r * dx, cy + r * dy - r * 0.62, w * 0.8, col);
+            }
+        },
+        // A TONGUE: two nested points, the inner one shorter, which is what reads as flame and not as an arrow.
+        .burning => {
+            rl.drawTriangle(
+                .{ .x = cx, .y = cy - r },
+                .{ .x = cx - r * 0.66, .y = cy + r * 0.7 },
+                .{ .x = cx + r * 0.66, .y = cy + r * 0.7 },
+                col,
+            );
+            rl.drawTriangle(
+                .{ .x = cx, .y = cy + r * 0.7 },
+                .{ .x = cx - r * 0.34, .y = cy - r * 0.15 },
+                .{ .x = cx + r * 0.34, .y = cy - r * 0.15 },
+                mathx.withAlpha(rl.Color.black, 120),
+            );
+        },
+        // Six spokes. Not four: a cross is a plus sign, and a plus sign is already health everywhere.
+        .chill => {
+            var i: usize = 0;
+            while (i < 3) : (i += 1) {
+                const th = mathx.radians(60.0 * @as(f32, @floatFromInt(i)) + 90.0);
+                const dx = mathx.cosf(th) * r;
+                const dy = mathx.sinf(th) * r;
+                gl(cx - dx, cy - dy, cx + dx, cy + dy, w, col);
+            }
+        },
+        // The only glyph here with a hard corner in it.
+        .stun => {
+            gl(cx + r * 0.45, cy - r, cx - r * 0.30, cy - r * 0.05, w * 1.15, col);
+            gl(cx - r * 0.30, cy - r * 0.05, cx + r * 0.25, cy - r * 0.05, w * 1.15, col);
+            gl(cx + r * 0.25, cy - r * 0.05, cx - r * 0.45, cy + r, w * 1.15, col);
+        },
+        // **THE zZZ HE ASKED FOR**, and the one glyph that is a letter — it is the picture everyone already knows.
+        .sleep => {
+            const zs = [_][3]f32{ .{ -0.55, 0.55, 0.42 }, .{ 0.15, -0.05, 0.55 }, .{ 0.62, -0.62, 0.38 } };
+            for (zs) |z| {
+                const s = r * z[2];
+                const x = cx + r * z[0];
+                const y = cy + r * z[1];
+                gl(x - s, y - s, x + s, y - s, w * 0.85, col);
+                gl(x + s, y - s, x - s, y + s, w * 0.85, col);
+                gl(x - s, y + s, x + s, y + s, w * 0.85, col);
+            }
+        },
+        // Two arrows crossing: it is swinging, and not at what it meant to.
+        .confusion => {
+            gl(cx - r * 0.8, cy - r * 0.6, cx + r * 0.8, cy + r * 0.6, w, col);
+            gl(cx + r * 0.8, cy - r * 0.6, cx - r * 0.8, cy + r * 0.6, w, col);
+            rl.drawCircleV(.{ .x = cx + r * 0.8, .y = cy + r * 0.6 }, w * 1.3, col);
+            rl.drawCircleV(.{ .x = cx - r * 0.8, .y = cy + r * 0.6 }, w * 1.3, col);
+        },
+        // A heart, because it has changed whose side it is on.
+        .charm => {
+            rl.drawCircleV(.{ .x = cx - r * 0.38, .y = cy - r * 0.28 }, r * 0.44, col);
+            rl.drawCircleV(.{ .x = cx + r * 0.38, .y = cy - r * 0.28 }, r * 0.44, col);
+            rl.drawTriangle(
+                .{ .x = cx, .y = cy + r * 0.82 },
+                .{ .x = cx - r * 0.80, .y = cy - r * 0.16 },
+                .{ .x = cx + r * 0.80, .y = cy - r * 0.16 },
+                col,
+            );
+        },
+        // Two chevrons up — the same arrow a level-up wears, doubled, because it is a boost with a bill.
+        .berserk => {
+            for ([_]f32{ 0.30, -0.35 }) |off| {
+                gl(cx - r * 0.75, cy + r * (off + 0.45), cx, cy + r * (off - 0.35), w * 1.1, col);
+                gl(cx, cy + r * (off - 0.35), cx + r * 0.75, cy + r * (off + 0.45), w * 1.1, col);
+            }
+        },
+        // A spiral going in: the one glyph with no straight line in it at all.
+        .stupefy => {
+            var i: usize = 0;
+            const steps = 26;
+            var prev = rl.Vector2{ .x = cx, .y = cy };
+            while (i < steps) : (i += 1) {
+                const u = @as(f32, @floatFromInt(i + 1)) / @as(f32, @floatFromInt(steps));
+                const th = u * std.math.tau * 1.6;
+                const rr = r * u;
+                const p = rl.Vector2{ .x = cx + mathx.cosf(th) * rr, .y = cy + mathx.sinf(th) * rr };
+                rl.drawLineEx(prev, p, w * 0.9, col);
+                prev = p;
+            }
+        },
+    }
+}
+
 const PSN_W: i32 = 196;
 const PSN_H: i32 = 9;
-fn statusBar(x: i32, y: i32, s: Status) void {
-    if (s.frac <= 0.001) return;
-    if (s.on) {
-        bar(x, y, PSN_W, PSN_H, s.frac, 0, PSN_ON_HI, PSN_ON_LO, PSN_ON_TP);
-        return;
+/// **A ROW PER METER, GLYPH FIRST** (owner: separate rows for each status buildup, along with an icon for each).
+/// Under the stamina bar, in `Ail` order, and only what is actually filling — so the strip grows downward as a
+/// fight goes wrong and the reader's eye finds the same ailment in the same place every time.
+/// Returns how far down the last row reached, so the caller keeps owning the layout.
+fn statusBars(x: i32, y: i32, ails: Ails) i32 {
+    var yy = y;
+    for (ails, 0..) |s, i| {
+        if (s.frac <= 0.001) continue;
+        const a: combat.Ail = @enumFromInt(i);
+        const tint = ailTint(a);
+        ailGlyph(a, @as(f32, @floatFromInt(x - PSN_GLYPH)), @as(f32, @floatFromInt(yy)) + @as(f32, PSN_H) * 0.5, PSN_GLYPH_S, tint);
+        const hi = if (s.on) tint else mathx.withAlpha(tint, 165);
+        bar(x, yy, PSN_W, PSN_H, s.frac, 0, hi, mathx.withAlpha(hi, 150), mathx.withAlpha(uiart.CATCH, 190));
+        yy += PSN_H + BAR_GAP;
     }
-    bar(x, y, PSN_W, PSN_H, s.frac, 0, PSN_HI, PSN_LO, PSN_TP);
+    return yy;
 }
+const PSN_GLYPH: i32 = 15;
+const PSN_GLYPH_S: f32 = 13.0;
 
 
 const PORT_RT_W: i32 = 320;
@@ -600,7 +741,7 @@ pub fn spiritPanel(hasFace: bool, name: [:0]const u8, hp: f32, k: f32) void {
     bar(tx, by, SP_BAR_W, SP_BAR_H, mathx.clampF(hp, 0, 1), 0, SP_LIFE_HI, SP_LIFE_LO, SP_LIFE_TP);
 }
 
-pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, fpRefused: f32, windedTo: f32, psn: Status) void {
+pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, fpRefused: f32, windedTo: f32, psn: Ails) void {
     if (hp > chip) {
         chip = hp;
         chipHold = 0;
@@ -625,7 +766,7 @@ pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, fpRefused:
     }
     refuseRing(BARS_X, y, ST_W, ST_H, stamRefused);
     y += ST_H + BAR_GAP + 2;
-    statusBar(BARS_X, y, psn);
+    _ = statusBars(BARS_X, y, psn);
 }
 
 const BARS_H: i32 = HP_H + BAR_GAP + FP_H + BAR_GAP + ST_H;
@@ -713,7 +854,14 @@ const STRIP_GAP: i32 = 1;
 /// at, and wrong the moment you close on a TALL one: the ogre's crown is 4.4 m up. So the bar has a CEILING in screen space — far off it rides the head, walking in it stops climbing and hangs against the body.
 const FOE_CEIL: f32 = 0.25; // …measured from the TOP, so 0.25 is three quarters up
 
-pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool, chill: f32, venom: Status) void {
+/// One entry per `combat.Ail`, in the enum's own order, so the caller hands over the body's meters and this
+/// file decides what is worth a row. A meter reading zero costs a compare and nothing else.
+pub const Ails = [combat.NAIL]Status;
+
+/// **A ROW PER LIVE METER, AND THE GLYPH IS ITS LABEL** (owner). Rows are laid in `Ail` order so the same
+/// ailment is always at the same height on the same creature, and only the ones that are actually filling take
+/// a row — ten at once would be 30 px of strip under a 5 px bar.
+pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool, ails: Ails) void {
     const wf: f32 = @floatFromInt(FOE_W);
     const x: i32 = @intFromFloat(sx - wf * 0.5);
     const ceiling = @as(f32, @floatFromInt(rl.getScreenHeight())) * FOE_CEIL;
@@ -724,19 +872,25 @@ pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool, chill: f32, venom: S
     const fw: i32 = @intFromFloat(wf * mathx.clampF(frac, 0, 1));
     // 5 px tall, so the shade band is 2 rather than the vitals bars' third and the tip is a single column.
     fillThree(x, y, fw, FOE_H, frac, HP_HI, HP_LO, mathx.withAlpha(HP_TP, 200), 2, 1, 120);
-    // WHAT IS IN IT, A ROW PER STATUS under the health — a tint on a red bar at 54 px is a hue nobody can name.
-    // The cold first (`combat.Chill.frac`), the poison under it, and the poison's colour flips once it is no
-    // longer filling but ticking, which is the only difference a player has to see.
-    if (chill > 0.001) {
-        const cw: i32 = @intFromFloat(wf * mathx.clampF(chill, 0, 1));
-        rl.drawRectangle(x, y + FOE_H + STRIP_GAP, cw, STRIP_H, CHILL_STRIP);
-    }
-    if (venom.frac > 0.001) {
-        const vw: i32 = @intFromFloat(wf * mathx.clampF(venom.frac, 0, 1));
-        rl.drawRectangle(x, y + FOE_H + STRIP_GAP * 2 + STRIP_H, vw, STRIP_H, if (venom.on) PSN_ON_HI else PSN_HI);
+    // A tint on a red bar at 54 px is a hue nobody can name, so every status is its OWN row under the health.
+    // **A RUNNING METER IS BRIGHT AND A FILLING ONE IS NOT** — that flip is the only difference a player has to
+    // read, and it is the same flip on every row rather than a colour pair per ailment.
+    var row: i32 = 0;
+    for (ails, 0..) |s, i| {
+        if (s.frac <= 0.001) continue;
+        const a: combat.Ail = @enumFromInt(i);
+        const sw: i32 = @intFromFloat(wf * mathx.clampF(s.frac, 0, 1));
+        const yy = y + FOE_H + STRIP_GAP * (row + 1) + STRIP_H * row;
+        const tint = ailTint(a);
+        rl.drawRectangle(x, yy, sw, STRIP_H, if (s.on) tint else mathx.withAlpha(tint, 150));
+        // The glyph rides the left end of its own row, off the bar, so the row is readable without a legend.
+        ailGlyph(a, @floatFromInt(x - FOE_GLYPH), @as(f32, @floatFromInt(yy)) + @as(f32, STRIP_H) * 0.5, FOE_GLYPH_S, tint);
+        row += 1;
     }
     if (staggered) rl.drawRectangleLines(x - 1, y - 1, FOE_W + 2, FOE_H + 2, STAGGER_RIM);
 }
+const FOE_GLYPH: i32 = 6;
+const FOE_GLYPH_S: f32 = 7.0;
 const BOSS_H: i32 = 13;
 const BOSS_LIFT: i32 = 158;
 var bossChip: f32 = 0;

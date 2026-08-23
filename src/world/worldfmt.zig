@@ -21,8 +21,9 @@ pub const MAX_LOOT: usize = 8;
 pub const MAX_ZONES: usize = 16;
 pub const MAX_CLEARINGS: usize = 32;
 /// **THE ONE FOE LIMIT** (owner: can u make it 512, this map is huge). Every group's slab is this wide too
-/// (`MAX_PER_KIND`), so raising it costs 17 slabs' worth: 512 puts the roster at ~52 MB of the one startup
-/// allocation, and `build.zig`'s stack reserve carries the same figure again because startup builds those
+/// (`MAX_PER_KIND`), so raising it costs one slab per `game.FOE_GROUPS` row: at 512 the twenty rows measure
+/// 101.6 MB of the one startup allocation (`game.zig`'s "WHAT THE FRAME COSTS" prints it), and `build.zig`'s
+/// stack reserve carries the same figure again because startup builds those
 /// groups BY VALUE. Both are address space rather than resident memory; the frame cost is nil, since every pass walks `live()`.
 pub const MAX_FOES: usize = 512;
 pub const FOE_SCALE_LO: f32 = 0.5;
@@ -143,6 +144,14 @@ pub fn defaults(k: OpKind) Op {
 
 pub const MAX_LOCATIONS: usize = 64;
 
+/// **THE ONE RECTANGLE TEST.** Four rows carry a corner pair — a location, a zone, the runway and `Cond.region` —
+/// and two of the four normalised the corners while two compared them raw, so a rect authored with `x1 < x`
+/// answered for nothing in one and for its own area in the other. The editor always emits them normalised
+/// (`normRect`); a hand-written map never had to.
+pub fn inRect(px: f32, pz: f32, x0: f32, z0: f32, x1: f32, z1: f32) bool {
+    return px >= @min(x0, x1) and px <= @max(x0, x1) and pz >= @min(z0, z1) and pz <= @max(z0, z1);
+}
+
 /// StarEdit's Location: declared ONCE and referred to by name, where `Cond.region`'s inline coordinates meant
 /// two triggers about one doorway held two copies of it.
 ///
@@ -162,8 +171,7 @@ pub const Location = struct {
     blend: f32 = 6.0,
 
     pub fn contains(self: *const Location, px: f32, pz: f32) bool {
-        return px >= @min(self.x, self.x1) and px <= @max(self.x, self.x1) and
-            pz >= @min(self.z, self.z1) and pz <= @max(self.z, self.z1);
+        return inRect(px, pz, self.x, self.z, self.x1, self.z1);
     }
     /// Does it say anything about the sky at all? A location with no weather is still a perfectly good location — it is a name for a place, and the script layer is its other customer.
     pub fn hasWeather(self: *const Location) bool {
@@ -190,7 +198,7 @@ pub const Zone = struct {
     nmix: u8 = 0,
 
     pub fn contains(self: *const Zone, px: f32, pz: f32) bool {
-        return px >= self.x and px <= self.x1 and pz >= self.z and pz <= self.z1;
+        return inRect(px, pz, self.x, self.z, self.x1, self.z1);
     }
     pub fn pick(self: *const Zone, rng: *mathx.Rng) ?Kind {
         if (self.nmix == 0) return null;
@@ -264,7 +272,7 @@ pub const Foe = struct {
 /// **THERE IS ONE FOE LIMIT AND IT IS `MAX_FOES`** (owner: remove the foe limits, seems dumb to have). At 24 a
 /// per-kind cap sat under the global one: `foe.resetGroup` fills a fixed slab and `continue`s past the
 /// overflow, so a 25th shroom was a body the map placed, the editor drew, the save counted and the level never
-/// spawned — and `01_fallen_plain` stands on exactly 24. Set to the whole budget it cannot bite. It costs memory — the 17 slabs go from 2.65 MB to ~28 MB of one startup allocation.
+/// spawned — and `01_fallen_plain` stands on exactly 24. Set to the whole budget it cannot bite. It costs memory — measured, the slabs come to 101.6 MB of one startup allocation.
 pub const MAX_PER_KIND: usize = MAX_FOES;
 
 pub const Runway = struct { x: f32 = -3.4, z: f32 = -44, x1: f32 = 3.4, z1: f32 = 30 };
@@ -888,7 +896,7 @@ pub const Map = struct {
 
     pub fn onRunway(self: *const Map, px: f32, pz: f32) bool {
         const r = self.runway;
-        return px >= r.x and px <= r.x1 and pz >= r.z and pz <= r.z1;
+        return inRect(px, pz, r.x, r.z, r.x1, r.z1);
     }
 
     pub fn cellSize(self: *const Map, n: usize) f32 {

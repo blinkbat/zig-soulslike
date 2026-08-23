@@ -690,7 +690,7 @@ where the head would have been.
   damage, no poise, so a catch can never resolve as a flinch: it breaks the stance or it does not.
 - **THE CREATURE READS THE SHIELD, IT NEVER REACHES FOR IT** (`foe.Parry`, stamped by `game.markParry`). Each
   MOVE answers for its own frames and reach (`ogre.parryable`). **MOST OF THE FIELD CARRIES WINDOWS NOW** —
-  thirteen creatures, every committed limb from the toad's leap to the skitterer's slam, each declared at its
+  fifteen creatures, every committed limb from the toad's leap to the skitterer's slam, each declared at its
   own `parryable`. Adding one is a `parry` field, a `toImpact`, a `parryable` and its group's
   `setParry`/`anyParried`: **`game.markParry`/`anyParried` are folded over `FOE_GROUPS` and keyed off
   `@hasDecl`**. `parryBeat` fires ONCE a frame for the whole field.
@@ -1876,7 +1876,7 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   RESISTS cold on the hero's side — no cold-warding item, so the one cold source lands unmitigated. Nothing
   raises a body but this creature, so `foe.rekindle` has two callers.
 - **Combat:** no criticals, no guard counter, no AR × motion-value damage (flat constants). Nothing scales a
-  cast. Thirteen creatures carry parry windows now; what carries none says why at its own impact site
+  cast. Fifteen creatures carry parry windows now; what carries none says why at its own impact site
   (projectiles, ground discs, poured elements — broodlings out on purpose).
 - **The jump exists but nothing hangs off it** — no jump ATTACK, no fall damage at any height, and no creature's
   move misses him for being over it (a per-move height would be authored at each `toImpact` the way a parry

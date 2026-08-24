@@ -68,7 +68,7 @@ const SMASH_FALL: f32 = 0.16;
 const SMASH_RECOVER: f32 = 0.86;
 const SMASH_CD: f32 = 2.6;
 pub const SMASH_R: f32 = 2.35;
-pub const SMASH_HIT = combat.Hit{ .dmg = 46, .poise = 40, .stance = 22 };
+pub const SMASH_HIT = combat.Hit{ .dmg = 58, .poise = 40, .stance = 22 };
 
 /// **TOLD IN HALF THE TIME** (owner: "quicker tell") — this answers backing off the smash, so at the smash's own wind-up it would be a second smash you could also walk out of.
 pub const SLAM_WIND: f32 = 0.44;
@@ -79,7 +79,7 @@ const SLAM_CD: f32 = 4.4;
 pub const SLAM_REACH: f32 = 5.6;
 const SLAM_UP: f32 = 1.30;
 pub const SLAM_R: f32 = 2.05;
-pub const SLAM_HIT = combat.Hit{ .dmg = 38, .poise = 44, .stance = 26, .launch = combat.SLAM_LAUNCH };
+pub const SLAM_HIT = combat.Hit{ .dmg = 48, .poise = 44, .stance = 26, .launch = combat.SLAM_LAUNCH };
 
 // **AND THE ANSWER TO WALKING AWAY.** Past the slam's 7.2 m this creature had nothing: at 1.05 m/s against a
 // hero who runs at 3.4 the whole band out to its aggro ring was free. A SAC OF SPORES, LOBBED — it does not
@@ -95,7 +95,7 @@ const SAC_MIN: f32 = 7.60;
 const SAC_MAX: f32 = 13.0;
 pub const SAC_SPEED: f32 = 12.0;
 /// Small: the cloud is the weapon and a sac to the chest is the tax on standing where it aimed.
-pub const SAC_HIT = combat.Hit{ .dmg = 10, .poise = 14 };
+pub const SAC_HIT = combat.Hit{ .dmg = 15, .poise = 14 };
 /// Share of stature — over the brim, so the arc starts above its own head.
 const SAC_FROM_Y: f32 = 0.86;
 
@@ -326,6 +326,11 @@ pub const Golem = struct {
         const held = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) held.hold(&self.pos);
         self.vit.tick(dt);
+        // **THE STUN METER GOES DOWN THIS BODY'S OWN DOOR.** Twenty creatures answer `grip.downed` with
+        // `stagger(true)`; this one has no such method and syncs its state off `vit.stunned()` instead — which
+        // only sleep ever set. A full lightning meter procced and did NOTHING, on the one creature lightning is
+        // meant to answer (`RESISTS` carries -40 to it). The sync below enters `.stunheavy` off this.
+        if (held.downed) self.vit.beginStun(.heavy);
         foe.fadeFlash(&self.flash, dt);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
@@ -1021,4 +1026,29 @@ test "THE DISC IS DRAWN BEFORE IT IS BILLED — the smash walks its own rim thro
     try std.testing.expect(emitted >= 20);
     try std.testing.expect(on >= 8);
     try std.testing.expect(off <= on / 2);
+}
+
+test "A FULL STUN METER PUTS IT DOWN — the one creature that reads `vit.stunned()` and not `grip.downed`" {
+    // The bug this pins: twenty creatures answer `foe.grip`'s `downed` with `stagger(true)`; this one has no
+    // such method and syncs its state off `vit.stunned()`, which ONLY sleep ever set. So a lightning stun
+    // filled, procced, and the slab carried on swinging — on the creature `RESISTS` marks as lightning's own.
+    var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const dt: f32 = 1.0 / 60.0;
+    g.vit.build(.stun, combat.ailRow(.stun).max);
+    _ = g.update(dt, v3(0, 0, 30), 200, .{});
+    std.debug.print("\n  stun proc: state {s}, {d:.2} s of hold left\n", .{ @tagName(g.state), g.vit.stunLeft });
+    try std.testing.expectEqual(State.stunheavy, g.state);
+    try std.testing.expect(g.staggered());
+
+    // …and lightning is what fills it, through the same door every other element builds its meter down.
+    var lit = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
+    _ = lit.vit.hit(combat.Hit{ .elem = combat.elems(.{ .lightning = 20 }) });
+    try std.testing.expect(lit.vit.ailFrac(.stun) > 0);
+
+    // A DEAD SLAB IS NEVER PUT DOWN — `grip.downed` is already gated on it, and the dead check must still win.
+    var corpse = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
+    corpse.vit.dead = true;
+    corpse.vit.build(.stun, combat.ailRow(.stun).max);
+    _ = corpse.update(dt, v3(0, 0, 30), 200, .{});
+    try std.testing.expectEqual(State.dead, corpse.state);
 }

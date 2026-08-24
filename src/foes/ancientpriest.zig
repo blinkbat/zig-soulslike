@@ -357,9 +357,10 @@ pub const Ancient = struct {
         return .ancient_priest;
     }
 
-    /// **NOT THE SKELETON FAMILY'S 0.95 H** (`archer.CENTER_F`): at a scale of 1.64 that puts the sphere's centre
-    /// 2.80 m up and its FLOOR at 2.08 m, over the top of every swing the hero owns. 0.58 H is the trunk — the
-    /// cyclops's own choice — and it lands the sphere at 0.99..2.43 m. The BAR still rides `TOP_F` above the crown.
+    /// **NOT A FLAT 0.95 H**: at a scale of 1.64 that puts the sphere's centre 2.80 m up and its FLOOR at
+    /// 2.08 m, over the top of every swing the hero owns. 0.58 H is the trunk — the cyclops's own choice — and
+    /// it lands the sphere at 0.99..2.43 m. The BAR still rides `TOP_F` above the crown. The skeletons left the
+    /// same fault the other way: `archer.centerWorld` hangs off the CHEST bone and there is no fraction at all.
     pub fn centerWorld(self: *const Ancient) rl.Vector3 {
         return foe.bodyPoint(self.pos, CENTER_F * H, self.scale, 0);
     }

@@ -129,7 +129,7 @@ const RELEASE_K: f32 = 0.34;
 
 /// **SLOWER AND FLATTER** (owner: slower bounce, lower lob). At 8.0 with a full ballistic loft the shot went up and came down on you; at 6.4 with `archer.EMBER_LOFT` at 0.52 it comes ACROSS the ground.
 pub const EMBER_SPEED: f32 = 6.4;
-pub const EMBER_HIT = combat.Hit{ .poise = 20, .elem = combat.elems(.{ .fire = 27 }) };
+pub const EMBER_HIT = combat.Hit{ .poise = 20, .elem = combat.elems(.{ .fire = 36 }) };
 
 const LOB_MIN: f32 = 4.5;
 const LOB_MAX: f32 = 16.0;

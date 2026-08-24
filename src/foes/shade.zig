@@ -97,7 +97,8 @@ pub const GRASP_HIT = combat.Hit{ .dmg = 7, .poise = 12, .fp = 14 };
 pub const MOURN_STUPEFY: f32 = 52.0;
 pub const MOURN_GRASP_HIT = blk: {
     var h = GRASP_HIT;
-    h.dmg = 11;
+    // Twice the shade's own hand and then some: this one stands 166 m out where the shade stands at 32.
+    h.dmg = 16;
     h.poise = 20;
     h.dose = combat.Doses.one(.stupefy, MOURN_STUPEFY);
     break :blk h;

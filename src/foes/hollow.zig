@@ -143,8 +143,9 @@ const SPARK_CD: f32 = 5.5;
 /// Inside `AGGRO_R` with room and past the bite ring by a wide margin — two moves answering one distance is one move with a coin flip.
 pub const SPARK_MAX: f32 = 16.0;
 pub const SPARK_SPEED: f32 = 17.0;
-/// Three of these is 27 through no armour, against the host's own 13 a bite. Pure lightning, so the resist rows are the answer.
-pub const SPARK_HIT = combat.Hit{ .poise = 8, .elem = combat.elems(.{ .lightning = 9 }) };
+/// **THE VOLLEY CARRIES ITS DAMAGE, BECAUSE THE BITE MAY NOT** — that one is pinned under 16 and under half the
+/// ogre's slam. Three of these is 45 through no armour against the bite's 13. Pure lightning: resists answer.
+pub const SPARK_HIT = combat.Hit{ .poise = 8, .elem = combat.elems(.{ .lightning = 15 }) };
 
 fn volleySpan() f32 {
     return @as(f32, @floatFromInt(SPARK_N - 1)) * SPARK_GAP;

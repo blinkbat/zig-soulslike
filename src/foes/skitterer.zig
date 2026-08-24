@@ -80,8 +80,9 @@ const SLICE_TRIGGER_R: f32 = 1.35;
 const STOP_FRAC: f32 = 0.72;
 /// The head's own thickness for the swept test — a shut eye the size of a fist, not a honed edge.
 const TIP_R: f32 = 0.19;
-/// The ravager's bite is 24 off 88 HP, this is 20 off 46. Poise past the hero's own light stun so a connection matters, stance under his heavy so it is not a guard-breaker.
-const SLICE_HIT = combat.Hit{ .dmg = 20, .poise = 18, .stance = 9 };
+/// The ravager's bite is 24 off 88 HP, this is 27 off 46, and it stands 170 m out. Poise past the hero's own
+/// light stun so a connection matters, stance under his heavy so it is not a guard-breaker.
+const SLICE_HIT = combat.Hit{ .dmg = 27, .poise = 18, .stance = 9 };
 
 comptime {
     std.debug.assert(SLICE_WIND >= foe.TELL_MIN);

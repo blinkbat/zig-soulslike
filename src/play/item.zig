@@ -438,7 +438,7 @@ pub const Arm = struct {
     negate: f32 = 1,
     arc: f32 = 1,
     walk: f32 = 1,
-    /// **WHAT A LANDED STROKE PUTS IN THE BODY'S POISON METER** (`combat.Hit.venom`, out of `combat.POISON_MAX`), and 0 for every clean edge. An ABSOLUTE, not a multiplier: the dose is the coating's, so it does not ride the damage dial or the skill.
+    /// **WHAT A LANDED STROKE PUTS IN THE BODY'S POISON METER** (`combat.Hit.dose`'s poison column, out of `combat.POISON_MAX`), and 0 for every clean edge. An ABSOLUTE, not a multiplier: the dose is the coating's, so it does not ride the damage dial or the skill.
     venom: f32 = 0,
 };
 
@@ -521,12 +521,14 @@ pub const GEAR = [_]Gear{
     // A DOOR — half again the compass of the small shield, at four fifths of the speed and more per blow. **THE
     // NEGATION DIAL STOPS UNDER THE CAP ON PURPOSE**: `combat.GUARD_NEGATE_CAP` is 0.95 on a 0.85 base, so anything past ~1.118 is silently clamped — and `effect` PRINTS this figure.
     .{ .kind = .tower_shield, .equip = .{ .arm = .{ .slot = .hand_shield, .heft = .heavy, .negate = 1.10, .arc = 1.45, .walk = 0.80, .stam = 1.30 } } },
-    .{ .kind = .quilted_gambeson, .equip = .{ .plate = .{ .slot = .chest, .a = 22.0 } } },
+    // **A WHOLE SUIT IS WORTH 25, NOT 45** (owner: too much armour). The curve is `a/(a + 5*dmg)`, so at 45 a
+    // best-in-slot kit turned aside HALF of every rank-and-file blow before the tree's own 32 went on top.
+    .{ .kind = .quilted_gambeson, .equip = .{ .plate = .{ .slot = .chest, .a = 12.0 } } },
     .{ .kind = .leech_signet, .equip = .{ .charm = .{ .slot = .ring, .leech = 2.0, .hpFrac = 0.06 } } },
-    .{ .kind = .pitted_helm, .equip = .{ .plate = .{ .slot = .helm, .a = 14.0 } } },
-    .{ .kind = .marchboots, .equip = .{ .plate = .{ .slot = .feet, .a = 9.0 } } },
+    .{ .kind = .pitted_helm, .equip = .{ .plate = .{ .slot = .helm, .a = 8.0 } } },
+    .{ .kind = .marchboots, .equip = .{ .plate = .{ .slot = .feet, .a = 5.0 } } },
     // **CHAOS IS WHAT HE MEETS MOST AND NOTHING ON HIS SIDE ANSWERED IT** — the wand's bolt and roots, the knight's lit blow and gas, and what poison itself is billed as. LESS armour than the boots beside them on purpose: the trade is the column and the pace, not a strictly better shoe.
-    .{ .kind = .spidersilk_moccasins, .equip = .{ .plate = .{ .slot = .feet, .a = 8.0, .res = .{ .chaos = 25 }, .move = 1.06 } } },
+    .{ .kind = .spidersilk_moccasins, .equip = .{ .plate = .{ .slot = .feet, .a = 4.0, .res = .{ .chaos = 25 }, .move = 1.06 } } },
     .{ .kind = .banded_warbelt, .equip = .{ .boon = .{ .slot = .belt, .attr = .strength, .n = 3 } } },
     .{ .kind = .deft_signet, .equip = .{ .boon = .{ .slot = .ring2, .attr = .dexterity, .n = 3 } } },
     // THE TWO FINGERS TAKE ONE EACH so both can be on at once, and neither shares a socket with the other's attribute.
@@ -534,8 +536,8 @@ pub const GEAR = [_]Gear{
     .{ .kind = .loop_of_chance, .equip = .{ .boon = .{ .slot = .ring2, .attr = .luck, .n = 4 } } },
     .{ .kind = .ashen_amulet, .equip = .{ .boon = .{ .slot = .neck, .attr = .intelligence, .n = 3 } } },
     // **THE FIRST COLD RESISTANCE ANYWHERE ON HIS SIDE** — the necromancer's rune ring is the game's one source of cold and the sheet showed 0%. PHYSICAL under the gambeson's on purpose: a chest socket strictly better than the coat already in it retires that coat instead of competing with it.
-    .{ .kind = .rimeward_mantle, .equip = .{ .plate = .{ .slot = .chest, .a = 13.0, .res = .{ .cold = 35 } } } },
-    .{ .kind = .sporecrown, .equip = .{ .plate = .{ .slot = .helm, .a = 8.0, .rate = .{ .ail = .poison, .k = 0.55 } } } },
+    .{ .kind = .rimeward_mantle, .equip = .{ .plate = .{ .slot = .chest, .a = 7.0, .res = .{ .cold = 35 } } } },
+    .{ .kind = .sporecrown, .equip = .{ .plate = .{ .slot = .helm, .a = 5.0, .rate = .{ .ail = .poison, .k = 0.55 } } } },
     .{ .kind = .gravebell_amulet, .equip = .{ .charm = .{ .slot = .neck, .spiritFp = 0.60, .fpFrac = 0.10 } } },
     .{ .kind = .soul_binding_ring, .equip = .{ .bind = .{ .slot = .ring } } },
     .{ .kind = .mushroom_jerky, .use = .{ .regen = .{ .frac = 0.60, .secs = 20.0 } } },
@@ -565,7 +567,7 @@ pub const GEAR = [_]Gear{
     .{ .kind = .madcap_powder, .use = .{ .lob = .{ .dmg = 0, .poise = 0, .dose = .{ .ail = .confusion, .amt = 100 }, .r = 3.4 } } },
     .{ .kind = .stolen_gravebell, .use = .{ .toll = .{ .ail = .charm, .amt = 100, .fp = 24, .r = 5.0 } } },
     .{ .kind = .bloodwine, .use = .{ .dose = .{ .ail = .berserk, .amt = 100 } } },
-    .{ .kind = .wax_stopped_hood, .equip = .{ .plate = .{ .slot = .helm, .a = 10.0, .rate = .{ .ail = .stupefy, .k = 0.40 } } } },
+    .{ .kind = .wax_stopped_hood, .equip = .{ .plate = .{ .slot = .helm, .a = 6.0, .rate = .{ .ail = .stupefy, .k = 0.40 } } } },
 };
 
 pub const INERT = [_]Kind{
@@ -695,6 +697,17 @@ pub fn isSpellScroll(k: Kind) bool {
         => true,
         else => false,
     };
+}
+
+comptime {
+    // **THE NINE SCROLL TAGS ARE WRITTEN TWICE** — once here and once in `class`'s `.treasure` arm — and
+    // nothing but this held them together. A tenth sheet added to one list and not the other shelves as a
+    // TOOL and lands on the quick bar, which is the one place the bag's own categories cannot say it is wrong.
+    for (0..NK) |i| {
+        const k: Kind = @enumFromInt(i);
+        if (isSpellScroll(k) and class(k) != .treasure)
+            @compileError("item: " ++ @tagName(k) ++ " is a sorcery scroll that `class` does not shelve as treasure");
+    }
 }
 
 pub fn usable(k: Kind) bool {

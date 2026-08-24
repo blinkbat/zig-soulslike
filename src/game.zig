@@ -1743,9 +1743,11 @@ pub fn openTalkForShot(g: *Game, name: []const u8) bool {
     const dlg = g.map.findDialog(name) orelse return false;
     g.folk.update(SHOT_STEP, g.hero.pos, PLAY_HALF);
     const npc: ?usize = g.folk.near;
-    const who: []const u8 = if (npc) |i| npcmod.nameOf(&g.map, g.folk.list[i].rec) else "";
+    const who: []const u8 = if (npc) |i| npcmod.nameOf(&g.map, (g.folk.at(i) orelse return false).rec) else "";
     if (!g.talk.open(&g.map, &g.trig, dlg, who, npc)) return false;
-    if (npc) |i| g.folk.list[i].talking = true;
+    if (npc) |i| {
+        if (g.folk.at(i)) |p| p.talking = true;
+    }
     return true;
 }
 pub fn stepTalkForShot(g: *Game, in: dialogmod.Input) void {
@@ -1758,8 +1760,7 @@ pub fn drawTalkForShot(g: *Game) void {
 
 fn talkPortrait(g: *Game) ?dialogmod.Portrait {
     const i = g.talk.npc orelse return null;
-    if (i >= g.folk.n) return null;
-    const p = &g.folk.list[i];
+    const p = g.folk.at(i) orelse return null;
     return .{
         .scene = &g.scene,
         .face = p.facePoint(),
@@ -2207,7 +2208,7 @@ fn markWardStep(g: *Game, was: rl.Vector3) void {
 fn startTalk(g: *Game) bool {
     if (g.talk.active()) return false;
     const i = g.folk.near orelse return false;
-    const p = &g.folk.list[i];
+    const p = g.folk.at(i) orelse return false;
     if (p.rec >= g.map.nnpcs) return false;
     const dlg = g.map.npcs[p.rec].dlg;
     if (dlg == worldfmt.NO_DIALOG) return false;
@@ -2218,7 +2219,7 @@ fn startTalk(g: *Game) bool {
 
 fn talkable(g: *const Game) bool {
     const i = g.folk.near orelse return false;
-    const rec = g.folk.list[i].rec;
+    const rec = (g.folk.atConst(i) orelse return false).rec;
     return rec < g.map.nnpcs and g.map.npcs[rec].dlg != worldfmt.NO_DIALOG;
 }
 
@@ -2232,7 +2233,7 @@ fn tickTalk(g: *Game, dt: f32) void {
     g.talk.update(&g.map, &g.trig, triggerWorld(g), dt, in);
     if (g.talk.justClosed) {
         if (g.talk.npc) |i| {
-            if (i < g.folk.n) g.folk.list[i].farewell();
+            if (g.folk.at(i)) |p| p.farewell();
         }
         g.folk.hush();
     }
@@ -4628,7 +4629,12 @@ pub fn bookView(g: *Game) bookmod.View {
     };
 }
 
+/// **ONE ACTION, NOT TWO HALVES.** The row names an armament AND the thing standing in its socket, and `equip`
+/// refuses while he is committed, staggered, dead or seated where `wear` does not — so ungated the refused hand
+/// still socketed the weapon. Asked ONCE up front, because `equip` also returns false for a hand ALREADY
+/// holding that armament, which is exactly the case that must still re-socket (one dirk swapped for the other).
 fn takeHand(g: *Game, hand: usize, slot: usize, h: bookmod.Hand) void {
+    if (!g.hero.bodyFree()) return;
     _ = g.hero.equip(hand, slot, h.a);
     if (heromod.wearFor(h.a)) |w| _ = g.hero.wear(w, h.kind);
 }
@@ -4740,9 +4746,13 @@ fn useItem(g: *Game, k: item.Kind) void {
             g.hero.stam.secondWind(w.share);
             sfx.play(.flask_drink);
         },
+        // **A FULL BANK REFUSES THE SHEAF** rather than eating it — `hero.startDrink`'s rule for the cerulean
+        // flask, one item along. `Quiver.add` caps, so ungated the whole sheaf vanished out of the bag.
         .arrows => |a| {
+            const bank: combat.ArrowKind = if (a.fire) .fire else .plain;
+            if (g.hero.quiver.count(bank) >= combat.Quiver.cap(bank)) return;
             if (g.bag.take(k, 1) == 0) return;
-            g.hero.quiver.add(if (a.fire) .fire else .plain, a.n);
+            g.hero.quiver.add(bank, a.n);
             sfx.play(.eat);
         },
         .grease => |gr| {

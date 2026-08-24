@@ -21,8 +21,8 @@ pub const MAX_LOOT: usize = 8;
 pub const MAX_ZONES: usize = 16;
 pub const MAX_CLEARINGS: usize = 32;
 /// **THE ONE FOE LIMIT** (owner: can u make it 512, this map is huge). Every group's slab is this wide too
-/// (`MAX_PER_KIND`), so raising it costs one slab per `game.FOE_GROUPS` row: at 512 the twenty rows measure
-/// 101.6 MB of the one startup allocation (`game.zig`'s "WHAT THE FRAME COSTS" prints it), and `build.zig`'s
+/// (`MAX_PER_KIND`), so raising it costs one slab per `game.FOE_GROUPS` row: at 512 the twenty-one rows measure
+/// 111.3 MB of the one startup allocation (`game.zig`'s "WHAT THE FRAME COSTS" prints it), and `build.zig`'s
 /// stack reserve carries the same figure again because startup builds those
 /// groups BY VALUE. Both are address space rather than resident memory; the frame cost is nil, since every pass walks `live()`.
 pub const MAX_FOES: usize = 512;

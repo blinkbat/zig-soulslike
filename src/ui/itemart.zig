@@ -22,6 +22,11 @@ pub const CORD = rgba(158, 142, 108, 255);
 pub const FIRE = rgba(255, 158, 62, 255);
 const FIRE_DIM = rgba(226, 108, 30, 150);
 pub const CHAOS = rgba(178, 92, 224, 255);
+/// **POISON'S VIOLET, UP HERE WITH THE REST OF THE PALETTE.** The dirk drew it inline off a `hud` constant that
+/// nothing has read since the ten meters replaced the one poison bar (`hud.ailTint`), so the citation and the
+/// figure had already parted company.
+const VENOM = rgba(96, 62, 118, 255);
+const VENOM_LT = rgba(158, 118, 186, 255);
 const CHAOS_LT = rgba(226, 182, 252, 255);
 const CHAOS_DK = rgba(96, 40, 132, 255);
 const BOWWOOD = rgba(96, 68, 44, 255);
@@ -1017,16 +1022,14 @@ fn dirkInto(cx: f32, cy: f32, px: f32, seed: u64, edge: rl.Color, glint: rl.Colo
     return tipP;
 }
 
-/// **THE DIRK'S SILHOUETTE, THE COATING'S COLOUR** — same fang, same corded haft, and the blade carried in the
-/// poison violet the meter is drawn in (`hud.PSN_HI`), with the bead at the point that says it is WET.
+/// **THE DIRK'S SILHOUETTE, THE COATING'S COLOUR** — same fang, same corded haft, and the blade carried in
+/// poison's own violet, with the bead at the point that says it is WET.
 fn envenomedDagger(cx: f32, cy: f32, px: f32) void {
     const s = px;
-    const coat = rgba(96, 62, 118, 255);
-    const coatLt = rgba(158, 118, 186, 255);
-    const tipP = dirkInto(cx, cy, px, 0x0E2D, coat, coatLt);
+    const tipP = dirkInto(cx, cy, px, 0x0E2D, VENOM, VENOM_LT);
     // The drop hanging off the point: two circles, because one is a dot on a line.
-    rl.drawCircleV(v2(tipP.x + s * 0.03, tipP.y + s * 0.05), s * 0.048, coat);
-    rl.drawCircleV(v2(tipP.x + s * 0.025, tipP.y + s * 0.040), s * 0.024, coatLt);
+    rl.drawCircleV(v2(tipP.x + s * 0.03, tipP.y + s * 0.05), s * 0.048, VENOM);
+    rl.drawCircleV(v2(tipP.x + s * 0.025, tipP.y + s * 0.040), s * 0.024, VENOM_LT);
 }
 
 /// **THE BOOTS' SILHOUETTE IN SILK** — the pair reads as the pair (same two uppers, same sole line) and what is

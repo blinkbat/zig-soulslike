@@ -138,7 +138,7 @@ pub const PER_SAC: usize = 1;
 const RESISTS = combat.resists(.{ .fire = -25, .cold = 35, .chaos = 75 });
 pub const M_SPIT_HIT = combat.Hit{ .dmg = 2, .poise = 5 };
 pub const M_SPIT_BUILD: f32 = 36.0;
-pub const M_BITE_HIT = combat.Hit{ .dmg = 19, .poise = 22, .stance = 7 };
+pub const M_BITE_HIT = combat.Hit{ .dmg = 26, .poise = 22, .stance = 7 };
 const PARRY_LEAD = foe.PARRY_LEAD;
 pub const SPIT_SPEED: f32 = 15.0;
 

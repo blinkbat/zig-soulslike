@@ -406,14 +406,6 @@ const FP_TP = rgba(88, 148, 188, 255);
 const ST_HI = rgba(112, 136, 58, 255);
 const ST_LO = rgba(60, 78, 28, 255);
 const ST_TP = rgba(154, 178, 88, 255);
-/// TWO faces off ONE number: violet while it FILLS (a threat), hot YELLOW once it has GONE OFF. The number
-/// means opposite things either side of the proc. AND THE ACTIVE FACE IS NOT GREEN, the genre's own: measured (108,150,44 against stamina's 112,136,58) it was the same bar as the stamina directly above it.
-const PSN_HI = rgba(96, 62, 118, 255);
-const PSN_LO = rgba(52, 32, 66, 255);
-const PSN_TP = rgba(146, 106, 172, 255);
-const PSN_ON_HI = rgba(196, 202, 44, 255);
-const PSN_ON_LO = rgba(112, 112, 16, 255);
-const PSN_ON_TP = rgba(232, 240, 132, 255);
 const CHIP = rgba(180, 98, 58, 226);
 const WARN = rgba(232, 96, 72, 255);
 const WARN_LT = rgba(240, 150, 120, 255);

@@ -894,6 +894,16 @@ pub const Folk = struct {
         return self.list[0..self.n];
     }
 
+    /// **THE ONE BOUND ON A HELD INDEX.** `near` is a body picked THIS frame and a `dialog.Session`'s `npc` is
+    /// one picked several frames ago, and the table is re-posted whenever the map moves (`reset`) — so the
+    /// caller that indexes `list` raw is the caller that reads a stranger, or reads off the end.
+    pub fn at(self: *Folk, i: usize) ?*Wanderer {
+        return if (i < self.n) &self.list[i] else null;
+    }
+    pub fn atConst(self: *const Folk, i: usize) ?*const Wanderer {
+        return if (i < self.n) &self.list[i] else null;
+    }
+
     /// POSTED FROM THE MAP, on the ground the map's own height field puts under them — a spawn table stores x/z only, and dropping a man at y = 0 on a sculpted rise buries him to the waist (`foe.resetGroup`).
     pub fn reset(self: *Folk, m: *const wf.Map) void {
         self.n = 0;

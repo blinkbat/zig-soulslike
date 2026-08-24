@@ -710,10 +710,6 @@ pub fn plateOf(worn: Worn) item.Plate {
     return suitOf(worn).plate;
 }
 
-pub fn resistOf(worn: Worn) item.Res {
-    return plateOf(worn).res;
-}
-
 /// **HOW FAST HE WALKS, ALL OF IT IN ONE PLACE** — the tree's node and what is on his feet. `game.moveHero` is
 /// the only caller, so a shoe that hurries him cannot be applied on one movement path and not the others.
 pub fn moveRateOf(worn: Worn, perk: ptree.Bonus) f32 {
@@ -724,18 +720,23 @@ pub fn charmOf(worn: Worn) item.Charm {
     return suitOf(worn).charm;
 }
 
+/// **THE MOST A BARGAIN MAY EAT OF A POOL.** Both bars answer to it, so a charm stack can shorten a bar and
+/// never delete it. Written out at each of the three sites, one of them retuned alone is a pool with no floor.
+pub const POOL_EATEN_CAP: f32 = 0.9;
+
 /// The focus pool off an ALREADY-WALKED suit, so `settleBody` can ask for the pool without walking again.
 pub fn fpMaxFrom(sheet: statsmod.Sheet, charm: item.Charm, perk: ptree.Bonus) f32 {
-    return sheet.fp() * (1.0 - mathx.clampF(charm.fpFrac, 0, 0.9)) * perk.fpMax;
+    return sheet.fp() * (1.0 - mathx.clampF(charm.fpFrac, 0, POOL_EATEN_CAP)) * perk.fpMax;
 }
 
 pub fn hpMaxOf(sheet: statsmod.Sheet, worn: Worn, perk: ptree.Bonus) f32 {
     const eaten = charmOf(worn).hpFrac + perk.hpFrac;
-    return sheet.hp() * (1.0 - mathx.clampF(eaten, 0, 0.9));
+    return sheet.hp() * (1.0 - mathx.clampF(eaten, 0, POOL_EATEN_CAP));
 }
 
+/// `fpMaxFrom` with the socket walk in front of it — the formula lives THERE and nowhere else.
 pub fn fpMaxOf(sheet: statsmod.Sheet, worn: Worn, perk: ptree.Bonus) f32 {
-    return sheet.fp() * (1.0 - mathx.clampF(charmOf(worn).fpFrac, 0, 0.9)) * perk.fpMax;
+    return fpMaxFrom(sheet, charmOf(worn), perk);
 }
 
 pub fn boonsOnto(worn: Worn, sheet: *statsmod.Sheet) void {
@@ -1685,7 +1686,7 @@ pub const Hero = struct {
     }
 
     pub fn startJump(self: *Hero, dir: rl.Vector3, speed: f32) bool {
-        if (self.committed() or self.dead or self.staggered() or self.resting) return false;
+        if (!self.bodyFree()) return false;
         self.jumping = true;
         self.jumps +%= 1;
         self.airY = self.pos.y;
@@ -1767,7 +1768,7 @@ pub const Hero = struct {
     }
 
     pub fn startRoll(self: *Hero, dir: rl.Vector3) void {
-        if (self.committed() or self.dead or self.staggered() or self.resting) return;
+        if (!self.bodyFree()) return;
         if (!self.stam.canAct()) {
             self.refuse();
             return;
@@ -1882,8 +1883,17 @@ pub const Hero = struct {
         return self.torchOut() and !self.resting;
     }
 
+    /// **THE BODY IS FREE TO START SOMETHING.** Committed to a move, reeling, dead or seated at a fire: four
+    /// states and ONE answer, and every door into a new action opens on it — `startJump`, `startRoll`,
+    /// `startAttack`, `startDrink`, `swapHand`/`equip`, and the book's two-part hand action (`game.takeHand`).
+    /// Spelled out at each site, a door added later forgets one of the four, and a caller that gates only half
+    /// of a change applies the other half anyway.
+    pub fn bodyFree(self: *const Hero) bool {
+        return !self.committed() and !self.staggered() and !self.dead and !self.resting;
+    }
+
     fn swapHand(self: *Hero, live: *Armament, alt: *Armament) bool {
-        if (self.committed() or self.staggered() or self.dead or self.resting) return false;
+        if (!self.bodyFree()) return false;
         if (live.* == alt.*) return false;
         std.mem.swap(Armament, live, alt);
         self.drawAmt = 0;
@@ -1910,7 +1920,7 @@ pub const Hero = struct {
 
     /// Taking a thing already in another cell SWAPS the two rather than refusing.
     pub fn equip(self: *Hero, hand: usize, slot: usize, a: Armament) bool {
-        if (self.committed() or self.staggered() or self.dead or self.resting) return false;
+        if (!self.bodyFree()) return false;
         const into = self.cell(hand, slot);
         if (into.* == a) return false;
         const wasArm = self.arm;
@@ -2513,7 +2523,7 @@ pub const Hero = struct {
     }
 
     pub fn startAttack(self: *Hero, kind: Attack) void {
-        if (self.committed() or self.dead or self.staggered() or self.resting) return;
+        if (!self.bodyFree()) return;
         // NOTHING SWINGS AN EMPTY HAND. `game.handActs` already routes R1/R2 per armament; this catches a caller
         // reaching past it, where a swing with no weapon poses the rig round an undrawn mesh and lands a bare-row blow.
         const held = self.meleeArm() orelse return;
@@ -2601,7 +2611,7 @@ pub const Hero = struct {
     }
 
     pub fn startDrink(self: *Hero) bool {
-        if (self.committed() or self.dead or self.staggered()) return false;
+        if (!self.bodyFree()) return false;
         if (self.flasks.sel == .cerulean and !self.fp.canTake()) {
             self.refuse();
             return false;

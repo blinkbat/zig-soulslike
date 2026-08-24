@@ -135,8 +135,10 @@ const WALK_SPEED = heromod.WALK_SPEED * 0.72;
 pub const AGGRO_R = 18.0;
 const SLAM_R = 2.3;
 const SWIPE_R = 4.4;
-const TURN_RATE = 3.4; // rad/s (~195 deg/s) — still out-turned by the hero, but no longer a turret
-const SWIPE_TURN = 5.4;
+/// **THE REFERENCE FOR HOW HARD A BIG BODY FOLLOWS YOU** — PUBLIC because the bone knight is pinned into this
+/// class rather than tuned against nothing (owner: track like the ogre). rad/s; ~195 deg/s.
+pub const TURN_RATE = 3.4;
+pub const SWIPE_TURN = 5.4;
 /// DOWN off the CHEST joint (which sits at the top of the barrel, 0.775·H) — owner's call, the mark rode too high. Now ~0.715·H, 2.9 m of a 4.1 m creature, inside the hurt sphere (0.8..4.1 m) and clear of the skull at 0.925·H. It still HINGES with the chest through the slam.
 const LOCK_AT = v3(0, -0.06 * H, 0);
 const BODY_R = 0.55; // ground footprint (pre-scale) — broad

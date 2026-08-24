@@ -111,7 +111,7 @@ const RAISE_CD: f32 = 7.5;
 pub const RAISE_HP_FRAC: f32 = 0.55;
 pub const RAISE_MATCH_R: f32 = 1.2;
 
-pub const FROST_HIT = combat.Hit{ .poise = 18, .stance = 8, .elem = combat.elems(.{ .cold = 26 }) };
+pub const FROST_HIT = combat.Hit{ .poise = 18, .stance = 8, .elem = combat.elems(.{ .cold = 38 }) };
 pub const FROST_R: f32 = 2.4;
 /// The cast — the staff comes up and the hand goes out over the mark. PUBLIC because the harness aims a beat with it (`shots.FROST_TELL_AT`): a portrait pinned to a literal 0.65 s photographs somewhere else later.
 pub const FROST_WIND: f32 = 0.72;
@@ -1793,7 +1793,9 @@ test "THE FROST IS THE FIRST COLD IN THE GAME, and it arrives as cold and nothin
     try std.testing.expectApproxEqAbs(FROST_HIT.elem.at(.cold), FROST_HIT.elem.total(), 1e-6);
     var v = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS);
     _ = v.hit(FROST_HIT);
-    try std.testing.expect(v.hp > HP_MAX - 8.0);
+    // **OFF THE BLOW, NOT A LITERAL** — it sits at `RES_CAP`, so its own element costs it exactly the quarter.
+    const quarter = FROST_HIT.elem.at(.cold) * (1.0 - combat.RES_CAP / 100.0);
+    try std.testing.expectApproxEqAbs(HP_MAX - quarter, v.hp, 0.01);
     var f = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS);
     _ = f.hit(combat.Hit{ .dmg = 10, .elem = combat.elems(.{ .fire = 5 }) });
     try std.testing.expect(f.hp < HP_MAX - 16.0);

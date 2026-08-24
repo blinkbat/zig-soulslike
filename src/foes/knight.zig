@@ -97,10 +97,12 @@ const solePatches = [_]heromod.SolePatch{
 };
 
 pub const AGGRO_R = 22.0;
-/// Against the 0.80 rad/s a walking hero carries at his closest approach (the ogre's 3.4 leaves no back).
-const TURN_RATE = 0.68;
-/// Under `TURN_RATE`, or there is no window. At 0.40 a committed stroke shed 32 deg against the hero's 0.80.
-const SWING_TURN = 0.55;
+/// **OVER A SPRINT'S OWN RATE ABOUT HIM, AND UNDER THE OGRE'S 3.4** — he cannot be out-circled either. What
+/// leaves a window is the COMMIT (`Attack.track`), never the flank.
+const TURN_RATE = 3.20;
+/// Under `TURN_RATE`, or there is no window. The heavy rows' default: they let go across a commit, where the
+/// quick rows hold you and the overhead lets go entirely.
+const SWING_TURN = 2.20;
 /// 51 deg of correction over the 1.45 s tell, into a 70-deg sector subtending ~25 either side.
 const FALL_AIM = 0.62;
 /// Strides are the shared gait at his scale: 4.4 m a cycle, a footfall every 1.5 s.
@@ -121,8 +123,14 @@ fn towerArc() f32 {
     return combat.subtendedArc(half, out) + TOWER_SWEPT_ALLOW;
 }
 const TOWER_SWEPT_ALLOW = 17.0;
-/// Over the hero's own `GUARD_NEGATE` (0.85) on purpose.
-const TOWER_NEGATE: f32 = 0.93;
+/// **OAK ANSWERS A BLADE BETTER THAN IT ANSWERS A SPELL** (owner) — over the hero's own `GUARD_NEGATE` (0.85)
+/// against steel, well under it against anything thrown, so a rod is the way through his front.
+const TOWER_NEGATE: f32 = 0.90;
+const TOWER_NEGATE_ELEM: f32 = 0.60;
+comptime {
+    std.debug.assert(TOWER_NEGATE_ELEM < TOWER_NEGATE);
+    std.debug.assert(TOWER_NEGATE < 1.0 and TOWER_NEGATE_ELEM > 0);
+}
 /// ELDEN_RING.md §7's stance loop: 80 stance, ~13/s regen, a ~6 s pressure window ending in a critical.
 const TOWER_STANCE_PASS: f32 = 0.15;
 
@@ -130,10 +138,10 @@ const TOWER_STANCE_PASS: f32 = 0.15;
 const SWIPE_OPEN_K: f32 = 0.30;
 const SWIPE_SHUT_K0: f32 = 0.45;
 const SWIPE_SHUT_K1: f32 = 0.90;
-/// In the shoulder's own degrees.
-const SWIPE_SH: f32 = 34.0;
-const SWIPE_ABD: f32 = 44.0;
-const SWIPE_YAW: f32 = 58.0;
+/// In the shoulder's own degrees. At 58 of yaw the door was still half across his chest (owner: rotate it aside).
+const SWIPE_SH: f32 = 40.0;
+const SWIPE_ABD: f32 = 52.0;
+const SWIPE_YAW: f32 = 82.0;
 
 const FALL_SECTOR = 70.0;
 
@@ -216,6 +224,8 @@ const Attack = struct {
     bearing: f32,
     /// rad/s once committed. A property of the MOVE: quick rows may exceed `TURN_RATE`, heavy rows may not.
     track: f32 = SWING_TURN,
+    /// **METRES THE STROKE CARRIES HIM FORWARD, PRE-SCALE** — the LUNGE, on top of the kit's own reach (`bandR`).
+    step: f32 = 0,
 };
 
 // The Anor Londo Sentinel's kit (docs/GIANT_KNIGHTS.md) on the ER knight brain (docs/ELDEN_RING.md §7).
@@ -230,7 +240,8 @@ const SWEEP = Attack{
     .hit = SWEEP_HIT,
     .weight = .heavy,
     .bearing = SWEEP_BEARING,
-    .track = 0.64,
+    .track = 2.00,
+    .step = 0.45,
 };
 
 const SWEEP2 = Attack{
@@ -244,7 +255,8 @@ const SWEEP2 = Attack{
     .hit = SWEEP2_HIT,
     .weight = .heavy,
     .bearing = SWEEP_BEARING,
-    .track = 0.64,
+    .track = 2.00,
+    .step = 0.40,
 };
 
 const OVERHEAD = Attack{
@@ -259,6 +271,8 @@ const OVERHEAD = Attack{
     .bearing = 56.0,
     // "Very poor tracking" (docs/GIANT_KNIGHTS.md): the line is committed at the drop.
     .track = 0.0,
+    // Tracking stays 0, so the BODY carries the drop to you instead.
+    .step = 0.55,
 };
 
 const THRUST = Attack{
@@ -271,11 +285,18 @@ const THRUST = Attack{
     .hit = THRUST_HIT,
     .weight = .light,
     .bearing = 54.0,
-    .track = 1.05,
+    .track = 4.40,
+    .step = 0.60,
 };
 
+/// **WHERE A MOVE REACHES FROM** — the kit plus its lunge. `triggerR` is the kit alone, which is what the parry
+/// window and the hurt shape want; this is what the AI picks at, and they differ for every stroke that steps.
+fn bandR(a: Attack, scale: f32) f32 {
+    return triggerR(a, scale) + a.step * scale;
+}
+
 fn thrustBandR(scale: f32) f32 {
-    return triggerR(THRUST, scale) + THRUST_STEP * scale;
+    return bandR(THRUST, scale);
 }
 
 const BASH = Attack{
@@ -290,7 +311,8 @@ const BASH = Attack{
     // `SH_RAM_HALF` subtends 26 deg at the range it arrives.
     .bearing = 26.0,
     // Its own test measures the lateral miss: it may not be out-turned inside its own 0.22 s.
-    .track = 0.95,
+    .track = 4.00,
+    .step = 0.52,
 };
 
 const SWAT = Attack{
@@ -304,7 +326,7 @@ const SWAT = Attack{
     .hit = SWAT_HIT,
     .weight = .light,
     .bearing = FLANK_BEARING,
-    .track = 1.25,
+    .track = 4.80,
 };
 pub const SWAT_HIT = combat.Hit{ .dmg = 14, .poise = 22, .stance = 6 };
 
@@ -510,11 +532,11 @@ const HOP = struct {
     cd: f32,
     turnMul: f32,
 }{
-    .windDur = 0.34,
-    .airDur = 0.30,
-    .settleDur = 0.42,
-    .dist = 0.55,
-    .cd = 7.5,
+    .windDur = 0.28,
+    .airDur = 0.26,
+    .settleDur = 0.22,
+    .dist = 1.10,
+    .cd = 2.6,
     .turnMul = 3.4,
 };
 
@@ -531,14 +553,16 @@ const CHARGE = struct {
     patience: f32,
     hit: combat.Hit,
 }{
-    .windDur = 0.62,
+    // Bracketed by `foe.TELL_MIN` below and the fall's gather above, like every wind he has.
+    .windDur = 0.42,
     // The hero sprints 5.10; at 7.6 he arrived at a jog.
-    .speed = 12.4,
+    .speed = 15.4,
     .accel = 0.22,
     .overrun = 2.6,
     .range = 26.0,
-    // `brakeDist` integrates to `speed * brakeDur / 2` — 3.8 m past the mark.
-    .brakeDur = 0.62,
+    // `brakeDist` integrates to `speed * brakeDur / 2` — held at 3.8 m past the mark through the speed-up
+    // (15.4 x 0.50 / 2), or a faster charge would simply skid further and be easier to stand still and watch.
+    .brakeDur = 0.50,
     .recoverDur = 1.05,
     .cd = 9.0,
     // The thrust band's own floor (7.3 m).
@@ -546,7 +570,7 @@ const CHARGE = struct {
     .patience = 2.4,
     .hit = CHARGE_HIT,
 };
-pub const CHARGE_HIT = combat.Hit{ .dmg = 32, .poise = 52, .stance = 22 };
+pub const CHARGE_HIT = combat.Hit{ .dmg = 42, .poise = 52, .stance = 22 };
 const CHARGE_LIT_FUSE: f32 = 0.65;
 pub const FALL_HIT = combat.Hit{ .dmg = 24, .poise = 64, .stance = 32 };
 
@@ -615,7 +639,6 @@ const BASH_HIT_EL = -14.0;
 const BASH_HIT_ABD = 6.0;
 const BASH_HIT_TWIST = 30.0;
 const BASH_HIT_LEAN = 22.0;
-const BASH_STEP = 0.52; // pre-scale
 
 const SWP_WIND_SH = 42.0;
 const SWP_WIND_EL = -14.0;
@@ -813,6 +836,9 @@ const SHOVE_CARRY_X = 0.30 * H;
 const SHOVE_CARRY_Z = 0.10 * H;
 const SHOVE_BAND = 1.25;
 const SHOVE_SHIELD_WIND = 0.60;
+/// **THE FASTEST TELL HE OWNS, AND THE ANSWER TO CAMPING ON THE DOOR** (owner). 0.52 x 0.58 lands on
+/// `foe.TELL_MIN` exactly, and it takes NO `windHold` — the whole point is that it does not wait.
+const SWAT_SHIELD_WIND = 0.58;
 const SWAT_HANG: f32 = 0.26;
 
 const SWAT_SWORD_KEYS = MoveKeys{
@@ -876,7 +902,6 @@ const THR_HIT_SH = 54.0;
 const THR_HIT_EL = -4.0;
 const THR_HIT_TILT = 14.0;
 const THR_HIT_LEAN = 20.0;
-const THRUST_STEP = 0.60; // pre-scale
 
 const SLM_WIND_SH = -132.0;
 const SLM_WIND_EL = -30.0;
@@ -1015,7 +1040,7 @@ comptime {
 const CHOOSE_N = 4;
 
 const SWEEP_BEARING = 72.0;
-/// `sweepwind` turns at full `TURN_RATE` for its whole 1.15 s, about 38 deg, so a sweep begun out here arrives inside `SWEEP_BEARING` under its own steam.
+/// EVERY gather aims at full `TURN_RATE` now, and the sweep's runs 1.00 s — 183 deg — so a sweep begun out here arrives well inside `SWEEP_BEARING` under its own steam.
 const FLANK_BEARING = SWEEP_BEARING + 28.0;
 
 /// docs/ELDEN_RING.md §7: strings run "1-4 hits, variable", recovery "3-4 frames mid-combo, 23-24 at combo end".
@@ -1109,9 +1134,9 @@ const W_PRESS: f32 = 0.35;
 const W_CIRCLE: f32 = 0.45;
 const W_LIT: f32 = 0.30;
 
-/// Peaks at 0.72 of the reach.
+/// Peaks at 0.72 of the reach. **OFF `bandR`, NOT THE KIT**: a stroke that carries him in fits from further out.
 fn fitTerm(mv: usize, dist: f32, scale: f32) f32 {
-    const r = triggerR(MOVES[mv], scale);
+    const r = bandR(MOVES[mv], scale);
     if (r <= 0) return 0;
     const u = mathx.clampF(dist / r, 0, 1);
     const d = (u - 0.72) / 0.72;
@@ -1211,7 +1236,9 @@ fn classify(sit: Sit) Decision {
         if (b <= FLANK_BEARING and ready[BASH_I] and dist <= triggerR(MOVES[BASH_I], scale) * SHOVE_BAND) {
             return .{ .what = .strike, .mv = BASH_I, .shove = true, .shoveShield = shieldSide };
         }
-        if (hopReady and circling and pressed) return .{ .what = .hop };
+        // **BOUGHT WITH PRESENCE, NOT WITH DAMAGE** (owner) — gated on `pressed` too it wanted a fight already
+        // in progress, so the one move answering a man circling him only fired at one who was also trading.
+        if (hopReady and circling) return .{ .what = .hop };
         if (b <= FLANK_BEARING and ready[SWEEP_I] and dist <= triggerR(MOVES[SWEEP_I], scale)) {
             return .{ .what = .strike, .mv = SWEEP_I };
         }
@@ -1228,6 +1255,9 @@ fn classify(sit: Sit) Decision {
     }
     if (dist <= thrustBandR(scale)) {
         if (b <= THRUST.bearing and ready[THRUST_I]) return .{ .what = .strike, .mv = THRUST_I };
+        // **HE SHUTS THE GAP RATHER THAN STANDING IN IT** (owner). Out here with the thrust spent he WAITED —
+        // the one band where the player could heal and pick a spell. The hop is 3.2 m in 0.54 s.
+        if (hopReady) return .{ .what = .hop };
         if (stepReady and b >= STEPTURN.least) return .{ .what = .stepturn };
         return .{ .what = .wait };
     }
@@ -1348,7 +1378,8 @@ pub const Knight = struct {
     /// A one-frame flag; the GROUP owns the cloud, which outlives the body that laid it.
     gasAt: ?rl.Vector3 = null,
     gasScale: f32 = 1.0,
-    /// Spaced by GROUND COVERED, never by a clock: at 12.4 m/s a per-frame emitter lays twenty a second.
+    /// Spaced by GROUND COVERED, never by a clock: at the charge's 15.4 m/s and `CHAOS_TRAIL_EVERY`'s 1.50 m
+    /// that is ten clouds a second, and the lane keeps its spacing whatever the speed is retuned to.
     trailAt: f32 = 0,
     shoving: bool = false,
     shoveShield: bool = false,
@@ -1482,10 +1513,10 @@ pub const Knight = struct {
     pub fn guardUp(self: *const Knight) bool {
         if (self.gone) return false;
         return switch (self.state) {
-            .idle, .approach, .hop, .stepturn, .leapwind, .leap, .awaken, .sweepwind, .chainwind, .overwind, .thrustwind, .thrust, .swatwind, .chargewind, .charge, .brake, .fallwind => true,
+            .idle, .approach, .hop, .stepturn, .leapwind, .leap, .awaken, .thrustwind, .thrust, .chargewind, .charge, .brake, .fallwind => true,
+            // The four swipes and their gathers answer the ONE channel; three arms spelled the same test out.
+            .sweepwind, .chainwind, .overwind, .swatwind, .sweep, .sweep2, .over, .swat => self.swipeOpen() < 0.5,
             .bashwind, .bash => self.shoveAcross() < 0.5,
-            .sweep, .sweep2, .over => self.swipeOpen() < 0.5,
-            .swat => self.swipeOpen() < 0.5,
             .slamwind => self.t < SLAM.windDur * 0.30,
             .recover => switch (self.blow) {
                 .slam => false,
@@ -1524,8 +1555,13 @@ pub const Knight = struct {
 
     fn swipeOpen(self: *const Knight) f32 {
         const swipe = switch (self.state) {
+            // **IT STAYS OUT ACROSS THE COMBO** (owner) — each link's gather used to bring it square again. The
+            // OPENER's gather is still guarded; a link that keeps the guard by design puts it back (`swipesNow`).
+            .sweepwind, .chainwind, .overwind, .swatwind => return if (self.strung > 0 and self.swipesNow(self.blow)) 1.0 else 0,
             .sweep, .sweep2, .over => true,
-            .swat => self.swipesNow(.swat),
+            // **RETURNS, DOES NOT FALL THROUGH.** A bare `false` drops into the RECOVER ramp below on `.swat`'s
+            // own clock, which reads 1.0 early — the one swat thrown WITH the door then took the door away.
+            .swat => if (self.swipesNow(.swat)) true else return 0,
             .recover => if (self.swipesNow(self.blow)) false else return 0,
             else => return 0,
         };
@@ -1808,8 +1844,10 @@ pub const Knight = struct {
                 }
             },
             .sweepwind, .chainwind, .overwind, .thrustwind, .bashwind, .swatwind => {
-                const windTurn: f32 = if (self.state == .sweepwind) 1.0 else 0.45;
-                self.faceToward(hero, dt * windTurn);
+                // **THE GATHER AIMS, THE COMMIT DOES NOT** (owner). At 0.45 of his own turn the overhead brought
+                // 16 deg round across a 0.88 s gather against a walk's 0.80 rad/s. `Attack.track` still costs him
+                // tracking once committed, which is what leaves the window.
+                self.faceToward(hero, dt);
                 const dur = self.windDur();
                 // ACROSS THE WHOLE GATHER: the track owns its own shape, and an outer easing curve laid over a keyed one is two animators fighting.
                 self.setWindKeys(self.t / dur);
@@ -1830,8 +1868,7 @@ pub const Knight = struct {
                 foe.faceToward(self.pos, &self.facing, hero, turn, dt);
                 const k = mathx.clampF(self.t / a.strikeDur, 0, 1);
                 self.setStrike(foe.swingCurve(k));
-                self.driveBash(k, bounds);
-                self.driveThrust(k, bounds);
+                self.driveStep(k, bounds);
                 // Fired ONCE at the impact frame off `dealt`'s own latch, and sized by what lands.
                 if (!self.strikeFelt and self.t >= a.strikeDur * a.impactK) {
                     self.strikeFelt = true;
@@ -2060,6 +2097,8 @@ pub const Knight = struct {
         };
         const base = if (self.shoving and self.shoveShield and (self.state == .bashwind))
             self.move().windDur * SHOVE_SHIELD_WIND + held
+        else if (self.swatShield and self.state == .swatwind)
+            self.move().windDur * SWAT_SHIELD_WIND
         else
             self.move().windDur + held;
         if (self.strung == 0) return base;
@@ -2091,17 +2130,15 @@ pub const Knight = struct {
         return self.farT >= need and self.chargeCd <= 0 and foe.canLeap(&self.root);
     }
 
-    fn driveBash(self: *Knight, k: f32, bounds: f32) void {
-        if (self.state != .bash) return;
+    fn driveStep(self: *Knight, k: f32, bounds: f32) void {
+        const reach = self.move().step;
+        if (reach <= 0) return;
+        switch (self.state) {
+            .sweep, .sweep2, .over, .thrust, .bash, .swat => {},
+            else => return,
+        }
         const e = 1.0 - (1.0 - k) * (1.0 - k);
-        const want = BASH_STEP * self.scale * e;
-        mathx.stepXZ(&self.pos, self.fdir(), want - self.strokeDone, bounds);
-        self.strokeDone = want;
-    }
-    fn driveThrust(self: *Knight, k: f32, bounds: f32) void {
-        if (self.state != .thrust) return;
-        const e = 1.0 - (1.0 - k) * (1.0 - k);
-        const want = THRUST_STEP * self.scale * e;
+        const want = reach * self.scale * e;
         mathx.stepXZ(&self.pos, self.fdir(), want - self.strokeDone, bounds);
         self.strokeDone = want;
     }
@@ -2216,6 +2253,9 @@ pub const Knight = struct {
             },
             .leap => sfx.world(.knight_lunge, self.pos),
             .swatwind => {
+                // **EVERY WIND STAMPS ITS OWN BLOW.** The swat's did not, so through its strike and recovery
+                // `self.blow` named the PREVIOUS move — which `swipeOpen` and `guardUp`'s recover arm both read.
+                self.blow = .swat;
                 self.windHold = if (self.aiRng.float() < 0.5) 0 else self.aiRng.range(0.10, SWAT_HANG);
                 sfx.world(.swing_light, self.pos);
             },
@@ -2478,7 +2518,7 @@ pub const Knight = struct {
         const blocked = self.shielded(blade);
         var b = blade;
         if (blocked) {
-            b.hit = combat.guardChip(blade.hit, TOWER_NEGATE);
+            b.hit = combat.guardChipSplit(blade.hit, TOWER_NEGATE, TOWER_NEGATE_ELEM);
             b.hit.stance = blade.hit.stance * TOWER_STANCE_PASS;
         }
         const s = foe.reached(self, b) orelse return;
@@ -4435,16 +4475,27 @@ test "the gas DOSES on its own clock, re-arms when he steps out, and thins to no
     for (v.gas[0].parts) |p| try std.testing.expect(p.life <= 0);
 }
 
+/// A point held at `deg` off whatever he is facing RIGHT NOW, `out` metres away — what a bearing rule has to be
+/// tested against once the creature turns faster than the tester can drop a fixed point.
+fn flankOf(k: *const Knight, deg: f32, out: f32) rl.Vector3 {
+    const a = k.facing + mathx.radians(deg);
+    return v3(k.pos.x + mathx.sinf(a) * out, 0, k.pos.z + mathx.cosf(a) * out);
+}
+
 test "THE SWIPE-AND-LEAP — one beat, not two, and only ever off a flank" {
     var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
     k.atk = SWAT_I;
     k.opener = SWAT_I;
     k.enter(.swat);
     k.leapCd = 0;
-    const flank = v3(4.0, 0, 0.4);
+    // **HELD ON THE FLANK WHILE HE TURNS ONTO IT.** A fixed point is not a flank any more: he tracks at
+    // 4.8 rad/s through the swat's own 0.16 s, so a body dropped at 95 deg finishes the stroke squared up.
+    // What the chain reads is the BEARING at the end, so the test has to keep one.
     const dt = 1.0 / 120.0;
     var t: f32 = 0;
-    while (t < SWAT.strikeDur + 0.05 and k.state == .swat) : (t += dt) _ = k.update(dt, flank, 400.0, .{});
+    while (t < SWAT.strikeDur + 0.05 and k.state == .swat) : (t += dt) {
+        _ = k.update(dt, flankOf(&k, 95.0, 4.1), 400.0, .{});
+    }
     try std.testing.expectEqual(State.leapwind, k.state);
     try std.testing.expect(k.leapChained);
     try std.testing.expect(k.leapWind() < LEAP.windDur);
@@ -4455,9 +4506,10 @@ test "THE SWIPE-AND-LEAP — one beat, not two, and only ever off a flank" {
     sq.opener = SWAT_I;
     sq.enter(.swat);
     sq.leapCd = 0;
-    const ahead = v3(0, 0, 4.0);
     t = 0;
-    while (t < SWAT.strikeDur + 0.05 and sq.state == .swat) : (t += dt) _ = sq.update(dt, ahead, 400.0, .{});
+    while (t < SWAT.strikeDur + 0.05 and sq.state == .swat) : (t += dt) {
+        _ = sq.update(dt, flankOf(&sq, 0.0, 4.0), 400.0, .{});
+    }
     try std.testing.expect(sq.state != .leapwind);
 
     var cold = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
@@ -4980,32 +5032,101 @@ test "NO ATTACK COMES OUT OF NOWHERE, and the fall's tell is the longest thing h
     try std.testing.expect(THRUST.cd < SLAM.cd and THRUST.cd < CHARGE.cd and THRUST.cd < FALL_CD);
 }
 
-test "HE IS OUT-TURNED, which is the only reason a flank exists at all" {
+test "HE IS NOT DULL — a man walking circles round him is under attack, not watching one" {
+    // The complaint this pins (owner: the ogre is harder, the knight is dull). A hero strolling a ring round
+    // him used to be safe: he could not turn fast enough to face a walk, so most of the fight was him WAITING.
+    // Measured as the share of the fight he spends committed to something, and the longest quiet gap in it.
+    var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    k.leash.provoke();
+    const dt = 1.0 / 60.0;
+    const ring = triggerR(SWEEP, k.scale) * 0.72;
+    var ang: f32 = 0;
+    var t: f32 = 0;
+    var busy: usize = 0;
+    var frames: usize = 0;
+    var quiet: f32 = 0;
+    var worstQuiet: f32 = 0;
+    var strokes: usize = 0;
+    var was = k.state;
+    while (t < 45.0) : (t += dt) {
+        // A WALK, held at a constant radius — the laziest thing a player can do.
+        ang += (heromod.WALK_SPEED / ring) * dt;
+        const hero = v3(mathx.sinf(ang) * ring, 0, mathx.cosf(ang) * ring);
+        // `game.markSight` stamps this every frame in the live loop; without it he goes blind at
+        // `foe.SIGHT_MEMORY` and the measurement is of a creature that has lost you, not a dull one.
+        k.leash.noteSeen();
+        _ = k.update(dt, hero, 400.0, .{});
+        frames += 1;
+        const idle = switch (k.state) {
+            .idle, .approach, .stepturn => true,
+            else => false,
+        };
+        if (idle) {
+            quiet += dt;
+            worstQuiet = mathx.maxF(worstQuiet, quiet);
+        } else {
+            quiet = 0;
+            busy += 1;
+        }
+        if (k.state != was) {
+            switch (k.state) {
+                .sweep, .sweep2, .over, .thrust, .bash, .swat, .slam, .charge, .fall => strokes += 1,
+                else => {},
+            }
+            was = k.state;
+        }
+    }
+    const share = @as(f32, @floatFromInt(busy)) / @as(f32, @floatFromInt(frames));
+    std.debug.print("\n  45 s of a walked circle: {d} blows thrown, {d:.0}% of it committed, longest lull {d:.2} s\n", .{ strokes, share * 100.0, worstQuiet });
+    // MEASURED: 30 blows, 91% committed, worst lull 2.23 s. The bounds sit just off those, and the lull is
+    // held to about one reposition — a big recovery plus a step-turn is 2.5 s and is the gap he has EARNED.
+    try std.testing.expect(strokes >= 22);
+    try std.testing.expect(share > 0.80);
+    try std.testing.expect(worstQuiet < SLAM.recoverDur + STEPTURN.windDur + STEPTURN.turnDur + STEPTURN.settleDur);
+}
+
+test "HE TRACKS LIKE THE OGRE — the window is the COMMIT, not the flank" {
+    // **THE LAW THIS REPLACES**: he was slower than a WALKING man (0.68 against 0.80), so the flank was free to
+    // anybody holding a direction and the fight was a stroll in circles (owner: the ogre is harder, and the
+    // knight is dull). The ogre cannot be out-circled either — what it gives you is its two big commits, and
+    // that is the shape copied here: quick strokes hold you, the heavies let go, the overhead lets go entirely.
     const k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
     const r = k.bodyR() + foe.HERO_R;
-    const heroRate = heromod.WALK_SPEED / r;
-    try std.testing.expect(heroRate > TURN_RATE * 1.15);
+    const sprintRate = heromod.SPRINT_SPEED / r;
+    std.debug.print("\n  knight turns {d:.2} rad/s, ogre {d:.2}; a sprint round the knight carries {d:.2}\n", .{ TURN_RATE, ogremod.TURN_RATE, sprintRate });
+    // IN THE OGRE'S CLASS, and under it: he is armour, not a beast.
+    try std.testing.expect(TURN_RATE > sprintRate);
+    try std.testing.expect(TURN_RATE < ogremod.TURN_RATE);
+    // …AND THE COMMIT STILL COSTS HIM TRACKING, which is the only thing leaving a window inside a stroke.
     for (MOVES) |a| {
         if (a.weight != .light) try std.testing.expect(a.track < TURN_RATE);
+    }
+    // The QUICK strokes hold you the way the ogre's swipe does, and the heavies plainly do not.
+    for (MOVES) |a| {
+        if (a.weight == .light) try std.testing.expect(a.track > sprintRate);
+    }
+    try std.testing.expect(MOVES[SWAT_I].track <= ogremod.SWIPE_TURN);
+    for (MOVES) |a| {
+        if (a.weight == .heavy) try std.testing.expect(a.track * 2.0 < MOVES[SWAT_I].track);
     }
     try std.testing.expect(SWING_TURN < TURN_RATE);
     try std.testing.expect(MOVES[SWAT_I].track > TURN_RATE and MOVES[THRUST_I].track > TURN_RATE);
     try std.testing.expectEqual(@as(f32, 0), MOVES[OVER_I].track);
     try std.testing.expect(FALL_AIM < TURN_RATE);
 
-    // The LATERAL miss at the impact frame against the kit's own half-width: he sheds 32 deg of bearing
-    // across a commit and starts up to 50 deg out. `kitHalf` is the angle the RAM itself subtends at the
-    // range it arrives, never the wrap's whole chord.
+    // The LATERAL miss at the impact frame against the kit's own half-width. `kitHalf` is the angle the RAM
+    // itself subtends at the range it arrives, never the wrap's whole chord.
     const kitHalf = std.math.asin(SH_RAM_HALF / BASH.reachOut);
     const commit = BASH.windDur + BASH.strikeDur * BASH.impactK;
-    // …AND IT IS THE BASH'S OWN TRACKING RATE, not the table's default.
-    const drift = (heroRate - BASH.track) * commit;
-    std.debug.print("\n  hero {d:.2} rad/s, bash commit {d:.2} s → drift {d:.0} deg; the ram subtends {d:.0} deg\n", .{
-        heroRate, commit, mathx.degrees(drift), mathx.degrees(kitHalf),
+    const walkRate = heromod.WALK_SPEED / r;
+    const drift = (walkRate - BASH.track) * commit;
+    std.debug.print("  bash commit {d:.2} s: he GAINS {d:.0} deg on a walking man across it; ram subtends {d:.0}\n", .{
+        commit, -mathx.degrees(drift), mathx.degrees(kitHalf),
     });
-    // ONE: the drift a commit sheds may not by itself carry the door off a squared-up man. It was 32 deg
-    // against a 25 deg door.
+    // The drift a commit sheds may not by itself carry the door off a squared-up man. It is NEGATIVE now:
+    // the bash GAINS bearing across its own commit rather than shedding it.
     try std.testing.expect(drift < kitHalf);
+    try std.testing.expect(BASH.track > sprintRate);
     try std.testing.expect(mathx.radians(SWING_BEARING) <= kitHalf);
 
     // THE SWEEP IS NOT HELD TO THAT, AND THAT IS THE DESIGN — pinned so the pair cannot become one move.
@@ -5075,9 +5196,11 @@ test "NO FOLLOW-UP CHAINS AT A MAN WHO IS ALREADY BEHIND HIM" {
         k.debugSweep();
         const dt = 1.0 / 60.0;
         var t: f32 = 0;
-        const behind = v3(0, 0, -6.0); // he faces +Z and turns at 0.58 rad/s
+        // **HELD BEHIND HIM, NOT DROPPED BEHIND HIM.** At ogre-class tracking a 1 s gather turns him the whole
+        // way round, so a fixed point behind his START is squarely in front by the time the stroke lands —
+        // which is the design. The rule being pinned is about the BEARING at the end of the stroke.
         while (t < SWEEP.windDur + SWEEP.strikeDur + 0.1) : (t += dt) {
-            _ = k.update(dt, behind, 400.0, .{});
+            _ = k.update(dt, flankOf(&k, 180.0, 6.0), 400.0, .{});
             try std.testing.expect(k.state != .chainwind and k.state != .sweep2);
         }
     }
@@ -5360,4 +5483,178 @@ test "THE ROAR IS NOT INTERRUPTIBLE — a phase change plays in full or it is no
         _ = k.update(dt, far, 400.0, .{});
         try std.testing.expectEqual(State.awaken, k.state);
     }
+}
+
+test "HE TRIES TO HIT YOU — the GATHER aims at his full turn, and the COMMIT still does not" {
+    // The bug this pins: every wind but the sweep's aimed at 0.45 of his rate, so standing in front was free.
+    var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    k.leash.provoke();
+    const dt = 1.0 / 240.0;
+    const r = k.bodyR() + foe.HERO_R;
+    inline for (.{ .{ State.overwind, OVER_I }, .{ State.thrustwind, THRUST_I }, .{ State.bashwind, BASH_I }, .{ State.swatwind, SWAT_I } }) |row| {
+        k.state = row[0];
+        k.atk = row[1];
+        k.swatShield = false;
+        k.windHold = 0;
+        k.t = 0;
+        k.facing = 0;
+        const dur = k.windDur();
+        var t: f32 = 0;
+        while (t < dur) : (t += dt) {
+            _ = k.update(dt, v3(0, 0, r), 400.0, .{});
+        }
+        // The body is dead ahead, so what is pinned is the rate he is ALLOWED, not the angle he covers.
+        try std.testing.expect(k.state != row[0] or k.t >= dur - 2.0 * dt);
+    }
+    // …and the COMMIT is still bracketed: no heavy row may out-turn his body, which is what leaves the window.
+    for (MOVES) |a| {
+        if (a.weight != .light) try std.testing.expect(a.track < TURN_RATE);
+    }
+    const heroRate = heromod.WALK_SPEED / r;
+    std.debug.print("\n  wind aims at {d:.2} rad/s (it was 0.45 of that); a walking man carries {d:.2}\n", .{ TURN_RATE, heroRate });
+    try std.testing.expect(TURN_RATE > heroRate);
+}
+
+test "THE DOOR STAYS OUT ACROSS A FRONT COMBO, and comes back for the strokes that keep it" {
+    var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    // THE OPENER'S GATHER IS STILL GUARDED: nothing has been committed yet.
+    for ([_]struct { s: State, b: Blow }{
+        .{ .s = .sweepwind, .b = .sweep },
+        .{ .s = .overwind, .b = .over },
+    }) |c| {
+        k.state = c.s;
+        k.blow = c.b;
+        k.strung = 0;
+        k.t = 0.1;
+        try std.testing.expectApproxEqAbs(@as(f32, 0), k.swipeOpen(), 1e-6);
+        try std.testing.expect(k.guardUp());
+        // …and a LINK's gather keeps it hauled out rather than waving it back across.
+        k.strung = 1;
+        try std.testing.expectApproxEqAbs(@as(f32, 1), k.swipeOpen(), 1e-6);
+        try std.testing.expect(!k.guardUp());
+    }
+    // A link that keeps the guard by design puts it straight back — the thrust, the bash, and a SHIELD swat.
+    k.state = .thrustwind;
+    k.blow = .thrust;
+    k.strung = 1;
+    try std.testing.expect(k.guardUp());
+    k.state = .swatwind;
+    k.blow = .swat;
+    k.swatShield = true;
+    try std.testing.expect(k.guardUp());
+    k.swatShield = false;
+    try std.testing.expect(!k.guardUp());
+
+    // The bug this pins: the swat's wind never stamped `blow`, so the door's own swat read the previous move.
+    var named = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    for ([_]struct { s: State, b: Blow }{
+        .{ .s = .sweepwind, .b = .sweep },
+        .{ .s = .chainwind, .b = .sweep2 },
+        .{ .s = .overwind, .b = .over },
+        .{ .s = .thrustwind, .b = .thrust },
+        .{ .s = .bashwind, .b = .bash },
+        .{ .s = .swatwind, .b = .swat },
+        .{ .s = .slamwind, .b = .slam },
+        .{ .s = .chargewind, .b = .charge },
+        .{ .s = .fallwind, .b = .fall },
+    }) |c| {
+        named.blow = .over;
+        named.enter(c.s);
+        try std.testing.expectEqual(c.b, named.blow);
+    }
+
+    // **OFF THE POSED DOOR, NOT ONLY OFF THE FLAG** — if the flag says open and the plank has not moved, the
+    // mechanic and the picture have parted company (`guardUp`'s law).
+    var m = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    m.facing = 0;
+    m.state = .sweepwind;
+    m.blow = .sweep;
+    m.atk = SWEEP_I;
+    m.strung = 0;
+    m.t = m.windDur() * 0.9;
+    m.setWindKeys(0.9);
+    m.pose();
+    const guarded = doorOut(&m);
+    m.strung = 1;
+    m.setWindKeys(0.9);
+    m.pose();
+    const hauled = doorOut(&m);
+    std.debug.print("\n  door stands {d:.2} m off his axis on the opener, {d:.2} m mid-combo\n", .{ guarded, hauled });
+    try std.testing.expect(hauled > guarded + 0.15);
+}
+
+/// Metres the door's own middle is hauled off his axis — the picture `swipeOpen` claims to be drawing.
+fn doorOut(k: *const Knight) f32 {
+    const seg = k.shieldSeg();
+    return mathx.distXZ(k.pos, mathx.lerpV(seg[0], seg[1], 0.5));
+}
+
+test "THE SHIELD SWIPE IS THE FASTEST THING HE OWNS — camping on the door is answered" {
+    var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    k.atk = SWAT_I;
+    k.state = .swatwind;
+    k.strung = 0;
+    k.windHold = SWAT_HANG;
+    k.swatShield = false;
+    const sword = k.windDur();
+    k.swatShield = true;
+    const shield = k.windDur();
+    std.debug.print("\n  swat gather: sword side {d:.2} s, shield side {d:.2} s (floor {d:.2})\n", .{ sword, shield, foe.TELL_MIN });
+    try std.testing.expect(shield < sword * 0.75);
+    // NEVER UNDER THE FLOOR: no move in this game may arrive before it has been seen.
+    try std.testing.expect(shield >= foe.TELL_MIN);
+    // …and it does not take the bait hold, which is the whole of "fast".
+    try std.testing.expect(shield <= MOVES[SWAT_I].windDur);
+    // The door is the weapon, so it does NOT leave his front to throw it.
+    k.state = .swat;
+    k.t = MOVES[SWAT_I].strikeDur;
+    k.swatShield = true;
+    try std.testing.expect(k.guardUp());
+}
+
+test "THE DOOR IS OAK — it answers steel almost wholly and sorcery only partly" {
+    const steel = combat.Hit{ .dmg = 40 };
+    const spell = combat.Hit{ .elem = combat.elems(.{ .chaos = 40 }) };
+    const throughSteel = combat.guardChipSplit(steel, TOWER_NEGATE, TOWER_NEGATE_ELEM).raw();
+    const throughSpell = combat.guardChipSplit(spell, TOWER_NEGATE, TOWER_NEGATE_ELEM).raw();
+    std.debug.print("\n  door: a 40 blade leaves {d:.1} through, a 40 spell leaves {d:.1}\n", .{ throughSteel, throughSpell });
+    try std.testing.expect(throughSpell > throughSteel * 3.0);
+    // AND IT IS STILL A DOOR: a rod is the way through the front, never a free one.
+    try std.testing.expect(throughSpell < 40.0 * 0.5);
+    // The hero's own board is unchanged — one figure for both columns.
+    const board = combat.guardChip(spell, combat.GUARD_NEGATE);
+    try std.testing.expectApproxEqAbs(combat.guardChip(steel, combat.GUARD_NEGATE).raw(), board.raw(), 1e-4);
+}
+
+test "EVERY FRONT STROKE CARRIES HIM IN — the lunge is a column, not two hand-written drives" {
+    // The bug this pins: `step` was the thrust's and the bash's alone, so a sweep was thrown from where he stood.
+    for ([_]usize{ SWEEP_I, SWEEP2_I, OVER_I, THRUST_I, BASH_I }) |mv| {
+        try std.testing.expect(MOVES[mv].step > 0);
+    }
+    const k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    for (MOVES, 0..) |a, mv| {
+        const kit = triggerR(a, k.scale);
+        const band = bandR(a, k.scale);
+        try std.testing.expect(band >= kit);
+        if (a.step > 0) {
+            std.debug.print("  {s}: kit {d:.2} m, carries {d:.2} m, reaches {d:.2} m\n", .{ moveName(mv), kit, a.step * k.scale, band });
+            try std.testing.expect(band > kit);
+        }
+    }
+    // A stroke may not carry him further than it reaches, or the blow lands behind him.
+    for (MOVES) |a| try std.testing.expect(a.step < a.reachOut);
+}
+
+test "PROBE: the swat's own gather" {
+    var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    std.debug.print("\n  PROBE windFor(SWAT_I) = {s}\n", .{@tagName(windFor(SWAT_I))});
+    k.atk = SWAT_I;
+    k.opener = SWAT_I;
+    k.enter(windFor(SWAT_I));
+    const dt = 1.0 / 240.0;
+    var t: f32 = 0;
+    while (t < k.windDur() + 0.05 and (k.state == .swatwind or k.state == .bashwind)) : (t += dt) {
+        _ = k.update(dt, v3(0, 0, 4.0), 400.0, .{});
+    }
+    std.debug.print("  PROBE after the gather: state {s}, blow {s}\n", .{ @tagName(k.state), @tagName(k.blow) });
 }

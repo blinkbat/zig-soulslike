@@ -292,12 +292,10 @@ pub const Vitals = struct {
         return self.ails[@intFromEnum(a)].justEnded;
     }
     /// How fast one meter fills on this body. Named rather than indexed, so no caller spells out an
-    /// `@intFromEnum` against a ten-wide array.
+    /// `@intFromEnum` against a ten-wide array. **READ-SIDE ONLY**: the one writer is `hero.settleBody`, which
+    /// restamps all ten in a loop off the walked suit, and there is no setter for a single row on purpose.
     pub fn ailRateOf(self: *const Vitals, a: Ail) f32 {
         return self.ailRate[@intFromEnum(a)];
-    }
-    pub fn setAilRate(self: *Vitals, a: Ail, k: f32) void {
-        self.ailRate[@intFromEnum(a)] = k;
     }
 
     pub fn bears(self: *const Vitals, a: Ail) bool {
@@ -373,6 +371,10 @@ pub const Vitals = struct {
         return self.stunAs == .heavy;
     }
 
+    /// **IT COMES BACK CLEAN, METERS INCLUDED.** `build` refuses to dose a corpse, so a body that carried its
+    /// poison through the raise was the one thing in the game carrying a meter nothing could have dosed: the
+    /// necromancer's skeleton stood up at `RAISE_HP_FRAC` and went straight back to bleeding out on the proc
+    /// that killed it, or woke asleep. The hero's own `makeWhole` has always come back with fresh `Vitals`.
     pub fn revive(self: *Vitals, frac: f32) void {
         self.dead = false;
         self.hp = mathx.maxF(1.0, self.hpMax * mathx.clampF(frac, 0, 1));
@@ -382,6 +384,7 @@ pub const Vitals = struct {
         self.stunAs = .none;
         self.sinceHit = LONG_AGO;
         self.sinceHurt = LONG_AGO;
+        self.clearAils();
     }
 
     pub fn beginStun(self: *Vitals, kind: StunKind) void {
@@ -646,8 +649,16 @@ pub fn guardNegation(boardNegate: f32, perkGuard: f32) f32 {
 }
 
 pub fn guardChip(h: Hit, negate: f32) Hit {
+    return guardChipSplit(h, negate, negate);
+}
+
+/// **A BOARD MAY ANSWER STEEL AND SORCERY DIFFERENTLY.** The hero's own shield does not — both columns take
+/// `guardChip`'s one figure; the bone knight's door does (`knight.TOWER_NEGATE`/`TOWER_NEGATE_ELEM`). `fp`
+/// rides the elemental share: a drain is not a blade either.
+pub fn guardChipSplit(h: Hit, negate: f32, negateElem: f32) Hit {
     const k = 1.0 - mathx.clampF(negate, 0, 1);
-    return .{ .dmg = h.dmg * k, .elem = h.elem.scaled(k), .fp = h.fp * k };
+    const ke = 1.0 - mathx.clampF(negateElem, 0, 1);
+    return .{ .dmg = h.dmg * k, .elem = h.elem.scaled(ke), .fp = h.fp * ke };
 }
 
 
@@ -1283,7 +1294,10 @@ pub const Payout = enum { over, burst };
 pub const AilRow = struct {
     ail: Ail,
     name: [:0]const u8,
-    /// ONE LINE OF MECHANIC (`item.effect`'s rule) — what the meter buys, which the numbers cannot say.
+    /// ONE LINE OF MECHANIC (`SPELLS`' own `says`) — what the meter buys, which the numbers cannot say.
+    /// **NOTHING PRINTS IT YET**: `ailSays` is its only reader and nothing calls that, and `item.effect` writes
+    /// its own sentence off `ailWord`. Authored ahead of the panel that wants it; the comptime check below keeps
+    /// it filled meanwhile.
     says: [:0]const u8,
     bearer: Bearer = .both,
     payout: Payout = .over,
@@ -1671,6 +1685,30 @@ test "A TICK DOES NOT WAKE A SLEEPER, AND A BLOW DOES" {
     try std.testing.expect(hit2.asleep());
     hit2.wake();
     try std.testing.expect(!hit2.asleep());
+}
+
+test "A RAISED BODY COMES BACK CLEAN — it does not carry the meter that killed it" {
+    // The bug this pins: `revive` reset every other scrap of combat state and left the ten meters alone, so
+    // the necromancer's skeleton stood up still running the proc that put it down and bled straight back out.
+    var v = Vitals.initFoe(400, 999, 999);
+    v.build(.poison, ailRow(.poison).max);
+    v.build(.sleep, ailRow(.sleep).max);
+    _ = v.tickAils(1.0 / 60.0);
+    try std.testing.expect(v.ailOn(.poison) and v.asleep());
+    v.hp = 0;
+    v.dead = true;
+
+    v.revive(0.55);
+    for (std.enums.values(Ail)) |a| {
+        try std.testing.expect(!v.ailOn(a));
+        try std.testing.expectApproxEqAbs(@as(f32, 0), v.ail(a).meter, 1e-6);
+    }
+    try std.testing.expect(!v.asleep());
+    // …and nothing bills it for the frame it came up on.
+    const before = v.hp;
+    _ = v.tickAils(1.0 / 60.0);
+    try std.testing.expectApproxEqAbs(before, v.hp, 1e-6);
+    std.debug.print("\n  raised at 55%: {d:.0} hp, no meter carried over\n", .{v.hp});
 }
 
 test "A FOE-ONLY METER REFUSES HIM, AND A HERO-ONLY ONE REFUSES A CREATURE" {

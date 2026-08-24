@@ -14350,6 +14350,18 @@ at: tree -107.039955 79.24952 0 1
 at: tree -109.69961 71.67619 0 1
 at: tree -123.76207 101.319824 0 1
 at: tree -97.31601 114.39241 0 1
+at: merchanthut -238.53357 27.451357 205 1
+at: packstack -239.8948 28.846317 0 1
+at: trestletable -235.33849 27.78745 -15 1
+at: rugpile -236.05003 28.35754 0 1
+at: scalepost -238.904 29.32888 0 1
+at: waterjars -235.40953 29.46083 0 1
+at: waterjars -233.15897 27.700554 35 1
+at: wall -230.28288 27.964062 95 1
+at: wall -229.90244 33.800022 -85 1
+at: brazier -232.04755 29.333563 0 1
+at: torch -239.69241 30.539082 0 1
+at: torch -230.67717 38.29159 0 1
 
 soil: 0x1887 1x2 0x62 1x2 0x59 1x2 0x1 1x3 0x58 1x6 0x60 2x2 1x1 0x10 9x5 0x46
 soil: 2x2 1x2 0x44 9x5 0x7 9x4 2x1 9x2 0x86 9x13 0x1 9x13 0x84 9x28 0x80 9x32
@@ -14831,6 +14843,7 @@ flags: met_wanderer heard_of_gate
 
 npc: wanderer -4.50 7.50 128.0 1.00 0.31 roam=1.8 dlg=wanderer
   call: The Wanderer
+npc: merchant -237.12 29.77 0.0 1.00 0.53
 
 dlg: wanderer
   node: root

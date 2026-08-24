@@ -187,7 +187,7 @@ Two things in that table are load-bearing beyond navigation:
 - **A SCALE≠1 humanoid must scale its pelvis HEIGHT** (`pelvY*fs`) or the legs sink.
 - **EITHER HAND MAY HOLD ANYTHING, AND THAT IS THREE THINGS PER ARMAMENT, NOT ONE** (`hero.Armament`): the
   MESH (`drawHand`), the POSE of the arm, and every WORLD POINT taken off it. All three ask one question —
-  `handsHold` / `swordLeft` / `wandLeft` / `shieldLeft` / `bellLeft` — and a pose picks its side through
+  `handsHold` / `meleeLeft` / `wandLeft` / `shieldLeft` / `torchLeft` / `bellLeft` — and a pose picks its side through
   `armSide(left, authoredLeft)`, whose `mirror` multiplies the LATERAL channels (`ry`, `rz`) and leaves
   sagittal `rx` alone. Miss the third and it fails INVISIBLY: a rod equipped right drew and carried perfectly
   and threw every bolt out of the empty left fist, because `wandTipWorld` was still `xf[WRL]`. Same shape on
@@ -355,15 +355,36 @@ plus swat / hop / leap / shove / charge / fall. Memorization and attrition, neve
   the sword-side flick, open through the head of the recovery; thrust and bash keep the guard, and the
   shield-side flick does not pay because there the door IS the flick. **THE MECHANIC AND THE PICTURE ARE ONE
   CHANNEL** — `guardUp` and where the door actually is, test-pinned together.
-- **HE IS OUT-TURNED, AND THAT IS THE WHOLE DESIGN** (`TURN_RATE` 0.58 rad/s against the 0.80 a walking player
-  carries round him, test-bracketed from above; walk 0.94 of the hero's). Everything that buys facing back is
-  discrete and clocked — the STEP-TURN's planted pivot, the HOP (turn allowed 3.4× ONLY across it), the LEAP —
-  so between them the flank the creature is built round still exists.
+- **HE TRACKS LIKE THE OGRE, AND THE WINDOW IS THE COMMIT — NOT THE FLANK** (owner: the ogre is harder, the
+  knight is dull). `TURN_RATE` 3.20 rad/s, pinned into the ogre's class and under it (`ogre.TURN_RATE` 3.40,
+  public for exactly this). He was at 0.68 — slower than the 0.80 a WALKING man carries — so a stroll in
+  circles was the whole counter and most of the fight was him waiting. **YOU CANNOT OUT-CIRCLE HIM ON FOOT
+  ANY MORE**: a sprint round him is 2.40. What he gives you instead is what the ogre gives you — the heavy
+  commits. Quick rows hold you (`SWAT` 4.80, `THRUST` 4.40, `BASH` 4.00, against the ogre's swipe at 5.40);
+  the heavies let go (`SWEEP`/`SWEEP2` 2.00, test-pinned under `TURN_RATE` and under half the swat's); the
+  OVERHEAD lets go entirely at 0.
+- **AND "DULL" IS A MEASUREMENT, NOT A FEELING** — 45 s of a hero walking a ring round him is 30 blows thrown,
+  91% of the fight committed, and no lull longer than one earned reposition (a big recovery plus a step-turn).
+  Test-pinned, because the failure it guards is the fight going quiet rather than anything going wrong.
+- **AND HE SHUTS THE GAP RATHER THAN STANDING IN IT** — the HOP is the quickstep: 3.2 m in 0.54 s on a 2.6 s
+  clock, taken on PRESENCE (a man circling him, or the thrust band with the thrust spent). At 1.6 m on a 7.5 s
+  clock, gated on damage already banked, it fired about never and the thrust band was where you healed.
+- **THE GATHER AIMS, THE COMMIT DOES NOT.** Every wind turns at his full `TURN_RATE` — it was 0.45 of it for
+  all but the sweep's, which is why standing in front of him and strafing was free: the overhead brought 16° round
+  across a 0.88 s gather. What still leaves the window is `Attack.track`, and the CHARGE's wind has always been
+  allowed to aim past even that (1.4×) because what you dodge there is the travel.
 - **HOW HARD A STROKE FOLLOWS YOU IS A PROPERTY OF THE STROKE** (`Attack.track`), not one global rate. HEAVY
   rows stay under `TURN_RATE` (test-pinned) — commitment has to cost him tracking or there is no window. The
-  OVERHEAD tracks at ZERO. **AND A SWING IS ONLY AS ACCURATE AS THE THING ON THE END IS WIDE**: `SWING_BEARING`
-  may never exceed the kit's own subtended half-angle (the ram subtends 26°), and the drift a commit sheds may
-  not by itself carry the kit off a squared-up man.
+  OVERHEAD tracks at ZERO and pays for it with `Attack.step` instead: **A STROKE THAT CANNOT FOLLOW YOU CARRIES
+  HIM AT YOU** — the lunge is one column on the table and every stroke but the swat has one. **AND A SWING IS
+  ONLY AS ACCURATE AS THE THING ON THE END IS WIDE**: `SWING_BEARING` may never exceed the kit's own subtended
+  half-angle (the ram subtends 26°), and the drift a commit sheds may not by itself carry the kit off a
+  squared-up man.
+- **THE DOOR IS OAK, AND OAK IS NOT A WARD** — `TOWER_NEGATE` 0.90 against steel, `TOWER_NEGATE_ELEM` 0.60
+  against anything thrown (`combat.guardChipSplit`). A rod is the way through his front, which is what pays for
+  the front no longer being a safe place to stand. **AND IT LEAVES HIS FRONT FOR THE WHOLE COMBO**, not for each
+  swing in turn: a link's own gather holds `swipeOpen` at 1 (`strung > 0`), and a link that keeps the guard by
+  design — thrust, bash, a SHIELD swat — puts it straight back.
 - **HE IS LEARNED, NOT ROLLED — AND THAT TEST IS THE DESIGN.** Attack choice is POSITIONALLY DETERMINISTIC: each
   band-and-side has an ORDERED PATTERN (`BOOTS_*`/`RANGE_*`) that `cursor` walks, a move on cooldown is SKIPPED
   rather than waited for, and `classify` is pure over one `Sit` so a test pins that the same place twice gives
@@ -832,10 +853,10 @@ death takes the RING instead of the souls.
 the **CLOCK**, draining over the effect's life while it bills HP. **It cannot be topped up while it drains** —
 where a BURST status (bleed) resets to nothing and re-procs at once.
 
-- **DECAY IS WHAT MAKES IT PRESSURE**: the meter falls once you STOP taking doses (`POISON_DECAY_DELAY` then
-  `POISON_DECAY`), so spaced hits never proc and LINGERING is the whole cost.
+- **DECAY IS WHAT MAKES IT PRESSURE**: the meter falls once you STOP taking doses (`AilRow.decayDelay` then
+  `AilRow.decay`), so spaced hits never proc and LINGERING is the whole cost.
 - **A SOURCE HANDS OVER BUILDUP, NEVER HP.** A source keeps no clock of its own.
-- **THE PROC IS BILLED AS A DRIP** (`Vitals.drip`): no poise. It takes `POISON_HP_FRAC` of MAX HP over its
+- **THE PROC IS BILLED AS A DRIP** (`Vitals.drip`): no poise. It takes the row's `hpFrac` of MAX HP over its
   span, a fraction so it is worth the same on a Vitality build as on a fresh sheet.
 - **AND IT IS BILLED AS CHAOS** (`combat.poisonPulse`, PoE2's). **BUILDUP AND RESISTANCE ARE TWO DIALS AND BOTH
   ARE LIVE**: the tree's Warded Blood and `item.sporecrown` slow the METER filling (`hero.perk.poison`) while
@@ -848,9 +869,9 @@ where a BURST status (bleed) resets to nothing and re-procs at once.
 - **TWO SOURCES, ONE FLUID** — the sporeling's cloud (`SPORE_BUILD`), the mother's spit (`M_SPIT_BUILD`) and
   acid pools (`ACID_BUILD`). Neither floor deals damage. Spores and acid at once dose as **both** — two `add`
   calls, not a max.
-- **THE METER SITS ON THE BODY, NOT ON HIM** (`combat.Vitals.venom`) — his and every creature's, filled by
-  `Hit.venom` through the one `Vitals.hit` and ticked for a creature in `foe.grip` (which EVERY creature
-  already called, so no foe grew a field). `venomRate` is the dose multiplier and the ONE place it is
+- **THE METER SITS ON THE BODY, NOT ON HIM** (`combat.Vitals.ails`) — his and every creature's, filled by
+  `Hit.dose` through the one `Vitals.hit` and ticked for a creature in `foe.grip` (which EVERY creature
+  already called, so no foe grew a field). `Vitals.ailRate` is the dose multiplier and the ONE place it is
   applied: the tree's node and what is on his head land there through `hero.settleBody`, so the spores' door
   (`hero.poisonBy`) and an edge's cannot disagree.
 - **AN ENVENOMED EDGE IS WHAT PUTS ONE IN A FOE** (`item.Arm.venom`, `item.ENVENOMED`). The dose is CARRIED
@@ -1056,7 +1077,7 @@ new one is a compile error until it has said what it costs and what it does.
 armour is the blow itself. A new game is bare-handed (`STARTING_KIT` is the wolf scroll alone).
 
 - **ONE TABLE, ONE ROW PER THING** (`item.equip`) — nineteen pieces, and the numbers are all any of them is (a
-  test counts the worn ones). Gear shelves as `Class.gear`, and the bag panel prints the row (`book.gearSays`),
+  test counts the worn ones). Gear shelves as `Class.gear`, and the bag panel prints the row (`item.effect`),
   A CLAUSE PER DIAL rather than a sentence per combination — four dials on a `Plate` is sixteen sentences.
 - **A PLATE MAY MOVE HIM TOO** (`item.Plate.move`, the spidersilk moccasins' 1.06). Multiplied onto the tree's
   node in `hero.moveRateOf`, which `game.moveHero` is the only caller of, so a shoe that hurries him cannot
@@ -1084,10 +1105,10 @@ armour is the blow itself. A new game is bare-handed (`STARTING_KIT` is the wolf
   **THE DIALS ARE NOT ALL THE SAME WAY UP** — `dur` and `stam` are BILLS, so under 1 is the gain there.
 - **A WEAPON SAYS WHAT KIND OF WEAPON IT IS, ON TWO AXES** (`item.Heft`, `item.Reach`). REACH is pinned to the
   socket at comptime; HEFT is how much of the body goes into it, and it is what the page prints.
-- **THE STROKE IS ONE STROKE, SCALED** (`hero.SwingShape`/`swingOf`, three multipliers over `AL_*`/`AH_*`). A
+- **THE STROKE IS ONE STROKE, SCALED** (`hero.Move`/`moveOf`, three multipliers over `AL_*`/`AH_*`). A
   club gathers further back, drops lower in the hips, carries further through; a dirk is the same stroke shut
   down to the elbow. **THE PLAIN SWORD IS 1 ON EVERY DIAL.** A test pins the table against `heft`.
-- **THREE SHAPES ON ONE GRIP** (`hero.Blade`, `BLADES`, `bladeFor`). Dirk and club are the SWORD bone with
+- **THREE SHAPES ON ONE GRIP** (`hero.Blade`, `BLADES`, `bladeOf`). Dirk and club are the SWORD bone with
   another mesh and capsule — 0.67 m and 1.44 m of reach against the sword's 1.15 — so pose, trail, sparks and
   every window are written once. **THE SHAPE IS LATCHED AT `startAttack`** with the row.
 - **WHAT A ROW DOES TO A BLOW IS ONE FUNCTION** (`hero.weigh`), asked by the sword, the bow AND the book. The
@@ -1781,7 +1802,7 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
 - **A cylinder is CAPLESS** — an open end shows its culled interior. Cap with `addDome` or an axis-flattened
   `addBlob`; a flat cap constrains the piece to a world axis.
 - **REPEATED BIG PROPS NEED VARIANTS.** One mesh placed sixty times reads as a periodic pattern; yaw and scale
-  do not hide it. The three `bigtree` kinds and six `CLIFFS` exist for this, drawn through an op's weighted
+  do not hide it. The three `bigtree` kinds and six `cliff` kinds exist for this, drawn through an op's weighted
   `mix=`. Long-wavelength variation beats per-instance noise.
 - **A CULLER BUG LOOKS LIKE AN EMPTY WORLD, AND ONE-ORIENTATION TESTS MISS IT.** `View.fromCamera`
   sign-corrects its plane normals against the camera forward rather than assuming a handedness. Its test sweeps
@@ -1889,7 +1910,7 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   that doses a foe is the envenomed dagger, and no foe doses HIM with an edge (the spore floors and the mother's
   spit are still the only sources pointed his way). Nothing else reads a meter: no creature flees, slows or
   changes state for being poisoned, it only loses HP.
-- **Equipment:** every registered piece is live and the SWORD HAND draws what is in it (`hero.Blade`/`bladeFor`,
+- **Equipment:** every registered piece is live and the SWORD HAND draws what is in it (`hero.Blade`/`bladeOf`,
   three shapes on one bone) — but the **WARBOW and the DOOR are still the plain bow and the small shield**. The
   door has a mesh to borrow (`knight`'s bowed wall); the warbow is the bow at another scale. **NOTHING WORN
   SHOWS ON HIS BODY AT ALL** — helm, coat, belt, boots and both rings are a number, a bag picture and a socket

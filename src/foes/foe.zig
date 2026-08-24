@@ -532,7 +532,12 @@ pub fn grip(root: *combat.Root, chill: *combat.Chill, vit: *combat.Vitals, dt: f
     // and twenty of them handle this field. Pinning `vit.stunLeft` from `Vitals.tick` alone left sleep doing
     // NOTHING to nineteen groups — the coating and the bloom both landed a meter that no body answered.
     // One heavy stagger, which is exactly what the hero's own sleep proc buys (`hero.tickPoison`).
-    return .{ .was = at, .on = on, .killed = bitten or frozen or rotted, .downed = vit.ailProcced(.stun) or vit.ailProcced(.sleep) };
+    // **AND A DEAD BODY IS NEVER DOWNED.** `tickAils` walks all ten meters in one pass, so a poison billing the
+    // last of the bar and a stun filling on the same frame both come back true — and every creature answers
+    // them in order (`if (grip.killed) enterDeath(); if (grip.downed) stagger(true);`), so the stagger put the
+    // corpse back on its feet with its souls already paid and no state that can ever reach `.dead` again.
+    // `hero.tickPoison` has always read `if (!self.dead)` here; this is that rule for the other twenty.
+    return .{ .was = at, .on = on, .killed = bitten or frozen or rotted, .downed = !vit.dead and (vit.ailProcced(.stun) or vit.ailProcced(.sleep)) };
 }
 
 /// Stamped from outside every frame (`game.markParry`): the ARC belongs to the shield, not to what is caught.
@@ -2257,6 +2262,36 @@ test "A SLEEP PROC PUTS A CREATURE DOWN — through `grip.downed`, which is the 
     while (t < combat.ailRow(.sleep).dur + 0.2) : (t += dt) _ = grip(&root, &chill, &vit, dt, mathx.zero3);
     std.debug.print("\n  sleep: down on the proc, {d:.1} s of clock, then awake\n", .{combat.ailRow(.sleep).dur});
     try std.testing.expect(!vit.asleep());
+}
+
+test "DEATH WINS THE FRAME — a corpse is never also DOWNED, or the stagger stands it back up" {
+    // The bug this pins: `tickAils` walks all ten meters in ONE pass, so the poison that bills the last of the
+    // bar and the sleep that fills on the same frame both came back true. Every creature reads them in order,
+    // so `stagger(true)` overwrote `.dead` — a body with its souls already paid, standing in `.stunheavy`,
+    // never able to reach `.dead` again because `Vitals.strike` refuses a dead body.
+    var vit = combat.Vitals.initFoe(400, 999, 999);
+    var root = combat.Root{};
+    var chill = combat.Chill{};
+    const dt: f32 = 1.0 / 60.0;
+
+    vit.build(.poison, combat.ailRow(.poison).max);
+    _ = vit.tickAils(dt);
+    try std.testing.expect(vit.ailOn(.poison));
+    // One frame's poison from a bar this thin is the whole of it.
+    vit.hp = 0.05;
+    vit.build(.sleep, combat.ailRow(.sleep).max);
+
+    const g = grip(&root, &chill, &vit, dt, mathx.zero3);
+    std.debug.print("\n  one frame: killed={}, downed={} (both would resurrect it)\n", .{ g.killed, g.downed });
+    try std.testing.expect(g.killed);
+    try std.testing.expect(!g.downed);
+    try std.testing.expect(vit.dead);
+
+    // …and it stays undownable for as long as it is a corpse, whatever its meters go on to do.
+    var t: f32 = 0;
+    while (t < combat.ailRow(.sleep).dur) : (t += dt) {
+        try std.testing.expect(!grip(&root, &chill, &vit, dt, mathx.zero3).downed);
+    }
 }
 
 test "A CHARMED BODY WITH NOTHING TO TURN ON DOES NOT TURN BACK ON HIM" {

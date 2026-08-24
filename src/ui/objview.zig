@@ -606,6 +606,19 @@ fn modalH() i32 {
     return HEADER + ROWS * cellH() + FOOTER;
 }
 
+const GRID_INSET: i32 = 16;
+
+/// **ONE PAGE GRID FOR THE THREE PAGES THAT DRAW ONE** — the inset, the header band, the column count and the
+/// cell pitch. Five sites wrote the same two lines of arithmetic out, so a retuned cell moved some of them.
+fn gridCell(box: ui.ModalBox, slot: i32) rl.Rectangle {
+    return ui.rect(
+        box.x + GRID_INSET + @mod(slot, COLS) * cellW(),
+        box.y + HEADER + @divTrunc(slot, COLS) * cellH(),
+        THUMB_W,
+        THUMB_H,
+    );
+}
+
 fn pageCount(n: usize) i32 {
     const total: i32 = @intCast(n);
     return @max(1, @divTrunc(total + perPage() - 1, perPage()));
@@ -660,20 +673,12 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
 
     const start: usize = @intCast(st.page * perPage());
     const end = @min(start + @as(usize, @intCast(perPage())), list.len);
-    const gridX = box.x + 16;
-    const gridY = box.y + HEADER;
 
     var hover: ?usize = null;
     var hoverRect: rl.Rectangle = undefined;
     var i = start;
     while (i < end) : (i += 1) {
-        const slot: i32 = @intCast(i - start);
-        const r = ui.rect(
-            gridX + @mod(slot, COLS) * cellW(),
-            gridY + @divTrunc(slot, COLS) * cellH(),
-            THUMB_W,
-            THUMB_H,
-        );
+        const r = gridCell(box, @intCast(i - start));
         if (rl.checkCollisionPointRec(ctx.mouse, r)) {
             hover = i;
             hoverRect = r;
@@ -713,13 +718,7 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
     i = start;
     while (i < end) : (i += 1) {
         const kind = list[i];
-        const slot: i32 = @intCast(i - start);
-        const r = ui.rect(
-            gridX + @mod(slot, COLS) * cellW(),
-            gridY + @divTrunc(slot, COLS) * cellH(),
-            THUMB_W,
-            THUMB_H,
-        );
+        const r = gridCell(box, @intCast(i - start));
         render(target(&thumbRT, THUMB_W, THUMB_H), env, scene, kind, st.poseOf(kind).*);
         blit(thumbRT.?, r);
         const on = (hover != null and hover.? == i) or (st.grabbed != null and st.grabbed.? == i);
@@ -852,14 +851,11 @@ fn galleryChars(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) b
 
     const start: usize = @intCast(st.page * perPage());
     const end = @min(start + @as(usize, @intCast(perPage())), CHAR_N);
-    const gridX = box.x + 16;
-    const gridY = box.y + HEADER;
 
     var hover: ?usize = null;
     var i = start;
     while (i < end) : (i += 1) {
-        const slot: i32 = @intCast(i - start);
-        const r = ui.rect(gridX + @mod(slot, COLS) * cellW(), gridY + @divTrunc(slot, COLS) * cellH(), THUMB_W, THUMB_H);
+        const r = gridCell(box, @intCast(i - start));
         if (rl.checkCollisionPointRec(ctx.mouse, r)) hover = i;
     }
     if (ctx.wheel != 0) {
@@ -894,8 +890,7 @@ fn galleryChars(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) b
     i = start;
     while (i < end) : (i += 1) {
         const k = CHAR_KINDS[i];
-        const slot: i32 = @intCast(i - start);
-        const r = ui.rect(gridX + @mod(slot, COLS) * cellW(), gridY + @divTrunc(slot, COLS) * cellH(), THUMB_W, THUMB_H);
+        const r = gridCell(box, @intCast(i - start));
         renderChar(target(&thumbRT, THUMB_W, THUMB_H), env, scene, k, st.charPose[i]);
         blit(thumbRT.?, r);
         const on = (hover != null and hover.? == i) or (st.grabbed != null and st.grabbed.? == i);
@@ -967,13 +962,10 @@ fn galleryIcons(st: *State, ctx: *ui.Ctx) bool {
 
     const start: usize = @intCast(st.page * perPage());
     const end = @min(start + @as(usize, @intCast(perPage())), ICONS_TOTAL);
-    const gridX = box.x + 16;
-    const gridY = box.y + HEADER;
     var hover: ?usize = null;
     var i = start;
     while (i < end) : (i += 1) {
-        const slot: i32 = @intCast(i - start);
-        const r = ui.rect(gridX + @mod(slot, COLS) * cellW(), gridY + @divTrunc(slot, COLS) * cellH(), THUMB_W, THUMB_H);
+        const r = gridCell(box, @intCast(i - start));
         const on = rl.checkCollisionPointRec(ctx.mouse, r);
         if (on) hover = i;
         rl.drawRectangleRec(r, BACKDROP);

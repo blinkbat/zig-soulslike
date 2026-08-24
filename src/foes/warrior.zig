@@ -1403,7 +1403,7 @@ pub const Warrior = struct {
 
     pub fn pose(self: *Warrior) void {
         const fs = self.rigScale();
-        const sink = -0.55 * self.scale * self.fade;
+        const sink = foe.rigSink(foe.SINK_HUMANOID, self.scale, self.fade);
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
 

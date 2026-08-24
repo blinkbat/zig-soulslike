@@ -259,7 +259,7 @@ pub fn stalagmiteMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// **A RAISED STONE, NOT A DRESSED ONE** — `propruins.obelisk` is the surveyed, four-square version. This is the
+/// **A RAISED STONE, NOT A DRESSED ONE** — `propruins.obeliskMesh` is the surveyed, four-square version. This is the
 /// same idea from before anybody could cut stone: one unworked block, packed at the foot and leaning where the
 /// packing gave.
 pub const MENHIR_TOP: f32 = 4.40;

@@ -453,14 +453,17 @@ pub fn goodsRackMesh(shader: rl.Shader) rl.Model {
 }
 
 pub const AWNING_TOP: f32 = 2.48;
-pub const AWNING_R: f32 = 1.75;
+/// **THE POLE SQUARE, AND THE COLLIDER IS THE SAME FOUR STICKS** (`props.INFO`) — written out there as bare
+/// numbers they were the mesh's `hw`/`hd` transcribed, which is a doorway that walks away from its own poles.
+pub const AWNING_HW: f32 = 1.55;
+pub const AWNING_HD: f32 = 1.25;
 /// **A SHEET ON FOUR STICKS, AND YOU WALK UNDER IT.** The hut without its walls: shade, which in a desert is the
 /// thing actually being sold. Guyed off two of its poles, and the guys are pegged.
 pub fn awningMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x4A1B);
-    const hw: f32 = 1.55;
-    const hd: f32 = 1.25;
+    const hw = AWNING_HW;
+    const hd = AWNING_HD;
     var top: [4]rl.Vector3 = undefined;
     const feet = [4]rl.Vector3{ v3(-hw, 0, hd), v3(hw, 0, hd), v3(hw, 0, -hd), v3(-hw, 0, -hd) };
     for (feet, 0..) |f, i| {
@@ -542,7 +545,6 @@ pub fn rugPileMesh(shader: rl.Shader) rl.Model {
 }
 
 pub const SCALE_TOP: f32 = 2.05;
-pub const SCALE_R: f32 = 0.72;
 /// **THE WEIGHING POST, AND ITS BEAM IS OFF LEVEL.** A public scale on a post: what settles a caravan's business.
 /// A level beam is a diagram, so one pan is loaded and hangs low, and the weights that did it are on the ground.
 pub fn scalePostMesh(shader: rl.Shader) rl.Model {

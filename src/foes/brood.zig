@@ -1652,7 +1652,7 @@ pub const Spider = struct {
 
     pub fn pose(self: *Spider) void {
         const fs = foe.rigScale(self.scale, self.fade);
-        const sink = -0.24 * self.scale * self.fade;
+        const sink = foe.rigSink(0.24, self.scale, self.fade);
         const bodyDrop = -self.crouch * 0.30;
         const ride = self.pos.y + self.lift + sink + self.settle - rideDrop(self.role) * fs;
         const keel = mul3(tr(0, -BODY_Y, 0), rz(self.roll), tr(0, BODY_Y, 0));

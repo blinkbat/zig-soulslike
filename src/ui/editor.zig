@@ -604,7 +604,10 @@ pub const Editor = struct {
     sel: ?usize = null,
     selUnit: ?Unit = null,
     dirty: bool = false,
-    /// BUMPED WHENEVER THE MAP IS REPLACED WHOLESALE — entering, and every Open / New / Reload. What the game watches to know its copy of the tables the editor cannot author (the folk) has gone stale.
+    /// BUMPED WHENEVER THE FOLK TABLE MOVES — entering, every Open / New / Reload, and every post, erase,
+    /// delete, nudge and undo of an npc (`touchFolk`). What the game watches to re-post its live copy: the foe
+    /// groups are re-homed every editor frame, the folk are not, so a placed caravaneer stays invisible and an
+    /// erased one stays standing until this moves.
     mapGen: u32 = 0,
 
     kindScroll: i32 = 0,
@@ -735,7 +738,7 @@ pub const Editor = struct {
         self.editing = false;
         if (self.pathLen == 0) self.setPath(wf.START_MAP);
         undoReset();
-        self.mapGen +%= 1;
+        self.touchFolk();
         self.say("Editor ready");
     }
 
@@ -917,6 +920,7 @@ pub const Editor = struct {
         undoAt += 1;
         m.* = undoSlot(undoN - undoAt).*;
         self.dropSelection();
+        self.touchFolk();
         return true;
     }
 
@@ -925,7 +929,15 @@ pub const Editor = struct {
         undoAt -= 1;
         m.* = undoSlot(undoN - undoAt).*;
         self.dropSelection();
+        self.touchFolk();
         return true;
+    }
+
+    /// **THE ONE SIGNAL THAT THE FOLK TABLE MOVED.** Every editor path that adds, removes or shifts a `wf.Npc`
+    /// ends here, because nothing else re-posts the live bodies (`game`'s editor branch re-homes the FOES every
+    /// frame and the folk only on this).
+    fn touchFolk(self: *Editor) void {
+        self.mapGen +%= 1;
     }
 
     fn dropSelection(self: *Editor) void {
@@ -1708,6 +1720,7 @@ pub const Editor = struct {
             m.npcs[m.nnpcs] = .{ .kind = kind, .x = at.x, .z = at.z, .yaw = 0, .scale = 1, .seed = seed };
             self.selUnit = .{ .npc = m.nnpcs };
             m.nnpcs += 1;
+            self.touchFolk();
             self.sayFmt("+{s} ({d:.0}, {d:.0})", .{ wf.npcName(kind), at.x, at.z });
             return;
         }
@@ -1774,6 +1787,7 @@ pub const Editor = struct {
                     self.bankStroke(m);
                     std.mem.copyForwards(wf.Npc, m.npcs[j - 1 .. m.nnpcs - 1], m.npcs[j..m.nnpcs]);
                     m.nnpcs -= 1;
+                    self.touchFolk();
                     self.dropSelection();
                     self.sayFmt("-npc ({d:.0}, {d:.0})", .{ nn.x, nn.z });
                     return true;
@@ -1852,6 +1866,7 @@ pub const Editor = struct {
                     self.bank(m);
                     std.mem.copyForwards(wf.Npc, m.npcs[i .. m.nnpcs - 1], m.npcs[i + 1 .. m.nnpcs]);
                     m.nnpcs -= 1;
+                    self.touchFolk();
                 },
             }
             self.dropSelection();
@@ -2112,7 +2127,7 @@ pub const Editor = struct {
         self.dropSelection();
         self.dirty = isDirty;
         undoReset();
-        self.mapGen +%= 1;
+        self.touchFolk();
         self.rebuild(m, env);
     }
 
@@ -2945,6 +2960,8 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 }
                 if (changed) {
                     ed.bankGesture(wf.Npc, m, np, before);
+                    // The live body is posted off the RECORD, so a stepper that moves the record has to re-post it or the man stands where he was dropped.
+                    ed.touchFolk();
                 } else if (!ctx.down) ed.endGesture(m, env);
             },
         }

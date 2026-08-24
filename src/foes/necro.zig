@@ -764,7 +764,7 @@ pub const Necro = struct {
 
     pub fn pose(self: *Necro) void {
         const fs = foe.rigScale(self.scale, self.fade);
-        const sink = -0.55 * self.scale * self.fade;
+        const sink = foe.rigSink(foe.SINK_HUMANOID, self.scale, self.fade);
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
 

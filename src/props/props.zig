@@ -875,8 +875,8 @@ pub const INFO = [NK]Info{
     // **YOU WALK UNDER AN AWNING** — the colliders are the four poles and the shade between them is the point,
     // so it does NOT thin when it stands in the camera's way and it does not wall you out either.
     .{ .kind = .awning, .build = market.awningMesh, .bound = market.AWNING_TOP + 0.5, .top = market.AWNING_TOP, .view = 300, .parts = &.{
-        .{ .ax = -1.55, .bx = -1.55, .az = -1.25, .bz = 1.25, .r = 0.13, .h = 2.30 },
-        .{ .ax = 1.55, .bx = 1.55, .az = -1.25, .bz = 1.25, .r = 0.13, .h = 2.30 },
+        .{ .ax = -market.AWNING_HW, .bx = -market.AWNING_HW, .az = -market.AWNING_HD, .bz = market.AWNING_HD, .r = 0.13, .h = 2.30 },
+        .{ .ax = market.AWNING_HW, .bx = market.AWNING_HW, .az = -market.AWNING_HD, .bz = market.AWNING_HD, .r = 0.13, .h = 2.30 },
     } },
     // Knee-high and walked ROUND, not over: a pile of rugs you can step onto is a ramp.
     .{ .kind = .rugpile, .build = market.rugPileMesh, .bound = market.RUGS_R * 1.6, .top = market.RUGS_TOP, .view = 180, .parts = circleParts(0.58, market.RUGS_TOP * 0.9) },

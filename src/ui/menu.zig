@@ -109,6 +109,8 @@ const SLOT_COUNT = SLOT_BACK + 1;
 const SlotIntent = enum { load, new };
 
 const CARD_INSET: i32 = 14;
+/// The title band every card opens with — the rule sits inside it (`cardChrome`), so the first row starts here.
+const CARD_HEADER_H: i32 = hud.lineH(hud.TITLE) + 22;
 
 const SLOT_THUMB_W: i32 = 144;
 const SLOT_THUMB_H: i32 = 90;
@@ -598,22 +600,32 @@ pub const Menu = struct {
         hud.hintRow(row, sh - @divTrunc(hud.lineH(hud.HINT), 2) - 14, hud.HINT, HINT_COL);
     }
 
+    /// **EVERY CARD IN THE MENU IS THE SAME PLATE** — centred, seated, framed, ruled under a centred title.
+    /// The slot picker and the generic list drew it out line for line, so the six figures in it (the frame's
+    /// flicker, the rule's inset and alpha, the title's drop) were two numbers apiece. Returns the corner.
+    fn cardChrome(sw: i32, sh: i32, w: i32, h: i32, title: [:0]const u8) struct { x: i32, y: i32 } {
+        const x = @divTrunc(sw - w, 2);
+        const y = @divTrunc(sh - h, 2);
+        uiart.seat(x, y, w, h);
+        uiart.plate(x, y, w, h, CARD.a);
+        uiart.frame(x, y, w, h, uiart.flick(200, x));
+        uiart.divider(x + @divTrunc(w, 2), y + hud.lineH(hud.TITLE) + 10, @divTrunc(w, 2) - 24, 180);
+        const tw = hud.textW(title, hud.TITLE);
+        hud.engraved(title, x + @divTrunc(w - tw, 2), y + 12, hud.TITLE, TITLE_COL);
+        return .{ .x = x, .y = y };
+    }
+
     fn drawSlots(self: *const Menu, shelf: *const savemod.Shelf) void {
         const sw = rl.getScreenWidth();
         const sh = rl.getScreenHeight();
-        const headerH: i32 = hud.lineH(hud.TITLE) + 22;
+        const headerH = CARD_HEADER_H;
         const backH: i32 = hud.lineH(hud.BODY) + 14;
         const cardW: i32 = 640;
         const cardH: i32 = headerH + (SLOT_H + SLOT_GAP) * @as(i32, savemod.SLOTS) + backH + 30;
-        const cx = @divTrunc(sw - cardW, 2);
-        const cy = @divTrunc(sh - cardH, 2);
-        uiart.seat(cx, cy, cardW, cardH);
-        uiart.plate(cx, cy, cardW, cardH, CARD.a);
-        uiart.frame(cx, cy, cardW, cardH, uiart.flick(200, cx));
-        uiart.divider(cx + @divTrunc(cardW, 2), cy + hud.lineH(hud.TITLE) + 10, @divTrunc(cardW, 2) - 24, 180);
         const title: [:0]const u8 = if (self.slotIntent == .new) "NEW GAME" else "LOAD GAME";
-        const tw = hud.textW(title, hud.TITLE);
-        hud.engraved(title, cx + @divTrunc(cardW - tw, 2), cy + 12, hud.TITLE, TITLE_COL);
+        const at = cardChrome(sw, sh, cardW, cardH, title);
+        const cx = at.x;
+        const cy = at.y;
 
         for (0..savemod.SLOTS) |i| {
             const y = cy + headerH + (SLOT_H + SLOT_GAP) * @as(i32, @intCast(i));
@@ -683,20 +695,15 @@ pub const Menu = struct {
         const fontSize: i32 = if (compact) hud.SMALL else hud.BODY;
         const rowH: i32 = hud.lineH(fontSize) + (if (compact) @as(i32, 2) else @as(i32, 14));
         const rowGap: i32 = if (compact) 2 else 8;
-        const headerH: i32 = hud.lineH(hud.TITLE) + 22;
+        const headerH = CARD_HEADER_H;
         const noteH: i32 = if (card.note != null) hud.lineH(hud.HINT) + 14 else 0;
         const footH: i32 = 20 + noteH;
         const noteW: i32 = if (card.note) |n| hud.textW(n, hud.HINT) else 0;
         const cardW: i32 = @max(if (card.gauges != null or card.note != null) @as(i32, 620) else @as(i32, 470), noteW + 72);
         const cardH: i32 = headerH + (rowH + rowGap) * @as(i32, @intCast(labels.len)) + footH;
-        const cx = @divTrunc(sw - cardW, 2);
-        const cy = @divTrunc(sh - cardH, 2);
-        uiart.seat(cx, cy, cardW, cardH);
-        uiart.plate(cx, cy, cardW, cardH, CARD.a);
-        uiart.frame(cx, cy, cardW, cardH, uiart.flick(200, cx));
-        uiart.divider(cx + @divTrunc(cardW, 2), cy + hud.lineH(hud.TITLE) + 10, @divTrunc(cardW, 2) - 24, 180);
-        const tw = hud.textW(title, hud.TITLE);
-        hud.engraved(title, cx + @divTrunc(cardW - tw, 2), cy + 12, hud.TITLE, TITLE_COL);
+        const at = cardChrome(sw, sh, cardW, cardH, title);
+        const cx = at.x;
+        const cy = at.y;
         for (labels, 0..) |label, i| {
             const y = cy + headerH + (rowH + rowGap) * @as(i32, @intCast(i));
             const selected = self.cursor == i;

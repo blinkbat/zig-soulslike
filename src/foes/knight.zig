@@ -2878,7 +2878,7 @@ pub const Knight = struct {
 
     pub fn pose(self: *Knight) void {
         const fs = self.rigScale();
-        const sink = -0.9 * self.scale * self.fade;
+        const sink = foe.rigSink(0.9, self.scale, self.fade);
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
 

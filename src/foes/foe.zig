@@ -1022,6 +1022,17 @@ pub fn rigScale(scale: f32, fade: f32) f32 {
     return scale * (1.0 - DEATH_SHRINK * fade);
 }
 
+/// **…AND IT SETTLES INTO THE GROUND WHILE IT GOES** — `rigScale`'s other half, written out by ELEVEN creatures
+/// as `-depth * self.scale * self.fade`. The SHAPE is the shared thing (metres of the body's OWN scale, run off
+/// the same `fade`); the DEPTH is per-creature the way `DEATH_DUR` is, so it is an argument and not a constant.
+pub fn rigSink(depth: f32, scale: f32, fade: f32) f32 {
+    return -depth * scale * fade;
+}
+
+/// What a walking humanoid settles by. FIVE rigs wrote this figure out — the archer, the warrior, the
+/// necromancer, the ancient priest and the tolling hollow are one body in five coats.
+pub const SINK_HUMANOID: f32 = 0.55;
+
 pub const Dissolve = struct {
     rate: f32 = 54.0,
     spread: f32 = 0.85,

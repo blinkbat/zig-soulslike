@@ -985,14 +985,13 @@ fn pilgrimsOffering(cx: f32, cy: f32, px: f32) void {
     }
 }
 
-/// **THE DIRK'S SILHOUETTE, THE COATING'S COLOUR** — same fang, same corded haft, and the blade carried in the
-/// poison violet the meter is drawn in (`hud.PSN_HI`), with the bead at the point that says it is WET.
-fn envenomedDagger(cx: f32, cy: f32, px: f32) void {
+/// **THE DIRK IS DRAWN ONCE.** The fang, the corded haft and the iron collar are one picture; a variant owns
+/// only its SEED (which is the bend and the cord's jitter), the edge's tone and the glint laid down it. Returns
+/// the POINT, because that is the one place a coating has anything of its own to hang.
+fn dirkInto(cx: f32, cy: f32, px: f32, seed: u64, edge: rl.Color, glint: rl.Color) rl.Vector2 {
     const s = px;
     const k = strokeK(px);
-    var rng = mathx.Rng.init(0x0E2D);
-    const coat = rgba(96, 62, 118, 255);
-    const coatLt = rgba(158, 118, 186, 255);
+    var rng = mathx.Rng.init(seed);
     const rootP = v2(cx - s * 0.10, cy + s * 0.14);
     const tipP = v2(cx + s * 0.24, cy - s * 0.34);
     const bend = rng.range(0.12, 0.18);
@@ -1002,10 +1001,10 @@ fn envenomedDagger(cx: f32, cy: f32, px: f32) void {
         const t = @as(f32, @floatFromInt(i)) / SEGS;
         const p = onAxis(rootP, tipP, t, -bend * s * (4.0 * t * (1.0 - t)));
         const w = mathx.lerpF(5.2, 0.5, t * t * 0.85 + t * 0.15) * k;
-        if (i > 0) rl.drawLineEx(prev, p, w, mathx.lerpColor(BONE_DK, coat, mathx.clampF(t * 1.25, 0, 1)));
+        if (i > 0) rl.drawLineEx(prev, p, w, mathx.lerpColor(BONE_DK, edge, mathx.clampF(t * 1.25, 0, 1)));
         prev = p;
     }
-    rl.drawLineEx(onAxis(rootP, tipP, 0.15, 1.2 * k), onAxis(rootP, tipP, 0.88, 0.3 * k), 1.1 * k, coatLt);
+    rl.drawLineEx(onAxis(rootP, tipP, 0.15, 1.2 * k), onAxis(rootP, tipP, 0.88, 0.3 * k), 1.1 * k, glint);
     const buttP = v2(cx - s * 0.24, cy + s * 0.30);
     rl.drawLineEx(rootP, buttP, 5.0 * k, GRIP);
     rl.drawCircleV(v2(rootP.x, rootP.y), 3.2 * k, IRON_DK);
@@ -1015,6 +1014,16 @@ fn envenomedDagger(cx: f32, cy: f32, px: f32) void {
         rl.drawLineEx(onAxis(rootP, buttP, t, -3.0 * k), onAxis(rootP, buttP, t + 0.07, 3.0 * k), 1.5 * k, CORD);
     }
     rl.drawCircleV(buttP, 2.4 * k, GRIP_LT);
+    return tipP;
+}
+
+/// **THE DIRK'S SILHOUETTE, THE COATING'S COLOUR** — same fang, same corded haft, and the blade carried in the
+/// poison violet the meter is drawn in (`hud.PSN_HI`), with the bead at the point that says it is WET.
+fn envenomedDagger(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const coat = rgba(96, 62, 118, 255);
+    const coatLt = rgba(158, 118, 186, 255);
+    const tipP = dirkInto(cx, cy, px, 0x0E2D, coat, coatLt);
     // The drop hanging off the point: two circles, because one is a dot on a line.
     rl.drawCircleV(v2(tipP.x + s * 0.03, tipP.y + s * 0.05), s * 0.048, coat);
     rl.drawCircleV(v2(tipP.x + s * 0.025, tipP.y + s * 0.040), s * 0.024, coatLt);
@@ -1165,31 +1174,7 @@ fn toadfleshBroth(cx: f32, cy: f32, px: f32) void {
 }
 
 fn fangDirk(cx: f32, cy: f32, px: f32) void {
-    const s = px;
-    const k = strokeK(px);
-    var rng = mathx.Rng.init(0xD1FA);
-    const rootP = v2(cx - s * 0.10, cy + s * 0.14);
-    const tipP = v2(cx + s * 0.24, cy - s * 0.34);
-    const bend = rng.range(0.12, 0.18);
-    const SEGS = 12;
-    var prev = rootP;
-    for (0..SEGS + 1) |i| {
-        const t = @as(f32, @floatFromInt(i)) / SEGS;
-        const p = onAxis(rootP, tipP, t, -bend * s * (4.0 * t * (1.0 - t)));
-        const w = mathx.lerpF(5.2, 0.5, t * t * 0.85 + t * 0.15) * k;
-        if (i > 0) rl.drawLineEx(prev, p, w, mathx.lerpColor(BONE_DK, BONE, mathx.clampF(t * 1.25, 0, 1)));
-        prev = p;
-    }
-    rl.drawLineEx(onAxis(rootP, tipP, 0.15, 1.2 * k), onAxis(rootP, tipP, 0.88, 0.3 * k), 1.1 * k, rgba(255, 252, 240, 220));
-    const buttP = v2(cx - s * 0.24, cy + s * 0.30);
-    rl.drawLineEx(rootP, buttP, 5.0 * k, GRIP);
-    rl.drawCircleV(v2(rootP.x, rootP.y), 3.2 * k, IRON_DK);
-    var i: u32 = 0;
-    while (i < 3) : (i += 1) {
-        const t = 0.25 + 0.25 * @as(f32, @floatFromInt(i)) + rng.range(-0.03, 0.03);
-        rl.drawLineEx(onAxis(rootP, buttP, t, -3.0 * k), onAxis(rootP, buttP, t + 0.07, 3.0 * k), 1.5 * k, CORD);
-    }
-    rl.drawCircleV(buttP, 2.4 * k, GRIP_LT);
+    _ = dirkInto(cx, cy, px, 0xD1FA, BONE, rgba(255, 252, 240, 220));
 }
 
 fn graveWarbow(cx: f32, cy: f32, px: f32) void {

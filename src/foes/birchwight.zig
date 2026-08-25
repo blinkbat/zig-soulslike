@@ -574,8 +574,8 @@ pub const Wight = struct {
             heromod.rootAt(self.pos),
         ));
         if (!dead) {
-            heromod.legChain(&wx, &self.rest, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, solePatches[0]);
-            heromod.legChain(&wx, &self.rest, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, solePatches[1]);
+            heromod.legChain(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, solePatches[0]);
+            heromod.legChain(&wx, &self.rest, self.pos.y, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, solePatches[1]);
         } else {
             heromod.deadLegs(&wx, self.rest, dk);
         }
@@ -711,17 +711,17 @@ fn buildBones() [N]rl.Mesh {
     mesh[CHEST] = trunkMesh();
     mesh[NECK] = boleMesh(0.038, 0.034, 0.062, 0x8103);
     mesh[CROWN] = crownMesh();
-    mesh[HIPL] = limbMesh(1.0, 0.146, 0.046, 0.036, 0x8104);
-    mesh[KNEEL] = limbMesh(1.0, 0.140, 0.034, 0.026, 0x8105);
+    mesh[HIPL] = limbMesh(1.0, heromod.SEG_THIGH, 0.046, 0.036, 0x8104);
+    mesh[KNEEL] = limbMesh(1.0, heromod.SEG_SHANK, 0.034, 0.026, 0x8105);
     mesh[ANKL] = rootFootMesh(1.0);
-    mesh[HIPR] = limbMesh(-1.0, 0.146, 0.046, 0.036, 0x8106);
-    mesh[KNEER] = limbMesh(-1.0, 0.140, 0.034, 0.026, 0x8107);
+    mesh[HIPR] = limbMesh(-1.0, heromod.SEG_THIGH, 0.046, 0.036, 0x8106);
+    mesh[KNEER] = limbMesh(-1.0, heromod.SEG_SHANK, 0.034, 0.026, 0x8107);
     mesh[ANKR] = rootFootMesh(-1.0);
-    mesh[SHL] = limbMesh(1.0, 0.116, 0.036, 0.028, 0x8108);
-    mesh[ELL] = limbMesh(1.0, 0.104, 0.028, 0.020, 0x8109);
+    mesh[SHL] = limbMesh(1.0, heromod.SEG_UPARM, 0.036, 0.028, 0x8108);
+    mesh[ELL] = limbMesh(1.0, heromod.SEG_FOREARM, 0.028, 0.020, 0x8109);
     mesh[WRL] = twigMesh(1.0);
-    mesh[SHR] = limbMesh(-1.0, 0.116, 0.036, 0.028, 0x810A);
-    mesh[ELR] = limbMesh(-1.0, 0.104, 0.028, 0.020, 0x810B);
+    mesh[SHR] = limbMesh(-1.0, heromod.SEG_UPARM, 0.036, 0.028, 0x810A);
+    mesh[ELR] = limbMesh(-1.0, heromod.SEG_FOREARM, 0.028, 0.020, 0x810B);
     mesh[WRR] = twigMesh(-1.0);
     return mesh;
 }
@@ -802,6 +802,8 @@ fn limbMesh(side: f32, len: f32, rTop: f32, rBot: f32, seed: u64) rl.Mesh {
     var rng = mathx.Rng.init(seed);
     b.setMat(.skin);
     b.addCapsule(v3(0, 0, 0), v3(side * 0.008 * H, -len * H, 0), rTop * H, rBot * H, 8, BARK);
+    // The knot at the joint: bark over the socket, and what stops the limb reading as a cut pipe.
+    b.addBlob(v3(0, 0.004 * H, 0), v3(rTop * 1.16 * H, rTop * 1.05 * H, rTop * 1.16 * H), 7, 5, BARK);
     b.setMat(.plain);
     lenticels(&b, &rng, len, rBot, 8);
     return b.toMesh();

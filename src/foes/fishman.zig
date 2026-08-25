@@ -34,7 +34,7 @@ const setLocal = heromod.setHumanoid;
 // **AND THE SHAMAN IS THE ANSWER, BUT THE NETTER IS WHAT KILLS YOU** — the lesson every player learns in the
 // wrong order, which is the whole reason to build it this way.
 
-pub const H: f32 = 1.74;
+pub const H: f32 = 2.05;
 const HIP_HALF = heromod.HIP_HALF * 1.04;
 const SHOULDER_HALF = heromod.SHOULDER_HALF * 0.98;
 const REST = heromod.restHumanoid(HIP_HALF, SHOULDER_HALF, H);
@@ -101,9 +101,9 @@ const Spec = struct {
 };
 
 const SPEC = [_]Spec{
-    .{ .hp = 118, .poise = 16, .stance = 34, .speed = 1.12, .bodyR = 0.40, .hurtR = 0.60, .souls = 155, .wantMin = 0.0, .wantMax = 2.4 },
-    .{ .hp = 88, .poise = 11, .stance = 26, .speed = 1.26, .bodyR = 0.38, .hurtR = 0.58, .souls = 175, .wantMin = 4.5, .wantMax = 8.5 },
-    .{ .hp = 74, .poise = 10, .stance = 22, .speed = 0.92, .bodyR = 0.38, .hurtR = 0.58, .souls = 265, .wantMin = 8.0, .wantMax = 13.0 },
+    .{ .hp = 168, .poise = 24, .stance = 44, .speed = 1.12, .bodyR = 0.47, .hurtR = 0.71, .souls = 215, .wantMin = 0.0, .wantMax = 2.8 },
+    .{ .hp = 126, .poise = 16, .stance = 34, .speed = 1.26, .bodyR = 0.45, .hurtR = 0.68, .souls = 240, .wantMin = 4.8, .wantMax = 8.5 },
+    .{ .hp = 106, .poise = 14, .stance = 30, .speed = 0.92, .bodyR = 0.45, .hurtR = 0.68, .souls = 365, .wantMin = 8.0, .wantMax = 13.0 },
 };
 
 fn spec(r: Role) *const Spec {
@@ -150,13 +150,13 @@ const RESISTS = combat.resists(.{ .cold = -40, .lightning = -30, .fire = 20, .ch
 
 // **THE TRIDENT.** Two-handed, both hands on the shaft, and it THRUSTS — the longest melee reach any common
 // body has, paid for with the slowest recovery.
-const THRUST_R: f32 = 2.70;
+const THRUST_R: f32 = 3.18;
 const THRUST_FRONT_DOT: f32 = 0.62;
 const THRUST_WIND: f32 = 0.52;
 const THRUST_STRIKE: f32 = 0.16;
 const THRUST_RECOVER: f32 = 0.86;
 const THRUST_CD: f32 = 2.6;
-pub const THRUST_HIT = combat.Hit{ .dmg = 20, .poise = 16, .stance = 12 };
+pub const THRUST_HIT = combat.Hit{ .dmg = 32, .poise = 26, .stance = 16 };
 
 // **THE NET.** Almost no damage. What it does is take his FEET, and everything else in the band is priced
 // against that.
@@ -173,7 +173,7 @@ const NET_GRAV: f32 = 6.0;
 /// Seconds of held feet. Priced against the trident: one net has to be long enough for a spearman to WIND
 /// and land one thrust, and no longer — being netted through two of them is a death with no decision in it.
 pub const NET_HOLD: f32 = 1.35;
-pub const NET_HIT = combat.Hit{ .dmg = 4, .poise = 6 };
+pub const NET_HIT = combat.Hit{ .dmg = 8, .poise = 10 };
 
 // **THE RATTLE.** No blow at all. It puts health back on everything in the band including itself, which is
 // what makes killing it first the answer and killing it last the mistake.
@@ -704,8 +704,8 @@ pub const Fishman = struct {
             heromod.rootAt(self.pos),
         ));
         if (!dead) {
-            heromod.legChain(&wx, &self.rest, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, solePatches[0]);
-            heromod.legChain(&wx, &self.rest, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, solePatches[1]);
+            heromod.legChain(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, solePatches[0]);
+            heromod.legChain(&wx, &self.rest, self.pos.y, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, solePatches[1]);
         } else {
             heromod.deadLegs(&wx, self.rest, dk);
         }
@@ -1011,17 +1011,21 @@ fn headMesh(role: Role) rl.Mesh {
 fn thighMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(side * 0.004 * H, -0.140 * H, 0), 0.040 * H, 0.030 * H, 8, SCALE);
+    const len = heromod.SEG_THIGH * H;
+    b.addCapsule(v3(0, 0, 0), v3(side * 0.008 * H, -len, 0), 0.040 * H, 0.030 * H, 8, SCALE);
+    b.addBlob(v3(0, 0.004 * H, 0), v3(0.045 * H, 0.042 * H, 0.044 * H), 7, 5, SCALE);
     return b.toMesh();
 }
 
 fn shinMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(side * 0.002 * H, -0.136 * H, 0.004 * H), 0.028 * H, 0.020 * H, 8, SCALE_DK);
+    const len = heromod.SEG_SHANK * H;
+    b.addCapsule(v3(0, 0, 0), v3(side * 0.004 * H, -len, 0.004 * H), 0.030 * H, 0.020 * H, 8, SCALE_DK);
+    b.addBlob(v3(0, 0.002 * H, 0), v3(0.034 * H, 0.032 * H, 0.034 * H), 6, 5, SCALE);
     b.setMat(.plain);
     // A trailing fin off the calf — the leg is still a fish's.
-    b.addBlob(v3(side * 0.024 * H, -0.070 * H, -0.014 * H), v3(0.005 * H, 0.030 * H, 0.020 * H), 5, 4, FIN_DK);
+    b.addBlob(v3(side * 0.024 * H, -len * 0.48, -0.016 * H), v3(0.005 * H, 0.052 * H, 0.022 * H), 5, 4, FIN_DK);
     return b.toMesh();
 }
 
@@ -1042,16 +1046,20 @@ fn footMesh(side: f32) rl.Mesh {
 fn upperArmMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(side * 0.006 * H, -0.100 * H, 0), 0.028 * H, 0.022 * H, 7, SCALE);
+    const len = heromod.SEG_UPARM * H;
+    b.addCapsule(v3(0, 0, 0), v3(side * 0.010 * H, -len, 0), 0.030 * H, 0.022 * H, 7, SCALE);
+    b.addBlob(v3(0, 0.004 * H, 0), v3(0.034 * H, 0.032 * H, 0.034 * H), 6, 5, SCALE);
     return b.toMesh();
 }
 
 fn forearmMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(side * 0.004 * H, -0.078 * H, 0), 0.021 * H, 0.016 * H, 7, SCALE_LT);
+    const len = heromod.SEG_FOREARM * H;
+    b.addCapsule(v3(0, 0, 0), v3(side * 0.008 * H, -len, 0), 0.023 * H, 0.016 * H, 7, SCALE_LT);
+    b.addBlob(v3(0, 0.002 * H, 0), v3(0.026 * H, 0.025 * H, 0.026 * H), 6, 5, SCALE);
     b.setMat(.plain);
-    b.addBlob(v3(side * 0.020 * H, -0.040 * H, -0.010 * H), v3(0.004 * H, 0.024 * H, 0.016 * H), 5, 4, FIN_DK);
+    b.addBlob(v3(side * 0.020 * H, -len * 0.5, -0.010 * H), v3(0.004 * H, 0.046 * H, 0.016 * H), 5, 4, FIN_DK);
     return b.toMesh();
 }
 
@@ -1066,7 +1074,7 @@ fn handMesh(side: f32) rl.Mesh {
 }
 
 /// **THREE PRONGS AND A BARB ON EACH**, because the whole reach of this creature is one thrust and the thing
-/// on the end has to look like it earns 2.7 m.
+/// on the end has to look like it earns 3.2 m.
 fn tridentMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);

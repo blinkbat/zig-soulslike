@@ -17065,16 +17065,24 @@ foe: mourner -214.76 53.75 0.0 1.00 0.50
 foe: mourner -216.81 48.93 0.0 1.00 0.87
 foe: ancient_priest -213.13 49.00 0.0 1.00 0.24
 foe: tolling_hollow -186.00 29.53 0.0 1.00 0.61
-foe: florid_ravager -128.86 87.14 0.0 1.00 0.98
-foe: florid_ravager -119.47 89.85 0.0 1.00 0.35
-foe: florid_ravager -125.02 100.23 0.0 1.00 0.72
-foe: mushroom_mage -122.64 92.83 0.0 1.00 0.09
-foe: mushroom_mage -127.26 91.10 0.0 1.00 0.46
-foe: mushroom_mage -123.07 97.70 0.0 1.00 0.83
-foe: shroom -129.90 90.41 0.0 1.00 0.20
-foe: shroom -124.53 88.37 0.0 1.00 0.57
-foe: shroom -118.34 96.89 0.0 1.00 0.94
-foe: shroom -127.79 97.77 0.0 1.00 0.31
+foe: fish_spearman -125.23 89.74 0.0 1.00 0.98
+foe: fish_spearman -125.81 98.62 0.0 1.00 0.35
+foe: fish_spearman -131.95 96.31 0.0 1.00 0.72
+foe: fish_netter -128.23 95.07 0.0 1.00 0.09
+foe: fish_shaman -127.36 92.28 0.0 1.00 0.46
+foe: birchwight -116.87 113.31 0.0 1.00 0.83
+foe: birchwight -146.51 112.53 0.0 1.00 0.20
+foe: cinder_wake -188.12 44.01 0.0 1.00 0.57
+foe: cinder_wake -191.34 46.66 0.0 1.00 0.94
+foe: rotgorger -192.56 40.36 0.0 1.00 0.31
+foe: salt_husk -203.47 67.81 0.0 1.00 0.68
+foe: salt_husk -234.73 71.29 0.0 1.00 0.05
+foe: salt_husk -234.72 69.22 0.0 1.00 0.42
+foe: cinder_wake -236.34 70.91 0.0 1.00 0.79
+foe: cinder_wake -255.95 57.43 0.0 1.00 0.16
+foe: cinder_wake -257.79 52.43 0.0 1.00 0.53
+foe: rotgorger -258.72 59.53 0.0 1.00 0.90
+foe: rotgorger -260.11 57.25 0.0 1.00 0.27
 
 flags: met_wanderer heard_of_gate
 

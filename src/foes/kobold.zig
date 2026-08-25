@@ -940,8 +940,8 @@ pub const Kobold = struct {
             self.legCrouch(&wx, crouch, 1.0, HIPL, KNEEL, ANKL);
             self.legCrouch(&wx, crouch, -1.0, HIPR, KNEER, ANKR);
         } else {
-            heromod.legChain(&wx, &self.rest, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, solePatches[0]);
-            heromod.legChain(&wx, &self.rest, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, solePatches[1]);
+            heromod.legChain(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, solePatches[0]);
+            heromod.legChain(&wx, &self.rest, self.pos.y, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, solePatches[1]);
         }
         self.poseUpper(&wx, dk, stunAmt, prot, o);
         self.xf = wx;

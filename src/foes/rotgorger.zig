@@ -726,6 +726,16 @@ pub const Gorge = struct {
     }
 };
 
+/// The rest chain is the only length that matters: a limb mesh shorter than the distance to its own child
+/// leaves the joint standing in air. Fractions of `W`, since every mesh here is authored in them.
+fn segLen(i: usize) f32 {
+    const rest = restPose();
+    for (0..N) |c| {
+        if (wolf.PARENT[c] == @as(i32, @intCast(i))) return mathx.lenV(mathx.subV(rest[i], rest[c])) / W;
+    }
+    return 0;
+}
+
 fn buildBones() [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
     mesh[ROOT] = hipMesh();
@@ -739,13 +749,13 @@ fn buildBones() [N]rl.Mesh {
     mesh[TAIL2] = tailMesh(0.12, 0.026);
     mesh[EARL] = earMesh(1.0);
     mesh[EARR] = earMesh(-1.0);
-    inline for (.{ wolf.SHL, wolf.SHR }, .{ 1.0, -1.0 }) |b, s| mesh[b] = upperLegMesh(s, 0.115, 0.052);
-    inline for (.{ wolf.ELL, wolf.ELR }, .{ 1.0, -1.0 }) |b, s| mesh[b] = lowerLegMesh(s, 0.098, 0.036);
-    inline for (.{ wolf.CAL, wolf.CAR }, .{ 1.0, -1.0 }) |b, s| mesh[b] = lowerLegMesh(s, 0.052, 0.030);
+    inline for (.{ wolf.SHL, wolf.SHR }, .{ 1.0, -1.0 }) |b, s| mesh[b] = upperLegMesh(s, segLen(b), 0.052);
+    inline for (.{ wolf.ELL, wolf.ELR }, .{ 1.0, -1.0 }) |b, s| mesh[b] = lowerLegMesh(s, segLen(b), 0.036);
+    inline for (.{ wolf.CAL, wolf.CAR }, .{ 1.0, -1.0 }) |b, s| mesh[b] = lowerLegMesh(s, segLen(b), 0.030);
     inline for (.{ wolf.PAWL, wolf.PAWR }) |b| mesh[b] = pawMesh();
-    inline for (.{ wolf.HIPL, wolf.HIPR }, .{ 1.0, -1.0 }) |b, s| mesh[b] = upperLegMesh(s, 0.128, 0.060);
-    inline for (.{ wolf.STL, wolf.STR }, .{ 1.0, -1.0 }) |b, s| mesh[b] = lowerLegMesh(s, 0.104, 0.038);
-    inline for (.{ wolf.HKL, wolf.HKR }, .{ 1.0, -1.0 }) |b, s| mesh[b] = lowerLegMesh(s, 0.058, 0.030);
+    inline for (.{ wolf.HIPL, wolf.HIPR }, .{ 1.0, -1.0 }) |b, s| mesh[b] = upperLegMesh(s, segLen(b), 0.060);
+    inline for (.{ wolf.STL, wolf.STR }, .{ 1.0, -1.0 }) |b, s| mesh[b] = lowerLegMesh(s, segLen(b), 0.038);
+    inline for (.{ wolf.HKL, wolf.HKR }, .{ 1.0, -1.0 }) |b, s| mesh[b] = lowerLegMesh(s, segLen(b), 0.030);
     inline for (.{ wolf.HPAWL, wolf.HPAWR }) |b| mesh[b] = pawMesh();
     return mesh;
 }
@@ -753,16 +763,16 @@ fn buildBones() [N]rl.Mesh {
 fn hipMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addBlob(v3(0, 0.010 * W, -0.030 * W), v3(0.150 * W, 0.135 * W, 0.180 * W), 10, 7, HIDE);
-    b.addBlob(v3(0, -0.070 * W, 0.010 * W), v3(0.130 * W, 0.080 * W, 0.150 * W), 8, 6, BELLY);
+    b.addBlob(v3(0, 0.010 * W, 0), v3(0.150 * W, 0.135 * W, 0.210 * W), 10, 7, HIDE);
+    b.addBlob(v3(0, -0.070 * W, 0.010 * W), v3(0.130 * W, 0.080 * W, 0.180 * W), 8, 6, BELLY);
     return b.toMesh();
 }
 
 fn loinMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addBlob(v3(0, 0.005 * W, 0.070 * W), v3(0.158 * W, 0.140 * W, 0.190 * W), 10, 7, HIDE);
-    b.addBlob(v3(0, -0.080 * W, 0.070 * W), v3(0.140 * W, 0.076 * W, 0.170 * W), 8, 6, BELLY);
+    b.addBlob(v3(0, 0.005 * W, 0.060 * W), v3(0.158 * W, 0.140 * W, 0.280 * W), 10, 7, HIDE);
+    b.addBlob(v3(0, -0.080 * W, 0.060 * W), v3(0.140 * W, 0.076 * W, 0.240 * W), 8, 6, BELLY);
     return b.toMesh();
 }
 
@@ -772,9 +782,9 @@ fn withersMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x60A9);
     b.setMat(.skin);
-    b.addBlob(v3(0, 0.005 * W, -0.020 * W), v3(0.168 * W, 0.152 * W, 0.185 * W), 10, 7, HIDE);
-    b.addBlob(v3(0, -0.085 * W, 0.010 * W), v3(0.148 * W, 0.082 * W, 0.165 * W), 8, 6, BELLY);
-    b.addBlob(v3(0, 0.110 * W, -0.050 * W), v3(0.120 * W, 0.060 * W, 0.130 * W), 8, 6, HIDE_DK);
+    b.addBlob(v3(0, 0.005 * W, -0.050 * W), v3(0.168 * W, 0.152 * W, 0.300 * W), 10, 7, HIDE);
+    b.addBlob(v3(0, -0.085 * W, -0.030 * W), v3(0.148 * W, 0.082 * W, 0.250 * W), 8, 6, BELLY);
+    b.addBlob(v3(0, 0.110 * W, -0.070 * W), v3(0.120 * W, 0.060 * W, 0.185 * W), 8, 6, HIDE_DK);
     var i: u32 = 0;
     while (i < 7) : (i += 1) {
         const f = @as(f32, @floatFromInt(i)) / 6.0;

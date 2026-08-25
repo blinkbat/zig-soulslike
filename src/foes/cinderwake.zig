@@ -527,8 +527,8 @@ pub const Cinder = struct {
             heromod.rootAt(self.pos),
         ));
         if (!dead) {
-            heromod.legChain(&wx, &self.rest, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, solePatches[0]);
-            heromod.legChain(&wx, &self.rest, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, solePatches[1]);
+            heromod.legChain(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, solePatches[0]);
+            heromod.legChain(&wx, &self.rest, self.pos.y, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, solePatches[1]);
         } else {
             heromod.deadLegs(&wx, self.rest, dk);
         }
@@ -841,18 +841,22 @@ fn thighMesh(seed: u64) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(seed);
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(0, -0.136 * H, 0), 0.040 * H, 0.032 * H, 8, CRUST);
-    b.addBlob(v3(rng.signed() * 0.010 * H, -0.070 * H, 0.006 * H), v3(0.034 * H, 0.040 * H, 0.032 * H), 6, 5, CHAR);
+    const len = heromod.SEG_THIGH * H;
+    b.addCapsule(v3(0, 0, 0), v3(0, -len, 0), 0.040 * H, 0.032 * H, 8, CRUST);
+    b.addBlob(v3(0, 0.004 * H, 0), v3(0.045 * H, 0.042 * H, 0.044 * H), 7, 5, CRUST);
+    b.addBlob(v3(rng.signed() * 0.010 * H, -len * 0.5, 0.006 * H), v3(0.036 * H, 0.062 * H, 0.034 * H), 6, 5, CHAR);
     b.setMat(.plain);
-    seamStripe(&b, v3(0.026 * H, -0.030 * H, 0.020 * H), v3(0.020 * H, -0.104 * H, 0.014 * H), 0.005 * H, SEAM_DK);
+    seamStripe(&b, v3(0.026 * H, -len * 0.18, 0.020 * H), v3(0.020 * H, -len * 0.82, 0.014 * H), 0.005 * H, SEAM_DK);
     return b.toMesh();
 }
 
 fn shinMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(0, -0.132 * H, 0.004 * H), 0.030 * H, 0.020 * H, 8, CRUST);
-    b.addBlob(v3(0, -0.036 * H, -0.006 * H), v3(0.026 * H, 0.030 * H, 0.024 * H), 6, 5, CHAR);
+    const len = heromod.SEG_SHANK * H;
+    b.addCapsule(v3(0, 0, 0), v3(0, -len, 0.004 * H), 0.030 * H, 0.020 * H, 8, CRUST);
+    b.addBlob(v3(0, 0.002 * H, 0), v3(0.034 * H, 0.032 * H, 0.034 * H), 6, 5, CRUST);
+    b.addBlob(v3(0, -len * 0.27, -0.006 * H), v3(0.028 * H, 0.052 * H, 0.026 * H), 6, 5, CHAR);
     return b.toMesh();
 }
 
@@ -870,19 +874,22 @@ fn footMesh(side: f32) rl.Mesh {
 fn upperArmMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(side * 0.006 * H, -0.104 * H, 0), 0.028 * H, 0.022 * H, 7, CRUST);
-    b.addBlob(v3(0, -0.006 * H, 0), v3(0.032 * H, 0.030 * H, 0.030 * H), 6, 5, CRUST_LT);
+    const len = heromod.SEG_UPARM * H;
+    b.addCapsule(v3(0, 0, 0), v3(side * 0.010 * H, -len, 0), 0.028 * H, 0.022 * H, 7, CRUST);
+    b.addBlob(v3(0, 0.002 * H, 0), v3(0.033 * H, 0.032 * H, 0.032 * H), 6, 5, CRUST_LT);
     b.setMat(.plain);
-    seamStripe(&b, v3(side * 0.020 * H, -0.024 * H, 0.010 * H), v3(side * 0.014 * H, -0.086 * H, 0.008 * H), 0.004 * H, SEAM_DK);
+    seamStripe(&b, v3(side * 0.020 * H, -len * 0.13, 0.010 * H), v3(side * 0.014 * H, -len * 0.86, 0.008 * H), 0.004 * H, SEAM_DK);
     return b.toMesh();
 }
 
 fn forearmMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(side * 0.004 * H, -0.082 * H, 0), 0.021 * H, 0.016 * H, 7, CRUST);
+    const len = heromod.SEG_FOREARM * H;
+    b.addCapsule(v3(0, 0, 0), v3(side * 0.008 * H, -len, 0), 0.023 * H, 0.016 * H, 7, CRUST);
+    b.addBlob(v3(0, 0.002 * H, 0), v3(0.026 * H, 0.025 * H, 0.026 * H), 6, 5, CRUST);
     b.setMat(.plain);
-    seamStripe(&b, v3(side * 0.014 * H, -0.014 * H, 0.008 * H), v3(side * 0.010 * H, -0.070 * H, 0.006 * H), 0.004 * H, SEAM);
+    seamStripe(&b, v3(side * 0.014 * H, -len * 0.10, 0.008 * H), v3(side * 0.010 * H, -len * 0.85, 0.006 * H), 0.004 * H, SEAM);
     return b.toMesh();
 }
 

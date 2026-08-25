@@ -1263,6 +1263,8 @@ pub fn advanceGait(phase: *f32, moving: *f32, fwdB: *f32, latB: *f32, speedS: *f
     phase.* -= @floor(phase.*);
 }
 
+/// The FLAT world's ground plane. The IK takes the actor's own `pos.y`; this is only what a rig posed at the
+/// origin stands on, and what the sole tests measure against.
 pub const SOLE_Y: f32 = 0.0;
 
 pub const SolePatch = struct {
@@ -3507,8 +3509,8 @@ pub const Hero = struct {
         setLocal(&wx, NECK, self.rest, mul(rx(-0.45 * gazeCounter), ry(-0.2 * prot)));
         setLocal(&wx, HEAD, self.rest, rx(HEAD_WALK - 0.55 * gazeCounter));
 
-        legChain(&wx, &self.rest, ph, m, runB, fw, lat, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
-        legChain(&wx, &self.rest, ph + 0.5, m, runB, fw, lat, -1.0, HIPR, KNEER, BOOT_SOLE[1]);
+        legChain(&wx, &self.rest, self.footY(), ph, m, runB, fw, lat, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
+        legChain(&wx, &self.rest, self.footY(), ph + 0.5, m, runB, fw, lat, -1.0, HIPR, KNEER, BOOT_SOLE[1]);
 
         const armAmp = mathx.lerpF(ARM_SWING, RUN_ARM_SWING, runB);
         const armL = -armAmp * armSwing(ph) * m * fw;
@@ -4287,7 +4289,10 @@ pub fn setJoint(wx: []rl.Matrix, rest: []const rl.Vector3, i: usize, p: usize, a
     wx[i] = mul(mul(animRot, tr(off.x, off.y, off.z)), wx[p]);
 }
 
-pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, ph: f32, m: f32, runB: f32, sag: f32, lat: f32, side: f32, hip: usize, knee: usize, sole: SolePatch) void {
+/// **`groundY` IS THE ACTOR'S OWN `pos.y`, NEVER A CONSTANT.** The plane the sole is driven to is the ground
+/// UNDER THIS BODY; with a world-space zero the IK asks for the hip's height above sea level, so on sculpted
+/// terrain every leg is solved for the wrong span — folded to nothing in a dug basin, locked straight on a rise.
+pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, groundY: f32, ph: f32, m: f32, runB: f32, sag: f32, lat: f32, side: f32, hip: usize, knee: usize, sole: SolePatch) void {
     const ank = sole.bone;
     const phS = if (sag >= 0) ph else -ph;
     const sagW = @abs(sag) * m;
@@ -4323,7 +4328,7 @@ pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, ph: f32, m: f32, runB
     const clear = STRAFE_CLEAR * rigS * arc * latW;
     const rootS = mathx.maxF(1e-4, @sqrt(wx[ROOT].m0 * wx[ROOT].m0 + wx[ROOT].m1 * wx[ROOT].m1 + wx[ROOT].m2 * wx[ROOT].m2));
     const hipW = rl.math.vector3Transform(mathx.subV(rest[hip], rest[ROOT]), wx[ROOT]);
-    const vert = mathx.maxF(0.1 * legLen, (hipW.y - SOLE_Y) / rootS - rest[ank].y - clear);
+    const vert = mathx.maxF(0.1 * legLen, (hipW.y - groundY) / rootS - rest[ank].y - clear);
     const span = @sqrt(vert * vert + dx * dx);
     const abd = mathx.degrees(std.math.atan2(dx, vert));
     const totalHip = hipFlex + latHip;
@@ -4355,11 +4360,11 @@ pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, ph: f32, m: f32, runB
                 }
             }
         }
-        if (deepest >= SOLE_Y) break;
+        if (deepest >= groundY) break;
         // MEASURED horizontally, not off the foot's length: a steeply pitched foot has most of that length pointing DOWN.
         const ankW = rl.math.vector3Transform(v3(0, 0, 0), wx[ank]);
         const lever = mathx.maxF(0.02 * wscale, mathx.lenXZ(mathx.subV(worst, ankW)));
-        const step = mathx.degrees(std.math.asin(mathx.clampF((SOLE_Y - deepest) / lever, -1, 1)));
+        const step = mathx.degrees(std.math.asin(mathx.clampF((groundY - deepest) / lever, -1, 1)));
         pitch += if (worstZ > 0) -step else step;
     }
 }
@@ -5962,7 +5967,7 @@ fn testStrafeAnkle(ph: f32, lat: f32, side: f32, hip: usize, knee: usize, sole: 
     const rest = restPositions();
     var wx: [N]rl.Matrix = undefined;
     wx[ROOT] = tr(0, rest[ROOT].y - STRAFE_DIP * @abs(lat), 0);
-    legChain(&wx, &rest, ph, 1.0, 0.0, 0.0, lat, side, hip, knee, sole);
+    legChain(&wx, &rest, SOLE_Y, ph, 1.0, 0.0, 0.0, lat, side, hip, knee, sole);
     return rl.math.vector3Transform(v3(0, 0, 0), wx[sole.bone]);
 }
 
@@ -6060,6 +6065,41 @@ test "feet do not RAKE through the floor — walking, running, sprinting or side
     try std.testing.expect(deepestSole(WALK_SPEED, -0.7) > SOLE_Y - 0.08);
     try std.testing.expect(deepestSole(RUN_SPEED, 0.0) > SOLE_Y - 0.10);
     try std.testing.expect(deepestSole(SPRINT_SPEED, 0.0) > SOLE_Y - 0.30);
+}
+
+/// The whole leg solve, measured at one ground height: how far the deepest sole sits under the plane the actor
+/// is standing on, and how bent the knee is. Both must be the same at every elevation.
+fn strafeAtGround(groundY: f32) struct { sole: f32, knee: f32 } {
+    var h = testHero();
+    h.pos = v3(0, groundY, 0);
+    h.moving = 1;
+    h.speedS = WALK_SPEED;
+    h.fwdB = 0;
+    h.latB = 1;
+    var lowest: f32 = std.math.floatMax(f32);
+    var knee: f32 = 0;
+    var i: i32 = 0;
+    while (i < 240) : (i += 1) {
+        h.phase = @as(f32, @floatFromInt(i)) / 240.0;
+        h.pose();
+        lowest = mathx.minF(lowest, soleDepth(&h.xf, &BOOT_SOLE) - groundY);
+        const hip = rl.math.vector3Transform(mathx.zero3, h.xf[HIPL]);
+        const ank = rl.math.vector3Transform(mathx.zero3, h.xf[ANKL]);
+        knee += mathx.lenV(mathx.subV(hip, ank));
+    }
+    return .{ .sole = lowest, .knee = knee / 240.0 };
+}
+
+test "THE LEG IK SOLVES AGAINST THE ACTOR'S OWN GROUND, not world zero — a dug basin is not mush" {
+    const flat = strafeAtGround(0);
+    inline for (.{ -6.0, -2.5, 1.75, 5.0 }) |y| {
+        const at = strafeAtGround(y);
+        try std.testing.expectApproxEqAbs(flat.sole, at.sole, 1e-3);
+        try std.testing.expectApproxEqAbs(flat.knee, at.knee, 1e-3);
+    }
+    // …and the span the hip actually holds the ankle at is a LEG, not a folded stump.
+    try std.testing.expect(flat.knee > 0.72 * LEG_LEN);
+    std.debug.print("\n  strafe at any elevation: sole {d:.4} m under the plane, hip-ankle {d:.3} m of a {d:.3} m leg\n", .{ flat.sole, flat.knee, LEG_LEN });
 }
 
 test "gait curves wrap continuously across the stride seam" {

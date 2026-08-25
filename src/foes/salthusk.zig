@@ -553,8 +553,8 @@ pub const Husk = struct {
             heromod.rootAt(self.pos),
         ));
         if (!dead) {
-            heromod.legChain(&wx, &self.rest, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, solePatches[0]);
-            heromod.legChain(&wx, &self.rest, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, solePatches[1]);
+            heromod.legChain(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, solePatches[0]);
+            heromod.legChain(&wx, &self.rest, self.pos.y, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, solePatches[1]);
         } else {
             heromod.deadLegs(&wx, self.rest, dk);
         }
@@ -788,8 +788,10 @@ fn thighMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(if (side > 0) 0x5A04 else 0x5A05);
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(side * 0.004 * H, -0.140 * H, 0), 0.036 * H, 0.028 * H, 8, FLESH);
-    crustOn(&b, &rng, v3(0, -0.070 * H, 0), v3(0.036 * H, 0.060 * H, 0.032 * H), 4);
+    const len = heromod.SEG_THIGH * H;
+    b.addCapsule(v3(0, 0, 0), v3(side * 0.008 * H, -len, 0), 0.038 * H, 0.028 * H, 8, FLESH);
+    b.addBlob(v3(0, 0.004 * H, 0), v3(0.042 * H, 0.040 * H, 0.042 * H), 7, 5, FLESH);
+    crustOn(&b, &rng, v3(0, -len * 0.5, 0), v3(0.038 * H, 0.104 * H, 0.034 * H), 4);
     return b.toMesh();
 }
 
@@ -797,8 +799,10 @@ fn shinMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(if (side > 0) 0x5A06 else 0x5A07);
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(side * 0.002 * H, -0.136 * H, 0.004 * H), 0.026 * H, 0.018 * H, 8, FLESH_DK);
-    crustOn(&b, &rng, v3(0, -0.060 * H, 0), v3(0.026 * H, 0.056 * H, 0.024 * H), 3);
+    const len = heromod.SEG_SHANK * H;
+    b.addCapsule(v3(0, 0, 0), v3(side * 0.004 * H, -len, 0.004 * H), 0.028 * H, 0.018 * H, 8, FLESH_DK);
+    b.addBlob(v3(0, 0.002 * H, 0), v3(0.032 * H, 0.030 * H, 0.032 * H), 6, 5, FLESH);
+    crustOn(&b, &rng, v3(0, -len * 0.45, 0), v3(0.028 * H, 0.100 * H, 0.026 * H), 3);
     return b.toMesh();
 }
 
@@ -813,15 +817,19 @@ fn upperArmMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(if (side > 0) 0x5A08 else 0x5A09);
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(side * 0.006 * H, -0.100 * H, 0), 0.026 * H, 0.020 * H, 7, FLESH);
-    crustOn(&b, &rng, v3(0, -0.050 * H, 0), v3(0.026 * H, 0.044 * H, 0.024 * H), 3);
+    const len = heromod.SEG_UPARM * H;
+    b.addCapsule(v3(0, 0, 0), v3(side * 0.010 * H, -len, 0), 0.028 * H, 0.020 * H, 7, FLESH);
+    b.addBlob(v3(0, 0.004 * H, 0), v3(0.032 * H, 0.030 * H, 0.032 * H), 6, 5, FLESH);
+    crustOn(&b, &rng, v3(0, -len * 0.5, 0), v3(0.028 * H, 0.082 * H, 0.026 * H), 3);
     return b.toMesh();
 }
 
 fn forearmMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(side * 0.004 * H, -0.080 * H, 0), 0.019 * H, 0.014 * H, 7, FLESH_DK);
+    const len = heromod.SEG_FOREARM * H;
+    b.addCapsule(v3(0, 0, 0), v3(side * 0.008 * H, -len, 0), 0.021 * H, 0.014 * H, 7, FLESH_DK);
+    b.addBlob(v3(0, 0.002 * H, 0), v3(0.024 * H, 0.023 * H, 0.024 * H), 6, 5, FLESH);
     return b.toMesh();
 }
 

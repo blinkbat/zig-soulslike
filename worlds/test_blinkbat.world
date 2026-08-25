@@ -1,0 +1,43 @@
+version: 1
+name: Blinkbat Test
+half: 70.0
+runway: -6.00 -26.00 6.00 -14.00
+
+zone: plain -400.0 -400.0 400.0 400.0 0.480 grasstall,patch,tuft,clover,moss,nettles,wildflowers
+clear: 0.0 0.0 34.0
+
+at: bonfire -2 -24 0 1
+at: chest 3.5 -22 190 1 loot=crimson_flask,bloodgrass,fire_tallow
+at: chest -5.5 -22.5 170 1 loot=purgeleaf,rimeward_mantle,gravebell_amulet
+
+# Cover, so a blink that lands inside geometry shows up as one. The ring it withdraws to is 6.4 m, which is
+# about the gap between these.
+at: boulder -11 -4 20 1.3
+at: boulder 12 -2 40 1.1
+at: pillar -16 12 0 1
+at: pillar 16 14 0 1
+at: snag 0 22 0 1
+
+# ONE, alone, on open ground: the pass and the withdrawal read here and nowhere else.
+foe: blinkbat 0.00 8.00 180.0 1.00 0.21
+
+# A pair, to see whether two of them saw across each other or share a ring.
+foe: blinkbat -18.00 24.00 190.0 1.00 0.47
+foe: blinkbat -12.00 27.00 170.0 1.06 0.82
+
+# Beside the OTHER flyer, which is the comparison that matters: the leechfly answers a sword by climbing out
+# of it and this one answers by not being there. If they read the same, one of them is wrong.
+foe: blinkbat 20.00 26.00 200.0 1.00 0.33
+foe: leechfly 26.00 24.00 200.0 1.00 0.58
+
+# Something to stagger it off, and a body that heals, so the two healers can be told apart on the field.
+foe: shroom 30.00 4.00 250.0 1.00 0.44
+foe: fish_shaman -30.00 4.00 90.0 1.00 0.51
+
+# The band, for the size read and the robe. The two that fight stand next to the one that cannot.
+foe: fish_spearman -34.00 10.00 90.0 1.00 0.28
+foe: fish_netter -30.00 14.00 90.0 1.00 0.66
+
+# Large next to the two things it should be read against for size.
+foe: archer -28.00 -8.00 90.0 1.00 0.62
+foe: ogre 30.00 -12.00 270.0 1.00 0.29

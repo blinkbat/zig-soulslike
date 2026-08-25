@@ -291,6 +291,15 @@ pub const Golem = struct {
         self.lift = 0;
     }
 
+    /// **ONE DOOR OUT** (every other creature's `enterDeath`). The blade and a drip that kills reach `.dead`
+    /// down different paths, and written out at both the drip's copy had no voice.
+    fn enterDeath(self: *Golem) void {
+        if (self.state == .dead) return;
+        sfx.world(.shroom_die, self.pos);
+        self.enter(.dead);
+        self.justDied = true;
+    }
+
     fn decide(self: *Golem, dist: f32) void {
         if (self.leash.goingHome()) return self.enter(.walk);
         if (dist <= SMASH_AT and self.smashCd <= 0) {
@@ -352,8 +361,7 @@ pub const Golem = struct {
             return null;
         }
         if (self.vit.dead) {
-            self.enter(.dead);
-            self.justDied = true;
+            self.enterDeath();
             self.pose();
             return null;
         }
@@ -474,11 +482,7 @@ pub const Golem = struct {
         const heavy = foe.wounded(self, s, blade, SHOVE);
         sfx.world(.shroom_hurt, self.pos);
         switch (s.reaction) {
-            .death => {
-                sfx.world(.shroom_die, self.pos);
-                self.enter(.dead);
-                self.justDied = true;
-            },
+            .death => self.enterDeath(),
             .heavy => self.enter(.stunheavy),
             .light => self.enter(.stunlight),
             .none => {},

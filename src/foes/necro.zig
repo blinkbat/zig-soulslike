@@ -1332,27 +1332,10 @@ fn hemMesh() rl.Mesh {
     return b.toMesh();
 }
 
+/// **THE ONE SKIRT IN THE GAME** (`gfx.Builder.addSkirt`) — the fishman shaman's robe is the same garment, and
+/// a second copy of the panel maths is a second place for the half-axis rule to be got wrong.
 fn skirt(b: *Builder, c: rl.Vector3, rTop: f32, drop: f32, rBot: f32, sides: i32, col: rl.Color, rng: *mathx.Rng) void {
-    const thick = 0.008 * H;
-    var i: i32 = 0;
-    while (i < sides) : (i += 1) {
-        const a0 = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(sides)) * std.math.tau;
-        const a1 = @as(f32, @floatFromInt(i + 1)) / @as(f32, @floatFromInt(sides)) * std.math.tau;
-        const am = (a0 + a1) * 0.5;
-        const wob = rng.range(0.88, 1.12);
-        const sag = rng.range(0.90, 1.10);
-        const rb = rBot * wob;
-        const fall = drop * sag;
-        const mid = (rTop + rb) * 0.5;
-        const half = (a1 - a0) * 0.5;
-        b.addBox(
-            v3(c.x + mathx.cosf(am) * mid, c.y - fall * 0.5, c.z + mathx.sinf(am) * mid),
-            v3(mathx.cosf(am) * thick, 0, mathx.sinf(am) * thick),
-            v3(mathx.cosf(am) * (rTop - rb) * 0.5, fall * 0.5, mathx.sinf(am) * (rTop - rb) * 0.5),
-            v3(-mathx.sinf(am) * mid * half * 1.25, 0, mathx.cosf(am) * mid * half * 1.25),
-            col,
-        );
-    }
+    b.addSkirt(c, rTop, drop, rBot, 0.008 * H, sides, col, rng);
 }
 
 fn neckMesh() rl.Mesh {

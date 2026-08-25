@@ -94,6 +94,7 @@ pub const TABLE = [_]Row{
     .{ .foe = .fish_netter, .common = .spidersilk_moccasins, .odds = UNCOMMON, .rare = .marchboots, .chance = 0.12 },
     // **THE ONE WHO PUTS HEALTH BACK IS CARRYING SOME** — the biggest purse in the band, and it earns it.
     .{ .foe = .fish_shaman, .common = .crimson_flask, .odds = UNCOMMON, .rare = .second_wind, .chance = 0.14 },
+    .{ .foe = .blinkbat, .common = .bloodgrass, .odds = UNCOMMON, .rare = .crimson_flask, .chance = 0.16 },
 };
 
 pub const NFOE = @typeInfo(wf.FoeKind).@"enum".fields.len;

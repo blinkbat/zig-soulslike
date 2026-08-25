@@ -68,6 +68,42 @@ const solePatches = [_]heromod.SolePatch{
 
 const A_PROT: f32 = 4.0;
 
+// **THE ROLL** (owner: the two that fight can roll, and they get i-frames for it). A committed dive with a
+// window in the middle where the body is not there — the same bargain the player's own roll is, on the same
+// terms: the frames at both ends are real, so a stroke that leads it still lands.
+const ROLL_DUR: f32 = 0.60;
+const ROLL_DIST: f32 = 3.30;
+/// **THE WINDOW IS A FIXED CLOCK, NOT A DIE** — learnable, which is the only way an invulnerable enemy is fair.
+/// 0.23 s of a 0.60 s dive: the launch and the whole rise are real frames, so a stroke that LEADS it still
+/// lands and only a stroke thrown at where it used to be is eaten.
+const ROLL_IFRAME_IN: f32 = 0.15;
+const ROLL_IFRAME_OUT: f32 = 0.38;
+const ROLL_CD: f32 = 3.40;
+/// How close a body has to be before it wants off. Inside its own thrust, so a spearman rolls out of the range
+/// it just thrust from rather than standing in the recovery.
+const ROLL_TRIGGER_R: f32 = 2.55;
+comptime {
+    std.debug.assert(ROLL_IFRAME_IN > 0 and ROLL_IFRAME_OUT < ROLL_DUR);
+    // **BOTH ENDS ARE REAL FRAMES**, and together they are more of the roll than the window is. An enemy dodge
+    // that is mostly invulnerable is an enemy dodge that eats a correctly-timed stroke.
+    std.debug.assert((ROLL_IFRAME_OUT - ROLL_IFRAME_IN) < ROLL_DUR * 0.45);
+    // It gets out of its own reach, or the dive was decoration.
+    std.debug.assert(ROLL_DIST > ROLL_TRIGGER_R);
+}
+
+/// How much of the dive is behind it at `u`. Front-loaded and settling: a body throws itself and then arrives,
+/// which is the opposite of the glide-to-a-stop AGENTS.md forbids.
+fn rollEase(u: f32) f32 {
+    const k = 1.0 - mathx.clampF(u, 0, 1);
+    return 1.0 - k * k;
+}
+
+/// **DEGREES THE POINT LEADS FORWARD OF PLUMB, MEASURED ON THIS FILE'S OWN CARRY TEST — never reasoned from
+/// the matrix convention** (AGENTS.md, the knight's carry). Swept in 30-degree steps the axis reads
+/// 0 -> lead 0.99 pitch 7, 60 -> 0.40/63, 180 -> -0.99/-7 (which is the backwards carry this replaces), and
+/// 300 -> 0.59/-50. 350 is that sweep's couched corner: prongs dead down his facing, level with a man's chest.
+const TRIDENT_TILT: f32 = 350.0;
+
 // Wet-looking on a dry lake: the scales keep a green-grey sheen the rest of the pan has lost, which is what
 // makes them read as OUT OF PLACE rather than as part of the ground.
 const SCALE = rgba(52, 66, 58, 255);
@@ -83,6 +119,12 @@ const BONE = rgba(150, 142, 120, 255);
 const CORD = rgba(112, 104, 78, 255);
 const SALT = rgba(214, 214, 204, 255);
 const TOTEM = rgba(84, 62, 44, 255);
+/// The shaman's robe. **SOLVED OFF A SAMPLED RENDER, NOT PICKED** (AGENTS.md): at (46, 62, 66) the cloth came
+/// back at 128,138,125 — paler than the fishman hide beside it at 111,116,97, so the one body in a garment read
+/// as the one body in a bedsheet. Wanted ~85, i.e. (85/130)^2.2 = 0.39 of it. Kelp-dark and COOL against a
+/// field that is warm everywhere.
+const ROBE = rgba(16, 22, 28, 255);
+const ROBE_DK = rgba(10, 14, 19, 255);
 
 pub const Role = enum { spearman, netter, shaman };
 
@@ -98,12 +140,20 @@ const Spec = struct {
     /// shaman wants to be behind both of them.
     wantMin: f32,
     wantMax: f32,
+    /// **HOW MUCH OF THE ONE BODY EACH ROLE IS.** One mesh, one stature, one rig — size is a COLUMN, never a
+    /// second skeleton. The two that fight are big; the one that hides behind them is not.
+    size: f32,
+    /// Whether this role can throw itself out of the way. The shaman cannot: a fat man in a robe is the one
+    /// body on this field that has to be caught, and taking that away is what makes killing it first the read.
+    rolls: bool,
 };
 
 const SPEC = [_]Spec{
-    .{ .hp = 168, .poise = 24, .stance = 44, .speed = 1.12, .bodyR = 0.47, .hurtR = 0.71, .souls = 215, .wantMin = 0.0, .wantMax = 2.8 },
-    .{ .hp = 126, .poise = 16, .stance = 34, .speed = 1.26, .bodyR = 0.45, .hurtR = 0.68, .souls = 240, .wantMin = 4.8, .wantMax = 8.5 },
-    .{ .hp = 106, .poise = 14, .stance = 30, .speed = 0.92, .bodyR = 0.45, .hurtR = 0.68, .souls = 365, .wantMin = 8.0, .wantMax = 13.0 },
+    .{ .hp = 168, .poise = 24, .stance = 44, .speed = 1.34, .bodyR = 0.47, .hurtR = 0.71, .souls = 215, .wantMin = 0.0, .wantMax = 2.8, .size = 1.16, .rolls = true },
+    .{ .hp = 126, .poise = 16, .stance = 34, .speed = 1.48, .bodyR = 0.45, .hurtR = 0.68, .souls = 240, .wantMin = 4.8, .wantMax = 8.5, .size = 1.12, .rolls = true },
+    // **FAT, AND IT IS A HITBOX AND NOT A JOKE** — the widest body of the three on the shortest stature, which
+    // is what makes a robe worth wearing and what makes it catchable.
+    .{ .hp = 106, .poise = 14, .stance = 30, .speed = 0.88, .bodyR = 0.60, .hurtR = 0.82, .souls = 365, .wantMin = 8.0, .wantMax = 13.0, .size = 1.00, .rolls = false },
 };
 
 fn spec(r: Role) *const Spec {
@@ -123,6 +173,12 @@ comptime {
     // **THE SHAMAN IS WORTH THE MOST AND IS THE SOFTEST**, which is the whole priority lesson written as a
     // pair of numbers rather than as a hint.
     std.debug.assert(SPEC[2].souls > SPEC[0].souls and SPEC[2].hp < SPEC[0].hp);
+    // **THE TWO THAT FIGHT ARE THE TWO THAT ARE BIG**, and the one that cannot get out of the way is the one
+    // that is widest. Both halves pinned, because "bigger and more agile" is two numbers that can drift apart.
+    std.debug.assert(SPEC[0].size > SPEC[2].size and SPEC[1].size > SPEC[2].size);
+    std.debug.assert(SPEC[0].rolls and SPEC[1].rolls and !SPEC[2].rolls);
+    std.debug.assert(SPEC[2].bodyR > SPEC[0].bodyR and SPEC[2].bodyR > SPEC[1].bodyR);
+    for (SPEC) |s| std.debug.assert(s.speed * WALK_BASE < heromod.RUN_SPEED);
 }
 
 pub fn roleOf(k: wf.FoeKind) ?Role {
@@ -138,7 +194,9 @@ pub fn kindOf(r: Role) wf.FoeKind {
 
 pub const AGGRO_R: f32 = 16.0;
 const HOME_R: f32 = 2.0;
-const TURN_RATE: f32 = 3.6;
+/// Raised with the size and the gait (owner: bigger AND more agile). Still under the hero's own, so squaring
+/// up to one is possible; what it costs is that walking a ring round it no longer is.
+const TURN_RATE: f32 = 4.4;
 const ACCEL: f32 = 4.0;
 const WALK_BASE: f32 = heromod.WALK_SPEED;
 
@@ -151,7 +209,13 @@ const RESISTS = combat.resists(.{ .cold = -40, .lightning = -30, .fire = 20, .ch
 // **THE TRIDENT.** Two-handed, both hands on the shaft, and it THRUSTS — the longest melee reach any common
 // body has, paid for with the slowest recovery.
 const THRUST_R: f32 = 3.18;
-const THRUST_FRONT_DOT: f32 = 0.62;
+/// **A THRUST IS A LINE, NOT A FAN — AND THE DOT IS SOLVED OFF THE THING ON THE END, NEVER PICKED**
+/// (`knight.SWING_BEARING`'s law). At 0.62 this was a 103-degree cone on the LONGEST reach in the game: a body
+/// standing 2.93 m to the SIDE of the drive was billed by it, which is 12.6 m2 of floor answering to one
+/// forward stab. Solved back to the prongs plus the man's own footprint, it is 1.16 m and 4.4 m2.
+const THRUST_FRONT_DOT: f32 = 0.95;
+/// How far off the line of the drive the thrust may still bill, at full extension.
+const THRUST_HALF_W: f32 = (THRUST_R + foe.HERO_REACH) * @sqrt(1.0 - THRUST_FRONT_DOT * THRUST_FRONT_DOT);
 const THRUST_WIND: f32 = 0.52;
 const THRUST_STRIKE: f32 = 0.16;
 const THRUST_RECOVER: f32 = 0.86;
@@ -189,6 +253,10 @@ const RITE_SLACK: f32 = 0.80;
 
 comptime {
     std.debug.assert(THRUST_WIND >= foe.TELL_MIN);
+    // The three prongs plus the body it is aimed at, and no more. Bracketed from BOTH sides: under the hero's
+    // own radius the longest weapon in the game would miss a man standing on the line of it.
+    std.debug.assert(THRUST_HALF_W < 1.25);
+    std.debug.assert(THRUST_HALF_W > foe.HERO_R);
     std.debug.assert(NET_WIND >= foe.TELL_MIN);
     std.debug.assert(RITE_WIND >= foe.TELL_MIN);
     // **THE NET BUYS EXACTLY ONE THRUST.** Long enough to wind and land one, short enough that the second
@@ -212,12 +280,12 @@ comptime {
     std.debug.assert(@as(f32, PARTS) >= @as(f32, @floatFromInt(RITE_MOTES + foe.hitParts(HIT_SPRAY_HEAVY) + foe.WOUND_PARTS)));
 }
 
-const State = enum { idle, walk, thrust, cast, rite, stunlight, stunheavy, dead };
+const State = enum { idle, walk, roll, thrust, cast, rite, stunlight, stunheavy, dead };
 
-const Choice = enum { rest, hold, close, back, thrust, net, rite };
+const Choice = enum { rest, hold, close, back, roll, thrust, net, rite };
 
 /// Pure over one situation, so every role's pick is testable without a body on a field.
-fn classify(role: Role, gap: f32, sensed: f32, homeGap: f32, ready: bool, wounded: bool, rooted: bool) Choice {
+fn classify(role: Role, gap: f32, sensed: f32, homeGap: f32, ready: bool, wounded: bool, rooted: bool, rollReady: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     const s = spec(role);
     switch (role) {
@@ -226,6 +294,10 @@ fn classify(role: Role, gap: f32, sensed: f32, homeGap: f32, ready: bool, wounde
         .shaman => if (ready and wounded) return .rite,
     }
     if (rooted) return .rest;
+    // **IT THROWS ITSELF OUT OF THE WAY RATHER THAN WALKING OUT OF IT.** Chosen on a DISTANCE and its own
+    // clock and nothing else: a body this close is a body it wants off, whatever that body is doing. Reading
+    // the swing would be reading an input, and this creature may not (`foe.zig`'s law).
+    if (s.rolls and rollReady and gap <= ROLL_TRIGGER_R) return .roll;
     if (sensed < s.wantMin) return .back;
     if (sensed > s.wantMax) return .close;
     return .rest;
@@ -263,6 +335,8 @@ pub const Model = struct {
     /// Per-role heads and held things. The BODY is one mesh set for all three — they are one people.
     head: [SPEC.len]rl.Mesh,
     hand: [SPEC.len]rl.Mesh,
+    hips: [SPEC.len]rl.Mesh,
+    trunk: [SPEC.len]rl.Mesh,
     net: rl.Mesh,
     mat: rl.Material,
 
@@ -272,6 +346,10 @@ pub const Model = struct {
         // second time inside `buildBones` uploaded two meshes nothing would ever reference.
         const head = [SPEC.len]rl.Mesh{ headMesh(.spearman), headMesh(.netter), headMesh(.shaman) };
         const hand = [SPEC.len]rl.Mesh{ tridentMesh(), netBundleMesh(), rattleMesh() };
+        // **THE SHAMAN IS A DIFFERENT SHAPE, NOT A SMALLER ONE** — a gut and a robe, so the two trunk bones
+        // join the head and the hand as things this creature does NOT hold in common.
+        const hips = [SPEC.len]rl.Mesh{ pelvisMesh(.spearman), pelvisMesh(.netter), pelvisMesh(.shaman) };
+        const trunk = [SPEC.len]rl.Mesh{ lumbarMesh(.spearman), lumbarMesh(.netter), lumbarMesh(.shaman) };
         var bone = buildBones();
         bone[SKULL] = head[0];
         bone[HELD] = hand[0];
@@ -279,6 +357,8 @@ pub const Model = struct {
             .bone = bone,
             .head = head,
             .hand = hand,
+            .hips = hips,
+            .trunk = trunk,
             .net = netFlightMesh(),
             .mat = gfx.material(shader, "fishman"),
         };
@@ -288,7 +368,10 @@ pub const Model = struct {
     }
     pub fn draw(self: *const Model, f: *const Fishman) void {
         const r = @intFromEnum(f.role);
-        for (0..SKULL) |i| rl.drawMesh(self.bone[i], self.mat, f.xf[i]);
+        for (0..SKULL) |i| {
+            const m = if (i == ROOT) self.hips[r] else if (i == SPINE) self.trunk[r] else self.bone[i];
+            rl.drawMesh(m, self.mat, f.xf[i]);
+        }
         rl.drawMesh(self.head[r], self.mat, f.xf[SKULL]);
         for (SKULL + 1..HELD) |i| rl.drawMesh(self.bone[i], self.mat, f.xf[i]);
         // The netter's bundle goes with the net: once it is in the air his hand is empty.
@@ -340,6 +423,9 @@ pub const Fishman = struct {
     justDied: bool = false,
     parry: foe.Parry = .{},
     parried: bool = false,
+    /// Seconds until it can throw itself again, and the heading it committed to at the launch.
+    rollCd: f32 = 0,
+    rollDir: rl.Vector3 = mathx.zero3,
     fade: f32 = 0,
     gone: bool = false,
 
@@ -370,24 +456,30 @@ pub const Fishman = struct {
     pub fn kind(self: *const Fishman) wf.FoeKind {
         return kindOf(self.role);
     }
+
+    /// **THE ONE SIZE EVERY WORLD POINT AND EVERY REACH IS MEASURED ON** — the map's own placement times the
+    /// role's column. Asked as bare `scale` anywhere, a role would draw at one size and be hit at another.
+    pub fn rigSize(self: *const Fishman) f32 {
+        return self.scale * spec(self.role).size;
+    }
     pub fn soulValue(self: *const Fishman) u32 {
         return spec(self.role).souls;
     }
 
     pub fn centerWorld(self: *const Fishman) rl.Vector3 {
-        return foe.bodyPoint(self.pos, CENTER_F * H, self.scale, 0);
+        return foe.bodyPoint(self.pos, CENTER_F * H, self.rigSize(), 0);
     }
     pub fn lockPoint(self: *const Fishman) rl.Vector3 {
         return foe.markOn(self.xf[CHEST], v3(0, 0.03 * H, 0));
     }
     pub fn topWorld(self: *const Fishman) rl.Vector3 {
-        return foe.bodyPoint(self.pos, TOP_F * H, self.scale, 0);
+        return foe.bodyPoint(self.pos, TOP_F * H, self.rigSize(), 0);
     }
     pub fn hurtRadius(self: *const Fishman) f32 {
-        return spec(self.role).hurtR * self.scale;
+        return spec(self.role).hurtR * self.rigSize();
     }
     pub fn bodyR(self: *const Fishman) f32 {
-        return spec(self.role).bodyR * self.scale;
+        return spec(self.role).bodyR * self.rigSize();
     }
     pub fn alive(self: *const Fishman) bool {
         return !self.gone;
@@ -439,7 +531,9 @@ pub const Fishman = struct {
     }
 
     pub fn netMat(self: *const Fishman) rl.Matrix {
-        const s = self.scale;
+        // **THE NET IS THE NETTER'S SIZE.** Asked at the raw placement, a role scaled to 1.12 threw a mesh
+        // still built for 1.00 — the one piece of its kit that leaves the hand and so the one that shows it.
+        const s = self.rigSize();
         return mul3(
             mul(scaleM(s, s, s), rx(mathx.degrees(self.net.spin))),
             ry(mathx.degrees(self.net.spin * 0.7)),
@@ -480,6 +574,8 @@ pub const Fishman = struct {
         var moveSpeed: f32 = 0;
         var moveYaw: ?f32 = null;
 
+        self.rollCd = mathx.maxF(0, self.rollCd - dt);
+
         switch (self.state) {
             .dead => {
                 self.speed = 0;
@@ -488,6 +584,24 @@ pub const Fishman = struct {
             .stunlight, .stunheavy => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enter(.idle);
+            },
+            .roll => {
+                // **A COMMITTED LINE, COMMITTED AT THE LAUNCH** — it does not steer and it does not track, so
+                // the place it lands is readable from the frame it leaves the ground.
+                // **THE DIVE IS DRIVEN BY THE DISTANCE IT HAS COVERED, NEVER BY A SPEED INTEGRATED PER
+                // FRAME.** Written as a rate the arc came out at 2.33 m of an advertised 3.30 — the profile's
+                // own mean silently rescaled it, which is the kind of number a comptime assert cannot see.
+                const u = mathx.clampF(self.t / ROLL_DUR, 0, 1);
+                const was = mathx.clampF((self.t - dt) / ROLL_DUR, 0, 1);
+                movedDist = ROLL_DIST * (rollEase(u) - rollEase(was)) * self.chill.travel();
+                mathx.stepXZ(&self.pos, self.rollDir, movedDist, bounds);
+                moveYaw = mathx.headingXZ(self.rollDir);
+                moveSpeed = if (dt > 1e-5) movedDist / dt else 0;
+                self.speed = moveSpeed;
+                if (self.t >= ROLL_DUR) {
+                    self.speed = 0;
+                    self.enter(.idle);
+                }
             },
             .thrust => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
@@ -518,12 +632,13 @@ pub const Fishman = struct {
                 const sensed = foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R);
                 const gap = mathx.maxF(0, sensed - foe.HERO_R - self.bodyR());
                 const homeGap = mathx.distXZ(self.pos, self.home);
-                switch (classify(self.role, gap, sensed, homeGap, self.cd <= 0, bandHurt, self.root.held())) {
+                switch (classify(self.role, gap, sensed, homeGap, self.cd <= 0, bandHurt, self.root.held(), self.rollCd <= 0 and foe.canLeap(&self.root))) {
                     .rest => {
                         if (sensed <= AGGRO_R) self.faceToward(quarry, dt);
                         self.speed = approach(self.speed, 0, ACCEL * dt);
                         self.state = .idle;
                     },
+                    .roll => self.enterRoll(quarry),
                     .thrust => {
                         self.cd = THRUST_CD * self.aiRng.range(0.85, 1.25);
                         self.heroLatch = false;
@@ -558,7 +673,7 @@ pub const Fishman = struct {
             },
         }
 
-        heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, moveSpeed, moveYaw, self.facing);
+        heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.rigSize(), moveSpeed, moveYaw, self.facing);
         self.pose();
         self.tryHit(blade);
         return self.heroHit;
@@ -566,7 +681,7 @@ pub const Fishman = struct {
 
     fn tryThrust(self: *Fishman, quarry: rl.Vector3) void {
         if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, quarry, foe.hurtReach(THRUST_R, self.scale), THRUST_FRONT_DOT)) return;
+        if (!foe.inFront(self.pos, self.facing, quarry, foe.hurtReach(THRUST_R, self.rigSize()), THRUST_FRONT_DOT)) return;
         self.heroHit = THRUST_HIT;
         self.heroLatch = true;
         self.leash.noteCombat();
@@ -589,8 +704,17 @@ pub const Fishman = struct {
         sfx.world(.shroom_fling, self.pos);
     }
 
+    /// **THE FRAMES IT IS NOT THERE FOR.** A fixed window in the middle of the dive, off the roll's own clock
+    /// — the same thing the player buys with his own roll, and readable for exactly the same reason.
+    pub fn invulnerable(self: *const Fishman) bool {
+        return self.state == .roll and self.t >= ROLL_IFRAME_IN and self.t < ROLL_IFRAME_OUT;
+    }
+
     pub fn tryHit(self: *Fishman, blade: foe.Blade) void {
         if (self.state == .dead) return;
+        // A blow that passes through leaves NO latch: the sword is still live when the body comes back down,
+        // and a stroke that swept an empty roll must be able to catch the rise.
+        if (self.invulnerable()) return;
         const s = foe.reached(self, blade) orelse return;
         const heavy = foe.wounded(self, s, blade, .{ .light = 0.75, .heavy = 1.45 });
         self.spray(s.contact, s.dir, foe.hitParts(if (heavy) HIT_SPRAY_HEAVY else HIT_SPRAY_LIGHT));
@@ -601,6 +725,19 @@ pub const Fishman = struct {
             .light => self.enterStun(.stunlight),
             .none => {},
         }
+    }
+
+    /// The heading is committed here and never re-aimed. **AWAY FROM THE BODY THAT CROWDED IT**, with a
+    /// lateral bias off its own stream so two of them do not dive onto the same spot.
+    fn enterRoll(self: *Fishman, quarry: rl.Vector3) void {
+        var away = mathx.dirXZ(quarry, self.pos);
+        if (mathx.lenXZ(away) < 1e-4) away = mathx.headingDir(self.facing);
+        const yaw = mathx.headingXZ(away) + mathx.radians(self.aiRng.range(-46.0, 46.0));
+        self.rollDir = mathx.headingDir(yaw);
+        self.rollCd = ROLL_CD * self.aiRng.range(0.85, 1.25);
+        self.heroLatch = false;
+        self.enter(.roll);
+        sfx.world(.lurker_sink, self.pos);
     }
 
     fn enter(self: *Fishman, s: State) void {
@@ -649,16 +786,16 @@ pub const Fishman = struct {
         .stretch = foe.BLOOD_STRETCH,
     };
     fn spray(self: *Fishman, at: rl.Vector3, dir: rl.Vector3, n: i32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, 2.4, self.scale, SPRAY);
+        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, 2.4, self.rigSize(), SPRAY);
     }
 
     fn riteMotes(self: *Fishman) void {
         var i: u32 = 0;
         while (i < RITE_MOTES) : (i += 1) {
             const a = self.fxRng.angle();
-            const rr = self.fxRng.range(0.1, 0.7) * self.scale;
+            const rr = self.fxRng.range(0.1, 0.7) * self.rigSize();
             foe.emitPart(&self.parts, &self.fxHead, .{
-                .p = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + self.fxRng.range(0.1, 1.5) * self.scale, self.pos.z + mathx.sinf(a) * rr),
+                .p = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + self.fxRng.range(0.1, 1.5) * self.rigSize(), self.pos.z + mathx.sinf(a) * rr),
                 .v = v3(0, self.fxRng.range(0.5, 1.5), 0),
                 .life = self.fxRng.range(0.5, 1.0),
                 .r0 = 0.03,
@@ -679,8 +816,8 @@ pub const Fishman = struct {
     }
 
     pub fn pose(self: *Fishman) void {
-        const fs = foe.rigScale(self.scale, self.fade);
-        const sink = foe.rigSink(foe.SINK_HUMANOID, self.scale, self.fade);
+        const fs = foe.rigScale(self.rigSize(), self.fade);
+        const sink = foe.rigSink(foe.SINK_HUMANOID, self.rigSize(), self.fade);
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
         const dead = self.state == .dead;
@@ -772,8 +909,12 @@ pub const Fishman = struct {
                 setLocal(wx, WRL, rest, rz(6.0));
             },
         }
-        // The held thing rides the right wrist for all three.
-        heromod.setJoint(wx, &rest, HELD, WRR, ry(0));
+        // **ONLY THE TRIDENT OWES THE KIT FIT** (`hero.staffFit`, the warriors' 180-is-plumb convention). At a
+        // bare `ry(0)` the mesh keeps its authored +Y, which off a hanging wrist points back up the forearm —
+        // so the trident was carried PRONGS BACKWARD over his shoulder with the butt leading. The bundle and
+        // the rattle are near-symmetric masses hung off the hand and were never wrong; re-basing those would
+        // be a change to two things nobody reported.
+        heromod.setJoint(wx, &rest, HELD, WRR, if (self.role == .spearman) heromod.staffFit(TRIDENT_TILT) else ry(0));
     }
 };
 
@@ -885,8 +1026,8 @@ pub const Shoal = struct {
 /// the per-role tables — they are the two bones this creature does NOT hold in common.
 fn buildBones() [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
-    mesh[ROOT] = pelvisMesh();
-    mesh[SPINE] = lumbarMesh();
+    mesh[ROOT] = pelvisMesh(.spearman);
+    mesh[SPINE] = lumbarMesh(.spearman);
     mesh[CHEST] = chestMesh();
     mesh[NECK] = neckMesh();
     mesh[HIPL] = thighMesh(1.0);
@@ -904,19 +1045,50 @@ fn buildBones() [N]rl.Mesh {
     return mesh;
 }
 
-fn pelvisMesh() rl.Mesh {
+/// **FAT IS A WIDER BODY, NOT A SCALED ONE** — the shaman's gut and hips are authored, so it reads as one
+/// heavy man among two lean ones rather than as the same man drawn bigger. `FAT` is the whole of the dial.
+fn fatOf(role: Role) f32 {
+    return if (role == .shaman) 1.62 else 1.0;
+}
+
+fn pelvisMesh(role: Role) rl.Mesh {
     var b = Builder.init();
+    var rng = mathx.Rng.init(0x5A17 + @as(u64, @intFromEnum(role)));
+    const fat = fatOf(role);
     b.setMat(.skin);
-    b.addBlob(v3(0, 0, 0), v3(0.086 * H, 0.068 * H, 0.074 * H), 9, 6, SCALE);
-    b.addBlob(v3(0, -0.020 * H, 0.030 * H), v3(0.070 * H, 0.044 * H, 0.052 * H), 8, 5, BELLY);
+    b.addBlob(v3(0, 0, 0), v3(0.086 * H * fat, 0.068 * H, 0.074 * H * fat), 9, 6, SCALE);
+    b.addBlob(v3(0, -0.020 * H, 0.030 * H * fat), v3(0.070 * H * fat, 0.044 * H, 0.052 * H * fat), 8, 5, BELLY);
+    if (role != .shaman) return b.toMesh();
+    // **THE ROBE.** Three courses of hem off the one shared garment primitive, widening as they fall, so the
+    // silhouette from behind is a bell and not a man. It hangs BELOW the pelvis and over the thighs, which is
+    // what makes the shaman the one body here with no legs to read.
+    b.setMat(.cloth);
+    const hip = -0.010 * H;
+    const knee = -0.150 * H;
+    const bot = -0.300 * H;
+    b.addSkirt(v3(0, hip, 0), 0.098 * H, hip - knee, 0.132 * H, 0.009 * H, 11, ROBE, &rng);
+    b.addSkirt(v3(0, knee, 0), 0.132 * H, knee - bot, 0.182 * H, 0.009 * H, 13, ROBE_DK, &rng);
+    // A cord at the waist, which is the one place the robe is not a bell.
+    b.setMat(.plain);
+    b.addCapsule(v3(-0.088 * H, 0.012 * H, 0), v3(0.088 * H, 0.012 * H, 0), 0.011 * H, 0.011 * H, 6, CORD);
+    b.addBlob(v3(0, 0.010 * H, 0.086 * H), v3(0.022 * H, 0.020 * H, 0.018 * H), 5, 5, SALT);
     return b.toMesh();
 }
 
-fn lumbarMesh() rl.Mesh {
+fn lumbarMesh(role: Role) rl.Mesh {
     var b = Builder.init();
+    var rng = mathx.Rng.init(0xB311 + @as(u64, @intFromEnum(role)));
+    const fat = fatOf(role);
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(0, 0.076 * H, 0), 0.062 * H, 0.074 * H, 9, SCALE);
-    b.addBlob(v3(0, 0.034 * H, 0.038 * H), v3(0.056 * H, 0.040 * H, 0.036 * H), 7, 5, BELLY);
+    b.addCapsule(v3(0, 0, 0), v3(0, 0.076 * H, 0), 0.062 * H * fat, 0.074 * H * fat, 9, SCALE);
+    b.addBlob(v3(0, 0.034 * H, 0.038 * H * fat), v3(0.056 * H * fat, 0.040 * H * fat, 0.036 * H * fat), 7, 5, BELLY);
+    if (role != .shaman) return b.toMesh();
+    // THE GUT ITSELF — proud of the trunk and hanging over the cord, uneven so it is not a ball.
+    b.addBlob(v3(0, 0.014 * H, 0.052 * H), v3(0.106 * H, 0.078 * H, 0.086 * H), 9, 7, BELLY);
+    b.addBlob(v3(rng.range(-0.012, 0.012) * H, -0.014 * H, 0.058 * H), v3(0.092 * H, 0.052 * H, 0.070 * H), 8, 6, BELLY);
+    // The robe carries on up over it, open at the front.
+    b.setMat(.cloth);
+    b.addSkirt(v3(0, 0.070 * H, 0), 0.086 * H, 0.082 * H, 0.104 * H, 0.009 * H, 11, ROBE, &rng);
     return b.toMesh();
 }
 
@@ -1171,26 +1343,26 @@ test "THE THREE PICK DIFFERENT THINGS FROM THE SAME PLACE — that is what makes
     const near = 1.8;
     const mid = 6.0;
     // At the spearman's own reach: he thrusts, the netter is too close to throw, the shaman does nothing.
-    try std.testing.expectEqual(Choice.thrust, classify(.spearman, near, near, 0, true, false, false));
-    try std.testing.expectEqual(Choice.back, classify(.netter, near, near, 0, true, false, false));
-    try std.testing.expectEqual(Choice.back, classify(.shaman, near, near, 0, true, false, false));
+    try std.testing.expectEqual(Choice.thrust, classify(.spearman, near, near, 0, true, false, false, false));
+    try std.testing.expectEqual(Choice.back, classify(.netter, near, near, 0, true, false, false, false));
+    try std.testing.expectEqual(Choice.back, classify(.shaman, near, near, 0, true, false, false, false));
     // Out at the netter's band: he throws, the spearman closes, the shaman still holds off.
-    try std.testing.expectEqual(Choice.net, classify(.netter, mid, mid, 0, true, false, false));
-    try std.testing.expectEqual(Choice.close, classify(.spearman, mid, mid, 0, true, false, false));
-    try std.testing.expectEqual(Choice.back, classify(.shaman, mid, mid, 0, true, false, false));
+    try std.testing.expectEqual(Choice.net, classify(.netter, mid, mid, 0, true, false, false, false));
+    try std.testing.expectEqual(Choice.close, classify(.spearman, mid, mid, 0, true, false, false, false));
+    try std.testing.expectEqual(Choice.back, classify(.shaman, mid, mid, 0, true, false, false, false));
 }
 
 test "THE NET IS NOT A MELEE MOVE — inside `NET_MIN` he cannot throw it and has to give ground" {
-    try std.testing.expectEqual(Choice.back, classify(.netter, NET_MIN - 0.2, NET_MIN - 0.2, 0, true, false, false));
-    try std.testing.expectEqual(Choice.net, classify(.netter, NET_MIN + 0.2, NET_MIN + 0.2, 0, true, false, false));
-    try std.testing.expectEqual(Choice.close, classify(.netter, NET_R + 1.0, NET_R + 1.0, 0, true, false, false));
+    try std.testing.expectEqual(Choice.back, classify(.netter, NET_MIN - 0.2, NET_MIN - 0.2, 0, true, false, false, false));
+    try std.testing.expectEqual(Choice.net, classify(.netter, NET_MIN + 0.2, NET_MIN + 0.2, 0, true, false, false, false));
+    try std.testing.expectEqual(Choice.close, classify(.netter, NET_R + 1.0, NET_R + 1.0, 0, true, false, false, false));
 }
 
 test "THE SHAMAN SPENDS THE RITE ON WOUNDS AND NOT ON SCRATCHES" {
-    try std.testing.expectEqual(Choice.rest, classify(.shaman, 10.0, 10.0, 0, true, false, false));
-    try std.testing.expectEqual(Choice.rite, classify(.shaman, 10.0, 10.0, 0, true, true, false));
+    try std.testing.expectEqual(Choice.rest, classify(.shaman, 10.0, 10.0, 0, true, false, false, false));
+    try std.testing.expectEqual(Choice.rite, classify(.shaman, 10.0, 10.0, 0, true, true, false, false));
     // …and it holds the rite while it is on cooldown rather than waiting on the spot for it.
-    try std.testing.expectEqual(Choice.rest, classify(.shaman, 10.0, 10.0, 0, false, true, false));
+    try std.testing.expectEqual(Choice.rest, classify(.shaman, 10.0, 10.0, 0, false, true, false, false));
 }
 
 test "THE NET TAKES HIS FEET AND BUYS EXACTLY ONE THRUST" {
@@ -1312,4 +1484,105 @@ test "the trident is the longest common reach in the game, and it is telegraphed
     try std.testing.expectEqual(@as(u32, 1), landed);
     try std.testing.expect(firstAt >= foe.TELL_MIN);
     std.debug.print("  trident: {d:.1} m of reach, arriving at {d:.2} s\n", .{ THRUST_R, firstAt });
+}
+
+/// The trident's own axis in the WORLD, off the POSED bone: mesh-local +Y is the prongs (`tridentMesh` builds
+/// the shaft down to -0.60 H and the tips up to +0.50 H), so this is butt-to-point.
+fn tridentAxis(f: *const Fishman) rl.Vector3 {
+    const butt = foe.markOn(f.xf[HELD], v3(0, -0.60 * H, 0));
+    const tip = foe.markOn(f.xf[HELD], v3(0, 0.50 * H, 0));
+    return mathx.normV(mathx.subV(tip, butt));
+}
+
+test "THE TRIDENT IS CARRIED POINT-FIRST — measured off the posed bone, never reasoned from the matrix" {
+    var f = Fishman.spawnAs(.spearman, mathx.ground(0, 0), 0, 1.0, 0.4);
+    f.pose();
+    const ax = tridentAxis(&f);
+    const fwd = mathx.headingDir(f.facing);
+    const lead = ax.x * fwd.x + ax.z * fwd.z;
+    const pitch = mathx.degrees(std.math.asin(mathx.clampF(ax.y, -1, 1)));
+    std.debug.print("\n  trident at tilt {d:.0}: leads {d:.2} along his facing, pitch {d:.0} deg\n", .{ TRIDENT_TILT, lead, pitch });
+    // **THE PRONGS GO WHERE HE IS LOOKING.** Backwards this read -1: the butt led and the points sat over his
+    // own shoulder, which is the bug this pins.
+    try std.testing.expect(lead > 0.55);
+    // …and couched, not shouldered: level to a little raised, never straight up and never into the ground.
+    try std.testing.expect(pitch > -30.0 and pitch < 45.0);
+}
+
+test "the thrust is a LINE down his facing, not a fan across his front" {
+    try std.testing.expect(THRUST_HALF_W < 1.25);
+    try std.testing.expect(THRUST_HALF_W > foe.HERO_R);
+    const was = (THRUST_R + foe.HERO_REACH) * @sqrt(1.0 - 0.62 * 0.62);
+    std.debug.print("  thrust bills {d:.2} m either side of the drive (was {d:.2} m)\n", .{ THRUST_HALF_W, was });
+
+    // A body squared up on the line is still hit; one standing off the shoulder is not.
+    var f = Fishman.spawnAs(.spearman, mathx.ground(0, 0), 0, 1.0, 0.4);
+    const reach = foe.hurtReach(THRUST_R, 1.0);
+    const fwd = mathx.headingDir(f.facing);
+    const onLine = v3(fwd.x * (reach - 0.4), 0, fwd.z * (reach - 0.4));
+    try std.testing.expect(foe.inFront(f.pos, f.facing, onLine, reach, THRUST_FRONT_DOT));
+    const side = v3(onLine.x - fwd.z * 2.4, 0, onLine.z + fwd.x * 2.4);
+    try std.testing.expect(!foe.inFront(f.pos, f.facing, side, reach, THRUST_FRONT_DOT));
+    f.pose();
+}
+
+test "THE TWO THAT FIGHT THROW THEMSELVES OUT OF THE WAY — and the one in the robe cannot" {
+    const close = ROLL_TRIGGER_R - 0.2;
+    try std.testing.expectEqual(Choice.roll, classify(.spearman, close, close, 0, false, false, false, true));
+    try std.testing.expectEqual(Choice.roll, classify(.netter, close, close, 0, false, false, false, true));
+    try std.testing.expectEqual(Choice.back, classify(.shaman, close, close, 0, false, false, false, true));
+    try std.testing.expectEqual(Choice.thrust, classify(.spearman, close, close, 0, true, false, false, true));
+    const far = ROLL_TRIGGER_R + 2.0;
+    try std.testing.expectEqual(Choice.close, classify(.spearman, far, far, 0, false, false, false, true));
+}
+
+test "THE ROLL HAS I-FRAMES, AND FRAMES AT BOTH ENDS THAT ARE NOT" {
+    var f = Fishman.spawnAs(.spearman, mathx.ground(0, 0), 0, 1.0, 0.4);
+    f.enterRoll(mathx.ground(0, 3));
+    const dt = 1.0 / 60.0;
+    var t: f32 = 0;
+    var open: u32 = 0;
+    var shut: u32 = 0;
+    const from = f.pos;
+    while (t < ROLL_DUR) : (t += dt) {
+        _ = f.update(dt, mathx.ground(0, 3), 400, .{}, false);
+        if (f.invulnerable()) shut += 1 else open += 1;
+    }
+    const went = mathx.distXZ(from, f.pos);
+    std.debug.print("\n  fishman roll: {d:.2} m in {d:.2} s, {d} frames gone of {d} ({d:.0}% vulnerable)\n", .{ went, ROLL_DUR, shut, shut + open, 100.0 * @as(f32, @floatFromInt(open)) / @as(f32, @floatFromInt(shut + open)) });
+    try std.testing.expect(shut > 0 and open > shut);
+    try std.testing.expect(went > ROLL_TRIGGER_R);
+    try std.testing.expect(!f.invulnerable());
+}
+
+test "a blow thrown into the i-frames passes through, and the one that leads it does not" {
+    const dt = 1.0 / 60.0;
+    const swing = foe.Blade{ .active = true, .r = 1.2, .a = mathx.ground(0, 0), .b = mathx.ground(0, 0), .hit = .{ .dmg = 40 } };
+    var gone = Fishman.spawnAs(.spearman, mathx.ground(0, 0), 0, 1.0, 0.4);
+    gone.enterRoll(mathx.ground(0, 3));
+    gone.t = (ROLL_IFRAME_IN + ROLL_IFRAME_OUT) * 0.5;
+    const hp0 = gone.vit.hp;
+    gone.tryHit(swing);
+    try std.testing.expectApproxEqAbs(hp0, gone.vit.hp, 1e-4);
+    var late = Fishman.spawnAs(.spearman, mathx.ground(0, 0), 0, 1.0, 0.4);
+    late.enterRoll(mathx.ground(0, 3));
+    late.t = ROLL_IFRAME_OUT + dt;
+    late.pose();
+    late.tryHit(.{ .active = true, .r = 1.2, .a = late.centerWorld(), .b = late.centerWorld(), .hit = .{ .dmg = 40 } });
+    try std.testing.expect(late.vit.hp < hp0);
+}
+
+test "BIGGER: the two that fight out-measure the one that hides behind them" {
+    var spear = Fishman.spawnAs(.spearman, mathx.ground(0, 0), 0, 1.0, 0.4);
+    var net = Fishman.spawnAs(.netter, mathx.ground(0, 0), 0, 1.0, 0.4);
+    var sham = Fishman.spawnAs(.shaman, mathx.ground(0, 0), 0, 1.0, 0.4);
+    spear.pose();
+    net.pose();
+    sham.pose();
+    std.debug.print("  fishmen: spearman {d:.2} m tall / {d:.2} m wide, netter {d:.2}/{d:.2}, shaman {d:.2}/{d:.2}\n", .{
+        spear.topWorld().y, spear.bodyR() * 2, net.topWorld().y, net.bodyR() * 2, sham.topWorld().y, sham.bodyR() * 2,
+    });
+    try std.testing.expect(spear.topWorld().y > sham.topWorld().y);
+    try std.testing.expect(net.topWorld().y > sham.topWorld().y);
+    try std.testing.expect(sham.bodyR() > spear.bodyR() and sham.bodyR() > net.bodyR());
 }

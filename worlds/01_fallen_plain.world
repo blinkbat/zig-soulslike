@@ -16523,6 +16523,42 @@ at: sapling -83.036255 83.36782 0 1
 at: sapling -95.14873 110.94844 0 1
 at: sapling -97.66752 105.58969 0 1
 at: sapling -97.64912 90.8833 45 0.79999995
+at: charspar -167.02898 37.314224 0 1
+at: stonecarve -170.06702 37.361664 -90 1
+at: charspar -190.35106 56.399967 60 1.5999994
+at: stonecarve -193.3891 56.447407 -90 1
+at: gibbet -180.56679 55.8868 0 1
+at: stairs -198.11372 62.034637 0 1
+at: monolith -197.77692 65.50261 0 1
+at: cairn -203.53264 52.23339 0 1
+at: cairn -246.30913 20.937975 0 1
+at: ashcrag -202.59647 11.248224 0 1
+at: ashcrag -201.90158 12.685116 50 1
+at: ashcrag -165.65381 39.56742 0 1.1499999
+at: boulder 37.87683 30.80721 0 1.2999997
+at: rocks 37.694347 25.87251 0 1
+at: rocks 37.267673 21.059217 0 1
+at: rocks 39.945103 27.124702 0 1
+at: rocks 39.69054 16.454433 0 1
+at: rocks 38.664055 28.51623 0 1
+at: boulder 39.30732 -4.0714226 0 1
+at: boulder 29.045395 -45.52707 0 1
+at: boulder 25.714981 -50.974632 35 1
+at: boulder -90.20256 -5.0782967 0 1
+at: boulder -156.08998 -16.320465 0 1
+at: boulder -155.78883 -9.249668 0 1
+at: boulder -163.50978 14.5112 0 1
+at: boulder -161.36769 41.20533 0 1
+at: boulder -159.54419 41.904037 0 1
+at: boulder -114.02631 -123.13168 0 1
+at: capcolossal -177.52208 -125.035324 -35 1.8999991
+at: glowcluster -142.85681 -140.69797 0 1
+at: glowcluster -172.21663 -125.39029 0 1
+at: glowcluster -180.26971 -127.27644 0 1
+at: glowcluster -185.80072 -123.76817 0 1
+at: glowcluster -153.90033 -119.48285 0 1
+at: glowcluster -140.61737 -133.24873 0 1
+at: glowcluster -150.60616 -137.88268 20 1.4999995
 
 soil: 0x1887 1x2 0x62 1x2 0x59 1x2 0x1 1x3 0x58 1x6 0x60 2x2 1x1 0x10 9x5 0x46
 soil: 2x2 1x2 0x44 9x5 0x7 9x4 2x1 9x2 0x86 9x13 0x1 9x13 0x84 9x28 0x80 9x32
@@ -17032,8 +17068,6 @@ foe: spore_golem -219.74 -117.11 0.0 1.00 0.29
 foe: rooted 37.06 41.68 0.0 1.00 0.66
 foe: bone_skitterer -222.50 -11.57 0.0 1.00 0.03
 foe: bone_skitterer -228.65 -9.99 0.0 1.00 0.40
-foe: bone_skitterer -222.80 -4.78 0.0 1.00 0.77
-foe: bone_skitterer -233.81 -4.38 0.0 1.00 0.14
 foe: ancient_priest -228.41 1.18 0.0 1.00 0.51
 foe: tolling_hollow -230.21 -35.95 0.0 1.00 0.88
 foe: fen_lurker -24.11 -134.84 0.0 1.00 0.25
@@ -17062,8 +17096,6 @@ foe: bone_skitterer -168.19 -14.17 0.0 1.00 0.39
 foe: shade -167.73 -20.41 0.0 1.00 0.76
 foe: mourner -210.50 52.14 0.0 1.00 0.13
 foe: mourner -214.76 53.75 0.0 1.00 0.50
-foe: mourner -216.81 48.93 0.0 1.00 0.87
-foe: ancient_priest -213.13 49.00 0.0 1.00 0.24
 foe: tolling_hollow -186.00 29.53 0.0 1.00 0.61
 foe: fish_spearman -125.23 89.74 0.0 1.00 0.98
 foe: fish_spearman -125.81 98.62 0.0 1.00 0.35
@@ -17083,6 +17115,11 @@ foe: cinder_wake -255.95 57.43 0.0 1.00 0.16
 foe: cinder_wake -257.79 52.43 0.0 1.00 0.53
 foe: rotgorger -258.72 59.53 0.0 1.00 0.90
 foe: rotgorger -260.11 57.25 0.0 1.00 0.27
+foe: blinkbat -257.13 25.00 0.0 1.00 0.64
+foe: blinkbat -169.31 15.29 0.0 1.00 0.01
+foe: blinkbat -164.32 8.67 0.0 1.00 0.38
+foe: blinkbat -264.55 -14.06 0.0 1.00 0.75
+foe: blinkbat -257.54 -29.90 0.0 1.00 0.12
 
 flags: met_wanderer heard_of_gate
 

@@ -82,6 +82,7 @@ pub fn traitsOf(k: wf.FoeKind) Traits {
         .fen_lurker => .{ .nature = .demon, .gait = .waterfaring },
         .leechfly => .{ .nature = .beast, .gait = .flying },
         .shade, .mourner => .{ .nature = .undead, .gait = .flying },
+        .blinkbat => .{ .nature = .demon, .gait = .flying },
         .rooted => .{ .nature = .plant, .gait = .rooted },
         .slumber_bloom => .{ .nature = .plant, .gait = .rooted },
         .brood_sac => .{ .nature = .beast, .gait = .rooted },

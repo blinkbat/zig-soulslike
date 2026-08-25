@@ -382,16 +382,29 @@ pub fn hintRow(hints: []const Hint, cy: i32, size: i32, col: rl.Color) void {
 }
 
 pub const MARGIN: i32 = 30;
-const BAR_TOP: i32 = 24;
+/// **THE VITALS SIT AT THE BOTTOM MIDDLE AND EVERYTHING ELSE IN THE BLOCK GROWS UPWARD FROM THEM** (owner).
+/// The bars' own bottom edge is the fixed thing: the ail meters stack ABOVE them and the status word above
+/// those, so a meter appearing never shoves the three bars a player is actually watching.
+const BAR_BOTTOM_MARGIN: i32 = 34;
 const BAR_GAP: i32 = 6;
+/// The day dial keeps the top-left corner it always had — it is the world clock, not a status bar, and it was
+/// only ever positioned off the bars because that is where they used to be.
+const DIAL_TOP: i32 = 24;
 const DIAL_R: i32 = 21;
 const DIAL_GAP: i32 = 14;
-const BARS_X: i32 = MARGIN + DIAL_R * 2 + DIAL_GAP;
-const HP_W: i32 = 268;
+/// Each bar is CENTRED on the screen's own axis rather than left-aligned to a common origin: the three
+/// widths step down, and stepped bars hung off a left edge read as lopsided once the block is centred.
+fn barX(w: i32) i32 {
+    return @divTrunc(rl.getScreenWidth() - w, 2);
+}
+fn barsTop() i32 {
+    return rl.getScreenHeight() - BAR_BOTTOM_MARGIN - BARS_H;
+}
+const HP_W: i32 = 308;
 const HP_H: i32 = 15;
-const FP_W: i32 = 182;
+const FP_W: i32 = 210;
 const FP_H: i32 = 11;
-const ST_W: i32 = 232;
+const ST_W: i32 = 268;
 const ST_H: i32 = 11;
 
 const TRACK = rgba(16, 13, 11, 186);
@@ -561,8 +574,11 @@ const PSN_H: i32 = 9;
 /// Under the stamina bar, in `Ail` order, and only what is actually filling — so the strip grows downward as a
 /// fight goes wrong and the reader's eye finds the same ailment in the same place every time.
 /// Returns how far down the last row reached, so the caller keeps owning the layout.
-fn statusBars(x: i32, y: i32, ails: Ails) i32 {
-    var yy = y;
+/// Rows laid UPWARD from `bottomY`, in `Ail` order so the same status is always the same distance from the
+/// bars. Returns the top of the stack, which is where the word goes.
+fn statusBarsUp(bottomY: i32, ails: Ails) i32 {
+    const x = barX(PSN_W);
+    var yy = bottomY - PSN_H;
     for (ails, 0..) |s, i| {
         if (s.frac <= 0.001) continue;
         const a: combat.Ail = @enumFromInt(i);
@@ -570,9 +586,9 @@ fn statusBars(x: i32, y: i32, ails: Ails) i32 {
         ailGlyph(a, @as(f32, @floatFromInt(x - PSN_GLYPH)), @as(f32, @floatFromInt(yy)) + @as(f32, PSN_H) * 0.5, PSN_GLYPH_S, tint);
         const hi = if (s.on) tint else mathx.withAlpha(tint, 165);
         bar(x, yy, PSN_W, PSN_H, s.frac, 0, hi, mathx.withAlpha(hi, 150), mathx.withAlpha(uiart.CATCH, 190));
-        yy += PSN_H + BAR_GAP;
+        yy -= PSN_H + BAR_GAP;
     }
-    return yy;
+    return yy + PSN_H;
 }
 const PSN_GLYPH: i32 = 15;
 const PSN_GLYPH_S: f32 = 13.0;
@@ -706,7 +722,9 @@ const SP_LIFE_HI = rgba(150, 200, 226, 255);
 const SP_LIFE_LO = rgba(58, 92, 116, 255);
 const SP_LIFE_TP = rgba(206, 234, 248, 255);
 
-const BARS_BOTTOM: i32 = BAR_TOP + BARS_H + BAR_GAP + 2 + PSN_H;
+/// The spirit panel hangs under the DIAL now, not under the bars — the bars left the corner, and a panel
+/// anchored to where they used to be would have followed them to the floor.
+const BARS_BOTTOM: i32 = DIAL_TOP + DIAL_R * 2;
 
 /// `k` is the fade, 0..1 — held by the game because the spirit's body is gone before the toast has finished leaving, and a panel that reads its own subject cannot outlive it.
 pub fn spiritPanel(hasFace: bool, name: [:0]const u8, hp: f32, k: f32) void {
@@ -733,6 +751,68 @@ pub fn spiritPanel(hasFace: bool, name: [:0]const u8, hp: f32, k: f32) void {
     bar(tx, by, SP_BAR_W, SP_BAR_H, mathx.clampF(hp, 0, 1), 0, SP_LIFE_HI, SP_LIFE_LO, SP_LIFE_TP);
 }
 
+/// **THE WORD A STATUS SAYS WHEN IT LANDS, AND THE ONE THAT SAYS NOTHING.** A stun is the one status the
+/// player is already being told about by the thing that took his feet, and a caption on that frame is noise
+/// laid over the frame he can least afford to read (owner: don't show one for stun/heavy stun).
+fn ailWord(a: combat.Ail) ?[:0]const u8 {
+    return switch (a) {
+        .poison => "Poisoned!",
+        .burning => "Burning!",
+        .chill => "Chilled!",
+        .bleed => "Bled!",
+        .sleep => "Asleep!",
+        .confusion => "Confused!",
+        .charm => "Charmed!",
+        .berserk => "Enraged!",
+        .stupefy => "Stupefied!",
+        .stun => null,
+    };
+}
+
+const FLASH_IN: f32 = 0.16;
+const FLASH_HOLD: f32 = 0.90;
+const FLASH_OUT: f32 = 0.60;
+const FLASH_DUR: f32 = FLASH_IN + FLASH_HOLD + FLASH_OUT;
+/// How far the word drifts up over its life. It ARRIVES rather than appearing, which is what stops a caption
+/// on a busy frame reading as a HUD element that was always there.
+const FLASH_RISE: f32 = 9.0;
+var flashLeft: f32 = 0;
+var flashAil: combat.Ail = .poison;
+var ailWas: [combat.NAIL]bool = [_]bool{false} ** combat.NAIL;
+
+/// The rising edge of a meter actually PROCCING, watched here rather than plumbed in: `Status.on` is already
+/// the fact, and the game hands it over every frame.
+fn watchAils(dt: f32, psn: Ails) void {
+    for (psn, 0..) |s, i| {
+        const a: combat.Ail = @enumFromInt(i);
+        if (s.on and !ailWas[i] and ailWord(a) != null) {
+            flashLeft = FLASH_DUR;
+            flashAil = a;
+        }
+        ailWas[i] = s.on;
+    }
+    if (flashLeft > 0) flashLeft = mathx.maxF(0, flashLeft - dt);
+}
+
+/// FADES IN AND THEN OUT (owner), off its own clock and nothing else.
+fn flashAmt() f32 {
+    if (flashLeft <= 0) return 0;
+    const spent = FLASH_DUR - flashLeft;
+    if (spent < FLASH_IN) return mathx.smoothstep(0, FLASH_IN, spent);
+    if (flashLeft > FLASH_OUT) return 1;
+    return mathx.smoothstep(0, FLASH_OUT, flashLeft);
+}
+
+fn statusFlash(topY: i32) void {
+    const k = flashAmt();
+    if (k <= 0.004) return;
+    const s = ailWord(flashAil) orelse return;
+    const a: u8 = @intFromFloat(255.0 * k);
+    const lift: i32 = @intFromFloat((1.0 - k) * FLASH_RISE);
+    const y = topY - lineH(SMALL) - 4 + lift;
+    text(s, @divTrunc(rl.getScreenWidth() - textW(s, SMALL), 2), y, SMALL, mathx.withAlpha(ailTint(flashAil), a));
+}
+
 pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, fpRefused: f32, windedTo: f32, psn: Ails) void {
     if (hp > chip) {
         chip = hp;
@@ -742,23 +822,29 @@ pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, fpRefused:
         if (chipHold > 0) chipHold -= dt else chip = mathx.maxF(hp, chip - CHIP_RATE * dt);
     }
     chipLast = hp;
-    var y = BAR_TOP;
-    bar(BARS_X, y, HP_W, HP_H, hp, chip, HP_HI, HP_LO, HP_TP);
+    watchAils(dt, psn);
+
+    var y = barsTop();
+    const hpX = barX(HP_W);
+    bar(hpX, y, HP_W, HP_H, hp, chip, HP_HI, HP_LO, HP_TP);
     y += HP_H + BAR_GAP;
-    bar(BARS_X, y, FP_W, FP_H, fp, 0, FP_HI, FP_LO, FP_TP);
-    refuseRing(BARS_X, y, FP_W, FP_H, fpRefused);
+    const fpX = barX(FP_W);
+    bar(fpX, y, FP_W, FP_H, fp, 0, FP_HI, FP_LO, FP_TP);
+    refuseRing(fpX, y, FP_W, FP_H, fpRefused);
     y += FP_H + BAR_GAP;
-    bar(BARS_X, y, ST_W, ST_H, stam, 0, ST_HI, ST_LO, ST_TP);
+    const stX = barX(ST_W);
+    bar(stX, y, ST_W, ST_H, stam, 0, ST_HI, ST_LO, ST_TP);
     if (windedTo > 0.001) {
         const wf: f32 = @floatFromInt(ST_W);
         const owed: i32 = @intFromFloat(wf * mathx.clampF(windedTo, 0, 1));
         const fill: i32 = @intFromFloat(wf * mathx.clampF(stam, 0, 1));
-        if (owed > fill) rl.drawRectangle(BARS_X + fill, y, owed - fill, ST_H, mathx.withAlpha(WARN, 46));
-        rl.drawRectangle(BARS_X + owed - 1, y - 1, 2, ST_H + 2, mathx.withAlpha(WARN_LT, 210));
+        if (owed > fill) rl.drawRectangle(stX + fill, y, owed - fill, ST_H, mathx.withAlpha(WARN, 46));
+        rl.drawRectangle(stX + owed - 1, y - 1, 2, ST_H + 2, mathx.withAlpha(WARN_LT, 210));
     }
-    refuseRing(BARS_X, y, ST_W, ST_H, stamRefused);
-    y += ST_H + BAR_GAP + 2;
-    _ = statusBars(BARS_X, y, psn);
+    refuseRing(stX, y, ST_W, ST_H, stamRefused);
+    // **THE METERS STACK UPWARD OFF THE TOP OF THE BLOCK**, so the three bars never move under a player's eye.
+    const stackTop = statusBarsUp(barsTop() - BAR_GAP - 2, psn);
+    statusFlash(stackTop);
 }
 
 const BARS_H: i32 = HP_H + BAR_GAP + FP_H + BAR_GAP + ST_H;
@@ -772,7 +858,7 @@ const MOON_COL = rgba(206, 216, 234, 255);
 /// THE WORLD CLOCK, drawn as the thing it actually is: a horizon, and the key light travelling across it left to right. The hour is the ONLY input and every shape comes off `daynight`'s own arithmetic, so the dial cannot tell a different time than the sun the scene is lit by.
 pub fn dayDial(hour: f32) void {
     const cx = MARGIN + DIAL_R;
-    const cy = BAR_TOP + @divTrunc(BARS_H, 2);
+    const cy = DIAL_TOP + DIAL_R;
     const r: f32 = @floatFromInt(DIAL_R);
     const fx: f32 = @floatFromInt(cx);
     const fy: f32 = @floatFromInt(cy);
@@ -1328,3 +1414,38 @@ test "a word wider than the whole column is taken rather than dropped" {
     try std.testing.expectEqualStrings("supercalifragilistic", out[1]);
 }
 
+
+test "A STATUS SAYS ITS OWN NAME — except a stun, which says nothing" {
+    inline for (.{ combat.Ail.poison, .burning, .chill, .bleed, .sleep, .confusion, .charm, .berserk, .stupefy }) |a| {
+        try std.testing.expect(ailWord(a) != null);
+    }
+    try std.testing.expect(ailWord(.stun) == null);
+}
+
+test "THE WORD FADES IN AND THEN OUT, and a stun never starts one" {
+    flashLeft = 0;
+    ailWas = [_]bool{false} ** combat.NAIL;
+    var ails: Ails = [_]Status{.{}} ** combat.NAIL;
+
+    ails[@intFromEnum(combat.Ail.stun)] = .{ .frac = 1, .on = true };
+    watchAils(1.0 / 60.0, ails);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), flashAmt(), 1e-6);
+
+    ails[@intFromEnum(combat.Ail.poison)] = .{ .frac = 1, .on = true };
+    watchAils(0, ails);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), flashAmt(), 1e-3);
+    var peak: f32 = 0;
+    var t: f32 = 0;
+    const dt = 1.0 / 60.0;
+    while (t < FLASH_IN) : (t += dt) {
+        watchAils(dt, ails);
+        peak = mathx.maxF(peak, flashAmt());
+    }
+    try std.testing.expect(peak > 0.9);
+    while (t < FLASH_DUR + 0.1) : (t += dt) watchAils(dt, ails);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), flashAmt(), 1e-6);
+    // …and it does not re-fire while the meter simply STAYS on. Only the edge speaks.
+    watchAils(dt, ails);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), flashAmt(), 1e-6);
+    flashLeft = 0;
+}

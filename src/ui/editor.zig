@@ -239,6 +239,7 @@ const unitTips = [_][:0]const u8{
     "Two-handed trident. The longest common reach in the game; one slow thrust down a line",
     "Throws a NET that takes your feet for 1.35 s — exactly one thrust. Cannot throw it up close",
     "No blow at all. Heals the whole band off its own bars. Softest body, biggest purse: kill it first",
+    "Blinks onto your flank, one bite, gone. A bite that LANDS heals it — block it, or stagger the drink off it",
     "Talks. Roams its own leash, carries a staff. Give it a `dlg=` in the file to say anything",
     "Talks. Camel-humanoid trader; the caravan props are its own family",
     "Sweep to erase ([ ] sets radius)",
@@ -294,6 +295,7 @@ const unitIcons = [_]ui.Icon{
     .fish_spearman,
     .fish_netter,
     .fish_shaman,
+    .blinkbat,
     .wanderer,
     .merchant,
     .erase,
@@ -418,6 +420,7 @@ const UnitBrush = enum {
     fish_spearman,
     fish_netter,
     fish_shaman,
+    blinkbat,
     // **THE FOLK COME AFTER THE FOES AND BEFORE THE ERASER**, which is what `brushIdx` splits on: under
     // `NFOE_KIND` it is a creature, over it a body that talks.
     wanderer,
@@ -2440,6 +2443,7 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         .fish_spearman => ui.col(96, 132, 112, 255),
         .fish_netter => ui.col(120, 156, 138, 255),
         .fish_shaman => ui.col(158, 186, 150, 255),
+        .blinkbat => ui.col(170, 108, 176, 255),
         .leechfly => ui.col(196, 66, 58, 255),
         .rooted => ui.col(140, 96, 52, 255),
         .shroom => ui.col(214, 130, 118, 255),

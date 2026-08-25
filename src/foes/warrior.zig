@@ -83,9 +83,7 @@ const FIST_Y = -0.05 * H;
 const FIST_Z = 0.02 * H;
 
 /// Both kits are authored pointing UP off the grip (built in the archer's bow frame, whose +Y runs back up the forearm), so the fit FLIPS them. After it, `wpnTilt` means degrees the weapon leads forward of the forearm line.
-fn wpnFit(tilt: f32) rl.Matrix {
-    return mul(ry(180.0), rx(180.0 - tilt));
-}
+const wpnFit = heromod.staffFit;
 
 /// Authors where the kit POINTS in the world (deg forward of straight down: 0 down, 90 level, 180 on end) and
 /// hands the wrist whatever that costs. A `wpnTilt` held steady through a 220-deg sweep leaves the weapon radial to the arm at the bottom — measured 0.44 m under the turf beside his own boot. The LUNGE opts out.

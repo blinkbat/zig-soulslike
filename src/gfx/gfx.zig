@@ -936,6 +936,30 @@ pub const Builder = struct {
         }
     }
 
+    /// **A GARMENT THAT HANGS OFF A BODY** — a ring of thin panels from `rTop` out to `rBot` over `drop`, each
+    /// wobbled and sagged on the caller's own seeded stream so the hem is uneven (WABI-SABI). Panels are thin
+    /// WALLS AT THE RIM: `addBox` takes HALF-axes, so a radial extent of `(rTop - rBot)/2` centred on the mean
+    /// radius spans one to the other, and writing the extents instead gives every panel a solid pie slice.
+    pub fn addSkirt(self: *Builder, c: rl.Vector3, rTop: f32, drop: f32, rBot: f32, thick: f32, sides: i32, col: rl.Color, rng: *mathx.Rng) void {
+        var i: i32 = 0;
+        while (i < sides) : (i += 1) {
+            const a0 = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(sides)) * std.math.tau;
+            const a1 = @as(f32, @floatFromInt(i + 1)) / @as(f32, @floatFromInt(sides)) * std.math.tau;
+            const am = (a0 + a1) * 0.5;
+            const rb = rBot * rng.range(0.88, 1.12);
+            const fall = drop * rng.range(0.90, 1.10);
+            const mid = (rTop + rb) * 0.5;
+            const half = (a1 - a0) * 0.5;
+            self.addBox(
+                v3(c.x + mathx.cosf(am) * mid, c.y - fall * 0.5, c.z + mathx.sinf(am) * mid),
+                v3(mathx.cosf(am) * thick, 0, mathx.sinf(am) * thick),
+                v3(mathx.cosf(am) * (rTop - rb) * 0.5, fall * 0.5, mathx.sinf(am) * (rTop - rb) * 0.5),
+                v3(-mathx.sinf(am) * mid * half * 1.25, 0, mathx.cosf(am) * mid * half * 1.25),
+                col,
+            );
+        }
+    }
+
     pub fn addBlob(self: *Builder, c: rl.Vector3, r: rl.Vector3, segs: i32, sides: i32, col: rl.Color) void {
         const o = self.shapeOff();
         const sf: f32 = @floatFromInt(sides);

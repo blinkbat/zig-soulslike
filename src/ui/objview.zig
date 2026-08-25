@@ -37,6 +37,7 @@ const gorgermod = @import("../foes/rotgorger.zig");
 const birchmod = @import("../foes/birchwight.zig");
 const huskmod = @import("../foes/salthusk.zig");
 const fishmod = @import("../foes/fishman.zig");
+const batmod = @import("../foes/blinkbat.zig");
 const combat = @import("../play/combat.zig");
 const foemod = @import("../foes/foe.zig");
 const elemfx = @import("../gfx/elemfx.zig");
@@ -342,6 +343,7 @@ const CharSet = struct {
     stand: birchmod.Stand,
     pan: huskmod.Pan,
     shoal: fishmod.Shoal,
+    roost: batmod.Roost,
 };
 /// **112.4 MB, TAKEN WHEN THE TAB IS FIRST OPENED AND NOT OUT OF BSS AT LOAD** — as a module `var` it was that
 /// much commit charge from the image mapping onward whether or not a creature was ever looked at. Built field
@@ -381,6 +383,7 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
     cs.stand = birchmod.Stand.init(scene.shader);
     cs.pan = huskmod.Pan.init(scene.shader);
     cs.shoal = fishmod.Shoal.init(scene.shader);
+    cs.roost = batmod.Roost.init(scene.shader);
     inline for (@typeInfo(CharSet).@"struct".fields) |f| @field(cs, f.name).n = 0;
     return cs;
 }
@@ -404,6 +407,8 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         .birchwight => .{ .top = 2.4, .bound = 1.4 },
         .salt_husk => .{ .top = 1.9, .bound = 1.2 },
         .fish_spearman, .fish_netter, .fish_shaman => .{ .top = 2.3, .bound = 1.3 },
+        // Hung in the air with the wings out: the bound is the SPAN, which is the widest thing here.
+        .blinkbat => .{ .top = 4.2, .bound = 3.2 },
         .leechfly => .{ .top = 2.9, .bound = 1.8 },
         .rooted => .{ .top = 7.2, .bound = 3.6 },
         .shroom => .{ .top = 1.2, .bound = 1.0 },
@@ -463,6 +468,11 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
             cs.shoal.n = 1;
             cs.shoal.live()[0] = fishmod.Fishman.spawnAs(fishmod.roleOf(k).?, mathx.zero3, 0, 1.0, seed);
             cs.shoal.draw(scene);
+        },
+        .blinkbat => {
+            cs.roost.n = 1;
+            cs.roost.live()[0] = batmod.Bat.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.roost.draw(scene);
         },
         .salt_husk => {
             cs.pan.n = 1;

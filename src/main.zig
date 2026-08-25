@@ -147,6 +147,7 @@ test {
     _ = @import("foes/birchwight.zig");
     _ = @import("foes/salthusk.zig");
     _ = @import("foes/fishman.zig");
+    _ = @import("foes/blinkbat.zig");
     _ = @import("props/propmarket.zig");
     _ = @import("foes/wolf.zig");
     _ = @import("play/pickup.zig");

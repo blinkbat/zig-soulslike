@@ -1300,9 +1300,7 @@ const SW_SEG = [2]rl.Vector3{
 };
 
 /// Authored pointing UP off the grip, so the fit flips it; `wpnTilt` then follows `hero.GRIP_PITCH`.
-fn wpnFit(tilt: f32) rl.Matrix {
-    return mul(ry(180.0), rx(180.0 - tilt));
-}
+const wpnFit = heromod.staffFit;
 
 pub fn moveClock(mv: usize) foe.Clock {
     return foe.moveClock(MOVES[@min(mv, MOVES.len - 1)]);

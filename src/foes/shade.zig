@@ -533,6 +533,9 @@ pub const Shade = struct {
                 if (self.t >= BLINK_OUT) {
                     self.pos.x = self.blinkTo.x;
                     self.pos.z = self.blinkTo.z;
+                    // A blink WRITES `pos` where every other mover STEPS it, so it is the one that has to ask
+                    // the bounds itself — a mark taken off a hero at the edge stands `BLINK_R` outside.
+                    mathx.holdXZ(&self.pos, bounds);
                     self.rift();
                     self.enter(.blinkin);
                 }

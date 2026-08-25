@@ -57,6 +57,7 @@ pub const Icon = enum {
     fish_spearman,
     fish_netter,
     fish_shaman,
+    blinkbat,
     wanderer,
     merchant,
     new,
@@ -473,6 +474,23 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             hline(cx, cy + s * 0.12, s * 0.12, w * 1.3, d);
             dot(cx + s * 0.36, cy - s * 0.34, w * 1.2, d);
             dot(cx + s * 0.44, cy - s * 0.24, w * 0.9, d);
+        },
+
+        .blinkbat => {
+            // Wings swept back off a small upright body — the ears and the fangs are what stop it reading
+            // as the leechfly, whose glyph is the other winged thing on this bar.
+            line(cx - s * 0.06, cy - s * 0.02, cx - s * 0.40, cy - s * 0.22, w * 1.2, col);
+            line(cx - s * 0.40, cy - s * 0.22, cx - s * 0.30, cy + s * 0.16, w * 1.0, d);
+            line(cx - s * 0.30, cy + s * 0.16, cx - s * 0.06, cy + s * 0.10, w * 1.0, d);
+            line(cx + s * 0.06, cy - s * 0.02, cx + s * 0.40, cy - s * 0.22, w * 1.2, col);
+            line(cx + s * 0.40, cy - s * 0.22, cx + s * 0.30, cy + s * 0.16, w * 1.0, d);
+            line(cx + s * 0.30, cy + s * 0.16, cx + s * 0.06, cy + s * 0.10, w * 1.0, d);
+            line(cx, cy - s * 0.06, cx, cy + s * 0.18, w * 1.6, col);
+            dot(cx, cy - s * 0.14, w * 2.0, col);
+            line(cx - s * 0.05, cy - s * 0.20, cx - s * 0.11, cy - s * 0.38, w * 1.0, col);
+            line(cx + s * 0.05, cy - s * 0.20, cx + s * 0.11, cy - s * 0.38, w * 1.0, col);
+            dot(cx - s * 0.04, cy - s * 0.06, w * 0.9, d);
+            dot(cx + s * 0.04, cy - s * 0.06, w * 0.9, d);
         },
 
         .leechfly => {

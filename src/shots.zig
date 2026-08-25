@@ -225,6 +225,19 @@ fn shootPortrait(g: *Game, name: [:0]const u8, at: rl.Vector3, yaw: f32, pitch: 
     shoot(g, name);
 }
 
+/// **FRAMES DRAWN AND THROWN AWAY.** The HUD keeps clocks of its own — the status caption's fade is one — and
+/// they only advance on a DRAWN frame, so a caption cannot be photographed by soaking the simulation alone:
+/// the shot on the proc frame catches it at zero alpha, which is what it is supposed to look like there.
+fn soakDrawn(g: *Game, frames: i32) void {
+    var k: i32 = 0;
+    while (k < frames) : (k += 1) {
+        drawScene(g);
+        hud(g, SHOT_DT);
+        rl.gl.rlDrawRenderBatchActive();
+        rl.endDrawing();
+    }
+}
+
 fn shootClear(g: *Game, name: [:0]const u8, yaw: f32, pitch: f32, dist: f32) void {
     g.rig.yaw = mathx.radians(yaw);
     g.rig.pitch = pitch;
@@ -2737,6 +2750,10 @@ fn poisonShots(g: *Game, mark: rl.Vector3) void {
         game.tickPoisonForShot(g, SHOT_DT);
     }
     shootClear(g, "shots/119g_poison_proc.png", LIT_YAW, 0.10, 5.2);
+    // …AND THE WORD IT SAYS, half a second later. On the proc frame itself the caption is still fading IN, so
+    // the shot above photographs it at zero alpha by design; this is the one that shows it.
+    soakDrawn(g, 30);
+    shootClear(g, "shots/119g2_status_word.png", LIT_YAW, 0.10, 5.2);
 
     game.clearFoesForShot(g);
     var d: i32 = 0;

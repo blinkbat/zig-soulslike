@@ -40,6 +40,7 @@ const gorgermod = @import("foes/rotgorger.zig");
 const birchmod = @import("foes/birchwight.zig");
 const huskmod = @import("foes/salthusk.zig");
 const fishmod = @import("foes/fishman.zig");
+const batmod = @import("foes/blinkbat.zig");
 const leechmod = @import("foes/leechfly.zig");
 const shademod = @import("foes/shade.zig");
 const chestmod = @import("play/chest.zig");
@@ -229,6 +230,7 @@ pub const Game = struct {
     stand: birchmod.Stand,
     pan: huskmod.Pan,
     shoal: fishmod.Shoal,
+    roost: batmod.Roost,
     vigil: knightmod.Vigil,
     swarm: leechmod.Swarm,
     haunt: shademod.Haunt,
@@ -347,6 +349,7 @@ pub const Game = struct {
         g.stand = birchmod.Stand.init(g.scene.shader);
         g.pan = huskmod.Pan.init(g.scene.shader);
         g.shoal = fishmod.Shoal.init(g.scene.shader);
+        g.roost = batmod.Roost.init(g.scene.shader);
         g.vigil = knightmod.Vigil.init(g.scene.shader);
         g.swarm = leechmod.Swarm.init(g.scene.shader);
         g.haunt = shademod.Haunt.init(g.scene.shader);
@@ -644,6 +647,7 @@ pub const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "stand", .kind = .birchwight, .aggro = birchmod.AGGRO_R },
     .{ .field = "pan", .kind = .salt_husk, .aggro = huskmod.AGGRO_R },
     .{ .field = "shoal", .kind = null, .aggro = fishmod.AGGRO_R },
+    .{ .field = "roost", .kind = .blinkbat, .aggro = batmod.AGGRO_R },
     .{ .field = "vigil", .kind = .bone_knight, .aggro = knightmod.AGGRO_R, .vsHero = false, .vs = &.{ "line", "muster" } },
 };
 
@@ -4359,6 +4363,17 @@ pub fn run(mode: Mode) void {
         // **THE NET TAKES HIS FEET AND NOTHING ELSE** — taken after the group, beside the other things a
         // creature does to him that is not a blow.
         g.hero.snareFor(g.shoal.takeSnare());
+        // **THE BAT LEARNS WHETHER ITS OWN JAWS DREW BLOOD, AND NOTHING ELSE.** `heroTakes` already knows —
+        // every other group throws the answer away with `_ =`. Blood puts it into a planted drink; a shield
+        // denies the heal outright and repels it. Nothing here reads an input: the outcome of ITS blow is a
+        // fact about the world, the same channel the leechfly's drink and the fishman's snare come down.
+        if (g.roost.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            g.roost.fedOn(heroTakes(g, b, b.hit.heavy(), true) == .taken);
+        }
+        if (g.roost.anyDrank()) {
+            g.rumble.play(rumblemod.hurt);
+            g.rig.addShake(SHAKE_HURT);
+        }
         // **THE PRIEST NEVER RETURNS A BLOW** — no melee, and its cold is a per-frame DRIP on its own channel, so it cannot voice and shake the hero sixty times a second.
         _ = g.crypt.update(dt, g.hero.pos, PLAY_HALF, bladeNow);
         if (g.crypt.breathDose(dt, g.hero.pos)) |b| {

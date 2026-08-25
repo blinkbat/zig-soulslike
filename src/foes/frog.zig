@@ -688,9 +688,8 @@ pub const Frog = struct {
         const c = self.centerWorld();
         const back = mathx.scaleV(self.fdir(), -1);
         const heavy = 1.0 - 0.55 * s;
-        var i: u32 = 0;
-        const n: u32 = @intFromFloat(@max(1.0, TRAIL_RATE * heavy * dt));
-        while (i < n) : (i += 1) {
+        var owed = foe.emitDue(&self.fxAccum, dt, TRAIL_RATE * heavy);
+        while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
             const r = self.fxRng.range(0.05, 0.42) * self.scale;
             foe.emitPart(&self.parts, &self.fxHead, .{

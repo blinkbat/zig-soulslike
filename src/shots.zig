@@ -321,6 +321,17 @@ pub fn runMapShots(g: *Game) void {
             var buf: [96]u8 = undefined;
             const stand = std.fmt.bufPrintZ(&buf, DIR_MAP ++ "/{d:0>2}_{s}_stand.png", .{ n, @tagName(kindOf) }) catch unreachable;
             shootAt(g, stand, aim, 53, 0.16, dist);
+            // …AND THE HEAD, for a creature whose head IS the read. The same `facePoint` frame the folk already
+            // get, keyed off `@hasDecl` like everything else here. TWICE — at rest and again on the signature
+            // move — because for the ravager the difference between those two faces is the whole fight.
+            const face = struct {
+                fn portrait(gg: *Game, ff: anytype, idx: usize, kk: worldfmt.FoeKind, rr: f32, tag: []const u8) void {
+                    var nb: [96]u8 = undefined;
+                    const nm = std.fmt.bufPrintZ(&nb, DIR_MAP ++ "/{d:0>2}_{s}_{s}.png", .{ idx, @tagName(kk), tag }) catch unreachable;
+                    shootAt(gg, nm, ff.facePoint(), 53, 0.06, mathx.clampF(rr * 2.6, 1.1, 3.4));
+                }
+            }.portrait;
+            if (comptime @hasDecl(T, "facePoint")) face(g, f, n, kindOf, r, "face");
             // ONE NAME FOR THE MOVE, WHICHEVER MOVE IT IS. A pounce and a gather are the same slot, and the two branches spelled the filename out separately.
             var b2: [96]u8 = undefined;
             const move = std.fmt.bufPrintZ(&b2, DIR_MAP ++ "/{d:0>2}_{s}_move.png", .{ n, @tagName(kindOf) }) catch unreachable;
@@ -331,6 +342,7 @@ pub fn runMapShots(g: *Game) void {
                 f.stageGather(1.0);
                 shootAt(g, move, aim, 53, 0.16, dist);
             }
+            if (comptime @hasDecl(T, "facePoint")) face(g, f, n, kindOf, r, "facemove");
             n += 1;
         }
     }

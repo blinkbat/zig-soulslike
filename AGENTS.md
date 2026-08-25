@@ -108,7 +108,7 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `world/dialog.zig` | one conversation: the node-tree walk and the BG2-style panel, with a live portrait |
 | `world/env.zig` | THE WORLD — terrain, op replay, `coverField`, uniform grid, cullers, occluder fade, lights |
 | `props/props.zig` | prop vocabulary + the `INFO` table; `displayName`/`group`/`stock` are exhaustive switches |
-| `prop*.zig` | meshes by family — `propart` (palette + weathering), `propruins`, `propbuild`, `propvillage`, `proprock`, `propwood`, `propflora`, `propfungus`, `propcoral`, `propash`, `propbone`, `propfx` |
+| `prop*.zig` | meshes by family — `propart` (palette + weathering), `propruins`, `propgold`, `propbuild`, `propvillage`, `propmarket`, `proprock`, `propwood`, `propflora`, `propfungus`, `propcoral`, `propash`, `propbone`, `propfx` |
 | `foes/foe.zig` | THE FOE STANDARD — contract, `Blade`/`strike`/`weaponReaches`/`Blow`, `Trail`, particles, `Leash` |
 | `foes/npc.zig` | the wanderer, on the hero's scaffold; idle set, gestures, roam, staff that plants with the far foot |
 | `foes/frog.zig` | gaping toad + `Knot` |
@@ -125,10 +125,14 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `foes/delver.zig` | THE DELVER + `Warrens` — goes UNDER; bursts underfoot or ploughs a furrow. No lock-on while down |
 | `foes/necro.zig` | THE NECROMANCER + `Rite` — holds a corpse open and raises it once; the only COLD source |
 | `foes/wolf.zig` | first SPIRIT + `Pack`, what the BELL calls. NOT a foe; first QUADRUPED, 27 bones |
-| `foes/ravager.zig` | florid ravager + `Thicket` — quadruped rig's second user; the BLOOM is the tell |
+| `foes/ravager.zig` | florid ravager + `Thicket` — quadruped rig's second user + 4 petal bones. The BLOOM is the tell AND the window |
 | `foes/shroommage.zig` | mushroom mage + `Ring` — the fireball BOUNCES, so it punishes backing off |
 | `foes/fenlurker.zig` | fen lurker + `Marsh` — never leaves the water; sunk it is unreachable. Counter is DRY LAND |
 | `foes/sporegolem.zig` | spore homunculus + `Host` — `ARMOUR` is the creature; fire and lightning pass through |
+| `foes/skitterer.zig` | bone skitterer + `Clatter` — walks ON ITS RIBS; the eye SHUTS before the spine slams. What a priest raises |
+| `foes/ancientpriest.zig` | ancient priest + `Crypt` — never melees; claws a skitterer out of bare earth far off, breathes COLD close |
+| `foes/hollow.zig` | tolling hollow + `Belfry` — the BELL on its back calls every body inside `TOLL_R`; refused inside bite reach |
+| `foes/slumberbloom.zig` | slumber bloom + `Bed` — a rooted FIXTURE with no blow at all; the only SLEEP source, and it cannot follow |
 | `play/combat.zig` | `Vitals`, `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`, spirits. THE place to retune feel |
 | `play/stats.zig` | the sheet — seven attributes, the bar curves, the ONE skill curve (`scaleFor`), `inert` |
 | `play/passivetree.zig` | PoE2's tree radially: three arms out of one hub, the gates, `Bonus`, the wheel |
@@ -137,7 +141,8 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `play/rest.zig` | bonfire + campfire — phase machine, the seat, the fire's own screen; `isRestKind` |
 | `play/souls.zig` | THE DROP — what a death leaves, the gold bloom, the walk back |
 | `play/drops.zig` | one row per `FoeKind`, guaranteed + rare, and **the one thing LUCK reads** (rare weight only) |
-| `play/pickup.zig` | the glow a drop stands as; `REACH` 2.4, between `souls.REACH` 2.6 and `rest.REACH` 3.2 |
+| `play/pickup.zig` | the glow a drop stands as; `REACH` 2.4, between `chest.REACH` 2.1 and `souls.REACH` 2.6 (`rest.REACH` 3.2 is the widest) |
+| `play/award.zig` | the FIRST-TIME card and the toast strip; `seen` is what makes a kind new, and `carding` holds the world clock |
 | `ui/hud.zig` | ER HUD, the pad-glyph kit, the day dial, the boss bar, and the ONLY path to draw/measure text |
 | `ui/ui.zig` | editor widget kit; `Ctx.anyHot` gates world clicks next frame |
 | `ui/uiart.zig` | chrome DRESSING shared by hud/menu/book/ui |
@@ -588,6 +593,42 @@ Never touches you; priority target on any field. 78 HP, 12 poise, 320 souls.
   LONGER than its own period so takes overlap; gapped, it chatters at 4 Hz and reads as a helicopter.
 - **A SWATTED FLY DROPS.** Stun states pull `hoverTo` down. Death is the hover running out before
   `foe.dissipate` takes it.
+
+### The florid ravager (`ravager.zig`) — the flower IS the window
+
+A hound's body on a two-metre woody stalk, with a flower where the head should be. `wolf.zig`'s 27 bones plus
+FOUR appended above them, so `wolf.legs` still takes `wx[0..wolf.N]` as its own array and no bone it solves has
+moved. The muzzle and the two ears are re-let as petals rather than left nodding on a flower.
+
+- **IT ONLY BLOOMS WHEN IT IS WARMING UP TO ATTACK, OR WHEN A HEAVY STUN BLOWS IT OPEN** (owner). One scalar,
+  `openAmt`, read off the leap's own clock or the stun's and nowhere else — never off distance. A bloom that
+  opened on APPROACH was a tell for standing still, and it made the flower ambient rather than an event.
+- **AND OPEN, IT TAKES MORE DAMAGE** (`frailty`, `BLOOM_FRAIL`) — 1.9x wide, on the BLADE in `tryHit` so the
+  cull, the threat and the shield all see the blow that landed. **DAMAGE ONLY**: `poise` and `stance` ride
+  through untouched, because `POISE_MAX` is solved to sit between his light (10) and his heavy (22) and a
+  multiplier there would quietly put a light poke through it. The window is a punish, not a second stagger.
+- **THE SWIPE CARRIES NO WINDOW** — it is the flank answer, its tell is the SHOULDER DROPPING, and every bloom
+  clock gates on `.bite` or the stun. Two moves, two grounds, one of them punishable.
+- **WIDE BEFORE IT LEAVES THE EARTH.** `LAUNCH_T` is 0.55 of the wind, so the burst has to finish inside
+  0.209 s — a comptime assert, and it is what caught an `OPEN_BY` of 0.70 reading as a tell it was not.
+- **SEVEN QUILLS, HAND-LAID, AND THE UNEVENNESS IS BOUNDED BOTH WAYS.** Gaps of 34 to 58 degrees against an even
+  ring's 51: pushed at the bottom because `k/7 * 360` reads as a gear, capped at the top because a 76-degree gap
+  came back as a bald sector in the open corolla.
+- **THE FOLD BUYS RADIUS UP TO 73 DEGREES AND SELLS IT AFTER.** A tip's distance off the bloom's axis goes as
+  `(BOW+RECURVE)*cos f + sin f`, so `PETAL_WIDE` dialled UP past the peak makes the flower NARROWER — at 128 the
+  corolla measured 0.76 m across against 1.72 m at 95. Same trap on the SWEEP, which is tangential in the
+  petal's own frame but still `hypot` against the axis: 34 degrees of it put the SHUT bud at 0.97 m across.
+- **A SECOND TIER FOR NO BONES.** Each petal bone carries a short broad TONGUE as well as its quill, pitched
+  `INNER_TILT` further in by a rotation baked into the MESH. Shut they cross the axis and seal the bud, which is
+  what keeps the throat's light off; open they cup it. A constant tilt is an OFFSET, so its length is solved
+  against `BLOOM_RIM` or the tongues come out the far side.
+- **THE STALK TELESCOPES AND THE HEAD'S OWN COLLAR COVERS THE SLIDE.** The reach is a translate on `HEAD` along
+  the neck's axis; the head's mesh hangs a 0.47 m sheath INSIDE the stalk's bore, thinner than the bore, so no
+  frame of a 0.35 m stretch shows a gap.
+- **THE STALK REARS OFF ITS OWN CLOCK, NOT OFF THE BLOOM** (`rearAmt`) — coupled, a heavy stun reared the neck
+  it is supposed to fold.
+- **A CORPSE WILTS FROM WHATEVER THE BLOW CAUGHT IT WEARING** (`deathOpen`). Snapping shut is a pop and ramping
+  from wide is the same pop the other way.
 
 ## Combat
 
@@ -1260,7 +1301,15 @@ worlds/test_x.world` (and `--shot` with it). Nothing under test goes into the sh
 `test_foggate` is the gate at three sizes and yaws plus a channel dug to 1.31 m, the one depth the hero can
 cross and nothing on foot will follow him into.
 
-- **THE MAP STORES THE AUTHORING, NOT ITS OUTPUT.** A wood is one `belt` of 260 attempts, not 260 coordinates.
+- **A GENERATOR OP IS FOR STAMPING, NOT FOR KEEPING.** It is ONE thing to select, move and delete, so a wood
+  of 260 attempts was one tree — the same complaint that baked ground cover down to `at:` decor. Stamp a
+  `belt`/`disc`/`ring`/`line`/`ivy`, re-roll it until it reads, then **break it apart** (op panel, or the
+  right-click menu) and it becomes one `at:` per instance, standing exactly where it stood: `env.explodeOp`
+  writes down the props the replay already made, and an `at` replays at the same `groundY(x, z)` every
+  generator plants on. There is no way back but undo — the seed and the shape go with it.
+  `zig-out\bin\zig-soulslike.exe --explode <map>` does the whole file headlessly and verifies itself by
+  re-loading and re-replaying: same prop, solid and light counts or it refuses. **`01_fallen_plain` is
+  ALREADY BROKEN APART** — 13,923 ops, 215 of them groups, became 16,654 `at:`.
 - **EVERY GENERATOR OP CARRIES ITS OWN SEED.** One shared stream meant inserting a belt re-rolled every op
   after it. Load-bearing.
 - **ORDER IS MEANING.** Ops replay in file order because later ones read what earlier ones placed.
@@ -1756,6 +1805,10 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
 - **The hero is per-bone matrices, not `drawModelEx`.**
 - **The scene shader gammas output (`pow 1/2.2`): author dark colours near-black.**
 - **Vertex alpha is the EMISSIVE channel** (255 = fully lit; lower = self-lit).
+- **…AND MATTER WANTS 248+, NOT 206.** `lit = mix(lit, base*1.35, 1 - a)`, so an alpha of 206 puts 0.19 of the
+  raw albedo on everything unlit. In SUN that is a 6% lift (nothing); in SHADOW it is a floor the terminator
+  cannot get under, and a whole creature authored at 206 reads as one flat lump however well its albedo is
+  solved. Reserve the low alphas for the things that are LIGHT (a throat, a flame, an eye).
 - **A BIG SMOOTH MASS NEEDS A NEARLY-BLACK ALBEDO — and FORM BREAKS.** The hot key (×1.72) plus the gamma lift
   turns any mid-dark value pale on a large sunward face. The bigger the face, the darker it must start.
 - **TWO STONE MATERIALS.** `.stone` is rubble masonry, matte; `.marble` is dressed stone, veined, with the only
@@ -1846,8 +1899,13 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   - **`gfx`'s mesh allocator MUST be `raw_c_allocator`, not `c_allocator`.** raylib frees mesh CPU arrays with
     libc `free()`, and `std.heap.c_allocator` does not hand out malloc pointers on Windows — freeing one frees
     an interior pointer. Heap corruption, surfacing as `0xC0000374` with no stack.
-  - **`rl.unloadModel` UNLOADS THE MATERIAL'S SHADER** — which on a terrain tile is the SCENE shader. Go through
-    `env.unloadTerrain`, which points the material at raylib's default shader first.
+  - **A MODEL'S MATERIAL CARRIES THE SCENE SHADER, AND ONLY THE PINNED raylib SPARES IT.** Go through
+    `env.unloadTerrain`, which points the material at raylib's default shader id first. The bundled raylib 5.5
+    `UnloadModel` frees `materials[i].maps` and never calls `UnloadMaterial`, so today the swap is belt to the
+    braces — but `UnloadMaterial` unloads any shader that is not the default one, and a raylib that routed
+    through it took the scene shader out from under the whole frame.
+- **AND `env.build` MAY RUN ONCE PER PROCESS** (`envBuilt` panics on the second). It makes every prototype, the
+  ground and the water sheet and clears `tileBuilt`, so a second run strands all of it.
 - **GLSL RESERVED WORDS ARE NOT ONLY THE OBVIOUS ONES.** A local named `patch` compiled everywhere the author
   tested and failed on Intel, which enforces it at `#version 330`. `layout`, `subroutine` and friends are the
   same trap, and a scene shader that fails to compile is a hard startup panic.
@@ -1894,40 +1952,40 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   creature's change, not his. No RIPOSTE behind the parry. His arena is authored by HAND in the `.world` file;
   there is no arena brush and no way to say "these props are a room".
 - **Necromancer:** no `necro_*` voice family (borrows the shade's, the wand's and the skeletons'). Nothing
-  RESISTS cold on the hero's side — no cold-warding item, so the one cold source lands unmitigated. Nothing
-  raises a body but this creature, so `foe.rekindle` has two callers.
+  raises a BODY but this creature, so `foe.rekindle` still has two callers — the ancient priest claws a new
+  skitterer out of the ground rather than reanimating anything, and it is the second COLD source.
 - **Combat:** no criticals, no guard counter, no AR × motion-value damage (flat constants). Nothing scales a
   cast. Fifteen creatures carry parry windows now; what carries none says why at its own impact site
   (projectiles, ground discs, poured elements — broodlings out on purpose).
 - **The jump exists but nothing hangs off it** — no jump ATTACK, no fall damage at any height, and no creature's
   move misses him for being over it (a per-move height would be authored at each `toImpact` the way a parry
   window is).
-- **Souls buy levels and nothing else** — no merchant. The PASSIVE TREE is 39 nodes with no respec, no jewel
-  sockets, no second grant on a node. Every attribute is raised by at least one node (test-pinned) and NO
-  attribute is inert; `stats.inert` stays and answers false for all seven, because the next attribute arrives
-  dead the way LUCK did.
-- **POISON is the only status effect, and BOTH SIDES carry it now** (`combat.Vitals.venom`) — but the only thing
-  that doses a foe is the envenomed dagger, and no foe doses HIM with an edge (the spore floors and the mother's
-  spit are still the only sources pointed his way). Nothing else reads a meter: no creature flees, slows or
-  changes state for being poisoned, it only loses HP.
+- **Souls buy levels and nothing else** — the caravaneer is a body on the road, not a shop; nothing in the game
+  buys or sells. The PASSIVE TREE is 81 nodes with no respec, no jewel sockets, no second grant on a node. Every
+  attribute is raised by at least one node (test-pinned) and NO attribute is inert; `stats.inert` stays and
+  answers false for all seven, because the next attribute arrives dead the way LUCK did.
+- **TEN METERS NOW, AND EACH SAYS WHO CAN CARRY IT** (`combat.Ail`, `combat.AILS`) — poison, burning, chill,
+  stun, bleed, sleep, confusion, charm, berserk, stupefy. A full meter reaches the state machine: stun and sleep
+  come out of `foe.grip` as `downed`, chill and stupefy take the FEET, charm and confusion re-point
+  `foe.Threat`. **WHAT IS STILL MISSING IS A PANEL** — `combat.ailSays` writes one line of mechanic per row and
+  nothing calls it, so the meters explain themselves nowhere but in `item.effect`'s own sentence.
 - **Equipment:** every registered piece is live and the SWORD HAND draws what is in it (`hero.Blade`/`bladeOf`,
   three shapes on one bone) — but the **WARBOW and the DOOR are still the plain bow and the small shield**. The
   door has a mesh to borrow (`knight`'s bowed wall); the warbow is the bow at another scale. **NOTHING WORN
   SHOWS ON HIS BODY AT ALL** — helm, coat, belt, boots and both rings are a number, a bag picture and a socket
-  caption. Four doll sockets (helm, amulet, belt, boots) have nothing in the world to put in them; one ring
-  socket for one ring. Nothing PLACES the ember candle, the leech signet or the grave warbow — no chest, no map
-  op, no body — so three registered pieces are unreachable. The crock lands with no burst FX; the tallowed blade
-  shows nothing on the sword.
+  caption. Every doll socket has at least one piece for it now (helm 3, neck 2, belt 1, feet 2, ring 4,
+  ring2 2). The crock lands with no burst FX; the tallowed blade shows nothing on the sword.
 - **Rig:** no foot IK — `rx(bodyPitch)` rotates about the WORLD ORIGIN, so a deep lean levers a forward-swung
   foot down and feet clip a few cm on slopes. The roll has front-loaded i-frames but no collision. One leg-cycle
   is reused across run and sprint.
 - **Elevation exists but nothing is authored with it:** no falling, terrain casts no shadows, painted water is
   one level plane.
-- **The script layer is foundations only. THE EDITOR CANNOT AUTHOR ANY OF IT** — no Triggers layer, no NPC unit
-  brush; triggers, dialogs and `npc:` records are hand-written and the editor round-trips them untouched
-  because the writer emits them off the same tables. One `NpcKind` (`wanderer`). No quest log, no journal. A
-  roamer wanders inside a radius about its post; no authored patrol points. `deaths brood_sac` is billed off the
-  brood's own `bursts`.
+- **The script layer is foundations only. THE EDITOR CANNOT AUTHOR THE SCRIPT** — no Triggers layer; triggers
+  and dialogs are hand-written and the editor round-trips them untouched because the writer emits them off the
+  same tables. NPCs it does place: the unit brush is the foe kinds, then the npc kinds, then an eraser (pinned
+  at comptime in `editor.zig`), and `dlg=` on a placed npc is still text. Two `NpcKind` (`wanderer`,
+  `merchant`). No quest log, no journal. A roamer wanders inside a radius about its post; no authored patrol
+  points. `deaths brood_sac` is billed off the brood's own `bursts`.
 - **Three editor holes, all fields the FORMAT has and the panels do not.** `Op.r1` on an `at` is how far off the
   ground that prop is lifted (`env.Placer.expand`) and no panel exposes it. `Op.field` thins a scatter by the
   ground-cover noise (`env.accepts`) and is ON by default for a `belt`, with no control either way. And **NO MAP

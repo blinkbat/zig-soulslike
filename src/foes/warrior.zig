@@ -2342,15 +2342,9 @@ const Swung = struct {
     maxD: f32,
     apex: f32,
     lowY: f32,
-    bearLo: f32 = 0,
-    bearHi: f32 = 0,
     /// Where the tip sits at the END of the tell, in his own frame: how far OUT TO THE SIDE, and how far up. A raised weapon is not the only readable tell — a horizontal's is entirely lateral.
     windLat: f32 = 0,
     windY: f32 = 0,
-
-    fn arc(self: Swung) f32 {
-        return self.bearHi - self.bearLo;
-    }
 };
 fn swung(role: Role, mv: usize, stroke: u8, at: f32) Swung {
     return swungAt(role, mv, stroke, v3(0, 0, at));
@@ -2376,8 +2370,6 @@ fn swungAt(role: Role, mv: usize, stroke: u8, hero: rl.Vector3) Swung {
         .maxD = 0,
         .apex = apex,
         .lowY = 99,
-        .bearLo = 999,
-        .bearHi = -999,
         .windLat = cocked.x,
         .windY = cocked.y,
     };
@@ -2389,9 +2381,6 @@ fn swungAt(role: Role, mv: usize, stroke: u8, hero: rl.Vector3) Swung {
         const tip = w.weaponSeg()[1];
         out.maxD = @max(out.maxD, mathx.distXZ(w.pos, tip));
         out.lowY = @min(out.lowY, tip.y);
-        const bear = mathx.degrees(mathx.headingXZ(mathx.dirXZ(w.pos, tip)));
-        out.bearLo = @min(out.bearLo, bear);
-        out.bearHi = @max(out.bearHi, bear);
         if (t < a.swingDur * a.impactK) continue;
         w.tryReach(hero);
         if (w.heroHit != null) out.hit = true;

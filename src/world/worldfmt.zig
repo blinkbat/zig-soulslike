@@ -14,8 +14,8 @@ pub const DEFAULT_HALF: f32 = 280.0;
 
 pub const MAX_DECLARED_HALF: f32 = 312.0;
 
-/// **RAISED FROM 2048 WHEN THE GLOBAL COVER OP WAS BAKED INTO ORDINARY DECOR** — one `cover:` line grew 13,228 plants a man could not select or delete, each its own `at:` op now on top of the map's ~1,290. This number IS memory: the editor's 24-deep undo ring is whole-`Map` copies.
-pub const MAX_OPS: usize = 16384;
+/// **RAISED FROM 2048 WHEN THE GLOBAL COVER OP WAS BAKED INTO ORDINARY DECOR** — one `cover:` line grew 13,228 plants a man could not select or delete, each its own `at:` op now on top of the map's ~1,290. Raised again when the WOOD went the same way (`env.explodeOp`): a generator op is one thing to delete, so 260 attempts were one tree. This number IS memory: the editor's 24-deep undo ring is whole-`Map` copies.
+pub const MAX_OPS: usize = 20480;
 pub const MAX_MIX: usize = 24;
 pub const MAX_LOOT: usize = 8;
 pub const MAX_ZONES: usize = 16;
@@ -223,7 +223,7 @@ pub fn setMix(dst: *[MAX_MIX]Kind, n: *u8, mix: []const Kind) void {
 pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
 
 /// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at comptime, and each `roleOf` reads its own entries as a CONTIGUOUS RUN off the first of them.
-pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, florid_ravager, mushroom_mage, fen_lurker, spore_golem, bone_skitterer, ancient_priest, tolling_hollow, mourner, slumber_bloom };
+pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, florid_ravager, mushroom_mage, fen_lurker, spore_golem, bone_skitterer, ancient_priest, tolling_hollow, mourner, slumber_bloom, cinder_wake, rotgorger, birchwight, salt_husk, fish_spearman, fish_netter, fish_shaman };
 
 pub fn foeName(k: FoeKind) [:0]const u8 {
     return switch (k) {
@@ -254,6 +254,13 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
         .tolling_hollow => "Tolling Hollow",
         .mourner => "Mourner",
         .slumber_bloom => "Slumber Bloom",
+        .cinder_wake => "Cinder Wake",
+        .rotgorger => "Rotgorger",
+        .birchwight => "Birchwight",
+        .salt_husk => "Salt Husk",
+        .fish_spearman => "Fishman Spearman",
+        .fish_netter => "Fishman Netter",
+        .fish_shaman => "Fishman Shaman",
     };
 }
 
@@ -304,10 +311,14 @@ pub const END_TARGET = "end";
 
 pub const Span = struct { at: u32 = 0, len: u16 = 0 };
 
-pub fn setId(dst: *Id, s: []const u8) void {
+/// **AN ID THAT DOES NOT FIT IS A LOAD ERROR, NEVER A TRUNCATED ONE.** Every id here is a REFERENCE and
+/// `found` compares the stored text against the full name, so a clipped one never matches itself: a
+/// 26-character flag interned a fresh row per mention, and the `do:` that set it and the `need:` that read
+/// it landed on different rows with the gate never opening.
+pub fn setId(dst: *Id, s: []const u8) !void {
+    if (s.len >= ID_CAP) return ParseError.NameTooLong;
     dst.* = [_]u8{0} ** ID_CAP;
-    const n = @min(s.len, ID_CAP - 1);
-    @memcpy(dst[0..n], s[0..n]);
+    @memcpy(dst[0..s.len], s);
 }
 
 pub fn idText(id: *const Id) []const u8 {
@@ -777,6 +788,18 @@ pub const Map = struct {
         self.nops -= 1;
     }
 
+    /// Widen the one op at `i` into `n` slots, its neighbours keeping their order — how a generator op is
+    /// replaced by the props it made. `n == 0` deletes it. The slots come back UNWRITTEN.
+    pub fn splice(self: *Map, i: usize, n: usize) !void {
+        if (i >= self.nops) return error.NoSuchOp;
+        if (n == 0) return self.remove(i);
+        const grow = n - 1;
+        if (grow == 0) return;
+        if (self.nops + grow > MAX_OPS) return error.TooManyOps;
+        std.mem.copyBackwards(Op, self.ops[i + n .. self.nops + grow], self.ops[i + 1 .. self.nops]);
+        self.nops += grow;
+    }
+
     pub fn reorder(self: *Map, from: usize, to: usize) void {
         if (from >= self.nops or to >= self.nops or from == to) return;
         const moved = self.ops[from];
@@ -1094,7 +1117,7 @@ fn found(table: []const Id, name: []const u8) ?u16 {
 fn intern(table: []Id, n: *usize, name: []const u8, full: ParseError) !u16 {
     if (found(table[0..n.*], name)) |i| return i;
     if (n.* >= table.len) return full;
-    setId(&table[n.*], name);
+    try setId(&table[n.*], name);
     n.* += 1;
     return @intCast(n.* - 1);
 }
@@ -1378,6 +1401,7 @@ pub const ParseError = error{
     TextFull,
     NoOwner,
     UnknownRef,
+    NameTooLong,
 };
 
 const Cursor = struct {
@@ -1540,7 +1564,7 @@ fn parseScript(m: *Map, rec: []const u8, rest: []const u8, it: *Toks, cur: *Curs
     if (std.mem.eql(u8, rec, "trig")) {
         if (m.ntrigs >= MAX_TRIGGERS) return ParseError.TooManyTriggers;
         var t = Trigger{};
-        setId(&t.id, it.next() orelse return ParseError.MissingField);
+        try setId(&t.id, it.next() orelse return ParseError.MissingField);
         while (it.next()) |tok| {
             const eq = std.mem.indexOfScalar(u8, tok, '=') orelse return ParseError.UnknownKey;
             const key = tok[0..eq];
@@ -1576,7 +1600,7 @@ fn parseScript(m: *Map, rec: []const u8, rest: []const u8, it: *Toks, cur: *Curs
     if (std.mem.eql(u8, rec, "dlg")) {
         if (m.ndialogs >= MAX_DIALOGS) return ParseError.TooManyDialogs;
         var d = Dialog{ .node0 = @intCast(m.nnodes) };
-        setId(&d.id, it.next() orelse return ParseError.MissingField);
+        try setId(&d.id, it.next() orelse return ParseError.MissingField);
         if (it.next() != null) return ParseError.ExtraField;
         m.dialogs[m.ndialogs] = d;
         cur.dlg = m.ndialogs;
@@ -1589,7 +1613,7 @@ fn parseScript(m: *Map, rec: []const u8, rest: []const u8, it: *Toks, cur: *Curs
         const di = cur.dlg orelse return ParseError.NoOwner;
         if (m.nnodes >= MAX_NODES) return ParseError.TooManyNodes;
         var nd = Node{ .act0 = @intCast(m.ndacts) };
-        setId(&nd.id, it.next() orelse return ParseError.MissingField);
+        try setId(&nd.id, it.next() orelse return ParseError.MissingField);
         if (it.next() != null) return ParseError.ExtraField;
         m.nodes[m.nnodes] = nd;
         cur.node = m.nnodes;
@@ -1996,7 +2020,36 @@ pub fn setStartMap(path: []const u8) void {
     bootMap = path;
 }
 
-var textBuf: [1 << 20]u8 = undefined;
+/// Bytes an `at:` line spends on the shipped maps, rounded up from a measured 49.7 and pinned by a test.
+const OP_LINE_TYPICAL: usize = 64;
+/// Worst-case bytes an RLE grid cell spends: `" 255x1"` plus a share of the per-16-run label.
+const GRID_CELL_CAP: usize = 7;
+
+/// **THE READ BUFFER IS DERIVED FROM THE CAPS, NOT PICKED.** At `MAX_OPS` the ops alone outgrew the 1 MB it
+/// used to be, so a map filling every cap was one `load` could only answer `MapTooLarge` to. An op carrying a
+/// full `mix=` or `loot=` still runs far past `OP_LINE_TYPICAL` — `save` measures and refuses for that.
+pub const TEXT_CAP: usize =
+    256 + NAME_CAP +
+    MAX_ZONES * (NAME_CAP + 64 + MAX_MIX * (longestTag(Kind) + 1)) +
+    MAX_LOCATIONS * (NAME_CAP + 128) +
+    MAX_CLEARINGS * 48 +
+    MAX_OPS * OP_LINE_TYPICAL +
+    (3 * SOIL_CELLS + 2 * WATER_CELLS + HEIGHT_CELLS) * GRID_CELL_CAP +
+    MAX_FOES * (longestTag(FoeKind) + 48) +
+    (MAX_FLAGS + MAX_COUNTERS + MAX_TIMERS) * (ID_CAP + 2) + 64 +
+    MAX_NPCS * (ID_CAP + NAME_CAP + 128) +
+    MAX_TRIGGERS * (ID_CAP + 64 + (MAX_CONDS + MAX_ACTS) * (ID_CAP + 48)) +
+    MAX_DIALOGS * (ID_CAP + 16) +
+    MAX_NODES * (ID_CAP + 32 + MAX_CHOICES * (ID_CAP + 32)) +
+    DTEXT_CAP;
+
+fn longestTag(comptime T: type) usize {
+    var n: usize = 0;
+    for (@typeInfo(T).@"enum".fields) |f| n = @max(n, f.name.len);
+    return n;
+}
+
+var textBuf: [TEXT_CAP]u8 = undefined;
 
 var loadScratch: Map = undefined;
 
@@ -2089,13 +2142,23 @@ pub fn pathFor(dst: []u8, name: []const u8) []const u8 {
     return dst[0..n];
 }
 
+/// **A MAP IS RENDERED BESIDE ITS FILE AND ONLY THEN PUT IN ITS PLACE.** `createFile` truncates first, so a
+/// failed save in place — full disk, or a map past `TEXT_CAP` — destroyed the last good copy. The size is
+/// checked here because this is the last moment the old file still exists.
 pub fn save(path: []const u8, m: *const Map) !void {
     try std.fs.cwd().makePath(DIR);
-    var f = try std.fs.cwd().createFile(path, .{});
-    defer f.close();
-    var buf = std.io.bufferedWriter(f.writer());
-    try write(m, buf.writer());
-    try buf.flush();
+    var tmpBuf: [PATH_CAP + 8]u8 = undefined;
+    const tmp = try std.fmt.bufPrint(&tmpBuf, "{s}.tmp", .{path});
+    errdefer std.fs.cwd().deleteFile(tmp) catch {};
+    {
+        var f = try std.fs.cwd().createFile(tmp, .{});
+        defer f.close();
+        var buf = std.io.bufferedWriter(f.writer());
+        try write(m, buf.writer());
+        try buf.flush();
+        if (try f.getEndPos() >= TEXT_CAP) return error.MapTooLarge;
+    }
+    try std.fs.cwd().rename(tmp, path);
 }
 
 
@@ -2366,6 +2429,94 @@ test "clear empties the script layer with the world" {
     try std.testing.expectEqual(@as(usize, 0), m.nnodes);
     try std.testing.expectEqual(@as(u32, 0), m.ndtext);
     try std.testing.expectEqual(@as(usize, 0), m.nflags);
+}
+
+test "AN ID TOO LONG TO STORE IS REFUSED, not quietly clipped into a second flag" {
+    const long = "a" ** (ID_CAP + 2);
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    var ln: usize = 0;
+    try std.testing.expectError(ParseError.NameTooLong, parse(TEST_HEAD ++ "flags: " ++ long ++ "\n", m, &ln));
+
+    // The longest that still fits round-trips, and interning it twice is one row — which is the whole point:
+    // the `do:` that sets a flag and the `need:` that reads it have to land on the same one.
+    const fits = "b" ** (ID_CAP - 1);
+    try parse(TEST_HEAD ++ "flags: " ++ fits ++ "\n", m, &ln);
+    try std.testing.expectEqual(@as(usize, 1), m.nflags);
+    try std.testing.expectEqual(@as(?u16, 0), m.findFlag(fits));
+    try std.testing.expectEqual(@as(u16, 0), try m.internFlag(fits));
+    try std.testing.expectEqual(@as(usize, 1), m.nflags);
+}
+
+test "A MAP THAT FILLS EVERY CAP IS STILL A MAP THAT LOADS" {
+    var n = std.io.countingWriter(std.io.null_writer);
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    m.* = .{};
+    m.blank("Full");
+    var o = defaults(.at);
+    o.kind = .pillar;
+    while (m.nops < MAX_OPS) _ = try m.add(o);
+    // The grids resist: RLE'd, a painted map is a few tens of KB. It is the OPS that carry a file.
+    for (&m.soil, 0..) |*c, i| c.* = @intCast(i % 4);
+    for (&m.height, 0..) |*c, i| c.* = @intCast(HEIGHT_ZERO -% @as(u8, @intCast(i % 3)));
+    for (&m.water, 0..) |*c, i| c.* = @intCast(i % 2);
+    try write(m, n.writer());
+    std.debug.print("\n  a map at every cap writes {d} bytes into a {d} B buffer ({d:.0}% used)\n", .{
+        n.bytes_written, TEXT_CAP, 100.0 * @as(f64, @floatFromInt(n.bytes_written)) / @as(f64, @floatFromInt(TEXT_CAP)),
+    });
+    try std.testing.expect(n.bytes_written < TEXT_CAP);
+}
+
+test "THE SHIPPED MAPS SIT INSIDE THE READ BUFFER, and `save` refuses to write one that would not" {
+    var dir = std.fs.cwd().openDir(DIR, .{ .iterate = true }) catch return error.SkipZigTest;
+    defer dir.close();
+    var it = dir.iterate();
+    var worst: u64 = 0;
+    var worstName: [PATH_CAP]u8 = [_]u8{0} ** PATH_CAP;
+    while (try it.next()) |ent| {
+        if (ent.kind != .file or !std.mem.endsWith(u8, ent.name, EXT)) continue;
+        const st = try dir.statFile(ent.name);
+        if (st.size <= worst) continue;
+        worst = st.size;
+        @memcpy(worstName[0..@min(ent.name.len, PATH_CAP)], ent.name[0..@min(ent.name.len, PATH_CAP)]);
+    }
+    std.debug.print("  biggest shipped map {s} {d} B, {d:.0}% of the buffer\n", .{
+        std.mem.sliceTo(&worstName, 0), worst, 100.0 * @as(f64, @floatFromInt(worst)) / @as(f64, @floatFromInt(TEXT_CAP)),
+    });
+    try std.testing.expect(worst * 2 < TEXT_CAP);
+
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    m.* = .{};
+    m.blank("Saved");
+    var at = defaults(.at);
+    at.kind = .pillar;
+    at.x = 12.5;
+    _ = try m.add(at);
+
+    const kept = DIR ++ "/test_saveroundtrip" ++ EXT;
+    defer std.fs.cwd().deleteFile(kept) catch {};
+    try save(kept, m);
+    try std.testing.expectError(error.FileNotFound, std.fs.cwd().access(kept ++ ".tmp", .{}));
+    const back = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(back);
+    var line: usize = 0;
+    try load(kept, back, &line);
+    try std.testing.expectEqual(m.nops, back.nops);
+    try std.testing.expectEqual(at.x, back.ops[0].x);
+
+    // A map past the buffer is REFUSED, and the file it would have replaced is left exactly as it was.
+    var o = defaults(.at);
+    o.kind = .pillar;
+    o.nmix = MAX_MIX;
+    for (&o.mix) |*k| k.* = .trestletable;
+    o.nloot = MAX_LOOT;
+    while (m.nops < MAX_OPS) _ = try m.add(o);
+    try std.testing.expectError(error.MapTooLarge, save(kept, m));
+    try std.testing.expectError(error.FileNotFound, std.fs.cwd().access(kept ++ ".tmp", .{}));
+    try load(kept, back, &line);
+    try std.testing.expectEqual(@as(usize, 1), back.nops);
 }
 
 test "an op round-trips through write and parse" {

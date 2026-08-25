@@ -874,16 +874,15 @@ const SWAT_SHIELD_KEYS = MoveKeys{
     },
 };
 
-/// `mv` is an index and not an enum; the comptime pin above refuses any row `MOVES` does not have.
+/// **A ROW PER `MOVES` ROW, IN ITS ORDER**, so a stroke added to that table is a compile error here until it
+/// names its key tables. As a `switch (mv)` ending in `else => BASH_KEYS` a new index silently wore the bash's
+/// arms — the same shape that cost the SWAT its own beat through `windFor`, and one a length pin cannot see.
+const MOVE_KEYS = [MOVES.len]MoveKeys{ SWEEP_KEYS, OVER_KEYS, THRUST_KEYS, BASH_KEYS, SWEEP2_KEYS, BASH_KEYS };
+
+/// `mv` is an index and not an enum. The two rows that answer to a SIDE come through `trackFor` instead
+/// (`bashKeys`, `swatKeys`) and the BASH's tables are their base, which is why they sit twice in `MOVE_KEYS`.
 fn keysFor(mv: usize) MoveKeys {
-    return switch (mv) {
-        SWEEP_I => SWEEP_KEYS,
-        SWEEP2_I => SWEEP2_KEYS,
-        OVER_I => OVER_KEYS,
-        THRUST_I => THRUST_KEYS,
-        BASH_I, SWAT_I => BASH_KEYS,
-        else => BASH_KEYS,
-    };
+    return MOVE_KEYS[@min(mv, MOVE_KEYS.len - 1)];
 }
 fn bashKeys(shoving: bool) MoveKeys {
     return if (shoving) SHOVE_KEYS else BASH_KEYS;
@@ -1032,10 +1031,20 @@ comptime {
         if (!std.meta.eql(MOVES[row[0]], row[1])) @compileError("knight: a *_I index no longer names its own row of MOVES");
     }
     std.debug.assert(CHOOSE_N <= MOVES.len and SWEEP2_I >= CHOOSE_N and SWAT_I >= CHOOSE_N);
-    // …AND EVERY INDEX HAS ITS OWN ANIMATION. `keysFor` and `windFor` switch on a `usize`, so both end in an
-    // `else` that hands back the BASH's — right for `SWAT_I`, silently wrong for anything added after it, and a
-    // wrong-animation bug does not fail a test. The pin above only says the two lists are the same LENGTH.
-    std.debug.assert(MOVES.len == 6);
+    // …AND EVERY INDEX HAS ITS OWN GATHER. `windFor` switches on a `usize` and ends in an `else` handing back
+    // the BASH's — that is how the SWAT lost its beat: `windFor(SWAT_I)` returned `.bashwind`, so the stroke
+    // came out as `.bash`, its `windHold` and `SWAT_SHIELD_WIND` never applied, its impact came off the SHIELD,
+    // and `setRecover` played the bash's arms. UNIQUENESS IS THE COVERAGE TEST FOR THAT SWITCH: an index nobody
+    // named falls to `.bashwind`, collides with `BASH_I`, and fails the build. A length pin only ever said the
+    // two lists were the same SIZE. **THE KEY TABLES ARE COVERED SEPARATELY** — `MOVE_KEYS` is an array as long
+    // as `MOVES`, so it cannot silently borrow a row; uniqueness would be wrong there, since the two side-aware
+    // rows share the BASH's on purpose.
+    for (0..MOVES.len) |i| {
+        for (i + 1..MOVES.len) |j| {
+            if (windFor(i) == windFor(j))
+                @compileError("knight: two MOVES rows share a gather state — a stroke is wearing another's animation");
+        }
+    }
 }
 const CHOOSE_N = 4;
 
@@ -1080,12 +1089,17 @@ const QUAKE_STEP: f32 = 0.07;
 /// HALF THE DISTANCE BETWEEN HIS BOOTS, pre-scale.
 const TURN_STANCE_HALF: f32 = 0.105;
 
+/// **EVERY STROKE NAMES ITS OWN GATHER.** The `else` is dead air the comptime pin beside `MOVES` polices: it
+/// hands back the BASH's, so an unnamed index collides with `BASH_I` and fails the build rather than borrowing
+/// a gather. It used to catch `SWAT_I`, which is how the swat lost its own beat entirely.
 fn windFor(mv: usize) State {
     return switch (mv) {
         SWEEP_I => .sweepwind,
         OVER_I => .overwind,
         THRUST_I => .thrustwind,
         SWEEP2_I => .chainwind,
+        SWAT_I => .swatwind,
+        BASH_I => .bashwind,
         else => .bashwind,
     };
 }
@@ -1854,13 +1868,16 @@ pub const Knight = struct {
                 const w = a.weight;
                 const load: f32 = if (w == .light) GATHER_PLAIN else GATHER_HEAVY;
                 self.emitGather(dt, mathx.clampF(self.t / dur, 0, 1) * load, w);
+                // EVERY GATHER NAMES ITS OWN COMMIT. As `else => .bash` a seventh wind added to the prong list
+                // above came out as the BASH — the same shape that cost the SWAT its beat through `windFor`.
                 if (self.t >= dur) self.enter(switch (self.state) {
                     .sweepwind => .sweep,
                     .chainwind => .sweep2,
                     .overwind => .over,
                     .thrustwind => .thrust,
                     .swatwind => .swat,
-                    else => .bash,
+                    .bashwind => .bash,
+                    else => unreachable,
                 });
             },
             .sweep, .sweep2, .over, .thrust, .bash, .swat => {
@@ -5645,16 +5662,40 @@ test "EVERY FRONT STROKE CARRIES HIM IN — the lunge is a column, not two hand-
     for (MOVES) |a| try std.testing.expect(a.step < a.reachOut);
 }
 
-test "PROBE: the swat's own gather" {
+
+test "THE SWAT HAS ITS OWN GATHER — every stroke's index names a state nothing else answers to" {
+    // The bug this pins: `windFor` ended in `else => .bashwind`, and `SWAT_I` fell into it. The AI picks the
+    // swat (`classify`), `enter(windFor(SWAT_I))` put him in the BASH's gather, and at the end of it he came out
+    // in `.bash` — so `windHold`/`SWAT_SHIELD_WIND` never applied, the impact came off `shieldHere()` instead of
+    // the weapon, `blow` read `.bash` for `guardUp`/`swipeOpen`, and `setRecover` played the bash's arms.
+    try std.testing.expectEqual(State.swatwind, windFor(SWAT_I));
+    for (0..MOVES.len) |i| {
+        for (i + 1..MOVES.len) |j| try std.testing.expect(windFor(i) != windFor(j));
+    }
+
     var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
-    std.debug.print("\n  PROBE windFor(SWAT_I) = {s}\n", .{@tagName(windFor(SWAT_I))});
     k.atk = SWAT_I;
     k.opener = SWAT_I;
+    k.swatShield = false;
     k.enter(windFor(SWAT_I));
+    try std.testing.expectEqual(Blow.swat, k.blow);
     const dt = 1.0 / 240.0;
     var t: f32 = 0;
     while (t < k.windDur() + 0.05 and (k.state == .swatwind or k.state == .bashwind)) : (t += dt) {
         _ = k.update(dt, v3(0, 0, 4.0), 400.0, .{});
     }
-    std.debug.print("  PROBE after the gather: state {s}, blow {s}\n", .{ @tagName(k.state), @tagName(k.blow) });
+    std.debug.print("\n  the swat's gather lands in {s} carrying blow {s}\n", .{ @tagName(k.state), @tagName(k.blow) });
+    try std.testing.expectEqual(State.swat, k.state);
+    try std.testing.expectEqual(Blow.swat, k.blow);
+
+    // …and the shield swat's own wind is the fastest tell he owns, which only `.swatwind` can read.
+    var d = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    d.atk = SWAT_I;
+    d.swatShield = true;
+    d.enter(windFor(SWAT_I));
+    d.windHold = 0;
+    const shielded = d.windDur();
+    d.swatShield = false;
+    try std.testing.expect(shielded < d.windDur());
+    try std.testing.expect(shielded >= foe.TELL_MIN);
 }

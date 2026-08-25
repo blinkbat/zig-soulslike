@@ -83,6 +83,17 @@ pub const TABLE = [_]Row{
     .{ .foe = .mourner, .common = .wax_stopped_hood, .odds = UNCOMMON, .rare = .wakers_nail, .chance = 0.12 },
     // **THE FAT IN THE JAR IS RENDERED OFF ONE OF THESE** (`item.describe`).
     .{ .foe = .slumber_bloom, .common = .purgeleaf, .rare = .nightcap_grease, .chance = 0.20 },
+    // **IT CARRIES ITS OWN ANSWER** — the draught is the fire ward, off the one body whose whole threat is fire.
+    .{ .foe = .cinder_wake, .common = .ashen_amulet, .odds = UNCOMMON, .rare = .kiln_draught, .chance = 0.18 },
+    .{ .foe = .rotgorger, .common = .sporeling_cap, .odds = UNCOMMON, .rare = .sporecrown, .chance = 0.14 },
+    // **BARK THAT LIGHTS WET IS TALLOW BY ANOTHER NAME** — the thing that burns it is what it leaves.
+    .{ .foe = .birchwight, .common = .fire_tallow, .odds = UNCOMMON, .rare = .rimewax, .chance = 0.14 },
+    // **THE SALT IS THE CREATURE** — it leaves the crust it was wearing.
+    .{ .foe = .salt_husk, .common = .pilgrims_salt, .rare = .ironwort_tea, .chance = 0.12 },
+    .{ .foe = .fish_spearman, .common = .bloodgrass, .rare = .fang_dirk, .chance = 0.10 },
+    .{ .foe = .fish_netter, .common = .spidersilk_moccasins, .odds = UNCOMMON, .rare = .marchboots, .chance = 0.12 },
+    // **THE ONE WHO PUTS HEALTH BACK IS CARRYING SOME** — the biggest purse in the band, and it earns it.
+    .{ .foe = .fish_shaman, .common = .crimson_flask, .odds = UNCOMMON, .rare = .second_wind, .chance = 0.14 },
 };
 
 pub const NFOE = @typeInfo(wf.FoeKind).@"enum".fields.len;

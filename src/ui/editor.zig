@@ -50,7 +50,8 @@ const NEW_ZONE_DENSITY: f32 = 0.7;
 
 const FOE_PICK_R: f32 = 1.6;
 
-// File scope: a Map is ~477 KB, so 24 of them is ~11.2 MB — BSS, not inside Game and not on an allocator.
+// File scope: a Map is 2.79 MB at MAX_OPS 20480, so 24 of them is 66.9 MB — BSS, not inside Game and not on an
+// allocator.
 var undoRing: [UNDO_CAP]wf.Map = undefined;
 var undoBase: usize = 0;
 var undoN: usize = 0;
@@ -231,6 +232,13 @@ const unitTips = [_][:0]const u8{
     "High HP, no armour, feeble bite. Rings the bell on its back and the camp comes; weak to lightning",
     "A shade twice over, slower. Its grip leaves a STUPOR: thin focus and dragged feet. Stand off it",
     "Never moves, never strikes. Swells, then vents SLEEP over 5 m. Walk out of the ring",
+    "The ground it walks over stays BURNING. Slower than your run. Fireproof; cold is the answer",
+    "EATS THE DEAD to heal, its own kin included. Head down it is wide open. Weak to fire",
+    "Slow, high poise. SET IT ALIGHT and it dies in 15 s — half again as fast, and it lights the next one",
+    "Frail, feeble. Killing it lights a 0.85 s fuse and it SHATTERS over 3.2 m. They chain",
+    "Two-handed trident. The longest common reach in the game; one slow thrust down a line",
+    "Throws a NET that takes your feet for 1.35 s — exactly one thrust. Cannot throw it up close",
+    "No blow at all. Heals the whole band off its own bars. Softest body, biggest purse: kill it first",
     "Talks. Roams its own leash, carries a staff. Give it a `dlg=` in the file to say anything",
     "Talks. Camel-humanoid trader; the caravan props are its own family",
     "Sweep to erase ([ ] sets radius)",
@@ -279,6 +287,13 @@ const unitIcons = [_]ui.Icon{
     .tolling_hollow,
     .mourner,
     .slumber_bloom,
+    .cinder_wake,
+    .rotgorger,
+    .birchwight,
+    .salt_husk,
+    .fish_spearman,
+    .fish_netter,
+    .fish_shaman,
     .wanderer,
     .merchant,
     .erase,
@@ -396,6 +411,13 @@ const UnitBrush = enum {
     tolling_hollow,
     mourner,
     slumber_bloom,
+    cinder_wake,
+    rotgorger,
+    birchwight,
+    salt_husk,
+    fish_spearman,
+    fish_netter,
+    fish_shaman,
     // **THE FOLK COME AFTER THE FOES AND BEFORE THE ERASER**, which is what `brushIdx` splits on: under
     // `NFOE_KIND` it is a creature, over it a body that talks.
     wanderer,
@@ -1184,10 +1206,7 @@ pub const Editor = struct {
     fn rebuild(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
         self.rebuildDue = false;
         self.rebuildT = 0;
-        env.uploadSoil(m);
-        env.uploadWater(m);
-        env.uploadHeight(m);
-        env.materialize(m);
+        env.replay(m);
     }
 
     fn requestRebuild(self: *Editor) void {
@@ -1852,6 +1871,23 @@ pub const Editor = struct {
         self.sayFmt("re-rolled #{d} - seed {d}", .{ s, m.ops[s].seed });
     }
 
+    /// The group stops being one thing: every instance it made becomes its own `at:` op, standing where it
+    /// already stood. There is no way back short of undo, so the seed and the shape go with it.
+    fn explodeSel(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
+        const s = self.sel orelse return;
+        if (s >= m.nops or m.ops[s].op == .at) return;
+        // It writes down where the props ARE, so a pending rebuild would bake the arrangement before the edit.
+        if (self.rebuildDue) self.rebuild(m, env);
+        self.bank(m);
+        const n = env.explodeOp(m, s) catch {
+            self.say(FULL_MSG);
+            return;
+        };
+        self.dropSelection();
+        self.rebuild(m, env);
+        self.sayFmt("broke apart into {d}", .{n});
+    }
+
     fn deleteSel(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
         if (self.layer == .units) {
             switch (self.selUnit orelse return) {
@@ -2397,6 +2433,13 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         .shade => ui.col(138, 116, 208, 255),
         .mourner => ui.col(174, 162, 194, 255),
         .slumber_bloom => ui.col(142, 152, 212, 255),
+        .cinder_wake => ui.col(226, 116, 52, 255),
+        .rotgorger => ui.col(148, 132, 86, 255),
+        .birchwight => ui.col(206, 202, 190, 255),
+        .salt_husk => ui.col(226, 228, 220, 255),
+        .fish_spearman => ui.col(96, 132, 112, 255),
+        .fish_netter => ui.col(120, 156, 138, 255),
+        .fish_shaman => ui.col(158, 186, 150, 255),
         .leechfly => ui.col(196, 66, 58, 255),
         .rooted => ui.col(140, 96, 52, 255),
         .shroom => ui.col(214, 130, 118, 255),
@@ -3182,6 +3225,11 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             return;
         }
         y += ROW_H + 6;
+        if (ui.buttonTip(ctx, ui.rect(x, y, w, 24), "break apart", hud.MONO, false, "One op per instance, so a single one can be moved or deleted. No way back but undo")) {
+            ed.explodeSel(m, env);
+            return;
+        }
+        y += ROW_H + 6;
 
         hud.mono("keeps off", x, y, hud.MONO, ui.alpha(ui.TRIM, 220));
         y += hud.monoLineH(hud.MONO);
@@ -3766,7 +3814,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
     }
 }
 
-const MenuItem = enum { view, loot, boss, focus, reroll, duplicate, delete, close };
+const MenuItem = enum { view, loot, boss, focus, reroll, explode, duplicate, delete, close };
 
 const menuRows = [_]struct { act: MenuItem, label: [:0]const u8 }{
     .{ .act = .view, .label = "View..." },
@@ -3774,6 +3822,7 @@ const menuRows = [_]struct { act: MenuItem, label: [:0]const u8 }{
     .{ .act = .boss, .label = "Sealed by..." },
     .{ .act = .focus, .label = "Focus" },
     .{ .act = .reroll, .label = "Re-roll" },
+    .{ .act = .explode, .label = "Break apart" },
     .{ .act = .duplicate, .label = "Duplicate" },
     .{ .act = .delete, .label = "Delete" },
     .{ .act = .close, .label = "Close" },
@@ -3794,6 +3843,12 @@ fn bossOp(ed: *const Editor, m: *const wf.Map) ?usize {
     const s = ed.sel orelse return null;
     if (s >= m.nops) return null;
     return if (m.ops[s].op == .at and props.info(m.ops[s].kind).ward) s else null;
+}
+
+fn groupOp(ed: *const Editor, m: *const wf.Map) ?usize {
+    const s = ed.sel orelse return null;
+    if (s >= m.nops) return null;
+    return if (m.ops[s].op == .at) null else s;
 }
 
 fn lootCount(o: *const wf.Op, k: item.Kind) u8 {
@@ -3946,6 +4001,7 @@ fn menuEnabled(ed: *const Editor, m: *const wf.Map, act: MenuItem) bool {
         .loot => lootOp(ed, m) != null,
         .boss => bossOp(ed, m) != null,
         .reroll, .duplicate => op != null,
+        .explode => groupOp(ed, m) != null,
         .delete => op != null or (ed.layer == .units and ed.selUnit != null),
     };
 }
@@ -3989,6 +4045,7 @@ fn drawContextMenu(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx) void
             .boss => ed.modal = .boss,
             .focus => if (ed.sel) |s| ed.focusOn(m, s),
             .reroll => ed.rerollSel(m, env),
+            .explode => ed.explodeSel(m, env),
             .duplicate => ed.duplicateSel(m, env),
             .delete => ed.deleteSel(m, env),
             .close => {},

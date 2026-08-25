@@ -354,6 +354,22 @@ pub const Cull = union(enum) {
     sun: rl.Vector3,
 };
 
+/// **`Env.build` MAY RUN ONCE PER PROCESS** — a second run strands every prototype the first made. File scope
+/// and not a field: `Env` comes off `alloc.create` inside `Game`, where a defaulted field never runs.
+var envBuilt = false;
+
+/// The only way the two upload skips are visible to a test — building a tile needs a GL context.
+var terrainBuilds: usize = 0;
+var waterBuilds: usize = 0;
+
+pub fn terrainBuildCount() usize {
+    return terrainBuilds;
+}
+
+pub fn waterBuildCount() usize {
+    return waterBuilds;
+}
+
 pub const Env = struct {
     ground: rl.Model,
     models: [props.NK]rl.Model,
@@ -399,6 +415,12 @@ pub const Env = struct {
     waterField: [wf.WATER_CELLS]u8 = [_]u8{gfx.WATER_SHORE} ** wf.WATER_CELLS,
     waterAny: bool = false,
     waterHalf: f32 = 0,
+    /// Every input `uploadWater` reads. Its OWN copy of the height, not `heightField`: `sculptHeight` moves
+    /// that one mid-stroke, so sharing it leaves the dig tone stale for the rest of the session.
+    waterSrc: [wf.WATER_CELLS]u8 = [_]u8{0} ** wf.WATER_CELLS,
+    waterEdgeSrc: [wf.WATER_CELLS]u8 = [_]u8{0} ** wf.WATER_CELLS,
+    waterHgtSrc: [wf.HEIGHT_CELLS]u8 = [_]u8{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS,
+    waterReady: bool = false,
     waterMid: rl.Vector3 = mathx.zero3,
     waterSpan: rl.Vector3 = mathx.zero3,
     heightField: [wf.HEIGHT_CELLS]u8 = [_]u8{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS,
@@ -414,6 +436,8 @@ pub const Env = struct {
     stat_cells: u32 = 0,
 
     pub fn build(self: *Env, scene: *gfx.Scene) void {
+        if (envBuilt) @panic("env: build ran twice — every prototype, tile and sheet the first run made is stranded");
+        envBuilt = true;
         self.scene = scene;
         const shader = scene.shader;
         for (&self.models, props.INFO) |*m, row| m.* = row.build(shader);
@@ -439,6 +463,7 @@ pub const Env = struct {
         self.stowed = false;
         self.waterAny = false;
         self.waterHalf = 0;
+        self.waterReady = false;
         @memset(&self.sgrid_start, 0);
         self.tileBuilt = [_]bool{false} ** NTILES;
         self.tileRad = [_]f32{0} ** NTILES;
@@ -449,15 +474,29 @@ pub const Env = struct {
         self.heightAny = false;
     }
 
+    /// Putting a map into the world: what `game.init`, `game.enterMap` and `editor.rebuild` all want.
+    pub fn replay(self: *Env, m: *const wf.Map) void {
+        self.uploadSoil(m);
+        self.uploadWater(m);
+        self.uploadHeight(m);
+        self.materialize(m);
+    }
+
     pub fn uploadSoil(self: *Env, m: *const wf.Map) void {
         if (self.scene) |sc| sc.setSoil(&m.soil, &m.soilCov, &m.soilEdge, m.half);
     }
 
+    /// **AN UNCHANGED FIELD COSTS A COMPARE, NOT A REBUILD.** Every editor edit reaches here whatever it
+    /// touched, and `rebuildTerrain` remakes all 225 tiles: 12.5 MB of vertices, 1350 GL objects, 27.6 ms of
+    /// CPU before the driver's share. Five a second under a dragged eraser is what stalled the machine.
     pub fn uploadHeight(self: *Env, m: *const wf.Map) void {
+        const any = m.anyHeight();
+        const same = self.heightAny == any and self.heightHalf == m.half and
+            std.mem.eql(u8, &self.heightField, &m.height);
         self.heightField = m.height;
         self.heightHalf = m.half;
-        self.heightAny = m.anyHeight();
-        self.rebuildTerrain();
+        self.heightAny = any;
+        if (!same) self.rebuildTerrain();
     }
 
     pub fn sculptHeight(self: *Env, m: *const wf.Map, span: [4]usize) void {
@@ -481,6 +520,7 @@ pub const Env = struct {
     }
 
     fn rebuildTerrain(self: *Env) void {
+        terrainBuilds += 1;
         for (0..NTILES) |i| {
             if (!self.heightAny) {
                 self.dropTile(i);
@@ -610,8 +650,20 @@ pub const Env = struct {
         return mathx.normV(v3(-dx, 1.0, -dz));
     }
 
+    /// **THE COAST IS DERIVED ONLY WHEN SOMETHING IT READS MOVED** — 7.1 ms over the whole 224² field, and
+    /// `replay` reaches here for every prop placed. Compared byte for byte rather than by hash or flag.
     pub fn uploadWater(self: *Env, m: *const wf.Map) void {
         const N = wf.WATER_N;
+        const same = self.waterReady and self.waterHalf == m.half and
+            std.mem.eql(u8, &self.waterSrc, &m.water) and
+            std.mem.eql(u8, &self.waterEdgeSrc, &m.waterEdge) and
+            std.mem.eql(u8, &self.waterHgtSrc, &m.height);
+        if (same) return;
+        waterBuilds += 1;
+        self.waterSrc = m.water;
+        self.waterEdgeSrc = m.waterEdge;
+        self.waterHgtSrc = m.height;
+        self.waterReady = true;
         self.waterAny = m.anyWater();
         self.waterHalf = m.half;
         if (!self.waterAny) {
@@ -742,6 +794,47 @@ pub const Env = struct {
         }
         buildSolids(self);
         indexProps(self);
+    }
+
+    /// **THE WOOD BECOMES TREES.** Break a generator op into the props it made — one `at:` apiece, in its
+    /// place, so a wood stops being one thing to select and delete. The world does not move: every generator
+    /// plants at `groundY(x, z)`, which is exactly where an `at` with no lift replays, and each instance
+    /// carries its own yaw, scale and lean out of the props it already stands as.
+    ///
+    /// Reads THIS env's last `materialize`, so the caller must have replayed `m` (water uploaded) and must
+    /// rebuild after. Walking the map BACKWARDS explodes the whole thing off one replay: splicing at `i` never
+    /// moves an op before it, so the prop records for the ops still to come keep their `op` numbers.
+    pub fn explodeOp(self: *const Env, m: *wf.Map, s: usize) !usize {
+        if (s >= m.nops) return error.NoSuchOp;
+        if (m.ops[s].op == .at) return 0;
+        const src = m.ops[s];
+        const tag: u16 = @intCast(s);
+        var first: usize = 0;
+        var n: usize = 0;
+        for (self.props[0..self.nprops], 0..) |pr, i| {
+            if (pr.op != tag) continue;
+            if (n == 0) first = i;
+            n += 1;
+        }
+        try m.splice(s, n);
+        for (0..n) |k| {
+            const pr = self.props[first + k];
+            var o = wf.defaults(.at);
+            o.kind = pr.kind;
+            o.x = pr.pos.x;
+            o.z = pr.pos.z;
+            o.yaw = pr.yaw;
+            o.scale = pr.scale;
+            o.lean = pr.lean;
+            o.leanDir = pr.leanDir;
+            o.loot = src.loot;
+            o.nloot = src.nloot;
+            o.boss = src.boss;
+            // A flame's phase is drawn off its op's stream, so one seed for the lot beats every torch of a ring in time.
+            if (props.info(pr.kind).light != null) o.seed = src.seed +% k;
+            m.ops[s + k] = o;
+        }
+        return n;
     }
 
     pub fn stageOne(self: *Env, kind: Kind) void {
@@ -2761,6 +2854,96 @@ test "every generator op in the shipped map has its own seed" {
     }
 }
 
+test "A PROP PLACED CANNOT MOVE THE GROUND — an unchanged height field is not rebuilt" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++ "at: pillar 0 0 0 1\n");
+    defer std.testing.allocator.destroy(m);
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.heightHalf = 0; // `build`'s job, and this Env never had one
+
+    const first = terrainBuildCount();
+    e.uploadHeight(m);
+    try std.testing.expectEqual(first + 1, terrainBuildCount());
+
+    e.uploadHeight(m);
+    e.uploadHeight(m);
+    try std.testing.expectEqual(first + 1, terrainBuildCount());
+
+    m.half += 1;
+    e.uploadHeight(m);
+    try std.testing.expectEqual(first + 2, terrainBuildCount());
+
+    m.height[wf.HEIGHT_CELLS / 2] = wf.HEIGHT_ZERO + 1;
+    try std.testing.expect(m.anyHeight());
+}
+
+test "THE COAST IS DERIVED ONLY WHEN SOMETHING IT READS MOVED — the DIG is one of them" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++ "at: pillar 0 0 0 1\n");
+    defer std.testing.allocator.destroy(m);
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+
+    const first = waterBuildCount();
+    e.uploadWater(m);
+    e.uploadWater(m);
+    e.uploadWater(m);
+    try std.testing.expectEqual(first + 1, waterBuildCount());
+
+    m.water[wf.WATER_CELLS / 2] = 1;
+    e.uploadWater(m);
+    try std.testing.expectEqual(first + 2, waterBuildCount());
+
+    // `digTone` reads how far the bed was dug, so the height is a water input that moves on its own — and
+    // `sculptHeight` runs first, which is what makes a shared compare read this as unchanged.
+    e.sculptHeight(m, wf.EMPTY_SPAN);
+    m.height[wf.HEIGHT_CELLS / 2] = wf.HEIGHT_ZERO - 4;
+    e.uploadWater(m);
+    try std.testing.expectEqual(first + 3, waterBuildCount());
+}
+
+test "BREAKING A GROUP APART DOES NOT MOVE THE WORLD" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++
+        "belt: pillar -20 -20 20 20 12 0.9 1.1 seed=7001\n" ++
+        "at: lantern 30 30 0 1\n");
+    defer std.testing.allocator.destroy(m);
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.materialize(m);
+    const props0 = e.propCount();
+    const solids0 = e.solidCount();
+    const lights0 = e.lightCount();
+    try std.testing.expect(props0 > 2 and solids0 > 0 and lights0 > 0);
+
+    const n = try e.explodeOp(m, 0);
+    try std.testing.expect(n > 1);
+    try std.testing.expectEqual(n + 1, m.nops);
+    for (m.slice()) |o| try std.testing.expectEqual(wf.OpKind.at, o.op);
+
+    e.materialize(m);
+    try std.testing.expectEqual(props0, e.propCount());
+    try std.testing.expectEqual(solids0, e.solidCount());
+    try std.testing.expectEqual(lights0, e.lightCount());
+}
+
+test "a group with nothing left standing leaves no op behind" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++
+        "belt: pillar -20 -20 20 20 0 0.9 1.1 seed=7002\n" ++
+        "at: lantern 30 30 0 1\n");
+    defer std.testing.allocator.destroy(m);
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.materialize(m);
+    try std.testing.expectEqual(@as(usize, 1), e.propCount());
+
+    try std.testing.expectEqual(@as(usize, 0), try e.explodeOp(m, 0));
+    try std.testing.expectEqual(@as(usize, 1), m.nops);
+    try std.testing.expectEqual(Kind.lantern, m.ops[0].kind);
+}
+
 test "a cliff stood at the map's edge is still inside the grid" {
     // CLIFF_BOUND is a hand-copied mirror of the mesh's own bound, because MAX_HALF has to be a comptime value and `props.info` is a runtime lookup.
     try std.testing.expectApproxEqAbs(CLIFF_BOUND, props.info(.cliff).bound, 1e-4);
@@ -3082,3 +3265,5 @@ test "THE FACET MEMO IS THE SAME ARITHMETIC — corner for corner, byte for byte
         try std.testing.expectEqualSlices(u8, &b, &a);
     }
 }
+
+

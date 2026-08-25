@@ -32,6 +32,11 @@ const skittermod = @import("../foes/skitterer.zig");
 const priestmod = @import("../foes/ancientpriest.zig");
 const hollowmod = @import("../foes/hollow.zig");
 const bloommod = @import("../foes/slumberbloom.zig");
+const cindermod = @import("../foes/cinderwake.zig");
+const gorgermod = @import("../foes/rotgorger.zig");
+const birchmod = @import("../foes/birchwight.zig");
+const huskmod = @import("../foes/salthusk.zig");
+const fishmod = @import("../foes/fishman.zig");
 const combat = @import("../play/combat.zig");
 const foemod = @import("../foes/foe.zig");
 const elemfx = @import("../gfx/elemfx.zig");
@@ -108,6 +113,9 @@ pub fn unload() void {
     if (bigRT) |t| rl.unloadRenderTexture(t);
     thumbRT = null;
     bigRT = null;
+    // The prototype meshes inside it are permanent by the house rule; the 112.4 MB of slab around them is not.
+    if (charSet) |cs| std.heap.c_allocator.destroy(cs);
+    charSet = null;
 }
 
 pub const Mode = enum {
@@ -329,55 +337,52 @@ const CharSet = struct {
     crypt: priestmod.Crypt,
     belfry: hollowmod.Belfry,
     bed: bloommod.Bed,
+    scorch: cindermod.Scorch,
+    gorge: gorgermod.Gorge,
+    stand: birchmod.Stand,
+    pan: huskmod.Pan,
+    shoal: fishmod.Shoal,
 };
-var charSet: ?CharSet = null;
+/// **112.4 MB, TAKEN WHEN THE TAB IS FIRST OPENED AND NOT OUT OF BSS AT LOAD** — as a module `var` it was that
+/// much commit charge from the image mapping onward whether or not a creature was ever looked at. Built field
+/// by field for `game.init`'s reason: a Debug frame reserves every temporary in a struct literal at once.
+var charSet: ?*CharSet = null;
+
+/// `game.FOE_GROUPS` is the other copy of this roster, and `game` pins the two against each other.
+pub const CHAR_GROUPS = @typeInfo(CharSet).@"struct".fields.len;
 
 fn ensureChars(scene: *gfx.Scene) *CharSet {
-    if (charSet == null) {
-        charSet = .{
-            .warren = frogmod.Knot.init(scene.shader),
-            .line = archermod.Line.init(scene.shader),
-            .grief = ogremod.Grief.init(scene.shader),
-            .band = koboldmod.Warband.init(scene.shader),
-            .brood = broodmod.Brood.init(scene.shader),
-            .muster = warriormod.Muster.init(scene.shader),
-            .haunt = shademod.Haunt.init(scene.shader),
-            .swarm = leechmod.Swarm.init(scene.shader),
-            .grove = rootedmod.Grove.init(scene.shader),
-            .cluster = shroommod.Cluster.init(scene.shader),
-            .warrens = delvermod.Warrens.init(scene.shader),
-            .rite = necromod.Rite.init(scene.shader),
-            .vigil = knightmod.Vigil.init(scene.shader),
-            .thicket = ravagermod.Thicket.init(scene.shader),
-            .ring = magemod.Ring.init(scene.shader),
-            .host = golemmod.Host.init(scene.shader),
-            .marsh = fenmod.Marsh.init(scene.shader),
-            .clatter = skittermod.Clatter.init(scene.shader),
-            .crypt = priestmod.Crypt.init(scene.shader),
-            .belfry = hollowmod.Belfry.init(scene.shader),
-            .bed = bloommod.Bed.init(scene.shader),
-        };
-        var cs = &charSet.?;
-        cs.warren.n = 0;
-        cs.line.n = 0;
-        cs.grief.n = 0;
-        cs.band.n = 0;
-        cs.brood.n = 0;
-        cs.muster.n = 0;
-        cs.haunt.n = 0;
-        cs.swarm.n = 0;
-        cs.grove.n = 0;
-        cs.cluster.n = 0;
-        cs.warrens.n = 0;
-        cs.vigil.n = 0;
-        cs.thicket.n = 0;
-        cs.ring.n = 0;
-        cs.clatter.n = 0;
-        cs.crypt.n = 0;
-        cs.belfry.n = 0;
-        cs.bed.n = 0;
-    }
-    return &charSet.?;
+    if (charSet) |cs| return cs;
+    const cs = std.heap.c_allocator.create(CharSet) catch @panic("objview: character roster");
+    charSet = cs;
+    cs.warren = frogmod.Knot.init(scene.shader);
+    cs.line = archermod.Line.init(scene.shader);
+    cs.grief = ogremod.Grief.init(scene.shader);
+    cs.band = koboldmod.Warband.init(scene.shader);
+    cs.brood = broodmod.Brood.init(scene.shader);
+    cs.muster = warriormod.Muster.init(scene.shader);
+    cs.haunt = shademod.Haunt.init(scene.shader);
+    cs.swarm = leechmod.Swarm.init(scene.shader);
+    cs.grove = rootedmod.Grove.init(scene.shader);
+    cs.cluster = shroommod.Cluster.init(scene.shader);
+    cs.warrens = delvermod.Warrens.init(scene.shader);
+    cs.rite = necromod.Rite.init(scene.shader);
+    cs.vigil = knightmod.Vigil.init(scene.shader);
+    cs.thicket = ravagermod.Thicket.init(scene.shader);
+    cs.ring = magemod.Ring.init(scene.shader);
+    cs.host = golemmod.Host.init(scene.shader);
+    cs.marsh = fenmod.Marsh.init(scene.shader);
+    cs.clatter = skittermod.Clatter.init(scene.shader);
+    cs.crypt = priestmod.Crypt.init(scene.shader);
+    cs.belfry = hollowmod.Belfry.init(scene.shader);
+    cs.bed = bloommod.Bed.init(scene.shader);
+    cs.scorch = cindermod.Scorch.init(scene.shader);
+    cs.gorge = gorgermod.Gorge.init(scene.shader);
+    cs.stand = birchmod.Stand.init(scene.shader);
+    cs.pan = huskmod.Pan.init(scene.shader);
+    cs.shoal = fishmod.Shoal.init(scene.shader);
+    inline for (@typeInfo(CharSet).@"struct".fields) |f| @field(cs, f.name).n = 0;
+    return cs;
 }
 
 fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
@@ -394,6 +399,11 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         // The same rig at `shade.SPEC`'s own 1.28, so the viewer frames the body it draws.
         .mourner => .{ .top = 3.1, .bound = 1.6 },
         .slumber_bloom => .{ .top = 1.6, .bound = 1.3 },
+        .cinder_wake => .{ .top = 1.9, .bound = 1.2 },
+        .rotgorger => .{ .top = 1.5, .bound = 1.9 },
+        .birchwight => .{ .top = 2.4, .bound = 1.4 },
+        .salt_husk => .{ .top = 1.9, .bound = 1.2 },
+        .fish_spearman, .fish_netter, .fish_shaman => .{ .top = 2.3, .bound = 1.3 },
         .leechfly => .{ .top = 2.9, .bound = 1.8 },
         .rooted => .{ .top = 7.2, .bound = 3.6 },
         .shroom => .{ .top = 1.2, .bound = 1.0 },
@@ -448,6 +458,31 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
             cs.muster.n = 1;
             cs.muster.live()[0] = warriormod.Warrior.spawnAs(if (k == .shieldman) .shieldman else .greatsword, mathx.zero3, 0, 1.0, seed);
             cs.muster.draw(scene);
+        },
+        .fish_spearman, .fish_netter, .fish_shaman => {
+            cs.shoal.n = 1;
+            cs.shoal.live()[0] = fishmod.Fishman.spawnAs(fishmod.roleOf(k).?, mathx.zero3, 0, 1.0, seed);
+            cs.shoal.draw(scene);
+        },
+        .salt_husk => {
+            cs.pan.n = 1;
+            cs.pan.live()[0] = huskmod.Husk.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.pan.draw(scene);
+        },
+        .birchwight => {
+            cs.stand.n = 1;
+            cs.stand.live()[0] = birchmod.Wight.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.stand.draw(scene);
+        },
+        .rotgorger => {
+            cs.gorge.n = 1;
+            cs.gorge.live()[0] = gorgermod.Gorger.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.gorge.draw(scene);
+        },
+        .cinder_wake => {
+            cs.scorch.n = 1;
+            cs.scorch.live()[0] = cindermod.Cinder.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.scorch.draw(scene);
         },
         .slumber_bloom => {
             cs.bed.n = 1;

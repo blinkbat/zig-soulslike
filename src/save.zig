@@ -699,6 +699,10 @@ fn sample() Data {
     d.spell = .roots;
     d.memory = .{ null, .roots, .levin };
     d.arrow = .fire;
+    // **OFF THEIR DEFAULTS ON PURPOSE.** `Data{}` starts these at the full load, so at the default a round-trip
+    // that dropped the `quiver:` row entirely would still come back equal and pass.
+    d.arrows = 3;
+    d.fireArrows = 1;
     d.flask = .cerulean;
     d.quick[0] = .crimson_flask;
     d.quick[3] = .mushroom_jerky;
@@ -762,29 +766,42 @@ test "a save round-trips through its own text" {
     const back = try roundTrip(&d);
     try testing.expectEqualStrings(d.mapName(), back.mapName());
     try testing.expectApproxEqAbs(d.at.x, back.at.x, 1e-3);
+    try testing.expectApproxEqAbs(d.at.y, back.at.y, 1e-3);
     try testing.expectApproxEqAbs(d.at.z, back.at.z, 1e-3);
     try testing.expectApproxEqAbs(d.facing, back.facing, 1e-4);
     try testing.expectEqual(d.souls, back.souls);
     try testing.expectEqual(d.arm, back.arm);
     try testing.expectEqual(d.off, back.off);
+    // THE ALT RACK IS HALF THE HANDS. Left unasserted, `hands:`' last two tokens could stop being written and
+    // every file on disk would quietly come back holding the STARTING alt pair (`parse`'s own `catch`).
+    try testing.expectEqual(d.armAlt, back.armAlt);
+    try testing.expectEqual(d.offAlt, back.offAlt);
     try testing.expectEqual(d.spell, back.spell);
     try testing.expectEqual(d.memory, back.memory);
     try testing.expectEqual(d.arrow, back.arrow);
+    try testing.expectEqual(d.arrows, back.arrows);
+    try testing.expectEqual(d.fireArrows, back.fireArrows);
     try testing.expectEqual(d.flask, back.flask);
+    try testing.expectEqual(d.worn, back.worn);
     try testing.expectEqual(d.quick, back.quick);
     try testing.expectEqual(d.quickSel, back.quickSel);
     try testing.expectEqual(d.bag, back.bag);
     try testing.expectEqual(d.tree, back.tree);
+    try testing.expectApproxEqAbs(d.dropAt.x, back.dropAt.x, 1e-3);
+    try testing.expectApproxEqAbs(d.dropAt.y, back.dropAt.y, 1e-3);
+    try testing.expectApproxEqAbs(d.dropAt.z, back.dropAt.z, 1e-3);
     try testing.expectEqual(d.dropAmount, back.dropAmount);
     try testing.expectApproxEqAbs(d.hour, back.hour, 1e-3);
     try testing.expectEqual(d.flags, back.flags);
     try testing.expectEqual(d.counters, back.counters);
+    try testing.expectEqual(d.timers, back.timers);
     try testing.expectEqual(d.armed, back.armed);
     try testing.expectEqual(d.talked, back.talked);
     try testing.expectEqual(d.fired, back.fired);
     try testing.expectEqual(d.preserved, back.preserved);
     try testing.expectEqual(d.running, back.running);
     try testing.expectEqual(d.actAt, back.actAt);
+    try testing.expectEqual(d.waitLeft, back.waitLeft);
     try testing.expectEqual(d.deaths, back.deaths);
     try testing.expectApproxEqAbs(d.elapsed, back.elapsed, 1e-3);
     try testing.expectEqual(d.chestOpen, back.chestOpen);

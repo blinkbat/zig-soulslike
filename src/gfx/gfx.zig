@@ -34,6 +34,41 @@ pub const SUN_DIR = daynight.ANCHOR_DIR;
 pub var sun: rl.Vector3 = SUN_DIR;
 pub var sunReach: f32 = daynight.reachOf(SUN_DIR);
 
+/// **THE HOT KEY AND THE OUTPUT GAMMA, NAMED ONCE.** The whole chain every albedo in the game is SOLVED
+/// through (AGENTS.md) lives in two places in the scene shader — `keyCol*diff*1.72` and the `pow(1.0/2.2)` on
+/// the way out — and the GLSL is a raw string, so it cannot import a constant. The comptime pin below is what
+/// keeps the two in step: move the key in the shader and the build stops here rather than letting the art
+/// tests go on measuring the old chain and passing.
+pub const KEY_HOT: f32 = 1.72;
+pub const OUT_GAMMA: f32 = 2.2;
+
+comptime {
+    // The FS is ~30 KB of GLSL and a scan of it costs one branch a byte.
+    @setEvalBranchQuota(200000);
+    if (std.mem.indexOf(u8, glsl.sceneFS, "keyCol*diff*1.72*") == null)
+        @compileError("gfx: the scene shader's key is no longer 1.72 — `KEY_HOT` and every solved albedo have parted company with it");
+    if (std.mem.indexOf(u8, glsl.sceneFS, "vec3(1.0/2.2)") == null)
+        @compileError("gfx: the scene shader no longer gammas at 1/2.2 — `OUT_GAMMA` has parted company with it");
+}
+
+/// What an authored albedo BYTE (0..255) comes up as ON SCREEN, in the same units. The one place the chain is
+/// arithmetic rather than prose — `propgold` and `propmarket` each carried their own copy of it.
+pub fn screenOf(albedo: f32) f32 {
+    return 255.0 * std.math.pow(f32, mathx.clampF(albedo / 255.0 * KEY_HOT, 0, 1), 1.0 / OUT_GAMMA);
+}
+
+/// The same chain read backwards: the albedo byte that lands on a wanted SCREEN byte. This is the solve the
+/// palettes are authored with, and guessing it instead is what the law exists to stop.
+pub fn albedoFor(screen: f32) f32 {
+    return std.math.pow(f32, mathx.clampF(screen, 0, 255) / 255.0, OUT_GAMMA) / KEY_HOT * 255.0;
+}
+
+/// A colour's screen value taken off its own MEAN channel — what a "is this paler than that" test compares.
+pub fn screenOfColor(c: rl.Color) f32 {
+    const mean = (@as(f32, @floatFromInt(c.r)) + @as(f32, @floatFromInt(c.g)) + @as(f32, @floatFromInt(c.b))) / 3.0;
+    return screenOf(mean);
+}
+
 pub const SHADOWMAP_RES = 8192;
 pub const SHADOW_ORTHO = 108.0;
 const SUN_DIST = 120.0;
@@ -982,6 +1017,16 @@ pub const Builder = struct {
         model.materials[0].shader = shader;
         return model;
     }
+
+    /// For a builder that never reaches `toMesh`, which is otherwise the only release: it hands the five
+    /// arrays to raylib.
+    pub fn deinit(self: *Builder) void {
+        self.pos.deinit();
+        self.nrm.deinit();
+        self.uv.deinit();
+        self.uv2.deinit();
+        self.col.deinit();
+    }
 };
 
 fn scaleAdd(base: rl.Vector3, dir: rl.Vector3, s: f32) rl.Vector3 {
@@ -1049,10 +1094,27 @@ fn norm3(a: rl.Vector3) rl.Vector3 {
 }
 const cross = mathx.crossV;
 
+test "THE CHAIN AND ITS INVERSE ARE ONE SOLVE — an albedo run through both comes back where it started" {
+    // `albedoFor` is what a palette is authored with and `screenOf` is what an art test measures; drifting apart
+    // they would each pass on their own while the two halves of the law disagreed.
+    for ([_]f32{ 8, 22, 45, 76, 95, 109, 148 }) |albedo| {
+        try std.testing.expectApproxEqAbs(albedo, albedoFor(screenOf(albedo)), 0.01);
+    }
+    // …and past the clip the chain is one-way: the key saturates at 255/1.72, so anything over that is white.
+    const ceiling = 255.0 / KEY_HOT;
+    try std.testing.expectApproxEqAbs(@as(f32, 255), screenOf(ceiling), 0.01);
+    try std.testing.expectApproxEqAbs(@as(f32, 255), screenOf(ceiling + 40), 0.01);
+    std.debug.print(
+        "\n  albedo chain: 76 -> screen {d:.0}, 109 -> {d:.0}; anything over albedo {d:.0} clips white\n",
+        .{ screenOf(76), screenOf(109), ceiling },
+    );
+}
+
 test "a FILLETED BOX stays inside the cube it replaces, and its normals point out" {
     const size = v3(0.4, 0.9, 0.3);
     const c = v3(1, 2, -3);
     var b = Builder.init();
+    defer b.deinit();
     b.addRoundBox(c, size, 0.30, 6, 12, mathx.rgba(255, 255, 255, 255));
     try std.testing.expect(b.pos.items.len > 0);
     try std.testing.expectEqual(b.pos.items.len, b.nrm.items.len);

@@ -2,6 +2,7 @@ const std = @import("std");
 const game = @import("game.zig");
 const bake = @import("core/bake.zig");
 const wf = @import("world/worldfmt.zig");
+const env = @import("world/env.zig");
 
 pub fn main() void {
     const alloc = std.heap.c_allocator;
@@ -14,6 +15,14 @@ pub fn main() void {
     if (argv.len >= 2 and std.mem.eql(u8, argv[1], "--bake")) {
         runBake(alloc) catch |e| {
             std.debug.print("bake FAILED: {s}\n", .{@errorName(e)});
+            std.process.exit(1);
+        };
+        return;
+    }
+    if (argv.len >= 2 and std.mem.eql(u8, argv[1], "--explode")) {
+        const path = if (argv.len >= 3) argv[2] else wf.START_MAP;
+        runExplode(alloc, path) catch |e| {
+            std.debug.print("explode FAILED: {s}\n", .{@errorName(e)});
             std.process.exit(1);
         };
         return;
@@ -66,6 +75,47 @@ fn runBake(alloc: std.mem.Allocator) !void {
     );
 }
 
+/// **THE WOOD BECOMES TREES.** Replays `path` the way the loop does, then walks it BACKWARDS turning every
+/// generator op into the props it made, and writes it back. Verified by re-loading and replaying the result:
+/// same prop, solid and light counts, or the map moved and it says so.
+fn runExplode(alloc: std.mem.Allocator, path: []const u8) !void {
+    const m = try alloc.create(wf.Map);
+    defer alloc.destroy(m);
+    var line: usize = 0;
+    try wf.load(path, m, &line);
+    const e = try alloc.create(env.Env);
+    defer alloc.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+
+    e.uploadWater(m);
+    e.materialize(m);
+    const props0 = e.propCount();
+    const solids0 = e.solidCount();
+    const lights0 = e.lightCount();
+    const ops0 = m.nops;
+
+    var s = m.nops;
+    var broken: usize = 0;
+    while (s > 0) {
+        s -= 1;
+        if (m.ops[s].op == .at) continue;
+        _ = try e.explodeOp(m, s);
+        broken += 1;
+    }
+    try wf.save(path, m);
+
+    const back = try alloc.create(wf.Map);
+    defer alloc.destroy(back);
+    try wf.load(path, back, &line);
+    e.uploadWater(back);
+    e.materialize(back);
+    std.debug.print(
+        "exploded {s} — {d} ops ({d} groups) -> {d} ops\n  props {d} -> {d}, solids {d} -> {d}, lights {d} -> {d}\n",
+        .{ path, ops0, broken, back.nops, props0, e.propCount(), solids0, e.solidCount(), lights0, e.lightCount() },
+    );
+    if (e.propCount() != props0 or e.solidCount() != solids0 or e.lightCount() != lights0) return error.MapMoved;
+}
+
 test {
     _ = @import("play/hero.zig");
     _ = @import("core/anim.zig");
@@ -92,6 +142,11 @@ test {
     _ = @import("foes/ancientpriest.zig");
     _ = @import("foes/hollow.zig");
     _ = @import("foes/slumberbloom.zig");
+    _ = @import("foes/cinderwake.zig");
+    _ = @import("foes/rotgorger.zig");
+    _ = @import("foes/birchwight.zig");
+    _ = @import("foes/salthusk.zig");
+    _ = @import("foes/fishman.zig");
     _ = @import("props/propmarket.zig");
     _ = @import("foes/wolf.zig");
     _ = @import("play/pickup.zig");

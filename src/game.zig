@@ -35,6 +35,11 @@ const skittermod = @import("foes/skitterer.zig");
 const priestmod = @import("foes/ancientpriest.zig");
 const hollowmod = @import("foes/hollow.zig");
 const bloommod = @import("foes/slumberbloom.zig");
+const cindermod = @import("foes/cinderwake.zig");
+const gorgermod = @import("foes/rotgorger.zig");
+const birchmod = @import("foes/birchwight.zig");
+const huskmod = @import("foes/salthusk.zig");
+const fishmod = @import("foes/fishman.zig");
 const leechmod = @import("foes/leechfly.zig");
 const shademod = @import("foes/shade.zig");
 const chestmod = @import("play/chest.zig");
@@ -219,6 +224,11 @@ pub const Game = struct {
     crypt: priestmod.Crypt,
     belfry: hollowmod.Belfry,
     bed: bloommod.Bed,
+    scorch: cindermod.Scorch,
+    gorge: gorgermod.Gorge,
+    stand: birchmod.Stand,
+    pan: huskmod.Pan,
+    shoal: fishmod.Shoal,
     vigil: knightmod.Vigil,
     swarm: leechmod.Swarm,
     haunt: shademod.Haunt,
@@ -310,10 +320,7 @@ pub const Game = struct {
         PLAY_HALF = playHalfOf(g.map.half);
         phase(&initTimer, "map");
         g.env.build(&g.scene);
-        g.env.uploadSoil(&g.map);
-        g.env.uploadWater(&g.map);
-        g.env.uploadHeight(&g.map);
-        g.env.materialize(&g.map);
+        g.env.replay(&g.map);
         phase(&initTimer, "world");
         g.hero = heromod.Hero.init(g.scene.shader);
         phase(&initTimer, "hero");
@@ -335,6 +342,11 @@ pub const Game = struct {
         g.crypt = priestmod.Crypt.init(g.scene.shader);
         g.belfry = hollowmod.Belfry.init(g.scene.shader);
         g.bed = bloommod.Bed.init(g.scene.shader);
+        g.scorch = cindermod.Scorch.init(g.scene.shader);
+        g.gorge = gorgermod.Gorge.init(g.scene.shader);
+        g.stand = birchmod.Stand.init(g.scene.shader);
+        g.pan = huskmod.Pan.init(g.scene.shader);
+        g.shoal = fishmod.Shoal.init(g.scene.shader);
         g.vigil = knightmod.Vigil.init(g.scene.shader);
         g.swarm = leechmod.Swarm.init(g.scene.shader);
         g.haunt = shademod.Haunt.init(g.scene.shader);
@@ -521,10 +533,7 @@ fn enterNow(g: *Game, act: Enter) void {
 fn enterMap(g: *Game, path: []const u8, at: rl.Vector3, facing: f32) void {
     worldfmt.loadOrPanic(path, &g.map);
     PLAY_HALF = playHalfOf(g.map.half);
-    g.env.uploadSoil(&g.map);
-    g.env.uploadWater(&g.map);
-    g.env.uploadHeight(&g.map);
-    g.env.materialize(&g.map);
+    g.env.replay(&g.map);
     g.hero.pos = inBounds(mathx.ground(at.x, at.z));
     g.hero.facing = facing;
     plantActor(g, &g.hero.pos);
@@ -603,6 +612,10 @@ const FoeGroup = struct {
     vsHero: bool = true,
     vs: []const []const u8 = &.{},
 };
+/// **A ROW HERE OWES `run` AN `update(...) |b| heroTakes(...)` CALL**, or the creature swings and nothing lands.
+/// NOTHING CHECKS THAT — `_ =` discards a returned blow just as legally as taking it, which is exactly what the
+/// crypt's own row does on purpose. There WAS a second list (`BLOW_GROUPS`); every check it could make was a
+/// restatement of this table, and both `bed` and `crypt` sat in it swinging nothing at the hero at all.
 pub const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "warren", .kind = .toad, .aggro = frogmod.AGGRO_R, .vs = &.{"thicket"} },
     .{ .field = "line", .kind = .archer, .aggro = archermod.AGGRO_R, .vs = &.{"warren"} },
@@ -626,35 +639,16 @@ pub const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "crypt", .kind = .ancient_priest, .aggro = priestmod.AGGRO_R },
     .{ .field = "belfry", .kind = .tolling_hollow, .aggro = hollowmod.AGGRO_R },
     .{ .field = "bed", .kind = .slumber_bloom, .aggro = bloommod.AGGRO_R, .vsHero = false },
+    .{ .field = "scorch", .kind = .cinder_wake, .aggro = cindermod.AGGRO_R },
+    .{ .field = "gorge", .kind = .rotgorger, .aggro = gorgermod.AGGRO_R },
+    .{ .field = "stand", .kind = .birchwight, .aggro = birchmod.AGGRO_R },
+    .{ .field = "pan", .kind = .salt_husk, .aggro = huskmod.AGGRO_R },
+    .{ .field = "shoal", .kind = null, .aggro = fishmod.AGGRO_R },
     .{ .field = "vigil", .kind = .bone_knight, .aggro = knightmod.AGGRO_R, .vsHero = false, .vs = &.{ "line", "muster" } },
-};
-
-const BLOW_GROUPS = [_][]const u8{
-    "warren", "grief",  "line",    "band",    "muster", "haunt",
-    "swarm",  "grove",  "cluster", "warrens", "vigil",  "brood",
-    "rite",   "thicket", "ring",    "marsh",
-    "host",   "clatter", "crypt",   "belfry",
-    "bed",
 };
 
 comptime {
     @setEvalBranchQuota(30000);
-    if (BLOW_GROUPS.len != FOE_GROUPS.len) @compileError("game: BLOW_GROUPS and FOE_GROUPS disagree on how many groups there are");
-    for (FOE_GROUPS) |gr| {
-        var seen = false;
-        for (BLOW_GROUPS) |b| {
-            if (std.mem.eql(u8, b, gr.field)) seen = true;
-        }
-        if (!seen) @compileError("game: `" ++ gr.field ++ "` is in FOE_GROUPS but not in BLOW_GROUPS — " ++
-            "give it its `update(...) |b| heroTakes(...)` call in `run` and name it here, or it will never land a blow");
-    }
-    for (BLOW_GROUPS) |b| {
-        var seen = false;
-        for (FOE_GROUPS) |gr| {
-            if (std.mem.eql(u8, b, gr.field)) seen = true;
-        }
-        if (!seen) @compileError("game: BLOW_GROUPS names `" ++ b ++ "`, which is not a FOE_GROUPS field");
-    }
     for (FOE_GROUPS) |gr| {
         for (gr.vs) |other| {
             if (std.mem.eql(u8, other, gr.field)) @compileError("game: `" ++ gr.field ++ "` shoulders itself");
@@ -887,6 +881,11 @@ comptime {
             @compileError("game: foe group '" ++ f.field ++ "' is narrower than worldfmt.MAX_PER_KIND — " ++
                 "a map that places more than it holds loses the difference without a word");
         }
+    }
+    // **THE ROSTER IS WRITTEN TWICE** — here and as `objview.CharSet`, because the viewer draws a creature
+    // through its own group.
+    if (FOE_GROUPS.len != objviewmod.CHAR_GROUPS) {
+        @compileError("game: FOE_GROUPS and objview.CharSet no longer hold the same roster");
     }
 }
 
@@ -1620,6 +1619,7 @@ pub fn stepShaftsForShot(g: *Game, dt: f32) void {
 pub fn tickPoisonForShot(g: *Game, dt: f32) void {
     g.hero.poisonBy(g.brood.burn(dt, g.hero.pos));
     g.hero.poisonBy(g.cluster.spores(dt, g.hero.pos));
+    g.hero.doseSelf(.burning, g.scorch.scorching(dt, g.hero.pos));
     _ = g.hero.tickPoison(dt);
 }
 pub fn flyingPointForShot(g: *Game, kind: archermod.Shot) ?rl.Vector3 {
@@ -2155,6 +2155,7 @@ fn billDeaths(g: *Game) void {
                 if (!f.justDied) continue;
                 const k = memberKind(f, kind);
                 self.g.trig.died(k);
+                self.g.gorge.noteCorpse(f.pos);
                 // **IT GOES ON THE GROUND WHERE IT FELL**, not into his hands. The roll is spent whatever died, so the stream cannot become a function of what you chose to fight.
                 var buf: [pickupmod.DROP_MAX]item.Kind = undefined;
                 self.g.pickups.spawn(f.pos, dropsmod.roll(k, self.g.hero.sheet.at(.luck), &self.g.dropRng, &buf));
@@ -4338,6 +4339,26 @@ pub fn run(mode: Mode) void {
             if (b.yelped) sfx.world(.shroom_hurt, b.pos);
             if (b.justDied) sfx.world(.shroom_die, b.pos);
         }
+        if (g.scorch.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.heavy(), true);
+        }
+        if (g.gorge.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.heavy(), true);
+        }
+        if (g.stand.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.heavy(), true);
+        }
+        if (g.pan.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.heavy(), true);
+        }
+        // **THE NET IS NOT A HEAVY BLOW** — four damage and no stance, so it must not fire the heavy hurt
+        // beat and voice the way the trident does. `Hit.heavy` is what every other group already asks.
+        if (g.shoal.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.heavy(), true);
+        }
+        // **THE NET TAKES HIS FEET AND NOTHING ELSE** — taken after the group, beside the other things a
+        // creature does to him that is not a blow.
+        g.hero.snareFor(g.shoal.takeSnare());
         // **THE PRIEST NEVER RETURNS A BLOW** — no melee, and its cold is a per-frame DRIP on its own channel, so it cannot voice and shake the hero sixty times a second.
         _ = g.crypt.update(dt, g.hero.pos, PLAY_HALF, bladeNow);
         if (g.crypt.breathDose(dt, g.hero.pos)) |b| {
@@ -4430,6 +4451,8 @@ pub fn run(mode: Mode) void {
         g.hero.poisonBy(g.cluster.spores(dt, g.hero.pos));
         // THE GAS, ON THE SPORES' OWN CHANNEL: unblockable, unparryable, and rate-gated in `Vitals.build`.
         g.hero.doseSelf(.sleep, g.bed.breath(g.hero.pos) * dt);
+        // **BURNT GROUND BILLS THE SAME WAY A CLOUD DOES** — a soak, not a blow, so a shield answers neither.
+        g.hero.doseSelf(.burning, g.scorch.scorching(dt, g.hero.pos));
         _ = g.hero.tickPoison(dt);
         if (g.hero.vit.ailProcced(.poison)) {
             sfx.play(.acid_burn);
@@ -5048,13 +5071,15 @@ fn collideActors(g: *Game, dt: f32) void {
     }
 }
 
-/// **THE ONE THING IN THE FRAME THAT SCALES QUADRATICALLY.** n² per group against `worldfmt.MAX_PER_KIND` (512):
-/// the shipped map's biggest kind is 24, so 552 `pushOut` a frame and nothing to see — at 512 in one group it is
-/// 261,632 and about a millisecond. Left alone on purpose; the answer is an actor grid, not an edit here.
+/// **THE ONE THING IN THE FRAME THAT SCALES QUADRATICALLY** — n² inside the group, every frame, no distance
+/// gate. The shipped map's widest group is 24 (`cluster`), so 552 `pushOut` for it and ~2,000 across all
+/// twenty-one rows: nothing. `worldfmt.MAX_PER_KIND` is 512 though, and 512 in one group is 261,632 pairs a
+/// frame and about a millisecond. Left alone on purpose; the answer is an actor grid, not an edit here.
 ///
 /// **AND `bodyOf(o)` MAY NOT BE HOISTED OUT OF THE INNER LOOP.** `a.pos` is written at the END of each outer
 /// pass, so body i settles against 0..i-1 at their NEW positions and the rest at their old ones: Gauss-Seidel.
-/// A pre-pass of solids makes everyone see the old ones — Jacobi, a different and looser settle.
+/// A pre-pass of solids makes everyone see the old ones — Jacobi, a different and looser settle. Order-dependent
+/// on purpose, so the pairs cannot be batched without changing how a crowd packs.
 fn settleGroup(g: *Game, comptime gr: FoeGroup, step: f32) void {
     const foes = @field(g, gr.field).live();
     for (foes, 0..) |*a, i| {
@@ -5086,6 +5111,7 @@ const ROLE_GROUPS = .{
     .{ "haunt", shademod },
     .{ "brood", broodmod },
     .{ "muster", warriormod },
+    .{ "shoal", fishmod },
 };
 
 fn roleIdx(comptime mod: type, r: FoeRef) ?usize {
@@ -5109,6 +5135,8 @@ const SOLO_GROUPS = blk: {
 };
 
 comptime {
+    // Kinds x groups, both of which grow every time a creature is added.
+    @setEvalBranchQuota(30000);
     for (@typeInfo(FoeKind).@"enum".fields) |f| {
         const k: FoeKind = @enumFromInt(f.value);
         var claims: usize = 0;
@@ -5405,3 +5433,4 @@ test "A RING IN THE BAG SAVES NOTHING — the snap is asked of the FINGER" {
     worn.put(.ring, null);
     try std.testing.expect(bindingWorn(worn) == null);
 }
+

@@ -1712,7 +1712,17 @@ pub const Spider = struct {
 
 pub const CAP = ROLE_KIND.len * wf.MAX_PER_KIND;
 const SAC_REUSE: usize = 8;
-pub const SAC_CAP = MAX_SACS * SAC_REUSE;
+/// **THE MAP POSTS `.brood_sac` ROWS STRAIGHT INTO THIS ARRAY** (`Brood.reset`), so it is map-fed as well as
+/// mother-fed — and `game.zig`'s "no group may be narrower than the map can place" pin only measures the array
+/// `live()` returns. At `MAX_SACS * SAC_REUSE` (24) a map painting a 25th egg sac lost it without a word, and
+/// map-placed sacs ate the mothers' re-lay budget on top.
+pub const SAC_CAP = wf.MAX_PER_KIND + MAX_SACS * SAC_REUSE;
+
+comptime {
+    // A pin on `SAC_CAP` against its own definition can never fire. What CAN go wrong is a term going to zero:
+    // then a full map leaves no room at all for a mother to lay into, and `addSac` refuses in silence.
+    std.debug.assert(MAX_SACS >= 1 and SAC_REUSE >= 1);
+}
 
 pub const Brood = struct {
     model: Model,
@@ -2187,7 +2197,9 @@ test "HER VENOM IS ONE FLUID: the spit and the puddle fill the SAME meter" {
     _ = psn.tick(P, 1.0 / 60.0, 70);
     try std.testing.expect(psn.active());
 
-    var b = Brood{ .model = undefined };
+    const b = try std.testing.allocator.create(Brood);
+    defer std.testing.allocator.destroy(b);
+    b.* = .{ .model = undefined };
     b.clear();
     const at = mathx.ground(0, 0);
     b.pools[0] = Pool.splash(at, 0.5);
@@ -2218,7 +2230,9 @@ test "A BURST SAC PAYS, ONCE — and a sac that hatched pays nothing" {
         fn spit(_: *@This(), _: rl.Vector3) void {}
     };
     var ctx = Nowt{};
-    var b = Brood{ .model = undefined };
+    const b = try std.testing.allocator.create(Brood);
+    defer std.testing.allocator.destroy(b);
+    b.* = .{ .model = undefined };
     b.clear();
     b.sacs[0] = Sac.lay(mathx.ground(0, 0), 0.5, 1.0);
     b.nsacs = 1;
@@ -2253,7 +2267,9 @@ test "A BURST SAC PAYS, ONCE — and a sac that hatched pays nothing" {
 }
 
 test "a pool spreads, DOSES while he stands in it, thins out and stops" {
-    var b = Brood{ .model = undefined };
+    const b = try std.testing.allocator.create(Brood);
+    defer std.testing.allocator.destroy(b);
+    b.* = .{ .model = undefined };
     b.clear();
     const at = mathx.ground(0, 0);
     b.pools[0] = Pool.splash(at, 0.5);
@@ -2270,12 +2286,12 @@ test "a pool spreads, DOSES while he stands in it, thins out and stops" {
     t = 0;
     while (t < 1.0) : (t += 1.0 / 60.0) dosed += b.burn(1.0 / 60.0, at);
     try std.testing.expectApproxEqAbs(ACID_BUILD * (1.0 + foe.ENTRY_BOLUS), dosed, 0.7);
-    const first = blk: {
-        var fresh = Brood{ .model = undefined };
-        fresh.clear();
-        fresh.pools[0] = b.pools[0];
-        break :blk fresh.burn(1.0 / 60.0, at);
-    };
+    const fresh = try std.testing.allocator.create(Brood);
+    defer std.testing.allocator.destroy(fresh);
+    fresh.* = .{ .model = undefined };
+    fresh.clear();
+    fresh.pools[0] = b.pools[0];
+    const first = fresh.burn(1.0 / 60.0, at);
     try std.testing.expect(first > ACID_BUILD / 60.0 * 5.0);
     try std.testing.expectEqual(@as(f32, 0), b.burn(1.0 / 60.0, mathx.ground(50, 50)));
 

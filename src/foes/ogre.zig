@@ -693,11 +693,14 @@ pub const Ogre = struct {
             .slam, .swipe, .backswipe, .drive => {
                 self.slammed = false;
                 self.heroLatch = false;
+                // Named through, not `else => .drive`: a fifth strike added to the prong list above wore the
+                // DRIVE's blow silently, and a wrong-blow bug does not fail a test.
                 self.blowKind = switch (s) {
                     .slam => .slam,
                     .swipe => .swipe,
                     .backswipe => .backswipe,
-                    else => .drive,
+                    .drive => .drive,
+                    else => unreachable,
                 };
             },
             else => {},

@@ -522,7 +522,6 @@ pub const Wanderer = struct {
     }
 };
 
-// ---------------------------------------------------------------------------------------------------------
 // THE CARAVANEER'S SEVENTEEN. Same bones, same order, same segment lengths — `heromod.SEG_*` is what `legChain`
 // solves against and a limb that disagrees with it walks on its shins.
 

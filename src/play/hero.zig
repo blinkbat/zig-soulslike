@@ -1543,6 +1543,10 @@ pub const Hero = struct {
     parryT: f32 = 0,
     parries: u32 = 0,
     held: bool = false,
+    /// **SECONDS OF NET.** The foes' own law on the hero's side (`foe.grip`): it takes ONE thing, the FEET.
+    /// The state machine still runs, the sword still swings, the shield still blocks — he simply cannot go
+    /// anywhere, and a roll is travel so it is refused with the walk.
+    snare: f32 = 0,
     stun: combat.StunKind = .none,
     stunT: f32 = 0,
     hurtFlash: f32 = 0,
@@ -1656,6 +1660,7 @@ pub const Hero = struct {
             if (self.perk.hpRegen > 0) _ = self.vit.heal(self.perk.hpRegen * dt);
             if (self.perk.fpRegen > 0) _ = self.fp.restore(self.perk.fpRegen * dt);
         }
+        self.snare = @max(0, self.snare - dt);
         self.stamRefused = @max(0, self.stamRefused - dt);
         self.fpRefused = @max(0, self.fpRefused - dt);
         self.guardB = mathx.approach(self.guardB, if (self.guarding or self.parrying) 1.0 else 0.0, dt * GUARD_BLEND_RATE);
@@ -1769,6 +1774,12 @@ pub const Hero = struct {
 
     pub fn startRoll(self: *Hero, dir: rl.Vector3) void {
         if (!self.bodyFree()) return;
+        // **A ROLL IS TRAVEL.** Refused here at the CHOOSE, the way a leap is refused of a rooted creature
+        // (`foe.canLeap`) — gated later it would spend the stamina and roll on the spot.
+        if (self.snared()) {
+            self.refuse();
+            return;
+        }
         if (!self.stam.canAct()) {
             self.refuse();
             return;
@@ -1892,6 +1903,13 @@ pub const Hero = struct {
         return !self.committed() and !self.staggered() and !self.dead and !self.resting;
     }
 
+    /// …AND THE ARMS THAT ALSO REFUSE A SPRINT (`shieldArm`, `castReady`, `canRing`). One name for the pair,
+    /// because a sprint is the only extra state a HELD arm answers to and three copies of the five is the same
+    /// forgetting `bodyFree` exists to stop.
+    fn armFree(self: *const Hero) bool {
+        return self.bodyFree() and !self.sprinting;
+    }
+
     fn swapHand(self: *Hero, live: *Armament, alt: *Armament) bool {
         if (!self.bodyFree()) return false;
         if (live.* == alt.*) return false;
@@ -1980,15 +1998,16 @@ pub const Hero = struct {
         self.nockVis = false;
     }
 
+    /// `armFree` with ONE exception, which is why it is still spelled out: a shot already in flight keeps the
+    /// aim, and that is the only door in the game that holds through its own commitment.
     pub fn canAim(self: *const Hero) bool {
         return self.bowOut() and (!self.committed() or self.shooting) and
             !self.staggered() and !self.dead and !self.sprinting and !self.resting and self.stam.canAct();
     }
 
     pub fn requestShot(self: *Hero, aimed: bool) void {
-        if (!self.bowOut() or self.dead or self.staggered()) return;
+        if (!self.bowOut() or !self.bodyFree()) return;
         if (aimed and !self.aiming) return;
-        if (self.committed()) return;
         self.startShot(aimed);
     }
 
@@ -2063,7 +2082,7 @@ pub const Hero = struct {
     }
 
     fn shieldArm(self: *const Hero) bool {
-        return self.shieldOut() and !self.committed() and !self.staggered() and !self.dead and !self.sprinting and !self.resting;
+        return self.shieldOut() and self.armFree();
     }
 
     pub fn canGuard(self: *const Hero) bool {
@@ -2292,8 +2311,7 @@ pub const Hero = struct {
 
     /// The BODY's half only; `canCast` is this AND the rack, so a refusal can say which of the two said no.
     pub fn castReady(self: *const Hero) bool {
-        return self.wandOut() and !self.committed() and !self.staggered() and !self.dead and
-            !self.resting and !self.sprinting;
+        return self.wandOut() and self.armFree();
     }
 
     pub fn canCast(self: *const Hero) bool {
@@ -2365,8 +2383,7 @@ pub const Hero = struct {
     }
 
     pub fn canRing(self: *const Hero) bool {
-        return self.bellOut() and !self.committed() and !self.staggered() and !self.dead and
-            !self.resting and !self.sprinting;
+        return self.bellOut() and self.armFree();
     }
 
     pub fn ringCost(self: *const Hero) f32 {
@@ -3143,7 +3160,17 @@ pub const Hero = struct {
     /// meters are doing to him. `game.moveHero` is the only caller, so a slow cannot land on one movement path
     /// and not the others.
     pub fn moveRate(self: *const Hero) f32 {
+        if (self.snared()) return 0;
         return moveRateOf(self.worn, self.perk) * self.vit.travelMult();
+    }
+
+    pub fn snared(self: *const Hero) bool {
+        return self.snare > 0;
+    }
+    /// Longest wins — a second net over the first extends the hold, it never shortens it.
+    pub fn snareFor(self: *Hero, secs: f32) void {
+        if (self.dead) return;
+        self.snare = @max(self.snare, secs);
     }
 
     pub fn atkDur(self: *const Hero, heavy: bool) f32 {
@@ -5559,6 +5586,39 @@ test "A SPELL'S BURST SETTLES ON THE GROUND IT WENT OFF ON, not on the one under
     for (own.fx) |q| {
         if (q.life > 0) try std.testing.expect(q.floor == null);
     }
+}
+
+test "A NET TAKES THE FEET AND NOTHING ELSE — no walk, no roll, and the sword still swings" {
+    var h = testHero();
+    const rate = h.moveRate();
+    try std.testing.expect(rate > 0);
+    h.snareFor(1.35);
+    try std.testing.expect(h.snared());
+    try std.testing.expectApproxEqAbs(@as(f32, 0), h.moveRate(), 1e-6);
+
+    // A ROLL IS TRAVEL, so it is refused — and refused at the CHOOSE, without spending the stamina.
+    const rolls = h.rolls;
+    const stam = h.stam.cur;
+    h.startRoll(v3(0, 0, 1));
+    try std.testing.expectEqual(rolls, h.rolls);
+    try std.testing.expect(!h.rolling);
+    try std.testing.expectApproxEqAbs(stam, h.stam.cur, 1e-4);
+
+    // …but the arms are his. Held feet is not a stun.
+    try std.testing.expect(h.bodyFree());
+    h.setGuard(true);
+    try std.testing.expect(h.guarding);
+    h.setGuard(false);
+
+    // Longest wins: a second net over the first extends the hold, never shortens it.
+    h.snareFor(0.4);
+    try std.testing.expect(h.snare > 0.4);
+
+    var t: f32 = 0;
+    while (t < 1.5) : (t += 1.0 / 60.0) h.update(1.0 / 60.0, 0, 0, null);
+    try std.testing.expect(!h.snared());
+    try std.testing.expectApproxEqAbs(rate, h.moveRate(), 1e-4);
+    std.debug.print("\n  net: {d:.2} s of held feet, then the walk comes back at {d:.2}\n", .{ @as(f32, 1.35), h.moveRate() });
 }
 
 test "i-frames beat the shield, and a committed action drops it" {

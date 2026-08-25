@@ -1,0 +1,130 @@
+version: 1
+name: Four Biomes Test
+half: 110.0
+runway: -5.00 -6.00 5.00 8.00
+
+# ONE MAP, FOUR QUADRANTS, FIVE NEW CREATURES. The bonfire is at the middle and every quadrant is a walk
+# from it, so any one of them can be reached, fought and re-reached without crossing the other three.
+#
+#   NW fungal (rotgorger)     |   NE ash (cinder wake)
+#   ------------------------- + -------------------------
+#   SW deadwood (birchwight)  |   SE dried lake (salt husk, fishmen)
+
+zone: pan -400.0 -400.0 400.0 400.0 0.180 cinders,rubble,thistle,bracken
+zone: ash 0.0 0.0 400.0 400.0 0.300 cinders,cinders,ashheap,ashdune,charspar,thistle
+zone: myc -400.0 0.0 0.0 400.0 0.820 sporepod,sporepod,moss,moss,mushrooms,mushrooms,clover,bracken,fern
+zone: dead -400.0 -400.0 0.0 0.0 0.560 bracken,bracken,snag,rotlog,deadfall,thistle,heather
+zone: salt 0.0 -400.0 400.0 0.0 0.090 cinders,rubble
+
+location: ashfall 6.0 6.0 100.0 100.0 wet=0.000 fog=0.150 blend=14.00
+location: bloom -100.0 6.0 -6.0 100.0 fog=0.200 spore=0.700 blend=12.00
+location: barrens 6.0 -100.0 100.0 -6.0 wet=0.000 fog=0.060 blend=14.00
+
+clear: 0.0 0.0 15.0
+clear: 40.0 40.0 16.0
+clear: -40.0 40.0 14.0
+clear: -40.0 -40.0 16.0
+clear: 44.0 -44.0 20.0
+
+at: bonfire 0 2 0 1
+
+# WHAT EACH FIGHT NEEDS, in the bag before the first step out.
+# Cold answers the cinder wake; fire answers the birchwight and then makes it worse.
+at: chest 4.5 6 190 1 loot=rimewax,scroll_rime,rimeward_mantle
+at: chest -4.5 6 170 1 loot=fire_tallow,fire_arrows,kiln_draught
+at: chest 0 8.5 180 1 loot=crimson_flask,cerulean_flask,plain_arrows
+at: chest 7.5 4 200 1 loot=grave_warbow,scroll_bolt,purgeleaf
+
+at: pillar -14 12 0 1
+at: pillar 15 13 0 1
+
+
+# ============================ NE: ASH — THE CINDER WAKE ============================
+# **OPEN GROUND ON PURPOSE.** The trail is the creature, and a trail laid through clutter cannot be read.
+# One alone first, then a pair that will cross each other's lines.
+at: ashdune 22 20 40 1.4
+at: ashdune 34 16 200 1.2
+at: charspar 26 30 70 1.0
+at: charspar 48 26 250 1.1
+at: hoodoo 58 44 0 1.3
+at: boulder 30 50 30 1.2
+
+foe: cinder_wake 40.00 40.00 200.0 1.00 0.21
+
+foe: cinder_wake 62.00 58.00 220.0 1.00 0.44
+foe: cinder_wake 70.00 50.00 240.0 1.06 0.77
+
+# …and one at scale, to see the trail spacing hold under a bigger body.
+foe: cinder_wake 84.00 30.00 210.0 1.45 0.63
+
+
+# ============================ NW: FUNGAL — THE ROTGORGER ============================
+# **IT NEEDS BODIES.** The sporelings and the toad are the meal: kill them slowly and the gorger feeds off
+# what you left. Kill it first and they are an ordinary fight.
+at: capgiant -46 44 0 1.2
+at: capgiant2 -34 52 120 1.0
+at: capgiant3 -58 36 240 1.1
+at: rotlog -40 30 60 1.0
+at: rotlog -52 54 200 0.9
+
+foe: rotgorger -40.00 40.00 160.0 1.00 0.31
+
+foe: shroom -34.00 34.00 180.0 1.00 0.12
+foe: shroom -46.00 36.00 180.0 0.94 0.55
+foe: shroom -38.00 48.00 180.0 1.08 0.83
+foe: toad -52.00 44.00 170.0 1.00 0.28
+
+# A second gorger further in, so the "two may not share one carcass" rule has somewhere to show.
+foe: rotgorger -66.00 56.00 150.0 1.00 0.68
+foe: rotgorger -74.00 46.00 150.0 1.00 0.92
+foe: shroom -70.00 50.00 180.0 1.00 0.37
+
+
+# ============================ SW: DEADWOOD — THE BIRCHWIGHT ============================
+# **ONE ALONE IS THE TOOL, THE STAND IS THE MISTAKE.** The lone one is where a torch is the right answer;
+# the grove of four is where it is the wrong one, and they are far enough apart that the lesson is separable.
+at: snag -30 -28 0 1.1
+at: snag -50 -34 140 0.9
+at: deadfall -38 -50 60 1.0
+at: rotlog -26 -44 200 1.0
+at: boulder -20 -36 0 1.2
+
+foe: birchwight -34.00 -34.00 40.0 1.00 0.19
+
+# THE STAND. Each within `SPREAD_R` of the next, so a caught one runs down the line.
+foe: birchwight -62.00 -58.00 30.0 1.00 0.41
+foe: birchwight -63.60 -59.40 30.0 1.05 0.58
+foe: birchwight -60.40 -60.20 30.0 0.95 0.72
+foe: birchwight -61.80 -61.80 30.0 1.10 0.86
+
+at: snag -66 -56 0 1.2
+at: snag -57 -63 90 1.0
+at: bracken -64 -54 0 1
+
+
+# ============================ SE: DRIED LAKE — SALT HUSK + FISHMEN ============================
+# **THE HUSKS ARE A LINE, NOT A CLUMP** — spaced so the chain is a run you can walk out of rather than one
+# blast, and so the fuse can be watched from outside it.
+at: hoodoo 30 -30 0 1.4
+at: fingers 52 -26 40 1.1
+at: balanced 66 -58 200 1.2
+at: spire 38 -66 0 1.3
+
+foe: salt_husk 34.00 -34.00 340.0 1.00 0.17
+
+foe: salt_husk 48.00 -42.00 330.0 1.00 0.33
+foe: salt_husk 51.20 -44.60 330.0 1.00 0.51
+foe: salt_husk 54.40 -47.20 330.0 1.00 0.69
+foe: salt_husk 57.60 -49.80 330.0 1.00 0.87
+
+# THE SHOAL. One of each first, at the ranges each of them wants, so the three-part move can be seen whole.
+foe: fish_spearman 44.00 -66.00 20.0 1.00 0.23
+foe: fish_netter 49.00 -72.00 20.0 1.00 0.47
+foe: fish_shaman 54.00 -78.00 20.0 1.00 0.71
+
+# …and a full band, which is the fight the trio is actually for.
+foe: fish_spearman 76.00 -60.00 200.0 1.00 0.14
+foe: fish_spearman 80.00 -64.00 200.0 1.00 0.39
+foe: fish_netter 86.00 -58.00 200.0 1.00 0.62
+foe: fish_netter 88.00 -68.00 200.0 1.00 0.78
+foe: fish_shaman 94.00 -64.00 200.0 1.00 0.95

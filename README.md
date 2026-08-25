@@ -18,7 +18,8 @@ Zig is not on PATH; the scripts use the vendored toolchain at
 `..\.zigtoolchain\zig-x86_64-windows-0.14.1\zig.exe` (shared with the sibling repos). raylib is static-linked
 from source — there is no `raylib.dll`. `zig build test` runs the unit tests.
 
-Flags: `--shot` (headless screenshot harness), `--shot-props` (every prop kind alone), `--map worlds/x.world`.
+Flags: `--shot` (headless screenshot harness), `--shot-props` (every prop kind alone), `--map worlds/x.world`,
+`--explode worlds/x.world` (break every generator op into one `at:` per prop, in place).
 
 ## What exists
 
@@ -30,28 +31,29 @@ each), bow, wand, torch.
 **Combat.** HP + two-tier stagger + poise + stance, stamina with a winded latch, FP, DS1-style directional
 block, L2 parry with a 0.18 s window, four PoE2 resistances plus an armour curve, poison as a build-up meter.
 
-**Foes.** 21 creatures: toad, skeletal archer, ogre, kobold warband (3 roles), brood mother + sacs +
-broodlings, skeletal warriors (2), Bone Knight (boss, with boss bar and fog gate), shade, leechfly, rooted,
-sporeling, delver, necromancer, ravager, mushroom mage, fen lurker, spore homunculus, plus the spirit wolf that
-fights on your side. Shared leash, sight, parry, nav-steering and dissipation contracts in `foe.zig`.
+**Foes.** 27 kinds in 21 groups: toad, skeletal archer, ogre, kobold warband (3 roles), brood mother + sacs +
+broodlings, skeletal warriors (2), Bone Knight (boss, with boss bar and fog gate), shade + mourner, leechfly,
+rooted, sporeling, delver, necromancer, ravager, mushroom mage, fen lurker, spore homunculus, bone skitterer,
+ancient priest, tolling hollow, slumber bloom, plus the spirit wolf that fights on your side. Shared leash,
+sight, parry, nav-steering and dissipation contracts in `foe.zig`.
 
-**World.** 560 m square ringed by cliffs, five regions, 136 prop kinds in three layers each. Sculptable
+**World.** 560 m square ringed by cliffs, five regions, 161 prop kinds in three layers each. Sculptable
 heightfield (40° slope limit, 0.55 m step). Painted soil with coverage and eight edge shapes; painted water
 with a derived coast you wade. Day/night clock (~20 min day) driving every colour and shadow; sun 6→20 then the
 moon as anti-sun. Intermittent rain in two strengths with lightning, late thunder and stray mist banks.
 
-**Progression.** Souls drop where you die and are spent only on a 39-node radial passive tree (PoE2-shaped,
-three arms, six branches). Taking a node IS the level-up — no point pool. Seven attributes, all raised via
-nodes. Equipment: 11 pieces, one row each, every doll socket real. Three memorized sorcery slots off seven
-scrolls.
+**Progression.** Souls drop where you die and are spent only on an 81-node radial passive tree (PoE2-shaped,
+three arms, six branches, six bridges). Taking a node IS the level-up — no point pool. Seven attributes, all
+raised via nodes. Equipment: 21 pieces, one row each, across 12 doll sockets, every socket real. Three
+memorized sorcery slots off nine scrolls.
 
 **Systems.** StarCraft-style trigger machine (conditions + actions, switches / counters / timers), BG2-style
-dialog with live-rendered speaker portraits, one NPC kind (wanderer). All of it authored in the `.world` file,
+dialog with live-rendered speaker portraits, two NPC kinds (wanderer, merchant). All of it authored in the `.world` file,
 not in Zig — grammar in `AGENTS.md`.
 
 **Editor** (Menu > Editor). Layered StarEdit-style: ground sculpt, soil and water brushes, prop and unit
-placement, zones, clearings, loot, undo/redo, cut/copy/paste, grid snap, object viewer, sound jukebox, FX
-bench, bake-time sound filter rack. Cannot yet author triggers, dialogs or NPCs.
+placement (foes and NPCs alike), zones, clearings, loot, undo/redo, cut/copy/paste, grid snap, object viewer,
+sound jukebox, FX bench, bake-time sound filter rack. Cannot yet author triggers or dialogs.
 
 **Save.** Three slots, written only by sitting at a bonfire, each with the thumbnail taken there. Text files in
 the map's own `key: value` grammar.

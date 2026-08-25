@@ -167,8 +167,6 @@ fn sheetAt(c: [4]rl.Vector3, u: f32, v: f32, sag: f32) rl.Vector3 {
     return p;
 }
 
-// ---------------------------------------------------------------------------------------------------------
-
 pub const HUT_W: f32 = 2.30;
 pub const HUT_D: f32 = 1.95;
 pub const HUT_TOP: f32 = 2.62;
@@ -716,10 +714,10 @@ pub fn hitchRailMesh(shader: rl.Shader) rl.Model {
 }
 
 test "the awning is the PALEST thing here and the freight the darkest — a booth reads from across a field" {
+    // 0..1, off the shader's own chain (`gfx.screenOfColor`, pinned to the GLSL) rather than a second copy of it.
     const lum = struct {
         fn of(c: rl.Color) f32 {
-            const a = (@as(f32, @floatFromInt(c.r)) + @as(f32, @floatFromInt(c.g)) + @as(f32, @floatFromInt(c.b))) / 3.0 / 255.0;
-            return std.math.pow(f32, mathx.clampF(a * 1.72, 0, 1), 1.0 / 2.2);
+            return gfx.screenOfColor(c) / 255.0;
         }
     }.of;
     const canvas = lum(CANVAS_LT);
@@ -736,6 +734,7 @@ test "the awning is the PALEST thing here and the freight the darkest — a boot
 test "every upright LEANS — nothing in a hand-pitched camp is plumb" {
     var rng = mathx.Rng.init(0x4A17);
     var b = Builder.init();
+    defer b.deinit();
     var plumb: usize = 0;
     var i: usize = 0;
     while (i < 12) : (i += 1) {

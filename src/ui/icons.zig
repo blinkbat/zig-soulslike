@@ -50,6 +50,13 @@ pub const Icon = enum {
     tolling_hollow,
     mourner,
     slumber_bloom,
+    cinder_wake,
+    rotgorger,
+    birchwight,
+    salt_husk,
+    fish_spearman,
+    fish_netter,
+    fish_shaman,
     wanderer,
     merchant,
     new,
@@ -359,6 +366,90 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             line(cx + s * 0.02, cy - s * 0.10, cx + s * 0.28, cy - s * 0.22, w, col);
             line(cx + s * 0.28, cy - s * 0.22, cx + s * 0.40, cy - s * 0.04, w * 0.8, col);
             line(cx, cy - s * 0.26, cx + s * 0.06, cy - s * 0.44, w * 0.8, d);
+        },
+
+        // The three fishmen share a finned head and differ only in what is in the hand — the same way a
+        // player tells them apart on the field.
+        .fish_spearman => {
+            dot(cx - s * 0.14, cy - s * 0.30, w * 1.7, col);
+            line(cx - s * 0.20, cy - s * 0.20, cx - s * 0.26, cy - s * 0.36, w, d);
+            vline(cx - s * 0.14, cy + s * 0.06, s * 0.44, w * 1.8, col);
+            line(cx - s * 0.14, cy + s * 0.28, cx - s * 0.30, cy + s * 0.50, w * 1.3, col);
+            line(cx - s * 0.14, cy + s * 0.28, cx + s * 0.00, cy + s * 0.50, w * 1.3, col);
+            vline(cx + s * 0.30, cy, s * 0.92, w * 1.5, d);
+            line(cx + s * 0.30, cy - s * 0.46, cx + s * 0.30, cy - s * 0.30, w, d);
+            line(cx + s * 0.18, cy - s * 0.44, cx + s * 0.20, cy - s * 0.28, w, d);
+            line(cx + s * 0.42, cy - s * 0.44, cx + s * 0.40, cy - s * 0.28, w, d);
+        },
+
+        .fish_netter => {
+            dot(cx - s * 0.20, cy - s * 0.28, w * 1.7, col);
+            line(cx - s * 0.26, cy - s * 0.18, cx - s * 0.32, cy - s * 0.34, w, d);
+            vline(cx - s * 0.20, cy + s * 0.10, s * 0.42, w * 1.8, col);
+            line(cx - s * 0.20, cy + s * 0.30, cx - s * 0.34, cy + s * 0.50, w * 1.3, col);
+            line(cx - s * 0.20, cy + s * 0.30, cx - s * 0.06, cy + s * 0.50, w * 1.3, col);
+            arc(cx + s * 0.24, cy - s * 0.04, s * 0.26, 0, 360, w * 1.2, d);
+            line(cx - s * 0.02, cy - s * 0.04, cx + s * 0.50, cy - s * 0.04, w * 0.8, d);
+            line(cx + s * 0.24, cy - s * 0.30, cx + s * 0.24, cy + s * 0.22, w * 0.8, d);
+        },
+
+        .fish_shaman => {
+            dot(cx - s * 0.16, cy - s * 0.24, w * 1.8, col);
+            arc(cx - s * 0.16, cy - s * 0.30, s * 0.20, 180, 360, w * 1.2, d);
+            vline(cx - s * 0.16, cy + s * 0.14, s * 0.40, w * 1.8, col);
+            line(cx - s * 0.16, cy + s * 0.34, cx - s * 0.30, cy + s * 0.52, w * 1.3, col);
+            line(cx - s * 0.16, cy + s * 0.34, cx - s * 0.02, cy + s * 0.52, w * 1.3, col);
+            vline(cx + s * 0.28, cy - s * 0.10, s * 0.62, w * 1.4, d);
+            hline(cx + s * 0.28, cy - s * 0.36, s * 0.22, w * 1.2, d);
+            hline(cx + s * 0.28, cy - s * 0.20, s * 0.18, w * 1.0, d);
+            hline(cx + s * 0.28, cy - s * 0.06, s * 0.14, w * 0.9, d);
+        },
+
+        // A body with the burst already drawn round it: the shards are the creature, not the corpse.
+        .salt_husk => {
+            vline(cx, cy + s * 0.06, s * 0.44, w * 2.0, col);
+            dot(cx, cy - s * 0.26, w * 1.8, col);
+            line(cx, cy + s * 0.02, cx - s * 0.20, cy + s * 0.30, w * 1.3, col);
+            line(cx, cy + s * 0.02, cx + s * 0.20, cy + s * 0.30, w * 1.3, col);
+            line(cx - s * 0.34, cy - s * 0.30, cx - s * 0.50, cy - s * 0.42, w, d);
+            line(cx + s * 0.34, cy - s * 0.30, cx + s * 0.50, cy - s * 0.42, w, d);
+            line(cx - s * 0.40, cy + s * 0.10, cx - s * 0.56, cy + s * 0.14, w, d);
+            line(cx + s * 0.40, cy + s * 0.10, cx + s * 0.56, cy + s * 0.14, w, d);
+            line(cx - s * 0.30, cy + s * 0.40, cx - s * 0.44, cy + s * 0.52, w, d);
+            line(cx + s * 0.30, cy + s * 0.40, cx + s * 0.44, cy + s * 0.52, w, d);
+        },
+
+        // A bare pale trunk with two boughs up: the lenticel dashes are what say birch and not bone.
+        .birchwight => {
+            vline(cx, cy, s * 0.86, w * 2.2, col);
+            line(cx, cy - s * 0.18, cx - s * 0.34, cy - s * 0.44, w * 1.6, col);
+            line(cx, cy - s * 0.18, cx + s * 0.34, cy - s * 0.44, w * 1.6, col);
+            line(cx - s * 0.20, cy - s * 0.02, cx + s * 0.20, cy - s * 0.02, w * 0.9, d);
+            line(cx - s * 0.16, cy + s * 0.20, cx + s * 0.16, cy + s * 0.20, w * 0.9, d);
+            hline(cx, cy + s * 0.44, s * 0.36, w * 1.4, d);
+        },
+
+        // A low four-legged mark with its head DOWN in something — the feed, not the face.
+        .rotgorger => {
+            arc(cx, cy - s * 0.30, s * 0.22, 180, 360, w * 1.8, col);
+            hline(cx + s * 0.04, cy - s * 0.06, s * 0.52, w * 2.4, col);
+            line(cx + s * 0.30, cy - s * 0.06, cx + s * 0.34, cy + s * 0.34, w * 1.4, col);
+            line(cx + s * 0.10, cy - s * 0.06, cx + s * 0.08, cy + s * 0.34, w * 1.4, col);
+            line(cx - s * 0.22, cy - s * 0.06, cx - s * 0.40, cy + s * 0.20, w * 1.6, col);
+            hline(cx - s * 0.34, cy + s * 0.34, s * 0.30, w * 1.6, d);
+        },
+
+        // **THE TRAIL IS THE GLYPH, NOT THE BODY** — a hunched mark with the burnt line running back from
+        // its heels, because that line is the only thing about this creature worth reading at brush size.
+        .cinder_wake => {
+            dot(cx + s * 0.10, cy - s * 0.34, w * 1.6, col);
+            line(cx + s * 0.10, cy - s * 0.24, cx + s * 0.02, cy + s * 0.06, w * 1.8, col);
+            line(cx + s * 0.02, cy + s * 0.06, cx + s * 0.16, cy + s * 0.36, w * 1.4, col);
+            line(cx + s * 0.02, cy + s * 0.06, cx - s * 0.10, cy + s * 0.36, w * 1.4, col);
+            line(cx + s * 0.10, cy - s * 0.20, cx + s * 0.34, cy - s * 0.02, w * 1.2, col);
+            hline(cx - s * 0.28, cy + s * 0.42, s * 0.52, w * 1.6, d);
+            line(cx - s * 0.44, cy + s * 0.42, cx - s * 0.50, cy + s * 0.22, w, d);
+            line(cx - s * 0.20, cy + s * 0.42, cx - s * 0.26, cy + s * 0.18, w, d);
         },
 
         // The shroom's cap turned into a BAG: the whole difference between the two fungal creatures at a glance.

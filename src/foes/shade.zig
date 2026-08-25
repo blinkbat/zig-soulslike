@@ -848,7 +848,8 @@ pub const Shade = struct {
         const fs = self.scale * (1.0 - 0.82 * self.thin);
         const facingDeg = mathx.degrees(self.facing);
         const bob = IDLE_BOB * mathx.sinf(self.elapsed * BOB_HZ * (1.0 + 0.16 * (self.seed - 0.5)) * std.math.tau + self.seed * 6.28);
-        const sink = if (self.state == .dead) -0.30 * self.scale * self.thin else 0;
+        // `thin` is this rig's `fade` — it has no other, being the one body that dissolves by SHRINKING.
+        const sink = if (self.state == .dead) foe.rigSink(0.30, self.scale, self.thin) else 0;
         const leanDeg = mathx.clampF(self.lean, -LEAN_MAX, LEAN_MAX);
 
         var wx: [N]rl.Matrix = undefined;

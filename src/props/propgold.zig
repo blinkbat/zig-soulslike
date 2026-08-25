@@ -982,11 +982,12 @@ test "the family's forms are the ARABIC ones, and its three layers are three hei
 }
 
 test "the palette reads PALE against ash and the gold is authored DIM for its own shine" {
-    // Screen goes as albedo^(1/2.2) over the 1.72 key (AGENTS.md). The ashlar has to come up brighter than `propart.DRIFT`, which is what the region is made of.
+    // Screen goes through `gfx.screenOf`, which is the shader's own key and gamma and is pinned to them. The
+    // ashlar has to come up brighter than `propart.DRIFT`, which is what the region is made of. RED channel:
+    // this family is warm and its red is the one that carries.
     const lit = struct {
         fn f(c: rl.Color) f32 {
-            const a = @as(f32, @floatFromInt(c.r)) / 255.0;
-            return 255.0 * std.math.pow(f32, mathx.clampF(a * 1.72, 0, 1), 1.0 / 2.2);
+            return gfx.screenOf(@floatFromInt(c.r));
         }
     }.f;
     const ashlar = lit(ASHLAR);

@@ -85,10 +85,10 @@ pub fn traitsOf(k: wf.FoeKind) Traits {
         .rooted => .{ .nature = .plant, .gait = .rooted },
         .slumber_bloom => .{ .nature = .plant, .gait = .rooted },
         .brood_sac => .{ .nature = .beast, .gait = .rooted },
-        .archer, .shieldman, .greatsword, .bone_knight, .necromancer, .bone_skitterer, .ancient_priest, .tolling_hollow => .{ .nature = .undead },
-        .berserker, .priest, .slinger, .ogre => .{ .nature = .humanoid },
-        .brood_mother, .broodling, .delver, .florid_ravager => .{ .nature = .beast },
-        .shroom, .mushroom_mage, .spore_golem => .{ .nature = .plant },
+        .archer, .shieldman, .greatsword, .bone_knight, .necromancer, .bone_skitterer, .ancient_priest, .tolling_hollow, .cinder_wake, .salt_husk => .{ .nature = .undead },
+        .berserker, .priest, .slinger, .ogre, .fish_spearman, .fish_netter, .fish_shaman => .{ .nature = .humanoid },
+        .brood_mother, .broodling, .delver, .florid_ravager, .rotgorger => .{ .nature = .beast },
+        .shroom, .mushroom_mage, .spore_golem, .birchwight => .{ .nature = .plant },
     };
 }
 
@@ -1027,9 +1027,10 @@ pub fn rigScale(scale: f32, fade: f32) f32 {
     return scale * (1.0 - DEATH_SHRINK * fade);
 }
 
-/// **…AND IT SETTLES INTO THE GROUND WHILE IT GOES** — `rigScale`'s other half, written out by ELEVEN creatures
+/// **…AND IT SETTLES INTO THE GROUND WHILE IT GOES** — `rigScale`'s other half, written out by TWELVE creatures
 /// as `-depth * self.scale * self.fade`. The SHAPE is the shared thing (metres of the body's OWN scale, run off
 /// the same `fade`); the DEPTH is per-creature the way `DEATH_DUR` is, so it is an argument and not a constant.
+/// The shade passes its `thin` here, which is the only name that rig has for the same clock.
 pub fn rigSink(depth: f32, scale: f32, fade: f32) f32 {
     return -depth * scale * fade;
 }

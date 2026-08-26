@@ -207,6 +207,22 @@ pub fn foeStunDur(heavy: bool) f32 {
     return if (heavy) FOE_HEAVY_STUN_DUR else FOE_LIGHT_STUN_DUR;
 }
 
+/// **A CREATURE'S LIGHT STUN IS HEALTH TAKEN IN BLOWS OVER A PERIOD, NOT A COUNT OF BLOWS** (owner: per hit
+/// isn't fair to dot builds — not that dots build stun, only hits do). Every point of damage a HIT takes pours
+/// this much into the poise pool; the pool refills on `POISE_REFILL`; full, it flinches. So a creature's
+/// `poiseMax` IS the damage it shrugs off inside the window — the knight's 78 against a 900 bar, a kobold's 12.
+/// A drip (`builds == false`) pours nothing. His own stagger keeps the blow's `poise`: the WEIGHT of what hit him.
+/// **0.82 PUTS HIS BASE BLOWS ON THE OLD SCALE** — 13 damage pours 10.7 where the light swing carried 10 poise,
+/// 27 pours 22.1 where the heavy carried 22 — so every creature's `poiseMax`, sized between those two, still means
+/// what it meant.
+pub const FOE_POISE_PER_DMG: f32 = 0.82;
+/// **YOU CANNOT DO ONE THING OVER AND OVER** (owner). Each light stun, heavy stun and status proc on a creature
+/// leaves WEAR on that channel: the next takes (1 + wear × this) as much. Wear halves every `WEAR_HALFLIFE`.
+pub const LIGHT_WEAR: f32 = 0.60;
+pub const HEAVY_WEAR: f32 = 0.60;
+pub const AIL_WEAR: f32 = 0.70;
+pub const WEAR_HALFLIFE: f32 = 14.0;
+
 pub fn heroStunDur(heavy: bool) f32 {
     return if (heavy) HEAVY_STUN_DUR else LIGHT_STUN_DUR;
 }
@@ -244,6 +260,11 @@ pub const Vitals = struct {
     /// **WHICH SIDE THIS BODY IS ON, AND THE ONLY THING HERE THAT KNOWS.** `AILS`'s `bearer` column is refused
     /// in one place (`build`) rather than at every source, so a foe-only ailment cannot land on him by accident.
     side: Side = .hero,
+    /// Diminishing returns, a creature's only (`LIGHT_WEAR`/`HEAVY_WEAR`/`AIL_WEAR`): how many times each
+    /// channel has already gone off here, decaying on `WEAR_HALFLIFE`.
+    lightWear: f32 = 0,
+    heavyWear: f32 = 0,
+    ailWear: [NAIL]f32 = [_]f32{0} ** NAIL,
 
     pub fn init(hpMax: f32, poiseMax: f32, stanceMax: f32) Vitals {
         return .{
@@ -310,8 +331,11 @@ pub const Vitals = struct {
     /// else, so a floor, a coating and a column of elemental damage cannot disagree about what a dose is worth.
     pub fn build(self: *Vitals, a: Ail, amt: f32) void {
         if (amt <= 0 or self.dead or !self.bears(a)) return;
+        // No kind of stun builds on a body already stunned (owner) — the lightning meter included.
+        if (a == .stun and self.stunned()) return;
         const i = @intFromEnum(a);
-        self.ails[i].add(ailRow(a), amt * self.ailRate[i]);
+        const wear = if (self.side == .foe) 1.0 + AIL_WEAR * self.ailWear[i] else 1.0;
+        self.ails[i].add(ailRow(a), amt * self.ailRate[i] / wear);
     }
 
     pub fn clearAils(self: *Vitals) void {
@@ -431,6 +455,10 @@ pub const Vitals = struct {
                 self.poise = self.poiseMax;
             }
         }
+        const wearK = std.math.pow(f32, 0.5, dt / WEAR_HALFLIFE);
+        self.lightWear *= wearK;
+        self.heavyWear *= wearK;
+        for (&self.ailWear) |*w| w.* *= wearK;
         if (self.dead or self.sinceHit < self.regenDelay) return;
         self.poise = mathx.minF(self.poiseMax, self.poise + self.poiseMax / POISE_REFILL * self.regenRate * self.poiseRate * dt);
         self.stance = mathx.minF(self.stanceMax, self.stance + self.stanceMax / STANCE_REFILL * self.regenRate * dt);
@@ -454,6 +482,7 @@ pub const Vitals = struct {
         for (&self.ails, 0..) |*s, i| {
             const row = AILS[i];
             const due = s.tick(row, dt, self.hpMax);
+            if (s.justProcced) self.ailWear[i] += 1;
             if (due <= 0) continue;
             const pulse = ailPulse(row, due);
             owed.elem = owed.elem.plus(pulse.elem);
@@ -473,7 +502,8 @@ pub const Vitals = struct {
     fn strike(self: *Vitals, h: Hit, builds: bool) HitResult {
         if (self.dead) return .none;
         self.sinceHurt = 0;
-        self.hp = mathx.maxF(0, self.hp - self.damageFrom(h));
+        const taken = self.damageFrom(h);
+        self.hp = mathx.maxF(0, self.hp - taken);
         if (self.hp <= 0) {
             self.dead = true;
             return .death;
@@ -493,22 +523,30 @@ pub const Vitals = struct {
                 self.build(ailOf(e), self.res.taken(e, amt) * BUILD_PER_DMG);
             }
         }
-        self.stance -= h.stance;
+        // **NOTHING BUILDS ON A BODY ALREADY STUNNED** (owner) — neither pool. The stagger is the punish window
+        // it earned, and stacking the next one inside it is doing one thing over and over.
+        if (self.stunned()) return .none;
+        const foe = self.side == .foe;
+        const stanceWear = if (foe) 1.0 + HEAVY_WEAR * self.heavyWear else 1.0;
+        self.stance -= h.stance / stanceWear;
         var light = false;
-        if (!self.stunned()) {
-            self.poise -= h.poise;
-            if (self.poise <= 0) {
-                self.poise = self.poiseMax;
-                self.stance -= LIGHT_BREAK_STANCE * self.stanceMax;
-                light = true;
-            }
+        // A creature's flinch pool takes the HEALTH a blow took (`FOE_POISE_PER_DMG`), a drip pours nothing.
+        const poiseHit = if (foe) (if (builds) taken * FOE_POISE_PER_DMG else 0) else h.poise;
+        const poiseWear = if (foe) 1.0 + LIGHT_WEAR * self.lightWear else 1.0;
+        self.poise -= poiseHit / poiseWear;
+        if (self.poise <= 0) {
+            self.poise = self.poiseMax;
+            self.stance -= LIGHT_BREAK_STANCE * self.stanceMax;
+            light = true;
         }
         if (self.stance <= 0) {
             self.stance = self.stanceMax;
+            if (foe) self.heavyWear += 1;
             self.beginStun(.heavy);
             return .heavy;
         }
         if (light) {
+            if (foe) self.lightWear += 1;
             self.beginStun(.light);
             return .light;
         }
@@ -2087,13 +2125,72 @@ test "NOBODY IS POISE-DAMAGED WHILE REELING, and poise is full again when the st
     try std.testing.expectEqual(HitResult.light, v.hit(.{ .poise = 99 }));
 }
 
-test "the immunity is POISE only: a heavy landed inside a light stun still breaks stance" {
+test "NOTHING BUILDS ON A BODY ALREADY STUNNED — a heavy landed inside a light stun takes no stance" {
     var v = Vitals.initFoe(100, 10, 30);
-    _ = v.hit(.{ .poise = 6 });
-    try std.testing.expectEqual(HitResult.light, v.hit(.{ .poise = 6 }));
+    _ = v.hit(.{ .dmg = 7 });
+    try std.testing.expectEqual(HitResult.light, v.hit(.{ .dmg = 7 }));
     try std.testing.expect(v.stunned());
-    try std.testing.expectEqual(HitResult.heavy, v.hit(.{ .poise = 1, .stance = 20 }));
-    try std.testing.expectApproxEqAbs(FOE_HEAVY_STUN_DUR, v.stunLeft, 1e-5);
+    const stanceAt = v.stance;
+    try std.testing.expectEqual(HitResult.none, v.hit(.{ .dmg = 1, .stance = 20 }));
+    try std.testing.expectApproxEqAbs(stanceAt, v.stance, 1e-5);
+    try std.testing.expectApproxEqAbs(FOE_LIGHT_STUN_DUR, v.stunLeft, 1e-5);
+    // …and the lightning meter is refused too: no kind of stun builds on a stunned body.
+    v.build(.stun, 30);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), v.ailFrac(.stun), 1e-6);
+}
+
+test "A CREATURE'S FLINCH IS A SHARE OF ITS HEALTH IN BLOWS, NOT A COUNT OF THEM — and a drip pours nothing" {
+    // Two blows worth the pool between them flinch it whatever their `poise` says; thirteen pokes of 1 do the same.
+    var v = Vitals.initFoe(100, 10, 999);
+    try std.testing.expectEqual(HitResult.none, v.hit(.{ .dmg = 7, .poise = 99 }));
+    try std.testing.expectEqual(HitResult.light, v.hit(.{ .dmg = 7 }));
+    var pokes = Vitals.initFoe(100, 10, 999);
+    var n: u32 = 0;
+    var flinched = false;
+    while (n < 13) : (n += 1) {
+        if (pokes.hit(.{ .dmg = 1 }) == .light) flinched = true;
+    }
+    try std.testing.expect(flinched);
+    var dripped = Vitals.initFoe(100, 10, 999);
+    n = 0;
+    while (n < 40) : (n += 1) try std.testing.expectEqual(HitResult.none, dripped.drip(.{ .dmg = 2 }));
+    try std.testing.expectApproxEqAbs(dripped.poiseMax, dripped.poise, 1e-5);
+    // His own stagger is still the blow's weight.
+    var hero = Vitals.init(100, 10, 999);
+    try std.testing.expectEqual(HitResult.light, hero.hit(.{ .dmg = 1, .poise = 12 }));
+}
+
+test "YOU CANNOT DO ONE THING OVER AND OVER — each flinch, break and proc wears the next one harder, and the wear fades" {
+    var v = Vitals.initFoe(100, 10, 999);
+    var blows: u32 = 0;
+    while (v.hit(.{ .dmg = 3 }) != .light) blows += 1;
+    const first = blows;
+    while (v.stunned()) v.tick(1.0 / 60.0);
+    blows = 0;
+    while (v.hit(.{ .dmg = 3 }) != .light) blows += 1;
+    try std.testing.expect(blows > first);
+    std.debug.print("\n  flinch wear: {d} blows the first time, {d} the second\n", .{ first + 1, blows + 1 });
+    var t: f32 = 0;
+    while (t < WEAR_HALFLIFE * 6) : (t += 1.0 / 30.0) v.tick(1.0 / 30.0);
+    try std.testing.expect(v.lightWear < 0.05);
+
+    var s = Vitals.initFoe(100, 999, 30);
+    try std.testing.expectEqual(HitResult.heavy, s.hit(.{ .dmg = 1, .stance = 30 }));
+    while (s.stunned()) s.tick(1.0 / 60.0);
+    try std.testing.expectEqual(HitResult.none, s.hit(.{ .dmg = 1, .stance = 30 }));
+
+    var p = Vitals.initFoe(100, 999, 999);
+    p.build(.poison, POISON_MAX);
+    _ = p.tickAils(1.0 / 60.0);
+    try std.testing.expect(p.ailOn(.poison));
+    try std.testing.expect(p.ailWear[@intFromEnum(Ail.poison)] > 0.9);
+    p.clearAils();
+    p.build(.poison, POISON_MAX);
+    try std.testing.expect(p.ailFrac(.poison) < 0.7);
+    // The hero wears nothing: bosses do not get to learn him.
+    var h = Vitals.init(100, 10, 999);
+    _ = h.hit(.{ .poise = 12 });
+    try std.testing.expectApproxEqAbs(@as(f32, 0), h.lightWear, 1e-6);
 }
 
 test "the immunity window IS the reaction the rig poses, on both sides" {
@@ -2123,8 +2220,8 @@ test "a HEAVY break refills poise when it ends, which is the tier that needed it
 test "the stun clock is not held behind the regen gate" {
     try std.testing.expect(FOE_REGEN_DELAY > FOE_LIGHT_STUN_DUR);
     var v = Vitals.initFoe(100, 10, 999);
-    _ = v.hit(.{ .poise = 6 });
-    try std.testing.expectEqual(HitResult.light, v.hit(.{ .poise = 6 }));
+    _ = v.hit(.{ .dmg = 7 });
+    try std.testing.expectEqual(HitResult.light, v.hit(.{ .dmg = 7 }));
     var t: f32 = 0;
     while (t < FOE_LIGHT_STUN_DUR + 0.05) : (t += 1.0 / 60.0) v.tick(1.0 / 60.0);
     try std.testing.expect(!v.stunned());
@@ -2177,7 +2274,8 @@ test "a foe's chip damage PERSISTS far longer than the hero's" {
     var hero = Vitals.init(100, 20, 40);
     var foeV = Vitals.initFoe(100, 20, 40);
     _ = hero.hit(.{ .poise = 15 });
-    _ = foeV.hit(.{ .poise = 15 });
+    // The damage that pours 15 into a 20 pool — the same chip, the creature's way.
+    _ = foeV.hit(.{ .dmg = 15.0 / FOE_POISE_PER_DMG });
     var t: f32 = 0;
     while (t < 2.0) : (t += 1.0 / 60.0) {
         hero.tick(1.0 / 60.0);

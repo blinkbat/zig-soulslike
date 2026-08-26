@@ -288,6 +288,122 @@ pub fn faceToward(pos: rl.Vector3, facing: *f32, target: rl.Vector3, rate: f32, 
     facing.* = mathx.approachAngle(facing.*, mathx.headingXZ(d), rate * dt);
 }
 
+/// **WHAT A UNIT DOES BEFORE IT HAS SEEN ANYBODY** (owner: a few basic idle enemy AIs, assigned per unit in the
+/// editor). The names are StarEdit's, because that is the vocabulary the maps are authored in: JUNKYARD DOG is
+/// roaming about a post, and it comes leashed or not.
+///
+/// **PRE-AGGRO ONLY** (owner). Nothing here touches a fight: the moment a creature is engaged its own state
+/// machine owns it, and this hands back nothing until it is idle again.
+/// **ONE ENUM, NOT TWO KEPT IN LOCKSTEP.** The FORMAT owns the authored shapes (`wf.FoeAi`, `wf.Wp`) because the
+/// editor and the save both spell them; the runtime only reads them. Two parallel enums is the brittleness the
+/// repo's own audit rules name.
+pub const Ai = wf.FoeAi;
+pub const MAX_WP: usize = wf.MAX_WP;
+pub const Wp = wf.Wp;
+
+/// How far a LEASHED roamer strays from its post, and how long it stands at each place it picks.
+pub const ROAM_R: f32 = 9.0;
+const ROAM_STEP_LO: f32 = 3.0;
+const DWELL_LO: f32 = 1.4;
+const DWELL_HI: f32 = 5.0;
+/// An unleashed roamer picks its next place the same way; it just measures from where it IS rather than a post.
+const ARRIVE: f32 = 1.1;
+
+/// **THE CREATURE OWES A FIELD AND ONE CALL** (`foe.Nav`'s rule). It embeds this, the game stamps the authored
+/// mode and route onto it at spawn, and the creature asks `want` from its own IDLE — never reaches out for it.
+pub const Post = struct {
+    ai: Ai = .hold,
+    home: rl.Vector3 = mathx.zero3,
+    wp: [MAX_WP]Wp = [_]Wp{.{}} ** MAX_WP,
+    nwp: u8 = 0,
+    /// Which leg of the route, and which way along it — a patrol turns round rather than teleporting to the start.
+    leg: u8 = 0,
+    back: bool = false,
+    mark: rl.Vector3 = mathx.zero3,
+    marked: bool = false,
+    dwell: f32 = 0,
+    rng: mathx.Rng = mathx.Rng.init(0x9051_11AA),
+
+    pub fn arm(self: *Post, ai: Ai, home: rl.Vector3, pts: []const Wp, seed: f32) void {
+        self.* = .{ .ai = ai, .home = home, .rng = fxStream(seed, 26417.0, 11) };
+        for (pts, 0..) |p, i| {
+            if (i >= MAX_WP) break;
+            self.wp[i] = p;
+            self.nwp = @intCast(i + 1);
+        }
+    }
+
+    pub fn idles(self: *const Post) bool {
+        return self.ai != .hold;
+    }
+
+    /// **WHERE TO WALK, OR NULL TO STAND.** Called every frame a creature is NOT engaged; `at` is where it is.
+    /// A creature that is fighting, going home on its leash, or otherwise busy simply does not call this.
+    pub fn want(self: *Post, dt: f32, at: rl.Vector3) ?rl.Vector3 {
+        switch (self.ai) {
+            .hold => return null,
+            .patrol => return self.walkRoute(at),
+            .roam, .roam_free => {
+                if (self.dwell > 0) {
+                    self.dwell -= dt;
+                    return null;
+                }
+                if (self.marked and mathx.distXZ(at, self.mark) > ARRIVE) return self.mark;
+                if (self.marked) {
+                    // Arrived: stand a while, so a roamer reads as an animal and not a patrolling guard.
+                    self.marked = false;
+                    self.dwell = self.rng.range(DWELL_LO, DWELL_HI);
+                    return null;
+                }
+                self.pick(at);
+                return self.mark;
+            },
+        }
+    }
+
+    /// **THE LEASH IS ON THE POST, NOT ON THE STEP** — a leashed roamer picks anywhere inside `ROAM_R` of home,
+    /// so it cannot walk itself out one short step at a time the way a per-step limit lets it.
+    fn pick(self: *Post, at: rl.Vector3) void {
+        const a = self.rng.angle();
+        const d = self.rng.range(ROAM_STEP_LO, ROAM_R);
+        const from = if (self.ai == .roam) self.home else at;
+        var p = v3(from.x + mathx.cosf(a) * d, from.y, from.z + mathx.sinf(a) * d);
+        if (self.ai == .roam and mathx.distXZ(p, self.home) > ROAM_R) {
+            const back = mathx.dirXZ(self.home, p);
+            p = v3(self.home.x + back.x * ROAM_R, self.home.y, self.home.z + back.z * ROAM_R);
+        }
+        self.mark = p;
+        self.marked = true;
+    }
+
+    fn legAt(self: *const Post, i: u8) rl.Vector3 {
+        if (i == 0) return self.home;
+        const w = self.wp[@min(i - 1, MAX_WP - 1)];
+        return v3(w.x, self.home.y, w.z);
+    }
+
+    /// The route is the POST and then every painted point, walked out and back. A unit with no points painted
+    /// has nothing to patrol and stands, so a half-finished route in the editor is never a creature spinning.
+    fn walkRoute(self: *Post, at: rl.Vector3) ?rl.Vector3 {
+        if (self.nwp == 0) return null;
+        const last: u8 = self.nwp;
+        const target = self.legAt(self.leg);
+        if (mathx.distXZ(at, target) > ARRIVE) return target;
+        if (self.back) {
+            if (self.leg == 0) {
+                self.back = false;
+                self.leg = 1;
+            } else self.leg -= 1;
+        } else {
+            if (self.leg >= last) {
+                self.back = true;
+                self.leg = last - 1;
+            } else self.leg += 1;
+        }
+        return self.legAt(self.leg);
+    }
+};
+
 pub const Nav = struct {
     dir: ?rl.Vector3 = null,
     /// WHICH WAY ROUND IT WENT LAST TIME, and this is why it does not dither: with both sides equally open, the
@@ -2310,4 +2426,83 @@ test "A CHARMED BODY WITH NOTHING TO TURN ON DOES NOT TURN BACK ON HIM" {
     c.distFoe = 12.0;
     c.tick(1.0 / 60.0, 3.0, mathx.LONG_AGO, false);
     try std.testing.expectEqual(Victim.hero, c.on);
+}
+
+test "AN IDLE AI IS OFF UNTIL A MAP SAYS OTHERWISE — every unit holds its post as it always did" {
+    var p = Post{};
+    try std.testing.expectEqual(Ai.hold, p.ai);
+    try std.testing.expect(!p.idles());
+    var t: f32 = 0;
+    while (t < 30.0) : (t += 1.0 / 60.0) try std.testing.expect(p.want(1.0 / 60.0, mathx.zero3) == null);
+}
+
+test "THE JUNKYARD DOG IS LEASHED OR IT IS NOT — one never leaves its post, the other never comes back" {
+    const dt = 1.0 / 60.0;
+    const home = mathx.ground(10, -4);
+    for ([_]Ai{ .roam, .roam_free }) |ai| {
+        var p = Post{};
+        p.arm(ai, home, &.{}, 0.31);
+        var at = home;
+        var far: f32 = 0;
+        var stood: f32 = 0;
+        var walked: f32 = 0;
+        var t: f32 = 0;
+        while (t < 600.0) : (t += dt) {
+            if (p.want(dt, at)) |go| {
+                const d = mathx.dirXZ(at, go);
+                at = v3(at.x + d.x * 1.6 * dt, at.y, at.z + d.z * 1.6 * dt);
+                walked += dt;
+            } else stood += dt;
+            far = mathx.maxF(far, mathx.distXZ(at, home));
+        }
+        std.debug.print("\n  {s}: strayed {d:.1} m from its post over 10 min, walking {d:.0}% of it\n", .{ @tagName(ai), far, walked / (walked + stood) * 100.0 });
+        // BOTH actually wander — a dog that stands still is `hold` under another name.
+        try std.testing.expect(far > ROAM_R * 0.5);
+        // …and it STANDS between places, or it is a patrol.
+        try std.testing.expect(stood > 30.0);
+        if (ai == .roam) {
+            // LEASHED: the post is the limit, and it cannot walk itself out one step at a time.
+            try std.testing.expect(far <= ROAM_R + 1.5);
+        } else {
+            // UNLEASHED: ten minutes of it should have taken the thing a long way off.
+            try std.testing.expect(far > ROAM_R * 3.0);
+        }
+    }
+}
+
+test "A PATROL WALKS ITS ROUTE AND TURNS ROUND — post out to the last point and back, never teleporting" {
+    const dt = 1.0 / 60.0;
+    const home = mathx.ground(0, 0);
+    var p = Post{};
+    p.arm(.patrol, home, &.{ .{ .x = 8, .z = 0 }, .{ .x = 8, .z = 9 } }, 0.4);
+    var at = home;
+    var hitHome: usize = 0;
+    var hitEnd: usize = 0;
+    var far: f32 = 0;
+    var t: f32 = 0;
+    while (t < 200.0) : (t += dt) {
+        const go = p.want(dt, at) orelse continue;
+        const d = mathx.dirXZ(at, go);
+        at = v3(at.x + d.x * 2.0 * dt, at.y, at.z + d.z * 2.0 * dt);
+        far = mathx.maxF(far, mathx.distXZ(at, home));
+        if (mathx.distXZ(at, home) < 1.2) hitHome += 1;
+        if (mathx.distXZ(at, mathx.ground(8, 9)) < 1.2) hitEnd += 1;
+    }
+    std.debug.print("  patrol: reached its far point and its post again, {d} and {d} frames of it; furthest {d:.1} m\n", .{ hitEnd, hitHome, far });
+    // IT WALKS THE WHOLE ROUTE, both ways, more than once.
+    try std.testing.expect(hitEnd > 0 and hitHome > 0);
+    // …and never further than the route itself: a patrol that overshoots is a roamer.
+    try std.testing.expect(far < mathx.distXZ(home, mathx.ground(8, 9)) + 1.5);
+
+    // A ROUTE WITH NOTHING PAINTED ON IT IS NOT A CREATURE SPINNING — a half-finished edit just stands.
+    var empty = Post{};
+    empty.arm(.patrol, home, &.{}, 0.4);
+    try std.testing.expect(empty.want(dt, home) == null);
+
+    // AND THE ROUTE IS CAPPED WHERE THE FORMAT CAPS IT: a longer one is truncated, never overrun.
+    var many: [MAX_WP + 4]Wp = undefined;
+    for (&many, 0..) |*w, i| w.* = .{ .x = @floatFromInt(i), .z = 0 };
+    var big = Post{};
+    big.arm(.patrol, home, &many, 0.4);
+    try std.testing.expectEqual(@as(u8, MAX_WP), big.nwp);
 }

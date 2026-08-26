@@ -1032,3 +1032,358 @@ test "THE SPORE FIELD IS NOT ON THE RAIN'S CLOCK - that one wraps 2.6 times a se
         try std.testing.expect(mathx.lenV(mathx.subV(a, b)) > 0.15);
     }
 }
+
+// Owner: bird packs of different sizes crossing the sky, distantly, from different angles, infrequently, when it
+// is not raining — "just to feel alive". So it is an EVENT on the weather's own law and not a field standing
+// there: one flight arrives, crosses, and is gone, and most of the time there is nothing at all.
+
+/// Seconds between one flight leaving and the next arriving.
+pub const SKEIN_GAP_LO: f32 = 18.0;
+pub const SKEIN_GAP_HI: f32 = 62.0;
+/// Never while it rains, nor the moment it stops: a sky still wringing itself out has nothing flying in it.
+pub const SKEIN_DRY: f32 = 0.02;
+pub const SKEIN_AFTER_RAIN: f32 = 22.0;
+
+/// **DIFFERENT SIZES** (owner) — a pair, a whole ragged skein, and everything between.
+pub const BIRDS_LO: usize = 3;
+pub const BIRDS_HI: usize = 17;
+
+/// Where the line crosses: it enters at `SKEIN_R` on one bearing and leaves on the far side, offset sideways so
+/// a crossing is rarely overhead. **SOLVED AGAINST THE HAZE, NOT PICKED**: `gfx.HAZE_DENSITY` is 0.013 a metre,
+/// so what is left of a thing at range d is exp(−0.013 d) — 185 m is 9% and the birds were invisible,
+/// photographed; 130 m is 18%; 60 m is 46%; 34 m is 64%. **NOTICEABLE IS CONTRAST BEFORE IT IS SIZE** (owner:
+/// more noticeable, they are quite small): flying at 46–88 m the haze was eating over half of every bird, so the
+/// band came DOWN rather than the birds only going up in span.
+pub const SKEIN_R: f32 = 96.0;
+const SKEIN_OFF: f32 = 56.0;
+pub const HIGH_LO: f32 = 30.0;
+pub const HIGH_HI: f32 = 62.0;
+const SKEIN_MPS_LO: f32 = 8.0;
+const SKEIN_MPS_HI: f32 = 15.0;
+
+/// **THE MESH IS BUILT AT ONE METRE AND EVERY BIRD SCALES IT**, so a span is a number and not a rebuild. A flock
+/// is one kind of bird (`SPAN_LO`..`SPAN_HI` rolled per FLIGHT) and then ragged inside itself (`SPAN_JITTER`), so
+/// what varies is the size of the birds and not only the count of them — the owner asked for both.
+const WING: f32 = 1.0;
+const SPAN_LO: f32 = 2.0;
+const SPAN_HI: f32 = 4.2;
+const SPAN_JITTER: f32 = 0.22;
+/// The flap is a SQUASH of the V, not a bone: at this range a wing is two pixels and what reads is the
+/// silhouette breathing. Cheap enough that every bird gets its own phase, which is what stops the flock pulsing
+/// as one animal.
+const FLAP_LO: f32 = 0.35;
+const FLAP_HI: f32 = 1.35;
+const FLAP_SECS_LO: f32 = 0.42;
+const FLAP_SECS_HI: f32 = 0.72;
+/// A skein is RAGGED — metres of scatter back along the line and out to the sides, growing down the rank.
+const TRAIL_LO: f32 = 3.0;
+const TRAIL_HI: f32 = 7.0;
+const SPREAD: f32 = 4.5;
+/// They fade up off the near rim and out at the far one, so nothing pops into being.
+const SKEIN_FADE: f32 = 0.14;
+pub const SKEIN_TOP: f32 = 1.0;
+
+/// **A BIRD IS A SILHOUETTE**, so it is opaque and nearly black: the vertex alpha is the EMISSIVE channel and at
+/// 210 they came up self-lit and pale, washing out into the very haze they are supposed to be read against.
+const BIRD_COL = rgba(16, 15, 18, 255);
+
+const Bird = struct {
+    back: f32 = 0,
+    side: f32 = 0,
+    lift: f32 = 0,
+    span: f32 = 1,
+    flapT: f32 = 0,
+    flapSecs: f32 = 0.5,
+};
+
+pub const Skein = struct {
+    model: rl.Model,
+    birds: [BIRDS_HI]Bird = [_]Bird{.{}} ** BIRDS_HI,
+    n: usize = 0,
+    wait: f32 = 0,
+    flown: f32 = 0,
+    cross: f32 = 0,
+    dryFor: f32 = 0,
+    at: rl.Vector3 = mathx.zero3,
+    dir: rl.Vector3 = mathx.zero3,
+    high: f32 = 0,
+    mps: f32 = 0,
+    rng: mathx.Rng = mathx.Rng.init(0xB18D_5EED),
+    armed: bool = false,
+
+    pub fn build(shader: rl.Shader) Skein {
+        return .{ .model = birdMesh(shader) };
+    }
+
+    fn birdMesh(shader: rl.Shader) rl.Model {
+        var b = gfx.Builder.init();
+        b.setMat(.plain);
+        b.setAnimY(0);
+        const half = WING * 0.5;
+        const rise = WING * 0.26;
+        const chord = WING * 0.16;
+        for ([_]f32{ 1, -1 }) |side| {
+            b.addBox(
+                v3(side * half * 0.5, rise * 0.5, 0),
+                v3(side * half * 0.5, rise * 0.5, 0),
+                v3(0, chord * 0.10, 0),
+                v3(0, 0, chord * 0.5),
+                BIRD_COL,
+            );
+        }
+        b.addBlob(mathx.zero3, v3(chord * 0.34, chord * 0.30, chord * 0.9), 4, 6, BIRD_COL);
+        return b.toModel(shader);
+    }
+
+    /// The clock runs ONLY on a dry sky, so a long storm cannot bank up a flight that then arrives the instant
+    /// it clears. A flight already in the air is not deleted by a squall — it finishes its crossing.
+    pub fn tick(self: *Skein, dt: f32, at: rl.Vector3, groundY: f32, rainLevel: f32) void {
+        if (!self.armed) {
+            self.armed = true;
+            self.wait = self.rng.range(SKEIN_GAP_LO, SKEIN_GAP_HI);
+        }
+        if (rainLevel > SKEIN_DRY) {
+            self.dryFor = 0;
+            if (self.n == 0) return;
+        } else self.dryFor += dt;
+
+        if (self.n > 0) {
+            self.flown += self.mps * dt;
+            for (self.birds[0..self.n]) |*bd| bd.flapT += dt;
+            if (self.flown >= self.cross) {
+                self.n = 0;
+                self.wait = self.rng.range(SKEIN_GAP_LO, SKEIN_GAP_HI);
+            }
+            return;
+        }
+        if (self.dryFor < SKEIN_AFTER_RAIN) return;
+        self.wait -= dt;
+        if (self.wait > 0) return;
+        self.launch(at, groundY, null);
+    }
+
+    /// **A DIFFERENT ANGLE EVERY TIME** (owner). The bearing is free, the line is offset sideways so a crossing
+    /// is rarely straight overhead, and the height, the speed and the size are their own rolls.
+    fn launch(self: *Skein, at: rl.Vector3, groundY: f32, count: ?usize) void {
+        const heading = self.rng.angle();
+        const d = v3(mathx.cosf(heading), 0, mathx.sinf(heading));
+        const off = self.rng.range(-SKEIN_OFF, SKEIN_OFF);
+        self.dir = d;
+        self.high = groundY + self.rng.range(HIGH_LO, HIGH_HI);
+        self.mps = self.rng.range(SKEIN_MPS_LO, SKEIN_MPS_HI);
+        self.cross = SKEIN_R * 2.0;
+        self.flown = 0;
+        self.at = v3(at.x - d.x * SKEIN_R - d.z * off, self.high, at.z - d.z * SKEIN_R + d.x * off);
+        const lo: f32 = @floatFromInt(BIRDS_LO);
+        const hi: f32 = @floatFromInt(BIRDS_HI);
+        // **THE COUNT IS THE LAUNCH'S** — raising it afterwards left the extra birds on their defaults, which is
+        // a flock where the tail all beats on one wingbeat.
+        self.n = count orelse @intFromFloat(@round(self.rng.range(lo, hi)));
+        const kind = self.rng.range(SPAN_LO, SPAN_HI);
+        for (self.birds[0..self.n], 0..) |*bd, i| {
+            const rank: f32 = @floatFromInt(i);
+            bd.* = .{
+                .back = rank * self.rng.range(TRAIL_LO, TRAIL_HI) * 0.5,
+                .side = self.rng.range(-SPREAD, SPREAD) * (0.35 + rank * 0.18),
+                .lift = self.rng.range(-SPREAD, SPREAD) * 0.4,
+                .span = kind * self.rng.range(1.0 - SPAN_JITTER, 1.0 + SPAN_JITTER),
+                .flapT = self.rng.range(0, 4),
+                .flapSecs = self.rng.range(FLAP_SECS_LO, FLAP_SECS_HI),
+            };
+        }
+    }
+
+    pub fn flying(self: *const Skein) bool {
+        return self.n > 0;
+    }
+
+    pub fn alpha(self: *const Skein) f32 {
+        if (self.n == 0 or self.cross <= 0) return 0;
+        const u = mathx.clampF(self.flown / self.cross, 0, 1);
+        return SKEIN_TOP * mathx.smoothstep(0, SKEIN_FADE, u) * (1.0 - mathx.smoothstep(1.0 - SKEIN_FADE, 1.0, u));
+    }
+
+    /// Where the lead bird is right now — the harness's own, and what a test measures the crossing on.
+    pub fn leadAt(self: *const Skein) rl.Vector3 {
+        return v3(self.at.x + self.dir.x * self.flown, self.high, self.at.z + self.dir.z * self.flown);
+    }
+
+    pub fn draw(self: *const Skein, scene: *gfx.Scene) void {
+        const a = self.alpha();
+        if (a <= 0.004) return;
+        const head = self.leadAt();
+        const yaw = mathx.degrees(mathx.headingXZ(self.dir));
+        scene.beginFade(a);
+        for (self.birds[0..self.n]) |bd| {
+            const p = v3(
+                head.x - self.dir.x * bd.back - self.dir.z * bd.side,
+                head.y + bd.lift,
+                head.z - self.dir.z * bd.back + self.dir.x * bd.side,
+            );
+            const flap = mathx.lerpF(FLAP_LO, FLAP_HI, 0.5 + 0.5 * mathx.sinf(std.math.tau * bd.flapT / bd.flapSecs));
+            rl.drawModelEx(self.model, p, v3(0, 1, 0), yaw, v3(bd.span, bd.span * flap, bd.span), rl.Color.white);
+        }
+        scene.endFade();
+    }
+
+    /// **ONE FLIGHT, NOW, ACROSS HIS FRONT** — the harness's own, because a photograph of a thing that happens
+    /// every few minutes cannot sit and wait for it.
+    pub fn stageOne(self: *Skein, at: rl.Vector3, groundY: f32, heading: f32) void {
+        self.dryFor = SKEIN_AFTER_RAIN;
+        self.armed = true;
+        self.launch(at, groundY, BIRDS_HI);
+        self.dir = v3(mathx.cosf(heading), 0, mathx.sinf(heading));
+        self.high = groundY + (HIGH_LO + HIGH_HI) * 0.5;
+        self.at = v3(at.x - self.dir.x * SKEIN_R, self.high, at.z - self.dir.z * SKEIN_R);
+        self.flown = self.cross * 0.42;
+    }
+};
+
+test "THE BIRDS ARE AN EVENT, NOT A FLOCK THAT LIVES THERE — infrequent, dry-only, and never twice the same" {
+    // Owner: bird packs of different sizes across the sky, distantly, from different angles, infrequently, just
+    // to feel alive. Measured over an hour of dry sky.
+    const dt = 1.0 / 60.0;
+    var sk = Skein{ .model = undefined };
+    var t: f32 = 0;
+    var flights: usize = 0;
+    var wasFlying = false;
+    var upFor: f32 = 0;
+    var visible: f32 = 0;
+    var smallest: usize = 999;
+    var biggest: usize = 0;
+    var bearX: f32 = 0;
+    var bearZ: f32 = 0;
+    var lowest: f32 = 1e9;
+    while (t < 3600.0) : (t += dt) {
+        sk.tick(dt, mathx.zero3, 0, 0);
+        if (sk.flying()) {
+            visible += dt;
+            upFor += dt;
+            lowest = mathx.minF(lowest, sk.high);
+            if (!wasFlying) {
+                flights += 1;
+                smallest = @min(smallest, sk.n);
+                biggest = @max(biggest, sk.n);
+                bearX += sk.dir.x;
+                bearZ += sk.dir.z;
+            }
+        } else if (wasFlying) upFor = 0;
+        wasFlying = sk.flying();
+    }
+    const share = visible / 3600.0;
+    std.debug.print("\n  skein: {d} flights in an hour, {d} to {d} birds, in the sky {d:.0}% of it, lowest {d:.0} m up\n", .{ flights, smallest, biggest, share * 100.0, lowest });
+    // DERIVED FROM THE GAP, not a number pinned beside it: one cycle is a mean gap plus a crossing, and the
+    // count has to land within a third of what that predicts or the clock is not doing what it says.
+    const meanCycle = (SKEIN_GAP_LO + SKEIN_GAP_HI) * 0.5 + SKEIN_R * 2.0 / ((SKEIN_MPS_LO + SKEIN_MPS_HI) * 0.5);
+    const want = 3600.0 / meanCycle;
+    std.debug.print("  ...{d:.0} predicted from the gap and the crossing, {d} flown\n", .{ want, flights });
+    try std.testing.expect(@as(f32, @floatFromInt(flights)) > want * 0.66 and @as(f32, @floatFromInt(flights)) < want * 1.34);
+    // DIFFERENT SIZES: over an hour it must have shown both ends of its own range, not one number.
+    try std.testing.expect(smallest <= BIRDS_LO + 3 and biggest >= BIRDS_HI - 3);
+    try std.testing.expect(smallest >= BIRDS_LO and biggest <= BIRDS_HI);
+    // DIFFERENT ANGLES: never a LANE. Summed as unit vectors, a set of bearings that all point one way has a
+    // resultant near 1 and a scattered set has one near zero — which is the claim, where "no two in a row within
+    // N degrees" is only a dice roll and fails on an honest sky about a third of the time.
+    const lane = @sqrt(bearX * bearX + bearZ * bearZ) / @as(f32, @floatFromInt(flights));
+    std.debug.print("  ...and their bearings pull {d:.2} one way (1.00 would be a flight path)\n", .{lane});
+    try std.testing.expect(lane < 0.75);
+    // DISTANT: nothing ever comes down near the world he is standing in.
+    try std.testing.expect(lowest >= HIGH_LO);
+    // …and the sky is still empty more often than not, which is what keeps a crossing worth looking up at.
+    try std.testing.expect(share < 0.50);
+}
+
+test "NOTHING FLIES IN THE RAIN, AND NOTHING IS WAITING TO THE SECOND IT STOPS" {
+    const dt = 1.0 / 60.0;
+    var wet = Skein{ .model = undefined };
+    var t: f32 = 0;
+    while (t < 3600.0) : (t += dt) {
+        wet.tick(dt, mathx.zero3, 0, 0.6);
+        try std.testing.expect(!wet.flying());
+    }
+    // …and the clock does not bank up while it rains: an hour of storm then a dry sky still owes the full wait.
+    var dry = Skein{ .model = undefined };
+    var e: f32 = 0;
+    var firstDry: f32 = -1;
+    while (e < 1200.0) : (e += dt) {
+        dry.tick(dt, mathx.zero3, 0, 0);
+        if (dry.flying() and firstDry < 0) firstDry = e;
+    }
+    std.debug.print("  first flight on a clear sky at {d:.0} s (gap {d:.0}..{d:.0}, and {d:.0} s of settling after rain)\n", .{ firstDry, SKEIN_GAP_LO, SKEIN_GAP_HI, SKEIN_AFTER_RAIN });
+    try std.testing.expect(firstDry >= SKEIN_GAP_LO);
+
+    // A flight already up is NOT deleted by a squall arriving — it finishes its crossing.
+    var caught = Skein{ .model = undefined };
+    caught.stageOne(mathx.zero3, 0, 0.4);
+    try std.testing.expect(caught.flying());
+    var f: f32 = 0;
+    var stillUp = false;
+    while (f < 3.0) : (f += dt) {
+        caught.tick(dt, mathx.zero3, 0, 0.9);
+        if (caught.flying()) stillUp = true;
+    }
+    try std.testing.expect(stillUp);
+}
+
+test "A CROSSING IS A CROSSING — it enters far, leaves far, and fades at both rims" {
+    const dt = 1.0 / 60.0;
+    var sk = Skein{ .model = undefined };
+    sk.stageOne(mathx.zero3, 0, 0);
+    sk.flown = 0;
+    const entered = sk.leadAt();
+    var t: f32 = 0;
+    var peak: f32 = 0;
+    var nearest: f32 = 1e9;
+    var wasA: f32 = sk.alpha();
+    var worstStep: f32 = 0;
+    while (t < 120.0 and sk.flying()) : (t += dt) {
+        sk.tick(dt, mathx.zero3, 0, 0);
+        if (!sk.flying()) break;
+        const a = sk.alpha();
+        peak = mathx.maxF(peak, a);
+        worstStep = mathx.maxF(worstStep, @abs(a - wasA));
+        wasA = a;
+        nearest = mathx.minF(nearest, mathx.distXZ(sk.leadAt(), mathx.zero3));
+    }
+    std.debug.print("  a crossing: in at {d:.0} m, nearest {d:.0} m, took {d:.0} s; alpha peaks {d:.2}, worst step {d:.4}\n", .{ mathx.distXZ(entered, mathx.zero3), nearest, t, peak, worstStep });
+    try std.testing.expect(mathx.distXZ(entered, mathx.zero3) > SKEIN_R * 0.9);
+    try std.testing.expect(peak > SKEIN_TOP * 0.9 and peak <= SKEIN_TOP + 1e-5);
+    // IT NEVER POPS: the fade is a ramp at both ends, so no frame steps it.
+    try std.testing.expect(worstStep < 0.01);
+    // …and a crossing is a THING YOU CATCH, not a thing you wait out. Derived off the line and the speed, so
+    // moving either cannot leave a number sitting here that used to be true.
+    try std.testing.expect(t > SKEIN_R * 2.0 / SKEIN_MPS_HI - 1.0);
+    try std.testing.expect(t < SKEIN_R * 2.0 / SKEIN_MPS_LO + 1.0);
+}
+
+test "THE FLOCK IS RAGGED AND EACH BIRD FLAPS ON ITS OWN — a pack, not one animal copied" {
+    var sk = Skein{ .model = undefined };
+    sk.stageOne(mathx.zero3, 0, 0);
+    var backs: f32 = 0;
+    var sides: f32 = 0;
+    var beatLo: f32 = 1e9;
+    var beatHi: f32 = 0;
+    var spanLo: f32 = 1e9;
+    var spanHi: f32 = 0;
+    for (sk.birds[0..sk.n]) |bd| {
+        backs = mathx.maxF(backs, bd.back);
+        sides = mathx.maxF(sides, @abs(bd.side));
+        beatLo = mathx.minF(beatLo, bd.flapSecs);
+        beatHi = mathx.maxF(beatHi, bd.flapSecs);
+        spanLo = mathx.minF(spanLo, bd.span);
+        spanHi = mathx.maxF(spanHi, bd.span);
+        try std.testing.expect(bd.flapSecs >= FLAP_SECS_LO and bd.flapSecs <= FLAP_SECS_HI);
+    }
+    std.debug.print("  a skein of {d}: trails {d:.1} m back, {d:.1} m wide; wingbeats {d:.2}..{d:.2} s, spans {d:.1}..{d:.1} m\n", .{ sk.n, backs, sides, beatLo, beatHi, spanLo, spanHi });
+    try std.testing.expect(backs > TRAIL_LO);
+    try std.testing.expect(sides > 1.0);
+    // THE PACK IS NOT ONE ANIMAL COPIED: the beats are SPREAD across their range. "No two exactly equal" is a
+    // dice roll on a continuous range and fails on an honest flock.
+    try std.testing.expect(beatHi - beatLo > (FLAP_SECS_HI - FLAP_SECS_LO) * 0.5);
+    // …and the BIRDS differ in size, not only the count of them (owner: more varied sizes).
+    try std.testing.expect(spanHi - spanLo > spanLo * SPAN_JITTER * 0.8);
+    try std.testing.expect(spanLo >= SPAN_LO * (1.0 - SPAN_JITTER) - 1e-3);
+    try std.testing.expect(spanHi <= SPAN_HI * (1.0 + SPAN_JITTER) + 1e-3);
+    // AND THE WHOLE PACK IS ONE DRAW EACH, capped at what the rain's own sheet costs.
+    try std.testing.expect(BIRDS_HI <= 20);
+}

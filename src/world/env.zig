@@ -361,9 +361,14 @@ var envBuilt = false;
 /// The only way the two upload skips are visible to a test — building a tile needs a GL context.
 var terrainBuilds: usize = 0;
 var waterBuilds: usize = 0;
+var soilBuilds: usize = 0;
 
 pub fn terrainBuildCount() usize {
     return terrainBuilds;
+}
+
+pub fn soilBuildCount() usize {
+    return soilBuilds;
 }
 
 pub fn waterBuildCount() usize {
@@ -387,6 +392,9 @@ pub const Env = struct {
     scene: ?*gfx.Scene = null,
     props: [MAX_PROPS]Prop = undefined,
     nprops: usize = 0,
+    /// **NO SILENT CAP** — how many ops hit their work budget on the last `materialize`, so a runaway one is a
+    /// number somebody can see rather than a machine that has quietly stopped responding.
+    opsCapped: usize = 0,
     solid_buf: [MAX_SOLIDS]collision.Solid = undefined,
     nsolids: usize = 0,
     /// THE FOG GATES, in the order `buildSolids` met them; `collision.Solid.ward` is a slot here PLUS ONE, so that 0 can mean "an ordinary solid".
@@ -418,6 +426,11 @@ pub const Env = struct {
     /// Every input `uploadWater` reads. Its OWN copy of the height, not `heightField`: `sculptHeight` moves
     /// that one mid-stroke, so sharing it leaves the dig tone stale for the rest of the session.
     waterSrc: [wf.WATER_CELLS]u8 = [_]u8{0} ** wf.WATER_CELLS,
+    soilSrc: [wf.SOIL_CELLS]u8 = [_]u8{0} ** wf.SOIL_CELLS,
+    soilCovSrc: [wf.SOIL_CELLS]u8 = [_]u8{0} ** wf.SOIL_CELLS,
+    soilEdgeSrc: [wf.SOIL_CELLS]u8 = [_]u8{0} ** wf.SOIL_CELLS,
+    soilReady: bool = false,
+    soilHalf: f32 = 0,
     waterEdgeSrc: [wf.WATER_CELLS]u8 = [_]u8{0} ** wf.WATER_CELLS,
     waterHgtSrc: [wf.HEIGHT_CELLS]u8 = [_]u8{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS,
     waterReady: bool = false,
@@ -482,7 +495,20 @@ pub const Env = struct {
         self.materialize(m);
     }
 
+    /// Guarded like `uploadHeight` and `uploadWater`: three texture uploads and a 12,544-cell edge dilation are
+    /// small beside a terrain rebuild, but every editor edit reaches here whatever it touched.
     pub fn uploadSoil(self: *Env, m: *const wf.Map) void {
+        const same = self.soilReady and self.soilHalf == m.half and
+            std.mem.eql(u8, &self.soilSrc, &m.soil) and
+            std.mem.eql(u8, &self.soilCovSrc, &m.soilCov) and
+            std.mem.eql(u8, &self.soilEdgeSrc, &m.soilEdge);
+        if (same) return;
+        soilBuilds += 1;
+        self.soilSrc = m.soil;
+        self.soilCovSrc = m.soilCov;
+        self.soilEdgeSrc = m.soilEdge;
+        self.soilReady = true;
+        self.soilHalf = m.half;
         if (self.scene) |sc| sc.setSoil(&m.soil, &m.soilCov, &m.soilEdge, m.half);
     }
 
@@ -778,6 +804,7 @@ pub const Env = struct {
 
     pub fn materialize(self: *Env, m: *const wf.Map) void {
         self.nprops = 0;
+        self.opsCapped = 0;
         self.nsolids = 0;
         self.nwards = 0;
         self.openWards();
@@ -1757,6 +1784,8 @@ const Placer = struct {
     m: *const wf.Map,
     flat: bool,
     cur: u16 = 0,
+    /// Candidates left to this op (`BUDGET`, reset per op in `expand`).
+    left: i32 = 0,
     lean: f32 = 0,
     leanDir: f32 = 0,
     leanExact: bool = false,
@@ -1823,7 +1852,26 @@ const Placer = struct {
         return self.e.blockedNear(v3(x, self.groundY(x, z) + SOLID_PROBE_Y, z), SOLID_PROBE_M, SOLID_PROBE_R);
     }
 
+    /// **AN OP MAY NOT SPIN.** Candidates it is allowed to consider, placed or rejected. The loops were bounded
+    /// only by authored numbers — `n` is an unbounded i32 and a `line`'s step only has to clear 1e-4 — and a
+    /// candidate that is REJECTED costs time without ever filling `MAX_PROPS`, so nothing stopped it and nothing
+    /// showed. MEASURED: one line op at 0.001 m spacing over 400 m burns 21 ms a rebuild and places NOTHING; at
+    /// the parser's own floor, 227 ms. A rebuild fires 0.28 s after every edit and a map holds 20,480 ops.
+    /// 8192 is far past any honest scatter (the shipping map's largest is a few hundred) and caps one op at
+    /// well under a millisecond.
+    const BUDGET: i32 = 8192;
+
+    fn spend(self: *Placer) bool {
+        if (self.left <= 0) {
+            self.e.opsCapped += 1;
+            return false;
+        }
+        self.left -= 1;
+        return true;
+    }
+
     fn expand(self: *Placer, o: *const wf.Op) void {
+        self.left = BUDGET;
         var rng = o.stream();
         self.lean = o.lean;
         self.leanDir = o.leanDir;
@@ -1841,6 +1889,7 @@ const Placer = struct {
     fn belt(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
         var i: i32 = 0;
         while (i < o.n) : (i += 1) {
+            if (!self.spend()) return;
             const x = rng.range(o.x, o.x1);
             const z = rng.range(o.z, o.z1);
             if (!self.accepts(o, x, z, rng)) continue;
@@ -1851,6 +1900,7 @@ const Placer = struct {
     fn disc(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
         var i: i32 = 0;
         while (i < o.n) : (i += 1) {
+            if (!self.spend()) return;
             const a = rng.angle();
             const t = rng.float();
             const d = o.r0 + (o.r1 - o.r0) * (t + (@sqrt(t) - t) * o.bias);
@@ -1864,6 +1914,7 @@ const Placer = struct {
     fn ring(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
         var i: i32 = 0;
         while (i < o.n) : (i += 1) {
+            if (!self.spend()) return;
             if (i == o.skip) continue;
             const a = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(o.n));
             const r = o.r0 * rng.range(0.94, 1.06);
@@ -1891,6 +1942,7 @@ const Placer = struct {
         const yaw = mathx.degrees(std.math.atan2(-uz, ux));
         var t: f32 = o.r0 * 0.5;
         while (t < len) : (t += o.r0 * rng.range(1.0, 1.5)) {
+            if (!self.spend()) return;
             if (rng.float() > o.chance) continue;
             const x = o.x + ux * t + rng.signed() * 0.6;
             const z = o.z + uz * t + rng.signed() * 0.6;
@@ -2878,6 +2930,37 @@ test "A PROP PLACED CANNOT MOVE THE GROUND — an unchanged height field is not 
     try std.testing.expect(m.anyHeight());
 }
 
+test "PAINTING NO SOIL UPLOADS NO SOIL — the third field skips on an unchanged compare like its two siblings" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++ "at: pillar 0 0 0 1\n");
+    defer std.testing.allocator.destroy(m);
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+
+    const first = soilBuildCount();
+    e.uploadSoil(m);
+    e.uploadSoil(m);
+    e.uploadSoil(m);
+    try std.testing.expectEqual(first + 1, soilBuildCount());
+
+    // Each of the three fields it reads is on its own — a coverage or edge change with the same ids still uploads.
+    m.soil[wf.SOIL_CELLS / 2] = 1;
+    e.uploadSoil(m);
+    try std.testing.expectEqual(first + 2, soilBuildCount());
+
+    m.soilCov[wf.SOIL_CELLS / 2] = 3;
+    e.uploadSoil(m);
+    try std.testing.expectEqual(first + 3, soilBuildCount());
+
+    m.soilEdge[wf.SOIL_CELLS / 2] = 2;
+    e.uploadSoil(m);
+    try std.testing.expectEqual(first + 4, soilBuildCount());
+
+    m.half += 1;
+    e.uploadSoil(m);
+    try std.testing.expectEqual(first + 5, soilBuildCount());
+}
+
 test "THE COAST IS DERIVED ONLY WHEN SOMETHING IT READS MOVED — the DIG is one of them" {
     const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++ "at: pillar 0 0 0 1\n");
     defer std.testing.allocator.destroy(m);
@@ -3247,4 +3330,53 @@ test "THE FACET MEMO IS THE SAME ARITHMETIC — corner for corner, byte for byte
     }
 }
 
+test "AN OP MAY NOT SPIN — the rebuild's cost is the map's size, never a number somebody dragged" {
+    // Owner: the editor freezes the PC, usually mid prop-edit, "spinning endlessly, almost crashing". It was not
+    // a leak. The generator loops were bounded only by AUTHORED numbers — `n` is an unbounded i32 and a line's
+    // step only has to clear 1e-4 — and a REJECTED candidate costs time without filling `MAX_PROPS`, so nothing
+    // stopped it and nothing showed. A rebuild fires `editor.REBUILD_QUIET` after every edit.
+    const ta = std.testing.allocator;
+    const m = try ta.create(wf.Map);
+    defer ta.destroy(m);
+    const e = try ta.create(Env);
+    defer ta.destroy(e);
+    m.* = .{};
+    e.* = .{ .ground = undefined, .models = undefined };
 
+    // `chance` 0 places NOTHING, so the prop cap never trips and the spin is invisible. MEASURED before the
+    // budget: 21 ms a rebuild at 0.001 m spacing, 227 ms at the floor the parser allows.
+    m.nops = 1;
+    m.ops[0] = .{ .op = .line, .kind = .block, .x = -200, .z = 0, .x1 = 200, .z1 = 0, .r0 = 0.0001, .chance = 0.0, .sLo = 1, .sHi = 1 };
+    var t = try std.time.Timer.start();
+    e.materialize(m);
+    const spin = @as(f64, @floatFromInt(t.read())) / 1e6;
+    std.debug.print("\n  a line op at the parser's own floor: {d:.1} ms a rebuild, {d} ops capped\n", .{ spin, e.opsCapped });
+    try std.testing.expect(e.opsCapped == 1);
+
+    // …and a COUNT nobody bounded is the same fault the other way: it used to reach the MAX_PROPS panic.
+    m.ops[0] = .{ .op = .belt, .kind = .block, .x = -200, .z = -200, .x1 = 200, .z1 = 200, .n = 2_000_000, .sLo = 1, .sHi = 1 };
+    t.reset();
+    e.materialize(m);
+    const flood = @as(f64, @floatFromInt(t.read())) / 1e6;
+    std.debug.print("  a belt of two million: {d:.1} ms, {d} props, {d} ops capped (cap {d})\n", .{ flood, e.nprops, e.opsCapped, MAX_PROPS });
+    try std.testing.expect(e.nprops < MAX_PROPS);
+    try std.testing.expect(spin < 8.0 and flood < 40.0);
+}
+
+test "…AND NO HONEST OP IN THE SHIPPING MAP IS TRUNCATED BY IT" {
+    // The budget is only safe if it never bites real content. If this ever fails, the world got quietly smaller.
+    const ta = std.testing.allocator;
+    const m = try ta.create(wf.Map);
+    defer ta.destroy(m);
+    const e = try ta.create(Env);
+    defer ta.destroy(e);
+    const text = std.fs.cwd().readFileAlloc(ta, wf.START_MAP, 1 << 22) catch return error.SkipZigTest;
+    defer ta.free(text);
+    var line: usize = 0;
+    try wf.parse(text, m, &line);
+    e.* = .{ .ground = undefined, .models = undefined };
+    var t = try std.time.Timer.start();
+    e.materialize(m);
+    std.debug.print("  {s}: {d} ops built {d} props in {d:.1} ms, {d} capped\n", .{ wf.START_MAP, m.nops, e.nprops, @as(f64, @floatFromInt(t.read())) / 1e6, e.opsCapped });
+    try std.testing.expectEqual(@as(usize, 0), e.opsCapped);
+}

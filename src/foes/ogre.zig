@@ -321,15 +321,35 @@ const Choice = enum { slam, swipe, drive, approach, wait, idle };
 const SWIPE_BEARING = 32.0;
 /// UP IN HIS FACE THE QUICK ONE WINS (owner's call). Fraction of the sweep band, out from its inner edge, inside which the swipe beats the slam even squared up with the slam ready — the 0.52 s cock-back rather than the 1.35 s rear.
 const SWIPE_NEAR_K = 0.5;
-fn classify(dist: f32, bearingDeg: f32, slamReady: bool, swipeReady: bool, driveReady: bool, swipeInner: f32) Choice {
+
+/// Share of `TURN_RATE` the rear-back is allowed to aim at — the one number the windup turns on and the slam's
+/// own bearing gate is solved from, so a retune cannot move one without the other.
+const WIND_TURN_SHARE: f32 = 0.4;
+
+/// **A BEARING THE CRUSH STRIP CANNOT BE BROUGHT ROUND TO IS A HARD GATE, NOT A WORSE CHOICE** (the knight's
+/// law). The drop itself turns not at all, so all the aiming the slam ever gets is the rear-back's, and its
+/// floor is the wind with no hang on it. Measured before the gate: thrown at a man 170° off he came round to
+/// 64° and billed nothing at three of four stands.
+fn slamBearing(dist: f32, scale: f32) f32 {
+    return mathx.degrees(TURN_RATE * WIND_TURN_SHARE * WINDUP_DUR) +
+        combat.subtendedArc(foe.hurtReach(SLAM_HALF_W, scale), dist);
+}
+
+fn swipeInnerAt(scale: f32) f32 {
+    return SWIPE_INNER * scale - HERO_REACH;
+}
+
+fn classify(dist: f32, bearingDeg: f32, slamReady: bool, swipeReady: bool, driveReady: bool, scale: f32) Choice {
     if (dist > AGGRO_R) return .idle;
     const offFront = @abs(bearingDeg) > SWIPE_BEARING;
     // AND THE SWIPE HAS TO BE ABLE TO LAND. Its arc passes clean OUTSIDE anything hugging his legs, and collision
-    // holds the hero at 1.68 m where the sweep only starts biting at 2.28 — so toe to toe, choosing it spent two thirds of a second on a guaranteed miss. The pocket at his feet is EARNED; he looms instead (`.wait`).
+    // holds the hero at 1.63 m where the sweep only starts biting at 2.16 — so toe to toe, choosing it spent two thirds of a second on a guaranteed miss. The pocket at his feet is EARNED; he looms instead (`.wait`).
+    const swipeInner = swipeInnerAt(scale);
     const inSweep = dist >= swipeInner and dist <= SWIPE_R;
     const near = swipeInner + (SWIPE_R - swipeInner) * SWIPE_NEAR_K;
     if (inSweep and swipeReady and (offFront or !slamReady or dist <= near)) return .swipe;
-    if (dist <= SLAM_R) return if (slamReady) .slam else .wait;
+    // Off the gate he LOOMS, and looming is the turn: `.wait` is `enterIdle`, and idle faces him at the full rate.
+    if (dist <= SLAM_R) return if (slamReady and @abs(bearingDeg) <= slamBearing(dist, scale)) .slam else .wait;
     if (dist >= DRIVE_MIN and dist <= DRIVE_MAX and driveReady) return .drive;
     return .approach;
 }
@@ -541,7 +561,7 @@ pub const Ogre = struct {
                     self.decide(d, bearing);
             },
             .windup => {
-                self.faceToward(hero, dt * 0.4);
+                self.faceToward(hero, dt * WIND_TURN_SHARE);
                 const k = mathx.smoothstep(0, WINDUP_DUR * 0.82, self.t);
                 self.setWindup(k);
                 self.emitStrain(dt, k);
@@ -746,7 +766,7 @@ pub const Ogre = struct {
 
     fn decide(self: *Ogre, dist: f32, bearingDeg: f32) void {
         const driveReady = self.driveCd <= 0 and foe.canLeap(&self.root);
-        switch (classify(dist, bearingDeg, self.slamCd <= 0, self.swipeCd <= 0, driveReady, self.swipeInner())) {
+        switch (classify(dist, bearingDeg, self.slamCd <= 0, self.swipeCd <= 0, driveReady, self.scale)) {
             .slam => self.enter(.windup),
             .swipe => self.enter(.swipewind),
             .drive => self.enter(.drivewind),
@@ -790,7 +810,7 @@ pub const Ogre = struct {
         return foe.hurtReach(SWIPE_OUTER, self.scale);
     }
     fn swipeInner(self: *const Ogre) f32 {
-        return SWIPE_INNER * self.scale - HERO_REACH;
+        return swipeInnerAt(self.scale);
     }
 
     fn tryImpact(self: *Ogre, hero: rl.Vector3, h: combat.Hit) void {
@@ -1882,43 +1902,61 @@ test "the swipe's hurt SECTOR matches where the club actually goes (band + arc, 
 
 test "attack choice: squared up crushes, flanked SWIPES, cooling looms, far closes, out of aggro idles" {
     const o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-    const inner = o.swipeInner(); // where the sweep starts biting — 2.28 on a full-size one
+    const inner = o.swipeInner(); // where the sweep starts biting — 2.16 m on a full-size one
     const mid = (inner + SWIPE_R) * 0.5;
-    try std.testing.expectEqual(Choice.idle, classify(AGGRO_R + 1, 0, true, true, true, inner));
-    try std.testing.expectEqual(Choice.slam, classify(SLAM_R - 0.5, 0, true, true, true, inner));
-    try std.testing.expectEqual(Choice.swipe, classify(mid, 80, true, true, false, inner));
-    try std.testing.expectEqual(Choice.swipe, classify(SWIPE_R - 0.2, -120, true, true, false, inner));
-    try std.testing.expectEqual(Choice.swipe, classify(mid, 0, false, true, false, inner));
-    try std.testing.expectEqual(Choice.wait, classify(SLAM_R - 0.5, 0, false, false, false, inner));
+    try std.testing.expectEqual(Choice.idle, classify(AGGRO_R + 1, 0, true, true, true, o.scale));
+    try std.testing.expectEqual(Choice.slam, classify(SLAM_R - 0.5, 0, true, true, true, o.scale));
+    try std.testing.expectEqual(Choice.swipe, classify(mid, 80, true, true, false, o.scale));
+    try std.testing.expectEqual(Choice.swipe, classify(SWIPE_R - 0.2, -120, true, true, false, o.scale));
+    try std.testing.expectEqual(Choice.swipe, classify(mid, 0, false, true, false, o.scale));
+    try std.testing.expectEqual(Choice.wait, classify(SLAM_R - 0.5, 0, false, false, false, o.scale));
 
     const near = inner + (SWIPE_R - inner) * SWIPE_NEAR_K;
-    try std.testing.expectEqual(Choice.swipe, classify(inner + 0.05, 0, true, true, true, inner));
-    try std.testing.expectEqual(Choice.swipe, classify(near - 0.05, 0, true, true, true, inner));
-    try std.testing.expectEqual(Choice.approach, classify(near + 0.05, 0, true, true, true, inner));
+    try std.testing.expectEqual(Choice.swipe, classify(inner + 0.05, 0, true, true, true, o.scale));
+    try std.testing.expectEqual(Choice.swipe, classify(near - 0.05, 0, true, true, true, o.scale));
+    try std.testing.expectEqual(Choice.approach, classify(near + 0.05, 0, true, true, true, o.scale));
     try std.testing.expect(near < SWIPE_R);
-    try std.testing.expectEqual(Choice.approach, classify(SWIPE_R + 1.0, 90, true, true, false, inner));
-    try std.testing.expectEqual(Choice.approach, classify((SWIPE_R + AGGRO_R) * 0.5, 0, true, true, true, inner));
+    try std.testing.expectEqual(Choice.approach, classify(SWIPE_R + 1.0, 90, true, true, false, o.scale));
+    try std.testing.expectEqual(Choice.approach, classify((SWIPE_R + AGGRO_R) * 0.5, 0, true, true, true, o.scale));
 
-    try std.testing.expectEqual(Choice.drive, classify((DRIVE_MIN + DRIVE_MAX) * 0.5, 0, true, true, true, inner));
-    try std.testing.expectEqual(Choice.drive, classify(DRIVE_MAX - 0.1, 140, true, true, true, inner));
-    try std.testing.expectEqual(Choice.approach, classify((DRIVE_MIN + DRIVE_MAX) * 0.5, 0, true, true, false, inner));
-    try std.testing.expectEqual(Choice.approach, classify(DRIVE_MAX + 0.5, 0, true, true, true, inner));
+    try std.testing.expectEqual(Choice.drive, classify((DRIVE_MIN + DRIVE_MAX) * 0.5, 0, true, true, true, o.scale));
+    try std.testing.expectEqual(Choice.drive, classify(DRIVE_MAX - 0.1, 140, true, true, true, o.scale));
+    try std.testing.expectEqual(Choice.approach, classify((DRIVE_MIN + DRIVE_MAX) * 0.5, 0, true, true, false, o.scale));
+    try std.testing.expectEqual(Choice.approach, classify(DRIVE_MAX + 0.5, 0, true, true, true, o.scale));
     try std.testing.expect(DRIVE_MIN > SWIPE_R);
 
     // HE NEVER SWIPES AT SOMETHING HUGGING HIS LEGS. Inside the band the arc passes clean outside the hero, so
     // the move is a guaranteed miss however flanked he is — he looms or crushes instead.
     const hugging = inner - 0.3;
-    try std.testing.expectEqual(Choice.slam, classify(hugging, 80, true, true, false, inner));
-    try std.testing.expectEqual(Choice.wait, classify(hugging, 80, false, true, false, inner));
+    try std.testing.expectEqual(Choice.slam, classify(hugging, 80, true, true, false, o.scale));
+    try std.testing.expectEqual(Choice.wait, classify(hugging, 80, false, true, false, o.scale));
     const toeToToe = o.bodyR() + foe.HERO_R;
     try std.testing.expect(toeToToe < inner);
-    try std.testing.expectEqual(Choice.wait, classify(toeToToe, 0, false, true, false, inner));
+    try std.testing.expectEqual(Choice.wait, classify(toeToToe, 0, false, true, false, o.scale));
+
+    // AND HE NEVER DROPS THE CLUB ON A MAN HE CANNOT BE FACING BY THEN. Only the rear-back aims, at a share of
+    // his rate; behind him the choice is the LOOM, which is idle turning at the full rate until it can.
+    const gate = slamBearing(hugging, o.scale);
+    try std.testing.expect(gate > 90 and gate < 180);
+    try std.testing.expectEqual(Choice.slam, classify(hugging, gate - 5, true, false, false, o.scale));
+    try std.testing.expectEqual(Choice.wait, classify(hugging, gate + 5, true, false, false, o.scale));
+    try std.testing.expectEqual(Choice.wait, classify(hugging, 180, true, false, false, o.scale));
+    // The strip is wider close in, so the gate opens as he is crowded — never the other way about.
+    try std.testing.expect(slamBearing(toeToToe, o.scale) > slamBearing(SLAM_R, o.scale));
 }
 
-test "range bands are ordered and sit inside aggro" {
+test "range bands are ordered and sit inside aggro — and each is INSIDE the bill it is chosen against" {
     try std.testing.expect(SLAM_R < SWIPE_R);
     try std.testing.expect(SWIPE_R < DRIVE_MIN);
     try std.testing.expect(DRIVE_MAX < AGGRO_R);
+
+    // A BAND WIDER THAN ITS OWN BILL IS A PROMISED MISS (the knight's `bandR`). These are picked, not derived,
+    // so what is pinned is only that a retune cannot push one past the reach that answers it.
+    const o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
+    std.debug.print("\n  bands vs bills: slam {d:.2}/{d:.2} m, swipe {d:.2}-{d:.2}/{d:.2}-{d:.2}, drive {d:.2}/{d:.2}\n", .{ SLAM_R, o.slamReach(), swipeInnerAt(o.scale), SWIPE_R, o.swipeInner(), o.swipeReach(), DRIVE_MAX, DRIVE_SPEED * DRIVE_DUR * DRIVE_IMPACT_K + o.slamReach() });
+    try std.testing.expect(SLAM_R <= o.slamReach());
+    try std.testing.expect(SWIPE_R <= o.swipeReach());
+    try std.testing.expect(foe.closestApproach(o.bodyR()) < SLAM_R);
 }
 
 test "THE DRIVE ALWAYS REACHES: surge travel + the crush strip covers its own band's far edge" {
@@ -1942,6 +1980,75 @@ test "THE DRIVE ALWAYS REACHES: surge travel + the crush strip covers its own ba
     try std.testing.expect(drove);
     try std.testing.expect(landed);
     try std.testing.expect(mathx.distXZ(g.pos, mathx.zero3) > 2.0);
+}
+
+test "THE CLUB LANDS ON THE MAN WHERE HE STANDS — every move thrown for real, anywhere its own band picks it" {
+    // The knight's judge (`THE SWORD IS SWUNG AT THE MAN WHERE HE STANDS`) asked of the ogre. The sector tests
+    // above say the hurt shape matches where the club goes; this one says the shape ARRIVES ON HIM, at every
+    // stand and bearing `classify` hands that move out at.
+    const dt = 1.0 / 120.0;
+    const probe = Ogre.spawn(mathx.zero3, 0, 1.0, 0.0);
+    const apart = foe.closestApproach(probe.bodyR());
+    // The RETURN has no row in `classify` — it is rolled at the swipe's own overswing, so its band is the
+    // sector's and not a pick.
+    const rows = [_]struct { name: []const u8, wind: State, strike: State, pick: ?Choice, near: f32, far: f32 }{
+        .{ .name = "slam", .wind = .windup, .strike = .slam, .pick = .slam, .near = apart, .far = SLAM_R },
+        .{ .name = "swipe", .wind = .swipewind, .strike = .swipe, .pick = .swipe, .near = probe.swipeInner(), .far = SWIPE_R },
+        .{ .name = "return", .wind = .backwind, .strike = .backswipe, .pick = null, .near = probe.swipeInner(), .far = SWIPE_R },
+        .{ .name = "drive", .wind = .drivewind, .strike = .drive, .pick = .drive, .near = DRIVE_MIN, .far = DRIVE_MAX },
+    };
+    var misses: usize = 0;
+    var thrown: usize = 0;
+    var refused: usize = 0;
+    for (rows) |row| {
+        for ([_]f32{ 0, 60, 120, 170 }) |deg| {
+            for ([_]f32{ 0.0, 0.34, 0.67, 1.0 }) |u| {
+                const stand = lerpF(mathx.maxF(row.near, apart) + 0.05, row.far * 0.97, u);
+                // A gate is a stand he never throws it from, not a stand he throws it from and misses.
+                if (row.pick) |want| {
+                    if (classify(stand, deg, want == .slam, want == .swipe, want == .drive, probe.scale) != want) {
+                        refused += 1;
+                        continue;
+                    }
+                }
+                thrown += 1;
+                const a = mathx.radians(deg);
+                var o = Ogre.spawn(mathx.zero3, 0, 1.0, 0.0);
+                var hero = v3(@sin(a) * stand, 0, @cos(a) * stand);
+                o.enter(row.wind);
+                o.windHold = 0;
+                var hit = false;
+                var squared: f32 = 1e9;
+                var relAt: f32 = 0;
+                var guard: usize = 0;
+                while (guard < 2000) : (guard += 1) {
+                    if (o.update(dt, hero, 400.0, .{}) != null) {
+                        hit = true;
+                        break;
+                    }
+                    // The drive SHOVES a man it runs into, as `env.resolveActor` does in the game.
+                    if (mathx.distXZ(o.pos, hero) < apart) {
+                        const out = mathx.dirXZ(o.pos, hero);
+                        hero = v3(o.pos.x + out.x * apart, 0, o.pos.z + out.z * apart);
+                    }
+                    const off = @abs(o.bearingTo(hero));
+                    if (off < squared) {
+                        squared = off;
+                        relAt = mathx.distXZ(o.pos, hero);
+                    }
+                    if (o.state != row.wind and o.state != row.strike) break;
+                }
+                if (!hit) {
+                    misses += 1;
+                    std.debug.print("\n  {s} at {d:.2} m, {d:.0} deg off: MISSED — came round to {d:.0} deg at best, man {d:.2} m off him then\n", .{ row.name, stand, deg, squared, relAt });
+                }
+            }
+        }
+    }
+    std.debug.print("\n  club: {d} stands thrown for real and landed, {d} refused by a bearing gate\n", .{ thrown, refused });
+    try std.testing.expectEqual(@as(usize, 0), misses);
+    // NO SILENT CAP: a gate that swallowed the whole sweep would pass this test with nothing thrown.
+    try std.testing.expect(thrown >= 48);
 }
 
 test "THE DRIVE IS A LEAP as far as the roots go: held feet choose the trudge instead" {

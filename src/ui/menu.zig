@@ -58,7 +58,11 @@ const DBG_TIMESCALE = 6;
 /// Weather arrives on a clock measured in MINUTES, so "is the rain working" is not a question anybody can sit and answer. Confirm cycles dry → gentle → moderate → dry (`weather.Weather.cycleForce`), as a row and not a submenu because the point is to watch the sky while you turn it.
 const DBG_WEATHER = 7;
 const DBG_FOG = 8;
-const DBG_CLOSE = 9;
+/// A skein crosses every few MINUTES and is gone in half a minute, so "are the birds working" is `DBG_WEATHER`'s
+/// question again and it has the same answer: send one now and go and look. A TRIGGER, not a state — there is
+/// nothing to read back, and the sky itself is the readout.
+const DBG_BIRDS = 9;
+const DBG_CLOSE = 10;
 const DBG_COUNT = DBG_CLOSE + 1;
 
 const Fog = enum { auto, off, thick, soup };
@@ -144,6 +148,8 @@ pub const Menu = struct {
     hitboxes: bool = false,
     timeScale: f32 = 1.0,
     fog: Fog = .auto,
+    /// One-shot: the debug row asking for a flock, drained by `takeBirds`.
+    birdsWanted: bool = false,
     adjHoldT: f32 = 0,
     book: bookmod.Book = .{},
 
@@ -443,6 +449,7 @@ pub const Menu = struct {
                 DBG_TIMESCALE => self.cycleTimeScale(),
                 DBG_WEATHER => sky.cycleForce(),
                 DBG_FOG => self.cycleFog(),
+                DBG_BIRDS => self.birdsWanted = true,
                 DBG_CLOSE => {
                     self.screen = .main;
                     self.cursor = 0;
@@ -499,6 +506,14 @@ pub const Menu = struct {
         };
     }
 
+    /// **THE REQUEST OUTLIVES THE MENU, ON PURPOSE.** The world does not tick while this is open, so the flag is
+    /// drained on the first frame after it shuts — which is the frame he is looking at the sky again.
+    pub fn takeBirds(self: *Menu) bool {
+        const want = self.birdsWanted;
+        self.birdsWanted = false;
+        return want;
+    }
+
     pub fn fogK(self: *const Menu) f32 {
         return fogMulOf(self.fog);
     }
@@ -540,6 +555,7 @@ pub const Menu = struct {
             .thick => "Fog: Thick",
             .soup => "Fog: Soup",
         };
+        out[DBG_BIRDS] = "Birds: Send a Flock Over";
         out[DBG_CLOSE] = "Back";
         return out;
     }
@@ -1069,4 +1085,22 @@ test "A NEW CHARACTER NEEDS AN EMPTY SLOT, and Load needs a written one — exac
     const bare = savemod.Shelf{};
     try std.testing.expect(m.rowLive(BOOT_NEW, &bare));
     try std.testing.expect(!m.rowLive(BOOT_LOAD, &bare));
+}
+
+test "THE DEBUG ROWS ARE ALL THERE, and the birds row is a ONE-SHOT that cannot fire twice" {
+    var m = Menu{};
+    // A request that is not drained fires every frame the menu is shut; one that drains twice never fires at all.
+    try std.testing.expect(!m.takeBirds());
+    m.birdsWanted = true;
+    try std.testing.expect(m.takeBirds());
+    try std.testing.expect(!m.takeBirds());
+    // The row table is indexed by the constants, so a row added without a label is a blank line in the menu.
+    const clock = daynight.Clock{};
+    var sky = weathermod.Weather.init(1);
+    const rows = m.debugLabels(&clock, &sky);
+    for (rows, 0..) |r, i| {
+        if (r.len == 0) std.debug.print("\n  debug row {d} has no label\n", .{i});
+        try std.testing.expect(r.len > 0);
+    }
+    try std.testing.expectEqual(@as(usize, DBG_COUNT), rows.len);
 }

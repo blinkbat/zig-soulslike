@@ -1797,15 +1797,16 @@ test "THE OPEN THROAT COSTS IT: the same swing takes near twice off a bloomed bo
     try std.testing.expectApproxEqAbs(1.0 + BLOOM_FRAIL, openTook / shutTook, 0.02);
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), shut.frailty(), 1e-6);
 
-    // POISE IS UNTOUCHED. `POISE_MAX` is solved to sit between his light (10) and his heavy (22); a multiplier
-    // here would put the light poke through it, and the bloom is a DAMAGE window, not a second stagger.
+    // A creature's flinch is the HEALTH a blow took (`combat.FOE_POISE_PER_DMG`, owner's rule), so the bloom's
+    // frailty does reach the poise: the light poke that a shut body shrugs off flinches an open one. That is the
+    // window paying out twice, and it is the rule and not this creature's choice.
     var poke = Ravager.spawn(mathx.zero3, 0, 1.0, 0.3);
     poke.state = .bite;
     poke.t = BITE_WIND * SETTLE_BY;
     var light = swing;
     light.hit = heromod.ATK_LIGHT_HIT;
     poke.tryHit(light);
-    try std.testing.expect(poke.state == .bite);
+    try std.testing.expect(poke.state == .hurt);
 }
 
 test "THE CLAW OWNS THE FLANK AND THE BLOOM OWNS THE FRONT — neither answers the other's ground" {

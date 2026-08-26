@@ -1012,7 +1012,18 @@ pub const Warrior = struct {
         } else if (self.hyperArmor()) {
             b.hit = .{ .dmg = blade.hit.dmg, .elem = blade.hit.elem };
         }
-        const s = foe.reached(self, b) orelse return;
+        // A creature's flinch pours off the DAMAGE now (`combat.FOE_POISE_PER_DMG`), so hyper armour has to refuse
+        // the pool itself — a blow stripped of its `poise` still takes health.
+        const hyper = !blocked and self.hyperArmor();
+        const poiseWas = self.vit.poise;
+        const stanceWas = self.vit.stance;
+        var s = foe.reached(self, b) orelse return;
+        if (hyper and s.reaction == .light) {
+            self.vit.poise = poiseWas;
+            self.vit.stance = stanceWas;
+            self.vit.beginStun(.none);
+            s.reaction = .none;
+        }
         if (blocked) return self.caught(blade.hit, s);
         const heavyBlow = foe.wounded(self, s, blade, .{ .light = 1.2, .heavy = 1.9 });
         self.chips(s.contact, s.dir, if (heavyBlow) 20 else 12, if (heavyBlow) 3.4 else 2.4);

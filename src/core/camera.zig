@@ -15,8 +15,10 @@ const LOOK_SENS = 0.0032; // radians per pixel of mouse motion
 /// ~ -22 deg, looking UP from below. Wider than the -0.20 the free look ever asked for, because the LOCK now tilts the rig onto whatever it is fixed on (`game.lockPitch`): an ogre's chest is two and a half metres up and eleven degrees of lift clipped short of framing it.
 const PITCH_MIN = -0.38;
 const PITCH_MAX = 1.15; // ~  66 deg (looking down)
-const SHOULDER = 0.55;
-const TARGET_RAISE = 0.15;
+pub const SHOULDER = 0.55;
+pub const TARGET_RAISE = 0.15;
+/// Vertical field of view, degrees. The only place the lens is described, so a framing solved against it cannot go stale on a different number.
+pub const FOVY: f32 = 55.0;
 const GROUND_CLEAR = 0.7;
 /// …and how much boom one probe of that search gives up. Named beside the clearance it is searching for: the two are only ever chosen against each other, and a bare 0.25 in the loop reads as arbitrary.
 const GROUND_PROBE = 0.25;
@@ -229,7 +231,7 @@ pub fn newCamRig(shoulder: rl.Vector3, yaw0: f32) CamRig {
             .position = mathx.zero3,
             .target = mathx.zero3,
             .up = v3(0, 1, 0),
-            .fovy = 55,
+            .fovy = FOVY,
             .projection = .perspective,
         },
         .yaw = yaw0,

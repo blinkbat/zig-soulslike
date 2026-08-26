@@ -52,10 +52,23 @@ implement what's asked and nothing extra. Don't commit, push, or create branches
   build cannot overwrite the exe. Build with `--prefix zig-out-dev` when locked.
 - `--shot-props` renders every kind alone into `shots\props\`. For ONE model the editor's object viewer is
   faster.
+- **AN EYE PASS IS A LOOP, SO SHOOT ONE STAGE** — `--shot --shot-only <substr>` (`shots.onlyStage`) runs the
+  named stage and skips every other frame's render and write: 32 s against 3m38s for the lot. A filtered run
+  still SIMULATES everything, so nothing a later stage stands on goes unbuilt.
+- **AND WHEN THE THING PHOTOGRAPHED IS HOW A BODY HOLDS SOMETHING, SHOOT ALL FOUR SIDES CLOSE**
+  (`shots.knightDoorShots`). The house three-quarter portrait at 12 m answers nothing: the door covered the
+  whole creature and the arm behind it was four grey pixels. Turn the SUBJECT rather than orbiting the lens,
+  so the sun stays over the camera's shoulder, and solve the boom off what is actually being held — a plank
+  that stands forward of him is NEARER the lens than his crown and overflows a boom solved off that.
 - **Framing is part of the test.** Confirm the camera SHOWS the moving part before tuning. `follow` does not
   clamp pitch, so a small negative pitch at long `dist` puts the camera under the terrain; the camera ends at
   `target + back*dist`, so interior framings must be DERIVED from the room's extent; the shadow ortho box
   tracks the HERO, so `standHero` near your subject. For a world change take a steep overhead (`dist` ~55).
+- **A FRAMING THAT HAS TO SURVIVE A RE-AUTHORED MOVE IS SOLVED AND PINNED, NOT PICKED** (`shots.KNIGHT_STRIP`,
+  `STRIP_FILL`, and the test beside them). Boom off the SWEPT BOX of everything the move moves — kit, the other
+  hand's kit, and the body under them — aim at that box's middle, and let a test re-measure and re-solve. Framed
+  for the old arcs at 13–15 m the knight's four strokes filled 40% of a frame aimed a metre over the action;
+  `camera.FOVY` and `game.SCREEN_W`/`SCREEN_H` are public so the solve reads the lens instead of copying it.
 - **A SUBJECT MUST BE LIT, NOT JUST IN FRAME.** `gfx.SUN_DIR` puts the sun over the shoulder of a camera at
   **yaw ≈ 53** and into the lens of one at **≈ 233**. A foe turns to face the hero, so "photograph its front"
   means putting the sensed hero on the SUN's bearing and shooting from ~53; the 180–215 band shadows its front.
@@ -189,6 +202,12 @@ Two things in that table are load-bearing beyond navigation:
 - **THE 18-BONE SCAFFOLD IS SHARED** — `hero.N`/`PARENT`/`restHumanoid(hx, sx, stature)`, bone 17 the `HELD`
   weapon slot. Do not transcribe the joint layout into a new creature file. Only `hx`/`sx` and stature are
   honestly per-creature. The ogre stays off it on purpose (24 bones, three inserted ABOVE existing joints).
+- **HE HAS HIPS AND KNEES, AND THEY ARE THERE BECAUSE A CYLINDER IS CAPLESS** (owner: the tops of his legs run up
+  to the torso and just cut off). Both leg meshes were bare `addCylinder`, open at every joint — the thigh's mouth
+  sits AT the hip, so a swung leg showed a flat ring and its culled interior with nothing between it and the
+  pelvis. A ball at each joint seals the mouth and reads as the joint: wider than either cylinder there, and
+  inside the belt's own half-width (0.235 H against the hip's 0.090), so no standing silhouette changed. The ogre
+  had this right from the start (`ogre.limb` caps with a blob) — **the reference rig was the one breaking the law.**
 - **A SCALE≠1 humanoid must scale its pelvis HEIGHT** (`pelvY*fs`) or the legs sink.
 - **EITHER HAND MAY HOLD ANYTHING, AND THAT IS THREE THINGS PER ARMAMENT, NOT ONE** (`hero.Armament`): the
   MESH (`drawHand`), the POSE of the arm, and every WORLD POINT taken off it. All three ask one question —
@@ -273,6 +292,22 @@ Two things in that table are load-bearing beyond navigation:
   `foe.markOn(bone, at)` for the reticle, which rides the POSE. `foe.stunCurve(t, heavy)` is the one reaction
   shape in the game. (The kobold keeps its own on purpose: its flinch decays from full rather than swelling.)
 - **Build vitals with `combat.Vitals.initFoe`**, never `init` — that is the slow foe regen schedule.
+- **A CREATURE'S FLINCH IS HEALTH TAKEN IN BLOWS OVER A PERIOD, NOT A COUNT OF BLOWS** (owner: per hit isn't
+  fair to dot builds — not that dots build stun, only hits do). On the foe side `Vitals.strike` pours
+  `FOE_POISE_PER_DMG` (0.82) of every point a HIT takes into the poise pool, and a blow's own `poise` is
+  ignored; a drip pours nothing. 0.82 puts his base blows on the old scale (13 → 10.7 where the light swing
+  carried 10 poise, 27 → 22.1 where the heavy carried 22), so a creature's `poiseMax`, sized between those, still
+  means what it meant — and IS the damage it shrugs off inside the refill window. His own stagger keeps the
+  blow's `poise`: the WEIGHT of what hit him. **A blow that refuses the flinch must hand the pool back** — the
+  knight's door and the greatsword's hyper armour both restore `poise` (and stance) after `foe.reached`, since
+  stripping a blow's `poise` no longer does anything; a bloomed ravager does NOT, so the light poke a shut body
+  shrugs off flinches an open one — the window paying out twice.
+- **NOTHING BUILDS ON A BODY ALREADY STUNNED** (owner) — neither pool, and not the lightning meter: the stagger
+  is the punish window it earned, and stacking the next one inside it is doing one thing over and over.
+- **YOU CANNOT DO ONE THING OVER AND OVER** (owner). Each flinch, break and status proc on a creature leaves WEAR
+  on that channel (`lightWear`/`heavyWear`/`ailWear`), the next taking (1 + wear × `LIGHT_WEAR`/`HEAVY_WEAR`/
+  `AIL_WEAR`, 0.6/0.6/0.7) as much; wear halves every `WEAR_HALFLIFE` 14 s. Measured: 5 blows for the first
+  flinch, 7 for the second. Creatures only — bosses do not get to learn him.
 - **`justDied` is a ONE-FRAME flag.** Reset at the TOP of `update`, set in `enterDeath`, apply the blade at the
   END. Applying it externally without the reset latches a nonstop rumble/shake.
 - **EVERY BODY GOES OUT THE SAME WAY** (`foe.dissipate` + `foe.Dissolve`) — past its own `DEATH_DUR` the fall
@@ -324,6 +359,18 @@ Two things in that table are load-bearing beyond navigation:
     straight on purpose** — that one is the attack.
   - **A FLYER IS NEVER STEERED** (`gateTerrain`'s `airborne` skip): the probe is the rule for FEET.
   - **It is asked about whoever the creature is actually FIGHTING** (`Threat.aim`), never about the hero.
+- **A MOVE IS JUDGED BY THROWING IT, NOT BY LOOKING AT IT.** Every blow goes through the REAL `update` at a hero
+  stood across its OWN band — the gather aiming, the strike tracking and stepping, the man shoved out to
+  `closestApproach` as `env.resolveActor` would — and must bill a hit at every stand. Two creatures carry the
+  test now (`knight`'s THE SWORD IS SWUNG AT THE MAN WHERE HE STANDS, `ogre`'s THE CLUB LANDS ON THE MAN WHERE
+  HE STANDS) and it is the judge for the third: a strip or a shot is not.
+  - **AND A BEARING THE KIT CANNOT BE BROUGHT ROUND TO IS A HARD GATE AT THE CHOOSE**, never a lower score — a
+    whiff is not a worse option, it is not an option. **The gate is SOLVED off what the wind can actually turn**
+    (`ogre.slamBearing`: the rear-back's share of `TURN_RATE` over its own duration, plus what the kit subtends
+    at that stand), so retuning either end cannot leave it behind. The ogre's slam had no gate and was handed
+    out at any bearing inside `SLAM_R`: thrown at a man 170° off he came round to 64° and billed nothing.
+  - **OFF THE GATE HE LOOMS, AND LOOMING IS THE TURN** — `.wait` is `enterIdle`, and idle faces the quarry at
+    the FULL rate. A gate is only a hole if the state it falls through does nothing.
 - **A BODY THE NECROMANCER CAN USE IS A `raisable`/`reraise` PAIR AND A `heldOpen` FIELD** — nothing else, and
   no edit to `game.markVigil`/`applyRaises`, which key off `@hasDecl`. The field is named for what it does to
   the BODY, not for the creature doing it: one name for both had `foe.dissipate`'s probe matching the caster.
@@ -340,8 +387,10 @@ plus swat / hop / leap / shove / charge / fall. Memorization and attrition, neve
 
 - **THE DOOR NEVER BREAKS; THE MAN BEHIND IT DOES.** No stamina pool on the door. A share of stance passes
   through (`TOWER_STANCE_PASS`, small) so frontal pressure earns a stagger, expensively. No poise ever — the
-  door may not flinch him, and `POISE_MAX` is sized past what light spam reaches. Three PARRIES still break the
-  stance.
+  door may not flinch him (`tryHit` hands the pool back after a blocked blow, since a creature's flinch is now
+  the DAMAGE it took), and `POISE_MAX` 78 is the damage he shrugs off inside the refill window. **TWO PARRIES
+  break the stance** (`PARRY_STANCE` 70 over the shared `combat.PARRY_HIT` 46 — owner: good parry potential,
+  the player should feel like a badass); it was three, and the third never came.
 - **EVERY DIMENSION OF THE DOOR IS DERIVED AND COMPTIME-ASSERTED, NEVER PICKED.** `TOWER_ARC` comes from
   `towerArc` — the widest chord against how far the face stands in front of his body axis, plus a named
   allowance for the swept kit; the chords are asserted past his pauldrons both sides, the bow is asserted real,
@@ -353,13 +402,50 @@ plus swat / hop / leap / shove / charge / fall. Memorization and attrition, neve
   measures off the CUIRASS FACE, not his footprint. **EVERY POSE THAT LERPS OFF `GUARD_*` MOVES WITH IT** —
   `BASH_WIND_*` are those hauls re-based, and an absolute wind target silently loses its whole gather when the
   guard moves under it.
+- **A SHIELD IS CARRIED, NOT WELDED TO THE FOREARM** (`hangUpright`, `HANG_TIP` — owner: it goes up in the air
+  like a retard, or the sword goes through it). Strapped rigidly, every roll of the forearm rolled four and a half
+  metres of oak, and NOTHING WAS ASKING: the pins were three instants of `doorNormal` and five strokes of
+  clearance. Walked across every state he has, the plank INVERTED (its own up axis at −0.82) and its foot climbed
+  to 6.87 m over a 5.11 m crown; a stagger flung it horizontal at 5.49 m; the SLAM had the hub 4.15 m off a 0.98 m
+  strap — the door left his hand, flew to 10.14 m and came back down. So the arm AIMS it and nothing else: the
+  face may tip `HANG_TIP` (30°) off his own horizontal and no further, and the plank length is then whatever is
+  left of his UP — his, not the world's, so a toppled body takes its door down with it. Inversion is impossible by
+  construction rather than by tuning a pose away from it. **The SLAM is the one exemption and it is a FRACTION,
+  not a flag** (`slamDrive`): laid flat there is no upright to solve for, so the length comes off his FORWARD and
+  the far end lies out in front. Exempting the whole move let the HAUL through, and the haul was the 7.41 m.
+  **AND THE STRAP IS A LENGTH, NOT A SUGGESTION** — a move own carry (`slamCarry`, `SHOVE_CARRY_*`) may swing the
+  hub round the fist and may not take it further off than the grip. Measured now, every state: plumb ≥ 0.86, foot
+  ≤ 2.45 m, hub 0.98 m on a 0.98 m strap, and a test walks all twenty of them.
+- **THE DOOR IS STRAPPED TO THE FOREARM** (`shieldXf`, `calibrateShield` — owner: it floated off his arm and
+  hung at bizarre angles). Position AND orientation come off the wrist bone through one fix solved at spawn, so
+  the GUARD is pixel-for-pixel what was authored (square across his front, pulled onto his centre line, foot
+  0.26 m, top 4.76 m) and from then on the arm carries the plank rigidly. Oriented off the BODY, the fist only
+  ever supplied a position: the plank stayed square to his front while the arm swung out, and left the arm
+  behind. **THE ANGLE IS THE ARM'S NOW, SO EVERY POSE THAT PRESENTS THE DOOR IS PINNED ON WHERE THE FACE
+  POINTS** (`doorNormal`): forward on guard (z 1.00), forward at the ram (0.99), down at the slam (y −0.95),
+  and the hub never further than the grip from the fist. Consequences that follow from the strap:
+  - **A shield is driven with the elbow FOLDED and the body behind it.** A straight-arm punch turned the plank
+    110° with the forearm and rammed its edge; the bash swings the upper arm 56° and OPENS the elbow by the
+    same (`BASH_HIT_SH` 62 / `BASH_HIT_EL` −70), so the forearm keeps its line, and the lean and lunge carry it.
+  - **`twist` turns the plank with the torso.** Wound to −58 the bash's door faced his own left; +22 at the
+    ram faced it 46° off the man; −16 squares it.
+  - **On the LEFT arm a positive abduction channel folds it ACROSS the chest** (the guard's pull), so "out to
+    his left" is the negative sign (`SWIPE_ABD` −96, and `SWIPE_SH` 70 pitches it BACK): out left and back,
+    edge-on, behind the shoulder plane. Raised overhead instead, a 4.5 m plank hanging 3.7 m below the fist
+    swung over his head onto his sword side.
+  - The slam's pitch (`SLM_PITCH_DOWN` 30, was 66) — the arm's own drop supplies most of it now.
 - **ANY ROTATION OF THE DOOR IS ABOUT ITS OWN CENTRE, NEVER ITS GRIP** (`SH_CENTRE_Y`). Gripped high like a
   pavise, a pitch about the hub sweeps four fifths of a four-metre plank through the knight.
 - **THE ARM CANNOT CARRY IT — THE MOVE HAS TO** (`slamCarry`): the fist travels ~1 m and the door is 4.
-- **A COMMITTED SWORD STROKE TAKES THE DOOR OFF HIS FRONT** (`swipeOpen`) — sweep, second sweep, overhead and
-  the sword-side flick, open through the head of the recovery; thrust and bash keep the guard, and the
-  shield-side flick does not pay because there the door IS the flick. **THE MECHANIC AND THE PICTURE ARE ONE
-  CHANNEL** — `guardUp` and where the door actually is, test-pinned together.
+- **EVERY SWORD STROKE TAKES THE DOOR OFF HIS FRONT** (`swipeOpen`) — sweep, second sweep, overhead, THRUST
+  and the sword-side flick; the bash keeps the guard because the door IS the bash, and so does the shield-side
+  flick. (The thrust used to keep it, and its point ran straight through the plank hanging on his centre line —
+  owner: the sword is going through the shield.) **THE SWORD COMES HOME FIRST, THEN THE DOOR** (`RECOVER_HOLD_K`
+  0.34, `RECOVER_BACK_K` 0.70, `SWIPE_SHUT_K0` 0.76): the End Pose is held, the arm is back at the carry by 70%
+  of the recover, and the door shuts in the last quarter — shutting from 45% it met the sword still out in
+  front. **A test throws every sword stroke wind-to-recover and measures the blade's nearest approach to the
+  door's face** (`bladeDoorGap`): 0.64–0.77 m now, against a 0.36 m clearance; it was 0.05–0.16. **THE
+  MECHANIC AND THE PICTURE ARE ONE CHANNEL** — `guardUp` and where the door actually is, test-pinned together.
 - **HE TRACKS LIKE THE OGRE, AND THE WINDOW IS THE COMMIT — NOT THE FLANK** (owner: the ogre is harder, the
   knight is dull). `TURN_RATE` 3.20 rad/s, pinned into the ogre's class and under it (`ogre.TURN_RATE` 3.40,
   public for exactly this). He was at 0.68 — slower than the 0.80 a WALKING man carries — so a stroll in
@@ -368,12 +454,132 @@ plus swat / hop / leap / shove / charge / fall. Memorization and attrition, neve
   commits. Quick rows hold you (`SWAT` 4.80, `THRUST` 4.40, `BASH` 4.00, against the ogre's swipe at 5.40);
   the heavies let go (`SWEEP`/`SWEEP2` 2.00, test-pinned under `TURN_RATE` and under half the swat's); the
   OVERHEAD lets go entirely at 0.
-- **AND "DULL" IS A MEASUREMENT, NOT A FEELING** — 45 s of a hero walking a ring round him is 30 blows thrown,
-  91% of the fight committed, and no lull longer than one earned reposition (a big recovery plus a step-turn).
-  Test-pinned, because the failure it guards is the fight going quiet rather than anything going wrong.
+- **BUT HE DOES NOT TURN ON THE SPOT** (owner: step-turn as needed — "oh he's not looking, OH WAIT HE IS").
+  Idle holds its facing; what moves it is the STEP-TURN (`STEPTURN`, a planted 62° pivot, taken past
+  `STEPTURN.least` 30° — over the bash's 26° gate, inside which he throws from where he stands), the hop, and
+  the GATHERS, which aim at the full `TURN_RATE`. So where he is looking is a fact you can read and be wrong
+  about: the wind coming round onto you IS the "oh wait".
+- **AND "DULL" IS A MEASUREMENT, NOT A FEELING** — 45 s of a hero walking a ring round him is 21 blows thrown,
+  93% of the fight committed, and no lull longer than 0.73 s. It was 30 blows at 91% with a 2.23 s lull when
+  he pivoted on the spot and threw strokes that could not reach; the time between blows is now hops,
+  step-turns and the fall's aftermath — MOVES, not waiting — and every blow is thrown from a stand it can land
+  on. Test-pinned, because the failure it guards is the fight going quiet rather than anything going wrong.
+- **EVERY STROKE LANDS ON THE MAN WHERE HE STANDS** (owner: "he is swinging at emotions"). Measured, none of
+  them did: the sweep was wound HIGH ACROSS his body and crossed his front 4.8 m up, un-live, coming down to a
+  man's height only out on his sword flank; the overhead and thrust ran a metre right of a squared man on the
+  shoulder's own offset; the sword swat was a flick at his right flank; the shield swat's blow was tested on
+  the SWORD, which was at his hip. Only the door connected. So:
+  - **THE ARCS ARE AUTHORED LOW AND THROUGH THE FRONT.** The sweep is a forehand cocked behind his right hip and
+    ripped across at ~1.3 m (`SWP_*`, fist brought down to ~2.4 m by `lean` 40 — at 2.7 the root cleared a man
+    at his boots); the second sweep is a SECOND FOREHAND, the blade drawn back low across his front to the right
+    hip (un-live, the whole 0.58 s a tell) and ripped across again — a backhand from the left had nowhere to
+    cock once the door stood edge-on behind his left shoulder; the overhead is
+    ADDUCTED across the chest (`OVR_HIT_ABD` — a blade pointing straight down barely answers `armSweep` or
+    `twist`); the thrust rides a near-LEVEL arm with the blade angled down off it (`THR_HIT_SH` 80, `tilt` −10)
+    so the point is out at full stretch at a man's chest, carried onto the centre line, and its lunge is a POKE
+    (0.16 — at 0.60 the fist ran PAST a man inside 4 m); the sword swat is flicked from the hip across the front
+    with the blade pointing OUT (hung near-vertical, 82° of shoulder sweep moved the tip 30°).
+  - **THE PIN IS THE REAL UPDATE**, out to `bandR` — where the AI actually picks it.
+  - **NOW THAT THEY LAND, THEY ARE SLOWER AND HEAVIER** (owner): every wind is up ~15% (sweep 1.15 s, sweep2
+    0.58, overhead 1.00, thrust 0.62, bash 0.64, swat 0.60 — more predictable), damage up ~12% (swat 16, sweep
+    33, sweep2 29, overhead 46, thrust 25, bash 30; the `Weight` rule still caps a HEAVY under 34).
+  - **EVERY GATHER ENDS IN A HANG** (owner: the swing tells could be better; `.hold` is how a bait is written).
+    The sweep, bash and thrust winds now end with the cocked pose held still for the last seventh, like the
+    overhead always did; the swat keeps its `windHold` hang; the second sweep's whole 0.58 s re-cock is drawn
+    low across his front, un-live.
+- **THE SWORD IS CARRIED HIGH — BLADE UP PAST HIS SWORD SHOULDER** (owner: the sword goes through it; use your
+  judgment of how bodies work). **WHAT THIS REPLACES:** the carry was Pflug — hilt at the hip, point presented
+  forward-down. On a body whose door covers his whole right side out to 1.54 m, the rig cannot put a point past
+  that edge without throwing the arm after it: MEASURED, the point sat 3.66 m off his centre line — 2.6 m
+  outboard of his own shoulder — and 1.37 m BELOW the hilt, which is Alber and not Pflug. PHOTOGRAPHED it read as
+  a pike carried out sideways, and it was the reason every clearance was tuned rather than structural. Nobody
+  fighting from behind a pavise presents low past its edge: the sword lives high. `CARRY_SH` 20 / `CARRY_EL` −10
+  / `CARRY_ABD` −2 / `CARRY_TILT` 150 / `CARRY_SWEEP` 30 — SOLVED, not dialled, by sweeping the four channels
+  against a target and taking the best that cleared the plank. Hilt at the sword hip (1.33 m right of centre,
+  3.09 m up), point 6.09 m up: 0.98 m over his own crown, 0.63 m off the pauldron and 1.24 m off the helm. **The
+  clearance is STRUCTURAL now** — a blade overhead cannot be swung into a plank at his side — and the whole kit's
+  worst blade-to-door approach went from 0.11 m to 0.38 m against a 0.36 m clearance.
+  - **AND EVERY GATHER NOW STARTS FROM HIGH**, so the drop into the cock is the tell rather than a draw-back.
+    Raising `CARRY_SWEEP` past zero flipped the bleed into the shield arm (`SHL`'s `ry(armSweep * 0.30)`) and
+    carried the door 0.13 m further out: `BASH.reachOut` was RE-MEASURED to 0.94, and `SHOVE_BAND` came down to
+    1.18 to keep the shove's band inside where the flank answer becomes the sweep.
+  - The door owns his centre line and the sword the right of it, as before. **Head-on he is still a wall and
+    nothing else**: door top 4.78 m under a 5.11 m crown, so 0.33 m of helm shows over 4.5 m of oak, and
+    `combat.withinArc` centres the block on his facing — which is why the plank may not be slid off centre to
+    show him.
+  - **REACH IS MEASURED DOWN HIS FACING, WHILE LIVE, THROUGH THE REAL UPDATE** — never at the bearing the kit
+    flies furthest (the gather aims him square, so a flank number is a distance nobody stands at), never before
+    the impact frame (picture, not reach), and never off a keyed replay (the springs lag the keys by a few frames,
+    and a replay put the swat's crossing before its own impact and read a third of its reach). Sweep 3.72 m,
+    sweep2 4.73, thrust 4.08, over 2.83 (the kit alone — its LUNGE carries the drop out), swat 3.20, door 1.90;
+    each `reachOut` is that number and a test holds them within [−0.05, +0.65] of it.
+  - **THE LUNGE ONLY COUNTS AS FAR AS IT HAS LANDED WHEN THE KIT CROSSES HIS FRONT** (`Attack.stepLands`,
+    measured; `bandR` is trigger + step × that). A held End Pose keeps the kit out to the end (thrust, door 1.0;
+    the overhead's blade is in the earth by k 0.55, 0.90); a sweep passes the front ONCE — the forehand at k 0.64
+    with 0.87 of its step landed, the backhand at k 0.39 with 0.63 — and the rest of the lunge was reach the far
+    stand never saw.
+  - **A STROKE HAS AN INNER EDGE TOO** (`Attack.reachIn`, `nearR`) — the thrust's point rides level off a
+    near-horizontal arm and a man inside 2.65 m is under the fist. `weigh` and the string links skip a stroke
+    whose dead zone or far edge holds the man: a whiff is not a worse choice, it is not a choice. Sweep, sweep2,
+    swat and door are pinned at 0.
+  - **THE SHIELD-SIDE SWAT IS THE DOOR'S FLICK** — `doorSwings` puts the blow on the shield, and
+    `swatTriggerR`/`strokeBandR` price it at the bash's reach (2.85 m against the sword's 3.78).
+  - Every stroke, both swat sides, is thrown at a hero stood at four stands from its inner edge to 0.97 × `bandR`
+    — gather aiming, strike tracking and stepping, the man shoved out to `closestApproach` when the lunge runs
+    into him as `env.resolveActor` would — and must bill a hit at every one. Judge a stroke on this before the
+    strip; the strips showed nothing wrong.
+- **THE JUMPBACK IS A LAST RESORT** (owner: less jumpbacks). Every door to the LEAP — the rear-sector and
+  outer-flank picks in `classify`, `counterFlank`'s spine answer, the swipe-and-leap chain — asks `harried`:
+  `RETREAT_AT` 0.20 of max HP banked at this spot (comptime-pinned over 1.5× `REPOSITION_AT` 0.12, which keeps
+  pricing the shove and `W_PRESS`). Pressure that only warrants a reposition never buys the leap. **One meter,
+  two tiers** (`foe.Sense.pressed` with the creature's own shares) — the pattern for any creature that must not
+  flee at the first scratch.
 - **AND HE SHUTS THE GAP RATHER THAN STANDING IN IT** — the HOP is the quickstep: 3.2 m in 0.54 s on a 2.6 s
   clock, taken on PRESENCE (a man circling him, or the thrust band with the thrust spent). At 1.6 m on a 7.5 s
   clock, gated on damage already banked, it fired about never and the thrust band was where you healed.
+- **A GATHER TURNS HIS SHOULDERS, NOT HIS FEET** (`GATHER_SWEEP_MAX` 60°, `holdWindSweep` — owner: he tracks a
+  bit too much between attacks, needs a bit more room to get behind). The RATE is still his full `TURN_RATE`; what
+  is capped is the TOTAL a wind may bring round off the facing it STARTED from, so a wind-up can no longer erase
+  ground the whole recovery bought. **The step-turn was not the culprit** — measured, a walked ring drew only 6 of
+  them in 45 s; every GATHER was, each aiming at full rate for up to 1.15 s, which is 211°. Past the cap the
+  answer is the STEP-TURN, a move you can see coming. Measured after: a full gather from dead behind leaves him
+  120° off (the rear sector starts at 110, so the FALL is still the answer there), and a walked ring puts you
+  behind him 25% of it against 17% — with 20 blows still thrown and 95% of it committed, so the dullness law
+  holds. `GATHER_SWEEP_MAX` must stay under `180 − FALL_SECTOR` or the back pocket closes.
+- **THE DOOR IS A MASS, SO ITS CHANNEL IS CHASED AND NEVER ASSIGNED** (`tickDoor`, `DOOR_EASE`, `seatDoor` — owner:
+  it flies around off his hand like a kite; fix his arm motion and keep the shield held). The strap already held
+  the hub at the fist and the plank already could not invert; what was left was SPEED. `swipeOpenWant` and
+  `shoveAcrossWant` are SCHEDULES with seams in them — a state changing, `shoving` clearing — and they were read
+  STRAIGHT into the arm, outside the spring bank that smooths every other channel. Measured: the hub crossed
+  **4.3 m in ONE FRAME**, at up to 260 m/s. Both are chased now, **and `guardUp` reads the CHASED value**, so the
+  mechanic and the picture stay the one channel and neither can step. Worst frame in any move is now 1.08 m, in
+  the slam's own haul, and a test walks all fifteen.
+  - **AND THE HAUL IS SPREAD OVER THE GATHER** (`SWIPE_LEAD_K`, `SWIPE_LEAD_TO`): the whole 96° of `SWIPE_ABD`
+    plus 82 of yaw used to go in 0.126 s — 762°/s, a snap and not a motion. The plank now leads to
+    `SWIPE_LEAD_TO` 0.45 through the wind, which sits UNDER `guardUp`'s own 0.5 threshold: **the picture leads the
+    flag and may never trail it.** The shut got its time back the same way — the sword's road home is UP now, so
+    `RECOVER_BACK_K` came down to 0.40 and `SWIPE_SHUT_K0` with it.
+  - **AND THE FACE ITSELF IS CHASED, WHICH IS THE LAST WORD** (`turnToward`, `DOOR_TURN_MAX` 300°/s). Easing
+    every channel under it was not enough: the arm's own roll has singularities in it, and a counter yanking him
+    out of a slam re-aims the whole basis in a frame. A 120 s chaotic-fight soak caught **113° of face turn in
+    ONE FRAME, standing in idle** — a translation test cannot see that, because the hub barely moves while four
+    and a half metres of plank whips. Worst now is 14.5°, and turning the cap off puts it back to 60, so the
+    chase is doing the work. **The tip is clamped AFTER the chase, not before** (`clampTip`): a slerp runs the
+    great circle between its ends, and between two legal near-horizontal faces on opposite bearings that circle
+    goes over the POLE — clamped only on the way in, the chase itself tipped the plank to 0.62 of upright.
+  - **AND `clampTip` MAY NOT BAIL OUT.** With the face pointing straight up there is no horizontal left to aim
+    by, and returning the arm's own matrix there handed back exactly the pose the function exists to refuse —
+    the soak caught the step-turn doing it, plank at 0.20 of plumb and flat out at 0.94 m. His FORWARD is always
+    a legal bearing.
+  - **THE SOAK IS THE JUDGE, NOT THE PER-MOVE PROBES** (`MAKE DAMN SURE…`). Debug entries drop him into one
+    state from nothing; the seams live in a real fight — a stagger landing mid-swipe, a string billed under a
+    wind, a counter interrupting a slam. 120 s, 200 blows landed on him, 29 of his 33 states visited, and the
+    four invariants asked on EVERY frame: hub on the strap, no whip, never inverted, never over his head. It
+    fails with the frame, the state and the geometry printed, and it asserts its own state coverage so a soak
+    that quietly stopped reaching the fall cannot pass having proved nothing.
+  - **A CHASED CHANNEL HAS TO BE SEATED.** A move dropped in from nothing — a debug entry, a shot, a test — has
+    no previous frame to inherit the door from, so every `debug*` seats it. `.chainwind` IS a link and seats
+    `strung` with it; entered at 0 the plank was still across his front while the re-cock swept low through it.
 - **THE GATHER AIMS, THE COMMIT DOES NOT.** Every wind turns at his full `TURN_RATE` — it was 0.45 of it for
   all but the sweep's, which is why standing in front of him and strafing was free: the overhead brought 16° round
   across a 0.88 s gather. What still leaves the window is `Attack.track`, and the CHARGE's wind has always been
@@ -403,11 +609,12 @@ plus swat / hop / leap / shove / charge / fall. Memorization and attrition, neve
   The four openers lead four pairwise-distinct places, and the cheapest (SWAT) opens the longest.
 - **HE IS NOT MASHED OUT OF A STRING HE HAS STARTED** (`inString`) — mid-route the light flinch is refused; the
   OPENER is interruptible, and a STANCE BREAK always stops him.
-- **A FLANK BLOW HE SHRUGS OFF IS ANSWERED** (`counterFlank`) — shoulders get a snap-and-swat, his spine gets
-  the leap. It reads a blow that already landed on his own body and the bearing it came from (world state, never
-  the player's buttons), is clocked, is refused out of anything committed, and is **refused outright if the blow
-  staggered him**: an earned punish window is never taken back. Same rule for the door's own guard counter
-  (`caught` → `riposteCd`).
+- **A FLANK BLOW HE SHRUGS OFF IS ANSWERED** (`counterFlank`) — shoulders get a snap-and-swat, his SPINE gets
+  the FALL (the body coming round is the counter, and its aftermath is the reward for dodging it); the leap
+  only once he is `harried` and the fall is spent. It reads a blow that already landed on his own body and the
+  bearing it came from (world state, never the player's buttons), is clocked, is refused out of anything
+  committed, and is **refused outright if the blow staggered him**: an earned punish window is never taken
+  back. Same rule for the door's own guard counter (`caught` → `riposteCd`).
 - **NEITHER SHOULDER IS A FREE LAP.** The SHOVE (`shoving`, `shoveAcross`, `shoveDir`) hauls the door onto
   whichever flank you stand on, on the bash's own row and clocks, and buys it with his FRONT. SWORD side fires
   on presence; SHIELD side is bought with DAMAGE (`pressed`), or the door would collapse that whole flank onto
@@ -424,6 +631,27 @@ plus swat / hop / leap / shove / charge / fall. Memorization and attrition, neve
   charge are all gated at the CHOOSE by `foe.canLeap`.
 - **THE DISC IS DRAWN BEFORE IT IS BILLED** (`slamRingTell`) — the blow's own circle walked during the WIND off
   the same `slamMark`/`SLAM.r` the mechanic uses, in EMBER because tan on tan is unreadable.
+- **THE FALL IS ANSWERED WITH DISTANCE NOW, NOT WITH A SECTOR** (owner: make his fall an AoE so you have to make
+  some distance). The crush strip is still the BODY arriving; a ring off the same mark (`fallMarkOf`,
+  `FALL_WAVE_R`) is the GROUND answering, billed only where the strip missed and lighter on all three counts.
+  SOLVED against the tell it is drawn through — 4.61 m over 1.83 s, where a walk covers 3.11 m and a run 6.22 m —
+  and drawn before it is billed off the shared `ringTell`. Test-pinned by the claim itself: a man who stands there
+  is hit and the same man running is not.
+- **AND THE BODY GOES BEFORE THE BODY GOES** (`FALL_WIND_TOPPLE`, owner: tilt back slowly before he falls back).
+  The wind takes 15° of the topple at the ROOT over its back three quarters, and the drop picks up from exactly
+  there — one motion, worst one-frame step 0.016 of the topple. A giant going over backwards rotates at his heels,
+  and `FALL_WIND_LEAN` alone was a gather like every other gather.
+- **HE ROCKS ON HIS BACK UNTIL HE CAN GET UP** (`rockAmt`, owner) — ±7° about his own head-to-toe axis, which flat
+  on his back is a wallow side to side, faded in and out so entering and leaving `.downed` cannot snap him. It
+  rides the SAME channel the rollover turns: a body cannot rock about one axis and turn about another and read as
+  one mass.
+- **A BODY ON THE GROUND IS LOOKED AT, NOT STOOD OVER, AND IT IS NOT HIDING** (owner: make sure targeting works
+  well while he is on the ground). Two separate faults, both in `game.zig`: `collision.blocksSight` takes the
+  LOWER of its two ends, so a mark that has fallen to 0.4 m is stopped by any knee-high rubble on the line and the
+  lock was dropped `LOCK_BLIND_HOLD` into the punish window it had just bought — `foeStaggered` now holds it. And
+  `lockPitch` chased the fallen mark down, diving the lens to 57° at three metres and putting the hero own back
+  between the player and the window; the mark is floored at the HERO shoulder for the PITCH only, so the reticle
+  still rides the body.
 - **STOOD DEAD BEHIND HIM HE FALLS ON YOU.** `fallwind` is the one move that steers AWAY from the hero — the
   spine coming round IS the tell. The crush is a STRIP down the line behind him, DERIVED off the rig, carrying
   the biggest POISE and STANCE in the game (`game.BLOW_HEAVIEST` is a `@max` over it and the ogre's slam) at
@@ -461,7 +689,13 @@ plus swat / hop / leap / shove / charge / fall. Memorization and attrition, neve
   demands. **THE LIT CHARGE FOULS THE LINE INSTEAD**: `chaosTrail` drops a cloud every `CHAOS_TRAIL_EVERY` of
   GROUND COVERED (never on a clock, or at 12.4 m/s it lays twenty a second), spaced wider than a trail cloud's
   own reach so the lane has crossings in it. `GAS_CAP` 12. **The cloud is the GROUP's, not the knight's** — it
-  must keep burning after the body that laid it has fallen — and it carries NO poise and NO stance.
+  must keep burning after the body that laid it has fallen — and it carries NO poise and NO stance. **THE
+  CLOUD'S EDGE IS THE MESSAGE** (owner: hard to see where it starts): over half the puffs are born ON the rim in
+  a tenth-wide band (`GAS_RIM_SHARE`), the inward drift is a whisper, puffs are small and short at a higher
+  rate, and `GAS_H` is METRES (1.3), never his scale — at 1.35 × scale it stood 4 m tall and read as fog. **AND
+  IT IS HIS EMBER, NOT CHAOS'S VIOLET** (owner: orangish like his tells, so it is never read as poison) — the
+  one call site that picks its own colour over `elemfx.sig`, because the cloud is a tell first and an element
+  second.
 - **THE BOSS BAR** (`hud.bossBar`): `game.zig` owns when it shows (`Vigil.boss`) and SUPPRESSES that body's
   floating bar — one number may not be read in two places. `bossK`/`bossFrac` assigned in `init`.
 - **Art and audio.** `PLATE` = `.plain`, `BRIGHT` = `.steel`: `Mat.steel`'s specular is catastrophic on a face
@@ -1473,6 +1707,31 @@ window.
   draws, ~10.8k tris, `MIST_TOP` 0.17 at full fog. **THE SLOWEST THING IN THE GAME** — 0.045–0.16 m/s, 94 s to
   cross its own width. Banks ramp in and out over 9 s and are re-seeded out past `MIST_R`, never in view. Three
   mesh variants (the repeated-big-prop law).
+- **THE DRY SKY HAS BIRDS IN IT** (`weather.Skein`, owner: bird packs of different sizes across the sky,
+  distantly, from different angles, infrequently, "just to feel alive"). **IT IS AN EVENT, NOT A FLOCK THAT LIVES
+  THERE** — the storm's own law. One flight arrives, crosses, and is gone: measured over an hour, **35 crossings,
+  4 to 17 birds, in the sky 23% of the time**, so it is empty more often than not and a crossing is still worth
+  looking up at. Gap `SKEIN_GAP_LO`..`HI` **30–120 s** (owner's own number, twice revised — it was 190–520 and he
+  never saw one), and the clock runs ONLY on a dry sky (plus `SKEIN_AFTER_RAIN` 22 s of settling), so a long storm
+  cannot bank up a flight that then arrives the second it clears. A flight already in the air is not deleted by a
+  squall; it finishes its crossing. **THE COUNT IS DERIVED IN THE TEST, NOT PINNED BESIDE IT** — a mean gap plus a
+  crossing predicts 37 an hour against 35 flown, so moving the gap cannot leave a stale number behind.
+  - **AND THERE IS A DEBUG ROW** (`menu.DBG_BIRDS`, owner: I didn't see any) — `DBG_WEATHER`'s reasoning exactly:
+    an event on a clock measured in minutes is not a question anybody can sit and answer. It sends one ACROSS his
+    view, and the request survives the menu being open (`takeBirds` drains on the first frame after it shuts,
+    which is the frame he is looking at the sky again).
+  - **THE RANGE IS SOLVED AGAINST THE HAZE, NOT PICKED.** `gfx.HAZE_DENSITY` is 0.013 a metre, so what is left of
+    a thing at range d is exp(−0.013 d): at 185 m that is 9% and the birds were invisible, photographed. `SKEIN_R`
+    is 130 m — 18% at the rim, ~46% overhead — so **the haze IS the fade-in** and no code does it.
+  - **A BIRD IS A SILHOUETTE**, so it is opaque and nearly black. At vertex alpha 210 they came up self-lit and
+    pale and washed out into the very haze they are read against (the 248+ law).
+  - **THE FLAP IS A SQUASH OF THE V, NOT A BONE** — at this range a wing is a couple of pixels and what reads is
+    the silhouette breathing. Cheap enough that every bird carries its own period, which is what stops a pack
+    beating as one animal; a test pins that no two in a skein share a wingbeat.
+  - **DIFFERENT ANGLES IS A RESULTANT, NOT A DIE.** Bearings summed as unit vectors pull 0.38 one way over an
+    hour, where 1.00 would be a flight path — "no two in a row within N degrees" is a dice roll that fails on an
+    honest sky about a third of the time.
+  - One draw a bird, `BIRDS_HI` 17 at the worst and only while a flight is up, against the rain sheet's 4–7.
 - **THE BED IS THE STORM'S, NOT THE HOUR'S** (`audio.setRain`, `audio.mkRain`) — three bands with a granular
   patter (a hiss alone is tape noise, a low roar alone is a motorway). Does not retrigger while dry. Thunder
   (`mkThunder`) is a ROLL with no transient at its head, and it is the third kind of ambient voice
@@ -1904,6 +2163,33 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
     `UnloadModel` frees `materials[i].maps` and never calls `UnloadMaterial`, so today the swap is belt to the
     braces — but `UnloadMaterial` unloads any shader that is not the default one, and a raylib that routed
     through it took the scene shader out from under the whole frame.
+- **AN OP MAY NOT SPIN** (`Placer.BUDGET`, `Env.opsCapped` — owner: the editor freezes the PC mid prop-edit,
+  "spinning endlessly, almost crashing"). **It was never a leak.** The generator loops were bounded only by
+  AUTHORED numbers — `Op.n` is an unbounded `i32` and a `line`'s step only has to clear 1e-4 — and a candidate
+  that is REJECTED costs time without ever filling `MAX_PROPS`, so nothing stopped it and nothing showed on
+  screen. MEASURED: one line op at 0.001 m spacing over 400 m burns **21 ms a rebuild placing NOTHING**, and
+  **227 ms** at the parser's own floor; a rebuild fires `editor.REBUILD_QUIET` (0.28 s) after every edit and a map
+  holds 20,480 ops. Every generator now spends from a per-op candidate budget: 0.6 ms in both cases, and a belt of
+  two million stops at the budget instead of reaching the `MAX_PROPS` panic. **NO SILENT CAP** — `opsCapped`
+  counts the ops that hit it, and a test pins that `01_fallen_plain` builds all 16,563 of its props with ZERO
+  capped, because a budget that bites real content has made the world quietly smaller.
+- **A PANEL MAY NOT SPEND A DRAW CALL PER OP** (`editor.blitMinimap`, `miniGen` — same owner, same freeze).
+  `drawMinimap` walked the whole op list and issued one `drawRectangleV` apiece: **16,510 immediate-mode rects a
+  frame** on `01_fallen_plain`, and the bill GROWS every time a scatter is exploded into `at:` ops, which is
+  exactly what prop-editing does. Every other field on that face already collapses — `blitField` run-length
+  encodes soil and water and skips id 0, relief skips flat cells — the op layer was the only term that scaled
+  with the map. MEASURED before reaching for a fix: those ops land on 12,442 distinct pixels of the 182x182 face,
+  a **1.33x** collapse, so no bucketing makes a per-frame walk cheap and the answer had to be a held texture.
+  Painted on `miniGen` (bumped by `bank`, `rebuild` and `touchFolk`) and blitted once.
+  - **A HELD FACE IS COPIED BACK, NOT BLENDED BACK.** raylib blends the target's OWN alpha channel by
+    `SRC_ALPHA` like the colour, so every translucent thing painted into it drives the target's alpha below 1
+    and blending that over the panel multiplies the face a SECOND time — measured, 49/765 darker across 78% of
+    it. Blit an opaque face with `rlSetBlendFactors(GL_ONE, GL_ZERO, GL_FUNC_ADD)` under `.custom`.
+  - A target has no MSAA and the window does: the held face carries 2,182 distinct colours where the direct
+    draw carried 6,538. Same picture, crisper edges — expected, not a regression.
+- **THE THIRD FIELD SKIPS TOO** (`env.uploadSoil`). `uploadHeight` and `uploadWater` each compare before they
+  rebuild; soil alone re-uploaded three textures and re-ran a 12,544-cell edge dilation on every single edit
+  whatever it touched. Cheap beside a terrain rebuild, but it was the odd one out. All three now guard.
 - **AND `env.build` MAY RUN ONCE PER PROCESS** (`envBuilt` panics on the second). It makes every prototype, the
   ground and the water sheet and clears `tileBuilt`, so a second run strands all of it.
 - **GLSL RESERVED WORDS ARE NOT ONLY THE OBVIOUS ONES.** A local named `patch` compiled everywhere the author

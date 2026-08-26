@@ -24,6 +24,7 @@ const npcmod = @import("foes/npc.zig");
 const wolfmod = @import("foes/wolf.zig");
 const dialogmod = @import("world/dialog.zig");
 const mathx = @import("core/mathx.zig");
+const camera = @import("core/camera.zig");
 const props = @import("props/props.zig");
 const stats = @import("play/stats.zig");
 const ptree = @import("play/passivetree.zig");
@@ -88,6 +89,9 @@ fn snap(name: [:0]const u8) void {
 }
 
 fn shoot(g: *Game, name: [:0]const u8) void {
+    // A filtered run still SIMULATES every stage — only the render and the write are skipped, so nothing a later
+    // stage depends on goes unbuilt.
+    if (!stageOn(name)) return;
     drawScene(g);
     hud(g, SHOT_DT);
     snap(name);
@@ -427,6 +431,14 @@ pub fn runLandShots(g: *Game) void {
     std.debug.print("LAND SHOTS: {s} - 7 frames, {d} props / {d} solids / {d} lights into " ++ DIR_LAND ++ "/\n", .{ stem, g.env.propCount(), g.env.solidCount(), g.env.lightCount() });
 }
 
+/// DEV ONLY: `--shot-only <substr>` names one stage, because a full harness run is 3m38s and an eye pass is a
+/// LOOP. Empty means every stage, which is what the harness is for.
+pub var onlyStage: []const u8 = "";
+fn stageOn(tag: []const u8) bool {
+    if (onlyStage.len == 0) return true;
+    return std.mem.indexOf(u8, tag, onlyStage) != null;
+}
+
 pub fn runShots(g: *Game) void {
     std.fs.cwd().makePath(DIR) catch {};
     if (g.warren.n == 0 or g.line.n == 0 or g.grief.n == 0) {
@@ -469,6 +481,23 @@ pub fn runShots(g: *Game) void {
         while (k < st.adv) : (k += 1) stepWorld(g, dt, st.speed);
         g.rig.follow(g.hero.shoulderPoint());
         shoot(g, st.name);
+    }
+
+    // **THE HIP JOINT, CLOSE, WITH THE LEG SWUNG** (owner: the tops of his legs cut off, he has no hips). The
+    // house walk frames are shot at 4 m on the whole man, where a hand's width of geometry at the hip is four
+    // pixels. Three phases of the stride, because the fault only shows once the thigh has left the pelvis.
+    for ([_]struct { tag: []const u8, adv: i32, yaw: f32 }{
+        .{ .tag = "a", .adv = 0, .yaw = 270 },
+        .{ .tag = "b", .adv = 7, .yaw = 270 },
+        .{ .tag = "c", .adv = 5, .yaw = 180 },
+    }) |hp| {
+        // Re-planted on open ground each time: at a 2.4 m boom the camera is inside whatever he has walked past.
+        standHero(g, 2.0, -18.0, std.math.pi);
+        var k: i32 = 0;
+        while (k < hp.adv) : (k += 1) stepWorld(g, dt, RUN_SPEED);
+        var name: [64]u8 = undefined;
+        const p = std.fmt.bufPrintZ(&name, "shots/7{s}_hero_hip.png", .{hp.tag}) catch continue;
+        shootAt(g, p, v3(g.hero.pos.x, g.hero.pos.y + 0.92, g.hero.pos.z), hp.yaw, 0.05, 2.4);
     }
 
     const lockedStages = [_]struct { name: [:0]const u8, yaw: f32, pitch: f32, dist: f32, phTgt: f32, dx: f32, dz: f32 }{
@@ -1805,6 +1834,17 @@ pub fn runShots(g: *Game) void {
         shootAt(g, "shots/154_fog.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
         shootAt(g, "shots/155_mist_bank.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 22.0);
         game.forceFogForShot(g, false);
+
+        // **THE BIRDS** — a dry sky's own, pitched UP because that is the only place they are. Two, because the
+        // brief was packs of DIFFERENT sizes from DIFFERENT angles and one frame cannot say that.
+        // Aimed AT the skein, because the point of the frame is whether a speck 70 m up reads as a bird; and
+        // then from the man, at the distance he will actually see one, which is the other half of the question.
+        game.forceSkeinForShot(g, mathx.radians(24.0));
+        stepWorld(g, dt, 0);
+        shootAt(g, "shots/157_birds.png", v3(g.hero.pos.x, g.hero.pos.y + 26.0, g.hero.pos.z), LIT_YAW, -0.52, 26.0);
+        game.forceSkeinForShot(g, mathx.radians(-58.0));
+        stepWorld(g, dt, 0);
+        shootAt(g, "shots/157a_birds_across.png", game.skeinLeadForShot(g), LIT_YAW, -0.30, 46.0);
     }
 
     fogGateShots(g, dt);
@@ -1896,25 +1936,25 @@ pub fn runShots(g: *Game) void {
     shoot(g, "shots/14_retro_default.png");
     g.retro.allOff();
 
-    broodShots(g);
-    warriorShots(g);
-    shadeShots(g);
-    leechShots(g);
-    rootedShots(g);
-    shroomShots(g);
-    delverShots(g);
-    necroShots(g);
-    pickupShots(g);
-    knightShots(g);
-    soulsShots(g);
-    campfireShots(g);
-    chestShots(g);
-    folkShots(g);
-    soundFilterShots(g);
-    wolfShots(g);
-    dayShots(g);
-    editorShots(g);
-    editorGapShots(g);
+    if (stageOn("brood")) broodShots(g);
+    if (stageOn("warrior")) warriorShots(g);
+    if (stageOn("shade")) shadeShots(g);
+    if (stageOn("leech")) leechShots(g);
+    if (stageOn("rooted")) rootedShots(g);
+    if (stageOn("shroom")) shroomShots(g);
+    if (stageOn("delver")) delverShots(g);
+    if (stageOn("necro")) necroShots(g);
+    if (stageOn("pickup")) pickupShots(g);
+    if (stageOn("knight")) knightShots(g);
+    if (stageOn("souls")) soulsShots(g);
+    if (stageOn("campfire")) campfireShots(g);
+    if (stageOn("chest")) chestShots(g);
+    if (stageOn("folk")) folkShots(g);
+    if (stageOn("sound")) soundFilterShots(g);
+    if (stageOn("wolf")) wolfShots(g);
+    if (stageOn("day")) dayShots(g);
+    if (stageOn("editor")) editorShots(g);
+    if (stageOn("editorgap")) editorGapShots(g);
 }
 
 fn soundFilterShots(g: *Game) void {
@@ -2664,10 +2704,60 @@ fn knightShots(g: *Game) void {
     stepFoe(k, 96, far);
     shootAt(g, "shots/121k_knight_death.png", v3(sc.x, sc.y + 1.2, sc.z), LIT_YAW + 26, 0.30, 12.0);
 
+    knightDoorShots(g, sc, faceCam, far, spawn, run);
     knightStrokeStrips(g, sc, spawn, run);
     game.clearFoesForShot(g);
     g.bossK = 0;
 }
+
+/// **HOW HE HOLDS IT, FROM ALL FOUR SIDES.** The one thing the owner keeps having to say out loud, and the
+/// three-quarter portrait cannot answer it: at 12 m the door covers the whole creature and the arm behind it is
+/// four grey pixels. Framed off his own crown instead, and turned rather than orbited so the sun stays over the
+/// lens shoulder (`LIT_YAW`).
+fn knightDoorShots(
+    g: *Game,
+    sc: rl.Vector3,
+    faceCam: f32,
+    far: rl.Vector3,
+    spawn: fn (*knightmod.Knight, rl.Vector3, f32) void,
+    run: fn (*knightmod.Knight, f32, rl.Vector3) void,
+) void {
+    const k = &g.vigil.knights[0];
+    const bossWas = g.bossK;
+    g.bossK = 0;
+    // The crown is what the boom is solved against, so a re-scaled knight re-frames itself.
+    spawn(k, sc, faceCam);
+    const crown = k.topWorld().y - k.pos.y;
+    const lift = crown * 0.5 - 0.15;
+    // The DOOR stands forward of him, so it is nearer the lens than his crown and overflows a boom solved off it.
+    const dist = (crown * 0.5) * 1.55 / 0.5206;
+    const sides = [_]struct { tag: []const u8, turn: f32 }{
+        .{ .tag = "a_front", .turn = 0 },
+        .{ .tag = "b_swordside", .turn = 90 },
+        .{ .tag = "c_back", .turn = 180 },
+        .{ .tag = "d_doorside", .turn = 270 },
+    };
+    for (sides) |s| {
+        spawn(k, sc, faceCam + mathx.radians(s.turn));
+        run(k, 0.60, far);
+        var name: [64]u8 = undefined;
+        const p = std.fmt.bufPrintZ(&name, "shots/122{s}_knight_carry.png", .{s.tag}) catch continue;
+        shootAt(g, p, v3(sc.x, sc.y + lift, sc.z), LIT_YAW, 0.12, dist);
+    }
+    g.bossK = bossWas;
+}
+
+/// **THE STRIP'S BOOM IS SOLVED AGAINST THE ARC, NOT PICKED.** `lift` is the measured mid of everything the
+/// stroke moves — sword AND door, feet to crown — and `dist` is what puts that span across `STRIP_FILL` of the
+/// frame. Its own test re-measures and re-solves, because the arcs get re-authored under it: framed for the old
+/// ones at 13-15 m the four strokes filled 40% of a frame aimed a metre over where the action had moved to.
+const STRIP_FILL: f32 = 1.0 / 1.30;
+const KNIGHT_STRIP = [_]struct { i: usize, tag: []const u8, pitch: f32, dist: f32, lift: f32 }{
+    .{ .i = knightmod.SWEEP_I, .tag = "x", .pitch = 0.20, .dist = 8.5, .lift = 2.53 },
+    .{ .i = knightmod.BASH_I, .tag = "y", .pitch = 0.16, .dist = 7.7, .lift = 2.88 },
+    .{ .i = knightmod.OVER_I, .tag = "z", .pitch = 0.18, .dist = 10.7, .lift = 3.41 },
+    .{ .i = knightmod.THRUST_I, .tag = "w", .pitch = 0.14, .dist = 8.7, .lift = 2.53 },
+};
 
 /// EVERY FRAME OF ALL THREE STROKES, IN PROFILE — stood ACROSS the lens so the arc travels the frame instead
 /// of foreshortening down it, walked at a fixed step so a stroke that snaps breaks between two frames.
@@ -2680,18 +2770,12 @@ fn knightStrokeStrips(
     const k = &g.vigil.knights[0];
     const across = mathx.headingXZ(LIT_BACK) + mathx.radians(90.0);
     const side = along(sc, mathx.headingDir(across), 4.2);
-    // **THE FRAMES ARE SPENT WHERE THE MOTION IS, NOT SPREAD EVENLY OVER THE MOVE.** The sweep is 1.10 s of
-    // wind and 0.38 s of strike, so an even walk lands most frames in the wind and one in the stroke. Two
+    // **THE FRAMES ARE SPENT WHERE THE MOTION IS, NOT SPREAD EVENLY OVER THE MOVE.** The sweep is 1.15 s of
+    // wind and 0.42 s of strike, so an even walk lands most frames in the wind and one in the stroke. Two
     // frames establish the gather; the remaining six are the STRIKE.
     const NW = 2;
     const NS = 6;
-    const strokes = [_]struct { i: usize, tag: []const u8, pitch: f32, dist: f32, lift: f32 }{
-        .{ .i = knightmod.SWEEP_I, .tag = "x", .pitch = 0.20, .dist = 15.0, .lift = 3.2 },
-        .{ .i = knightmod.BASH_I, .tag = "y", .pitch = 0.16, .dist = 13.0, .lift = 2.6 },
-        .{ .i = knightmod.OVER_I, .tag = "z", .pitch = 0.18, .dist = 15.0, .lift = 3.2 },
-        .{ .i = knightmod.THRUST_I, .tag = "w", .pitch = 0.14, .dist = 13.0, .lift = 2.6 },
-    };
-    inline for (strokes) |st| {
+    inline for (KNIGHT_STRIP) |st| {
         const cl = knightmod.moveClock(st.i);
         var f: usize = 0;
         while (f < NW + NS) : (f += 1) {
@@ -2716,6 +2800,50 @@ fn knightStrokeStrips(
             const p = std.fmt.bufPrintZ(&name, "shots/121{s}{d}_knight_stroke.png", .{ st.tag, f }) catch continue;
             shootAt(g, p, v3(sc.x, sc.y + st.lift, sc.z), LIT_YAW, st.pitch, st.dist);
         }
+    }
+}
+
+test "THE STRIP FRAMES THE ARC IT IS A STRIP OF — solved against the swept kit, not against the old poses" {
+    // He stands ACROSS the lens, so screen-vertical is world Y and screen-horizontal is his own FACING axis.
+    // The box is everything the stroke moves — sword, DOOR, and the body under them — and the frame must both
+    // CONTAIN it and be FILLED by it: nothing clipped, and no postage stamp in a picture of the sky.
+    const dt = 1.0 / 60.0;
+    const aspect = @as(f32, game.SCREEN_W) / @as(f32, game.SCREEN_H);
+    const halfFov = mathx.radians(camera.FOVY * 0.5);
+    const tanHalf = mathx.sinf(halfFov) / mathx.cosf(halfFov);
+    for (KNIGHT_STRIP) |st| {
+        var k = knightmod.Knight.spawn(mathx.zero3, 0, 1.0, 0.37);
+        const side = v3(0, 0, 4.2);
+        switch (st.i) {
+            knightmod.SWEEP_I => k.debugSweep(),
+            knightmod.BASH_I => k.debugBash(),
+            knightmod.OVER_I => k.debugOverhead(),
+            knightmod.THRUST_I => k.debugThrust(),
+            else => unreachable,
+        }
+        var loY: f32 = 0;
+        var hiY: f32 = k.topWorld().y - k.pos.y;
+        var wideF: f32 = 0;
+        const cl = knightmod.moveClock(st.i);
+        var c: f32 = 0;
+        while (c < cl.wind + cl.strike) : (c += dt) {
+            _ = k.update(dt, side, 400.0, .{});
+            const fw = mathx.headingDir(k.facing);
+            const sword = k.weaponSeg();
+            const plank = k.shieldSeg();
+            for ([_]rl.Vector3{ sword[0], sword[1], plank[0], plank[1] }) |p| {
+                loY = mathx.minF(loY, p.y - k.pos.y);
+                hiY = mathx.maxF(hiY, p.y - k.pos.y);
+                wideF = mathx.maxF(wideF, @abs((p.x - k.pos.x) * fw.x + (p.z - k.pos.z) * fw.z));
+            }
+        }
+        const halfH = st.dist * tanHalf;
+        const span = hiY - loY;
+        const fill = span / (2.0 * halfH);
+        std.debug.print("\n  strip {s}: arc {d:.2}..{d:.2} m up, {d:.2} m out along him; frame {d:.2} m tall at {d:.1} m — fills {d:.0}%\n", .{ st.tag, loY, hiY, wideF, 2.0 * halfH, st.dist, fill * 100.0 });
+        try std.testing.expect(@abs(st.lift + camera.TARGET_RAISE - (loY + hiY) * 0.5) <= 0.25);
+        try std.testing.expect(wideF + camera.SHOULDER <= halfH * aspect);
+        try std.testing.expect(fill >= STRIP_FILL * 0.85 and fill <= STRIP_FILL * 1.13);
     }
 }
 

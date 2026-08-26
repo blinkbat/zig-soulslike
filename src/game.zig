@@ -66,8 +66,8 @@ const PAD = rumblemod.PAD;
 const padPressed = rumblemod.padPressed;
 const padDown = rumblemod.padDown;
 
-const SCREEN_W = 1280;
-const SCREEN_H = 800;
+pub const SCREEN_W = 1280;
+pub const SCREEN_H = 800;
 
 const WALK_SPEED = heromod.WALK_SPEED;
 const RUN_SPEED = heromod.RUN_SPEED;
@@ -150,8 +150,13 @@ fn depression(eyeY: f32, mark: rl.Vector3, flat: f32) f32 {
     return std.math.atan2(eyeY - mark.y, flat);
 }
 
+/// **A BODY ON THE GROUND IS LOOKED AT, NOT STOOD OVER.** The mark rides the body, so a felled giant drops his
+/// to his own boots; chasing it dived the lens to 57 deg at three metres and put the hero own back between the
+/// player and the punish window he just earned. The mark is floored at the HERO shoulder for the pitch only —
+/// the reticle still sits on the body.
 fn lockPitch(g: *const Game, r: FoeRef) f32 {
-    const mark = foeLockPoint(g, r);
+    var mark = foeLockPoint(g, r);
+    mark.y = mathx.maxF(mark.y, g.hero.shoulderPoint().y);
     const eye = g.rig.cam.position;
     const flat = mathx.distXZ(eye, mark);
     if (flat < LOCK_PITCH_NEAR) return LOCK_PITCH;
@@ -266,6 +271,7 @@ pub const Game = struct {
     weather: weathermod.Weather,
     rainfall: weathermod.Rain,
     mist: weathermod.Mist,
+    skein: weathermod.Skein,
     sporefall: weathermod.Spore,
     tree: ptree.Tree = .{},
     restRetro: [gfx.RETRO_COUNT]f32 = [_]f32{0} ** gfx.RETRO_COUNT,
@@ -378,6 +384,7 @@ pub const Game = struct {
         g.weather = weathermod.Weather.init(0x5701_A17E);
         g.rainfall = weathermod.Rain.build(g.scene.shader);
         g.mist = weathermod.Mist.build(g.scene.shader);
+        g.skein = weathermod.Skein.build(g.scene.shader);
         g.sporefall = weathermod.Spore.build(g.scene.shader);
         phase(&initTimer, "foes");
         g.arrowModel = archermod.arrowMesh(g.scene.shader);
@@ -1736,6 +1743,15 @@ pub fn forceFogForShot(g: *Game, on: bool) void {
 pub fn forceMistForShot(g: *Game, ahead: f32) void {
     const p = v3(g.hero.pos.x, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), g.hero.pos.z);
     g.mist.stageOne(p, ahead, g.hero.facing);
+}
+/// **THE BIRDS COME BY ONCE EVERY FEW MINUTES**, so a harness that waited for one would never take the picture.
+/// `across` is the bearing off his facing, since what the shot is of is a skein crossing his sky and not one
+/// flying at the lens.
+pub fn forceSkeinForShot(g: *Game, across: f32) void {
+    g.skein.stageOne(g.hero.pos, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), g.hero.facing + across);
+}
+pub fn skeinLeadForShot(g: *const Game) rl.Vector3 {
+    return g.skein.leadAt();
 }
 pub fn openChestForShot(g: *Game) bool {
     const had = g.chests.near != null;
@@ -3380,6 +3396,12 @@ fn tickWeather(g: *Game, dt: f32) void {
     // THE LIGHTNING STAYS THE WORLD'S: a location sets how wet it is, but the storm that throws bolts is the sky's own event.
     if (g.weather.thunder()) |gain| sfx.playAt(.thunder, gain);
     g.mist.tick(dt, g.hero.pos, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), fogAmt(g));
+    // **THE BIRDS ARE THE DRY SKY'S** (owner: infrequently, just to feel alive) — the same wet level the
+    // sheet reads, so a region that is raining on him has nothing flying over it either.
+    // …and the debug row sends one ACROSS his view rather than at him, since what he is checking is whether a
+    // flock crossing the sky reads at all.
+    if (g.menu.takeBirds()) g.skein.stageOne(g.hero.pos, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), g.hero.facing + std.math.pi * 0.5);
+    g.skein.tick(dt, g.hero.pos, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), g.wetNow);
 }
 
 /// **A REGION'S WEATHER IS A CROSS-FADE, NEVER A SWITCH** — one sky, one sun, one rain sheet round the camera. Outside every weather location the target is the world clock's own.
@@ -3505,6 +3527,7 @@ pub fn drawScene(g: *Game) void {
         if (!g.editor.on) g.rainfall.draw(&g.scene, cam.position, g.hero.pos, g.wetNow, g.weather.t);
         if (!g.editor.on) g.mist.draw(&g.scene, cam.position, fogAmt(g), weathermod.sporeTint(g.sporeNow));
         g.sporefall.draw(&g.scene, cam.position, if (g.editor.on) cam.position else g.hero.pos, g.sporeNow, g.weather.slowSecs());
+        if (!g.editor.on) g.skein.draw(&g.scene);
     }
     rl.endMode3D();
 
@@ -3783,6 +3806,7 @@ pub fn run(mode: Mode) void {
     defer bookmod.unload();
     defer hud_.unloadPortrait();
     defer menumod.unload();
+    defer editormod.unloadMinimap();
 
     // BEFORE `init`, which surveys the shelf: a `--map` or `--shot` run gets `devsave<n>` and cannot reach the played files at all.
     savemod.useDevShelf(shot or !std.mem.eql(u8, worldfmt.startMap(), worldfmt.START_MAP));
@@ -4014,7 +4038,10 @@ pub fn run(mode: Mode) void {
         if (g.lock) |li| {
             if (!lockValid(g, li)) {
                 g.lock = null;
-            } else if (canSee(g, li)) {
+                // **A BODY KNOCKED DOWN IN FRONT OF YOU IS NOT HIDING.** `collision.blocksSight` takes the LOWER
+                // of the two ends, so a mark that has fallen to 0.4 m is stopped by any knee-high rubble on the
+                // line, and the lock was dropped 1.1 s into the punish window it had just bought.
+            } else if (canSee(g, li) or foeStaggered(g, li)) {
                 g.lockBlind = 0;
             } else {
                 g.lockBlind += rawDt;
@@ -5223,6 +5250,13 @@ fn foeLockable(g: *const Game, r: FoeRef) bool {
     return askFoe(bool, g, r, struct {
         fn ask(f: anytype) bool {
             return foemod.corporeal(f);
+        }
+    }.ask);
+}
+fn foeStaggered(g: *const Game, r: FoeRef) bool {
+    return askFoe(bool, g, r, struct {
+        fn ask(f: anytype) bool {
+            return f.staggered();
         }
     }.ask);
 }

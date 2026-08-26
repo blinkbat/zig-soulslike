@@ -270,6 +270,22 @@ pub fn eqlBoss(a: ?FoeKind, b: ?FoeKind) bool {
     return std.meta.eql(a, b);
 }
 
+/// **WHAT A UNIT DOES BEFORE IT HAS SEEN ANYBODY.** The names are StarEdit's, because that is the vocabulary
+/// these maps are authored in: JUNKYARD DOG is roaming about a post, leashed or not. APPEND-ONLY like every
+/// other authored enum. **`hold` is what every unit did before this existed**, so a map that never mentions
+/// `ai=` loads unchanged.
+pub const FoeAi = enum(u8) {
+    hold,
+    roam,
+    roam_free,
+    patrol,
+};
+
+/// A painted patrol point. Ground only — the route follows the terrain the unit stands on.
+pub const Wp = struct { x: f32 = 0, z: f32 = 0 };
+/// Per unit. Eight legs is a long beat for a guard and keeps the map's foe table at 34 KB across `MAX_FOES`.
+pub const MAX_WP: usize = 8;
+
 pub const Foe = struct {
     kind: FoeKind = .toad,
     x: f32 = 0,
@@ -277,6 +293,13 @@ pub const Foe = struct {
     yaw: f32 = 0,
     scale: f32 = 1,
     seed: f32 = 0,
+    ai: FoeAi = .hold,
+    wp: [MAX_WP]Wp = [_]Wp{.{}} ** MAX_WP,
+    nwp: u8 = 0,
+
+    pub fn route(self: *const Foe) []const Wp {
+        return self.wp[0..@min(self.nwp, MAX_WP)];
+    }
 };
 
 /// **THERE IS ONE FOE LIMIT AND IT IS `MAX_FOES`** (owner: remove the foe limits, seems dumb to have). At 24 a
@@ -1186,7 +1209,12 @@ pub fn write(m: *const Map, w: anytype) !void {
 
     if (m.nfoes > 0) try w.writeAll("\n");
     for (m.foes[0..m.nfoes]) |f| {
-        try w.print("foe: {s} {d:.2} {d:.2} {d:.1} {d:.2} {d:.2}\n", .{ @tagName(f.kind), f.x, f.z, f.yaw, f.scale, f.seed });
+        // **THE TAIL IS WRITTEN ONLY WHEN IT SAYS SOMETHING.** A unit on the default AI emits exactly the line it
+        // always did, so a map authored before any of this round-trips byte for byte.
+        try w.print("foe: {s} {d:.2} {d:.2} {d:.1} {d:.2} {d:.2}", .{ @tagName(f.kind), f.x, f.z, f.yaw, f.scale, f.seed });
+        if (f.ai != .hold) try w.print(" ai={s}", .{@tagName(f.ai)});
+        for (f.route()) |q| try w.print(" wp={d:.2},{d:.2}", .{ q.x, q.z });
+        try w.print("\n", .{});
     }
 
     try writeScript(m, w);
@@ -1471,7 +1499,7 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
             hgtAt = try readGrid(&it, &m.height, hgtAt, 256);
         } else if (std.mem.eql(u8, rec, "foe")) {
             if (m.nfoes >= MAX_FOES) return ParseError.TooManyFoes;
-            m.foes[m.nfoes] = .{
+            var f = Foe{
                 .kind = try enumFromName(FoeKind, it.next() orelse return ParseError.MissingField),
                 .x = try nextFloat(&it),
                 .z = try nextFloat(&it),
@@ -1479,6 +1507,24 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
                 .scale = try band(&it, FOE_SCALE_LO, FOE_SCALE_HI),
                 .seed = try band(&it, 0, 1),
             };
+            // OPTIONAL AND ORDERLESS. A line written before any of this has none of it and takes the defaults.
+            while (it.next()) |tok| {
+                const eq = std.mem.indexOfScalar(u8, tok, '=') orelse return ParseError.UnknownKey;
+                const key = tok[0..eq];
+                const val = tok[eq + 1 ..];
+                if (std.mem.eql(u8, key, "ai")) {
+                    f.ai = try enumFromName(FoeAi, val);
+                } else if (std.mem.eql(u8, key, "wp")) {
+                    if (f.nwp >= MAX_WP) return ParseError.TooManyFoes;
+                    const comma = std.mem.indexOfScalar(u8, val, ',') orelse return ParseError.MissingField;
+                    f.wp[f.nwp] = .{
+                        .x = try finiteFloat(f32, val[0..comma]),
+                        .z = try finiteFloat(f32, val[comma + 1 ..]),
+                    };
+                    f.nwp += 1;
+                } else return ParseError.UnknownKey;
+            }
+            m.foes[m.nfoes] = f;
             m.nfoes += 1;
         } else if (enumFromName(OpKind, rec)) |k| {
             if (m.nops >= MAX_OPS) return ParseError.TooManyOps;
@@ -2948,4 +2994,56 @@ test "THE OP CAP IS MEMORY — the editor's undo ring is whole-Map copies" {
     std.debug.print("\n  ops: {d} cap, {d} B an Op, {d:.1} MB a Map, {d:.1} MB for a 24-deep undo ring\n", .{ MAX_OPS, @sizeOf(Op), @as(f64, @floatFromInt(one)) / 1048576.0, @as(f64, @floatFromInt(ring)) / 1048576.0 });
     // The whole reason cover was baked to PATCHES and not to 13,228 individual `at:` ops.
     try std.testing.expect(ring < 200 * 1024 * 1024);
+}
+
+test "A UNIT'S IDLE AI AND ITS ROUTE SURVIVE A ROUND TRIP — and a map that never mentions them is untouched" {
+    const head = "version: 1\n";
+    var m: Map = undefined;
+    var ln: usize = 0;
+    // **THE OLD LINE STILL PARSES AND STILL WRITES ITSELF BACK IDENTICALLY.** This is the whole reason the tail
+    // is optional: `01_fallen_plain.world` is authored and shipping, and it must not be rewritten by loading it.
+    try parse(head ++ "foe: toad 3.00 -4.00 90.0 1.00 0.50\n", &m, &ln);
+    try std.testing.expectEqual(FoeAi.hold, m.foes[0].ai);
+    try std.testing.expectEqual(@as(u8, 0), m.foes[0].nwp);
+
+    var buf: [4096]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(&m, fbs.writer());
+    try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "foe: toad 3.00 -4.00 90.0 1.00 0.50\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "ai=") == null);
+    try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "wp=") == null);
+
+    // …and a unit that DOES carry one comes back with every point where it was put.
+    ln = 0;
+    try parse(head ++ "foe: ogre 1.00 2.00 0.0 1.00 0.25 ai=patrol wp=8.00,-3.00 wp=12.00,5.00\n", &m, &ln);
+    try std.testing.expectEqual(FoeAi.patrol, m.foes[0].ai);
+    try std.testing.expectEqual(@as(u8, 2), m.foes[0].nwp);
+    try std.testing.expectApproxEqAbs(@as(f32, 12), m.foes[0].wp[1].x, 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 5), m.foes[0].wp[1].z, 1e-4);
+    try std.testing.expectEqual(@as(usize, 2), m.foes[0].route().len);
+
+    fbs.reset();
+    try write(&m, fbs.writer());
+    const out = fbs.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, out, "ai=patrol") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "wp=8.00,-3.00") != null);
+    // AND IT LOADS BACK THE SAME — the round trip is the claim, not the spelling.
+    var back: Map = undefined;
+    var bl: usize = 0;
+    try parse(out, &back, &bl);
+    try std.testing.expectEqual(m.foes[0].ai, back.foes[0].ai);
+    try std.testing.expectEqual(m.foes[0].nwp, back.foes[0].nwp);
+
+    // A ROUTE MAY NOT OVERRUN ITS OWN CAP, and a mode nobody has heard of is an error rather than a silent hold.
+    ln = 0;
+    try std.testing.expectError(ParseError.BadKind, parse(head ++ "foe: toad 0 0 0 1 0 ai=chase\n", &m, &ln));
+    ln = 0;
+    try std.testing.expectError(ParseError.UnknownKey, parse(head ++ "foe: toad 0 0 0 1 0 nonsense=1\n", &m, &ln));
+    ln = 0;
+    var many: [512]u8 = undefined;
+    var at: usize = 0;
+    at += (try std.fmt.bufPrint(many[at..], "{s}foe: toad 0 0 0 1 0", .{head})).len;
+    for (0..MAX_WP + 1) |_| at += (try std.fmt.bufPrint(many[at..], " wp=1,1", .{})).len;
+    at += (try std.fmt.bufPrint(many[at..], "\n", .{})).len;
+    try std.testing.expectError(ParseError.TooManyFoes, parse(many[0..at], &m, &ln));
 }

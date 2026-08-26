@@ -634,6 +634,8 @@ pub const Editor = struct {
     /// groups are re-homed every editor frame, the folk are not, so a placed caravaneer stays invisible and an
     /// erased one stays standing until this moves.
     mapGen: u32 = 0,
+    /// Bumped by every path that can move what the minimap draws, which is what lets it hold a painted face.
+    miniGen: u64 = 0,
 
     kindScroll: i32 = 0,
 
@@ -932,6 +934,7 @@ pub const Editor = struct {
         undoSlot(undoN).* = m.*;
         undoN += 1;
         self.dirty = true;
+        self.miniGen +%= 1;
     }
 
     fn undo(self: *Editor, m: *wf.Map) bool {
@@ -963,6 +966,7 @@ pub const Editor = struct {
     /// frame and the folk only on this).
     fn touchFolk(self: *Editor) void {
         self.mapGen +%= 1;
+        self.miniGen +%= 1;
     }
 
     fn dropSelection(self: *Editor) void {
@@ -1209,6 +1213,7 @@ pub const Editor = struct {
     fn rebuild(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
         self.rebuildDue = false;
         self.rebuildT = 0;
+        self.miniGen +%= 1;
         env.replay(m);
     }
 
@@ -3291,6 +3296,83 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.C
     const inner: f32 = @floatFromInt(MINI_W - 8);
     const px = x0 + 4;
     const py = y0 + 4;
+
+    blitMinimap(ed, m, env, px, py, inner);
+
+    const cp = toMini(
+        mathx.clampF(ed.cam.position.x, -m.half, m.half),
+        mathx.clampF(ed.cam.position.z, -m.half, m.half),
+        m.half,
+        px,
+        py,
+        inner,
+    );
+    const f = ed.forward();
+    rl.drawLineV(cp, .{ .x = cp.x + f.x * 12, .y = cp.y + f.z * 12 }, ui.HOT);
+    rl.drawCircleV(cp, 3, ui.HOT);
+
+    if (ctx.pressed and rl.checkCollisionPointRec(ctx.mouse, r)) {
+        const t = mathx.clampF((ctx.mouse.x - @as(f32, @floatFromInt(px))) / inner, 0, 1);
+        const u = mathx.clampF((ctx.mouse.y - @as(f32, @floatFromInt(py))) / inner, 0, 1);
+        ed.lookAtGround(-m.half + t * 2 * m.half, -m.half + u * 2 * m.half, 60);
+    }
+    ui.tipFor(ctx, r, "Click to fly there");
+}
+
+fn toMini(wx: f32, wz: f32, half: f32, ox: i32, oy: i32, span: f32) rl.Vector2 {
+    return .{
+        .x = @as(f32, @floatFromInt(ox)) + (wx + half) / (2 * half) * span,
+        .y = @as(f32, @floatFromInt(oy)) + (wz + half) / (2 * half) * span,
+    };
+}
+
+fn onMini(wx: f32, wz: f32, half: f32) bool {
+    return @abs(wx) <= half and @abs(wz) <= half;
+}
+
+/// **THE MAP LAYER IS PAINTED ON CHANGE, NOT ON FRAME.** `paintMinimap` spends one rectangle per op, and
+/// `01_fallen_plain` stands at 16,563 of them — measured, they collapse only 1.33x onto the 182x182 face, so
+/// there is no bucketing that makes a per-frame walk cheap. Held in a texture it costs one blit instead, and
+/// the bill stops growing every time a scatter is exploded into `at:` ops.
+var miniRT: ?rl.RenderTexture2D = null;
+var miniPainted: u64 = std.math.maxInt(u64);
+var miniLayer: Layer = .ground;
+
+pub fn unloadMinimap() void {
+    if (miniRT) |t| rl.unloadRenderTexture(t);
+    miniRT = null;
+    miniPainted = std.math.maxInt(u64);
+}
+
+fn blitMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, px: i32, py: i32, inner: f32) void {
+    const side: i32 = MINI_W - 8;
+    if (miniRT == null) miniRT = rl.loadRenderTexture(side, side) catch null;
+    const rt = miniRT orelse return paintMinimap(ed, m, env, px, py, inner);
+
+    if (miniPainted != ed.miniGen or miniLayer != ed.layer) {
+        miniPainted = ed.miniGen;
+        miniLayer = ed.layer;
+        rl.beginTextureMode(rt);
+        paintMinimap(ed, m, env, 0, 0, inner);
+        rl.endTextureMode();
+    }
+    // **A STRAIGHT COPY, NOT A BLEND.** Every translucent thing painted into the target drives the target's OWN
+    // alpha below 1 (raylib blends the alpha channel by `SRC_ALPHA` like the colour), and blending that back
+    // over the panel multiplies the face a second time — measured, it came out 49/765 darker across 78% of it.
+    // The face is opaque by construction, so src replaces dst: GL_ONE, GL_ZERO, GL_FUNC_ADD.
+    rl.gl.rlSetBlendFactors(1, 0, 0x8006);
+    rl.beginBlendMode(.custom);
+    // A render texture reads bottom-up, so the source height is negative.
+    rl.drawTextureRec(
+        rt.texture,
+        .{ .x = 0, .y = 0, .width = @floatFromInt(side), .height = @floatFromInt(-side) },
+        .{ .x = @floatFromInt(px), .y = @floatFromInt(py) },
+        rl.Color.white,
+    );
+    rl.endBlendMode();
+}
+
+fn paintMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, px: i32, py: i32, inner: f32) void {
     rl.drawRectangle(px, py, MINI_W - 8, MINI_W - 8, ui.col(18, 20, 14, 255));
 
     blitField(m.soil[0..], wf.SOIL_N, px, py, inner, null);
@@ -3316,51 +3398,18 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.C
     }
     blitField(m.water[0..], wf.WATER_N, px, py, inner, WATER_SWATCH);
 
-    const toMini = struct {
-        fn f(wx: f32, wz: f32, half: f32, ox: i32, oy: i32, span: f32) rl.Vector2 {
-            return .{
-                .x = @as(f32, @floatFromInt(ox)) + (wx + half) / (2 * half) * span,
-                .y = @as(f32, @floatFromInt(oy)) + (wz + half) / (2 * half) * span,
-            };
-        }
-    }.f;
-
-    const onMap = struct {
-        fn f(wx: f32, wz: f32, half: f32) bool {
-            return @abs(wx) <= half and @abs(wz) <= half;
-        }
-    }.f;
-
     for (m.ops[0..m.nops]) |*o| {
-        if (!onMap(o.x, o.z, m.half)) continue;
+        if (!onMini(o.x, o.z, m.half)) continue;
         const p = toMini(o.x, o.z, m.half, px, py, inner);
         const mine = layerOf(o) == ed.layer;
         const col = if (layerOf(o) == .decor) ui.col(96, 132, 70, if (mine) 235 else 70) else ui.col(168, 156, 130, if (mine) 235 else 70);
         rl.drawRectangleV(.{ .x = p.x - 1, .y = p.y - 1 }, .{ .x = 2, .y = 2 }, col);
     }
     for (m.foes[0..m.nfoes]) |f| {
-        if (!onMap(f.x, f.z, m.half)) continue;
+        if (!onMini(f.x, f.z, m.half)) continue;
         const p = toMini(f.x, f.z, m.half, px, py, inner);
         rl.drawCircleV(p, 2.5, ui.col(220, 120, 90, if (ed.layer == .units) 255 else 110));
     }
-    const cp = toMini(
-        mathx.clampF(ed.cam.position.x, -m.half, m.half),
-        mathx.clampF(ed.cam.position.z, -m.half, m.half),
-        m.half,
-        px,
-        py,
-        inner,
-    );
-    const f = ed.forward();
-    rl.drawLineV(cp, .{ .x = cp.x + f.x * 12, .y = cp.y + f.z * 12 }, ui.HOT);
-    rl.drawCircleV(cp, 3, ui.HOT);
-
-    if (ctx.pressed and rl.checkCollisionPointRec(ctx.mouse, r)) {
-        const t = mathx.clampF((ctx.mouse.x - @as(f32, @floatFromInt(px))) / inner, 0, 1);
-        const u = mathx.clampF((ctx.mouse.y - @as(f32, @floatFromInt(py))) / inner, 0, 1);
-        ed.lookAtGround(-m.half + t * 2 * m.half, -m.half + u * 2 * m.half, 60);
-    }
-    ui.tipFor(ctx, r, "Click to fly there");
 }
 
 const WATER_SWATCH = ui.col(32, 55, 62, 255);
@@ -4178,4 +4227,40 @@ test "the units layer POSTS and ERASES both kinds, and the eraser does not care 
     try std.testing.expectEqual(@as(usize, 1), m.nfoes);
     try std.testing.expect(ed.eraseAt(m, env, v3(0, 0, 0)));
     try std.testing.expectEqual(@as(usize, 0), m.nfoes);
+}
+
+test "THE MINIMAP'S HELD FACE IS REPAINTED BY EVERY HAND THAT MOVES IT" {
+    undoReset();
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    const env = try testEnv(std.testing.allocator);
+    defer std.testing.allocator.destroy(env);
+    m.blank("mini");
+    var ed = Editor{};
+
+    // A prop posted, a unit posted, an eraser sweep, an undo and a rebuild each have to move the key —
+    // a face held past any one of them is a minimap showing a map that is no longer there.
+    ed.layer = .props;
+    ed.radius = 2.0;
+    var last = ed.miniGen;
+    ed.addUnit(m, v3(0, 0, 0));
+    try std.testing.expect(ed.miniGen != last);
+
+    last = ed.miniGen;
+    ed.layer = .units;
+    ed.setBrush(0);
+    ed.addUnit(m, v3(6, 0, 0));
+    try std.testing.expect(ed.miniGen != last);
+
+    last = ed.miniGen;
+    try std.testing.expect(ed.eraseAt(m, env, v3(6, 0, 0)));
+    try std.testing.expect(ed.miniGen != last);
+
+    last = ed.miniGen;
+    try std.testing.expect(ed.undo(m));
+    try std.testing.expect(ed.miniGen != last);
+
+    last = ed.miniGen;
+    ed.rebuild(m, env);
+    try std.testing.expect(ed.miniGen != last);
 }

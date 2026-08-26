@@ -382,29 +382,22 @@ pub fn hintRow(hints: []const Hint, cy: i32, size: i32, col: rl.Color) void {
 }
 
 pub const MARGIN: i32 = 30;
-/// **THE VITALS SIT AT THE BOTTOM MIDDLE AND EVERYTHING ELSE IN THE BLOCK GROWS UPWARD FROM THEM** (owner).
-/// The bars' own bottom edge is the fixed thing: the ail meters stack ABOVE them and the status word above
-/// those, so a meter appearing never shoves the three bars a player is actually watching.
-const BAR_BOTTOM_MARGIN: i32 = 34;
+const BAR_TOP: i32 = 24;
 const BAR_GAP: i32 = 6;
-/// The day dial keeps the top-left corner it always had — it is the world clock, not a status bar, and it was
-/// only ever positioned off the bars because that is where they used to be.
-const DIAL_TOP: i32 = 24;
 const DIAL_R: i32 = 21;
 const DIAL_GAP: i32 = 14;
-/// Each bar is CENTRED on the screen's own axis rather than left-aligned to a common origin: the three
-/// widths step down, and stepped bars hung off a left edge read as lopsided once the block is centred.
-fn barX(w: i32) i32 {
+const BARS_X: i32 = MARGIN + DIAL_R * 2 + DIAL_GAP;
+/// **THE STATUS BUILDUP METERS SIT AT THE BOTTOM MIDDLE** (owner) — stacked upward off this margin, the
+/// status word above them. The vitals keep the top-left corner beside the day dial.
+const STATUS_BOTTOM_MARGIN: i32 = 34;
+fn centreX(w: i32) i32 {
     return @divTrunc(rl.getScreenWidth() - w, 2);
 }
-fn barsTop() i32 {
-    return rl.getScreenHeight() - BAR_BOTTOM_MARGIN - BARS_H;
-}
-const HP_W: i32 = 308;
+const HP_W: i32 = 268;
 const HP_H: i32 = 15;
-const FP_W: i32 = 210;
+const FP_W: i32 = 182;
 const FP_H: i32 = 11;
-const ST_W: i32 = 268;
+const ST_W: i32 = 232;
 const ST_H: i32 = 11;
 
 const TRACK = rgba(16, 13, 11, 186);
@@ -571,13 +564,11 @@ pub fn ailGlyph(a: combat.Ail, cx: f32, cy: f32, size: f32, col: rl.Color) void 
 const PSN_W: i32 = 196;
 const PSN_H: i32 = 9;
 /// **A ROW PER METER, GLYPH FIRST** (owner: separate rows for each status buildup, along with an icon for each).
-/// Under the stamina bar, in `Ail` order, and only what is actually filling — so the strip grows downward as a
-/// fight goes wrong and the reader's eye finds the same ailment in the same place every time.
-/// Returns how far down the last row reached, so the caller keeps owning the layout.
-/// Rows laid UPWARD from `bottomY`, in `Ail` order so the same status is always the same distance from the
-/// bars. Returns the top of the stack, which is where the word goes.
+/// Centred at the bottom of the screen, laid UPWARD from `bottomY` in `Ail` order and only what is actually
+/// filling — so the same status is always the same distance from the floor. Returns the top of the stack,
+/// which is where the word goes.
 fn statusBarsUp(bottomY: i32, ails: Ails) i32 {
-    const x = barX(PSN_W);
+    const x = centreX(PSN_W);
     var yy = bottomY - PSN_H;
     for (ails, 0..) |s, i| {
         if (s.frac <= 0.001) continue;
@@ -722,9 +713,7 @@ const SP_LIFE_HI = rgba(150, 200, 226, 255);
 const SP_LIFE_LO = rgba(58, 92, 116, 255);
 const SP_LIFE_TP = rgba(206, 234, 248, 255);
 
-/// The spirit panel hangs under the DIAL now, not under the bars — the bars left the corner, and a panel
-/// anchored to where they used to be would have followed them to the floor.
-const BARS_BOTTOM: i32 = DIAL_TOP + DIAL_R * 2;
+const BARS_BOTTOM: i32 = BAR_TOP + BARS_H + BAR_GAP + 2;
 
 /// `k` is the fade, 0..1 — held by the game because the spirit's body is gone before the toast has finished leaving, and a panel that reads its own subject cannot outlive it.
 pub fn spiritPanel(hasFace: bool, name: [:0]const u8, hp: f32, k: f32) void {
@@ -824,26 +813,22 @@ pub fn vitals(dt: f32, hp: f32, fp: f32, stam: f32, stamRefused: f32, fpRefused:
     chipLast = hp;
     watchAils(dt, psn);
 
-    var y = barsTop();
-    const hpX = barX(HP_W);
-    bar(hpX, y, HP_W, HP_H, hp, chip, HP_HI, HP_LO, HP_TP);
+    var y = BAR_TOP;
+    bar(BARS_X, y, HP_W, HP_H, hp, chip, HP_HI, HP_LO, HP_TP);
     y += HP_H + BAR_GAP;
-    const fpX = barX(FP_W);
-    bar(fpX, y, FP_W, FP_H, fp, 0, FP_HI, FP_LO, FP_TP);
-    refuseRing(fpX, y, FP_W, FP_H, fpRefused);
+    bar(BARS_X, y, FP_W, FP_H, fp, 0, FP_HI, FP_LO, FP_TP);
+    refuseRing(BARS_X, y, FP_W, FP_H, fpRefused);
     y += FP_H + BAR_GAP;
-    const stX = barX(ST_W);
-    bar(stX, y, ST_W, ST_H, stam, 0, ST_HI, ST_LO, ST_TP);
+    bar(BARS_X, y, ST_W, ST_H, stam, 0, ST_HI, ST_LO, ST_TP);
     if (windedTo > 0.001) {
         const wf: f32 = @floatFromInt(ST_W);
         const owed: i32 = @intFromFloat(wf * mathx.clampF(windedTo, 0, 1));
         const fill: i32 = @intFromFloat(wf * mathx.clampF(stam, 0, 1));
-        if (owed > fill) rl.drawRectangle(stX + fill, y, owed - fill, ST_H, mathx.withAlpha(WARN, 46));
-        rl.drawRectangle(stX + owed - 1, y - 1, 2, ST_H + 2, mathx.withAlpha(WARN_LT, 210));
+        if (owed > fill) rl.drawRectangle(BARS_X + fill, y, owed - fill, ST_H, mathx.withAlpha(WARN, 46));
+        rl.drawRectangle(BARS_X + owed - 1, y - 1, 2, ST_H + 2, mathx.withAlpha(WARN_LT, 210));
     }
-    refuseRing(stX, y, ST_W, ST_H, stamRefused);
-    // **THE METERS STACK UPWARD OFF THE TOP OF THE BLOCK**, so the three bars never move under a player's eye.
-    const stackTop = statusBarsUp(barsTop() - BAR_GAP - 2, psn);
+    refuseRing(BARS_X, y, ST_W, ST_H, stamRefused);
+    const stackTop = statusBarsUp(rl.getScreenHeight() - STATUS_BOTTOM_MARGIN, psn);
     statusFlash(stackTop);
 }
 
@@ -858,7 +843,7 @@ const MOON_COL = rgba(206, 216, 234, 255);
 /// THE WORLD CLOCK, drawn as the thing it actually is: a horizon, and the key light travelling across it left to right. The hour is the ONLY input and every shape comes off `daynight`'s own arithmetic, so the dial cannot tell a different time than the sun the scene is lit by.
 pub fn dayDial(hour: f32) void {
     const cx = MARGIN + DIAL_R;
-    const cy = DIAL_TOP + DIAL_R;
+    const cy = BAR_TOP + @divTrunc(BARS_H, 2);
     const r: f32 = @floatFromInt(DIAL_R);
     const fx: f32 = @floatFromInt(cx);
     const fy: f32 = @floatFromInt(cy);

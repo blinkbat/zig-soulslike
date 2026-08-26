@@ -967,7 +967,9 @@ test "A STAGGER FROM ANYWHERE PICKS THE RIGHT SEVERITY — `stance <= 0` never w
 
     var lit = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
     _ = lit.update(dt, hero, 400, .{});
-    try std.testing.expectEqual(combat.HitResult.light, lit.vit.hit(.{ .poise = POISE_MAX + 1 }));
+    // A creature's flinch is damage poured into the pool (`combat.FOE_POISE_PER_DMG`), so empty the pool and land one point.
+    lit.vit.poise = 0.5;
+    try std.testing.expectEqual(combat.HitResult.light, lit.vit.hit(.{ .dmg = 20 }));
     try std.testing.expect(!lit.vit.stunHeavy());
     _ = lit.update(dt, hero, 400, .{});
     try std.testing.expectEqual(State.stunlight, lit.state);

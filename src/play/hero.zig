@@ -103,6 +103,18 @@ const CLOTHDK = rgba(44, 39, 32, 255);
 const BOOT = rgba(24, 22, 20, 255);
 const BELT = rgba(34, 26, 18, 255);
 const HAIR = rgba(40, 31, 24, 255);
+
+/// Where the braid is tied, in SKULL space — it hangs and swings about this point, so the mesh is authored on it.
+const TAIL_AT = v3(0, 0.012 * H, -0.092 * H);
+/// Degrees it trails at a full run, and the spring that gets it there. `SETTLE` under 1 is what makes it
+/// OVERSHOOT when he stops rather than sliding back (a mass in motion, the owner's law).
+const TAIL_DRAG: f32 = 34.0;
+const TAIL_EASE: f32 = 9.0;
+const TAIL_SETTLE: f32 = 0.62;
+const TAIL_SWAY: f32 = 13.0;
+/// Long enough to READ from behind at play distance (owner: more prominent). Three lengths off the tie at
+/// 0.115 H each is 0.62 m of braid on a 1.8 m man — down past the shoulder blades, about a head and a half.
+const TAIL_LEN: f32 = 0.115 * H;
 const CAPE = rgba(82, 20, 12, 255);
 const STEEL = rgba(98, 104, 114, 255);
 const STEEL_DK = rgba(58, 62, 70, 255);
@@ -1418,6 +1430,15 @@ pub const Hero = struct {
     club: rl.Mesh,
     roots: [ROOT_KINDS]rl.Mesh,
     guitar: rl.Mesh,
+    /// **THE PONYTAIL IS NOT A BONE** — the necromancer's dragging hem, one level up the body (`necro.hemXf`).
+    /// The 18-bone scaffold is shared by six creatures, so a nineteenth joint for a braid is not a braid's price.
+    /// It rides the SKULL through a lag matrix chained in `pose`, and the swing is a SPRING, not an ease: it
+    /// trails the run, OVERSHOOTS when he stops and settles onto its rest.
+    tail: rl.Mesh,
+    tailMat: rl.Matrix = undefined,
+    tailLean: f32 = 0,
+    tailVel: f32 = 0,
+    tailSway: f32 = 0,
     mat: rl.Material,
     rest: [N]rl.Vector3,
     xf: [N]rl.Matrix = undefined,
@@ -1583,6 +1604,7 @@ pub const Hero = struct {
                 break :blk out;
             },
             .guitar = guitarMesh(),
+            .tail = tailMesh(),
             .mat = mat,
             .rest = restPositions(),
         };
@@ -1680,6 +1702,27 @@ pub const Hero = struct {
         self.tickClocks(dt);
         self.speed = speed;
         advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist, speed, moveYaw, self.facing);
+        self.tickTail(dt, speed);
+    }
+
+    /// Chained in `pose`, off the POSED skull — so the braid follows the head wherever the head went, and a
+    /// pose that never publishes `xf` cannot leave it on last frame's matrix.
+    fn chainTail(self: *Hero) void {
+        self.tailMat = mul3(
+            mul(rx(self.tailLean), rz(self.tailSway)),
+            tr(TAIL_AT.x, TAIL_AT.y, TAIL_AT.z),
+            self.xf[HEAD],
+        );
+    }
+
+    fn tickTail(self: *Hero, dt: f32, speed: f32) void {
+        const want = TAIL_DRAG * mathx.clampF(speed / RUN_SPEED, 0, 1);
+        const accel = (want - self.tailLean) * TAIL_EASE * TAIL_SETTLE;
+        self.tailVel += accel * dt;
+        self.tailVel *= mathx.maxF(0, 1.0 - TAIL_EASE * dt);
+        self.tailLean += self.tailVel * dt;
+        // A stride is TWO footfalls, so the braid crosses twice a cycle and lags the hips by a beat.
+        self.tailSway = TAIL_SWAY * mathx.sinf(std.math.tau * self.phase * 2.0 - 1.1) * self.moving;
     }
 
     pub fn footPos(self: *const Hero) rl.Vector3 {
@@ -3526,6 +3569,7 @@ pub const Hero = struct {
         if (self.drinking) self.poseDrinkArm(&wx, dk.lift, dk.tip);
         self.applyXfade(&wx);
         self.xf = wx;
+        self.chainTail();
     }
 
     /// Asked in ONE place: the jump used to ask for the rod alone, and the brand's flame — and its light — snapped down onto a hanging arm for the whole of a leap.
@@ -3686,6 +3730,7 @@ pub const Hero = struct {
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         self.applyXfade(&wx);
         self.xf = wx;
+        self.chainTail();
     }
 
 
@@ -3742,6 +3787,7 @@ pub const Hero = struct {
         self.poseCarried(&wx);
         self.applyXfade(&wx);
         self.xf = wx;
+        self.chainTail();
     }
 
     /// Off the vertical velocity: DRIVE up, TUCK where it passes through zero — which IS the apex, so the pose cannot drift out of step with the arc — REACH down.
@@ -3770,6 +3816,7 @@ pub const Hero = struct {
         if (self.bowOut()) self.poseBowArms(&wx, fold * 0.5, 0, 0);
         self.applyXfade(&wx);
         self.xf = wx;
+        self.chainTail();
     }
 
     fn poseRoll(self: *Hero) void {
@@ -3808,6 +3855,7 @@ pub const Hero = struct {
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         self.applyXfade(&wx);
         self.xf = wx;
+        self.chainTail();
     }
 
     fn poseAttack(self: *Hero) void {
@@ -3858,6 +3906,7 @@ pub const Hero = struct {
         placeSword(&wx, self.rest, rx(k.grip), sd < 0);
         self.applyXfade(&wx);
         self.xf = wx;
+        self.chainTail();
     }
 
     fn poseLight(self: *Hero) void {
@@ -3920,6 +3969,7 @@ pub const Hero = struct {
         placeSword(&wx, self.rest, rx(GRIP_PITCH * lvl), sd < 0);
         self.applyXfade(&wx);
         self.xf = wx;
+        self.chainTail();
     }
 
     fn poseHeavy(self: *Hero) void {
@@ -3973,6 +4023,7 @@ pub const Hero = struct {
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), sd < 0);
         self.applyXfade(&wx);
         self.xf = wx;
+        self.chainTail();
     }
 
     fn poseCast(self: *Hero) void {
@@ -4027,6 +4078,7 @@ pub const Hero = struct {
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         self.applyXfade(&wx);
         self.xf = wx;
+        self.chainTail();
     }
 
     fn poseRing(self: *Hero) void {
@@ -4063,6 +4115,7 @@ pub const Hero = struct {
         setLocal(&wx, free.wr, self.rest, rl.math.matrixIdentity());
         self.applyXfade(&wx);
         self.xf = wx;
+        self.chainTail();
     }
 
     fn poseDrinkArm(self: *const Hero, wx: *[N]rl.Matrix, lift: f32, tip: f32) void {
@@ -4105,6 +4158,7 @@ pub const Hero = struct {
         setLocal(&wx, WRR, self.rest, rz(9.0 * strum));
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         self.xf = wx;
+        self.chainTail();
     }
 
     fn poseStun(self: *Hero) void {
@@ -4155,6 +4209,7 @@ pub const Hero = struct {
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         self.applyXfade(&wx);
         self.xf = wx;
+        self.chainTail();
     }
 
     fn poseDeath(self: *Hero) void {
@@ -4192,6 +4247,7 @@ pub const Hero = struct {
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         self.applyXfade(&wx);
         self.xf = wx;
+        self.chainTail();
     }
 
     /// `lit` is FALSE in the depth pass (`game.drawCasters` runs this twice). **A FIRE MAY NOT CAST A SHADOW**:
@@ -4202,6 +4258,7 @@ pub const Hero = struct {
             if (i == SWORD) continue;
             rl.drawMesh(self.mesh[i], self.mat, self.xf[i]);
         }
+        rl.drawMesh(self.tail, self.mat, self.tailMat);
         if (!stowSword) rl.drawMesh(self.bladeMesh(), self.mat, self.xf[SWORD]);
         if (self.resting) {
             rl.drawMesh(self.guitar, self.mat, self.xf[ROOT]);
@@ -4816,6 +4873,25 @@ fn neckMesh() rl.Mesh {
     return b.toMesh();
 }
 
+/// **AUTHORED ABOUT THE TIE, NOT ABOUT THE SKULL** — the lag matrix rotates it, so its own origin has to be the
+/// point it swings from. Three lengths tapering to a tip, back and down off the head.
+fn tailMesh() rl.Mesh {
+    var b = Builder.init();
+    b.setMat(.leather);
+    const seg = [_]f32{ 0.0, 1.0, 2.0, 3.0 };
+    // RADII, not a width — `addCapsule` takes true radii and `slab`/`addCube` takes a FULL size, and mixing
+    // them is how the first cut came out as three balls each wider than the segment was long. 0.017 H is a 6 cm
+    // braid on a 1.8 m man.
+    const wide = [_]f32{ 0.017, 0.015, 0.011, 0.005 };
+    for (0..3) |i| {
+        // Steeply DOWN and a little back: at rest it hangs, and the spring is what lays it out behind a run.
+        const a = v3(0, -seg[i] * TAIL_LEN * 0.90, -seg[i] * TAIL_LEN * 0.26);
+        const c = v3(0, -seg[i + 1] * TAIL_LEN * 0.90, -seg[i + 1] * TAIL_LEN * 0.26);
+        b.addCapsule(a, c, wide[i] * H, wide[i + 1] * H, 8, HAIR);
+    }
+    return b.toMesh();
+}
+
 fn headMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
@@ -4825,7 +4901,7 @@ fn headMesh() rl.Mesh {
     b.setMat(.leather);
     slab(&b, v3(0, 0.118 * H, -0.025 * H), v3(0.145 * H, 0.05 * H, 0.15 * H), HAIR);
     slab(&b, v3(0, 0.055 * H, -0.078 * H), v3(0.135 * H, 0.125 * H, 0.035 * H), HAIR);
-    slab(&b, v3(0, 0.012 * H, -0.092 * H), v3(0.05 * H, 0.05 * H, 0.035 * H), HAIR);
+    slab(&b, v3(0, 0.012 * H, -0.088 * H), v3(0.055 * H, 0.055 * H, 0.04 * H), HAIR);
     slab(&b, v3(0, 0.092 * H, 0.0 * H), v3(0.142 * H, 0.018 * H, 0.152 * H), LEATHER_DK);
     return b.toMesh();
 }
@@ -4833,9 +4909,25 @@ fn headMesh() rl.Mesh {
 fn thighMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.cloth);
-    b.addCylinder(v3(0, 0, 0), v3(0, -SEG_THIGH * H, 0), 0.078 * H, 0.058 * H, 10, CLOTHDK);
+    // **THE THIGH TUCKS INTO THE PELVIS, IT DOES NOT MEET IT AT ITS WIDEST** (owner: he has a weird womanly
+    // figure now). Widest at 0.078 the leg reached 0.30 m off his axis where the belt reaches 0.21, so sealing
+    // that mouth with a ball put a rounded flare at the widest point — hips curving out of a waist. Narrowed to
+    // 0.055 at the joint and widest a hand below it, the silhouette runs INWARD to the waist: the ogre's own limb
+    // profile (`ogre.limb`), which is narrow at the joint and full at 42%.
+    b.addCylinder(v3(0, 0.012 * H, 0), v3(0, -0.052 * H, 0), 0.055 * H, 0.078 * H, 10, CLOTHDK);
+    b.addCylinder(v3(0, -0.052 * H, 0), v3(0, -SEG_THIGH * H, 0), 0.078 * H, 0.058 * H, 10, CLOTHDK);
+    // **THE KNEE, so the thigh does not end in a cut pipe** (`addCylinder` is CAPLESS). It only shows on a bent
+    // leg, which is where a knee is looked at.
+    b.addBlob(v3(0, -SEG_THIGH * H, 0), v3(0.059 * H, 0.038 * H, 0.059 * H), 5, 10, CLOTHDK);
     b.setMat(.leather);
     b.addCylinder(v3(0, -0.002 * H, 0), v3(0, -0.075 * H, 0), 0.088 * H, 0.072 * H, 10, LEATHER_DK);
+    // **AND THE HIP** (owner: the tops of his legs run up to the torso and just cut off — he has no hips). Both
+    // cylinders above are open at the joint, so a swung leg showed the ring and its culled interior with nothing
+    // between it and the pelvis. **A CAP IS FLUSH WITH WHAT IT SEALS AND FLATTENED ON ITS AXIS** (`addCube` takes
+    // a FULL size and `addBlob` takes RADII, and mixing them is how this went wrong): 0.079 against the cloth
+    // cylinder's 0.078, inside the leather band's 0.088, so it closes the mouth and adds no width at all. At a
+    // 0.092 RADIUS it stood 0.12 m proud of the belt on each side and he read as obese.
+    b.addBlob(v3(0, 0.012 * H, 0), v3(0.056 * H, 0.030 * H, 0.056 * H), 6, 12, CLOTHDK);
     return b.toMesh();
 }
 
@@ -4843,6 +4935,8 @@ fn shankMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.cloth);
     b.addCylinder(v3(0, 0, 0), v3(0, -0.09 * H, 0), 0.058 * H, 0.062 * H, 10, CLOTHDK);
+    // The shank's own open mouth at the knee — the thigh's ball covers it while straight and not while bent.
+    b.addBlob(v3(0, 0, 0), v3(0.058 * H, 0.036 * H, 0.058 * H), 5, 10, CLOTHDK);
     b.setMat(.leather);
     b.addCylinder(v3(0, -0.09 * H, 0), v3(0, -SEG_SHANK * H, 0), 0.064 * H, 0.036 * H, 10, BOOT);
     slab(&b, v3(0, -0.02 * H, 0.052 * H), v3(0.062 * H, 0.06 * H, 0.026 * H), LEATHER);
@@ -4906,6 +5000,7 @@ fn testHero() Hero {
         .club = undefined,
         .roots = undefined,
         .guitar = undefined,
+        .tail = undefined,
         .mat = undefined,
         .rest = restPositions(),
     };

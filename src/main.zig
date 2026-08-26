@@ -3,6 +3,7 @@ const game = @import("game.zig");
 const bake = @import("core/bake.zig");
 const wf = @import("world/worldfmt.zig");
 const env = @import("world/env.zig");
+const shots = @import("shots.zig");
 
 pub fn main() void {
     const alloc = std.heap.c_allocator;
@@ -32,6 +33,15 @@ pub fn main() void {
         if (std.mem.eql(u8, argv[i], "--map")) {
             wf.setStartMap(argv[i + 1]);
             std.debug.print("MAP: {s}\n", .{argv[i + 1]});
+            break;
+        }
+    }
+    // DEV ONLY: run one stage of the shot harness. A full --shot is 3m38s, which is not an iteration loop.
+    i = 1;
+    while (i + 1 < argv.len) : (i += 1) {
+        if (std.mem.eql(u8, argv[i], "--shot-only")) {
+            shots.onlyStage = argv[i + 1];
+            std.debug.print("SHOT STAGE: {s}\n", .{argv[i + 1]});
             break;
         }
     }

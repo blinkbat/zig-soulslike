@@ -943,7 +943,8 @@ test "a spirit dies and stops being a collider before it stops being drawn" {
 test "THE EDGES A BLOW SETS DO NOT SURVIVE THE UPDATE — so they have to be read above it" {
     // `takeHit` runs with the FIELD's blows and `update` clears every one-frame edge at the top of its body, so a caller reading these two AFTER `Pack.update` reads false on every frame. Pinned here rather than in game.zig: the contract is the creature's.
     var hurt = Wolf.spawn(mathx.zero3, 0);
-    _ = hurt.takeHit(.{ .dmg = 1, .poise = 999 });
+    hurt.vit.poise = 0.5;
+    _ = hurt.takeHit(.{ .dmg = 1 });
     try std.testing.expect(hurt.yelped);
     hurt.update(1.0 / 60.0, mathx.zero3, 100);
     try std.testing.expect(!hurt.yelped);

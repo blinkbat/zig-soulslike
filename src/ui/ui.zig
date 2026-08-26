@@ -116,7 +116,12 @@ pub fn panel(ctx: *Ctx, r: rl.Rectangle, title: ?[:0]const u8) void {
     }
 }
 
-pub fn button(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32, active: bool) bool {
+/// **EVERY CONTROL IN THE KIT TAKES ITS TOOLTIP, AND NONE OF THEM TAKES IT OPTIONALLY.** A label is four
+/// characters of room ("lean", "take", "r1") and the panels are full of them; what a thing DOES lives here or
+/// nowhere. Zig has no default arguments, which is the point: a widget added without a tip does not compile.
+/// An empty string is the deliberate opt-out, for a control whose own label already says the whole of it.
+pub fn button(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32, active: bool, tip: [:0]const u8) bool {
+    tipFor(ctx, r, tip);
     const h = ctx.hot(r);
     const face = if (active) ACTIVE_FILL else if (h) HOVER_FILL else IDLE_FILL;
     rl.drawRectangleRec(r, face);
@@ -135,7 +140,8 @@ pub fn iconButtonW(label: [:0]const u8, size: i32) i32 {
     return ICON_PAD * 2 + size + ICON_GAP + hud.monoW(label, size);
 }
 
-pub fn iconButton(ctx: *Ctx, r: rl.Rectangle, ic: Icon, label: [:0]const u8, size: i32, active: bool) bool {
+pub fn iconButton(ctx: *Ctx, r: rl.Rectangle, ic: Icon, label: [:0]const u8, size: i32, active: bool, tip: [:0]const u8) bool {
+    tipFor(ctx, r, tip);
     const h = ctx.hot(r);
     const face = if (active) ACTIVE_FILL else if (h) HOVER_FILL else IDLE_FILL;
     rl.drawRectangleRec(r, face);
@@ -207,7 +213,8 @@ pub fn iconOnly(ctx: *Ctx, r: rl.Rectangle, ic: Icon, active: bool, tip: [:0]con
     return h and ctx.pressed;
 }
 
-pub fn swatchButton(ctx: *Ctx, r: rl.Rectangle, paint: rl.Color, label: [:0]const u8, size: i32, active: bool) bool {
+pub fn swatchButton(ctx: *Ctx, r: rl.Rectangle, paint: rl.Color, label: [:0]const u8, size: i32, active: bool, tip: [:0]const u8) bool {
+    tipFor(ctx, r, tip);
     const h = ctx.hot(r);
     const face = if (active) ACTIVE_FILL else if (h) HOVER_FILL else IDLE_FILL;
     rl.drawRectangleRec(r, face);
@@ -222,8 +229,10 @@ pub fn swatchButton(ctx: *Ctx, r: rl.Rectangle, paint: rl.Color, label: [:0]cons
     return h and ctx.pressed;
 }
 
-/// Looks like a button, cannot be pressed — for an action that doesn't apply to what is selected.
-pub fn disabled(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32) void {
+/// Looks like a button, cannot be pressed — for an action that doesn't apply to what is selected. **ITS TIP
+/// IS THE ONE THAT MATTERS MOST**: a greyed control that cannot say why it is greyed is worse than no control.
+pub fn disabled(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32, tip: [:0]const u8) void {
+    tipFor(ctx, r, tip);
     _ = ctx.hot(r);
     rl.drawRectangleRec(r, IDLE_FILL);
     rl.drawRectangleLinesEx(r, 1, alpha(TRIM, 40));
@@ -233,26 +242,23 @@ pub fn disabled(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32) void
     hud.mono(label, tx, ty, size, alpha(LABEL, 90));
 }
 
-pub fn buttonTip(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32, active: bool, tp: [:0]const u8) bool {
-    tipFor(ctx, r, tp);
-    return button(ctx, r, label, size, active);
-}
-
-pub fn chip(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, active: bool, usedW: *i32) bool {
+pub fn chip(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, active: bool, usedW: *i32, tip: [:0]const u8) bool {
     const w = hud.monoW(label, hud.MONO) + 16;
     usedW.* = w + 5;
-    return button(ctx, rect(x, y, w, 24), label, hud.MONO, active);
+    return button(ctx, rect(x, y, w, 24), label, hud.MONO, active, tip);
 }
 
-fn stepper(comptime T: type, ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *T, step: T, lo: T, hi: T) bool {
+fn stepper(comptime T: type, ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *T, step: T, lo: T, hi: T, tip: [:0]const u8) bool {
     const clampfn = comptime if (T == f32) mathx.clampF else mathx.clampI;
+    // THE WHOLE ROW, not the two nudge buttons: the label and the readout are what a hand rests on.
+    tipFor(ctx, rect(x, y, w, 22), tip);
     hud.mono(label, x, y + 4, hud.MONO, LABEL);
     const bw: i32 = 20;
     // Wide enough for the WIDEST world coordinate ("-152.0"), or the sign and last digit clip and the readout lies about where the op is.
     const vw: i32 = 62;
     const bx = x + w - bw * 2 - vw;
     var changed = false;
-    if (button(ctx, rect(bx, y, bw, 22), "-", hud.MONO, false)) {
+    if (button(ctx, rect(bx, y, bw, 22), "-", hud.MONO, false, tip)) {
         const nv = clampfn(v.* - step, lo, hi);
         if (nv != v.*) {
             v.* = nv;
@@ -263,7 +269,7 @@ fn stepper(comptime T: type, ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const
     const fmt = comptime if (T == f32) "{d:.1}" else "{d}";
     const s = std.fmt.bufPrintZ(&buf, fmt, .{v.*}) catch "?";
     hud.mono(s, bx + bw + @divTrunc(vw - hud.monoW(s, hud.MONO), 2), y + 4, hud.MONO, VALUE);
-    if (button(ctx, rect(bx + bw + vw, y, bw, 22), "+", hud.MONO, false)) {
+    if (button(ctx, rect(bx + bw + vw, y, bw, 22), "+", hud.MONO, false, tip)) {
         const nv = clampfn(v.* + step, lo, hi);
         if (nv != v.*) {
             v.* = nv;
@@ -273,17 +279,19 @@ fn stepper(comptime T: type, ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const
     return changed;
 }
 
-pub fn stepperF(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, step: f32, lo: f32, hi: f32) bool {
-    return stepper(f32, ctx, x, y, w, label, v, step, lo, hi);
+pub fn stepperF(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, step: f32, lo: f32, hi: f32, tip: [:0]const u8) bool {
+    return stepper(f32, ctx, x, y, w, label, v, step, lo, hi, tip);
 }
 
-pub fn stepperI(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *i32, step: i32, lo: i32, hi: i32) bool {
-    return stepper(i32, ctx, x, y, w, label, v, step, lo, hi);
+pub fn stepperI(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *i32, step: i32, lo: i32, hi: i32, tip: [:0]const u8) bool {
+    return stepper(i32, ctx, x, y, w, label, v, step, lo, hi, tip);
 }
 
-pub fn slider(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, lo: f32, hi: f32) bool {
+pub fn slider(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, lo: f32, hi: f32, tip: [:0]const u8) bool {
     hud.mono(label, x, y, hud.MONO, LABEL);
     const barY = y + hud.monoLineH(hud.MONO) + 3;
+    // The caption row AND the bar — a slider is read by its label and grabbed by its track.
+    tipFor(ctx, rect(x, y, w, barY + 12 - y), tip);
     const r = rect(x, barY, w, 12);
     const h = ctx.hot(r);
     rl.drawRectangleRec(r, IDLE_FILL);
@@ -305,8 +313,9 @@ pub fn slider(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, l
     return false;
 }
 
-pub fn checkbox(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, v: *bool) bool {
+pub fn checkbox(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, v: *bool, tip: [:0]const u8) bool {
     const box = rect(x, y, 16, 16);
+    tipFor(ctx, rect(x, y, 24 + hud.monoW(label, hud.MONO), 16), tip);
     const h = ctx.hot(box);
     rl.drawRectangleRec(box, IDLE_FILL);
     rl.drawRectangleLinesEx(box, 1, alpha(TRIM, if (h) 190 else 100));
@@ -320,7 +329,8 @@ pub fn checkbox(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, v: *bool) bool {
     return false;
 }
 
-pub fn textField(ctx: *Ctx, r: rl.Rectangle, buf: []u8, len: *usize, focused: bool) void {
+pub fn textField(ctx: *Ctx, r: rl.Rectangle, buf: []u8, len: *usize, focused: bool, tip: [:0]const u8) void {
+    tipFor(ctx, r, tip);
     _ = ctx.hot(r);
     rl.drawRectangleRec(r, rgba(14, 12, 10, 245));
     rl.drawRectangleLinesEx(r, 1, alpha(TRIM, if (focused) 220 else 100));
@@ -347,7 +357,8 @@ pub fn listRows(heightPx: i32) i32 {
     return @divTrunc(heightPx - 6, ROW_H);
 }
 
-pub fn list(ctx: *Ctx, r: rl.Rectangle, labels: []const [:0]const u8, sel: usize, scroll: *i32) ?usize {
+pub fn list(ctx: *Ctx, r: rl.Rectangle, labels: []const [:0]const u8, sel: usize, scroll: *i32, tip: [:0]const u8) ?usize {
+    tipFor(ctx, r, tip);
     _ = ctx.hot(r);
     rl.drawRectangleRec(r, rgba(12, 11, 10, 240));
     rl.drawRectangleLinesEx(r, 1, alpha(TRIM, 90));

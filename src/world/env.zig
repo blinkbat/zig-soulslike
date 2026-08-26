@@ -1,6 +1,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 const gfx = @import("../gfx/gfx.zig");
+const glsl = @import("../gfx/shaders.zig");
 const mathx = @import("../core/mathx.zig");
 const collision = @import("../core/collision.zig");
 const props = @import("../props/props.zig");
@@ -112,31 +113,9 @@ const WATER_Y: f32 = 0.055;
 var scratchIn: [wf.WATER_CELLS]f32 = undefined;
 var scratchOut: [wf.WATER_CELLS]f32 = undefined;
 
-pub const WATER_FACET: f32 = 3.6;
-
-fn coastWarp(e: wf.Edge, x: f32, z: f32) f32 {
-    return switch (e) {
-        .blend => 0,
-        .natural => (vnoise2(x / 13.0, z / 13.0) - 0.5) * 4.4,
-        .frayed => (vnoise2(x / 5.5 + 12.3, z / 5.5 - 7.1) - 0.5) * 3.0,
-        .jagged => (vnoise2(x / 6.0 + 3.3, z / 6.0 + 9.9) - 0.5) * 7.0 +
-            (vnoise2(x / 2.2 - 5.0, z / 2.2 + 4.0) - 0.5) * 2.6,
-        .straight => 0,
-        .tiled => tiledCoast(x, z),
-        .scallop => (mathx.sinf(x * 0.34) + mathx.sinf(z * 0.34)) * 2.3,
-        .speckle => (vnoise2(x / 3.0 + 21.0, z / 3.0 - 17.0) - 0.5) * 8.0 - 1.4,
-    };
-}
-
-fn tiledCoast(x: f32, z: f32) f32 {
-    const g = WATER_FACET;
-    const sx = x / g - @floor(x / g);
-    const sz = z / g - @floor(z / g);
-    const dx = (0.5 - @abs(sx - 0.5)) * g;
-    const dz = (0.5 - @abs(sz - 0.5)) * g;
-    return -@min(dx, dz);
-}
-
+/// **HOW WIDE THE WALK BACK TO DRY LAND IS, PER SHAPE** — and the only part of an edge policy still baked into
+/// the field, because a ramp WIDTH is a smooth scalar and survives being sampled. Where the coast actually
+/// LANDS is `shaders.waterAt`'s, per fragment, off the same `edgeShape`/`edgeWarp` the soil uses.
 fn coastBand(e: wf.Edge) f32 {
     return switch (e) {
         .blend => 3.2,
@@ -148,99 +127,6 @@ fn coastBand(e: wf.Edge) f32 {
         .scallop => 1.2,
         .speckle => 2.2,
     };
-}
-
-/// **THE FACET CORNERS, SAMPLED ONCE EACH.** `sampleField` is pure and the three corners a cell reads are shared
-/// with its neighbours: the facet is at least 1.2 cells wide, so every corner was being bilinearly resampled about six times. MEASURED on the shipped map, this pass was 4.85 ms of `uploadWater`'s 9.40.
-const FACET_LAT: usize = @as(usize, @intFromFloat(@ceil(2.0 * wf.MAX_DECLARED_HALF / WATER_FACET))) + 4;
-var facetLat: [FACET_LAT * FACET_LAT]f32 = undefined;
-
-fn facetWater(field: *[wf.WATER_CELLS]u8, half: f32) void {
-    const N = wf.WATER_N;
-    if (!(half > 0)) return;
-    const cell = 2 * half / @as(f32, @floatFromInt(N));
-    const facet = @max(WATER_FACET, cell * 1.2);
-
-    const lo = -half + 0.5 * cell;
-    const b0 = @floor(lo / facet);
-    const need: usize = @intFromFloat(@floor(-lo / facet) - b0 + 2.0);
-    const cached = need <= FACET_LAT;
-    const base: i32 = @intFromFloat(b0);
-    if (cached) {
-        for (0..need) |jz| {
-            const gz = (b0 + @as(f32, @floatFromInt(jz))) * facet;
-            for (0..need) |jx| {
-                facetLat[jz * FACET_LAT + jx] = sampleField(field, half, cell, (b0 + @as(f32, @floatFromInt(jx))) * facet, gz);
-            }
-        }
-    }
-    const corner = struct {
-        fn at(f: *const [wf.WATER_CELLS]u8, hf: f32, cl: f32, fc: f32, on: bool, from: i32, gx: i32, gz: i32) f32 {
-            if (on) return facetLat[@as(usize, @intCast(gz - from)) * FACET_LAT + @as(usize, @intCast(gx - from))];
-            return sampleField(f, hf, cl, @as(f32, @floatFromInt(gx)) * fc, @as(f32, @floatFromInt(gz)) * fc);
-        }
-    }.at;
-
-    const out = &scratchIn;
-    for (0..N) |cz| {
-        for (0..N) |cx| {
-            const wx = -half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell;
-            const wz = -half + (@as(f32, @floatFromInt(cz)) + 0.5) * cell;
-            const sx = wx / facet;
-            const sz = wz / facet;
-            const bx = @floor(sx);
-            const bz = @floor(sz);
-            const fx = sx - bx;
-            const fz = sz - bz;
-            const ix: i32 = @intFromFloat(bx);
-            const iz: i32 = @intFromFloat(bz);
-            var wa: f32 = undefined;
-            var wb: f32 = undefined;
-            var wc: f32 = undefined;
-            var c0: [2]i32 = undefined;
-            var c1: [2]i32 = undefined;
-            var c2: [2]i32 = undefined;
-            if (fx + fz > 1.0) {
-                c0 = .{ 1, 0 };
-                c1 = .{ 0, 1 };
-                c2 = .{ 1, 1 };
-                wa = 1 - fz;
-                wb = 1 - fx;
-                wc = fx + fz - 1;
-            } else {
-                c0 = .{ 0, 0 };
-                c1 = .{ 1, 0 };
-                c2 = .{ 0, 1 };
-                wa = 1 - fx - fz;
-                wb = fx;
-                wc = fz;
-            }
-            const va = corner(field, half, cell, facet, cached, base, ix + c0[0], iz + c0[1]);
-            const vb = corner(field, half, cell, facet, cached, base, ix + c1[0], iz + c1[1]);
-            const vc = corner(field, half, cell, facet, cached, base, ix + c2[0], iz + c2[1]);
-            out[cz * N + cx] = wa * va + wb * vb + wc * vc;
-        }
-    }
-    for (field, out) |*dst, v| dst.* = mathx.u8f(v);
-}
-
-/// Bilinear, not nearest: the lattice corners are arbitrary world positions rather than cell centres, and nearest-sampling puts the field's own 2.5 m staircase back into what this pass exists to remove.
-fn sampleField(field: *const [wf.WATER_CELLS]u8, half: f32, cell: f32, wx: f32, wz: f32) f32 {
-    const N = wf.WATER_N;
-    const maxI: f32 = @floatFromInt(N - 1);
-    const tx = mathx.clampF((wx + half) / cell - 0.5, 0, maxI);
-    const tz = mathx.clampF((wz + half) / cell - 0.5, 0, maxI);
-    const x0: usize = @intFromFloat(@floor(tx));
-    const z0: usize = @intFromFloat(@floor(tz));
-    const x1 = @min(x0 + 1, N - 1);
-    const z1 = @min(z0 + 1, N - 1);
-    const ux = tx - @floor(tx);
-    const uz = tz - @floor(tz);
-    const v00: f32 = @floatFromInt(field[z0 * N + x0]);
-    const v10: f32 = @floatFromInt(field[z0 * N + x1]);
-    const v01: f32 = @floatFromInt(field[z1 * N + x0]);
-    const v11: f32 = @floatFromInt(field[z1 * N + x1]);
-    return mathx.lerpF(mathx.lerpF(v00, v10, ux), mathx.lerpF(v01, v11, ux), uz);
 }
 
 const Prop = struct {
@@ -389,6 +275,9 @@ pub const Env = struct {
     scene: ?*gfx.Scene = null,
     props: [MAX_PROPS]Prop = undefined,
     nprops: usize = 0,
+    /// How many props each op placed, by op slot. `MAX_PROPS` fits a `u16` with room, and the add saturates so
+    /// a runaway op reads as "all of them" rather than wrapping to nearly none.
+    opOwned: [wf.MAX_OPS]u16 = [_]u16{0} ** wf.MAX_OPS,
     /// **NO SILENT CAP** — how many ops hit their work budget on the last `materialize`, so a runaway one is a
     /// number somebody can see rather than a machine that has quietly stopped responding.
     opsCapped: usize = 0,
@@ -418,6 +307,10 @@ pub const Env = struct {
     npools: usize = 0,
     waterSheet: rl.Model = undefined,
     waterField: [wf.WATER_CELLS]u8 = [_]u8{gfx.WATER_SHORE} ** wf.WATER_CELLS,
+    /// The coast POLICY per cell, dilated one cell off the painted water so the dry side of a boundary answers
+    /// with the same shape as the wet side. Held here rather than in `gfx` because BOTH sides read it: the
+    /// shader gets this exact buffer, and `paintedDepth` walks it for the footing.
+    waterEdgeField: [wf.WATER_CELLS]u8 = [_]u8{@intFromEnum(wf.Edge.natural)} ** wf.WATER_CELLS,
     waterAny: bool = false,
     waterHalf: f32 = 0,
     /// Every input `uploadWater` reads. Its OWN copy of the height, not `heightField`: `sculptHeight` moves
@@ -691,7 +584,8 @@ pub const Env = struct {
         self.waterHalf = m.half;
         if (!self.waterAny) {
             @memset(&self.waterField, 0);
-            if (self.scene) |sc| sc.setWater(&self.waterField, m.half, false);
+            self.dilateWaterEdge(m);
+            if (self.scene) |sc| sc.setWater(&self.waterField, &self.waterEdgeField, m.half, false);
             return;
         }
         var lo: [2]usize = .{ N - 1, N - 1 };
@@ -769,16 +663,23 @@ pub const Env = struct {
                 const i = cz * N + cx;
                 const ex = edge(cx, m.half, cell);
                 const wet = m.water[i];
-                const wx = ex + cell * 0.5;
-                const wz = ez + cell * 0.5;
                 const shape: wf.Edge = @enumFromInt(@min(m.waterEdge[i], wf.Edge.N - 1));
-                const sd = coastWarp(shape, wx, wz) + if (wet != 0)
+                // **A PLAIN SIGNED DISTANCE, AND NOTHING SHAPED INTO IT.** The wander is the shader's now
+                // (`shaders.waterAt`), for the reason the soil's always was: baked at one sample per cell it is
+                // undersampled by its own wavelength, and bilinear filtering then smooths off what survived.
+                const sd = if (wet != 0)
                     @max(0.0, (dIn[i] - 0.5) * cell)
                 else
                     -@max(0.0, (dOut[i] - 0.5) * cell);
                 const enc: f32 = if (sd >= 0) blk: {
                     const byShore = mathx.clampF(sd / gfx.WATER_DEEP_AT, 0, 1);
                     const dug = WATER_Y - (GROUND_Y + m.heightAt(ex, ez));
+                    // **A BANK THROUGH THE SURFACE IS NOT WATER, WHATEVER THE PAINT SAYS** — and it gets the
+                    // same walk-off a painted coast gets, so a rise inside a lake comes with a shore instead of
+                    // the terrain mesh ruling a hard line across the flat sheet. Only a bed ABOVE the waterline
+                    // does this: un-sculpted ground sits 0.045 m under it, and capping the tone by the bed
+                    // there would erase every lake nobody happened to dig out.
+                    if (dug <= 0) break :blk shoreF * (1.0 - mathx.clampF(-dug / (gfx.WATER_WET_OUT * coastBand(shape)), 0, 1));
                     break :blk shoreF + @max(byShore, digTone(dug)) * (255.0 - shoreF);
                 } else blk: {
                     break :blk shoreF * (1.0 - mathx.clampF(-sd / (gfx.WATER_WET_OUT * coastBand(shape)), 0, 1));
@@ -786,8 +687,8 @@ pub const Env = struct {
                 self.waterField[i] = mathx.u8f(enc);
             }
         }
-        facetWater(&self.waterField, m.half);
-        if (self.scene) |sc| sc.setWater(&self.waterField, m.half, true);
+        self.dilateWaterEdge(m);
+        if (self.scene) |sc| sc.setWater(&self.waterField, &self.waterEdgeField, m.half, true);
     }
 
     pub fn drawWater(self: *Env) void {
@@ -1293,9 +1194,46 @@ pub const Env = struct {
         return self.paintedDepth(x, z) * gfx.WATER_DEEP_AT > margin + 0.01;
     }
 
+    /// **THE BARE SIDE OF A COAST ANSWERS WITH THE WATER'S OWN POLICY.** `gfx.dilateEdges` does this for the
+    /// soil inside its upload; the coast needs it on THIS side, because the footing reads the map as well as
+    /// the shader does and the two have to be looking at the same one.
+    fn dilateWaterEdge(self: *Env, m: *const wf.Map) void {
+        const N = wf.WATER_N;
+        self.waterEdgeField = m.waterEdge;
+        for (0..N) |z| {
+            for (0..N) |x| {
+                const i = z * N + x;
+                if (m.water[i] != 0) continue;
+                const nb = [4]?usize{
+                    if (x > 0) i - 1 else null,
+                    if (x + 1 < N) i + 1 else null,
+                    if (z > 0) i - N else null,
+                    if (z + 1 < N) i + N else null,
+                };
+                for (nb) |maybe| {
+                    const j = maybe orelse continue;
+                    if (m.water[j] == 0) continue;
+                    self.waterEdgeField[i] = m.waterEdge[j];
+                    break;
+                }
+            }
+        }
+    }
+
+    fn waterEdgeAt(self: *const Env, x: f32, z: f32) usize {
+        const i = wf.gridIndex(self.waterHalf, wf.WATER_N, x, z) orelse return @intFromEnum(wf.Edge.natural);
+        return @min(self.waterEdgeField[i], wf.Edge.N - 1);
+    }
+
+    /// **THE ONE DOOR INTO THE WATER FIELD FOR EVERYTHING THAT IS NOT A PIXEL** — wading, the fen lurker's
+    /// water, what blocks a step. **IT WARPS EXACTLY AS THE SHADER DOES** (`glsl.warpEdge`, off the same
+    /// `EDGE_K` row), because the field is ONE field feeding the look and the footing: shaped only on the GPU,
+    /// the coast you see would sit up to `warp` metres from the coast you walk into.
     pub fn paintedDepth(self: *const Env, x: f32, z: f32) f32 {
         if (!self.waterAny) return 0;
-        const i = wf.gridIndex(self.waterHalf, wf.WATER_N, x, z) orelse return 0;
+        const e = self.waterEdgeAt(x, z);
+        const q = glsl.warpEdge(x, z, e, true);
+        const i = wf.gridIndex(self.waterHalf, wf.WATER_N, q[0], q[1]) orelse return 0;
         const v: f32 = @floatFromInt(self.waterField[i]);
         const shore: f32 = @floatFromInt(gfx.WATER_SHORE);
         if (v <= shore) return 0;
@@ -1318,31 +1256,47 @@ pub const Env = struct {
     }
 
 
+    /// **A CURSOR RAY CANNOT HIT WHAT IS NOT ON SCREEN**, so this asks the draw's own index rather than the
+    /// whole list: the mouse is in the viewport by construction. It ran every frame the select tool was up,
+    /// ray-testing all ~17k props to light one of them.
     pub fn pickIf(
         self: *const Env,
+        view: *const View,
         origin: rl.Vector3,
         dir: rl.Vector3,
         ctx: anytype,
         comptime accept: fn (@TypeOf(ctx), u16) bool,
     ) ?usize {
-        var best: ?usize = null;
-        var bestT: f32 = std.math.floatMax(f32);
-        for (self.props[0..self.nprops], 0..) |*pr, i| {
-            const nfo = props.info(pr.kind);
-            const sw = leanSwing(pr, nfo.top * pr.scale * 0.5);
-            const c = v3(pr.pos.x + sw.x, pr.pos.y + nfo.top * pr.scale * 0.5, pr.pos.z + sw.z);
-            const rad = @max(nfo.bound * pr.scale * 0.5, 0.35);
-            const oc = mathx.subV(c, origin);
-            const along = oc.x * dir.x + oc.y * dir.y + oc.z * dir.z;
-            if (along <= 0 or along >= bestT) continue;
-            const perp2 = (oc.x * oc.x + oc.y * oc.y + oc.z * oc.z) - along * along;
-            if (perp2 > rad * rad) continue;
-            if (accept(ctx, pr.op)) {
-                bestT = along;
-                best = i;
+        const Pick = struct {
+            e: *const Env,
+            origin: rl.Vector3,
+            dir: rl.Vector3,
+            ctx: @TypeOf(ctx),
+            best: ?usize = null,
+            bestT: f32 = std.math.floatMax(f32),
+
+            fn at(p: *@This(), pi: u32) void {
+                const pr = &p.e.props[pi];
+                const nfo = props.info(pr.kind);
+                const sw = leanSwing(pr, nfo.top * pr.scale * 0.5);
+                const c = v3(pr.pos.x + sw.x, pr.pos.y + nfo.top * pr.scale * 0.5, pr.pos.z + sw.z);
+                const rad = @max(nfo.bound * pr.scale * 0.5, 0.35);
+                const oc = mathx.subV(c, p.origin);
+                const along = oc.x * p.dir.x + oc.y * p.dir.y + oc.z * p.dir.z;
+                if (along <= 0 or along >= p.bestT) return;
+                const perp2 = (oc.x * oc.x + oc.y * oc.y + oc.z * oc.z) - along * along;
+                if (perp2 > rad * rad) return;
+                if (accept(p.ctx, pr.op)) {
+                    p.bestT = along;
+                    p.best = pi;
+                }
             }
-        }
-        return best;
+        };
+        // The cells come in index order rather than near-to-far, so the `bestT` compare is what keeps the
+        // NEAREST — the same test the flat walk used, and it does not care what order the candidates arrive in.
+        var p = Pick{ .e = self, .origin = origin, .dir = dir, .ctx = ctx };
+        self.eachInView(view, &p, Pick.at);
+        return p.best;
     }
 
     pub fn model(self: *const Env, kind: Kind) rl.Model {
@@ -1529,6 +1483,43 @@ pub const Env = struct {
                 }
             }
         }
+    }
+
+    /// **WHAT IS ON SCREEN, THROUGH THE SAME TWO REJECTS THE DRAW USES** — the cell's sphere, then the prop's.
+    /// Both indexes, because "on screen" means flora too. Yields the prop's INDEX, so a caller reads
+    /// `env.props[i]` the way it already did. No fade or `gone` filter: those decide how a prop is DRAWN, and a
+    /// tree faded out because it stands in front of you is still a prop you are looking at.
+    pub fn eachInView(
+        self: *const Env,
+        view: *const View,
+        ctx: anytype,
+        comptime visit: fn (@TypeOf(ctx), u32) void,
+    ) void {
+        for ([_]*const Index{ &self.stx, &self.flx }) |idx| {
+            var c: usize = 0;
+            while (c < NCELL) : (c += 1) {
+                if (idx.start[c] == idx.start[c + 1]) continue;
+                var centre = cellCentre(c);
+                centre.y = (idx.ylo[c] + idx.yhi[c]) * 0.5;
+                const vspan = (idx.yhi[c] - idx.ylo[c]) * 0.5;
+                if (!view.visible(centre, CELL_CIRCUM + idx.bound[c] + vspan, idx.view[c])) continue;
+                var k = idx.start[c];
+                while (k < idx.start[c + 1]) : (k += 1) {
+                    const pi = idx.items[k];
+                    const pr = &self.props[pi];
+                    const nfo = props.info(pr.kind);
+                    if (!view.visible(pr.pos, nfo.bound * pr.scale, nfo.view)) continue;
+                    visit(ctx, pi);
+                }
+            }
+        }
+    }
+
+    /// **HOW MANY PROPS ONE OP PLACED, WITHOUT LOOKING FOR THEM.** Tallied in `indexProps`, which already walks
+    /// the list once. The editor's gizmo used to recover this by scanning all of them every frame; now the
+    /// scan is gone and the COUNT must not go with it, or a scatter's readout becomes "what is in frame".
+    pub fn ownedBy(self: *const Env, op: u16) usize {
+        return if (op < self.opOwned.len) self.opOwned[op] else 0;
     }
 
     fn drawProp(self: *const Env, pr: *const Prop) void {
@@ -2096,8 +2087,10 @@ fn indexProps(e: *Env) void {
     e.nchests = 0;
     e.npickups = 0;
     e.nrests = 0;
+    @memset(&e.opOwned, 0);
     for (e.props[0..e.nprops], 0..) |*pr, pi| {
         const i: u32 = @intCast(pi);
+        if (pr.op < e.opOwned.len) e.opOwned[pr.op] +|= 1;
         const nfo = props.info(pr.kind);
         if (nfo.veil != null or nfo.stow != null) {
             if (e.ndress >= MAX_DRESSED) @panic("env: MAX_DRESSED exceeded — raise the cap");
@@ -3255,78 +3248,6 @@ test "A BLOCKED PROBE AND A MOVED PUSH-OUT ARE ONE PREDICATE — what `game.wayC
     try std.testing.expectEqual(@as(usize, 61 * 61 * 3), agreed);
 }
 
-test "THE FACET MEMO IS THE SAME ARITHMETIC — corner for corner, byte for byte" {
-    // `facetWater` caches the lattice `sampleField` is read at, which is only licensed if it is a MEMO and
-    // not an approximation. The direct version is written out here so the thing pinned is the loop this
-    // replaced rather than a paraphrase of it.
-    const direct = struct {
-        fn go(field: *[wf.WATER_CELLS]u8, half: f32) void {
-            const N = wf.WATER_N;
-            if (!(half > 0)) return;
-            const cell = 2 * half / @as(f32, @floatFromInt(N));
-            const facet = @max(WATER_FACET, cell * 1.2);
-            const out = &scratchOut;
-            for (0..N) |cz| {
-                for (0..N) |cx| {
-                    const wx = -half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell;
-                    const wz = -half + (@as(f32, @floatFromInt(cz)) + 0.5) * cell;
-                    const sx = wx / facet;
-                    const sz = wz / facet;
-                    const bx = @floor(sx);
-                    const bz = @floor(sz);
-                    const fx = sx - bx;
-                    const fz = sz - bz;
-                    var wa: f32 = undefined;
-                    var wb: f32 = undefined;
-                    var wc: f32 = undefined;
-                    var c0: [2]f32 = undefined;
-                    var c1: [2]f32 = undefined;
-                    var c2: [2]f32 = undefined;
-                    if (fx + fz > 1.0) {
-                        c0 = .{ 1, 0 };
-                        c1 = .{ 0, 1 };
-                        c2 = .{ 1, 1 };
-                        wa = 1 - fz;
-                        wb = 1 - fx;
-                        wc = fx + fz - 1;
-                    } else {
-                        c0 = .{ 0, 0 };
-                        c1 = .{ 1, 0 };
-                        c2 = .{ 0, 1 };
-                        wa = 1 - fx - fz;
-                        wb = fx;
-                        wc = fz;
-                    }
-                    const va = sampleField(field, half, cell, (bx + c0[0]) * facet, (bz + c0[1]) * facet);
-                    const vb = sampleField(field, half, cell, (bx + c1[0]) * facet, (bz + c1[1]) * facet);
-                    const vc = sampleField(field, half, cell, (bx + c2[0]) * facet, (bz + c2[1]) * facet);
-                    out[cz * N + cx] = wa * va + wb * vb + wc * vc;
-                }
-            }
-            for (field, out) |*dst, v| dst.* = mathx.u8f(v);
-        }
-    }.go;
-
-    const m = try std.testing.allocator.create(wf.Map);
-    defer std.testing.allocator.destroy(m);
-    var line: usize = 0;
-    const txt = try std.fs.cwd().readFileAlloc(std.testing.allocator, wf.START_MAP, 1 << 22);
-    defer std.testing.allocator.free(txt);
-    try wf.parse(txt, m, &line);
-    const e = try std.testing.allocator.create(Env);
-    defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
-    e.uploadWater(m);
-
-    for ([_]f32{ m.half, 40.0, wf.MAX_DECLARED_HALF }) |half| {
-        var a: [wf.WATER_CELLS]u8 = e.waterField;
-        var b: [wf.WATER_CELLS]u8 = e.waterField;
-        facetWater(&a, half);
-        direct(&b, half);
-        try std.testing.expectEqualSlices(u8, &b, &a);
-    }
-}
-
 test "AN OP MAY NOT SPIN — the rebuild's cost is the map's size, never a number somebody dragged" {
     // Owner: the editor freezes the PC, usually mid prop-edit, "spinning endlessly, almost crashing". It was not
     // a leak. The generator loops were bounded only by AUTHORED numbers — `n` is an unbounded i32 and a line's
@@ -3376,4 +3297,229 @@ test "…AND NO HONEST OP IN THE SHIPPING MAP IS TRUNCATED BY IT" {
     e.materialize(m);
     std.debug.print("  {s}: {d} ops built {d} props in {d:.1} ms, {d} capped\n", .{ wf.START_MAP, m.nops, e.nprops, @as(f64, @floatFromInt(t.read())) / 1e6, e.opsCapped });
     try std.testing.expectEqual(@as(usize, 0), e.opsCapped);
+}
+
+test "THE GIZMO PASS WALKS WHAT IS IN FRAME, NOT THE WHOLE MAP — and the owned count survives losing the scan" {
+    const ta = std.testing.allocator;
+    const m = try ta.create(wf.Map);
+    defer ta.destroy(m);
+    const e = try ta.create(Env);
+    defer ta.destroy(e);
+    const text = std.fs.cwd().readFileAlloc(ta, wf.START_MAP, 1 << 22) catch return error.SkipZigTest;
+    defer ta.free(text);
+    var line: usize = 0;
+    try wf.parse(text, m, &line);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.materialize(m);
+
+    // An editor eye at the map's middle, looking the way `shots.LIT_YAW` does, at the boom the editor opens on.
+    const view = viewLooking(v3(0, 26, -34), v3(0, 0, 0));
+    const Count = struct {
+        n: usize = 0,
+        fn at(c: *@This(), _: u32) void {
+            c.n += 1;
+        }
+    };
+    var c = Count{};
+    e.eachInView(&view, &c, Count.at);
+    const share = @as(f64, @floatFromInt(c.n)) / @as(f64, @floatFromInt(e.nprops));
+    std.debug.print("  gizmo pass: {d} of {d} props in frame ({d:.1}% — the walk it replaces was all of them)\n", .{ c.n, e.nprops, share * 100.0 });
+    try std.testing.expect(c.n < e.nprops);
+
+    // **THE COUNT IS NOT THE WALK'S ANY MORE.** Every prop is owned by exactly one op, so the tallies sum back
+    // to the whole list — which a per-frame scan of what is on screen could never have told you.
+    var summed: usize = 0;
+    var widest: usize = 0;
+    for (0..m.nops) |i| {
+        summed += e.ownedBy(@intCast(i));
+        widest = @max(widest, e.ownedBy(@intCast(i)));
+    }
+    try std.testing.expectEqual(e.nprops, summed);
+    // NOT PINNED: `widest` is 1 on a map whose scatters have all been exploded into `at:` ops, and hundreds on
+    // one that still carries a `belt`. The claim is the SUM, which holds either way.
+    std.debug.print("  widest op owns {d} props; ownedBy sums to {d}\n", .{ widest, summed });
+}
+
+test "THE CURSOR PICK ANSWERS THE SAME PROP OFF THE INDEX AS OFF THE WHOLE LIST — and stops walking the map to do it" {
+    const ta = std.testing.allocator;
+    const m = try ta.create(wf.Map);
+    defer ta.destroy(m);
+    const e = try ta.create(Env);
+    defer ta.destroy(e);
+    const text = std.fs.cwd().readFileAlloc(ta, wf.START_MAP, 1 << 22) catch return error.SkipZigTest;
+    defer ta.free(text);
+    var line: usize = 0;
+    try wf.parse(text, m, &line);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.materialize(m);
+
+    const Any = struct {
+        fn all(_: void, _: u16) bool {
+            return true;
+        }
+    };
+    // **THE REFERENCE IS THE WALK THIS REPLACED**, written out here so the claim is an equality and not a hope.
+    const flat = struct {
+        fn pick(env: *const Env, origin: rl.Vector3, dir: rl.Vector3) ?usize {
+            var best: ?usize = null;
+            var bestT: f32 = std.math.floatMax(f32);
+            for (env.props[0..env.nprops], 0..) |*pr, i| {
+                const nfo = props.info(pr.kind);
+                const sw = leanSwing(pr, nfo.top * pr.scale * 0.5);
+                const c = v3(pr.pos.x + sw.x, pr.pos.y + nfo.top * pr.scale * 0.5, pr.pos.z + sw.z);
+                const rad = @max(nfo.bound * pr.scale * 0.5, 0.35);
+                const oc = mathx.subV(c, origin);
+                const along = oc.x * dir.x + oc.y * dir.y + oc.z * dir.z;
+                if (along <= 0 or along >= bestT) continue;
+                const perp2 = (oc.x * oc.x + oc.y * oc.y + oc.z * oc.z) - along * along;
+                if (perp2 > rad * rad) continue;
+                bestT = along;
+                best = i;
+            }
+            return best;
+        }
+    }.pick;
+
+    // A grid of cursor positions over the ground the eye is looking at — the rays a hand actually casts.
+    const eye = v3(0, 26, -34);
+    var rng = mathx.Rng.init(0xC0FFEE);
+    var agree: usize = 0;
+    var hits: usize = 0;
+    var tIdx: u64 = 0;
+    var tFlat: u64 = 0;
+    var t = try std.time.Timer.start();
+    for (0..64) |_| {
+        const at = v3(rng.range(-60, 60), 0, rng.range(-60, 60));
+        const view = viewLooking(eye, at);
+        const dir = mathx.normV(mathx.subV(at, eye));
+
+        t.reset();
+        const got = e.pickIf(&view, eye, dir, {}, Any.all);
+        tIdx += t.read();
+
+        t.reset();
+        const want = flat(e, eye, dir);
+        tFlat += t.read();
+
+        if (want != null) hits += 1;
+        if (got == want) agree += 1;
+    }
+    std.debug.print(
+        "  cursor pick over 64 rays: {d} agreed, {d} hit something | indexed {d:.0} us, whole-list {d:.0} us ({d:.1}x)\n",
+        .{ agree, hits, @as(f64, @floatFromInt(tIdx)) / 1000.0, @as(f64, @floatFromInt(tFlat)) / 1000.0, @as(f64, @floatFromInt(tFlat)) / @as(f64, @floatFromInt(@max(tIdx, 1))) },
+    );
+    try std.testing.expectEqual(@as(usize, 64), agree);
+    try std.testing.expect(hits > 0);
+    try std.testing.expect(tIdx < tFlat);
+}
+
+
+test "THE BAKED WATER FIELD CARRIES NO SHAPE — the coast is the shader's, so the field is a plain distance" {
+    // **THE INVARIANT THE NEW COAST RESTS ON.** `uploadWater` used to write `coastWarp` into the field and then
+    // re-facet it on a 3.6 m lattice; measured, that left `natural` with 1.6% more waterline than `straight`,
+    // which applies no wander at all — eight authored shapes arriving as one smooth blob. The wander is
+    // `shaders.waterAt`'s now, per fragment, off the same `edgeShape`/`edgeWarp` the soil has always used.
+    // What has to stay true here is that the field is a clean signed distance: bilinear-safe, and identical
+    // whatever the policy says, because a shape baked at one sample per cell is a shape undersampled.
+    const ta = std.testing.allocator;
+    const m = try ta.create(wf.Map);
+    defer ta.destroy(m);
+    const e = try ta.create(Env);
+    defer ta.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+
+    var first: [wf.WATER_CELLS]u8 = undefined;
+    inline for (@typeInfo(wf.Edge).@"enum".fields, 0..) |f, k| {
+        m.* = .{};
+        m.half = 140;
+        const N = wf.WATER_N;
+        const cell = m.cellSize(N);
+        for (0..N) |cz| {
+            for (0..N) |cx| {
+                const wx = -m.half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell;
+                const wz = -m.half + (@as(f32, @floatFromInt(cz)) + 0.5) * cell;
+                const i = cz * N + cx;
+                m.water[i] = if (wx * wx + wz * wz < 60.0 * 60.0) 1 else 0;
+                m.waterEdge[i] = f.value;
+            }
+        }
+        e.waterReady = false;
+        e.uploadWater(m);
+        if (k == 0) {
+            first = e.waterField;
+            continue;
+        }
+        // The WET side is the distance and nothing else. (The dry ramp still narrows per shape — `coastBand`
+        // is a width, which is a smooth scalar and survives being sampled.)
+        for (first, e.waterField) |a, b| {
+            if (a < gfx.WATER_SHORE and b < gfx.WATER_SHORE) continue;
+            try std.testing.expectEqual(a, b);
+        }
+    }
+
+    // …and it is MONOTONE out from the middle, which is what makes a 3 m warp of the lookup land somewhere
+    // meaningful rather than on a facet's corner.
+    const N = wf.WATER_N;
+    const mid = N / 2;
+    var prev: u8 = 255;
+    for (mid..N) |cx| {
+        const v = e.waterField[mid * N + cx];
+        try std.testing.expect(v <= prev);
+        prev = v;
+    }
+}
+
+test "THE COAST YOU SEE IS THE COAST YOU WADE INTO — one warp, evaluated on both sides" {
+    // The shader shapes the coast per fragment now, so `paintedDepth` has to walk the SAME displacement or the
+    // waterline drifts up to `EDGE_K[e].warp` metres from the one you can stand in. This is the pin on that.
+    const ta = std.testing.allocator;
+    const m = try ta.create(wf.Map);
+    defer ta.destroy(m);
+    const e = try ta.create(Env);
+    defer ta.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+
+    // `wf.Edge` and the shader's shape table are two lists that have to stay the same length.
+    try std.testing.expectEqual(@as(usize, wf.Edge.N), glsl.EDGE_K.len);
+    try std.testing.expectEqual(@as(usize, @intFromEnum(wf.Edge.scallop)), glsl.SCALLOP);
+    try std.testing.expectEqual(@as(usize, @intFromEnum(wf.Edge.tiled)), glsl.TILED);
+
+    m.* = .{};
+    m.half = 140;
+    const N = wf.WATER_N;
+    const cell = m.cellSize(N);
+    for (0..N) |cz| {
+        for (0..N) |cx| {
+            const wx = -m.half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell;
+            const wz = -m.half + (@as(f32, @floatFromInt(cz)) + 0.5) * cell;
+            const i = cz * N + cx;
+            m.water[i] = if (wx * wx + wz * wz < 60.0 * 60.0) 1 else 0;
+            m.waterEdge[i] = @intFromEnum(wf.Edge.jagged);
+        }
+    }
+    e.waterReady = false;
+    e.uploadWater(m);
+
+    // **THE WATERLINE MOVED, AND IT MOVED FOR THE FOOTING TOO.** Walk out along +x and find where the footing
+    // says the water stops; against a painted circle of r = 60 the warp has to have shifted it.
+    var wetTo: f32 = 0;
+    var t: f32 = 0;
+    while (t < 90) : (t += 0.25) {
+        if (e.paintedDepth(t, 0) > 0) wetTo = t;
+    }
+    const k = glsl.edgeK(@intFromEnum(wf.Edge.jagged));
+    std.debug.print("\n  jagged coast: painted at 60.00 m, footing finds water out to {d:.2} m (warp {d:.1} m)\n", .{ wetTo, k.warp });
+    try std.testing.expect(@abs(wetTo - 60.0) > 0.3);
+    try std.testing.expect(@abs(wetTo - 60.0) < k.warp + glsl.BAY_M + 2.0);
+
+    // …and `straight` warps by nothing, so its footing sits on the painted line to within a cell.
+    for (&m.waterEdge) |*v| v.* = @intFromEnum(wf.Edge.straight);
+    e.waterReady = false;
+    e.uploadWater(m);
+    wetTo = 0;
+    t = 0;
+    while (t < 90) : (t += 0.25) {
+        if (e.paintedDepth(t, 0) > 0) wetTo = t;
+    }
+    try std.testing.expect(@abs(wetTo - 60.0) <= cell + 0.3);
 }

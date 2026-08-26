@@ -1,3 +1,110 @@
+const std = @import("std");
+
+/// **THE THREE KNOBS AN EDGE HAS, WRITTEN ONCE AND SPOKEN IN TWO LANGUAGES.** `warp` is how far the lookup
+/// wanders off the authored line in metres, `freq` the wavelength it wanders at in cycles/metre, `feather` how
+/// much of the soil's 4-tap neighbour ring survives (1 = full soft ring, 0 = a clean cut; water has no ring and
+/// ignores it). The GLSL `edgeShape` below is GENERATED from this table and `env.paintedDepth` evaluates the
+/// same numbers on the CPU — which it has to, or the coast you SEE and the coast you WADE INTO are two
+/// different lines. Ordinals are `wf.Edge`'s; the enum lives in `worldfmt`, which cannot be imported here
+/// without a cycle (worldfmt → gfx → shaders), so the pinning is the comptime length check in `env`.
+pub const EdgeK = struct { warp: f32, freq: f32, feather: f32 };
+
+pub const EDGE_K = [_]EdgeK{
+    .{ .warp = 0.0, .freq = 0.00, .feather = 1.60 }, // blend    — no wander, the widest feather of the set
+    .{ .warp = 1.7, .freq = 0.62, .feather = 1.00 }, // natural  — the wander everything used to have
+    .{ .warp = 1.1, .freq = 1.90, .feather = 1.00 }, // frayed   — a light fast wander, still soft
+    .{ .warp = 3.2, .freq = 2.60, .feather = 0.00 }, // jagged   — deep, fast, and CUT: a torn line
+    .{ .warp = 0.0, .freq = 0.00, .feather = 0.00 }, // straight — exactly where it was painted
+    .{ .warp = 0.0, .freq = 0.00, .feather = 0.00 }, // tiled    — straight, and snapped to the grid below
+    .{ .warp = 1.5, .freq = 0.00, .feather = 0.00 }, // scallop  — a periodic wave, not noise
+    .{ .warp = 0.9, .freq = 3.40, .feather = 0.55 }, // speckle  — flecks off the end of it
+};
+
+pub const SCALLOP: usize = 6;
+pub const TILED: usize = 5;
+pub const SPECKLE: usize = 7;
+
+pub fn edgeK(e: usize) EdgeK {
+    return EDGE_K[@min(e, EDGE_K.len - 1)];
+}
+
+fn fract(x: f32) f32 {
+    return x - @floor(x);
+}
+
+/// **THE GLSL `hash21`/`vnoise` AGAIN, IN ZIG** — the same arithmetic in the same order, because the CPU has to
+/// land on the coast the GPU drew. Not `mathx.vnoise2`: that is a different field, and "close enough" here is a
+/// waterline you can see a metre from the one you can stand in.
+fn hash21(px: f32, pz: f32) f32 {
+    var x = fract(px * 123.34);
+    var y = fract(pz * 456.21);
+    const d = x * (x + 45.32) + y * (y + 45.32);
+    x += d;
+    y += d;
+    return fract(x * y);
+}
+
+fn vnoise(px: f32, pz: f32) f32 {
+    const ix = @floor(px);
+    const iz = @floor(pz);
+    var fx = px - ix;
+    var fz = pz - iz;
+    fx = fx * fx * (3.0 - 2.0 * fx);
+    fz = fz * fz * (3.0 - 2.0 * fz);
+    const a = hash21(ix, iz);
+    const b = hash21(ix + 1, iz);
+    const c = hash21(ix, iz + 1);
+    const d = hash21(ix + 1, iz + 1);
+    return (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fz;
+}
+
+/// **A COAST IS A MUCH BIGGER FEATURE THAN A SOIL PATCH, SO THE SAME METRES OF WANDER READ AS NOTHING ON IT.**
+/// A courtyard is 10 m across and ±1.7 m of wiggle is a torn edge on it; a tarn is 40 m across and the same
+/// 1.7 m is invisible next to the ten-metre straight runs a brush leaves behind. What makes a coast read is a
+/// LOW octave — bays and headlands at tens of metres — with the shape's own wiggle riding on top of it. Water
+/// only: the soil's edges are already sized to the things they end.
+pub const BAY_FREQ: f32 = 0.045; // cycles/metre — about a 22 m bay
+/// **METRES, NOT A MULTIPLE OF THE SHAPE'S OWN WANDER.** As a multiple `jagged` got 8 m of bay and `natural`
+/// 4.25 for no reason anybody authored — the bay is a fact about how big a LAKE is, not about how torn its
+/// edge is. It also moves the waterline and `paintedDepth` follows it, so this stays small enough that a
+/// painted pond is still the pond somebody drew.
+pub const BAY_M: f32 = 3.5;
+
+/// The Zig twin of the shader's `edgeWarp`. Returns the position the field should actually be READ at.
+/// `bays` adds the coast's low octave; the soil passes false and gets exactly what it always got.
+pub fn warpEdge(x: f32, z: f32, e: usize, bays: bool) [2]f32 {
+    const k = edgeK(e);
+    if (k.warp <= 0.0001) return .{ x, z };
+    var ox = x;
+    var oz = z;
+    if (e == SCALLOP) {
+        ox += @sin(z * 0.9) * k.warp;
+        oz += @sin(x * 0.9) * k.warp;
+    } else {
+        ox += (vnoise(x * k.freq, z * k.freq) - 0.5) * 2.0 * k.warp;
+        oz += (vnoise(x * k.freq + 47.3, z * k.freq + 47.3) - 0.5) * 2.0 * k.warp;
+    }
+    if (!bays) return .{ ox, oz };
+    const amp = 2.0 * BAY_M;
+    ox += (vnoise(x * BAY_FREQ, z * BAY_FREQ) - 0.5) * amp;
+    oz += (vnoise(x * BAY_FREQ + 19.7, z * BAY_FREQ + 19.7) - 0.5) * amp;
+    return .{ ox, oz };
+}
+
+const BAY_GLSL = std.fmt.comptimePrint("const float BAY_FREQ = {d:.5};\nconst float BAY_M = {d:.4};\n", .{ BAY_FREQ, BAY_M });
+
+const EDGE_SHAPE_GLSL = blk: {
+    var s: []const u8 = "vec3 edgeShape(int e){\n";
+    for (EDGE_K, 0..) |k, i| {
+        s = s ++ std.fmt.comptimePrint(
+            "  if (e=={d}) return vec3({d:.4},{d:.4},{d:.4});\n",
+            .{ i, k.warp, k.freq, k.feather },
+        );
+    }
+    s = s ++ std.fmt.comptimePrint("  return vec3({d:.4},{d:.4},{d:.4});\n}}\n", .{ EDGE_K[1].warp, EDGE_K[1].freq, EDGE_K[1].feather });
+    break :blk s;
+};
+
 /// **ONE VALUE-NOISE BASIS, SPLICED INTO EVERY PROGRAM THAT WANTS IT.** GLSL has no linker here, so each
 /// shader carries its own copy of the source — but the source was written out by hand three times, and the
 /// magic tuple in `hash21` has to be the SAME tuple in all of them or the grain, the stars and the elemental
@@ -227,20 +334,10 @@ pub const sceneFS =
     \\  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1;   // natural
     \\  return int(texture(soilEdgeMap, uv).r*255.0 + 0.5);
     \\}
-    \\// **THE THREE KNOBS AN EDGE ACTUALLY HAS.** x = how far the lookup wanders off the authored line in
-    \\// metres, y = the wavelength it wanders at in cycles/metre, z = how much the 4-tap neighbour feather
-    \\// survives (1 = full soft ring, 0 = a clean cut). Ordinals are pinned to `wf.Edge` by a comptime
-    \\// assert there — an inserted row would re-point every stroke in every map at the wrong shape.
-    \\vec3 edgeShape(int e){
-    \\  if (e==0) return vec3(0.0,  0.00, 1.60);  // blend    — no wander, the widest feather of the set
-    \\  if (e==2) return vec3(1.1,  1.90, 1.00);  // frayed   — a light fast wander, still soft
-    \\  if (e==3) return vec3(3.2,  2.60, 0.00);  // jagged   — deep, fast, and CUT: a torn line
-    \\  if (e==4) return vec3(0.0,  0.00, 0.00);  // straight — exactly where it was painted
-    \\  if (e==5) return vec3(0.0,  0.00, 0.00);  // tiled    — straight, and snapped to the grid below
-    \\  if (e==6) return vec3(1.5,  0.00, 0.00);  // scallop  — a periodic wave, not noise (see below)
-    \\  if (e==7) return vec3(0.9,  3.40, 0.55);  // speckle  — flecks off the end of it
-    \\  return vec3(1.7, 0.62, 1.00);             // 1 = natural, the wander everything used to have
-    \\}
+    \\// **THE THREE KNOBS AN EDGE HAS** - GENERATED from `EDGE_K` at the top of this file, so the table
+    \\// the CPU reads (`env.paintedDepth`) and the function the GPU runs cannot drift apart.
+    \\
+++ EDGE_SHAPE_GLSL ++ BAY_GLSL ++
     \\// WHERE THE LOOKUP ACTUALLY READS FROM. This is the whole fix: the displacement used to be one fixed
     \\// noise applied to EVERY material before anything else was asked, so the material BOUNDARY wandered
     \\// +/-1.7 m whatever its policy said — and `soilHard` only ever snapped the COVERAGE. Nothing could
@@ -265,18 +362,56 @@ pub const sceneFS =
     \\// of it: 0.5 is the waterline, above it depth, below it the walk back to dry land.
     \\uniform sampler2D waterMap;
     \\uniform float waterHalf;   // world half-extent the field spans
+    \\uniform float waterCell;   // metres one cell spans — only the tiled snap reads it
     \\uniform int   waterOn;     // 0 = nothing painted; every read below is skipped
     \\uniform int   waterSheet;  // 1 while the PAINTED sheet draws — authored water props keep their own colours
     \\uniform vec3  waterTone[3]; // shallow / mid / deep, straight off the prop palette (env.drawWater)
-    \\float waterField(vec2 w){
+    \\// **THE SHEET'S OWN OPACITY, WRITTEN FROM INSIDE THE MATERIAL SWITCH.** Water is the one surface here that
+    \\// has to END IN A FADE rather than at a threshold, and the tint function hands back a colour only.
+    \\float waterA = 1.0;
+    \\// How wide the shore fade is, in field units: `d` runs 0..1 over WATER_DEEP_AT, so 0.045 is about a metre.
+    \\const float WATER_FEATHER_D = 0.115;
+    \\// …and the floor under a shape's own `feather`, so even one authored to CUT dies into wet sand instead of
+    \\// shattering into shards where the domain warp folds over itself.
+    \\const float WATER_FEATHER_MIN = 0.55;
+    \\// …AND HOW THE COAST ENDS, one authored `wf.Edge` per cell (wf.Map.waterEdge), point-sampled and dilated
+    \\// one cell at upload exactly as the soil's is.
+    \\uniform sampler2D waterEdgeMap;
+    \\int waterEdgeAt(vec2 w){
+    \\  vec2 uv = w/(2.0*waterHalf) + 0.5;
+    \\  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1;   // natural
+    \\  return int(texture(waterEdgeMap, uv).r*255.0 + 0.5);
+    \\}
+    \\float waterField(vec2 w, bool snap){
     \\  vec2 uv = w/(2.0*waterHalf) + 0.5;
     \\  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
+    \\  // `tiled` reads the texel CENTRE out of the same bilinear texture, which is what squares a coast off.
+    \\  if (snap){ float n = 2.0*waterHalf/waterCell; uv = (floor(uv*n) + 0.5)/n; }
     \\  return texture(waterMap, uv).r;
+    \\}
+    \\// **THE COAST IS SHAPED HERE, PER FRAGMENT, AND NOT BAKED INTO THE FIELD.** It used to be the other way
+    \\// round: a per-cell `coastWarp` written into a 224² byte grid, then a 3.6 m triangular re-facet over the
+    \\// top of it. Between them a `natural` coast kept 1.6% more waterline than `straight`, which applies no
+    \\// wander at all — every shape came out the same smooth blob. The soil has always done it this way, so
+    \\// this is the SAME `edgeShape`/`edgeWarp` the ground uses and "jagged" means one thing in the map now.
+    \\// Every reader goes through here, or the wet sand and the sheet would part company at the waterline.
+    \\// **THE COAST TAKES A LOW OCTAVE ON TOP** — bays and headlands at tens of metres. Without it the shape's
+    \\// own wander is sized for a soil patch and vanishes against the straight runs a brush leaves on a lake.
+    \\vec2 coastWarp(vec2 p, int e, vec3 k){
+    \\  vec2 q = edgeWarp(p, e, k);
+    \\  if (k.x <= 0.0001) return q;
+    \\  float amp = 2.0*BAY_M;
+    \\  return q + (vec2(vnoise(p*BAY_FREQ), vnoise(p*BAY_FREQ + 19.7)) - 0.5)*amp;
+    \\}
+    \\float waterAt(vec2 w){
+    \\  int e = waterEdgeAt(w);
+    \\  vec3 k = edgeShape(e);
+    \\  return waterField(coastWarp(w, e, k), e==5);
     \\}
     \\// WET SAND.
     \\vec3 wetShore(vec3 c, vec2 p){
     \\  if (waterOn == 0) return c;
-    \\  float f = waterField(p);
+    \\  float f = waterAt(p);
     \\  if (f <= 0.002) return c;                       // dry land, well away from any water
     \\  float wet = clamp(f/0.5, 0.0, 1.0);             // 0 at the ramp's edge, 1 at the waterline
     \\  wet = wet*wet;                                  // the last metre or so does most of the work
@@ -480,14 +615,20 @@ pub const sceneFS =
     \\    // free — see waterNormal — this is only what's suspended in the tarn) THE PAINTED SHEET reads its colour from the field instead of from the mesh: one quad over the whole world, present only where the field says water and shaded deep→shallow by how far inside the shore it is.
     \\    if (waterSheet == 1){
     \\      // `q` IS world xz for water (see the call site — water textures in world space, not surface UVs), which is the coordinate the field is indexed in.
-    \\      float f = waterField(q);
-    \\      if (f < 0.503) discard;                       // outside the waterline: no sheet here at all
+    \\      float f = waterAt(q);
+    \\      if (f <= 0.5005) discard;                     // the dry side: no sheet here at all
     \\      float d = clamp((f - 0.5)*2.0, 0.0, 1.0);     // 0 at the shore, 1 in the deep
     \\      // The three tones come from the PALETTE (propart.WATER_SHALLOW/MID/DEEP), pushed in as uniforms by env.drawWater.
     \\      base = (d < 0.5) ? mix(waterTone[0], waterTone[1], smoothstep(0.0, 0.5, d))
     \\                       : mix(waterTone[1], waterTone[2], smoothstep(0.5, 1.0, d));
-    \\      // …and the last half metre of it goes THIN, so the edge dies into the wet sand instead of ruling a line across it.
-    \\      if (d < 0.06 && fract(q.x*0.9 + q.y*0.7 + vnoise(q*2.3)*3.0) > d*14.0) discard;
+    \\      // **THE SHEET DIES INTO THE SHORE; IT IS NOT CUT BY IT.** A threshold turns every fold of the domain
+    \\      // warp into a shard — which is exactly what a `jagged` coast looked like: torn paper with islands
+    \\      // thrown off it. The soil never had this fault because its edge is an ALPHA (`k.z` feathers the
+    \\      // coverage ring); water was the one surface asked to end at a compare. It fades over the same
+    \\      // `feather` the shape already carries, floored so even a shape authored to CUT still dies softly
+    \\      // into wet sand rather than shattering. `d` is 0..1 over WATER_DEEP_AT, so 0.045 is about a metre.
+    \\      float fe = max(edgeShape(waterEdgeAt(q)).z, WATER_FEATHER_MIN);
+    \\      waterA = smoothstep(0.0, WATER_FEATHER_D*(0.4 + fe), d);
     \\    }
     \\    base *= 0.84 + 0.30*fmot(q, 0.7, px);
     \\  } else {            // PLAIN: the old generic grain, now surface-anchored. This is the DEFAULT
@@ -650,6 +791,7 @@ pub const sceneFS =
     \\  outc += (hash21(gl_FragCoord.xy) - 0.5)*(2.0/255.0);
     \\  // …and the flame's own body is the only thing here that is not opaque.
     \\  float outA = (mi == 11) ? mix(FLAME_A_TIP, FLAME_A_CORE, smoothstep(0.62, 0.90, emis)) : 1.0;
+    \\  if (mi == 9) outA *= waterA;   // the painted sheet's shore fade; 1.0 on every authored water prop
     \\  // SMOKE IS THIN, AND IT THINS OUT.
     \\  if (mi == 12) outA = SMOKE_A*smoothstep(0.0, 0.10, fragLife)*(1.0 - smoothstep(0.22, 0.90, fragLife));
     \\  // AN EMBER IS THE OPPOSITE OF SMOKE: nearly solid, and it does not dissolve — it WINKS OUT.

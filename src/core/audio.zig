@@ -617,23 +617,30 @@ pub const AF_CRACKLE = 8;
 pub const AF_BASS = 9;
 pub const AF_PRESENCE = 10;
 
-const AudioFilter = struct { name: [:0]const u8 };
+const AudioFilter = struct { name: [:0]const u8, tip: [:0]const u8 };
 const AUDIO_FILTERS = [AFX_COUNT]AudioFilter{
-    .{ .name = "Drive" },
-    .{ .name = "Bit Crush" },
-    .{ .name = "Sample Hold" },
-    .{ .name = "Muffle" },
-    .{ .name = "Telephone" },
-    .{ .name = "Wow & Flutter" },
-    .{ .name = "Room" },
-    .{ .name = "Tape Hiss" },
-    .{ .name = "Vinyl Crackle" },
-    .{ .name = "Bass Cut" },
-    .{ .name = "Presence" },
+    .{ .name = "Drive", .tip = "Push it into soft clipping - louder and dirtier, never brighter" },
+    .{ .name = "Bit Crush", .tip = "Fewer levels to quantise to. The grit of a cheap sampler" },
+    .{ .name = "Sample Hold", .tip = "Hold each sample longer - aliasing, the other half of a cheap sampler" },
+    .{ .name = "Muffle", .tip = "Low-pass. Takes the top off, as if it were through a door" },
+    .{ .name = "Telephone", .tip = "Band-pass to a narrow mid - no bass and no air" },
+    .{ .name = "Wow & Flutter", .tip = "Slow pitch drift, the way worn tape wanders" },
+    .{ .name = "Room", .tip = "A short reverb tail that darkens as it dies" },
+    .{ .name = "Tape Hiss", .tip = "Steady broadband noise under everything" },
+    .{ .name = "Vinyl Crackle", .tip = "Sparse ticks and pops over the top" },
+    .{ .name = "Bass Cut", .tip = "High-pass. Thins the bottom so a small speaker can carry it" },
+    .{ .name = "Presence", .tip = "Lift the upper mids - what makes a voice cut through" },
 };
 pub const AFX_NAMES = blk: {
     var out: [AFX_COUNT][:0]const u8 = undefined;
     for (&out, AUDIO_FILTERS) |*o, f| o.* = f.name;
+    break :blk out;
+};
+/// What each rack dial DOES, beside its name for the same reason `dialSpec` carries one: the rack is eleven
+/// short labels and nothing else says which way a knob goes.
+pub const AFX_TIPS = blk: {
+    var out: [AFX_COUNT][:0]const u8 = undefined;
+    for (&out, AUDIO_FILTERS) |*o, f| o.* = f.tip;
     break :blk out;
 };
 

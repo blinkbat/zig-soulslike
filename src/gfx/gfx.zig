@@ -15,6 +15,7 @@ const SLOT_SOIL: i32 = 13;
 const SLOT_WATER: i32 = 14;
 const SLOT_SOILCOV: i32 = 15;
 const SLOT_SOILEDGE: i32 = 16;
+const SLOT_WATEREDGE: i32 = 17;
 
 pub const SOIL_N: i32 = 112;
 
@@ -446,8 +447,10 @@ pub const Scene = struct {
     loc_soilHalf: i32,
     loc_soilCell: i32,
     waterTex: rl.Texture2D,
+    waterEdgeTex: rl.Texture2D,
     loc_waterOn: i32,
     loc_waterHalf: i32,
+    loc_waterCell: i32,
     loc_waterSheet: i32,
     loc_waterTone: i32,
     saved_near: @TypeOf(rl.gl.rlGetCullDistanceNear()) = 0,
@@ -468,6 +471,8 @@ pub const Scene = struct {
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "soilCovMap"), &slotSoilCov, .int);
         var slotSoilEdge = SLOT_SOILEDGE;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "soilEdgeMap"), &slotSoilEdge, .int);
+        var slotWaterEdge = SLOT_WATEREDGE;
+        rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterEdgeMap"), &slotWaterEdge, .int);
         var waterOff: i32 = 0;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterOn"), &waterOff, .int);
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterSheet"), &waterOff, .int);
@@ -491,8 +496,11 @@ pub const Scene = struct {
             .loc_soilHalf = rl.getShaderLocation(shader, "soilHalf"),
             .loc_soilCell = rl.getShaderLocation(shader, "soilCell"),
             .waterTex = loadFieldTexture(WATER_N, .bilinear),
+            // POINT, like the soil edge map: a policy is an ordinal, and blending two of them names a third shape.
+            .waterEdgeTex = loadFieldTexture(WATER_N, .point),
             .loc_waterOn = rl.getShaderLocation(shader, "waterOn"),
             .loc_waterHalf = rl.getShaderLocation(shader, "waterHalf"),
+            .loc_waterCell = rl.getShaderLocation(shader, "waterCell"),
             .loc_waterSheet = rl.getShaderLocation(shader, "waterSheet"),
             .loc_waterTone = rl.getShaderLocation(shader, "waterTone"),
             .lightVP = rl.math.matrixIdentity(),
@@ -622,14 +630,21 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_ground, &m, .int);
     }
 
-    pub fn setWater(self: *Scene, field: []const u8, half: f32, any: bool) void {
+    /// `wet` and `edge` are the map's own grids: the first says which cells were painted, so the policy can be
+    /// dilated off it, and the second says how each one ENDS. **THE SHAPE IS APPLIED PER FRAGMENT NOW** and is
+    /// no longer baked into `field`, which is a plain signed distance and survives being sampled.
+    pub fn setWater(self: *Scene, field: []const u8, edge: []const u8, half: f32, any: bool) void {
         const n: usize = @intCast(WATER_N);
         std.debug.assert(field.len == n * n);
+        std.debug.assert(edge.len == field.len);
         rl.updateTexture(self.waterTex, field.ptr);
+        rl.updateTexture(self.waterEdgeTex, edge.ptr);
         var on: i32 = if (any) 1 else 0;
         rl.setShaderValue(self.shader, self.loc_waterOn, &on, .int);
         var h = half;
         rl.setShaderValue(self.shader, self.loc_waterHalf, &h, .float);
+        var cell = 2.0 * half / @as(f32, @floatFromInt(WATER_N));
+        rl.setShaderValue(self.shader, self.loc_waterCell, &cell, .float);
     }
 
     pub fn setWaterSheet(self: *Scene, on: bool, tones: [3]rl.Vector3) void {
@@ -640,11 +655,13 @@ pub const Scene = struct {
         rl.setShaderValueV(self.shader, self.loc_waterTone, &t, .vec3, 3);
     }
 
-var edgeDilated: [@as(usize, @intCast(SOIL_N)) * @as(usize, @intCast(SOIL_N))]u8 = undefined;
+var soilEdgeDilated: [@as(usize, @intCast(SOIL_N)) * @as(usize, @intCast(SOIL_N))]u8 = undefined;
 
-fn dilateEdges(ids: []const u8, edge: []const u8) []const u8 {
-    const n: usize = @intCast(SOIL_N);
-    @memcpy(&edgeDilated, edge);
+/// **THE BARE SIDE OF A BOUNDARY ANSWERS WITH THE PAINTED SIDE'S POLICY.** Without it a tiled courtyard is
+/// tiled looking out and soft looking in - and a coast is read from OUTSIDE the water as often as from in it.
+/// One walk for both grids; `ids` is whatever counts as painted on that grid.
+fn dilateEdges(out: []u8, n: usize, ids: []const u8, edge: []const u8) []const u8 {
+    @memcpy(out, edge);
     for (0..n) |z| {
         for (0..n) |x| {
             const i = z * n + x;
@@ -658,12 +675,12 @@ fn dilateEdges(ids: []const u8, edge: []const u8) []const u8 {
             for (nb) |maybe| {
                 const j = maybe orelse continue;
                 if (ids[j] == 0) continue;
-                edgeDilated[i] = edge[j];
+                out[i] = edge[j];
                 break;
             }
         }
     }
-    return &edgeDilated;
+    return out;
 }
 
     pub fn setSoil(self: *Scene, ids: []const u8, cov: []const u8, edge: []const u8, half: f32) void {
@@ -673,7 +690,7 @@ fn dilateEdges(ids: []const u8, edge: []const u8) []const u8 {
         std.debug.assert(edge.len == ids.len);
         rl.updateTexture(self.soilTex, ids.ptr);
         rl.updateTexture(self.soilCovTex, cov.ptr);
-        rl.updateTexture(self.soilEdgeTex, dilateEdges(ids, edge).ptr);
+        rl.updateTexture(self.soilEdgeTex, dilateEdges(&soilEdgeDilated, n, ids, edge).ptr);
         var painted: i32 = 0;
         for (ids) |v| {
             if (v != 0) {
@@ -697,6 +714,8 @@ fn dilateEdges(ids: []const u8, edge: []const u8) []const u8 {
         rl.gl.rlEnableTexture(self.soilCovTex.id);
         rl.gl.rlActiveTextureSlot(SLOT_SOILEDGE);
         rl.gl.rlEnableTexture(self.soilEdgeTex.id);
+        rl.gl.rlActiveTextureSlot(SLOT_WATEREDGE);
+        rl.gl.rlEnableTexture(self.waterEdgeTex.id);
         rl.gl.rlActiveTextureSlot(0);
     }
 

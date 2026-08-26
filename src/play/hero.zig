@@ -104,20 +104,6 @@ const BOOT = rgba(24, 22, 20, 255);
 const BELT = rgba(34, 26, 18, 255);
 const HAIR = rgba(40, 31, 24, 255);
 
-/// Where the braid is tied, in SKULL space — it hangs and swings about this point, so the mesh is authored on it.
-const TAIL_AT = v3(0, 0.012 * H, -0.092 * H);
-/// Degrees it trails at a full run, and `anim.Spring`'s own two numbers for the mass that gets it there —
-/// hand-integrated it was a fixed-step Euler with `1 - ease*dt` damping, which is frame-rate dependent and
-/// dead at dt >= 1/9 s. **`TAIL_ZETA` IS THE DAMPING RATIO AND 1.91 DOES NOT OVERSHOOT** — the pair below is
-/// the hand-rolled version's arithmetic to the letter (stiff 5.58, damp 9.0), and the braid provably decays
-/// monotonically onto its rest. A visible overshoot wants zeta under 1, which is a look and not a fix.
-const TAIL_DRAG: f32 = 34.0;
-const TAIL_STIFF: f32 = 5.58;
-const TAIL_ZETA: f32 = 1.905;
-const TAIL_SWAY: f32 = 13.0;
-/// Long enough to READ from behind at play distance (owner: more prominent). Three lengths off the tie at
-/// 0.115 H each is 0.62 m of braid on a 1.8 m man — down past the shoulder blades, about a head and a half.
-const TAIL_LEN: f32 = 0.115 * H;
 const CAPE = rgba(82, 20, 12, 255);
 const STEEL = rgba(98, 104, 114, 255);
 const STEEL_DK = rgba(58, 62, 70, 255);
@@ -1433,14 +1419,6 @@ pub const Hero = struct {
     club: rl.Mesh,
     roots: [ROOT_KINDS]rl.Mesh,
     guitar: rl.Mesh,
-    /// **THE PONYTAIL IS NOT A BONE** — the necromancer's dragging hem, one level up the body (`necro.hemXf`).
-    /// The 18-bone scaffold is shared by six creatures, so a nineteenth joint for a braid is not a braid's price.
-    /// It rides the SKULL through a lag matrix chained in `pose`, and the swing is a SPRING, not an ease: it
-    /// trails the run, OVERSHOOTS when he stops and settles onto its rest.
-    tail: rl.Mesh,
-    tailMat: rl.Matrix = undefined,
-    tailLean: anim.Spring = .{},
-    tailSway: f32 = 0,
     mat: rl.Material,
     rest: [N]rl.Vector3,
     xf: [N]rl.Matrix = undefined,
@@ -1606,7 +1584,6 @@ pub const Hero = struct {
                 break :blk out;
             },
             .guitar = guitarMesh(),
-            .tail = tailMesh(),
             .mat = mat,
             .rest = restPositions(),
         };
@@ -1704,40 +1681,18 @@ pub const Hero = struct {
         self.tickClocks(dt);
         self.speed = speed;
         advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist, speed, moveYaw, self.facing);
-        self.tickTail(dt, speed);
     }
 
-    /// **EVERY POSE ENDS HERE AND NOWHERE ELSE.** Thirteen of them spelled out `applyXfade` / `xf = wx` /
-    /// `chainTail` by hand, and the braid rides a matrix chained off the PUBLISHED skull — so a fourteenth pose
-    /// that forgot the last line would silently leave it on the previous frame's head.
+    /// **EVERY POSE ENDS HERE AND NOWHERE ELSE.** Thirteen of them spelled out `applyXfade` / `xf = wx` by hand.
     fn publish(self: *Hero, wx: *[N]rl.Matrix) void {
         self.applyXfade(wx);
         self.xf = wx.*;
-        self.chainTail();
     }
 
     /// The one pose that is NOT cross-faded — the busker is entered from a standstill and has nothing to blend
     /// out of, and an xfade there dragged the guitar in from whatever he was last doing.
     fn publishRaw(self: *Hero, wx: *const [N]rl.Matrix) void {
         self.xf = wx.*;
-        self.chainTail();
-    }
-
-    /// Chained in `publish`, off the POSED skull — so the braid follows the head wherever the head went, and a
-    /// pose that never publishes `xf` cannot leave it on last frame's matrix.
-    fn chainTail(self: *Hero) void {
-        self.tailMat = mul3(
-            mul(rx(self.tailLean.v), rz(self.tailSway)),
-            tr(TAIL_AT.x, TAIL_AT.y, TAIL_AT.z),
-            self.xf[HEAD],
-        );
-    }
-
-    fn tickTail(self: *Hero, dt: f32, speed: f32) void {
-        const want = TAIL_DRAG * mathx.clampF(speed / RUN_SPEED, 0, 1);
-        _ = self.tailLean.step(want, TAIL_STIFF, TAIL_ZETA, dt);
-        // A stride is TWO footfalls, so the braid crosses twice a cycle and lags the hips by a beat.
-        self.tailSway = TAIL_SWAY * mathx.sinf(std.math.tau * self.phase * 2.0 - 1.1) * self.moving;
     }
 
     pub fn footPos(self: *const Hero) rl.Vector3 {
@@ -4248,7 +4203,6 @@ pub const Hero = struct {
             if (i == SWORD) continue;
             rl.drawMesh(self.mesh[i], self.mat, self.xf[i]);
         }
-        rl.drawMesh(self.tail, self.mat, self.tailMat);
         if (!stowSword) rl.drawMesh(self.bladeMesh(), self.mat, self.xf[SWORD]);
         if (self.resting) {
             rl.drawMesh(self.guitar, self.mat, self.xf[ROOT]);
@@ -4863,25 +4817,6 @@ fn neckMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// **AUTHORED ABOUT THE TIE, NOT ABOUT THE SKULL** — the lag matrix rotates it, so its own origin has to be the
-/// point it swings from. Three lengths tapering to a tip, back and down off the head.
-fn tailMesh() rl.Mesh {
-    var b = Builder.init();
-    b.setMat(.leather);
-    const seg = [_]f32{ 0.0, 1.0, 2.0, 3.0 };
-    // RADII, not a width — `addCapsule` takes true radii and `slab`/`addCube` takes a FULL size, and mixing
-    // them is how the first cut came out as three balls each wider than the segment was long. 0.017 H is a 6 cm
-    // braid on a 1.8 m man.
-    const wide = [_]f32{ 0.017, 0.015, 0.011, 0.005 };
-    for (0..3) |i| {
-        // Steeply DOWN and a little back: at rest it hangs, and the spring is what lays it out behind a run.
-        const a = v3(0, -seg[i] * TAIL_LEN * 0.90, -seg[i] * TAIL_LEN * 0.26);
-        const c = v3(0, -seg[i + 1] * TAIL_LEN * 0.90, -seg[i + 1] * TAIL_LEN * 0.26);
-        b.addCapsule(a, c, wide[i] * H, wide[i + 1] * H, 8, HAIR);
-    }
-    return b.toMesh();
-}
-
 fn headMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
@@ -4891,7 +4826,6 @@ fn headMesh() rl.Mesh {
     b.setMat(.leather);
     slab(&b, v3(0, 0.118 * H, -0.025 * H), v3(0.145 * H, 0.05 * H, 0.15 * H), HAIR);
     slab(&b, v3(0, 0.055 * H, -0.078 * H), v3(0.135 * H, 0.125 * H, 0.035 * H), HAIR);
-    slab(&b, v3(0, 0.012 * H, -0.088 * H), v3(0.055 * H, 0.055 * H, 0.04 * H), HAIR);
     slab(&b, v3(0, 0.092 * H, 0.0 * H), v3(0.142 * H, 0.018 * H, 0.152 * H), LEATHER_DK);
     return b.toMesh();
 }
@@ -4990,7 +4924,6 @@ fn testHero() Hero {
         .club = undefined,
         .roots = undefined,
         .guitar = undefined,
-        .tail = undefined,
         .mat = undefined,
         .rest = restPositions(),
     };

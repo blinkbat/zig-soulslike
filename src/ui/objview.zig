@@ -681,7 +681,7 @@ fn modeTabs(st: *State, ctx: *ui.Ctx, x0: i32, y: i32) struct { changed: bool, x
     inline for (@typeInfo(Mode).@"enum".fields) |f| {
         const m: Mode = @enumFromInt(f.value);
         var usedW: i32 = 0;
-        if (ui.chip(ctx, tx, y, m.label(), st.mode == m, &usedW) and st.mode != m) {
+        if (ui.chip(ctx, tx, y, m.label(), st.mode == m, &usedW, "Which bench you are on - props, creatures, the icon sheet or the element FX") and st.mode != m) {
             st.mode = m;
             st.page = 0;
             st.grabbed = null;
@@ -708,7 +708,7 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
     inline for (@typeInfo(Shelf).@"enum".fields) |f| {
         const s: Shelf = @enumFromInt(f.value);
         var usedW: i32 = 0;
-        if (ui.chip(ctx, tx, ty, s.label(), st.shelf == s, &usedW) and st.shelf != s) {
+        if (ui.chip(ctx, tx, ty, s.label(), st.shelf == s, &usedW, "Narrow the grid to this family") and st.shelf != s) {
             st.shelf = s;
             st.page = 0;
             st.grabbed = null;
@@ -780,12 +780,12 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
     }
 
     const by = box.y + box.h - FOOT_DROP;
-    if (ui.button(ctx, ui.rect(box.x + 16, by, 44, 24), "<", hud.MONO, false)) st.page = @max(0, st.page - 1);
-    if (ui.button(ctx, ui.rect(box.x + 64, by, 44, 24), ">", hud.MONO, false)) st.page = @min(pages - 1, st.page + 1);
+    if (ui.button(ctx, ui.rect(box.x + 16, by, 44, 24), "<", hud.MONO, false, "The page before this one")) st.page = @max(0, st.page - 1);
+    if (ui.button(ctx, ui.rect(box.x + 64, by, 44, 24), ">", hud.MONO, false, "The page after this one")) st.page = @min(pages - 1, st.page + 1);
     var buf: [96]u8 = undefined;
     const s = std.fmt.bufPrintZ(&buf, "page {d}/{d}   {d} objects   drag spins, wheel zooms, click opens", .{ st.page + 1, pages, list.len }) catch "";
     hud.mono(s, box.x + 120, by + 5, hud.MONO, ui.alpha(ui.LABEL, 210));
-    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Close", hud.MONO, false)) return false;
+    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Close", hud.MONO, false, "Shut the viewer and go back to the editor (Esc)")) return false;
     return true;
 }
 
@@ -873,17 +873,17 @@ fn big(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, kind: Kind
         if (k == kind) at = idx;
     }
     const by = box.y + box.h - FOOT_DROP;
-    if (ui.button(ctx, ui.rect(box.x + BIG_PAD, by, 44, 24), "<", hud.MONO, false)) {
+    if (ui.button(ctx, ui.rect(box.x + BIG_PAD, by, 44, 24), "<", hud.MONO, false, "The kind before this one, wrapping round")) {
         st.open = list[if (at == 0) list.len - 1 else at - 1];
     }
-    if (ui.button(ctx, ui.rect(box.x + BIG_PAD + 48, by, 44, 24), ">", hud.MONO, false)) {
+    if (ui.button(ctx, ui.rect(box.x + BIG_PAD + 48, by, 44, 24), ">", hud.MONO, false, "The kind after this one, wrapping round")) {
         st.open = list[if (at + 1 >= list.len) 0 else at + 1];
     }
     var cb: [64]u8 = undefined;
     const count = std.fmt.bufPrintZ(&cb, "{d}/{d} in {s}", .{ at + 1, list.len, st.shelf.label() }) catch "";
     hud.mono(count, box.x + BIG_PAD + 104, by + 5, hud.MONO, ui.alpha(ui.LABEL, 210));
-    if (ui.button(ctx, ui.rect(box.x + box.w - 176, by, 74, 24), "Reset", hud.MONO, false)) p.* = .{};
-    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Back", hud.MONO, false)) return false;
+    if (ui.button(ctx, ui.rect(box.x + box.w - 176, by, 74, 24), "Reset", hud.MONO, false, "Back to the house angle and distance")) p.* = .{};
+    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Back", hud.MONO, false, "Back to the grid")) return false;
     return true;
 }
 
@@ -946,12 +946,12 @@ fn galleryChars(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) b
     }
 
     const by = box.y + box.h - FOOT_DROP;
-    if (ui.button(ctx, ui.rect(box.x + 16, by, 44, 24), "<", hud.MONO, false)) st.page = @max(0, st.page - 1);
-    if (ui.button(ctx, ui.rect(box.x + 64, by, 44, 24), ">", hud.MONO, false)) st.page = @min(pages - 1, st.page + 1);
+    if (ui.button(ctx, ui.rect(box.x + 16, by, 44, 24), "<", hud.MONO, false, "The page before this one")) st.page = @max(0, st.page - 1);
+    if (ui.button(ctx, ui.rect(box.x + 64, by, 44, 24), ">", hud.MONO, false, "The page after this one")) st.page = @min(pages - 1, st.page + 1);
     var buf: [96]u8 = undefined;
     const s = std.fmt.bufPrintZ(&buf, "page {d}/{d}   {d} characters   drag spins, wheel zooms, click opens", .{ st.page + 1, pages, CHAR_N }) catch "";
     hud.mono(s, box.x + 120, by + 5, hud.MONO, ui.alpha(ui.LABEL, 210));
-    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Close", hud.MONO, false)) return false;
+    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Close", hud.MONO, false, "Shut the viewer and go back to the editor (Esc)")) return false;
     return true;
 }
 
@@ -989,13 +989,13 @@ fn bigChar(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, at: us
     hud.mono("wheel zooms", x, y, hud.MONO, ui.alpha(ui.LABEL, 170));
 
     const by = box.y + box.h - FOOT_DROP;
-    if (ui.button(ctx, ui.rect(box.x + BIG_PAD, by, 44, 24), "<", hud.MONO, false)) st.openChar = if (at == 0) CHAR_N - 1 else at - 1;
-    if (ui.button(ctx, ui.rect(box.x + BIG_PAD + 48, by, 44, 24), ">", hud.MONO, false)) st.openChar = if (at + 1 >= CHAR_N) 0 else at + 1;
+    if (ui.button(ctx, ui.rect(box.x + BIG_PAD, by, 44, 24), "<", hud.MONO, false, "The creature before this one, wrapping round")) st.openChar = if (at == 0) CHAR_N - 1 else at - 1;
+    if (ui.button(ctx, ui.rect(box.x + BIG_PAD + 48, by, 44, 24), ">", hud.MONO, false, "The creature after this one, wrapping round")) st.openChar = if (at + 1 >= CHAR_N) 0 else at + 1;
     var cb: [64]u8 = undefined;
     const count = std.fmt.bufPrintZ(&cb, "{d}/{d} characters", .{ at + 1, CHAR_N }) catch "";
     hud.mono(count, box.x + BIG_PAD + 104, by + 5, hud.MONO, ui.alpha(ui.LABEL, 210));
-    if (ui.button(ctx, ui.rect(box.x + box.w - 176, by, 74, 24), "Reset", hud.MONO, false)) p.* = .{};
-    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Back", hud.MONO, false)) return false;
+    if (ui.button(ctx, ui.rect(box.x + box.w - 176, by, 74, 24), "Reset", hud.MONO, false, "Back to the house angle and distance")) p.* = .{};
+    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Back", hud.MONO, false, "Back to the grid")) return false;
     return true;
 }
 
@@ -1024,12 +1024,12 @@ fn galleryIcons(st: *State, ctx: *ui.Ctx) bool {
     if (ctx.pressed and hover != null) st.openIcon = hover;
 
     const by = box.y + box.h - FOOT_DROP;
-    if (ui.button(ctx, ui.rect(box.x + 16, by, 44, 24), "<", hud.MONO, false)) st.page = @max(0, st.page - 1);
-    if (ui.button(ctx, ui.rect(box.x + 64, by, 44, 24), ">", hud.MONO, false)) st.page = @min(pages - 1, st.page + 1);
+    if (ui.button(ctx, ui.rect(box.x + 16, by, 44, 24), "<", hud.MONO, false, "The page before this one")) st.page = @max(0, st.page - 1);
+    if (ui.button(ctx, ui.rect(box.x + 64, by, 44, 24), ">", hud.MONO, false, "The page after this one")) st.page = @min(pages - 1, st.page + 1);
     var buf: [96]u8 = undefined;
     const s = std.fmt.bufPrintZ(&buf, "page {d}/{d}   {d} glyphs + {d} pictures   click enlarges", .{ st.page + 1, pages, GLYPH_N, PICT_N }) catch "";
     hud.mono(s, box.x + 120, by + 5, hud.MONO, ui.alpha(ui.LABEL, 210));
-    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Close", hud.MONO, false)) return false;
+    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Close", hud.MONO, false, "Shut the viewer and go back to the editor (Esc)")) return false;
     return true;
 }
 
@@ -1044,9 +1044,9 @@ fn bigIcon(st: *State, ctx: *ui.Ctx, at: usize) bool {
     drawIconAt(at, cx, cy, @as(f32, @floatFromInt(@min(w, h))) * 0.62);
 
     const by = box.y + box.h - FOOT_DROP;
-    if (ui.button(ctx, ui.rect(box.x + BIG_PAD, by, 44, 24), "<", hud.MONO, false)) st.openIcon = if (at == 0) ICONS_TOTAL - 1 else at - 1;
-    if (ui.button(ctx, ui.rect(box.x + BIG_PAD + 48, by, 44, 24), ">", hud.MONO, false)) st.openIcon = if (at + 1 >= ICONS_TOTAL) 0 else at + 1;
-    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Back", hud.MONO, false)) return false;
+    if (ui.button(ctx, ui.rect(box.x + BIG_PAD, by, 44, 24), "<", hud.MONO, false, "The glyph before this one, wrapping round")) st.openIcon = if (at == 0) ICONS_TOTAL - 1 else at - 1;
+    if (ui.button(ctx, ui.rect(box.x + BIG_PAD + 48, by, 44, 24), ">", hud.MONO, false, "The glyph after this one, wrapping round")) st.openIcon = if (at + 1 >= ICONS_TOTAL) 0 else at + 1;
+    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Back", hud.MONO, false, "Back to the grid")) return false;
     return true;
 }
 
@@ -1167,7 +1167,7 @@ fn volumePanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bo
     inline for (@typeInfo(Volume).@"enum".fields) |f| {
         const v: Volume = @enumFromInt(f.value);
         var usedW: i32 = 0;
-        if (ui.chip(ctx, tx, vy, v.label(), st.vol == v, &usedW) and st.vol != v) {
+        if (ui.chip(ctx, tx, vy, v.label(), st.vol == v, &usedW, "How much of the effect to pour - the same shape the game fires it at") and st.vol != v) {
             st.vol = v;
             volReset(st);
         }
@@ -1235,7 +1235,7 @@ fn benchPanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) boo
     inline for (@typeInfo(combat.Elem).@"enum".fields) |f| {
         const e: combat.Elem = @enumFromInt(f.value);
         var usedW: i32 = 0;
-        if (ui.chip(ctx, tx, ey, combat.elemName(e), st.elem == e, &usedW) and st.elem != e) {
+        if (ui.chip(ctx, tx, ey, combat.elemName(e), st.elem == e, &usedW, "Which element to bench. Each has its own signature: fire rises, cold falls and lies about, lightning does not travel, chaos goes inward") and st.elem != e) {
             st.elem = e;
             benchClear(st);
         }
@@ -1246,7 +1246,7 @@ fn benchPanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) boo
     inline for (@typeInfo(Verb).@"enum".fields) |f| {
         const v: Verb = @enumFromInt(f.value);
         var usedW: i32 = 0;
-        if (ui.chip(ctx, tx, vy, v.label(), st.verb == v, &usedW) and st.verb != v) {
+        if (ui.chip(ctx, tx, vy, v.label(), st.verb == v, &usedW, "Which shape to fire - gather, burst or pour. Each reads differently per element") and st.verb != v) {
             st.verb = v;
             benchClear(st);
         }
@@ -1306,15 +1306,15 @@ fn benchPanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) boo
     hud.mono("wheel zooms", x, y, hud.MONO, ui.alpha(ui.LABEL, 170));
 
     const by = box.y + box.h - FOOT_DROP;
-    if (ui.button(ctx, ui.rect(box.x + BIG_PAD, by, 74, 24), "Play", hud.MONO, false)) {
+    if (ui.button(ctx, ui.rect(box.x + BIG_PAD, by, 74, 24), "Play", hud.MONO, false, "Fire the effect again, with the numbers printed beside it")) {
         st.fxT = 0;
         benchFire(st);
     }
-    if (ui.button(ctx, ui.rect(box.x + BIG_PAD + 78, by, 74, 24), "Clear", hud.MONO, false)) benchClear(st);
+    if (ui.button(ctx, ui.rect(box.x + BIG_PAD + 78, by, 74, 24), "Clear", hud.MONO, false, "Kill every live particle on the bench")) benchClear(st);
     var cb: [96]u8 = undefined;
     const count = std.fmt.bufPrintZ(&cb, "{s} {s}   {d} live", .{ combat.elemName(st.elem), Verb.label(st.verb), liveParts(st) }) catch "";
     hud.mono(count, box.x + BIG_PAD + 164, by + 5, hud.MONO, ui.alpha(ui.LABEL, 210));
-    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Close", hud.MONO, false)) return false;
+    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Close", hud.MONO, false, "Shut the viewer and go back to the editor (Esc)")) return false;
     return true;
 }
 

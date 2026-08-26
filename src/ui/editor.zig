@@ -26,6 +26,13 @@ const ERASE_HZ: f32 = 5.0;
 const ERASE_STEP: f32 = 0.6;
 const MAX_MARKERS: usize = 500;
 
+/// **EVERY COAST IS `speckle`, AND THE OTHER SEVEN ARE OFF THE WATER BRUSH FOR NOW** (owner's call — it is the
+/// one that reads right, and its numbers say why: the smallest wander of the set AND a real feather, so the
+/// fold that shatters a `jagged` coast comes out as the flecks speckle is FOR). The FORMAT still carries all
+/// eight and the shader still honours whatever a file holds, so `worlds/test_wateredge.world` keeps working
+/// and putting the picker back is deleting this constant. The SOIL keeps its full set — this is water only.
+const WATER_EDGE: wf.Edge = .speckle;
+
 /// **WHAT THE UNITS LAYER IS POINTING AT.** A foe and an NPC are two arrays on the map and two index spaces, so
 /// the cursor and the selection carry WHICH — an untagged `usize` would delete a caravaneer by a foe's number.
 const Unit = union(enum) { foe: usize, npc: usize };
@@ -614,8 +621,10 @@ pub const Editor = struct {
     /// axes stay independent on purpose: you hide the wood to place a wall under it and the Props layer is still
     /// the one your brush is on. Hiding is a VIEW and never touches the map, so nothing here is saved, nothing is undoable and a hidden layer still parses, still builds and still spawns.
     shown: [Layer.N]bool = [_]bool{true} ** Layer.N,
-    /// The rain, the mist and the sporefall — not a layer, because it is not a thing the map places in a rectangle. It is the one overlay that hides the GROUND you are trying to sculpt.
-    showWeather: bool = true,
+    /// The rain, the mist and the sporefall — not a layer, because it is not a thing the map places in a
+    /// rectangle. **OFF ON ENTRY** (owner): it is the one overlay that hides the GROUND you are trying to
+    /// sculpt, so the editor opens on the ground and the eye is what asks to see the sky's mood over it.
+    showWeather: bool = false,
     brush: [Layer.N]usize = [_]usize{0} ** Layer.N,
     decorKind: Kind = .fern,
     propKind: Kind = .pillar,
@@ -1342,7 +1351,7 @@ pub const Editor = struct {
                                 self.heightStroke = true;
                             }
                         },
-                        .water => if (m.paintWater(g.x, g.z, self.radius, true, self.brushEdge)) {
+                        .water => if (m.paintWater(g.x, g.z, self.radius, true, WATER_EDGE)) {
                             env.uploadWater(m);
                             self.wetStroke = true;
                         },
@@ -1440,6 +1449,13 @@ pub const Editor = struct {
         return .{ .position = ray.position, .direction = mathx.normV(ray.direction) };
     }
 
+    /// **WHAT "ON SCREEN" MEANS HERE**, and the two callers that need it are the two that used to walk every
+    /// prop in the map: the cursor pick and the selected op's markers.
+    fn camView(self: *const Editor) envmod.View {
+        const aspect = @as(f32, @floatFromInt(rl.getScreenWidth())) / @as(f32, @floatFromInt(rl.getScreenHeight()));
+        return envmod.View.fromCamera(self.cam, aspect);
+    }
+
     const OpFilter = struct {
         ed: *const Editor,
         m: *const wf.Map,
@@ -1477,7 +1493,8 @@ pub const Editor = struct {
     fn hoverInLayer(self: *Editor, m: *wf.Map, env: *envmod.Env) Hover {
         if (self.layer.opLayer()) {
             const ray = self.cursorRay();
-            if (env.pickIf(ray.position, ray.direction, self.filter(m), OpFilter.inLayer)) |pi| return .{ .prop = pi };
+            const view = self.camView();
+            if (env.pickIf(&view, ray.position, ray.direction, self.filter(m), OpFilter.inLayer)) |pi| return .{ .prop = pi };
             return .none;
         }
         if (self.layer == .units) {
@@ -2285,17 +2302,29 @@ pub const Editor = struct {
         if (self.sel) |s| {
             if (s < m.nops and self.layer.opLayer()) {
                 drawOpGizmo(&m.ops[s], y);
-                // MEASURED AND LEFT: a whole-list walk (~17k props, ~1 MB) every frame something is selected. A binary search over `materialize`'s op order would find the run in ~14 steps, but that buys the gizmo pass a dependence on the placer's append order.
-                for (env.props[0..env.nprops]) |pr| {
-                    if (pr.op != s) continue;
-                    self.selOwned += 1;
-                    if (self.selMarked >= MAX_MARKERS) continue;
-                    self.selMarked += 1;
-                    const nfo = props.info(pr.kind);
-                    const h = @max(nfo.top * pr.scale, 0.4);
-                    const sw = envmod.leanOffsetAt(pr.lean, pr.leanDir, h * 0.5);
-                    rl.drawCubeWires(v3(pr.pos.x + sw.x, pr.pos.y + h * 0.5, pr.pos.z + sw.z), 0.3, h, 0.3, ui.HOT);
-                }
+                // **ONLY THE ONES YOU CAN SEE** (owner). This walked all ~17k props every frame something was
+                // selected — which during prop editing is most of the time — to find the few one op owns. The
+                // draw's own index answers "what is in frame" in a per-cell reject, and a marker you cannot see
+                // is not worth finding. The COUNT is not in here at all any more: `env.ownedBy` is tallied when
+                // the props are built, so the readout stays the op's true total rather than what is on screen.
+                self.selOwned = env.ownedBy(@intCast(s));
+                const view = self.camView();
+                const Mark = struct {
+                    ed: *Editor,
+                    e: *const envmod.Env,
+                    op: u16,
+                    fn at(c: *@This(), pi: u32) void {
+                        const pr = &c.e.props[pi];
+                        if (pr.op != c.op or c.ed.selMarked >= MAX_MARKERS) return;
+                        c.ed.selMarked += 1;
+                        const nfo = props.info(pr.kind);
+                        const h = @max(nfo.top * pr.scale, 0.4);
+                        const sw = envmod.leanOffsetAt(pr.lean, pr.leanDir, h * 0.5);
+                        rl.drawCubeWires(v3(pr.pos.x + sw.x, pr.pos.y + h * 0.5, pr.pos.z + sw.z), 0.3, h, 0.3, ui.HOT);
+                    }
+                };
+                var mk = Mark{ .ed = self, .e = env, .op = @intCast(s) };
+                env.eachInView(&view, &mk, Mark.at);
             }
         }
 
@@ -2526,6 +2555,8 @@ const RING_N_MAX: i32 = 64;
 const LEAN_LIM: f32 = 40;
 
 fn edgeTip(e: wf.Edge, wet: bool) [:0]const u8 {
+    // The water rows are kept for `test_wateredge.world` and for the day the picker comes back; the brush only
+    // ever stamps `WATER_EDGE` now, so `speckle`'s is the one a coast actually shows.
     if (wet) return switch (e) {
         .blend => "A margin you cannot find the edge of. Metres of ground that is neither",
         .natural => "What a lake does on its own. A slow wander either side of the line",
@@ -2587,7 +2618,7 @@ const BarRow = struct {
     fn button(r: *BarRow, label: [:0]const u8, active: bool, tip: [:0]const u8) bool {
         const w = hud.monoW(label, hud.MONO) + PAD;
         defer r.x += w + GAP;
-        return ui.buttonTip(r.ctx, ui.rect(r.x, 5, w, BAR_H - 10), label, hud.MONO, active, tip);
+        return ui.button(r.ctx, ui.rect(r.x, 5, w, BAR_H - 10), label, hud.MONO, active, tip);
     }
 
     fn layer(r: *BarRow, ic: ui.Icon, label: [:0]const u8, active: bool, shown: bool, tip: [:0]const u8) ui.LayerHit {
@@ -2685,8 +2716,7 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
     var y: i32 = BAR_H + 8;
 
     const selR = ui.rect(8, y, SIDE_W - 16, ROW_H - 2);
-    ui.tipFor(ctx, selR, "Left-click picks objects; left-drag pans the map (Esc)");
-    if (ui.iconButton(ctx, selR, .select, "Select", hud.MONO, ed.selecting)) {
+    if (ui.iconButton(ctx, selR, .select, "Select", hud.MONO, ed.selecting, "Left-click picks objects; left-drag pans the map (Esc)")) {
         ed.selecting = true;
     }
     y += ROW_H + 8;
@@ -2704,19 +2734,18 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
         var lab: [40]u8 = undefined;
         const s = if (i < DIGIT_KEYS) (std.fmt.bufPrintZ(&lab, "{d} {s}", .{ i + 1, b }) catch b) else b;
         const r = ui.rect(8, y, SIDE_W - 16, ROW_H - 4);
-        ui.tipFor(ctx, r, tips[i]);
         const on = !ed.selecting and ed.brushIdx() == i;
         const hit = if (glyphs) |g|
-            ui.iconButton(ctx, r, g[i], s, hud.MONO, on)
+            ui.iconButton(ctx, r, g[i], s, hud.MONO, on, tips[i])
         else
             (if (i + 1 == brushes.len)
-                ui.iconButton(ctx, r, .erase, s, hud.MONO, on)
+                ui.iconButton(ctx, r, .erase, s, hud.MONO, on, tips[i])
             else switch (@as(GroundBrush, @enumFromInt(i))) {
-                .raise => ui.swatchButton(ctx, r, RAISE_SWATCH, s, hud.MONO, on),
-                .lower => ui.swatchButton(ctx, r, LOWER_SWATCH, s, hud.MONO, on),
-                .smooth, .flat => ui.swatchButton(ctx, r, EVEN_SWATCH, s, hud.MONO, on),
-                .water => ui.swatchButton(ctx, r, WATER_SWATCH, s, hud.MONO, on),
-                else => ui.swatchButton(ctx, r, soilSwatch(@enumFromInt(i - GROUND_SOIL_0 + 1)), s, hud.MONO, on),
+                .raise => ui.swatchButton(ctx, r, RAISE_SWATCH, s, hud.MONO, on, tips[i]),
+                .lower => ui.swatchButton(ctx, r, LOWER_SWATCH, s, hud.MONO, on, tips[i]),
+                .smooth, .flat => ui.swatchButton(ctx, r, EVEN_SWATCH, s, hud.MONO, on, tips[i]),
+                .water => ui.swatchButton(ctx, r, WATER_SWATCH, s, hud.MONO, on, tips[i]),
+                else => ui.swatchButton(ctx, r, soilSwatch(@enumFromInt(i - GROUND_SOIL_0 + 1)), s, hud.MONO, on, tips[i]),
             });
         if (hit) {
             ed.setBrush(i);
@@ -2740,7 +2769,7 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
                     chipX = 8;
                     chipY += 28;
                 }
-                if (ui.chip(ctx, chipX, chipY, gp.label(), on, &used)) ed.groupSel = gp;
+                if (ui.chip(ctx, chipX, chipY, gp.label(), on, &used, "Narrow the KIND list to this family")) ed.groupSel = gp;
                 chipX += used;
             }
         }
@@ -2763,7 +2792,7 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
             if (k == cur) selIdx = i;
         }
         const listH = @max(0, sh - y - STATUS_H - 8);
-        if (ui.list(ctx, ui.rect(8, y, SIDE_W - 16, listH), labels[0..n], selIdx, &ed.kindScroll)) |i| {
+        if (ui.list(ctx, ui.rect(8, y, SIDE_W - 16, listH), labels[0..n], selIdx, &ed.kindScroll, "What the brush places. The GROUP chips above narrow this list")) |i| {
             ed.kindSlot().* = kinds[i];
         }
     }
@@ -2772,7 +2801,7 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
 
 fn coordRow(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, label: [:0]const u8, v: *f32, step: f32) bool {
     defer y.* += ROW_H;
-    return ui.stepperF(ctx, x, y.*, w, label, v, step, -COORD_LIM, COORD_LIM);
+    return ui.stepperF(ctx, x, y.*, w, label, v, step, -COORD_LIM, COORD_LIM, "Where this op sits, in world metres. Drag it in the world instead if you would rather");
 }
 
 fn centreRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op, step: f32) bool {
@@ -2802,7 +2831,7 @@ fn gradientRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op) bool {
             .x => "along x",
             .z => "along z",
         };
-        if (ui.chip(ctx, cx, y.*, lab, o.gAxis == ax, &usedW) and o.gAxis != ax) {
+        if (ui.chip(ctx, cx, y.*, lab, o.gAxis == ax, &usedW, "Thin the scatter from one end to the other along this axis. Off spreads it evenly") and o.gAxis != ax) {
             o.gAxis = ax;
             if (ax != .none and o.gA == o.gB) {
                 o.gA = if (ax == .x) @min(o.x, o.x1) else @min(o.z, o.z1);
@@ -2815,11 +2844,11 @@ fn gradientRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op) bool {
     }
     y.* += ROW_H + 4;
     if (o.gAxis == .none) return ch;
-    ch = ui.stepperF(ctx, x, y.*, w, "from", &o.gA, 1, -COORD_LIM, COORD_LIM) or ch;
+    ch = ui.stepperF(ctx, x, y.*, w, "from", &o.gA, 1, -COORD_LIM, COORD_LIM, "The FULL end of the fade, in world metres") or ch;
     y.* += ROW_H;
-    ch = ui.stepperF(ctx, x, y.*, w, "to", &o.gB, 1, -COORD_LIM, COORD_LIM) or ch;
+    ch = ui.stepperF(ctx, x, y.*, w, "to", &o.gB, 1, -COORD_LIM, COORD_LIM, "The THIN end of the fade, in world metres") or ch;
     y.* += ROW_H;
-    ch = ui.slider(ctx, x, y.*, w, "thin end", &o.gFloor, 0, 1) or ch;
+    ch = ui.slider(ctx, x, y.*, w, "thin end", &o.gFloor, 0, 1, "What share survives at the thin end. 0 fades to nothing, 1 is no fade at all") or ch;
     y.* += ROW_H + SLIDER_DROP;
     return ch;
 }
@@ -2841,28 +2870,35 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         };
         hud.mono(if (sculpting) "SCULPT" else if (wet) "WATER BRUSH" else "SOIL BRUSH", x, y, hud.MONO, ui.TITLE);
         y += ROW_H + 4;
-        _ = ui.slider(ctx, x, y, w, "radius", &ed.radius, 1, 60);
+        _ = ui.slider(ctx, x, y, w, "radius", &ed.radius, 1, 60, "How wide the brush bites, in metres");
         y += ROW_H + SLIDER_DROP;
         if (!sculpting and !wet) {
-            _ = ui.slider(ctx, x, y, w, "opacity", &ed.soilOpacity, 0, 1);
+            _ = ui.slider(ctx, x, y, w, "opacity", &ed.soilOpacity, 0, 1, "How much a stroke lays down. Under 1 blends with what is already there, so a pass builds up");
             y += ROW_H + SLIDER_DROP;
         }
         if (!sculpting) {
             hud.mono(if (wet) "coast" else "edge", x, y, hud.MONO, ui.LABEL);
             y += ROW_H;
-            const EDGE_COLS = 4;
-            const cellW = @divTrunc(w - (EDGE_COLS - 1) * 4, EDGE_COLS);
-            for (0..wf.Edge.N) |i| {
-                const e: wf.Edge = @enumFromInt(i);
-                const col: i32 = @intCast(i % EDGE_COLS);
-                const row: i32 = @intCast(i / EDGE_COLS);
-                const r = ui.rect(x + col * (cellW + 4), y + row * (ROW_H + 4), cellW, ROW_H);
-                if (ui.buttonTip(ctx, r, e.label(), hud.MONO, ed.brushEdge == e, edgeTip(e, wet))) ed.brushEdge = e;
+            if (wet) {
+                // ONE SHAPE, AND IT IS NOT A CHOICE (`WATER_EDGE`). Shown rather than hidden, because a brush
+                // that quietly stamps something the panel never mentions is worse than a row you cannot press.
+                ui.disabled(ctx, ui.rect(x, y, w, ROW_H), WATER_EDGE.label(), hud.MONO, edgeTip(WATER_EDGE, true));
+                y += ROW_H + 6;
+            } else {
+                const EDGE_COLS = 4;
+                const cellW = @divTrunc(w - (EDGE_COLS - 1) * 4, EDGE_COLS);
+                for (0..wf.Edge.N) |i| {
+                    const e: wf.Edge = @enumFromInt(i);
+                    const col: i32 = @intCast(i % EDGE_COLS);
+                    const row: i32 = @intCast(i / EDGE_COLS);
+                    const r = ui.rect(x + col * (cellW + 4), y + row * (ROW_H + 4), cellW, ROW_H);
+                    if (ui.button(ctx, r, e.label(), hud.MONO, ed.brushEdge == e, edgeTip(e, wet))) ed.brushEdge = e;
+                }
+                y += 2 * (ROW_H + 4) + 6;
             }
-            y += 2 * (ROW_H + 4) + 6;
         }
         if (sculpting) {
-            _ = ui.slider(ctx, x, y, w, "strength", &ed.sculptRate, 0.5, 12);
+            _ = ui.slider(ctx, x, y, w, "strength", &ed.sculptRate, 0.5, 12, "How fast raise, lower and smooth move the ground under the brush");
             y += ROW_H + SLIDER_DROP;
             var hbuf: [96]u8 = undefined;
             const at = ed.groundAt() orelse mathx.zero3;
@@ -2884,7 +2920,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             const ss = std.fmt.bufPrintZ(&hbuf, "steps up to {d:.2} m for free", .{envmod.STEP_UP}) catch "";
             hud.mono(ss, x, y, hud.MONO, ui.alpha(ui.LABEL, 160));
             y += ROW_H + 10;
-            if (ui.buttonTip(ctx, ui.rect(x, y, w, 24), "level the map", hud.MONO, false, "Flatten the whole world back to zero. Undoable")) {
+            if (ui.button(ctx, ui.rect(x, y, w, 24), "level the map", hud.MONO, false, "Flatten the whole world back to zero. Undoable")) {
                 ed.bank(m);
                 m.height = [_]u8{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS;
                 ed.rebuild(m, env);
@@ -2924,7 +2960,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         y += 10;
         const clearLabel: [:0]const u8 = if (wet) "drain the map" else "clear all paint";
         const clearTip: [:0]const u8 = if (wet) "Wipe every painted lake" else "Unpaint the whole map";
-        if (ui.buttonTip(ctx, ui.rect(x, y, w, 24), clearLabel, hud.MONO, false, clearTip)) {
+        if (ui.button(ctx, ui.rect(x, y, w, 24), clearLabel, hud.MONO, false, clearTip)) {
             ed.bank(m);
             if (wet) {
                 m.water = [_]u8{0} ** wf.WATER_CELLS;
@@ -2961,18 +2997,18 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 y += ROW_H + 4;
                 var changed = false;
                 const before = fo.*;
-                changed = ui.stepperF(ctx, x, y, w, "x", &fo.x, 0.5, -COORD_LIM, COORD_LIM) or changed;
+                changed = ui.stepperF(ctx, x, y, w, "x", &fo.x, 0.5, -COORD_LIM, COORD_LIM, "Where it stands, east-west. Its patrol route moves with it") or changed;
                 y += ROW_H;
-                changed = ui.stepperF(ctx, x, y, w, "z", &fo.z, 0.5, -COORD_LIM, COORD_LIM) or changed;
+                changed = ui.stepperF(ctx, x, y, w, "z", &fo.z, 0.5, -COORD_LIM, COORD_LIM, "Where it stands, north-south. Its patrol route moves with it") or changed;
                 fo.moveRoute(fo.x - before.x, fo.z - before.z);
                 y += ROW_H;
-                changed = ui.stepperF(ctx, x, y, w, "yaw", &fo.yaw, 15, -360, 720) or changed;
+                changed = ui.stepperF(ctx, x, y, w, "yaw", &fo.yaw, 15, -360, 720, "Which way it faces when the level starts, in degrees") or changed;
                 y += ROW_H;
-                changed = ui.stepperF(ctx, x, y, w, "scale", &fo.scale, 0.02, wf.FOE_SCALE_LO, wf.FOE_SCALE_HI) or changed;
+                changed = ui.stepperF(ctx, x, y, w, "scale", &fo.scale, 0.02, wf.FOE_SCALE_LO, wf.FOE_SCALE_HI, "How big this one is. Reach, health and the weight of its blows all read it") or changed;
                 y += ROW_H;
-                changed = ui.stepperF(ctx, x, y, w, "phase", &fo.seed, 0.05, 0, 1) or changed;
+                changed = ui.stepperF(ctx, x, y, w, "phase", &fo.seed, 0.05, 0, 1, "Its own seed - where in its idle it starts, and the wabi-sabi in its body. Two side by side should not match") or changed;
                 y += ROW_H + 6;
-                if (ui.buttonTip(ctx, ui.rect(x, y, 80, 24), "delete", hud.MONO, false, "Remove this spawn (Del)")) {
+                if (ui.button(ctx, ui.rect(x, y, 80, 24), "delete", hud.MONO, false, "Remove this spawn (Del)")) {
                     ed.deleteSel(m, env);
                     return;
                 }
@@ -2992,19 +3028,19 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 y += ROW_H + 4;
                 var changed = false;
                 const before = np.*;
-                changed = ui.stepperF(ctx, x, y, w, "x", &np.x, 0.5, -COORD_LIM, COORD_LIM) or changed;
+                changed = ui.stepperF(ctx, x, y, w, "x", &np.x, 0.5, -COORD_LIM, COORD_LIM, "Where the body stands, east-west") or changed;
                 y += ROW_H;
-                changed = ui.stepperF(ctx, x, y, w, "z", &np.z, 0.5, -COORD_LIM, COORD_LIM) or changed;
+                changed = ui.stepperF(ctx, x, y, w, "z", &np.z, 0.5, -COORD_LIM, COORD_LIM, "Where the body stands, north-south") or changed;
                 y += ROW_H;
-                changed = ui.stepperF(ctx, x, y, w, "yaw", &np.yaw, 15, -360, 720) or changed;
+                changed = ui.stepperF(ctx, x, y, w, "yaw", &np.yaw, 15, -360, 720, "Which way it faces, in degrees") or changed;
                 y += ROW_H;
-                changed = ui.stepperF(ctx, x, y, w, "scale", &np.scale, 0.02, wf.FOE_SCALE_LO, wf.FOE_SCALE_HI) or changed;
+                changed = ui.stepperF(ctx, x, y, w, "scale", &np.scale, 0.02, wf.FOE_SCALE_LO, wf.FOE_SCALE_HI, "How big this one is") or changed;
                 y += ROW_H;
-                changed = ui.stepperF(ctx, x, y, w, "phase", &np.seed, 0.05, 0, 1) or changed;
+                changed = ui.stepperF(ctx, x, y, w, "phase", &np.seed, 0.05, 0, 1, "Its own seed - where in its idle it starts, and the wabi-sabi in its body") or changed;
                 y += ROW_H;
-                changed = ui.stepperF(ctx, x, y, w, "roam", &np.roam, 0.5, 0, wf.NPC_ROAM_MAX) or changed;
+                changed = ui.stepperF(ctx, x, y, w, "roam", &np.roam, 0.5, 0, wf.NPC_ROAM_MAX, "How far it wanders from this post, in metres. At 0 it stands still") or changed;
                 y += ROW_H + 6;
-                if (ui.buttonTip(ctx, ui.rect(x, y, 80, 24), "delete", hud.MONO, false, "Remove this body (Del)")) {
+                if (ui.button(ctx, ui.rect(x, y, 80, 24), "delete", hud.MONO, false, "Remove this body (Del)")) {
                     ed.deleteSel(m, env);
                     return;
                 }
@@ -3029,7 +3065,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 var lb: [56]u8 = undefined;
                 const on = ed.locSel == i;
                 const lab = std.fmt.bufPrintZ(&lb, "{s}{s}", .{ l.label(), if (l.hasWeather()) " *" else "" }) catch "?";
-                if (ui.buttonTip(ctx, ui.rect(x, y, w, 22), lab, hud.MONO, on, "Select this location - a * means it carries weather")) {
+                if (ui.button(ctx, ui.rect(x, y, w, 22), lab, hud.MONO, on, "Select this location - a * means it carries weather")) {
                     ed.locSel = if (on) null else i;
                 }
                 y += ROW_H;
@@ -3040,7 +3076,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 var spore = l.spore orelse 0;
                 var has = l.hasWeather();
                 var usedW: i32 = 0;
-                if (ui.chip(ctx, x + 8, y, "weather", has, &usedW)) {
+                if (ui.chip(ctx, x + 8, y, "weather", has, &usedW, "Give this region its own sky. OFF is not the same as dry - it leaves the world's own storm alone")) {
                     has = !has;
                     l.wet = if (has) wet else null;
                     l.fog = if (has) fog else null;
@@ -3049,22 +3085,22 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 }
                 y += ROW_H;
                 if (has) {
-                    if (ui.slider(ctx, x + 8, y, w - 16, "wet", &wet, 0, 1)) {
+                    if (ui.slider(ctx, x + 8, y, w - 16, "wet", &wet, 0, 1, "How hard it rains here. 0 is dry whatever the world clock is doing")) {
                         l.wet = wet;
                         lchanged = true;
                     }
                     y += ROW_H + SLIDER_DROP;
-                    if (ui.slider(ctx, x + 8, y, w - 16, "fog", &fog, 0, 1)) {
+                    if (ui.slider(ctx, x + 8, y, w - 16, "fog", &fog, 0, 1, "How thick the air is here")) {
                         l.fog = fog;
                         lchanged = true;
                     }
                     y += ROW_H + SLIDER_DROP;
-                    if (ui.slider(ctx, x + 8, y, w - 16, "spore", &spore, 0, 1)) {
+                    if (ui.slider(ctx, x + 8, y, w - 16, "spore", &spore, 0, 1, "How much sporefall drifts here")) {
                         l.spore = spore;
                         lchanged = true;
                     }
                     y += ROW_H + SLIDER_DROP;
-                    if (ui.slider(ctx, x + 8, y, w - 16, "blend s", &l.blend, 0, 30)) lchanged = true;
+                    if (ui.slider(ctx, x + 8, y, w - 16, "blend s", &l.blend, 0, 30, "Seconds to cross-fade into this region's sky as he walks in. A region is never a switch")) lchanged = true;
                     y += ROW_H + SLIDER_DROP;
                 }
             }
@@ -3082,9 +3118,9 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         for (m.zones[0..m.nzones], 0..) |*z, i| {
             var zb: [48]u8 = undefined;
             const lab = std.fmt.bufPrintZ(&zb, "{d} {s} ({d})", .{ i, z.label(), z.nmix }) catch "?";
-            changed = ui.slider(ctx, x, y, w - 34, lab, &z.density, 0, 1) or changed;
+            changed = ui.slider(ctx, x, y, w - 34, lab, &z.density, 0, 1, "How thickly this zone grows. The cover field thins it further in clearings") or changed;
             // …and the way IN to the two things a zone carries that nothing here could reach: its NAME and the MIX it grows. Its own button, so it cannot fight the slider for the same click.
-            if (ui.buttonTip(ctx, ui.rect(x + w - 30, y + 14, 30, 22), "...", hud.MONO, ed.zoneSel == i, "Name this zone and choose what grows in it")) {
+            if (ui.button(ctx, ui.rect(x + w - 30, y + 14, 30, 22), "...", hud.MONO, ed.zoneSel == i, "Name this zone and choose what grows in it")) {
                 ed.selectZone(m, i);
                 ed.modal = .zonemix;
             }
@@ -3097,7 +3133,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 y += hud.monoLineH(hud.MONO) + 2;
                 const focused = ed.modal == .none;
                 ed.textFocus = focused;
-                ui.textField(ctx, ui.rect(x, y, w, 26), &ed.zoneNameBuf, &ed.zoneNameLen, focused);
+                ui.textField(ctx, ui.rect(x, y, w, 26), &ed.zoneNameBuf, &ed.zoneNameLen, focused, "The zone's name as the map file stores it. Spaces and # become _");
                 for (ed.zoneNameBuf[0..ed.zoneNameLen]) |*ch| {
                     if (ch.* == ' ' or ch.* == '#') ch.* = '_';
                 }
@@ -3148,7 +3184,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
     var head: [48]u8 = undefined;
     const title = std.fmt.bufPrintZ(&head, "#{d} {s}", .{ s, @tagName(o.op) }) catch "";
     hud.mono(title, x, y, hud.MONO, ui.TITLE);
-    if (ui.buttonTip(ctx, ui.rect(x + w - 74, y - 2, 74, 22), "view", hud.MONO, false, "Open this kind in the object viewer")) {
+    if (ui.button(ctx, ui.rect(x + w - 74, y - 2, 74, 22), "view", hud.MONO, false, "Open this kind in the object viewer")) {
         ed.objects.show(o.kind);
         ed.modal = .objects;
         return;
@@ -3168,71 +3204,71 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
     switch (o.op) {
         .at => {
             changed = centreRows(ctx, x, &y, w, o, 0.5) or changed;
-            changed = ui.stepperF(ctx, x, y, w, "yaw", &o.yaw, 5, -360, 720) or changed;
+            changed = ui.stepperF(ctx, x, y, w, "yaw", &o.yaw, 5, -360, 720, "Which way the piece faces, in degrees") or changed;
             y += ROW_H;
-            changed = ui.stepperF(ctx, x, y, w, "scale", &o.scale, 0.05, 0.1, 4) or changed;
+            changed = ui.stepperF(ctx, x, y, w, "scale", &o.scale, 0.05, 0.1, 4, "How big the piece is, as a multiple of its authored size") or changed;
             y += ROW_H;
-            changed = ui.stepperF(ctx, x, y, w, "lean", &o.lean, 1, 0, LEAN_LIM) or changed;
+            changed = ui.stepperF(ctx, x, y, w, "lean", &o.lean, 1, 0, LEAN_LIM, "Degrees off plumb. Nothing dead stands straight") or changed;
             y += ROW_H;
-            changed = ui.stepperF(ctx, x, y, w, "lean dir", &o.leanDir, 15, -360, 720) or changed;
+            changed = ui.stepperF(ctx, x, y, w, "lean dir", &o.leanDir, 15, -360, 720, "Which way it leans, in degrees") or changed;
             y += ROW_H;
         },
         .belt, .ivy => {
             changed = spanRows(ctx, x, &y, w, o) or changed;
             if (o.op == .belt) {
-                changed = ui.stepperI(ctx, x, y, w, "count", &o.n, 5, 0, COUNT_MAX) or changed;
+                changed = ui.stepperI(ctx, x, y, w, "count", &o.n, 5, 0, COUNT_MAX, "How many to try to place. Rejected candidates still cost time, so this is an ASK and not a promise") or changed;
                 y += ROW_H;
             } else {
-                changed = ui.slider(ctx, x, y, w, "take", &o.chance, 0, 1) or changed;
+                changed = ui.slider(ctx, x, y, w, "take", &o.chance, 0, 1, "What share of the candidates actually stand. Under 1 is what stops a belt reading as a fence") or changed;
                 y += ROW_H + SLIDER_DROP;
             }
         },
         .disc => {
             changed = centreRows(ctx, x, &y, w, o, 1) or changed;
-            changed = ui.stepperF(ctx, x, y, w, "inner", &o.r0, 0.5, 0, 200) or changed;
+            changed = ui.stepperF(ctx, x, y, w, "inner", &o.r0, 0.5, 0, 200, "Hole in the middle, in metres. 0 fills the disc") or changed;
             y += ROW_H;
-            changed = ui.stepperF(ctx, x, y, w, "outer", &o.r1, 0.5, 0, 200) or changed;
+            changed = ui.stepperF(ctx, x, y, w, "outer", &o.r1, 0.5, 0, 200, "How far out it reaches, in metres") or changed;
             y += ROW_H;
-            changed = ui.stepperI(ctx, x, y, w, "count", &o.n, 5, 0, COUNT_MAX) or changed;
+            changed = ui.stepperI(ctx, x, y, w, "count", &o.n, 5, 0, COUNT_MAX, "How many to try to place") or changed;
             y += ROW_H;
-            changed = ui.slider(ctx, x, y, w, "centre bias", &o.bias, 0, 1) or changed;
+            changed = ui.slider(ctx, x, y, w, "centre bias", &o.bias, 0, 1, "Pull them toward the middle. 0 spreads evenly across the disc") or changed;
             y += ROW_H + SLIDER_DROP;
         },
         .ring => {
             changed = centreRows(ctx, x, &y, w, o, 1) or changed;
-            changed = ui.stepperF(ctx, x, y, w, "radius", &o.r0, 0.5, 0.5, 200) or changed;
+            changed = ui.stepperF(ctx, x, y, w, "radius", &o.r0, 0.5, 0.5, 200, "How wide the ring stands, in metres") or changed;
             y += ROW_H;
-            changed = ui.stepperI(ctx, x, y, w, "count", &o.n, 1, 2, RING_N_MAX) or changed;
+            changed = ui.stepperI(ctx, x, y, w, "count", &o.n, 1, 2, RING_N_MAX, "How many stand in the ring, spaced evenly") or changed;
             y += ROW_H;
-            changed = ui.stepperI(ctx, x, y, w, "gap at", &o.skip, 1, -1, RING_N_MAX - 1) or changed;
+            changed = ui.stepperI(ctx, x, y, w, "gap at", &o.skip, 1, -1, RING_N_MAX - 1, "Leave one place empty, so the ring has a way in. -1 closes it") or changed;
             y += ROW_H;
         },
         .line => {
             changed = spanRows(ctx, x, &y, w, o) or changed;
-            changed = ui.stepperF(ctx, x, y, w, "step", &o.r0, 0.25, 0.5, 40) or changed;
+            changed = ui.stepperF(ctx, x, y, w, "step", &o.r0, 0.25, 0.5, 40, "Metres between one and the next along the row") or changed;
             y += ROW_H;
-            changed = ui.slider(ctx, x, y, w, "stands", &o.chance, 0, 1) or changed;
+            changed = ui.slider(ctx, x, y, w, "stands", &o.chance, 0, 1, "What share of the places along the row are actually filled. Under 1 is what makes a ruin a ruin") or changed;
             y += ROW_H + SLIDER_DROP;
         },
     }
 
     if (o.op != .at) {
-        changed = ui.stepperF(ctx, x, y, w, "scale lo", &o.sLo, 0.05, 0.1, 3) or changed;
+        changed = ui.stepperF(ctx, x, y, w, "scale lo", &o.sLo, 0.05, 0.1, 3, "Smallest of the batch. Equal to scale hi means every one is the same size, which reads as fake") or changed;
         y += ROW_H;
-        changed = ui.stepperF(ctx, x, y, w, "scale hi", &o.sHi, 0.05, 0.1, 3) or changed;
+        changed = ui.stepperF(ctx, x, y, w, "scale hi", &o.sHi, 0.05, 0.1, 3, "Largest of the batch") or changed;
         y += ROW_H;
         if (changed and o.sHi < o.sLo) o.sHi = o.sLo;
-        changed = ui.stepperF(ctx, x, y, w, "lean max", &o.lean, 1, 0, LEAN_LIM) or changed;
+        changed = ui.stepperF(ctx, x, y, w, "lean max", &o.lean, 1, 0, LEAN_LIM, "How far off plumb any one of them may lean, in degrees") or changed;
         y += ROW_H;
         var sb: [40]u8 = undefined;
         const seedLab = std.fmt.bufPrintZ(&sb, "seed {d}", .{o.seed}) catch "";
         hud.mono(seedLab, x, y + 4, hud.MONO, ui.LABEL);
-        if (ui.buttonTip(ctx, ui.rect(x + w - 90, y, 90, 24), "re-roll", hud.MONO, false, "A different arrangement, same meaning (R)")) {
+        if (ui.button(ctx, ui.rect(x + w - 90, y, 90, 24), "re-roll", hud.MONO, false, "A different arrangement, same meaning (R)")) {
             ed.rerollSel(m, env);
             return;
         }
         y += ROW_H + 6;
-        if (ui.buttonTip(ctx, ui.rect(x, y, w, 24), "break apart", hud.MONO, false, "One op per instance, so a single one can be moved or deleted. No way back but undo")) {
+        if (ui.button(ctx, ui.rect(x, y, w, 24), "break apart", hud.MONO, false, "One op per instance, so a single one can be moved or deleted. No way back but undo")) {
             ed.explodeSel(m, env);
             return;
         }
@@ -3240,22 +3276,22 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
 
         hud.mono("keeps off", x, y, hud.MONO, ui.alpha(ui.TRIM, 220));
         y += hud.monoLineH(hud.MONO);
-        changed = ui.checkbox(ctx, x, y, "runway", &o.avoid.runway) or changed;
+        changed = ui.checkbox(ctx, x, y, "runway", &o.avoid.runway, "Keep clear of the runway - the corridor the player starts in") or changed;
         y += 22;
-        changed = ui.checkbox(ctx, x, y, "water", &o.avoid.water) or changed;
+        changed = ui.checkbox(ctx, x, y, "water", &o.avoid.water, "Keep out of painted water") or changed;
         y += 22;
-        changed = ui.checkbox(ctx, x, y, "clearings", &o.avoid.clear) or changed;
+        changed = ui.checkbox(ctx, x, y, "clearings", &o.avoid.clear, "Keep out of the clearings - the circles that hold open ground") or changed;
         y += 22;
-        changed = ui.checkbox(ctx, x, y, "solids", &o.avoid.solid) or changed;
+        changed = ui.checkbox(ctx, x, y, "solids", &o.avoid.solid, "Do not stand inside anything already placed") or changed;
         y += 22;
         if (o.op == .belt or o.op == .disc) {
-            changed = ui.checkbox(ctx, x, y, "cover field", &o.field) or changed;
+            changed = ui.checkbox(ctx, x, y, "cover field", &o.field, "Thin the scatter by the world's own cover noise, so it drops to nothing in clearings. On by default for a belt") or changed;
             y += 26;
             changed = gradientRows(ctx, x, &y, w, o) or changed;
         }
     }
 
-    if (ui.buttonTip(ctx, ui.rect(x, y, 44, 24), "up", hud.MONO, false, "Run EARLIER - order decides what later ops can see")) {
+    if (ui.button(ctx, ui.rect(x, y, 44, 24), "up", hud.MONO, false, "Run EARLIER - order decides what later ops can see")) {
         if (s > 0) {
             ed.bank(m);
             m.reorder(s, s - 1);
@@ -3264,7 +3300,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         }
         return;
     }
-    if (ui.buttonTip(ctx, ui.rect(x + 48, y, 60, 24), "down", hud.MONO, false, "Run LATER")) {
+    if (ui.button(ctx, ui.rect(x + 48, y, 60, 24), "down", hud.MONO, false, "Run LATER")) {
         if (s + 1 < m.nops) {
             ed.bank(m);
             m.reorder(s, s + 1);
@@ -3273,7 +3309,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         }
         return;
     }
-    if (ui.buttonTip(ctx, ui.rect(x + w - 80, y, 80, 24), "delete", hud.MONO, false, "Remove this op (Del)")) {
+    if (ui.button(ctx, ui.rect(x + w - 80, y, 80, 24), "delete", hud.MONO, false, "Remove this op (Del)")) {
         ed.deleteSel(m, env);
         return;
     }
@@ -3543,7 +3579,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             const s = std.fmt.bufPrintZ(&buf, "{s} has unsaved edits.", .{ed.curPath()}) catch "";
             hud.mono(s, box.x + DLG_PAD, y, hud.MONO, ui.VALUE);
             const by = box.y + box.h - DLG_FOOT;
-            if (ui.button(ctx, ui.rect(box.x + DLG_PAD, by, 120, DLG_BTN_H), "Save first", hud.MONO, false) or confirm) {
+            if (ui.button(ctx, ui.rect(box.x + DLG_PAD, by, 120, DLG_BTN_H), "Save first", hud.MONO, false, "Write the file, then go on with what you asked for (Enter)") or confirm) {
                 if (ed.saveNow(m)) {
                     const what = ed.pending;
                     ed.modal = .none;
@@ -3551,14 +3587,14 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 }
                 return;
             }
-            if (ui.button(ctx, ui.rect(box.x + 154, by, 120, DLG_BTN_H), "Discard", hud.MONO, false)) {
+            if (ui.button(ctx, ui.rect(box.x + 154, by, 120, DLG_BTN_H), "Discard", hud.MONO, false, "Throw the edits away and go on")) {
                 const what = ed.pending;
                 ed.dirty = false;
                 ed.modal = .none;
                 ed.commitPending(what);
                 return;
             }
-            if (ui.button(ctx, ui.rect(box.x + 300, by, 120, DLG_BTN_H), "Cancel", hud.MONO, false)) {
+            if (ui.button(ctx, ui.rect(box.x + 300, by, 120, DLG_BTN_H), "Cancel", hud.MONO, false, "Stay here and keep editing (Esc)")) {
                 ed.modal = .none;
                 ed.pending = .none;
             }
@@ -3600,7 +3636,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 else
                     c.label();
                 const r = ui.rect(box.x + DLG_PAD + @as(i32, @intCast(ci)) * tabW, box.y + LOOT_TOP - TAB_H, tabW - 3, TAB_H - 4);
-                if (ui.buttonTip(ctx, r, lab, hud.MONO, ed.lootTab == c, "Show this shelf - a * means this container already holds one")) ed.lootTab = c;
+                if (ui.button(ctx, r, lab, hud.MONO, ed.lootTab == c, "Show this shelf - a * means this container already holds one")) ed.lootTab = c;
             }
 
             for (shown[0..nshown], 0..) |k, row| {
@@ -3614,16 +3650,16 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 var nbuf: [8]u8 = undefined;
                 const ns = std.fmt.bufPrintZ(&nbuf, "{d}", .{n}) catch "0";
                 hud.mono(ns, box.x + 340, y + 5, hud.MONO, if (n > 0) ui.VALUE else ui.LABEL);
-                if (ui.button(ctx, ui.rect(box.x + 368, y, 24, 22), "-", hud.MONO, false) and n > 0) {
+                if (ui.button(ctx, ui.rect(box.x + 368, y, 24, 22), "-", hud.MONO, false, "One fewer of this item in the container") and n > 0) {
                     ed.bank(m);
                     lootRemove(o, k);
                 }
-                if (ui.button(ctx, ui.rect(box.x + 396, y, 24, 22), "+", hud.MONO, false) and o.nloot < wf.MAX_LOOT) {
+                if (ui.button(ctx, ui.rect(box.x + 396, y, 24, 22), "+", hud.MONO, false, "One more of this item. A container holds eight kinds") and o.nloot < wf.MAX_LOOT) {
                     ed.bank(m);
                     lootAdd(o, k);
                 }
             }
-            if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false) or confirm) {
+            if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false, "Close it - every change is already applied (Enter)") or confirm) {
                 ed.modal = .none;
             }
         },
@@ -3651,12 +3687,12 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 const label: [:0]const u8 = if (pick) |k| wf.foeName(k) else "Never shuts";
                 const on = wf.eqlBoss(o.boss, pick);
                 hud.mono(label, box.x + DLG_PAD, y + 5, hud.MONO, if (on) ui.VALUE else ui.LABEL);
-                if (ui.button(ctx, ui.rect(box.x + 368, y, 52, 22), if (on) "set" else "pick", hud.MONO, on) and !on) {
+                if (ui.button(ctx, ui.rect(box.x + 368, y, 52, 22), if (on) "set" else "pick", hud.MONO, on, "Seal this gate until that creature is dead. The top row leaves it an ordinary doorway") and !on) {
                     ed.bank(m);
                     o.boss = pick;
                 }
             }
-            if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false) or confirm) {
+            if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false, "Close it - every change is already applied (Enter)") or confirm) {
                 ed.modal = .none;
             }
         },
@@ -3686,18 +3722,18 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 hud.mono(props.displayName(k), box.x + DLG_PAD, y + 5, hud.MONO, if (n > 0) ui.VALUE else ui.LABEL);
                 var nbuf: [8]u8 = undefined;
                 hud.mono(std.fmt.bufPrintZ(&nbuf, "{d}", .{n}) catch "0", box.x + 340, y + 5, hud.MONO, if (n > 0) ui.VALUE else ui.LABEL);
-                if (ui.button(ctx, ui.rect(box.x + 368, y, 24, 22), "-", hud.MONO, false) and n > 0) {
+                if (ui.button(ctx, ui.rect(box.x + 368, y, 24, 22), "-", hud.MONO, false, "One fewer share of this plant in the zone's mix") and n > 0) {
                     ed.bank(m);
                     mixRemove(z, k);
                     ed.requestRebuild();
                 }
-                if (ui.button(ctx, ui.rect(box.x + 396, y, 24, 22), "+", hud.MONO, false) and z.nmix < wf.MAX_MIX) {
+                if (ui.button(ctx, ui.rect(box.x + 396, y, 24, 22), "+", hud.MONO, false, "One more share. The mix is WEIGHTS against each other, not counts") and z.nmix < wf.MAX_MIX) {
                     ed.bank(m);
                     mixAdd(z, k);
                     ed.requestRebuild();
                 }
             }
-            if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false) or confirm) {
+            if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false, "Close it - every change is already applied (Enter)") or confirm) {
                 ed.modal = .none;
             }
         },
@@ -3712,7 +3748,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
 
             hud.mono("SIZE", x, y, hud.MONO, ui.TITLE);
             y += ROW_H + 4;
-            changed = ui.stepperF(ctx, x, y, w, "half extent", &m.half, 5, 40, wf.MAX_DECLARED_HALF) or changed;
+            changed = ui.stepperF(ctx, x, y, w, "half extent", &m.half, 5, 40, wf.MAX_DECLARED_HALF, "Half the map's width in metres, so 100 is a 200 m square. The play area sits inside it") or changed;
             y += ROW_H;
             var hb: [72]u8 = undefined;
             hud.mono(
@@ -3728,13 +3764,13 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             y += ROW_H + 4;
             hud.mono("the lane kept clear of anything that avoids it", x, y, hud.MONO, ui.alpha(ui.LABEL, 170));
             y += hud.monoLineH(hud.MONO) + 4;
-            changed = ui.stepperF(ctx, x, y, w, "x0", &m.runway.x, 0.5, -COORD_LIM, COORD_LIM) or changed;
+            changed = ui.stepperF(ctx, x, y, w, "x0", &m.runway.x, 0.5, -COORD_LIM, COORD_LIM, "West edge of the runway - the corridor scatters keep clear of") or changed;
             y += ROW_H;
-            changed = ui.stepperF(ctx, x, y, w, "z0", &m.runway.z, 0.5, -COORD_LIM, COORD_LIM) or changed;
+            changed = ui.stepperF(ctx, x, y, w, "z0", &m.runway.z, 0.5, -COORD_LIM, COORD_LIM, "South edge of the runway") or changed;
             y += ROW_H;
-            changed = ui.stepperF(ctx, x, y, w, "x1", &m.runway.x1, 0.5, -COORD_LIM, COORD_LIM) or changed;
+            changed = ui.stepperF(ctx, x, y, w, "x1", &m.runway.x1, 0.5, -COORD_LIM, COORD_LIM, "East edge of the runway") or changed;
             y += ROW_H;
-            changed = ui.stepperF(ctx, x, y, w, "z1", &m.runway.z1, 0.5, -COORD_LIM, COORD_LIM) or changed;
+            changed = ui.stepperF(ctx, x, y, w, "z1", &m.runway.z1, 0.5, -COORD_LIM, COORD_LIM, "North edge of the runway") or changed;
             y += ROW_H + 10;
 
             // **THE HOUR, WHERE YOU CAN FIND IT** (owner: add way to change time of day in editor — world menu). `,`/`.` still scrub it and the crib names them — the editor is AGENTS.md's one keyboard exception.
@@ -3754,14 +3790,14 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             );
             y += hud.monoLineH(hud.MONO) + 4;
             var hourNow = day.hour;
-            if (ui.stepperF(ctx, x, y, w, "hour", &hourNow, HOUR_STEP, 0, 24)) day.set(hourNow);
+            if (ui.stepperF(ctx, x, y, w, "hour", &hourNow, HOUR_STEP, 0, 24, "The world clock, for looking at your map under a different sun. Not saved with the map")) day.set(hourNow);
             y += ROW_H;
             {
                 const bw: i32 = @divTrunc(w - 3 * 6, 4);
                 for (HOUR_MARKS, 0..) |mk, i| {
                     const bx = x + @as(i32, @intCast(i)) * (bw + 6);
                     const on = @abs(day.hour - mk.at) < HOUR_STEP * 0.5;
-                    if (ui.buttonTip(ctx, ui.rect(bx, y, bw, 24), mk.name, hud.MONO, on, mk.tip)) day.set(mk.at);
+                    if (ui.button(ctx, ui.rect(bx, y, bw, 24), mk.name, hud.MONO, on, mk.tip)) day.set(mk.at);
                 }
                 y += ROW_H + 10;
             }
@@ -3772,13 +3808,13 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 ed.rebuild(m, env);
             } else if (!ctx.down) ed.endGesture(m, env);
 
-            if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false) or confirm) {
+            if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false, "Close it - every change is already applied (Enter)") or confirm) {
                 ed.modal = .none;
             }
         },
         .jukebox => {
             const box = ui.beginModal(ctx, JUKE_W, JUKE_H, "Sounds");
-            if (ui.list(ctx, ui.rect(box.x + 20, box.y + 56, JUKE_LIST_W, JUKE_LIST_H), &VOICE_NAMES, ed.juke, &ed.jukeScroll)) |i| {
+            if (ui.list(ctx, ui.rect(box.x + 20, box.y + 56, JUKE_LIST_W, JUKE_LIST_H), &VOICE_NAMES, ed.juke, &ed.jukeScroll, "Every voice in the game. Click one to hear it")) |i| {
                 ed.juke = i;
                 ed.jukePlay();
             }
@@ -3796,7 +3832,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 const d: sfx.Dial = @enumFromInt(dfld.value);
                 const spec = sfx.dialSpec(d);
                 var v = sfx.dialOf(vid, d);
-                if (ui.slider(ctx, cx, cy, JUKE_COL_W, spec.name, &v, spec.lo, spec.hi)) sfx.setDial(vid, d, v);
+                if (ui.slider(ctx, cx, cy, JUKE_COL_W, spec.name, &v, spec.lo, spec.hi, spec.tip)) sfx.setDial(vid, d, v);
                 cy += RACK_ROW;
             }
             cy += 4;
@@ -3804,7 +3840,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             const shape = std.fmt.bufPrintZ(&buf, "{d} takes x {d} voices, {s}", .{ nfo.vars, nfo.poly, @tagName(nfo.mix) }) catch "";
             hud.mono(shape, cx, cy, hud.MONO, ui.alpha(ui.LABEL, 170));
             cy += ROW_H + 6;
-            _ = ui.checkbox(ctx, cx, cy, "play out in the world", &ed.jukeWorld);
+            _ = ui.checkbox(ctx, cx, cy, "play out in the world", &ed.jukeWorld, "Play it positioned at the focus, with distance and pan, instead of flat in your ear");
             cy += ROW_H;
             const ds = if (ed.jukeWorld)
                 (std.fmt.bufPrintZ(&buf, "at the focus, {d:.0} m out - zoom to move it", .{ed.dist}) catch "")
@@ -3812,20 +3848,20 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 "at the ear";
             hud.mono(ds, cx, cy, hud.MONO, ui.alpha(ui.LABEL, 170));
             cy += ROW_H + 8;
-            if (ui.buttonTip(ctx, ui.rect(cx, cy, 150, 22), "Revert voice", hud.MONO, !edited, "Back to the numbers in the code - the originals are never overwritten")) {
+            if (ui.button(ctx, ui.rect(cx, cy, 150, 22), "Revert voice", hud.MONO, !edited, "Back to the numbers in the code - the originals are never overwritten")) {
                 sfx.revertVoice(vid);
                 ed.jukePlay();
             }
-            if (ui.buttonTip(ctx, ui.rect(cx + 158, cy, 130, 22), "Revert all", hud.MONO, !sfx.anyVoiceEdited(), "Every voice in the game back to the code")) sfx.revertAllVoices();
+            if (ui.button(ctx, ui.rect(cx + 158, cy, 130, 22), "Revert all", hud.MONO, !sfx.anyVoiceEdited(), "Every voice in the game back to the code")) sfx.revertAllVoices();
             rackPanel(ed, ctx, box.x + JUKE_W - RACK_W - 20, box.y + 56, vid);
 
             const by = box.y + box.h - DLG_FOOT;
-            if (ui.button(ctx, ui.rect(box.x + 20, by, 150, DLG_BTN_H), "Play again", hud.MONO, false) or confirm) ed.jukePlay();
-            if (ui.buttonTip(ctx, ui.rect(box.x + 180, by, 120, DLG_BTN_H), "Save", hud.MONO, false, "Write the edited voices over settings.cfg")) {
+            if (ui.button(ctx, ui.rect(box.x + 20, by, 150, DLG_BTN_H), "Play again", hud.MONO, false, "Hear the selected voice again (Enter)") or confirm) ed.jukePlay();
+            if (ui.button(ctx, ui.rect(box.x + 180, by, 120, DLG_BTN_H), "Save", hud.MONO, false, "Write the edited voices over settings.cfg")) {
                 sfx.saveSettings();
                 ed.say("sounds saved");
             }
-            if (ui.button(ctx, ui.rect(box.x + 310, by, 120, DLG_BTN_H), "Done", hud.MONO, false)) {
+            if (ui.button(ctx, ui.rect(box.x + 310, by, 120, DLG_BTN_H), "Done", hud.MONO, false, "Close the sound bench. Edited voices stay edited until you revert them")) {
                 sfx.saveSettings();
                 ed.modal = .none;
             }
@@ -3835,20 +3871,20 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             const isNew = ed.modal == .new_map;
             const box = ui.beginModal(ctx, 460, 180, if (isNew) "New map" else "Save map as");
             hud.mono("name", box.x + DLG_PAD, box.y + 58, hud.MONO, ui.LABEL);
-            ui.textField(ctx, ui.rect(box.x + DLG_PAD, box.y + 82, 412, 30), &ed.nameBuf, &ed.nameLen, true);
+            ui.textField(ctx, ui.rect(box.x + DLG_PAD, box.y + 82, 412, 30), &ed.nameBuf, &ed.nameLen, true, "The file name. It lands in worlds/ with .world on the end");
             var buf: [wf.PATH_CAP]u8 = undefined;
             const p = wf.pathFor(&buf, ed.nameBuf[0..ed.nameLen]);
             var pz: [wf.PATH_CAP + 4]u8 = undefined;
             const ps = std.fmt.bufPrintZ(&pz, "{s}", .{p}) catch "";
             hud.mono(ps, box.x + DLG_PAD, box.y + 118, hud.MONO, ui.alpha(ui.LABEL, 190));
             const by = box.y + box.h - DLG_FOOT;
-            const go = ui.button(ctx, ui.rect(box.x + DLG_PAD, by, 130, DLG_BTN_H), if (isNew) "Create" else "Save", hud.MONO, false);
+            const go = ui.button(ctx, ui.rect(box.x + DLG_PAD, by, 130, DLG_BTN_H), if (isNew) "Create" else "Save", hud.MONO, false, "Write it and open it (Enter)");
             if (go or confirm) {
                 ed.modal = .none;
                 if (isNew) ed.doNew(m, env) else ed.doSaveAs(m);
                 return;
             }
-            if (ui.button(ctx, ui.rect(box.x + 164, by, 120, DLG_BTN_H), "Cancel", hud.MONO, false)) ed.modal = .none;
+            if (ui.button(ctx, ui.rect(box.x + 164, by, 120, DLG_BTN_H), "Cancel", hud.MONO, false, "Close without doing it (Esc)")) ed.modal = .none;
         },
         .open_map => {
             const box = ui.beginModal(ctx, 460, 380, "Open map");
@@ -3856,16 +3892,16 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             for (0..listing.n) |i| labels[i] = listing.name(i);
             if (listing.n == 0) {
                 hud.mono("no maps in worlds/", box.x + DLG_PAD, box.y + 62, hud.MONO, ui.LABEL);
-            } else if (ui.list(ctx, ui.rect(box.x + DLG_PAD, box.y + 54, 412, 258), labels[0..listing.n], ed.fileSel, &ed.fileScroll)) |i| {
+            } else if (ui.list(ctx, ui.rect(box.x + DLG_PAD, box.y + 54, 412, 258), labels[0..listing.n], ed.fileSel, &ed.fileScroll, "The maps in worlds/. Click one, then Open")) |i| {
                 ed.fileSel = i;
             }
             const by = box.y + box.h - DLG_FOOT;
-            if ((ui.button(ctx, ui.rect(box.x + DLG_PAD, by, 130, DLG_BTN_H), "Open", hud.MONO, false) or confirm) and listing.n > 0) {
+            if ((ui.button(ctx, ui.rect(box.x + DLG_PAD, by, 130, DLG_BTN_H), "Open", hud.MONO, false, "Load this map. Unsaved edits are asked about first (Enter)") or confirm) and listing.n > 0) {
                 ed.modal = .none;
                 ed.doOpen(m, env, ed.fileSel);
                 return;
             }
-            if (ui.button(ctx, ui.rect(box.x + 164, by, 120, DLG_BTN_H), "Cancel", hud.MONO, false)) ed.modal = .none;
+            if (ui.button(ctx, ui.rect(box.x + 164, by, 120, DLG_BTN_H), "Cancel", hud.MONO, false, "Close without doing it (Esc)")) ed.modal = .none;
         },
         .objects => {
             if (!objview.draw(&ed.objects, env, scene, ctx)) ed.modal = .none;
@@ -3875,17 +3911,29 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
 
 const MenuItem = enum { view, loot, boss, focus, reroll, explode, duplicate, delete, close };
 
-const menuRows = [_]struct { act: MenuItem, label: [:0]const u8 }{
-    .{ .act = .view, .label = "View..." },
-    .{ .act = .loot, .label = "Items..." },
-    .{ .act = .boss, .label = "Sealed by..." },
-    .{ .act = .focus, .label = "Focus" },
-    .{ .act = .reroll, .label = "Re-roll" },
-    .{ .act = .explode, .label = "Break apart" },
-    .{ .act = .duplicate, .label = "Duplicate" },
-    .{ .act = .delete, .label = "Delete" },
-    .{ .act = .close, .label = "Close" },
+const menuRows = [_]struct { act: MenuItem, label: [:0]const u8, tip: [:0]const u8 }{
+    .{ .act = .view, .label = "View...", .tip = "Open this kind alone in the object viewer" },
+    .{ .act = .loot, .label = "Items...", .tip = "What this container holds when it is opened" },
+    .{ .act = .boss, .label = "Sealed by...", .tip = "Which creature's death opens this gate" },
+    .{ .act = .focus, .label = "Focus", .tip = "Put the camera on it (F)" },
+    .{ .act = .reroll, .label = "Re-roll", .tip = "A different arrangement, same meaning (R)" },
+    .{ .act = .explode, .label = "Break apart", .tip = "One op per instance, so a single one can be moved or deleted. No way back but undo" },
+    .{ .act = .duplicate, .label = "Duplicate", .tip = "A copy beside it, ready to drag" },
+    .{ .act = .delete, .label = "Delete", .tip = "Remove it (Del)" },
+    .{ .act = .close, .label = "Close", .tip = "Shut this menu (Esc)" },
 };
+
+/// **WHY A ROW IS GREYED, WHICH IS THE ONE THING A GREYED ROW CANNOT SAY FOR ITSELF.** Each answers the test
+/// `menuEnabled` just failed, so the two cannot drift into disagreeing about what a row needs.
+fn menuWhy(act: MenuItem) [:0]const u8 {
+    return switch (act) {
+        .close => "",
+        .focus, .view, .reroll, .duplicate, .delete => "Select an object first",
+        .loot => "Select a container - a chest, or something that can hold items",
+        .boss => "Select a fog gate",
+        .explode => "Select a group op - a belt, a scatter, a ring or a row. A single placement has nothing to break apart",
+    };
+}
 
 const MENU_W: i32 = 150;
 const MENU_EDGE: i32 = 4;
@@ -3985,7 +4033,7 @@ fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32, voice: ?sfx.Id) void {
     inline for (@typeInfo(sfx.Submix).@"enum".fields) |fld| {
         const mx: sfx.Submix = @enumFromInt(fld.value);
         var usedW: i32 = 0;
-        if (ui.chip(ctx, cx, y, @tagName(mx), !ed.rackOnVoice and ed.rackMix == mx, &usedW)) {
+        if (ui.chip(ctx, cx, y, @tagName(mx), !ed.rackOnVoice and ed.rackMix == mx, &usedW, "Filter this whole family of sounds. The same three families as the game's own volume sliders")) {
             ed.rackMix = mx;
             ed.rackOnVoice = false;
         }
@@ -3993,7 +4041,7 @@ fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32, voice: ?sfx.Id) void {
     }
     if (voice != null) {
         var usedW: i32 = 0;
-        if (ui.chip(ctx, cx, y, "this voice", ed.rackOnVoice, &usedW)) ed.rackOnVoice = true;
+        if (ui.chip(ctx, cx, y, "this voice", ed.rackOnVoice, &usedW, "Filter only the selected voice, on TOP of whatever its family is already doing")) ed.rackOnVoice = true;
     } else ed.rackOnVoice = false;
     y += ROW_H + 8;
 
@@ -4007,7 +4055,7 @@ fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32, voice: ?sfx.Id) void {
         const lab = sfx.AFX_NAMES[i];
         const cxx = x + @as(i32, @intCast(i / perCol)) * (colW + RACK_GAP);
         const cyy = y + @as(i32, @intCast(i % perCol)) * RACK_ROW;
-        if (ui.slider(ctx, cxx, cyy, colW, lab, &v, 0, 1)) {
+        if (ui.slider(ctx, cxx, cyy, colW, lab, &v, 0, 1, sfx.AFX_TIPS[i])) {
             if (onVoice) sfx.setVoiceFx(vid, i, v) else sfx.setFx(ed.rackMix, i, v);
         }
     }
@@ -4022,7 +4070,7 @@ fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32, voice: ?sfx.Id) void {
     inline for (PRESETS, 0..) |pre, i| {
         const bx = x + @as(i32, @intCast(i % 2)) * (RACK_W / 2 + 4);
         const by = y + @as(i32, @intCast(i / 2)) * 26;
-        if (ui.button(ctx, ui.rect(bx, by, RACK_W / 2 - 4, 22), pre.n, hud.MONO, false)) {
+        if (ui.button(ctx, ui.rect(bx, by, RACK_W / 2 - 4, 22), pre.n, hud.MONO, false, "Load this preset into the rack, over whatever is set now")) {
             if (onVoice) sfx.applyVoiceFxPreset(vid, pre.p) else sfx.applyFxPreset(ed.rackMix, pre.p);
         }
     }
@@ -4032,10 +4080,10 @@ fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32, voice: ?sfx.Id) void {
         "This voice adds nothing of its own - the family's rack still applies"
     else
         "Back to the house sound (worn tape)";
-    if (ui.buttonTip(ctx, ui.rect(x, y, RACK_W / 2 - 4, 22), "Default", hud.MONO, false, dflt)) {
+    if (ui.button(ctx, ui.rect(x, y, RACK_W / 2 - 4, 22), "Default", hud.MONO, false, dflt)) {
         if (onVoice) sfx.voiceFxOff(vid) else sfx.resetFx(ed.rackMix);
     }
-    if (ui.buttonTip(ctx, ui.rect(x + RACK_W / 2 + 4, y, RACK_W / 2 - 4, 22), "All Off", hud.MONO, false, "Every dial to zero - drier than the game ships")) {
+    if (ui.button(ctx, ui.rect(x + RACK_W / 2 + 4, y, RACK_W / 2 - 4, 22), "All Off", hud.MONO, false, "Every dial to zero - drier than the game ships")) {
         if (onVoice) sfx.voiceFxOff(vid) else sfx.allFxOff(ed.rackMix);
     }
     y += ROW_H + 4;
@@ -4088,10 +4136,10 @@ fn drawContextMenu(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx) void
         const label = if (row.act == .view) viewRow else row.label;
         const r = ui.rect(x + 3, y + 3 + @as(i32, @intCast(i)) * ROW_H, menuW - 6, ROW_H - 2);
         if (!menuEnabled(ed, m, row.act)) {
-            ui.disabled(ctx, r, label, hud.MONO);
+            ui.disabled(ctx, r, label, hud.MONO, menuWhy(row.act));
             continue;
         }
-        if (!ui.button(ctx, r, label, hud.MONO, false)) continue;
+        if (!ui.button(ctx, r, label, hud.MONO, false, row.tip)) continue;
         ed.menuOpen = false;
         switch (row.act) {
             .view => if (ed.sel) |s| {

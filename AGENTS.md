@@ -1575,12 +1575,30 @@ cross and nothing on foot will follow him into.
   about half a cell do not survive the coverage staircase.
 - **AN OLD MAP COMES UP UNCHANGED** — no `soiledge:` row means every cell takes the edge its material used to
   imply (`fillLegacyEdges`: stone cut, everything else soft). The row is only written when some stroke asked for
-  something else (`edgesAllDefault`). **WATER'S COAST DOES NOT USE ANY OF THIS YET** and may not use it the same
-  way: the water field is ONE field feeding the look *and* the wading, so an edge warped in the shader would put
-  the coast you see somewhere other than the coast you walk into. It has to be baked into the field in
-  `env.uploadWater`.
+  something else (`edgesAllDefault`).
+- **THE COAST USES THE SAME EDGES, AND THE TABLE IS WRITTEN ONCE** (`shaders.EDGE_K`). The GLSL `edgeShape` is
+  GENERATED from that table and `shaders.warpEdge` is its Zig twin, so the shape a map asks for means one thing
+  whether it is soil or water. Water USED to bake the shape into the field (`coastWarp`) and then re-facet it on
+  a 3.6 m lattice: measured, that left `natural` with 1.6% more waterline than `straight`, which applies no
+  wander at all — eight shapes arriving as one smooth blob, because a warp sampled once per 1.25 m cell is
+  undersampled by its own wavelength and bilinear filtering then smooths off what survived.
+- **THE SHEET DIES INTO THE SHORE; IT IS NOT CUT BY IT** (`WATER_FEATHER_D`, `WATER_FEATHER_MIN`). A domain
+  warp whose amplitude beats its own wavelength FOLDS OVER ITSELF, and a hard threshold turns every fold into a
+  shard — a `jagged` coast came out as torn paper with islands thrown off it. The soil never had this fault
+  because its edge is an ALPHA (`k.z` feathers the coverage ring); water was the one surface asked to end at a
+  compare. It fades over the shape's own `feather` now, FLOORED so even one authored to CUT still dies softly.
+  The amplitudes are the soil's own and are not the problem — do not go tuning them to chase a hard edge.
+- **THE COAST GETS A LOW OCTAVE THE SOIL DOES NOT** (`BAY_FREQ`, `BAY_M`) — bays at ~22 m, in METRES and not
+  as a multiple of the shape's wander, or `jagged` gets 8 m of bay and `natural` 4 for no authored reason. It
+  moves the waterline and `paintedDepth` follows, so it stays small enough that a painted pond is still the
+  pond somebody drew.
+- **THE FIELD IS ONE FIELD, FEEDING THE LOOK *AND* THE WADING**, which is why the warp is evaluated on BOTH
+  sides: `shaders.waterAt` per fragment, `env.paintedDepth` per query, off the same row. Shaped only on the GPU
+  the coast you see would sit up to `warp` metres from the coast you walk into — measured at 1.50 m on `jagged`.
+  Anything that reads the field for gameplay goes through `paintedDepth` or it is looking at the wrong line.
 - **WATER IS PAINTED, ITS COAST DERIVED** — one bit per cell → a signed distance field (128 is the waterline).
-  One field, three effects. The sheet is ONE world-spanning quad.
+  One field, three effects. The sheet is ONE world-spanning quad. `worlds/test_wateredge.world` is eight ponds,
+  one per `Edge`, on bare ground: `--shot-land --map worlds/test_wateredge.world`.
 - **PROPS CAN LEAN** (`lean`/`leanDir`) about the prop's GROUND ORIGIN, so the base stays planted and the
   culling sphere is unchanged. `buildSolids` carries the footprint with it.
 - **`buildSolids` RESETS** — `materialize` runs it twice and an appending version doubles every collider.

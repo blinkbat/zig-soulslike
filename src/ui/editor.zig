@@ -2013,8 +2013,7 @@ pub const Editor = struct {
         for (self.marked[0..self.nMarked]) |i| {
             if (self.layer == .units) {
                 if (i >= m.nfoes) continue;
-                m.foes[i].x += dx;
-                m.foes[i].z += dz;
+                m.foes[i].translate(dx, dz);
             } else {
                 if (i >= m.nops) continue;
                 translateOp(&m.ops[i], dx, dz);
@@ -2037,8 +2036,7 @@ pub const Editor = struct {
             if (self.layer == .units) {
                 if (i >= m.nfoes or nClipFoes >= MAX_MARKED) continue;
                 var f = m.foes[i];
-                f.x -= c.x;
-                f.z -= c.z;
+                f.translate(-c.x, -c.z);
                 clipFoes[nClipFoes] = f;
                 nClipFoes += 1;
             } else {
@@ -2098,8 +2096,7 @@ pub const Editor = struct {
                 break;
             }
             var f = src;
-            f.x += at.x;
-            f.z += at.z;
+            f.translate(at.x, at.z);
             m.foes[m.nfoes] = f;
             self.mark(m.nfoes);
             m.nfoes += 1;
@@ -2967,6 +2964,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 changed = ui.stepperF(ctx, x, y, w, "x", &fo.x, 0.5, -COORD_LIM, COORD_LIM) or changed;
                 y += ROW_H;
                 changed = ui.stepperF(ctx, x, y, w, "z", &fo.z, 0.5, -COORD_LIM, COORD_LIM) or changed;
+                fo.moveRoute(fo.x - before.x, fo.z - before.z);
                 y += ROW_H;
                 changed = ui.stepperF(ctx, x, y, w, "yaw", &fo.yaw, 15, -360, 720) or changed;
                 y += ROW_H;
@@ -3337,6 +3335,11 @@ fn onMini(wx: f32, wz: f32, half: f32) bool {
 var miniRT: ?rl.RenderTexture2D = null;
 var miniPainted: u64 = std.math.maxInt(u64);
 var miniLayer: Layer = .ground;
+/// **THE MAP ITSELF IS PART OF THE KEY, BECAUSE A MAP CAN BE SWAPPED WITHOUT AN EDITOR HAND ON IT.**
+/// `game.enterMap` loads a whole new `Map` over this one and replays the world; nothing it does moves
+/// `miniGen`, so the held face was the map he walked out of until his first edit.
+var miniOf: [wf.NAME_CAP]u8 = [_]u8{0} ** wf.NAME_CAP;
+var miniHalf: f32 = 0;
 
 pub fn unloadMinimap() void {
     if (miniRT) |t| rl.unloadRenderTexture(t);
@@ -3349,9 +3352,12 @@ fn blitMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, px: i32, p
     if (miniRT == null) miniRT = rl.loadRenderTexture(side, side) catch null;
     const rt = miniRT orelse return paintMinimap(ed, m, env, px, py, inner);
 
-    if (miniPainted != ed.miniGen or miniLayer != ed.layer) {
+    const swapped = !std.mem.eql(u8, &miniOf, &m.name) or miniHalf != m.half;
+    if (miniPainted != ed.miniGen or miniLayer != ed.layer or swapped) {
         miniPainted = ed.miniGen;
         miniLayer = ed.layer;
+        miniOf = m.name;
+        miniHalf = m.half;
         rl.beginTextureMode(rt);
         paintMinimap(ed, m, env, 0, 0, inner);
         rl.endTextureMode();
@@ -3359,8 +3365,8 @@ fn blitMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, px: i32, p
     // **A STRAIGHT COPY, NOT A BLEND.** Every translucent thing painted into the target drives the target's OWN
     // alpha below 1 (raylib blends the alpha channel by `SRC_ALPHA` like the colour), and blending that back
     // over the panel multiplies the face a second time — measured, it came out 49/765 darker across 78% of it.
-    // The face is opaque by construction, so src replaces dst: GL_ONE, GL_ZERO, GL_FUNC_ADD.
-    rl.gl.rlSetBlendFactors(1, 0, 0x8006);
+    // The face is opaque by construction, so src replaces dst.
+    rl.gl.rlSetBlendFactors(gfx.GL_ONE, gfx.GL_ZERO, gfx.GL_FUNC_ADD);
     rl.beginBlendMode(.custom);
     // A render texture reads bottom-up, so the source height is negative.
     rl.drawTextureRec(

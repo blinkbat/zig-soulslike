@@ -1016,12 +1016,9 @@ pub const Warrior = struct {
         // the pool itself — a blow stripped of its `poise` still takes health.
         const hyper = !blocked and self.hyperArmor();
         const poiseWas = self.vit.poise;
-        const stanceWas = self.vit.stance;
         var s = foe.reached(self, b) orelse return;
         if (hyper and s.reaction == .light) {
-            self.vit.poise = poiseWas;
-            self.vit.stance = stanceWas;
-            self.vit.beginStun(.none);
+            self.vit.refuseFlinch(poiseWas);
             s.reaction = .none;
         }
         if (blocked) return self.caught(blade.hit, s);

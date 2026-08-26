@@ -860,6 +860,12 @@ fn eyeMesh(side: f32) rl.Mesh {
     return b.toMesh();
 }
 
+/// **THE MEMBRANE AND THE RIBS ARE CUT OFF ONE CURVE.** Both walked the same expression by hand, so a wider
+/// wing was two edits and a rib standing proud of the panel it is meant to stiffen.
+fn wingChord(t: f32) f32 {
+    return 0.135 * H * @sqrt(mathx.clampF(1.0 - t * t * t * 0.98, 0, 1)) * (0.42 + 0.58 * @min(1.0, t * 4.0));
+}
+
 fn wingMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     const span = 0.52 * H;
@@ -869,7 +875,7 @@ fn wingMesh(side: f32) rl.Mesh {
     var i: u32 = 0;
     while (i <= SEG) : (i += 1) {
         const t = @as(f32, @floatFromInt(i)) / SEG;
-        const chord = 0.135 * H * @sqrt(mathx.clampF(1.0 - t * t * t * 0.98, 0, 1)) * (0.42 + 0.58 * @min(1.0, t * 4.0));
+        const chord = wingChord(t);
         const rake = -span * 0.26 * t * t;
         const f = v3(side * span * t, 0, rake);
         const bk = v3(side * span * t, -0.0015 * H * t, rake - chord);
@@ -885,7 +891,7 @@ fn wingMesh(side: f32) rl.Mesh {
     var k: u32 = 0;
     while (k < 4) : (k += 1) {
         const t = 0.16 + 0.22 * @as(f32, @floatFromInt(k)) * rng.range(0.92, 1.08);
-        const chord = 0.135 * H * @sqrt(mathx.clampF(1.0 - t * t * t * 0.98, 0, 1)) * (0.42 + 0.58 * @min(1.0, t * 4.0));
+        const chord = wingChord(t);
         const rake = -span * 0.26 * t * t;
         b.addCapsule(
             v3(side * span * t, 0, rake),

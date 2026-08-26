@@ -27,6 +27,13 @@ pub const WATER_SHORE: u8 = 128;
 pub const WATER_DEEP_AT: f32 = 11.0;
 pub const WATER_WET_OUT: f32 = 3.4;
 
+/// **THE RAW GL BLEND ENUMS, NAMED ONCE.** `rl.gl.rlSetBlendFactors` takes them as bare ints and two callers
+/// want them (`env`'s occluder pass, the editor's opaque minimap blit); the editor was writing `1, 0, 0x8006`
+/// with the names in a comment beside it.
+pub const GL_ZERO: i32 = 0;
+pub const GL_ONE: i32 = 1;
+pub const GL_FUNC_ADD: i32 = 0x8006;
+
 /// THE ANCHOR SUN — what the game was authored and photographed under, and the bearing every frame in `shots/` is framed off (`shots.LIT_YAW`). It is NOT what casts any more (`daynight.keyDir`); it stays because the cycle is SOLVED THROUGH it.
 pub const SUN_DIR = daynight.ANCHOR_DIR;
 
@@ -1165,4 +1172,27 @@ test "the fillet dial spans ellipsoid to hard box" {
     try std.testing.expectApproxEqAbs(@as(f32, 1), mathx.lenV(soft), 1e-3);
     try std.testing.expect(mathx.lenV(hard) > 1.5);
     try std.testing.expect(mathx.lenV(hard) < @sqrt(3.0) + 1e-3);
+}
+
+test "EVERY PROGRAM THAT USES THE NOISE BASIS DECLARES IT ONCE — spliced, not copied" {
+    const count = struct {
+        fn of(hay: []const u8, needle: []const u8) usize {
+            var n: usize = 0;
+            var at: usize = 0;
+            while (std.mem.indexOfPos(u8, hay, at, needle)) |i| : (at = i + needle.len) n += 1;
+            return n;
+        }
+    }.of;
+    const DECL = "float hash21(vec2 p){";
+    for ([_][]const u8{ glsl.sceneFS, glsl.skyFS, glsl.retroFS }) |src| {
+        try std.testing.expectEqual(@as(usize, 1), count(src, DECL));
+        // The splice has to leave the declaration on a line of its own, or it lands inside the `//` comment above it.
+        const at = std.mem.indexOf(u8, src, DECL).?;
+        try std.testing.expectEqual(@as(u8, '\n'), src[at - 1]);
+    }
+    // …and the two that call `vnoise` carry its definition, which only the shared source can give them.
+    for ([_][]const u8{ glsl.sceneFS, glsl.skyFS }) |src| {
+        try std.testing.expectEqual(@as(usize, 1), count(src, "float vnoise(vec2 p){"));
+    }
+    try std.testing.expectEqual(@as(usize, 0), count(glsl.retroFS, "float vnoise(vec2 p){"));
 }

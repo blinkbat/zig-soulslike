@@ -1483,6 +1483,12 @@ fn fallWaveR(scale: f32) f32 {
     return foe.hurtReach(FALL_WAVE_R, scale);
 }
 
+/// **THE ONE RADIUS THE SLAM IS DRAWN AND BILLED AT.** `trySlam` has always asked `foe.hurtReach`, so the two FX
+/// walking a bare `SLAM.r * scale` drew a disc `foe.HERO_REACH` short of the one that lands.
+fn slamRingR(scale: f32) f32 {
+    return foe.hurtReach(SLAM.r, scale);
+}
+
 fn crushLen(scale: f32) f32 {
     return foe.hurtReach(FALL_LEN, scale);
 }
@@ -2770,7 +2776,7 @@ pub const Knight = struct {
 
     fn trySlam(self: *Knight, hero: rl.Vector3) void {
         const at = self.slamMark();
-        if (mathx.distXZ(at, hero) > foe.hurtReach(SLAM.r, self.scale)) return;
+        if (mathx.distXZ(at, hero) > slamRingR(self.scale)) return;
         self.heroHit = SLAM.hit;
         self.leash.noteCombat();
     }
@@ -2864,10 +2870,15 @@ pub const Knight = struct {
             b.hit.stance = blade.hit.stance * TOWER_STANCE_PASS;
         }
         const poiseWas = self.vit.poise;
-        const s = foe.reached(self, b) orelse return;
+        var s = foe.reached(self, b) orelse return;
         if (blocked) {
-            // The door takes the flinch: what chips through it is damage, never poise.
-            self.vit.poise = poiseWas;
+            // The door takes the flinch: what chips through it is damage and the guard-break's own stance, never
+            // poise. Restoring the POOL is not enough — the break had already begun a stagger nothing here reads,
+            // and a stunned body refuses every pool (`combat.refuseFlinch`).
+            if (s.reaction == .light) {
+                self.vit.refuseFlinch(poiseWas);
+                s.reaction = .none;
+            } else self.vit.poise = poiseWas;
             return self.caught(s);
         }
         const heavyBlow = foe.wounded(self, s, blade, .{ .light = 0.30, .heavy = 0.55 });
@@ -3482,7 +3493,7 @@ pub const Knight = struct {
         sfx.world(.knight_slam, mid);
     }
     fn slamRingTell(self: *Knight, dt: f32) void {
-        self.ringTell(dt, self.slamMark(), SLAM.r * self.scale, mathx.clampF(self.t / SLAM.windDur, 0, 1));
+        self.ringTell(dt, self.slamMark(), slamRingR(self.scale), mathx.clampF(self.t / SLAM.windDur, 0, 1));
     }
     /// **THE DISC IS DRAWN BEFORE IT IS BILLED** — the blow own circle walked during the WIND, off the same mark
     /// and radius the mechanic uses. Two moves take a disc now, so the walk is one function and the caller owns
@@ -3510,7 +3521,7 @@ pub const Knight = struct {
     /// The picture and the blow share `SLAM.r` and `slamMark`, so the FX cannot promise a smaller ring than the mechanic bills.
     fn slamCrater(self: *Knight) void {
         const at = self.slamMark();
-        const reach = SLAM.r * self.scale;
+        const reach = slamRingR(self.scale);
         var i: i32 = 0;
         while (i < 44) : (i += 1) {
             const a = self.fxRng.angle();
@@ -4675,6 +4686,34 @@ test "A BLOW ON THE DOOR TAKES NO POISE, BUT THE FOOTING BEHIND IT CAN BE WORN T
     try std.testing.expectEqual(@as(u32, 0), back.blocks);
     try std.testing.expectEqual(@as(u32, 1), back.hits);
     try std.testing.expect(back.staggered());
+}
+
+test "A BLOW THE DOOR STOPPED CANNOT FLINCH HIM — the pool, the footing, the stagger and the wear all refused" {
+    // `Vitals.strike` empties the pool and begins the stagger before `tryHit` can answer for the block, and
+    // restoring only `poise` left him `stunned()` — which refuses every pool for a whole stun while he goes on
+    // attacking. The chip is 10% of `dmg` (`TOWER_NEGATE`), so 10 pours 0.82 into a pool left with 0.5 in it.
+    var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    k.state = .idle;
+    k.covered = true;
+    k.vit.poise = 0.5;
+    const stanceBefore = k.vit.stance;
+    const p = v3(0, 2.6, k.hurtRadius() * 0.5);
+    k.tryHit(.{ .active = true, .r = 0.2, .a = p, .b = p, .a0 = p, .b0 = p, .hit = .{ .dmg = 10, .poise = 0, .stance = 60 } });
+    try std.testing.expectEqual(@as(u32, 1), k.blocks);
+    try std.testing.expect(!k.vit.stunned());
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), k.vit.poise, 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), k.vit.lightWear, 1e-6);
+    // The guard-break's own share still passes (`TOWER_STANCE_PASS`) and nothing beyond it.
+    try std.testing.expectApproxEqAbs(stanceBefore - 60.0 * TOWER_STANCE_PASS, k.vit.stance, 1e-3);
+
+    // …and the same blow with the door turned away DOES flinch him, so the refusal is the door and not the sum.
+    var open = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    open.state = .idle;
+    open.vit.poise = 0.5;
+    const q = v3(0, 2.6, -open.hurtRadius() * 0.5);
+    open.tryHit(.{ .active = true, .r = 0.2, .a = q, .b = q, .a0 = q, .b0 = q, .hit = .{ .dmg = 10, .poise = 0, .stance = 0 } });
+    try std.testing.expectEqual(@as(u32, 0), open.blocks);
+    try std.testing.expect(open.vit.stunned());
 }
 
 test "THE STRING IS ONE COMMITMENT — variable length, capped, and the debt paid at the finisher" {

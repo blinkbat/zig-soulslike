@@ -366,13 +366,10 @@ pub const Post = struct {
     fn pick(self: *Post, at: rl.Vector3) void {
         const a = self.rng.angle();
         const d = self.rng.range(ROAM_STEP_LO, ROAM_R);
+        // The leash is the POST, so a leashed roamer's `d` is already inside `ROAM_R` of it and there is nothing
+        // left to clamp — the clamp that stood here could not fire. An unleashed one measures from where it IS.
         const from = if (self.ai == .roam) self.home else at;
-        var p = v3(from.x + mathx.cosf(a) * d, from.y, from.z + mathx.sinf(a) * d);
-        if (self.ai == .roam and mathx.distXZ(p, self.home) > ROAM_R) {
-            const back = mathx.dirXZ(self.home, p);
-            p = v3(self.home.x + back.x * ROAM_R, self.home.y, self.home.z + back.z * ROAM_R);
-        }
-        self.mark = p;
+        self.mark = v3(from.x + mathx.cosf(a) * d, from.y, from.z + mathx.sinf(a) * d);
         self.marked = true;
     }
 

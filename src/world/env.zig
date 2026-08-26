@@ -52,9 +52,6 @@ pub const OCCL_MAX = 64;
 const OCCL_IN: f32 = 0.16;
 const OCCL_OUT: f32 = 0.34;
 const FADE_SOLID: f32 = 0.999;
-const GL_ZERO: i32 = 0;
-const GL_ONE: i32 = 1;
-const GL_FUNC_ADD: i32 = 0x8006;
 /// How fast the ramp runs where the value already sits: full speed across the middle, down to this share at solid and at the floor. Never 0, or a fade would never leave either end.
 const EASE_ENDS = 0.3;
 fn easeAt(u: f64) f64 {
@@ -1567,7 +1564,7 @@ pub const Env = struct {
             n += 1;
         }
         if (n == 0) return;
-        rl.gl.rlSetBlendFactors(GL_ZERO, GL_ONE, GL_FUNC_ADD);
+        rl.gl.rlSetBlendFactors(gfx.GL_ZERO, gfx.GL_ONE, gfx.GL_FUNC_ADD);
         for (order[0..n]) |pi| {
             const pr = &self.props[pi];
             const windy = props.info(pr.kind).flora;

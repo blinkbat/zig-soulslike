@@ -420,6 +420,19 @@ pub const Vitals = struct {
         };
     }
 
+    /// **A FLINCH THE ARMOUR REFUSED NEVER HAPPENED.** `strike` has already emptied the pool, taken
+    /// `LIGHT_BREAK_STANCE` off the stance, begun the stagger and charged `lightWear` by the time a caller with
+    /// hyper armour or a tower shield can answer for it, so the undo is ONE call and not four fields at each
+    /// site: hyper armour kept the wear from a flinch it had refused, and a blow the knight's door BLOCKED left
+    /// him `stunned()` — which under the stunned rule bought him a whole stun's poise and stance immunity while
+    /// his own state machine went on attacking. `poiseWas` is the pool the body walked into the blow with.
+    pub fn refuseFlinch(self: *Vitals, poiseWas: f32) void {
+        self.poise = poiseWas;
+        self.stance = mathx.minF(self.stanceMax, self.stance + LIGHT_BREAK_STANCE * self.stanceMax);
+        self.beginStun(.none);
+        if (self.lightWear >= 1) self.lightWear -= 1;
+    }
+
     pub fn hpFrac(self: *const Vitals) f32 {
         return if (self.hpMax > 0) mathx.clampF(self.hp / self.hpMax, 0, 1) else 0;
     }

@@ -21,7 +21,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     // **STARTUP BUILDS THE FOE GROUPS BY VALUE, AND THEY ARE BIG.** `game.init` and `objview.ensureChars` both
-    // assign twenty-one `Group.init(shader)` results, one field at a time; a Debug frame reserves every
+    // assign every `game.FOE_GROUPS` row's `Group.init(shader)` result, one field at a time; a Debug frame reserves every
     // temporary up front, so the reserve has to clear the largest group's `sizeOf` many times over. It
     // overflowed the default at boot when a group grew from 24 bodies to `worldfmt.MAX_FOES`. Windows COMMITS
     // stack lazily, so this is address space and not memory. Raising `MAX_FOES` again means raising this.

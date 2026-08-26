@@ -1,3 +1,17 @@
+/// **ONE VALUE-NOISE BASIS, SPLICED INTO EVERY PROGRAM THAT WANTS IT.** GLSL has no linker here, so each
+/// shader carries its own copy of the source — but the source was written out by hand three times, and the
+/// magic tuple in `hash21` has to be the SAME tuple in all of them or the grain, the stars and the elemental
+/// FX are three different noise fields. The trailing blank `\\` line is what puts the newline back.
+const HASH21 =
+    \\float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
+    \\
+;
+const VNOISE = HASH21 ++
+    \\float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
+    \\  return mix(mix(hash21(i),hash21(i+vec2(1,0)),f.x), mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)),f.x),f.y); }
+    \\
+;
+
 pub const depthVS =
     \\#version 330
     \\in vec3 vertexPosition;
@@ -164,9 +178,8 @@ pub const sceneFS =
     \\const float SMOKE_A = 0.34;   // the ceiling on a puff — see the fade at the bottom of main()
     \\const float EMBER_A = 0.85;   // …and on a mote, which is nearly solid: it is a lit coal, not vapour
     \\const float FOG_A = 0.97;     // a fog gate at the THRESHOLD, where it is thickest — it is a door, not a haze
-    \\float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
-    \\float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
-    \\  return mix(mix(hash21(i),hash21(i+vec2(1,0)),f.x), mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)),f.x),f.y); }
+    \\
+++ VNOISE ++
     \\float speck(vec2 p, float s){ return hash21(floor(p*s)); }
     \\// Every pattern below is procedural, sampled ONCE per fragment at a FIXED frequency in world/UV units.
     \\float uvFoot(vec2 q){ return length(fwidth(q)); }
@@ -699,9 +712,8 @@ pub const skyFS =
     \\uniform vec3 cloudLit;
     \\uniform float stars;    // 0..1 of the star field, and its own dial — see the note at Palette.stars
     \\out vec4 finalColor;
-    \\float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
-    \\float vnoise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
-    \\  return mix(mix(hash21(i),hash21(i+vec2(1,0)),f.x), mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)),f.x),f.y); }
+    \\
+++ VNOISE ++
     \\float fbm(vec2 p){ float a=0.5, s=0.0;
     \\  for (int i=0;i<4;i++){ s+=a*vnoise(p); p=p*2.13+vec2(19.7,7.3); a*=0.5; } return s; }
     \\void main(){
@@ -771,7 +783,8 @@ pub const retroFS =
     \\uniform float fCGA, fPalette, fSepia, fMono, fAmber;
     \\uniform float fEdges, fScanlines, fCurve, fVHS, fGrain;
     \\out vec4 finalColor;
-    \\float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
+    \\
+++ HASH21 ++
     \\float luma(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
     \\// EVERY read of the captured scene goes through this.
     \\const float PIX_BOX = 0.5;

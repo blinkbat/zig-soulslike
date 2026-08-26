@@ -106,11 +106,14 @@ const HAIR = rgba(40, 31, 24, 255);
 
 /// Where the braid is tied, in SKULL space — it hangs and swings about this point, so the mesh is authored on it.
 const TAIL_AT = v3(0, 0.012 * H, -0.092 * H);
-/// Degrees it trails at a full run, and the spring that gets it there. `SETTLE` under 1 is what makes it
-/// OVERSHOOT when he stops rather than sliding back (a mass in motion, the owner's law).
+/// Degrees it trails at a full run, and `anim.Spring`'s own two numbers for the mass that gets it there —
+/// hand-integrated it was a fixed-step Euler with `1 - ease*dt` damping, which is frame-rate dependent and
+/// dead at dt >= 1/9 s. **`TAIL_ZETA` IS THE DAMPING RATIO AND 1.91 DOES NOT OVERSHOOT** — the pair below is
+/// the hand-rolled version's arithmetic to the letter (stiff 5.58, damp 9.0), and the braid provably decays
+/// monotonically onto its rest. A visible overshoot wants zeta under 1, which is a look and not a fix.
 const TAIL_DRAG: f32 = 34.0;
-const TAIL_EASE: f32 = 9.0;
-const TAIL_SETTLE: f32 = 0.62;
+const TAIL_STIFF: f32 = 5.58;
+const TAIL_ZETA: f32 = 1.905;
 const TAIL_SWAY: f32 = 13.0;
 /// Long enough to READ from behind at play distance (owner: more prominent). Three lengths off the tie at
 /// 0.115 H each is 0.62 m of braid on a 1.8 m man — down past the shoulder blades, about a head and a half.
@@ -1436,8 +1439,7 @@ pub const Hero = struct {
     /// trails the run, OVERSHOOTS when he stops and settles onto its rest.
     tail: rl.Mesh,
     tailMat: rl.Matrix = undefined,
-    tailLean: f32 = 0,
-    tailVel: f32 = 0,
+    tailLean: anim.Spring = .{},
     tailSway: f32 = 0,
     mat: rl.Material,
     rest: [N]rl.Vector3,
@@ -1705,11 +1707,27 @@ pub const Hero = struct {
         self.tickTail(dt, speed);
     }
 
-    /// Chained in `pose`, off the POSED skull — so the braid follows the head wherever the head went, and a
+    /// **EVERY POSE ENDS HERE AND NOWHERE ELSE.** Thirteen of them spelled out `applyXfade` / `xf = wx` /
+    /// `chainTail` by hand, and the braid rides a matrix chained off the PUBLISHED skull — so a fourteenth pose
+    /// that forgot the last line would silently leave it on the previous frame's head.
+    fn publish(self: *Hero, wx: *[N]rl.Matrix) void {
+        self.applyXfade(wx);
+        self.xf = wx.*;
+        self.chainTail();
+    }
+
+    /// The one pose that is NOT cross-faded — the busker is entered from a standstill and has nothing to blend
+    /// out of, and an xfade there dragged the guitar in from whatever he was last doing.
+    fn publishRaw(self: *Hero, wx: *const [N]rl.Matrix) void {
+        self.xf = wx.*;
+        self.chainTail();
+    }
+
+    /// Chained in `publish`, off the POSED skull — so the braid follows the head wherever the head went, and a
     /// pose that never publishes `xf` cannot leave it on last frame's matrix.
     fn chainTail(self: *Hero) void {
         self.tailMat = mul3(
-            mul(rx(self.tailLean), rz(self.tailSway)),
+            mul(rx(self.tailLean.v), rz(self.tailSway)),
             tr(TAIL_AT.x, TAIL_AT.y, TAIL_AT.z),
             self.xf[HEAD],
         );
@@ -1717,10 +1735,7 @@ pub const Hero = struct {
 
     fn tickTail(self: *Hero, dt: f32, speed: f32) void {
         const want = TAIL_DRAG * mathx.clampF(speed / RUN_SPEED, 0, 1);
-        const accel = (want - self.tailLean) * TAIL_EASE * TAIL_SETTLE;
-        self.tailVel += accel * dt;
-        self.tailVel *= mathx.maxF(0, 1.0 - TAIL_EASE * dt);
-        self.tailLean += self.tailVel * dt;
+        _ = self.tailLean.step(want, TAIL_STIFF, TAIL_ZETA, dt);
         // A stride is TWO footfalls, so the braid crosses twice a cycle and lags the hips by a beat.
         self.tailSway = TAIL_SWAY * mathx.sinf(std.math.tau * self.phase * 2.0 - 1.1) * self.moving;
     }
@@ -3567,9 +3582,7 @@ pub const Hero = struct {
         self.poseCarried(&wx);
         if (self.bowOut()) self.poseBowArms(&wx, lean, prot, bank);
         if (self.drinking) self.poseDrinkArm(&wx, dk.lift, dk.tip);
-        self.applyXfade(&wx);
-        self.xf = wx;
-        self.chainTail();
+        self.publish(&wx);
     }
 
     /// Asked in ONE place: the jump used to ask for the rod alone, and the brand's flame — and its light — snapped down onto a hanging arm for the whole of a leap.
@@ -3728,9 +3741,7 @@ pub const Hero = struct {
         setLocal(&wx, free.el, self.rest, rx(-(GUARD_SWORD_ELBOW + 14.0 * k)));
         setLocal(&wx, free.wr, self.rest, rx(GUARD_SWORD_WRIST));
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
-        self.applyXfade(&wx);
-        self.xf = wx;
-        self.chainTail();
+        self.publish(&wx);
     }
 
 
@@ -3785,9 +3796,7 @@ pub const Hero = struct {
         }
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         self.poseCarried(&wx);
-        self.applyXfade(&wx);
-        self.xf = wx;
-        self.chainTail();
+        self.publish(&wx);
     }
 
     /// Off the vertical velocity: DRIVE up, TUCK where it passes through zero — which IS the apex, so the pose cannot drift out of step with the arc — REACH down.
@@ -3814,9 +3823,7 @@ pub const Hero = struct {
         if (self.guardB > 0.001) self.poseGuard(&wx, mathx.clampF(self.guardB, 0, 1), 0, fold * 0.5, 0, 0);
         self.poseCarried(&wx);
         if (self.bowOut()) self.poseBowArms(&wx, fold * 0.5, 0, 0);
-        self.applyXfade(&wx);
-        self.xf = wx;
-        self.chainTail();
+        self.publish(&wx);
     }
 
     fn poseRoll(self: *Hero) void {
@@ -3853,9 +3860,7 @@ pub const Hero = struct {
         rollArm(&wx, self.rest, tuck, if (overL) guideF else pushF, 1.0, SHL, ELL, WRL);
         rollArm(&wx, self.rest, tuck, if (overL) pushF else guideF, -1.0, SHR, ELR, WRR);
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
-        self.applyXfade(&wx);
-        self.xf = wx;
-        self.chainTail();
+        self.publish(&wx);
     }
 
     fn poseAttack(self: *Hero) void {
@@ -3904,9 +3909,7 @@ pub const Hero = struct {
         setLocal(&wx, sA.el, self.rest, rx(-k.elbow));
         setLocal(&wx, sA.wr, self.rest, mul(ry(lat * k.roll), rx(k.wrist)));
         placeSword(&wx, self.rest, rx(k.grip), sd < 0);
-        self.applyXfade(&wx);
-        self.xf = wx;
-        self.chainTail();
+        self.publish(&wx);
     }
 
     fn poseLight(self: *Hero) void {
@@ -3967,9 +3970,7 @@ pub const Hero = struct {
         const lay = sw * (AL_WRIST_LAY * wind - (AL_WRIST_LAY + AL_WRIST_WHIP) * sWr);
         setLocal(&wx, sA.wr, self.rest, mul3(ry(sd * sw * AL_EDGE_ROLL * lvl), rx(-AL_TIP_UP * lvl), rz(sd * lay)));
         placeSword(&wx, self.rest, rx(GRIP_PITCH * lvl), sd < 0);
-        self.applyXfade(&wx);
-        self.xf = wx;
-        self.chainTail();
+        self.publish(&wx);
     }
 
     fn poseHeavy(self: *Hero) void {
@@ -4021,9 +4022,7 @@ pub const Hero = struct {
         setLocal(&wx, sA.el, self.rest, rx(-elb));
         setLocal(&wx, sA.wr, self.rest, rx(AH_WRIST_COCK * wind - (AH_WRIST_COCK + AH_WRIST_SNAP) * sWr + 8.0 * rcl));
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), sd < 0);
-        self.applyXfade(&wx);
-        self.xf = wx;
-        self.chainTail();
+        self.publish(&wx);
     }
 
     fn poseCast(self: *Hero) void {
@@ -4076,9 +4075,7 @@ pub const Hero = struct {
         setLocal(&wx, free.el, self.rest, rx(-(IDLE_ELBOW + (GUARD_SWORD_ELBOW - IDLE_ELBOW) * wind)));
         setLocal(&wx, free.wr, self.rest, rx(GUARD_SWORD_WRIST * wind));
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
-        self.applyXfade(&wx);
-        self.xf = wx;
-        self.chainTail();
+        self.publish(&wx);
     }
 
     fn poseRing(self: *Hero) void {
@@ -4113,9 +4110,7 @@ pub const Hero = struct {
         setLocal(&wx, free.sh, self.rest, mul(rx(-6.0 * lift), rz(free.mirror * ARM_ABD)));
         setLocal(&wx, free.el, self.rest, rx(-(IDLE_ELBOW + 10.0 * lift)));
         setLocal(&wx, free.wr, self.rest, rl.math.matrixIdentity());
-        self.applyXfade(&wx);
-        self.xf = wx;
-        self.chainTail();
+        self.publish(&wx);
     }
 
     fn poseDrinkArm(self: *const Hero, wx: *[N]rl.Matrix, lift: f32, tip: f32) void {
@@ -4157,8 +4152,7 @@ pub const Hero = struct {
         setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + 88.0 + 3.5 * strum)));
         setLocal(&wx, WRR, self.rest, rz(9.0 * strum));
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
-        self.xf = wx;
-        self.chainTail();
+        self.publishRaw(&wx);
     }
 
     fn poseStun(self: *Hero) void {
@@ -4207,9 +4201,7 @@ pub const Hero = struct {
         setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + 16.0 * amt)));
         setLocal(&wx, WRR, self.rest, rl.math.matrixIdentity());
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
-        self.applyXfade(&wx);
-        self.xf = wx;
-        self.chainTail();
+        self.publish(&wx);
     }
 
     fn poseDeath(self: *Hero) void {
@@ -4245,9 +4237,7 @@ pub const Hero = struct {
         setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + 24.0 * k)));
         setLocal(&wx, WRR, self.rest, rl.math.matrixIdentity());
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
-        self.applyXfade(&wx);
-        self.xf = wx;
-        self.chainTail();
+        self.publish(&wx);
     }
 
     /// `lit` is FALSE in the depth pass (`game.drawCasters` runs this twice). **A FIRE MAY NOT CAST A SHADOW**:

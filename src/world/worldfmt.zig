@@ -300,6 +300,24 @@ pub const Foe = struct {
     pub fn route(self: *const Foe) []const Wp {
         return self.wp[0..@min(self.nwp, MAX_WP)];
     }
+
+    /// **THE ROUTE IS WORLD-SPACE, SO IT MOVES WITH THE BODY.** Every editor gesture that shifts a spawn — the
+    /// marquee drag, the clipboard's centring and its paste, the inspector's steppers — moved `x`/`z` alone and
+    /// left a patrol walking back to the coordinates the unit was copied from.
+    pub fn translate(self: *Foe, dx: f32, dz: f32) void {
+        self.x += dx;
+        self.z += dz;
+        self.moveRoute(dx, dz);
+    }
+
+    /// For the one mover that writes `x`/`z` in place (the inspector's steppers): the legs take the same delta.
+    pub fn moveRoute(self: *Foe, dx: f32, dz: f32) void {
+        if (dx == 0 and dz == 0) return;
+        for (self.wp[0..@min(self.nwp, MAX_WP)]) |*q| {
+            q.x += dx;
+            q.z += dz;
+        }
+    }
 };
 
 /// **THERE IS ONE FOE LIMIT AND IT IS `MAX_FOES`** (owner: remove the foe limits, seems dumb to have). At 24 a
@@ -1416,6 +1434,7 @@ pub const ParseError = error{
     TooManyLocations,
     TooManyClearings,
     TooManyFoes,
+    TooManyWaypoints,
     TooManyNpcs,
     TooManyTriggers,
     TooManyConds,
@@ -1515,7 +1534,7 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
                 if (std.mem.eql(u8, key, "ai")) {
                     f.ai = try enumFromName(FoeAi, val);
                 } else if (std.mem.eql(u8, key, "wp")) {
-                    if (f.nwp >= MAX_WP) return ParseError.TooManyFoes;
+                    if (f.nwp >= MAX_WP) return ParseError.TooManyWaypoints;
                     const comma = std.mem.indexOfScalar(u8, val, ',') orelse return ParseError.MissingField;
                     f.wp[f.nwp] = .{
                         .x = try finiteFloat(f32, val[0..comma]),
@@ -3045,5 +3064,25 @@ test "A UNIT'S IDLE AI AND ITS ROUTE SURVIVE A ROUND TRIP — and a map that nev
     at += (try std.fmt.bufPrint(many[at..], "{s}foe: toad 0 0 0 1 0", .{head})).len;
     for (0..MAX_WP + 1) |_| at += (try std.fmt.bufPrint(many[at..], " wp=1,1", .{})).len;
     at += (try std.fmt.bufPrint(many[at..], "\n", .{})).len;
-    try std.testing.expectError(ParseError.TooManyFoes, parse(many[0..at], &m, &ln));
+    try std.testing.expectError(ParseError.TooManyWaypoints, parse(many[0..at], &m, &ln));
+}
+
+test "A SPAWN CARRIES ITS ROUTE WHEN IT MOVES — the legs are world-space, so a copy is not a body patrolling its old post" {
+    var f = Foe{ .kind = .ogre, .x = 10, .z = -4, .ai = .patrol, .nwp = 2 };
+    f.wp[0] = .{ .x = 14, .z = -4 };
+    f.wp[1] = .{ .x = 14, .z = 6 };
+
+    f.translate(-3, 7);
+    try std.testing.expectApproxEqAbs(@as(f32, 7), f.x, 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 3), f.z, 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 11), f.wp[0].x, 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 3), f.wp[0].z, 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 11), f.wp[1].x, 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 13), f.wp[1].z, 1e-5);
+    // The leg offsets off the body are what a move may not change.
+    for (f.route()) |q| try std.testing.expect(q.x - f.x == 4);
+
+    // Nothing past `nwp` is touched, so an unpainted slot cannot drift into the route on the next paint.
+    try std.testing.expectApproxEqAbs(@as(f32, 0), f.wp[2].x, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), f.wp[2].z, 1e-6);
 }

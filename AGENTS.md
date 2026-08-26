@@ -146,6 +146,12 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `foes/ancientpriest.zig` | ancient priest + `Crypt` — never melees; claws a skitterer out of bare earth far off, breathes COLD close |
 | `foes/hollow.zig` | tolling hollow + `Belfry` — the BELL on its back calls every body inside `TOLL_R`; refused inside bite reach |
 | `foes/slumberbloom.zig` | slumber bloom + `Bed` — a rooted FIXTURE with no blow at all; the only SLEEP source, and it cannot follow |
+| `foes/cinderwake.zig` | cinder wake + `Scorch` — the hazard is LAID by its own feet, continuously; a standing wake is safe ground |
+| `foes/rotgorger.zig` | rotgorger + `Gorge` — quadruped rig's THIRD user; EATS THE DEAD, kin included, and breaks off mid-fight to do it |
+| `foes/birchwight.zig` | birchwight + `Stand` — the only counter that is also an escalation: CAUGHT it is faster and sets you alight |
+| `foes/salthusk.zig` | salt husk + `Pan` — the weakest thing on the field and the only one whose KILL is the dangerous part |
+| `foes/fishman.zig` | fishmen + `Shoal` — the SECOND warband, held together by a NET; netter, spearman, shaman are one move in three |
+| `foes/blinkbat.zig` | blinkbat + `Roost` — a flyer that never travels: it BLINKS onto your flank, bites once, blinks out |
 | `play/combat.zig` | `Vitals`, `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`, spirits. THE place to retune feel |
 | `play/stats.zig` | the sheet — seven attributes, the bar curves, the ONE skill curve (`scaleFor`), `inert` |
 | `play/passivetree.zig` | PoE2's tree radially: three arms out of one hub, the gates, `Bonus`, the wheel |
@@ -2270,8 +2276,10 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   and dialogs are hand-written and the editor round-trips them untouched because the writer emits them off the
   same tables. NPCs it does place: the unit brush is the foe kinds, then the npc kinds, then an eraser (pinned
   at comptime in `editor.zig`), and `dlg=` on a placed npc is still text. Two `NpcKind` (`wanderer`,
-  `merchant`). No quest log, no journal. A roamer wanders inside a radius about its post; no authored patrol
-  points. `deaths brood_sac` is billed off the brood's own `bursts`.
+  `merchant`). No quest log, no journal. A roamer wanders inside a radius about its post. **A UNIT'S `ai=` AND
+  ITS `wp=` ROUTE ARE IN THE FORMAT AND NOT YET IN ANYBODY'S LEGS** — `worldfmt` parses and writes them, the
+  editor round-trips them (and moves them with the body), and `foe.Post` walks a route; no creature embeds a
+  `Post` yet, and no panel paints one. `deaths brood_sac` is billed off the brood's own `bursts`.
 - **Three editor holes, all fields the FORMAT has and the panels do not.** `Op.r1` on an `at` is how far off the
   ground that prop is lifted (`env.Placer.expand`) and no panel exposes it. `Op.field` thins a scatter by the
   ground-cover noise (`env.accepts`) and is ON by default for a `belt`, with no control either way. And **NO MAP

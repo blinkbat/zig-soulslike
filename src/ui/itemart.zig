@@ -242,18 +242,33 @@ const WINE_RED = rgba(140, 26, 40, 255);
 const PAPER = rgba(206, 192, 156, 255);
 const PAPER_DK = rgba(160, 144, 112, 255);
 
+/// **ONE JAR, THREE FATS.** "Same cloth, same cord, only the fat swapped" is the law all three greases are
+/// written under, and all three drew it out by hand. Split in two calls rather than one, because the tallow
+/// threads its wick BETWEEN them — behind the lump, which is where a wick goes.
+fn greaseRag(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.12 + 1.2 * k), s * 0.25, rgba(0, 0, 0, 115));
+    quad(v2(cx - s * 0.23, cy + s * 0.02), v2(cx + s * 0.22, cy + s * 0.05), v2(cx + s * 0.15, cy + s * 0.30), v2(cx - s * 0.17, cy + s * 0.27), SALT);
+    rl.drawLineEx(v2(cx - s * 0.23, cy + s * 0.04), v2(cx - s * 0.33, cy - s * 0.04), 3.4 * k, CORD);
+}
+
+fn greaseFat(cx: f32, cy: f32, px: f32, rng: *mathx.Rng, fat: rl.Color, dk: rl.Color, glint: rl.Color) void {
+    const s = px;
+    const k = strokeK(px);
+    rl.drawCircleV(v2(cx - s * 0.02, cy - s * 0.03), s * 0.165, fat);
+    rl.drawCircleV(v2(cx + s * 0.11 + rng.range(-1.2, 1.2) * k, cy + s * 0.01), s * 0.115, dk);
+    rl.drawCircleV(v2(cx - s * 0.09, cy - s * 0.08), s * 0.05, glint);
+}
+
 /// **THE THIRD JAR ON THE TALLOW'S SHELF AND IT READS AS THE THIRD** (`rimewax`'s law) — same cloth, same cord,
 /// only the fat swapped.
 fn nightcapGrease(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
     var rng = mathx.Rng.init(0x51EE);
-    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.12 + 1.2 * k), s * 0.25, rgba(0, 0, 0, 115));
-    quad(v2(cx - s * 0.23, cy + s * 0.02), v2(cx + s * 0.22, cy + s * 0.05), v2(cx + s * 0.15, cy + s * 0.30), v2(cx - s * 0.17, cy + s * 0.27), SALT);
-    rl.drawLineEx(v2(cx - s * 0.23, cy + s * 0.04), v2(cx - s * 0.33, cy - s * 0.04), 3.4 * k, CORD);
-    rl.drawCircleV(v2(cx - s * 0.02, cy - s * 0.03), s * 0.165, SLEEP_WAX);
-    rl.drawCircleV(v2(cx + s * 0.11 + rng.range(-1.2, 1.2) * k, cy + s * 0.01), s * 0.115, SLEEP_WAX_DK);
-    rl.drawCircleV(v2(cx - s * 0.09, cy - s * 0.08), s * 0.05, rgba(216, 222, 250, 255));
+    greaseRag(cx, cy, px);
+    greaseFat(cx, cy, px, &rng, SLEEP_WAX, SLEEP_WAX_DK, rgba(216, 222, 250, 255));
     rl.drawLineEx(v2(cx + s * 0.04, cy + s * 0.09), v2(cx + s * 0.06, cy + s * 0.26), 2.0 * k, SLEEP_WAX_DK);
 }
 
@@ -904,13 +919,9 @@ fn fireTallow(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
     var rng = mathx.Rng.init(0xFA77);
-    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.12 + 1.2 * k), s * 0.25, rgba(0, 0, 0, 115));
-    quad(v2(cx - s * 0.23, cy + s * 0.02), v2(cx + s * 0.22, cy + s * 0.05), v2(cx + s * 0.15, cy + s * 0.30), v2(cx - s * 0.17, cy + s * 0.27), SALT);
-    rl.drawLineEx(v2(cx - s * 0.23, cy + s * 0.04), v2(cx - s * 0.33, cy - s * 0.04), 3.4 * k, CORD);
+    greaseRag(cx, cy, px);
     rl.drawLineEx(v2(cx - s * 0.05, cy + s * 0.10), v2(cx - s * 0.10, cy + s * 0.24), 1.0 * k, rgba(190, 172, 138, 255));
-    rl.drawCircleV(v2(cx - s * 0.02, cy - s * 0.03), s * 0.165, EMBER_FAT);
-    rl.drawCircleV(v2(cx + s * 0.11 + rng.range(-1.2, 1.2) * k, cy + s * 0.01), s * 0.115, EMBER_FAT_DK);
-    rl.drawCircleV(v2(cx - s * 0.09, cy - s * 0.08), s * 0.05, rgba(246, 222, 164, 255));
+    greaseFat(cx, cy, px, &rng, EMBER_FAT, EMBER_FAT_DK, rgba(246, 222, 164, 255));
     rl.drawLineEx(v2(cx + s * 0.05, cy + s * 0.08), v2(cx + s * 0.07 + rng.range(0, 2) * k, cy + s * 0.25), 2.2 * k, EMBER_FAT_DK);
 }
 
@@ -921,12 +932,8 @@ fn rimewax(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
     var rng = mathx.Rng.init(0x21CE);
-    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.12 + 1.2 * k), s * 0.25, rgba(0, 0, 0, 115));
-    quad(v2(cx - s * 0.23, cy + s * 0.02), v2(cx + s * 0.22, cy + s * 0.05), v2(cx + s * 0.15, cy + s * 0.30), v2(cx - s * 0.17, cy + s * 0.27), SALT);
-    rl.drawLineEx(v2(cx - s * 0.23, cy + s * 0.04), v2(cx - s * 0.33, cy - s * 0.04), 3.4 * k, CORD);
-    rl.drawCircleV(v2(cx - s * 0.02, cy - s * 0.03), s * 0.165, RIME_ICE);
-    rl.drawCircleV(v2(cx + s * 0.11 + rng.range(-1.2, 1.2) * k, cy + s * 0.01), s * 0.115, rgba(104, 152, 184, 255));
-    rl.drawCircleV(v2(cx - s * 0.09, cy - s * 0.08), s * 0.05, RIME_LT);
+    greaseRag(cx, cy, px);
+    greaseFat(cx, cy, px, &rng, RIME_ICE, rgba(104, 152, 184, 255), RIME_LT);
     // Three frost needles off the lump — the only part of the picture the tallow does not have.
     var i: u32 = 0;
     while (i < 3) : (i += 1) {

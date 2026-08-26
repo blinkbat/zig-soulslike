@@ -94,13 +94,17 @@ const Rack = struct {
         return .{ .a = a, .b = b };
     }
 
+    /// **THE RATIO DOES NOT MOVE, SO ITS LOG IS TAKEN ONCE.** `f0*(f1/f0)^u` is a `pow` — a log AND an exp —
+    /// per SAMPLE, and this loop and `air`'s are where the 4.4 s of synthesis is spent. Hoisted, a sample costs
+    /// one `exp2`.
     fn body(r: *Rack, t0: f32, dur: f32, f0: f32, f1: f32, amp: f32, curve: f32) void {
         const s = r.span(t0, dur) orelse return;
+        const oct = std.math.log2(f1 / f0);
         var ph: f32 = 0;
         var i = s.a;
         while (i < s.b) : (i += 1) {
             const u = s.u(i);
-            const f = f0 * std.math.pow(f32, f1 / f0, u);
+            const f = f0 * @exp2(oct * u);
             ph += std.math.tau * f / SRF;
             work[i] += mathx.sinf(ph) * amp * decay(u, curve);
         }
@@ -108,11 +112,12 @@ const Rack = struct {
 
     fn air(r: *Rack, t0: f32, dur: f32, amp: f32, c0: f32, c1: f32, res: f32, curve: f32) void {
         const s = r.span(t0, dur) orelse return;
+        const oct = std.math.log2(c1 / c0);
         var f = Svf{};
         var i = s.a;
         while (i < s.b) : (i += 1) {
             const u = s.u(i);
-            const cut = c0 * std.math.pow(f32, c1 / c0, mathx.smoothstep(0, 1, u));
+            const cut = c0 * @exp2(oct * mathx.smoothstep(0, 1, u));
             const out = f.step(r.rng.signed(), cut, res);
             work[i] += out.bp * amp * decay(u, curve);
         }
@@ -156,6 +161,7 @@ const Rack = struct {
 
     fn growl(r: *Rack, t0: f32, dur: f32, f0: f32, f1: f32, amp: f32, rough: f32, shape: f32) void {
         const s = r.span(t0, dur) orelse return;
+        const oct = std.math.log2(f1 / f0);
         var f = Svf{};
         var ph: f32 = 0;
         var vib: f32 = 0;
@@ -163,7 +169,7 @@ const Rack = struct {
         while (i < s.b) : (i += 1) {
             const u = s.u(i);
             vib += std.math.tau * (5.5 + 3.0 * u) / SRF;
-            const hz = f0 * std.math.pow(f32, f1 / f0, u) * (1.0 + 0.035 * mathx.sinf(vib));
+            const hz = f0 * @exp2(oct * u) * (1.0 + 0.035 * mathx.sinf(vib));
             ph += hz / SRF;
             ph -= @floor(ph);
             const saw = 2.0 * ph - 1.0 + rough * r.rng.signed();

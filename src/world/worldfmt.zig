@@ -18,11 +18,13 @@ pub const MAX_DECLARED_HALF: f32 = 312.0;
 pub const MAX_OPS: usize = 20480;
 pub const MAX_MIX: usize = 24;
 pub const MAX_LOOT: usize = 8;
+/// Creatures one fog gate may seal on. Two is the duo; the spare is for the warband nobody has authored yet.
+pub const MAX_SEAL: usize = 4;
 pub const MAX_ZONES: usize = 16;
 pub const MAX_CLEARINGS: usize = 32;
 /// **THE ONE FOE LIMIT** (owner: can u make it 512, this map is huge). Every group's slab is this wide too
-/// (`MAX_PER_KIND`), so raising it costs one slab per `game.FOE_GROUPS` row: at 512 the twenty-one rows measure
-/// 111.3 MB of the one startup allocation (`game.zig`'s "WHAT THE FRAME COSTS" prints it), and `build.zig`'s
+/// (`MAX_PER_KIND`), so raising it costs one slab per `game.FOE_GROUPS` row — and so does every creature added,
+/// which is the term that actually moves: at 512 the twenty-nine rows measure 144.4 MB of the one startup allocation (`game.zig`'s "WHAT THE FRAME COSTS" prints it), and `build.zig`'s
 /// stack reserve carries the same figure again because startup builds those
 /// groups BY VALUE. Both are address space rather than resident memory; the frame cost is nil, since every pass walks `live()`.
 pub const MAX_FOES: usize = 512;
@@ -82,8 +84,21 @@ pub const Op = struct {
     /// What is in the CONTAINER this op placed — a chest, or an item pickup (`props.holdsLoot`). Written and parsed on `nloot > 0` alone and never on the kind, which is why the glow needed no format change.
     loot: [MAX_LOOT]item.Kind = undefined,
     nloot: u8 = 0,
-    /// WHAT MUST DIE BEFORE A FOG GATE OPENS AGAIN — read by `ward` kinds alone (`props.Info.ward`), the way `loot` is read by containers alone. `-` in the file is a gate that never shuts: a doorway, not an arena. The default is the only boss in the game, so a stamped gate works with nothing typed.
-    boss: ?FoeKind = .bone_knight,
+    /// WHAT MUST DIE BEFORE A FOG GATE OPENS AGAIN — read by `ward` kinds alone (`props.Info.ward`), the way `loot` is read by containers alone. `boss=-` in the file is a gate that never shuts: a doorway, not an arena. **A DUO IS TWO, SO THE SEAL IS A LIST** (`fungalduo`): the gate holds while ANY name on it still stands, and every bar behind it waits on the same list (`game.bossBars`). The default is the FIRST boss, so a stamped gate works with nothing typed and writes no tail.
+    boss: [MAX_SEAL]FoeKind = [_]FoeKind{.bone_knight} ** MAX_SEAL,
+    nboss: u8 = 1,
+
+    /// The creatures this gate is sealed on, in the order they were picked. Empty is a doorway.
+    pub fn seal(self: *const Op) []const FoeKind {
+        return self.boss[0..@min(self.nboss, MAX_SEAL)];
+    }
+
+    pub fn sealsOn(self: *const Op, k: FoeKind) bool {
+        for (self.seal()) |s| {
+            if (s == k) return true;
+        }
+        return false;
+    }
 
     pub fn pick(self: *const Op, r: *mathx.Rng) Kind {
         if (self.nmix == 0) return self.kind;
@@ -223,7 +238,7 @@ pub fn setMix(dst: *[MAX_MIX]Kind, n: *u8, mix: []const Kind) void {
 pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
 
 /// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at comptime, and each `roleOf` reads its own entries as a CONTIGUOUS RUN off the first of them.
-pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, florid_ravager, mushroom_mage, fen_lurker, spore_golem, bone_skitterer, ancient_priest, tolling_hollow, mourner, slumber_bloom, cinder_wake, rotgorger, birchwight, salt_husk, fish_spearman, fish_netter, fish_shaman, blinkbat };
+pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, florid_ravager, mushroom_mage, fen_lurker, spore_golem, bone_skitterer, ancient_priest, tolling_hollow, mourner, slumber_bloom, cinder_wake, rotgorger, birchwight, salt_husk, fish_spearman, fish_netter, fish_shaman, blinkbat, fungal_swordsman, fungal_magus };
 
 pub fn foeName(k: FoeKind) [:0]const u8 {
     return switch (k) {
@@ -262,14 +277,12 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
         .fish_netter => "Fishman Netter",
         .fish_shaman => "Fishman Shaman",
         .blinkbat => "Blinkbat",
+        .fungal_swordsman => "Fungal Swordsman",
+        .fungal_magus => "Fungal Magus",
     };
 }
 
 /// Optionals do not compare with `==` in every Zig version this has been built on, and the editor asks this once per row per frame; one spelling of it beats three.
-pub fn eqlBoss(a: ?FoeKind, b: ?FoeKind) bool {
-    return std.meta.eql(a, b);
-}
-
 /// **WHAT A UNIT DOES BEFORE IT HAS SEEN ANYBODY.** The names are StarEdit's, because that is the vocabulary
 /// these maps are authored in: JUNKYARD DOG is roaming about a post, leashed or not. APPEND-ONLY like every
 /// other authored enum. **`hold` is what every unit did before this existed**, so a map that never mentions
@@ -575,6 +588,32 @@ pub const Soil = enum(u8) {
     }
 };
 
+/// **WHAT THE PAINTED SHEET IS MADE OF.** One per cell, beside the coast shape, so a map may hold a tarn and a
+/// lava run at once. `water` is 0, which is what every map written before this comes up as. The behaviour is
+/// the water's for all four — the wading, the coast, the gate a `Gait` reads — and only the LOOK, the STATUS it
+/// soaks into you and its voice differ.
+pub const Liquid = enum(u8) {
+    water,
+    oil,
+    fungal,
+    lava,
+
+    pub const N = @typeInfo(Liquid).@"enum".fields.len;
+
+    pub fn label(l: Liquid) [:0]const u8 {
+        return switch (l) {
+            .water => "water",
+            .oil => "oil",
+            .fungal => "fungal",
+            .lava => "lava",
+        };
+    }
+
+    pub fn fromTag(s: []const u8) ?Liquid {
+        return std.meta.stringToEnum(Liquid, s);
+    }
+};
+
 /// **HOW A PAINTED PATCH ENDS.** One authored property per CELL, beside its material and its coverage — not a property of the material, since six materials cannot carry eight shapes and the point is to lay a tiled courtyard and a torn scree of the same stone in one world.
 pub const Edge = enum(u8) {
     blend,
@@ -619,6 +658,9 @@ comptime {
     std.debug.assert(@intFromEnum(Edge.tiled) == 5);
     std.debug.assert(@intFromEnum(Edge.scallop) == 6);
     std.debug.assert(@intFromEnum(Edge.speckle) == 7);
+    // …and `shaders.liquidTone` is a flat 3-per-kind array indexed by THIS ordinal.
+    std.debug.assert(Liquid.N == gfx.LIQUID_N);
+    std.debug.assert(@intFromEnum(Liquid.water) == 0);
 }
 
 /// **IS EVERY CELL'S EDGE THE ONE ITS MATERIAL WOULD HAVE CHOSEN** — what decides whether the grid is worth a row in the file, and the exact inverse of `fillLegacyEdges`. As a `!= .natural` test every map with stone in it grew a row.
@@ -778,6 +820,9 @@ pub const Map = struct {
     water: [WATER_CELLS]u8 = [_]u8{0} ** WATER_CELLS,
     /// …AND HOW ITS COAST RUNS, one `Edge` per cell, painted with the water brush as the soil's is. Baked into the field by `env.uploadWater` and never read at draw time.
     waterEdge: [WATER_CELLS]u8 = [_]u8{@intFromEnum(Edge.natural)} ** WATER_CELLS,
+    /// …AND WHAT IT IS, one `Liquid` per cell. Dilated one cell off the paint at upload like the coast is
+    /// (`env.dilateWaterEdge`), so the dry side of a bank answers with the pool's own kind.
+    waterKind: [WATER_CELLS]u8 = [_]u8{@intFromEnum(Liquid.water)} ** WATER_CELLS,
     height: [HEIGHT_CELLS]u8 = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS,
 
     pub fn label(self: *const Map) []const u8 {
@@ -801,6 +846,7 @@ pub const Map = struct {
         self.soilEdge = [_]u8{@intFromEnum(Edge.natural)} ** SOIL_CELLS;
         self.water = [_]u8{0} ** WATER_CELLS;
         self.waterEdge = [_]u8{@intFromEnum(Edge.natural)} ** WATER_CELLS;
+        self.waterKind = [_]u8{@intFromEnum(Liquid.water)} ** WATER_CELLS;
         // To the DATUM, not to zero: `@memset(.., 0)` here would drop the ground to HEIGHT_MIN.
         self.height = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS;
     }
@@ -1020,11 +1066,12 @@ pub const Map = struct {
         return changed;
     }
 
-    pub fn paintWater(self: *Map, px: f32, pz: f32, radius: f32, wet: bool, edge: ?Edge) bool {
+    pub fn paintWater(self: *Map, px: f32, pz: f32, radius: f32, wet: bool, edge: ?Edge, kind: ?Liquid) bool {
         const cell = self.cellSize(WATER_N);
         const r2 = radius * radius;
         const v: u8 = if (wet) 1 else 0;
         const ev: ?u8 = if (edge) |e| @intFromEnum(e) else null;
+        const kv: ?u8 = if (kind) |k| @intFromEnum(k) else null;
         var changed = false;
         var cz: usize = 0;
         while (cz < WATER_N) : (cz += 1) {
@@ -1045,6 +1092,12 @@ pub const Map = struct {
                 if (ev) |want| {
                     if (self.waterEdge[i] != want) {
                         self.waterEdge[i] = want;
+                        changed = true;
+                    }
+                }
+                if (kv) |want| {
+                    if (self.waterKind[i] != want) {
+                        self.waterKind[i] = want;
                         changed = true;
                     }
                 }
@@ -1219,6 +1272,13 @@ pub fn write(m: *const Map, w: anytype) !void {
                 break;
             }
         }
+        // …and the same rule for the kind: a map that is all water writes no row and comes back byte for byte.
+        for (m.waterKind) |k| {
+            if (k != @intFromEnum(Liquid.water)) {
+                try writeGrid(w, "liquid", &m.waterKind);
+                break;
+            }
+        }
     }
     if (m.anyHeight()) {
         try w.writeAll("\n");
@@ -1368,6 +1428,14 @@ fn writeOp(o: *const Op, w: anytype) !void {
             try w.writeAll(item.tag(it));
         }
     }
+    if (!sameSeal(o, &d)) {
+        try w.writeAll(" boss=");
+        if (o.nboss == 0) try w.writeAll("-");
+        for (o.seal(), 0..) |k, i| {
+            if (i > 0) try w.writeAll(",");
+            try w.writeAll(@tagName(k));
+        }
+    }
     try w.writeAll("\n");
 }
 
@@ -1468,6 +1536,7 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     var edgeAt: usize = 0;
     var waterAt: usize = 0;
     var wEdgeAt: usize = 0;
+    var wKindAt: usize = 0;
     var hgtAt: usize = 0;
     var cur = Cursor{};
     var lines = std.mem.splitScalar(u8, text, '\n');
@@ -1514,6 +1583,8 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
             waterAt = try readGrid(&it, &m.water, waterAt, 2);
         } else if (std.mem.eql(u8, rec, "wateredge")) {
             wEdgeAt = try readGrid(&it, &m.waterEdge, wEdgeAt, Edge.N);
+        } else if (std.mem.eql(u8, rec, "liquid")) {
+            wKindAt = try readGrid(&it, &m.waterKind, wKindAt, Liquid.N);
         } else if (std.mem.eql(u8, rec, "hgt")) {
             hgtAt = try readGrid(&it, &m.height, hgtAt, 256);
         } else if (std.mem.eql(u8, rec, "foe")) {
@@ -1559,6 +1630,7 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     if (edgeAt != 0 and edgeAt != m.soilEdge.len) return ParseError.MissingField;
     if (waterAt != 0 and waterAt != m.water.len) return ParseError.MissingField;
     if (wEdgeAt != 0 and wEdgeAt != m.waterEdge.len) return ParseError.MissingField;
+    if (wKindAt != 0 and wKindAt != m.waterKind.len) return ParseError.MissingField;
     if (hgtAt != 0 and hgtAt != m.height.len) return ParseError.MissingField;
     if (edgeAt == 0) fillLegacyEdges(m);
     lineOut.* = 0;
@@ -1997,6 +2069,10 @@ fn parseOp(kind: OpKind, it: *std.mem.TokenIterator(u8, .any)) !Op {
                     o.nloot = try parseLoot(val, &o.loot);
                     continue;
                 }
+                if (std.mem.eql(u8, key, "boss")) {
+                    o.nboss = try parseSeal(val, &o.boss);
+                    continue;
+                }
                 var matched = false;
                 inline for (@typeInfo(Op).@"struct".fields) |f| {
                     if (comptime canTail(k, f.name)) {
@@ -2021,6 +2097,20 @@ fn parseLoot(s: []const u8, out: *[MAX_LOOT]item.Kind) !u8 {
         if (t.len == 0) continue;
         if (n >= MAX_LOOT) return ParseError.ExtraField;
         out[n] = item.fromTag(t) orelse return ParseError.BadKind;
+        n += 1;
+    }
+    return n;
+}
+
+/// `-` is the doorway, and it is the only token that may stand alone: a gate sealed on nothing never shuts.
+fn parseSeal(s: []const u8, out: *[MAX_SEAL]FoeKind) !u8 {
+    var n: u8 = 0;
+    var parts = std.mem.splitScalar(u8, s, ',');
+    while (parts.next()) |p| {
+        const t = trim(p);
+        if (t.len == 0 or std.mem.eql(u8, t, "-")) continue;
+        if (n >= MAX_SEAL) return ParseError.ExtraField;
+        out[n] = try enumFromName(FoeKind, t);
         n += 1;
     }
     return n;
@@ -2100,7 +2190,7 @@ pub const TEXT_CAP: usize =
     MAX_LOCATIONS * (NAME_CAP + 128) +
     MAX_CLEARINGS * 48 +
     MAX_OPS * OP_LINE_TYPICAL +
-    (3 * SOIL_CELLS + 2 * WATER_CELLS + HEIGHT_CELLS) * GRID_CELL_CAP +
+    (3 * SOIL_CELLS + 3 * WATER_CELLS + HEIGHT_CELLS) * GRID_CELL_CAP +
     MAX_FOES * (longestTag(FoeKind) + 48) +
     (MAX_FLAGS + MAX_COUNTERS + MAX_TIMERS) * (ID_CAP + 2) + 64 +
     MAX_NPCS * (ID_CAP + NAME_CAP + 128) +
@@ -2240,11 +2330,16 @@ fn isPositional(comptime k: OpKind, comptime name: []const u8) bool {
 fn canTail(comptime k: OpKind, comptime name: []const u8) bool {
     @setEvalBranchQuota(20000);
     // The array-plus-count pairs are written by hand as their own `key=` tail (see writeOp), so the generic field walk must not also try to emit them — an `[8]item.Kind` has no `writeTail` form.
-    const never = [_][]const u8{ "op", "mix", "nmix", "loot", "nloot" };
+    const never = [_][]const u8{ "op", "mix", "nmix", "loot", "nloot", "boss", "nboss" };
     for (never) |n| {
         if (std.mem.eql(u8, n, name)) return false;
     }
     return !isPositional(k, name);
+}
+
+/// A tail is written only when it says something (`writeOp`), and the seal is compared over its LIVE entries — the slots past `nboss` are stale picks nobody reads.
+fn sameSeal(a: *const Op, b: *const Op) bool {
+    return a.nboss == b.nboss and std.mem.eql(FoeKind, a.seal(), b.seal());
 }
 
 fn eqlVal(a: anytype, b: @TypeOf(a)) bool {
@@ -2527,6 +2622,10 @@ test "A MAP THAT FILLS EVERY CAP IS STILL A MAP THAT LOADS" {
     for (&m.soil, 0..) |*c, i| c.* = @intCast(i % 4);
     for (&m.height, 0..) |*c, i| c.* = @intCast(HEIGHT_ZERO -% @as(u8, @intCast(i % 3)));
     for (&m.water, 0..) |*c, i| c.* = @intCast(i % 2);
+    // …and the two grids that ride the water, at the same churn: every cell its own run, which is the worst
+    // case the buffer is sized for and the only way `TEXT_CAP` is honestly tested.
+    for (&m.waterEdge, 0..) |*c, i| c.* = @intCast(i % Edge.N);
+    for (&m.waterKind, 0..) |*c, i| c.* = @intCast(i % Liquid.N);
     try write(m, n.writer());
     std.debug.print("\n  a map at every cap writes {d} bytes into a {d} B buffer ({d:.0}% used)\n", .{
         n.bytes_written, TEXT_CAP, 100.0 * @as(f64, @floatFromInt(n.bytes_written)) / @as(f64, @floatFromInt(TEXT_CAP)),
@@ -2635,12 +2734,19 @@ test "A FOG GATE'S BOSS ROUND-TRIPS, and the default costs the file nothing" {
     _ = try m.add(plain);
     var named = defaults(.at);
     named.kind = .foggate;
-    named.boss = .ogre;
+    named.boss[0] = .ogre;
     _ = try m.add(named);
     var never = defaults(.at);
     never.kind = .foggate;
-    never.boss = null;
+    never.nboss = 0;
     _ = try m.add(never);
+    // A DUO IS TWO NAMES ON ONE GATE, which is the whole reason the seal is a list.
+    var pair = defaults(.at);
+    pair.kind = .foggate;
+    pair.boss[0] = .fungal_swordsman;
+    pair.boss[1] = .fungal_magus;
+    pair.nboss = 2;
+    _ = try m.add(pair);
 
     var buf: [8192]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&buf);
@@ -2650,14 +2756,17 @@ test "A FOG GATE'S BOSS ROUND-TRIPS, and the default costs the file nothing" {
     try std.testing.expectEqual(@as(usize, 0), std.mem.count(u8, text, "boss=bone_knight"));
     try std.testing.expect(std.mem.indexOf(u8, text, "boss=ogre") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "boss=-") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "boss=fungal_swordsman,fungal_magus") != null);
 
     var back = Map{};
     var ln: usize = 0;
     try parse(text, &back, &ln);
-    try std.testing.expectEqual(@as(usize, 3), back.nops);
-    try std.testing.expect(eqlBoss(back.ops[0].boss, .bone_knight));
-    try std.testing.expect(eqlBoss(back.ops[1].boss, .ogre));
-    try std.testing.expect(eqlBoss(back.ops[2].boss, null));
+    try std.testing.expectEqual(@as(usize, 4), back.nops);
+    try std.testing.expect(back.ops[0].sealsOn(.bone_knight));
+    try std.testing.expect(back.ops[1].sealsOn(.ogre) and !back.ops[1].sealsOn(.bone_knight));
+    try std.testing.expectEqual(@as(usize, 0), back.ops[2].seal().len);
+    try std.testing.expect(back.ops[3].sealsOn(.fungal_swordsman) and back.ops[3].sealsOn(.fungal_magus));
+    try std.testing.expectEqual(@as(usize, 2), back.ops[3].seal().len);
 }
 
 test "A MAP OLDER THAN THE EDGE GRID COMES UP LOOKING THE SAME" {
@@ -2773,6 +2882,49 @@ test "COVERAGE: an untouched grid costs no record, and the four rules the brush 
     _ = m.paintSoil(0, 0, 40, .dirt, 1, null);
     const rim = m.soilIndex(0, 38).?;
     try std.testing.expect(m.soilCov[rim] < m.soilCov[mid]);
+}
+
+test "THE LIQUID GRID ROUND-TRIPS, and a map of plain water writes no `liquid:` row at all" {
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    const back = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(back);
+    var buf: [1 << 20]u8 = undefined;
+
+    m.blank("Tarn");
+    try std.testing.expect(m.paintWater(0, 0, 40, true, .speckle, .water));
+    {
+        var fbs = std.io.fixedBufferStream(&buf);
+        try write(m, fbs.writer());
+        // WATER IS ORDINAL 0, so a map that predates the liquids costs the file nothing and comes back the same.
+        try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "liquid:") == null);
+        var line: usize = 0;
+        try parse(fbs.getWritten(), back, &line);
+        try std.testing.expectEqual(Liquid.water, @as(Liquid, @enumFromInt(back.waterKind[gridIndex(back.half, WATER_N, 0, 0).?])));
+    }
+
+    m.blank("Four Pools");
+    inline for (.{ .{ -60.0, -60.0, Liquid.water }, .{ 60.0, -60.0, Liquid.oil }, .{ -60.0, 60.0, Liquid.fungal }, .{ 60.0, 60.0, Liquid.lava } }) |p| {
+        try std.testing.expect(m.paintWater(p[0], p[1], 25, true, .speckle, p[2]));
+    }
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "liquid:") != null);
+    var line: usize = 0;
+    try parse(fbs.getWritten(), back, &line);
+    try std.testing.expectEqualSlices(u8, &m.water, &back.water);
+    try std.testing.expectEqualSlices(u8, &m.waterEdge, &back.waterEdge);
+    try std.testing.expectEqualSlices(u8, &m.waterKind, &back.waterKind);
+    inline for (.{ .{ -60.0, -60.0, Liquid.water }, .{ 60.0, -60.0, Liquid.oil }, .{ -60.0, 60.0, Liquid.fungal }, .{ 60.0, 60.0, Liquid.lava } }) |p| {
+        const i = gridIndex(back.half, WATER_N, p[0], p[1]).?;
+        try std.testing.expectEqual(@as(u8, 1), back.water[i]);
+        try std.testing.expectEqual(@as(u8, @intFromEnum(p[2])), back.waterKind[i]);
+    }
+    // AN ERASED POOL TAKES ITS KIND WITH IT, or plain water painted over an old lava run comes up molten.
+    try std.testing.expect(m.paintWater(60, 60, 25, false, null, .water));
+    const lav = gridIndex(m.half, WATER_N, 60, 60).?;
+    try std.testing.expectEqual(@as(u8, 0), m.water[lav]);
+    try std.testing.expectEqual(@as(u8, @intFromEnum(Liquid.water)), m.waterKind[lav]);
 }
 
 test "the height field round-trips, and a FLAT map writes no height record at all" {

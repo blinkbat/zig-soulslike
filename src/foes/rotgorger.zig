@@ -83,7 +83,6 @@ const SINK_DEPTH: f32 = 0.42;
 const HP_MAX: f32 = 155.0;
 const POISE_MAX: f32 = 20.0;
 const STANCE_MAX: f32 = 30.0;
-/// Fat, wet and fungal: fire renders it, chaos is its own weather.
 const RESISTS = combat.resists(.{ .fire = -45, .chaos = 60, .cold = 10 });
 pub const SOULS: u32 = 165;
 

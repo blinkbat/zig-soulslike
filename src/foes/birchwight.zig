@@ -757,7 +757,6 @@ fn boleMesh(rTop: f32, rBot: f32, len: f32, seed: u64) rl.Mesh {
     return b.toMesh();
 }
 
-/// The chest is where the tree DIED: a split bole with the heartwood open down the front and a knothole in it.
 fn trunkMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x8102);
@@ -809,7 +808,6 @@ fn limbMesh(side: f32, len: f32, rTop: f32, rBot: f32, seed: u64) rl.Mesh {
     return b.toMesh();
 }
 
-/// It walks on its own root ball — the picture of a thing that pulled itself out of the ground.
 fn rootFootMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x800F);

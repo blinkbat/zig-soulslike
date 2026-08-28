@@ -24,7 +24,9 @@ pub fn build(b: *std.Build) void {
     // assign every `game.FOE_GROUPS` row's `Group.init(shader)` result, one field at a time; a Debug frame reserves every
     // temporary up front, so the reserve has to clear the largest group's `sizeOf` many times over. It
     // overflowed the default at boot when a group grew from 24 bodies to `worldfmt.MAX_FOES`. Windows COMMITS
-    // stack lazily, so this is address space and not memory. Raising `MAX_FOES` again means raising this.
+    // stack lazily, so this is address space and not memory. **THE ROW COUNT MOVES IT TOO** — `game.zig`'s
+    // "WHAT THE FRAME COSTS" measures 144.4 MB of slabs across 29 rows against this 192 MB, so a handful more
+    // creatures wants this raised as surely as another `MAX_FOES` does.
     exe.stack_size = 192 * 1024 * 1024;
     exe.linkLibrary(raylib_artifact);
     exe.root_module.addImport("raylib", raylib);

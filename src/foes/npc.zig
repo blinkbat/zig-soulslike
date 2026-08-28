@@ -555,8 +555,6 @@ fn merchPelvisMesh() rl.Mesh {
     b.setMat(.leather);
     slab(&b, v3(0, 0.058 * H, 0), v3(0.226 * H, 0.042 * H, 0.170 * H), MADDER);
     slab(&b, v3(0, 0.058 * H, 0.090 * H), v3(0.034 * H, 0.034 * H, 0.010 * H), BRASS);
-    // **THE PURSES ARE THE TRADE.** Four of them, no two the same size and none of them level, because they are
-    // hung on a belt and full of different things.
     var i: i32 = 0;
     while (i < 4) : (i += 1) {
         const a = rng.range(-2.4, 2.4);
@@ -578,7 +576,6 @@ fn merchAbdomenMesh() rl.Mesh {
     striped(&b, v3(0, 0.010 * H, 0), v3(0.208 * H, 0.132 * H, 0.150 * H), 5, &rng);
     b.setMat(.leather);
     slab(&b, v3(0, -0.038 * H, 0.004 * H), v3(0.210 * H, 0.030 * H, 0.150 * H), MADDER);
-    // THE TALLY on his hip — a notched stick on a thong, which is a ledger before anybody could write.
     b.setMat(.wood);
     b.addCylinder(v3(-0.135 * H, -0.030 * H, 0.070 * H), v3(-0.150 * H, -0.135 * H, 0.062 * H), 0.011 * H, 0.009 * H, 6, WOOD);
     var i: i32 = 0;
@@ -626,7 +623,6 @@ fn merchChestMesh() rl.Mesh {
             if (rng.float() < 0.5) HUMP_LT else HIDE_DK,
         );
     }
-    // THE STRAPS the packs hung off, crossed over the chest and still on him.
     b.setMat(.leather);
     slab(&b, v3(0.068 * H, -0.010 * H, 0.078 * H), v3(0.030 * H, 0.140 * H, 0.012 * H), STRAP);
     slab(&b, v3(-0.072 * H, -0.004 * H, 0.076 * H), v3(0.026 * H, 0.132 * H, 0.012 * H), STRAP);
@@ -647,7 +643,6 @@ fn merchNeckMesh() rl.Mesh {
     b.addCylinder(v3(0, 0, 0), v3(0, top * 0.55, 0.014 * H), 0.040 * H, 0.034 * H, 9, HIDE_DK);
     b.addCylinder(v3(0, top * 0.55, 0.014 * H), v3(0, top, 0.008 * H), 0.034 * H, 0.030 * H, 9, HIDE);
     b.addDome(v3(0, top, 0.008 * H), v3(0, 1, 0), 0.030 * H, 8, HIDE);
-    // THE RUFF at the base — shaggy, and it is what stops the neck reading as a pipe.
     var i: i32 = 0;
     while (i < 8) : (i += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(i)) / 8.0 + rng.signed() * 0.2;
@@ -675,17 +670,13 @@ fn merchHeadMesh(wrapped: bool) rl.Mesh {
     var rng = mathx.Rng.init(if (wrapped) 0xCA34 else 0xCA35);
     const y = MERCH_NECK;
     b.setMat(.hide);
-    // THE SKULL — narrow and long, not a ball: two blobs, the rear one the braincase and the front the jaw line.
     b.addBlob(v3(0, y + 0.074 * H, -0.014 * H), v3(0.058 * H, 0.062 * H, 0.070 * H), 6, 10, HIDE);
     b.addBlob(v3(0, y + 0.056 * H, 0.040 * H), v3(0.048 * H, 0.046 * H, 0.058 * H), 5, 10, HIDE);
-    // THE MUZZLE, tapering forward and DOWN — a camel's nose falls away from the brow.
     b.addCapsule(v3(0, y + 0.058 * H, 0.062 * H), v3(0, y + 0.036 * H, 0.132 * H), 0.040 * H, 0.028 * H, 9, HIDE);
     b.addBlob(v3(0, y + 0.033 * H, 0.140 * H), v3(0.030 * H, 0.026 * H, 0.024 * H), 4, 9, MUZZLE);
-    // THE SPLIT LIP — two lobes with a gap down the middle. This is the read, and it is worth two primitives.
     for ([_]f32{ -1.0, 1.0 }) |side| {
         b.addBlob(v3(side * 0.014 * H, y + 0.024 * H, 0.146 * H), v3(0.014 * H, 0.014 * H, 0.013 * H), 3, 8, MUZZLE);
     }
-    // NOSTRIL SLITS, sunk: dark, narrow, and set high on the muzzle where a camel closes them against sand.
     for ([_]f32{ -1.0, 1.0 }) |side| {
         b.addCapsule(
             v3(side * 0.020 * H, y + 0.046 * H, 0.136 * H),
@@ -696,25 +687,19 @@ fn merchHeadMesh(wrapped: bool) rl.Mesh {
             HOOF,
         );
     }
-    // THE BROW — heavy, and it OVERHANGS, which is where the shade for the eye comes from.
     b.addBlob(v3(0, y + 0.092 * H, 0.038 * H), v3(0.056 * H, 0.020 * H, 0.040 * H), 4, 9, HIDE_DK);
     for ([_]f32{ -1.0, 1.0 }) |side| {
-        // The eye, set WIDE and to the side of the skull the way a prey animal's is.
         b.addBlob(v3(side * 0.046 * H, y + 0.074 * H, 0.030 * H), v3(0.015 * H, 0.016 * H, 0.014 * H), 3, 8, HOOF);
         b.addBlob(v3(side * 0.049 * H, y + 0.077 * H, 0.034 * H), v3(0.007 * H, 0.007 * H, 0.006 * H), 3, 6, MUZZLE);
-        // **THE LASHES**, and they are absurd on a real camel, so they are three capsules here rather than one.
         var l: i32 = 0;
         while (l < 3) : (l += 1) {
             const fl = @as(f32, @floatFromInt(l)) - 1.0;
             const from = v3(side * (0.044 * H + fl * 0.006 * H), y + 0.086 * H, 0.030 * H + fl * 0.004 * H);
             b.addCapsule(from, mathx.addV(from, v3(side * 0.008 * H, 0.020 * H, 0.014 * H)), 0.0035 * H, 0.0015 * H, 4, LASH);
         }
-        // The ear: SMALL and set back, which is the other half of "not a horse".
         b.addBlob(v3(side * 0.050 * H, y + 0.098 * H, -0.038 * H), v3(0.012 * H, 0.020 * H, 0.010 * H), 3, 7, HIDE_DK);
     }
     if (wrapped) {
-        // THE HEADCLOTH over the crown and down past the ear, muzzle left bare. Its fall is uneven — one side is
-        // thrown back over the shoulder and the other hangs.
         b.setMat(.cloth);
         b.addBlob(v3(0, y + 0.096 * H, -0.020 * H), v3(0.072 * H, 0.054 * H, 0.080 * H), 5, 11, STRIPE);
         // **THE FALLS HUG THE SKULL.** Authored as two slabs they stood off it as flat plates — the one thing a
@@ -731,14 +716,11 @@ fn merchHeadMesh(wrapped: bool) rl.Mesh {
                 STRIPE,
             );
         }
-        // The back fall, over the nape, and it is the one place the dark weave shows on the head.
         b.addCapsule(v3(0, y + 0.094 * H, -0.052 * H), v3(0, y + 0.020 * H, -0.062 * H), 0.048 * H, 0.036 * H, 9, STRIPE_DK);
         b.addBlob(v3(0, y + 0.104 * H, -0.052 * H), v3(0.050 * H, 0.028 * H, 0.040 * H), 4, 9, MADDER);
-        // The cord round the crown that holds it on.
         b.setMat(.leather);
         b.addCylinder(v3(-0.062 * H, y + 0.098 * H, 0), v3(0.062 * H, y + 0.098 * H, 0), 0.007 * H, 0.007 * H, 6, STRAP);
     } else {
-        // Bare-headed: a low brimless cap, and the crown-tuft that the cloth would have flattened.
         b.setMat(.cloth);
         b.addCylinder(v3(0, y + 0.112 * H, -0.016 * H), v3(0, y + 0.148 * H, -0.020 * H), 0.050 * H, 0.046 * H, 10, MADDER);
         b.addDome(v3(0, y + 0.148 * H, -0.020 * H), v3(0, 1, 0), 0.046 * H, 10, MADDER_LT);
@@ -758,7 +740,6 @@ fn merchThighMesh() rl.Mesh {
     b.setMat(.cloth);
     b.addCylinder(v3(0, 0, 0), v3(0, -0.070 * H, 0), 0.068 * H, 0.050 * H, 9, STRIPE);
     b.addDome(v3(0, 0, 0), v3(0, 1, 0), 0.068 * H, 9, STRIPE);
-    // BARE BELOW THE HITCHED HEM, and thin — the leg of a thing built for distance and not for carrying.
     b.setMat(.hide);
     b.addCylinder(v3(0, -0.066 * H, 0), v3(0, -heromod.SEG_THIGH * H, 0), 0.044 * H, 0.034 * H, 9, HIDE_DK);
     return b.toMesh();
@@ -767,11 +748,9 @@ fn merchThighMesh() rl.Mesh {
 fn merchShankMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
-    // **THE KNOB AT THE KNEE**, which on a camel is a callus and is the one lumpy thing on the leg.
     b.addBlob(v3(0, -0.006 * H, 0.008 * H), v3(0.040 * H, 0.034 * H, 0.036 * H), 4, 9, HIDE_DK);
     b.addCylinder(v3(0, -0.020 * H, 0), v3(0, -heromod.SEG_SHANK * H, 0), 0.030 * H, 0.026 * H, 9, HIDE);
     b.setMat(.cloth);
-    // Puttees, wrapped and UNEVEN: three bands, none the same width.
     for ([_]f32{ 0.30, 0.52, 0.74 }) |t| {
         const yy = -heromod.SEG_SHANK * H * t;
         b.addCylinder(v3(0, yy, 0), v3(0, yy - 0.022 * H, 0), 0.032 * H, 0.031 * H, 9, if (t > 0.5) LINEN_DK else LINEN);
@@ -808,7 +787,6 @@ fn merchForearmMesh() rl.Mesh {
     b.setMat(.hide);
     b.addCylinder(v3(0, 0, 0), v3(0, -heromod.SEG_FOREARM * H, 0), 0.038 * H, 0.028 * H, 9, HIDE);
     b.setMat(.gilt);
-    // Bangles, which is where a merchant keeps what he cannot bank.
     for ([_]f32{ 0.34, 0.50, 0.80 }) |t| {
         const yy = -heromod.SEG_FOREARM * H * t;
         b.addCylinder(v3(0, yy, 0), v3(0, yy - 0.008 * H, 0), 0.037 * H, 0.036 * H, 9, BRASS);
@@ -834,7 +812,6 @@ fn scaleBeamMesh() rl.Mesh {
     var rng = mathx.Rng.init(0xCA36);
     const grip = 0.070 * H;
     b.setMat(.wood);
-    // The handle, down out of the fist.
     b.addCylinder(v3(0, 0, 0), v3(0, -grip, 0), 0.011 * H, 0.010 * H, 6, WOOD);
     b.setMat(.gilt);
     // THE BEAM, and it hangs OFF LEVEL, because one pan has something in it. That tilt is the whole picture.

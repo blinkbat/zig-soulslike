@@ -38,6 +38,7 @@ const birchmod = @import("../foes/birchwight.zig");
 const huskmod = @import("../foes/salthusk.zig");
 const fishmod = @import("../foes/fishman.zig");
 const batmod = @import("../foes/blinkbat.zig");
+const duomod = @import("../foes/fungalduo.zig");
 const combat = @import("../play/combat.zig");
 const foemod = @import("../foes/foe.zig");
 const elemfx = @import("../gfx/elemfx.zig");
@@ -207,6 +208,16 @@ const CHAR_KINDS = blk: {
 };
 const CHAR_N = CHAR_KINDS.len;
 
+/// **`openChar` IS A SLOT IN `CHAR_KINDS`, NOT A `FoeKind` ORDINAL** — the list skips the egg sac, so the two
+/// run past each other by one from `brood_sac` on. Handed a raw ordinal the viewer walked off the end of its
+/// own roster.
+pub fn charSlot(k: wf.FoeKind) ?usize {
+    for (CHAR_KINDS, 0..) |c, i| {
+        if (c == k) return i;
+    }
+    return null;
+}
+
 const GLYPH_N = @typeInfo(icons.Icon).@"enum".fields.len;
 const PICT_N = item.NK;
 const ICONS_TOTAL = GLYPH_N + PICT_N;
@@ -344,6 +355,8 @@ const CharSet = struct {
     pan: huskmod.Pan,
     shoal: fishmod.Shoal,
     roost: batmod.Roost,
+    vanguard: duomod.Vanguard,
+    conclave: duomod.Conclave,
 };
 /// **112.4 MB, TAKEN WHEN THE TAB IS FIRST OPENED AND NOT OUT OF BSS AT LOAD** — as a module `var` it was that
 /// much commit charge from the image mapping onward whether or not a creature was ever looked at. Built field
@@ -384,6 +397,8 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
     cs.pan = huskmod.Pan.init(scene.shader);
     cs.shoal = fishmod.Shoal.init(scene.shader);
     cs.roost = batmod.Roost.init(scene.shader);
+    cs.vanguard = duomod.Vanguard.init(scene.shader);
+    cs.conclave = duomod.Conclave.init(scene.shader);
     inline for (@typeInfo(CharSet).@"struct".fields) |f| @field(cs, f.name).n = 0;
     return cs;
 }
@@ -422,6 +437,9 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         .bone_skitterer => .{ .top = 2.2, .bound = 1.4 },
         .ancient_priest => .{ .top = 3.4, .bound = 1.4 },
         .tolling_hollow => .{ .top = 2.9, .bound = 1.9 },
+        // Both on the shared 1.34 rig, and the swordsman's bound is the SWORD held out to one side.
+        .fungal_swordsman => .{ .top = 3.0, .bound = 2.6 },
+        .fungal_magus => .{ .top = 3.2, .bound = 1.6 },
     };
 }
 
@@ -582,6 +600,16 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
             cs.belfry.live()[0] = hollowmod.Hollow.spawn(mathx.zero3, 0, 1.0, seed);
             cs.belfry.live()[0].stageGather(0.9);
             cs.belfry.draw(scene);
+        },
+        .fungal_swordsman => {
+            cs.vanguard.n = 1;
+            cs.vanguard.live()[0] = duomod.Swordsman.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.vanguard.draw(scene);
+        },
+        .fungal_magus => {
+            cs.conclave.n = 1;
+            cs.conclave.live()[0] = duomod.Magus.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.conclave.draw(scene);
         },
     }
 }

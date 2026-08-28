@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const gfx = @import("../gfx/gfx.zig");
 const mathx = @import("../core/mathx.zig");
+const camera = @import("../core/camera.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -1048,25 +1049,67 @@ pub const SKEIN_AFTER_RAIN: f32 = 22.0;
 pub const BIRDS_LO: usize = 3;
 pub const BIRDS_HI: usize = 17;
 
-/// Where the line crosses: it enters at `SKEIN_R` on one bearing and leaves on the far side, offset sideways so
-/// a crossing is rarely overhead. **SOLVED AGAINST THE HAZE, NOT PICKED**: `gfx.HAZE_DENSITY` is 0.013 a metre,
-/// so what is left of a thing at range d is exp(−0.013 d) — 185 m is 9% and the birds were invisible,
-/// photographed; 130 m is 18%; 60 m is 46%; 34 m is 64%. **NOTICEABLE IS CONTRAST BEFORE IT IS SIZE** (owner:
-/// more noticeable, they are quite small): flying at 46–88 m the haze was eating over half of every bird, so the
-/// band came DOWN rather than the birds only going up in span.
-pub const SKEIN_R: f32 = 96.0;
-const SKEIN_OFF: f32 = 56.0;
-pub const HIGH_LO: f32 = 30.0;
-pub const HIGH_HI: f32 = 62.0;
-const SKEIN_MPS_LO: f32 = 8.0;
-const SKEIN_MPS_HI: f32 = 15.0;
+// **THEY WERE NEVER ONCE IN THE PICTURE** (owner: "i never see any fuckin birds in the sky"), and it was not
+// rarity — 62 flights an hour, something in the sky 30% of the time. It was the FRAME. The resting camera tops
+// out 11.46 deg above the horizon (`camera.skyTop`), and flying 30–62 m up at 96 m out and crossing to within
+// 56 m, the LOWEST elevation any bird reached over any flight was 15.1 deg and the closest approach was 48 deg,
+// near enough straight overhead. Every one of them passed above the top of the screen. The whole band is solved
+// against that number now, and against the cliffs they used to fly through.
+
+/// **THE CEILING IS A SHARE OF THE RESTING FRAME'S OWN TOP**, so the flock sits in the upper part of the
+/// picture instead of over it. At 0.70 that is 8.0 deg, which leaves the birds a clear third of sky above them.
+const SKY_SHARE: f32 = 0.70;
+
+/// Just clear of a cliff (`props.cliffParts` stands 15.5 m). They used to fly at 30–62 m and it bought nothing:
+/// nothing on the map is that tall, and the height was what put them off the top of the screen.
+pub const HIGH_LO: f32 = 17.0;
+pub const HIGH_HI: f32 = 24.0;
+
+fn skyCeiling() f32 {
+    return camera.skyTop() * SKY_SHARE;
+}
+
+comptime {
+    // `skeinNear` divides by its tangent. A lens or a resting pitch that closed the sky would put the whole
+    // flock at infinity rather than fail, which is the one way this could break and say nothing.
+    std.debug.assert(camera.skyTop() > 0.02);
+    std.debug.assert(SKY_SHARE > 0 and SKY_SHARE < 1);
+    std.debug.assert(HIGH_LO > 15.5 and HIGH_HI > HIGH_LO);
+}
+
+/// **HOW CLOSE THE LINE MAY COME**, solved and not picked: the highest bird at this range sits exactly on the
+/// ceiling, so no bird at any point of any crossing is above the top of the resting frame.
+pub fn skeinNear() f32 {
+    return HIGH_HI / @tan(skyCeiling());
+}
+/// …and the far end of the offset, so a crossing is not always the same distance out.
+pub fn skeinWide() f32 {
+    return skeinNear() * 1.18;
+}
+/// The rim it enters and leaves at. Past the widest offset, or there is no crossing left to make.
+pub fn skeinRim() f32 {
+    return skeinWide() * 1.20;
+}
+
+/// **AND THE HAZE IS TURNED DOWN FOR THEM ALONE** (`gfx.Scene.setHaze`). `gfx.HAZE_DENSITY` is 0.013 a metre,
+/// so exp(−0.013 d) leaves 15% of a thing at 130 m and 4% at 240 m — and the band HAS to be out there now, or
+/// it is back above the frame. A bird is not a surface the distance veils, it is a SILHOUETTE read against the
+/// sky, and the haze does not soften it: it deletes it by pulling it to the sky's own colour. At 0.35 the same
+/// two ranges keep 55% and 33%, which is a bird.
+pub const SKEIN_HAZE: f32 = 0.35;
+
+/// Faster than they were, because the crossing is three times as long now and 8 m/s over it was a drift. A
+/// goose flies about 20 m/s.
+const SKEIN_MPS_LO: f32 = 14.0;
+const SKEIN_MPS_HI: f32 = 26.0;
 
 /// **THE MESH IS BUILT AT ONE METRE AND EVERY BIRD SCALES IT**, so a span is a number and not a rebuild. A flock
 /// is one kind of bird (`SPAN_LO`..`SPAN_HI` rolled per FLIGHT) and then ragged inside itself (`SPAN_JITTER`), so
 /// what varies is the size of the birds and not only the count of them — the owner asked for both.
 const WING: f32 = 1.0;
-const SPAN_LO: f32 = 2.0;
-const SPAN_HI: f32 = 4.2;
+/// Up with the range: at 170 m a 5 m span is 1.7 deg, about 24 px of an 800-line frame.
+const SPAN_LO: f32 = 2.6;
+const SPAN_HI: f32 = 5.0;
 const SPAN_JITTER: f32 = 0.22;
 /// The flap is a SQUASH of the V, not a bone: at this range a wing is two pixels and what reads is the
 /// silhouette breathing. Cheap enough that every bird gets its own phase, which is what stops the flock pulsing
@@ -1079,8 +1122,11 @@ const FLAP_SECS_HI: f32 = 0.72;
 const TRAIL_LO: f32 = 3.0;
 const TRAIL_HI: f32 = 7.0;
 const SPREAD: f32 = 4.5;
-/// They fade up off the near rim and out at the far one, so nothing pops into being.
-const SKEIN_FADE: f32 = 0.14;
+/// **METRES OF RAMP AT EACH RIM, NOT A SHARE OF THE CROSSING.** They fade up off the near rim and out at the
+/// far one so nothing pops into being; as a fraction the ramp got steeper every time the line came in shorter,
+/// and the per-frame step is what "it never pops" actually means. At 70 m the worst step is
+/// `mps*dt*1.5/70` — under a hundredth of the alpha at the fastest a flock flies.
+const SKEIN_FADE_M: f32 = 70.0;
 pub const SKEIN_TOP: f32 = 1.0;
 
 /// **A BIRD IS A SILHOUETTE**, so it is opaque and nearly black: the vertex alpha is the EMISSIVE channel and at
@@ -1159,21 +1205,26 @@ pub const Skein = struct {
         if (self.dryFor < SKEIN_AFTER_RAIN) return;
         self.wait -= dt;
         if (self.wait > 0) return;
-        self.launch(at, groundY, null);
+        self.launch(at, groundY, null, null);
     }
 
     /// **A DIFFERENT ANGLE EVERY TIME** (owner). The bearing is free, the line is offset sideways so a crossing
     /// is rarely straight overhead, and the height, the speed and the size are their own rolls.
-    fn launch(self: *Skein, at: rl.Vector3, groundY: f32, count: ?usize) void {
-        const heading = self.rng.angle();
+    fn launch(self: *Skein, at: rl.Vector3, groundY: f32, count: ?usize, bearing: ?f32) void {
+        const heading = bearing orelse self.rng.angle();
         const d = v3(mathx.cosf(heading), 0, mathx.sinf(heading));
-        const off = self.rng.range(-SKEIN_OFF, SKEIN_OFF);
+        // **THE OFFSET NEVER PASSES THROUGH ZERO NOW.** A line that crosses overhead is a line whose middle is
+        // at 90 deg of elevation, and the middle is the part you were meant to see.
+        const side: f32 = if (self.rng.float() < 0.5) -1.0 else 1.0;
+        const off = side * self.rng.range(skeinNear(), skeinWide());
+        const rim = skeinRim();
         self.dir = d;
         self.high = groundY + self.rng.range(HIGH_LO, HIGH_HI);
         self.mps = self.rng.range(SKEIN_MPS_LO, SKEIN_MPS_HI);
-        self.cross = SKEIN_R * 2.0;
+        // The chord the line actually cuts through the rim circle at this offset, not the diameter.
+        self.cross = 2.0 * @sqrt(mathx.maxF(rim * rim - off * off, 1.0));
         self.flown = 0;
-        self.at = v3(at.x - d.x * SKEIN_R - d.z * off, self.high, at.z - d.z * SKEIN_R + d.x * off);
+        self.at = v3(at.x - d.x * self.cross * 0.5 - d.z * off, self.high, at.z - d.z * self.cross * 0.5 + d.x * off);
         const lo: f32 = @floatFromInt(BIRDS_LO);
         const hi: f32 = @floatFromInt(BIRDS_HI);
         // **THE COUNT IS THE LAUNCH'S** — raising it afterwards left the extra birds on their defaults, which is
@@ -1200,7 +1251,8 @@ pub const Skein = struct {
     pub fn alpha(self: *const Skein) f32 {
         if (self.n == 0 or self.cross <= 0) return 0;
         const u = mathx.clampF(self.flown / self.cross, 0, 1);
-        return SKEIN_TOP * mathx.smoothstep(0, SKEIN_FADE, u) * (1.0 - mathx.smoothstep(1.0 - SKEIN_FADE, 1.0, u));
+        const f = mathx.clampF(SKEIN_FADE_M / mathx.maxF(self.cross, 1.0), 0.02, 0.45);
+        return SKEIN_TOP * mathx.smoothstep(0, f, u) * (1.0 - mathx.smoothstep(1.0 - f, 1.0, u));
     }
 
     /// Where the lead bird is right now — the harness's own, and what a test measures the crossing on.
@@ -1214,6 +1266,7 @@ pub const Skein = struct {
         const head = self.leadAt();
         const yaw = mathx.degrees(mathx.headingXZ(self.dir));
         scene.beginFade(a);
+        scene.setHaze(SKEIN_HAZE);
         for (self.birds[0..self.n]) |bd| {
             const p = v3(
                 head.x - self.dir.x * bd.back - self.dir.z * bd.side,
@@ -1223,6 +1276,7 @@ pub const Skein = struct {
             const flap = mathx.lerpF(FLAP_LO, FLAP_HI, 0.5 + 0.5 * mathx.sinf(std.math.tau * bd.flapT / bd.flapSecs));
             rl.drawModelEx(self.model, p, v3(0, 1, 0), yaw, v3(bd.span, bd.span * flap, bd.span), rl.Color.white);
         }
+        scene.setHaze(1.0);
         scene.endFade();
     }
 
@@ -1231,17 +1285,61 @@ pub const Skein = struct {
     pub fn stageOne(self: *Skein, at: rl.Vector3, groundY: f32, heading: f32) void {
         self.dryFor = SKEIN_AFTER_RAIN;
         self.armed = true;
-        self.launch(at, groundY, BIRDS_HI);
-        self.dir = v3(mathx.cosf(heading), 0, mathx.sinf(heading));
-        self.high = groundY + (HIGH_LO + HIGH_HI) * 0.5;
-        self.at = v3(at.x - self.dir.x * SKEIN_R, self.high, at.z - self.dir.z * SKEIN_R);
+        // **THE BEARING IS THE HARNESS'S AND NOTHING ELSE IS.** Overriding the line as well put the staged
+        // flight straight overhead — the one shape a real crossing can no longer take, so the photograph was
+        // of something the game does not do.
+        self.launch(at, groundY, BIRDS_HI, heading);
         self.flown = self.cross * 0.42;
     }
 };
 
+test "EVERY BIRD IS IN THE PICTURE WITH THE CAMERA WHERE IT RESTS — which is why none of them ever were" {
+    const top = camera.skyTop();
+    var sk = Skein{ .model = undefined };
+    sk.dryFor = SKEIN_AFTER_RAIN;
+    const dt = 1.0 / 60.0;
+    var worst: f32 = 0;
+    var lowest: f32 = 1e9;
+    var nearest: f32 = 1e9;
+    var farthest: f32 = 0;
+    var flights: usize = 0;
+    var was = false;
+    var t: f32 = 0;
+    while (t < 1800.0) : (t += dt) {
+        sk.tick(dt, mathx.zero3, 0, 0);
+        if (sk.flying() and !was) flights += 1;
+        was = sk.flying();
+        if (!sk.flying() or sk.alpha() <= 0.004) continue;
+        // The whole flock, not just the leader: the tail rides its own lift and side.
+        const head = sk.leadAt();
+        for (sk.birds[0..sk.n]) |bd| {
+            const p = v3(
+                head.x - sk.dir.x * bd.back - sk.dir.z * bd.side,
+                head.y + bd.lift,
+                head.z - sk.dir.z * bd.back + sk.dir.x * bd.side,
+            );
+            const d = mathx.lenXZ(p);
+            const e = std.math.atan2(p.y, mathx.maxF(d, 0.001));
+            worst = mathx.maxF(worst, e);
+            lowest = mathx.minF(lowest, e);
+            nearest = mathx.minF(nearest, d);
+            farthest = mathx.maxF(farthest, d);
+        }
+    }
+    std.debug.print("\n  birds: {d} flights, elevation {d:.1}..{d:.1} deg against a {d:.1} deg frame; range {d:.0}..{d:.0} m\n", .{
+        flights, mathx.degrees(lowest), mathx.degrees(worst), mathx.degrees(top), nearest, farthest,
+    });
+    try std.testing.expect(flights > 20);
+    try std.testing.expect(worst < top);
+    // …AND ABOVE THE HORIZON, or they are birds walking on the ground.
+    try std.testing.expect(lowest > 0);
+    // …AND CLEAR OF THE CLIFFS THEY USED TO FLY THROUGH (`props.cliffParts` stands 15.5 m).
+    try std.testing.expect(HIGH_LO > 15.5);
+    try std.testing.expect(nearest > skeinNear() * 0.9);
+}
+
 test "THE BIRDS ARE AN EVENT, NOT A FLOCK THAT LIVES THERE — infrequent, dry-only, and never twice the same" {
-    // Owner: bird packs of different sizes across the sky, distantly, from different angles, infrequently, just
-    // to feel alive. Measured over an hour of dry sky.
+    // Measured over an hour of dry sky.
     const dt = 1.0 / 60.0;
     var sk = Skein{ .model = undefined };
     var t: f32 = 0;
@@ -1274,7 +1372,10 @@ test "THE BIRDS ARE AN EVENT, NOT A FLOCK THAT LIVES THERE — infrequent, dry-o
     std.debug.print("\n  skein: {d} flights in an hour, {d} to {d} birds, in the sky {d:.0}% of it, lowest {d:.0} m up\n", .{ flights, smallest, biggest, share * 100.0, lowest });
     // DERIVED FROM THE GAP, not a number pinned beside it: one cycle is a mean gap plus a crossing, and the
     // count has to land within a third of what that predicts or the clock is not doing what it says.
-    const meanCycle = (SKEIN_GAP_LO + SKEIN_GAP_HI) * 0.5 + SKEIN_R * 2.0 / ((SKEIN_MPS_LO + SKEIN_MPS_HI) * 0.5);
+    // The mean chord, not the diameter: the line is offset, so it cuts the rim circle short of across it.
+    const meanOff = (skeinNear() + skeinWide()) * 0.5;
+    const meanChord = 2.0 * @sqrt(skeinRim() * skeinRim() - meanOff * meanOff);
+    const meanCycle = (SKEIN_GAP_LO + SKEIN_GAP_HI) * 0.5 + meanChord / ((SKEIN_MPS_LO + SKEIN_MPS_HI) * 0.5);
     const want = 3600.0 / meanCycle;
     std.debug.print("  ...{d:.0} predicted from the gap and the crossing, {d} flown\n", .{ want, flights });
     try std.testing.expect(@as(f32, @floatFromInt(flights)) > want * 0.66 and @as(f32, @floatFromInt(flights)) < want * 1.34);
@@ -1346,14 +1447,15 @@ test "A CROSSING IS A CROSSING — it enters far, leaves far, and fades at both 
         nearest = mathx.minF(nearest, mathx.distXZ(sk.leadAt(), mathx.zero3));
     }
     std.debug.print("  a crossing: in at {d:.0} m, nearest {d:.0} m, took {d:.0} s; alpha peaks {d:.2}, worst step {d:.4}\n", .{ mathx.distXZ(entered, mathx.zero3), nearest, t, peak, worstStep });
-    try std.testing.expect(mathx.distXZ(entered, mathx.zero3) > SKEIN_R * 0.9);
+    try std.testing.expect(mathx.distXZ(entered, mathx.zero3) > skeinRim() * 0.9);
     try std.testing.expect(peak > SKEIN_TOP * 0.9 and peak <= SKEIN_TOP + 1e-5);
     // IT NEVER POPS: the fade is a ramp at both ends, so no frame steps it.
     try std.testing.expect(worstStep < 0.01);
     // …and a crossing is a THING YOU CATCH, not a thing you wait out. Derived off the line and the speed, so
     // moving either cannot leave a number sitting here that used to be true.
-    try std.testing.expect(t > SKEIN_R * 2.0 / SKEIN_MPS_HI - 1.0);
-    try std.testing.expect(t < SKEIN_R * 2.0 / SKEIN_MPS_LO + 1.0);
+    const chord = 2.0 * @sqrt(skeinRim() * skeinRim() - skeinNear() * skeinNear());
+    try std.testing.expect(t > chord / SKEIN_MPS_HI - 1.0);
+    try std.testing.expect(t < 2.0 * skeinRim() / SKEIN_MPS_LO + 1.0);
 }
 
 test "THE FLOCK IS RAGGED AND EACH BIRD FLAPS ON ITS OWN — a pack, not one animal copied" {

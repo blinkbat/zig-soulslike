@@ -91,8 +91,6 @@ const PARENT = heromod.PARENT ++ [_]i32{ SKULL, SKULL, SKULL };
 
 comptime {
     std.debug.assert(PARENT.len == N);
-    // The membrane and the struts ride the WRIST bones, so the wing folds at the elbow like an arm and no
-    // panel is ever asked to span two bones that move apart.
     std.debug.assert(FORE_LEN > UPPER_LEN);
 }
 
@@ -203,7 +201,6 @@ const WING_HZ_HOVER: f32 = 3.4;
 const WING_HZ_BEAT: f32 = 7.2;
 
 comptime {
-    // NO ATTACK COMES OUT OF NOWHERE, and this one's tell is the arrival plus the gather.
     std.debug.assert(BITE_WIND > foe.TELL_MIN);
     // **THE WITHDRAWAL HAS TO LEAVE REACH**, or "hit and run" is a body standing in your swing.
     std.debug.assert(BLINK_FAR > BITE_R + 2.0);
@@ -989,7 +986,6 @@ fn boneMesh(i: usize) rl.Mesh {
         CHEST => {
             b.setMat(.hide);
             const up: f32 = len(NECK, CHEST);
-            // The keel is what reads as a flyer from the side with the wings folded.
             b.addBlob(v3(0, up * 0.10, 0.020 * H), v3(0.128 * H, 0.104 * H, 0.094 * H), 6, 10, HIDE);
             b.addBlob(v3(0, up * 0.05, 0.088 * H), v3(0.050 * H, 0.086 * H, 0.038 * H), 5, 8, HIDE_DK);
             var k: i32 = 0;
@@ -1006,7 +1002,6 @@ fn boneMesh(i: usize) rl.Mesh {
         SKULL => {
             b.setMat(.hide);
             b.addBlob(v3(0, 0.006 * H, 0.004 * H), v3(0.062 * H, 0.058 * H, 0.062 * H), 6, 10, HIDE);
-            // The only warm thing on the animal.
             b.setMat(.skin);
             b.addCapsule(v3(0, -0.004 * H, 0.048 * H), v3(0, -0.014 * H, 0.092 * H), 0.030 * H, 0.022 * H, 8, SNOUT);
             b.addBlob(v3(0, 0.004 * H, 0.086 * H), v3(0.020 * H, 0.016 * H, 0.014 * H), 4, 7, SNOUT);
@@ -1317,8 +1312,6 @@ test "IT DOES NOT TAKE TWO BITES FROM ONE SPOT — hit and RUN" {
     }
     std.debug.print("\n  20 s stood in its face: {d} bites, {d} blinks, never more than {d} from one spot\n", .{ bites, blinks, worst });
     try std.testing.expect(bites > 0 and blinks > 0);
-    // **THE RUN IS HALF THE CREATURE.** Before `spent` existed this measured 6 bites and ZERO blinks: it stood
-    // in his face and chewed, which is the leechfly's fight and not this one's.
     try std.testing.expectEqual(@as(u32, 1), worst);
 }
 
@@ -1328,7 +1321,5 @@ test "A SPENT PASS LEAVES — but rooted it stays and fights, which is the one t
     try std.testing.expectEqual(Choice.blink, classify(2.0, near, 0, true, false, true));
     // …unless the roots have it, and then it has to finish the fight where it stands.
     try std.testing.expectEqual(Choice.bite, classify(2.0, near, 0, true, true, true));
-    // Spent with the blink still cooling it HANGS rather than chewing — that wait is the reposition window,
-    // and it is the whole difference between 2 bites off one spot and 1.
     try std.testing.expectEqual(Choice.rest, classify(2.0, near, 0, false, false, true));
 }

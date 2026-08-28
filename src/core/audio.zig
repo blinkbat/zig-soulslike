@@ -578,6 +578,25 @@ pub const Id = enum {
     priest_breath,
     hollow_toll,
     hollow_clank,
+    step_oil,
+    step_fungal,
+    step_lava,
+    oil_pop,
+    fungal_pop,
+    lava_pop,
+    lava_sear,
+    oil_bed,
+    fungal_bed,
+    lava_bed,
+    duo_sword_hurt,
+    duo_sword_die,
+    duo_magus_hurt,
+    duo_magus_die,
+    duo_orb,
+    duo_sprout,
+    duo_burst,
+    duo_fade,
+    duo_bloom,
 };
 const NV = @typeInfo(Id).@"enum".fields.len;
 
@@ -824,6 +843,217 @@ fn mkStepWater(r: *Rack) void {
     r.body(0.052, 0.05, 620, 1180, 0.22, 7.5);
     r.grit(0.02, 0.13, 0.16, 2600, 0.25, 3.4);
     r.master(1.7, 4200);
+}
+
+// **A BUBBLE RISES IN PITCH AS IT BURSTS.** Helmholtz: the cavity shrinks, so the note goes UP — a pop written
+// falling reads as a drip instead. All three of these run `f0 -> f1` with f1 the higher.
+fn mkOilPop(r: *Rack) void {
+    r.body(0.0, 0.080, 94 + r.rng.signed() * 12, 250, 0.92, 5.0);
+    r.body(0.0, 0.17, 54, 30, 0.55, 3.4);
+    r.air(0.0, 0.05, 0.13, 500, 1400, 0.30, 6.0);
+    r.master(1.4, 1500);
+}
+
+fn mkFungalPop(r: *Rack) void {
+    r.body(0.0, 0.058, 178 + r.rng.signed() * 26, 540, 0.86, 5.5);
+    r.air(0.004, 0.075, 0.20, 900, 2600, 0.34, 5.0);
+    r.grit(0.0, 0.06, 0.10, 1800, 0.40, 5.0);
+    r.master(1.3, 3200);
+}
+
+fn mkLavaPop(r: *Rack) void {
+    r.tick(0.0, 0.28, 3200);
+    r.body(0.0, 0.10, 118 + r.rng.signed() * 16, 330, 0.82, 4.5);
+    r.body(0.0, 0.23, 46, 26, 0.50, 3.0);
+    r.air(0.012, 0.34, 0.26, 4200, 900, 0.22, 2.0);
+    r.master(1.7, 4600);
+}
+
+/// The bite lava takes every second — a HISS and nothing struck, so it can never be read as a blow landing.
+fn mkLavaSear(r: *Rack) void {
+    r.air(0.0, 0.42, 0.55, 5200, 1300, 0.24, 2.0);
+    r.air(0.02, 0.26, 0.20, 1800, 620, 0.40, 2.6);
+    r.grit(0.0, 0.30, 0.14, 3200, 0.25, 2.4);
+    r.master(1.35, 5200);
+}
+
+/// **A SURFACE THAT BOILS IS A BAND PLUS POISSON BLUPS** — the standing band is the mass and the blups are what
+/// says it is alive. One helper for three beds, because the difference between a tar pit and a lava run is the
+/// numbers and not the shape.
+const LiquidBed = struct {
+    bodyHz: f32,
+    bodySwing: f32,
+    /// Blups a second, redrawn at every one of them (`mkTorchFire`'s rule: a crackle is Poisson, not a clock).
+    pops: f32,
+    popLo: f32,
+    popHi: f32,
+    /// How far a blup climbs over its own tail, as a fraction: 0.6 is a minor sixth up.
+    popRise: f32,
+    /// Per-sample decay of a blup's envelope. 0.9975 is a ~160 ms tail.
+    popHold: f32,
+    hissAmt: f32,
+    topHz: f32,
+    trim: f32,
+};
+
+fn liquidBed(r: *Rack, c: LiquidBed) void {
+    var band = Svf{};
+    var blup = Svf{};
+    var top = Pole{};
+    const q1 = r.rng.angle();
+    const q2 = r.rng.angle();
+    var wait: i32 = 0;
+    var env: f32 = 0;
+    var hz: f32 = c.popLo;
+    var i: usize = 0;
+    while (i < r.n) : (i += 1) {
+        const t = @as(f32, @floatFromInt(i)) / SRF;
+        const g1 = 0.5 + 0.5 * mathx.sinf(std.math.tau * 0.061 * t + q1);
+        const g2 = 0.5 + 0.5 * mathx.sinf(std.math.tau * 0.137 * t + 1.9 + q2);
+        const nz = r.rng.signed();
+        if (wait <= 0) {
+            wait = 1 + @as(i32, @intFromFloat(@abs(r.rng.signed()) * (2.0 * SRF / c.pops)));
+            env = 1.0;
+            hz = r.rng.range(c.popLo, c.popHi);
+        }
+        wait -= 1;
+        env *= c.popHold;
+        const bo = band.step(nz, c.bodyHz * (1.0 - c.bodySwing + 2.0 * c.bodySwing * g1), 0.40).bp;
+        const bl = blup.step(nz, hz * (1.0 + c.popRise * (1.0 - env)), 0.94).bp * env * env;
+        const tp = top.step(nz, c.topHz) * c.hissAmt * (0.4 + 0.6 * g2);
+        work[i] = bo * (0.45 + 0.55 * g2) + bl * 0.90 + tp;
+    }
+    r.norm(0.42);
+    r.sat(1.1);
+    r.crush(CRUSH_BITS + 1.5, CRUSH_HOLD);
+    r.warm(c.trim);
+    r.wow(0.002, 0.5);
+    r.hiss(0.020);
+    r.norm(0.60);
+    r.ends(0.9, 0.9);
+}
+
+fn mkOilBed(r: *Rack) void {
+    liquidBed(r, .{ .bodyHz = 74, .bodySwing = 0.28, .pops = 1.4, .popLo = 58, .popHi = 130, .popRise = 0.55, .popHold = 0.9982, .hissAmt = 0.02, .topHz = 1400, .trim = 900 });
+}
+
+fn mkFungalBed(r: *Rack) void {
+    liquidBed(r, .{ .bodyHz = 210, .bodySwing = 0.34, .pops = 4.6, .popLo = 190, .popHi = 520, .popRise = 0.70, .popHold = 0.9968, .hissAmt = 0.14, .topHz = 3600, .trim = AIR_FAR_BED });
+}
+
+fn mkLavaBed(r: *Rack) void {
+    liquidBed(r, .{ .bodyHz = 108, .bodySwing = 0.40, .pops = 6.2, .popLo = 90, .popHi = 340, .popRise = 0.45, .popHold = 0.9974, .hissAmt = 0.26, .topHz = 5200, .trim = 2600 });
+}
+
+// **WHAT MAKES A FOOTFALL READ AS LIQUID IS A NOISE BAND SWEEPING UP** — that is the splash, and it is the
+// whole of what `mkStepWater` does that `mkStepSoft` does not (700 -> 3200 Hz under a rising bubble). Authored
+// without one, all three of these came out as textures over a thud: measured they were LOUDER than water's
+// (rms 0.18 against 0.11) and none of them said liquid. Each carries water's sweep now, moved to its own body,
+// and its own character on top of it.
+
+/// Tar: the same splash, an octave down and slower — a heavy film parting rather than a spray.
+fn mkStepOil(r: *Rack) void {
+    r.air(0.0, 0.26, 0.38, 220, 2100, 0.34, 2.4);
+    r.body(0.010, 0.09, 150 + r.rng.signed() * 14, 460, 0.62, 5.4);
+    // **AND THE SUCK ON THE WAY OUT IS WHAT SAYS TAR.** A cavity closing behind a boot is small, so it rises —
+    // and it has to rise FASTER than the body under it, or the take gets duller as it runs and stops reading
+    // as a splash at all (measured: crossings x0.98 over its own length, against water's x1.60).
+    r.body(0.085, 0.12, 130, 620, 0.40, 3.8);
+    r.grit(0.03, 0.14, 0.10, 1600, 0.40, 3.4);
+    r.master(1.6, 2600);
+}
+
+/// Stew: water's own splash with the pitch pulled down and grit in it — thicker, not deeper.
+fn mkStepFungal(r: *Rack) void {
+    r.air(0.0, 0.14, 0.36, 480, 2600, 0.32, 4.0);
+    r.body(0.008, 0.09, 260 + r.rng.signed() * 26, 640, 0.50, 6.0);
+    r.body(0.055, 0.07, 400, 900, 0.26, 6.8);
+    r.grit(0.02, 0.16, 0.24, 1500, 0.45, 3.2);
+    r.master(1.65, 3400);
+}
+
+/// Lava: the splash is there and the STEAM answers it — a rising spray under a long falling hiss.
+fn mkStepLava(r: *Rack) void {
+    r.air(0.0, 0.12, 0.30, 600, 2800, 0.32, 4.4);
+    r.body(0.006, 0.10, 190 + r.rng.signed() * 18, 520, 0.55, 5.6);
+    r.air(0.030, 0.34, 0.40, 4400, 1000, 0.22, 2.1);
+    r.grit(0.02, 0.24, 0.22, 2400, 0.32, 2.6);
+    r.body(0.0, 0.14, 88, 42, 0.44, 4.0);
+    r.master(1.75, 4400);
+}
+
+// THE FUNGAL DUO. **ONE FAMILY, TWO VOICES**: the swordsman is WET MASS with a blade in it and the magus is
+// DRY SPORE. Both are pitched under the bone knight's family — they are big, but they are not iron.
+fn mkDuoSwordHurt(r: *Rack) void {
+    r.body(0.0, 0.16, 132 + r.rng.signed() * 14, 58, 0.90, 3.6);
+    r.grit(0.0, 0.20, 0.44, 900, 0.62, 3.2);
+    r.air(0.006, 0.14, 0.22, 1600, 520, 0.34, 4.0);
+    r.master(1.5, 2600);
+}
+
+fn mkDuoSwordDie(r: *Rack) void {
+    r.body(0.0, 0.62, 96, 34, 1.15, 1.9);
+    r.grit(0.02, 0.70, 0.50, 700, 0.72, 1.8);
+    r.air(0.10, 0.58, 0.30, 1200, 340, 0.30, 2.0);
+    // The mass going down: a wet thud, not a clatter.
+    r.body(0.46, 0.26, 62, 30, 0.72, 3.0);
+    r.master(1.7, 2400);
+}
+
+fn mkDuoMagusHurt(r: *Rack) void {
+    r.air(0.0, 0.20, 0.42, 2600, 900, 0.30, 3.4);
+    r.body(0.0, 0.12, 220 + r.rng.signed() * 22, 96, 0.60, 4.4);
+    r.grit(0.004, 0.18, 0.30, 2000, 0.44, 3.6);
+    r.master(1.35, 3800);
+}
+
+fn mkDuoMagusDie(r: *Rack) void {
+    r.air(0.0, 0.72, 0.52, 3200, 620, 0.26, 1.9);
+    r.body(0.0, 0.48, 150, 52, 0.80, 2.2);
+    r.grit(0.06, 0.66, 0.40, 1500, 0.52, 2.0);
+    r.master(1.5, 3400);
+}
+
+/// A DRY, QUICK SPIT — the orb is attrition, so its voice is small and it comes often.
+fn mkDuoOrb(r: *Rack) void {
+    r.tick(0.0, 0.22, 3400);
+    r.body(0.0, 0.10, 300 + r.rng.signed() * 40, 720, 0.55, 5.5);
+    r.air(0.0, 0.14, 0.24, 1400, 3000, 0.34, 4.2);
+    r.master(1.25, 4600);
+}
+
+/// The ground opening: a low swell with grit in it, and it RISES, because something is coming up.
+fn mkDuoSprout(r: *Rack) void {
+    r.body(0.0, 0.34, 62, 190, 0.85, 2.6);
+    r.grit(0.0, 0.38, 0.42, 800, 0.70, 2.4);
+    r.air(0.08, 0.30, 0.26, 700, 2200, 0.32, 3.0);
+    r.master(1.4, 3000);
+}
+
+/// …and the bunch going off. The one loud thing either of them owns.
+fn mkDuoBurst(r: *Rack) void {
+    r.tick(0.0, 0.44, 2600);
+    r.body(0.0, 0.30, 128, 40, 1.20, 2.8);
+    r.body(0.0, 0.16, 68, 34, 0.70, 4.0);
+    r.grit(0.0, 0.34, 0.58, 1700, 0.60, 2.6);
+    r.air(0.010, 0.40, 0.40, 3000, 700, 0.28, 2.2);
+    r.master(1.8, 4200);
+}
+
+/// Going: a breath OUT, falling. Coming back is the same breath run the other way — a separate voice, because
+/// a reversed sample is a reversed sample and these are synthesized.
+fn mkDuoFade(r: *Rack) void {
+    r.air(0.0, 0.86, 0.46, 2800, 520, 0.28, 1.8);
+    r.body(0.04, 0.52, 210, 74, 0.42, 2.2);
+    r.grit(0.0, 0.80, 0.22, 1600, 0.55, 1.9);
+    r.master(1.2, 3200);
+}
+
+fn mkDuoBloom(r: *Rack) void {
+    r.air(0.0, 0.62, 0.44, 620, 3000, 0.30, 2.0);
+    r.body(0.0, 0.40, 88, 260, 0.50, 2.6);
+    r.grit(0.05, 0.56, 0.24, 1900, 0.50, 2.2);
+    r.master(1.25, 3600);
 }
 
 fn mkRoll(r: *Rack) void {
@@ -2550,6 +2780,29 @@ const BANK = [NV]Row{
     // …AND THE BELL CARRIES AS FAR AS IT REACHES (`hollow.TOLL_R` is 34 m): a voice that faded first would be a lie about the mechanic.
     .{ .id = .hollow_toll, .make = mkHollowToll, .gain = battle(0.92), .mix = .combat, .jit = 0.05, .vjit = 0.06, .vars = 3, .poly = 2, .reach = 40 },
     .{ .id = .hollow_clank, .make = mkHollowClank, .gain = battle(0.30), .mix = .combat, .jit = 0.16, .vjit = 0.24, .vars = 4, .poly = 4, .reach = 20 },
+    .{ .id = .step_oil, .make = mkStepOil, .gain = 0.145, .jit = 0.12, .vjit = 0.26, .vars = 4, .poly = 3 },
+    .{ .id = .step_fungal, .make = mkStepFungal, .gain = 0.135, .jit = 0.13, .vjit = 0.26, .vars = 4, .poly = 3 },
+    .{ .id = .step_lava, .make = mkStepLava, .gain = 0.120, .jit = 0.11, .vjit = 0.24, .vars = 4, .poly = 3 },
+    // TEXTURE, at or under the floor and thinned in COUNT too (`game.POP_EVERY`): a pool that pops in your ear
+    // as often as it pops on screen is the loudest thing in a quiet map.
+    .{ .id = .oil_pop, .make = mkOilPop, .gain = 0.115, .mix = .ambience, .jit = 0.20, .vjit = 0.34, .vars = 5, .poly = 3, .reach = 26 },
+    .{ .id = .fungal_pop, .make = mkFungalPop, .gain = 0.100, .mix = .ambience, .jit = 0.22, .vjit = 0.34, .vars = 5, .poly = 3, .reach = 24 },
+    .{ .id = .lava_pop, .make = mkLavaPop, .gain = 0.130, .mix = .ambience, .jit = 0.18, .vjit = 0.30, .vars = 5, .poly = 3, .reach = 34 },
+    // The bite is what is HAPPENING TO YOU, so it sits with the fight and not with the scenery.
+    .{ .id = .lava_sear, .make = mkLavaSear, .gain = battle(0.44), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 4, .poly = 2 },
+    .{ .id = .oil_bed, .make = mkOilBed, .gain = 0.052, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
+    .{ .id = .fungal_bed, .make = mkFungalBed, .gain = 0.040, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
+    .{ .id = .lava_bed, .make = mkLavaBed, .gain = 0.058, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
+    .{ .id = .duo_sword_hurt, .make = mkDuoSwordHurt, .gain = battle(0.72), .mix = .combat, .jit = 0.15, .vjit = 0.20, .vars = 4, .poly = 3, .reach = 60 },
+    .{ .id = .duo_sword_die, .make = mkDuoSwordDie, .gain = battle(0.95), .mix = .combat, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1, .reach = 100 },
+    .{ .id = .duo_magus_hurt, .make = mkDuoMagusHurt, .gain = battle(0.66), .mix = .combat, .jit = 0.16, .vjit = 0.22, .vars = 4, .poly = 3, .reach = 60 },
+    .{ .id = .duo_magus_die, .make = mkDuoMagusDie, .gain = battle(0.92), .mix = .combat, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1, .reach = 100 },
+    .{ .id = .duo_orb, .make = mkDuoOrb, .gain = battle(0.44), .mix = .combat, .jit = 0.18, .vjit = 0.26, .vars = 5, .poly = 4, .reach = 55 },
+    .{ .id = .duo_sprout, .make = mkDuoSprout, .gain = battle(0.62), .mix = .combat, .jit = 0.12, .vjit = 0.18, .vars = 4, .poly = 3, .reach = 70 },
+    // **THE TELL IS LOUDER THAN THE CAST** — the bunch going off is the thing you have to hear across a fight.
+    .{ .id = .duo_burst, .make = mkDuoBurst, .gain = battle(0.88), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 5, .poly = 4, .reach = 80 },
+    .{ .id = .duo_fade, .make = mkDuoFade, .gain = battle(0.58), .mix = .combat, .jit = 0.08, .vjit = 0.12, .vars = 3, .poly = 2, .reach = 65 },
+    .{ .id = .duo_bloom, .make = mkDuoBloom, .gain = battle(0.60), .mix = .combat, .jit = 0.08, .vjit = 0.12, .vars = 3, .poly = 2, .reach = 65 },
 };
 
 fn seconds(id: Id) f32 {
@@ -2565,6 +2818,18 @@ fn seconds(id: Id) f32 {
         // A BED HAS TO OUTLAST ITS OWN PATTERN or the loop point is the thing you hear — and it may not equal another bed's, or the two retrigger on one frame forever.
         .rain => 8.6,
         .torch_fire => 7.9,
+        // …and none of these may equal another bed's, or the two retrigger on the same frame forever.
+        .oil_bed => 8.3,
+        .fungal_bed => 7.6,
+        .lava_bed => 9.1,
+        .lava_sear => 0.55,
+        .oil_pop, .fungal_pop, .lava_pop => 0.42,
+        .duo_sword_die => 1.35,
+        .duo_magus_die => 1.45,
+        .duo_fade => 1.05,
+        .duo_bloom => 0.80,
+        .duo_sprout => 0.55,
+        .duo_burst => 0.62,
         .thunder => 3.4,
         .death => 3.2,
         .owl => 1.6,
@@ -3077,6 +3342,20 @@ pub fn setDaylight(k: f32) void {
 
 var rainLevel: f32 = 0;
 var torchLevel: f32 = 0;
+/// **THE DIALLED LIQUID BEDS, IN `wf.Liquid` ORDER PAST WATER** — water has none: the wind is its bed, and
+/// painting a tarn may not add a voice to a map that already sounded right. `BEDS` is built off this list and
+/// `game.LIQUID_VOICE` pins the names against the enum, so the index is the liquid's ordinal minus one and
+/// there is no side array to keep in step.
+pub const LIQUID_BEDS = [_]Id{ .oil_bed, .fungal_bed, .lava_bed };
+
+/// How much of each is underfoot or next to you. Driven by `game.tickLiquid`.
+var liquidLevel: [LIQUID_BEDS.len]f32 = [_]f32{0} ** LIQUID_BEDS.len;
+
+/// `i` is `@intFromEnum(wf.Liquid) - 1`. Out of range is a bounds panic, not a shrug: there is no liquid the
+/// caller could mean that this does not have a slot for.
+pub fn setLiquidBed(i: usize, k: f32) void {
+    liquidLevel[i] = mathx.clampF(k, 0, 1);
+}
 
 pub fn setRain(k: f32) void {
     rainLevel = mathx.clampF(k, 0, 1);
@@ -3283,9 +3562,16 @@ const BEDS = [_]Bed{
     .{ .id = .crickets, .hour = .{ .atNoon = 0.34, .atNight = 1.0 } },
     .{ .id = .rain, .dial = &rainLevel },
     .{ .id = .torch_fire, .dial = &torchLevel },
+} ++ blk: {
+    // GENERATED, so a bed and the slot it dials cannot be written out of step with each other.
+    var out: [LIQUID_BEDS.len]Bed = undefined;
+    for (LIQUID_BEDS, 0..) |id, i| out[i] = .{ .id = id, .dial = &liquidLevel[i] };
+    break :blk out;
 };
 
-pub const AMBIENT_EVENTS = [_]Id{.thunder};
+/// An ambience-mix voice the WORLD fires, rather than a bed that holds or a call on a clock of its own. Each
+/// must out-shout the loudest bed (a test pins it), or the thing that happened is quieter than the room.
+pub const AMBIENT_EVENTS = [_]Id{ .thunder, .oil_pop, .fungal_pop, .lava_pop };
 
 const Call = struct {
     id: Id,
@@ -3996,4 +4282,45 @@ test "THE BENCH NEVER OVERWRITES THE ORIGINAL — that is what makes revert free
     }
     try std.testing.expectEqual(NV, NAMES.len);
     try std.testing.expect(std.mem.eql(u8, NAMES[@intFromEnum(Id.knight_die)], "knight_die"));
+}
+
+test "A LIQUID FOOTFALL IS A NOISE BAND SWEEPING UP, and all four carry one" {
+    // The splash is what separates `step_water` from `step_soft`: a noise band whose centre CLIMBS. Authoring
+    // three textures over a thud is how the liquids came out louder than water (rms 0.18 against 0.11) and
+    // still did not say liquid. Measured as the ZERO-CROSSING RATE — the cheap stand-in for spectral centre
+    // this file already uses on the knight's grit — over the take's second half against its first.
+    const wet = [_]Id{ .step_water, .step_oil, .step_fungal, .step_lava };
+    var wetLow: f32 = 1e9;
+    inline for (wet) |id| {
+        const idx = @intFromEnum(id);
+        var r = Rack.init(0x9E3779B9 *% (@as(u64, idx) + 1), seconds(id));
+        BANK[idx].make(&r);
+        // THE ACTIVE PART ONLY. Every take is authored well inside its own buffer, so halving the BUFFER
+        // measured silence against silence and handed back 0% for all seven.
+        var last: usize = 0;
+        var peak: f32 = 0;
+        for (work[0..r.n]) |v| peak = @max(peak, @abs(v));
+        for (work[0..r.n], 0..) |v, i| {
+            if (@abs(v) > peak * 0.02) last = i;
+        }
+        const half = last / 2;
+        var head: usize = 0;
+        var tail: usize = 0;
+        var i: usize = 1;
+        while (i <= last) : (i += 1) {
+            const flip = (work[i] >= 0) != (work[i - 1] >= 0);
+            if (!flip) continue;
+            if (i < half) head += 1 else tail += 1;
+        }
+        const hz0 = @as(f32, @floatFromInt(head)) / @max(@as(f32, @floatFromInt(half)), 1.0);
+        const hz1 = @as(f32, @floatFromInt(tail)) / @max(@as(f32, @floatFromInt(last - half)), 1.0);
+        const rise = hz1 / @max(hz0, 1e-6);
+        wetLow = @min(wetLow, rise);
+        std.debug.print("  {s: <12} crossings x{d:.2} over the take\n", .{ @tagName(id), rise });
+    }
+    std.debug.print("  the dullest of the four brightens x{d:.2}\n", .{wetLow});
+    // **EVERY LIQUID FOOTFALL BRIGHTENS OVER ITS OWN LENGTH.** Not a claim against the dry set — `step_soft`
+    // rises x6.8 off its own grit tail, so "wetter than dry" is not a real separation and pretending it is
+    // would be a test that passes by accident. What IS true of all four and false of a thud is the sweep.
+    try std.testing.expect(wetLow > 1.05);
 }

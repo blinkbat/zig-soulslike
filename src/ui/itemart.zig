@@ -9,6 +9,12 @@ const combat = @import("../play/combat.zig");
 
 const rgba = mathx.rgba;
 
+/// **THE DROP SHADOW UNDER A PICTURE, NAMED ONCE.** Nineteen `drawCircleV`s laid the same black wash and every
+/// one of them spelled it out, in a file that names every other colour it uses — so the one value the whole set
+/// shares was the one nothing could retune. The handful of pictures that ask for a heavier or lighter wash keep
+/// their own literal on purpose.
+const SHADOW = rgba(0, 0, 0, 110);
+
 pub const STEEL = rgba(232, 234, 238, 255);
 pub const STEEL_MID = rgba(178, 184, 192, 255);
 pub const STEEL_DK = rgba(126, 132, 140, 255);
@@ -276,7 +282,7 @@ fn nightcapGrease(cx: f32, cy: f32, px: f32) void {
 fn wakersNail(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
-    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.04 + 1.0 * k), s * 0.20, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.04 + 1.0 * k), s * 0.20, SHADOW);
     arc(cx, cy + s * 0.03, s * 0.175, std.math.pi * 0.10, std.math.tau * 0.97, 20, s * 0.052, s * 0.030, IRON_DK);
     arc(cx - s * 0.02, cy + s * 0.01, s * 0.150, std.math.pi * 1.00, std.math.pi * 1.55, 8, 1.6 * k, 0.9 * k, rgba(158, 150, 138, 220));
     quad(
@@ -413,7 +419,7 @@ fn pilgrimsSalt(cx: f32, cy: f32, px: f32) void {
     var rng = mathx.Rng.init(0x5A17);
     const grey = rgba(198, 194, 184, 255);
     const greyLo = rgba(142, 138, 130, 255);
-    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.06 + 1.4 * k), s * 0.26, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.06 + 1.4 * k), s * 0.26, SHADOW);
     quad(v2(cx - s * 0.26, cy - s * 0.02), v2(cx + s * 0.26, cy - s * 0.06), v2(cx + s * 0.24, cy + s * 0.24), v2(cx - s * 0.25, cy + s * 0.26), greyLo);
     quad(v2(cx - s * 0.26, cy - s * 0.02), v2(cx - s * 0.06, cy - s * 0.22), v2(cx + s * 0.28, cy - s * 0.25), v2(cx + s * 0.26, cy - s * 0.06), grey);
     rl.drawCircleV(v2(cx + s * 0.06, cy - s * 0.13), s * 0.075, rgba(172, 168, 158, 255));
@@ -432,7 +438,7 @@ fn ironwortTea(cx: f32, cy: f32, px: f32) void {
     const clayLo = rgba(68, 50, 38, 255);
     const brew = rgba(126, 66, 34, 255);
     const brewLt = rgba(172, 100, 52, 255);
-    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.14 + 1.4 * k), s * 0.26, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.14 + 1.4 * k), s * 0.26, SHADOW);
     quad(v2(cx - s * 0.27, cy - s * 0.02), v2(cx + s * 0.28, cy - s * 0.04), v2(cx + s * 0.18, cy + s * 0.26), v2(cx - s * 0.16, cy + s * 0.27), clay);
     arc(cx + s * 0.005, cy + s * 0.26, s * 0.17, std.math.pi * 0.06, std.math.pi * 0.94, 10, 2.6 * k, 2.2 * k, clayLo);
     ellipseV(cx + s * 0.005, cy - s * 0.03, s * 0.275, s * 0.075, brew);
@@ -451,7 +457,7 @@ fn rimewardMantle(cx: f32, cy: f32, px: f32) void {
     const hide = rgba(84, 74, 62, 255);
     const hideLo = rgba(54, 48, 40, 255);
     const fleece = rgba(196, 190, 176, 255);
-    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.06 + 1.4 * k), s * 0.27, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.06 + 1.4 * k), s * 0.27, SHADOW);
     quad(v2(cx - s * 0.15, cy - s * 0.14), v2(cx + s * 0.15, cy - s * 0.14), v2(cx + s * 0.29, cy + s * 0.28), v2(cx - s * 0.29, cy + s * 0.28), hide);
     quad(v2(cx - s * 0.15, cy - s * 0.14), v2(cx + s * 0.01, cy - s * 0.14), v2(cx + s * 0.06, cy + s * 0.28), v2(cx - s * 0.29, cy + s * 0.28), hideLo);
     var i: u32 = 0;
@@ -477,7 +483,7 @@ fn sporecrown(cx: f32, cy: f32, px: f32) void {
     var rng = mathx.Rng.init(0x5C40);
     const fibre = rgba(146, 96, 66, 255);
     const fibreLo = rgba(96, 60, 42, 255);
-    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.06 + 1.4 * k), s * 0.25, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.06 + 1.4 * k), s * 0.25, SHADOW);
     arc(cx, cy + s * 0.10, s * 0.255, std.math.pi, std.math.tau, 14, s * 0.26, s * 0.14, fibreLo);
     arc(cx - s * 0.02, cy + s * 0.09, s * 0.215, std.math.pi * 1.06, std.math.pi * 1.88, 12, s * 0.18, s * 0.09, fibre);
     var c: u32 = 0;
@@ -645,7 +651,7 @@ fn ashenAmulet(cx: f32, cy: f32, px: f32) void {
     rl.drawLineEx(v2(cx - s * 0.16, top), v2(cx - s * 0.015, cy + s * 0.08), 1.8 * k, cord);
     rl.drawLineEx(v2(cx + s * 0.15 + rng.range(-1, 1) * k, top - s * 0.01), v2(cx + s * 0.02, cy + s * 0.08), 1.8 * k, cord);
     arc(cx, top + s * 0.01, s * 0.16, std.math.pi * 1.08, std.math.pi * 1.92, 8, 1.6 * k, 1.6 * k, cord);
-    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.15 + 1.2 * k), s * 0.115, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.15 + 1.2 * k), s * 0.115, SHADOW);
     rl.drawCircleV(v2(cx, cy + s * 0.13), s * 0.105, rgba(122, 118, 112, 255));
     arc(cx, cy + s * 0.13, s * 0.075, std.math.pi * 0.85, std.math.pi * 1.55, 8, 1.5 * k, 0.8 * k, rgba(176, 170, 160, 255));
     rl.drawCircleV(v2(cx - s * 0.03, cy + s * 0.09), 1.6 * k, rgba(236, 214, 176, 210));
@@ -679,7 +685,7 @@ fn marchboots(cx: f32, cy: f32, px: f32) void {
     const hide = rgba(74, 56, 42, 255);
     const hideDk = rgba(46, 34, 26, 255);
     const sole = rgba(58, 50, 44, 255);
-    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.18 + 1.4 * k), s * 0.26, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.18 + 1.4 * k), s * 0.26, SHADOW);
     quad(v2(cx - s * 0.02, cy - s * 0.24), v2(cx + s * 0.15, cy - s * 0.24), v2(cx + s * 0.17, cy + s * 0.10), v2(cx - s * 0.01, cy + s * 0.10), hideDk);
     quad(v2(cx - s * 0.01, cy + s * 0.05), v2(cx + s * 0.30, cy + s * 0.09), v2(cx + s * 0.30, cy + s * 0.17), v2(cx - s * 0.01, cy + s * 0.15), hideDk);
     quad(v2(cx - s * 0.26, cy - s * 0.20), v2(cx - s * 0.07, cy - s * 0.22), v2(cx - s * 0.05, cy + s * 0.14), v2(cx - s * 0.24, cy + s * 0.14), hide);
@@ -694,7 +700,7 @@ fn marchboots(cx: f32, cy: f32, px: f32) void {
 fn deftSignet(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
-    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.03 + 1.0 * k), s * 0.20, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.03 + 1.0 * k), s * 0.20, SHADOW);
     arc(cx, cy + s * 0.02, s * 0.175, 0, std.math.tau, 20, s * 0.062, s * 0.062, rgba(118, 112, 102, 255));
     arc(cx, cy + s * 0.02, s * 0.145, std.math.pi * 0.15, std.math.pi * 1.05, 12, 1.3 * k, 1.3 * k, rgba(206, 200, 186, 255));
     arc(cx - s * 0.03, cy - s * 0.01, s * 0.17, std.math.pi * 0.95, std.math.pi * 1.5, 8, 1.7 * k, 0.9 * k, rgba(168, 160, 146, 255));
@@ -711,7 +717,7 @@ pub fn bell(cx: f32, cy: f32, px: f32) void {
     const crownY = cy - s * 0.12;
     const hw = s * 0.215;
     const cw = s * 0.085;
-    rl.drawCircleV(v2(cx + 1.2 * k, mouthY + 1.0 * k), hw, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + 1.2 * k, mouthY + 1.0 * k), hw, SHADOW);
 
     rl.drawLineEx(v2(cx + lean, cy - s * 0.36), v2(cx + lean, crownY), 3.6 * k, GRIP);
     rl.drawCircleV(v2(cx + lean, cy - s * 0.345), 2.6 * k, GRIP_LT);
@@ -754,7 +760,7 @@ fn scrollSheet(cx: f32, cy: f32, px: f32) void {
     const hw = s * 0.21;
     const top = cy - s * 0.33;
     const rollY = cy + s * 0.26;
-    rl.drawCircleV(v2(cx + 1.2 * k, rollY + 1.2 * k), hw * 1.02, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + 1.2 * k, rollY + 1.2 * k), hw * 1.02, SHADOW);
 
     const tl = v2(cx - hw * 1.06 + lean, top);
     const tr = v2(cx + hw * 1.02 + lean, top + s * 0.02);
@@ -839,7 +845,7 @@ fn sporelingCap(cx: f32, cy: f32, px: f32) void {
 fn secondWind(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
-    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.06 + 1.0 * k), s * 0.26, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.06 + 1.0 * k), s * 0.26, SHADOW);
     arc(cx, cy + s * 0.04, s * 0.22, std.math.pi * 0.2, std.math.pi * 1.6, 14, s * 0.16, s * 0.10, BONE_DK);
     arc(cx, cy + s * 0.04, s * 0.22, std.math.pi * 0.25, std.math.pi * 1.5, 12, s * 0.10, s * 0.05, BONE);
     arc(cx + s * 0.06, cy + s * 0.02, s * 0.10, std.math.pi * 0.4, std.math.pi * 1.8, 10, s * 0.07, s * 0.03, BONE);
@@ -854,7 +860,7 @@ fn towerShield(cx: f32, cy: f32, px: f32) void {
     const hw = s * 0.20;
     const top = cy - s * 0.34;
     const bot = cy + s * 0.36;
-    rl.drawCircleV(v2(cx + 1.2 * k, bot - s * 0.04), hw, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + 1.2 * k, bot - s * 0.04), hw, SHADOW);
     quad(v2(cx - hw, top + s * 0.06), v2(cx + hw, top + s * 0.06), v2(cx + hw * 0.86, bot), v2(cx - hw * 0.86, bot), GRIP);
     arc(cx, top + s * 0.07, hw, std.math.pi, std.math.tau, 10, s * 0.12, s * 0.12, GRIP);
     for ([_]f32{ -0.4, 0.2 }) |t| {
@@ -893,7 +899,7 @@ fn greatclub(cx: f32, cy: f32, px: f32) void {
 fn soulRing(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
-    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.03 + 1.0 * k), s * 0.21, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.03 + 1.0 * k), s * 0.21, SHADOW);
     arc(cx, cy + s * 0.02, s * 0.175, 0, std.math.tau, 20, s * 0.048, s * 0.038, RING_GOLD);
     arc(cx - s * 0.05, cy - s * 0.02, s * 0.175, std.math.pi * 0.85, std.math.pi * 1.45, 8, 1.7 * k, 0.9 * k, RING_GOLD_LT);
     const bx = cx + s * 0.155;
@@ -907,7 +913,7 @@ fn soulRing(cx: f32, cy: f32, px: f32) void {
 fn leechSignet(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
-    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.04 + 1.0 * k), s * 0.20, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.04 + 1.0 * k), s * 0.20, SHADOW);
     arc(cx, cy + s * 0.04, s * 0.17, 0, std.math.tau, 18, s * 0.075, s * 0.05, rgba(44, 34, 30, 255));
     arc(cx - s * 0.04, cy, s * 0.16, std.math.pi * 0.9, std.math.pi * 1.5, 8, 1.6 * k, 0.8 * k, rgba(120, 104, 92, 255));
     rl.drawCircleV(v2(cx, cy - s * 0.16), s * 0.075, CRIMSON);
@@ -953,7 +959,7 @@ fn kilnDraught(cx: f32, cy: f32, px: f32) void {
     const horn = rgba(96, 82, 66, 255);
     const hornLo = rgba(62, 52, 42, 255);
     const ash = rgba(148, 142, 134, 255);
-    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.14 + 1.4 * k), s * 0.26, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.14 + 1.4 * k), s * 0.26, SHADOW);
     quad(v2(cx - s * 0.24, cy - s * 0.06), v2(cx + s * 0.25, cy - s * 0.08), v2(cx + s * 0.13, cy + s * 0.30), v2(cx - s * 0.11, cy + s * 0.29), horn);
     quad(v2(cx + s * 0.06, cy - s * 0.07), v2(cx + s * 0.25, cy - s * 0.08), v2(cx + s * 0.13, cy + s * 0.30), v2(cx + s * 0.02, cy + s * 0.30), hornLo);
     ellipseV(cx + s * 0.005, cy - s * 0.07, s * 0.245, s * 0.070, rgba(52, 44, 38, 255));
@@ -1072,7 +1078,7 @@ fn spidersilkMoccasins(cx: f32, cy: f32, px: f32) void {
 fn bloodtingeSignet(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
-    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.03 + 1.0 * k), s * 0.20, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.03 + 1.0 * k), s * 0.20, SHADOW);
     arc(cx, cy + s * 0.02, s * 0.175, 0, std.math.tau, 20, s * 0.066, s * 0.066, rgba(96, 74, 66, 255));
     arc(cx, cy + s * 0.02, s * 0.145, std.math.pi * 0.15, std.math.pi * 1.05, 12, 1.3 * k, 1.3 * k, rgba(168, 140, 128, 255));
     rl.drawCircleV(v2(cx, cy - s * 0.17), s * 0.105, rgba(74, 56, 52, 255));
@@ -1086,7 +1092,7 @@ fn loopOfChance(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
     var rng = mathx.Rng.init(0xC0FF);
-    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.06 + 1.2 * k), s * 0.23, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.06 + 1.2 * k), s * 0.23, SHADOW);
     arc(cx, cy + s * 0.05, s * 0.19, 0, std.math.tau, 22, s * 0.105, s * 0.105, BRONZE);
     arc(cx - s * 0.02, cy + s * 0.03, s * 0.19, std.math.pi * 0.55, std.math.pi * 1.35, 12, s * 0.055, s * 0.045, BRONZE_LT);
     arc(cx, cy + s * 0.05, s * 0.135, 0, std.math.tau, 18, 1.4 * k, 1.4 * k, BRONZE_BORE);
@@ -1216,7 +1222,7 @@ fn quiltedGambeson(cx: f32, cy: f32, px: f32) void {
     var rng = mathx.Rng.init(0x6A3B);
     const linen = rgba(184, 168, 136, 255);
     const linenDk = rgba(140, 126, 100, 255);
-    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.08 + 1.4 * k), s * 0.26, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.08 + 1.4 * k), s * 0.26, SHADOW);
     quad(v2(cx - s * 0.20, cy - s * 0.18), v2(cx - s * 0.34, cy - s * 0.02), v2(cx - s * 0.26, cy + s * 0.06), v2(cx - s * 0.14, cy - s * 0.06), linenDk);
     quad(v2(cx + s * 0.20, cy - s * 0.18), v2(cx + s * 0.34, cy - s * 0.04), v2(cx + s * 0.27, cy + s * 0.05), v2(cx + s * 0.14, cy - s * 0.06), linenDk);
     quad(v2(cx - s * 0.19, cy - s * 0.22), v2(cx + s * 0.19, cy - s * 0.22), v2(cx + s * 0.17, cy + s * 0.32), v2(cx - s * 0.16, cy + s * 0.30 + rng.range(0, 2) * k), linen);
@@ -1799,7 +1805,7 @@ fn goldenSeed(cx: f32, cy: f32, px: f32) void {
     }
     const podR = s * 0.155;
     const podY = tipY + podR * 0.55;
-    rl.drawCircleV(v2(cx + lean + 0.9 * k, podY + 1.0 * k), podR, rgba(0, 0, 0, 110));
+    rl.drawCircleV(v2(cx + lean + 0.9 * k, podY + 1.0 * k), podR, SHADOW);
     var i: u32 = 0;
     while (i < 7) : (i += 1) {
         const t = @as(f32, @floatFromInt(i)) / 6.0;

@@ -58,6 +58,8 @@ pub const Icon = enum {
     fish_netter,
     fish_shaman,
     blinkbat,
+    fungal_swordsman,
+    fungal_magus,
     wanderer,
     merchant,
     new,
@@ -491,6 +493,30 @@ pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
             line(cx + s * 0.05, cy - s * 0.20, cx + s * 0.11, cy - s * 0.38, w * 1.0, col);
             dot(cx - s * 0.04, cy - s * 0.06, w * 0.9, d);
             dot(cx + s * 0.04, cy - s * 0.06, w * 0.9, d);
+        },
+
+        .fungal_swordsman => {
+            // A cap over a long blade held out to one side — the blade is what separates it from the magus.
+            arc(cx, cy - s * 0.20, s * 0.30, 180, 360, w * 1.5, col);
+            hline(cx, cy - s * 0.20, s * 0.34, w * 1.1, d);
+            line(cx, cy - s * 0.12, cx, cy + s * 0.16, w * 1.5, col);
+            line(cx + s * 0.10, cy + s * 0.02, cx + s * 0.42, cy - s * 0.34, w * 1.4, col);
+            hline(cx + s * 0.12, cy + s * 0.04, s * 0.10, w * 1.2, d);
+            line(cx - s * 0.08, cy + s * 0.16, cx - s * 0.14, cy + s * 0.40, w * 1.1, d);
+            line(cx + s * 0.06, cy + s * 0.16, cx + s * 0.10, cy + s * 0.40, w * 1.1, d);
+        },
+
+        .fungal_magus => {
+            // A TALL cap over a staff with a head on it — the swordsman's is low and wide, and the pair are
+            // told apart on this bar the same way they are told apart on the field.
+            arc(cx - s * 0.04, cy - s * 0.16, s * 0.24, 180, 360, w * 1.5, col);
+            vline(cx - s * 0.04, cy - s * 0.34, s * 0.20, w * 1.4, col);
+            line(cx - s * 0.04, cy - s * 0.08, cx - s * 0.04, cy + s * 0.18, w * 1.5, col);
+            vline(cx + s * 0.30, cy + s * 0.02, s * 0.46, w * 1.3, col);
+            dot(cx + s * 0.30, cy - s * 0.26, w * 2.2, d);
+            arc(cx + s * 0.30, cy - s * 0.26, s * 0.12, 180, 360, w * 1.0, col);
+            line(cx - s * 0.12, cy + s * 0.18, cx - s * 0.18, cy + s * 0.40, w * 1.1, d);
+            line(cx + s * 0.02, cy + s * 0.18, cx + s * 0.06, cy + s * 0.40, w * 1.1, d);
         },
 
         .leechfly => {

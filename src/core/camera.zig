@@ -8,8 +8,8 @@ const clampF = mathx.clampF;
 
 pub const MIN_DIST = 2.4;
 pub const MAX_DIST = 9.0;
-const DEFAULT_DIST = 4.6;
-const DEFAULT_PITCH = 0.28;
+pub const DEFAULT_DIST = 4.6;
+pub const DEFAULT_PITCH = 0.28;
 const ZOOM_STEP = 0.6;
 const LOOK_SENS = 0.0032; // radians per pixel of mouse motion
 /// ~ -22 deg, looking UP from below. Wider than the -0.20 the free look ever asked for, because the LOCK now tilts the rig onto whatever it is fixed on (`game.lockPitch`): an ogre's chest is two and a half metres up and eleven degrees of lift clipped short of framing it.
@@ -19,6 +19,14 @@ pub const SHOULDER = 0.55;
 pub const TARGET_RAISE = 0.15;
 /// Vertical field of view, degrees. The only place the lens is described, so a framing solved against it cannot go stale on a different number.
 pub const FOVY: f32 = 55.0;
+
+/// **HOW FAR ABOVE THE HORIZON THE RESTING FRAME REACHES**, in radians: half the lens, less the pitch the rig
+/// sits at. Anything higher than this is off the top of the screen unless the player is holding the stick up.
+/// **THE SKY IS SMALLER THAN IT LOOKS** — 0.200 rad, 11.5 deg — and anything meant to be SEEN in it without
+/// being looked for has to be solved against this number (`weather.SKY_SHARE`), not placed by eye.
+pub fn skyTop() f32 {
+    return std.math.degreesToRadians(FOVY * 0.5) - DEFAULT_PITCH;
+}
 const GROUND_CLEAR = 0.7;
 /// …and how much boom one probe of that search gives up. Named beside the clearance it is searching for: the two are only ever chosen against each other, and a bare 0.25 in the loop reads as arbitrary.
 const GROUND_PROBE = 0.25;

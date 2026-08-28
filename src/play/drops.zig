@@ -95,6 +95,10 @@ pub const TABLE = [_]Row{
     // **THE ONE WHO PUTS HEALTH BACK IS CARRYING SOME** — the biggest purse in the band, and it earns it.
     .{ .foe = .fish_shaman, .common = .crimson_flask, .odds = UNCOMMON, .rare = .second_wind, .chance = 0.14 },
     .{ .foe = .blinkbat, .common = .bloodgrass, .odds = UNCOMMON, .rare = .crimson_flask, .chance = 0.16 },
+    // A BOSS PAYS ONCE AND PAYS WELL — the pair drop the two halves of what the fight teaches: the venom that
+    // was on the blade, and the ward against what the caps do.
+    .{ .foe = .fungal_swordsman, .common = .purgeleaf, .odds = BOSS_ALWAYS, .rare = .envenomed_dagger, .chance = 0.5 },
+    .{ .foe = .fungal_magus, .common = .purgeleaf, .odds = BOSS_ALWAYS, .rare = .scroll_babble, .chance = 0.5 },
 };
 
 pub const NFOE = @typeInfo(wf.FoeKind).@"enum".fields.len;

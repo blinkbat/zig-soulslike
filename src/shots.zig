@@ -1845,6 +1845,15 @@ pub fn runShots(g: *Game) void {
         game.forceSkeinForShot(g, mathx.radians(-58.0));
         stepWorld(g, dt, 0);
         shootAt(g, "shots/157a_birds_across.png", game.skeinLeadForShot(g), LIT_YAW, -0.30, 46.0);
+        // **AND THE ONE THAT ACTUALLY ANSWERS IT: THE CAMERA WHERE IT RESTS.** Both frames above hold the lens
+        // UP at the flock, which is exactly why nobody noticed that at the pitch the game is played at they
+        // were all above the top of the screen. No aiming, no lift — the shot a player gets.
+        game.forceSkeinForShot(g, mathx.radians(38.0));
+        stepWorld(g, dt, 0);
+        // Turned toward the flock, because a player would; the PITCH and the boom are the resting rig's own and
+        // they are the thing under test. The camera yaw is the back-bearing, so it is the look bearing plus 180.
+        const toFlock = mathx.headingXZ(mathx.dirXZ(g.hero.pos, game.skeinLeadForShot(g)));
+        shootAt(g, "shots/157b_birds_resting.png", g.hero.shoulderPoint(), mathx.degrees(toFlock) + 180.0, camera.DEFAULT_PITCH, camera.DEFAULT_DIST);
     }
 
     fogGateShots(g, dt);
@@ -2531,7 +2540,8 @@ fn knightShots(g: *Game) void {
     const sc = mathx.ground(3.0, -60.0);
     const far = along(sc, LIT_BACK, 120.0);
     const faceCam = mathx.headingXZ(LIT_BACK);
-    g.bossK = 1.0;
+    // Rail 0 is the knight's row in `game.BOSS_RAILS`; the bar is per-rail now, not one scalar.
+    g.bossK[0] = 1.0;
     g.vigil.n = 1;
     const k = &g.vigil.knights[0];
     const spawn = struct {
@@ -2707,7 +2717,7 @@ fn knightShots(g: *Game) void {
     knightDoorShots(g, sc, faceCam, far, spawn, run);
     knightStrokeStrips(g, sc, spawn, run);
     game.clearFoesForShot(g);
-    g.bossK = 0;
+    g.bossK[0] = 0;
 }
 
 /// **HOW HE HOLDS IT, FROM ALL FOUR SIDES.** The one thing the owner keeps having to say out loud, and the
@@ -2723,8 +2733,8 @@ fn knightDoorShots(
     run: fn (*knightmod.Knight, f32, rl.Vector3) void,
 ) void {
     const k = &g.vigil.knights[0];
-    const bossWas = g.bossK;
-    g.bossK = 0;
+    const bossWas = g.bossK[0];
+    g.bossK[0] = 0;
     // The crown is what the boom is solved against, so a re-scaled knight re-frames itself.
     spawn(k, sc, faceCam);
     const crown = k.topWorld().y - k.pos.y;
@@ -2744,7 +2754,7 @@ fn knightDoorShots(
         const p = std.fmt.bufPrintZ(&name, "shots/122{s}_knight_carry.png", .{s.tag}) catch continue;
         shootAt(g, p, v3(sc.x, sc.y + lift, sc.z), LIT_YAW, 0.12, dist);
     }
-    g.bossK = bossWas;
+    g.bossK[0] = bossWas;
 }
 
 /// **THE STRIP'S BOOM IS SOLVED AGAINST THE ARC, NOT PICKED.** `lift` is the measured mid of everything the
@@ -3205,6 +3215,13 @@ fn chestShots(g: *Game) void {
     // A WORN socket as well as a held one: the compare panel's plate rows (armour, the one resistance, the two
     // multipliers) share nothing with a weapon's but the loop that draws them.
     bookShot(g, "shots/106e4_book_wear_pick.png", .equipment, bookmod.slotOrdinal(.chest), bookmod.slotOrdinal(.chest), 2);
+    // **THE TALLEST CARD AND THE SHORTEST, BOTH WITH NO PICKER OPEN** — browsing is what the card is for, and
+    // the two ends of it are where it can run out of its box: a coated edge carries six rows over the sheet's
+    // own ten, and the ammo cell is gear-less so the sheet has to take the whole column back.
+    _ = g.hero.wear(.hand_dagger, .envenomed_dagger);
+    g.hero.arm = .dagger;
+    bookShot(g, "shots/106e5_book_card_tall.png", .equipment, bookmod.slotOrdinal(.right), null, 0);
+    bookShot(g, "shots/106e6_book_no_card.png", .equipment, bookmod.slotOrdinal(.arrows), null, 0);
     inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
         const w: item.Wear = @enumFromInt(f.value);
         _ = g.hero.wear(w, wornWas.at(w));
@@ -3458,10 +3475,10 @@ fn editorShots(g: *Game) void {
     g.editor.brush[@intFromEnum(editormod.Layer.ground)] = @intFromEnum(editormod.GroundBrush.water);
     g.editor.radius = 7;
     var wz: f32 = -6;
-    while (wz < 26) : (wz += 2.5) _ = g.map.paintWater(-26 + wz * 0.35, wz, 9.5, true, .natural);
+    while (wz < 26) : (wz += 2.5) _ = g.map.paintWater(-26 + wz * 0.35, wz, 9.5, true, .natural, .water);
     var wx: f32 = -34;
-    while (wx < -8) : (wx += 2.5) _ = g.map.paintWater(wx, 14, 7.5, true, .natural);
-    _ = g.map.paintWater(-21, 9, 4.6, false, null);
+    while (wx < -8) : (wx += 2.5) _ = g.map.paintWater(wx, 14, 7.5, true, .natural, .water);
+    _ = g.map.paintWater(-21, 9, 4.6, false, null, null);
     g.env.uploadWater(&g.map);
     g.env.materialize(&g.map);
     g.editor.focus = mathx.ground(-24, 10);
@@ -3479,6 +3496,20 @@ fn editorShots(g: *Game) void {
     g.env.uploadWater(&g.map);
     g.env.materialize(&g.map);
 
+    // **THE UNITS PALETTE, BOTH TABS.** Thirty-eight icon rows in one column did not fit the side panel and the
+    // tail of it was drawn off the bottom of the window; the Foes tab files by kingdom and the Folk tab is its
+    // own list. One shot per tab, because the point of the pair is that they are DIFFERENT lists.
+    g.editor.setLayer(.units);
+    g.editor.focus = mathx.ground(0, -12);
+    g.editor.pitch = -0.8;
+    g.editor.yaw = std.math.pi;
+    g.editor.dist = 40;
+    g.editor.applyCamForShot();
+    g.editor.unitsForShot(.foes, .bone);
+    editorSnap(g, "shots/98d_editor_units_foes.png");
+    g.editor.unitsForShot(.folk, .bone);
+    editorSnap(g, "shots/98e_editor_units_folk.png");
+
     g.editor.setLayer(.props);
     g.editor.focus = mathx.ground(0, -12);
     g.editor.pitch = -0.8;
@@ -3490,6 +3521,13 @@ fn editorShots(g: *Game) void {
 
     g.editor.openForShot();
     editorSnap(g, "shots/99b_editor_open.png");
+
+    // THE PAIR, BIG AND ALONE. A body at fighting range is judged by its silhouette and nothing else, and the
+    // land shots have them 30 m off behind a pillar.
+    g.editor.charForShot(.fungal_swordsman);
+    editorSnap(g, "shots/99f_char_duo_sword.png");
+    g.editor.charForShot(.fungal_magus);
+    editorSnap(g, "shots/99g_char_duo_magus.png");
 
     g.editor.objectsForShot(.props, 0, null);
     editorSnap(g, "shots/99c_editor_objects.png");

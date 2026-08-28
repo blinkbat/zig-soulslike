@@ -10,7 +10,11 @@ const gfx = @import("../gfx/gfx.zig");
 const daynight = @import("../world/daynight.zig");
 const objview = @import("objview.zig");
 const item = @import("../play/item.zig");
+const combat = @import("../play/combat.zig");
+const restmod = @import("../play/rest.zig");
+const liquidmod = @import("../play/liquid.zig");
 const sfx = @import("../core/audio.zig");
+const foemod = @import("../foes/foe.zig");
 
 const Kind = props.Kind;
 const v3 = mathx.v3;
@@ -119,13 +123,13 @@ pub const Layer = enum(u8) {
 const layerTips = [Layer.N][:0]const u8{
     "Shape the land and paint the soil (Tab cycles layers)",
     "Zone density and the clearings it keeps out of",
-    "Plants",
+    "Small accoutrements - plants, but also cobbles, shards and scree",
     "Props - stone, timber, fire, water",
     "Chests (right-click > Items...) and the fog gate",
-    "Foe spawns",
+    "Creatures and folk (the Foes tab files creatures by kingdom)",
 };
 
-/// **TWO SECTIONS IN ONE LIST, and the split is `GROUND_SOIL_0`** — the sculpt tools first (pinned to `wf.Sculpt`), then one row per `wf.Soil` past the first, then Water and the eraser. Laid out to SHOW the seam: the index arithmetic either side of it is why this list cannot simply be appended to.
+/// **TWO SECTIONS IN ONE LIST, and the split is `GROUND_SOIL_0`** — the sculpt tools first (pinned to `wf.Sculpt`), then one row per `wf.Soil` past the first, then one row per `wf.Liquid` and the eraser. Laid out to SHOW the seam: the index arithmetic either side of it is why this list cannot simply be appended to.
 const groundBrushes = [_][:0]const u8{
     "Raise",
     "Lower",
@@ -142,6 +146,9 @@ const groundBrushes = [_][:0]const u8{
     "spore",
     "bloom",
     "Water",
+    "Oil",
+    "Fungal",
+    "Lava",
     "Erase",
 };
 const locationBrushes = [_][:0]const u8{ "Clearing", "Zone", "Location", "Erase" };
@@ -156,6 +163,55 @@ const unitBrushes = blk: {
     for (0..NNPC_KIND) |i| out[NFOE_KIND + i] = wf.npcName(@enumFromInt(i));
     out[NFOE_KIND + NNPC_KIND] = "Erase";
     break :blk out;
+};
+
+/// **WHICH HALF OF THE UNITS PALETTE IS SHOWING.** Foes and folk are already two arrays on the map and two
+/// index spaces (`Unit`); this is that same split in the brush list, because thirty-eight icon rows in one
+/// column is a scroll and not a palette.
+const UnitTab = enum {
+    foes,
+    folk,
+
+    pub const N = @typeInfo(UnitTab).@"enum".fields.len;
+
+    pub fn label(t: UnitTab) [:0]const u8 {
+        return switch (t) {
+            .foes => "Foes",
+            .folk => "Folk",
+        };
+    }
+};
+
+const unitTabTips = [UnitTab.N][:0]const u8{
+    "Creatures, filed by the kingdom they read as standing in",
+    "Bodies that talk - give one a `dlg=` in the file and it says something",
+};
+
+/// The kingdoms that actually hold a creature, `any` excluded: those answer EVERY chip (`foe.atHome`) and a
+/// chip of their own would be a list nothing is missing from.
+const foeBiomes = blk: {
+    var t = [_]bool{false} ** props.Biome.N;
+    for (0..NFOE_KIND) |i| {
+        const b = foemod.homeOf(@as(wf.FoeKind, @enumFromInt(i)));
+        if (b != .any) t[@intFromEnum(b)] = true;
+    }
+    break :blk t;
+};
+
+const FIRST_FOE_BIOME: props.Biome = blk: {
+    for (foeBiomes, 0..) |has, i| {
+        if (has) break :blk @enumFromInt(i);
+    }
+    @compileError("editor: no kingdom holds a creature");
+};
+
+/// The longest brush list there is, which is what `visibleBrushes` sizes its scratch off. **TAKEN OFF
+/// `brushesFor`, NOT NAMED** — `visibleBrushes` writes one index per shown row into a caller's buffer, so a
+/// palette that outgrew a hand-picked maximum here would run off the end of a stack array.
+const MAX_BRUSHES: usize = blk: {
+    var most: usize = 0;
+    for (0..Layer.N) |i| most = @max(most, brushesFor(@enumFromInt(i)).len);
+    break :blk most;
 };
 
 const GROUND_SOIL_0: usize = @typeInfo(wf.Sculpt).@"enum".fields.len;
@@ -185,6 +241,9 @@ const groundTips = [_][:0]const u8{
     "",
     "",
     "Sweep to flood. Depth, shore and wet sand come off the outline",
+    "Tar. Wades like water; bubbles mound and pop. No status",
+    "Fungal soup. Wades like water and builds POISON while you stand in it",
+    "Molten rock. Wades like water, builds BURNING and bites every second",
     "Sweep to unpaint soil and water. Leaves the sculpted shape",
 };
 const locationTips = [_][:0]const u8{
@@ -247,6 +306,8 @@ const unitTips = [_][:0]const u8{
     "Throws a NET that takes your feet for 1.35 s — exactly one thrust. Cannot throw it up close",
     "No blow at all. Heals the whole band off its own bars. Softest body, biggest purse: kill it first",
     "Blinks onto your flank, one bite, gone. A bite that LANDS heals it — block it, or stagger the drink off it",
+    "Half of the DUO. Fast, lunges to close, poisoned longsword, and he jumps back to come at you again",
+    "The other half. Keeps its distance, sprouts BUNCHES that swell and burst, throws chaos orbs, and DISSOLVES when pressed",
     "Talks. Roams its own leash, carries a staff. Give it a `dlg=` in the file to say anything",
     "Talks. Camel-humanoid trader; the caravan props are its own family",
     "Sweep to erase ([ ] sets radius)",
@@ -303,6 +364,8 @@ const unitIcons = [_]ui.Icon{
     .fish_netter,
     .fish_shaman,
     .blinkbat,
+    .fungal_swordsman,
+    .fungal_magus,
     .wanderer,
     .merchant,
     .erase,
@@ -319,6 +382,34 @@ comptime {
     std.debug.assert(propIcons.len == propBrushes.len);
     std.debug.assert(interactIcons.len == interactBrushes.len);
     std.debug.assert(unitIcons.len == unitBrushes.len);
+}
+
+/// **WHAT THE BRUSH LIST ACTUALLY SHOWS, AND THE ONLY PLACE IT IS DECIDED.** The digit keys and the panel both
+/// walk this: filtered in one and not the other, `3` armed a creature the list was not showing. The ERASER is
+/// in every tab — it is a tool, not a category — and it is the last row either way.
+fn brushShown(ed: *const Editor, i: usize) bool {
+    if (ed.layer != .units) return true;
+    if (i + 1 == unitBrushes.len) return true;
+    if (i >= NFOE_KIND) return ed.unitTab == .folk;
+    return ed.unitTab == .foes and foemod.atHome(@enumFromInt(i), ed.foeBiome);
+}
+
+/// The visible rows, in the order they are drawn. `out` must hold the widest palette there is.
+fn visibleBrushes(ed: *const Editor, out: []usize) []const usize {
+    var n: usize = 0;
+    for (0..brushesFor(ed.layer).len) |i| {
+        if (!brushShown(ed, i)) continue;
+        out[n] = i;
+        n += 1;
+    }
+    return out[0..n];
+}
+
+fn armFirstShown(ed: *Editor) void {
+    if (brushShown(ed, ed.brushIdx())) return;
+    var buf: [MAX_BRUSHES]usize = undefined;
+    const shown = visibleBrushes(ed, &buf);
+    if (shown.len > 0) ed.setBrush(shown[0]);
 }
 
 fn brushSectionFor(l: Layer, i: usize) ?[:0]const u8 {
@@ -369,7 +460,10 @@ comptime {
     std.debug.assert(propTips.len == propBrushes.len);
     std.debug.assert(interactTips.len == interactBrushes.len);
     std.debug.assert(unitTips.len == unitBrushes.len);
-    std.debug.assert(groundBrushes.len == GROUND_SOIL_0 + (wf.Soil.N - 1) + 2);
+    std.debug.assert(groundBrushes.len == GROUND_SOIL_0 + (wf.Soil.N - 1) + wf.Liquid.N + 1);
+    for (0..wf.Liquid.N) |i| {
+        std.debug.assert(liquidOf(@enumFromInt(GROUND_SOIL_0 + wf.Soil.N - 1 + i)).? == @as(wf.Liquid, @enumFromInt(i)));
+    }
     for (0..wf.Soil.N - 1) |i| {
         std.debug.assert(std.mem.eql(u8, groundBrushes[GROUND_SOIL_0 + i], @tagName(@as(wf.Soil, @enumFromInt(i + 1)))));
     }
@@ -386,7 +480,19 @@ comptime {
     }
 }
 
-pub const GroundBrush = enum { raise, lower, smooth, flat, dirt, turf, stone, silt, ash, moss, bone, cinder, spore, bloom, water, erase };
+pub const GroundBrush = enum { raise, lower, smooth, flat, dirt, turf, stone, silt, ash, moss, bone, cinder, spore, bloom, water, oil, fungal, lava, erase };
+
+/// **THE FOUR LIQUID ROWS, AND `null` FOR EVERY OTHER BRUSH.** One place the brush list and `wf.Liquid` are tied
+/// together, so the panel, the paint arm and the readout cannot disagree about which rows are wet.
+fn liquidOf(b: GroundBrush) ?wf.Liquid {
+    return switch (b) {
+        .water => .water,
+        .oil => .oil,
+        .fungal => .fungal,
+        .lava => .lava,
+        else => null,
+    };
+}
 const LocationBrush = enum { clearing, zone, location, erase };
 pub const DecorBrush = enum { single, patch, scatter, erase };
 const PropBrush = enum { stamp, row, ring, cluster, ivy, erase };
@@ -428,6 +534,8 @@ const UnitBrush = enum {
     fish_netter,
     fish_shaman,
     blinkbat,
+    fungal_swordsman,
+    fungal_magus,
     // **THE FOLK COME AFTER THE FOES AND BEFORE THE ERASER**, which is what `brushIdx` splits on: under
     // `NFOE_KIND` it is a creature, over it a body that talks.
     wanderer,
@@ -630,6 +738,8 @@ pub const Editor = struct {
     propKind: Kind = .pillar,
     interactKind: Kind = .chest,
     groupSel: props.Group = .ruins,
+    unitTab: UnitTab = .foes,
+    foeBiome: props.Biome = FIRST_FOE_BIOME,
     radius: f32 = 6.0,
     soilOpacity: f32 = 1.0,
     brushEdge: wf.Edge = .natural,
@@ -830,6 +940,22 @@ pub const Editor = struct {
         if (self.layer != l) self.nMarked = 0;
         self.layer = l;
         if (l.opLayer() and !layerHasGroup(l, self.groupSel)) self.groupSel = firstGroup(l);
+        // **THE TAB MOVES TO THE BRUSH, NOT THE BRUSH TO THE TAB.** Coming back to the units layer with a fen
+        // lurker armed and the palette on Bonefield, the selection was live and invisible.
+        if (l == .units) self.showArmedUnit();
+    }
+
+    /// Put the palette where the armed unit brush can be seen. The eraser is in every tab, so it moves nothing.
+    fn showArmedUnit(self: *Editor) void {
+        const i = self.brush[@intFromEnum(Layer.units)];
+        if (i + 1 == unitBrushes.len) return;
+        if (i >= NFOE_KIND) {
+            self.unitTab = .folk;
+            return;
+        }
+        self.unitTab = .foes;
+        const home = foemod.homeOf(@enumFromInt(i));
+        if (home != .any) self.foeBiome = home;
     }
 
 
@@ -884,7 +1010,7 @@ pub const Editor = struct {
 
     fn groundForward(self: *const Editor) rl.Vector3 {
         const f = self.forward();
-        const l = @sqrt(f.x * f.x + f.z * f.z);
+        const l = mathx.lenXZ(f);
         if (l < 1e-5) return v3(0, 0, 1);
         return v3(f.x / l, 0, f.z / l);
     }
@@ -999,6 +1125,17 @@ pub const Editor = struct {
         self.marqueeSelect(m, a, b);
     }
 
+    /// Put the units palette on one tab and one kingdom, and arm its first row — the harness's door into the
+    /// same call a click makes, rather than poking `unitTab` and leaving a hidden brush armed.
+    pub fn unitsForShot(self: *Editor, tab: UnitTab, home: props.Biome) void {
+        self.layer = .units;
+        self.unitTab = tab;
+        if (foeBiomes[@intFromEnum(home)]) self.foeBiome = home;
+        self.selecting = false;
+        self.setBrush(0);
+        armFirstShown(self);
+    }
+
     pub fn openForShot(self: *Editor) void {
         listing.scan();
         self.fileSel = 0;
@@ -1035,6 +1172,15 @@ pub const Editor = struct {
         self.menuOpen = false;
         self.juke = @intFromEnum(id);
         self.jukeReveal();
+    }
+
+    /// Open the character viewer on ONE creature, full-frame — the harness's door into the same panel a click
+    /// reaches, which is the only place in the game a body is seen big and alone.
+    pub fn charForShot(self: *Editor, k: wf.FoeKind) void {
+        self.modal = .objects;
+        self.objects.mode = .chars;
+        self.objects.openChar = objview.charSlot(k);
+        self.objects.grabbed = null;
     }
 
     pub fn objectsForShot(self: *Editor, shelf: objview.Shelf, page: i32, one: ?Kind) void {
@@ -1185,11 +1331,13 @@ pub const Editor = struct {
                 self.sayFmt("{s}", .{self.layer.label()});
             }
             const digits = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine };
+            var seen: [MAX_BRUSHES]usize = undefined;
+            const shown = visibleBrushes(self, &seen);
             for (digits, 0..) |k, i| {
-                if (rl.isKeyPressed(k) and i < brushesFor(self.layer).len and
+                if (rl.isKeyPressed(k) and i < shown.len and
                     !self.dragging and !self.painting and !self.wipe.on)
                 {
-                    self.setBrush(i);
+                    self.setBrush(shown[i]);
                     self.selecting = false;
                 }
             }
@@ -1351,13 +1499,15 @@ pub const Editor = struct {
                                 self.heightStroke = true;
                             }
                         },
-                        .water => if (m.paintWater(g.x, g.z, self.radius, true, WATER_EDGE)) {
+                        .water, .oil, .fungal, .lava => |b| if (m.paintWater(g.x, g.z, self.radius, true, WATER_EDGE, liquidOf(b))) {
                             env.uploadWater(m);
                             self.wetStroke = true;
                         },
                         .erase => {
                             if (m.paintSoil(g.x, g.z, self.radius, .none, 1, null)) env.uploadSoil(m);
-                            if (m.paintWater(g.x, g.z, self.radius, false, null)) {
+                            // The KIND goes back to water with the paint, or an erased lava run leaves its
+                            // ordinal behind and the next stroke of plain water there comes up molten.
+                            if (m.paintWater(g.x, g.z, self.radius, false, null, .water)) {
                                 env.uploadWater(m);
                                 self.wetStroke = true;
                             }
@@ -2475,6 +2625,8 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         .fish_netter => ui.col(120, 156, 138, 255),
         .fish_shaman => ui.col(158, 186, 150, 255),
         .blinkbat => ui.col(170, 108, 176, 255),
+        .fungal_swordsman => ui.col(196, 176, 132, 255),
+        .fungal_magus => ui.col(112, 140, 96, 255),
         .leechfly => ui.col(196, 66, 58, 255),
         .rooted => ui.col(140, 96, 52, 255),
         .shroom => ui.col(214, 130, 118, 255),
@@ -2723,16 +2875,21 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
 
     hud.mono("BRUSH", 10, y, hud.MONO, ui.alpha(ui.TRIM, 235));
     y += ROW_H;
+    if (ed.layer == .units) y = drawUnitTabs(ed, ctx, y);
     const brushes = brushesFor(ed.layer);
     const tips = brushTipsFor(ed.layer);
     const glyphs = brushIconsFor(ed.layer);
+    var slot: usize = 0;
     for (brushes, 0..) |b, i| {
+        if (!brushShown(ed, i)) continue;
+        defer slot += 1;
         if (brushSectionFor(ed.layer, i)) |sec| {
             hud.mono(sec, 18, y, hud.MONO, ui.alpha(ui.LABEL, 150));
             y += hud.monoLineH(hud.MONO);
         }
         var lab: [40]u8 = undefined;
-        const s = if (i < DIGIT_KEYS) (std.fmt.bufPrintZ(&lab, "{d} {s}", .{ i + 1, b }) catch b) else b;
+        // NUMBERED BY WHERE IT SITS, not by its ordinal — the digit keys walk the same visible list.
+        const s = if (slot < DIGIT_KEYS) (std.fmt.bufPrintZ(&lab, "{d} {s}", .{ slot + 1, b }) catch b) else b;
         const r = ui.rect(8, y, SIDE_W - 16, ROW_H - 4);
         const on = !ed.selecting and ed.brushIdx() == i;
         const hit = if (glyphs) |g|
@@ -2744,7 +2901,7 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
                 .raise => ui.swatchButton(ctx, r, RAISE_SWATCH, s, hud.MONO, on, tips[i]),
                 .lower => ui.swatchButton(ctx, r, LOWER_SWATCH, s, hud.MONO, on, tips[i]),
                 .smooth, .flat => ui.swatchButton(ctx, r, EVEN_SWATCH, s, hud.MONO, on, tips[i]),
-                .water => ui.swatchButton(ctx, r, WATER_SWATCH, s, hud.MONO, on, tips[i]),
+                .water, .oil, .fungal, .lava => |lq| ui.swatchButton(ctx, r, liquidSwatch(liquidOf(lq).?), s, hud.MONO, on, tips[i]),
                 else => ui.swatchButton(ctx, r, soilSwatch(@enumFromInt(i - GROUND_SOIL_0 + 1)), s, hud.MONO, on, tips[i]),
             });
         if (hit) {
@@ -2798,6 +2955,38 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
     }
 }
 
+
+/// The units palette's own header: FOES / FOLK, and under the foes a chip per kingdom that holds one. Returns
+/// the y the brush rows start at.
+fn drawUnitTabs(ed: *Editor, ctx: *ui.Ctx, y0: i32) i32 {
+    var y = y0;
+    var labels: [UnitTab.N][:0]const u8 = undefined;
+    inline for (0..UnitTab.N) |i| labels[i] = (@as(UnitTab, @enumFromInt(i))).label();
+    if (ui.tabs(ctx, 8, y, SIDE_W - 16, &labels, @intFromEnum(ed.unitTab), &unitTabTips)) |hit| {
+        ed.unitTab = @enumFromInt(hit);
+        armFirstShown(ed);
+    }
+    y += ui.TAB_H + 6;
+    if (ed.unitTab != .foes) return y;
+
+    var chipX: i32 = 8;
+    inline for (@typeInfo(props.Biome).@"enum".fields) |bf| {
+        const b: props.Biome = @enumFromInt(bf.value);
+        if (foeBiomes[bf.value]) {
+            var used: i32 = 0;
+            if (chipX > 8 and chipX + hud.monoW(b.label(), hud.MONO) + 22 > SIDE_W - 8) {
+                chipX = 8;
+                y += 28;
+            }
+            if (ui.chip(ctx, chipX, y, b.label(), ed.foeBiome == b, &used, "Narrow the creature list to this kingdom")) {
+                ed.foeBiome = b;
+                armFirstShown(ed);
+            }
+            chipX += used;
+        }
+    }
+    return y + 34;
+}
 
 fn coordRow(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, label: [:0]const u8, v: *f32, step: f32) bool {
     defer y.* += ROW_H;
@@ -2863,12 +3052,19 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
 
     if (ed.layer == .ground) {
         const brush = @as(GroundBrush, @enumFromInt(ed.brushIdx()));
-        const wet = brush == .water;
+        const liquid = liquidOf(brush);
+        const wet = liquid != null;
         const sculpting = switch (brush) {
             .raise, .lower, .smooth, .flat => true,
             else => false,
         };
-        hud.mono(if (sculpting) "SCULPT" else if (wet) "WATER BRUSH" else "SOIL BRUSH", x, y, hud.MONO, ui.TITLE);
+        const title: [:0]const u8 = if (sculpting) "SCULPT" else if (liquid) |l| switch (l) {
+            .water => "WATER BRUSH",
+            .oil => "OIL BRUSH",
+            .fungal => "FUNGAL BRUSH",
+            .lava => "LAVA BRUSH",
+        } else "SOIL BRUSH";
+        hud.mono(title, x, y, hud.MONO, ui.TITLE);
         y += ROW_H + 4;
         _ = ui.slider(ctx, x, y, w, "radius", &ed.radius, 1, 60, "How wide the brush bites, in metres");
         y += ROW_H + SLIDER_DROP;
@@ -2930,9 +3126,10 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         }
         // A full scan of the armed brush's grid every frame (12,544 bytes soil / 50,176 water) to print one number — measured, and deliberately left.
         var painted: usize = 0;
-        if (wet) {
-            for (m.water) |v| {
-                if (v != 0) painted += 1;
+        if (liquid) |l| {
+            const want: u8 = @intFromEnum(l);
+            for (m.water, m.waterKind) |v, k| {
+                if (v != 0 and k == want) painted += 1;
             }
         } else {
             for (m.soil) |v| {
@@ -2949,23 +3146,36 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         const s2 = std.fmt.bufPrintZ(&buf, "cell {d:.1} m", .{cell}) catch "";
         hud.mono(s2, x, y, hud.MONO, ui.LABEL);
         y += ROW_H;
-        if (wet) {
+        if (liquid) |l| {
             const s3 = std.fmt.bufPrintZ(&buf, "deep at {d:.0} m in", .{gfx.WATER_DEEP_AT}) catch "";
             hud.mono(s3, x, y, hud.MONO, ui.alpha(ui.LABEL, 190));
             y += ROW_H;
             const s4 = std.fmt.bufPrintZ(&buf, "wet sand {d:.1} m out", .{gfx.WATER_WET_OUT}) catch "";
             hud.mono(s4, x, y, hud.MONO, ui.alpha(ui.LABEL, 190));
             y += ROW_H;
+            // WHAT IT DOES TO YOU, off the one table the game bills from (`liquidmod.SOAK`).
+            const soak = liquidmod.soakOf(l);
+            const s5: [:0]const u8 = if (soak) |sk|
+                (std.fmt.bufPrintZ(&buf, "{s} {d:.0}/s{s}", .{
+                    combat.ailRow(sk.ail).name,
+                    sk.build,
+                    if (sk.dpsFrac > 0) " + damage" else "",
+                }) catch "")
+            else
+                "no status";
+            hud.mono(s5, x, y, hud.MONO, if (soak == null) ui.alpha(ui.LABEL, 150) else ui.HOT);
+            y += ROW_H;
         }
         y += 10;
         const clearLabel: [:0]const u8 = if (wet) "drain the map" else "clear all paint";
-        const clearTip: [:0]const u8 = if (wet) "Wipe every painted lake" else "Unpaint the whole map";
+        const clearTip: [:0]const u8 = if (wet) "Wipe every painted pool, of every liquid" else "Unpaint the whole map";
         if (ui.button(ctx, ui.rect(x, y, w, 24), clearLabel, hud.MONO, false, clearTip)) {
             ed.bank(m);
             if (wet) {
                 m.water = [_]u8{0} ** wf.WATER_CELLS;
+                m.waterKind = [_]u8{@intFromEnum(wf.Liquid.water)} ** wf.WATER_CELLS;
                 ed.rebuild(m, env);
-                ed.say("water cleared");
+                ed.say("liquid cleared");
             } else {
                 m.soil = [_]u8{0} ** wf.SOIL_CELLS;
                 m.soilCov = [_]u8{wf.COV_FULL} ** wf.SOIL_CELLS;
@@ -3386,7 +3596,7 @@ pub fn unloadMinimap() void {
 fn blitMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, px: i32, py: i32, inner: f32) void {
     const side: i32 = MINI_W - 8;
     if (miniRT == null) miniRT = rl.loadRenderTexture(side, side) catch null;
-    const rt = miniRT orelse return paintMinimap(ed, m, env, px, py, inner);
+    const rt = miniRT orelse return paintMinimap(m, env, px, py, inner);
 
     const swapped = !std.mem.eql(u8, &miniOf, &m.name) or miniHalf != m.half;
     if (miniPainted != ed.miniGen or miniLayer != ed.layer or swapped) {
@@ -3395,7 +3605,7 @@ fn blitMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, px: i32, p
         miniOf = m.name;
         miniHalf = m.half;
         rl.beginTextureMode(rt);
-        paintMinimap(ed, m, env, 0, 0, inner);
+        paintMinimap(m, env, 0, 0, inner);
         rl.endTextureMode();
     }
     // **A STRAIGHT COPY, NOT A BLEND.** Every translucent thing painted into the target drives the target's OWN
@@ -3414,56 +3624,157 @@ fn blitMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, px: i32, p
     rl.endBlendMode();
 }
 
-fn paintMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, px: i32, py: i32, inner: f32) void {
-    rl.drawRectangle(px, py, MINI_W - 8, MINI_W - 8, ui.col(18, 20, 14, 255));
+/// **A MAP IS FIVE THINGS, NOT EVERYTHING** (owner). It used to blit the whole soil grid, shade the relief and
+/// put a dot on every op — which on the shipped map is 16,587 dots over a painted floor, and nothing in it told
+/// you where you were. What a map is for is WHERE CAN I NOT GO, WHERE IS THE WATER, WHERE IS THE COVER, WHERE
+/// IS THE FIRE, WHERE ARE THEY. So: walls, water, trees (subtly), fires, and red for the foes.
+///
+/// **READ OFF THE PLACED PROPS, NOT OFF THE OPS.** A belt of a hundred trees is ONE op, so an op walk drew one
+/// tree where there is a wood.
+///
+/// **FOUR WALKS OF 16,587 PROPS, AND THAT IS ON PURPOSE.** Order is the whole point — water under trees under
+/// walls under fires — so one binning pass would need a byte per prop to sort into. It is not a per-frame
+/// cost: `miniGen` bumps on a stroke's START and on the debounced rebuild (`REBUILD_QUIET`), never per frame
+/// while painting, and the panel beside it already spends a 50,176-cell scan every frame by choice.
+fn paintMinimap(m: *const wf.Map, env: *const envmod.Env, px: i32, py: i32, inner: f32) void {
+    rl.drawRectangle(px, py, MINI_W - 8, MINI_W - 8, MINI_GROUND);
 
-    blitField(m.soil[0..], wf.SOIL_N, px, py, inner, null);
-    if (env.heightAny) {
-        const rCellPx = inner / @as(f32, @floatFromInt(RELIEF_N));
-        for (0..RELIEF_N) |cz| {
-            for (0..RELIEF_N) |cx| {
-                const i = (cz * RELIEF_STRIDE) * wf.HEIGHT_N + cx * RELIEF_STRIDE;
-                const h = wf.heightOf(m.height[i]);
-                if (@abs(h) < wf.HEIGHT_STEP) continue;
-                // Saturating at ±12 m, which is a hill you would notice; past that it is just white.
-                const k = mathx.clampF(h / 12.0, -1, 1);
-                const a: u8 = mathx.u8f(@abs(k) * 150.0);
-                const col = if (k > 0) ui.col(236, 226, 200, a) else ui.col(18, 14, 10, a);
-                rl.drawRectangleRec(.{
-                    .x = @as(f32, @floatFromInt(px)) + @as(f32, @floatFromInt(cx)) * rCellPx,
-                    .y = @as(f32, @floatFromInt(py)) + @as(f32, @floatFromInt(cz)) * rCellPx,
-                    .width = @ceil(rCellPx),
-                    .height = @ceil(rCellPx),
-                }, col);
+    for (m.water, m.waterKind, 0..) |wet, k, i| miniLiquid[i] = if (wet != 0) k + 1 else 0;
+    blitField(miniLiquid[0..], wf.WATER_N, px, py, inner, liquidByte);
+
+    // AN AUTHORED POOL IS A SHAPE, NOT A DOT: it is one prop 30 m across, so it is drawn at its own bound.
+    for (env.placed()) |*pr| {
+        if (pr.gone or miniMark(pr.kind) != .water) continue;
+        if (!onMini(pr.pos.x, pr.pos.z, m.half)) continue;
+        const p = toMini(pr.pos.x, pr.pos.z, m.half, px, py, inner);
+        rl.drawCircleV(p, props.info(pr.kind).bound * pr.scale * inner / (2.0 * m.half), liquidSwatch(.water));
+    }
+
+    // TWO PASSES, so a wall is never lost under the wood it stands in.
+    for ([_]MiniMark{ .tree, .wall }) |want| {
+        for (env.placed()) |*pr| {
+            if (pr.gone) continue;
+            const mark = miniMark(pr.kind) orelse continue;
+            if (mark != want) continue;
+            if (!onMini(pr.pos.x, pr.pos.z, m.half)) continue;
+            const p = toMini(pr.pos.x, pr.pos.z, m.half, px, py, inner);
+            switch (mark) {
+                // SUBTLY (owner): a wood has to read as a texture and not as a wall of green.
+                .tree => rl.drawRectangleV(.{ .x = p.x - 0.5, .y = p.y - 0.5 }, .{ .x = 1.5, .y = 1.5 }, MINI_TREE),
+                // …and a barrier is drawn at its OWN SIZE, so the cliff ring reads as a ring and not as a
+                // dotted line. Floored at 2 px, or a wall at the far end of a big map disappears.
+                .wall => {
+                    const wpx = mathx.maxF(MINI_W_OF[@intFromEnum(pr.kind)] * pr.scale * inner / (2.0 * m.half), 2.0);
+                    rl.drawRectangleV(.{ .x = p.x - wpx * 0.5, .y = p.y - wpx * 0.5 }, .{ .x = wpx, .y = wpx }, MINI_WALL);
+                },
+                .fire, .water => {},
             }
         }
     }
-    blitField(m.water[0..], wf.WATER_N, px, py, inner, WATER_SWATCH);
-
-    for (m.ops[0..m.nops]) |*o| {
-        if (!onMini(o.x, o.z, m.half)) continue;
-        const p = toMini(o.x, o.z, m.half, px, py, inner);
-        const mine = layerOf(o) == ed.layer;
-        const col = if (layerOf(o) == .decor) ui.col(96, 132, 70, if (mine) 235 else 70) else ui.col(168, 156, 130, if (mine) 235 else 70);
-        rl.drawRectangleV(.{ .x = p.x - 1, .y = p.y - 1 }, .{ .x = 2, .y = 2 }, col);
+    // **THE FIRES YOU STEER BY, AND NOT EVERY FLAME ON THE MAP.** `group == .fire` is torches and braziers too,
+    // which on the shipped map is dressing by the hundred and it buried the thing under a field of orange.
+    // A landmark is somewhere you can SIT (`rest.isRestKind`).
+    for (env.placed()) |*pr| {
+        if (pr.gone or !restmod.isRestKind(pr.kind)) continue;
+        if (!onMini(pr.pos.x, pr.pos.z, m.half)) continue;
+        const p = toMini(pr.pos.x, pr.pos.z, m.half, px, py, inner);
+        rl.drawCircleV(p, 3.0, MINI_FIRE_HALO);
+        rl.drawCircleV(p, 1.5, MINI_FIRE);
     }
+    // …and the foes last. SMALL: 173 of them at 2.5 px is 3,400 px of red on a 264 px map, and what you want to
+    // read off it is WHERE they are thick, not to count them.
     for (m.foes[0..m.nfoes]) |f| {
         if (!onMini(f.x, f.z, m.half)) continue;
         const p = toMini(f.x, f.z, m.half, px, py, inner);
-        rl.drawCircleV(p, 2.5, ui.col(220, 120, 90, if (ed.layer == .units) 255 else 110));
+        rl.drawCircleV(p, 1.5, MINI_FOE);
     }
 }
 
-const WATER_SWATCH = ui.col(32, 55, 62, 255);
+const MiniMark = enum { water, wall, tree, fire };
 
-const RELIEF_N: usize = 56;
-const RELIEF_STRIDE: usize = wf.HEIGHT_N / RELIEF_N;
-comptime {
-    std.debug.assert(RELIEF_N * RELIEF_STRIDE == wf.HEIGHT_N);
+/// **A WALL IS WHATEVER THE CAMERA WILL NOT THIN** (`props.Info.solid`) — architecture, cliffs, the bonfire —
+/// which is the same set the hero cannot walk through, so the map's barriers and the world's are one list and
+/// cannot drift. The fire is asked FIRST, because a bonfire is `solid` too and it is a landmark before it is a
+/// wall.
+fn markOf(k: Kind) ?MiniMark {
+    // **THE FIRE AND THE WATER ARE ASKED BEFORE `solid`.** A bonfire is solid and a tarn is solid — the flag is
+    // "the camera will not thin this" — so read plainly they both came out as WALLS, and the map grew a barrier
+    // where the one landmark and the one crossing are.
+    return switch (props.group(k)) {
+        .fire => .fire,
+        .water => .water,
+        .trees => .tree,
+        else => if (props.info(k).solid and footprintW(k) >= WALL_W) .wall else null,
+    };
 }
 
-fn blitField(cells: []const u8, n: usize, px: i32, py: i32, inner: f32, paint: ?rl.Color) void {
-    // Both callers pass a comptime grid width, so this cannot fire today — it is here because the same shape (a divide by a caller's count) was a live crash in `book.rowStep`, reached through a picker whose candidate list came back empty.
+/// **A WALL IS SOLID *AND* LONG.** `solid` alone is every pillar, block, arch and sarcophagus on the map, and
+/// four hundred white specks is not a map of anything. What you steer round is the thing you cannot go PAST,
+/// so the test is its own footprint: a cliff is 16.6 m across, a ruined wall 6.8, and a pillar 1.6.
+const WALL_W: f32 = 4.0;
+
+fn footprintW(k: Kind) f32 {
+    var w: f32 = 0;
+    for (props.info(k).parts) |p| {
+        const dx = @abs(p.bx - p.ax);
+        const dz = @abs(p.bz - p.az);
+        w = @max(w, @max(dx, dz) + 2.0 * p.r);
+    }
+    return w;
+}
+
+/// **BOTH ANSWERS ARE A FACT ABOUT THE KIND, SO BOTH ARE SOLVED ONCE AT COMPTIME.** `markOf` walks the kind's
+/// own parts list to measure a footprint and the wall pass measures it a second time, and `paintMinimap` asks
+/// four times over every placed prop: on `01_fallen_plain` that is 66,252 switches and two parts walks apiece
+/// on every repaint, and a repaint fires `REBUILD_QUIET` after every edit. Two array reads instead.
+const MINI_OF = blk: {
+    @setEvalBranchQuota(200000);
+    var out: [props.NK]?MiniMark = undefined;
+    for (0..props.NK) |i| out[i] = markOf(@enumFromInt(i));
+    break :blk out;
+};
+const MINI_W_OF = blk: {
+    @setEvalBranchQuota(200000);
+    var out: [props.NK]f32 = undefined;
+    for (0..props.NK) |i| out[i] = footprintW(@enumFromInt(i));
+    break :blk out;
+};
+
+fn miniMark(k: Kind) ?MiniMark {
+    return MINI_OF[@intFromEnum(k)];
+}
+
+// **THE FIVE TONES, IN THE ORDER THEY MUST BEAT EACH OTHER**: the fire is the brightest thing on it because it
+// is the one place you are going, then the foes, then the walls as MASS (not as glare — at 196 they were a
+// white sheet the water and the wood vanished under), then the wood as texture.
+const MINI_GROUND = ui.col(18, 20, 14, 255);
+const MINI_WALL = ui.col(146, 140, 126, 235);
+const MINI_TREE = ui.col(74, 106, 56, 190);
+const MINI_FIRE = ui.col(255, 220, 150, 255);
+const MINI_FIRE_HALO = ui.col(236, 132, 46, 120);
+const MINI_FOE = ui.col(232, 58, 44, 255);
+
+/// `wf.Liquid` PLUS ONE per painted cell, 0 where the sheet is dry — `blitField` reads 0 as "nothing here", so
+/// water (ordinal 0) needs the shift to be drawn at all.
+var miniLiquid: [wf.WATER_CELLS]u8 = [_]u8{0} ** wf.WATER_CELLS;
+
+fn liquidSwatch(l: wf.Liquid) rl.Color {
+    return switch (l) {
+        .water => ui.col(32, 55, 62, 255),
+        .oil => ui.col(26, 24, 22, 255),
+        .fungal => ui.col(158, 84, 66, 255),
+        .lava => ui.col(206, 88, 30, 255),
+    };
+}
+
+fn liquidByte(v: u8) rl.Color {
+    return liquidSwatch(@enumFromInt(@min(v -| 1, wf.Liquid.N - 1)));
+}
+
+/// `swatch` turns a cell's byte into its colour; a 0 cell is never drawn. The liquid layer keys it on the
+/// `wf.Liquid` plus one, so the dry cells fall out for free.
+fn blitField(cells: []const u8, n: usize, px: i32, py: i32, inner: f32, swatch: *const fn (u8) rl.Color) void {
+    // The caller passes a comptime grid width, so this cannot fire today — it is here because the same shape (a divide by a caller's count) was a live crash in `book.rowStep`, reached through a picker whose candidate list came back empty.
     if (n == 0) return;
     const cellPx = inner / @as(f32, @floatFromInt(n));
     for (0..n) |cz| {
@@ -3476,13 +3787,13 @@ fn blitField(cells: []const u8, n: usize, px: i32, py: i32, inner: f32, paint: ?
                 continue;
             }
             var run: usize = 1;
-            while (cx + run < n and (if (paint == null) row[cx + run] == id else row[cx + run] != 0)) run += 1;
+            while (cx + run < n and row[cx + run] == id) run += 1;
             rl.drawRectangleRec(.{
                 .x = @as(f32, @floatFromInt(px)) + @as(f32, @floatFromInt(cx)) * cellPx,
                 .y = @as(f32, @floatFromInt(py)) + @as(f32, @floatFromInt(cz)) * cellPx,
                 .width = @ceil(@as(f32, @floatFromInt(run)) * cellPx),
                 .height = @ceil(cellPx),
-            }, paint orelse soilSwatch(@enumFromInt(id)));
+            }, swatch(id));
             cx += run;
         }
     }
@@ -3670,10 +3981,11 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 ed.modal = .none;
                 return;
             };
-            const box = ui.beginModal(ctx, 470, LOOT_TOP + rows * LOOT_ROW_H + 8 + DLG_FOOT, "Sealed until this dies");
+            const box = ui.beginModal(ctx, 470, LOOT_TOP + rows * LOOT_ROW_H + 8 + DLG_FOOT, "Sealed until these die");
             const o = &m.ops[sPre];
+            var sb: [96]u8 = undefined;
             hud.mono(
-                "He walks through it once, then nothing does until this is dead",
+                std.fmt.bufPrintZ(&sb, "He walks through once, then nothing does until all {d} are dead", .{o.nboss}) catch "",
                 box.x + DLG_PAD,
                 box.y + 58,
                 hud.MONO,
@@ -3685,11 +3997,11 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 const pick: ?wf.FoeKind = if (i == 0) null else @enumFromInt(i - 1);
                 const y = box.y + LOOT_TOP + @as(i32, @intCast(i)) * LOOT_ROW_H;
                 const label: [:0]const u8 = if (pick) |k| wf.foeName(k) else "Never shuts";
-                const on = wf.eqlBoss(o.boss, pick);
+                const on = if (pick) |k| o.sealsOn(k) else o.nboss == 0;
                 hud.mono(label, box.x + DLG_PAD, y + 5, hud.MONO, if (on) ui.VALUE else ui.LABEL);
-                if (ui.button(ctx, ui.rect(box.x + 368, y, 52, 22), if (on) "set" else "pick", hud.MONO, on, "Seal this gate until that creature is dead. The top row leaves it an ordinary doorway") and !on) {
+                if (ui.button(ctx, ui.rect(box.x + 368, y, 52, 22), if (on) "on" else "add", hud.MONO, on, "Name this creature on the gate. It holds while ANY name still stands - a duo is two. The top row empties it back to an ordinary doorway")) {
                     ed.bank(m);
-                    o.boss = pick;
+                    if (pick) |k| sealToggle(o, k) else o.nboss = 0;
                 }
             }
             if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false, "Close it - every change is already applied (Enter)") or confirm) {
@@ -3914,7 +4226,7 @@ const MenuItem = enum { view, loot, boss, focus, reroll, explode, duplicate, del
 const menuRows = [_]struct { act: MenuItem, label: [:0]const u8, tip: [:0]const u8 }{
     .{ .act = .view, .label = "View...", .tip = "Open this kind alone in the object viewer" },
     .{ .act = .loot, .label = "Items...", .tip = "What this container holds when it is opened" },
-    .{ .act = .boss, .label = "Sealed by...", .tip = "Which creature's death opens this gate" },
+    .{ .act = .boss, .label = "Sealed by...", .tip = "Which creatures must die before this gate opens - name every body in the fight" },
     .{ .act = .focus, .label = "Focus", .tip = "Put the camera on it (F)" },
     .{ .act = .reroll, .label = "Re-roll", .tip = "A different arrangement, same meaning (R)" },
     .{ .act = .explode, .label = "Break apart", .tip = "One op per instance, so a single one can be moved or deleted. No way back but undo" },
@@ -3943,6 +4255,21 @@ fn lootOp(ed: *const Editor, m: *const wf.Map) ?usize {
     const s = ed.sel orelse return null;
     if (s >= m.nops) return null;
     return if (m.ops[s].op == .at and props.holdsLoot(m.ops[s].kind)) s else null;
+}
+
+/// Name a creature on the gate, or take it off. **A FULL SEAL DROPS THE PRESS** rather than wrapping — silently
+/// evicting a name he picked earlier is worse than doing nothing.
+fn sealToggle(o: *wf.Op, k: wf.FoeKind) void {
+    for (o.seal(), 0..) |s, i| {
+        if (s != k) continue;
+        var j = i;
+        while (j + 1 < o.nboss) : (j += 1) o.boss[j] = o.boss[j + 1];
+        o.nboss -= 1;
+        return;
+    }
+    if (o.nboss >= wf.MAX_SEAL) return;
+    o.boss[o.nboss] = k;
+    o.nboss += 1;
 }
 
 /// A GATE'S SEAL IS EDITED WHERE ITS LOOT WOULD BE, and it is offered on the same test the mechanic reads (`props.Info.ward`) rather than on the kind by name, so a second ward kind gets the panel for free.
@@ -4253,6 +4580,56 @@ test "THE UNITS PALETTE SPLITS AT `NFOE_KIND` — a creature on one side, a body
     try std.testing.expectEqualStrings("Erase", unitBrushes[unitBrushes.len - 1]);
 }
 
+test "EVERY UNIT IS REACHABLE FROM EXACTLY ONE TAB, and the tallest list now fits the panel" {
+    var ed = Editor{};
+    ed.layer = .units;
+    var buf: [MAX_BRUSHES]usize = undefined;
+
+    // Every brush is shown by exactly one (tab, kingdom) — except the eraser, which is in all of them.
+    var reach = [_]usize{0} ** unitBrushes.len;
+    var tallest: usize = 0;
+    for (0..UnitTab.N) |t| {
+        ed.unitTab = @enumFromInt(t);
+        for (0..props.Biome.N) |b| {
+            if (ed.unitTab == .foes and !foeBiomes[b]) continue;
+            ed.foeBiome = @enumFromInt(b);
+            const shown = visibleBrushes(&ed, &buf);
+            for (shown) |i| reach[i] += 1;
+            tallest = @max(tallest, shown.len);
+            // …and the eraser is the LAST row of every one of them, or a filtered list ends on a creature.
+            try std.testing.expectEqual(unitBrushes.len - 1, shown[shown.len - 1]);
+            if (ed.unitTab == .folk) break;
+        }
+    }
+    const kingdoms = blk: {
+        var n: usize = 0;
+        for (foeBiomes) |h| n += @intFromBool(h);
+        break :blk n;
+    };
+    for (reach[0 .. unitBrushes.len - 1], 0..) |n, i| {
+        // A creature filed `any` is in EVERY kingdom's list, which is the whole reason it has no chip of its
+        // own (`foe.atHome`). Everything else is in exactly one, and the folk are in exactly the Folk tab.
+        const want: usize = if (i < NFOE_KIND and foemod.homeOf(@enumFromInt(i)) == .any) kingdoms else 1;
+        if (n == want) continue;
+        std.debug.print("\n  {s} is shown by {d} lists, wanted {d}\n", .{ unitBrushes[i], n, want });
+        return error.TestUnexpectedResult;
+    }
+    try std.testing.expectEqual(kingdoms + 1, reach[unitBrushes.len - 1]);
+
+    // **THE OLD LIST DID NOT FIT AND WAS NEVER GOING TO.** The side panel is `SCREEN_H - BAR_H - STATUS_H`
+    // tall and the rows start below a Select button and a header; nothing here scrolls, so the tail of a
+    // thirty-eight-row palette was drawn off the bottom of the window and could not be clicked at all.
+    const panel = 800 - BAR_H - STATUS_H;
+    const rows0 = 8 + (ROW_H + 8) + ROW_H;
+    const was = @as(i32, @intCast(unitBrushes.len)) * ROW_H;
+    // Tabs, then the chips, which wrap over at most one row per two kingdoms.
+    const head = ui.TAB_H + 6 + 28 * @as(i32, @intCast((kingdoms + 1) / 2)) + 34;
+    const now = head + @as(i32, @intCast(tallest)) * ROW_H;
+    std.debug.print("\n  units palette: was {d} px of rows in a {d} px panel; tallest tab is now {d} rows, {d} px\n", .{ rows0 + was, panel, tallest, rows0 + now });
+    try std.testing.expect(rows0 + was > panel);
+    try std.testing.expect(rows0 + now <= panel);
+}
+
 test "the units layer POSTS and ERASES both kinds, and the eraser does not care which" {
     undoReset();
     const m = try std.testing.allocator.create(wf.Map);
@@ -4272,10 +4649,8 @@ test "the units layer POSTS and ERASES both kinds, and the eraser does not care 
     try std.testing.expectEqual(@as(usize, 1), m.nfoes);
     try std.testing.expectEqual(@as(usize, 1), m.nnpcs);
     try std.testing.expectEqual(wf.NpcKind.merchant, m.npcs[0].kind);
-    // The selection carries WHICH, or a delete would take the wrong body.
     try std.testing.expect(ed.selUnit != null and ed.selUnit.? == .npc);
 
-    // ONE eraser for the layer: the same sweep takes either off.
     try std.testing.expect(ed.eraseAt(m, env, v3(4, 0, 0)));
     try std.testing.expectEqual(@as(usize, 0), m.nnpcs);
     try std.testing.expectEqual(@as(usize, 1), m.nfoes);

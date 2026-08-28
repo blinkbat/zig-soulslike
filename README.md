@@ -38,8 +38,9 @@ ancient priest, tolling hollow, slumber bloom, plus the spirit wolf that fights 
 sight, parry, nav-steering and dissipation contracts in `foe.zig`.
 
 **World.** 560 m square ringed by cliffs, five regions, 161 prop kinds in three layers each. Sculptable
-heightfield (40° slope limit, 0.55 m step). Painted soil with coverage and eight edge shapes; painted water
-with a derived coast you wade. Day/night clock (~20 min day) driving every colour and shadow; sun 6→20 then the
+heightfield (40° slope limit, 0.55 m step). Painted soil with coverage and eight edge shapes; painted liquid
+with a derived coast you wade, in four kinds — water, tar, fungal soup (poison) and lava (burning, and it
+bites). All four wade the same; the look, the status and the voice are what differ. Day/night clock (~20 min day) driving every colour and shadow; sun 6→20 then the
 moon as anti-sun. Intermittent rain in two strengths with lightning, late thunder and stray mist banks.
 
 **Progression.** Souls drop where you die and are spent only on an 81-node radial passive tree (PoE2-shaped,
@@ -51,7 +52,7 @@ memorized sorcery slots off nine scrolls.
 dialog with live-rendered speaker portraits, two NPC kinds (wanderer, merchant). All of it authored in the `.world` file,
 not in Zig — grammar in `AGENTS.md`.
 
-**Editor** (Menu > Editor). Layered StarEdit-style: ground sculpt, soil and water brushes, prop and unit
+**Editor** (Menu > Editor). Layered StarEdit-style: ground sculpt, soil and liquid brushes, prop and unit
 placement (foes and NPCs alike), zones, clearings, loot, undo/redo, cut/copy/paste, grid snap, object viewer,
 sound jukebox, FX bench, bake-time sound filter rack. Cannot yet author triggers or dialogs.
 

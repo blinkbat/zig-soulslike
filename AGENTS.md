@@ -152,7 +152,9 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `foes/salthusk.zig` | salt husk + `Pan` — the weakest thing on the field and the only one whose KILL is the dangerous part |
 | `foes/fishman.zig` | fishmen + `Shoal` — the SECOND warband, held together by a NET; netter, spearman, shaman are one move in three |
 | `foes/blinkbat.zig` | blinkbat + `Roost` — a flyer that never travels: it BLINKS onto your flank, bites once, blinks out |
+| `foes/fungalduo.zig` | THE FUNGAL DUO + `Vanguard`/`Conclave` — swordsman and magus, one encounter, two bars |
 | `play/combat.zig` | `Vitals`, `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`, spirits. THE place to retune feel |
+| `play/liquid.zig` | WHAT STANDING IN A PAINTED POOL COSTS — one `Soak` row per `wf.Liquid`, billed the way a cloud bills |
 | `play/stats.zig` | the sheet — seven attributes, the bar curves, the ONE skill curve (`scaleFor`), `inert` |
 | `play/passivetree.zig` | PoE2's tree radially: three arms out of one hub, the gates, `Bonus`, the wheel |
 | `play/item.zig` | item vocabulary, `Use`, **`Equip`/`Wear` (the GEAR table)**, the `Bag` |
@@ -167,7 +169,7 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `ui/uiart.zig` | chrome DRESSING shared by hud/menu/book/ui |
 | `ui/itemart.zig` | pictures of things — armaments and bag items as objects, sized by the caller |
 | `ui/icons.zig` | editor glyph set, drawn from primitives (vector, not an atlas) |
-| `ui/book.zig` | THE CHARACTER BOOK (pad START) — paper doll + ten quick sockets, the bag, the sheet |
+| `ui/book.zig` | THE CHARACTER BOOK (pad START) — paper doll + ten quick sockets, the bag, the sheet, the piece-under-the-cursor card |
 | `ui/menu.zig` | boot screen, pause/debug menu, sound LEVELS, retro filter rack |
 | `ui/editor.zig` | THE EDITOR (Menu > Editor), layered StarEdit-style; biggest file, next split candidate |
 | `ui/objview.zig` | object viewer + the JUKEBOX + the FX BENCH (`elemfx`'s cells with their numbers printed) |
@@ -702,8 +704,12 @@ plus swat / hop / leap / shove / charge / fall. Memorization and attrition, neve
   IT IS HIS EMBER, NOT CHAOS'S VIOLET** (owner: orangish like his tells, so it is never read as poison) — the
   one call site that picks its own colour over `elemfx.sig`, because the cloud is a tell first and an element
   second.
-- **THE BOSS BAR** (`hud.bossBar`): `game.zig` owns when it shows (`Vigil.boss`) and SUPPRESSES that body's
+- **THE BOSS BAR** (`hud.bossBarAt`): `game.zig` owns when it shows (`Vigil.boss`) and SUPPRESSES that body's
   floating bar — one number may not be read in two places. `bossK`/`bossFrac` assigned in `init`.
+- **AND A NAMED GATE OWNS ITS BOSS'S BAR** (`game.gateEntered`). Where a ward's seal names the creature, the bar
+  waits until his own step has crossed that sheet (`env.wardIn`); where nothing names it, the bar keeps the
+  aggro ring it always had. The arena — and so where the bar comes up — is the MAP's to say, authored per gate
+  in the editor (Sealed by...), never a list in `game.zig`.
 - **Art and audio.** `PLATE` = `.plain`, `BRIGHT` = `.steel`: `Mat.steel`'s specular is catastrophic on a face
   the size of a door, so `.steel` is for what is SMALL AND PROUD. The iron is BLUE-BLACK because everything
   outdoors here is warm; the shield's bands are ONE substance with a few points of value on them; his rust is
@@ -724,9 +730,12 @@ plus swat / hop / leap / shove / charge / fall. Memorization and attrition, neve
   3.5 m in one step and the sheet is 0.8 m thick. A SPENT gate never answers (`eachSolid` retires it at
   `wardLife` 0).
 - **THE LATCH AND THE DOOR ARE DELIBERATELY APART.** The latch is his own step crossing the sheet
-  (`markWardStep`); the door is only SHUT while the creature `Op.boss` names is still standing, so killing it is
+  (`markWardStep`); the door is only SHUT while a creature the seal names is still standing, so killing them is
   what lets you back out. A gate may not shut on the man in it (`wardClear`). It is a wall to every FOE and
   every LOOK regardless.
+- **THE SEAL IS A LIST, BECAUSE A DUO IS TWO** (`Op.boss`/`nboss`, `Op.sealsOn`, up to `wf.MAX_SEAL`). ANY name
+  on it holds the door; `boss=-` is a doorway that never shuts. `boss=a,b` in the file, multi-pick in the
+  editor, and one name still writes no tail when it is the default.
 - **THE SEAL IS OWED AN ANSWER** (`fog_felled`). DARK is a REGISTER and FRIGHTENING is an INTERVAL: keep the
   seal's root (A1, 55 Hz) and its subterranean band, swap the TRITONE for the perfect FIFTH with the major third
   landing last. One shot, off the first frame of `wardLife` leaving 1.
@@ -869,6 +878,52 @@ moved. The muzzle and the two ears are re-let as petals rather than left nodding
   it is supposed to fold.
 - **A CORPSE WILTS FROM WHATEVER THE BLOW CAUGHT IT WEARING** (`deathOpen`). Snapping shut is a pop and ramping
   from wide is the same pop the other way.
+
+### The fungal duo (`fungalduo.zig`) — two bodies, one encounter
+
+Owner's creature, owner's brief: a SWORDSMAN who stays in your face and a MAGUS who will not let you have the
+rest of the floor. Both on the shared humanoid rig at 1.34 of the hero (a 2.42 m crown).
+
+- **THEY DIVIDE THE GROUND AND NEITHER COVERS THE OTHER'S.** The swordsman owns the ring you stand in
+  (`SW_SLASH_R` 2.2, lunging 3.4–9.0) and the magus owns everywhere past it (`MG_FLEE_R` 7.0 to `MG_KEEP_R`
+  16.0). The bands ABUT, and that is the whole of the pair: backing off the blade walks into the sprouts.
+- **NEITHER KNOWS THE OTHER EXISTS.** No shared brain and no combo table — that would be a script, and the LAW
+  forbids reading anything of the hero's anyway. What makes them read as a pair is the geometry.
+- **TWO GROUPS, ONE FILE** (`Vanguard`, `Conclave`). A `FOE_GROUPS` row hands back ONE slice of ONE type, and a
+  set of strokes and a set of spells are not one type; a role field over both is a union with two state
+  machines in it. They share the file because they share the rig, the palette, the pose and the bands.
+- **ONE RAIL PER BOSS, AND THE RAIL IS THE ROW'S INDEX** (`game.BOSS_RAILS`, `hud.bossBarAt`). They die
+  separately and the fight is which of them you spend the window on, so one pooled bar would hide the only
+  decision in it. Each fades on its own clock, and the chip state is PER RAIL — the knight's bar and the duo's
+  swordsman both used to mean rail 0, so every frame each wiped the other's frac, fade and chip tail and the
+  two drew on top of each other whether or not either was awake. `AGGRO_OF` takes each rail's ring off
+  `FOE_GROUPS`, so a bar cannot wake at a different range from the creature it is showing.
+- **THE BAND IS THE MEASURED REACH OF THE STROKE, NOT A NUMBER BESIDE ONE.** Thrown for real, the slash lands
+  out to 2.35 m; it was handed out to 3.3 and drove past the man at every stand past 2.5. A band wider than the
+  kit is a whiff the pick called a plan, and the judge below is what caught it.
+- **THE TWO STROKES DO NOT GET THE SAME BEARING GATE, BECAUSE THEY ARE NOT THE SAME SHAPE** (`swSlashArc`,
+  `swLungeArc`). The slash SWEEPS, so it gets the wind's turn plus its own arc; the LUNGE is a thrust down one
+  line that closes nothing after the wind commits it, so it gets the turn and nothing else. Given the slash's
+  allowance it was thrown at 100 deg, came round 9 short, and missed at every stand in its band.
+- **THE KIT IS AUTHORED POINTING UP OFF THE GRIP AND `hero.staffFit` TURNS IT** — and the ARM'S OWN FLEX comes
+  out of the tilt (`warrior.swingTilt`'s rule). Fitted in the forearm's frame instead, a `tilt` of 94 — level,
+  by the convention — put the point 3.73 m up over a hero column that ends at 1.71.
+- **THE VENOM IS THE CLOCK ON THE FIGHT.** Chaos builds poison, and a guard answers the DAMAGE and not the
+  buildup, so blocking every stroke still breaks the bar in 5. Both strokes carry it or the clock is on one.
+- **THE JUMPBACK IS A REPOSITION AND ITS TRIGGER IS HIS OWN CLOCK** (`crowd`) — how long something has stood
+  inside his swing, which is a distance and a clock, never a read of what the player pressed. It lands him
+  inside his own lunge band, so what follows it is the lunge coming back.
+- **THE MAGUS'S BUNCH IS THE PUNISH AND THE ORB IS THE ATTRITION.** A bunch of four sown AROUND him (standing
+  still is what it punishes), 1.9 s of growing, 0.85 s of glowing, then 3.1 m of burst — the cap's COLOUR is
+  its clock, because a warning you have to remember is not a warning.
+- **THE DISSOLVE IS LONG ON PURPOSE AND A STAGGER SPENDS IT.** Caught halfway out it comes back solid and owes
+  the whole cooldown, so pressure through the fade is the answer rather than a race. It leaves SLUMBER MIST
+  where it stood, billed as a soak on the bloom's own meter — and the mist does not bill on the frame it
+  appears, because the magus leaves it behind as it goes and that would be a blow with no tell.
+- **NEITHER CAST HAS A BAND INSIDE THE RING IT WALKS OUT OF** (`MG_ORB_MIN`, `MG_SPROUT_MIN`, both derived off
+  `MG_FLEE_R`). `.back` is answered before either, so a lower minimum is a number nothing can ever reach.
+- The bench is `worlds/test_fungalduo.world` — the pair on an arena floor with one pillar, at the distance the
+  fight is meant to hold. `--map worlds/test_fungalduo.world`.
 
 ## Combat
 
@@ -1403,6 +1458,30 @@ armour is the blow itself. A new game is bare-handed (`STARTING_KIT` is the wolf
   `hero.wear`, not at the next bonfire.
 - **A SOCKET REFUSES WHAT DOES NOT BELONG IN IT** — `hero.wear` and the save's parser both ask
   `item.wearSlot`. Seated wrong, every dial reads as 1 and the piece silently does nothing.
+- **BOTH PAGES SPEAK IN NUMBERS, AND NEITHER CARRIES A BILL** (owner: attack damage in NUMBERS not percents,
+  attack speed in some NUMBER corollary not percent; remove stats like roll speed or stamina consumption). The
+  rows on the equipment sheet (`book.Der`) and on a piece's own card (`book.GDial`) are what the FIGHT uses:
+  light and heavy through `hero.weigh`, the clock in SECONDS through `hero.swingSecs`/`drawSecs`, the guard's
+  real negation under `combat.GUARD_NEGATE_CAP`, the arc in degrees, armour AND what its curve turns aside, the
+  pools, and the four columns. **A DIAL IS NOT A STAT**: "78% swing time" asks the reader to hold a straight
+  sword's own 0.62 s in their head, and no page ever showed them that number to hold. The stamina bills and the
+  roll went to a details panel that does not exist yet; the stamina POOL stays on the stats page, because a pool
+  is not a bill. `item.effect` still prints the DIALS for the bag page, which has no table under it.
+- **BROWSING THE DOLL SHOWS THE PIECE *AND* THE SHEET** (`book.browsing`, `drawGearCard`). What a worn piece
+  does was reachable only by OPENING the picker over its socket, and then only as a column beside a candidate.
+  The card is the slot under the cursor — a bare hand included, off `item.bareArm` — and the sheet under it is
+  the body carrying it; a slot with no gear in it at all (ammo, sorcery, the ten quick cells) gives the sheet
+  the whole column back. The card is capped at what the sheet is owed (`derivedNeedH`), `pickBox`'s own rule.
+- **THE SHEET IS TWO COLUMNS AND THE ENUM'S ORDER IS THE LAYOUT** (`book.DER_SPLIT`) — what he DOES before the
+  seam, what he IS after it. Twenty-one rows down one column overflowed the box a picker leaves them, and
+  `rowStep` will not pitch under `rowFloor`, so the tail drew over the panel below.
+- **A WEAPON'S FOOTER IS THE HALF A NUMBER CANNOT SAY** (`book.armWords`) — heft, reach, and WHICH SKILL DRIVES
+  IT, which had never appeared anywhere in the game. Off `stats.displayName`, so a renamed attribute carries.
+- **THE THREE MELEE SOCKETS RUN BACKWARDS TO A `Blade`** (`hero.bladeForWear`), so a panel handed a SOCKET can
+  price the stroke standing in it. Pinned against `wearFor`+`bladeOf` at comptime, or a club is clocked as a sword.
+- **A BOARD PRICES NO BLOW.** The card and the compare read the offence rows off a socket that actually swings
+  or shoots; taken from `item.bareArm` for every held socket alike, a shield printed the bare sword's damage
+  beside it — noise as "Damage 100%", a lie as "Heavy attack 27".
 - **THE PICKER OFFERS BOTH AXES AS ONE LIST** (`book.Hand`): every armament, and under each the gear he is
   CARRYING that fills it. So the row has to be COUNTED rather than taken as an ordinal (`book.pickIndexOf`).
   The VARIANT is the ARMAMENT'S, not the hand's.
@@ -1541,6 +1620,30 @@ worlds/test_x.world` (and `--shot` with it). Nothing under test goes into the sh
 `test_foggate` is the gate at three sizes and yaws plus a channel dug to 1.31 m, the one depth the hero can
 cross and nothing on foot will follow him into.
 
+- **THE UNITS PALETTE IS TWO TABS AND THE FOES ARE FILED BY KINGDOM** (`editor.UnitTab`, `foe.homeOf`). Thirty
+  eight icon rows in one column is 1136 px of list in a 738 px panel: **the bottom fourteen creatures were drawn
+  off the end of the window and could not be clicked at all.** Foes / Folk, and under Foes a chip per
+  `props.Biome` that holds one — the same axis the props are filed on, so the two palettes split the world the
+  same way. Tallest tab is 12 rows now. `foe.homeOf` is an EXHAUSTIVE switch (`traitsOf`'s reason: a creature
+  cannot be added unfiled) and NOTHING SPAWNS BY IT; `any` is not a dustbin, it is the set that answers every
+  chip (`foe.atHome`), which is why it has no chip of its own.
+- **THE DIGIT KEYS AND THE PANEL WALK ONE LIST** (`editor.visibleBrushes`). Filtered in one and not the other,
+  `3` armed a creature the palette was not showing. **The eraser is in every tab** — a tool, not a category —
+  and the tab moves to the armed brush on entry, never the brush to the tab.
+- **THE MINIMAP IS FIVE THINGS** (owner) — walls, water, trees subtly, fires, red for the foes. It used to blit
+  the whole soil grid, shade the relief and dot every op, which on the shipped map is 16,587 dots over a painted
+  floor telling you nothing. **A wall is whatever the camera will not thin** (`props.Info.solid`), which is the
+  same set the hero cannot walk through, so the map's barriers and the world's cannot drift apart. **Read off
+  `env.placed()`, never off the ops**: a belt of a hundred trees is ONE op, and an op walk drew one tree where
+  there is a wood.
+- **THE FLOOR IS A MARGIN ON THE LOADED MAP'S OWN HALF** (`env.groundOut`, `GROUND_APRON` 0.80 with a 60 m
+  floor). As a flat `DEFAULT_HALF + 220` a 95 m test bench was a 190 m island sitting in a 1000 m floor, with
+  the editor's bound box drawn round the island (owner: "the floor looks larger than the map"). The shipped
+  280 m map moves 4 m by this, 500 to 504 — which is the point: it was already right THERE and nowhere else.
+  The flat path draws ONE quad built at the widest and scaled (a plane scales exactly, and every field the
+  shader reads over it is indexed in world xz); the sculpted path already had the tiles and a skirt.
+- **THE DECOR LAYER IS NOT PLANTS** — it is `props.Info.flora`, which holds cobbles, shards and scree too. Small
+  accoutrements, whatever they are made of; the layer tip says so.
 - **A GENERATOR OP IS FOR STAMPING, NOT FOR KEEPING.** It is ONE thing to select, move and delete, so a wood
   of 260 attempts was one tree — the same complaint that baked ground cover down to `at:` decor. Stamp a
   `belt`/`disc`/`ring`/`line`/`ivy`, re-roll it until it reads, then **break it apart** (op panel, or the
@@ -1599,6 +1702,38 @@ cross and nothing on foot will follow him into.
 - **WATER IS PAINTED, ITS COAST DERIVED** — one bit per cell → a signed distance field (128 is the waterline).
   One field, three effects. The sheet is ONE world-spanning quad. `worlds/test_wateredge.world` is eight ponds,
   one per `Edge`, on bare ground: `--shot-land --map worlds/test_wateredge.world`.
+- **FOUR LIQUIDS, ONE SHEET, ONE FIELD** (`wf.Liquid`, `wf.Map.waterKind`) — water, oil, fungal, lava, one per
+  cell off the same brush. **THE FOOTING IS WATER'S AND UNCHANGED FOR ALL FOUR**: same coast, same
+  `paintedDepth`, same `WADE_MAX`, same `Gait` gate, same `avoid.water`. Three things differ and only three —
+  the LOOK, the STATUS it soaks in, and the VOICE.
+- **THE KIND RIDES IN THE COAST BYTE** (`env.packLiquid`) — `wf.Edge` in the low three bits, `wf.Liquid` in the
+  next two, one point-sampled `u8` per cell. Two ordinals in one texture because they are dilated by ONE walk
+  off ONE paint (`env.dilateWaterEdge`) and because a second sampler would be an EIGHTEENTH texture unit, where
+  GL 3.3 promises a fragment stage sixteen. The GPU unpacks in `waterCellAt`, the CPU in `env.waterEdgeAt` and
+  `env.liquidAt` — and `liquidAt` reads the DILATED field, so a foot on the bank answers with the pool's kind.
+- **A MAP WITH NO `liquid:` ROW IS ALL WATER** (ordinal 0), so every map written before this comes up unchanged
+  and round-trips byte for byte — the row's own `wateredge:` rule.
+- **THE STATUS IS A SOAK, NOT A BLOW** (`play/liquid.zig`, `game.tickLiquid`) — the sporeling cloud's channel
+  (`foe.Soak`, `hero.doseSelf`), so nothing blocks it and nothing parries it. **NOTHING DECAYS UNDER A
+  CONTINUOUS DOSE** — a dose resets `sinceDose` and the delay is 1.1 s — so `max/build` IS the seconds to break:
+  fungal 13.9 s of POISON, lava 7.0 s of BURNING, and clipping a rim is 2% and 5% of the bar. Lava also drips
+  4.5% of MAX HP a second in fire: a SHARE of the bar (`Soak.dpsFrac`), so a levelled body cannot walk it off,
+  and a DRIP (`hero.burn`) so it never builds the meter a second time. Oil is a look and a sound and nothing else.
+- **LAVA IS A LIGHT, NOT A SURFACE** (`sheetGlow`) — written from inside the sheet's material branch and applied
+  past the emissive mix, because `emis` rides a vertex alpha the world-spanning quad cannot carry. It also takes
+  NO sun lobe: a specular streak on lava reads as wet plastic. Tar's fresnel is the OPPOSITE problem — at
+  water's exponent 3 an oil pit came back a flat slate disc from the far bank (0.09 linear over the whole
+  surface, 87/255 after gamma), because a sheen over a near-zero albedo IS the pixel. Fifth power, a third the
+  amount.
+- **BUBBLES ARE ONE HASH TAP, NOT NINE** (`bubbleAt`) — one per cell, centre in 0.3..0.7 and radius under 0.28,
+  so a dome can never cross into a neighbour and the 3×3 ring a bubble field usually needs is not paid for on a
+  quad that covers the world. They MOUND and then pop; the swell is most of the read.
+- **ITS VOICES ARE A BED PLUS A THINNED POP** — one dialled bed per liquid (`audio.setLiquidBed`, off a scan
+  bounded to 27 cells a side around the hero) and a pop every ~1.15 s from a reservoir-sampled wet cell
+  (`game.POP_EVERY`; the surface pops far more often than it is heard to). **WATER GETS NEITHER**: the wind is
+  its bed, and painting a tarn may not add a voice to a map that already sounded right.
+- `worlds/test_liquids.world` is one 14 m pool per liquid at (±32, ±32) on bare ground:
+  `--shot-land --map worlds/test_liquids.world`.
 - **PROPS CAN LEAN** (`lean`/`leanDir`) about the prop's GROUND ORIGIN, so the base stays planted and the
   culling sphere is unchanged. `buildSolids` carries the footprint with it.
 - **`buildSolids` RESETS** — `materialize` runs it twice and an appending version doubles every collider.
@@ -1733,20 +1868,22 @@ window.
   mesh variants (the repeated-big-prop law).
 - **THE DRY SKY HAS BIRDS IN IT** (`weather.Skein`, owner: bird packs of different sizes across the sky,
   distantly, from different angles, infrequently, "just to feel alive"). **IT IS AN EVENT, NOT A FLOCK THAT LIVES
-  THERE** — the storm's own law. One flight arrives, crosses, and is gone: measured over an hour, **35 crossings,
-  4 to 17 birds, in the sky 23% of the time**, so it is empty more often than not and a crossing is still worth
-  looking up at. Gap `SKEIN_GAP_LO`..`HI` **30–120 s** (owner's own number, twice revised — it was 190–520 and he
+  THERE** — the storm's own law. One flight arrives, crosses, and is gone: measured over an hour, **63 crossings,
+  4 to 17 birds, in the sky 28% of the time**, so it is empty more often than not and a crossing is still worth
+  looking up at. Gap `SKEIN_GAP_LO`..`HI` **18–62 s** (owner's own number, twice revised — it was 190–520 and he
   never saw one), and the clock runs ONLY on a dry sky (plus `SKEIN_AFTER_RAIN` 22 s of settling), so a long storm
   cannot bank up a flight that then arrives the second it clears. A flight already in the air is not deleted by a
   squall; it finishes its crossing. **THE COUNT IS DERIVED IN THE TEST, NOT PINNED BESIDE IT** — a mean gap plus a
-  crossing predicts 37 an hour against 35 flown, so moving the gap cannot leave a stale number behind.
+  crossing predicts 65 an hour against 63 flown, so moving the gap cannot leave a stale number behind.
   - **AND THERE IS A DEBUG ROW** (`menu.DBG_BIRDS`, owner: I didn't see any) — `DBG_WEATHER`'s reasoning exactly:
     an event on a clock measured in minutes is not a question anybody can sit and answer. It sends one ACROSS his
     view, and the request survives the menu being open (`takeBirds` drains on the first frame after it shuts,
     which is the frame he is looking at the sky again).
-  - **THE RANGE IS SOLVED AGAINST THE HAZE, NOT PICKED.** `gfx.HAZE_DENSITY` is 0.013 a metre, so what is left of
-    a thing at range d is exp(−0.013 d): at 185 m that is 9% and the birds were invisible, photographed. `SKEIN_R`
-    is 130 m — 18% at the rim, ~46% overhead — so **the haze IS the fade-in** and no code does it.
+  - **THE RANGE IS NOT PICKED EITHER, BUT IT IS NO LONGER SOLVED AGAINST THE HAZE.** `gfx.HAZE_DENSITY` is
+    0.013 a metre, so what is left of a thing at range d is exp(−0.013 d) — 9% at 185 m, which is why the birds
+    were invisible, photographed. The band is solved against the FRAME now (`skeinNear`/`skeinWide`/`skeinRim`,
+    measured 160–284 m), the haze is turned DOWN over it (`SKEIN_HAZE`), and the fade-in is code
+    (`SKEIN_FADE_M`) rather than the distance doing it.
   - **A BIRD IS A SILHOUETTE**, so it is opaque and nearly black. At vertex alpha 210 they came up self-lit and
     pale and washed out into the very haze they are read against (the 248+ law).
   - **THE FLAP IS A SQUASH OF THE V, NOT A BONE** — at this range a wing is a couple of pixels and what reads is
@@ -1756,6 +1893,25 @@ window.
     hour, where 1.00 would be a flight path — "no two in a row within N degrees" is a dice roll that fails on an
     honest sky about a third of the time.
   - One draw a bird, `BIRDS_HI` 17 at the worst and only while a flight is up, against the rain sheet's 4–7.
+- **THE SKY IS SMALLER THAN IT LOOKS, AND ANYTHING PUT IN IT IS SOLVED AGAINST `camera.skyTop()`** — half the
+  lens less the resting pitch, 0.200 rad, **11.46 deg above the horizon**. That is the whole of the sky a player
+  sees without holding the stick up. The birds were authored at 30–62 m up, entering at 96 m and crossing to
+  within 56 m: the LOWEST elevation any bird reached over a whole flight was 15.1 deg and the middle of a
+  crossing was 48 deg, near enough straight overhead. Sixty-two flights an hour, something in the sky 30% of the
+  time, and not one of them was ever on the screen (owner: "i never see any fuckin birds"). **THE HARNESS DID
+  NOT CATCH IT BECAUSE BOTH BIRD SHOTS HELD THE LENS UP AT THE FLOCK** — `157b_birds_resting.png` is the frame
+  a player actually gets, and a test walks half an hour of sky and pins every bird inside it (3.5–8.3 deg now).
+- **THE SKEIN'S WHOLE BAND IS DERIVED, NOT PICKED** (`weather.SKY_SHARE`, `skeinNear`/`skeinWide`/`skeinRim`).
+  The ceiling is 0.70 of `skyTop`; the closest the line may come is `HIGH_HI / tan(ceiling)`, so the highest
+  bird at the nearest point sits exactly on the ceiling. `HIGH_LO` 17 m is the floor because a cliff stands
+  15.5 m (`props.cliffParts`) and they used to fly through them. **THE OFFSET NEVER PASSES THROUGH ZERO**: a
+  line over your head is a line whose middle is at 90 deg, and the middle is the part you were meant to see.
+- **AND THE HAZE IS TURNED DOWN FOR THEM ALONE** (`gfx.Scene.setHaze`, `weather.SKEIN_HAZE` 0.35, paired like
+  `beginFade`). A bird is not a surface the distance veils — it is a SILHOUETTE, and the haze does not soften a
+  silhouette, it deletes it by pulling it to the sky's own colour. At 0.013/m the world's own density leaves 4%
+  of a thing at 240 m, which is where the band has to be now; at 0.35 of it, 33%.
+- **THE FADE IS METRES, NOT A SHARE OF THE CROSSING** (`SKEIN_FADE_M` 70). As a fraction the ramp got steeper
+  every time the chord came in shorter, and "it never pops" is a claim about the per-frame STEP.
 - **THE BED IS THE STORM'S, NOT THE HOUR'S** (`audio.setRain`, `audio.mkRain`) — three bands with a granular
   patter (a hiss alone is tape noise, a low roar alone is a motorway). Does not retrigger while dry. Thunder
   (`mkThunder`) is a ROLL with no transient at its head, and it is the third kind of ambient voice
@@ -2200,9 +2356,9 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
 - **A PANEL MAY NOT SPEND A DRAW CALL PER OP** (`editor.blitMinimap`, `miniGen` — same owner, same freeze).
   `drawMinimap` walked the whole op list and issued one `drawRectangleV` apiece: **16,510 immediate-mode rects a
   frame** on `01_fallen_plain`, and the bill GROWS every time a scatter is exploded into `at:` ops, which is
-  exactly what prop-editing does. Every other field on that face already collapses — `blitField` run-length
-  encodes soil and water and skips id 0, relief skips flat cells — the op layer was the only term that scaled
-  with the map. MEASURED before reaching for a fix: those ops land on 12,442 distinct pixels of the 182x182 face,
+  exactly what prop-editing does. Every other field on that face already collapsed — `blitField` run-length
+  encodes a grid and skips id 0 (the soil and the relief have since gone off the face entirely; the liquid layer
+  is its one caller now) — the op layer was the only term that scaled with the map. MEASURED before reaching for a fix: those ops land on 12,442 distinct pixels of the 182x182 face,
   a **1.33x** collapse, so no bucketing makes a per-frame walk cheap and the answer had to be a held texture.
   Painted on `miniGen` (bumped by `bank`, `rebuild` and `touchFolk`) and blitted once.
   - **A HELD FACE IS COPIED BACK, NOT BLENDED BACK.** raylib blends the target's OWN alpha channel by

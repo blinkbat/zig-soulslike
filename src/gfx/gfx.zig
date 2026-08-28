@@ -15,6 +15,7 @@ const SLOT_SOIL: i32 = 13;
 const SLOT_WATER: i32 = 14;
 const SLOT_SOILCOV: i32 = 15;
 const SLOT_SOILEDGE: i32 = 16;
+/// The COAST SHAPE and the LIQUID, packed into one byte a cell (`env.packLiquid`).
 const SLOT_WATEREDGE: i32 = 17;
 
 pub const SOIL_N: i32 = 112;
@@ -23,6 +24,10 @@ pub const SOIL_N: i32 = 112;
 pub const WATER_N: i32 = 224;
 
 pub const HEIGHT_N: i32 = 224;
+
+/// Re-exported from the shader, which is where the GLSL that indexes `liquidTone` is generated from it.
+/// `props.LIQUID_TONES` sizes off this and `wf.Liquid` asserts against it.
+pub const LIQUID_N: usize = glsl.LIQUID_N;
 
 pub const WATER_SHORE: u8 = 128;
 pub const WATER_DEEP_AT: f32 = 11.0;
@@ -440,6 +445,7 @@ pub const Scene = struct {
     loc_hazeBank: i32,
     loc_keyAmt: i32,
     loc_hazeD: i32,
+    loc_hazeScale: i32,
     soilTex: rl.Texture2D,
     soilCovTex: rl.Texture2D,
     soilEdgeTex: rl.Texture2D,
@@ -452,7 +458,7 @@ pub const Scene = struct {
     loc_waterHalf: i32,
     loc_waterCell: i32,
     loc_waterSheet: i32,
-    loc_waterTone: i32,
+    loc_liquidTone: i32,
     saved_near: @TypeOf(rl.gl.rlGetCullDistanceNear()) = 0,
     saved_far: @TypeOf(rl.gl.rlGetCullDistanceFar()) = 0,
 
@@ -483,6 +489,7 @@ pub const Scene = struct {
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "frost"), &flashOff, .float);
         var fadeOff: f32 = 1;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "fade"), &fadeOff, .float);
+        rl.setShaderValue(shader, rl.getShaderLocation(shader, "hazeScale"), &fadeOff, .float);
         var noLights: i32 = 0;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "nLights"), &noLights, .int);
         var out = Scene{
@@ -496,13 +503,14 @@ pub const Scene = struct {
             .loc_soilHalf = rl.getShaderLocation(shader, "soilHalf"),
             .loc_soilCell = rl.getShaderLocation(shader, "soilCell"),
             .waterTex = loadFieldTexture(WATER_N, .bilinear),
-            // POINT, like the soil edge map: a policy is an ordinal, and blending two of them names a third shape.
+            // POINT, like the soil edge map: both ordinals it packs are ordinals, and blending two of them
+            // names a third shape and a fifth liquid.
             .waterEdgeTex = loadFieldTexture(WATER_N, .point),
             .loc_waterOn = rl.getShaderLocation(shader, "waterOn"),
             .loc_waterHalf = rl.getShaderLocation(shader, "waterHalf"),
             .loc_waterCell = rl.getShaderLocation(shader, "waterCell"),
             .loc_waterSheet = rl.getShaderLocation(shader, "waterSheet"),
-            .loc_waterTone = rl.getShaderLocation(shader, "waterTone"),
+            .loc_liquidTone = rl.getShaderLocation(shader, "liquidTone"),
             .lightVP = rl.math.matrixIdentity(),
             .loc_ground = rl.getShaderLocation(shader, "groundMode"),
             .loc_lightVP = rl.getShaderLocation(shader, "lightVP"),
@@ -524,6 +532,7 @@ pub const Scene = struct {
             .loc_hazeBank = rl.getShaderLocation(shader, "hazeBank"),
             .loc_keyAmt = rl.getShaderLocation(shader, "keyAmt"),
             .loc_hazeD = rl.getShaderLocation(shader, "hazeDensity"),
+            .loc_hazeScale = rl.getShaderLocation(shader, "hazeScale"),
         };
         out.setHour(daynight.SHOT_HOUR, 0, 1.0, 0);
         return out;
@@ -630,9 +639,9 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_ground, &m, .int);
     }
 
-    /// `wet` and `edge` are the map's own grids: the first says which cells were painted, so the policy can be
-    /// dilated off it, and the second says how each one ENDS. **THE SHAPE IS APPLIED PER FRAGMENT NOW** and is
-    /// no longer baked into `field`, which is a plain signed distance and survives being sampled.
+    /// `field` is the plain signed distance and `edge` the PACKED coast-shape-plus-liquid byte, already dilated
+    /// (`env.dilateWaterEdge`). **THE SHAPE IS APPLIED PER FRAGMENT NOW** and is no longer baked into `field`,
+    /// which survives being sampled.
     pub fn setWater(self: *Scene, field: []const u8, edge: []const u8, half: f32, any: bool) void {
         const n: usize = @intCast(WATER_N);
         std.debug.assert(field.len == n * n);
@@ -647,20 +656,24 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_waterCell, &cell, .float);
     }
 
-    pub fn setWaterSheet(self: *Scene, on: bool, tones: [3]rl.Vector3) void {
+    /// `tones` is shallow/mid/deep for every `wf.Liquid`, flat and in its order (`props.LIQUID_TONES`) — the
+    /// sheet picks per fragment off the packed edge byte, so one draw covers a tarn and a lava run at once.
+    pub fn setWaterSheet(self: *Scene, on: bool, tones: [LIQUID_N * 3]rl.Vector3) void {
         var v: i32 = if (on) 1 else 0;
         rl.setShaderValue(self.shader, self.loc_waterSheet, &v, .int);
         if (!on) return;
         var t = tones;
-        rl.setShaderValueV(self.shader, self.loc_waterTone, &t, .vec3, 3);
+        rl.setShaderValueV(self.shader, self.loc_liquidTone, &t, .vec3, LIQUID_N * 3);
     }
 
 var soilEdgeDilated: [@as(usize, @intCast(SOIL_N)) * @as(usize, @intCast(SOIL_N))]u8 = undefined;
 
 /// **THE BARE SIDE OF A BOUNDARY ANSWERS WITH THE PAINTED SIDE'S POLICY.** Without it a tiled courtyard is
 /// tiled looking out and soft looking in - and a coast is read from OUTSIDE the water as often as from in it.
-/// One walk for both grids; `ids` is whatever counts as painted on that grid.
-fn dilateEdges(out: []u8, n: usize, ids: []const u8, edge: []const u8) []const u8 {
+/// One walk for both grids; `ids` is whatever counts as painted on that grid. The soil's runs at upload and is
+/// the GPU's alone; the water's is `env.dilateWaterEdge`, which HOLDS its result because the footing reads it
+/// too — so this is public, and there is not a second copy of the walk over there.
+pub fn dilateEdges(out: []u8, n: usize, ids: []const u8, edge: []const u8) []const u8 {
     @memcpy(out, edge);
     for (0..n) |z| {
         for (0..n) |x| {
@@ -734,6 +747,13 @@ fn dilateEdges(out: []u8, n: usize, ids: []const u8, edge: []const u8) []const u
         rl.setShaderValue(self.shader, self.loc_frost, &a, .float);
     }
 
+    /// A PER-DRAW share of the world's haze, 1 for everything but the birds. Paired like `beginFade`: whatever
+    /// turns it down puts it back, or the next thing drawn comes out of the distance too clean.
+    pub fn setHaze(self: *Scene, amt: f32) void {
+        var a = mathx.clampF(amt, 0, 1);
+        rl.setShaderValue(self.shader, self.loc_hazeScale, &a, .float);
+    }
+
     pub fn setFade(self: *Scene, amt: f32) void {
         var a = mathx.clampF(amt, 0, 1);
         rl.setShaderValue(self.shader, self.loc_fade, &a, .float);
@@ -751,6 +771,17 @@ fn dilateEdges(out: []u8, n: usize, ids: []const u8, edge: []const u8) []const u
 
 pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble, flame, smoke, ember, bark, fog, gilt };
 comptime {
+    // **THE HEAD IS PINNED AS WELL AS THE TAIL.** `water == 9` catches an INSERT below it, but the shader
+    // branches on 1 through 8 too (`matAlbedo`), and a reorder inside that run leaves water where it is —
+    // stone would silently come out as wood.
+    std.debug.assert(@intFromEnum(Mat.stone) == 1);
+    std.debug.assert(@intFromEnum(Mat.wood) == 2);
+    std.debug.assert(@intFromEnum(Mat.cloth) == 3);
+    std.debug.assert(@intFromEnum(Mat.steel) == 4);
+    std.debug.assert(@intFromEnum(Mat.leather) == 5);
+    std.debug.assert(@intFromEnum(Mat.skin) == 6);
+    std.debug.assert(@intFromEnum(Mat.hide) == 7);
+    std.debug.assert(@intFromEnum(Mat.plant) == 8);
     std.debug.assert(@intFromEnum(Mat.water) == 9);
     std.debug.assert(@intFromEnum(Mat.marble) == 10);
     std.debug.assert(@intFromEnum(Mat.flame) == 11);

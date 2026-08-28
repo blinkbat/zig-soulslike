@@ -753,7 +753,6 @@ fn chestMesh() rl.Mesh {
     b.setMat(.skin);
     b.addBlob(v3(0, 0.038 * H, 0), v3(0.098 * H, 0.080 * H, 0.080 * H), 10, 7, FLESH);
     b.addBlob(v3(0, -0.004 * H, 0.008 * H), v3(0.086 * H, 0.050 * H, 0.072 * H), 9, 6, FLESH_DK);
-    // The ribs come THROUGH the crust — the one place the body under the salt is visible.
     var i: u32 = 0;
     while (i < 4) : (i += 1) {
         const y = 0.004 * H + @as(f32, @floatFromInt(i)) * 0.020 * H;

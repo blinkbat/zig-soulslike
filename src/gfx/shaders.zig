@@ -20,12 +20,44 @@ pub const EDGE_K = [_]EdgeK{
     .{ .warp = 0.9, .freq = 3.40, .feather = 0.55 }, // speckle  — flecks off the end of it
 };
 
+pub const NATURAL: usize = 1;
 pub const SCALLOP: usize = 6;
 pub const TILED: usize = 5;
 pub const SPECKLE: usize = 7;
 
+/// **HOW A CELL'S COAST SHAPE AND ITS LIQUID SHARE ONE BYTE** — `wf.Edge` in the low bits, `wf.Liquid` above
+/// it. Written HERE because the GLSL that unpacks it is generated from these three (`LIQUID_GLSL`) and
+/// `env.packLiquid` is the Zig half of the same pair; spelled `& 7` on one side and `>> 3` on the other they
+/// were four magic numbers across two languages.
+pub const EDGE_MASK: u8 = 7;
+pub const LIQUID_SHIFT: u3 = 3;
+pub const LIQUID_MASK: u8 = 3;
+
+/// **HOW MANY THINGS THE PAINTED SHEET CAN BE** (`wf.Liquid`, which asserts against it). Here rather than in
+/// `gfx` because the GLSL that indexes `liquidTone` is generated a few lines down; `gfx` re-exports it, which
+/// is how `props.LIQUID_TONES` sizes off it without importing a shader.
+pub const LIQUID_N: usize = 4;
+
+/// The liquids, by name and not by number, plus the flat `liquidTone` array they index — sized off `LIQUID_N` so a
+/// fifth liquid cannot leave the uniform one triple short.
+const LIQUID_GLSL = std.fmt.comptimePrint(
+    "const int L_WATER = 0;\nconst int L_OIL = 1;\nconst int L_FUNGAL = 2;\nconst int L_LAVA = 3;\n" ++
+        "const int LIQ_SHIFT = {d};\nconst int LIQ_MASK = {d};\nconst int EDGE_MASK = {d};\n" ++
+        "uniform vec3 liquidTone[{d}];\n",
+    .{ LIQUID_SHIFT, LIQUID_MASK, EDGE_MASK, LIQUID_N * 3 },
+);
+
+comptime {
+    // The four names above are spelled out, so the count they cover is pinned rather than trusted.
+    std.debug.assert(LIQUID_N == 4);
+    std.debug.assert(LIQUID_N <= LIQUID_MASK + 1);
+}
+
+/// An ordinal off the end answers `natural`, exactly as the generated `edgeShape` does. Clamping to the LAST
+/// row instead handed the CPU `speckle` where the GPU took its default, which is the one thing this pair may
+/// not do.
 pub fn edgeK(e: usize) EdgeK {
-    return EDGE_K[@min(e, EDGE_K.len - 1)];
+    return if (e < EDGE_K.len) EDGE_K[e] else EDGE_K[NATURAL];
 }
 
 fn fract(x: f32) f32 {
@@ -33,7 +65,7 @@ fn fract(x: f32) f32 {
 }
 
 /// **THE GLSL `hash21`/`vnoise` AGAIN, IN ZIG** — the same arithmetic in the same order, because the CPU has to
-/// land on the coast the GPU drew. Not `mathx.vnoise2`: that is a different field, and "close enough" here is a
+/// land on the coast the GPU drew. Not `env.vnoise2`: that is a different field, and "close enough" here is a
 /// waterline you can see a metre from the one you can stand in.
 fn hash21(px: f32, pz: f32) f32 {
     var x = fract(px * 123.34);
@@ -101,9 +133,17 @@ const EDGE_SHAPE_GLSL = blk: {
             .{ i, k.warp, k.freq, k.feather },
         );
     }
-    s = s ++ std.fmt.comptimePrint("  return vec3({d:.4},{d:.4},{d:.4});\n}}\n", .{ EDGE_K[1].warp, EDGE_K[1].freq, EDGE_K[1].feather });
+    s = s ++ std.fmt.comptimePrint("  return vec3({d:.4},{d:.4},{d:.4});\n}}\n", .{ EDGE_K[NATURAL].warp, EDGE_K[NATURAL].freq, EDGE_K[NATURAL].feather });
     break :blk s;
 };
+
+/// **THE THREE SHAPES THE GLSL SINGLES OUT, BY NAME AND NOT BY NUMBER.** `edgeWarp`, `waterAt` and
+/// `paintedSoil` each branch on one ordinal; spelled `e==5` in the source they were three magic indices into an
+/// enum that lives in `worldfmt`.
+const EDGE_ID_GLSL = std.fmt.comptimePrint(
+    "const int E_TILED = {d};\nconst int E_SCALLOP = {d};\nconst int E_SPECKLE = {d};\n",
+    .{ TILED, SCALLOP, SPECKLE },
+);
 
 /// **ONE VALUE-NOISE BASIS, SPLICED INTO EVERY PROGRAM THAT WANTS IT.** GLSL has no linker here, so each
 /// shader carries its own copy of the source — but the source was written out by hand three times, and the
@@ -257,6 +297,10 @@ pub const sceneFS =
     \\uniform vec3 camPos;      // for distance haze
     \\uniform vec3 hazeColor;   // sky/haze tint (pre-gamma)
     \\uniform float hazeDensity;
+    \\// …and a PER-DRAW share of it. A silhouette is read by its CONTRAST with the sky and by nothing else, so the
+    \\// haze is not a veil over it — it is the thing that erases it. 1.0 for every surface in the world; the birds
+    \\// are the one draw that asks for less (`weather.SKEIN_HAZE`).
+    \\uniform float hazeScale;
     \\// THE HOUR'S OWN COLOURS (`daynight.Palette`, pushed by `gfx.Scene.setHour`). The KEY carries its own
     \\// strength, so nightfall is this vector walking toward black; the hemisphere pair is the ambient it sits
     \\// in, and `hazeBank` the warm wash the distance takes on looking into the light.
@@ -337,14 +381,14 @@ pub const sceneFS =
     \\// **THE THREE KNOBS AN EDGE HAS** - GENERATED from `EDGE_K` at the top of this file, so the table
     \\// the CPU reads (`env.paintedDepth`) and the function the GPU runs cannot drift apart.
     \\
-++ EDGE_SHAPE_GLSL ++ BAY_GLSL ++
+++ EDGE_SHAPE_GLSL ++ EDGE_ID_GLSL ++ LIQUID_GLSL ++ BAY_GLSL ++
     \\// WHERE THE LOOKUP ACTUALLY READS FROM. This is the whole fix: the displacement used to be one fixed
     \\// noise applied to EVERY material before anything else was asked, so the material BOUNDARY wandered
     \\// +/-1.7 m whatever its policy said — and `soilHard` only ever snapped the COVERAGE. Nothing could
     \\// produce a straight edge because the thing being straightened was not the thing being bent.
     \\vec2 edgeWarp(vec2 p, int e, vec3 k){
     \\  if (k.x <= 0.0001) return p;
-    \\  if (e==6){
+    \\  if (e==E_SCALLOP){
     \\    // The scallop is DELIBERATE, so it is a sine along both axes rather than noise — a laid border.
     \\    return p + vec2(sin(p.y*0.9), sin(p.x*0.9))*k.x;
     \\  }
@@ -365,7 +409,6 @@ pub const sceneFS =
     \\uniform float waterCell;   // metres one cell spans — only the tiled snap reads it
     \\uniform int   waterOn;     // 0 = nothing painted; every read below is skipped
     \\uniform int   waterSheet;  // 1 while the PAINTED sheet draws — authored water props keep their own colours
-    \\uniform vec3  waterTone[3]; // shallow / mid / deep, straight off the prop palette (env.drawWater)
     \\// **THE SHEET'S OWN OPACITY, WRITTEN FROM INSIDE THE MATERIAL SWITCH.** Water is the one surface here that
     \\// has to END IN A FADE rather than at a threshold, and the tint function hands back a colour only.
     \\float waterA = 1.0;
@@ -374,14 +417,21 @@ pub const sceneFS =
     \\// …and the floor under a shape's own `feather`, so even one authored to CUT dies into wet sand instead of
     \\// shattering into shards where the domain warp folds over itself.
     \\const float WATER_FEATHER_MIN = 0.55;
-    \\// …AND HOW THE COAST ENDS, one authored `wf.Edge` per cell (wf.Map.waterEdge), point-sampled and dilated
-    \\// one cell at upload exactly as the soil's is.
+    \\// …AND HOW THE COAST ENDS *AND WHAT THE SHEET IS MADE OF*, packed into ONE point-sampled byte per cell:
+    \\// `wf.Edge` in the low three bits, `wf.Liquid` in the next two (`env.packLiquid`). Two ordinals in one texture
+    \\// because they are dilated by the same walk off the same paint, and because a second sampler would be an
+    \\// eighteenth texture unit — GL 3.3 only promises sixteen to a fragment stage.
     \\uniform sampler2D waterEdgeMap;
-    \\int waterEdgeAt(vec2 w){
+    \\int waterCellAt(vec2 w){
     \\  vec2 uv = w/(2.0*waterHalf) + 0.5;
-    \\  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1;   // natural
+    \\  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1;   // natural water
     \\  return int(texture(waterEdgeMap, uv).r*255.0 + 0.5);
     \\}
+    \\// **HOW BRIGHT THE SHEET BURNS ON ITS OWN**, written from inside the material switch beside `waterA`. Lava is
+    \\// the one liquid here that is a LIGHT and not a surface; the other three leave this at 0.
+    \\float sheetGlow = 0.0;
+    \\// …and which liquid the fragment landed in, so the lighting pass below needs no second fetch of the map.
+    \\int sheetKind = L_WATER;
     \\float waterField(vec2 w, bool snap){
     \\  vec2 uv = w/(2.0*waterHalf) + 0.5;
     \\  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
@@ -403,11 +453,39 @@ pub const sceneFS =
     \\  float amp = 2.0*BAY_M;
     \\  return q + (vec2(vnoise(p*BAY_FREQ), vnoise(p*BAY_FREQ + 19.7)) - 0.5)*amp;
     \\}
-    \\float waterAt(vec2 w){
-    \\  int e = waterEdgeAt(w);
-    \\  vec3 k = edgeShape(e);
-    \\  return waterField(coastWarp(w, e, k), e==5);
+    \\// **THE SHAPE AND THE LIQUID COME BACK WITH THE FIELD.** The sheet needs `k.z` for its own feather and the
+    \\// liquid for its tones, both at the coordinate it just read the field at; asking for either separately was a
+    \\// SECOND fetch of `waterEdgeMap` and a second walk of `edgeShape` per fragment - on a quad that covers the
+    \\// world. One fetch, unpacked twice.
+    \\// **ONE BUBBLE PER CELL AND NEVER OUTSIDE IT.** A tar pit and a lava run both MOUND and POP, and the read is
+    \\// the swell more than the burst: `x` is how far the dome has risen (0..1), `y` is the one bright frame of the
+    \\// pop. Confined to its own cell — centre in 0.3..0.7 and radius under 0.28 — so a single hash tap does it,
+    \\// where a 3x3 neighbour ring would be nine on a quad that covers the world.
+    \\// **AND IT FADES OUT WITH EVERY OTHER DETAIL TERM HERE** (`band`): it is a hard hash under a `length`, so a
+    \\// pool seen from across the map was a field of crawling white specks. It fades to NOTHING rather than to a
+    \\// mean — the absence of a bubble is the mean.
+    \\vec2 bubbleAt(vec2 q, float span, float period, float t, float px){
+    \\  float lod = 1.0 - band(1.0/span, px);
+    \\  if (lod <= 0.001) return vec2(0.0);
+    \\  vec2 g = q/span;
+    \\  vec2 id = floor(g), f = fract(g);
+    \\  float h = hash21(id*1.37);
+    \\  float h2 = hash21(id*3.71 + 19.3);
+    \\  float ph = fract(t/period + h);
+    \\  float r = 0.06 + 0.22*ph;
+    \\  float d = length(f - vec2(0.3 + 0.4*h2, 0.3 + 0.4*fract(h*7.13)))/r;
+    \\  float k = (1.0 - smoothstep(0.42, 1.0, d))*lod;
+    \\  float rise = smoothstep(0.0, 0.30, ph)*(1.0 - smoothstep(0.88, 0.97, ph));
+    \\  return vec2(k*rise, k*smoothstep(0.86, 0.92, ph)*(1.0 - smoothstep(0.92, 1.0, ph)));
     \\}
+    \\float waterAt(vec2 w, out vec3 k, out int liq){
+    \\  int cell = waterCellAt(w);
+    \\  int e = cell & EDGE_MASK;
+    \\  liq = (cell >> LIQ_SHIFT) & LIQ_MASK;
+    \\  k = edgeShape(e);
+    \\  return waterField(coastWarp(w, e, k), e==E_TILED);
+    \\}
+    \\float waterAt(vec2 w){ vec3 k; int liq; return waterAt(w, k, liq); }
     \\// WET SAND.
     \\vec3 wetShore(vec3 c, vec2 p){
     \\  if (waterOn == 0) return c;
@@ -440,11 +518,11 @@ pub const sceneFS =
     \\  // THE TWO COVERAGES MULTIPLY, and they answer different questions: the brush's own strength, and how
     \\  // much of this cell's NEIGHBOURHOOD is the same material. `k.z` is how much of the second one the
     \\  // shape wants — 0 cuts the ring out entirely and the edge lands wherever the coverage does.
-    \\  float a = soilCovAt(q, e==5);
+    \\  float a = soilCovAt(q, e==E_TILED);
     \\  if (k.z > 0.0001) a *= clamp((cov/5.0)*k.z, 0.0, 1.0);
     \\  // AND THE SPECKLE BREAKS ITS LAST STRETCH INTO FLECKS rather than fading: a hard per-cell hash
     \\  // thresholded against the coverage, so full cover is solid and the tail scatters and stops.
-    \\  if (e==7) a *= step(speck(p, 2.7), a*1.35);
+    \\  if (e==E_SPECKLE) a *= step(speck(p, 2.7), a*1.35);
     \\  return mix(c, s, a*0.92);
     \\}
     \\vec3 terrainAlbedo(vec2 p, float px){
@@ -615,22 +693,69 @@ pub const sceneFS =
     \\    // free — see waterNormal — this is only what's suspended in the tarn) THE PAINTED SHEET reads its colour from the field instead of from the mesh: one quad over the whole world, present only where the field says water and shaded deep→shallow by how far inside the shore it is.
     \\    if (waterSheet == 1){
     \\      // `q` IS world xz for water (see the call site — water textures in world space, not surface UVs), which is the coordinate the field is indexed in.
-    \\      float f = waterAt(q);
+    \\      vec3 wk;
+    \\      // **THE KIND IS READ AT THE UNWARPED POSITION**, like the coast policy it shares a byte with and for the
+    \\      // same reason: the warp belongs to the shape, so a pool's own tones may not be fetched through another
+    \\      // pool's wander.
+    \\      float f = waterAt(q, wk, sheetKind);
     \\      if (f <= 0.5005) discard;                     // the dry side: no sheet here at all
     \\      float d = clamp((f - 0.5)*2.0, 0.0, 1.0);     // 0 at the shore, 1 in the deep
-    \\      // The three tones come from the PALETTE (propart.WATER_SHALLOW/MID/DEEP), pushed in as uniforms by env.drawWater.
-    \\      base = (d < 0.5) ? mix(waterTone[0], waterTone[1], smoothstep(0.0, 0.5, d))
-    \\                       : mix(waterTone[1], waterTone[2], smoothstep(0.5, 1.0, d));
+    \\      int t0 = 3*sheetKind;
+    \\      // The three tones come from the PALETTE (props.LIQUID_TONES), pushed in as uniforms by env.drawWater.
+    \\      base = (d < 0.5) ? mix(liquidTone[t0], liquidTone[t0+1], smoothstep(0.0, 0.5, d))
+    \\                       : mix(liquidTone[t0+1], liquidTone[t0+2], smoothstep(0.5, 1.0, d));
     \\      // **THE SHEET DIES INTO THE SHORE; IT IS NOT CUT BY IT.** A threshold turns every fold of the domain
     \\      // warp into a shard — which is exactly what a `jagged` coast looked like: torn paper with islands
     \\      // thrown off it. The soil never had this fault because its edge is an ALPHA (`k.z` feathers the
     \\      // coverage ring); water was the one surface asked to end at a compare. It fades over the same
     \\      // `feather` the shape already carries, floored so even a shape authored to CUT still dies softly
     \\      // into wet sand rather than shattering. `d` is 0..1 over WATER_DEEP_AT, so 0.045 is about a metre.
-    \\      float fe = max(edgeShape(waterEdgeAt(q)).z, WATER_FEATHER_MIN);
+    \\      float fe = max(wk.z, WATER_FEATHER_MIN);
     \\      waterA = smoothstep(0.0, WATER_FEATHER_D*(0.4 + fe), d);
+    \\      // **WHAT MAKES EACH ONE ITSELF, AND ONLY WATER GETS THE SILT.** Every branch below is on `sheetKind`,
+    \\      // which is uniform over a pool but not over the quad, so each is written to cost nothing on the others.
+    \\      if (sheetKind == L_OIL){
+    \\        // TAR: a slow, heavy skin — one wide crawl rather than the water's two — with bubbles that MOUND and pop.
+    \\        // The mound is a LIGHT (a dome catches the sky where the flat does not); the pop is a torn dark rim.
+    \\        vec2 bb = bubbleAt(q, 2.6, 5.2, uTime, px);
+    \\        base *= 0.80 + 0.34*fvn(q, 0.30, vec2(uTime*0.020, -uTime*0.013), px);
+    \\        base += vec3(0.055, 0.048, 0.040)*bb.x*bb.x;
+    \\        base *= 1.0 - 0.55*bb.y;
+    \\      } else if (sheetKind == L_FUNGAL){
+    \\        // A SOUP, AND IT IS STIRRED: two octaves crawling against each other at different rates, which is what
+    \\        // says the thing is moving as a mass. Wide swings — a stew is not an even colour anywhere.
+    \\        float st = fvn(q, 0.34, vec2(uTime*0.045, uTime*0.031), px)*0.62
+    \\                 + fvn(q, 1.10, vec2(-uTime*0.070, uTime*0.052), px)*0.38;
+    \\        base *= 0.66 + 0.72*st;
+    \\        // The scum on top is the PALE side of it, so the stew reads pink over orange and not orange over brown.
+    \\        // **THE LIFTS ARE A SHARE OF THE BODY, NOT A FIXED ADD.** Written flat they were sized against an
+    \\        // albedo four times the one this pool has now (propart's own note), so the scum came back as a light.
+    \\        base = mix(base, base*vec3(1.22, 1.02, 1.06) + vec3(0.012, 0.005, 0.008),
+    \\                   smoothstep(0.62, 0.94, st));
+    \\        vec2 bb = bubbleAt(q, 3.4, 7.5, uTime, px);
+    \\        base += vec3(0.013, 0.007, 0.008)*bb.x;
+    \\      } else if (sheetKind == L_LAVA){
+    \\        // **RED SWIRLS ON A PALE YELLOW BODY**, and the swirl is what the crust is: the noise pulls the hot
+    \\        // tone DOWN toward a dark red, so the bright body shows through where the crust is thin.
+    \\        float sw = fvn(q, 0.26, vec2(uTime*0.028, -uTime*0.019), px)*0.60
+    \\                 + fvn(q, 0.95, vec2(-uTime*0.041, uTime*0.033), px)*0.40;
+    \\        base = mix(base, vec3(0.180, 0.028, 0.014), smoothstep(0.40, 0.86, sw));
+    \\        vec2 bb = bubbleAt(q, 2.2, 3.4, uTime, px);
+    \\        // A bubble in lava is a hole in the crust, so it BRIGHTENS toward the core tone rather than tinting.
+    \\        base = mix(base, liquidTone[3*L_LAVA + 2]*1.15, bb.x*0.85);
+    \\        base += vec3(1.00, 0.62, 0.20)*bb.y*0.9;
+    \\        // EMBERS RIDING THE SURFACE: sparse, hot, and on their own drift so they are not the swirl again.
+    \\        float em = fspk(q*1.0 - vec2(uTime*0.09, uTime*0.055), 5.5, px);
+    \\        em = smoothstep(0.955, 0.995, em)*(0.55 + 0.45*sin(uTime*7.3 + q.x*3.1 + q.y*2.2));
+    \\        base += vec3(1.00, 0.52, 0.14)*max(em, 0.0)*1.6;
+    \\        // **IT IS A LIGHT, NOT A SURFACE.** Hottest in the middle and on the thin crust, dimmest at the rim.
+    \\        sheetGlow = clamp(0.55 + 0.35*d - 0.30*smoothstep(0.40, 0.86, sw) + 0.5*bb.x, 0.0, 1.0);
+    \\      } else {
+    \\        base *= 0.84 + 0.30*fmot(q, 0.7, px);   // WATER: silt suspended in the tarn
+    \\      }
+    \\    } else {
+    \\      base *= 0.84 + 0.30*fmot(q, 0.7, px);     // an authored water PROP, which has no field to read
     \\    }
-    \\    base *= 0.84 + 0.30*fmot(q, 0.7, px);
     \\  } else {            // PLAIN: the old generic grain, now surface-anchored. This is the DEFAULT
     \\    // material — every untagged shape (the skeleton's bones, eyes, glints) lands here, so its 13-cell hard hash was sizzling on more of the world than any other single term.
     \\    float g = fvn(q, 1.1, vec2(0.0), px)*0.45 + fvn(q, 4.3, vec2(0.0), px)*0.35 + fspk(q, 13.0, px)*0.20;
@@ -644,14 +769,23 @@ pub const sceneFS =
     \\       + sin((q.x + q.y)*2.1 + t*1.9)*0.16 + sin((q.x - q.y*1.7)*4.3 - t*2.7)*0.07
     \\       + vnoise(q*0.7 + vec2(t*0.09, -t*0.07))*1.15 + vnoise(q*3.1 - vec2(t*0.21, t*0.16))*0.28;
     \\}
-    \\vec3 waterNormal(vec2 q, float t, float px){
+    \\// `amp` is the STEEPNESS of the swell and matters more than it looks; `rate` is how fast the trains run, which
+    \\// is the whole difference between water and a tar pit — same field, a fifth of the clock.
+    \\vec3 waterNormal(vec2 q, float t, float px, float amp, float rate){
     \\  // The finite-difference baseline must be at least a PIXEL wide.
     \\  float E = max(0.14, px);  // slope sample step, in world units
-    \\  // STEEPNESS matters more than it looks.
-    \\  const float AMP = 0.24;
-    \\  float h0 = swell(q, t);
-    \\  return normalize(vec3(-(swell(q + vec2(E, 0.0), t) - h0)/E*AMP, 1.0,
-    \\                        -(swell(q + vec2(0.0, E), t) - h0)/E*AMP));
+    \\  float tt = t*rate;
+    \\  float h0 = swell(q, tt);
+    \\  return normalize(vec3(-(swell(q + vec2(E, 0.0), tt) - h0)/E*amp, 1.0,
+    \\                        -(swell(q + vec2(0.0, E), tt) - h0)/E*amp));
+    \\}
+    \\// **HOW EACH LIQUID MOVES**, in the order of `wf.Liquid`: (steepness, rate). Tar is thick and barely creeps,
+    \\// the stew heaves slowly and wide, and lava's crust hardly moves at all — what animates THAT is the swirl.
+    \\vec2 liquidSwell(int k){
+    \\  return (k == L_OIL)    ? vec2(0.10, 0.20)
+    \\       : (k == L_FUNGAL) ? vec2(0.17, 0.34)
+    \\       : (k == L_LAVA)   ? vec2(0.07, 0.13)
+    \\                         : vec2(0.24, 1.00);
     \\}
     \\// Torch/fire light: quadratic falloff reaching exactly 0 at the radius (so a light can never leak out of its room), lambert wrapped hard so one flame fills a chamber.
     \\vec3 pointLights(vec3 pos, vec3 n){
@@ -711,8 +845,9 @@ pub const sceneFS =
     \\    // which is the right order of magnitude and costs no third `fwidth` over the whole scene.
     \\    vec2 mq = (mi == 9) ? p : (mi == 15) ? vec2(p.x + p.y, fragPosition.y) : fragUV;
     \\    base = matAlbedo(mi, mq, base, n, (mi == 9 || mi == 15) ? pxP : pxQ);
-    \\    // …and its ripples live in the NORMAL, so they must land before any lighting term.
-    \\    if (mi == 9) { n = waterNormal(p, uTime, pxP); nv = clamp(dot(n, V), 0.0, 1.0); } // ripples move the normal
+    \\    // …and its ripples live in the NORMAL, so they must land before any lighting term. `sheetKind` was set by
+    \\    // `matAlbedo` one line up, so a tar pit reads its own crawl off the same swell field.
+    \\    if (mi == 9) { vec2 sk = liquidSwell(sheetKind); n = waterNormal(p, uTime, pxP, sk.x, sk.y); nv = clamp(dot(n, V), 0.0, 1.0); }
     \\  }
     \\  float ndl = dot(n, L);
     \\  float diff = clamp((ndl + 0.12)/1.12, 0.0, 1.0); // tighter wrap = crisper terminator (more contrast)
@@ -765,13 +900,38 @@ pub const sceneFS =
     \\      float nh = max(dot(n, H), 0.0);
     \\      // A TIGHT glitter path only.
     \\      float ww = lobe(pxP, 10.0);
-    \\      lit += (pow(nh, 320.0*ww)*2.6*ww + pow(nh, 48.0)*0.07)*vec3(1.5, 1.26, 0.92)*keyAmt*(1.0 - sh);
-    \\      float fres = pow(1.0 - nv, 4.0);
-    \\      lit += fres*vec3(0.058, 0.072, 0.104)*keyAmt;          // the slate sky, only at grazing angles
+    \\      if (sheetKind == L_LAVA){
+    \\        // NOTHING. A sun streak on lava reads as wet plastic; what lava has instead is `sheetGlow`.
+    \\      } else if (sheetKind == L_OIL){
+    \\        // **TAR IS THE GLOSSIEST SURFACE IN THE GAME AND THE DARKEST**, which is the whole read of it: almost
+    \\        // no albedo under a broad hard sheen, so the pit is a mirror with nothing in it. Broader than water's
+    \\        // needle (180 against 320) because a heavy skin does not shatter the streak into glitter.
+    \\        lit += (pow(nh, 180.0*ww)*2.1*ww + pow(nh, 24.0)*0.30)*vec3(1.34, 1.18, 0.96)*keyAmt*(1.0 - sh);
+    \\        // **AND ITS SKY IS A SLIVER, NOT A WASH.** Water can afford a broad fresnel because it has a body under
+    \\        // it; tar has none, so the sheen IS the pixel — at water's exponent 3 the pool came back a flat slate
+    \\        // disc from the far bank (measured 0.09 linear, 87/255 after gamma, over the whole surface). Fifth
+    \\        // power and a third the amount keeps the mirror in the last few degrees, where a pit's mirror is.
+    \\        lit += pow(1.0 - nv, 5.0)*vec3(0.030, 0.030, 0.034)*keyAmt;
+    \\      } else if (sheetKind == L_FUNGAL){
+    \\        // **A WET SKIN, AND A SKIN IS STILL WET.** Between water's needle and tar's mirror: a stew is heavy
+    \\        // enough not to shatter the sun into glitter, so the streak is BROAD (96 against water's 320) and
+    \\        // sits over a wide sheen. On the old blown-out albedo none of it could be seen — a 0.13 lobe over
+    \\        // a body already at the clip is no highlight at all, which is why the pool read as flat paint.
+    \\        lit += (pow(nh, 96.0*ww)*1.55*ww + pow(nh, 20.0)*0.24)*vec3(1.32, 1.10, 1.02)*keyAmt*(1.0 - sh);
+    \\        // …AND ITS SKY IS WARM, because what is under it is. Water's exponent, a little less of it.
+    \\        lit += pow(1.0 - nv, 4.0)*vec3(0.052, 0.036, 0.042)*keyAmt;
+    \\      } else {
+    \\        lit += (pow(nh, 320.0*ww)*2.6*ww + pow(nh, 48.0)*0.07)*vec3(1.5, 1.26, 0.92)*keyAmt*(1.0 - sh);
+    \\        float fres = pow(1.0 - nv, 4.0);
+    \\        lit += fres*vec3(0.058, 0.072, 0.104)*keyAmt;        // the slate sky, only at grazing angles
+    \\      }
     \\    }
     \\  }
     \\  float emis = 1.0 - fragColor.a;
     \\  lit = mix(lit, base*1.35, emis);
+    \\  // **LAVA IS A SOURCE.** Written by the sheet's own branch, so it costs one compare on every other surface;
+    \\  // pushed past the mix above rather than through `emis`, which rides a vertex attribute the quad cannot carry.
+    \\  if (sheetGlow > 0.0) lit = mix(lit, base*1.62, sheetGlow);
     \\  // Rime: a chilled body wears a pale blue coat while the hold lasts (per-draw, like the flash).
     \\  lit = mix(lit, vec3(0.60, 0.74, 0.88), frost);
     \\  // Combat flash: the struck actor pops for a beat (per-draw uniform). AFTER the frost, so a hit
@@ -779,7 +939,7 @@ pub const sceneFS =
     \\  // back off this chain at luma 111 and the blood flying off it at 48, so the spray was a dark red
     \\  // thing on a red thing. Screen luma here is 185 — the same hue, twice the gap.
     \\  lit = mix(lit, vec3(0.88, 0.38, 0.30), hitFlash);
-    \\  float haze = 1.0 - exp(-hazeDensity*dist);
+    \\  float haze = 1.0 - exp(-hazeDensity*hazeScale*dist);
     \\  // Haze banks golden looking into the sun's quarter (matches the sky shader's bank).
     \\  float sunAmt = pow(clamp(dot(-V, L), 0.0, 1.0), 3.0);
     \\  vec3 hazeC = hazeColor + hazeBank*sunAmt;

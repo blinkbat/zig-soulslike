@@ -128,6 +128,23 @@ pub const WATER_DEEP = rgba(13, 19, 21, 255);
 pub const WATER_MID = rgba(18, 25, 26, 255);
 pub const WATER_SHALLOW = rgba(30, 35, 31, 255);
 pub const WATER_MUD = rgba(40, 35, 25, 255);
+// **THE OTHER THREE LIQUIDS' SHEET TONES** (`props.LIQUID_TONES`, shallow -> deep). Water is dark because it is
+// mostly a reflection of a slate sky; these three are OPAQUE, so they are read at their own albedo and sit
+// brighter. Lava runs the other way round — the rim is the cool crust and the middle is the hot core.
+pub const OIL_SHALLOW = rgba(20, 17, 14, 255);
+pub const OIL_MID = rgba(11, 10, 9, 255);
+pub const OIL_DEEP = rgba(5, 5, 6, 255);
+// **THE STEW IS NOT A LIGHT** (owner: too bright, hurts my eyes). Sampled through the chain (albedo x1.72 ->
+// gamma 1/2.2) the old rim came back 255/205/172 — past the clip on red, and BRIGHTER on green and blue than
+// lava's own crust — over a fungal bloom that reads 121/87/98. Solved back against that bank rather than
+// picked: the rim now lands a shade over it at 145/95/84 and the deep well under it at 87/43/59, so a pool
+// reads as a body sunk into the ground it lies in. Its wet look is the SHEEN's job (`shaders`), not the albedo's.
+pub const FUNGAL_SHALLOW = rgba(43, 17, 13, 255);
+pub const FUNGAL_MID = rgba(26, 8, 9, 255);
+pub const FUNGAL_DEEP = rgba(14, 4, 6, 255);
+pub const LAVA_SHALLOW = rgba(150, 40, 18, 255);
+pub const LAVA_MID = rgba(238, 122, 34, 255);
+pub const LAVA_DEEP = rgba(255, 232, 148, 255);
 
 pub const Part = struct { ax: f32 = 0, az: f32 = 0, bx: f32 = 0, bz: f32 = 0, r: f32, h: f32 };
 

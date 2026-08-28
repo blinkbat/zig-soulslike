@@ -168,6 +168,8 @@ test {
     _ = @import("play/combat.zig");
     _ = @import("play/stats.zig");
     _ = @import("play/item.zig");
+    _ = @import("play/liquid.zig");
+    _ = @import("foes/fungalduo.zig");
     _ = @import("core/collision.zig");
     _ = @import("gfx/gfx.zig");
     _ = @import("world/daynight.zig");

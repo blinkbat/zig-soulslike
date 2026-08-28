@@ -1681,7 +1681,6 @@ test "THE SLOWS MULTIPLY, AND THE BARGAIN PULLS THE OTHER WAY" {
 
     v.build(.stupefy, ailRow(.stupefy).max);
     _ = v.tickAils(1.0 / 60.0);
-    // **NEITHER CANCELS THE OTHER**: chilled and stupefied at once crawls.
     try std.testing.expectApproxEqAbs(CHILL_TRAVEL * STUPEFY_TRAVEL, v.travelMult(), 1e-5);
     try std.testing.expect(v.travelMult() < CHILL_TRAVEL);
     try std.testing.expect(STUPEFY_TRAVEL > CHILL_TRAVEL);
@@ -1696,7 +1695,6 @@ test "THE SLOWS MULTIPLY, AND THE BARGAIN PULLS THE OTHER WAY" {
         mad.dmgMult(), mad.travelMult(), mad.hasteMult(), STUPEFY_TRAVEL, STUPEFY_FOCUS,
     });
 
-    // **THE BARGAIN COMES DUE**: it bleeds the whole way and hands back a `justEnded` at the far end.
     var paid: f32 = 0;
     var t: f32 = 0;
     var ended = false;
@@ -1790,14 +1788,12 @@ test "BLEED BURSTS FLAT AND RE-ARMS, AND ARMOUR BARELY ANSWERS IT" {
     std.debug.print("\n  bleed: 60 armour keeps {d:.0} of a {d:.0} physical blow and {d:.0} of the burst\n", .{
         B.flat - armourTaken(60, B.flat), B.flat, @as(f32, 0),
     });
-    // **IT EMPTIES AND RE-ARMS**: never `on`, so the next dose starts filling the same frame.
     try std.testing.expect(!plated.ailOn(.bleed));
     try std.testing.expectApproxEqAbs(@as(f32, 0), plated.ail(.bleed).meter, 1e-6);
     plated.build(.bleed, B.max);
     _ = plated.tickAils(1.0 / 60.0);
     try std.testing.expectApproxEqAbs(400.0 - B.flat * 2.0, plated.hp, 0.01);
 
-    // **ONLY A LONGER BAR REALLY HELPS** — the same burst is a smaller share of a bigger pool.
     var small = Vitals.init(100, 99, 99);
     var big = Vitals.init(400, 99, 99);
     small.build(.bleed, B.max);

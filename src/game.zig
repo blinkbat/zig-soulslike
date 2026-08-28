@@ -15,6 +15,7 @@ const bookmod = @import("ui/book.zig");
 const frogmod = @import("foes/frog.zig");
 const foemod = @import("foes/foe.zig");
 const combat = @import("play/combat.zig");
+const liquidmod = @import("play/liquid.zig");
 const collision = @import("core/collision.zig");
 const rumblemod = @import("core/rumble.zig");
 const archermod = @import("foes/archer.zig");
@@ -25,6 +26,7 @@ const broodmod = @import("foes/brood.zig");
 const warriormod = @import("foes/warrior.zig");
 const rootedmod = @import("foes/rooted.zig");
 const knightmod = @import("foes/knight.zig");
+const duomod = @import("foes/fungalduo.zig");
 const delvermod = @import("foes/delver.zig");
 const necromod = @import("foes/necro.zig");
 const ravagermod = @import("foes/ravager.zig");
@@ -202,6 +204,11 @@ const Enter = union(enum) {
 const ENTER_OUT: f32 = 0.40;
 const ENTER_IN: f32 = 0.85;
 
+/// Every rail standing. Spelled once: the field's default never runs (`Game` comes off `alloc.create`), so
+/// `init` and `snapBosses` both have to write it and three copies of the literal is three chances to
+/// size one of them off the wrong count.
+const NO_BOSSES: savemod.BossBits = [_][worldfmt.MAX_PER_KIND]bool{[_]bool{false} ** worldfmt.MAX_PER_KIND} ** savemod.BOSS_RAILS;
+
 pub const Game = struct {
     scene: gfx.Scene,
     sky: gfx.Sky,
@@ -237,6 +244,8 @@ pub const Game = struct {
     shoal: fishmod.Shoal,
     roost: batmod.Roost,
     vigil: knightmod.Vigil,
+    vanguard: duomod.Vanguard,
+    conclave: duomod.Conclave,
     swarm: leechmod.Swarm,
     haunt: shademod.Haunt,
     chests: chestmod.Chests,
@@ -251,8 +260,15 @@ pub const Game = struct {
     nNpcPos: usize = 0,
     rest: restmod.Rest = .{},
     bootT: f32 = 0,
-    bossK: f32 = 0,
-    bossFrac: f32 = 0,
+    /// **THE SCRATCH THE SAVE READS AND WRITES**, one row per `BOSS_RAILS` row. It is a `Game` field and not a
+    /// local because `save.Slot` holds a pointer to it across both directions of the trip.
+    bossBits: savemod.BossBits = NO_BOSSES,
+    /// **ONE RAIL PER BOSS, AND THE RAIL IS ASSIGNED WHERE IT IS DRAWN.** Held per SLOT, not per creature: the
+    /// knight's bar and the duo's swordsman both called the old `bossBar`, which meant rail 0 — so every frame
+    /// each overwrote the other's frac, its fade and its chip tail, and the two drew on top of each other at
+    /// the same y whether or not either was awake.
+    bossK: [hud_.BOSS_SLOTS]f32 = [_]f32{0} ** hud_.BOSS_SLOTS,
+    bossFrac: [hud_.BOSS_SLOTS]f32 = [_]f32{0} ** hud_.BOSS_SLOTS,
     /// A DEFAULTED FIELD: assigned in `init` and in `beginGame` — `Game` comes off `alloc.create`, so the
     /// `= null` here never runs.
     gateWalk: ?GateWalk = null,
@@ -305,10 +321,18 @@ pub const Game = struct {
     /// **SEEDED ONCE AT STARTUP AND NEVER REWOUND.** A seeded `Rng` rather than wall time because `--shot` has
     /// to stay reproducible; in `init` rather than `beginGame`, or a reload hands you the same answer forever.
     dropRng: mathx.Rng = mathx.Rng.init(0),
+    /// **NOT `dropRng`.** The liquid layer draws once per wet cell near him and once per pop clock, so sharing
+    /// the drop stream would make what a corpse yields depend on how much lava he happened to be standing by —
+    /// and `--shot` would stop being reproducible. Its own stream, seeded on the same rule.
+    liquidRng: mathx.Rng = mathx.Rng.init(0),
     saveT: f32 = 0,
     boltGas: [BOLT_GAS_CAP]knightmod.Gas = undefined,
     boltGasHead: usize = 0,
     boltGasT: f32 = 0,
+    /// One per `wf.Liquid`, and water's stays at zero: a tarn has no status and no pop of its own.
+    liquidSoak: foemod.Soak = .{},
+    popT: [worldfmt.Liquid.N]f32 = [_]f32{0} ** worldfmt.Liquid.N,
+    searT: f32 = 0,
     drawDt: f32 = 1.0 / 60.0,
 
     fn init(g: *Game) void {
@@ -357,6 +381,8 @@ pub const Game = struct {
         g.shoal = fishmod.Shoal.init(g.scene.shader);
         g.roost = batmod.Roost.init(g.scene.shader);
         g.vigil = knightmod.Vigil.init(g.scene.shader);
+        g.vanguard = duomod.Vanguard.init(g.scene.shader);
+        g.conclave = duomod.Conclave.init(g.scene.shader);
         g.swarm = leechmod.Swarm.init(g.scene.shader);
         g.haunt = shademod.Haunt.init(g.scene.shader);
         g.chests = chestmod.Chests.init(g.scene.shader);
@@ -367,8 +393,8 @@ pub const Game = struct {
         g.award = .{};
         g.day = .{};
         g.bootT = 0;
-        g.bossK = 0;
-        g.bossFrac = 0;
+        g.bossK = [_]f32{0} ** hud_.BOSS_SLOTS;
+        g.bossFrac = [_]f32{0} ** hud_.BOSS_SLOTS;
         g.gateWalk = null;
         g.spiritK = 0;
         g.spiritHp = 0;
@@ -416,6 +442,11 @@ pub const Game = struct {
         g.boltGasHead = 0;
         g.boltGasT = 0;
         g.dropRng = mathx.Rng.init(0xD0DEC0DE);
+        g.bossBits = NO_BOSSES;
+        g.liquidRng = mathx.Rng.init(0x11C0D5EA);
+        g.liquidSoak = .{};
+        g.popT = [_]f32{0} ** worldfmt.Liquid.N;
+        g.searT = 0;
         g.shelf = savemod.survey(saveMap(g));
         g.slot = 0;
         g.shotOwed = false;
@@ -479,8 +510,8 @@ fn beginGame(g: *Game) void {
 
     g.hero.flasks = .{};
     g.day = .{};
-    g.bossK = 0;
-    g.bossFrac = 0;
+    g.bossK = [_]f32{0} ** hud_.BOSS_SLOTS;
+    g.bossFrac = [_]f32{0} ** hud_.BOSS_SLOTS;
     g.gateWalk = null;
     g.spiritK = 0;
     g.spiritHp = 0;
@@ -587,6 +618,29 @@ fn saveMap(g: *const Game) []const u8 {
     return worldfmt.startMap();
 }
 
+comptime {
+    if (BOSS_RAILS.len > savemod.BOSS_RAILS) @compileError("game: more boss rails than the save file has rows for");
+}
+
+/// **EVERY RAIL'S DEAD, INTO THE SCRATCH THE FILE IS WRITTEN FROM.** `vit.dead` and not `gone`: the mechanic is
+/// the killing blow, and the dissolve is only the picture catching up with it.
+fn snapBosses(g: *Game) void {
+    g.bossBits = NO_BOSSES;
+    inline for (BOSS_RAILS, 0..) |row, i| {
+        for (@field(g, row.field).liveConst(), 0..) |*k, j| {
+            if (j < worldfmt.MAX_PER_KIND) g.bossBits[i][j] = k.vit.dead;
+        }
+    }
+}
+
+fn applyBosses(g: *Game) void {
+    inline for (BOSS_RAILS, 0..) |row, i| {
+        for (@field(g, row.field).live(), 0..) |*k, j| {
+            if (j < worldfmt.MAX_PER_KIND and g.bossBits[i][j]) k.markSlain();
+        }
+    }
+}
+
 fn slotOf(g: *Game) savemod.Slot {
     return .{
         .hero = &g.hero,
@@ -597,7 +651,7 @@ fn slotOf(g: *Game) savemod.Slot {
         .trig = &g.trig,
         .chests = &g.chests,
         .pickups = &g.pickups,
-        .bosses = g.vigil.live(),
+        .bosses = &g.bossBits,
         .award = &g.award,
         .map = saveMap(g),
     };
@@ -606,6 +660,7 @@ fn slotOf(g: *Game) savemod.Slot {
 fn loadGame(g: *Game, i: usize) bool {
     beginGame(g);
     if (!savemod.read(i, slotOf(g))) return false;
+    applyBosses(g);
     hidePickups(g);
     applyTree(g);
     plantActor(g, &g.hero.pos);
@@ -656,6 +711,10 @@ pub const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "shoal", .kind = null, .aggro = fishmod.AGGRO_R },
     .{ .field = "roost", .kind = .blinkbat, .aggro = batmod.AGGRO_R },
     .{ .field = "vigil", .kind = .bone_knight, .aggro = knightmod.AGGRO_R, .vsHero = false, .vs = &.{ "line", "muster" } },
+    // **THE PAIR IS ONE GROUP AND ANSWERS FOR ITS OWN MEMBERS** — the kobold warband's arrangement, because
+    // the two of them are one encounter and the ground they put down belongs to neither body.
+    .{ .field = "vanguard", .kind = .fungal_swordsman, .aggro = duomod.AGGRO_R, .vs = &.{ "cluster", "ring" } },
+    .{ .field = "conclave", .kind = .fungal_magus, .aggro = duomod.AGGRO_R, .vs = &.{ "cluster", "ring" } },
 };
 
 comptime {
@@ -689,6 +748,7 @@ const NO_PARRY = [_]struct { field: []const u8, why: []const u8 }{
     .{ .field = "host", .why = "a disc at your feet, a leap-slam that throws you, and a thrown sac: no strokes" },
     .{ .field = "crypt", .why = "the ancient priest never melees; the breath is a cone you walk out of" },
     .{ .field = "bed", .why = "the slumber bloom has no blow at all — the gas is a ring you walk out of" },
+    .{ .field = "conclave", .why = "the fungal magus never melees; the orbs and the bunches are not strokes" },
 };
 
 comptime {
@@ -992,6 +1052,112 @@ comptime {
     std.debug.assert(envmod.HERO_R_PIN == foemod.HERO_R);
 }
 
+/// **EVERY BOSS ON THE FIELD, IN ONE PASS, EACH ON ITS OWN RAIL.** A boss group owes this list a row and
+/// nothing else. The rail is the ROW'S index, so it is stable while a fight lasts and never shared: the duo's
+/// swordsman and the knight both used to mean rail 0, and each spent the frame wiping the other's chip tail.
+///
+/// **A DUO IS TWO ROWS, NOT ONE POOLED ONE.** They die separately and the fight is which of them you spend the
+/// window on, so a bar summing both would hide the only decision in it. Each fades on its own clock, so a
+/// survivor's bar stays up alone.
+const BOSS_RAILS = [_]struct { field: []const u8, kind: FoeKind }{
+    .{ .field = "vigil", .kind = .bone_knight },
+    .{ .field = "vanguard", .kind = .fungal_swordsman },
+    .{ .field = "conclave", .kind = .fungal_magus },
+};
+
+comptime {
+    if (BOSS_RAILS.len > hud_.BOSS_SLOTS) @compileError("game: more boss rails than the HUD has rails for");
+    for (BOSS_RAILS) |r| {
+        var known = false;
+        for (FOE_GROUPS) |gr| {
+            if (std.mem.eql(u8, gr.field, r.field)) known = true;
+        }
+        if (!known) @compileError("game: BOSS_RAILS names `" ++ r.field ++ "`, which is not a FOE_GROUPS field");
+    }
+}
+
+/// **A NAMED GATE OWNS ITS BOSS'S BAR** — has the hero walked through a fog gate sealed on `k`? `null` is
+/// nobody asking: no ward in this map names that creature, so the bar falls back to the aggro ring it has
+/// always used. Authored per gate in the editor (Sealed by...), never a list in here — which is the whole
+/// point: the arena, and therefore where the bar comes up, is the MAP's to say.
+fn gateEntered(e: *const envmod.Env, m: *const worldfmt.Map, k: FoeKind) ?bool {
+    var named = false;
+    for (0..e.nwards) |i| {
+        const pr = &e.props[e.wardProps[i]];
+        if (pr.op >= m.nops or !m.ops[pr.op].sealsOn(k)) continue;
+        named = true;
+        if (e.wardIn[i]) return true;
+    }
+    return if (named) false else null;
+}
+
+test "A BOSS BAR BELONGS TO ITS FOG GATE, and a boss no gate names keeps the ring it always had" {
+    const e = try std.testing.allocator.create(envmod.Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    const m = try std.testing.allocator.create(worldfmt.Map);
+    defer std.testing.allocator.destroy(m);
+    m.blank("Gate");
+    var op = worldfmt.defaults(.at);
+    op.kind = .foggate;
+    op.boss[0] = .fungal_swordsman;
+    op.boss[1] = .fungal_magus;
+    op.nboss = 2;
+    const oi = try m.add(op);
+    e.nprops = 1;
+    e.props[0] = .{ .kind = .foggate, .pos = mathx.zero3, .yaw = 0, .scale = 1, .op = @intCast(oi) };
+    e.nwards = 1;
+    e.wardProps[0] = 0;
+    e.wardIn[0] = false;
+
+    // Both halves of the pair wait on the ONE gate, which is what a two-name seal buys.
+    try std.testing.expectEqual(@as(?bool, false), gateEntered(e, m, .fungal_swordsman));
+    try std.testing.expectEqual(@as(?bool, false), gateEntered(e, m, .fungal_magus));
+    // …and a boss nothing gates is nobody's business here: `null` hands the bar back to the aggro ring.
+    try std.testing.expectEqual(@as(?bool, null), gateEntered(e, m, .bone_knight));
+    e.wardIn[0] = true;
+    try std.testing.expectEqual(@as(?bool, true), gateEntered(e, m, .fungal_swordsman));
+    try std.testing.expectEqual(@as(?bool, true), gateEntered(e, m, .fungal_magus));
+    try std.testing.expectEqual(@as(?bool, null), gateEntered(e, m, .bone_knight));
+}
+
+fn bossBars(g: *Game, dt: f32) void {
+    inline for (BOSS_RAILS, 0..) |row, i| {
+        var frac: f32 = 0;
+        var stag = false;
+        var up = false;
+        // **THE BAR IS THE FOG GATE'S, WHEN A FOG GATE CLAIMS IT.** A boss you have not been sealed in with is
+        // a boss whose bar has no business on screen: the pair were visible across half a canyon, so both rails
+        // came up while he was still walking toward the door.
+        const gated = gateEntered(&g.env, &g.map, row.kind) orelse true;
+        for (if (gated) @field(g, row.field).liveConst() else &.{}) |*k| {
+            if (!k.alive()) continue;
+            if (!(k.leash.roused() or mathx.distXZ(k.pos, g.hero.pos) <= AGGRO_OF[i])) continue;
+            frac = k.vit.hpFrac();
+            stag = k.staggered();
+            up = true;
+            break;
+        }
+        if (up) {
+            g.bossFrac[i] = frac;
+            g.bossK[i] = mathx.approach(g.bossK[i], 1.0, dt * 4.0);
+        } else g.bossK[i] = mathx.approach(g.bossK[i], 0, dt * 1.4);
+        hud_.bossBarAt(i, dt, worldfmt.foeName(row.kind), g.bossFrac[i], stag, g.bossK[i]);
+    }
+}
+
+/// The aggro ring for each rail, taken off `FOE_GROUPS` rather than written again — a bar that wakes at a
+/// different range from the creature it is showing is a bar that lies about whether the fight has started.
+const AGGRO_OF = blk: {
+    var out: [BOSS_RAILS.len]f32 = undefined;
+    for (BOSS_RAILS, 0..) |r, i| {
+        for (FOE_GROUPS) |gr| {
+            if (std.mem.eql(u8, gr.field, r.field)) out[i] = gr.aggro;
+        }
+    }
+    break :blk out;
+};
+
 fn wadeDrag(g: *const Game) f32 {
     return wadeDragAt(g.env.wadeDepth(g.hero.pos.x, g.hero.pos.z));
 }
@@ -1008,14 +1174,25 @@ fn wadeDragAt(d: f32) f32 {
     return mathx.lerpF(1.0, WADE_SLOWEST, mathx.smoothstep(WADE_KNEE, WADE_DEEP, d));
 }
 
-fn markSwing(f: anytype, hero: rl.Vector3) f32 {
-    var worst: f32 = 0;
+const Mark = struct { swing: f32, out: f32, lo: f32, hi: f32 };
+
+/// **HOW FAR THE MARK RIDES, AND HOW FAR IT WANDERS OFF THE BODY.** `swing` is the travel a lock dot needs to
+/// look attached; `out` is the worst the mark ever pokes out of the body's own standing box — sideways past
+/// `bodyR`, or over the crown.
+fn markSwing(f: anytype, hero: rl.Vector3) Mark {
+    var m = Mark{ .swing = 0, .out = 0, .lo = 1e9, .hi = -1e9 };
     var i: u32 = 0;
     while (i < 300) : (i += 1) {
         _ = f.update(1.0 / 60.0, hero, PLAY_HALF, .{});
-        worst = @max(worst, mathx.distXZ(f.lockPoint(), f.pos));
+        const at = f.lockPoint();
+        m.swing = @max(m.swing, mathx.distXZ(at, f.pos));
+        m.out = @max(m.out, mathx.distXZ(at, f.pos) - f.bodyR());
+        m.out = @max(m.out, at.y - f.topWorld().y);
+        m.out = @max(m.out, f.pos.y - at.y);
+        m.lo = @min(m.lo, at.y - f.pos.y);
+        m.hi = @max(m.hi, at.y - f.pos.y);
     }
-    return worst;
+    return m;
 }
 
 test "THE MARK RIDES THE BODY, on every creature that has one" {
@@ -1023,23 +1200,33 @@ test "THE MARK RIDES THE BODY, on every creature that has one" {
     const MIN: f32 = 0.02;
 
     var toad = frogmod.Frog.spawn(mathx.zero3, 0, 1.0, 0.3);
-    try std.testing.expect(markSwing(&toad, hero) > MIN);
     var bowman = archermod.Archer.spawn(mathx.zero3, 0, 1.0, 0.3);
-    try std.testing.expect(markSwing(&bowman, hero) > MIN);
     var giant = ogremod.Ogre.spawn(mathx.zero3, 0, 1.0, 0.3);
-    try std.testing.expect(markSwing(&giant, hero) > MIN);
     var zerk = koboldmod.Kobold.spawn(mathx.zero3, 0, 1.0, 0.3);
-    try std.testing.expect(markSwing(&zerk, hero) > MIN);
     var mother = broodmod.Spider.spawnAs(.mother, mathx.zero3, 0, 1.0, 0.3);
-    try std.testing.expect(markSwing(&mother, hero) > MIN);
     var boards = warriormod.Warrior.spawnAs(.shieldman, mathx.zero3, 0, 1.0, 0.3);
-    try std.testing.expect(markSwing(&boards, hero) > MIN);
     var ghost = shademod.Shade.spawn(mathx.zero3, 0, 1.0, 0.3);
-    try std.testing.expect(markSwing(&ghost, hero) > MIN);
     var cap = shroommod.Shroom.spawn(mathx.zero3, 0, 1.0, 0.3);
-    try std.testing.expect(markSwing(&cap, hero) > MIN);
     var knight = knightmod.Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
-    try std.testing.expect(markSwing(&knight, hero) > MIN);
+    var blade = duomod.Swordsman.spawn(mathx.zero3, 0, 1.0, 0.3);
+    var staff = duomod.Magus.spawn(mathx.zero3, 0, 1.0, 0.3);
+
+    // **AND IT RIDES IT — IT DOES NOT ORBIT THE WORLD.** `foe.markOn` takes a point in the BONE'S frame; the
+    // duo handed it the world centre instead, so both marks landed a body-length past the far side of the map.
+    // Nothing could SEE that point, which cost the pair their lock-on AND made `markSight` cast at open
+    // ground — so a fog gate stopped blocking their aggro. One assertion here would have caught all of it.
+    inline for (.{
+        .{ "toad", &toad },      .{ "archer", &bowman },   .{ "ogre", &giant },
+        .{ "berserker", &zerk },  .{ "mother", &mother },   .{ "shieldman", &boards },
+        .{ "shade", &ghost },     .{ "sporeling", &cap },   .{ "knight", &knight },
+        .{ "fungal sword", &blade }, .{ "fungal magus", &staff },
+    }) |row| {
+        const m = markSwing(row[1], hero);
+        std.debug.print("\n  {s}: mark swings {d:.2} m, sits {d:.2}..{d:.2} m up, worst {d:.2} m out of its own standing box", .{ row[0], m.swing, m.lo, m.hi, m.out });
+        try std.testing.expect(m.swing > MIN);
+        try std.testing.expect(m.out <= 0.60);
+    }
+    std.debug.print("\n", .{});
 }
 
 const Chase = struct { turned: ?f32, out: f32, gap: f32 };
@@ -2205,12 +2392,17 @@ const WARD_FADE: f32 = 2.6;
 fn markWards(g: *Game, alive: [@typeInfo(FoeKind).@"enum".fields.len]u32, dt: f32) void {
     for (0..g.env.nwards) |i| {
         const pr = &g.env.props[g.env.wardProps[i]];
-        const boss = if (pr.op < g.map.nops) g.map.ops[pr.op].boss else null;
-        const standing = if (boss) |b| alive[@intFromEnum(b)] > 0 else false;
+        const seal = if (pr.op < g.map.nops) g.map.ops[pr.op].seal() else &.{};
+        // **ANY NAME ON THE GATE HOLDS IT.** A duo is two, and a door that let go with half the fight still
+        // standing let you walk out of an arena you were sealed into.
+        var standing = false;
+        for (seal) |b| {
+            if (alive[@intFromEnum(b)] > 0) standing = true;
+        }
         const shut = g.env.wardIn[i] and standing and g.env.wardClear(@intCast(i), g.hero.pos, HERO_R);
         if (shut and !g.env.wardShut[i]) sfx.play(.fog_seal);
         g.env.wardShut[i] = shut;
-        if (g.env.wardIn[i] and boss != null and !standing) {
+        if (g.env.wardIn[i] and seal.len > 0 and !standing) {
             // One shot off the first frame of the door letting go — past it `wardLife` is already under 1, so the edge cannot come round twice.
             if (g.env.wardLife[i] >= 1.0) sfx.play(.fog_felled);
             g.env.wardLife[i] = mathx.maxF(0, g.env.wardLife[i] - dt / WARD_FADE);
@@ -2378,6 +2570,7 @@ fn bonfirePick(g: *Game, pick: restmod.Pick) void {
 const SaveShot = enum { withShot, noShot };
 
 fn saveNow(g: *Game, shot: SaveShot) void {
+    snapBosses(g);
     if (!savemod.write(g.slot, slotOf(g))) {
         std.debug.print("SAVE FAILED: could not write {s}\n", .{savemod.path(g.slot)});
         return;
@@ -2899,6 +3092,9 @@ fn heroEye(g: *const Game) rl.Vector3 {
     return v3(g.hero.pos.x, g.hero.pos.y + foemod.HERO_EYE, g.hero.pos.z);
 }
 
+/// **THE RAY IS CAST AT THE CREATURE'S OWN MARK**, so a mark that does not ride the body is a body no wall can
+/// hide from — a fog gate stopped blocking the duo's aggro because theirs sat off in open ground. Pinned by
+/// "THE MARK RIDES THE BODY".
 fn markSight(g: *Game) void {
     const eye = heroEye(g);
     inline for (FOE_GROUPS) |gr| {
@@ -3395,13 +3591,14 @@ fn tickWeather(g: *Game, dt: f32) void {
     sfx.setTorch(if (g.hero.torchLit()) 1.0 else 0.0);
     // THE LIGHTNING STAYS THE WORLD'S: a location sets how wet it is, but the storm that throws bolts is the sky's own event.
     if (g.weather.thunder()) |gain| sfx.playAt(.thunder, gain);
-    g.mist.tick(dt, g.hero.pos, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), fogAmt(g));
+    const under = g.env.groundAt(g.hero.pos.x, g.hero.pos.z);
+    g.mist.tick(dt, g.hero.pos, under, fogAmt(g));
     // **THE BIRDS ARE THE DRY SKY'S** (owner: infrequently, just to feel alive) — the same wet level the
     // sheet reads, so a region that is raining on him has nothing flying over it either.
     // …and the debug row sends one ACROSS his view rather than at him, since what he is checking is whether a
     // flock crossing the sky reads at all.
-    if (g.menu.takeBirds()) g.skein.stageOne(g.hero.pos, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), g.hero.facing + std.math.pi * 0.5);
-    g.skein.tick(dt, g.hero.pos, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), g.wetNow);
+    if (g.menu.takeBirds()) g.skein.stageOne(g.hero.pos, under, g.hero.facing + std.math.pi * 0.5);
+    g.skein.tick(dt, g.hero.pos, under, g.wetNow);
 }
 
 /// **A REGION'S WEATHER IS A CROSS-FADE, NEVER A SWITCH** — one sky, one sun, one rain sheet round the camera. Outside every weather location the target is the world clock's own.
@@ -3651,15 +3848,7 @@ pub fn hud(g: *Game, dt: f32) void {
             hud_.spiritPanel(spiritFace, combat.spiritName(g.hero.spirit), g.spiritHp, g.spiritK);
             hud_.reticle(g.hero.aimB);
             hud_.souls(g.hero.souls.display());
-            if (g.vigil.boss(g.hero.pos)) |bi| {
-                const b = &g.vigil.liveConst()[bi];
-                g.bossFrac = b.vit.hpFrac();
-                g.bossK = mathx.approach(g.bossK, 1.0, dt * 4.0);
-                hud_.bossBar(dt, worldfmt.foeName(.bone_knight), g.bossFrac, b.staggered(), g.bossK);
-            } else {
-                g.bossK = mathx.approach(g.bossK, 0, dt * 1.4);
-                hud_.bossBar(dt, worldfmt.foeName(.bone_knight), g.bossFrac, false, g.bossK);
-            }
+            bossBars(g, dt);
             if (reachable(g)) |r| hud_.prompt(r.prompt());
         }
     }
@@ -4455,6 +4644,15 @@ pub fn run(mode: Mode) void {
         if (g.vigil.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.stance >= knightmod.CHARGE_HIT.stance, true);
         }
+        // **A `FOE_GROUPS` ROW OWES `run` THIS CALL AND NOTHING CHECKS THAT** (the table's own note). Without
+        // it the pair spawned, drew, and showed two boss bars while never once taking a step: `update` is what
+        // ticks the leash, so a creature that is never updated can never notice anybody.
+        if (g.vanguard.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.launch > 0, true);
+        }
+        if (g.conclave.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.launch > 0, true);
+        }
         tickBoltGas(g, dt);
         if (g.vigil.gasDose(dt, g.hero.pos)) |b| {
             _ = heroTakes(g, b, false, false);
@@ -4493,8 +4691,12 @@ pub fn run(mode: Mode) void {
         g.hero.poisonBy(g.cluster.spores(dt, g.hero.pos));
         // THE GAS, ON THE SPORES' OWN CHANNEL: unblockable, unparryable, and rate-gated in `Vitals.build`.
         g.hero.doseSelf(.sleep, g.bed.breath(g.hero.pos) * dt);
+        // …AND THE MAGUS'S VANISH LEAVES THE SAME METER BEHIND IT, through the cloud's soak rather than a rate:
+        // the mist is something you walk into, so clipping its rim costs the bolus and nothing more.
+        g.hero.doseSelf(.sleep, g.conclave.breath(g.hero.pos, dt));
         // **BURNT GROUND BILLS THE SAME WAY A CLOUD DOES** — a soak, not a blow, so a shield answers neither.
         g.hero.doseSelf(.burning, g.scorch.scorching(dt, g.hero.pos));
+        tickLiquid(g, dt);
         _ = g.hero.tickPoison(dt);
         if (g.hero.vit.ailProcced(.poison)) {
             sfx.play(.acid_burn);
@@ -4656,7 +4858,7 @@ fn footsteps(g: *Game, last: *f32) void {
 }
 
 fn stepOverlay(g: *const Game, x: f32, z: f32) ?sfx.Id {
-    if (g.env.inWater(x, z, 1.0)) return .step_water;
+    if (g.env.inWater(x, z, 1.0)) return LIQUID_VOICE[@intFromEnum(g.env.liquidAt(x, z))].step;
     const i = g.map.soilIndex(x, z) orelse return null;
     const v = g.map.soil[i];
     if (v >= worldfmt.Soil.N) return null;
@@ -4664,6 +4866,117 @@ fn stepOverlay(g: *const Game, x: f32, z: f32) ?sfx.Id {
         .stone => .step_stone,
         .none, .dirt, .turf, .silt, .ash, .moss, .bone, .cinder, .spore, .bloom => null,
     };
+}
+
+/// **HOW FAR A POOL IS HEARD FROM**, in metres, and what bounds the scan that finds one.
+const LIQUID_EAR: f32 = 34.0;
+/// Cells inside `LIQUID_EAR` that make a bed full. At 2.5 m a cell, 40 is a pond about 18 m across.
+const LIQUID_FULL: f32 = 40.0;
+/// **TEXTURE IS THINNED IN COUNT, NOT JUST IN LEVEL.** The surface pops far more often than it is heard to.
+const POP_EVERY: f32 = 1.15;
+/// …and the same rule on the bite: lava bills every frame, and says so once a second.
+const SEAR_EVERY: f32 = 1.0;
+
+/// **A LIQUID'S THREE VOICES, IN ITS OWN ORDER** — the footfall it overlays, the bed it holds and the pop it
+/// throws. Water has no bed and no pop (the wind is its bed); the rest carry all three. Pinned TAG-FOR-TAG at
+/// comptime below, so a fifth liquid is one row here and a compile error until its voices are named after it.
+const Voices = struct { step: sfx.Id, bed: ?sfx.Id = null, pop: ?sfx.Id = null };
+const LIQUID_VOICE = [worldfmt.Liquid.N]Voices{
+    .{ .step = .step_water },
+    .{ .step = .step_oil, .bed = .oil_bed, .pop = .oil_pop },
+    .{ .step = .step_fungal, .bed = .fungal_bed, .pop = .fungal_pop },
+    .{ .step = .step_lava, .bed = .lava_bed, .pop = .lava_pop },
+};
+
+comptime {
+    var beds: usize = 0;
+    for (LIQUID_VOICE, 0..) |v, i| {
+        const tag = @tagName(@as(worldfmt.Liquid, @enumFromInt(i)));
+        std.debug.assert(std.mem.eql(u8, @tagName(v.step), "step_" ++ tag));
+        const bed = v.bed orelse {
+            // The one without a bed is water, and it is also the one without a pop.
+            std.debug.assert(i == @intFromEnum(worldfmt.Liquid.water) and v.pop == null);
+            continue;
+        };
+        std.debug.assert(std.mem.eql(u8, @tagName(bed), tag ++ "_bed"));
+        std.debug.assert(std.mem.eql(u8, @tagName(v.pop.?), tag ++ "_pop"));
+        // …and the bed sits in the slot `setLiquidBed` will be handed for this liquid.
+        std.debug.assert(sfx.LIQUID_BEDS[i - 1] == bed);
+        beds += 1;
+    }
+    std.debug.assert(beds == sfx.LIQUID_BEDS.len);
+}
+
+/// **THE PAINTED SHEET'S OWN FRAME**: what it soaks into him, what it costs him, and what it sounds like. The
+/// scan is bounded by `LIQUID_EAR` — 27 cells a side of a 224² grid — and it does three jobs in one walk: the
+/// bed level per liquid, a reservoir-sampled cell to pop from, and nothing at all when no pool is near.
+fn tickLiquid(g: *Game, dt: f32) void {
+    const N = worldfmt.Liquid.N;
+    var weight = [_]f32{0} ** N;
+    var seen = [_]f32{0} ** N;
+    var pick = [_]rl.Vector3{mathx.zero3} ** N;
+    if (g.env.waterAny) {
+        const n = worldfmt.WATER_N;
+        const cell = g.map.cellSize(n);
+        const half = g.map.half;
+        // THE BOX IS SOLVED, NOT WALKED TO: 27 cells a side out of 224, so the ear costs 729 tests and not 50,176.
+        const span = struct {
+            fn at(w: f32, hf: f32, cw: f32, nn: usize) usize {
+                return @min(@as(usize, @intFromFloat(mathx.clampF((w + hf) / cw, 0, @floatFromInt(nn - 1)))), nn - 1);
+            }
+        }.at;
+        const cz0 = span(g.hero.pos.z - LIQUID_EAR, half, cell, n);
+        const cz1 = span(g.hero.pos.z + LIQUID_EAR, half, cell, n);
+        const cx0 = span(g.hero.pos.x - LIQUID_EAR, half, cell, n);
+        const cx1 = span(g.hero.pos.x + LIQUID_EAR, half, cell, n);
+        for (cz0..cz1 + 1) |cz| {
+            const wz = -half + (@as(f32, @floatFromInt(cz)) + 0.5) * cell;
+            for (cx0..cx1 + 1) |cx| {
+                const i = cz * n + cx;
+                if (g.map.water[i] == 0) continue;
+                const at = mathx.ground(-half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell, wz);
+                const d = mathx.dist2XZ(at, g.hero.pos);
+                if (d > LIQUID_EAR * LIQUID_EAR) continue;
+                const k = @min(g.map.waterKind[i], N - 1);
+                weight[k] += 1.0 - @sqrt(d) / LIQUID_EAR;
+                seen[k] += 1;
+                // RESERVOIR OF ONE: every wet cell of a kind is equally likely to be the one that pops, in one
+                // pass and with no list of candidates held anywhere.
+                if (g.liquidRng.float() * seen[k] < 1.0) pick[k] = at;
+            }
+        }
+    }
+    for (LIQUID_VOICE, 0..) |v, k| {
+        if (v.bed != null) sfx.setLiquidBed(k - 1, mathx.clampF(weight[k] / LIQUID_FULL, 0, 1));
+        const voice = v.pop orelse continue;
+        g.popT[k] -= dt;
+        if (g.popT[k] > 0) continue;
+        g.popT[k] = POP_EVERY * g.liquidRng.range(0.55, 1.65);
+        if (seen[k] > 0) sfx.world(voice, pick[k]);
+    }
+
+    const wet = g.env.inWater(g.hero.pos.x, g.hero.pos.z, 1.0);
+    const in: ?worldfmt.Liquid = if (wet) g.env.liquidAt(g.hero.pos.x, g.hero.pos.z) else null;
+    const bill = liquidmod.tick(&g.liquidSoak, in, dt) orelse {
+        g.searT = 0;
+        return;
+    };
+    // A SOAK, NOT A BLOW — the shroom cloud's channel, so nothing blocks it and nothing parries it.
+    g.hero.doseSelf(bill.ail, bill.amt);
+    if (bill.dmgFrac <= 0) {
+        // …AND THE SEAR CLOCK IS THE LAVA'S ALONE. Left running through a wade in the fungal soup, stepping
+        // back into the lava owed a part-spent clock and the first bite went unheard.
+        g.searT = 0;
+        return;
+    }
+    // A SHARE OF THE BAR, IN THE AIL'S OWN ELEMENT — so fire resistance answers the lava and a levelled body
+    // does not walk it off. A DRIP (`hero.burn`), so it never builds the meter a second time.
+    _ = g.hero.burn(combat.ailPulse(combat.ailRow(bill.ail), bill.dmgFrac * g.hero.vit.hpMax));
+    g.searT -= dt;
+    if (g.searT > 0) return;
+    g.searT = SEAR_EVERY;
+    sfx.play(.lava_sear);
+    g.rumble.play(rumblemod.hurt);
 }
 
 fn heroHurtBeat(g: *Game, heavy: bool, voice: bool) void {
@@ -5115,7 +5428,7 @@ fn collideActors(g: *Game, dt: f32) void {
 
 /// **THE ONE THING IN THE FRAME THAT SCALES QUADRATICALLY** — n² inside the group, every frame, no distance
 /// gate. The shipped map's widest group is 24 (`cluster`), so 552 `pushOut` for it and ~2,000 across all
-/// twenty-one rows: nothing. `worldfmt.MAX_PER_KIND` is 512 though, and 512 in one group is 261,632 pairs a
+/// `FOE_GROUPS` rows: nothing. `worldfmt.MAX_PER_KIND` is 512 though, and 512 in one group is 261,632 pairs a
 /// frame and about a millisecond. Left alone on purpose; the answer is an actor grid, not an edit here.
 ///
 /// **AND `bodyOf(o)` MAY NOT BE HOISTED OUT OF THE INNER LOOP.** `a.pos` is written at the END of each outer

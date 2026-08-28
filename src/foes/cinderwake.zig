@@ -803,7 +803,6 @@ fn chestMesh() rl.Mesh {
     b.addBlob(v3(0, 0.040 * H, 0), v3(0.108 * H, 0.086 * H, 0.088 * H), 10, 7, CRUST);
     b.addBlob(v3(0, -0.006 * H, 0.010 * H), v3(0.096 * H, 0.054 * H, 0.080 * H), 9, 6, CRUST_LT);
     b.addBlob(v3(0, 0.086 * H, -0.008 * H), v3(0.092 * H, 0.036 * H, 0.080 * H), 8, 6, CHAR);
-    // The ribs are gone on the near side: a cage of crust round a hollow that glows.
     b.setMat(.plain);
     b.addBlob(v3(0, 0.024 * H, 0.062 * H), v3(0.050 * H, 0.048 * H, 0.024 * H), 7, 6, SEAM);
     b.addBlob(v3(0, 0.024 * H, 0.070 * H), v3(0.030 * H, 0.030 * H, 0.016 * H), 6, 5, EYE);
@@ -824,7 +823,6 @@ fn neckMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// A skull with the face burnt off it — no jaw hinge, no nose, two sockets with the fire behind them.
 fn skullMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);

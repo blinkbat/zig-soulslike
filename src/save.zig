@@ -8,7 +8,6 @@ const combat = @import("play/combat.zig");
 const daynight = @import("world/daynight.zig");
 const heromod = @import("play/hero.zig");
 const item = @import("play/item.zig");
-const knightmod = @import("foes/knight.zig");
 const mathx = @import("core/mathx.zig");
 const ptree = @import("play/passivetree.zig");
 const soulsmod = @import("play/souls.zig");
@@ -64,8 +63,11 @@ pub const Slot = struct {
     trig: *trigmod.Runtime,
     chests: *chestmod.Chests,
     pickups: *pickupmod.Pickups,
-    /// **THE BOSS STAYS DEAD** (owner's call). The GROUP'S MEMBERS, not the group: its meshes want a shader and this has to run headless. Keyed to placing order, which `foe.resetGroup` fills in the map's own foe-table order — the same stable index the chest and pickup bits use.
-    bosses: []knightmod.Knight,
+    /// **EVERY BOSS STAYS DEAD** (owner's call), one row per BOSS RAIL and one bit per body that rail placed.
+    /// Filled and applied by the caller rather than held as groups: the group TYPES differ (a duo is two of
+    /// them) and this file has to run headless, so it may not touch a mesh. Keyed to placing order, which
+    /// `foe.resetGroup` fills in the map's own foe-table order — the stable index the chest and pickup bits use.
+    bosses: *BossBits,
     award: *awardmod.Award,
     map: []const u8,
 };
@@ -74,6 +76,12 @@ const MAP_CAP = 96;
 comptime {
     if (wf.START_MAP.len > MAP_CAP) @compileError("save: MAP_CAP is shorter than the map path it has to hold");
 }
+
+/// **RAIL 0 IS THE FILE'S ORIGINAL `bosses:` ROW AND STAYS THAT WAY.** Every save written before the duo
+/// existed describes one rail, and a row nobody wrote reads back as nobody dead — which is what those files
+/// mean. `game` owns the rail ORDER (`game.BOSS_RAILS`) and pins this cap against it.
+pub const BOSS_RAILS: usize = 4;
+pub const BossBits = [BOSS_RAILS][wf.MAX_PER_KIND]bool;
 
 pub const Drop = struct {
     at: rl.Vector3 = mathx.zero3,
@@ -136,8 +144,8 @@ pub const Data = struct {
     pickupTaken: [pickupmod.CAP]bool = [_]bool{false} ** pickupmod.CAP,
     ground: [pickupmod.CAP]Drop = [_]Drop{.{}} ** pickupmod.CAP,
     groundN: usize = 0,
-    /// One bit per boss the map placed, in placing order. A missing row leaves them all standing, which is honestly what a save written before bosses stayed dead describes.
-    bossDead: [wf.MAX_PER_KIND]bool = [_]bool{false} ** wf.MAX_PER_KIND,
+    /// One bit per boss the map placed, in placing order, per rail. A missing row leaves them all standing, which is honestly what a save written before bosses stayed dead describes.
+    bossDead: BossBits = [_][wf.MAX_PER_KIND]bool{[_]bool{false} ** wf.MAX_PER_KIND} ** BOSS_RAILS,
     seen: [item.NK]bool = [_]bool{false} ** item.NK,
 
     pub fn mapName(self: *const Data) []const u8 {
@@ -171,7 +179,7 @@ const CAP: usize =
     NFOE * 12 + 10 +
     chestmod.CAP + 10 +
     pickupmod.CAP + 10 +
-    wf.MAX_PER_KIND + 10 +
+    BOSS_RAILS * (wf.MAX_PER_KIND + 12) +
     pickupmod.CAP * (3 * 11 + 3 + pickupmod.DROP_MAX * (item.TAG_MAX + 1)) + 10 +
     item.NK + 8;
 
@@ -333,7 +341,7 @@ pub fn gather(s: Slot) Data {
         d.groundN += 1;
     }
     // From the frame the killing blow lands, not the frame the body finishes dissolving: `vit.dead` is the mechanic and `gone` is only the picture catching up with it.
-    for (s.bosses, 0..) |k, i| d.bossDead[i] = k.vit.dead;
+    d.bossDead = s.bosses.*;
     d.seen = s.award.seen;
     return d;
 }
@@ -398,9 +406,7 @@ pub fn scatter(d: *const Data, s: Slot) void {
     }
     s.pickups.clearDropped();
     for (d.ground[0..d.groundN]) |g| s.pickups.spawn(g.at, g.loot[0..g.n]);
-    for (s.bosses, 0..) |*k, i| {
-        if (d.bossDead[i]) k.markSlain();
-    }
+    s.bosses.* = d.bossDead;
     s.award.seen = d.seen;
     s.award.clearPending();
 }
@@ -460,7 +466,15 @@ pub fn render(w: anytype, d: *const Data) !void {
         for (g.loot[0..g.n]) |k| try w.print(" {s}", .{item.tag(k)});
     }
     try w.writeByte('\n');
-    try bits(w, "bosses", &d.bossDead);
+    // **A ROW IS WRITTEN ONLY WHEN IT SAYS SOMETHING** past rail 0, so a knight-only save is the same bytes it always was.
+    try bits(w, "bosses", &d.bossDead[0]);
+    for (d.bossDead[1..], 1..) |row, i| {
+        var any = false;
+        for (row) |x| any = any or x;
+        if (!any) continue;
+        var kb: [16]u8 = undefined;
+        try bits(w, try std.fmt.bufPrint(&kb, "bosses{d}", .{i}), &row);
+    }
     try bits(w, "seen", &d.seen);
 }
 
@@ -596,7 +610,11 @@ pub fn parse(text: []const u8, d: *Data) !void {
                 d.groundN += 1;
             }
         } else if (std.mem.eql(u8, key, "bosses:")) {
-            try readBits(&it, &d.bossDead);
+            try readBits(&it, &d.bossDead[0]);
+        } else if (std.mem.startsWith(u8, key, "bosses") and std.mem.endsWith(u8, key, ":")) {
+            const n = std.fmt.parseInt(usize, key["bosses".len .. key.len - 1], 10) catch return Error.BadKey;
+            if (n == 0 or n >= BOSS_RAILS) return Error.BadKey;
+            try readBits(&it, &d.bossDead[n]);
         } else if (std.mem.eql(u8, key, "seen:")) {
             try readBits(&it, &d.seen);
         } else {
@@ -735,7 +753,8 @@ fn sample() Data {
     d.ground[0] = .{ .at = .{ .x = -12.5, .y = 0.75, .z = 4.25 }, .n = 1, .loot = .{ .kobold_fang, .kobold_fang } };
     d.ground[1] = .{ .at = .{ .x = 3.0, .y = 0.0, .z = -8.5 }, .n = 2, .loot = .{ .mushroom_jerky, .quilted_gambeson } };
     d.groundN = 2;
-    d.bossDead[0] = true;
+    d.bossDead[0][0] = true;
+    d.bossDead[2][1] = true;
     d.seen[@intFromEnum(item.Kind.mushroom_jerky)] = true;
     d.seen[item.NK - 1] = true;
     return d;
@@ -829,6 +848,9 @@ test "the buffer holds the biggest save this build can write" {
     for (&d.actAt) |*v| v.* = 255;
     for (&d.deaths) |*v| v.* = std.math.maxInt(u32);
     for (&d.timers) |*v| v.* = -99999.5;
+    // EVERY RAIL WRITTEN — the rows past the first are skipped when empty, so an all-standing sample never
+    // touches them and the buffer they need goes unmeasured.
+    for (&d.bossDead) |*row| @memset(row, true);
     d.groundN = d.ground.len;
     for (&d.ground) |*g| g.* = .{
         .at = .{ .x = -99999.5, .y = -99999.5, .z = -99999.5 },
@@ -925,7 +947,7 @@ const Live = struct {
     trig: trigmod.Runtime = .{},
     chests: chestmod.Chests = undefined,
     pickups: pickupmod.Pickups = .{},
-    bosses: [2]knightmod.Knight = undefined,
+    bosses: BossBits = [_][wf.MAX_PER_KIND]bool{[_]bool{false} ** wf.MAX_PER_KIND} ** BOSS_RAILS,
     award: awardmod.Award = .{},
 
     fn blank(nChests: usize) Live {
@@ -942,7 +964,6 @@ const Live = struct {
         l.hero.flasks = .{};
         l.hero.quick = .{};
         l.souls.drop = .{};
-        for (&l.bosses) |*k| k.* = knightmod.Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
         l.chests.n = nChests;
         for (0..nChests) |i| l.chests.list[i] = .{};
         return l;
@@ -997,7 +1018,8 @@ test "THE SLOT CARRIES EVERY FIELD IT NAMES — live game out, text, live game b
     a.trig.deaths[1] = 11;
     a.trig.elapsed = 300.5;
     a.chests.list[2].opened = true;
-    a.bosses[1].vit.dead = true; // …and one of the two bosses is down
+    a.bosses[0][1] = true; // …one of the knight's two is down
+    a.bosses[2][0] = true; // …and one HALF of the duo behind the second gate, which rail 0 could never say
 
     const out = gather(a.slot());
     const back = try roundTrip(&out);
@@ -1016,8 +1038,8 @@ test "THE SLOT CARRIES EVERY FIELD IT NAMES — live game out, text, live game b
     try testing.expect(b.chests.list[2].swing == 1 and b.chests.list[0].swing == 0);
     // **THE BOSS COMES BACK ALREADY GONE, NOT DYING.** A load that re-played the collapse would pay the
     // souls, the quake and the dissolve a second time, and leave a body standing in the arena while it did.
-    try testing.expect(!b.bosses[1].alive() and b.bosses[1].vit.dead);
-    try testing.expect(b.bosses[0].alive());
+    try testing.expect(b.bosses[0][1] and !b.bosses[0][0]);
+    try testing.expect(b.bosses[2][0]);
 }
 
 test "the file itself round-trips, and one written for another map is refused" {
@@ -1036,7 +1058,7 @@ test "the file itself round-trips, and one written for another map is refused" {
 
     var c = Live.blank(2);
     var wrong = c.slot();
-    wrong.map = "worlds/02_brood_arena.world";
+    wrong.map = wf.DIR ++ "/02_brood_arena" ++ wf.EXT;
     try testing.expect(!readFrom(tmp, wrong));
     try testing.expectEqual(@as(u32, 0), c.hero.souls.total);
 
@@ -1188,8 +1210,6 @@ test "ARROWS ARE FOUND OR BOUGHT, NEVER GRANTED — a spent quiver survives the 
 }
 
 test "A SAVE WRITTEN BEFORE ARROWS WERE FINITE LOADS FULL, which is what it described" {
-    // No `quiver:` line at all: the two counts fall to `Quiver{}`'s own load rather than to zero, or every save
-    // already on disk would come back with a dead bow.
     // `parse` writes only what the file HOLDS — it does not reset the struct — so the DEFAULTS are the whole
     // mechanism, and they are `Quiver{}`'s own full load rather than zero.
     var d = Data{};

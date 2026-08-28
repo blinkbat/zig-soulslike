@@ -80,7 +80,6 @@ const APEX_T: f32 = (LAUNCH_T + HOP_END) * 0.5;
 
 comptime {
     std.debug.assert(BITE_WIND >= foe.TELL_MIN);
-    // The bud is fully thrown open with time left ON THE GROUND: the widest frame comes before the launch, never with it.
     std.debug.assert(BITE_WIND * OPEN_BY < LAUNCH_T);
     std.debug.assert(CLAMP_BY < OPEN_BY and OPEN_BY < SETTLE_BY and SETTLE_BY < 1.0);
 }
@@ -131,7 +130,6 @@ comptime {
     std.debug.assert(RAKE_R < BITE_R);
 }
 
-// ── THE BLOOM'S CLOCK ───────────────────────────────────────────────────────
 // One scalar (`openAmt`), 0 shut to 1 wide, and it is allowed OUT of that range at both ends: a bud tightens
 // before it bursts and a mass in motion overshoots its rest.
 
@@ -260,7 +258,6 @@ const WILT_FOLD: f32 = 122.0;
 const DEAD_ROLL: f32 = 70.0;
 const DEAD_BUCKLE: f32 = 0.20;
 
-// ── THE SEVEN PETALS ────────────────────────────────────────────────────────
 
 /// One petal. `ang` is degrees round the bloom's axis with 0 at the top; `bias` is degrees of fold this one
 /// carries at every open value (the one that never quite shuts is a positive bias); `gain` is its share of the
@@ -304,7 +301,6 @@ const PETALS = [7]Petal{
 };
 
 comptime {
-    // Each of the seven owns exactly one bone, and every appended bone is claimed.
     var seen = [_]bool{false} ** N;
     for (PETALS) |q| {
         if (seen[q.bone]) @compileError("ravager: two petals on one bone");
@@ -414,14 +410,12 @@ const HIDE_DK = rgba(6, 6, 7, 252);
 const HIDE_LT = rgba(17, 14, 12, 248);
 /// The one COLD note in the hide — hue separation, not another value (AGENTS.md: everything outdoors here is warm).
 const BELLY = rgba(9, 10, 13, 250);
-/// The stalk and the legs are WOOD, not hide: `Mat.bark`'s furrows are what say a stem carries the flower.
 /// The stalk and the legs. MEASURED against the trunk: at (21, 20, 14) the lower legs came back at twice the
 /// hide's albedo — 1.37x on screen — and the animal read as a brown barrel standing on pale green pipes. The
 /// stem keeps this tone (it is a stem, and it wants to be seen); the LEGS take `LIMB` instead.
 const STALK = rgba(21, 20, 14, 250);
 const STALK_LT = rgba(34, 33, 22, 248);
 const STALK_DK = rgba(12, 12, 9, 252);
-/// Bark over bone, and near enough the hide that the legs belong to the body they hold up.
 const LIMB = rgba(14, 13, 11, 250);
 const LIMB_LT = rgba(22, 20, 16, 248);
 const CALYX = rgba(19, 22, 15, 250);
@@ -451,14 +445,12 @@ const THROAT_DEEP = rgba(188, 48, 62, 96);
 const THROAT = rgba(255, 132, 128, 22);
 /// MEASURED at (244, 216, 142) alpha 150: 0.41 emissive on a near-white albedo put the anthers at luma 120+ and they read as golf balls. Same solve as the teeth.
 const STAMEN = rgba(146, 122, 76, 196);
-/// The dark two-thirds of a fang — the iris that stands in front of the light.
 const FANG = rgba(29, 26, 22, 250);
 /// …and its point. MEASURED at (188, 180, 158): luma 157 against a body at 60 and a ground at 101 — the brightest
 /// thing in frame by half again, on a creature whose whole point is that the THROAT is the bright thing. Solved
 /// to ~110: the wanted factor is 110/157 on screen, so 0.66^2.2 = 0.41 on the albedo.
 const TOOTH = rgba(78, 74, 65, 242);
 const CLAW = rgba(30, 28, 22, 250);
-/// What it carries: its own spent flowers, caught in the coat at the withers and lodged over one hip.
 const HUSK = rgba(36, 31, 24, 250);
 
 pub const State = enum { idle, move, bite, rake, hurt, dead };
@@ -869,7 +861,6 @@ pub const Ravager = struct {
         }
         const s = foe.reached(self, blade) orelse return;
         const heavy = foe.wounded(self, s, blade, SHOVE);
-        // A blow into the throat takes petals with it.
         const torn: i32 = if (heavy) 7 else 3;
         self.emitPetals(s.contact, torn + @as(i32, @intFromFloat(6.0 * mathx.clampF(self.openAmt(), 0, 1))));
         switch (s.reaction) {
@@ -985,7 +976,6 @@ pub const Ravager = struct {
         const m = mathx.clampF(self.speedS / wolf.WALK_SPEED, 0, 1);
 
         const react: f32 = if (self.state == .hurt) foe.stunCurve(self.t, self.heavyStun) else 0;
-        // THE STALK GOES FIRST and the barrel follows: the bloom is on the earth before the body has begun to roll.
         const wilt: f32 = if (self.state == .dead) mathx.clampF(self.t / (DEATH_DUR * 0.34), 0, 1) else 0;
         const fall: f32 = if (self.state == .dead) mathx.clampF((self.t - DEATH_DUR * 0.26) / (DEATH_DUR * 0.58), 0, 1) else 0;
 
@@ -1036,7 +1026,6 @@ pub const Ravager = struct {
         );
 
         const open = self.openAmt();
-        // A held-open flower does not hold still, and a shut one still breathes.
         const shiver = SHIVER_DEG * react * mathx.sinf(self.elapsed * SHIVER_HZ * std.math.tau);
         const flutter = 1.3 * sway;
         for (PETALS) |q| {
@@ -1148,7 +1137,6 @@ pub const Thicket = struct {
     }
 };
 
-// ── THE MESH ────────────────────────────────────────────────────────────────
 
 fn buildMeshes() [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
@@ -1175,7 +1163,6 @@ fn buildBone(b: *Builder, i: usize, rest: [N]rl.Vector3) void {
     }
 }
 
-/// The haunches: a running dog's, high and split, and the growth it carries on one hip only.
 fn buildPelvis(b: *Builder, rng: *mathx.Rng) void {
     b.setMat(.hide);
     b.addBlob(v3(0, 0.006 * W, 0.02 * W), v3(0.166 * W, 0.176 * W, 0.230 * W), 6, 10, HIDE);
@@ -1185,7 +1172,6 @@ fn buildPelvis(b: *Builder, rng: *mathx.Rng) void {
     b.addBlob(v3(0.130 * W, -0.014 * W, -0.01 * W), v3(0.090 * W, 0.148 * W, 0.152 * W), 5, 9, HIDE_LT);
     b.addBlob(v3(-0.126 * W, -0.006 * W, 0.00 * W), v3(0.086 * W, 0.142 * W, 0.148 * W), 5, 9, HIDE_LT);
     b.addBlob(v3(0, -0.104 * W, 0.05 * W), v3(0.112 * W, 0.058 * W, 0.150 * W), 4, 8, BELLY);
-    // The cords over the hip are WOOD: the thing is a stem wearing a hide, and the seam shows at the joints.
     b.setMat(.bark);
     var k: u32 = 0;
     while (k < 4) : (k += 1) {
@@ -1218,7 +1204,6 @@ fn buildLoin(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
     const len = mathx.lenV(off);
     b.setMat(.hide);
     b.addCapsule(v3(0, 0, -0.03 * W), mathx.scaleV(off, 1.04), 0.132 * W, 0.160 * W, 11, HIDE);
-    // …and the belly is TUCKED UP behind the ribs, not hung under them.
     b.addBlob(v3(0, -0.086 * W, len * 0.55), v3(0.104 * W, 0.046 * W, len * 0.48), 4, 9, BELLY);
     // FOUR vertebral knuckles, graded and uneven. Relief is a few PERCENT of the mass — 0.172 W of barrel takes 0.006 W of proud bone, no more.
     var k: u32 = 0;
@@ -1235,7 +1220,6 @@ fn buildLoin(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
     }
 }
 
-/// The chest: DEEP, and it is where the withers hump and the litter it carries live.
 fn buildChest(b: *Builder, rng: *mathx.Rng) void {
     b.setMat(.hide);
     b.addBlob(v3(0, -0.010 * W, 0.02 * W), v3(0.212 * W, 0.244 * W, 0.235 * W), 7, 11, HIDE);
@@ -1313,7 +1297,6 @@ fn buildStalk(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
             if (k == 0) STALK_DK else STALK,
         );
     }
-    // THE NODES — where a leaf once was — each with a dry stipule spur pointing back DOWN the stalk. Nothing dead is straight and nothing ends in a point.
     const NODE = [4]f32{ 0.19, 0.42, 0.63, 0.84 };
     for (NODE, 0..) |u, ni| {
         const c = at(dir, side, fwd, len, u, mathx.lerpF(LEAN[0], LEAN[SHEATH], u) * W, 0);
@@ -1357,9 +1340,6 @@ fn buildStalk(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
     }
 }
 
-/// **THE FLOWER'S OWN HEAD** — the collar that slides out of the stalk, the receptacle, the sepals that clasp it
-/// from behind, and the throat: a dark cup with a ring of pale thorns leaning in over it, a corona of stamens,
-/// and the one hot thing on the whole animal at the bottom of it.
 fn buildBloom(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
     const dn = mathx.normV(mathx.subV(rest[NECK], rest[HEAD]));
     // Down the stalk's bore by the stretch plus a hand: at full reach its bottom is still 0.12 m inside the sheath, so no frame of the slide shows a gap.
@@ -1375,7 +1355,6 @@ fn buildBloom(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
     b.addBlob(mathx.scaleV(dn, 0.026 * W), v3(0.074 * W, 0.066 * W, 0.072 * W), 5, 10, STALK);
 
     b.setMat(.plant);
-    // The receptacle — the swollen knuckle the corolla sits on.
     // Small and set BACK: at 0.100 W it stood in the middle of the open corolla and, unlit and non-emissive,
     // read as a hole punched through the flower. It is a knuckle behind the light, not part of the light.
     b.addBlob(v3(0, 0, -0.044 * W), v3(0.084 * W, 0.082 * W, 0.056 * W), 6, 10, CALYX_LT);
@@ -1405,7 +1384,6 @@ fn buildBloom(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
         }
     }
 
-    // ── THE THROAT ─────────────────────────────────────────────────────────
     // **THE ONE LIGHT ON THE ANIMAL, AND IT HAS TO BE FOUND FROM ACROSS A FIELD.** Sunk inside the receptacle it
     // could not be seen at all: a closed ellipsoid has no inside, so a "cup" of nested blobs shows the player its
     // dark BACK. It is built as a PROUD BOSS instead — four shells stepping out and up the axis, each hotter and
@@ -1577,7 +1555,6 @@ fn widthAt(u: f32, q: Petal) f32 {
     return w * (1.0 - q.notch * @exp(-d * d));
 }
 
-/// The tail is a whip, and it ends in a DRY SEED POD — the one part of the animal that rattles.
 fn buildTail(b: *Builder, rng: *mathx.Rng, i: usize, rest: [N]rl.Vector3) void {
     const len: f32 = switch (i) {
         TAIL0 => mathx.lenV(mathx.subV(rest[TAIL0], rest[TAIL1])),
@@ -1625,7 +1602,6 @@ fn buildLimbBone(b: *Builder, i: usize, rest: [N]rl.Vector3, rng: *mathx.Rng) vo
         b.setMat(.hide);
         b.addCapsule(v3(0, 0, 0), v3(0, -len, 0), 0.070 * W, 0.046 * W, 9, HIDE);
         b.addBlob(v3(rng.signed() * 0.006 * W, -len * 0.20, 0.006 * W), v3(0.078 * W, 0.066 * W, 0.072 * W), 4, 9, HIDE_LT);
-        // The tendon standing off the back of it — a few percent of the mass, and it is what says the leg is loaded.
         b.setMat(.bark);
         b.addCapsule(v3(0, -len * 0.10, -0.052 * W), v3(0, -len * 0.96, -0.030 * W), 0.016 * W, 0.010 * W, 5, STALK_DK);
         return;
@@ -1651,7 +1627,6 @@ fn buildLimbBone(b: *Builder, i: usize, rest: [N]rl.Vector3, rng: *mathx.Rng) vo
     }
 }
 
-/// The paw: four ROOT-like toes at uneven splay and length, each ending in a claw, plus a dewclaw on one side only.
 fn buildPaw(b: *Builder, rng: *mathx.Rng) void {
     b.setMat(.hide);
     b.addBlob(v3(0, -0.020 * W, 0.026 * W), v3(0.066 * W, 0.034 * W, 0.080 * W), 8, 6, HIDE_DK);
@@ -1683,13 +1658,10 @@ fn buildPaw(b: *Builder, rng: *mathx.Rng) void {
     );
 }
 
-// ── TESTS ───────────────────────────────────────────────────────────────────
 
 test "THE BLOOM IS THE TELL AND IT ONLY OPENS FOR THE LEAP — shut standing, shut walking, shut on a swipe" {
     var r = Ravager.spawn(mathx.zero3, 0, 1.0, 0.3);
     const dt: f32 = 1.0 / 60.0;
-    // Stood on his toes for three seconds: the flower says nothing. This is the whole change — a bloom that
-    // opened on APPROACH was a tell for standing still.
     var t: f32 = 0;
     var widest: f32 = 0;
     while (t < 3.0) : (t += dt) {
@@ -1716,7 +1688,6 @@ test "…AND THE LEAP'S OWN CLOCK OPENS IT: a tighten, a burst that overshoots, 
     const tight = r.openAmt();
     try std.testing.expect(tight < -BLOOM_CLAMP * 0.9); // the bud TIGHTENS first
 
-    // The fling goes past wide and settles back onto it — the overshoot law, on the tell.
     var over: f32 = 0;
     var t: f32 = 0;
     while (t <= BITE_WIND) : (t += 1.0 / 480.0) {
@@ -1740,7 +1711,6 @@ test "…AND THE LEAP'S OWN CLOCK OPENS IT: a tighten, a burst that overshoots, 
     r.t = HOP_END + BITE_RECOVER;
     try std.testing.expectApproxEqAbs(-BLOOM_CLAMP * 0.5, r.openAmt(), 1e-3);
 
-    // WIDE BEFORE IT LEAVES THE EARTH, and with a tell over the floor. Measured, not asserted by eye.
     const led = BITE_WIND - BITE_WIND * OPEN_BY;
     std.debug.print("\n  ravager bloom: wide {d:.3} s before the launch, {d:.3} s before the strike (floor {d:.2})\n", .{
         LAUNCH_T - BITE_WIND * OPEN_BY, led, foe.TELL_MIN,
@@ -1760,7 +1730,6 @@ test "A HEAVY STUN BLOWS IT OPEN AND A LIGHT ONE DOES NOT — the window is wort
         wide = @max(wide, heavy.openAmt());
     }
     try std.testing.expect(wide > 0.95);
-    // …and it is SHUT again by the end of the stun, so getting up is not still an open throat.
     heavy.t = dur;
     try std.testing.expectApproxEqAbs(@as(f32, 0), heavy.openAmt(), 1e-4);
 
@@ -1990,12 +1959,9 @@ test "A BUD SHUT IS A MUZZLE AND OPEN IT IS A METRE AND A THIRD OF FLOWER — me
     std.debug.print("\n  ravager corolla: bud {d:.2} m across x {d:.2} m long | open {d:.2} m across, tips {d:.2} m forward\n", .{
         budW * 2, budL, openW * 2, openL,
     });
-    // SHUT it is a spear — longer than it is wide, which is the whole reason it reads as a head at range.
     try std.testing.expect(budL > budW * 2.0);
-    // …and OPEN it is a LARGE flower (owner): better than twice the bud across, and over a metre wide.
     try std.testing.expect(openW > budW * 2.5);
     try std.testing.expect(openW * 2 > 1.0);
-    // …thrown a little PAST flat, so the throat faces out and not up a tube.
     try std.testing.expect(openL < budL * 0.2);
 
     // THE FLING CARRIES THE BLADES PAST THEIR REST AND THEY SPRING BACK ONTO IT. Measured on the FOLD, which is
@@ -2011,7 +1977,6 @@ test "A BUD SHUT IS A MUZZLE AND OPEN IT IS A METRE AND A THIRD OF FLOWER — me
     std.debug.print("  …widest fold is {d:.0} deg and the ring stands at most {d:.0} deg off it\n", .{ peak, worst });
     try std.testing.expect(worst < 45.0);
 
-    // NO TWO PETALS ALIKE, AND NO TWO GAPS: a ring stepped off k/7 reads as a gear however good the blade is.
     var minGap: f32 = 360;
     var maxGap: f32 = 0;
     for (PETALS) |a| {
@@ -2184,7 +2149,6 @@ test "A DEAD ONE WILTS FROM WHATEVER IT WAS WEARING — never a snap shut and ne
     mid.t = WILT_DUR;
     try std.testing.expectApproxEqAbs(@as(f32, 0), mid.openAmt(), 1e-4);
 
-    // …and one killed with the bud shut STAYS shut. From across a field that is most of what says it is finished.
     var shut = Ravager.spawn(mathx.zero3, 0, 1.0, 0.3);
     shut.enterDeath();
     const dt: f32 = 1.0 / 60.0;
@@ -2245,7 +2209,6 @@ test "THE GATHER LOADS AND THE LANDING ABSORBS — and the coil does not come fr
     var r = Ravager.spawn(mathx.zero3, 0, 1.0, 0.3);
     r.state = .bite;
 
-    // The gather peaks inside the wind and is SPENT by the launch: a load still building at the release is a load that never fired.
     var peak: f32 = 0;
     var peakAt: f32 = 0;
     var t: f32 = 0;
@@ -2262,7 +2225,6 @@ test "THE GATHER LOADS AND THE LANDING ABSORBS — and the coil does not come fr
     r.t = HOP_END;
     try std.testing.expectApproxEqAbs(@as(f32, 0), r.gatherAmt(), 1e-4);
 
-    // The landing overshoots its rest and settles back onto it — a signed channel that crosses zero.
     var lo: f32 = 9;
     var hi: f32 = -9;
     t = HOP_END;

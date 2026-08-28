@@ -4,6 +4,7 @@ const mathx = @import("../core/mathx.zig");
 const combat = @import("../play/combat.zig");
 const gfx = @import("../gfx/gfx.zig");
 const wf = @import("../world/worldfmt.zig");
+const props = @import("../props/props.zig");
 
 const v3 = mathx.v3;
 
@@ -90,7 +91,64 @@ pub fn traitsOf(k: wf.FoeKind) Traits {
         .berserker, .priest, .slinger, .ogre, .fish_spearman, .fish_netter, .fish_shaman => .{ .nature = .humanoid },
         .brood_mother, .broodling, .delver, .florid_ravager, .rotgorger => .{ .nature = .beast },
         .shroom, .mushroom_mage, .spore_golem, .birchwight => .{ .nature = .plant },
+        .fungal_swordsman, .fungal_magus => .{ .nature = .plant },
     };
+}
+
+/// **WHICH KINGDOM A CREATURE READS AS STANDING IN** — the third axis beside `Nature` and `Gait`, and an
+/// exhaustive switch for their reason: a creature cannot be added unfiled. It is `props.Biome`, the same axis
+/// the props are filed on, so the editor's units palette and its prop palette split the world the same way.
+///
+/// **NOTHING SPAWNS BY IT** (`props.biome`'s own rule). What places a creature is an authored `foe:` line, and
+/// nothing consults this but the editor's palette. `any` is not a dustbin — it is the set that reads right
+/// ANYWHERE, and `atHome` is what puts those in every list rather than a list of their own.
+pub fn homeOf(k: wf.FoeKind) props.Biome {
+    return switch (k) {
+        // Nothing about a bloodfly or a bat says where it is: both are authored across every test map there is.
+        .leechfly, .blinkbat => .any,
+        // `shade.zig` builds both, so both are filed together.
+        .shade, .mourner => .ruins,
+        // The warband camps (`kobold.zig`, one group because of the priest), which is the one settled thing here.
+        .berserker, .priest, .slinger => .village,
+        // The rooted wears a `snag`'s own palette and limb builder, the birchwight is a birch, and the bloom and
+        // the brood are the things a wood hides.
+        .rooted, .birchwight, .slumber_bloom => .forest,
+        .brood_mother, .broodling, .brood_sac => .forest,
+        // The cyclops for its scale and the delver because it comes up THROUGH the ground.
+        .ogre, .delver => .rock,
+        .toad, .fen_lurker, .fish_spearman, .fish_netter, .fish_shaman => .wetland,
+        // A wake that leaves burnt ground, and a body the dried lake took the water out of.
+        .cinder_wake, .salt_husk => .ash,
+        .archer, .shieldman, .greatsword, .bone_knight, .bone_skitterer => .bone,
+        .ancient_priest, .necromancer, .tolling_hollow, .rotgorger => .bone,
+        .shroom, .mushroom_mage, .spore_golem, .florid_ravager => .fungal,
+        .fungal_swordsman, .fungal_magus => .fungal,
+    };
+}
+
+/// Everything that reads right in `b`, plus everything that reads right anywhere — `props.inBiome`'s rule, for
+/// the creatures.
+pub fn atHome(k: wf.FoeKind, b: props.Biome) bool {
+    const own = homeOf(k);
+    return own == b or own == .any;
+}
+
+test "EVERY KINGDOM THAT HOLDS A CREATURE HOLDS MORE THAN ONE, and the wanderers are in every list" {
+    var n = [_]usize{0} ** props.Biome.N;
+    for (0..@typeInfo(wf.FoeKind).@"enum".fields.len) |i| n[@intFromEnum(homeOf(@enumFromInt(i)))] += 1;
+    std.debug.print("\n  foe homes:", .{});
+    for (n, 0..) |c, i| {
+        if (c == 0) continue;
+        const b: props.Biome = @enumFromInt(i);
+        std.debug.print(" {s} {d}", .{ b.label(), c });
+        // A kingdom with ONE creature in it is a chip that opens onto a single row — file it or fold it.
+        try std.testing.expect(c >= 2);
+    }
+    std.debug.print("\n", .{});
+    // …and an `any` creature answers every kingdom, which is what keeps it off a chip of its own.
+    for (0..props.Biome.N) |i| try std.testing.expect(atHome(.blinkbat, @enumFromInt(i)));
+    try std.testing.expect(!atHome(.toad, .ash));
+    try std.testing.expect(atHome(.toad, .wetland));
 }
 
 /// A share of its OWN STATURE — the hips. The hero's own limit is 0.76 of his (`env.WADE_MAX`).
@@ -289,8 +347,7 @@ pub fn faceToward(pos: rl.Vector3, facing: *f32, target: rl.Vector3, rate: f32, 
 }
 
 /// **WHAT A UNIT DOES BEFORE IT HAS SEEN ANYBODY** (owner: a few basic idle enemy AIs, assigned per unit in the
-/// editor). The names are StarEdit's, because that is the vocabulary the maps are authored in: JUNKYARD DOG is
-/// roaming about a post, and it comes leashed or not.
+/// editor).
 ///
 /// **PRE-AGGRO ONLY** (owner). Nothing here touches a fight: the moment a creature is engaged its own state
 /// machine owns it, and this hands back nothing until it is idle again.

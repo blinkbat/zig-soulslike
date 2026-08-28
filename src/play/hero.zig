@@ -787,6 +787,27 @@ pub fn wearFor(a: Armament) ?item.Wear {
     };
 }
 
+/// **`wearFor` RUN BACKWARDS FOR THE THREE THAT SWING**, so a panel handed a SOCKET can price the stroke that
+/// stands in it. Null for the bow, the board and every worn socket — none of them has a `hero.Move`. Pinned
+/// against `wearFor` at comptime, or the pair drifts and a club is priced on the sword's clock.
+pub fn bladeForWear(w: item.Wear) ?Blade {
+    return switch (w) {
+        .hand_sword => .sword,
+        .hand_dagger => .dagger,
+        .hand_club => .club,
+        else => null,
+    };
+}
+
+comptime {
+    for (@typeInfo(Armament).@"enum".fields) |f| {
+        const a: Armament = @enumFromInt(f.value);
+        const w = wearFor(a) orelse continue;
+        if (bladeOf(a) != bladeForWear(w))
+            @compileError("hero: `bladeForWear` disagrees with `wearFor`+`bladeOf` on " ++ f.name);
+    }
+}
+
 pub fn heldGear(a: Armament, worn: Worn) ?item.Kind {
     const w = wearFor(a) orelse return null;
     return worn.at(w);
@@ -1041,6 +1062,18 @@ comptime {
 
 pub fn moveOf(b: Blade, heavy: bool) Move {
     return MOVES[@intFromEnum(b)][@intFromBool(heavy)];
+}
+
+/// **SECONDS A STROKE TAKES AT REST** — the class's own clock times the weapon's `dur` dial, and THE one place
+/// the swing time is written down. `Hero.atkDur` is this over the live haste; the book prints it flat, because
+/// what a page compares two weapons on is the clock and not a multiplier of a clock nobody is shown.
+pub fn swingSecs(b: Blade, heavy: bool, row: item.Arm) f32 {
+    return moveOf(b, heavy).t.dur * row.dur;
+}
+
+/// …and the DRAW's, which has no `Blade` and its own two clocks.
+pub fn drawSecs(aimed: bool, row: item.Arm) f32 {
+    return @as(f32, if (aimed) BOW_SHOT_DUR else BOW_QUICK_DUR) * row.dur;
 }
 
 /// Degrees except `dip`, which is metres the pelvis drops. Signs are the AUTHORED (right-hand) side's;
@@ -3189,12 +3222,12 @@ pub const Hero = struct {
     }
 
     pub fn atkDur(self: *const Hero, heavy: bool) f32 {
-        return moveOf(self.heldBlade(), heavy).t.dur * self.swingRow().dur / self.vit.hasteMult();
+        return swingSecs(self.heldBlade(), heavy, self.swingRow()) / self.vit.hasteMult();
     }
 
     /// ONE answer for the three places that each spelled out the same pair (`updateShot`, `bowLevels`, `shotU`) — the mechanic's knot and the pose's `u` cannot be a shaft apart.
     pub fn shotDur(self: *const Hero, aimed: bool) f32 {
-        return @as(f32, if (aimed) BOW_SHOT_DUR else BOW_QUICK_DUR) * self.drawRow().dur;
+        return drawSecs(aimed, self.drawRow());
     }
 
     fn shotAt(self: *const Hero) f32 {
@@ -5151,7 +5184,6 @@ test "A DRY FIRE QUIVER REFUSES, with plain shafts still on his back" {
     try std.testing.expect(!h.shooting and h.stamRefused > 0);
     try std.testing.expectApproxEqAbs(stamBefore, h.stam.cur, 1e-5);
     try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.count(.plain));
-    // …and a death leaves the dry bank dry. The FLASKS come back; the arrows do not.
     h.respawnNow();
     try std.testing.expectEqual(@as(u8, 0), h.quiver.count(.fire));
     try std.testing.expectEqual(combat.ARROWS_MAX, h.quiver.count(.plain));
@@ -5619,7 +5651,6 @@ test "A NET TAKES THE FEET AND NOTHING ELSE — no walk, no roll, and the sword 
     try std.testing.expect(h.snared());
     try std.testing.expectApproxEqAbs(@as(f32, 0), h.moveRate(), 1e-6);
 
-    // A ROLL IS TRAVEL, so it is refused — and refused at the CHOOSE, without spending the stamina.
     const rolls = h.rolls;
     const stam = h.stam.cur;
     h.startRoll(v3(0, 0, 1));
@@ -5633,7 +5664,6 @@ test "A NET TAKES THE FEET AND NOTHING ELSE — no walk, no roll, and the sword 
     try std.testing.expect(h.guarding);
     h.setGuard(false);
 
-    // Longest wins: a second net over the first extends the hold, never shortens it.
     h.snareFor(0.4);
     try std.testing.expect(h.snare > 0.4);
 
@@ -6443,7 +6473,7 @@ fn bladePitchAt(a: Armament, k: ?item.Kind, heavy: bool, u: f32) f32 {
     h.pose();
     h.updateBlade();
     const d = mathx.subV(h.bladeB, h.bladeA);
-    return mathx.degrees(std.math.atan2(-d.y, @sqrt(d.x * d.x + d.z * d.z)));
+    return mathx.degrees(std.math.atan2(-d.y, mathx.lenXZ(d)));
 }
 
 test "A SWEEP RUNS LEVEL AND A SMASH COMES DOWN — the blade's own pitch, not the arm's" {

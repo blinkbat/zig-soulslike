@@ -956,27 +956,39 @@ const FOE_GLYPH: i32 = 6;
 const FOE_GLYPH_S: f32 = 7.0;
 const BOSS_H: i32 = 13;
 const BOSS_LIFT: i32 = 158;
-var bossChip: f32 = 0;
-var bossHold: f32 = 0;
-var bossLast: f32 = 0;
+/// **A BAR PER BOSS ON THE FIELD, EACH KEEPING ITS OWN CHIP** — the delayed white tail is a memory of THAT
+/// bar's last hit, so one set of module scratch across two bosses had the second replaying the first one's
+/// damage. Rail 0 is the lowest. **A RAIL IS A ROW OF `game.BOSS_RAILS` AND NOT A PLACE IN A QUEUE** — it is
+/// the same rail whether or not the ones under it are up, because a bar that slid down when another boss died
+/// would move mid-fight. Three, because the shipped map holds three bosses.
+pub const BOSS_SLOTS: usize = 3;
+/// **THE PITCH BETWEEN TWO BARS IS THE BAR PLUS ITS OWN NAME, NOT A ROUND NUMBER.** The name is engraved ABOVE
+/// the rail (`y - lineH(SMALL) - 3`), so at a 20 px pitch on a 13 px bar the upper bar sat straight on top of
+/// the lower one's name. Derived, so restyling either the bar or the caption cannot leave the two overlapping.
+const BOSS_NAME_LIFT: i32 = 3;
+const BOSS_GAP: i32 = BOSS_H + BOSS_NAME_LIFT + 8 + lineH(SMALL);
+var bossChip: [BOSS_SLOTS]f32 = [_]f32{0} ** BOSS_SLOTS;
+var bossHold: [BOSS_SLOTS]f32 = [_]f32{0} ** BOSS_SLOTS;
+var bossLast: [BOSS_SLOTS]f32 = [_]f32{0} ** BOSS_SLOTS;
 
-pub fn bossBar(dt: f32, name: [:0]const u8, frac: f32, staggered: bool, k: f32) void {
+pub fn bossBarAt(tier: usize, dt: f32, name: [:0]const u8, frac: f32, staggered: bool, k: f32) void {
     if (k <= 0.001) {
-        bossChip = frac;
-        bossLast = frac;
+        bossChip[tier] = frac;
+        bossLast[tier] = frac;
         return;
     }
     const w: i32 = @min(760, @divTrunc(rl.getScreenWidth() * 62, 100));
     const x = @divTrunc(rl.getScreenWidth() - w, 2);
-    const y = rl.getScreenHeight() - BOSS_LIFT;
-    if (frac > bossChip) {
-        bossChip = frac;
-        bossHold = 0;
+    // Slot 0 sits where the single tier always sat; each one above it is a tier and a gap higher.
+    const y = rl.getScreenHeight() - BOSS_LIFT - @as(i32, @intCast(tier)) * BOSS_GAP;
+    if (frac > bossChip[tier]) {
+        bossChip[tier] = frac;
+        bossHold[tier] = 0;
     } else {
-        if (frac < bossLast - 1e-4) bossHold = CHIP_HOLD;
-        if (bossHold > 0) bossHold -= dt else bossChip = mathx.maxF(frac, bossChip - CHIP_RATE * dt);
+        if (frac < bossLast[tier] - 1e-4) bossHold[tier] = CHIP_HOLD;
+        if (bossHold[tier] > 0) bossHold[tier] -= dt else bossChip[tier] = mathx.maxF(frac, bossChip[tier] - CHIP_RATE * dt);
     }
-    bossLast = frac;
+    bossLast[tier] = frac;
     const a = mathx.clampF(k, 0, 1);
     rl.drawRectangle(x - 3, y - 3, w + 6, BOSS_H + 6, rgba(0, 0, 0, au8(60, a)));
     rl.drawRectangle(x - 2, y - 2, w + 4, BOSS_H + 4, rgba(0, 0, 0, au8(165, a)));
@@ -986,7 +998,7 @@ pub fn bossBar(dt: f32, name: [:0]const u8, frac: f32, staggered: bool, k: f32) 
     rl.drawRectangle(x, y, w, BOSS_H, mathx.withAlpha(TRACK, au8(186, a)));
     const wf: f32 = @floatFromInt(w);
     const fw: i32 = @intFromFloat(wf * mathx.clampF(frac, 0, 1));
-    const cw: i32 = @intFromFloat(wf * mathx.clampF(bossChip, 0, 1));
+    const cw: i32 = @intFromFloat(wf * mathx.clampF(bossChip[tier], 0, 1));
     if (cw > fw) rl.drawRectangle(x + fw, y, cw - fw, BOSS_H, mathx.withAlpha(CHIP, au8(226, a)));
     if (fw > 0) {
         const shadeH = @max(@divTrunc(BOSS_H, 3), 1);
@@ -1002,7 +1014,7 @@ pub fn bossBar(dt: f32, name: [:0]const u8, frac: f32, staggered: bool, k: f32) 
         rl.drawRectangleLines(x - 1, y - 1, w + 2, BOSS_H + 2, mathx.withAlpha(STAGGER_RIM, au8(255, a)));
         rl.drawRectangleLines(x - 2, y - 2, w + 4, BOSS_H + 4, mathx.withAlpha(STAGGER_RIM, au8(130, a)));
     }
-    engraved(name, x, y - lineH(SMALL) - 3, SMALL, rgba(230, 218, 190, au8(244, a)));
+    engraved(name, x, y - lineH(SMALL) - BOSS_NAME_LIFT, SMALL, rgba(230, 218, 190, au8(244, a)));
 }
 
 fn au8(base: u8, k: f32) u8 {

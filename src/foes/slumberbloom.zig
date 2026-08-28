@@ -86,7 +86,6 @@ const POUR_CD: f32 = 6.5;
 const WAKE_DUR: f32 = 0.65;
 
 comptime {
-    // **THE TELL CLEARS THE LAW** — no gas comes out of nowhere.
     std.debug.assert(SWELL_DUR >= foe.TELL_MIN);
     // A WHOLE POUR FILLS A METER AND HALF OF ONE DOES NOT — both over the AREA. Too little and it is scenery,
     // too much and the tell is decoration. The half integrates on [0, 0.5], which is not half the whole.
@@ -94,7 +93,6 @@ comptime {
     std.debug.assert(POUR_DUR * POUR_BUILD * POUR_SHAPE > row.max);
     const halfArea = 0.5 - POUR_TAIL * 0.125 / 3.0;
     std.debug.assert(POUR_DUR * POUR_BUILD * halfArea < row.max);
-    // …and the gas may not reach further than the thing is visible from.
     std.debug.assert(POUR_R < WAKE_R and WAKE_R < AGGRO_R);
 }
 
@@ -627,7 +625,6 @@ fn bulbMesh() rl.Mesh {
     b.addBlob(mathx.zero3, v3(0.235 * H, 0.200 * H, 0.222 * H), 6, 13, CAP_SKIN);
     b.addBlob(v3(rng.signed() * 0.012 * H, 0.070 * H, rng.signed() * 0.010 * H), v3(0.185 * H, 0.135 * H, 0.176 * H), 5, 12, CAP_BLOOM);
     b.addBlob(v3(0, -0.085 * H, 0.010 * H), v3(0.196 * H, 0.100 * H, 0.186 * H), 5, 11, CAP_SKIN_DK);
-    // OPEN, and dark inside: a vent that is capped is a chimney pot.
     b.addCylinder(v3(0, 0.120 * H, 0), v3(0, 0.168 * H, 0), 0.070 * H, 0.086 * H, 11, CAP_SKIN_DK);
     b.addBlob(v3(0, 0.108 * H, 0), v3(0.062 * H, 0.026 * H, 0.062 * H), 3, 9, GILL_DEEP);
     // A FEW PERCENT OF THE MASS, not a tenth (the relief law). At 0.030 seated on the surface these were PEGS
@@ -666,7 +663,6 @@ fn gillMesh(len: f32, seed: u64) rl.Mesh {
         const t0 = @as(f32, @floatFromInt(i)) / segs;
         const t1 = @as(f32, @floatFromInt(i + 1)) / segs;
         const zc = L * (t0 + t1) * 0.5;
-        // Deepest at the collar, so the skirt has a profile.
         const drop = lerpF(0.072, 0.026, (t0 + t1) * 0.5) * H * rng.range(0.9, 1.1);
         b.addBox(
             v3(0, -0.010 * H - drop, zc),

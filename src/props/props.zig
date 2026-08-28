@@ -959,8 +959,50 @@ test "fires carry a light above their base and inside their own bound" {
     }
 }
 
-pub const WATER_TONES = [3]rl.Vector3{
-    mathx.colVec(art.WATER_SHALLOW),
-    mathx.colVec(art.WATER_MID),
-    mathx.colVec(art.WATER_DEEP),
+/// **SHALLOW / MID / DEEP FOR EVERY `wf.Liquid`, FLAT AND IN THE ENUM'S ORDER** — pushed straight into the
+/// shader's `liquidTone[12]` by `env.drawWater`, which is why it is one array and not four.
+pub const LIQUID_TONES = [gfx.LIQUID_N * 3]rl.Vector3{
+    mathx.colVec(art.WATER_SHALLOW),  mathx.colVec(art.WATER_MID),  mathx.colVec(art.WATER_DEEP),
+    mathx.colVec(art.OIL_SHALLOW),    mathx.colVec(art.OIL_MID),    mathx.colVec(art.OIL_DEEP),
+    mathx.colVec(art.FUNGAL_SHALLOW), mathx.colVec(art.FUNGAL_MID), mathx.colVec(art.FUNGAL_DEEP),
+    mathx.colVec(art.LAVA_SHALLOW),   mathx.colVec(art.LAVA_MID),   mathx.colVec(art.LAVA_DEEP),
 };
+
+/// The fungal-bloom soil, off the shader's own `terrainAlbedo` row — the bank every fungal pool lies in, and
+/// what "too bright" is measured against. Pinned to the GLSL so the two cannot part company.
+const BLOOM_GROUND = [3]f32{ 0.115 * 255.0, 0.055 * 255.0, 0.070 * 255.0 };
+comptime {
+    if (std.mem.indexOf(u8, @import("../gfx/shaders.zig").sceneFS, "vec3(0.115, 0.055, 0.070)") == null)
+        @compileError("props: the fungal bloom's ground tone moved — BLOOM_GROUND is stale");
+}
+
+test "ONLY LAVA IS A LIGHT — no other pool may come back off the top of the screen" {
+    // **SOLVE IT, DO NOT GUESS IT** (AGENTS.md). The fungal stew was authored at 168/92/62 albedo, which is
+    // 255/205/172 through the chain: past the clip on red, brighter on green and blue than lava's own crust,
+    // and a full stop over the mauve ground it sits in. Lava is the one sheet that is a SOURCE (`sheetGlow`).
+    // Indexed by the enum's own order (`wf.Liquid`, pinned there), which is what this flat array IS. Lava is
+    // the last three and the only ones exempt.
+    for (LIQUID_TONES[0 .. 3 * 3]) |tone| {
+        for ([3]f32{ tone.x, tone.y, tone.z }) |ch| {
+            try std.testing.expect(gfx.screenOf(ch * 255.0) < 250.0);
+        }
+    }
+    const rim = LIQUID_TONES[6];
+    const deep = LIQUID_TONES[8];
+    var b: [3]f32 = undefined;
+    for (BLOOM_GROUND, 0..) |g, i| b[i] = gfx.screenOf(g);
+    std.debug.print(
+        "\n  fungal pool: rim {d:.0}/{d:.0}/{d:.0}, deep {d:.0}/{d:.0}/{d:.0} on screen; the bloom it lies in is {d:.0}/{d:.0}/{d:.0}\n",
+        .{
+            gfx.screenOf(rim.x * 255.0),  gfx.screenOf(rim.y * 255.0),  gfx.screenOf(rim.z * 255.0),
+            gfx.screenOf(deep.x * 255.0), gfx.screenOf(deep.y * 255.0), gfx.screenOf(deep.z * 255.0),
+            b[0],                         b[1],                         b[2],
+        },
+    );
+    // A POOL IS A BODY SUNK INTO ITS BANK: the rim may stand a little over the ground, the deep may not.
+    try std.testing.expect(gfx.screenOf(rim.x * 255.0) < b[0] * 1.30);
+    try std.testing.expect(gfx.screenOf(deep.x * 255.0) < b[0]);
+    // …and it still reads as a stew: warm, and shallow-to-deep is a ramp and not a step.
+    try std.testing.expect(rim.x > rim.y and rim.y >= rim.z);
+    try std.testing.expect(rim.x > deep.x);
+}

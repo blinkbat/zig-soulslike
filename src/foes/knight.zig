@@ -157,8 +157,6 @@ const SWIPE_SHUT_K1: f32 = 0.88;
 /// then into the carry. The sword's road home is UP now (`CARRY_TILT` 150), which is what let `RECOVER_BACK_K`
 /// come down and gave the shut its time; on the old Pflug carry the hilt sat at the door's right edge and a
 /// sword coming home while the plank was still moving met it.
-/// The sword's own way home is UP now, not forward across his front (`CARRY_TILT` 150), so it clears the park
-/// sooner and the door may start shutting sooner — which is what buys the shut its time and stops it snapping.
 const RECOVER_HOLD_K: f32 = 0.22;
 const RECOVER_BACK_K: f32 = 0.40;
 const RECOVER_PARK_TO: f32 = 0.90;
@@ -1282,7 +1280,7 @@ const TURN_STANCE_HALF: f32 = 0.105;
 
 /// **EVERY STROKE NAMES ITS OWN GATHER.** The `else` is dead air the comptime pin beside `MOVES` polices: it
 /// hands back the BASH's, so an unnamed index collides with `BASH_I` and fails the build rather than borrowing
-/// a gather. It used to catch `SWAT_I`, which is how the swat lost its own beat entirely.
+/// a gather.
 fn windFor(mv: usize) State {
     return switch (mv) {
         SWEEP_I => .sweepwind,
@@ -4548,8 +4546,6 @@ test "THE SWORD IS CARRIED HIGH — blade up past his sword shoulder, where it c
     // covers his whole right side out to 1.54 m, the rig cannot put a point out past that edge without throwing
     // the arm after it: measured, the point sat 3.66 m off his centre line and 1.37 m BELOW the hilt, which is
     // Alber and not Pflug, and photographed it read as a pike carried out sideways. So the blade goes UP.
-    // Nobody fighting from behind a pavise presents low past its edge — the sword lives high, where it still
-    // threatens, where the silhouette stays a man's, and where a plank 4.5 m tall simply is not.
     var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
     k.setCarry(1.0);
     k.seatDoor();
@@ -4561,12 +4557,10 @@ test "THE SWORD IS CARRIED HIGH — blade up past his sword shoulder, where it c
     std.debug.print("\n  carry: point at x {d:.2} y {d:.2} z {d:.2}; hilt at x {d:.2} y {d:.2} z {d:.2}; door gap {d:.2} m (crown {d:.2})\n", .{
         tip.x, tip.y, tip.z, root.x, root.y, root.z, bladeDoorGap(&k).gap, crown,
     });
-    // POINT UP, and past his own crown: that is what makes it a threat, and what keeps it off the plank.
     try std.testing.expect(tip.y > root.y + 2.0);
     try std.testing.expect(tip.y > crown);
     // Near-plumb, so it reads as a line beside him rather than a spar held out.
     try std.testing.expect(@abs(tip.x - root.x) < 0.9 and @abs(tip.z - root.z) < 0.9);
-    // The hilt is still at his sword hip: right of centre, and outboard of the door's own edge.
     try std.testing.expect(root.x < -0.9 and root.x > -2.2);
     try std.testing.expect(root.y > 2.4 and root.y < 3.6);
     // AND THE CLEARANCE IS STRUCTURAL NOW, not tuned: a blade overhead cannot be swung into a plank at his side.
@@ -4820,7 +4814,6 @@ test "LIGHT AND HEAVY ARE TELLABLE APART BEFORE THEY LAND, and a move cannot lie
             .light => lightest = @min(lightest, a.hit.dmg),
             .heavy, .crushing => heaviest = @max(heaviest, a.hit.dmg),
         }
-        // THE TELL MAY NEVER UNDERSTATE THE BLOW.
         if (a.hit.dmg >= 34) try std.testing.expect(a.weight == .crushing);
         if (a.hit.dmg <= 27) try std.testing.expect(a.weight != .crushing);
     }
@@ -5553,8 +5546,6 @@ fn doorNormal(k: *const Knight) rl.Vector3 {
 }
 
 test "THE DOOR FACES WHAT IT MEETS — forward on guard and at the ram, down when it slams, and it never leaves the arm" {
-    // Owner: it floated off his arm and hung at bizarre angles. Strapped to the forearm (`shieldXf`) the angle is
-    // the arm's, so each pose that presents the door is pinned on where the face points.
     var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
     k.setCarry(1.0);
     k.seatDoor();
@@ -5571,7 +5562,6 @@ test "THE DOOR FACES WHAT IT MEETS — forward on guard and at the ram, down whe
     while (b.state == .bashwind or b.state == .bash) {
         _ = b.update(dt, v3(0, 0, 40), 400, .{});
         if (b.state == .bash and b.t >= BASH.strikeDur * BASH.impactK and atRam.z == 0) atRam = doorNormal(&b);
-        // The grip never leaves the fist: the hub stays where the strap says, whatever the arm does.
         const fist = rl.math.vector3Transform(v3(0, FIST_Y, FIST_Z), b.xf[WRL]);
         const hub = rl.math.vector3Transform(mathx.zero3, b.shXf);
         worstGap = mathx.maxF(worstGap, mathx.lenV(mathx.subV(hub, fist)));
@@ -5797,7 +5787,6 @@ test "THE PUNISH WINDOW IS REAL — flat on his back, the mark and the hurt sphe
             try std.testing.expect(k.guardUp());
         }
     }
-    // The thrust opens him like the swipes do: its point runs down the line the door hangs on.
     k.state = .thrust;
     k.atk = THRUST_I;
     k.t = THRUST.strikeDur;
@@ -5921,7 +5910,6 @@ test "HE IS NOT DULL — a man walking circles round him is under attack, not wa
     var strokes: usize = 0;
     var was = k.state;
     while (t < 45.0) : (t += dt) {
-        // A WALK, held at a constant radius — the laziest thing a player can do.
         ang += (heromod.WALK_SPEED / ring) * dt;
         const hero = v3(mathx.sinf(ang) * ring, 0, mathx.cosf(ang) * ring);
         // `game.markSight` stamps this every frame in the live loop; without it he goes blind at
@@ -5962,9 +5950,7 @@ test "HE IS NOT DULL — a man walking circles round him is under attack, not wa
 
 test "HE TRACKS LIKE THE OGRE — the window is the COMMIT, not the flank" {
     // **THE LAW THIS REPLACES**: he was slower than a WALKING man (0.68 against 0.80), so the flank was free to
-    // anybody holding a direction and the fight was a stroll in circles (owner: the ogre is harder, and the
-    // knight is dull). The ogre cannot be out-circled either — what it gives you is its two big commits, and
-    // that is the shape copied here: quick strokes hold you, the heavies let go, the overhead lets go entirely.
+    // anybody holding a direction and the fight was a stroll in circles (owner: the ogre is harder, and the knight is dull).
     const k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
     const r = k.bodyR() + foe.HERO_R;
     const sprintRate = heromod.SPRINT_SPEED / r;
@@ -5972,7 +5958,6 @@ test "HE TRACKS LIKE THE OGRE — the window is the COMMIT, not the flank" {
     // IN THE OGRE'S CLASS, and under it: he is armour, not a beast.
     try std.testing.expect(TURN_RATE > sprintRate);
     try std.testing.expect(TURN_RATE < ogremod.TURN_RATE);
-    // …AND THE COMMIT STILL COSTS HIM TRACKING, which is the only thing leaving a window inside a stroke.
     for (MOVES) |a| {
         if (a.weight != .light) try std.testing.expect(a.track < TURN_RATE);
     }
@@ -6325,14 +6310,12 @@ test "A SPENT TRANSFORMATION IS ALWAYS A LIT ONE — staggering him mid-roar may
     try std.testing.expectEqual(State.awaken, k.state);
     try std.testing.expect(k.awoken and !k.lit);
 
-    // A heavy blow lands halfway through the roar.
     const dt = 1.0 / 120.0;
     var t: f32 = 0;
     const far = v3(0, 0, 40.0);
     while (t < AWAKEN.liftDur) : (t += dt) _ = k.update(dt, far, 400.0, .{});
     k.enterStun(.stunheavy);
 
-    // Whatever ended the roar, the transformation is spent — so phase two is ON.
     try std.testing.expect(k.awoken);
     try std.testing.expect(k.lit);
 
@@ -6382,7 +6365,6 @@ test "HE TRIES TO HIT YOU — the GATHER aims at his full turn, and the COMMIT s
         // TOTAL is capped separately (`GATHER_SWEEP_MAX`) and a man out in front never reaches it.
         try std.testing.expect(k.state != row[0] or k.t >= dur - 2.0 * dt);
     }
-    // …and the COMMIT is still bracketed: no heavy row may out-turn his body, which is what leaves the window.
     for (MOVES) |a| {
         if (a.weight != .light) try std.testing.expect(a.track < TURN_RATE);
     }
@@ -7063,7 +7045,6 @@ test "MAKE DAMN SURE: through a whole chaotic fight, the door is HELD on every s
     var worstTurnIn: []const u8 = "";
     var t: f32 = 0;
     while (t < 120.0) : (t += dt) {
-        // The man moves like a man: he changes his mind about radius and direction, and sometimes stands still.
         if (rng.float() < 0.010) ringTo = rng.range(1.7, 11.0);
         if (rng.float() < 0.008) spin = if (rng.float() < 0.5) -1.0 else 1.0;
         ring = mathx.approach(ring, ringTo, dt * 3.0);
@@ -7072,7 +7053,6 @@ test "MAKE DAMN SURE: through a whole chaotic fight, the door is HELD on every s
         k.leash.noteSeen();
         _ = k.update(dt, hero, 400.0, .{});
 
-        // …and he hits back, from wherever he happens to be, hard enough to flinch, break and light him.
         if (rng.float() < 0.030) {
             const a = rng.angle();
             const at = mathx.addV(k.centerWorld(), mathx.scaleV(v3(mathx.cosf(a), 0, mathx.sinf(a)), k.hurtRadius() * 0.8));

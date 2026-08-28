@@ -242,6 +242,41 @@ pub fn disabled(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32, tip:
     hud.mono(label, tx, ty, size, alpha(LABEL, 90));
 }
 
+pub const TAB_H: i32 = 24;
+
+/// **A ROW OF TABS THAT OPENS INTO WHAT IS UNDER IT** — evenly divided over `w`, and the live one is the one
+/// with NO FLOOR, so the eye runs out of the tab and into its own list. That gap is the whole difference from a
+/// `chip` row: chips say "narrow this list", tabs say "this is a different list".
+pub fn tabs(ctx: *Ctx, x: i32, y: i32, w: i32, labels: []const [:0]const u8, sel: usize, tips: []const [:0]const u8) ?usize {
+    std.debug.assert(tips.len == labels.len);
+    var hit: ?usize = null;
+    const n: i32 = @intCast(labels.len);
+    if (n == 0) return null;
+    const rule = alpha(TRIM, 150);
+    // The rule the whole row stands on, laid FIRST so the live tab's own face covers its share of it.
+    rl.drawRectangle(x, y + TAB_H - 1, w, 1, rule);
+    for (labels, 0..) |lab, i| {
+        const ix: i32 = @intCast(i);
+        const x0 = x + @divTrunc(w * ix, n);
+        const x1 = x + @divTrunc(w * (ix + 1), n);
+        const tw = x1 - x0;
+        const r = rect(x0, y, tw, TAB_H);
+        const on = i == sel;
+        tipFor(ctx, r, tips[i]);
+        const h = ctx.hot(r);
+        rl.drawRectangleRec(r, if (on) ACTIVE_FILL else if (h) HOVER_FILL else IDLE_FILL);
+        const trim = alpha(TRIM, if (on) 220 else if (h) 170 else 80);
+        rl.drawRectangle(x0, y, tw, 1, trim);
+        rl.drawRectangle(x0, y, 1, TAB_H, trim);
+        rl.drawRectangle(x1 - 1, y, 1, TAB_H, trim);
+        if (!on) rl.drawRectangle(x0, y + TAB_H - 1, tw, 1, rule);
+        const lw = hud.monoW(lab, hud.MONO);
+        hud.mono(lab, x0 + @divTrunc(tw - lw, 2), y + @divTrunc(TAB_H - hud.monoLineH(hud.MONO), 2), hud.MONO, if (on) HOT else VALUE);
+        if (h and ctx.pressed) hit = i;
+    }
+    return hit;
+}
+
 pub fn chip(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, active: bool, usedW: *i32, tip: [:0]const u8) bool {
     const w = hud.monoW(label, hud.MONO) + 16;
     usedW.* = w + 5;

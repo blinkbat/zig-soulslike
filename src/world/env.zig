@@ -24,7 +24,27 @@ comptime {
     std.debug.assert(MAX_HALF >= wf.MAX_DECLARED_HALF);
 }
 const CLIFF_BOUND: f32 = 18.0;
-const GROUND_HALF: f32 = wf.DEFAULT_HALF + 220.0;
+/// **HOW FAR THE FLOOR REACHES PAST THE PLAYABLE BOUND**, as a SHARE of the map's own half — so the horizon is
+/// ground and not an edge, and a small map looks like a small map. As a flat 220 m it made a 95 m test bench a
+/// 190 m island sitting in a 1000 m floor, with the editor's bound box drawn round the island. The shipped
+/// 280 m map moves 4 m by this (500 -> 504), which is the point: it was already right THERE and nowhere else.
+const GROUND_APRON: f32 = 0.80;
+const GROUND_APRON_MIN: f32 = 60.0;
+
+pub fn groundOut(half: f32) f32 {
+    return half + mathx.maxF(GROUND_APRON_MIN, half * GROUND_APRON);
+}
+
+/// The WIDEST floor there can be — what the flat quad is built at once, and the far distance every culler
+/// measures against. The draw scales it down to `groundOut(mapHalf)`.
+const GROUND_HALF: f32 = wf.MAX_DECLARED_HALF * (1.0 + GROUND_APRON);
+
+comptime {
+    // …AND IT HAS TO BE THE WIDEST, which is only true while the SHARE beats the floor at the biggest map
+    // there can be. Drop `MAX_DECLARED_HALF` under `GROUND_APRON_MIN / GROUND_APRON` and `drawGround` scales
+    // the quad UP past what it was built at, which is a floor that ends short of its own edge.
+    std.debug.assert(groundOut(wf.MAX_DECLARED_HALF) <= GROUND_HALF);
+}
 
 const MAX_PROPS = 24576;
 const MAX_SOLIDS = 8192;
@@ -112,6 +132,25 @@ const WATER_Y: f32 = 0.055;
 
 var scratchIn: [wf.WATER_CELLS]f32 = undefined;
 var scratchOut: [wf.WATER_CELLS]f32 = undefined;
+/// The UNDILATED packed coast byte, built off the map each upload and handed to `dilateEdges` as its source.
+var scratchPack: [wf.WATER_CELLS]u8 = undefined;
+
+/// **ONE BYTE CARRIES BOTH ORDINALS** — `wf.Edge` in the low three bits, `wf.Liquid` in the next two. The
+/// shader unpacks the same way (`waterCellAt`), and they travel together because they are dilated by one walk
+/// off one paint and a second point-sampled field would be an eighteenth texture unit.
+pub fn packLiquid(edge: u8, kind: u8) u8 {
+    const e: u8 = @min(edge, wf.Edge.N - 1) & glsl.EDGE_MASK;
+    const k: u8 = @min(kind, wf.Liquid.N - 1) & glsl.LIQUID_MASK;
+    return e | (k << glsl.LIQUID_SHIFT);
+}
+
+comptime {
+    // **THE TWO ORDINALS HAVE TO FIT THE BYTE THEY SHARE.** Grow either enum past its mask and the pack aliases
+    // silently: a ninth `Edge` would read back as `blend`, a fifth `Liquid` as water.
+    std.debug.assert(wf.Edge.N <= glsl.EDGE_MASK + 1);
+    std.debug.assert(wf.Liquid.N <= glsl.LIQUID_MASK + 1);
+    std.debug.assert((glsl.LIQUID_MASK << glsl.LIQUID_SHIFT) | glsl.EDGE_MASK <= 255);
+}
 
 /// **HOW WIDE THE WALK BACK TO DRY LAND IS, PER SHAPE** — and the only part of an edge policy still baked into
 /// the field, because a ramp WIDTH is a smooth scalar and survives being sampled. Where the coast actually
@@ -129,7 +168,7 @@ fn coastBand(e: wf.Edge) f32 {
     };
 }
 
-const Prop = struct {
+pub const Prop = struct {
     kind: Kind,
     pos: rl.Vector3,
     yaw: f32,
@@ -192,6 +231,21 @@ const Index = struct {
     // …and the cell's VERTICAL extent: the per-cell reject is a sphere about the cell's centre, and a cell whose props stand 20 m up a hill is nowhere near a sphere centred at y = 0.
     ylo: [NCELL]f32 = [_]f32{0} ** NCELL,
     yhi: [NCELL]f32 = [_]f32{0} ** NCELL,
+
+    /// Lifted onto the cell's own props, for the reason above.
+    fn cellAt(idx: *const Index, c: usize) rl.Vector3 {
+        var centre = cellCentre(c);
+        centre.y = (idx.ylo[c] + idx.yhi[c]) * 0.5;
+        return centre;
+    }
+
+    /// **ONE SPHERE, AND EVERY WALK OVER THE CELLS ASKS FOR IT HERE.** `drawIndexed` and `eachInView` had the
+    /// centre lift, the vertical span and the radius spelled out separately, so "what is on screen" was two
+    /// pieces of arithmetic that only happened to agree.
+    fn cellSeen(idx: *const Index, c: usize, vw: *const View) bool {
+        const vspan = (idx.yhi[c] - idx.ylo[c]) * 0.5;
+        return vw.visible(idx.cellAt(c), CELL_CIRCUM + idx.bound[c] + vspan, idx.view[c]);
+    }
 };
 
 pub const View = struct {
@@ -307,9 +361,10 @@ pub const Env = struct {
     npools: usize = 0,
     waterSheet: rl.Model = undefined,
     waterField: [wf.WATER_CELLS]u8 = [_]u8{gfx.WATER_SHORE} ** wf.WATER_CELLS,
-    /// The coast POLICY per cell, dilated one cell off the painted water so the dry side of a boundary answers
-    /// with the same shape as the wet side. Held here rather than in `gfx` because BOTH sides read it: the
-    /// shader gets this exact buffer, and `paintedDepth` walks it for the footing.
+    /// The coast POLICY *and the liquid* per cell, packed (`packLiquid`) and dilated one cell off the painted
+    /// water so the dry side of a boundary answers with the same shape as the wet side. Held here rather than
+    /// in `gfx` because BOTH sides read it: the shader gets this exact buffer, and `paintedDepth` walks it for
+    /// the footing.
     waterEdgeField: [wf.WATER_CELLS]u8 = [_]u8{@intFromEnum(wf.Edge.natural)} ** wf.WATER_CELLS,
     waterAny: bool = false,
     waterHalf: f32 = 0,
@@ -322,10 +377,14 @@ pub const Env = struct {
     soilReady: bool = false,
     soilHalf: f32 = 0,
     waterEdgeSrc: [wf.WATER_CELLS]u8 = [_]u8{0} ** wf.WATER_CELLS,
+    waterKindSrc: [wf.WATER_CELLS]u8 = [_]u8{0} ** wf.WATER_CELLS,
     waterHgtSrc: [wf.HEIGHT_CELLS]u8 = [_]u8{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS,
     waterReady: bool = false,
     waterMid: rl.Vector3 = mathx.zero3,
     waterSpan: rl.Vector3 = mathx.zero3,
+    /// **THE HALF THE LOADED MAP DECLARED**, which is what the floor is sized against. Not `heightHalf`: that
+    /// one is the sculpt grid's and is only right once `uploadHeight` has run.
+    mapHalf: f32 = wf.DEFAULT_HALF,
     heightField: [wf.HEIGHT_CELLS]u8 = [_]u8{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS,
     heightHalf: f32 = wf.DEFAULT_HALF,
     heightAny: bool = false,
@@ -367,6 +426,7 @@ pub const Env = struct {
         self.waterAny = false;
         self.waterHalf = 0;
         self.waterReady = false;
+        self.soilReady = false;
         @memset(&self.sgrid_start, 0);
         self.tileBuilt = [_]bool{false} ** NTILES;
         self.tileRad = [_]f32{0} ** NTILES;
@@ -379,6 +439,7 @@ pub const Env = struct {
 
     /// Putting a map into the world: what `game.init`, `game.enterMap` and `editor.rebuild` all want.
     pub fn replay(self: *Env, m: *const wf.Map) void {
+        self.mapHalf = m.half;
         self.uploadSoil(m);
         self.uploadWater(m);
         self.uploadHeight(m);
@@ -515,7 +576,7 @@ pub const Env = struct {
             self.skirtBuilt = false;
         }
         const half = self.heightHalf;
-        const out = GROUND_HALF;
+        const out = groundOut(self.mapHalf);
         if (out <= half) return;
         const n = wf.HEIGHT_N - 1;
         const step = 2 * half / @as(f32, @floatFromInt(n));
@@ -573,11 +634,13 @@ pub const Env = struct {
         const same = self.waterReady and self.waterHalf == m.half and
             std.mem.eql(u8, &self.waterSrc, &m.water) and
             std.mem.eql(u8, &self.waterEdgeSrc, &m.waterEdge) and
+            std.mem.eql(u8, &self.waterKindSrc, &m.waterKind) and
             std.mem.eql(u8, &self.waterHgtSrc, &m.height);
         if (same) return;
         waterBuilds += 1;
         self.waterSrc = m.water;
         self.waterEdgeSrc = m.waterEdge;
+        self.waterKindSrc = m.waterKind;
         self.waterHgtSrc = m.height;
         self.waterReady = true;
         self.waterAny = m.anyWater();
@@ -694,13 +757,15 @@ pub const Env = struct {
     pub fn drawWater(self: *Env) void {
         if (!self.waterAny) return;
         if (self.scene) |sc| {
-            sc.setWaterSheet(true, props.WATER_TONES);
+            sc.setWaterSheet(true, props.LIQUID_TONES);
             rl.drawModelEx(self.waterSheet, self.waterMid, v3(0, 1, 0), 0, self.waterSpan, rl.Color.white);
             sc.setWaterSheet(false, undefined);
         }
     }
 
     pub fn materialize(self: *Env, m: *const wf.Map) void {
+        // Here as well as in `replay`: a test and the editor's own rebuild reach this one without the other.
+        self.mapHalf = m.half;
         self.nprops = 0;
         self.opsCapped = 0;
         self.nsolids = 0;
@@ -755,6 +820,7 @@ pub const Env = struct {
             o.loot = src.loot;
             o.nloot = src.nloot;
             o.boss = src.boss;
+            o.nboss = src.nboss;
             // A flame's phase is drawn off its op's stream, so one seed for the lot beats every torch of a ring in time.
             if (props.info(pr.kind).light != null) o.seed = src.seed +% k;
             m.ops[s + k] = o;
@@ -1156,7 +1222,7 @@ pub const Env = struct {
             return v3(origin.x + dir.x * t, GROUND_Y, origin.z + dir.z * t);
         }
         const step = 2 * self.heightHalf / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
-        const horiz = @sqrt(dir.x * dir.x + dir.z * dir.z);
+        const horiz = mathx.lenXZ(dir);
         const dt = if (horiz > 1e-4) step * 0.5 / horiz else step * 0.5;
         const MAX_T: f32 = 4.0 * GROUND_HALF;
         var t: f32 = 0;
@@ -1194,35 +1260,28 @@ pub const Env = struct {
         return self.paintedDepth(x, z) * gfx.WATER_DEEP_AT > margin + 0.01;
     }
 
-    /// **THE BARE SIDE OF A COAST ANSWERS WITH THE WATER'S OWN POLICY.** `gfx.dilateEdges` does this for the
-    /// soil inside its upload; the coast needs it on THIS side, because the footing reads the map as well as
-    /// the shader does and the two have to be looking at the same one.
+    /// **THE BARE SIDE OF A COAST ANSWERS WITH THE POOL'S OWN POLICY AND ITS OWN LIQUID.** The soil's dilation happens inside
+    /// `setSoil` and is the GPU's alone; the coast needs the result HELD, because the footing reads the map as
+    /// well as the shader does and the two have to be looking at the same one. Same walk either way
+    /// (`gfx.Scene.dilateEdges`) — two copies of it is how the two sides part company.
     fn dilateWaterEdge(self: *Env, m: *const wf.Map) void {
-        const N = wf.WATER_N;
-        self.waterEdgeField = m.waterEdge;
-        for (0..N) |z| {
-            for (0..N) |x| {
-                const i = z * N + x;
-                if (m.water[i] != 0) continue;
-                const nb = [4]?usize{
-                    if (x > 0) i - 1 else null,
-                    if (x + 1 < N) i + 1 else null,
-                    if (z > 0) i - N else null,
-                    if (z + 1 < N) i + N else null,
-                };
-                for (nb) |maybe| {
-                    const j = maybe orelse continue;
-                    if (m.water[j] == 0) continue;
-                    self.waterEdgeField[i] = m.waterEdge[j];
-                    break;
-                }
-            }
-        }
+        for (m.waterEdge, m.waterKind, 0..) |e, k, i| scratchPack[i] = packLiquid(e, k);
+        _ = gfx.Scene.dilateEdges(&self.waterEdgeField, wf.WATER_N, &m.water, &scratchPack);
     }
 
+    /// Off the end is `natural`, which is what both `waterEdgeAt`s answer out of bounds — the range check is
+    /// `glsl.edgeK`'s and stays there, so the CPU cannot clamp to a shape the GPU never picked.
     fn waterEdgeAt(self: *const Env, x: f32, z: f32) usize {
-        const i = wf.gridIndex(self.waterHalf, wf.WATER_N, x, z) orelse return @intFromEnum(wf.Edge.natural);
-        return @min(self.waterEdgeField[i], wf.Edge.N - 1);
+        const i = wf.gridIndex(self.waterHalf, wf.WATER_N, x, z) orelse return glsl.NATURAL;
+        return self.waterEdgeField[i] & glsl.EDGE_MASK;
+    }
+
+    /// **WHAT THE POOL UNDER A BODY IS MADE OF** — the dilated field, so a foot on the bank answers with the
+    /// pool's own kind exactly as the shader colours that fragment. Dry ground answers `water`, which is why
+    /// nothing may read this without first asking `paintedDepth` whether there is a pool here at all.
+    pub fn liquidAt(self: *const Env, x: f32, z: f32) wf.Liquid {
+        const i = wf.gridIndex(self.waterHalf, wf.WATER_N, x, z) orelse return .water;
+        return @enumFromInt((self.waterEdgeField[i] >> glsl.LIQUID_SHIFT) & glsl.LIQUID_MASK);
     }
 
     /// **THE ONE DOOR INTO THE WATER FIELD FOR EVERYTHING THAT IS NOT A PIXEL** — wading, the fen lurker's
@@ -1325,7 +1384,11 @@ pub const Env = struct {
 
     pub fn drawGround(self: *Env, view: ?*const View) void {
         if (!self.heightAny) {
-            rl.drawModel(self.ground, mathx.zero3, 1.0, rl.Color.white);
+            // ONE QUAD, BUILT AT THE WIDEST AND SCALED DOWN. A flat plane scales exactly, and every field the
+            // shader reads over it (soil, water, the terrain albedo) is indexed in WORLD xz, so the scale
+            // moves the floor's edge and nothing else.
+            const k = groundOut(self.mapHalf) / GROUND_HALF;
+            rl.drawModelEx(self.ground, mathx.zero3, v3(0, 1, 0), 0, v3(k, 1, k), rl.Color.white);
             return;
         }
         for (self.tiles[0..], self.tileBuilt[0..], self.tileMid[0..], self.tileRad[0..]) |t, built, mid, rad| {
@@ -1363,6 +1426,12 @@ pub const Env = struct {
     pub fn resetStats(self: *Env) void {
         self.stat_draws = 0;
         self.stat_cells = 0;
+    }
+
+    /// Everything `materialize` actually put on the ground, which is what the minimap draws: an OP is one dot
+    /// and a belt of a hundred trees is one op, so the map has to be read off the props and not off the ops.
+    pub fn placed(self: *const Env) []const Prop {
+        return self.props[0..self.nprops];
     }
 
     pub fn propCount(self: *const Env) usize {
@@ -1444,16 +1513,12 @@ pub const Env = struct {
         var c: usize = 0;
         while (c < NCELL) : (c += 1) {
             if (idx.start[c] == idx.start[c + 1]) continue;
-            var centre = cellCentre(c);
-            // Lifted onto the cell's own props: with elevation the cell is a slab tens of metres off the datum, and a sphere at y = 0 rejects a hilltop you are looking straight at.
-            centre.y = (idx.ylo[c] + idx.yhi[c]) * 0.5;
-            const vspan = (idx.yhi[c] - idx.ylo[c]) * 0.5;
             switch (cull) {
                 .view => |*vw| {
-                    if (!vw.visible(centre, CELL_CIRCUM + idx.bound[c] + vspan, idx.view[c])) continue;
+                    if (!idx.cellSeen(c, vw)) continue;
                 },
                 .sun => |focus| {
-                    if (!castsInto(focus, centre, CELL_CIRCUM + idx.bound[c], idx.top[c])) continue;
+                    if (!castsInto(focus, idx.cellAt(c), CELL_CIRCUM + idx.bound[c], idx.top[c])) continue;
                 },
             }
             self.stat_cells += 1;
@@ -1499,10 +1564,7 @@ pub const Env = struct {
             var c: usize = 0;
             while (c < NCELL) : (c += 1) {
                 if (idx.start[c] == idx.start[c + 1]) continue;
-                var centre = cellCentre(c);
-                centre.y = (idx.ylo[c] + idx.yhi[c]) * 0.5;
-                const vspan = (idx.yhi[c] - idx.ylo[c]) * 0.5;
-                if (!view.visible(centre, CELL_CIRCUM + idx.bound[c] + vspan, idx.view[c])) continue;
+                if (!idx.cellSeen(c, view)) continue;
                 var k = idx.start[c];
                 while (k < idx.start[c + 1]) : (k += 1) {
                     const pi = idx.items[k];
@@ -2784,7 +2846,7 @@ test "DEEP WATER READS DEEP — the sheet is darkened by the DIG, not by the sho
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     m.blank("Tarn");
-    try std.testing.expect(m.paintWater(0, 0, 60, true, .natural));
+    try std.testing.expect(m.paintWater(0, 0, 60, true, .natural, .water));
 
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
@@ -3249,10 +3311,7 @@ test "A BLOCKED PROBE AND A MOVED PUSH-OUT ARE ONE PREDICATE — what `game.wayC
 }
 
 test "AN OP MAY NOT SPIN — the rebuild's cost is the map's size, never a number somebody dragged" {
-    // Owner: the editor freezes the PC, usually mid prop-edit, "spinning endlessly, almost crashing". It was not
-    // a leak. The generator loops were bounded only by AUTHORED numbers — `n` is an unbounded i32 and a line's
-    // step only has to clear 1e-4 — and a REJECTED candidate costs time without filling `MAX_PROPS`, so nothing
-    // stopped it and nothing showed. A rebuild fires `editor.REBUILD_QUIET` after every edit.
+    // Owner: the editor freezes the PC, usually mid prop-edit, "spinning endlessly, almost crashing". It was not a leak.
     const ta = std.testing.allocator;
     const m = try ta.create(wf.Map);
     defer ta.destroy(m);
@@ -3261,8 +3320,7 @@ test "AN OP MAY NOT SPIN — the rebuild's cost is the map's size, never a numbe
     m.* = .{};
     e.* = .{ .ground = undefined, .models = undefined };
 
-    // `chance` 0 places NOTHING, so the prop cap never trips and the spin is invisible. MEASURED before the
-    // budget: 21 ms a rebuild at 0.001 m spacing, 227 ms at the floor the parser allows.
+    // `chance` 0 places NOTHING, so the prop cap never trips and the spin is invisible.
     m.nops = 1;
     m.ops[0] = .{ .op = .line, .kind = .block, .x = -200, .z = 0, .x1 = 200, .z1 = 0, .r0 = 0.0001, .chance = 0.0, .sLo = 1, .sHi = 1 };
     var t = try std.time.Timer.start();
@@ -3483,6 +3541,11 @@ test "THE COAST YOU SEE IS THE COAST YOU WADE INTO — one warp, evaluated on bo
     try std.testing.expectEqual(@as(usize, wf.Edge.N), glsl.EDGE_K.len);
     try std.testing.expectEqual(@as(usize, @intFromEnum(wf.Edge.scallop)), glsl.SCALLOP);
     try std.testing.expectEqual(@as(usize, @intFromEnum(wf.Edge.tiled)), glsl.TILED);
+    try std.testing.expectEqual(@as(usize, @intFromEnum(wf.Edge.speckle)), glsl.SPECKLE);
+    // …and the row an ordinal off the end falls back to, on BOTH sides: `edgeShape`'s generated default is
+    // `EDGE_K[NATURAL]` and `waterEdgeAt` answers the same number out of bounds.
+    try std.testing.expectEqual(@as(usize, @intFromEnum(wf.Edge.natural)), glsl.NATURAL);
+    try std.testing.expectEqual(glsl.EDGE_K[glsl.NATURAL], glsl.edgeK(wf.Edge.N + 4));
 
     m.* = .{};
     m.half = 140;
@@ -3522,4 +3585,32 @@ test "THE COAST YOU SEE IS THE COAST YOU WADE INTO — one warp, evaluated on bo
         if (e.paintedDepth(t, 0) > 0) wetTo = t;
     }
     try std.testing.expect(@abs(wetTo - 60.0) <= cell + 0.3);
+}
+
+test "THE FOOTING READS THE LIQUID THE SHADER PAINTED - every pool on the bench answers with its own kind" {
+    // `game.stepOverlay` asks these two questions and nothing else, so this is the whole of the path between a
+    // painted pool and the sound a boot makes in it.
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    var line: usize = 0;
+    wf.load(wf.DIR ++ "/test_liquids" ++ wf.EXT, m, &line) catch return error.SkipZigTest;
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.uploadSoil(m);
+    e.uploadWater(m);
+    e.uploadHeight(m);
+    const pools = [_]struct { x: f32, z: f32, want: wf.Liquid }{
+        .{ .x = -32, .z = -32, .want = .water },
+        .{ .x = 32, .z = -32, .want = .oil },
+        .{ .x = -32, .z = 32, .want = .fungal },
+        .{ .x = 32, .z = 32, .want = .lava },
+    };
+    for (pools) |c| {
+        try std.testing.expect(e.inWater(c.x, c.z, 1.0));
+        try std.testing.expectEqual(c.want, e.liquidAt(c.x, c.z));
+    }
+    // ...and dry ground between them is dry, or every step on the map is a splash.
+    try std.testing.expect(!e.inWater(0, 0, 1.0));
+    std.debug.print("\n  footing: four pools, each answering with its own kind, dry in the middle\n", .{});
 }

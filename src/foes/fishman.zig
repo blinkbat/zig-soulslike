@@ -87,7 +87,6 @@ comptime {
     // **BOTH ENDS ARE REAL FRAMES**, and together they are more of the roll than the window is. An enemy dodge
     // that is mostly invulnerable is an enemy dodge that eats a correctly-timed stroke.
     std.debug.assert((ROLL_IFRAME_OUT - ROLL_IFRAME_IN) < ROLL_DUR * 0.45);
-    // It gets out of its own reach, or the dive was decoration.
     std.debug.assert(ROLL_DIST > ROLL_TRIGGER_R);
 }
 
@@ -104,8 +103,6 @@ fn rollEase(u: f32) f32 {
 /// 300 -> 0.59/-50. 350 is that sweep's couched corner: prongs dead down his facing, level with a man's chest.
 const TRIDENT_TILT: f32 = 350.0;
 
-// Wet-looking on a dry lake: the scales keep a green-grey sheen the rest of the pan has lost, which is what
-// makes them read as OUT OF PLACE rather than as part of the ground.
 const SCALE = rgba(52, 66, 58, 255);
 const SCALE_LT = rgba(78, 96, 82, 255);
 const SCALE_DK = rgba(28, 38, 34, 255);
@@ -136,12 +133,11 @@ const Spec = struct {
     bodyR: f32,
     hurtR: f32,
     souls: u32,
-    /// The band it wants to stand in. The spearman wants his own reach, the netter wants his throw, and the
-    /// shaman wants to be behind both of them.
+    /// The band it wants to stand in.
     wantMin: f32,
     wantMax: f32,
     /// **HOW MUCH OF THE ONE BODY EACH ROLE IS.** One mesh, one stature, one rig — size is a COLUMN, never a
-    /// second skeleton. The two that fight are big; the one that hides behind them is not.
+    /// second skeleton.
     size: f32,
     /// Whether this role can throw itself out of the way. The shaman cannot: a fat man in a robe is the one
     /// body on this field that has to be caught, and taking that away is what makes killing it first the read.
@@ -151,8 +147,6 @@ const Spec = struct {
 const SPEC = [_]Spec{
     .{ .hp = 168, .poise = 24, .stance = 44, .speed = 1.34, .bodyR = 0.47, .hurtR = 0.71, .souls = 215, .wantMin = 0.0, .wantMax = 2.8, .size = 1.16, .rolls = true },
     .{ .hp = 126, .poise = 16, .stance = 34, .speed = 1.48, .bodyR = 0.45, .hurtR = 0.68, .souls = 240, .wantMin = 4.8, .wantMax = 8.5, .size = 1.12, .rolls = true },
-    // **FAT, AND IT IS A HITBOX AND NOT A JOKE** — the widest body of the three on the shortest stature, which
-    // is what makes a robe worth wearing and what makes it catchable.
     .{ .hp = 106, .poise = 14, .stance = 30, .speed = 0.88, .bodyR = 0.60, .hurtR = 0.82, .souls = 365, .wantMin = 8.0, .wantMax = 13.0, .size = 1.00, .rolls = false },
 };
 
@@ -170,11 +164,7 @@ comptime {
             @compileError("fishman: wf.FoeKind." ++ @tagName(fk) ++ " is not in the shoal's contiguous run");
         }
     }
-    // **THE SHAMAN IS WORTH THE MOST AND IS THE SOFTEST**, which is the whole priority lesson written as a
-    // pair of numbers rather than as a hint.
     std.debug.assert(SPEC[2].souls > SPEC[0].souls and SPEC[2].hp < SPEC[0].hp);
-    // **THE TWO THAT FIGHT ARE THE TWO THAT ARE BIG**, and the one that cannot get out of the way is the one
-    // that is widest. Both halves pinned, because "bigger and more agile" is two numbers that can drift apart.
     std.debug.assert(SPEC[0].size > SPEC[2].size and SPEC[1].size > SPEC[2].size);
     std.debug.assert(SPEC[0].rolls and SPEC[1].rolls and !SPEC[2].rolls);
     std.debug.assert(SPEC[2].bodyR > SPEC[0].bodyR and SPEC[2].bodyR > SPEC[1].bodyR);
@@ -203,7 +193,6 @@ const WALK_BASE: f32 = heromod.WALK_SPEED;
 const CENTER_F: f32 = 0.56;
 const TOP_F: f32 = 1.02;
 
-/// Amphibian on a salt pan: the water is gone and the cold went with it.
 const RESISTS = combat.resists(.{ .cold = -40, .lightning = -30, .fire = 20, .chaos = 25 });
 
 // **THE TRIDENT.** Two-handed, both hands on the shaft, and it THRUSTS — the longest melee reach any common
@@ -246,7 +235,6 @@ const RITE_DUR: f32 = 0.55;
 const RITE_RECOVER: f32 = 0.80;
 const RITE_CD: f32 = 9.0;
 const RITE_RANGE: f32 = 14.0;
-/// Off each body's OWN maximum, so it is worth the same to a spearman as to a netter.
 pub const RITE_HEAL_FRAC: f32 = 0.22;
 /// It will not spend the rite on scratches.
 const RITE_SLACK: f32 = 0.80;
@@ -259,11 +247,8 @@ comptime {
     std.debug.assert(THRUST_HALF_W > foe.HERO_R);
     std.debug.assert(NET_WIND >= foe.TELL_MIN);
     std.debug.assert(RITE_WIND >= foe.TELL_MIN);
-    // **THE NET BUYS EXACTLY ONE THRUST.** Long enough to wind and land one, short enough that the second
-    // never arrives inside the same hold.
     std.debug.assert(NET_HOLD > THRUST_WIND + THRUST_STRIKE);
     std.debug.assert(NET_HOLD < THRUST_WIND + THRUST_STRIKE + THRUST_RECOVER);
-    // The netter must not be able to stand where the spear cannot reach him back.
     std.debug.assert(SPEC[1].wantMin > THRUST_R);
 }
 
@@ -855,7 +840,6 @@ pub const Fishman = struct {
         const m = self.moving * (1.0 - dk);
         const wonk = (self.seed - 0.5) * 5.0;
         const nod = 1.6 * mathx.cosf(2.0 * std.math.tau * self.phase) * m;
-        // The trident's drive twists the whole trunk; the net's throw is a shoulder; the rite is neither.
         const twist: f32 = switch (self.state) {
             .thrust => 22.0 * act,
             .cast => 30.0 * act,
@@ -886,7 +870,6 @@ pub const Fishman = struct {
                 setLocal(wx, ELL, rest, rx(-(48.0 - 34.0 * mathx.maxF(0, act))));
                 setLocal(wx, WRL, rest, rz(6.0));
             },
-            // Overarm: hauled back behind the shoulder, then thrown across the body.
             .netter => {
                 const throw_ = 96.0 * mathx.maxF(0, act);
                 const haul = -74.0 * mathx.maxF(0, -act);
@@ -1068,7 +1051,6 @@ fn pelvisMesh(role: Role) rl.Mesh {
     const bot = -0.300 * H;
     b.addSkirt(v3(0, hip, 0), 0.098 * H, hip - knee, 0.132 * H, 0.009 * H, 11, ROBE, &rng);
     b.addSkirt(v3(0, knee, 0), 0.132 * H, knee - bot, 0.182 * H, 0.009 * H, 13, ROBE_DK, &rng);
-    // A cord at the waist, which is the one place the robe is not a bell.
     b.setMat(.plain);
     b.addCapsule(v3(-0.088 * H, 0.012 * H, 0), v3(0.088 * H, 0.012 * H, 0), 0.011 * H, 0.011 * H, 6, CORD);
     b.addBlob(v3(0, 0.010 * H, 0.086 * H), v3(0.022 * H, 0.020 * H, 0.018 * H), 5, 5, SALT);
@@ -1083,10 +1065,8 @@ fn lumbarMesh(role: Role) rl.Mesh {
     b.addCapsule(v3(0, 0, 0), v3(0, 0.076 * H, 0), 0.062 * H * fat, 0.074 * H * fat, 9, SCALE);
     b.addBlob(v3(0, 0.034 * H, 0.038 * H * fat), v3(0.056 * H * fat, 0.040 * H * fat, 0.036 * H * fat), 7, 5, BELLY);
     if (role != .shaman) return b.toMesh();
-    // THE GUT ITSELF — proud of the trunk and hanging over the cord, uneven so it is not a ball.
     b.addBlob(v3(0, 0.014 * H, 0.052 * H), v3(0.106 * H, 0.078 * H, 0.086 * H), 9, 7, BELLY);
     b.addBlob(v3(rng.range(-0.012, 0.012) * H, -0.014 * H, 0.058 * H), v3(0.092 * H, 0.052 * H, 0.070 * H), 8, 6, BELLY);
-    // The robe carries on up over it, open at the front.
     b.setMat(.cloth);
     b.addSkirt(v3(0, 0.070 * H, 0), 0.086 * H, 0.082 * H, 0.104 * H, 0.009 * H, 11, ROBE, &rng);
     return b.toMesh();
@@ -1121,7 +1101,6 @@ fn neckMesh() rl.Mesh {
     b.setMat(.skin);
     b.addCapsule(v3(0, 0, 0), v3(0, 0.042 * H, -0.004 * H), 0.030 * H, 0.032 * H, 7, SCALE);
     b.setMat(.plain);
-    // Gills: three slits a side, and they are the one warm colour on the body.
     inline for (.{ 1.0, -1.0 }) |side| {
         var i: u32 = 0;
         while (i < 3) : (i += 1) {
@@ -1160,7 +1139,6 @@ fn headMesh(role: Role) rl.Mesh {
             }
         },
         .shaman => {
-            // A fish's skull worn as a hood: the long jaw comes forward over its own brow.
             b.addBlob(v3(0, 0.044 * H, 0.006 * H), v3(0.050 * H, 0.030 * H, 0.056 * H), 8, 6, BONE);
             b.addCapsule(v3(0, 0.040 * H, 0.040 * H), v3(0, 0.020 * H, 0.098 * H), 0.020 * H, 0.009 * H, 7, BONE);
             var i: u32 = 0;
@@ -1196,12 +1174,10 @@ fn shinMesh(side: f32) rl.Mesh {
     b.addCapsule(v3(0, 0, 0), v3(side * 0.004 * H, -len, 0.004 * H), 0.030 * H, 0.020 * H, 8, SCALE_DK);
     b.addBlob(v3(0, 0.002 * H, 0), v3(0.034 * H, 0.032 * H, 0.034 * H), 6, 5, SCALE);
     b.setMat(.plain);
-    // A trailing fin off the calf — the leg is still a fish's.
     b.addBlob(v3(side * 0.024 * H, -len * 0.48, -0.016 * H), v3(0.005 * H, 0.052 * H, 0.022 * H), 5, 4, FIN_DK);
     return b.toMesh();
 }
 
-/// Splayed webbed feet — wide, because a body built for silt is what still walks on the pan.
 fn footMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
@@ -1240,7 +1216,6 @@ fn handMesh(side: f32) rl.Mesh {
     b.setMat(.skin);
     b.addBlob(v3(0, -0.016 * H, 0.004 * H), v3(0.020 * H, 0.022 * H, 0.018 * H), 6, 5, SCALE_LT);
     b.setMat(.plain);
-    // Webbing between the fingers, which is most of what a hand at this size reads as.
     b.addBlob(v3(side * 0.006 * H, -0.034 * H, 0.010 * H), v3(0.019 * H, 0.014 * H, 0.016 * H), 5, 4, FIN);
     return b.toMesh();
 }
@@ -1257,13 +1232,11 @@ fn tridentMesh() rl.Mesh {
         const f = @as(f32, @floatFromInt(i)) - 1.0;
         const tipY = 0.50 * H;
         b.addCapsule(v3(f * 0.026 * H, 0.36 * H, 0), v3(f * 0.030 * H, tipY, 0), 0.008 * H, 0.002 * H, 6, BONE);
-        // The barb: a short spur back down the prong, the reason a trident is not three sticks.
         b.addCapsule(v3(f * 0.030 * H, tipY - 0.030 * H, 0), v3(f * 0.048 * H, tipY - 0.058 * H, 0), 0.004 * H, 0.001 * H, 4, BONE);
     }
     return b.toMesh();
 }
 
-/// The bundle in the hand before it is thrown: a gathered mass of cord with the weights hanging off it.
 fn netBundleMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF15E);
@@ -1278,8 +1251,6 @@ fn netBundleMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// The net OPEN, in the air: a ring of weights with the mesh strung between. Drawn spinning, so what a player
-/// sees coming is a widening circle rather than a thrown rock.
 fn netFlightMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
@@ -1297,7 +1268,6 @@ fn netFlightMesh() rl.Mesh {
             CORD,
         );
         b.addBlob(v3(mathx.cosf(a) * R, -0.010 * H, mathx.sinf(a) * R), v3(0.014 * H, 0.012 * H, 0.014 * H), 5, 4, SALT);
-        // Two chords across the middle each way, which is all a mesh needs to read as a mesh in flight.
         if (i < 6) {
             const opp = a + std.math.pi;
             b.addCapsule(
@@ -1313,7 +1283,6 @@ fn netFlightMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// A jaw on a stick with the teeth still in it, and salt-crusted rings that make the noise.
 fn rattleMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
@@ -1342,11 +1311,9 @@ fn rattleMesh() rl.Mesh {
 test "THE THREE PICK DIFFERENT THINGS FROM THE SAME PLACE — that is what makes them a band" {
     const near = 1.8;
     const mid = 6.0;
-    // At the spearman's own reach: he thrusts, the netter is too close to throw, the shaman does nothing.
     try std.testing.expectEqual(Choice.thrust, classify(.spearman, near, near, 0, true, false, false, false));
     try std.testing.expectEqual(Choice.back, classify(.netter, near, near, 0, true, false, false, false));
     try std.testing.expectEqual(Choice.back, classify(.shaman, near, near, 0, true, false, false, false));
-    // Out at the netter's band: he throws, the spearman closes, the shaman still holds off.
     try std.testing.expectEqual(Choice.net, classify(.netter, mid, mid, 0, true, false, false, false));
     try std.testing.expectEqual(Choice.close, classify(.spearman, mid, mid, 0, true, false, false, false));
     try std.testing.expectEqual(Choice.back, classify(.shaman, mid, mid, 0, true, false, false, false));
@@ -1361,7 +1328,6 @@ test "THE NET IS NOT A MELEE MOVE — inside `NET_MIN` he cannot throw it and ha
 test "THE SHAMAN SPENDS THE RITE ON WOUNDS AND NOT ON SCRATCHES" {
     try std.testing.expectEqual(Choice.rest, classify(.shaman, 10.0, 10.0, 0, true, false, false, false));
     try std.testing.expectEqual(Choice.rite, classify(.shaman, 10.0, 10.0, 0, true, true, false, false));
-    // …and it holds the rite while it is on cooldown rather than waiting on the spot for it.
     try std.testing.expectEqual(Choice.rest, classify(.shaman, 10.0, 10.0, 0, false, true, false, false));
 }
 
@@ -1393,7 +1359,6 @@ test "A NET IN THE AIR OUTLIVES THE THROWER, AND IT CAN BE STEPPED OUT OF" {
     try std.testing.expect(flew);
     try std.testing.expect(caught);
 
-    // The same throw, with the hero walking out of the line: it lands on empty ground.
     var g = Fishman.spawnAs(.netter, mathx.zero3, 0, 1.0, 0.3);
     g.facing = mathx.headingXZ(mathx.dirXZ(g.pos, hero));
     g.debugAct();
@@ -1446,7 +1411,6 @@ test "KILL THE SHAMAN FIRST: it is worth the most and it is the softest thing th
     try std.testing.expect(spec(.shaman).souls > spec(.netter).souls);
     try std.testing.expect(spec(.shaman).hp < spec(.spearman).hp);
     try std.testing.expect(spec(.shaman).hp < spec(.netter).hp);
-    // …and it stands furthest back, which is what makes the right answer the hard one.
     try std.testing.expect(spec(.shaman).wantMin > spec(.netter).wantMin);
     try std.testing.expect(spec(.netter).wantMin > spec(.spearman).wantMin);
     std.debug.print("  souls {d}/{d}/{d}, hp {d:.0}/{d:.0}/{d:.0}, band {d:.1}/{d:.1}/{d:.1} m\n", .{
@@ -1515,7 +1479,6 @@ test "the thrust is a LINE down his facing, not a fan across his front" {
     const was = (THRUST_R + foe.HERO_REACH) * @sqrt(1.0 - 0.62 * 0.62);
     std.debug.print("  thrust bills {d:.2} m either side of the drive (was {d:.2} m)\n", .{ THRUST_HALF_W, was });
 
-    // A body squared up on the line is still hit; one standing off the shoulder is not.
     var f = Fishman.spawnAs(.spearman, mathx.ground(0, 0), 0, 1.0, 0.4);
     const reach = foe.hurtReach(THRUST_R, 1.0);
     const fwd = mathx.headingDir(f.facing);

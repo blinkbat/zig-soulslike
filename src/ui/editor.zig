@@ -151,7 +151,7 @@ const groundBrushes = [_][:0]const u8{
     "Lava",
     "Erase",
 };
-const locationBrushes = [_][:0]const u8{ "Clearing", "Zone", "Location", "Erase" };
+const locationBrushes = [_][:0]const u8{ "Clearing", "Zone", "Location", "Arena", "Erase" };
 const decorBrushes = [_][:0]const u8{ "Single", "Patch", "Scatter", "Erase" };
 const propBrushes = [_][:0]const u8{ "Stamp", "Row", "Ring", "Cluster", "Ivy", "Erase" };
 const interactBrushes = [_][:0]const u8{ "Stamp", "Erase" };
@@ -250,6 +250,7 @@ const locationTips = [_][:0]const u8{
     "Drag a circle nothing grows in",
     "Drag a rectangle with its own cover density",
     "Drag a NAMED rectangle. Triggers find it by name; carries its own weather",
+    "CLICK EACH CORNER of a boss room; Enter or the first corner closes it, Backspace undoes one, Esc drops it. Then Select and drag its corners",
     "Sweep to erase",
 };
 const decorTips = [_][:0]const u8{
@@ -324,7 +325,7 @@ fn layerIcon(l: Layer) ui.Icon {
     };
 }
 
-const locationIcons = [_]ui.Icon{ .clearing, .zone, .location, .erase };
+const locationIcons = [_]ui.Icon{ .clearing, .zone, .location, .arena, .erase };
 const decorIcons = [_]ui.Icon{ .single, .patch, .scatter, .erase };
 const propIcons = [_]ui.Icon{ .stamp, .row, .ring, .cluster, .ivy, .erase };
 const interactIcons = [_]ui.Icon{ .stamp, .erase };
@@ -382,6 +383,15 @@ comptime {
     std.debug.assert(propIcons.len == propBrushes.len);
     std.debug.assert(interactIcons.len == interactBrushes.len);
     std.debug.assert(unitIcons.len == unitBrushes.len);
+    // **THE TIP IS THE THIRD LIST IN THE LOCKSTEP AND IT WAS THE ONE NOT PINNED.** Icons and names were held
+    // against each other and the crib against neither, so a brush appended anywhere but the end silently
+    // shifted every tip after it onto the wrong tool — and a wrong caption fails no test.
+    std.debug.assert(groundTips.len == groundBrushes.len);
+    std.debug.assert(locationTips.len == locationBrushes.len);
+    std.debug.assert(decorTips.len == decorBrushes.len);
+    std.debug.assert(propTips.len == propBrushes.len);
+    std.debug.assert(interactTips.len == interactBrushes.len);
+    std.debug.assert(unitTips.len == unitBrushes.len);
 }
 
 /// **WHAT THE BRUSH LIST ACTUALLY SHOWS, AND THE ONLY PLACE IT IS DECIDED.** The digit keys and the panel both
@@ -493,7 +503,7 @@ fn liquidOf(b: GroundBrush) ?wf.Liquid {
         else => null,
     };
 }
-const LocationBrush = enum { clearing, zone, location, erase };
+const LocationBrush = enum { clearing, zone, location, arena, erase };
 pub const DecorBrush = enum { single, patch, scatter, erase };
 const PropBrush = enum { stamp, row, ring, cluster, ivy, erase };
 const InteractBrush = enum { stamp, erase };
@@ -633,7 +643,7 @@ fn layerOf(o: *const wf.Op) Layer {
 
 pub const Action = enum { none, leave, playtest };
 
-pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot, boss, jukebox, world, zonemix };
+pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot, boss, jukebox, world, zonemix, script };
 
 /// The bench lists off the AUDIO module's own table (`sfx.NAMES`), which `settings.cfg` is already keyed on. A second comptime walk over `sfx.Id` here was the same list built twice.
 const VOICE_NAMES = sfx.NAMES;
@@ -664,6 +674,89 @@ const Rect = struct {
         return px >= r.x0 and px <= r.x1 and pz >= r.z0 and pz <= r.z1;
     }
 };
+
+/// **A STEPPER IS 102 px OF FURNITURE BEFORE IT IS ANYTHING ELSE** (`ui.stepper`: two 20 px buttons and a
+/// 62 px readout). Handed less it lays its minus button out to the LEFT of the x it was given and walks over
+/// whatever is there — which is what the trigger rows did to their own kind buttons.
+const STEP_MIN_W: i32 = 112;
+
+/// **THE NEXT ONE ROUND.** Six rows in the script modal cycled an enum by hand — cond kind, act kind, the
+/// comparison, the creature, the set-op and the count-op — each spelling out the same modulo over
+/// `@typeInfo(...).fields.len`, which is exactly the arithmetic that goes stale when a variant is appended.
+fn cycleEnum(comptime T: type, v: T) T {
+    const n = @typeInfo(T).@"enum".fields.len;
+    return @enumFromInt((@intFromEnum(v) + 1) % n);
+}
+
+/// **THE FOG GATE STANDING IN THIS ROOM'S WALL**, asked in one place. It walks the whole op list and the panel
+/// asks it once a frame, which is the shape AGENTS.md calls out as the editor's own freeze (`drawMinimap`).
+/// MEASURED before reaching for a fix: **22.8 us over `01_fallen_plain`'s 16,637 ops, 0.14% of a 16.7 ms
+/// frame** — and that is the Debug build. A ward index off `env` would make it 2 iterations, but the side panel
+/// is handed no `env` and 0.14% does not buy the plumbing.
+///
+/// Three copies walked the op list for it:
+/// the seal the editor inherits when a room is closed, the "seal from gate" button, and the warning that says
+/// a room has no door — and a room whose three answers could disagree is a room nobody can trust.
+fn gateOnWall(m: *const wf.Map, a: *const wf.Arena) ?*const wf.Op {
+    for (m.ops[0..m.nops]) |*o| {
+        if (props.info(o.kind).ward and a.onWall(o.x, o.z)) return o;
+    }
+    return null;
+}
+
+/// **ONE NAME FIELD.** The zone's, the location's, the room's and the trigger's were four copies of: draw the
+/// field, turn spaces and `#` into `_`, compare with what is stored, bank and write. Returns the typed name
+/// when it differs from `cur`, and null when nothing changed.
+fn nameField(ed: *Editor, ctx: *ui.Ctx, x: i32, y: i32, w: i32, buf: []u8, len: *usize, cur: []const u8, tip: [:0]const u8) ?[]const u8 {
+    const focused = ed.modal == .none or ed.modal == .script;
+    ed.textFocus = focused;
+    ui.textField(ctx, ui.rect(x, y, w, 26), buf, len, focused, tip);
+    for (buf[0..len.*]) |*ch| {
+        if (ch.* == ' ' or ch.* == '#') ch.* = '_';
+    }
+    if (!focused) return null;
+    const typed = buf[0..len.*];
+    if (std.mem.eql(u8, typed, cur)) return null;
+    return typed;
+}
+
+/// Metres an `at` may be lifted off or bedded into the ground. Over head height either way, and no further:
+/// a prop pushed further than this is a prop in the wrong place, not a prop that needs a bigger number.
+const LIFT_LIM: f32 = 12.0;
+
+fn aiTip(a: wf.FoeAi) [:0]const u8 {
+    return switch (a) {
+        .hold => "Stands on its post and fights whatever comes into its ring",
+        .roam => "Wanders about its post, leashed to it",
+        .roam_free => "Wanders and does not go home",
+        .patrol => "Walks the route below, leg to leg",
+    };
+}
+
+/// Smallest a clearing may be dragged or stepped down to, in metres. File scope: the brush that makes one and
+/// the two controls that resize one are in three different scopes and must agree.
+const MIN_CLEARING_R: f32 = 2.0;
+
+/// **EVERY REGION IS DRAGGED THE SAME WAY**, so there is one union and not a flag apiece. The payload is
+/// WHICH HANDLE: a rect's corner 0..3 in `(x,z) (x1,z) (x1,z1) (x,z1)` order, a room's corner index, or the
+/// clearing's rim. `null` — and `false` for the clearing — is the BODY, which moves the whole thing.
+const Grab = union(enum) {
+    arena: ?u8,
+    zone: ?u8,
+    loc: ?u8,
+    clearing: bool,
+};
+
+/// The four corners of a rect in the order `Grab` names them. Written once, because the pick and the drag and
+/// the draw all have to agree about which corner is number 2.
+fn rectCorner(x: f32, z: f32, x1: f32, z1: f32, i: u8) rl.Vector3 {
+    return switch (i & 3) {
+        0 => mathx.ground(x, z),
+        1 => mathx.ground(x1, z),
+        2 => mathx.ground(x1, z1),
+        else => mathx.ground(x, z1),
+    };
+}
 
 fn normRect(a: rl.Vector3, b: rl.Vector3) Rect {
     return .{
@@ -794,6 +887,38 @@ pub const Editor = struct {
     /// WHICH ZONE the name field and the mix modal are editing. A zone is not an `Op`, so it cannot ride `sel` — and its mix was the one thing in the whole format the editor could only ever INHERIT.
     zoneSel: ?usize = null,
     locSel: ?usize = null,
+    arenaSel: ?usize = null,
+    clearSel: ?usize = null,
+    /// **WHAT THE MOUSE HAS HOLD OF ON THIS LAYER, AS ONE THING.** A flag per region kind is four copies of
+    /// the same gesture: grab a handle or grab the body, then drag. `null` in the payload means the BODY.
+    grab: ?Grab = null,
+    /// **WHICH HANDLE IS SELECTED AND WHETHER A DRAG IS LIVE ARE TWO THINGS.** `grab` persists so the panel's
+    /// "- corner" and the Delete key know what to aim at and the draw knows what to highlight; `grabLive` is
+    /// true only between the press and the release. Run off `grab` alone, a panel button that set it — the
+    /// "+ corner" one did — latched a drag with no button held that followed the cursor and ate every click.
+    grabLive: bool = false,
+    grabFrom: rl.Vector3 = mathx.zero3,
+    /// Banked LAZILY, on the first frame a drag actually moves something: a plain selection click arms the
+    /// drag too, and banking on the press filled the undo ring with no-op steps for every region you looked at.
+    grabBanked: bool = false,
+    /// **LAYING A PATROL IS A MODE**, like drawing a room: a leg per click until it is turned off. It belongs
+    /// to whichever unit is selected and is dropped the moment the selection changes.
+    routing: bool = false,
+    trigSel: ?usize = null,
+    trigNameBuf: [wf.ID_CAP]u8 = [_]u8{0} ** wf.ID_CAP,
+    trigNameLen: usize = 0,
+    trigScroll: i32 = 0,
+    lineBuf: [96]u8 = [_]u8{0} ** 96,
+    lineLen: usize = 0,
+    arenaNameBuf: [wf.NAME_CAP]u8 = [_]u8{0} ** wf.NAME_CAP,
+    arenaNameLen: usize = 0,
+    locNameBuf: [wf.NAME_CAP]u8 = [_]u8{0} ** wf.NAME_CAP,
+    locNameLen: usize = 0,
+    /// **THE ROOM UNDER CONSTRUCTION** — the one brush that is neither a stamp nor a drag, so the half-built
+    /// polygon has to live between the clicks. `nPend` 0 is "no room being drawn"; nothing else reads it.
+    pendX: [wf.MAX_ARENA_VERTS]f32 = [_]f32{0} ** wf.MAX_ARENA_VERTS,
+    pendZ: [wf.MAX_ARENA_VERTS]f32 = [_]f32{0} ** wf.MAX_ARENA_VERTS,
+    nPend: u8 = 0,
     lootTab: item.Class = .tool,
     zoneNameLen: usize = 0,
     zoneNameBuf: [wf.NAME_CAP]u8 = [_]u8{0} ** wf.NAME_CAP,
@@ -876,6 +1001,7 @@ pub const Editor = struct {
         self.marquee = false;
         self.moving = false;
         self.dropSelection();
+        self.dropPendingRoom();
         self.modal = .none;
         self.pending = .none;
         self.rmbDown = false;
@@ -1083,6 +1209,7 @@ pub const Editor = struct {
         undoAt += 1;
         m.* = undoSlot(undoN - undoAt).*;
         self.dropSelection();
+        self.dropPendingRoom();
         self.touchFolk();
         return true;
     }
@@ -1092,6 +1219,7 @@ pub const Editor = struct {
         undoAt -= 1;
         m.* = undoSlot(undoN - undoAt).*;
         self.dropSelection();
+        self.dropPendingRoom();
         self.touchFolk();
         return true;
     }
@@ -1110,6 +1238,19 @@ pub const Editor = struct {
         self.nMarked = 0;
         self.zoneSel = null;
         self.locSel = null;
+        self.arenaSel = null;
+        self.clearSel = null;
+        self.grab = null;
+        self.grabLive = false;
+        self.routing = false;
+    }
+
+    /// **A HALF-DRAWN ROOM DOES NOT OUTLIVE THE MAP IT WAS BEING DRAWN ON.** Corners are world coordinates, so
+    /// carried across a load or an undo, Enter builds a room out of the last map's floor plan — silently, and in
+    /// the right shape to look deliberate. NOT in `dropSelection`, which also fires on every delete: deleting a
+    /// prop may not cost you the room you are drawing.
+    fn dropPendingRoom(self: *Editor) void {
+        self.nPend = 0;
     }
 
     pub fn applyCamForShot(self: *Editor) void {
@@ -1119,6 +1260,26 @@ pub const Editor = struct {
 
     pub fn focusOnForShot(self: *Editor, m: *const wf.Map, i: usize) void {
         self.focusOn(m, i);
+    }
+
+    pub fn selectArenaForShot(self: *Editor, m: *const wf.Map, i: usize, grabbed: ?u8) void {
+        self.selectArena(m, i);
+        self.grab = if (grabbed) |v| .{ .arena = v } else null;
+        self.grabLive = false;
+    }
+
+    /// The room corner the mouse has hold of, or null — the one question three call sites ask of `grab`.
+    fn grabbedVert(self: *const Editor) ?u8 {
+        const g = self.grab orelse return null;
+        return switch (g) {
+            .arena => |v| v,
+            else => null,
+        };
+    }
+
+    pub fn openScriptForShot(self: *Editor, m: *const wf.Map) void {
+        self.modal = .script;
+        if (m.ntrigs > 0) self.selectTrig(m, 0);
     }
 
     pub fn selectForShot(self: *Editor, m: *const wf.Map, a: rl.Vector3, b: rl.Vector3) void {
@@ -1300,6 +1461,36 @@ pub const Editor = struct {
             }
             return .none;
         }
+        // **A SELECTED ROOM OWNS DELETE AND INSERT**, above `deleteSel`: on this layer Delete otherwise reaches
+        // for an op, and the thing under the cursor is a corner.
+        if (self.arenaSel != null and self.layer == .locations) {
+            if (rl.isKeyPressed(.insert)) {
+                self.splitLongestWall(m);
+                return .none;
+            }
+            if (rl.isKeyPressed(.delete) and self.grabbedVert() != null) {
+                self.dropCorner(m);
+                return .none;
+            }
+        }
+        // **A HALF-DRAWN ROOM OWNS THESE THREE KEYS**, above the escape chain: Esc otherwise drops you into
+        // select mode with the corners still standing on the floor and no way left to close them.
+        if (self.nPend > 0) {
+            if (rl.isKeyPressed(.enter)) {
+                self.closeArena(m);
+                return .none;
+            }
+            if (rl.isKeyPressed(.backspace)) {
+                self.nPend -= 1;
+                self.sayFmt("{d} corners", .{self.nPend});
+                return .none;
+            }
+            if (rl.isKeyPressed(.escape)) {
+                self.nPend = 0;
+                self.say("room dropped");
+                return .none;
+            }
+        }
         if (rl.isKeyPressed(.escape)) {
             if (self.menuOpen) {
                 self.menuOpen = false;
@@ -1395,6 +1586,7 @@ pub const Editor = struct {
     }
 
     fn selectZone(self: *Editor, m: *const wf.Map, i: usize) void {
+        self.clearRegionSel();
         self.zoneSel = i;
         self.zoneNameBuf = [_]u8{0} ** wf.NAME_CAP;
         self.zoneNameLen = 0;
@@ -1471,6 +1663,18 @@ pub const Editor = struct {
         if (self.panning) {
             self.dragPan();
             if (rl.isMouseButtonReleased(.left)) self.panning = false;
+            return;
+        }
+
+        // ABOVE the pan and the marquee: a region being dragged owns the whole gesture until the button is let go.
+        if (self.grabLive) {
+            if (rl.isMouseButtonDown(.left)) {
+                if (ground) |g| self.dragRegion(m, g);
+            }
+            if (!rl.isMouseButtonDown(.left)) {
+                self.grabLive = false;
+                if (self.grabBanked) self.rebuild(m, env);
+            }
             return;
         }
 
@@ -1557,11 +1761,34 @@ pub const Editor = struct {
                     }
                     return;
                 }
-                if (self.pickInLayer(m, env)) return;
+                if (self.pickInLayer(m, env)) {
+                    // A pick that landed on a region arms its drag: the same press moves the handle it grabbed,
+                    // or the whole thing when it grabbed the body.
+                    if (self.grab != null) {
+                        if (ground) |g| {
+                            self.grabLive = true;
+                            self.grabBanked = false;
+                            self.grabFrom = g;
+                        }
+                    }
+                    return;
+                }
                 if (ground) |g| {
                     self.panning = true;
                     self.panGrab = g;
                 }
+                return;
+            }
+            // **THE ROOM IS THE ONE BRUSH THAT IS NEITHER A STAMP NOR A DRAG** — a corner per click, so it is
+            // taken before the drag arms rather than as a case inside `commitDrag`, which only ever sees two points.
+            if (self.layer == .locations and self.brushIdx() == @intFromEnum(LocationBrush.arena)) {
+                if (ground) |g| self.arenaCorner(m, g);
+                return;
+            }
+            // **LAYING A PATROL OWNS THE CLICK**, above the unit brush: while the mode is on, clicking the
+            // ground drops the next leg rather than posting another creature on top of the one being routed.
+            if (self.routing) {
+                if (ground) |g| self.layLeg(m, g);
                 return;
             }
             switch (self.layer) {
@@ -1684,17 +1911,103 @@ pub const Editor = struct {
             },
             .none => {},
         }
-        if (self.layer == .locations) {
-            const g = self.groundAt() orelse return false;
-            for (m.clearings[0..m.nclearings], 0..) |c, i| {
-                if (mathx.dist2XZ(v3(c.x, 0, c.z), g) < c.r * c.r) {
-                    self.sel = null;
-                    self.sayFmt("clearing {d} - r {d:.0}", .{ i, c.r });
-                    return false;
+        if (self.layer == .locations) return self.pickRegion(m);
+        return false;
+    }
+
+    /// **A HANDLE ON THE THING ALREADY SELECTED ANSWERS BEFORE ANY BODY DOES.** A corner standing inside
+    /// another region could otherwise never be taken hold of, and the handle is what you are aiming at.
+    fn pickRegion(self: *Editor, m: *wf.Map) bool {
+        const g = self.groundAt() orelse return false;
+        if (self.arenaSel) |ai| {
+            if (ai < m.narenas) {
+                if (nearestCorner(&m.arenas[ai], g)) |vi| {
+                    self.grab = .{ .arena = vi };
+                    self.sayFmt("corner {d} of {s}", .{ vi, m.arenas[ai].label() });
+                    return true;
                 }
             }
         }
+        if (self.zoneSel) |zi| {
+            if (zi < m.nzones and !m.isFallbackZone(zi)) {
+                const z = &m.zones[zi];
+                if (rectHandle(z.x, z.z, z.x1, z.z1, g)) |ci| {
+                    self.grab = .{ .zone = ci };
+                    self.sayFmt("corner {d} of {s}", .{ ci, z.label() });
+                    return true;
+                }
+            }
+        }
+        if (self.locSel) |li| {
+            if (li < m.nlocations) {
+                const l = &m.locations[li];
+                if (rectHandle(l.x, l.z, l.x1, l.z1, g)) |ci| {
+                    self.grab = .{ .loc = ci };
+                    self.sayFmt("corner {d} of {s}", .{ ci, l.label() });
+                    return true;
+                }
+            }
+        }
+        if (self.clearSel) |ci| {
+            if (ci < m.nclearings) {
+                const c = m.clearings[ci];
+                // The RIM is a band about the circle, not the whole disc: inside it is the body.
+                const d = mathx.distXZ(mathx.ground(c.x, c.z), g);
+                // **THE RIM IS THE OUTER HALF, NOT A BAND OF ITS OWN.** At `HANDLE_R` 2.5 the band reached the
+                // middle of any circle under 5 m across, so a small clearing could be resized and never moved.
+                if (@abs(d - c.r) <= HANDLE_R and d >= c.r * 0.5) {
+                    self.grab = .{ .clearing = true };
+                    self.sayFmt("clearing r {d:.0} - drag to resize", .{c.r});
+                    return true;
+                }
+            }
+        }
+        // …then the bodies. SMALLEST FIRST, so a clearing inside a zone inside the fallback is reachable.
+        for (m.arenas[0..m.narenas], 0..) |*a, i| {
+            if (!a.contains(g.x, g.z)) continue;
+            self.selectArena(m, i);
+            self.grab = .{ .arena = null };
+            self.sayFmt("{s} - {d} corners, drag to move", .{ a.label(), a.verts() });
+            return true;
+        }
+        for (m.clearings[0..m.nclearings], 0..) |c, i| {
+            if (mathx.dist2XZ(mathx.ground(c.x, c.z), g) > c.r * c.r) continue;
+            self.selectClearing(i);
+            self.grab = .{ .clearing = false };
+            self.sayFmt("clearing {d} - r {d:.0}, drag to move", .{ i, c.r });
+            return true;
+        }
+        for (m.locations[0..m.nlocations], 0..) |*l, i| {
+            if (!l.contains(g.x, g.z)) continue;
+            self.selectLocation(m, i);
+            self.grab = .{ .loc = null };
+            self.sayFmt("{s} - drag to move", .{l.label()});
+            return true;
+        }
+        for (m.zones[0..m.nzones], 0..) |*z, i| {
+            // The FALLBACK zone is the whole world and has no edges to take hold of; grabbing it would move
+            // the ground out from under every other region on the map.
+            if (m.isFallbackZone(i) or !z.contains(g.x, g.z)) continue;
+            self.selectZone(m, i);
+            self.grab = .{ .zone = null };
+            self.sayFmt("{s} - drag to move", .{z.label()});
+            return true;
+        }
         return false;
+    }
+
+    /// Which corner of this rect the cursor is on, if any.
+    fn rectHandle(x: f32, z: f32, x1: f32, z1: f32, at: rl.Vector3) ?u8 {
+        var best: ?u8 = null;
+        var bd = HANDLE_R * HANDLE_R;
+        for (0..4) |i| {
+            const c = rectCorner(x, z, x1, z1, @intCast(i));
+            const d = mathx.dist2XZ(at, c);
+            if (d > bd) continue;
+            bd = d;
+            best = @intCast(i);
+        }
+        return best;
     }
 
     fn commitDrag(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
@@ -1757,6 +2070,8 @@ pub const Editor = struct {
                     m.nclearings += 1;
                     self.sayFmt("+clearing r {d:.0}", .{r});
                 },
+                // Taken a corner at a time before the drag arms (`arenaCorner`), so a drag here commits nothing.
+                .arena => return,
                 .erase => return,
             }
             self.rebuild(m, env);
@@ -1857,7 +2172,6 @@ pub const Editor = struct {
     const AREA_PER_INSTANCE: f32 = 9.0;
     const FRESH_N_LO: f32 = 4;
     const FRESH_N_HI: f32 = 900;
-    const MIN_CLEARING_R: f32 = 2.0;
     const MIN_BRUSH_R: f32 = 1.0;
 
     fn countForArea(area: f32) i32 {
@@ -1895,6 +2209,334 @@ pub const Editor = struct {
         var s: u64 = 1000;
         for (m.slice()) |*o| s = @max(s, o.seed);
         return s + 1;
+    }
+
+    /// **A CORNER IS GRABBED BY THE SAME REACH THAT CLOSES A RUN**, so the two gestures cannot disagree about
+    /// what counts as being on one.
+    fn nearestCorner(a: *const wf.Arena, at: rl.Vector3) ?u8 {
+        var best: ?u8 = null;
+        var bd = ARENA_CLOSE_R * ARENA_CLOSE_R;
+        for (0..a.verts()) |i| {
+            const d = mathx.dist2XZ(at, mathx.ground(a.vx[i], a.vz[i]));
+            if (d > bd) continue;
+            bd = d;
+            best = @intCast(i);
+        }
+        return best;
+    }
+
+    /// **ONE NAMED THING AT A TIME.** The name fields are live text fields on the same panel, and two focused
+    /// fields take the same keystroke twice — so every selector opens on this, rather than each clearing the
+    /// other three and a fifth region kind quietly not being cleared by any of them.
+    fn clearRegionSel(self: *Editor) void {
+        self.zoneSel = null;
+        self.locSel = null;
+        self.clearSel = null;
+        self.arenaSel = null;
+        self.grab = null;
+        self.grabLive = false;
+    }
+
+    fn selectArena(self: *Editor, m: *const wf.Map, i: usize) void {
+        self.clearRegionSel();
+        self.arenaSel = i;
+        self.arenaNameBuf = [_]u8{0} ** wf.NAME_CAP;
+        self.arenaNameLen = 0;
+        if (i >= m.narenas) return;
+        const lab = m.arenas[i].label();
+        self.arenaNameLen = @min(lab.len, wf.NAME_CAP - 1);
+        @memcpy(self.arenaNameBuf[0..self.arenaNameLen], lab[0..self.arenaNameLen]);
+    }
+
+    /// **ONE DRAG FOR EVERY REGION.** A handle moves that handle; the body moves the whole thing by the
+    /// cursor's own travel. Banked on the first frame that actually moves something, so a plain selection
+    /// click — which arms this too — leaves no step in the undo ring.
+    fn dragRegion(self: *Editor, m: *wf.Map, to: rl.Vector3) void {
+        const g = self.grab orelse return;
+        if (mathx.distXZ(to, self.grabFrom) < 1e-4) return;
+        if (!self.grabBanked) {
+            self.bank(m);
+            self.grabBanked = true;
+        }
+        const dx = to.x - self.grabFrom.x;
+        const dz = to.z - self.grabFrom.z;
+        switch (g) {
+            .arena => |vi| {
+                const ai = self.arenaSel orelse return;
+                if (ai >= m.narenas) return;
+                const a = &m.arenas[ai];
+                if (vi) |v| {
+                    if (v >= a.verts()) return;
+                    a.vx[v] = to.x;
+                    a.vz[v] = to.z;
+                } else for (0..a.verts()) |i| {
+                    a.vx[i] += dx;
+                    a.vz[i] += dz;
+                }
+            },
+            .zone => |ci| {
+                const zi = self.zoneSel orelse return;
+                if (zi >= m.nzones or m.isFallbackZone(zi)) return;
+                const z = &m.zones[zi];
+                if (dragRect(&z.x, &z.z, &z.x1, &z.z1, ci, to, dx, dz)) |now| self.grab = .{ .zone = now };
+            },
+            .loc => |ci| {
+                const li = self.locSel orelse return;
+                if (li >= m.nlocations) return;
+                const l = &m.locations[li];
+                if (dragRect(&l.x, &l.z, &l.x1, &l.z1, ci, to, dx, dz)) |now| self.grab = .{ .loc = now };
+            },
+            .clearing => |rim| {
+                const ci = self.clearSel orelse return;
+                if (ci >= m.nclearings) return;
+                const c = &m.clearings[ci];
+                if (rim) {
+                    c.r = @max(mathx.distXZ(mathx.ground(c.x, c.z), to), MIN_CLEARING_R);
+                } else {
+                    c.x += dx;
+                    c.z += dz;
+                }
+            },
+        }
+        self.grabFrom = to;
+        self.dirty = true;
+        self.requestRebuild();
+    }
+
+    /// A rect by one corner or by its body. **RE-NORMALISED AFTER**, because dragging a corner past its
+    /// opposite inverts the pair and `inRect` is the one test four record kinds share — and the caller is
+    /// handed back WHICH CORNER the hand is now on, because normalising renames it. Left naming the old one,
+    /// the next frame wrote the other pair and the rect flipped back and forth under the cursor.
+    fn dragRect(x: *f32, z: *f32, x1: *f32, z1: *f32, ci: ?u8, to: rl.Vector3, dx: f32, dz: f32) ?u8 {
+        if (ci) |c| {
+            switch (c & 3) {
+                0 => {
+                    x.* = to.x;
+                    z.* = to.z;
+                },
+                1 => {
+                    x1.* = to.x;
+                    z.* = to.z;
+                },
+                2 => {
+                    x1.* = to.x;
+                    z1.* = to.z;
+                },
+                else => {
+                    x.* = to.x;
+                    z1.* = to.z;
+                },
+            }
+            const nx = @min(x.*, x1.*);
+            const nz = @min(z.*, z1.*);
+            const nx1 = @max(x.*, x1.*);
+            const nz1 = @max(z.*, z1.*);
+            x.* = nx;
+            z.* = nz;
+            x1.* = nx1;
+            z1.* = nz1;
+            const ex: u8 = if (to.x > nx1 - 1e-4) 1 else 0;
+            const ez: u8 = if (to.z > nz1 - 1e-4) 1 else 0;
+            return switch ((ez << 1) | ex) {
+                0 => 0,
+                1 => 1,
+                3 => 2,
+                else => 3,
+            };
+        }
+        x.* += dx;
+        z.* += dz;
+        x1.* += dx;
+        z1.* += dz;
+        return null;
+    }
+
+    /// One leg of the selected foe's patrol. **THE ROUTE IS WORLD-SPACE** (`Foe.translate`'s note), so a leg is
+    /// stored where it was clicked and travels with the body from then on.
+    fn layLeg(self: *Editor, m: *wf.Map, at: rl.Vector3) void {
+        const su = self.selUnit orelse {
+            self.routing = false;
+            return;
+        };
+        const fi = switch (su) {
+            .foe => |i| i,
+            .npc => {
+                self.routing = false;
+                return;
+            },
+        };
+        if (fi >= m.nfoes) {
+            self.routing = false;
+            return;
+        }
+        const f = &m.foes[fi];
+        if (f.nwp >= wf.MAX_WP) {
+            self.sayFmt("a route takes {d} legs", .{wf.MAX_WP});
+            self.routing = false;
+            return;
+        }
+        f.wp[f.nwp] = .{ .x = at.x, .z = at.z };
+        f.nwp += 1;
+        self.dirty = true;
+        self.sayFmt("leg {d} of {d}", .{ f.nwp, wf.MAX_WP });
+    }
+
+    fn selectTrig(self: *Editor, m: *const wf.Map, i: usize) void {
+        self.trigSel = i;
+        self.trigNameBuf = [_]u8{0} ** wf.ID_CAP;
+        self.trigNameLen = 0;
+        if (i >= m.ntrigs) return;
+        const lab = m.trigs[i].label();
+        self.trigNameLen = @min(lab.len, wf.ID_CAP - 1);
+        @memcpy(self.trigNameBuf[0..self.trigNameLen], lab[0..self.trigNameLen]);
+    }
+
+    fn selectClearing(self: *Editor, i: usize) void {
+        self.clearRegionSel();
+        self.clearSel = i;
+    }
+
+    fn selectLocation(self: *Editor, m: *const wf.Map, i: usize) void {
+        self.clearRegionSel();
+        self.locSel = i;
+        self.locNameBuf = [_]u8{0} ** wf.NAME_CAP;
+        self.locNameLen = 0;
+        if (i >= m.nlocations) return;
+        const lab = m.locations[i].label();
+        self.locNameLen = @min(lab.len, wf.NAME_CAP - 1);
+        @memcpy(self.locNameBuf[0..self.locNameLen], lab[0..self.locNameLen]);
+    }
+
+    /// **A ROOM MUST KEEP THREE CORNERS**, and the one taken out is the one under the cursor.
+    fn dropCorner(self: *Editor, m: *wf.Map) void {
+        const ai = self.arenaSel orelse return;
+        if (ai >= m.narenas) return;
+        const a = &m.arenas[ai];
+        const vi = self.grabbedVert() orelse return;
+        if (a.verts() <= 3) {
+            self.say("a room needs three corners");
+            return;
+        }
+        if (vi >= a.verts()) return;
+        self.bank(m);
+        var i: usize = vi;
+        while (i + 1 < a.verts()) : (i += 1) {
+            a.vx[i] = a.vx[i + 1];
+            a.vz[i] = a.vz[i + 1];
+        }
+        a.n -= 1;
+        self.grab = null;
+        self.sayFmt("{d} corners", .{a.verts()});
+    }
+
+    /// A new corner goes at the MIDDLE OF THE LONGEST WALL, which is the one a reader would have split anyway.
+    fn splitLongestWall(self: *Editor, m: *wf.Map) void {
+        const ai = self.arenaSel orelse return;
+        if (ai >= m.narenas) return;
+        const a = &m.arenas[ai];
+        const n = a.verts();
+        if (n >= wf.MAX_ARENA_VERTS) {
+            self.sayFmt("a room takes {d} corners", .{wf.MAX_ARENA_VERTS});
+            return;
+        }
+        var at: usize = 0;
+        var best: f32 = -1;
+        for (0..n) |i| {
+            const j = (i + 1) % n;
+            const d = mathx.distXZ(mathx.ground(a.vx[i], a.vz[i]), mathx.ground(a.vx[j], a.vz[j]));
+            if (d <= best) continue;
+            best = d;
+            at = i;
+        }
+        self.bank(m);
+        const j = (at + 1) % n;
+        const mx = (a.vx[at] + a.vx[j]) * 0.5;
+        const mz = (a.vz[at] + a.vz[j]) * 0.5;
+        var i: usize = n;
+        while (i > at + 1) : (i -= 1) {
+            a.vx[i] = a.vx[i - 1];
+            a.vz[i] = a.vz[i - 1];
+        }
+        a.vx[at + 1] = mx;
+        a.vz[at + 1] = mz;
+        a.n += 1;
+        // The SELECTION, not a drag (`grabLive`): the new corner is what Delete and the panel now aim at.
+        self.grab = .{ .arena = @intCast(at + 1) };
+        self.grabLive = false;
+        self.sayFmt("+corner on the {d:.0} m wall", .{best});
+    }
+
+    /// **THE SEAL COMES OFF THE GATE STANDING IN THIS ROOM'S WALL**, the one place it can be got right without
+    /// being typed twice. False when no gate stands on it, which is a room the author has to look at.
+    fn sealFromGate(self: *Editor, m: *wf.Map) bool {
+        const ai = self.arenaSel orelse return false;
+        if (ai >= m.narenas) return false;
+        const a = &m.arenas[ai];
+        const o = gateOnWall(m, a) orelse return false;
+        self.bank(m);
+        a.boss = o.boss;
+        a.nboss = o.nboss;
+        self.dirty = true;
+        return true;
+    }
+
+    /// How near a region's handle has to be taken hold of, in metres. Shared with the room's own close reach,
+    /// so no two gestures on this layer disagree about what counts as being on a corner.
+    const HANDLE_R: f32 = ARENA_CLOSE_R;
+
+    /// How near the first corner closes the run, in metres — forgiving, because the camera is usually wide.
+    const ARENA_CLOSE_R: f32 = 2.5;
+
+    /// Clicking back onto the first corner closes the room, the same act as pressing Enter.
+    fn arenaCorner(self: *Editor, m: *wf.Map, at: rl.Vector3) void {
+        if (self.nPend >= 3 and mathx.distXZ(at, mathx.ground(self.pendX[0], self.pendZ[0])) <= ARENA_CLOSE_R) {
+            self.closeArena(m);
+            return;
+        }
+        if (self.nPend >= wf.MAX_ARENA_VERTS) {
+            self.sayFmt("a room takes {d} corners", .{wf.MAX_ARENA_VERTS});
+            return;
+        }
+        self.pendX[self.nPend] = at.x;
+        self.pendZ[self.nPend] = at.z;
+        self.nPend += 1;
+        self.sayFmt("corner {d} - Enter closes, Esc drops", .{self.nPend});
+    }
+
+    /// **THE SEAL IS INHERITED FROM THE GATE STANDING IN THE WALL YOU JUST DREW**, and from nothing else: a
+    /// default of `bone_knight` would silently author a room whose floor and whose door name different fights.
+    /// With no gate on the line it holds nothing and says so.
+    fn closeArena(self: *Editor, m: *wf.Map) void {
+        if (self.nPend < 3) {
+            self.say("a room needs three corners");
+            return;
+        }
+        if (m.narenas >= wf.MAX_ARENAS) {
+            self.say("arena cap reached");
+            self.nPend = 0;
+            return;
+        }
+        self.bank(m);
+        var a = wf.Arena{ .n = self.nPend, .nboss = 0 };
+        a.vx = self.pendX;
+        a.vz = self.pendZ;
+        var nbuf: [wf.NAME_CAP]u8 = undefined;
+        a.setName(std.fmt.bufPrint(&nbuf, "arena{d}", .{m.narenas + 1}) catch "arena");
+        if (gateOnWall(m, &a)) |o| {
+            a.boss = o.boss;
+            a.nboss = o.nboss;
+        }
+        // PREPENDED, and that IS the overlap rule — `arenaIndexAt` takes the first match, like a location.
+        std.mem.copyBackwards(wf.Arena, m.arenas[1 .. m.narenas + 1], m.arenas[0..m.narenas]);
+        m.arenas[0] = a;
+        m.narenas += 1;
+        self.arenaSel = 0;
+        if (a.nboss == 0) {
+            self.sayFmt("+{s} ({d} corners) - NO GATE ON ITS WALL, so it holds nothing", .{ m.arenas[0].label(), a.n });
+        } else {
+            self.sayFmt("+{s} ({d} corners) sealed on {s}", .{ m.arenas[0].label(), a.n, @tagName(a.boss[0]) });
+        }
+        self.nPend = 0;
     }
 
     /// **ONE BRUSH INDEX, TWO ARRAYS.** Under `NFOE_KIND` the palette is placing a creature and over it a body
@@ -1988,6 +2630,17 @@ pub const Editor = struct {
                 }
             },
             .locations => {
+                var ai: usize = 0;
+                while (ai < m.narenas) : (ai += 1) {
+                    if (!m.arenas[ai].contains(g.x, g.z)) continue;
+                    self.bankStroke(m);
+                    std.mem.copyForwards(wf.Arena, m.arenas[ai .. m.narenas - 1], m.arenas[ai + 1 .. m.narenas]);
+                    m.narenas -= 1;
+                    self.arenaSel = null;
+                    self.rebuild(m, env);
+                    self.say("-arena");
+                    return true;
+                }
                 for (m.clearings[0..m.nclearings], 0..) |c, i| {
                     if (mathx.dist2XZ(v3(c.x, 0, c.z), g) > c.r * c.r) continue;
                     self.bankStroke(m);
@@ -2405,7 +3058,7 @@ pub const Editor = struct {
         }
         w += 6 + sq + step; // the weather eye
         w += 14 + 7 * (sq + step) + 10 + 10; // the seven verbs and the gaps that group them
-        inline for (.{ "Objects", "World", "Sounds" }) |lab| {
+        inline for (.{ "Objects", "World", "Script", "Sounds" }) |lab| {
             w += hud.monoW(lab, hud.MONO) + BarRow.PAD + step;
         }
         return w + DIRTY_W <= sw;
@@ -2413,6 +3066,22 @@ pub const Editor = struct {
 
     /// Room for the unsaved-changes `*` that `drawTopBar` sets down past the last button.
     const DIRTY_W: i32 = 20;
+
+    fn drawRectHandles(self: *const Editor, x: f32, z: f32, x1: f32, z1: f32, y: f32, comptime which: std.meta.Tag(Grab)) void {
+        for (0..4) |i| {
+            const c = rectCorner(x, z, x1, z1, @intCast(i));
+            const held = if (self.grab) |g| blk: {
+                if (g != which) break :blk false;
+                const v: ?u8 = switch (g) {
+                    .zone => |c2| c2,
+                    .loc => |c2| c2,
+                    else => null,
+                };
+                break :blk v != null and v.? == @as(u8, @intCast(i));
+            } else false;
+            handlePost(c.x, c.z, y, held);
+        }
+    }
 
     pub fn draw3D(self: *Editor, m: *const wf.Map, env: *const envmod.Env) void {
         gizmoWorld = env;
@@ -2434,16 +3103,94 @@ pub const Editor = struct {
                 const on = self.locSel == i;
                 const col = if (l.hasWeather()) ui.LIVE else ui.TRIM;
                 outline(l.x, l.z, l.x1, l.z1, y + 0.02, ui.alpha(if (on) ui.HOT else col, if (self.layer == .locations) 220 else 55));
+                if (on) self.drawRectHandles(l.x, l.z, l.x1, l.z1, y, .loc);
             }
+            if (self.zoneSel) |zi| {
+                if (zi < m.nzones and !m.isFallbackZone(zi)) {
+                    const z = &m.zones[zi];
+                    outline(z.x, z.z, z.x1, z.z1, y + 0.02, ui.HOT);
+                    self.drawRectHandles(z.x, z.z, z.x1, z.z1, y, .zone);
+                }
+            }
+            if (self.clearSel) |ci| {
+                if (ci < m.nclearings) {
+                    const c = m.clearings[ci];
+                    ringXZ(c.x, c.z, c.r, y + 0.02, ui.HOT);
+                    // The rim handle sits due EAST, which is where `rectCorner` puts a rect's corner 1: one convention.
+                    const rimGrab = if (self.grab) |g| g == .clearing and g.clearing else false;
+                    handlePost(c.x + c.r, c.z, y, rimGrab);
+                    handlePost(c.x, c.z, y, false);
+                }
+            }
+        }
+
+        // **A ROOM IS DRAWN AS ITS WALL AND ITS CORNERS**, and the run being built is drawn open — a closed
+        // outline under the cursor reads as a room that already exists and is the one thing this brush must not
+        // lie about. `LIVE` is the sealed one, `TRIM` bounds that hold nothing.
+        if (self.visible(.locations)) {
+            for (m.arenas[0..m.narenas], 0..) |*a, i| {
+                const on = self.arenaSel == i;
+                const col = if (on) ui.HOT else if (a.seal().len > 0) ui.LIVE else ui.TRIM;
+                const wall = ui.alpha(col, if (self.layer == .locations) 235 else 60);
+                const n = a.verts();
+                for (0..n) |vi| {
+                    const vj = (vi + 1) % n;
+                    arenaWall(a.vx[vi], a.vz[vi], a.vx[vj], a.vz[vj], y + 0.03, wall);
+                    // The GRABBED corner is bigger and in the live tone: Delete takes that one, and a post you
+                    // cannot pick out of eleven identical posts is a delete you cannot aim.
+                    const held = on and self.grabbedVert() != null and self.grabbedVert().? == vi;
+                    const ph: f32 = if (held) ARENA_PIN_H * 1.6 else ARENA_PIN_H;
+                    const pw: f32 = if (held) ARENA_PIN_W * 1.7 else ARENA_PIN_W;
+                    rl.drawCubeWires(liftAt(a.vx[vi], a.vz[vi], y + ph * 0.5), pw, ph, pw, if (held) ui.LIVE else wall);
+                }
+            }
+        }
+        if (self.nPend > 0) {
+            for (0..self.nPend) |vi| {
+                if (vi + 1 < self.nPend) arenaWall(self.pendX[vi], self.pendZ[vi], self.pendX[vi + 1], self.pendZ[vi + 1], y + 0.04, ui.HOT);
+                rl.drawCubeWires(liftAt(self.pendX[vi], self.pendZ[vi], y + ARENA_PIN_H * 0.5), ARENA_PIN_W, ARENA_PIN_H, ARENA_PIN_W, ui.HOT);
+            }
+            // The leg back to the first corner is the CLOSE, so it is dashed off in a dimmer tone than the wall.
+            if (self.nPend >= 3) groundLine(self.pendX[self.nPend - 1], self.pendZ[self.nPend - 1], self.pendX[0], self.pendZ[0], y + 0.04, ui.alpha(ui.HOT, 90));
+        }
+
+        // **THE START IS A PLACE, SO IT IS DRAWN AS ONE.** Three numbers in a modal is a spot you cannot see and
+        // therefore cannot check against the ground it lands on.
+        {
+            const sp = m.start.at();
+            const dir = mathx.headingDir(m.start.facing());
+            handlePost(sp.x, sp.z, y, false);
+            ringXZ(sp.x, sp.z, 1.4, y + 0.02, ui.LIVE);
+            groundLine(sp.x, sp.z, sp.x + dir.x * 4.0, sp.z + dir.z * 4.0, y + 0.05, ui.LIVE);
         }
 
         const unitA: u8 = if (self.layer == .units) 235 else 70;
         if (self.visible(.units)) {
             for (m.foes[0..m.nfoes], 0..) |f, i| {
                 const sel = self.layer == .units and self.selUnit != null and self.selUnit.? == .foe and self.selUnit.?.foe == i;
-                const col = if (sel) ui.HOT else ui.alpha(foeSwatch(f.kind), unitA);
+                // **A UNIT UNDER ORDERS READS AS ONE FROM ACROSS THE MAP.** Which bodies have a round is the
+                // one thing you cannot see by looking at a map full of identical boxes, and clicking each of a
+                // hundred to find out is not an answer.
+                const ordered = f.ai != .hold;
+                const col = if (sel) ui.HOT else if (ordered) ui.alpha(ui.LIVE, unitA) else ui.alpha(foeSwatch(f.kind), unitA);
                 const at = liftAt(f.x, f.z, y + FOE_BOX_H * 0.5);
                 rl.drawCubeWires(at, FOE_BOX_W, FOE_BOX_H, FOE_BOX_W, col);
+                // …and a LEASHED roamer's tether is a circle you can judge against the ground it is standing on.
+                if (ordered and self.layer == .units and f.ai == .roam) {
+                    ringXZ(f.x, f.z, foemod.ROAM_R, y + 0.02, ui.alpha(ui.LIVE, if (sel) 190 else 70));
+                }
+                // **A ROUTE YOU CANNOT SEE IS A ROUTE YOU CANNOT CHECK.** The SELECTED unit's only — every
+                // patrol on a busy map at once is a cat's cradle — and closed back to the post, because it loops.
+                const route = f.route();
+                if (!sel or route.len == 0) continue;
+                var prev = mathx.ground(f.x, f.z);
+                for (route) |q| {
+                    const p = mathx.ground(q.x, q.z);
+                    groundLine(prev.x, prev.z, p.x, p.z, y + 0.05, ui.LIVE);
+                    handlePost(p.x, p.z, y, false);
+                    prev = p;
+                }
+                if (route.len > 1) groundLine(prev.x, prev.z, f.x, f.z, y + 0.05, ui.alpha(ui.LIVE, 110));
             }
         }
 
@@ -2543,7 +3290,8 @@ pub const Editor = struct {
                 switch (@as(LocationBrush, @enumFromInt(self.brushIdx()))) {
                     .zone, .location => outlineOf(box, y, ui.HOT),
                     .clearing => ringXZ(a.x, a.z, rad, y, ui.HOT),
-                    .erase => {},
+                    // The room draws its own run in `draw3D`; it never arms a drag, so there is no box here.
+                    .arena, .erase => {},
                 }
             } else if (self.layer == .decor) {
                 switch (@as(DecorBrush, @enumFromInt(self.brushIdx()))) {
@@ -2650,6 +3398,37 @@ fn liftAt(x: f32, z: f32, lift: f32) rl.Vector3 {
     return v3(x, envmod.groundY() + lift, z);
 }
 
+/// **A HANDLE YOU CANNOT SEE IS A HANDLE THAT DOES NOT EXIST.** Every draggable corner on this layer gets the
+/// same post as a room's, and the one under the mouse is bigger and in the live tone.
+fn handlePost(x: f32, z: f32, y: f32, held: bool) void {
+    const h: f32 = if (held) ARENA_PIN_H * 1.6 else ARENA_PIN_H;
+    const w: f32 = if (held) ARENA_PIN_W * 1.7 else ARENA_PIN_W;
+    rl.drawCubeWires(liftAt(x, z, y + h * 0.5), w, h, w, if (held) ui.LIVE else ui.HOT);
+}
+
+/// **A ROOM'S WALL IS DRAWN AS A WALL, NOT AS A LINE ON THE FLOOR.** 37 `drawLine3D` a wall against
+/// `groundLine`'s 12 — 407 for the shipped room's eleven, beside the 2,175 props the same frame draws. At a working camera a `groundLine` and a
+/// 2.4 m post are a few grey pixels lost in the rock the room was traced off; the invisible barrier the player
+/// runs into has to be the obvious thing on the face. A ground line, a line at `ARENA_WALL_H`, and a picket
+/// between them at every terrain sample — so it follows the ground and still reads from directly overhead.
+fn arenaWall(x0: f32, z0: f32, x1: f32, z1: f32, lift: f32, col: rl.Color) void {
+    const SEG = 12;
+    const top = ui.alpha(col, @intFromFloat(@as(f32, @floatFromInt(col.a)) * 0.55));
+    var i: i32 = 0;
+    while (i <= SEG) : (i += 1) {
+        const t0 = @as(f32, @floatFromInt(i)) / SEG;
+        const x = mathx.lerpF(x0, x1, t0);
+        const z = mathx.lerpF(z0, z1, t0);
+        rl.drawLine3D(liftAt(x, z, lift), liftAt(x, z, lift + ARENA_WALL_H), if (@mod(i, 3) == 0) col else top);
+        if (i == SEG) break;
+        const t1 = @as(f32, @floatFromInt(i + 1)) / SEG;
+        const x1s = mathx.lerpF(x0, x1, t1);
+        const z1s = mathx.lerpF(z0, z1, t1);
+        rl.drawLine3D(liftAt(x, z, lift), liftAt(x1s, z1s, lift), col);
+        rl.drawLine3D(liftAt(x, z, lift + ARENA_WALL_H), liftAt(x1s, z1s, lift + ARENA_WALL_H), top);
+    }
+}
+
 fn groundLine(x0: f32, z0: f32, x1: f32, z1: f32, lift: f32, col: rl.Color) void {
     const SEG = 12;
     var i: i32 = 0;
@@ -2663,6 +3442,12 @@ fn groundLine(x0: f32, z0: f32, x1: f32, z1: f32, lift: f32, col: rl.Color) void
         );
     }
 }
+
+/// The post at each corner of a room, and the height its wall is drawn to — metres. The wall is over head
+/// height on purpose: it is the only thing on this face that stops a body, so it may not read as a kerb.
+const ARENA_PIN_W: f32 = 0.9;
+const ARENA_PIN_H: f32 = 3.2;
+const ARENA_WALL_H: f32 = 4.5;
 
 fn outlineOf(r: Rect, y: f32, col: rl.Color) void {
     outline(r.x0, r.z0, r.x1, r.z1, y, col);
@@ -2855,12 +3640,153 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
         ed.menuOpen = false;
         ed.modal = .world;
     }
+    if (row.button("Script", ed.modal == .script, "Triggers - the conditions and actions the map runs on. SC1's, and the one layer the editor could never author")) {
+        ed.menuOpen = false;
+        ed.modal = .script;
+        if (ed.trigSel == null and m.ntrigs > 0) ed.selectTrig(m, 0);
+    }
     if (row.button("Sounds", ed.modal == .jukebox, "Jukebox - play any sound in the bank on demand")) {
         ed.menuOpen = false;
         ed.modal = .jukebox;
     }
 
     if (ed.dirty) hud.mono("*", row.x + 8, 8, hud.MONO, ui.HOT);
+}
+
+/// **THE ROOMS PANEL** — the one place a boss arena is named, re-shaped, sealed and thrown away. The polygon
+/// itself is drawn and dragged in the world; everything a click cannot express lives here.
+fn drawRoomsPanel(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, x: i32, y0: i32, w: i32) i32 {
+    var y = y0;
+    var hb: [40]u8 = undefined;
+    hud.mono(std.fmt.bufPrintZ(&hb, "ROOMS ({d})", .{m.narenas}) catch "ROOMS", x, y, hud.MONO, ui.TITLE);
+    y += ROW_H + 4;
+    if (m.narenas == 0) {
+        hud.mono("none - pick the Arena", x, y, hud.MONO, ui.alpha(ui.LABEL, 160));
+        y += hud.monoLineH(hud.MONO);
+        hud.mono("brush and click corners", x, y, hud.MONO, ui.alpha(ui.LABEL, 160));
+        return y + ROW_H + 6;
+    }
+    for (m.arenas[0..m.narenas], 0..) |*a, i| {
+        var lb: [56]u8 = undefined;
+        const on = ed.arenaSel == i;
+        // The seal is what the row is FOR, so the row says it: a nameless count would need a click to read.
+        const lab = std.fmt.bufPrintZ(&lb, "{s} ({d})", .{ a.label(), a.verts() }) catch "?";
+        if (ui.button(ctx, ui.rect(x, y, w, 22), lab, hud.MONO, on, "Select this room. Then drag its corners, or drag inside it to move the whole thing")) {
+            if (on) ed.arenaSel = null else ed.selectArena(m, i);
+            ed.grab = null;
+        }
+        y += ROW_H;
+    }
+    y += 4;
+    const ai = ed.arenaSel orelse return y + 2;
+    if (ai >= m.narenas) return y + 2;
+    const a = &m.arenas[ai];
+
+    hud.mono("name", x, y, hud.MONO, ui.LABEL);
+    y += hud.monoLineH(hud.MONO) + 2;
+    if (nameField(ed, ctx, x, y, w, &ed.arenaNameBuf, &ed.arenaNameLen, a.label(), "The room's name as the map file stores it. Spaces and # become _")) |typed| {
+        ed.bank(m);
+        a.setName(typed);
+        ed.dirty = true;
+    }
+    y += 32;
+
+    // **WHAT IT HOLDS, AND WHERE THAT CAME FROM.** A room with an empty seal is bounds that never hold, which
+    // is legal and almost never what was meant, so it says so in the loud colour rather than showing "0".
+    var sb: [96]u8 = undefined;
+    if (a.seal().len == 0) {
+        hud.mono("holds nothing", x, y, hud.MONO, ui.HOT);
+    } else {
+        var n: usize = 0;
+        var line: [96]u8 = undefined;
+        for (a.seal()) |k| {
+            const t = @tagName(k);
+            if (n + t.len + 1 >= line.len) break;
+            if (n > 0) {
+                line[n] = ',';
+                n += 1;
+            }
+            @memcpy(line[n .. n + t.len], t);
+            n += t.len;
+        }
+        hud.mono(std.fmt.bufPrintZ(&sb, "{s}", .{line[0..n]}) catch "?", x, y, hud.MONO, ui.LIVE);
+    }
+    y += ROW_H;
+
+    // **THE CANDIDATES ARE THE BODIES ACTUALLY STANDING IN THIS ROOM**, not all 37 kinds: the seal is a fact
+    // about this floor, so the only names worth offering are the ones on it.
+    var offered: [wf.MAX_SEAL * 4]wf.FoeKind = undefined;
+    var non: usize = 0;
+    for (m.foes[0..m.nfoes]) |f| {
+        if (!a.contains(f.x, f.z)) continue;
+        var seen = false;
+        for (offered[0..non]) |o| {
+            if (o == f.kind) seen = true;
+        }
+        if (seen or non >= offered.len) continue;
+        offered[non] = f.kind;
+        non += 1;
+    }
+    if (non == 0) {
+        hud.mono("no bodies inside it", x, y, hud.MONO, ui.alpha(ui.LABEL, 160));
+        y += ROW_H;
+    } else {
+        var usedW: i32 = 0;
+        for (offered[0..non]) |k| {
+            var cb: [40]u8 = undefined;
+            const on = a.sealsOn(k);
+            const lab = std.fmt.bufPrintZ(&cb, "{s}", .{@tagName(k)}) catch "?";
+            if (ui.chip(ctx, x + 4, y, lab, on, &usedW, "Hold the room until this creature is dead")) {
+                ed.bank(m);
+                if (on) {
+                    var w2: u8 = 0;
+                    for (a.seal()) |s2| {
+                        if (s2 == k) continue;
+                        a.boss[w2] = s2;
+                        w2 += 1;
+                    }
+                    a.nboss = w2;
+                } else if (a.nboss < wf.MAX_SEAL) {
+                    a.boss[a.nboss] = k;
+                    a.nboss += 1;
+                } else ed.sayFmt("a seal takes {d} names", .{wf.MAX_SEAL});
+                ed.dirty = true;
+            }
+            y += ROW_H;
+        }
+    }
+
+    // **AND THE ONE THING THAT CANNOT GO STALE**: the gate's own list, taken whole.
+    if (ui.button(ctx, ui.rect(x, y, w, 22), "seal from gate", hud.MONO, false, "Copy the seal off the fog gate standing in this room's wall - the one way the two cannot disagree")) {
+        if (!ed.sealFromGate(m)) ed.say("no fog gate on this room's wall");
+    }
+    y += ROW_H;
+
+    // **THE TWO THINGS THAT ARE SILENTLY WRONG**, said out loud: a room whose outline crosses itself holds
+    // nothing in its own middle, and a room with no gate on its wall is one the player walks straight into.
+    if (!a.simple()) {
+        hud.mono("outline crosses itself", x, y, hud.MONO, ui.HOT);
+        y += ROW_H;
+    }
+    if (gateOnWall(m, a) == null) {
+        hud.mono("no gate on its wall", x, y, hud.MONO, ui.HOT);
+        y += ROW_H;
+    }
+
+    const half = @divTrunc(w - 6, 2);
+    if (ui.button(ctx, ui.rect(x, y, half, 22), "+ corner", hud.MONO, false, "Split the longest wall (Insert)")) ed.splitLongestWall(m);
+    if (ui.button(ctx, ui.rect(x + half + 6, y, half, 22), "- corner", hud.MONO, false, "Remove the corner under the cursor (Delete)")) ed.dropCorner(m);
+    y += ROW_H;
+    if (ui.button(ctx, ui.rect(x, y, w, 22), "delete room", hud.MONO, false, "Throw this room away. Its walls and its gate stay where they are")) {
+        ed.bank(m);
+        std.mem.copyForwards(wf.Arena, m.arenas[ai .. m.narenas - 1], m.arenas[ai + 1 .. m.narenas]);
+        m.narenas -= 1;
+        ed.arenaSel = null;
+        ed.grab = null;
+        ed.dirty = true;
+        ed.say("-room");
+    }
+    return y + ROW_H + 6;
 }
 
 fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
@@ -3217,6 +4143,47 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 changed = ui.stepperF(ctx, x, y, w, "scale", &fo.scale, 0.02, wf.FOE_SCALE_LO, wf.FOE_SCALE_HI, "How big this one is. Reach, health and the weight of its blows all read it") or changed;
                 y += ROW_H;
                 changed = ui.stepperF(ctx, x, y, w, "phase", &fo.seed, 0.05, 0, 1, "Its own seed - where in its idle it starts, and the wabi-sabi in its body. Two side by side should not match") or changed;
+                y += ROW_H;
+                // **THE ORDERS AND THE ROUTE, WHICH THE FORMAT HELD AND NO PANEL PAINTED** (`wf.FoeAi`,
+                // `Foe.wp`) — parsed, written, round-tripped and moved with the body since the format grew
+                // them, and reachable only by hand-editing the file. Chips rather than a dropdown: four names.
+                hud.mono("orders", x, y, hud.MONO, ui.LABEL);
+                y += hud.monoLineH(hud.MONO) + 2;
+                var aiW: i32 = 0;
+                var aiX = x;
+                inline for (@typeInfo(wf.FoeAi).@"enum".fields) |af| {
+                    const a: wf.FoeAi = @enumFromInt(af.value);
+                    defer aiX += aiW;
+                    if (ui.chip(ctx, aiX, y, @tagName(a), fo.ai == a, &aiW, aiTip(a))) {
+                        ed.bank(m);
+                        fo.ai = a;
+                        changed = true;
+                    }
+                }
+                y += ROW_H + 4;
+                var wb: [56]u8 = undefined;
+                const wlab = std.fmt.bufPrintZ(&wb, "route: {d} of {d} legs", .{ fo.route().len, wf.MAX_WP }) catch "";
+                hud.mono(wlab, x, y, hud.MONO, if (fo.ai == .patrol and fo.nwp == 0) ui.HOT else ui.LABEL);
+                y += ROW_H;
+                // **A PATROL WITH NO ROUTE IS A UNIT THAT STANDS STILL AND SAYS IT IS PATROLLING**, which is
+                // the one way these two fields can disagree, so it is said in the loud colour above.
+                const half2 = @divTrunc(w - 6, 2);
+                if (ui.button(ctx, ui.rect(x, y, half2, 22), if (ed.routing) "stop laying" else "lay route", hud.MONO, ed.routing, "Click the ground to drop each leg of the patrol. Click here again when you are done")) {
+                    ed.routing = !ed.routing;
+                    if (ed.routing) {
+                        ed.bank(m);
+                        fo.nwp = 0;
+                        fo.ai = .patrol;
+                        changed = true;
+                        ed.say("click the ground for each leg");
+                    }
+                }
+                if (ui.button(ctx, ui.rect(x + half2 + 6, y, half2, 22), "clear route", hud.MONO, false, "Throw the legs away. The body keeps its orders")) {
+                    ed.bank(m);
+                    fo.nwp = 0;
+                    ed.routing = false;
+                    changed = true;
+                }
                 y += ROW_H + 6;
                 if (ui.button(ctx, ui.rect(x, y, 80, 24), "delete", hud.MONO, false, "Remove this spawn (Del)")) {
                     ed.deleteSel(m, env);
@@ -3249,6 +4216,34 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 changed = ui.stepperF(ctx, x, y, w, "phase", &np.seed, 0.05, 0, 1, "Its own seed - where in its idle it starts, and the wabi-sabi in its body") or changed;
                 y += ROW_H;
                 changed = ui.stepperF(ctx, x, y, w, "roam", &np.roam, 0.5, 0, wf.NPC_ROAM_MAX, "How far it wanders from this post, in metres. At 0 it stands still") or changed;
+                y += ROW_H;
+                // **WHICH CONVERSATION THIS BODY OPENS** (`Npc.dlg`) — the format has carried it since the
+                // dialog layer landed and the editor could only round-trip it. The dialogs themselves are still
+                // hand-written, so this offers the ones the MAP already declares and nothing else.
+                hud.mono("says", x, y, hud.MONO, ui.LABEL);
+                y += hud.monoLineH(hud.MONO) + 2;
+                var dW: i32 = 0;
+                if (ui.chip(ctx, x, y, "(nothing)", np.dlg == wf.NO_DIALOG, &dW, "This body has no conversation - walking up to it does nothing")) {
+                    ed.bank(m);
+                    np.dlg = wf.NO_DIALOG;
+                    changed = true;
+                }
+                y += ROW_H;
+                if (m.ndialogs == 0) {
+                    hud.mono("no dialogs in this map", x, y, hud.MONO, ui.alpha(ui.LABEL, 160));
+                    y += ROW_H;
+                } else for (0..m.ndialogs) |di| {
+                    var db: [40]u8 = undefined;
+                    const on = np.dlg == di;
+                    const dlab = std.fmt.bufPrintZ(&db, "{s}", .{m.dialogs[di].label()}) catch "?";
+                    var dw2: i32 = 0;
+                    if (ui.chip(ctx, x, y, dlab, on, &dw2, "Open this conversation when he is spoken to")) {
+                        ed.bank(m);
+                        np.dlg = @intCast(di);
+                        changed = true;
+                    }
+                    y += ROW_H;
+                }
                 y += ROW_H + 6;
                 if (ui.button(ctx, ui.rect(x, y, 80, 24), "delete", hud.MONO, false, "Remove this body (Del)")) {
                     ed.deleteSel(m, env);
@@ -3275,11 +4270,23 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 var lb: [56]u8 = undefined;
                 const on = ed.locSel == i;
                 const lab = std.fmt.bufPrintZ(&lb, "{s}{s}", .{ l.label(), if (l.hasWeather()) " *" else "" }) catch "?";
-                if (ui.button(ctx, ui.rect(x, y, w, 22), lab, hud.MONO, on, "Select this location - a * means it carries weather")) {
-                    ed.locSel = if (on) null else i;
+                if (ui.button(ctx, ui.rect(x, y, w, 22), lab, hud.MONO, on, "Select this location - a * means it carries weather. Drag it or its corners in the world")) {
+                    if (on) ed.locSel = null else ed.selectLocation(m, i);
+                    ed.grab = null;
                 }
                 y += ROW_H;
                 if (!on) continue;
+                // **A LOCATION'S NAME IS THE WHOLE POINT OF IT** — `Cond.region` and every trigger find one by
+                // name (`Map.findLocation`), and the editor could only ever call them `locN`. A rectangle
+                // nothing can refer to is a rectangle that does nothing.
+                hud.mono("name", x, y, hud.MONO, ui.LABEL);
+                y += hud.monoLineH(hud.MONO) + 2;
+                if (nameField(ed, ctx, x, y, w, &ed.locNameBuf, &ed.locNameLen, l.label(), "The name triggers find this region by. Spaces and # become _")) |typed| {
+                    ed.bank(m);
+                    l.setName(typed);
+                    lchanged = true;
+                }
+                y += 32;
                 // A location with NO opinion leaves the world's own storm alone, which is not the same as one that says "dry": the toggle is the difference and it has to be explicit.
                 var wet = l.wet orelse 0;
                 var fog = l.fog orelse 0;
@@ -3320,6 +4327,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             }
             y += 6;
         }
+        y = drawRoomsPanel(ed, ctx, m, x, y, w);
         hud.mono("ZONES", x, y, hud.MONO, ui.TITLE);
         y += ROW_H + 4;
         var changed = false;
@@ -3341,14 +4349,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             if (zi < m.nzones) {
                 hud.mono("name", x, y, hud.MONO, ui.LABEL);
                 y += hud.monoLineH(hud.MONO) + 2;
-                const focused = ed.modal == .none;
-                ed.textFocus = focused;
-                ui.textField(ctx, ui.rect(x, y, w, 26), &ed.zoneNameBuf, &ed.zoneNameLen, focused, "The zone's name as the map file stores it. Spaces and # become _");
-                for (ed.zoneNameBuf[0..ed.zoneNameLen]) |*ch| {
-                    if (ch.* == ' ' or ch.* == '#') ch.* = '_';
-                }
-                const typed = ed.zoneNameBuf[0..ed.zoneNameLen];
-                if (focused and !std.mem.eql(u8, typed, m.zones[zi].label())) {
+                if (nameField(ed, ctx, x, y, w, &ed.zoneNameBuf, &ed.zoneNameLen, m.zones[zi].label(), "The zone's name as the map file stores it. Spaces and # become _")) |typed| {
                     ed.bank(m);
                     m.zones[zi].setName(typed);
                 }
@@ -3356,8 +4357,36 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             }
         }
         var cb: [64]u8 = undefined;
-        const cs = std.fmt.bufPrintZ(&cb, "{d} clearings", .{m.nclearings}) catch "";
-        hud.mono(cs, x, y, hud.MONO, ui.LABEL);
+        const cs = std.fmt.bufPrintZ(&cb, "CLEARINGS ({d})", .{m.nclearings}) catch "";
+        hud.mono(cs, x, y, hud.MONO, ui.TITLE);
+        y += ROW_H + 4;
+        for (m.clearings[0..m.nclearings], 0..) |*c, i| {
+            var rb: [48]u8 = undefined;
+            const on = ed.clearSel == i;
+            const lab = std.fmt.bufPrintZ(&rb, "{d}  r {d:.0}  ({d:.0}, {d:.0})", .{ i, c.r, c.x, c.z }) catch "?";
+            if (ui.button(ctx, ui.rect(x, y, w, 22), lab, hud.MONO, on, "Select this clearing. Drag its middle to move it, or its rim to resize it")) {
+                if (on) ed.clearSel = null else ed.selectClearing(i);
+                ed.grab = null;
+            }
+            y += ROW_H;
+            if (!on) continue;
+            if (ui.stepperF(ctx, x + 8, y, w - 16, "radius", &c.r, 1, MIN_CLEARING_R, 200, "How wide the open ground is, in metres")) {
+                ed.bank(m);
+                ed.requestRebuild();
+                ed.dirty = true;
+            }
+            y += ROW_H;
+            if (ui.button(ctx, ui.rect(x + 8, y, w - 16, 22), "delete clearing", hud.MONO, false, "Remove it - the ground it was holding open grows back")) {
+                ed.bank(m);
+                std.mem.copyForwards(wf.Clearing, m.clearings[i .. m.nclearings - 1], m.clearings[i + 1 .. m.nclearings]);
+                m.nclearings -= 1;
+                ed.clearSel = null;
+                ed.requestRebuild();
+                ed.dirty = true;
+            }
+            y += ROW_H;
+            break;
+        }
         if (changed) {
             if (!ed.editing) {
                 var live: [wf.MAX_ZONES]f32 = undefined;
@@ -3421,6 +4450,11 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             changed = ui.stepperF(ctx, x, y, w, "lean", &o.lean, 1, 0, LEAN_LIM, "Degrees off plumb. Nothing dead stands straight") or changed;
             y += ROW_H;
             changed = ui.stepperF(ctx, x, y, w, "lean dir", &o.leanDir, 15, -360, 720, "Which way it leans, in degrees") or changed;
+            y += ROW_H;
+            // **HOW FAR OFF THE GROUND IT SITS** (`env.Placer.expand`: `groundY + r1`) — the format has carried
+            // it for every `at` and no panel exposed it, so anything that hangs, floats or is bedded into a
+            // slope could only be placed by hand-editing the file.
+            changed = ui.stepperF(ctx, x, y, w, "lift", &o.r1, 0.1, -LIFT_LIM, LIFT_LIM, "Metres off the ground it sits. Negative beds it in, which is how a boulder half-buried in a slope is authored") or changed;
             y += ROW_H;
         },
         .belt, .ivy => {
@@ -3842,6 +4876,15 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
     const rightX = sw - hud.monoW(right, hud.MONO) - CHROME_PAD;
     hud.mono(right, rightX, ty, hud.MONO, if (ed.dirty) ui.HOT else ui.LABEL);
 
+    // **NO SILENT CAP** (`env.Placer.BUDGET`'s own rule) — the count existed and was printed by a TEST and
+    // nowhere else, so the one person who needs it, the author cranking a belt's count, never saw it. A budget
+    // that bites real content has made the world quietly smaller, and that has to be visible while it happens.
+    var capBuf: [56]u8 = undefined;
+    if (env.opsCapped > 0) {
+        const cap = std.fmt.bufPrintZ(&capBuf, "{d} ops hit the budget", .{env.opsCapped}) catch "";
+        hud.mono(cap, rightX - hud.monoW(cap, hud.MONO) - GUTTER, ty, hud.MONO, ui.HOT);
+    }
+
     const room = rightX - GUTTER;
     if (ed.statusT > 0 and ed.statusLen > 0) {
         var msg: [ui.MSG_CAP]u8 = undefined;
@@ -3869,8 +4912,14 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
 const EDIT_HOUR_RATE: f32 = 6.0;
 const EDIT_HOUR_FAST: f32 = 24.0;
 
+/// **THE CRIB NAMED EIGHT GESTURES AND THE EDITOR BINDS TWENTY-FIVE.** Undo, delete, copy, paste, select-all,
+/// save, grid snap, brush size, re-roll and playtest were all bound and named NOWHERE on screen — an editing
+/// tool whose edit verbs are undiscoverable is a tool you can only build in, not revise in. Widest-that-fits
+/// (`drawCrib`), so a narrow window still gets the navigation and a wide one gets the whole keyboard.
 const CRIBS = [_][:0]const u8{
-    "LMB brush   Shift+LMB drag marquee   RMB menu / deselect, drag rotates   wheel zoom   WASD+arrows pan   Tab layer   ,/. time   Esc back",
+    "LMB brush   Shift+LMB marquee   RMB menu / deselect, drag rotates   wheel zoom   WASD+arrows pan   Tab layer   Ctrl+Z/Y undo   Ctrl+C/X/V copy   Ctrl+A all   Del delete   R re-roll   G grid   [ ] size   ,/. time   Ctrl+S save   F5 play   Esc back",
+    "LMB brush   Shift+LMB marquee   RMB menu/rotate   wheel zoom   WASD pan   Tab layer   Ctrl+Z undo   Ctrl+C/V copy   Del delete   G grid   [ ] size   ,/. time   F5 play   Esc back",
+    "LMB brush   Shift+LMB marquee   RMB menu/rotate   wheel zoom   WASD pan   Tab layer   Ctrl+Z undo   Del delete   G grid   F5 play",
     "LMB brush   Shift+LMB marquee   RMB menu, drag rotates   wheel zoom   WASD pan   Tab layer   ,/. time",
     "LMB brush   Shift+LMB marquee   RMB menu/rotate   wheel zoom   WASD pan   Tab layer",
     "LMB brush   Shift marquee   Tab layer   Esc back",
@@ -4049,6 +5098,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 ed.modal = .none;
             }
         },
+        .script => drawScriptModal(ed, ctx, m, confirm),
         .world => {
             const box = ui.beginModal(ctx, WORLD_W, WORLD_H, "World");
             const x = box.x + DLG_PAD;
@@ -4083,6 +5133,26 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             changed = ui.stepperF(ctx, x, y, w, "x1", &m.runway.x1, 0.5, -COORD_LIM, COORD_LIM, "East edge of the runway") or changed;
             y += ROW_H;
             changed = ui.stepperF(ctx, x, y, w, "z1", &m.runway.z1, 0.5, -COORD_LIM, COORD_LIM, "North edge of the runway") or changed;
+            y += ROW_H + 8;
+            // **WHERE THE PLAYER STANDS UP** — beside the runway because that lane exists to keep his first
+            // steps clear, and the two were meant to agree all along.
+            hud.mono("START", x, y, hud.MONO, ui.TITLE);
+            y += ROW_H;
+            hud.mono("where the player stands up in a new game", x, y, hud.MONO, ui.alpha(ui.LABEL, 170));
+            y += hud.monoLineH(hud.MONO) + 4;
+            changed = ui.stepperF(ctx, x, y, w, "start x", &m.start.x, 0.5, -COORD_LIM, COORD_LIM, "Where he stands up, east-west") or changed;
+            y += ROW_H;
+            changed = ui.stepperF(ctx, x, y, w, "start z", &m.start.z, 0.5, -COORD_LIM, COORD_LIM, "Where he stands up, north-south") or changed;
+            y += ROW_H;
+            changed = ui.stepperF(ctx, x, y, w, "start yaw", &m.start.yaw, 15, -360, 720, "Which way he faces, in degrees. 180 is south, which is what every map used to get") or changed;
+            y += ROW_H;
+            if (ui.button(ctx, ui.rect(x, y, w, 24), "put it under the cursor", hud.MONO, false, "Take the start from where the mouse is standing in the world")) {
+                if (ed.groundAt()) |g2| {
+                    m.start.x = g2.x;
+                    m.start.z = g2.z;
+                    changed = true;
+                }
+            }
             y += ROW_H + 10;
 
             // **THE HOUR, WHERE YOU CAN FIND IT** (owner: add way to change time of day in editor — world menu). `,`/`.` still scrub it and the crib names them — the editor is AGENTS.md's one keyboard exception.
@@ -4335,6 +5405,420 @@ fn lootRemove(o: *wf.Op, k: item.Kind) void {
 
 const RACK_W: i32 = 356;
 const RACK_GAP: i32 = 14;
+
+const SCRIPT_W: i32 = 780;
+const SCRIPT_H: i32 = 610;
+
+/// **NAMED PER KIND AND NOT PER FIELD.** A `Cond` carries eleven fields because eleven kinds share the struct,
+/// and showing all eleven on every row is how a trigger editor becomes unreadable.
+fn condTip(k: wf.CondKind) [:0]const u8 {
+    return switch (k) {
+        .always => "Fires every time it is asked",
+        .never => "Never fires - the way to park a trigger without deleting it",
+        .flag => "A named switch is on or off",
+        .counter => "A named counter compares against a number",
+        .timer => "A named timer has finished, or is still running",
+        .elapsed => "Seconds since the map started",
+        .region => "He is standing inside this rectangle",
+        .near => "He is within r metres of an NPC",
+        .talked => "He has had this conversation",
+        .deaths => "How many of a kind have died",
+        .alive => "How many of a kind are still standing",
+    };
+}
+
+fn actTip(k: wf.ActKind) [:0]const u8 {
+    return switch (k) {
+        .dialog => "Open a conversation",
+        .text => "Put one line on the banner",
+        .flag => "Set, clear or flip a named switch",
+        .counter => "Set, add to or subtract from a named counter",
+        .timer => "Start a named timer running for n seconds",
+        .wait => "Hold this trigger for n seconds before the next action",
+        .preserve => "Run again next time - without this a trigger fires once",
+    };
+}
+
+/// **THE SCRIPT LAYER, AT LAST AUTHORABLE.** `worldfmt` has parsed, written and round-tripped triggers since
+/// the layer landed and the editor could only carry them through untouched, so every condition and every action
+/// in every shipped map was typed into the `.world` file by hand. A MODAL and not a map layer: a trigger is not
+/// a place, and the one condition that is a rectangle already has Locations to name it.
+fn drawScriptModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, confirm: bool) void {
+    const box = ui.beginModal(ctx, SCRIPT_W, SCRIPT_H, "Script");
+    const x = box.x + DLG_PAD;
+    const listW: i32 = 200;
+    var y = box.y + DLG_PAD + 26;
+
+    var hb: [48]u8 = undefined;
+    hud.mono(std.fmt.bufPrintZ(&hb, "TRIGGERS {d}/{d}", .{ m.ntrigs, wf.MAX_TRIGGERS }) catch "", x, y, hud.MONO, ui.TITLE);
+    y += ROW_H + 2;
+    if (ui.button(ctx, ui.rect(x, y, listW, 22), "+ new trigger", hud.MONO, false, "Add one. It starts as `always` with no actions, which does nothing until you give it some")) {
+        if (m.ntrigs < wf.MAX_TRIGGERS) {
+            ed.bank(m);
+            var t = wf.Trigger{};
+            var nb: [wf.ID_CAP]u8 = undefined;
+            const nm = std.fmt.bufPrint(&nb, "trig{d}", .{m.ntrigs + 1}) catch "trig";
+            @memcpy(t.id[0..@min(nm.len, wf.ID_CAP)], nm[0..@min(nm.len, wf.ID_CAP)]);
+            t.conds[0] = .{ .kind = .always };
+            t.nconds = 1;
+            t.nacts = 0;
+            m.trigs[m.ntrigs] = t;
+            m.ntrigs += 1;
+            ed.selectTrig(m, m.ntrigs - 1);
+            ed.dirty = true;
+        } else ed.say("trigger cap reached");
+    }
+    y += ROW_H + 4;
+    for (m.trigs[0..m.ntrigs], 0..) |*t, i| {
+        var lb: [40]u8 = undefined;
+        const on = ed.trigSel == i;
+        const lab = std.fmt.bufPrintZ(&lb, "{s}{s}", .{ t.label(), if (t.wip) " ~" else "" }) catch "?";
+        if (ui.button(ctx, ui.rect(x, y, listW, 22), lab, hud.MONO, on, "Select this trigger. A ~ means it is parked")) {
+            if (on) ed.trigSel = null else ed.selectTrig(m, i);
+        }
+        y += ROW_H;
+    }
+
+    const rx = x + listW + DLG_PAD;
+    const rw = SCRIPT_W - listW - DLG_PAD * 3;
+    var ry = box.y + DLG_PAD + 26;
+    const ti = ed.trigSel orelse {
+        hud.mono("no trigger selected", rx, ry, hud.MONO, ui.LABEL);
+        scriptDone(ed, ctx, box, confirm);
+        return;
+    };
+    if (ti >= m.ntrigs) {
+        ed.trigSel = null;
+        scriptDone(ed, ctx, box, confirm);
+        return;
+    }
+    const t = &m.trigs[ti];
+
+    hud.mono("id", rx, ry, hud.MONO, ui.LABEL);
+    ry += hud.monoLineH(hud.MONO) + 2;
+    if (nameField(ed, ctx, rx, ry, rw, &ed.trigNameBuf, &ed.trigNameLen, t.label(), "What this trigger is called. Spaces and # become _")) |typed| {
+        ed.bank(m);
+        t.id = [_]u8{0} ** wf.ID_CAP;
+        @memcpy(t.id[0..@min(typed.len, wf.ID_CAP)], typed[0..@min(typed.len, wf.ID_CAP)]);
+        ed.dirty = true;
+    }
+    ry += 32;
+    var flagW: i32 = 0;
+    var chipX = rx;
+    if (ui.chip(ctx, chipX, ry, "once", t.once, &flagW, "Fires once and stops. Off, it fires every time its conditions hold")) {
+        ed.bank(m);
+        t.once = !t.once;
+        ed.dirty = true;
+    }
+    chipX += flagW;
+    if (ui.chip(ctx, chipX, ry, "parked", t.wip, &flagW, "Kept in the file and never run")) {
+        ed.bank(m);
+        t.wip = !t.wip;
+        ed.dirty = true;
+    }
+    ry += ROW_H;
+    if (ui.stepperI(ctx, rx, ry, rw, "priority", &t.pri, 1, -99, 99, "Higher runs first when two are ready on the same frame")) ed.dirty = true;
+    ry += ROW_H + 8;
+
+    var cb: [40]u8 = undefined;
+    hud.mono(std.fmt.bufPrintZ(&cb, "WHEN {d}/{d}", .{ t.nconds, wf.MAX_CONDS }) catch "", rx, ry, hud.MONO, ui.TITLE);
+    if (ui.button(ctx, ui.rect(rx + rw - 28, ry - 2, 28, 20), "+", hud.MONO, false, "Add a condition. Every one of them has to hold")) {
+        if (t.nconds < wf.MAX_CONDS) {
+            ed.bank(m);
+            t.conds[t.nconds] = .{ .kind = .always };
+            t.nconds += 1;
+            ed.dirty = true;
+        }
+    }
+    ry += ROW_H;
+    var ci: usize = 0;
+    while (ci < t.nconds) {
+        const c = &t.conds[ci];
+        var kb: [32]u8 = undefined;
+        if (ui.button(ctx, ui.rect(rx, ry, 104, 20), std.fmt.bufPrintZ(&kb, "{s}", .{@tagName(c.kind)}) catch "?", hud.MONO, false, condTip(c.kind))) {
+            ed.bank(m);
+            // CYCLES the kind: eleven names is too long for a chip row and too short for a modal of its own.
+            c.kind = cycleEnum(wf.CondKind, c.kind);
+            ed.dirty = true;
+        }
+        if (condFields(ed, ctx, m, c, rx + 110, ry, rw - 110 - 26)) ed.dirty = true;
+        if (ui.button(ctx, ui.rect(rx + rw - 22, ry, 22, 20), "x", hud.MONO, false, "Remove this condition")) {
+            ed.bank(m);
+            std.mem.copyForwards(wf.Cond, t.conds[ci .. t.nconds - 1], t.conds[ci + 1 .. t.nconds]);
+            t.nconds -= 1;
+            ed.dirty = true;
+            continue;
+        }
+        ry += ROW_H;
+        ci += 1;
+    }
+    ry += 8;
+
+    var ab: [40]u8 = undefined;
+    hud.mono(std.fmt.bufPrintZ(&ab, "DO {d}/{d}", .{ t.nacts, wf.MAX_ACTS }) catch "", rx, ry, hud.MONO, ui.TITLE);
+    if (ui.button(ctx, ui.rect(rx + rw - 28, ry - 2, 28, 20), "+", hud.MONO, false, "Add an action. They run in order")) {
+        if (t.nacts < wf.MAX_ACTS) {
+            ed.bank(m);
+            t.acts[t.nacts] = .{ .kind = .preserve };
+            t.nacts += 1;
+            ed.dirty = true;
+        }
+    }
+    ry += ROW_H;
+    var an: usize = 0;
+    while (an < t.nacts) {
+        const a = &t.acts[an];
+        var kb2: [32]u8 = undefined;
+        if (ui.button(ctx, ui.rect(rx, ry, 104, 20), std.fmt.bufPrintZ(&kb2, "{s}", .{@tagName(a.kind)}) catch "?", hud.MONO, false, actTip(a.kind))) {
+            ed.bank(m);
+            a.kind = cycleEnum(wf.ActKind, a.kind);
+            ed.dirty = true;
+        }
+        if (actFields(ed, ctx, m, a, rx + 110, ry, rw - 110 - 26)) ed.dirty = true;
+        // The banner line rides UNDER its own row, so that row is two tall or it writes over what follows.
+        const tall = a.kind == .text;
+        if (ui.button(ctx, ui.rect(rx + rw - 22, ry, 22, 20), "x", hud.MONO, false, "Remove this action")) {
+            ed.bank(m);
+            std.mem.copyForwards(wf.Act, t.acts[an .. t.nacts - 1], t.acts[an + 1 .. t.nacts]);
+            t.nacts -= 1;
+            ed.dirty = true;
+            continue;
+        }
+        ry += if (tall) ROW_H + 26 else ROW_H;
+        an += 1;
+    }
+    ry += 8;
+
+    // **A TRIGGER WITH NO ACTIONS DOES NOTHING**, which is the one state this editor can author by accident.
+    if (t.nacts == 0) {
+        hud.mono("no actions - this does nothing", rx, ry, hud.MONO, ui.HOT);
+        ry += ROW_H;
+    }
+    if (ui.button(ctx, ui.rect(rx, ry, 140, 22), "delete trigger", hud.MONO, false, "Throw this trigger away")) {
+        ed.bank(m);
+        std.mem.copyForwards(wf.Trigger, m.trigs[ti .. m.ntrigs - 1], m.trigs[ti + 1 .. m.ntrigs]);
+        m.ntrigs -= 1;
+        ed.trigSel = null;
+        ed.dirty = true;
+    }
+    scriptDone(ed, ctx, box, confirm);
+}
+
+fn scriptDone(ed: *Editor, ctx: *ui.Ctx, box: ui.ModalBox, confirm: bool) void {
+    if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false, "Close it - every change is already applied (Enter)") or confirm) {
+        ed.modal = .none;
+        ed.textFocus = false;
+    }
+}
+
+/// **A NAMED SLOT IS PICKED, NEVER TYPED TWICE.** Flags, counters and timers are interned tables; offering the
+/// declared names and one "+ new" is the only way an editor can reach them without inventing a second grammar.
+/// **AND IT DECLARES ONE WHEN THE MAP HAS NONE.** The tables are `undefined` memory up to their count, so a
+/// `flag` condition added to a map with no flags pointed at slot 0 of nothing — and `writeCond` would have put
+/// those bytes in the file. Cycling an empty table coins the first name rather than leaving that state reachable.
+fn slotRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, slot: *u16, table: []const wf.Id, n: usize, x: i32, y: i32, w: i32, comptime what: []const u8) bool {
+    var lb: [40]u8 = undefined;
+    const cur = if (slot.* < n) wf.idText(&table[slot.*]) else "(none)";
+    const lab = std.fmt.bufPrintZ(&lb, "{s}", .{cur}) catch "?";
+    if (!ui.button(ctx, ui.rect(x, y, @min(w, 120), 20), lab, hud.MONO, false, "Cycle the declared " ++ what ++ "s, or coin the first one. The map's own table, so a name is declared once")) return false;
+    ed.bank(m);
+    if (n == 0) {
+        slot.* = coinName(ed, m, what) orelse return false;
+        return true;
+    }
+    slot.* = @intCast((@as(usize, slot.*) + 1) % n);
+    return true;
+}
+
+/// Coins `<what>1`, `<what>2`… in the map's own table. One name per press, which is all a cycling row needs.
+fn coinName(ed: *Editor, m: *wf.Map, comptime what: []const u8) ?u16 {
+    var nb: [wf.ID_CAP]u8 = undefined;
+    var i: usize = 1;
+    while (i < 100) : (i += 1) {
+        const nm = std.fmt.bufPrint(&nb, what ++ "{d}", .{i}) catch return null;
+        const got = (if (comptime std.mem.eql(u8, what, "flag"))
+            m.internFlag(nm)
+        else if (comptime std.mem.eql(u8, what, "counter"))
+            m.internCounter(nm)
+        else
+            m.internTimer(nm)) catch {
+            ed.say("the map's " ++ what ++ " table is full");
+            return null;
+        };
+        ed.dirty = true;
+        ed.sayFmt("+{s}", .{nm});
+        return got;
+    }
+    return null;
+}
+
+fn cmpRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, cmp: *wf.Cmp, x: i32, y: i32) bool {
+    var lb: [12]u8 = undefined;
+    if (!ui.button(ctx, ui.rect(x, y, 40, 20), std.fmt.bufPrintZ(&lb, "{s}", .{cmp.tok()}) catch "?", hud.MONO, false, "How the two are compared")) return false;
+    ed.bank(m);
+    cmp.* = cycleEnum(wf.Cmp, cmp.*);
+    return true;
+}
+
+fn foeRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, k: *wf.FoeKind, x: i32, y: i32, w: i32) bool {
+    var lb: [40]u8 = undefined;
+    if (!ui.button(ctx, ui.rect(x, y, @min(w, 150), 20), std.fmt.bufPrintZ(&lb, "{s}", .{@tagName(k.*)}) catch "?", hud.MONO, false, "Which creature this counts")) return false;
+    ed.bank(m);
+    k.* = cycleEnum(wf.FoeKind, k.*);
+    return true;
+}
+
+/// **THE NEXT CONVERSATION THIS MAP DECLARES**, written once. `Cond.talked` and `Act.dialog` both name a dialog
+/// by TEXT, and both had the same cycle-and-intern block; the two drifting apart is a condition that watches a
+/// conversation the action never opens.
+fn cycleDialog(ed: *Editor, m: *wf.Map, cur: wf.Span, out: *wf.Span) bool {
+    if (m.ndialogs == 0) {
+        ed.say("no dialogs in this map");
+        return false;
+    }
+    const txt = m.spanText(cur);
+    var at: usize = 0;
+    for (0..m.ndialogs) |di| {
+        if (std.mem.eql(u8, m.dialogs[di].label(), txt)) at = di + 1;
+    }
+    ed.bank(m);
+    out.* = m.addText(m.dialogs[at % m.ndialogs].label()) catch {
+        ed.say("the map's text arena is full");
+        return false;
+    };
+    return true;
+}
+
+fn condFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, c: *wf.Cond, x: i32, y: i32, w: i32) bool {
+    var hit = false;
+    switch (c.kind) {
+        .always, .never => hud.mono("-", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 140)),
+        .flag => {
+            hit = slotRow(ed, ctx, m, &c.slot, &m.flagNames, m.nflags, x, y, w - 60, "flag") or hit;
+            var onW: i32 = 0;
+            if (ui.chip(ctx, x + 124, y, if (c.on) "on" else "off", c.on, &onW, "Which way the switch has to be")) {
+                ed.bank(m);
+                c.on = !c.on;
+                hit = true;
+            }
+        },
+        .counter => {
+            hit = slotRow(ed, ctx, m, &c.slot, &m.counterNames, m.ncounters, x, y, w - 110, "counter") or hit;
+            hit = cmpRow(ed, ctx, m, &c.cmp, x + 124, y) or hit;
+            hit = ui.stepperI(ctx, x + 168, y, @max(w - 172, STEP_MIN_W), "", &c.n, 1, -9999, 9999, "The number it is compared against") or hit;
+        },
+        .timer => {
+            hit = slotRow(ed, ctx, m, &c.slot, &m.timerNames, m.ntimers, x, y, w - 60, "timer") or hit;
+            var onW: i32 = 0;
+            if (ui.chip(ctx, x + 124, y, if (c.on) "done" else "running", c.on, &onW, "Whether it has finished or is still counting")) {
+                ed.bank(m);
+                c.on = !c.on;
+                hit = true;
+            }
+        },
+        .elapsed => {
+            hit = cmpRow(ed, ctx, m, &c.cmp, x, y) or hit;
+            hit = ui.stepperF(ctx, x + 46, y, @max(w - 50, STEP_MIN_W), "s", &c.r, 1, 0, 36000, "Seconds since the map started") or hit;
+        },
+        .region => {
+            var rb: [48]u8 = undefined;
+            hud.mono(std.fmt.bufPrintZ(&rb, "{d:.0},{d:.0} to {d:.0},{d:.0}", .{ c.x, c.z, c.x1, c.z1 }) catch "", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 200));
+            if (ui.button(ctx, ui.rect(x + w - 76, y, 76, 20), "from loc", hud.MONO, false, "Take the rectangle from the selected Location, so the two cannot drift apart")) {
+                if (ed.locSel) |li| {
+                    if (li < m.nlocations) {
+                        ed.bank(m);
+                        const l = m.locations[li];
+                        c.x = l.x;
+                        c.z = l.z;
+                        c.x1 = l.x1;
+                        c.z1 = l.z1;
+                        hit = true;
+                    }
+                } else ed.say("select a Location first");
+            }
+        },
+        .near => {
+            var npc: i32 = @intCast(c.slot);
+            if (ui.stepperI(ctx, x, y, STEP_MIN_W + 38, "npc", &npc, 1, 0, 999, "Which body, by its place in the npc table")) {
+                c.slot = @intCast(@max(npc, 0));
+                hit = true;
+            }
+            hit = ui.stepperF(ctx, x + STEP_MIN_W + 44, y, @max(w - STEP_MIN_W - 44, STEP_MIN_W), "r", &c.r, 0.5, 0.5, 200, "How near he has to come, in metres") or hit;
+        },
+        .talked => {
+            const txt = m.spanText(c.ref);
+            var tb: [48]u8 = undefined;
+            hud.mono(std.fmt.bufPrintZ(&tb, "{s}", .{if (txt.len > 0) txt else "(no dialog)"}) catch "", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 200));
+            if (ui.button(ctx, ui.rect(x + w - 76, y, 76, 20), "pick", hud.MONO, false, "Cycle the conversations this map declares")) {
+                hit = cycleDialog(ed, m, c.ref, &c.ref) or hit;
+            }
+        },
+        .deaths, .alive => {
+            hit = foeRow(ed, ctx, m, &c.foe, x, y, w - 120) or hit;
+            hit = cmpRow(ed, ctx, m, &c.cmp, x + 154, y) or hit;
+            hit = ui.stepperI(ctx, x + 198, y, @max(w - 202, STEP_MIN_W), "", &c.n, 1, 0, 9999, "How many") or hit;
+        },
+    }
+    return hit;
+}
+
+fn actFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, a: *wf.Act, x: i32, y: i32, w: i32) bool {
+    var hit = false;
+    switch (a.kind) {
+        .preserve => hud.mono("-", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 140)),
+        .dialog => {
+            const txt = m.spanText(a.ref);
+            var tb: [48]u8 = undefined;
+            hud.mono(std.fmt.bufPrintZ(&tb, "{s}", .{if (txt.len > 0) txt else "(none)"}) catch "", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 200));
+            if (ui.button(ctx, ui.rect(x + w - 76, y, 76, 20), "pick", hud.MONO, false, "Cycle the conversations this map declares")) {
+                hit = cycleDialog(ed, m, a.ref, &a.ref) or hit;
+            }
+        },
+        .text => {
+            const txt = m.spanText(a.line);
+            var tb: [64]u8 = undefined;
+            hud.mono(std.fmt.bufPrintZ(&tb, "{s}", .{if (txt.len > 0) txt else "(empty banner)"}) catch "", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 200));
+            // **COMMITTED ON A BUTTON AND NEVER PER KEYSTROKE.** `Map.addText` only ever APPENDS, so a field
+            // that wrote through on every letter would eat `DTEXT_CAP` a character at a time.
+            ui.textField(ctx, ui.rect(x, y + 22, @max(w - 60, 90), 24), &ed.lineBuf, &ed.lineLen, true, "Type a REPLACEMENT line here, then press set. The line it carries now is shown above");
+            if (ui.button(ctx, ui.rect(x + @max(w - 56, 94), y + 22, 56, 24), "set", hud.MONO, false, "Write it into the map")) {
+                ed.bank(m);
+                a.line = m.addText(ed.lineBuf[0..ed.lineLen]) catch blk: {
+                    ed.say("the map's text arena is full");
+                    break :blk a.line;
+                };
+                hit = true;
+            }
+        },
+        .flag => {
+            hit = slotRow(ed, ctx, m, &a.slot, &m.flagNames, m.nflags, x, y, w - 80, "flag") or hit;
+            var sw: i32 = 0;
+            if (ui.chip(ctx, x + 124, y, @tagName(a.setop), true, &sw, "Set it, clear it, or flip whatever it was")) {
+                ed.bank(m);
+                a.setop = cycleEnum(wf.Setop, a.setop);
+                hit = true;
+            }
+        },
+        .counter => {
+            hit = slotRow(ed, ctx, m, &a.slot, &m.counterNames, m.ncounters, x, y, w - 120, "counter") or hit;
+            var sw: i32 = 0;
+            if (ui.chip(ctx, x + 124, y, @tagName(a.countop), true, &sw, "Set it, add to it, or take from it")) {
+                ed.bank(m);
+                a.countop = cycleEnum(wf.Countop, a.countop);
+                hit = true;
+            }
+            hit = ui.stepperI(ctx, x + 184, y, @max(w - 188, STEP_MIN_W), "", &a.n, 1, -9999, 9999, "By how much") or hit;
+        },
+        .timer => {
+            hit = slotRow(ed, ctx, m, &a.slot, &m.timerNames, m.ntimers, x, y, w - 100, "timer") or hit;
+            hit = ui.stepperF(ctx, x + 124, y, @max(w - 128, STEP_MIN_W), "s", &a.v, 0.5, 0, 3600, "How long it runs for, in seconds") or hit;
+        },
+        .wait => {
+            hit = ui.stepperF(ctx, x, y, @max(@min(w, 140), STEP_MIN_W), "s", &a.v, 0.25, 0, 600, "Seconds held before the next action") or hit;
+        },
+    }
+    return hit;
+}
 
 const WORLD_W: i32 = 420;
 const WORLD_H: i32 = 470 + 96;

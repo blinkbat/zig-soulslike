@@ -1551,6 +1551,8 @@ pub const Knight = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     parry: foe.Parry = .{},
@@ -2017,7 +2019,7 @@ pub const Knight = struct {
         self.riposteCd = mathx.maxF(0, self.riposteCd - dt);
         foe.fadeFlash(&self.flash, dt);
         self.thud = mathx.maxF(0, self.thud - dt * 2.8);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         self.trail.age(dt);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
@@ -2049,6 +2051,8 @@ pub const Knight = struct {
                 // **HE DOES NOT TURN ON THE SPOT** (owner) — a standing man holds his facing and STEP-TURNS when
                 // the bearing warrants it, so where he is looking is a fact you can read and be wrong about.
                 self.setCarry(dt);
+                // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postDrive`), refused inside the ring.
+                _ = foe.postDrive(self, dt, bounds, WALK_SPEED, d, AGGRO_R, TURN_RATE, &movedDist, &moveSpeed, &moveYaw);
                 if (self.t >= 0.18) self.decide(d, bearing);
             },
             .approach => {
@@ -2713,7 +2717,7 @@ pub const Knight = struct {
                 self.enterIdle();
             },
             .hold => {
-                if (mathx.distXZ(self.pos, self.home) > foe.LEASH_HOME_R) {
+                if (mathx.distXZ(self.pos, foe.homeFor(self)) > foe.LEASH_HOME_R) {
                     self.homing = true;
                     self.enter(.approach);
                 } else self.enterIdle();

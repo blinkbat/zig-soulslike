@@ -184,6 +184,8 @@ pub const Wight = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     threat: foe.Threat = .{},
@@ -352,7 +354,7 @@ pub const Wight = struct {
         self.t += dt;
         self.boughCd = mathx.maxF(0, self.boughCd - dt);
         foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, quarry, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), quarry, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
         self.tickFire(dt);
@@ -388,8 +390,8 @@ pub const Wight = struct {
                 switch (classify(gap, sensed, homeGap, self.boughCd <= 0, self.root.held())) {
                     .rest => {
                         if (sensed <= AGGRO_R) self.faceToward(quarry, dt);
-                        self.speed = approach(self.speed, 0, ACCEL * dt);
-                        self.state = .idle;
+                        // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postAmble`), refused inside the ring.
+                        self.state = if (foe.postAmble(self, dt, bounds, WALK_SPEED, ACCEL, sensed, AGGRO_R, TURN_RATE, &movedDist, &moveSpeed, &moveYaw)) .walk else .idle;
                     },
                     .bough => {
                         self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);

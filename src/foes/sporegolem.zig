@@ -163,6 +163,8 @@ pub const Golem = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     facing: f32 = 0,
     seed: f32 = 0,
     scale: f32 = SCALE,
@@ -343,7 +345,7 @@ pub const Golem = struct {
         foe.fadeFlash(&self.flash, dt);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
         self.smashCd = mathx.maxF(0, self.smashCd - dt);
         self.slamCd = mathx.maxF(0, self.slamCd - dt);
         self.sacCd = mathx.maxF(0, self.sacCd - dt);
@@ -376,6 +378,12 @@ pub const Golem = struct {
         switch (self.state) {
             .idle => {
                 if (d <= AGGRO_R) self.face(hero, dt);
+                // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postStep`), refused inside the ring.
+                const ps = foe.postStep(self, dt, bounds, WALK_SPEED, d, AGGRO_R);
+                if (ps.yaw) |w| {
+                    moved = ps.moved;
+                    self.facing = mathx.approachAngle(self.facing, w, TURN_RATE * dt);
+                }
                 if (self.t >= 0.35) self.decide(d);
             },
             .walk => {

@@ -910,6 +910,8 @@ pub const Spider = struct {
     guard: ?rl.Vector3 = null,
     layWanted: bool = false,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     parry: foe.Parry = .{},
@@ -1101,7 +1103,7 @@ pub const Spider = struct {
         self.spitCd = mathx.maxF(0, self.spitCd - dt);
         self.biteCd = mathx.maxF(0, self.biteCd - dt);
         self.layCd = mathx.maxF(0, self.layCd - dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, spec(self.role).aggro);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, spec(self.role).aggro);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
@@ -1123,7 +1125,14 @@ pub const Spider = struct {
         switch (self.state) {
             .idle => {
                 if (d <= M_AGGRO) self.faceToward(hero, dt);
-                self.resolveIdle(dt);
+                // **ORDERS ARE WHAT SHE DOES BEFORE SHE HAS SEEN ANYBODY** (`foe.postStep`), refused inside her ring.
+                const ps = foe.postStep(self, dt, bounds, M_SPEED, d, M_AGGRO);
+                if (ps.yaw) |w| {
+                    self.gait += ps.moved / (skinOf(self.role).stride * self.scale);
+                    self.facing = mathx.approachAngle(self.facing, w, TURN_RATE * dt);
+                    self.emitDrag(dt);
+                    self.resolveWalk();
+                } else self.resolveIdle(dt);
                 const wait = if (d <= M_AGGRO) mathx.minF(self.idleWait, 0.14) else self.idleWait;
                 if (self.t >= wait) self.decideMother(d, bounds);
             },

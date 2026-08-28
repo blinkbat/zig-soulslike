@@ -298,6 +298,8 @@ pub const Bat = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     threat: foe.Threat = .{},
@@ -444,7 +446,7 @@ pub const Bat = struct {
         self.t += dt;
         self.blinkCd = mathx.maxF(0, self.blinkCd - dt);
         foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, quarry, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), quarry, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
@@ -553,8 +555,17 @@ pub const Bat = struct {
                 self.hoverTo = HOVER_IDLE;
                 switch (classify(sensed, gap, homeGap, self.blinkCd <= 0, !foe.canLeap(&self.root), self.spent)) {
                     .rest => {
-                        self.speed = approach(self.speed, 0, ACCEL * dt);
-                        if (sensed <= AGGRO_R) self.faceToward(quarry, dt);
+                        // **IT DRIFTS ITS ROUND RATHER THAN BLINKING IT** (`foe.postWant`). The blink is what
+                        // it spends on a FLANK — a bat that teleported its way round a patrol would have no
+                        // tell left for the one move that matters, and its own `travel` is already this drift.
+                        if (foe.postWant(self, dt, sensed, AGGRO_R)) |go| {
+                            self.faceToward(go, dt);
+                            self.speed = approach(self.speed, DRIFT_SPEED, ACCEL * dt);
+                            self.travel(dt, bounds);
+                        } else {
+                            self.speed = approach(self.speed, 0, ACCEL * dt);
+                            if (sensed <= AGGRO_R) self.faceToward(quarry, dt);
+                        }
                     },
                     .hold => {
                         self.faceToward(self.home, dt);

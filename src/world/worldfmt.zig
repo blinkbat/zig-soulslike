@@ -1,4 +1,5 @@
 const std = @import("std");
+const rl = @import("raylib");
 const props = @import("../props/props.zig");
 const mathx = @import("../core/mathx.zig");
 const gfx = @import("../gfx/gfx.zig");
@@ -22,6 +23,11 @@ pub const MAX_LOOT: usize = 8;
 pub const MAX_SEAL: usize = 4;
 pub const MAX_ZONES: usize = 16;
 pub const MAX_CLEARINGS: usize = 32;
+/// Rooms a map may wall. A map wanting more than this many sealed fights is not one map.
+pub const MAX_ARENAS: usize = 8;
+/// Corners one room may have. **THREE IS THE FLOOR** — two points are a line and bound nothing — and the cap
+/// is what a hand-drawn room takes before it is really terrain.
+pub const MAX_ARENA_VERTS: usize = 24;
 /// **THE ONE FOE LIMIT** (owner: can u make it 512, this map is huge). Every group's slab is this wide too
 /// (`MAX_PER_KIND`), so raising it costs one slab per `game.FOE_GROUPS` row — and so does every creature added,
 /// which is the term that actually moves: at 512 the twenty-nine rows measure 144.4 MB of the one startup allocation (`game.zig`'s "WHAT THE FRAME COSTS" prints it), and `build.zig`'s
@@ -90,14 +96,11 @@ pub const Op = struct {
 
     /// The creatures this gate is sealed on, in the order they were picked. Empty is a doorway.
     pub fn seal(self: *const Op) []const FoeKind {
-        return self.boss[0..@min(self.nboss, MAX_SEAL)];
+        return sealList(&self.boss, self.nboss);
     }
 
     pub fn sealsOn(self: *const Op, k: FoeKind) bool {
-        for (self.seal()) |s| {
-            if (s == k) return true;
-        }
-        return false;
+        return sealHas(self.seal(), k);
     }
 
     pub fn pick(self: *const Op, r: *mathx.Rng) Kind {
@@ -229,13 +232,224 @@ pub const Zone = struct {
     }
 };
 
+/// Do the two open segments properly cross? Written on the sign of four turns rather than on an intersection
+/// point, so a shared endpoint and a parallel pair answer FALSE without a division anywhere.
+fn segsCrossXZ(ax: f32, az: f32, bx: f32, bz: f32, cx: f32, cz: f32, dx: f32, dz: f32) bool {
+    const d1 = turn(cx, cz, dx, dz, ax, az);
+    const d2 = turn(cx, cz, dx, dz, bx, bz);
+    const d3 = turn(ax, az, bx, bz, cx, cz);
+    const d4 = turn(ax, az, bx, bz, dx, dz);
+    return ((d1 > 0) != (d2 > 0)) and ((d3 > 0) != (d4 > 0));
+}
+
+fn turn(ax: f32, az: f32, bx: f32, bz: f32, px: f32, pz: f32) f32 {
+    return (bx - ax) * (pz - az) - (bz - az) * (px - ax);
+}
+
 pub fn setMix(dst: *[MAX_MIX]Kind, n: *u8, mix: []const Kind) void {
     const k = @min(mix.len, MAX_MIX);
     @memcpy(dst[0..k], mix[0..k]);
     n.* = @intCast(k);
 }
 
+/// **THE DOOR AND THE ROOM CARRY THE SAME SEAL, SO THEY ASK IT THE SAME WAY.** Both keep it as plain fields
+/// because both are serialized off the format's own field table; every question about it lives here.
+pub fn sealList(boss: *const [MAX_SEAL]FoeKind, n: u8) []const FoeKind {
+    return boss[0..@min(n, MAX_SEAL)];
+}
+
+pub fn sealHas(seal: []const FoeKind, k: FoeKind) bool {
+    for (seal) |s| {
+        if (s == k) return true;
+    }
+    return false;
+}
+
+/// **IS ANY NAME ON IT STILL STANDING** — a duo is two, and a seal that let go with half the fight up let you
+/// walk out of an arena you were sealed into. `alive` is the per-kind tally the loop already keeps.
+pub fn sealStanding(seal: []const FoeKind, alive: []const u32) bool {
+    for (seal) |b| {
+        const i = @intFromEnum(b);
+        if (i < alive.len and alive[i] > 0) return true;
+    }
+    return false;
+}
+
+/// `boss=a,b`, or `boss=-` for a seal that names nobody. The exact inverse of `parseSeal`.
+pub fn writeSeal(w: anytype, seal: []const FoeKind) !void {
+    try w.writeAll(" boss=");
+    if (seal.len == 0) try w.writeAll("-");
+    for (seal, 0..) |k, i| {
+        if (i > 0) try w.writeAll(",");
+        try w.writeAll(@tagName(k));
+    }
+}
+
 pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
+
+/// **WHERE THE PLAYER STANDS UP.** Every world put him at (0, 4) facing south because `game.beginGame` said
+/// so and the format had no way to disagree — which is why every test map had to be built around that spot.
+/// `yaw` is the house convention, degrees, 0 facing +Z.
+pub const Start = struct {
+    x: f32 = 0,
+    z: f32 = 4,
+    yaw: f32 = 180,
+
+    pub fn at(self: *const Start) rl.Vector3 {
+        return mathx.ground(self.x, self.z);
+    }
+    pub fn facing(self: *const Start) f32 {
+        return mathx.radians(self.yaw);
+    }
+};
+
+/// **A ROOM, AND THE FOG GATE IS ONLY ITS DOOR.** The gate refuses one line 0.8 m thick, so an arena on open
+/// ground is a gate you walk round and a magus that dissolves out of its own fight (owner). An XZ polygon that
+/// holds every body inside it, his included, for as long as `boss` still stands.
+///
+/// **THE SEAL IS THE ROOM'S AND NOT THE DOOR'S** (`Op.boss` is the gate's own copy, same grammar) — a room can
+/// be walled with no gate in it, and a gate can be a doorway in no room. Where a map has both, a test pins the
+/// two lists against each other rather than trusting them to agree.
+pub const Arena = struct {
+    name: [NAME_CAP]u8 = [_]u8{0} ** NAME_CAP,
+    vx: [MAX_ARENA_VERTS]f32 = [_]f32{0} ** MAX_ARENA_VERTS,
+    vz: [MAX_ARENA_VERTS]f32 = [_]f32{0} ** MAX_ARENA_VERTS,
+    n: u8 = 0,
+    boss: [MAX_SEAL]FoeKind = [_]FoeKind{.bone_knight} ** MAX_SEAL,
+    nboss: u8 = 1,
+
+    /// Empty is bounds that never hold.
+    pub fn seal(self: *const Arena) []const FoeKind {
+        return sealList(&self.boss, self.nboss);
+    }
+
+    pub fn sealsOn(self: *const Arena, k: FoeKind) bool {
+        return sealHas(self.seal(), k);
+    }
+
+    pub fn verts(self: *const Arena) usize {
+        return @min(self.n, MAX_ARENA_VERTS);
+    }
+
+    /// **EVEN-ODD, AND THE HALF-OPEN RULE ON Z IS WHAT MAKES A SHARED CORNER COUNT ONCE.** Written with two
+    /// `<=` a ray through a vertex crosses both its edges and the point outside reads as inside.
+    pub fn contains(self: *const Arena, px: f32, pz: f32) bool {
+        const n = self.verts();
+        if (n < 3) return false;
+        var in = false;
+        var j = n - 1;
+        for (0..n) |i| {
+            const zi = self.vz[i];
+            const zj = self.vz[j];
+            if ((zi > pz) != (zj > pz)) {
+                const t = (pz - zi) / (zj - zi);
+                if (px < self.vx[i] + t * (self.vx[j] - self.vx[i])) in = !in;
+            }
+            j = i;
+        }
+        return in;
+    }
+
+    /// The distance is unsigned — `contains` answers which side of the wall `p` is on.
+    pub fn nearestWall(self: *const Arena, p: rl.Vector3) struct { at: rl.Vector3, d: f32 } {
+        const n = self.verts();
+        // `j = n - 1` on a usize is the wrap, not -1: an Arena with no corners panicked here rather than
+        // answering. `hold` and `onWall` guard it themselves, but this is `pub` and the next caller will not.
+        if (n < 3) return .{ .at = p, .d = 0 };
+        var best = mathx.zero3;
+        var bd: f32 = std.math.floatMax(f32);
+        var j = n - 1;
+        for (0..n) |i| {
+            const q = mathx.closestOnSegXZ(p, mathx.ground(self.vx[j], self.vz[j]), mathx.ground(self.vx[i], self.vz[i]));
+            const d = mathx.distXZ(q, p);
+            if (d < bd) {
+                bd = d;
+                best = q;
+            }
+            j = i;
+        }
+        return .{ .at = best, .d = bd };
+    }
+
+    /// **THE WALL IS A PUSH-OUT, NOT A REFUSAL.** A blink lands a body wherever it lands and a refusal would
+    /// strand it; the room takes it by the shoulder and stands it `r` back inside its own line.
+    ///
+    /// It walks every wall on every call, and the obvious cache — the room's INRADIUS off `middle`, which by the
+    /// triangle inequality lets a body near the centre skip that walk in one distance test — is NOT applied.
+    /// MEASURED on the shipped room: 11 walls, six bodies, two calls a frame each is **396 crossings a frame**,
+    /// and every map with no `arena:` row pays a zero-length loop. There is nothing there to buy.
+    pub fn hold(self: *const Arena, p: rl.Vector3, r: f32) rl.Vector3 {
+        if (self.verts() < 3) return p;
+        const inside = self.contains(p.x, p.z);
+        const near = self.nearestWall(p);
+        if (inside and near.d >= r) return p;
+        // Toward the interior: away from the wall when he is in, toward it when he is out. On the line itself
+        // neither is defined, so the centroid is what breaks the tie.
+        var dir = if (inside) mathx.dirXZ(near.at, p) else mathx.dirXZ(p, near.at);
+        if (mathx.lenXZ(dir) < 1e-4) dir = mathx.dirXZ(near.at, self.middle());
+        if (mathx.lenXZ(dir) < 1e-4) return p;
+        const u = mathx.normV(dir);
+        return mathx.v3(near.at.x + u.x * r, p.y, near.at.z + u.z * r);
+    }
+
+    /// **HOW NEAR A GATE HAS TO STAND TO COUNT AS BEING IN THIS ROOM'S WALL.** A door is authored ON the line;
+    /// the slack is for a hand-typed corner, not for a gate somewhere in the middle of the floor.
+    pub const GATE_ON_WALL: f32 = 2.0;
+
+    /// What pairs a fog gate to the room it is the door of.
+    pub fn onWall(self: *const Arena, px: f32, pz: f32) bool {
+        if (self.verts() < 3) return false;
+        return self.nearestWall(mathx.ground(px, pz)).d <= GATE_ON_WALL;
+    }
+
+    /// **DOES THE OUTLINE CROSS ITSELF.** A figure-of-eight room has an even-odd test that answers `false` in
+    /// its own middle, so it holds nothing where it looks most like a room — and it is drawn by hand, so
+    /// nothing else would catch it. O(n2) over at most `MAX_ARENA_VERTS`, and only ever asked offline.
+    pub fn simple(self: *const Arena) bool {
+        const n = self.verts();
+        if (n < 3) return false;
+        for (0..n) |i| {
+            for (0..n) |j| {
+                // Adjacent edges SHARE a corner, which is a touch and not a crossing.
+                if (j <= i + 1 or (i == 0 and j == n - 1)) continue;
+                if (segsCrossXZ(
+                    self.vx[i],
+                    self.vz[i],
+                    self.vx[(i + 1) % n],
+                    self.vz[(i + 1) % n],
+                    self.vx[j],
+                    self.vz[j],
+                    self.vx[(j + 1) % n],
+                    self.vz[(j + 1) % n],
+                )) return false;
+            }
+        }
+        return true;
+    }
+
+    /// The corners' mean — a tie-break and a place to aim a camera, never a centre of area.
+    pub fn middle(self: *const Arena) rl.Vector3 {
+        const n = self.verts();
+        if (n == 0) return mathx.zero3;
+        var sx: f32 = 0;
+        var sz: f32 = 0;
+        for (0..n) |i| {
+            sx += self.vx[i];
+            sz += self.vz[i];
+        }
+        const k: f32 = @floatFromInt(n);
+        return mathx.ground(sx / k, sz / k);
+    }
+
+    pub fn label(self: *const Arena) []const u8 {
+        return std.mem.sliceTo(&self.name, 0);
+    }
+    pub fn setName(self: *Arena, s: []const u8) void {
+        self.name = [_]u8{0} ** NAME_CAP;
+        const n = @min(s.len, NAME_CAP - 1);
+        @memcpy(self.name[0..n], s[0..n]);
+    }
+};
 
 /// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at comptime, and each `roleOf` reads its own entries as a CONTIGUOUS RUN off the first of them.
 pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, florid_ravager, mushroom_mage, fen_lurker, spore_golem, bone_skitterer, ancient_priest, tolling_hollow, mourner, slumber_bloom, cinder_wake, rotgorger, birchwight, salt_husk, fish_spearman, fish_netter, fish_shaman, blinkbat, fungal_swordsman, fungal_magus };
@@ -661,6 +875,29 @@ comptime {
     // …and `shaders.liquidTone` is a flat 3-per-kind array indexed by THIS ordinal.
     std.debug.assert(Liquid.N == gfx.LIQUID_N);
     std.debug.assert(@intFromEnum(Liquid.water) == 0);
+    // **AND `props.LIQUID_TONES` IS THAT ARRAY ON THE CPU SIDE, PINNED TAG-FOR-TAG** — `game.LIQUID_VOICE`'s
+    // rule, applied to the one liquid table that was held in this order by a comment alone. It lives here and
+    // not beside the table because `props` cannot import this file; reordered, four lakes silently repaint.
+    const art = @import("../props/propart.zig");
+    for (0..Liquid.N) |i| {
+        const tag = upperTag(@tagName(@as(Liquid, @enumFromInt(i))));
+        for ([3][]const u8{ "_SHALLOW", "_MID", "_DEEP" }, 0..) |depth, k| {
+            const want = mathx.colVec(@field(art, tag ++ depth));
+            const got = props.LIQUID_TONES[i * 3 + k];
+            std.debug.assert(got.x == want.x and got.y == want.y and got.z == want.z);
+        }
+    }
+}
+
+/// A tag in the SHOUTING spelling `propart` names its colours in — the only reason this exists is so a table
+/// can be pinned to an enum by NAME rather than by counting rows.
+fn upperTag(comptime s: []const u8) []const u8 {
+    comptime {
+        var out: [s.len]u8 = undefined;
+        for (s, 0..) |c, i| out[i] = std.ascii.toUpper(c);
+        const frozen = out;
+        return &frozen;
+    }
 }
 
 /// **IS EVERY CELL'S EDGE THE ONE ITS MATERIAL WOULD HAVE CHOSEN** — what decides whether the grid is worth a row in the file, and the exact inverse of `fillLegacyEdges`. As a `!= .natural` test every map with stone in it grew a row.
@@ -709,6 +946,21 @@ pub fn gridIndex(half: f32, n: usize, px: f32, pz: f32) ?usize {
     const cx = @min(@as(usize, @intFromFloat(t * nf)), n - 1);
     const cz = @min(@as(usize, @intFromFloat(u * nf)), n - 1);
     return cz * n + cx;
+}
+
+/// `gridIndex`'s INVERSE — the world coordinate of cell `i`'s centre on one axis. Every brush walk and every
+/// scan over a painted grid needs it, and written out at the call site it was the same line in three files.
+pub fn cellCentre(half: f32, cell: f32, i: usize) f32 {
+    return -half + (@as(f32, @floatFromInt(i)) + 0.5) * cell;
+}
+
+/// World coordinate → cell index on ONE axis, CLAMPED into the grid rather than refused. `gridIndex` is the
+/// point sampler and answers null off the end; a scan bounding a box by a radius wants the rim cell instead.
+pub fn cellAxis(half: f32, n: usize, w: f32) usize {
+    if (n == 0 or !(half > 0)) return 0;
+    const cell = 2 * half / @as(f32, @floatFromInt(n));
+    const hi: f32 = @floatFromInt(n - 1);
+    return @min(@as(usize, @intFromFloat(mathx.clampF((w + half) / cell, 0, hi))), n - 1);
 }
 
 pub const WATER_N: usize = @intCast(gfx.WATER_N);
@@ -783,6 +1035,7 @@ pub const Map = struct {
     name: [NAME_CAP]u8 = [_]u8{0} ** NAME_CAP,
     half: f32 = DEFAULT_HALF,
     runway: Runway = .{},
+    start: Start = .{},
 
     ops: [MAX_OPS]Op = undefined,
     nops: usize = 0,
@@ -792,6 +1045,8 @@ pub const Map = struct {
     nzones: usize = 0,
     clearings: [MAX_CLEARINGS]Clearing = undefined,
     nclearings: usize = 0,
+    arenas: [MAX_ARENAS]Arena = undefined,
+    narenas: usize = 0,
     foes: [MAX_FOES]Foe = undefined,
     nfoes: usize = 0,
     npcs: [MAX_NPCS]Npc = undefined,
@@ -839,6 +1094,7 @@ pub const Map = struct {
         self.nops = 0;
         self.nzones = 0;
         self.nclearings = 0;
+        self.narenas = 0;
         self.nfoes = 0;
         self.clearScript();
         self.soil = [_]u8{0} ** SOIL_CELLS;
@@ -993,6 +1249,20 @@ pub const Map = struct {
         return null;
     }
 
+    /// FIRST MATCH, like a location — rooms are not expected to overlap, and if two do the one painted last
+    /// is the one that answers. **THE INDEX AND NOT THE POINTER** is the primitive, because whether a room is
+    /// SHUT is per-frame state `game` holds beside the map and looks up by the same number.
+    pub fn arenaIndexAt(self: *const Map, px: f32, pz: f32) ?usize {
+        for (self.arenas[0..self.narenas], 0..) |*a, i| {
+            if (a.contains(px, pz)) return i;
+        }
+        return null;
+    }
+
+    pub fn arenaAt(self: *const Map, px: f32, pz: f32) ?*const Arena {
+        return &self.arenas[self.arenaIndexAt(px, pz) orelse return null];
+    }
+
     pub fn findLocation(self: *const Map, name: []const u8) ?u16 {
         for (self.locations[0..self.nlocations], 0..) |*l, i| {
             if (std.mem.eql(u8, l.label(), name)) return @intCast(i);
@@ -1029,11 +1299,11 @@ pub const Map = struct {
         var changed = false;
         var cz: usize = 0;
         while (cz < SOIL_N) : (cz += 1) {
-            const wz = -self.half + (@as(f32, @floatFromInt(cz)) + 0.5) * cell;
+            const wz = cellCentre(self.half, cell, cz);
             if (@abs(wz - pz) > radius + cell) continue;
             var cx: usize = 0;
             while (cx < SOIL_N) : (cx += 1) {
-                const wx = -self.half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell;
+                const wx = cellCentre(self.half, cell, cx);
                 if (@abs(wx - px) > radius + cell) continue;
                 const dx = wx - px;
                 const dz = wz - pz;
@@ -1075,11 +1345,11 @@ pub const Map = struct {
         var changed = false;
         var cz: usize = 0;
         while (cz < WATER_N) : (cz += 1) {
-            const wz = -self.half + (@as(f32, @floatFromInt(cz)) + 0.5) * cell;
+            const wz = cellCentre(self.half, cell, cz);
             if (@abs(wz - pz) > radius + cell) continue;
             var cx: usize = 0;
             while (cx < WATER_N) : (cx += 1) {
-                const wx = -self.half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell;
+                const wx = cellCentre(self.half, cell, cx);
                 if (@abs(wx - px) > radius + cell) continue;
                 const dx = wx - px;
                 const dz = wz - pz;
@@ -1223,6 +1493,7 @@ pub fn write(m: *const Map, w: anytype) !void {
     try w.print("name: {s}\n", .{m.label()});
     try w.print("half: {d:.1}\n", .{m.half});
     try w.print("runway: {d:.2} {d:.2} {d:.2} {d:.2}\n", .{ m.runway.x, m.runway.z, m.runway.x1, m.runway.z1 });
+    try w.print("start: {d:.2} {d:.2} {d:.1}\n", .{ m.start.x, m.start.z, m.start.yaw });
     try w.writeAll("\n");
 
     for (m.zones[0..m.nzones]) |*z| {
@@ -1241,7 +1512,15 @@ pub fn write(m: *const Map, w: anytype) !void {
     for (m.clearings[0..m.nclearings]) |c| {
         try w.print("clear: {d:.1} {d:.1} {d:.1}\n", .{ c.x, c.z, c.r });
     }
-    if (m.nzones + m.nclearings + m.nlocations > 0) try w.writeAll("\n");
+    for (m.arenas[0..m.narenas]) |*a| {
+        try w.print("arena: {s}", .{a.label()});
+        // ALWAYS, and not on a difference the way `writeOp` writes the gate's: a room whose line reads as
+        // bounds alone is a room that silently holds nothing, and there is no stamped default here.
+        try writeSeal(w, a.seal());
+        for (0..a.verts()) |i| try w.print(" {d:.2} {d:.2}", .{ a.vx[i], a.vz[i] });
+        try w.writeAll("\n");
+    }
+    if (m.nzones + m.nclearings + m.nlocations + m.narenas > 0) try w.writeAll("\n");
 
     for (m.ops[0..m.nops]) |*o| try writeOp(o, w);
 
@@ -1367,12 +1646,20 @@ fn writeScript(m: *const Map, w: anytype) !void {
     }
 }
 
+/// **A SLOT PAST THE END OF ITS TABLE IS `undefined` MEMORY, AND THE WRITER MUST NEVER READ IT.** The tables
+/// are sized `MAX_*` and filled to `n*`; a condition on a flag the map never declared pointed at slot 0 of
+/// nothing and would have put those bytes in the file. `unset` parses straight back as a declared name, so the
+/// round trip stays lossless rather than the row being dropped.
+fn slotName(table: []const Id, n: usize, i: u16) []const u8 {
+    return if (i < n) idText(&table[i]) else "unset";
+}
+
 fn writeCond(m: *const Map, w: anytype, c: *const Cond) !void {
     switch (c.kind) {
         .always, .never => try w.print("{s}\n", .{@tagName(c.kind)}),
-        .flag => try w.print("flag {s}={d}\n", .{ idText(&m.flagNames[c.slot]), @as(u8, if (c.on) 1 else 0) }),
-        .counter => try w.print("counter {s} {s} {d}\n", .{ idText(&m.counterNames[c.slot]), c.cmp.tok(), c.n }),
-        .timer => try w.print("timer {s}={s}\n", .{ idText(&m.timerNames[c.slot]), if (c.on) "done" else "running" }),
+        .flag => try w.print("flag {s}={d}\n", .{ slotName(&m.flagNames, m.nflags, c.slot), @as(u8, if (c.on) 1 else 0) }),
+        .counter => try w.print("counter {s} {s} {d}\n", .{ slotName(&m.counterNames, m.ncounters, c.slot), c.cmp.tok(), c.n }),
+        .timer => try w.print("timer {s}={s}\n", .{ slotName(&m.timerNames, m.ntimers, c.slot), if (c.on) "done" else "running" }),
         .elapsed => try w.print("elapsed {s} {d}\n", .{ c.cmp.tok(), c.r }),
         .region => try w.print("region {d:.1} {d:.1} {d:.1} {d:.1}\n", .{ c.x, c.z, c.x1, c.z1 }),
         .near => try w.print("near npc={d} r={d}\n", .{ c.slot, c.r }),
@@ -1386,13 +1673,13 @@ fn writeAct(m: *const Map, w: anytype, a: *const Act) !void {
     switch (a.kind) {
         .dialog => try w.print("dialog {s}\n", .{m.spanText(a.ref)}),
         .text => try w.print("text {s}\n", .{m.spanText(a.line)}),
-        .flag => try w.print("flag {s}={s}\n", .{ idText(&m.flagNames[a.slot]), switch (a.setop) {
+        .flag => try w.print("flag {s}={s}\n", .{ slotName(&m.flagNames, m.nflags, a.slot), switch (a.setop) {
             .off => "0",
             .on => "1",
             .flip => "flip",
         } }),
-        .counter => try w.print("counter {s} {s} {d}\n", .{ idText(&m.counterNames[a.slot]), @tagName(a.countop), a.n }),
-        .timer => try w.print("timer {s}={d}\n", .{ idText(&m.timerNames[a.slot]), a.v }),
+        .counter => try w.print("counter {s} {s} {d}\n", .{ slotName(&m.counterNames, m.ncounters, a.slot), @tagName(a.countop), a.n }),
+        .timer => try w.print("timer {s}={d}\n", .{ slotName(&m.timerNames, m.ntimers, a.slot), a.v }),
         .wait => try w.print("wait {d}\n", .{a.v}),
         .preserve => try w.writeAll("preserve\n"),
     }
@@ -1428,14 +1715,7 @@ fn writeOp(o: *const Op, w: anytype) !void {
             try w.writeAll(item.tag(it));
         }
     }
-    if (!sameSeal(o, &d)) {
-        try w.writeAll(" boss=");
-        if (o.nboss == 0) try w.writeAll("-");
-        for (o.seal(), 0..) |k, i| {
-            if (i > 0) try w.writeAll(",");
-            try w.writeAll(@tagName(k));
-        }
-    }
+    if (!sameSeal(o, &d)) try writeSeal(w, o.seal());
     try w.writeAll("\n");
 }
 
@@ -1501,6 +1781,8 @@ pub const ParseError = error{
     TooManyZones,
     TooManyLocations,
     TooManyClearings,
+    TooManyArenas,
+    ShortArena,
     TooManyFoes,
     TooManyWaypoints,
     TooManyNpcs,
@@ -1561,6 +1843,8 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
             if (!(m.half > 0 and m.half <= MAX_DECLARED_HALF)) return ParseError.BadNumber;
         } else if (std.mem.eql(u8, rec, "runway")) {
             m.runway = .{ .x = try nextFloat(&it), .z = try nextFloat(&it), .x1 = try nextFloat(&it), .z1 = try nextFloat(&it) };
+        } else if (std.mem.eql(u8, rec, "start")) {
+            m.start = .{ .x = try nextFloat(&it), .z = try nextFloat(&it), .yaw = try nextFloat(&it) };
         } else if (std.mem.eql(u8, rec, "zone")) {
             if (m.nzones >= MAX_ZONES) return ParseError.TooManyZones;
             m.zones[m.nzones] = try parseZone(&it);
@@ -1573,6 +1857,10 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
             if (m.nclearings >= MAX_CLEARINGS) return ParseError.TooManyClearings;
             m.clearings[m.nclearings] = .{ .x = try nextFloat(&it), .z = try nextFloat(&it), .r = try nextFloat(&it) };
             m.nclearings += 1;
+        } else if (std.mem.eql(u8, rec, "arena")) {
+            if (m.narenas >= MAX_ARENAS) return ParseError.TooManyArenas;
+            m.arenas[m.narenas] = try parseArena(&it);
+            m.narenas += 1;
         } else if (std.mem.eql(u8, rec, "soil")) {
             soilAt = try readGrid(&it, &m.soil, soilAt, Soil.N);
         } else if (std.mem.eql(u8, rec, "soilcov")) {
@@ -2049,6 +2337,26 @@ fn parseZone(it: *std.mem.TokenIterator(u8, .any)) !Zone {
     return z;
 }
 
+/// **THE SEAL COMES BEFORE THE CORNERS AND THE CORNERS ARE THE REST OF THE LINE.** Written the other way round
+/// a room with an odd float in it eats its own `boss=` tail; parsed this way a truncated line is a `ShortArena`
+/// and never a room silently one corner smaller than it was authored.
+fn parseArena(it: *std.mem.TokenIterator(u8, .any)) !Arena {
+    var a = Arena{};
+    a.setName(it.next() orelse return ParseError.MissingField);
+    const tok = it.next() orelse return ParseError.MissingField;
+    const eq = std.mem.indexOfScalar(u8, tok, '=') orelse return ParseError.UnknownKey;
+    if (!std.mem.eql(u8, tok[0..eq], "boss")) return ParseError.UnknownKey;
+    a.nboss = try parseSeal(tok[eq + 1 ..], &a.boss);
+    while (it.next()) |xt| {
+        if (a.n >= MAX_ARENA_VERTS) return ParseError.ExtraField;
+        a.vx[a.n] = try finiteFloat(f32, xt);
+        a.vz[a.n] = try nextFloat(it);
+        a.n += 1;
+    }
+    if (a.n < 3) return ParseError.ShortArena;
+    return a;
+}
+
 fn parseOp(kind: OpKind, it: *std.mem.TokenIterator(u8, .any)) !Op {
     var o = defaults(kind);
     switch (kind) {
@@ -2185,10 +2493,11 @@ const GRID_CELL_CAP: usize = 7;
 /// used to be, so a map filling every cap was one `load` could only answer `MapTooLarge` to. An op carrying a
 /// full `mix=` or `loot=` still runs far past `OP_LINE_TYPICAL` — `save` measures and refuses for that.
 pub const TEXT_CAP: usize =
-    256 + NAME_CAP +
+    256 + NAME_CAP + 48 +
     MAX_ZONES * (NAME_CAP + 64 + MAX_MIX * (longestTag(Kind) + 1)) +
     MAX_LOCATIONS * (NAME_CAP + 128) +
     MAX_CLEARINGS * 48 +
+    MAX_ARENAS * (NAME_CAP + 16 + MAX_SEAL * (longestTag(FoeKind) + 1) + MAX_ARENA_VERTS * 22) +
     MAX_OPS * OP_LINE_TYPICAL +
     (3 * SOIL_CELLS + 3 * WATER_CELLS + HEIGHT_CELLS) * GRID_CELL_CAP +
     MAX_FOES * (longestTag(FoeKind) + 48) +
@@ -3237,4 +3546,333 @@ test "A SPAWN CARRIES ITS ROUTE WHEN IT MOVES — the legs are world-space, so a
     // Nothing past `nwp` is touched, so an unpainted slot cannot drift into the route on the next paint.
     try std.testing.expectApproxEqAbs(@as(f32, 0), f.wp[2].x, 1e-6);
     try std.testing.expectApproxEqAbs(@as(f32, 0), f.wp[2].z, 1e-6);
+}
+
+test "A ROOM IS A POLYGON — inside, outside, and the shared corner a ray must cross exactly once" {
+    var a = Arena{};
+    a.setName("hall");
+    // An L, so a convex test cannot pass by accident: the notch at (+x, +z) is OUTSIDE.
+    const pts = [_][2]f32{ .{ -10, -10 }, .{ 10, -10 }, .{ 10, 0 }, .{ 0, 0 }, .{ 0, 10 }, .{ -10, 10 } };
+    for (pts, 0..) |p, i| {
+        a.vx[i] = p[0];
+        a.vz[i] = p[1];
+    }
+    a.n = pts.len;
+
+    try std.testing.expect(a.contains(-5, 0));
+    try std.testing.expect(a.contains(5, -5));
+    try std.testing.expect(a.contains(-5, 5));
+    // THE NOTCH. A rect over the same corners would answer true here, which is the whole point of a polygon.
+    try std.testing.expect(!a.contains(5, 5));
+    try std.testing.expect(!a.contains(-11, 0));
+    try std.testing.expect(!a.contains(0, 11));
+    // A RAY THROUGH A VERTEX CROSSES ITS TWO EDGES AND MUST STILL COUNT ONCE: swept along the corner row, a
+    // `<=` on both ends flips twice and every point outside reads as in.
+    for ([_]f32{ -10, 0, 10 }) |z| {
+        try std.testing.expect(!a.contains(-40, z));
+        try std.testing.expect(!a.contains(40, z));
+    }
+    // Fewer than three corners bounds nothing rather than crashing on the wrap.
+    var thin = Arena{ .n = 2 };
+    try std.testing.expect(!thin.contains(0, 0));
+    try std.testing.expectApproxEqAbs(@as(f32, 7.0), thin.hold(mathx.ground(7, 7), 1).x, 1e-4);
+}
+
+test "AND THE WALL STANDS A BODY BACK INSIDE IT — the blink's answer, since there is no segment to refuse" {
+    var a = Arena{ .n = 4 };
+    const pts = [_][2]f32{ .{ -20, -20 }, .{ 20, -20 }, .{ 20, 20 }, .{ -20, 20 } };
+    for (pts, 0..) |p, i| {
+        a.vx[i] = p[0];
+        a.vz[i] = p[1];
+    }
+    const R: f32 = 0.6;
+    const mid = mathx.ground(3, -4);
+    try std.testing.expectApproxEqAbs(mid.x, a.hold(mid, R).x, 1e-5);
+    try std.testing.expectApproxEqAbs(mid.z, a.hold(mid, R).z, 1e-5);
+
+    const gone = a.hold(mathx.ground(33, 4), R);
+    try std.testing.expect(a.contains(gone.x, gone.z));
+    try std.testing.expectApproxEqAbs(@as(f32, 20.0 - R), gone.x, 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 4.0), gone.z, 1e-4);
+
+    const lean = a.hold(mathx.ground(-19.9, 0), R);
+    try std.testing.expectApproxEqAbs(@as(f32, -20.0 + R), lean.x, 1e-4);
+
+    // A corner and a point ON the line are the two cases with no single answer.
+    const corner = a.hold(mathx.ground(26, 26), R);
+    try std.testing.expect(a.contains(corner.x, corner.z));
+    const onLine = a.hold(mathx.ground(20, 0), R);
+    try std.testing.expect(a.contains(onLine.x, onLine.z));
+    std.debug.print("\n  arena hold: out at x33 -> {d:.2}, on the line -> {d:.2}, corner -> ({d:.2}, {d:.2})\n", .{ gone.x, onLine.x, corner.x, corner.z });
+}
+
+test "AN ARENA ROUND-TRIPS WITH ITS SEAL, and a room with under three corners is a LOAD ERROR" {
+    var m = Map{};
+    m.setName("Rooms");
+    var a = Arena{ .n = 4, .nboss = 2 };
+    a.setName("mycelian_hall");
+    a.boss[0] = .fungal_swordsman;
+    a.boss[1] = .fungal_magus;
+    const pts = [_][2]f32{ .{ -26, -14 }, .{ 26, -14 }, .{ 30, 12 }, .{ -30, 12 } };
+    for (pts, 0..) |p, i| {
+        a.vx[i] = p[0];
+        a.vz[i] = p[1];
+    }
+    m.arenas[0] = a;
+    // …and a second room that holds NOTHING, which is bounds with no fight in them.
+    var open = Arena{ .n = 3, .nboss = 0 };
+    open.setName("yard");
+    open.vx = [_]f32{0} ** MAX_ARENA_VERTS;
+    open.vz = [_]f32{0} ** MAX_ARENA_VERTS;
+    open.vx[1] = 8;
+    open.vz[2] = 8;
+    m.arenas[1] = open;
+    m.narenas = 2;
+
+    var buf: [8192]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(&m, fbs.writer());
+    const text = fbs.getWritten();
+    // The seal is written even when it is the default — there is no stamped room, so a silent one holds nothing.
+    try std.testing.expect(std.mem.indexOf(u8, text, "arena: mycelian_hall boss=fungal_swordsman,fungal_magus") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "arena: yard boss=-") != null);
+
+    var back = Map{};
+    var ln: usize = 0;
+    try parse(text, &back, &ln);
+    try std.testing.expectEqual(@as(usize, 2), back.narenas);
+    try std.testing.expectEqualStrings("mycelian_hall", back.arenas[0].label());
+    try std.testing.expectEqual(@as(usize, 4), back.arenas[0].verts());
+    try std.testing.expectEqual(@as(usize, 2), back.arenas[0].seal().len);
+    try std.testing.expectEqual(@as(usize, 0), back.arenas[1].seal().len);
+    for (pts, 0..) |p, i| {
+        try std.testing.expectApproxEqAbs(p[0], back.arenas[0].vx[i], 1e-3);
+        try std.testing.expectApproxEqAbs(p[1], back.arenas[0].vz[i], 1e-3);
+    }
+    try std.testing.expectEqual(@as(?usize, 0), back.arenaIndexAt(0, 0));
+    try std.testing.expectEqual(@as(?usize, null), back.arenaIndexAt(0, 200));
+
+    // TWO CORNERS ARE A LINE, and a truncated row may not come up as a room one corner smaller than authored.
+    var bad = Map{};
+    ln = 0;
+    try std.testing.expectError(ParseError.ShortArena, parse("version: 1\narena: thin boss=- 0 0 1 1\n", &bad, &ln));
+    // …and an odd float is a missing field, not a corner at z=0.
+    ln = 0;
+    try std.testing.expectError(ParseError.MissingField, parse("version: 1\narena: odd boss=- 0 0 1 1 2\n", &bad, &ln));
+}
+
+test "EVERY SHIPPED ROOM AND THE GATE STANDING IN IT SEAL ON THE SAME NAMES" {
+    // **THE ROOM'S SEAL AND THE DOOR'S ARE TWO COPIES, SO THEY ARE PINNED RATHER THAN TRUSTED.** A wall that
+    // outlives its door locks you in a fight that is over; a door that outlives its wall is a room you walk
+    // out of the back of. Both are silent, and neither fails any other test.
+    var dir = std.fs.cwd().openDir(DIR, .{ .iterate = true }) catch return error.SkipZigTest;
+    defer dir.close();
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    var rooms: usize = 0;
+    var paired: usize = 0;
+    var it = dir.iterate();
+    while (try it.next()) |ent| {
+        if (ent.kind != .file or !std.mem.endsWith(u8, ent.name, EXT)) continue;
+        var path: [PATH_CAP]u8 = undefined;
+        const p = try std.fmt.bufPrint(&path, DIR ++ "/{s}", .{ent.name});
+        var ln: usize = 0;
+        load(p, m, &ln) catch continue;
+        for (m.arenas[0..m.narenas]) |*a| {
+            rooms += 1;
+            for (m.ops[0..m.nops]) |*o| {
+                if (!props.info(o.kind).ward) continue;
+                if (!a.onWall(o.x, o.z)) continue;
+                paired += 1;
+                try std.testing.expectEqualSlices(FoeKind, a.seal(), o.seal());
+            }
+        }
+    }
+    std.debug.print("\n  shipped rooms: {d}, each with a gate on its wall: {d}\n", .{ rooms, paired });
+    try std.testing.expect(rooms > 0 and paired == rooms);
+}
+
+test "AND EVERY SHIPPED ROOM IS A ROOM — an outline that does not cross itself, with its own bosses inside it" {
+    var dir = std.fs.cwd().openDir(DIR, .{ .iterate = true }) catch return error.SkipZigTest;
+    defer dir.close();
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    var checked: usize = 0;
+    var it = dir.iterate();
+    while (try it.next()) |ent| {
+        if (ent.kind != .file or !std.mem.endsWith(u8, ent.name, EXT)) continue;
+        var path: [PATH_CAP]u8 = undefined;
+        const p = try std.fmt.bufPrint(&path, DIR ++ "/{s}", .{ent.name});
+        var ln: usize = 0;
+        load(p, m, &ln) catch continue;
+        for (m.arenas[0..m.narenas]) |*a| {
+            // A FIGURE-OF-EIGHT holds nothing in its own middle, and it is drawn by HAND: nothing else catches it.
+            try std.testing.expect(a.simple());
+            for (a.seal()) |k| {
+                var placed: usize = 0;
+                var held: usize = 0;
+                for (m.foes[0..m.nfoes]) |f| {
+                    if (f.kind != k) continue;
+                    placed += 1;
+                    if (a.contains(f.x, f.z)) held += 1;
+                }
+                // A body a room seals on and does NOT stand in is a room that never lets go.
+                if (placed > 0) try std.testing.expect(held > 0);
+                checked += 1;
+            }
+            std.debug.print("\n  {s}: {s} — {d} corners, {d:.0} m to its nearest wall, middle ({d:.0}, {d:.0})", .{
+                ent.name, a.label(), a.verts(), a.nearestWall(a.middle()).d, a.middle().x, a.middle().z,
+            });
+        }
+    }
+    std.debug.print("\n", .{});
+    try std.testing.expect(checked > 0);
+}
+
+test "A FIGURE-OF-EIGHT IS NOT A ROOM, and adjacent corners touching is not a crossing" {
+    var ok = Arena{ .n = 4 };
+    const sq = [_][2]f32{ .{ -10, -10 }, .{ 10, -10 }, .{ 10, 10 }, .{ -10, 10 } };
+    for (sq, 0..) |p, i| {
+        ok.vx[i] = p[0];
+        ok.vz[i] = p[1];
+    }
+    try std.testing.expect(ok.simple());
+
+    // The same four corners with two of them swapped, which is the bow-tie a hand-drawn room makes.
+    var bow = Arena{ .n = 4 };
+    const tie = [_][2]f32{ .{ -10, -10 }, .{ 10, -10 }, .{ -10, 10 }, .{ 10, 10 } };
+    for (tie, 0..) |p, i| {
+        bow.vx[i] = p[0];
+        bow.vz[i] = p[1];
+    }
+    try std.testing.expect(!bow.simple());
+    // …and it is exactly the shape whose own middle answers FALSE, which is why it has to be refused.
+    try std.testing.expect(!bow.contains(0, 0));
+}
+
+test "WHAT A ROOM COSTS A FRAME — the per-body wall test, counted rather than guessed" {
+    var dir = std.fs.cwd().openDir(DIR, .{ .iterate = true }) catch return error.SkipZigTest;
+    defer dir.close();
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    var ln: usize = 0;
+    load(DIR ++ "/01_fallen_plain" ++ EXT, m, &ln) catch return error.SkipZigTest;
+    if (m.narenas == 0) return error.SkipZigTest;
+    const a = &m.arenas[0];
+    const n = a.verts();
+    // Every body pays `arenaIndexAt` (one `contains` per room) and, inside a SHUT one, a `hold`: a second
+    // `contains` plus one segment projection per wall. `game` asks twice a frame — the step gate and the settle.
+    const perOutside = m.narenas * n;
+    const perInside = perOutside + n + n;
+    std.debug.print("\n  room cost: {d} rooms x {d} walls — a body outside pays {d} crossings a call, one inside {d} + {d} projections; {d} bodies in it x2 calls = {d}\n", .{
+        m.narenas, n, perOutside, perOutside + n, n, 6, 2 * 6 * perInside,
+    });
+    // The shape of the bill is what matters: LINEAR in the walls, and the common map pays nothing at all
+    // because `narenas` is 0 and the loop never runs.
+    try std.testing.expect(2 * 6 * perInside < 1000);
+}
+
+test "A MAP SAYS WHERE THE PLAYER STARTS, and one that does not says the old hard-coded spot" {
+    var m = Map{};
+    m.setName("Spawn");
+    m.start = .{ .x = -195.5, .z = -137.25, .yaw = 65 };
+    var buf: [4096]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(&m, fbs.writer());
+    const text = fbs.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, text, "start: -195.50 -137.25 65.0") != null);
+
+    var back = Map{};
+    var ln: usize = 0;
+    try parse(text, &back, &ln);
+    try std.testing.expectApproxEqAbs(@as(f32, -195.5), back.start.x, 1e-3);
+    try std.testing.expectApproxEqAbs(@as(f32, -137.25), back.start.z, 1e-3);
+    try std.testing.expectApproxEqAbs(mathx.radians(65.0), back.start.facing(), 1e-4);
+
+    // **A MAP WITH NO `start:` ROW COMES UP WHERE EVERY MAP USED TO** — (0, 4) facing south, which is what
+    // `game.beginGame` hard-coded, so nothing shipped moves under this.
+    var old = Map{};
+    ln = 0;
+    try parse("version: 1\nname: Old\n", &old, &ln);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), old.start.x, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 4), old.start.z, 1e-6);
+    try std.testing.expectApproxEqAbs(std.math.pi, old.start.facing(), 1e-5);
+}
+
+test "AND EVERY SHIPPED MAP STARTS HIM SOMEWHERE INSIDE ITSELF" {
+    var dir = std.fs.cwd().openDir(DIR, .{ .iterate = true }) catch return error.SkipZigTest;
+    defer dir.close();
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    var n: usize = 0;
+    var it = dir.iterate();
+    while (try it.next()) |ent| {
+        if (ent.kind != .file or !std.mem.endsWith(u8, ent.name, EXT)) continue;
+        var path: [PATH_CAP]u8 = undefined;
+        const p = try std.fmt.bufPrint(&path, DIR ++ "/{s}", .{ent.name});
+        var ln: usize = 0;
+        load(p, m, &ln) catch continue;
+        // A start outside the world is a man who wakes up in the void, and it is one typo away at all times.
+        try std.testing.expect(@abs(m.start.x) <= m.half and @abs(m.start.z) <= m.half);
+        n += 1;
+    }
+    try std.testing.expect(n > 0);
+}
+
+test "WHAT THE ROOMS PANEL COSTS A FRAME — the op walk that finds a room's gate, timed" {
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    var ln: usize = 0;
+    load(DIR ++ "/01_fallen_plain" ++ EXT, m, &ln) catch return error.SkipZigTest;
+    if (m.narenas == 0) return error.SkipZigTest;
+    const a = &m.arenas[0];
+    var timer = try std.time.Timer.start();
+    var hits: usize = 0;
+    const ROUNDS = 240;
+    for (0..ROUNDS) |_| {
+        for (m.ops[0..m.nops]) |*o| {
+            if (!props.info(o.kind).ward) continue;
+            if (a.onWall(o.x, o.z)) hits += 1;
+        }
+    }
+    const us = @as(f64, @floatFromInt(timer.read())) / 1000.0 / @as(f64, @floatFromInt(ROUNDS));
+    std.debug.print("\n  rooms panel: one walk of {d} ops finds {d} gate(s) in {d:.1} us — {d:.3}% of a 16.7 ms frame\n", .{ m.nops, hits / ROUNDS, us, 100.0 * us / 16700.0 });
+    try std.testing.expect(hits > 0);
+}
+
+test "A TRIGGER ON A NAME THE MAP NEVER DECLARED WRITES A NAME, NOT UNDEFINED MEMORY" {
+    // The editor can add a `flag` condition to a map with no flags in it (`editor.drawScriptModal`), and the
+    // name tables are `undefined` past their count — so the writer read whatever was in the slab and put it in
+    // the file. `unset` parses straight back as a declared name, so the row survives the round trip.
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    m.* = .{};
+    m.setName("Undeclared");
+    var t = Trigger{};
+    @memcpy(t.id[0..4], "trig");
+    t.conds[0] = .{ .kind = .flag, .slot = 0, .on = true };
+    t.conds[1] = .{ .kind = .counter, .slot = 7, .cmp = .ge, .n = 2 };
+    t.nconds = 2;
+    t.acts[0] = .{ .kind = .timer, .slot = 3, .v = 5 };
+    t.nacts = 1;
+    m.trigs[0] = t;
+    m.ntrigs = 1;
+    try std.testing.expectEqual(@as(usize, 0), m.nflags);
+
+    var buf: [8192]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    const text = fbs.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, text, "flag unset=1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "counter unset >= 2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "timer unset=5") != null);
+
+    // …and it comes back as a real declared name rather than a load error.
+    const back = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(back);
+    var ln: usize = 0;
+    try parse(text, back, &ln);
+    try std.testing.expectEqual(@as(usize, 1), back.ntrigs);
+    try std.testing.expect(back.nflags == 1 and back.ncounters == 1 and back.ntimers == 1);
+    try std.testing.expectEqualStrings("unset", idText(&back.flagNames[0]));
 }

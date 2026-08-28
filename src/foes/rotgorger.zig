@@ -169,6 +169,8 @@ pub const Gorger = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     threat: foe.Threat = .{},
@@ -323,7 +325,7 @@ pub const Gorger = struct {
         self.t += dt;
         self.biteCd = mathx.maxF(0, self.biteCd - dt);
         foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, quarry, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), quarry, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
@@ -388,8 +390,17 @@ pub const Gorger = struct {
                     },
                     .rest => {
                         if (sensed <= AGGRO_R) self.faceToward(quarry, dt);
-                        self.speed = approach(self.speed, 0, ACCEL * dt);
-                        self.state = .idle;
+                        // **ORDERS ARE WHAT IT DOES BETWEEN MEALS** (`foe.postWant`) — through its own
+                        // `travel`, so the prowl gait and the drag it leaves are the ones it already has.
+                        if (foe.postWant(self, dt, sensed, AGGRO_R)) |go| {
+                            self.faceToward(self.nav.aim(self.pos, go), dt);
+                            self.speed = approach(self.speed, WALK_SPEED, ACCEL * dt);
+                            moved = self.travel(dt, bounds);
+                            self.state = .prowl;
+                        } else {
+                            self.speed = approach(self.speed, 0, ACCEL * dt);
+                            self.state = .idle;
+                        }
                     },
                     .bite => {
                         self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);

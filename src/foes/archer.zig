@@ -606,6 +606,8 @@ pub const Archer = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     facing: f32 = 0,
@@ -745,7 +747,7 @@ pub const Archer = struct {
         self.backstepCd = mathx.maxF(0, self.backstepCd - dt);
         self.buttCd = mathx.maxF(0, self.buttCd - dt);
         foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         self.t += dt;
         var loosed = false;
@@ -768,6 +770,9 @@ pub const Archer = struct {
                 } else {
                     self.headScan = mathx.approach(self.headScan, 32.0 * mathx.sinf(self.elapsed * 0.55 + self.seed * 9.0), dt * 45.0);
                 }
+                // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postDrive`). No `moveSpeed`
+                // local: the gait speed below is derived from `movedDist` alone.
+                _ = foe.postDrive(self, dt, bounds, WALK_SPEED, d, AGGRO_R, TURN_RATE, &movedDist, null, &moveYaw);
                 self.decide(d);
             },
             .draw => {

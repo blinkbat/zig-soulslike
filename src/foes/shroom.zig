@@ -155,6 +155,8 @@ pub const Shroom = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     facing: f32 = 0,
@@ -276,7 +278,7 @@ pub const Shroom = struct {
         self.t += dt;
         self.flingCd = mathx.maxF(0, self.flingCd - dt);
         foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
@@ -359,7 +361,15 @@ pub const Shroom = struct {
         self.armUp = mathx.approach(self.armUp, 0.06 + 0.05 * br, dt * 2.0);
         self.kick = mathx.approach(self.kick, 0, dt * 4.0);
         const wait = if (d <= AGGRO_R) mathx.minF(self.idleWait, 0.14) else self.idleWait;
-        if (self.t >= wait) self.decide(hero, bounds);
+        if (self.t < wait) return;
+        // **IT WALKS ITS ORDERS THE ONLY WAY IT MOVES — IN HOPS** (`foe.postWant`, the toad's arrangement).
+        if (foe.postWant(self, dt, d, AGGRO_R)) |go| {
+            if (mathx.distXZ(self.pos, go) > 0.3) {
+                self.beginHop(go, bounds);
+                return;
+            }
+        }
+        self.decide(hero, bounds);
     }
 
     fn decide(self: *Shroom, hero: rl.Vector3, bounds: f32) void {

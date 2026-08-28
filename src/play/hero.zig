@@ -222,6 +222,14 @@ const JUMP_LEG_SPLIT: f32 = 5.0;
 
 pub const ROLL_DUR = 0.70;
 pub const ROLL_IFRAME_END = 0.46;
+
+/// **THE CROSSING IS A GRACE AND THE CLOCK IS HIS, NOT THE GATE'S** (owner) — he comes out of a fog gate
+/// untouchable and stays that way for as long as he STANDS there. The tail runs only on a step of his own,
+/// which is why `updateGateWalk` re-holds it every frame: the walk moves him and would otherwise spend it.
+pub const FOG_GRACE_TAIL: f32 = 1.6;
+/// Ground speed under which he counts as standing. A speed and not a per-frame distance, or the grace lasts
+/// longer on a slower machine.
+const FOG_GRACE_STILL: f32 = 0.20;
 pub const ROLL_DIST = 3.5;
 const ROLL_BALL_Y = 0.50;
 const ROLL_TUCK_IN = 0.16;
@@ -1473,6 +1481,8 @@ pub const Hero = struct {
     rollYaw: f32 = 0,
     rollSide: f32 = -1,
     rollVar: f32 = 1,
+    /// Held at `FOG_GRACE_TAIL` while he stands, counting down once he moves; zero is no grace at all.
+    fogGraceT: f32 = 0,
     lift: f32 = 0,
     /// A WORLD height, integrated under gravity; `lift` is DERIVED off it. A lift integrated over a moving
     /// datum sinks with the ground it was measured from when he runs off a ledge.
@@ -1713,6 +1723,7 @@ pub const Hero = struct {
     pub fn update(self: *Hero, dt: f32, movedDist: f32, speed: f32, moveYaw: ?f32) void {
         self.tickClocks(dt);
         self.speed = speed;
+        self.tickFogGrace(dt);
         advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist, speed, moveYaw, self.facing);
     }
 
@@ -1811,6 +1822,7 @@ pub const Hero = struct {
     pub fn updateAir(self: *Hero, dt: f32, faceYaw: ?f32) void {
         self.tickClocks(dt);
         self.speed = self.airSpeed;
+        self.tickFogGrace(dt);
         self.speedS = mathx.approach(self.speedS, self.airSpeed, dt * SPEED_SMOOTH);
         // THROWN, HE KEEPS THE BEARING HE WAS HIT ON: travelling backwards while still facing what hit him is what makes the arch read as being knocked over rather than as a leap.
         if (!self.launched) {
@@ -3107,7 +3119,19 @@ pub const Hero = struct {
     }
 
     pub fn iFramed(self: *const Hero) bool {
+        if (self.fogGraceT > 0) return true;
         return self.rolling and self.rollT < ROLL_IFRAME_END + self.perk.iframe;
+    }
+
+    pub fn startFogGrace(self: *Hero) void {
+        self.fogGraceT = FOG_GRACE_TAIL;
+    }
+
+    /// Asked off `speed` and not off `moving`, because the gait's blend lags a stick let go by ~0.1 s and a
+    /// grace that outlives the step that spent it is a grace that never ends on a man tapping the stick.
+    fn tickFogGrace(self: *Hero, dt: f32) void {
+        if (self.fogGraceT <= 0 or self.speed <= FOG_GRACE_STILL) return;
+        self.fogGraceT = mathx.maxF(0, self.fogGraceT - dt);
     }
 
     fn armOf(self: *const Hero, w: item.Wear) item.Arm {
@@ -3400,6 +3424,8 @@ pub const Hero = struct {
         self.dropActions();
         self.stun = .none;
         self.stunT = 0;
+        // A grace left over from the cell before is a staged blow that silently does not land.
+        self.fogGraceT = 0;
         self.clearAir();
         self.startXfade();
         self.pose();
@@ -3476,6 +3502,7 @@ pub const Hero = struct {
         self.dropActions();
         self.stamRefused = 0;
         self.fpRefused = 0;
+        self.fogGraceT = 0;
         self.sprinting = false;
         self.guardB = 0;
         self.aimB = 0;
@@ -6992,4 +7019,38 @@ test "DEATH PUTS HIM BACK WHERE HE LAST SAT DOWN — the stamped spawn, not the 
     // He comes back WHOLE, and nothing he was carrying in his blood comes back with him.
     try std.testing.expectApproxEqAbs(h.vit.hpMax, h.vit.hp, 1e-4);
     try std.testing.expectApproxEqAbs(@as(f32, 0), h.vit.ailFrac(.poison), 1e-6);
+}
+
+test "THE FOG GRACE HOLDS WHILE HE STANDS AND ONLY THE STEP HE TAKES HIMSELF SPENDS IT" {
+    var h = testHero();
+    const dt: f32 = 1.0 / 60.0;
+    h.startFogGrace();
+
+    var t: f32 = 0;
+    while (t < FOG_GRACE_TAIL * 6.0) : (t += dt) h.update(dt, 0, 0, null);
+    try std.testing.expect(h.iFramed());
+    try std.testing.expectEqual(combat.HitOutcome.ignored, h.takeHit(.{ .dmg = 999 }, v3(1, 0, 0)));
+    try std.testing.expect(!h.dead);
+
+    // …and a creep under the threshold is still standing, or a shove would spend the whole of it.
+    t = 0;
+    while (t < FOG_GRACE_TAIL * 2.0) : (t += dt) h.update(dt, FOG_GRACE_STILL * 0.5 * dt, FOG_GRACE_STILL * 0.5, null);
+    try std.testing.expect(h.iFramed());
+
+    var ran: f32 = 0;
+    while (h.iFramed() and ran < FOG_GRACE_TAIL * 4.0) : (ran += dt) h.update(dt, WALK_SPEED * dt, WALK_SPEED, null);
+    std.debug.print("\n  fog grace: held {d:.1} s standing, then {d:.2} s of walking (tail {d:.2})\n", .{ FOG_GRACE_TAIL * 8.0, ran, FOG_GRACE_TAIL });
+    try std.testing.expectApproxEqAbs(FOG_GRACE_TAIL, ran, dt * 2.0);
+    try std.testing.expectEqual(combat.HitOutcome.taken, h.takeHit(.{ .dmg = 5 }, v3(1, 0, 0)));
+
+    // A DEATH ENDS IT — he may not respawn still wearing the last crossing's grace.
+    h.startFogGrace();
+    h.vit.hp = 1;
+    _ = h.takeHit(.{ .dmg = 999 }, v3(1, 0, 0));
+    try std.testing.expect(!h.dead); // …and it ate that blow, which is the point of it
+    h.startFogGrace();
+    h.enterDeath();
+    var d: f32 = 0;
+    while (d < DEATH_DUR + 0.1) : (d += dt) h.updateDeath(dt);
+    try std.testing.expect(!h.iFramed());
 }

@@ -520,6 +520,8 @@ pub const Warrior = struct {
     justDied: bool = false,
     threat: foe.Threat = .{},
     nav: foe.Nav = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`). Stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     heldOpen: bool = false,
     /// …AND A BODY MAY BE RAISED ONCE. A latch nothing clears (`shieldGone`'s arrangement): twice is a fight that cannot be won by killing things.
     wasRaised: bool = false,
@@ -653,7 +655,7 @@ pub const Warrior = struct {
         self.blockT += dt;
         for (&self.cds) |*c| c.* = mathx.maxF(0, c.* - dt);
         foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         self.trail.age(dt);
 
@@ -671,6 +673,8 @@ pub const Warrior = struct {
             .idle => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
                 self.setCarry(dt);
+                // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postDrive`), refused inside the ring.
+                _ = foe.postDrive(self, dt, bounds, WALK_SPEED, d, AGGRO_R, TURN_RATE, &movedDist, &moveSpeed, &moveYaw);
                 if (self.t >= 0.18) self.decide(d);
             },
             .approach => {
@@ -928,7 +932,7 @@ pub const Warrior = struct {
                 self.enter(.idle);
             },
             .hold => {
-                if (mathx.distXZ(self.pos, self.home) > foe.LEASH_HOME_R) {
+                if (mathx.distXZ(self.pos, foe.homeFor(self)) > foe.LEASH_HOME_R) {
                     self.homing = true;
                     self.enter(.approach);
                 } else self.enter(.idle);
@@ -2675,4 +2679,81 @@ test "NO ATTACK COMES OUT OF NOWHERE: every stroke of every moveset is visible f
             }
         }
     }
+}
+
+test "A UNIT WALKS ITS ORDERS — the junkyard dog roams its post, the held one does not, and neither notices the hero doing it" {
+    const dt: f32 = 1.0 / 60.0;
+    const home = mathx.ground(0, 0);
+    // Well outside `AGGRO_R`, so nothing here is a fight: these are the orders and nothing else.
+    const far = mathx.ground(0, AGGRO_R * 6);
+
+    var strayed: [3]f32 = .{ 0, 0, 0 };
+    for ([_]wf.FoeAi{ .hold, .roam, .roam_free }, 0..) |ai, i| {
+        var w = Warrior.spawnAs(.shieldman, home, 0, 1.0, 0.37);
+        w.post.arm(ai, home, &.{}, 0.37);
+        var t: f32 = 0;
+        while (t < 240.0) : (t += dt) {
+            _ = w.update(dt, far, 400.0, .{});
+            strayed[i] = @max(strayed[i], mathx.distXZ(w.pos, home));
+        }
+    }
+    std.debug.print("\n  orders over 4 min: hold strayed {d:.1} m, roam {d:.1} m, roam_free {d:.1} m (leash {d:.0} m)\n", .{ strayed[0], strayed[1], strayed[2], foe.ROAM_R });
+    // HOLD is what every unit did before any of this existed, and it must still do exactly that.
+    try std.testing.expectApproxEqAbs(@as(f32, 0), strayed[0], 1e-3);
+    // The leashed dog actually leaves its post…
+    try std.testing.expect(strayed[1] > foe.ROAM_R * 0.5);
+    // …and cannot walk itself off the leash one step at a time.
+    try std.testing.expect(strayed[1] <= foe.ROAM_R + 2.0);
+    // The unleashed one goes further than the leash ever allows, which is the whole difference between them.
+    try std.testing.expect(strayed[2] > foe.ROAM_R + 2.0);
+}
+
+test "AND A PATROL WALKS ITS LEGS, out and back rather than round and round" {
+    const dt: f32 = 1.0 / 60.0;
+    const home = mathx.ground(0, 0);
+    const far = mathx.ground(0, AGGRO_R * 6);
+    var w = Warrior.spawnAs(.greatsword, home, 0, 1.0, 0.2);
+    w.post.arm(.patrol, home, &.{ .{ .x = 14, .z = 0 }, .{ .x = 14, .z = 11 } }, 0.2);
+    var reachedFar = false;
+    var backHome = false;
+    var t: f32 = 0;
+    var maxD: f32 = 0;
+    while (t < 180.0) : (t += dt) {
+        _ = w.update(dt, far, 400.0, .{});
+        const d = mathx.distXZ(w.pos, home);
+        maxD = @max(maxD, d);
+        if (mathx.distXZ(w.pos, mathx.ground(14, 11)) < 2.0) reachedFar = true;
+        if (reachedFar and d < 2.0) backHome = true;
+    }
+    std.debug.print("  patrol: reached the far leg {}, came back to its post {}, furthest {d:.1} m\n", .{ reachedFar, backHome, maxD });
+    try std.testing.expect(reachedFar and backHome);
+}
+
+test "AN ORDERED UNIT IS STILL ON A TETHER — only the free roamer is off it, and it is off it by definition" {
+    const dt: f32 = 1.0 / 60.0;
+    const home = mathx.ground(0, 0);
+    // **THE LEASH ASKS A DIFFERENT QUESTION FROM "AM I AT MY POST"** (`foe.tetherFor` against `foe.homeFor`).
+    // Fed the go-home anchor it measured zero for ever, and an ordered guard followed him across the map.
+    for ([_]wf.FoeAi{ .hold, .roam, .patrol }) |ai| {
+        var w = Warrior.spawnAs(.shieldman, home, 0, 1.0, 0.4);
+        w.post.arm(ai, home, &.{.{ .x = 6, .z = 0 }}, 0.4);
+        // Dragged well past the tether, with nobody near enough to hold its attention.
+        w.pos = mathx.ground(0, foe.leashR(AGGRO_R) + 30.0);
+        w.leash.noteSeen();
+        var t: f32 = 0;
+        while (t < foe.LEASH_CALM + 2.0) : (t += dt) {
+            _ = w.update(dt, mathx.ground(0, 400), 800.0, .{});
+        }
+        try std.testing.expect(w.leash.goingHome());
+    }
+    // …and the UNLEASHED one is not dragged back, which is the whole difference between the two dogs.
+    var free = Warrior.spawnAs(.shieldman, home, 0, 1.0, 0.4);
+    free.post.arm(.roam_free, home, &.{}, 0.4);
+    free.pos = mathx.ground(0, foe.leashR(AGGRO_R) + 30.0);
+    free.leash.noteSeen();
+    var t: f32 = 0;
+    while (t < foe.LEASH_CALM + 2.0) : (t += dt) {
+        _ = free.update(dt, mathx.ground(0, 400), 800.0, .{});
+    }
+    try std.testing.expect(!free.leash.goingHome());
 }

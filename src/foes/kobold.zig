@@ -284,6 +284,8 @@ pub const Kobold = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     facing: f32 = 0,
@@ -473,7 +475,7 @@ pub const Kobold = struct {
         // THE BILL COMES DUE ON THE WAY OUT: the one stagger nothing hit it for (`hero.tickPoison`'s beat).
         if (self.vit.ailEnded(.berserk) and !self.gone) self.stagger(true);
         foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
         self.castCd = mathx.maxF(0, self.castCd - dt);
         self.slingCd = mathx.maxF(0, self.slingCd - dt);
         self.biteCd = mathx.maxF(0, self.biteCd - dt);
@@ -491,6 +493,8 @@ pub const Kobold = struct {
         switch (self.state) {
             .idle => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
+                // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postDrive`), refused inside the ring.
+                _ = foe.postDrive(self, dt, bounds, WALK_SPEED, d, AGGRO_R, TURN_RATE, &movedDist, &moveSpeed, &moveYaw);
                 if (self.t >= 0.25) self.decide(d);
             },
             .approach, .reposition => {

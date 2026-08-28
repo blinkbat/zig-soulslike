@@ -319,6 +319,8 @@ pub const Shade = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     facing: f32 = 0,
@@ -455,7 +457,7 @@ pub const Shade = struct {
         for (&self.cds) |*c| c.* = mathx.maxF(0, c.* - dt);
         self.blinkCd = mathx.maxF(0, self.blinkCd - dt);
         self.spookLeft = mathx.maxF(0, self.spookLeft - dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
         foe.tickParticles(&self.parts, dt, self.pos.y);
 
@@ -469,6 +471,10 @@ pub const Shade = struct {
             .idle => {
                 self.easeRest(dt);
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
+                // **A SHADE WALKS ITS ROUND AT ITS DRIFT**, not at a stride — it has no legs, and that is its
+                // own travel speed everywhere else in this file.
+                const ps = foe.postStep(self, dt, bounds, DRIFT_SPEED, d, AGGRO_R);
+                if (ps.yaw) |w| self.facing = mathx.approachAngle(self.facing, w, TURN_RATE * dt);
                 self.decide(d, hero);
             },
             .drift => {

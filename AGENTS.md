@@ -52,6 +52,9 @@ implement what's asked and nothing extra. Don't commit, push, or create branches
   build cannot overwrite the exe. Build with `--prefix zig-out-dev` when locked.
 - `--shot-props` renders every kind alone into `shots\props\`. For ONE model the editor's object viewer is
   faster.
+- `--shot-art` lays the whole 2D set on contact sheets in `shots\art\`: every editor glyph at its 18 px and
+  at 3x, every item picture at the 34 px bag cell and a plate, the spells, the ailments and the pad kit. A glyph
+  set is judged as a SET, and this is the only frame that shows one.
 - **AN EYE PASS IS A LOOP, SO SHOOT ONE STAGE** — `--shot --shot-only <substr>` (`shots.onlyStage`) runs the
   named stage and skips every other frame's render and write: 32 s against 3m38s for the lot. A filtered run
   still SIMULATES everything, so nothing a later stage stands on goes unbuilt.
@@ -882,7 +885,10 @@ moved. The muzzle and the two ears are re-let as petals rather than left nodding
 ### The fungal duo (`fungalduo.zig`) — two bodies, one encounter
 
 Owner's creature, owner's brief: a SWORDSMAN who stays in your face and a MAGUS who will not let you have the
-rest of the floor. Both on the shared humanoid rig at 1.34 of the hero (a 2.42 m crown).
+rest of the floor. Both on the shared humanoid rig at 1.48 of the hero (a 2.66 m crown). **THE HEIGHT IS
+AUTHORED AS METRES OVER THE HERO AND THE WIDTHS RIDE IT** (`SCALE`, `HIP_HALF`, `SHOULDER_HALF`) — written out
+as their own 1.34 and 1.30 the widths were `SCALE` copied by hand, and the first time the crown moved the body
+under it stayed the old build's width.
 
 - **THEY DIVIDE THE GROUND AND NEITHER COVERS THE OTHER'S.** The swordsman owns the ring you stand in
   (`SW_SLASH_R` 2.2, lunging 3.4–9.0) and the magus owns everywhere past it (`MG_FLEE_R` 7.0 to `MG_KEEP_R`
@@ -910,18 +916,30 @@ rest of the floor. Both on the shared humanoid rig at 1.34 of the hero (a 2.42 m
   by the convention — put the point 3.73 m up over a hero column that ends at 1.71.
 - **THE VENOM IS THE CLOCK ON THE FIGHT.** Chaos builds poison, and a guard answers the DAMAGE and not the
   buildup, so blocking every stroke still breaks the bar in 5. Both strokes carry it or the clock is on one.
+- **THE LUNGE IS PRICED AS A COMMITMENT, WHICH MEANS IT IS RARE** (owner: lunges come too often). At
+  `SW_LUNGE_CD` 3.6 it came round every 4.6 s measured — near enough the slash's own cadence that the whole
+  3.4–9.0 band read as one move on repeat. At 6.4 it is one throw in ~7.7 s, and the 4 m band bills 3.3 a
+  second against 6.9. **AND THE STEEL CAME DOWN A SECOND TIME** (owner: does too much damage) — 23 raw to 18 on
+  the slash and 32 to 25 on the lunge, all of it off `dmg`, because the VENOM is the clock the fight runs on.
+  That put one slash inside 1.5× of the orb, so the bar the tall-and-sturdy test holds moved onto the LUNGE:
+  the orb is pure chaos and cutting it would come off the venom too.
 - **THE JUMPBACK IS A REPOSITION AND ITS TRIGGER IS HIS OWN CLOCK** (`crowd`) — how long something has stood
   inside his swing, which is a distance and a clock, never a read of what the player pressed. It lands him
   inside his own lunge band, so what follows it is the lunge coming back.
 - **THE MAGUS'S BUNCH IS THE PUNISH AND THE ORB IS THE ATTRITION.** A bunch of four sown AROUND him (standing
   still is what it punishes), 1.9 s of growing, 0.85 s of glowing, then 3.1 m of burst — the cap's COLOUR is
-  its clock, because a warning you have to remember is not a warning.
+  its clock, because a warning you have to remember is not a warning. **THE ORB IS A DRIP AND THE CADENCE IS
+  WHAT SAYS SO** (`MG_ORB_CD` 1.5 → 2.3, owner: chaos orbs could come out a bit slower) — the flight stays at
+  `ORB_SPEED`. Most of the caster side's 14 a second is the BUNCH, not the orbs; measure before cutting either.
 - **THE DISSOLVE IS LONG ON PURPOSE AND A STAGGER SPENDS IT.** Caught halfway out it comes back solid and owes
   the whole cooldown, so pressure through the fade is the answer rather than a race. It leaves SLUMBER MIST
   where it stood, billed as a soak on the bloom's own meter — and the mist does not bill on the frame it
   appears, because the magus leaves it behind as it goes and that would be a blow with no tell.
 - **NEITHER CAST HAS A BAND INSIDE THE RING IT WALKS OUT OF** (`MG_ORB_MIN`, `MG_SPROUT_MIN`, both derived off
   `MG_FLEE_R`). `.back` is answered before either, so a lower minimum is a number nothing can ever reach.
+- **AND THE ARENA IS A ROOM NOW, NOT A DOORWAY IN OPEN GROUND** — `mycelian_hall` on the bench and
+  `fungal_hollow` in the shipped map, the second traced off the rock that was already round the pair (one corner
+  per 30 deg, each on the nearest cliff's own collision radius, the fog gate standing as the corner at due west).
 - The bench is `worlds/test_fungalduo.world` — the pair on an arena floor with one pillar, at the distance the
   fight is meant to hold. `--map worlds/test_fungalduo.world`.
 
@@ -2260,6 +2278,72 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
 - **THE FLAME MATERIAL IS THE ONE THING DRAWN SEMI-TRANSPARENT BY ITS MATERIAL** (the faded hero under an aim is
   the one drawn so by a per-draw uniform). Opacity is graded off the emissive (`FLAME_A_CORE`→`FLAME_A_TIP`);
   depth WRITE stays on so tongues don't stack into a brighter core.
+- **AN ARENA IS A ROOM AND THE FOG GATE IS ONLY ITS DOOR** (`worldfmt.Arena`, the `arena:` row, `game.holdInRoom`).
+  The ward refuses ONE line 0.8 m thick; on open ground that is a gate you stroll round, and a creature that
+  BLINKS never touches the line at all — the duo's magus dissolved 13 m out of its own fight (owner). The row is
+  an XZ polygon plus its own `boss=` seal, and it holds every body inside it, HIS included, for exactly as long
+  as a name on it still stands. Then it opens, on the same tally and the same frame the gate starts fading
+  (`game.solveArenaSeals`, beside `markWards`).
+  - **IT IS A PUSH-OUT, NOT THE WARD'S REFUSAL, AND IT IS ASKED ON THE STEP'S START.** There is no segment to
+    refuse on a blink, so only being stood back inside answers it; and `Arena.hold` pushes an OUTSIDE point IN,
+    so asked about where a body ended up it would reach out and drag a creature walking past into the fight.
+  - **THE SEAL IS THE ROOM'S AND THE DOOR HAS ITS OWN COPY**, so the two are PINNED by a test over every shipped
+    map rather than trusted to agree — a wall that outlives its door locks you into a fight that is over, and a
+    door that outlives its wall is a room you walk out of the back of. The editor closes a room by INHERITING
+    the seal off the gate standing in the wall you just drew, and says so loudly when there is no gate on it.
+  - **A HAND-DRAWN OUTLINE CAN CROSS ITSELF** (`Arena.simple`) — a figure-of-eight's even-odd test answers
+    `false` in its own middle, so it holds nothing exactly where it looks most like a room. Solving one corner
+    per 30 deg about a single centre, in bearing order, cannot produce one; a test refuses any shipped map that does.
+  - **A BOSS BAR MAY NOT BE GATED ON A RANGE THE CREATURE'S OWN DESIGN EXCEEDS** (`game.sealedInWith`). MEASURED:
+    the magus keeps to `MG_KEEP_R` 16 m and blinks `MG_REAPPEAR_R` 13 more — 29 m against a bar ring of 26 — and
+    `Leash.roused` is a 14 s timer topped up only by being HIT, so chasing the swordsman let it lapse and the bar
+    faded out mid-fight. Being SEALED IN with something is the fight whatever the range; `AGGRO_R` went to 30 and
+    a comptime block by `MG_REAPPEAR_R` now holds the blink inside the ring for the next creature.
+- **A UNIT'S ORDERS ARE STAREDIT'S, AND THEY ARE WALKED NOW** (`wf.FoeAi`, `foe.Post`, `foe.postStep`). JUNKYARD
+  DOG is `roam` — roaming about a post, leashed — and `roam_free` is the same dog off its chain; `patrol` walks
+  the `wp=` legs out and back; `hold` is what every unit did before this existed, and it is the DEFAULT, so a
+  map that never says `ai=` loads unchanged.
+  - **THE CREATURE OWES A FIELD AND ONE CALL.** `post: foe.Post`, and `foe.postStep` from its IDLE branch,
+    filling the same `movedDist`/`moveSpeed`/`moveYaw` its chase branch fills — a helper that advanced the gait
+    itself would run the walk cycle at double speed on exactly the frames the body is walking. Arming is free:
+    `resetGroup`/`resetRoles` stamp the authored orders on at spawn, duck-typed.
+  - **AND "BACK TO YOUR POST" MEANS THE POST, NOT THE SPAWN PIN** (`foe.homeFor`). Every roamer got three
+    metres out and turned round, because a creature's own `.hold` arm compares against where it was placed and
+    `LEASH_HOME_R` is 3 m: the orders and the go-home rule pulled against each other and the orders lost. The
+    same anchor feeds `tickLeash`, or `roam_free` — unleashed BY DEFINITION — is dragged back by the tether.
+  - **WHICH UNITS GET THEM IS THE AUTHOR'S CALL, MADE PER UNIT IN THE EDITOR** (owner: let me assign them).
+    So every creature that CAN move takes them — 26 of 29 groups — and `hold` being the default is what keeps a
+    map that never says `ai=` unchanged. The three that cannot are the FIXTURES, and `game.NO_ORDERS` names them
+    with a reason, enforced both ways: a creature added with no `Post` and no line there is an order the editor
+    lets you assign that silently does nothing.
+  - **AND EACH WALKS IT IN ITS OWN IDIOM.** `foe.postDrive` is the leg-and-gait case (nine of them share it),
+    `postAmble` the four that ease a `self.speed`, and `postWant` hands back only the PLACE — which is what a
+    hopper leaps to (`frog`, `shroom`), a flyer cruises to (`leechfly`, `blinkbat` — it drifts its round rather
+    than blinking it, or the blink has no tell left for the flank), and a quadruped simply walks to instead of
+    home (`ravager`, `skitterer`). A round stops at `foe.ARRIVE`: the ravager's own `HOME_R` was 1.2 against it
+    and the body stalled a tenth of a metre short of a mark it could then never reach.
+  - **A UNIT UNDER ORDERS READS AS ONE FROM ACROSS THE MAP** — the editor draws its box in the live tone and a
+    leashed roamer's tether as a circle, because which bodies have a round is the one thing you cannot see on a
+    map full of identical boxes.
+- **THE CRIB NAMES EVERY GESTURE, OR THE VERB DOES NOT EXIST** (`editor.CRIBS`, widest-that-fits). It named
+  eight and the editor bound twenty-five: undo, redo, cut, copy, paste, select-all, save, delete, grid snap,
+  brush size, re-roll and playtest were all live and written NOWHERE on screen. An editing tool whose edit
+  verbs are undiscoverable is one you can build in and not revise in.
+- **AND NO SILENT CAP MEANS THE AUTHOR CAN SEE IT** (`env.opsCapped`, the editor's status line). The count
+  existed and was printed by a TEST — the one person who needs it is the author cranking a belt's count, and
+  a budget that bites real content has made the world quietly smaller.
+- **A CROSSING IS A GRACE, AND THE CLOCK ON IT IS HIS** (`hero.FOG_GRACE_TAIL` 1.6 s, `hero.startFogGrace`,
+  folded into the one `iFramed` the roll already answers). He is untouchable from the sheet to the far side and
+  stays that way for as long as he STANDS there; the tail runs only once he is moving under his own power, and
+  it is measured off ground SPEED (`FOG_GRACE_STILL`) so it cannot last longer on a slower machine.
+  **`updateGateWalk` RE-HOLDS IT EVERY FRAME rather than arming it at the door** — the walk moves him, and a
+  grace armed at the door would arrive nearly spent. A death clears it (`respawn`), and a test walks both halves.
+- **EVERY BAR THE RUN LEFT ON SCREEN GOES WHILE THE SCREEN IS BLACK** (`game.dropRunHud`) — the death card's
+  black, the bonfire's and the map cut's are three doors and all three already re-home the field behind them.
+  `bossK` and `spiritK` only tick inside `hud`, which the chrome fade and `rest.active()` both stop calling, so
+  they FROZE at full: the rail came back up carrying the dead run's HP and the dead run's chip tail and then
+  faded out in front of him, as the black lifted, instead of behind it. The chip statics are hud module scratch
+  and need their own `hud.dropBossBars`.
 - **THE FOG GATE IS A VEIL** (`props.foggate`, `propfx.fogGateMesh`, `Mat.fog`). Laid down in `env.drawVeils`
   AFTER everything opaque, because its own depth write at the head of the sheet is a rectangle of missing world
   behind it. `build` is the two threshold stones and the sheet is the veil; `solid` is TRUE.
@@ -2415,14 +2499,15 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   straight legs and rest-offset feet — no knee flex, no foot stagger, no weight on the back foot, through
   either stroke. `legBrace` only drops the pelvis. It cannot be bolted on AFTER `legChain` (that is the hand
   that levels the ankle), and a bespoke walk is forbidden, so the stance has to go THROUGH `legChain` — every
-  creature's change, not his. No RIPOSTE behind the parry. His arena is authored by HAND in the `.world` file;
-  there is no arena brush and no way to say "these props are a room".
+  creature's change, not his. No RIPOSTE behind the parry. His arena has a `foggate` on it but no `arena:` row
+  yet — the Locations tab's ARENA brush draws one, and the duo's two are the worked examples.
 - **Necromancer:** no `necro_*` voice family (borrows the shade's, the wand's and the skeletons'). Nothing
   raises a BODY but this creature, so `foe.rekindle` still has two callers — the ancient priest claws a new
   skitterer out of the ground rather than reanimating anything, and it is the second COLD source.
 - **Combat:** no criticals, no guard counter, no AR × motion-value damage (flat constants). Nothing scales a
-  cast. Fifteen creatures carry parry windows now; what carries none says why at its own impact site
-  (projectiles, ground discs, poured elements — broodlings out on purpose).
+  cast. Every `FOE_GROUPS` row carries a parry window except the ones `game.NO_PARRY` excuses, and the pairing
+  is comptime-enforced both ways, so the count here would only ever go stale: what carries none says why at its
+  own impact site (projectiles, ground discs, poured elements — broodlings out on purpose).
 - **The jump exists but nothing hangs off it** — no jump ATTACK, no fall damage at any height, and no creature's
   move misses him for being over it (a per-move height would be authored at each `toImpact` the way a parry
   window is).
@@ -2446,17 +2531,21 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   is reused across run and sprint.
 - **Elevation exists but nothing is authored with it:** no falling, terrain casts no shadows, painted water is
   one level plane.
-- **The script layer is foundations only. THE EDITOR CANNOT AUTHOR THE SCRIPT** — no Triggers layer; triggers
-  and dialogs are hand-written and the editor round-trips them untouched because the writer emits them off the
-  same tables. NPCs it does place: the unit brush is the foe kinds, then the npc kinds, then an eraser (pinned
-  at comptime in `editor.zig`), and `dlg=` on a placed npc is still text. Two `NpcKind` (`wanderer`,
-  `merchant`). No quest log, no journal. A roamer wanders inside a radius about its post. **A UNIT'S `ai=` AND
-  ITS `wp=` ROUTE ARE IN THE FORMAT AND NOT YET IN ANYBODY'S LEGS** — `worldfmt` parses and writes them, the
-  editor round-trips them (and moves them with the body), and `foe.Post` walks a route; no creature embeds a
-  `Post` yet, and no panel paints one. `deaths brood_sac` is billed off the brood's own `bursts`.
-- **Three editor holes, all fields the FORMAT has and the panels do not.** `Op.r1` on an `at` is how far off the
-  ground that prop is lifted (`env.Placer.expand`) and no panel exposes it. `Op.field` thins a scatter by the
-  ground-cover noise (`env.accepts`) and is ON by default for a `belt`, with no control either way. And **NO MAP
-  CAN SAY WHERE THE PLAYER STARTS**: `game.beginGame` plants him at (0, 4) facing south in every world, which is
-  why a test map has to be built around that spot. Everything else the writer emits has a panel, plus
-  undo/redo, cut/copy/paste and grid snap.
+- **The script layer is foundations only, but it is AUTHORABLE now** (`editor.drawScriptModal`, the top bar's
+  Script button beside Objects/World/Sounds). Triggers, their conditions and their actions are made, named,
+  re-kinded and thrown away from a modal — and a MODAL rather than a map layer, because a trigger is not a
+  place and the one condition that is a rectangle already has Locations to name it. Still hand-written: the
+  DIALOG trees themselves (nodes and choices), and the flag/counter/timer TABLES — the modal cycles the names a
+  map already declares and cannot coin a new one. Two `NpcKind` (`wanderer`, `merchant`). No quest log, no
+  journal. `deaths brood_sac` is billed off the brood's own `bursts`.
+- **THE EDITOR NOW REACHES EVERY FIELD THE FORMAT HAS.** `Op.r1` on an `at` is the prop's LIFT off the ground
+  (`env.Placer.expand`) and has a row; `Op.field` has its "cover field" checkbox; an npc's `dlg=` is a chip per
+  conversation the map declares. **AND A MAP SAYS WHERE THE PLAYER STARTS** (`worldfmt.Start`, the `start:`
+  row, the World modal, drawn on the map as a ring and a bearing) — hard-coded at (0, 4) facing south, every
+  test map had to be built around that one spot whatever its own shape was.
+- **EVERY REGION IS SELECTED, MOVED, RESIZED AND NAMED THE SAME WAY** (`editor.Grab`, `pickRegion`,
+  `dragRegion`). Zones, locations, clearings and rooms were all create-and-delete only: a rectangle you got
+  wrong could only be erased and redrawn, losing its mix or its weather, and a LOCATION could never be renamed
+  at all — which made the layer useless for script, since `Cond.region` and every trigger find one BY NAME.
+  One union rather than a flag per kind, handles drawn as posts, and the handle under the mouse in the live
+  tone. Banked on the first frame a drag moves something, so a plain selection click leaves no undo step.

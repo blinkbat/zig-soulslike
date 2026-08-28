@@ -49,6 +49,8 @@ pub fn main() void {
         .props
     else if (hasArg(argv, "--shot-land"))
         .land
+    else if (hasArg(argv, "--shot-art"))
+        .art
     else if (hasArg(argv, "--shot"))
         .shots
     else

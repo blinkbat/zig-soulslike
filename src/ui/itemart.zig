@@ -283,8 +283,8 @@ fn wakersNail(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
     rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.04 + 1.0 * k), s * 0.20, SHADOW);
-    arc(cx, cy + s * 0.03, s * 0.175, std.math.pi * 0.10, std.math.tau * 0.97, 20, s * 0.052, s * 0.030, IRON_DK);
-    arc(cx - s * 0.02, cy + s * 0.01, s * 0.150, std.math.pi * 1.00, std.math.pi * 1.55, 8, 1.6 * k, 0.9 * k, rgba(158, 150, 138, 220));
+    arc(cx, cy + s * 0.03, s * 0.175, std.math.pi * 0.10, std.math.tau * 0.97, 20, s * 0.052, s * 0.030, rgba(112, 104, 94, 255));
+    arc(cx - s * 0.02, cy + s * 0.01, s * 0.150, std.math.pi * 1.00, std.math.pi * 1.55, 8, 1.6 * k, 0.9 * k, rgba(196, 188, 174, 235));
     quad(
         v2(cx + s * 0.14, cy - s * 0.19),
         v2(cx + s * 0.26, cy - s * 0.15),
@@ -365,8 +365,8 @@ fn bloodwine(cx: f32, cy: f32, px: f32) void {
 fn waxStoppedHood(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
-    const cloth = rgba(118, 108, 92, 255);
-    const clothLo = rgba(76, 70, 60, 255);
+    const cloth = rgba(158, 146, 126, 255);
+    const clothLo = rgba(108, 100, 86, 255);
     const wax = rgba(232, 222, 186, 255);
     rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.08 + 1.4 * k), s * 0.25, rgba(0, 0, 0, 112));
     arc(cx, cy + s * 0.06, s * 0.235, std.math.pi * 0.98, std.math.tau * 1.02, 16, s * 0.24, s * 0.15, clothLo);
@@ -623,12 +623,12 @@ fn pittedHelm(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
     var rng = mathx.Rng.init(0x4E1);
-    const iron = rgba(132, 124, 112, 255);
-    const ironLo = rgba(88, 82, 74, 255);
+    const iron = rgba(170, 162, 148, 255);
+    const ironLo = rgba(116, 108, 98, 255);
     rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.02 + 1.4 * k), s * 0.26, rgba(0, 0, 0, 115));
     rl.drawCircleV(v2(cx, cy - s * 0.03), s * 0.245, ironLo);
     rl.drawCircleV(v2(cx - s * 0.03, cy - s * 0.06), s * 0.205, iron);
-    arc(cx - s * 0.02, cy - s * 0.05, s * 0.20, std.math.pi * 1.06, std.math.pi * 1.62, 10, 2.0 * k, 1.0 * k, rgba(186, 178, 162, 255));
+    arc(cx - s * 0.02, cy - s * 0.05, s * 0.20, std.math.pi * 1.06, std.math.pi * 1.62, 10, 2.0 * k, 1.0 * k, rgba(222, 214, 198, 255));
     quad(v2(cx - s * 0.235, cy + s * 0.02), v2(cx + s * 0.235, cy + s * 0.02), v2(cx + s * 0.185, cy + s * 0.24), v2(cx - s * 0.185, cy + s * 0.24), ironLo);
     quad(v2(cx - s * 0.125, cy + s * 0.05), v2(cx + s * 0.125, cy + s * 0.05), v2(cx + s * 0.10, cy + s * 0.20), v2(cx - s * 0.10, cy + s * 0.20), rgba(14, 12, 10, 240));
     rl.drawLineEx(v2(cx, cy + s * 0.04), v2(cx, cy + s * 0.13), 1.6 * k, iron);
@@ -662,8 +662,8 @@ fn bandedWarbelt(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
     var rng = mathx.Rng.init(0xBE17);
-    const hide = rgba(88, 62, 42, 255);
-    const hideLt = rgba(126, 92, 62, 255);
+    const hide = rgba(124, 90, 62, 255);
+    const hideLt = rgba(170, 128, 88, 255);
     rl.drawCircleV(v2(cx + 1.2 * k, cy + 1.4 * k), s * 0.26, rgba(0, 0, 0, 105));
     quad(v2(cx - s * 0.34, cy - s * 0.09), v2(cx + s * 0.30, cy - s * 0.12), v2(cx + s * 0.30, cy + s * 0.05), v2(cx - s * 0.34, cy + s * 0.08), hide);
     quad(v2(cx - s * 0.34, cy - s * 0.09), v2(cx + s * 0.30, cy - s * 0.12), v2(cx + s * 0.30, cy - s * 0.07), v2(cx - s * 0.34, cy - s * 0.04), hideLt);
@@ -682,9 +682,9 @@ fn bandedWarbelt(cx: f32, cy: f32, px: f32) void {
 fn marchboots(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
-    const hide = rgba(74, 56, 42, 255);
-    const hideDk = rgba(46, 34, 26, 255);
-    const sole = rgba(58, 50, 44, 255);
+    const hide = rgba(118, 90, 66, 255);
+    const hideDk = rgba(76, 56, 42, 255);
+    const sole = rgba(96, 86, 76, 255);
     rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.18 + 1.4 * k), s * 0.26, SHADOW);
     quad(v2(cx - s * 0.02, cy - s * 0.24), v2(cx + s * 0.15, cy - s * 0.24), v2(cx + s * 0.17, cy + s * 0.10), v2(cx - s * 0.01, cy + s * 0.10), hideDk);
     quad(v2(cx - s * 0.01, cy + s * 0.05), v2(cx + s * 0.30, cy + s * 0.09), v2(cx + s * 0.30, cy + s * 0.17), v2(cx - s * 0.01, cy + s * 0.15), hideDk);
@@ -692,7 +692,7 @@ fn marchboots(cx: f32, cy: f32, px: f32) void {
     quad(v2(cx - s * 0.27, cy - s * 0.20), v2(cx - s * 0.17, cy - s * 0.21), v2(cx - s * 0.15, cy - s * 0.09), v2(cx - s * 0.26, cy - s * 0.08), rgba(104, 80, 58, 255));
     quad(v2(cx - s * 0.25, cy + s * 0.09), v2(cx + s * 0.08, cy + s * 0.13), v2(cx + s * 0.08, cy + s * 0.21), v2(cx - s * 0.25, cy + s * 0.19), hide);
     quad(v2(cx - s * 0.26, cy + s * 0.19), v2(cx + s * 0.09, cy + s * 0.21), v2(cx + s * 0.09, cy + s * 0.26), v2(cx - s * 0.26, cy + s * 0.24), sole);
-    rl.drawCircleV(v2(cx + s * 0.03, cy + s * 0.17), s * 0.03, rgba(112, 92, 70, 220));
+    rl.drawCircleV(v2(cx + s * 0.03, cy + s * 0.17), s * 0.03, rgba(160, 134, 104, 230));
     rl.drawLineEx(v2(cx - s * 0.20, cy - s * 0.10), v2(cx - s * 0.11, cy - s * 0.08), 1.2 * k, hideDk);
     rl.drawLineEx(v2(cx - s * 0.20, cy - s * 0.02), v2(cx - s * 0.10, cy), 1.2 * k, hideDk);
 }
@@ -748,8 +748,25 @@ fn spiritScroll(cx: f32, cy: f32, px: f32, glyph: SpiritGlyph) void {
 fn sorceryScroll(cx: f32, cy: f32, px: f32, sp: combat.Spell) void {
     const s = px;
     scrollSheet(cx, cy, px);
-    spellArt(sp, cx, cy - s * 0.03, s * 0.34, true);
+    const tint = spellTint(sp);
+    rl.drawLineEx(v2(cx - s * 0.23, cy + s * 0.12), v2(cx + s * 0.22, cy + s * 0.10), s * 0.075, tint);
+    rl.drawLineEx(v2(cx - s * 0.23, cy + s * 0.145), v2(cx + s * 0.22, cy + s * 0.125), 1.2 * strokeK(px), rgba(0, 0, 0, 90));
+    spellArt(sp, cx, cy - s * 0.07, s * 0.48, true);
     scrollRoll(cx, cy, px);
+}
+
+/// The colour each spell picture is built from, for the one place the picture itself is too small to read.
+pub fn spellTint(sp: combat.Spell) rl.Color {
+    return switch (sp) {
+        .bolt, .siphon => CHAOS,
+        .roots => ROOT_HEART,
+        .rime => RIME_ICE,
+        .levin => LEVIN_HOT,
+        .lance => FIRE,
+        .sunder => rgba(148, 142, 132, 255),
+        .babble => rgba(172, 202, 82, 255),
+        .bidding => CHARM_ROSE,
+    };
 }
 
 fn scrollSheet(cx: f32, cy: f32, px: f32) void {
@@ -914,8 +931,8 @@ fn leechSignet(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
     rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.04 + 1.0 * k), s * 0.20, SHADOW);
-    arc(cx, cy + s * 0.04, s * 0.17, 0, std.math.tau, 18, s * 0.075, s * 0.05, rgba(44, 34, 30, 255));
-    arc(cx - s * 0.04, cy, s * 0.16, std.math.pi * 0.9, std.math.pi * 1.5, 8, 1.6 * k, 0.8 * k, rgba(120, 104, 92, 255));
+    arc(cx, cy + s * 0.04, s * 0.17, 0, std.math.tau, 18, s * 0.075, s * 0.05, rgba(84, 66, 58, 255));
+    arc(cx - s * 0.04, cy, s * 0.16, std.math.pi * 0.9, std.math.pi * 1.5, 8, 1.6 * k, 0.8 * k, rgba(166, 144, 128, 255));
     rl.drawCircleV(v2(cx, cy - s * 0.16), s * 0.075, CRIMSON);
     rl.drawCircleV(v2(cx - s * 0.02, cy - s * 0.18), 1.4 * k, rgba(255, 200, 190, 220));
     rl.drawCircleV(v2(cx, cy - s * 0.10), 1.6 * k, rgba(44, 34, 30, 255));
@@ -956,8 +973,8 @@ fn kilnDraught(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
     var rng = mathx.Rng.init(0x4C17);
-    const horn = rgba(96, 82, 66, 255);
-    const hornLo = rgba(62, 52, 42, 255);
+    const horn = rgba(136, 118, 96, 255);
+    const hornLo = rgba(92, 78, 62, 255);
     const ash = rgba(148, 142, 134, 255);
     rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.14 + 1.4 * k), s * 0.26, SHADOW);
     quad(v2(cx - s * 0.24, cy - s * 0.06), v2(cx + s * 0.25, cy - s * 0.08), v2(cx + s * 0.13, cy + s * 0.30), v2(cx - s * 0.11, cy + s * 0.29), horn);
@@ -1079,8 +1096,8 @@ fn bloodtingeSignet(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
     rl.drawCircleV(v2(cx + 1.0 * k, cy + s * 0.03 + 1.0 * k), s * 0.20, SHADOW);
-    arc(cx, cy + s * 0.02, s * 0.175, 0, std.math.tau, 20, s * 0.066, s * 0.066, rgba(96, 74, 66, 255));
-    arc(cx, cy + s * 0.02, s * 0.145, std.math.pi * 0.15, std.math.pi * 1.05, 12, 1.3 * k, 1.3 * k, rgba(168, 140, 128, 255));
+    arc(cx, cy + s * 0.02, s * 0.175, 0, std.math.tau, 20, s * 0.066, s * 0.066, rgba(134, 104, 94, 255));
+    arc(cx, cy + s * 0.02, s * 0.145, std.math.pi * 0.15, std.math.pi * 1.05, 12, 1.3 * k, 1.3 * k, rgba(206, 176, 162, 255));
     rl.drawCircleV(v2(cx, cy - s * 0.17), s * 0.105, rgba(74, 56, 52, 255));
     rl.drawCircleV(v2(cx, cy - s * 0.175), s * 0.072, WEED_DK);
     rl.drawCircleV(v2(cx - s * 0.02, cy - s * 0.195), s * 0.030, WEED_LT);
@@ -1592,27 +1609,31 @@ pub fn roots(cx: f32, cy: f32, px: f32, on: bool) void {
     var rng = mathx.Rng.init(0x600751);
     const a: u8 = if (on) 255 else 120;
     const bark = rgba(ROOT_BARK.r, ROOT_BARK.g, ROOT_BARK.b, a);
-    const heart = rgba(ROOT_HEART.r, ROOT_HEART.g, ROOT_HEART.b, a);
-    const lit = rgba(CHAOS.r, CHAOS.g, CHAOS.b, if (on) 210 else 90);
-    const halo = rgba(CHAOS.r, CHAOS.g, CHAOS.b, if (on) 70 else 30);
+    const wood = rgba(122, 92, 60, a);
+    const lit = rgba(CHAOS_LT.r, CHAOS_LT.g, CHAOS_LT.b, a);
+    const glow = rgba(CHAOS.r, CHAOS.g, CHAOS.b, a);
+    const halo = rgba(CHAOS.r, CHAOS.g, CHAOS.b, if (on) 80 else 34);
     const soil = cy + s * 0.22;
     var i: u32 = 0;
-    while (i < 5) : (i += 1) {
-        const t = (@as(f32, @floatFromInt(i)) + rng.range(-0.22, 0.22)) / 4.0 - 0.5;
-        const foot = v2(cx + t * s * 0.62, soil + rng.range(-0.02, 0.02) * s);
-        const rise = s * rng.range(0.20, 0.40);
-        const lean = rng.range(-0.34, 0.34) * s * 0.5;
+    while (i < 3) : (i += 1) {
+        const t = (@as(f32, @floatFromInt(i)) + rng.range(-0.15, 0.15)) / 2.0 - 0.5;
+        const foot = v2(cx + t * s * 0.56, soil + rng.range(-0.02, 0.02) * s);
+        const rise = s * rng.range(0.30, 0.46);
+        const lean = rng.range(-0.30, 0.30) * s * 0.5;
         const knee = v2(foot.x + lean * 0.35, foot.y - rise * 0.55);
         const tip = v2(knee.x + lean, knee.y - rise * 0.45);
-        const w = rng.range(2.2, 3.1) * k;
-        rl.drawLineEx(foot, knee, w, bark);
-        rl.drawLineEx(knee, tip, w * 0.72, bark);
-        rl.drawCircleV(tip, w * 0.44, heart);
-        rl.drawCircleV(tip, w * 1.15, halo);
-        rl.drawCircleV(tip, w * 0.30, lit);
+        const w = rng.range(4.0, 5.2) * k;
+        rl.drawLineEx(foot, knee, w + 1.6 * k, bark);
+        rl.drawLineEx(knee, tip, w * 0.72 + 1.6 * k, bark);
+        rl.drawLineEx(foot, knee, w, wood);
+        rl.drawLineEx(knee, tip, w * 0.72, wood);
+        rl.drawCircleV(tip, s * 0.11, halo);
+        rl.drawCircleV(tip, s * 0.062, glow);
+        rl.drawCircleV(v2(tip.x - 0.6 * k, tip.y - 0.8 * k), s * 0.030, lit);
     }
     const soilCol = rgba(ROOT_SOIL.r, ROOT_SOIL.g, ROOT_SOIL.b, a);
-    rl.drawLineEx(v2(cx - s * 0.36, soil), v2(cx + s * 0.36, soil), 2.4 * k, soilCol);
+    rl.drawLineEx(v2(cx - s * 0.36, soil), v2(cx + s * 0.36, soil), 3.4 * k, soilCol);
+    rl.drawLineEx(v2(cx - s * 0.34, soil - 1.4 * k), v2(cx + s * 0.34, soil - 1.4 * k), 1.2 * k, wood);
     var j: u32 = 0;
     while (j < 4) : (j += 1) {
         const x = cx + rng.range(-0.32, 0.32) * s;
@@ -1709,15 +1730,15 @@ pub fn siphon(cx: f32, cy: f32, px: f32, on: bool) void {
         const tail = v2(at.x + cs * far, at.y + sn * far);
         const waist = v2(at.x + cs * mid, at.y + sn * mid);
         const head = v2(at.x + cs * nearR, at.y + sn * nearR);
-        const w = rng.range(1.5, 2.2) * k;
-        rl.drawLineEx(tail, waist, w * 0.55, halo);
+        const w = rng.range(2.4, 3.2) * k;
+        rl.drawLineEx(tail, waist, w * 0.6, halo);
         rl.drawLineEx(waist, head, w, body);
-        rl.drawCircleV(head, w * 1.05, if (i % 3 == 0) core else body);
+        rl.drawCircleV(head, w * 1.15, if (i % 3 == 0) core else body);
     }
-    rl.drawCircleV(at, s * 0.118, halo);
-    rl.drawCircleV(at, s * 0.076, shell);
-    rl.drawCircleV(v2(at.x - 0.7 * k, at.y - 0.9 * k), s * 0.046, body);
-    rl.drawCircleV(v2(at.x - 1.1 * k, at.y - 1.4 * k), s * 0.020, core);
+    rl.drawCircleV(at, s * 0.15, halo);
+    rl.drawCircleV(at, s * 0.096, shell);
+    rl.drawCircleV(v2(at.x - 0.7 * k, at.y - 0.9 * k), s * 0.060, body);
+    rl.drawCircleV(v2(at.x - 1.1 * k, at.y - 1.4 * k), s * 0.028, core);
 }
 
 pub fn arrow(cx: f32, cy: f32, px: f32, on: bool, fire: bool) void {

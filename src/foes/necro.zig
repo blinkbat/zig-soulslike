@@ -249,6 +249,8 @@ pub const Necro = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     vigil: Vigil = .{},
@@ -412,7 +414,7 @@ pub const Necro = struct {
         self.frostCd = mathx.maxF(0, self.frostCd - dt);
         self.leapCd = mathx.maxF(0, self.leapCd - dt);
         foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
@@ -425,6 +427,8 @@ pub const Necro = struct {
             .idle => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
                 self.setCarry(dt);
+                // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postDrive`), refused inside the ring.
+                _ = foe.postDrive(self, dt, bounds, WALK_SPEED, d, AGGRO_R, TURN_RATE, &movedDist, &moveSpeed, &moveYaw);
                 if (self.t >= 0.20) self.decide(d);
             },
             .leap => {
@@ -606,7 +610,7 @@ pub const Necro = struct {
                 self.enter(.drift);
             },
             .hold => {
-                if (mathx.distXZ(self.pos, self.home) > foe.LEASH_HOME_R) {
+                if (mathx.distXZ(self.pos, foe.homeFor(self)) > foe.LEASH_HOME_R) {
                     self.homing = true;
                     self.moveDir = mathx.dirXZ(self.pos, self.home);
                     self.enter(.drift);

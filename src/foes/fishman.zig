@@ -369,6 +369,8 @@ pub const Fishman = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     threat: foe.Threat = .{},
@@ -547,7 +549,7 @@ pub const Fishman = struct {
         self.t += dt;
         self.cd = mathx.maxF(0, self.cd - dt);
         foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, quarry, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), quarry, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
@@ -620,8 +622,8 @@ pub const Fishman = struct {
                 switch (classify(self.role, gap, sensed, homeGap, self.cd <= 0, bandHurt, self.root.held(), self.rollCd <= 0 and foe.canLeap(&self.root))) {
                     .rest => {
                         if (sensed <= AGGRO_R) self.faceToward(quarry, dt);
-                        self.speed = approach(self.speed, 0, ACCEL * dt);
-                        self.state = .idle;
+                        // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postAmble`), refused inside the ring.
+                        self.state = if (foe.postAmble(self, dt, bounds, WALK_BASE, ACCEL, sensed, AGGRO_R, TURN_RATE, &movedDist, &moveSpeed, &moveYaw)) .walk else .idle;
                     },
                     .roll => self.enterRoll(quarry),
                     .thrust => {

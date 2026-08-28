@@ -316,6 +316,8 @@ pub const Hollow = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     threat: foe.Threat = .{},
@@ -514,7 +516,7 @@ pub const Hollow = struct {
         self.biteCool = mathx.maxF(0, self.biteCool - dt);
         self.tollCool = mathx.maxF(0, self.tollCool - dt);
         self.sparkCool = mathx.maxF(0, self.sparkCool - dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
@@ -614,8 +616,17 @@ pub const Hollow = struct {
                         }
                     },
                     .hold => {
-                        const gap = mathx.distXZ(self.pos, self.home);
-                        if (gap > HOME_R) {
+                        // **ORDERS COME BEFORE GOING HOME**, because for a unit that has them the round IS
+                        // where it belongs (`foe.homeFor`); the walk-home below is what a HELD body does.
+                        const ps = foe.postStep(self, dt, bounds, WALK_SPEED, sensed, AGGRO_R);
+                        if (ps.yaw) |w| {
+                            self.speed = approach(self.speed, ps.speed, ACCEL * dt);
+                            moveSpeed = self.speed;
+                            movedDist = ps.moved;
+                            moveYaw = w;
+                            self.facing = mathx.approachAngle(self.facing, w, TURN_RATE * dt);
+                            self.state = .walk;
+                        } else if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) {
                             self.faceToward(self.nav.aim(self.pos, self.home), dt);
                             self.speed = approach(self.speed, WALK_SPEED, ACCEL * dt);
                             moveSpeed = self.speed;

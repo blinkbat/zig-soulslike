@@ -206,6 +206,8 @@ pub const Leechfly = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     /// THE WAND'S ROOTS, when they have hold of it — stamped from outside, like the leash's eyes. On this creature they are the counter to the whole design: rooted, it cannot climb (`wantsClimb`).
     root: combat.Root = .{},
     chill: combat.Chill = .{},
@@ -327,7 +329,7 @@ pub const Leechfly = struct {
         self.feedCd = mathx.maxF(0, self.feedCd - dt);
         self.climbCd = mathx.maxF(0, self.climbCd - dt);
         self.spookLeft = mathx.maxF(0, self.spookLeft - dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
         foe.tickParticles(&self.parts, dt, self.pos.y);
 
@@ -339,6 +341,16 @@ pub const Leechfly = struct {
                 self.hoverTo = HOVER_IDLE;
                 self.easeRest(dt);
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
+                // **IT FLIES ITS ROUND** (`foe.postWant`) — it never lands, so its orders are flown through
+                // `flyXZ` at its own stalk speed, banking into the turn like every other leg it makes.
+                if (foe.postWant(self, dt, d, AGGRO_R)) |go| {
+                    const dir = mathx.dirXZ(self.pos, go);
+                    if (mathx.lenXZ(dir) > 1e-3) {
+                        const way = mathx.normV(dir);
+                        self.flyXZ(way, STALK_SPEED, dt, bounds);
+                        self.facing = mathx.approachAngle(self.facing, mathx.headingXZ(way), TURN_RATE * dt);
+                    }
+                }
                 self.decide(d, hero);
             },
             .stalk => {

@@ -269,6 +269,9 @@ pub const Game = struct {
     /// the same y whether or not either was awake.
     bossK: [hud_.BOSS_SLOTS]f32 = [_]f32{0} ** hud_.BOSS_SLOTS,
     bossFrac: [hud_.BOSS_SLOTS]f32 = [_]f32{0} ** hud_.BOSS_SLOTS,
+    /// **IS EACH ROOM STILL HOLDING**, one flag per `map.arenas`, solved once a frame in `markWards` off the
+    /// same `alive` tally the fog gate's own seal is solved from. A DEFAULTED FIELD: assigned in `init`.
+    arenaShut: [worldfmt.MAX_ARENAS]bool = [_]bool{false} ** worldfmt.MAX_ARENAS,
     /// A DEFAULTED FIELD: assigned in `init` and in `beginGame` — `Game` comes off `alloc.create`, so the
     /// `= null` here never runs.
     gateWalk: ?GateWalk = null,
@@ -443,6 +446,7 @@ pub const Game = struct {
         g.boltGasT = 0;
         g.dropRng = mathx.Rng.init(0xD0DEC0DE);
         g.bossBits = NO_BOSSES;
+        g.arenaShut = [_]bool{false} ** worldfmt.MAX_ARENAS;
         g.liquidRng = mathx.Rng.init(0x11C0D5EA);
         g.liquidSoak = .{};
         g.popT = [_]f32{0} ** worldfmt.Liquid.N;
@@ -494,9 +498,11 @@ pub fn bootCam(g: *Game, t: f32) void {
 }
 
 fn beginGame(g: *Game) void {
-    var start = mathx.ground(0, 4);
+    // **THE MAP SAYS WHERE HE STANDS UP** (`worldfmt.Start`). Hard-coded at (0, 4) facing south, every test map
+    // had to be built around that one spot whatever its own shape was.
+    var start = g.map.start.at();
     plantActor(g, &start);
-    g.hero.setSpawn(start, std.math.pi);
+    g.hero.setSpawn(start, g.map.start.facing());
     g.hero.souls = .{};
     g.hero.arm = .sword;
     g.hero.armAlt = .bell;
@@ -510,11 +516,8 @@ fn beginGame(g: *Game) void {
 
     g.hero.flasks = .{};
     g.day = .{};
-    g.bossK = [_]f32{0} ** hud_.BOSS_SLOTS;
-    g.bossFrac = [_]f32{0} ** hud_.BOSS_SLOTS;
+    dropRunHud(g);
     g.gateWalk = null;
-    g.spiritK = 0;
-    g.spiritHp = 0;
     g.bag = .{};
     g.award = .{};
     for (STARTING_KIT) |k| {
@@ -530,7 +533,6 @@ fn beginGame(g: *Game) void {
     armScript(g);
     clearQuivers(g);
     g.pack.clear();
-    hud_.dropSpiritFace();
     g.deathFade = 0;
     g.saveT = 0;
     g.restRetro = [_]f32{0} ** gfx.RETRO_COUNT;
@@ -585,6 +587,7 @@ fn enterMap(g: *Game, path: []const u8, at: rl.Vector3, facing: f32) void {
     armScript(g);
     clearQuivers(g);
     g.pack.clear();
+    dropRunHud(g);
     g.lock = null;
     g.lockBlind = 0;
     g.hook = null;
@@ -751,6 +754,43 @@ const NO_PARRY = [_]struct { field: []const u8, why: []const u8 }{
     .{ .field = "conclave", .why = "the fungal magus never melees; the orbs and the bunches are not strokes" },
 };
 
+/// **WHAT IS ROOTED, AND WHY** — the only creatures with no `foe.Post`, because standing still IS their
+/// design. Enforced BOTH WAYS below, `NO_PARRY`'s rule: which units get orders is the AUTHOR's call, made per
+/// unit in the editor, so every creature that CAN move must be able to take them. One that cannot, and has no
+/// line here, is an order the editor lets you assign that silently does nothing.
+const NO_ORDERS = [_]struct { field: []const u8, why: []const u8 }{
+    .{ .field = "grove", .why = "the snag-mimic is a FIXTURE — it opens its eyes and strikes, and never moves" },
+    .{ .field = "marsh", .why = "the fen lurker never leaves its water; dry land is the whole counter to it" },
+    .{ .field = "bed", .why = "the slumber bloom is rooted and cannot follow — that is the fight" },
+};
+
+fn memberOf(comptime field: []const u8) type {
+    return @typeInfo(@typeInfo(@TypeOf(@FieldType(Game, field).live)).@"fn".return_type.?).pointer.child;
+}
+
+comptime {
+    @setEvalBranchQuota(30000);
+    for (NO_ORDERS) |x| {
+        var known = false;
+        for (FOE_GROUPS) |gr| {
+            if (!std.mem.eql(u8, gr.field, x.field)) continue;
+            known = true;
+            if (@hasField(memberOf(gr.field), "post")) @compileError("game: NO_ORDERS names `" ++ x.field ++
+                "`, which HAS a post — take it off the list rather than leaving two answers");
+        }
+        if (!known) @compileError("game: NO_ORDERS names `" ++ x.field ++ "`, which is not a FOE_GROUPS field");
+    }
+    for (FOE_GROUPS) |gr| {
+        if (@hasField(memberOf(gr.field), "post")) continue;
+        var excused = false;
+        for (NO_ORDERS) |x| {
+            if (std.mem.eql(u8, x.field, gr.field)) excused = true;
+        }
+        if (!excused) @compileError("game: `" ++ gr.field ++ "` has no `foe.Post`, so the `ai=` and `wp=` the " ++
+            "editor paints on it do nothing. Give it one and a `foe.postStep` from its idle, or say why not in NO_ORDERS");
+    }
+}
+
 comptime {
     @setEvalBranchQuota(30000);
     for (NO_PARRY) |x| {
@@ -852,6 +892,27 @@ test "EVERY GROUP HOLDS EVERYTHING THE MAP CAN PLACE — the per-kind limit is g
         worldfmt.MAX_FOES,
     });
     try std.testing.expect(worldfmt.MAX_PER_KIND >= worldfmt.MAX_FOES);
+}
+
+test "WHICH CREATURES OBEY THEIR ORDERS — every group that carries a `post`, and every one that does not yet" {
+    // **THE COVERAGE IS PRINTED, NOT ASSUMED.** `ai=` and `wp=` are authored per unit and painted in the
+    // editor for every kind; a creature that has not grown a `foe.Post` takes the orders, saves them, redraws
+    // them and stands still — which is the one failure of this feature that nothing else would show.
+    var carries: usize = 0;
+    var stands: usize = 0;
+    inline for (FOE_GROUPS) |gr| {
+        const G = @FieldType(Game, gr.field);
+        const Member = @typeInfo(@typeInfo(@TypeOf(G.live)).@"fn".return_type.?).pointer.child;
+        if (comptime @hasField(Member, "post")) {
+            carries += 1;
+        } else {
+            stands += 1;
+            std.debug.print("\n  no orders yet: {s}", .{gr.field});
+        }
+    }
+    std.debug.print("\n  orders: {d} of {d} groups walk them\n", .{ carries, carries + stands });
+    // The standard is `foe.Post` plus one call from the idle branch; this only ever goes UP.
+    try std.testing.expect(carries > 0);
 }
 
 test "A DETONATOR RESOLVES ONE WAY — caught on the chest and rolled to a stop bill the SAME blow" {
@@ -1121,18 +1182,92 @@ test "A BOSS BAR BELONGS TO ITS FOG GATE, and a boss no gate names keeps the rin
     try std.testing.expectEqual(@as(?bool, null), gateEntered(e, m, .bone_knight));
 }
 
+test "A SEALED ROOM HOLDS WHAT IS IN IT AND LETS EVERYTHING ELSE ALONE" {
+    const m = try std.testing.allocator.create(worldfmt.Map);
+    defer std.testing.allocator.destroy(m);
+    m.* = .{};
+    var a = worldfmt.Arena{ .n = 4, .nboss = 1 };
+    a.boss[0] = .fungal_magus;
+    const pts = [_][2]f32{ .{ -20, -20 }, .{ 20, -20 }, .{ 20, 20 }, .{ -20, 20 } };
+    for (pts, 0..) |p, i| {
+        a.vx[i] = p[0];
+        a.vz[i] = p[1];
+    }
+    m.arenas[0] = a;
+    m.narenas = 1;
+    const R: f32 = 0.6;
+    var shut = [_]bool{true} ** worldfmt.MAX_ARENAS;
+
+    // **A MAGUS THAT DISSOLVED OUT OF THE FIGHT** — no segment was travelled, so only the destination answers.
+    const inside = mathx.ground(4, 4);
+    const blinked = holdInRoom(m, &shut, inside, mathx.ground(60, 4), R);
+    try std.testing.expect(m.arenas[0].contains(blinked.x, blinked.z));
+    try std.testing.expectApproxEqAbs(@as(f32, 20.0 - R), blinked.x, 1e-4);
+
+    // **ASKED ON THE STEP'S START.** A body walking past OUTSIDE is not dragged in through the wall — the bug
+    // this would have if it read where the body ended up instead of where it set off from.
+    const passing = holdInRoom(m, &shut, mathx.ground(60, 60), mathx.ground(0, 0), R);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), passing.x, 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), passing.z, 1e-5);
+
+    const walk = holdInRoom(m, &shut, inside, mathx.ground(5, 5), R);
+    try std.testing.expectApproxEqAbs(@as(f32, 5), walk.x, 1e-5);
+
+    shut[0] = false;
+    const out = holdInRoom(m, &shut, inside, mathx.ground(60, 4), R);
+    try std.testing.expectApproxEqAbs(@as(f32, 60), out.x, 1e-5);
+}
+
+test "AND THE ROOM'S SEAL IS SOLVED OFF THE SAME TALLY THE GATE'S IS" {
+    const m = try std.testing.allocator.create(worldfmt.Map);
+    defer std.testing.allocator.destroy(m);
+    m.* = .{};
+    var a = worldfmt.Arena{ .n = 3, .nboss = 2 };
+    a.boss[0] = .fungal_swordsman;
+    a.boss[1] = .fungal_magus;
+    a.vx[1] = 10;
+    a.vz[2] = 10;
+    m.arenas[0] = a;
+    m.arenas[1] = .{ .n = 3, .nboss = 0 };
+    m.narenas = 2;
+
+    var alive = [_]u32{0} ** @typeInfo(FoeKind).@"enum".fields.len;
+    var shut = [_]bool{false} ** worldfmt.MAX_ARENAS;
+    // HALF THE FIGHT STANDING STILL HOLDS THE ROOM, which is the whole reason the seal is a list.
+    alive[@intFromEnum(FoeKind.fungal_magus)] = 1;
+    solveArenaSeals(m, alive, &shut);
+    try std.testing.expect(shut[0] and !shut[1]);
+    alive[@intFromEnum(FoeKind.fungal_swordsman)] = 1;
+    solveArenaSeals(m, alive, &shut);
+    try std.testing.expect(shut[0]);
+    alive = [_]u32{0} ** @typeInfo(FoeKind).@"enum".fields.len;
+    solveArenaSeals(m, alive, &shut);
+    try std.testing.expect(!shut[0] and !shut[1]);
+}
+
+/// **BEING SHUT IN WITH SOMETHING IS THE FIGHT, WHATEVER THE RANGE** — the one thing a radius cannot say
+/// (owner: "he tele'd out of the arena and his hp bar vanished"). The magus stood itself 29 m off against a bar
+/// gated at 26 (`fungalduo`'s own comptime block has the arithmetic), and `Leash.roused` is a 14 s timer topped
+/// up only by being HIT, so chasing the swordsman let it lapse and the bar faded out mid-fight.
+fn sealedInWith(g: *const Game, k: FoeKind) bool {
+    const i = g.map.arenaIndexAt(g.hero.pos.x, g.hero.pos.z) orelse return false;
+    if (i >= g.arenaShut.len or !g.arenaShut[i]) return false;
+    return g.map.arenas[i].sealsOn(k);
+}
+
 fn bossBars(g: *Game, dt: f32) void {
     inline for (BOSS_RAILS, 0..) |row, i| {
         var frac: f32 = 0;
         var stag = false;
         var up = false;
+        const sealed = sealedInWith(g, row.kind);
         // **THE BAR IS THE FOG GATE'S, WHEN A FOG GATE CLAIMS IT.** A boss you have not been sealed in with is
         // a boss whose bar has no business on screen: the pair were visible across half a canyon, so both rails
         // came up while he was still walking toward the door.
         const gated = gateEntered(&g.env, &g.map, row.kind) orelse true;
         for (if (gated) @field(g, row.field).liveConst() else &.{}) |*k| {
             if (!k.alive()) continue;
-            if (!(k.leash.roused() or mathx.distXZ(k.pos, g.hero.pos) <= AGGRO_OF[i])) continue;
+            if (!(sealed or k.leash.roused() or mathx.distXZ(k.pos, g.hero.pos) <= AGGRO_OF[i])) continue;
             frac = k.vit.hpFrac();
             stag = k.staggered();
             up = true;
@@ -1457,6 +1592,19 @@ fn snapshotPos(foes: anytype, out: []rl.Vector3) void {
     }
 }
 
+/// **A SEALED ROOM IS A WALL FOR EXACTLY WHAT IS ALREADY IN IT**, and it is asked on the step's START and never
+/// on where the body ended up — `Arena.hold` pushes an outside point IN, so asked about the destination it
+/// would reach out and drag a creature walking past into the fight through its own wall.
+///
+/// **AND IT IS A PUSH-OUT RATHER THAN THE WARD'S REFUSAL** (`env.wardRefusing`). A body that blinks or
+/// dissolves and comes back up (`fungalduo`'s magus, the shade, the blinkbat) never travels through its wall,
+/// so there is no segment to refuse — only being stood back on the near side of the line answers it.
+fn holdInRoom(m: *const worldfmt.Map, shut: []const bool, was: rl.Vector3, p: rl.Vector3, r: f32) rl.Vector3 {
+    const i = m.arenaIndexAt(was.x, was.z) orelse return p;
+    if (i >= shut.len or !shut[i]) return p;
+    return m.arenas[i].hold(p, r);
+}
+
 /// **AND NOTHING ON FOOT WALKS INTO THE DEEP AFTER HIM** (`foe.wadeLimit`) — a creature turns back at its own hips, not the hero's waterline.
 fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?FoeKind, crossesWards: bool) void {
     const T = @typeInfo(@TypeOf(foes)).pointer.child;
@@ -1473,6 +1621,11 @@ fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?F
             f.pos.z = was[i].z;
             continue;
         }
+        // ABOVE the airborne skip as well as the terrain one: a room is a wall to the full height of it, and
+        // the flyers are the creatures a segment refusal was never going to hold.
+        const held = holdInRoom(&g.map, &g.arenaShut, was[i], f.pos, bodyRadiusOf(f));
+        f.pos.x = held.x;
+        f.pos.z = held.z;
         if (comptime @hasDecl(T, "airborne")) {
             if (f.airborne()) continue;
         }
@@ -1486,6 +1639,13 @@ fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?F
         f.pos.x = stepped.x;
         f.pos.z = stepped.z;
     }
+}
+
+/// What a wall stands the body back off, in metres. `bodyR` is `foe.zig`'s contract; the fallback is the hero's.
+fn bodyRadiusOf(f: anytype) f32 {
+    const T = std.meta.Child(@TypeOf(f));
+    if (comptime @hasDecl(T, "bodyR")) return @max(f.bodyR(), 0.1);
+    return HERO_R;
 }
 
 /// **THE BODY'S OWN HEIGHT, WHICH IS NOT ALWAYS THE BAR'S.** The bone skitterer's `topWorld` sits at 2.23 m
@@ -1509,6 +1669,13 @@ fn gateHeroTerrain(g: *Game, was: rl.Vector3) void {
     const out = gatedXZ(&g.env, was, g.hero.pos, g.hero.airborne());
     g.hero.pos.x = out.x;
     g.hero.pos.z = out.z;
+    // **AND THE ROOM IS THE REST OF THE WALL THE GATE IS THE DOOR IN** (owner: I should not be able to exit a
+    // fog until its bosses are killed). The ward refuses one line 0.8 m thick; on open ground that is a door
+    // you stroll round. Held after the terrain gate — but NOT for the last time this frame: `collideActors`
+    // runs 300 lines later and a boss with a SHOVE pressed him straight back out, so it holds him again there.
+    const room = holdInRoom(&g.map, &g.arenaShut, was, g.hero.pos, HERO_R);
+    g.hero.pos.x = room.x;
+    g.hero.pos.z = room.z;
     markWardStep(g, was);
 }
 
@@ -2136,6 +2303,10 @@ fn updateGateWalk(g: *Game, dt: f32) void {
     var n: u32 = 0;
     while (gw.motes >= 1.0 and n < heromod.FOG_WAKE_CAP) : (n += 1) gw.motes -= 1.0;
     if (n > 0) g.hero.fogWake(g.hero.shoulderPoint(), gw.dir, n);
+    // **HELD AT FULL FOR THE WHOLE CROSSING, NOT ARMED AT THE END OF IT.** `hero.tickFogGrace` spends the tail
+    // on GROUND SPEED, and the walk is the one movement that is not his — re-held each frame, he is untouchable
+    // from the sheet to the far side and the tail starts on the first step he takes himself.
+    g.hero.startFogGrace();
     if (gw.t >= 1.0) g.gateWalk = null;
 }
 
@@ -2389,16 +2560,24 @@ fn tickTriggers(g: *Game, dt: f32) void {
 /// How long a spent gate takes to go.
 const WARD_FADE: f32 = 2.6;
 
+/// **THE ROOM ANSWERS THE SAME QUESTION THE DOOR DOES, OFF THE SAME TALLY, ON THE SAME FRAME.** Solved once
+/// beside the gate's own seal rather than at the two chokepoints that read it, so a wall and the gate standing
+/// in it can never disagree about whether the fight is over. **ANY NAME ON IT HOLDS IT**, which is the duo's rule.
+fn solveArenaSeals(m: *const worldfmt.Map, alive: [@typeInfo(FoeKind).@"enum".fields.len]u32, shut: []bool) void {
+    for (m.arenas[0..m.narenas], 0..) |*a, i| {
+        if (i >= shut.len) return;
+        shut[i] = worldfmt.sealStanding(a.seal(), &alive);
+    }
+}
+
 fn markWards(g: *Game, alive: [@typeInfo(FoeKind).@"enum".fields.len]u32, dt: f32) void {
+    solveArenaSeals(&g.map, alive, &g.arenaShut);
     for (0..g.env.nwards) |i| {
         const pr = &g.env.props[g.env.wardProps[i]];
         const seal = if (pr.op < g.map.nops) g.map.ops[pr.op].seal() else &.{};
-        // **ANY NAME ON THE GATE HOLDS IT.** A duo is two, and a door that let go with half the fight still
-        // standing let you walk out of an arena you were sealed into.
-        var standing = false;
-        for (seal) |b| {
-            if (alive[@intFromEnum(b)] > 0) standing = true;
-        }
+        // **ANY NAME ON THE GATE HOLDS IT** (`worldfmt.sealStanding`, the room's own question too). A duo is
+        // two, and a door that let go with half the fight standing let you walk out of an arena you were sealed into.
+        const standing = worldfmt.sealStanding(seal, &alive);
         const shut = g.env.wardIn[i] and standing and g.env.wardClear(@intCast(i), g.hero.pos, HERO_R);
         if (shut and !g.env.wardShut[i]) sfx.play(.fog_seal);
         g.env.wardShut[i] = shut;
@@ -2507,6 +2686,7 @@ fn tickRest(g: *Game, dt: f32) void {
         g.retro.values = g.restRetro;
         g.hero.sit(false, g.hero.pos, g.hero.facing);
         rehomeFoes(g, .blind);
+        dropRunHud(g);
         saveNow(g, .noShot);
     }
     if (g.rest.listening()) bonfireInput(g, dt);
@@ -3959,7 +4139,7 @@ fn gaitLabel(moving: f32, speed: f32) [:0]const u8 {
     };
 }
 
-pub const Mode = enum { play, shots, props, land };
+pub const Mode = enum { play, shots, props, land, art };
 
 /// **A HITCH IS NOT SIMULATED IN FULL.** `arrowCover` queries a radius of `speed * dt` and `MAX_NEAR` is pinned
 /// over a 2x2 cell window — at 40 m/s a 0.35 s stall asks for a 3-wide one and the overflow DROPS SILENTLY,
@@ -4021,6 +4201,10 @@ pub fn run(mode: Mode) void {
     }
     if (mode == .land) {
         @import("shots.zig").runLandShots(g);
+        return;
+    }
+    if (mode == .art) {
+        @import("shots.zig").runArtShots(g);
         return;
     }
 
@@ -4920,21 +5104,17 @@ fn tickLiquid(g: *Game, dt: f32) void {
         const cell = g.map.cellSize(n);
         const half = g.map.half;
         // THE BOX IS SOLVED, NOT WALKED TO: 27 cells a side out of 224, so the ear costs 729 tests and not 50,176.
-        const span = struct {
-            fn at(w: f32, hf: f32, cw: f32, nn: usize) usize {
-                return @min(@as(usize, @intFromFloat(mathx.clampF((w + hf) / cw, 0, @floatFromInt(nn - 1)))), nn - 1);
-            }
-        }.at;
-        const cz0 = span(g.hero.pos.z - LIQUID_EAR, half, cell, n);
-        const cz1 = span(g.hero.pos.z + LIQUID_EAR, half, cell, n);
-        const cx0 = span(g.hero.pos.x - LIQUID_EAR, half, cell, n);
-        const cx1 = span(g.hero.pos.x + LIQUID_EAR, half, cell, n);
+        // Off `worldfmt`'s own axis cast, so the rim cell this lands on is the one `gridIndex` would name.
+        const cz0 = worldfmt.cellAxis(half, n, g.hero.pos.z - LIQUID_EAR);
+        const cz1 = worldfmt.cellAxis(half, n, g.hero.pos.z + LIQUID_EAR);
+        const cx0 = worldfmt.cellAxis(half, n, g.hero.pos.x - LIQUID_EAR);
+        const cx1 = worldfmt.cellAxis(half, n, g.hero.pos.x + LIQUID_EAR);
         for (cz0..cz1 + 1) |cz| {
-            const wz = -half + (@as(f32, @floatFromInt(cz)) + 0.5) * cell;
+            const wz = worldfmt.cellCentre(half, cell, cz);
             for (cx0..cx1 + 1) |cx| {
                 const i = cz * n + cx;
                 if (g.map.water[i] == 0) continue;
-                const at = mathx.ground(-half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell, wz);
+                const at = mathx.ground(worldfmt.cellCentre(half, cell, cx), wz);
                 const d = mathx.dist2XZ(at, g.hero.pos);
                 if (d > LIQUID_EAR * LIQUID_EAR) continue;
                 const k = @min(g.map.waterKind[i], N - 1);
@@ -5407,7 +5587,14 @@ fn collideActors(g: *Game, dt: f32) void {
     for (g.pack.liveConst()) |*w| {
         if (foemod.corporeal(w)) hp = collision.pushOutCircle(hp, HERO_R, w.pos, w.bodyR());
     }
+    // **THE WALL IS THE LAST WORD, AND THIS IS THE LAST HAND ON THE POSITION.** `gateHeroTerrain` holds him in
+    // 300 lines earlier, and then a boss with a SHOVE presses him through it here — a sealed room you can be
+    // squeezed out of is not sealed. His pre-push position is the step's start, which the room already vetted.
+    const heroWasIn = g.hero.pos;
     g.hero.pos = mathx.approachV(g.hero.pos, inBounds(hp), step);
+    const heroHeld = holdInRoom(&g.map, &g.arenaShut, heroWasIn, g.hero.pos, HERO_R);
+    g.hero.pos.x = heroHeld.x;
+    g.hero.pos.z = heroHeld.z;
 
     inline for (FOE_GROUPS) |gr| settleGroup(g, gr, step);
 
@@ -5440,8 +5627,12 @@ fn settleGroup(g: *Game, comptime gr: FoeGroup, step: f32) void {
     for (foes, 0..) |*a, i| {
         if (!foemod.corporeal(a) or phased(a)) continue;
         const r = a.bodyR();
+        // …AND IT MATTERS MORE FOR A BODY: `holdInRoom` asks whether the step STARTED inside, so a creature
+        // settled one metre out is a creature the room lets go of for good.
+        const wasIn = a.pos;
         if (a.airborne()) {
             a.pos = inBounds(g.env.resolveActor(a.pos, r, a.pos.y));
+            a.pos = holdInRoom(&g.map, &g.arenaShut, wasIn, a.pos, r);
             continue;
         }
         var p = g.env.resolveActor(a.pos, r, a.pos.y);
@@ -5456,6 +5647,7 @@ fn settleGroup(g: *Game, comptime gr: FoeGroup, step: f32) void {
             }
         }
         a.pos = mathx.approachV(a.pos, inBounds(p), step);
+        a.pos = holdInRoom(&g.map, &g.arenaShut, wasIn, a.pos, r);
     }
 }
 
@@ -5746,21 +5938,42 @@ fn resetFoes(g: *Game) void {
     clearQuivers(g);
     g.lock = null;
     g.pack.clear();
+    dropRunHud(g);
+}
+
+/// **EVERY BAR THE RUN LEFT ON SCREEN GOES WHILE THE SCREEN IS BLACK** (owner) — the death card's black and the
+/// bonfire's are the two doors, and both already re-home the field behind them.
+///
+/// `bossK` and `spiritK` only tick inside `hud`, which the chrome fade and `rest.active()` both stop calling, so
+/// they FROZE at full: the rail came back up carrying the dead run's HP and the dead run's chip tail and then
+/// faded out in front of him, as the black lifted, instead of behind it.
+fn dropRunHud(g: *Game) void {
+    g.bossK = [_]f32{0} ** hud_.BOSS_SLOTS;
+    g.bossFrac = [_]f32{0} ** hud_.BOSS_SLOTS;
+    g.spiritK = 0;
+    g.spiritHp = 0;
+    hud_.dropBossBars();
+    hud_.dropSpiritFace();
 }
 
 const HURT_BAR_WINDOW = 5.0;
 
+/// A kind with a rail in `BOSS_RAILS` never gets a floating bar — the rail is its ONLY bar, duo included.
+fn onBossRail(k: FoeKind) bool {
+    inline for (BOSS_RAILS) |r| {
+        if (k == r.kind) return true;
+    }
+    return false;
+}
+
 const BarCtx = struct {
     cam: rl.Camera3D,
     lock: ?FoeRef,
-    boss: ?usize,
 
     fn visit(self: *const BarCtx, foes: anytype, kind: ?FoeKind) void {
         for (foes, 0..) |*f, i| {
             if (!foemod.corporeal(f)) continue;
-            if (self.boss) |bi| {
-                if (bi == i and memberKind(f, kind) == .bone_knight) continue;
-            }
+            if (onBossRail(memberKind(f, kind))) continue;
             if (disguised(f)) continue;
             const fixed = if (self.lock) |l| l.idx == i and l.kind == memberKind(f, kind) else false;
             if (!fixed and f.vit.sinceHurt > HURT_BAR_WINDOW) continue;
@@ -5772,7 +5985,7 @@ const BarCtx = struct {
 };
 
 fn drawFoeBars(g: *const Game) void {
-    const ctx = BarCtx{ .cam = g.rig.cam, .lock = activeLock(g), .boss = g.vigil.boss(g.hero.pos) };
+    const ctx = BarCtx{ .cam = g.rig.cam, .lock = activeLock(g) };
     eachTarget(g, &ctx, BarCtx.visit);
 }
 

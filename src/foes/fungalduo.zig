@@ -32,11 +32,16 @@ const setLocal = heromod.setHumanoid;
 
 const H: f32 = heromod.H;
 
-/// **BOTH ARE TALL AND STURDY** (owner). 1.34 of the hero puts a 2.41 m crown on the swordsman, over the
-/// mushroom mage's 2.04 and under the bone knight — they loom without being a boss-of-a-different-size.
-pub const SCALE = (heromod.H + 0.62) / heromod.H;
-const HIP_HALF = heromod.HIP_HALF * 1.34;
-const SHOULDER_HALF = heromod.SHOULDER_HALF * 1.30;
+/// **BOTH ARE TALL AND STURDY** (owner, twice — "they can be a bit taller too"). Authored as METRES OVER THE
+/// HERO rather than as a ratio, so the number here is the thing being judged: 0.86 puts a 2.66 m crown on the
+/// swordsman, over the mushroom mage's 2.04 and under the bone knight — they loom without being a
+/// boss-of-a-different-size.
+pub const SCALE = (heromod.H + 0.86) / heromod.H;
+/// **THE WIDTHS RIDE THE HEIGHT** — written out as their own 1.34 and 1.30 they were `SCALE` copied by hand,
+/// and the first time the crown moved the body under it stayed the old build's width. The shoulder keeps its
+/// 0.97 of the hip's share, which is what makes the silhouette a stalk and not a barrel.
+const HIP_HALF = heromod.HIP_HALF * SCALE;
+const SHOULDER_HALF = heromod.SHOULDER_HALF * SCALE * 0.97;
 const REST = heromod.restHumanoid(HIP_HALF, SHOULDER_HALF, H);
 
 const N = heromod.N;
@@ -95,7 +100,9 @@ const EYE = rgba(214, 232, 150, 44);
 
 const CHAOS_CORE = elemfx.sig(.chaos).core;
 
-pub const AGGRO_R: f32 = 26.0;
+/// **AND IT MUST REACH PAST WHERE THE PAIR THEMSELVES STAND** — at the 26 this was, the magus could blink
+/// outside the ring its own boss bar wakes on. The comptime block by `MG_REAPPEAR_R` holds the two together.
+pub const AGGRO_R: f32 = 30.0;
 
 /// **THE MARK IS A POINT IN THE CHEST BONE'S OWN FRAME** (`foe.markOn`) — the house form, and the one both
 /// bodies wear. Handed the WORLD centre instead, the transform put it a body-length past the far side of the
@@ -240,7 +247,10 @@ const SW_LUNGE_MAX: f32 = 9.0;
 const SW_LUNGE_WIND: f32 = 0.70;
 const SW_LUNGE_DUR: f32 = 0.34;
 const SW_LUNGE_REC: f32 = 0.72;
-const SW_LUNGE_CD: f32 = 3.6;
+/// **THE COMMITMENT IS RARE OR IT IS NOT A COMMITMENT** (owner: lunges come too often, longer cooldowns on
+/// lunges). At 3.6 it came round every 4.6 s measured, which is close enough to the slash's own cadence that
+/// the whole 3.4–9.0 band read as one move on repeat; at 6.4 it is one throw in ~7.7 s.
+const SW_LUNGE_CD: f32 = 6.4;
 const SW_LUNGE_DIST: f32 = 7.4;
 const SW_LUNGE_UP: f32 = 0.30;
 
@@ -262,8 +272,10 @@ const SW_BACK_CD: f32 = 6.5;
 /// body standing beside a second one. 23 puts it between his light swat (16) and that sweep (33). **THE CUT
 /// CAME OFF THE STEEL AND NOT OFF THE VENOM** — the poison is the clock the fight runs on and its own meter
 /// already rate-limits it, so taking the chaos down as well only made the fight longer at the same danger.
-const SW_SLASH_HIT = combat.Hit{ .dmg = 12, .poise = 30, .stance = 26, .elem = combat.elems(.{ .chaos = 11 }) };
-const SW_LUNGE_HIT = combat.Hit{ .dmg = 20, .poise = 44, .stance = 34, .launch = 3.4, .elem = combat.elems(.{ .chaos = 12 }) };
+/// …and the STEEL came down a second time (owner: does too much damage), by the same rule: 23 raw to 18 on the
+/// slash and 32 to 25 on the lunge, all of it off `dmg`, so the venom clock the fight is built on is untouched.
+const SW_SLASH_HIT = combat.Hit{ .dmg = 7, .poise = 30, .stance = 26, .elem = combat.elems(.{ .chaos = 11 }) };
+const SW_LUNGE_HIT = combat.Hit{ .dmg = 13, .poise = 44, .stance = 34, .launch = 3.4, .elem = combat.elems(.{ .chaos = 12 }) };
 
 const SW_NPART = 40;
 
@@ -378,7 +390,9 @@ pub const ORB_HIT = combat.Hit{ .poise = 14, .elem = combat.elems(.{ .chaos = 14
 const MG_ORB_WIND: f32 = 0.36;
 const MG_ORB_DUR: f32 = 0.16;
 const MG_ORB_REC: f32 = 0.26;
-const MG_ORB_CD: f32 = 1.5;
+/// **THE ATTRITION IS A DRIP, NOT A STREAM** (owner: chaos orbs could come out a bit slower) — the cadence and
+/// not the flight, which stays at `ORB_SPEED`.
+const MG_ORB_CD: f32 = 2.3;
 const MG_ORB_RELEASE_K: f32 = 0.34;
 /// **DERIVED OFF THE RING IT WALKS OUT OF, NOT PICKED.** `.back` is answered before either cast, so any part
 /// of a spell's band inside `MG_FLEE_R` is a band it can never be asked for — a dead number that reads as tuning.
@@ -424,6 +438,10 @@ comptime {
     std.debug.assert(MG_FADE_OUT > MG_ORB_WIND * 2.0);
     std.debug.assert(MG_REAPPEAR_R > MG_FLEE_R);
     std.debug.assert(CAP_GROW > CAP_GLOW * 2.0);
+    // **A CREATURE MAY NOT STAND FURTHER OFF THAN THE RING ITS OWN BAR WAKES ON.** Keeping to 16 and blinking
+    // 13 put the magus 29 m out against an `AGGRO_R` of 26, so the bar dropped mid-fight whenever `roused` had
+    // lapsed (owner). The room answers it now (`game.sealedInWith`), and this stops the NEXT blink re-authoring it.
+    std.debug.assert(MG_KEEP_R + MG_REAPPEAR_R <= AGGRO_R);
 }
 
 const MG_CARRY = P{ .lean = 4.0, .head = 3.0, .rsh = 16.0, .rabd = 12.0, .rel = 26.0, .lsh = 8.0, .lel = 20.0, .tilt = 166.0 };
@@ -552,6 +570,8 @@ pub const Swordsman = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     threat: foe.Threat = .{},
@@ -752,7 +772,7 @@ pub const Swordsman = struct {
         self.lungeCd = mathx.maxF(0, self.lungeCd - dt);
         self.backCd = mathx.maxF(0, self.backCd - dt);
         foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
@@ -767,6 +787,8 @@ pub const Swordsman = struct {
             .idle => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
                 self.chanSet(SW_CARRY.chan());
+                // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postDrive`), refused inside the ring.
+                _ = foe.postDrive(self, dt, bounds, SW_SPEED, d, AGGRO_R, SW_TURN_RATE, &movedDist, &moveSpeed, &moveYaw);
                 if (self.t >= 0.12) self.decide(d, hero);
             },
             .stride => {
@@ -914,7 +936,7 @@ pub const Swordsman = struct {
                 self.enter(.stride);
             },
             .hold => {
-                if (mathx.distXZ(self.pos, self.home) > foe.LEASH_HOME_R) {
+                if (mathx.distXZ(self.pos, foe.homeFor(self)) > foe.LEASH_HOME_R) {
                     self.homing = true;
                     self.moveDir = mathx.dirXZ(self.pos, self.home);
                     self.enter(.stride);
@@ -1060,6 +1082,8 @@ pub const Magus = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     threat: foe.Threat = .{},
@@ -1261,7 +1285,7 @@ pub const Magus = struct {
         self.sproutCd = mathx.maxF(0, self.sproutCd - dt);
         self.fadeCd = mathx.maxF(0, self.fadeCd - dt);
         foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
@@ -1278,6 +1302,8 @@ pub const Magus = struct {
             .idle => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
                 self.chanSet(MG_CARRY.chan());
+                // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postDrive`), refused inside the ring.
+                _ = foe.postDrive(self, dt, bounds, MG_SPEED, d, AGGRO_R, MG_TURN_RATE, &movedDist, &moveSpeed, &moveYaw);
                 if (self.t >= 0.16) self.decide(d, hero);
             },
             .drift => {
@@ -1432,7 +1458,7 @@ pub const Magus = struct {
                 self.enter(.drift);
             },
             .hold => {
-                if (mathx.distXZ(self.pos, self.home) > foe.LEASH_HOME_R) {
+                if (mathx.distXZ(self.pos, foe.homeFor(self)) > foe.LEASH_HOME_R) {
                     self.homing = true;
                     self.moveDir = mathx.dirXZ(self.pos, self.home);
                     self.enter(.drift);
@@ -2394,7 +2420,11 @@ test "BOTH ARE TALL AND STURDY, and the swordsman is the one that hits" {
     try std.testing.expect(crown > heromod.H * 1.25);
     try std.testing.expect(SW_POISE > MG_POISE);
     try std.testing.expect(SW_HP > MG_HP);
-    try std.testing.expect(SW_SLASH_HIT.raw() > ORB_HIT.raw() * 1.5);
+    // **THE MARGIN OVER THE ORB IS THE COMMITMENT'S, NOT THE BREAD-AND-BUTTER STROKE'S.** The owner's second
+    // cut to the steel put one slash (18) inside 1.5x of the orb (14) and the bar failed; the orb was left
+    // where it is because it is pure chaos, and cutting it would come off the VENOM the fight is clocked on.
+    try std.testing.expect(SW_SLASH_HIT.raw() > ORB_HIT.raw());
+    try std.testing.expect(SW_LUNGE_HIT.raw() > ORB_HIT.raw() * 1.5);
 }
 
 test "THE SEAMS HOLD — every pose track starts where the one before it ended" {

@@ -374,6 +374,8 @@ pub const Ogre = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     parry: foe.Parry = .{},
@@ -523,7 +525,7 @@ pub const Ogre = struct {
         self.swipeCd = mathx.maxF(0, self.swipeCd - dt);
         self.driveCd = mathx.maxF(0, self.driveCd - dt);
         foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
         self.t += dt;
         self.updateFx(dt);
         var movedDist: f32 = 0;
@@ -539,6 +541,9 @@ pub const Ogre = struct {
             .idle => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
                 self.setCarry(dt);
+                // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postDrive`). No `moveSpeed`
+                // local: the gait speed below is derived from `movedDist` alone.
+                _ = foe.postDrive(self, dt, bounds, WALK_SPEED, d, AGGRO_R, TURN_RATE, &movedDist, null, &moveYaw);
                 if (self.t >= 0.2) self.decide(d, bearing);
             },
             .approach => {
@@ -777,7 +782,7 @@ pub const Ogre = struct {
             .wait => self.enterIdle(),
             .idle => {
                 // ONE RADIUS DECIDES "AM I AT MY POST", and it is the LEASH's own (`foe.LEASH_HOME_R`), because that is where the tether stops caring. Setting off at 3 m and arriving at 2 m leaves him trudging a metre past the boundary that sent him.
-                if (mathx.distXZ(self.pos, self.home) > foe.LEASH_HOME_R) {
+                if (mathx.distXZ(self.pos, foe.homeFor(self)) > foe.LEASH_HOME_R) {
                     self.homing = true;
                     self.enter(.approach);
                 } else self.enterIdle();

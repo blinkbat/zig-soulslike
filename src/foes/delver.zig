@@ -218,6 +218,8 @@ pub const Delver = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     parry: foe.Parry = .{},
@@ -371,12 +373,12 @@ pub const Delver = struct {
         self.clawCd = mathx.maxF(0, self.clawCd - dt);
         self.diveCd = mathx.maxF(0, self.diveCd - dt);
         foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
         switch (self.state) {
-            .idle => self.updateIdle(dt, hero),
+            .idle => self.updateIdle(dt, hero, bounds),
             .walk => self.updateWalk(dt, hero, bounds),
             .claw => self.updateClaw(dt, hero),
             .rake => self.updateRake(dt, hero),
@@ -438,9 +440,18 @@ pub const Delver = struct {
         return self.heroHit;
     }
 
-    fn updateIdle(self: *Delver, dt: f32, hero: rl.Vector3) void {
+    fn updateIdle(self: *Delver, dt: f32, hero: rl.Vector3, bounds: f32) void {
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         if (d <= AGGRO_R) self.faceToward(self.goingFor(hero), TURN_RATE, dt);
+        // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postStep`), and it walks them ON TOP —
+        // going under is a committed move it enters from here, never something a round can interrupt.
+        const ps = foe.postStep(self, dt, bounds, WALK_SPEED * self.scale, d, AGGRO_R);
+        if (ps.yaw) |w| {
+            self.gait += ps.moved / (STRIDE * self.scale);
+            self.facing = mathx.approachAngle(self.facing, w, TURN_RATE * dt);
+            self.swing = 0.24 * mathx.sinf(self.gait * std.math.tau);
+            self.emitScuff(dt);
+        }
         // Three clocks that never line up (the wanderer's law): a breath, a shoulder roll, a snout that casts about.
         const br = mathx.sinf(self.elapsed * (1.5 + 0.3 * self.seed) + self.seed * 6.28);
         self.crouch = mathx.approach(self.crouch, 0.05 + 0.025 * br, dt * 3.0);

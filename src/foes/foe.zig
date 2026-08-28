@@ -364,7 +364,11 @@ const ROAM_STEP_LO: f32 = 3.0;
 const DWELL_LO: f32 = 1.4;
 const DWELL_HI: f32 = 5.0;
 /// An unleashed roamer picks its next place the same way; it just measures from where it IS rather than a post.
-const ARRIVE: f32 = 1.1;
+///
+/// **PUBLIC, BECAUSE IT IS A CONTRACT WITH WHOEVER WALKS THE MARK.** A creature that stops SHORT of this never
+/// arrives, so `want` hands back the same place for ever and the body stands there: the ravager's `HOME_R` is
+/// 1.2 against this 1.1 and it stalled a tenth of a metre out.
+pub const ARRIVE: f32 = 1.1;
 
 /// **THE CREATURE OWES A FIELD AND ONE CALL** (`foe.Nav`'s rule). It embeds this, the game stamps the authored
 /// mode and route onto it at spawn, and the creature asks `want` from its own IDLE — never reaches out for it.
@@ -428,6 +432,13 @@ pub const Post = struct {
         const from = if (self.ai == .roam) self.home else at;
         self.mark = v3(from.x + mathx.cosf(a) * d, from.y, from.z + mathx.sinf(a) * d);
         self.marked = true;
+    }
+
+    /// The leg this patrol is walking toward, for the tether to measure from. `fallback` covers a route with
+    /// no legs on it at all, which is an authored patrol that never got one.
+    pub fn legHere(self: *const Post, fallback: rl.Vector3) rl.Vector3 {
+        if (self.nwp == 0) return fallback;
+        return self.legAt(self.leg);
     }
 
     fn legAt(self: *const Post, i: u8) rl.Vector3 {
@@ -1517,12 +1528,148 @@ fn quad(c0: rl.Vector3, c1: rl.Vector3, c2: rl.Vector3, c3: rl.Vector3) void {
 }
 
 
+/// What one idle frame of a unit's ORDERS comes to, in the three locals every creature's update already
+/// carries to the single `advanceGait` at its foot.
+pub const PostStep = struct { moved: f32 = 0, speed: f32 = 0, yaw: ?f32 = null };
+
+/// **THE ONE CALL A CREATURE OWES ITS POST** (`Post`'s own note), made from its IDLE branch and nowhere else.
+///
+/// MEASURED at the map's own foe limit: **512 bodies asked every frame is 7.3 us, 0.044% of a 16.7 ms frame**,
+/// in Debug. It refuses on a distance test before it touches the RNG or the marks, and the `post` field is a
+/// comptime `@hasField`, so a creature without orders pays nothing at all. There is nothing here to buy.
+///
+/// It fills the same `movedDist`/`moveSpeed`/`moveYaw` a chase branch fills, so the gait is advanced ONCE a
+/// frame by the call already at the foot of the update — a helper that advanced the phase itself would run the
+/// walk cycle at double speed on exactly the frames the creature is walking.
+///
+/// **AND IT REFUSES WHILE ANYBODY IS SENSED.** `sensed` is the creature's own `senseHero`, which already
+/// answers `LONG_AGO` when the body is blind or going home; orders are what a unit does BEFORE it has seen
+/// anybody, so a dog that keeps padding its round with the hero inside its ring is a dog that has not noticed him.
+pub fn postStep(self: anytype, dt: f32, bounds: f32, speed: f32, sensed: f32, aggroR: f32) PostStep {
+    const T = @TypeOf(self.*);
+    if (comptime !@hasField(T, "post")) return .{};
+    if (sensed <= aggroR or speed <= 0) return .{};
+    const go = self.post.want(dt, self.pos) orelse return .{};
+    const dir = mathx.dirXZ(self.pos, go);
+    if (mathx.lenXZ(dir) < 1e-4) return .{};
+    const moved = speed * dt;
+    mathx.stepXZ(&self.pos, mathx.normV(dir), moved, bounds);
+    return .{ .moved = moved, .speed = speed, .yaw = mathx.headingXZ(dir) };
+}
+
+/// **WHERE "BACK TO YOUR POST" MEANS, FOR A UNIT THAT HAS ORDERS.** A held body is measured back to the spot
+/// it was placed on; a body under orders is ALREADY at its post, because walking is what its orders are.
+///
+/// Without this every roamer got three metres out and turned round: the `.hold` arm of a creature's own
+/// `decide` compares against its spawn point and `LEASH_HOME_R` is 3 m, so the orders and the go-home rule
+/// pulled against each other and the orders lost. The same anchor feeds `tickLeash`, or `roam_free` — the one
+/// that is unleashed BY DEFINITION — trips the tether at `leashR` and is dragged back anyway.
+pub fn homeFor(self: anytype) rl.Vector3 {
+    const T = @TypeOf(self.*);
+    if (comptime !@hasField(T, "post")) return self.home;
+    return if (self.post.ai == .hold) self.home else self.pos;
+}
+
+/// **WHAT THE TETHER MEASURES FROM, WHICH IS NOT WHERE "BACK TO YOUR POST" MEANS.** `homeFor` answers "am I at
+/// my post" and a body under orders always is — feeding that to `tickLeash` made `out` zero for ever, so an
+/// ordered unit had NO leash at all and a patrolling guard would follow you across the whole map.
+///
+/// The leash asks a different question: how far have I been DRAGGED from base. A roamer's base is its post, a
+/// patrol's is the leg it is walking, and `roam_free` is unleashed by definition — for that one the anchor is
+/// the body itself, which is the only honest way to say "no tether".
+pub fn tetherFor(self: anytype) rl.Vector3 {
+    const T = @TypeOf(self.*);
+    if (comptime !@hasField(T, "post")) return self.home;
+    return switch (self.post.ai) {
+        .hold => self.home,
+        .roam => self.post.home,
+        .patrol => self.post.legHere(self.home),
+        .roam_free => self.pos,
+    };
+}
+
+/// **THE WHOLE IDLE-FRAME CONTRACT IN ONE LINE**, for the creatures that walk on legs and feed one
+/// `advanceGait` at the foot of their update. Eight of them spelled out the same five: take the step, copy the
+/// three locals, turn the facing toward it. `moveSpeed` is optional because a few derive their gait speed from
+/// `movedDist` alone and have no such local.
+///
+/// Returns whether it walked, so a caller with its own `.idle`/`.walk` states can say which one it is in.
+pub fn postDrive(
+    self: anytype,
+    dt: f32,
+    bounds: f32,
+    speed: f32,
+    sensed: f32,
+    aggroR: f32,
+    turn: f32,
+    movedDist: *f32,
+    moveSpeed: ?*f32,
+    moveYaw: *?f32,
+) bool {
+    const ps = postStep(self, dt, bounds, speed, sensed, aggroR);
+    const w = ps.yaw orelse return false;
+    movedDist.* = ps.moved;
+    if (moveSpeed) |ms| ms.* = ps.speed;
+    moveYaw.* = w;
+    self.facing = mathx.approachAngle(self.facing, w, turn * dt);
+    return true;
+}
+
+/// **THE SAME THING FOR A BODY THAT EASES ITS SPEED** rather than stepping at it flat — four creatures share
+/// an `.idle`/`.walk` pair driven off a `self.speed` that accelerates, and spelled out they were four copies of
+/// twelve lines. Returns whether it is walking, so the caller picks its own state name.
+pub fn postAmble(
+    self: anytype,
+    dt: f32,
+    bounds: f32,
+    speed: f32,
+    accel: f32,
+    sensed: f32,
+    aggroR: f32,
+    turn: f32,
+    movedDist: *f32,
+    moveSpeed: *f32,
+    moveYaw: *?f32,
+) bool {
+    const ps = postStep(self, dt, bounds, speed, sensed, aggroR);
+    const w = ps.yaw orelse {
+        self.speed = mathx.approach(self.speed, 0, accel * dt);
+        return false;
+    };
+    self.speed = mathx.approach(self.speed, ps.speed, accel * dt);
+    movedDist.* = ps.moved;
+    moveSpeed.* = self.speed;
+    moveYaw.* = w;
+    self.facing = mathx.approachAngle(self.facing, w, turn * dt);
+    return true;
+}
+
+/// **THE SAME ORDERS FOR A BODY THAT DOES NOT WALK.** `postStep` takes a step for you, which is right for
+/// anything on legs; a HOPPER leaps, a flyer cruises and a burrower dives, and each of those wants the PLACE
+/// its orders are pointing at so it can get there in its own idiom. Same refusal: nothing while anybody is sensed.
+pub fn postWant(self: anytype, dt: f32, sensed: f32, aggroR: f32) ?rl.Vector3 {
+    const T = @TypeOf(self.*);
+    if (comptime !@hasField(T, "post")) return null;
+    if (sensed <= aggroR) return null;
+    return self.post.want(dt, self.pos);
+}
+
+/// Stamps the authored orders onto a body the moment it is spawned. Duck-typed, so a creature that has not
+/// grown a `post` yet costs nothing and a creature that has needs no line here.
+pub fn armPost(f: anytype, h: wf.Foe, home: rl.Vector3) void {
+    const T = @TypeOf(f.*);
+    if (comptime !@hasField(T, "post")) return;
+    f.post.arm(h.ai, home, h.route(), h.seed);
+}
+
 pub fn resetGroup(comptime T: type, out: []T, n: *usize, m: *const wf.Map, want: wf.FoeKind) void {
     n.* = 0;
     for (m.foes[0..m.nfoes]) |h| {
         if (h.kind != want or n.* >= out.len) continue;
         // ON THE GROUND: a spawn table stores x/z only, so a foe on a sculpted rise dropped at y = 0 is buried to the waist.
-        out[n.*] = T.spawn(v3(h.x, m.heightAt(h.x, h.z), h.z), mathx.radians(h.yaw), h.scale, h.seed);
+        const home = v3(h.x, m.heightAt(h.x, h.z), h.z);
+        out[n.*] = T.spawn(home, mathx.radians(h.yaw), h.scale, h.seed);
+        armPost(&out[n.*], h, home);
         n.* += 1;
     }
 }
@@ -1539,7 +1686,9 @@ pub fn resetRoles(
     for (m.foes[0..m.nfoes]) |h| {
         const role = roleOf(h.kind) orelse continue;
         if (n.* >= out.len) continue;
-        out[n.*] = T.spawnAs(role, v3(h.x, m.heightAt(h.x, h.z), h.z), mathx.radians(h.yaw), h.scale, h.seed);
+        const home = v3(h.x, m.heightAt(h.x, h.z), h.z);
+        out[n.*] = T.spawnAs(role, home, mathx.radians(h.yaw), h.scale, h.seed);
+        armPost(&out[n.*], h, home);
         n.* += 1;
     }
 }
@@ -2559,4 +2708,26 @@ test "A PATROL WALKS ITS ROUTE AND TURNS ROUND — post out to the last point an
     var big = Post{};
     big.arm(.patrol, home, &many, 0.4);
     try std.testing.expectEqual(@as(u8, MAX_WP), big.nwp);
+}
+
+test "WHAT ORDERS COST A FRAME — the idle-frame walk, at the map's own foe limit" {
+    // **THE ROUND RUNS ON EVERY IDLE FRAME OF EVERY BODY**, so its cost is the one thing about this feature
+    // that scales with the map. `postStep` refuses on a distance test before it touches the RNG or the marks.
+    var posts: [512]Post = undefined;
+    const home = mathx.ground(0, 0);
+    for (&posts, 0..) |*p, i| p.arm(if (i % 2 == 0) .roam else .patrol, home, &.{ .{ .x = 9, .z = 0 }, .{ .x = 9, .z = 9 } }, @as(f32, @floatFromInt(i % 97)) / 97.0);
+    const dt: f32 = 1.0 / 60.0;
+    var timer = try std.time.Timer.start();
+    const FRAMES = 600;
+    var walked: usize = 0;
+    for (0..FRAMES) |_| {
+        for (&posts) |*p| {
+            if (p.want(dt, home) != null) walked += 1;
+        }
+    }
+    const us = @as(f64, @floatFromInt(timer.read())) / 1000.0 / @as(f64, @floatFromInt(FRAMES));
+    std.debug.print("\n  orders: {d} bodies asked every frame costs {d:.1} us — {d:.3}% of a 16.7 ms frame\n", .{ posts.len, us, 100.0 * us / 16700.0 });
+    // The shape is what matters: LINEAR in the bodies, no allocation, and one distance test on the frame a
+    // body is standing still. `MAX_FOES` of them is the worst a map can ask for.
+    try std.testing.expect(walked > 0);
 }

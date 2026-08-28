@@ -3415,6 +3415,31 @@ fn editorShots(g: *Game) void {
 
     // **THE EYES, AS A PAIR OF SHOTS.** Standing on Ground so nothing is force-shown (`Editor.visible` keeps
     // the layer you are working in on screen whatever its eye says), then everything else shut.
+    // **THE ROOMS PANEL, WITH A ROOM UP AND A CORNER GRABBED** — the whole of what an author can do to a boss
+    // arena is on this one face, and a corner that does not read as picked is a Delete you cannot aim.
+    if (g.map.narenas > 0) {
+        g.editor.setLayer(.locations);
+        g.editor.selectArenaForShot(&g.map, 0, 3);
+        const mid = g.map.arenas[0].middle();
+        g.editor.focus = mid;
+        g.editor.dist = 62;
+        g.editor.pitch = -0.85;
+        g.editor.applyCamForShot();
+        editorSnap(g, "shots/95e_editor_rooms.png");
+        g.editor.setLayer(.props);
+        g.editor.focus = mathx.ground(0, -66);
+        g.editor.dist = 46;
+        g.editor.pitch = -0.65;
+        g.editor.applyCamForShot();
+    }
+
+    // **THE SCRIPT MODAL** — the one layer the editor could never author, so its face is worth a frame.
+    if (g.map.ntrigs > 0) {
+        g.editor.openScriptForShot(&g.map);
+        editorSnap(g, "shots/95f_editor_script.png");
+        g.editor.closeModalForShot();
+    }
+
     g.editor.setLayer(.ground);
     for (&g.editor.shown) |*s| s.* = false;
     g.editor.showWeather = false;
@@ -3726,4 +3751,140 @@ fn wolfShots(g: *Game) void {
 fn plantHeroForShot(g: *Game) void {
     g.hero.pos.y = g.env.groundAt(g.hero.pos.x, g.hero.pos.z);
     g.hero.pose();
+}
+
+const icons = @import("ui/icons.zig");
+const itemart = @import("ui/itemart.zig");
+const uimod = @import("ui/ui.zig");
+const DIR_ART = DIR ++ "/art";
+
+/// **THE WHOLE 2D SET ON CONTACT SHEETS** — every editor glyph at the 18 px it is drawn at and at 3x, every item
+/// picture at its 34 px bag cell and at a plate size, the spells, the ailments and the pad kit. No world, no
+/// camera: `--shot-art` is the one harness that can judge a glyph set as a set.
+pub fn runArtShots(g: *Game) void {
+    _ = g;
+    std.fs.cwd().makePath(DIR_ART) catch {};
+    const W: f32 = @floatFromInt(game.SCREEN_W);
+    const ICON_N = @typeInfo(icons.Icon).@"enum".fields.len;
+
+    const sheet = struct {
+        fn begin() void {
+            rl.beginDrawing();
+            rl.clearBackground(uimod.PANEL_FILL);
+        }
+        fn cellBg(x: f32, y: f32, w: f32, h: f32) void {
+            rl.drawRectangleRec(.{ .x = x, .y = y, .width = w, .height = h }, uimod.IDLE_FILL);
+            rl.drawRectangleLinesEx(.{ .x = x, .y = y, .width = w, .height = h }, 1, mathx.withAlpha(uimod.TRIM, 80));
+        }
+    };
+
+    // Editor glyphs at real size, in the button they actually sit in.
+    {
+        sheet.begin();
+        const cols: usize = 5;
+        const cw = W / @as(f32, @floatFromInt(cols));
+        const rh: f32 = 30;
+        var i: usize = 0;
+        while (i < ICON_N) : (i += 1) {
+            const ic: icons.Icon = @enumFromInt(i);
+            const x = @as(f32, @floatFromInt(i % cols)) * cw + 8;
+            const y = @as(f32, @floatFromInt(i / cols)) * rh + 8;
+            sheet.cellBg(x, y, cw - 16, rh - 4);
+            icons.draw(ic, x + 8 + 9, y + (rh - 4) * 0.5, 18, uimod.VALUE);
+            hudmod.mono(@tagName(ic), @intFromFloat(x + 8 + 18 + 7), @intFromFloat(y + 4), hudmod.MONO, uimod.VALUE);
+        }
+        snap(DIR_ART ++ "/00_icons_18.png");
+    }
+    // …and at 3x, where the construction can be read.
+    {
+        sheet.begin();
+        const cols: usize = 10;
+        const cw = W / @as(f32, @floatFromInt(cols));
+        const rh: f32 = 96;
+        var i: usize = 0;
+        while (i < ICON_N) : (i += 1) {
+            const ic: icons.Icon = @enumFromInt(i);
+            const x = @as(f32, @floatFromInt(i % cols)) * cw + 6;
+            const y = @as(f32, @floatFromInt(i / cols)) * rh + 6;
+            sheet.cellBg(x, y, cw - 12, rh - 8);
+            icons.draw(ic, x + (cw - 12) * 0.5, y + 38, 54, uimod.VALUE);
+            var buf: [24]u8 = undefined;
+            const name = @tagName(ic);
+            const short = std.fmt.bufPrintZ(&buf, "{s}", .{name[0..@min(name.len, 12)]}) catch unreachable;
+            hudmod.mono(short, @intFromFloat(x + 4), @intFromFloat(y + rh - 30), 14, uimod.LABEL);
+        }
+        snap(DIR_ART ++ "/01_icons_54.png");
+    }
+    // Item pictures at the bag cell and at a plate.
+    inline for (.{ .{ 34.0, 12, 60.0, "02_items_34.png" }, .{ 90.0, 8, 130.0, "03_items_90.png" } }) |row| {
+        const px: f32 = row[0];
+        const cols: usize = row[1];
+        const rh: f32 = row[2];
+        const cw = W / @as(f32, @floatFromInt(cols));
+        var page: usize = 0;
+        var i: usize = 0;
+        while (i < item.NK) {
+            sheet.begin();
+            var k: usize = 0;
+            while (i < item.NK and @as(f32, @floatFromInt(k / cols)) * rh + rh < @as(f32, @floatFromInt(game.SCREEN_H))) : ({
+                i += 1;
+                k += 1;
+            }) {
+                const kind: item.Kind = @enumFromInt(i);
+                const x = @as(f32, @floatFromInt(k % cols)) * cw + 4;
+                const y = @as(f32, @floatFromInt(k / cols)) * rh + 4;
+                sheet.cellBg(x, y, cw - 8, rh - 8);
+                itemart.draw(kind, x + (cw - 8) * 0.5, y + (rh - 8) * 0.5 - 6, px);
+                const name = item.displayName(kind);
+                var buf: [32]u8 = undefined;
+                const short = std.fmt.bufPrintZ(&buf, "{s}", .{name[0..@min(name.len, if (cols == 12) 11 else 18)]}) catch unreachable;
+                hudmod.mono(short, @intFromFloat(x + 3), @intFromFloat(y + rh - 8 - 16), 13, uimod.LABEL);
+            }
+            var nb: [64]u8 = undefined;
+            const nm = std.fmt.bufPrintZ(&nb, DIR_ART ++ "/{s}_{d}.png", .{ row[3][0 .. row[3].len - 4], page }) catch unreachable;
+            snap(nm);
+            page += 1;
+        }
+    }
+    // Spells lit and unlit, ailments, and the pad kit.
+    {
+        sheet.begin();
+        const spells = @typeInfo(combat.Spell).@"enum".fields;
+        inline for (spells, 0..) |f, i| {
+            const sp: combat.Spell = @enumFromInt(f.value);
+            const x: f32 = 20 + @as(f32, @floatFromInt(i)) * 136;
+            sheet.cellBg(x, 20, 120, 120);
+            itemart.spellArt(sp, x + 60, 74, 90, true);
+            sheet.cellBg(x, 150, 120, 60);
+            itemart.spellArt(sp, x + 30, 180, 34, true);
+            itemart.spellArt(sp, x + 90, 180, 34, false);
+            hudmod.mono(f.name, @intFromFloat(x), 214, 14, uimod.LABEL);
+        }
+        const ails = @typeInfo(combat.Ail).@"enum".fields;
+        inline for (ails, 0..) |f, i| {
+            const a: combat.Ail = @enumFromInt(f.value);
+            const x: f32 = 20 + @as(f32, @floatFromInt(i)) * 124;
+            sheet.cellBg(x, 260, 110, 110);
+            hudmod.ailGlyph(a, x + 55, 310, 60, hudmod.ailTint(a));
+            hudmod.ailGlyph(a, x + 20, 355, 13, hudmod.ailTint(a));
+            hudmod.ailGlyph(a, x + 45, 355, 13, uimod.VALUE);
+            hudmod.mono(f.name, @intFromFloat(x), 374, 14, uimod.LABEL);
+        }
+        var i: i32 = 0;
+        inline for (.{ hudmod.PadBtn.a, hudmod.PadBtn.b, hudmod.PadBtn.x, hudmod.PadBtn.y }) |b| {
+            hudmod.padFace(60 + i * 60, 460, hudmod.GLYPH_R, b);
+            hudmod.padFace(60 + i * 60, 520, 20, b);
+            i += 1;
+        }
+        inline for (.{ hudmod.Dir.up, hudmod.Dir.down, hudmod.Dir.left, hudmod.Dir.right, hudmod.Dir.updown, hudmod.Dir.leftright }) |d| {
+            hudmod.padDpad(60 + i * 60, 460, hudmod.GLYPH_R, d);
+            hudmod.padDpad(60 + i * 60, 520, 20, d);
+            i += 1;
+        }
+        hudmod.padMenu(60 + i * 60, 460);
+        hudmod.padBumper(60 + (i + 1) * 60, 460, "LB");
+        hudmod.padBumper(60 + (i + 2) * 60, 460, "RT");
+        hudmod.dayDial(9.5);
+        snap(DIR_ART ++ "/04_spells_ails_pads.png");
+    }
 }

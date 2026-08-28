@@ -249,6 +249,8 @@ pub const Skitterer = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     threat: foe.Threat = .{},
@@ -452,7 +454,7 @@ pub const Skitterer = struct {
         self.vit.tick(dt);
         foe.fadeFlash(&self.flash, dt);
         self.sliceCool = mathx.maxF(0, self.sliceCool - dt);
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
@@ -484,9 +486,14 @@ pub const Skitterer = struct {
 
         const sensed = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         const hunting = sensed <= AGGRO_R;
-        const want = if (hunting) hero else self.home;
+        // **ORDERS ONLY CHANGE THE PLACE IT IS WALKING TO** (the ravager's arrangement) — it already crosses
+        // to a point on its ribs when it is not hunting, so a round is that point moved.
+        const round = foe.postWant(self, dt, sensed, AGGRO_R);
+        const want = if (hunting) hero else (round orelse self.home);
         const gap = mathx.distXZ(self.pos, want);
-        const stop: f32 = if (hunting) stopR(foe.HERO_R) else HOME_R;
+        // **A ROUND STOPS WHERE THE POST SAYS ARRIVED** (`foe.ARRIVE`), not at `HOME_R`. Stopping short of it
+        // means `Post.want` never marks the place reached and hands back the same one for ever.
+        const stop: f32 = if (hunting) stopR(foe.HERO_R) else if (round != null) foe.ARRIVE else HOME_R;
 
         if (hunting and gap <= triggerR(foe.HERO_R) and self.sliceCool <= 0) {
             self.state = .slice;

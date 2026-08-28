@@ -971,6 +971,14 @@ var bossChip: [BOSS_SLOTS]f32 = [_]f32{0} ** BOSS_SLOTS;
 var bossHold: [BOSS_SLOTS]f32 = [_]f32{0} ** BOSS_SLOTS;
 var bossLast: [BOSS_SLOTS]f32 = [_]f32{0} ** BOSS_SLOTS;
 
+/// **THE CHIP TAIL IS A MEMORY OF ONE RUN, AND A BLACK SCREEN ENDS THE RUN.** Module scratch, so without this
+/// the last blow of the fight you died in was still on the rail when the bar next opened.
+pub fn dropBossBars() void {
+    bossChip = [_]f32{0} ** BOSS_SLOTS;
+    bossHold = [_]f32{0} ** BOSS_SLOTS;
+    bossLast = [_]f32{0} ** BOSS_SLOTS;
+}
+
 pub fn bossBarAt(tier: usize, dt: f32, name: [:0]const u8, frac: f32, staggered: bool, k: f32) void {
     if (k <= 0.001) {
         bossChip[tier] = frac;

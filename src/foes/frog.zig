@@ -178,6 +178,8 @@ pub const Frog = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
+    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
+    post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     parry: foe.Parry = .{},
@@ -385,7 +387,7 @@ pub const Frog = struct {
         self.chompCd = mathx.maxF(0, self.chompCd - dt);
         foe.fadeFlash(&self.flash, dt);
         self.t += dt;
-        foe.tickLeash(&self.leash, dt, self.pos, self.home, hero, AGGRO_R);
+        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
         const bearing = mathx.wrapPi(mathx.headingXZ(mathx.dirXZ(self.pos, hero)) - self.facing);
         self.sense.tick(dt, self.pos, bearing, self.bodyR(), switch (self.state) {
             .hop, .lunge => false,
@@ -469,7 +471,18 @@ pub const Frog = struct {
         if (d <= AGGRO_R) self.faceToward(hero, dt);
         self.resolveIdle();
         const wait = if (d <= AGGRO_R) mathx.minF(self.idleWait, 0.16) else self.idleWait;
-        if (self.t >= wait) self.decide(hero, bounds);
+        if (self.t < wait) return;
+        // **IT WALKS ITS ORDERS THE ONLY WAY IT MOVES — IN HOPS** (`foe.postWant`). One leap toward the place
+        // its round is pointing at, capped at its own reach, so a round reads as a frog and not as a glide.
+        if (foe.postWant(self, dt, d, AGGRO_R)) |go| {
+            const dir = self.nav.along(mathx.dirXZ(self.pos, go));
+            const reach = mathx.minF(HOP_REACH, mathx.distXZ(self.pos, go));
+            if (reach > 0.2) {
+                self.startHop(v3(self.pos.x + dir.x * reach, 0, self.pos.z + dir.z * reach), bounds, false);
+                return;
+            }
+        }
+        self.decide(hero, bounds);
     }
 
     fn updateHop(self: *Frog, dt: f32, hero: rl.Vector3, bounds: f32, coil: f32, flight: f32, land: f32) void {

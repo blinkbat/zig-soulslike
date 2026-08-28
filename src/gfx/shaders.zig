@@ -536,7 +536,7 @@ pub const sceneFS =
     \\  vec3 c = mix(grn, dry, smoothstep(0.22, 0.78, f1 + 0.30*(f2 - 0.5)));
     \\  c *= 0.80 + 0.50*blades + 0.20*f3;
     \\  float wob = (vnoise(vec2(p.y*0.13, 3.7)) - 0.5)*3.2; // 0.13 cycles/unit — resolves to the horizon
-    \\  float path = smoothstep(2.8, 1.2, abs(p.x + wob));
+    \\  float path = 1.0 - smoothstep(1.2, 2.8, abs(p.x + wob));
     \\  vec3 dirt = vec3(0.130, 0.110, 0.082)*(0.80 + 0.40*f3)*(0.88 + 0.24*fspk(p, 21.0, px));
     \\  c = mix(c, dirt, path*0.85);
     \\  float rocky = smoothstep(0.64, 0.86, fvn(p, 0.09, vec2(47.1), px));
@@ -545,7 +545,7 @@ pub const sceneFS =
     \\  float scrub = smoothstep(0.68, 0.90, fvn(p, 0.22, vec2(8.9), px))*(1.0 - rocky)*(1.0 - path);
     \\  c = mix(c, vec3(0.042, 0.055, 0.026)*(0.7 + 0.6*blades), scrub*0.8);
     \\  // REGION DRIFT.
-    \\  float wood = smoothstep(-46.0, -104.0, p.x);
+    \\  float wood = 1.0 - smoothstep(-104.0, -46.0, p.x);
     \\  if (wood > 0.001){
     \\    vec3 litter = vec3(0.058, 0.050, 0.030);   // last year's leaves
     \\    vec3 shade  = vec3(0.040, 0.056, 0.032);   // moss and damp turf
@@ -1047,7 +1047,7 @@ pub const skyFS =
     \\      vec2 fp = fract(sp*18.0) - 0.5 - (vec2(hash21(ci + 7.13), hash21(ci + 3.71)) - 0.5)*0.62;
     \\      float mag = (h - 0.978)/0.022;                       // how bright THIS one is
     \\      float tw = 0.62 + 0.38*sin(uTime*(1.3 + 3.4*hash21(ci + 11.3)) + h*57.0);
-    \\      float pt = smoothstep(0.17, 0.0, length(fp))*(0.30 + 0.70*mag);
+    \\      float pt = (1.0 - smoothstep(0.0, 0.17, length(fp)))*(0.30 + 0.70*mag);
     \\      col += vec3(0.80,0.86,1.00)*pt*tw*stars*smoothstep(0.0, 0.20, ray.y)*(1.0 - 0.85*az);
     \\    }
     \\  }

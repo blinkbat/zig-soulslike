@@ -3494,8 +3494,8 @@ test "THE BAKED WATER FIELD CARRIES NO SHAPE — the coast is the shader's, so t
         const cell = m.cellSize(N);
         for (0..N) |cz| {
             for (0..N) |cx| {
-                const wx = -m.half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell;
-                const wz = -m.half + (@as(f32, @floatFromInt(cz)) + 0.5) * cell;
+                const wx = wf.cellCentre(m.half, cell, cx);
+                const wz = wf.cellCentre(m.half, cell, cz);
                 const i = cz * N + cx;
                 m.water[i] = if (wx * wx + wz * wz < 60.0 * 60.0) 1 else 0;
                 m.waterEdge[i] = f.value;
@@ -3553,8 +3553,8 @@ test "THE COAST YOU SEE IS THE COAST YOU WADE INTO — one warp, evaluated on bo
     const cell = m.cellSize(N);
     for (0..N) |cz| {
         for (0..N) |cx| {
-            const wx = -m.half + (@as(f32, @floatFromInt(cx)) + 0.5) * cell;
-            const wz = -m.half + (@as(f32, @floatFromInt(cz)) + 0.5) * cell;
+            const wx = wf.cellCentre(m.half, cell, cx);
+            const wz = wf.cellCentre(m.half, cell, cz);
             const i = cz * N + cx;
             m.water[i] = if (wx * wx + wz * wz < 60.0 * 60.0) 1 else 0;
             m.waterEdge[i] = @intFromEnum(wf.Edge.jagged);

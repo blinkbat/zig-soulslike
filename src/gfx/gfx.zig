@@ -29,7 +29,9 @@ pub const HEIGHT_N: i32 = 224;
 /// `props.LIQUID_TONES` sizes off this and `wf.Liquid` asserts against it.
 pub const LIQUID_N: usize = glsl.LIQUID_N;
 
-pub const WATER_SHORE: u8 = 128;
+/// Re-exported for `LIQUID_N`'s reason — the GLSL that discards on it is generated from it over there, so the
+/// byte `env`'s bake writes, the one `env.paintedDepth` reads back and the one the sheet tests are one number.
+pub const WATER_SHORE: u8 = glsl.WATER_SHORE;
 pub const WATER_DEEP_AT: f32 = 11.0;
 pub const WATER_WET_OUT: f32 = 3.4;
 

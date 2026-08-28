@@ -5,7 +5,8 @@ const wf = @import("../world/worldfmt.zig");
 
 /// **WHAT STANDING IN ONE COSTS**, per `wf.Liquid`. `build` is meter per second on `ail`, billed the way a
 /// cloud bills (`foe.Soak`: `ENTRY_BOLUS` seconds up front, then the clock), and `dpsFrac` is a drip on top of
-/// it in the ail's own element. Water is `null` — it is the one liquid that is only water.
+/// it in the ail's own element. **TWO ROWS ARE `null`**: water, which is only water, and OIL — what oil is for
+/// is being set alight, so a bill for standing in it would charge for the hazard before there is one.
 pub const Soak = struct {
     ail: combat.Ail,
     build: f32,

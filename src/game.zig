@@ -2904,11 +2904,10 @@ fn whisperAt(g: *Game) void {
 /// Tight — this lands ON a body, where the powder's ring lands on a crowd.
 const WHISPER_R: f32 = 1.1;
 
+/// The burst has to agree with the meter it fills, so it reads the spell's OWN dose (`combat.spellDose`)
+/// rather than a second copy of the pairing — spelled out here, a third doser silently got confusion's green.
 fn whisperTint(s: combat.Spell) rl.Color {
-    return hud_.ailTint(switch (s) {
-        .bidding => .charm,
-        else => .confusion,
-    });
+    return hud_.ailTint(combat.spellDose(s) orelse .confusion);
 }
 
 fn throwLance(g: *Game) void {
@@ -6008,4 +6007,3 @@ test "A RING IN THE BAG SAVES NOTHING — the snap is asked of the FINGER" {
     worn.put(.ring, null);
     try std.testing.expect(bindingWorn(worn) == null);
 }
-

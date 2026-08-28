@@ -59,6 +59,12 @@ const DIR_PROPS = DIR ++ "/props";
 const DIR_MAP = DIR ++ "/map";
 const DIR_LAND = DIR ++ "/land";
 
+comptime {
+    // …SO MOVING `DIR` MAY NOT BE SILENT: the tree is made from it and 510 names are written against the
+    // literal, so changed here alone the harness creates one directory and fills another.
+    std.debug.assert(std.mem.eql(u8, DIR, "shots"));
+}
+
 pub const SHOT_DT: f32 = 1.0 / 60.0;
 /// The DRAWING clock, one shot at a time: every camera here TELEPORTS and a still frame cannot show a fade, so the occluder fade is handed a step big enough to arrive within the one frame we capture.
 pub const SETTLE_DT: f32 = 10.0;

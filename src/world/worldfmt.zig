@@ -496,7 +496,6 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
     };
 }
 
-/// Optionals do not compare with `==` in every Zig version this has been built on, and the editor asks this once per row per frame; one spelling of it beats three.
 /// **WHAT A UNIT DOES BEFORE IT HAS SEEN ANYBODY.** The names are StarEdit's, because that is the vocabulary
 /// these maps are authored in: JUNKYARD DOG is roaming about a post, leashed or not. APPEND-ONLY like every
 /// other authored enum. **`hold` is what every unit did before this existed**, so a map that never mentions

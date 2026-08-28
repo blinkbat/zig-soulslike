@@ -995,6 +995,17 @@ pub fn spellDoses(s: Spell) bool {
     return if (row.blow) |b| b.dose.any() else false;
 }
 
+/// **WHICH METER A DOSER FILLS, OFF ITS OWN BLOW** — the pairing is already here, and a second copy of it
+/// (`game.whisperTint`) had an `else` arm that handed any third doser the confusion colour. The FIRST row it
+/// doses: no spell in the table doses two, and the burst can only be one colour.
+pub fn spellDose(s: Spell) ?Ail {
+    const b = rowFor(s).blow orelse return null;
+    for (b.dose.v, 0..) |amt, i| {
+        if (amt > 0) return @enumFromInt(i);
+    }
+    return null;
+}
+
 /// ER's memory slots: how many sorceries he may have about him at once. Owning a scroll is not casting off it.
 pub const MEM_SLOTS: usize = 3;
 

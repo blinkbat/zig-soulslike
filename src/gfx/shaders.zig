@@ -38,6 +38,26 @@ pub const LIQUID_MASK: u8 = 3;
 /// is how `props.LIQUID_TONES` sizes off it without importing a shader.
 pub const LIQUID_N: usize = 4;
 
+/// **THE WATERLINE, WHICH IS ONE NUMBER AND WAS FOUR.** The byte the field encodes the shore at — `env`'s bake
+/// writes it, `env.paintedDepth` reads back off it, and the sheet below discards on it. It was `128` in Zig
+/// against `0.5005` and two bare `0.5`s in the GLSL: 128/255 is **0.501961**, so the drawn waterline and the
+/// walkable one were set against three different thresholds. Here for `LIQUID_N`'s reason — the GLSL that
+/// tests it is generated from it, and `gfx` re-exports it so no caller has to import a shader.
+pub const WATER_SHORE: u8 = 128;
+
+/// `f` is the field normalized 0..1, so the shore sits here and the deep at 1. Both spellings are emitted, so
+/// the sheet's depth ramp divides by the span rather than assuming the line is half way up.
+const WATER_GLSL = std.fmt.comptimePrint(
+    "const float WATER_LINE = {d:.6};\nconst float WATER_SPAN = {d:.6};\n",
+    .{ @as(f32, WATER_SHORE) / 255.0, 1.0 - @as(f32, WATER_SHORE) / 255.0 },
+);
+
+comptime {
+    // A shore byte at either end leaves the sheet with no dry ramp or no depth ramp, and one of the two
+    // divisions the GLSL does becomes a divide by zero.
+    std.debug.assert(WATER_SHORE > 0 and WATER_SHORE < 255);
+}
+
 /// The liquids, by name and not by number, plus the flat `liquidTone` array they index — sized off `LIQUID_N` so a
 /// fifth liquid cannot leave the uniform one triple short.
 const LIQUID_GLSL = std.fmt.comptimePrint(
@@ -381,7 +401,7 @@ pub const sceneFS =
     \\// **THE THREE KNOBS AN EDGE HAS** - GENERATED from `EDGE_K` at the top of this file, so the table
     \\// the CPU reads (`env.paintedDepth`) and the function the GPU runs cannot drift apart.
     \\
-++ EDGE_SHAPE_GLSL ++ EDGE_ID_GLSL ++ LIQUID_GLSL ++ BAY_GLSL ++
+++ EDGE_SHAPE_GLSL ++ EDGE_ID_GLSL ++ LIQUID_GLSL ++ BAY_GLSL ++ WATER_GLSL ++
     \\// WHERE THE LOOKUP ACTUALLY READS FROM. This is the whole fix: the displacement used to be one fixed
     \\// noise applied to EVERY material before anything else was asked, so the material BOUNDARY wandered
     \\// +/-1.7 m whatever its policy said — and `soilHard` only ever snapped the COVERAGE. Nothing could
@@ -412,7 +432,8 @@ pub const sceneFS =
     \\// **THE SHEET'S OWN OPACITY, WRITTEN FROM INSIDE THE MATERIAL SWITCH.** Water is the one surface here that
     \\// has to END IN A FADE rather than at a threshold, and the tint function hands back a colour only.
     \\float waterA = 1.0;
-    \\// How wide the shore fade is, in field units: `d` runs 0..1 over WATER_DEEP_AT, so 0.045 is about a metre.
+    \\// How wide the shore fade is, in field units: `d` runs 0..1 over WATER_DEEP_AT (11 m), so a metre of depth
+    \\// is 0.091 of it. Feathered 0.4..1.4 by the shape, this spans 0.51 m to 1.77 m of shore.
     \\const float WATER_FEATHER_D = 0.115;
     \\// …and the floor under a shape's own `feather`, so even one authored to CUT dies into wet sand instead of
     \\// shattering into shards where the domain warp folds over itself.
@@ -491,7 +512,7 @@ pub const sceneFS =
     \\  if (waterOn == 0) return c;
     \\  float f = waterAt(p);
     \\  if (f <= 0.002) return c;                       // dry land, well away from any water
-    \\  float wet = clamp(f/0.5, 0.0, 1.0);             // 0 at the ramp's edge, 1 at the waterline
+    \\  float wet = clamp(f/WATER_LINE, 0.0, 1.0);      // 0 at the ramp's edge, 1 at the waterline
     \\  wet = wet*wet;                                  // the last metre or so does most of the work
     \\  return mix(c, c*0.42 + vec3(0.020, 0.019, 0.014), wet*0.85);
     \\}
@@ -698,8 +719,8 @@ pub const sceneFS =
     \\      // same reason: the warp belongs to the shape, so a pool's own tones may not be fetched through another
     \\      // pool's wander.
     \\      float f = waterAt(q, wk, sheetKind);
-    \\      if (f <= 0.5005) discard;                     // the dry side: no sheet here at all
-    \\      float d = clamp((f - 0.5)*2.0, 0.0, 1.0);     // 0 at the shore, 1 in the deep
+    \\      if (f <= WATER_LINE) discard;                 // the dry side: no sheet here at all
+    \\      float d = clamp((f - WATER_LINE)/WATER_SPAN, 0.0, 1.0);  // 0 at the shore, 1 in the deep
     \\      int t0 = 3*sheetKind;
     \\      // The three tones come from the PALETTE (props.LIQUID_TONES), pushed in as uniforms by env.drawWater.
     \\      base = (d < 0.5) ? mix(liquidTone[t0], liquidTone[t0+1], smoothstep(0.0, 0.5, d))
@@ -709,7 +730,7 @@ pub const sceneFS =
     \\      // thrown off it. The soil never had this fault because its edge is an ALPHA (`k.z` feathers the
     \\      // coverage ring); water was the one surface asked to end at a compare. It fades over the same
     \\      // `feather` the shape already carries, floored so even a shape authored to CUT still dies softly
-    \\      // into wet sand rather than shattering. `d` is 0..1 over WATER_DEEP_AT, so 0.045 is about a metre.
+    \\      // into wet sand rather than shattering. `d` is 0..1 over WATER_DEEP_AT, so 0.091 is about a metre.
     \\      float fe = max(wk.z, WATER_FEATHER_MIN);
     \\      waterA = smoothstep(0.0, WATER_FEATHER_D*(0.4 + fe), d);
     \\      // **WHAT MAKES EACH ONE ITSELF, AND ONLY WATER GETS THE SILT.** Every branch below is on `sheetKind`,

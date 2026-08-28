@@ -4915,7 +4915,7 @@ const EDIT_HOUR_FAST: f32 = 24.0;
 /// **THE CRIB NAMED EIGHT GESTURES AND THE EDITOR BINDS TWENTY-FIVE.** Undo, delete, copy, paste, select-all,
 /// save, grid snap, brush size, re-roll and playtest were all bound and named NOWHERE on screen — an editing
 /// tool whose edit verbs are undiscoverable is a tool you can only build in, not revise in. Widest-that-fits
-/// (`drawCrib`), so a narrow window still gets the navigation and a wide one gets the whole keyboard.
+/// (`drawStatus`, at the foot of it), so a narrow window still gets the navigation and a wide one the whole keyboard.
 const CRIBS = [_][:0]const u8{
     "LMB brush   Shift+LMB marquee   RMB menu / deselect, drag rotates   wheel zoom   WASD+arrows pan   Tab layer   Ctrl+Z/Y undo   Ctrl+C/X/V copy   Ctrl+A all   Del delete   R re-roll   G grid   [ ] size   ,/. time   Ctrl+S save   F5 play   Esc back",
     "LMB brush   Shift+LMB marquee   RMB menu/rotate   wheel zoom   WASD pan   Tab layer   Ctrl+Z undo   Ctrl+C/V copy   Del delete   G grid   [ ] size   ,/. time   F5 play   Esc back",

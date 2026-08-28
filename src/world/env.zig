@@ -1284,6 +1284,41 @@ pub const Env = struct {
         return @enumFromInt((self.waterEdgeField[i] >> glsl.LIQUID_SHIFT) & glsl.LIQUID_MASK);
     }
 
+    /// **AND IT FILTERS THE FIELD THE WAY THE GPU DOES.** `gfx` loads `waterTex` `.bilinear` with
+    /// CLAMP_TO_EDGE, so the shader's `texture()` blends the four cells round the sample and the waterline
+    /// lands BETWEEN cell centres; indexing the one cell instead quantized the footing's coast to the grid.
+    /// MEASURED on the shipped map's 2.50 m cell: the walkable line sat **1.00 m** outside the drawn one.
+    /// `snap` is `waterField`'s own argument — only `tiled` point-samples, and there a cell index IS the snap.
+    ///
+    /// The three extra byte reads are free beside what `warpEdge` already spends here: MEASURED at two calls
+    /// per body across `MAX_FOES`, **1,024 a frame is 199 us in Debug, 1.2% of a 16.7 ms frame**, and sixteen
+    /// `hash21` evaluations of the domain warp are nearly all of it.
+    fn waterFieldAt(self: *const Env, x: f32, z: f32, snap: bool) ?f32 {
+        const N = wf.WATER_N;
+        const cell = wf.gridIndex(self.waterHalf, N, x, z) orelse return null;
+        if (snap) return @floatFromInt(self.waterField[cell]);
+        const half = self.waterHalf;
+        const nf: f32 = @floatFromInt(N);
+        const fx = (x + half) / (2 * half) * nf - 0.5;
+        const fz = (z + half) / (2 * half) * nf - 0.5;
+        const x0 = @floor(fx);
+        const z0 = @floor(fz);
+        const tx = fx - x0;
+        const tz = fz - z0;
+        const hi: i32 = @intCast(N - 1);
+        var acc: f32 = 0;
+        for (0..2) |dz| {
+            const cz: usize = @intCast(mathx.clampI(@as(i32, @intFromFloat(z0)) + @as(i32, @intCast(dz)), 0, hi));
+            const wz = if (dz == 0) 1.0 - tz else tz;
+            for (0..2) |dx| {
+                const cx: usize = @intCast(mathx.clampI(@as(i32, @intFromFloat(x0)) + @as(i32, @intCast(dx)), 0, hi));
+                const wx = if (dx == 0) 1.0 - tx else tx;
+                acc += wx * wz * @as(f32, @floatFromInt(self.waterField[cz * N + cx]));
+            }
+        }
+        return acc;
+    }
+
     /// **THE ONE DOOR INTO THE WATER FIELD FOR EVERYTHING THAT IS NOT A PIXEL** — wading, the fen lurker's
     /// water, what blocks a step. **IT WARPS EXACTLY AS THE SHADER DOES** (`glsl.warpEdge`, off the same
     /// `EDGE_K` row), because the field is ONE field feeding the look and the footing: shaped only on the GPU,
@@ -1292,8 +1327,7 @@ pub const Env = struct {
         if (!self.waterAny) return 0;
         const e = self.waterEdgeAt(x, z);
         const q = glsl.warpEdge(x, z, e, true);
-        const i = wf.gridIndex(self.waterHalf, wf.WATER_N, q[0], q[1]) orelse return 0;
-        const v: f32 = @floatFromInt(self.waterField[i]);
+        const v = self.waterFieldAt(q[0], q[1], e == glsl.TILED) orelse return 0;
         const shore: f32 = @floatFromInt(gfx.WATER_SHORE);
         if (v <= shore) return 0;
         return (v - shore) / (255.0 - shore);
@@ -3585,6 +3619,41 @@ test "THE COAST YOU SEE IS THE COAST YOU WADE INTO — one warp, evaluated on bo
         if (e.paintedDepth(t, 0) > 0) wetTo = t;
     }
     try std.testing.expect(@abs(wetTo - 60.0) <= cell + 0.3);
+
+    // **AND THE FILTER IS THE GPU'S, NOT A CELL LOOKUP** (`waterFieldAt`). `waterTex` is `.bilinear`, so the
+    // drawn coast lands between cell centres; point-sampled the footing's line stood a WHOLE CELL out — 1.00 m
+    // measured here at half 280. Re-solved against a bilinear read of the same field, which is what the shader does.
+    const bil = struct {
+        fn at(en: *const Env, half: f32, x: f32, z: f32) f32 {
+            const NN = wf.WATER_N;
+            const nf: f32 = @floatFromInt(NN);
+            const u = (x + half) / (2 * half) * nf - 0.5;
+            const v = (z + half) / (2 * half) * nf - 0.5;
+            const tu = u - @floor(u);
+            const tv = v - @floor(v);
+            const hi: i32 = @intCast(NN - 1);
+            var acc: f32 = 0;
+            for (0..2) |dz| {
+                const cz: usize = @intCast(mathx.clampI(@as(i32, @intFromFloat(@floor(v))) + @as(i32, @intCast(dz)), 0, hi));
+                for (0..2) |dx| {
+                    const cx: usize = @intCast(mathx.clampI(@as(i32, @intFromFloat(@floor(u))) + @as(i32, @intCast(dx)), 0, hi));
+                    const w = (if (dx == 0) 1 - tu else tu) * (if (dz == 0) 1 - tv else tv);
+                    acc += w * @as(f32, @floatFromInt(en.waterField[cz * NN + cx]));
+                }
+            }
+            return acc;
+        }
+    }.at;
+    const shoreF: f32 = @floatFromInt(gfx.WATER_SHORE);
+    var seen: f32 = 0;
+    var walked: f32 = 0;
+    t = 0;
+    while (t < 90) : (t += 0.01) {
+        if (bil(e, m.half, t, 0) > shoreF) seen = t;
+        if (e.paintedDepth(t, 0) > 0) walked = t;
+    }
+    std.debug.print("  straight coast at {d:.0} m, cell {d:.2}: drawn waterline {d:.2} m, walked {d:.2} m, gap {d:.2} m\n", .{ 60.0, cell, seen, walked, @abs(walked - seen) });
+    try std.testing.expect(@abs(walked - seen) <= 0.02);
 }
 
 test "THE FOOTING READS THE LIQUID THE SHADER PAINTED - every pool on the bench answers with its own kind" {

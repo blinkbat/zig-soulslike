@@ -220,9 +220,22 @@ pub fn pour(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, from: rl.Vector
     if (mathx.lenV(dir) < 1e-3) return;
     const scale = callerScale * POUR_GRAIN;
     const axis = mathx.normV(dir);
+    // **THE SPREAD IS A DISC ACROSS THE AXIS, NOT A BALL AROUND IT** — the sector drawn IS the sector that bites
+    // (`game.rimeBreathe`, `shroommage.flick`). Off a full 3D unit vector the offset's own axial component skews
+    // the angle: MEASURED, 7.6% of the rime stream landed outside its 30 deg and the widest reached 35.2, which
+    // is 0.78 m of frost past the arc at six metres.
+    var side = mathx.perpXZ(axis);
+    if (mathx.lenV(side) < 1e-3) side = v3(1, 0, 0);
+    side = mathx.normV(side);
+    const up = mathx.normV(mathx.crossV(axis, side));
     var i: usize = 0;
     while (i < n) : (i += 1) {
-        const off = mathx.scaleV(randomUnit(rng), @tan(spread) * @sqrt(rng.float()));
+        const spin = rng.range(0, std.math.tau);
+        const wander = @tan(spread) * @sqrt(rng.float());
+        const off = mathx.addV(
+            mathx.scaleV(side, mathx.cosf(spin) * wander),
+            mathx.scaleV(up, mathx.sinf(spin) * wander),
+        );
         const out = mathx.normV(mathx.addV(axis, off));
         const life = rng.range(s.lifeLo, s.lifeHi);
         const sp = (reach / mathx.maxF(life, 0.05)) * rng.range(0.55, 1.0);
@@ -361,4 +374,42 @@ test "a gather actually converges" {
         const v = mathx.normV(p.v);
         try std.testing.expect(toward.x * v.x + toward.y * v.y + toward.z * v.z > 0.5);
     }
+}
+
+test "A POURED CONE IS THE SECTOR THAT BITES — no mote lands outside the arc the hitbox uses" {
+    // All three pours hand this the arc their own hit test reads, so a mote outside it is frost or fire on a
+    // body taking none. BEFORE: p99 33.7 deg, widest 35.2 against a claimed 30 — 0.78 m of overspray at six metres.
+    var pool = [_]foe.Particle{.{}} ** 4096;
+    var head: usize = 0;
+    var rng = mathx.Rng.init(0x51E);
+    const ARC: f32 = combat.RIME_ARC;
+    const REACH: f32 = combat.RIME_REACH;
+    const spread = mathx.radians(ARC);
+    const axis = v3(0, 0, -1);
+    var i: usize = 0;
+    while (i < 60) : (i += 1) pour(&pool, &head, &rng, mathx.zero3, axis, .cold, 24, spread, REACH, 1.0);
+
+    var worst: f32 = 0;
+    var farthest: f32 = 0;
+    var n: usize = 0;
+    for (pool) |p| {
+        if (p.life <= 0) continue;
+        const l = mathx.lenV(p.v);
+        if (l < 1e-4) continue;
+        const travel = l * p.life;
+        // The nozzle knot is a puff at the source, not the stream, and it is not what draws the cone.
+        if (travel < REACH * 0.2) continue;
+        const u = mathx.scaleV(p.v, 1.0 / l);
+        const dot = mathx.clampF(u.x * axis.x + u.y * axis.y + u.z * axis.z, -1, 1);
+        worst = mathx.maxF(worst, mathx.degrees(std.math.acos(dot)));
+        farthest = mathx.maxF(farthest, travel);
+        n += 1;
+    }
+    std.debug.print("\n  pour: {d} stream motes, widest {d:.1} deg against an arc of {d:.1}, farthest {d:.2} m against a reach of {d:.2}\n", .{ n, worst, ARC, farthest, REACH });
+    try std.testing.expect(n > 500);
+    try std.testing.expect(worst <= ARC + 0.05);
+    // …and it still FILLS the arc, or the fix has narrowed the cone instead of bounding it.
+    try std.testing.expect(worst > ARC - 1.0);
+    // The reach half of the same contract: the far end is reached and not overshot.
+    try std.testing.expect(farthest >= REACH * 0.95 and farthest <= REACH + 0.01);
 }

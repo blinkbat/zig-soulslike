@@ -601,9 +601,10 @@ const BREATH_SHIVER_HZ = 12.0;
 /// at that count is a scatter of specks.
 const DUST_MOTES = 96;
 
-const FX_N = 1536;
-
-comptime {
+/// **THE RING IS THE ARITHMETIC, NOT A NUMBER THAT LOOKED BIG ENOUGH** (a ring overwrites its oldest silently).
+/// These ADD rather than taking the largest: a rod burst is exclusive per CAST but not in the AIR. `SUNDER_MOTES`
+/// was missing from the sum — worst is 1552 against the 1536 written here, so 28 motes landed in a pool 16 short.
+const FX_WORST = blk: {
     const gather = CAST_MOTE_RATE_HI * CAST_MOTE_LIFE_HI;
     const release = CAST_SPARKS + CAST_COLLAR + 1;
     const erupt = ROOT_DUST + ROOT_MOTES;
@@ -615,13 +616,11 @@ comptime {
     const lance = LANCE_STEPS * elemfx.burstCount(.fire, LANCE_SPARKS);
     const blocked = BLOCK_GRIT_MAX + BLOCK_SPARK_MAX + 1;
     const wake = FOG_WAKE_RATE * FOG_WAKE_LIFE_HI;
-    const worst = gather + breath + wake +
-        @as(f32, release + erupt + caught + struck + 2 * BOLT_BURST + lance + blocked + DUST_MOTES);
-    if (@as(f32, FX_N) < worst) @compileError(std.fmt.comptimePrint(
-        "hero: FX_N = {d} but a cast can have {d} particles in the air — raise it",
-        .{ FX_N, worst },
-    ));
-}
+    break :blk gather + breath + wake +
+        @as(f32, release + erupt + caught + struck + 2 * BOLT_BURST + lance + blocked + SUNDER_MOTES + DUST_MOTES);
+};
+
+const FX_N: usize = @intFromFloat(@ceil(FX_WORST));
 
 const WAND_LIT = mathx.colVec(CHAOS_MOTE);
 /// Radius matters more than brightness (the chapel's law): at a torch's 6 m it washed him violet head to foot.
@@ -3516,6 +3515,10 @@ pub const Hero = struct {
         self.trail = .{};
         self.fx = [_]foemod.Particle{.{}} ** FX_N;
         self.fxHead = 0;
+        // Drawn off `rootSites`, not out of `fx`, so clearing the pool missed it: `ROOT_SITE_LIFE` 5.86 s against
+        // `DEATH_DUR` 3.6 left root fans tearing out of the old spot for 2.26 s of the next run.
+        self.rootSites = [_]RootSite{.{}} ** ROOT_SITES;
+        self.rootHead = 0;
         self.startXfade();
     }
 
@@ -7053,4 +7056,31 @@ test "THE FOG GRACE HOLDS WHILE HE STANDS AND ONLY THE STEP HE TAKES HIMSELF SPE
     var d: f32 = 0;
     while (d < DEATH_DUR + 0.1) : (d += dt) h.updateDeath(dt);
     try std.testing.expect(!h.iFramed());
+}
+
+test "A RUN'S FX DIE WITH IT — the root patch outlives the death card and had to be cleared by hand" {
+    // MEASURED: `ROOT_SITE_LIFE` is 5.86 s against `DEATH_DUR`'s 3.6, so a Roots cast on the frame he died
+    // was still tearing fans out of the ground 2.26 s into the next run — at the OLD spot, since `respawn`
+    // moves him. `fx` was cleared and this was not, because it is drawn off `rootSites` and not out of the pool.
+    try std.testing.expect(ROOT_SITE_LIFE > DEATH_DUR);
+    std.debug.print("\n  root patch lives {d:.2} s, the death card {d:.2} s - {d:.2} s of it landed in the next run\n", .{ ROOT_SITE_LIFE, DEATH_DUR, ROOT_SITE_LIFE - DEATH_DUR });
+
+    var h = testHero();
+    h.setSpawn(mathx.ground(0, 0), 0);
+    h.pos = v3(40, 0, -25);
+    h.rootsBurst(mathx.ground(41, -25), true);
+    var live: usize = 0;
+    for (h.rootSites) |s| {
+        if (s.t < ROOT_SITE_LIFE) live += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), live);
+
+    _ = h.takeHit(.{ .dmg = 9999 }, v3(1, 0, 0));
+    try std.testing.expect(h.dead);
+    var t: f32 = 0;
+    while (t < DEATH_DUR + 0.1) : (t += 1.0 / 60.0) h.updateDeath(1.0 / 60.0);
+    try std.testing.expect(!h.dead);
+    for (h.rootSites) |s| try std.testing.expect(s.t >= ROOT_SITE_LIFE);
+    // …and the particle pool it shares the burst with is cleared the same way, which is what set the rule.
+    for (h.fx) |p| try std.testing.expect(p.life <= 0);
 }

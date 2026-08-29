@@ -146,11 +146,11 @@ comptime {
         if (sp.hp <= 0 or sp.size <= 0 or sp.slow <= 0) @compileError("shade: a role with no body");
     }
     // **THE BIGGER BODY IS THE SLOWER ONE AND IS WORTH MORE**, or it is simply a shade with more HP.
-    std.debug.assert(SPEC[1].size > SPEC[0].size and SPEC[1].slow > SPEC[0].slow);
-    std.debug.assert(SPEC[1].souls > SPEC[0].souls and SPEC[1].hp > SPEC[0].hp);
+    std.debug.assert(spec(.mourner).size > spec(.shade).size and spec(.mourner).slow > spec(.shade).slow);
+    std.debug.assert(spec(.mourner).souls > spec(.shade).souls and spec(.mourner).hp > spec(.shade).hp);
     // …and only the mourner builds the stupor. Two sources of a hero-only meter and neither is the tell.
-    std.debug.assert(SPEC[0].grasp.dose.at(.stupefy) == 0);
-    std.debug.assert(SPEC[1].grasp.dose.at(.stupefy) > 0);
+    std.debug.assert(spec(.shade).grasp.dose.at(.stupefy) == 0);
+    std.debug.assert(spec(.mourner).grasp.dose.at(.stupefy) > 0);
 }
 
 pub fn spec(r: Role) Spec {

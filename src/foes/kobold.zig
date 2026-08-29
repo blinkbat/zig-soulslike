@@ -645,7 +645,7 @@ pub const Kobold = struct {
 
     fn decide(self: *Kobold, d: f32) void {
         if (d > AGGRO_R) {
-            const back = mathx.distXZ(self.pos, self.home);
+            const back = mathx.distXZ(self.pos, foe.homeFor(self));
             if (back > HOME_R) {
                 self.moveDir = mathx.dirXZ(self.pos, self.home);
                 return self.enter(.reposition);
@@ -1966,7 +1966,7 @@ test "THE SLINGER DRIFTS WHILE THE SLING COOLS — the bearing sweeps and the ba
         was = now;
     }
     const d = mathx.distXZ(k.pos, hero);
-    std.debug.print("\n  slinger drift: bearing swept {d:.0} deg, range {d:.1} m (band {d:.1}..{d:.1})\n", .{ mathx.degrees(swept), d, SPEC[2].wantMin, SPEC[2].wantMax });
+    std.debug.print("\n  slinger drift: bearing swept {d:.0} deg, range {d:.1} m (band {d:.1}..{d:.1})\n", .{ mathx.degrees(swept), d, spec(.slinger).wantMin, spec(.slinger).wantMax });
     try std.testing.expect(swept > mathx.radians(12.0));
-    try std.testing.expect(d > SPEC[2].wantMin and d < SPEC[2].wantMax + 1.0);
+    try std.testing.expect(d > spec(.slinger).wantMin and d < spec(.slinger).wantMax + 1.0);
 }

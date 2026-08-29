@@ -291,7 +291,8 @@ pub const Husk = struct {
     pub fn navWant(self: *const Husk, quarry: rl.Vector3) ?rl.Vector3 {
         if (self.state != .idle and self.state != .walk) return null;
         if (foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R) <= AGGRO_R) return quarry;
-        return if (mathx.distXZ(self.pos, self.home) > HOME_R) self.home else null;
+        if (foe.postAim(self)) |go| return go;
+        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
     }
 
     fn faceToward(self: *Husk, target: rl.Vector3, dt: f32) void {
@@ -363,7 +364,7 @@ pub const Husk = struct {
             .idle, .walk => {
                 const sensed = foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R);
                 const gap = mathx.maxF(0, sensed - foe.HERO_R - self.bodyR());
-                const homeGap = mathx.distXZ(self.pos, self.home);
+                const homeGap = mathx.distXZ(self.pos, foe.homeFor(self));
                 switch (classify(gap, sensed, homeGap, self.cloutCd <= 0, self.root.held())) {
                     .rest => {
                         if (sensed <= AGGRO_R) self.faceToward(quarry, dt);

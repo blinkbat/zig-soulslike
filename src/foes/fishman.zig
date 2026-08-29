@@ -164,10 +164,11 @@ comptime {
             @compileError("fishman: wf.FoeKind." ++ @tagName(fk) ++ " is not in the shoal's contiguous run");
         }
     }
-    std.debug.assert(SPEC[2].souls > SPEC[0].souls and SPEC[2].hp < SPEC[0].hp);
-    std.debug.assert(SPEC[0].size > SPEC[2].size and SPEC[1].size > SPEC[2].size);
-    std.debug.assert(SPEC[0].rolls and SPEC[1].rolls and !SPEC[2].rolls);
-    std.debug.assert(SPEC[2].bodyR > SPEC[0].bodyR and SPEC[2].bodyR > SPEC[1].bodyR);
+    // Read through `spec` and not by ordinal: the run above pins the ORDER, and a bare `SPEC[2]` names no role.
+    std.debug.assert(spec(.shaman).souls > spec(.spearman).souls and spec(.shaman).hp < spec(.spearman).hp);
+    std.debug.assert(spec(.spearman).size > spec(.shaman).size and spec(.netter).size > spec(.shaman).size);
+    std.debug.assert(spec(.spearman).rolls and spec(.netter).rolls and !spec(.shaman).rolls);
+    std.debug.assert(spec(.shaman).bodyR > spec(.spearman).bodyR and spec(.shaman).bodyR > spec(.netter).bodyR);
     for (SPEC) |s| std.debug.assert(s.speed * WALK_BASE < heromod.RUN_SPEED);
 }
 
@@ -249,7 +250,7 @@ comptime {
     std.debug.assert(RITE_WIND >= foe.TELL_MIN);
     std.debug.assert(NET_HOLD > THRUST_WIND + THRUST_STRIKE);
     std.debug.assert(NET_HOLD < THRUST_WIND + THRUST_STRIKE + THRUST_RECOVER);
-    std.debug.assert(SPEC[1].wantMin > THRUST_R);
+    std.debug.assert(spec(.netter).wantMin > THRUST_R);
 }
 
 const DEATH_DUR: f32 = 1.05;
@@ -487,7 +488,8 @@ pub const Fishman = struct {
     pub fn navWant(self: *const Fishman, quarry: rl.Vector3) ?rl.Vector3 {
         if (self.state != .idle and self.state != .walk) return null;
         if (foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R) <= AGGRO_R) return quarry;
-        return if (mathx.distXZ(self.pos, self.home) > HOME_R) self.home else null;
+        if (foe.postAim(self)) |go| return go;
+        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
     }
 
     fn faceToward(self: *Fishman, target: rl.Vector3, dt: f32) void {
@@ -618,7 +620,7 @@ pub const Fishman = struct {
             .idle, .walk => {
                 const sensed = foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R);
                 const gap = mathx.maxF(0, sensed - foe.HERO_R - self.bodyR());
-                const homeGap = mathx.distXZ(self.pos, self.home);
+                const homeGap = mathx.distXZ(self.pos, foe.homeFor(self));
                 switch (classify(self.role, gap, sensed, homeGap, self.cd <= 0, bandHurt, self.root.held(), self.rollCd <= 0 and foe.canLeap(&self.root))) {
                     .rest => {
                         if (sensed <= AGGRO_R) self.faceToward(quarry, dt);

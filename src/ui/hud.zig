@@ -444,8 +444,8 @@ pub fn ailTint(a: combat.Ail) rl.Color {
         .stun => rgba(240, 228, 122, 255),
         .bleed => rgba(198, 44, 40, 255),
         .sleep => rgba(142, 152, 212, 255),
-        .confusion => rgba(172, 202, 82, 255),
-        .charm => rgba(228, 122, 172, 255),
+        .confusion => itemart.BABBLE_GILL,
+        .charm => itemart.CHARM_ROSE,
         .berserk => rgba(242, 82, 40, 255),
         .stupefy => rgba(174, 162, 194, 255),
     };

@@ -272,7 +272,8 @@ pub const Gorger = struct {
             .rush => self.mealAt,
             .idle, .prowl => blk: {
                 if (foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R) <= AGGRO_R) break :blk quarry;
-                break :blk if (mathx.distXZ(self.pos, self.home) > HOME_R) self.home else null;
+                if (foe.postAim(self)) |go| break :blk go;
+                break :blk if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
             },
             else => null,
         };
@@ -378,7 +379,7 @@ pub const Gorger = struct {
             .idle, .prowl => {
                 const sensed = foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R);
                 const gap = mathx.maxF(0, sensed - foe.HERO_R - self.bodyR());
-                const homeGap = mathx.distXZ(self.pos, self.home);
+                const homeGap = mathx.distXZ(self.pos, foe.homeFor(self));
                 const foodD: ?f32 = if (smelled) |s| s.d else null;
                 switch (classify(gap, sensed, homeGap, self.vit.hpFrac(), foodD, self.biteCd <= 0, self.root.held())) {
                     .feed => {

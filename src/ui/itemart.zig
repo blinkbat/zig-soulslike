@@ -242,7 +242,12 @@ const SLEEP_WAX = rgba(150, 158, 206, 255);
 const SLEEP_WAX_DK = rgba(96, 104, 152, 255);
 const GILL_DUST = rgba(186, 208, 96, 255);
 const GILL_DUST_DK = rgba(126, 144, 58, 255);
-const CHARM_ROSE = rgba(228, 122, 172, 255);
+/// **THE TWO METER COLOURS A PICTURE IS BUILT FROM, UP HERE WITH THE REST OF THE PALETTE.** `hud` imports this
+/// file and not the other way round, so this is the only side the one value can live on: `hud.ailTint` reads
+/// these two and the babble and bidding pictures read them. It was three hand-copies of the green and two of
+/// the rose, under a comment saying the icon and the bar agree — which nothing made true.
+pub const BABBLE_GILL = rgba(172, 202, 82, 255);
+pub const CHARM_ROSE = rgba(228, 122, 172, 255);
 const WINE_BLACK = rgba(46, 18, 26, 255);
 const WINE_RED = rgba(140, 26, 40, 255);
 const PAPER = rgba(206, 192, 156, 255);
@@ -546,7 +551,7 @@ pub fn spellArt(s: combat.Spell, cx: f32, cy: f32, px: f32, lit: bool) void {
 fn babble(cx: f32, cy: f32, px: f32, lit: bool) void {
     const s = px;
     const k = strokeK(px);
-    const hot = dimmed(rgba(172, 202, 82, 255), lit);
+    const hot = dimmed(BABBLE_GILL, lit);
     const cool = dimmed(rgba(112, 138, 46, 255), lit);
     const rows = [_][4]f32{ .{ -0.16, -0.14, 0.20, 0.20 }, .{ 0.10, 0.02, 0.27, -0.35 }, .{ -0.04, 0.22, 0.15, 0.70 } };
     for (rows, 0..) |r, i| {
@@ -764,7 +769,7 @@ pub fn spellTint(sp: combat.Spell) rl.Color {
         .levin => LEVIN_HOT,
         .lance => FIRE,
         .sunder => rgba(148, 142, 132, 255),
-        .babble => rgba(172, 202, 82, 255),
+        .babble => BABBLE_GILL,
         .bidding => CHARM_ROSE,
     };
 }

@@ -512,7 +512,7 @@ pub const Warrior = struct {
     speedS: f32 = 0,
     prevPhase: f32 = 0,
 
-    vit: combat.Vitals = combat.Vitals.initFoe(SPEC[0].hp, SPEC[0].poise, SPEC[0].stance).withRes(RESISTS),
+    vit: combat.Vitals = combat.Vitals.initFoe(spec(.shieldman).hp, spec(.shieldman).poise, spec(.shieldman).stance).withRes(RESISTS),
     hits: u32 = 0,
     hitLatch: bool = false,
     flash: f32 = 0,

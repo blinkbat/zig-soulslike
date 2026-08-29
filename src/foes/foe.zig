@@ -1588,6 +1588,23 @@ pub fn tetherFor(self: anytype) rl.Vector3 {
     };
 }
 
+/// **WHERE THE ORDERS POINT, ASKED WITHOUT ADVANCING THEM.** `navWant` is the way a creature tells the way-
+/// finder where it is going and it is `*const`, so it cannot call `Post.want`; every body under orders answered
+/// with its SPAWN PIN instead. `Nav.dir` is an ABSOLUTE heading, so `markWay`'s detour round whatever stood
+/// between the body and its post was then steered by while it walked to a mark somewhere else entirely.
+///
+/// Null while a roamer stands out its dwell, and null for a route with no legs painted on it: a body with
+/// nothing to walk to has nothing to walk round.
+pub fn postAim(self: anytype) ?rl.Vector3 {
+    const T = @TypeOf(self.*);
+    if (comptime !@hasField(T, "post")) return null;
+    return switch (self.post.ai) {
+        .hold => null,
+        .patrol => if (self.post.nwp == 0) null else self.post.legHere(self.home),
+        .roam, .roam_free => if (self.post.marked) self.post.mark else null,
+    };
+}
+
 /// **THE WHOLE IDLE-FRAME CONTRACT IN ONE LINE**, for the creatures that walk on legs and feed one
 /// `advanceGait` at the foot of their update. Eight of them spelled out the same five: take the step, copy the
 /// three locals, turn the facing toward it. `moveSpeed` is optional because a few derive their gait speed from

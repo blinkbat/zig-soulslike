@@ -136,8 +136,8 @@ comptime {
         if (@intFromEnum(sp.kind) != i) @compileError("npc: SPEC is out of `wf.NpcKind` order");
     }
     // **THE TWO CARRIAGES MUST DISAGREE**, or one kind is the other in a different coat.
-    std.debug.assert(SPEC[1].stoop < SPEC[0].stoop and SPEC[1].headFwd < SPEC[0].headFwd);
-    std.debug.assert(SPEC[1].top > SPEC[0].top);
+    std.debug.assert(spec(.merchant).stoop < spec(.wanderer).stoop and spec(.merchant).headFwd < spec(.wanderer).headFwd);
+    std.debug.assert(spec(.merchant).top > spec(.wanderer).top);
 }
 
 pub fn spec(k: wf.NpcKind) Spec {

@@ -254,7 +254,8 @@ pub const Shroom = struct {
     pub fn navWant(self: *const Shroom, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .idle) return null;
         if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) return hero;
-        return if (mathx.distXZ(self.pos, self.home) > HOME_R) self.home else null;
+        if (foe.postAim(self)) |go| return go;
+        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
     }
 
     fn faceToward(self: *Shroom, target: rl.Vector3, dt: f32) void {
@@ -376,7 +377,7 @@ pub const Shroom = struct {
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         switch (classify(d, self.flingCd <= 0, !foe.canLeap(&self.root))) {
             .rest => {
-                if (mathx.distXZ(self.pos, self.home) > HOME_R) {
+                if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) {
                     self.homing = true;
                     self.beginHop(self.home, bounds);
                 } else self.enterIdle(0.5 + self.seed * 0.4);

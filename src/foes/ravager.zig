@@ -675,7 +675,8 @@ pub const Ravager = struct {
     pub fn navWant(self: *const Ravager, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .idle and self.state != .move) return null;
         if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) return hero;
-        return if (mathx.distXZ(self.pos, self.home) > HOME_R) self.home else null;
+        if (foe.postAim(self)) |go| return go;
+        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
     }
 
     fn faceToward(self: *Ravager, at: rl.Vector3, dt: f32) void {
@@ -777,7 +778,7 @@ pub const Ravager = struct {
         // **ORDERS ONLY CHANGE THE PLACE IT IS WALKING TO.** It already trots to a point when it is not
         // hunting — its own gait, its own turn — so a round is that point moved, and nothing else here alters.
         const round = foe.postWant(self, dt, sensed, AGGRO_R);
-        const want = if (hunting) hero else (round orelse self.home);
+        const want = if (hunting) hero else (round orelse foe.homeFor(self));
         const gap = mathx.distXZ(self.pos, want);
         // **A ROUND STOPS WHERE THE POST SAYS ARRIVED** (`foe.ARRIVE`), not at `HOME_R`. Stopping short of it
         // means `Post.want` never marks the place reached and hands back the same one for ever.

@@ -791,6 +791,72 @@ comptime {
     }
 }
 
+// **EVERY CREATURE THAT TAKES ORDERS HAS TO WALK THEM.** The comptime block above only pins that each group
+// HAS a `foe.Post`; `warrior.zig` then pinned that ITS dog roams, and nothing asked the other twenty-five.
+// MEASURED: twelve of them tested the go-home arm against `self.home` instead of `foe.homeFor`, and their own
+// `HOME_R` is 1.5-3.0 m against `foe.ROAM_R`'s 9 — eight never got further than 1.9-3.4 m off the post, and
+// the other four reached the mark and were walked straight back off it again instead of standing there.
+// Four minutes each, hero six aggro rings away, so nothing here is a fight.
+test "A UNIT WALKS ITS ORDERS — every creature that takes them, not just the one it was written on" {
+    const dt: f32 = 1.0 / 60.0;
+    const home = mathx.ground(0, 0);
+    // Marks are drawn from 3 m out (`foe.ROAM_STEP_LO`), so a dog that stands its dwell where it arrived is
+    // near its post only in transit; one that is dragged back the moment it gets there lives at the pin.
+    const AT_POST: f32 = 2.0;
+    var worst: f32 = 1e9;
+    var worstName: []const u8 = "";
+    var homiest: f32 = 0;
+    var homiestName: []const u8 = "";
+    std.debug.print("\n", .{});
+    inline for (FOE_GROUPS) |gr| {
+        const T = memberOf(gr.field);
+        if (comptime @hasField(T, "post")) {
+            const far = mathx.ground(0, gr.aggro * 6);
+            var f = if (comptime @hasDecl(T, "spawn"))
+                T.spawn(home, 0, 1.0, 0.37)
+            else
+                T.spawnAs(@enumFromInt(0), home, 0, 1.0, 0.37);
+            f.post.arm(.roam, home, &.{}, 0.37);
+            var strayed: f32 = 0;
+            var atPost: u32 = 0;
+            var frames: u32 = 0;
+            var t: f32 = 0;
+            while (t < 240.0) : (t += dt) {
+                _ = callUpdate(&f, dt, far, 400.0);
+                const d = mathx.distXZ(f.pos, home);
+                strayed = @max(strayed, d);
+                frames += 1;
+                if (d <= AT_POST) atPost += 1;
+            }
+            const share = @as(f32, @floatFromInt(atPost)) / @as(f32, @floatFromInt(frames));
+            std.debug.print("  {s: <10} roams {d:.1} m off its post, and spends {d:.0}% of the round back at it\n", .{ gr.field, strayed, share * 100.0 });
+            if (strayed < worst) {
+                worst = strayed;
+                worstName = gr.field;
+            }
+            if (share > homiest) {
+                homiest = share;
+                homiestName = gr.field;
+            }
+        }
+    }
+    std.debug.print("  worst reach: {s} at {d:.1} m against a leash of {d:.1} m; most homebound: {s} at {d:.0}%\n", .{ worstName, worst, foemod.ROAM_R, homiestName, homiest * 100.0 });
+    try std.testing.expect(worst > foemod.ROAM_R * 0.5);
+    // A dog that never stands out its dwell is one that walks home and back for four minutes.
+    try std.testing.expect(homiest < 0.35);
+}
+
+/// The two creatures whose update carries one more argument than the rest: the fishman reads its band's blood
+/// and the rotgorger the nearest corpse. Neither is anything a body standing its round has.
+fn callUpdate(f: anytype, dt: f32, hero: rl.Vector3, bounds: f32) void {
+    const P = @typeInfo(@TypeOf(@TypeOf(f.*).update)).@"fn".params;
+    if (P.len == 5) {
+        _ = f.update(dt, hero, bounds, .{});
+    } else {
+        _ = f.update(dt, hero, bounds, .{}, if (P[5].type.? == bool) false else null);
+    }
+}
+
 comptime {
     @setEvalBranchQuota(30000);
     for (NO_PARRY) |x| {
@@ -967,6 +1033,14 @@ fn rehomeFoes(g: *Game, sighted: Sighted) void {
     g.env.openWards();
     // A swing left in the sink across a tear-down bills into a body that has since been re-homed.
     foemod.clearTurned();
+    // **AND THE GROUND THE RUN LAID GOES WITH THE BODIES** — every group that leaves a hazard clears it in its
+    // own `reset` (`knight.Vigil.clearGas`, `shroom.Cluster.clearClouds`, `cinderwake.Scorch.clearTrail`); the
+    // hero's bolt cloud is the one of them that lives on `Game` and had nobody to clear it. MEASURED:
+    // `knight.GAS_LIFE` 4.2 s against `hero.DEATH_DUR` 3.6 s, so 0.6 s of the dead run's cloud hung at the old
+    // spot dosing the re-homed field — and a bonfire or a map cut has no card at all, so there it was all 4.2.
+    g.boltGas = [_]knightmod.Gas{.{}} ** BOLT_GAS_CAP;
+    g.boltGasHead = 0;
+    g.boltGasT = 0;
     inline for (FOE_GROUPS) |f| {
         @field(g, f.field).reset(&g.map);
         if (sighted == .blind) {

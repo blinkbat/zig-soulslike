@@ -343,7 +343,8 @@ pub const Delver = struct {
         if (self.state != .walk and self.state != .idle) return null;
         if (self.airborne()) return null;
         if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) return hero;
-        return if (mathx.distXZ(self.pos, self.home) > HOME_R) self.home else null;
+        if (foe.postAim(self)) |go| return go;
+        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
     }
 
     fn faceToward(self: *Delver, target: rl.Vector3, rate: f32, dt: f32) void {
@@ -687,7 +688,7 @@ pub const Delver = struct {
         if (pick != .rest) self.homing = false;
         switch (pick) {
             .rest => {
-                if (mathx.distXZ(self.pos, self.home) > HOME_R) {
+                if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) {
                     self.homing = true;
                     self.enter(.walk);
                 } else self.enterIdle(0.5 + self.seed * 0.5);

@@ -285,7 +285,8 @@ pub const Frog = struct {
     pub fn navWant(self: *const Frog, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .idle) return null;
         if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) return hero;
-        return if (mathx.distXZ(self.pos, self.home) > HOME_R) self.home else null;
+        if (foe.postAim(self)) |go| return go;
+        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
     }
 
     pub fn startHop(self: *Frog, to: rl.Vector3, bounds: f32, lunge: bool) void {
@@ -458,7 +459,7 @@ pub const Frog = struct {
             },
             .wait => self.enterIdle(0.12),
             .rest => {
-                if (mathx.distXZ(self.pos, self.home) > HOME_R) {
+                if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) {
                     const dir = self.nav.along(mathx.dirXZ(self.pos, self.home));
                     self.startHop(v3(self.pos.x + dir.x * HOP_REACH, 0, self.pos.z + dir.z * HOP_REACH), bounds, false);
                 } else self.enterIdle(1.4 + self.seed * 2.2);

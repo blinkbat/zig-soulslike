@@ -385,7 +385,8 @@ pub const Skitterer = struct {
     pub fn navWant(self: *const Skitterer, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .idle and self.state != .move) return null;
         if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) return hero;
-        return if (mathx.distXZ(self.pos, self.home) > HOME_R) self.home else null;
+        if (foe.postAim(self)) |go| return go;
+        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
     }
 
     fn faceToward(self: *Skitterer, at: rl.Vector3, dt: f32) void {
@@ -489,7 +490,7 @@ pub const Skitterer = struct {
         // **ORDERS ONLY CHANGE THE PLACE IT IS WALKING TO** (the ravager's arrangement) — it already crosses
         // to a point on its ribs when it is not hunting, so a round is that point moved.
         const round = foe.postWant(self, dt, sensed, AGGRO_R);
-        const want = if (hunting) hero else (round orelse self.home);
+        const want = if (hunting) hero else (round orelse foe.homeFor(self));
         const gap = mathx.distXZ(self.pos, want);
         // **A ROUND STOPS WHERE THE POST SAYS ARRIVED** (`foe.ARRIVE`), not at `HOME_R`. Stopping short of it
         // means `Post.want` never marks the place reached and hands back the same one for ever.

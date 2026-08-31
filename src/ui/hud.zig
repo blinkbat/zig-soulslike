@@ -1034,18 +1034,48 @@ const SOUL_H: i32 = 32;
 const SOUL_FILL_A: u8 = 170;
 const SOUL_TEXT = rgba(228, 216, 190, 255);
 
-pub fn souls(n: u32) void {
+/// **ONE PLATE, TWO PURSES.** The box, the drop shadow, the rim and the gilt top line are the same picture for
+/// both counters; only the mark on the left and the tone of the numeral differ, which is the whole point of
+/// having two. Spelled twice they drifted the moment either changed height.
+fn pursePlate(x: i32, y: i32, w: i32, h: i32, n: u32, col: rl.Color, jewels: bool) void {
     var buf: [16]u8 = undefined;
     const s = std.fmt.bufPrintZ(&buf, "{d}", .{n}) catch return;
+    rl.drawRectangle(x - 2, y - 2, w + 4, h + 4, rgba(0, 0, 0, 128));
+    uiart.plate(x, y, w, h, SOUL_FILL_A);
+    rl.drawRectangleLines(x, y, w, h, mathx.withAlpha(RIM, 186));
+    rl.drawRectangle(x + 1, y + 1, w - 2, 1, mathx.withAlpha(uiart.GILT, 90));
+    if (jewels) uiart.cornerJewels(x + 1, y + 1, w - 2, h - 2, 2.0, mathx.withAlpha(uiart.GILT_DIM, 200));
+    text(s, x + w - textW(s, BODY) - 11, y + @divTrunc(h - lineH(BODY), 2) + 1, BODY, col);
+}
+
+pub fn souls(n: u32) void {
     const x = rl.getScreenWidth() - SOUL_W - MARGIN;
     const y = rl.getScreenHeight() - SOUL_H - BOTTOM;
-    rl.drawRectangle(x - 2, y - 2, SOUL_W + 4, SOUL_H + 4, rgba(0, 0, 0, 128));
-    uiart.plate(x, y, SOUL_W, SOUL_H, SOUL_FILL_A);
-    rl.drawRectangleLines(x, y, SOUL_W, SOUL_H, mathx.withAlpha(RIM, 186));
-    rl.drawRectangle(x + 1, y + 1, SOUL_W - 2, 1, mathx.withAlpha(uiart.GILT, 90));
-    uiart.cornerJewels(x + 1, y + 1, SOUL_W - 2, SOUL_H - 2, 2.0, mathx.withAlpha(uiart.GILT_DIM, 200));
-    uiart.diamond(@floatFromInt(x + 12), @floatFromInt(y + @divTrunc(SOUL_H, 2)), 2.8, mathx.withAlpha(uiart.GILT_DIM, 220));
-    text(s, x + SOUL_W - textW(s, BODY) - 11, y + @divTrunc(SOUL_H - lineH(BODY), 2) + 1, BODY, SOUL_TEXT);
+    pursePlate(x, y, SOUL_W, SOUL_H, n, SOUL_TEXT, true);
+    uiart.soulMark(uiart.fi(x + 14), uiart.fi(y + @divTrunc(SOUL_H, 2)), uiart.MARK_R, 235);
+}
+
+const COIN_H: i32 = 26;
+const COIN_GAP: i32 = 5;
+const COIN_W: i32 = SOUL_W;
+const COIN_TEXT = rgba(238, 216, 158, 255);
+
+/// **HOW TALL THE PAIR OF PURSES STANDS.** One number, because the save tree anchors off the bottom-right stack
+/// too and a second copy of the sum would put the tree over the gold the first time either plate changed height.
+pub fn purseStackH() i32 {
+    return SOUL_H + COIN_GAP + COIN_H;
+}
+
+/// **GOLD SITS OVER SOULS AND IT IS A COIN, NOT A JEWEL** (owner: a different icon). The souls plate carries
+/// `uiart.diamond`; a second diamond in a second box a few pixels above it is the same readout twice. A disc
+/// with a rim and a struck face is the one shape nobody confuses for a soul.
+pub fn gold(n: u32) void {
+    const x = rl.getScreenWidth() - COIN_W - MARGIN;
+    const y = rl.getScreenHeight() - BOTTOM - purseStackH();
+    // No corner jewels: the shallower plate has no room for them, and they are what makes the souls box the
+    // one your eye lands on first.
+    pursePlate(x, y, COIN_W, COIN_H, n, COIN_TEXT, false);
+    uiart.coinMark(uiart.fi(x + 14), uiart.fi(y + @divTrunc(COIN_H, 2)), uiart.MARK_R, 240);
 }
 
 // **THE ONE THING THAT SAYS THE DISK WAS TOUCHED** (owner: a save spinner, bottom right — a tree that grows; a
@@ -1085,7 +1115,7 @@ pub fn saveTree(left: f32) void {
     if (a <= 0.004 or grow <= 0.001) return;
 
     const x = rl.getScreenWidth() - MARGIN - SAVE_W;
-    const baseY = rl.getScreenHeight() - BOTTOM - SOUL_H - SAVE_GAP;
+    const baseY = rl.getScreenHeight() - BOTTOM - purseStackH() - SAVE_GAP;
     const bx = uiart.fi(x + @divTrunc(SAVE_W, 2));
     const by = uiart.fi(baseY);
     const h = uiart.fi(SAVE_H);

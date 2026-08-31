@@ -13,6 +13,8 @@ const cameramod = @import("core/camera.zig");
 const hud_ = @import("ui/hud.zig");
 const menumod = @import("ui/menu.zig");
 const bookmod = @import("ui/book.zig");
+const countermod = @import("play/counter.zig");
+const counterui = @import("ui/counterui.zig");
 const frogmod = @import("foes/frog.zig");
 const foemod = @import("foes/foe.zig");
 const combat = @import("play/combat.zig");
@@ -277,6 +279,10 @@ pub const Game = struct {
     /// `= null` here never runs.
     gateWalk: ?GateWalk = null,
     climb: ?Climb = null,
+    /// **THE TRADE COUNTER** (`play/counter.zig`), opened by a `shop`/`smithy` trigger act. A DEFAULTED FIELD:
+    /// assigned in `init` and in `beginGame`, because `Game` comes off `alloc.create`.
+    counter: countermod.Counter = .{},
+    counterT: f32 = 0,
     /// The deck he stood on LAST frame, or null. Walking off one is a fall and needs to know there was a floor.
     heroDeck: ?f32 = null,
     /// His `pos.y` last frame, and nothing else reads it: `syncLensLift` is the one customer.
@@ -405,6 +411,8 @@ pub const Game = struct {
         g.bossK = [_]f32{0} ** hud_.BOSS_SLOTS;
         g.bossFrac = [_]f32{0} ** hud_.BOSS_SLOTS;
         leavePlace(g);
+        g.counter = .{};
+        g.counterT = 0;
         g.lensGroundY = 0;
         g.spiritK = 0;
         g.spiritHp = 0;
@@ -511,6 +519,7 @@ fn beginGame(g: *Game) void {
     plantActor(g, &start);
     g.hero.setSpawn(start, g.map.start.facing());
     g.hero.souls = .{};
+    g.hero.gold = .{};
     g.hero.arm = .sword;
     g.hero.armAlt = .bell;
     g.hero.off = .shield;
@@ -525,6 +534,8 @@ fn beginGame(g: *Game) void {
     g.day = .{};
     dropRunHud(g);
     leavePlace(g);
+    g.counter = .{};
+    g.counterT = 0;
     g.bag = .{};
     g.award = .{};
     for (STARTING_KIT) |k| {
@@ -2392,6 +2403,21 @@ pub fn forceSkeinForShot(g: *Game, across: f32) void {
 pub fn skeinLeadForShot(g: *const Game) rl.Vector3 {
     return g.skein.leadAt();
 }
+pub fn openCounterForShot(g: *Game, t: countermod.Trade) void {
+    g.counter.begin(t);
+    g.counterT = counterui.RAISE;
+}
+
+pub fn counterSellForShot(g: *Game) void {
+    g.counter.selling = true;
+    g.counter.sel = 0;
+}
+
+pub fn closeCounterForShot(g: *Game) void {
+    g.counter.close();
+    g.hero.held = false;
+}
+
 pub fn openChestForShot(g: *Game) bool {
     const had = g.chests.near != null;
     interact(g);
@@ -3029,6 +3055,7 @@ fn reclaimSouls(g: *Game) void {
 fn openChest(g: *Game) void {
     const got = g.chests.openNear(&g.map) orelse return;
     awardLoot(g, got.loot, got.at);
+    g.hero.gold.gain(got.gold);
     g.rig.addShake(SHAKE_CHEST);
     g.rumble.play(rumblemod.hit_light);
 }
@@ -3036,6 +3063,7 @@ fn openChest(g: *Game) void {
 fn takePickup(g: *Game) void {
     const got = g.pickups.takeNear(&g.map) orelse return;
     awardLoot(g, got.loot, got.at);
+    g.hero.gold.gain(got.gold);
     g.rig.addShake(SHAKE_CHEST);
     g.rumble.play(rumblemod.hit_light);
 }
@@ -3099,6 +3127,10 @@ fn billDeaths(g: *Game) void {
                 // **IT GOES ON THE GROUND WHERE IT FELL**, not into his hands. The roll is spent whatever died, so the stream cannot become a function of what you chose to fight.
                 var buf: [pickupmod.DROP_MAX]item.Kind = undefined;
                 self.g.pickups.spawn(f.pos, dropsmod.roll(k, self.g.hero.sheet.at(.luck), &self.g.dropRng, &buf));
+                // **THE PURSE GOES STRAIGHT INTO HIS**, the way souls do — gold is a counter and not a glow, so
+                // there is nothing to walk over. Drawn from the same stream immediately after the item roll,
+                // and it always spends its draws, so the order here is part of the determinism.
+                self.g.hero.gold.gain(dropsmod.rollGold(k, &self.g.dropRng));
                 if (self.g.hero.perk.onKill > 0 and !self.g.hero.dead) {
                     _ = self.g.hero.vit.heal(self.g.hero.perk.onKill);
                 }
@@ -3215,9 +3247,10 @@ fn voiceFolk(g: *Game) void {
     }
 }
 
-/// Where the ring comes from: the anvil's face, not his crown. A line drawn from the top of a 3.24 m body
-/// clears low walls the sound itself would not.
-const ANVIL_EAR: f32 = 1.0;
+/// Where the ring comes from: the anvil's own face, not his crown. A line drawn from the top of a 3.24 m body
+/// clears low walls the sound itself would not. Off the PROP rather than spelled here, so re-solving the anvil
+/// against his stroke — which already moved it once, 0.88 to 0.98 — carries the sound with it.
+const ANVIL_EAR: f32 = propsmod.info(.anvil).top;
 
 test "A CLIFF TURNS THE ANVIL INTO A HINT — the ring carries in the open and is muffled through rock" {
     const m = try worldfmt.testMap(std.testing.allocator, worldfmt.TEST_HEAD ++ "at: cliff 18 0 0 1\n");
@@ -3242,6 +3275,44 @@ test "A CLIFF TURNS THE ANVIL INTO A HINT — the ring carries in the open and i
     std.debug.print("\n  anvil through rock: {d:.0}% of its open level, pitched down {d:.0}% — a hint, not a location\n", .{
         100.0 * sfx.MUFFLE_GAIN, 100.0 * sfx.MUFFLE_DROOP,
     });
+}
+
+fn openCounter(g: *Game, k: worldfmt.ActKind) void {
+    const trade: countermod.Trade = switch (k) {
+        .shop => .shop,
+        .smithy => .smithy,
+        else => return,
+    };
+    // A counter may not open over a crossing, a climb or a death — every other door here refuses the same way.
+    if (g.hero.dead or g.gateWalk != null or g.climb != null) return;
+    g.counter.begin(trade);
+    g.counterT = 0;
+    g.hero.held = true;
+    sfx.play(.flask_cycle);
+}
+
+/// **THE STICK AND FOUR BUTTONS, AND NOTHING ELSE TICKS.** The world is held (`hero.held`) exactly as a
+/// conversation holds it, so nothing walks, swings or bleeds while he is haggling.
+fn tickCounter(g: *Game, dt: f32) void {
+    g.counterT += dt;
+    var rowBuf: [countermod.MAX_ROWS]countermod.Row = undefined;
+    const len = g.counter.rows(&g.hero, &g.bag, &rowBuf).len;
+    if (navPressed(.up)) g.counter.move(-1, len);
+    if (navPressed(.down)) g.counter.move(1, len);
+    if (confirmPressed()) g.counter.take(&g.hero, &g.bag);
+    // The QUICK button flips a shop between its two lists; a smithy has only the one.
+    if (g.counter.trade == .shop and (rl.isKeyPressed(.q) or padPressed(hud_.padOf(hud_.BTN_QUICK)))) {
+        g.counter.selling = !g.counter.selling;
+        g.counter.sel = 0;
+        g.counter.said = .none;
+    }
+    if (rl.isKeyPressed(.escape) or padPressed(hud_.padOf(hud_.BTN_BACK))) {
+        g.counter.close();
+        g.hero.held = false;
+    }
+    g.hero.pose();
+    g.rig.tickShake(dt);
+    g.rumble.update(dt, false);
 }
 
 fn navPressed(dir: menumod.NavDir) bool {
@@ -3387,7 +3458,9 @@ fn applyHour(g: *Game) void {
     // the editor) is spared. Deliberate: a `@round` on the hour is a step in the sun's own bearing, and light
     // here is never stepped. The cost is 18 uniform uploads a frame on a path already drawing hundreds.
     const wet = @round(g.wetNow * WET_STEPS) / WET_STEPS;
-    const fog = g.menu.fogK();
+    // The distance haze is weather, and the editor's weather eye is shut on entry: a 900 m pull-back through
+    // 0.013-per-metre air is a grey sheet with the map behind it.
+    const fog = if (skyLive(g)) g.menu.fogK() else 0;
     const spore = @round(g.sporeNow * WET_STEPS) / WET_STEPS;
     if (g.day.hour == g.hourLit and wet == g.wetLit and fog == g.fogLit and spore == g.sporeLit) return;
     g.hourLit = g.day.hour;
@@ -4346,6 +4419,23 @@ fn sceneCam(g: *const Game) rl.Camera3D {
     return if (g.editor.on) g.editor.cam else g.rig.cam;
 }
 
+/// **THE EDITOR SEES AS FAR AS IT IS PULLED BACK.** Play keeps its 320 m wall; zoomed out over a map 624 m a
+/// side the wall is what would eat the far half of the screen, so it opens with the orbit distance.
+fn drawFar(g: *const Game) f32 {
+    if (!g.editor.on) return CLIP_FAR;
+    return mathx.clampF(g.editor.dist * 2.0 + CLIP_FAR, CLIP_FAR, EDITOR_CLIP_FAR);
+}
+
+const EDITOR_CLIP_FAR: f32 = 2600.0;
+
+/// How wide the shadow box opens. The editor's ground footprint is about 2.6 x the orbit distance at fovy 55
+/// and a middling pitch, so the box tracks that and every caster on screen lands in the depth map — coarser
+/// with every metre out, which is the trade the zoom asks for.
+fn shadowSpanOf(g: *const Game) f32 {
+    if (!g.editor.on) return gfx.SHADOW_ORTHO;
+    return mathx.clampF(g.editor.dist * 2.6, gfx.SHADOW_ORTHO, gfx.SHADOW_SPAN_MAX);
+}
+
 fn sunFocus(g: *const Game) rl.Vector3 {
     if (g.menu.booting()) {
         const at = bootLook(g, g.bootT);
@@ -4450,7 +4540,8 @@ pub fn drawScene(g: *Game) void {
     foemod.setLens(cam.position, mathx.normV(mathx.subV(cam.target, cam.position)));
     g.env.markOccluders(cam.position, if (g.editor.on) cam.position else heroAimPoint(g), g.drawDt);
     const focus = sunFocus(g);
-    g.scene.beginShadowPass(focus);
+    rl.gl.rlSetClipPlanes(CLIP_NEAR, drawFar(g));
+    g.scene.beginShadowPass(focus, shadowSpanOf(g));
     setCasterShaders(g, g.scene.depthShader);
     drawCasters(g, .{ .sun = focus });
     setCasterShaders(g, g.scene.shader);
@@ -4462,7 +4553,8 @@ pub fn drawScene(g: *Game) void {
     g.sky.draw(cam);
 
     const aspect = @as(f32, @floatFromInt(rl.getScreenWidth())) / @as(f32, @floatFromInt(rl.getScreenHeight()));
-    const view = envmod.View.fromCamera(cam, aspect);
+    var view = envmod.View.fromCamera(cam, aspect);
+    if (g.editor.on) view.floor = drawFar(g);
 
     rl.beginMode3D(cam);
     g.scene.bind(cam.position);
@@ -4636,6 +4728,7 @@ pub fn hud(g: *Game, dt: f32) void {
             hud_.spiritPanel(spiritFace, combat.spiritName(g.hero.spirit), g.spiritHp, g.spiritK);
             hud_.reticle(g.hero.aimB);
             hud_.souls(g.hero.souls.display());
+            hud_.gold(g.hero.gold.display());
             bossBars(g, dt);
             if (reachable(g)) |r| hud_.prompt(r.prompt());
         }
@@ -4988,6 +5081,20 @@ pub fn run(mode: Mode) void {
             hud(g, rawDt);
             restmod.drawScreen(&g.rest, restView(g));
             saveMark(g, rawDt);
+            rl.endDrawing();
+            continue;
+        }
+        // **A COUNTER TAKES THE FRAME, LIKE A CONVERSATION DOES.** Before `g.talk`, because a shop opened from
+        // inside a dialog's own act list would otherwise be drawn under the panel that opened it.
+        if (g.counter.open) {
+            tickCounter(g, rawDt);
+            bWasDown = true;
+            bHeldT = ROLL_TAP_MAX;
+            wasInside = false;
+            sfx.ambience(rawDt);
+            sfx.tickStreams();
+            drawScene(g);
+            counterui.draw(&g.counter, &g.hero, &g.bag, g.counterT);
             rl.endDrawing();
             continue;
         }
@@ -5582,6 +5689,7 @@ pub fn run(mode: Mode) void {
         for (g.folk.live()) |*p| groundActor(g, &p.pos, dt);
         for (g.pack.live()) |*w| groundActor(g, &w.pos, dt);
         tickTriggers(g, dt);
+        if (g.trig.takeCounter()) |k| openCounter(g, k);
         g.rig.tickShake(rawDt);
         g.rig.aimB = g.hero.aimB;
         g.rig.tickLift(g.hero.lift, liftShare(&g.hero), dt);
@@ -5815,7 +5923,9 @@ pub fn bookView(g: *Game) bookmod.View {
         .mem = g.hero.mem,
         .fp = g.hero.fp.cur,
         .souls = g.hero.souls.display(),
+        .gold = g.hero.gold.display(),
         .worn = g.hero.worn,
+        .tiers = g.hero.tiers,
     };
 }
 

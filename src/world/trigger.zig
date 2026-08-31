@@ -26,6 +26,8 @@ pub const World = struct {
 };
 
 pub const Runtime = struct {
+    /// Set by `apply`, drained by `takeCounter`.
+    wantCounter: ?wf.ActKind = null,
     flags: [wf.MAX_FLAGS]bool = [_]bool{false} ** wf.MAX_FLAGS,
     counters: [wf.MAX_COUNTERS]i32 = [_]i32{0} ** wf.MAX_COUNTERS,
     /// Seconds left on each countdown. A timer nobody started reads as NOT done, so `timer x=done` cannot pass before something armed it — the alternative makes every unstarted timer a free `always`.
@@ -184,9 +186,19 @@ pub const Runtime = struct {
         return null;
     }
 
+    /// **WHICH COUNTER A TRIGGER ASKED FOR**, drained by whoever opens it. Null on every other frame.
+    pub fn takeCounter(self: *Runtime) ?wf.ActKind {
+        const want = self.wantCounter;
+        self.wantCounter = null;
+        return want;
+    }
+
     pub fn apply(self: *Runtime, m: *const wf.Map, a: *const wf.Act) void {
         switch (a.kind) {
             .dialog, .wait, .preserve => {},
+            // **A COUNTER IS A DOOR AND THE GAME OPENS IT**, exactly as `.dialog` is: a runtime that reached
+            // into the hero's purse from here would be the script layer doing gameplay. This only says which.
+            .shop, .smithy => self.wantCounter = a.kind,
             .text => self.say(m.spanText(a.line)),
             .flag => if (a.slot < wf.MAX_FLAGS) {
                 self.flags[a.slot] = switch (a.setop) {

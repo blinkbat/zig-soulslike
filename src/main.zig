@@ -163,6 +163,8 @@ test {
     _ = @import("props/propmarket.zig");
     _ = @import("props/propforge.zig");
     _ = @import("foes/wolf.zig");
+    _ = @import("play/counter.zig");
+    _ = @import("ui/counterui.zig");
     _ = @import("play/pickup.zig");
     _ = @import("play/award.zig");
     _ = @import("foes/foe.zig");

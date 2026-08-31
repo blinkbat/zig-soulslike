@@ -209,6 +209,50 @@ pub const Class = enum {
     }
 };
 
+/// **WHAT A THING IS WORTH IN COIN, AND 0 MEANS IT DOES NOT TRADE.** Derived from the SHELF it sits on rather
+/// than authored sixty times: a tool is a tool, and the handful that are genuinely dearer or genuinely priceless
+/// say so below. Guessed on the owner's say-so and meant to be retuned — the test beside it prints the whole
+/// list so the spread can be read at once instead of hunted for.
+///
+/// **UNTRADEABLE IS A PRICE OF 0** and it is one rule, not a second flag: the two flasks are the ESTUS of this
+/// game, a key is a key, and a boss's ring is the record of a fight. None of those has a number a shop could
+/// name without breaking something.
+pub fn price(k: Kind) u32 {
+    return switch (k) {
+        // The things no counter may touch.
+        .crimson_flask, .cerulean_flask, .iron_key, .soul_binding_ring, .golden_seed => 0,
+
+        // Dearer than their shelf: a made weapon, and the two scrolls a boss dies for.
+        .envenomed_dagger => 900,
+        .grave_warbow => 850,
+        .tower_shield => 700,
+        .greatclub => 480,
+        .scroll_babble, .scroll_bidding => 620,
+        // The one material the smith actually eats, so it has a price a player will feel.
+        .smithing_stone => 150,
+        .rune_arc => 520,
+
+        else => switch (class(k)) {
+            .tool => 60,
+            .treasure => 400,
+            .material => 40,
+            .key => 0,
+            .gear => 300,
+        },
+    };
+}
+
+/// What a counter pays for one. **A SHOP IS NOT A BANK** — buying back what you sold has to cost something, or
+/// the stock list is a free storage chest with extra steps.
+pub const SELL_SHARE: f32 = 0.40;
+
+pub fn sellPrice(k: Kind) u32 {
+    const p = price(k);
+    if (p == 0) return 0;
+    const paid: u32 = @intFromFloat(@as(f32, @floatFromInt(p)) * SELL_SHARE);
+    return @max(paid, 1);
+}
+
 pub fn class(k: Kind) Class {
     return switch (k) {
         // **ONE PER LINE.** This is the table you read to find out where a thing shelves, and both of the long arms ran past 200 columns.

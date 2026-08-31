@@ -51,6 +51,9 @@ pub const Pickup = struct {
 pub const Taken = struct {
     at: rl.Vector3,
     loot: []const item.Kind,
+    /// Coin the placing op put in it (`wf.Op.gold`). A BODY DROP carries none — a purse off a corpse goes
+    /// straight into his (`game`'s kill site), so a glow that also paid would pay twice.
+    gold: u32 = 0,
 };
 
 pub const Pickups = struct {
@@ -138,7 +141,7 @@ pub const Pickups = struct {
         if (p.dropped()) return .{ .at = p.topWorld(), .loot = p.loot[0..p.nloot] };
         const op = p.op;
         const loot: []const item.Kind = if (op < m.nops) m.ops[op].loot[0..m.ops[op].nloot] else &.{};
-        return .{ .at = p.topWorld(), .loot = loot };
+        return .{ .at = p.topWorld(), .loot = loot, .gold = if (op < m.nops) m.ops[op].gold else 0 };
     }
 };
 

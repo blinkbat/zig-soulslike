@@ -86,9 +86,14 @@ pub fn screenOfColor(c: rl.Color) f32 {
 
 pub const SHADOWMAP_RES = 8192;
 pub const SHADOW_ORTHO = 108.0;
+/// The widest the box may open, for the editor zoomed out over a whole map (`worldfmt.MAX_DECLARED_HALF` is 312 a side). 8192 over 1024 m is 12.5 cm a texel: a pillar still lays a shadow, a fern's is gone.
+pub const SHADOW_SPAN_MAX = 1024.0;
 const SUN_DIST = 120.0;
-const SHADOW_CLIP_NEAR = SUN_DIST - SHADOW_ORTHO * 0.78;
-const SHADOW_CLIP_FAR = SUN_DIST + SHADOW_ORTHO * 0.78;
+const SHADOW_DEPTH = 0.78;
+const SHADOW_NEAR = SUN_DIST - SHADOW_ORTHO * SHADOW_DEPTH;
+
+/// HOW WIDE THE BOX IS THIS FRAME, read by `env`'s caster cull the way `sun` is. Written only by `beginShadowPass`.
+pub var shadowSpan: f32 = SHADOW_ORTHO;
 
 const HAZE_DENSITY: f32 = 0.013;
 const HAZE_STORM: f32 = 3.10;
@@ -567,23 +572,28 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_hazeD, &density, .float);
     }
 
-    pub fn beginShadowPass(self: *Scene, focus: rl.Vector3) void {
-        const t = SHADOW_ORTHO / @as(f32, SHADOWMAP_RES);
+    /// `span` is the width of the ortho box in metres — `SHADOW_ORTHO` in play, wider as the editor pulls
+    /// back. The camera's distance and both clip planes ride it, so the depth slab stays the same +-0.78 span
+    /// around the focus at every width and the shader's NDC bias keeps costing the same 16.6 texels.
+    pub fn beginShadowPass(self: *Scene, focus: rl.Vector3, span: f32) void {
+        shadowSpan = mathx.clampF(span, SHADOW_ORTHO, SHADOW_SPAN_MAX);
+        const dist = SHADOW_NEAR + shadowSpan * SHADOW_DEPTH;
+        const t = shadowSpan / @as(f32, SHADOWMAP_RES);
         const b = lightBasis();
         const a0 = @round(dot3(focus, b.right) / t) * t;
         const a1 = @round(dot3(focus, b.up) / t) * t;
         const a2 = dot3(focus, b.fwd);
         const f = mathx.addV(mathx.addV(mathx.scaleV(b.right, a0), mathx.scaleV(b.up, a1)), mathx.scaleV(b.fwd, a2));
         const cam = rl.Camera3D{
-            .position = v3(f.x + sun.x * SUN_DIST, f.y + sun.y * SUN_DIST, f.z + sun.z * SUN_DIST),
+            .position = v3(f.x + sun.x * dist, f.y + sun.y * dist, f.z + sun.z * dist),
             .target = f,
             .up = b.up,
-            .fovy = SHADOW_ORTHO,
+            .fovy = shadowSpan,
             .projection = .orthographic,
         };
         self.saved_near = rl.gl.rlGetCullDistanceNear();
         self.saved_far = rl.gl.rlGetCullDistanceFar();
-        rl.gl.rlSetClipPlanes(SHADOW_CLIP_NEAR, SHADOW_CLIP_FAR);
+        rl.gl.rlSetClipPlanes(SHADOW_NEAR, dist + shadowSpan * SHADOW_DEPTH);
         rl.beginTextureMode(self.shadowMap);
         rl.clearBackground(rl.Color.white);
         rl.beginMode3D(cam);

@@ -846,12 +846,24 @@ pub fn heldGear(a: Armament, worn: Worn) ?item.Kind {
     return worn.at(w);
 }
 
+pub const TIER_MAX: u8 = 10;
+/// **A TIER IS FLAT DAMAGE ON THE BASE, AND THAT IS THE POINT** (owner: flat, to make the other +% more
+/// effective as you go). Added BEFORE `row.dmg`, the skill curve and the perks, so every percentage the build
+/// already owns multiplies a bigger number — a +10 sword is worth more to a strength build than to a naked one,
+/// which a flat bonus tacked on at the END would have got exactly backwards.
+///
+/// 1.3 a tier against `ATK_LIGHT_HIT`'s 13, so **+10 doubles the base of a light swing** before anything else
+/// touches it. `ATK_HEAVY_HIT` is 27, so the same ten tiers are worth half as much again to a heavy — the
+/// weapon's own `row.dmg` then scales both.
+pub const TIER_FLAT: f32 = 1.3;
+
 /// **THE SKILL RIDES THE DAMAGE DIAL AND NOTHING ELSE**: strength makes a club hit HARDER, not heavier —
 /// poise and stance belong to the WEAPON's mass. Elemental rides damage, stance rides poise.
-pub fn weigh(h: combat.Hit, row: item.Arm, sheet: statsmod.Sheet) combat.Hit {
+pub fn weigh(h: combat.Hit, row: item.Arm, sheet: statsmod.Sheet, tier: u8) combat.Hit {
     const skill = scaleOf(sheet, row.scales);
+    const base = h.dmg + TIER_FLAT * @as(f32, @floatFromInt(@min(tier, TIER_MAX)));
     return .{
-        .dmg = h.dmg * row.dmg * skill,
+        .dmg = base * row.dmg * skill,
         .poise = h.poise * row.poise,
         .stance = h.stance * row.poise,
         .elem = h.elem.scaled(row.dmg * skill),
@@ -1426,6 +1438,7 @@ pub const Attack = enum { light, heavy };
 /// Appending is free: `save.zig` writes the rack by TAG NAME, and the book's hand menu is folded over these
 /// fields IN THIS ORDER.
 pub const Armament = enum { sword, dagger, club, bow, bell, shield, wand, torch };
+pub const NARM = @typeInfo(Armament).@"enum".fields.len;
 
 pub const Arm = Armament;
 pub const Off = Armament;
@@ -1552,6 +1565,11 @@ pub const Hero = struct {
     stam: combat.Stamina = .{},
     fp: combat.Focus = .{},
     souls: combat.Souls = .{},
+    /// **KEPT ON DEATH**, unlike `souls` — see `combat.Gold`. Nothing here drops it, which is deliberate.
+    gold: combat.Gold = .{},
+    /// **WHAT THE SMITH HAS DONE TO EACH ARMAMENT**, 0..`TIER_MAX`. Per ARMAMENT and not per item: the sword
+    /// hand draws whatever is in it (`bladeOf`), so a tier follows the HAND he raised it in.
+    tiers: [NARM]u8 = [_]u8{0} ** NARM,
     flasks: combat.Flasks = .{},
     quick: combat.Quick = .{},
     quiver: combat.Quiver = .{},
@@ -1748,6 +1766,7 @@ pub const Hero = struct {
         self.landT = @min(self.landT + dt, mathx.LONG_AGO);
         self.tickAir(dt);
         self.souls.tick(dt);
+        self.gold.tick(dt);
         foemod.tickParticles(&self.fx, dt, self.pos.y);
         for (&self.rootSites) |*s| s.t = @min(s.t + dt, mathx.LONG_AGO);
     }
@@ -2777,7 +2796,7 @@ pub const Hero = struct {
     }
 
     pub fn shotBlow(self: *const Hero) combat.Hit {
-        return weigh(arrowBlow(self.shotArrow, self.shotAimed, self.perk), self.drawRow(), self.sheet);
+        return weigh(arrowBlow(self.shotArrow, self.shotAimed, self.perk), self.drawRow(), self.sheet, self.tierOf(.bow));
     }
     pub fn shotShaft(self: *const Hero) archer.Shot {
         return arrowShot(self.shotArrow);
@@ -3194,7 +3213,7 @@ pub const Hero = struct {
     }
 
     pub fn attackHit(self: *const Hero) combat.Hit {
-        const base = weigh(if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT, self.swingRow(), self.sheet).scaled(self.perk.dmg * self.vit.dmgMult());
+        const base = weigh(if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT, self.swingRow(), self.sheet, self.tierOf(self.arm)).scaled(self.perk.dmg * self.vit.dmgMult());
         if (!self.grease.on() and !self.coat.on()) return base;
         var out = base;
         if (self.grease.on()) out.elem.v[@intFromEnum(self.greaseElem)] += base.dmg * self.grease.value(0);
@@ -3203,6 +3222,19 @@ pub const Hero = struct {
         if (self.coat.on()) out.dose.v[@intFromEnum(self.coatAil)] += self.coat.value(0);
         return out;
     }
+    pub fn tierOf(self: *const Hero, a: Armament) u8 {
+        return self.tiers[@intFromEnum(a)];
+    }
+
+    /// **THE ONE DOOR A TIER GOES UP THROUGH**, so the cap lives in one place and cannot be walked past by a
+    /// caller that forgot it.
+    pub fn raiseTier(self: *Hero, a: Armament) bool {
+        const t = &self.tiers[@intFromEnum(a)];
+        if (t.* >= TIER_MAX) return false;
+        t.* += 1;
+        return true;
+    }
+
     pub fn setSpawn(self: *Hero, pos: rl.Vector3, facing: f32) void {
         self.spawnPos = pos;
         self.spawnFacing = facing;

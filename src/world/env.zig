@@ -76,7 +76,9 @@ const NCELL: usize = GRID_N * GRID_N;
 const HALF_DIAG: f32 = @sqrt(0.5);
 const CELL_CIRCUM: f32 = CELL * HALF_DIAG;
 
-const SHADOW_BOX: f32 = gfx.SHADOW_ORTHO * HALF_DIAG;
+fn shadowBox() f32 {
+    return gfx.shadowSpan * HALF_DIAG;
+}
 
 const LIGHT_REACH: f32 = 90.0;
 
@@ -354,6 +356,10 @@ const Index = struct {
 pub const View = struct {
     pos: rl.Vector3,
     n: [4]rl.Vector3,
+    /// **THE EDITOR'S "SHOW ME EVERYTHING"**: every per-kind view distance is lifted to at least this many
+    /// metres, so what culls is the frustum and the far clip plane and never a prop's own LOD reach. 0 in play,
+    /// where a rubble pile has no business drawing at 300 m.
+    floor: f32 = 0,
 
     pub fn fromCamera(cam: rl.Camera3D, aspect: f32) View {
         const fwd = mathx.normV(mathx.subV(cam.target, cam.position));
@@ -380,7 +386,7 @@ pub const View = struct {
 
     pub fn visible(self: *const View, c: rl.Vector3, rad: f32, maxDist: f32) bool {
         const d = mathx.subV(c, self.pos);
-        const far = maxDist + rad;
+        const far = mathx.maxF(maxDist, self.floor) + rad;
         if (d.x * d.x + d.y * d.y + d.z * d.z > far * far) return false;
         for (self.n) |nn| {
             if (nn.x * d.x + nn.y * d.y + nn.z * d.z < -rad) return false;
@@ -946,6 +952,11 @@ pub const Env = struct {
 
     pub fn stageOne(self: *Env, kind: Kind) void {
         self.nprops = 0;
+        // The two cap counters belong to the world that is being torn down with it — left behind, `opsCapped`
+        // and `lightsCapped` describe a map this `Env` no longer holds, and a counter that lies is worse than
+        // no counter. `materialize` clears them for the same reason.
+        self.opsCapped = 0;
+        self.lightsCapped = 0;
         self.nsolids = 0;
         self.nlights = 0;
         self.npools = 0;
@@ -1938,7 +1949,7 @@ pub const Env = struct {
 };
 
 fn castsInto(focus: rl.Vector3, pos: rl.Vector3, bound: f32, top: f32) bool {
-    const reach = SHADOW_BOX + bound + top * gfx.sunReach;
+    const reach = shadowBox() + bound + top * gfx.sunReach;
     return mathx.dist2XZ(focus, pos) <= reach * reach;
 }
 
@@ -2693,11 +2704,11 @@ test "A GLOW TAKEN OUT OF THE WORLD TAKES ITS FADE SLOT AND ITS LIGHT WITH IT" {
 
 test "the shadow cull keeps a distant TALL caster whose shadow still reaches the box" {
     const focus = v3(0, 0, 0);
-    const outside = SHADOW_BOX + 10.0;
+    const outside = shadowBox() + 10.0;
     try std.testing.expect(castsInto(focus, v3(outside, 0, 0), 18.0, 15.5));
     try std.testing.expect(!castsInto(focus, v3(outside, 0, 0), 0.9, 0.8));
-    try std.testing.expect(!castsInto(focus, v3(SHADOW_BOX + 60.0, 0, 0), 18.0, 15.5));
-    try std.testing.expect(castsInto(focus, v3(SHADOW_BOX - 10.0, 0, 0), 0.2, 0.2));
+    try std.testing.expect(!castsInto(focus, v3(shadowBox() + 60.0, 0, 0), 18.0, 15.5));
+    try std.testing.expect(castsInto(focus, v3(shadowBox() - 10.0, 0, 0), 0.2, 0.2));
 }
 
 test "grid cells round-trip a world position" {

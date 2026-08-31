@@ -435,6 +435,166 @@ pub fn list(ctx: *Ctx, r: rl.Rectangle, labels: []const [:0]const u8, sel: usize
     return clicked;
 }
 
+// ── DROPDOWNS ─────────────────────────────────────────────────────────────────────────────────────────────
+// **A REAL DROPDOWN, BECAUSE CLICK-TO-CYCLE IS NOT A CHOICE** (owner: actual dropdowns, names instead of ids,
+// human-usable). Everything in this kit used to advance by one on click, which means: to pick the fourth of
+// twelve you press four times and to go back you press eleven, you cannot see what the options ARE without
+// pressing through all of them, and you cannot tell a list of twelve from a list of two.
+//
+// **IT IS ONE WIDGET WITH A DEFERRED PANEL.** The open list has to draw OVER the rows beneath it, and those
+// rows are drawn after it in the caller's own order, so the button paints in place and the panel is parked in
+// `pending` and flushed by `endDropdowns` at the end of the frame. That is also what makes it exclusive: one
+// `openId` at a time, so two dropdowns cannot both be down.
+
+const DD_ROW_H: i32 = ROW_H;
+const DD_MAX_SHOWN: i32 = 10;
+
+/// Which dropdown is open, as the caller's own id. **NOT A POINTER** — the rows are rebuilt every frame and a
+/// pointer into last frame's array points at nothing.
+var openId: ?u32 = null;
+var openScroll: i32 = 0;
+var pending: ?Pending = null;
+
+const Pending = struct {
+    r: rl.Rectangle,
+    labels: []const [:0]const u8,
+    sel: usize,
+};
+
+fn ddPanel(r: rl.Rectangle, n: usize) rl.Rectangle {
+    const rows: i32 = @min(@as(i32, @intCast(@max(n, 1))), DD_MAX_SHOWN);
+    const h: f32 = @floatFromInt(rows * DD_ROW_H + 6);
+    // **DROPS UP IF IT WOULD RUN OFF THE BOTTOM.** A list opening past the window is one whose last rows cannot
+    // be reached at all.
+    const below = r.y + r.height;
+    const room = @as(f32, @floatFromInt(rl.getScreenHeight())) - below;
+    const y = if (room < h) r.y - h else below;
+    return .{ .x = r.x, .y = y, .width = @max(r.width, 168), .height = h };
+}
+
+/// **THE CLICK RESOLVES HERE, THE DRAWING DOES NOT.** The open panel has to paint OVER the rows below it, and
+/// those are drawn after this returns, so the panel is parked in `pending` and flushed by `endDropdowns`. The
+/// hit test cannot wait for that — a caller has to be able to apply the pick on the frame it happened — so it
+/// is done here against the same rect the flush will use.
+///
+/// Returns the index picked this frame, or null. `id` must be stable while the panel is open and unique on
+/// screen; `ddId` builds one from what the row edits.
+pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u8, sel: usize, tip: [:0]const u8) ?usize {
+    tipFor(ctx, r, tip);
+    const isOpen = openId != null and openId.? == id;
+    const h = ctx.hot(r);
+    rl.drawRectangleRec(r, if (isOpen) ACTIVE_FILL else if (h) HOVER_FILL else rgba(18, 16, 14, 225));
+    rl.drawRectangleLinesEx(r, 1, alpha(TRIM, if (isOpen or h) 180 else 90));
+    const shown: [:0]const u8 = if (sel < labels.len) labels[sel] else "(none)";
+    hud.mono(shown, @as(i32, @intFromFloat(r.x)) + 6, @as(i32, @intFromFloat(r.y)) + 2, hud.MONO, if (isOpen) HOT else VALUE);
+    // The caret: down when shut, up when open. It is the only thing that says this row is a LIST and not a box.
+    const cx = r.x + r.width - 10;
+    const cy = r.y + r.height * 0.5;
+    const d: f32 = if (isOpen) -1 else 1;
+    rl.drawTriangle(
+        rl.Vector2.init(cx - 4, cy - 2 * d),
+        rl.Vector2.init(cx + 4, cy - 2 * d),
+        rl.Vector2.init(cx, cy + 3 * d),
+        alpha(TRIM, 210),
+    );
+    if (h and ctx.pressed) {
+        openId = if (isOpen) null else id;
+        openScroll = if (isOpen) 0 else @max(0, @as(i32, @intCast(sel)) - DD_MAX_SHOWN + 1);
+        return null;
+    }
+    if (!isOpen) return null;
+
+    const box = ddPanel(r, labels.len);
+    ctx.anyHot = true;
+    if (rl.checkCollisionPointRec(ctx.mouse, box)) {
+        openScroll -= @intFromFloat(ctx.wheel * 3);
+        const maxScroll = @max(0, @as(i32, @intCast(labels.len)) - DD_MAX_SHOWN);
+        openScroll = @max(0, @min(maxScroll, openScroll));
+    }
+    var picked: ?usize = null;
+    if (ctx.pressed) {
+        if (rl.checkCollisionPointRec(ctx.mouse, box)) {
+            const rel = ctx.mouse.y - (box.y + 3);
+            const row = @divFloor(@as(i32, @intFromFloat(rel)), DD_ROW_H);
+            const idx: usize = @intCast(@max(row, 0) + openScroll);
+            if (row >= 0 and idx < labels.len) {
+                picked = idx;
+                openId = null;
+                openScroll = 0;
+            }
+        } else {
+            // A press outside the panel and outside its own button shuts it without picking, which is what
+            // every dropdown in every tool does.
+            openId = null;
+            openScroll = 0;
+        }
+    }
+    if (openId != null) pending = .{ .r = r, .labels = labels, .sel = sel };
+    return picked;
+}
+
+/// Draws whatever `dropdown` parked, last, over everything. Purely a paint — the click was already resolved.
+pub fn endDropdowns() void {
+    const p = pending orelse return;
+    pending = null;
+    const box = ddPanel(p.r, p.labels.len);
+    uiart.seat(@intFromFloat(box.x), @intFromFloat(box.y), @intFromFloat(box.width), @intFromFloat(box.height));
+    // **OPAQUE, NOT NEARLY OPAQUE.** At 246 the rows underneath read straight through it and the list became
+    // the hardest thing on the panel to read — which is the opposite of what a dropdown is for. Two passes: a
+    // flat black ground, then the panel tone over it, because one alpha over a lit row is still a lit row.
+    rl.drawRectangleRec(box, rgba(0, 0, 0, 255));
+    rl.drawRectangleRec(box, rgba(20, 18, 15, 255));
+    rl.drawRectangleLinesEx(box, 1, alpha(TRIM, 190));
+    const rows: i32 = @min(@as(i32, @intCast(p.labels.len)), DD_MAX_SHOWN);
+    var i: i32 = 0;
+    while (i < rows) : (i += 1) {
+        const idx: usize = @intCast(i + openScroll);
+        if (idx >= p.labels.len) break;
+        const rowR = rect(
+            @as(i32, @intFromFloat(box.x)) + 3,
+            @as(i32, @intFromFloat(box.y)) + 3 + i * DD_ROW_H,
+            @as(i32, @intFromFloat(box.width)) - 6,
+            DD_ROW_H - 2,
+        );
+        const hot = rl.checkCollisionPointRec(mouseNow(), rowR);
+        if (idx == p.sel) rl.drawRectangleRec(rowR, ACTIVE_FILL) else if (hot) rl.drawRectangleRec(rowR, HOVER_FILL);
+        hud.mono(p.labels[idx], @as(i32, @intFromFloat(rowR.x)) + 6, @as(i32, @intFromFloat(rowR.y)) + 2, hud.MONO, if (idx == p.sel) HOT else VALUE);
+    }
+    if (p.labels.len > DD_MAX_SHOWN) {
+        var nb: [24]u8 = undefined;
+        const more = std.fmt.bufPrintZ(&nb, "+{d} more", .{p.labels.len - @as(usize, @intCast(rows))}) catch "";
+        hud.mono(more, @as(i32, @intFromFloat(box.x)) + 6, @as(i32, @intFromFloat(box.y + box.height)) - 2, hud.MONO, alpha(TRIM, 200));
+    }
+}
+
+fn mouseNow() rl.Vector2 {
+    return rl.getMousePosition();
+}
+
+/// Is any dropdown down? Callers use it to stop their own keyboard shortcuts firing under an open list.
+pub fn dropdownOpen() bool {
+    return openId != null;
+}
+
+/// DEV ONLY: forces one open so the shot harness can photograph the panel. A still frame cannot click, and the
+/// panel is the whole of what this widget added over the button it replaced.
+pub fn openDropdownForShot(id: u32) void {
+    openId = id;
+    openScroll = 0;
+}
+
+pub fn closeDropdown() void {
+    openId = null;
+    openScroll = 0;
+    pending = null;
+}
+
+/// **A STABLE ID FROM WHAT THE ROW EDITS.** Hashed off a tag and two indices, so act row 3 of trigger 7 keeps
+/// its identity while the panel is open and cannot collide with condition row 3 of the same trigger.
+pub fn ddId(tag: u8, a: usize, b: usize) u32 {
+    return (@as(u32, tag) << 24) ^ (@as(u32, @truncate(a)) << 12) ^ @as(u32, @truncate(b));
+}
+
 pub const ModalBox = struct { x: i32, y: i32, w: i32, h: i32 };
 
 pub fn beginModal(ctx: *Ctx, w: i32, h: i32, title: [:0]const u8) ModalBox {

@@ -1899,6 +1899,12 @@ pub const Regen = struct {
 pub const SOUL_ROLL_RATE = 7.0;
 pub const SOUL_ROLL_FLOOR = 26.0;
 
+/// **THE SECOND PURSE, AND IT IS NOT SOULS.** The same roll and the same saturation guard — a counter is a
+/// counter — but the two are spent on different things and lost on different terms: souls are DROPPED on death
+/// and walked back for (`souls.zig`), gold is KEPT. That difference is the whole reason there are two of them,
+/// and it is why this is an alias rather than a second copy of the arithmetic.
+pub const Gold = Souls;
+
 pub const Souls = struct {
     total: u32 = 0,
     shown: f32 = 0,

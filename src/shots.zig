@@ -21,6 +21,8 @@ const shademod = @import("foes/shade.zig");
 const leechmod = @import("foes/leechfly.zig");
 const rootedmod = @import("foes/rooted.zig");
 const npcmod = @import("foes/npc.zig");
+const countermod = @import("play/counter.zig");
+const counterui = @import("ui/counterui.zig");
 const wolfmod = @import("foes/wolf.zig");
 const dialogmod = @import("world/dialog.zig");
 const mathx = @import("core/mathx.zig");
@@ -1968,6 +1970,7 @@ pub fn runShots(g: *Game) void {
     if (stageOn("campfire")) campfireShots(g);
     if (stageOn("chest")) chestShots(g);
     if (stageOn("folk")) folkShots(g);
+    if (stageOn("counter")) counterShots(g);
     if (stageOn("sound")) soundFilterShots(g);
     if (stageOn("wolf")) wolfShots(g);
     if (stageOn("day")) dayShots(g);
@@ -3257,6 +3260,35 @@ fn heroAside(g: *Game, from: rl.Vector3) void {
 /// THE FOLK AND WHAT THEY SAY. The staff PLANT happens once a stride and the panel has a different shape
 /// for answers and for a plain Continue; the `need:` gate needs two frames by definition — the same node
 /// before and after it opens.
+/// **BOTH COUNTERS, WITH SOMETHING IN THE PURSE AND SOMETHING IN THE BAG.** A shop photographed broke shows
+/// every row refused and every price in the cannot-afford tone, which is the one state that says least about it.
+fn counterShots(g: *Game) void {
+    game.clearFoesForShot(g);
+    // **THE MENU AND THE EDITOR BOTH HAVE TO BE SHUT.** A filtered run still simulates every stage, so whatever
+    // an earlier one left open is still up — the retro rack was, and it photographed itself over this panel.
+    g.menu.screen = .closed;
+    g.editor.on = false;
+    g.hero.gold.total = 1450;
+    g.hero.gold.shown = 1450;
+    g.bag.add(.smithing_stone, 6);
+    g.bag.add(.mushroom_jerky, 3);
+    g.hero.tiers[@intFromEnum(heromod.Armament.sword)] = 4;
+    counterSnap(g, .shop, false, "shots/109_counter_shop_buy.png");
+    counterSnap(g, .shop, true, "shots/109b_counter_shop_sell.png");
+    counterSnap(g, .smithy, false, "shots/109c_counter_smithy.png");
+    game.closeCounterForShot(g);
+}
+
+/// One counter, drawn over a live scene and snapped BEFORE `endDrawing` (`snap`'s own rule) — `editorSnap`'s
+/// shape, because this is the same case: a panel over a running frame.
+fn counterSnap(g: *Game, t: countermod.Trade, selling: bool, name: [:0]const u8) void {
+    game.openCounterForShot(g, t);
+    if (selling) game.counterSellForShot(g);
+    drawScene(g);
+    counterui.draw(&g.counter, &g.hero, &g.bag, counterui.RAISE);
+    snap(name);
+}
+
 fn folkShots(g: *Game) void {
     if (g.folk.n == 0) {
         std.debug.print("--shot needs at least one npc posted in {s}\n", .{worldfmt.START_MAP});
@@ -3446,6 +3478,11 @@ fn editorShots(g: *Game) void {
     if (g.map.ntrigs > 0) {
         g.editor.openScriptForShot(&g.map);
         editorSnap(g, "shots/95f_editor_script.png");
+        // **AND ONE WITH A LIST DOWN.** The panel is the whole of what a dropdown adds over the button it
+        // replaced, and it is the one part a still frame cannot reach by clicking.
+        uimod.openDropdownForShot(uimod.ddId(1, g.editor.trigSelForShot() orelse 0, 0));
+        editorSnap(g, "shots/95g_editor_script_open.png");
+        uimod.closeDropdown();
         g.editor.closeModalForShot();
     }
 

@@ -94,6 +94,9 @@ pub const Op = struct {
     /// What is in the CONTAINER this op placed — a chest, or an item pickup (`props.holdsLoot`). Written and parsed on `nloot > 0` alone and never on the kind, which is why the glow needed no format change.
     loot: [MAX_LOOT]item.Kind = undefined,
     nloot: u8 = 0,
+    /// **COIN IN THE CONTAINER**, read by the same kinds `loot` is (`props.holdsLoot`) and independent of it — a
+    /// chest may hold gold and nothing else, or items and no gold. 0 is an empty purse and writes no tail.
+    gold: u32 = 0,
     /// WHAT MUST DIE BEFORE A FOG GATE OPENS AGAIN — read by `ward` kinds alone (`props.Info.ward`), the way `loot` is read by containers alone. `boss=-` in the file is a gate that never shuts: a doorway, not an arena. **A DUO IS TWO, SO THE SEAL IS A LIST** (`fungalduo`): the gate holds while ANY name on it still stands, and every bar behind it waits on the same list (`game.bossBars`). The default is the FIRST boss, so a stamped gate works with nothing typed and writes no tail.
     boss: [MAX_SEAL]FoeKind = [_]FoeKind{.bone_knight} ** MAX_SEAL,
     nboss: u8 = 1,
@@ -681,6 +684,11 @@ pub const ActKind = enum(u8) {
     timer,
     wait,
     preserve,
+    /// **APPENDED, LIKE `FoeKind`** — the editor's picker cycles this enum and a map names an act by TAG, so a
+    /// kind inserted in the middle would re-point every act already authored. The two counters
+    /// (`play/counter.zig`) carry no payload: which one it is IS the kind.
+    shop,
+    smithy,
 };
 
 pub const Act = struct {
@@ -1686,6 +1694,8 @@ fn writeAct(m: *const Map, w: anytype, a: *const Act) !void {
         .timer => try w.print("timer {s}={d}\n", .{ slotName(&m.timerNames, m.ntimers, a.slot), a.v }),
         .wait => try w.print("wait {d}\n", .{a.v}),
         .preserve => try w.writeAll("preserve\n"),
+        .shop => try w.writeAll("shop\n"),
+        .smithy => try w.writeAll("smithy\n"),
     }
 }
 
@@ -2182,7 +2192,8 @@ fn parseAct(m: *Map, rest: []const u8, it: *Toks) !Act {
             a.v = try nextFloat(it);
             if (a.v < 0) return ParseError.BadNumber;
         },
-        .preserve => {},
+        // Payload-free, like `preserve`: the kind is the whole of the instruction.
+        .preserve, .shop, .smithy => {},
     }
     if (it.next() != null) return ParseError.ExtraField;
     return a;

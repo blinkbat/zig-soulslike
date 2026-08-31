@@ -1,3 +1,4 @@
+const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 
@@ -22,6 +23,72 @@ pub const TEXT_DIM = rgba(150, 146, 138, 255);
 pub const TEXT_HINT = rgba(128, 122, 110, 255);
 pub const GOOD = rgba(146, 194, 118, 255);
 pub const BAD = rgba(206, 96, 78, 255);
+
+// ── THE TWO CURRENCIES ────────────────────────────────────────────────────────────────────────────────────
+// **ONE PAIR OF MARKS, DEFINED HERE AND NOWHERE ELSE** (owner: use global). Souls and gold are both GILT — the
+// drop itself is authored gold (`play/souls.zig`) — so they cannot be told apart by HUE, and the first cut had
+// them as two small diamonds in two small boxes, which is the same readout printed twice.
+//
+// They separate on SHAPE and on VALUE instead, which survives both the retro filters and a 26 px plate:
+//   A SOUL IS LIGHT   — a spark with rays, and the BRIGHTER of the two. Nothing else in this UI has rays.
+//   GOLD IS METAL     — a struck disc with a thickness under it, and the DARKER. Nothing else here is a disc.
+//
+// **HUD colours are LITERAL screen values** (AGENTS.md) — these draw after the retro blit, so no gamma is owed.
+
+/// The radius both marks are authored at. A plate is 26–32 px tall, so this is about a third of it: smaller and
+/// the rays close up into a blob, larger and the disc crowds the numeral beside it.
+pub const MARK_R: f32 = 5.2;
+
+/// One tapering ray, tip outward. Triangles rather than lines because a line of even width reads as a spoke and
+/// a spoke reads as a wheel.
+fn ray(cx: f32, cy: f32, ang: f32, len: f32, wid: f32, col: rl.Color) void {
+    const c = mathx.cosf(ang);
+    const s = mathx.sinf(ang);
+    const tip = rl.Vector2.init(cx + c * len, cy + s * len);
+    const a = rl.Vector2.init(cx - s * wid, cy + c * wid);
+    const b = rl.Vector2.init(cx + s * wid, cy - c * wid);
+    rl.drawTriangle(tip, a, b, col);
+    rl.drawTriangle(tip, b, a, col);
+}
+
+/// **A SOUL: A SPARK.** Four long rays on the axes, four short ones between, a solid core and a soft bloom —
+/// the bloom is what keeps it from reading as a compass rose. Both triangle windings are drawn (`ray`) because
+/// `drawTriangle` is single-sided and the winding flips as the angle passes 180.
+pub fn soulMark(cx: f32, cy: f32, r: f32, a: u8) void {
+    const bloom = withAlpha(GILT, u8f(@as(f32, @floatFromInt(a)) * 0.26));
+    rl.drawCircleV(rl.Vector2.init(cx, cy), r * 0.92, bloom);
+    const long = withAlpha(GILT_BRIGHT, a);
+    const short = withAlpha(GILT, a);
+    var i: usize = 0;
+    while (i < 4) : (i += 1) {
+        const q = std.math.pi * 0.5 * @as(f32, @floatFromInt(i));
+        ray(cx, cy, q, r * 1.62, r * 0.30, long);
+        ray(cx, cy, q + std.math.pi * 0.25, r * 0.86, r * 0.20, short);
+    }
+    rl.drawCircleV(rl.Vector2.init(cx, cy), r * 0.40, withAlpha(CATCH, a));
+}
+
+/// **GOLD: A STRUCK DISC.** Squashed, because a coin lying in a purse is seen at an angle and a true circle
+/// reads as a dot; a darker rim UNDER it is the thickness, which is the whole of what makes it metal rather
+/// than a hole. The catch-light sits high-left, where every other lit thing in this UI takes its light from.
+pub fn coinMark(cx: f32, cy: f32, r: f32, a: u8) void {
+    const xi: i32 = @intFromFloat(cx);
+    const yi: i32 = @intFromFloat(cy);
+    // **WIDER THAN THE SOUL IS TALL, OR THE PAIR IS UNBALANCED.** The spark throws rays to 1.62 r, so a disc
+    // at 1.0 r came back half its visual mass and read as the lesser of the two currencies. Measured against it
+    // rather than picked: 1.30 r across puts the two bounding boxes within a few pixels of each other.
+    const rx = r * 1.30;
+    // **FLAT, OR IT IS A BALL.** The first cut ran 0.80 of the width with a big central catch-light and came
+    // back a potato — a coin is read off its ELLIPSE and off the sliver of edge under it, so the squash has to
+    // be obvious and the highlight has to sit ON the rim rather than in the middle of the face.
+    const ry = rx * 0.60;
+    rl.drawEllipse(xi, yi + 2, rx, ry, withAlpha(STONE_DK, u8f(@as(f32, @floatFromInt(a)) * 0.9)));
+    rl.drawEllipse(xi, yi, rx, ry, withAlpha(GILT, a));
+    rl.drawEllipse(xi, yi, rx * 0.74, ry * 0.66, withAlpha(GILT_BRIGHT, a));
+    // The strike in the middle of the face, and the catch on the high-left EDGE where the rim turns.
+    rl.drawEllipse(xi, yi, rx * 0.30, ry * 0.30, withAlpha(GILT, a));
+    rl.drawCircleV(rl.Vector2.init(cx - rx * 0.50, cy - ry * 0.46), r * 0.16, withAlpha(CATCH, a));
+}
 
 pub fn fi(v: i32) f32 {
     return @floatFromInt(v);

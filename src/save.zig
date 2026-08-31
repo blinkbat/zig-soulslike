@@ -100,6 +100,12 @@ pub const Data = struct {
     at: rl.Vector3 = mathx.zero3,
     facing: f32 = 0,
     souls: u32 = 0,
+    /// **AND THE PURSE, OR "KEPT ON DEATH" MEANS NOTHING.** Gold survives a death by design (`combat.Gold`), so
+    /// a slot that did not carry it would take the whole of it back on the next load instead.
+    gold: u32 = 0,
+    /// **THE SMITH'S WORK** (`hero.tiers`), one per `heromod.Armament`. A slot that lost these would hand back a
+    /// +10 sword as a bare one, which is the whole of what the gold was spent on.
+    tiers: [heromod.NARM]u8 = [_]u8{0} ** heromod.NARM,
 
     arm: heromod.Armament = .sword,
     off: heromod.Armament = .shield,
@@ -297,6 +303,8 @@ pub fn gather(s: Slot) Data {
     d.at = h.pos;
     d.facing = h.facing;
     d.souls = h.souls.total;
+    d.gold = h.gold.total;
+    d.tiers = h.tiers;
     d.arm = h.arm;
     d.off = h.off;
     d.armAlt = h.armAlt;
@@ -356,6 +364,9 @@ pub fn scatter(d: *const Data, s: Slot) void {
     h.setSpawn(d.at, d.facing);
     h.souls.total = d.souls;
     h.souls.shown = @floatFromInt(d.souls);
+    h.gold.total = d.gold;
+    h.gold.shown = @floatFromInt(d.gold);
+    h.tiers = d.tiers;
     h.arm = d.arm;
     h.off = d.off;
     h.armAlt = d.armAlt;
@@ -416,6 +427,17 @@ pub fn render(w: anytype, d: *const Data) !void {
     try w.print("map: {s}\n", .{d.mapName()});
     try w.print("at: {d:.3} {d:.3} {d:.3} {d:.4}\n", .{ d.at.x, d.at.y, d.at.z, d.facing });
     try w.print("souls: {d}\n", .{d.souls});
+    // **ITS OWN LINE, LIKE `souls:`.** Not a second token there: a reader expecting one and finding two is
+    // the trap the `ready:` note below already records. Written only when there IS gold, so every slot on
+    // disk from before the purse existed stays byte-identical and still round-trips.
+    if (d.gold > 0) try w.print("gold: {d}\n", .{d.gold});
+    var anyTier = false;
+    for (d.tiers) |t| anyTier = anyTier or t > 0;
+    if (anyTier) {
+        try w.writeAll("tiers:");
+        for (d.tiers) |t| try w.print(" {d}", .{t});
+        try w.writeAll("\n");
+    }
     try w.print("hands: {s} {s} {s} {s} {s}\n", .{ @tagName(d.arm), @tagName(d.off), @tagName(d.spell), @tagName(d.armAlt), @tagName(d.offAlt) });
     try w.print("ready: {s} {s}\n", .{ @tagName(d.arrow), @tagName(d.flask) });
     // **ITS OWN LINE, NOT A THIRD TOKEN ON `ready:`.** A reader expecting two tokens there and finding four
@@ -506,6 +528,12 @@ pub fn parse(text: []const u8, d: *Data) !void {
             _ = try float(&it);
         } else if (std.mem.eql(u8, key, "souls:")) {
             d.souls = try int(u32, &it);
+        } else if (std.mem.eql(u8, key, "gold:")) {
+            d.gold = try int(u32, &it);
+        } else if (std.mem.eql(u8, key, "tiers:")) {
+            // **SHORT IS FINE.** A file written before an armament existed names fewer than there are now, and
+            // the ones it does not name keep their 0 rather than refusing the whole slot.
+            for (&d.tiers) |*t| t.* = int(u8, &it) catch break;
         } else if (std.mem.eql(u8, key, "hands:")) {
             d.arm = try tagged(heromod.Armament, &it);
             d.off = try tagged(heromod.Armament, &it);
@@ -710,6 +738,9 @@ fn sample() Data {
     d.at = .{ .x = -4.5, .y = 0.31, .z = 7.25 };
     d.facing = 3.1416;
     d.souls = 12345;
+    d.gold = 6789;
+    d.tiers[@intFromEnum(heromod.Armament.sword)] = 7;
+    d.tiers[@intFromEnum(heromod.Armament.bow)] = 3;
     d.arm = .bow;
     d.off = .wand;
     d.armAlt = .sword;
@@ -789,6 +820,8 @@ test "a save round-trips through its own text" {
     try testing.expectApproxEqAbs(d.at.z, back.at.z, 1e-3);
     try testing.expectApproxEqAbs(d.facing, back.facing, 1e-4);
     try testing.expectEqual(d.souls, back.souls);
+    try testing.expectEqual(d.gold, back.gold);
+    try testing.expectEqualSlices(u8, &d.tiers, &back.tiers);
     try testing.expectEqual(d.arm, back.arm);
     try testing.expectEqual(d.off, back.off);
     // THE ALT RACK IS HALF THE HANDS. Left unasserted, `hands:`' last two tokens could stop being written and
@@ -992,6 +1025,8 @@ test "THE SLOT CARRIES EVERY FIELD IT NAMES — live game out, text, live game b
     a.hero.pos = .{ .x = -4.5, .y = 0.25, .z = 7.125 };
     a.hero.facing = 1.5;
     a.hero.souls.total = 4321;
+    a.hero.gold.total = 987;
+    a.hero.tiers[@intFromEnum(heromod.Armament.club)] = 10;
     a.hero.arm = .bell;
     a.hero.off = .wand;
     a.hero.offAlt = .shield; // the rack is four DISTINCT armaments (`hero.equip`), and `scatter` tidies one that is not

@@ -718,6 +718,14 @@ fn nameField(ed: *Editor, ctx: *ui.Ctx, x: i32, y: i32, w: i32, buf: []u8, len: 
     return typed;
 }
 
+/// **COIN A CONTAINER MAY HOLD.** Stepped coarsely, because a chest is authored in purses and not in pennies,
+/// and capped: past this it is a reward the economy is built around rather than a thing in a box, and that is a
+/// design decision rather than a number to nudge. The band it is priced against is `drops.Coin.hoard`.
+/// How many declared names a slot dropdown lists. The map's own tables are this deep or deeper, and a list
+/// longer than a screen is one nobody scrolls anyway.
+const MAX_SLOT_ROWS: usize = 32;
+const GOLD_LIM: i32 = 5000;
+const GOLD_STEP: i32 = 25;
 /// Metres of run a stacking kind may be given. Twenty-six sections of ladder; past that it is a shaft, not a
 /// prop, and `env.MAX_SECTIONS` is the hard stop behind it.
 const RISE_LIM: f32 = 24.0;
@@ -847,6 +855,8 @@ pub const Editor = struct {
     /// groups are re-homed every editor frame, the folk are not, so a placed caravaneer stays invisible and an
     /// erased one stays standing until this moves.
     mapGen: u32 = 0,
+    folkDue: bool = false,
+    folkT: f32 = 0,
     /// Bumped by every path that can move what the minimap draws, which is what lets it hold a painted face.
     miniGen: u64 = 0,
 
@@ -906,6 +916,9 @@ pub const Editor = struct {
     /// to whichever unit is selected and is dropped the moment the selection changes.
     routing: bool = false,
     trigSel: ?usize = null,
+    /// Scratch for `slotRow`'s dropdown labels. The panel is PAINTED after the row returns (`ui.endDropdowns`),
+    /// so the strings have to outlive the call that built them.
+    slotLabels: [MAX_SLOT_ROWS][wf.ID_CAP]u8 = undefined,
     trigNameBuf: [wf.ID_CAP]u8 = [_]u8{0} ** wf.ID_CAP,
     trigNameLen: usize = 0,
     trigScroll: i32 = 0,
@@ -1119,7 +1132,7 @@ pub const Editor = struct {
 
         const wheel = rl.getMouseWheelMove();
         if (wheel != 0 and !self.hotFrame) {
-            self.dist = mathx.clampF(self.dist * (1.0 - wheel * 0.12), 2.0, 420.0);
+            self.dist = mathx.clampF(self.dist * (1.0 - wheel * 0.12), 2.0, 900.0);
         }
 
         if (!ctrl and !self.textFocus) {
@@ -1228,9 +1241,31 @@ pub const Editor = struct {
     /// **THE ONE SIGNAL THAT THE FOLK TABLE MOVED.** Every editor path that adds, removes or shifts a `wf.Npc`
     /// ends here, because nothing else re-posts the live bodies (`game`'s editor branch re-homes the FOES every
     /// frame and the folk only on this).
+    /// **RE-POSTS THE FOLK, AND IT IS NOT FREE.** `game` answers a `mapGen` bump with `folk.reset`, which
+    /// re-posts every body on the map and throws away where each was walking. Called straight from a stepper it
+    /// fired ONCE PER CLICK, so nudging an npc's scale re-posted the whole layer a dozen times and the man you
+    /// were sizing kept snapping back to his pin. It also bumped `miniGen` per click, which `blitMinimap`'s own
+    /// note says may only move on a stroke's start or on the debounced rebuild.
     fn touchFolk(self: *Editor) void {
         self.mapGen +%= 1;
         self.miniGen +%= 1;
+    }
+
+    /// **THE DEBOUNCED DOOR, AND THE ONE A PANEL USES** — `requestRebuild`'s shape, for the same reason: a
+    /// visual field is dragged through a dozen values on the way to the one the author wants, and only the last
+    /// of them is worth paying for.
+    fn requestFolk(self: *Editor) void {
+        self.folkDue = true;
+        self.folkT = 0;
+    }
+
+    fn tickFolk(self: *Editor, dt: f32) void {
+        if (!self.folkDue) return;
+        self.folkT += dt;
+        if (self.folkT < REBUILD_QUIET) return;
+        self.folkDue = false;
+        self.folkT = 0;
+        self.touchFolk();
     }
 
     fn dropSelection(self: *Editor) void {
@@ -1276,6 +1311,10 @@ pub const Editor = struct {
             .arena => |v| v,
             else => null,
         };
+    }
+
+    pub fn trigSelForShot(self: *const Editor) ?usize {
+        return self.trigSel;
     }
 
     pub fn openScriptForShot(self: *Editor, m: *const wf.Map) void {
@@ -1572,6 +1611,7 @@ pub const Editor = struct {
     }
 
     fn tickRebuild(self: *Editor, m: *const wf.Map, env: *envmod.Env, dt: f32) void {
+        self.tickFolk(dt);
         if (!self.rebuildDue) return;
         self.rebuildT += dt;
         if (self.rebuildT >= REBUILD_QUIET) self.rebuild(m, env);
@@ -3543,9 +3583,15 @@ pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene,
     } else if (ed.menuOpen) {
         drawContextMenu(ed, m, env, &ctx);
     }
+    // **LAST, OVER EVERYTHING.** An open dropdown's panel is parked while its row draws (`ui.dropdown`) so it
+    // lands on top of the rows beneath it rather than under them. Before the TIP, which is the only thing
+    // allowed over an open list.
+    ui.endDropdowns();
     ui.drawTip(&ctx);
 
-    ed.hotFrame = ctx.anyHot;
+    // A shut modal cannot leave a panel hanging in the air over the map.
+    if (ed.modal == .none and !ed.menuOpen) ui.closeDropdown();
+    ed.hotFrame = ctx.anyHot or ui.dropdownOpen();
 }
 
 const BarRow = struct {
@@ -3738,7 +3784,7 @@ fn drawRoomsPanel(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, x: i32, y0: i32, w: i32
         for (offered[0..non]) |k| {
             var cb: [40]u8 = undefined;
             const on = a.sealsOn(k);
-            const lab = std.fmt.bufPrintZ(&cb, "{s}", .{@tagName(k)}) catch "?";
+            const lab = std.fmt.bufPrintZ(&cb, "{s}", .{wf.foeName(k)}) catch "?";
             if (ui.chip(ctx, x + 4, y, lab, on, &usedW, "Hold the room until this creature is dead")) {
                 ed.bank(m);
                 if (on) {
@@ -4223,29 +4269,26 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 // **WHICH CONVERSATION THIS BODY OPENS** (`Npc.dlg`) — the format has carried it since the
                 // dialog layer landed and the editor could only round-trip it. The dialogs themselves are still
                 // hand-written, so this offers the ones the MAP already declares and nothing else.
-                hud.mono("says", x, y, hud.MONO, ui.LABEL);
-                y += hud.monoLineH(hud.MONO) + 2;
-                var dW: i32 = 0;
-                if (ui.chip(ctx, x, y, "(nothing)", np.dlg == wf.NO_DIALOG, &dW, "This body has no conversation - walking up to it does nothing")) {
-                    ed.bank(m);
-                    np.dlg = wf.NO_DIALOG;
-                    changed = true;
-                }
-                y += ROW_H;
-                if (m.ndialogs == 0) {
-                    hud.mono("no dialogs in this map", x, y, hud.MONO, ui.alpha(ui.LABEL, 160));
-                    y += ROW_H;
-                } else for (0..m.ndialogs) |di| {
-                    var db: [40]u8 = undefined;
-                    const on = np.dlg == di;
-                    const dlab = std.fmt.bufPrintZ(&db, "{s}", .{m.dialogs[di].label()}) catch "?";
-                    var dw2: i32 = 0;
-                    if (ui.chip(ctx, x, y, dlab, on, &dw2, "Open this conversation when he is spoken to")) {
+                // **ONE ROW, NOT ONE ROW PER CONVERSATION.** A chip apiece cost the side panel a row for every
+                // dialog the map declares and pushed `delete` off the bottom the moment there were four.
+                hud.mono("says", x, y + 4, hud.MONO, ui.LABEL);
+                {
+                    const shown = @min(m.ndialogs, MAX_SLOT_ROWS);
+                    var labels: [MAX_SLOT_ROWS + 1][:0]const u8 = undefined;
+                    labels[0] = "(nothing)";
+                    for (0..shown) |di| {
+                        const lbl = m.dialogs[di].label();
+                        const cap = @min(lbl.len, wf.ID_CAP - 1);
+                        @memcpy(ed.slotLabels[di][0..cap], lbl[0..cap]);
+                        ed.slotLabels[di][cap] = 0;
+                        labels[di + 1] = ed.slotLabels[di][0..cap :0];
+                    }
+                    const sel: usize = if (np.dlg == wf.NO_DIALOG or np.dlg >= shown) 0 else @as(usize, np.dlg) + 1;
+                    if (ui.dropdown(ctx, ui.rect(x + 44, y, w - 44, 20), ui.ddId(15, i, 0), labels[0 .. shown + 1], sel, "Which conversation this body opens when he is spoken to")) |pick| {
                         ed.bank(m);
-                        np.dlg = @intCast(di);
+                        np.dlg = if (pick == 0) wf.NO_DIALOG else @intCast(pick - 1);
                         changed = true;
                     }
-                    y += ROW_H;
                 }
                 y += ROW_H + 6;
                 if (ui.button(ctx, ui.rect(x, y, 80, 24), "delete", hud.MONO, false, "Remove this body (Del)")) {
@@ -4254,8 +4297,9 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 }
                 if (changed) {
                     ed.bankGesture(wf.Npc, m, np, before);
-                    // The live body is posted off the RECORD, so a stepper that moves the record has to re-post it or the man stands where he was dropped.
-                    ed.touchFolk();
+                    // The live body is posted off the RECORD, so a moved record has to re-post — DEBOUNCED,
+                    // because a stepper walks through a dozen values on the way to the one you want.
+                    ed.requestFolk();
                 } else if (!ctx.down) ed.endGesture(m, env);
             },
         }
@@ -5034,6 +5078,15 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                     lootAdd(o, k);
                 }
             }
+            // **AND THE COIN IN IT** (`wf.Op.gold`). A container holds gold INDEPENDENTLY of its things — a
+            // purse with nothing else in it is the commonest thing to put in a chest, and threading it through
+            // the item shelves would have made it an item, which it is not.
+            var coin: i32 = @intCast(@min(o.gold, GOLD_LIM));
+            if (ui.stepperI(ctx, box.x + DLG_PAD, box.y + box.h - DLG_FOOT - ROW_H - 6, 420, "gold", &coin, GOLD_STEP, 0, GOLD_LIM, "Coin in this container. It goes straight into his purse on opening, and is not one of the eight item kinds")) {
+                o.gold = @intCast(@max(coin, 0));
+                ed.dirty = true;
+                ed.bank(m);
+            }
             if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false, "Close it - every change is already applied (Enter)") or confirm) {
                 ed.modal = .none;
             }
@@ -5426,6 +5479,52 @@ const SCRIPT_H: i32 = 610;
 
 /// **NAMED PER KIND AND NOT PER FIELD.** A `Cond` carries eleven fields because eleven kinds share the struct,
 /// and showing all eleven on every row is how a trigger editor becomes unreadable.
+// **NAMES, NOT TAGS** (owner: names instead of ids all over). `@tagName` gave the author `deaths`, `alive`,
+// `elapsed` and `preserve` — the identifiers a programmer chose — in a panel meant to read as a sentence. These
+// are what a dropdown shows; the tags stay the FILE's business and nothing here writes them.
+
+const COND_NAMES = blk: {
+    var out: [@typeInfo(wf.CondKind).@"enum".fields.len][:0]const u8 = undefined;
+    for (&out, 0..) |*o, i| o.* = condName(@enumFromInt(i));
+    break :blk out;
+};
+
+const ACT_NAMES = blk: {
+    var out: [@typeInfo(wf.ActKind).@"enum".fields.len][:0]const u8 = undefined;
+    for (&out, 0..) |*o, i| o.* = actName(@enumFromInt(i));
+    break :blk out;
+};
+
+fn condName(k: wf.CondKind) [:0]const u8 {
+    return switch (k) {
+        .always => "always",
+        .never => "never",
+        .flag => "switch",
+        .counter => "counter",
+        .timer => "timer",
+        .elapsed => "seconds elapsed",
+        .region => "inside region",
+        .near => "near an npc",
+        .talked => "has spoken to",
+        .deaths => "kind has died",
+        .alive => "kind still alive",
+    };
+}
+
+fn actName(k: wf.ActKind) [:0]const u8 {
+    return switch (k) {
+        .dialog => "conversation",
+        .text => "banner line",
+        .flag => "set a switch",
+        .counter => "change counter",
+        .timer => "start a timer",
+        .wait => "wait n seconds",
+        .preserve => "may fire again",
+        .shop => "open trader",
+        .smithy => "open smithy",
+    };
+}
+
 fn condTip(k: wf.CondKind) [:0]const u8 {
     return switch (k) {
         .always => "Fires every time it is asked",
@@ -5451,6 +5550,8 @@ fn actTip(k: wf.ActKind) [:0]const u8 {
         .timer => "Start a named timer running for n seconds",
         .wait => "Hold this trigger for n seconds before the next action",
         .preserve => "Run again next time - without this a trigger fires once",
+        .shop => "Open the TRADING counter - buy and sell with gold (put this on the caravaneer)",
+        .smithy => "Open the SMITHY - stones and gold to put a tier on a weapon (put this on the smith)",
     };
 }
 
@@ -5549,14 +5650,12 @@ fn drawScriptModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, confirm: bool) void {
     var ci: usize = 0;
     while (ci < t.nconds) {
         const c = &t.conds[ci];
-        var kb: [32]u8 = undefined;
-        if (ui.button(ctx, ui.rect(rx, ry, 104, 20), std.fmt.bufPrintZ(&kb, "{s}", .{@tagName(c.kind)}) catch "?", hud.MONO, false, condTip(c.kind))) {
+        if (ui.dropdown(ctx, ui.rect(rx, ry, 148, 20), ui.ddId(1, ed.trigSel orelse 0, ci), &COND_NAMES, @intFromEnum(c.kind), condTip(c.kind))) |pick| {
             ed.bank(m);
-            // CYCLES the kind: eleven names is too long for a chip row and too short for a modal of its own.
-            c.kind = cycleEnum(wf.CondKind, c.kind);
+            c.kind = @enumFromInt(pick);
             ed.dirty = true;
         }
-        if (condFields(ed, ctx, m, c, rx + 110, ry, rw - 110 - 26)) ed.dirty = true;
+        if (condFields(ed, ctx, m, c, rx + 154, ry, rw - 154 - 26)) ed.dirty = true;
         if (ui.button(ctx, ui.rect(rx + rw - 22, ry, 22, 20), "x", hud.MONO, false, "Remove this condition")) {
             ed.bank(m);
             std.mem.copyForwards(wf.Cond, t.conds[ci .. t.nconds - 1], t.conds[ci + 1 .. t.nconds]);
@@ -5583,13 +5682,12 @@ fn drawScriptModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, confirm: bool) void {
     var an: usize = 0;
     while (an < t.nacts) {
         const a = &t.acts[an];
-        var kb2: [32]u8 = undefined;
-        if (ui.button(ctx, ui.rect(rx, ry, 104, 20), std.fmt.bufPrintZ(&kb2, "{s}", .{@tagName(a.kind)}) catch "?", hud.MONO, false, actTip(a.kind))) {
+        if (ui.dropdown(ctx, ui.rect(rx, ry, 148, 20), ui.ddId(2, ed.trigSel orelse 0, an), &ACT_NAMES, @intFromEnum(a.kind), actTip(a.kind))) |pick| {
             ed.bank(m);
-            a.kind = cycleEnum(wf.ActKind, a.kind);
+            a.kind = @enumFromInt(pick);
             ed.dirty = true;
         }
-        if (actFields(ed, ctx, m, a, rx + 110, ry, rw - 110 - 26)) ed.dirty = true;
+        if (actFields(ed, ctx, m, a, rx + 154, ry, rw - 154 - 26)) ed.dirty = true;
         // The banner line rides UNDER its own row, so that row is two tall or it writes over what follows.
         const tall = a.kind == .text;
         if (ui.button(ctx, ui.rect(rx + rw - 22, ry, 22, 20), "x", hud.MONO, false, "Remove this action")) {
@@ -5631,17 +5729,33 @@ fn scriptDone(ed: *Editor, ctx: *ui.Ctx, box: ui.ModalBox, confirm: bool) void {
 /// **AND IT DECLARES ONE WHEN THE MAP HAS NONE.** The tables are `undefined` memory up to their count, so a
 /// `flag` condition added to a map with no flags pointed at slot 0 of nothing — and `writeCond` would have put
 /// those bytes in the file. Cycling an empty table coins the first name rather than leaving that state reachable.
+/// **THE MAP'S OWN NAMES, IN A LIST, WITH "new..." ON THE END** (owner: names instead of ids). It cycled before:
+/// to reach the fourth of nine switches you pressed four times, and you could not see the other eight at all.
+/// The last row COINS one, so declaring a switch and using it is still a single gesture.
+///
+/// **A NUL-TERMINATED COPY PER ROW, HELD ACROSS THE FRAME.** `wf.idText` hands back a slice into the map and the
+/// dropdown wants `[:0]const u8`, so the labels live in the editor's own scratch (`slotLabels`) — a stack buffer
+/// would be gone by the time `endDropdowns` paints them.
 fn slotRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, slot: *u16, table: []const wf.Id, n: usize, x: i32, y: i32, w: i32, comptime what: []const u8) bool {
-    var lb: [40]u8 = undefined;
-    const cur = if (slot.* < n) wf.idText(&table[slot.*]) else "(none)";
-    const lab = std.fmt.bufPrintZ(&lb, "{s}", .{cur}) catch "?";
-    if (!ui.button(ctx, ui.rect(x, y, @min(w, 120), 20), lab, hud.MONO, false, "Cycle the declared " ++ what ++ "s, or coin the first one. The map's own table, so a name is declared once")) return false;
+    const shown = @min(n, MAX_SLOT_ROWS);
+    var labels: [MAX_SLOT_ROWS + 1][:0]const u8 = undefined;
+    for (0..shown) |i| {
+        const txt = wf.idText(&table[i]);
+        const cap = @min(txt.len, wf.ID_CAP - 1);
+        @memcpy(ed.slotLabels[i][0..cap], txt[0..cap]);
+        ed.slotLabels[i][cap] = 0;
+        labels[i] = ed.slotLabels[i][0..cap :0];
+    }
+    labels[shown] = "new " ++ what ++ "...";
+    const tag: u8 = if (comptime std.mem.eql(u8, what, "flag")) 3 else if (comptime std.mem.eql(u8, what, "counter")) 4 else 5;
+    const sel: usize = if (slot.* < shown) slot.* else shown;
+    const pick = ui.dropdown(ctx, ui.rect(x, y, @min(w, 132), 20), ui.ddId(tag, ed.trigSel orelse 0, @intFromPtr(slot) & 0xfff), labels[0 .. shown + 1], sel, "Pick one of the " ++ what ++ "s this map declares, or coin a new one") orelse return false;
     ed.bank(m);
-    if (n == 0) {
+    if (pick >= shown) {
         slot.* = coinName(ed, m, what) orelse return false;
         return true;
     }
-    slot.* = @intCast((@as(usize, slot.*) + 1) % n);
+    slot.* = @intCast(pick);
     return true;
 }
 
@@ -5667,25 +5781,121 @@ fn coinName(ed: *Editor, m: *wf.Map, comptime what: []const u8) ?u16 {
     return null;
 }
 
+const ON_OFF_NAMES = [_][:0]const u8{ "is off", "is on" };
+const TIMER_NAMES = [_][:0]const u8{ "is running", "has finished" };
+
+/// **THE BODY BY ITS NAME AND ITS KIND, NOT ITS ROW NUMBER.** `Cond.near` indexed the npc table, so the author
+/// read "npc 0" and had to go count rows in another layer to find out who that was.
+fn npcRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, slot: *u16, x: i32, y: i32, w: i32) bool {
+    if (m.nnpcs == 0) {
+        hud.mono("no folk on this map", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 160));
+        return false;
+    }
+    const shown = @min(m.nnpcs, MAX_SLOT_ROWS);
+    var labels: [MAX_SLOT_ROWS][:0]const u8 = undefined;
+    for (0..shown) |i| {
+        const nm = wf.npcName(m.npcs[i].kind);
+        const txt = std.fmt.bufPrint(&ed.slotLabels[i], "{d} {s}", .{ i, nm }) catch nm;
+        const cap = @min(txt.len, wf.ID_CAP - 1);
+        ed.slotLabels[i][cap] = 0;
+        labels[i] = ed.slotLabels[i][0..cap :0];
+    }
+    const sel: usize = @min(slot.*, shown - 1);
+    const pick = ui.dropdown(ctx, ui.rect(x, y, w, 20), ui.ddId(14, ed.trigSel orelse 0, @intFromPtr(slot) & 0xfff), labels[0..shown], sel, "Which body he has to come near") orelse return false;
+    ed.bank(m);
+    slot.* = @intCast(pick);
+    return true;
+}
+
+const COUNTOP_NAMES = blk: {
+    var out: [@typeInfo(wf.Countop).@"enum".fields.len][:0]const u8 = undefined;
+    for (&out, 0..) |*o, i| {
+        const c: wf.Countop = @enumFromInt(i);
+        o.* = switch (c) {
+            .set => "set to",
+            .add => "add",
+            .sub => "take",
+        };
+    }
+    break :blk out;
+};
+
+const SETOP_NAMES = blk: {
+    var out: [@typeInfo(wf.Setop).@"enum".fields.len][:0]const u8 = undefined;
+    for (&out, 0..) |*o, i| {
+        const c: wf.Setop = @enumFromInt(i);
+        o.* = switch (c) {
+            .off => "clear it",
+            .on => "set it",
+            .flip => "flip it",
+        };
+    }
+    break :blk out;
+};
+
+const CMP_NAMES = blk: {
+    var out: [@typeInfo(wf.Cmp).@"enum".fields.len][:0]const u8 = undefined;
+    for (&out, 0..) |*o, i| {
+        const c: wf.Cmp = @enumFromInt(i);
+        o.* = switch (c) {
+            .lt => "is under",
+            .le => "is at most",
+            .eq => "is exactly",
+            .ge => "is at least",
+            .gt => "is over",
+        };
+    }
+    break :blk out;
+};
+
 fn cmpRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, cmp: *wf.Cmp, x: i32, y: i32) bool {
-    var lb: [12]u8 = undefined;
-    if (!ui.button(ctx, ui.rect(x, y, 40, 20), std.fmt.bufPrintZ(&lb, "{s}", .{cmp.tok()}) catch "?", hud.MONO, false, "How the two are compared")) return false;
+    const pick = ui.dropdown(ctx, ui.rect(x, y, 96, 20), ui.ddId(6, ed.trigSel orelse 0, @intFromPtr(cmp) & 0xfff), &CMP_NAMES, @intFromEnum(cmp.*), "How the two are compared") orelse return false;
     ed.bank(m);
-    cmp.* = cycleEnum(wf.Cmp, cmp.*);
+    cmp.* = @enumFromInt(pick);
     return true;
 }
 
+/// **THE CREATURE BY ITS DISPLAY NAME.** `@tagName` gave the author `fish_netter` and `fungal_swordsman`;
+/// `wf.foeName` is what the rest of the tool already shows and `unitBrushes` is already built from it.
 fn foeRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, k: *wf.FoeKind, x: i32, y: i32, w: i32) bool {
-    var lb: [40]u8 = undefined;
-    if (!ui.button(ctx, ui.rect(x, y, @min(w, 150), 20), std.fmt.bufPrintZ(&lb, "{s}", .{@tagName(k.*)}) catch "?", hud.MONO, false, "Which creature this counts")) return false;
+    const pick = ui.dropdown(ctx, ui.rect(x, y, @min(w, 176), 20), ui.ddId(7, ed.trigSel orelse 0, @intFromPtr(k) & 0xfff), &unitBrushes, @intFromEnum(k.*), "Which creature this counts") orelse return false;
     ed.bank(m);
-    k.* = cycleEnum(wf.FoeKind, k.*);
+    if (pick < NFOE_KIND) {
+        k.* = @enumFromInt(pick);
+        return true;
+    }
+    return false;
+}
+
+/// **EVERY CONVERSATION THIS MAP DECLARES, IN A LIST.** `Cond.talked` and `Act.dialog` both name a dialog by
+/// TEXT and both used to CYCLE it, so the author could not see what a map declared without pressing through all
+/// of it. One row, both callers, so the condition and the action cannot come to name different conversations.
+fn dialogRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, span: *wf.Span, x: i32, y: i32, w: i32, tag: u8) bool {
+    if (m.ndialogs == 0) {
+        hud.mono("no conversations in this map", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 160));
+        return false;
+    }
+    const shown = @min(m.ndialogs, MAX_SLOT_ROWS);
+    var labels: [MAX_SLOT_ROWS][:0]const u8 = undefined;
+    const txt = m.spanText(span.*);
+    var sel: usize = 0;
+    for (0..shown) |i| {
+        const lbl = m.dialogs[i].label();
+        const cap = @min(lbl.len, wf.ID_CAP - 1);
+        @memcpy(ed.slotLabels[i][0..cap], lbl[0..cap]);
+        ed.slotLabels[i][cap] = 0;
+        labels[i] = ed.slotLabels[i][0..cap :0];
+        if (std.mem.eql(u8, lbl, txt)) sel = i;
+    }
+    const pick = ui.dropdown(ctx, ui.rect(x, y, @min(w, 200), 20), ui.ddId(tag, ed.trigSel orelse 0, @intFromPtr(span) & 0xfff), labels[0..shown], sel, "Pick one of the conversations this map declares") orelse return false;
+    ed.bank(m);
+    span.* = m.addText(m.dialogs[pick].label()) catch {
+        ed.say("the map's text arena is full");
+        return false;
+    };
     return true;
 }
 
-/// **THE NEXT CONVERSATION THIS MAP DECLARES**, written once. `Cond.talked` and `Act.dialog` both name a dialog
-/// by TEXT, and both had the same cycle-and-intern block; the two drifting apart is a condition that watches a
-/// conversation the action never opens.
 fn cycleDialog(ed: *Editor, m: *wf.Map, cur: wf.Span, out: *wf.Span) bool {
     if (m.ndialogs == 0) {
         ed.say("no dialogs in this map");
@@ -5710,10 +5920,9 @@ fn condFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, c: *wf.Cond, x: i32, y: i32
         .always, .never => hud.mono("-", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 140)),
         .flag => {
             hit = slotRow(ed, ctx, m, &c.slot, &m.flagNames, m.nflags, x, y, w - 60, "flag") or hit;
-            var onW: i32 = 0;
-            if (ui.chip(ctx, x + 124, y, if (c.on) "on" else "off", c.on, &onW, "Which way the switch has to be")) {
+            if (ui.dropdown(ctx, ui.rect(x + 138, y, 74, 20), ui.ddId(12, ed.trigSel orelse 0, @intFromPtr(c) & 0xfff), &ON_OFF_NAMES, @intFromBool(c.on), "Which way the switch has to be")) |pick| {
                 ed.bank(m);
-                c.on = !c.on;
+                c.on = pick == 1;
                 hit = true;
             }
         },
@@ -5724,10 +5933,9 @@ fn condFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, c: *wf.Cond, x: i32, y: i32
         },
         .timer => {
             hit = slotRow(ed, ctx, m, &c.slot, &m.timerNames, m.ntimers, x, y, w - 60, "timer") or hit;
-            var onW: i32 = 0;
-            if (ui.chip(ctx, x + 124, y, if (c.on) "done" else "running", c.on, &onW, "Whether it has finished or is still counting")) {
+            if (ui.dropdown(ctx, ui.rect(x + 138, y, 88, 20), ui.ddId(13, ed.trigSel orelse 0, @intFromPtr(c) & 0xfff), &TIMER_NAMES, @intFromBool(c.on), "Whether it has finished or is still counting")) |pick| {
                 ed.bank(m);
-                c.on = !c.on;
+                c.on = pick == 1;
                 hit = true;
             }
         },
@@ -5753,21 +5961,10 @@ fn condFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, c: *wf.Cond, x: i32, y: i32
             }
         },
         .near => {
-            var npc: i32 = @intCast(c.slot);
-            if (ui.stepperI(ctx, x, y, STEP_MIN_W + 38, "npc", &npc, 1, 0, 999, "Which body, by its place in the npc table")) {
-                c.slot = @intCast(@max(npc, 0));
-                hit = true;
-            }
-            hit = ui.stepperF(ctx, x + STEP_MIN_W + 44, y, @max(w - STEP_MIN_W - 44, STEP_MIN_W), "r", &c.r, 0.5, 0.5, 200, "How near he has to come, in metres") or hit;
+            hit = npcRow(ed, ctx, m, &c.slot, x, y, 150) or hit;
+            hit = ui.stepperF(ctx, x + 156, y, @max(w - 160, STEP_MIN_W), "r", &c.r, 0.5, 0.5, 200, "How near he has to come, in metres") or hit;
         },
-        .talked => {
-            const txt = m.spanText(c.ref);
-            var tb: [48]u8 = undefined;
-            hud.mono(std.fmt.bufPrintZ(&tb, "{s}", .{if (txt.len > 0) txt else "(no dialog)"}) catch "", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 200));
-            if (ui.button(ctx, ui.rect(x + w - 76, y, 76, 20), "pick", hud.MONO, false, "Cycle the conversations this map declares")) {
-                hit = cycleDialog(ed, m, c.ref, &c.ref) or hit;
-            }
-        },
+        .talked => hit = dialogRow(ed, ctx, m, &c.ref, x, y, w, 11) or hit,
         .deaths, .alive => {
             hit = foeRow(ed, ctx, m, &c.foe, x, y, w - 120) or hit;
             hit = cmpRow(ed, ctx, m, &c.cmp, x + 154, y) or hit;
@@ -5780,15 +5977,9 @@ fn condFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, c: *wf.Cond, x: i32, y: i32
 fn actFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, a: *wf.Act, x: i32, y: i32, w: i32) bool {
     var hit = false;
     switch (a.kind) {
-        .preserve => hud.mono("-", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 140)),
-        .dialog => {
-            const txt = m.spanText(a.ref);
-            var tb: [48]u8 = undefined;
-            hud.mono(std.fmt.bufPrintZ(&tb, "{s}", .{if (txt.len > 0) txt else "(none)"}) catch "", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 200));
-            if (ui.button(ctx, ui.rect(x + w - 76, y, 76, 20), "pick", hud.MONO, false, "Cycle the conversations this map declares")) {
-                hit = cycleDialog(ed, m, a.ref, &a.ref) or hit;
-            }
-        },
+        // **NO FIELDS, BECAUSE THE KIND IS THE WHOLE INSTRUCTION.** Which counter it opens is the act itself.
+        .preserve, .shop, .smithy => hud.mono("-", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 140)),
+        .dialog => hit = dialogRow(ed, ctx, m, &a.ref, x, y, w, 8) or hit,
         .text => {
             const txt = m.spanText(a.line);
             var tb: [64]u8 = undefined;
@@ -5808,21 +5999,23 @@ fn actFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, a: *wf.Act, x: i32, y: i32, 
         .flag => {
             hit = slotRow(ed, ctx, m, &a.slot, &m.flagNames, m.nflags, x, y, w - 80, "flag") or hit;
             var sw: i32 = 0;
-            if (ui.chip(ctx, x + 124, y, @tagName(a.setop), true, &sw, "Set it, clear it, or flip whatever it was")) {
+            _ = &sw;
+            if (ui.dropdown(ctx, ui.rect(x + 138, y, 78, 20), ui.ddId(10, ed.trigSel orelse 0, @intFromPtr(a) & 0xfff), &SETOP_NAMES, @intFromEnum(a.setop), "Set it, clear it, or flip whatever it was")) |pick| {
                 ed.bank(m);
-                a.setop = cycleEnum(wf.Setop, a.setop);
+                a.setop = @enumFromInt(pick);
                 hit = true;
             }
         },
         .counter => {
             hit = slotRow(ed, ctx, m, &a.slot, &m.counterNames, m.ncounters, x, y, w - 120, "counter") or hit;
             var sw: i32 = 0;
-            if (ui.chip(ctx, x + 124, y, @tagName(a.countop), true, &sw, "Set it, add to it, or take from it")) {
+            _ = &sw;
+            if (ui.dropdown(ctx, ui.rect(x + 138, y, 74, 20), ui.ddId(9, ed.trigSel orelse 0, @intFromPtr(a) & 0xfff), &COUNTOP_NAMES, @intFromEnum(a.countop), "Set it, add to it, or take from it")) |pick| {
                 ed.bank(m);
-                a.countop = cycleEnum(wf.Countop, a.countop);
+                a.countop = @enumFromInt(pick);
                 hit = true;
             }
-            hit = ui.stepperI(ctx, x + 184, y, @max(w - 188, STEP_MIN_W), "", &a.n, 1, -9999, 9999, "By how much") or hit;
+            hit = ui.stepperI(ctx, x + 218, y, @max(w - 222, STEP_MIN_W), "", &a.n, 1, -9999, 9999, "By how much") or hit;
         },
         .timer => {
             hit = slotRow(ed, ctx, m, &a.slot, &m.timerNames, m.ntimers, x, y, w - 100, "timer") or hit;

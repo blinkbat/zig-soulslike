@@ -208,9 +208,11 @@ const HAFT_LEN: f32 = 0.255 * H;
 const HEAD_R: f32 = 0.052 * H;
 
 /// **WHERE HIS ANVIL GOES**, in metres forward of the pin he is placed on. MEASURED off the posed rig at the
-/// bottom of the stroke and not picked: the head bottoms at 0.87 m up and 0.91 m out, which is what
+/// bottom of the stroke and not picked: the head bottoms at 0.98 m up and 1.00 m out, which is what
 /// `propforge.ANVIL_FACE` is authored to. A map that stands the anvil anywhere else is a smith hammering air,
 /// so the number lives here beside the stroke that produced it and a test re-measures it every build.
+/// **IT MOVES WHEN HE DOES** — it was 0.91 against a 1.52 body, and every anvil already placed in a map wants
+/// moving with it.
 pub const SMITH_ANVIL_Z: f32 = 1.00;
 
 pub const NKIND = @typeInfo(wf.NpcKind).@"enum".fields.len;
@@ -241,6 +243,9 @@ const Spec = struct {
     /// **HE TRACKS YOU WITH HIS HEAD AND HIS BODY STAYS PUT** (owner). Degrees of neck; 0 turns the whole body
     /// instead, which is what the wanderer and the caravaneer do.
     headTrack: f32 = 0,
+    /// …and how far that head will look DOWN. In the table beside the yaw because they are one behaviour: read
+    /// off a constant instead, the next kind to track you would inherit a giant's dip at a man's height.
+    headDip: f32 = 0,
 };
 
 const SPEC = [NKIND]Spec{
@@ -248,7 +253,7 @@ const SPEC = [NKIND]Spec{
     .{ .kind = .merchant, .size = 1.06, .stoop = -3.0, .headFwd = -7.0, .faceAt = v3(0, 0.045 * H + MERCH_NECK, 0.085 * H), .top = 1.16 },
     // The face point is up on the BURL and forward of it: the moustache hangs off the front of the head and a
     // portrait solved on the wanderer's point photographs the back of it.
-    .{ .kind = .smith, .size = SMITH_SIZE, .stoop = SMITH_STOOP, .headFwd = SMITH_HEAD_FWD, .faceAt = v3(0, 0.062 * H, 0.048 * H), .top = SMITH_TOP, .headTrack = SMITH_HEAD_TRACK },
+    .{ .kind = .smith, .size = SMITH_SIZE, .stoop = SMITH_STOOP, .headFwd = SMITH_HEAD_FWD, .faceAt = v3(0, 0.062 * H, 0.048 * H), .top = SMITH_TOP, .headTrack = SMITH_HEAD_TRACK, .headDip = SMITH_HEAD_DIP },
 };
 
 comptime {
@@ -633,7 +638,7 @@ pub const Wanderer = struct {
         const dip = mathx.degrees(std.math.atan2(eye.y - (at.y + heromod.H * 0.55), mathx.maxF(flat, 0.2)));
         const step = HEAD_TRACK_RATE * dt;
         self.headYaw = mathx.approach(self.headYaw, mathx.clampF(off, -lim, lim), step);
-        self.headDip = mathx.approach(self.headDip, mathx.clampF(dip, 0, SMITH_HEAD_DIP), step);
+        self.headDip = mathx.approach(self.headDip, mathx.clampF(dip, 0, spec(self.kind).headDip), step);
     }
 
     fn restHead(self: *Wanderer, dt: f32) void {
@@ -656,8 +661,8 @@ pub const Wanderer = struct {
         setLocal(wx, WRR, rest, mul(rx(-HAM_WRIST * k), rz(-6.0)));
         // **WHERE THE HAMMER POINTS IS AUTHORED IN THE WORLD, NOT INHERITED FROM THE ARM** (`hero.staffFit`,
         // and the wanderer's own staff two branches down says the same). Left unbilled it rode the whole chain:
-        // MEASURED, the head swung 1.96 m and topped out at 2.83 m — over his own 2.80 m crown — which is the
-        // executioner this file's `HAM_EL_HI` note says he must not be. The arm's own rx down the chain is
+        // MEASURED at the size he was then, the head swung 1.96 m and topped out at 2.83 m — over his own crown
+        // of 2.80 — which is the executioner `HAM_EL_HI`'s note forbids. The arm's own rx down the chain is
         // `-(flex + elbow + wrist)`, and the sign is `necro`'s, measured there.
         setLocal(wx, STAFF, rest, heromod.staffFit(lerpF(HAM_TILT_LO, HAM_TILT_HI, k) - flex - elbow - HAM_WRIST * k));
     }

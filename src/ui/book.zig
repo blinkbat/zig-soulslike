@@ -67,7 +67,15 @@ pub const View = struct {
     spell: combat.Spell,
     fp: f32,
     souls: u32,
+    gold: u32 = 0,
     worn: heromod.Worn = .{},
+    /// **THE SMITH'S WORK, PER ARMAMENT** (`hero.tiers`). The sheet PREVIEWS damage, so a book that weighed a
+    /// blow without it would show the numbers of an unsharpened weapon and every upgrade would read as nothing.
+    tiers: [heromod.NARM]u8 = [_]u8{0} ** heromod.NARM,
+
+    pub fn tierOf(self: *const View, a: heromod.Armament) u8 {
+        return self.tiers[@intFromEnum(a)];
+    }
 
     pub fn holds(self: *const View, a: heromod.Armament) bool {
         return heromod.handsHold(self.arm, self.off, a);
@@ -87,6 +95,8 @@ const Loadout = struct {
     quick: ?item.Kind,
     spell: combat.Spell,
     worn: heromod.Worn = .{},
+    /// The smith's work on the hand this loadout is weighing (`hero.tiers`), 0 for a bare one.
+    tier: u8 = 0,
 };
 
 /// `secs` is a CLOCK printed as a clock. **A SPEED DIAL IS NOT A SPEED** (owner: attack speed in some NUMBER
@@ -216,8 +226,9 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     const row = heromod.armRow(l.worn, if (bow) .hand_bow else heromod.swingSocket(l.arm, l.off));
     const perk = v.tree.bonus();
     const sheet = sheetOf(l, perk);
-    const light = heromod.weigh(if (bow) heromod.arrowBlow(l.ammo, false, perk) else heromod.ATK_LIGHT_HIT, row, sheet);
-    const heavy = heromod.weigh(if (bow) heromod.arrowBlow(l.ammo, true, perk) else heromod.ATK_HEAVY_HIT, row, sheet);
+    const tier = l.tier;
+    const light = heromod.weigh(if (bow) heromod.arrowBlow(l.ammo, false, perk) else heromod.ATK_LIGHT_HIT, row, sheet, tier);
+    const heavy = heromod.weigh(if (bow) heromod.arrowBlow(l.ammo, true, perk) else heromod.ATK_HEAVY_HIT, row, sheet, tier);
     var d: [ND]f32 = undefined;
     d[@intFromEnum(Der.light)] = if (attacks) light.dmg else 0;
     d[@intFromEnum(Der.heavy)] = if (attacks) heavy.dmg else 0;
@@ -1319,9 +1330,12 @@ fn drawTabs(self: *const Book, card: Box, v: View) void {
         }
         x += w[i] + gap;
     }
+    // **THE SAME MARK THE HUD USES** (`uiart.soulMark`), because a number with no mark beside it on a page that
+    // also prints gold is a number you have to read the label to identify.
     const souls = fmt("{d}", .{v.souls});
     const rx = card.right() - PAD - hud.textW(souls, hud.BODY);
     hud.text(souls, rx, y + 8, hud.BODY, uiart.TEXT_VALUE);
+    uiart.soulMark(fi(rx) - 13, fi(y + 8) + fi(hud.lineH(hud.BODY)) * 0.5, uiart.MARK_R * 0.86, 225);
     hud.text("SOULS", rx - hud.textW("SOULS", hud.TINY) - 10, y + 12, hud.TINY, uiart.TEXT_DIM);
     uiart.divider(card.x + @divTrunc(card.w, 2), card.y + headH(), @divTrunc(card.w, 2) - 30, 170);
 }
@@ -1518,11 +1532,24 @@ comptime {
         @compileError("book: the `rate_*` dials are not one contiguous run of `combat.NAIL` — `rateDial` indexes off the first");
 }
 
+/// **WHICH ARMAMENT LIVES IN A SOCKET** — derived by walking `hero.wearFor` rather than written as a second
+/// table, so the inverse cannot drift from the map it inverts. The card weighs a SOCKET, and a tier is per
+/// armament, so this is what joins them.
+fn armInSocket(w: item.Wear) ?heromod.Armament {
+    for (0..heromod.NARM) |i| {
+        const a: heromod.Armament = @enumFromInt(i);
+        if (heromod.wearFor(a)) |ww| {
+            if (ww == w) return a;
+        }
+    }
+    return null;
+}
+
 /// The four offence rows off one pair of blows, so the bow and the three blades cannot be weighed differently.
 /// STANCE comes off the HEAVY: a light stroke carries none (`hero.ATK_LIGHT_HIT`), and the row would read 0.
-fn setBlow(d: *Dials, lightHit: combat.Hit, heavyHit: combat.Hit, row: item.Arm, sheet: stats.Sheet) void {
-    const lo = heromod.weigh(lightHit, row, sheet);
-    const hi = heromod.weigh(heavyHit, row, sheet);
+fn setBlow(d: *Dials, lightHit: combat.Hit, heavyHit: combat.Hit, row: item.Arm, sheet: stats.Sheet, tier: u8) void {
+    const lo = heromod.weigh(lightHit, row, sheet, tier);
+    const hi = heromod.weigh(heavyHit, row, sheet, tier);
     d.set(.dmg_light, lo.dmg);
     d.set(.dmg_heavy, hi.dmg);
     d.set(.poise, hi.poise);
@@ -1591,10 +1618,10 @@ fn dialsOf(k: ?item.Kind, socket: ?item.Wear, v: View) Dials {
             // SWINGS** — read plainly a shield came out with the bare sword's blow beside it, which is a lie in
             // numbers where it was merely noise in percentages ("Damage 100%").
             if (a.slot == .hand_bow) {
-                setBlow(&d, heromod.arrowBlow(v.quiver.sel, false, perk), heromod.arrowBlow(v.quiver.sel, true, perk), a, v.sheet.*);
+                setBlow(&d, heromod.arrowBlow(v.quiver.sel, false, perk), heromod.arrowBlow(v.quiver.sel, true, perk), a, v.sheet.*, v.tierOf(.bow));
                 d.set(.swing, heromod.drawSecs(true, a));
             } else if (heromod.bladeForWear(a.slot)) |b| {
-                setBlow(&d, heromod.ATK_LIGHT_HIT, heromod.ATK_HEAVY_HIT, a, v.sheet.*);
+                setBlow(&d, heromod.ATK_LIGHT_HIT, heromod.ATK_HEAVY_HIT, a, v.sheet.*, v.tierOf(armInSocket(a.slot) orelse .sword));
                 d.set(.swing, heromod.swingSecs(b, true, a));
             }
             if (a.venom > 0) d.set(.venom, a.venom);

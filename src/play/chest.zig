@@ -57,6 +57,8 @@ fn ease(u: f32) f32 {
 }
 
 pub const Opened = struct {
+    /// Coin the placing op put in it (`wf.Op.gold`), 0 for a container that holds only things.
+    gold: u32 = 0,
     at: rl.Vector3,
     loot: []const item.Kind,
 };
@@ -112,7 +114,8 @@ pub const Chests = struct {
         sfx.world(.chest_open, c.pos);
         const op = c.op;
         const loot: []const item.Kind = if (op < m.nops) m.ops[op].loot[0..m.ops[op].nloot] else &.{};
-        return .{ .at = c.topWorld(), .loot = loot };
+        const coin: u32 = if (op < m.nops) m.ops[op].gold else 0;
+        return .{ .at = c.topWorld(), .loot = loot, .gold = coin };
     }
 
     pub fn draw(self: *const Chests) void {

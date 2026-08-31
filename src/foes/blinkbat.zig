@@ -138,7 +138,11 @@ comptime {
 
 const BLINK_OUT: f32 = 0.20;
 const BLINK_IN: f32 = 0.30;
-const BLINK_CD: f32 = 2.40;
+/// **THE BLINK IS RARE, AND THAT IS WHAT MAKES IT THE MOVE.** At 2.40 it vanished after every single pass and
+/// the whole fight was strobing: the arrival is the thing worth watching and you cannot watch a thing that
+/// happens every two seconds. Now most withdrawals are flown (`RETREAT_CHANCE`) and the teleport is what it
+/// spends when it wants to be somewhere you are not looking.
+const BLINK_CD: f32 = 5.60;
 /// Where it puts itself down for a pass, and where it withdraws to. **BOTH ARE MEASURED FROM THE QUARRY'S HIDE**
 /// (`wolf.triggerR`'s law): asked centre-to-centre a flat radius is unsatisfiable on anything broad.
 const BLINK_NEAR: f32 = 1.62;
@@ -152,6 +156,17 @@ const BITE_STRIKE: f32 = 0.13;
 const BITE_RECOVER: f32 = 0.46;
 const BITE_R: f32 = 2.05;
 const BITE_FRONT_DOT: f32 = 0.34;
+
+/// **IT DOES NOT ALWAYS VANISH TO LEAVE.** A withdrawal under its own wings is in the OPEN the whole way —
+/// travelling, facing you, hittable — which is the window a blink never gives, and it is the only reason the
+/// long `BLINK_CD` reads as a rhythm rather than as a bat standing still. Rolled once, at the moment the pass
+/// is spent, so the exit is committed rather than re-decided every frame.
+const RETREAT_CHANCE: f32 = 0.62;
+const RETREAT_SPEED: f32 = DRIFT_SPEED * 1.7;
+const RETREAT_MAX: f32 = 1.70;
+/// How far out it is trying to get. Short of `BLINK_FAR` on purpose — flown, it does not make the full ring,
+/// so a retreat leaves it closer than a blink does and you can still reach it.
+const RETREAT_R: f32 = BLINK_FAR * 0.82;
 
 /// Seconds it hangs at the ring doing nothing between passes. The lull IS the reposition window, and it is the
 /// only ground the fight gives you.
@@ -250,14 +265,14 @@ const CHIP_HEAVY: i32 = 18;
 const CHIP_DEATH: i32 = 26;
 const PARTS: usize = 96;
 
-const State = enum { hang, wait, blinkout, blinkin, wind, strike, recover, feed, repelled, stunlight, stunheavy, dead };
+const State = enum { hang, wait, retreat, blinkout, blinkin, wind, strike, recover, feed, repelled, stunlight, stunheavy, dead };
 
-const Choice = enum { blink, bite, drift, hold, rest };
+const Choice = enum { blink, retreat, bite, drift, hold, rest };
 
 /// **THE WHOLE DECISION, AND IT READS FIVE NUMBERS** — a distance, a distance home, two clocks and whether the
 /// roots have it. No hero state reaches this function, which is what makes NO INPUT READING checkable rather
 /// than asserted (`foe.zig`'s law), and pure over its arguments, which is what makes it testable at all.
-fn classify(sensed: f32, gap: f32, homeGap: f32, blinkReady: bool, rooted: bool, spent: bool) Choice {
+fn classify(sensed: f32, gap: f32, homeGap: f32, blinkReady: bool, rooted: bool, spent: bool, runs: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     // **IT DOES NOT TAKE TWO BITES FROM ONE SPOT.** Measured before this existed: 20 s stood in its face was 6
     // bites and ZERO blinks — the creature was a slow leechfly and the whole run half of hit-and-run was dead
@@ -265,7 +280,9 @@ fn classify(sensed: f32, gap: f32, homeGap: f32, blinkReady: bool, rooted: bool,
     // …and while it is spent it does not bite AT ALL: it goes if it can, and hangs there waiting to if it
     // cannot. That wait is the reposition window, and gating only the blink left it chewing through the
     // `FEED_BLINK_LOCK` it had just bought — two bites off one spot, which is the thing this rule forbids.
-    if (spent and !rooted) return if (blinkReady) .blink else .rest;
+    // …and it ALWAYS leaves now, on the wing when it is not blinking. Hanging there spent (the old `.rest`)
+    // was the long cooldown's only face and it read as the creature having stopped working.
+    if (spent and !rooted) return if (blinkReady and !runs) .blink else .retreat;
     if (gap <= BITE_R) return .bite;
     // **ROOTED IT CANNOT VANISH, SO IT HAS TO FLY THE DISTANCE LIKE ANYTHING ELSE** — which is the only time
     // this creature is ever chaseable, and it is what a rod buys.
@@ -330,6 +347,9 @@ pub const Bat = struct {
     /// **THE PASS IS SPENT** — it has bitten from here, so wherever it stands is somewhere it is leaving.
     /// Cleared at the launch of the blink that takes it away, and by a stagger, which ends the pass for it.
     spent: bool = false,
+    /// **HOW THIS SPENT PASS IS LEAVING** — flown out (`RETREAT_CHANCE`) rather than blinked. Rolled once, by
+    /// `markSpent`, because `classify` is asked every frame and a coin in there would flicker.
+    wantRun: bool = false,
     wingPhase: f32 = 0,
     jawOpen: f32 = 0,
 
@@ -467,7 +487,7 @@ pub const Bat = struct {
                 // it wasted. No feed, and no free exit either.
                 self.hoverTo = HOVER_IDLE;
                 self.speed = approach(self.speed, 0, ACCEL * 2.4 * dt);
-                self.driftAway(quarry, dt, bounds);
+                self.driftAway(quarry, dt, bounds, DRIFT_SPEED * 0.9);
                 if (self.t >= BITE_WIND) self.enter(.hang);
             },
             .blinkout => {
@@ -500,6 +520,19 @@ pub const Bat = struct {
                     }
                 }
             },
+            .retreat => {
+                // **IT BACKS OFF FACING YOU.** A body that turns its back is fleeing; this one is withdrawing,
+                // and it stays pointed at the quarry the whole way so the next pass has no turn to pay for.
+                self.hoverTo = HOVER_WAIT;
+                self.faceToward(quarry, dt);
+                self.speed = approach(self.speed, RETREAT_SPEED, ACCEL * dt);
+                self.driftAway(quarry, dt, bounds, self.speed);
+                if (self.t >= RETREAT_MAX or mathx.distXZ(self.pos, quarry) >= RETREAT_R) {
+                    self.spent = false;
+                    self.waitFor = self.aiRng.range(WAIT_MIN, WAIT_MAX);
+                    self.enter(.wait);
+                }
+            },
             .wait => {
                 self.hoverTo = HOVER_WAIT;
                 self.speed = approach(self.speed, 0, ACCEL * dt);
@@ -521,6 +554,11 @@ pub const Bat = struct {
             },
             .strike => {
                 self.hoverTo = HOVER_BITE;
+                // **THE JAWS SHUT ON THE STRIKE, AND THE SHUTTING IS THE BITE.** `jawOpen` only ever decayed
+                // OUTSIDE wind and strike, so the gape was held wide through the whole blow and the snap
+                // happened half a second later in `recover` — a lunge with the mouth still open. Same curve
+                // the head drives forward on (`biteAmt`), so the two are one motion.
+                self.jawOpen = 1.0 - foe.swingCurve(mathx.clampF(self.t / BITE_STRIKE, 0, 1));
                 self.tryBite(quarry);
                 if (self.t >= BITE_STRIKE) self.enter(.recover);
             },
@@ -529,7 +567,7 @@ pub const Bat = struct {
                 self.speed = approach(self.speed, 0, ACCEL * dt);
                 // A MISS IS THE ONE OUTCOME IT WALKS AWAY FROM CLEAN — but it still walks away.
                 if (self.t >= BITE_RECOVER) {
-                    self.spent = true;
+                    self.markSpent();
                     self.enter(.hang);
                 }
             },
@@ -544,7 +582,7 @@ pub const Bat = struct {
                 }
                 self.emitDrink(dt);
                 if (self.t >= FEED_DUR or self.drinkLeft <= 0) {
-                    self.spent = true;
+                    self.markSpent();
                     self.enter(.hang);
                 }
             },
@@ -553,7 +591,7 @@ pub const Bat = struct {
                 const gap = mathx.maxF(0, sensed - foe.HERO_R - self.bodyR());
                 const homeGap = mathx.distXZ(self.pos, foe.homeFor(self));
                 self.hoverTo = HOVER_IDLE;
-                switch (classify(sensed, gap, homeGap, self.blinkCd <= 0, !foe.canLeap(&self.root), self.spent)) {
+                switch (classify(sensed, gap, homeGap, self.blinkCd <= 0, !foe.canLeap(&self.root), self.spent, self.wantRun)) {
                     .rest => {
                         // **IT DRIFTS ITS ROUND RATHER THAN BLINKING IT** (`foe.postWant`). The blink is what
                         // it spends on a FLANK — a bat that teleported its way round a patrol would have no
@@ -582,6 +620,7 @@ pub const Bat = struct {
                         self.enter(.wind);
                         sfx.world(.shade_gather, self.pos);
                     },
+                    .retreat => self.enter(.retreat),
                     .blink => self.enterBlink(quarry),
                 }
             },
@@ -608,10 +647,17 @@ pub const Bat = struct {
         mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), step, bounds);
     }
 
-    fn driftAway(self: *Bat, quarry: rl.Vector3, dt: f32, bounds: f32) void {
+    fn driftAway(self: *Bat, quarry: rl.Vector3, dt: f32, bounds: f32, speed: f32) void {
         const away = mathx.dirXZ(quarry, self.pos);
         if (mathx.lenXZ(away) < 1e-4) return;
-        mathx.stepXZ(&self.pos, mathx.normV(away), DRIFT_SPEED * 0.9 * dt, bounds);
+        mathx.stepXZ(&self.pos, mathx.normV(away), speed * self.chill.travel() * dt, bounds);
+    }
+
+    /// A pass is done with. **HOW IT LEAVES IS DECIDED HERE AND NOT RE-ROLLED**, because `classify` runs every
+    /// frame and a coin flipped in there would flicker between the two exits until one of them happened to win.
+    fn markSpent(self: *Bat) void {
+        self.spent = true;
+        self.wantRun = self.aiRng.float() < RETREAT_CHANCE;
     }
 
     fn faceToward(self: *Bat, target: rl.Vector3, dt: f32) void {
@@ -681,6 +727,7 @@ pub const Bat = struct {
         self.drinkLeft = 0;
         self.thin = 0;
         self.spent = false;
+        self.wantRun = false;
         self.enter(s);
     }
 
@@ -709,6 +756,7 @@ pub const Bat = struct {
         self.blinkTo = v3(quarry.x + dir.x * outR, self.pos.y, quarry.z + dir.z * outR);
         self.blinkNear = near;
         self.spent = false;
+        self.wantRun = false;
         self.blinkCd = BLINK_CD * self.aiRng.range(0.85, 1.25);
         // It works one way round for a while and then changes its mind, so a player cannot pre-aim the ring.
         if (self.aiRng.float() < 0.22) self.arcSign = -self.arcSign;
@@ -800,13 +848,16 @@ pub const Bat = struct {
 
         const bite = self.biteAmt();
         const feed = if (self.state == .feed) mathx.smoothstep(0, 0.18, self.t) else 0;
+        // A MASS IN MOTION LEANS AGAINST ITS OWN TRAVEL: backing off, the chest comes UP and the head stays on
+        // you. Without it a retreat was the idle hover playing while the body slid backwards.
+        const run = self.retreatAmt();
         const beat = mathx.sinf(self.wingPhase * std.math.tau);
         const wing = beat * (1.0 - dk);
         const bob = mathx.sinf((self.elapsed + self.seed) * 1.6) * 0.045 * H * (1.0 - dk);
 
         // **THE BODY HINGES AT THE WAIST AND THE PELVIS STAYS NEAR-UPRIGHT** (`ogre.PELVIS_SHARE`'s law on a
         // hanging body): a lean taken at the ROOT rotates the legs and reads as the whole animal tipping.
-        const bodyPitch = 16.0 + 30.0 * bite + 46.0 * feed - 34.0 * stun + 74.0 * dk;
+        const bodyPitch = 16.0 + 30.0 * bite + 46.0 * feed - 34.0 * stun - 30.0 * run + 74.0 * dk;
         const leanX = 0.28 * bodyPitch;
         const waist = bodyPitch - leanX;
 
@@ -819,7 +870,7 @@ pub const Bat = struct {
 
         setLocal(&wx, SPINE, self.rest, rx(waist * 0.55));
         setLocal(&wx, CHEST, self.rest, rx(waist * 0.45));
-        const neckPitch = -6.0 + 34.0 * bite + 48.0 * feed - 16.0 * stun;
+        const neckPitch = -6.0 + 34.0 * bite + 48.0 * feed - 16.0 * stun + 22.0 * run;
         setLocal(&wx, NECK, self.rest, rx(neckPitch * 0.45));
         setLocal(&wx, SKULL, self.rest, mul(rx(neckPitch * 0.55), rz(4.0 * mathx.sinf(self.elapsed * 0.7 + self.seed))));
 
@@ -854,6 +905,12 @@ pub const Bat = struct {
 
         wx[HELD] = wx[WRR];
         self.xf = wx;
+    }
+
+    /// Off again before the state ends, so the lean settles rather than snapping back on its last frame.
+    fn retreatAmt(self: *const Bat) f32 {
+        if (self.state != .retreat) return 0;
+        return mathx.smoothstep(0, 0.16, self.t) * (1.0 - mathx.smoothstep(RETREAT_MAX - 0.30, RETREAT_MAX, self.t));
     }
 
     fn biteAmt(self: *const Bat) f32 {
@@ -1251,12 +1308,12 @@ test "MIDWAY THROUGH A BLINK IT IS NOWHERE: no body to hit and no body to lock" 
 }
 
 test "THE ROOTS REFUSE THE BLINK — the one time this creature is chaseable" {
-    try std.testing.expectEqual(Choice.blink, classify(9.0, 8.0, 0, true, false, false));
-    try std.testing.expectEqual(Choice.drift, classify(9.0, 8.0, 0, true, true, false));
-    try std.testing.expectEqual(Choice.drift, classify(9.0, 8.0, 0, false, false, false));
-    try std.testing.expectEqual(Choice.bite, classify(2.0, BITE_R - 0.1, 0, true, false, false));
-    try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1, 20, 0, true, false, false));
-    try std.testing.expectEqual(Choice.hold, classify(AGGRO_R + 1, 20, HOME_R + 1, true, false, false));
+    try std.testing.expectEqual(Choice.blink, classify(9.0, 8.0, 0, true, false, false, false));
+    try std.testing.expectEqual(Choice.drift, classify(9.0, 8.0, 0, true, true, false, false));
+    try std.testing.expectEqual(Choice.drift, classify(9.0, 8.0, 0, false, false, false, false));
+    try std.testing.expectEqual(Choice.bite, classify(2.0, BITE_R - 0.1, 0, true, false, false, false));
+    try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1, 20, 0, true, false, false, false));
+    try std.testing.expectEqual(Choice.hold, classify(AGGRO_R + 1, 20, HOME_R + 1, true, false, false, false));
 }
 
 test "IT IS NOT THE LEECHFLY: it never climbs out of a swing" {
@@ -1328,33 +1385,95 @@ test "IT DOES NOT TAKE TWO BITES FROM ONE SPOT — hit and RUN" {
     var t: f32 = 0;
     var bites: u32 = 0;
     var blinks: u32 = 0;
-    var sinceBlink: u32 = 0;
+    var runs: u32 = 0;
+    var sinceLeft: u32 = 0;
     var worst: u32 = 0;
     var wasBlink = false;
+    var wasRun = false;
     while (t < 20.0) : (t += dt) {
+        // **THE GAME FEEDS SIGHT EVERY FRAME AND A UNIT TEST HAS TO TOO.** `foe.SIGHT_MEMORY` is 6 s, so
+        // without this the back two thirds of the run is a BLIND bat hovering at its post and the counts below
+        // measure nothing (the fungal deer's and the priest's own tests already do this).
+        b.leash.noteSeen();
         _ = b.update(dt, hero, 400, .{});
         if (b.bit) {
             bites += 1;
-            sinceBlink += 1;
-            worst = @max(worst, sinceBlink);
+            sinceLeft += 1;
+            worst = @max(worst, sinceLeft);
         }
+        // **A RETREAT IS A LEAVING TOO**, and it is now the commoner of the two exits.
         const nowBlink = b.state == .blinkout;
+        const nowRun = b.state == .retreat;
         if (nowBlink and !wasBlink) {
             blinks += 1;
-            sinceBlink = 0;
+            sinceLeft = 0;
+        }
+        if (nowRun and !wasRun) {
+            runs += 1;
+            sinceLeft = 0;
         }
         wasBlink = nowBlink;
+        wasRun = nowRun;
     }
-    std.debug.print("\n  20 s stood in its face: {d} bites, {d} blinks, never more than {d} from one spot\n", .{ bites, blinks, worst });
-    try std.testing.expect(bites > 0 and blinks > 0);
+    std.debug.print("\n  20 s stood in its face: {d} bites, {d} blinks, {d} flown retreats, never more than {d} from one spot\n", .{ bites, blinks, runs, worst });
+    try std.testing.expect(bites > 0);
+    // **MOST EXITS ARE FLOWN.** The teleport is what it spends, not what it does.
+    try std.testing.expect(runs > blinks);
     try std.testing.expectEqual(@as(u32, 1), worst);
 }
 
-test "A SPENT PASS LEAVES — but rooted it stays and fights, which is the one time it is beatable on foot" {
+test "THE JAWS SHUT ON THE STRIKE — the closing IS the bite, not something that happens afterwards" {
+    var b = testBat();
+    const hero = mathx.ground(0, 1.2);
+    const dt = 1.0 / 240.0;
+    b.debugBite();
+    var t: f32 = 0;
+    var gapeAtCommit: f32 = 0;
+    while (t < BITE_WIND) : (t += dt) {
+        _ = b.update(dt, hero, 400, .{});
+        gapeAtCommit = b.jawOpen;
+    }
+    try std.testing.expect(gapeAtCommit > 0.9);
+    var t2: f32 = 0;
+    while (t2 < BITE_STRIKE) : (t2 += dt) _ = b.update(dt, hero, 400, .{});
+    std.debug.print("\n  gape {d:.2} at the commit, {d:.2} once the {d:.2} s blow is over\n", .{ gapeAtCommit, b.jawOpen, BITE_STRIKE });
+    try std.testing.expect(b.jawOpen < 0.08);
+}
+
+test "IT FLIES ITS WITHDRAWAL, AND THE WITHDRAWAL OPENS REAL DISTANCE" {
+    var b = testBat();
+    const hero = mathx.ground(0, 1.2);
+    b.pos = mathx.ground(0, 2.6);
+    b.markSpent();
+    b.wantRun = true;
+    b.blinkCd = BLINK_CD;
+    const dt = 1.0 / 240.0;
+    const from = mathx.distXZ(b.pos, hero);
+    var t: f32 = 0;
+    var everRetreated = false;
+    while (t < RETREAT_MAX + 0.4) : (t += dt) {
+        _ = b.update(dt, hero, 400, .{});
+        if (b.state == .retreat) everRetreated = true;
+        try std.testing.expect(!b.hidden());
+    }
+    const to = mathx.distXZ(b.pos, hero);
+    std.debug.print("  flew from {d:.2} m out to {d:.2} m inside {d:.2} s, in the open the whole way\n", .{ from, to, RETREAT_MAX });
+    try std.testing.expect(everRetreated);
+    try std.testing.expect(to > from + 1.5);
+    try std.testing.expect(!b.spent);
+}
+
+test "A SPENT PASS ALWAYS LEAVES — by teleport or on the wing, and rooted not at all" {
     const near = BITE_R - 0.2;
-    try std.testing.expectEqual(Choice.bite, classify(2.0, near, 0, true, false, false));
-    try std.testing.expectEqual(Choice.blink, classify(2.0, near, 0, true, false, true));
+    try std.testing.expectEqual(Choice.bite, classify(2.0, near, 0, true, false, false, false));
+    // Spent, with the blink up and the coin against a run: it vanishes.
+    try std.testing.expectEqual(Choice.blink, classify(2.0, near, 0, true, false, true, false));
+    // …with the coin FOR a run it flies out instead, blink or no blink. **THE OLD `.rest` IS GONE**: a spent
+    // bat with the blink still cooling used to hang in your face doing nothing, which at `BLINK_CD` 5.60 would
+    // now be five seconds of a creature that had stopped working.
+    try std.testing.expectEqual(Choice.retreat, classify(2.0, near, 0, true, false, true, true));
+    try std.testing.expectEqual(Choice.retreat, classify(2.0, near, 0, false, false, true, false));
+    try std.testing.expectEqual(Choice.retreat, classify(2.0, near, 0, false, false, true, true));
     // …unless the roots have it, and then it has to finish the fight where it stands.
-    try std.testing.expectEqual(Choice.bite, classify(2.0, near, 0, true, true, true));
-    try std.testing.expectEqual(Choice.rest, classify(2.0, near, 0, false, false, true));
+    try std.testing.expectEqual(Choice.bite, classify(2.0, near, 0, true, true, true, false));
 }

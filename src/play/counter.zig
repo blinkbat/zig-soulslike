@@ -149,7 +149,11 @@ pub const Counter = struct {
                 } else {
                     for (STOCK) |k| {
                         if (n >= MAX_ROWS) break;
-                        out[n] = .{ .kind = k, .coin = item.price(k), .done = h.gold.total < item.price(k) };
+                        // **BROKE IS NOT `done`.** `done` means the row can never do anything again, and
+                        // `counterui` draws such a row with NO PRICE AT ALL — so set off the purse, every item
+                        // he could not yet afford stopped telling him what to save up for. `take` reads the
+                        // purse itself, so the transaction is unchanged.
+                        out[n] = .{ .kind = k, .coin = item.price(k) };
                         n += 1;
                     }
                 }
@@ -360,4 +364,28 @@ test "A TIER IS FLAT ON THE BASE, SO THE PERCENTAGES GET BETTER AS IT CLIMBS" {
     });
     try std.testing.expect(keen.dmg > bare.dmg);
     try std.testing.expect(keenGain > bareGain * 1.5);
+}
+
+test "AN EMPTY PURSE HIDES NO PRICES — a shelf you cannot afford is a shelf you are saving up for" {
+    var h = std.mem.zeroInit(heromod.Hero, .{});
+    var bag = item.Bag{};
+    var c = Counter{};
+    c.begin(.shop);
+    var buf: [MAX_ROWS]Row = undefined;
+
+    const poor = c.rows(&h, &bag, &buf);
+    for (poor) |r| {
+        try std.testing.expect(!r.done);
+        try std.testing.expect(r.coin > 0);
+    }
+    // …and the press is still refused, because the door reads the PURSE and not the row.
+    c.sel = 0;
+    c.take(&h, &bag);
+    try std.testing.expectEqual(Counter.Said.no_coin, c.said);
+
+    // Only the SMITHY has a row that is genuinely finished, and only at the cap.
+    c.begin(.smithy);
+    for (&h.tiers) |*t| t.* = heromod.TIER_MAX;
+    const maxed = c.rows(&h, &bag, &buf);
+    for (maxed) |r| try std.testing.expect(r.done);
 }

@@ -551,9 +551,24 @@ pub fn towerMesh(shader: rl.Shader) rl.Model {
     const W: f32 = 6.4;
     b.addBox(v3(0, 0.55, 0), v3(W * 0.60, rng.signed() * 0.01, 0), v3(0, 0.55, 0), v3(0, 0, W * 0.60), STONE_DK);
     b.addBox(v3(0, 1.20, 0), v3(W * 0.545, rng.signed() * 0.01, 0), v3(0, 0.30, 0), v3(0, 0, W * 0.545), STONE);
-    const yMid = courseStack(&b, &rng, 0, 1.42, 0, W, W, 0.86, 8, 0.06);
+    // Coursed per FACE: one box per course banded the whole shaft — the barber's pole, on a tower.
+    const t1 = art.Course{ .thick = 0.30, .height = 0.86 * 8, .y0 = 1.42, .courses = 8, .blockW = 0.88, .crumbleTop = 0.10, .crumble = 0.03 };
+    const h1 = W * 0.5 - t1.thick;
+    courseInto(&b, &rng, -h1, -h1, h1, -h1, t1);
+    courseInto(&b, &rng, h1, -h1, h1, h1, t1);
+    courseInto(&b, &rng, h1, h1, -h1, h1, t1);
+    courseInto(&b, &rng, -h1, h1, -h1, -h1, t1);
+    b.addCube(v3(0, 1.42 + t1.height * 0.5, 0), v3(W - 0.24, t1.height, W - 0.24), art.MORTAR);
+    const yMid = 1.42 + t1.height;
     b.addBox(v3(0.15, yMid + 0.16, -0.1), v3(W * 0.56, rng.signed() * 0.012, 0), v3(0, 0.16, 0), v3(0, 0, W * 0.56), STONE_LT);
-    const yTop = courseStack(&b, &rng, 0.3, yMid + 0.32, -0.2, W * 0.85, W * 0.85, 0.82, 7, 0.07);
+    const t2 = art.Course{ .thick = 0.28, .height = 0.82 * 7, .y0 = yMid + 0.32, .courses = 7, .blockW = 0.80, .crumbleTop = 0.45, .crumble = 0.05 };
+    const h2 = W * 0.85 * 0.5 - t2.thick;
+    courseInto(&b, &rng, 0.3 - h2, -0.2 - h2, 0.3 + h2, -0.2 - h2, t2);
+    courseInto(&b, &rng, 0.3 + h2, -0.2 - h2, 0.3 + h2, -0.2 + h2, t2);
+    courseInto(&b, &rng, 0.3 + h2, -0.2 + h2, 0.3 - h2, -0.2 + h2, t2);
+    courseInto(&b, &rng, 0.3 - h2, -0.2 + h2, 0.3 - h2, -0.2 - h2, t2);
+    b.addCube(v3(0.3, yMid + 0.32 + t2.height * 0.5, -0.2), v3(W * 0.85 - 0.22, t2.height, W * 0.85 - 0.22), art.MORTAR);
+    const yTop = yMid + 0.32 + t2.height;
     for ([_][2]f32{ .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 } }) |f| {
         const h = rng.range(0.62, 0.88) * yMid;
         b.addBox(
@@ -655,7 +670,14 @@ pub fn gateMesh(shader: rl.Shader) rl.Model {
     b.setMat(.stone);
     for ([_]f32{ -TX, TX }) |x| {
         b.addBox(v3(x, 0.7, 0), v3(3.05, rng.signed() * 0.01, 0), v3(0, 0.7, 0), v3(0, 0, 3.05), STONE_DK);
-        const yc = courseStack(&b, &rng, x, 1.4, 0, 5.0, 5.0, 0.92, 14, 0.05);
+        const gt = art.Course{ .thick = 0.30, .height = 0.92 * 14, .y0 = 1.4, .courses = 14, .blockW = 1.0, .crumbleTop = 0.14, .crumble = 0.03 };
+        const gh = 2.5 - gt.thick;
+        courseInto(&b, &rng, x - gh, -gh, x + gh, -gh, gt);
+        courseInto(&b, &rng, x + gh, -gh, x + gh, gh, gt);
+        courseInto(&b, &rng, x + gh, gh, x - gh, gh, gt);
+        courseInto(&b, &rng, x - gh, gh, x - gh, -gh, gt);
+        b.addCube(v3(x, 1.4 + gt.height * 0.5, 0), v3(4.76, gt.height, 4.76), art.MORTAR);
+        const yc = 1.4 + gt.height;
         b.addBox(v3(x, yc + 0.22, 0), v3(2.85, rng.signed() * 0.014, 0), v3(0, 0.22, 0), v3(0, 0, 2.85), STONE_LT);
         _ = courseStack(&b, &rng, x, yc + 0.44, 0, 4.2, 4.2, 0.78, 2, 0.04);
         quoinsInto(&b, &rng, x - 2.4, -2.4, 1.4, 0.92, 14, 0.9, 0.42);

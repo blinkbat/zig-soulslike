@@ -147,7 +147,7 @@ pub fn homeOf(k: wf.FoeKind) props.Biome {
 /// block there pins the two, so the set that gets a bar and the set a fog gate can be sealed on are one set.
 ///
 /// **THE ONLY CONSUMER THAT NEEDS IT BY NAME IS THE EDITOR.** A gate's `boss=` names what the ward waits on
-/// (`worldfmt.Op.boss`, `game.solveArenaSeals`), and offering all thirty-eight kinds there is a list nobody
+/// (`worldfmt.Op.boss`, `game.solveArenaSeals`), and offering all thirty-seven kinds there is a list nobody
 /// scrolls and a seal nobody meant: a ward held on a broodling is a door that opens when a broodling dies.
 pub fn isBoss(k: wf.FoeKind) bool {
     return switch (k) {
@@ -176,7 +176,7 @@ test "A BOSS IS FILED, AND THE SET IS SMALL ENOUGH TO BE A LIST" {
         std.debug.print(" {s}", .{wf.foeName(k)});
     }
     std.debug.print("  ({d} of {d} kinds)\n", .{ n, total });
-    // A gate offers this list unscrolled, which is what taking it off all thirty-eight bought.
+    // A gate offers this list unscrolled, which is what taking it off the whole roster bought.
     try std.testing.expect(n >= 1 and n <= 12);
     try std.testing.expect(isBoss(.bone_knight) and isBoss(.fungal_magus));
     try std.testing.expect(!isBoss(.broodling));

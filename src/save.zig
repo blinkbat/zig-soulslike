@@ -87,6 +87,10 @@ pub const Drop = struct {
     at: rl.Vector3 = mathx.zero3,
     n: u8 = 0,
     loot: [pickupmod.DROP_MAX]item.Kind = undefined,
+    /// **THE PURSE ON THE GROUND IS STATE NOW** (`pickup.Pickup.gold`) — coin is picked up rather than credited
+    /// on the kill, so a drop left standing has to survive a reload or the money is gone. Written as a trailing
+    /// `g<n>` token only when there is any, so every slot written before this reads back unchanged.
+    gold: u32 = 0,
 };
 
 pub const Data = struct {
@@ -345,7 +349,7 @@ pub fn gather(s: Slot) Data {
     for (s.pickups.droppedConst()) |p| {
         if (p.taken or p.nloot == 0) continue;
         if (d.groundN >= d.ground.len) break;
-        d.ground[d.groundN] = .{ .at = p.pos, .n = p.nloot, .loot = p.loot };
+        d.ground[d.groundN] = .{ .at = p.pos, .n = p.nloot, .loot = p.loot, .gold = p.gold };
         d.groundN += 1;
     }
     // From the frame the killing blow lands, not the frame the body finishes dissolving: `vit.dead` is the mechanic and `gone` is only the picture catching up with it.
@@ -366,7 +370,9 @@ pub fn scatter(d: *const Data, s: Slot) void {
     h.souls.shown = @floatFromInt(d.souls);
     h.gold.total = d.gold;
     h.gold.shown = @floatFromInt(d.gold);
-    h.tiers = d.tiers;
+    // Clamped on the way in, as `quiver` and `quicksel` below are: `weigh` caps the tier it prices but the
+    // sheet and the smithy's rows print the stored number, so an out-of-band row read back as "+200 (finished)".
+    for (&h.tiers, d.tiers) |*t, v| t.* = @min(v, heromod.TIER_MAX);
     h.arm = d.arm;
     h.off = d.off;
     h.armAlt = d.armAlt;
@@ -416,7 +422,7 @@ pub fn scatter(d: *const Data, s: Slot) void {
         p.fade = if (p.taken) 1 else 0;
     }
     s.pickups.clearDropped();
-    for (d.ground[0..d.groundN]) |g| s.pickups.spawn(g.at, g.loot[0..g.n]);
+    for (d.ground[0..d.groundN]) |g| s.pickups.spawn(g.at, g.loot[0..g.n], g.gold);
     s.bosses.* = d.bossDead;
     s.award.seen = d.seen;
     s.award.clearPending();
@@ -486,6 +492,7 @@ pub fn render(w: anytype, d: *const Data) !void {
     for (d.ground[0..d.groundN]) |g| {
         try w.print(" {d:.3} {d:.3} {d:.3} {d}", .{ g.at.x, g.at.y, g.at.z, g.n });
         for (g.loot[0..g.n]) |k| try w.print(" {s}", .{item.tag(k)});
+        if (g.gold > 0) try w.print(" g{d}", .{g.gold});
     }
     try w.writeByte('\n');
     // **A ROW IS WRITTEN ONLY WHEN IT SAYS SOMETHING** past rail 0, so a knight-only save is the same bytes it always was.
@@ -633,6 +640,15 @@ pub fn parse(text: []const u8, d: *Data) !void {
                 while (j < g.n) : (j += 1) {
                     const tok = it.next() orelse return Error.BadField;
                     g.loot[j] = item.fromTag(tok) orelse return Error.BadField;
+                }
+                // The purse rides after the loot and is OPTIONAL, so the next token is either this drop's coin
+                // or the next drop's x — `g` is what tells them apart, and a slot written before it had one
+                // simply has no such token.
+                if (it.peek()) |tok| {
+                    if (tok.len > 1 and tok[0] == 'g') {
+                        g.gold = std.fmt.parseInt(u32, tok[1..], 10) catch return Error.BadField;
+                        _ = it.next();
+                    }
                 }
                 d.ground[d.groundN] = g;
                 d.groundN += 1;

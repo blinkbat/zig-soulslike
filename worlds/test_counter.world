@@ -1,0 +1,70 @@
+version: 1
+name: Counter Bench
+half: 60.0
+start: 0.00 -10.00 0.0
+runway: -6.00 -20.00 6.00 -12.00
+
+# THE TWO COUNTERS, AND THE CONVERSATIONS THAT OPEN THEM.
+#   --map worlds/test_counter.world
+#
+# The whole chain on one bench: walk up, talk, pick the line, the stall opens. The SHOP is the caravaneer's and
+# the SMITHY is Mossbeard's, which is the pairing `worldfmt.Does` offers in the editor's talk panel.
+#
+# Both conversations are exactly what that panel writes — one node, lines that end the talk, and a `gets:` on
+# the one that trades. Authored here as text so the bench stands on its own; open either body's `talk...` in
+# the editor and this is what comes back.
+#
+# The purse starts empty, so the shop's REFUSAL is the first thing on the bench and the smithy's "no stones"
+# is the second. Kill the shieldman for coin, or use the debug menu.
+
+zone: plain -400.0 -400.0 400.0 400.0 0.460 grasstall,patch,tuft,clover,moss,wildflowers
+clear: 0.0 0.0 26.0
+
+at: bonfire 0 -16 0 1
+
+# ── THE CARAVANEER ────────────────────────────────────────────────────────────────────────────────────────
+at: merchanthut -8 6 0 1
+at: awning -13.5 3.5 20 1
+at: trestletable -4.5 2.0 165 1
+at: waterjars -2.6 -1.0 210 1
+
+npc: merchant -8.00 3.60 180.0 1.00 0.22 dlg=merchant_talk0
+  call: Salt-Factor
+
+# ── MOSSBEARD ─────────────────────────────────────────────────────────────────────────────────────────────
+# The anvil sits 0.91 m in front of him (`npc.SMITH_ANVIL_Z`) or the hammer swings through air.
+npc: smith 9.00 6.00 180.0 1.00 0.28 dlg=smith_talk1
+at: anvil 9.00 5.09 20 1
+at: forge 6.70 5.60 60 1
+at: quenchtrough 10.90 6.90 155 1
+at: toolrack 8.40 7.60 175 1
+
+# ── WHAT PAYS FOR IT ──────────────────────────────────────────────────────────────────────────────────────
+# The smithy eats 30 stones to take one armament to +10 and the shop eats coin, so the bench carries both in
+# the ground as well as on the bodies: a chest of stone, a purse chest, and loose finds between them.
+at: chest -3.00 -4.00 40 1 loot=smithing_stone,smithing_stone,smithing_stone gold=180
+at: chest 4.00 -4.00 320 1 loot=smithing_stone,ironwort_tea gold=420
+at: pickup -6.00 -8.00 0 1 loot=smithing_stone
+at: pickup 6.50 -7.20 0 1 loot=smithing_stone,mushroom_jerky
+at: pickup 0.00 -6.00 0 1 gold=95
+at: pickup 11.00 -2.00 0 1 loot=pilgrims_salt gold=140
+
+# …and the bodies that carry stone, so the drop rows have somewhere to be seen: the two skeletal warriors and
+# the one that digs (`drops.TABLE`). The shieldman is the slowest thing in the game and will not kill you.
+foe: shieldman 0.00 14.00 180.0 1.00 0.40
+foe: greatsword -5.00 16.00 170.0 1.00 0.55
+foe: delver 6.00 17.00 200.0 1.00 0.31
+
+dlg: merchant_talk0
+  node: root
+  say: Salt and iron, traveller. Both keep, and both are worth the carrying.
+  ask: Show me your wares. -> end
+  gets: shop
+  ask: Nothing today. -> end
+
+dlg: smith_talk1
+  node: root
+  say: Bring me stone and I will fold it in. The wood gives up its iron slowly.
+  ask: Work my blade. -> end
+  gets: smithy
+  ask: Another time. -> end

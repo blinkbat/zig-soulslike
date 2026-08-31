@@ -22,8 +22,9 @@ const radians = mathx.radians;
 pub const H: f32 = 1.8;
 
 comptime {
-    // `foe.zig` is below this file in the import graph and cannot read `H`, so it hardcodes 1.71.
+    // `foe.zig` is below this file in the import graph and cannot read `H`, so it hardcodes 1.71 and 0.99.
     std.debug.assert(@abs(foemod.HERO_HIGH - 0.95 * H) < 0.005);
+    std.debug.assert(@abs(foemod.HERO_CHEST - 0.55 * H) < 0.005);
 }
 
 pub const WALK_SPEED: f32 = 1.7;

@@ -403,13 +403,27 @@ pub fn textField(ctx: *Ctx, r: rl.Rectangle, buf: []u8, len: *usize, id: u32, el
     }
     buf[len.*] = 0;
     const s: [:0]const u8 = buf[0..len.* :0];
-    hud.mono(s, @intFromFloat(r.x + 8), @intFromFloat(r.y + 5), hud.MONO, VALUE);
+
+    // **THE FIELD SCROLLS, IT DOES NOT SPILL.** A `worldfmt.TALK_SAY_CAP` greeting is 240 characters in a box
+    // 60 wide; unclipped, the tail and the caret both ran out over the panel and off the window. Editing only
+    // ever happens at the end, so the tail is what has to stay on screen.
+    const bx: i32 = @intFromFloat(r.x);
+    const bw: i32 = @intFromFloat(r.width);
+    const bh: i32 = @intFromFloat(r.height);
+    const tw = hud.monoW(s, hud.MONO);
+    // …and only while it HAS the keyboard: at rest, a value scrolled to its tail reads as one beginning
+    // mid-word.
+    const off: i32 = if (focused) @max(0, tw - (bw - 16 - CARET_W)) else 0;
+    rl.beginScissorMode(bx + 1, @as(i32, @intFromFloat(r.y)) + 1, bw - 2, bh - 2);
+    hud.mono(s, bx + 8 - off, @intFromFloat(r.y + 5), hud.MONO, VALUE);
     if (focused and @mod(ctx.t, 1.0) < 0.55) {
-        const cx: i32 = @as(i32, @intFromFloat(r.x)) + 9 + hud.monoW(s, hud.MONO);
-        rl.drawRectangle(cx, @intFromFloat(r.y + 6), 2, hud.monoLineH(hud.MONO) - 2, HOT);
+        rl.drawRectangle(bx + 9 + tw - off, @intFromFloat(r.y + 6), CARET_W, hud.monoLineH(hud.MONO) - 2, HOT);
     }
+    rl.endScissorMode();
     return focused;
 }
+
+const CARET_W: i32 = 2;
 
 pub fn listRows(heightPx: i32) i32 {
     return @divTrunc(heightPx - 6, ROW_H);
@@ -478,10 +492,21 @@ var openId: ?u32 = null;
 var openScroll: i32 = 0;
 var pending: ?Pending = null;
 
+/// **THE ROWS ARE COPIED HERE, NOT BORROWED** — `openId`'s rule, which the parked panel was breaking. Four
+/// callers build their `[][:0]const u8` as a LOCAL, so the array of slices dies when the caller returns and
+/// `endDropdowns` painted freed stack: an npc's `says` list segfaulted inside `DrawTextEx` on a garbage
+/// pointer. The label BYTES are the caller's to keep alive (`editor.slotLabels`); the slice table is ours.
+const DD_ROWS_CAP: usize = 128;
+var ddRows: [DD_ROWS_CAP][:0]const u8 = undefined;
+
 const Pending = struct {
     r: rl.Rectangle,
-    labels: []const [:0]const u8,
+    n: usize,
     sel: usize,
+
+    fn labels(self: Pending) []const [:0]const u8 {
+        return ddRows[0..self.n];
+    }
 };
 
 fn ddPanel(r: rl.Rectangle, n: usize) rl.Rectangle {
@@ -555,7 +580,11 @@ pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u
             openScroll = 0;
         }
     }
-    if (openId != null) pending = .{ .r = r, .labels = labels, .sel = sel };
+    if (openId != null) {
+        const n = @min(labels.len, DD_ROWS_CAP);
+        @memcpy(ddRows[0..n], labels[0..n]);
+        pending = .{ .r = r, .n = n, .sel = sel };
+    }
     return picked;
 }
 
@@ -563,7 +592,8 @@ pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u
 pub fn endDropdowns() void {
     const p = pending orelse return;
     pending = null;
-    const box = ddPanel(p.r, p.labels.len);
+    const rows_ = p.labels();
+    const box = ddPanel(p.r, rows_.len);
     uiart.seat(@intFromFloat(box.x), @intFromFloat(box.y), @intFromFloat(box.width), @intFromFloat(box.height));
     // **OPAQUE, NOT NEARLY OPAQUE.** At 246 the rows underneath read straight through it and the list became
     // the hardest thing on the panel to read — which is the opposite of what a dropdown is for. Two passes: a
@@ -571,11 +601,11 @@ pub fn endDropdowns() void {
     rl.drawRectangleRec(box, rgba(0, 0, 0, 255));
     rl.drawRectangleRec(box, rgba(20, 18, 15, 255));
     rl.drawRectangleLinesEx(box, 1, alpha(TRIM, 190));
-    const rows: i32 = @min(@as(i32, @intCast(p.labels.len)), DD_MAX_SHOWN);
+    const rows: i32 = @min(@as(i32, @intCast(rows_.len)), DD_MAX_SHOWN);
     var i: i32 = 0;
     while (i < rows) : (i += 1) {
         const idx: usize = @intCast(i + openScroll);
-        if (idx >= p.labels.len) break;
+        if (idx >= rows_.len) break;
         const rowR = rect(
             @as(i32, @intFromFloat(box.x)) + 3,
             @as(i32, @intFromFloat(box.y)) + 3 + i * DD_ROW_H,
@@ -584,11 +614,11 @@ pub fn endDropdowns() void {
         );
         const hot = rl.checkCollisionPointRec(mouseNow(), rowR);
         if (idx == p.sel) rl.drawRectangleRec(rowR, ACTIVE_FILL) else if (hot) rl.drawRectangleRec(rowR, HOVER_FILL);
-        hud.mono(p.labels[idx], @as(i32, @intFromFloat(rowR.x)) + 6, @as(i32, @intFromFloat(rowR.y)) + 2, hud.MONO, if (idx == p.sel) HOT else VALUE);
+        hud.mono(rows_[idx], @as(i32, @intFromFloat(rowR.x)) + 6, @as(i32, @intFromFloat(rowR.y)) + 2, hud.MONO, if (idx == p.sel) HOT else VALUE);
     }
-    if (p.labels.len > DD_MAX_SHOWN) {
+    if (rows_.len > DD_MAX_SHOWN) {
         var nb: [24]u8 = undefined;
-        const more = std.fmt.bufPrintZ(&nb, "+{d} more", .{p.labels.len - @as(usize, @intCast(rows))}) catch "";
+        const more = std.fmt.bufPrintZ(&nb, "+{d} more", .{rows_.len - @as(usize, @intCast(rows))}) catch "";
         hud.mono(more, @as(i32, @intFromFloat(box.x)) + 6, @as(i32, @intFromFloat(box.y + box.height)) - 2, hud.MONO, alpha(TRIM, 200));
     }
 }

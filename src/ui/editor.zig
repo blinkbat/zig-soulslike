@@ -5,6 +5,7 @@ const mathx = @import("../core/mathx.zig");
 const props = @import("../props/props.zig");
 const ui = @import("ui.zig");
 const wf = @import("../world/worldfmt.zig");
+const dialogmod = @import("../world/dialog.zig");
 const envmod = @import("../world/env.zig");
 const gfx = @import("../gfx/gfx.zig");
 const daynight = @import("../world/daynight.zig");
@@ -166,7 +167,7 @@ const unitBrushes = blk: {
 };
 
 /// **WHICH HALF OF THE UNITS PALETTE IS SHOWING.** Foes and folk are already two arrays on the map and two
-/// index spaces (`Unit`); this is that same split in the brush list, because thirty-eight icon rows in one
+/// index spaces (`Unit`); this is that same split in the brush list, because forty-one icon rows in one
 /// column is a scroll and not a palette.
 const UnitTab = enum {
     foes,
@@ -688,7 +689,7 @@ fn layerOf(o: *const wf.Op) Layer {
 
 pub const Action = enum { none, leave, playtest };
 
-pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot, boss, jukebox, world, zonemix, script };
+pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot, boss, jukebox, world, zonemix, script, talk, options };
 
 /// The bench lists off the AUDIO module's own table (`sfx.NAMES`), which `settings.cfg` is already keyed on. A second comptime walk over `sfx.Id` here was the same list built twice.
 const VOICE_NAMES = sfx.NAMES;
@@ -756,6 +757,12 @@ const KB_LOC_NAME = ui.ddId(KB_TAG, 2, 0);
 const KB_ZONE_NAME = ui.ddId(KB_TAG, 3, 0);
 const KB_TRIG_ID = ui.ddId(KB_TAG, 4, 0);
 const KB_FILE_NAME = ui.ddId(KB_TAG, 5, 0);
+const KB_TALK_SAY = ui.ddId(KB_TAG, 6, 0);
+const KB_TALK_WHO = ui.ddId(KB_TAG, 8, 0);
+/// One per line the conversation offers — these are NOT singletons, so the row index is part of the id.
+fn kbTalkRow(i: usize) u32 {
+    return ui.ddId(KB_TAG, 7, i);
+}
 
 /// **ONE NAME FIELD.** The zone's, the location's, the room's and the trigger's were four copies of: draw the
 /// field, turn spaces and `#` into `_`, compare with what is stored, bank and write. Returns the typed name
@@ -891,6 +898,15 @@ pub const Editor = struct {
     /// rectangle. **OFF ON ENTRY** (owner): it is the one overlay that hides the GROUND you are trying to
     /// sculpt, so the editor opens on the ground and the eye is what asks to see the sky's mood over it.
     showWeather: bool = false,
+    /// **THE DISTANCE HAZE, AND IT IS ON.** Separate from the weather eye: the eye is about rain and mist over
+    /// the ground you are sculpting, this is the clear-air falloff the 560 m world is sized for
+    /// (`gfx.HAZE_DENSITY`, 0.013 a metre). Off, every prop out to `env`'s view distance draws at full contrast.
+    showFog: bool = true,
+    /// **CAST SHADOWS ARE OFF IN HERE.** The depth pass is a SECOND draw of every caster in the ortho box
+    /// (`game.drawCasters` runs twice) and the editor's box opens with the orbit (`game.shadowSpanOf`, up to
+    /// `gfx.SHADOW_SPAN_MAX`), so it is the most expensive thing on a pulled-back frame and the least useful:
+    /// a shadow tells you nothing about where a prop SITS. On, and it is the game's own pass again.
+    showShadows: bool = false,
     brush: [Layer.N]usize = [_]usize{0} ** Layer.N,
     decorKind: Kind = .fern,
     propKind: Kind = .pillar,
@@ -994,6 +1010,21 @@ pub const Editor = struct {
     /// what the BRUSH places and the mix is what a zone grows, and moving one from the other would retarget the
     /// brush every time a mix was looked at.
     mixTab: props.Group = FIRST_MIX_GROUP,
+    /// **THE CONVERSATION BEING WRITTEN, HELD OUTSIDE THE MAP UNTIL IT IS COMMITTED.** Typing goes here and
+    /// `wf.writeTalk` rebuilds the node arena once, on Done — a rebuild per keystroke would re-add the whole
+    /// greeting to the text arena sixty times a second. `talkFlat` false means `readTalk` refused the tree and
+    /// the panel is a read-only notice: the editor may not flatten a conversation it cannot express.
+    talkNpc: ?usize = null,
+    talkDlg: u16 = wf.NO_DIALOG,
+    talkFlat: bool = true,
+    talkSay: [wf.TALK_SAY_CAP]u8 = [_]u8{0} ** wf.TALK_SAY_CAP,
+    talkSayLen: usize = 0,
+    talkWho: [wf.TALK_LABEL_CAP]u8 = [_]u8{0} ** wf.TALK_LABEL_CAP,
+    talkWhoLen: usize = 0,
+    talkRow: [wf.MAX_CHOICES][wf.TALK_LABEL_CAP]u8 = [_][wf.TALK_LABEL_CAP]u8{[_]u8{0} ** wf.TALK_LABEL_CAP} ** wf.MAX_CHOICES,
+    talkRowLen: [wf.MAX_CHOICES]usize = [_]usize{0} ** wf.MAX_CHOICES,
+    talkDoes: [wf.MAX_CHOICES]wf.Does = [_]wf.Does{.leave} ** wf.MAX_CHOICES,
+    talkRows: usize = 0,
     zoneNameLen: usize = 0,
     zoneNameBuf: [wf.NAME_CAP]u8 = [_]u8{0} ** wf.NAME_CAP,
     /// The zone name field owns the keyboard while it is on screen — set by the draw pass, read by `update` a frame later, so w/a/s/d, digits, g/r, Tab and Delete type letters instead of firing.
@@ -1410,6 +1441,17 @@ pub const Editor = struct {
     pub fn worldForShot(self: *Editor) void {
         self.menuOpen = false;
         self.modal = .world;
+    }
+    pub fn optionsForShot(self: *Editor) void {
+        self.menuOpen = false;
+        self.modal = .options;
+    }
+    pub fn talkForShot(self: *Editor, m: *wf.Map, rec: usize) void {
+        self.menuOpen = false;
+        openTalk(self, m, rec);
+    }
+    pub fn talkIsFlatForShot(self: *const Editor) bool {
+        return self.talkFlat;
     }
     pub fn zoneMixForShot(self: *Editor, m: *const wf.Map, i: usize) void {
         self.selectZone(m, i);
@@ -2840,9 +2882,25 @@ pub const Editor = struct {
                 .npc => |i| {
                     if (i >= m.nnpcs) return;
                     self.bank(m);
-                    std.mem.copyForwards(wf.Npc, m.npcs[i .. m.nnpcs - 1], m.npcs[i + 1 .. m.nnpcs]);
-                    m.nnpcs -= 1;
+                    // **THROUGH THE FORMAT'S OWN REMOVAL, NEVER A BARE `copyForwards`.** `Cond.near` is a
+                    // POSITIONAL npc index, so a raw compaction moved every watch onto the wrong body and
+                    // deleting the LAST body wrote a map `link` refuses outright.
+                    const doomed = m.npcs[i].dlg;
+                    const broke = wf.removeNpc(m, i);
+                    // …and the conversation it was the last owner of goes with it, or the table fills with
+                    // voices nothing can reach (`wf.MAX_DIALOGS` is 32 and `talk...` coins one on sight).
+                    const freed = doomed != wf.NO_DIALOG and wf.removeDialog(m, doomed);
                     self.touchFolk();
+                    if (broke.conds > 0) {
+                        self.sayFmt("-unit; {d} `near` condition(s) now never", .{broke.conds});
+                        self.dropSelection();
+                        return;
+                    }
+                    if (freed) {
+                        self.say("-unit and its conversation");
+                        self.dropSelection();
+                        return;
+                    }
                 },
             }
             self.dropSelection();
@@ -3175,9 +3233,8 @@ pub const Editor = struct {
             const l: Layer = @enumFromInt(f.value);
             w += ui.layerButtonW(l.label(), hud.MONO) + step;
         }
-        w += 6 + sq + step; // the weather eye
         w += 14 + 7 * (sq + step) + 10 + 10; // the seven verbs and the gaps that group them
-        inline for (.{ "Objects", "World", "Script", "Sounds" }) |lab| {
+        inline for (.{ "Objects", "World", "Script", "Sounds", "Options" }) |lab| {
             w += hud.monoW(lab, hud.MONO) + BarRow.PAD + step;
         }
         barFitFor = sw;
@@ -3703,13 +3760,6 @@ const BarRow = struct {
         return ui.iconOnly(r.ctx, ui.rect(r.x, 5, w, w), ic, false, tip);
     }
 
-    /// THE SKY'S OWN EYE — a lone one, because the weather is not a layer and has no label to ride inside.
-    fn eye(r: *BarRow, on: bool, tip: [:0]const u8) bool {
-        const w = BAR_H - 10;
-        defer r.x += w + GAP;
-        return ui.iconOnly(r.ctx, ui.rect(r.x, 5, w, w), if (on) .eye else .eyeOff, !on, tip);
-    }
-
     fn gap(r: *BarRow, px: i32) void {
         r.x += px;
     }
@@ -3728,14 +3778,6 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
             .toggle => ed.shown[f.value] = !ed.shown[f.value],
             .none => {},
         }
-    }
-    row.gap(6);
-    if (row.eye(ed.showWeather, if (ed.showWeather)
-        "Hide the weather - rain, mist and sporefall, so you can see the ground"
-    else
-        "Show the weather"))
-    {
-        ed.showWeather = !ed.showWeather;
     }
     row.gap(14);
     if (row.verb(.new, "New - start an empty map (Ctrl+N)")) ed.request(.new);
@@ -3779,6 +3821,10 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
     if (row.button("Sounds", ed.modal == .jukebox, "Jukebox - play any sound in the bank on demand")) {
         ed.menuOpen = false;
         ed.modal = .jukebox;
+    }
+    if (row.button("Options", ed.modal == .options, "Editor Options - what the viewport shows and how the brush lands. None of it touches the map")) {
+        ed.menuOpen = false;
+        ed.modal = .options;
     }
 
     if (ed.dirty) hud.mono("*", row.x + 8, 8, hud.MONO, ui.HOT);
@@ -4366,11 +4412,23 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                         labels[di + 1] = ed.slotLabels[di][0..cap :0];
                     }
                     const sel: usize = if (np.dlg == wf.NO_DIALOG or np.dlg >= shown) 0 else @as(usize, np.dlg) + 1;
-                    if (ui.dropdown(ctx, ui.rect(x + 44, y, w - 44, 20), ui.ddId(15, i, 0), labels[0 .. shown + 1], sel, "Which conversation this body opens when he is spoken to")) |pick| {
+                    if (ui.dropdown(ctx, ui.rect(x + 44, y, w - 44 - 60, 20), ui.ddId(15, i, 0), labels[0 .. shown + 1], sel, "Which conversation this body opens when he is spoken to")) |pick| {
                         ed.bank(m);
                         ed.editing = true;
                         np.dlg = if (pick == 0) wf.NO_DIALOG else @intCast(pick - 1);
+                        // **THE FILE STORES THE NAME, NOT THE INDEX** (`Npc.dlgRef`, and `link` resolves it on
+                        // load). Setting `dlg` alone left `dlg=` off the written line entirely, so every
+                        // conversation attached in the editor was gone the next time the map was opened.
+                        np.dlgRef = if (pick == 0) wf.Span{} else (m.addText(m.dialogs[pick - 1].label()) catch blk: {
+                            ed.say("the map's text arena is full");
+                            break :blk wf.Span{};
+                        });
                         changed = true;
+                        ed.requestFolk();
+                    }
+                    if (ui.button(ctx, ui.rect(x + w - 56, y, 56, 20), "talk...", hud.MONO, ed.modal == .talk, "Write what this body says, and which counter a line opens")) {
+                        openTalk(ed, m, i);
+                        return;
                     }
                 }
                 y += ROW_H + 6;
@@ -5312,6 +5370,14 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             }
         },
         .script => drawScriptModal(ed, ctx, m, confirm),
+        .talk => {
+            drawTalkModal(ed, ctx, m);
+            if (confirm and ed.modal == .talk) {
+                commitTalk(ed, m);
+                ed.modal = .none;
+            }
+        },
+        .options => drawOptionsModal(ed, ctx),
         .world => {
             const box = ui.beginModal(ctx, WORLD_W, WORLD_H, "World");
             const x = box.x + DLG_PAD;
@@ -5708,6 +5774,311 @@ fn actTip(k: wf.ActKind) [:0]const u8 {
         .shop => "Open the TRADING counter - buy and sell with gold (put this on the caravaneer)",
         .smithy => "Open the SMITHY - stones and gold to put a tier on a weapon (put this on the smith)",
     };
+}
+
+// ── EDITOR OPTIONS ────────────────────────────────────────────────────────────────────────────────────────
+
+const OPT_W: i32 = 420;
+const OPT_ROWS: i32 = 4;
+const OPT_H: i32 = 56 + OPT_ROWS * (ROW_H + hud.monoLineH(hud.MONO) + 8) + 3 * (ROW_H + 6) + DLG_FOOT;
+
+/// **WHAT THE VIEWPORT SHOWS, AND NOTHING THE MAP KEEPS.** Every switch here is a VIEW: none of it is written
+/// to the `.world` file, none of it is undoable, and a hidden overlay still parses, still builds and still
+/// spawns (the layer eyes' own rule, `Editor.visible`). Gathered off the top strip because the strip measures
+/// itself against the window (`barWide`) and a lone icon with no label is the first thing to become a mystery.
+fn drawOptionsModal(ed: *Editor, ctx: *ui.Ctx) void {
+    const box = ui.beginModal(ctx, OPT_W, OPT_H, "Editor Options");
+    const x = box.x + DLG_PAD;
+    var y = box.y + 56;
+
+    hud.mono("VIEW", x, y, hud.MONO, ui.TITLE);
+    y += ROW_H + 4;
+
+    _ = ui.checkbox(ctx, x, y, "distance fog", &ed.showFog, "The clear-air haze the world is sized for. Off, everything out to its view distance draws at full contrast and the far edge of a 560 m map reads as a wall of props");
+    y += ROW_H;
+    hud.mono("the far falloff - on, and cheaper to look at", x + 24, y, hud.MONO, ui.alpha(ui.LABEL, 160));
+    y += hud.monoLineH(hud.MONO) + 8;
+
+    _ = ui.checkbox(ctx, x, y, "weather", &ed.showWeather, "Rain, mist and sporefall. Off on entry: it is the one overlay that hides the ground you came in to sculpt");
+    y += ROW_H;
+    hud.mono("needs the Locations eye open too", x + 24, y, hud.MONO, ui.alpha(ui.LABEL, 160));
+    y += hud.monoLineH(hud.MONO) + 8;
+
+    _ = ui.checkbox(ctx, x, y, "cast shadows", &ed.showShadows, "The sun's own depth pass. Off in here: it draws every caster in the box a second time, and the box opens as you pull back");
+    y += ROW_H;
+    hud.mono("off - the second pass over every caster", x + 24, y, hud.MONO, ui.alpha(ui.LABEL, 160));
+    y += hud.monoLineH(hud.MONO) + 8;
+
+    hud.mono("BRUSH", x, y, hud.MONO, ui.TITLE);
+    y += ROW_H + 4;
+    _ = ui.checkbox(ctx, x, y, "grid snap", &ed.snap, "Land every placement on the whole metre (G)");
+    y += ROW_H;
+    hud.mono("G toggles it from the map as well", x + 24, y, hud.MONO, ui.alpha(ui.LABEL, 160));
+
+    if (ui.button(ctx, ui.rect(box.x + box.w - DLG_PAD - 110, box.y + box.h - DLG_FOOT, 110, DLG_BTN_H), "Close", hud.MONO, false, "Back to the map (Esc)")) ed.modal = .none;
+}
+
+// ── THE CONVERSATION PANEL ────────────────────────────────────────────────────────────────────────────────
+
+/// Loads the npc's conversation into the editor's scratch and opens the panel. **NOTHING IS WRITTEN HERE** —
+/// a body with no voice yet gets a SEEDED scratch and `talkDlg` stays `NO_DIALOG`, so backing out with Esc or
+/// Cancel leaves the map exactly as it was. Coining the row on open left an orphan conversation behind every
+/// time the panel was opened and closed again, and `wf.MAX_DIALOGS` is 32.
+fn openTalk(ed: *Editor, m: *wf.Map, rec: usize) void {
+    if (rec >= m.nnpcs) return;
+    const np = &m.npcs[rec];
+    ed.talkNpc = rec;
+    ed.talkRows = 0;
+    ed.talkSayLen = 0;
+    ed.talkWhoLen = 0;
+    ed.talkFlat = true;
+    // **A DEFAULT IS SOMETHING TO START FROM, NOT SOMETHING TO EDIT** (`wf.seedDialogs`). It is shared by
+    // every silent body of its kind and it is not in the file, so Done coins a REAL conversation for THIS body
+    // rather than rewriting a row the author never wrote.
+    const synth = np.dlg != wf.NO_DIALOG and np.dlg < m.ndialogs and m.dialogs[np.dlg].synth;
+    ed.talkDlg = if (synth) wf.NO_DIALOG else np.dlg;
+
+    var t = wf.Talk{};
+    if (np.dlg == wf.NO_DIALOG) {
+        wf.seedTalk(np.kind, &t);
+    } else {
+        t = wf.readTalk(m, np.dlg) orelse {
+            // A hand-written tree. Shown, never rewritten.
+            ed.talkFlat = false;
+            ed.modal = .talk;
+            return;
+        };
+    }
+    ed.talkSayLen = t.line().len;
+    @memcpy(ed.talkSay[0..ed.talkSayLen], t.line());
+    ed.talkWhoLen = t.speaker().len;
+    @memcpy(ed.talkWho[0..ed.talkWhoLen], t.speaker());
+    ed.talkRows = t.nrows;
+    for (0..t.nrows) |i| {
+        ed.talkRowLen[i] = t.rows[i].label().len;
+        @memcpy(ed.talkRow[i][0..ed.talkRowLen[i]], t.rows[i].label());
+        ed.talkDoes[i] = t.rows[i].does;
+    }
+    ed.modal = .talk;
+}
+
+/// **ONE REBUILD, ON DONE**, and the conversation is coined here if the body had none. Everything typed lives
+/// in the editor's own buffers until this runs, so a rebuild per keystroke cannot re-add the greeting to the
+/// text arena sixty times a second.
+fn commitTalk(ed: *Editor, m: *wf.Map) void {
+    if (!ed.talkFlat) return;
+    const rec = ed.talkNpc orelse return;
+    if (rec >= m.nnpcs) return;
+    const np = &m.npcs[rec];
+
+    var t = wf.Talk{};
+    t.setLine(ed.talkSay[0..ed.talkSayLen]);
+    t.setSpeaker(ed.talkWho[0..ed.talkWhoLen]);
+    for (0..ed.talkRows) |i| {
+        if (ed.talkRowLen[i] == 0) continue;
+        t.rows[t.nrows] = .{ .does = ed.talkDoes[i] };
+        t.rows[t.nrows].setLabel(ed.talkRow[i][0..ed.talkRowLen[i]]);
+        t.nrows += 1;
+    }
+
+    ed.bank(m);
+    if (ed.talkDlg == wf.NO_DIALOG) {
+        var nb: [wf.ID_CAP]u8 = undefined;
+        const name = wf.freeDialogName(m, &nb, np.kind);
+        const di = wf.addTalk(m, name, &t) catch {
+            ed.sayFmt("this map already holds {d} conversations", .{wf.MAX_DIALOGS});
+            return;
+        };
+        // **THE FILE STORES THE NAME** (`Npc.dlgRef`), and `link` is what turns it back into an index.
+        np.dlgRef = m.addText(name) catch {
+            _ = wf.removeDialog(m, di);
+            ed.say("the map's text arena is full");
+            return;
+        };
+        np.dlg = di;
+        ed.talkDlg = di;
+    } else {
+        wf.writeTalk(m, ed.talkDlg, &t) catch {
+            ed.say("this map has no room left for conversation lines");
+            return;
+        };
+    }
+    ed.dirty = true;
+    ed.requestFolk();
+}
+
+const TALK_W: i32 = 700;
+const TALK_ROW_H: i32 = 30;
+const DOES_W: i32 = 190;
+/// **THE GREETING IS A PARAGRAPH AND THE FIELD IS A LINE**, so the panel shows it BOTH ways: you type into a
+/// box that scrolls (`ui.textField`) and you read it back wrapped to the plate's own width, at the same cap
+/// the panel enforces. `dialog.MAX_LINES` is 7 and everything past that is dropped SILENTLY at runtime — a
+/// sentence that vanishes with nothing said — so the count is on screen while it is being written.
+const TALK_PREVIEW_LINES: usize = 7;
+
+fn talkPreviewSize() i32 {
+    const w = TALK_W - DLG_PAD * 2 - 12;
+    return @max(10, @min(hud.BODY, @divTrunc(hud.BODY * w, @max(dialogmod.innerWidth(), 1))));
+}
+
+fn talkModalH(rows: usize) i32 {
+    return DLG_PAD * 2 + 34 + 26 + 32 + 30 + 26 + @as(i32, @intCast(rows + 1)) * TALK_ROW_H + DLG_FOOT + 18 +
+        @as(i32, @intCast(TALK_PREVIEW_LINES)) * hud.lineH(talkPreviewSize()) + 20;
+}
+
+/// **A NOTICE IS NOT A FORM, SO IT DOES NOT GET A FORM'S BOX.** Sized for the two lines it says and the one
+/// button under them: a hand-written tree used to open the whole authoring panel's height with nothing in it.
+fn talkNoticeH() i32 {
+    return DLG_PAD * 2 + 34 + 26 + ROW_H * 2 + DLG_FOOT;
+}
+
+const DOES_NAMES = blk: {
+    const n = @typeInfo(wf.Does).@"enum".fields.len;
+    var out: [n][:0]const u8 = undefined;
+    for (0..n) |i| out[i] = @as(wf.Does, @enumFromInt(i)).label();
+    break :blk out;
+};
+
+/// The shape `worldfmt.Talk` can round-trip: a greeting and up to `wf.MAX_CHOICES` lines that each end the
+/// talk, go back to the top, or open a counter. A tree with branches stays a job for the file.
+fn drawTalkModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map) void {
+    const rec = ed.talkNpc orelse {
+        ed.modal = .none;
+        return;
+    };
+    if (rec >= m.nnpcs) {
+        ed.modal = .none;
+        return;
+    }
+    const np = &m.npcs[rec];
+    const box = ui.beginModal(ctx, TALK_W, if (ed.talkFlat) talkModalH(ed.talkRows) else talkNoticeH(), "Conversation");
+    const x = box.x + DLG_PAD;
+    const w = TALK_W - DLG_PAD * 2;
+    var y = box.y + DLG_PAD + 30;
+
+    var head: [96]u8 = undefined;
+    const who = std.fmt.bufPrintZ(&head, "#{d} {s} - {s}", .{
+        rec,
+        wf.npcName(np.kind),
+        if (np.dlg < m.ndialogs) m.dialogs[np.dlg].label() else "(new)",
+    }) catch "";
+    hud.mono(who, x, y, hud.MONO, ui.LABEL);
+    // Two bodies pointed at one row is a rewrite the author does not know he is making.
+    // **BODIES, NOT REFERENCES.** `wf.dialogUsers` also counts the `talked` conditions and `dialog` actions
+    // that name it, and rewriting the lines changes nothing for those — said as "shared by 2" over a body with
+    // one trigger watching it, the warning was about a second speaker that did not exist.
+    if (np.dlg != wf.NO_DIALOG) {
+        var users: usize = 0;
+        for (m.npcSlice()) |*q| {
+            if (q.dlg == np.dlg) users += 1;
+        }
+        if (users > 1) {
+            var sb: [80]u8 = undefined;
+            const shared = std.fmt.bufPrintZ(&sb, "{d} bodies share this - editing changes all of them", .{users}) catch "";
+            hud.mono(shared, x + w - hud.monoW(shared, hud.MONO), y, hud.MONO, ui.alpha(ui.HOT, 220));
+        }
+    }
+    y += 26;
+
+    if (!ed.talkFlat) {
+        hud.mono("This one is a tree with more than one node.", x, y, hud.MONO, ui.VALUE);
+        y += ROW_H;
+        hud.mono("The panel would flatten it, so it edits in the .world file.", x, y, hud.MONO, ui.alpha(ui.LABEL, 190));
+        if (ui.button(ctx, ui.rect(box.x + box.w - DLG_PAD - 110, box.y + box.h - DLG_FOOT, 110, DLG_BTN_H), "Close", hud.MONO, false, "Leave it alone (Esc)")) ed.modal = .none;
+        return;
+    }
+
+    // **THE NAME OVER THE PLATE, AND BLANK IS THE BODY'S OWN.** `dialog.draw` falls back to what `startTalk`
+    // handed it (the `call:` line, or the kind's name), so an empty field is not a missing name.
+    hud.mono("called", x, y, hud.MONO, ui.LABEL);
+    var fb2: [72]u8 = undefined;
+    const fallback = std.fmt.bufPrintZ(&fb2, "blank = {s}", .{if (np.call.len > 0) m.spanText(np.call) else wf.npcName(np.kind)}) catch "";
+    hud.mono(fallback, x + w - hud.monoW(fallback, hud.MONO), y, hud.MONO, ui.alpha(ui.LABEL, 150));
+    y += hud.monoLineH(hud.MONO) + 2;
+    _ = ui.textField(ctx, ui.rect(x, y, w, 26), &ed.talkWho, &ed.talkWhoLen, KB_TALK_WHO, true, "The name drawn over the panel. Leave it blank to use the body's own");
+    y += 32;
+
+    hud.mono("says", x, y, hud.MONO, ui.LABEL);
+    var cb: [32]u8 = undefined;
+    const count = std.fmt.bufPrintZ(&cb, "{d}/{d}", .{ ed.talkSayLen, wf.TALK_SAY_CAP }) catch "";
+    hud.mono(count, x + w - hud.monoW(count, hud.MONO), y, hud.MONO, ui.alpha(ui.LABEL, 170));
+    y += hud.monoLineH(hud.MONO) + 2;
+    _ = ui.textField(ctx, ui.rect(x, y, w, 26), &ed.talkSay, &ed.talkSayLen, KB_TALK_SAY, true, "The line this body opens with");
+    y += 30;
+
+    // A line past the cap is drawn in the refusal colour rather than left off: the sentence you are about to
+    // lose is the one worth seeing.
+    {
+        // **A MINIATURE OF THE PLATE, NOT A SECOND LAYOUT.** The break is solved at the PLAYER's width and
+        // font (`dialog.innerWidth`, `hud.BODY`) and then drawn smaller to fit the box — wrapped at the box's
+        // own width instead, the line COUNT would be this panel's and not the one `dialog.MAX_LINES` refuses
+        // against, which is the only number here worth anything.
+        const playW = dialogmod.innerWidth();
+        var wrapBuf: [wf.TALK_SAY_CAP * 2]u8 = undefined;
+        var rows: [TALK_PREVIEW_LINES + 4][:0]const u8 = undefined;
+        const lines = hud.wrap(ed.talkSay[0..ed.talkSayLen], hud.BODY, playW, &wrapBuf, &rows);
+        const small = talkPreviewSize();
+        const step = hud.lineH(small);
+        const boxH = @as(i32, @intCast(TALK_PREVIEW_LINES)) * step + 8;
+        ui.panel(ctx, ui.rect(x, y, w, boxH), null);
+        for (lines, 0..) |ln, li| {
+            const over = li >= TALK_PREVIEW_LINES;
+            hud.text(ln, x + 6, y + 4 + @as(i32, @intCast(li)) * step, small, if (over) ui.HOT else ui.VALUE);
+            if (over) break;
+        }
+        if (lines.len > TALK_PREVIEW_LINES) {
+            var ob: [72]u8 = undefined;
+            const over = std.fmt.bufPrintZ(&ob, "{d} lines - the plate shows {d} and drops the rest", .{ lines.len, TALK_PREVIEW_LINES }) catch "";
+            hud.mono(over, x + w - hud.monoW(over, hud.MONO) - 6, y - hud.monoLineH(hud.MONO) - 2, hud.MONO, ui.HOT);
+        }
+        y += boxH + 12;
+    }
+
+    hud.mono("and offers", x, y, hud.MONO, ui.LABEL);
+    y += hud.monoLineH(hud.MONO) + 4;
+
+    var drop: ?usize = null;
+    for (0..ed.talkRows) |i| {
+        const ry = y + @as(i32, @intCast(i)) * TALK_ROW_H;
+        const labW = w - DOES_W - 34;
+        _ = ui.textField(ctx, ui.rect(x, ry, labW, 24), &ed.talkRow[i], &ed.talkRowLen[i], kbTalkRow(i), true, "What the player says");
+        if (ui.dropdown(ctx, ui.rect(x + labW + 6, ry + 2, DOES_W, 20), ui.ddId(16, rec, i), &DOES_NAMES, @intFromEnum(ed.talkDoes[i]), "What pressing this line does")) |pick| {
+            ed.talkDoes[i] = @enumFromInt(pick);
+        }
+        if (ui.button(ctx, ui.rect(x + w - 24, ry, 24, 24), "x", hud.MONO, false, "Take this line off")) drop = i;
+    }
+    if (drop) |d| {
+        var k = d;
+        while (k + 1 < ed.talkRows) : (k += 1) {
+            ed.talkRow[k] = ed.talkRow[k + 1];
+            ed.talkRowLen[k] = ed.talkRowLen[k + 1];
+            ed.talkDoes[k] = ed.talkDoes[k + 1];
+        }
+        ed.talkRows -= 1;
+        ed.talkRowLen[ed.talkRows] = 0;
+        ed.talkDoes[ed.talkRows] = .leave;
+    }
+    y += @as(i32, @intCast(ed.talkRows)) * TALK_ROW_H;
+
+    if (ed.talkRows < wf.MAX_CHOICES) {
+        if (ui.button(ctx, ui.rect(x, y, 110, 24), "+ line", hud.MONO, false, "Offer one more line")) {
+            ed.talkRowLen[ed.talkRows] = 0;
+            ed.talkDoes[ed.talkRows] = .leave;
+            ed.talkRows += 1;
+        }
+    } else {
+        var fb: [56]u8 = undefined;
+        const full = std.fmt.bufPrintZ(&fb, "{d} lines is the most a panel offers", .{wf.MAX_CHOICES}) catch "";
+        hud.mono(full, x, y + 5, hud.MONO, ui.alpha(ui.LABEL, 160));
+    }
+
+    const by = box.y + box.h - DLG_FOOT;
+    if (ui.button(ctx, ui.rect(x, by, 120, DLG_BTN_H), "Done", hud.MONO, false, "Write it into the map (Enter)")) {
+        commitTalk(ed, m);
+        ed.modal = .none;
+        return;
+    }
+    if (ui.button(ctx, ui.rect(x + 134, by, 120, DLG_BTN_H), "Cancel", hud.MONO, false, "Leave the conversation as it was (Esc)")) ed.modal = .none;
 }
 
 /// **THE SCRIPT LAYER, AT LAST AUTHORABLE.** `worldfmt` has parsed, written and round-tripped triggers since
@@ -6456,7 +6827,7 @@ test "EVERY UNIT IS REACHABLE FROM EXACTLY ONE TAB, and the tallest list now fit
 
     // **THE OLD LIST DID NOT FIT AND WAS NEVER GOING TO.** The side panel is `SCREEN_H - BAR_H - STATUS_H`
     // tall and the rows start below a Select button and a header; nothing here scrolls, so the tail of a
-    // thirty-eight-row palette was drawn off the bottom of the window and could not be clicked at all.
+    // forty-one-row palette was drawn off the bottom of the window and could not be clicked at all.
     const panel = 800 - BAR_H - STATUS_H;
     const rows0 = 8 + (ROW_H + 8) + ROW_H;
     const was = @as(i32, @intCast(unitBrushes.len)) * ROW_H;

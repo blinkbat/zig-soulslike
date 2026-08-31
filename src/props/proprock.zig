@@ -89,7 +89,7 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
     var frng = mathx.Rng.init(seed ^ 0x5C1FF00D);
     b.setMat(.stone);
     const NM = 5;
-    const Summit = struct { x: f32, z: f32, y: f32, rx: f32, rz: f32 };
+    const Summit = struct { x: f32, z: f32, y: f32, rx: f32, rz: f32, ry: f32 };
     var top: [NM]Summit = undefined;
     var bodies: [NM * 2]CliffBody = undefined;
     var nbody: usize = 0;
@@ -122,7 +122,7 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
         );
         bodies[nbody] = .{ .x = sx, .y = sy, .z = sz, .rx = srx, .ry = sry, .rz = srz };
         nbody += 1;
-        top[@intCast(m)] = .{ .x = sx, .z = sz, .y = sy + sry, .rx = srx, .rz = srz };
+        top[@intCast(m)] = .{ .x = sx, .z = sz, .y = sy + sry, .rx = srx, .rz = srz, .ry = sry };
     }
     const face = bodies[0..nbody];
     var course: i32 = 0;
@@ -251,18 +251,25 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
             if (rng.float() < 0.25) CLIFF_LT else CLIFF_ROCK,
         );
     }
+    // One big blob per summit read as a green lid; a dark heart under a spill of small pads reads as growth.
     b.setMat(.plant);
     var g: i32 = 0;
     while (g < 6) : (g += 1) {
         const s = top[@intCast(rng.intn(NM))];
-        const r = rng.range(0.6, 1.3);
+        const r = rng.range(0.30, 0.55);
+        const nx = rng.signed() * 0.5;
+        const nz = rng.signed() * 0.35;
+        const gx = s.x + nx * s.rx;
+        const gz = s.z + nz * s.rz;
+        const gy = s.y - s.ry * (1.0 - @sqrt(@max(1.0 - nx * nx - nz * nz, 0.0))) - r * rng.range(0.20, 0.34);
         b.addBlob(
-            v3(s.x + rng.signed() * s.rx * 0.6, s.y - rng.range(0.10, 0.45), s.z + rng.signed() * s.rz * 0.5),
-            v3(r, r * rng.range(0.45, 0.75), r * rng.range(0.7, 1.1)),
+            v3(gx, gy, gz),
+            v3(r, r * rng.range(0.30, 0.48), r * rng.range(0.7, 1.1)),
             3,
-            6,
-            if (rng.float() < 0.5) SCRUB_DK else STONE_MOSS,
+            7,
+            if (rng.float() < 0.5) SCRUB_DK else MOSS_DK,
         );
+        art.lichenInto(&b, &rng, v3(gx, gy + r * 0.22, gz), v3(r * 1.15, 0.06, r * 1.05), 4);
     }
     if (k.ivy > 0) {
         const nCurtain: i32 = @intFromFloat(@round(7.0 + 5.0 * k.ivy));
@@ -327,14 +334,20 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
         var cs: i32 = 0;
         while (cs < 5) : (cs += 1) {
             const s = top[@intCast(frng.intn(NM))];
-            const r = frng.range(0.8, 1.6);
+            const r = frng.range(0.45, 0.85);
+            const nx = frng.signed() * 0.5;
+            const nz = frng.signed() * 0.35;
+            const cxp = s.x + nx * s.rx;
+            const czp = s.z + nz * s.rz;
+            const cyp = s.y - s.ry * (1.0 - @sqrt(@max(1.0 - nx * nx - nz * nz, 0.0))) - r * frng.range(0.18, 0.30);
             b.addBlob(
-                v3(s.x + frng.signed() * s.rx * 0.7, s.y - frng.range(0.05, 0.35), s.z + frng.signed() * s.rz * 0.6),
-                v3(r, r * frng.range(0.40, 0.70), r * frng.range(0.7, 1.1)),
+                v3(cxp, cyp, czp),
+                v3(r, r * frng.range(0.34, 0.55), r * frng.range(0.7, 1.1)),
                 3,
-                6,
+                7,
                 if (frng.float() < 0.4) IVY_GRN else SCRUB_DK,
             );
+            art.lichenInto(&b, &frng, v3(cxp, cyp + r * 0.28, czp), v3(r * 1.05, 0.07, r * 0.95), 3);
         }
     }
     return b.toModel(shader);
@@ -345,16 +358,18 @@ pub fn boulderMesh(shader: rl.Shader) rl.Model {
     var rng = mathx.Rng.init(4242);
     b.setMat(.stone);
     const nm = 3 + rng.intn(2);
+    var crownC = v3(0, 0, 0);
+    var crownR = v3(1, 1, 1);
     var i: i32 = 0;
     while (i < nm) : (i += 1) {
         const r = rng.range(0.75, 1.15) * (1.0 - 0.12 * @as(f32, @floatFromInt(i)));
-        b.addBlob(
-            v3(rng.signed() * 0.42, rng.range(0.55, 1.15), rng.signed() * 0.38),
-            v3(r, r * rng.range(0.68, 0.95), r * rng.range(0.82, 1.18)),
-            5,
-            7,
-            if (@mod(i, 2) == 0) CLIFF_DK else ROCK_DEEP,
-        );
+        const c = v3(rng.signed() * 0.42, rng.range(0.55, 1.15), rng.signed() * 0.38);
+        const e = v3(r, r * rng.range(0.68, 0.95), r * rng.range(0.82, 1.18));
+        b.addBlob(c, e, 5, 7, if (@mod(i, 2) == 0) CLIFF_DK else ROCK_DEEP);
+        if (c.y + e.y > crownC.y + crownR.y) {
+            crownC = c;
+            crownR = e;
+        }
     }
     var c: i32 = 0;
     while (c < 4) : (c += 1) {
@@ -362,7 +377,13 @@ pub fn boulderMesh(shader: rl.Shader) rl.Model {
         b.addBlob(v3(rng.signed() * 1.35, r * 0.55, rng.signed() * 1.3), v3(r, r * 0.7, r), 3, 5, CLIFF_LT);
     }
     b.setMat(.plant);
-    b.addBlob(v3(rng.signed() * 0.3, 1.62, rng.signed() * 0.3), v3(0.62, 0.14, 0.55), 3, 6, STONE_MOSS);
+    const nx = rng.signed() * 0.45;
+    const nz = rng.signed() * 0.35;
+    const mx = crownC.x + nx * crownR.x;
+    const mz = crownC.z + nz * crownR.z;
+    const my = crownC.y + crownR.y * @sqrt(@max(1.0 - nx * nx - nz * nz, 0.0));
+    b.addBlob(v3(mx, my - 0.10, mz), v3(0.34, 0.11, 0.30), 3, 7, MOSS_DK);
+    art.lichenInto(&b, &rng, v3(mx, my - 0.02, mz), v3(0.40, 0.05, 0.36), 5);
     return b.toModel(shader);
 }
 
@@ -415,9 +436,39 @@ pub fn monolithMesh(shader: rl.Shader) rl.Model {
             CLIFF_DK,
         );
     }
+    // Rain finds the iron first: a wash below each strap, a damp foot, two leached panels.
+    for ([_]f32{ 0.24, 0.49, 0.76 }, 0..) |t0, bi| {
+        const broken = bi == 1;
+        var st: i32 = 0;
+        while (st < 2) : (st += 1) {
+            if (rng.float() < 0.25) continue;
+            const sh = rng.range(0.14, 0.34);
+            b.addBox(
+                v3(lean.x * t0 + (if (broken) @as(f32, 0.26) else 0) + rng.signed() * 0.38, lean.y * t0 - 0.10 - sh, lean.z * t0),
+                v3(rng.range(0.020, 0.048), 0, 0),
+                v3(0, sh, 0),
+                v3(0, 0, 0.412),
+                ROCK_DEEP,
+            );
+        }
+    }
+    b.addBox(v3(0, 0.22, 0), v3(0.585, 0, 0), v3(0, rng.range(0.16, 0.26), 0), v3(0.03, 0, 0.408), CLIFF_DK);
+    var mo: i32 = 0;
+    while (mo < 2) : (mo += 1) {
+        const t = rng.range(0.30, 0.72);
+        b.addBox(
+            v3(lean.x * t + rng.signed() * 0.30, lean.y * t, lean.z * t),
+            v3(rng.range(0.09, 0.17), 0, 0),
+            v3(0, rng.range(0.28, 0.55), 0),
+            v3(0, 0, 0.405),
+            CLIFF_LT,
+        );
+    }
     b.setMat(.plant);
     b.addBlob(v3(lean.x * 0.25 - 0.42, 0.75, lean.z * 0.25), v3(0.16, 0.55, 0.30), 3, 5, STONE_MOSS);
     b.addBlob(v3(0, 0.10, 0), v3(0.85, 0.10, 0.75), 3, 6, SCRUB_DK);
+    art.lichenInto(&b, &rng, v3(-0.30, 0.55, 0.20), v3(0.16, 0.28, 0.14), 4);
+    art.lichenInto(&b, &rng, v3(0.30, rng.range(1.3, 2.0), -0.15), v3(0.12, 0.30, 0.12), 3);
     return b.toModel(shader);
 }
 
@@ -476,7 +527,13 @@ pub fn outcropMesh(shader: rl.Shader) rl.Model {
     }
     b.setMat(.plant);
     var g: i32 = 0;
-    while (g < 3) : (g += 1) b.addBlob(v3(rng.range(-1.2, 1.2), rng.range(0.5, 0.9), rng.range(0.3, 0.8)), v3(rng.range(0.3, 0.6), 0.10, rng.range(0.25, 0.5)), 3, 6, if (rng.float() < 0.5) MOSS_DK else SCRUB_DK);
+    while (g < 3) : (g += 1) {
+        const px = rng.range(-1.2, 1.2);
+        const py = rng.range(0.5, 0.9);
+        const pz = rng.range(0.3, 0.8);
+        b.addBlob(v3(px, py, pz), v3(rng.range(0.22, 0.40), 0.09, rng.range(0.20, 0.36)), 3, 7, if (rng.float() < 0.5) MOSS_DK else SCRUB_DK);
+        art.lichenInto(&b, &rng, v3(px, py + 0.05, pz), v3(0.48, 0.05, 0.42), 3);
+    }
     tuftInto(&b, &rng, rng.range(-1.5, 1.5), rng.range(0.2, 0.9), 0.8);
     return b.toModel(shader);
 }

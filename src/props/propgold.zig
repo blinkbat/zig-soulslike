@@ -364,6 +364,31 @@ pub fn marbleSlabMesh(shader: rl.Shader) rl.Model {
     }
     veinAcross(&b, &rng, v3(-0.16, 0, 0), L * 0.55, Hh * 1.04, 0.010);
     veinAcross(&b, &rng, v3(L * 0.50, 0, 0), L * 0.28, Hh * 1.28, 0.008);
+    veinAcross(&b, &rng, v3(L * 0.55, 0, 0), L * 0.20, Hh * 1.30, 0.007);
+    // Centuries on the turf: soil splash low on the flanks, moss at the ground line.
+    var sb: i32 = 0;
+    while (sb < 3) : (sb += 1) {
+        const side: f32 = if (sb == 2) -1 else 1;
+        const bx = rng.range(-0.85, 0.55);
+        const bw = rng.range(0.14, 0.30);
+        b.addBox(
+            v3(bx, rng.range(0.03, 0.06), side * (W * 0.5 + 0.004)),
+            v3(bw, rng.signed() * 0.01, 0),
+            v3(0, rng.range(0.030, 0.048), 0),
+            v3(0, 0, 0.012),
+            MARBLE_DK,
+        );
+        b.addBox(
+            v3(bx + rng.signed() * bw, rng.range(0.05, 0.09), side * (W * 0.5 + 0.003)),
+            v3(bw * rng.range(0.45, 0.70), rng.signed() * 0.008, 0),
+            v3(0, rng.range(0.020, 0.035), 0),
+            v3(0, 0, 0.011),
+            MARBLE_DK,
+        );
+    }
+    b.setMat(.plant);
+    art.lichenInto(&b, &rng, v3(-0.35, 0.06, rng.range(0.28, 0.36)), v3(0.42, 0.05, 0.10), 4);
+    art.lichenInto(&b, &rng, v3(-L * 0.68, 0.08, -0.08), v3(0.12, 0.07, 0.18), 3);
     // It was gilt once.
     b.setMat(.gilt);
     b.addBox(

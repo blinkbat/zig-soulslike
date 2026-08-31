@@ -3507,6 +3507,17 @@ fn editorShots(g: *Game) void {
         g.editor.closeModalForShot();
     }
 
+    g.editor.optionsForShot();
+    editorSnap(g, "shots/95h_editor_options.png");
+    g.editor.closeModalForShot();
+
+    // Both faces of it: the AUTHORING form, and the notice a hand-written tree gets instead.
+    for (0..g.map.nnpcs) |ni| {
+        g.editor.talkForShot(&g.map, ni);
+        editorSnap(g, if (g.editor.talkIsFlatForShot()) "shots/95i_editor_talk.png" else "shots/95j_editor_talk_tree.png");
+        g.editor.closeModalForShot();
+    }
+
     g.editor.setLayer(.ground);
     for (&g.editor.shown) |*s| s.* = false;
     g.editor.showWeather = false;

@@ -1184,7 +1184,7 @@ fn sprintingMove(mv: Move) bool {
     return mv.speed > RUN_SPEED + 0.01 and (mv.fx * mv.fx + mv.fz * mv.fz) > 1e-6;
 }
 
-/// The knee on the H=1.8 rig (0.285·H).
+/// The knee on the H=1.8 rig (0.278·H).
 const WADE_KNEE: f32 = 0.50;
 const WADE_DEEP: f32 = envmod.WADE_MAX;
 const WADE_SLOWEST: f32 = 0.8;
@@ -3077,7 +3077,11 @@ fn openChest(g: *Game) void {
 fn takePickup(g: *Game) void {
     const got = g.pickups.takeNear(&g.map) orelse return;
     awardLoot(g, got.loot, got.at);
-    g.hero.gold.gain(got.gold);
+    if (got.gold > 0) {
+        g.hero.gold.gain(got.gold);
+        g.award.gainCoin(got.gold);
+        if (got.loot.len == 0) sfx.world(.item_get, got.at);
+    }
     g.rig.addShake(SHAKE_CHEST);
     g.rumble.play(rumblemod.hit_light);
 }
@@ -3140,11 +3144,11 @@ fn billDeaths(g: *Game) void {
                 self.g.gorge.noteCorpse(f.pos);
                 // **IT GOES ON THE GROUND WHERE IT FELL**, not into his hands. The roll is spent whatever died, so the stream cannot become a function of what you chose to fight.
                 var buf: [pickupmod.DROP_MAX]item.Kind = undefined;
-                self.g.pickups.spawn(f.pos, dropsmod.roll(k, self.g.hero.sheet.at(.luck), &self.g.dropRng, &buf));
-                // **THE PURSE GOES STRAIGHT INTO HIS**, the way souls do — gold is a counter and not a glow, so
-                // there is nothing to walk over. Drawn from the same stream immediately after the item roll,
-                // and it always spends its draws, so the order here is part of the determinism.
-                self.g.hero.gold.gain(dropsmod.rollGold(k, &self.g.dropRng));
+                const loot = dropsmod.roll(k, self.g.hero.sheet.at(.luck), &self.g.dropRng, &buf);
+                // **AND SO DOES THE PURSE** (owner: gold should drop as an item, not auto-add like souls) — on
+                // the SAME glow as the loot, so a body leaves one thing to walk over. Drawn from the same
+                // stream in the same order as before, which is what the determinism rests on.
+                self.g.pickups.spawn(f.pos, loot, dropsmod.rollGold(k, &self.g.dropRng));
                 if (self.g.hero.perk.onKill > 0 and !self.g.hero.dead) {
                     _ = self.g.hero.vit.heal(self.g.hero.perk.onKill);
                 }
@@ -3232,6 +3236,11 @@ fn tickTalk(g: *Game, dt: f32) void {
         .pick = digitPressed(),
     };
     g.talk.update(&g.map, &g.trig, triggerWorld(g), dt, in);
+    // **A COUNTER ASKED FOR INSIDE A CONVERSATION OPENS FROM INSIDE IT.** The main loop's own drain sits past
+    // the `g.talk.active()` branch's `continue`, so a `gets: shop` on a choice set `wantCounter` and nothing
+    // read it — the stall opened whenever the talk happened to end, which could be several lines later.
+    // `run` already orders the counter branch AHEAD of the talk branch for exactly this case.
+    if (g.trig.takeCounter()) |k| openCounter(g, k);
     if (g.talk.justClosed) {
         if (g.talk.npc) |i| {
             if (g.folk.at(i)) |p| p.farewell();
@@ -3472,9 +3481,7 @@ fn applyHour(g: *Game) void {
     // the editor) is spared. Deliberate: a `@round` on the hour is a step in the sun's own bearing, and light
     // here is never stepped. The cost is 18 uniform uploads a frame on a path already drawing hundreds.
     const wet = @round(g.wetNow * WET_STEPS) / WET_STEPS;
-    // The distance haze is weather, and the editor's weather eye is shut on entry: a 900 m pull-back through
-    // 0.013-per-metre air is a grey sheet with the map behind it.
-    const fog = if (skyLive(g)) g.menu.fogK() else 0;
+    const fog = hazeK(g);
     const spore = @round(g.sporeNow * WET_STEPS) / WET_STEPS;
     if (g.day.hour == g.hourLit and wet == g.wetLit and fog == g.fogLit and spore == g.sporeLit) return;
     g.hourLit = g.day.hour;
@@ -4498,6 +4505,14 @@ fn settleSky(g: *Game, dt: f32) void {
     settleSkyAt(g, dt, g.hero.pos);
 }
 
+/// **THE DISTANCE HAZE IS ITS OWN SWITCH, NOT THE WEATHER EYE'S** (Editor Options > distance fog, on by
+/// default). The eye is about rain and mist over the ground being sculpted; the haze is the clear-air falloff
+/// the 560 m world is sized for, and hanging it off the eye meant the editor always looked at a flat far edge.
+fn hazeK(g: *const Game) f32 {
+    if (!g.editor.on) return g.menu.fogK();
+    return if (g.editor.showFog) g.menu.fogK() else 0;
+}
+
 /// Always true in play. In the editor it answers to two eyes: the sky's own, and the LOCATIONS layer's — weather is a property of those rectangles.
 fn skyLive(g: *const Game) bool {
     if (!g.editor.on) return true;
@@ -4553,13 +4568,19 @@ pub fn drawScene(g: *Game) void {
     const cam = sceneCam(g);
     foemod.setLens(cam.position, mathx.normV(mathx.subV(cam.target, cam.position)));
     g.env.markOccluders(cam.position, if (g.editor.on) cam.position else heroAimPoint(g), g.drawDt);
-    const focus = sunFocus(g);
     rl.gl.rlSetClipPlanes(CLIP_NEAR, drawFar(g));
-    g.scene.beginShadowPass(focus, shadowSpanOf(g));
-    setCasterShaders(g, g.scene.depthShader);
-    drawCasters(g, .{ .sun = focus });
-    setCasterShaders(g, g.scene.shader);
-    g.scene.endShadowPass();
+    // **THE DEPTH PASS IS A WHOLE SECOND DRAW OF EVERY CASTER**, so the editor's switch skips the pass rather
+    // than dimming its result — and `shadowsOff` after `bind` is what stops the colour pass sampling the map
+    // it did not lay this frame (`gfx.Scene.shadowsOff`: the scale-to-zero, not the translate).
+    const casting = !g.editor.on or g.editor.showShadows;
+    if (casting) {
+        const focus = sunFocus(g);
+        g.scene.beginShadowPass(focus, shadowSpanOf(g));
+        setCasterShaders(g, g.scene.depthShader);
+        drawCasters(g, .{ .sun = focus });
+        setCasterShaders(g, g.scene.shader);
+        g.scene.endShadowPass();
+    }
 
     rl.beginDrawing();
     const filtered = if (g.editor.on) false else g.retro.begin();
@@ -4572,6 +4593,7 @@ pub fn drawScene(g: *Game) void {
 
     rl.beginMode3D(cam);
     g.scene.bind(cam.position);
+    if (!casting) g.scene.shadowsOff();
     var lightBuf: [RESERVED_LIGHTS]gfx.Light = undefined;
     g.env.uploadLights(&g.scene, &view, @floatCast(rl.getTime()), reservedLights(g, &lightBuf));
     g.scene.setGround(true);
@@ -6773,3 +6795,4 @@ test "A RING IN THE BAG SAVES NOTHING — the snap is asked of the FINGER" {
     worn.put(.ring, null);
     try std.testing.expect(bindingWorn(worn) == null);
 }
+

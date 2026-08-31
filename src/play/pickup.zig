@@ -27,6 +27,10 @@ pub const Pickup = struct {
     op: u16 = 0,
     loot: [DROP_MAX]item.Kind = undefined,
     nloot: u8 = 0,
+    /// **COIN THIS GLOW IS CARRYING.** On a MAP glow the purse is the placing op's (`wf.Op.gold`); on a BODY
+    /// drop it is what the corpse was worth, and it rides the SAME glow as the loot rather than standing up a
+    /// second one beside it — one thing on the ground per body is what a body leaving something looks like.
+    gold: u32 = 0,
     taken: bool = false,
     fade: f32 = 0,
 
@@ -43,16 +47,18 @@ pub const Pickup = struct {
         return 1.0 - self.fade;
     }
 
+    /// **A PURSE ALONE IS STILL A DROP.** Keyed off the coin as well as the loot, or a body that left nothing
+    /// but money read as a map glow and `takeNear` went looking for a placing op that was never there.
     pub fn dropped(self: *const Pickup) bool {
-        return self.nloot > 0;
+        return self.nloot > 0 or self.gold > 0;
     }
 };
 
 pub const Taken = struct {
     at: rl.Vector3,
     loot: []const item.Kind,
-    /// Coin the placing op put in it (`wf.Op.gold`). A BODY DROP carries none — a purse off a corpse goes
-    /// straight into his (`game`'s kill site), so a glow that also paid would pay twice.
+    /// **PICKED UP, NOT CREDITED ON THE KILL** (owner): gold used to go straight into his hands the way souls
+    /// do, so a fight paid you from across the field and there was nothing to walk over.
     gold: u32 = 0,
 };
 
@@ -103,8 +109,8 @@ pub const Pickups = struct {
     /// Refuses an empty list, so `nloot > 0` stays the honest test for "this one is a drop".
     ///
     /// **A FULL LIST RECYCLES A SPENT SLOT BEFORE IT REFUSES** — a session kills far more than the 96 the cap shares with the map's glows, and a picked-up glow is a slot nobody can see. With none spendable the drop is DROPPED rather than overwriting a glow standing in front of you.
-    pub fn spawn(self: *Pickups, at: rl.Vector3, kinds: []const item.Kind) void {
-        if (kinds.len == 0) return;
+    pub fn spawn(self: *Pickups, at: rl.Vector3, kinds: []const item.Kind, gold: u32) void {
+        if (kinds.len == 0 and gold == 0) return;
         const n = @min(kinds.len, DROP_MAX);
         var p: *Pickup = undefined;
         if (self.n < CAP) {
@@ -118,7 +124,7 @@ pub const Pickups = struct {
                 return;
             };
         }
-        p.* = .{ .pos = at, .yaw = 0, .scale = 1, .op = 0, .nloot = @intCast(n) };
+        p.* = .{ .pos = at, .yaw = 0, .scale = 1, .op = 0, .nloot = @intCast(n), .gold = gold };
         for (kinds[0..n], 0..) |k, i| p.loot[i] = k;
     }
 
@@ -138,7 +144,7 @@ pub const Pickups = struct {
         if (p.taken) return null;
         p.taken = true;
         self.near = null;
-        if (p.dropped()) return .{ .at = p.topWorld(), .loot = p.loot[0..p.nloot] };
+        if (p.dropped()) return .{ .at = p.topWorld(), .loot = p.loot[0..p.nloot], .gold = p.gold };
         const op = p.op;
         const loot: []const item.Kind = if (op < m.nops) m.ops[op].loot[0..m.ops[op].nloot] else &.{};
         return .{ .at = p.topWorld(), .loot = loot, .gold = if (op < m.nops) m.ops[op].gold else 0 };
@@ -240,14 +246,14 @@ test "A DROPPED GLOW IS A GLOW — it stands where the body fell, hands back its
     try std.testing.expectEqual(@as(usize, 1), ps.mapped);
     try std.testing.expectEqual(@as(usize, 0), ps.droppedOnes().len);
 
-    ps.spawn(v3(0, 0, 0), &.{ .bloodgrass, .toadflesh_broth });
+    ps.spawn(v3(0, 0, 0), &.{ .bloodgrass, .toadflesh_broth }, 0);
     try std.testing.expectEqual(@as(usize, 2), ps.n);
     try std.testing.expectEqual(@as(usize, 1), ps.mapped);
     try std.testing.expectEqual(@as(usize, 1), ps.droppedOnes().len);
     try std.testing.expect(ps.droppedOnes()[0].dropped());
     try std.testing.expect(!ps.liveConst()[0].dropped());
 
-    ps.spawn(v3(9, 0, 9), &.{});
+    ps.spawn(v3(9, 0, 9), &.{}, 0);
     try std.testing.expectEqual(@as(usize, 2), ps.n);
 
     const m = try std.testing.allocator.create(wf.Map);
@@ -271,16 +277,41 @@ test "A DROPPED GLOW IS A GLOW — it stands where the body fell, hands back its
 test "A FULL LIST RECYCLES A SPENT SLOT AND NEVER OVERWRITES ONE YOU CAN STILL SEE" {
     var ps = Pickups{};
     ps.reset(&.{});
-    for (0..CAP) |_| ps.spawn(v3(0, 0, 0), &.{.bloodgrass});
+    for (0..CAP) |_| ps.spawn(v3(0, 0, 0), &.{.bloodgrass}, 0);
     try std.testing.expectEqual(CAP, ps.n);
-    ps.spawn(v3(1, 0, 1), &.{.kobold_fang});
+    ps.spawn(v3(1, 0, 1), &.{.kobold_fang}, 0);
     for (ps.liveConst()) |p| try std.testing.expectEqual(item.Kind.bloodgrass, p.loot[0]);
     ps.list[7].taken = true;
     var t: f32 = 0;
     while (t < FADE_DUR * 2.0) : (t += 1.0 / 60.0) ps.update(1.0 / 60.0, v3(900, 0, 900));
     try std.testing.expect(ps.list[7].spent());
-    ps.spawn(v3(1, 0, 1), &.{.kobold_fang});
+    ps.spawn(v3(1, 0, 1), &.{.kobold_fang}, 0);
     try std.testing.expectEqual(item.Kind.kobold_fang, ps.list[7].loot[0]);
     try std.testing.expect(!ps.list[7].taken);
     try std.testing.expectEqual(CAP, ps.n);
+}
+
+test "A PURSE ALONE IS A DROP — coin lands on the ground and is carried by the glow, not credited on the kill" {
+    var ps = Pickups{};
+    ps.reset(&.{});
+    ps.spawn(v3(0, 0, 0), &.{}, 0);
+    try std.testing.expectEqual(@as(usize, 0), ps.n);
+
+    ps.spawn(v3(0, 0, 0), &.{}, 30);
+    try std.testing.expectEqual(@as(usize, 1), ps.n);
+    try std.testing.expect(ps.list[0].dropped());
+    try std.testing.expectEqual(@as(u32, 30), ps.list[0].gold);
+
+    // **ONE GLOW PER BODY**: coin and loot ride the same one, so a corpse leaves one thing to walk over.
+    ps.spawn(v3(20, 0, 0), &.{.bloodgrass}, 45);
+    try std.testing.expectEqual(@as(usize, 2), ps.n);
+    try std.testing.expectEqual(@as(u8, 1), ps.list[1].nloot);
+    try std.testing.expectEqual(@as(u32, 45), ps.list[1].gold);
+
+    var m: wf.Map = undefined;
+    m.nops = 0;
+    ps.update(1.0 / 60.0, v3(20, 0, 0));
+    const got = ps.takeNear(&m) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(@as(u32, 45), got.gold);
+    try std.testing.expectEqual(@as(usize, 1), got.loot.len);
 }

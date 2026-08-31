@@ -86,8 +86,11 @@ pub const TABLE = [_]Row{
     .{ .foe = .broodling, .common = .bloodgrass },
     .{ .foe = .brood_sac, .common = null },
 
-    .{ .foe = .shieldman, .common = .pitted_helm, .odds = UNCOMMON, .gold = .few },
-    .{ .foe = .greatsword, .common = .quilted_gambeson, .odds = UNCOMMON, .gold = .purse },
+    // **THE BODIES CARRYING MADE IRON ARE WHERE THE STONE COMES FROM** (owner). A soldier keeps a stone for
+    // his own edge, so the two skeletal warriors and the knight over them are the tap the DELVER's common row
+    // was carrying alone — 30 stones takes an armament to `hero.TIER_MAX` and one uncommon body could not pay it.
+    .{ .foe = .shieldman, .common = .pitted_helm, .odds = UNCOMMON, .rare = .smithing_stone, .chance = 0.12, .gold = .few },
+    .{ .foe = .greatsword, .common = .quilted_gambeson, .odds = UNCOMMON, .rare = .smithing_stone, .chance = 0.14, .gold = .purse },
 
     .{ .foe = .shade, .common = .nameless_soul, .odds = UNCOMMON, .rare = .loop_of_chance, .chance = 0.14 },
 
@@ -98,9 +101,11 @@ pub const TABLE = [_]Row{
 
     .{ .foe = .shroom, .common = .purgeleaf, .rare = .sporeling_cap, .chance = 0.18 },
 
-    // THE BONE KNIGHT — the one row that never rolls.
-    .{ .foe = .bone_knight, .common = .soul_binding_ring, .odds = BOSS_ALWAYS, .gold = .hoard },
+    // THE BONE KNIGHT — the one row that never rolls, and the best single stone in the game: he is the body
+    // the whole armoury of the bone court answers to, and a boss is the one place a tier is worth a walk back.
+    .{ .foe = .bone_knight, .common = .soul_binding_ring, .odds = BOSS_ALWAYS, .rare = .smithing_stone, .chance = 0.5, .gold = .hoard },
 
+    // **THE ONE THAT DIGS IS THE ONE THAT FINDS IT**, and it is the only body carrying stone in its COMMON row.
     .{ .foe = .delver, .common = .smithing_stone, .odds = UNCOMMON, .gold = .few },
 
     // The one thing in the world that deals cold carries the coating that gives it back.
@@ -249,7 +254,13 @@ test "A BODY MOSTLY LEAVES NOTHING, and what it does leave is its own row" {
             }
         }
         if (k == .brood_sac) try std.testing.expectEqual(@as(usize, 0), seen);
-        if (k == .bone_knight) try std.testing.expectEqual(@as(usize, 4000), seen);
+        // **A BOSS ALWAYS LEAVES ITS COMMON ROW, AND MAY LEAVE ITS RARE ON TOP.** Pinned as a floor rather than
+        // as an equality: the knight carries a stone at `.chance` now, so an exact 4000 was the old table's
+        // shape and not the rule (`BOSS_ALWAYS`).
+        if (k == .bone_knight) {
+            try std.testing.expect(seen >= 4000);
+            try std.testing.expect(seen <= 8000);
+        }
     }
 }
 
@@ -347,5 +358,49 @@ test "A MAN CARRIES COIN AND A MUSHROOM DOES NOT — what each nature actually p
             if (g == 0) continue;
             try std.testing.expect(g >= b[0] and g <= b[1]);
         }
+    }
+}
+
+test "WHAT A TIER COSTS IN BODIES — every row that carries stone, and the walk to +10" {
+    const counter = @import("counter.zig");
+    const heromod = @import("hero.zig");
+
+    var carriers: usize = 0;
+    var perBody: f64 = 0;
+    std.debug.print("\n", .{});
+    for (0..NFOE) |i| {
+        const k: wf.FoeKind = @enumFromInt(i);
+        const row = TABLE[i];
+        const common: f64 = if (row.common == item.Kind.smithing_stone) row.odds else 0;
+        const rare: f64 = if (row.rare == item.Kind.smithing_stone) rareOdds(k, stats.START) else 0;
+        if (common + rare == 0) continue;
+        carriers += 1;
+        perBody += common + rare;
+        std.debug.print("  {s: <16} {d:5.1}% a body\n", .{ wf.foeName(k), 100.0 * (common + rare) });
+    }
+    try std.testing.expect(carriers >= 4);
+
+    // **THE LADDER, PRICED IN CORPSES.** `counter.ladderCost` is the stones one armament needs end to end; the
+    // mean over the bodies that carry any is what a run actually has to kill for it.
+    const run = counter.ladderCost(0, heromod.TIER_MAX);
+    const mean = perBody / @as(f64, @floatFromInt(carriers));
+    std.debug.print("  {d} kinds carry stone, {d:.1}% a body on average\n", .{ carriers, 100.0 * mean });
+    std.debug.print("  +{d} wants {d} stones = about {d:.0} stone-carrying bodies (was {d:.0} on the delver alone)\n", .{
+        heromod.TIER_MAX,
+        run.stones,
+        @as(f64, @floatFromInt(run.stones)) / mean,
+        @as(f64, @floatFromInt(run.stones)) / UNCOMMON,
+    });
+    try std.testing.expectEqual(item.Kind.smithing_stone, TABLE[@intFromEnum(wf.FoeKind.delver)].common.?);
+    for (0..NFOE) |i| {
+        const k: wf.FoeKind = @enumFromInt(i);
+        if (TABLE[i].rare == item.Kind.smithing_stone) try std.testing.expect(rareOdds(k, stats.MAX) <= RARE_CAP);
+    }
+    // …and a body that carries stone is one that carries IRON or DIGS — never a plant or a fish.
+    for (0..NFOE) |i| {
+        const k: wf.FoeKind = @enumFromInt(i);
+        if (TABLE[i].common != item.Kind.smithing_stone and TABLE[i].rare != item.Kind.smithing_stone) continue;
+        const nat = foe.traitsOf(k).nature;
+        try std.testing.expect(nat == .undead or nat == .beast);
     }
 }

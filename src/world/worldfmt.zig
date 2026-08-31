@@ -752,11 +752,488 @@ pub const Dialog = struct {
     id: Id = [_]u8{0} ** ID_CAP,
     node0: u16 = 0,
     nnodes: u16 = 0,
+    /// **STOOD UP BY `link`, NOT BY THE FILE** (`seedDialogs`), and so never written back out. A body with no
+    /// `dlg=` on its line still has to be worth walking up to — a merchant you cannot buy from is scenery.
+    synth: bool = false,
 
     pub fn label(self: *const Dialog) []const u8 {
         return idText(&self.id);
     }
 };
+
+// ── THE EDITABLE CONVERSATION ─────────────────────────────────────────────────────────────────────────────
+
+/// **WHAT A COUNTER'S CONVERSATION IS, FLAT**: one greeting and up to `MAX_CHOICES` lines that each DO one
+/// thing. This is the SUBSET of the node tree the editor can author and round-trip — enough for a merchant, a
+/// smith and a goodbye, and nothing that needs a graph. A hand-written tree with more than one node is left
+/// strictly alone: `readTalk` refuses it, and the panel says so rather than flattening his work.
+pub const TALK_SAY_CAP: usize = 240;
+pub const TALK_LABEL_CAP: usize = 44;
+
+/// What pressing a line does. **THE COUNTER LINES END THE CONVERSATION**, because the stall is the answer to
+/// what was asked: `game.tickTalk` drains the ask on the frame the talk closes and `run` puts the counter's
+/// frame ahead of the talk's, so the panel is gone before the stall is drawn.
+pub const Does = enum(u8) {
+    leave,
+    again,
+    shop,
+    smithy,
+
+    pub fn label(d: Does) [:0]const u8 {
+        return switch (d) {
+            .leave => "ends it",
+            .again => "back to the top",
+            .shop => "opens the SHOP",
+            .smithy => "opens the SMITHY",
+        };
+    }
+
+    pub fn act(d: Does) ?ActKind {
+        return switch (d) {
+            .leave, .again => null,
+            .shop => .shop,
+            .smithy => .smithy,
+        };
+    }
+};
+
+pub const TalkRow = struct {
+    text: [TALK_LABEL_CAP]u8 = [_]u8{0} ** TALK_LABEL_CAP,
+    len: u8 = 0,
+    does: Does = .leave,
+
+    pub fn label(self: *const TalkRow) []const u8 {
+        return self.text[0..self.len];
+    }
+    pub fn setLabel(self: *TalkRow, s: []const u8) void {
+        self.len = @intCast(@min(s.len, TALK_LABEL_CAP));
+        @memcpy(self.text[0..self.len], s[0..self.len]);
+    }
+};
+
+pub const Talk = struct {
+    say: [TALK_SAY_CAP]u8 = [_]u8{0} ** TALK_SAY_CAP,
+    sayLen: u16 = 0,
+    /// **THE NAME OVER THE PLATE, AND EMPTY MEANS THE BODY'S OWN** (`node.who`, which `dialog.draw` falls back
+    /// off to the speaker `game.startTalk` handed it). Carried here rather than ignored: a conversation that
+    /// named its speaker lost the name the first time the panel wrote it back, silently.
+    who: [TALK_LABEL_CAP]u8 = [_]u8{0} ** TALK_LABEL_CAP,
+    whoLen: u8 = 0,
+    rows: [MAX_CHOICES]TalkRow = [_]TalkRow{.{}} ** MAX_CHOICES,
+    nrows: u8 = 0,
+
+    pub fn line(self: *const Talk) []const u8 {
+        return self.say[0..self.sayLen];
+    }
+    pub fn setLine(self: *Talk, s: []const u8) void {
+        self.sayLen = @intCast(@min(s.len, TALK_SAY_CAP));
+        @memcpy(self.say[0..self.sayLen], s[0..self.sayLen]);
+    }
+    pub fn speaker(self: *const Talk) []const u8 {
+        return self.who[0..self.whoLen];
+    }
+    pub fn setSpeaker(self: *Talk, s: []const u8) void {
+        self.whoLen = @intCast(@min(s.len, TALK_LABEL_CAP));
+        @memcpy(self.who[0..self.whoLen], s[0..self.whoLen]);
+    }
+};
+
+/// The one node id every authored conversation uses. Spelled once: `writeTalk` emits it and `.again` points a
+/// line back at it, so the two cannot disagree about what "the top" is called.
+pub const TALK_NODE: []const u8 = "root";
+
+/// **WHAT A BODY SAYS WHEN THE MAP GIVES IT NOTHING TO SAY.** One greeting per kind and the lines that go
+/// with it — the merchant opens his shop, the smith opens his smithy, and the wanderer passes the time. Lives
+/// here rather than in the editor because BOTH need it: the panel seeds a fresh conversation off it, and
+/// `seedDialogs` stands one up for every body the file left silent.
+pub fn seedTalk(kind: NpcKind, t: *Talk) void {
+    switch (kind) {
+        .merchant => {
+            t.setLine("Salt and iron, traveller. Both keep, and both are worth the carrying.");
+            t.rows[0] = .{ .does = .shop };
+            t.rows[0].setLabel("Show me your wares.");
+            t.rows[1] = .{ .does = .leave };
+            t.rows[1].setLabel("Nothing today.");
+            t.nrows = 2;
+        },
+        .smith => {
+            t.setLine("Bring me stone and I will fold it in. The wood gives up its iron slowly.");
+            t.rows[0] = .{ .does = .smithy };
+            t.rows[0].setLabel("Work my blade.");
+            t.rows[1] = .{ .does = .leave };
+            t.rows[1].setLabel("Another time.");
+            t.nrows = 2;
+        },
+        .wanderer => {
+            t.setLine("You have the look of one who walks a long road alone.");
+            t.rows[0] = .{ .does = .leave };
+            t.rows[0].setLabel("And you.");
+            t.nrows = 1;
+        },
+    }
+}
+
+/// **EVERY BODY TALKS, WHETHER OR NOT THE FILE SAID SO.** Run at the end of `link`: a merchant or a smith with
+/// no `dlg=` used to have no prompt over him at all, which on the shipped map is both of them. One SYNTHETIC
+/// dialog per kind that needs it — shared by every silent body of that kind, marked `synth` so `render` leaves
+/// it out and the file is exactly what the author wrote.
+///
+/// **NON-FATAL BY CONSTRUCTION.** Out of dialog slots or out of text arena leaves the body as it was — silent,
+/// which is where it started — rather than refusing to load a map that was fine before this existed.
+fn seedDialogs(m: *Map) void {
+    for (m.npcs[0..m.nnpcs]) |*p| {
+        if (p.dlg != NO_DIALOG) continue;
+        var nb: [ID_CAP]u8 = undefined;
+        const name = std.fmt.bufPrint(&nb, "{s}_default", .{@tagName(p.kind)}) catch continue;
+        if (m.findDialog(name)) |at| {
+            p.dlg = at;
+            continue;
+        }
+        var t = Talk{};
+        seedTalk(p.kind, &t);
+        const at = addTalk(m, name, &t) catch continue;
+        m.dialogs[at].synth = true;
+        p.dlg = at;
+    }
+}
+
+/// **DECOMPILE, OR REFUSE.** Null means this dialog is not one the flat panel can express — more than one node,
+/// an act on the node itself, a gated line, a line that jumps somewhere, or an act that is not a counter.
+/// Refusing is the whole point: the editor may not quietly rewrite a tree it does not understand.
+pub fn readTalk(m: *const Map, dlg: u16) ?Talk {
+    const d = m.dialogAt(dlg) orelse return null;
+    if (d.nnodes != 1) return null;
+    const nd = &m.nodes[d.node0];
+    if (nd.nact != 0) return null;
+    // A node with no lines may only fall out of the conversation; with one node there is nowhere else it
+    // could point but at itself, which is a panel with no way out.
+    if (nd.nchoices == 0 and nd.next != NO_NODE) return null;
+    var t = Talk{};
+    t.setLine(m.spanText(nd.text));
+    t.setSpeaker(m.spanText(nd.who));
+    for (nd.choiceSlice()) |*c| {
+        if (c.gate >= 0 or c.nact > 1) return null;
+        const acts = m.dactRun(c.act0, c.nact);
+        var does: Does = if (c.next == NO_NODE) .leave else if (c.next == d.node0) .again else return null;
+        if (acts.len == 1) {
+            does = switch (acts[0].kind) {
+                .shop => .shop,
+                .smithy => .smithy,
+                else => return null,
+            };
+        }
+        t.rows[t.nrows] = .{ .does = does };
+        t.rows[t.nrows].setLabel(m.spanText(c.label));
+        t.nrows += 1;
+    }
+    return t;
+}
+
+/// **THE ARENA IS REBUILT WHOLE, NOT PATCHED.** A dialog owns a CONTIGUOUS run of `nodes` and every node and
+/// choice a contiguous run of `dacts`, so adding one line to the first conversation would shift every index
+/// after it. Rebuilding in dialog order is the only edit that cannot leave a dangling `act0`; the other
+/// dialogs are copied VERBATIM (an arbitrary hand-written tree survives it), with their `next` re-based by the
+/// one offset their whole run moved.
+pub fn writeTalk(m: *Map, dlg: u16, t: *const Talk) !void {
+    if (dlg >= m.ndialogs) return ParseError.UnknownRef;
+    // **SWEEP BEFORE WRITING, NOT AFTER.** A `Talk` carries its own BYTES rather than spans, so nothing here
+    // is invalidated by the sweep — and the greeting about to be re-added is exactly the copy it reclaims.
+    compactText(m);
+    var nodes: [MAX_NODES]Node = undefined;
+    var acts: [MAX_DACTS]Act = undefined;
+    var nn: u16 = 0;
+    var na: u16 = 0;
+
+    for (m.dialogs[0..m.ndialogs], 0..) |*d, di| {
+        const at = nn;
+        if (di == dlg) {
+            if (nn >= MAX_NODES) return ParseError.TooManyNodes;
+            var nd = Node{ .act0 = na };
+            try setId(&nd.id, TALK_NODE);
+            nd.text = try m.addText(t.line());
+            nd.who = try m.addText(t.speaker());
+            nd.next = NO_NODE;
+            for (t.rows[0..t.nrows]) |*r| {
+                if (r.len == 0) continue;
+                var c = Choice{ .act0 = na };
+                c.label = try m.addText(r.label());
+                switch (r.does) {
+                    .again => {
+                        c.target = try m.addText(TALK_NODE);
+                        c.next = at;
+                    },
+                    else => {
+                        c.target = Span{};
+                        c.next = NO_NODE;
+                    },
+                }
+                if (r.does.act()) |k| {
+                    if (na >= MAX_DACTS) return ParseError.TooManyActs;
+                    acts[na] = .{ .kind = k };
+                    na += 1;
+                    c.nact = 1;
+                }
+                nd.choices[nd.nchoices] = c;
+                nd.nchoices += 1;
+            }
+            // A node with no lines at all has to say `then: end`, or the panel is a wall with no way out.
+            if (nd.nchoices == 0) nd.thenRef = Span{};
+            nodes[nn] = nd;
+            nn += 1;
+        } else {
+            const shift = @as(i32, at) - @as(i32, d.node0);
+            for (m.nodesOf(d)) |*src| {
+                if (nn >= MAX_NODES) return ParseError.TooManyNodes;
+                var nd = src.*;
+                nd.act0 = na;
+                for (m.dactRun(src.act0, src.nact)) |*a| {
+                    if (na >= MAX_DACTS) return ParseError.TooManyActs;
+                    acts[na] = a.*;
+                    na += 1;
+                }
+                if (nd.next != NO_NODE) nd.next = @intCast(@as(i32, nd.next) + shift);
+                for (nd.choices[0..nd.nchoices], src.choices[0..src.nchoices]) |*c, *csrc| {
+                    c.act0 = na;
+                    for (m.dactRun(csrc.act0, csrc.nact)) |*a| {
+                        if (na >= MAX_DACTS) return ParseError.TooManyActs;
+                        acts[na] = a.*;
+                        na += 1;
+                    }
+                    if (c.next != NO_NODE) c.next = @intCast(@as(i32, c.next) + shift);
+                }
+                nodes[nn] = nd;
+                nn += 1;
+            }
+        }
+        d.node0 = at;
+        d.nnodes = nn - at;
+    }
+
+    @memcpy(m.nodes[0..nn], nodes[0..nn]);
+    @memcpy(m.dacts[0..na], acts[0..na]);
+    m.nnodes = nn;
+    m.ndacts = na;
+}
+
+/// **`addText` ONLY EVER APPENDS, SO AN EDITOR HAS TO SWEEP UP AFTER ITSELF.** `DTEXT_CAP` is 8 KB and every
+/// re-commit of a conversation, every coined flag name and every re-pointed `dialog` act writes a fresh copy —
+/// re-saying one 240-byte greeting seventeen times fills the arena and the next edit is refused with the map
+/// looking fine. This walks EVERY `Span` the format has (the list is the ten fields, and it is exhaustive by
+/// construction — a new one that is not copied here loses its text the first time this runs) and rewrites the
+/// arena as just what is still pointed at.
+pub fn compactText(m: *Map) void {
+    var out: [DTEXT_CAP]u8 = undefined;
+    var n: u32 = 0;
+
+    const H = struct {
+        fn move(map: *const Map, buf: []u8, at: *u32, s: *Span) void {
+            const txt = map.spanText(s.*);
+            if (txt.len == 0) {
+                s.* = .{};
+                return;
+            }
+            // The same bytes twice is one copy: a conversation re-committed unchanged then costs nothing at all.
+            if (std.mem.indexOf(u8, buf[0..at.*], txt)) |hit| {
+                s.* = .{ .at = @intCast(hit), .len = @intCast(txt.len) };
+                return;
+            }
+            @memcpy(buf[at.* ..][0..txt.len], txt);
+            s.* = .{ .at = at.*, .len = @intCast(txt.len) };
+            at.* += @intCast(txt.len);
+        }
+    };
+
+    for (m.npcs[0..m.nnpcs]) |*p| {
+        H.move(m, &out, &n, &p.call);
+        H.move(m, &out, &n, &p.dlgRef);
+    }
+    for (m.trigs[0..m.ntrigs]) |*t| {
+        for (t.conds[0..t.nconds]) |*c| H.move(m, &out, &n, &c.ref);
+        for (t.acts[0..t.nacts]) |*a| {
+            H.move(m, &out, &n, &a.ref);
+            H.move(m, &out, &n, &a.line);
+        }
+    }
+    for (m.gates[0..m.ngates]) |*c| H.move(m, &out, &n, &c.ref);
+    for (m.dacts[0..m.ndacts]) |*a| {
+        H.move(m, &out, &n, &a.ref);
+        H.move(m, &out, &n, &a.line);
+    }
+    for (m.nodes[0..m.nnodes]) |*nd| {
+        H.move(m, &out, &n, &nd.who);
+        H.move(m, &out, &n, &nd.text);
+        H.move(m, &out, &n, &nd.thenRef);
+        for (nd.choices[0..nd.nchoices]) |*c| {
+            H.move(m, &out, &n, &c.label);
+            H.move(m, &out, &n, &c.target);
+        }
+    }
+
+    @memcpy(m.dtext[0..n], out[0..n]);
+    m.ndtext = n;
+}
+
+/// Every `Cond` the map owns, in one walk: a trigger's `when:` list and a choice's `need:` gate are the same
+/// type in two pools, and a fixup that reaches only one of them is a reference left dangling in the other.
+fn eachCond(m: *Map, ctx: anytype, comptime visit: fn (@TypeOf(ctx), *Cond) void) void {
+    for (m.trigs[0..m.ntrigs]) |*t| {
+        for (t.conds[0..t.nconds]) |*c| visit(ctx, c);
+    }
+    for (m.gates[0..m.ngates]) |*c| visit(ctx, c);
+}
+
+/// …and every `Act`, for the same reason: a trigger's `do:` list and a node's or choice's own.
+fn eachAct(m: *Map, ctx: anytype, comptime visit: fn (@TypeOf(ctx), *Act) void) void {
+    for (m.trigs[0..m.ntrigs]) |*t| {
+        for (t.acts[0..t.nacts]) |*a| visit(ctx, a);
+    }
+    for (m.dacts[0..m.ndacts]) |*a| visit(ctx, a);
+}
+
+/// What a removal had to break to stay loadable. **A COUNT, NOT A SILENT REPAIR** — the editor says it out
+/// loud, because a condition that quietly stopped meaning what it said is worse than one that is gone.
+pub const Broke = struct { conds: usize = 0 };
+
+/// **DELETING A BODY REPOINTS EVERY `near` THAT COUNTED PAST IT.** `Cond.near` is a POSITIONAL index into
+/// `npcs` and `link` refuses one past the end, so deleting the body a trigger watched wrote a map that would
+/// not load at all — and deleting one BELOW it silently moved every watch onto the wrong body. A condition
+/// that watched the deleted body becomes `never`: it cannot fire on a stranger, and it is visible in the panel.
+pub fn removeNpc(m: *Map, i: usize) Broke {
+    var broke = Broke{};
+    if (i >= m.nnpcs) return broke;
+    std.mem.copyForwards(Npc, m.npcs[i .. m.nnpcs - 1], m.npcs[i + 1 .. m.nnpcs]);
+    m.nnpcs -= 1;
+
+    const Fix = struct {
+        gone: u16,
+        n: *usize,
+        fn go(self: @This(), c: *Cond) void {
+            if (c.kind != .near) return;
+            if (c.slot == self.gone) {
+                c.kind = .never;
+                c.slot = 0;
+                self.n.* += 1;
+            } else if (c.slot > self.gone) c.slot -= 1;
+        }
+    };
+    eachCond(m, Fix{ .gone = @intCast(i), .n = &broke.conds }, Fix.go);
+    return broke;
+}
+
+/// How many things still name this conversation — npcs that open it, `talked` conditions and `dialog` actions.
+/// **NOTHING IS RECLAIMED WHILE ANYTHING POINTS AT IT**: the alternative is neutralising acts and gates the
+/// author wrote, and a conversation left standing costs one row of a table.
+pub fn dialogUsers(m: *const Map, dlg: u16) usize {
+    var n: usize = 0;
+    for (m.npcs[0..m.nnpcs]) |*p| {
+        if (p.dlg == dlg) n += 1;
+    }
+    for (m.trigs[0..m.ntrigs]) |*t| {
+        for (t.conds[0..t.nconds]) |*c| {
+            if (c.kind == .talked and c.slot == dlg) n += 1;
+        }
+        for (t.acts[0..t.nacts]) |*a| {
+            if (a.kind == .dialog and a.slot == dlg) n += 1;
+        }
+    }
+    for (m.gates[0..m.ngates]) |*c| {
+        if (c.kind == .talked and c.slot == dlg) n += 1;
+    }
+    for (m.dacts[0..m.ndacts]) |*a| {
+        if (a.kind == .dialog and a.slot == dlg) n += 1;
+    }
+    return n;
+}
+
+/// **RECLAIMS A CONVERSATION NOBODY OPENS.** `MAX_DIALOGS` is 32 and the talk panel coins one the moment a
+/// body is given a voice, so without this an afternoon of adding and deleting folk fills the table with
+/// conversations nothing can reach. Refuses while anything still names it (`dialogUsers`). The node arena is
+/// rebuilt around the hole for `writeTalk`'s reason — a dialog owns a CONTIGUOUS run of it.
+pub fn removeDialog(m: *Map, dlg: u16) bool {
+    if (dlg >= m.ndialogs or dialogUsers(m, dlg) > 0) return false;
+
+    var nodes: [MAX_NODES]Node = undefined;
+    var acts: [MAX_DACTS]Act = undefined;
+    var nn: u16 = 0;
+    var na: u16 = 0;
+    for (m.dialogs[0..m.ndialogs], 0..) |*d, di| {
+        if (di == dlg) continue;
+        const at = nn;
+        const shift = @as(i32, at) - @as(i32, d.node0);
+        for (m.nodesOf(d)) |*src| {
+            var nd = src.*;
+            nd.act0 = na;
+            for (m.dactRun(src.act0, src.nact)) |*a| {
+                acts[na] = a.*;
+                na += 1;
+            }
+            if (nd.next != NO_NODE) nd.next = @intCast(@as(i32, nd.next) + shift);
+            for (nd.choices[0..nd.nchoices], src.choices[0..src.nchoices]) |*c, *csrc| {
+                c.act0 = na;
+                for (m.dactRun(csrc.act0, csrc.nact)) |*a| {
+                    acts[na] = a.*;
+                    na += 1;
+                }
+                if (c.next != NO_NODE) c.next = @intCast(@as(i32, c.next) + shift);
+            }
+            nodes[nn] = nd;
+            nn += 1;
+        }
+        d.node0 = at;
+        d.nnodes = nn - at;
+    }
+    @memcpy(m.nodes[0..nn], nodes[0..nn]);
+    @memcpy(m.dacts[0..na], acts[0..na]);
+    m.nnodes = nn;
+    m.ndacts = na;
+
+    std.mem.copyForwards(Dialog, m.dialogs[dlg .. m.ndialogs - 1], m.dialogs[dlg + 1 .. m.ndialogs]);
+    m.ndialogs -= 1;
+
+    // Everything that indexed a conversation ABOVE the hole counts one lower now. The NAMES are what the file
+    // stores and `link` re-resolves, so these are the live indices only — but the editor runs on them.
+    for (m.npcs[0..m.nnpcs]) |*p| {
+        if (p.dlg != NO_DIALOG and p.dlg > dlg) p.dlg -= 1;
+    }
+    const Fix = struct {
+        gone: u16,
+        fn cond(self: @This(), c: *Cond) void {
+            if (c.kind == .talked and c.slot > self.gone) c.slot -= 1;
+        }
+        fn act(self: @This(), a: *Act) void {
+            if (a.kind == .dialog and a.slot > self.gone) a.slot -= 1;
+        }
+    };
+    eachCond(m, Fix{ .gone = dlg }, Fix.cond);
+    eachAct(m, Fix{ .gone = dlg }, Fix.act);
+    compactText(m);
+    return true;
+}
+
+/// A conversation name no dialog is using yet. `talk{n}` after the body's own kind, walked until it is free —
+/// the record index alone collided the moment a body below it was deleted and the list closed up.
+pub fn freeDialogName(m: *const Map, buf: []u8, kind: NpcKind) []const u8 {
+    var i: usize = 0;
+    while (i < MAX_DIALOGS * 2) : (i += 1) {
+        const nm = std.fmt.bufPrint(buf, "{s}_talk{d}", .{ @tagName(kind), i }) catch return "talk";
+        if (m.findDialog(nm) == null) return nm;
+    }
+    return "talk";
+}
+
+/// Appends an empty conversation and hands back its index. The NAME is the caller's, and it is also what the
+/// npc's `dlg=` will spell — `findDialog` is how a reload finds it again.
+pub fn addTalk(m: *Map, name: []const u8, t: *const Talk) !u16 {
+    if (m.ndialogs >= MAX_DIALOGS) return ParseError.TooManyDialogs;
+    if (m.findDialog(name) != null) return ParseError.UnknownRef;
+    var d = Dialog{ .node0 = @intCast(m.nnodes) };
+    try setId(&d.id, name);
+    m.dialogs[m.ndialogs] = d;
+    const at: u16 = @intCast(m.ndialogs);
+    m.ndialogs += 1;
+    try writeTalk(m, at, t);
+    return at;
+}
 
 /// APPEND-ONLY, for `FoeKind`'s reason: it is an `enum(u8)` and the editor's own picker indexes it by ordinal. The MAP FILE is safe either way — `parseScript` reads the kind back by TAG (`enumFromName`).
 pub const NpcKind = enum(u8) { wanderer, merchant, smith };
@@ -1616,6 +2093,8 @@ fn writeScript(m: *const Map, w: anytype) !void {
     }
 
     for (m.dialogs[0..m.ndialogs]) |*d| {
+        // A SYNTHETIC IS NOT THE AUTHOR'S (`seedDialogs`), so it never lands in his file.
+        if (d.synth) continue;
         try w.print("\ndlg: {s}\n", .{d.label()});
         for (m.nodesOf(d)) |*nd| {
             try w.print("  node: {s}\n", .{idText(&nd.id)});
@@ -2230,6 +2709,9 @@ fn link(m: *Map) !void {
         if (a.kind != .dialog) continue;
         a.slot = m.findDialog(m.spanText(a.ref)) orelse return ParseError.UnknownRef;
     }
+    // **AFTER EVERY NAMED REFERENCE IS RESOLVED.** The synthetics are appended through `addTalk`, which writes
+    // its own node indices, so nothing above may still be resolving a name against the table this extends.
+    seedDialogs(m);
     for (m.dialogs[0..m.ndialogs]) |*d| {
         const run = m.nodes[d.node0 .. d.node0 + d.nnodes];
         for (run) |*nd| {
@@ -3905,4 +4387,428 @@ test "A TRIGGER ON A NAME THE MAP NEVER DECLARED WRITES A NAME, NOT UNDEFINED ME
     try std.testing.expectEqual(@as(usize, 1), back.ntrigs);
     try std.testing.expect(back.nflags == 1 and back.ncounters == 1 and back.ntimers == 1);
     try std.testing.expectEqualStrings("unset", idText(&back.flagNames[0]));
+}
+
+test "A COUNTER'S CONVERSATION AUTHORS, SAVES AND LOADS BACK — greeting, lines, and which stall each opens" {
+    const alloc = std.testing.allocator;
+    const m = try testMap(alloc, TEST_HEAD ++
+        \\npc: merchant 4.00 2.00 180.0 1.00 0.20
+        \\
+    );
+    defer alloc.destroy(m);
+
+    var t = Talk{};
+    t.setLine("Salt and iron, traveller. Both keep.");
+    t.rows[0] = .{ .does = .shop };
+    t.rows[0].setLabel("Show me your wares.");
+    t.rows[1] = .{ .does = .leave };
+    t.rows[1].setLabel("Nothing today.");
+    t.nrows = 2;
+
+    const di = try addTalk(m, "merchant_talk", &t);
+    m.npcs[0].dlg = di;
+    m.npcs[0].dlgRef = try m.addText("merchant_talk");
+
+    var buf: [8192]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    const out = fbs.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, out, "dlg=merchant_talk") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "  say: Salt and iron, traveller. Both keep.\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "  ask: Show me your wares. -> end\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "  gets: shop\n") != null);
+
+    var back: Map = undefined;
+    var bl: usize = 0;
+    try parse(out, &back, &bl);
+    // **BY NAME, NOT BY INDEX.** The file stores the name and `link` resolves it, and the table the index
+    // points into is not the one it was built in — `seedDialogs` stands a `merchant_default` up beside it.
+    const at = back.findDialog("merchant_talk") orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(at, back.npcs[0].dlg);
+    try std.testing.expect(!back.dialogs[at].synth);
+    const rt = readTalk(&back, at) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings(t.line(), rt.line());
+    try std.testing.expectEqual(@as(u8, 2), rt.nrows);
+    try std.testing.expectEqualStrings("Show me your wares.", rt.rows[0].label());
+    try std.testing.expectEqual(Does.shop, rt.rows[0].does);
+    try std.testing.expectEqual(Does.leave, rt.rows[1].does);
+}
+
+test "EDITING ONE CONVERSATION LEAVES A HAND-WRITTEN TREE BESIDE IT ALONE" {
+    const alloc = std.testing.allocator;
+    const m = try testMap(alloc, TEST_HEAD ++
+        \\dlg: smith
+        \\  node: root
+        \\  say: Bring me stone.
+        \\  ask: Work my blade. -> end
+        \\  gets: smithy
+        \\dlg: hunter
+        \\  node: root
+        \\  say: A long road.
+        \\  ask: North? -> north
+        \\  ask: Nothing. -> end
+        \\  node: north
+        \\  say: The gate stands shut.
+        \\  act: flag told=1
+        \\  then: root
+        \\
+    );
+    defer alloc.destroy(m);
+
+    try std.testing.expect(readTalk(m, 0) != null);
+    try std.testing.expect(readTalk(m, 1) == null);
+
+    // Grow the smith by a line: every index the hunter's tree stands on has to be re-based, not left behind.
+    var t = readTalk(m, 0).?;
+    t.rows[1] = .{ .does = .again };
+    t.rows[1].setLabel("Tell me of the wood.");
+    t.rows[2] = .{ .does = .leave };
+    t.rows[2].setLabel("Farewell.");
+    t.nrows = 3;
+    try writeTalk(m, 0, &t);
+
+    const hunter = m.dialogAt(1).?;
+    try std.testing.expectEqual(@as(u16, 2), hunter.nnodes);
+    const root = &m.nodes[hunter.node0];
+    const north = &m.nodes[hunter.node0 + 1];
+    try std.testing.expectEqual(hunter.node0 + 1, root.choices[0].next);
+    try std.testing.expectEqual(hunter.node0, north.next);
+    try std.testing.expectEqual(@as(u8, 1), north.nact);
+    try std.testing.expectEqual(ActKind.flag, m.dactRun(north.act0, north.nact)[0].kind);
+    // …and the smith's own `.again` points at the smith's node, not at whatever now sits at that index.
+    const smith = m.dialogAt(0).?;
+    try std.testing.expectEqual(smith.node0, m.nodes[smith.node0].choices[1].next);
+    try std.testing.expectEqual(NO_NODE, m.nodes[smith.node0].choices[2].next);
+
+    var buf: [8192]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    var back: Map = undefined;
+    var bl: usize = 0;
+    try parse(fbs.getWritten(), &back, &bl);
+    try std.testing.expectEqual(@as(u8, 3), readTalk(&back, 0).?.nrows);
+    try std.testing.expect(readTalk(&back, 1) == null);
+}
+
+test "RE-SAYING A GREETING DOES NOT FILL THE TEXT ARENA — the editor commits over and over" {
+    const alloc = std.testing.allocator;
+    const m = try testMap(alloc, TEST_HEAD ++
+        \\npc: merchant 4.00 2.00 180.0 1.00 0.20 dlg=wares
+        \\  call: The Caravaneer
+        \\dlg: wares
+        \\  node: root
+        \\  say: Salt and iron.
+        \\  ask: Show me. -> end
+        \\  gets: shop
+        \\trig: hello
+        \\  when: talked wares
+        \\  do: text You have met the caravaneer.
+        \\
+    );
+    defer alloc.destroy(m);
+
+    var t = readTalk(m, 0) orelse return error.TestUnexpectedResult;
+    t.setLine("Salt and iron, traveller. Both keep. Both are heavy, and both are worth the carrying.");
+
+    // A COMMIT IS NOT A LEAK. Two hundred of them is far past what any authoring session does.
+    const before = m.ndtext;
+    for (0..200) |_| try writeTalk(m, 0, &t);
+    std.debug.print("\n  talk arena: {d} bytes before 200 commits, {d} after (cap {d})\n", .{ before, m.ndtext, DTEXT_CAP });
+    try std.testing.expect(m.ndtext < DTEXT_CAP / 4);
+
+    try std.testing.expectEqualStrings("The Caravaneer", m.spanText(m.npcs[0].call));
+    try std.testing.expectEqualStrings("wares", m.spanText(m.npcs[0].dlgRef));
+    try std.testing.expectEqualStrings("You have met the caravaneer.", m.spanText(m.trigs[0].acts[0].line));
+    try std.testing.expectEqualStrings("wares", m.spanText(m.trigs[0].conds[0].ref));
+    try std.testing.expectEqualStrings(t.line(), readTalk(m, 0).?.line());
+
+    var buf: [8192]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    var back: Map = undefined;
+    var bl: usize = 0;
+    try parse(fbs.getWritten(), &back, &bl);
+    try std.testing.expectEqualStrings(t.line(), readTalk(&back, 0).?.line());
+    try std.testing.expectEqual(@as(u16, 0), back.npcs[0].dlg);
+}
+
+test "DELETING A BODY KEEPS EVERY `near` POINTING AT THE BODY IT MEANT — and the map still loads" {
+    const alloc = std.testing.allocator;
+    const m = try testMap(alloc, TEST_HEAD ++
+        \\npc: wanderer 0.00 0.00 0.0 1.00 0.10
+        \\npc: merchant 4.00 0.00 0.0 1.00 0.20
+        \\npc: smith 8.00 0.00 0.0 1.00 0.30
+        \\trig: at_smith
+        \\  when: near npc=2 r=3.0
+        \\  do: flag met_smith=1
+        \\trig: at_merchant
+        \\  when: near npc=1 r=3.0
+        \\  do: flag met_merchant=1
+        \\
+    );
+    defer alloc.destroy(m);
+
+    // Delete the WANDERER, which is below both watches: each has to count one lower or it watches a stranger.
+    const broke = removeNpc(m, 0);
+    try std.testing.expectEqual(@as(usize, 0), broke.conds);
+    try std.testing.expectEqual(@as(usize, 2), m.nnpcs);
+    try std.testing.expectEqual(NpcKind.merchant, m.npcs[0].kind);
+    try std.testing.expectEqual(@as(u16, 1), m.trigs[0].conds[0].slot); // the smith, now #1
+    try std.testing.expectEqual(@as(u16, 0), m.trigs[1].conds[0].slot); // the merchant, now #0
+
+    // Now delete the body a trigger is actually watching: it may not be left pointing past the end.
+    const broke2 = removeNpc(m, 1);
+    try std.testing.expectEqual(@as(usize, 1), broke2.conds);
+    try std.testing.expectEqual(CondKind.never, m.trigs[0].conds[0].kind);
+
+    // **THE CLAIM IS THAT IT STILL LOADS.** `link` refuses a `near` past the end, so before this the editor
+    // could write a map it could not open again.
+    var buf: [8192]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    var back: Map = undefined;
+    var bl: usize = 0;
+    try parse(fbs.getWritten(), &back, &bl);
+    try std.testing.expectEqual(@as(usize, 1), back.nnpcs);
+}
+
+test "A CONVERSATION NOBODY OPENS IS RECLAIMED, and one anything still names is left standing" {
+    const alloc = std.testing.allocator;
+    const m = try testMap(alloc, TEST_HEAD ++
+        \\npc: merchant 0.00 0.00 0.0 1.00 0.20 dlg=wares
+        \\npc: smith 8.00 0.00 0.0 1.00 0.30 dlg=forge
+        \\dlg: wares
+        \\  node: root
+        \\  say: Salt and iron.
+        \\  ask: Show me. -> end
+        \\  gets: shop
+        \\dlg: forge
+        \\  node: root
+        \\  say: Bring me stone.
+        \\  ask: Work my blade. -> end
+        \\  gets: smithy
+        \\dlg: spare
+        \\  node: root
+        \\  say: Nothing here.
+        \\  then: end
+        \\trig: seen
+        \\  when: talked spare
+        \\  do: flag done=1
+        \\
+    );
+    defer alloc.destroy(m);
+    try std.testing.expectEqual(@as(usize, 3), m.ndialogs);
+
+    // `spare` is named by a `talked` condition, so it stays whatever else happens.
+    try std.testing.expectEqual(@as(usize, 1), dialogUsers(m, 2));
+    try std.testing.expect(!removeDialog(m, 2));
+
+    try std.testing.expectEqual(@as(usize, 1), dialogUsers(m, 0));
+    _ = removeNpc(m, 0);
+    try std.testing.expect(removeDialog(m, 0));
+    try std.testing.expectEqual(@as(usize, 2), m.ndialogs);
+
+    try std.testing.expectEqualStrings("forge", m.dialogs[0].label());
+    try std.testing.expectEqual(@as(u16, 0), m.npcs[0].dlg);
+    try std.testing.expectEqual(@as(u16, 1), m.trigs[0].conds[0].slot);
+    const t = readTalk(m, 0) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("Work my blade.", t.rows[0].label());
+    try std.testing.expectEqual(Does.smithy, t.rows[0].does);
+
+    var buf: [8192]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    var back: Map = undefined;
+    var bl: usize = 0;
+    try parse(fbs.getWritten(), &back, &bl);
+    try std.testing.expectEqual(@as(usize, 2), back.ndialogs);
+    try std.testing.expectEqual(@as(u16, 0), back.npcs[0].dlg);
+    try std.testing.expectEqual(Does.smithy, readTalk(&back, 0).?.rows[0].does);
+}
+
+test "A COINED CONVERSATION NAME IS FREE — the record index alone collided as soon as a body was deleted" {
+    const alloc = std.testing.allocator;
+    const m = try testMap(alloc, TEST_HEAD ++
+        \\npc: merchant 0.00 0.00 0.0 1.00 0.20
+        \\
+    );
+    defer alloc.destroy(m);
+    var nb: [ID_CAP]u8 = undefined;
+
+    var seed = Talk{};
+    seed.setLine("Salt and iron.");
+    seed.rows[0] = .{ .does = .shop };
+    seed.rows[0].setLabel("Show me.");
+    seed.nrows = 1;
+
+    // Every coin walks past the names already taken, so a map can hold the whole table without a collision.
+    // Counted as a DELTA: the body arrived with `merchant_default` already standing behind it (`seedDialogs`).
+    const had = m.ndialogs;
+    var made: usize = 0;
+    while (made < 8) : (made += 1) {
+        const nm = freeDialogName(m, &nb, .merchant);
+        _ = try addTalk(m, nm, &seed);
+    }
+    try std.testing.expectEqual(had + 8, m.ndialogs);
+    for (0..m.ndialogs) |a| {
+        for (a + 1..m.ndialogs) |b| {
+            try std.testing.expect(!std.mem.eql(u8, m.dialogs[a].label(), m.dialogs[b].label()));
+        }
+    }
+    std.debug.print("\n  coined: {s} .. {s}\n", .{ m.dialogs[0].label(), m.dialogs[m.ndialogs - 1].label() });
+}
+
+test "THE COUNTER ACTS SURVIVE EVERY EDIT — a shop stays a shop through a rebuild, a removal and a round trip" {
+    const alloc = std.testing.allocator;
+    const m = try testMap(alloc, TEST_HEAD ++
+        \\npc: merchant 0.00 0.00 0.0 1.00 0.20 dlg=wares
+        \\npc: smith 8.00 0.00 0.0 1.00 0.30 dlg=forge
+        \\npc: wanderer 4.00 4.00 0.0 1.00 0.40
+        \\dlg: wares
+        \\  node: root
+        \\  say: Salt and iron.
+        \\  ask: Show me. -> end
+        \\  gets: shop
+        \\  ask: Nothing. -> end
+        \\dlg: forge
+        \\  node: root
+        \\  say: Bring me stone.
+        \\  ask: Work my blade. -> end
+        \\  gets: smithy
+        \\
+    );
+    defer alloc.destroy(m);
+
+    var t = readTalk(m, 0).?;
+    t.rows[2] = .{ .does = .again };
+    t.rows[2].setLabel("Tell me the road.");
+    t.nrows = 3;
+    try writeTalk(m, 0, &t);
+    _ = removeNpc(m, 2);
+
+    var buf: [8192]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    var back: Map = undefined;
+    var bl: usize = 0;
+    try parse(fbs.getWritten(), &back, &bl);
+
+    const shop = readTalk(&back, back.npcs[0].dlg).?;
+    const forge = readTalk(&back, back.npcs[1].dlg).?;
+    try std.testing.expectEqual(Does.shop, shop.rows[0].does);
+    try std.testing.expectEqual(@as(u8, 3), shop.nrows);
+    try std.testing.expectEqual(Does.smithy, forge.rows[0].does);
+    const nd = &back.nodes[back.dialogAt(back.npcs[1].dlg).?.node0];
+    try std.testing.expectEqual(ActKind.smithy, back.dactRun(nd.choices[0].act0, nd.choices[0].nact)[0].kind);
+}
+
+test "A CONVERSATION THAT NAMES ITS SPEAKER KEEPS THE NAME THROUGH THE PANEL" {
+    const alloc = std.testing.allocator;
+    const m = try testMap(alloc, TEST_HEAD ++
+        \\npc: merchant 0.00 0.00 0.0 1.00 0.20 dlg=wares
+        \\  call: Salt-Factor
+        \\dlg: wares
+        \\  node: root
+        \\  who: The Salt-Factor
+        \\  say: Salt and iron.
+        \\  ask: Show me. -> end
+        \\  gets: shop
+        \\
+    );
+    defer alloc.destroy(m);
+
+    var t = readTalk(m, 0) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("The Salt-Factor", t.speaker());
+
+    t.setLine("Salt, iron, and a road under both.");
+    try writeTalk(m, 0, &t);
+    var buf: [8192]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "  who: The Salt-Factor\n") != null);
+
+    var back: Map = undefined;
+    var bl: usize = 0;
+    try parse(fbs.getWritten(), &back, &bl);
+    try std.testing.expectEqualStrings("The Salt-Factor", readTalk(&back, 0).?.speaker());
+
+    // …and clearing it writes no `who:` at all, which is what falls back to the body's own name.
+    var t2 = readTalk(&back, 0).?;
+    t2.setSpeaker("");
+    try writeTalk(&back, 0, &t2);
+    fbs.reset();
+    try write(&back, fbs.writer());
+    try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "who:") == null);
+    try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "call: Salt-Factor") != null);
+}
+
+test "A ONE-NODE CONVERSATION THAT POINTS AT ITSELF IS NOT ONE THE PANEL WILL TOUCH" {
+    const alloc = std.testing.allocator;
+    const m = try testMap(alloc, TEST_HEAD ++
+        \\dlg: loop
+        \\  node: root
+        \\  say: Round and round.
+        \\  then: root
+        \\
+    );
+    defer alloc.destroy(m);
+    // No lines to press and a `then:` that comes back here is a panel with no way out — refused, so the
+    // editor shows it as a tree rather than quietly rewriting it into one that ends.
+    try std.testing.expect(readTalk(m, 0) == null);
+}
+
+test "A BODY THE FILE LEFT SILENT STILL TALKS — and the default never lands back in his file" {
+    const alloc = std.testing.allocator;
+    const m = try testMap(alloc, TEST_HEAD ++
+        \\npc: merchant 4.00 2.00 180.0 1.00 0.20
+        \\npc: smith 8.00 2.00 180.0 1.00 0.30
+        \\npc: merchant -4.00 2.00 0.0 1.00 0.40
+        \\
+    );
+    defer alloc.destroy(m);
+
+    // The shipped map's own shape: a merchant and a smith with no `dlg=`, and no prompt over either before this.
+    for (m.npcSlice()) |*p| try std.testing.expect(p.dlg != NO_DIALOG);
+    try std.testing.expectEqual(m.npcs[0].dlg, m.npcs[2].dlg);
+    try std.testing.expect(m.npcs[0].dlg != m.npcs[1].dlg);
+    try std.testing.expectEqual(@as(usize, 2), m.ndialogs);
+
+    const shop = readTalk(m, m.npcs[0].dlg) orelse return error.TestUnexpectedResult;
+    const forge = readTalk(m, m.npcs[1].dlg) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(Does.shop, shop.rows[0].does);
+    try std.testing.expectEqual(Does.smithy, forge.rows[0].does);
+    std.debug.print("\n  silent bodies: {d} kinds seeded, merchant says \"{s}\"\n", .{ m.ndialogs, shop.rows[0].label() });
+
+    // His file stays exactly what he wrote: no `dlg=` on the lines, no `dlg:` block for either default.
+    var buf: [16384]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    const out = fbs.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, out, "dlg=") == null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "merchant_default") == null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "smith_default") == null);
+
+    var back: Map = undefined;
+    var bl: usize = 0;
+    try parse(out, &back, &bl);
+    try std.testing.expectEqual(@as(usize, 2), back.ndialogs);
+    for (back.npcSlice()) |*p| try std.testing.expect(p.dlg != NO_DIALOG);
+}
+
+test "A DEFAULT IS NEVER MISTAKEN FOR THE AUTHOR'S — a named conversation wins and is not synthetic" {
+    const alloc = std.testing.allocator;
+    const m = try testMap(alloc, TEST_HEAD ++
+        \\npc: merchant 0.00 0.00 0.0 1.00 0.20 dlg=wares
+        \\npc: merchant 6.00 0.00 0.0 1.00 0.30
+        \\dlg: wares
+        \\  node: root
+        \\  say: My own words.
+        \\  ask: Aye. -> end
+    );
+    defer alloc.destroy(m);
+    const named = m.findDialog("wares").?;
+    try std.testing.expectEqual(named, m.npcs[0].dlg);
+    try std.testing.expect(!m.dialogs[named].synth);
+    try std.testing.expect(m.npcs[1].dlg != named);
+    try std.testing.expect(m.dialogs[m.npcs[1].dlg].synth);
 }

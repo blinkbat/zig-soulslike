@@ -39,7 +39,14 @@ const Toast = struct {
     kind: item.Kind = .crimson_flask,
     n: u16 = 1,
     t: f32 = 0,
+    /// **NON-ZERO MAKES IT A PURSE AND NOT A THING** (`COIN_NAME`). Coin is the one drop with no `item.Kind`
+    /// behind it — it never enters the bag — so it rides the strip on its own field rather than as a fake row
+    /// in `item`, and `kind` means nothing on this toast.
+    coin: u32 = 0,
 };
+
+/// What a purse on the ground is called, spelled once so the strip and anything after it cannot disagree.
+pub const COIN_NAME: [:0]const u8 = "Pile of Coins";
 
 const Card = struct {
     kind: item.Kind = .crimson_flask,
@@ -86,6 +93,25 @@ pub const Award = struct {
             self.ntoasts -= 1;
         }
         self.toasts[self.ntoasts] = t;
+        self.ntoasts += 1;
+    }
+
+    /// **A PURSE TOASTS, IT DOES NOT CARD.** There is no first-time card for money — nothing about the tenth
+    /// pile is different from the first, and a modal over a running fight for 30 coin is an interruption and
+    /// not news. Merges into the purse already standing rather than stacking a strip of them off one fight.
+    pub fn gainCoin(self: *Award, n: u32) void {
+        if (n == 0) return;
+        for (self.toasts[0..self.ntoasts]) |*t| {
+            if (t.coin == 0) continue;
+            t.coin += n;
+            t.t = 0;
+            return;
+        }
+        if (self.ntoasts >= TOAST_CAP) {
+            std.mem.copyForwards(Toast, self.toasts[0 .. TOAST_CAP - 1], self.toasts[1..TOAST_CAP]);
+            self.ntoasts = TOAST_CAP - 1;
+        }
+        self.toasts[self.ntoasts] = .{ .coin = n };
         self.ntoasts += 1;
     }
 
@@ -146,9 +172,18 @@ pub const Award = struct {
             const x = sw - TOAST_W - TOAST_MARGIN + slide;
             uiart.plate(x, y, TOAST_W, TOAST_H, mathx.u8f(212.0 * outK));
             uiart.frame(x, y, TOAST_W, TOAST_H, a);
+            const ny = y + @divTrunc(TOAST_H - hud.lineH(hud.TINY), 2);
+            if (t.coin > 0) {
+                uiart.coinMark(@floatFromInt(x + 26), @floatFromInt(y + @divTrunc(TOAST_H, 2)), uiart.MARK_R, a);
+                hud.text(COIN_NAME, x + 50, ny, hud.TINY, mathx.withAlpha(uiart.GILT, a));
+                var gb: [16]u8 = undefined;
+                const amt = std.fmt.bufPrintZ(&gb, "{d}g", .{t.coin}) catch "";
+                hud.text(amt, x + TOAST_W - 18 - hud.textW(amt, hud.TINY), ny, hud.TINY, mathx.withAlpha(uiart.GILT_BRIGHT, a));
+                y += TOAST_H + TOAST_GAP;
+                continue;
+            }
             itemart.draw(t.kind, @floatFromInt(x + 26), @floatFromInt(y + @divTrunc(TOAST_H, 2)), 30.0);
             const name = item.displayName(t.kind);
-            const ny = y + @divTrunc(TOAST_H - hud.lineH(hud.TINY), 2);
             hud.text(name, x + 50, ny, hud.TINY, mathx.withAlpha(uiart.GILT, a));
             if (t.n > 1) {
                 var buf: [12]u8 = undefined;

@@ -95,6 +95,19 @@ pub fn draw(c: *const counter.Counter, h: *const heromod.Hero, bag: *const item.
         hud.mono(st, x + PAD, y + 40, hud.MONO, uiart.GILT_DIM);
     }
 
+    // **AN EMPTY LIST SAYS SO.** Only the SELL side can be empty (`STOCK` and `FORGEABLE` never are), and an
+    // empty plate with a button strip under it reads as a screen that failed to load rather than as a bag with
+    // nothing in it worth coin.
+    if (list.len == 0) {
+        hud.text(
+            if (c.selling) "Nothing in your bag is worth coin to me." else "Nothing on the shelf today.",
+            x + PAD + 8,
+            y + HEAD_H,
+            hud.BODY,
+            NAME_OFF,
+        );
+    }
+
     var i: usize = 0;
     while (i < list.len) : (i += 1) {
         const r = list[i];

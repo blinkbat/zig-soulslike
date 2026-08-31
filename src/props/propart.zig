@@ -191,6 +191,7 @@ pub fn towerDoorway(i: i32) bool {
 pub const Course = struct {
     thick: f32,
     height: f32,
+    y0: f32 = 0,
     courses: i32 = 9,
     blockW: f32 = 0.72,
     crumbleTop: f32 = 0.45,
@@ -214,8 +215,7 @@ pub fn courseInto(bb: *Builder, r: *mathx.Rng, ax: f32, az: f32, bx: f32, bz: f3
     if (spec.core > 0.001) {
         var c: i32 = 0;
         while (c < spec.courses) : (c += 1) {
-            const y0 = @as(f32, @floatFromInt(c)) * ch;
-            const yc = y0 + ch * 0.5;
+            const yc = spec.y0 + @as(f32, @floatFromInt(c)) * ch + ch * 0.5;
             const open = yc > spec.sillY and yc < spec.headY;
             const lo: f32 = if (open) spec.gapLo else runLen * 0.5;
             const hi: f32 = if (open) spec.gapHi else runLen * 0.5;
@@ -237,7 +237,7 @@ pub fn courseInto(bb: *Builder, r: *mathx.Rng, ax: f32, az: f32, bx: f32, bz: f3
     }
     var c: i32 = 0;
     while (c < spec.courses) : (c += 1) {
-        const yc = @as(f32, @floatFromInt(c)) * ch + ch * 0.5;
+        const yc = spec.y0 + @as(f32, @floatFromInt(c)) * ch + ch * 0.5;
         const crumble: f32 = if (c >= spec.courses - 2) spec.crumbleTop else spec.crumble;
         const nb: i32 = @intFromFloat(@max(runLen / spec.blockW, 2.0));
         var i: i32 = 0;

@@ -1663,8 +1663,8 @@ worlds/test_x.world` (and `--shot` with it). Nothing under test goes into the sh
 `test_foggate` is the gate at three sizes and yaws plus a channel dug to 1.31 m, the one depth the hero can
 cross and nothing on foot will follow him into.
 
-- **THE UNITS PALETTE IS TWO TABS AND THE FOES ARE FILED BY KINGDOM** (`editor.UnitTab`, `foe.homeOf`). Thirty
-  eight icon rows in one column is 1136 px of list in a 738 px panel: **the bottom fourteen creatures were drawn
+- **THE UNITS PALETTE IS TWO TABS AND THE FOES ARE FILED BY KINGDOM** (`editor.UnitTab`, `foe.homeOf`). Forty
+  one icon rows in one column is 1220 px of list in a 738 px panel: **the bottom seventeen creatures were drawn
   off the end of the window and could not be clicked at all.** Foes / Folk, and under Foes a chip per
   `props.Biome` that holds one — the same axis the props are filed on, so the two palettes split the world the
   same way. Tallest tab is 12 rows now. `foe.homeOf` is an EXHAUSTIVE switch (`traitsOf`'s reason: a creature

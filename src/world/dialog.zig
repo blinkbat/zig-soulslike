@@ -56,6 +56,32 @@ pub const Input = struct {
     pick: ?usize = null,
 };
 
+/// **THE PLATE'S HEIGHT, IN THE ORDER THE DRAW WALKS IT** — one pass ahead of the other, so a row added below
+/// cannot silently overflow a box laid out for the row count before it. Its own function so the fit can be
+/// MEASURED with no window open: what a counter's greeting costs is arithmetic, not a screenshot.
+pub fn plateNeed(named: bool, nlines: usize, nchoices: usize, portrait: bool) i32 {
+    const bodyH = hud.lineH(hud.BODY);
+    const rowStep = bodyH + ROW_GAP;
+    var need: i32 = PAD * 2;
+    if (named) need += bodyH + RULE_GAP * 2;
+    need += @as(i32, @intCast(nlines)) * bodyH;
+    if (nchoices > 0) need += RULE_GAP * 2 + @as(i32, @intCast(nchoices)) * rowStep;
+    need += RULE_GAP + hud.lineH(hud.HINT);
+    if (portrait) need = @max(need, PAD * 2 + PORT_H);
+    return need;
+}
+
+/// **HOW WIDE THE PROSE GETS**, portrait aside — the width `draw` wraps the greeting against, exposed so the
+/// editor's talk panel can show the author the SAME break the player will see rather than its own.
+pub fn innerWidth() i32 {
+    return rl.getScreenWidth() - SIDE_MARGIN * 2 - PAD * 2;
+}
+
+/// The tallest plate the window will grant, which is what `plateNeed` has to come in under.
+pub fn plateCap(screenH: i32) i32 {
+    return @intFromFloat(@as(f32, @floatFromInt(screenH)) * MAX_FRAC);
+}
+
 pub const Session = struct {
     dlg: u16 = wf.NO_DIALOG,
     node: u16 = wf.NO_NODE,
@@ -196,16 +222,9 @@ pub const Session = struct {
         var buf: [wf.MAX_CHOICES]usize = undefined;
         const shown = self.offered(m, rt, w, &buf);
 
-        // THE MEASURE, in the same order the draw walks it — one pass ahead of the other, so a row added below cannot silently overflow a box laid out for the row count before it.
-        var need: i32 = PAD * 2;
-        if (who.len > 0) need += bodyH + RULE_GAP * 2;
-        need += @as(i32, @intCast(lines.len)) * bodyH;
-        if (shown.len > 0) need += RULE_GAP * 2 + @as(i32, @intCast(shown.len)) * rowStep;
-        need += RULE_GAP + hud.lineH(hud.HINT);
-        if (showPort) need = @max(need, PAD * 2 + PORT_H);
+        const need = plateNeed(who.len > 0, lines.len, shown.len, showPort);
 
-        const capH = @as(i32, @intFromFloat(@as(f32, @floatFromInt(sh)) * MAX_FRAC));
-        const hpx = @min(need, capH);
+        const hpx = @min(need, plateCap(sh));
         const lift = @as(i32, @intFromFloat((1.0 - k) * RAISE_LIFT));
         const y = sh - BOTTOM_MARGIN - hpx + lift;
         const a: u8 = @intFromFloat(PLATE_A * k);
@@ -230,8 +249,14 @@ pub const Session = struct {
 
         // THE FOOTER IS THE FLOOR EVERYTHING INSIDE THE PLATE IS MEASURED AGAINST — the prose as much as the rows. `need` asked for the height it wanted and `MAX_FRAC` may have refused it on a short window, and a line that will not fit is not drawn OUTSIDE the plate.
         const footer = y + hpx - PAD - hud.lineH(hud.HINT);
+        // **THE ROWS ARE RESERVED BEFORE THE PROSE, BECAUSE ONLY THE ROWS CAN BE PRESSED.** `MAX_FRAC` can
+        // refuse the height `need` asked for on a short window, and the clip then ate the BOTTOM of the plate
+        // — the last choices. `offered` still returned them and the cursor still walked them, so a body could
+        // confirm a line that was nowhere on screen. A dropped line of prose is legible; a dropped choice is not.
+        const rowsH: i32 = if (shown.len > 0) RULE_GAP * 2 + @as(i32, @intCast(shown.len)) * rowStep else 0;
+        const proseFloor = footer - rowsH;
         for (lines) |ln| {
-            if (cy + bodyH > footer) break;
+            if (cy + bodyH > proseFloor) break;
             hud.text(ln, innerX, cy, hud.BODY, TEXT);
             cy += bodyH;
         }
@@ -419,4 +444,62 @@ test "an empty or missing dialog is refused rather than opened blank" {
     try std.testing.expect(!s.open(m, &rt, wf.NO_DIALOG, "x", null));
     try std.testing.expect(!s.open(m, &rt, 9, "x", null));
     try std.testing.expect(!s.active());
+}
+
+test "A LINE THAT OPENS A STALL ASKS FOR IT ON THE FRAME IT IS PRESSED, and the talk is gone by then" {
+    const alloc = std.testing.allocator;
+    const m = try testMap(alloc, HEAD ++
+        \\dlg: wares
+        \\  node: root
+        \\  say: Salt and iron.
+        \\  ask: Show me your wares. -> end
+        \\  gets: shop
+        \\  ask: Work my blade. -> root
+        \\  gets: smithy
+        \\  ask: Nothing today. -> end
+    );
+    defer alloc.destroy(m);
+    var rt = trigger.Runtime{};
+    rt.arm(m);
+    var s = Session{};
+    try std.testing.expect(s.open(m, &rt, 0, "Caravaneer", null));
+
+    try std.testing.expect(rt.takeCounter() == null);
+
+    pick(&s, m, &rt, 1);
+    try std.testing.expectEqual(@as(?wf.ActKind, .shop), rt.takeCounter());
+    try std.testing.expect(!s.active());
+    // …and it is DRAINED — a stale ask would re-open the stall the next time anything looked.
+    try std.testing.expect(rt.takeCounter() == null);
+
+    // THE SMITHY LINE GOES BACK TO THE TOP, so the stall opens over a conversation that is still running.
+    _ = s.open(m, &rt, 0, "Caravaneer", null);
+    pick(&s, m, &rt, 2);
+    try std.testing.expectEqual(@as(?wf.ActKind, .smithy), rt.takeCounter());
+    try std.testing.expect(s.active());
+    try std.testing.expectEqualStrings("root", wf.idText(&s.nodeOf(m).?.id));
+
+    pick(&s, m, &rt, 3);
+    try std.testing.expect(rt.takeCounter() == null);
+    try std.testing.expect(!s.active());
+}
+
+test "THE PANEL FITS EVERY LINE IT WILL OFFER — the choices are what can be pressed, so they may not be clipped" {
+    // **MEASURED, NOT LOOKED AT.** `MAX_FRAC` of the window is the ceiling; a counter's greeting wraps to a few
+    // lines and offers up to `wf.MAX_CHOICES`. What this pins is the SHORT window, where the plate is refused
+    // the height it asked for and the draw has to spend the shortfall on prose rather than on rows.
+    for ([_]i32{ 720, 800, 1009, 1440 }) |sh| {
+        const cap = plateCap(sh);
+        // The rows and the chrome round them must always fit, or a line is offered that cannot be shown.
+        const bare = plateNeed(true, 0, wf.MAX_CHOICES, false);
+        std.debug.print("\n  {d}px window: plate cap {d}, {d} lines + chrome need {d}", .{ sh, cap, wf.MAX_CHOICES, bare });
+        try std.testing.expect(bare <= cap);
+        const full = plateNeed(true, MAX_LINES, wf.MAX_CHOICES, false);
+        const proseFits = @divTrunc(cap - bare, hud.lineH(hud.BODY));
+        std.debug.print(" | {d} of {d} prose lines fit\n", .{ @min(proseFits, @as(i32, MAX_LINES)), MAX_LINES });
+        try std.testing.expect(proseFits >= 1);
+        if (full <= cap) try std.testing.expect(proseFits >= MAX_LINES);
+    }
+    // A PORTRAIT NEVER SHRINKS THE PLATE, it only ever sets a floor under it.
+    try std.testing.expect(plateNeed(true, 1, 1, true) >= plateNeed(true, 1, 1, false));
 }

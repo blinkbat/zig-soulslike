@@ -2087,3 +2087,4 @@ test "THE ANVIL IS SOLVED OFF THE STROKE, not the other way round" {
     // The stump has to clear his own footprint, or the anvil is inside him.
     try std.testing.expect(SMITH_ANVIL_Z > BODY_R * SCALE * SMITH_SIZE);
 }
+

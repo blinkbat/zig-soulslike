@@ -446,13 +446,31 @@ pub fn birchMesh(shader: rl.Shader) rl.Model {
     const fork = v3(lean, H * 0.72, rng.signed() * 0.4);
     b.addCapsule(v3(0, 0, 0), mid, 0.30, 0.24, 8, BIRCH_BARK);
     b.addCapsule(mid, fork, 0.24, 0.17, 7, BIRCH_BARK);
+    // The bole is read by its BANDS: lenticel dashes lying tangent on the bark, with a few knots between.
     var s: i32 = 0;
-    while (s < 12) : (s += 1) {
+    while (s < 22) : (s += 1) {
         const t = rng.range(0.05, 0.70);
         const a = rng.angle();
         const yy = H * t;
         const rr = 0.30 - 0.13 * t;
-        b.addBlob(v3(lean * t * 0.55 + mathx.cosf(a) * rr * 0.85, yy, mathx.sinf(a) * rr * 0.85), v3(rr * rng.range(0.25, 0.6), rng.range(0.025, 0.06), rr * rng.range(0.25, 0.6)), 3, 5, BIRCH_SCAR);
+        const ca = mathx.cosf(a);
+        const sa = mathx.sinf(a);
+        const len = rr * rng.range(0.36, 0.60);
+        b.addBox(
+            v3(lean * t * 0.55 + ca * rr * 0.95, yy, sa * rr * 0.95),
+            v3(-sa * len, rng.signed() * 0.010, ca * len),
+            v3(0, rng.range(0.018, 0.042), 0),
+            v3(ca * 0.018, 0, sa * 0.018),
+            BIRCH_SCAR,
+        );
+    }
+    var kt: i32 = 0;
+    while (kt < 5) : (kt += 1) {
+        const t = rng.range(0.10, 0.66);
+        const a = rng.angle();
+        const yy = H * t;
+        const rr = 0.30 - 0.13 * t;
+        b.addBlob(v3(lean * t * 0.55 + mathx.cosf(a) * rr * 0.88, yy, mathx.sinf(a) * rr * 0.88), v3(rr * rng.range(0.28, 0.50), rng.range(0.04, 0.09), rr * rng.range(0.28, 0.50)), 3, 5, BIRCH_SCAR);
     }
     b.setMat(.plant);
     const NB = 7;

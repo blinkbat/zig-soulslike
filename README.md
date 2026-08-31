@@ -29,13 +29,15 @@ distance travelled, not time. Roll, jump, guard, parry, three melee classes (swo
 each), bow, wand, torch.
 
 **Combat.** HP + two-tier stagger + poise + stance, stamina with a winded latch, FP, DS1-style directional
-block, L2 parry with a 0.18 s window, four PoE2 resistances plus an armour curve, poison as a build-up meter.
+block, L2 parry with a 0.16 s window, four PoE2 resistances plus an armour curve, ten status meters built the
+way poison is — poison, burning, chill, stun, bleed, sleep, confusion, charm, berserk, stupefy.
 
-**Foes.** 27 kinds in 21 groups: toad, skeletal archer, ogre, kobold warband (3 roles), brood mother + sacs +
+**Foes.** 37 kinds in 29 groups: toad, skeletal archer, ogre, kobold warband (3 roles), brood mother + sacs +
 broodlings, skeletal warriors (2), Bone Knight (boss, with boss bar and fog gate), shade + mourner, leechfly,
-rooted, sporeling, delver, necromancer, ravager, mushroom mage, fen lurker, spore homunculus, bone skitterer,
-ancient priest, tolling hollow, slumber bloom, plus the spirit wolf that fights on your side. Shared leash,
-sight, parry, nav-steering and dissipation contracts in `foe.zig`.
+rooted, sporeling, delver, necromancer, fungal deer, mushroom mage, fen lurker, spore homunculus, bone
+skitterer, ancient priest, tolling hollow, slumber bloom, cinder wake, rotgorger, birchwight, salt husk,
+fishman shoal (3 roles), blinkbat, and the fungal duo (second boss, two bars), plus the spirit wolf that fights
+on your side. Shared leash, sight, parry, nav-steering and dissipation contracts in `foe.zig`.
 
 **World.** 560 m square ringed by cliffs, five regions, 161 prop kinds in three layers each. Sculptable
 heightfield (40° slope limit, 0.55 m step). Painted soil with coverage and eight edge shapes; painted liquid
@@ -97,7 +99,7 @@ Keyboard + mouse **or** a gamepad (Elden Ring default layout).
 | Cycle memorized sorcery | G | D-pad up |
 | Plain ↔ fire arrow | U | character book's ammo slot |
 | Drink / cycle flask | R / T | Square / X / D-pad down |
-| Rest / speak / open | Y | Triangle / Y |
+| Rest / speak / open / mount a ladder | Y | Triangle / Y |
 | Answer in a conversation | Up/Down or 1-9, Enter or Y | D-pad up/down, Cross / A |
 | Zoom | Scroll wheel | — |
 | Menu | Esc | Select |
@@ -114,3 +116,9 @@ The jump costs no stamina and is committed: no double jump, and a swing pressed 
 landing. Heading and speed are set at takeoff; the stick only bends the arc. He clears 1 m — three terrain
 risers where a walk climbs two — and flies over what he is above and nothing else, creatures included. No jump
 attack, no fall damage.
+
+**Ladders** are placed in the editor and run up cliffs and structures. Interact to get on; forward climbs, back
+climbs down, back + sprint slides; jump or roll lets go. Nothing else can be done while you are on one, and a
+blow that lands peels you off it. The watchtower is hollow and now has two flights and a hatch in each floor,
+so it can be climbed to its roof — which has no rail. Nothing but the player climbs, so a ladder is an escape
+from whatever cannot follow.

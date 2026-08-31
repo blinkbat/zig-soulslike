@@ -662,7 +662,7 @@ pub const Skitterer = struct {
 pub fn triggerR(quarryR: f32) f32 {
     return SLICE_TRIGGER_R + quarryR;
 }
-/// **THE SAME RING THE TRIGGER IS, SHRUNK** (the ravager's `stopR`) — and NEITHER is scaled by the body, or the
+/// **THE SAME RING THE TRIGGER IS, SHRUNK**, where `hollow.stopR` shrinks the REACH — and NEITHER is scaled by the body, or the
 /// two invert: at `SLICE_TRIGGER_R * scale * STOP_FRAC` a placement at 1.4 halted at 1.91 m outside a trigger ring standing at 1.90.
 fn stopR(quarryR: f32) f32 {
     return SLICE_TRIGGER_R * STOP_FRAC + quarryR;

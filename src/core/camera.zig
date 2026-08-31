@@ -37,7 +37,9 @@ const AIM_DIST = 0.7;
 const AIM_SHOULDER = 0.30;
 const AIM_RAISE = 0.42;
 
-const LIFT_SHARE: f32 = 0.55;
+/// How much of a JUMP the lens takes. A climb and a fall off a deck take all of it (`game.liftShare`) — those
+/// are the body leaving the ground for good, not a hop the camera can ride out.
+pub const LIFT_SHARE: f32 = 0.55;
 const LIFT_RATE: f32 = 10.0;
 
 const SHAKE_MAX = 0.13;
@@ -130,8 +132,8 @@ pub const CamRig = struct {
         return mathx.minF(MIN_DIST, c.boom());
     }
 
-    pub fn tickLift(c: *CamRig, heroLift: f32, dt: f32) void {
-        c.lift = mathx.approach(c.lift, LIFT_SHARE * heroLift, LIFT_RATE * dt);
+    pub fn tickLift(c: *CamRig, heroLift: f32, share: f32, dt: f32) void {
+        c.lift = mathx.approach(c.lift, share * heroLift, LIFT_RATE * dt);
     }
 
     pub fn follow(c: *CamRig, shoulder: rl.Vector3) void {

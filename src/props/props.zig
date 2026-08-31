@@ -18,6 +18,7 @@ const fungus = @import("propfungus.zig");
 const coral = @import("propcoral.zig");
 const gold = @import("propgold.zig");
 const market = @import("propmarket.zig");
+const forge = @import("propforge.zig");
 
 const v3 = mathx.v3;
 
@@ -186,6 +187,11 @@ pub const Kind = enum(u8) {
     hitchrail,
     pickup,
     foggate,
+    ladder,
+    anvil,
+    forge,
+    quenchtrough,
+    toolrack,
 };
 
 
@@ -398,6 +404,11 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .hitchrail => "Hitching Rail",
         .pickup => "Item",
         .foggate => "Fog Gate",
+        .ladder => "Ladder",
+        .anvil => "Anvil",
+        .forge => "Forge",
+        .quenchtrough => "Quench Trough",
+        .toolrack => "Tool Rack",
     };
 }
 
@@ -408,16 +419,19 @@ pub fn group(k: Kind) Group {
         .banner, .sword, .graves, .sarcophagus, .bones,
         .gibbet, .cairn,
         => .ruins,
-        .chapel, .watchtower, .cottage, .tower, .gate, .causeway, .foggate => .buildings,
+        .chapel, .watchtower, .cottage, .tower, .gate, .causeway, .foggate, .ladder => .buildings,
         .obelisk, .plinth, .altar => .ruins,
         .well, .shrine, .lantern, .fence, .barrels, .woodpile, .cart, .bonfire => .village,
+        // THE FORGE YARD is village furniture: it is what a settlement has, not what a ruin has.
+        .anvil, .quenchtrough, .toolrack => .village,
         .chest, .pickup => .treasure,
         .boulder, .rocks, .outcrop, .scree, .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6, .stump, .log,
         .shards, .slabs, .cobbles, .whaleback,
         .hoodoo, .spire, .balanced, .fingers, .rotlog, .deadfall,
         => .rock,
         .tree, .bigtree, .bigtree2, .bigtree3, .willow, .conifer, .birch, .snag, .sapling => .trees,
-        .torch, .brazier, .campfire, .campfire_lit => .fire,
+        // …and the HEARTH is a fire before it is furniture: it is the one piece of the yard that lights.
+        .torch, .brazier, .campfire, .campfire_lit, .forge => .fire,
         .water => .water,
         .tuft, .patch, .grasstall, .clover, .moss => .grass,
         .flowers, .wildflowers, .foxglove, .thistle, .glow => .flowers,
@@ -473,7 +487,7 @@ pub const Biome = enum {
 
 pub fn biome(k: Kind) Biome {
     return switch (k) {
-        .rubble, .chest, .pickup, .water, .foggate,
+        .rubble, .chest, .pickup, .water, .foggate, .ladder,
         .torch, .brazier, .campfire, .campfire_lit,
         .tuft, .patch, .shrub, .flowers, .glow, .grasstall, .clover,
         .thistle, .foxglove, .heather, .gorse, .wildflowers,
@@ -485,6 +499,7 @@ pub fn biome(k: Kind) Biome {
         => .ruins,
 
         .bonfire, .cottage, .cart, .well, .shrine, .lantern, .fence, .barrels, .woodpile => .village,
+        .anvil, .forge, .quenchtrough, .toolrack => .village,
 
         .tree, .stump, .log, .bigtree, .bigtree2, .bigtree3, .willow, .conifer, .birch,
         .snag, .sapling, .rotlog, .deadfall,
@@ -594,6 +609,17 @@ comptime {
 }
 pub const Part = art.Part;
 
+pub const Deck = art.Deck;
+
+pub const LADDER_STANDOFF = build.LADDER_STANDOFF;
+
+/// How near the watchtower's axis a body can actually stand: the shaft's own radius less the wall capsules and
+/// his own. Every hatch in that tower is authored inside it, and the test beside `WATCH_DECKS` says so.
+/// **THE BODY'S HALF IS A NUMBER IN ANOTHER MODULE** — `foe.HERO_R`, which this file may not import (it sits
+/// UNDER `foes/`), so it is spelled here and `game.zig` asserts the pair, exactly as it does `env.WARD_CLEAR`.
+pub const HERO_R_HERE: f32 = 0.36;
+pub const TOWER_CLEAR = art.TOWER_R - art.TOWER_WALL_R - HERO_R_HERE;
+
 pub const Blocker = art.Blocker;
 
 pub const LightSpec = struct {
@@ -620,6 +646,14 @@ pub const Info = struct {
     /// ITS `parts` ARE WARDS, NOT WALLS (`collision.Solid.ward`) — the hero and the spirit he summons walk through, nothing else crosses either way, and no look crosses at all.
     ward: bool = false,
     parts: []const Part = &.{},
+    /// **METRES OF LOCAL HEIGHT ONE COPY OF THE MESH SPANS**, or 0 for everything else — one mesh, one draw.
+    /// A stacking kind is drawn as whole copies up its own axis for `Prop.rise` metres (`env.drawProp`), which
+    /// is the only way a run gets taller without a uniform `scale` dragging its detail out with it.
+    stack: f32 = 0,
+    /// SURFACES ABOVE THE GROUND A BODY MAY STAND ON (`env.deckAt`). Empty for everything that is only a wall.
+    decks: []const Deck = &.{},
+    /// **HE CAN GET ON IT** — the ladder's flag, and the one thing `game.mountLadder` looks for.
+    climb: bool = false,
     light: ?LightSpec = null,
     surf: collision.Surface = .stone,
 };
@@ -629,6 +663,18 @@ const FAR: f32 = 400.0;
 fn circleParts(comptime r: f32, comptime h: f32) []const Part {
     return &.{.{ .r = r, .h = h }};
 }
+
+/// **THE FLOOR AND THE HOLE IN IT ARE ONE DECLARATION.** The disc is the whole plank field — the shaft walls
+/// keep his centre inside `TOWER_R` anyway, so a smaller one would only leave a rim he could drop through — and
+/// the `hole` is the hatch, cut at the same `y` and off `propbuild`'s own numbers.
+const WATCH_DECKS = [_]Deck{
+    .{ .r = art.TOWER_R, .y = build.WATCH_DECK_TOP },
+    .{ .z = build.WATCH_HATCH_Z, .r = build.WATCH_HATCH_R, .y = build.WATCH_DECK_TOP, .hole = true },
+    // **THE ROOF, AND IT HAS NO RAIL.** The shaft's colliders stop at 11.0 m, so nothing at the parapet holds
+    // a body in: he walks to the merlons and off them, which is the whole point of standing up there.
+    .{ .r = art.TOWER_R, .y = build.WATCH_ROOF_TOP },
+    .{ .z = build.WATCH_ROOF_HATCH_Z, .r = build.WATCH_HATCH_R, .y = build.WATCH_ROOF_TOP, .hole = true },
+};
 
 const cliffParts = [_]Part{
     .{ .ax = -5.4, .bx = 5.4, .r = 2.9, .h = 15.5 },
@@ -664,7 +710,7 @@ pub const INFO = [NK]Info{
         .{ .ax = 1.15, .az = -3.6, .bx = 2.6, .bz = -3.6, .r = 0.42, .h = 4.4 },
         .{ .ax = -1.5, .az = 2.9, .bx = 1.5, .bz = 2.9, .r = 0.55, .h = 1.1 },
     } },
-    .{ .kind = .watchtower, .build = build.watchtowerMesh, .bound = 13.0, .top = 12.4, .view = FAR, .solid = true, .parts = &art.towerRing },
+    .{ .kind = .watchtower, .build = build.watchtowerMesh, .bound = 13.0, .top = 12.4, .view = FAR, .solid = true, .parts = &art.towerRing, .decks = &WATCH_DECKS },
     .{ .kind = .cottage, .build = build.cottageMesh, .bound = 5.6, .top = 4.0, .view = 280, .solid = true, .parts = &.{
         .{ .ax = -2.3, .az = -1.9, .bx = -2.3, .bz = 1.9, .r = 0.34, .h = 2.6 },
         .{ .ax = 2.3, .az = -1.9, .bx = 2.3, .bz = 1.9, .r = 0.34, .h = 2.6 },
@@ -887,10 +933,29 @@ pub const INFO = [NK]Info{
     .{ .kind = .pickup, .build = fx.pickupMesh, .bound = 1.9, .top = fx.PICKUP_TOP, .view = 190, .interact = true, .casts = false, .light = .{ .y = 0.30, .col = v3(0.86, 0.82, 0.58), .radius = 5.4, .flicker = 0.03 } },
     // `build` is the two threshold stones; the sheet is the VEIL, hence the late pass (`env.drawVeils`). `solid` because a fog wall must NOT thin between the lens and him, and it casts nothing. `ward` is the MECHANIC: a capsule the width of its own sheet that no foe and no sight crosses, and that he does.
     .{ .kind = .foggate, .build = fx.fogGateStoneMesh, .veil = fx.fogGateMesh, .bound = 5.4, .top = fx.FOG_H, .view = 320, .solid = true, .interact = true, .casts = false, .ward = true, .parts = &.{.{ .ax = -fx.FOG_W * 0.5, .bx = fx.FOG_W * 0.5, .r = fx.FOG_WARD_R, .h = fx.FOG_H }} },
+    .{ .kind = .ladder, .build = build.ladderMesh, .bound = build.LADDER_SEG + 0.2, .top = build.LADDER_SEG, .view = 210, .stack = build.LADDER_SEG, .climb = true, .surf = .wood },
+    // **THE FORGE YARD** (`propforge`), the smith's four. The anvil's own collider is DELIBERATELY SHORT of its
+    // stump: a body has to be able to stand right up against the thing to look like it is working at it, and a
+    // capsule out at `ANVIL_R` would hold the smith a horn's length off his own anvil.
+    .{ .kind = .anvil, .build = forge.anvilMesh, .bound = forge.ANVIL_R + 0.3, .top = forge.ANVIL_TOP, .view = 190, .parts = circleParts(forge.STUMP_R + 0.01, forge.ANVIL_TOP), .surf = .stone },
+    .{ .kind = .forge, .build = forge.forgeMesh, .bound = forge.FORGE_R + 1.3, .top = forge.FORGE_TOP, .view = 300, .solid = true, .parts = &.{
+        .{ .ax = -0.72, .bx = 0.72, .r = 0.62, .h = 1.10 },
+    }, .light = .{ .y = forge.FORGE_LIGHT_Y, .col = v3(1.0, 0.52, 0.18), .radius = forge.FORGE_LIGHT_R, .flicker = 0.16 } },
+    .{ .kind = .quenchtrough, .build = forge.quenchMesh, .bound = forge.QUENCH_R + 0.2, .top = forge.QUENCH_TOP, .view = 170, .parts = &.{.{ .ax = -0.62, .bx = 0.62, .r = 0.30, .h = forge.QUENCH_TOP }}, .surf = .wood },
+    .{ .kind = .toolrack, .build = forge.toolRackMesh, .bound = forge.RACK_TOP + 0.6, .top = forge.RACK_TOP, .view = 220, .parts = &.{.{ .ax = -0.62, .bx = 0.62, .r = 0.22, .h = forge.RACK_TOP * 0.9 }}, .surf = .wood },
 };
 
 pub fn info(k: Kind) *const Info {
     return &INFO[@intFromEnum(k)];
+}
+
+/// **NOTHING THAT STACKS OR IS CLIMBED MAY STAND OFF PLUMB** (`env.Placer.atY`). `game.Climb` runs a body up a
+/// VERTICAL line, and `env.drawStack` splices sections up the prop's own axis with no tilt in the transform —
+/// so a leaning stack draws plumb and collides crooked. Written as ONE predicate because the placer refused on
+/// `climb` and the draw branched on `stack`, and a stacking kind nobody climbs would have parted them.
+pub fn upright(k: Kind) bool {
+    const nfo = info(k);
+    return nfo.climb or nfo.stack > 0;
 }
 
 comptime {
@@ -945,9 +1010,44 @@ test "collider parts stay inside their kind's bounding sphere" {
     }
 }
 
-test "the watchtower's collider ring leaves exactly one doorway gap" {
-    try std.testing.expectEqual(@as(usize, art.TOWER_SIDES - art.TOWER_DOOR), art.towerRing.len);
-    for (art.towerRing) |part| try std.testing.expect(part.az > -art.TOWER_R * 0.85);
+test "the watchtower's doorway is a hole on the floor and wall at deck height" {
+    // Every side is a collider now; the three across the doorway are LINTELS, starting at the course over it.
+    try std.testing.expectEqual(@as(usize, art.TOWER_SIDES), art.towerRing.len);
+    var doors: usize = 0;
+    for (art.towerRing) |part| {
+        if (part.y0 == 0) {
+            try std.testing.expect(part.az > -art.TOWER_R * 0.85);
+            continue;
+        }
+        doors += 1;
+        try std.testing.expect(part.az <= -art.TOWER_R * 0.85);
+        try std.testing.expectEqual(art.TOWER_DOOR_HEAD, part.y0);
+    }
+    try std.testing.expectEqual(@as(usize, art.TOWER_DOOR), doors);
+    // …and the head of that opening is UNDER the middle floor, or the ladder tops out into a doorway.
+    try std.testing.expect(art.TOWER_DOOR_HEAD < build.WATCH_DECK_TOP);
+}
+
+test "the watchtower's two floors each carry their own hatch, on opposite sides of the shaft" {
+    var floors: usize = 0;
+    var holes: usize = 0;
+    for (WATCH_DECKS) |d| {
+        if (d.hole) holes += 1 else floors += 1;
+        // A hatch a body cannot stand beside is a hatch the wall shoulders him off (`propbuild.WATCH_HATCH_Z`).
+        if (d.hole) try std.testing.expect(@abs(d.z) < TOWER_CLEAR);
+        // Every deck is matched by a hole at its own height, or `env.holedAt` cancels nothing.
+        var matched = false;
+        for (WATCH_DECKS) |o| {
+            if (o.hole != d.hole and o.y == d.y) matched = true;
+        }
+        try std.testing.expect(matched);
+    }
+    try std.testing.expectEqual(@as(usize, 2), floors);
+    try std.testing.expectEqual(@as(usize, 2), holes);
+    try std.testing.expect(build.WATCH_ROOF_HATCH_Z * build.WATCH_HATCH_Z < 0);
+    // The roof is over the last course and under the parapet the merlons are authored from.
+    try std.testing.expect(build.WATCH_ROOF_TOP > build.WATCH_DECK_TOP);
+    try std.testing.expect(build.WATCH_ROOF_TOP <= info(.watchtower).top);
 }
 
 test "fires carry a light above their base and inside their own bound" {

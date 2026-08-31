@@ -12,6 +12,9 @@ pub const Solid = struct {
     b: rl.Vector3,
     r: f32,
     h: f32 = 1e9,
+    /// **AND WHERE IT STARTS** — 0 for every wall in the world, positive only for a LINTEL: the course over a
+    /// doorway, which a body on the floor walks under and a body up on a deck walks into.
+    y0: f32 = 0,
     surf: Surface = .stone,
     /// THE FOG GATE'S RULE, and the only thing in the world that has one: a wall to every BODY but the hero's own side, in both directions, and a wall to every LOOK without exception. It is the gate's slot in `env.wardProps` PLUS ONE, so 0 is an ordinary solid; only `env.resolveHeroSide` lets an OPEN one through.
     ward: u8 = 0,
@@ -52,7 +55,7 @@ pub fn resolve(p: rl.Vector3, pr: f32, solids: []const Solid) rl.Vector3 {
 }
 
 pub fn blocksPoint(p: rl.Vector3, margin: f32, s: Solid) bool {
-    if (p.y > s.h) return false;
+    if (p.y > s.h or p.y < s.y0) return false;
     const q = mathx.closestOnSegXZ(p, s.a, s.b);
     const dx = p.x - q.x;
     const dz = p.z - q.z;
@@ -95,6 +98,7 @@ fn segsCrossXZ(a0: rl.Vector3, a1: rl.Vector3, b0: rl.Vector3, b1: rl.Vector3) b
 
 pub fn blocksSight(a: rl.Vector3, b: rl.Vector3, s: Solid) bool {
     if (@min(a.y, b.y) >= s.h) return false;
+    if (@max(a.y, b.y) < s.y0) return false;
     if (@min(s.a.x, s.b.x) - s.r > @max(a.x, b.x) or @max(s.a.x, s.b.x) + s.r < @min(a.x, b.x)) return false;
     if (@min(s.a.z, s.b.z) - s.r > @max(a.z, b.z) or @max(s.a.z, s.b.z) + s.r < @min(a.z, b.z)) return false;
     return segDistXZ(a, b, s.a, s.b) < s.r;
@@ -157,6 +161,16 @@ test "resolve returns a clear actor UNTOUCHED, and pushes an overlapping one out
     try std.testing.expectEqual(p.z, clear.z);
     const out = resolve(v3(0.3, 0, 0.1), 0.4, &world);
     for (world) |s| try std.testing.expect(!blocksPoint(out, -1e-3, s));
+}
+
+test "a lintel is a wall to what is up at its level and open to what walks under it" {
+    var head = circle(0, 0, 1.0);
+    head.y0 = 3.5;
+    head.h = 11.0;
+    try std.testing.expect(!blocksPoint(v3(0.5, 1.2, 0), 0.05, head));
+    try std.testing.expect(blocksPoint(v3(0.5, 4.7, 0), 0.05, head));
+    try std.testing.expect(!blocksSight(v3(0, 1.3, -4), v3(0, 1.4, 4), head));
+    try std.testing.expect(blocksSight(v3(0, 4.7, -4), v3(0, 4.7, 4), head));
 }
 
 test "blocksPoint respects the blocking height: hits below the top, clears above it" {

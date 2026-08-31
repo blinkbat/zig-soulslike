@@ -445,11 +445,11 @@ pub const Id = enum {
     shroom_puff,
     shroom_hurt,
     shroom_die,
-    ravager_bloom,
-    ravager_leap,
-    ravager_snap,
-    ravager_hurt,
-    ravager_die,
+    deer_bloom,
+    deer_charge,
+    deer_gore,
+    deer_hurt,
+    deer_die,
     mage_kindle,
     mage_throw,
     mage_hurt,
@@ -597,6 +597,13 @@ pub const Id = enum {
     duo_burst,
     duo_fade,
     duo_bloom,
+    // **APPENDED, NOT FILED BESIDE ITS FAMILY** — the bake seeds off the ORDINAL (the note on `Id`), and
+    // slotting this in next to `deer_bloom` re-rolled every voice below it and moved the knight's heave 2%
+    // off the cyclops's, under the 3% its own test demands. The family is a NAME, not a position.
+    deer_spit,
+    // …and the same rule again: MOSSBEARD'S ANVIL goes on the end, not beside the village voices it belongs
+    // with. The bake seeds off the ORDINAL, so filing it by family re-rolls every take below it.
+    smith_ring,
 };
 const NV = @typeInfo(Id).@"enum".fields.len;
 
@@ -2401,7 +2408,7 @@ fn mkCrickets(r: *Rack) void {
 
 const BATTLE_FLOOR: f32 = 0.34;
 
-fn mkRavagerBloom(r: *Rack) void {
+fn mkDeerBloom(r: *Rack) void {
     r.air(0.0, 0.72, 0.28, 240, 1900, 0.55, 1.9);
     r.grit(0.05, 0.50, 0.13, 1500, 0.55, 2.4);
     r.choir(0.06, 0.66, 132, 0.30, 5, 0.72);
@@ -2413,14 +2420,39 @@ fn mkRavagerBloom(r: *Rack) void {
     r.master(1.5, 3000);
 }
 
-fn mkRavagerLeap(r: *Rack) void {
+/// THE VOLLEY LEAVING THE THROAT: a wet cough of air with no thump under it. It is a thing being BREATHED
+/// out, not struck — the body is what the charge sounds like and this must not be mistaken for it.
+/// **THE ANVIL, AND IT IS A BELL WITH A HAMMER ON THE FRONT OF IT.** The strike is a tick and a short body;
+/// everything after it is the RING, which is what an anvil actually is — a tuned bar that will not stop. The
+/// tail is long on purpose: he is doing this endlessly, and a dry clank would be a woodpecker.
+fn mkSmithRing(r: *Rack) void {
+    r.tick(0.0, 0.62, 5200);
+    r.body(0.0, 0.09, 420, 190, 0.62, 6.5);
+    // Two inharmonic partials over the strike — a bar rings in ratios a bell never does, and the beat between
+    // them is the whole character of struck iron.
+    r.ring(0.0, 1.35, 1180, 0.46, 1.9, 4);
+    r.ring(0.004, 1.05, 2760, 0.24, 2.6, 3);
+    r.grit(0.0, 0.10, 0.26, 3200, 0.45, 5.0);
+    r.air(0.02, 0.34, 0.12, 900, 2600, 0.30, 2.4);
+    r.master(1.7, 4200);
+}
+
+fn mkDeerSpit(r: *Rack) void {
+    r.air(0.0, 0.44, 0.40, 420, 3400, 0.42, 2.2);
+    r.grit(0.0, 0.30, 0.30, 1100, 0.62, 3.0);
+    r.choir(0.04, 0.36, 168, 0.10, 3, 0.70);
+    r.wow(0.010, 1.4);
+    r.master(1.3, 3200);
+}
+
+fn mkDeerCharge(r: *Rack) void {
     r.grit(0.0, 0.13, 0.34, 2600, 0.70, 2.6);
     r.body(0.05, 0.20, 150, 62, 0.62, 4.2);
     r.air(0.06, 0.26, 0.24, 700, 2400, 0.34, 2.2);
     r.master(1.8, 3400);
 }
 
-fn mkRavagerSnap(r: *Rack) void {
+fn mkDeerGore(r: *Rack) void {
     r.body(0.0, 0.07, 300, 96, 0.85, 6.5);
     r.air(0.0, 0.20, 0.42, 3000, 420, 0.62, 3.0);
     r.grit(0.01, 0.10, 0.24, 1900, 0.45, 3.4);
@@ -2428,14 +2460,14 @@ fn mkRavagerSnap(r: *Rack) void {
     r.master(2.0, 3200);
 }
 
-fn mkRavagerHurt(r: *Rack) void {
+fn mkDeerHurt(r: *Rack) void {
     r.growl(0.0, 0.26, 380, 720, 0.52, 0.46, 0.09);
     r.air(0.02, 0.30, 0.26, 1400, 3400, 0.48, 1.6);
     r.grit(0.0, 0.18, 0.22, 2800, 0.50, 2.2);
     r.master(2.1, 3600);
 }
 
-fn mkRavagerDie(r: *Rack) void {
+fn mkDeerDie(r: *Rack) void {
     r.growl(0.0, 0.30, 620, 190, 0.54, 0.52, 0.10);
     r.air(0.10, 0.86, 0.34, 2200, 200, 0.50, 1.2);
     r.grit(0.14, 0.52, 0.18, 1200, 0.60, 1.8);
@@ -2639,11 +2671,11 @@ const BANK = [NV]Row{
     .{ .id = .shroom_puff, .make = mkShroomPuff, .gain = battle(0.56), .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 30 },
     .{ .id = .shroom_hurt, .make = mkShroomHurt, .gain = battle(0.48), .mix = .combat, .jit = 0.16, .vjit = 0.24, .vars = 4, .poly = 3, .reach = 26 },
     .{ .id = .shroom_die, .make = mkShroomDie, .gain = battle(0.56), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 30 },
-    .{ .id = .ravager_bloom, .make = mkRavagerBloom, .gain = battle(0.70), .mix = .combat, .jit = 0.08, .vjit = 0.14, .vars = 4, .poly = 4, .reach = 34 },
-    .{ .id = .ravager_leap, .make = mkRavagerLeap, .gain = battle(0.52), .mix = .combat, .jit = 0.14, .vjit = 0.22, .vars = 4, .poly = 4, .reach = 26 },
-    .{ .id = .ravager_snap, .make = mkRavagerSnap, .gain = battle(0.82), .mix = .combat, .jit = 0.08, .vjit = 0.14, .vars = 4, .poly = 4, .reach = 30 },
-    .{ .id = .ravager_hurt, .make = mkRavagerHurt, .gain = battle(0.50), .mix = .combat, .jit = 0.16, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 26 },
-    .{ .id = .ravager_die, .make = mkRavagerDie, .gain = battle(0.58), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 32 },
+    .{ .id = .deer_bloom, .make = mkDeerBloom, .gain = battle(0.70), .mix = .combat, .jit = 0.08, .vjit = 0.14, .vars = 4, .poly = 4, .reach = 34 },
+    .{ .id = .deer_charge, .make = mkDeerCharge, .gain = battle(0.52), .mix = .combat, .jit = 0.14, .vjit = 0.22, .vars = 4, .poly = 4, .reach = 26 },
+    .{ .id = .deer_gore, .make = mkDeerGore, .gain = battle(0.82), .mix = .combat, .jit = 0.08, .vjit = 0.14, .vars = 4, .poly = 4, .reach = 30 },
+    .{ .id = .deer_hurt, .make = mkDeerHurt, .gain = battle(0.50), .mix = .combat, .jit = 0.16, .vjit = 0.26, .vars = 4, .poly = 4, .reach = 26 },
+    .{ .id = .deer_die, .make = mkDeerDie, .gain = battle(0.58), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 3, .poly = 3, .reach = 32 },
     // THE MUSHROOM MAGE. The GATHER carries furthest of the four by a clear margin — a tell you cannot hear from where the fight is happening is not one.
     .{ .id = .mage_kindle, .make = mkMageKindle, .gain = battle(0.62), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 4, .poly = 4, .reach = 38 },
     .{ .id = .mage_throw, .make = mkMageThrow, .gain = battle(0.58), .mix = .combat, .jit = 0.12, .vjit = 0.20, .vars = 4, .poly = 4, .reach = 32 },
@@ -2803,6 +2835,11 @@ const BANK = [NV]Row{
     .{ .id = .duo_burst, .make = mkDuoBurst, .gain = battle(0.88), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 5, .poly = 4, .reach = 80 },
     .{ .id = .duo_fade, .make = mkDuoFade, .gain = battle(0.58), .mix = .combat, .jit = 0.08, .vjit = 0.12, .vars = 3, .poly = 2, .reach = 65 },
     .{ .id = .duo_bloom, .make = mkDuoBloom, .gain = battle(0.60), .mix = .combat, .jit = 0.08, .vjit = 0.12, .vars = 3, .poly = 2, .reach = 65 },
+    .{ .id = .deer_spit, .make = mkDeerSpit, .gain = battle(0.60), .mix = .combat, .jit = 0.10, .vjit = 0.18, .vars = 5, .poly = 4, .reach = 44 },
+    // **NOT IN THE FIGHT'S BAND.** It is `.sfx`, so `BATTLE_FLOOR` never touches it and its own tests never
+    // have to make room for a sound that is not a threat. It CARRIES, because a smith you can hear from the
+    // next field is how you find him — the one voice in the game that is a landmark.
+    .{ .id = .smith_ring, .make = mkSmithRing, .gain = 0.66, .jit = 0.05, .vjit = 0.11, .vars = 5, .poly = 3, .reach = 92 },
 };
 
 fn seconds(id: Id) f32 {
@@ -3501,10 +3538,24 @@ pub fn playAt(id: Id, vol: f32) void {
 }
 
 pub fn world(id: Id, at: rl.Vector3) void {
-    worldAt(id, at, 1.0);
+    worldThrough(id, at, 1.0, 1.0);
 }
 
 pub fn worldAt(id: Id, at: rl.Vector3, gain: f32) void {
+    worldThrough(id, at, gain, 1.0);
+}
+
+/// **WHAT A WALL DOES TO A SOUND.** `clear` is 1 on an open line and 0 with rock in the way; the caller is who
+/// can ask that question, since nothing under `core/` can see the world.
+///
+/// **IT IS A CUT AND A DROOP, NOT A FILTER.** raylib cannot filter a playing voice (AGENTS.md) — the rack is
+/// bake-time — so the two levers a live voice has are level and pitch. Level alone reads as FAR AWAY; pulling
+/// the pitch down with it is what makes the same take read as dull, which is what coming through stone sounds
+/// like. Both are small: the point is a sound you can still place, not one you cannot hear.
+pub const MUFFLE_GAIN: f32 = 0.34;
+pub const MUFFLE_DROOP: f32 = 0.06;
+
+pub fn worldThrough(id: Id, at: rl.Vector3, gain: f32, clear: f32) void {
     if (!ready) return;
     const row = live[@intFromEnum(id)];
     const d2 = mathx.dist2XZ(at, lisPos);
@@ -3518,7 +3569,10 @@ pub fn worldAt(id: Id, at: rl.Vector3, gain: f32) void {
     const front = to.x * fwd.x + to.z * fwd.z;
     const rear = 1.0 - REAR_DUCK * 0.5 * (1.0 - front);
     const width = PAN_WIDTH * mathx.smoothstep(0, PAN_NEAR, d);
-    emit(id, k * k * rear * gain, panFor(side, width), 1.0 - PITCH_DROOP * near);
+    const c = mathx.clampF(clear, 0, 1);
+    const muffle = mathx.lerpF(MUFFLE_GAIN, 1.0, c);
+    const droop = mathx.lerpF(MUFFLE_DROOP, 0, c);
+    emit(id, k * k * rear * gain * muffle, panFor(side, width), 1.0 - PITCH_DROOP * near - droop);
 }
 
 fn emit(id: Id, vol: f32, pan: f32, pitchScale: f32) void {

@@ -4,6 +4,7 @@ const mathx = @import("core/mathx.zig");
 const gfx = @import("gfx/gfx.zig");
 pub const daynight = @import("world/daynight.zig");
 const envmod = @import("world/env.zig");
+const propsmod = @import("props/props.zig");
 const worldfmt = @import("world/worldfmt.zig");
 const editormod = @import("ui/editor.zig");
 const objviewmod = @import("ui/objview.zig");
@@ -29,7 +30,7 @@ const knightmod = @import("foes/knight.zig");
 const duomod = @import("foes/fungalduo.zig");
 const delvermod = @import("foes/delver.zig");
 const necromod = @import("foes/necro.zig");
-const ravagermod = @import("foes/ravager.zig");
+const deermod = @import("foes/fungaldeer.zig");
 const magemod = @import("foes/shroommage.zig");
 const golemmod = @import("foes/sporegolem.zig");
 const fenmod = @import("foes/fenlurker.zig");
@@ -229,7 +230,7 @@ pub const Game = struct {
     cluster: shroommod.Cluster,
     warrens: delvermod.Warrens,
     rite: necromod.Rite,
-    thicket: ravagermod.Thicket,
+    herd: deermod.Herd,
     ring: magemod.Ring,
     host: golemmod.Host,
     marsh: fenmod.Marsh,
@@ -275,6 +276,11 @@ pub const Game = struct {
     /// A DEFAULTED FIELD: assigned in `init` and in `beginGame` — `Game` comes off `alloc.create`, so the
     /// `= null` here never runs.
     gateWalk: ?GateWalk = null,
+    climb: ?Climb = null,
+    /// The deck he stood on LAST frame, or null. Walking off one is a fall and needs to know there was a floor.
+    heroDeck: ?f32 = null,
+    /// His `pos.y` last frame, and nothing else reads it: `syncLensLift` is the one customer.
+    lensGroundY: f32 = 0,
     spiritK: f32 = 0,
     spiritHp: f32 = 0,
     day: daynight.Clock = .{},
@@ -369,7 +375,7 @@ pub const Game = struct {
         g.cluster = shroommod.Cluster.init(g.scene.shader);
         g.warrens = delvermod.Warrens.init(g.scene.shader);
         g.rite = necromod.Rite.init(g.scene.shader);
-        g.thicket = ravagermod.Thicket.init(g.scene.shader);
+        g.herd = deermod.Herd.init(g.scene.shader);
         g.ring = magemod.Ring.init(g.scene.shader);
         g.host = golemmod.Host.init(g.scene.shader);
         g.marsh = fenmod.Marsh.init(g.scene.shader);
@@ -398,7 +404,8 @@ pub const Game = struct {
         g.bootT = 0;
         g.bossK = [_]f32{0} ** hud_.BOSS_SLOTS;
         g.bossFrac = [_]f32{0} ** hud_.BOSS_SLOTS;
-        g.gateWalk = null;
+        leavePlace(g);
+        g.lensGroundY = 0;
         g.spiritK = 0;
         g.spiritHp = 0;
         g.wetNow = 0;
@@ -517,7 +524,7 @@ fn beginGame(g: *Game) void {
     g.hero.flasks = .{};
     g.day = .{};
     dropRunHud(g);
-    g.gateWalk = null;
+    leavePlace(g);
     g.bag = .{};
     g.award = .{};
     for (STARTING_KIT) |k| {
@@ -577,6 +584,7 @@ fn enterMap(g: *Game, path: []const u8, at: rl.Vector3, facing: f32) void {
     worldfmt.loadOrPanic(path, &g.map);
     PLAY_HALF = playHalfOf(g.map.half);
     g.env.replay(&g.map);
+    leavePlace(g);
     g.hero.pos = inBounds(mathx.ground(at.x, at.z));
     g.hero.facing = facing;
     plantActor(g, &g.hero.pos);
@@ -685,7 +693,7 @@ const FoeGroup = struct {
 /// crypt's own row does on purpose. There WAS a second list (`BLOW_GROUPS`); every check it could make was a
 /// restatement of this table, and both `bed` and `crypt` sat in it swinging nothing at the hero at all.
 pub const FOE_GROUPS = [_]FoeGroup{
-    .{ .field = "warren", .kind = .toad, .aggro = frogmod.AGGRO_R, .vs = &.{"thicket"} },
+    .{ .field = "warren", .kind = .toad, .aggro = frogmod.AGGRO_R, .vs = &.{"herd"} },
     .{ .field = "line", .kind = .archer, .aggro = archermod.AGGRO_R, .vs = &.{"warren"} },
     .{ .field = "grief", .kind = .ogre, .aggro = ogremod.AGGRO_R, .vsHero = false },
     .{ .field = "band", .kind = null, .aggro = koboldmod.AGGRO_R },
@@ -694,11 +702,11 @@ pub const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "haunt", .kind = null, .aggro = shademod.AGGRO_R, .vs = &.{ "warren", "line", "muster" } },
     .{ .field = "swarm", .kind = .leechfly, .aggro = leechmod.AGGRO_R },
     .{ .field = "grove", .kind = .rooted, .aggro = rootedmod.AGGRO_R, .vsHero = false },
-    .{ .field = "cluster", .kind = .shroom, .aggro = shroommod.AGGRO_R, .vs = &.{"thicket"} },
+    .{ .field = "cluster", .kind = .shroom, .aggro = shroommod.AGGRO_R, .vs = &.{"herd"} },
     .{ .field = "warrens", .kind = .delver, .aggro = delvermod.AGGRO_R },
     .{ .field = "rite", .kind = .necromancer, .aggro = necromod.AGGRO_R, .vs = &.{ "line", "muster" } },
     // **THE ROW THAT YIELDS IS THE ROW THAT NAMES THE OTHER** — `vs` is who shoulders ME.
-    .{ .field = "thicket", .kind = .florid_ravager, .aggro = ravagermod.AGGRO_R },
+    .{ .field = "herd", .kind = .fungal_deer, .aggro = deermod.AGGRO_R },
     .{ .field = "ring", .kind = .mushroom_mage, .aggro = magemod.AGGRO_R },
     .{ .field = "host", .kind = .spore_golem, .aggro = golemmod.AGGRO_R },
     .{ .field = "marsh", .kind = .fen_lurker, .aggro = fenmod.AGGRO_R, .vsHero = false },
@@ -1641,7 +1649,14 @@ test "A GIANT ONLY BRINGS THE LENS DOWN WHEN IT IS ON TOP OF YOU, and it arrives
 }
 
 fn groundActor(g: *const Game, pos: *rl.Vector3, dt: f32) void {
-    const want = g.env.groundAt(pos.x, pos.z);
+    groundActorFrom(g, pos, pos.y, dt);
+}
+
+/// **A FALLING BODY IS MEASURED FROM ITS FEET, NOT FROM `pos.y`.** `pos.y` is already the floor he is heading
+/// for, so asked with itself the deck he is about to land ON is refused by its own `STEP_UP` gate and he drops
+/// straight through it. Handed his real height, the answer walks DOWN the decks as he falls.
+fn groundActorFrom(g: *const Game, pos: *rl.Vector3, refY: f32, dt: f32) void {
+    const want = g.env.standAt(pos.x, pos.z, refY);
     const d = want - pos.y;
     if (@abs(d) > GROUND_SNAP) {
         pos.y = want;
@@ -1652,11 +1667,50 @@ fn groundActor(g: *const Game, pos: *rl.Vector3, dt: f32) void {
 }
 
 fn plantActor(g: *const Game, pos: *rl.Vector3) void {
-    pos.y = g.env.groundAt(pos.x, pos.z);
+    pos.y = g.env.standAt(pos.x, pos.z, pos.y);
+}
+
+/// **A DECK HAS AN EDGE, AND WALKING OFF ONE IS A FALL AND NOT A SNAP.** `groundActor` plants past
+/// `GROUND_SNAP`, which off a five-metre floor is a teleport with a footstep on the end of it. Only a DECK does
+/// this — the land keeps the snap it has always had, because terrain has no lip a body can be standing over.
+fn heroFooting(g: *Game, was_: rl.Vector3) void {
+    const h = &g.hero;
+    if (h.climbing or h.dead) {
+        g.heroDeck = null;
+        return;
+    }
+    // **THE FLOOR GIVING WAY IS ONE QUESTION, AND WALKING OFF AN EDGE IS ONLY HALF OF IT.** Stepping into a
+    // hatch drops him onto the floor below, not to the ground, so what is compared is the SURFACE either side
+    // of the step rather than whether a deck is under him at all.
+    const under = g.env.standAt(h.pos.x, h.pos.z, h.footY());
+    if (g.heroDeck) |was| {
+        // **HE CARRIES THE WAY HE WAS GOING, NOT THE WAY HE IS LOOKING.** Off his facing, a lock-on strafe or
+        // a backpedal over the lip threw him forward off the deck — the one direction he was not travelling.
+        if (!h.airborne() and under < was - envmod.STEP_UP) h.startFall(was, mathx.dirXZ(was_, h.pos), h.speedS);
+    }
+    g.heroDeck = if (h.airborne()) null else g.env.deckAt(h.pos.x, h.pos.z, h.pos.y);
 }
 
 pub fn envGroundAt(e: *const envmod.Env, x: f32, z: f32) f32 {
     return e.groundAt(x, z);
+}
+
+/// **THE LENS CLEARS THE FLOOR HE IS ON, NOT THE LAND UNDER IT.** `followClear` was handed `groundAt`, which on
+/// the watchtower's roof is eleven metres below his boots — so the boom paid nothing, the eye sank through the
+/// boards and the shot was the inside of the shaft. Off `standAt` the deck is the floor; past its edge the same
+/// call answers with the land again, which is what a camera hanging out over a drop should see. Plumb ground is
+/// unchanged: `standAt` IS `groundAt` wherever no deck is within the walk's own riser of him.
+pub const CamFloor = struct {
+    e: *const envmod.Env,
+    footY: f32,
+
+    pub fn at(c: CamFloor, x: f32, z: f32) f32 {
+        return c.e.standAt(x, z, c.footY);
+    }
+};
+
+pub fn camFloor(g: *const Game) CamFloor {
+    return .{ .e = &g.env, .footY = g.hero.footY() };
 }
 
 fn snapshotPos(foes: anytype, out: []rl.Vector3) void {
@@ -1761,6 +1815,163 @@ fn gatedXZ(e: *const envmod.Env, was: rl.Vector3, to: rl.Vector3, airborne: bool
     }
     const stepped = e.walkSegment(was, to);
     return v3(stepped.x, to.y, stepped.z);
+}
+
+test "EVERY LADDER ON THE BENCH TOPS OUT WHERE IT WAS AUTHORED TO, AND THE THREE THAT CANNOT REFUSE" {
+    const m = try std.testing.allocator.create(worldfmt.Map);
+    defer std.testing.allocator.destroy(m);
+    var ln: usize = 0;
+    worldfmt.load("worlds/test_ladder.world", m, &ln) catch return error.SkipZigTest;
+    const e = try std.testing.allocator.create(envmod.Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    // The field goes in by hand: `uploadHeight` rebuilds the terrain MESHES, and there is no GL here.
+    e.heightField = m.height;
+    e.heightHalf = m.half;
+    e.heightAny = m.anyHeight();
+    e.materialize(m);
+
+    const floor = propsmod.info(.watchtower).decks[0].y;
+    const roof = propsmod.info(.watchtower).decks[2].y;
+    // Authored foot (x, z), the height a body stands beside it at, and the ground it must put him down on —
+    // null for a run that serves nothing and has to be refused.
+    const want = [_]struct { x: f32, z: f32, at: f32 = 0, top: ?f32 }{
+        .{ .x = 7.2, .z = 0, .top = 7.00 },
+        .{ .x = 7.2, .z = -14, .top = null },
+        .{ .x = -29.8, .z = 20, .top = 3.00 },
+        .{ .x = -29.8, .z = 26, .top = null },
+        .{ .x = -20, .z = 1.4, .top = floor },
+        .{ .x = -20, .z = -1.4, .at = floor, .top = roof },
+        .{ .x = -8, .z = -34, .top = null },
+    };
+    var found: usize = 0;
+    std.debug.print("\n", .{});
+    for (want) |w| {
+        const r = e.ladderNear(v3(w.x, 0, w.z), w.at, LADDER_REACH + 0.4) orelse {
+            std.debug.print("  ladder ({d:.1}, {d:.1}): NOT FOUND\n", .{ w.x, w.z });
+            return error.TestUnexpectedResult;
+        };
+        found += 1;
+        const head = r.foot.y + r.run;
+        const exit = ladderExit(e, r);
+        std.debug.print("  ladder ({d:6.1},{d:6.1}) foot {d:5.2} run {d:5.2} head {d:5.2} -> {s}\n", .{
+            w.x, w.z, r.foot.y, r.run, head,
+            if (exit) |x| blk: {
+                var buf: [48]u8 = undefined;
+                break :blk std.fmt.bufPrint(&buf, "steps off at {d:.2} m ({d:.2} off the head)", .{ x.y, x.y - head }) catch "?";
+            } else "no exit — he rides the top rung",
+        });
+        if (w.top) |t| {
+            const x = exit orelse return error.TestUnexpectedResult;
+            try std.testing.expectApproxEqAbs(t, x.y, 0.02);
+            // …and it is a step he could have taken on foot, in the band the exit is allowed to accept.
+            try std.testing.expect(head - x.y <= envmod.LADDER_PROUD and x.y - head <= envmod.STEP_UP);
+        } else {
+            try std.testing.expectEqual(@as(?rl.Vector3, null), exit);
+        }
+    }
+    try std.testing.expectEqual(want.len, found);
+}
+
+test "THE SHIPPED MAP'S WATCHTOWER IS CLIMBABLE TO ITS ROOF, in two flights" {
+    const m = try std.testing.allocator.create(worldfmt.Map);
+    defer std.testing.allocator.destroy(m);
+    var ln: usize = 0;
+    worldfmt.load(worldfmt.START_MAP, m, &ln) catch return error.SkipZigTest;
+    const e = try std.testing.allocator.create(envmod.Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.heightField = m.height;
+    e.heightHalf = m.half;
+    e.heightAny = m.anyHeight();
+    e.materialize(m);
+
+    // The tower north-west of the colossal gate, and the ground under all of it is flat. The two floors are
+    // read off the WORLD rather than off the kind's table, so what is asserted is the deck a body would find.
+    const base = e.groundAt(-52, -104);
+    const floor = e.deckAt(-52, -104, 5.0) orelse return error.TestUnexpectedResult;
+    const roof = e.deckAt(-52, -104, 12.0) orelse return error.TestUnexpectedResult;
+    try std.testing.expect(roof - floor > 6.5);
+    const lower = e.ladderNear(v3(-52.479, 0, -105.316), base, LADDER_REACH) orelse return error.TestUnexpectedResult;
+    const upper = e.ladderNear(v3(-51.521, 0, -102.684), floor, LADDER_REACH) orelse return error.TestUnexpectedResult;
+    const outLo = ladderExit(e, lower) orelse return error.TestUnexpectedResult;
+    const outHi = ladderExit(e, upper) orelse return error.TestUnexpectedResult;
+    std.debug.print("\n  fallen plain watchtower: ground {d:.2} -> floor {d:.2} ({d:.2} m off the axis) -> roof {d:.2} ({d:.2} m off)\n", .{
+        base, outLo.y, mathx.distXZ(outLo, v3(-52, 0, -104)), outHi.y, mathx.distXZ(outHi, v3(-52, 0, -104)),
+    });
+    try std.testing.expectApproxEqAbs(floor, outLo.y, 0.02);
+    try std.testing.expectApproxEqAbs(roof, outHi.y, 0.02);
+    // **HE STEPS OFF INBOARD, NOT THROUGH THE WALL AND NOT ONTO THE MERLONS.** Both exits must land inside the
+    // shaft's clear radius: below, stone refuses the wall side; on the roof, the ledge test does.
+    try std.testing.expect(mathx.distXZ(outLo, v3(-52, 0, -104)) < propsmod.TOWER_CLEAR);
+    try std.testing.expect(mathx.distXZ(outHi, v3(-52, 0, -104)) < propsmod.TOWER_CLEAR);
+
+    // **AND HE CAN GET IN AT ALL.** Not a straight line — the forecourt has a brazier in it and a body walks
+    // round that — so this is a FLOOD over the floor at ankle height, from outside the door to the foot of the
+    // lower ladder. It is the whole question the lintel broke: the course over the doorway is a wall to a body
+    // on a deck and has to be nothing at all to one on the ground.
+    const G: f32 = 0.15;
+    const SPAN: usize = 96;
+    const org = v3(-52 - 0.5 * G * SPAN, 0, -104 - 0.5 * G * SPAN);
+    var open = [_]bool{false} ** (SPAN * SPAN);
+    var seen = [_]bool{false} ** (SPAN * SPAN);
+    for (0..SPAN) |iz| {
+        for (0..SPAN) |ix| {
+            const at = v3(org.x + G * @as(f32, @floatFromInt(ix)), base + 0.20, org.z + G * @as(f32, @floatFromInt(iz)));
+            open[iz * SPAN + ix] = !e.blockedNear(at, HERO_R, 1.2);
+        }
+    }
+    const cellOfXZ = struct {
+        fn go(o: rl.Vector3, x: f32, z: f32) usize {
+            const ix: usize = @intFromFloat(@round((x - o.x) / G));
+            const iz: usize = @intFromFloat(@round((z - o.z) / G));
+            return @min(iz, SPAN - 1) * SPAN + @min(ix, SPAN - 1);
+        }
+    }.go;
+    const th = mathx.radians(200.0);
+    const face = v3(-mathx.sinf(th), 0, -mathx.cosf(th));
+    const from = cellOfXZ(org, -52 + face.x * 6.6, -104 + face.z * 6.6);
+    const want = cellOfXZ(org, lower.axis.x, lower.axis.z);
+    try std.testing.expect(open[from] and open[want]);
+    var queue: [SPAN * SPAN]usize = undefined;
+    var head: usize = 0;
+    var tail: usize = 1;
+    queue[0] = from;
+    seen[from] = true;
+    while (head < tail) : (head += 1) {
+        const c = queue[head];
+        const cx = c % SPAN;
+        const cz = c / SPAN;
+        for ([_][2]i32{ .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 } }) |d| {
+            const nx = @as(i32, @intCast(cx)) + d[0];
+            const nz = @as(i32, @intCast(cz)) + d[1];
+            if (nx < 0 or nz < 0 or nx >= SPAN or nz >= SPAN) continue;
+            const n = @as(usize, @intCast(nz)) * SPAN + @as(usize, @intCast(nx));
+            if (seen[n] or !open[n]) continue;
+            seen[n] = true;
+            queue[tail] = n;
+            tail += 1;
+        }
+    }
+    std.debug.print("  doorway: {d} of {d} cells reachable on foot from outside; foot of the ladder {s}\n", .{
+        tail, SPAN * SPAN, if (seen[want]) "REACHED" else "WALLED OFF",
+    });
+    if (!seen[want]) {
+        var iz: usize = 0;
+        while (iz < SPAN) : (iz += 2) {
+            var line: [SPAN / 2]u8 = undefined;
+            var ix: usize = 0;
+            while (ix < SPAN) : (ix += 2) {
+                const c = iz * SPAN + ix;
+                line[ix / 2] = if (c == want) 'L' else if (c == from) 'S' else if (seen[c]) '.' else if (open[c]) 'o' else '#';
+            }
+            std.debug.print("    {s}\n", .{line[0..]});
+        }
+    }
+    try std.testing.expect(seen[want]);
+
+    // …and the same walk at deck height is stopped, because up there the doorway is wall like every other side.
+    try std.testing.expect(e.blockedNear(v3(-52 + face.x * 2.35, floor + 0.20, -104 + face.z * 2.35), HERO_R, 1.2));
 }
 
 test "THE ROLL OBEYS THE GROUND — a committed move may not take him up what a walk refuses" {
@@ -2273,6 +2484,7 @@ const Reach = enum {
     pickup,
     talk,
     chest,
+    ladder,
     gate,
 
     fn prompt(self: Reach) hud_.Hint {
@@ -2282,18 +2494,108 @@ const Reach = enum {
             .pickup => "Take",
             .talk => "Speak",
             .chest => "Open",
+            .ladder => "Climb",
             .gate => "Enter",
         } };
     }
 };
 
+/// **A REACH IS A CIRCLE IN THE GROUND PLANE, AND A FLOOR IS NOT.** Every `near` ring — the drop, the bonfire,
+/// the glow, the box, the folk — is `mathx.Nearest`, which is XZ and pinned to be (its own test offers a body
+/// forty metres up and expects it taken). That was the whole truth while every body stood on the land; with
+/// decks a man on the watchtower's roof stands 11.9 m over its yard and inside all five rings, so he reclaimed
+/// his souls, opened a box and sat down at a bonfire through the boards.
+///
+/// **AND THE BAND IS ONLY EVER ASKED OF A BODY UP ON A DECK** (`Game.heroDeck`). Sculpted LAND inside a ring
+/// can be nearly the ring's own width away in height, because the walk allows a riser per lattice cell —
+/// MEASURED on the shipped map, one glow has 1.65 m of hillside inside its 2.4 m ring — so a band over the
+/// TERRAIN would take prompts off a map that has always worked. A deck is flat and the shortest storey is
+/// 4.69 m, so up there the band is only ever asked to tell one floor from another, and twice the walk's own
+/// riser does that with room to spare.
+const REACH_RISE: f32 = 2.0 * envmod.STEP_UP;
+comptime {
+    std.debug.assert(REACH_RISE < propsmod.info(.watchtower).decks[0].y);
+}
+
+/// Is the thing on the floor he is standing on? `null` is the LAND, which is never gated.
+fn onSameFloor(deck: ?f32, thingY: f32) bool {
+    const d = deck orelse return true;
+    return @abs(thingY - d) <= REACH_RISE;
+}
+
+fn atHisLevel(g: *const Game, y: f32) bool {
+    return onSameFloor(g.heroDeck, y);
+}
+
+test "A REACH IS REFUSED THROUGH A FLOOR, AND NEVER REFUSED ACROSS THE LAND" {
+    const floor = propsmod.info(.watchtower).decks[0].y;
+    const roof = propsmod.info(.watchtower).decks[2].y;
+    // **ON THE LAND THERE IS NO GATE AT ALL**, whatever the hillside is doing — that is the whole shape of the
+    // rule, and the ring walk below is why.
+    try std.testing.expect(onSameFloor(null, 0));
+    try std.testing.expect(onSameFloor(null, -40));
+    try std.testing.expect(onSameFloor(null, roof));
+    // Up on a floor, neither the yard below nor the other storey is his.
+    try std.testing.expect(onSameFloor(roof, roof));
+    try std.testing.expect(onSameFloor(roof, roof + envmod.STEP_UP));
+    try std.testing.expect(!onSameFloor(roof, 0));
+    try std.testing.expect(!onSameFloor(roof, floor));
+    try std.testing.expect(!onSameFloor(floor, 0));
+
+    const m = try std.testing.allocator.create(worldfmt.Map);
+    defer std.testing.allocator.destroy(m);
+    var ln: usize = 0;
+    worldfmt.load(worldfmt.START_MAP, m, &ln) catch return error.SkipZigTest;
+    const e = try std.testing.allocator.create(envmod.Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.heightField = m.height;
+    e.heightHalf = m.half;
+    e.heightAny = m.anyHeight();
+    e.materialize(m);
+
+    // **WHY THE GATE MAY NOT BE ASKED OF THE TERRAIN.** This walks the ring round every placed interactable on
+    // the shipped map and takes the worst standing height on it. The number is most of the ring's own width —
+    // the walk allows a riser per lattice cell — so a band over the LAND would have taken working prompts off
+    // a map that has always worked, which is what sent the gate to the DECK.
+    var boxes: [chestmod.CAP]chestmod.Site = undefined;
+    var fires: [restmod.CAP]restmod.Site = undefined;
+    var glows: [pickupmod.CAP]pickupmod.Site = undefined;
+    const nb = e.chestSites(&boxes);
+    const nf = e.restSites(&fires);
+    const ng = e.pickupSites(&glows);
+    std.debug.print("\n  reach band +/-{d:.2} m, asked only on a deck; a storey is {d:.2} m\n", .{ REACH_RISE, floor });
+    inline for (.{
+        .{ "chest ", chestmod.REACH, boxes[0..nb] },
+        .{ "rest  ", restmod.REACH, fires[0..nf] },
+        .{ "pickup", pickupmod.REACH, glows[0..ng] },
+    }) |ring| {
+        var worst: f32 = 0;
+        for (ring[2]) |site| {
+            var k: usize = 0;
+            while (k < 32) : (k += 1) {
+                const a = std.math.tau * @as(f32, @floatFromInt(k)) / 32.0;
+                const gx = site.pos.x + mathx.cosf(a) * ring[1];
+                const gz = site.pos.z + mathx.sinf(a) * ring[1];
+                worst = mathx.maxF(worst, @abs(e.standAt(gx, gz, site.pos.y) - site.pos.y));
+            }
+            // …and every one of them keeps its prompt, because none of them stands on a deck.
+            try std.testing.expect(onSameFloor(e.deckAt(site.pos.x, site.pos.z, site.pos.y), site.pos.y));
+        }
+        std.debug.print("  {s}: {d:3} sites, worst land {d:.2} m off the site inside its {d:.1} m ring\n", .{
+            ring[0], ring[2].len, worst, ring[1],
+        });
+    }
+}
+
 fn inReach(g: *const Game, r: Reach) bool {
     return switch (r) {
-        .souls => g.souls.near,
-        .rest => g.rest.near != null,
-        .pickup => g.pickups.near != null,
+        .souls => g.souls.near and atHisLevel(g, g.souls.drop.at.y),
+        .rest => if (g.rest.near) |i| atHisLevel(g, g.rest.list[i].pos.y) else false,
+        .pickup => if (g.pickups.near) |i| atHisLevel(g, g.pickups.list[i].pos.y) else false,
         .talk => talkable(g),
-        .chest => g.chests.near != null,
+        .chest => if (g.chests.near) |i| atHisLevel(g, g.chests.list[i].pos.y) else false,
+        .ladder => ladderAt(g) != null,
         .gate => gateAt(g) != null,
     };
 }
@@ -2302,6 +2604,9 @@ const GATE_MARGIN: f32 = 1.15;
 comptime {
     // HE MAY NOT STEP OUT OF A GATE INTO ITS OWN PROMPT: the crossing lands him `WARD_CLEAR` past the sheet and the prompt reaches `GATE_MARGIN`, both off the same capsule.
     std.debug.assert(envmod.WARD_CLEAR > GATE_MARGIN);
+    // …and `props` sits UNDER `foes/`, so the body's radius in `props.TOWER_CLEAR` is a copy. Pinned here, the
+    // one file that sees both, or the shaft's clear standing room drifts off the body it was solved for.
+    std.debug.assert(propsmod.HERO_R_HERE == HERO_R);
 }
 
 fn gateAt(g: *const Game) ?u8 {
@@ -2324,8 +2629,191 @@ fn interact(g: *Game) void {
         .pickup => takePickup(g),
         .talk => _ = startTalk(g),
         .chest => openChest(g),
+        .ladder => mountLadder(g),
         .gate => enterGate(g),
     }
+}
+
+/// How far from a ladder's climbing line he may stand and still get on it. Between `chest.REACH` 2.1 and the
+/// pickup's 2.4 would be far too generous for a thing 0.5 m wide: this is a reach for the RAILS.
+pub const LADDER_REACH: f32 = 1.5;
+/// The step off the head of a ladder onto whatever holds him. **PAST THE LIP AND NOT ONTO IT** — a heightfield
+/// cliff ramps over one lattice cell (0.54 m at the shipped map's spacing), so a shorter stride lands him
+/// halfway up the ramp, reads as not solid ground, and refuses the exit.
+const LADDER_EXIT: f32 = 1.20;
+/// Metres of run he covers in the beat between one hand-over-hand voice and the next.
+const CLIMB_STEP_EVERY: f32 = 0.62;
+/// Apex of the peel-off when a blow lands on him up there. Small: he is knocked LOOSE, and the drop does the
+/// rest — there is no fall damage in this game, so the price is the climb and the ground he lands in front of.
+const LADDER_KNOCK_APEX: f32 = 0.35;
+
+/// **A LADDER HE IS ON.** Solved once at the mount — the axis never moves and the run never changes — so no
+/// frame of the climb re-derives which prop he is standing on.
+const Climb = struct {
+    rung: envmod.Rung,
+    /// The world line his BODY stands on, `LADDER_STANDOFF` off the rung plane on the ladder's open side.
+    axis: rl.Vector3,
+    /// Metres of run under his feet: 0 at the foot, `rung.run` at the head.
+    at: f32,
+    face: f32,
+    /// Run since the last hand-over-hand, so the voice is spent by DISTANCE like every other footfall here.
+    beat: f32 = 0,
+};
+
+/// **A CLIMB AND A FALL OFF A FLOOR ARE NOT A JUMP** — the lens takes all of those, where it takes just over
+/// half a hop (`camera.LIFT_SHARE`). Split on the height itself and not on the state, so the knock-off's own
+/// arc, which starts as a launch and ends as a plain landing, never changes rule mid-flight.
+/// **THE LENS FOLLOWS HIS FEET AND NOT HIS `pos.y`.** Both jump — `groundActor` PLANTS past `GROUND_SNAP`, and
+/// a mount or a top-out moves `pos.y` and `lift` the opposite way in one frame — while `pos.y + lift` is
+/// continuous through every one of those. The rig eases only the lift, so a frame where the ground under him
+/// moved a whole plant re-seeds it rather than chasing a discontinuity it should never have been shown.
+fn syncLensLift(g: *Game) void {
+    if (@abs(g.hero.pos.y - g.lensGroundY) > GROUND_SNAP * 0.5) g.rig.lift = liftShare(&g.hero) * g.hero.lift;
+    g.lensGroundY = g.hero.pos.y;
+}
+
+fn liftShare(h: *const heromod.Hero) f32 {
+    if (h.climbing or h.lift > heromod.JUMP_APEX) return 1.0;
+    return cameramod.LIFT_SHARE;
+}
+
+fn ladderAt(g: *const Game) ?envmod.Rung {
+    if (g.climb != null or g.gateWalk != null or !g.hero.bodyFree()) return null;
+    return g.env.ladderNear(g.hero.pos, g.hero.footY(), LADDER_REACH);
+}
+
+/// The ladder's own +Z: the open side he mounts from, and the side his body hangs on all the way up.
+fn ladderOut(r: envmod.Rung) rl.Vector3 {
+    return mathx.headingDir(mathx.radians(r.yaw));
+}
+
+fn mountLadder(g: *Game) void {
+    const r = ladderAt(g) orelse return;
+    const out = ladderOut(r);
+    const axis = r.axis;
+    g.hero.pos.x = axis.x;
+    g.hero.pos.z = axis.z;
+    g.hero.pos.y = g.env.groundAt(axis.x, axis.z);
+    const face = mathx.headingXZ(mathx.scaleV(out, -1));
+    g.climb = .{
+        .rung = r,
+        .axis = axis,
+        .at = mathx.clampF(g.hero.footY() - r.foot.y, 0, r.run),
+        .face = face,
+    };
+    g.lock = null;
+    g.hero.startClimb(r.foot.y + g.climb.?.at - g.hero.pos.y, face);
+    sfx.play(.step_soft);
+}
+
+/// **HE COMES OFF THE WAY HE WENT ON, OR HE FALLS.** Nothing else clears the state: a climb abandoned with the
+/// hero left holding a `lift` is a man standing in the air.
+fn leaveLadder(g: *Game) void {
+    g.climb = null;
+    g.hero.endClimb();
+}
+
+/// **EVERY DOOR OUT OF A PLACE LETS GO OF THAT PLACE.** A crossing, a run up a ladder and the floor under his
+/// boots all name somewhere in the map being left, and spelled out at each door a fifth one forgets one of the
+/// three. The run goes through `leaveLadder` and never through `g.climb = null`: that field is HALF of a climb,
+/// and the half in the BODY (`hero.climbing`, and the `lift` carrying him up the run) is what strands a man in
+/// the air, permanently `committed()`. Both `beginGame`'s callers — new game and load — are reachable from the
+/// pause menu with him eight metres up a ladder, and both cleared only the field.
+fn leavePlace(g: *Game) void {
+    g.gateWalk = null;
+    leaveLadder(g);
+    g.heroDeck = null;
+}
+
+/// **STEPPING OFF THE BOTTOM PUTS HIM ON WHATEVER THE BOTTOM STANDS ON.** `endClimb` only drops the `lift`, and
+/// `pos.y` has been the ground under the ladder's FOOT the whole climb — which for the flight that stands on a
+/// floor is a storey below where he is. Asked at the foot's own height, `standAt` answers with that floor.
+fn footOffLadder(g: *Game) void {
+    const c = &(g.climb orelse return);
+    const at = c.rung.foot.y;
+    g.hero.pos.y = g.env.standAt(c.axis.x, c.axis.z, at);
+    g.heroDeck = g.env.deckAt(c.axis.x, c.axis.z, g.hero.pos.y);
+    leaveLadder(g);
+}
+
+fn dropOffLadder(g: *Game) void {
+    if (g.climb == null) return;
+    const face = g.hero.facing;
+    const from = g.hero.footY();
+    leaveLadder(g);
+    g.hero.startFall(from, mathx.headingDir(face + std.math.pi), heromod.WALK_SPEED);
+}
+
+/// **A BLOW UP THERE TAKES THE LADDER AWAY.** Routed through the launch, so the arc, the pose and the landing
+/// beat are the ones a slam already gives — the only new thing is the height it starts from.
+fn knockOffLadder(g: *Game, b: foemod.Blow) void {
+    if (g.climb == null) return;
+    const from = g.hero.footY();
+    const away = mathx.dirXZ(b.from, g.hero.pos);
+    leaveLadder(g);
+    _ = g.hero.launchFrom(away, LADDER_KNOCK_APEX, from);
+}
+
+/// Where the head of the ladder puts him down. **THE WALL SIDE IS ASKED FIRST** — that is topping out over a
+/// lip, which is what a ladder up a cliff is for; the open side is the answer inside a shaft, where he comes up
+/// through a hatch and steps off onto the floor he just passed. Neither holding him is a ladder to nowhere, and
+/// he simply stays on it.
+fn ladderExit(e: *const envmod.Env, r: envmod.Rung) ?rl.Vector3 {
+    const head = r.foot.y + r.run;
+    const out = ladderOut(r);
+    const step = LADDER_EXIT * r.scale;
+    var ledge: ?rl.Vector3 = null;
+    for ([_]f32{ -step, step }) |k| {
+        const x = r.axis.x + out.x * k;
+        const z = r.axis.z + out.z * k;
+        const y = e.standAt(x, z, head);
+        if (head - y > envmod.LADDER_PROUD or y - head > envmod.STEP_UP) continue;
+        if (e.blockedNear(v3(x, y + 0.4, z), HERO_R, 1.4)) continue;
+        // **AND IT MAY NOT BE A LEDGE.** One more stride the same way has to hold him too, or topping out
+        // lands him with his heels over the drop. Stone is what refuses the wall side inside a shaft; on a
+        // ROOF both sides are the same deck and there is no wall left to do it — this is what tells them apart,
+        // and it is why he steps off a parapet ladder inboard rather than onto the merlons.
+        const on = e.standAt(x + out.x * k, z + out.z * k, y);
+        if (y - on <= envmod.STEP_UP) return v3(x, y, z);
+        if (ledge == null) ledge = v3(x, y, z);
+    }
+    return ledge;
+}
+
+fn topOutLadder(g: *Game) void {
+    const c = &(g.climb orelse return);
+    const at = ladderExit(&g.env, c.rung) orelse return;
+    leaveLadder(g);
+    g.hero.pos = at;
+    g.heroDeck = g.env.deckAt(at.x, at.z, at.y);
+    sfx.play(.land);
+}
+
+/// Driven by the distance he actually covers, like the gate walk and the gait — a fixed clock over a run that
+/// varies by metres is a climb that is sometimes a sprint.
+fn updateClimb(g: *Game, dt: f32, mv: Move) void {
+    const c = &(g.climb orelse return);
+    // **THE STICK IS THE LADDER'S, NOT THE CAMERA'S.** Forward is up whichever way the lens is pointing, or a
+    // camera swung round to look at the wall would send him back down it.
+    const drive = mathx.clampF(mv.fz, -1, 1);
+    const down = if (sprintingMove(mv)) heromod.CLIMB_SLIDE_SPEED else heromod.CLIMB_DOWN_SPEED;
+    const rate: f32 = if (drive >= 0) heromod.CLIMB_SPEED else down;
+    const want = drive * rate * dt;
+    const was = c.at;
+    c.at = mathx.clampF(c.at + want, 0, c.rung.run);
+    const moved = c.at - was;
+    g.hero.pos.x = c.axis.x;
+    g.hero.pos.z = c.axis.z;
+    g.hero.facing = c.face;
+    g.hero.tickClimb(dt, c.rung.foot.y + c.at - g.hero.pos.y, moved);
+    g.hero.pose();
+    c.beat += @abs(moved);
+    if (c.beat >= CLIMB_STEP_EVERY) {
+        c.beat = 0;
+        sfx.playAt(.step_hard, 0.62);
+    }
+    if (moved > 0 and c.at >= c.rung.run - 1e-4) return topOutLadder(g);
+    if (moved < 0 and c.at <= 1e-4) return footOffLadder(g);
 }
 
 /// The whole line comes off the sheet (`env.wardCross`), not his facing, so entering at an angle still puts him
@@ -2685,8 +3173,9 @@ fn startTalk(g: *Game) bool {
 
 fn talkable(g: *const Game) bool {
     const i = g.folk.near orelse return false;
-    const rec = (g.folk.atConst(i) orelse return false).rec;
-    return rec < g.map.nnpcs and g.map.npcs[rec].dlg != worldfmt.NO_DIALOG;
+    const p = g.folk.atConst(i) orelse return false;
+    if (!atHisLevel(g, p.pos.y)) return false;
+    return p.rec < g.map.nnpcs and g.map.npcs[p.rec].dlg != worldfmt.NO_DIALOG;
 }
 
 fn tickTalk(g: *Game, dt: f32) void {
@@ -2705,8 +3194,54 @@ fn tickTalk(g: *Game, dt: f32) void {
     }
     g.hero.pose();
     g.folk.update(dt, g.hero.pos, PLAY_HALF);
+    voiceFolk(g);
     g.rig.tickShake(dt);
     g.rumble.update(dt, false);
+}
+
+/// **THE BODY SAYS WHEN AND THIS SAYS IT** — the same split every creature's voice is on, so an anvil cannot
+/// ring through the pause card or into the shot harness. Called from BOTH folk steps the live game has: a
+/// conversation branch `continue`s the frame, and the smith across the field is still visibly hammering in it.
+fn voiceFolk(g: *Game) void {
+    for (g.folk.live()) |*p| {
+        if (!p.struck) continue;
+        // **A CLIFF MAKES THE ANVIL A HINT** (owner). The ring carries across open ground and comes through
+        // rock as a dull knock, so a forge is something you hear before you find. Asked off HIS ears and not
+        // the lens: the listener is the camera, which can be the far side of a wall from the body doing the
+        // exploring, and what this decides is what the PLAYER has learnt.
+        const ear = v3(g.hero.pos.x, g.hero.pos.y + foemod.HERO_EYE, g.hero.pos.z);
+        const anvil = v3(p.pos.x, p.pos.y + ANVIL_EAR, p.pos.z);
+        sfx.worldThrough(.smith_ring, p.pos, 1.0, if (g.env.sees(ear, anvil)) 1.0 else 0.0);
+    }
+}
+
+/// Where the ring comes from: the anvil's face, not his crown. A line drawn from the top of a 3.24 m body
+/// clears low walls the sound itself would not.
+const ANVIL_EAR: f32 = 1.0;
+
+test "A CLIFF TURNS THE ANVIL INTO A HINT — the ring carries in the open and is muffled through rock" {
+    const m = try worldfmt.testMap(std.testing.allocator, worldfmt.TEST_HEAD ++ "at: cliff 18 0 0 1\n");
+    defer std.testing.allocator.destroy(m);
+    const e = try std.testing.allocator.create(envmod.Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.materialize(m);
+
+    // Ear height to the anvil's face, the same two points `voiceFolk` asks about.
+    const ear = v3(0, foemod.HERO_EYE, 0);
+    // The cliff's own capsule is 10.8 m long with a 2.9 m girth, so "the same side of it" has to be well
+    // clear of the rock itself — measured off `props.cliffParts`, not guessed at.
+    const behindTheCliff = v3(34, ANVIL_EAR, 0);
+    const sameSide = v3(3, ANVIL_EAR, 0);
+    try std.testing.expect(!e.sees(ear, behindTheCliff));
+    try std.testing.expect(e.sees(ear, sameSide));
+    // …and the muffle is a CUT AND A DROOP, small enough to stay placeable and deep enough to stop being the
+    // same sound. A gain that only halved would read as further off rather than as through something.
+    try std.testing.expect(sfx.MUFFLE_GAIN < 0.5 and sfx.MUFFLE_GAIN > 0.15);
+    try std.testing.expect(sfx.MUFFLE_DROOP > 0 and sfx.MUFFLE_DROOP < 0.15);
+    std.debug.print("\n  anvil through rock: {d:.0}% of its open level, pitched down {d:.0}% — a hint, not a location\n", .{
+        100.0 * sfx.MUFFLE_GAIN, 100.0 * sfx.MUFFLE_DROOP,
+    });
 }
 
 fn navPressed(dir: menumod.NavDir) bool {
@@ -3233,7 +3768,7 @@ fn drawSiphon(g: *Game) void {
     g.rig.addShake(SHAKE_CAST);
     const pick = strikeVictim(g, reach) orelse {
         const on = strikeMissAt(g, reach);
-        g.hero.siphonDrain(v3(on.x, on.y + heromod.H * 0.55, on.z), g.hero.casts);
+        g.hero.siphonDrain(foemod.heroChest(on), g.hero.casts);
         return;
     };
     const hit = strikeOne(g, pick, blow) orelse return;
@@ -4379,6 +4914,10 @@ pub fn run(mode: Mode) void {
                 .quit => break,
                 .editor => {
                     g.lock = null;
+                    // **THE EDITOR IS A DOOR LIKE THE REST.** `.playtest` stands him at the camera's target; a
+                    // climb left armed drives his XZ straight back onto the axis of a ladder that is a hundred
+                    // metres away, or one the edit has since deleted.
+                    leavePlace(g);
                     g.editor.enter(g.hero.pos);
                 },
                 .toTitle => g.menu.toTitle(),
@@ -4566,7 +5105,9 @@ pub fn run(mode: Mode) void {
         if (arrowReq and g.hero.cycleArrow()) sfx.play(.flask_cycle);
 
         const useReq = rl.isKeyPressed(INTERACT_KEY) or padPressed(INTERACT_PAD);
-        if (useReq and !g.hero.dead) interact(g);
+        // **NOT FROM A RUNG.** Every other reach is measured in XZ, so eight metres up a ladder he was still
+        // beside the bonfire he had climbed away from and could sit down at it.
+        if (useReq and !g.hero.dead and g.climb == null) interact(g);
 
         var rollReq = rl.isKeyPressed(.space);
         const bDown = padDown(hud_.padOf(hud_.BTN_BACK));
@@ -4616,6 +5157,9 @@ pub fn run(mode: Mode) void {
         g.hero.tickFlash(dt);
         g.hero.quick.dropEmpty(&g.bag);
         const jumpReq = rl.isKeyPressed(JUMP_KEY) or padPressed(JUMP_PAD);
+        // **THE ONE INPUT A LADDER ANSWERS BESIDES THE STICK.** Everything else is refused by `committed()`, so
+        // this has to be read before the block that asks it.
+        if (g.climb != null and (jumpReq or rollReq)) dropOffLadder(g);
         if (!g.hero.dead and !g.hero.staggered() and g.gateWalk == null) {
             if (rollReq) {
                 g.hero.requestRoll(rollDir(g, mv));
@@ -4656,7 +5200,14 @@ pub fn run(mode: Mode) void {
         const heroWas = g.hero.pos;
         const heroAfoot = !g.hero.dead;
         // **A CROSSING IS ABANDONED, NOT SUSPENDED.** A walk left standing resumes against a line drawn before the interruption, which is a teleport either way.
-        if (g.hero.dead or g.hero.staggered()) g.gateWalk = null;
+        // **AND A LADDER IS LET GO OF, NOT DELETED.** `leaveLadder` drops the `lift` where it stands, so a
+        // stagger that arrives from INSIDE the body — the stun and sleep procs and the berserk bargain coming
+        // due (`hero.tickPoison`), none of which go through the blow path's own `knockOffLadder` — put him at
+        // the foot of a twelve-metre run in one frame with no fall at all.
+        if (g.hero.dead or g.hero.staggered()) {
+            g.gateWalk = null;
+            dropOffLadder(g);
+        }
         if (g.hero.dead) {
             g.hero.updateDeath(dt);
             if (!g.hero.dead) resetFoes(g);
@@ -4664,6 +5215,8 @@ pub fn run(mode: Mode) void {
             g.hero.updateStun(dt);
         } else if (g.gateWalk != null) {
             updateGateWalk(g, dt);
+        } else if (g.climb != null) {
+            updateClimb(g, dt, mv);
         } else if (g.hero.airborne()) {
             moveHeroAir(g, dt, mv, faceYaw);
         } else if (g.hero.rolling) {
@@ -4685,7 +5238,7 @@ pub fn run(mode: Mode) void {
         } else {
             moveHero(g, dt, mv, faceYaw);
         }
-        if (heroAfoot) gateHeroTerrain(g, heroWas);
+        if (heroAfoot and !g.hero.climbing) gateHeroTerrain(g, heroWas);
         const wasPos = &frameWasPos;
         var wasN: [FOE_GROUPS.len]usize = undefined;
         inline for (FOE_GROUPS, 0..) |f, gi| {
@@ -4751,17 +5304,17 @@ pub fn run(mode: Mode) void {
         if (g.rite.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.heavy(), true);
         }
-        if (g.thicket.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+        if (g.herd.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.heavy(), true);
         }
         // **THE CREATURE SAYS WHEN AND THIS SAYS IT** — a creature calling `sfx` itself would play through the pause card and the shot harness.
-        for (g.thicket.live()) |*r| {
-            if (r.opened) sfx.world(.ravager_bloom, r.pos);
-            if (r.leapt) sfx.world(.ravager_leap, r.pos);
-            if (r.snapped) sfx.world(.ravager_snap, r.pos);
-            if (r.swiped) sfx.world(.delver_claw, r.pos);
-            if (r.yelped) sfx.world(.ravager_hurt, r.pos);
-            if (r.justDied) sfx.world(.ravager_die, r.pos);
+        for (g.herd.live()) |*d| {
+            if (d.opened) sfx.world(.deer_bloom, d.pos);
+            if (d.spat) sfx.world(.deer_spit, d.pos);
+            if (d.charged) sfx.world(.deer_charge, d.pos);
+            if (d.gored) sfx.world(.deer_gore, d.pos);
+            if (d.yelped) sfx.world(.deer_hurt, d.pos);
+            if (d.justDied) sfx.world(.deer_die, d.pos);
         }
         if (g.ring.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.heavy(), true);
@@ -4970,6 +5523,7 @@ pub fn run(mode: Mode) void {
         const nFolk = g.folk.n;
         snapshotPos(g.folk.live(), &wasFolk);
         g.folk.update(dt, g.hero.pos, PLAY_HALF);
+        voiceFolk(g);
         gateTerrain(g, g.folk.live(), wasFolk[0..nFolk], null, false);
         inline for (FOE_GROUPS, 0..) |f, gi| gateTerrain(g, @field(g, f.field).live(), wasPos[gi][0..wasN[gi]], f.kind, false);
         inline for (FOE_GROUPS, 0..) |f, gi| gateChill(@field(g, f.field).live(), wasPos[gi][0..wasN[gi]]);
@@ -5016,7 +5570,12 @@ pub fn run(mode: Mode) void {
             if (!foeLockable(g, li)) g.lock = acquireLock(g);
         }
         collideActors(g, dt);
-        groundActor(g, &g.hero.pos, dt);
+        heroFooting(g, heroWas);
+        if (!g.hero.climbing) {
+            groundActorFrom(g, &g.hero.pos, g.hero.footY(), dt);
+            g.hero.syncLift();
+        }
+        syncLensLift(g);
         inline for (FOE_GROUPS) |f| {
             for (@field(g, f.field).live()) |*a| groundActor(g, &a.pos, dt);
         }
@@ -5025,8 +5584,8 @@ pub fn run(mode: Mode) void {
         tickTriggers(g, dt);
         g.rig.tickShake(rawDt);
         g.rig.aimB = g.hero.aimB;
-        g.rig.tickLift(g.hero.lift, dt);
-        g.rig.followClear(g.hero.shoulderPoint(), &g.env, envGroundAt);
+        g.rig.tickLift(g.hero.lift, liftShare(&g.hero), dt);
+        g.rig.followClear(g.hero.shoulderPoint(), camFloor(g), CamFloor.at);
         sfx.listen(g.rig.cam.position, g.rig.rightXZ());
         sfx.ambience(rawDt);
         footsteps(g, &lastPhase);
@@ -5469,7 +6028,11 @@ fn heroTakes(g: *Game, b: foemod.Blow, heavy: bool, voice: bool) combat.HitOutco
     const out = g.hero.takeHit(b.hit, mathx.dirXZ(g.hero.pos, b.from));
     switch (out) {
         .ignored => {},
-        .taken => heroHurtBeat(g, heavy, voice),
+        .taken => {
+            // **BEFORE THE BEAT** — the knock-off has to read his climb height, and the beat does not care.
+            if (g.climb != null) knockOffLadder(g, b);
+            heroHurtBeat(g, heavy, voice);
+        },
         .blocked => heroBlockBeat(g, b.hit),
         .guardBroken => {
             g.hero.blockSparks(1.0);
@@ -5648,17 +6211,22 @@ fn inBounds(p: rl.Vector3) rl.Vector3 {
 
 fn collideActors(g: *Game, dt: f32) void {
     const step = COLLIDE_RATE * dt;
-    var hp = g.env.resolveHeroSide(g.hero.pos, HERO_R, g.hero.footY());
-    inline for (FOE_GROUPS) |gr| {
-        for (@field(g, gr.field).live()) |*a| {
-            if (foemod.corporeal(a) and !a.airborne() and !phased(a) and g.hero.footY() < a.topWorld().y) {
-                hp = collision.pushOut(hp, HERO_R, bodyOf(a));
+    // **A BODY ON A LADDER IS NOT PUSHED.** It stands hard against the wall the thing leans on, and one frame
+    // of push-out is what takes him off it; the climb owns his XZ outright, exactly as the gate walk does.
+    var hp = g.hero.pos;
+    if (!g.hero.climbing) {
+        hp = g.env.resolveHeroSide(g.hero.pos, HERO_R, g.hero.footY());
+        inline for (FOE_GROUPS) |gr| {
+            for (@field(g, gr.field).live()) |*a| {
+                if (foemod.corporeal(a) and !a.airborne() and !phased(a) and g.hero.footY() < a.topWorld().y) {
+                    hp = collision.pushOut(hp, HERO_R, bodyOf(a));
+                }
             }
         }
-    }
-    for (g.folk.liveConst()) |*p| hp = collision.pushOutCircle(hp, HERO_R, p.pos, p.bodyR());
-    for (g.pack.liveConst()) |*w| {
-        if (foemod.corporeal(w)) hp = collision.pushOutCircle(hp, HERO_R, w.pos, w.bodyR());
+        for (g.folk.liveConst()) |*p| hp = collision.pushOutCircle(hp, HERO_R, p.pos, p.bodyR());
+        for (g.pack.liveConst()) |*w| {
+            if (foemod.corporeal(w)) hp = collision.pushOutCircle(hp, HERO_R, w.pos, w.bodyR());
+        }
     }
     // **THE WALL IS THE LAST WORD, AND THIS IS THE LAST HAND ON THE POSITION.** `gateHeroTerrain` holds him in
     // 300 lines earlier, and then a boss with a SHOVE presses him through it here — a sealed room you can be

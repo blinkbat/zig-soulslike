@@ -1,0 +1,46 @@
+version: 1
+name: Fungal Deer Test
+half: 80.0
+runway: -6.00 -26.00 6.00 -14.00
+
+# THE DEER IS A SPACING PROBLEM, SO THE BENCH IS MOSTLY EMPTY GROUND. Everything this creature does is about
+# where it is standing relative to you: it holds a band, it spits a volley that hangs in the air, and it runs
+# when you close. A wood would hide the half of it that matters.
+#   --map worlds/test_fungaldeer.world
+
+zone: meadow -400.0 -400.0 400.0 400.0 0.300 grasstall,patch,tuft,clover,moss,wildflowers
+clear: 0.0 0.0 30.0
+
+at: bonfire -2 -24 0 1
+at: chest 5.0 -22 190 1 loot=purgeleaf,crimson_flask,wax_stopped_hood
+
+# THE OPEN FIELD. Two of them, far enough apart that their volleys arrive on different clocks — five spores
+# hanging over you from one animal is a pattern; ten from two is the thing to actually look at.
+foe: fungal_deer 0.00 18.00 180.0 1.00 0.21
+foe: fungal_deer 14.00 26.00 205.0 0.94 0.63
+
+# THE POCKET, AND IT IS THE ONLY REASON THIS MAP HAS WALLS IN IT. `pinned` is its own clock and its own gap:
+# it needs somewhere it genuinely cannot back out of, or the antlers are a branch nothing ever reaches. Three
+# walls and a mouth about four metres wide — wide enough to walk into, narrow enough that the deer runs out of
+# ground before you run out of patience.
+at: wall -34.0 4.0 0 1.0
+at: wall -34.0 8.0 0 1.0
+at: wall -34.0 12.0 0 1.0
+at: wall -30.0 16.0 90 1.0
+at: wall -26.0 16.0 90 1.0
+at: wall -22.0 16.0 90 1.0
+at: wall -18.0 12.0 0 1.0
+at: wall -18.0 8.0 0 1.0
+at: wall -18.0 4.0 0 1.0
+foe: fungal_deer -26.00 11.00 180.0 1.00 0.44
+
+# A LONE ONE ON ITS OWN POST, WALKING A ROUND. Orders are what it does before it has seen anybody, and a
+# ranged animal that never noticed you is the only way to watch the flower ride furled at a walk.
+foe: fungal_deer 30.00 -8.00 90.0 1.06 0.88 ai=patrol wp=44.00,-8.00 wp=44.00,4.00 wp=30.00,4.00
+
+# SOMETHING TO PUT THE SCALE AGAINST: the deer stands 1.46 m at the withers and the flower rises over the top
+# of a man. A boulder is the only thing here that says so.
+at: boulder -8 34 20 1.4
+at: boulder 20 6 130 1.2
+at: capgiant 38 30 40 1.0
+at: glowcluster -12 -6 0 1.0

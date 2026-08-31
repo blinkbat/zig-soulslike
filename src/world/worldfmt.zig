@@ -69,6 +69,10 @@ pub const Op = struct {
     r1: f32 = 0,
     yaw: f32 = 0,
     scale: f32 = 1,
+    /// **HOW FAR UP A STACKING KIND RUNS**, in metres (`props.Info.stack`, the ladder). It SNAPS to whole
+    /// sections at replay, so the file and the world agree on a number the author can read off the panel; 0
+    /// leaves the kind its own single section. Meaningless on anything that does not stack.
+    rise: f32 = 0,
     /// TIP THE PROP OFF PLUMB: `lean` degrees, toward the compass direction `leanDir` (measured like yaw).
     lean: f32 = 0,
     leanDir: f32 = 0,
@@ -452,7 +456,7 @@ pub const Arena = struct {
 };
 
 /// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at comptime, and each `roleOf` reads its own entries as a CONTIGUOUS RUN off the first of them.
-pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, florid_ravager, mushroom_mage, fen_lurker, spore_golem, bone_skitterer, ancient_priest, tolling_hollow, mourner, slumber_bloom, cinder_wake, rotgorger, birchwight, salt_husk, fish_spearman, fish_netter, fish_shaman, blinkbat, fungal_swordsman, fungal_magus };
+pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, fungal_deer, mushroom_mage, fen_lurker, spore_golem, bone_skitterer, ancient_priest, tolling_hollow, mourner, slumber_bloom, cinder_wake, rotgorger, birchwight, salt_husk, fish_spearman, fish_netter, fish_shaman, blinkbat, fungal_swordsman, fungal_magus };
 
 pub fn foeName(k: FoeKind) [:0]const u8 {
     return switch (k) {
@@ -474,7 +478,7 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
         .bone_knight => "Bone Knight",
         .delver => "Delver",
         .necromancer => "Necromancer",
-        .florid_ravager => "Florid Ravager",
+        .fungal_deer => "Fungal Deer",
         .mushroom_mage => "Mushroom Mage",
         .fen_lurker => "Fen Lurker",
         .spore_golem => "Spore Homunculus",
@@ -747,12 +751,13 @@ pub const Dialog = struct {
 };
 
 /// APPEND-ONLY, for `FoeKind`'s reason: it is an `enum(u8)` and the editor's own picker indexes it by ordinal. The MAP FILE is safe either way — `parseScript` reads the kind back by TAG (`enumFromName`).
-pub const NpcKind = enum(u8) { wanderer, merchant };
+pub const NpcKind = enum(u8) { wanderer, merchant, smith };
 
 pub fn npcName(k: NpcKind) [:0]const u8 {
     return switch (k) {
         .wanderer => "Wanderer",
         .merchant => "Caravaneer",
+        .smith => "Mossbeard",
     };
 }
 
@@ -2658,8 +2663,21 @@ fn eqlVal(a: anytype, b: @TypeOf(a)) bool {
 }
 
 fn enumFromName(comptime T: type, s: []const u8) !T {
-    return std.meta.stringToEnum(T, s) orelse ParseError.BadKind;
+    if (std.meta.stringToEnum(T, s)) |v| return v;
+    if (T == FoeKind) {
+        // **A KIND THAT WAS REPLACED STILL HAS TO LOAD.** The florid ravager was scrapped and rebuilt as the
+        // fungal deer on its own bones; every map already on disk names the old tag. Reading it is a rename,
+        // not a compatibility layer — a WRITE always emits the current one, so a map re-saved is a map migrated.
+        inline for (FOE_RENAMED) |r| {
+            if (std.mem.eql(u8, r[0], s)) return @field(FoeKind, r[1]);
+        }
+    }
+    return ParseError.BadKind;
 }
+
+const FOE_RENAMED = [_][2][]const u8{
+    .{ "florid_ravager", "fungal_deer" },
+};
 
 fn finiteFloat(comptime T: type, tok: []const u8) !T {
     const v = std.fmt.parseFloat(T, tok) catch return ParseError.BadNumber;

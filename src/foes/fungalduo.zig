@@ -99,6 +99,7 @@ const VENOM = rgba(150, 206, 120, 210);
 const EYE = rgba(214, 232, 150, 44);
 
 const CHAOS_CORE = elemfx.sig(.chaos).core;
+const CHAOS_EDGE = elemfx.sig(.chaos).edge;
 
 /// **AND IT MUST REACH PAST WHERE THE PAIR THEMSELVES STAND** — at the 26 this was, the magus could blink
 /// outside the ring its own boss bar wakes on. The comptime block by `MG_REAPPEAR_R` holds the two together.
@@ -117,7 +118,7 @@ const SPRING_STIFF: f32 = 1500.0;
 const SPRING_ZETA: f32 = 0.72;
 const SPRING_FALLOFF: f32 = 0.93;
 
-const CHAN_N = 9;
+const CHAN_N = 10;
 const Chan = [CHAN_N]f32;
 const CH_LEAN = 0;
 const CH_TWIST = 1;
@@ -130,6 +131,15 @@ const CH_LEL = 7;
 /// **WHERE THE KIT POINTS, AS A POSE CHANNEL** — degrees the weapon leads FORWARD of the forearm line (0 down,
 /// 90 level, 180 on end), the warriors' own convention (`hero.staffFit`).
 const CH_TILT = 8;
+/// **DEGREES BOTH SHOULDERS DRAW THE HANDS TO THE MIDLINE — THE ONLY WAY A ONE-HELD-BONE RIG GRIPS WITH TWO
+/// HANDS.** It is ONE channel and symmetric because that is the only thing it is for.
+///
+/// **AND IT IS APPLIED BEFORE THE PITCH, WHICH IS THE WHOLE POINT.** `rabd` composes AFTER (`mul(rx, rz)`), so
+/// once an arm has swung forward it lies on `rz`'s own axis and abduction is a near no-op: 34 deg of it moved
+/// the off fist 0.13 m. Prepended in the bone's frame the lateral offset survives the swing, and the
+/// arithmetic is closed-form — the hand sits `armLen · sin(clasp)` off its shoulder, so on 0.57 m shoulders
+/// and a 0.88 m arm the midline is `asin(0.57/0.88)` = 40 deg. Zero everywhere else, so no other pose moved.
+const CH_CLASP = 9;
 
 const P = struct {
     lean: f32 = 0,
@@ -141,9 +151,10 @@ const P = struct {
     lsh: f32 = 0,
     lel: f32 = 0,
     tilt: f32 = 0,
+    clasp: f32 = 0,
 
     pub fn chan(self: P) Chan {
-        return .{ self.lean, self.twist, self.head, self.rsh, self.rabd, self.rel, self.lsh, self.lel, self.tilt };
+        return .{ self.lean, self.twist, self.head, self.rsh, self.rabd, self.rel, self.lsh, self.lel, self.tilt, self.clasp };
     }
 };
 
@@ -153,7 +164,7 @@ const PoseKey = anim.Pose(P).PoseKey;
 /// bar the receiver, so a tenth channel meant four hand edits in lockstep. The two structs keep one-line
 /// delegates (`foe.resetGroup`'s rule) because every state branch calls them by name.
 fn chanOf(self: anytype) Chan {
-    return .{ self.bodyLean, self.twist, self.headPitch, self.rsh, self.rabd, self.rel, self.lsh, self.lel, self.tilt };
+    return .{ self.bodyLean, self.twist, self.headPitch, self.rsh, self.rabd, self.rel, self.lsh, self.lel, self.tilt, self.clasp };
 }
 
 fn setChan(self: anytype, c: Chan) void {
@@ -166,6 +177,7 @@ fn setChan(self: anytype, c: Chan) void {
     self.lsh = c[CH_LSH];
     self.lel = c[CH_LEL];
     self.tilt = c[CH_TILT];
+    self.clasp = c[CH_CLASP];
 }
 
 fn settle(self: anytype, dt: f32) void {
@@ -230,6 +242,9 @@ fn swSlashArc() f32 {
 fn swLungeArc() f32 {
     return SW_TURN_RATE * SW_LUNGE_WIND;
 }
+fn swHeavyArc() f32 {
+    return SW_TURN_RATE * SW_HEAVY_WIND;
+}
 
 /// **THE STROKE IS PRICED BY ITS CLOCK, NOT BY ITS ROW** (owner: dps way too high). Measured through his own
 /// update at his slash band, he billed 22.7 a second against the first boss's 22.0 — and he is one of TWO
@@ -243,18 +258,24 @@ const SW_SLASH2_CHANCE: f32 = 0.55;
 const SW_SLASH_CD: f32 = 1.35;
 
 const SW_LUNGE_MIN: f32 = 3.4;
-const SW_LUNGE_MAX: f32 = 9.0;
+/// **AND ITS FLOOR IS THE MAGUS'S SKIRT, NOT A FEELING** — the two bands have to abut (the first test in this
+/// file), so the lunge cannot stop reaching inside `MG_FLEE_R` or there is a ring nothing answers at.
+const SW_LUNGE_MAX: f32 = 7.3;
 const SW_LUNGE_WIND: f32 = 0.70;
 const SW_LUNGE_DUR: f32 = 0.34;
 const SW_LUNGE_REC: f32 = 0.72;
 /// **THE COMMITMENT IS RARE OR IT IS NOT A COMMITMENT** (owner: lunges come too often, longer cooldowns on
 /// lunges). At 3.6 it came round every 4.6 s measured, which is close enough to the slash's own cadence that
-/// the whole 3.4–9.0 band read as one move on repeat; at 6.4 it is one throw in ~7.7 s.
+/// the whole 3.4–7.3 band read as one move on repeat; at 6.4 it is one throw in ~7.7 s.
 const SW_LUNGE_CD: f32 = 6.4;
-const SW_LUNGE_DIST: f32 = 7.4;
+/// Metres pre-scale, so the travel is `× SCALE`: 7.68 m on the ground, down from the 10.94 m that 7.4 bought
+/// (owner: lunge must have less distance). It still covers its own band from the top of it — `SW_LUNGE_DIST +
+/// SW_SLASH_R >= SW_LUNGE_MAX` is the comptime that says so, and it is what stops the cut going further.
+const SW_LUNGE_DIST: f32 = 5.2;
 const SW_LUNGE_UP: f32 = 0.30;
 
-const SW_BACK_DIST: f32 = 5.2;
+/// Lands him back inside the lunge band, which is why it moves when the band's top does.
+const SW_BACK_DIST: f32 = 4.8;
 const SW_BACK_DUR: f32 = 0.38;
 const SW_BACK_UP: f32 = 0.52;
 const SW_BACK_LAND: f32 = 0.20;
@@ -275,7 +296,33 @@ const SW_BACK_CD: f32 = 6.5;
 /// …and the STEEL came down a second time (owner: does too much damage), by the same rule: 23 raw to 18 on the
 /// slash and 32 to 25 on the lunge, all of it off `dmg`, so the venom clock the fight is built on is untouched.
 const SW_SLASH_HIT = combat.Hit{ .dmg = 7, .poise = 30, .stance = 26, .elem = combat.elems(.{ .chaos = 11 }) };
-const SW_LUNGE_HIT = combat.Hit{ .dmg = 13, .poise = 44, .stance = 34, .launch = 3.4, .elem = combat.elems(.{ .chaos = 12 }) };
+/// **A THRUST DOES NOT THROW A MAN OFF HIS FEET** (owner: stop juggling you). It carried `launch = 3.4` — an
+/// apex nearly three times the biggest slam in the game (`combat.SLAM_LAUNCH` 0.85) and past the ceiling the
+/// airborne pose is even solved against (`hero.LAUNCH_MAX_APEX` 1.2), which is 1.33 s off the ground per hit
+/// from a move that closes 7.7 m. The throw moved to the OVERHEAD, where a two-hander's weight belongs.
+const SW_LUNGE_HIT = combat.Hit{ .dmg = 13, .poise = 44, .stance = 34, .elem = combat.elems(.{ .chaos = 12 }) };
+
+// **THE CLOSE-RANGE COMMITMENT** (owner: a close range 2-hand heavy slow atk that can juggle u instead). Both
+// hands on the grip, straight over the crown, and it comes down on the spot he is standing on. It is the
+// slowest tell he owns and the shortest band he owns — the answer is to be somewhere else, and the price of
+// not being is the only throw in the fight.
+const SW_HEAVY_R: f32 = 2.1;
+/// The slowest wind in the pair by half again, because it is the only thing that throws you.
+const SW_HEAVY_WIND: f32 = 1.15;
+const SW_HEAVY_DUR: f32 = 0.30;
+/// **THE TAIL IS THE PAYMENT.** He is stood over his own blade for nearly a second, which is the window the
+/// move buys you and the reason a commitment is worth baiting.
+const SW_HEAVY_REC: f32 = 0.98;
+const SW_HEAVY_CD: f32 = 8.5;
+/// **METRES OF APEX, AND ITS OWN NUMBER RATHER THAN THE POSE'S.** It is the biggest throw in the game — over
+/// every other slam's `combat.SLAM_LAUNCH` and at the top of the range the airborne pose is solved against —
+/// but `hero.LAUNCH_MAX_APEX` is the POSE's reference, not a damage table, and spending it as an authored blow
+/// would mean a change made to how a throw READS quietly changed how far this one throws. The comptime below
+/// keeps the two related without making them one.
+const SW_HEAVY_LAUNCH: f32 = 1.2;
+/// An overhead is SAGITTAL — it cuts down one line and sweeps nothing across, so its bearing gate gets no
+/// sweep allowance the way the slash's does, only what the long wind can turn (`swHeavyArc`).
+const SW_HEAVY_HIT = combat.Hit{ .dmg = 24, .poise = 58, .stance = 42, .launch = SW_HEAVY_LAUNCH, .elem = combat.elems(.{ .chaos = 14 }) };
 
 const SW_NPART = 40;
 
@@ -288,6 +335,17 @@ comptime {
     std.debug.assert(SW_BACK_DIST + SW_SLASH_R > SW_LUNGE_MIN);
     std.debug.assert(SW_BACK_DIST + SW_SLASH_R < SW_LUNGE_MAX);
     std.debug.assert(SW_SLASH_HIT.elem.at(.chaos) > 0 and SW_LUNGE_HIT.elem.at(.chaos) > 0);
+    // **THE ONLY THING THAT THROWS HIM IS THE SLOWEST AND THE NEAREST.** Every one of these is what makes the
+    // overhead answerable: a longer tell than either other stroke, a band inside the slash's, a rarer clock,
+    // and a tail longer than the two of them. Retiming any of them cannot quietly make it the bread-and-butter.
+    std.debug.assert(SW_HEAVY_WIND > SW_SLASH_WIND and SW_HEAVY_WIND > SW_LUNGE_WIND);
+    std.debug.assert(SW_HEAVY_R <= SW_SLASH_R);
+    std.debug.assert(SW_HEAVY_CD > SW_LUNGE_CD);
+    std.debug.assert(SW_HEAVY_REC > SW_SLASH_REC and SW_HEAVY_REC > SW_LUNGE_REC);
+    // …and it is the ONLY one: `tryReach` reads the state, so a second launching row here would be a juggle.
+    std.debug.assert(SW_HEAVY_HIT.launch > 0 and SW_SLASH_HIT.launch == 0 and SW_LUNGE_HIT.launch == 0);
+    // The heaviest throw in the game, and still inside the range the airborne pose is solved over.
+    std.debug.assert(SW_HEAVY_LAUNCH > combat.SLAM_LAUNCH and SW_HEAVY_LAUNCH <= heromod.LAUNCH_MAX_APEX);
 }
 
 /// **TOP-HEAVY AND HUNG FORWARD.** All the mass is in the shelves, so he carries it the way a thing with a
@@ -325,29 +383,86 @@ const SW_LUNGE_KEYS = [_]PoseKey{
     .{ .t = 1.00, .p = .{ .lean = 22.0, .twist = 12.0, .head = -8.0, .rsh = 78.0, .rabd = 6.0, .rel = 10.0, .lsh = -22.0, .lel = 18.0, .tilt = 88.0 } },
 };
 
+/// **BOTH HANDS ON THE GRIP IS `lsh`/`lel` MEETING `rsh`/`rel`, NOT A SECOND MESH.** The rig has one held
+/// bone, so a two-hander reads entirely off the off-arm coming across to the hilt and staying there through
+/// the stroke — an off-arm left in its carry pose is a man swinging a longsword one-handed over his head.
+/// `rabd` closes to nothing for the same reason: a two-handed grip is CENTRED, not out at the shoulder.
+/// Solved, not picked: `asin(shoulderHalf / armLen)` on this body's own numbers (0.57 m and 0.88 m).
+const SW_HEAVY_CLASP: f32 = 40.0;
+
+const SW_HEAVY_WIND_KEYS = [_]PoseKey{
+    .{ .t = 0.00, .p = SW_CARRY },
+    .{ .t = 0.52, .p = .{ .lean = -13.0, .head = 13.0, .rsh = -48.0, .rabd = 12.0, .rel = 66.0, .lsh = -46.0, .lel = 64.0, .clasp = SW_HEAVY_CLASP * 0.85, .tilt = 168.0 }, .ease = .accel },
+    .{ .t = 1.00, .p = .{ .lean = -21.0, .head = 18.0, .rsh = -72.0, .rabd = 5.0, .rel = 46.0, .lsh = -72.0, .lel = 46.0, .clasp = SW_HEAVY_CLASP, .tilt = 178.0 } },
+};
+
+const SW_HEAVY_KEYS = [_]PoseKey{
+    .{ .t = 0.00, .p = .{ .lean = -21.0, .head = 18.0, .rsh = -72.0, .rabd = 5.0, .rel = 46.0, .lsh = -72.0, .lel = 46.0, .clasp = SW_HEAVY_CLASP, .tilt = 178.0 } },
+    .{ .t = 0.42, .p = .{ .lean = 33.0, .head = -18.0, .rsh = 88.0, .rabd = 4.0, .rel = 8.0, .lsh = 88.0, .lel = 8.0, .clasp = SW_HEAVY_CLASP, .tilt = 66.0 }, .ease = .snap },
+    .{ .t = 1.00, .p = .{ .lean = 27.0, .head = -14.0, .rsh = 80.0, .rabd = 6.0, .rel = 13.0, .lsh = 80.0, .lel = 13.0, .clasp = SW_HEAVY_CLASP, .tilt = 48.0 } },
+};
+
+/// **A TAIL OPENS ON ITS OWN STROKE'S LAST FRAME.** Hand-written, the first key is a copy of another array's
+/// last one and only the pairs listed in THE SEAMS HOLD were held: `.slash2` opened 88 deg of twist off its
+/// own end pose, the magus's `.orb` 84 of `lsh`, and the spring bank whips through that in a tenth of a second.
+fn recTrack(comptime keys: []const PoseKey, comptime carry: P) [2]PoseKey {
+    return .{
+        .{ .t = 0.00, .p = keys[keys.len - 1].p },
+        .{ .t = 1.00, .p = carry, .ease = .decel },
+    };
+}
+
+const SW_HEAVY_REC_KEYS = recTrack(&SW_HEAVY_KEYS, SW_CARRY);
+
 const SW_BACK_KEYS = [_]PoseKey{
     .{ .t = 0.00, .p = .{ .lean = 22.0, .twist = 12.0, .head = -8.0, .rsh = 78.0, .rabd = 6.0, .rel = 10.0, .lsh = -22.0, .lel = 18.0, .tilt = 88.0 } },
     .{ .t = 0.40, .p = .{ .lean = -30.0, .head = 16.0, .rsh = 6.0, .rabd = 40.0, .rel = 84.0, .lsh = 34.0, .lel = 56.0, .tilt = 60.0 }, .ease = .decel },
     .{ .t = 1.00, .p = SW_CARRY, .ease = .decel },
 };
 
-const SW_REC_KEYS = [_]PoseKey{
-    .{ .t = 0.00, .p = .{ .lean = 11.0, .twist = 48.0, .head = -6.0, .rsh = 82.0, .rabd = 6.0, .rel = 10.0, .lsh = -20.0, .lel = 18.0, .tilt = 74.0 } },
-    .{ .t = 1.00, .p = SW_CARRY, .ease = .decel },
+const SW_REC_KEYS = recTrack(&SW_SLASH_KEYS, SW_CARRY);
+const SW_SLASH2_REC_KEYS = recTrack(&SW_SLASH2_KEYS, SW_CARRY);
+const SW_LUNGE_REC_KEYS = recTrack(&SW_LUNGE_KEYS, SW_CARRY);
+
+const SwState = enum { idle, stride, slash_wind, slash, slash2, heavy_wind, heavy, lunge_wind, lunge, back, recover, stunlight, stunheavy, dead };
+
+const SwChoice = enum { hold, close, slash, heavy, lunge, back };
+
+/// The tail a stroke leaves behind it: its length, and the track that walks out of its own end pose.
+const Recover = enum {
+    slash,
+    slash2,
+    heavy,
+    lunge,
+
+    fn dur(self: Recover) f32 {
+        return switch (self) {
+            .slash, .slash2 => SW_SLASH_REC,
+            .heavy => SW_HEAVY_REC,
+            .lunge => SW_LUNGE_REC,
+        };
+    }
+    fn keys(self: Recover) []const PoseKey {
+        return switch (self) {
+            .slash => &SW_REC_KEYS,
+            .slash2 => &SW_SLASH2_REC_KEYS,
+            .heavy => &SW_HEAVY_REC_KEYS,
+            .lunge => &SW_LUNGE_REC_KEYS,
+        };
+    }
 };
-
-const SwState = enum { idle, stride, slash_wind, slash, slash2, lunge_wind, lunge, back, recover, stunlight, stunheavy, dead };
-
-const SwChoice = enum { hold, close, slash, lunge, back };
 
 /// The pick, with no world near it, so a test can walk every band. `off` is radians the quarry stands off his
 /// own bearing — a fact about where two bodies are, which is what the LAW allows a decision to read.
-fn swClassify(dist: f32, off: f32, slashReady: bool, lungeReady: bool, backReady: bool, crowded: bool) SwChoice {
+fn swClassify(dist: f32, off: f32, slashReady: bool, heavyReady: bool, lungeReady: bool, backReady: bool, crowded: bool) SwChoice {
     if (dist > AGGRO_R) return .hold;
     // **THE JUMPBACK IS FIRST AND IT IS THE ONLY ONE THAT LOOKS INWARD.** `crowded` is his OWN clock saying he
     // has been stood on top of for long enough — never a read of what the hero did (the LAW).
     if (crowded and backReady) return .back;
     const a = @abs(off);
+    // **THE COMMITMENT OUTRANKS THE BREAD-AND-BUTTER STROKE INSIDE ITS OWN BAND**, or an 8.5 s clock that only
+    // gets asked when the 1.35 s one happens to be cold is a move you see once a fight.
+    if (dist <= SW_HEAVY_R and heavyReady and a <= swHeavyArc()) return .heavy;
     if (dist <= SW_SLASH_R and slashReady and a <= swSlashArc()) return .slash;
     if (lungeReady and dist >= SW_LUNGE_MIN and dist <= SW_LUNGE_MAX and a <= swLungeArc()) return .lunge;
     // **OFF THE GATE HE LOOMS, AND LOOMING IS THE TURN.** `.close` walks at him and idle faces him at the full
@@ -382,24 +497,31 @@ const MG_FLEE_R: f32 = 7.0;
 const MG_KEEP_R: f32 = 16.0;
 const MG_DRIFT_DUR: f32 = 0.85;
 
-pub const ORB_SPEED: f32 = 15.0;
-pub const ORB_R: f32 = 0.20;
-pub const ORB_LIFE: f32 = 2.6;
+/// **A BOLT YOU CAN SEE COMING IS A BOLT YOU CAN STEP OFF** (owner: slow it down and make it more obvious). At
+/// 15 m/s it crossed the caster's own keep-band in 1.07 s; at 9.5 that is 1.68 s, and out of its shortest stand
+/// (`MG_ORB_MIN`) it is 0.74 s — still nearly twice the hero's sprint, so it is dodged and never outrun.
+pub const ORB_SPEED: f32 = 9.5;
+pub const ORB_R: f32 = 0.32;
+pub const ORB_LIFE: f32 = 3.6;
 /// ATTRITION, and the knight's gas is the tier: 14 raw, thrown often, and never the thing that kills you.
 pub const ORB_HIT = combat.Hit{ .poise = 14, .elem = combat.elems(.{ .chaos = 14 }) };
 const MG_ORB_WIND: f32 = 0.36;
 const MG_ORB_DUR: f32 = 0.16;
-const MG_ORB_REC: f32 = 0.26;
+/// The tail on BOTH casts, which is why it is not `MG_ORB_REC` any more.
+const MG_REC: f32 = 0.26;
 /// **THE ATTRITION IS A DRIP, NOT A STREAM** (owner: chaos orbs could come out a bit slower) — the cadence and
-/// not the flight, which stays at `ORB_SPEED`.
+/// How fast one travels once thrown is `ORB_SPEED`'s, and was cut on its own later.
 const MG_ORB_CD: f32 = 2.3;
 const MG_ORB_RELEASE_K: f32 = 0.34;
 /// **DERIVED OFF THE RING IT WALKS OUT OF, NOT PICKED.** `.back` is answered before either cast, so any part
 /// of a spell's band inside `MG_FLEE_R` is a band it can never be asked for — a dead number that reads as tuning.
 const MG_ORB_MIN: f32 = MG_FLEE_R;
 
-pub const CAP_GROW: f32 = 1.9;
-pub const CAP_GLOW: f32 = 0.85;
+/// **THE GROUND ASKS YOU TO MOVE, SO IT HAS TO ASK IN TIME** (owner: mushrooms must grow slower and be more
+/// obvious). At 1.9 s of growing a bunch sown under you went off inside one of the swordsman's own chains, so
+/// the answer to it was never your feet — it was luck. 3.2 s is two of his slashes plus the tail.
+pub const CAP_GROW: f32 = 3.2;
+pub const CAP_GLOW: f32 = 1.05;
 pub const CAP_BURST_R: f32 = 3.1;
 /// **A BUNCH IS FOUR OF THESE AND THEY POP IN A RUN**, so the cap is priced as one of four and not as one
 /// blow: at 40 apiece, standing in the middle of a bunch was 160 raw — more than three of the knight's overheads.
@@ -424,7 +546,11 @@ const MG_FADE_IN: f32 = 0.60;
 const MG_FADE_CD: f32 = 9.0;
 const MG_REAPPEAR_R: f32 = 13.0;
 pub const MIST_R: f32 = 3.4;
-pub const MIST_LIFE: f32 = 5.5;
+/// **THE FOG HAS TO OUTLAST THE BLINK THAT LAID IT** (owner: sleep fog should last longer). It is shed at the
+/// END of the fade and the caster is back up `MG_GONE_DUR + MG_FADE_IN` later, so at 5.5 s — of which only the
+/// 0.14..0.55 band is full strength — the ground it denied was clear again before it had cast anything from the
+/// new spot. 9.5 s leaves it standing across a whole cast cycle.
+pub const MIST_LIFE: f32 = 9.5;
 pub const MIST_BUILD: f32 = 16.0;
 
 const MG_NPART = 72;
@@ -438,6 +564,11 @@ comptime {
     std.debug.assert(MG_FADE_OUT > MG_ORB_WIND * 2.0);
     std.debug.assert(MG_REAPPEAR_R > MG_FLEE_R);
     std.debug.assert(CAP_GROW > CAP_GLOW * 2.0);
+    // A bolt has to be able to CROSS the ring it is thrown inside, or slowing it turns the far half of the
+    // aggro band into ground the caster cannot answer at.
+    std.debug.assert(ORB_SPEED * ORB_LIFE > AGGRO_R);
+    // The wounded knobs only ever go one way: sooner and oftener, never slower than the healthy caster's.
+    std.debug.assert(MG_PRESS_RATE_HURT >= 1.0 and MG_FADE_CD_HURT <= MG_FADE_CD);
     // **A CREATURE MAY NOT STAND FURTHER OFF THAN THE RING ITS OWN BAR WAKES ON.** Keeping to 16 and blinking
     // 13 put the magus 29 m out against an `AGGRO_R` of 26, so the bar dropped mid-fight whenever `roused` had
     // lapsed (owner). The room answers it now (`game.sealedInWith`), and this stops the NEXT blink re-authoring it.
@@ -470,9 +601,20 @@ const MG_SPROUT_KEYS = [_]PoseKey{
     .{ .t = 1.00, .p = .{ .lean = 20.0, .head = -11.0, .rsh = 48.0, .rabd = 8.0, .rel = 16.0, .lsh = 40.0, .lel = 20.0, .tilt = 22.0 } },
 };
 
-const MG_REC_KEYS = [_]PoseKey{
-    .{ .t = 0.00, .p = .{ .lean = 20.0, .head = -11.0, .rsh = 48.0, .rabd = 8.0, .rel = 16.0, .lsh = 40.0, .lel = 20.0, .tilt = 22.0 } },
-    .{ .t = 1.00, .p = MG_CARRY, .ease = .decel },
+const MG_SPROUT_REC_KEYS = recTrack(&MG_SPROUT_KEYS, MG_CARRY);
+const MG_ORB_REC_KEYS = recTrack(&MG_ORB_KEYS, MG_CARRY);
+
+/// Two casts, two end poses, one tail — `recTrack`'s note.
+const MgRecover = enum {
+    orb,
+    sprout,
+
+    fn keys(self: MgRecover) []const PoseKey {
+        return switch (self) {
+            .orb => &MG_ORB_REC_KEYS,
+            .sprout => &MG_SPROUT_REC_KEYS,
+        };
+    }
 };
 
 const MG_FADE_KEYS = [_]PoseKey{
@@ -545,6 +687,8 @@ pub const Orb = struct {
     vel: rl.Vector3 = mathx.zero3,
     t: f32 = 0,
     spin: f32 = 0,
+    /// The ground under the caster that threw it — what `foe.landed` measures against.
+    floor: f32 = 0,
 };
 
 /// **HOW LONG SOMETHING HAS TO STAND ON HIM BEFORE HE TAKES THE GROUND BACK.** Over two of his own strokes, so
@@ -585,6 +729,7 @@ pub const Swordsman = struct {
     t: f32 = 0,
     elapsed: f32 = 0,
     slashCd: f32 = 0,
+    heavyCd: f32 = 0,
     lungeCd: f32 = 0,
     backCd: f32 = 0,
     /// **HOW LONG HE HAS BEEN STOOD ON TOP OF**, in seconds, and the only thing that asks for the jumpback. A
@@ -599,9 +744,13 @@ pub const Swordsman = struct {
 
     heroHit: ?combat.Hit = null,
     dealt: bool = false,
-    /// **WHICH RECOVER HE OWES.** `enter` clears `hopDone` on the way into `.recover`, so reading the leap off
-    /// that gave the lunge the SLASH's recover every time — a 9.9 m commitment with a 0.40 s tail on it.
-    fromLeap: bool = false,
+    /// **WHICH RECOVER HE OWES, STAMPED BY THE STROKE THAT OWES IT.** Three strokes end in three different
+    /// poses over three different tails, and inferring it at the recover is what once gave the lunge the
+    /// SLASH's 0.40 s tail off a leap flag `enter` had already cleared.
+    ///
+    /// A TAG AND NOT THE TRACK ITSELF: these bodies live in a `[MAX_PER_KIND]Swordsman = undefined` and every
+    /// other field in them is a scalar, so a slot read past `n` is nonsense rather than a wild pointer.
+    rec: Recover = .slash,
 
     moveDir: rl.Vector3 = mathx.zero3,
     homing: bool = false,
@@ -615,6 +764,7 @@ pub const Swordsman = struct {
     lsh: f32 = 0,
     lel: f32 = 0,
     tilt: f32 = 0,
+    clasp: f32 = 0,
     springs: anim.SpringBank(CHAN_N) = .{},
 
     phase: f32 = 0,
@@ -738,11 +888,15 @@ pub const Swordsman = struct {
         self.state = s;
         self.t = 0;
         self.dealt = false;
-        if (s != .recover) self.fromLeap = false;
         if (s != .lunge and s != .back) {
             self.hop = 0;
             self.hopDone = 0;
         }
+    }
+
+    fn recoverAfter(self: *Swordsman, r: Recover) void {
+        self.rec = r;
+        self.enter(.recover);
     }
 
     pub fn update(self: *Swordsman, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
@@ -769,6 +923,7 @@ pub const Swordsman = struct {
         self.t += dt;
         self.vit.tick(dt);
         self.slashCd = mathx.maxF(0, self.slashCd - dt);
+        self.heavyCd = mathx.maxF(0, self.heavyCd - dt);
         self.lungeCd = mathx.maxF(0, self.lungeCd - dt);
         self.backCd = mathx.maxF(0, self.backCd - dt);
         foe.fadeFlash(&self.flash, dt);
@@ -824,7 +979,7 @@ pub const Swordsman = struct {
                         self.enter(.slash2);
                     } else {
                         self.slashCd = SW_SLASH_CD;
-                        self.enter(.recover);
+                        self.recoverAfter(.slash);
                     }
                 }
             },
@@ -836,7 +991,26 @@ pub const Swordsman = struct {
                 if (self.t >= SW_SLASH_DUR) {
                     self.doubling = false;
                     self.slashCd = SW_SLASH_CD;
-                    self.enter(.recover);
+                    self.recoverAfter(.slash2);
+                }
+            },
+            .heavy_wind => {
+                self.faceToward(hero, dt);
+                self.chanSet(samplePose(&SW_HEAVY_WIND_KEYS, mathx.clampF(self.t / SW_HEAVY_WIND, 0, 1)));
+                if (self.t >= SW_HEAVY_WIND) {
+                    sfx.world(.swing_heavy, self.pos);
+                    self.enter(.heavy);
+                }
+            },
+            .heavy => {
+                // **AN OVERHEAD CANNOT BE STEERED ONCE IT IS FALLING.** The whole of its aim was the 1.15 s of
+                // wind; a turn inside the drop would make the one move that throws you also the one that
+                // follows you, and the answer to it is stepping off the line it committed to.
+                self.chanSet(samplePose(&SW_HEAVY_KEYS, mathx.clampF(self.t / SW_HEAVY_DUR, 0, 1)));
+                self.tryReach(hero);
+                if (self.t >= SW_HEAVY_DUR) {
+                    self.heavyCd = SW_HEAVY_CD;
+                    self.recoverAfter(.heavy);
                 }
             },
             .lunge_wind => {
@@ -846,7 +1020,6 @@ pub const Swordsman = struct {
                     self.hopDir = self.fdir();
                     sfx.world(.swing_heavy, self.pos);
                     self.enter(.lunge);
-                    self.fromLeap = true;
                 }
             },
             .lunge => {
@@ -860,7 +1033,7 @@ pub const Swordsman = struct {
                 if (self.t >= SW_LUNGE_DUR) {
                     self.hop = 0;
                     self.lungeCd = SW_LUNGE_CD;
-                    self.enter(.recover);
+                    self.recoverAfter(.lunge);
                 }
             },
             .back => {
@@ -881,8 +1054,8 @@ pub const Swordsman = struct {
             },
             .recover => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt * 0.55);
-                const dur = if (self.fromLeap) SW_LUNGE_REC else SW_SLASH_REC;
-                self.chanSet(samplePose(&SW_REC_KEYS, mathx.clampF(self.t / dur, 0, 1)));
+                const dur = self.rec.dur();
+                self.chanSet(samplePose(self.rec.keys(), mathx.clampF(self.t / dur, 0, 1)));
                 if (self.t >= dur) self.enter(.idle);
             },
             .stunlight, .stunheavy => {
@@ -911,11 +1084,12 @@ pub const Swordsman = struct {
         // facing him, so the two are close — but a gate measured off the thing it gates on is the whole point.
         const f = mathx.dirXZ(self.pos, toward);
         const off = mathx.wrapPi(mathx.headingXZ(f) - self.facing);
-        switch (swClassify(dist, off, self.slashCd <= 0, self.lungeCd <= 0, self.backCd <= 0, self.crowd >= SW_CROWD_HOLD)) {
+        switch (swClassify(dist, off, self.slashCd <= 0, self.heavyCd <= 0, self.lungeCd <= 0, self.backCd <= 0, self.crowd >= SW_CROWD_HOLD)) {
             .slash => {
                 self.doubling = self.rng.float() < SW_SLASH2_CHANCE;
                 self.enter(.slash_wind);
             },
+            .heavy => self.enter(.heavy_wind),
             .lunge => self.enter(.lunge_wind),
             .back => {
                 if (foe.canLeap(&self.root)) {
@@ -951,6 +1125,8 @@ pub const Swordsman = struct {
         return switch (self.state) {
             .slash_wind => SW_SLASH_WIND - self.t + SW_SLASH_DUR * 0.46,
             .slash => SW_SLASH_DUR * 0.46 - self.t,
+            .heavy_wind => SW_HEAVY_WIND - self.t + SW_HEAVY_DUR * 0.42,
+            .heavy => SW_HEAVY_DUR * 0.42 - self.t,
             .lunge_wind => SW_LUNGE_WIND - self.t + SW_LUNGE_DUR * 0.30,
             .lunge => SW_LUNGE_DUR * 0.30 - self.t,
             else => null,
@@ -969,6 +1145,7 @@ pub const Swordsman = struct {
         const reach = self.parryable() orelse return;
         if (!foe.caught(self, reach)) return;
         self.slashCd = SW_SLASH_CD;
+        self.heavyCd = SW_HEAVY_CD;
         self.lungeCd = SW_LUNGE_CD;
         self.doubling = false;
         self.venom(self.bladeSeg()[1], 14);
@@ -985,7 +1162,11 @@ pub const Swordsman = struct {
         if (self.dealt) return;
         const r = foe.hurtReach(SW_KIT_R, self.scale);
         if (!foe.weaponReaches(self.wpnWas, self.bladeSeg(), hero, r)) return;
-        self.heroHit = if (self.state == .lunge) SW_LUNGE_HIT else SW_SLASH_HIT;
+        self.heroHit = switch (self.state) {
+            .lunge => SW_LUNGE_HIT,
+            .heavy => SW_HEAVY_HIT,
+            else => SW_SLASH_HIT,
+        };
         self.dealt = true;
         self.leash.noteCombat();
         self.venom(self.bladeSeg()[1], 7);
@@ -1062,6 +1243,16 @@ pub const Swordsman = struct {
 /// to start at all. Both are its own: a clock and a bar, never a read of what he is doing.
 const MG_PRESS_HOLD: f32 = 2.4;
 const MG_PRESS_HP: f32 = 0.86;
+/// **THE WORSE IT IS DOING, THE SOONER IT LEAVES** (owner: more evasive when getting beaten down). Both knobs
+/// read its OWN bar and its own clock, which is what the LAW allows — never how it is being hurt. `harm` is 0
+/// at the threshold the press clock starts at and 1 at nothing left, so a healthy caster is untouched: at full
+/// HP it still owes 2.4 s of being stood on and 9 s between blinks; at death's door it owes 1.0 s and 4.0 s.
+const MG_PRESS_RATE_HURT: f32 = 2.4;
+const MG_FADE_CD_HURT: f32 = 4.0;
+
+fn mgHarm(hpFrac: f32) f32 {
+    return mathx.clampF((MG_PRESS_HP - hpFrac) / MG_PRESS_HP, 0, 1);
+}
 
 pub const MgModel = struct {
     bone: [N]rl.Mesh,
@@ -1100,6 +1291,8 @@ pub const Magus = struct {
     sproutCd: f32 = 0,
     fadeCd: f32 = 0,
     press: f32 = 0,
+    /// **WHICH TAIL IT OWES, STAMPED BY THE CAST THAT OWES IT** — the swordsman's `rec`, and for its reason.
+    rec: MgRecover = .sprout,
 
     /// Where it will come back up. Chosen at the START of the fade, so the mist it leaves is on the way out.
     returnTo: rl.Vector3 = mathx.zero3,
@@ -1125,6 +1318,7 @@ pub const Magus = struct {
     lsh: f32 = 0,
     lel: f32 = 0,
     tilt: f32 = 0,
+    clasp: f32 = 0,
     springs: anim.SpringBank(CHAN_N) = .{},
 
     phase: f32 = 0,
@@ -1257,6 +1451,11 @@ pub const Magus = struct {
         self.t = 0;
     }
 
+    fn recoverAfter(self: *Magus, r: MgRecover) void {
+        self.rec = r;
+        self.enter(.recover);
+    }
+
     pub fn update(self: *Magus, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
         self.justDied = false;
         self.threw = false;
@@ -1291,7 +1490,7 @@ pub const Magus = struct {
 
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         if (d <= MG_FLEE_R and self.vit.hpFrac() < MG_PRESS_HP) {
-            self.press += dt;
+            self.press += dt * lerpF(1.0, MG_PRESS_RATE_HURT, mgHarm(self.vit.hpFrac()));
         } else self.press = mathx.maxF(0, self.press - dt * 1.2);
 
         var movedDist: f32 = 0;
@@ -1339,7 +1538,7 @@ pub const Magus = struct {
                 }
                 if (self.t >= MG_ORB_DUR) {
                     self.orbCd = MG_ORB_CD;
-                    self.enter(.recover);
+                    self.recoverAfter(.orb);
                 }
             },
             .sprout_wind => {
@@ -1361,13 +1560,13 @@ pub const Magus = struct {
                 }
                 if (self.t >= MG_SPROUT_DUR) {
                     self.sproutCd = MG_SPROUT_CD;
-                    self.enter(.recover);
+                    self.recoverAfter(.sprout);
                 }
             },
             .recover => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt * 0.6);
-                self.chanSet(samplePose(&MG_REC_KEYS, mathx.clampF(self.t / MG_ORB_REC, 0, 1)));
-                if (self.t >= MG_ORB_REC) self.enter(.idle);
+                self.chanSet(samplePose(self.rec.keys(), mathx.clampF(self.t / MG_REC, 0, 1)));
+                if (self.t >= MG_REC) self.enter(.idle);
             },
             .fade_out => {
                 const u = mathx.clampF(self.t / MG_FADE_OUT, 0, 1);
@@ -1402,7 +1601,7 @@ pub const Magus = struct {
                 if (self.t >= MG_FADE_IN) {
                     self.fade = 0;
                     self.press = 0;
-                    self.fadeCd = MG_FADE_CD;
+                    self.fadeCd = lerpF(MG_FADE_CD, MG_FADE_CD_HURT, mgHarm(self.vit.hpFrac()));
                     self.enter(.idle);
                 }
             },
@@ -1495,7 +1694,9 @@ pub const Magus = struct {
     fn enterStun(self: *Magus, heavy: bool) void {
         if (self.state == .dead) return;
         // **A STAGGER SPENDS THE FADE.** Caught halfway out it comes back solid and owes the whole cooldown,
-        // which is what makes closing on it during the dissolve the answer rather than a race.
+        // which is what makes closing on it during the dissolve the answer rather than a race. Flat at
+        // `MG_FADE_CD` on purpose: scaled by `mgHarm` like the free blink, closing on a nearly-dead caster
+        // would stop being an answer at exactly the point it is meant to be one.
         if (self.state == .fade_out or self.state == .fade_in) {
             self.fade = 0;
             self.press = 0;
@@ -1613,10 +1814,10 @@ fn poseBody(self: anytype, deathDur: f32) void {
     const armStun = -56.0 * stun;
     const busy = mathx.clampF(mathx.smoothstep(10.0, 46.0, @abs(self.rsh)), 0, 1);
     const swing = 12.0 * mathx.sinf(twoPi * self.phase) * m * @abs(self.fwdB) * (1.0 - busy);
-    setLocal(&wx, SHR, rest, mathx.mul(mathx.rx(-(self.rsh - swing + armStun - 24.0 * dk)), mathx.rz(-(self.rabd + wonk * 0.4))));
+    setLocal(&wx, SHR, rest, mathx.mul3(mathx.rz(self.clasp), mathx.rx(-(self.rsh - swing + armStun - 24.0 * dk)), mathx.rz(-(self.rabd + wonk * 0.4))));
     setLocal(&wx, ELR, rest, mathx.rx(-(self.rel + wonk * 0.6)));
     setLocal(&wx, WRR, rest, mathx.rz(-8.0));
-    setLocal(&wx, SHL, rest, mathx.mul(mathx.rx(-(self.lsh + swing + armStun - 24.0 * dk)), mathx.rz(self.rabd * 0.35 + wonk * 0.4)));
+    setLocal(&wx, SHL, rest, mathx.mul3(mathx.rz(-self.clasp), mathx.rx(-(self.lsh + swing + armStun - 24.0 * dk)), mathx.rz(self.rabd * 0.35 + wonk * 0.4)));
     setLocal(&wx, ELL, rest, mathx.rx(-(self.lel - wonk * 0.6)));
     setLocal(&wx, WRL, rest, mathx.rz(8.0));
 
@@ -2018,7 +2219,9 @@ fn staffMesh() rl.Mesh {
 pub fn orbMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     b.setMat(.flame);
-    b.addBlob(mathx.zero3, v3(ORB_R, ORB_R, ORB_R), 8, 7, mathx.withAlpha(CHAOS_CORE, 90));
+    // A CORE INSIDE A SKIN: at one blob on 90 alpha the whole thing was a smear the ground showed through.
+    b.addBlob(mathx.zero3, v3(ORB_R, ORB_R, ORB_R), 8, 7, mathx.withAlpha(CHAOS_EDGE, 120));
+    b.addBlob(mathx.zero3, v3(ORB_R * 0.62, ORB_R * 0.62, ORB_R * 0.62), 7, 6, mathx.withAlpha(CHAOS_CORE, 235));
     return b.toModel(shader);
 }
 
@@ -2148,7 +2351,7 @@ pub const Conclave = struct {
         var worst: ?foe.Blow = null;
         for (self.live()) |*k| {
             if (k.update(dt, k.threat.aim(hero), bounds, blade)) |h| foe.worseBlow(&worst, h, k.pos, &k.threat);
-            if (k.threw) self.launchOrb(k.threwFrom, k.threat.aim(hero));
+            if (k.threw) self.launchOrb(k.threwFrom, k.threat.aim(hero), k.pos.y);
             if (k.sowed) self.sow(k.sowAt);
             if (k.misted) self.mist(k.mistAt);
         }
@@ -2173,11 +2376,11 @@ pub const Conclave = struct {
         return self.soak.step(inside, dt, MIST_BUILD);
     }
 
-    fn launchOrb(self: *Conclave, from: rl.Vector3, at: rl.Vector3) void {
+    fn launchOrb(self: *Conclave, from: rl.Vector3, at: rl.Vector3, floor: f32) void {
         for (&self.orbs) |*o| {
             if (o.live) continue;
-            const to = v3(at.x, at.y + heromod.H * 0.55, at.z);
-            o.* = .{ .live = true, .at = from, .vel = mathx.scaleV(mathx.normV(mathx.subV(to, from)), ORB_SPEED), .spin = self.fxRng.angle() };
+            const to = foe.heroChest(at);
+            o.* = .{ .live = true, .at = from, .vel = mathx.scaleV(mathx.normV(mathx.subV(to, from)), ORB_SPEED), .spin = self.fxRng.angle(), .floor = floor };
             return;
         }
     }
@@ -2188,14 +2391,14 @@ pub const Conclave = struct {
             o.t += dt;
             o.at = mathx.addV(o.at, mathx.scaleV(o.vel, dt));
             o.spin += dt * 9.0;
-            const chest = v3(hero.x, hero.y + heromod.H * 0.55, hero.z);
+            const chest = foe.heroChest(hero);
             if (mathx.lenV(mathx.subV(o.at, chest)) <= ORB_R + foe.HERO_R) {
                 o.live = false;
                 self.splashAt(o.at, 9);
                 foe.worseBlow(worst, ORB_HIT, o.at, &GROUND_THREAT);
                 continue;
             }
-            if (o.t >= ORB_LIFE or o.at.y <= hero.y + 0.05) {
+            if (o.t >= ORB_LIFE or foe.landed(o.at.y, o.floor, hero.y)) {
                 o.live = false;
                 self.splashAt(o.at, 9);
             }
@@ -2212,7 +2415,7 @@ pub const Conclave = struct {
             const spot = v3(at.x + mathx.cosf(a) * r, at.y, at.z + mathx.sinf(a) * r);
             for (&self.caps) |*c| {
                 if (c.live) continue;
-                c.* = .{ .live = true, .at = spot, .r = self.fxRng.range(0.42, 0.72), .t = -self.fxRng.range(0, CAP_STAGGER) };
+                c.* = .{ .live = true, .at = spot, .r = self.fxRng.range(0.64, 1.04), .t = -self.fxRng.range(0, CAP_STAGGER) };
                 placed += 1;
                 break;
             }
@@ -2264,6 +2467,8 @@ pub const Conclave = struct {
         for (&self.orbs) |*o| {
             if (!o.live) continue;
             rl.drawModelEx(self.orbModel, o.at, v3(0, 1, 0), mathx.degrees(o.spin), v3(1, 1, 1), rl.Color.white);
+            // The halo is what carries at range — the mesh alone is a 0.32 m ball 16 m away.
+            rl.drawSphereEx(o.at, ORB_R * (2.1 + 0.16 * mathx.sinf(o.t * 16.0)), 8, 6, mathx.withAlpha(CHAOS_CORE, 64));
         }
         for (&self.mists) |*g| {
             const a = g.amt();
@@ -2293,19 +2498,22 @@ pub const Conclave = struct {
 const DUO_PARTS: usize = 96;
 
 fn drawCap(c: *const Cap) void {
+    // **THE SIZE COMES UP FAST AND THE CLOCK RUNS SLOW.** Drawn straight off `grown` a longer grow made the
+    // warning SMALLER for longer, which is the opposite of the ask: it breaks the earth at a third of its size
+    // and is a thing on the floor from the first frame, while `heat` stays the clock.
     const g = c.grown();
-    const up = c.r * g;
-    const stem = v3(c.at.x, c.at.y + up * 0.42, c.at.z);
-    rl.drawCylinderEx(c.at, stem, c.r * 0.16, c.r * 0.22, 6, RIND_LT);
+    const up = c.r * (0.34 + 0.66 * @sqrt(g));
+    const stem = v3(c.at.x, c.at.y + up * 0.46, c.at.z);
+    rl.drawCylinderEx(c.at, stem, c.r * 0.17, c.r * 0.24, 6, RIND_LT);
     // **IT GLOWS BEFORE IT GOES.** The cap's colour IS its clock: nothing else says the thing is about to
-    // happen, and a warning you have to remember is not a warning.
+    // happen, and a warning you have to remember is not a warning. It starts on the CHAOS edge and not on the
+    // fungus palette — against moss and rind a (52,18,14) cap was a dark lump on dark ground.
     const heat = c.heat();
-    const col = mathx.lerpColor(CAP_COL, mathx.withAlpha(CHAOS_CORE, 255), heat);
-    rl.drawSphereEx(v3(stem.x, stem.y + up * 0.22, stem.z), up * 0.46, 7, 6, col);
-    if (heat > 0.02) {
-        const puff = up * (0.55 + 0.55 * heat) * (1.0 + 0.10 * mathx.sinf(c.t * 20.0));
-        rl.drawSphereEx(v3(stem.x, stem.y + up * 0.22, stem.z), puff, 7, 6, mathx.withAlpha(CHAOS_CORE, mathx.u8f(70.0 * heat)));
-    }
+    const head = v3(stem.x, stem.y + up * 0.24, stem.z);
+    const col = mathx.lerpColor(mathx.withAlpha(CHAOS_EDGE, 255), mathx.withAlpha(CHAOS_CORE, 255), heat);
+    rl.drawSphereEx(head, up * 0.54, 7, 6, col);
+    const puff = up * (0.70 + 0.60 * heat) * (1.0 + 0.10 * mathx.sinf(c.t * 20.0));
+    rl.drawSphereEx(head, puff, 7, 6, mathx.withAlpha(CHAOS_CORE, mathx.u8f(38.0 + 76.0 * heat)));
 }
 
 /// An orb in flight and a cap in the ground belong to nobody standing there — they ARE the ground, so they
@@ -2324,23 +2532,44 @@ test "THE TWO BANDS ABUT, so there is no ring where neither of them is answering
 test "EVERY BAND OF THE SWORDSMAN PICKS A MOVE, and a bearing he cannot reach is a hard gate" {
     var d: f32 = 0;
     while (d <= AGGRO_R) : (d += 0.25) {
-        try std.testing.expect(swClassify(d, 0, true, true, true, false) != .hold);
+        try std.testing.expect(swClassify(d, 0, true, true, true, true, false) != .hold);
     }
-    try std.testing.expectEqual(SwChoice.hold, swClassify(AGGRO_R + 1.0, 0, true, true, true, false));
-    try std.testing.expectEqual(SwChoice.back, swClassify(1.0, 0, true, true, true, true));
-    try std.testing.expectEqual(SwChoice.slash, swClassify(1.0, 0, true, true, false, true));
-    try std.testing.expectEqual(SwChoice.slash, swClassify(SW_SLASH_R - 0.1, 0, true, true, false, false));
-    try std.testing.expectEqual(SwChoice.lunge, swClassify(SW_LUNGE_MIN + 0.1, 0, false, true, false, false));
-    try std.testing.expectEqual(SwChoice.close, swClassify(6.0, 0, false, false, false, false));
+    try std.testing.expectEqual(SwChoice.hold, swClassify(AGGRO_R + 1.0, 0, true, true, true, true, false));
+    try std.testing.expectEqual(SwChoice.back, swClassify(1.0, 0, true, true, true, true, true));
+    try std.testing.expectEqual(SwChoice.heavy, swClassify(1.0, 0, true, true, true, false, true));
+    // **THE OVERHEAD TAKES THE BAND IT SHARES WITH THE SLASH**, and hands it straight back on its long clock.
+    try std.testing.expectEqual(SwChoice.heavy, swClassify(SW_HEAVY_R - 0.1, 0, true, true, true, false, false));
+    try std.testing.expectEqual(SwChoice.slash, swClassify(SW_HEAVY_R - 0.1, 0, true, false, true, false, false));
+    try std.testing.expectEqual(SwChoice.slash, swClassify(SW_SLASH_R - 0.1, 0, true, false, true, false, false));
+    try std.testing.expectEqual(SwChoice.lunge, swClassify(SW_LUNGE_MIN + 0.1, 0, false, false, true, false, false));
+    // …and it never reaches out of its own band, however cold everything else is.
+    try std.testing.expectEqual(SwChoice.close, swClassify(SW_HEAVY_R + 0.3, 0, false, true, false, false, false));
+    try std.testing.expectEqual(SwChoice.close, swClassify(6.0, 0, false, false, false, false, false));
     inline for (.{ @as(f32, 1.0), @as(f32, -1.0) }) |sgn| {
         const wide = sgn * (swSlashArc() + 0.05);
-        try std.testing.expectEqual(SwChoice.close, swClassify(SW_SLASH_R - 0.1, wide, true, false, false, false));
+        try std.testing.expectEqual(SwChoice.close, swClassify(SW_SLASH_R - 0.1, wide, true, false, false, false, false));
         const wideL = sgn * (swLungeArc() + 0.05);
-        try std.testing.expectEqual(SwChoice.close, swClassify(SW_LUNGE_MIN + 0.1, wideL, false, true, false, false));
+        try std.testing.expectEqual(SwChoice.close, swClassify(SW_LUNGE_MIN + 0.1, wideL, false, false, true, false, false));
     }
-    std.debug.print("  sword: swings to {d:.1} m inside {d:.0} deg, lunges {d:.1}..{d:.1} inside {d:.0} deg\n", .{
-        SW_SLASH_R, mathx.degrees(swSlashArc()), SW_LUNGE_MIN, SW_LUNGE_MAX, mathx.degrees(swLungeArc()),
+    std.debug.print("  sword: swings to {d:.1} m inside {d:.0} deg, lunges {d:.1}..{d:.1} inside {d:.0} deg, overhead to {d:.1} m on a {d:.2} s tell\n", .{
+        SW_SLASH_R, mathx.degrees(swSlashArc()), SW_LUNGE_MIN, SW_LUNGE_MAX, mathx.degrees(swLungeArc()), SW_HEAVY_R, SW_HEAVY_WIND,
     });
+}
+
+test "ONE STROKE THROWS HIM AND IT IS THE SLOW ONE — the lunge stopped juggling and the overhead took it on" {
+    // **A JUGGLE IS AN APEX AND AN AIRTIME, NOT A FEELING** (owner: lunge must stop juggling, give him a heavy
+    // that can juggle instead). Solved through the hero's own launch arithmetic so the two numbers are the
+    // seconds he is actually off the ground, and so a retune of either row cannot quietly hand the throw back.
+    try std.testing.expectEqual(@as(f32, 0), SW_LUNGE_HIT.launch);
+    try std.testing.expectEqual(@as(f32, 0), SW_SLASH_HIT.launch);
+    try std.testing.expect(SW_HEAVY_HIT.launch > 0);
+    const air = heromod.launchAirFor(SW_HEAVY_HIT.launch);
+    const wasAir = heromod.launchAirFor(3.4);
+    std.debug.print("  throw: the overhead puts him {d:.2} m up for {d:.2} s; the lunge used to put him {d:.2} m up for {d:.2} s\n", .{ SW_HEAVY_HIT.launch, air, @as(f32, 3.4), wasAir });
+    try std.testing.expect(air < wasAir);
+    // **AND HE IS BACK ON HIS FEET BEFORE THE NEXT STROKE CAN LAND** — the throw is a reset, not a loop: the
+    // recover alone outlasts the flight, so nothing is waiting for him when he comes down.
+    try std.testing.expect(SW_HEAVY_REC > air);
 }
 
 test "THE MAGUS NEVER CLOSES, and being pressed outranks casting" {
@@ -2427,17 +2656,67 @@ test "BOTH ARE TALL AND STURDY, and the swordsman is the one that hits" {
     try std.testing.expect(SW_LUNGE_HIT.raw() > ORB_HIT.raw() * 1.5);
 }
 
+test "EVERY CHANNEL LANDS IN ITS OWN FIELD — the CH_ indices and P.chan()'s order are one list kept by hand" {
+    // `setChan` is the only reader of `CH_*`, and it mirrors the order `P.chan()` writes. Nothing in the
+    // compiler ties the two: insert a channel in the middle of `chan()` without renumbering and every field
+    // below it silently takes its neighbour's value. Given one distinct number per channel, this catches it.
+    const p = P{ .lean = 1, .twist = 2, .head = 3, .rsh = 4, .rabd = 5, .rel = 6, .lsh = 7, .lel = 8, .tilt = 9, .clasp = 10 };
+    var k = Swordsman.spawn(mathx.zero3, 0, 1.0, 0.0);
+    k.chanSet(p.chan());
+    try std.testing.expectEqual(p.lean, k.bodyLean);
+    try std.testing.expectEqual(p.twist, k.twist);
+    try std.testing.expectEqual(p.head, k.headPitch);
+    try std.testing.expectEqual(p.rsh, k.rsh);
+    try std.testing.expectEqual(p.rabd, k.rabd);
+    try std.testing.expectEqual(p.rel, k.rel);
+    try std.testing.expectEqual(p.lsh, k.lsh);
+    try std.testing.expectEqual(p.lel, k.lel);
+    try std.testing.expectEqual(p.tilt, k.tilt);
+    try std.testing.expectEqual(p.clasp, k.clasp);
+    // …and the magus rides the same nine-plus-one, so one body cannot drift off the other's.
+    var m = Magus.spawn(mathx.zero3, 0, 1.0, 0.0);
+    m.chanSet(p.chan());
+    try std.testing.expectEqual(p.tilt, m.tilt);
+    try std.testing.expectEqual(p.clasp, m.clasp);
+    try std.testing.expectEqual(@as(usize, CHAN_N), p.chan().len);
+}
+
 test "THE SEAMS HOLD — every pose track starts where the one before it ended" {
     const pairs = .{
         .{ &SW_SLASH_WIND_KEYS, &SW_SLASH_KEYS },
         .{ &SW_SLASH_KEYS, &SW_SLASH2_KEYS },
         .{ &SW_SLASH_KEYS, &SW_REC_KEYS },
+        .{ &SW_SLASH2_KEYS, &SW_SLASH2_REC_KEYS },
+        .{ &SW_HEAVY_WIND_KEYS, &SW_HEAVY_KEYS },
+        .{ &SW_HEAVY_KEYS, &SW_HEAVY_REC_KEYS },
         .{ &SW_LUNGE_WIND_KEYS, &SW_LUNGE_KEYS },
         .{ &SW_LUNGE_KEYS, &SW_BACK_KEYS },
+        .{ &SW_LUNGE_KEYS, &SW_LUNGE_REC_KEYS },
         .{ &MG_ORB_WIND_KEYS, &MG_ORB_KEYS },
+        .{ &MG_ORB_KEYS, &MG_ORB_REC_KEYS },
         .{ &MG_SPROUT_WIND_KEYS, &MG_SPROUT_KEYS },
-        .{ &MG_SPROUT_KEYS, &MG_REC_KEYS },
+        .{ &MG_SPROUT_KEYS, &MG_SPROUT_REC_KEYS },
     };
+    // The pairs above are hand-listed; walked off the tag, a recover added without a row cannot go unheld.
+    inline for (@typeInfo(Recover).@"enum".fields) |f| {
+        const r: Recover = @enumFromInt(f.value);
+        const stroke = switch (r) {
+            .slash => &SW_SLASH_KEYS,
+            .slash2 => &SW_SLASH2_KEYS,
+            .heavy => &SW_HEAVY_KEYS,
+            .lunge => &SW_LUNGE_KEYS,
+        };
+        for (samplePose(stroke, 1.0), samplePose(r.keys(), 0.0)) |a, b| try std.testing.expectApproxEqAbs(a, b, 1e-5);
+        try std.testing.expect(r.dur() > 0);
+    }
+    inline for (@typeInfo(MgRecover).@"enum".fields) |f| {
+        const r: MgRecover = @enumFromInt(f.value);
+        const cast = switch (r) {
+            .orb => &MG_ORB_KEYS,
+            .sprout => &MG_SPROUT_KEYS,
+        };
+        for (samplePose(cast, 1.0), samplePose(r.keys(), 0.0)) |a, b| try std.testing.expectApproxEqAbs(a, b, 1e-5);
+    }
     inline for (pairs) |p| {
         const endA = samplePose(p[0], 1.0);
         const startB = samplePose(p[1], 0.0);
@@ -2456,6 +2735,7 @@ test "THE BLADE LANDS ON THE MAN WHERE HE STANDS - every stroke thrown for real,
     const apart = foe.closestApproach(probe.bodyR());
     const rows = [_]struct { name: []const u8, wind: SwState, strike: SwState, pick: SwChoice, near: f32, far: f32 }{
         .{ .name = "slash", .wind = .slash_wind, .strike = .slash, .pick = .slash, .near = apart, .far = SW_SLASH_R },
+        .{ .name = "heavy", .wind = .heavy_wind, .strike = .heavy, .pick = .heavy, .near = apart, .far = SW_HEAVY_R },
         .{ .name = "lunge", .wind = .lunge_wind, .strike = .lunge, .pick = .lunge, .near = SW_LUNGE_MIN, .far = SW_LUNGE_MAX },
     };
     var misses: usize = 0;
@@ -2467,7 +2747,7 @@ test "THE BLADE LANDS ON THE MAN WHERE HE STANDS - every stroke thrown for real,
                 const stand = lerpF(mathx.maxF(row.near, apart) + 0.05, row.far * 0.97, u);
                 const off = mathx.radians(deg);
                 // A GATE IS A STAND HE NEVER THROWS IT FROM, not a stand he throws it from and misses.
-                if (swClassify(stand, off, row.pick == .slash, row.pick == .lunge, false, false) != row.pick) {
+                if (swClassify(stand, off, row.pick == .slash, row.pick == .heavy, row.pick == .lunge, false, false) != row.pick) {
                     refused += 1;
                     continue;
                 }
@@ -2513,24 +2793,30 @@ test "AND THE BAND IS INSIDE THE REACH - the pick never hands out a stroke that 
     // `SW_SLASH_R` is the measured reach and not a number beside one. Measured here, dead ahead, through the
     // real `update`: the band has to sit INSIDE it or the judge above is testing a promise nothing keeps.
     const dt = 1.0 / 120.0;
-    var far: f32 = 0;
-    var d: f32 = 0.6;
-    while (d < 6.0) : (d += 0.05) {
-        var k = Swordsman.spawn(mathx.zero3, 0, 1.0, 0.0);
-        k.enter(.slash_wind);
-        var guard: usize = 0;
-        while (guard < 900) : (guard += 1) {
-            if (k.update(dt, v3(0, 0, d), 900.0, .{}) != null) {
-                far = d;
-                break;
+    const rows = [_]struct { name: []const u8, wind: SwState, band: f32 }{
+        .{ .name = "slash", .wind = .slash_wind, .band = SW_SLASH_R },
+        .{ .name = "heavy", .wind = .heavy_wind, .band = SW_HEAVY_R },
+    };
+    for (rows) |row| {
+        var far: f32 = 0;
+        var d: f32 = 0.6;
+        while (d < 6.0) : (d += 0.05) {
+            var k = Swordsman.spawn(mathx.zero3, 0, 1.0, 0.0);
+            k.enter(row.wind);
+            var guard: usize = 0;
+            while (guard < 900) : (guard += 1) {
+                if (k.update(dt, v3(0, 0, d), 900.0, .{}) != null) {
+                    far = d;
+                    break;
+                }
+                if (k.state == .recover or k.state == .idle) break;
             }
-            if (k.state != .slash_wind and k.state != .slash and k.state != .slash2) break;
         }
+        std.debug.print("  blade: the {s} lands out to {d:.2} m, and its band stops at {d:.2}\n", .{ row.name, far, row.band });
+        try std.testing.expect(row.band <= far);
+        // …and the band is worth having: a ring thinner than a step is a creature flickering in and out of range.
+        try std.testing.expect(row.band - foe.closestApproach(SW_BODY_R * SCALE) > 0.8);
     }
-    std.debug.print("  blade: the slash lands out to {d:.2} m, and its band stops at {d:.2}\n", .{ far, SW_SLASH_R });
-    try std.testing.expect(SW_SLASH_R <= far);
-    // …and the band is worth having: a ring thinner than a step is a creature flickering in and out of range.
-    try std.testing.expect(SW_SLASH_R - foe.closestApproach(SW_BODY_R * SCALE) > 0.8);
 }
 
 test "THE MAGUS COMES BACK UP OUT OF REACH, and a stagger through the fade spends it" {
@@ -2556,6 +2842,51 @@ test "THE MAGUS COMES BACK UP OUT OF REACH, and a stagger through the fade spend
     try std.testing.expect(caught.state == .stunheavy);
 }
 
+test "THE OVERHEAD IS ACTUALLY TWO-HANDED — the off fist is ON the hilt, measured, not asserted by its name" {
+    // The rig has ONE held bone, so "two-handed" is entirely a claim about where the LEFT hand ends up. An
+    // off-arm left near its carry pose is a man swinging a longsword one-handed, and no arithmetic anywhere
+    // else in this file would notice. Measured off the posed matrices, against his own carry as the control.
+    const dt = 1.0 / 120.0;
+    var k = Swordsman.spawn(mathx.zero3, 0, 1.0, 0.0);
+    const carry = mathx.lenV(mathx.subV(rl.math.vector3Transform(mathx.zero3, k.xf[WRL]), rl.math.vector3Transform(mathx.zero3, k.xf[HELD])));
+    k.enter(.heavy_wind);
+    var worst: f32 = 0;
+    var t: f32 = 0;
+    while (t < SW_HEAVY_WIND + SW_HEAVY_DUR) : (t += dt) {
+        _ = k.update(dt, v3(0, 0, 1.6), 400.0, .{});
+        // **THE CLAIM IS ABOUT THE STROKE, NOT THE REACH FOR THE HILT.** He carries the sword one-handed and
+        // the off hand arrives up the wind, so measured from mid-wind this reads 0.67 m and says nothing.
+        if (t < SW_HEAVY_WIND) continue;
+        worst = @max(worst, mathx.lenV(mathx.subV(rl.math.vector3Transform(mathx.zero3, k.xf[WRL]), rl.math.vector3Transform(mathx.zero3, k.xf[HELD]))));
+    }
+    std.debug.print("\n  overhead grip: the off fist stays within {d:.2} m of the hilt through the stroke (carried, it is {d:.2} m off)\n", .{ worst, carry });
+    try std.testing.expect(worst < carry * 0.5);
+    try std.testing.expect(worst < 0.45);
+}
+
+test "A BEATEN MAGUS LEAVES SOONER AND COMES BACK ROUND QUICKER" {
+    // Measured through the real `update`: two casters stood on from the same distance, one healthy and one
+    // nearly out, and the seconds each of them takes to start dissolving. Both read only their own bar.
+    const dt = 1.0 / 120.0;
+    var secs: [2]f32 = undefined;
+    for ([_]f32{ MG_PRESS_HP - 0.02, 0.06 }, 0..) |frac, i| {
+        var k = Magus.spawn(mathx.ground(0, 0), 0, 1.0, 0.30);
+        k.vit.hp = MG_HP * frac;
+        var t: f32 = 0;
+        while (t < 12.0 and k.state != .fade_out) : (t += dt) {
+            k.leash.noteSeen();
+            _ = k.update(dt, mathx.ground(0, MG_FLEE_R - 1.0), 400.0, .{});
+            k.pos = mathx.ground(0, 0);
+        }
+        secs[i] = t;
+    }
+    std.debug.print("\n  press: at {d:.0}% HP it holds {d:.2} s before it dissolves, at 6% it holds {d:.2}\n", .{ MG_PRESS_HP * 100.0, secs[0], secs[1] });
+    try std.testing.expect(secs[0] < 12.0 and secs[1] < secs[0]);
+    // …and the blink comes round quicker too, so a caster on its last legs is not pinned by its own cooldown.
+    try std.testing.expect(lerpF(MG_FADE_CD, MG_FADE_CD_HURT, mgHarm(0.06)) < MG_FADE_CD);
+    try std.testing.expectApproxEqAbs(MG_FADE_CD, lerpF(MG_FADE_CD, MG_FADE_CD_HURT, mgHarm(1.0)), 1e-5);
+}
+
 test "THE VENOM IS ON EVERY STROKE, and it is the clock the fight runs on" {
     const row = combat.ailRow(.poison);
     var v = combat.Vitals.initFoe(99999, 99999, 99999);
@@ -2577,7 +2908,7 @@ test "AN ORB FLIES, LANDS ON HIM AND IS SPENT - and the pool never leaks" {
     // suite and four clean builds. Anything the group does on its own owes a test that reaches it.
     var c = Conclave{ .model = undefined, .orbModel = undefined };
     const hero = mathx.ground(0, 9);
-    c.launchOrb(v3(0, 1.6, 0), hero);
+    c.launchOrb(v3(0, 1.6, 0), hero, 0);
     var lit: usize = 0;
     for (&c.orbs) |*o| lit += @intFromBool(o.live);
     try std.testing.expectEqual(@as(usize, 1), lit);
@@ -2593,12 +2924,35 @@ test "AN ORB FLIES, LANDS ON HIM AND IS SPENT - and the pool never leaks" {
     std.debug.print("  orb: {d:.0} m/s across {d:.1} m, landed in {d:.2} s\n", .{ ORB_SPEED, mathx.distXZ(mathx.zero3, hero), t });
 
     // A miss expires rather than flying forever.
-    c.launchOrb(v3(0, 1.6, 0), mathx.ground(0, 200));
+    c.launchOrb(v3(0, 1.6, 0), mathx.ground(0, 200), 0);
     var u: f32 = 0;
     var junk: ?foe.Blow = null;
     while (u < ORB_LIFE + 0.5) : (u += dt) c.tickOrbs(dt, mathx.ground(300, 300), &junk);
     for (&c.orbs) |*o| try std.testing.expect(!o.live);
     try std.testing.expect(junk == null);
+}
+
+test "AN ORB THROWN FROM BELOW HIM SURVIVES THE STAFF — the earth is not wherever he is standing" {
+    // The deer's spore, same line and same reason: `pos.y` is the ground under a body on a sculpted map
+    // (AGENTS.md's Elevation), so read off the HERO's alone the despawn floor sat above the staff head and
+    // the caster's attrition move died at the moment of the throw.
+    var c = Conclave{ .model = undefined, .orbModel = undefined };
+    const dt = 1.0 / 120.0;
+    const rise = 2.4;
+    const staff = 1.6;
+    const hero = v3(0, rise, 26);
+    c.launchOrb(v3(0, staff, 0), hero, 0);
+    var worst: ?foe.Blow = null;
+    c.tickOrbs(dt, hero, &worst);
+    var lit: usize = 0;
+    for (&c.orbs) |*o| lit += @intFromBool(o.live);
+    std.debug.print("\n  magus on ground {d:.2} m under him: staff at {d:.2} m, floor was {d:.2} m — {d} orb(s) still in flight\n", .{ rise, staff, rise + 0.05, lit });
+    try std.testing.expect(staff < rise);
+    try std.testing.expectEqual(@as(usize, 1), lit);
+    // …and it still lands on him from down there.
+    var t: f32 = 0;
+    while (t < ORB_LIFE and worst == null) : (t += dt) c.tickOrbs(dt, hero, &worst);
+    try std.testing.expect(worst != null);
 }
 
 test "A BUNCH GOES OFF ONCE, on the frame it bursts, and only on what is standing in it" {
@@ -2734,13 +3088,16 @@ test "NOTHING HERE HITS HARDER THAN THE FIRST BOSS DOES" {
     const overhead = knightmod.OVERHEAD_HIT.raw();
     const slash = SW_SLASH_HIT.raw();
     const lunge = SW_LUNGE_HIT.raw();
+    const heavy = SW_HEAVY_HIT.raw();
     const bunch = CAP_HIT.raw() * @as(f32, @floatFromInt(MG_BUNCH));
-    std.debug.print("\n  damage: slash {d:.0}, x2 chain {d:.0}, lunge {d:.0}, orb {d:.0}, a whole bunch {d:.0}" ++
-        " | knight sweep {d:.0}, overhead {d:.0}\n", .{ slash, slash * 2, lunge, ORB_HIT.raw(), bunch, sweep, overhead });
+    std.debug.print("\n  damage: slash {d:.0}, x2 chain {d:.0}, lunge {d:.0}, overhead {d:.0}, orb {d:.0}, a whole bunch {d:.0}" ++
+        " | knight sweep {d:.0}, overhead {d:.0}\n", .{ slash, slash * 2, lunge, heavy, ORB_HIT.raw(), bunch, sweep, overhead });
     // The bread-and-butter stroke sits UNDER his bread-and-butter one, because it can be thrown twice.
     try std.testing.expect(slash < sweep);
     // The commitment sits under his commitment.
     try std.testing.expect(lunge <= overhead);
+    // …and so does the one that throws you, which is the heaviest thing either body swings.
+    try std.testing.expect(heavy > lunge and heavy <= overhead);
     // …and the chain is worth more than either single, or doubling means nothing.
     try std.testing.expect(slash * 2 > lunge);
     // The orb is attrition: under the cheapest thing the knight owns that is not his gas.

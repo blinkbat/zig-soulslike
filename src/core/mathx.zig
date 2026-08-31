@@ -144,6 +144,28 @@ pub fn crossV(a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
 pub fn lerpV(a: rl.Vector3, b: rl.Vector3, t: f32) rl.Vector3 {
     return v3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
 }
+
+/// Rotate `from` toward `want` by at most `maxRad`. **NOT `normV(from + k*(want - from))`** — that stalls as
+/// the angle grows and at dead opposite is `(1-2k)*from`, a fixed point: measured, a 2.2 rad/s steer took
+/// 5.15 s to reverse against the 1.43 s a cap gives. Dead opposite also has no slerp axis (`sin(ang)` → 0 →
+/// NaN), so any perpendicular does for one step.
+pub fn turnToward(from: rl.Vector3, want: rl.Vector3, maxRad: f32) rl.Vector3 {
+    const a = normV(from);
+    const b = normV(want);
+    if (lenV(a) < 0.5) return b;
+    if (lenV(b) < 0.5) return a;
+    const ang = std.math.acos(clampF(a.x * b.x + a.y * b.y + a.z * b.z, -1, 1));
+    if (ang <= maxRad or ang < 1e-5) return b;
+    const sn = @sin(ang);
+    if (sn < 1e-3) {
+        var axis = crossV(a, v3(0, 1, 0));
+        if (lenV(axis) < 1e-4) axis = crossV(a, v3(0, 0, 1));
+        const side = normV(crossV(axis, a));
+        return normV(addV(scaleV(a, @cos(maxRad)), scaleV(side, @sin(maxRad))));
+    }
+    const k = maxRad / ang;
+    return normV(addV(scaleV(a, @sin((1.0 - k) * ang) / sn), scaleV(b, @sin(k * ang) / sn)));
+}
 pub fn lerpF(a: f32, b: f32, t: f32) f32 {
     return a + (b - a) * t;
 }

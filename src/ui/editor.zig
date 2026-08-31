@@ -290,7 +290,7 @@ const unitTips = [_][:0]const u8{
     "Unbreakable shield across his front. Work round the side; stand behind him and he falls on you",
     "Travels underground as a moving mound, then bursts up under your feet. Cannot be locked on while down",
     "Skeletons near it stop dissolving and get raised. Also lays a delayed ice ring",
-    "The bloom OPENS before it leaps",
+    "Keeps its distance. The flower RISES, then spits spores that HANG before they home. Cornered, it gores",
     "Lobs slow bouncing fireballs. Backing away stays in the bounce line; go sideways",
     "Place in water. Surfaces when you wade; cannot leave water or be hit while down",
     "Very tough against steel, weak to fire and lightning. Slams forward at anyone who backs off",
@@ -311,6 +311,7 @@ const unitTips = [_][:0]const u8{
     "The other half. Keeps its distance, sprouts BUNCHES that swell and burst, throws chaos orbs, and DISSOLVES when pressed",
     "Talks. Roams its own leash, carries a staff. Give it a `dlg=` in the file to say anything",
     "Talks. Camel-humanoid trader; the caravan props are its own family",
+    "Talks. A tree, and a smith: hulking, bowed, hammering. Stand him at an Anvil and the forge props are his",
     "Sweep to erase ([ ] sets radius)",
 };
 
@@ -348,7 +349,7 @@ const unitIcons = [_]ui.Icon{
     .bone_knight,
     .delver,
     .necromancer,
-    .florid_ravager,
+    .fungal_deer,
     .mushroom_mage,
     .fen_lurker,
     .spore_golem,
@@ -369,6 +370,7 @@ const unitIcons = [_]ui.Icon{
     .fungal_magus,
     .wanderer,
     .merchant,
+    .smith,
     .erase,
 };
 
@@ -463,13 +465,8 @@ fn brushTipsFor(l: Layer) []const [:0]const u8 {
 }
 
 comptime {
+    // The six tip/brush counts are pinned once, up beside `pinIcons` where the lockstep lives.
     std.debug.assert(layerTips.len == Layer.N);
-    std.debug.assert(groundTips.len == groundBrushes.len);
-    std.debug.assert(locationTips.len == locationBrushes.len);
-    std.debug.assert(decorTips.len == decorBrushes.len);
-    std.debug.assert(propTips.len == propBrushes.len);
-    std.debug.assert(interactTips.len == interactBrushes.len);
-    std.debug.assert(unitTips.len == unitBrushes.len);
     std.debug.assert(groundBrushes.len == GROUND_SOIL_0 + (wf.Soil.N - 1) + wf.Liquid.N + 1);
     for (0..wf.Liquid.N) |i| {
         std.debug.assert(liquidOf(@enumFromInt(GROUND_SOIL_0 + wf.Soil.N - 1 + i)).? == @as(wf.Liquid, @enumFromInt(i)));
@@ -527,7 +524,7 @@ const UnitBrush = enum {
     bone_knight,
     delver,
     necromancer,
-    florid_ravager,
+    fungal_deer,
     mushroom_mage,
     fen_lurker,
     spore_golem,
@@ -550,6 +547,7 @@ const UnitBrush = enum {
     // `NFOE_KIND` it is a creature, over it a body that talks.
     wanderer,
     merchant,
+    smith,
     erase,
 };
 
@@ -720,6 +718,9 @@ fn nameField(ed: *Editor, ctx: *ui.Ctx, x: i32, y: i32, w: i32, buf: []u8, len: 
     return typed;
 }
 
+/// Metres of run a stacking kind may be given. Twenty-six sections of ladder; past that it is a shaft, not a
+/// prop, and `env.MAX_SECTIONS` is the hard stop behind it.
+const RISE_LIM: f32 = 24.0;
 /// Metres an `at` may be lifted off or bedded into the ground. Over head height either way, and no further:
 /// a prop pushed further than this is a prop in the wrong place, not a prop that needs a bigger number.
 const LIFT_LIM: f32 = 12.0;
@@ -2080,6 +2081,8 @@ pub const Editor = struct {
 
         var o = wf.defaults(.at);
         o.kind = self.kindForLayer();
+        // A stacking kind stamped at its own single section is a ladder to nothing. Four sections is a storey.
+        o.rise = props.info(o.kind).stack * 4.0;
         switch (self.layer) {
             .ground, .units => return,
             .locations => @panic("editor: locations layer reached the op placer"),
@@ -3215,7 +3218,7 @@ pub const Editor = struct {
                         if (pr.op != c.op or c.ed.selMarked >= MAX_MARKERS) return;
                         c.ed.selMarked += 1;
                         const nfo = props.info(pr.kind);
-                        const h = @max(nfo.top * pr.scale, 0.4);
+                        const h = @max(envmod.runOf(pr, nfo), 0.4);
                         const sw = envmod.leanOffsetAt(pr.lean, pr.leanDir, h * 0.5);
                         rl.drawCubeWires(v3(pr.pos.x + sw.x, pr.pos.y + h * 0.5, pr.pos.z + sw.z), 0.3, h, 0.3, ui.HOT);
                     }
@@ -3242,7 +3245,7 @@ pub const Editor = struct {
                 if (pi < env.nprops) {
                     const pr = env.props[pi];
                     const nfo = props.info(pr.kind);
-                    const h = @max(nfo.top * pr.scale, 0.4);
+                    const h = @max(envmod.runOf(&pr, nfo), 0.4);
                     const w = @max(nfo.bound * pr.scale, 0.3) * 1.6;
                     const sw = envmod.leanOffsetAt(pr.lean, pr.leanDir, h * 0.5);
                     rl.drawCubeWires(v3(pr.pos.x + sw.x, pr.pos.y + h * 0.5, pr.pos.z + sw.z), w, h, w, ui.HOT);
@@ -3381,7 +3384,7 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         .bone_knight => ui.col(228, 132, 62, 255),
         .delver => ui.col(150, 118, 78, 255),
         .necromancer => ui.col(126, 196, 224, 255),
-        .florid_ravager => ui.col(226, 138, 196, 255),
+        .fungal_deer => ui.col(226, 138, 196, 255),
         .mushroom_mage => ui.col(238, 152, 66, 255),
         .spore_golem => ui.col(214, 96, 132, 255),
         .fen_lurker => ui.col(78, 200, 186, 255),
@@ -4456,6 +4459,13 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             // slope could only be placed by hand-editing the file.
             changed = ui.stepperF(ctx, x, y, w, "lift", &o.r1, 0.1, -LIFT_LIM, LIFT_LIM, "Metres off the ground it sits. Negative beds it in, which is how a boulder half-buried in a slope is authored") or changed;
             y += ROW_H;
+            // **STEPPED BY THE SECTION, BECAUSE THAT IS THE ONLY HEIGHT IT CAN BE BUILT AT** (`env.snapRise`).
+            // A free metres knob would show a number the world rounds off behind the author's back.
+            const seg = props.info(o.kind).stack * o.scale;
+            if (seg > 0) {
+                changed = ui.stepperF(ctx, x, y, w, "rise", &o.rise, seg, seg, RISE_LIM, "How far up it runs, in metres. One step is one section - the rungs keep their spacing however tall it gets") or changed;
+                y += ROW_H;
+            }
         },
         .belt, .ivy => {
             changed = spanRows(ctx, x, &y, w, o) or changed;
@@ -4880,8 +4890,13 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
     // nowhere else, so the one person who needs it, the author cranking a belt's count, never saw it. A budget
     // that bites real content has made the world quietly smaller, and that has to be visible while it happens.
     var capBuf: [56]u8 = undefined;
-    if (env.opsCapped > 0) {
-        const cap = std.fmt.bufPrintZ(&capBuf, "{d} ops hit the budget", .{env.opsCapped}) catch "";
+    if (env.opsCapped > 0 or env.lightsCapped > 0) {
+        const cap = if (env.opsCapped > 0)
+            std.fmt.bufPrintZ(&capBuf, "{d} ops hit the budget", .{env.opsCapped}) catch ""
+        else
+            // A fire the world placed and never lit is the same silent loss as a capped op, and it is reached
+            // by scattering glowing flora rather than by placing torches, so the author needs telling.
+            std.fmt.bufPrintZ(&capBuf, "{d} props left UNLIT (light cap)", .{env.lightsCapped}) catch "";
         hud.mono(cap, rightX - hud.monoW(cap, hud.MONO) - GUTTER, ty, hud.MONO, ui.HOT);
     }
 

@@ -33,7 +33,7 @@ pub const TABLE = [_]Row{
     // **THE ONE BODY IN THE GAME THAT IS CARRYING ARROWS.** Nothing dropped them at all, and with the bonfire's
     // free refill gone that left the whole map holding four sheaves in two containers — a bow with 40 shots in it
     // and then never again. `BIG` because this is the only tap: a sheaf is 10, and the archer is common.
-    // Bloodgrass is not lost with it — the toad, the broodling and the ravager all still leave it.
+    // Bloodgrass is not lost with it — the toad, the broodling and the fungal deer all still leave it.
     .{ .foe = .archer, .common = .plain_arrows, .odds = BIG, .rare = .fire_arrows, .chance = 0.14 },
 
     .{ .foe = .ogre, .common = .second_wind, .odds = BIG, .rare = .bloodtinge_signet, .chance = 0.12 },
@@ -68,7 +68,7 @@ pub const TABLE = [_]Row{
     // The one thing in the world that deals cold carries the coating that gives it back.
     .{ .foe = .necromancer, .common = .nameless_soul, .odds = BIG, .rare = .rimewax, .chance = 0.20 },
 
-    .{ .foe = .florid_ravager, .common = .bloodgrass },
+    .{ .foe = .fungal_deer, .common = .bloodgrass },
     .{ .foe = .mushroom_mage, .common = .purgeleaf, .odds = UNCOMMON },
 
     .{ .foe = .fen_lurker, .common = .ironwort_tea, .odds = UNCOMMON },

@@ -1,0 +1,85 @@
+version: 1
+name: Ladder Bench
+half: 60.0
+runway: -6.00 -20.00 6.00 -8.00
+
+# LADDERS, and the two floors of the watchtower they serve.
+#   --map worlds/test_ladder.world
+#
+# The east shelf stands 7.00 m over the plain and its face is one lattice cell wide (0.538 m), which is a wall
+# to `env.walkStep` at any frame rate; the north-west shelf is 3.00 m. Forward on the stick climbs, back climbs
+# down, back + sprint SLIDES. Jump or roll lets go of it.
+#
+# A section is 0.90 m (`propbuild.LADDER_SEG`), so every `rise` here is a multiple of it.
+
+zone: meadow -400.0 -400.0 400.0 400.0 0.220 grasstall,patch,tuft,clover,moss,wildflowers
+clear: 0.0 0.0 26.0
+
+at: bonfire -2 -18 0 1
+
+# ONE: EIGHT SECTIONS UP THE EAST SHELF. Rung plane at x 7.20, which is 0.065 m short of the ramp's foot, so it
+# plants on the plain and leans on the face. Head at 7.20 over a lip at 7.00 - 0.20 m proud, which is the read.
+at: ladder 7.2 0 270 1 rise=7.2
+
+# TWO: THE SAME WALL, SIXTEEN SECTIONS. A head 7.40 m over the ground it serves is a ladder to nothing, and
+# `ladderExit` must REFUSE it - he rides the top rung and comes back down.
+at: ladder 7.2 -14 270 1 rise=14.4
+
+# THREE: THE LOW SHELF at 3.00 m, whose face runs x -30.40..-29.87. Four sections lands 0.60 m proud; two
+# falls 1.20 m short of the lip, past `env.STEP_UP`, and is the other refusal.
+at: ladder -29.8 20 90 1 rise=3.6
+at: ladder -29.8 26 90 1 rise=1.8
+
+# FOUR: THE WATCHTOWER, GROUND TO ROOF IN TWO FLIGHTS. Boards at 4.69 m and 11.90 m, a hatch in each, on
+# OPPOSITE sides of the shaft - so the middle storey is crossed rather than passed through. The lower flight
+# stands on the ground under the +z hatch and heads 0.71 m proud of the boards; the upper one stands ON the
+# middle floor (`r1=4.69`) under the -z hatch and heads level with the roof. Both face the shaft's centre, so
+# the wall-side exit is refused by stone and he steps off inboard.
+# The roof has NO rail: the shaft's colliders stop at 11.0 m, so the merlons are scenery and the edge is real.
+at: watchtower -20 0 0 1
+at: ladder -20 1.4 180 1 rise=5.4
+at: ladder -20 -1.4 0 1 r1=4.69 rise=7.2
+
+# FIVE: A LADDER TO NOWHERE on the open plain, for the same refusal with no wall anywhere near it.
+at: ladder -8 -34 0 1 rise=7.2
+
+# WHAT KNOCKS HIM OFF. Two archers on the plain under the east shelf - the one thing that can reach a body
+# seven metres up without standing under it - and a shieldman at the foot of ladder one.
+foe: archer 2.00 10.00 200.0 1.00 0.21
+foe: archer -5.00 12.00 190.0 1.00 0.62
+foe: shieldman 4.00 4.00 200.0 1.00 0.40
+
+hgt: 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98
+hgt: 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98
+hgt: 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98
+hgt: 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98
+hgt: 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98
+hgt: 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98
+hgt: 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98
+hgt: 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98
+hgt: 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98
+hgt: 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98
+hgt: 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98
+hgt: 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98
+hgt: 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98
+hgt: 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98
+hgt: 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98
+hgt: 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98
+hgt: 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 64x126 92x98 76x56 64x70 92x98 76x56
+hgt: 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70
+hgt: 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98
+hgt: 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56
+hgt: 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70
+hgt: 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98
+hgt: 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56
+hgt: 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70
+hgt: 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98
+hgt: 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56
+hgt: 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70
+hgt: 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98
+hgt: 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56
+hgt: 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70
+hgt: 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98
+hgt: 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56
+hgt: 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70
+hgt: 92x98 76x56 64x70 92x98 76x56 64x70 92x98 76x56 64x70 92x98

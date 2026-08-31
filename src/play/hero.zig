@@ -220,6 +220,32 @@ const JUMP_FOLD: f32 = 12.0;
 const JUMP_HEAD_UP: f32 = -10.0;
 const JUMP_LEG_SPLIT: f32 = 5.0;
 
+/// **THE LADDER.** A climb is slower than a walk and much slower than the slide down it, which is the whole of
+/// what makes going up a commitment and coming down an escape.
+pub const CLIMB_SPEED: f32 = 1.35;
+pub const CLIMB_DOWN_SPEED: f32 = 1.70;
+/// Sprint on the way down: the hands come off the rails and he rides the stiles. Under the jump's terminal
+/// speed at its own apex, so a slide is never faster than falling.
+pub const CLIMB_SLIDE_SPEED: f32 = 5.20;
+/// Metres of run one full cycle of hands and feet covers — two rungs, since the limbs alternate.
+const CLIMB_RUNG: f32 = 0.60;
+/// Degrees, and the trunk stays near plumb: on a ladder the reach is all arm.
+const CLIMB_SPINE: f32 = 6.0;
+const CLIMB_HEAD: f32 = 14.0;
+const CLIMB_ROCK: f32 = 3.2;
+const CLIMB_SINK = 0.030 * H;
+const CLIMB_HIP_FLEX: f32 = 58.0;
+const CLIMB_KNEE: f32 = 74.0;
+const CLIMB_ANKLE: f32 = -12.0;
+const CLIMB_LEG_OUT: f32 = 7.0;
+const CLIMB_ARM_LO: f32 = 66.0;
+const CLIMB_ARM_HI: f32 = 128.0;
+/// Well under the walk's `ARM_ABD` — the stiles are 0.52 m apart and a swung-out elbow reads as hugging a tree.
+const CLIMB_ARM_ABD: f32 = 4.0;
+const CLIMB_ELBOW_LO: f32 = 14.0;
+const CLIMB_ELBOW_HI: f32 = 74.0;
+const CLIMB_WRIST: f32 = 18.0;
+
 pub const ROLL_DUR = 0.70;
 pub const ROLL_IFRAME_END = 0.46;
 
@@ -1491,6 +1517,13 @@ pub const Hero = struct {
     /// Differs from `jumping` in exactly two ways: he cannot steer it and cannot turn in it, and he lands in
     /// a heavy stun rather than on his feet.
     launched: bool = false,
+    /// **ON A LADDER.** `lift` carries him up it and `pos.y` stays the ground under its foot, exactly as the
+    /// jump does; what the ladder adds is that the height is DRIVEN and not integrated. `game.Climb` holds
+    /// which ladder and where on it — this is only what the body needs to be posed.
+    climbing: bool = false,
+    /// Rungs crossed, as a repeating phase. Driven by DISTANCE climbed and never by time (the rig's law), so
+    /// hands and feet cannot skate off the rungs at any climb speed.
+    climbPhase: f32 = 0,
     jumps: u32 = 0,
     airYaw: f32 = 0,
     airSpeed: f32 = 0,
@@ -1766,19 +1799,83 @@ pub const Hero = struct {
     /// stunned on the way down instead (`tickAir`). `held` refuses outright: `tickAir` will not integrate while
     /// the world is stopped, so a launch granted on such a frame would strand him mid-flight.
     pub fn startLaunch(self: *Hero, away: rl.Vector3, apex: f32) bool {
+        return self.launchFrom(away, apex, self.footY());
+    }
+
+    /// **THROWN FROM WHERE HIS FEET ACTUALLY ARE**, which off a ladder or a deck is not `pos.y`. The rest of
+    /// the arc is the jump's own integrator: he falls to the ground under him and lands there.
+    pub fn launchFrom(self: *Hero, away: rl.Vector3, apex: f32, fromY: f32) bool {
         if (self.dead or self.held or apex <= 0) return false;
         self.dropActions();
+        self.endClimb();
         self.stun = .none;
         self.stunT = 0;
         self.jumping = false;
         self.launched = true;
-        self.airY = self.pos.y;
+        self.airY = mathx.maxF(fromY, self.pos.y);
         self.vertVel = launchV0(apex);
         self.airSpeed = launchSpeed(apex);
         self.airYaw = if (mathx.lenXZ(away) > 1e-3) mathx.headingXZ(away) else self.facing + std.math.pi;
         self.landT = mathx.LONG_AGO;
         self.startXfade();
         return true;
+    }
+
+    /// **HE STEPS ON, HE DOES NOT JUMP ON.** Height comes in as a `lift` the caller solves off the ladder, so
+    /// there is one owner of where on the run he is (`game.Climb`) and the body only holds the pose.
+    pub fn startClimb(self: *Hero, lift: f32, facing: f32) void {
+        self.dropActions();
+        self.clearAir();
+        self.sprinting = false;
+        self.climbing = true;
+        self.climbPhase = 0;
+        self.lift = mathx.maxF(lift, 0);
+        self.facing = facing;
+        self.moving = 0;
+        self.speed = 0;
+        self.speedS = 0;
+        self.startXfade();
+    }
+
+    /// `climbed` is SIGNED metres this frame — down the ladder runs the same hands backwards.
+    pub fn tickClimb(self: *Hero, dt: f32, lift: f32, climbed: f32) void {
+        self.tickClocks(dt);
+        self.tickFogGrace(dt);
+        self.lift = mathx.maxF(lift, 0);
+        self.climbPhase = @mod(self.climbPhase + climbed / CLIMB_RUNG + 1.0, 1.0);
+        self.speed = 0;
+        self.speedS = 0;
+        self.moving = 0;
+    }
+
+    /// **`lift` IS DERIVED, SO IT GOES STALE THE FRAME THE GROUND UNDER HIM MOVES.** `tickAir` recomputes it,
+    /// but that runs at the top of the NEXT frame, and `game.groundActor` writes `pos.y` at the bottom of this
+    /// one — which off a deck edge is a whole storey. The lens reads the pair in between.
+    pub fn syncLift(self: *Hero) void {
+        self.lift = if (self.airborne()) mathx.maxF(self.airY - self.pos.y, 0) else 0;
+    }
+
+    pub fn endClimb(self: *Hero) void {
+        if (!self.climbing) return;
+        self.climbing = false;
+        self.lift = 0;
+        self.startXfade();
+    }
+
+    /// **WALKED OFF AN EDGE** — no impulse, no toss, just gravity from where his feet were. `startJump` is a
+    /// request and refuses a committed body; this is the world taking the floor away and cannot be refused.
+    pub fn startFall(self: *Hero, fromY: f32, dir: rl.Vector3, speed: f32) void {
+        if (self.dead or self.held) return;
+        self.endClimb();
+        self.dropActions();
+        self.jumping = true;
+        self.airY = mathx.maxF(fromY, self.pos.y);
+        self.vertVel = 0;
+        self.airSpeed = if (mathx.lenXZ(dir) > 0.01) speed else 0;
+        self.airYaw = if (self.airSpeed > 0.01) mathx.headingXZ(dir) else self.facing;
+        self.landT = mathx.LONG_AGO;
+        self.lift = self.airY - self.pos.y;
+        self.startXfade();
     }
 
     fn tickAir(self: *Hero, dt: f32) void {
@@ -1880,7 +1977,7 @@ pub const Hero = struct {
 
 
     pub fn committed(self: *const Hero) bool {
-        return self.jumping or self.launched or self.rolling or self.attacking or self.drinking or self.shooting or self.casting or self.parrying or self.ringing;
+        return self.jumping or self.launched or self.climbing or self.rolling or self.attacking or self.drinking or self.shooting or self.casting or self.parrying or self.ringing;
     }
 
     pub fn holds(self: *const Hero, a: Armament) bool {
@@ -3433,6 +3530,7 @@ pub const Hero = struct {
     fn clearAir(self: *Hero) void {
         self.jumping = false;
         self.launched = false;
+        self.climbing = false;
         self.lift = 0;
         self.airY = self.pos.y;
         self.vertVel = 0;
@@ -3531,6 +3629,7 @@ pub const Hero = struct {
         if (self.dead) return self.poseDeath();
         if (self.stun != .none) return self.poseStun();
         if (self.launched) return self.poseLaunch();
+        if (self.climbing) return self.poseClimb();
         if (self.jumping) return self.poseJump();
         if (self.rolling) return self.poseRoll();
         if (self.attacking) return self.poseAttack();
@@ -3841,6 +3940,32 @@ pub const Hero = struct {
         if (self.guardB > 0.001) self.poseGuard(&wx, mathx.clampF(self.guardB, 0, 1), 0, fold * 0.5, 0, 0);
         self.poseCarried(&wx);
         if (self.bowOut()) self.poseBowArms(&wx, fold * 0.5, 0, 0);
+        self.publish(&wx);
+    }
+
+    /// **THE LADDER IS A CROSS-CRAWL AND THE DIAGONALS ARE WHAT SELL IT** — left hand with right foot. One
+    /// phase drives all four limbs; the arm's is a half-cycle ahead of the leg on the same side, which is what
+    /// makes it a crawl rather than a bunny-hop. He hugs the rails, so the arms stay NARROW: the shoulder
+    /// abduction is a fraction of the walk's or the elbows swing out past the stiles.
+    fn poseClimb(self: *Hero) void {
+        const ph = self.climbPhase;
+        const facingDeg = mathx.degrees(self.facing);
+        // The hips ride under the shoulders on a ladder, so the trunk is near plumb and the whole reach is arms.
+        const rock = CLIMB_ROCK * mathx.sinf(std.math.tau * ph);
+        const hipY = self.rest[ROOT].y - CLIMB_SINK;
+
+        var wx: [N]rl.Matrix = undefined;
+        wx[ROOT] = mul(mul3(tr(0, hipY, 0), rz(rock), ry(facingDeg)), rootAt(self.footPos()));
+        setLocal(&wx, SPINE, self.rest, rx(CLIMB_SPINE * 0.5));
+        setLocal(&wx, CHEST, self.rest, rx(CLIMB_SPINE * 0.5));
+        setLocal(&wx, NECK, self.rest, rx(-CLIMB_HEAD * 0.35));
+        setLocal(&wx, HEAD, self.rest, rx(-CLIMB_HEAD));
+        climbLeg(&wx, self.rest, ph, 1.0, HIPL, KNEEL, ANKL);
+        climbLeg(&wx, self.rest, ph + 0.5, -1.0, HIPR, KNEER, ANKR);
+        climbArm(&wx, self.rest, ph + 0.5, 1.0, SHL, ELL, WRL);
+        climbArm(&wx, self.rest, ph, -1.0, SHR, ELR, WRR);
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
+        self.poseCarried(&wx);
         self.publish(&wx);
     }
 
@@ -4464,6 +4589,23 @@ fn jumpArm(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, drive: f32, reach: f32, tuck:
     setLocal(wx, el, rest, rx(-(IDLE_ELBOW + JUMP_ARM_ELBOW * drive + JUMP_ARM_FOLD * tuck)));
     setLocal(wx, wr, rest, rl.math.matrixIdentity());
 }
+/// One rung's worth of leg: the knee draws up, the foot plants, the leg straightens under him as he rises.
+fn climbLeg(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, ph: f32, side: f32, hip: usize, knee: usize, ank: usize) void {
+    const up = 0.5 - 0.5 * mathx.cosf(std.math.tau * ph);
+    setLocal(wx, hip, rest, mul(rx(-CLIMB_HIP_FLEX * up), rz(-side * (HIP_ADDUCT + CLIMB_LEG_OUT * up))));
+    setLocal(wx, knee, rest, rx(IDLE_KNEE + CLIMB_KNEE * up));
+    setLocal(wx, ank, rest, mul(rx(CLIMB_ANKLE * up), ry(side * FOOT_TOEOUT)));
+}
+
+/// The reach up a rung and the pull down off it, on the same phase — and the elbow stays TUCKED, since a
+/// ladder is held between the hands and not embraced.
+fn climbArm(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, ph: f32, side: f32, sh: usize, el: usize, wr: usize) void {
+    const up = 0.5 - 0.5 * mathx.cosf(std.math.tau * ph);
+    setLocal(wx, sh, rest, mul(rx(-(CLIMB_ARM_LO + (CLIMB_ARM_HI - CLIMB_ARM_LO) * up)), rz(side * CLIMB_ARM_ABD)));
+    setLocal(wx, el, rest, rx(-(CLIMB_ELBOW_HI - (CLIMB_ELBOW_HI - CLIMB_ELBOW_LO) * up)));
+    setLocal(wx, wr, rest, rx(CLIMB_WRIST));
+}
+
 fn sitLeg(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, side: f32, hip: usize, knee: usize, ank: usize) void {
     setLocal(wx, hip, rest, mul(rx(-SIT_HIP_FLEX), rz(side * SIT_HIP_ABD)));
     setLocal(wx, knee, rest, rx(SIT_KNEE));

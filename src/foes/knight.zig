@@ -6477,37 +6477,14 @@ fn clampTip(n: rl.Vector3, bodyUp: rl.Vector3, bodyFwd: rl.Vector3, allow: f32) 
     return mathx.normV(mathx.addV(mathx.scaleV(mathx.normV(flat), keep), mathx.scaleV(bodyUp, lean)));
 }
 
-/// Rotate `cur` toward `want` by at most `DOOR_TURN_MAX` for this frame, about the axis between them, and store
-/// it back. A zero or unseated `cur` takes `want` whole — a first frame has nothing to chase from.
+/// Rotate `cur` toward `want` at `DOOR_TURN_MAX` and store it back; the slerp is `mathx.turnToward`'s. A zero
+/// or unseated `cur` takes `want` whole — a first frame has nothing to chase from.
 fn turnToward(cur: *rl.Vector3, want: rl.Vector3, dt: f32) rl.Vector3 {
     if (mathx.lenV(cur.*) < 0.5) {
         cur.* = want;
         return want;
     }
-    const from = mathx.normV(cur.*);
-    const dot = mathx.clampF(from.x * want.x + from.y * want.y + from.z * want.z, -1, 1);
-    const ang = std.math.acos(dot);
-    const cap = mathx.radians(DOOR_TURN_MAX) * dt;
-    if (ang <= cap or ang < 1e-5) {
-        cur.* = want;
-        return want;
-    }
-    const k = cap / ang;
-    const sn = @sin(ang);
-    // **DEAD OPPOSITE IS REACHABLE AND IT DIVIDES BY ZERO.** A slam interrupted mid-flight hands this a target
-    // 180° from the face it is holding, and a slerp has no axis there: `sin(ang)` goes to nothing and the plank
-    // comes out NaN. Any perpendicular will do for one step, and the next frame is an ordinary slerp again.
-    if (sn < 1e-3) {
-        var axis = mathx.crossV(from, v3(0, 1, 0));
-        if (mathx.lenV(axis) < 1e-4) axis = mathx.crossV(from, v3(0, 0, 1));
-        const side = mathx.normV(mathx.crossV(axis, from));
-        const out = mathx.normV(mathx.addV(mathx.scaleV(from, @cos(cap)), mathx.scaleV(side, @sin(cap))));
-        cur.* = out;
-        return out;
-    }
-    const a = @sin((1.0 - k) * ang) / sn;
-    const b = @sin(k * ang) / sn;
-    const out = mathx.normV(mathx.addV(mathx.scaleV(from, a), mathx.scaleV(want, b)));
+    const out = mathx.turnToward(cur.*, want, mathx.radians(DOOR_TURN_MAX) * dt);
     cur.* = out;
     return out;
 }

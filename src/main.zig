@@ -146,7 +146,7 @@ test {
     _ = @import("foes/shroom.zig");
     _ = @import("foes/delver.zig");
     _ = @import("foes/necro.zig");
-    _ = @import("foes/ravager.zig");
+    _ = @import("foes/fungaldeer.zig");
     _ = @import("foes/shroommage.zig");
     _ = @import("foes/sporegolem.zig");
     _ = @import("foes/fenlurker.zig");
@@ -161,6 +161,7 @@ test {
     _ = @import("foes/fishman.zig");
     _ = @import("foes/blinkbat.zig");
     _ = @import("props/propmarket.zig");
+    _ = @import("props/propforge.zig");
     _ = @import("foes/wolf.zig");
     _ = @import("play/pickup.zig");
     _ = @import("play/award.zig");

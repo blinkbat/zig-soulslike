@@ -942,7 +942,7 @@ pub const Hollow = struct {
 pub fn triggerR(quarryR: f32) f32 {
     return BITE_TRIGGER_R + quarryR;
 }
-/// The ravager's `stopR` form, not the skitterer's trigger-ring one — and NEITHER ring is scaled by the body,
+/// Off the BITE's own reach, not off the trigger ring the way `skitterer.stopR` is — and NEITHER ring is scaled by the body,
 /// or the two invert: at `BITE_R * scale * STOP_FRAC` a placement at 1.25 halted 3.0 m out with a trigger ring at 2.08.
 fn stopR(quarryR: f32) f32 {
     return BITE_R * STOP_FRAC + quarryR;

@@ -123,10 +123,10 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `world/trigger.zig` | SC1's conditions + actions, and the switches / counters / timers they compose through |
 | `world/dialog.zig` | one conversation: the node-tree walk and the BG2-style panel, with a live portrait |
 | `world/env.zig` | THE WORLD — terrain, op replay, `coverField`, uniform grid, cullers, occluder fade, lights |
-| `props/props.zig` | prop vocabulary + the `INFO` table; `displayName`/`group`/`stock` are exhaustive switches |
-| `prop*.zig` | meshes by family — `propart` (palette + weathering), `propruins`, `propgold`, `propbuild`, `propvillage`, `propmarket`, `proprock`, `propwood`, `propflora`, `propfungus`, `propcoral`, `propash`, `propbone`, `propfx` |
+| `props/props.zig` | prop vocabulary + the `INFO` table; `displayName`/`group`/`stock` are exhaustive switches. `decks`/`stack`/`climb` are the ladder's and the deck's |
+| `prop*.zig` | meshes by family — `propart` (palette + weathering), `propruins`, `propgold`, `propbuild`, `propvillage`, `propmarket`, `propforge`, `proprock`, `propwood`, `propflora`, `propfungus`, `propcoral`, `propash`, `propbone`, `propfx` |
 | `foes/foe.zig` | THE FOE STANDARD — contract, `Blade`/`strike`/`weaponReaches`/`Blow`, `Trail`, particles, `Leash` |
-| `foes/npc.zig` | the wanderer, on the hero's scaffold; idle set, gestures, roam, staff that plants with the far foot |
+| `foes/npc.zig` | THE FOLK, all three on the hero's scaffold — the wanderer's staff, the caravaneer's neck and muzzle, and MOSSBEARD, the tree smith whose idle IS a hammer stroke |
 | `foes/frog.zig` | gaping toad + `Knot` |
 | `foes/archer.zig` | skeletal archer + `Line`; kite-only, arrows that stick and fade |
 | `foes/ogre.zig` | one-eyed ogre + `Grief`; 24 bones, high poise, slam / swipe / drive; never strafes |
@@ -141,7 +141,7 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `foes/delver.zig` | THE DELVER + `Warrens` — goes UNDER; bursts underfoot or ploughs a furrow. No lock-on while down |
 | `foes/necro.zig` | THE NECROMANCER + `Rite` — holds a corpse open and raises it once; the only COLD source |
 | `foes/wolf.zig` | first SPIRIT + `Pack`, what the BELL calls. NOT a foe; first QUADRUPED, 27 bones |
-| `foes/ravager.zig` | florid ravager + `Thicket` — quadruped rig's second user + 4 petal bones. The BLOOM is the tell AND the window |
+| `foes/fungaldeer.zig` | fungal deer + `Herd` — quadruped rig's FOURTH user + a stalk, a bloom, 7 petals and a rack. The flower RISES out of its back and spits spores that HANG before they home; the antlers are what it does cornered |
 | `foes/shroommage.zig` | mushroom mage + `Ring` — the fireball BOUNCES, so it punishes backing off |
 | `foes/fenlurker.zig` | fen lurker + `Marsh` — never leaves the water; sunk it is unreachable. Counter is DRY LAND |
 | `foes/sporegolem.zig` | spore homunculus + `Host` — `ARMOUR` is the creature; fire and lightning pass through |
@@ -311,7 +311,7 @@ Two things in that table are load-bearing beyond navigation:
   means what it meant — and IS the damage it shrugs off inside the refill window. His own stagger keeps the
   blow's `poise`: the WEIGHT of what hit him. **A blow that refuses the flinch must hand the pool back** — the
   knight's door and the greatsword's hyper armour both restore `poise` (and stance) after `foe.reached`, since
-  stripping a blow's `poise` no longer does anything; a bloomed ravager does NOT, so the light poke a shut body
+  stripping a blow's `poise` no longer does anything; a bloomed fungal deer does NOT, so the light poke a shut body
   shrugs off flinches an open one — the window paying out twice.
 - **NOTHING BUILDS ON A BODY ALREADY STUNNED** (owner) — neither pool, and not the lightning meter: the stagger
   is the punish window it earned, and stacking the next one inside it is doing one thing over and over.
@@ -846,41 +846,61 @@ Never touches you; priority target on any field. 78 HP, 12 poise, 320 souls.
 - **A SWATTED FLY DROPS.** Stun states pull `hoverTo` down. Death is the hover running out before
   `foe.dissipate` takes it.
 
-### The florid ravager (`ravager.zig`) — the flower IS the window
+### The fungal deer (`fungaldeer.zig`) — the flower is ARTILLERY, the antlers are the corner
 
-A hound's body on a two-metre woody stalk, with a flower where the head should be. `wolf.zig`'s 27 bones plus
-FOUR appended above them, so `wolf.legs` still takes `wx[0..wolf.N]` as its own array and no bone it solves has
-moved. The muzzle and the two ears are re-let as petals rather than left nodding on a flower.
+Owner's creature, owner's name, and it REPLACED the florid ravager on the ravager's own bones. A leggy stag
+with a large flower growing out of its BACK: `wolf.zig`'s 27 bones plus eleven — a stalk off the withers, the
+bloom on it, seven petals, and a beam of antler each side of a head this one actually kept. `wolf.legs` still
+takes `wx[0..wolf.N]` as its own array, so no bone it solves has moved.
 
-- **IT ONLY BLOOMS WHEN IT IS WARMING UP TO ATTACK, OR WHEN A HEAVY STUN BLOWS IT OPEN** (owner). One scalar,
-  `openAmt`, read off the leap's own clock or the stun's and nowhere else — never off distance. A bloom that
-  opened on APPROACH was a tell for standing still, and it made the flower ambient rather than an event.
-- **AND OPEN, IT TAKES MORE DAMAGE** (`frailty`, `BLOOM_FRAIL`) — 1.9x wide, on the BLADE in `tryHit` so the
-  cull, the threat and the shield all see the blow that landed. **DAMAGE ONLY**: `poise` and `stance` ride
-  through untouched, because `POISE_MAX` is solved to sit between his light (10) and his heavy (22) and a
-  multiplier there would quietly put a light poke through it. The window is a punish, not a second stagger.
-- **THE SWIPE CARRIES NO WINDOW** — it is the flank answer, its tell is the SHOULDER DROPPING, and every bloom
-  clock gates on `.bite` or the stun. Two moves, two grounds, one of them punishable.
-- **WIDE BEFORE IT LEAVES THE EARTH.** `LAUNCH_T` is 0.55 of the wind, so the burst has to finish inside
-  0.209 s — a comptime assert, and it is what caught an `OPEN_BY` of 0.70 reading as a tell it was not.
-- **SEVEN QUILLS, HAND-LAID, AND THE UNEVENNESS IS BOUNDED BOTH WAYS.** Gaps of 34 to 58 degrees against an even
-  ring's 51: pushed at the bottom because `k/7 * 360` reads as a gear, capped at the top because a 76-degree gap
-  came back as a bald sector in the open corolla.
-- **THE FOLD BUYS RADIUS UP TO 73 DEGREES AND SELLS IT AFTER.** A tip's distance off the bloom's axis goes as
-  `(BOW+RECURVE)*cos f + sin f`, so `PETAL_WIDE` dialled UP past the peak makes the flower NARROWER — at 128 the
-  corolla measured 0.76 m across against 1.72 m at 95. Same trap on the SWEEP, which is tangential in the
-  petal's own frame but still `hypot` against the axis: 34 degrees of it put the SHUT bud at 0.97 m across.
+- **THE FLOWER IS NOT ITS FACE, IT IS ITS ARTILLERY.** Furled it lies back down the loins and the animal reads
+  as a deer with something growing on it; it RISES — that is the whole tell, and there is no other — opens, and
+  spits five spores straight up. `riseAmt` is off the volley's clock and never off `openAmt`, or a heavy stun
+  would raise a stalk it is meant to leave lying.
+- **THE HANG IS THE MOVE** (owner: they hover for a bit before homing in). `SPORE_HANG` 1.55 s of drifting and
+  bobbing before they turn over, then `SPORE_HOME` 4.4 m/s — under `hero.SPRINT_SPEED`, asserted at comptime,
+  so a spore cannot run him down in a straight line. **THE BOB'S RATE HAS TO BE IN THE STEP OR IT IS NOT ONE**:
+  added as `A·cos(wt)·dt` this is the integral of the wave, and 0.16 m authored arrived as 0.02 m of wobble.
+- **THE STEER IS CAPPED, NOT LERPED** (`mathx.turnToward`, `SPORE_TURN` 2.2 rad/s). `normV(from + k·(want −
+  from))` stalls as the angle grows and at dead opposite is a fixed point: measured, 5.15 s to reverse against
+  the 1.43 s a cap gives, on a post-hang life of 5.90 s — so the one bearing the hang exists for was the one
+  that did not work.
+- **AND A THING IN FLIGHT LANDS ON EARTH, NOT ON WHATEVER HE IS STANDING ON** (`foe.landed`, and the magus's
+  orb is its other caller). Nothing in `foes/` can reach `env.groundAt`, so the shot carries the floor it was
+  thrown from and is spent on the LOWER of that and his own. Asked against HIS alone, a deer three metres below
+  him lost every spore of a volley on the frame it left the throat — the throat rides 2.33 m over its own feet.
+- **OPEN, IT TAKES MORE DAMAGE** (`frailty`, `BLOOM_FRAIL`) — 1.9x wide, on the BLADE in `tryHit` so the cull,
+  the threat and the shield all see the blow that landed. **DAMAGE ONLY**: `poise` and `stance` ride through
+  untouched, because `POISE_MAX` 14 is solved to sit between his light (10) and his heavy (22) and a multiplier
+  there would quietly put a light poke through it. The window is a punish, not a second stagger.
+- **IT DOES NOT WANT TO BE NEAR YOU.** Inside `FLEE_R` 6.5 it walks away and QUARTERS while it does — a
+  straight backpedal is a thing you keep pace with; past `KEEP_R` 13 it closes enough to throw. `FLEE_SPEED` is
+  a gallop and `CLOSE_SPEED` a trot: the flight is the animal, the approach is only bookkeeping.
+- **THE ANTLERS ARE WHAT IT DOES CORNERED, AND CORNERED IS TWO DISTANCES AND A CLOCK** (the LAW). He is inside
+  `CORNER_R` — the ring the flower is useless in — AND the gap did not open this frame, held for `CORNER_HOLD`
+  1.15 s, draining at `CORNER_DECAY` 1.6. Never a read of what he is holding or pressing. The charge commits to
+  the line it loaded on and does not steer inside the drop.
+- **HAND-LAID PETALS, AND THE UNEVENNESS IS BOUNDED BOTH WAYS.** Gaps of 34 to 64 degrees against an even
+  ring's 51: pushed at the bottom because `k/7 * 360` reads as a gear, capped at the top or the open corolla
+  comes back with a bald sector in it.
+- **THE FOLD BUYS RADIUS UP TO 67 DEGREES AND SELLS IT AFTER.** A tip's distance off the bloom's axis goes as
+  `(BOW+RECURVE)·cos f + sin f`, so `PETAL_WIDE` dialled UP past the peak makes the flower NARROWER. 95 puts
+  the ring at 86..108 — straddling flat, so the throat faces OUT, which is what a flower spitting UP needs.
+  `PETAL_SHUT` is NEGATIVE and solved from the same radial: a bud's petals converge PAST parallel.
 - **A SECOND TIER FOR NO BONES.** Each petal bone carries a short broad TONGUE as well as its quill, pitched
-  `INNER_TILT` further in by a rotation baked into the MESH. Shut they cross the axis and seal the bud, which is
-  what keeps the throat's light off; open they cup it. A constant tilt is an OFFSET, so its length is solved
-  against `BLOOM_RIM` or the tongues come out the far side.
-- **THE STALK TELESCOPES AND THE HEAD'S OWN COLLAR COVERS THE SLIDE.** The reach is a translate on `HEAD` along
-  the neck's axis; the head's mesh hangs a 0.47 m sheath INSIDE the stalk's bore, thinner than the bore, so no
-  frame of a 0.35 m stretch shows a gap.
-- **THE STALK REARS OFF ITS OWN CLOCK, NOT OFF THE BLOOM** (`rearAmt`) — coupled, a heavy stun reared the neck
-  it is supposed to fold.
+  `INNER_TILT` further in by a rotation baked into the MESH. A constant tilt is an OFFSET, so `INNER_LEN` is
+  solved against `BLOOM_RIM` or the tongues come out the far side.
+- **THE FURL IS RELATIVE TO THE STALK'S OWN REST LEAN, NOT ABSOLUTE.** STALK→BLOOM is already 26 deg off plumb,
+  so an absolute furl folds the flower the WRONG WAY — at +74 it laid over the animal's head, 1.65 m in front
+  of its own hip. And the stalk TELESCOPES as well as hinging (`STALK_FURL_IN`), the bloom's collar hanging
+  0.35 W down the bore so no frame of the rise shows a gap.
+- **THE HURT SPHERE HOLDS THE BLOOM AT BOTH ENDS OF ITS TRAVEL** — a weak point a blade cannot reach is not one.
+  Solved, not picked: the bloom rides 1.66 m furled and stands to 2.30 m, and `wx[ROOT]` translates in Y ONLY,
+  so the whole trunk hangs forward of `pos` and `BARREL_MID` is what keeps the withers inside it.
 - **A CORPSE WILTS FROM WHATEVER THE BLOW CAUGHT IT WEARING** (`deathOpen`). Snapping shut is a pop and ramping
   from wide is the same pop the other way.
+- **`stageGather` AND NOT `stageRise`** — `shots.runMapShots` finds a creature's signature move off `@hasDecl`
+  of that ONE name, and under any other the deer goes unshot.
 
 ### The fungal duo (`fungalduo.zig`) — two bodies, one encounter
 
@@ -1977,6 +1997,50 @@ normals from the FIELD so two tiles agree at their seam.
 - **THE TERRAIN RECEIVES SHADOWS BUT DOES NOT CAST.** Self-shadowing a heightfield off a 108 m ortho box puts
   acne everywhere the surface grazes the sun.
 
+### Decks and ladders — the only two ways off the ground
+
+**A DECK IS THE FIRST WALKABLE SURFACE THAT IS NOT THE LAND** (`props.Info.decks`, `env.deckAt`/`standAt`). Props
+were XZ capsules with a ceiling and nothing else; `game.groundActor` asks `standAt` now, so `pos.y` is the deck
+where there is one and `groundAt` stays the question about the LAND.
+
+- **A DECK HE IS NOT ALREADY UP AT IS NO FLOOR AT ALL** — the gate is the walk's own `STEP_UP`, which is what
+  stops a body on the ground being snapped onto a platform five metres over its head.
+- **A `hole` CANCELS THE DECK AT ITS OWN `y` AND NO OTHER** (`env.holedAt`) — a trapdoor, and the ONE way a deck
+  is not simply convex. The mesh and the deck are solved off the same constants or it is a floor you fall
+  through (`propbuild.WATCH_DECK_Y`/`WATCH_ROOF_Y`/`WATCH_HATCH_Z`).
+- **WALKING OFF A DECK EDGE IS A FALL, NOT A SNAP** (`game.heroFooting`, `hero.startFall`). `groundActor` PLANTS
+  past `GROUND_SNAP`, which off a five-metre floor is a teleport with a footstep on the end of it. Only a deck
+  does this; the land keeps the snap it has always had.
+- **THE LENS FOLLOWS HIS FEET, NOT `pos.y`** (`game.syncLensLift`, `camera.tickLift`'s share). Both jump — a
+  plant, a mount, a top-out — while `pos.y + lift` is continuous through all of it. A climb and a fall off a
+  deck take the FULL lift; a jump still takes `camera.LIFT_SHARE`.
+- **A SOLID CAN HAVE A FOOT** (`Part.y0`, `collision.Solid.y0`) — a LINTEL: the course over a doorway, open to a
+  body on the floor and wall to one up on a deck. Four consumers and they must all know: `blocksPoint`,
+  `blocksSight`, `env.resolveActorPast`, and **`buildSolids`, which has to carry `y0` into the collider the way
+  it already carried `h`** — left behind, the watchtower's doorway came out sealed from the ground up.
+
+**A LADDER IS THE ONE PROP YOU GET ON** (`props.Info.climb`, `game.Climb`). Its own local **+Z is the open side**
+he mounts from and stands off (`propbuild.LADDER_STANDOFF`); local −Z is the wall it leans on.
+
+- **IT IS THE FIRST KIND THAT STACKS** (`props.Info.stack`, `Prop.rise`, `env.drawStack`). One mesh drawn as
+  whole sections up its own axis, because a uniform `scale` drags the rungs apart with the rails. Every other
+  section is turned 180°, or the mesh's own wabi-sabi bands the run like a barber's pole.
+- **THE SECTION IS THE AUTHORING GRANULARITY, AND THAT IS WHY IT IS 0.90 m** (`propbuild.LADDER_SEG`, three
+  rungs). A run can only be a whole number of them; at 2.40 the band `ladderExit` accepts was narrower than the
+  pitch, so against a cliff quantised to `wf.HEIGHT_STEP` most lips had no run that served them.
+- **THE HEAD MAY STAND PROUD AND MAY ONLY JUST FALL SHORT** (`game.LADDER_PROUD` 1.00 up, `env.STEP_UP` 0.55
+  down). Rails over a floor are what you haul on; a head under the lip is a pull-up.
+- **THE EXIT ASKS THE WALL SIDE FIRST AND MAY NOT BE A LEDGE.** Over a cliff you top out over the lip; inside a
+  shaft the stone refuses that side and he steps off inboard. **ON A ROOF THERE IS NO WALL LEFT TO REFUSE IT**,
+  so one more stride the same way has to hold him too — that is what keeps him off the merlons.
+- **HEIGHT IS A `lift`, NOT A `pos.y`** — the jump's own machinery, so `footPos` and the shadow follow for free
+  and a knock-off is `hero.launchFrom` with the climb height. `game.updateClimb` owns his XZ outright (no
+  terrain gate, no push-out, like the fog-gate walk), and the phase is driven by DISTANCE climbed.
+- Forward climbs, back climbs down, back + sprint SLIDES; jump or roll lets go. Everything else is refused by
+  `committed()`. **NOTHING BUT THE HERO CLIMBS**, so a ladder is an escape from whatever cannot follow.
+- `worlds/test_ladder.world` is the bench — two shelves, the watchtower's two flights to its roof, and the
+  three runs that must REFUSE to top out. The test beside it prints every head and exit in metres.
+
 ### Performance — how a 560 m world stays cheap (`env.zig`)
 
 - **UNIFORM GRID (CSR).** Props bucketed by 16 m cell into two indexes (structures, flora), built by counting
@@ -2098,6 +2162,43 @@ Not a foe: no `Vitals`, no `Leash`, no blade. Do not let the foe contract grow i
 - **VALUE CONTRAST BETWEEN TWO LARGE AREAS CANNOT SURVIVE FULL DAYLIGHT ON THIS SUN.** A sunward face reads
   `255·(albedo·1.72/255)^(1/2.2)`, so albedo 40 comes back at 142 and 58 at 168. Layer on HUE, which the sun
   does not flatten, and spend value contrast only where the area is small (`LINEN`) or is a hole (`HOOD_IN`).
+
+### Mossbeard, the tree smith (`npc.zig`, `props/propforge.zig`)
+
+The third `NpcKind` and the first that is not a man. Owner's brief — wise, old, mustached, a hulking gentle
+giant, sad but noble, hammering endlessly on his anvil — and every word of it is a number.
+
+- **THE STROKE IS THE IDLE, NOT A `Gesture`.** A gesture has a clock that ends; he is doing this when you find
+  him and when you leave. `Wanderer.hammer` is a repeating phase, `HAMMER_PERIOD` 2.15 s, and `struck` is the
+  one-frame edge `game.voiceFolk` spends on `sfx.smith_ring`.
+- **THE RISE TAKES FOUR TIMES AS LONG AS THE FALL, AND THE ELBOW CARRIES THE RAISE.** Comptime-pinned, both:
+  a shoulder that did the lifting reads as an executioner, and an even rise/fall reads as a woodpecker. The
+  head travels 1.96 m — 2.83 m at the top of the raise to 0.88 m on the face.
+- **AND IT OVERSHOOTS** (the LAW). `HAMMER_REBOUND` bounces the head 0.19 m back off the anvil and the trunk
+  drives past its own stoop with it. There is no hitstop to fake the weight with.
+- **THE BEARD ARRIVES LATE.** The moustache is grown onto the burl, so the only thing that can swing it is the
+  skull — read off the stroke's phase shifted back by `BEARD_LAG`. A rope that moved WITH the arm is a rope
+  nailed to it, and that late arrival is most of what makes the hammer look heavy.
+- **BOWED, NOT FOLDED.** `stoop` 25° and `headFwd` 21° put the skull 0.20 m forward of the chest while the
+  chest sits 0.075 m forward of the hips. Sad is the head; NOBLE is that the shoulders stay square under it —
+  the split is asserted, not described.
+- **THE ANVIL IS SOLVED OFF THE STROKE AND NOT THE OTHER WAY ROUND** (`npc.SMITH_ANVIL_Z` 0.91 m,
+  `propforge.ANVIL_FACE` 0.88 m). The hammer head bottoms at 0.87 m up and 0.91 m out; a test re-measures the
+  pair every build, so a re-authored stroke cannot quietly start swinging through air.
+- **HE STILL HAS TO FIT THROUGH A DOOR.** Crown 2.80 m against the wanderer's 1.77, pinned under
+  `propart.TOWER_DOOR_HEAD` — a character nobody can put indoors has one place to stand.
+- **THE FORGE YARD IS FOUR PROPS, NOT ONE MESH** (`propforge`): anvil, forge, quench trough, tool rack, laid
+  out by an author the way `propmarket` is the caravaneer's.
+  - **THE COAL BED IS `Mat.flame`, NEVER `Mat.ember`.** Ember is one of the two VERTEX-ANIMATED ids and is for
+    sparks that FLY UP; a static bed under it drifted off the hearth and out of the hood.
+  - **THE HOOD STANDS CLEAR OF THE FIRE.** Sat on the hearth at full width it is a KILN that swallows the one
+    thing the object exists to show. It is a cone — two goes in boxes left daylight between four slabs and then
+    came back as a wedding cake — raised, leaning back, open at the front.
+  - **A BIG SMOOTH PROP NEEDS A DARKER ALBEDO THAN A SMALL ONE OF THE SAME MATERIAL.** Shot alone, every piece
+    of the first cut came back pale: `art.TIMBER` on a 0.6 m capsule reads at 180 where the same value on a
+    fence rail reads at 130. The family carries its own timber and stone, a third under `propart`'s.
+  - **AND A 6 mm DISC IS ALWAYS WHITE.** Hammer scale scattered on the floor had every normal straight up into
+    the key, so a near-black albedo still landed at full brightness. Ground litter is a `decor` op.
 
 ## Sight and leashing
 
@@ -2223,6 +2324,9 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   roll, X the quick item. The dialog panel takes it on top of the menu Confirm. The quiver's keyboard cycle
   moved off Y to `ARROW_KEY`.
 - **Guard or CAST:** hold L1/LB or RMB. The button belongs to the HAND, not the shield.
+- **A LADDER TAKES INTERACT AND THEN THE STICK, AND NOTHING ELSE.** Forward is up whichever way the lens points
+  — the camera does not steer a ladder — back climbs down, back + sprint SLIDES. Jump or roll lets go of it;
+  every other press is refused by `committed()`.
 - **Aim or PARRY:** L2 is that same hand's SKILL slot — a raised bow aims on the HELD level (or RMB with the bow
   out), boards parry on the PRESSED edge (`PARRY_KEY`).
 - **THE RIG TILTS ONTO WHAT IT IS LOCKED TO** (`game.lockPitch`). The boom's pitch IS the view's, so the right
@@ -2320,7 +2424,7 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
     `postAmble` the four that ease a `self.speed`, and `postWant` hands back only the PLACE — which is what a
     hopper leaps to (`frog`, `shroom`), a flyer cruises to (`leechfly`, `blinkbat` — it drifts its round rather
     than blinking it, or the blink has no tell left for the flank), and a quadruped simply walks to instead of
-    home (`ravager`, `skitterer`). A round stops at `foe.ARRIVE`: the ravager's own `HOME_R` was 1.2 against it
+    home (`fungaldeer`, `skitterer`). A round stops at `foe.ARRIVE`: the old ravager's own `HOME_R` was 1.2 against it
     and the body stalled a tenth of a metre short of a mark it could then never reach.
   - **A UNIT UNDER ORDERS READS AS ONE FROM ACROSS THE MAP** — the editor draws its box in the live tone and a
     leashed roamer's tether as a circle, because which bodies have a round is the one thing you cannot see on a
@@ -2536,7 +2640,7 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   re-kinded and thrown away from a modal — and a MODAL rather than a map layer, because a trigger is not a
   place and the one condition that is a rectangle already has Locations to name it. Still hand-written: the
   DIALOG trees themselves (nodes and choices), and the flag/counter/timer TABLES — the modal cycles the names a
-  map already declares and cannot coin a new one. Two `NpcKind` (`wanderer`, `merchant`). No quest log, no
+  map already declares and cannot coin a new one. Three `NpcKind` (`wanderer`, `merchant`, `smith`). No quest log, no
   journal. `deaths brood_sac` is billed off the brood's own `bursts`.
 - **THE EDITOR NOW REACHES EVERY FIELD THE FORMAT HAS.** `Op.r1` on an `at` is the prop's LIFT off the ground
   (`env.Placer.expand`) and has a row; `Op.field` has its "cover field" checkbox; an npc's `dlg=` is a chip per

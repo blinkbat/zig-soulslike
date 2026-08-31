@@ -26,6 +26,75 @@ const courseInto = art.courseInto;
 const lichenInto = art.lichenInto;
 const towerDoorway = art.towerDoorway;
 const tuftInto = art.tuftInto;
+const SPRUCE = art.SPRUCE;
+const WEAVE = art.WEAVE;
+
+
+/// **ONE SECTION, AND THE PITCH A LADDER TILES AT** (`props.Info.stack`, `env.drawProp`). A run of any height is
+/// whole sections spliced end to end, so the rung spacing is the same at 0.9 m and at 12 — the one thing a
+/// uniform `scale` could not give, since it drags the rungs apart with the rails.
+///
+/// **THREE RUNGS, BECAUSE THE SECTION IS THE AUTHORING GRANULARITY.** At eight it was 2.40 m, and a run can
+/// only be a whole number of them: against a cliff quantised to `wf.HEIGHT_STEP` 0.25 that leaves most lips
+/// unreachable — the head lands a metre over the ledge or a metre under it and `game.ladderExit` refuses both.
+/// At 0.90 it is finer than the band that exit accepts, so EVERY height has a run that serves it — and that
+/// relation is a comptime assert beside `env.LADDER_PROUD`, not a number to be re-derived here.
+pub const LADDER_SEG: f32 = 0.90;
+const LADDER_RUNGS: i32 = 3;
+/// Rail centres either side of the prop's axis. The rungs are what he climbs, so the axis IS the climbing line.
+pub const LADDER_HALF: f32 = 0.26;
+/// How far out of the rung plane the climber's own axis sits, on the prop's local +Z — the side it faces.
+pub const LADDER_STANDOFF: f32 = 0.30;
+const RAIL_R: f32 = 0.058;
+const RUNG_R: f32 = 0.038;
+/// How far each rail runs past its own section, both ends. Over the cap radius, or the dome still shows.
+const RAIL_LAP: f32 = 0.075;
+
+pub fn ladderMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(6431);
+    const seg = LADDER_SEG;
+    b.setMat(.wood);
+    // **THE RAILS OVERRUN THEIR OWN SECTION AT BOTH ENDS**, so a stack buries each capsule's dome inside its
+    // neighbour and the stile reads as one continuous pole. Butted exactly at the seam it beads like bamboo.
+    for ([_]f32{ -LADDER_HALF, LADDER_HALF }) |rx| {
+        const bow = rng.range(-0.005, 0.005);
+        b.addCapsule(
+            v3(rx, -RAIL_LAP, 0),
+            v3(rx + bow, seg + RAIL_LAP, 0),
+            RAIL_R * rng.range(0.95, 1.05),
+            RAIL_R * rng.range(0.95, 1.05),
+            7,
+            if (rng.float() < 0.45) TIMBER else TIMBER_DK,
+        );
+    }
+    const pitch = seg / @as(f32, @floatFromInt(LADDER_RUNGS));
+    var i: i32 = 0;
+    while (i < LADDER_RUNGS) : (i += 1) {
+        const y = (@as(f32, @floatFromInt(i)) + 0.5) * pitch + rng.range(-0.02, 0.02);
+        const tilt = rng.signed() * 0.022;
+        const sag = rng.range(-0.016, 0.008);
+        const r = RUNG_R * rng.range(0.84, 1.16);
+        b.addCapsule(
+            v3(-LADDER_HALF - 0.03, y + tilt, sag),
+            v3(LADDER_HALF + 0.03, y - tilt, sag),
+            r,
+            r * rng.range(0.88, 1.12),
+            6,
+            if (rng.float() < 0.3) SPRUCE else if (rng.float() < 0.4) TIMBER_DK else TIMBER,
+        );
+        // Not every rung is bound, and a ladder where every one is reads as machined.
+        if (rng.float() < 0.55) {
+            b.setMat(.cloth);
+            for ([_]f32{ -LADDER_HALF, LADDER_HALF }) |rx| {
+                b.addCube(v3(rx, y - tilt * std.math.sign(rx), sag), v3(0.055, 0.078, 0.078), WEAVE);
+            }
+            b.setMat(.wood);
+        }
+    }
+    return b.toModel(shader);
+}
+
 
 
 pub fn chapelMesh(shader: rl.Shader) rl.Model {
@@ -112,6 +181,65 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
+/// **THE PLANK FLOOR, AND THE HOLE THE LADDER COMES UP THROUGH.** The mesh and `props.INFO`'s deck are solved
+/// off these three: a hatch cut in one and not the other is a floor you fall through or a hole you stand on.
+/// Boards are this thick, and a deck's TOP is half of one above the line the planks are centred on. The mesh
+/// and `props.WATCH_DECKS` are the two readers and they may not each carry their own copy of the half.
+pub const PLANK_T: f32 = 0.14;
+pub const WATCH_DECK_Y: f32 = 4.62;
+pub const WATCH_DECK_TOP: f32 = WATCH_DECK_Y + PLANK_T * 0.5;
+/// **THE ROOF** — boards laid over the head of the shaft, which the merlons then stand on. The last course
+/// tops out at 0.44 + 15 x 0.76 = 11.84 and the parapet is authored from 11.90, so the deck goes between them
+/// and nothing else moves.
+pub const WATCH_ROOF_Y: f32 = 11.83;
+pub const WATCH_ROOF_TOP: f32 = WATCH_ROOF_Y + PLANK_T * 0.5;
+/// Where a hatch sits, and it is a NUMBER WITH A CEILING: the shaft's colliders leave clear standing only
+/// inside `TOWER_R - 0.62 - HERO_R` = 1.37 m of the axis, so a hatch further out is one the push-out shoulders
+/// him off before he can step onto the floor.
+pub const WATCH_HATCH_Z: f32 = 1.10;
+pub const WATCH_HATCH_R: f32 = 0.70;
+/// **THE TWO HATCHES ARE ON OPPOSITE SIDES OF THE SHAFT** — one flight per floor, and crossing the boards
+/// between them is what makes the middle storey a place rather than a landing.
+pub const WATCH_ROOF_HATCH_Z: f32 = -WATCH_HATCH_Z;
+
+fn inHatch(hz: f32, x: f32, z: f32) bool {
+    const dz = z - hz;
+    return x * x + dz * dz < WATCH_HATCH_R * WATCH_HATCH_R;
+}
+
+/// One boarded floor across the shaft, with its hatch cut out. Both storeys are this: a plank is laid in the
+/// PIECES either side of the opening, so the hole is a real hole and not a gap in a row of boards.
+fn floorInto(b: *Builder, rng: *mathx.Rng, y: f32, hz: f32, R: f32, sides: i32) void {
+    b.setMat(.wood);
+    // **NO BOARD IS MISSING FROM A FLOOR THAT HOLDS A BODY.** The deck is the whole disc (`props.WATCH_DECKS`),
+    // so a dropped plank is a hole he stands on — the picture and the footing have to be the same floor. The
+    // wabi-sabi is in the WIDTH and the tone instead, which is where it belongs on sawn timber anyway.
+    var pl: i32 = 0;
+    while (pl < 8) : (pl += 1) {
+        const x = (@as(f32, @floatFromInt(pl)) - 3.5) * 0.60 + rng.range(-0.02, 0.02);
+        const halfSpan = @sqrt(@max(R * R - x * x, 0.04));
+        var pz: f32 = -halfSpan;
+        while (pz < halfSpan - 0.05) {
+            var run = pz;
+            while (run < halfSpan and !inHatch(hz, x, run)) run += 0.08;
+            if (run - pz > 0.12) b.addCube(v3(x, y + rng.range(-0.006, 0.006), (pz + run) * 0.5), v3(rng.range(0.55, 0.60), PLANK_T, run - pz), if (rng.float() < 0.42) TIMBER else TIMBER_DK);
+            while (run < halfSpan and inHatch(hz, x, run)) run += 0.08;
+            pz = run;
+        }
+    }
+    b.addCylinder(v3(0, y - 0.20, 0), v3(0, y - 0.08, 0), R * 0.94, R * 0.94, sides, TIMBER_DK);
+    // THE HATCH IS FRAMED — a sawn hole in bare boards reads as missing geometry.
+    var hf: i32 = 0;
+    while (hf < 10) : (hf += 1) {
+        const a = std.math.tau * @as(f32, @floatFromInt(hf)) / 10.0;
+        b.addCube(
+            v3(mathx.cosf(a) * (WATCH_HATCH_R + 0.06), y + 0.06, hz + mathx.sinf(a) * (WATCH_HATCH_R + 0.06)),
+            v3(0.30, 0.09, 0.30),
+            if (rng.float() < 0.35) TIMBER else TIMBER_DK,
+        );
+    }
+}
+
 pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(7788);
@@ -178,15 +306,8 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
     b.addBox(v3(0, 3.55, -R), v3(1.30, 0, 0), v3(0, 0.28, 0), v3(0, 0, 0.42), STONE_LT);
     for ([_]f32{ -1.18, 1.18 }) |jx| b.addBox(v3(jx, 1.85, -R), v3(0.22, 0, 0), v3(0, 1.85, 0), v3(0, 0, 0.40), STONE_DK);
     b.addCylinder(v3(0, 0.02, 0), v3(0, 0.16, 0), R + 0.1, R + 0.1, sides, STONE_DK);
-    b.setMat(.wood);
-    var pl: i32 = 0;
-    while (pl < 8) : (pl += 1) {
-        const x = (@as(f32, @floatFromInt(pl)) - 3.5) * 0.60;
-        const halfSpan = @sqrt(@max(R * R - x * x, 0.04));
-        if (rng.float() < 0.16) continue;
-        b.addCube(v3(x, 4.62, 0), v3(0.56, 0.14, halfSpan * 2.0), if (@mod(pl, 2) == 0) TIMBER else TIMBER_DK);
-    }
-    b.addCylinder(v3(0, 4.42, 0), v3(0, 4.54, 0), R * 0.94, R * 0.94, sides, TIMBER_DK);
+    floorInto(&b, &rng, WATCH_DECK_Y, WATCH_HATCH_Z, R, sides);
+    floorInto(&b, &rng, WATCH_ROOF_Y, WATCH_ROOF_HATCH_Z, R, sides);
     b.setMat(.stone);
     var m: i32 = 0;
     while (m < sides) : (m += 1) {

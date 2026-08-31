@@ -24,7 +24,7 @@ const shroommod = @import("../foes/shroom.zig");
 const knightmod = @import("../foes/knight.zig");
 const delvermod = @import("../foes/delver.zig");
 const necromod = @import("../foes/necro.zig");
-const ravagermod = @import("../foes/ravager.zig");
+const deermod = @import("../foes/fungaldeer.zig");
 const magemod = @import("../foes/shroommage.zig");
 const golemmod = @import("../foes/sporegolem.zig");
 const fenmod = @import("../foes/fenlurker.zig");
@@ -341,7 +341,7 @@ const CharSet = struct {
     warrens: delvermod.Warrens,
     rite: necromod.Rite,
     vigil: knightmod.Vigil,
-    thicket: ravagermod.Thicket,
+    herd: deermod.Herd,
     ring: magemod.Ring,
     host: golemmod.Host,
     marsh: fenmod.Marsh,
@@ -383,7 +383,7 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
     cs.warrens = delvermod.Warrens.init(scene.shader);
     cs.rite = necromod.Rite.init(scene.shader);
     cs.vigil = knightmod.Vigil.init(scene.shader);
-    cs.thicket = ravagermod.Thicket.init(scene.shader);
+    cs.herd = deermod.Herd.init(scene.shader);
     cs.ring = magemod.Ring.init(scene.shader);
     cs.host = golemmod.Host.init(scene.shader);
     cs.marsh = fenmod.Marsh.init(scene.shader);
@@ -430,7 +430,7 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         .bone_knight => .{ .top = 5.4, .bound = 3.2 },
         .delver => .{ .top = 1.9, .bound = 2.0 },
         .necromancer => .{ .top = 2.8, .bound = 1.3 },
-        .florid_ravager => .{ .top = 1.9, .bound = 2.2 },
+        .fungal_deer => .{ .top = 2.6, .bound = 2.4 },
         .mushroom_mage => .{ .top = 1.6, .bound = 1.4 },
         .spore_golem => .{ .top = 3.3, .bound = 2.6 },
         .fen_lurker => .{ .top = 2.9, .bound = 1.1 },
@@ -559,11 +559,12 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
             cs.rite.live()[0] = necromod.Necro.spawn(mathx.zero3, 0, 1.0, seed);
             cs.rite.draw(scene);
         },
-        .florid_ravager => {
-            cs.thicket.n = 1;
-            cs.thicket.live()[0] = ravagermod.Ravager.spawn(mathx.zero3, 0, 1.0, seed);
-            cs.thicket.live()[0].stageGather(1.0);
-            cs.thicket.draw(scene);
+        .fungal_deer => {
+            cs.herd.n = 1;
+            cs.herd.live()[0] = deermod.Deer.spawn(mathx.zero3, 0, 1.0, seed);
+            // Photographed with the flower UP: furled it is a hump on a deer's back and says nothing.
+            cs.herd.live()[0].stageGather(1.0);
+            cs.herd.draw(scene);
         },
         .spore_golem => {
             cs.host.n = 1;

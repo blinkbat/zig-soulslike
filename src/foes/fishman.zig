@@ -221,6 +221,12 @@ const NET_RECOVER: f32 = 0.74;
 const NET_CD: f32 = 7.5;
 const NET_SPEED: f32 = 12.0;
 const NET_HIT_R: f32 = 0.95;
+/// How far off his chest the net still takes him. Deep, because the throw is a LOB and the arc crosses that
+/// height fast — a band solved off the mesh would drop the hit between two frames of flight.
+const NET_HIT_H: f32 = 1.4;
+/// Seconds a net stays in the air with nothing under it. It is the backstop behind `foe.landed`, not the
+/// ordinary end of a flight.
+const NET_LIFE: f32 = 2.0;
 /// **ONE GRAVITY FOR THE SOLVE AND THE FLIGHT.** `loose` solves the lob against it and `Net.step` integrates
 /// with it; two spellings drift and the net quietly stops landing where it was aimed.
 const NET_GRAV: f32 = 6.0;
@@ -297,6 +303,10 @@ pub const Net = struct {
     live: bool = false,
     t: f32 = 0,
     spin: f32 = 0,
+    /// The ground under the fishman that threw it — what `foe.landed` measures against. Tested against WORLD
+    /// zero, a net thrown anywhere the land is sculpted sailed straight through the beach it was thrown over
+    /// and only ever expired on its own 2 s clock.
+    floor: f32 = 0,
 
     pub fn step(self: *Net, dt: f32, target: rl.Vector3) bool {
         if (!self.live) return false;
@@ -304,11 +314,11 @@ pub const Net = struct {
         self.spin += dt * 5.0;
         self.at = v3(self.at.x + self.vel.x * dt, self.at.y + self.vel.y * dt, self.at.z + self.vel.z * dt);
         self.vel.y -= NET_GRAV * dt;
-        if (self.at.y <= 0.05 or self.t > 2.0) {
+        if (foe.landed(self.at.y, self.floor, target.y) or self.t > NET_LIFE) {
             self.live = false;
             return false;
         }
-        if (mathx.distXZ(self.at, target) <= NET_HIT_R and @abs(self.at.y - (target.y + 0.9)) < 1.4) {
+        if (mathx.distXZ(self.at, target) <= NET_HIT_R and @abs(self.at.y - (target.y + foe.HERO_CHEST)) < NET_HIT_H) {
             self.live = false;
             return true;
         }
@@ -678,12 +688,13 @@ pub const Fishman = struct {
 
     fn loose(self: *Fishman, quarry: rl.Vector3) void {
         const from = foe.markOn(self.xf[HELD], mathx.zero3);
-        const to = v3(quarry.x, quarry.y + 0.9, quarry.z);
+        const to = foe.heroChest(quarry);
         const d = mathx.subV(to, from);
         const flat = mathx.lenXZ(d);
         const tof = mathx.maxF(0.05, flat / NET_SPEED);
         self.net = .{
             .at = from,
+            .floor = self.pos.y,
             // Solved for the arc rather than aimed flat: the lob is what makes the throw readable in the air.
             .vel = v3(d.x / tof, d.y / tof + 0.5 * NET_GRAV * tof, d.z / tof),
             .live = true,

@@ -1,0 +1,49 @@
+version: 1
+name: Forge Yard
+half: 70.0
+runway: -6.00 -26.00 6.00 -14.00
+
+# MOSSBEARD AND HIS YARD.
+#   --map worlds/test_smith.world
+#
+# The anvil is placed 0.91 m in FRONT of him, which is `npc.SMITH_ANVIL_Z` and is a measured number: the head
+# of his hammer bottoms at 0.87 m up and 0.91 m out, and `propforge.ANVIL_FACE` is 0.88. Move him and the
+# hammer swings through air; the test in `npc.zig` re-measures the pair every build.
+#
+# He faces +z at yaw 0, so the anvil goes at z = his z + 0.91.
+
+zone: plain -400.0 -400.0 400.0 400.0 0.480 grasstall,patch,tuft,clover,moss,wildflowers
+clear: 0.0 0.0 30.0
+
+at: bonfire -2 -22 0 1
+
+# ONE: THE YARD AS IT IS MEANT TO STAND. He faces the runway across his anvil, with the hearth on his hammer
+# side and the quench and the rack behind him — the layout a smith actually works in, which is everything
+# within one step and nothing behind the swing.
+npc: smith 0.00 6.00 180.0 1.00 0.28
+at: anvil 0.00 5.09 20 1
+at: forge -2.30 5.60 60 1
+at: quenchtrough 1.90 6.90 155 1
+at: toolrack -0.60 7.60 175 1
+
+# TWO: THE SAME MAN AT ANOTHER SCALE AND ON A LEASH, so the stroke can be judged against a body that is
+# WALKING it — `tickHammer` stops the stroke over `moving` 0.15 and the arm eases back to a carry.
+npc: smith -18.00 4.00 150.0 1.06 0.71 roam=3.2
+at: anvil -18.79 3.55 250 1.06
+
+# THREE: THE PROPS ALONE, in a row, for the object viewer's job done in the world — a contact sheet you can
+# walk round. No smith on them, so the anvil is judged as an anvil.
+at: anvil 14.00 -2.00 0 1
+at: forge 18.00 -2.00 0 1
+at: quenchtrough 22.00 -2.00 0 1
+at: toolrack 25.50 -2.00 0 1
+
+# FOUR: THE SCALE READ. He is 2.80 m at the crown against the wanderer's 1.77 — stand them together or the
+# number is only a number.
+npc: wanderer 4.20 -8.00 340.0 1.00 0.44
+npc: smith 6.60 -8.00 340.0 1.00 0.62
+at: anvil 6.29 -8.85 300 1
+
+# …AND SOMETHING TO FIGHT NEXT TO HIM, because a body that talks is only interesting where a body that does
+# not can reach it. The shieldman is the slowest thing in the game and will not kill you while you look.
+foe: shieldman 12.00 10.00 220.0 1.00 0.40

@@ -252,7 +252,7 @@ fn shootClear(g: *Game, name: [:0]const u8, yaw: f32, pitch: f32, dist: f32) voi
     g.rig.yaw = mathx.radians(yaw);
     g.rig.pitch = pitch;
     g.rig.dist = dist;
-    g.rig.followClear(g.hero.shoulderPoint(), &g.env, game.envGroundAt);
+    g.rig.followClear(g.hero.shoulderPoint(), game.camFloor(g), game.CamFloor.at);
     shoot(g, name);
 }
 
@@ -310,10 +310,13 @@ pub fn runPropShots(g: *Game) void {
     game.clearFoesForShot(g);
     for (props.INFO, 0..) |row, i| {
         g.env.stageOne(row.kind);
-        const r = mathx.maxF(row.bound, 0.9);
+        // Off the STAGED instance, not the kind's table: a stacking kind stands taller than its own mesh.
+        const staged = &g.env.props[0];
+        const r = mathx.maxF(env.reachOf(staged, &row), 0.9);
+        const top = env.runOf(staged, &row);
         standHero(g, -(r + 1.1), 0.35 * r + 0.9, mathx.radians(115));
-        const aim = v3(0, mathx.clampF(row.top * 0.45, 0.4, 9.0), 0);
-        const dist = mathx.clampF(mathx.maxF(r * 2.1, row.top * 1.7), 3.2, 60.0);
+        const aim = v3(0, mathx.clampF(top * 0.45, 0.4, 9.0), 0);
+        const dist = mathx.clampF(mathx.maxF(r * 2.1, top * 1.7), 3.2, 60.0);
         var buf: [96]u8 = undefined;
         const name = std.fmt.bufPrintZ(&buf, DIR_PROPS ++ "/{d:0>2}_{s}.png", .{ i, @tagName(row.kind) }) catch unreachable;
         shootAt(g, name, aim, 35, 0.30, dist);
@@ -346,7 +349,7 @@ pub fn runMapShots(g: *Game) void {
             shootAt(g, stand, aim, 53, 0.16, dist);
             // …AND THE HEAD, for a creature whose head IS the read. The same `facePoint` frame the folk already
             // get, keyed off `@hasDecl` like everything else here. TWICE — at rest and again on the signature
-            // move — because for the ravager the difference between those two faces is the whole fight.
+            // move — because for a creature whose signature is worn on its head the two faces are the fight.
             const face = struct {
                 fn portrait(gg: *Game, ff: anytype, idx: usize, kk: worldfmt.FoeKind, rr: f32, tag: []const u8) void {
                     var nb: [96]u8 = undefined;
@@ -3559,6 +3562,9 @@ fn editorShots(g: *Game) void {
     editorSnap(g, "shots/99f_char_duo_sword.png");
     g.editor.charForShot(.fungal_magus);
     editorSnap(g, "shots/99g_char_duo_magus.png");
+    // …and the deer, which is the one body whose whole silhouette is a thing on its BACK.
+    g.editor.charForShot(.fungal_deer);
+    editorSnap(g, "shots/99h_char_fungal_deer.png");
 
     g.editor.objectsForShot(.props, 0, null);
     editorSnap(g, "shots/99c_editor_objects.png");

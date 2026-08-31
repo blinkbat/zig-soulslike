@@ -39,12 +39,18 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Build and run zig-soulslike");
     run_step.dependOn(&run_cmd.step);
 
+    // DEV ONLY: `zig build test -Dtest-filter=knight` runs the tests whose name contains that, and skips the
+    // rest — `shots.onlyStage`'s lever for the suite. The whole run is 1130 tests and a chunk of them rebuild
+    // the entire shipped world or bake eighty synthesized voices, so an edit loop on one module was paying for
+    // all of it. The roster check still walks the tree, so a filtered run cannot hide a module from it.
+    const test_filter = b.option([]const u8, "test-filter", "Run only tests whose name contains this");
     const unit_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
         }),
+        .filters = if (test_filter) |f| &.{f} else &.{},
     });
     unit_tests.linkLibrary(raylib_artifact);
     unit_tests.root_module.addImport("raylib", raylib);

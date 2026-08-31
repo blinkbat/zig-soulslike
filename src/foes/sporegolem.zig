@@ -308,7 +308,7 @@ pub const Golem = struct {
             self.smashCd = SMASH_CD;
             return self.enter(.smash_wind);
         }
-        // **THE SLAM IS A LEAP, SO IT IS GATED WHERE THE MOVE IS CHOSEN** (`ravager`'s law, `foe.canLeap`) — the airborne half of `foe.grip` lets a body finish an arc it is already in, so a jump still ALLOWED to start is a jump straight out of the roots.
+        // **THE SLAM IS A LEAP, SO IT IS GATED WHERE THE MOVE IS CHOSEN** (AGENTS.md's law, `foe.canLeap`) — the airborne half of `foe.grip` lets a body finish an arc it is already in, so a jump still ALLOWED to start is a jump straight out of the roots.
         if (dist >= SLAM_MIN and dist <= SLAM_MAX and self.slamCd <= 0 and foe.canLeap(&self.root)) {
             self.slamCd = SLAM_CD;
             return self.enter(.slam_wind);
@@ -987,7 +987,7 @@ test "IT CANNOT SLAM ITS WAY OUT OF THE ROOTS — the leap is gated where the mo
     const dt: f32 = 1.0 / 60.0;
     // Standing in the slam's own band, cooldown clear, and held by the ankles: it may pick anything but the
     // leap. `foe.grip`'s airborne guard lets a body finish an arc it is ALREADY in, so a jump still allowed to
-    // start is a jump straight out of the fist of roots (`ravager`'s own note).
+    // start is a jump straight out of the fist of roots (`foe.canLeap`'s own note).
     const hero = v3(0, 0, (SLAM_MIN + SLAM_MAX) * 0.5);
     var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
     g.root.grab();

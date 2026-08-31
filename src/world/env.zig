@@ -5,6 +5,7 @@ const glsl = @import("../gfx/shaders.zig");
 const mathx = @import("../core/mathx.zig");
 const collision = @import("../core/collision.zig");
 const props = @import("../props/props.zig");
+const propbuild = @import("../props/propbuild.zig");
 const propfx = @import("../props/propfx.zig");
 const wf = @import("worldfmt.zig");
 const chestmod = @import("../play/chest.zig");
@@ -53,7 +54,17 @@ pub const MAX_WARDS = 64;
 /// How far past a fog gate a crossing puts him down — clear of the sheet AND clear of the prompt's own reach. That second half is a relationship with a number in another module, so `game.zig` asserts it.
 pub const WARD_CLEAR: f32 = 1.30;
 const MAX_SOLID_REFS = 4 * MAX_SOLIDS;
-const MAX_LIGHTS = 192;
+const MAX_DECKS = 512;
+const MAX_DECK_REFS = 4 * MAX_DECKS;
+/// **NOT A RENDER BUDGET — THE ARRAY THE WORLD'S FIRES LIVE IN.** `uploadLights` already skips every light the
+/// view rejects and hands the shader the nearest `gfx.MAX_LIGHTS` of what is left, so nothing off screen costs a
+/// draw. This is the cap on how many can EXIST, refused at build time in `Placer.addLight`, and a fire refused
+/// here is placed, drawn and never lit — there is nothing left to cull. Raised from 192 because the shipped map
+/// sat at 192 of 192 with 46 props dark, the forge yard among them: sixteen kinds carry a `LightSpec` and half
+/// are SCATTER kinds (the glowing flora, and every `pickup` glow), so the budget goes on dressing a biome.
+/// **MEASURED before moving it** — the per-frame scan is 0.013 us a light, so this costs 6.7 us a frame (0.04%)
+/// and 20 KB in `Env`; the test beside `lightsCapped` prints both every build.
+const MAX_LIGHTS = 512;
 const MAX_DRESSED = 64;
 
 // 40 a side = 640 m, covering a 280 m map's edge-standing cliffs (280 + 18 of cliff bound). The arrays are BSS and the per-frame cost is one loop of four plane tests, so 1,600 cells is not measurable.
@@ -182,7 +193,75 @@ pub const Prop = struct {
     fadeTo: f32 = 1,
     gone: bool = false,
     shrink: f32 = 1,
+    /// **HOW FAR UP A STACKING KIND RUNS**, in metres and already snapped to whole sections (`wf.Op.rise`,
+    /// `props.Info.stack`). 0 on everything else, which is what `runOf`/`reachOf` read to fall back to the
+    /// kind's own single mesh.
+    rise: f32 = 0,
 };
+
+/// One `props.Deck` planted: the disc in world XZ, its top in world Y, and whether it is the hole rather than
+/// the floor. `y` is a TOP — what a body's feet rest at, not a local offset.
+pub const WorldDeck = struct { x: f32, z: f32, r: f32, y: f32, hole: bool };
+
+/// A ladder as the climb reads it: the foot of the run, the way it faces, and how far up it goes.
+/// **THE FACE IS THE WHOLE CONVENTION** — local +Z is the open side he mounts from and stands off, local -Z is
+/// the wall it leans on and the surface he tops out onto.
+pub const Rung = struct {
+    foot: rl.Vector3,
+    /// The world line his BODY stands on — the rung plane pushed out on the ladder's own +Z. Solved here, where
+    /// the prop's frame already is, rather than re-derived by whoever is doing the climbing.
+    axis: rl.Vector3,
+    yaw: f32,
+    run: f32,
+    scale: f32,
+};
+
+/// The prop's own height in metres — the stacked run where there is one, the kind's `top` otherwise.
+pub fn runOf(pr: *const Prop, nfo: *const props.Info) f32 {
+    if (nfo.stack > 0 and pr.rise > 0) return pr.rise;
+    return nfo.top * pr.scale;
+}
+
+/// **THE CULLING SPHERE ABOUT THE PROP'S FOOT.** A ladder's mesh is 2.4 m and its run can be twelve, so every
+/// culler that took `bound * scale` would drop the thing the moment its base left the frustum.
+pub fn reachOf(pr: *const Prop, nfo: *const props.Info) f32 {
+    const b = nfo.bound * pr.scale;
+    // The sphere is centred on the FOOT, so a run needs its own height PLUS the girth — at exactly `rise` the
+    // top corner of the last section sits outside it and the culler drops the head of the ladder.
+    if (nfo.stack > 0 and pr.rise > 0) return pr.rise + b;
+    return b;
+}
+
+/// **THE BALL THE CURSOR IS TESTED AGAINST** — centred halfway up whatever the prop actually stands, and wide
+/// enough to hold it. Off `nfo.top`/`nfo.bound` it was the bottom bay of a twelve-metre ladder, so every click
+/// above the third rung picked the ground behind it.
+pub fn pickSphere(pr: *const Prop, nfo: *const props.Info) struct { c: rl.Vector3, r: f32 } {
+    const half = runOf(pr, nfo) * 0.5;
+    const sw = leanSwing(pr, half);
+    return .{
+        .c = v3(pr.pos.x + sw.x, pr.pos.y + half, pr.pos.z + sw.z),
+        .r = @max(reachOf(pr, nfo) * 0.5, 0.35),
+    };
+}
+
+/// Whole sections a run of `rise` metres is drawn as — at least one, so a stacking kind is never invisible,
+/// and never more than `MAX_SECTIONS`: the number comes off an authored file, and one draw call per section
+/// means an unbounded `rise=` is an unbounded loop rather than a big ladder.
+pub const MAX_SECTIONS: u32 = 64;
+pub fn sectionsIn(rise: f32, seg: f32) u32 {
+    if (seg <= 1e-3 or !std.math.isFinite(rise)) return 1;
+    const n: i32 = @intFromFloat(@round(mathx.clampF(rise / seg, 1, @as(f32, MAX_SECTIONS))));
+    return @intCast(@max(n, 1));
+}
+
+/// **THE RUN THE FILE ASKS FOR, ROUNDED TO WHOLE SECTIONS** — the world may not show a height the panel does
+/// not, so the snap happens once, here, and both the draw and the climb read the result.
+pub fn snapRise(kind: Kind, scale: f32, rise: f32) f32 {
+    const nfo = props.info(kind);
+    if (nfo.stack <= 0 or rise <= 0) return 0;
+    const seg = nfo.stack * scale;
+    return @as(f32, @floatFromInt(sectionsIn(rise, seg))) * seg;
+}
 
 // A prop can stand OFF PLUMB: `lean` degrees toward `leanDir`, measured like every yaw here — (cos d, −sin d).
 
@@ -192,8 +271,7 @@ fn leanToward(dirDeg: f32) rl.Vector3 {
 }
 
 fn leanAxis(dirDeg: f32) rl.Vector3 {
-    const d = leanToward(dirDeg);
-    return v3(d.z, 0, -d.x);
+    return mathx.perpXZ(leanToward(dirDeg));
 }
 
 pub fn leanOffsetAt(lean: f32, dirDeg: f32, up: f32) rl.Vector3 {
@@ -205,6 +283,31 @@ pub fn leanOffsetAt(lean: f32, dirDeg: f32, up: f32) rl.Vector3 {
 
 fn leanSwing(pr: *const Prop, up: f32) rl.Vector3 {
     return leanOffsetAt(pr.lean, pr.leanDir, up);
+}
+
+fn inDisc(d: WorldDeck, x: f32, z: f32) bool {
+    const dx = x - d.x;
+    const dz = z - d.z;
+    return dx * dx + dz * dz < d.r * d.r;
+}
+
+/// How far above or below a ladder's run he may be and still count as standing beside it — one riser at the
+/// foot, the same at the lip, so topping out and turning round to go back down is the same reach.
+pub const LADDER_GRAB: f32 = 1.2;
+
+/// Sections `stageOne` gives a stacking kind, so `--shot-props` shows a RUN and its splices rather than one
+/// bay. The object viewer draws the MODEL and so still shows the single section, which is what it is for.
+const STAGE_SECTIONS: f32 = 5;
+
+/// **THE HEAD MAY STAND THIS FAR PROUD OF WHAT IT SERVES** (`game.ladderExit`); short of it, the allowance is
+/// the walk's own `STEP_UP`. Rails over a floor are what you haul on and are how a ladder through a hatch is
+/// built; a head UNDER the lip is a pull-up, and past a riser it is a climb the ladder did not make.
+/// **THE PAIR IS WHAT SIZES `propbuild.LADDER_SEG`** — a section coarser than this band leaves lip heights no
+/// run can reach — so the two live together and a comptime check keeps them that way.
+pub const LADDER_PROUD: f32 = 1.00;
+comptime {
+    if (props.info(.ladder).stack >= LADDER_PROUD + STEP_UP) @compileError("env: the ladder's section is coarser " ++
+        "than the band `ladderExit` accepts — there are lip heights no run can serve");
 }
 
 const FIELD_FLOOR: f32 = 0.35;
@@ -335,6 +438,11 @@ pub const Env = struct {
     /// **NO SILENT CAP** — how many ops hit their work budget on the last `materialize`, so a runaway one is a
     /// number somebody can see rather than a machine that has quietly stopped responding.
     opsCapped: usize = 0,
+    /// **AND THE LIGHTS HAVE A BUDGET TOO** (`MAX_LIGHTS`), counted for `opsCapped`'s reason: `addLight` used to
+    /// refuse the 193rd fire with a bare `return`, so the torch was still placed, still drawn and simply never
+    /// lit — and nothing anywhere said so. Which fires keep their light is decided by OP ORDER, so moving an op
+    /// earlier silently puts out one further down the file.
+    lightsCapped: usize = 0,
     solid_buf: [MAX_SOLIDS]collision.Solid = undefined,
     nsolids: usize = 0,
     /// THE FOG GATES, in the order `buildSolids` met them; `collision.Solid.ward` is a slot here PLUS ONE, so that 0 can mean "an ordinary solid".
@@ -355,6 +463,12 @@ pub const Env = struct {
     noccl: usize = 0,
     sgrid_start: [NCELL + 1]u32 = [_]u32{0} ** (NCELL + 1),
     sgrid_items: [MAX_SOLID_REFS]u32 = undefined,
+    /// **THE FLOORS ABOVE THE FLOOR** (`props.Info.decks`), in world coordinates and on their own grid: a deck
+    /// is not a wall, and every solid in the game answers a question this one must not.
+    deck_buf: [MAX_DECKS]WorldDeck = undefined,
+    ndecks: usize = 0,
+    dgrid_start: [NCELL + 1]u32 = [_]u32{0} ** (NCELL + 1),
+    dgrid_items: [MAX_DECK_REFS]u32 = undefined,
     lights: [MAX_LIGHTS]WorldLight = undefined,
     nlights: usize = 0,
     pools: [8]Pool = undefined,
@@ -768,6 +882,7 @@ pub const Env = struct {
         self.mapHalf = m.half;
         self.nprops = 0;
         self.opsCapped = 0;
+        self.lightsCapped = 0;
         self.nsolids = 0;
         self.nwards = 0;
         self.openWards();
@@ -817,6 +932,7 @@ pub const Env = struct {
             o.scale = pr.scale;
             o.lean = pr.lean;
             o.leanDir = pr.leanDir;
+            o.rise = pr.rise;
             o.loot = src.loot;
             o.nloot = src.nloot;
             o.boss = src.boss;
@@ -834,7 +950,11 @@ pub const Env = struct {
         self.nlights = 0;
         self.npools = 0;
         self.noccl = 0;
-        self.props[0] = .{ .kind = kind, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1.0, .op = 0 };
+        // **A STACKING KIND IS STAGED STACKED.** `--shot-props` is the one frame that photographs a kind
+        // alone, and a ladder shown as a single section is not the thing being judged — the splice between
+        // sections is most of what there is to look at.
+        const nfo = props.info(kind);
+        self.props[0] = .{ .kind = kind, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1.0, .op = 0, .rise = nfo.stack * STAGE_SECTIONS };
         self.nprops = 1;
         if (props.info(kind).light) |ls| {
             self.lights[0] = .{ .base = .{ .pos = v3(0, ls.y, 0), .col = ls.col, .radius = ls.radius }, .flicker = ls.flicker, .phase = 0, .prop = 0 };
@@ -1118,6 +1238,11 @@ pub const Env = struct {
             fn one(c: *@This(), s: collision.Solid) bool {
                 if (s.ward > 0 and s.ward <= c.open.len and c.open[s.ward - 1]) return true;
                 if (c.footY >= s.h) return true;
+                // **AND A LINTEL IS OPEN TO WHAT WALKS UNDER IT** — the same rule `blocksPoint` and
+                // `blocksSight` carry, and the push-out was the one consumer that did not have it: the stone
+                // over the watchtower's doorway sealed the doorway. The walk's own riser is the allowance,
+                // beside the `s.h` test above it, so a body up on a deck is stopped by the very same course.
+                if (c.footY + STEP_UP < s.y0) return true;
                 c.at = collision.pushOut(c.at, c.r, s);
                 return true;
             }
@@ -1139,6 +1264,86 @@ pub const Env = struct {
     pub fn groundAt(self: *const Env, x: f32, z: f32) f32 {
         if (!self.heightAny) return GROUND_Y;
         return GROUND_Y + wf.sampleHeight(&self.heightField, self.heightHalf, x, z);
+    }
+
+    /// **THE HIGHEST FLOOR UNDER HIS FEET THAT IS NOT THE GROUND**, or null. A deck he is not already up at is
+    /// no floor at all: the gate is the walk's own riser (`STEP_UP`), which is what stops a body on the ground
+    /// being snapped onto a platform five metres over its head.
+    pub fn deckAt(self: *const Env, x: f32, z: f32, footY: f32) ?f32 {
+        const c = cellOf(x, z);
+        var best: ?f32 = null;
+        var k = self.dgrid_start[c];
+        while (k < self.dgrid_start[c + 1]) : (k += 1) {
+            const d = self.deck_buf[self.dgrid_items[k]];
+            if (d.hole or !inDisc(d, x, z)) continue;
+            if (d.y > footY + STEP_UP) continue;
+            if (best) |b| {
+                if (d.y <= b) continue;
+            }
+            if (self.holedAt(c, d, x, z)) continue;
+            best = d.y;
+        }
+        return best;
+    }
+
+    /// A hatch cancels the floor it is cut in and only that one — matched on the deck's own `y`, so two floors
+    /// stacked in one shaft each keep their own opening.
+    fn holedAt(self: *const Env, c: usize, floor: WorldDeck, x: f32, z: f32) bool {
+        var k = self.dgrid_start[c];
+        while (k < self.dgrid_start[c + 1]) : (k += 1) {
+            const h = self.deck_buf[self.dgrid_items[k]];
+            if (!h.hole or @abs(h.y - floor.y) > 1e-3) continue;
+            if (inDisc(h, x, z)) return true;
+        }
+        return false;
+    }
+
+    /// **WHAT A BODY AT (x, z) IS STANDING ON** — the deck if it is up on one, the sculpted ground otherwise.
+    /// The one thing `game.groundActor` asks; `groundAt` stays the question about the LAND.
+    pub fn standAt(self: *const Env, x: f32, z: f32, footY: f32) f32 {
+        const g = self.groundAt(x, z);
+        if (self.deckAt(x, z, footY)) |d| return mathx.maxF(g, d);
+        return g;
+    }
+
+    /// The nearest thing he can get on, measured to its CLIMBING LINE and not to its mesh. `footY` picks the
+    /// run: a body at the head of a shaft and one at its foot are both beside the same ladder.
+    pub fn ladderNear(self: *const Env, p: rl.Vector3, footY: f32, reach: f32) ?Rung {
+        var best = reach * reach;
+        var out: ?Rung = null;
+        // **THE CELLS THE REACH ACTUALLY TOUCHES**, not a whole 16 m block either way: props are bucketed by
+        // their own origin, so the box round the query point is the complete answer. The HUD asks this every
+        // frame through `reachable`, and on the shipped map nine cells of structures is a few thousand rows.
+        // …and the box is widened by the STANDOFF, because the reach is measured to the climbing line while the
+        // prop is bucketed by its rung plane: a ladder in reach can have its origin that much further out.
+        const box = reach + props.LADDER_STANDOFF;
+        const x0 = cellCoord(p.x - box);
+        const x1 = cellCoord(p.x + box);
+        const z0 = cellCoord(p.z - box);
+        const z1 = cellCoord(p.z + box);
+        var cz = z0;
+        while (cz <= z1) : (cz += 1) {
+            var cx = x0;
+            while (cx <= x1) : (cx += 1) {
+                const c = cz * GRID_N + cx;
+                var k = self.stx.start[c];
+                while (k < self.stx.start[c + 1]) : (k += 1) {
+                    const pr = &self.props[self.stx.items[k]];
+                    if (pr.gone) continue;
+                    const nfo = props.info(pr.kind);
+                    if (!nfo.climb) continue;
+                    const run = runOf(pr, nfo);
+                    if (footY < pr.pos.y - LADDER_GRAB or footY > pr.pos.y + run + LADDER_GRAB) continue;
+                    const fr = PropFrame.of(pr);
+                    const axis = fr.at(0, 0, props.LADDER_STANDOFF);
+                    const d2 = mathx.dist2XZ(axis, p);
+                    if (d2 >= best) continue;
+                    best = d2;
+                    out = .{ .foot = pr.pos, .axis = axis, .yaw = pr.yaw, .run = run, .scale = pr.scale };
+                }
+            }
+        }
+        return out;
     }
 
     pub fn gradAt(self: *const Env, x: f32, z: f32) [2]f32 {
@@ -1370,10 +1575,9 @@ pub const Env = struct {
 
             fn at(p: *@This(), pi: u32) void {
                 const pr = &p.e.props[pi];
-                const nfo = props.info(pr.kind);
-                const sw = leanSwing(pr, nfo.top * pr.scale * 0.5);
-                const c = v3(pr.pos.x + sw.x, pr.pos.y + nfo.top * pr.scale * 0.5, pr.pos.z + sw.z);
-                const rad = @max(nfo.bound * pr.scale * 0.5, 0.35);
+                const ball = pickSphere(pr, props.info(pr.kind));
+                const c = ball.c;
+                const rad = ball.r;
                 const oc = mathx.subV(c, p.origin);
                 const along = oc.x * p.dir.x + oc.y * p.dir.y + oc.z * p.dir.z;
                 if (along <= 0 or along >= p.bestT) return;
@@ -1447,10 +1651,10 @@ pub const Env = struct {
             const pr = &self.props[pi];
             const mdl = self.stows[@intFromEnum(pr.kind)] orelse continue;
             const nfo = props.info(pr.kind);
-            const bound = nfo.bound * pr.scale;
+            const bound = reachOf(pr, nfo);
             switch (cull) {
                 .view => |*vw| if (!vw.visible(pr.pos, bound, nfo.view)) continue,
-                .sun => |focus| if (!castsInto(focus, pr.pos, bound, nfo.top * pr.scale)) continue,
+                .sun => |focus| if (!castsInto(focus, pr.pos, bound, runOf(pr, nfo))) continue,
             }
             const sc = v3(pr.scale, pr.scale, pr.scale);
             rl.drawModelEx(mdl, pr.pos, v3(0, 1, 0), pr.yaw, sc, rl.Color.white);
@@ -1526,7 +1730,7 @@ pub const Env = struct {
             if (pr.gone) continue;
             const mdl = self.veils[@intFromEnum(pr.kind)] orelse continue;
             const nfo = props.info(pr.kind);
-            if (!view.visible(pr.pos, nfo.bound * pr.scale, nfo.view)) continue;
+            if (!view.visible(pr.pos, reachOf(pr, nfo), nfo.view)) continue;
             self.stat_draws += 1;
             // The SHEET does not shrink as it goes — a wall that got smaller would read as retreating rather than as thinning — so only the fade is taken and the scale stays the gate's own.
             const sc = v3(pr.scale, pr.scale, pr.scale);
@@ -1562,13 +1766,13 @@ pub const Env = struct {
                 if (pr.gone) continue;
                 const nfo = props.info(pr.kind);
                 if (casters_only and !nfo.casts) continue;
-                const bound = nfo.bound * pr.scale;
+                const bound = reachOf(pr, nfo);
                 switch (cull) {
                     .view => |*vw| {
                         if (!vw.visible(pr.pos, bound, nfo.view)) continue;
                     },
                     .sun => |focus| {
-                        if (!castsInto(focus, pr.pos, bound, nfo.top * pr.scale)) continue;
+                        if (!castsInto(focus, pr.pos, bound, runOf(pr, nfo))) continue;
                     },
                 }
                 if (!casters_only and pr.fade < FADE_SOLID) continue;
@@ -1604,7 +1808,7 @@ pub const Env = struct {
                     const pi = idx.items[k];
                     const pr = &self.props[pi];
                     const nfo = props.info(pr.kind);
-                    if (!view.visible(pr.pos, nfo.bound * pr.scale, nfo.view)) continue;
+                    if (!view.visible(pr.pos, reachOf(pr, nfo), nfo.view)) continue;
                     visit(ctx, pi);
                 }
             }
@@ -1621,6 +1825,8 @@ pub const Env = struct {
     fn drawProp(self: *const Env, pr: *const Prop) void {
         const s = pr.scale * pr.shrink;
         const sc = v3(s, s, s);
+        const nfo = props.info(pr.kind);
+        if (nfo.stack > 0 and pr.rise > 0) return self.drawStack(pr, nfo, sc);
         if (pr.lean == 0) {
             rl.drawModelEx(self.models[@intFromEnum(pr.kind)], pr.pos, v3(0, 1, 0), pr.yaw, sc, rl.Color.white);
             return;
@@ -1628,6 +1834,21 @@ pub const Env = struct {
         var mdl = self.models[@intFromEnum(pr.kind)];
         mdl.transform = rl.math.matrixRotateY(mathx.radians(pr.yaw));
         rl.drawModelEx(mdl, pr.pos, leanAxis(pr.leanDir), pr.lean, sc, rl.Color.white);
+    }
+
+    /// **A RUN IS WHOLE SECTIONS SPLICED, AND EVERY OTHER ONE IS TURNED.** The mesh is authored once, so
+    /// stacked straight its wabi-sabi repeats every `stack` metres and bands the ladder like a barber's pole;
+    /// the half-turn mirrors the jitter about the climbing axis without moving one rung off it.
+    fn drawStack(self: *const Env, pr: *const Prop, nfo: *const props.Info, sc: rl.Vector3) void {
+        const seg = nfo.stack * pr.scale;
+        if (seg <= 1e-3) return;
+        const n = sectionsIn(pr.rise, seg);
+        var i: u32 = 0;
+        while (i < n) : (i += 1) {
+            const at = v3(pr.pos.x, pr.pos.y + @as(f32, @floatFromInt(i)) * seg * pr.shrink, pr.pos.z);
+            const yaw = pr.yaw + if (i % 2 == 1) @as(f32, 180) else 0;
+            rl.drawModelEx(self.models[@intFromEnum(pr.kind)], at, v3(0, 1, 0), yaw, sc, rl.Color.white);
+        }
     }
 
     pub fn drawThinned(self: *Env, view: *const View) void {
@@ -1639,7 +1860,7 @@ pub const Env = struct {
             if (pr.gone) continue;
             if (pr.fade >= FADE_SOLID) continue;
             const nfo = props.info(pr.kind);
-            if (!view.visible(pr.pos, nfo.bound * pr.scale, nfo.view)) continue;
+            if (!view.visible(pr.pos, reachOf(pr, nfo), nfo.view)) continue;
             const d = mathx.dist2XZ(pr.pos, view.pos);
             var i = n;
             while (i > 0 and far[i - 1] < d) : (i -= 1) {
@@ -1789,7 +2010,9 @@ fn thinFor(pr: *const Prop, nfo: *const props.Info, eye: rl.Vector3, at: rl.Vect
         thin = mathx.maxF(thin, thinOf(eye, at, fr.partFoot(part), part.h * pr.scale, r));
     }
     if (nfo.parts.len == 0) {
-        thin = thinOf(eye, at, pr.pos, nfo.top * pr.scale, nfo.bound * pr.scale * OCCL_GIRTH);
+        // The HEIGHT is the run (`runOf`); the girth is not, because splicing sections up an axis makes a
+        // thing taller and never fatter.
+        thin = thinOf(eye, at, pr.pos, runOf(pr, nfo), nfo.bound * pr.scale * OCCL_GIRTH);
     }
     return thin;
 }
@@ -1812,7 +2035,7 @@ fn coverFrac(eye: rl.Vector3, at: rl.Vector3, foot: rl.Vector3, h: f32, r: f32) 
     const dh = mathx.lenV(toH);
     if (dh < 0.5) return NO_COVER;
     const fwd = mathx.scaleV(toH, 1.0 / dh);
-    var right = v3(fwd.z, 0, -fwd.x);
+    var right = mathx.perpXZ(fwd);
     const rn = mathx.lenV(right);
     if (rn < 1e-3) return NO_COVER;
     right = mathx.scaleV(right, 1.0 / rn);
@@ -1873,6 +2096,8 @@ const Placer = struct {
     lean: f32 = 0,
     leanDir: f32 = 0,
     leanExact: bool = false,
+    /// The op's authored `rise`; `atY` is where it is snapped, since the snap needs the instance's own scale.
+    rise: f32 = 0,
 
     // PLANTED ON THE GROUND, which with elevation means the sculpted height there and not y = 0.
     fn at(self: *Placer, kind: Kind, x: f32, z: f32, yaw: f32, scale: f32, rng: *mathx.Rng) void {
@@ -1888,15 +2113,20 @@ const Placer = struct {
         if (self.e.nprops >= MAX_PROPS) @panic("env: MAX_PROPS exceeded — raise the cap");
         var lean: f32 = 0;
         var leanDir: f32 = self.leanDir;
-        if (self.lean != 0) {
+        // **NOTHING YOU CLIMB OR STACK LEANS** (`props.upright`). Refused here rather than hidden in the
+        // editor, so a hand-written map cannot do it — and refused for THIS prop rather than by clearing the
+        // op's own tilt: a `mix=` that holds a ladder among leaning kinds would otherwise stand every prop
+        // drawn after the first ladder bolt upright.
+        const tilt: f32 = if (props.upright(kind)) 0 else self.lean;
+        if (tilt != 0) {
             if (self.leanExact) {
-                lean = self.lean;
+                lean = tilt;
             } else {
-                lean = self.lean * rng.range(0.15, 1.0);
+                lean = tilt * rng.range(0.15, 1.0);
                 leanDir = rng.range(0, 360);
             }
         }
-        self.e.props[self.e.nprops] = .{ .kind = kind, .pos = v3(x, y, z), .yaw = yaw, .scale = scale, .lean = lean, .leanDir = leanDir, .op = self.cur };
+        self.e.props[self.e.nprops] = .{ .kind = kind, .pos = v3(x, y, z), .yaw = yaw, .scale = scale, .lean = lean, .leanDir = leanDir, .op = self.cur, .rise = snapRise(kind, scale, self.rise) };
         self.e.nprops += 1;
         if (props.info(kind).light) |ls| self.addLight(@intCast(self.e.nprops - 1), x, y, z, scale, ls, rng);
         if (kind == .water) {
@@ -1907,7 +2137,10 @@ const Placer = struct {
     }
 
     fn addLight(self: *Placer, pi: u32, x: f32, y: f32, z: f32, scale: f32, ls: props.LightSpec, rng: *mathx.Rng) void {
-        if (self.e.nlights >= MAX_LIGHTS) return;
+        if (self.e.nlights >= MAX_LIGHTS) {
+            self.e.lightsCapped += 1;
+            return;
+        }
         self.e.lights[self.e.nlights] = .{
             .base = .{ .pos = v3(x, y + ls.y * scale, z), .col = ls.col, .radius = ls.radius * mathx.maxF(scale, 0.6) },
             .flicker = ls.flicker,
@@ -1960,6 +2193,7 @@ const Placer = struct {
         self.lean = o.lean;
         self.leanDir = o.leanDir;
         self.leanExact = o.op == .at;
+        self.rise = o.rise;
         switch (o.op) {
             .at => self.atY(o.kind, o.x, self.groundY(o.x, o.z) + o.r1, o.z, o.yaw, o.scale, &rng),
             .belt => self.belt(o, &rng),
@@ -2105,6 +2339,9 @@ fn buildSolids(e: *Env) void {
             const b = fr.at(part.bx, 0, part.bz);
             var sol = collision.capsule(a.x, a.z, b.x, b.z, part.r * s);
             sol.h = pr.pos.y + part.h * s;
+            // …AND ITS FOOT, which is a WORLD height like `h` and 0 for all but a lintel. Left behind, the
+            // course over the watchtower's doorway came out as a wall from the ground up and sealed the door.
+            if (part.y0 > 0) sol.y0 = pr.pos.y + part.y0 * s;
             sol.surf = nfo.surf;
             sol.ward = ward;
             if (pr.lean != 0) {
@@ -2121,6 +2358,7 @@ fn buildSolids(e: *Env) void {
             e.nsolids += 1;
         }
     }
+    buildDecks(e);
     var counts = [_]u32{0} ** NCELL;
     for (e.solid_buf[0..e.nsolids]) |s| {
         var it = SolidCells.init(s);
@@ -2175,6 +2413,43 @@ const SolidCells = struct {
         return out;
     }
 };
+
+/// **RESETS, for `buildSolids`' own reason** — `materialize` runs it twice and an appending version doubles
+/// every floor in the world.
+fn buildDecks(e: *Env) void {
+    e.ndecks = 0;
+    for (e.props[0..e.nprops]) |*pr| {
+        const nfo = props.info(pr.kind);
+        if (nfo.decks.len == 0) continue;
+        const fr = PropFrame.of(pr);
+        for (nfo.decks) |d| {
+            if (e.ndecks >= MAX_DECKS) @panic("env: MAX_DECKS exceeded — raise the cap");
+            const at = fr.at(d.x, d.y, d.z);
+            e.deck_buf[e.ndecks] = .{ .x = at.x, .z = at.z, .r = d.r * pr.scale, .y = at.y, .hole = d.hole };
+            e.ndecks += 1;
+        }
+    }
+    var counts = [_]u32{0} ** NCELL;
+    for (e.deck_buf[0..e.ndecks]) |d| {
+        var it = SolidCells.init(collision.circle(d.x, d.z, d.r));
+        while (it.next()) |c| counts[c] += 1;
+    }
+    var total: u32 = 0;
+    for (counts, 0..) |n, i| {
+        e.dgrid_start[i] = total;
+        total += n;
+    }
+    e.dgrid_start[NCELL] = total;
+    if (total > MAX_DECK_REFS) @panic("env: MAX_DECK_REFS exceeded — raise the cap");
+    var cursor = e.dgrid_start;
+    for (e.deck_buf[0..e.ndecks], 0..) |d, di| {
+        var it = SolidCells.init(collision.circle(d.x, d.z, d.r));
+        while (it.next()) |c| {
+            e.dgrid_items[cursor[c]] = @intCast(di);
+            cursor[c] += 1;
+        }
+    }
+}
 
 fn indexProps(e: *Env) void {
     fillIndex(e, &e.stx, false);
@@ -2236,9 +2511,9 @@ fn fillIndex(e: *Env, idx: *Index, want_flora: bool) void {
         const first = cursor[c] == idx.start[c];
         idx.items[cursor[c]] = @intCast(pi);
         cursor[c] += 1;
-        idx.bound[c] = mathx.maxF(idx.bound[c], nfo.bound * pr.scale);
+        idx.bound[c] = mathx.maxF(idx.bound[c], reachOf(pr, nfo));
         idx.view[c] = mathx.maxF(idx.view[c], nfo.view);
-        idx.top[c] = mathx.maxF(idx.top[c], nfo.top * pr.scale);
+        idx.top[c] = mathx.maxF(idx.top[c], runOf(pr, nfo));
         idx.ylo[c] = if (first) pr.pos.y else mathx.minF(idx.ylo[c], pr.pos.y);
         idx.yhi[c] = if (first) pr.pos.y else mathx.maxF(idx.yhi[c], pr.pos.y);
     }
@@ -3072,6 +3347,114 @@ test "THE COAST IS DERIVED ONLY WHEN SOMETHING IT READS MOVED — the DIG is one
     try std.testing.expectEqual(first + 3, waterBuildCount());
 }
 
+test "A FLOOR IS A FLOOR AND ITS HATCH IS A HOLE, and neither is anything to a body on the ground" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++ "at: watchtower 0 0 0 1\n");
+    defer std.testing.allocator.destroy(m);
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.materialize(m);
+    const mid = propbuild.WATCH_DECK_TOP;
+    const roof = propbuild.WATCH_ROOF_TOP;
+    const hz = propbuild.WATCH_HATCH_Z;
+
+    // FROM THE GROUND, neither floor exists: `STEP_UP` is the whole gate, and it is what stops a body being
+    // snapped onto a platform five metres over its head.
+    try std.testing.expectEqual(@as(?f32, null), e.deckAt(0, 0, 0));
+    // Up at the boards, the middle floor answers — but not through its own hatch.
+    try std.testing.expectEqual(@as(?f32, mid), e.deckAt(0, 0, mid));
+    try std.testing.expectEqual(@as(?f32, null), e.deckAt(0, hz, mid));
+    // The roof is out of reach from the middle floor and is the answer once he is up there…
+    try std.testing.expectEqual(@as(?f32, mid), e.deckAt(0, 0, mid));
+    try std.testing.expectEqual(@as(?f32, roof), e.deckAt(0, 0, roof));
+    // …and the roof's hatch drops him back to the floor below rather than to the ground, because a hole
+    // cancels the deck at ITS OWN height and no other.
+    try std.testing.expectEqual(@as(?f32, mid), e.deckAt(0, propbuild.WATCH_ROOF_HATCH_Z, roof));
+    // `standAt` is what an actor asks, and the land is still under all of it.
+    try std.testing.expectApproxEqAbs(roof, e.standAt(0, 0, roof), 1e-4);
+    try std.testing.expectApproxEqAbs(e.groundAt(0, hz), e.standAt(0, hz, mid), 1e-4);
+    // **AND A FALLING BODY WALKS DOWN THE FLOORS**, which is the whole reason `game.groundActorFrom` is handed
+    // his FEET and not his `pos.y`: asked with the floor it is already heading for, each deck refuses itself on
+    // its own `STEP_UP` gate and he drops through every one of them to the ground.
+    try std.testing.expectApproxEqAbs(roof, e.standAt(0, 0, roof + 0.5), 1e-4);
+    try std.testing.expectApproxEqAbs(mid, e.standAt(0, 0, roof - 1.0), 1e-4);
+    try std.testing.expectApproxEqAbs(e.groundAt(0, 0), e.standAt(0, 0, mid - 1.0), 1e-4);
+    std.debug.print("\n  watchtower: floor {d:.2} m, roof {d:.2} m, hatches at z {d:.2} / {d:.2}, shaft clear to {d:.2} m of the axis\n", .{
+        mid, roof, hz, propbuild.WATCH_ROOF_HATCH_Z, props.TOWER_CLEAR,
+    });
+}
+
+test "A RUN IS WHOLE SECTIONS, AND THE FILE MAY NOT SHOW A HEIGHT THE WORLD ROUNDS OFF" {
+    const seg = props.info(.ladder).stack;
+    try std.testing.expect(seg > 0);
+    // Nothing else stacks, or `runOf` starts answering for kinds whose `top` is their real height.
+    for (props.INFO) |row| {
+        if (row.stack > 0) try std.testing.expectEqual(props.Kind.ladder, row.kind);
+    }
+    try std.testing.expectApproxEqAbs(seg * 8, snapRise(.ladder, 1, 7.15), 1e-4);
+    try std.testing.expectApproxEqAbs(seg * 8, snapRise(.ladder, 1, 7.20), 1e-4);
+    // A scaled ladder snaps to ITS OWN section, not the kind's.
+    try std.testing.expectApproxEqAbs(seg * 2 * 4, snapRise(.ladder, 2, 7.20), 1e-4);
+    // Zero is the kind's single mesh and stays zero, or every prop in the world gains a stacked draw.
+    try std.testing.expectEqual(@as(f32, 0), snapRise(.ladder, 1, 0));
+    try std.testing.expectEqual(@as(f32, 0), snapRise(.pillar, 1, 7.2));
+    // The grain against the band is a comptime assert beside `LADDER_PROUD`; this prints the numbers.
+    std.debug.print("  ladder: section {d:.2} m, exit band {d:.2} proud + {d:.2} short = {d:.2} m — every lip is reachable\n", .{
+        seg, LADDER_PROUD, STEP_UP, LADDER_PROUD + STEP_UP,
+    });
+}
+
+test "A LADDER IS FOUND BY ITS CLIMBING LINE, from the foot of the run and from the head of it" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++ "at: ladder 4 0 270 1 rise=7.2\n");
+    defer std.testing.allocator.destroy(m);
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.materialize(m);
+    const r = e.ladderNear(v3(3.7, 0, 0), 0, 1.5) orelse return error.TestUnexpectedResult;
+    try std.testing.expectApproxEqAbs(@as(f32, 7.2), r.run, 1e-4);
+    // The axis stands off the rung plane on the ladder's own +Z — yaw 270 is world −x.
+    try std.testing.expectApproxEqAbs(4.0 - props.LADDER_STANDOFF, r.axis.x, 1e-3);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), r.axis.z, 1e-3);
+    // From the head of it, because turning round to go back down is the same reach.
+    try std.testing.expect(e.ladderNear(v3(3.7, 0, 0), 7.2, 1.5) != null);
+    // …and from neither halfway out to sea nor from a storey above the head.
+    try std.testing.expectEqual(@as(?Rung, null), e.ladderNear(v3(-4, 0, 0), 0, 1.5));
+    try std.testing.expectEqual(@as(?Rung, null), e.ladderNear(v3(3.7, 0, 0), 7.2 + LADDER_GRAB + 0.1, 1.5));
+}
+
+test "WHAT THE CLIMB PROMPT COSTS A FRAME — `ladderNear` on the shipped map, timed where it is asked" {
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    var ln: usize = 0;
+    wf.load(wf.START_MAP, m, &ln) catch return error.SkipZigTest;
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.materialize(m);
+    // `game.reachable` asks this EVERY FRAME once the five cheaper reaches miss, so the case that matters is
+    // the one where the answer is no: he is standing somewhere ordinary and the walk finds nothing.
+    const spots = [_]struct { name: []const u8, at: rl.Vector3 }{
+        .{ .name = "at the tower", .at = v3(-52.479, 0, -105.316) },
+        .{ .name = "open ground ", .at = v3(0, 0, 4) },
+    };
+    const ROUNDS = 2000;
+    std.debug.print("\n", .{});
+    for (spots) |s| {
+        var timer = try std.time.Timer.start();
+        var found: usize = 0;
+        for (0..ROUNDS) |_| {
+            if (e.ladderNear(s.at, 0, 1.5) != null) found += 1;
+        }
+        const us = @as(f64, @floatFromInt(timer.read())) / 1000.0 / @as(f64, @floatFromInt(ROUNDS));
+        std.debug.print("  climb prompt {s}: {d:.3} us a frame — {d:.4}% of a 16.7 ms frame ({s})\n", .{
+            s.name, us, 100.0 * us / 16700.0, if (found > 0) "a ladder in reach" else "nothing in reach",
+        });
+        // The box is a metre and a half wide against a 16 m cell, so this may never grow with the map.
+        try std.testing.expect(us < 40.0);
+    }
+}
+
 test "BREAKING A GROUP APART DOES NOT MOVE THE WORLD" {
     const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++
         "belt: pillar -20 -20 20 20 12 0.9 1.1 seed=7001\n" ++
@@ -3388,7 +3771,42 @@ test "…AND NO HONEST OP IN THE SHIPPING MAP IS TRUNCATED BY IT" {
     var t = try std.time.Timer.start();
     e.materialize(m);
     std.debug.print("  {s}: {d} ops built {d} props in {d:.1} ms, {d} capped\n", .{ wf.START_MAP, m.nops, e.nprops, @as(f64, @floatFromInt(t.read())) / 1e6, e.opsCapped });
+    // **AND THE SAME FOR THE FIRES.** Sixteen prop kinds carry a `LightSpec` and half of them are SCATTER kinds
+    // — the glowing flora, and every `pickup` glow — so this budget is reached by authoring a biome rather than
+    // by placing torches one at a time.
+    std.debug.print("  ...and {d} of {d} lights ({d:.0}% of the budget), {d} props left unlit for want of a slot\n", .{
+        e.lightCount(),
+        MAX_LIGHTS,
+        100.0 * @as(f64, @floatFromInt(e.lightCount())) / @as(f64, @floatFromInt(MAX_LIGHTS)),
+        e.lightsCapped,
+    });
     try std.testing.expectEqual(@as(usize, 0), e.opsCapped);
+    // NOT asserted the way `opsCapped` is: the shipped map is over this budget TODAY (44 props placed unlit),
+    // and pinning the suite red on it would hide every test behind the failure. The editor's status line is
+    // where the author is told, and raising `MAX_LIGHTS` or thinning the glow is his call, not this test's.
+    // **WHAT THE BUDGET COSTS A FRAME**, since raising it is the obvious answer to running out and the cost is
+    // the thing nobody measures: `uploadLights` walks EVERY light every frame — a frustum test and a distance —
+    // to pick the nearest sixteen the shader takes. That walk is linear in `MAX_LIGHTS`, so this is the number
+    // to read before moving it.
+    {
+        var cam: rl.Camera3D = undefined;
+        cam.position = v3(0, 12, -20);
+        cam.target = v3(0, 2, 0);
+        cam.up = v3(0, 1, 0);
+        const view = View.fromCamera(cam, 16.0 / 9.0);
+        var timer = try std.time.Timer.start();
+        var seen: usize = 0;
+        const ROUNDS = 2000;
+        for (0..ROUNDS) |_| {
+            for (e.lights[0..e.nlights]) |wl| {
+                if (view.visible(wl.base.pos, wl.base.radius, LIGHT_REACH)) seen += 1;
+            }
+        }
+        const us = @as(f64, @floatFromInt(timer.read())) / 1000.0 / @as(f64, ROUNDS);
+        std.debug.print("  ...the per-frame light walk is {d:.2} us over {d} lights ({d:.3} us each) — {d:.3}% of a 16.7 ms frame\n", .{
+            us, e.nlights, us / @as(f64, @floatFromInt(@max(e.nlights, 1))), 100.0 * us / 16700.0,
+        });
+    }
 }
 
 test "THE GIZMO PASS WALKS WHAT IS IN FRAME, NOT THE WHOLE MAP — and the owned count survives losing the scan" {
@@ -3456,10 +3874,9 @@ test "THE CURSOR PICK ANSWERS THE SAME PROP OFF THE INDEX AS OFF THE WHOLE LIST 
             var best: ?usize = null;
             var bestT: f32 = std.math.floatMax(f32);
             for (env.props[0..env.nprops], 0..) |*pr, i| {
-                const nfo = props.info(pr.kind);
-                const sw = leanSwing(pr, nfo.top * pr.scale * 0.5);
-                const c = v3(pr.pos.x + sw.x, pr.pos.y + nfo.top * pr.scale * 0.5, pr.pos.z + sw.z);
-                const rad = @max(nfo.bound * pr.scale * 0.5, 0.35);
+                const ball = pickSphere(pr, props.info(pr.kind));
+                const c = ball.c;
+                const rad = ball.r;
                 const oc = mathx.subV(c, origin);
                 const along = oc.x * dir.x + oc.y * dir.y + oc.z * dir.z;
                 if (along <= 0 or along >= bestT) continue;

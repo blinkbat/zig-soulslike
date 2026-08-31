@@ -41,7 +41,7 @@ pub const Icon = enum {
     bone_knight,
     delver,
     necromancer,
-    florid_ravager,
+    fungal_deer,
     mushroom_mage,
     fen_lurker,
     spore_golem,
@@ -62,6 +62,7 @@ pub const Icon = enum {
     fungal_magus,
     wanderer,
     merchant,
+    smith,
     new,
     open,
     save,
@@ -437,6 +438,26 @@ const G = struct {
                 for ([_]f32{ -0.18, -0.04, 0.16, 0.30 }) |x| g.vbar(x, 0.34, 0.28, 0.08, col);
                 g.disc(-0.36, -0.36, 0.035, cut);
             },
+            .smith => {
+                // **THE MOUSTACHE AND THE RAISED HAMMER, AND NOTHING ELSE FITS AT 18 px.** A bowed slab of a
+                // body under a burl, two lichen ropes off it, and the head of the hammer up and behind — which
+                // is the one silhouette that says smith rather than tree.
+                g.trap(-0.04, -0.10, 0.46, 0.30, 0.44, col);
+                g.disc(-0.02, -0.28, 0.19, col);
+                // The moustache: two ropes hanging forward off the burl.
+                g.bar(-0.16, -0.22, -0.28, 0.10, 0.075, col);
+                g.bar(0.12, -0.22, 0.24, 0.12, 0.075, col);
+                // The two coals under the brow.
+                g.disc(-0.09, -0.33, 0.045, cut);
+                g.disc(0.06, -0.33, 0.045, cut);
+                // The hammer arm, cocked, with the head squared off at the top of the raise.
+                g.bar(0.20, -0.02, 0.40, -0.34, 0.09, col);
+                g.bar(0.40, -0.34, 0.34, -0.60, 0.075, col);
+                g.rect(0.36, -0.68, 0.30, 0.15, col);
+                // Roots.
+                g.bar(-0.18, 0.42, -0.36, 0.56, 0.08, col);
+                g.bar(0.12, 0.42, 0.32, 0.56, 0.08, col);
+            },
 
             .rooted => {
                 g.rect(0, 0.08, 0.26, 0.56, col);
@@ -587,18 +608,27 @@ const G = struct {
                 g.disc(0.26, -0.43, 0.035, cut);
                 g.disc(0.34, -0.43, 0.035, cut);
             },
-            .florid_ravager => {
-                g.hbar(-0.08, 0.02, 0.54, 0.18, col);
-                for ([_]f32{ -0.28, -0.10, 0.08 }) |x| g.vbar(x, 0.26, 0.30, 0.09, col);
-                g.bar(-0.34, 0.0, -0.50, -0.24, 0.08, col);
-                g.bar(0.16, -0.02, 0.26, -0.26, 0.12, col);
+            .fungal_deer => {
+                // A QUADRUPED WITH A FLOWER OVER ITS BACK AND A RACK ON ITS HEAD. At 18 px the ring and the
+                // antlers are the whole glyph — the body under them only has to say "four legs".
+                g.hbar(-0.04, 0.08, 0.50, 0.13, col);
+                for ([_]f32{ -0.22, -0.04, 0.16 }) |x| g.vbar(x, 0.34, 0.38, 0.06, col);
+                g.bar(-0.28, 0.04, -0.40, -0.08, 0.06, col);
+                g.bar(0.20, 0.04, 0.34, -0.22, 0.09, col);
+                g.ellipse(0.44, -0.28, 0.13, 0.06, -20, col);
+                // The rack: two beams off the poll, each with one tine, blunt at the crown.
+                g.bar(0.34, -0.34, 0.26, -0.62, 0.045, col);
+                g.bar(0.30, -0.50, 0.42, -0.56, 0.040, col);
+                g.bar(0.42, -0.32, 0.50, -0.58, 0.045, col);
+                // The stalk out of the withers, and the corolla standing over it.
+                g.bar(-0.06, 0.02, -0.10, -0.24, 0.075, col);
                 var k: u32 = 0;
                 while (k < 6) : (k += 1) {
-                    const a = mathx.radians(60 * @as(f32, @floatFromInt(k)));
-                    g.disc(0.28 + mathx.cosf(a) * 0.16, -0.32 + mathx.sinf(a) * 0.16, 0.08, col);
+                    const a = mathx.radians(60 * @as(f32, @floatFromInt(k)) + 12);
+                    g.disc(-0.12 + mathx.cosf(a) * 0.16, -0.40 + mathx.sinf(a) * 0.16, 0.075, col);
                 }
-                g.disc(0.28, -0.32, 0.10, col);
-                g.disc(0.28, -0.32, 0.05, cut);
+                g.disc(-0.12, -0.40, 0.10, col);
+                g.disc(-0.12, -0.40, 0.05, cut);
             },
             .mushroom_mage => {
                 g.trap(0, -0.14, 0.40, 0.26, 0.44, col);

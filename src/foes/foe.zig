@@ -20,6 +20,21 @@ pub const POINT_BLANK: f32 = 0.35;
 pub const HERO_LOW: f32 = -0.10;
 pub const HERO_HIGH: f32 = 1.71; // 0.95 of his 1.8 m stature
 pub const HERO_EYE: f32 = 1.25;
+/// What a thrown thing aims at and is tested against: 0.55 of his 1.8 m stature.
+pub const HERO_CHEST: f32 = 0.99;
+pub fn heroChest(at: rl.Vector3) rl.Vector3 {
+    return v3(at.x, at.y + HERO_CHEST, at.z);
+}
+
+/// **WHAT COUNTS AS EARTH UNDER A THING IN FLIGHT**, since nothing in `foes/` can reach `env.groundAt` and the
+/// world is a sculpted heightfield. A body's `pos.y` IS the ground under it (AGENTS.md), so a projectile
+/// carries the floor it was thrown from and is spent on the LOWER of that and the quarry's own. Asked against
+/// the QUARRY's alone, a caster standing below him lost every shot on the frame it left: the deer's throat
+/// rides 2.33 m over its own feet and the magus's staff head 1.60 m, both under a man three metres up.
+pub const LANDED_AT: f32 = 0.05;
+pub fn landed(atY: f32, floor: f32, quarryY: f32) bool {
+    return atY <= mathx.minF(floor, quarryY) + LANDED_AT;
+}
 pub fn closestApproach(bodyR: f32) f32 {
     return bodyR + HERO_R;
 }
@@ -89,7 +104,7 @@ pub fn traitsOf(k: wf.FoeKind) Traits {
         .brood_sac => .{ .nature = .beast, .gait = .rooted },
         .archer, .shieldman, .greatsword, .bone_knight, .necromancer, .bone_skitterer, .ancient_priest, .tolling_hollow, .cinder_wake, .salt_husk => .{ .nature = .undead },
         .berserker, .priest, .slinger, .ogre, .fish_spearman, .fish_netter, .fish_shaman => .{ .nature = .humanoid },
-        .brood_mother, .broodling, .delver, .florid_ravager, .rotgorger => .{ .nature = .beast },
+        .brood_mother, .broodling, .delver, .fungal_deer, .rotgorger => .{ .nature = .beast },
         .shroom, .mushroom_mage, .spore_golem, .birchwight => .{ .nature = .plant },
         .fungal_swordsman, .fungal_magus => .{ .nature = .plant },
     };
@@ -121,7 +136,7 @@ pub fn homeOf(k: wf.FoeKind) props.Biome {
         .cinder_wake, .salt_husk => .ash,
         .archer, .shieldman, .greatsword, .bone_knight, .bone_skitterer => .bone,
         .ancient_priest, .necromancer, .tolling_hollow, .rotgorger => .bone,
-        .shroom, .mushroom_mage, .spore_golem, .florid_ravager => .fungal,
+        .shroom, .mushroom_mage, .spore_golem, .fungal_deer => .fungal,
         .fungal_swordsman, .fungal_magus => .fungal,
     };
 }
@@ -366,8 +381,8 @@ const DWELL_HI: f32 = 5.0;
 /// An unleashed roamer picks its next place the same way; it just measures from where it IS rather than a post.
 ///
 /// **PUBLIC, BECAUSE IT IS A CONTRACT WITH WHOEVER WALKS THE MARK.** A creature that stops SHORT of this never
-/// arrives, so `want` hands back the same place for ever and the body stands there: the ravager's `HOME_R` is
-/// 1.2 against this 1.1 and it stalled a tenth of a metre out.
+/// arrives, so `want` hands back the same place for ever and the body stands there: the scrapped ravager's own
+/// `HOME_R` was 1.2 against this 1.1 and it stalled a tenth of a metre out.
 pub const ARRIVE: f32 = 1.1;
 
 /// **THE CREATURE OWES A FIELD AND ONE CALL** (`foe.Nav`'s rule). It embeds this, the game stamps the authored
@@ -1437,6 +1452,17 @@ pub fn drawParticles(pool: []const Particle) void {
         moteSoft = moteTexture(0.12);
         moteGrain = moteTexture(0.55);
     }
+    // **AN EMPTY POOL COSTS TWO BATCH FLUSHES**: changing the blend mode drains rlgl's pending batch, and
+    // this is called once per BODY every frame from 42 sites. The textures stay bound above, so the one-time
+    // upload still lands on the first frame rather than mid-fight.
+    var any = false;
+    for (pool) |*q| {
+        if (q.life > 0) {
+            any = true;
+            break;
+        }
+    }
+    if (!any) return;
     // Depth is TESTED, never WRITTEN: soft quads that wrote depth would punch square holes in each other.
     rl.gl.rlDisableBackfaceCulling();
     rl.gl.rlDisableDepthMask();

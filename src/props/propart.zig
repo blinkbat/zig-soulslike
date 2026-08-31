@@ -146,7 +146,14 @@ pub const LAVA_SHALLOW = rgba(150, 40, 18, 255);
 pub const LAVA_MID = rgba(238, 122, 34, 255);
 pub const LAVA_DEEP = rgba(255, 232, 148, 255);
 
-pub const Part = struct { ax: f32 = 0, az: f32 = 0, bx: f32 = 0, bz: f32 = 0, r: f32, h: f32 };
+/// `y0` is the collider's FOOT and is 0 for every wall: raise it and the capsule becomes a LINTEL
+/// (`collision.Solid.y0`) — the stone over a doorway, open to a body on the ground and solid to one on a deck.
+pub const Part = struct { ax: f32 = 0, az: f32 = 0, bx: f32 = 0, bz: f32 = 0, r: f32, h: f32, y0: f32 = 0 };
+
+/// **WHAT A BODY CAN STAND ON ABOVE THE GROUND** (`props.Info.decks`, `env.deckAt`) — a disc at local height
+/// `y`, in the prop's own frame. `hole` cuts one back out of another at the same `y`: a trapdoor a ladder comes
+/// up through, and the ONE way a deck is not simply convex.
+pub const Deck = struct { x: f32 = 0, z: f32 = 0, r: f32, y: f32, hole: bool = false };
 
 /// A volume a prop blocks the VIEW with (`props.Info.occl`). Here beside `Part` rather than in `props.zig` because a family file that builds its own colliders needs to build its own occluders too, and `props.zig` imports the families.
 pub const Blocker = struct { r: f32, y0: f32 = 0, y1: f32, x: f32 = 0, z: f32 = 0 };
@@ -154,13 +161,19 @@ pub const Blocker = struct { r: f32, y0: f32 = 0, y1: f32, x: f32 = 0, z: f32 = 
 pub const TOWER_R: f32 = 2.35;
 pub const TOWER_SIDES: i32 = 14;
 pub const TOWER_DOOR: i32 = 3;
+/// Where the stone over the doorway begins — course 4 of the shaft, the first one the opening does not skip
+/// (`propbuild.watchtowerMesh`). Under it the door is a hole; at deck height it is wall like every other side.
+pub const TOWER_DOOR_HEAD: f32 = 3.48;
+/// Radius of one wall capsule, and it is what eats the shaft: `props.TOWER_CLEAR` is `TOWER_R` less this and
+/// less the body's own, so the number the hatches are placed against reads it rather than repeating it.
+pub const TOWER_WALL_R: f32 = 0.62;
 pub const towerRing = blk: {
-    var out: [TOWER_SIDES - TOWER_DOOR]Part = undefined;
+    var out: [TOWER_SIDES]Part = undefined;
     var n: usize = 0;
     for (0..TOWER_SIDES) |i| {
-        if (towerDoorway(@intCast(i))) continue;
         const a = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, TOWER_SIDES);
-        out[n] = .{ .ax = @sin(a) * TOWER_R, .az = -@cos(a) * TOWER_R, .bx = @sin(a) * TOWER_R, .bz = -@cos(a) * TOWER_R, .r = 0.62, .h = 11.0 };
+        const door = towerDoorway(@intCast(i));
+        out[n] = .{ .ax = @sin(a) * TOWER_R, .az = -@cos(a) * TOWER_R, .bx = @sin(a) * TOWER_R, .bz = -@cos(a) * TOWER_R, .r = TOWER_WALL_R, .h = 11.0, .y0 = if (door) TOWER_DOOR_HEAD else 0 };
         n += 1;
     }
     std.debug.assert(n == out.len);

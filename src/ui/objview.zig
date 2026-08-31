@@ -1213,7 +1213,7 @@ fn volumePanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bo
     // The numbers, which are the reason this page exists.
     const ix = box.x + w - INFO_W - BIG_PAD;
     var iy: i32 = @intFromFloat(viewR.y);
-    var buf: [96]u8 = undefined;
+    var buf: [3 * 96]u8 = undefined;
     const rows = volFacts(st, &buf);
     hud.mono(rows.a, ix, iy, hud.MONO, ui.VALUE);
     iy += ui.ROW_H;
@@ -1229,22 +1229,29 @@ fn volumePanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bo
 
 const VolFacts = struct { a: [:0]const u8, b: [:0]const u8, c: [:0]const u8 };
 
+/// **THE NUMBERS ARE READ OFF THE CREATURES, NOT TYPED IN BESIDE THEM.** These three rows were string literals
+/// — "r 1.90 m   life 3.40 s   build 42/s" — on the one page in the game whose whole reason is printing what a
+/// cloud actually costs. `SPORE_BUILD` has already been retuned once (24 to 42) and a caption that goes stale
+/// here is worse than no caption, because it is read as measured. `buf` is carved in three: the struct hands
+/// back three lines and they all have to outlive the call.
 fn volFacts(st: *const State, buf: []u8) VolFacts {
-    _ = buf;
+    const third = buf.len / 3;
+    const b1 = buf[third .. third * 2];
+    const b2 = buf[third * 2 ..];
     return switch (st.vol) {
         .spore_cloud => .{
             .a = "POISON - builds while you stand in it",
-            .b = "r 1.90 m   life 3.40 s   build 42/s",
-            .c = "Entry costs 0.34 s of build up front",
+            .b = std.fmt.bufPrintZ(b1, "r {d:.2} m   life {d:.2} s   build {d:.0}/s", .{ shroommod.CLOUD_R, shroommod.CLOUD_LIFE, shroommod.SPORE_BUILD }) catch "",
+            .c = std.fmt.bufPrintZ(b2, "Entry costs {d:.2} s of build up front", .{foemod.ENTRY_BOLUS}) catch "",
         },
         .acid_pool => .{
             .a = "ACID - spreads, then thins",
-            .b = "r 1.55 m   life 7.50 s",
-            .c = "Entry costs 0.34 s of build up front",
+            .b = std.fmt.bufPrintZ(b1, "r {d:.2} m   life {d:.2} s   build {d:.0}/s", .{ broodmod.ACID_R, broodmod.ACID_LIFE, broodmod.ACID_BUILD }) catch "",
+            .c = std.fmt.bufPrintZ(b2, "Entry costs {d:.2} s of build up front", .{foemod.ENTRY_BOLUS}) catch "",
         },
         .knight_gas => .{
             .a = "CHAOS - dosed on a clock, not built",
-            .b = "r 1.00 m   life 4.20 s   dose every 0.55 s",
+            .b = std.fmt.bufPrintZ(b1, "r {d:.2} m   life {d:.2} s   dose every {d:.2} s", .{ knightmod.GAS_R, knightmod.GAS_LIFE, knightmod.GAS_DOSE_EVERY }) catch "",
             .c = "First frame in is already due",
         },
     };

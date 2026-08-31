@@ -1228,6 +1228,20 @@ comptime {
         }
         if (!known) @compileError("game: BOSS_RAILS names `" ++ r.field ++ "`, which is not a FOE_GROUPS field");
     }
+    // **A RAIL AND `foe.isBoss` ARE ONE SET, ENFORCED BOTH WAYS.** The rail is what gets a bar; `isBoss` is what
+    // a fog gate offers to be sealed on (`editor`'s Sealed by...). A boss with a bar and no seal is a door the
+    // author cannot hang on it, and a seal with no bar is a fight with nothing on screen.
+    for (BOSS_RAILS) |r| {
+        if (!foemod.isBoss(r.kind)) @compileError("game: BOSS_RAILS names " ++ @tagName(r.kind) ++ ", which foe.isBoss says is not a boss");
+    }
+    for (@typeInfo(FoeKind).@"enum".fields) |f| {
+        if (!foemod.isBoss(@enumFromInt(f.value))) continue;
+        var railed = false;
+        for (BOSS_RAILS) |r| {
+            if (@intFromEnum(r.kind) == f.value) railed = true;
+        }
+        if (!railed) @compileError("game: foe.isBoss says " ++ f.name ++ " is a boss, but it has no row in BOSS_RAILS");
+    }
 }
 
 /// **A NAMED GATE OWNS ITS BOSS'S BAR** — has the hero walked through a fog gate sealed on `k`? `null` is

@@ -575,7 +575,7 @@ comptime {
     std.debug.assert(MG_KEEP_R + MG_REAPPEAR_R <= AGGRO_R);
 }
 
-const MG_CARRY = P{ .lean = 4.0, .head = 3.0, .rsh = 16.0, .rabd = 12.0, .rel = 26.0, .lsh = 8.0, .lel = 20.0, .tilt = 166.0 };
+const MG_CARRY = P{ .lean = 4.0, .head = 3.0, .rsh = 16.0, .rabd = 7.0, .rel = 38.0, .lsh = 8.0, .lel = 20.0, .tilt = 172.0 };
 
 const MG_ORB_WIND_KEYS = [_]PoseKey{
     .{ .t = 0.00, .p = MG_CARRY },
@@ -1433,7 +1433,8 @@ pub const Magus = struct {
     }
 
     pub fn staffHead(self: *const Magus) rl.Vector3 {
-        return rl.math.vector3Transform(v3(0, STAFF_LEN, 0), self.xf[HELD]);
+        // The head knob sits 0.58 of the shaft over the mid-shaft grip (`staffMesh`).
+        return rl.math.vector3Transform(v3(0, STAFF_LEN * 0.58 + 0.028 * H, 0), self.xf[HELD]);
     }
 
     fn chanGet(self: *const Magus) Chan {
@@ -1829,7 +1830,9 @@ fn poseBody(self: anytype, deathDur: f32) void {
     // in the forearm's frame the number means nothing: measured, a `tilt` of 94 — level, by the convention —
     // put the point 3.73 m up, two metres over a hero column that ends at 1.71, and the whole stroke reached
     // 1.85 m because the blade never once crossed him.
-    setLocal(&wx, HELD, rest, heromod.staffFit(self.tilt - self.rsh));
+    // The SWUNG shoulder, not the authored one: the walk's arm-pump would otherwise pitch a world-authored
+    // tilt ±12° every stride and a planted staff's ferrule with it.
+    setLocal(&wx, HELD, rest, heromod.staffFit(self.tilt - (self.rsh - swing)));
     self.xf = wx;
 }
 
@@ -2192,18 +2195,27 @@ fn swordMesh() rl.Mesh {
     return b.toMesh();
 }
 
+/// **THE GRIP IS MID-SHAFT, AND THE MESH SAYS SO** (owner: prop-holders hold things wrong). Authored footed
+/// at the fist, the pole ran up out of a straight hanging arm and read as taped to it — nobody grips a staff
+/// at its extreme butt. The shaft now spans −0.55..+0.45 of its length about the HELD origin: ferrule near the
+/// ground, head over the shoulder, and a wrapped swell right where the fingers close.
 fn staffMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x2E6D);
+    const top = STAFF_LEN * 0.58;
+    const foot = -STAFF_LEN * 0.42;
     b.setMat(.bark);
-    b.addCapsule(v3(0, -0.10 * H, 0), v3(0, STAFF_LEN * 0.86, 0.012 * H), 0.020 * H, 0.026 * H, 7, RIND_DK);
-    b.addCapsule(v3(0, STAFF_LEN * 0.86, 0.012 * H), v3(0, STAFF_LEN, -0.006 * H), 0.026 * H, 0.020 * H, 7, RIND_DK);
+    b.addCapsule(v3(0, foot, 0), v3(0, top * 0.72, 0.012 * H), 0.021 * H, 0.026 * H, 7, RIND_DK);
+    b.addCapsule(v3(0, top * 0.72, 0.012 * H), v3(0, top, -0.006 * H), 0.026 * H, 0.020 * H, 7, RIND_DK);
+    // The ferrule ends blunt, and the fist's own wrap sits over the origin.
+    b.addBlob(v3(0, foot, 0), v3(0.026 * H, 0.020 * H, 0.026 * H), 4, 6, CAP_DK);
+    b.addCapsule(v3(0, -0.050 * H, 0), v3(0, 0.062 * H, 0), 0.031 * H, 0.031 * H, 7, CAP_DK);
     b.setMat(.skin);
-    b.addBlob(v3(0, STAFF_LEN + 0.028 * H, -0.006 * H), v3(0.070 * H, 0.052 * H, 0.066 * H), 8, 7, CAP_COL);
-    b.addBlob(v3(0, STAFF_LEN + 0.004 * H, -0.006 * H), v3(0.058 * H, 0.016 * H, 0.054 * H), 7, 6, GILL);
+    b.addBlob(v3(0, top + 0.028 * H, -0.006 * H), v3(0.070 * H, 0.052 * H, 0.066 * H), 8, 7, CAP_COL);
+    b.addBlob(v3(0, top + 0.004 * H, -0.006 * H), v3(0.058 * H, 0.016 * H, 0.054 * H), 7, 6, GILL);
     var i: u32 = 0;
     while (i < 5) : (i += 1) {
-        const t = rng.range(0.25, 0.80);
+        const t = rng.range(-0.30, 0.42);
         const a = rng.angle();
         b.addBlob(
             v3(mathx.cosf(a) * 0.020 * H, STAFF_LEN * t, mathx.sinf(a) * 0.020 * H),

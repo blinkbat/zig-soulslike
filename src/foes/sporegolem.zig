@@ -171,6 +171,8 @@ pub const Golem = struct {
     gone: bool = false,
     state: State = .idle,
     t: f32 = 0,
+    /// A clock no state resets — the bellows must not restart every time the body changes its mind.
+    elapsed: f32 = 0,
     phase: f32 = 0,
     moving: f32 = 0,
     speed: f32 = 0,
@@ -350,6 +352,7 @@ pub const Golem = struct {
         self.slamCd = mathx.maxF(0, self.slamCd - dt);
         self.sacCd = mathx.maxF(0, self.sacCd - dt);
         self.t += dt;
+        self.elapsed += dt;
         self.burst = null;
         self.lobFrom = null;
         // THE ONE-FRAME FLAG, CLEARED AT THE TOP. `Host.live` hands out the whole slab with no `gone` filter, so
@@ -508,7 +511,11 @@ pub const Golem = struct {
         const fold = self.foldAmt();
         const lob = self.lobAmt();
         const bob = mathx.sinf(self.phase * std.math.tau) * 0.022 * H * self.moving;
-        const trunk = -34.0 * rear + 66.0 * fold - 74.0 * dk + 30.0 * lob;
+        // **A STANDING SLAB STILL BREATHES** — two rates that never line up, gone the moment it moves. Bolt
+        // still it read as masonry; a fungus this size is a bellows.
+        const still = (1.0 - self.moving) * (1.0 - dk);
+        const breathe = (mathx.sinf(self.elapsed * 0.9 + self.seed * 5.0) * 0.9 + mathx.sinf(self.elapsed * 0.43 + self.seed * 8.3) * 0.7) * still;
+        const trunk = -34.0 * rear + 66.0 * fold - 74.0 * dk + 30.0 * lob + 1.4 * breathe;
 
         var wx: [N]rl.Matrix = undefined;
         const rootY = self.rest[BODY].y + bob - 0.30 * H * dk;
@@ -519,7 +526,8 @@ pub const Golem = struct {
         );
         // The cap leads the fold and lags the rear, which is what stops the two reading as one rigid board.
         const swing = mathx.sinf(self.phase * std.math.tau) * 16.0 * self.moving;
-        self.limb(&wx, CAP, rx(-12.0 * rear + 24.0 * fold + 16.0 * lob));
+        const breatheLate = (mathx.sinf(self.elapsed * 0.9 - 0.8 + self.seed * 5.0) * 0.9 + mathx.sinf(self.elapsed * 0.43 - 0.5 + self.seed * 8.3) * 0.7) * still;
+        self.limb(&wx, CAP, rx(-12.0 * rear + 24.0 * fold + 16.0 * lob + 2.1 * breatheLate));
         // BOTH ARMS, TOGETHER: two arms doing the same thing is what separates the throw from the smash's asymmetric flail.
         self.limb(&wx, ARML, rx(swing - 28.0 * rear + 58.0 * fold + 74.0 * lob));
         self.limb(&wx, ARMR, rx(-swing - 28.0 * rear + 58.0 * fold + 74.0 * lob));

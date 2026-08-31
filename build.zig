@@ -59,6 +59,33 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     checkTestRoster(b);
     test_step.dependOn(&run_tests.step);
+
+    // DEV ONLY: `zig build check` type-checks and stops. `Step.Compile` passes `-fno-emit-bin` whenever
+    // nothing asks for its binary, so no step here may install or run these two. Measured on this tree:
+    // 1.4 s against 8.4 s, because sema is 1.4 s of a build and LLVM plus LLD are the other 7. The exe and
+    // the test root are separate compilations — a `test { }` block's errors only surface in the second.
+    const check_exe = b.addExecutable(.{
+        .name = "check-exe",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const check_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const check_step = b.step("check", "Type-check only — no codegen, no link, no binary");
+    for ([_]*std.Build.Step.Compile{ check_exe, check_tests }) |c| {
+        c.linkLibrary(raylib_artifact);
+        c.root_module.addImport("raylib", raylib);
+        c.root_module.addAnonymousImport("campfire_wav", .{ .root_source_file = b.path("assets/campfire.wav") });
+        check_step.dependOn(&c.step);
+    }
 }
 
 /// THE TEST ROSTER IS A LOCKSTEP LIST, AND NOTHING WAS CHECKING IT. `main.zig`'s `test { _ = @import(…) }`

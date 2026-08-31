@@ -1005,6 +1005,20 @@ fn boneMesh(i: usize) rl.Mesh {
                 const rr = (0.020 + rng.range(-0.004, 0.006)) * H;
                 b.addCapsule(v3(-0.104 * H, y, 0.010 * H), v3(0.104 * H, y, 0.010 * H), rr, rr, 6, HIDE_DK);
             }
+            // THE FLANK WEB — a skewed panel drooping off each side toward the armpit, overlapping the arm's
+            // own panels in any pose either bone can take. Each panel stays on ONE bone; the OVERLAP is what
+            // closes the sheet, never a span between two bones that move apart.
+            b.setMat(.cloth);
+            inline for (.{ 1.0, -1.0 }) |sgn| {
+                const sx: f32 = sgn;
+                b.addBox(
+                    v3(sx * 0.148 * H, up * 0.02, 0.004 * H),
+                    v3(sx * 0.056 * H, -0.030 * H, 0),
+                    v3(sx * 0.020 * H, -0.132 * H, -0.008 * H),
+                    v3(0, 0, 0.0038 * H),
+                    MEMBRANE,
+                );
+            }
         },
         NECK => {
             b.setMat(.hide);
@@ -1066,6 +1080,16 @@ fn boneMesh(i: usize) rl.Mesh {
             const down: f32 = -len(if (i == SHL) @as(usize, ELL) else @as(usize, ELR), i);
             b.addCapsule(v3(0, 0, 0), v3(0, down, 0), 0.052 * H, 0.040 * H, 9, HIDE);
             b.addBlob(v3(side * 0.014 * H, -0.012 * H, 0), v3(0.048 * H, 0.044 * H, 0.044 * H), 5, 8, HIDE_DK);
+            // The upper arm's own share of the inner membrane — the forearm's strip alone left the armpit
+            // open sky at the wing root, and a wing is one sheet from spar to flank.
+            b.setMat(.cloth);
+            b.addBox(
+                v3(side * -0.050 * H, down * 0.48, 0.004 * H),
+                v3(side * 0.050 * H, 0, 0),
+                v3(0, down * 0.48, 0),
+                v3(0, 0, 0.0040 * H),
+                MEMBRANE,
+            );
         },
         ELL, ELR => {
             const side: f32 = if (i == ELL) 1.0 else -1.0;

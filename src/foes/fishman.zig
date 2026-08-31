@@ -1100,8 +1100,11 @@ fn chestMesh() rl.Mesh {
     while (i < 5) : (i += 1) {
         const f = @as(f32, @floatFromInt(i)) / 4.0;
         const hgt = (0.030 + 0.026 * mathx.sinf(f * std.math.pi)) * H;
+        // 0.116·H seats the sail's roots inside the chest's own crown (top 0.122·H) with the crest proud.
+        // The old `(0.070 + hgt*0.5) * H / H` cancelled its own H and buried the whole ridge mid-chest —
+        // which is why all three read as smooth mannequins from behind.
         b.addBlob(
-            v3(0, (0.070 + hgt * 0.5) * H / H, (-0.040 + 0.060 * f) * H),
+            v3(0, 0.116 * H + hgt * 0.45, (-0.040 + 0.060 * f) * H),
             v3(0.006 * H, hgt, 0.016 * H),
             5,
             5,
@@ -1252,17 +1255,29 @@ fn tridentMesh() rl.Mesh {
     return b.toMesh();
 }
 
+/// **A CARRIED NET IS ROPE HANGING, NOT A WAD** (owner: prop-holders hold things wrong — this one held a
+/// fist-sized lump). Gathered at the fist, a skirt of uneven two-link cords sagging to knots, two floats
+/// riding the outside. The THROWN net is `netFlightMesh`; this is what the hand carries between throws.
 fn netBundleMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF15E);
     b.setMat(.plain);
-    b.addBlob(v3(0, -0.030 * H, 0.010 * H), v3(0.048 * H, 0.042 * H, 0.044 * H), 7, 6, CORD);
+    b.addBlob(v3(0, -0.020 * H, 0.006 * H), v3(0.040 * H, 0.034 * H, 0.038 * H), 7, 6, CORD);
     var i: u32 = 0;
-    while (i < 6) : (i += 1) {
+    while (i < 7) : (i += 1) {
         const a = rng.angle();
-        const d = rng.range(0.030, 0.062) * H;
-        b.addBlob(v3(mathx.cosf(a) * d, -0.072 * H, mathx.sinf(a) * d), v3(0.010 * H, 0.010 * H, 0.010 * H), 5, 4, SALT);
+        const spread = rng.range(0.020, 0.052) * H;
+        const drop = rng.range(0.16, 0.30) * H;
+        const kx = mathx.cosf(a) * spread;
+        const kz = mathx.sinf(a) * spread * 0.7 + 0.010 * H;
+        const knee = v3(kx, -0.060 * H - drop * 0.45, kz);
+        const tip = v3(kx * rng.range(0.5, 1.4), -0.050 * H - drop, kz * rng.range(0.4, 1.2));
+        b.addCapsule(v3(0, -0.036 * H, 0.006 * H), knee, 0.009 * H, 0.007 * H, 5, CORD);
+        b.addCapsule(knee, tip, 0.007 * H, 0.004 * H, 4, CORD);
+        b.addBlob(tip, v3(0.012 * H, 0.009 * H, 0.012 * H), 4, 5, CORD);
     }
+    b.addBlob(v3(0.034 * H, -0.150 * H, 0.020 * H), v3(0.018 * H, 0.014 * H, 0.016 * H), 5, 5, SALT);
+    b.addBlob(v3(-0.028 * H, -0.210 * H, -0.010 * H), v3(0.016 * H, 0.013 * H, 0.015 * H), 5, 5, SALT);
     return b.toMesh();
 }
 

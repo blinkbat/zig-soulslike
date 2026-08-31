@@ -342,13 +342,34 @@ pub fn runMapShots(g: *Game) void {
             shot[@intFromEnum(kindOf)] = true;
             const top = f.topWorld().y - f.pos.y;
             const r = mathx.maxF(f.bodyR(), 0.6);
-            standHero(g, f.pos.x + 4.5, f.pos.z + 3.4, mathx.radians(215));
+            // **THE HERO STANDS ON THE SUN'S BEARING** (AGENTS: photograph its front = the sensed hero SW,
+            // the lens at ~53). Stood NE, every body that turns to face him gave the camera its back.
+            standHero(g, f.pos.x - 4.5, f.pos.z - 3.4, mathx.radians(35));
             f.pose();
             const aim = v3(f.pos.x, f.pos.y + top * 0.55, f.pos.z);
             const dist = mathx.clampF(mathx.maxF(r * 7.0, top * 4.2), 4.0, 34.0);
             var buf: [96]u8 = undefined;
             const stand = std.fmt.bufPrintZ(&buf, DIR_MAP ++ "/{d:0>2}_{s}_stand.png", .{ n, @tagName(kindOf) }) catch unreachable;
             shootAt(g, stand, aim, 53, 0.16, dist);
+            // **AND THE GRIP, CLOSE, FROM TWO QUARTERS** — how a body holds its kit is judged at arm's
+            // length (`knightDoorShots`' lesson); the house portrait at 12 m answers nothing about a fist.
+            // Hero-scaffold rigs only: on any other bone count, 17 is not the held slot.
+            if (comptime @hasField(T, "xf")) {
+                if (comptime @typeInfo(@TypeOf(f.xf)).array.len == heromod.N) {
+                    const grip = rl.math.vector3Transform(mathx.zero3, f.xf[heromod.HELD]);
+                    // A rig that never poses its held bone leaves undefined memory there (the cinder wake's
+                    // rake is its own two hands) — refuse a grip that is not on the body.
+                    if (mathx.distXZ(grip, f.pos) < 5.0 and grip.y > f.pos.y - 1.0 and grip.y < f.pos.y + 8.0) {
+                        const gaim = v3(grip.x, grip.y + 0.12, grip.z);
+                        // The body faces the stood hero (bearing ~53), so 53 is its FRONT and 323 its sword flank.
+                        for ([_]struct { yaw: f32, tag: []const u8 }{ .{ .yaw = 53, .tag = "kit0" }, .{ .yaw = 323, .tag = "kit1" } }) |kv| {
+                            var kb: [96]u8 = undefined;
+                            const km = std.fmt.bufPrintZ(&kb, DIR_MAP ++ "/{d:0>2}_{s}_{s}.png", .{ n, @tagName(kindOf), kv.tag }) catch unreachable;
+                            shootAt(g, km, gaim, kv.yaw, 0.12, 4.2);
+                        }
+                    }
+                }
+            }
             // …AND THE HEAD, for a creature whose head IS the read. The same `facePoint` frame the folk already
             // get, keyed off `@hasDecl` like everything else here. TWICE — at rest and again on the signature
             // move — because for a creature whose signature is worn on its head the two faces are the fight.

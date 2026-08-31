@@ -1,0 +1,15 @@
+version: 1
+name: Duo Front Bench
+half: 60.0
+
+# THE PAIR FACING THE SHOT CAMERA'S OWN BEARING (53), far enough apart that neither stands in the other's
+# frame. The duo bench proper is the ARENA; this one exists to photograph the bodies and their kit.
+#   --map worlds/test_duofront.world
+
+zone: meadow -400.0 -400.0 400.0 400.0 0.120 grasstall,tuft
+clear: 0.0 0.0 40.0
+
+foe: fungal_swordsman 0.00 18.00 233.0 1.00 0.21
+foe: fungal_magus 26.00 -14.00 233.0 1.00 0.63
+
+at: boulder -48 48 20 1.2

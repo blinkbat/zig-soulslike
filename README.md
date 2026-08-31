@@ -48,11 +48,13 @@ moon as anti-sun. Intermittent rain in two strengths with lightning, late thunde
 **Progression.** Souls drop where you die and are spent only on an 81-node radial passive tree (PoE2-shaped,
 three arms, six branches, six bridges). Taking a node IS the level-up — no point pool. Seven attributes, all
 raised via nodes. Equipment: 21 pieces, one row each, across 12 doll sockets, every socket real. Three
-memorized sorcery slots off nine scrolls.
+memorized sorcery slots off nine scrolls. Gold is the second currency and is kept on death — it buys the
+shelf, and with smithing stone it buys weapon tiers, +0 to +10 per armament.
 
 **Systems.** StarCraft-style trigger machine (conditions + actions, switches / counters / timers), BG2-style
-dialog with live-rendered speaker portraits, two NPC kinds (wanderer, merchant). All of it authored in the `.world` file,
-not in Zig — grammar in `AGENTS.md`.
+dialog with live-rendered speaker portraits, three NPC kinds (wanderer, merchant, smith). A trade counter the
+merchant and the smith open off a trigger — one screen, buy and sell on the shelf, stone-and-coin weapon tiers
+at the anvil. All of it authored in the `.world` file, not in Zig — grammar in `AGENTS.md`.
 
 **Editor** (Menu > Editor). Layered StarEdit-style: ground sculpt, soil and liquid brushes, prop and unit
 placement (foes and NPCs alike), zones, clearings, loot, undo/redo, cut/copy/paste, grid snap, object viewer,

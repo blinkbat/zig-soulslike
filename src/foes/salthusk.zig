@@ -36,7 +36,8 @@ const setLocal = heromod.setHumanoid;
 // **THEY CHAIN.** A burst that finishes another husk lights its fuse too, so a line of them is a line of
 // fuses — the reason to kill them one at a time, from range, or in the right order.
 
-pub const H: f32 = 1.72;
+/// **A MAN-SHAPE STANDS OVER THE HERO** (owner: all humanoids bigger than us) — asserted below.
+pub const H: f32 = 2.00;
 const HIP_HALF = heromod.HIP_HALF * 0.88;
 const SHOULDER_HALF = heromod.SHOULDER_HALF * 0.92;
 const REST = heromod.restHumanoid(HIP_HALF, SHOULDER_HALF, H);
@@ -84,8 +85,8 @@ const CHASE_SPEED: f32 = heromod.WALK_SPEED * 0.88;
 const ACCEL: f32 = 2.4;
 const TURN_RATE: f32 = 2.0;
 
-const BODY_R: f32 = 0.34;
-const HURT_R: f32 = 0.52;
+const BODY_R: f32 = 0.40;
+const HURT_R: f32 = 0.60;
 const CENTER_F: f32 = 0.56;
 const TOP_F: f32 = 1.00;
 
@@ -98,7 +99,7 @@ const STANCE_MAX: f32 = 20.0;
 const RESISTS = combat.resists(.{ .chaos = 60, .cold = 30, .fire = 15, .lightning = -35 });
 pub const SOULS: u32 = 95;
 
-const CLOUT_R: f32 = 1.55;
+const CLOUT_R: f32 = 1.72;
 const CLOUT_FRONT_DOT: f32 = 0.45;
 const CLOUT_WIND: f32 = 0.42;
 const CLOUT_STRIKE: f32 = 0.18;
@@ -127,6 +128,7 @@ pub const SHATTER_HIT = combat.Hit{
 };
 
 comptime {
+    std.debug.assert(H > heromod.H);
     std.debug.assert(CLOUT_WIND >= foe.TELL_MIN);
     // The SHORTEST fuse any husk can roll is what the tell floor has to be measured against.
     std.debug.assert(BURST_FUSE * FUSE_LO >= foe.TELL_MIN * 2.0);
@@ -570,11 +572,17 @@ pub const Husk = struct {
         const rest = self.rest;
         const m = self.moving * (1.0 - dk);
         const wonk = (self.seed - 0.5) * 5.0;
+        // **NOT QUITE DEAD.** No breath in a salt-cured body — what it has is a SETTLING LIST, a couple of
+        // degrees on `gutter`'s three incommensurate rates, the trunk arriving before the skull. Bolt still,
+        // it read as a prop; a corpse that stands is a corpse that balances.
+        const idleAmt = (1.0 - mathx.clampF(self.moving * 2.0, 0, 1)) * (1.0 - dk);
+        const settle = mathx.gutter(self.elapsed * 0.30 + self.seed * 8.1, self.seed * 3.7) * idleAmt;
+        const settleLag = mathx.gutter(self.elapsed * 0.30 - 0.7 + self.seed * 8.1, self.seed * 3.7) * idleAmt;
 
-        setLocal(wx, SPINE, rest, mul3(rx(waist * 0.44), ry(-0.3 * prot), rz(wonk * 0.5)));
-        setLocal(wx, CHEST, rest, mul3(rx(waist * 0.56), ry(-0.45 * prot), rz(-wonk * 0.3)));
+        setLocal(wx, SPINE, rest, mul3(rx(waist * 0.44), ry(-0.3 * prot), rz(wonk * 0.5 + 1.7 * settle)));
+        setLocal(wx, CHEST, rest, mul3(rx(waist * 0.56 + 0.6 * settleLag), ry(-0.45 * prot), rz(-wonk * 0.3 - 1.2 * settleLag)));
         setLocal(wx, NECK, rest, rx(-8.0 * clout + 6.0 * dk - 4.0 * stun - 18.0 * fuse));
-        setLocal(wx, SKULL, rest, mul3(rx(-14.0 * clout + 12.0 * dk - 20.0 * stun - 26.0 * fuse), ry(-0.4 * prot), rz(wonk)));
+        setLocal(wx, SKULL, rest, mul3(rx(-14.0 * clout + 12.0 * dk - 20.0 * stun - 26.0 * fuse + 0.9 * settle), ry(-0.4 * prot), rz(wonk + 1.5 * settleLag)));
 
         // Arms out and away as it swells: the body opening is what "about to come apart" looks like.
         const armStun = -40.0 * stun;

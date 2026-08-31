@@ -30,7 +30,7 @@ pub const COIN_BASE: u32 = 40;
 pub const COIN_PER: u32 = 55;
 
 /// Stones to take an armament from `tier` to `tier + 1`. `STONE_PER` is halved into the step so the early
-/// tiers are one stone apiece and the last are six — a run's worth of the delver's drop, not a mine.
+/// tiers are one stone apiece and the last are five — a run's worth of the delver's drop, not a mine.
 pub fn stoneCost(tier: u8) u32 {
     return STONE_BASE + (STONE_PER * tier) / 2;
 }
@@ -196,6 +196,12 @@ pub const Counter = struct {
                 }
                 if (h.gold.total < r.coin) {
                     self.said = .no_coin;
+                    return;
+                }
+                // `Bag.add` SATURATES at `item.CAP`, so a full shelf takes the coin and hands back nothing —
+                // the smithy's all-or-nothing rule owed the other way round.
+                if (bag.count(k) >= item.CAP) {
+                    self.said = .maxed;
                     return;
                 }
                 if (!spend(&h.gold, r.coin)) {

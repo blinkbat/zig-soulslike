@@ -48,6 +48,10 @@ pub const Ctx = struct {
 
     pub fn begin(t: f32) Ctx {
         if (!rl.isMouseButtonDown(.left)) dragOwner = null;
+        // A claim on a field that is no longer on screen is a keyboard nobody owns.
+        if (!kbSeen) kbOwner = null;
+        kbSeen = false;
+        kbTaken = false;
         var c = Ctx{ .mouse = rl.getMousePosition(), .pressed = false, .down = false, .wheel = 0, .t = t };
         c.setLive(true);
         return c;
@@ -364,9 +368,27 @@ pub fn checkbox(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, v: *bool, tip: [
     return false;
 }
 
-pub fn textField(ctx: *Ctx, r: rl.Rectangle, buf: []u8, len: *usize, focused: bool, tip: [:0]const u8) void {
+/// **ONE FIELD OWNS THE KEYBOARD, AND IT IS CLAIMED BY BEING CLICKED.** `rl.getCharPressed` DRAINS a global
+/// queue, so two fields drawn eligible in the same frame means the first drawn eats every keystroke and the
+/// second is dead however it is styled — the script modal's trigger id ate every letter meant for the banner
+/// line under it, and the region name field behind the modal ate them both. With nobody claiming, the first
+/// eligible field drawn keeps it, which is what every panel here did before. Returns whether it has the
+/// keyboard, because the editor's own w/a/s/d have to stand off exactly when it does.
+var kbOwner: ?u32 = null;
+var kbSeen = false;
+var kbTaken = false;
+
+pub fn textField(ctx: *Ctx, r: rl.Rectangle, buf: []u8, len: *usize, id: u32, eligible: bool, tip: [:0]const u8) bool {
     tipFor(ctx, r, tip);
     _ = ctx.hot(r);
+    if (eligible) {
+        if (ctx.pressed and rl.checkCollisionPointRec(ctx.mouse, r)) kbOwner = id;
+        if (kbOwner) |o| {
+            if (o == id) kbSeen = true;
+        }
+    }
+    const focused = eligible and !kbTaken and (kbOwner == null or kbOwner.? == id);
+    if (focused) kbTaken = true;
     rl.drawRectangleRec(r, rgba(14, 12, 10, 245));
     rl.drawRectangleLinesEx(r, 1, alpha(TRIM, if (focused) 220 else 100));
     if (focused) {
@@ -386,6 +408,7 @@ pub fn textField(ctx: *Ctx, r: rl.Rectangle, buf: []u8, len: *usize, focused: bo
         const cx: i32 = @as(i32, @intFromFloat(r.x)) + 9 + hud.monoW(s, hud.MONO);
         rl.drawRectangle(cx, @intFromFloat(r.y + 6), 2, hud.monoLineH(hud.MONO) - 2, HOT);
     }
+    return focused;
 }
 
 pub fn listRows(heightPx: i32) i32 {
@@ -517,7 +540,10 @@ pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u
             const rel = ctx.mouse.y - (box.y + 3);
             const row = @divFloor(@as(i32, @intFromFloat(rel)), DD_ROW_H);
             const idx: usize = @intCast(@max(row, 0) + openScroll);
-            if (row >= 0 and idx < labels.len) {
+            // The panel is `rows * DD_ROW_H + 6` tall, so its bottom 3 px divide to one row PAST the last one
+            // drawn: unclamped, a click on that border picked the entry under the one you were looking at.
+            const drawn: i32 = @min(@as(i32, @intCast(labels.len)), DD_MAX_SHOWN);
+            if (row >= 0 and row < drawn and idx < labels.len) {
                 picked = idx;
                 openId = null;
                 openScroll = 0;

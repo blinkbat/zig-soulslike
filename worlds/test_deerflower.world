@@ -1,0 +1,14 @@
+version: 1
+name: Deer Flower Bench
+half: 60.0
+
+# ONE ANIMAL ON BARE GROUND — the flower redo's own bench. The shipped deer bench stands two of them in
+# line with the shot camera, and the far body reads as part of the near one's corolla in every frame.
+#   --map worlds/test_deerflower.world
+
+zone: meadow -400.0 -400.0 400.0 400.0 0.120 grasstall,tuft
+clear: 0.0 0.0 40.0
+
+foe: fungal_deer 0.00 18.00 53.0 1.00 0.21
+
+at: boulder -10 30 20 1.3

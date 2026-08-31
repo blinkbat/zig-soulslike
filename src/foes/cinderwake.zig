@@ -39,7 +39,8 @@ const setLocal = heromod.setHumanoid;
 // **COLD IS THE COUNTER AND FIRE IS NOTHING AT ALL TO IT.** Not the same bargain the birchwight offers: a
 // torch makes THAT one worse and kills it, while a torch spent on this one is a torch spent on nothing.
 
-pub const H: f32 = 1.66;
+/// **A MAN-SHAPE STANDS OVER THE HERO** (owner: all humanoids bigger than us) — asserted below.
+pub const H: f32 = 2.08;
 const HIP_HALF = heromod.HIP_HALF * 0.92;
 const SHOULDER_HALF = heromod.SHOULDER_HALF * 0.88;
 const REST = heromod.restHumanoid(HIP_HALF, SHOULDER_HALF, H);
@@ -90,8 +91,8 @@ const CHASE_SPEED: f32 = heromod.WALK_SPEED * 1.02;
 const ACCEL: f32 = 2.6;
 const TURN_RATE: f32 = 2.4;
 
-const BODY_R: f32 = 0.34;
-const HURT_R: f32 = 0.52;
+const BODY_R: f32 = 0.43;
+const HURT_R: f32 = 0.65;
 const CENTER_F: f32 = 0.56;
 const TOP_F: f32 = 1.00;
 
@@ -103,7 +104,7 @@ const STANCE_MAX: f32 = 34.0;
 const RESISTS = combat.resists(.{ .fire = 75, .cold = -70, .chaos = 25 });
 pub const SOULS: u32 = 180;
 
-const RAKE_R: f32 = 1.75;
+const RAKE_R: f32 = 1.95;
 const RAKE_FRONT_DOT: f32 = 0.42;
 const RAKE_WIND: f32 = 0.44;
 const RAKE_STRIKE: f32 = 0.20;
@@ -123,6 +124,7 @@ const TRAIL_SPACING: f32 = 0.42;
 pub const TRAIL_BUILD: f32 = 58.0;
 
 comptime {
+    std.debug.assert(H > heromod.H);
     std.debug.assert(TRAIL_SPACING < 2.0 * EMBER_R);
     std.debug.assert(RAKE_WIND >= foe.TELL_MIN);
     std.debug.assert(CHASE_SPEED > heromod.WALK_SPEED and CHASE_SPEED < heromod.RUN_SPEED);

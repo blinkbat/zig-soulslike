@@ -46,6 +46,9 @@ implement what's asked and nothing extra. Don't commit, push, or create branches
 
 - `zig` is NOT on PATH. Build with `build.cmd` / `build-release.cmd`; toolchain is
   `..\.zigtoolchain\zig-x86_64-windows-0.14.1\zig.exe`. `zig build test` runs unit tests.
+- **AN ERROR LOOP DOES NOT NEED A BINARY** — `check.cmd` (`zig build check`) type-checks the exe root AND
+  the test root and stops: 2.7 s against the 10 s a build costs, because sema is 1.4 s of a build and LLVM
+  plus LLD are the other 7. Use it for every edit until it is clean, then build once.
 - Verify rendering/animation by RUNNING `zig-out\bin\zig-soulslike.exe --shot` (or `shot.cmd`) and inspecting
   `shots\` (gitignored). Never claim a visual change works without a shot.
 - Do NOT launch the interactive window to "check" — the owner plays it himself, and while he has it open the
@@ -141,7 +144,7 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `foes/delver.zig` | THE DELVER + `Warrens` — goes UNDER; bursts underfoot or ploughs a furrow. No lock-on while down |
 | `foes/necro.zig` | THE NECROMANCER + `Rite` — holds a corpse open and raises it once; the only COLD source |
 | `foes/wolf.zig` | first SPIRIT + `Pack`, what the BELL calls. NOT a foe; first QUADRUPED, 27 bones |
-| `foes/fungaldeer.zig` | fungal deer + `Herd` — quadruped rig's FOURTH user + a stalk, a bloom, 7 petals and a rack. The flower RISES out of its back and spits spores that HANG before they home; the antlers are what it does cornered |
+| `foes/fungaldeer.zig` | fungal deer + `Herd` — quadruped rig's FOURTH user + a stalk, a bloom, 7 petals and a rack. The flower stands off its back for good and OPENS to spit spores that HANG before they home; the antlers are what it does cornered |
 | `foes/shroommage.zig` | mushroom mage + `Ring` — the fireball BOUNCES, so it punishes backing off |
 | `foes/fenlurker.zig` | fen lurker + `Marsh` — never leaves the water; sunk it is unreachable. Counter is DRY LAND |
 | `foes/sporegolem.zig` | spore homunculus + `Host` — `ARMOUR` is the creature; fire and lightning pass through |
@@ -161,6 +164,7 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `play/stats.zig` | the sheet — seven attributes, the bar curves, the ONE skill curve (`scaleFor`), `inert` |
 | `play/passivetree.zig` | PoE2's tree radially: three arms out of one hub, the gates, `Bonus`, the wheel |
 | `play/item.zig` | item vocabulary, `Use`, **`Equip`/`Wear` (the GEAR table)**, the `Bag` |
+| `play/counter.zig` | THE COUNTER — shop and smithy as one `Trade`; `STOCK`, `stoneCost`/`coinCost`, and the one `take` that spends. Headless and tested |
 | `play/chest.zig` | openable boxes; contents read off the placing op (`Op.loot`) |
 | `play/rest.zig` | bonfire + campfire — phase machine, the seat, the fire's own screen; `isRestKind` |
 | `play/souls.zig` | THE DROP — what a death leaves, the gold bloom, the walk back |
@@ -173,6 +177,7 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `ui/itemart.zig` | pictures of things — armaments and bag items as objects, sized by the caller |
 | `ui/icons.zig` | editor glyph set, drawn from primitives (vector, not an atlas) |
 | `ui/book.zig` | THE CHARACTER BOOK (pad START) — paper doll + ten quick sockets, the bag, the sheet, the piece-under-the-cursor card |
+| `ui/counterui.zig` | the counter's panel — the DIALOG's shape over a running frame, not the book's; every number off `play/counter.zig` |
 | `ui/menu.zig` | boot screen, pause/debug menu, sound LEVELS, retro filter rack |
 | `ui/editor.zig` | THE EDITOR (Menu > Editor), layered StarEdit-style; biggest file, next split candidate |
 | `ui/objview.zig` | object viewer + the JUKEBOX + the FX BENCH (`elemfx`'s cells with their numbers printed) |
@@ -853,10 +858,11 @@ with a large flower growing out of its BACK: `wolf.zig`'s 27 bones plus eleven �
 bloom on it, seven petals, and a beam of antler each side of a head this one actually kept. `wolf.legs` still
 takes `wx[0..wolf.N]` as its own array, so no bone it solves has moved.
 
-- **THE FLOWER IS NOT ITS FACE, IT IS ITS ARTILLERY.** Furled it lies back down the loins and the animal reads
-  as a deer with something growing on it; it RISES — that is the whole tell, and there is no other — opens, and
-  spits five spores straight up. `riseAmt` is off the volley's clock and never off `openAmt`, or a heavy stun
-  would raise a stalk it is meant to leave lying.
+- **THE FLOWER IS NOT ITS FACE, IT IS ITS ARTILLERY — AND THE TELL IS THE COROLLA, NOT A RISE** (owner: no
+  stalk rise; open/close on the spore, bigger instead). The bloom stands off the withers the animal's whole
+  life at ONE stance (`STANCE_FURL`), a bud the size of its own barrel; for the volley it OPENS — blades built
+  as midrib + vanes + membrane lenses, never bare quills (owner: seven spokes read as a whisk) — and spits five
+  spores straight up. A heavy stun still blows the bud open (`openAmt`'s hurt branch); nothing moves its seat.
 - **THE HANG IS THE MOVE** (owner: they hover for a bit before homing in). `SPORE_HANG` 1.55 s of drifting and
   bobbing before they turn over, then `SPORE_HOME` 4.4 m/s — under `hero.SPRINT_SPEED`, asserted at comptime,
   so a spore cannot run him down in a straight line. **THE BOB'S RATE HAS TO BE IN THE STEP OR IT IS NOT ONE**:
@@ -890,13 +896,12 @@ takes `wx[0..wolf.N]` as its own array, so no bone it solves has moved.
 - **A SECOND TIER FOR NO BONES.** Each petal bone carries a short broad TONGUE as well as its quill, pitched
   `INNER_TILT` further in by a rotation baked into the MESH. A constant tilt is an OFFSET, so `INNER_LEN` is
   solved against `BLOOM_RIM` or the tongues come out the far side.
-- **THE FURL IS RELATIVE TO THE STALK'S OWN REST LEAN, NOT ABSOLUTE.** STALK→BLOOM is already 26 deg off plumb,
-  so an absolute furl folds the flower the WRONG WAY — at +74 it laid over the animal's head, 1.65 m in front
-  of its own hip. And the stalk TELESCOPES as well as hinging (`STALK_FURL_IN`), the bloom's collar hanging
-  0.35 W down the bore so no frame of the rise shows a gap.
-- **THE HURT SPHERE HOLDS THE BLOOM AT BOTH ENDS OF ITS TRAVEL** — a weak point a blade cannot reach is not one.
-  Solved, not picked: the bloom rides 1.66 m furled and stands to 2.30 m, and `wx[ROOT]` translates in Y ONLY,
-  so the whole trunk hangs forward of `pos` and `BARREL_MID` is what keeps the withers inside it.
+- **THE STANCE IS RELATIVE TO THE STALK'S OWN REST LEAN, NOT ABSOLUTE** — STALK→BLOOM is already 26 deg off
+  plumb, and an absolute angle folds the flower the WRONG WAY (the old furl at +74 laid it over the animal's
+  head, 1.65 m in front of its own hip).
+- **THE HURT SPHERE HOLDS THE BLOOM AND THE BARREL** — a weak point a blade cannot reach is not one. The bloom
+  keeps ONE seat now (2.00 m, test-pinned within 0.12 m across every state), and `wx[ROOT]` translates in Y
+  ONLY, so the whole trunk hangs forward of `pos` and `BARREL_MID` is what keeps the withers inside it.
 - **A CORPSE WILTS FROM WHATEVER THE BLOW CAUGHT IT WEARING** (`deathOpen`). Snapping shut is a pop and ramping
   from wide is the same pop the other way.
 - **`stageGather` AND NOT `stageRise`** — `shots.runMapShots` finds a creature's signature move off `@hasDecl`

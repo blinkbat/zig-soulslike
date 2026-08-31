@@ -2978,7 +2978,9 @@ test "THE SHIPPED MAPS SIT INSIDE THE READ BUFFER, and `save` refuses to write o
     var worstName: [PATH_CAP]u8 = [_]u8{0} ** PATH_CAP;
     while (try it.next()) |ent| {
         if (ent.kind != .file or !std.mem.endsWith(u8, ent.name, EXT)) continue;
-        const st = try dir.statFile(ent.name);
+        // An entry that vanishes between the listing and the stat is not a shipped map: this test writes
+        // `test_saveroundtrip` into the very directory it scans, and the live editor renames over maps here.
+        const st = dir.statFile(ent.name) catch continue;
         if (st.size <= worst) continue;
         worst = st.size;
         @memcpy(worstName[0..@min(ent.name.len, PATH_CAP)], ent.name[0..@min(ent.name.len, PATH_CAP)]);

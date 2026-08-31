@@ -30,15 +30,16 @@ const lerpF = mathx.lerpF;
 // lit throat behind a ring of fangs — is the ravager's, moved off the head and onto the WITHERS. What it left
 // behind is a real head: a muzzle, a jaw, ears, and a rack of antlers.
 //
-// **THE FLOWER IS NOT ITS FACE, IT IS ITS ARTILLERY.** Furled it lies along the spine and the animal is a deer.
-// It RISES — that is the whole tell — opens, and spits a handful of spores straight up. They HANG in the air,
+// **THE FLOWER IS NOT ITS FACE, IT IS ITS ARTILLERY.** It stands off the withers the animal's whole life — a
+// bud the size of its own barrel — and it OPENS: that is the whole tell (owner: no stalk rise; open/close on
+// the spore, and bigger instead). Wide, it spits a handful of spores straight up. They HANG in the air,
 // drifting, for long enough to be read and walked out of; then they turn over and come down at you.
 //
 // **AND IT DOES NOT WANT TO BE NEAR YOU.** It keeps its band and backs off when you close. The antlers are what
 // it does when backing off has stopped working — its own gap, its own clock, and never a read of him.
 
 /// Height at the WITHERS. Over the ravager's 1.34 and leggier with it: the barrel is the same animal's, the
-/// legs are longer, and the flower stands over the top of the hero when it rises.
+/// legs are longer, and the flower stands over the top of the hero at all times.
 pub const W: f32 = 1.46;
 
 /// **A RANGED BODY SEES FURTHER THAN A BITING ONE** — twice the ravager's 11, because a volley thrown from
@@ -47,13 +48,10 @@ pub const AGGRO_R: f32 = 22.0;
 const HOME_R: f32 = 1.2;
 
 const BODY_R: f32 = 0.46;
-/// **IT HAS TO HOLD THE BLOOM AT BOTH ENDS OF ITS TRAVEL** (the ravager's lesson) — the flower is the WEAK
-/// POINT and a weak point a blade cannot reach is not one. MEASURED off the posed rig and solved, not picked:
-/// the bloom rides 1.66 m furled and stands to 2.30 m, so a centre at 1.39 m needs 1.05 m to reach the risen
-/// one — and that is EXACTLY it, which is a sphere the flower leaves on the next pose. 1.12 is the same solve
-/// with 0.07 m of daylight in it, and the barrel sits 0.44 m the other side of the centre. A quadruped's nose and hooves stay OUTSIDE, as the
-/// wolf's do at 0.42 on a 1.12 body — a sphere that swallowed a 1.37 m neck would be a sphere you could hit
-/// by swinging at open ground.
+/// **IT HAS TO HOLD THE BLOOM AND THE BARREL** — the flower is the WEAK POINT and a weak point a blade cannot
+/// reach is not one. The bloom keeps ONE seat now (2.00 m, test-pinned), 0.52 m inside this sphere off a
+/// centre at 1.39 m. A quadruped's nose and hooves stay OUTSIDE, as the wolf's do at 0.42 on a 1.12 body — a
+/// sphere that swallowed a 1.37 m neck would be a sphere you could hit by swinging at open ground.
 const HURT_R: f32 = 1.12;
 const CENTER_F: f32 = 0.95;
 /// **METRES OF `W` THE HURT SPHERE SITS FORWARD OF THE BODY'S OWN POSITION.** `wolf.restPose` puts the ROOT at
@@ -82,8 +80,8 @@ const SINK_DEPTH: f32 = 0.34;
 
 const PARTS = 58;
 
-// **THE VOLLEY.** The rise and the open ARE the wind-up — there is nothing else to read, and there does not
-// need to be: it takes most of a second and the flower is a metre across at the end of it.
+// **THE VOLLEY.** The open IS the wind-up — there is nothing else to read, and there does not need to be:
+// it takes most of a second and the flower is over two metres across at the end of it.
 
 const SPIT_WIND: f32 = 0.95;
 const SPIT_DUR: f32 = 0.22;
@@ -100,7 +98,7 @@ pub const SPORES_PER_VOLLEY: usize = 5;
 // **A BLOW YOU CAN SEE COMING FOR A SECOND AND A HALF.** The spore goes UP, hangs, and only then turns over.
 // Everything about it is built so the answer is your feet: it is slow, it is bright, and the hang is long.
 
-pub const SPORE_R: f32 = 0.20;
+pub const SPORE_R: f32 = 0.15;
 /// Seconds of the climb out of the throat, and how far up and out it carries.
 const SPORE_RISE: f32 = 0.55;
 const SPORE_UP: f32 = 2.1;
@@ -120,7 +118,9 @@ const SPORE_BOB_W: f32 = SPORE_BOB_HZ * std.math.tau;
 pub const SPORE_HOME: f32 = 4.4;
 /// Radians a second the homing steer may bend. Capped, so a ROLL beats it: at 2.2 it needs 1.43 s to reverse.
 const SPORE_TURN: f32 = 2.2;
-pub const SPORE_LIFE: f32 = 8.0;
+/// **THE CHASE IS SHORT** (owner: less chase time) — 3.5 s of homing after the hang, against 5.9 before.
+/// Still over twice the 1.43 s a dead-opposite reversal costs, so the cap test's claim stands.
+pub const SPORE_LIFE: f32 = 5.6;
 /// Five of these land for 45 raw, under the bone knight's own overhead — and no volley ever lands whole.
 pub const SPORE_HIT = combat.Hit{ .dmg = 3, .poise = 12, .elem = combat.elems(.{ .chaos = 6 }) };
 
@@ -224,21 +224,13 @@ comptime {
 /// time the stalk rose (the ravager's own finding, and the same fix).
 const LOCK_AT = v3(0, 0.30 * W, 0.10 * W);
 
-// **THE STALK LEAVES THE WITHERS AND LEANS BACK OVER THE LOINS.** Furled, that is a hump along the spine and
-// the animal reads as a deer with something growing on it; risen, it stands over the shoulders.
+// **THE STALK LEAVES THE WITHERS AND LEANS BACK OVER THE LOINS.** It holds ONE stance the animal's whole
+// life (owner: no rise) — the bud standing off the shoulders is the silhouette, and the corolla does the rest.
 const STALK_UP: f32 = 0.62;
 const STALK_BACK: f32 = 0.30;
-/// **DEGREES FURTHER BACK THAN ITS OWN REST LEAN, AND IT IS SOLVED.** The STALK→BLOOM rest vector is already
-/// 26 deg off plumb (`STALK_UP` against `STALK_BACK`), so a furl authored as an absolute angle folds the
-/// flower the WRONG WAY: at +74 it laid over the animal's HEAD, 1.65 m in front of its own hip. 49 deg is
-/// what puts the axis at 75 deg off plumb — lying back down the loins, which is where a furled thing on a
-/// back belongs.
-const FURL_DEG: f32 = 49.0;
-/// …and how much of its own length the stalk takes back while furled, so the rise is a TELESCOPE and not only
-/// a hinge. Solved against the sheath's own overlap in `buildStalk`: the bloom's collar hangs 0.35 W down the
-/// bore, so anything under that never shows a gap.
-const STALK_FURL_IN: f32 = 0.26;
-const STALK_STRETCH: f32 = 0.16;
+/// Degrees of permanent lie-back past the STALK→BLOOM rest vector's own 26 off plumb — 42 total, standing
+/// but grown, not staked. What replaced the furl/rise pair when the tell moved onto the corolla.
+const STANCE_FURL: f32 = 16.0;
 
 /// Degrees the head lowers and the rack comes forward across the charge. The crown has to arrive at chest
 /// height on him or it is a nod: reared it rides at 1.9 m, and 64 degrees brings it into his column.
@@ -313,13 +305,13 @@ const Petal = struct {
 /// quill is. Gaps of 34 to 64 against a mean of 51, and no gap over 64 or the open corolla comes back with a
 /// bald sector in it. The angles are the one thing `restPose` and `pose` must agree on, so they are a table.
 const PETALS = [NPETAL]Petal{
-    .{ .bone = PET0 + 0, .ang = 196, .root = 1.00, .len = 1.34, .wide = 1.16, .bias = 0, .gain = 1.10, .sweep = 13, .sag = 34, .tone = 1 },
-    .{ .bone = PET0 + 1, .ang = 96, .root = 0.94, .len = 1.04, .wide = 0.98, .bias = -3, .gain = 0.95, .sweep = 9, .sag = 21, .tone = 0 },
-    .{ .bone = PET0 + 2, .ang = 248, .root = 1.06, .len = 0.92, .wide = 0.93, .bias = 4, .gain = 1.01, .sweep = 16, .sag = 29, .tone = 1 },
-    .{ .bone = PET0 + 3, .ang = 10, .root = 0.98, .len = 1.18, .wide = 1.05, .bias = -2, .gain = 1.04, .sweep = 7, .notch = 0.34, .notchAt = 0.68, .sag = 16, .tone = 2 },
-    .{ .bone = PET0 + 4, .ang = 44, .root = 1.10, .len = 0.72, .wide = 0.82, .bias = 13, .gain = 0.84, .sweep = 11, .notch = 0.52, .notchAt = 0.44, .sag = 12, .tone = 0 },
+    .{ .bone = PET0 + 0, .ang = 196, .root = 1.00, .len = 1.34, .wide = 1.16, .bias = 0, .gain = 1.05, .sweep = 13, .sag = 34, .tone = 1 },
+    .{ .bone = PET0 + 1, .ang = 96, .root = 0.94, .len = 1.04, .wide = 0.98, .bias = -3, .gain = 0.97, .sweep = 9, .sag = 21, .tone = 0 },
+    .{ .bone = PET0 + 2, .ang = 248, .root = 1.06, .len = 0.92, .wide = 0.93, .bias = 4, .gain = 1.00, .sweep = 16, .sag = 29, .tone = 1 },
+    .{ .bone = PET0 + 3, .ang = 10, .root = 0.98, .len = 1.18, .wide = 1.05, .bias = -2, .gain = 1.02, .sweep = 7, .notch = 0.34, .notchAt = 0.68, .sag = 16, .tone = 2 },
+    .{ .bone = PET0 + 4, .ang = 44, .root = 1.10, .len = 0.72, .wide = 0.82, .bias = 13, .gain = 0.90, .sweep = 11, .notch = 0.52, .notchAt = 0.44, .sag = 12, .tone = 0 },
     .{ .bone = PET0 + 5, .ang = 306, .root = 0.90, .len = 1.10, .wide = 1.00, .bias = -5, .gain = 0.99, .sweep = -8, .sag = 25, .tone = 1 },
-    .{ .bone = PET0 + 6, .ang = 148, .root = 1.02, .len = 0.86, .wide = 0.88, .bias = 6, .gain = 0.92, .sweep = 14, .sag = 31, .tone = 2 },
+    .{ .bone = PET0 + 6, .ang = 148, .root = 1.02, .len = 0.86, .wide = 0.88, .bias = 6, .gain = 0.95, .sweep = 14, .sag = 31, .tone = 2 },
 };
 
 comptime {
@@ -338,16 +330,27 @@ comptime {
 /// `|BLOOM_RIM + len*(0.42*cos f + sin f)|` and landing that on the axis is -33 deg.
 const PETAL_SHUT: f32 = -33.0;
 /// …and at the other end. **A BIGGER NUMBER HERE MAKES A SMALLER FLOWER PAST A POINT**: that same radial peaks
-/// at `atan(1/0.42)` = 67 deg and falls away after. 95 puts the ring at 86..108 — straddling flat, so the
-/// throat faces OUT, which is what a flower spitting straight up needs.
-const PETAL_WIDE: f32 = 95.0;
+/// at `atan(1/0.42)` = 67 deg and falls away after. 80 with the gains at 0.90..1.05 folds the family 69..86 —
+/// every blade UNDER flat, so the corolla is a dish and an eye-level camera reads blade backs, not shadowed
+/// undersides; at 95 the widest hung past horizontal and the whole flower was a mop.
+const PETAL_WIDE: f32 = 80.0;
 
-/// **QUILLED, NOT BLADED.** Flat oriented boxes come back as pale cardboard — this renderer is flat-shaded and
-/// a 4 cm slab has no gradient across it. A round tapering quill has its own shading and needs no faces.
-const PETAL_LEN: f32 = 0.48 * W;
-/// **THIN, OR SEVEN OF THEM ARE ONE LUMP** — the gaps between them are what read as a bud.
+/// **A BLADE, NOT A QUILL** (owner: the flower was horrible — seven bare spokes read as a whisk from ten
+/// metres, because a flower is its corolla AREA). Flat boxes are still wrong (pale cardboard on a flat-shaded
+/// renderer), so the blade is built of ROUND parts: a midrib, four vanes a side running base to rim on the
+/// same bow, and two flattened lenses sealing the lower blade. Round sections shade; a plate does not.
+/// 0.62 against the old 0.48: the flower no longer buys its tell with a rise, so it buys it with SIZE
+/// (owner: bigger instead) — the open corolla spans past two and a half metres.
+const PETAL_LEN: f32 = 0.62 * W;
+/// The midrib's root radius — the vanes and membrane carry the width now.
 const QUILL_R: f32 = 0.021 * W;
 const PETAL_SEGS: u32 = 8;
+/// The blade's half-width at its widest, as a share of its own length. 0.26 puts a petal near 2:1, which is
+/// petal and not paddle; the seven together open to a corolla over two metres across.
+const PETAL_HALFW: f32 = 0.26;
+/// Vanes per SIDE of the midrib. Four lands the gap between neighbours under a vane's own diameter over the
+/// sealed half, so the blade is one surface there and only FRINGES past the belly.
+const VANES: u32 = 4;
 /// How far the quill bows off the axis over its length and again over the last of it — the RECURVE. Their SUM,
 /// 0.42, is the tip's own off-axis share and it is what `PETAL_SHUT` and the width peak are solved against.
 const PETAL_BOW: f32 = 0.24;
@@ -356,13 +359,13 @@ const PETAL_RECURVE: f32 = 0.18;
 /// **THE SECOND TIER, AND IT COSTS NO BONES.** Each petal bone carries a short broad TONGUE as well as its
 /// quill, pitched this many degrees further in and baked into the mesh, so one fold drives both.
 const INNER_TILT: f32 = 24.0;
-/// Solved so the tongue lands ON the axis and not through it: `|y'| = ilen*(0.30*cos f + sin f)` = `BLOOM_RIM`.
-const INNER_LEN: f32 = 0.34;
+/// Short of the axis now: at 0.34 the open tier crossed the dish and stood over the rim as black spikes.
+const INNER_LEN: f32 = 0.26;
 /// …and its half-width is ABSOLUTE metres, not a multiple of the quill's: the tongues are the seal.
 const INNER_W: f32 = 0.075 * W;
 
 /// Where the quills root, and how far forward of the receptacle. The throat's own size sets this.
-const BLOOM_RIM: f32 = 0.112 * W;
+const BLOOM_RIM: f32 = 0.126 * W;
 const CALYX_Z: f32 = 0.052 * W;
 fn ringDir(angDeg: f32) rl.Vector3 {
     const a = mathx.radians(angDeg);
@@ -429,11 +432,11 @@ const LIMB_LT = rgba(22, 20, 16, 248);
 const CALYX = rgba(19, 22, 15, 250);
 const CALYX_LT = rgba(31, 34, 22, 248);
 
-const PETAL_DK = rgba(15, 11, 16, 250);
-const PETAL = rgba(26, 16, 23, 250);
-const PETAL_LT = rgba(40, 27, 33, 248);
-const PETAL_TIP = rgba(58, 45, 48, 246);
-const PETAL_IN = rgba(30, 12, 14, 246);
+const PETAL_DK = rgba(20, 14, 20, 250);
+const PETAL = rgba(34, 22, 30, 250);
+const PETAL_LT = rgba(56, 38, 46, 248);
+const PETAL_TIP = rgba(84, 64, 66, 246);
+const PETAL_IN = rgba(54, 20, 22, 246);
 
 const THROAT_HALO = rgba(46, 20, 26, 236);
 const THROAT_LIP = rgba(120, 38, 50, 168);
@@ -621,15 +624,6 @@ pub const Deer = struct {
     /// **THE OPEN THROAT IS THE PRICE OF THE MOVE.** 1 shut, up to 1.9 wide. Damage only — see `BLOOM_FRAIL`.
     pub fn frailty(self: *const Deer) f32 {
         return 1.0 + BLOOM_FRAIL * mathx.clampF(self.openAmt(), 0, 1);
-    }
-
-    /// **HOW FAR THE FLOWER HAS RISEN OUT OF ITS BACK**, 0 furled to 1 standing. Off the volley's clock — never
-    /// off `openAmt`, or a heavy stun would raise a stalk it is meant to leave lying.
-    pub fn riseAmt(self: *const Deer) f32 {
-        if (self.state != .spit) return 0;
-        if (self.t < SPIT_WIND) return mathx.smoothstep(0, SPIT_WIND * OPEN_BY, self.t);
-        if (self.t < SPIT_WIND + SPIT_DUR) return 1.0;
-        return 1.0 - mathx.smoothstep(SPIT_WIND + SPIT_DUR, SPIT_WIND + SPIT_DUR + SPIT_REC * SHUT_BY, self.t);
     }
 
     /// The GATHER, 0..1 — the load under the charge, spent by the drive.
@@ -980,7 +974,6 @@ pub const Deer = struct {
         const wilt: f32 = if (self.state == .dead) mathx.clampF(self.t / (DEATH_DUR * 0.34), 0, 1) else 0;
         const fall: f32 = if (self.state == .dead) mathx.clampF((self.t - DEATH_DUR * 0.26) / (DEATH_DUR * 0.58), 0, 1) else 0;
 
-        const rise = self.riseAmt();
         const gather = self.gatherAmt();
         const drive = self.driveAmt();
         const sway = self.swayAt();
@@ -1018,23 +1011,24 @@ pub const Deer = struct {
         heromod.setJoint(&wx, &self.rest, ANTL, HEAD, rz(3.0 * sway));
         heromod.setJoint(&wx, &self.rest, ANTR, HEAD, rz(-3.0 * sway));
 
-        // **THE STALK RISES OUT OF THE BACK, AND IT IS A HINGE AND A TELESCOPE AT ONCE.** Furled it lies back
-        // along the loins at `FURL_DEG` with a quarter of its length pulled down inside the sheath; risen it
-        // stands and stretches. `setJoint` takes the bone length from the DISTANCE between two rest points, so
-        // the reach is a translate on top — and the bloom's collar hangs inside the bore to cover the slide.
-        const furl = FURL_DEG * (1.0 - rise);
-        const reach = (STALK_STRETCH * rise - STALK_FURL_IN * (1.0 - rise)) * W;
+        // **THE STALK HOLDS ITS STANCE; THE THROW RECOILS THROUGH IT.** One permanent posture (owner: no
+        // rise), so the only things that move the bloom's seat are breath-scale sway, the stun, the wilt —
+        // and the volley leaving, which pushes back on the stalk that threw it, the bloom taking its share
+        // LATE, because joints peaking on the same frame read as one welded block.
         const stalkOff = mathx.subV(self.rest[BLOOM], self.rest[STALK]);
-        const up = if (mathx.lenV(stalkOff) > 1e-5) mathx.normV(stalkOff) else v3(0, 1, 0);
+        const relK = SPIT_WIND + SPIT_DUR * SPIT_RELEASE_K;
+        const spitting = self.state == .spit;
+        const recoil: f32 = if (spitting) 5.0 * mathx.pulse(self.t, relK, relK + 0.06, relK + 0.12, relK + 0.34) else 0;
+        const recoilB: f32 = if (spitting) 4.0 * mathx.pulse(self.t, relK + 0.05, relK + 0.12, relK + 0.18, relK + 0.44) else 0;
         heromod.setJoint(&wx, &self.rest, STALK, CHEST, mul3(
-            rx(-furl - 6.0 * rise + 14.0 * react + 110.0 * wilt),
+            rx(-STANCE_FURL - recoil + 14.0 * react + 110.0 * wilt),
             ry(SWAY_DEG * 1.4 * sway),
             rz(SWAY_DEG * 0.9 * sway),
         ));
         wx[BLOOM] = mul(
             mul(
-                mul3(rx(-8.0 * rise + 18.0 * react - 26.0 * wilt), ry(0), rz(SWAY_DEG * 0.6 * sway)),
-                tr(stalkOff.x + up.x * reach, stalkOff.y + up.y * reach, stalkOff.z + up.z * reach),
+                mul3(rx(-8.0 - 0.7 * recoilB + 18.0 * react - 26.0 * wilt), ry(0), rz(SWAY_DEG * 0.6 * sway)),
+                tr(stalkOff.x, stalkOff.y, stalkOff.z),
             ),
             wx[STALK],
         );
@@ -1043,7 +1037,7 @@ pub const Deer = struct {
         const shiver = SHIVER_DEG * react * mathx.sinf(self.elapsed * SHIVER_HZ * std.math.tau);
         const flutter = 1.3 * sway;
         for (PETALS) |q| {
-            const fold = foldOf(q, open) + q.sag * wilt + shiver * q.gain + flutter * (0.4 + 0.6 * mathx.clampF(open, 0, 1));
+            const fold = foldOf(q, open) + q.sag * wilt + shiver * q.gain + flutter * (0.4 + 0.6 * mathx.clampF(open, 0, 1)) + recoilB * 0.6 * q.gain;
             heromod.setJoint(&wx, &self.rest, q.bone, BLOOM, mul(rx(-fold), rz(q.ang + shiver * 0.3)));
         }
 
@@ -1587,12 +1581,11 @@ fn buildStalk(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
 
 fn buildBloom(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
     const dn = mathx.normV(mathx.subV(rest[STALK], rest[BLOOM]));
-    // **DOWN THE STALK'S BORE BY THE WHOLE TRAVEL PLUS A HAND.** The furl pulls the bloom 0.26 W INTO the
-    // sheath and the rise pushes it 0.16 W out, so the collar has to be longer than their sum or one end of the
-    // move shows daylight between flower and stem.
+    // The collar sleeves a hand's length down the bore — the seat never travels now, so this is a joint
+    // cover, not a telescope sheath.
     b.setMat(.bark);
     b.addCapsule(
-        mathx.scaleV(dn, (STALK_FURL_IN + STALK_STRETCH + 0.09) * W),
+        mathx.scaleV(dn, 0.14 * W),
         mathx.scaleV(dn, 0.012 * W),
         0.054 * W,
         0.064 * W,
@@ -1605,13 +1598,33 @@ fn buildBloom(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
     // Small and set BACK: standing in the middle of the open corolla it reads as a hole punched through the
     // flower. It is a knuckle behind the light, not part of the light.
     b.addBlob(v3(0, 0, -0.044 * W), v3(0.084 * W, 0.082 * W, 0.056 * W), 6, 10, CALYX_LT);
-    // FIVE SEPALS clasping from behind, each a three-link chain that leaves on its axis, reaches an elbow and
-    // DROOPS. One is broken short, which is the only thing that says this flower has been open before.
-    const SEP = [5]f32{ 1.00, 0.82, 1.16, 0.38, 0.92 };
+    // **THE RECEPTACLE.** The blades used to root on a bare knob with daylight between them — a backing disc
+    // out past the petal ring, and seven scales seated in the ring's own gaps, so the corolla grows out of a
+    // cup and the shut bud has a floor under it.
+    b.addBlob(v3(0, 0, -0.006 * W), v3(0.168 * W, 0.166 * W, 0.042 * W), 5, 12, CALYX);
+    var sc: u32 = 0;
+    while (sc < NPETAL) : (sc += 1) {
+        const sang = PETALS[sc].ang + 25.7;
+        const d2 = ringDir(sang);
+        const rr2 = BLOOM_RIM * 1.18;
+        const srad = 0.052 * W * rng.range(0.80, 1.22);
+        b.addBlob(
+            v3(d2.x * rr2, d2.y * rr2, 0.014 * W + rng.range(-0.008, 0.008) * W),
+            v3(srad, srad * 0.92, 0.027 * W),
+            4,
+            8,
+            if (rng.float() < 0.35) CALYX_LT else CALYX,
+        );
+    }
+    // SEVEN SEPALS clasping from behind, each a three-link chain that leaves on its axis, reaches an elbow and
+    // DROOPS. One is broken short, which is the only thing that says this flower has been open before. Seven
+    // and longer than they were: head-on the player sees the flower's BACK, and five short ones left the
+    // receptacle a bare dark disc.
+    const SEP = [7]f32{ 1.00, 0.82, 1.16, 0.38, 0.92, 1.08, 0.70 };
     for (SEP, 0..) |share, k| {
-        const a = std.math.tau * (@as(f32, @floatFromInt(k)) + rng.range(-0.20, 0.20)) / 5.0;
+        const a = std.math.tau * (@as(f32, @floatFromInt(k)) + rng.range(-0.20, 0.20)) / 7.0;
         const d = ringDir(mathx.degrees(a));
-        const l = 0.062 * W * share;
+        const l = 0.095 * W * share;
         var pt = v3(d.x * 0.078 * W, d.y * 0.078 * W, 0.006 * W);
         const col = if (k & 1 == 0) CALYX_LT else CALYX;
         var seg: u32 = 0;
@@ -1644,8 +1657,8 @@ fn buildBloom(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
     while (k < 9) : (k += 1) {
         const a = std.math.tau * (@as(f32, @floatFromInt(k)) + rng.range(-0.26, 0.26)) / 9.0;
         const d = ringDir(mathx.degrees(a));
-        const rr = 0.100 * W;
-        const l = 0.054 * W * rng.range(0.62, 1.36);
+        const rr = 0.112 * W;
+        const l = 0.060 * W * rng.range(0.62, 1.36);
         const bend = v3(d.x * rr * 0.52, d.y * rr * 0.52, 0.006 * W + l * 0.60);
         b.addCapsule(v3(d.x * rr, d.y * rr, 0.000 * W), bend, 0.019 * W * rng.range(0.85, 1.15), 0.009 * W, 6, FANG);
         b.addCapsule(bend, v3(d.x * rr * 0.20, d.y * rr * 0.20, 0.006 * W + l), 0.009 * W, 0.0035 * W, 5, TOOTH);
@@ -1672,41 +1685,109 @@ fn petalTone(t: u8) rl.Color {
     };
 }
 
-/// **A QUILL AND A TONGUE, ON ONE BONE.** The outer quill is the silhouette — round in section, tapering,
-/// bowing out and recurving at the tip. The tongue is the second tier: short, broad, flattened, and pitched
-/// `INNER_TILT` further in by a rotation baked into its SPINE rather than into the rig, so one fold drives both.
+/// The blade's own half-width at `u` along the midrib — narrow at the claw, widest past the middle, shut at
+/// the tip. What the vanes and the membrane are both measured against.
+fn bladeHalfW(u: f32, maxW: f32) f32 {
+    const uc = mathx.clampF(u, 0, 1);
+    return maxW * std.math.pow(f32, mathx.sinf(std.math.pi * (0.06 + 0.94 * uc)), 1.1);
+}
+
+/// Where a vane runs: the midrib's swept spine, offset across the blade by its own share of the envelope,
+/// CUPPED toward the throat side — the edges rise off the midrib's plane, which is what makes a dish of it.
+fn vaneAt(len: f32, u: f32, sweepDeg: f32, side: f32, share: f32, maxW: f32) rl.Vector3 {
+    const p = sweptAt(len, u, sweepDeg);
+    const w = bladeHalfW(u, maxW) * share;
+    // Shallow, and the lenses rise to meet it — at 0.06 the outer vanes arched 5 cm off the membrane and the
+    // blade read as a NET from underneath.
+    const cup = 0.028 * len * share * share * mathx.sinf(std.math.pi * mathx.clampF(u, 0, 1));
+    return v3(p.x + side * w, p.y, p.z + cup);
+}
+
+/// **A BLADE AND A TONGUE, ON ONE BONE.** The midrib carries the fold; four vanes a side lie on the same bow
+/// and land on `bladeHalfW`, two membrane lenses seal the lower blade into one surface, and the fringe is the
+/// outer half's alone. The tongue is the second tier: a small inner blade pitched `INNER_TILT` further in by a
+/// rotation baked into its spine rather than into the rig, so one fold drives both.
 fn buildPetal(b: *Builder, rng: *mathx.Rng, q: Petal) void {
     const len = PETAL_LEN * q.len;
+    const maxW = PETAL_HALFW * len * q.wide;
+    const tone = petalTone(q.tone);
     b.setMat(.plant);
 
-    // THE QUILL. One tone up its whole length; only the last link is bleached.
-    const tone = petalTone(q.tone);
+    // THE MIDRIB — dark only at the claw, the blade's own tone up the run, bleached at the last link. A dark
+    // stripe the whole length read as one more strand on every petal.
     var at = sweptAt(len, 0, q.sweep);
     var j: u32 = 1;
     while (j <= PETAL_SEGS) : (j += 1) {
         const u = @as(f32, @floatFromInt(j)) / @as(f32, @floatFromInt(PETAL_SEGS));
         const to = sweptAt(len, u, q.sweep);
-        const last = j == PETAL_SEGS;
-        b.addCapsule(at, to, quillAt(u - 1.0 / @as(f32, @floatFromInt(PETAL_SEGS)), q), quillAt(u, q), 6, if (last) PETAL_TIP else tone);
+        const col = if (j == PETAL_SEGS) PETAL_TIP else if (u < 0.32) PETAL_DK else tone;
+        b.addCapsule(at, to, quillAt(u - 1.0 / @as(f32, @floatFromInt(PETAL_SEGS)), q), quillAt(u, q), 6, col);
         at = to;
     }
     // …and a blunt swelling at the tip, because nothing ends in a point.
     b.addBlob(at, v3(QUILL_R * 0.9, QUILL_R * 0.9, QUILL_R * 0.9), 4, 6, PETAL_TIP);
 
-    // THE TONGUE, pitched further in and flattened across.
-    const tilt = mathx.radians(INNER_TILT);
-    const ilen = len * INNER_LEN;
-    var s: u32 = 0;
-    while (s < 5) : (s += 1) {
-        const ua = @as(f32, @floatFromInt(s)) / 5.0;
-        const ub = @as(f32, @floatFromInt(s + 1)) / 5.0;
-        const pa = v3(0, ilen * ua * mathx.cosf(tilt), ilen * ua * mathx.sinf(tilt));
-        const pb = v3(0, ilen * ub * mathx.cosf(tilt), ilen * ub * mathx.sinf(tilt));
-        const wa = INNER_W * q.wide * (0.55 + 0.45 * mathx.sinf(ua * std.math.pi));
-        const wb = INNER_W * q.wide * (0.55 + 0.45 * mathx.sinf(ub * std.math.pi));
-        b.addCapsule(pa, pb, wa * 0.42, wb * 0.42, 5, PETAL_IN);
+    // THE VANES. Outer ones end sooner, so the outline rounds; every end is jittered, so the rim frays —
+    // the wabi-sabi is BETWEEN the eight, and the tear the table asks for is one vane cut short.
+    for ([_]f32{ 1.0, -1.0 }) |side| {
+        var k: u32 = 0;
+        while (k < VANES) : (k += 1) {
+            const share = (@as(f32, @floatFromInt(k)) + 0.7) / @as(f32, @floatFromInt(VANES));
+            var uEnd = 0.90 - 0.26 * share * share + rng.range(-0.03, 0.02);
+            if (q.notch > 0 and side > 0 and k == 1) uEnd = q.notchAt - q.notch * 0.35;
+            const r0 = (0.016 - 0.005 * share) * W;
+            const uMid = lerpF(0.07, uEnd, 0.55);
+            const pBase = vaneAt(len, 0.07, q.sweep, side, share, maxW);
+            const pMid = vaneAt(len, uMid, q.sweep, side, share, maxW);
+            const pEnd = vaneAt(len, uEnd, q.sweep, side, share, maxW);
+            b.addCapsule(pBase, pMid, r0, r0 * 0.78, 5, tone);
+            b.addCapsule(pMid, pEnd, r0 * 0.78, 0.005 * W, 5, tone);
+            // A fray bead on the outer pair only — beads on every strand read as wet hair.
+            if (share > 0.5) b.addBlob(pEnd, v3(0.006 * W, 0.006 * W, 0.006 * W), 3, 5, tone);
+        }
     }
-    _ = rng;
+
+    // THE MEMBRANE — three lenses shingled to past the belly, so the blade is one SURFACE for most of its
+    // run and only the last third is ribs and fringe. Two left the outer two-thirds loose strands, and seven
+    // stranded blades read as a mop and not a corolla.
+    const m1 = sweptAt(len, 0.14, q.sweep);
+    const m2 = sweptAt(len, 0.33, q.sweep);
+    const m3 = sweptAt(len, 0.53, q.sweep);
+    const m4 = sweptAt(len, 0.70, q.sweep);
+    // Deep shingle: an ellipsoid is paper at its own ends, so neighbours overlap by most of a half-length or
+    // the seams read as gaps and the blade as a stack of hoops from its side.
+    b.addBlob(v3(m1.x, m1.y, m1.z + 0.006 * W), v3(bladeHalfW(0.14, maxW) * 0.96, 0.160 * len, 0.014 * W), 4, 9, tone);
+    b.addBlob(v3(m2.x, m2.y, m2.z + 0.012 * W), v3(bladeHalfW(0.33, maxW) * 0.98, 0.165 * len, 0.013 * W), 4, 9, tone);
+    b.addBlob(v3(m3.x, m3.y, m3.z + 0.017 * W), v3(bladeHalfW(0.53, maxW) * 0.97, 0.160 * len, 0.012 * W), 4, 9, tone);
+    b.addBlob(v3(m4.x, m4.y, m4.z + 0.019 * W), v3(bladeHalfW(0.70, maxW) * 0.94, 0.150 * len, 0.011 * W), 4, 9, tone);
+
+    // THE TONGUE — a small blade of its own, in the throat's flesh tone, pitched further in.
+    const tilt = mathx.radians(INNER_TILT + q.bias * 0.4);
+    const idir = v3(0, mathx.cosf(tilt), mathx.sinf(tilt));
+    const ilen = len * INNER_LEN;
+    const iw = INNER_W * q.wide;
+    for ([_]struct { x: f32, l: f32, r: f32 }{
+        .{ .x = 0.0, .l = 1.0, .r = 0.012 },
+        .{ .x = 0.52, .l = 0.76, .r = 0.009 },
+        .{ .x = -0.52, .l = 0.74, .r = 0.009 },
+    }) |vn| {
+        const lx = vn.x * iw;
+        b.addCapsule(
+            v3(lx * 0.35, 0.02 * ilen * vn.l, 0.01 * ilen),
+            v3(lx, idir.y * ilen * vn.l, idir.z * ilen * vn.l),
+            vn.r * W,
+            0.005 * W,
+            5,
+            PETAL_IN,
+        );
+    }
+    b.addBlob(
+        v3(0, idir.y * ilen * 0.30, idir.z * ilen * 0.30 + 0.004 * W),
+        v3(iw * 0.62, ilen * 0.22, 0.011 * W),
+        4,
+        8,
+        PETAL_IN,
+    );
 }
 
 fn sweptAt(len: f32, u: f32, sweepDeg: f32) rl.Vector3 {
@@ -1822,47 +1903,37 @@ fn buildHoof(b: *Builder, rng: *mathx.Rng) void {
     b.addCapsule(v3(-0.022 * W, 0.008 * W, -0.024 * W), v3(-0.027 * W, -0.016 * W, -0.036 * W), 0.008 * W, 0.004 * W, 4, LIMB);
 }
 
-test "THE FLOWER RISES OUT OF ITS BACK, AND ONLY FOR THE VOLLEY" {
-    // **THE RISE IS THE WHOLE TELL** (owner: a large flower that rises out of its back). Measured off the
-    // posed bloom, in metres, at every state a player can catch it in — a stalk that stood up for a stagger
-    // or a charge would be a tell that means nothing.
+test "THE FLOWER OPENS FOR THE VOLLEY AND NEVER MOVES HOUSE — the tell is the corolla, not a rise" {
+    // (owner: no stalk rise — open/close on the spore, and bigger instead.) The bloom stands over a man for
+    // the animal's whole life, and the volley may move its seat by recoil and breath only, never by a stage.
     var d = Deer.spawn(mathx.zero3, 0, 1.0, 0.30);
     d.pose();
-    const furled = rl.math.vector3Transform(mathx.zero3, d.xf[BLOOM]).y;
+    const atRest = rl.math.vector3Transform(mathx.zero3, d.xf[BLOOM]);
     d.stageGather(1.0);
-    const risen = rl.math.vector3Transform(mathx.zero3, d.xf[BLOOM]).y;
-    // **AND IT MUST STAND OVER ITS OWN BACK, NOT OVER THE ANIMAL'S HEAD.** The lean is where a rest chain
-    // authored in one frame and a rotation applied in another can quietly disagree, and a photograph cannot
-    // settle it: measured against the WITHERS, the flower has to end up BEHIND them at both ends of the rise.
-    var up = Deer.spawn(mathx.zero3, 0, 1.0, 0.30);
-    up.stageGather(1.0);
-    const withers = rl.math.vector3Transform(mathx.zero3, up.xf[CHEST]).z;
-    const bloomZ = rl.math.vector3Transform(mathx.zero3, up.xf[BLOOM]).z;
-    var down = Deer.spawn(mathx.zero3, 0, 1.0, 0.30);
-    down.pose();
-    const furledZ = rl.math.vector3Transform(mathx.zero3, down.xf[BLOOM]).z;
-    std.debug.print("\n  deer: the bloom rides {d:.2} m furled and stands to {d:.2} m — {d:.2} m of rise on a {d:.2} m animal\n", .{ furled, risen, risen - furled, W });
-    std.debug.print("    fore-aft: withers at {d:.2} m, the flower at {d:.2} m risen and {d:.2} m furled — {d:.2} m and {d:.2} m BEHIND the shoulder\n", .{ withers, bloomZ, furledZ, withers - bloomZ, withers - furledZ });
-    try std.testing.expect(bloomZ < withers and furledZ < withers);
-    try std.testing.expect(risen > furled + 0.35);
-    // …and it clears the top of a man, which is what makes a volley come from over his head.
-    try std.testing.expect(risen > heromod.H);
+    const atSpit = rl.math.vector3Transform(mathx.zero3, d.xf[BLOOM]);
+    std.debug.print("\n  deer: the bloom stands {d:.2} m at rest and {d:.2} m at the volley on a {d:.2} m animal\n", .{ atRest.y, atSpit.y, W });
+    try std.testing.expect(@abs(atSpit.y - atRest.y) < 0.12);
+    // …and it clears the top of a man AT ALL TIMES, which is what makes a volley come from over his head.
+    try std.testing.expect(atRest.y > heromod.H);
+    // **AND IT STANDS OVER ITS OWN BACK, NOT OVER THE ANIMAL'S HEAD** — measured against the WITHERS.
+    const withers = rl.math.vector3Transform(mathx.zero3, d.xf[CHEST]).z;
+    std.debug.print("    fore-aft: withers at {d:.2} m, the flower at {d:.2} m — {d:.2} m BEHIND the shoulder\n", .{ withers, atSpit.z, withers - atSpit.z });
+    try std.testing.expect(atSpit.z < withers and atRest.z < withers);
 
-    // Furled everywhere else, on its own clock and nothing else's.
+    // Shut everywhere but the volley, on its own clock and nothing else's — and WIDE at the throw.
     for ([_]State{ .idle, .move, .flee, .butt }) |st| {
         var k = Deer.spawn(mathx.zero3, 0, 1.0, 0.30);
         k.state = st;
         k.t = 0.4;
-        try std.testing.expectApproxEqAbs(@as(f32, 0), k.riseAmt(), 1e-6);
         try std.testing.expectApproxEqAbs(@as(f32, 0), k.openAmt(), 1e-6);
     }
-    // A HEAVY stun blows the bud open and a light one does not — the window is worth aiming for or it is not
-    // a window — but neither one raises the stalk.
+    try std.testing.expect(d.openAmt() > 0.9);
+    // A HEAVY stun blows the bud open and a light one does not — the window is worth aiming for or it is
+    // not a window.
     var hurt = Deer.spawn(mathx.zero3, 0, 1.0, 0.30);
     hurt.stagger(true);
     hurt.t = combat.foeStunDur(true) * 0.4;
     try std.testing.expect(hurt.openAmt() > 0.5);
-    try std.testing.expectApproxEqAbs(@as(f32, 0), hurt.riseAmt(), 1e-6);
     hurt.stagger(false);
     hurt.t = combat.foeStunDur(false) * 0.4;
     try std.testing.expectApproxEqAbs(@as(f32, 0), hurt.openAmt(), 1e-6);

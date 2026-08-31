@@ -141,6 +141,47 @@ pub fn homeOf(k: wf.FoeKind) props.Biome {
     };
 }
 
+/// **WHICH CREATURES ARE A FIGHT OF THEIR OWN** — an exhaustive switch for `homeOf`'s reason: a creature
+/// cannot be added unfiled, and the next boss arrives with a bar and no gate that will offer it. `game`'s
+/// `BOSS_RAILS` is the other half of this — a boss owes that list a rail and this one a `true` — and a comptime
+/// block there pins the two, so the set that gets a bar and the set a fog gate can be sealed on are one set.
+///
+/// **THE ONLY CONSUMER THAT NEEDS IT BY NAME IS THE EDITOR.** A gate's `boss=` names what the ward waits on
+/// (`worldfmt.Op.boss`, `game.solveArenaSeals`), and offering all thirty-eight kinds there is a list nobody
+/// scrolls and a seal nobody meant: a ward held on a broodling is a door that opens when a broodling dies.
+pub fn isBoss(k: wf.FoeKind) bool {
+    return switch (k) {
+        .bone_knight => true,
+        // A duo is TWO bosses and two bars, because they die separately (`game.BOSS_RAILS`).
+        .fungal_swordsman, .fungal_magus => true,
+        .toad, .archer, .ogre, .berserker, .priest, .slinger => false,
+        .brood_mother, .broodling, .brood_sac => false,
+        .shieldman, .greatsword, .shade, .mourner => false,
+        .leechfly, .rooted, .shroom, .delver, .necromancer => false,
+        .fungal_deer, .mushroom_mage, .fen_lurker, .spore_golem => false,
+        .bone_skitterer, .ancient_priest, .tolling_hollow => false,
+        .slumber_bloom, .cinder_wake, .rotgorger, .birchwight, .salt_husk => false,
+        .fish_spearman, .fish_netter, .fish_shaman, .blinkbat => false,
+    };
+}
+
+test "A BOSS IS FILED, AND THE SET IS SMALL ENOUGH TO BE A LIST" {
+    var n: usize = 0;
+    const total = @typeInfo(wf.FoeKind).@"enum".fields.len;
+    std.debug.print("\n  bosses:", .{});
+    for (0..total) |i| {
+        const k: wf.FoeKind = @enumFromInt(i);
+        if (!isBoss(k)) continue;
+        n += 1;
+        std.debug.print(" {s}", .{wf.foeName(k)});
+    }
+    std.debug.print("  ({d} of {d} kinds)\n", .{ n, total });
+    // A gate offers this list unscrolled, which is what taking it off all thirty-eight bought.
+    try std.testing.expect(n >= 1 and n <= 12);
+    try std.testing.expect(isBoss(.bone_knight) and isBoss(.fungal_magus));
+    try std.testing.expect(!isBoss(.broodling));
+}
+
 /// Everything that reads right in `b`, plus everything that reads right anywhere — `props.inBiome`'s rule, for
 /// the creatures.
 pub fn atHome(k: wf.FoeKind, b: props.Biome) bool {

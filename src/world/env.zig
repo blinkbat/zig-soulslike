@@ -3619,6 +3619,7 @@ test "EVERY SHIPPED MAP LOADS AND MATERIALIZES, not just the one the game starts
         };
         e.* = .{ .ground = undefined, .models = undefined };
         e.materialize(m);
+        if (e.propCount() == 0) std.debug.print("{s} materialized ZERO props\n", .{path});
         try std.testing.expect(e.propCount() > 0);
         seen += 1;
     }

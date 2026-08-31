@@ -369,8 +369,7 @@ pub fn quenchMesh(shader: rl.Shader) rl.Model {
 // ── THE TOOL RACK ─────────────────────────────────────────────────────────────────────────────────────────
 
 pub const RACK_TOP: f32 = 1.72;
-pub const RACK_R: f32 = 0.90;
-const RACK_HW: f32 = 0.62;
+pub const RACK_HW: f32 = 0.62;
 
 pub fn toolRackMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();

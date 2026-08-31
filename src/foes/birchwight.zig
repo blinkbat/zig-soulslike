@@ -560,8 +560,9 @@ pub const Wight = struct {
         const pel = heromod.pelvisChannels(self.phase, m, self.fwdB, self.latB, A_PROT);
         const bough = self.boughAmt();
 
-        // A standing tree does not hunch. It LEANS, slowly, and the lean is most of the idle.
-        const creak = SWAY * mathx.sinf(self.elapsed * 0.42 + self.seed * 6.28) * (1.0 - m);
+        // A standing tree does not hunch. It LEANS, slowly, and the lean is most of the idle — on `gutter`'s
+        // three incommensurate rates, because one sine is a metronome and a stand of them falls into step.
+        const creak = SWAY * mathx.gutter(self.elapsed * 0.42 + self.seed * 6.28, self.seed * 4.3) * (1.0 - m);
         const bodyPitch = 20.0 * mathx.maxF(0, bough) - 12.0 * mathx.maxF(0, -bough) - 18.0 * stun + 74.0 * dk;
         const leanX = PELVIS_SHARE * bodyPitch;
         const waist = (1.0 - PELVIS_SHARE) * bodyPitch;
@@ -597,16 +598,20 @@ pub const Wight = struct {
         setLocal(wx, CROWN, rest, mul3(rx(-12.0 * bough + 10.0 * dk - 20.0 * stun), ry(-0.3 * prot), rz(lean + creak)));
 
         // **BOTH BOUGHS COME OVERHEAD AND COME DOWN TOGETHER** — the tell is the whole tree rearing back, and
-        // at this stature it is readable from further out than the swing can reach.
+        // at this stature it is readable from further out than the swing can reach. Together is not WELDED:
+        // each side carries its own few percent of the haul, and the elbows ride |bough|^1.5 so they peak
+        // after the shoulders — mass flows root to tip even on a double slam.
         const armStun = -34.0 * stun;
         const swing = -7.0 * heromod.armSwing(self.phase) * m * @abs(self.fwdB);
         const haul = -128.0 * mathx.maxF(0, -bough);
         const drive = 84.0 * mathx.maxF(0, bough);
+        const boughLate = std.math.pow(f32, @abs(bough), 1.5);
         inline for (.{ SHL, SHR }, .{ ELL, ELR }, .{ WRL, WRR }, .{ 1.0, -1.0 }) |sh, el, wr, side| {
             const s = if (side > 0) swing else -swing;
-            setLocal(wx, sh, rest, mul3(rx(-(10.0 + s) + haul - drive + armStun - 14.0 * dk), ry(0), rz(side * (18.0 + 6.0 * @abs(lean)))));
-            setLocal(wx, el, rest, rx(-(14.0 + 16.0 * @abs(bough))));
-            setLocal(wx, wr, rest, rz(side * 4.0));
+            const gain: f32 = if (side > 0) 0.94 else 1.06;
+            setLocal(wx, sh, rest, mul3(rx(-(10.0 + s) + (haul - drive) * gain + armStun - 14.0 * dk), ry(0), rz(side * (18.0 + 6.0 * @abs(lean)))));
+            setLocal(wx, el, rest, rx(-(14.0 + 16.0 * boughLate * (if (side > 0) @as(f32, 0.9) else @as(f32, 1.12)))));
+            setLocal(wx, wr, rest, rz(side * 4.0 + 3.0 * creak));
         }
     }
 };

@@ -271,7 +271,11 @@ const interactTips = [_][:0]const u8{
     "Click to place. Right-click > Items... to fill",
     "Sweep to erase",
 };
-const unitTips = [_][:0]const u8{
+/// **THE CAPTIONS, IN THREE PIECES AND ASSEMBLED LIKE THE NAMES.** As one flat table of 41 it was pinned by
+/// LENGTH only, so a creature APPENDED to `wf.FoeKind` slid every one of the folk's captions onto the wrong
+/// body — the count assert still passed and a wrong caption fails no test. Each half is now the length of its
+/// own enum, and the eraser's is the eraser's.
+const foeTips = [NFOE_KIND][:0]const u8{
     "",
     "",
     "",
@@ -309,10 +313,19 @@ const unitTips = [_][:0]const u8{
     "Blinks onto your flank, one bite, gone. A bite that LANDS heals it — block it, or stagger the drink off it",
     "Half of the DUO. Fast, lunges to close, poisoned longsword, and he jumps back to come at you again",
     "The other half. Keeps its distance, sprouts BUNCHES that swell and burst, throws chaos orbs, and DISSOLVES when pressed",
+};
+const npcTips = [NNPC_KIND][:0]const u8{
     "Talks. Roams its own leash, carries a staff. Give it a `dlg=` in the file to say anything",
     "Talks. Camel-humanoid trader; the caravan props are its own family",
     "Talks. A tree, and a smith: hulking, bowed, hammering. Stand him at an Anvil and the forge props are his",
-    "Sweep to erase ([ ] sets radius)",
+};
+const ERASE_UNIT_TIP: [:0]const u8 = "Sweep to erase ([ ] sets radius)";
+const unitTips = blk: {
+    var out: [NFOE_KIND + NNPC_KIND + 1][:0]const u8 = undefined;
+    for (foeTips, 0..) |t, i| out[i] = t;
+    for (npcTips, 0..) |t, i| out[NFOE_KIND + i] = t;
+    out[NFOE_KIND + NNPC_KIND] = ERASE_UNIT_TIP;
+    break :blk out;
 };
 
 fn layerIcon(l: Layer) ui.Icon {
@@ -472,7 +485,9 @@ comptime {
         std.debug.assert(liquidOf(@enumFromInt(GROUND_SOIL_0 + wf.Soil.N - 1 + i)).? == @as(wf.Liquid, @enumFromInt(i)));
     }
     for (0..wf.Soil.N - 1) |i| {
-        std.debug.assert(std.mem.eql(u8, groundBrushes[GROUND_SOIL_0 + i], @tagName(@as(wf.Soil, @enumFromInt(i + 1)))));
+        const b: GroundBrush = @enumFromInt(GROUND_SOIL_0 + i);
+        std.debug.assert(soilOf(b).? == @as(wf.Soil, @enumFromInt(i + 1)));
+        std.debug.assert(std.mem.eql(u8, groundBrushes[GROUND_SOIL_0 + i], @tagName(soilOf(b).?)));
     }
     // `GROUND_SOIL_0` IS `wf.Sculpt`'s length, so the sculpt half needs no count assert of its own. The NAMES
     // are not tag-for-tag there (`Flat` is `wf.Sculpt.flatten`), which is why only the soils are pinned by tag above.
@@ -488,6 +503,16 @@ comptime {
 }
 
 pub const GroundBrush = enum { raise, lower, smooth, flat, dirt, turf, stone, silt, ash, moss, bone, cinder, spore, bloom, water, oil, fungal, lava, erase };
+
+/// **THE SOIL ROWS, AND `null` FOR EVERY OTHER BRUSH.** `liquidOf`'s twin, and for its reason: the ordinal is
+/// `i - GROUND_SOIL_0 + 1` — the `+ 1` is `wf.Soil.none`, which has no row — and that arithmetic was written out
+/// at the paint arm, at the swatch and in the comptime assert. Three copies of the seam the brush list is
+/// LAID OUT to show is exactly one too many for a list that gets appended to.
+fn soilOf(b: GroundBrush) ?wf.Soil {
+    const i = @intFromEnum(b);
+    if (i < GROUND_SOIL_0 or i >= GROUND_SOIL_0 + wf.Soil.N - 1) return null;
+    return @enumFromInt(i - GROUND_SOIL_0 + 1);
+}
 
 /// **THE FOUR LIQUID ROWS, AND `null` FOR EVERY OTHER BRUSH.** One place the brush list and `wf.Liquid` are tied
 /// together, so the panel, the paint arm and the readout cannot disagree about which rows are wet.
@@ -628,6 +653,28 @@ fn layerHasGroup(l: Layer, g: props.Group) bool {
     return layerGroups[@intFromEnum(l)][@intFromEnum(g)];
 }
 
+/// **THE SHELVES THE ZONE MIX IS FILED ON** — every `props.Group` that holds a flora kind, in the enum's own
+/// order, taken off `layerGroups` so it is the SAME set the decor palette's chips narrow on. Laid out as a grid
+/// rather than a wrapping chip row: the modal's height has to be known before `beginModal` opens it, and a grid
+/// gives the row count as arithmetic instead of a measuring pass.
+const MIX_COLS: i32 = 3;
+const MIX_GROUPS = blk: {
+    var n = 0;
+    for (0..props.Group.N) |g| {
+        if (layerHasGroup(.decor, @enumFromInt(g))) n += 1;
+    }
+    var out: [n]props.Group = undefined;
+    var w = 0;
+    for (0..props.Group.N) |g| {
+        if (!layerHasGroup(.decor, @enumFromInt(g))) continue;
+        out[w] = @enumFromInt(g);
+        w += 1;
+    }
+    break :blk out;
+};
+const MIX_TAB_ROWS: i32 = (@as(i32, @intCast(MIX_GROUPS.len)) + MIX_COLS - 1) / MIX_COLS;
+const FIRST_MIX_GROUP: props.Group = MIX_GROUPS[0];
+
 fn layerOf(o: *const wf.Op) Layer {
     return switch (o.op) {
         .ivy => .props,
@@ -653,11 +700,17 @@ const JUKE_LIST_H: i32 = JUKE_H - 150;
 /// The bench column between the list and the rack, MEASURED off the modal rather than picked: the rack is pinned to the right edge, so this is whatever is left after both gutters.
 const JUKE_COL_W: i32 = JUKE_W - JUKE_LIST_W - RACK_W - 80;
 
+/// The width the three LIST modals (loot, seal, zone mix) are laid out at. It was the literal `470` in four
+/// places, one of them the loot tabs' own column arithmetic — so widening the box left the tabs where they were.
+const LIST_W: i32 = 470;
+
 const DLG_PAD: i32 = 24;
 const DLG_BTN_H: i32 = 28;
 const DLG_FOOT: i32 = 44;
 const TAB_H: i32 = 26;
 const LOOT_ROW_H: i32 = 26;
+/// Where a list modal's TAB ROW starts, under the header line each of them prints at `box.y + 58`. As
+/// `LOOT_TOP - TAB_H` the tabs were laid at exactly 58 and the header read through them.
 const LOOT_TOP: i32 = 84;
 
 pub const Pending = enum { none, new, open, leave };
@@ -678,14 +731,6 @@ const Rect = struct {
 /// whatever is there — which is what the trigger rows did to their own kind buttons.
 const STEP_MIN_W: i32 = 112;
 
-/// **THE NEXT ONE ROUND.** Six rows in the script modal cycled an enum by hand — cond kind, act kind, the
-/// comparison, the creature, the set-op and the count-op — each spelling out the same modulo over
-/// `@typeInfo(...).fields.len`, which is exactly the arithmetic that goes stale when a variant is appended.
-fn cycleEnum(comptime T: type, v: T) T {
-    const n = @typeInfo(T).@"enum".fields.len;
-    return @enumFromInt((@intFromEnum(v) + 1) % n);
-}
-
 /// **THE FOG GATE STANDING IN THIS ROOM'S WALL**, asked in one place. It walks the whole op list and the panel
 /// asks it once a frame, which is the shape AGENTS.md calls out as the editor's own freeze (`drawMinimap`).
 /// MEASURED before reaching for a fix: **22.8 us over `01_fallen_plain`'s 16,637 ops, 0.14% of a 16.7 ms
@@ -702,13 +747,24 @@ fn gateOnWall(m: *const wf.Map, a: *const wf.Arena) ?*const wf.Op {
     return null;
 }
 
+/// **EVERY TEXT FIELD'S CLAIM ON THE KEYBOARD, IN ONE PLACE** (`ui.textField`). One tag of its own so a field
+/// can never collide with a dropdown's id, and one row per field rather than a pointer, because these are
+/// singletons: there is one arena name field on screen, not one per room.
+const KB_TAG: u8 = 20;
+const KB_ARENA_NAME = ui.ddId(KB_TAG, 1, 0);
+const KB_LOC_NAME = ui.ddId(KB_TAG, 2, 0);
+const KB_ZONE_NAME = ui.ddId(KB_TAG, 3, 0);
+const KB_TRIG_ID = ui.ddId(KB_TAG, 4, 0);
+const KB_FILE_NAME = ui.ddId(KB_TAG, 5, 0);
+
 /// **ONE NAME FIELD.** The zone's, the location's, the room's and the trigger's were four copies of: draw the
 /// field, turn spaces and `#` into `_`, compare with what is stored, bank and write. Returns the typed name
-/// when it differs from `cur`, and null when nothing changed.
-fn nameField(ed: *Editor, ctx: *ui.Ctx, x: i32, y: i32, w: i32, buf: []u8, len: *usize, cur: []const u8, tip: [:0]const u8) ?[]const u8 {
-    const focused = ed.modal == .none or ed.modal == .script;
-    ed.textFocus = focused;
-    ui.textField(ctx, ui.rect(x, y, w, 26), buf, len, focused, tip);
+/// when it differs from `cur`, and null when nothing changed. `eligible` is the CALLER's: the panel's fields
+/// are the map's and the modal's are the modal's, and a field eligible behind an open modal is one that eats
+/// the keystrokes meant for it (`ui.textField`).
+fn nameField(ed: *Editor, ctx: *ui.Ctx, x: i32, y: i32, w: i32, buf: []u8, len: *usize, cur: []const u8, id: u32, eligible: bool, tip: [:0]const u8) ?[]const u8 {
+    const focused = ui.textField(ctx, ui.rect(x, y, w, 26), buf, len, id, eligible, tip);
+    if (focused) ed.textFocus = true;
     for (buf[0..len.*]) |*ch| {
         if (ch.* == ' ' or ch.* == '#') ch.* = '_';
     }
@@ -718,12 +774,12 @@ fn nameField(ed: *Editor, ctx: *ui.Ctx, x: i32, y: i32, w: i32, buf: []u8, len: 
     return typed;
 }
 
-/// **COIN A CONTAINER MAY HOLD.** Stepped coarsely, because a chest is authored in purses and not in pennies,
-/// and capped: past this it is a reward the economy is built around rather than a thing in a box, and that is a
-/// design decision rather than a number to nudge. The band it is priced against is `drops.Coin.hoard`.
 /// How many declared names a slot dropdown lists. The map's own tables are this deep or deeper, and a list
 /// longer than a screen is one nobody scrolls anyway.
 const MAX_SLOT_ROWS: usize = 32;
+/// **COIN A CONTAINER MAY HOLD.** Stepped coarsely, because a chest is authored in purses and not in pennies,
+/// and capped: past this it is a reward the economy is built around rather than a thing in a box, and that is a
+/// design decision rather than a number to nudge. The band it is priced against is `drops.Coin.hoard`.
 const GOLD_LIM: i32 = 5000;
 const GOLD_STEP: i32 = 25;
 /// Metres of run a stacking kind may be given. Twenty-six sections of ladder; past that it is a shaft, not a
@@ -934,6 +990,10 @@ pub const Editor = struct {
     pendZ: [wf.MAX_ARENA_VERTS]f32 = [_]f32{0} ** wf.MAX_ARENA_VERTS,
     nPend: u8 = 0,
     lootTab: item.Class = .tool,
+    /// WHICH SHELF the zone-mix modal is showing (`MIX_GROUPS`). Its own field and not `groupSel`: that one is
+    /// what the BRUSH places and the mix is what a zone grows, and moving one from the other would retarget the
+    /// brush every time a mix was looked at.
+    mixTab: props.Group = FIRST_MIX_GROUP,
     zoneNameLen: usize = 0,
     zoneNameBuf: [wf.NAME_CAP]u8 = [_]u8{0} ** wf.NAME_CAP,
     /// The zone name field owns the keyboard while it is on screen — set by the draw pass, read by `update` a frame later, so w/a/s/d, digits, g/r, Tab and Delete type letters instead of firing.
@@ -1014,6 +1074,9 @@ pub const Editor = struct {
         self.menuOpen = false;
         self.marquee = false;
         self.moving = false;
+        // OFF ON ENTRY, which is what the field's own note says and what `enter` was not doing: it is the one
+        // overlay that hides the ground you came in to sculpt.
+        self.showWeather = false;
         self.dropSelection();
         self.dropPendingRoom();
         self.modal = .none;
@@ -1617,7 +1680,8 @@ pub const Editor = struct {
         if (self.rebuildT >= REBUILD_QUIET) self.rebuild(m, env);
     }
 
-    fn endGesture(self: *Editor, _: *const wf.Map, _: *envmod.Env) void {
+    /// Closes the one banked gesture (`bankGesture`, `bankWorld`), so the next drag banks again.
+    fn endGesture(self: *Editor) void {
         self.editing = false;
     }
 
@@ -1757,8 +1821,8 @@ pub const Editor = struct {
                                 self.wetStroke = true;
                             }
                         },
-                        else => {
-                            const id: wf.Soil = @enumFromInt(self.brushIdx() - GROUND_SOIL_0 + 1);
+                        else => |b| {
+                            const id = soilOf(b) orelse unreachable;
                             if (m.paintSoil(g.x, g.z, self.radius, id, self.soilOpacity, self.brushEdge)) env.uploadSoil(m);
                         },
                     }
@@ -2635,6 +2699,11 @@ pub const Editor = struct {
 
     fn wipeEnd(self: *Editor) void {
         if (self.wipe.n > 1) self.sayFmt("erased {d}", .{self.wipe.n});
+        // **THE HELD FACE IS REPAINTED AT THE STROKE'S END, NOT ONLY AT ITS START.** Only the FIRST erase of a
+        // sweep banks (`bankStroke`), and on the units layer a banked foe is the only thing that moves
+        // `miniGen` — so a sweep that took nine spawns left eight of them still drawn in red on the minimap
+        // until some unrelated edit. Once per stroke, not once per erase.
+        if (self.wipe.n > 0) self.miniGen +%= 1;
         self.wipe.on = false;
     }
 
@@ -3090,8 +3159,15 @@ pub const Editor = struct {
     }
 
     /// **DOES THE TOP STRIP FIT WITH ITS LAYER NAMES SPELLED OUT.** Measured, not guessed: `BarRow`'s own widths for the layers plus the same arithmetic for the fixed tail, so a label added is answered here rather than discovered as a clipped button on the right-hand edge.
-    fn barWide(self: *const Editor, sw: i32) bool {
-        _ = self;
+    ///
+    /// **THE STRIP'S OWN WIDTH IS MEASURED ONCE**, `drawStatus`'s `cribW` for the same reason: ten compile-time
+    /// literals against a font that never moves, and `hud.monoW` is a glyph lookup per character. Only `sw`
+    /// can change the answer, so `sw` is the whole key.
+    var barFitFor: i32 = -1;
+    var barFit = false;
+
+    fn barWide(sw: i32) bool {
+        if (barFitFor == sw) return barFit;
         const step = BarRow.GAP;
         const sq = BAR_H - 10;
         var w: i32 = 8;
@@ -3104,7 +3180,9 @@ pub const Editor = struct {
         inline for (.{ "Objects", "World", "Script", "Sounds" }) |lab| {
             w += hud.monoW(lab, hud.MONO) + BarRow.PAD + step;
         }
-        return w + DIRTY_W <= sw;
+        barFitFor = sw;
+        barFit = w + DIRTY_W <= sw;
+        return barFit;
     }
 
     /// Room for the unsaved-changes `*` that `drawTopBar` sets down past the last button.
@@ -3455,7 +3533,7 @@ fn handlePost(x: f32, z: f32, y: f32, held: bool) void {
 /// runs into has to be the obvious thing on the face. A ground line, a line at `ARENA_WALL_H`, and a picket
 /// between them at every terrain sample — so it follows the ground and still reads from directly overhead.
 fn arenaWall(x0: f32, z0: f32, x1: f32, z1: f32, lift: f32, col: rl.Color) void {
-    const SEG = 12;
+    const SEG = GROUND_SEG;
     const top = ui.alpha(col, @intFromFloat(@as(f32, @floatFromInt(col.a)) * 0.55));
     var i: i32 = 0;
     while (i <= SEG) : (i += 1) {
@@ -3472,8 +3550,12 @@ fn arenaWall(x0: f32, z0: f32, x1: f32, z1: f32, lift: f32, col: rl.Color) void 
     }
 }
 
+/// Segments a straight run on the ground is drawn in. It FOLLOWS the terrain, so this is the sampling rate and
+/// not a smoothness dial — and `arenaWall`'s own measured line counts are quoted off it.
+const GROUND_SEG: i32 = 12;
+
 fn groundLine(x0: f32, z0: f32, x1: f32, z1: f32, lift: f32, col: rl.Color) void {
-    const SEG = 12;
+    const SEG = GROUND_SEG;
     var i: i32 = 0;
     while (i < SEG) : (i += 1) {
         const t0 = @as(f32, @floatFromInt(i)) / SEG;
@@ -3638,7 +3720,7 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
     var row = BarRow{ .ctx = ctx, .x = 8 };
     // **THE STRIP MEASURES ITSELF AND DROPS THE LABELS RATHER THAN RUN OFF THE WINDOW.** The eyes cost `EYE_SLOT`
     // apiece and pushed `Sounds` off the right-hand edge at 1280. `barWide` is the one place the decision is made, so the widths the layout uses and the widths it measured cannot disagree.
-    const named = ed.barWide(sw);
+    const named = Editor.barWide(sw);
     inline for (@typeInfo(Layer).@"enum".fields) |f| {
         const l: Layer = @enumFromInt(f.value);
         switch (row.layer(layerIcon(l), if (named) l.label() else "", ed.layer == l, ed.shown[f.value], layerTips[f.value])) {
@@ -3733,7 +3815,7 @@ fn drawRoomsPanel(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, x: i32, y0: i32, w: i32
 
     hud.mono("name", x, y, hud.MONO, ui.LABEL);
     y += hud.monoLineH(hud.MONO) + 2;
-    if (nameField(ed, ctx, x, y, w, &ed.arenaNameBuf, &ed.arenaNameLen, a.label(), "The room's name as the map file stores it. Spaces and # become _")) |typed| {
+    if (nameField(ed, ctx, x, y, w, &ed.arenaNameBuf, &ed.arenaNameLen, a.label(), KB_ARENA_NAME, ed.modal == .none, "The room's name as the map file stores it. Spaces and # become _")) |typed| {
         ed.bank(m);
         a.setName(typed);
         ed.dirty = true;
@@ -3762,12 +3844,17 @@ fn drawRoomsPanel(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, x: i32, y0: i32, w: i32
     }
     y += ROW_H;
 
-    // **THE CANDIDATES ARE THE BODIES ACTUALLY STANDING IN THIS ROOM**, not all 37 kinds: the seal is a fact
-    // about this floor, so the only names worth offering are the ones on it.
+    // **THE CANDIDATES ARE THE BOSSES ACTUALLY STANDING IN THIS ROOM**, not all 37 kinds: the seal is a fact
+    // about this floor, so the only names worth offering are the ones on it — and only the ones a ward can wait
+    // on (`foe.isBoss`), because **THE ROOM'S SEAL AND ITS DOOR'S ARE PINNED EQUAL** over every shipped map
+    // (`worldfmt`'s own test). Offering the room a name the gate modal cannot is a room the author can put out
+    // of step with its own door, and that test is what catches it — after he has saved. Whatever it ALREADY
+    // seals stays offered, so a name written into the file by hand can still be taken off.
     var offered: [wf.MAX_SEAL * 4]wf.FoeKind = undefined;
     var non: usize = 0;
     for (m.foes[0..m.nfoes]) |f| {
         if (!a.contains(f.x, f.z)) continue;
+        if (!foemod.isBoss(f.kind) and !a.sealsOn(f.kind)) continue;
         var seen = false;
         for (offered[0..non]) |o| {
             if (o == f.kind) seen = true;
@@ -3777,7 +3864,7 @@ fn drawRoomsPanel(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, x: i32, y0: i32, w: i32
         non += 1;
     }
     if (non == 0) {
-        hud.mono("no bodies inside it", x, y, hud.MONO, ui.alpha(ui.LABEL, 160));
+        hud.mono("no boss inside it", x, y, hud.MONO, ui.alpha(ui.LABEL, 160));
         y += ROW_H;
     } else {
         var usedW: i32 = 0;
@@ -3787,18 +3874,8 @@ fn drawRoomsPanel(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, x: i32, y0: i32, w: i32
             const lab = std.fmt.bufPrintZ(&cb, "{s}", .{wf.foeName(k)}) catch "?";
             if (ui.chip(ctx, x + 4, y, lab, on, &usedW, "Hold the room until this creature is dead")) {
                 ed.bank(m);
-                if (on) {
-                    var w2: u8 = 0;
-                    for (a.seal()) |s2| {
-                        if (s2 == k) continue;
-                        a.boss[w2] = s2;
-                        w2 += 1;
-                    }
-                    a.nboss = w2;
-                } else if (a.nboss < wf.MAX_SEAL) {
-                    a.boss[a.nboss] = k;
-                    a.nboss += 1;
-                } else ed.sayFmt("a seal takes {d} names", .{wf.MAX_SEAL});
+                if (!on and a.nboss >= wf.MAX_SEAL) ed.sayFmt("a seal takes {d} names", .{wf.MAX_SEAL});
+                sealToggle(a, k);
                 ed.dirty = true;
             }
             y += ROW_H;
@@ -3877,7 +3954,7 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
                 .lower => ui.swatchButton(ctx, r, LOWER_SWATCH, s, hud.MONO, on, tips[i]),
                 .smooth, .flat => ui.swatchButton(ctx, r, EVEN_SWATCH, s, hud.MONO, on, tips[i]),
                 .water, .oil, .fungal, .lava => |lq| ui.swatchButton(ctx, r, liquidSwatch(liquidOf(lq).?), s, hud.MONO, on, tips[i]),
-                else => ui.swatchButton(ctx, r, soilSwatch(@enumFromInt(i - GROUND_SOIL_0 + 1)), s, hud.MONO, on, tips[i]),
+                else => |sl| ui.swatchButton(ctx, r, soilSwatch(soilOf(sl) orelse .none), s, hud.MONO, on, tips[i]),
             });
         if (hit) {
             ed.setBrush(i);
@@ -4205,6 +4282,9 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                     defer aiX += aiW;
                     if (ui.chip(ctx, aiX, y, @tagName(a), fo.ai == a, &aiW, aiTip(a))) {
                         ed.bank(m);
+                        // **A CONTROL THAT BANKS ITSELF CLOSES THE GESTURE ITSELF.** Left open, `bankGesture`
+                        // below banked a SECOND identical step off `before` and one chip press took two Ctrl+Z.
+                        ed.editing = true;
                         fo.ai = a;
                         changed = true;
                     }
@@ -4221,6 +4301,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                     ed.routing = !ed.routing;
                     if (ed.routing) {
                         ed.bank(m);
+                        ed.editing = true;
                         fo.nwp = 0;
                         fo.ai = .patrol;
                         changed = true;
@@ -4229,6 +4310,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 }
                 if (ui.button(ctx, ui.rect(x + half2 + 6, y, half2, 22), "clear route", hud.MONO, false, "Throw the legs away. The body keeps its orders")) {
                     ed.bank(m);
+                    ed.editing = true;
                     fo.nwp = 0;
                     ed.routing = false;
                     changed = true;
@@ -4240,7 +4322,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 }
                 if (changed) {
                     ed.bankGesture(wf.Foe, m, fo, before);
-                } else if (!ctx.down) ed.endGesture(m, env);
+                } else if (!ctx.down) ed.endGesture();
             },
             // **THE FOLK GET `roam` AND THE FOES DO NOT** — it is the one dial that is theirs (`npc.Wanderer.roamR`),
             // and at 0 the body stands on its post. The `call:` name and the `dlg=` it opens are still file-only
@@ -4286,6 +4368,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                     const sel: usize = if (np.dlg == wf.NO_DIALOG or np.dlg >= shown) 0 else @as(usize, np.dlg) + 1;
                     if (ui.dropdown(ctx, ui.rect(x + 44, y, w - 44, 20), ui.ddId(15, i, 0), labels[0 .. shown + 1], sel, "Which conversation this body opens when he is spoken to")) |pick| {
                         ed.bank(m);
+                        ed.editing = true;
                         np.dlg = if (pick == 0) wf.NO_DIALOG else @intCast(pick - 1);
                         changed = true;
                     }
@@ -4300,7 +4383,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                     // The live body is posted off the RECORD, so a moved record has to re-post — DEBOUNCED,
                     // because a stepper walks through a dozen values on the way to the one you want.
                     ed.requestFolk();
-                } else if (!ctx.down) ed.endGesture(m, env);
+                } else if (!ctx.down) ed.endGesture();
             },
         }
         return;
@@ -4312,7 +4395,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             hud.mono("LOCATIONS", x, y, hud.MONO, ui.TITLE);
             y += ROW_H + 4;
             var lchanged = false;
-            const lbefore = m.locations;
             for (m.locations[0..m.nlocations], 0..) |*l, i| {
                 var lb: [56]u8 = undefined;
                 const on = ed.locSel == i;
@@ -4323,13 +4405,19 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 }
                 y += ROW_H;
                 if (!on) continue;
+                // **THE WEATHER KNOBS ARE ONE GESTURE, AND THEY WERE BANKING NOTHING AT ALL.** They set
+                // `dirty` and nothing else, so a rain or a fog you dragged wrong could only be undone by
+                // undoing whatever came BEFORE it, and if it was the first edit after a load there was nothing
+                // in the ring to undo. One step per gesture, the same shape as the spawn panel's.
+                const lbefore = l.*;
                 // **A LOCATION'S NAME IS THE WHOLE POINT OF IT** — `Cond.region` and every trigger find one by
                 // name (`Map.findLocation`), and the editor could only ever call them `locN`. A rectangle
                 // nothing can refer to is a rectangle that does nothing.
                 hud.mono("name", x, y, hud.MONO, ui.LABEL);
                 y += hud.monoLineH(hud.MONO) + 2;
-                if (nameField(ed, ctx, x, y, w, &ed.locNameBuf, &ed.locNameLen, l.label(), "The name triggers find this region by. Spaces and # become _")) |typed| {
+                if (nameField(ed, ctx, x, y, w, &ed.locNameBuf, &ed.locNameLen, l.label(), KB_LOC_NAME, ed.modal == .none, "The name triggers find this region by. Spaces and # become _")) |typed| {
                     ed.bank(m);
+                    ed.editing = true;
                     l.setName(typed);
                     lchanged = true;
                 }
@@ -4367,11 +4455,9 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                     if (ui.slider(ctx, x + 8, y, w - 16, "blend s", &l.blend, 0, 30, "Seconds to cross-fade into this region's sky as he walks in. A region is never a switch")) lchanged = true;
                     y += ROW_H + SLIDER_DROP;
                 }
+                if (lchanged) ed.bankGesture(wf.Location, m, l, lbefore);
             }
-            if (lchanged) {
-                ed.dirty = true;
-                _ = lbefore;
-            }
+            if (lchanged) ed.dirty = true;
             y += 6;
         }
         y = drawRoomsPanel(ed, ctx, m, x, y, w);
@@ -4396,7 +4482,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             if (zi < m.nzones) {
                 hud.mono("name", x, y, hud.MONO, ui.LABEL);
                 y += hud.monoLineH(hud.MONO) + 2;
-                if (nameField(ed, ctx, x, y, w, &ed.zoneNameBuf, &ed.zoneNameLen, m.zones[zi].label(), "The zone's name as the map file stores it. Spaces and # become _")) |typed| {
+                if (nameField(ed, ctx, x, y, w, &ed.zoneNameBuf, &ed.zoneNameLen, m.zones[zi].label(), KB_ZONE_NAME, ed.modal == .none, "The zone's name as the map file stores it. Spaces and # become _")) |typed| {
                     ed.bank(m);
                     m.zones[zi].setName(typed);
                 }
@@ -4446,7 +4532,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 ed.editing = true;
             }
             ed.requestRebuild();
-        } else if (!ctx.down) ed.endGesture(m, env);
+        } else if (!ctx.down) ed.endGesture();
         return;
     }
 
@@ -4616,7 +4702,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         ed.bankGesture(wf.Op, m, o, before);
         ed.requestRebuild();
     } else if (!ctx.down) {
-        ed.endGesture(m, env);
+        ed.endGesture();
     }
 }
 
@@ -5034,7 +5120,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             }
             const rows: i32 = @intCast(@max(nshown, 1));
             const title: [:0]const u8 = if (m.ops[sPre].kind == .chest) "Chest contents" else "Item contents";
-            const box = ui.beginModal(ctx, 470, LOOT_TOP + TAB_H + rows * LOOT_ROW_H + 8 + DLG_FOOT, title);
+            const box = ui.beginModal(ctx, LIST_W, LOOT_TOP + TAB_H + rows * LOOT_ROW_H + 8 + DLG_FOOT, title);
             const s = sPre;
             const o = &m.ops[s];
             var buf: [48]u8 = undefined;
@@ -5042,8 +5128,22 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             hud.mono(total, box.x + DLG_PAD, box.y + 58, hud.MONO, ui.LABEL);
 
             // The tabs. A class carrying something already in this container is marked, so you can find what you put in without walking every shelf.
+            // **AN AUTHORED ORDER, PINNED FOR COVERAGE.** It is not `item.Class`'s own order — tools first, keys
+            // last is the reading order — so it cannot be derived; but a class appended to the enum and not to
+            // this row is a shelf with no tab, and every item on it unreachable from the one panel that fills a
+            // chest. Length alone does not catch a swap, so each variant is looked for by name.
             const CLASSES = [_]item.Class{ .tool, .gear, .material, .treasure, .key };
-            const tabW: i32 = @divTrunc(470 - DLG_PAD * 2, @as(i32, CLASSES.len));
+            comptime {
+                for (@typeInfo(item.Class).@"enum".fields) |f| {
+                    var found = false;
+                    for (CLASSES) |c| {
+                        if (@intFromEnum(c) == f.value) found = true;
+                    }
+                    if (!found) @compileError("editor: the loot modal has no tab for item.Class." ++ f.name);
+                }
+                if (CLASSES.len != @typeInfo(item.Class).@"enum".fields.len) @compileError("editor: the loot modal names a class twice");
+            }
+            const tabW: i32 = @divTrunc(box.w - DLG_PAD * 2, @as(i32, CLASSES.len));
             for (CLASSES, 0..) |c, ci| {
                 var tb: [24]u8 = undefined;
                 var carried: u8 = 0;
@@ -5054,7 +5154,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                     std.fmt.bufPrintZ(&tb, "{s} *", .{c.label()}) catch c.label()
                 else
                     c.label();
-                const r = ui.rect(box.x + DLG_PAD + @as(i32, @intCast(ci)) * tabW, box.y + LOOT_TOP - TAB_H, tabW - 3, TAB_H - 4);
+                const r = ui.rect(box.x + DLG_PAD + @as(i32, @intCast(ci)) * tabW, box.y + LOOT_TOP, tabW - 3, TAB_H - 4);
                 if (ui.button(ctx, r, lab, hud.MONO, ed.lootTab == c, "Show this shelf - a * means this container already holds one")) ed.lootTab = c;
             }
 
@@ -5082,24 +5182,38 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             // purse with nothing else in it is the commonest thing to put in a chest, and threading it through
             // the item shelves would have made it an item, which it is not.
             var coin: i32 = @intCast(@min(o.gold, GOLD_LIM));
+            // BANKED BEFORE THE WRITE, like every other row here: banking after it stores the map that already
+            // holds the new number, so the undo step it costs restores the value it was meant to take back.
             if (ui.stepperI(ctx, box.x + DLG_PAD, box.y + box.h - DLG_FOOT - ROW_H - 6, 420, "gold", &coin, GOLD_STEP, 0, GOLD_LIM, "Coin in this container. It goes straight into his purse on opening, and is not one of the eight item kinds")) {
-                o.gold = @intCast(@max(coin, 0));
-                ed.dirty = true;
                 ed.bank(m);
+                o.gold = @intCast(@max(coin, 0));
             }
             if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false, "Close it - every change is already applied (Enter)") or confirm) {
                 ed.modal = .none;
             }
         },
         .boss => {
-            const NF = @typeInfo(wf.FoeKind).@"enum".fields.len;
-            const rows: i32 = NF + 1;
             const sPre = bossOp(ed, m) orelse {
                 ed.modal = .none;
                 return;
             };
-            const box = ui.beginModal(ctx, 470, LOOT_TOP + rows * LOOT_ROW_H + 8 + DLG_FOOT, "Sealed until these die");
             const o = &m.ops[sPre];
+            // **THE BOSSES, AND NOT ALL THIRTY-EIGHT KINDS** (owner: gate seal should be bosses only). At every
+            // kind the modal stood **1124 px** tall in an 800 px window: its title band was off the top of the
+            // screen and `Done` and the last twelve rows off the bottom, so the panel could not be shut. What a
+            // ward waits on is a FIGHT (`foe.isBoss`, railed to `game.BOSS_RAILS`) — a seal held on a broodling
+            // is a door that opens when a broodling dies. **PLUS WHATEVER THIS GATE ALREADY NAMES**, so a seal
+            // hand-written into the file can still be seen and taken off.
+            var offer: [NFOE_KIND]wf.FoeKind = undefined;
+            var non: usize = 0;
+            for (0..NFOE_KIND) |ki| {
+                const k: wf.FoeKind = @enumFromInt(ki);
+                if (!foemod.isBoss(k) and !o.sealsOn(k)) continue;
+                offer[non] = k;
+                non += 1;
+            }
+            const rows: i32 = @intCast(non + 1);
+            const box = ui.beginModal(ctx, LIST_W, LOOT_TOP + rows * LOOT_ROW_H + 8 + DLG_FOOT, "Sealed until these die");
             var sb: [96]u8 = undefined;
             hud.mono(
                 std.fmt.bufPrintZ(&sb, "He walks through once, then nothing does until all {d} are dead", .{o.nboss}) catch "",
@@ -5111,7 +5225,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             // Row 0 is the OPT-OUT, and it has to exist: a gate with no boss is an ordinary doorway, which is what a gate hung anywhere but an arena mouth needs to be.
             var i: usize = 0;
             while (i < rows) : (i += 1) {
-                const pick: ?wf.FoeKind = if (i == 0) null else @enumFromInt(i - 1);
+                const pick: ?wf.FoeKind = if (i == 0) null else offer[i - 1];
                 const y = box.y + LOOT_TOP + @as(i32, @intCast(i)) * LOOT_ROW_H;
                 const label: [:0]const u8 = if (pick) |k| wf.foeName(k) else "Never shuts";
                 const on = if (pick) |k| o.sealsOn(k) else o.nboss == 0;
@@ -5126,8 +5240,11 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             }
         },
         .zonemix => {
-            const rows: i32 = @intCast(props.FLORA_KINDS.len);
-            const box = ui.beginModal(ctx, 470, LOOT_TOP + rows * LOOT_ROW_H + 8 + DLG_FOOT, "What grows here");
+            // **THE ZONE MIX IS FILED ON `props.Group`**, the same axis the decor palette narrows on, for the
+            // reason the loot modal was tabbed on `item.Class`: thirty flora rows in one column stood the box
+            // **916 px** tall in an 800 px window, so its title band was off the top of the screen and `Done`
+            // was off the bottom — the panel could not be shut except with Esc. The zone is resolved BEFORE the
+            // box, because the shelf decides how many rows there are and so how tall the box is.
             const zi = ed.zoneSel orelse {
                 ed.modal = .none;
                 return;
@@ -5137,6 +5254,15 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 return;
             }
             const z = &m.zones[zi];
+            var shown: [props.FLORA_KINDS.len]Kind = undefined;
+            var nshown: usize = 0;
+            for (props.FLORA_KINDS) |k| {
+                if (props.group(k) != ed.mixTab) continue;
+                shown[nshown] = k;
+                nshown += 1;
+            }
+            const rows: i32 = @intCast(@max(nshown, 1));
+            const box = ui.beginModal(ctx, LIST_W, LOOT_TOP + MIX_TAB_ROWS * TAB_H + rows * LOOT_ROW_H + 8 + DLG_FOOT, "What grows here");
             var hb: [64]u8 = undefined;
             hud.mono(
                 std.fmt.bufPrintZ(&hb, "{s} - {d} / {d} picks", .{ z.label(), z.nmix, wf.MAX_MIX }) catch "",
@@ -5145,8 +5271,27 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 hud.MONO,
                 ui.LABEL,
             );
-            for (props.FLORA_KINDS, 0..) |k, i| {
-                const y = box.y + LOOT_TOP + @as(i32, @intCast(i)) * LOOT_ROW_H;
+
+            // A shelf already carrying a share of this zone's mix is marked, so a mix can be read back without
+            // walking every shelf — the loot modal's `*`, for its reason.
+            const tabW: i32 = @divTrunc(box.w - DLG_PAD * 2 - (MIX_COLS - 1) * 3, MIX_COLS);
+            for (MIX_GROUPS, 0..) |g, gi| {
+                var carried: u8 = 0;
+                for (z.mix[0..z.nmix]) |k| {
+                    if (props.group(k) == g) carried += 1;
+                }
+                var tb: [24]u8 = undefined;
+                const lab = if (carried > 0) (std.fmt.bufPrintZ(&tb, "{s} *", .{g.label()}) catch g.label()) else g.label();
+                const slot: i32 = @intCast(gi);
+                const col = @mod(slot, MIX_COLS);
+                const row = @divTrunc(slot, MIX_COLS);
+                const r = ui.rect(box.x + DLG_PAD + col * (tabW + 3), box.y + LOOT_TOP + row * TAB_H, tabW, TAB_H - 4);
+                if (ui.button(ctx, r, lab, hud.MONO, ed.mixTab == g, "Show this family - a * means the zone already grows one")) ed.mixTab = g;
+            }
+
+            const listTop = box.y + LOOT_TOP + MIX_TAB_ROWS * TAB_H;
+            for (shown[0..nshown], 0..) |k, i| {
+                const y = listTop + @as(i32, @intCast(i)) * LOOT_ROW_H;
                 const n = mixCount(z, k);
                 hud.mono(props.displayName(k), box.x + DLG_PAD, y + 5, hud.MONO, if (n > 0) ui.VALUE else ui.LABEL);
                 var nbuf: [8]u8 = undefined;
@@ -5228,8 +5373,10 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             y += ROW_H + 4;
             var cb: [10]u8 = undefined;
             var lb: [80]u8 = undefined;
+            // TWO LINES, MEASURED: as one it was 52 characters of `hud.MONO` — 499 px against 372 px of
+            // content inside `WORLD_W` — and the key hint ran out over the map past the modal's own frame.
             hud.mono(
-                std.fmt.bufPrintZ(&lb, "{s}  {s}  -  ',' '.' scrub, Shift for hours", .{
+                std.fmt.bufPrintZ(&lb, "{s}  {s}", .{
                     daynight.clockTextZ(day.hour, &cb),
                     daynight.phaseName(day.hour),
                 }) catch "",
@@ -5238,12 +5385,15 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 hud.MONO,
                 ui.alpha(ui.LABEL, 190),
             );
+            y += hud.monoLineH(hud.MONO);
+            hud.mono("',' '.' scrub, Shift for hours", x, y, hud.MONO, ui.alpha(ui.LABEL, 190));
             y += hud.monoLineH(hud.MONO) + 4;
             var hourNow = day.hour;
             if (ui.stepperF(ctx, x, y, w, "hour", &hourNow, HOUR_STEP, 0, 24, "The world clock, for looking at your map under a different sun. Not saved with the map")) day.set(hourNow);
             y += ROW_H;
             {
-                const bw: i32 = @divTrunc(w - 3 * 6, 4);
+                const cols: i32 = @intCast(HOUR_MARKS.len);
+                const bw: i32 = @divTrunc(w - (cols - 1) * 6, cols);
                 for (HOUR_MARKS, 0..) |mk, i| {
                     const bx = x + @as(i32, @intCast(i)) * (bw + 6);
                     const on = @abs(day.hour - mk.at) < HOUR_STEP * 0.5;
@@ -5256,7 +5406,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 ed.bankWorld(m, halfBefore, before);
                 // A size change moves the painted grids as well as the props, so it is the FULL rebuild and not just a re-materialize: `half` is what every one of those uploads is measured in.
                 ed.rebuild(m, env);
-            } else if (!ctx.down) ed.endGesture(m, env);
+            } else if (!ctx.down) ed.endGesture();
 
             if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false, "Close it - every change is already applied (Enter)") or confirm) {
                 ed.modal = .none;
@@ -5321,7 +5471,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             const isNew = ed.modal == .new_map;
             const box = ui.beginModal(ctx, 460, 180, if (isNew) "New map" else "Save map as");
             hud.mono("name", box.x + DLG_PAD, box.y + 58, hud.MONO, ui.LABEL);
-            ui.textField(ctx, ui.rect(box.x + DLG_PAD, box.y + 82, 412, 30), &ed.nameBuf, &ed.nameLen, true, "The file name. It lands in worlds/ with .world on the end");
+            _ = ui.textField(ctx, ui.rect(box.x + DLG_PAD, box.y + 82, 412, 30), &ed.nameBuf, &ed.nameLen, KB_FILE_NAME, true, "The file name. It lands in worlds/ with .world on the end");
             var buf: [wf.PATH_CAP]u8 = undefined;
             const p = wf.pathFor(&buf, ed.nameBuf[0..ed.nameLen]);
             var pz: [wf.PATH_CAP + 4]u8 = undefined;
@@ -5395,9 +5545,14 @@ fn lootOp(ed: *const Editor, m: *const wf.Map) ?usize {
     return if (m.ops[s].op == .at and props.holdsLoot(m.ops[s].kind)) s else null;
 }
 
-/// Name a creature on the gate, or take it off. **A FULL SEAL DROPS THE PRESS** rather than wrapping — silently
+/// Name a creature on the seal, or take it off. **A FULL SEAL DROPS THE PRESS** rather than wrapping — silently
 /// evicting a name he picked earlier is worse than doing nothing.
-fn sealToggle(o: *wf.Op, k: wf.FoeKind) void {
+///
+/// **THE GATE'S SEAL AND THE ROOM'S ARE THE SAME LIST AND NOW THE SAME EDIT.** `wf.Op` and `wf.Arena` each
+/// carry `boss`/`nboss` and AGENTS.md pins the pair against each other; the toggle was written out twice, once
+/// here for the door and once inline in `drawRoomsPanel` for the wall, so the two could come to disagree about
+/// what a full seal does. Duck-typed on the two fields, which is all either row is.
+fn sealToggle(o: anytype, k: wf.FoeKind) void {
     for (o.seal(), 0..) |s, i| {
         if (s != k) continue;
         var j = i;
@@ -5612,7 +5767,7 @@ fn drawScriptModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, confirm: bool) void {
 
     hud.mono("id", rx, ry, hud.MONO, ui.LABEL);
     ry += hud.monoLineH(hud.MONO) + 2;
-    if (nameField(ed, ctx, rx, ry, rw, &ed.trigNameBuf, &ed.trigNameLen, t.label(), "What this trigger is called. Spaces and # become _")) |typed| {
+    if (nameField(ed, ctx, rx, ry, rw, &ed.trigNameBuf, &ed.trigNameLen, t.label(), KB_TRIG_ID, ed.modal == .script, "What this trigger is called. Spaces and # become _")) |typed| {
         ed.bank(m);
         t.id = [_]u8{0} ** wf.ID_CAP;
         @memcpy(t.id[0..@min(typed.len, wf.ID_CAP)], typed[0..@min(typed.len, wf.ID_CAP)]);
@@ -5633,7 +5788,11 @@ fn drawScriptModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, confirm: bool) void {
         ed.dirty = true;
     }
     ry += ROW_H;
-    if (ui.stepperI(ctx, rx, ry, rw, "priority", &t.pri, 1, -99, 99, "Higher runs first when two are ready on the same frame")) ed.dirty = true;
+    // Banked like every other row in this modal — it was the one control here that set `dirty` and left no step.
+    const priBefore = t.pri;
+    if (ui.stepperI(ctx, rx, ry, rw, "priority", &t.pri, 1, -99, 99, "Higher runs first when two are ready on the same frame")) {
+        ed.bankGesture(i32, m, &t.pri, priBefore);
+    } else if (!ctx.down) ed.endGesture();
     ry += ROW_H + 8;
 
     var cb: [40]u8 = undefined;
@@ -5896,24 +6055,6 @@ fn dialogRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, span: *wf.Span, x: i32, y: i
     return true;
 }
 
-fn cycleDialog(ed: *Editor, m: *wf.Map, cur: wf.Span, out: *wf.Span) bool {
-    if (m.ndialogs == 0) {
-        ed.say("no dialogs in this map");
-        return false;
-    }
-    const txt = m.spanText(cur);
-    var at: usize = 0;
-    for (0..m.ndialogs) |di| {
-        if (std.mem.eql(u8, m.dialogs[di].label(), txt)) at = di + 1;
-    }
-    ed.bank(m);
-    out.* = m.addText(m.dialogs[at % m.ndialogs].label()) catch {
-        ed.say("the map's text arena is full");
-        return false;
-    };
-    return true;
-}
-
 fn condFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, c: *wf.Cond, x: i32, y: i32, w: i32) bool {
     var hit = false;
     switch (c.kind) {
@@ -5986,7 +6127,7 @@ fn actFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, a: *wf.Act, x: i32, y: i32, 
             hud.mono(std.fmt.bufPrintZ(&tb, "{s}", .{if (txt.len > 0) txt else "(empty banner)"}) catch "", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 200));
             // **COMMITTED ON A BUTTON AND NEVER PER KEYSTROKE.** `Map.addText` only ever APPENDS, so a field
             // that wrote through on every letter would eat `DTEXT_CAP` a character at a time.
-            ui.textField(ctx, ui.rect(x, y + 22, @max(w - 60, 90), 24), &ed.lineBuf, &ed.lineLen, true, "Type a REPLACEMENT line here, then press set. The line it carries now is shown above");
+            _ = ui.textField(ctx, ui.rect(x, y + 22, @max(w - 60, 90), 24), &ed.lineBuf, &ed.lineLen, ui.ddId(KB_TAG, 6, @intFromPtr(a) & 0xfff), true, "Type a REPLACEMENT line here, then press set. The line it carries now is shown above");
             if (ui.button(ctx, ui.rect(x + @max(w - 56, 94), y + 22, 56, 24), "set", hud.MONO, false, "Write it into the map")) {
                 ed.bank(m);
                 a.line = m.addText(ed.lineBuf[0..ed.lineLen]) catch blk: {
@@ -6029,7 +6170,12 @@ fn actFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, a: *wf.Act, x: i32, y: i32, 
 }
 
 const WORLD_W: i32 = 420;
-const WORLD_H: i32 = 470 + 96;
+/// **MEASURED OFF THE ROWS IT DRAWS, NOT PICKED.** As a flat `470 + 96` the box was **66 px short**: the hour
+/// stepper hung half out of the frame, the four hour marks were laid over the map below it, and `Done` — which
+/// sits at `box.h - DLG_FOOT` — came down on top of the LIGHT caption. The panel lays out sixteen label/stepper
+/// rows, four wrapped captions and 62 px of the gaps that group its four sections, under `beginModal`'s own
+/// 56 px title band and over the footer.
+const WORLD_H: i32 = 56 + 16 * ROW_H + 4 * hud.monoLineH(hud.MONO) + 62 + DLG_FOOT;
 
 const HOUR_STEP: f32 = 0.25;
 /// THE HOURS WORTH AUTHORING AT. The anchor is not negotiable (every albedo in the game was measured under it); the other three are the lights a belt of flora has to survive.
@@ -6320,6 +6466,55 @@ test "EVERY UNIT IS REACHABLE FROM EXACTLY ONE TAB, and the tallest list now fit
     std.debug.print("\n  units palette: was {d} px of rows in a {d} px panel; tallest tab is now {d} rows, {d} px\n", .{ rows0 + was, panel, tallest, rows0 + now });
     try std.testing.expect(rows0 + was > panel);
     try std.testing.expect(rows0 + now <= panel);
+}
+
+test "EVERY LIST MODAL FITS THE WINDOW IT OPENS IN" {
+    // **BOTH OF THESE WERE TALLER THAN THE SCREEN.** `beginModal` centres on `getScreenHeight`, so a box past it
+    // puts its own title band above y=0 and `Done` below the bottom edge — a panel you cannot read the name of
+    // and cannot shut. The gate seal listed all 38 creatures (1124 px) and the zone mix all 30 flora (916 px)
+    // against the window's 800. Spelled here rather than imported: `game.SCREEN_H` sits above this file.
+    const SCREEN_H: i32 = 800;
+    const foot = 8 + DLG_FOOT;
+
+    // The gate offers the bosses, plus at most a full seal of names a file already carried.
+    var bosses: usize = 0;
+    for (0..NFOE_KIND) |i| {
+        if (foemod.isBoss(@enumFromInt(i))) bosses += 1;
+    }
+    const sealRows: i32 = @intCast(bosses + wf.MAX_SEAL + 1);
+    const sealH = LOOT_TOP + sealRows * LOOT_ROW_H + foot;
+
+    // The mix offers one shelf at a time, so the tallest shelf is what sizes it.
+    var tallest: usize = 0;
+    var counted: usize = 0;
+    for (MIX_GROUPS) |g| {
+        var n: usize = 0;
+        for (props.FLORA_KINDS) |k| {
+            if (props.group(k) == g) n += 1;
+        }
+        // A shelf with nothing on it is a tab that opens onto nothing.
+        try std.testing.expect(n > 0);
+        counted += n;
+        tallest = @max(tallest, n);
+    }
+    // …and every flora kind is on exactly one shelf, or a plant is unreachable from this panel.
+    try std.testing.expectEqual(props.FLORA_KINDS.len, counted);
+    const mixH = LOOT_TOP + MIX_TAB_ROWS * TAB_H + @as(i32, @intCast(tallest)) * LOOT_ROW_H + foot;
+
+    std.debug.print(
+        "\n  gate seal: {d} bosses -> {d} px (was {d}); zone mix: {d} shelves, tallest {d} -> {d} px (was {d}); window {d}\n",
+        .{
+            bosses,                                                                        sealH,
+            LOOT_TOP + (NFOE_KIND + 1) * LOOT_ROW_H + foot,                                MIX_GROUPS.len,
+            tallest,                                                                       mixH,
+            LOOT_TOP + @as(i32, @intCast(props.FLORA_KINDS.len)) * LOOT_ROW_H + foot,       SCREEN_H,
+        },
+    );
+    try std.testing.expect(sealH <= SCREEN_H);
+    try std.testing.expect(mixH <= SCREEN_H);
+    // The pair they were fixed against: both really did overflow, so this test cannot pass vacuously.
+    try std.testing.expect(LOOT_TOP + (NFOE_KIND + 1) * LOOT_ROW_H + foot > SCREEN_H);
+    try std.testing.expect(LOOT_TOP + @as(i32, @intCast(props.FLORA_KINDS.len)) * LOOT_ROW_H + foot > SCREEN_H);
 }
 
 test "the units layer POSTS and ERASES both kinds, and the eraser does not care which" {

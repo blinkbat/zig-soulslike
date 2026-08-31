@@ -1,0 +1,34 @@
+version: 1
+name: Roster Lineup
+half: 90.0
+
+# EVERY MAN-SHAPE AND KIT-BEARER ON ONE FIELD, each facing the shot camera's own bearing, spaced so no
+# body stands in a neighbour's frame. The art pass's bench: `--map worlds/test_lineup.world --shot`.
+
+zone: meadow -400.0 -400.0 400.0 400.0 0.100 grasstall,tuft
+clear: 0.0 0.0 60.0
+
+at: boulder -70 70 20 1.3
+at: boulder 70 -70 130 1.1
+
+foe: archer -48.00 36.00 233.0 1.00 0.21
+foe: shieldman -24.00 36.00 233.0 1.00 0.34
+foe: greatsword 0.00 36.00 233.0 1.00 0.55
+foe: berserker 24.00 36.00 233.0 1.00 0.72
+foe: priest 48.00 36.00 233.0 1.00 0.11
+foe: slinger -48.00 12.00 233.0 1.00 0.42
+foe: necromancer -24.00 12.00 233.0 1.00 0.63
+foe: shade 0.00 12.00 233.0 1.00 0.27
+foe: mourner 24.00 12.00 233.0 1.00 0.88
+foe: mushroom_mage 48.00 12.00 233.0 1.00 0.16
+foe: spore_golem -48.00 -12.00 233.0 1.00 0.51
+foe: ancient_priest -24.00 -12.00 233.0 1.00 0.77
+foe: bone_skitterer 0.00 -12.00 233.0 1.00 0.31
+foe: tolling_hollow 24.00 -12.00 233.0 1.00 0.66
+foe: fish_spearman 48.00 -12.00 233.0 1.00 0.24
+foe: fish_netter -48.00 -36.00 233.0 1.00 0.47
+foe: fish_shaman -24.00 -36.00 233.0 1.00 0.83
+foe: salt_husk 0.00 -36.00 233.0 1.00 0.37
+foe: cinder_wake 24.00 -36.00 233.0 1.00 0.59
+foe: birchwight 48.00 -36.00 233.0 1.00 0.14
+foe: rotgorger -48.00 -60.00 233.0 1.00 0.71

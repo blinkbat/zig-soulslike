@@ -38,7 +38,7 @@ const LIMB_LT = rgba(24, 19, 15, 255);
 /// Its own stature, in metres — sized against `propwood.snagMesh`'s own 6.0..7.6 so it stands in a line of them without being the tall one.
 pub const H: f32 = 6.9;
 
-pub const AGGRO_R: f32 = 6.8;
+pub var AGGRO_R: f32 = 6.8;
 const WAKE_R: f32 = 4.2;
 const EYES_R: f32 = 6.5;
 const SLEEP_R: f32 = 8.2;
@@ -55,7 +55,7 @@ const HP_MAX: f32 = 130.0;
 const POISE_MAX: f32 = 28.0;
 const STANCE_MAX: f32 = 40.0;
 const RESISTS = combat.resists(.{ .fire = -70, .cold = 40, .lightning = -20, .chaos = 30 });
-pub const SOULS: u32 = 150;
+pub var SOULS: u32 = 150;
 
 const DEATH_DUR: f32 = 1.9;
 const DISS_DUR: f32 = 1.1;
@@ -85,17 +85,20 @@ pub const SLAM: usize = 0;
 pub const SWEEP: usize = 1;
 pub const HOOK: usize = 2;
 /// Wind-ups are LONG — it is a tree, and its reach is what makes it dangerous. Every one clears `foe.TELL_MIN`. The bands are MEASURED off the posed tip: the old 7.4 m hook billed a blow off a limb that passed three metres over his head.
-const MOVES = [_]Attack{
+const MOVES_BANK = [_]Attack{
     .{ .windDur = 0.86, .strikeDur = 0.26, .recoverDur = 0.95, .cd = 3.4, .minR = 0, .maxR = 2.4, .arc = 46.0, .hit = SLAM_HIT, .limb = LIMB_H },
     .{ .windDur = 0.70, .strikeDur = 0.32, .recoverDur = 0.80, .cd = 2.8, .minR = 1.2, .maxR = 3.8, .arc = 82.0, .hit = SWEEP_HIT, .limb = LIMB_L },
     .{ .windDur = 0.66, .strikeDur = 0.30, .recoverDur = 1.15, .cd = 5.0, .minR = 2.8, .maxR = 4.6, .arc = 58.0, .hit = HOOK_HIT, .limb = LIMB_R },
 };
+/// **THE LIVE KIT.** The bank above is the code's own and never moves — that is the revert; every blow
+/// the bench can reach is `MOVES[i].hit`, so a move retuned in the source flows through (`play/tune.zig`).
+pub var MOVES = MOVES_BANK;
 
 comptime {
     const named = .{ .{ SLAM, SLAM_HIT }, .{ SWEEP, SWEEP_HIT }, .{ HOOK, HOOK_HIT } };
     if (named.len != MOVES.len) @compileError("rooted: MOVES and the named indices disagree on how many strikes there are");
     for (named) |row| {
-        if (!std.meta.eql(MOVES[row[0]].hit, row[1])) @compileError("rooted: a named index no longer points at its own row of MOVES");
+        if (!std.meta.eql(MOVES_BANK[row[0]].hit, row[1])) @compileError("rooted: a named index no longer points at its own row of MOVES");
     }
 }
 

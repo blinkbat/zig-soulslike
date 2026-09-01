@@ -168,6 +168,7 @@ test {
     _ = @import("play/pickup.zig");
     _ = @import("play/award.zig");
     _ = @import("foes/foe.zig");
+    _ = @import("foes/foestat.zig");
     _ = @import("foes/behave.zig");
     _ = @import("gfx/elemfx.zig");
     _ = @import("play/combat.zig");
@@ -197,10 +198,12 @@ test {
     _ = @import("world/weather.zig");
     _ = @import("play/souls.zig");
     _ = @import("play/passivetree.zig");
+    _ = @import("play/tune.zig");
     _ = @import("core/rumble.zig");
     _ = @import("save.zig");
     _ = @import("ui/menu.zig");
     _ = @import("ui/objview.zig");
+    _ = @import("ui/tuneui.zig");
     _ = @import("shots.zig");
     _ = @import("gfx/shaders.zig");
     _ = @import("ui/ui.zig");

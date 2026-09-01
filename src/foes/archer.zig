@@ -117,8 +117,8 @@ fn stretchZ(a: rl.Vector3, b: rl.Vector3) rl.Matrix {
 }
 
 pub const SCALE = (H + 0.305) / H; // 0.305 m = one foot over the hero's stature
-const WALK_SPEED = heromod.WALK_SPEED * 0.95;
-pub const AGGRO_R = 24.0;
+const WALK_SPEED = heromod.WALK_SPEED_BANK * 0.95;
+pub var AGGRO_R: f32 = 24.0;
 const RANGE_MIN = 8.0;
 const RANGE_MAX = 20.0;
 const TURN_RATE = 6.0;
@@ -185,9 +185,9 @@ const HP_MAX = 58.0;
 const POISE_MAX = 14.0;
 const STANCE_MAX = 30.0;
 const RESISTS = combat.resists(.{ .fire = -35, .cold = 60, .chaos = 45 });
-pub const ARROW_HIT = combat.Hit{ .dmg = 16, .poise = 10 };
+pub var ARROW_HIT = combat.Hit{ .dmg = 16, .poise = 10 };
 pub const DEATH_DUR = 1.15;
-pub const SOULS: u32 = 130;
+pub var SOULS: u32 = 130;
 pub const DISS_DUR = 0.9;
 pub const BONE_CHIP = rgba(150, 140, 116, 235);
 pub const DISSOLVE = foe.Dissolve{ .flake = BONE_CHIP };

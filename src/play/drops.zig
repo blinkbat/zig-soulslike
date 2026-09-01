@@ -65,7 +65,7 @@ pub const RARE_CAP: f32 = 0.85;
 pub const MAX_PER_BODY: usize = 2;
 
 /// One row per `wf.FoeKind` IN ITS ORDER — a comptime walk pins it, so a creature added to that enum is a compile error here until it has said what it leaves. **WHAT EACH ONE DROPS IS WHAT IT IS**, and most were already written into the item's own description long before anything dropped.
-pub const TABLE = [_]Row{
+pub const BANK = [_]Row{
     .{ .foe = .toad, .common = .bloodgrass, .rare = .toadflesh_broth, .chance = 0.14 },
 
     // **THE ONE BODY IN THE GAME THAT IS CARRYING ARROWS.** Nothing dropped them at all, and with the bonfire's
@@ -169,10 +169,13 @@ pub fn noPurse(k: wf.FoeKind) bool {
     return false;
 }
 
+/// The live thirty-seven. `BANK` above is the revert (`play/tune.zig`), and it is what the walk below reads.
+pub var TABLE: [BANK.len]Row = BANK;
+
 comptime {
-    if (TABLE.len != NFOE) @compileError("drops: TABLE is not one row per FoeKind");
+    if (BANK.len != NFOE) @compileError("drops: BANK is not one row per FoeKind");
     // **A MAN HAS POCKETS** — the rule the owner gave, enforced rather than written out thirty-seven times.
-    for (TABLE) |row| {
+    for (BANK) |row| {
         if (foe.traitsOf(row.foe).nature == .humanoid and row.gold == .none and !noPurse(row.foe)) {
             @compileError("drops: " ++ @tagName(row.foe) ++ " is a humanoid carrying no gold — give it a `.gold`" ++
                 " band, or name it in `NO_PURSE` with a reason");
@@ -184,7 +187,7 @@ comptime {
     for (rungs[1..], 0..) |hi, i| {
         if (hi.band()[0] <= rungs[i].band()[1]) @compileError("drops: the coin bands overlap");
     }
-    for (TABLE, 0..) |row, i| {
+    for (BANK, 0..) |row, i| {
         const k: wf.FoeKind = @enumFromInt(i);
         if (row.foe != k) {
             @compileError("drops: row " ++ @tagName(row.foe) ++ " sits where " ++ @tagName(k) ++ " should be");

@@ -131,8 +131,8 @@ fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix
 
 // A hulking giant — ~4.1 m to the crown, a shade over twice the hero. The dial has been walked: 2.5 rejected as too big, 2.1 as too small, 2.4 read big again, and the owner has now asked for a bit off it.
 pub const SCALE = 2.3;
-const WALK_SPEED = heromod.WALK_SPEED * 0.72;
-pub const AGGRO_R = 18.0;
+const WALK_SPEED = heromod.WALK_SPEED_BANK * 0.72;
+pub var AGGRO_R: f32 = 18.0;
 const SLAM_R = 2.3;
 const SWIPE_R = 4.4;
 /// **THE REFERENCE FOR HOW HARD A BIG BODY FOLLOWS YOU** — PUBLIC because the bone knight is pinned into this
@@ -186,14 +186,14 @@ const HP_MAX = 300.0;
 const POISE_MAX = 30.0;
 const STANCE_MAX = 90.0;
 const RESISTS = combat.resists(.{ .fire = 30, .cold = 30, .lightning = -15, .chaos = 20 });
-pub const SLAM_HIT = combat.Hit{ .dmg = 36, .poise = 44, .stance = 20, .launch = combat.SLAM_LAUNCH };
-pub const SWIPE_HIT = combat.Hit{ .dmg = 23, .poise = 30, .stance = 11 };
-pub const DRIVE_HIT = combat.Hit{ .dmg = 31, .poise = 40, .stance = 20 };
+pub var SLAM_HIT = combat.Hit{ .dmg = 36, .poise = 44, .stance = 20, .launch = combat.SLAM_LAUNCH };
+pub var SWIPE_HIT = combat.Hit{ .dmg = 23, .poise = 30, .stance = 11 };
+pub var DRIVE_HIT = combat.Hit{ .dmg = 31, .poise = 40, .stance = 20 };
 const DEATH_DUR = 1.7;
 /// Fraction of `DEATH_DUR` at which the trunk ARRIVES on the earth — the fall accelerates to here
 /// (a mass on a hinge, the knight's law), the settle overshoots past it, and the landing is an EVENT.
 const DEATH_LAND = 0.62;
-pub const SOULS: u32 = 900;
+pub var SOULS: u32 = 900;
 const DISS_DUR = 1.1;
 const DISSOLVE = foe.Dissolve{ .rate = 70.0, .spread = 1.0, .rise = 0.70 };
 

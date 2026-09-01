@@ -91,10 +91,10 @@ const FIRE_CORE = elemfx.sig(.fire).core;
 const FIRE_EDGE = elemfx.sig(.fire).edge;
 
 
-pub const AGGRO_R: f32 = 22.0;
+pub var AGGRO_R: f32 = 22.0;
 const TURN_RATE: f32 = 2.6;
 /// **SLOWER, BECAUSE IT IS NOW WORTH DODGING** (owner: tougher, slower, more dangerous). Three-fifths of a walk: it cannot chase and it is not meant to.
-const WALK_SPEED: f32 = heromod.WALK_SPEED * 0.60;
+const WALK_SPEED: f32 = heromod.WALK_SPEED_BANK * 0.60;
 
 const BODY_R: f32 = 0.43;
 /// **IT HAS TO HOLD THE CAP, NOT JUST THE BARREL** (the ravager's lesson). Fitted to the body the sphere stopped at 1.45 m with the mark 1.35 m up on its own rim. MEASURED off the posed rig: head bone at 0.885·H, crown 0.17·H above it.
@@ -107,7 +107,7 @@ const POISE_MAX: f32 = 22.0;
 const STANCE_MAX: f32 = 44.0;
 const RESISTS = combat.resists(.{ .fire = 55, .cold = 20, .lightning = -20, .chaos = -45 });
 
-pub const SOULS: u32 = 260;
+pub var SOULS: u32 = 260;
 
 const DEATH_DUR: f32 = 1.15;
 const DISS_DUR: f32 = 1.0;
@@ -129,7 +129,7 @@ const RELEASE_K: f32 = 0.34;
 
 /// **SLOWER AND FLATTER** (owner: slower bounce, lower lob). At 8.0 with a full ballistic loft the shot went up and came down on you; at 6.4 with `archer.EMBER_LOFT` at 0.52 it comes ACROSS the ground.
 pub const EMBER_SPEED: f32 = 6.4;
-pub const EMBER_HIT = combat.Hit{ .poise = 20, .elem = combat.elems(.{ .fire = 36 }) };
+pub var EMBER_HIT = combat.Hit{ .poise = 20, .elem = combat.elems(.{ .fire = 36 }) };
 
 const LOB_MIN: f32 = 4.5;
 const LOB_MAX: f32 = 16.0;

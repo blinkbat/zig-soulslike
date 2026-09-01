@@ -4,6 +4,7 @@ const mathx = @import("../core/mathx.zig");
 const combat = @import("../play/combat.zig");
 const gfx = @import("../gfx/gfx.zig");
 const wf = @import("../world/worldfmt.zig");
+const foestat = @import("foestat.zig");
 const props = @import("../props/props.zig");
 
 const v3 = mathx.v3;
@@ -1764,6 +1765,15 @@ pub fn armPost(f: anytype, h: wf.Foe, home: rl.Vector3) void {
     f.post.arm(h.ai, home, h.route(), h.seed);
 }
 
+/// **THE BENCH'S POOLS GO ON HERE, AND NOWHERE ELSE** (`foes/foestat.zig`) — one door, taken by every group's
+/// reset AND by every body a group makes in play, and a body that is not yet fighting is the only body it is
+/// honest to resize. A runtime spawn that skipped it put a code-HP skitterer on the field beside the edited
+/// ones the map had placed.
+pub fn armStats(f: anytype, k: wf.FoeKind) void {
+    if (comptime !@hasField(@TypeOf(f.*), "vit")) return;
+    foestat.arm(&f.vit, k);
+}
+
 pub fn resetGroup(comptime T: type, out: []T, n: *usize, m: *const wf.Map, want: wf.FoeKind) void {
     n.* = 0;
     for (m.foes[0..m.nfoes]) |h| {
@@ -1771,6 +1781,7 @@ pub fn resetGroup(comptime T: type, out: []T, n: *usize, m: *const wf.Map, want:
         // ON THE GROUND: a spawn table stores x/z only, so a foe on a sculpted rise dropped at y = 0 is buried to the waist.
         const home = v3(h.x, m.heightAt(h.x, h.z), h.z);
         out[n.*] = T.spawn(home, mathx.radians(h.yaw), h.scale, h.seed);
+        armStats(&out[n.*], want);
         armPost(&out[n.*], h, home);
         n.* += 1;
     }
@@ -1790,6 +1801,7 @@ pub fn resetRoles(
         if (n.* >= out.len) continue;
         const home = v3(h.x, m.heightAt(h.x, h.z), h.z);
         out[n.*] = T.spawnAs(role, home, mathx.radians(h.yaw), h.scale, h.seed);
+        armStats(&out[n.*], h.kind);
         armPost(&out[n.*], h, home);
         n.* += 1;
     }

@@ -70,15 +70,17 @@ const solePatches = [_]heromod.SolePatch{
     .{ .bone = ANKR, .heel = 0.05 * H, .toe = 0.255 * H, .halfW = 0.075 * H, .drop = 0.036 * H },
 };
 
-pub const AGGRO_R: f32 = 20.0;
+/// The ring as authored — what the comptime pin below is asked of, since the ring itself is live now.
+pub const AGGRO_R_BANK: f32 = 20.0;
+pub var AGGRO_R: f32 = AGGRO_R_BANK;
 const HOME_R: f32 = 1.4;
 const TURN_RATE: f32 = 2.6;
-const WALK_SPEED: f32 = heromod.WALK_SPEED * 0.72;
-const CHASE_SPEED: f32 = heromod.WALK_SPEED * 1.05;
+const WALK_SPEED: f32 = heromod.WALK_SPEED_BANK * 0.72;
+const CHASE_SPEED: f32 = heromod.WALK_SPEED_BANK * 1.05;
 const ACCEL: f32 = 3.2;
 const BODY_R: f32 = 0.62;
 const HURT_R: f32 = 0.78;
-pub const SOULS: u32 = 420;
+pub var SOULS: u32 = 420;
 
 /// Over the cyclops's 300, and it is the whole creature: there is no armour under it.
 const HP_MAX: f32 = 340.0;
@@ -145,7 +147,7 @@ pub const SPARK_MAX: f32 = 16.0;
 pub const SPARK_SPEED: f32 = 17.0;
 /// **THE VOLLEY CARRIES ITS DAMAGE, BECAUSE THE BITE MAY NOT** — that one is pinned under 16 and under half the
 /// ogre's slam. Three of these is 45 through no armour against the bite's 13. Pure lightning: resists answer.
-pub const SPARK_HIT = combat.Hit{ .poise = 8, .elem = combat.elems(.{ .lightning = 15 }) };
+pub var SPARK_HIT = combat.Hit{ .poise = 8, .elem = combat.elems(.{ .lightning = 15 }) };
 
 fn volleySpan() f32 {
     return @as(f32, @floatFromInt(SPARK_N - 1)) * SPARK_GAP;
@@ -154,14 +156,14 @@ fn volleySpan() f32 {
 comptime {
     std.debug.assert(BITE_WIND >= foe.TELL_MIN and TOLL_WIND >= foe.TELL_MIN);
     std.debug.assert(BITE_COOL > BITE_STRIKE + BITE_RECOVER);
-    std.debug.assert(TOLL_R > AGGRO_R * 1.5);
+    std.debug.assert(TOLL_R > AGGRO_R_BANK * 1.5);
     std.debug.assert(TOLL_WIND + TOLL_SWING + TOLL_RECOVER > BITE_WIND + BITE_STRIKE + BITE_RECOVER);
     std.debug.assert(TOLL_HIT_AT > 0 and TOLL_HIT_AT < 1);
     std.debug.assert(SPARK_WIND >= foe.TELL_MIN);
-    std.debug.assert(SPARK_GAP > heromod.ROLL_IFRAME_END); // …or two arrive inside one set of i-frames
+    std.debug.assert(SPARK_GAP > heromod.ROLL_IFRAME_END_BANK); // …or two arrive inside one set of i-frames
     std.debug.assert(SPARK_CD > SPARK_WIND + volleySpan() + SPARK_RECOVER);
     std.debug.assert(BITE_TRIGGER_R + foe.HERO_R < SPARK_MAX);
-    std.debug.assert(SPARK_MAX < AGGRO_R);
+    std.debug.assert(SPARK_MAX < AGGRO_R_BANK);
     std.debug.assert(SPARK_N >= 2);
     std.debug.assert(NPART >= foe.hitParts(CHIP_HEAVY) + foe.hitParts(CHIP_DEATH) + foe.WOUND_PARTS);
     std.debug.assert(HP_MAX > 300.0); // over the cyclops: the sponge IS the creature
@@ -1373,7 +1375,7 @@ test "A STAGGERED THREE — the volley fires exactly `SPARK_N`, one at a time, a
         for (gaps[0 .. SPARK_N - 1]) |gp| {
             try std.testing.expect(gp >= SPARK_GAP - dt * 1.5 and gp <= SPARK_GAP + dt * 1.5);
         }
-        std.debug.print("  spark volley at dt {d:.4}: {d} shots, gaps {d:.2} s (authored {d:.2}, roll i-frames {d:.2})\n", .{ dt, fired, gaps[0], SPARK_GAP, heromod.ROLL_IFRAME_END });
+        std.debug.print("  spark volley at dt {d:.4}: {d} shots, gaps {d:.2} s (authored {d:.2}, roll i-frames {d:.2})\n", .{ dt, fired, gaps[0], SPARK_GAP, heromod.ROLL_IFRAME_END_BANK });
         try std.testing.expect(h.sparkCool > 0);
     }
 }

@@ -212,8 +212,8 @@ const SWEEP = Attack{
     .step = SWEEP_STEP,
 };
 
-const MOVES_SHIELDMAN = [_]Attack{MACE};
-const MOVES_GREATSWORD = [_]Attack{ SLAM, LUNGE, SWEEP };
+const MOVES_SHIELDMAN_BANK = [_]Attack{MACE};
+const MOVES_GREATSWORD_BANK = [_]Attack{ SLAM, LUNGE, SWEEP };
 
 /// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT — the game's own number (`foe.PARRY_LEAD`), the SAME one for all three moves. In SECONDS BEFORE THE HIT, since the impact frames differ wildly (mace 0.078 s into its stroke, slam 0.072, lunge 0.120).
 const PARRY_LEAD = foe.PARRY_LEAD;
@@ -228,6 +228,12 @@ const Spec = struct {
     souls: u32,
     moves: []const Attack,
 };
+/// **THE LIVE KIT.** The bank above is the code's own and never moves — that is the revert; every blow
+/// the bench can reach is `MOVES[i].hit`, so a move retuned in the source flows through (`play/tune.zig`).
+pub var MOVES_GREATSWORD = MOVES_GREATSWORD_BANK;
+/// **THE LIVE KIT.** The bank above is the code's own and never moves — that is the revert; every blow
+/// the bench can reach is `MOVES[i].hit`, so a move retuned in the source flows through (`play/tune.zig`).
+pub var MOVES_SHIELDMAN = MOVES_SHIELDMAN_BANK;
 
 const SPEC = [_]Spec{
     .{ .hp = 92, .poise = 15, .stance = 42, .speed = 0.86, .bodyR = 0.36, .hurtR = 0.44, .souls = 180, .moves = &MOVES_SHIELDMAN },
@@ -250,11 +256,11 @@ const MAX_MOVES = blk: {
     break :blk m;
 };
 
-pub const AGGRO_R = 20.0;
+pub var AGGRO_R: f32 = 20.0;
 const TURN_RATE = 4.6;
 const SWING_TURN = 3.0;
-const WALK_SPEED = heromod.WALK_SPEED;
-const RUN_SPEED = heromod.RUN_SPEED;
+const WALK_SPEED = heromod.WALK_SPEED_BANK;
+const RUN_SPEED = heromod.RUN_SPEED_BANK;
 const WALK_IN = 3.2;
 const RUN_STALK = 1.2;
 const CRASH_LOW = 0.30;
@@ -2577,7 +2583,7 @@ test "MELEE SKELETONS RUN THE GAP DOWN, and walk the last of it in" {
         try std.testing.expectApproxEqAbs(walk, w.approachSpeed(w.walkInR() - 0.01), 1e-4);
         try std.testing.expectApproxEqAbs(walk, w.approachSpeed(0), 1e-4);
         try std.testing.expect(w.walkInR() > w.longestTrigger());
-        try std.testing.expect(w.approachSpeed(AGGRO_R) < heromod.RUN_SPEED);
+        try std.testing.expect(w.approachSpeed(AGGRO_R) < heromod.RUN_SPEED_BANK);
         w.homing = true;
         try std.testing.expectApproxEqAbs(walk, w.approachSpeed(AGGRO_R), 1e-4);
     }

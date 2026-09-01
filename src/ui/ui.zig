@@ -63,13 +63,13 @@ pub const Ctx = struct {
         ctx.wheel = if (live) rl.getMouseWheelMove() else 0;
     }
 
-    fn owns(ctx: *Ctx, r: rl.Rectangle) bool {
+    pub fn owns(ctx: *Ctx, r: rl.Rectangle) bool {
         if (ctx.pressed and rl.checkCollisionPointRec(ctx.mouse, r)) dragOwner = r;
         const o = dragOwner orelse return false;
         return o.x == r.x and o.y == r.y and o.width == r.width and o.height == r.height;
     }
 
-    fn hot(ctx: *Ctx, r: rl.Rectangle) bool {
+    pub fn hot(ctx: *Ctx, r: rl.Rectangle) bool {
         const h = rl.checkCollisionPointRec(ctx.mouse, r);
         if (h) ctx.anyHot = true;
         return h;
@@ -554,11 +554,16 @@ pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u
     }
     if (!isOpen) return null;
 
-    const box = ddPanel(r, labels.len);
+    // **THE HIT TEST MAY NOT OUTRUN THE PARKED TABLE.** `endDropdowns` paints off `ddRows`, which is
+    // `DD_ROWS_CAP` wide; asked of the caller's own `labels.len` the scroll and the pick both reached rows the
+    // panel had no copy of and never drew. Nothing passes a longer list today, and this is what keeps that
+    // from becoming a click on a blank row.
+    const nRows = @min(labels.len, DD_ROWS_CAP);
+    const box = ddPanel(r, nRows);
     ctx.anyHot = true;
     if (rl.checkCollisionPointRec(ctx.mouse, box)) {
         openScroll -= @intFromFloat(ctx.wheel * 3);
-        const maxScroll = @max(0, @as(i32, @intCast(labels.len)) - DD_MAX_SHOWN);
+        const maxScroll = @max(0, @as(i32, @intCast(nRows)) - DD_MAX_SHOWN);
         openScroll = @max(0, @min(maxScroll, openScroll));
     }
     var picked: ?usize = null;
@@ -569,8 +574,8 @@ pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u
             const idx: usize = @intCast(@max(row, 0) + openScroll);
             // The panel is `rows * DD_ROW_H + 6` tall, so its bottom 3 px divide to one row PAST the last one
             // drawn: unclamped, a click on that border picked the entry under the one you were looking at.
-            const drawn: i32 = @min(@as(i32, @intCast(labels.len)), DD_MAX_SHOWN);
-            if (row >= 0 and row < drawn and idx < labels.len) {
+            const drawn: i32 = @min(@as(i32, @intCast(nRows)), DD_MAX_SHOWN);
+            if (row >= 0 and row < drawn and idx < nRows) {
                 picked = idx;
                 openId = null;
                 openScroll = 0;
@@ -583,9 +588,8 @@ pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u
         }
     }
     if (openId != null) {
-        const n = @min(labels.len, DD_ROWS_CAP);
-        @memcpy(ddRows[0..n], labels[0..n]);
-        pending = .{ .r = r, .n = n, .sel = sel };
+        @memcpy(ddRows[0..nRows], labels[0..nRows]);
+        pending = .{ .r = r, .n = nRows, .sel = sel };
     }
     return picked;
 }

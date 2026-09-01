@@ -28,7 +28,7 @@ const lerpF = mathx.lerpF;
 pub const H: f32 = 2.55;
 
 /// It feels this far through the water. Generous, because it cannot come after you: the ring is what makes crossing a pool a decision rather than a surprise.
-pub const AGGRO_R: f32 = 9.0;
+pub var AGGRO_R: f32 = 9.0;
 
 /// **HOW DEEP HE HAS TO BE STANDING FOR IT TO FEEL HIM AT ALL.** Ankle-deep is enough: the trigger is being IN the water rather than far into it. Well under `env.WADE_MAX` (1.37), which is the depth that refuses him outright.
 pub const WADE_MIN: f32 = 0.30;
@@ -46,7 +46,7 @@ const POISE_MAX: f32 = 20.0;
 const STANCE_MAX: f32 = 36.0;
 const RESISTS = combat.resists(.{ .fire = 45, .cold = 25, .lightning = -60, .chaos = 0 });
 
-pub const SOULS: u32 = 170;
+pub var SOULS: u32 = 170;
 
 const DEATH_DUR: f32 = 1.15;
 const DISS_DUR: f32 = 1.0;
@@ -61,7 +61,7 @@ const SINK_DUR: f32 = 0.85;
 const REST_DUR: f32 = 1.10;
 
 /// WHAT THE HEAD DOES. Heavy on poise and it carries stance: it is a mass falling out of the air, and what it punishes is being caught mid-swing in water you cannot roll in.
-pub const LASH_HIT = combat.Hit{ .dmg = 26, .poise = 24, .stance = 11 };
+pub var LASH_HIT = combat.Hit{ .dmg = 26, .poise = 24, .stance = 11 };
 
 /// How far out the head reaches at the strike, off the creature's own centre — MEASURED off the posed rig by the test at the foot of this file, never guessed.
 const LASH_R: f32 = 2.35;

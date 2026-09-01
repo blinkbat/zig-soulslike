@@ -51,7 +51,9 @@ const HAZE_THIN = rgba(196, 200, 226, 30);
 
 pub const H: f32 = 1.35;
 
-pub const AGGRO_R: f32 = 9.0;
+/// The ring as authored — what the comptime pin below is asked of, since the ring itself is live now.
+pub const AGGRO_R_BANK: f32 = 9.0;
+pub var AGGRO_R: f32 = AGGRO_R_BANK;
 /// **IT OPENS BEFORE IT CAN REACH YOU** (the rooted's law) — the wake ring is outside the gas.
 const WAKE_R: f32 = 7.6;
 
@@ -65,7 +67,7 @@ const POISE_MAX: f32 = 18.0;
 const STANCE_MAX: f32 = 30.0;
 /// A PLANT ANSWERED WITH FIRE (the sporeling's column, harder) — chaos slides off the thing that makes chaos.
 const RESISTS = combat.resists(.{ .fire = -60, .cold = 10, .lightning = -15, .chaos = 70 });
-pub const SOULS: u32 = 130;
+pub var SOULS: u32 = 130;
 
 /// **LIVE ONLY WHILE THE THING IS VENTING.** No lingering cloud object — the sporeling owns that pattern
 /// (`shroom.Cluster.clouds`), and a second invisible soak is a second thing to be hurt by with nothing to blame.
@@ -89,11 +91,11 @@ comptime {
     std.debug.assert(SWELL_DUR >= foe.TELL_MIN);
     // A WHOLE POUR FILLS A METER AND HALF OF ONE DOES NOT — both over the AREA. Too little and it is scenery,
     // too much and the tell is decoration. The half integrates on [0, 0.5], which is not half the whole.
-    const row = combat.ailRow(.sleep);
+    const row = combat.ailBank(.sleep);
     std.debug.assert(POUR_DUR * POUR_BUILD * POUR_SHAPE > row.max);
     const halfArea = 0.5 - POUR_TAIL * 0.125 / 3.0;
     std.debug.assert(POUR_DUR * POUR_BUILD * halfArea < row.max);
-    std.debug.assert(POUR_R < WAKE_R and WAKE_R < AGGRO_R);
+    std.debug.assert(POUR_R < WAKE_R and WAKE_R < AGGRO_R_BANK);
 }
 
 const DEATH_DUR: f32 = 0.75;

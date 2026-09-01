@@ -112,7 +112,7 @@ const M_SCALE = 1.55;
 const M_HP = 150.0;
 const M_POISE = 34.0;
 const M_STANCE = 58.0;
-const M_SPEED = heromod.WALK_SPEED * 0.52;
+const M_SPEED = heromod.WALK_SPEED_BANK * 0.52;
 const M_AGGRO = 22.0;
 const M_SPIT_MIN = 4.6;
 const M_SPIT_MAX = 19.0;
@@ -155,7 +155,7 @@ const B_STAND = 1.22;
 const B_HP = 18.0;
 const B_POISE = 1.0;
 const B_STANCE = 6.0;
-const B_SPEED = heromod.RUN_SPEED * 0.95;
+const B_SPEED = heromod.RUN_SPEED_BANK * 0.95;
 const B_AGGRO = 16.0;
 const B_HOME_R = 1.8;
 const B_BITE_R = 1.05;
@@ -1902,11 +1902,13 @@ pub const Brood = struct {
         for (self.live()) |*s| {
             if (s.gone) {
                 s.* = Spider.spawnAs(.broodling, at, faceYaw, 1.0, seed);
+                foe.armStats(s, .broodling);
                 return;
             }
         }
         if (self.n >= CAP) return;
         self.band[self.n] = Spider.spawnAs(.broodling, at, faceYaw, 1.0, seed);
+        foe.armStats(&self.band[self.n], .broodling);
         self.n += 1;
     }
 
@@ -2071,8 +2073,8 @@ test "A HATCHLING IS WIMPY AND FAST, and she is neither" {
     try std.testing.expect(M_POISE > light.poise);
     try std.testing.expect(B_LEAP_HIT.dmg > B_BITE_HIT.dmg);
     try std.testing.expect(B_LEAP_HIT.dmg < heromod.HP_MAX * 0.1);
-    try std.testing.expect(M_SPEED < heromod.WALK_SPEED);
-    try std.testing.expect(B_SPEED > heromod.WALK_SPEED);
+    try std.testing.expect(M_SPEED < heromod.WALK_SPEED_BANK);
+    try std.testing.expect(B_SPEED > heromod.WALK_SPEED_BANK);
     try std.testing.expect(B_SPEED > M_SPEED * 2.0);
 }
 

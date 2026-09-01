@@ -217,7 +217,7 @@ pub const Class = enum {
 /// **UNTRADEABLE IS A PRICE OF 0** and it is one rule, not a second flag: the two flasks are the ESTUS of this
 /// game, a key is a key, and a boss's ring is the record of a fight. None of those has a number a shop could
 /// name without breaking something.
-pub fn price(k: Kind) u32 {
+pub fn priceBank(k: Kind) u32 {
     return switch (k) {
         // The things no counter may touch.
         .crimson_flask, .cerulean_flask, .iron_key, .soul_binding_ring, .golden_seed => 0,
@@ -242,9 +242,21 @@ pub fn price(k: Kind) u32 {
     };
 }
 
+/// **THE SHELF PRICE, LIVE.** Filled from the switch above at comptime, so nothing waits on an init, and the
+/// bench writes over it — `priceBank` stays the thing a comptime check reads.
+pub var PRICE: [NK]u32 = blk: {
+    var out: [NK]u32 = undefined;
+    for (0..NK) |i| out[i] = priceBank(@enumFromInt(i));
+    break :blk out;
+};
+
+pub fn price(k: Kind) u32 {
+    return PRICE[@intFromEnum(k)];
+}
+
 /// What a counter pays for one. **A SHOP IS NOT A BANK** — buying back what you sold has to cost something, or
 /// the stock list is a free storage chest with extra steps.
-pub const SELL_SHARE: f32 = 0.40;
+pub var SELL_SHARE: f32 = 0.40;
 
 pub fn sellPrice(k: Kind) u32 {
     const p = price(k);
@@ -637,28 +649,43 @@ comptime {
     }
 }
 
-const BY_KIND: [NK]Gear = blk: {
+/// **THE CODE'S OWN GEAR, AND IT NEVER MOVES** — the revert (`play/tune.zig`). `LIVE` under it is what
+/// `equip`/`use` read and what the bench writes.
+pub const GEAR_BANK: [NK]Gear = blk: {
     var out: [NK]Gear = undefined;
     for (0..NK) |i| out[i] = .{ .kind = @enumFromInt(i) };
     for (GEAR) |g| out[@intFromEnum(g.kind)] = g;
     break :blk out;
 };
 
+pub var LIVE: [NK]Gear = GEAR_BANK;
+
 pub fn equip(k: Kind) Equip {
-    return BY_KIND[@intFromEnum(k)].equip;
+    return LIVE[@intFromEnum(k)].equip;
 }
 
 pub fn use(k: Kind) Use {
-    return BY_KIND[@intFromEnum(k)].use;
+    return LIVE[@intFromEnum(k)].use;
+}
+
+/// What the source says, for the comptime checks below and anything else that asks before the game runs.
+pub fn equipBank(k: Kind) Equip {
+    return GEAR_BANK[@intFromEnum(k)].equip;
+}
+
+pub fn useBank(k: Kind) Use {
+    return GEAR_BANK[@intFromEnum(k)].use;
 }
 
 
+/// WHICH SOCKET A THING GOES IN IS NOT A TUNING, so the identity questions read the bank and stay
+/// comptime-answerable (book.zig sockets its whole paper doll at comptime).
 pub fn wearable(k: Kind) bool {
-    return std.meta.activeTag(equip(k)) != .none;
+    return std.meta.activeTag(equipBank(k)) != .none;
 }
 
 pub fn wearSlot(k: Kind) ?Wear {
-    return switch (equip(k)) {
+    return switch (equipBank(k)) {
         .none => null,
         .arm => |a| a.slot,
         .plate => |p| p.slot,
@@ -671,7 +698,7 @@ pub fn wearSlot(k: Kind) ?Wear {
 comptime {
     for (0..NK) |i| {
         const k: Kind = @enumFromInt(i);
-        switch (equip(k)) {
+        switch (equipBank(k)) {
             .arm => |a| {
                 const guardDials = a.negate != 1 or a.arc != 1 or a.walk != 1;
                 const bladeDials = a.dmg != 1 or a.poise != 1 or a.venom != 0;
@@ -755,11 +782,11 @@ comptime {
 }
 
 pub fn usable(k: Kind) bool {
-    return std.meta.activeTag(use(k)) != .none;
+    return std.meta.activeTag(useBank(k)) != .none;
 }
 
 pub fn dosed(k: Kind) bool {
-    return switch (use(k)) {
+    return switch (useBank(k)) {
         inline else => |payload| @TypeOf(payload) != void,
     };
 }

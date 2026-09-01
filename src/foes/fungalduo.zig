@@ -103,7 +103,9 @@ const CHAOS_EDGE = elemfx.sig(.chaos).edge;
 
 /// **AND IT MUST REACH PAST WHERE THE PAIR THEMSELVES STAND** — at the 26 this was, the magus could blink
 /// outside the ring its own boss bar wakes on. The comptime block by `MG_REAPPEAR_R` holds the two together.
-pub const AGGRO_R: f32 = 30.0;
+/// The ring as authored — what the comptime pin below is asked of, since the ring itself is live now.
+pub const AGGRO_R_BANK: f32 = 30.0;
+pub var AGGRO_R: f32 = AGGRO_R_BANK;
 
 /// **THE MARK IS A POINT IN THE CHEST BONE'S OWN FRAME** (`foe.markOn`) — the house form, and the one both
 /// bodies wear. Handed the WORLD centre instead, the transform put it a body-length past the far side of the
@@ -199,10 +201,10 @@ const SW_HP: f32 = 620.0;
 const SW_POISE: f32 = 62.0;
 const SW_STANCE: f32 = 96.0;
 const SW_RESISTS = combat.resists(.{ .chaos = 75, .fire = -45, .cold = -25, .lightning = 10 });
-pub const SW_SOULS: u32 = 1500;
+pub var SW_SOULS: u32 = 1500;
 
 const SW_TURN_RATE: f32 = 3.05;
-const SW_SPEED: f32 = heromod.RUN_SPEED * 0.92;
+const SW_SPEED: f32 = heromod.RUN_SPEED_BANK * 0.92;
 const SW_BODY_R: f32 = 0.56;
 /// Metres pre-scale. **SOLVED OFF THE BODY, NOT PICKED**: the sphere sits at `SW_CENTER_F` and must take the
 /// crown at `SW_TOP_F` without dropping below the knee — 1.05 m about a centre 1.45 m up on a 2.42 m body.
@@ -479,10 +481,10 @@ const MG_HP: f32 = 520.0;
 const MG_POISE: f32 = 34.0;
 const MG_STANCE: f32 = 62.0;
 const MG_RESISTS = combat.resists(.{ .chaos = 75, .fire = -55, .cold = -15, .lightning = -20 });
-pub const MG_SOULS: u32 = 1500;
+pub var MG_SOULS: u32 = 1500;
 
 const MG_TURN_RATE: f32 = 2.5;
-const MG_SPEED: f32 = heromod.WALK_SPEED * 0.72;
+const MG_SPEED: f32 = heromod.WALK_SPEED_BANK * 0.72;
 const MG_BODY_R: f32 = 0.52;
 const MG_HURT_R: f32 = 0.74;
 const MG_CENTER_F: f32 = 0.62;
@@ -566,13 +568,13 @@ comptime {
     std.debug.assert(CAP_GROW > CAP_GLOW * 2.0);
     // A bolt has to be able to CROSS the ring it is thrown inside, or slowing it turns the far half of the
     // aggro band into ground the caster cannot answer at.
-    std.debug.assert(ORB_SPEED * ORB_LIFE > AGGRO_R);
+    std.debug.assert(ORB_SPEED * ORB_LIFE > AGGRO_R_BANK);
     // The wounded knobs only ever go one way: sooner and oftener, never slower than the healthy caster's.
     std.debug.assert(MG_PRESS_RATE_HURT >= 1.0 and MG_FADE_CD_HURT <= MG_FADE_CD);
     // **A CREATURE MAY NOT STAND FURTHER OFF THAN THE RING ITS OWN BAR WAKES ON.** Keeping to 16 and blinking
     // 13 put the magus 29 m out against an `AGGRO_R` of 26, so the bar dropped mid-fight whenever `roused` had
     // lapsed (owner). The room answers it now (`game.sealedInWith`), and this stops the NEXT blink re-authoring it.
-    std.debug.assert(MG_KEEP_R + MG_REAPPEAR_R <= AGGRO_R);
+    std.debug.assert(MG_KEEP_R + MG_REAPPEAR_R <= AGGRO_R_BANK);
 }
 
 const MG_CARRY = P{ .lean = 4.0, .head = 3.0, .rsh = 16.0, .rabd = 7.0, .rel = 38.0, .lsh = 8.0, .lel = 20.0, .tilt = 172.0 };

@@ -284,7 +284,7 @@ pub const REACH: f32 = 2.4;
 const TURN_RATE = 3.2;
 /// How square onto his errand he has to be before he sets off (radians).
 const TURN_GATE = 0.22;
-const AMBLE_SPEED = heromod.WALK_SPEED * 0.42;
+const AMBLE_SPEED = heromod.WALK_SPEED_BANK * 0.42;
 const BODY_R = 0.32;
 
 const A_BOB = heromod.A_BOB;

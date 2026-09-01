@@ -19,12 +19,15 @@ pub const Soak = struct {
 /// `sinceDose` and the delay is 1.1 s (`combat.POISON_DECAY_DELAY`) — so `max/build` IS the seconds to break.
 /// The bar it is set against is the burnt ground the cinder wake leaves, which fills BURNING in 1.7 s: a lake
 /// is scenery you cross, not a creature's attack, so the fungal takes eight times that and the lava four.
-pub const SOAK = [wf.Liquid.N]?Soak{
+pub const SOAK_BANK = [wf.Liquid.N]?Soak{
     null,
     null,
     .{ .ail = .poison, .build = 7.2 },
     .{ .ail = .burning, .build = 14.3, .dpsFrac = 0.045 },
 };
+
+/// The live four. `SOAK_BANK` above is the revert (`play/tune.zig`).
+pub var SOAK: [wf.Liquid.N]?Soak = SOAK_BANK;
 
 pub fn soakOf(l: wf.Liquid) ?Soak {
     return SOAK[@intFromEnum(l)];

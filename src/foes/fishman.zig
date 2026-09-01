@@ -169,7 +169,7 @@ comptime {
     std.debug.assert(spec(.spearman).size > spec(.shaman).size and spec(.netter).size > spec(.shaman).size);
     std.debug.assert(spec(.spearman).rolls and spec(.netter).rolls and !spec(.shaman).rolls);
     std.debug.assert(spec(.shaman).bodyR > spec(.spearman).bodyR and spec(.shaman).bodyR > spec(.netter).bodyR);
-    for (SPEC) |s| std.debug.assert(s.speed * WALK_BASE < heromod.RUN_SPEED);
+    for (SPEC) |s| std.debug.assert(s.speed * WALK_BASE < heromod.RUN_SPEED_BANK);
 }
 
 pub fn roleOf(k: wf.FoeKind) ?Role {
@@ -183,13 +183,13 @@ pub fn kindOf(r: Role) wf.FoeKind {
     return @enumFromInt(@intFromEnum(wf.FoeKind.fish_spearman) + @intFromEnum(r));
 }
 
-pub const AGGRO_R: f32 = 16.0;
+pub var AGGRO_R: f32 = 16.0;
 const HOME_R: f32 = 2.0;
 /// Raised with the size and the gait (owner: bigger AND more agile). Still under the hero's own, so squaring
 /// up to one is possible; what it costs is that walking a ring round it no longer is.
 const TURN_RATE: f32 = 4.4;
 const ACCEL: f32 = 4.0;
-const WALK_BASE: f32 = heromod.WALK_SPEED;
+const WALK_BASE: f32 = heromod.WALK_SPEED_BANK;
 
 const CENTER_F: f32 = 0.56;
 const TOP_F: f32 = 1.02;
@@ -632,7 +632,7 @@ pub const Fishman = struct {
             },
             .idle, .walk => {
                 const sensed = foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R);
-                const gap = mathx.maxF(0, sensed - foe.HERO_R - self.bodyR());
+                const gap = mathx.maxF(0, sensed - foe.closestApproach(self.bodyR()));
                 const homeGap = mathx.distXZ(self.pos, foe.homeFor(self));
                 switch (classify(self.role, gap, sensed, homeGap, self.scale, self.cd <= 0, bandHurt, self.root.held(), self.rollCd <= 0 and foe.canLeap(&self.root))) {
                     .rest => {
@@ -1399,7 +1399,7 @@ test "A NET IN THE AIR OUTLIVES THE THROWER, AND IT CAN BE STEPPED OUT OF" {
     var at = hero;
     t = 0;
     while (t < 3.0) : (t += 1.0 / 60.0) {
-        at.x += heromod.RUN_SPEED * (1.0 / 60.0);
+        at.x += heromod.RUN_SPEED_BANK * (1.0 / 60.0);
         _ = g.update(1.0 / 60.0, at, 400, .{}, false);
         if (g.snared > 0) dodged = false;
     }

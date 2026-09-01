@@ -97,14 +97,14 @@ const EYE_LIT = rgba(255, 196, 86, 255);
 const DUST = rgba(96, 92, 86, 235);
 const CHIP = rgba(66, 64, 61, 240);
 
-pub const AGGRO_R: f32 = 12.0;
+pub var AGGRO_R: f32 = 12.0;
 const HOME_R: f32 = 2.2;
 /// **HOW NEAR IS NEAR.** Well inside `AGGRO_R`, because the wake is not the sighting: it has to be a thing
 /// you walked up to. Also outside `BURST_R` and both melee bands, so nothing can be woken already swinging.
 const WAKE_R: f32 = 4.6;
 
-const WALK_SPEED: f32 = heromod.WALK_SPEED * 0.62;
-const CHASE_SPEED: f32 = heromod.WALK_SPEED * 1.02;
+const WALK_SPEED: f32 = heromod.WALK_SPEED_BANK * 0.62;
+const CHASE_SPEED: f32 = heromod.WALK_SPEED_BANK * 1.02;
 const ACCEL: f32 = 3.2;
 const TURN_RATE: f32 = 2.1;
 
@@ -123,7 +123,7 @@ const POISE_MAX: f32 = 30.0;
 const STANCE_MAX: f32 = 46.0;
 /// A rock: fire does nothing to it, cold cracks it, and lightning finds it standing in the open.
 const RESISTS = combat.resists(.{ .fire = 55, .cold = -45, .lightning = -30, .chaos = 25 });
-pub const SOULS: u32 = 240;
+pub var SOULS: u32 = 240;
 
 const DEATH_DUR: f32 = 1.45;
 const DISS_DUR: f32 = 1.05;
@@ -174,10 +174,13 @@ pub const SLAM_HIT = combat.Hit{ .dmg = 33, .poise = 32, .stance = 16, .launch =
 
 /// Every wind clears `foe.TELL_MIN`, and the slam's is nearly a second: the thing is slow and the reach is
 /// what makes it dangerous.
-const MOVES = [_]Attack{
+const MOVES_BANK = [_]Attack{
     .{ .windDur = 0.58, .strikeDur = 0.20, .recoverDur = 0.52, .cd = 2.3, .minR = 0, .maxR = 2.45, .frontDot = 0.40, .hit = RAKE_HIT },
     .{ .windDur = 0.94, .strikeDur = 0.24, .recoverDur = 0.98, .cd = 5.2, .minR = 0, .maxR = 2.20, .frontDot = 0.52, .hit = SLAM_HIT },
 };
+/// **THE LIVE KIT.** The bank above is the code's own and never moves — that is the revert; every blow
+/// the bench can reach is `MOVES[i].hit`, so a move retuned in the source flows through (`play/tune.zig`).
+pub var MOVES = MOVES_BANK;
 
 /// Where in a strike the talons arrive, as a share of it — the ONE frame the boards are asked about, read
 /// from one constant so the blow and the parry cannot disagree about when it happened.
@@ -187,9 +190,9 @@ comptime {
     const named = .{ .{ RAKE, RAKE_HIT }, .{ SLAM, SLAM_HIT } };
     if (named.len != MOVES.len) @compileError("owlbear: MOVES and the named indices disagree on how many strikes there are");
     for (named) |row| {
-        if (!std.meta.eql(MOVES[row[0]].hit, row[1])) @compileError("owlbear: a named index no longer points at its own row of MOVES");
+        if (!std.meta.eql(MOVES_BANK[row[0]].hit, row[1])) @compileError("owlbear: a named index no longer points at its own row of MOVES");
     }
-    for (MOVES) |mv| std.debug.assert(mv.windDur >= foe.TELL_MIN);
+    for (MOVES_BANK) |mv| std.debug.assert(mv.windDur >= foe.TELL_MIN);
 }
 
 pub fn moveClock(which: usize) foe.Clock {
@@ -547,7 +550,7 @@ pub const Owlbear = struct {
             .burst => self.tickBurst(dt, bounds, &movedDist, &moveSpeed, &moveYaw),
             .idle, .walk => {
                 const sensed = foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R);
-                const gap = mathx.maxF(0, sensed - foe.HERO_R - self.bodyR());
+                const gap = mathx.maxF(0, sensed - foe.closestApproach(self.bodyR()));
                 const homeGap = mathx.distXZ(self.pos, foe.homeFor(self));
                 // **BACK ON ITS PERCH WITH NOBODY IN SIGHT, IT SITS DOWN AGAIN** — the statue is the resting
                 // state and not a one-shot, so a wood full of these can be walked past twice.

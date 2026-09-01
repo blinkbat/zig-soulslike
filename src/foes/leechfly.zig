@@ -51,7 +51,7 @@ const CLIMB_RATE: f32 = 8.5;
 const DIVE_RATE: f32 = 7.0;
 const SETTLE_RATE: f32 = 3.2;
 
-pub const AGGRO_R: f32 = 15.0;
+pub var AGGRO_R: f32 = 15.0;
 const BODY_R: f32 = 0.30;
 const HURT_R: f32 = 0.40;
 const CENTER_F: f32 = 0.10;
@@ -66,7 +66,7 @@ const HP_MAX: f32 = 30.0;
 const POISE_MAX: f32 = 7.0;
 const STANCE_MAX: f32 = 20.0;
 const RESISTS = combat.resists(.{ .fire = -55, .cold = -25, .chaos = 35 });
-pub const SOULS: u32 = 95;
+pub var SOULS: u32 = 95;
 
 const DEATH_DUR: f32 = 0.85;
 const DISS_DUR: f32 = 0.8;
@@ -74,7 +74,7 @@ const DISSOLVE = foe.Dissolve{ .rate = 30.0, .spread = 0.45, .rise = 0.30, .flak
 const SHOVE_DECAY: f32 = 8.0;
 
 
-pub const STAB_HIT = combat.Hit{ .dmg = 6, .poise = 9 };
+pub var STAB_HIT = combat.Hit{ .dmg = 6, .poise = 9 };
 pub const DRINK_DPS: f32 = 10.0;
 const LEECH_SHARE: f32 = 0.55;
 const DRINK_DUR: f32 = 1.45;

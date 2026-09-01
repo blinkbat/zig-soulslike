@@ -10,6 +10,8 @@ const envmod = @import("../world/env.zig");
 const gfx = @import("../gfx/gfx.zig");
 const daynight = @import("../world/daynight.zig");
 const objview = @import("objview.zig");
+const tuneui = @import("tuneui.zig");
+const tunemod = @import("../play/tune.zig");
 const item = @import("../play/item.zig");
 const combat = @import("../play/combat.zig");
 const restmod = @import("../play/rest.zig");
@@ -694,7 +696,7 @@ fn layerOf(o: *const wf.Op) Layer {
 
 pub const Action = enum { none, leave, playtest };
 
-pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot, boss, jukebox, world, zonemix, script, talk, options };
+pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot, boss, jukebox, stats, world, zonemix, script, talk, options };
 
 /// The bench lists off the AUDIO module's own table (`sfx.NAMES`), which `settings.cfg` is already keyed on. A second comptime walk over `sfx.Id` here was the same list built twice.
 const VOICE_NAMES = sfx.NAMES;
@@ -967,6 +969,7 @@ pub const Editor = struct {
     modal: Modal = .none,
     pending: Pending = .none,
     objects: objview.State = .{},
+    stats: tuneui.State = .{},
     juke: usize = 0,
     jukeScroll: i32 = 0,
     jukeWorld: bool = false,
@@ -1479,6 +1482,25 @@ pub const Editor = struct {
         o.gB = @max(o.x, o.x1);
         if (o.gB - o.gA < 1.0) o.gB = o.gA + 1.0;
         o.gFloor = 0.25;
+    }
+
+    /// The bench on one named table and row — the harness's door into the same sheet the Stats button opens.
+    pub fn statsForShot(self: *Editor, tableName: []const u8, row: usize) void {
+        self.modal = .stats;
+        self.menuOpen = false;
+        self.stats = .{};
+        for (tunemod.TABLES, 0..) |tb, i| {
+            if (std.mem.eql(u8, tb.name, tableName)) self.stats.tab = i;
+        }
+        self.stats.row = @min(row, tunemod.TABLES[self.stats.tab].n - 1);
+    }
+
+    /// One item's picture, full-frame, with its sheet beside it.
+    pub fn itemForShot(self: *Editor, k: item.Kind) void {
+        self.modal = .objects;
+        self.menuOpen = false;
+        self.objects.mode = .icons;
+        self.objects.openIcon = objview.itemSlot(k);
     }
 
     pub fn soundsForShot(self: *Editor, id: sfx.Id) void {
@@ -2783,11 +2805,14 @@ pub const Editor = struct {
                     const nn = m.npcs[j - 1];
                     if (mathx.dist2XZ(v3(nn.x, 0, nn.z), g) > self.radius * self.radius) continue;
                     self.bankStroke(m);
-                    std.mem.copyForwards(wf.Npc, m.npcs[j - 1 .. m.nnpcs - 1], m.npcs[j..m.nnpcs]);
-                    m.nnpcs -= 1;
-                    self.touchFolk();
-                    self.dropSelection();
-                    self.sayFmt("-npc ({d:.0}, {d:.0})", .{ nn.x, nn.z });
+                    const gone = self.removeFolk(m, j - 1);
+                    if (gone.conds > 0) {
+                        self.sayFmt("-npc; {d} `near` condition(s) now never", .{gone.conds});
+                    } else if (gone.freed) {
+                        self.sayFmt("-npc and its conversation ({d:.0}, {d:.0})", .{ nn.x, nn.z });
+                    } else {
+                        self.sayFmt("-npc ({d:.0}, {d:.0})", .{ nn.x, nn.z });
+                    }
                     return true;
                 }
             },
@@ -2878,6 +2903,23 @@ pub const Editor = struct {
         self.sayFmt("broke apart into {d}", .{n});
     }
 
+    /// What taking a body off the map had to break, for the caller's own line.
+    const FolkGone = struct { conds: usize, freed: bool };
+
+    /// **ONE DOOR OUT FOR A BODY.** Delete and the eraser each did this by hand and the eraser's copy was a bare
+    /// `copyForwards`: `Cond.near` is a POSITIONAL npc index (`wf.removeNpc`), so it moved every watch onto the
+    /// wrong body and taking the LAST one wrote a map `link` refuses outright. The conversation it was the last
+    /// owner of goes with it too, or the table fills with voices nothing can reach (`wf.MAX_DIALOGS` is 32 and
+    /// the talk panel coins one on sight).
+    fn removeFolk(self: *Editor, m: *wf.Map, i: usize) FolkGone {
+        const doomed = m.npcs[i].dlg;
+        const broke = wf.removeNpc(m, i);
+        const freed = doomed != wf.NO_DIALOG and wf.removeDialog(m, doomed);
+        self.touchFolk();
+        self.dropSelection();
+        return .{ .conds = broke.conds, .freed = freed };
+    }
+
     fn deleteSel(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
         if (self.layer == .units) {
             switch (self.selUnit orelse return) {
@@ -2890,25 +2932,15 @@ pub const Editor = struct {
                 .npc => |i| {
                     if (i >= m.nnpcs) return;
                     self.bank(m);
-                    // **THROUGH THE FORMAT'S OWN REMOVAL, NEVER A BARE `copyForwards`.** `Cond.near` is a
-                    // POSITIONAL npc index, so a raw compaction moved every watch onto the wrong body and
-                    // deleting the LAST body wrote a map `link` refuses outright.
-                    const doomed = m.npcs[i].dlg;
-                    const broke = wf.removeNpc(m, i);
-                    // …and the conversation it was the last owner of goes with it, or the table fills with
-                    // voices nothing can reach (`wf.MAX_DIALOGS` is 32 and `talk...` coins one on sight).
-                    const freed = doomed != wf.NO_DIALOG and wf.removeDialog(m, doomed);
-                    self.touchFolk();
-                    if (broke.conds > 0) {
-                        self.sayFmt("-unit; {d} `near` condition(s) now never", .{broke.conds});
-                        self.dropSelection();
-                        return;
-                    }
-                    if (freed) {
+                    const gone = self.removeFolk(m, i);
+                    if (gone.conds > 0) {
+                        self.sayFmt("-unit; {d} `near` condition(s) now never", .{gone.conds});
+                    } else if (gone.freed) {
                         self.say("-unit and its conversation");
-                        self.dropSelection();
-                        return;
+                    } else {
+                        self.say("-unit");
                     }
+                    return;
                 },
             }
             self.dropSelection();
@@ -3826,6 +3858,10 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
         ed.menuOpen = false;
         ed.modal = .script;
         if (ed.trigSel == null and m.ntrigs > 0) ed.selectTrig(m, 0);
+    }
+    if (row.button("Stats", ed.modal == .stats, "The stats bench - every table-able number in the game, and a revert on each one")) {
+        ed.menuOpen = false;
+        ed.modal = .stats;
     }
     if (row.button("Sounds", ed.modal == .jukebox, "Jukebox - play any sound in the bank on demand")) {
         ed.menuOpen = false;
@@ -5487,6 +5523,9 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 ed.modal = .none;
             }
         },
+        .stats => {
+            if (!tuneui.panel(&ed.stats, ctx)) ed.modal = .none;
+        },
         .jukebox => {
             const box = ui.beginModal(ctx, JUKE_W, JUKE_H, "Sounds");
             if (ui.list(ctx, ui.rect(box.x + 20, box.y + 56, JUKE_LIST_W, JUKE_LIST_H), &VOICE_NAMES, ed.juke, &ed.jukeScroll, "Every voice in the game. Click one to hear it")) |i| {
@@ -6932,6 +6971,41 @@ test "the units layer POSTS and ERASES both kinds, and the eraser does not care 
     try std.testing.expectEqual(@as(usize, 1), m.nfoes);
     try std.testing.expect(ed.eraseAt(m, env, v3(0, 0, 0)));
     try std.testing.expectEqual(@as(usize, 0), m.nfoes);
+}
+
+test "THE ERASER TAKES A BODY OFF THROUGH THE FORMAT — the watch on the one above it follows it down" {
+    undoReset();
+    const alloc = std.testing.allocator;
+    // The eraser was a bare `copyForwards`, so `Cond.near`'s POSITIONAL index stayed where it was and the
+    // trigger came out watching whoever had closed up into that slot.
+    const m = try wf.testMap(alloc, wf.TEST_HEAD ++
+        \\dlg: hi
+        \\  node: root
+        \\  say: Ho.
+        \\  then: end
+        \\npc: wanderer 0.00 0.00 0.0 1.00 0.00 dlg=hi
+        \\npc: merchant 20.00 0.00 0.0 1.00 0.00
+        \\trig: watch
+        \\  when: near npc=1 r=3.0
+        \\  do: flag met=1
+    );
+    defer alloc.destroy(m);
+    const env = try testEnv(alloc);
+    defer alloc.destroy(env);
+    var ed = Editor{};
+    ed.layer = .units;
+    ed.radius = 2.0;
+
+    try std.testing.expectEqual(@as(u16, 1), m.trigs[0].conds[0].slot);
+    const dialogsWas = m.ndialogs;
+    try std.testing.expect(ed.eraseAt(m, env, v3(0, 0, 0)));
+    try std.testing.expectEqual(@as(usize, 1), m.nnpcs);
+    try std.testing.expectEqual(wf.NpcKind.merchant, m.npcs[0].kind);
+    try std.testing.expectEqual(wf.CondKind.near, m.trigs[0].conds[0].kind);
+    try std.testing.expectEqual(@as(u16, 0), m.trigs[0].conds[0].slot);
+    // …and the conversation nobody opens any more went with the body, the way Delete's does.
+    try std.testing.expectEqual(dialogsWas - 1, m.ndialogs);
+    try std.testing.expect(m.npcs[0].dlg < m.ndialogs);
 }
 
 test "THE MINIMAP'S HELD FACE IS REPAINTED BY EVERY HAND THAT MOVES IT" {

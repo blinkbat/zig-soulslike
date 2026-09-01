@@ -82,10 +82,10 @@ const ROT = rgba(42, 40, 30, 255);
 const KNOTHOLE = rgba(14, 13, 11, 255);
 const EMBER_EYE = rgba(232, 128, 40, 255);
 
-pub const AGGRO_R: f32 = 13.0;
+pub var AGGRO_R: f32 = 13.0;
 const HOME_R: f32 = 2.6;
-const WALK_SPEED: f32 = heromod.WALK_SPEED * 0.44;
-const CHASE_SPEED: f32 = heromod.WALK_SPEED * 0.72;
+const WALK_SPEED: f32 = heromod.WALK_SPEED_BANK * 0.44;
+const CHASE_SPEED: f32 = heromod.WALK_SPEED_BANK * 0.72;
 const ACCEL: f32 = 2.0;
 const TURN_RATE: f32 = 1.5;
 
@@ -101,7 +101,7 @@ const POISE_MAX: f32 = 34.0;
 const STANCE_MAX: f32 = 38.0;
 /// Fire is the answer twice over: the damage AND the catch. Lightning is the second — it is still a tree.
 const RESISTS = combat.resists(.{ .fire = -85, .lightning = -20, .cold = 25, .chaos = 40 });
-pub const SOULS: u32 = 210;
+pub var SOULS: u32 = 210;
 
 const BOUGH_R: f32 = 2.30;
 const BOUGH_FRONT_DOT: f32 = 0.34;
@@ -109,7 +109,7 @@ const BOUGH_WIND: f32 = 0.86;
 const BOUGH_STRIKE: f32 = 0.22;
 const BOUGH_RECOVER: f32 = 0.95;
 const BOUGH_CD: f32 = 3.0;
-pub const BOUGH_HIT = combat.Hit{ .dmg = 22, .poise = 22, .stance = 14 };
+pub var BOUGH_HIT = combat.Hit{ .dmg = 22, .poise = 22, .stance = 14 };
 /// What the same swing carries once it is alight — added on top, so the LIT blow is the unlit one plus fire.
 pub const LIT_FIRE: f32 = 14.0;
 

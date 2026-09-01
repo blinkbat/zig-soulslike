@@ -241,7 +241,7 @@ fn bridgeNode(s: Seam, ring: u8, name: [:0]const u8, near: stats.Attr, far: stat
 }
 
 /// IN ARM ORDER — class node, first branch, second branch, each in ring/slot order. A comptime walk pins it, so a node in the wrong place is a compile error.
-pub const NODES = [N]Node{
+pub const NODES_BANK = [N]Node{
     classNode(.warrior, "Iron Thews"),
 
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 1, .name = "Warrior's Blood", .grant = attr(.vitality, 2) },
@@ -345,14 +345,18 @@ pub const NODES = [N]Node{
     bridgeNode(.wizard_warrior, 5, "Battlemage", .intelligence, .strength, 2),
 };
 
+/// **THE LIVE BOARD.** `NODES_BANK` above is the code's own and never moves — that is the revert
+/// (`play/tune.zig`); the walk below is asked of the bank, and everything at runtime reads this.
+pub var NODES: [N]Node = NODES_BANK;
+
 comptime {
     var i: usize = 0;
     for (0..NARM) |a| {
         const arm: Arm = @as(Arm, @enumFromInt(a));
         std.debug.assert(i == armFirst(arm));
-        std.debug.assert(NODES[i].arm == arm and NODES[i].branch == null and NODES[i].ring == 0);
-        std.debug.assert(!NODES[i].key);
-        switch (NODES[i].grant) {
+        std.debug.assert(NODES_BANK[i].arm == arm and NODES_BANK[i].branch == null and NODES_BANK[i].ring == 0);
+        std.debug.assert(!NODES_BANK[i].key);
+        switch (NODES_BANK[i].grant) {
             .attr => |x| std.debug.assert(x.a == arm.stat()),
             else => @compileError("passivetree: an arm's class node must be its own attribute"),
         }
@@ -363,7 +367,7 @@ comptime {
             std.debug.assert(i == branchFirst(b));
             for (BRANCH_RINGS, 0..) |slots, br| {
                 for (0..slots) |slot| {
-                    const n = NODES[i];
+                    const n = NODES_BANK[i];
                     std.debug.assert(n.arm == arm);
                     std.debug.assert(n.branch.? == b);
                     std.debug.assert(n.ring == br + 1);
@@ -380,29 +384,29 @@ comptime {
         std.debug.assert(s.from() != s.to());
         std.debug.assert(i == bridgeFirst(s));
         for (BRIDGE_RINGS) |ring| {
-            const n = NODES[i];
+            const n = NODES_BANK[i];
             std.debug.assert(n.seam.? == s and n.branch == null and !n.key);
             std.debug.assert(n.ring == ring);
             // Two rungs wide, or "the outermost slot" is the only slot and the crossing hangs off the centre.
             std.debug.assert(BRANCH_RINGS[ring - 1] >= 2);
             const a = bridgeAnchors(s, ring);
-            std.debug.assert(NODES[a[0]].arm == s.from() and NODES[a[1]].arm == s.to());
-            std.debug.assert(NODES[a[0]].ring == ring and NODES[a[1]].ring == ring);
-            std.debug.assert(NODES[a[0]].slot == 0 and NODES[a[1]].slot == BRANCH_RINGS[ring - 1] - 1);
-            std.debug.assert(NODES[a[0]].branch.?.lane() == 0 and NODES[a[1]].branch.?.lane() == 1);
+            std.debug.assert(NODES_BANK[a[0]].arm == s.from() and NODES_BANK[a[1]].arm == s.to());
+            std.debug.assert(NODES_BANK[a[0]].ring == ring and NODES_BANK[a[1]].ring == ring);
+            std.debug.assert(NODES_BANK[a[0]].slot == 0 and NODES_BANK[a[1]].slot == BRANCH_RINGS[ring - 1] - 1);
+            std.debug.assert(NODES_BANK[a[0]].branch.?.lane() == 0 and NODES_BANK[a[1]].branch.?.lane() == 1);
             i += 1;
         }
     }
     std.debug.assert(i == N);
     var keys: usize = 0;
-    for (NODES) |n| {
+    for (NODES_BANK) |n| {
         if (n.key) keys += 1;
     }
     std.debug.assert(keys == NBRANCH);
 
     // **AT LEAST HALF THE BOARD PAYS A POINT** (owner's call). A rider may not double its grant on the SAME attribute; two DIFFERENT ones are a bridge's whole point.
     var carry: usize = 0;
-    for (NODES) |n| {
+    for (NODES_BANK) |n| {
         const pureOn: ?stats.Attr = switch (n.grant) {
             .attr => |x| x.a,
             else => null,

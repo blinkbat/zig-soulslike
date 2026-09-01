@@ -63,6 +63,7 @@ const item = @import("play/item.zig");
 const dropsmod = @import("play/drops.zig");
 const weathermod = @import("world/weather.zig");
 const savemod = @import("save.zig");
+const tune = @import("play/tune.zig");
 const sfx = @import("core/audio.zig");
 
 const v3 = mathx.v3;
@@ -75,9 +76,6 @@ const padDown = rumblemod.padDown;
 pub const SCREEN_W = 1280;
 pub const SCREEN_H = 800;
 
-const WALK_SPEED = heromod.WALK_SPEED;
-const RUN_SPEED = heromod.RUN_SPEED;
-const SPRINT_SPEED = heromod.SPRINT_SPEED;
 const TURN_RATE = 12.0;
 const STRAFE_SPEED = heromod.STRAFE_SPEED;
 const STICK_DEADZONE = 0.16;
@@ -101,7 +99,10 @@ const SHAKE_HURT_HEAVY = 0.62;
 const SHAKE_BLOCK = 0.40;
 const SHAKE_PARRY = 0.56;
 const SHAKE_GUARD_BREAK = 0.72;
-const BLOW_HEAVIEST = @max(ogremod.SLAM_HIT.raw(), knightmod.FALL_HIT.raw());
+/// The worst single blow in the game, asked rather than baked — the slam is a live row now.
+fn blowHeaviest() f32 {
+    return @max(ogremod.SLAM_HIT.raw(), knightmod.FALL_HIT.raw());
+}
 const BLOCK_FELT_MIN = 0.25;
 const BLOCK_FELT_HEAVY = 0.5;
 const SHAKE_DEATH = 0.85;
@@ -704,10 +705,21 @@ fn loadGame(g: *Game, i: usize) bool {
     return true;
 }
 
+/// **THE RING IS ASKED FOR, NOT COPIED.** It used to be `aggro: f32` off each module's `AGGRO_R`, which baked
+/// the number into this table at comptime — and the moment the bench could move one (`play/tune.zig`), the
+/// creature would have noticed the hero at one distance while the music and the boss bar used another.
+fn aggroRing(comptime M: type) *const fn () f32 {
+    return struct {
+        fn f() f32 {
+            return M.AGGRO_R;
+        }
+    }.f;
+}
+
 const FoeGroup = struct {
     field: []const u8,
     kind: ?FoeKind,
-    aggro: f32,
+    aggro: *const fn () f32,
     vsHero: bool = true,
     vs: []const []const u8 = &.{},
 };
@@ -716,40 +728,40 @@ const FoeGroup = struct {
 /// crypt's own row does on purpose. There WAS a second list (`BLOW_GROUPS`); every check it could make was a
 /// restatement of this table, and both `bed` and `crypt` sat in it swinging nothing at the hero at all.
 pub const FOE_GROUPS = [_]FoeGroup{
-    .{ .field = "warren", .kind = .toad, .aggro = frogmod.AGGRO_R, .vs = &.{"herd"} },
-    .{ .field = "line", .kind = .archer, .aggro = archermod.AGGRO_R, .vs = &.{"warren"} },
-    .{ .field = "grief", .kind = .ogre, .aggro = ogremod.AGGRO_R, .vsHero = false },
-    .{ .field = "band", .kind = null, .aggro = koboldmod.AGGRO_R },
-    .{ .field = "brood", .kind = null, .aggro = broodmod.AGGRO_R },
-    .{ .field = "muster", .kind = null, .aggro = warriormod.AGGRO_R, .vs = &.{"line"} },
-    .{ .field = "haunt", .kind = null, .aggro = shademod.AGGRO_R, .vs = &.{ "warren", "line", "muster" } },
-    .{ .field = "swarm", .kind = .leechfly, .aggro = leechmod.AGGRO_R },
-    .{ .field = "grove", .kind = .rooted, .aggro = rootedmod.AGGRO_R, .vsHero = false },
-    .{ .field = "cluster", .kind = .shroom, .aggro = shroommod.AGGRO_R, .vs = &.{"herd"} },
-    .{ .field = "warrens", .kind = .delver, .aggro = delvermod.AGGRO_R },
-    .{ .field = "rite", .kind = .necromancer, .aggro = necromod.AGGRO_R, .vs = &.{ "line", "muster" } },
+    .{ .field = "warren", .kind = .toad, .aggro = aggroRing(frogmod), .vs = &.{"herd"} },
+    .{ .field = "line", .kind = .archer, .aggro = aggroRing(archermod), .vs = &.{"warren"} },
+    .{ .field = "grief", .kind = .ogre, .aggro = aggroRing(ogremod), .vsHero = false },
+    .{ .field = "band", .kind = null, .aggro = aggroRing(koboldmod) },
+    .{ .field = "brood", .kind = null, .aggro = aggroRing(broodmod) },
+    .{ .field = "muster", .kind = null, .aggro = aggroRing(warriormod), .vs = &.{"line"} },
+    .{ .field = "haunt", .kind = null, .aggro = aggroRing(shademod), .vs = &.{ "warren", "line", "muster" } },
+    .{ .field = "swarm", .kind = .leechfly, .aggro = aggroRing(leechmod) },
+    .{ .field = "grove", .kind = .rooted, .aggro = aggroRing(rootedmod), .vsHero = false },
+    .{ .field = "cluster", .kind = .shroom, .aggro = aggroRing(shroommod), .vs = &.{"herd"} },
+    .{ .field = "warrens", .kind = .delver, .aggro = aggroRing(delvermod) },
+    .{ .field = "rite", .kind = .necromancer, .aggro = aggroRing(necromod), .vs = &.{ "line", "muster" } },
     // **THE ROW THAT YIELDS IS THE ROW THAT NAMES THE OTHER** — `vs` is who shoulders ME.
-    .{ .field = "herd", .kind = .fungal_deer, .aggro = deermod.AGGRO_R },
-    .{ .field = "ring", .kind = .mushroom_mage, .aggro = magemod.AGGRO_R },
-    .{ .field = "host", .kind = .spore_golem, .aggro = golemmod.AGGRO_R },
-    .{ .field = "marsh", .kind = .fen_lurker, .aggro = fenmod.AGGRO_R, .vsHero = false },
+    .{ .field = "herd", .kind = .fungal_deer, .aggro = aggroRing(deermod) },
+    .{ .field = "ring", .kind = .mushroom_mage, .aggro = aggroRing(magemod) },
+    .{ .field = "host", .kind = .spore_golem, .aggro = aggroRing(golemmod) },
+    .{ .field = "marsh", .kind = .fen_lurker, .aggro = aggroRing(fenmod), .vsHero = false },
     // **THE LITTLE BODY IS THE ONE THAT GIVES WAY** — a 0.62 m cage shouldering a priest off its line is the picture arguing with the weights.
-    .{ .field = "clatter", .kind = .bone_skitterer, .aggro = skittermod.AGGRO_R, .vs = &.{ "crypt", "belfry" } },
-    .{ .field = "crypt", .kind = .ancient_priest, .aggro = priestmod.AGGRO_R },
-    .{ .field = "belfry", .kind = .tolling_hollow, .aggro = hollowmod.AGGRO_R },
-    .{ .field = "bed", .kind = .slumber_bloom, .aggro = bloommod.AGGRO_R, .vsHero = false },
-    .{ .field = "scorch", .kind = .cinder_wake, .aggro = cindermod.AGGRO_R },
-    .{ .field = "gorge", .kind = .rotgorger, .aggro = gorgermod.AGGRO_R },
-    .{ .field = "stand", .kind = .birchwight, .aggro = birchmod.AGGRO_R },
-    .{ .field = "pan", .kind = .salt_husk, .aggro = huskmod.AGGRO_R },
-    .{ .field = "shoal", .kind = null, .aggro = fishmod.AGGRO_R },
-    .{ .field = "roost", .kind = .blinkbat, .aggro = batmod.AGGRO_R },
-    .{ .field = "perch", .kind = .owlbear, .aggro = owlbearmod.AGGRO_R },
-    .{ .field = "vigil", .kind = .bone_knight, .aggro = knightmod.AGGRO_R, .vsHero = false, .vs = &.{ "line", "muster" } },
+    .{ .field = "clatter", .kind = .bone_skitterer, .aggro = aggroRing(skittermod), .vs = &.{ "crypt", "belfry" } },
+    .{ .field = "crypt", .kind = .ancient_priest, .aggro = aggroRing(priestmod) },
+    .{ .field = "belfry", .kind = .tolling_hollow, .aggro = aggroRing(hollowmod) },
+    .{ .field = "bed", .kind = .slumber_bloom, .aggro = aggroRing(bloommod), .vsHero = false },
+    .{ .field = "scorch", .kind = .cinder_wake, .aggro = aggroRing(cindermod) },
+    .{ .field = "gorge", .kind = .rotgorger, .aggro = aggroRing(gorgermod) },
+    .{ .field = "stand", .kind = .birchwight, .aggro = aggroRing(birchmod) },
+    .{ .field = "pan", .kind = .salt_husk, .aggro = aggroRing(huskmod) },
+    .{ .field = "shoal", .kind = null, .aggro = aggroRing(fishmod) },
+    .{ .field = "roost", .kind = .blinkbat, .aggro = aggroRing(batmod) },
+    .{ .field = "perch", .kind = .owlbear, .aggro = aggroRing(owlbearmod) },
+    .{ .field = "vigil", .kind = .bone_knight, .aggro = aggroRing(knightmod), .vsHero = false, .vs = &.{ "line", "muster" } },
     // **THE PAIR IS ONE GROUP AND ANSWERS FOR ITS OWN MEMBERS** — the kobold warband's arrangement, because
     // the two of them are one encounter and the ground they put down belongs to neither body.
-    .{ .field = "vanguard", .kind = .fungal_swordsman, .aggro = duomod.AGGRO_R, .vs = &.{ "cluster", "ring" } },
-    .{ .field = "conclave", .kind = .fungal_magus, .aggro = duomod.AGGRO_R, .vs = &.{ "cluster", "ring" } },
+    .{ .field = "vanguard", .kind = .fungal_swordsman, .aggro = aggroRing(duomod), .vs = &.{ "cluster", "ring" } },
+    .{ .field = "conclave", .kind = .fungal_magus, .aggro = aggroRing(duomod), .vs = &.{ "cluster", "ring" } },
 };
 
 comptime {
@@ -868,7 +880,7 @@ test "A UNIT WALKS ITS ORDERS — every creature that takes them, not just the o
     inline for (FOE_GROUPS) |gr| {
         const T = memberOf(gr.field);
         if (comptime @hasField(T, "post")) {
-            const far = mathx.ground(0, gr.aggro * 6);
+            const far = mathx.ground(0, gr.aggro() * 6);
             var f = if (comptime @hasDecl(T, "spawn"))
                 T.spawn(home, 0, 1.0, 0.37)
             else
@@ -939,8 +951,10 @@ comptime {
 
 pub fn inCombat(g: *const Game) bool {
     inline for (FOE_GROUPS) |gr| {
+        // The ring is the GROUP'S, so it is asked once for the group and not once for every body in it.
+        const ring = gr.aggro();
         for (@field(g, gr.field).liveConst()) |*f| {
-            if (foeFights(f, g.hero.pos, gr.aggro)) return true;
+            if (foeFights(f, g.hero.pos, ring)) return true;
         }
     }
     return false;
@@ -1081,7 +1095,7 @@ test "ONE BUTTON, ONE ORDER — and the enum's own order is what the press goes 
 
 test "the ranges the fight is judged at are each GROUP'S OWN, never one figure for the field" {
     try std.testing.expect(frogmod.AGGRO_R < archermod.AGGRO_R);
-    inline for (FOE_GROUPS) |gr| try std.testing.expect(gr.aggro > 0);
+    inline for (FOE_GROUPS) |gr| try std.testing.expect(gr.aggro() > 0);
 }
 
 const Sighted = enum { blind, seen };
@@ -1201,7 +1215,7 @@ fn gatherMove() Move {
             1.0,
         );
         if (s.mag > 0.001) {
-            const sp = if (sprint) SPRINT_SPEED else s.mag * RUN_SPEED;
+            const sp = if (sprint) heromod.SPRINT_SPEED else s.mag * heromod.RUN_SPEED;
             return .{ .fx = s.x, .fz = -s.y, .speed = sp };
         }
     }
@@ -1212,14 +1226,14 @@ fn gatherMove() Move {
     if (rl.isKeyDown(.d) or rl.isKeyDown(.right)) kx += 1;
     if (rl.isKeyDown(.a) or rl.isKeyDown(.left)) kx -= 1;
     if (kx != 0 or kz != 0) {
-        const sp: f32 = if (sprint) SPRINT_SPEED else RUN_SPEED;
+        const sp: f32 = if (sprint) heromod.SPRINT_SPEED else heromod.RUN_SPEED;
         return .{ .fx = kx, .fz = kz, .speed = sp };
     }
     return .{};
 }
 
 fn sprintingMove(mv: Move) bool {
-    return mv.speed > RUN_SPEED + 0.01 and (mv.fx * mv.fx + mv.fz * mv.fz) > 1e-6;
+    return mv.speed > heromod.RUN_SPEED + 0.01 and (mv.fx * mv.fx + mv.fz * mv.fz) > 1e-6;
 }
 
 /// The knee on the H=1.8 rig (0.278·H).
@@ -1410,9 +1424,10 @@ fn bossBars(g: *Game, dt: f32) void {
         // a boss whose bar has no business on screen: the pair were visible across half a canyon, so both rails
         // came up while he was still walking toward the door.
         const gated = gateEntered(&g.env, &g.map, row.kind) orelse true;
+        const ring = aggroOfRail(i);
         for (if (gated) @field(g, row.field).liveConst() else &.{}) |*k| {
             if (!k.alive()) continue;
-            if (!(sealed or k.leash.roused() or mathx.distXZ(k.pos, g.hero.pos) <= AGGRO_OF[i])) continue;
+            if (!(sealed or k.leash.roused() or mathx.distXZ(k.pos, g.hero.pos) <= ring)) continue;
             frac = k.vit.hpFrac();
             stag = k.staggered();
             up = true;
@@ -1428,15 +1443,13 @@ fn bossBars(g: *Game, dt: f32) void {
 
 /// The aggro ring for each rail, taken off `FOE_GROUPS` rather than written again — a bar that wakes at a
 /// different range from the creature it is showing is a bar that lies about whether the fight has started.
-const AGGRO_OF = blk: {
-    var out: [BOSS_RAILS.len]f32 = undefined;
-    for (BOSS_RAILS, 0..) |r, i| {
-        for (FOE_GROUPS) |gr| {
-            if (std.mem.eql(u8, gr.field, r.field)) out[i] = gr.aggro;
-        }
+fn aggroOfRail(comptime i: usize) f32 {
+    var out: f32 = 0;
+    inline for (FOE_GROUPS) |gr| {
+        if (comptime std.mem.eql(u8, gr.field, BOSS_RAILS[i].field)) out = gr.aggro();
     }
-    break :blk out;
-};
+    return out;
+}
 
 fn wadeDrag(g: *const Game) f32 {
     return wadeDragAt(g.env.wadeDepth(g.hero.pos.x, g.hero.pos.z));
@@ -1444,8 +1457,8 @@ fn wadeDrag(g: *const Game) f32 {
 
 test "wading costs the run first and never roots him" {
     try std.testing.expectEqual(@as(f32, 1.0), wadeDragAt(0.2));
-    try std.testing.expect(wadeDragAt(WADE_DEEP) * WALK_SPEED < WALK_SPEED);
-    try std.testing.expect(wadeDragAt(WADE_DEEP * 3) * WALK_SPEED > 0.1);
+    try std.testing.expect(wadeDragAt(WADE_DEEP) * heromod.WALK_SPEED < heromod.WALK_SPEED);
+    try std.testing.expect(wadeDragAt(WADE_DEEP * 3) * heromod.WALK_SPEED > 0.1);
     try std.testing.expect(wadeDragAt(0.7) > wadeDragAt(0.9));
 }
 
@@ -1654,7 +1667,7 @@ test "THE JUMP IS SIZED AGAINST THE TERRAIN IT EXISTS TO CROSS, not against a nu
     try std.testing.expect(heromod.JUMP_APEX > 3.0 * worldfmt.HEIGHT_STEP);
     try std.testing.expect(heromod.JUMP_APEX > envmod.STEP_UP);
     try std.testing.expect(heromod.JUMP_APEX < 6.0 * worldfmt.HEIGHT_STEP);
-    try std.testing.expect(SPRINT_SPEED * heromod.JUMP_AIR > heromod.ROLL_DIST);
+    try std.testing.expect(heromod.SPRINT_SPEED * heromod.JUMP_AIR > heromod.ROLL_DIST);
 }
 
 fn standHeight(f: anytype) f32 {
@@ -2917,7 +2930,7 @@ fn updateClimb(g: *Game, dt: f32, mv: Move) void {
 
 /// The whole line comes off the sheet (`env.wardCross`), not his facing, so entering at an angle still puts him
 /// out square. A SPEED and not a duration — a fixed clock over a distance that varies by metres is a walk that is sometimes a run.
-pub const GATE_SPEED: f32 = heromod.WALK_SPEED * 0.66;
+pub const GATE_SPEED: f32 = heromod.WALK_SPEED_BANK * 0.66;
 
 const GateWalk = struct {
     ward: u8,
@@ -4047,11 +4060,11 @@ fn stepShafts(g: *Game, dt: f32) void {
     }
 }
 
-const SIGHT_R: f32 = blk: {
+fn sightR() f32 {
     var widest: f32 = 0;
-    for (FOE_GROUPS) |f| widest = @max(widest, f.aggro);
-    break :blk widest + 1.0;
-};
+    inline for (FOE_GROUPS) |f| widest = @max(widest, f.aggro());
+    return widest + 1.0;
+}
 
 fn heroEye(g: *const Game) rl.Vector3 {
     return v3(g.hero.pos.x, g.hero.pos.y + foemod.HERO_EYE, g.hero.pos.z);
@@ -4062,10 +4075,13 @@ fn heroEye(g: *const Game) rl.Vector3 {
 /// "THE MARK RIDES THE BODY".
 fn markSight(g: *Game) void {
     const eye = heroEye(g);
+    // ONCE A FRAME: `sightR` is a walk of all 31 rings now that a ring is a live dial, and it was being re-solved
+    // per BODY — the widest of thirty-one maxima recomputed for every creature standing on the map.
+    const reach = sightR();
     inline for (FOE_GROUPS) |gr| {
         for (@field(g, gr.field).live()) |*f| {
             if (!foemod.corporeal(f)) continue;
-            if (mathx.distXZ(g.hero.pos, f.pos) > SIGHT_R) continue;
+            if (mathx.distXZ(g.hero.pos, f.pos) > reach) continue;
             if (g.env.sees(f.lockPoint(), eye)) f.leash.noteSeen();
         }
     }
@@ -4945,8 +4961,8 @@ fn dbgRow(s: [:0]const u8, y: i32, size: i32, col: rl.Color) void {
 const GAIT_SLACK: f32 = 0.3;
 const Gait = enum { walk, run, sprint };
 fn gaitOf(speed: f32) Gait {
-    if (speed >= SPRINT_SPEED - GAIT_SLACK) return .sprint;
-    if (speed >= RUN_SPEED - GAIT_SLACK) return .run;
+    if (speed >= heromod.SPRINT_SPEED - GAIT_SLACK) return .sprint;
+    if (speed >= heromod.RUN_SPEED - GAIT_SLACK) return .run;
     return .walk;
 }
 
@@ -4986,7 +5002,12 @@ pub fn run(mode: Mode) void {
     defer hud_.deinit();
     stamp(&runTimer, "fonts");
 
+    // **THE BENCH READS THE CODE FIRST AND THE FILE SECOND** — `init` is what makes Revert mean "back to the
+    // source", so it may never run after a load. `--shot` takes the code's own numbers, as it does with the
+    // sound bank: a harness that photographed a tuning file would not be photographing the game.
+    tune.init();
     if (!shot) {
+        tune.load();
         sfx.init();
         stamp(&runTimer, "audio bake");
     }
@@ -5376,9 +5397,9 @@ pub fn run(mode: Mode) void {
         const parryReq = acts.parry;
 
         var mv = gatherMove();
-        if (!g.hero.stam.canSprint()) mv.speed = @min(mv.speed, RUN_SPEED);
+        if (!g.hero.stam.canSprint()) mv.speed = @min(mv.speed, heromod.RUN_SPEED);
         const wade = wadeDrag(g);
-        if (wade < 1.0) mv.speed = @min(mv.speed, WALK_SPEED * wade);
+        if (wade < 1.0) mv.speed = @min(mv.speed, heromod.WALK_SPEED * wade);
         g.hero.vit.tick(dt);
         g.hero.regen.tick(dt, &g.hero.vit);
         g.hero.tickTimed(dt);
@@ -5414,9 +5435,9 @@ pub fn run(mode: Mode) void {
         g.hero.sprinting = sprintingMove(mv) and !g.hero.committed() and !g.hero.dead and !g.hero.staggered();
         g.hero.setGuard(guardHeld);
         g.hero.setAim(aimHeld);
-        if (g.hero.guarding) mv.speed = @min(mv.speed, WALK_SPEED * heromod.GUARD_SPEED * g.hero.guardWalk());
-        if (g.hero.aiming) mv.speed = @min(mv.speed, WALK_SPEED * heromod.BOW_AIM_SPEED);
-        if (g.hero.drinking) mv.speed = @min(mv.speed, WALK_SPEED * heromod.DRINK_SPEED);
+        if (g.hero.guarding) mv.speed = @min(mv.speed, heromod.WALK_SPEED * heromod.GUARD_SPEED * g.hero.guardWalk());
+        if (g.hero.aiming) mv.speed = @min(mv.speed, heromod.WALK_SPEED * heromod.BOW_AIM_SPEED);
+        if (g.hero.drinking) mv.speed = @min(mv.speed, heromod.WALK_SPEED * heromod.DRINK_SPEED);
 
         const lockYaw: ?f32 = if (g.lock) |li| blk: {
             const d = mathx.dirXZ(g.hero.pos, foePos(g, li));
@@ -5903,7 +5924,7 @@ fn footsteps(g: *Game, last: *f32) void {
         .run => .step_hard,
         .walk => .step_soft,
     };
-    const vol = mathx.clampF(0.45 + 0.55 * h.speed / SPRINT_SPEED, 0.35, 1.0);
+    const vol = mathx.clampF(0.45 + 0.55 * h.speed / heromod.SPRINT_SPEED, 0.35, 1.0);
     sfx.playAt(id, vol);
     if (stepOverlay(g, h.pos.x, h.pos.z)) |over| sfx.playAt(over, vol);
 }
@@ -6303,7 +6324,7 @@ fn spiritTakes(g: *Game, b: foemod.Blow, heavy: bool) combat.HitOutcome {
 }
 
 fn heroBlockBeat(g: *Game, h: combat.Hit) void {
-    const w = mathx.clampF(h.raw() / BLOW_HEAVIEST, BLOCK_FELT_MIN, 1.0);
+    const w = mathx.clampF(h.raw() / blowHeaviest(), BLOCK_FELT_MIN, 1.0);
     g.rumble.play(if (w >= BLOCK_FELT_HEAVY) rumblemod.guard_block_heavy else rumblemod.guard_block);
     g.rig.addShake(SHAKE_BLOCK * w);
     g.hero.blockSparks(w);

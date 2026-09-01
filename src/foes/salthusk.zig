@@ -78,10 +78,10 @@ const SOCKET = rgba(12, 11, 10, 255);
 const BRINE = rgba(206, 210, 198, 210);
 const BRINE_THIN = rgba(228, 230, 224, 70);
 
-pub const AGGRO_R: f32 = 12.0;
+pub var AGGRO_R: f32 = 12.0;
 const HOME_R: f32 = 2.2;
-const WALK_SPEED: f32 = heromod.WALK_SPEED * 0.50;
-const CHASE_SPEED: f32 = heromod.WALK_SPEED * 0.88;
+const WALK_SPEED: f32 = heromod.WALK_SPEED_BANK * 0.50;
+const CHASE_SPEED: f32 = heromod.WALK_SPEED_BANK * 0.88;
 const ACCEL: f32 = 2.4;
 const TURN_RATE: f32 = 2.0;
 
@@ -97,7 +97,7 @@ const POISE_MAX: f32 = 10.0;
 const STANCE_MAX: f32 = 20.0;
 /// Salt-cured and bone dry: nothing left to rot and nothing left to freeze. Lightning runs straight through it.
 const RESISTS = combat.resists(.{ .chaos = 60, .cold = 30, .fire = 15, .lightning = -35 });
-pub const SOULS: u32 = 95;
+pub var SOULS: u32 = 95;
 
 const CLOUT_R: f32 = 1.72;
 const CLOUT_FRONT_DOT: f32 = 0.45;
@@ -107,7 +107,7 @@ const CLOUT_RECOVER: f32 = 0.66;
 const CLOUT_CD: f32 = 2.2;
 /// Feeble, and it has to be: everything this creature is worth is in the burst. **NO STANCE** — `Hit.heavy`
 /// is `stance > 0`, and the weakest blow on the field reading as a heavy one is the beat lying about it.
-pub const CLOUT_HIT = combat.Hit{ .dmg = 9, .poise = 8 };
+pub var CLOUT_HIT = combat.Hit{ .dmg = 9, .poise = 8 };
 
 // **THE BURST.** The one blow that matters, and the only one in the game a corpse throws.
 pub const SHATTER_R: f32 = 3.20;
@@ -120,7 +120,7 @@ pub const FUSE_LO: f32 = 0.85;
 pub const FUSE_HI: f32 = 1.30;
 /// Salt in an open cut. It is `bleed` and not an element, so no ward answers it and only a longer bar does.
 pub const SHATTER_BLEED: f32 = 34.0;
-pub const SHATTER_HIT = combat.Hit{
+pub var SHATTER_HIT = combat.Hit{
     .dmg = 26,
     .poise = 20,
     .stance = 12,
@@ -891,12 +891,12 @@ test "THE DEATH IS THE ATTACK — and it is a FUSE, so it can be walked out of" 
     const worst = BURST_FUSE * FUSE_LO;
     const best = BURST_FUSE * FUSE_HI;
     std.debug.print("  burst bills at {d:.2} m; from {d:.1} m that is {d:.2} m — {d:.2} m/s on the short fuse, {d:.2} on the long\n", .{ reach, from, owed, owed / worst, owed / best });
-    try std.testing.expect(owed / worst < heromod.RUN_SPEED);
-    try std.testing.expect(owed / best > heromod.WALK_SPEED);
+    try std.testing.expect(owed / worst < heromod.RUN_SPEED_BANK);
+    try std.testing.expect(owed / best > heromod.WALK_SPEED_BANK);
 
     for ([_]struct { name: []const u8, speed: f32, fuse: f32, clears: bool }{
-        .{ .name = "walk, long fuse ", .speed = heromod.WALK_SPEED, .fuse = best, .clears = false },
-        .{ .name = "run,  short fuse", .speed = heromod.RUN_SPEED, .fuse = worst, .clears = true },
+        .{ .name = "walk, long fuse ", .speed = heromod.WALK_SPEED_BANK, .fuse = best, .clears = false },
+        .{ .name = "run,  short fuse", .speed = heromod.RUN_SPEED_BANK, .fuse = worst, .clears = true },
     }) |leg| {
         var q = Pan{ .model = undefined };
         q.husks[0] = Husk.spawn(mathx.zero3, 0, 1.0, 0.3);

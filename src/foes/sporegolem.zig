@@ -29,7 +29,9 @@ const lerpF = mathx.lerpF;
 pub const H: f32 = 3.15;
 pub const SCALE: f32 = 1.0;
 
-pub const AGGRO_R: f32 = 15.0;
+/// The ring as authored — what the comptime pin below is asked of, since the ring itself is live now.
+pub const AGGRO_R_BANK: f32 = 15.0;
+pub var AGGRO_R: f32 = AGGRO_R_BANK;
 const TURN_RATE: f32 = 1.5;
 /// **VERY SLOW** (owner). Two-fifths of a walk — everything else is priced against a player free to leave.
 const WALK_SPEED: f32 = 1.05;
@@ -45,7 +47,7 @@ const HP_MAX: f32 = 210.0;
 const POISE_MAX: f32 = 46.0;
 const STANCE_MAX: f32 = 70.0;
 const RESISTS = combat.resists(.{ .fire = -85, .cold = 55, .lightning = -40, .chaos = 70 });
-pub const SOULS: u32 = 900;
+pub var SOULS: u32 = 900;
 
 const DEATH_DUR: f32 = 1.7;
 const DISS_DUR: f32 = 1.2;
@@ -68,7 +70,8 @@ const SMASH_FALL: f32 = 0.16;
 const SMASH_RECOVER: f32 = 0.86;
 const SMASH_CD: f32 = 2.6;
 pub const SMASH_R: f32 = 2.35;
-pub const SMASH_HIT = combat.Hit{ .dmg = 58, .poise = 40, .stance = 22 };
+const SMASH_HIT_BANK = combat.Hit{ .dmg = 58, .poise = 40, .stance = 22 };
+pub var SMASH_HIT = SMASH_HIT_BANK;
 
 /// **TOLD IN HALF THE TIME** (owner: "quicker tell") — this answers backing off the smash, so at the smash's own wind-up it would be a second smash you could also walk out of.
 pub const SLAM_WIND: f32 = 0.44;
@@ -79,7 +82,8 @@ const SLAM_CD: f32 = 4.4;
 pub const SLAM_REACH: f32 = 5.6;
 const SLAM_UP: f32 = 1.30;
 pub const SLAM_R: f32 = 2.05;
-pub const SLAM_HIT = combat.Hit{ .dmg = 48, .poise = 44, .stance = 26, .launch = combat.SLAM_LAUNCH };
+const SLAM_HIT_BANK = combat.Hit{ .dmg = 48, .poise = 44, .stance = 26, .launch = combat.SLAM_LAUNCH };
+pub var SLAM_HIT = SLAM_HIT_BANK;
 
 // **AND THE ANSWER TO WALKING AWAY.** Past the slam's 7.2 m this creature had nothing: at 1.05 m/s against a
 // hero who runs at 3.4 the whole band out to its aggro ring was free. A SAC OF SPORES, LOBBED — it does not
@@ -95,7 +99,8 @@ const SAC_MIN: f32 = 7.60;
 const SAC_MAX: f32 = 13.0;
 pub const SAC_SPEED: f32 = 12.0;
 /// Small: the cloud is the weapon and a sac to the chest is the tax on standing where it aimed.
-pub const SAC_HIT = combat.Hit{ .dmg = 15, .poise = 14 };
+const SAC_HIT_BANK = combat.Hit{ .dmg = 15, .poise = 14 };
+pub var SAC_HIT = SAC_HIT_BANK;
 /// Share of stature — over the brim, so the arc starts above its own head.
 const SAC_FROM_Y: f32 = 0.86;
 
@@ -112,12 +117,12 @@ comptime {
     std.debug.assert(SLAM_MIN < SLAM_MAX);
     std.debug.assert(SLAM_REACH + SLAM_R > SLAM_MIN);
     std.debug.assert(SLAM_REACH < SLAM_MAX);
-    std.debug.assert(SMASH_HIT.dmg > SLAM_HIT.dmg);
-    std.debug.assert(SLAM_HIT.poise > SMASH_HIT.poise);
+    std.debug.assert(SMASH_HIT_BANK.dmg > SLAM_HIT_BANK.dmg);
+    std.debug.assert(SLAM_HIT_BANK.poise > SMASH_HIT_BANK.poise);
     std.debug.assert(SLAM_MAX < SAC_MIN);
-    std.debug.assert(SAC_MIN < SAC_MAX and SAC_MAX <= AGGRO_R);
+    std.debug.assert(SAC_MIN < SAC_MAX and SAC_MAX <= AGGRO_R_BANK);
     std.debug.assert(SAC_WIND > SMASH_WIND);
-    std.debug.assert(SAC_HIT.dmg < SLAM_HIT.dmg and SAC_HIT.stance == 0);
+    std.debug.assert(SAC_HIT_BANK.dmg < SLAM_HIT_BANK.dmg and SAC_HIT_BANK.stance == 0);
 }
 
 // Six bones, the sporeling's layout with an arm each side. NO NECK — the cap sits ON the body, which is what makes the smash read as the whole creature falling forward.

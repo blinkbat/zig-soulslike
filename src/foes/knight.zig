@@ -96,7 +96,7 @@ const solePatches = [_]heromod.SolePatch{
     .{ .bone = ANKR, .heel = 0.064 * H, .toe = 0.200 * H, .halfW = 0.063 * H, .drop = 0.041 * H },
 };
 
-pub const AGGRO_R = 22.0;
+pub var AGGRO_R: f32 = 22.0;
 /// **OVER A SPRINT'S OWN RATE ABOUT HIM, AND UNDER THE OGRE'S 3.4** — he cannot be out-circled either. What
 /// leaves a window is the COMMIT (`Attack.track`), never the flank.
 const TURN_RATE = 3.20;
@@ -106,7 +106,7 @@ const SWING_TURN = 2.20;
 /// 51 deg of correction over the 1.45 s tell, into a 70-deg sector subtending ~25 either side.
 const FALL_AIM = 0.62;
 /// Strides are the shared gait at his scale: 4.4 m a cycle, a footfall every 1.5 s.
-const WALK_SPEED = heromod.WALK_SPEED * 0.94;
+const WALK_SPEED = heromod.WALK_SPEED_BANK * 0.94;
 
 const BODY_R = 0.60; // ground footprint, PRE-SCALE
 const HURT_R = 0.78; // pre-scale
@@ -697,7 +697,7 @@ const HP_MAX = 900.0;
 const POISE_MAX = 78.0;
 const STANCE_MAX = 138.0;
 const RESISTS = combat.resists(.{ .fire = -35, .cold = 60, .chaos = 45 });
-pub const SOULS: u32 = 2400;
+pub var SOULS: u32 = 2400;
 const DEATH_DUR = 2.20;
 /// WHEN THE BODY ARRIVES. `audio.mkKnightDie` writes its crash to this same number, and so does the dust.
 const DEATH_LAND = DEATH_DUR * 0.62;
@@ -1203,7 +1203,7 @@ const State = enum {
 
 const Blow = enum { sweep, sweep2, over, thrust, bash, swat, slam, charge, fall };
 
-const MOVES = [_]Attack{ SWEEP, OVERHEAD, THRUST, BASH, SWEEP2, SWAT };
+const MOVES_BANK = [_]Attack{ SWEEP, OVERHEAD, THRUST, BASH, SWEEP2, SWAT };
 pub const SWEEP_I = 0;
 pub const OVER_I = 1;
 pub const THRUST_I = 2;
@@ -1217,7 +1217,7 @@ comptime {
     const named = .{ .{ SWEEP_I, SWEEP }, .{ OVER_I, OVERHEAD }, .{ THRUST_I, THRUST }, .{ BASH_I, BASH }, .{ SWEEP2_I, SWEEP2 }, .{ SWAT_I, SWAT } };
     if (named.len != MOVES.len) @compileError("knight: MOVES and the *_I indices disagree on how many strokes there are");
     for (named) |row| {
-        if (!std.meta.eql(MOVES[row[0]], row[1])) @compileError("knight: a *_I index no longer names its own row of MOVES");
+        if (!std.meta.eql(MOVES_BANK[row[0]], row[1])) @compileError("knight: a *_I index no longer names its own row of MOVES");
     }
     std.debug.assert(CHOOSE_N <= MOVES.len and SWEEP2_I >= CHOOSE_N and SWAT_I >= CHOOSE_N);
     // …AND EVERY INDEX HAS ITS OWN GATHER. `windFor` switches on a `usize` and ends in an `else` handing back
@@ -1327,6 +1327,9 @@ const Sit = struct {
         return self.bearing > 0;
     }
 };
+/// **THE LIVE KIT.** The bank above is the code's own and never moves — that is the revert; every blow
+/// the bench can reach is `MOVES[i].hit`, so a move retuned in the source flows through (`play/tune.zig`).
+pub var MOVES = MOVES_BANK;
 
 // A SCORE AND NEVER A DIE: the same moment always scores the same way.
 const W_ROTATION: f32 = 1.00;
@@ -1368,7 +1371,7 @@ fn trackTerm(mv: usize) f32 {
 /// Solved ONCE at comptime — `trackTerm` was walking the whole table on every candidate of every decision.
 const TRACK_MOST: f32 = blk: {
     var most: f32 = 0;
-    for (MOVES) |a| {
+    for (MOVES_BANK) |a| {
         if (a.track > most) most = a.track;
     }
     if (most <= 0) @compileError("knight: nothing in the kit tracks at all — `trackTerm` would divide by zero");
@@ -5914,7 +5917,7 @@ test "HE IS NOT DULL — a man walking circles round him is under attack, not wa
     var strokes: usize = 0;
     var was = k.state;
     while (t < 45.0) : (t += dt) {
-        ang += (heromod.WALK_SPEED / ring) * dt;
+        ang += (heromod.WALK_SPEED_BANK / ring) * dt;
         const hero = v3(mathx.sinf(ang) * ring, 0, mathx.cosf(ang) * ring);
         // `game.markSight` stamps this every frame in the live loop; without it he goes blind at
         // `foe.SIGHT_MEMORY` and the measurement is of a creature that has lost you, not a dull one.
@@ -5957,7 +5960,7 @@ test "HE TRACKS LIKE THE OGRE — the window is the COMMIT, not the flank" {
     // anybody holding a direction and the fight was a stroll in circles (owner: the ogre is harder, and the knight is dull).
     const k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
     const r = k.bodyR() + foe.HERO_R;
-    const sprintRate = heromod.SPRINT_SPEED / r;
+    const sprintRate = heromod.SPRINT_SPEED_BANK / r;
     std.debug.print("\n  knight turns {d:.2} rad/s, ogre {d:.2}; a sprint round the knight carries {d:.2}\n", .{ TURN_RATE, ogremod.TURN_RATE, sprintRate });
     // IN THE OGRE'S CLASS, and under it: he is armour, not a beast.
     try std.testing.expect(TURN_RATE > sprintRate);
@@ -5982,7 +5985,7 @@ test "HE TRACKS LIKE THE OGRE — the window is the COMMIT, not the flank" {
     // itself subtends at the range it arrives, never the wrap's whole chord.
     const kitHalf = std.math.asin(SH_RAM_HALF / BASH.reachOut);
     const commit = BASH.windDur + BASH.strikeDur * BASH.impactK;
-    const walkRate = heromod.WALK_SPEED / r;
+    const walkRate = heromod.WALK_SPEED_BANK / r;
     const drift = (walkRate - BASH.track) * commit;
     std.debug.print("  bash commit {d:.2} s: he GAINS {d:.0} deg on a walking man across it; ram subtends {d:.0}\n", .{
         commit, -mathx.degrees(drift), mathx.degrees(kitHalf),
@@ -6002,10 +6005,10 @@ test "THE SLAM IS OUTRUN, NOT OUT-TRADED — a run clears the crater's disc and 
     const tell = SLAM.windDur + SLAM.strikeDur * SLAM.impactK;
     const ring = foe.hurtReach(SLAM.r, k.scale);
     std.debug.print("\n  slam: disc {d:.2} m, tell {d:.2} s -> run reaches {d:.2}, walk {d:.2}\n", .{
-        ring, tell, heromod.RUN_SPEED * tell, heromod.WALK_SPEED * tell,
+        ring, tell, heromod.RUN_SPEED_BANK * tell, heromod.WALK_SPEED_BANK * tell,
     });
-    try std.testing.expect(heromod.RUN_SPEED * tell > ring + 0.4);
-    try std.testing.expect(heromod.WALK_SPEED * tell < ring - 0.1);
+    try std.testing.expect(heromod.RUN_SPEED_BANK * tell > ring + 0.4);
+    try std.testing.expect(heromod.WALK_SPEED_BANK * tell < ring - 0.1);
     var s = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
     const mark = s.slamMark();
     s.heroHit = null;
@@ -6244,8 +6247,8 @@ test "THE CHARGE COMES FROM A STEP OUTSIDE HIS SWORD — not only from across th
     std.debug.print("\n  charge fuse: lit at {d:.1} m after {d:.1} s\n", .{ kite, t });
     try std.testing.expect(launched);
     const half = Knight.chargeDist(0.5);
-    std.debug.print("  charge: {d:.1} m in the first half second, hero sprints {d:.1} m\n", .{ half, heromod.SPRINT_SPEED * 0.5 });
-    try std.testing.expect(half > heromod.SPRINT_SPEED * 0.5 * 1.6);
+    std.debug.print("  charge: {d:.1} m in the first half second, hero sprints {d:.1} m\n", .{ half, heromod.SPRINT_SPEED_BANK * 0.5 });
+    try std.testing.expect(half > heromod.SPRINT_SPEED_BANK * 0.5 * 1.6);
     try std.testing.expect(Knight.brakeDist(CHARGE.brakeDur) < 4.2);
 }
 
@@ -6372,7 +6375,7 @@ test "HE TRIES TO HIT YOU — the GATHER aims at his full turn, and the COMMIT s
     for (MOVES) |a| {
         if (a.weight != .light) try std.testing.expect(a.track < TURN_RATE);
     }
-    const heroRate = heromod.WALK_SPEED / r;
+    const heroRate = heromod.WALK_SPEED_BANK / r;
     std.debug.print("\n  wind aims at {d:.2} rad/s (it was 0.45 of that); a walking man carries {d:.2}\n", .{ TURN_RATE, heroRate });
     try std.testing.expect(TURN_RATE > heroRate);
 }
@@ -6607,8 +6610,8 @@ test "THE FALL IS ANSWERED WITH DISTANCE — a run clears the ring from the mark
     const k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
     const reach = fallWaveR(k.scale);
     const tell = FALL_WIND_DUR + FALL_DUR * FALL_IMPACT_K;
-    const walked = heromod.WALK_SPEED * tell;
-    const ran = heromod.RUN_SPEED * tell;
+    const walked = heromod.WALK_SPEED_BANK * tell;
+    const ran = heromod.RUN_SPEED_BANK * tell;
     std.debug.print("\n  fall ring {d:.2} m over a {d:.2} s tell: a walk covers {d:.2} m, a run {d:.2} m (crush strip {d:.2} m)\n", .{ reach, tell, walked, ran, crushLen(k.scale) });
     try std.testing.expect(walked < reach);
     try std.testing.expect(ran > reach);
@@ -6711,7 +6714,7 @@ test "THE RING BILLS WHERE THE BODY MISSED — and standing still in it is what 
         }
     }.it;
     const stood = run(0);
-    const ran = run(heromod.RUN_SPEED);
+    const ran = run(heromod.RUN_SPEED_BANK);
     std.debug.print("  stood still: {}; ran for it: {}\n", .{ stood, ran });
     try std.testing.expect(stood);
     try std.testing.expect(!ran);
@@ -6876,7 +6879,7 @@ test "A WIND CANNOT FOLLOW YOU ROUND ONTO HIS BACK — the gather turns his shou
     var strokes: usize = 0;
     var was = g.state;
     while (e < 45.0) : (e += step) {
-        ang += (heromod.WALK_SPEED / ring) * step;
+        ang += (heromod.WALK_SPEED_BANK / ring) * step;
         g.leash.noteSeen();
         _ = g.update(step, v3(mathx.sinf(ang) * ring, 0, mathx.cosf(ang) * ring), 400.0, .{});
         frames += 1;
@@ -7029,7 +7032,7 @@ test "MAKE DAMN SURE: through a whole chaotic fight, the door is HELD on every s
         if (rng.float() < 0.010) ringTo = rng.range(1.7, 11.0);
         if (rng.float() < 0.008) spin = if (rng.float() < 0.5) -1.0 else 1.0;
         ring = mathx.approach(ring, ringTo, dt * 3.0);
-        ang += spin * (rng.range(0, heromod.RUN_SPEED) / ring) * dt;
+        ang += spin * (rng.range(0, heromod.RUN_SPEED_BANK) / ring) * dt;
         const hero = v3(mathx.sinf(ang) * ring, 0, mathx.cosf(ang) * ring);
         k.leash.noteSeen();
         _ = k.update(dt, hero, 400.0, .{});

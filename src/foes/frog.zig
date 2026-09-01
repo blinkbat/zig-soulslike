@@ -58,7 +58,7 @@ const BODY_R = 0.55;
 
 pub const SCALE = 1.4;
 
-pub const AGGRO_R = 11.0;
+pub var AGGRO_R: f32 = 11.0;
 const HOME_R = 2.2;
 const LUNGE_R = 5.6;
 const BITE_R = 1.45;
@@ -126,7 +126,7 @@ const POISE_MAX = 8.0;
 const STANCE_MAX = 26.0;
 const RESISTS = combat.resists(.{ .fire = 40, .cold = -30, .lightning = -25 });
 const CHOMP_HIT = combat.Hit{ .dmg = 13, .poise = 15 };
-const LUNGE_HIT = combat.Hit{ .dmg = 19, .poise = 26, .stance = 8 };
+pub var LUNGE_HIT = combat.Hit{ .dmg = 19, .poise = 26, .stance = 8 };
 const PARRY_LEAD = foe.PARRY_LEAD;
 
 const LUNGE_IMPACT_R = 1.9;
@@ -137,7 +137,7 @@ const BITE_OWN = BITE_R / SCALE;
 const LUNGE_IMPACT_OWN = LUNGE_IMPACT_R / SCALE;
 const TRAIL_RATE: f32 = 150.0;
 const DEATH_DUR = 1.25;
-pub const SOULS: u32 = 60;
+pub var SOULS: u32 = 60;
 
 const State = enum { idle, hop, lunge, recover, chomp, stunlight, stunheavy, dead };
 

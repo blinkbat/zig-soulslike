@@ -7,6 +7,8 @@ const hud = @import("hud.zig");
 const mathx = @import("../core/mathx.zig");
 const props = @import("../props/props.zig");
 const ui = @import("ui.zig");
+const tune = @import("../play/tune.zig");
+const tuneui = @import("tuneui.zig");
 const icons = @import("icons.zig");
 const item = @import("../play/item.zig");
 const itemart = @import("itemart.zig");
@@ -217,6 +219,11 @@ pub fn charSlot(k: wf.FoeKind) ?usize {
         if (c == k) return i;
     }
     return null;
+}
+
+/// An item's picture in the icon gallery — past the editor glyphs, in `item.Kind` order.
+pub fn itemSlot(k: item.Kind) usize {
+    return GLYPH_N + @intFromEnum(k);
 }
 
 const GLYPH_N = @typeInfo(icons.Icon).@"enum".fields.len;
@@ -831,7 +838,10 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
 
 
 const BIG_PAD: i32 = 16;
-const INFO_W: i32 = 250;
+/// **THE NUMBERS STAND BESIDE THE THING** (owner: file it with the object viewer so you can view the object
+/// details and edit them side by side), so this column carries a whole sheet of dials now and not three
+/// measurements — 300 against the 250 it was.
+const INFO_W: i32 = 300;
 
 /// **DRAG SPINS, WHEEL ZOOMS — ONE COPY.** The three modals (a prop, a creature, the FX bench) each had this nine-line block written out, so a rate or a clamp retuned in one left the other two turning differently.
 fn spinView(st: *State, ctx: *ui.Ctx, p: *Pose, viewR: rl.Rectangle) void {
@@ -1023,10 +1033,10 @@ fn bigChar(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, at: us
         hud.mono(s, x, y, hud.MONO, ui.VALUE);
         y += line;
     }
-    y += 6;
-    hud.mono("drag spins", x, y, hud.MONO, ui.alpha(ui.LABEL, 170));
-    y += line;
-    hud.mono("wheel zooms", x, y, hud.MONO, ui.alpha(ui.LABEL, 170));
+    y += 8;
+    y = tuneui.faceSheet(ctx, x, y, INFO_W, .foe, @intFromEnum(k), box.y + h - FOOT_DROP - 24);
+    y += 2;
+    hud.mono("drag spins, wheel zooms", x, y, hud.MONO, ui.alpha(ui.LABEL, 170));
 
     const by = box.y + box.h - FOOT_DROP;
     if (ui.button(ctx, ui.rect(box.x + BIG_PAD, by, 44, 24), "<", hud.MONO, false, "The creature before this one, wrapping round")) st.openChar = if (at == 0) CHAR_N - 1 else at - 1;
@@ -1076,12 +1086,24 @@ fn galleryIcons(st: *State, ctx: *ui.Ctx) bool {
 fn bigIcon(st: *State, ctx: *ui.Ctx, at: usize) bool {
     const sw = rl.getScreenWidth();
     const sh = rl.getScreenHeight();
-    const w = @min(sw - 60, 720);
+    // **A PICTURE OF A THING IS ALSO THE THING'S SHEET.** An editor glyph has no numbers behind it and keeps the
+    // narrow frame; an ITEM's picture stands beside every dial the bag reads off it.
+    const kind: ?item.Kind = if (at >= GLYPH_N) @enumFromInt(at - GLYPH_N) else null;
+    const wide = kind != null;
+    const w = @min(sw - 60, @as(i32, if (wide) 900 else 720));
     const h = @min(sh - 60, 640);
     const box = ui.beginModal(ctx, w, h, iconLabel(at));
-    const cx = @as(f32, @floatFromInt(box.x)) + @as(f32, @floatFromInt(w)) * 0.5;
+    const artW = if (wide) w - INFO_W - 3 * BIG_PAD else w;
+    const cx = @as(f32, @floatFromInt(box.x)) + @as(f32, @floatFromInt(artW)) * 0.5;
     const cy = @as(f32, @floatFromInt(box.y)) + @as(f32, @floatFromInt(h)) * 0.5;
-    drawIconAt(at, cx, cy, @as(f32, @floatFromInt(@min(w, h))) * 0.62);
+    drawIconAt(at, cx, cy, @as(f32, @floatFromInt(@min(artW, h))) * 0.62);
+    if (kind) |k| {
+        const ix = box.x + w - INFO_W - BIG_PAD;
+        var iy = box.y + 52;
+        hud.mono(item.class(k).label(), ix, iy, hud.MONO, ui.alpha(ui.TRIM, 230));
+        iy += hud.monoLineH(hud.MONO) + 6;
+        _ = tuneui.faceSheet(ctx, ix, iy, INFO_W, .item, @intFromEnum(k), box.y + h - 40);
+    }
 
     const by = box.y + box.h - FOOT_DROP;
     if (ui.button(ctx, ui.rect(box.x + BIG_PAD, by, 44, 24), "<", hud.MONO, false, "The glyph before this one, wrapping round")) st.openIcon = if (at == 0) ICONS_TOTAL - 1 else at - 1;

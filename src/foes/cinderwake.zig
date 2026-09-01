@@ -82,12 +82,12 @@ const SEAM = rgba(226, 96, 28, 255);
 const SEAM_DK = rgba(148, 50, 14, 255);
 const EYE = rgba(255, 172, 72, 255);
 
-pub const AGGRO_R: f32 = 14.0;
+pub var AGGRO_R: f32 = 14.0;
 const HOME_R: f32 = 2.4;
-const WALK_SPEED: f32 = heromod.WALK_SPEED * 0.55;
+const WALK_SPEED: f32 = heromod.WALK_SPEED_BANK * 0.55;
 /// Just over the hero's WALK (1.7) and half his run. Backing off on foot does not shake it; RUNNING does, and
 /// running is the whole cost — it commits you to a bearing while the trail eats the one behind you.
-const CHASE_SPEED: f32 = heromod.WALK_SPEED * 1.02;
+const CHASE_SPEED: f32 = heromod.WALK_SPEED_BANK * 1.02;
 const ACCEL: f32 = 2.6;
 const TURN_RATE: f32 = 2.4;
 
@@ -102,7 +102,7 @@ const STANCE_MAX: f32 = 34.0;
 /// **FIRE IS NOTHING TO IT AND COLD IS THE ANSWER** — the one body a torch makes worse. `RES_CAP` is 75, so
 /// the fire row is written at the cap rather than at a number that reads stronger than it can be.
 const RESISTS = combat.resists(.{ .fire = 75, .cold = -70, .chaos = 25 });
-pub const SOULS: u32 = 180;
+pub var SOULS: u32 = 180;
 
 const RAKE_R: f32 = 1.95;
 const RAKE_FRONT_DOT: f32 = 0.42;
@@ -110,7 +110,7 @@ const RAKE_WIND: f32 = 0.44;
 const RAKE_STRIKE: f32 = 0.20;
 const RAKE_RECOVER: f32 = 0.72;
 const RAKE_CD: f32 = 2.4;
-pub const RAKE_HIT = combat.Hit{ .dmg = 13, .poise = 12, .stance = 9, .elem = combat.elems(.{ .fire = 11 }) };
+pub var RAKE_HIT = combat.Hit{ .dmg = 13, .poise = 12, .stance = 9, .elem = combat.elems(.{ .fire = 11 }) };
 
 // **THE TRAIL.** One `Ember` every `TRAIL_SPACING` of travel, each a disc of `EMBER_R` that burns for
 // `EMBER_LIFE`. Spacing is under one diameter, so the line is CONTINUOUS rather than a row of dots you can
@@ -127,7 +127,7 @@ comptime {
     std.debug.assert(H > heromod.H);
     std.debug.assert(TRAIL_SPACING < 2.0 * EMBER_R);
     std.debug.assert(RAKE_WIND >= foe.TELL_MIN);
-    std.debug.assert(CHASE_SPEED > heromod.WALK_SPEED and CHASE_SPEED < heromod.RUN_SPEED);
+    std.debug.assert(CHASE_SPEED > heromod.WALK_SPEED_BANK and CHASE_SPEED < heromod.RUN_SPEED_BANK);
     // The live trail the header quotes, held here rather than only printed by a test.
     std.debug.assert(CHASE_SPEED * EMBER_LIFE > 8.0 and CHASE_SPEED * EMBER_LIFE < 14.0);
 }
@@ -1023,8 +1023,8 @@ test "THE TRAIL OUTLIVES THE BODY — killing it late leaves you standing in wha
 }
 
 test "IT CANNOT OUTRUN YOU, AND IT DOES NOT LET GO EITHER" {
-    try std.testing.expect(CHASE_SPEED > heromod.WALK_SPEED);
-    try std.testing.expect(CHASE_SPEED < heromod.RUN_SPEED * 0.6);
+    try std.testing.expect(CHASE_SPEED > heromod.WALK_SPEED_BANK);
+    try std.testing.expect(CHASE_SPEED < heromod.RUN_SPEED_BANK * 0.6);
     const perWake: f32 = CHASE_SPEED * EMBER_LIFE;
     std.debug.print("  live trail behind one wake: {d:.1} m at {d:.2} m/s over {d:.1} s\n", .{ perWake, CHASE_SPEED, EMBER_LIFE });
     try std.testing.expect(perWake > 8.0 and perWake < 14.0);

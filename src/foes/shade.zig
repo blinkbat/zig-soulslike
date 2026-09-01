@@ -67,7 +67,7 @@ pub const H: f32 = 1.92;
 const HOVER: f32 = 0.20;
 const CORE_Y: f32 = 0.56 * H;
 
-pub const AGGRO_R: f32 = 22.0;
+pub var AGGRO_R: f32 = 22.0;
 const BODY_R: f32 = 0.33;
 const HURT_R: f32 = 0.44;
 const CENTER_F: f32 = 0.62;
@@ -82,7 +82,7 @@ const HP_MAX: f32 = 46.0;
 const POISE_MAX: f32 = 11.0;
 const STANCE_MAX: f32 = 26.0;
 const RESISTS = combat.resists(.{ .fire = 30, .cold = 65, .chaos = -45 });
-pub const SOULS: u32 = 110;
+pub var SOULS: u32 = 110;
 
 const DEATH_DUR: f32 = 0.55;
 const DISS_DUR: f32 = 0.75;
@@ -173,23 +173,26 @@ const Attack = struct {
 
 pub const GRASP: usize = 0;
 pub const WISP: usize = 1;
-const MOVES = [_]Attack{
+const MOVES_BANK = [_]Attack{
     .{ .windDur = 0.46, .strikeDur = 0.30, .recoverDur = 0.55, .cd = 2.6, .minR = 0, .maxR = 2.05, .hit = GRASP_HIT, .hurl = false },
     .{ .windDur = 0.68, .strikeDur = 0.18, .recoverDur = 0.62, .cd = 4.6, .minR = 4.2, .maxR = 12.0, .hit = WISP_HIT, .hurl = true },
 };
+/// **THE LIVE KIT.** The bank above is the code's own and never moves — that is the revert; every blow
+/// the bench can reach is `MOVES[i].hit`, so a move retuned in the source flows through (`play/tune.zig`).
+pub var MOVES = MOVES_BANK;
 
 comptime {
     const named = .{ .{ GRASP, false }, .{ WISP, true } };
     if (named.len != MOVES.len) @compileError("shade: MOVES and the named indices disagree on how many moves there are");
     for (named) |row| {
-        if (MOVES[row[0]].hurl != row[1]) @compileError("shade: a named index no longer points at its own row of MOVES");
+        if (MOVES_BANK[row[0]].hurl != row[1]) @compileError("shade: a named index no longer points at its own row of MOVES");
     }
 }
 pub fn moveClock(which: usize) foe.Clock {
     return foe.moveClock(MOVES[@min(which, MOVES.len - 1)]);
 }
 
-const GRASP_REACH: f32 = MOVES[GRASP].maxR;
+const GRASP_REACH: f32 = MOVES_BANK[GRASP].maxR;
 
 
 const THREAT_R: f32 = 2.4;

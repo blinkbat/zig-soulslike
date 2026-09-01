@@ -27,9 +27,12 @@ comptime {
     std.debug.assert(@abs(foemod.HERO_CHEST - 0.55 * H) < 0.005);
 }
 
-pub const WALK_SPEED: f32 = 1.7;
-pub const RUN_SPEED: f32 = 3.4;
-pub const SPRINT_SPEED: f32 = 5.1;
+pub const WALK_SPEED_BANK: f32 = 1.7;
+pub var WALK_SPEED: f32 = WALK_SPEED_BANK;
+pub const RUN_SPEED_BANK: f32 = 3.4;
+pub var RUN_SPEED: f32 = RUN_SPEED_BANK;
+pub const SPRINT_SPEED_BANK: f32 = 5.1;
+pub var SPRINT_SPEED: f32 = SPRINT_SPEED_BANK;
 pub const STRAFE_SPEED: f32 = 0.85;
 pub const GUARD_SPEED: f32 = 0.75;
 pub const DRINK_SPEED: f32 = 0.35;
@@ -149,9 +152,9 @@ const GAZE_AHEAD = 15.0;
 const NECK_EXT_MAX = 34.0;
 const A_RUN_BOUNCE = 0.05 * H;
 const RUN_SPEED_LO = 2.1;
-const RUN_SPEED_HI = RUN_SPEED;
+const RUN_SPEED_HI = RUN_SPEED_BANK;
 const SPRINT_LEAN = 40.0;
-const SPRINT_REF_SPEED = SPRINT_SPEED;
+const SPRINT_REF_SPEED = SPRINT_SPEED_BANK;
 
 const SLOPE_LEAN: f32 = 0.55;
 /// …capped: he can stand on ground far steeper than he can walk up.
@@ -247,8 +250,9 @@ const CLIMB_ELBOW_LO: f32 = 14.0;
 const CLIMB_ELBOW_HI: f32 = 74.0;
 const CLIMB_WRIST: f32 = 18.0;
 
-pub const ROLL_DUR = 0.70;
-pub const ROLL_IFRAME_END = 0.46;
+pub var ROLL_DUR: f32 = 0.70;
+pub const ROLL_IFRAME_END_BANK: f32 = 0.46;
+pub var ROLL_IFRAME_END: f32 = ROLL_IFRAME_END_BANK;
 
 /// **THE CROSSING IS A GRACE AND THE CLOCK IS HIS, NOT THE GATE'S** (owner) — he comes out of a fog gate
 /// untouchable and stays that way for as long as he STANDS there. The tail runs only on a step of his own,
@@ -257,7 +261,7 @@ pub const FOG_GRACE_TAIL: f32 = 1.6;
 /// Ground speed under which he counts as standing. A speed and not a per-frame distance, or the grace lasts
 /// longer on a slower machine.
 const FOG_GRACE_STILL: f32 = 0.20;
-pub const ROLL_DIST = 3.5;
+pub var ROLL_DIST: f32 = 3.5;
 const ROLL_BALL_Y = 0.50;
 const ROLL_TUCK_IN = 0.16;
 const ROLL_SPIN_A = 0.05;
@@ -680,8 +684,8 @@ const TRAIL_PEAK = 84.0;
 pub const HP_MAX = statsmod.hpFor(statsmod.START);
 pub const POISE_MAX = 55.0;
 pub const STANCE_MAX = 90.0;
-pub const ATK_LIGHT_HIT = combat.Hit{ .dmg = 13, .poise = 10 };
-pub const ATK_HEAVY_HIT = combat.Hit{ .dmg = 27, .poise = 22, .stance = 14 };
+pub var ATK_LIGHT_HIT = combat.Hit{ .dmg = 13, .poise = 10 };
+pub var ATK_HEAVY_HIT = combat.Hit{ .dmg = 27, .poise = 22, .stance = 14 };
 
 /// **NOTHING MAY EVER SET `vit.armour`.** `takeHit`/`blockHit` pre-apply it off `armourA()`; both doors at once
 /// is `combat.armourTaken` twice, silently.
@@ -861,7 +865,7 @@ pub const TIER_MAX: u8 = 10;
 /// 1.3 a tier against `ATK_LIGHT_HIT`'s 13, so **+10 doubles the base of a light swing** before anything else
 /// touches it. `ATK_HEAVY_HIT` is 27, so the same ten tiers are worth half as much again to a heavy — the
 /// weapon's own `row.dmg` then scales both.
-pub const TIER_FLAT: f32 = 1.3;
+pub var TIER_FLAT: f32 = 1.3;
 
 /// **THE SKILL RIDES THE DAMAGE DIAL AND NOTHING ELSE**: strength makes a club hit HARDER, not heavier —
 /// poise and stance belong to the WEAPON's mass. Elemental rides damage, stance rides poise.
@@ -1294,7 +1298,7 @@ const STRAFE_CYCLE = 2.0 * STRAFE_REACH / STRAFE_STANCE;
 pub const STRAFE_DIP = LEG_LEN - @sqrt((LEG_LEN - STRAFE_SINK) * (LEG_LEN - STRAFE_SINK) - STRAFE_REACH * STRAFE_REACH);
 
 const STRIDE = 0.85 * H;
-const WALK_REF_SPEED = WALK_SPEED;
+const WALK_REF_SPEED = WALK_SPEED_BANK;
 const ARM_SWING = 9.0;
 pub const A_BOB = 0.024 * H;
 const A_SWAY = 0.009 * H;

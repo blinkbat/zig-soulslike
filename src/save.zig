@@ -190,7 +190,10 @@ const CAP: usize =
     chestmod.CAP + 10 +
     pickupmod.CAP + 10 +
     BOSS_RAILS * (wf.MAX_PER_KIND + 12) +
-    pickupmod.CAP * (3 * 11 + 3 + pickupmod.DROP_MAX * (item.TAG_MAX + 1)) + 10 +
+    // One drop's row: three coordinates, its count, its loot tags, and the ` g<coin>` purse `render` writes
+    // when there is any. The purse was in the FILE and not in this sum, and the worst-case test below left it
+    // at zero — so the one term that scales with a `u32` was both unbudgeted and unmeasured.
+    pickupmod.CAP * (3 * 11 + 4 + pickupmod.DROP_MAX * (item.TAG_MAX + 1) + 12) + 10 +
     item.NK + 8;
 
 pub const Head = struct {
@@ -907,6 +910,9 @@ test "the buffer holds the biggest save this build can write" {
         .at = .{ .x = -99999.5, .y = -99999.5, .z = -99999.5 },
         .n = pickupmod.DROP_MAX,
         .loot = [_]item.Kind{item.LONGEST_TAG} ** pickupmod.DROP_MAX,
+        // …AND EVERY PURSE SATURATED. `render` writes ` g<coin>` only when there is coin, so a sample left at
+        // zero never measures the widest token on the row.
+        .gold = std.math.maxInt(u32),
     };
     var buf: [CAP]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&buf);

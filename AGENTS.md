@@ -128,6 +128,7 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `world/env.zig` | THE WORLD — terrain, op replay, `coverField`, uniform grid, cullers, occluder fade, lights |
 | `props/props.zig` | prop vocabulary + the `INFO` table; `displayName`/`group`/`stock` are exhaustive switches. `decks`/`stack`/`climb` are the ladder's and the deck's |
 | `prop*.zig` | meshes by family — `propart` (palette + weathering), `propruins`, `propgold`, `propbuild`, `propvillage`, `propmarket`, `propforge`, `proprock`, `propwood`, `propflora`, `propfungus`, `propcoral`, `propash`, `propbone`, `propfx` |
+| `foes/foestat.zig` | the pools the bench lays over a fresh body — one multiplier per kind, applied in `foe.resetGroup`/`resetRoles`, and where the authored HP is LEARNED from the first body made |
 | `foes/foe.zig` | THE FOE STANDARD — contract, `Blade`/`strike`/`weaponReaches`/`Blow`, `Trail`, particles, `Leash` |
 | `foes/npc.zig` | THE FOLK, all three on the hero's scaffold — the wanderer's staff, the caravaneer's neck and muzzle, and MOSSBEARD, the tree smith whose idle IS a hammer stroke |
 | `foes/frog.zig` | gaping toad + `Knot` |
@@ -169,6 +170,7 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `play/chest.zig` | openable boxes; contents read off the placing op (`Op.loot`) |
 | `play/rest.zig` | bonfire + campfire — phase machine, the seat, the fire's own screen; `isRestKind` |
 | `play/souls.zig` | THE DROP — what a death leaves, the gold bloom, the walk back |
+| `play/tune.zig` | THE STATS BENCH — one `Table` per sheet (spells, ailments, armaments, armour, trinkets, the bag, foes, the hero, every named blow, the passive board, drops, liquids, trade), a getter and a setter each, the base read back at `init`, and `tuning.cfg` written as the DIFFERENCE |
 | `play/drops.zig` | one row per `FoeKind`, guaranteed + rare, and **the one thing LUCK reads** (rare weight only) |
 | `play/pickup.zig` | the glow a drop stands as; `REACH` 2.4, between `chest.REACH` 2.1 and `souls.REACH` 2.6 (`rest.REACH` 3.2 is the widest) |
 | `play/award.zig` | the FIRST-TIME card and the toast strip; `seen` is what makes a kind new, and `carding` holds the world clock |
@@ -181,6 +183,7 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `ui/counterui.zig` | the counter's panel — the DIALOG's shape over a running frame, not the book's; every number off `play/counter.zig` |
 | `ui/menu.zig` | boot screen, pause/debug menu, sound LEVELS, retro filter rack |
 | `ui/editor.zig` | THE EDITOR (Menu > Editor), layered StarEdit-style; biggest file, next split candidate |
+| `ui/tuneui.zig` | the bench's face — the dial column, drawn both in the editor's Stats sheet and beside the model in the object viewer |
 | `ui/objview.zig` | object viewer + the JUKEBOX + the FX BENCH (`elemfx`'s cells with their numbers printed) |
 | `save.zig` | THE SLOTS — three files in the map's own `key: value` grammar, each with its picture |
 | `core/audio.zig` | ~190 synthesized voices through one tape-style `master`; three submixes; read as recipes |
@@ -189,6 +192,15 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `core/collision.zig` | 2D XZ capsule/circle push-out, `blocksSight` |
 | `core/mathx.zig` | ground-plane + vector/angle helpers, seeded `Rng`, `gutter` |
 | `core/bake.zig` | one-way door that emitted the first map from the old code-authored regions |
+
+**A NUMBER THE BENCH CAN MOVE IS A `var`, AND ITS BANK IS THE `const` BESIDE IT** (`play/tune.zig`, on
+`core/audio.zig`'s arrangement). The pattern is one table renamed and one line added — `SPELLS_BANK` stays the
+authored const and `SPELLS` becomes the live copy every reader takes — so a row re-authored in the source flows
+through to a `tuning.cfg` that never mentioned it. What that costs: anything that read the table AT COMPTIME has
+to be pointed at the bank (`combat.ailBank`, `item.equipBank`, `item.priceBank`, `combat.bankRow`), and a
+creature's ring is asked for rather than copied (`game.aggroRing`) so a baked table cannot go stale against an
+edit. Identity — a name, a socket, which scroll a spell is on — reads the bank on purpose: it is not a tuning,
+and a comptime string is built out of it.
 
 Two things in that table are load-bearing beyond navigation:
 

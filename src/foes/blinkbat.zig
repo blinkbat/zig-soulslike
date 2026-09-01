@@ -118,7 +118,7 @@ fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix
     heromod.setJoint(wx, &rest, i, @intCast(PARENT[i]), animRot);
 }
 
-pub const AGGRO_R: f32 = 18.0;
+pub var AGGRO_R: f32 = 18.0;
 const HOME_R: f32 = 3.0;
 
 /// **`pos.y` IS THE GROUND UNDER IT AND `hover` IS WHAT IT FLIES ABOVE THAT** (the leechfly's law) — every world
@@ -186,12 +186,12 @@ const HP_MAX: f32 = 138;
 const POISE_MAX: f32 = 13;
 const STANCE_MAX: f32 = 30;
 const RESISTS = combat.resists(.{ .fire = -55, .cold = 20, .lightning = -15, .chaos = 15 });
-pub const SOULS: u32 = 265;
+pub var SOULS: u32 = 265;
 
 /// Five bites fill the bleed meter, solved rather than picked (`item.ENVENOMED`'s idiom).
-const BITE_BLEED: f32 = combat.ailRow(.bleed).max / 5.0;
+const BITE_BLEED: f32 = combat.ailBank(.bleed).max / 5.0;
 
-pub const BITE_HIT = combat.Hit{
+pub var BITE_HIT = combat.Hit{
     .dmg = 22,
     .poise = 13,
     .stance = 15,

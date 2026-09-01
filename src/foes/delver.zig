@@ -38,7 +38,7 @@ const CLOD_DRAG: f32 = 1.5;
 
 pub const H: f32 = 1.55;
 
-pub const AGGRO_R: f32 = 14.0;
+pub var AGGRO_R: f32 = 14.0;
 const HOME_R: f32 = 2.5;
 
 const BODY_R: f32 = 0.62;
@@ -51,10 +51,12 @@ const HP_MAX: f32 = 118.0;
 const POISE_MAX: f32 = 26.0;
 const STANCE_MAX: f32 = 58.0;
 const RESISTS = combat.resists(.{ .fire = 20, .cold = -30, .lightning = -40 });
-pub const SOULS: u32 = 155;
+pub var SOULS: u32 = 155;
 
-pub const CLAW_HIT = combat.Hit{ .dmg = 15, .poise = 20, .stance = 6 };
-pub const BURST_HIT = combat.Hit{ .dmg = 28, .poise = 42, .stance = 18 };
+const CLAW_HIT_BANK = combat.Hit{ .dmg = 15, .poise = 20, .stance = 6 };
+pub var CLAW_HIT = CLAW_HIT_BANK;
+const BURST_HIT_BANK = combat.Hit{ .dmg = 28, .poise = 42, .stance = 18 };
+pub var BURST_HIT = BURST_HIT_BANK;
 pub const BURST_R: f32 = 1.9;
 
 const WALK_SPEED: f32 = 2.2;
@@ -115,7 +117,8 @@ comptime {
     std.debug.assert(SURGE_DUR > 0.70 + 0.30);
 }
 
-pub const PLOUGH_HIT = combat.Hit{ .dmg = 20, .poise = 30, .stance = 12 };
+const PLOUGH_HIT_BANK = combat.Hit{ .dmg = 20, .poise = 30, .stance = 12 };
+pub var PLOUGH_HIT = PLOUGH_HIT_BANK;
 pub const PLOUGH_R: f32 = 1.15;
 pub const PLOUGH_WIND: f32 = 0.55;
 const PLOUGH_DUR: f32 = 0.85;
@@ -127,7 +130,8 @@ const MOUND_PLOUGH_R: f32 = MOUND_TRAVEL_R * 1.1;
 const MOUND_PLOUGH_H: f32 = MOUND_TRAVEL_H * 1.45;
 const MOUND_PLOUGH_LONG: f32 = 2.8;
 
-pub const RAKE_HIT = combat.Hit{ .dmg = 12, .poise = 16, .stance = 5 };
+const RAKE_HIT_BANK = combat.Hit{ .dmg = 12, .poise = 16, .stance = 5 };
+pub var RAKE_HIT = RAKE_HIT_BANK;
 /// **LONG ENOUGH TO BE CAUGHT ON, WHICH IS WHAT SIZES IT FROM BELOW** — `foe.PARRY_LEAD` brackets every wind from above. At 0.33 the one difficulty dial covered 55% of this tell against under half of the claw's beside it.
 pub const RAKE_WIND: f32 = 0.40;
 const RAKE_STRIKE: f32 = 0.18;
@@ -138,8 +142,8 @@ comptime {
     std.debug.assert(RAKE_WIND < CLAW_WIND);
     std.debug.assert(foe.PARRY_LEAD < RAKE_WIND * 0.5 and foe.PARRY_LEAD < CLAW_WIND * 0.5);
     std.debug.assert(PLOUGH_R_MIN > SURGE_LOCK_R and PLOUGH_R_MAX > PLOUGH_R_MIN);
-    std.debug.assert(PLOUGH_HIT.stance < BURST_HIT.stance and RAKE_HIT.stance < BURST_HIT.stance);
-    std.debug.assert(RAKE_HIT.dmg < CLAW_HIT.dmg);
+    std.debug.assert(PLOUGH_HIT_BANK.stance < BURST_HIT_BANK.stance and RAKE_HIT_BANK.stance < BURST_HIT_BANK.stance);
+    std.debug.assert(RAKE_HIT_BANK.dmg < CLAW_HIT_BANK.dmg);
 }
 
 const DEATH_DUR: f32 = 1.15;
@@ -1515,9 +1519,9 @@ test "THE SURFACE TELL IS A BUILDING SPRAY, NOT A SWELLING DOME — the mound ho
 }
 
 test "IT IS VICIOUS ON ITS FEET TOO — it runs him down and its stroke comes round again quickly" {
-    try std.testing.expect(CHASE_SPEED > heromod.RUN_SPEED);
-    try std.testing.expect(CHASE_SPEED < heromod.SPRINT_SPEED);
-    try std.testing.expect(WALK_SPEED < heromod.RUN_SPEED);
+    try std.testing.expect(CHASE_SPEED > heromod.RUN_SPEED_BANK);
+    try std.testing.expect(CHASE_SPEED < heromod.SPRINT_SPEED_BANK);
+    try std.testing.expect(WALK_SPEED < heromod.RUN_SPEED_BANK);
     // THE STROKE COMES BACK. A claw every 1.9 s off a body that could not close was a punching bag between dives; the whole cycle now fits inside what the dive alone used to cost.
     const cycle = CLAW_WIND + CLAW_STRIKE + CLAW_RECOVER + CLAW_CD;
     try std.testing.expect(cycle < 2.2);
@@ -1525,7 +1529,7 @@ test "IT IS VICIOUS ON ITS FEET TOO — it runs him down and its stroke comes ro
     try std.testing.expect(CLAW_WIND >= foe.TELL_MIN);
     try std.testing.expect(foe.PARRY_LEAD < CLAW_WIND * 0.5);
     std.debug.print("  delver surface: chases {d:.2} m/s (hero runs {d:.2}, sprints {d:.2}), claw cycle {d:.2} s\n", .{
-        CHASE_SPEED, heromod.RUN_SPEED, heromod.SPRINT_SPEED, cycle,
+        CHASE_SPEED, heromod.RUN_SPEED_BANK, heromod.SPRINT_SPEED_BANK, cycle,
     });
 }
 

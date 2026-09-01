@@ -445,7 +445,7 @@ comptime {
     std.debug.assert(STOOP_NECK_SHARE > 0.5 and STOOP_NECK_SHARE < 1.0);
 }
 const BITE_CROUCH: f32 = 0.09;
-pub const BITE_HIT = combat.Hit{ .dmg = 21, .poise = 16, .stance = 3 };
+pub var BITE_HIT = combat.Hit{ .dmg = 21, .poise = 16, .stance = 3 };
 
 const GROWL_EVERY: f32 = 2.6;
 

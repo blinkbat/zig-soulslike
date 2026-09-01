@@ -49,9 +49,6 @@ const hudmod = @import("ui/hud.zig");
 const heroBlade = game.heroBlade;
 const HERO_CENTER_Y = game.HERO_CENTER_Y;
 const arrowCover = game.arrowCover;
-const WALK_SPEED = heromod.WALK_SPEED;
-const RUN_SPEED = heromod.RUN_SPEED;
-const SPRINT_SPEED = heromod.SPRINT_SPEED;
 
 const BOOT_SHOT_T: f32 = 11.0;
 
@@ -494,7 +491,7 @@ pub fn runShots(g: *Game) void {
 
     g.hero.pos = mathx.ground(0, 26);
     var i: i32 = 0;
-    while (i < 40) : (i += 1) stepWorld(g, dt, WALK_SPEED);
+    while (i < 40) : (i += 1) stepWorld(g, dt, heromod.WALK_SPEED);
 
     // **THE CULLER COUNTS, CAPTURED** (AGENTS.md says the harness takes them and nothing here was turning them
     // on). If `drawn` closes on `props` a culler has been defeated, and that is not something the eye can spot.
@@ -503,12 +500,12 @@ pub fn runShots(g: *Game) void {
     g.menu.stats = false;
 
     const stages = [_]struct { name: [:0]const u8, yaw: f32, pitch: f32, dist: f32, adv: i32, speed: f32 }{
-        .{ .name = "shots/1_walk_side.png", .yaw = 90, .pitch = 0.10, .dist = 4.0, .adv = 0, .speed = WALK_SPEED },
-        .{ .name = "shots/2_walk_front.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .adv = 22, .speed = WALK_SPEED },
-        .{ .name = "shots/3_run_side.png", .yaw = 90, .pitch = 0.06, .dist = 4.9, .adv = 24, .speed = RUN_SPEED },
-        .{ .name = "shots/4_run_threequarter.png", .yaw = 45, .pitch = 0.16, .dist = 4.9, .adv = 12, .speed = RUN_SPEED },
-        .{ .name = "shots/5_sprint_side.png", .yaw = 90, .pitch = 0.04, .dist = 5.4, .adv = 16, .speed = SPRINT_SPEED },
-        .{ .name = "shots/6_sprint_back.png", .yaw = 180, .pitch = 0.22, .dist = 5.2, .adv = 14, .speed = SPRINT_SPEED },
+        .{ .name = "shots/1_walk_side.png", .yaw = 90, .pitch = 0.10, .dist = 4.0, .adv = 0, .speed = heromod.WALK_SPEED },
+        .{ .name = "shots/2_walk_front.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .adv = 22, .speed = heromod.WALK_SPEED },
+        .{ .name = "shots/3_run_side.png", .yaw = 90, .pitch = 0.06, .dist = 4.9, .adv = 24, .speed = heromod.RUN_SPEED },
+        .{ .name = "shots/4_run_threequarter.png", .yaw = 45, .pitch = 0.16, .dist = 4.9, .adv = 12, .speed = heromod.RUN_SPEED },
+        .{ .name = "shots/5_sprint_side.png", .yaw = 90, .pitch = 0.04, .dist = 5.4, .adv = 16, .speed = heromod.SPRINT_SPEED },
+        .{ .name = "shots/6_sprint_back.png", .yaw = 180, .pitch = 0.22, .dist = 5.2, .adv = 14, .speed = heromod.SPRINT_SPEED },
     };
     for (stages) |st| {
         g.rig.yaw = mathx.radians(st.yaw);
@@ -531,7 +528,7 @@ pub fn runShots(g: *Game) void {
         // Re-planted on open ground each time: at a 2.4 m boom the camera is inside whatever he has walked past.
         standHero(g, 2.0, -18.0, std.math.pi);
         var k: i32 = 0;
-        while (k < hp.adv) : (k += 1) stepWorld(g, dt, RUN_SPEED);
+        while (k < hp.adv) : (k += 1) stepWorld(g, dt, heromod.RUN_SPEED);
         var name: [64]u8 = undefined;
         const p = std.fmt.bufPrintZ(&name, "shots/7{s}_hero_hip.png", .{hp.tag}) catch continue;
         shootAt(g, p, v3(g.hero.pos.x, g.hero.pos.y + 0.92, g.hero.pos.z), hp.yaw, 0.05, 2.4);
@@ -553,12 +550,12 @@ pub fn runShots(g: *Game) void {
         g.rig.pitch = st.pitch;
         g.rig.dist = st.dist;
         var k: i32 = 0;
-        while (k < 14) : (k += 1) stepLocked(g, dt, WALK_SPEED, v3(st.dx, 0, st.dz), std.math.pi);
+        while (k < 14) : (k += 1) stepLocked(g, dt, heromod.WALK_SPEED, v3(st.dx, 0, st.dz), std.math.pi);
         var seek: i32 = 0;
         while (seek < 90) : (seek += 1) {
             const d = @abs(g.hero.phase - st.phTgt);
             if (@min(d, 1.0 - d) < 0.022) break;
-            stepLocked(g, dt, WALK_SPEED, v3(st.dx, 0, st.dz), std.math.pi);
+            stepLocked(g, dt, heromod.WALK_SPEED, v3(st.dx, 0, st.dz), std.math.pi);
         }
         g.rig.follow(g.hero.shoulderPoint());
         shoot(g, st.name);
@@ -577,7 +574,7 @@ pub fn runShots(g: *Game) void {
     for (rollStages) |st| {
         var k: i32 = 0;
         while (k < st.adv) : (k += 1) {
-            if (g.hero.rolling) g.hero.updateRoll(dt, game.PLAY_HALF) else stepWorld(g, dt, WALK_SPEED);
+            if (g.hero.rolling) g.hero.updateRoll(dt, game.PLAY_HALF) else stepWorld(g, dt, heromod.WALK_SPEED);
             g.rig.follow(g.hero.shoulderPoint());
         }
         shoot(g, st.name);
@@ -594,9 +591,9 @@ pub fn runShots(g: *Game) void {
     g.rig.dist = 6.4;
     const jumpGround = mathx.addV(
         g.hero.shoulderPoint(),
-        v3(0, 0, -RUN_SPEED * heromod.JUMP_AIR * 0.5),
+        v3(0, 0, -heromod.RUN_SPEED * heromod.JUMP_AIR * 0.5),
     );
-    must(g.hero.startJump(v3(0, 0, -1), RUN_SPEED), "the jump would not start");
+    must(g.hero.startJump(v3(0, 0, -1), heromod.RUN_SPEED), "the jump would not start");
     // AIMED OFF THE ARC'S OWN NUMBERS, never literal frames: each stage is a FRACTION of the flight, and the apex is 0.5 because that is where v passes through zero (t = v0/g = JUMP_AIR/2).
     const jumpStages = [_]struct { name: [:0]const u8, at: f32 }{
         .{ .name = "shots/9a_jump_drive.png", .at = 0.15 },
@@ -1998,10 +1995,39 @@ pub fn runShots(g: *Game) void {
     if (stageOn("folk")) folkShots(g);
     if (stageOn("counter")) counterShots(g);
     if (stageOn("sound")) soundFilterShots(g);
+    if (stageOn("stats")) statsShots(g);
     if (stageOn("wolf")) wolfShots(g);
     if (stageOn("day")) dayShots(g);
     if (stageOn("editor")) editorShots(g);
     if (stageOn("editorgap")) editorGapShots(g);
+}
+
+/// **THE STATS BENCH**, on the sheet with the most shape to it: a consumable draws only the dials its own
+/// payload has, which is the whole claim the panel makes.
+fn statsShots(g: *Game) void {
+    const was = g.menu.screen;
+    g.menu.screen = .closed;
+    g.editor.enter(mathx.ground(0, -66));
+    g.editor.applyCamForShot();
+    g.editor.statsForShot("Spells", 0);
+    editorSnap(g, "shots/117a_stats_spells.png");
+    g.editor.statsForShot("Bag", 1);
+    editorSnap(g, "shots/117b_stats_consumables.png");
+    g.editor.statsForShot("Foes", 2);
+    editorSnap(g, "shots/117c_stats_foes.png");
+    g.editor.statsForShot("Blows", 18);
+    editorSnap(g, "shots/117e_stats_blows.png");
+    g.editor.statsForShot("Hero", 0);
+    editorSnap(g, "shots/117f_stats_hero.png");
+    g.editor.statsForShot("Passives", 3);
+    editorSnap(g, "shots/117g_stats_passives.png");
+    g.editor.closeModalForShot();
+    // …and the other half of the ask: the picture of the thing with its own dials beside it.
+    g.editor.itemForShot(.tower_shield);
+    editorSnap(g, "shots/117d_stats_item.png");
+    g.editor.closeModalForShot();
+    g.editor.on = false;
+    g.menu.screen = was;
 }
 
 fn soundFilterShots(g: *Game) void {

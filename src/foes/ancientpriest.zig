@@ -65,13 +65,15 @@ const SHOULDER_HALF = heromod.SHOULDER_HALF * 0.58;
 const REST = heromod.restHumanoid(HIP_HALF, SHOULDER_HALF, H);
 const solePatches = archermod.solePatches;
 
-pub const AGGRO_R: f32 = 24.0;
+/// The ring as authored — what the comptime pin below is asked of, since the ring itself is live now.
+pub const AGGRO_R_BANK: f32 = 24.0;
+pub var AGGRO_R: f32 = AGGRO_R_BANK;
 const TURN_RATE: f32 = 3.8;
-const WALK_SPEED: f32 = heromod.WALK_SPEED * 1.02;
+const WALK_SPEED: f32 = heromod.WALK_SPEED_BANK * 1.02;
 const BODY_R: f32 = 0.32;
 const HURT_R: f32 = 0.44;
 const CENTER_F: f32 = 0.58;
-pub const SOULS: u32 = 480;
+pub var SOULS: u32 = 480;
 
 const HP_MAX: f32 = 96.0;
 /// **ALMOST NONE** (the necromancer's rule): under the hero's light poke, so anything that lands drops the cast. A creature whose threat is a 1.55 s ritual must be answerable by reaching it.
@@ -123,7 +125,7 @@ const WANT_MAX: f32 = 19.0;
 comptime {
     std.debug.assert(RAISE_WIND >= foe.TELL_MIN and BREATH_WIND >= foe.TELL_MIN);
     std.debug.assert(BREATH_REACH * SCALE < WANT_MIN);
-    std.debug.assert(WANT_MAX < AGGRO_R);
+    std.debug.assert(WANT_MAX < AGGRO_R_BANK);
     std.debug.assert(RAISE_CD > RAISE_WIND + RAISE_CAST + RAISE_RECOVER);
     std.debug.assert(BREATH_CD > BREATH_WIND + BREATH_DUR + BREATH_RECOVER);
     std.debug.assert(RAISE_WIND > BREATH_WIND * 2.0);

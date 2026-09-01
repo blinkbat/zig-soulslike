@@ -36,7 +36,7 @@ const SPORE_VIO_SHARE: f32 = 0.48;
 
 pub const H: f32 = 0.92;
 
-pub const AGGRO_R: f32 = 9.0;
+pub var AGGRO_R: f32 = 9.0;
 const KEEP_R: f32 = 1.25;
 const HOME_R: f32 = 2.0;
 
@@ -49,9 +49,9 @@ const HP_MAX: f32 = 34.0;
 const POISE_MAX: f32 = 12.0;
 const STANCE_MAX: f32 = 26.0;
 const RESISTS = combat.resists(.{ .fire = -50, .cold = 15, .chaos = 75 });
-pub const SOULS: u32 = 70;
+pub var SOULS: u32 = 70;
 
-pub const FLING_HIT = combat.Hit{ .dmg = 12, .poise = 20, .stance = 8 };
+pub var FLING_HIT = combat.Hit{ .dmg = 12, .poise = 20, .stance = 8 };
 /// **POISON PER SECOND STANDING IN IT** (owner: accrue more rapidly). Nearly double: at 24 a sporeling's cloud was something you could walk through while reading the room, which is not what a gas is for.
 pub const SPORE_BUILD: f32 = 42.0;
 

@@ -81,13 +81,13 @@ const setLocal = heromod.setHumanoid;
 const FIST_Y = -0.05 * H;
 const FIST_Z = 0.02 * H;
 
-pub const AGGRO_R = 26.0;
+pub var AGGRO_R: f32 = 26.0;
 const TURN_RATE = 4.6;
-const WALK_SPEED = heromod.WALK_SPEED * 1.18;
+const WALK_SPEED = heromod.WALK_SPEED_BANK * 1.18;
 const SPEED = 1.0;
 const BODY_R = 0.34;
 const HURT_R = 0.42;
-pub const SOULS: u32 = 520;
+pub var SOULS: u32 = 520;
 
 const HP_MAX: f32 = 84.0;
 /// **ALMOST NONE.** Under the hero's light poke (10 poise), so ANYTHING that lands staggers it.
@@ -112,7 +112,8 @@ const RAISE_CD: f32 = 7.5;
 pub const RAISE_HP_FRAC: f32 = 0.55;
 pub const RAISE_MATCH_R: f32 = 1.2;
 
-pub const FROST_HIT = combat.Hit{ .poise = 18, .stance = 8, .elem = combat.elems(.{ .cold = 38 }) };
+const FROST_HIT_BANK = combat.Hit{ .poise = 18, .stance = 8, .elem = combat.elems(.{ .cold = 38 }) };
+pub var FROST_HIT = FROST_HIT_BANK;
 pub const FROST_R: f32 = 2.4;
 /// The cast — the staff comes up and the hand goes out over the mark. PUBLIC because the harness aims a beat with it (`shots.FROST_TELL_AT`): a portrait pinned to a literal 0.65 s photographs somewhere else later.
 pub const FROST_WIND: f32 = 0.72;
@@ -130,7 +131,7 @@ comptime {
     std.debug.assert(FROST_WIND >= foe.TELL_MIN);
     std.debug.assert(RAISE_WIND > FROST_WIND + FROST_CAST_DUR);
     std.debug.assert(RAISE_CD > RAISE_WIND + RAISE_DUR + RAISE_RECOVER);
-    std.debug.assert(FROST_HIT.dmg == 0 and FROST_HIT.elem.at(.cold) > 0);
+    std.debug.assert(FROST_HIT_BANK.dmg == 0 and FROST_HIT_BANK.elem.at(.cold) > 0);
     std.debug.assert(RAISE_R > FROST_R_MIN);
     // **THE RANGE IT WANTS TO STAND AT MUST SIT INSIDE THE RANGE IT CAN CAST FROM.** Two independently authored bands that only happen to overlap is a creature that walks to the one place it cannot cast.
     std.debug.assert(WANT_MIN >= FROST_R_MIN and WANT_MAX <= FROST_R_MAX);
@@ -743,7 +744,7 @@ pub const Necro = struct {
     }
 
     fn tickHem(self: *Necro, dt: f32, speed: f32) void {
-        const want = HEM_DRAG * mathx.clampF(speed / (heromod.WALK_SPEED * SPEED), 0, 1);
+        const want = HEM_DRAG * mathx.clampF(speed / (heromod.WALK_SPEED_BANK * SPEED), 0, 1);
         const accel = (want - self.hemLean) * HEM_EASE * HEM_SETTLE;
         self.hemVel += accel * dt;
         self.hemVel *= mathx.maxF(0, 1.0 - HEM_EASE * dt);
@@ -1618,10 +1619,10 @@ test "THE HEM REACHES THE GROUND AND PAST IT — that is what dragging means" {
 test "THE HEM IS A SPRING: it lags going out, and it OVERSHOOTS its rest coming back" {
     var k = Necro.spawn(mathx.zero3, 0, 1.0, 0.3);
     const dt = 1.0 / 60.0;
-    k.tickHem(dt, heromod.WALK_SPEED * SPEED);
+    k.tickHem(dt, heromod.WALK_SPEED_BANK * SPEED);
     try std.testing.expect(k.hemLean > 0 and k.hemLean < HEM_DRAG * 0.5);
     var t: f32 = 0;
-    while (t < 2.0) : (t += dt) k.tickHem(dt, heromod.WALK_SPEED * SPEED);
+    while (t < 2.0) : (t += dt) k.tickHem(dt, heromod.WALK_SPEED_BANK * SPEED);
     try std.testing.expect(@abs(k.hemLean - HEM_DRAG) < 1.5);
     var least: f32 = 999;
     t = 0;
@@ -1682,7 +1683,7 @@ test "A WALK CLEARS THE RING and standing still does not — the counter is his 
     var caught = false;
     t = 0;
     while (t < FROST_FUSE + 0.2) : (t += dt) {
-        const he = v3(heromod.WALK_SPEED * t, 0, 0);
+        const he = v3(heromod.WALK_SPEED_BANK * t, 0, 0);
         _ = walk.update(dt, he, 400, .{});
         if (walk.heroHit != null) caught = true;
     }

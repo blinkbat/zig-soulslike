@@ -63,7 +63,7 @@ const CAP_DK = shroommod.CAP_DK;
 const GILL = rgba(148, 132, 96, 255);
 const EYE = rgba(196, 206, 132, 255);
 
-pub const AGGRO_R: f32 = 15.0;
+pub var AGGRO_R: f32 = 15.0;
 const HOME_R: f32 = 3.0;
 const WALK_SPEED: f32 = wolf.WALK_SPEED * 0.90;
 const CHASE_SPEED: f32 = wolf.TROT_SPEED * 1.02;
@@ -84,7 +84,7 @@ const HP_MAX: f32 = 155.0;
 const POISE_MAX: f32 = 20.0;
 const STANCE_MAX: f32 = 30.0;
 const RESISTS = combat.resists(.{ .fire = -45, .chaos = 60, .cold = 10 });
-pub const SOULS: u32 = 165;
+pub var SOULS: u32 = 165;
 
 const BITE_R: f32 = 1.55;
 const BITE_FRONT_DOT: f32 = 0.55;
@@ -92,7 +92,7 @@ const BITE_WIND: f32 = 0.38;
 const BITE_STRIKE: f32 = 0.16;
 const BITE_RECOVER: f32 = 0.60;
 const BITE_CD: f32 = 1.9;
-pub const BITE_HIT = combat.Hit{ .dmg = 15, .poise = 13, .stance = 8, .elem = combat.elems(.{ .chaos = 9 }) };
+pub var BITE_HIT = combat.Hit{ .dmg = 15, .poise = 13, .stance = 8, .elem = combat.elems(.{ .chaos = 9 }) };
 
 // **THE TABLE.** A `Carrion` is stamped where any body in the world falls (`game.billDeaths`, the one place a
 // death is billed) and keeps for `CARRION_LIFE`. It is FOOD, not a corpse: nothing else in the game reads it,

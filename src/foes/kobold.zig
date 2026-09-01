@@ -155,12 +155,12 @@ pub fn kindOf(r: Role) wf.FoeKind {
     return @enumFromInt(@intFromEnum(wf.FoeKind.berserker) + @intFromEnum(r));
 }
 
-pub const AGGRO_R = 16.0;
+pub var AGGRO_R: f32 = 16.0;
 const HOME_R = 1.5;
 const TURN_RATE = 5.2;
-const WALK_SPEED = heromod.WALK_SPEED;
+const WALK_SPEED = heromod.WALK_SPEED_BANK;
 /// …and what the BERSERKER closes at, which is the hero's own run scaled by his spec (`approachSpeed`). At 1.22 of it that is 4.15 m/s: past the hero's run (3.4) so backing off on foot does not shake him, and well under the sprint (5.1) so the sprint still does.
-const RUN_SPEED = heromod.RUN_SPEED;
+const RUN_SPEED = heromod.RUN_SPEED_BANK;
 const ZERK_WALK_IN = 0.9;
 const DEATH_DUR = 1.0;
 const DISS_DUR = 0.85;
@@ -201,7 +201,7 @@ const CAST_CD = 9.0;
 const HEAL_AMT = 30.0;
 /// **A FULL METER IN ONE RITE.** Half of one would decay away before a second cast could land on it
 /// (`combat.AILS`' berserk row decays at 16/s), so the rite would visibly do nothing.
-const RITE_ZERK = combat.ailRow(.berserk).max;
+const RITE_ZERK = combat.ailBank(.berserk).max;
 const HEAL_SLACK = 4.0;
 const HEAL_RANGE = 14.0;
 const HEAL_BLOOM: u32 = 34;

@@ -200,8 +200,8 @@ const FOE_REGEN_DELAY = 2.2;
 const FOE_REGEN_RATE = 0.45;
 pub const LIGHT_STUN_DUR = 0.46;
 pub const HEAVY_STUN_DUR = 1.15;
-pub const FOE_LIGHT_STUN_DUR = 0.78;
-pub const FOE_HEAVY_STUN_DUR = 2.40;
+pub const FOE_LIGHT_STUN_DUR: f32 = 0.78;
+pub const FOE_HEAVY_STUN_DUR: f32 = 2.40;
 
 pub fn foeStunDur(heavy: bool) f32 {
     return if (heavy) FOE_HEAVY_STUN_DUR else FOE_LIGHT_STUN_DUR;
@@ -215,7 +215,7 @@ pub fn foeStunDur(heavy: bool) f32 {
 /// **0.82 PUTS HIS BASE BLOWS ON THE OLD SCALE** — 13 damage pours 10.7 where the light swing carried 10 poise,
 /// 27 pours 22.1 where the heavy carried 22 — so every creature's `poiseMax`, sized between those two, still means
 /// what it meant.
-pub const FOE_POISE_PER_DMG: f32 = 0.82;
+pub var FOE_POISE_PER_DMG: f32 = 0.82;
 /// **YOU CANNOT DO ONE THING OVER AND OVER** (owner). Each light stun, heavy stun and status proc on a creature
 /// leaves WEAR on that channel: the next takes (1 + wear × this) as much. Wear halves every `WEAR_HALFLIFE`.
 pub const LIGHT_WEAR: f32 = 0.60;
@@ -569,12 +569,12 @@ pub const Vitals = struct {
 
 // ER's shallow, fast-refilling pool (docs/ELDEN_RING.md §3 — its Endurance-15 numbers): a flat bite per action, pouring back ~4x as fast as a roll spends it, so it paces a FLURRY and not a whole fight.
 pub const STAM_MAX = stats.staminaFor(stats.START); // 105 — ENDURANCE owns the pool size now (`stats.zig`); about eight rolls from full
-pub const STAM_ROLL = 12.0;
-pub const STAM_LIGHT = 10.0;
-pub const STAM_HEAVY = 16.0;
-pub const STAM_SHOT = 8.0;
-pub const STAM_AIMED = 18.0;
-pub const STAM_SPRINT = 9.0;
+pub var STAM_ROLL: f32 = 12.0;
+pub var STAM_LIGHT: f32 = 10.0;
+pub var STAM_HEAVY: f32 = 16.0;
+pub var STAM_SHOT: f32 = 8.0;
+pub var STAM_AIMED: f32 = 18.0;
+pub var STAM_SPRINT: f32 = 9.0;
 const STAM_REGEN = 45.0;
 const STAM_DELAY = 0.55;
 pub const STAM_REFUSE_FLASH: f32 = 0.35;
@@ -660,9 +660,9 @@ pub const Stamina = struct {
     }
 };
 
-pub const GUARD_NEGATE: f32 = 0.85;
-pub const GUARD_STAM_FLAT: f32 = 5.0;
-pub const GUARD_STAM_PER_DMG: f32 = 1.10;
+pub var GUARD_NEGATE: f32 = 0.85;
+pub var GUARD_STAM_FLAT: f32 = 5.0;
+pub var GUARD_STAM_PER_DMG: f32 = 1.10;
 pub const GUARD_ARC: f32 = 65.0;
 
 pub fn withinGuardArc(bearing: f32, facing: f32) bool {
@@ -713,7 +713,7 @@ pub fn guardChipSplit(h: Hit, negate: f32, negateElem: f32) Hit {
 }
 
 
-pub const STAM_PARRY: f32 = 9.0;
+pub var STAM_PARRY: f32 = 9.0;
 /// WHAT THE BOARDS DEAL WHEN THEY CATCH: nothing to the health, everything to the FOOTING. No `dmg` — a parry
 /// has never been damage, the punish after it is. And NO POISE, so a catch can never resolve as a mere flinch.
 /// Sized so the ogre's 90 stance takes two catches and lighter takes one.
@@ -891,11 +891,11 @@ pub const SUNDER_REACH: f32 = 4.0;
 /// **THE TWO THAT DO NOTHING TO A BODY AND EVERYTHING TO WHOSE SIDE IT IS ON.** The whole blow is the dose,
 /// which is why they sit OUTSIDE the damage ladder and above all of it. A meter apiece in ONE cast: nothing else
 /// builds confusion or charm, so a half-filling spell would have no second source and would never proc.
-pub const BABBLE_HIT = Hit{ .dose = Doses.one(.confusion, ailRow(.confusion).max) };
+pub const BABBLE_HIT = Hit{ .dose = Doses.one(.confusion, ailBank(.confusion).max) };
 /// PAST THE ROOTS' 7 m AND WELL SHORT OF THE BOLT'S 55 — cast INTO the room, not across the field.
 pub const BABBLE_REACH: f32 = 13.0;
 
-pub const BIDDING_HIT = Hit{ .dose = Doses.one(.charm, ailRow(.charm).max) };
+pub const BIDDING_HIT = Hit{ .dose = Doses.one(.charm, ailBank(.charm).max) };
 /// **INSIDE THE BABBLE'S**, because charm is the better of the two: the price is the walk in as well as the FP.
 pub const BIDDING_REACH: f32 = 9.0;
 
@@ -915,7 +915,7 @@ pub const SpellRow = struct {
 
 /// **THE ROD'S SEVEN, AS ONE TABLE YOU CAN READ DOWN.** The FP column is the LADDER (the monotonicity assert
 /// below). **ROW ORDER IS `Spell`'S OWN**, pinned at comptime: an eighth spell is a compile error until it has said what it costs and what it does. This is the price, not the physics.
-pub const SPELLS = [_]SpellRow{
+pub const SPELLS_BANK = [_]SpellRow{
     .{ .spell = .bolt,   .name = "Chaos Bolt",   .fp = 8,  .scroll = .scroll_bolt,   .says = "A thrown stone of chaos. Crosses the ground, and cover stops it.",     .blow = BOLT_HIT },
     .{ .spell = .roots,  .name = "Roots",        .fp = 12, .scroll = .scroll_roots,  .says = "Holds a body where it stands and bleeds it while it is held.",        .drip = ROOT_HOLD * ROOT_DPS },
     .{ .spell = .rime,   .name = "Rime Breath",  .fp = 15, .scroll = .scroll_rime,   .says = "A cone of cold, held out for as long as the breath lasts. Slows what it touches.", .drip = RIME_DUR * RIME_DPS },
@@ -927,15 +927,19 @@ pub const SPELLS = [_]SpellRow{
     .{ .spell = .bidding, .name = "Bidding",     .fp = 24, .scroll = .scroll_bidding, .says = "Turns a body on the ones it came with. The dearest thing the rod does.", .blow = BIDDING_HIT, .reach = BIDDING_REACH },
 };
 
+/// **THE LIVE NINE.** `SPELLS_BANK` above is the code's own table and never moves — that is the revert
+/// (`play/tune.zig`). Every reader below is `rowFor`, which reads this one.
+pub var SPELLS: [SPELLS_BANK.len]SpellRow = SPELLS_BANK;
+
 comptime {
-    if (SPELLS.len != @typeInfo(Spell).@"enum".fields.len) @compileError("combat: SPELLS is not one row per Spell");
-    for (SPELLS, 0..) |row, i| {
-        if (@intFromEnum(row.spell) != i) @compileError("combat: SPELLS row " ++ row.name ++ " is out of `Spell` order");
+    if (SPELLS_BANK.len != @typeInfo(Spell).@"enum".fields.len) @compileError("combat: SPELLS_BANK is not one row per Spell");
+    for (SPELLS_BANK, 0..) |row, i| {
+        if (@intFromEnum(row.spell) != i) @compileError("combat: SPELLS_BANK row " ++ row.name ++ " is out of `Spell` order");
         if ((row.blow == null) != (row.drip > 0)) @compileError("combat: " ++ row.name ++ " has no worth, or two");
         if (!item.isSpellScroll(row.scroll)) @compileError("combat: " ++ row.name ++ " names a scroll that " ++
             "`item.isSpellScroll` does not know — the bag would hold an object nothing can memorize");
         if (row.says.len == 0) @compileError("combat: " ++ row.name ++ " says nothing about what it does");
-        for (SPELLS[0..i]) |prev| {
+        for (SPELLS_BANK[0..i]) |prev| {
             if (prev.scroll == row.scroll) @compileError("combat: " ++ row.name ++ " and " ++ prev.name ++
                 " are written on the same scroll — one sheet cannot hand over two sorceries");
         }
@@ -945,7 +949,7 @@ comptime {
         const k: item.Kind = @enumFromInt(i);
         if (!item.isSpellScroll(k)) continue;
         var named = false;
-        for (SPELLS) |row| named = named or row.scroll == k;
+        for (SPELLS_BANK) |row| named = named or row.scroll == k;
         if (!named) @compileError("combat: nothing is written on " ++ @tagName(k));
     }
 }
@@ -954,16 +958,35 @@ pub fn rowFor(s: Spell) SpellRow {
     return SPELLS[@intFromEnum(s)];
 }
 
+/// The authored row, for the ladder's own comptime asserts and the consts solved off it (`ailBank`'s reason).
+pub fn bankRow(s: Spell) SpellRow {
+    return SPELLS_BANK[@intFromEnum(s)];
+}
+
+fn bankFp(s: Spell) f32 {
+    return bankRow(s).fp;
+}
+
+fn bankDoses(s: Spell) bool {
+    const row = bankRow(s);
+    return if (row.blow) |b| b.dose.any() else false;
+}
+
+fn bankDamage(s: Spell) f32 {
+    const row = bankRow(s);
+    return if (row.blow) |b| b.raw() else row.drip;
+}
+
 pub fn spellName(s: Spell) [:0]const u8 {
-    return rowFor(s).name;
+    return bankRow(s).name;
 }
 
 pub fn spellSays(s: Spell) [:0]const u8 {
-    return rowFor(s).says;
+    return bankRow(s).says;
 }
 
 pub fn spellScroll(s: Spell) item.Kind {
-    return rowFor(s).scroll;
+    return bankRow(s).scroll;
 }
 
 /// THE ONE PLACE "does he carry it" is asked, so carried cannot mean two things on two panels.
@@ -1072,7 +1095,7 @@ pub const Memory = struct {
     }
 };
 
-pub const BOLT_FP: f32 = spellFp(.bolt);
+pub const BOLT_FP: f32 = bankFp(.bolt);
 
 comptime {
     // **THE LADDER IS MONOTONE, AND THAT IS THE WHOLE PRICE LIST**: 8→25, 11→22, 12→19.6, 13→18, 14→16.5,
@@ -1081,22 +1104,22 @@ comptime {
     @setEvalBranchQuota(8000);
     for (std.enums.values(Spell)) |a| {
         for (std.enums.values(Spell)) |b| {
-            if (spellDoses(a) or spellDoses(b)) continue;
-            if (spellFp(a) < spellFp(b)) std.debug.assert(spellDamage(a) > spellDamage(b));
+            if (bankDoses(a) or bankDoses(b)) continue;
+            if (bankFp(a) < bankFp(b)) std.debug.assert(bankDamage(a) > bankDamage(b));
         }
     }
     // **AND A DOSER IS DEARER THAN EVERY SPELL THAT HURTS SOMETHING.** The ladder ranks worth as damage and a
     // doser has none, so it is exempt from that and answers to this instead.
     for (std.enums.values(Spell)) |d| {
-        if (!spellDoses(d)) continue;
-        std.debug.assert(spellDamage(d) == 0);
+        if (!bankDoses(d)) continue;
+        std.debug.assert(bankDamage(d) == 0);
         for (std.enums.values(Spell)) |s| {
-            if (spellDoses(s)) continue;
-            std.debug.assert(spellFp(d) > spellFp(s));
+            if (bankDoses(s)) continue;
+            std.debug.assert(bankFp(d) > bankFp(s));
         }
     }
     // …and every one of them is castable off a full pool, or the sheet's Mind curve promises what it cannot pay.
-    for (std.enums.values(Spell)) |s| std.debug.assert(spellFp(s) > 0 and spellFp(s) <= FP_MAX);
+    for (std.enums.values(Spell)) |s| std.debug.assert(bankFp(s) > 0 and bankFp(s) <= FP_MAX);
 }
 
 test "the chill outlives the breath, refreshes rather than stacks, and lets go on its own" {
@@ -1411,7 +1434,7 @@ comptime {
     std.debug.assert(BERSERK_DMG > 1.0 and BERSERK_TRAVEL > 1.0 and BERSERK_HASTE > 1.0);
 }
 
-pub const AILS = [_]AilRow{
+pub const AILS_BANK = [_]AilRow{
     .{
         .ail = .poison, .name = "Poison", .elem = .chaos, .pulse = .chaos,
         .says = "Bleeds you for a share of your health over a long clock.",
@@ -1472,10 +1495,13 @@ pub const AILS = [_]AilRow{
     },
 };
 
+/// **THE LIVE TEN**, on `SPELLS`' arrangement: the bank above is the revert and `ailRow` reads this.
+pub var AILS: [AILS_BANK.len]AilRow = AILS_BANK;
+
 comptime {
-    if (AILS.len != NAIL) @compileError("combat: AILS is not one row per Ail");
-    for (AILS, 0..) |row, i| {
-        if (@intFromEnum(row.ail) != i) @compileError("combat: AILS row " ++ row.name ++ " is out of `Ail` order");
+    if (AILS_BANK.len != NAIL) @compileError("combat: AILS_BANK is not one row per Ail");
+    for (AILS_BANK, 0..) |row, i| {
+        if (@intFromEnum(row.ail) != i) @compileError("combat: AILS_BANK row " ++ row.name ++ " is out of `Ail` order");
         if (row.says.len == 0) @compileError("combat: " ++ row.name ++ " says nothing about what it does");
         if (row.max <= 0 or row.decay <= 0) @compileError("combat: " ++ row.name ++ " has a meter nothing can fill or empty");
         if (row.payout == .over and row.dur <= 0) @compileError("combat: " ++ row.name ++ " runs on a clock of zero");
@@ -1487,8 +1513,8 @@ comptime {
     }
     // **NO TWO AILMENTS SHARE AN ELEMENT.** The pairing is the law (fire-burn, cold-chill, lightning-stun,
     // chaos-poison), and two rows on one element would split every blow's buildup between them.
-    for (AILS, 0..) |a, i| {
-        for (AILS[0..i]) |b| {
+    for (AILS_BANK, 0..) |a, i| {
+        for (AILS_BANK[0..i]) |b| {
             if (a.elem != null and std.meta.eql(a.elem, b.elem))
                 @compileError("combat: " ++ a.name ++ " and " ++ b.name ++ " both build off one element");
         }
@@ -1496,12 +1522,12 @@ comptime {
     // …and every element has a row, or a column of damage quietly builds nothing.
     for (std.enums.values(Elem)) |e| {
         var named = false;
-        for (AILS) |row| named = named or std.meta.eql(row.elem, @as(?Elem, e));
+        for (AILS_BANK) |row| named = named or std.meta.eql(row.elem, @as(?Elem, e));
         if (!named) @compileError("combat: nothing is built by " ++ @tagName(e) ++ " damage");
     }
     // **THE ONE SPELL BUILT TO CHILL MUST FILL THE CHILL METER** — the pour is 15.3 cold and the meter is
     // authored under it, so retuning either without the other is a compile error rather than a dead spell.
-    if (RIME_DUR * RIME_DPS < ailRow(.chill).max) @compileError("combat: the rime breath no longer fills a chill meter");
+    if (RIME_DUR * RIME_DPS < ailBank(.chill).max) @compileError("combat: the rime breath no longer fills a chill meter");
 }
 
 comptime {
@@ -1525,12 +1551,19 @@ pub fn ailRow(a: Ail) AilRow {
     return AILS[@intFromEnum(a)];
 }
 
+/// **WHAT THE CODE SAYS, FOR THE THINGS THAT ASK AT COMPTIME.** A `const` solved off a meter's size (the two
+/// dosing spells, the bat's bleed, the rite's berserk) cannot read the live table, and would not want to: it is
+/// the authored arithmetic, and the row it was solved against is the one the bench reverts to.
+pub fn ailBank(a: Ail) AilRow {
+    return AILS_BANK[@intFromEnum(a)];
+}
+
 pub fn ailName(a: Ail) [:0]const u8 {
-    return ailRow(a).name;
+    return ailBank(a).name;
 }
 
 pub fn ailSays(a: Ail) [:0]const u8 {
-    return ailRow(a).says;
+    return ailBank(a).says;
 }
 
 /// **WHICH METER AN ELEMENT FILLS** — fire-burn, cold-chill, lightning-stun, chaos-poison. Solved off `AILS`
@@ -1538,7 +1571,7 @@ pub fn ailSays(a: Ail) [:0]const u8 {
 const AIL_OF_ELEM: [NELEM]Ail = blk: {
     var out: [NELEM]Ail = undefined;
     for (std.enums.values(Elem)) |e| {
-        for (AILS) |row| {
+        for (AILS_BANK) |row| {
             if (std.meta.eql(row.elem, @as(?Elem, e))) out[@intFromEnum(e)] = row.ail;
         }
     }
@@ -1549,7 +1582,7 @@ pub fn ailOf(e: Elem) Ail {
     return AIL_OF_ELEM[@intFromEnum(e)];
 }
 
-pub const POISON_MAX: f32 = ailRow(.poison).max;
+pub const POISON_MAX: f32 = ailBank(.poison).max;
 
 comptime {
     // **THE DIRK'S DOSE IS AUTHORED IN STROKES, AND `item` CANNOT SEE THIS NUMBER** (it is a leaf). Pinned here

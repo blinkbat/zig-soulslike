@@ -30,7 +30,7 @@ const scaleM = mathx.scaleM;
 /// KEEL HEIGHT — every fraction in this file is a share of it. Low: a body at the hero's knee.
 pub const W: f32 = 0.62;
 
-pub const AGGRO_R: f32 = 15.0;
+pub var AGGRO_R: f32 = 15.0;
 const HOME_R: f32 = 1.0;
 
 const BODY_R: f32 = 0.42;
@@ -49,9 +49,9 @@ const STANCE_MAX: f32 = 22.0;
 /// Dry bone and marrow: nothing to freeze (the skeleton family's own 60-75 cold), nothing to poison, and no wet mass or metal for lightning to find.
 const RESISTS = combat.resists(.{ .fire = -55, .cold = 70, .lightning = 0, .chaos = 50 });
 
-const SOULS: u32 = 120;
+pub var SOULS: u32 = 120;
 /// A quarter. The ancient priest can make these all day (`ancientpriest.RAISE_CD`), so full price is a soul farm with a timer on it. What was PLACED on the map pays in full.
-const SOULS_RAISED: u32 = 30;
+pub var SOULS_RAISED: u32 = 30;
 
 const DEATH_DUR = archermod.DEATH_DUR;
 const DISS_DUR = archermod.DISS_DUR;
@@ -713,6 +713,7 @@ pub const Clatter = struct {
         for (self.live()) |*sk| {
             if (!sk.gone) continue;
             sk.* = Skitterer.spawn(at, faceYaw, 1.0, seed);
+            foe.armStats(sk, .bone_skitterer);
             sk.bornRaised = true;
             self.raised += 1;
             return;
@@ -720,6 +721,7 @@ pub const Clatter = struct {
         // COUNTED ONLY WHEN A BODY ACTUALLY STANDS UP: bumped ahead of this guard, a full slab reported raises it had refused.
         if (self.n >= CAP_N) return;
         self.band[self.n] = Skitterer.spawn(at, faceYaw, 1.0, seed);
+        foe.armStats(&self.band[self.n], .bone_skitterer);
         self.band[self.n].bornRaised = true;
         self.n += 1;
         self.raised += 1;
@@ -1122,6 +1124,21 @@ test "A RAISED BODY IS A BODY — same spawn, and a dead slot is reused before t
     for (c.live()) |*sk| try std.testing.expectEqual(SOULS_RAISED, sk.soulValue());
     const placed = Skitterer.spawn(mathx.zero3, 0, 1.0, 0.3);
     try std.testing.expectEqual(SOULS, placed.soulValue());
+}
+
+test "A CLAWED BODY CARRIES THE BENCH'S POOLS — the same door the map's own placements go through" {
+    const foestat = @import("foestat.zig");
+    const i = @intFromEnum(wf.FoeKind.bone_skitterer);
+    foestat.mult[i] = .{};
+    defer foestat.mult[i] = .{};
+    var placed = Skitterer.spawn(mathx.zero3, 0, 1.0, 0.3);
+    foe.armStats(&placed, .bone_skitterer);
+    foestat.mult[i].hp = 2.0;
+
+    var c = Clatter{ .model = undefined };
+    c.raise(mathx.ground(3, 4), 0.5);
+    try std.testing.expectEqual(2.0 * HP_MAX, c.live()[0].vit.hpMax);
+    try std.testing.expectEqual(c.live()[0].vit.hpMax, c.live()[0].vit.hp);
 }
 
 test "A BIG PLACEMENT STILL ATTACKS — the stop ring may never grow past the trigger ring" {

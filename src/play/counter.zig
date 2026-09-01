@@ -24,10 +24,17 @@ pub const Trade = enum { shop, smithy };
 /// Both curves are LINEAR IN THE TIER and deliberately so — a smith who charges quadratically stops being used
 /// at +4, and the flat damage a tier gives (`hero.TIER_FLAT`) is linear too, so a linear price keeps the coin
 /// per point of damage flat across the whole run.
-pub const STONE_BASE: u32 = 1;
-pub const STONE_PER: u32 = 1;
-pub const COIN_BASE: u32 = 40;
-pub const COIN_PER: u32 = 55;
+/// The bank is the four numbers as written; the live four under them are what the smith actually charges and
+/// what the bench writes (`play/tune.zig`).
+pub const STONE_BASE_BANK: u32 = 1;
+pub const STONE_PER_BANK: u32 = 1;
+pub const COIN_BASE_BANK: u32 = 40;
+pub const COIN_PER_BANK: u32 = 55;
+
+pub var STONE_BASE: u32 = STONE_BASE_BANK;
+pub var STONE_PER: u32 = STONE_PER_BANK;
+pub var COIN_BASE: u32 = COIN_BASE_BANK;
+pub var COIN_PER: u32 = COIN_PER_BANK;
 
 /// Stones to take an armament from `tier` to `tier + 1`. `STONE_PER` is halved into the step so the early
 /// tiers are one stone apiece and the last are five — a run's worth of the delver's drop, not a mine.
@@ -40,8 +47,9 @@ pub fn coinCost(tier: u8) u32 {
 }
 
 comptime {
-    // A tier may never be free in either currency, or the screen has a button that always works.
-    std.debug.assert(stoneCost(0) > 0 and coinCost(0) > 0);
+    // A tier may never be free in either currency, or the screen has a button that always works. Asked of the
+    // BANK, and the bench's own floor of 1 is what holds it for an edited one.
+    std.debug.assert(STONE_BASE_BANK > 0 and COIN_BASE_BANK > 0);
 }
 
 /// What the whole ladder costs, for the test that prints it and for anything that wants to price a run.
@@ -98,7 +106,7 @@ pub const STOCK = [_]item.Kind{
 comptime {
     if (STOCK.len > MAX_ROWS) @compileError("counter: the shop stocks more than the screen can list");
     for (STOCK) |k| {
-        if (item.price(k) == 0) @compileError("counter: " ++ @tagName(k) ++ " is stocked but does not trade");
+        if (item.priceBank(k) == 0) @compileError("counter: " ++ @tagName(k) ++ " is stocked but does not trade");
     }
 }
 

@@ -147,7 +147,7 @@ const SIRON_LT = rgba(46, 44, 42, 255);
 const HAFT = rgba(52, 40, 26, 255);
 
 /// **HULKING, AND THE NUMBER IS SOLVED AGAINST A DOORWAY.** On top of `SCALE` and the map's own, so a crown at
-/// `SMITH_TOP * H * SCALE * SMITH_SIZE`. The test beside `smithReach` prints it; it may not clear the
+/// `SMITH_TOP * H * SCALE * SMITH_SIZE`. `MOSSBEARD IS THE BIGGEST BODY THAT TALKS` prints it; it may not clear the
 /// watchtower's own opening, or the biggest body in the game is one no building can hold.
 pub const SMITH_SIZE: f32 = 1.76;
 const SMITH_TOP: f32 = 1.06;

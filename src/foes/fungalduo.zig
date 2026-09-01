@@ -1244,7 +1244,7 @@ pub const Swordsman = struct {
 const MG_PRESS_HOLD: f32 = 2.4;
 const MG_PRESS_HP: f32 = 0.86;
 /// **THE WORSE IT IS DOING, THE SOONER IT LEAVES** (owner: more evasive when getting beaten down). Both knobs
-/// read its OWN bar and its own clock, which is what the LAW allows — never how it is being hurt. `harm` is 0
+/// read its OWN bar and its own clock, which is what the LAW allows — never how it is being hurt. `mgHarm` is 0
 /// at the threshold the press clock starts at and 1 at nothing left, so a healthy caster is untouched: at full
 /// HP it still owes 2.4 s of being stood on and 9 s between blinks; at death's door it owes 1.0 s and 4.0 s.
 const MG_PRESS_RATE_HURT: f32 = 2.4;

@@ -604,12 +604,7 @@ pub const Hollow = struct {
                         self.faceToward(self.nav.aim(self.pos, want), dt);
                         if (gap > stop) {
                             self.speed = approach(self.speed, CHASE_SPEED, ACCEL * dt);
-                            moveSpeed = self.speed;
-                            const moved = moveSpeed * dt * self.chill.travel();
-                            const way = self.nav.along(mathx.headingDir(self.facing));
-                            mathx.stepXZ(&self.pos, way, moved, bounds);
-                            movedDist = moved;
-                            moveYaw = mathx.headingXZ(way);
+                            foe.stride(self, dt, bounds, &movedDist, &moveSpeed, &moveYaw);
                             self.state = .walk;
                         } else {
                             self.speed = approach(self.speed, 0, ACCEL * dt);
@@ -630,12 +625,7 @@ pub const Hollow = struct {
                         } else if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) {
                             self.faceToward(self.nav.aim(self.pos, self.home), dt);
                             self.speed = approach(self.speed, WALK_SPEED, ACCEL * dt);
-                            moveSpeed = self.speed;
-                            const moved = moveSpeed * dt * self.chill.travel();
-                            const way = self.nav.along(mathx.headingDir(self.facing));
-                            mathx.stepXZ(&self.pos, way, moved, bounds);
-                            movedDist = moved;
-                            moveYaw = mathx.headingXZ(way);
+                            foe.stride(self, dt, bounds, &movedDist, &moveSpeed, &moveYaw);
                             self.state = .walk;
                         } else {
                             self.speed = approach(self.speed, 0, ACCEL * dt);

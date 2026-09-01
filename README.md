@@ -32,14 +32,15 @@ each), bow, wand, torch.
 block, L2 parry with a 0.16 s window, four PoE2 resistances plus an armour curve, ten status meters built the
 way poison is — poison, burning, chill, stun, bleed, sleep, confusion, charm, berserk, stupefy.
 
-**Foes.** 37 kinds in 29 groups: toad, skeletal archer, ogre, kobold warband (3 roles), brood mother + sacs +
+**Foes.** 38 kinds in 30 groups: toad, skeletal archer, ogre, kobold warband (3 roles), brood mother + sacs +
 broodlings, skeletal warriors (2), Bone Knight (boss, with boss bar and fog gate), shade + mourner, leechfly,
 rooted, sporeling, delver, necromancer, fungal deer, mushroom mage, fen lurker, spore homunculus, bone
 skitterer, ancient priest, tolling hollow, slumber bloom, cinder wake, rotgorger, birchwight, salt husk,
-fishman shoal (3 roles), blinkbat, and the fungal duo (second boss, two bars), plus the spirit wolf that fights
-on your side. Shared leash, sight, parry, nav-steering and dissipation contracts in `foe.zig`.
+fishman shoal (3 roles), blinkbat, the fungal duo (second boss, two bars) and the owlbear (a carving that wakes
+when you walk up to it), plus the spirit wolf that fights on your side. Shared leash, sight, parry, nav-steering
+and dissipation contracts in `foe.zig`.
 
-**World.** 560 m square ringed by cliffs, five regions, 161 prop kinds in three layers each. Sculptable
+**World.** 560 m square ringed by cliffs, five regions, 166 prop kinds in three layers each. Sculptable
 heightfield (40° slope limit, 0.55 m step). Painted soil with coverage and eight edge shapes; painted liquid
 with a derived coast you wade, in four kinds — water, tar, fungal soup (poison) and lava (burning, and it
 bites). All four wade the same; the look, the status and the voice are what differ. Day/night clock (~20 min day) driving every colour and shadow; sun 6→20 then the

@@ -38,6 +38,7 @@ const birchmod = @import("../foes/birchwight.zig");
 const huskmod = @import("../foes/salthusk.zig");
 const fishmod = @import("../foes/fishman.zig");
 const batmod = @import("../foes/blinkbat.zig");
+const owlbearmod = @import("../foes/owlbear.zig");
 const duomod = @import("../foes/fungalduo.zig");
 const combat = @import("../play/combat.zig");
 const foemod = @import("../foes/foe.zig");
@@ -115,7 +116,7 @@ pub fn unload() void {
     if (bigRT) |t| rl.unloadRenderTexture(t);
     thumbRT = null;
     bigRT = null;
-    // The prototype meshes inside it are permanent by the house rule; the 112.4 MB of slab around them is not.
+    // The prototype meshes inside it are permanent by the house rule; the slab around them is not.
     if (charSet) |cs| std.heap.c_allocator.destroy(cs);
     charSet = null;
 }
@@ -355,12 +356,15 @@ const CharSet = struct {
     pan: huskmod.Pan,
     shoal: fishmod.Shoal,
     roost: batmod.Roost,
+    perch: owlbearmod.Perch,
     vanguard: duomod.Vanguard,
     conclave: duomod.Conclave,
 };
-/// **112.4 MB, TAKEN WHEN THE TAB IS FIRST OPENED AND NOT OUT OF BSS AT LOAD** — as a module `var` it was that
-/// much commit charge from the image mapping onward whether or not a creature was ever looked at. Built field
-/// by field for `game.init`'s reason: a Debug frame reserves every temporary in a struct literal at once.
+/// **TAKEN WHEN THE TAB IS FIRST OPENED AND NOT OUT OF BSS AT LOAD** — as a module `var` this was its whole
+/// size in commit charge from the image mapping onward whether or not a creature was ever looked at. Built
+/// field by field for `game.init`'s reason: a Debug frame reserves every temporary in a struct literal at once.
+/// The size is one group per creature and GROWS WITH THE ROSTER, so it is measured by the test at the foot of
+/// this file rather than written here — as a figure it read 112.4 MB and was 150.6 by the time anyone looked.
 var charSet: ?*CharSet = null;
 
 /// `game.FOE_GROUPS` is the other copy of this roster, and `game` pins the two against each other.
@@ -397,6 +401,7 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
     cs.pan = huskmod.Pan.init(scene.shader);
     cs.shoal = fishmod.Shoal.init(scene.shader);
     cs.roost = batmod.Roost.init(scene.shader);
+    cs.perch = owlbearmod.Perch.init(scene.shader);
     cs.vanguard = duomod.Vanguard.init(scene.shader);
     cs.conclave = duomod.Conclave.init(scene.shader);
     inline for (@typeInfo(CharSet).@"struct".fields) |f| @field(cs, f.name).n = 0;
@@ -424,6 +429,7 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         .fish_spearman, .fish_netter, .fish_shaman => .{ .top = 2.3, .bound = 1.3 },
         // Hung in the air with the wings out: the bound is the SPAN, which is the widest thing here.
         .blinkbat => .{ .top = 4.2, .bound = 3.2 },
+        .owlbear => .{ .top = 3.0, .bound = 1.9 },
         .leechfly => .{ .top = 2.9, .bound = 1.8 },
         .rooted => .{ .top = 7.2, .bound = 3.6 },
         .shroom => .{ .top = 1.2, .bound = 1.0 },
@@ -491,6 +497,11 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
             cs.roost.n = 1;
             cs.roost.live()[0] = batmod.Bat.spawn(mathx.zero3, 0, 1.0, seed);
             cs.roost.draw(scene);
+        },
+        .owlbear => {
+            cs.perch.n = 1;
+            cs.perch.live()[0] = owlbearmod.Owlbear.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.perch.draw(scene);
         },
         .salt_husk => {
             cs.pan.n = 1;
@@ -1409,4 +1420,16 @@ pub fn back(st: *State) bool {
     st.open = null;
     st.grabbed = null;
     return true;
+}
+
+// **THE SECOND-BIGGEST ALLOCATION IN THE PROGRAM, AND ITS SIZE WAS A NUMBER IN A COMMENT.** `CharSet` holds one
+// live group per creature, so every foe added grows it and nothing said so: the figure written beside it drifted
+// as the roster did. Measured here instead, and printed, so the comment can be read against a fact.
+test "THE CHARACTER BENCH'S SLAB, MEASURED — one live group per creature, taken when the tab is opened" {
+    const MB = 1024.0 * 1024.0;
+    const bytes = @sizeOf(CharSet);
+    std.debug.print("\n  objview CharSet: {d:.1} MB over {d} groups\n", .{ @as(f64, @floatFromInt(bytes)) / MB, CHAR_GROUPS });
+    // Not a budget anyone tuned — a ceiling that says "this is still one lazy allocation and not a leak".
+    try std.testing.expect(bytes < 512 * 1024 * 1024);
+    try std.testing.expectEqual(@typeInfo(CharSet).@"struct".fields.len, CHAR_GROUPS);
 }

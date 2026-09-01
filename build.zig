@@ -98,6 +98,10 @@ pub fn build(b: *std.Build) void {
 ///
 /// **AND IT IS SCOPED TO THE BLOCK, NOT TO THE FILE.** Searching the whole of `main.zig` counted the ORDINARY
 /// imports at the top of it, so `bake.zig` passed this check while a top-level import pulls no tests in.
+/// Bytes under which a `src/**/*.zig` is a truncation rather than a module — the smallest real one is
+/// `play/liquid.zig` at 4293.
+const MIN_SRC: u64 = 512;
+
 fn checkTestRoster(b: *std.Build) void {
     const file = b.build_root.handle.readFileAlloc(b.allocator, "src/main.zig", 1 << 20) catch return;
     const at = std.mem.indexOf(u8, file, "\ntest {") orelse
@@ -114,6 +118,16 @@ fn checkTestRoster(b: *std.Build) void {
         // The roster names a module by the path `main.zig` imports it as, which on Windows comes back off the walker with backslashes.
         const slashed = b.allocator.dupe(u8, ent.path) catch return;
         std.mem.replaceScalar(u8, slashed, '\\', '/');
+        // **AND A MODULE NAMED BUT EMPTIED IS THE SAME FAILURE WITH NOTHING LEFT TO RUN.** `ui/editor.zig` was
+        // truncated to 0 bytes and committed that way (c08f4f7): the roster still named it, this walk passed,
+        // and the only complaint was `game.zig` asking a now-empty struct for `Editor`. The smallest real module
+        // in the tree is 4.2 KB, so anything under `MIN_SRC` is a truncation and never something anyone wrote.
+        const st = ent.dir.statFile(ent.basename) catch continue;
+        if (st.size < MIN_SRC) std.debug.panic(
+            "src/{s} is {d} bytes — that is a truncated file, not a module. Restore it " ++
+                "(`git log --oneline -- src/{s}`, then `git show <rev>:src/{s}`) instead of building over it.",
+            .{ slashed, st.size, slashed, slashed },
+        );
         const want = b.fmt("@import(\"{s}\")", .{slashed});
         if (std.mem.indexOf(u8, root, want) == null) {
             std.debug.panic(

@@ -142,12 +142,13 @@ pub const TABLE = [_]Row{
     // was on the blade, and the ward against what the caps do.
     .{ .foe = .fungal_swordsman, .common = .purgeleaf, .odds = BOSS_ALWAYS, .rare = .envenomed_dagger, .chance = 0.5, .gold = .hoard },
     .{ .foe = .fungal_magus, .common = .purgeleaf, .odds = BOSS_ALWAYS, .rare = .scroll_babble, .chance = 0.5, .gold = .hoard },
+    .{ .foe = .owlbear, .common = null },
 };
 
 pub const NFOE = @typeInfo(wf.FoeKind).@"enum".fields.len;
 
-/// **THE BODIES THAT ARE ALLOWED TO LEAVE NOTHING, AND WHY** — an egg sac is not a corpse, and a skitterer a priest clawed out of the ground is a body whose supply is a cooldown. Everything else must say what it drops or the table refuses to compile.
-pub const LEAVES_NOTHING = [_]wf.FoeKind{ .brood_sac, .bone_skitterer };
+/// **THE BODIES THAT ARE ALLOWED TO LEAVE NOTHING, AND WHY** — an egg sac is not a corpse, a skitterer a priest clawed out of the ground is a body whose supply is a cooldown, and a carving that stops moving is rubble. The one stone material is barred from it anyway: `smithing_stone` is undead-or-beast only (the test below), and a construct is neither. Everything else must say what it drops or the table refuses to compile.
+pub const LEAVES_NOTHING = [_]wf.FoeKind{ .brood_sac, .bone_skitterer, .owlbear };
 
 pub fn leavesNothing(k: wf.FoeKind) bool {
     for (LEAVES_NOTHING) |n| {

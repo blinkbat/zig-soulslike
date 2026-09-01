@@ -1,0 +1,50 @@
+version: 1
+name: Owlbear Test
+half: 70.0
+runway: -6.00 -26.00 6.00 -14.00
+
+zone: plain -400.0 -400.0 400.0 400.0 0.460 grasstall,patch,tuft,clover,moss,nettles,wildflowers
+clear: 0.0 0.0 34.0
+
+at: bonfire -2 -24 0 1
+at: chest 3.5 -22 190 1 loot=crimson_flask,purgeleaf,fire_tallow
+
+# ONE, ALONE, ON OPEN GROUND WITH NOTHING NEAR IT. The whole creature is the wake: walk in from the bonfire
+# and the eyes come up at 4.6 m with 0.63 s of tell before the body moves. Nothing else on the bench may be
+# close enough to break the disguise early.
+foe: owlbear 0.00 8.00 180.0 1.00 0.21
+
+# THE ROW IT IS SUPPOSED TO HIDE IN, and this is the read the creature lives or dies on: among masonry it is
+# masonry. If it picks itself out of this line before the eyes light, the body is too clean or too round.
+at: statue -22 6 0 1
+at: statue -18 6 20 1.05
+at: plinth -14 6 0 1
+foe: owlbear -18.00 10.00 180.0 1.00 0.47
+at: statue -10 6 340 0.95
+at: obelisk -26 8 0 1
+
+# TWO IN THE SAME STAND, so "a wood full of these can be walked past twice" can be walked. Both seat back onto
+# their own perch bearing after you leave, and the second is the one that catches you on the way out.
+foe: owlbear 20.00 22.00 200.0 1.00 0.33
+foe: owlbear 26.00 26.00 240.0 1.06 0.82
+at: wall 23 30 0 1
+at: rubble 24 24 0 1
+
+# CROWDED AGAINST GEOMETRY. Inside BURST_R 1.55 m it hops back and fans five quills down the bearing it left
+# on, so it needs somewhere to hop TO — pinched against the boulder is where the burst has nothing.
+foe: owlbear -24.00 -10.00 45.0 1.00 0.62
+at: boulder -21 -13 20 1.3
+
+# AN ORDERED ONE, which is the arm that did nothing until this sweep: `ai=` on a carving used to be swallowed
+# by the stone state. This one is awake from the first frame with no wake tell, patrols its route and never
+# seats — that is what a post being honoured looks like.
+foe: owlbear 30.00 -8.00 90.0 1.00 0.88 ai=patrol wp=44.00,-8.00 wp=44.00,6.00 wp=30.00,6.00
+
+# …and a roamer, on the other arm of the same fix.
+foe: owlbear -34.00 -22.00 90.0 1.00 0.51 ai=roam
+
+# FOR SIZE AND FOR TONE. It is 2.60 m of grey masonry: the ogre says whether that reads big, and the two dark
+# organic bodies say whether the stone separates from flesh at distance.
+foe: ogre 34.00 16.00 250.0 1.00 0.29
+foe: fungal_deer -32.00 20.00 120.0 1.00 0.44
+foe: archer 12.00 -14.00 200.0 1.00 0.66

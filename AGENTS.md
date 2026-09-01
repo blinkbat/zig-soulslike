@@ -159,6 +159,7 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `foes/fishman.zig` | fishmen + `Shoal` — the SECOND warband, held together by a NET; netter, spearman, shaman are one move in three |
 | `foes/blinkbat.zig` | blinkbat + `Roost` — a flyer that never travels: it BLINKS onto your flank, bites once, blinks out |
 | `foes/fungalduo.zig` | THE FUNGAL DUO + `Vanguard`/`Conclave` — swordsman and magus, one encounter, two bars |
+| `foes/owlbear.zig` | owlbear + `Perch` — THE FIRST CONSTRUCT, and a carving until you walk inside `WAKE_R`: the eyes lead the stone by half the wake, and the answer to being crowded is a hop back that fans stone quills down the bearing it left on |
 | `play/combat.zig` | `Vitals`, `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`, spirits. THE place to retune feel |
 | `play/liquid.zig` | WHAT STANDING IN A PAINTED POOL COSTS — one `Soak` row per `wf.Liquid`, billed the way a cloud bills |
 | `play/stats.zig` | the sheet — seven attributes, the bar curves, the ONE skill curve (`scaleFor`), `inert` |
@@ -182,7 +183,7 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `ui/editor.zig` | THE EDITOR (Menu > Editor), layered StarEdit-style; biggest file, next split candidate |
 | `ui/objview.zig` | object viewer + the JUKEBOX + the FX BENCH (`elemfx`'s cells with their numbers printed) |
 | `save.zig` | THE SLOTS — three files in the map's own `key: value` grammar, each with its picture |
-| `core/audio.zig` | ~80 synthesized voices through one tape-style `master`; three submixes; read as recipes |
+| `core/audio.zig` | ~190 synthesized voices through one tape-style `master`; three submixes; read as recipes |
 | `core/rumble.zig` | XInput directly (raylib's GLFW backend stubs `SetGamepadVibration`); holds `PAD` |
 | `shots.zig` | the headless harness — never in context while working on the loop |
 | `core/collision.zig` | 2D XZ capsule/circle push-out, `blocksSight` |
@@ -2422,7 +2423,7 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
     `LEASH_HOME_R` is 3 m: the orders and the go-home rule pulled against each other and the orders lost. The
     same anchor feeds `tickLeash`, or `roam_free` — unleashed BY DEFINITION — is dragged back by the tether.
   - **WHICH UNITS GET THEM IS THE AUTHOR'S CALL, MADE PER UNIT IN THE EDITOR** (owner: let me assign them).
-    So every creature that CAN move takes them — 26 of 29 groups — and `hold` being the default is what keeps a
+    So every creature that CAN move takes them — 27 of 30 groups — and `hold` being the default is what keeps a
     map that never says `ai=` unchanged. The three that cannot are the FIXTURES, and `game.NO_ORDERS` names them
     with a reason, enforced both ways: a creature added with no `Post` and no line there is an order the editor
     lets you assign that silently does nothing.

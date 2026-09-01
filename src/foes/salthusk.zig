@@ -160,9 +160,13 @@ const State = enum { idle, walk, clout, bursting, stunlight, stunheavy, dead };
 
 const Choice = enum { rest, hold, close, clout };
 
-fn classify(gap: f32, sensed: f32, homeGap: f32, cloutReady: bool, rooted: bool) Choice {
+/// **A BAND IS ASKED THE WAY THE STROKE BILLS IT** (`foe.hurtReach`, the ogre's `slamReach` law).
+/// Measured edge to edge against a centre-to-centre bill, the band ran 0.21 m past the reach at scale 1
+/// and 0.87 m at `wf.FOE_SCALE_LO` — and a body stops closing the frame its band takes it, so that
+/// sliver was where the clout was always thrown and never billed.
+fn classify(sensed: f32, homeGap: f32, scale: f32, cloutReady: bool, rooted: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
-    if (gap <= CLOUT_R and cloutReady) return .clout;
+    if (sensed <= foe.hurtReach(CLOUT_R, scale) and cloutReady) return .clout;
     if (rooted) return .rest;
     return .close;
 }
@@ -365,9 +369,8 @@ pub const Husk = struct {
             },
             .idle, .walk => {
                 const sensed = foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R);
-                const gap = mathx.maxF(0, sensed - foe.HERO_R - self.bodyR());
                 const homeGap = mathx.distXZ(self.pos, foe.homeFor(self));
-                switch (classify(gap, sensed, homeGap, self.cloutCd <= 0, self.root.held())) {
+                switch (classify(sensed, homeGap, self.scale, self.cloutCd <= 0, self.root.held())) {
                     .rest => {
                         if (sensed <= AGGRO_R) self.faceToward(quarry, dt);
                         // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postAmble`), refused inside the ring.
@@ -384,12 +387,7 @@ pub const Husk = struct {
                         const want = if (ch == .hold) WALK_SPEED else CHASE_SPEED;
                         self.faceToward(self.nav.aim(self.pos, to), dt);
                         self.speed = approach(self.speed, want, ACCEL * dt);
-                        moveSpeed = self.speed;
-                        const moved = moveSpeed * dt * self.chill.travel();
-                        const way = self.nav.along(mathx.headingDir(self.facing));
-                        mathx.stepXZ(&self.pos, way, moved, bounds);
-                        movedDist = moved;
-                        moveYaw = mathx.headingXZ(way);
+                        foe.stride(self, dt, bounds, &movedDist, &moveSpeed, &moveYaw);
                         self.state = .walk;
                     },
                 }
@@ -1008,10 +1006,10 @@ test "IT DIES EASILY AND IT HITS FEEBLY — everything it is worth is in the bur
 }
 
 test "the pick is positional and the clout lands once per swing" {
-    try std.testing.expectEqual(Choice.clout, classify(CLOUT_R - 0.2, 1.6, 0, true, false));
-    try std.testing.expectEqual(Choice.close, classify(CLOUT_R + 1.0, 3.0, 0, true, false));
-    try std.testing.expectEqual(Choice.rest, classify(AGGRO_R, AGGRO_R + 1.0, 0, true, false));
-    try std.testing.expectEqual(Choice.hold, classify(AGGRO_R, AGGRO_R + 1.0, HOME_R + 1.0, true, false));
+    try std.testing.expectEqual(Choice.clout, classify(1.6, 0, 1.0, true, false));
+    try std.testing.expectEqual(Choice.close, classify(3.0, 0, 1.0, true, false));
+    try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1.0, 0, 1.0, true, false));
+    try std.testing.expectEqual(Choice.hold, classify(AGGRO_R + 1.0, HOME_R + 1.0, 1.0, true, false));
 
     var h = Husk.spawn(mathx.zero3, 0, 1.0, 0.3);
     const hero = v3(0, 0, 1.1);
@@ -1023,4 +1021,53 @@ test "the pick is positional and the clout lands once per swing" {
         if (h.update(1.0 / 60.0, hero, 400, .{}) != null) landed += 1;
     }
     try std.testing.expectEqual(@as(u32, 1), landed);
+}
+
+// **THE BAND IT STOPS CLOSING AT HAS TO BE A BAND IT CAN BILL FROM** (AGENTS.md: a move is judged by THROWING
+// it, not by looking at it). The outer edge is asked of `classify` rather than re-derived here — which unit the
+// band is written in is the thing under test.
+test "THE BLOW LANDS ON THE MAN WHERE HE STANDS — thrown for real, anywhere its own band picks it" {
+    const dt: f32 = 1.0 / 120.0;
+    var misses: usize = 0;
+    var thrown: usize = 0;
+    var widest: f32 = 0;
+    for ([_]f32{ wf.FOE_SCALE_LO, 1.0, wf.FOE_SCALE_HI }) |scale| {
+        const probe = Husk.spawn(mathx.ground(0, 0), 0, scale, 0.31);
+        const apart = foe.closestApproach(probe.bodyR());
+        var lo: f32 = apart;
+        var hi: f32 = AGGRO_R;
+        for (0..48) |_| {
+            const mid = (lo + hi) * 0.5;
+            if (classify(mid, 0, scale, true, false) == Choice.clout) lo = mid else hi = mid;
+        }
+        const far = lo;
+        widest = @max(widest, far - foe.hurtReach(CLOUT_R, scale));
+        for ([_]f32{ 0, 30, 55 }) |deg| {
+            for ([_]f32{ 0.0, 0.34, 0.67, 0.92, 1.0 }) |u| {
+                const stand = lerpF(apart + 0.05, far - 0.002, u);
+                if (classify(stand, 0, scale, true, false) != Choice.clout) continue;
+                thrown += 1;
+                const a = mathx.radians(deg);
+                var c = Husk.spawn(mathx.ground(0, 0), 0, scale, 0.31);
+                const hero = v3(@sin(a) * stand, 0, @cos(a) * stand);
+                c.enter(.clout);
+                var hit = false;
+                var guard: usize = 0;
+                while (guard < 2000) : (guard += 1) {
+                    if (c.update(dt, hero, 400.0, .{}) != null) {
+                        hit = true;
+                        break;
+                    }
+                    if (c.state != .clout) break;
+                }
+                if (!hit) {
+                    misses += 1;
+                    std.debug.print("\n  x{d:.2} at {d:.2} m, {d:.0} deg off: MISSED — the band runs to {d:.2} m, the stroke bills to {d:.2}\n", .{ scale, stand, deg, far, foe.hurtReach(CLOUT_R, scale) });
+                }
+            }
+        }
+    }
+    std.debug.print("\n  salthusk: {d} stands thrown across three scales, {d} billed nothing; band overruns its reach by at most {d:.2} m\n", .{ thrown, misses, widest });
+    try std.testing.expectEqual(@as(usize, 0), misses);
+    try std.testing.expect(widest <= 0.001);
 }

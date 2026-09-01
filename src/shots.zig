@@ -3669,7 +3669,7 @@ fn editorShots(g: *Game) void {
 
 fn dayShots(g: *Game) void {
     const at = mathx.ground(0, -14.0);
-    standHero(g, at.x, at.z, mathx.radians(game.daynight.SHOT_HOUR * 0));
+    standHero(g, at.x, at.z, 0);
     plantHeroForShot(g);
     game.clearFoesForShot(g);
     game.clearShaftsForShot(g);

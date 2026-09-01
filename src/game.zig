@@ -46,6 +46,7 @@ const birchmod = @import("foes/birchwight.zig");
 const huskmod = @import("foes/salthusk.zig");
 const fishmod = @import("foes/fishman.zig");
 const batmod = @import("foes/blinkbat.zig");
+const owlbearmod = @import("foes/owlbear.zig");
 const leechmod = @import("foes/leechfly.zig");
 const shademod = @import("foes/shade.zig");
 const chestmod = @import("play/chest.zig");
@@ -114,6 +115,9 @@ const SHAKE_RAISE = 0.30;
 const SHAKE_SIGIL = 0.16;
 /// The bell is struck 34 m from bodies that answer it, so the SHAKE is the weight of the bronze and not a hit — under the raise's, over the sigil's.
 const SHAKE_TOLL = 0.26;
+/// A 2.6 m carving standing off its plinth. Between the bell and the sac burst: it is masonry moving, not a
+/// blow, so it must not read as loud as one landing on him.
+const SHAKE_ROUSE = 0.28;
 const RESPAWN_HOLD = 0.55;
 const RESPAWN_FADE = 0.9;
 const DEATH_BAND_TOP: f32 = 0.35;
@@ -246,6 +250,7 @@ pub const Game = struct {
     pan: huskmod.Pan,
     shoal: fishmod.Shoal,
     roost: batmod.Roost,
+    perch: owlbearmod.Perch,
     vigil: knightmod.Vigil,
     vanguard: duomod.Vanguard,
     conclave: duomod.Conclave,
@@ -397,6 +402,7 @@ pub const Game = struct {
         g.pan = huskmod.Pan.init(g.scene.shader);
         g.shoal = fishmod.Shoal.init(g.scene.shader);
         g.roost = batmod.Roost.init(g.scene.shader);
+        g.perch = owlbearmod.Perch.init(g.scene.shader);
         g.vigil = knightmod.Vigil.init(g.scene.shader);
         g.vanguard = duomod.Vanguard.init(g.scene.shader);
         g.conclave = duomod.Conclave.init(g.scene.shader);
@@ -738,6 +744,7 @@ pub const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "pan", .kind = .salt_husk, .aggro = huskmod.AGGRO_R },
     .{ .field = "shoal", .kind = null, .aggro = fishmod.AGGRO_R },
     .{ .field = "roost", .kind = .blinkbat, .aggro = batmod.AGGRO_R },
+    .{ .field = "perch", .kind = .owlbear, .aggro = owlbearmod.AGGRO_R },
     .{ .field = "vigil", .kind = .bone_knight, .aggro = knightmod.AGGRO_R, .vsHero = false, .vs = &.{ "line", "muster" } },
     // **THE PAIR IS ONE GROUP AND ANSWERS FOR ITS OWN MEMBERS** — the kobold warband's arrangement, because
     // the two of them are one encounter and the ground they put down belongs to neither body.
@@ -822,6 +829,31 @@ comptime {
 // `HOME_R` is 1.5-3.0 m against `foe.ROAM_R`'s 9 — eight never got further than 1.9-3.4 m off the post, and
 // the other four reached the mark and were walked straight back off it again instead of standing there.
 // Four minutes each, hero six aggro rings away, so nothing here is a fight.
+// **THE ROW'S DEBT TO `run` IS NOW CHECKED.** `FOE_GROUPS` says a row owes an `update(...)` call or "the
+// creature swings and nothing lands", and says in the same breath that nothing checks it. Nothing did:
+// `perch` went in with its field, its init and its row, and the owlbear spent the whole game frozen in its
+// spawn pose — no AI, no wake, no blow, and a fan of quills that could not be thrown. A comptime block cannot
+// see the body of a function, so this reads the file, the way `build.zig` reads `main.zig`'s roster.
+test "EVERY FOE_GROUPS ROW IS ACTUALLY UPDATED BY `run` — a row nothing drives is a creature standing still" {
+    const src = try worldfmt.readForTest(std.testing.allocator, "src/game.zig", 1 << 22);
+    defer std.testing.allocator.free(src);
+    var missing: usize = 0;
+    inline for (FOE_GROUPS) |gr| {
+        // Two shapes count, and only these two. `_ = g.crypt.update(...)` is one: throwing the blow away is a
+        // choice a row may make, and the crypt's own comment makes it. `for (g.line.live()) |*a|` is the other —
+        // the archer is driven per BODY because each one spawns its own arrow. The table-driven passes spell it
+        // `@field(g, gr.field)`, so a row cannot pass on those.
+        const byGroup = "g." ++ gr.field ++ ".update(";
+        const byBody = "g." ++ gr.field ++ ".live()";
+        if (std.mem.indexOf(u8, src, byGroup) == null and std.mem.indexOf(u8, src, byBody) == null) {
+            std.debug.print("  FOE_GROUPS row `{s}` is never driven by run — no `{s}` and no `{s}` in game.zig\n", .{ gr.field, byGroup, byBody });
+            missing += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 0), missing);
+    std.debug.print("\n  all {d} foe groups are driven from run\n", .{FOE_GROUPS.len});
+}
+
 test "A UNIT WALKS ITS ORDERS — every creature that takes them, not just the one it was written on" {
     const dt: f32 = 1.0 / 60.0;
     const home = mathx.ground(0, 0);
@@ -5596,6 +5628,12 @@ pub fn run(mode: Mode) void {
             g.rumble.play(rumblemod.hurt);
             g.rig.addShake(SHAKE_HURT);
         }
+        // **THE CARVING'S BLOWS AND ITS QUILLS COME DOWN ONE CHANNEL** — `Perch.update` returns the worse of the
+        // two, so the fan lands through the same `heroTakes` the rake does.
+        if (g.perch.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.heavy(), true);
+        }
+        if (g.perch.anyWoke()) g.rig.addShake(SHAKE_ROUSE);
         // **THE PRIEST NEVER RETURNS A BLOW** — no melee, and its cold is a per-frame DRIP on its own channel, so it cannot voice and shake the hero sixty times a second.
         _ = g.crypt.update(dt, g.hero.pos, PLAY_HALF, bladeNow);
         if (g.crypt.breathDose(dt, g.hero.pos)) |b| {

@@ -17549,6 +17549,10 @@ foe: fen_lurker -48.18 26.66 0.0 1.00 0.60
 foe: fen_lurker 66.51 31.96 0.0 1.00 0.97
 foe: fen_lurker 55.88 39.70 0.0 1.00 0.34
 foe: fen_lurker 43.75 30.61 0.0 1.00 0.71
+foe: owlbear -203.89 100.07 0.0 1.00 0.08
+foe: owlbear -196.07 121.41 75.0 1.00 0.45
+foe: owlbear -183.45 97.79 90.0 1.00 0.82
+foe: owlbear -11.34 -161.89 0.0 1.00 0.19
 
 flags: met_wanderer heard_of_gate
 

@@ -136,12 +136,16 @@ const Choice = enum { rest, hold, close, bite, feed };
 
 /// Pure over one situation. `food` is the distance to the nearest carrion, or null for a clean field —
 /// **A GORGER WITH NOTHING TO EAT IS AN ORDINARY BEAST**, which is the whole design stated as a branch.
-fn classify(gap: f32, sensed: f32, homeGap: f32, hpFrac: f32, food: ?f32, biteReady: bool, rooted: bool) Choice {
+/// **A BAND IS ASKED THE WAY THE STROKE BILLS IT** (`foe.hurtReach`, the ogre's `slamReach` law).
+/// Measured edge to edge against a centre-to-centre bill, the band ran 0.33 m past the reach at scale 1
+/// and 0.84 m at `wf.FOE_SCALE_LO` — and a body stops closing the frame its band takes it, so that
+/// sliver was where the bite was always thrown and never billed.
+fn classify(sensed: f32, homeGap: f32, scale: f32, hpFrac: f32, food: ?f32, biteReady: bool, rooted: bool) Choice {
     if (food) |d| {
         if (hpFrac < HUNGER_FRAC and d <= SMELL_R and !rooted) return .feed;
     }
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
-    if (gap <= BITE_R and biteReady) return .bite;
+    if (sensed <= foe.hurtReach(BITE_R, scale) and biteReady) return .bite;
     if (rooted) return .rest;
     return .close;
 }
@@ -378,10 +382,9 @@ pub const Gorger = struct {
             },
             .idle, .prowl => {
                 const sensed = foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R);
-                const gap = mathx.maxF(0, sensed - foe.HERO_R - self.bodyR());
                 const homeGap = mathx.distXZ(self.pos, foe.homeFor(self));
                 const foodD: ?f32 = if (smelled) |s| s.d else null;
-                switch (classify(gap, sensed, homeGap, self.vit.hpFrac(), foodD, self.biteCd <= 0, self.root.held())) {
+                switch (classify(sensed, homeGap, self.scale, self.vit.hpFrac(), foodD, self.biteCd <= 0, self.root.held())) {
                     .feed => {
                         const s = smelled.?;
                         self.meal = s.i;
@@ -903,21 +906,21 @@ fn pawMesh() rl.Mesh {
 
 
 test "A CLEAN FIELD MAKES IT AN ORDINARY BEAST — nothing dead, nothing to break off for" {
-    try std.testing.expectEqual(Choice.close, classify(6.0, 6.0, 0, 0.4, null, true, false));
-    try std.testing.expectEqual(Choice.bite, classify(BITE_R - 0.2, 1.5, 0, 0.4, null, true, false));
+    try std.testing.expectEqual(Choice.close, classify(6.0, 0, 1.0, 0.4, null, true, false));
+    try std.testing.expectEqual(Choice.bite, classify(1.5, 0, 1.0, 0.4, null, true, false));
     // …and one body on the ground changes the same situation into a meal.
-    try std.testing.expectEqual(Choice.feed, classify(6.0, 6.0, 0, 0.4, 8.0, true, false));
-    try std.testing.expectEqual(Choice.feed, classify(BITE_R - 0.2, 1.5, 0, 0.4, 8.0, true, false));
+    try std.testing.expectEqual(Choice.feed, classify(6.0, 0, 1.0, 0.4, 8.0, true, false));
+    try std.testing.expectEqual(Choice.feed, classify(1.5, 0, 1.0, 0.4, 8.0, true, false));
 }
 
 test "IT ONLY LEAVES A FIGHT FOR A MEAL IT NEEDS — full health, it stays on you" {
-    try std.testing.expectEqual(Choice.close, classify(6.0, 6.0, 0, 1.0, 4.0, true, false));
-    try std.testing.expectEqual(Choice.close, classify(6.0, 6.0, 0, HUNGER_FRAC + 0.01, 4.0, true, false));
-    try std.testing.expectEqual(Choice.feed, classify(6.0, 6.0, 0, HUNGER_FRAC - 0.01, 4.0, true, false));
+    try std.testing.expectEqual(Choice.close, classify(6.0, 0, 1.0, 1.0, 4.0, true, false));
+    try std.testing.expectEqual(Choice.close, classify(6.0, 0, 1.0, HUNGER_FRAC + 0.01, 4.0, true, false));
+    try std.testing.expectEqual(Choice.feed, classify(6.0, 0, 1.0, HUNGER_FRAC - 0.01, 4.0, true, false));
     // And not for one it cannot smell.
-    try std.testing.expectEqual(Choice.close, classify(6.0, 6.0, 0, 0.3, SMELL_R + 1.0, true, false));
+    try std.testing.expectEqual(Choice.close, classify(6.0, 0, 1.0, 0.3, SMELL_R + 1.0, true, false));
     // Rooted it cannot go and get it, whatever it can smell.
-    try std.testing.expectEqual(Choice.rest, classify(6.0, 6.0, 0, 0.3, 4.0, true, true));
+    try std.testing.expectEqual(Choice.rest, classify(6.0, 0, 1.0, 0.3, 4.0, true, true));
 }
 
 test "IT BREAKS OFF, EATS, AND COMES BACK UP HEALED — and the carcass is gone after" {
@@ -1050,4 +1053,53 @@ test "the bite is telegraphed and it only lands once per snap" {
     }
     try std.testing.expectEqual(@as(u32, 1), landed);
     try std.testing.expect(firstAt >= foe.TELL_MIN);
+}
+
+// **THE BAND IT STOPS CLOSING AT HAS TO BE A BAND IT CAN BILL FROM** (AGENTS.md: a move is judged by THROWING
+// it, not by looking at it). The outer edge is asked of `classify` rather than re-derived here — which unit the
+// band is written in is the thing under test.
+test "THE BLOW LANDS ON THE MAN WHERE HE STANDS — thrown for real, anywhere its own band picks it" {
+    const dt: f32 = 1.0 / 120.0;
+    var misses: usize = 0;
+    var thrown: usize = 0;
+    var widest: f32 = 0;
+    for ([_]f32{ wf.FOE_SCALE_LO, 1.0, wf.FOE_SCALE_HI }) |scale| {
+        const probe = Gorger.spawn(mathx.ground(0, 0), 0, scale, 0.31);
+        const apart = foe.closestApproach(probe.bodyR());
+        var lo: f32 = apart;
+        var hi: f32 = AGGRO_R;
+        for (0..48) |_| {
+            const mid = (lo + hi) * 0.5;
+            if (classify(mid, 0, scale, 1.0, null, true, false) == Choice.bite) lo = mid else hi = mid;
+        }
+        const far = lo;
+        widest = @max(widest, far - foe.hurtReach(BITE_R, scale));
+        for ([_]f32{ 0, 30, 55 }) |deg| {
+            for ([_]f32{ 0.0, 0.34, 0.67, 0.92, 1.0 }) |u| {
+                const stand = lerpF(apart + 0.05, far - 0.002, u);
+                if (classify(stand, 0, scale, 1.0, null, true, false) != Choice.bite) continue;
+                thrown += 1;
+                const a = mathx.radians(deg);
+                var c = Gorger.spawn(mathx.ground(0, 0), 0, scale, 0.31);
+                const hero = v3(@sin(a) * stand, 0, @cos(a) * stand);
+                c.enter(.bite);
+                var hit = false;
+                var guard: usize = 0;
+                while (guard < 2000) : (guard += 1) {
+                    if (c.update(dt, hero, 400.0, .{}, null) != null) {
+                        hit = true;
+                        break;
+                    }
+                    if (c.state != .bite) break;
+                }
+                if (!hit) {
+                    misses += 1;
+                    std.debug.print("\n  x{d:.2} at {d:.2} m, {d:.0} deg off: MISSED — the band runs to {d:.2} m, the stroke bills to {d:.2}\n", .{ scale, stand, deg, far, foe.hurtReach(BITE_R, scale) });
+                }
+            }
+        }
+    }
+    std.debug.print("\n  rotgorger: {d} stands thrown across three scales, {d} billed nothing; band overruns its reach by at most {d:.2} m\n", .{ thrown, misses, widest });
+    try std.testing.expectEqual(@as(usize, 0), misses);
+    try std.testing.expect(widest <= 0.001);
 }

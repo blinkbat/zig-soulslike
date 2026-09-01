@@ -60,6 +60,7 @@ pub const Icon = enum {
     blinkbat,
     fungal_swordsman,
     fungal_magus,
+    owlbear,
     wanderer,
     merchant,
     smith,
@@ -553,6 +554,16 @@ const G = struct {
                 g.disc(0, -0.16, 0.12, col);
                 g.disc(-0.05, -0.17, 0.035, cut);
                 g.disc(0.05, -0.17, 0.035, cut);
+            },
+            .owlbear => {
+                g.trap(0, -0.02, 0.28, 0.34, 0.44, col);
+                g.legs(0, 0.28, 0.17, 0.22, 0.10);
+                for ([_]f32{ -1, 1 }) |sx| g.tri(sx * 0.13, -0.36, sx * 0.30, -0.30, sx * 0.27, -0.64, col);
+                g.disc(0, -0.22, 0.34, col);
+                g.disc(-0.13, -0.26, 0.075, cut);
+                g.disc(0.13, -0.26, 0.075, cut);
+                g.tri(-0.05, -0.14, 0.05, -0.14, 0, 0.02, cut);
+                g.hbar(0, 0.14, 0.30, 0.04, cut);
             },
             .fungal_swordsman => {
                 g.bar(0.14, 0.06, 0.44, -0.30, 0.09, col);

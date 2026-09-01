@@ -1958,7 +1958,7 @@ test "A FIREBALL BOUNCES, AND EACH ARC IS SHORTER THAN THE ONE BEFORE IT" {
     const speed: f32 = 8.0;
     var a = launchShaft(v3(0, 1.15, 0), v3(0, 1.0, 11.0), speed, .{}, true, .emberball);
 
-    var touches: [8]f32 = undefined;
+    var touches = [_]f32{0} ** 8;
     var n: usize = 0;
     var i: usize = 0;
     while (i < 900 and !a.stuck) : (i += 1) {
@@ -1971,7 +1971,7 @@ test "A FIREBALL BOUNCES, AND EACH ARC IS SHORTER THAN THE ONE BEFORE IT" {
             }
         }
     }
-    std.debug.print("\n  fireball: {d} touches at {d:.1} {d:.1} {d:.1}, rests at {d:.1} m\n", .{ n, touches[0], if (n > 1) touches[1] else 0, if (n > 2) touches[2] else 0, a.pos.z });
+    std.debug.print("\n  fireball: {d} touches at {d:.1} {d:.1} {d:.1}, rests at {d:.1} m\n", .{ n, touches[0], touches[1], touches[2], a.pos.z });
     // **THE CAP IS A CEILING, NOT A QUOTA.** It used to be spent exactly, because the shot took the full
     // ballistic solve and arrived with the energy for three touches. Flattened (`EMBER_LOFT`) and damped harder (`EMBER_KEEP_Y`) it leaves on the second. Two is the floor; three is the cap.
     try std.testing.expect(n >= 2 and n <= bouncesOf(.emberball));

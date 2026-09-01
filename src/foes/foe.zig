@@ -1733,6 +1733,19 @@ pub fn postAmble(
     return true;
 }
 
+/// **ONE STEP DOWN THE HEADING, STEERED AND CHILLED, WITH THE GAIT CHANNELS FILLED** — the three lines a
+/// chasing body owes every frame (`Nav.along`'s committed vector, the chill's share of its travel, and the
+/// distance/speed/bearing `hero.advanceGait` reads) were written out at six sites. Steps at whatever `self.speed`
+/// already is: easing that speed is the caller's, because a haste, a stalk and a charge differ only there.
+pub fn stride(self: anytype, dt: f32, bounds: f32, movedDist: *f32, moveSpeed: *f32, moveYaw: *?f32) void {
+    const moved = self.speed * dt * self.chill.travel();
+    const way = self.nav.along(mathx.headingDir(self.facing));
+    mathx.stepXZ(&self.pos, way, moved, bounds);
+    movedDist.* = moved;
+    moveSpeed.* = self.speed;
+    moveYaw.* = mathx.headingXZ(way);
+}
+
 /// **THE SAME ORDERS FOR A BODY THAT DOES NOT WALK.** `postStep` takes a step for you, which is right for
 /// anything on legs; a HOPPER leaps, a flyer cruises and a burrower dives, and each of those wants the PLACE
 /// its orders are pointing at so it can get there in its own idiom. Same refusal: nothing while anybody is sensed.

@@ -30,7 +30,9 @@ pub const MAX_ARENAS: usize = 8;
 pub const MAX_ARENA_VERTS: usize = 24;
 /// **THE ONE FOE LIMIT** (owner: can u make it 512, this map is huge). Every group's slab is this wide too
 /// (`MAX_PER_KIND`), so raising it costs one slab per `game.FOE_GROUPS` row — and so does every creature added,
-/// which is the term that actually moves: at 512 the twenty-nine rows measure 144.4 MB of the one startup allocation (`game.zig`'s "WHAT THE FRAME COSTS" prints it), and `build.zig`'s
+/// which is the term that actually moves. **THE FIGURE IS NOT WRITTEN HERE, BECAUSE IT DRIFTS EVERY TIME A
+/// CREATURE LANDS** — `game.zig`'s "WHAT THE FRAME COSTS" prints the live total per group, and a number copied
+/// out of it here read 144.4 MB over twenty-nine rows while the tree had thirty and 150.6. `build.zig`'s
 /// stack reserve carries the same figure again because startup builds those
 /// groups BY VALUE. Both are address space rather than resident memory; the frame cost is nil, since every pass walks `live()`.
 pub const MAX_FOES: usize = 512;
@@ -557,7 +559,8 @@ pub const Foe = struct {
 /// **THERE IS ONE FOE LIMIT AND IT IS `MAX_FOES`** (owner: remove the foe limits, seems dumb to have). At 24 a
 /// per-kind cap sat under the global one: `foe.resetGroup` fills a fixed slab and `continue`s past the
 /// overflow, so a 25th shroom was a body the map placed, the editor drew, the save counted and the level never
-/// spawned — and `01_fallen_plain` stands on exactly 24. Set to the whole budget it cannot bite. It costs memory — measured, the slabs come to 101.6 MB of one startup allocation.
+/// spawned — and `01_fallen_plain` stands on exactly 24. Set to the whole budget it cannot bite. It costs
+/// memory, and how much is `MAX_FOES`' own note: read it off "WHAT THE FRAME COSTS" and not off a comment.
 pub const MAX_PER_KIND: usize = MAX_FOES;
 
 pub const Runway = struct { x: f32 = -3.4, z: f32 = -44, x1: f32 = 3.4, z1: f32 = 30 };

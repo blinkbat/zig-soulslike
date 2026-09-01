@@ -272,7 +272,7 @@ const Choice = enum { blink, retreat, bite, drift, hold, rest };
 /// **THE WHOLE DECISION, AND IT READS FIVE NUMBERS** — a distance, a distance home, two clocks and whether the
 /// roots have it. No hero state reaches this function, which is what makes NO INPUT READING checkable rather
 /// than asserted (`foe.zig`'s law), and pure over its arguments, which is what makes it testable at all.
-fn classify(sensed: f32, gap: f32, homeGap: f32, blinkReady: bool, rooted: bool, spent: bool, runs: bool) Choice {
+fn classify(sensed: f32, homeGap: f32, scale: f32, blinkReady: bool, rooted: bool, spent: bool, runs: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     // **IT DOES NOT TAKE TWO BITES FROM ONE SPOT.** Measured before this existed: 20 s stood in its face was 6
     // bites and ZERO blinks — the creature was a slow leechfly and the whole run half of hit-and-run was dead
@@ -283,7 +283,10 @@ fn classify(sensed: f32, gap: f32, homeGap: f32, blinkReady: bool, rooted: bool,
     // …and it ALWAYS leaves now, on the wing when it is not blinking. Hanging there spent (the old `.rest`)
     // was the long cooldown's only face and it read as the creature having stopped working.
     if (spent and !rooted) return if (blinkReady and !runs) .blink else .retreat;
-    if (gap <= BITE_R) return .bite;
+    // **THE BAND IS ASKED THE WAY THE BITE BILLS IT** (`foe.hurtReach`, the ogre's `slamReach` law). Edge to
+    // edge against a centre-to-centre bill, the bite was handed out to 2.93 m and landed to 2.60 — and a
+    // hovering bat does not close inside `.wind`, so that outer sliver was a gape that never billed.
+    if (sensed <= foe.hurtReach(BITE_R, scale)) return .bite;
     // **ROOTED IT CANNOT VANISH, SO IT HAS TO FLY THE DISTANCE LIKE ANYTHING ELSE** — which is the only time
     // this creature is ever chaseable, and it is what a rod buys.
     if (!blinkReady or rooted) return .drift;
@@ -588,10 +591,9 @@ pub const Bat = struct {
             },
             .hang => {
                 const sensed = foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R);
-                const gap = mathx.maxF(0, sensed - foe.HERO_R - self.bodyR());
                 const homeGap = mathx.distXZ(self.pos, foe.homeFor(self));
                 self.hoverTo = HOVER_IDLE;
-                switch (classify(sensed, gap, homeGap, self.blinkCd <= 0, !foe.canLeap(&self.root), self.spent, self.wantRun)) {
+                switch (classify(sensed, homeGap, self.scale, self.blinkCd <= 0, !foe.canLeap(&self.root), self.spent, self.wantRun)) {
                     .rest => {
                         // **IT DRIFTS ITS ROUND RATHER THAN BLINKING IT** (`foe.postWant`). The blink is what
                         // it spends on a FLANK — a bat that teleported its way round a patrol would have no
@@ -1308,12 +1310,12 @@ test "MIDWAY THROUGH A BLINK IT IS NOWHERE: no body to hit and no body to lock" 
 }
 
 test "THE ROOTS REFUSE THE BLINK — the one time this creature is chaseable" {
-    try std.testing.expectEqual(Choice.blink, classify(9.0, 8.0, 0, true, false, false, false));
-    try std.testing.expectEqual(Choice.drift, classify(9.0, 8.0, 0, true, true, false, false));
-    try std.testing.expectEqual(Choice.drift, classify(9.0, 8.0, 0, false, false, false, false));
-    try std.testing.expectEqual(Choice.bite, classify(2.0, BITE_R - 0.1, 0, true, false, false, false));
-    try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1, 20, 0, true, false, false, false));
-    try std.testing.expectEqual(Choice.hold, classify(AGGRO_R + 1, 20, HOME_R + 1, true, false, false, false));
+    try std.testing.expectEqual(Choice.blink, classify(9.0, 0, 1.0, true, false, false, false));
+    try std.testing.expectEqual(Choice.drift, classify(9.0, 0, 1.0, true, true, false, false));
+    try std.testing.expectEqual(Choice.drift, classify(9.0, 0, 1.0, false, false, false, false));
+    try std.testing.expectEqual(Choice.bite, classify(2.0, 0, 1.0, true, false, false, false));
+    try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1, 0, 1.0, true, false, false, false));
+    try std.testing.expectEqual(Choice.hold, classify(AGGRO_R + 1, HOME_R + 1, 1.0, true, false, false, false));
 }
 
 test "IT IS NOT THE LEECHFLY: it never climbs out of a swing" {
@@ -1464,16 +1466,64 @@ test "IT FLIES ITS WITHDRAWAL, AND THE WITHDRAWAL OPENS REAL DISTANCE" {
 }
 
 test "A SPENT PASS ALWAYS LEAVES — by teleport or on the wing, and rooted not at all" {
-    const near = BITE_R - 0.2;
-    try std.testing.expectEqual(Choice.bite, classify(2.0, near, 0, true, false, false, false));
+    try std.testing.expectEqual(Choice.bite, classify(2.0, 0, 1.0, true, false, false, false));
     // Spent, with the blink up and the coin against a run: it vanishes.
-    try std.testing.expectEqual(Choice.blink, classify(2.0, near, 0, true, false, true, false));
+    try std.testing.expectEqual(Choice.blink, classify(2.0, 0, 1.0, true, false, true, false));
     // …with the coin FOR a run it flies out instead, blink or no blink. **THE OLD `.rest` IS GONE**: a spent
     // bat with the blink still cooling used to hang in your face doing nothing, which at `BLINK_CD` 5.60 would
     // now be five seconds of a creature that had stopped working.
-    try std.testing.expectEqual(Choice.retreat, classify(2.0, near, 0, true, false, true, true));
-    try std.testing.expectEqual(Choice.retreat, classify(2.0, near, 0, false, false, true, false));
-    try std.testing.expectEqual(Choice.retreat, classify(2.0, near, 0, false, false, true, true));
+    try std.testing.expectEqual(Choice.retreat, classify(2.0, 0, 1.0, true, false, true, true));
+    try std.testing.expectEqual(Choice.retreat, classify(2.0, 0, 1.0, false, false, true, false));
+    try std.testing.expectEqual(Choice.retreat, classify(2.0, 0, 1.0, false, false, true, true));
     // …unless the roots have it, and then it has to finish the fight where it stands.
-    try std.testing.expectEqual(Choice.bite, classify(2.0, near, 0, true, true, true, false));
+    try std.testing.expectEqual(Choice.bite, classify(2.0, 0, 1.0, true, true, true, false));
+}
+
+// **THE BAND IT STOPS CLOSING AT HAS TO BE A BAND IT CAN BILL FROM** (AGENTS.md: a move is judged by THROWING
+// it). The bat hovers through its whole wind, so a band wider than the jaws is a gape thrown at nothing. The
+// outer edge is asked of `classify`, not re-derived: which unit the band is written in is the thing under test.
+test "THE JAWS SHUT ON THE MAN WHERE HE STANDS — thrown for real, anywhere its own band picks it" {
+    const dt: f32 = 1.0 / 120.0;
+    var misses: usize = 0;
+    var thrown: usize = 0;
+    var widest: f32 = 0;
+    for ([_]f32{ wf.FOE_SCALE_LO, 1.0, wf.FOE_SCALE_HI }) |scale| {
+        const probe = Bat.spawn(mathx.ground(0, 0), 0, scale, 0.31);
+        const apart = foe.closestApproach(probe.bodyR());
+        var lo: f32 = apart;
+        var hi: f32 = AGGRO_R;
+        for (0..48) |_| {
+            const mid = (lo + hi) * 0.5;
+            if (classify(mid, 0, scale, false, true, false, false) == Choice.bite) lo = mid else hi = mid;
+        }
+        const far = lo;
+        widest = @max(widest, far - foe.hurtReach(BITE_R, scale));
+        for ([_]f32{ 0, 30, 55 }) |deg| {
+            for ([_]f32{ 0.0, 0.34, 0.67, 0.92, 1.0 }) |u| {
+                const stand = lerpF(apart + 0.05, far - 0.002, u);
+                if (classify(stand, 0, scale, false, true, false, false) != Choice.bite) continue;
+                thrown += 1;
+                const a = mathx.radians(deg);
+                var c = Bat.spawn(mathx.ground(0, 0), 0, scale, 0.31);
+                const hero = v3(@sin(a) * stand, 0, @cos(a) * stand);
+                c.enter(.wind);
+                var hit = false;
+                var guard: usize = 0;
+                while (guard < 2000) : (guard += 1) {
+                    if (c.update(dt, hero, 400.0, .{}) != null) {
+                        hit = true;
+                        break;
+                    }
+                    if (c.state != .wind and c.state != .strike) break;
+                }
+                if (!hit) {
+                    misses += 1;
+                    std.debug.print("\n  x{d:.2} at {d:.2} m, {d:.0} deg off: MISSED — the band runs to {d:.2} m, the bite bills to {d:.2}\n", .{ scale, stand, deg, far, foe.hurtReach(BITE_R, scale) });
+                }
+            }
+        }
+    }
+    std.debug.print("\n  blinkbat: {d} stands thrown across three scales, {d} billed nothing; band overruns its reach by at most {d:.2} m\n", .{ thrown, misses, widest });
+    try std.testing.expectEqual(@as(usize, 0), misses);
+    try std.testing.expect(widest <= 0.001);
 }

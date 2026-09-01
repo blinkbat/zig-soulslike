@@ -277,11 +277,14 @@ const State = enum { idle, walk, roll, thrust, cast, rite, stunlight, stunheavy,
 const Choice = enum { rest, hold, close, back, roll, thrust, net, rite };
 
 /// Pure over one situation, so every role's pick is testable without a body on a field.
-fn classify(role: Role, gap: f32, sensed: f32, homeGap: f32, ready: bool, wounded: bool, rooted: bool, rollReady: bool) Choice {
+fn classify(role: Role, gap: f32, sensed: f32, homeGap: f32, scale: f32, ready: bool, wounded: bool, rooted: bool, rollReady: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     const s = spec(role);
     switch (role) {
-        .spearman => if (gap <= THRUST_R and ready) return .thrust,
+        // **THE BAND IS ASKED THE WAY THE THRUST BILLS IT** (`foe.hurtReach` on the same `rigSize`, the ogre's
+        // `slamReach` law). Edge to edge against a centre-to-centre bill, a half-scale spearman was handed the
+        // thrust out to 3.81 m and landed it to 2.39.
+        .spearman => if (sensed <= foe.hurtReach(THRUST_R, scale * s.size) and ready) return .thrust,
         .netter => if (ready and gap <= NET_R and gap >= NET_MIN) return .net,
         .shaman => if (ready and wounded) return .rite,
     }
@@ -631,7 +634,7 @@ pub const Fishman = struct {
                 const sensed = foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R);
                 const gap = mathx.maxF(0, sensed - foe.HERO_R - self.bodyR());
                 const homeGap = mathx.distXZ(self.pos, foe.homeFor(self));
-                switch (classify(self.role, gap, sensed, homeGap, self.cd <= 0, bandHurt, self.root.held(), self.rollCd <= 0 and foe.canLeap(&self.root))) {
+                switch (classify(self.role, gap, sensed, homeGap, self.scale, self.cd <= 0, bandHurt, self.root.held(), self.rollCd <= 0 and foe.canLeap(&self.root))) {
                     .rest => {
                         if (sensed <= AGGRO_R) self.faceToward(quarry, dt);
                         // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postAmble`), refused inside the ring.
@@ -1341,24 +1344,24 @@ fn rattleMesh() rl.Mesh {
 test "THE THREE PICK DIFFERENT THINGS FROM THE SAME PLACE — that is what makes them a band" {
     const near = 1.8;
     const mid = 6.0;
-    try std.testing.expectEqual(Choice.thrust, classify(.spearman, near, near, 0, true, false, false, false));
-    try std.testing.expectEqual(Choice.back, classify(.netter, near, near, 0, true, false, false, false));
-    try std.testing.expectEqual(Choice.back, classify(.shaman, near, near, 0, true, false, false, false));
-    try std.testing.expectEqual(Choice.net, classify(.netter, mid, mid, 0, true, false, false, false));
-    try std.testing.expectEqual(Choice.close, classify(.spearman, mid, mid, 0, true, false, false, false));
-    try std.testing.expectEqual(Choice.back, classify(.shaman, mid, mid, 0, true, false, false, false));
+    try std.testing.expectEqual(Choice.thrust, classify(.spearman, near, near, 0, 1.0, true, false, false, false));
+    try std.testing.expectEqual(Choice.back, classify(.netter, near, near, 0, 1.0, true, false, false, false));
+    try std.testing.expectEqual(Choice.back, classify(.shaman, near, near, 0, 1.0, true, false, false, false));
+    try std.testing.expectEqual(Choice.net, classify(.netter, mid, mid, 0, 1.0, true, false, false, false));
+    try std.testing.expectEqual(Choice.close, classify(.spearman, mid, mid, 0, 1.0, true, false, false, false));
+    try std.testing.expectEqual(Choice.back, classify(.shaman, mid, mid, 0, 1.0, true, false, false, false));
 }
 
 test "THE NET IS NOT A MELEE MOVE — inside `NET_MIN` he cannot throw it and has to give ground" {
-    try std.testing.expectEqual(Choice.back, classify(.netter, NET_MIN - 0.2, NET_MIN - 0.2, 0, true, false, false, false));
-    try std.testing.expectEqual(Choice.net, classify(.netter, NET_MIN + 0.2, NET_MIN + 0.2, 0, true, false, false, false));
-    try std.testing.expectEqual(Choice.close, classify(.netter, NET_R + 1.0, NET_R + 1.0, 0, true, false, false, false));
+    try std.testing.expectEqual(Choice.back, classify(.netter, NET_MIN - 0.2, NET_MIN - 0.2, 0, 1.0, true, false, false, false));
+    try std.testing.expectEqual(Choice.net, classify(.netter, NET_MIN + 0.2, NET_MIN + 0.2, 0, 1.0, true, false, false, false));
+    try std.testing.expectEqual(Choice.close, classify(.netter, NET_R + 1.0, NET_R + 1.0, 0, 1.0, true, false, false, false));
 }
 
 test "THE SHAMAN SPENDS THE RITE ON WOUNDS AND NOT ON SCRATCHES" {
-    try std.testing.expectEqual(Choice.rest, classify(.shaman, 10.0, 10.0, 0, true, false, false, false));
-    try std.testing.expectEqual(Choice.rite, classify(.shaman, 10.0, 10.0, 0, true, true, false, false));
-    try std.testing.expectEqual(Choice.rest, classify(.shaman, 10.0, 10.0, 0, false, true, false, false));
+    try std.testing.expectEqual(Choice.rest, classify(.shaman, 10.0, 10.0, 0, 1.0, true, false, false, false));
+    try std.testing.expectEqual(Choice.rite, classify(.shaman, 10.0, 10.0, 0, 1.0, true, true, false, false));
+    try std.testing.expectEqual(Choice.rest, classify(.shaman, 10.0, 10.0, 0, 1.0, false, true, false, false));
 }
 
 test "THE NET TAKES HIS FEET AND BUYS EXACTLY ONE THRUST" {
@@ -1521,12 +1524,12 @@ test "the thrust is a LINE down his facing, not a fan across his front" {
 
 test "THE TWO THAT FIGHT THROW THEMSELVES OUT OF THE WAY — and the one in the robe cannot" {
     const close = ROLL_TRIGGER_R - 0.2;
-    try std.testing.expectEqual(Choice.roll, classify(.spearman, close, close, 0, false, false, false, true));
-    try std.testing.expectEqual(Choice.roll, classify(.netter, close, close, 0, false, false, false, true));
-    try std.testing.expectEqual(Choice.back, classify(.shaman, close, close, 0, false, false, false, true));
-    try std.testing.expectEqual(Choice.thrust, classify(.spearman, close, close, 0, true, false, false, true));
+    try std.testing.expectEqual(Choice.roll, classify(.spearman, close, close, 0, 1.0, false, false, false, true));
+    try std.testing.expectEqual(Choice.roll, classify(.netter, close, close, 0, 1.0, false, false, false, true));
+    try std.testing.expectEqual(Choice.back, classify(.shaman, close, close, 0, 1.0, false, false, false, true));
+    try std.testing.expectEqual(Choice.thrust, classify(.spearman, close, close, 0, 1.0, true, false, false, true));
     const far = ROLL_TRIGGER_R + 2.0;
-    try std.testing.expectEqual(Choice.close, classify(.spearman, far, far, 0, false, false, false, true));
+    try std.testing.expectEqual(Choice.close, classify(.spearman, far, far, 0, 1.0, false, false, false, true));
 }
 
 test "THE ROLL HAS I-FRAMES, AND FRAMES AT BOTH ENDS THAT ARE NOT" {
@@ -1578,4 +1581,55 @@ test "BIGGER: the two that fight out-measure the one that hides behind them" {
     try std.testing.expect(spear.topWorld().y > sham.topWorld().y);
     try std.testing.expect(net.topWorld().y > sham.topWorld().y);
     try std.testing.expect(sham.bodyR() > spear.bodyR() and sham.bodyR() > net.bodyR());
+}
+
+// **THE BAND IT STOPS CLOSING AT HAS TO BE A BAND IT CAN BILL FROM** (AGENTS.md: a move is judged by THROWING
+// it). The spearman is the one role here with a stroke; the outer edge is asked of `classify` rather than
+// re-derived, because which unit the band is written in is the thing under test.
+test "THE TRIDENT LANDS ON THE MAN WHERE HE STANDS — thrown for real, anywhere its own band picks it" {
+    const dt: f32 = 1.0 / 120.0;
+    var misses: usize = 0;
+    var thrown: usize = 0;
+    var widest: f32 = 0;
+    for ([_]f32{ wf.FOE_SCALE_LO, 1.0, wf.FOE_SCALE_HI }) |scale| {
+        const probe = Fishman.spawnAs(.spearman, mathx.ground(0, 0), 0, scale, 0.31);
+        const apart = foe.closestApproach(probe.bodyR());
+        var lo: f32 = apart;
+        var hi: f32 = AGGRO_R;
+        for (0..48) |_| {
+            const mid = (lo + hi) * 0.5;
+            const g = mathx.maxF(0, mid - foe.HERO_R - probe.bodyR());
+            if (classify(.spearman, g, mid, 0, scale, true, false, false, false) == Choice.thrust) lo = mid else hi = mid;
+        }
+        const far = lo;
+        widest = @max(widest, far - foe.hurtReach(THRUST_R, probe.rigSize()));
+        for ([_]f32{ 0, 30, 55 }) |deg| {
+            for ([_]f32{ 0.0, 0.34, 0.67, 0.92, 1.0 }) |u| {
+                const stand = lerpF(apart + 0.05, far - 0.002, u);
+                const gap = mathx.maxF(0, stand - foe.HERO_R - probe.bodyR());
+                if (classify(.spearman, gap, stand, 0, scale, true, false, false, false) != Choice.thrust) continue;
+                thrown += 1;
+                const a = mathx.radians(deg);
+                var c = Fishman.spawnAs(.spearman, mathx.ground(0, 0), 0, scale, 0.31);
+                const hero = v3(@sin(a) * stand, 0, @cos(a) * stand);
+                c.enter(.thrust);
+                var hit = false;
+                var guard: usize = 0;
+                while (guard < 2000) : (guard += 1) {
+                    if (c.update(dt, hero, 400.0, .{}, false) != null) {
+                        hit = true;
+                        break;
+                    }
+                    if (c.state != .thrust) break;
+                }
+                if (!hit) {
+                    misses += 1;
+                    std.debug.print("\n  x{d:.2} at {d:.2} m, {d:.0} deg off: MISSED — the band runs to {d:.2} m, the thrust bills to {d:.2}\n", .{ scale, stand, deg, far, foe.hurtReach(THRUST_R, probe.rigSize()) });
+                }
+            }
+        }
+    }
+    std.debug.print("\n  fishman spearman: {d} stands thrown across three scales, {d} billed nothing; band overruns its reach by at most {d:.2} m\n", .{ thrown, misses, widest });
+    try std.testing.expectEqual(@as(usize, 0), misses);
+    try std.testing.expect(widest <= 0.001);
 }

@@ -518,6 +518,8 @@ pub const Id = enum {
     leech_drink,
     leech_hurt,
     leech_die,
+    stone_grind,
+    stone_loose,
     wood_wake,
     wood_creak,
     wood_swing,
@@ -1481,6 +1483,22 @@ fn mkShadeGather(r: *Rack) void {
     r.master(1.4, 4200);
 }
 
+
+fn mkStoneLoose(r: *Rack) void {
+    r.tick(0.0, 0.36, 3400);
+    r.air(0.0, 0.26, 0.62, 420, 2600, 0.34, 1.6);
+    r.grit(0.0, 0.20, 0.54, 2200, 0.66, 2.6);
+    r.master(2.0, 3200);
+}
+
+fn mkStoneGrind(r: *Rack) void {
+    r.grit(0.0, 0.70, 0.66, 1400, 0.80, 0.5);
+    r.growl(0.0, 0.78, 34, 58, 0.46, 0.50, 0.4);
+    r.air(0.06, 0.58, 0.16, 900, 3200, 0.26, 0.7);
+    r.crackle(0.30, 26.0);
+    r.body(0.40, 0.30, 74, 30, 0.40, 3.0);
+    r.master(2.2, 3000);
+}
 
 fn mkWoodWake(r: *Rack) void {
     r.grit(0.0, 0.62, 0.52, 900, 0.72, 0.6);
@@ -2745,6 +2763,8 @@ const BANK = [NV]Row{
     .{ .id = .leech_drink, .make = mkLeechDrink, .gain = battle(0.40), .mix = .combat, .jit = 0.12, .vjit = 0.16, .vars = 4, .poly = 3, .reach = 26 },
     .{ .id = .leech_hurt, .make = mkLeechHurt, .gain = battle(0.56), .mix = .combat, .jit = 0.16, .vjit = 0.24, .vars = 5, .poly = 4, .reach = 40 },
     .{ .id = .leech_die, .make = mkLeechDie, .gain = battle(0.60), .mix = .combat, .jit = 0.11, .vjit = 0.15, .vars = 4, .poly = 3, .reach = 48 },
+    .{ .id = .stone_grind, .make = mkStoneGrind, .gain = battle(0.88), .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 2, .reach = 104 },
+    .{ .id = .stone_loose, .make = mkStoneLoose, .gain = battle(0.72), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 4, .poly = 5, .reach = 62 },
     .{ .id = .wood_wake, .make = mkWoodWake, .gain = battle(0.86), .mix = .combat, .jit = 0.06, .vjit = 0.10, .vars = 3, .poly = 2, .reach = 96 },
     .{ .id = .wood_creak, .make = mkWoodCreak, .gain = battle(0.24), .mix = .combat, .jit = 0.18, .vjit = 0.26, .vars = 5, .poly = 3, .reach = 42 },
     .{ .id = .wood_swing, .make = mkWoodSwing, .gain = battle(0.80), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 4, .poly = 3, .reach = 60 },
@@ -2911,6 +2931,7 @@ fn seconds(id: Id) f32 {
         .acid_splash => 0.42,
         // Recipes authoring past the 0.5 s default — without a row here `Rack.at` clamps and the tail
         // layers render zero samples.
+        .stone_grind => 0.9,
         .wood_wake => 0.8,
         .wood_die => 1.2, // the tear, THEN the ground taking it at 0.80
         .eat => 0.65,

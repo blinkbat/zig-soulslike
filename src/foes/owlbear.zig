@@ -232,8 +232,8 @@ pub const QUILL_SPEED: f32 = 12.5;
 /// Seconds in the air. At 12.5 m/s this is 16 m of reach, past `AGGRO_R` — the fan is spent by distance, not
 /// by the clock, and the clock is only there so nothing lives forever.
 pub const QUILL_LIFE: f32 = 1.3;
-/// Metres it DROPS over its own life, as a share of the drop a thrown thing would take. Small: a stone quill
-/// is heavy and fast, and a visible arc on a 1.3 s shot reads as a lobbed rock.
+/// Its gravity, in m/s² — a tenth of the world's, so a full `QUILL_LIFE` of flight drops it 1.35 m. A stone
+/// quill is heavy and fast, and a visible arc on a 1.3 s shot reads as a lobbed rock.
 const QUILL_FALL: f32 = 1.6;
 /// Three of these land for 33 raw, under one slam — a fan you eat whole is worse than a swing and better
 /// than the launch, which is the right price for standing in it.
@@ -257,13 +257,17 @@ const State = enum { stone, wake, seat, idle, walk, rake, slam, burst, stunlight
 
 const Choice = enum { rest, hold, close, rake, slam, burst };
 
-fn classify(gap: f32, sensed: f32, homeGap: f32, rakeReady: bool, slamReady: bool, burstReady: bool, rooted: bool) Choice {
+/// **A BAND IS ASKED THE WAY THE STROKE BILLS IT** (`foe.hurtReach`, the ogre's rule). The two melee bands were
+/// measured EDGE TO EDGE against a centre-to-centre bill: the rake was handed out to 3.33 m and landed to 3.00,
+/// the slam to 3.08 and 2.75 — and a body stops closing the frame a band takes it, so the outer 0.33 m of each
+/// was where it always swung and never billed. The burst stays edge to edge: crowding is bodies touching.
+fn classify(gap: f32, sensed: f32, homeGap: f32, scale: f32, rakeReady: bool, slamReady: bool, burstReady: bool, rooted: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     // **THE BURST IS ASKED FIRST AND IT IS ASKED ABOUT ONE THING** — a man this close. Below the melee bands,
     // so it can never take a stand the rake or the slam had a better answer for.
     if (gap <= BURST_R and burstReady and !rooted) return .burst;
-    if (gap <= MOVES[SLAM].maxR and slamReady) return .slam;
-    if (gap <= MOVES[RAKE].maxR and rakeReady) return .rake;
+    if (sensed <= foe.hurtReach(MOVES[SLAM].maxR, scale) and slamReady) return .slam;
+    if (sensed <= foe.hurtReach(MOVES[RAKE].maxR, scale) and rakeReady) return .rake;
     if (rooted) return .rest;
     return .close;
 }
@@ -521,7 +525,7 @@ pub const Owlbear = struct {
                 self.rouse = mathx.clampF(1.0 - self.t / SEAT_DUR, 0, 1);
                 foe.faceToward(self.pos, &self.facing, mathx.addV(self.pos, mathx.headingDir(self.perchYaw)), TURN_RATE, dt);
                 if (self.rouse <= 0) {
-                    self.vit.heal(HP_MAX);
+                    _ = self.vit.heal(HP_MAX);
                     self.enter(.stone);
                 }
             },
@@ -547,9 +551,9 @@ pub const Owlbear = struct {
                 const homeGap = mathx.distXZ(self.pos, foe.homeFor(self));
                 // **BACK ON ITS PERCH WITH NOBODY IN SIGHT, IT SITS DOWN AGAIN** — the statue is the resting
                 // state and not a one-shot, so a wood full of these can be walked past twice.
-                if (self.leash.goingHome() and homeGap <= SEAT_R and sensed > AGGRO_R) {
+                if (!self.post.idles() and self.leash.goingHome() and homeGap <= SEAT_R and sensed > AGGRO_R) {
                     self.enter(.seat);
-                } else switch (classify(gap, sensed, homeGap, self.rakeCd <= 0, self.slamCd <= 0, self.burstCd <= 0 and foe.canLeap(&self.root), self.root.held())) {
+                } else switch (classify(gap, sensed, homeGap, self.scale, self.rakeCd <= 0, self.slamCd <= 0, self.burstCd <= 0 and foe.canLeap(&self.root), self.root.held())) {
                     .rest => {
                         if (sensed <= AGGRO_R) self.faceToward(quarry, dt);
                         self.state = if (foe.postAmble(self, dt, bounds, WALK_SPEED, ACCEL, sensed, AGGRO_R, TURN_RATE, &movedDist, &moveSpeed, &moveYaw)) .walk else .idle;
@@ -580,12 +584,7 @@ pub const Owlbear = struct {
                         const want = if (ch == .hold) WALK_SPEED else CHASE_SPEED;
                         self.faceToward(self.nav.aim(self.pos, to), dt);
                         self.speed = approach(self.speed, want, ACCEL * dt);
-                        moveSpeed = self.speed;
-                        const moved = moveSpeed * dt * self.chill.travel();
-                        const way = self.nav.along(mathx.headingDir(self.facing));
-                        mathx.stepXZ(&self.pos, way, moved, bounds);
-                        movedDist = moved;
-                        moveYaw = mathx.headingXZ(way);
+                        foe.stride(self, dt, bounds, &movedDist, &moveSpeed, &moveYaw);
                         self.state = .walk;
                     },
                 }
@@ -605,6 +604,14 @@ pub const Owlbear = struct {
         self.hop = 0;
         self.rouse = 0;
         _ = dt;
+        // **A CARVING THE AUTHOR TOLD TO WALK IS NOT A CARVING.** `ai=`/`wp=` painted in the editor has to move
+        // the body, and this state is the one thing that could swallow them: an unordered owlbear waits to be
+        // walked into, an ordered one is simply already up. No wake tell, because there was no disguise to break.
+        if (self.post.idles()) {
+            self.rouse = 1.0;
+            self.enter(.idle);
+            return;
+        }
         if (mathx.distXZ(self.pos, quarry) > WAKE_R * self.scale) return;
         self.justWoke = true;
         self.leash.provoke();
@@ -631,7 +638,7 @@ pub const Owlbear = struct {
             self.loosed = true;
             self.threw = true;
             self.threwFrom = foe.markOn(self.xf[CHEST], v3(0, 0, 0.10 * H));
-            sfx.world(.arrow_loose, self.pos);
+            sfx.world(.stone_loose, self.pos);
         }
         if (self.t >= BURST_GATHER + BURST_FLIGHT + BURST_LAND) {
             self.hop = 0;
@@ -707,13 +714,14 @@ pub const Owlbear = struct {
         self.enter(.slam);
     }
     /// The signature move `shots.runMapShots` finds by `@hasDecl`, and it is the burst.
-    pub fn stageGather(self: *Owlbear) void {
+    pub fn stageGather(self: *Owlbear, u: f32) void {
         self.debugWake();
         self.heroLatch = false;
         self.loosed = false;
         self.burstYaw = self.facing;
         self.enter(.burst);
-        self.t = BURST_GATHER + BURST_FLIGHT * BURST_LOOSE_K;
+        self.t = (BURST_GATHER + BURST_FLIGHT * BURST_LOOSE_K) * mathx.clampF(u, 0, 1);
+        self.pose();
     }
     pub fn debugKill(self: *Owlbear) void {
         self.enterDeath();
@@ -809,7 +817,7 @@ pub const Owlbear = struct {
         var wx: [N]rl.Matrix = undefined;
         // The crouch drops the pelvis as well as folding it: a statue sits INTO its own base.
         const crouch = 0.16 * H * settle;
-        const pelvY = if (dead) lerpF(hipY, hipY * 0.60, dk) else hipY + pel.bob - pel.dip - crouch + self.hop / mathx.maxF(fs, 1e-4) * 0;
+        const pelvY = if (dead) lerpF(hipY, hipY * 0.60, dk) else hipY + pel.bob - pel.dip - crouch;
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
             mul3(rz(sway * 0.5), rx(leanX), ry(pel.prot)),
             mul(tr(pel.sway * fs, pelvY * fs + sink + self.hop * self.scale, 0), ry(facingDeg)),
@@ -1060,7 +1068,8 @@ fn buildBones() [N]rl.Mesh {
     mesh[SHR] = wingMesh(-1.0, &rng);
     mesh[ELR] = foreMesh(-1.0, &rng);
     mesh[WRR] = clawMesh(-1.0, &rng);
-    mesh[HELD] = Builder.init().toMesh();
+    var empty = Builder.init();
+    mesh[HELD] = empty.toMesh();
     return mesh;
 }
 
@@ -1249,4 +1258,219 @@ fn lichen(b: *Builder, rx0: f32, ry0: f32, rng: *mathx.Rng, n: u32) void {
         );
     }
     b.setMat(.stone);
+}
+
+fn testBear() Owlbear {
+    return Owlbear.spawn(mathx.ground(0, 0), 0, 1.0, 0.31);
+}
+
+fn offBy(a: f32, b: f32) f32 {
+    return @abs(mathx.degrees(mathx.wrapPi(a - b)));
+}
+
+test "THE WAKE ASKS ABOUT DISTANCE AND NOTHING ELSE, and it shows the eyes before it shows the body" {
+    const dt: f32 = 1.0 / 60.0;
+    var far = testBear();
+    var t: f32 = 0;
+    while (t < 6.0) : (t += dt) _ = far.update(dt, mathx.ground(0, WAKE_R + 1.0), 400, .{});
+    try std.testing.expectEqual(State.stone, far.state);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), far.rouse, 1e-6);
+
+    var near = testBear();
+    _ = near.update(dt, mathx.ground(0, WAKE_R - 0.5), 400, .{});
+    try std.testing.expectEqual(State.wake, near.state);
+    const eyesOnly = WAKE_DUR * EYE_LEAD;
+    try std.testing.expect(eyesOnly >= foe.TELL_MIN * 2.0);
+    t = 0;
+    while (t < eyesOnly * 0.9) : (t += dt) _ = near.update(dt, mathx.ground(0, WAKE_R - 0.5), 400, .{});
+    try std.testing.expect(near.eyeGlow() > 0.5);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), near.woke(), 1e-6);
+    std.debug.print("\n  owlbear: wakes inside {d:.2} m, eyes lit {d:.2} s before the body moves (tell floor {d:.2})\n", .{ WAKE_R, eyesOnly, foe.TELL_MIN });
+}
+
+test "A CARVING IS NOT A THING TO LOCK ON TO, but it is a thing you walk into" {
+    var o = testBear();
+    try std.testing.expect(o.hidden());
+    try std.testing.expect(!o.phased());
+    o.rouse = 1.0;
+    try std.testing.expect(!o.hidden());
+}
+
+// **THE ORDERS ARM WAS UNREACHABLE.** `.stone` is left on hero DISTANCE alone, so an owlbear the author painted
+// an order on stood at its post for the whole round: measured 0.0 m of roam against `foe.ROAM_R`'s 9, while every
+// other creature in `game.FOE_GROUPS` reached ~8. The editor was offering an order that did nothing.
+test "AN ORDERED CARVING IS NOT A CARVING — a post that idles takes the body out of the stone with nobody in sight" {
+    const dt: f32 = 1.0 / 60.0;
+    const home = mathx.ground(0, 0);
+    const away = mathx.ground(0, AGGRO_R * 6);
+
+    var held = testBear();
+    held.post.arm(.hold, home, &.{}, 0.37);
+    var t: f32 = 0;
+    while (t < 4.0) : (t += dt) _ = held.update(dt, away, 400, .{});
+    try std.testing.expectEqual(State.stone, held.state);
+
+    var roamer = testBear();
+    roamer.post.arm(.roam, home, &.{}, 0.37);
+    _ = roamer.update(dt, away, 400, .{});
+    try std.testing.expect(roamer.state != .stone);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), roamer.rouse, 1e-6);
+    var strayed: f32 = 0;
+    t = 0;
+    while (t < 90.0) : (t += dt) {
+        _ = roamer.update(dt, away, 400, .{});
+        strayed = @max(strayed, mathx.distXZ(roamer.pos, home));
+        try std.testing.expect(roamer.state != .stone and roamer.state != .seat);
+    }
+    try std.testing.expect(strayed > foe.ROAM_R * 0.5);
+    std.debug.print("  ordered roam strays {d:.1} m of a {d:.1} m leash; an unordered one holds its perch\n", .{ strayed, foe.ROAM_R });
+}
+
+test "THE FAN IS EVEN AND SYMMETRIC ABOUT THE BEARING IT LEFT ON — a spread you can read and cross" {
+    var p: Perch = .{ .model = undefined };
+    p.fan(mathx.ground(0, 0), 0, 0);
+    var offs: [QUILLS_PER_BURST]f32 = undefined;
+    var live: usize = 0;
+    for (&p.quills) |*q| {
+        if (!q.live) continue;
+        try std.testing.expect(live < QUILLS_PER_BURST);
+        offs[live] = mathx.degrees(mathx.headingXZ(mathx.normV(q.vel)));
+        live += 1;
+    }
+    try std.testing.expectEqual(QUILLS_PER_BURST, live);
+    std.mem.sort(f32, &offs, {}, std.sort.asc(f32));
+    try std.testing.expectApproxEqAbs(-QUILL_FAN * 0.5, offs[0], 1e-3);
+    try std.testing.expectApproxEqAbs(QUILL_FAN * 0.5, offs[live - 1], 1e-3);
+    const step = QUILL_FAN / @as(f32, @floatFromInt(QUILLS_PER_BURST - 1));
+    for (1..live) |i| try std.testing.expectApproxEqAbs(step, offs[i] - offs[i - 1], 1e-3);
+    std.debug.print("  fan: {d} quills over {d:.0} deg, {d:.1} deg apart\n", .{ live, QUILL_FAN, step });
+}
+
+test "A FULL POOL DROPS RATHER THAN WRAPS — a wrap would put a quill in the air nothing had thrown" {
+    var p: Perch = .{ .model = undefined };
+    const bursts = QUILL_N / QUILLS_PER_BURST;
+    for (0..bursts + 2) |i| p.fan(mathx.ground(@floatFromInt(i), 0), 0, 0);
+    var live: usize = 0;
+    for (&p.quills) |*q| {
+        if (q.live) live += 1;
+    }
+    try std.testing.expectEqual(QUILL_N, live);
+    std.debug.print("  pool holds {d} quills = {d} full fans; the next fan is dropped, not wrapped\n", .{ QUILL_N, bursts });
+}
+
+test "clear EMPTIES THE AIR AS WELL AS THE FIELD — a reload may not come up standing in a fan nothing threw" {
+    var p: Perch = .{ .model = undefined };
+    p.n = 1;
+    p.fan(mathx.ground(0, 0), 0, 0);
+    p.clear();
+    try std.testing.expectEqual(@as(usize, 0), p.n);
+    for (&p.quills) |*q| try std.testing.expect(!q.live);
+}
+
+test "THE BURST AIMS WHERE THE BODY CAME FROM, so crowding it is what the fan punishes" {
+    var o = testBear();
+    o.rouse = 1.0;
+    o.state = .idle;
+    o.burstCd = 0;
+    o.rakeCd = 999;
+    o.slamCd = 999;
+    const at = mathx.ground(0, BURST_R * 0.5);
+    _ = o.update(1.0 / 60.0, at, 400, .{});
+    try std.testing.expectEqual(State.burst, o.state);
+    try std.testing.expect(offBy(o.burstYaw, mathx.headingXZ(mathx.dirXZ(at, o.pos))) < 1.0);
+    try std.testing.expect(offBy(o.burstBearing(), mathx.headingXZ(mathx.dirXZ(o.pos, at))) < 1.0);
+    std.debug.print("  burst hops away down its own bearing; the fan comes back along it\n", .{});
+}
+
+test "THE HOP DOES NOT STEER INSIDE ITSELF — a man who rolls through it cannot drag the creature round" {
+    const dt: f32 = 1.0 / 60.0;
+    var o = testBear();
+    o.rouse = 1.0;
+    o.state = .idle;
+    o.burstCd = 0;
+    o.rakeCd = 999;
+    o.slamCd = 999;
+    _ = o.update(dt, mathx.ground(0, BURST_R * 0.5), 400, .{});
+    try std.testing.expectEqual(State.burst, o.state);
+    const committed = o.burstYaw;
+    var t: f32 = 0;
+    while (t < BURST_GATHER + BURST_FLIGHT * 0.9) : (t += dt) {
+        _ = o.update(dt, mathx.ground(BURST_R * 0.5, 0), 400, .{});
+        try std.testing.expectApproxEqAbs(committed, o.burstYaw, 1e-5);
+    }
+}
+
+test "A CARVING THAT SEATS ITSELF COMES BACK TO FULL — the statue is the resting state, not a spent one" {
+    const dt: f32 = 1.0 / 60.0;
+    var o = testBear();
+    o.rouse = 1.0;
+    o.state = .seat;
+    o.t = 0;
+    o.vit.hp = HP_MAX * 0.25;
+    var t: f32 = 0;
+    while (t < SEAT_DUR + 0.2) : (t += dt) _ = o.update(dt, mathx.ground(0, AGGRO_R * 6), 400, .{});
+    try std.testing.expectEqual(State.stone, o.state);
+    try std.testing.expectApproxEqAbs(HP_MAX, o.vit.hp, 1e-3);
+    try std.testing.expect(o.hidden());
+}
+
+// The harness stages every creature's signature move through one name and one argument (`shots.runMapShots`);
+// authored with no fraction at all, `stageGather` did not compile against it.
+test "THE SHOT HARNESS STAGE TAKES A FRACTION, and 1.0 is the instant the quills leave" {
+    var half = testBear();
+    half.stageGather(0.5);
+    var full = testBear();
+    full.stageGather(1.0);
+    try std.testing.expectEqual(State.burst, full.state);
+    try std.testing.expectApproxEqAbs(BURST_GATHER + BURST_FLIGHT * BURST_LOOSE_K, full.t, 1e-5);
+    try std.testing.expectApproxEqAbs(full.t * 0.5, half.t, 1e-5);
+    try std.testing.expect(!full.loosed);
+}
+
+test "THE TALONS LAND ON THE MAN WHERE HE STANDS — both close moves thrown for real, anywhere their band picks them" {
+    // The ogre's judge (`THE CLUB LANDS ON THE MAN WHERE HE STANDS`) asked of the carving, and at the scales the
+    // map may post it at: a band written in the wrong units is invisible at 1.0 and worst at `FOE_SCALE_LO`.
+    const dt: f32 = 1.0 / 120.0;
+    const rows = [_]struct { name: []const u8, which: usize, st: State }{
+        .{ .name = "rake", .which = RAKE, .st = .rake },
+        .{ .name = "slam", .which = SLAM, .st = .slam },
+    };
+    var misses: usize = 0;
+    var thrown: usize = 0;
+    for ([_]f32{ wf.FOE_SCALE_LO, 1.0, wf.FOE_SCALE_HI }) |scale| {
+        const probe = Owlbear.spawn(mathx.ground(0, 0), 0, scale, 0.31);
+        const apart = foe.closestApproach(probe.bodyR());
+        for (rows) |row| {
+            const far = foe.hurtReach(MOVES[row.which].maxR, scale);
+            for ([_]f32{ 0, 30, 55 }) |deg| {
+                for ([_]f32{ 0.0, 0.34, 0.67, 1.0 }) |u| {
+                    const stand = lerpF(apart + 0.05, far * 0.999, u);
+                    const gap = mathx.maxF(0, stand - foe.HERO_R - probe.bodyR());
+                    const want: Choice = if (row.which == SLAM) .slam else .rake;
+                    if (classify(gap, stand, 0, scale, row.which == RAKE, row.which == SLAM, false, false) != want) continue;
+                    thrown += 1;
+                    const a = mathx.radians(deg);
+                    var o = Owlbear.spawn(mathx.ground(0, 0), 0, scale, 0.31);
+                    o.rouse = 1.0;
+                    const hero = v3(@sin(a) * stand, 0, @cos(a) * stand);
+                    o.enter(row.st);
+                    var hit = false;
+                    var guard: usize = 0;
+                    while (guard < 2000) : (guard += 1) {
+                        if (o.update(dt, hero, 400.0, .{}) != null) {
+                            hit = true;
+                            break;
+                        }
+                        if (o.state != row.st) break;
+                    }
+                    if (!hit) {
+                        misses += 1;
+                        std.debug.print("\n  {s} x{d:.2} at {d:.2} m, {d:.0} deg off: MISSED — its band picks it out to {d:.2} m\n", .{ row.name, scale, stand, deg, far });
+                    }
+                }
+            }
+        }
+    }
+    std.debug.print("\n  owlbear: {d} stands thrown across three scales, {d} billed nothing\n", .{ thrown, misses });
+    try std.testing.expectEqual(@as(usize, 0), misses);
 }

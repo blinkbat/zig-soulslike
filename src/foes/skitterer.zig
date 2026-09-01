@@ -898,7 +898,7 @@ fn buildBone(b: *Builder, i: usize, rest: [N]rl.Vector3) void {
             const thick: f32 = mathx.lerpF(0.058, 0.044, @as(f32, @floatFromInt(p)) / @as(f32, PAIRS - 1)) * W;
             if (!lower) {
                 const off = mathx.subV(rest[ribLo(leg)], rest[ribUp(leg)]);
-                const mid = v3(off.x * 0.52 + side * 0.10 * W, off.y * 0.60, off.z + side * 0.0);
+                const mid = v3(off.x * 0.52 + side * 0.10 * W, off.y * 0.60, off.z);
                 b.addCapsule(mathx.zero3, mid, thick, thick * 0.92, 7, BONE);
                 b.addCapsule(mid, off, thick * 0.92, thick * 0.80, 7, BONE_LT);
                 b.addBlob(mathx.zero3, v3(thick * 1.5, thick * 1.4, thick * 1.7), 5, 6, BONE_DK);

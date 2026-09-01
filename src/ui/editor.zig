@@ -1017,11 +1017,14 @@ pub const Editor = struct {
     talkNpc: ?usize = null,
     talkDlg: u16 = wf.NO_DIALOG,
     talkFlat: bool = true,
-    talkSay: [wf.TALK_SAY_CAP]u8 = [_]u8{0} ** wf.TALK_SAY_CAP,
+    /// **ONE PAST THE FORMAT'S CAP, BECAUSE `ui.textField` PUTS THE TERMINATOR AT `len`.** Sized to the cap
+    /// itself, a line loaded at it wrote one past the buffer, and the typing guard stopped a character short
+    /// of the count the panel prints.
+    talkSay: [wf.TALK_SAY_CAP + 1]u8 = [_]u8{0} ** (wf.TALK_SAY_CAP + 1),
     talkSayLen: usize = 0,
-    talkWho: [wf.TALK_LABEL_CAP]u8 = [_]u8{0} ** wf.TALK_LABEL_CAP,
+    talkWho: [wf.TALK_LABEL_CAP + 1]u8 = [_]u8{0} ** (wf.TALK_LABEL_CAP + 1),
     talkWhoLen: usize = 0,
-    talkRow: [wf.MAX_CHOICES][wf.TALK_LABEL_CAP]u8 = [_][wf.TALK_LABEL_CAP]u8{[_]u8{0} ** wf.TALK_LABEL_CAP} ** wf.MAX_CHOICES,
+    talkRow: [wf.MAX_CHOICES][wf.TALK_LABEL_CAP + 1]u8 = [_][wf.TALK_LABEL_CAP + 1]u8{[_]u8{0} ** (wf.TALK_LABEL_CAP + 1)} ** wf.MAX_CHOICES,
     talkRowLen: [wf.MAX_CHOICES]usize = [_]usize{0} ** wf.MAX_CHOICES,
     talkDoes: [wf.MAX_CHOICES]wf.Does = [_]wf.Does{.leave} ** wf.MAX_CHOICES,
     talkRows: usize = 0,
@@ -5819,6 +5822,15 @@ fn drawOptionsModal(ed: *Editor, ctx: *ui.Ctx) void {
 }
 
 // ── THE CONVERSATION PANEL ────────────────────────────────────────────────────────────────────────────────
+
+comptime {
+    // `openTalk` copies a node in AT the format's cap and `ui.textField` writes the terminator at `len`, so a
+    // buffer merely as wide as the cap is a write one past its end.
+    const E = Editor{};
+    if (E.talkSay.len <= wf.TALK_SAY_CAP) @compileError("editor: talkSay must be wider than wf.TALK_SAY_CAP");
+    if (E.talkWho.len <= wf.TALK_LABEL_CAP) @compileError("editor: talkWho must be wider than wf.TALK_LABEL_CAP");
+    if (E.talkRow[0].len <= wf.TALK_LABEL_CAP) @compileError("editor: talkRow must be wider than wf.TALK_LABEL_CAP");
+}
 
 /// Loads the npc's conversation into the editor's scratch and opens the panel. **NOTHING IS WRITTEN HERE** —
 /// a body with no voice yet gets a SEEDED scratch and `talkDlg` stays `NO_DIALOG`, so backing out with Esc or

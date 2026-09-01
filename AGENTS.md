@@ -2034,7 +2034,7 @@ he mounts from and stands off (`propbuild.LADDER_STANDOFF`); local −Z is the w
 - **THE SECTION IS THE AUTHORING GRANULARITY, AND THAT IS WHY IT IS 0.90 m** (`propbuild.LADDER_SEG`, three
   rungs). A run can only be a whole number of them; at 2.40 the band `ladderExit` accepts was narrower than the
   pitch, so against a cliff quantised to `wf.HEIGHT_STEP` most lips had no run that served them.
-- **THE HEAD MAY STAND PROUD AND MAY ONLY JUST FALL SHORT** (`game.LADDER_PROUD` 1.00 up, `env.STEP_UP` 0.55
+- **THE HEAD MAY STAND PROUD AND MAY ONLY JUST FALL SHORT** (`env.LADDER_PROUD` 1.00 up, `env.STEP_UP` 0.55
   down). Rails over a floor are what you haul on; a head under the lip is a pull-up.
 - **THE EXIT ASKS THE WALL SIDE FIRST AND MAY NOT BE A LEDGE.** Over a cliff you top out over the lip; inside a
   shaft the stone refuses that side and he steps off inboard. **ON A ROOF THERE IS NO WALL LEFT TO REFUSE IT**,

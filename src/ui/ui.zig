@@ -401,6 +401,8 @@ pub fn textField(ctx: *Ctx, r: rl.Rectangle, buf: []u8, len: *usize, id: u32, el
         }
         if ((rl.isKeyPressed(.backspace) or rl.isKeyPressedRepeat(.backspace)) and len.* > 0) len.* -= 1;
     }
+    // The terminator goes at `len`, so a caller that loaded a field AT its buffer's size writes one past it.
+    len.* = @min(len.*, buf.len - 1);
     buf[len.*] = 0;
     const s: [:0]const u8 = buf[0..len.* :0];
 

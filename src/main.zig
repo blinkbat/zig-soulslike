@@ -72,7 +72,7 @@ fn runBake(alloc: std.mem.Allocator) !void {
 
     try wf.save(wf.START_MAP, m);
 
-    const text = try std.fs.cwd().readFileAlloc(alloc, wf.START_MAP, 1 << 22);
+    const text = try std.fs.cwd().readFileAlloc(alloc, wf.START_MAP, wf.TEXT_CAP);
     defer alloc.free(text);
     const back = try alloc.create(wf.Map);
     defer alloc.destroy(back);
@@ -175,6 +175,7 @@ test {
     _ = @import("play/item.zig");
     _ = @import("play/liquid.zig");
     _ = @import("foes/fungalduo.zig");
+    _ = @import("foes/owlbear.zig");
     _ = @import("core/collision.zig");
     _ = @import("gfx/gfx.zig");
     _ = @import("world/daynight.zig");

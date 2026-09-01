@@ -107,6 +107,8 @@ pub fn traitsOf(k: wf.FoeKind) Traits {
         .brood_mother, .broodling, .delver, .fungal_deer, .rotgorger => .{ .nature = .beast },
         .shroom, .mushroom_mage, .spore_golem, .birchwight => .{ .nature = .plant },
         .fungal_swordsman, .fungal_magus => .{ .nature = .plant },
+        // **THE FIRST CONSTRUCT.** A carved thing that stands up is not a beast and was never alive.
+        .owlbear => .{ .nature = .construct },
     };
 }
 
@@ -138,6 +140,8 @@ pub fn homeOf(k: wf.FoeKind) props.Biome {
         .ancient_priest, .necromancer, .tolling_hollow, .rotgorger => .bone,
         .shroom, .mushroom_mage, .spore_golem, .fungal_deer => .fungal,
         .fungal_swordsman, .fungal_magus => .fungal,
+        // Masonry, so it stands where masonry does.
+        .owlbear => .ruins,
     };
 }
 
@@ -162,6 +166,7 @@ pub fn isBoss(k: wf.FoeKind) bool {
         .bone_skitterer, .ancient_priest, .tolling_hollow => false,
         .slumber_bloom, .cinder_wake, .rotgorger, .birchwight, .salt_husk => false,
         .fish_spearman, .fish_netter, .fish_shaman, .blinkbat => false,
+        .owlbear => false,
     };
 }
 

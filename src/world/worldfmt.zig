@@ -459,7 +459,7 @@ pub const Arena = struct {
 };
 
 /// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at comptime, and each `roleOf` reads its own entries as a CONTIGUOUS RUN off the first of them.
-pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, fungal_deer, mushroom_mage, fen_lurker, spore_golem, bone_skitterer, ancient_priest, tolling_hollow, mourner, slumber_bloom, cinder_wake, rotgorger, birchwight, salt_husk, fish_spearman, fish_netter, fish_shaman, blinkbat, fungal_swordsman, fungal_magus };
+pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, fungal_deer, mushroom_mage, fen_lurker, spore_golem, bone_skitterer, ancient_priest, tolling_hollow, mourner, slumber_bloom, cinder_wake, rotgorger, birchwight, salt_husk, fish_spearman, fish_netter, fish_shaman, blinkbat, fungal_swordsman, fungal_magus, owlbear };
 
 pub fn foeName(k: FoeKind) [:0]const u8 {
     return switch (k) {
@@ -500,6 +500,7 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
         .blinkbat => "Blinkbat",
         .fungal_swordsman => "Fungal Swordsman",
         .fungal_magus => "Fungal Magus",
+        .owlbear => "Owlbear",
     };
 }
 
@@ -3024,6 +3025,27 @@ pub fn loadOrPanic(path: []const u8, m: *Map) void {
     };
 }
 
+/// **ONLY A MISSING FILE MAY SKIP A TEST.** `FileNotFound` means the suite is not being run from the repo
+/// root; every other error — a `ParseError`, `MapTooLarge` — is the MAP being broken, which is the thing the
+/// test was standing there to catch. MEASURED: with `test_liquids`' `version:` row wrecked, the footing test
+/// still reported passed under a bare `catch return error.SkipZigTest`; through this it fails.
+pub fn loadForTest(path: []const u8, m: *Map, lineOut: *usize) !void {
+    load(path, m, lineOut) catch |e| {
+        if (e == error.FileNotFound) return error.SkipZigTest;
+        std.debug.print("{s} failed to load — {s} (line {d})\n", .{ path, @errorName(e), lineOut.* });
+        return e;
+    };
+}
+
+/// The same rule for a test that wants the raw text — `FileTooBig` is a map that OUTGREW the cap, which is
+/// exactly what the ops-budget tests exist to notice.
+pub fn readForTest(alloc: std.mem.Allocator, path: []const u8, cap: usize) ![]u8 {
+    return std.fs.cwd().readFileAlloc(alloc, path, cap) catch |e| {
+        if (e == error.FileNotFound) return error.SkipZigTest;
+        return e;
+    };
+}
+
 pub const EXT = ".world";
 pub const MAX_FILES: usize = 64;
 pub const PATH_CAP: usize = 96;
@@ -4260,7 +4282,7 @@ test "WHAT A ROOM COSTS A FRAME — the per-body wall test, counted rather than 
     const m = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(m);
     var ln: usize = 0;
-    load(DIR ++ "/01_fallen_plain" ++ EXT, m, &ln) catch return error.SkipZigTest;
+    try loadForTest(DIR ++ "/01_fallen_plain" ++ EXT, m, &ln);
     if (m.narenas == 0) return error.SkipZigTest;
     const a = &m.arenas[0];
     const n = a.verts();
@@ -4327,7 +4349,7 @@ test "WHAT THE ROOMS PANEL COSTS A FRAME — the op walk that finds a room's gat
     const m = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(m);
     var ln: usize = 0;
-    load(DIR ++ "/01_fallen_plain" ++ EXT, m, &ln) catch return error.SkipZigTest;
+    try loadForTest(DIR ++ "/01_fallen_plain" ++ EXT, m, &ln);
     if (m.narenas == 0) return error.SkipZigTest;
     const a = &m.arenas[0];
     var timer = try std.time.Timer.start();

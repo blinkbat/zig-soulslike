@@ -7,7 +7,6 @@ const foe = @import("foe.zig");
 const wf = @import("../world/worldfmt.zig");
 const heromod = @import("../play/hero.zig");
 const wolf = @import("wolf.zig");
-const wood = @import("../props/propwood.zig");
 const knightmod = @import("knight.zig");
 
 const v3 = mathx.v3;
@@ -348,21 +347,13 @@ const PETAL_SEGS: u32 = 8;
 /// The blade's half-width at its widest, as a share of its own length. 0.26 puts a petal near 2:1, which is
 /// petal and not paddle; the seven together open to a corolla over two metres across.
 const PETAL_HALFW: f32 = 0.26;
-/// Vanes per SIDE of the midrib. Four lands the gap between neighbours under a vane's own diameter over the
-/// sealed half, so the blade is one surface there and only FRINGES past the belly.
-const VANES: u32 = 4;
+/// Vanes per SIDE of the midrib. Three, now that the membrane shingles the whole run and the ribs are relief
+/// under a surface rather than the surface itself — a fourth only put more strands under the same skin.
+const VANES: u32 = 3;
 /// How far the quill bows off the axis over its length and again over the last of it — the RECURVE. Their SUM,
 /// 0.42, is the tip's own off-axis share and it is what `PETAL_SHUT` and the width peak are solved against.
 const PETAL_BOW: f32 = 0.24;
 const PETAL_RECURVE: f32 = 0.18;
-
-/// **THE SECOND TIER, AND IT COSTS NO BONES.** Each petal bone carries a short broad TONGUE as well as its
-/// quill, pitched this many degrees further in and baked into the mesh, so one fold drives both.
-const INNER_TILT: f32 = 24.0;
-/// Short of the axis now: at 0.34 the open tier crossed the dish and stood over the rim as black spikes.
-const INNER_LEN: f32 = 0.26;
-/// …and its half-width is ABSOLUTE metres, not a multiple of the quill's: the tongues are the seal.
-const INNER_W: f32 = 0.075 * W;
 
 /// Where the quills root, and how far forward of the receptacle. The throat's own size sets this.
 const BLOOM_RIM: f32 = 0.126 * W;
@@ -432,27 +423,28 @@ const LIMB_LT = rgba(22, 20, 16, 248);
 const CALYX = rgba(19, 22, 15, 250);
 const CALYX_LT = rgba(31, 34, 22, 248);
 
-const PETAL_DK = rgba(20, 14, 20, 250);
-const PETAL = rgba(34, 22, 30, 250);
-const PETAL_LT = rgba(56, 38, 46, 248);
-const PETAL_TIP = rgba(84, 64, 66, 246);
-const PETAL_IN = rgba(54, 20, 22, 246);
+const PETAL_DK = rgba(32, 24, 32, 250);
+const PETAL = rgba(58, 42, 54, 250);
+const PETAL_LT = rgba(92, 70, 82, 248);
+const PETAL_TIP = rgba(132, 110, 112, 246);
 
-const THROAT_HALO = rgba(46, 20, 26, 236);
-const THROAT_LIP = rgba(120, 38, 50, 168);
-const THROAT_DEEP = rgba(188, 48, 62, 96);
-const THROAT = rgba(255, 132, 128, 22);
+/// The centre is a WARM light now and not a gullet — the blood tones read as an open mouth on a thing that
+/// only ever spits pollen.
+const THROAT_HALO = rgba(52, 42, 20, 236);
+const THROAT_LIP = rgba(138, 108, 44, 168);
+const THROAT_DEEP = rgba(214, 168, 66, 96);
+const THROAT = rgba(255, 226, 150, 22);
 
-const STAMEN = rgba(146, 122, 76, 196);
-const FANG = rgba(29, 26, 22, 250);
-const TOOTH = rgba(78, 74, 65, 242);
+const STAMEN = rgba(170, 146, 92, 196);
 const HUSK = rgba(36, 31, 24, 250);
 /// The rack. Dead bone weathered green at the base — the one PALE thing on a body authored this dark, so the
 /// silhouette has a crown on it from across a field.
 const HORN = rgba(52, 49, 38, 250);
 const HORN_LT = rgba(74, 70, 55, 248);
 const MUZZLE = rgba(9, 8, 8, 251);
-const EYE = rgba(96, 108, 62, 200);
+const EYE = rgba(118, 132, 76, 210);
+/// The catchlight. Off the eye's own tone and pale enough to survive the hide it sits in.
+const GLINT = rgba(196, 208, 164, 226);
 
 /// **THE SPORE IS A LIGHT, NOT A PEBBLE** — it has to be findable against dark ground for a second and a half.
 const SPORE_CORE = rgba(214, 230, 150, 40);
@@ -1284,7 +1276,7 @@ fn buildBone(b: *Builder, i: usize, rest: [N]rl.Vector3) void {
         BLOOM => buildBloom(b, &rng, rest),
         TAIL0, TAIL1, TAIL2 => buildTail(b, &rng, i, rest),
         else => {
-            if (i >= PET0 and i < PET0 + NPETAL) buildPetal(b, &rng, rowFor(i)) else buildLimbBone(b, i, rest, &rng);
+            if (i >= PET0 and i < PET0 + NPETAL) buildPetal(b, rowFor(i)) else buildLimbBone(b, i, rest, &rng);
         },
     }
 }
@@ -1360,23 +1352,17 @@ fn buildChest(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
     b.addBlob(v3(0, socket.y * 0.72, socket.z * 0.72), v3(0.124 * W, 0.076 * W, 0.120 * W), 5, 10, HIDE);
     b.setMat(.bark);
     b.addBlob(v3(0, socket.y, socket.z), v3(0.092 * W, 0.058 * W, 0.090 * W), 4, 10, STALK_DK);
-    // THE COLLAR OF SPENT FLOWERS lodged where the stalk leaves the shoulders. Round the BACK three-quarters
-    // only: the front is where a blade lands and a ruff there would read as armour it does not have.
+    // THE COLLAR where the stalk leaves the shoulders, and it is a ring of round BUDS, not the hanging husks
+    // it was — those drooped off the withers as tendrils. Round the BACK three-quarters only: the front is
+    // where a blade lands and a ruff there would read as armour it does not have.
     b.setMat(.plant);
     var k: u32 = 0;
     while (k < 9) : (k += 1) {
         const a = std.math.pi * 0.35 + std.math.pi * 1.30 * (@as(f32, @floatFromInt(k)) + rng.range(-0.3, 0.3)) / 9.0;
         const rr = 0.122 * W;
-        const at = v3(mathx.cosf(a) * rr, socket.y - 0.020 * W + rng.range(-0.02, 0.02) * W, socket.z + mathx.sinf(a) * rr * 0.5);
-        const l = 0.066 * W * rng.range(0.55, 1.35);
-        b.addCapsule(
-            at,
-            v3(at.x * 1.30, at.y - l * 0.75, at.z - l * 0.55),
-            0.019 * W * rng.range(0.7, 1.2),
-            0.008 * W,
-            5,
-            if (rng.float() < 0.45) HUSK else CALYX,
-        );
+        const at = v3(mathx.cosf(a) * rr, socket.y - 0.026 * W + rng.range(-0.02, 0.02) * W, socket.z + mathx.sinf(a) * rr * 0.5);
+        const br = 0.030 * W * rng.range(0.72, 1.24);
+        b.addBlob(at, v3(br, br * 1.15, br), 4, 8, if (rng.float() < 0.45) HUSK else CALYX);
     }
 }
 
@@ -1420,15 +1406,21 @@ fn buildNeck(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
 /// run forward of it, and the whole thing narrower than the neck that carries it.
 fn buildSkull(b: *Builder, rng: *mathx.Rng) void {
     b.setMat(.hide);
-    b.addBlob(v3(0, 0.010 * W, -0.012 * W), v3(0.064 * W, 0.070 * W, 0.078 * W), 6, 10, HIDE);
-    b.addBlob(v3(0, -0.006 * W, 0.062 * W), v3(0.044 * W, 0.048 * W, 0.082 * W), 6, 10, HIDE_DK);
-    b.addBlob(v3(0, -0.020 * W, 0.126 * W), v3(0.034 * W, 0.036 * W, 0.036 * W), 5, 9, MUZZLE);
+    // A ROUNDER, SHORTER WEDGE. The braincase is up 20% and the nasal run in 12%: a long thin skull is the
+    // difference between a deer and a fawn, and this animal is meant to read as the second.
+    b.addBlob(v3(0, 0.012 * W, -0.014 * W), v3(0.077 * W, 0.082 * W, 0.086 * W), 6, 10, HIDE);
+    b.addBlob(v3(0, -0.004 * W, 0.058 * W), v3(0.050 * W, 0.053 * W, 0.072 * W), 6, 10, HIDE_DK);
+    b.addBlob(v3(0, -0.016 * W, 0.111 * W), v3(0.038 * W, 0.039 * W, 0.034 * W), 5, 9, MUZZLE);
     // The brow ridges and the cheek: a few percent proud, which is what a skull under hide looks like.
-    b.addBlob(v3(0.042 * W, 0.038 * W, 0.018 * W), v3(0.026 * W, 0.020 * W, 0.030 * W), 4, 7, HIDE_LT);
-    b.addBlob(v3(-0.042 * W, 0.038 * W, 0.018 * W), v3(0.026 * W, 0.020 * W, 0.030 * W), 4, 7, HIDE_LT);
+    b.addBlob(v3(0.046 * W, 0.040 * W, 0.016 * W), v3(0.026 * W, 0.020 * W, 0.030 * W), 4, 7, HIDE_LT);
+    b.addBlob(v3(-0.046 * W, 0.040 * W, 0.016 * W), v3(0.026 * W, 0.020 * W, 0.030 * W), 4, 7, HIDE_LT);
     b.setMat(.plain);
-    b.addBlob(v3(0.052 * W, 0.012 * W, 0.026 * W), v3(0.019 * W, 0.021 * W, 0.017 * W), 5, 8, EYE);
-    b.addBlob(v3(-0.052 * W, 0.012 * W, 0.026 * W), v3(0.019 * W, 0.021 * W, 0.017 * W), 5, 8, EYE);
+    // **BIG EYES, SET FORWARD.** Half again the diameter they were and carried onto the front of the wedge,
+    // each with a catchlight bead — one pale dot is most of what separates a cute eye from a dead one.
+    b.addBlob(v3(0.055 * W, 0.014 * W, 0.034 * W), v3(0.029 * W, 0.031 * W, 0.026 * W), 6, 9, EYE);
+    b.addBlob(v3(-0.055 * W, 0.014 * W, 0.034 * W), v3(0.029 * W, 0.031 * W, 0.026 * W), 6, 9, EYE);
+    b.addBlob(v3(0.061 * W, 0.023 * W, 0.049 * W), v3(0.009 * W, 0.009 * W, 0.007 * W), 4, 7, GLINT);
+    b.addBlob(v3(-0.049 * W, 0.023 * W, 0.049 * W), v3(0.009 * W, 0.009 * W, 0.007 * W), 4, 7, GLINT);
     // …and the fungus has taken the poll. Small buds crowding the base of the rack, which is where it started.
     b.setMat(.plant);
     var k: u32 = 0;
@@ -1454,14 +1446,15 @@ fn buildJaw(b: *Builder, rng: *mathx.Rng) void {
 
 fn buildEar(b: *Builder, side: f32) void {
     b.setMat(.hide);
-    // A deer's ear is a big cupped leaf — the one part of the animal that is bigger than a dog's.
-    b.addCapsule(v3(0, 0, 0), v3(side * 0.036 * W, 0.078 * W, -0.030 * W), 0.020 * W, 0.030 * W, 7, HIDE);
-    b.addBlob(v3(side * 0.030 * W, 0.064 * W, -0.024 * W), v3(0.026 * W, 0.044 * W, 0.014 * W), 5, 8, HIDE_LT);
+    // A deer's ear is a big cupped leaf — the one part of the animal that is bigger than a dog's, and BIGGER
+    // AGAIN here: a third longer and wider at the cup, because oversized ears are the cheapest cute there is.
+    b.addCapsule(v3(0, 0, 0), v3(side * 0.048 * W, 0.104 * W, -0.038 * W), 0.023 * W, 0.040 * W, 7, HIDE);
+    b.addBlob(v3(side * 0.040 * W, 0.086 * W, -0.030 * W), v3(0.035 * W, 0.058 * W, 0.017 * W), 5, 8, HIDE_LT);
 }
 
-/// **THE RACK, AND IT IS A DEAD LIMB — SO IT USES THE ONE THE TREES USE** (`propwood.deadLimbTinted`): out on
-/// its own axis, up to an elbow, then DROOPING off the line to a blunt snap. Nothing dead is straight and
-/// nothing ends in a point (AGENTS.md), and an antler is the most dead-limb-shaped thing on any animal.
+/// **THE RACK, AND IT IS A SIMPLE ONE.** A three-link beam out and back, two blunt prongs off it, and every
+/// end a bead — nothing ends in a point (AGENTS.md). It used to be built out of the trees' own dead limb,
+/// which came back drooping and forked and read as bare twigs growing out of the skull.
 fn buildAntler(b: *Builder, rng: *mathx.Rng, side: f32) void {
     b.setMat(.bark);
     // THE BEAM: up and out, sweeping back. Three links so it curves instead of leaning.
@@ -1474,12 +1467,15 @@ fn buildAntler(b: *Builder, rng: *mathx.Rng, side: f32) void {
     b.addCapsule(p2, p3, 0.015 * W, 0.011 * W, 6, HORN_LT);
     // …and a blunt crown, because nothing ends in a point.
     b.addBlob(p3, v3(0.013 * W, 0.012 * W, 0.013 * W), 4, 7, HORN_LT);
-    // THREE TINES, uneven, off the outer half of the beam — the wabi-sabi is BETWEEN them, not along one.
-    const AT = [3]rl.Vector3{ p1, p2, v3(side * 0.120 * W, 0.230 * W, 0.018 * W) };
-    const REACH = [3]f32{ 0.118, 0.086, 0.062 };
+    // TWO TINES, uneven — the wabi-sabi is BETWEEN them, not along one.
+    const AT = [2]rl.Vector3{ p1, p2 };
+    const REACH = [2]f32{ 0.104, 0.076 };
     for (AT, REACH, 0..) |root, reach, k| {
-        const a = mathx.radians(side * (56.0 + 30.0 * @as(f32, @floatFromInt(k)) + rng.range(-14, 14)));
-        wood.deadLimbTinted(b, rng, root, a, reach * W * rng.range(0.82, 1.20), 0.052 * W, 0.013 * W, 0, HORN, HORN_LT);
+        const a = mathx.radians(side * (52.0 + 26.0 * @as(f32, @floatFromInt(k)) + rng.range(-9, 9)));
+        const l = reach * W * rng.range(0.88, 1.12);
+        const tip = v3(root.x + mathx.cosf(a) * l * 0.72, root.y + l * 0.68, root.z + mathx.sinf(a) * l * 0.34);
+        b.addCapsule(root, tip, 0.014 * W, 0.010 * W, 6, HORN);
+        b.addBlob(tip, v3(0.011 * W, 0.010 * W, 0.011 * W), 4, 7, HORN_LT);
     }
     // The velvet has rotted and the fungus is in it: a few buds crowding the burr.
     b.setMat(.plant);
@@ -1616,30 +1612,16 @@ fn buildBloom(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
             if (rng.float() < 0.35) CALYX_LT else CALYX,
         );
     }
-    // SEVEN SEPALS clasping from behind, each a three-link chain that leaves on its axis, reaches an elbow and
-    // DROOPS. One is broken short, which is the only thing that says this flower has been open before. Seven
-    // and longer than they were: head-on the player sees the flower's BACK, and five short ones left the
-    // receptacle a bare dark disc.
-    const SEP = [7]f32{ 1.00, 0.82, 1.16, 0.38, 0.92, 1.08, 0.70 };
+    // SEVEN SEPALS, and they are LOBES rather than chains — one stubby rounded pad each, laid back onto the
+    // receptacle. The three-link droop they used to be read as tendrils hanging off the flower's back.
+    const SEP = [7]f32{ 1.00, 0.86, 1.10, 0.78, 0.94, 1.04, 0.82 };
     for (SEP, 0..) |share, k| {
-        const a = std.math.tau * (@as(f32, @floatFromInt(k)) + rng.range(-0.20, 0.20)) / 7.0;
+        const a = std.math.tau * (@as(f32, @floatFromInt(k)) + rng.range(-0.14, 0.14)) / 7.0;
         const d = ringDir(mathx.degrees(a));
-        const l = 0.095 * W * share;
-        var pt = v3(d.x * 0.078 * W, d.y * 0.078 * W, 0.006 * W);
+        const l = 0.070 * W * share;
         const col = if (k & 1 == 0) CALYX_LT else CALYX;
-        var seg: u32 = 0;
-        var rr = 0.020 * W * rng.range(0.85, 1.15);
-        while (seg < 3) : (seg += 1) {
-            const droop = (0.10 + 0.55 * @as(f32, @floatFromInt(seg))) * l;
-            const to = v3(
-                pt.x + d.x * l * (0.62 - 0.22 * @as(f32, @floatFromInt(seg))),
-                pt.y + d.y * l * (0.62 - 0.22 * @as(f32, @floatFromInt(seg))) - droop * 0.30,
-                pt.z - l * 0.55 - droop * 0.35,
-            );
-            b.addCapsule(pt, to, rr, rr * 0.62, 5, col);
-            pt = to;
-            rr *= 0.62;
-        }
+        const at = v3(d.x * (0.082 * W + l * 0.45), d.y * (0.082 * W + l * 0.45), -0.018 * W - l * 0.30);
+        b.addBlob(at, v3(l * 0.62, l * 0.62, l * 0.40), 4, 8, col);
     }
 
     // **THE ONE LIGHT ON THE ANIMAL, AND IT HAS TO BE FOUND FROM ACROSS A FIELD.** Built as a PROUD BOSS and
@@ -1651,29 +1633,28 @@ fn buildBloom(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
     b.addBlob(v3(0, 0, 0.026 * W), v3(0.070 * W, 0.070 * W, 0.052 * W), 7, 11, THROAT_LIP);
     b.addBlob(v3(0, 0, 0.050 * W), v3(0.048 * W, 0.048 * W, 0.044 * W), 6, 10, THROAT_DEEP);
     b.addBlob(v3(0, 0, 0.070 * W), v3(0.027 * W, 0.027 * W, 0.026 * W), 5, 9, THROAT);
-    // **THE FANGS ARE THE IRIS.** Nine, arching in and forward OVER the light — dark horn for two-thirds of
-    // their reach and pale only at the point, so the light is read BETWEEN them and not as a badge.
+    // **A CORONA OF ROUND LOBES WHERE THE FANGS WERE.** Nine soft pads seated on the halo's rim, so the light
+    // is still read BETWEEN something and not as a flat badge — but nothing arches over it and nothing is a
+    // point. The ring of dark horn teeth made a mouth of a flower that only ever spits pollen.
+    b.setMat(.plant);
     var k: u32 = 0;
     while (k < 9) : (k += 1) {
-        const a = std.math.tau * (@as(f32, @floatFromInt(k)) + rng.range(-0.26, 0.26)) / 9.0;
+        const a = std.math.tau * (@as(f32, @floatFromInt(k)) + rng.range(-0.16, 0.16)) / 9.0;
         const d = ringDir(mathx.degrees(a));
-        const rr = 0.112 * W;
-        const l = 0.060 * W * rng.range(0.62, 1.36);
-        const bend = v3(d.x * rr * 0.52, d.y * rr * 0.52, 0.006 * W + l * 0.60);
-        b.addCapsule(v3(d.x * rr, d.y * rr, 0.000 * W), bend, 0.019 * W * rng.range(0.85, 1.15), 0.009 * W, 6, FANG);
-        b.addCapsule(bend, v3(d.x * rr * 0.20, d.y * rr * 0.20, 0.006 * W + l), 0.009 * W, 0.0035 * W, 5, TOOTH);
+        const rr = 0.100 * W;
+        const lr = 0.024 * W * rng.range(0.82, 1.20);
+        b.addBlob(v3(d.x * rr, d.y * rr, 0.010 * W), v3(lr, lr, lr * 0.80), 4, 8, if (k & 1 == 0) PETAL_LT else PETAL);
     }
-    // …and the ANTHERS, a TUFT and not a wheel: seven leaning FORWARD, clustered inside the fang ring, which
-    // reads as pollen standing in the gullet. **THIS IS WHAT THE VOLLEY COMES OUT OF.**
+    // …and the ANTHERS: a cluster of round pollen beads sitting IN the light, no stalks. **THIS IS WHAT THE
+    // VOLLEY COMES OUT OF**, and it should look like pollen rather than something growing out of a gullet.
+    b.setMat(.plain);
     var f: u32 = 0;
     while (f < 7) : (f += 1) {
         const a = std.math.tau * (@as(f32, @floatFromInt(f)) + rng.range(-0.30, 0.30)) / 7.0;
         const d = ringDir(mathx.degrees(a));
-        const l = 0.048 * W * rng.range(0.58, 1.42);
-        const tip = v3(d.x * (0.036 * W + l * 0.26), d.y * (0.036 * W + l * 0.26), 0.044 * W + l * 0.92);
-        b.addCapsule(v3(d.x * 0.038 * W, d.y * 0.038 * W, 0.030 * W), tip, 0.0055 * W, 0.0038 * W, 5, STAMEN);
-        const ar = 0.0080 * W * rng.range(0.75, 1.3);
-        b.addBlob(tip, v3(ar, ar, ar * 1.5), 3, 6, STAMEN);
+        const rr = 0.030 * W * rng.range(0.55, 1.15);
+        const ar = 0.0105 * W * rng.range(0.80, 1.25);
+        b.addBlob(v3(d.x * rr, d.y * rr, 0.062 * W + rng.range(0, 0.016) * W), v3(ar, ar, ar), 4, 7, STAMEN);
     }
 }
 
@@ -1703,11 +1684,10 @@ fn vaneAt(len: f32, u: f32, sweepDeg: f32, side: f32, share: f32, maxW: f32) rl.
     return v3(p.x + side * w, p.y, p.z + cup);
 }
 
-/// **A BLADE AND A TONGUE, ON ONE BONE.** The midrib carries the fold; four vanes a side lie on the same bow
-/// and land on `bladeHalfW`, two membrane lenses seal the lower blade into one surface, and the fringe is the
-/// outer half's alone. The tongue is the second tier: a small inner blade pitched `INNER_TILT` further in by a
-/// rotation baked into its spine rather than into the rig, so one fold drives both.
-fn buildPetal(b: *Builder, rng: *mathx.Rng, q: Petal) void {
+/// **ONE ROUNDED BLADE, SEALED END TO END.** The midrib carries the fold; three vanes a side lie on the same
+/// bow and land on `bladeHalfW`, and six membrane lenses shingle the whole run so the petal has one outline
+/// and no loose strand anywhere on it.
+fn buildPetal(b: *Builder, q: Petal) void {
     const len = PETAL_LEN * q.len;
     const maxW = PETAL_HALFW * len * q.wide;
     const tone = petalTone(q.tone);
@@ -1727,67 +1707,38 @@ fn buildPetal(b: *Builder, rng: *mathx.Rng, q: Petal) void {
     // …and a blunt swelling at the tip, because nothing ends in a point.
     b.addBlob(at, v3(QUILL_R * 0.9, QUILL_R * 0.9, QUILL_R * 0.9), 4, 6, PETAL_TIP);
 
-    // THE VANES. Outer ones end sooner, so the outline rounds; every end is jittered, so the rim frays —
-    // the wabi-sabi is BETWEEN the eight, and the tear the table asks for is one vane cut short.
+    // THE VANES, and they run to the RIM now — the outer pair used to stop short and stand out past the
+    // membrane as loose strands, which is the fringe that made a mop of the corolla. All of them end on the
+    // same envelope the lenses seal to, so the blade has ONE outline and no hair on it.
     for ([_]f32{ 1.0, -1.0 }) |side| {
         var k: u32 = 0;
         while (k < VANES) : (k += 1) {
-            const share = (@as(f32, @floatFromInt(k)) + 0.7) / @as(f32, @floatFromInt(VANES));
-            var uEnd = 0.90 - 0.26 * share * share + rng.range(-0.03, 0.02);
+            const share = (@as(f32, @floatFromInt(k)) + 0.8) / @as(f32, @floatFromInt(VANES));
+            var uEnd = 0.94 - 0.04 * share * share;
             if (q.notch > 0 and side > 0 and k == 1) uEnd = q.notchAt - q.notch * 0.35;
-            const r0 = (0.016 - 0.005 * share) * W;
+            const r0 = (0.017 - 0.005 * share) * W;
             const uMid = lerpF(0.07, uEnd, 0.55);
             const pBase = vaneAt(len, 0.07, q.sweep, side, share, maxW);
             const pMid = vaneAt(len, uMid, q.sweep, side, share, maxW);
             const pEnd = vaneAt(len, uEnd, q.sweep, side, share, maxW);
-            b.addCapsule(pBase, pMid, r0, r0 * 0.78, 5, tone);
-            b.addCapsule(pMid, pEnd, r0 * 0.78, 0.005 * W, 5, tone);
-            // A fray bead on the outer pair only — beads on every strand read as wet hair.
-            if (share > 0.5) b.addBlob(pEnd, v3(0.006 * W, 0.006 * W, 0.006 * W), 3, 5, tone);
+            b.addCapsule(pBase, pMid, r0, r0 * 0.82, 5, tone);
+            b.addCapsule(pMid, pEnd, r0 * 0.82, r0 * 0.55, 5, tone);
         }
     }
 
-    // THE MEMBRANE — three lenses shingled to past the belly, so the blade is one SURFACE for most of its
-    // run and only the last third is ribs and fringe. Two left the outer two-thirds loose strands, and seven
-    // stranded blades read as a mop and not a corolla.
-    const m1 = sweptAt(len, 0.14, q.sweep);
-    const m2 = sweptAt(len, 0.33, q.sweep);
-    const m3 = sweptAt(len, 0.53, q.sweep);
-    const m4 = sweptAt(len, 0.70, q.sweep);
-    // Deep shingle: an ellipsoid is paper at its own ends, so neighbours overlap by most of a half-length or
-    // the seams read as gaps and the blade as a stack of hoops from its side.
-    b.addBlob(v3(m1.x, m1.y, m1.z + 0.006 * W), v3(bladeHalfW(0.14, maxW) * 0.96, 0.160 * len, 0.014 * W), 4, 9, tone);
-    b.addBlob(v3(m2.x, m2.y, m2.z + 0.012 * W), v3(bladeHalfW(0.33, maxW) * 0.98, 0.165 * len, 0.013 * W), 4, 9, tone);
-    b.addBlob(v3(m3.x, m3.y, m3.z + 0.017 * W), v3(bladeHalfW(0.53, maxW) * 0.97, 0.160 * len, 0.012 * W), 4, 9, tone);
-    b.addBlob(v3(m4.x, m4.y, m4.z + 0.019 * W), v3(bladeHalfW(0.70, maxW) * 0.94, 0.150 * len, 0.011 * W), 4, 9, tone);
-
-    // THE TONGUE — a small blade of its own, in the throat's flesh tone, pitched further in.
-    const tilt = mathx.radians(INNER_TILT + q.bias * 0.4);
-    const idir = v3(0, mathx.cosf(tilt), mathx.sinf(tilt));
-    const ilen = len * INNER_LEN;
-    const iw = INNER_W * q.wide;
-    for ([_]struct { x: f32, l: f32, r: f32 }{
-        .{ .x = 0.0, .l = 1.0, .r = 0.012 },
-        .{ .x = 0.52, .l = 0.76, .r = 0.009 },
-        .{ .x = -0.52, .l = 0.74, .r = 0.009 },
-    }) |vn| {
-        const lx = vn.x * iw;
-        b.addCapsule(
-            v3(lx * 0.35, 0.02 * ilen * vn.l, 0.01 * ilen),
-            v3(lx, idir.y * ilen * vn.l, idir.z * ilen * vn.l),
-            vn.r * W,
-            0.005 * W,
-            5,
-            PETAL_IN,
+    // THE MEMBRANE — six lenses shingled the WHOLE run, so the blade is one surface from claw to tip. Four
+    // left the last third as bare ribs, and bare ribs are what read as strands from a distance.
+    for ([_]f32{ 0.12, 0.28, 0.44, 0.60, 0.76, 0.90 }, 0..) |u, li| {
+        const mp = sweptAt(len, u, q.sweep);
+        const lift = (0.006 + 0.003 * @as(f32, @floatFromInt(li))) * W;
+        b.addBlob(
+            v3(mp.x, mp.y, mp.z + lift),
+            v3(bladeHalfW(u, maxW) * 0.98, 0.125 * len, 0.013 * W),
+            4,
+            9,
+            if (u > 0.82) PETAL_LT else tone,
         );
     }
-    b.addBlob(
-        v3(0, idir.y * ilen * 0.30, idir.z * ilen * 0.30 + 0.004 * W),
-        v3(iw * 0.62, ilen * 0.22, 0.011 * W),
-        4,
-        8,
-        PETAL_IN,
-    );
 }
 
 fn sweptAt(len: f32, u: f32, sweepDeg: f32) rl.Vector3 {
@@ -1824,17 +1775,18 @@ fn buildTail(b: *Builder, rng: *mathx.Rng, i: usize, rest: [N]rl.Vector3) void {
     if (i != TAIL2) return;
     // THE FLAG: a deer's tail ends pale, and it is the one bright thing at the back of a very dark animal.
     b.addBlob(v3(to.x, to.y - 0.012 * W, to.z - 0.022 * W), v3(0.034 * W, 0.048 * W, 0.056 * W), 5, 8, HIDE_LT);
+    // …and a small TUFT of round buds behind the flag. Five tapered spines used to stand off the tail tip,
+    // which is a wisp of hair on the one part of the animal a player sees while it runs away.
     b.setMat(.plant);
     var k: u32 = 0;
     while (k < 5) : (k += 1) {
         const a = std.math.tau * (@as(f32, @floatFromInt(k)) + rng.range(-0.3, 0.3)) / 5.0;
-        const l = 0.046 * W * rng.range(0.5, 1.4);
-        b.addCapsule(
-            v3(to.x + mathx.cosf(a) * 0.018 * W, to.y - 0.028 * W, to.z - 0.054 * W),
-            v3(to.x + mathx.cosf(a) * (0.018 * W + l), to.y - 0.028 * W + mathx.sinf(a) * l * 0.6, to.z - 0.054 * W - l * 0.8),
-            0.008 * W,
-            0.0025 * W,
+        const rr = 0.016 * W * rng.range(0.72, 1.28);
+        b.addBlob(
+            v3(to.x + mathx.cosf(a) * 0.026 * W, to.y - 0.030 * W + mathx.sinf(a) * 0.018 * W, to.z - 0.062 * W),
+            v3(rr, rr, rr * 0.9),
             4,
+            7,
             HUSK,
         );
     }

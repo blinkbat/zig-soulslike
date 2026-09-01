@@ -1852,7 +1852,7 @@ test "EVERY LADDER ON THE BENCH TOPS OUT WHERE IT WAS AUTHORED TO, AND THE THREE
     const m = try std.testing.allocator.create(worldfmt.Map);
     defer std.testing.allocator.destroy(m);
     var ln: usize = 0;
-    worldfmt.load("worlds/test_ladder.world", m, &ln) catch return error.SkipZigTest;
+    try worldfmt.loadForTest("worlds/test_ladder.world", m, &ln);
     const e = try std.testing.allocator.create(envmod.Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
@@ -1908,7 +1908,7 @@ test "THE SHIPPED MAP'S WATCHTOWER IS CLIMBABLE TO ITS ROOF, in two flights" {
     const m = try std.testing.allocator.create(worldfmt.Map);
     defer std.testing.allocator.destroy(m);
     var ln: usize = 0;
-    worldfmt.load(worldfmt.START_MAP, m, &ln) catch return error.SkipZigTest;
+    try worldfmt.loadForTest(worldfmt.START_MAP, m, &ln);
     const e = try std.testing.allocator.create(envmod.Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
@@ -2612,7 +2612,7 @@ test "A REACH IS REFUSED THROUGH A FLOOR, AND NEVER REFUSED ACROSS THE LAND" {
     const m = try std.testing.allocator.create(worldfmt.Map);
     defer std.testing.allocator.destroy(m);
     var ln: usize = 0;
-    worldfmt.load(worldfmt.START_MAP, m, &ln) catch return error.SkipZigTest;
+    try worldfmt.loadForTest(worldfmt.START_MAP, m, &ln);
     const e = try std.testing.allocator.create(envmod.Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };

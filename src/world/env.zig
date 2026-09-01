@@ -3252,11 +3252,7 @@ test "the SHIPPED map parses, and its zones cover every reachable position" {
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     var line: usize = 0;
-    wf.load(wf.START_MAP, m, &line) catch |e| {
-        if (e == error.FileNotFound) return error.SkipZigTest;
-        std.debug.print("{s} failed to parse at line {d}\n", .{ wf.START_MAP, line });
-        return e;
-    };
+    try wf.loadForTest(wf.START_MAP, m, &line);
     try std.testing.expect(m.nops > 0);
     try std.testing.expect(m.half > 0);
 }
@@ -3265,10 +3261,7 @@ test "every generator op in the shipped map has its own seed" {
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     var line: usize = 0;
-    wf.load(wf.START_MAP, m, &line) catch |e| {
-        if (e == error.FileNotFound) return error.SkipZigTest;
-        return e;
-    };
+    try wf.loadForTest(wf.START_MAP, m, &line);
     for (m.slice(), 0..) |o, i| {
         if (o.op == .at) continue;
         try std.testing.expect(o.seed != 0);
@@ -3438,7 +3431,7 @@ test "WHAT THE CLIMB PROMPT COSTS A FRAME — `ladderNear` on the shipped map, t
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     var ln: usize = 0;
-    wf.load(wf.START_MAP, m, &ln) catch return error.SkipZigTest;
+    try wf.loadForTest(wf.START_MAP, m, &ln);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
@@ -3518,10 +3511,7 @@ test "THE BROOD ARENA LOADS — a scratch map is only useful if it is known to s
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     var line: usize = 0;
-    wf.load(wf.DIR ++ "/02_brood_arena" ++ wf.EXT, m, &line) catch |e| {
-        if (e == error.FileNotFound) return error.SkipZigTest;
-        return e;
-    };
+    try wf.loadForTest(wf.DIR ++ "/02_brood_arena" ++ wf.EXT, m, &line);
     var mothers: usize = 0;
     for (m.foes[0..m.nfoes]) |f| {
         if (f.kind == .brood_mother) mothers += 1;
@@ -3534,10 +3524,7 @@ test "replaying the SHIPPED map produces a stable world" {
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     var line: usize = 0;
-    wf.load(wf.START_MAP, m, &line) catch |e| {
-        if (e == error.FileNotFound) return error.SkipZigTest;
-        return e;
-    };
+    try wf.loadForTest(wf.START_MAP, m, &line);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
@@ -3574,7 +3561,7 @@ test "A FEN LURKER IS POSTED IN WATER IT CAN ACTUALLY HIDE IN" {
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     var line: usize = 0;
-    wf.load(wf.DIR ++ "/test_fenlurker" ++ wf.EXT, m, &line) catch return error.SkipZigTest;
+    try wf.loadForTest(wf.DIR ++ "/test_fenlurker" ++ wf.EXT, m, &line);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
@@ -3654,10 +3641,7 @@ test "no grid query can overflow MAX_NEAR, which is the one cap here that drops 
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     var line: usize = 0;
-    wf.load(wf.START_MAP, m, &line) catch |e| {
-        if (e == error.FileNotFound) return error.SkipZigTest;
-        return e;
-    };
+    try wf.loadForTest(wf.START_MAP, m, &line);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
@@ -3775,7 +3759,7 @@ test "…AND NO HONEST OP IN THE SHIPPING MAP IS TRUNCATED BY IT" {
     defer ta.destroy(m);
     const e = try ta.create(Env);
     defer ta.destroy(e);
-    const text = std.fs.cwd().readFileAlloc(ta, wf.START_MAP, 1 << 22) catch return error.SkipZigTest;
+    const text = try wf.readForTest(ta, wf.START_MAP, wf.TEXT_CAP);
     defer ta.free(text);
     var line: usize = 0;
     try wf.parse(text, m, &line);
@@ -3827,7 +3811,7 @@ test "THE GIZMO PASS WALKS WHAT IS IN FRAME, NOT THE WHOLE MAP — and the owned
     defer ta.destroy(m);
     const e = try ta.create(Env);
     defer ta.destroy(e);
-    const text = std.fs.cwd().readFileAlloc(ta, wf.START_MAP, 1 << 22) catch return error.SkipZigTest;
+    const text = try wf.readForTest(ta, wf.START_MAP, wf.TEXT_CAP);
     defer ta.free(text);
     var line: usize = 0;
     try wf.parse(text, m, &line);
@@ -3868,7 +3852,7 @@ test "THE CURSOR PICK ANSWERS THE SAME PROP OFF THE INDEX AS OFF THE WHOLE LIST 
     defer ta.destroy(m);
     const e = try ta.create(Env);
     defer ta.destroy(e);
-    const text = std.fs.cwd().readFileAlloc(ta, wf.START_MAP, 1 << 22) catch return error.SkipZigTest;
+    const text = try wf.readForTest(ta, wf.START_MAP, wf.TEXT_CAP);
     defer ta.free(text);
     var line: usize = 0;
     try wf.parse(text, m, &line);
@@ -4091,7 +4075,7 @@ test "THE FOOTING READS THE LIQUID THE SHADER PAINTED - every pool on the bench 
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     var line: usize = 0;
-    wf.load(wf.DIR ++ "/test_liquids" ++ wf.EXT, m, &line) catch return error.SkipZigTest;
+    try wf.loadForTest(wf.DIR ++ "/test_liquids" ++ wf.EXT, m, &line);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
@@ -4112,3 +4096,47 @@ test "THE FOOTING READS THE LIQUID THE SHADER PAINTED - every pool on the bench 
     try std.testing.expect(!e.inWater(0, 0, 1.0));
     std.debug.print("\n  footing: four pools, each answering with its own kind, dry in the middle\n", .{});
 }
+
+test "A FEN LURKER IS SUBMERGED WHEREVER IT IS POSTED, on every map but the bench's dry control" {
+    const fen = @import("../foes/fenlurker.zig");
+    var dir = std.fs.cwd().openDir(wf.DIR, .{ .iterate = true }) catch return error.SkipZigTest;
+    defer dir.close();
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    var checked: usize = 0;
+    var it = dir.iterate();
+    while (try it.next()) |ent| {
+        if (ent.kind != .file or !std.mem.endsWith(u8, ent.name, wf.EXT)) continue;
+        // The lurker bench posts one on dry land ON PURPOSE, and its own test pins that.
+        if (std.mem.eql(u8, ent.name, "test_fenlurker" ++ wf.EXT)) continue;
+        var buf: [256]u8 = undefined;
+        const path = try std.fmt.bufPrint(&buf, wf.DIR ++ "/{s}", .{ent.name});
+        var line: usize = 0;
+        try wf.load(path, m, &line);
+        var any = false;
+        for (m.foes[0..m.nfoes]) |f| {
+            if (f.kind == .fen_lurker) any = true;
+        }
+        if (!any) continue;
+        e.* = .{ .ground = undefined, .models = undefined };
+        e.heightField = m.height;
+        e.heightHalf = m.half;
+        e.heightAny = m.anyHeight();
+        e.uploadWater(m);
+        e.materialize(m);
+        for (m.foes[0..m.nfoes]) |f| {
+            if (f.kind != .fen_lurker) continue;
+            const d = e.wadeDepth(f.x, f.z);
+            if (d < fen.POOL_MIN or d > WADE_MAX) {
+                std.debug.print("{s}: fen lurker at {d:.2} {d:.2} stands in {d:.3} m of water\n", .{ ent.name, f.x, f.z, d });
+                return error.LurkerOutOfItsWater;
+            }
+            checked += 1;
+        }
+    }
+    try std.testing.expect(checked > 0);
+    std.debug.print("\n  fen lurkers submerged on the shipped maps: {d}\n", .{checked});
+}
+

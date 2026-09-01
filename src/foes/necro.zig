@@ -35,7 +35,6 @@ const FROST_COOL = elemfx.sig(.cold).cool;
 const RAISE_GLOW = rgba(236, 198, 104, 200);
 
 const DUST = foe.DUST;
-const CHIP = archermod.BONE_CHIP;
 /// He is the archer's own skeleton — same stature, same feet, same dissolve — so he chips at the archer's grade.
 const CHIP_SPRAY = archermod.boneChips(1.0);
 

@@ -893,9 +893,9 @@ takes `wx[0..wolf.N]` as its own array, so no bone it solves has moved.
   `(BOW+RECURVE)·cos f + sin f`, so `PETAL_WIDE` dialled UP past the peak makes the flower NARROWER. 95 puts
   the ring at 86..108 — straddling flat, so the throat faces OUT, which is what a flower spitting UP needs.
   `PETAL_SHUT` is NEGATIVE and solved from the same radial: a bud's petals converge PAST parallel.
-- **A SECOND TIER FOR NO BONES.** Each petal bone carries a short broad TONGUE as well as its quill, pitched
-  `INNER_TILT` further in by a rotation baked into the MESH. A constant tilt is an OFFSET, so `INNER_LEN` is
-  solved against `BLOOM_RIM` or the tongues come out the far side.
+- **THE BLADE IS ONE SURFACE, AND EVERY VANE ENDS ON THE ENVELOPE THE LENSES SEAL TO.** `VANES` a side lie on
+  the midrib's own bow and land on `bladeHalfW`; a vane that stops SHORT of the rim stands out past the
+  membrane as a loose strand, and that fringe is what made a mop of the corolla.
 - **THE STANCE IS RELATIVE TO THE STALK'S OWN REST LEAN, NOT ABSOLUTE** — STALK→BLOOM is already 26 deg off
   plumb, and an absolute angle folds the flower the WRONG WAY (the old furl at +74 laid it over the animal's
   head, 1.65 m in front of its own hip).

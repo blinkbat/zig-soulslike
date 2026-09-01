@@ -32,13 +32,13 @@ const TEXT_OFF = rgba(150, 142, 124, 230);
 const NAME = uiart.GILT;
 const VEIL: u8 = 132;
 
-const PORT_W: i32 = 176;
-const PORT_H: i32 = 200;
+pub const PORT_W: i32 = 176;
+pub const PORT_H: i32 = 200;
 const PORT_YAW = hud.PORTRAIT_YAW;
 const PORT_PITCH = hud.PORTRAIT_PITCH;
 const PORT_DIST = npcmod.PORTRAIT_DIST;
 const PORT_FOV = hud.PORTRAIT_FOV;
-const PORT_GAP: i32 = 16;
+pub const PORT_GAP: i32 = 16;
 const PROSE_MIN_W: i32 = 240;
 
 pub const Portrait = struct {
@@ -290,7 +290,7 @@ pub const Session = struct {
     }
 };
 
-fn drawPortrait(p: Portrait, dx: i32, dy: i32, dw: i32, dh: i32) void {
+pub fn drawPortrait(p: Portrait, dx: i32, dy: i32, dw: i32, dh: i32) void {
     const dst = rl.Rectangle{
         .x = @floatFromInt(dx),
         .y = @floatFromInt(dy),

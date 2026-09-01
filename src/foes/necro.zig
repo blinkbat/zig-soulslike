@@ -36,6 +36,8 @@ const RAISE_GLOW = rgba(236, 198, 104, 200);
 
 const DUST = foe.DUST;
 const CHIP = archermod.BONE_CHIP;
+/// He is the archer's own skeleton — same stature, same feet, same dissolve — so he chips at the archer's grade.
+const CHIP_SPRAY = archermod.boneChips(1.0);
 
 const N = heromod.N;
 const ROOT = heromod.ROOT;
@@ -1070,23 +1072,7 @@ pub const Necro = struct {
     }
 
     fn chips(self: *Necro, at: rl.Vector3, dir: rl.Vector3, n: u32, spd: f32) void {
-        const parts: u32 = @intCast(@max(0, foe.hitParts(@intCast(n))));
-        var i: u32 = 0;
-        while (i < parts) : (i += 1) {
-            const a = self.fxRng.angle();
-            const s = self.fxRng.range(0.4, 1.0) * spd;
-            foe.emitPart(&self.parts, &self.fxHead, .{
-                .p = v3(at.x + self.fxRng.signed() * 0.06, at.y + self.fxRng.signed() * 0.06, at.z + self.fxRng.signed() * 0.06),
-                .v = v3(dir.x * s + mathx.cosf(a) * s * 0.5, self.fxRng.range(0.9, 3.0), dir.z * s + mathx.sinf(a) * s * 0.5),
-                .life = self.fxRng.range(0.28, 0.55),
-                .r0 = self.fxRng.range(0.02, 0.05) * self.scale,
-                .r1 = 0.008,
-                .col = CHIP,
-                .grav = 6.4,
-                .stretch = 0.030,
-                .bounce = 0.42,
-            });
-        }
+        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, @intCast(n), spd, self.scale, CHIP_SPRAY);
     }
 
     /// The hem sweeping the ground rather than a boot striking it — barefoot bone under a metre of wet cloth, so the footfall is a DRAG. At or under the fight's floor (the audio law).

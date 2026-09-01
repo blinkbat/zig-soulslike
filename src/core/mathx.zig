@@ -134,9 +134,17 @@ pub fn lenV(a: rl.Vector3) f32 {
     return @sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
 }
 pub fn normV(a: rl.Vector3) rl.Vector3 {
+    return normVOr(a, v3(0, 0, 0));
+}
+/// A mesh normal may not come back zero — a degenerate face wants a sane axis, not a black one — so the
+/// caller says what nothing normalises to.
+pub fn normVOr(a: rl.Vector3, fallback: rl.Vector3) rl.Vector3 {
     const l = lenV(a);
-    if (l < 1e-6) return v3(0, 0, 0);
+    if (l < 1e-6) return fallback;
     return v3(a.x / l, a.y / l, a.z / l);
+}
+pub fn dotV(a: rl.Vector3, b: rl.Vector3) f32 {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 pub fn crossV(a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
     return v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
@@ -154,7 +162,7 @@ pub fn turnToward(from: rl.Vector3, want: rl.Vector3, maxRad: f32) rl.Vector3 {
     const b = normV(want);
     if (lenV(a) < 0.5) return b;
     if (lenV(b) < 0.5) return a;
-    const ang = std.math.acos(clampF(a.x * b.x + a.y * b.y + a.z * b.z, -1, 1));
+    const ang = std.math.acos(clampF(dotV(a, b), -1, 1));
     if (ang <= maxRad or ang < 1e-5) return b;
     const sn = @sin(ang);
     if (sn < 1e-3) {

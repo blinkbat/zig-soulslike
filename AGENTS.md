@@ -398,7 +398,7 @@ Two things in that table are load-bearing beyond navigation:
 
 ### The Bone Knight (`knight.zig`) — first boss
 
-Anor Londo Sentinel (docs/GIANT_KNIGHTS.md) on the ER knight brain (ELDEN_RING.md §7). 640 HP, five strokes
+Anor Londo Sentinel (docs/GIANT_KNIGHTS.md) on the ER knight brain (ELDEN_RING.md §7). 900 HP, five strokes
 plus swat / hop / leap / shove / charge / fall. Memorization and attrition, never dice.
 
 - **THE DOOR NEVER BREAKS; THE MAN BEHIND IT DOES.** No stamina pool on the door. A share of stance passes
@@ -457,8 +457,8 @@ plus swat / hop / leap / shove / charge / fall. Memorization and attrition, neve
   and the sword-side flick; the bash keeps the guard because the door IS the bash, and so does the shield-side
   flick. (The thrust used to keep it, and its point ran straight through the plank hanging on his centre line —
   owner: the sword is going through the shield.) **THE SWORD COMES HOME FIRST, THEN THE DOOR** (`RECOVER_HOLD_K`
-  0.34, `RECOVER_BACK_K` 0.70, `SWIPE_SHUT_K0` 0.76): the End Pose is held, the arm is back at the carry by 70%
-  of the recover, and the door shuts in the last quarter — shutting from 45% it met the sword still out in
+  0.22, `RECOVER_BACK_K` 0.40, `SWIPE_SHUT_K0` 0.44): the End Pose is held, the arm is back at the carry by 40%
+  of the recover, and the door shuts after it — shutting earlier it met the sword still out in
   front. **A test throws every sword stroke wind-to-recover and measures the blade's nearest approach to the
   door's face** (`bladeDoorGap`): 0.64–0.77 m now, against a 0.36 m clearance; it was 0.05–0.16. **THE
   MECHANIC AND THE PICTURE ARE ONE CHANNEL** — `guardUp` and where the door actually is, test-pinned together.
@@ -640,7 +640,7 @@ plus swat / hop / leap / shove / charge / fall. Memorization and attrition, neve
   forbids tuning a move's damage up without its tell following.
 - **THE MOVES THE BOARDS CANNOT ANSWER GET THE LONGEST TELLS.** Slam, charge and fall carry no parry window
   (`parryable`); their counter is DISTANCE, the sidestep and the roll. `FALL_WIND_DUR` is therefore bracketed
-  from BELOW by every one of his own winds rather than by `foe.TELL_MIN`, and the charge's `windDur` 0.62 is a
+  from BELOW by every one of his own winds rather than by `foe.TELL_MIN`, and the charge's `windDur` 0.42 is a
   floor. **A RUN CLEARS THE SLAM'S DISC FROM THE MARK AND A WALK DELIBERATELY DOES NOT.**
 - **A COMMITTED LINE IS COMMITTED AT THE LAUNCH.** The charge's wind aims (allowed 1.4× his turn) and the travel
   steers not at all, test-pinned frame by frame; `brakeDist` integrates to `speed × brakeDur / 2`. Leap, hop and
@@ -786,7 +786,7 @@ plus swat / hop / leap / shove / charge / fall. Memorization and attrition, neve
 
 ### The necromancer (`necro.zig`)
 
-Never touches you; priority target on any field. 78 HP, 12 poise, 320 souls.
+Never touches you; priority target on any field. 84 HP, 5 poise, 520 souls.
 
 - **THE CORPSE IS THE MECHANIC.** A skeleton is `DEATH_DUR + DISS_DUR` = 2.05 s from killing blow to last
   mote, which will not hold a raise with a readable tell inside it. So a body inside `RAISE_R` of a living
@@ -1455,7 +1455,7 @@ new one is a compile error until it has said what it costs and what it does.
 **BARE IS THE GAME EXACTLY AS IT WAS.** Every dial on an `item.Arm` defaults to 1 and the armour curve of 0
 armour is the blow itself. A new game is bare-handed (`STARTING_KIT` is the wolf scroll alone).
 
-- **ONE TABLE, ONE ROW PER THING** (`item.equip`) — nineteen pieces, and the numbers are all any of them is (a
+- **ONE TABLE, ONE ROW PER THING** (`item.equip`) — twenty-one pieces, and the numbers are all any of them is (a
   test counts the worn ones). Gear shelves as `Class.gear`, and the bag panel prints the row (`item.effect`),
   A CLAUSE PER DIAL rather than a sentence per combination — four dials on a `Plate` is sixteen sentences.
 - **A PLATE MAY MOVE HIM TOO** (`item.Plate.move`, the spidersilk moccasins' 1.06). Multiplied onto the tree's
@@ -1552,7 +1552,7 @@ armour is the blow itself. A new game is bare-handed (`STARTING_KIT` is the wolf
   is MEASURED off the mesh's constants (the ogre's `clubLowWorld` law).
 - **THE BOLT FLIES THROUGH THE ARROW POOL** (`archer.Shot.bolt`) — cover, gravity, ground, expiry and the swept
   `pierce` test are one body of code.
-- **ALL CHAOS, NO PHYSICAL** — `BOLT_HIT` 24 chaos, poise 14, stance 6. Chaos is the most-resisted column, so
+- **ALL CHAOS, NO PHYSICAL** — `BOLT_HIT` 25 chaos, poise 14, stance 6. Chaos is the most-resisted column, so
   the wand answers toads and kobolds and is near useless against skeletons. An honest trade.
 - **ONE VIOLET FOR THE WHOLE SPELL** — stone, gather, both bursts, streak and LIGHT.
 - **THE STONE IS THE ONLY LIGHT IN THE GAME THAT MOVES** (`hero.wandLight`). `env.uploadLights` takes it as a
@@ -1580,10 +1580,11 @@ armour is the blow itself. A new game is bare-handed (`STARTING_KIT` is the wolf
 These arrive on ONE body on the frame they are cast. There is no flight to intercept, and SIGHT stands in for
 one (`env.sees`).
 
-- **THE LADDER IS MONOTONE, AND THAT IS THE WHOLE PRICE LIST**: bolt 12→24, levin 16→16, roots 18→14, siphon
-  20→13, rime 22→10.2. Every step up in FP is a step DOWN in raw damage — what the difference buys is a
-  stagger, a hold, HP back, or a second body in the cone. A comptime block asserts it over every PAIR, so a
-  sixth spell is priced by the rule without editing it.
+- **THE LADDER IS MONOTONE, AND THAT IS THE WHOLE PRICE LIST**: bolt 8, levin 11, roots 12, siphon 13, lance
+  14, rime 15, sunder 16 FP (`combat.SPELLS`, which is the price list — the damages are the rows' own). Every
+  step up in FP is a step DOWN in raw damage — what the difference buys is a stagger, a hold, HP back, or a
+  second body in the cone. A comptime block asserts it over every PAIR, so an eighth spell is priced by the
+  rule without editing it.
 - **THE LEVIN BUYS THE STAGGER AND NOTHING ELSE.** Poise 34 — past every creature's `POISE_MAX` bar the
   knight's 78. Its STANCE stays under his own heavy swing's. First lightning anything but a thrown jar deals.
 - **IT DOES NOT TRAVEL BECAUSE THE ELEMENT DOES NOT** (`elemfx`'s lightning: shortest life by 3×, no gravity).

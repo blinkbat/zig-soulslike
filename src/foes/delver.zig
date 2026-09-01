@@ -828,24 +828,18 @@ pub const Delver = struct {
         }
     }
 
+    /// Flat `big` (`bigJit` null) is one draw fewer per mote, which is the stream this was written with.
+    const DIRT_PUFF = foe.Puff{
+        .blast = foe.Blast.of(foe.DUST_DRAG, 0.3, 0.6),
+        .spdLo = 0.4,
+        .upLo = 0.6,
+        .upHi = 2.0,
+        .rLo = 0.05,
+        .rHi = 0.10,
+        .bigJit = null,
+    };
     fn dirtBurst(self: *Delver, c: rl.Vector3, motes: i32, spd: f32, big: f32) void {
-        const B = comptime foe.Blast.of(foe.DUST_DRAG, 0.3, 0.6);
-        var i: i32 = 0;
-        while (i < motes) : (i += 1) {
-            const a = self.fxRng.angle();
-            const sp = self.fxRng.range(0.4, 1.0) * spd * B.boost;
-            foe.emitPart(&self.parts, &self.fxHead, .{
-                .p = c,
-                .v = v3(mathx.cosf(a) * sp, self.fxRng.range(0.6, 2.0) * B.boost, mathx.sinf(a) * sp),
-                .life = B.life(&self.fxRng),
-                .r0 = self.fxRng.range(0.05, 0.10),
-                .r1 = big,
-                .col = foe.DUST,
-                .col1 = foe.DUST_THIN,
-                .grav = foe.DUST_GRAV,
-                .drag = foe.DUST_DRAG,
-            });
-        }
+        foe.puff(&self.parts, &self.fxHead, &self.fxRng, c, motes, spd, big, self.scale, DIRT_PUFF);
     }
     fn burstDirt(self: *Delver) void {
         var i: i32 = 0;

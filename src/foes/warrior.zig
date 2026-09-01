@@ -1025,7 +1025,13 @@ pub const Warrior = struct {
             self.vit.refuseFlinch(poiseWas);
             s.reaction = .none;
         }
-        if (blocked) return self.caught(blade.hit, s);
+        if (blocked) {
+            if (s.reaction == .light) {
+                self.vit.refuseFlinch(poiseWas);
+                s.reaction = .none;
+            } else self.vit.poise = poiseWas;
+            return self.caught(blade.hit, s);
+        }
         const heavyBlow = foe.wounded(self, s, blade, .{ .light = 1.2, .heavy = 1.9 });
         self.chips(s.contact, s.dir, if (heavyBlow) 20 else 12, if (heavyBlow) 3.4 else 2.4);
         sfx.world(.bone_hurt, self.pos);

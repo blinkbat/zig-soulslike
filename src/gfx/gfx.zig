@@ -415,9 +415,7 @@ fn loadShadowmap(res: i32) rl.RenderTexture2D {
     };
 }
 
-fn dot3(a: rl.Vector3, b: rl.Vector3) f32 {
-    return a.x * b.x + a.y * b.y + a.z * b.z;
-}
+const dot3 = mathx.dotV;
 
 fn lightBasis() struct { fwd: rl.Vector3, right: rl.Vector3, up: rl.Vector3 } {
     const fwd = mathx.normV(mathx.scaleV(sun, -1));
@@ -1131,7 +1129,7 @@ fn axisFrame(a: rl.Vector3, b: rl.Vector3) AxisFrame {
     const axis = norm3(d);
     const seed = if (@abs(axis.y) < 0.99) v3(0, 1, 0) else v3(1, 0, 0);
     const u = norm3(cross(axis, seed));
-    return .{ .axis = axis, .u = u, .w = norm3(cross(axis, u)), .len = @sqrt(d.x * d.x + d.y * d.y + d.z * d.z) };
+    return .{ .axis = axis, .u = u, .w = norm3(cross(axis, u)), .len = mathx.lenV(d) };
 }
 fn onBlob(c: rl.Vector3, r: rl.Vector3, t: f32, ang: f32) rl.Vector3 {
     const st = mathx.sinf(t);
@@ -1181,9 +1179,7 @@ fn neg(a: rl.Vector3) rl.Vector3 {
     return v3(-a.x, -a.y, -a.z);
 }
 fn norm3(a: rl.Vector3) rl.Vector3 {
-    const l = @sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
-    if (l < 1e-6) return v3(0, 1, 0);
-    return v3(a.x / l, a.y / l, a.z / l);
+    return mathx.normVOr(a, v3(0, 1, 0));
 }
 const cross = mathx.crossV;
 

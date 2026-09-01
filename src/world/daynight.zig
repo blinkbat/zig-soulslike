@@ -246,8 +246,13 @@ const STORM_KEY: f32 = 0.34;
 const STORM_HAZE: f32 = 1.70;
 const STORM_AMB: f32 = 1.06;
 
+/// ITU-R BT.601, the same weights the shaders' own `luma` carries.
+fn luma(c: rl.Vector3) f32 {
+    return 0.299 * c.x + 0.587 * c.y + 0.114 * c.z;
+}
+
 fn slate(c: rl.Vector3) rl.Vector3 {
-    const l = 0.299 * c.x + 0.587 * c.y + 0.114 * c.z;
+    const l = luma(c);
     return v3(l * 0.86, l * 0.96, l * 1.14);
 }
 
@@ -284,7 +289,7 @@ pub fn overcast(p: Palette, wet: f32) Palette {
 
 /// **A FACTOR ON THE HOUR'S OWN VALUE, NEVER A CONSTANT** (`overcast`'s law): lerping toward an absolute peach DARKENED noon's horizon by 0.140 while lifting its zenith. `peach` is `slate` written warm — take the luminance the hour actually has and re-split it toward the red end.
 fn peach(c: rl.Vector3) rl.Vector3 {
-    const l = 0.299 * c.x + 0.587 * c.y + 0.114 * c.z;
+    const l = luma(c);
     return v3(l * 1.62, l * 0.90, l * 0.74);
 }
 
@@ -333,8 +338,7 @@ pub fn bloom(p: Palette, spore: f32) Palette {
 
 
 pub fn keyAmt(p: Palette) f32 {
-    const luma = 0.299 * p.key.x + 0.587 * p.key.y + 0.114 * p.key.z;
-    return mathx.clampF(luma / ANCHOR_KEY_LUMA, 0, 4);
+    return mathx.clampF(luma(p.key) / ANCHOR_KEY_LUMA, 0, 4);
 }
 const ANCHOR_KEY_LUMA: f32 = 1.13158; // luma(1.32, 1.10, 0.80)
 

@@ -74,7 +74,9 @@ pub const Row = struct {
     done: bool = false,
 };
 
-pub const MAX_ROWS: usize = 24;
+/// One row per `item.Kind` — the sell list is the BAG, and a bag can hold every kind at once, so a smaller
+/// buffer silently dropped the kinds past its cutoff. The panel scrolls; this is model capacity, not screen.
+pub const MAX_ROWS: usize = item.NK;
 
 /// **WHAT A SHOP SELLS.** Not a per-map stock list yet: the caravaneer carries what a body on the road carries,
 /// which is the consumables and the arrows, and nothing that would let a player skip a boss for it. A map that
@@ -114,10 +116,19 @@ pub const Counter = struct {
     /// **SELLING IS THE SAME SCREEN WITH THE LIST TURNED ROUND**, not a second modal: one key flips it, which is
     /// how every shop in the genre does it and how a player expects to find it.
     selling: bool = false,
-    /// What the last press did, for the panel to say out loud. Cleared by whoever draws it.
+    /// What the last press did, for the panel to say out loud. It stands until the next press or move clears it.
     said: Said = .none,
 
     pub const Said = enum { none, bought, sold, forged, no_coin, no_stones, maxed, nothing };
+
+    /// Which `Said`s are the counter saying NO — one list, because the panel's ink and the game's refusal
+    /// knock must never disagree about what a refusal is.
+    pub fn refused(s: Said) bool {
+        return switch (s) {
+            .no_coin, .no_stones, .maxed, .nothing => true,
+            .none, .bought, .sold, .forged => false,
+        };
+    }
 
     pub fn begin(self: *Counter, t: Trade) void {
         self.trade = t;
@@ -142,7 +153,11 @@ pub const Counter = struct {
                     for (0..item.NK) |ki| {
                         if (n >= MAX_ROWS) break;
                         const k: item.Kind = @enumFromInt(ki);
-                        if (bag.count(k) == 0 or item.sellPrice(k) == 0) continue;
+                        const held = bag.count(k);
+                        if (held == 0 or item.sellPrice(k) == 0) continue;
+                        // The worn copy is not on the shelf: sold, the socket would keep stats the bag
+                        // no longer owns. Spares sell fine.
+                        if (held == 1 and h.worn.wears(k)) continue;
                         out[n] = .{ .kind = k, .coin = item.sellPrice(k) };
                         n += 1;
                     }
@@ -346,6 +361,30 @@ test "THE SMITH EATS STONES AND COIN, ONE TIER AT A TIME, AND STOPS AT THE CAP" 
     std.debug.print("  ...which is about {d:.0} humanoid corpses at 12.9 coins a body\n", .{
         @as(f64, @floatFromInt(run.coin)) / 12.9,
     });
+}
+
+test "THE WORN COPY IS NOT ON THE SHELF — a spare sells, the last one stays his" {
+    var h = std.mem.zeroInit(heromod.Hero, .{});
+    var bag = item.Bag{};
+    var c = Counter{};
+    c.begin(.shop);
+    c.selling = true;
+    var buf: [MAX_ROWS]Row = undefined;
+
+    h.worn.put(.chest, .quilted_gambeson);
+    bag.add(.quilted_gambeson, 2);
+    var found: u32 = 0;
+    for (c.rows(&h, &bag, &buf)) |r| {
+        if (r.kind == .quilted_gambeson) found += 1;
+    }
+    try std.testing.expectEqual(@as(u32, 1), found);
+
+    _ = bag.take(.quilted_gambeson, 1);
+    found = 0;
+    for (c.rows(&h, &bag, &buf)) |r| {
+        if (r.kind == .quilted_gambeson) found += 1;
+    }
+    try std.testing.expectEqual(@as(u32, 0), found);
 }
 
 test "A TIER IS FLAT ON THE BASE, SO THE PERCENTAGES GET BETTER AS IT CLIMBS" {

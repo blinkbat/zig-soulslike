@@ -764,6 +764,9 @@ pub fn dosed(k: Kind) bool {
     };
 }
 
+/// Named so the test asserting a kind never falls through to it cannot drift when the wording changes.
+pub const NO_USE_LINE = "No use in the field.";
+
 /// **WHAT IT DOES, IN ONE LINE OF MECHANIC** — the answer to "which of these two flasks did I just put in the box", which the flavour prose (`describe`) deliberately does not give. Read off `use` wherever there is a `Use` to read, so a dose retuned there reads here.
 pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
     if (isFlask(k)) return switch (k) {
@@ -828,7 +831,7 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
         .bind => return "Worn: a death spills no souls. The ring breaks instead.",
     }
     return switch (use(k)) {
-        .none => "No effect yet.",
+        .none => NO_USE_LINE,
         .regen => |r| std.fmt.bufPrintZ(buf, "Heals {d:.0}% of max HP over {d:.0}s.", .{ r.frac * 100, r.secs }) catch "Heals over time.",
         .lob => |l| if (l.dose) |d| std.fmt.bufPrintZ(buf, "Thrown at the reticle: bursts for {d:.0} {s} on everything inside {d:.1}m. No damage.", .{
             d.amt,
@@ -981,7 +984,7 @@ test "EVERY KIND SAYS WHAT IT DOES, and a kind with a dose says it in NUMBERS" {
             try std.testing.expect(digit);
         }
         if (isFlask(k) or bindsSouls(k) or k == .spirit_scroll_wolf or k == .iron_key) {
-            try std.testing.expect(!std.mem.eql(u8, s, "No effect yet."));
+            try std.testing.expect(!std.mem.eql(u8, s, NO_USE_LINE));
         }
     }
 }

@@ -616,7 +616,9 @@ pub const Cmp = enum(u8) {
             .gt => ">",
         };
     }
-    pub fn holds(c: Cmp, a: i64, b: i64) bool {
+    /// One comparison for both the counters' `i64` and the clocks' `f32` — the arms are the type's, not the
+    /// comparison's, so a sixth `Cmp` cannot be answered in one place and forgotten in the other.
+    pub fn holdsOf(c: Cmp, comptime T: type, a: T, b: T) bool {
         return switch (c) {
             .lt => a < b,
             .le => a <= b,
@@ -625,14 +627,11 @@ pub const Cmp = enum(u8) {
             .gt => a > b,
         };
     }
+    pub fn holds(c: Cmp, a: i64, b: i64) bool {
+        return holdsOf(c, i64, a, b);
+    }
     pub fn holdsF(c: Cmp, a: f32, b: f32) bool {
-        return switch (c) {
-            .lt => a < b,
-            .le => a <= b,
-            .eq => a == b,
-            .ge => a >= b,
-            .gt => a > b,
-        };
+        return holdsOf(c, f32, a, b);
     }
 };
 
@@ -916,6 +915,8 @@ pub fn readTalk(m: *const Map, dlg: u16) ?Talk {
         const acts = m.dactRun(c.act0, c.nact);
         var does: Does = if (c.next == NO_NODE) .leave else if (c.next == d.node0) .again else return null;
         if (acts.len == 1) {
+            // `Does` has no shop-and-loop variant, so an act on a looping line is refused, not rewritten.
+            if (c.next != NO_NODE) return null;
             does = switch (acts[0].kind) {
                 .shop => .shop,
                 .smithy => .smithy,
@@ -927,6 +928,35 @@ pub fn readTalk(m: *const Map, dlg: u16) ?Talk {
         t.nrows += 1;
     }
     return t;
+}
+
+/// **ONE REBASE, TWO REBUILDERS.** `writeTalk` and `removeDialog` both rebuild the arena whole, and both have to
+/// carry every OTHER dialog across verbatim with its `next` shifted by however far its run moved. Written out
+/// twice the copies drifted — only one of them bounds-checked what it was filling.
+fn rebaseDialog(m: *Map, d: *Dialog, nodes: []Node, acts: []Act, nn: *u16, na: *u16) !void {
+    const shift = @as(i32, nn.*) - @as(i32, d.node0);
+    for (m.nodesOf(d)) |*src| {
+        if (nn.* >= MAX_NODES) return ParseError.TooManyNodes;
+        var nd = src.*;
+        nd.act0 = na.*;
+        for (m.dactRun(src.act0, src.nact)) |*a| {
+            if (na.* >= MAX_DACTS) return ParseError.TooManyActs;
+            acts[na.*] = a.*;
+            na.* += 1;
+        }
+        if (nd.next != NO_NODE) nd.next = @intCast(@as(i32, nd.next) + shift);
+        for (nd.choices[0..nd.nchoices], src.choices[0..src.nchoices]) |*c, *csrc| {
+            c.act0 = na.*;
+            for (m.dactRun(csrc.act0, csrc.nact)) |*a| {
+                if (na.* >= MAX_DACTS) return ParseError.TooManyActs;
+                acts[na.*] = a.*;
+                na.* += 1;
+            }
+            if (c.next != NO_NODE) c.next = @intCast(@as(i32, c.next) + shift);
+        }
+        nodes[nn.*] = nd;
+        nn.* += 1;
+    }
 }
 
 /// **THE ARENA IS REBUILT WHOLE, NOT PATCHED.** A dialog owns a CONTIGUOUS run of `nodes` and every node and
@@ -981,29 +1011,7 @@ pub fn writeTalk(m: *Map, dlg: u16, t: *const Talk) !void {
             nodes[nn] = nd;
             nn += 1;
         } else {
-            const shift = @as(i32, at) - @as(i32, d.node0);
-            for (m.nodesOf(d)) |*src| {
-                if (nn >= MAX_NODES) return ParseError.TooManyNodes;
-                var nd = src.*;
-                nd.act0 = na;
-                for (m.dactRun(src.act0, src.nact)) |*a| {
-                    if (na >= MAX_DACTS) return ParseError.TooManyActs;
-                    acts[na] = a.*;
-                    na += 1;
-                }
-                if (nd.next != NO_NODE) nd.next = @intCast(@as(i32, nd.next) + shift);
-                for (nd.choices[0..nd.nchoices], src.choices[0..src.nchoices]) |*c, *csrc| {
-                    c.act0 = na;
-                    for (m.dactRun(csrc.act0, csrc.nact)) |*a| {
-                        if (na >= MAX_DACTS) return ParseError.TooManyActs;
-                        acts[na] = a.*;
-                        na += 1;
-                    }
-                    if (c.next != NO_NODE) c.next = @intCast(@as(i32, c.next) + shift);
-                }
-                nodes[nn] = nd;
-                nn += 1;
-            }
+            try rebaseDialog(m, d, &nodes, &acts, &nn, &na);
         }
         d.node0 = at;
         d.nnodes = nn - at;
@@ -1159,26 +1167,8 @@ pub fn removeDialog(m: *Map, dlg: u16) bool {
     for (m.dialogs[0..m.ndialogs], 0..) |*d, di| {
         if (di == dlg) continue;
         const at = nn;
-        const shift = @as(i32, at) - @as(i32, d.node0);
-        for (m.nodesOf(d)) |*src| {
-            var nd = src.*;
-            nd.act0 = na;
-            for (m.dactRun(src.act0, src.nact)) |*a| {
-                acts[na] = a.*;
-                na += 1;
-            }
-            if (nd.next != NO_NODE) nd.next = @intCast(@as(i32, nd.next) + shift);
-            for (nd.choices[0..nd.nchoices], src.choices[0..src.nchoices]) |*c, *csrc| {
-                c.act0 = na;
-                for (m.dactRun(csrc.act0, csrc.nact)) |*a| {
-                    acts[na] = a.*;
-                    na += 1;
-                }
-                if (c.next != NO_NODE) c.next = @intCast(@as(i32, c.next) + shift);
-            }
-            nodes[nn] = nd;
-            nn += 1;
-        }
+        // Every dialog but one, out of a map that already fit: the rebase's caps cannot be reached from here.
+        rebaseDialog(m, d, &nodes, &acts, &nn, &na) catch unreachable;
         d.node0 = at;
         d.nnodes = nn - at;
     }
@@ -2571,6 +2561,7 @@ fn parseScript(m: *Map, rec: []const u8, rest: []const u8, it: *Toks, cur: *Curs
     if (std.mem.eql(u8, rec, "need")) {
         const nd = &m.nodes[cur.node orelse return ParseError.NoOwner];
         const ci = cur.choice orelse return ParseError.NoOwner;
+        if (nd.choices[ci].gate >= 0) return ParseError.ExtraField;
         if (m.ngates >= MAX_GATES) return ParseError.TooManyGates;
         m.gates[m.ngates] = try parseCond(m, it);
         nd.choices[ci].gate = @intCast(m.ngates);
@@ -2628,6 +2619,7 @@ fn parseCond(m: *Map, it: *Toks) !Cond {
             const r = try splitKV(it);
             if (!std.mem.eql(u8, r.key, "r")) return ParseError.UnknownKey;
             c.r = try finiteFloat(f32, r.val);
+            if (c.r < 0) return ParseError.BadNumber;
         },
         .talked => c.ref = try m.addText(it.next() orelse return ParseError.MissingField),
         .deaths, .alive => {

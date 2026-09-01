@@ -700,6 +700,11 @@ pub const Worn = struct {
     pub fn put(self: *Worn, w: item.Wear, k: ?item.Kind) void {
         self.in.set(w, k);
     }
+
+    pub fn wears(self: Worn, k: item.Kind) bool {
+        for (self.in.values) |v| if (v == k) return true;
+        return false;
+    }
 };
 
 /// Summed over every socket; `combat.armourTaken` is a diminishing curve, so a sum cannot reach immunity.
@@ -1606,6 +1611,7 @@ pub const Hero = struct {
     shotArrow: combat.ArrowKind = .plain,
     atkRow: item.Arm = item.bareArm(.hand_sword),
     atkBlade: Blade = .sword,
+    atkArm: Armament = .sword,
     shotRow: item.Arm = item.bareArm(.hand_bow),
     loosed: bool = false,
     shots: u32 = 0,
@@ -2207,11 +2213,17 @@ pub const Hero = struct {
         self.startXfade();
     }
 
-    pub fn updateShot(self: *Hero, dt: f32, faceYaw: ?f32) void {
+    /// **A PLANTED ACTION IS ONE PREAMBLE** — the shot, the parry, the cast and the bell all stand still and
+    /// only turn to face. Written out at each of them, a retune of the turn rate reached three of the four.
+    fn tickPlanted(self: *Hero, dt: f32, faceYaw: ?f32) void {
         self.tickClocks(dt);
         self.speed = 0;
         self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
         if (faceYaw) |ty| self.facing = mathx.approachAngle(self.facing, ty, TURN_TO_SHOT * dt);
+    }
+
+    pub fn updateShot(self: *Hero, dt: f32, faceYaw: ?f32) void {
+        self.tickPlanted(dt, faceYaw);
         const dur: f32 = self.shotDur(self.shotAimed);
         const at: f32 = self.shotAt();
         const was = self.shotT / dur;
@@ -2287,10 +2299,7 @@ pub const Hero = struct {
     }
 
     pub fn updateParry(self: *Hero, dt: f32, faceYaw: ?f32) void {
-        self.tickClocks(dt);
-        self.speed = 0;
-        self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
-        if (faceYaw) |ty| self.facing = mathx.approachAngle(self.facing, ty, TURN_TO_SHOT * dt);
+        self.tickPlanted(dt, faceYaw);
         self.parryT += dt;
         const punchT = PARRY_PUNCH_AT * PARRY_DUR;
         if (self.parryT >= punchT and self.parryT - dt < punchT) self.parryGlint();
@@ -2324,19 +2333,31 @@ pub const Hero = struct {
         return .{ .at = at, .n = mathx.normV(mathx.subV(out, at)) };
     }
 
-    fn parrySparks(self: *Hero) void {
+    /// Where a shield burst is thrown from and the frame it is thrown in — the parry, the block and the glint
+    /// all open on it, and the proud offset has to be the one number for all three.
+    fn sparkOrigin(self: *const Hero) struct { at: rl.Vector3, n: rl.Vector3, side: rl.Vector3, up: rl.Vector3 } {
         const f = self.shieldFaceWorld();
         const fr = burstFrame(f.n);
-        const side = fr.side;
-        const up = fr.up;
-        const at = mathx.addV(f.at, mathx.scaleV(f.n, SPARK_PROUD));
+        return .{
+            .at = mathx.addV(f.at, mathx.scaleV(f.n, SPARK_PROUD)),
+            .n = f.n,
+            .side = fr.side,
+            .up = fr.up,
+        };
+    }
+
+    fn parrySparks(self: *Hero) void {
+        const o = self.sparkOrigin();
+        const side = o.side;
+        const up = o.up;
+        const at = o.at;
         var rng = foemod.fxStream(@floatFromInt(self.parries), 733.0, 0x8B06);
         var i: u32 = 0;
         while (i < PARRY_SPARKS) : (i += 1) {
             const a = rng.angle();
             const fan = rng.range(0.35, 1.0) * PARRY_SPARK_FAN;
             const v = mathx.addV(
-                mathx.scaleV(f.n, rng.range(PARRY_SPARK_OUT_LO, PARRY_SPARK_OUT_HI)),
+                mathx.scaleV(o.n, rng.range(PARRY_SPARK_OUT_LO, PARRY_SPARK_OUT_HI)),
                 mathx.addV(mathx.scaleV(side, mathx.cosf(a) * fan), mathx.scaleV(up, mathx.sinf(a) * fan)),
             );
             foemod.emitPart(&self.fx, &self.fxHead, .{
@@ -2353,7 +2374,7 @@ pub const Hero = struct {
                 .add = true,
             });
         }
-        foemod.emitPart(&self.fx, &self.fxHead, .{ .p = at, .v = mathx.scaleV(f.n, 0.8), .life = PARRY_FLASH_LIFE, .r0 = PARRY_FLASH_R, .r1 = PARRY_FLASH_R * 0.25, .col = PARRY_SPARK_HOT, .add = true });
+        foemod.emitPart(&self.fx, &self.fxHead, .{ .p = at, .v = mathx.scaleV(o.n, 0.8), .life = PARRY_FLASH_LIFE, .r0 = PARRY_FLASH_R, .r1 = PARRY_FLASH_R * 0.25, .col = PARRY_SPARK_HOT, .add = true });
     }
 
     pub fn fogWake(self: *Hero, at: rl.Vector3, along: rl.Vector3, n: u32) void {
@@ -2383,9 +2404,8 @@ pub const Hero = struct {
     }
 
     pub fn blockSparks(self: *Hero, weight: f32) void {
-        const f = self.shieldFaceWorld();
-        const fr = burstFrame(f.n);
-        const at = mathx.addV(f.at, mathx.scaleV(f.n, SPARK_PROUD));
+        const o = self.sparkOrigin();
+        const at = o.at;
         const w = mathx.clampF(weight, 0, 1);
         const n: u32 = @intFromFloat(mathx.lerpF(BLOCK_GRIT_MIN, BLOCK_GRIT_MAX, w));
         var rng = foemod.fxStream(self.elapsed, 911.0, 0x8B08);
@@ -2394,8 +2414,8 @@ pub const Hero = struct {
             const a = rng.angle();
             const fan = rng.range(0.30, 1.0) * BLOCK_GRIT_FAN;
             const v = mathx.addV(
-                mathx.scaleV(f.n, rng.range(BLOCK_GRIT_OUT_LO, BLOCK_GRIT_OUT_HI)),
-                mathx.addV(mathx.scaleV(fr.side, mathx.cosf(a) * fan), mathx.scaleV(fr.up, mathx.sinf(a) * fan)),
+                mathx.scaleV(o.n, rng.range(BLOCK_GRIT_OUT_LO, BLOCK_GRIT_OUT_HI)),
+                mathx.addV(mathx.scaleV(o.side, mathx.cosf(a) * fan), mathx.scaleV(o.up, mathx.sinf(a) * fan)),
             );
             foemod.emitPart(&self.fx, &self.fxHead, .{
                 .p = at,
@@ -2415,8 +2435,8 @@ pub const Hero = struct {
             const a = rng.angle();
             const fan = rng.range(0.35, 1.0) * PARRY_SPARK_FAN * BLOCK_SPARK_FAN_K;
             const v = mathx.addV(
-                mathx.scaleV(f.n, rng.range(PARRY_SPARK_OUT_LO, PARRY_SPARK_OUT_HI)),
-                mathx.addV(mathx.scaleV(fr.side, mathx.cosf(a) * fan), mathx.scaleV(fr.up, mathx.sinf(a) * fan)),
+                mathx.scaleV(o.n, rng.range(PARRY_SPARK_OUT_LO, PARRY_SPARK_OUT_HI)),
+                mathx.addV(mathx.scaleV(o.side, mathx.cosf(a) * fan), mathx.scaleV(o.up, mathx.sinf(a) * fan)),
             );
             foemod.emitPart(&self.fx, &self.fxHead, .{
                 .p = at,
@@ -2434,7 +2454,7 @@ pub const Hero = struct {
         }
         foemod.emitPart(&self.fx, &self.fxHead, .{
             .p = at,
-            .v = mathx.scaleV(f.n, 0.25),
+            .v = mathx.scaleV(o.n, 0.25),
             .life = BLOCK_PUFF_LIFE,
             .r0 = BLOCK_PUFF_R * (0.6 + 0.4 * w),
             .r1 = BLOCK_PUFF_R * 1.6,
@@ -2446,11 +2466,10 @@ pub const Hero = struct {
 
     /// What separates a glint from a catch is COUNT and fan, never colour, or a whiff reads as half a hit.
     fn parryGlint(self: *Hero) void {
-        const f = self.shieldFaceWorld();
-        const fr = burstFrame(f.n);
-        const side = fr.side;
-        const up = fr.up;
-        const at = mathx.addV(f.at, mathx.scaleV(f.n, SPARK_PROUD));
+        const o = self.sparkOrigin();
+        const side = o.side;
+        const up = o.up;
+        const at = o.at;
         var rng = foemod.fxStream(@floatFromInt(self.parries), 419.0, 0x8B07);
         var i: u32 = 0;
         while (i < PARRY_GLINT) : (i += 1) {
@@ -2460,7 +2479,7 @@ pub const Hero = struct {
             const fan = rng.range(0.35, 1.0) * PARRY_GLINT_FAN;
             const v = mathx.addV(
                 mathx.addV(
-                    mathx.scaleV(f.n, rng.range(PARRY_SPARK_OUT_LO * 0.5, PARRY_SPARK_OUT_HI * 0.4)),
+                    mathx.scaleV(o.n, rng.range(PARRY_SPARK_OUT_LO * 0.5, PARRY_SPARK_OUT_HI * 0.4)),
                     mathx.scaleV(side, along * PARRY_GLINT_FAN * PARRY_GLINT_TRAIL),
                 ),
                 mathx.addV(mathx.scaleV(side, mathx.cosf(a) * fan * 0.4), mathx.scaleV(up, mathx.sinf(a) * fan)),
@@ -2478,7 +2497,7 @@ pub const Hero = struct {
                 .add = true,
             });
         }
-        foemod.emitPart(&self.fx, &self.fxHead, .{ .p = at, .v = mathx.scaleV(f.n, 0.9), .life = PARRY_FLASH_LIFE, .r0 = PARRY_GLINT_FLASH_R, .r1 = PARRY_GLINT_FLASH_R * 0.25, .col = PARRY_SPARK_HOT, .add = true });
+        foemod.emitPart(&self.fx, &self.fxHead, .{ .p = at, .v = mathx.scaleV(o.n, 0.9), .life = PARRY_FLASH_LIFE, .r0 = PARRY_GLINT_FLASH_R, .r1 = PARRY_GLINT_FLASH_R * 0.25, .col = PARRY_SPARK_HOT, .add = true });
     }
 
     pub fn armed(self: *const Hero) bool {
@@ -2541,10 +2560,7 @@ pub const Hero = struct {
     }
 
     pub fn updateCast(self: *Hero, dt: f32, faceYaw: ?f32) void {
-        self.tickClocks(dt);
-        self.speed = 0;
-        self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
-        if (faceYaw) |ty| self.facing = mathx.approachAngle(self.facing, ty, TURN_TO_SHOT * dt);
+        self.tickPlanted(dt, faceYaw);
         const was = self.castT / CAST_DUR;
         self.castT += dt * self.castRate();
         if (was < CAST_AT and self.castT / CAST_DUR >= CAST_AT) self.thrown = true;
@@ -2581,10 +2597,7 @@ pub const Hero = struct {
     }
 
     pub fn updateRing(self: *Hero, dt: f32, faceYaw: ?f32) void {
-        self.tickClocks(dt);
-        self.speed = 0;
-        self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
-        if (faceYaw) |ty| self.facing = mathx.approachAngle(self.facing, ty, TURN_TO_SHOT * dt);
+        self.tickPlanted(dt, faceYaw);
         const was = self.ringT / RING_DUR;
         self.ringT += dt;
         if (was < RING_AT and self.ringT / RING_DUR >= RING_AT) self.rang = true;
@@ -2722,6 +2735,7 @@ pub const Hero = struct {
         const held = self.meleeArm() orelse return;
         self.atkRow = self.armOf(wearFor(held) orelse .hand_sword);
         self.atkBlade = bladeOf(held) orelse .sword;
+        self.atkArm = held;
         const cost: f32 = @as(f32, if (kind == .heavy) combat.STAM_HEAVY else combat.STAM_LIGHT) * self.atkRow.stam;
         if (!self.stam.canAct()) {
             self.refuse();
@@ -3214,7 +3228,7 @@ pub const Hero = struct {
     }
 
     pub fn attackHit(self: *const Hero) combat.Hit {
-        const base = weigh(if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT, self.swingRow(), self.sheet, self.tierOf(self.arm)).scaled(self.perk.dmg * self.vit.dmgMult());
+        const base = weigh(if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT, self.swingRow(), self.sheet, self.tierOf(self.swingArm())).scaled(self.perk.dmg * self.vit.dmgMult());
         if (!self.grease.on() and !self.coat.on()) return base;
         var out = base;
         if (self.grease.on()) out.elem.v[@intFromEnum(self.greaseElem)] += base.dmg * self.grease.value(0);
@@ -3280,6 +3294,12 @@ pub const Hero = struct {
 
     fn swingRow(self: *const Hero) item.Arm {
         return if (self.attacking) self.atkRow else self.armOf(swingSocket(self.arm, self.off));
+    }
+
+    /// The armament the stroke is priced on — the OFF hand's when that is what swings, never bare `self.arm`:
+    /// a +10 club in the left fist under a torch swung at tier 0, and a parked bow lent its tier to a dagger.
+    fn swingArm(self: *const Hero) Armament {
+        return if (self.attacking) self.atkArm else meleeArmOf(self.arm, self.off) orelse self.arm;
     }
 
     /// LATCHED for the stroke in flight: a club taken up mid-swing may not lend its reach to the sword that started it.

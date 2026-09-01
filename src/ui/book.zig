@@ -442,7 +442,7 @@ fn slotHas(s: SlotId, v: View) bool {
 
 const EMPTY = "-";
 
-fn armName(a: heromod.Armament) [:0]const u8 {
+pub fn armName(a: heromod.Armament) [:0]const u8 {
     return switch (a) {
         .sword => "Straight Sword",
         .dagger => "Dagger",

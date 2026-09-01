@@ -886,6 +886,11 @@ pub const Sac = struct {
         foe.drawParticles(&self.parts);
     }
 
+    /// A burst sac wears the wreck. Present so the sacs go out through `foe.drawGroup` like every other body.
+    pub fn draw(self: *const Sac, model: *const Model) void {
+        rl.drawMesh(if (self.killed or self.hatched) model.wreck else model.sac, model.mat, self.xform());
+    }
+
     pub fn xform(self: *const Sac) rl.Matrix {
         const k = self.swell();
         if (self.killed or self.hatched) {
@@ -1825,21 +1830,7 @@ pub const Brood = struct {
         for (&self.pools) |*p| {
             if (p.live) rl.drawMesh(self.model.pool, self.model.mat, p.xform());
         }
-        var lit: f32 = -1;
-        for (self.liveSacsConst()) |*s| {
-            if (!s.alive()) continue;
-            if (scene) |sc| {
-                const want = foe.FLASH_GAIN * s.flashFrac();
-                if (want != lit) {
-                    sc.setFlash(want);
-                    lit = want;
-                }
-            }
-            rl.drawMesh(if (s.killed or s.hatched) self.model.wreck else self.model.sac, self.model.mat, s.xform());
-        }
-        if (scene) |sc| {
-            if (lit > 0) sc.setFlash(0);
-        }
+        foe.drawGroup(self.liveSacsConst(), &self.model, scene);
         foe.drawGroup(self.liveConst(), &self.model, scene);
     }
     pub fn drawFx(self: *const Brood) void {

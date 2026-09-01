@@ -283,6 +283,8 @@ pub const Game = struct {
     /// assigned in `init` and in `beginGame`, because `Game` comes off `alloc.create`.
     counter: countermod.Counter = .{},
     counterT: f32 = 0,
+    /// Whose counter it is — the folk index the panel's portrait photographs. Captured when the counter opens.
+    counterNpc: ?usize = null,
     /// The deck he stood on LAST frame, or null. Walking off one is a fall and needs to know there was a floor.
     heroDeck: ?f32 = null,
     /// His `pos.y` last frame, and nothing else reads it: `syncLensLift` is the one customer.
@@ -413,6 +415,7 @@ pub const Game = struct {
         leavePlace(g);
         g.counter = .{};
         g.counterT = 0;
+        g.counterNpc = null;
         g.lensGroundY = 0;
         g.spiritK = 0;
         g.spiritHp = 0;
@@ -486,7 +489,9 @@ const BOOT_DRIFT_R: f32 = 26.0;
 const BOOT_DRIFT_RATE: f32 = 0.036;
 const BOOT_LOOK_UP: f32 = 6.0;
 
-const BOOT_YAW_MID: f32 = 53.0; // degrees — the sun's own over-the-shoulder bearing
+/// Degrees — the sun's own over-the-shoulder bearing. The SAME angle the shot harness frames "lit" on, and
+/// public so `shots.LIT_YAW` can assert the two have not drifted apart under a retune of the sun's path.
+pub const BOOT_YAW_MID: f32 = 53.0;
 const BOOT_YAW_SWEEP: f32 = 38.0;
 const BOOT_YAW_T: f32 = 41.0;
 /// 0.44 rad is about 25 degrees under the horizon, which keeps the horizon and its sky in the upper third.
@@ -536,6 +541,7 @@ fn beginGame(g: *Game) void {
     leavePlace(g);
     g.counter = .{};
     g.counterT = 0;
+    g.counterNpc = null;
     g.bag = .{};
     g.award = .{};
     for (STARTING_KIT) |k| {
@@ -2420,6 +2426,8 @@ pub fn skeinLeadForShot(g: *const Game) rl.Vector3 {
 pub fn openCounterForShot(g: *Game, t: countermod.Trade) void {
     g.counter.begin(t);
     g.counterT = counterui.RAISE;
+    g.folk.update(SHOT_STEP, g.hero.pos, PLAY_HALF);
+    g.counterNpc = g.talk.npc orelse g.folk.near orelse (if (g.folk.n > 0) @as(?usize, 0) else null);
 }
 
 pub fn counterSellForShot(g: *Game) void {
@@ -2467,6 +2475,25 @@ fn talkPortrait(g: *Game) ?dialogmod.Portrait {
         .ctx = @ptrCast(g),
         .drawFn = drawTalkingNpc,
     };
+}
+
+/// The counter's own portrait — the same picture the dialog takes, of the folk index captured when it opened.
+pub fn counterPortrait(g: *Game) ?dialogmod.Portrait {
+    const i = g.counterNpc orelse return null;
+    const p = g.folk.at(i) orelse return null;
+    return .{
+        .scene = &g.scene,
+        .face = p.facePoint(),
+        .facing = p.facing,
+        .ctx = @ptrCast(g),
+        .drawFn = drawCounterNpc,
+    };
+}
+
+fn drawCounterNpc(ctx: *const anyopaque) void {
+    const g: *const Game = @ptrCast(@alignCast(ctx));
+    const i = g.counterNpc orelse return;
+    g.folk.drawOne(i);
 }
 fn spiritPortrait(g: *Game) ?hud_.LivePortrait {
     const w = g.pack.firstConst() orelse return null;
@@ -3310,6 +3337,8 @@ fn openCounter(g: *Game, k: worldfmt.ActKind) void {
     if (g.hero.dead or g.gateWalk != null or g.climb != null) return;
     g.counter.begin(trade);
     g.counterT = 0;
+    // The body behind the counter: whoever the dialog that opened it was with, else whoever is at hand.
+    g.counterNpc = g.talk.npc orelse g.folk.near;
     g.hero.held = true;
     sfx.play(.flask_cycle);
 }
@@ -3320,19 +3349,41 @@ fn tickCounter(g: *Game, dt: f32) void {
     g.counterT += dt;
     var rowBuf: [countermod.MAX_ROWS]countermod.Row = undefined;
     const len = g.counter.rows(&g.hero, &g.bag, &rowBuf).len;
-    if (navPressed(.up)) g.counter.move(-1, len);
-    if (navPressed(.down)) g.counter.move(1, len);
-    if (confirmPressed()) g.counter.take(&g.hero, &g.bag);
+    if (navPressed(.up)) {
+        g.counter.move(-1, len);
+        if (len > 1) sfx.play(.menu_move);
+    }
+    if (navPressed(.down)) {
+        g.counter.move(1, len);
+        if (len > 1) sfx.play(.menu_move);
+    }
+    if (confirmPressed()) {
+        g.counter.take(&g.hero, &g.bag);
+        // **EVERY PRESS ANSWERS IN SOUND AS WELL AS INK** — the smith's own anvil for a forge, the menu's
+        // refusal knock for a refusal, so the said-line is never the only witness.
+        if (countermod.Counter.refused(g.counter.said)) {
+            sfx.play(.refused);
+        } else switch (g.counter.said) {
+            .bought, .sold => sfx.play(.item_get),
+            .forged => sfx.play(.smith_ring),
+            else => {},
+        }
+    }
     // The QUICK button flips a shop between its two lists; a smithy has only the one.
     if (g.counter.trade == .shop and (rl.isKeyPressed(.q) or padPressed(hud_.padOf(hud_.BTN_QUICK)))) {
         g.counter.selling = !g.counter.selling;
         g.counter.sel = 0;
         g.counter.said = .none;
+        sfx.play(.menu_pick);
     }
     if (rl.isKeyPressed(.escape) or padPressed(hud_.padOf(hud_.BTN_BACK))) {
         g.counter.close();
         g.hero.held = false;
+        sfx.play(.menu_back);
     }
+    // The purse on the panel is `gold.display()`, and only `tick` rolls `shown` up — held world or not,
+    // a sale has to count up on the screen it happened on.
+    g.hero.gold.tick(dt);
     g.hero.pose();
     g.rig.tickShake(dt);
     g.rumble.update(dt, false);
@@ -5130,7 +5181,7 @@ pub fn run(mode: Mode) void {
             sfx.ambience(rawDt);
             sfx.tickStreams();
             drawScene(g);
-            counterui.draw(&g.counter, &g.hero, &g.bag, g.counterT);
+            counterui.draw(&g.counter, &g.hero, &g.bag, g.counterT, counterPortrait(g));
             rl.endDrawing();
             continue;
         }
@@ -5250,7 +5301,9 @@ pub fn run(mode: Mode) void {
         const useReq = rl.isKeyPressed(INTERACT_KEY) or padPressed(INTERACT_PAD);
         // **NOT FROM A RUNG.** Every other reach is measured in XZ, so eight metres up a ladder he was still
         // beside the bonfire he had climbed away from and could sit down at it.
-        if (useReq and !g.hero.dead and g.climb == null) interact(g);
+        // **NOR MID-CROSSING** — a rest or talk taken inside a fog-gate walk suspends the lerp, and its end
+        // snaps him back onto the pre-rest line. The counter's own door already refuses the same way.
+        if (useReq and !g.hero.dead and g.climb == null and g.gateWalk == null) interact(g);
 
         var rollReq = rl.isKeyPressed(.space);
         const bDown = padDown(hud_.padOf(hud_.BTN_BACK));

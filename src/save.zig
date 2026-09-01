@@ -388,7 +388,7 @@ pub fn scatter(d: *const Data, s: Slot) void {
     h.quick.slots = d.quick;
     h.quick.sel = @min(d.quickSel, combat.QUICK_SLOTS - 1);
 
-    s.bag.counts = d.bag;
+    for (&s.bag.counts, d.bag) |*c, v| c.* = @min(v, item.CAP);
     s.tree.taken = d.tree;
     h.applyPerks(s.tree.bonus());
     inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
@@ -545,8 +545,10 @@ pub fn parse(text: []const u8, d: *Data) !void {
             d.arm = try tagged(heromod.Armament, &it);
             d.off = try tagged(heromod.Armament, &it);
             d.spell = try tagged(combat.Spell, &it);
-            d.armAlt = tagged(heromod.Armament, &it) catch d.armAlt;
-            d.offAlt = tagged(heromod.Armament, &it) catch d.offAlt;
+            // SHORT IS FINE, GARBAGE IS NOT: a file from before the alt rack simply ends here, but a token
+            // that is present and unknown is corruption and refuses the slot like every other field.
+            if (it.next()) |tok| d.armAlt = std.meta.stringToEnum(heromod.Armament, tok) orelse return Error.BadField;
+            if (it.next()) |tok| d.offAlt = std.meta.stringToEnum(heromod.Armament, tok) orelse return Error.BadField;
         } else if (std.mem.eql(u8, key, "ready:")) {
             d.arrow = try tagged(combat.ArrowKind, &it);
             d.flask = try tagged(combat.FlaskKind, &it);

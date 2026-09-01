@@ -169,6 +169,11 @@ fn offTo(g: *Game, want: heromod.Armament) void {
 }
 
 pub const LIT_YAW: f32 = 53.0;
+comptime {
+    // The boot camera stands on the same sun at the same anchor hour. Two literals for one bearing, so the
+    // one that is not retuned fails the build rather than lighting the boot screen off the old path.
+    if (LIT_YAW != game.BOOT_YAW_MID) @compileError("shots: LIT_YAW and game.BOOT_YAW_MID are one bearing");
+}
 /// DERIVED (`camera.backDir` at pitch 0). Hand-rounded it was already 0.45° out, so moving `LIT_YAW` left every "lit" framing in the file pointing the old way.
 pub const LIT_BACK = v3(-mathx.sinf(mathx.radians(LIT_YAW)), 0, -mathx.cosf(mathx.radians(LIT_YAW)));
 
@@ -3306,7 +3311,7 @@ fn counterSnap(g: *Game, t: countermod.Trade, selling: bool, name: [:0]const u8)
     game.openCounterForShot(g, t);
     if (selling) game.counterSellForShot(g);
     drawScene(g);
-    counterui.draw(&g.counter, &g.hero, &g.bag, counterui.RAISE);
+    counterui.draw(&g.counter, &g.hero, &g.bag, counterui.RAISE, game.counterPortrait(g));
     snap(name);
 }
 

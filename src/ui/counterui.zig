@@ -7,22 +7,35 @@ const itemart = @import("itemart.zig");
 const item = @import("../play/item.zig");
 const heromod = @import("../play/hero.zig");
 const counter = @import("../play/counter.zig");
+const dialogmod = @import("../world/dialog.zig");
+const book = @import("book.zig");
 
 const rgba = mathx.rgba;
+const fi = uiart.fi;
 
 // **THE COUNTER'S PANEL, AND NOTHING ELSE.** Every number on it comes off `play/counter.zig`, which is where the
 // arithmetic and the tests live; this file decides only where things sit. Two screens share it because a shop
 // and a smithy are one interaction (`counter.Trade`).
 //
 // **IT IS THE DIALOG PANEL'S SHAPE, NOT THE BOOK'S.** A counter opens in the WORLD off a trigger, so it is a
-// panel over a running frame like `world/dialog.zig` — not a page of the pause book. That is why it draws its
-// own purse line: the HUD is hidden behind it.
+// panel over a running frame like `world/dialog.zig` — same plate, same divider, same live portrait of the body
+// behind the counter. That is why it draws its own purse line: the HUD is hidden behind it.
 
 const PAD: i32 = 18;
-const ROW_H: i32 = 26;
-const HEAD_H: i32 = 64;
-const FOOT_H: i32 = 30;
-const W: i32 = 560;
+const ROW_H: i32 = 34;
+const HEAD_H: i32 = 58;
+const FOOT_H: i32 = 36;
+const W: i32 = 700;
+// The portrait is the DIALOG's, at the dialog's own size — retune it there and both panels move together.
+const PORT_W = dialogmod.PORT_W;
+const PORT_H = dialogmod.PORT_H;
+const PORT_GAP = dialogmod.PORT_GAP;
+const CARD_H: i32 = 104;
+/// The list is a WINDOW, not the whole bag — a sell list can run past the plate, and a plate sized to it
+/// would walk off the screen. The rail says there is more.
+const VIS_ROWS: usize = 9;
+const ROW_ART: f32 = 20;
+const CARD_ART: f32 = 46;
 
 const PANEL_A: u8 = 232;
 const NAME = rgba(226, 214, 188, 255);
@@ -40,6 +53,9 @@ fn title(t: counter.Trade, selling: bool) [:0]const u8 {
     };
 }
 
+/// He says it after a refused press AND on the card of a finished row, so it is spelled once.
+const MASTERED_LINE = "There is nothing more I can do to it.";
+
 /// The one line the panel says back after a press. **EVERY REFUSAL SAYS WHY** — a button that does nothing and
 /// explains nothing is one the player decides is broken.
 fn saidLine(s: counter.Counter.Said, t: counter.Trade) [:0]const u8 {
@@ -50,27 +66,69 @@ fn saidLine(s: counter.Counter.Said, t: counter.Trade) [:0]const u8 {
         .forged => "Held in the fire, and folded.",
         .no_coin => "Not enough gold.",
         .no_stones => "I need smithing stone for that.",
-        .maxed => "There is nothing more I can do to it.",
+        .maxed => MASTERED_LINE,
         .nothing => if (t == .shop) "You have nothing I want." else "Nothing to work on.",
     };
 }
 
-/// **WHAT A ROW IS CALLED.** A shop row is an item; a smithy row is a hand and the tier it is on, which is the
-/// number the player is actually buying.
-fn rowLabel(buf: []u8, r: counter.Row, h: *const heromod.Hero) [:0]const u8 {
-    if (r.kind) |k| return std.fmt.bufPrintZ(buf, "{s}", .{item.displayName(k)}) catch "?";
-    const a = r.arm orelse return "?";
+/// What one more tier is worth on THIS hand, through the real `weigh` — the delta is the tier's flat share
+/// times the row's own multipliers, so it holds for the bow as much as the blades.
+fn tierGain(a: heromod.Armament, h: *const heromod.Hero) f32 {
+    const w = heromod.wearFor(a) orelse return 0;
+    const row = heromod.armRow(h.worn, w);
     const t = h.tierOf(a);
-    if (r.done) return std.fmt.bufPrintZ(buf, "{s}  +{d}  (finished)", .{ @tagName(a), t }) catch "?";
-    return std.fmt.bufPrintZ(buf, "{s}  +{d} -> +{d}", .{ @tagName(a), t, t + 1 }) catch "?";
+    const now = heromod.weigh(heromod.ATK_LIGHT_HIT, row, h.sheet, t).dmg;
+    const next = heromod.weigh(heromod.ATK_LIGHT_HIT, row, h.sheet, t + 1).dmg;
+    return next - now;
 }
 
-pub fn draw(c: *const counter.Counter, h: *const heromod.Hero, bag: *const item.Bag, t: f32) void {
+/// The tier ladder as PIPS — ten small diamonds, lit to the tier. A number says where you are; the row of
+/// lamps says how far the road goes, at a glance and without arithmetic.
+fn tierPips(x: i32, cy: i32, tier: u8, r: f32) void {
+    var p: u8 = 0;
+    while (p < heromod.TIER_MAX) : (p += 1) {
+        const px = fi(x) + fi(p) * (r * 2.0 + 2.6);
+        if (p < tier) {
+            uiart.diamond(px, fi(cy), r, mathx.withAlpha(uiart.GILT, 235));
+        } else {
+            uiart.diamond(px, fi(cy), r * 0.72, mathx.withAlpha(uiart.GILT_DIM, 96));
+        }
+    }
+}
+
+fn pipsW(r: f32) i32 {
+    return @intFromFloat(fi(heromod.TIER_MAX) * (r * 2.0 + 2.6));
+}
+
+/// Both currencies read as THINGS — a struck disc, or the stone's own picture — so a price is one block with
+/// two marks rather than two blocks. In one call so the row and the header cannot draw the pair two ways.
+const Mark = enum { coin, stone };
+
+fn priceBlock(right: i32, cy: i32, n: u32, col: rl.Color, mark: Mark) i32 {
+    var b: [24]u8 = undefined;
+    const s = std.fmt.bufPrintZ(&b, "{d}", .{n}) catch "0";
+    const tw = hud.textW(s, hud.BODY);
+    hud.text(s, right - tw, cy, hud.BODY, col);
+    switch (mark) {
+        .coin => uiart.coinMark(fi(right - tw - 13), fi(cy + 11), uiart.MARK_R * 0.92, col.a),
+        .stone => itemart.draw(counter.STONE, fi(right - tw - 13), fi(cy + 11), 17),
+    }
+    return right - tw - 26;
+}
+
+pub fn draw(c: *const counter.Counter, h: *const heromod.Hero, bag: *const item.Bag, t: f32, port: ?dialogmod.Portrait) void {
     if (!c.open) return;
     var buf: [counter.MAX_ROWS]counter.Row = undefined;
     const list = c.rows(h, bag, &buf);
-    const rows: i32 = @intCast(@max(list.len, 1));
-    const height = HEAD_H + rows * ROW_H + FOOT_H;
+    const len = list.len;
+    const sel = if (len == 0) 0 else @min(c.sel, len - 1);
+    const vis = @min(len, VIS_ROWS);
+    const shown: i32 = @intCast(@max(vis, 3));
+
+    const hasPort = port != null;
+    var listH = shown * ROW_H + 10;
+    if (hasPort) listH = @max(listH, PORT_H + 10);
+    const height = HEAD_H + listH + CARD_H + FOOT_H + 8;
 
     const sw = rl.getScreenWidth();
     const sh = rl.getScreenHeight();
@@ -81,72 +139,95 @@ pub fn draw(c: *const counter.Counter, h: *const heromod.Hero, bag: *const item.
     rl.drawRectangle(0, 0, sw, sh, rgba(0, 0, 0, uiart.flick(96, 0)));
     uiart.plate(x, y, W, height, PANEL_A);
     uiart.frame(x, y, W, height, 220);
-    hud.text(title(c.trade, c.selling), x + PAD, y + 14, hud.BODY, NAME);
 
-    // **THE PURSE IS ON THE PANEL**, because the HUD's own plates are behind it and a shop you cannot read your
-    // gold on is a shop you have to close to make a decision.
-    var pb: [48]u8 = undefined;
-    const purse = std.fmt.bufPrintZ(&pb, "{d}", .{h.gold.display()}) catch "0";
-    uiart.coinMark(uiart.fi(x + W - PAD - 86), uiart.fi(y + 22), uiart.MARK_R, 240);
-    hud.text(purse, x + W - PAD - hud.textW(purse, hud.BODY), y + 14, hud.BODY, COIN_OK);
-    if (c.trade == .smithy) {
-        var sb: [48]u8 = undefined;
-        const st = std.fmt.bufPrintZ(&sb, "stone x{d}", .{bag.count(counter.STONE)}) catch "";
-        hud.mono(st, x + PAD, y + 40, hud.MONO, uiart.GILT_DIM);
-    }
+    // ── THE HEADER: his line engraved, and both purses where the eye checks them ────────────────────────────
+    hud.engraved(title(c.trade, c.selling), x + PAD, y + 13, hud.BODY, NAME);
+    const right = priceBlock(x + W - PAD, y + 13, h.gold.display(), COIN_OK, .coin);
+    if (c.trade == .smithy) _ = priceBlock(right - 14, y + 13, bag.count(counter.STONE), mathx.withAlpha(NAME, 235), .stone);
+    uiart.divider(x + @divTrunc(W, 2), y + HEAD_H - 8, @divTrunc(W - PAD * 2, 2), 220);
 
-    // **AN EMPTY LIST SAYS SO.** Only the SELL side can be empty (`STOCK` and `FORGEABLE` never are), and an
-    // empty plate with a button strip under it reads as a screen that failed to load rather than as a bag with
-    // nothing in it worth coin.
-    if (list.len == 0) {
+    // ── THE PORTRAIT AND THE LIST, THE DIALOG'S TWO COLUMNS ─────────────────────────────────────────────────
+    const ly = y + HEAD_H + 4;
+    const lx = if (hasPort) x + PAD + PORT_W + PORT_GAP else x + PAD;
+    const lw = x + W - PAD - lx;
+    if (hasPort) dialogmod.drawPortrait(port.?, x + PAD, ly, PORT_W, @min(PORT_H, listH - 8));
+
+    if (len == 0) {
         hud.text(
             if (c.selling) "Nothing in your bag is worth coin to me." else "Nothing on the shelf today.",
-            x + PAD + 8,
-            y + HEAD_H,
+            lx + 8,
+            ly + 10,
             hud.BODY,
             NAME_OFF,
         );
     }
 
-    var i: usize = 0;
-    while (i < list.len) : (i += 1) {
+    // The window keeps the cursor in the middle third, so walking a long sell list scrolls it.
+    const first = if (len <= VIS_ROWS) 0 else @min(sel -| VIS_ROWS / 2, len - VIS_ROWS);
+    var i: usize = first;
+    while (i < first + vis) : (i += 1) {
         const r = list[i];
-        const ry = y + HEAD_H + @as(i32, @intCast(i)) * ROW_H;
-        const on = i == @min(c.sel, list.len - 1);
-        if (on) uiart.rowHilite(x + PAD - 6, ry - 3, W - 2 * PAD + 12, ROW_H - 2);
-        uiart.caret(x + PAD - 12, ry, ROW_H - 6, if (on) 235 else 0);
+        const ry = ly + @as(i32, @intCast(i - first)) * ROW_H;
+        const on = i == sel;
+        if (on) uiart.rowHilite(lx - 8, ry - 2, lw + 10, ROW_H - 4);
+        const rx = lx + (if (on) @as(i32, 6) else 0);
+        const cyMid = ry + @divTrunc(ROW_H, 2) - 2;
 
-        var lb: [64]u8 = undefined;
-        hud.text(rowLabel(&lb, r, h), x + PAD + 8, ry, hud.BODY, if (r.done) NAME_OFF else NAME);
-
-        if (!r.done) {
-            var cb: [48]u8 = undefined;
-            const cost = if (r.stones > 0)
-                std.fmt.bufPrintZ(&cb, "{d} stone   {d}", .{ r.stones, r.coin }) catch ""
-            else
-                std.fmt.bufPrintZ(&cb, "{d}", .{r.coin}) catch "";
-            const afford = h.gold.total >= r.coin and (r.stones == 0 or bag.count(counter.STONE) >= r.stones);
-            // Selling shows what he is PAID, which is never unaffordable.
-            const col = if (c.selling or afford) COIN_OK else COIN_NO;
-            hud.text(cost, x + W - PAD - hud.textW(cost, hud.BODY), ry, hud.BODY, col);
-        }
-        // How many he already holds, for the shop only — a shelf without it is one you buy a fourth of.
         if (r.kind) |k| {
+            itemart.draw(k, fi(rx + 12), fi(cyMid), ROW_ART);
+            const nm = item.displayName(k);
+            hud.text(nm, rx + 30, ry + 4, hud.BODY, if (r.done) NAME_OFF else NAME);
             const n = bag.count(k);
             if (n > 0) {
                 var nb: [24]u8 = undefined;
                 const have = std.fmt.bufPrintZ(&nb, "x{d}", .{n}) catch "";
-                hud.mono(have, x + W - PAD - 120, ry + 4, hud.MONO, uiart.GILT_DIM);
+                hud.mono(have, rx + 34 + hud.textW(nm, hud.BODY), ry + 8, hud.MONO, uiart.GILT_DIM);
+            }
+        } else if (r.arm) |a| {
+            itemart.heldArt(book.armPic(a), heromod.heldGear(a, h.worn), fi(rx + 12), fi(cyMid), ROW_ART);
+            const nm = book.armName(a);
+            hud.text(nm, rx + 30, ry + 4, hud.BODY, if (r.done) NAME_OFF else NAME);
+            tierPips(rx + 38 + hud.textW(nm, hud.BODY), cyMid, h.tierOf(a), 2.6);
+        }
+
+        if (r.done) {
+            hud.text("mastered", x + W - PAD - hud.textW("mastered", hud.HINT), ry + 6, hud.HINT, NAME_OFF);
+        } else {
+            const affordCoin = c.selling or h.gold.total >= r.coin;
+            const cright = priceBlock(x + W - PAD, ry + 4, r.coin, if (affordCoin) COIN_OK else COIN_NO, .coin);
+            if (r.stones > 0) {
+                const hasStones = bag.count(counter.STONE) >= r.stones;
+                _ = priceBlock(cright - 10, ry + 4, r.stones, if (hasStones) mathx.withAlpha(NAME, 225) else COIN_NO, .stone);
             }
         }
     }
+    if (len > VIS_ROWS) {
+        uiart.rail(
+            x + W - 11,
+            ly,
+            @as(i32, @intCast(vis)) * ROW_H,
+            fi(@intCast(vis)) / fi(@intCast(len)),
+            fi(@intCast(first)) / fi(@intCast(len - VIS_ROWS)),
+        );
+    }
+
+    // ── THE CARD: what the chosen row IS, in the words the bag uses ─────────────────────────────────────────
+    const cy = y + HEAD_H + listH + 2;
+    uiart.well(x + PAD, cy, W - PAD * 2, CARD_H, 205);
+    if (len > 0) drawCard(list[sel], h, x + PAD, cy);
 
     const said = saidLine(c.said, c.trade);
-    if (said.len > 0) hud.text(said, x + PAD, y + height - FOOT_H - 4, hud.HINT, SAID);
+    if (said.len > 0) {
+        hud.text(said, x + PAD, y + height - FOOT_H - 2, hud.HINT, if (counter.Counter.refused(c.said)) COIN_NO else SAID);
+    }
 
     // The button strip, in the house's own pictograms — no key captions anywhere in the GAME (AGENTS.md).
-    var hints: [3]hud.Hint = undefined;
+    var hints: [4]hud.Hint = undefined;
     var nh: usize = 0;
+    if (len > 1) {
+        hints[nh] = .{ .glyph = .{ .dpad = .updown }, .label = "Choose" };
+        nh += 1;
+    }
     hints[nh] = .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = if (c.trade == .smithy) "Forge" else if (c.selling) "Sell" else "Buy" };
     nh += 1;
     if (c.trade == .shop) {
@@ -155,5 +236,54 @@ pub fn draw(c: *const counter.Counter, h: *const heromod.Hero, bag: *const item.
     }
     hints[nh] = .{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Leave" };
     nh += 1;
-    hud.hintRowAt(hints[0..nh], x + PAD, y + height - FOOT_H + 16, hud.HINT, uiart.GILT_DIM);
+    hud.hintRowAt(hints[0..nh], x + PAD, y + height - @divTrunc(FOOT_H, 2), hud.HINT, uiart.GILT_DIM);
+}
+
+/// The chosen row, said properly: the picture at a plate's size, the mechanic in one line (`item.effect`, which
+/// is test-pinned to exist), and the flavour under it. The smithy's card says what the coin actually buys —
+/// the tier and the damage it adds — which the old panel left to be inferred from "+3 -> +4".
+fn drawCard(r: counter.Row, h: *const heromod.Hero, cx: i32, cy: i32) void {
+    const cell = CARD_H - 24;
+    uiart.slot(cx + 12, cy + 12, cell, cell, true);
+    const tx = cx + 12 + cell + 16;
+    const tw = W - PAD * 2 - (12 + cell + 16) - 14;
+
+    if (r.kind) |k| {
+        itemart.draw(k, fi(cx + 12 + @divTrunc(cell, 2)), fi(cy + 12 + @divTrunc(cell, 2)), CARD_ART);
+        hud.text(item.displayName(k), tx, cy + 10, hud.BODY, NAME);
+        var eb: [item.EFFECT_BUF]u8 = undefined;
+        hud.mono(item.effect(k, &eb), tx, cy + 36, hud.MONO, uiart.TEXT_VALUE);
+        proseClipped(item.describe(k), tx, cy + 58, tw, 2);
+    } else if (r.arm) |a| {
+        itemart.heldArt(book.armPic(a), heromod.heldGear(a, h.worn), fi(cx + 12 + @divTrunc(cell, 2)), fi(cy + 12 + @divTrunc(cell, 2)), CARD_ART);
+        const t = h.tierOf(a);
+        var nb: [48]u8 = undefined;
+        const nm = std.fmt.bufPrintZ(&nb, "{s}  +{d}", .{ book.armName(a), t }) catch "?";
+        hud.text(nm, tx, cy + 10, hud.BODY, NAME);
+        tierPips(tx, cy + 44, t, 3.2);
+        if (r.done) {
+            hud.text(MASTERED_LINE, tx, cy + 62, hud.HINT, NAME_OFF);
+        } else {
+            var gb: [64]u8 = undefined;
+            const gain = std.fmt.bufPrintZ(&gb, "damage +{d:.1} a stroke", .{tierGain(a, h)}) catch "";
+            hud.mono(gain, tx + pipsW(3.2) + 18, cy + 38, hud.MONO, uiart.GOOD);
+            proseClipped("Stone is the gate and coin is the tax; the edge keeps what the fire teaches it.", tx, cy + 62, tw, 1);
+        }
+    }
+}
+
+/// Flavour is allowed exactly the lines the card has room for — a cut sentence gets an ellipsis, never a
+/// spill over the footer.
+fn proseClipped(s: []const u8, x: i32, y: i32, w: i32, maxLines: usize) void {
+    const lines = hud.proseWrap(s, w, hud.HINT);
+    const n = @min(lines.len, maxLines);
+    var i: usize = 0;
+    var yy = y;
+    while (i < n) : (i += 1) {
+        hud.text(lines[i], x, yy, hud.HINT, uiart.TEXT_DIM);
+        if (i + 1 == n and lines.len > n) {
+            hud.text("...", x + hud.textW(lines[i], hud.HINT) + 4, yy, hud.HINT, uiart.TEXT_DIM);
+        }
+        yy += hud.lineH(hud.HINT);
+    }
 }

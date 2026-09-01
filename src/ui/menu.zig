@@ -541,7 +541,7 @@ pub const Menu = struct {
         }) catch "?";
         // …and the SPEED, said as a day's length rather than as a multiplier: what you are about to watch is the sky going round, and "10 s/day" is that where "120x" is arithmetic.
         var len: [12]u8 = undefined;
-        out[DBG_DAYRATE] = std.fmt.bufPrintZ(&dbgRateBuf, "Day Speed: {d:.0}x — {s}/day{s}", .{
+        out[DBG_DAYRATE] = std.fmt.bufPrintZ(&dbgRateBuf, "Day Speed: {d:.0}x - {s}/day{s}", .{
             day.speed(),
             daynight.dayLenText(day, &len),
             if (day.frozen()) " (held)" else "",

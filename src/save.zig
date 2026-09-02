@@ -832,64 +832,44 @@ test "A FILE WITH NO RACK IN IT LOADS AS THE STARTING RACK, and a bad sorcery is
     try testing.expectEqual(combat.Spell.bolt, wide.memory[0].?);
 }
 
+/// One field of a slot, either side of the file. **FLOATS AT THE FILE'S OWN COARSEST PRECISION** — `text`
+/// writes every one of them with at least `{d:.3}`, so half a thousandth is the whole of what a round trip may
+/// lose; anything else has to come back bit for bit.
+fn expectSame(comptime T: type, comptime where: []const u8, a: T, b: T) !void {
+    switch (@typeInfo(T)) {
+        .float => testing.expectApproxEqAbs(a, b, 1e-3) catch |e| {
+            std.debug.print("\n  {s}: {d} -> {d}\n", .{ where, a, b });
+            return e;
+        },
+        .array => |arr| for (a, b) |x, y| try expectSame(arr.child, where, x, y),
+        .@"struct" => |st| inline for (st.fields) |f| {
+            try expectSame(f.type, where ++ "." ++ f.name, @field(a, f.name), @field(b, f.name));
+        },
+        else => testing.expectEqual(a, b) catch |e| {
+            std.debug.print("\n  {s} did not survive the file\n", .{where});
+            return e;
+        },
+    }
+}
+
 test "a save round-trips through its own text" {
     const d = sample();
     const back = try roundTrip(&d);
-    try testing.expectEqualStrings(d.mapName(), back.mapName());
-    try testing.expectApproxEqAbs(d.at.x, back.at.x, 1e-3);
-    try testing.expectApproxEqAbs(d.at.y, back.at.y, 1e-3);
-    try testing.expectApproxEqAbs(d.at.z, back.at.z, 1e-3);
-    try testing.expectApproxEqAbs(d.facing, back.facing, 1e-4);
-    try testing.expectEqual(d.souls, back.souls);
-    try testing.expectEqual(d.gold, back.gold);
-    try testing.expectEqualSlices(u8, &d.tiers, &back.tiers);
-    try testing.expectEqual(d.arm, back.arm);
-    try testing.expectEqual(d.off, back.off);
-    // THE ALT RACK IS HALF THE HANDS. Left unasserted, `hands:`' last two tokens could stop being written and
-    // every file on disk would quietly come back holding the STARTING alt pair (`parse`'s own `catch`).
-    try testing.expectEqual(d.armAlt, back.armAlt);
-    try testing.expectEqual(d.offAlt, back.offAlt);
-    try testing.expectEqual(d.spell, back.spell);
-    try testing.expectEqual(d.memory, back.memory);
-    try testing.expectEqual(d.arrow, back.arrow);
-    try testing.expectEqual(d.arrows, back.arrows);
-    try testing.expectEqual(d.fireArrows, back.fireArrows);
-    try testing.expectEqual(d.flask, back.flask);
-    try testing.expectEqual(d.worn, back.worn);
-    try testing.expectEqual(d.quick, back.quick);
-    try testing.expectEqual(d.quickSel, back.quickSel);
-    try testing.expectEqual(d.bag, back.bag);
-    try testing.expectEqual(d.tree, back.tree);
-    try testing.expectApproxEqAbs(d.dropAt.x, back.dropAt.x, 1e-3);
-    try testing.expectApproxEqAbs(d.dropAt.y, back.dropAt.y, 1e-3);
-    try testing.expectApproxEqAbs(d.dropAt.z, back.dropAt.z, 1e-3);
-    try testing.expectEqual(d.dropAmount, back.dropAmount);
-    try testing.expectApproxEqAbs(d.hour, back.hour, 1e-3);
-    try testing.expectEqual(d.flags, back.flags);
-    try testing.expectEqual(d.counters, back.counters);
-    try testing.expectEqual(d.timers, back.timers);
-    try testing.expectEqual(d.armed, back.armed);
-    try testing.expectEqual(d.talked, back.talked);
-    try testing.expectEqual(d.fired, back.fired);
-    try testing.expectEqual(d.preserved, back.preserved);
-    try testing.expectEqual(d.running, back.running);
-    try testing.expectEqual(d.actAt, back.actAt);
-    try testing.expectEqual(d.waitLeft, back.waitLeft);
-    try testing.expectEqual(d.deaths, back.deaths);
-    try testing.expectApproxEqAbs(d.elapsed, back.elapsed, 1e-3);
-    try testing.expectEqual(d.chestOpen, back.chestOpen);
-    try testing.expectEqual(d.pickupTaken, back.pickupTaken);
-    try testing.expectEqual(d.groundN, back.groundN);
+    // **THE STRUCT IS WALKED, NOT LISTED.** Named by hand, a field added to `Data` was one nothing compared
+    // and a row that stopped being written passed in silence. It had already bitten the ALT RACK, which is half
+    // the hands and read back as the starting pair.
+    inline for (@typeInfo(Data).@"struct".fields) |f| {
+        // `ground` is the one field a whole-array compare cannot touch: only the first `n` loot slots of a drop
+        // are written, and `Drop.loot` past that is `undefined` on both sides.
+        if (comptime std.mem.eql(u8, f.name, "ground")) continue;
+        try expectSame(f.type, f.name, @field(d, f.name), @field(back, f.name));
+    }
     for (d.ground[0..d.groundN], back.ground[0..back.groundN]) |a, b| {
-        try testing.expectApproxEqAbs(a.at.x, b.at.x, 1e-3);
-        try testing.expectApproxEqAbs(a.at.y, b.at.y, 1e-3);
-        try testing.expectApproxEqAbs(a.at.z, b.at.z, 1e-3);
+        try expectSame(rl.Vector3, "ground.at", a.at, b.at);
         try testing.expectEqual(a.n, b.n);
+        try testing.expectEqual(a.gold, b.gold);
         try testing.expectEqualSlices(item.Kind, a.loot[0..a.n], b.loot[0..b.n]);
     }
-    // A boss you killed stays killed, which is the whole reason the row is in the file.
-    try testing.expectEqual(d.bossDead, back.bossDead);
-    try testing.expectEqual(d.seen, back.seen);
 }
 
 test "the buffer holds the biggest save this build can write" {

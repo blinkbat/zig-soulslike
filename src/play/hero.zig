@@ -3809,8 +3809,7 @@ pub const Hero = struct {
         setLocal(&wx, NECK, self.rest, mul(rx(-0.45 * gazeCounter), ry(-0.2 * prot)));
         setLocal(&wx, HEAD, self.rest, rx(HEAD_WALK - 0.55 * gazeCounter));
 
-        legChain(&wx, &self.rest, self.footY(), ph, m, runB, fw, lat, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
-        legChain(&wx, &self.rest, self.footY(), ph + 0.5, m, runB, fw, lat, -1.0, HIPR, KNEER, BOOT_SOLE[1]);
+        legPair(&wx, &self.rest, self.footY(), ph, m, runB, fw, lat, HIPL, KNEEL, HIPR, KNEER, BOOT_SOLE);
 
         const armAmp = mathx.lerpF(ARM_SWING, RUN_ARM_SWING, runB);
         const armL = -armAmp * armSwing(ph) * m * fw;
@@ -4708,6 +4707,14 @@ pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, groundY: f32, ph: f32
         const step = mathx.degrees(std.math.asin(mathx.clampF((groundY - deepest) / lever, -1, 1)));
         pitch += if (worstZ > 0) -step else step;
     }
+}
+
+/// **BOTH LEGS, AND THE HALF-PHASE BETWEEN THEM IS NOT A NUMBER A CALLER MAY SPELL.** Four things flip
+/// together — the phase, the side, the hip/knee pair and the sole — so a body copied off another one is four
+/// chances to flip three.
+pub fn legPair(wx: []rl.Matrix, rest: []const rl.Vector3, groundY: f32, ph: f32, m: f32, runB: f32, sag: f32, lat: f32, hipL: usize, kneeL: usize, hipR: usize, kneeR: usize, soles: [2]SolePatch) void {
+    legChain(wx, rest, groundY, ph, m, runB, sag, lat, 1.0, hipL, kneeL, soles[0]);
+    legChain(wx, rest, groundY, ph + 0.5, m, runB, sag, lat, -1.0, hipR, kneeR, soles[1]);
 }
 
 fn armChain(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, swing: f32, m: f32, runB: f32, sprintB: f32, side: f32, carry: f32, sh: usize, el: usize, wr: usize) void {

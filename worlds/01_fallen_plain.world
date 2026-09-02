@@ -2457,7 +2457,7 @@ at: boulder 4.3850946 36.486008 40 1
 at: boulder 5.644925 35.58229 25 1
 at: cliff4 35.523308 47.30874 30 1 lean=9 leanDir=-105
 at: cliff4 41.71763 37.725925 125 1 lean=5
-at: chest -0.8820944 44.309277 120 1 leanDir=30 loot=mushroom_jerky,soul_binding_ring,spirit_scroll_wolf
+at: chest -0.8820944 44.309277 120 1 leanDir=30
 at: cliff3 -17.344637 0.8332672 95 0.6499999
 at: birch 8.689278 1.582593 0 1 lean=2
 at: sapling 9.547991 -0.34965706 0 1
@@ -3476,18 +3476,18 @@ at: glow -57.475212 -86.07784 0 1
 at: glow -58.259018 -87.98888 0 1
 at: cliff -71.08909 -74.810555 0 0.5999999
 at: cliff -78.64811 -74.75725 -20 0.49999988
-at: chest -65.610016 -76.684105 200 1 loot=nameless_soul,quilted_gambeson,sporeling_cap,ashen_amulet
-at: pickup -20.090546 -4.690786 0 1 loot=fire_tallow,bloodgrass,pitted_helm
-at: pickup 32.73991 -6.384436 0 1 loot=toadflesh_broth,nameless_soul,marchboots
-at: pickup -31.69429 -64.822624 0 1.3499997 loot=tower_shield,banded_warbelt
-at: pickup 12.699394 -42.347057 0 1 loot=fang_dirk,deft_signet
-at: pickup -37.529385 -45.327354 0 1 loot=bloodgrass,bloodgrass,smithing_stone
-at: pickup -98.94065 -17.500525 0 1 loot=greatclub
-at: chest -74.93457 28.546747 50 1 loot=ashen_amulet,iron_key,mushroom_jerky
+at: chest -65.610016 -76.684105 200 1
+at: pickup -20.090546 -4.690786 0 1
+at: pickup 32.73991 -6.384436 0 1
+at: pickup -31.69429 -64.822624 0 1.3499997
+at: pickup 12.699394 -42.347057 0 1
+at: pickup -37.529385 -45.327354 0 1
+at: pickup -98.94065 -17.500525 0 1
+at: chest -74.93457 28.546747 50 1
 at: cliff6 -42.012745 11.0029335 75 0.84999996
 at: cliff5 1.1265416 30.752016 0 1
 at: boulder 2.670064 26.155378 0 1.6499994
-at: pickup -0.74419975 25.579767 0 1 loot=fire_tallow,banded_warbelt
+at: pickup -0.74419975 25.579767 0 1
 at: sapling -3.9326134 23.525167 0 1
 at: sapling -6.0337133 29.091492 0 1
 at: birch -10.95527 24.864124 0 1
@@ -3510,7 +3510,7 @@ at: tree -46.721436 56.01173 0 1
 at: snag -45.65062 53.506382 0 1
 at: snag -47.864082 44.12587 70 0.84999996 lean=9
 at: snag -53.632988 33.38153 40 0.84999996
-at: pickup -40.244473 18.492893 0 1 loot=nameless_soul,sporeling_cap,sporeling_cap
+at: pickup -40.244473 18.492893 0 1
 at: tuft -47.087486 18.060404 0 1
 at: tuft -53.49706 18.023142 0 1
 at: tuft -55.04235 19.900936 0 1
@@ -3644,12 +3644,12 @@ at: rocks -15.807421 -94.79736 0 1
 at: rocks 14.207535 -68.49868 0 1
 at: rocks 15.537249 -65.37834 0 1
 at: outcrop 14.948542 -64.23855 0 1
-at: pickup 17.277428 -67.45147 0 1 loot=nameless_soul
-at: pickup -12.007288 -61.98085 0 1 loot=kobold_fang
-at: pickup -70.48561 -127.43801 0 1 loot=toadflesh_broth,thundercrock
-at: pickup 32.58292 -36.324352 0 1 loot=gravebell_amulet,pilgrims_salt
-at: pickup 75.70958 -18.9836 0 1 loot=pilgrims_salt,ironwort_tea
-at: pickup 53.78853 -21.032747 0 1 loot=mushroom_jerky,mushroom_jerky,nameless_soul
+at: pickup 17.277428 -67.45147 0 1
+at: pickup -12.007288 -61.98085 0 1
+at: pickup -70.48561 -127.43801 0 1
+at: pickup 32.58292 -36.324352 0 1
+at: pickup 75.70958 -18.9836 0 1
+at: pickup 53.78853 -21.032747 0 1
 at: torch -10.840383 14.158059 0 1
 at: torch -65.46792 -73.11904 0 1
 at: torch -66.3933 -103.00027 0 1
@@ -3723,7 +3723,7 @@ at: thicket -40.271366 13.283144 0 1
 at: thicket -39.501114 13.870087 0 1
 at: tree -40.65895 15.1750965 0 0.9
 at: cottage 11.97912 49.13188 0 1
-at: pickup 11.323516 49.54892 0 1 loot=nameless_soul,kobold_fang,smithing_stone
+at: pickup 11.323516 49.54892 0 1
 at: snag 15.449707 52.888294 0 1
 at: campfire 16.452654 49.94458 0 1
 at: torch 17.889246 55.259342 0 1
@@ -3746,7 +3746,7 @@ at: scree -100.412415 -100.2405 0 1
 at: scree -93.828545 -95.214836 0 1
 at: rotlog -96.39326 -95.862785 25 1
 at: deadfall -90.13173 -96.04466 0 1
-at: pickup -99.22125 -109.890305 0 1 loot=pilgrims_salt,toadflesh_broth,sporeling_cap
+at: pickup -99.22125 -109.890305 0 1
 at: monolith -119.74751 -119.87663 0 1
 at: gibbet -119.06779 -117.72844 0 1
 at: sword -121.52759 -120.50098 0 1
@@ -3759,8 +3759,8 @@ at: sarcophagus -118.544464 -114.40422 0 1
 at: graves -117.037125 -117.27864 0 1
 at: graves -114.25408 -114.36546 0 1
 at: banner -116.010345 -112.60776 0 1
-at: pickup -128.78545 -123.28777 0 1 loot=second_wind,smithing_stone,pilgrims_salt
-at: pickup -118.3931 -114.582565 0 1 loot=nameless_soul,nameless_soul
+at: pickup -128.78545 -123.28777 0 1
+at: pickup -118.3931 -114.582565 0 1
 at: cliff6 -144.08188 -75.340775 0 1
 at: cliff6 -131.27571 -81.91507 40 1
 at: cliff4 -163.01398 -76.66542 0 1
@@ -15729,8 +15729,8 @@ at: graves 15.761602 -113.84404 0 1
 at: boulder 17.855022 -116.025795 0 1
 at: boulder 19.416546 -108.12015 0 0.6999999
 at: outcrop -22.221142 -99.53345 0 1
-at: pickup -26.992933 -98.74292 0 1 loot=ember_candle,mushroom_jerky,mushroom_jerky
-at: pickup 17.434315 -120.44568 0 1 loot=sporeling_cap,sporeling_cap,mushroom_jerky,mushroom_jerky
+at: pickup -26.992933 -98.74292 0 1
+at: pickup 17.434315 -120.44568 0 1
 at: gibbet 19.497458 -118.93693 0 1
 at: plinth 19.429379 -121.44347 0 1
 at: plinth 13.229858 -116.491104 0 1
@@ -15827,7 +15827,7 @@ at: willow 3.5136108 53.845512 0 1
 at: bigtree2 1.9415226 50.597996 0 0.84999996
 at: birch 6.5847435 52.705128 0 1
 at: birch 26.815514 42.261932 0 1
-at: chest 39.736916 40.581215 65 1 loot=mushroom_jerky,pilgrims_salt
+at: chest 39.736916 40.581215 65 1
 at: pipeclutch 41.6323 42.439896 0 1
 at: pipeclutch 37.447784 35.84904 0 1
 at: capcluster 36.389523 33.94484 0 1
@@ -15845,7 +15845,7 @@ at: glowcluster -196.4895 -91.80412 0 1
 at: glowcluster -191.52258 -92.601204 0 1
 at: glowcluster -207.65048 -113.27047 0 1
 at: glowcluster -199.95413 -117.54712 0 1
-at: chest -199.9717 -121.063934 260 1 loot=nameless_soul,sporeling_cap,plain_arrows,plain_arrows,plain_arrows,nameless_soul,mushroom_jerky,mushroom_jerky
+at: chest -199.9717 -121.063934 260 1
 at: sporevent -233.25822 -80.93289 0 1
 at: sporevent -233.3867 -76.9309 0 1
 at: captower -233.56792 -79.38143 0 1
@@ -16093,7 +16093,7 @@ at: rocks -32.135677 -139.00394 0 1
 at: rocks -28.52225 -137.53004 0 1
 at: rocks -27.929394 -134.87544 65 1
 at: shrine -20.477066 -133.93665 180 1
-at: pickup -20.451769 -132.73457 0 1 loot=loop_of_chance
+at: pickup -20.451769 -132.73457 0 1
 at: snag -26.55048 -127.42372 0 1
 at: tree -13.247612 -124.374054 0 1
 at: sapling -13.070953 -127.46025 0 1
@@ -16229,7 +16229,7 @@ at: bramble -196.19257 34.331814 0 1
 at: bramble -191.06245 8.241425 0 1
 at: sporepod -163.7878 -71.49808 0 1
 at: sporepod -162.67958 -63.672752 0 1
-at: chest -158.88913 -66.58446 -105 1 loot=scroll_bidding,pilgrims_offering
+at: chest -158.88913 -66.58446 -105 1
 at: ribarch -229.30861 13.875734 0 1
 at: rib -233.92125 18.601036 -20 0.6999999
 at: whaleback -201.52687 1.8569254 0 1
@@ -16287,7 +16287,7 @@ at: lampstalk -239.38939 -89.81044 0 1
 at: lampstalk -193.81348 -151.69818 0 1
 at: lampstalk -141.99048 -161.17651 0 1
 at: lampstalk -146.67647 -144.37569 0 1
-at: pickup -165.92365 -16.89042 0 1 loot=fire_arrows,nightcap_grease,pilgrims_salt
+at: pickup -165.92365 -16.89042 0 1
 at: wall -175.64009 -15.124878 -90 1
 at: wall -170.68456 -4.850811 0 1
 at: paving -164.83904 -18.087687 0 1
@@ -16662,7 +16662,7 @@ at: antlercoral -170.68068 -126.80591 0 1
 at: antlercoral -158.38567 -123.38228 0 1
 at: antlercoral -185.42358 -125.062546 0 1
 at: antlercoral -194.88632 -128.86255 0 1
-at: chest -154.55833 -41.885036 -75 1 loot=scroll_babble,wax_stopped_hood
+at: chest -154.55833 -41.885036 -75 1
 at: antlercoral -183.08195 -35.474926 0 1
 at: hangcurtain -183.91591 -28.351154 -90 1
 at: fleshfold -182.6425 -32.710667 -110 0.74999994
@@ -16683,7 +16683,7 @@ at: wall -132.70364 -123.02242 105 1
 at: wall -131.39687 -116.045265 -85 1
 at: capgiant2 -145.86978 -57.500427 0 1
 at: capgiant2 -145.41725 -63.43126 -120 0.6999999
-at: pickup -151.90929 -58.728024 0 1 loot=pilgrims_offering,bloodwine
+at: pickup -151.90929 -58.728024 0 1
 at: rubble -197.64847 97.853096 0 1
 at: rubble -180.54178 108.05818 0 1
 at: rubble -190.00604 125.97456 0 1

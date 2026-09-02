@@ -1458,8 +1458,7 @@ pub const Warrior = struct {
 
         const legsTaken = dead or kn > 0.001 or self.leaping();
         if (!legsTaken) {
-            heromod.legChain(&wx, &self.rest, self.pos.y, self.phase, m, runB, self.fwdB, self.latB, 1.0, HIPL, KNEEL, solePatches[0]);
-            heromod.legChain(&wx, &self.rest, self.pos.y, self.phase + 0.5, m, runB, self.fwdB, self.latB, -1.0, HIPR, KNEER, solePatches[1]);
+            heromod.legPair(&wx, &self.rest, self.pos.y, self.phase, m, runB, self.fwdB, self.latB, HIPL, KNEEL, HIPR, KNEER, solePatches);
         }
         self.poseUpper(&wx, dk, stun, kn, dead, prot);
         self.xf = wx;

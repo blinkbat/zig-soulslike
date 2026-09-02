@@ -4,6 +4,7 @@ const mathx = @import("../core/mathx.zig");
 const uiart = @import("uiart.zig");
 const item = @import("../play/item.zig");
 const combat = @import("../play/combat.zig");
+const elemfx = @import("../gfx/elemfx.zig");
 
 // Every stroke scales off `k`: the set was tuned in a 34 px box (`TUNED_AT`) and multiplies up, so one picture serves a 33 px bag cell and a 240 px detail plate. Every wabi-sabi offset comes out of a FIXED-SEED `mathx.Rng` re-seeded per call — off a live stream the whole HUD crawls.
 
@@ -52,10 +53,13 @@ const STONE = rgba(132, 130, 126, 255);
 const STONE_LT = rgba(186, 184, 178, 255);
 const STONE_DK = rgba(74, 73, 70, 255);
 const SPARK = rgba(180, 214, 236, 255);
-const RIME_ICE = rgba(150, 200, 226, 255);
-const RIME_LT = rgba(212, 238, 250, 255);
-const LEVIN_HOT = rgba(255, 255, 224, 255);
-const LEVIN_EDGE = rgba(226, 230, 232, 255);
+/// **THE OIL IN THE JAR IS THE ELEMENT IT POURS.** Named here like every other colour in this file, but off
+/// `elemfx`'s own signature rather than spelled again: retuned there, a literal here leaves the bag picture on
+/// the old hue with nothing to say so. The alpha is the picture's, not the mote's.
+const RIME_ICE = mathx.withAlpha(elemfx.sig(.cold).edge, 255);
+const RIME_LT = mathx.withAlpha(elemfx.sig(.cold).core, 255);
+const LEVIN_HOT = mathx.withAlpha(elemfx.sig(.lightning).core, 255);
+const LEVIN_EDGE = mathx.withAlpha(elemfx.sig(.lightning).edge, 255);
 const WEED = rgba(126, 30, 34, 255);
 const WEED_LT = rgba(178, 62, 52, 255);
 const WEED_DK = rgba(74, 20, 24, 255);

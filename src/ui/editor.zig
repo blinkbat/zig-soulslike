@@ -1495,6 +1495,16 @@ pub const Editor = struct {
         self.stats.row = @min(row, tunemod.TABLES[self.stats.tab].n - 1);
     }
 
+    /// DEV ONLY: the sheet with one of its choice lists hanging open, which is the only frame that shows what
+    /// a pick cell IS. `c` is the column's index in the table's own `cols`.
+    pub fn statsPickForShot(self: *Editor, c: usize) void {
+        tuneui.openPickForShot(self.stats.tab, self.stats.row, c);
+    }
+
+    pub fn statsTabForShot(self: *const Editor) usize {
+        return self.stats.tab;
+    }
+
     /// One item's picture, full-frame, with its sheet beside it.
     pub fn itemForShot(self: *Editor, k: item.Kind) void {
         self.modal = .objects;
@@ -4639,6 +4649,28 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         return;
     }
 
+    // **THE SWEEP SITS ABOVE THE SELECTION AND NOT INSIDE IT**, because the whole point is the frames where
+    // nothing is selected yet — a jump that is only offered once you have already found a container is no help
+    // finding one. Drawn before the early return for that reason.
+    //
+    // **THE COUNT IS A WALK OF EVERY OP, EVERY FRAME** — 81 us at the format's 20480 (the test at the foot of
+    // this file), 0.49% of a frame. Paid only on this layer, and only in the editor: `nloot` moves inside the
+    // Items... modal with no rebuild behind it, so there is no generation to hang a memo on that would not go
+    // stale on the one edit that matters.
+    if (ed.layer == .interact) {
+        const left = unfilledCount(m);
+        var eb: [40]u8 = undefined;
+        const lab = if (left > 0)
+            std.fmt.bufPrintZ(&eb, "next empty ({d})", .{left}) catch "next empty"
+        else
+            "all filled";
+        if (ui.button(ctx, ui.rect(x, y, w, 24), lab, hud.MONO, false, "Centre on the next chest or item with nothing in it, wrapping round the map. Right-click it and pick Items... to fill it")) {
+            goToUnfilled(ed, m);
+            return;
+        }
+        y += ROW_H + 6;
+    }
+
     const s = ed.sel orelse {
         hud.mono("nothing selected", x, y, hud.MONO, ui.LABEL);
         y += ROW_H;
@@ -5656,7 +5688,56 @@ const MENU_EDGE: i32 = 4;
 fn lootOp(ed: *const Editor, m: *const wf.Map) ?usize {
     const s = ed.sel orelse return null;
     if (s >= m.nops) return null;
-    return if (m.ops[s].op == .at and props.holdsLoot(m.ops[s].kind)) s else null;
+    return if (isContainer(&m.ops[s])) s else null;
+}
+
+/// **WHAT THE ITEMS... DOOR WILL OPEN ON.** Off `props.holdsLoot` and not a list of kinds by name, so a second
+/// container kind gets both the door and the sweep for free.
+fn isContainer(o: *const wf.Op) bool {
+    return o.op == .at and props.holdsLoot(o.kind);
+}
+
+/// **A CONTAINER NOBODY HAS PUT ANYTHING IN.** Coin counts as filling it — `wf.Op.gold` is independent of
+/// `loot` and a chest of nothing but money is authored — so this is the same two fields that door edits and
+/// not a third idea of "empty".
+fn unfilledContainer(o: *const wf.Op) bool {
+    return isContainer(o) and o.nloot == 0 and o.gold == 0;
+}
+
+fn unfilledCount(m: *const wf.Map) usize {
+    var n: usize = 0;
+    for (m.ops[0..m.nops]) |*o| {
+        if (unfilledContainer(o)) n += 1;
+    }
+    return n;
+}
+
+/// **THE NEXT ONE PAST THE SELECTION, WRAPPING ROUND THE MAP.** Walked from `sel + 1` rather than from the
+/// nearest, so pressing it again and again rounds the whole map instead of sitting on the one you just filled
+/// — and filling one takes it off the list, so the walk shortens as you go.
+fn nextUnfilled(ed: *const Editor, m: *const wf.Map) ?usize {
+    if (m.nops == 0) return null;
+    const from = if (ed.sel) |s| (s + 1) % m.nops else 0;
+    for (0..m.nops) |k| {
+        const i = (from + k) % m.nops;
+        if (unfilledContainer(&m.ops[i])) return i;
+    }
+    return null;
+}
+
+/// The layer moves with the selection, because a container the panel cannot show is a jump that looks like
+/// nothing happened.
+fn goToUnfilled(ed: *Editor, m: *const wf.Map) void {
+    const i = nextUnfilled(ed, m) orelse {
+        ed.say("every chest and item on the map holds something");
+        return;
+    };
+    ed.dropSelection();
+    ed.setLayer(layerOf(&m.ops[i]));
+    ed.selecting = true;
+    ed.sel = i;
+    ed.focusOn(m, i);
+    ed.sayFmt("#{d} {s} - {d} still empty", .{ i, @tagName(m.ops[i].kind), unfilledCount(m) });
 }
 
 /// Name a creature on the seal, or take it off. **A FULL SEAL DROPS THE PRESS** rather than wrapping — silently
@@ -7042,4 +7123,105 @@ test "THE MINIMAP'S HELD FACE IS REPAINTED BY EVERY HAND THAT MOVES IT" {
     last = ed.miniGen;
     ed.rebuild(m, env);
     try std.testing.expect(ed.miniGen != last);
+}
+
+test "THE SWEEP FINDS EVERY CONTAINER NOBODY HAS FILLED, and rounds the map rather than sitting on one" {
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    m.blank("loot");
+
+    // A chest with things in it, a chest with only COIN, two empty ones, and a pillar that holds nothing at
+    // all — so what this walks is `holdsLoot` plus BOTH purse and shelf, not "is it a chest".
+    const rows = [_]struct { kind: props.Kind, nloot: u8, gold: u32 }{
+        .{ .kind = .chest, .nloot = 2, .gold = 0 },
+        .{ .kind = .pickup, .nloot = 0, .gold = 0 },
+        .{ .kind = .pillar, .nloot = 0, .gold = 0 },
+        .{ .kind = .chest, .nloot = 0, .gold = 40 },
+        .{ .kind = .pickup, .nloot = 0, .gold = 0 },
+    };
+    for (rows, 0..) |r, i| {
+        var o = wf.defaults(.at);
+        o.kind = r.kind;
+        o.x = @as(f32, @floatFromInt(i)) * 10.0;
+        o.nloot = r.nloot;
+        o.gold = r.gold;
+        for (0..r.nloot) |k| o.loot[k] = .mushroom_jerky;
+        _ = try m.add(o);
+    }
+    try std.testing.expectEqual(@as(usize, 2), unfilledCount(m));
+
+    var ed = Editor{};
+    // The pillar and the chest that holds coin are both stepped over, and the last one rounds to the first.
+    try std.testing.expectEqual(@as(?usize, 1), nextUnfilled(&ed, m));
+    ed.sel = 1;
+    try std.testing.expectEqual(@as(?usize, 4), nextUnfilled(&ed, m));
+    ed.sel = 4;
+    try std.testing.expectEqual(@as(?usize, 1), nextUnfilled(&ed, m));
+
+    // **FILLING ONE TAKES IT OFF THE SWEEP**, which is the whole loop — the count is the work left, and either
+    // field alone is enough to fill a container.
+    m.ops[1].gold = 5;
+    ed.sel = null;
+    try std.testing.expectEqual(@as(usize, 1), unfilledCount(m));
+    try std.testing.expectEqual(@as(?usize, 4), nextUnfilled(&ed, m));
+    m.ops[4].nloot = 1;
+    try std.testing.expectEqual(@as(usize, 0), unfilledCount(m));
+    try std.testing.expectEqual(@as(?usize, null), nextUnfilled(&ed, m));
+}
+
+test "going to an empty container selects it, brings the layer with it and puts the eye on it" {
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    m.blank("goto");
+    var full = wf.defaults(.at);
+    full.kind = .chest;
+    full.x = -60;
+    full.nloot = 1;
+    full.loot[0] = .mushroom_jerky;
+    _ = try m.add(full);
+    var empty = wf.defaults(.at);
+    empty.kind = .pickup;
+    empty.x = 42;
+    empty.z = -18;
+    _ = try m.add(empty);
+
+    var ed = Editor{};
+    ed.layer = .props;
+    ed.focus = mathx.ground(300, 300);
+    goToUnfilled(&ed, m);
+    try std.testing.expectEqual(@as(?usize, 1), ed.sel);
+    // The panel that fills it only draws on the container's own layer, so the jump has to bring that with it.
+    try std.testing.expectEqual(Layer.interact, ed.layer);
+    try std.testing.expectApproxEqAbs(@as(f32, 42), ed.focus.x, 1e-3);
+    try std.testing.expectApproxEqAbs(@as(f32, -18), ed.focus.z, 1e-3);
+    std.debug.print("\n  empty container sweep: eye on ({d:.1}, {d:.1}) at {d:.1} m, {d} left to fill\n", .{
+        ed.focus.x, ed.focus.z, ed.dist, unfilledCount(m),
+    });
+
+    // Nothing left empty is a message and not a jump — the selection and the eye stay where they were.
+    m.ops[1].nloot = 1;
+    ed.focus = mathx.ground(7, 7);
+    goToUnfilled(&ed, m);
+    try std.testing.expectApproxEqAbs(@as(f32, 7), ed.focus.x, 1e-3);
+}
+
+test "WHAT THE EMPTY-CONTAINER COUNT COSTS A FRAME — the button's label is a walk of every op" {
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    m.blank("cost");
+    // The worst map this format can hold, and every op a container so the predicate never short-circuits on
+    // its cheapest term. The panel redraws this label every frame the interactables layer is up.
+    var o = wf.defaults(.at);
+    o.kind = .pickup;
+    while (m.nops < wf.MAX_OPS) _ = try m.add(o);
+
+    const ROUNDS = 200;
+    var timer = try std.time.Timer.start();
+    var sink: usize = 0;
+    for (0..ROUNDS) |_| sink += unfilledCount(m);
+    const us = @as(f64, @floatFromInt(timer.read())) / 1000.0 / @as(f64, @floatFromInt(ROUNDS));
+    try std.testing.expectEqual(wf.MAX_OPS * ROUNDS, sink);
+    std.debug.print("\n  empty-container count over {d} ops: {d:.2} us a frame — {d:.3}% of a 16.7 ms frame\n", .{
+        m.nops, us, us / 16700.0 * 100.0,
+    });
 }

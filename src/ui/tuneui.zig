@@ -116,13 +116,108 @@ fn dial(ctx: *ui.Ctx, x: i32, y: i32, w: i32, t: usize, r: usize, c: usize) bool
     return moved;
 }
 
+/// **THE PICK LIST IS PARKED, NOT BORROWED** (`ui.dropdown`'s own rule about `ddRows`). The label BYTES are
+/// static — an item's display name, a coin band's word — but the table of slices has to outlive the call, so
+/// it is file scope here rather than a local that dies when the row returns.
+const PICK_CAP: usize = 128;
+var pickBuf: [PICK_CAP][:0]const u8 = undefined;
+
+comptime {
+    for (tune.TABLES) |tb| {
+        for (tb.cols) |col| {
+            if (col.pick) |p| {
+                if (p.n > PICK_CAP) @compileError("tuneui: '" ++ col.name ++ "' has more choices than PICK_CAP");
+            }
+        }
+    }
+}
+
+/// The box's own padding: `ui.dropdown` insets its label 6 px and hangs its caret 10 px off the right edge.
+const PICK_PAD: i32 = 26;
+/// Room kept for the column's NAME on the left, so the box can never grow over its own label.
+const PICK_LABEL_W: i32 = 96;
+
+/// A box narrower than this is not a control, and a field too tight to hold one would otherwise solve to a
+/// negative width — which draws nothing and answers no click.
+const PICK_MIN_W: i32 = 120;
+
+/// **AS WIDE AS THE LONGEST NAME IN THE LIST, MEASURED AND NOT PICKED.** At a round 200 the twenty characters
+/// of "Sheaf of Fire Arrows" ran clean under the caret. The mono advance is the loaded font's, so this cannot
+/// be solved at comptime — and it is a modal's cost, not the loop's.
+fn pickWidth(p: tune.Pick, w: i32) i32 {
+    var wide: i32 = 0;
+    for (0..p.n) |i| wide = @max(wide, hud.monoW(p.label(i), hud.MONO));
+    return @max(PICK_MIN_W, @min(w - PICK_LABEL_W, wide + PICK_PAD));
+}
+
+/// ONE CHOICE, and it is `dial`'s twin — what that one does, this has to do.
+fn picker(ctx: *ui.Ctx, x: i32, y: i32, w: i32, t: usize, r: usize, c: usize) void {
+    const col = tune.colSpec(t, r, c);
+    const p = col.pick.?;
+    const hit = tune.edited(t, r, c);
+    const cur = @as(usize, @intFromFloat(mathx.clampF(tune.value(t, r, c), 0, @floatFromInt(p.n - 1))));
+
+    ui.tipFor(ctx, ui.rect(x, y, w, ROW_H), col.tip);
+    hud.mono(col.name, x, y + 4, hud.MONO, if (hit) ui.HOT else ui.LABEL);
+    for (0..p.n) |i| pickBuf[i] = p.label(i);
+    const bw = pickWidth(p, w);
+    const box = ui.rect(x + w - bw, y, bw, ROW_H - 2);
+    if (ui.dropdown(ctx, box, pickId(t, r, c), pickBuf[0..p.n], cur, col.tip)) |k| {
+        tune.setValue(t, r, c, @floatFromInt(k));
+    }
+    // **WHAT THE CODE SAYS, BESIDE WHAT YOU MADE IT SAY** — the dial's rule, and it matters more here: a name
+    // you replaced leaves no trace of itself the way a moved number does. Dropped when it will not fit, since
+    // a full item name is four times a number's width and the column's own label is what it would land on.
+    if (hit) {
+        const was = @as(usize, @intFromFloat(mathx.clampF(tune.baseValue(t, r, c), 0, @floatFromInt(p.n - 1))));
+        const os = p.label(was);
+        const room = w - bw - hud.monoW(col.name, hud.MONO) - 16;
+        if (hud.monoW(os, hud.MONO) <= room) {
+            hud.mono(os, x + w - bw - hud.monoW(os, hud.MONO) - 8, y + 4, hud.MONO, ui.alpha(ui.LABEL, 150));
+        }
+    }
+}
+
+/// The dropdown id's high byte, so a bench list can never collide with one of the editor's own.
+const PICK_TAG: u8 = 31;
+/// **TABLE AND COLUMN PACKED INTO ONE OF `ddId`'s TWO SLOTS**, so the row can have the other. A table wider
+/// than this would fold two columns onto one id and open the wrong list.
+const PICK_STRIDE: usize = 64;
+
+comptime {
+    for (tune.TABLES) |tb| {
+        if (tb.cols.len > PICK_STRIDE) @compileError("tuneui: '" ++ tb.name ++ "' has more columns than PICK_STRIDE");
+    }
+}
+
+fn pickId(t: usize, r: usize, c: usize) u32 {
+    return ui.ddId(PICK_TAG, t * PICK_STRIDE + c, r);
+}
+
+/// DEV ONLY: the shot harness cannot click, and the open list is the whole of what a pick cell adds over a
+/// readout. Built off the same `ddId` the row draws with, so the two cannot drift.
+pub fn openPickForShot(t: usize, r: usize, c: usize) void {
+    ui.openDropdownForShot(pickId(t, r, c));
+}
+
+fn tableHasPick(t: usize) bool {
+    for (tune.TABLES[t].cols) |col| {
+        if (col.pick != null) return true;
+    }
+    return false;
+}
+
 /// **THE FIELD COLUMN FOR ONE ROW.** Draws only the dials that row actually has and returns the y it ended at,
 /// so the caller can stack something under it. Used by the bench and by the object viewer both.
 pub fn fields(ctx: *ui.Ctx, x: i32, y: i32, w: i32, t: usize, r: usize) i32 {
     var cy = y;
     for (0..tune.TABLES[t].cols.len) |c| {
         if (!tune.shows(t, r, c)) continue;
-        _ = dial(ctx, x, cy, w, t, r, c);
+        if (tune.colSpec(t, r, c).pick != null) {
+            picker(ctx, x, cy, w, t, r, c);
+        } else {
+            _ = dial(ctx, x, cy, w, t, r, c);
+        }
         cy += ROW_H + GAP;
     }
     return cy;
@@ -250,8 +345,10 @@ pub fn panel(st: *State, ctx: *ui.Ctx) bool {
     const cx = box.x + PAD + LIST_W + 24;
     const cw = W - (cx - box.x) - PAD;
     // **THE DIALS SIT UNDER THE NAME, NOT OUT AT THE FRAME.** Given the whole column the readout ends up a
-    // hand's width from its own label and the pair stops reading as one row.
-    const fieldW = @min(cw, 340);
+    // hand's width from its own label and the pair stops reading as one row. **A SHEET WITH NAMES ON IT GETS
+    // MORE**: 340 is solved for a four-digit readout, and a picker's box is the widest item name in the game
+    // with the code's own answer standing beside it.
+    const fieldW = @min(cw, if (tableHasPick(st.tab)) @as(i32, 520) else 340);
     var cy = listY + 2;
     header(ctx, cx, cy, fieldW, st.tab, st.row);
     cy += hud.monoLineH(hud.MONO) + 10;

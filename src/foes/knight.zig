@@ -3340,8 +3340,7 @@ pub const Knight = struct {
         ));
 
         if (!dead and !self.floored()) {
-            heromod.legChain(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, 0, 1.0, HIPL, KNEEL, solePatches[0]);
-            heromod.legChain(&wx, &self.rest, self.pos.y, self.phase + 0.5, m, 0, self.fwdB, 0, -1.0, HIPR, KNEER, solePatches[1]);
+            heromod.legPair(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, 0, HIPL, KNEEL, HIPR, KNEER, solePatches);
         }
         self.poseUpper(&wx, stun, dead, prot, bodyPitch);
         self.xf = wx;

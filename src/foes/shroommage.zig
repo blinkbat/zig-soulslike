@@ -789,8 +789,7 @@ pub const Mage = struct {
         ));
 
         if (!dead) {
-            heromod.legChain(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, self.latB, 1.0, HIPL, KNEEL, SOLES[0]);
-            heromod.legChain(&wx, &self.rest, self.pos.y, self.phase + 0.5, m, 0, self.fwdB, self.latB, -1.0, HIPR, KNEER, SOLES[1]);
+            heromod.legPair(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, self.latB, HIPL, KNEEL, HIPR, KNEER, SOLES);
         }
         self.poseUpper(&wx, dk, stun, dead, pel.prot);
         self.xf = wx;

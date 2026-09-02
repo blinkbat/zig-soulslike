@@ -49,6 +49,23 @@ const wf = @import("../world/worldfmt.zig");
 /// (`SpellRow.blow`), a union (`item.Equip`, `passivetree.Grant`) or a switch (`item.price`), and an address
 /// through any of those is not comptime-known. One `get`/`set` pair per table reaches all of it, and the base
 /// value is READ BACK at `init` rather than authored twice.
+/// **A CHOICE, NOT A DIAL** — one `f32` through the table's own `get`/`set`, but an ORDINAL into a named list.
+/// **THE FILE CARRIES THE NAME**: an ordinal written against 59 item kinds lands on a different item the day a
+/// sixtieth is authored.
+pub const Pick = struct {
+    n: usize,
+    label: *const fn (usize) [:0]const u8,
+    /// The file's token. Must be one word, and stable once shipped — it is the same promise `Table.rowKey` makes.
+    key: *const fn (usize) []const u8,
+
+    fn find(self: Pick, token: []const u8) ?usize {
+        for (0..self.n) |i| {
+            if (std.mem.eql(u8, self.key(i), token)) return i;
+        }
+        return null;
+    }
+};
+
 pub const Col = struct {
     name: [:0]const u8,
     hi: f32,
@@ -56,6 +73,9 @@ pub const Col = struct {
     step: f32 = 1,
     /// Shown and stored whole. The underlying field may still be a float.
     int: bool = false,
+    /// What this cell is a choice OUT OF, or null for a plain number. `hi` still governs the clamp, so a pick
+    /// column names its own last index there rather than being trusted to.
+    pick: ?Pick = null,
     /// **SHOWN ABSOLUTE, KEPT AS A RATIO.** A column whose base is not in the source but learned off the first
     /// body of a kind (`foes/foestat.zig`): the screen says 192 HP, the file says x2, and a creature re-authored
     /// in code stays twice as tough instead of being pinned to a number that moved.
@@ -1141,9 +1161,59 @@ fn foeHas(r: usize, c: usize) bool {
     };
 }
 
+/// **NOTHING IS THE FIRST CHOICE, NOT A MISSING ONE.** `Row.common` and `Row.rare` are optionals, so the list
+/// they pick out of has to carry the empty answer as an entry you can land on — otherwise a body that leaves
+/// nothing is a cell with no legal value.
+const NOTHING: [:0]const u8 = "- nothing -";
+const NOTHING_KEY = "-";
+
+fn itemPickLabel(i: usize) [:0]const u8 {
+    return if (i == 0) NOTHING else item.displayName(@enumFromInt(i - 1));
+}
+
+fn itemPickKey(i: usize) []const u8 {
+    return if (i == 0) NOTHING_KEY else item.tag(@enumFromInt(i - 1));
+}
+
+const ITEM_PICK = Pick{ .n = item.NK + 1, .label = itemPickLabel, .key = itemPickKey };
+
+/// An item's place in the `common`/`rare` list — public because a caller reaching a drop cell from outside
+/// (the shot harness, a test) may not spell the +1 that `- nothing -` costs the ordinal.
+pub fn itemOrdinal(k: ?item.Kind) f32 {
+    return if (k) |v| @floatFromInt(@intFromEnum(v) + 1) else 0;
+}
+
+fn itemAt(v: f32) ?item.Kind {
+    const i = @as(usize, @intFromFloat(mathx.clampF(v, 0, @floatFromInt(item.NK))));
+    return if (i == 0) null else @enumFromInt(@as(u8, @intCast(i - 1)));
+}
+
+const NCOIN = @typeInfo(drops.Coin).@"enum".fields.len;
+
+fn coinPickLabel(i: usize) [:0]const u8 {
+    return switch (@as(drops.Coin, @enumFromInt(i))) {
+        .none => "no purse",
+        .few => "a few coins",
+        .purse => "a purse",
+        .heavy => "heavy",
+        .hoard => "a hoard",
+    };
+}
+
+fn coinPickKey(i: usize) []const u8 {
+    return @tagName(@as(drops.Coin, @enumFromInt(i)));
+}
+
+const COIN_PICK = Pick{ .n = NCOIN, .label = coinPickLabel, .key = coinPickKey };
+
+/// **WHAT IT LEAVES SITS ABOVE HOW OFTEN**, because the odds are meaningless until you know what they are odds
+/// ON — and a row whose item is `- nothing -` hides its number entirely (`dropHas`).
 const DROP_COLS = [_]Col{
+    .{ .name = "common", .hi = item.NK, .int = true, .pick = ITEM_PICK, .tip = "What this body usually leaves. Pick `- nothing -` and it drops no item at all" },
     .{ .name = "odds", .hi = 1, .step = 0.01, .tip = "How often the body leaves its common item at all" },
+    .{ .name = "rare", .hi = item.NK, .int = true, .pick = ITEM_PICK, .tip = "The second, rarer thing on the body. Name one and its chance appears below - at 0 it never drops" },
     .{ .name = "chance", .hi = 0.85, .step = 0.01, .tip = "How often it leaves the rare one. Luck moves this and nothing else" },
+    .{ .name = "purse", .hi = NCOIN - 1, .int = true, .pick = COIN_PICK, .tip = "Which coin band the body carries. A separate roll from the item, and luck does not touch it" },
 };
 
 fn dropRowName(i: usize) [:0]const u8 {
@@ -1159,19 +1229,38 @@ fn dropFace(i: usize) u32 {
 }
 
 fn dropGet(r: usize, c: usize) f32 {
-    return if (c == 0) drops.TABLE[r].odds else drops.TABLE[r].chance;
+    const row = &drops.TABLE[r];
+    return switch (c) {
+        0 => itemOrdinal(row.common),
+        1 => row.odds,
+        2 => itemOrdinal(row.rare),
+        3 => row.chance,
+        else => @floatFromInt(@intFromEnum(row.gold)),
+    };
 }
 
 fn dropSet(r: usize, c: usize, v: f32) void {
-    if (c == 0) drops.TABLE[r].odds = v else drops.TABLE[r].chance = v;
+    const row = &drops.TABLE[r];
+    switch (c) {
+        0 => row.common = itemAt(v),
+        1 => row.odds = v,
+        // **NAMING ONE DOES NOT ARM ITS CHANCE** — a cell writes its own field and nothing beside it, which
+        // the bench's own bleed test pins. What it does instead is UNHIDE `chance` (`dropHas`), so the dial
+        // that is still 0 appears on the row under it and says so.
+        2 => row.rare = itemAt(v),
+        3 => row.chance = v,
+        else => row.gold = @enumFromInt(@as(u8, @intFromFloat(mathx.clampF(v, 0, NCOIN - 1)))),
+    }
 }
 
-/// A body with no rare row has no chance to move — the pair is one claim, and `drops`' own comptime walk
-/// refuses a rare without a chance.
+/// A body with nothing in a slot has no number to move — the pair is one claim, and `drops`' own comptime walk
+/// refuses a rare without a chance. The two PICKS are always offered: naming the thing is how an empty slot
+/// stops being empty.
 fn dropHas(r: usize, c: usize) bool {
     return switch (c) {
-        0 => drops.TABLE[r].common != null,
-        else => drops.TABLE[r].rare != null,
+        1 => drops.TABLE[r].common != null,
+        3 => drops.TABLE[r].rare != null,
+        else => true,
     };
 }
 
@@ -1434,6 +1523,22 @@ pub fn table(t: usize) Table {
     return TABLES[t];
 }
 
+/// **A TABLE AND A COLUMN BY NAME, NOT BY WHERE THEY SIT.** An index into `cols` moves the day a column is
+/// added in front of it — silently, onto a cell that is still a valid cell.
+pub fn tableIndex(key: []const u8) ?usize {
+    for (TABLES, 0..) |tb, i| {
+        if (std.mem.eql(u8, tb.key, key)) return i;
+    }
+    return null;
+}
+
+pub fn colIndex(t: usize, name: []const u8) ?usize {
+    for (TABLES[t].cols, 0..) |col, i| {
+        if (std.mem.eql(u8, col.name, name)) return i;
+    }
+    return null;
+}
+
 pub fn value(t: usize, r: usize, c: usize) f32 {
     return TABLES[t].get(r, c);
 }
@@ -1555,7 +1660,13 @@ pub fn writeDiff(w: anytype) !void {
                 }
                 try w.print("{s}.", .{tb.key});
                 try writeToken(w, tb.rowKey(r));
-                try w.print(".{s} {d:.4}\n", .{ tb.cols[c].name, out });
+                // **A CHOICE GOES OUT BY NAME** (`Pick`), never as this build's ordinal.
+                if (tb.cols[c].pick) |p| {
+                    const at = @as(usize, @intFromFloat(mathx.clampF(out, 0, @floatFromInt(p.n - 1))));
+                    try w.print(".{s} {s}\n", .{ tb.cols[c].name, p.key(at) });
+                } else {
+                    try w.print(".{s} {d:.4}\n", .{ tb.cols[c].name, out });
+                }
             }
         }
     }
@@ -1598,12 +1709,11 @@ pub fn load() void {
         var it = std.mem.tokenizeScalar(u8, line, ' ');
         const path = it.next() orelse continue;
         const tok = it.next() orelse continue;
-        const v = std.fmt.parseFloat(f32, tok) catch continue;
         var parts = std.mem.tokenizeScalar(u8, path, '.');
         const tkey = parts.next() orelse continue;
         const rkey = parts.next() orelse continue;
         const ckey = parts.next() orelse continue;
-        apply(tkey, rkey, ckey, v);
+        applyText(tkey, rkey, ckey, tok);
     }
 }
 
@@ -1619,24 +1729,47 @@ fn ratioIn(t: usize, r: usize, c: usize, v: f32) f32 {
     return if (std.math.isNan(v)) 0 else mathx.clampF(v, 0, col.hi);
 }
 
-fn apply(tkey: []const u8, rkey: []const u8, ckey: []const u8, v: f32) void {
+/// **THE ONE WALK FROM THREE TOKENS TO A CELL**, and it has to come before the decode: whether the third token
+/// is a number or a name is the COLUMN's answer and not the line's.
+fn find(tkey: []const u8, rkey: []const u8, ckey: []const u8) ?[3]usize {
     for (TABLES, 0..) |tb, ti| {
         if (!std.mem.eql(u8, tkey, tb.key)) continue;
         for (0..tb.n) |r| {
             if (!tokenEql(tb.rowKey(r), rkey)) continue;
             for (tb.cols, 0..) |col, c| {
-                if (!std.mem.eql(u8, ckey, col.name)) continue;
-                if (col.ratio) {
-                    if (tb.setRatio) |f| f(r, c, ratioIn(ti, r, c, v));
-                } else {
-                    setValue(ti, r, c, v);
-                }
-                return;
+                if (std.mem.eql(u8, ckey, col.name)) return .{ ti, r, c };
             }
-            return;
+            return null;
         }
+        return null;
+    }
+    return null;
+}
+
+fn land(t: usize, r: usize, c: usize, v: f32) void {
+    if (TABLES[t].cols[c].ratio) {
+        if (TABLES[t].setRatio) |f| f(r, c, ratioIn(t, r, c, v));
         return;
     }
+    setValue(t, r, c, v);
+}
+
+fn apply(tkey: []const u8, rkey: []const u8, ckey: []const u8, v: f32) void {
+    const at = find(tkey, rkey, ckey) orelse return;
+    land(at[0], at[1], at[2], v);
+}
+
+/// **A NAME THIS BUILD DOES NOT KNOW LEAVES THE CELL WHERE THE CODE PUT IT.** An item taken out of the game
+/// is a token nothing can resolve, and guessing at it would silently move a drop onto whatever happened to
+/// land at that ordinal — so the line is dropped and the row keeps its authored answer.
+fn applyText(tkey: []const u8, rkey: []const u8, ckey: []const u8, tok: []const u8) void {
+    const at = find(tkey, rkey, ckey) orelse return;
+    if (TABLES[at[0]].cols[at[2]].pick) |p| {
+        const i = p.find(tok) orelse return;
+        land(at[0], at[1], at[2], @floatFromInt(i));
+        return;
+    }
+    land(at[0], at[1], at[2], std.fmt.parseFloat(f32, tok) catch return);
 }
 
 test "the bench reads every cell back off the code, and a revert is exact" {
@@ -1790,4 +1923,93 @@ test "a dial writes the field its own getter reads, at its own step, and moves n
         std.debug.print("bench: {d} bad cells\n", .{bad});
         return error.BenchCellMismatch;
     }
+}
+
+test "WHAT A BODY LEAVES IS A CHOICE ON THE SHEET, AND THE FILE CARRIES ITS NAME" {
+    init();
+    defer revertAll();
+    const dt = tableIndex("drop").?;
+    const cCommon = colIndex(dt, "common").?;
+    const cRare = colIndex(dt, "rare").?;
+    const cChance = colIndex(dt, "chance").?;
+    const cPurse = colIndex(dt, "purse").?;
+
+    const toad: usize = @intFromEnum(wf.FoeKind.toad);
+    try std.testing.expectEqual(item.Kind.bloodgrass, drops.TABLE[toad].common.?);
+    try std.testing.expect(!edited(dt, toad, cCommon));
+    setValue(dt, toad, cCommon, itemOrdinal(.smithing_stone));
+    try std.testing.expectEqual(item.Kind.smithing_stone, drops.TABLE[toad].common.?);
+    try std.testing.expect(edited(dt, toad, cCommon));
+
+    // **NOTHING IS A VALUE YOU CAN LAND ON**, not a missing one: the sac leaves nothing and its cell reads 0.
+    const sac: usize = @intFromEnum(wf.FoeKind.brood_sac);
+    try std.testing.expectEqual(@as(f32, 0), value(dt, sac, cCommon));
+    // …and naming a rare UNHIDES its chance without moving it (`dropSet`).
+    try std.testing.expectEqual(@as(?item.Kind, null), drops.TABLE[sac].rare);
+    try std.testing.expect(!shows(dt, sac, cChance));
+    setValue(dt, sac, cRare, itemOrdinal(.golden_seed));
+    try std.testing.expectEqual(item.Kind.golden_seed, drops.TABLE[sac].rare.?);
+    try std.testing.expect(shows(dt, sac, cChance));
+    try std.testing.expectEqual(@as(f32, 0), value(dt, sac, cChance));
+    setValue(dt, sac, cChance, 0.25);
+    setValue(dt, sac, cPurse, @floatFromInt(@intFromEnum(drops.Coin.heavy)));
+    try std.testing.expectEqual(drops.Coin.heavy, drops.TABLE[sac].gold);
+
+    var buf: [4096]u8 = undefined;
+    var st = std.io.fixedBufferStream(&buf);
+    try writeDiff(st.writer());
+    const text = st.getWritten();
+    std.debug.print("\n  drop sheet writes:\n{s}", .{text});
+    try std.testing.expect(std.mem.indexOf(u8, text, "drop.toad.common smithing_stone") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "drop.brood_sac.rare golden_seed") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "drop.brood_sac.purse heavy") != null);
+
+    revertAll();
+    try std.testing.expectEqual(item.Kind.bloodgrass, drops.TABLE[toad].common.?);
+    try std.testing.expectEqual(@as(?item.Kind, null), drops.TABLE[sac].rare);
+    try std.testing.expectEqual(drops.Coin.none, drops.TABLE[sac].gold);
+    try std.testing.expect(!anyEdited());
+
+    var lines = std.mem.tokenizeAny(u8, text, "\r\n");
+    while (lines.next()) |line| {
+        var it = std.mem.tokenizeScalar(u8, line, ' ');
+        var parts = std.mem.tokenizeScalar(u8, it.next().?, '.');
+        applyText(parts.next().?, parts.next().?, parts.next().?, it.next().?);
+    }
+    try std.testing.expectEqual(item.Kind.smithing_stone, drops.TABLE[toad].common.?);
+    try std.testing.expectEqual(item.Kind.golden_seed, drops.TABLE[sac].rare.?);
+    try std.testing.expectEqual(drops.Coin.heavy, drops.TABLE[sac].gold);
+
+    // An item cut from the game must not silently move a drop onto whatever now stands at that ordinal.
+    applyText("drop", "toad", "common", "a_thing_that_was_cut");
+    try std.testing.expectEqual(item.Kind.smithing_stone, drops.TABLE[toad].common.?);
+}
+
+test "EVERY PICK COLUMN'S KEYS ARE UNIQUE AND ITS CLAMP REACHES ITS WHOLE LIST" {
+    var picks: usize = 0;
+    inline for (TABLES, 0..) |tb, ti| {
+        for (tb.cols, 0..) |col, ci| {
+            const p = col.pick orelse continue;
+            picks += 1;
+            // The clamp is the column's, so a list longer than `hi` has choices nothing can select.
+            try std.testing.expectEqual(@as(f32, @floatFromInt(p.n - 1)), col.hi);
+            try std.testing.expectEqual(@as(f32, 0), col.lo);
+            try std.testing.expect(col.int);
+            for (0..p.n) |i| {
+                // One word, or a saved line is four tokens and the loader reads the wrong one.
+                try std.testing.expect(p.key(i).len > 0);
+                for (p.key(i)) |ch| try std.testing.expect(ch != ' ');
+                for (0..p.n) |j| {
+                    if (i != j) try std.testing.expect(!std.mem.eql(u8, p.key(i), p.key(j)));
+                }
+                try std.testing.expectEqual(@as(?usize, i), p.find(p.key(i)));
+            }
+            std.debug.print("  pick {s}.{s}: {d} choices, \"{s}\" .. \"{s}\"\n", .{
+                tb.key, col.name, p.n, p.key(0), p.key(p.n - 1),
+            });
+            _ = ti;
+            _ = ci;
+        }
+    }
+    try std.testing.expect(picks > 0);
 }

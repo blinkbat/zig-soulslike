@@ -37,6 +37,7 @@ const savemod = @import("save.zig"); // for the boot screen's shelf — staged, 
 const sfx = @import("core/audio.zig");
 const worldfmt = @import("world/worldfmt.zig");
 const env = @import("world/env.zig");
+const tunemod = @import("play/tune.zig");
 
 const Game = game.Game;
 const v3 = mathx.v3;
@@ -2014,6 +2015,21 @@ fn statsShots(g: *Game) void {
     editorSnap(g, "shots/117b_stats_consumables.png");
     g.editor.statsForShot("Foes", 2);
     editorSnap(g, "shots/117c_stats_foes.png");
+    // **THE ONE SHEET WITH CHOICES ON IT**, and the archer because it is the row that fills every column: a
+    // common, a rare with a chance under it, and a purse.
+    g.editor.statsForShot("Drops", @intFromEnum(worldfmt.FoeKind.archer));
+    editorSnap(g, "shots/117h_stats_drops.png");
+    // …and the same row with its list down, because a shut picker is only a readout.
+    g.editor.statsPickForShot(tunemod.colIndex(g.editor.statsTabForShot(), "common").?);
+    editorSnap(g, "shots/117i_stats_drops_open.png");
+    // …and MOVED OFF THE CODE, the only frame that shows the name the source says. Put back at once, so no
+    // later stage photographs a table this harness edited.
+    uimod.closeDropdown();
+    const dropTab = g.editor.statsTabForShot();
+    const commonCol = tunemod.colIndex(dropTab, "common").?;
+    tunemod.setValue(dropTab, @intFromEnum(worldfmt.FoeKind.archer), commonCol, tunemod.itemOrdinal(.bloodgrass));
+    editorSnap(g, "shots/117j_stats_drops_edited.png");
+    tunemod.revertAll();
     g.editor.statsForShot("Blows", 18);
     editorSnap(g, "shots/117e_stats_blows.png");
     g.editor.statsForShot("Hero", 0);

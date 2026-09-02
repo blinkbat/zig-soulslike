@@ -635,9 +635,6 @@ pub fn chestLidMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// **THE LID IS A HALF-ROUND, NOT A BARREL** (owner: the inside bulges). A full `addCylinder` at the hinge line
-/// puts its lower half inside the box, so the arc is swept over the TOP semicircle only and the ends are closed
-/// down to the chord. Winding follows `ringBand`'s: -x rim first, then +x, or the shell faces inward and vanishes.
 fn barrelHalf(b: *Builder, ex: f32, axis: f32, cz: f32, r: f32, col: rl.Color) void {
     const SEGS = 9;
     const at = struct {
@@ -651,7 +648,6 @@ fn barrelHalf(b: *Builder, ex: f32, axis: f32, cz: f32, r: f32, col: rl.Color) v
         const a1 = -std.math.pi * 0.5 + std.math.pi * @as(f32, @floatFromInt(i + 1)) / SEGS;
         const n = v3(0, mathx.cosf((a0 + a1) * 0.5), mathx.sinf((a0 + a1) * 0.5));
         b.quad(at(-ex, axis, cz, r, a0), at(-ex, axis, cz, r, a1), at(ex, axis, cz, r, a1), at(ex, axis, cz, r, a0), n, col);
-        // The end plates, chord to arc — a fan of quads rather than a triangle fan, which this builder has no vertex for.
         const c0 = v3(0, axis, cz + mathx.sinf(a0) * r);
         const c1 = v3(0, axis, cz + mathx.sinf(a1) * r);
         b.quad(v3(ex, c0.y, c0.z), at(ex, axis, cz, r, a0), at(ex, axis, cz, r, a1), v3(ex, c1.y, c1.z), v3(1, 0, 0), col);

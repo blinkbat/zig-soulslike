@@ -95,22 +95,14 @@ fn hearthInto(b: *Builder, rng: *mathx.Rng, cold: bool) void {
     }
 }
 
-/// **A LIT CAMPFIRE IS A BONFIRE, SO IT GETS THE BONFIRE'S DRESSING** — `rest.isRestKind` says both of these are
-/// places you sit down, and one of them was a ring of stones with a candle in it. What that promise is worth is
-/// the same everywhere: a column of smoke you can see from across the field, embers going up it, a bedroll, and a
-/// flame that reads as a fire rather than a campstove.
-///
 /// **IT IS NOT A COPY OF THE BONFIRE.** This hearth is smaller — its stones ring at 0.68 against the bonfire's
 /// 1.08 — so the ash bed, the flame and the smoke are all scaled to it (`CAMP_S`); the same OBJECT, at the size
-/// of the fire that is actually burning.
 const CAMP_S: f32 = 0.72;
 const SMOKE_SRC: f32 = 0.62;
 pub fn campfireMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(9003);
     hearthInto(&b, &rng, false);
-    // THE ASH BED, three layers deep like the bonfire's, and the drifts on top of it: a fire that has been
-    // burning has burnt something, and a bare stone ring says it was lit a minute ago.
     b.setMat(.plain);
     b.addBlob(v3(0, 0.040, 0), v3(0.56 * CAMP_S, 0.055, 0.56 * CAMP_S), 3, 11, ASH_DK);
     b.addBlob(v3(rng.signed() * 0.05, 0.068, rng.signed() * 0.05), v3(0.44 * CAMP_S, 0.050, 0.42 * CAMP_S), 3, 10, ASH);
@@ -129,22 +121,15 @@ pub fn campfireMesh(shader: rl.Shader) rl.Model {
         );
     }
     b.addBlob(v3(0, 0.10, 0), v3(0.30, 0.05, 0.30), 3, 7, COAL);
-    // **THE FLAME IS THE HEARTH'S OWN TRIPLE, SCALED** (`art.HEARTH_FLAMES`, which the bonfire reads too). At
-    // 1.15 it sat inside the stones and read as a candle in a bucket; the tallest through `CAMP_S` is 1.58,
-    // which clears the ring.
     const F = art.HEARTH_FLAMES;
     flameInto(&b, &rng, rng.signed() * 0.04, 0.11, rng.signed() * 0.04, F[0] * CAMP_S);
     flameInto(&b, &rng, rng.signed() * 0.22, 0.09, rng.signed() * 0.22, F[1] * CAMP_S);
     flameInto(&b, &rng, rng.signed() * 0.25, 0.08, rng.signed() * 0.25, F[2] * CAMP_S);
-    // THE BEDROLL, opposite the guitar so the two do not fight over the same side of the hearth.
-    // Its near edge 1.35 m out, which clears this hearth's kicked stone at 1.15, and on the far side from the
-    // guitar rock at (-1.44, 0.98).
     art.bedrollInto(&b, &rng, 1.45, -0.90, 1.02);
     art.guitarRockInto(&b, &rng, GUITAR_CX, GUITAR_CZ);
     return b.toModel(shader);
 }
 
-/// The column, off `propart` — the same mesh the bonfire's veil is, at this hearth's own height and scale.
 pub fn campfireVeilMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(9013);
@@ -174,14 +159,12 @@ pub const PICKUP_H: f32 = 0.62;
 const GLOW_R0: f32 = 0.022;
 const GLOW_R1: f32 = 0.007;
 
-/// **THE PILLAR: A SHAFT OF LIGHT STANDING IN THE AIR OVER IT** (owner's call). What the wisp cannot do is say "here" from behind a rock, and a taller wisp would only be the bollard again — so the thing that carries the distance is a column you can see THROUGH.
 const PILLAR_H: f32 = 1.48;
 const PILLAR_R0: f32 = 0.105;
 const PILLAR_R1: f32 = 0.048;
-/// **THE ALPHA IS SOLVED AGAINST THE SHADER'S OWN STEP, NOT CHOSEN.** `outA` lerps TIP→CORE across
 /// `smoothstep(0.62, 0.90, emis)` with `emis = 1 - a/255`, so the translucent end wants `emis <= 0.62`, any
-/// `a >= 97`. **AND IT FADES OUT AS IT GOES UP** (owner's call): the shader FLOORS opacity at the tip value, so
-/// the gradient comes from a more solid FOOT — `a = 63` → `emis = 0.753` → `outA ≈ 0.62`, easing to the tip's 0.42.
+/// **IT FADES OUT AS IT GOES UP** (owner's call): the shader FLOORS opacity at the tip value, so a more solid
+/// FOOT makes the gradient — `a = 63` → `emis = 0.753` → `outA ≈ 0.62`, easing to the tip's 0.42.
 const PILLAR_A_FOOT: u8 = 63;
 const PILLAR_A_HEAD: u8 = 104;
 const PILLAR = mathx.rgba(212, 208, 176, PILLAR_A_FOOT);
@@ -334,28 +317,19 @@ pub fn waterMesh(shader: rl.Shader) rl.Model {
 }
 
 
-// Authored at the size of a real door (`FOG_W` x `FOG_H`), so the editor's `scale` reads as a multiple of one.
-//
-// **IT IS A VEIL, NOT A PROP MESH** (`props.INFO`): laid down AFTER everything opaque, or its own depth punches a hole in what stands behind it.
 pub const FOG_W: f32 = 3.4;
 pub const FOG_H: f32 = 4.2;
 /// Half-thickness of the WARD behind the sheet (`props.Info.ward`) — not of the curtain, whose three panes span 0.22 m. A push-out is a position test, so a wall thinner than one frame of travel is one a charge steps clean through: the knight's 12.4 m/s covers 0.21 m at 60 fps and 0.41 m at 30.
 pub const FOG_WARD_R: f32 = 0.40;
 // THE UNDULATION IS PER-VERTEX, so the grid IS the amplitude it can carry: at 10x9 the roll had two and a half
-// cells to bend through and read as a flag.
-//
 // **AND THIS IS THE EXPENSIVE PROP IN THE GAME, ON PURPOSE**: 16x14x5x2 = 2240 quads, 4480 tris (it was 1080),
-// five ALPHA-BLENDED layers over three value-noise octaves, on a sheet that fills the frame. If it has to come down, the sheet COUNT is the dial — it multiplies fill, where the grid only costs vertices.
 const FOG_COLS: i32 = 16;
 const FOG_ROWS: i32 = 14;
 const FOG_SHEETS: i32 = 5; // depth: five curtains a hand apart, so the billow has something to move THROUGH
-// COLD AND HEAVY: everything outdoors here is warm, so the one thing between you and a boss is the one that is
-// not. **SOLVED AGAINST THE RENDER** — at (190,198,210) it measured 220,209,201 beside a cliff at 151,137,105,
-// so far up the curve that the curdle and billow clipped flat. 220 → 130 wants (130/220)^2.2 = 0.314 on the
-// albedo, and the BLUE is pushed past neutral because the warm key drags it back. Alpha is EMISSIVE, not opacity.
+// **SOLVED AGAINST THE RENDER** — at (190,198,210) it measured 220,209,201 beside a cliff at 151,137,105, so
+// far up the curve that the curdle and billow clipped flat. 220 → 130 wants (130/220)^2.2 = 0.314.
 const FOG_PALE = mathx.rgba(38, 44, 58, 176);
 const FOG_DEEP = mathx.rgba(20, 24, 36, 176);
-/// **THE MOTES THE SHEET SHEDS AS HE CROSSES** (`hero.fogWake`), DERIVED from the curtain's own colours or a retune of the wall leaves them the wrong colour silently. A mote draws lit and the sheet translucent emissive, so the same albedo reads several times darker on the mote and the lift puts them back on one value.
 const WAKE_LIFT: f32 = 0.40;
 const WHITE = mathx.rgba(255, 255, 255, 255);
 pub const FOG_WAKE_PALE = mathx.withAlpha(mathx.lerpColor(FOG_PALE, WHITE, WAKE_LIFT), 168);
@@ -383,7 +357,6 @@ pub fn fogGateMesh(shader: rl.Shader) rl.Model {
             while (c < FOG_COLS) : (c += 1) {
                 const x0 = (@as(f32, @floatFromInt(c)) / @as(f32, FOG_COLS) - 0.5) * FOG_W;
                 const x1 = (@as(f32, @floatFromInt(c + 1)) / @as(f32, FOG_COLS) - 0.5) * FOG_W;
-                // BOTH FACES, because a gate is walked at from both sides and a one-sided sheet vanishes the moment you turn round inside it.
                 b.quadFadeAnim(v3(x0, y0, z), v3(x1, y0, z), v3(x1, y1, z), v3(x0, y1, z), v3(0, 0, 1), c0, c1, t0, t1);
                 b.quadFadeAnim(v3(x1, y0, z), v3(x0, y0, z), v3(x0, y1, z), v3(x1, y1, z), v3(0, 0, -1), c0, c1, t0, t1);
             }
@@ -393,7 +366,6 @@ pub fn fogGateMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// …AND THE THRESHOLD IT HANGS IN. Two worn stones at the jambs and nothing overhead: a fog gate is dropped into somebody else's archway as often as it stands on its own, and a lintel of mine would fight theirs.
 pub fn fogGateStoneMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0A7E);

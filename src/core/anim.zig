@@ -70,7 +70,6 @@ pub fn Pose(comptime P: type) type {
     };
 }
 
-/// **THE POSE IS A TARGET, NOT THE OUTPUT** — the one idea that separates a body from a puppet, and the reason a two-pose lerp can never be fixed by tuning it. A spring chases the keyed value with its own velocity, so it arrives LATE, carries PAST, and settles back.
 pub const Spring = struct {
     v: f32 = 0,
     vel: f32 = 0,
@@ -148,7 +147,6 @@ test "A SPRING ARRIVES, OVERSHOOTS AND SETTLES — the weight law, as a type rat
     try std.testing.expect(peak < 160);
     try std.testing.expectApproxEqAbs(@as(f32, 100), s.v, 2.0);
 
-    // Critically damped: arrives fast and NEVER overshoots — for anything that must not wobble.
     var c = Spring{};
     c.set(0);
     var cpeak: f32 = 0;

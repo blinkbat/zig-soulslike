@@ -13,7 +13,6 @@ pub const Solid = struct {
     r: f32,
     h: f32 = 1e9,
     /// **AND WHERE IT STARTS** — 0 for every wall in the world, positive only for a LINTEL: the course over a
-    /// doorway, which a body on the floor walks under and a body up on a deck walks into.
     y0: f32 = 0,
     surf: Surface = .stone,
     /// THE FOG GATE'S RULE, and the only thing in the world that has one: a wall to every BODY but the hero's own side, in both directions, and a wall to every LOOK without exception. It is the gate's slot in `env.wardProps` PLUS ONE, so 0 is an ordinary solid; only `env.resolveHeroSide` lets an OPEN one through.
@@ -45,7 +44,6 @@ pub fn pushOutCircle(p: rl.Vector3, pr: f32, c: rl.Vector3, cr: f32) rl.Vector3 
     return pushOut(p, pr, .{ .a = c, .b = c, .r = cr });
 }
 
-/// THE SECOND PASS IS WHAT SETTLES A BODY PUSHED OUT OF ONE SOLID AND INTO THE NEXT — and it is only ever worth anything if the FIRST one moved him. `pushOut` returns its input untouched when nothing overlapped, so on a frame he is standing clear the second sweep is bit-for-bit a no-op over every capsule in his cells.
 pub fn resolve(p: rl.Vector3, pr: f32, solids: []const Solid) rl.Vector3 {
     var out = p;
     for (solids) |s| out = pushOut(out, pr, s);

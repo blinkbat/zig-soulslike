@@ -96,7 +96,6 @@ const DISSOLVE = foe.Dissolve{ .rate = 44.0, .spread = 0.55, .rise = 0.35 };
 const FX_MAX = 84;
 const DUST = foe.DUST;
 const EMBER = rgba(252, 196, 84, 150);
-/// An ember is LIGHT, so it is drawn additive and it COOLS — amber down through this as it rises and dies.
 const EMBER_COOL = rgba(214, 92, 26, 90);
 const SPIT = rgba(176, 190, 150, 140);
 const SPIT_DRY = rgba(120, 138, 104, 110);
@@ -141,7 +140,6 @@ pub var SOULS: u32 = 60;
 
 const State = enum { idle, hop, lunge, recover, chomp, stunlight, stunheavy, dead };
 
-/// Damage banked at one spot (`foe.Sense`) before it startles sideways — under a third of the bar, so one heavy chop or two pokes scatter it. The LUNGE still outranks it: a toad that can answer, answers.
 const PANIC_AT = 0.28;
 
 const Choice = enum { rest, hop, lunge, chomp, scatter, wait };
@@ -178,7 +176,6 @@ pub const Frog = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
@@ -220,7 +217,6 @@ pub const Frog = struct {
     heroHit: ?combat.Hit = null,
     heroLatch: bool = false,
     justDied: bool = false,
-    /// WHO IT IS FIGHTING (`foe.Threat`) — embedded here and stamped by the game, `Leash`'s own law. The creature never asks what a spirit is; it is handed a target in the argument it calls `hero`.
     threat: foe.Threat = .{},
     nav: foe.Nav = .{},
     sense: foe.Sense = .{},
@@ -232,7 +228,6 @@ pub const Frog = struct {
     fxHead: usize = 0,
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
-    /// Carried ONLY so its blood knows whether the ground under it is dry — a toad in the shallows moves and fights exactly as one on the bank.
     wade: foe.Wade = .{},
 
     xf: [NP]rl.Matrix = undefined,
@@ -315,7 +310,6 @@ pub const Frog = struct {
         self.heroLatch = false;
     }
 
-    /// SECONDS UNTIL THE SLAM LANDS, counted from the start of the leap so the coil and the arc are ONE continuous countdown. `tryImpact` fires the frame the toad touches down, so the window shuts there by construction: a caught leap is one that never arrived.
     fn toImpact(self: *const Frog) ?f32 {
         return switch (self.state) {
             .lunge => (LUNGE_COIL + self.hopDur) - self.t,
@@ -329,7 +323,6 @@ pub const Frog = struct {
         return foe.hurtReach(LUNGE_IMPACT_OWN, self.scale);
     }
 
-    /// THE BOARDS TAKE THE LEAP. `enterStun` is what kills it: the `.lunge` state is gone, so `updateHop` never reaches its landing and `tryImpact` never fires. The toad COMES STRAIGHT DOWN — both stun resolvers write `lift` from scratch.
     fn takeParry(self: *Frog) void {
         const reach = self.parryable() orelse return;
         if (!foe.caught(self, reach)) return;
@@ -450,7 +443,6 @@ pub const Frog = struct {
                 const reach = mathx.minF(HOP_REACH, mathx.maxF(0, d - KEEP_OFF));
                 self.startHop(v3(self.pos.x + dir.x * reach, 0, self.pos.z + dir.z * reach), bounds, false);
             },
-            // THE STARTLE: punished where it sits, it scatters a full hop SIDEWAYS off the line — one panic hop clears `Sense`'s own span, so it startles once and then answers. The side alternates.
             .scatter => {
                 const to = mathx.dirXZ(self.pos, hero);
                 const dir = self.nav.along(v3(to.z * self.panicSide, 0, -to.x * self.panicSide));
@@ -473,7 +465,6 @@ pub const Frog = struct {
         self.resolveIdle();
         const wait = if (d <= AGGRO_R) mathx.minF(self.idleWait, 0.16) else self.idleWait;
         if (self.t < wait) return;
-        // **IT WALKS ITS ORDERS THE ONLY WAY IT MOVES — IN HOPS** (`foe.postWant`). One leap toward the place
         // its round is pointing at, capped at its own reach, so a round reads as a frog and not as a glide.
         if (foe.postWant(self, dt, d, AGGRO_R)) |go| {
             const dir = self.nav.along(mathx.dirXZ(self.pos, go));
@@ -489,7 +480,6 @@ pub const Frog = struct {
     fn updateHop(self: *Frog, dt: f32, hero: rl.Vector3, bounds: f32, coil: f32, flight: f32, land: f32) void {
         const total = coil + flight + land;
         if (self.t < coil) {
-            // EVERY hop faces its own AIM: `hopStep` launches along the FACING, so a coil that eyed the hero instead re-bent the hop at the launch — undoing the nav bend and curving a homeward hop back toward him.
             self.faceToward(self.hopAim, dt);
             const k = mathx.smoothstep(0, coil, self.t);
             self.resolveCoil(k, self.isLunge);
@@ -919,7 +909,6 @@ pub const Knot = struct {
     pub fn setParry(self: *Knot, p: foe.Parry) void {
         foe.setParry(self.live(), p);
     }
-    /// …and whether any of them was caught on it this frame. A ONE-FRAME edge, `anyDied`'s, read after `update`.
     pub fn anyParried(self: *const Knot) bool {
         return foe.anyParried(self.liveConst());
     }
@@ -1207,13 +1196,11 @@ test "ROOTED, A TOAD HAS ONLY ITS JAWS — every other move it owns leaves the g
 }
 
 test "THE STARTLE SCATTERS IT SIDEWAYS, AND ONLY WHEN IT CANNOT ANSWER — the lunge still outranks panic" {
-    // Punished with the lunge ready, it lunges; punished with it cooling, it scatters instead of walking in.
     try std.testing.expectEqual(Choice.lunge, classify(LUNGE_R - 0.5, true, true, false, true));
     try std.testing.expectEqual(Choice.scatter, classify(LUNGE_R - 0.5, false, true, false, true));
     try std.testing.expectEqual(Choice.scatter, classify(AGGRO_R - 1.0, true, true, false, true));
     try std.testing.expectEqual(Choice.chomp, classify(BITE_R - 0.2, true, true, false, true));
 
-    // …and the hop it takes is OFF THE LINE: bank a heavy blow's damage where it sits, let it decide, and measure the aim against the bearing to the hero.
     var f = Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     f.leash.provoke();
     f.lungeCd = LUNGE_CD;
@@ -1226,7 +1213,6 @@ test "THE STARTLE SCATTERS IT SIDEWAYS, AND ONLY WHEN IT CANNOT ANSWER — the l
     try std.testing.expect(@abs(aim.x * to.x + aim.z * to.z) < 0.15);
     std.debug.print("\n  toad startle: banked {d:.0} dmg at the spot, hop aimed {d:.0} deg off the hero line\n", .{ HP_MAX * PANIC_AT + 1.0, mathx.degrees(std.math.acos(mathx.clampF(aim.x * to.x + aim.z * to.z, -1, 1))) });
 
-    // One scatter clears the meter — the hop crosses its own pressure span, so it startles ONCE.
     try std.testing.expect(f.hopReach > f.bodyR());
 }
 

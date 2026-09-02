@@ -19,11 +19,7 @@ const mul = mathx.mul;
 const mul3 = mathx.mul3;
 const lerpF = mathx.lerpF;
 
-// **THE SPORELING'S BRUTISH COUSIN, ANSWERED WITH FIRE AND NOT WITH A SWORD** (owner's brief). `ARMOUR` is the
-// point of it: fire and lightning skip it entirely, cold and chaos do nothing.
-//
-// **BUT STEEL HAS TO REGISTER** (owner: seems impossible to hit with melee, should do a little dmg, just highly
-// reduced). At 220 a light landed 3.0 of a 210 bar — 71 swings, and 21 heavies against the OGRE's 11. At 80 a light lands 5.8 and a heavy 17.0.
+// At 220 armour a light landed 3.0 of a 210 bar — 71 swings, and 21 heavies against the OGRE's 11. At 80 a light lands 5.8 and a heavy 17.0.
 
 pub const H: f32 = 3.15;
 pub const SCALE: f32 = 1.0;
@@ -32,7 +28,6 @@ pub const SCALE: f32 = 1.0;
 pub const AGGRO_R_BANK: f32 = 15.0;
 pub var AGGRO_R: f32 = AGGRO_R_BANK;
 const TURN_RATE: f32 = 1.5;
-/// **VERY SLOW** (owner). Two-fifths of a walk — everything else is priced against a player free to leave.
 const WALK_SPEED: f32 = 1.05;
 
 const BODY_R: f32 = 0.86;
@@ -63,7 +58,6 @@ const CORE = rgba(236, 172, 200, 70);
 const DISSOLVE = foe.Dissolve{ .rate = 54.0, .spread = 1.25, .rise = 0.70, .flake = MOTE };
 
 
-/// **A LONG TELL FOR AN ENORMOUS BLOW** — nearly a second of the cap going up. Hits harder than anything in the game that is not a boss.
 pub const SMASH_WIND: f32 = 0.92;
 const SMASH_FALL: f32 = 0.16;
 const SMASH_RECOVER: f32 = 0.86;
@@ -72,12 +66,10 @@ pub const SMASH_R: f32 = 2.35;
 const SMASH_HIT_BANK = combat.Hit{ .dmg = 58, .poise = 40, .stance = 22 };
 pub var SMASH_HIT = SMASH_HIT_BANK;
 
-/// **TOLD IN HALF THE TIME** (owner: "quicker tell") — this answers backing off the smash, so at the smash's own wind-up it would be a second smash you could also walk out of.
 pub const SLAM_WIND: f32 = 0.44;
 const SLAM_AIR: f32 = 0.46;
 const SLAM_RECOVER: f32 = 1.05;
 const SLAM_CD: f32 = 4.4;
-/// Metres it covers, and how high the body rides at the top of the arc.
 pub const SLAM_REACH: f32 = 5.6;
 const SLAM_UP: f32 = 1.30;
 pub const SLAM_R: f32 = 2.05;
@@ -86,24 +78,17 @@ pub var SLAM_HIT = SLAM_HIT_BANK;
 
 // **AND THE ANSWER TO WALKING AWAY.** Past the slam's 7.2 m this creature had nothing: at 1.05 m/s against a
 // hero who runs at 3.4 the whole band out to its aggro ring was free. A SAC OF SPORES, LOBBED — it does not
-// make the golem faster, it makes standing still cost something. What lands is the SPORELING'S OWN CLOUD
-// (`shroom.Cloud`, one pool and one poison meter), so this is area denial and never a second way to be flattened.
-/// **THE LONGEST TELL IN THE GAME** — a second and a half, because what it answers is a player with all the room in the world to read it.
 pub const SAC_WIND: f32 = 1.55;
 const SAC_THROW: f32 = 0.24;
 const SAC_RECOVER: f32 = 1.30;
 const SAC_CD: f32 = 8.0;
-/// Off the far end of the slam's band, so the three moves still answer three distances and never one.
 const SAC_MIN: f32 = 7.60;
 const SAC_MAX: f32 = 13.0;
 pub const SAC_SPEED: f32 = 12.0;
-/// Small: the cloud is the weapon and a sac to the chest is the tax on standing where it aimed.
 const SAC_HIT_BANK = combat.Hit{ .dmg = 15, .poise = 14 };
 pub var SAC_HIT = SAC_HIT_BANK;
-/// Share of stature — over the brim, so the arc starts above its own head.
 const SAC_FROM_Y: f32 = 0.86;
 
-/// **THREE BANDS, AND THEY DO NOT OVERLAP**: inside `SMASH_R` it smashes, the slam owns the band beyond, and the sac everything past the slam's reach. Two moves answering one distance is one move with a coin flip.
 const SMASH_AT: f32 = 3.10;
 const SLAM_MIN: f32 = 3.40;
 const SLAM_MAX: f32 = 7.20;
@@ -124,11 +109,8 @@ comptime {
     std.debug.assert(SAC_HIT_BANK.dmg < SLAM_HIT_BANK.dmg and SAC_HIT_BANK.stance == 0);
 }
 
-// Six bones, the sporeling's layout with an arm each side. NO NECK — the cap sits ON the body, which is what makes the smash read as the whole creature falling forward.
 
-/// Sized by the RING LAW: the disc tell's residency (`RING_RATE` at its longest life) can share a frame with the body dying into its own dissolve and the shared wound on top.
 const PARTS = 60;
-/// The disc tell's motes per second — spore-light walked round the blow's own rim.
 const RING_RATE: f32 = 30.0;
 comptime {
     std.debug.assert(@as(f32, PARTS) >= RING_RATE * 0.55 + DISSOLVE.rate * 0.7 + @as(f32, foe.WOUND_PARTS));
@@ -167,7 +149,6 @@ pub const Golem = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     facing: f32 = 0,
     seed: f32 = 0,
@@ -175,7 +156,6 @@ pub const Golem = struct {
     gone: bool = false,
     state: State = .idle,
     t: f32 = 0,
-    /// A clock no state resets — the bellows must not restart every time the body changes its mind.
     elapsed: f32 = 0,
     phase: f32 = 0,
     moving: f32 = 0,
@@ -193,11 +173,9 @@ pub const Golem = struct {
     smashCd: f32 = 0,
     slamCd: f32 = 0,
     sacCd: f32 = 0,
-    /// One-frame, like `burst`: where the sac left the cap, read by the loop the frame it appears.
     lobFrom: ?rl.Vector3 = null,
     lift: f32 = 0,
     launch: rl.Vector3 = mathx.zero3,
-    /// Where the slam will land — committed with `launch`, and what the flight's disc tell is drawn at.
     landAt: rl.Vector3 = mathx.zero3,
     struck: bool = false,
     burst: ?rl.Vector3 = null,
@@ -246,7 +224,6 @@ pub const Golem = struct {
         foe.drawParticles(&self.parts);
     }
 
-    /// The blow's own circle in spore-light — pink on grass, so it reads without the delver's tan-on-tan problem. Soft, additive, and rising a little: a warning, not debris.
     fn discTell(self: *Golem, dt: f32, at: rl.Vector3, r: f32) void {
         var owed = foe.emitDue(&self.fxAccum, dt, RING_RATE);
         while (owed > 0) : (owed -= 1) {
@@ -265,7 +242,6 @@ pub const Golem = struct {
     pub fn flashFrac(self: *const Golem) f32 {
         return foe.flashFrac(self.flash);
     }
-    /// **THE TRAVEL STATE IS `.walk`, WHICH IS THE ONE THE STAMP HAS TO BE FOR.** Asked while `.idle` the heading was solved for the frames it stands still and null on every frame it moves, so the stamp was never read.
     pub fn navWant(self: *const Golem, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .walk) return null;
         return if (self.leash.goingHome()) self.home else hero;
@@ -286,7 +262,6 @@ pub const Golem = struct {
         _ = self;
         return SOULS;
     }
-    /// **AIRBORNE ON THE SLAM, AND THAT MATTERS TO THE FLOOR** — a creature off the ground does not collide with terrain the way a walking one does, which is what lets the slam cross a lip it could not climb.
     pub fn airborne(self: *const Golem) bool {
         return self.state == .slam_air and self.lift > foe.AIRBORNE_LIFT;
     }
@@ -299,8 +274,6 @@ pub const Golem = struct {
         self.lift = 0;
     }
 
-    /// **ONE DOOR OUT** (every other creature's `enterDeath`). The blade and a drip that kills reach `.dead`
-    /// down different paths, and written out at both the drip's copy had no voice.
     fn enterDeath(self: *Golem) void {
         if (self.state == .dead) return;
         sfx.world(.shroom_die, self.pos);
@@ -314,12 +287,10 @@ pub const Golem = struct {
             self.smashCd = SMASH_CD;
             return self.enter(.smash_wind);
         }
-        // **THE SLAM IS A LEAP, SO IT IS GATED WHERE THE MOVE IS CHOSEN** (AGENTS.md's law, `foe.canLeap`) — the airborne half of `foe.grip` lets a body finish an arc it is already in, so a jump still ALLOWED to start is a jump straight out of the roots.
         if (dist >= SLAM_MIN and dist <= SLAM_MAX and self.slamCd <= 0 and foe.canLeap(&self.root)) {
             self.slamCd = SLAM_CD;
             return self.enter(.slam_wind);
         }
-        // **AND PAST THE SLAM IT THROWS.** Its own band — a creature this slow needs a reason to be respected from across a field.
         if (dist >= SAC_MIN and dist <= SAC_MAX and self.sacCd <= 0) {
             self.sacCd = SAC_CD;
             return self.enter(.sac_wind);
@@ -328,25 +299,18 @@ pub const Golem = struct {
         self.enter(.idle);
     }
 
-    /// Over the brim of its own cap, so the arc starts above its head.
     pub fn sacPoint(self: *const Golem) rl.Vector3 {
         return foe.bodyPoint(self.pos, SAC_FROM_Y * H, self.scale, self.lift);
     }
 
     pub fn update(self: *Golem, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
-        // A CLOUD TICKS ITS MOTES PAST THE BODY'S OWN END (the foe contract's rule): the flakes a dissolve throws are still in the air when the slab goes `gone`, and returning before this froze them there for the rest of the level.
         if (self.gone) {
             foe.tickParticles(&self.parts, dt, self.pos.y);
             return null;
         }
-        // Taken before anything moves `pos`, held through a `defer`, and left to the `vit.dead` check below to resolve a drip that kills.
         const held = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) held.hold(&self.pos);
         self.vit.tick(dt);
-        // **THE STUN METER GOES DOWN THIS BODY'S OWN DOOR.** Twenty creatures answer `grip.downed` with
-        // `stagger(true)`; this one has no such method and syncs its state off `vit.stunned()` instead — which
-        // only sleep ever set. A full lightning meter procced and did NOTHING, on the one creature lightning is
-        // meant to answer (`RESISTS` carries -40 to it). The sync below enters `.stunheavy` off this.
         if (held.downed) self.vit.beginStun(.heavy);
         foe.fadeFlash(&self.flash, dt);
         foe.tickParticles(&self.parts, dt, self.pos.y);
@@ -359,8 +323,6 @@ pub const Golem = struct {
         self.elapsed += dt;
         self.burst = null;
         self.lobFrom = null;
-        // THE ONE-FRAME FLAG, CLEARED AT THE TOP. `Host.live` hands out the whole slab with no `gone` filter, so
-        // left set this latched for the rest of the map — and `game.anyFoeDied` reads it, so the kill sound, shake and rumble fired EVERY FRAME after the first golem died.
         self.justDied = false;
 
         if (self.state == .dead) {
@@ -375,9 +337,6 @@ pub const Golem = struct {
             return null;
         }
 
-        // **THE DECISIONS READ THE SENSED DISTANCE, NEVER THE REAL ONE** (`foe.sensedDist`) — the raw gap ignored
-        // the tether it is already ticking, so a golem that had lost sight of him kept walking and the anti-cheese
-        // rouse `foe.reached` buys did nothing. The reach tests below stay on the REAL distance: a blow lands where the body is.
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         var blow: ?combat.Hit = null;
         var moved: f32 = 0;
@@ -385,7 +344,6 @@ pub const Golem = struct {
         switch (self.state) {
             .idle => {
                 if (d <= AGGRO_R) self.face(hero, dt);
-                // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postStep`), refused inside the ring.
                 const ps = foe.postStep(self, dt, bounds, WALK_SPEED, d, AGGRO_R);
                 if (ps.yaw) |w| {
                     moved = ps.moved;
@@ -394,8 +352,6 @@ pub const Golem = struct {
                 if (self.t >= 0.35) self.decide(d);
             },
             .walk => {
-                // IT WALKS WHERE IT IS LOOKING and turns round what is in the way through the FACING — the ogre's
-                // and the ravager's arrangement, because a mass this size does not strafe. Stepping at the target instead carried it sideways for the two seconds a 1.5 rad/s turn takes.
                 const tgt = if (self.leash.goingHome()) self.home else hero;
                 self.face(self.nav.aim(self.pos, tgt), dt);
                 const step = WALK_SPEED * dt;
@@ -403,10 +359,8 @@ pub const Golem = struct {
                 moved = step;
                 if (self.t >= 0.40) self.decide(d);
             },
-            // **IT REARS AND HOLDS.** The cap goes all the way up over the first two thirds and the last third is dead still, which is the frame the player is actually reading.
             .smash_wind => {
                 self.face(hero, dt);
-                // **THE DISC IS DRAWN BEFORE IT IS BILLED** (the knight's slam law): the blow's own rim in spore-light for the whole wind, off the same centre and radius the blow uses.
                 self.discTell(dt, self.reachPoint(SMASH_R * 0.62), SMASH_R * self.scale);
                 if (self.t >= SMASH_WIND) self.enter(.smash_fall);
             },
@@ -415,7 +369,6 @@ pub const Golem = struct {
                     self.struck = true;
                     const at = self.reachPoint(SMASH_R * 0.62);
                     self.burst = at;
-                    // NOT PARRYABLE, AND THAT IS A DECISION (the delver-burst rule): the blow is a DISC of ground with no bearing to catch. The counter is your feet, both moves.
                     if (mathx.distXZ(at, hero) <= SMASH_R * self.scale + foe.HERO_R) {
                         blow = SMASH_HIT;
                     }
@@ -423,7 +376,6 @@ pub const Golem = struct {
                 if (self.t >= SMASH_FALL) self.enter(.smash_rec);
             },
             .smash_rec => if (self.t >= SMASH_RECOVER) self.decide(d),
-            // **IT GATHERS AND THROWS ITSELF.** The launch vector is fixed at the end of the wind-up, so the slam commits to a spot the way the bone knight's fall does — it cannot steer onto you in the air.
             .slam_wind => {
                 self.face(hero, dt);
                 if (self.t >= SLAM_WIND) {
@@ -439,7 +391,6 @@ pub const Golem = struct {
                 const step = mathx.lenV(self.launch) / SLAM_AIR * dt;
                 mathx.stepXZ(&self.pos, mathx.normV(self.launch), step, bounds);
                 moved = step;
-                // Drawn at the spot the launch COMMITTED to — the wind cannot show it (the aim is still tracking there), so the flight does, which is the half-second you dodge in.
                 self.discTell(dt, self.landAt, SLAM_R * self.scale);
                 self.lift = SLAM_UP * mathx.sinf(std.math.pi * u) * self.scale;
                 if (u >= 1.0) {
@@ -452,7 +403,6 @@ pub const Golem = struct {
                 }
             },
             .slam_rec => if (self.t >= SLAM_RECOVER) self.decide(d),
-            // **THE SAC SWELLS AND IT KEEPS FACING HIM.** The aim is taken at the THROW, so tracking through the wind is honest — what it cannot do is steer the sac once it is in the air.
             .sac_wind => {
                 self.face(hero, dt);
                 if (self.t >= SAC_WIND) self.enter(.sac_throw);
@@ -510,13 +460,10 @@ pub const Golem = struct {
         const facingDeg = mathx.degrees(self.facing);
         const dk = if (self.state == .dead) mathx.smoothstep(0, 0.5, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
 
-        // **THE WHOLE CREATURE IS THE ANIMATION.** No neck and no wrists, so every read it has is the trunk: the rear is the body arching back, the smash is the body folding forward, and the slam is the same fold thrown off the ground.
         const rear = self.rearAmt();
         const fold = self.foldAmt();
         const lob = self.lobAmt();
         const bob = mathx.sinf(self.phase * std.math.tau) * 0.022 * H * self.moving;
-        // **A STANDING SLAB STILL BREATHES** — two rates that never line up, gone the moment it moves. Bolt
-        // still it read as masonry; a fungus this size is a bellows.
         const still = (1.0 - self.moving) * (1.0 - dk);
         const breathe = (mathx.sinf(self.elapsed * 0.9 + self.seed * 5.0) * 0.9 + mathx.sinf(self.elapsed * 0.43 + self.seed * 8.3) * 0.7) * still;
         const trunk = -34.0 * rear + 66.0 * fold - 74.0 * dk + 30.0 * lob + 1.4 * breathe;
@@ -528,11 +475,9 @@ pub const Golem = struct {
             tr(0, rootY, 0),
             mul(ry(facingDeg), tr(self.pos.x, self.pos.y + self.lift, self.pos.z)),
         );
-        // The cap leads the fold and lags the rear, which is what stops the two reading as one rigid board.
         const swing = mathx.sinf(self.phase * std.math.tau) * 16.0 * self.moving;
         const breatheLate = (mathx.sinf(self.elapsed * 0.9 - 0.8 + self.seed * 5.0) * 0.9 + mathx.sinf(self.elapsed * 0.43 - 0.5 + self.seed * 8.3) * 0.7) * still;
         self.limb(&wx, CAP, rx(-12.0 * rear + 24.0 * fold + 16.0 * lob + 2.1 * breatheLate));
-        // BOTH ARMS, TOGETHER: two arms doing the same thing is what separates the throw from the smash's asymmetric flail.
         self.limb(&wx, ARML, rx(swing - 28.0 * rear + 58.0 * fold + 74.0 * lob));
         self.limb(&wx, ARMR, rx(-swing - 28.0 * rear + 58.0 * fold + 74.0 * lob));
         self.limb(&wx, LEGL, rx(-swing * 0.7));
@@ -541,7 +486,6 @@ pub const Golem = struct {
         self.xf = wx;
     }
 
-    /// Hangs a bone off the trunk at its rest offset. Everything above the body follows the trunk.
     fn limb(self: *const Golem, wx: *[N]rl.Matrix, i: usize, local: rl.Matrix) void {
         const off = mathx.subV(self.rest[i], self.rest[BODY]);
         wx[i] = mul(mul(local, tr(off.x, off.y, off.z)), wx[BODY]);
@@ -583,7 +527,6 @@ fn buildBone(b: *Builder, i: usize) void {
     switch (i) {
         BODY => {
             b.setMat(.skin);
-            // The sporeling's own profile with the mass moved UP, which is what turns a mushroom into something that can throw itself.
             b.addBlob(v3(0, 0.12 * H, 0), v3(0.24 * H, 0.26 * H, 0.22 * H), 11, 9, FLESH);
             b.addBlob(v3(0, -0.08 * H, 0), v3(0.20 * H, 0.14 * H, 0.19 * H), 9, 8, FLESH_DK);
             var k: u32 = 0;
@@ -602,7 +545,6 @@ fn buildBone(b: *Builder, i: usize) void {
         },
         CAP => {
             b.setMat(.skin);
-            // **THE CAP IS THE WEAPON AND IT IS SIZED LIKE ONE.** Wider than the body it sits on, so the silhouette says "this comes down on you" before the creature has done anything.
             b.addBlob(v3(0, 0.04 * H, 0), v3(CAP_R, 0.20 * H, CAP_R * 0.95), 13, 10, CAP_COL);
             b.addBlob(v3(0, 0.15 * H, 0), v3(CAP_R * 0.66, 0.12 * H, CAP_R * 0.64), 10, 8, CAP_DK);
             b.addBlob(v3(0, -0.04 * H, 0), v3(CAP_R * 0.88, 0.030 * H, CAP_R * 0.84), 10, 9, GILL);
@@ -613,7 +555,6 @@ fn buildBone(b: *Builder, i: usize) void {
                 const s = rng.range(0.020, 0.048) * H;
                 b.addBlob(v3(mathx.cosf(a) * rr, 0.09 * H, mathx.sinf(a) * rr), v3(s, s * 0.7, s), 5, 5, CAP_DK);
             }
-            // The only bright thing on it, and the reason you can see the cap coming in a dark hollow.
             b.setMat(.plain);
             b.addBlob(v3(0, -0.06 * H, 0), v3(CAP_R * 0.46, 0.026 * H, CAP_R * 0.44), 9, 8, MOTE);
             b.addBlob(v3(0, -0.07 * H, 0), v3(CAP_R * 0.24, 0.020 * H, CAP_R * 0.22), 8, 7, CORE);
@@ -662,7 +603,6 @@ pub const Model = struct {
 /// **THE MAP'S OWN PER-KIND CAP** — it was a bare 8, so a map placing a ninth golem got eight and `foe.resetGroup` dropped the rest in silence.
 pub const CAP_N: usize = wf.MAX_PER_KIND;
 
-/// THE SAC IN FLIGHT — it wears the cap's palette rather than a new one. Not the mage's ball: that thing is LIGHT, drawn additive; this is a lump with gills showing.
 pub fn sacMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     b.setMat(.skin);
@@ -735,9 +675,7 @@ test "THE HOMUNCULUS IS ANSWERED WITH FIRE, NOT WITH A SWORD" {
     // against the ogre's 11. Bounded at BOTH ends: under 2 the armour says nothing, over 3.5 the sword stops being a choice a player can make badly.
     const margin = took_f / took_h;
     try std.testing.expect(margin > 2.0 and margin < 3.5);
-    // …and it may never take longer with a sword than the OGRE does, which carries half again the health and no armour at all. That comparison is the one the number got away from.
     try std.testing.expect(HP_MAX / took_h < 300.0 / 27.0 * 1.25);
-    // …and armour is never immunity, however much of it there is (`combat.armourTaken`).
     try std.testing.expect(took_l > 0 and took_h > 0);
 }
 
@@ -792,10 +730,8 @@ test "A DEATH IS ONE FRAME LONG, and the flakes outlive the body that threw them
         }
     }
     std.debug.print("\n  spore golem: {d} frame(s) claimed a death over {d}; gone at frame {d} with {d} flakes still up, {d} left now\n", .{ claims, frames, goneAt orelse 0, atGone, Live.count(&g.parts) });
-    // **ONE.** `Host.live` hands out the whole slab with no `gone` filter, so a flag left set here is one `game.anyFoeDied` reads every frame for the rest of the map.
     try std.testing.expectEqual(@as(u32, 1), claims);
     try std.testing.expect(goneAt != null);
-    // …and the flakes still up when the slab went have aged out since, rather than frozen where they were.
     try std.testing.expect(atGone > 0);
     try std.testing.expectEqual(@as(usize, 0), Live.count(&g.parts));
 }
@@ -803,7 +739,6 @@ test "A DEATH IS ONE FRAME LONG, and the flakes outlive the body that threw them
 test "THE FIRST TWO BANDS COVER EACH OTHER: the smash owns its feet, the slam owns where you back off to" {
     std.debug.print("  spore golem: smash {d:.2} m at a {d:.2} s tell | slam {d:.1} m from {d:.1}..{d:.1} at a {d:.2} s tell\n", .{ SMASH_R, SMASH_WIND, SLAM_REACH, SLAM_MIN, SLAM_MAX, SLAM_WIND });
     try std.testing.expect(SLAM_WIND * 2.0 < SMASH_WIND);
-    // Backing out of the smash puts you INSIDE the slam's opening band, which is the whole trap.
     try std.testing.expect(SMASH_R < SLAM_MIN);
     try std.testing.expect(SLAM_MIN < SMASH_R + 2.0);
     try std.testing.expect(WALK_SPEED < 1.2);
@@ -811,12 +746,9 @@ test "THE FIRST TWO BANDS COVER EACH OTHER: the smash owns its feet, the slam ow
 
 test "AND A THIRD BAND PAST BOTH: WALKING AWAY IS NOT AN ANSWER ANY MORE" {
     std.debug.print("  spore golem: sac {d:.1}..{d:.1} m at a {d:.2} s tell, {d:.0} s apart | walks {d:.2} m/s against a hero's 3.40 run\n", .{ SAC_MIN, SAC_MAX, SAC_WIND, SAC_CD, WALK_SPEED });
-    // THE HOLE IT FILLS: past the slam's far edge the creature had nothing, and it closes ground at less than a third of a run.
     try std.testing.expect(SLAM_MAX < SAC_MIN);
     try std.testing.expect(SAC_MAX > SLAM_MAX + 4.0);
-    // …AND IT IS STILL THE SLOWEST TELL ON THE FIELD. It answers a player with room to read it, so it may not be the thing that punishes him for having room.
     try std.testing.expect(SAC_WIND > SMASH_WIND and SAC_WIND > SLAM_WIND * 3.0);
-    // Area denial, not artillery: the sac itself does less than either fist.
     try std.testing.expect(SAC_HIT.dmg * 3.0 < SMASH_HIT.dmg);
 
     var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.5);
@@ -828,9 +760,7 @@ test "AND A THIRD BAND PAST BOTH: WALKING AWAY IS NOT AN ANSWER ANY MORE" {
         from = g.lobFrom;
     }
     const at = from orelse return error.TestUnexpectedResult;
-    // IT LEAVES OVER ITS OWN BRIM, not out of its chest — the arc has to start above the cap it came from.
     try std.testing.expect(at.y > g.pos.y + CAP_Y * 0.9);
-    // ONE SAC PER THROW: the flag is one frame, like every other creature's.
     var more: u32 = 0;
     var k: u32 = 0;
     while (k < 30) : (k += 1) {
@@ -872,13 +802,8 @@ test "IT COMMITS TO A SPOT AND CANNOT STEER ONTO HIM IN THE AIR" {
 
 test "THE STAMPED WAY IS ACTUALLY READ, and a slam broken in the air comes down" {
     const dt: f32 = 1.0 / 60.0;
-    // OUTSIDE THE LOB'S BAND: at 12 m it throws a sac instead of setting off, and a walk test that spends
-    // three seconds in a throw first is measuring the wrong thing.
     const hero = v3(0, 0, SAC_MAX + 1.2);
 
-    // **THE STAMP BENDS THE WALK.** `markWays` asks `navWant` while the body is in its TRAVEL state, so a
-    // heading written onto `nav` has to move the creature — a field nothing reads is the silent half of
-    // `game.markWays`' field-implies-method pin.
     var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.5);
     while (g.state != .walk) _ = g.update(dt, hero, 400, .{});
     try std.testing.expect(g.navWant(hero) != null);
@@ -892,8 +817,6 @@ test "THE STAMPED WAY IS ACTUALLY READ, and a slam broken in the air comes down"
     }
     try std.testing.expect(bent.pos.x > g.pos.x + 0.1);
 
-    // …AND IT WALKS WHERE IT LOOKS: spawned facing away it sets off the way it is pointing and turns, rather
-    // than sliding backwards at him for the two seconds a 1.5 rad/s about-face takes.
     var away = Golem.spawn(mathx.zero3, 180.0, 1.0, 0.5);
     while (away.state != .walk) _ = away.update(dt, hero, 400, .{});
     const from = away.pos;
@@ -901,7 +824,6 @@ test "THE STAMPED WAY IS ACTUALLY READ, and a slam broken in the air comes down"
     while (k < 12) : (k += 1) _ = away.update(dt, hero, 400, .{});
     try std.testing.expect(away.pos.z < from.z);
 
-    // **AND A BODY CAUGHT IN MID-FLIGHT IS ON THE GROUND ON THE FRAME IT IS CAUGHT** (`frog.base`'s rule).
     var air = Golem.spawn(mathx.zero3, 0, 1.0, 0.5);
     var t: f32 = 0;
     while (t < 6.0 and air.state != .slam_air) : (t += dt) _ = air.update(dt, v3(0, 0, 5.0), 400, .{});
@@ -913,8 +835,6 @@ test "THE STAMPED WAY IS ACTUALLY READ, and a slam broken in the air comes down"
     try std.testing.expect(!air.airborne());
     try std.testing.expectApproxEqAbs(air.pos.y, air.centerWorld().y - CENTER_F * H, 1e-5);
 
-    // **AND A BLOW FROM OUTSIDE ITS AGGRO STILL WAKES IT** — `foe.reached` rouses the tether, and the
-    // decisions have to be reading that tether or the rouse buys nothing and a bow beats the creature.
     var plinked = Golem.spawn(mathx.zero3, 0, 1.0, 0.5);
     const far = v3(0, 0, AGGRO_R + 1.5);
     k = 0;
@@ -930,9 +850,6 @@ test "THE WAND REACHES IT: the grip bills and lets go, and the rime's cone does 
     const dt: f32 = 1.0 / 60.0;
     const hero = v3(0, 0, 4.0);
 
-    // **ROOTS BILL, AND THE GRIP EXPIRES.** `game.seedRoots` writes `root` on whatever it picks, and a
-    // creature that never calls `foe.grip` bills none of it and holds the clock open for good — the spell
-    // costs 12 FP and does literally nothing.
     var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
     const before = g.vit.hp;
     g.root.grab();
@@ -943,10 +860,8 @@ test "THE WAND REACHES IT: the grip bills and lets go, and the rime's cone does 
     const paid = before - g.vit.hp;
     std.debug.print("\n  spore golem: the roots bill {d:.1} of a {d:.0} bar over {d:.1} s\n", .{ paid, HP_MAX, combat.ROOT_HOLD });
     try std.testing.expect(paid > 0);
-    // CHAOS, and it resists chaos hard, so the bill is well under the raw drip rather than equal to it.
     try std.testing.expect(paid < combat.ROOT_HOLD * combat.ROOT_DPS);
 
-    // **AND THE FEET ARE HELD WHILE IT RUNS** — the whole point of the spell on a thing that walks at you.
     var pinned = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
     while (pinned.state != .walk) _ = pinned.update(dt, v3(0, 0, 9.0), 400, .{});
     pinned.root.grab();
@@ -956,8 +871,6 @@ test "THE WAND REACHES IT: the grip bills and lets go, and the rime's cone does 
     try std.testing.expectApproxEqAbs(stood.x, pinned.pos.x, 1e-5);
     try std.testing.expectApproxEqAbs(stood.z, pinned.pos.z, 1e-5);
 
-    // **THE RIME BILLS AS COLD, WHICH IT RESISTS** — the cone is poured every frame it is held, so what has
-    // to happen here is that the owed bite is collected at all.
     var cold = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
     const hp0 = cold.vit.hp;
     t = 0;
@@ -977,8 +890,6 @@ test "A STAGGER FROM ANYWHERE PICKS THE RIGHT SEVERITY — `stance <= 0` never w
     const hero = v3(0, 0, 4.0);
     var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
     _ = g.update(dt, hero, 400, .{});
-    // A break straight through the bars, the way a blow that did not come down `tryHit` arrives. `Vitals.hit`
-    // refills `stance` on the frame it breaks, so the severity has to be read off the stun and not off a bar.
     g.vit.stance = 1;
     try std.testing.expectEqual(combat.HitResult.heavy, g.vit.hit(.{ .stance = 40 }));
     try std.testing.expect(g.vit.stunHeavy());
@@ -987,7 +898,6 @@ test "A STAGGER FROM ANYWHERE PICKS THE RIGHT SEVERITY — `stance <= 0` never w
 
     var lit = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
     _ = lit.update(dt, hero, 400, .{});
-    // A creature's flinch is damage poured into the pool (`combat.FOE_POISE_PER_DMG`), so empty the pool and land one point.
     lit.vit.poise = 0.5;
     try std.testing.expectEqual(combat.HitResult.light, lit.vit.hit(.{ .dmg = 20 }));
     try std.testing.expect(!lit.vit.stunHeavy());
@@ -997,9 +907,6 @@ test "A STAGGER FROM ANYWHERE PICKS THE RIGHT SEVERITY — `stance <= 0` never w
 
 test "IT CANNOT SLAM ITS WAY OUT OF THE ROOTS — the leap is gated where the move is chosen" {
     const dt: f32 = 1.0 / 60.0;
-    // Standing in the slam's own band, cooldown clear, and held by the ankles: it may pick anything but the
-    // leap. `foe.grip`'s airborne guard lets a body finish an arc it is ALREADY in, so a jump still allowed to
-    // start is a jump straight out of the fist of roots (`foe.canLeap`'s own note).
     const hero = v3(0, 0, (SLAM_MIN + SLAM_MAX) * 0.5);
     var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
     g.root.grab();
@@ -1008,7 +915,6 @@ test "IT CANNOT SLAM ITS WAY OUT OF THE ROOTS — the leap is gated where the mo
         _ = g.update(dt, hero, 400, .{});
         try std.testing.expect(g.state != .slam_wind and g.state != .slam_air);
     }
-    // …and the same golem, unheld, takes it — or the gate above is passing for the wrong reason.
     var free = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
     t = 0;
     var leapt = false;
@@ -1055,9 +961,6 @@ test "THE DISC IS DRAWN BEFORE IT IS BILLED — the smash walks its own rim thro
 }
 
 test "A FULL STUN METER PUTS IT DOWN — the one creature that reads `vit.stunned()` and not `grip.downed`" {
-    // The bug this pins: twenty creatures answer `foe.grip`'s `downed` with `stagger(true)`; this one has no
-    // such method and syncs its state off `vit.stunned()`, which ONLY sleep ever set. So a lightning stun
-    // filled, procced, and the slab carried on swinging — on the creature `RESISTS` marks as lightning's own.
     var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
     const dt: f32 = 1.0 / 60.0;
     g.vit.build(.stun, combat.ailRow(.stun).max);
@@ -1066,12 +969,10 @@ test "A FULL STUN METER PUTS IT DOWN — the one creature that reads `vit.stunne
     try std.testing.expectEqual(State.stunheavy, g.state);
     try std.testing.expect(g.staggered());
 
-    // …and lightning is what fills it, through the same door every other element builds its meter down.
     var lit = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
     _ = lit.vit.hit(combat.Hit{ .elem = combat.elems(.{ .lightning = 20 }) });
     try std.testing.expect(lit.vit.ailFrac(.stun) > 0);
 
-    // A DEAD SLAB IS NEVER PUT DOWN — `grip.downed` is already gated on it, and the dead check must still win.
     var corpse = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
     corpse.vit.dead = true;
     corpse.vit.build(.stun, combat.ailRow(.stun).max);

@@ -32,7 +32,6 @@ const SOIL = rgba(24, 19, 14, 255);
 const SOIL_DK = rgba(15, 12, 9, 255);
 const CLOD = rgba(148, 120, 84, 220);
 const CLOD_DK = rgba(106, 84, 58, 210);
-/// Turned earth DRIES AND DARKENS on the way down. Clods are chunky: their drag is a third of dust's.
 const CLOD_DRY = rgba(84, 68, 48, 180);
 const CLOD_DRAG: f32 = 1.5;
 
@@ -65,7 +64,6 @@ const TURN_RATE: f32 = 4.2;
 /// **MEASURED, NOT ARGUED** — a test walks the stroke frame by frame and brackets it from both sides, which caught the first pass declaring 2.9 m off a limb that arrived at 1.19.
 const CLAW_REACH: f32 = 1.75;
 const CLAW_SWEEP_R: f32 = 0.34;
-/// **THE DECISION IS TAKEN AT THE RANGE THE BLOW LANDS AT**, never a number beside it. **AND THAT RANGE IS WHERE
 /// THE ARC CROSSES HIM, NOT HOW FAR THE TIP GETS** (owner: the moles cannot hit me): `CLAW_REACH + CLAW_SWEEP_R` is the tip's RADIAL reach, achieved out to the SIDE. At 2.09 the outer fifth of the trigger band could not land by construction.
 const CLAW_BAND: f32 = 1.65;
 const CLAW_KEEP: f32 = CLAW_BAND - 0.5;
@@ -81,21 +79,17 @@ const UNDER_MIN: f32 = 2.6;
 const UNDER_MAX: f32 = 7.0;
 const UNDER_SPEED: f32 = 4.8;
 const UNDER_TURN: f32 = 2.6;
-/// This number is what makes it unhittable while it is down, and nothing else does (the assert below).
 pub const UNDER_DEPTH: f32 = 2.6;
 const SURGE_LOCK_R: f32 = 1.0;
 const MOUND_TRAVEL_R: f32 = 1.05;
 const MOUND_TRAVEL_H: f32 = 0.28;
 
-/// **THE TELL IS THROWN EARTH, NOT A SWELLING DOME** (owner: instead of distending the bump, steadily add
-/// particles until he jumps out) — a shape held for over a second stops being motion at all. The spray BUILDS, the disc the blow lands on is exactly `BURST_R`, and the mound HOLDS at its travelling size to the burst.
 const MOUND_SWELL_R: f32 = MOUND_TRAVEL_R;
 const MOUND_SWELL_H: f32 = MOUND_TRAVEL_H;
 const SURGE_SPRAY_0: f32 = 14.0;
 const SURGE_SPRAY_1: f32 = 190.0;
 const SURGE_SPRAY_CURVE: f32 = 2.4;
 const SURGE_SPRAY_LIFT: f32 = 2.6;
-/// THE LONGEST THING IT DOES. Bracketed from below by its own dive wind — the one move arriving from a direction the camera cannot be turned toward may not be the one you get least warning of — and again by what it costs to get out of the ring.
 pub const SURGE_DUR: f32 = 1.15;
 pub const BURST_RISE: f32 = 0.28;
 const BURST_RECOVER: f32 = 0.95;
@@ -106,9 +100,6 @@ pub const CHURN_EVERY: f32 = 0.72;
 const STRIDE: f32 = 0.92;
 
 comptime {
-    // **SUBMERGED IT CANNOT BE STRUCK, AND THAT IS GEOMETRY RATHER THAN A GUARD IN `tryHit`** — at `UNDER_DEPTH`
-    // the top of its hurt sphere sits further under the ground than any blade reaches below his boots.
-    //
     // **`depth` IS IN SCALE-1 METRES** and `ride()` multiplies it (`-depth * scale`), so every term here is the same multiple of `scale`. Scaling `depth` at its writers to "fix" that double-scales the burrow and surfaces a small delver.
     std.debug.assert(UNDER_DEPTH - CENTER_F * H - HURT_R > 0.8);
     std.debug.assert(SURGE_DUR > DIVE_WIND and DIVE_WIND >= foe.TELL_MIN and CLAW_WIND >= foe.TELL_MIN);
@@ -222,12 +213,10 @@ pub const Delver = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     parry: foe.Parry = .{},
-    /// The boards caught the claw this frame — a ONE-FRAME flag, `justDied`'s exactly.
     parried: bool = false,
     facing: f32 = 0,
     scale: f32 = 1.0,
@@ -242,7 +231,6 @@ pub const Delver = struct {
     heroLatch: bool = false,
     raked: bool = false,
     homing: bool = false,
-    /// It went under this frame, and it broke the surface this frame — one-frame edges the GROUP reads, which is what lets the game put a shake and a low rumble under a tell arriving from off screen.
     surged: bool = false,
 
     /// HOW FAR UNDER ITS OWN GROUND THE BODY IS RIDING, metres. 0 at the surface; every world point on it is measured with this as a NEGATIVE lift, so the whole creature goes down together.
@@ -329,7 +317,6 @@ pub const Delver = struct {
     pub fn mounded(self: *const Delver) bool {
         return self.moundR > 1e-3;
     }
-    /// **YOU CANNOT FIX ON WHAT IS UNDER THE GROUND** (owner's call) — the Rooted's `hidden` predicate, found by `@hasDecl` at every targeting site. A held lock DROPS the frame it goes under.
     pub fn hidden(self: *const Delver) bool {
         return self.deep();
     }
@@ -408,7 +395,6 @@ pub const Delver = struct {
             .plough => self.updatePlough(dt, hero, bounds),
             .burst => self.updateBurst(dt, hero),
             .stunlight, .stunheavy => {
-                // KNOCKED BACK ONTO ITS HAUNCHES, forelimbs up and useless. It cannot be flinched while it is under, so this is always a surfaced pose.
                 self.rear = mathx.approach(self.rear, 0.34 * foe.stunCurve(self.t, self.state == .stunheavy), dt * 6.0);
                 self.crouch = mathx.approach(self.crouch, 0.16, dt * 5.0);
                 self.swing = mathx.approach(self.swing, 0, dt * 4.0);
@@ -448,8 +434,6 @@ pub const Delver = struct {
     fn updateIdle(self: *Delver, dt: f32, hero: rl.Vector3, bounds: f32) void {
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         if (d <= AGGRO_R) self.faceToward(self.goingFor(hero), TURN_RATE, dt);
-        // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postStep`), and it walks them ON TOP —
-        // going under is a committed move it enters from here, never something a round can interrupt.
         const ps = foe.postStep(self, dt, bounds, WALK_SPEED * self.scale, d, AGGRO_R);
         if (ps.yaw) |w| {
             self.gait += ps.moved / (STRIDE * self.scale);
@@ -457,7 +441,6 @@ pub const Delver = struct {
             self.swing = 0.24 * mathx.sinf(self.gait * std.math.tau);
             self.emitScuff(dt);
         }
-        // Three clocks that never line up (the wanderer's law): a breath, a shoulder roll, a snout that casts about.
         const br = mathx.sinf(self.elapsed * (1.5 + 0.3 * self.seed) + self.seed * 6.28);
         self.crouch = mathx.approach(self.crouch, 0.05 + 0.025 * br, dt * 3.0);
         self.rear = mathx.approach(self.rear, 0.04 + 0.03 * mathx.sinf(self.elapsed * 0.9 + self.seed * 4.0), dt * 2.0);
@@ -584,7 +567,6 @@ pub const Delver = struct {
     fn updateDive(self: *Delver, dt: f32, hero: rl.Vector3) void {
         if (self.t < DIVE_WIND) {
             self.faceToward(self.goingFor(hero), TURN_RATE, dt);
-            // UP ON ITS HIND LEGS — the biggest it ever is, and the only frame you can read from across the field.
             const u = mathx.smoothstep(0, DIVE_WIND, self.t);
             self.rear = lerpF(0, 1.0, u);
             self.swing = lerpF(0, -0.7, u);
@@ -666,7 +648,6 @@ pub const Delver = struct {
         self.moundR = lerpF(MOUND_SWELL_R, 0, u);
         self.moundH = lerpF(MOUND_SWELL_H, 0, u * u);
         if ((self.t - dt) <= 0 and self.t > 0) {
-            // The blow is on the OPENING frame, and its reach is a RADIUS — the ground opening has no edge to sweep. Its `from` is the hole itself, so stood dead on it there is no bearing and the boards cannot answer it; caught at the rim, they can.
             self.burstDirt();
             if (mathx.distXZ(self.pos, hero) <= BURST_R * self.scale + foe.HERO_R) {
                 self.heroHit = BURST_HIT;
@@ -713,7 +694,6 @@ pub const Delver = struct {
         }
     }
 
-    /// The mound has a life of its own on the way in and the way out — a heap of earth does not appear on one frame. Driven off what the BODY is doing rather than off a clock beside it.
     fn settleMound(self: *Delver, dt: f32) void {
         const wantR: f32 = switch (self.state) {
             .dive => MOUND_TRAVEL_R * mathx.clampF(self.depth / UNDER_DEPTH, 0, 1),
@@ -744,7 +724,6 @@ pub const Delver = struct {
         self.idleWait = wait;
         self.surgeK = 0;
     }
-    /// A BLOW NEVER LANDS ON SOMETHING SUBMERGED, so a stun always finds it on the surface — but the depth is cleared here anyway, because a stagger arriving on the rise must not strand it half in the ground.
     fn enterStun(self: *Delver, s: State) void {
         self.enter(s);
         self.moundR = 0;
@@ -832,7 +811,6 @@ pub const Delver = struct {
         }
     }
 
-    /// Flat `big` (`bigJit` null) is one draw fewer per mote, which is the stream this was written with.
     const DIRT_PUFF = foe.Puff{
         .blast = foe.Blast.of(foe.DUST_DRAG, 0.3, 0.6),
         .spdLo = 0.4,
@@ -1138,7 +1116,7 @@ fn clawMesh(side: f32) rl.Mesh {
     b.addBlob(v3(side * 0.05, -0.10, 0.44), v3(0.14, 0.11, 0.13), 5, 10, HIDE_LO);
     b.setMat(.plain);
     // **THE CLAWS HAVE TO LOOK LIKE THE CREATURE'S POINT** (owner: more pronounced claws and nails). At 0.04
-    // thick and 0.22 long they were three scratches on a pad. **NONE ENDS IN A POINT** — a blunt capsule cap, because a rosette of needles is a hub of spokes; what reads as sharp is the TAPER (0.062 to 0.020) and the hook.
+// **NONE ENDS IN A POINT** — a blunt capsule cap; what reads as sharp is the TAPER (0.062 to 0.020) and the hook.
     inline for (.{
         .{ 0.11, -0.12, 0.50, 0.13, -0.30, 0.92, 0.056, 0.020 },
         .{ 0.00, -0.13, 0.51, 0.00, -0.33, 1.02, 0.062, 0.022 },
@@ -1226,7 +1204,6 @@ test "TWO WAYS OUT OF THE BURROW: under him it BURSTS, out in front of him it PL
         }
         try std.testing.expectEqual(State.surge, d.state);
     }
-    // …and SPRINTING he cannot be — `SPRINT_SPEED` is over `UNDER_SPEED`, so the chase is one it will never win. It drives the ridge down the ground he is running over instead, which is the answer this creature did not have to a player who simply keeps walking.
     {
         var d = Delver.spawn(mathx.zero3, 0, 1.0, 0.3);
         var hero = v3(0, 0, 4.5);
@@ -1292,7 +1269,6 @@ test "THE CLAW COMES BACK — the surfaced window is a trade now, not a free hit
     }
     try std.testing.expect(seen);
 
-    // …AND NEVER AT A MAN WHO HAS ALREADY LEFT. A backhand thrown at empty air is the creature announcing that the punish was free after all.
     var far = Delver.spawn(mathx.zero3, 0, 1.0, 0.3);
     const gone = v3(0, 0, CLAW_BAND + 4.0);
     far.debugClaw();
@@ -1305,7 +1281,6 @@ test "THE CLAW COMES BACK — the surfaced window is a trade now, not a free hit
 }
 
 test "THE COOLDOWN IS SURFACE TIME — the burrow does not spend the dial that gates it" {
-    // Armed where it went DOWN, the under, surge, rise and opening ran most of `DIVE_CD` off before it was ever standing in front of you — at `UNDER_MAX`, nothing at all, so it re-dived as it finished rising.
     try std.testing.expect(UNDER_MIN + SURGE_DUR + BURST_RISE + BURST_RECOVER > DIVE_CD * 0.5);
     var d = Delver.spawn(mathx.zero3, 0, 1.0, 0.3);
     const hero = v3(0, 0, 3.0);
@@ -1525,7 +1500,6 @@ test "IT IS VICIOUS ON ITS FEET TOO — it runs him down and its stroke comes ro
     // THE STROKE COMES BACK. A claw every 1.9 s off a body that could not close was a punching bag between dives; the whole cycle now fits inside what the dive alone used to cost.
     const cycle = CLAW_WIND + CLAW_STRIKE + CLAW_RECOVER + CLAW_CD;
     try std.testing.expect(cycle < 2.2);
-    // …but the TELL is untouched: faster may never mean harder to read (`foe.TELL_MIN`, and the parry).
     try std.testing.expect(CLAW_WIND >= foe.TELL_MIN);
     try std.testing.expect(foe.PARRY_LEAD < CLAW_WIND * 0.5);
     std.debug.print("  delver surface: chases {d:.2} m/s (hero runs {d:.2}, sprints {d:.2}), claw cycle {d:.2} s\n", .{

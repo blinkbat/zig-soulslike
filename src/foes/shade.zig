@@ -20,10 +20,6 @@ const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 const placeAt = mathx.placeAt;
 
-// A BIG SMOOTH MASS NEEDS A NEARLY-BLACK ALBEDO (AGENTS.md): the hot key plus the gamma lift turns any mid-dark value pale on a sunward face, and this thing is one sunward face from the shoulders down. What separates the three tones is therefore HUE — cold violet against cold blue — and not value.
-/// **HUE IS THE ONLY THING THAT SEPARATES THE TWO** — at this albedo value differences vanish under the key
-/// (the note above). Shade: cold violet. Mourner: wet-ash grey, eyes in the stupor meter's own colour
-/// (`hud.ailTint(.stupefy)`).
 const Pal = struct {
     shroud: rl.Color,
     shroudLt: rl.Color,
@@ -90,10 +86,7 @@ const SHOVE_DECAY: f32 = 9.0;
 
 pub const GRASP_HIT = combat.Hit{ .dmg = 7, .poise = 12, .fp = 14 };
 
-/// **THE MOURNER — THE SAME HAND, AND A DRAIN THAT DOES NOT LET GO.** The shade takes focus in one bite
-/// (`GRASP_HIT.fp`); this leaves the STUPOR (`combat.STUPEFY_FOCUS`/`STUPEFY_TRAVEL`), and is the only source
-/// of it. **TWO GRASPS, NOT ONE**: 52 against a 100 meter decaying 20/s after 1.1 s quiet, so the second has
-/// to land inside about three seconds of the first.
+/// **TWO GRASPS, NOT ONE**: 52 against a 100 meter decaying 20/s after 1.1 s quiet.
 pub const MOURN_STUPEFY: f32 = 52.0;
 pub const MOURN_GRASP_HIT = blk: {
     var h = GRASP_HIT;
@@ -122,13 +115,10 @@ pub fn kindOf(r: Role) wf.FoeKind {
     };
 }
 
-/// `grasp` is the only mechanic that differs; the rest is the price of being twice the body. Row order is
-/// `Role`'s own, pinned below.
 const Spec = struct {
     role: Role,
     hp: f32,
     souls: u32,
-    /// A MULTIPLIER on whatever the map placed it at, so a mourner scaled down is still the bigger of the two.
     size: f32,
     /// Its own clocks, divided. Over 1 is SLOWER.
     slow: f32,
@@ -145,10 +135,8 @@ comptime {
         if (@intFromEnum(sp.role) != i) @compileError("shade: SPEC is out of `Role` order");
         if (sp.hp <= 0 or sp.size <= 0 or sp.slow <= 0) @compileError("shade: a role with no body");
     }
-    // **THE BIGGER BODY IS THE SLOWER ONE AND IS WORTH MORE**, or it is simply a shade with more HP.
     std.debug.assert(spec(.mourner).size > spec(.shade).size and spec(.mourner).slow > spec(.shade).slow);
     std.debug.assert(spec(.mourner).souls > spec(.shade).souls and spec(.mourner).hp > spec(.shade).hp);
-    // …and only the mourner builds the stupor. Two sources of a hero-only meter and neither is the tell.
     std.debug.assert(spec(.shade).grasp.dose.at(.stupefy) == 0);
     std.debug.assert(spec(.mourner).grasp.dose.at(.stupefy) > 0);
 }
@@ -159,7 +147,6 @@ pub fn spec(r: Role) Spec {
 pub const WISP_HIT = combat.Hit{ .dmg = 20, .poise = 10 };
 pub const WISP_SPEED: f32 = 13.5;
 
-/// One row per move. Every window here clears `foe.TELL_MIN` — the law that no attack comes out of nowhere — and the test at the foot of this file pins that rather than trusting the reading.
 const Attack = struct {
     windDur: f32,
     strikeDur: f32,
@@ -177,7 +164,6 @@ const MOVES_BANK = [_]Attack{
     .{ .windDur = 0.46, .strikeDur = 0.30, .recoverDur = 0.55, .cd = 2.6, .minR = 0, .maxR = 2.05, .hit = GRASP_HIT, .hurl = false },
     .{ .windDur = 0.68, .strikeDur = 0.18, .recoverDur = 0.62, .cd = 4.6, .minR = 4.2, .maxR = 12.0, .hit = WISP_HIT, .hurl = true },
 };
-/// **THE LIVE KIT.** The bank above is the code's own and never moves — that is the revert; every blow
 /// the bench can reach is `MOVES[i].hit`, so a move retuned in the source flows through (`play/tune.zig`).
 pub var MOVES = MOVES_BANK;
 
@@ -206,7 +192,6 @@ const SPOOK_DUR: f32 = 7.0;
 
 /// THE ARMS' OWN ARC. The grasp is both hands closing in FRONT of it, so a hero at its back is not somebody it has hold of — tested on distance alone it landed a blow that the shield's own 65° could never answer and that no frame of the animation showed.
 const GRASP_ARC: f32 = 78.0;
-/// Where in the reach the hand arrives, as a share of the strike — the SAME fraction the grasp lands on, read from one constant so the boards and the blow cannot disagree about when it happened.
 const GRASP_IMPACT_K: f32 = 0.42;
 
 const CIRCLE_DUR: f32 = 1.3;
@@ -218,9 +203,6 @@ const LEAN_MAX: f32 = 15.0; // degrees it tips into its travel — from the WAIS
 const HEM_LAG_RATE: f32 = 5.2;
 const HEM_SWING: f32 = 34.0; // degrees of tatter throw at full travel
 const HEM_WOBBLE: f32 = 6.0;
-/// **THE SHARE OF THE THROW A WINDWARD TATTER GETS.** Cloth in front of a moving body pins against it; cloth
-/// behind streams. At full travel: 47.6 deg of throw on the lee side against 16.2 windward, about 9 cm between
-/// the two tips — the test at the foot of this file prints it.
 const HEM_LEE: f32 = 0.34;
 
 const RIFT_N = 14;
@@ -249,7 +231,6 @@ const HEM_N = 8;
 const HEM_R: f32 = 0.074 * H;
 const HEM_Y: f32 = -0.118 * H;
 
-/// The shoulder's half-width. Inside the shroud's own, so the arms hang CLEAR of the mass rather than inside its silhouette — an arm you cannot see is an arm the reach cannot tell you about.
 const SH_HALF: f32 = 0.118 * H;
 const SH_Y: f32 = 0.190 * H;
 
@@ -298,8 +279,6 @@ pub const Act = union(enum) {
 };
 
 pub const Model = struct {
-    /// **ONE SET PER ROLE, BECAUSE THE COLOUR IS IN THE VERTICES** (`gfx.Builder`) — there is no material tint
-    /// to swap at draw time. The rig and every pose stay shared.
     mesh: [NROLE][N]rl.Mesh,
     mat: rl.Material,
 
@@ -322,7 +301,6 @@ pub const Shade = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
@@ -340,7 +318,6 @@ pub const Shade = struct {
     cds: [MOVES.len]f32 = [_]f32{0} ** MOVES.len,
     blinkCd: f32 = 0,
     spookLeft: f32 = 0,
-    /// Where the current blink is putting it down. Committed at `blinkout` so the arrival cannot chase a hero who moved during the fade, which would read as a lunge rather than as a place it went to.
     blinkTo: rl.Vector3 = mathx.zero3,
     driftDir: rl.Vector3 = mathx.zero3,
     orbitSign: f32 = 1,
@@ -372,8 +349,6 @@ pub const Shade = struct {
         return spawnAs(.shade, home, faceYaw, scale, seed);
     }
 
-    /// **THE ONE DOOR**, so a mourner cannot be stood up without its own bar and weight. The map comes through
-    /// `foe.resetRoles`.
     pub fn spawnAs(role: Role, home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32) Shade {
         const sp = spec(role);
         var s = Shade{ .pos = home, .home = home, .facing = faceYaw, .scale = scale * sp.size, .seed = seed, .role = role };
@@ -420,7 +395,6 @@ pub const Shade = struct {
     pub fn staggered(self: *const Shade) bool {
         return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
     }
-    /// HALFWAY THROUGH A BLINK IT IS NOWHERE — which is what exempts the jump from the terrain gate (`game.gateTerrain`) and from being shouldered. A step it never took cannot be walked back.
     pub fn airborne(self: *const Shade) bool {
         return self.state == .blinkout or self.state == .blinkin;
     }
@@ -434,7 +408,6 @@ pub const Shade = struct {
         return mathx.lerpV(l, r, 0.5);
     }
 
-    /// One table of moves for both bodies; the only thing a mourner swaps is what the hand LEAVES (`SPEC.grasp`).
     fn move(self: *const Shade) Attack {
         var a = MOVES[@min(self.atk, MOVES.len - 1)];
         if (self.atk == GRASP) a.hit = spec(self.role).grasp;
@@ -453,7 +426,6 @@ pub const Shade = struct {
         if (grip.killed) self.enterDeath();
         if (grip.downed) self.stagger(true);
         self.elapsed += dt;
-        // ITS OWN CLOCK, never the world's. The mourner's longer wind is what makes the second grasp escapable.
         self.t += dt / spec(self.role).slow;
         self.vit.tick(dt);
         foe.fadeFlash(&self.flash, dt);
@@ -474,8 +446,6 @@ pub const Shade = struct {
             .idle => {
                 self.easeRest(dt);
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
-                // **A SHADE WALKS ITS ROUND AT ITS DRIFT**, not at a stride — it has no legs, and that is its
-                // own travel speed everywhere else in this file.
                 const ps = foe.postStep(self, dt, bounds, DRIFT_SPEED, d, AGGRO_R);
                 if (ps.yaw) |w| self.facing = mathx.approachAngle(self.facing, w, TURN_RATE * dt);
                 self.decide(d, hero);
@@ -542,8 +512,6 @@ pub const Shade = struct {
                 if (self.t >= BLINK_OUT) {
                     self.pos.x = self.blinkTo.x;
                     self.pos.z = self.blinkTo.z;
-                    // A blink WRITES `pos` where every other mover STEPS it, so it is the one that has to ask
-                    // the bounds itself — a mark taken off a hero at the edge stands `BLINK_R` outside.
                     mathx.holdXZ(&self.pos, bounds);
                     self.rift();
                     self.enter(.blinkin);
@@ -566,7 +534,6 @@ pub const Shade = struct {
                 self.easeRest(dt);
                 if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enter(.idle);
             },
-            // THE ONE BODY THAT DOES NOT DISSIPATE (`foe.dissipate`, which every other death runs through). It has nothing to shed: it does not fall over, it comes APART — `thin` from the first frame, and motes off a thing made of nothing is a substance it never had.
             .dead => {
                 self.reach = mathx.approach(self.reach, -0.2, dt * 2.0);
                 self.thin = mathx.smoothstep(0, DEATH_DUR + DISS_DUR, self.t);
@@ -596,14 +563,12 @@ pub const Shade = struct {
         };
     }
 
-    /// THE INSTANT THE HAND CAN BE CAUGHT IN, and how far out it reaches then — `holds`'s OWN extent, so a grasp the boards could not have met is never offered as one.
     fn parryable(self: *const Shade) ?f32 {
         const left = self.toImpact() orelse return null;
         if (!foe.inParryWindow(left)) return null;
         return self.graspReach();
     }
 
-    /// **THE BOARDS TAKE THE HAND, AND THE FOCUS IS NOT DRAINED** — hence the bool: the caller drops the `Act` this returns true for, because the one thing this creature is for is the FP it takes. `dealt` is spent so the rest of the strike cannot try again.
     fn takeParry(self: *Shade) bool {
         const reach = self.parryable() orelse return false;
         if (!foe.caught(self, reach)) return false;
@@ -846,10 +811,6 @@ pub const Shade = struct {
     }
 
 
-    /// **THE TRAVEL, NOT ITS NEGATIVE** — held as `-velocity` and rotated against in `poseHem`, the gown blew
-    /// FORWARD. `rx(+deg)` carries a hanging tatter to local -Z (raylib's `MatrixRotateX`) and local +Z is
-    /// forward (`mathx.headingDir` against `ry`), so the term that TRAILS cloth is `rx(+vz)`: one sign, in the
-    /// pose, where it can be read against its own rotation. Eased, because a mass in motion overshoots.
     fn trailHem(self: *Shade, was: rl.Vector3, dt: f32) void {
         const step = mathx.subV(self.pos, was);
         const want = if (dt > 1e-5) mathx.scaleV(v3(step.x, 0, step.z), 1.0 / dt) else mathx.zero3;
@@ -860,7 +821,6 @@ pub const Shade = struct {
         const fs = self.scale * (1.0 - 0.82 * self.thin);
         const facingDeg = mathx.degrees(self.facing);
         const bob = IDLE_BOB * mathx.sinf(self.elapsed * BOB_HZ * (1.0 + 0.16 * (self.seed - 0.5)) * std.math.tau + self.seed * 6.28);
-        // `thin` is this rig's `fade` — it has no other, being the one body that dissolves by SHRINKING.
         const sink = if (self.state == .dead) foe.rigSink(0.30, self.scale, self.thin) else 0;
         const leanDeg = mathx.clampF(self.lean, -LEAN_MAX, LEAN_MAX);
 
@@ -895,9 +855,6 @@ pub const Shade = struct {
         wx[wr] = placeAt(REST[wr], mul(scaleM(1, 1.0 / stretch, 1), rz(side * -12.0 * out)), wx[el]);
     }
 
-    /// **THE SKIRT BLOWS DOWNWIND AS ONE THING, THEN EACH TATTER ANSWERS THE WIND ON ITS OWN SIDE.** The
-    /// downwind term alone gives all eight an identical throw, which is a cone being dragged: cloth is the
-    /// TRAILING edge streaming while the LEADING edge presses flat. One dot a tatter, no second clock.
     fn poseHem(self: *Shade, wx: *[N]rl.Matrix) void {
         const velX = mathx.clampF(self.hemVel.x, -1.4, 1.4);
         const velZ = mathx.clampF(self.hemVel.z, -1.4, 1.4);
@@ -914,7 +871,6 @@ pub const Shade = struct {
             const outX = mathx.cosf(a);
             const outZ = mathx.sinf(a) * 0.86;
             // -1 dead astern, +1 dead ahead. Normalised, so the SHAPE of the skirt does not change with speed —
-            // only how far it goes, which is the throw's own job.
             const facingWind = if (speed > 1e-4) (outX * localX + outZ * localZ) / speed else 0;
             const gain = lerpF(1.0, HEM_LEE, 0.5 + 0.5 * facingWind);
             const phase = self.elapsed * (0.79 + 0.13 * fi) + self.seed * 5.0 + fi * 1.7;
@@ -1011,7 +967,6 @@ fn buildMeshes(pal: Pal) [N]rl.Mesh {
     mesh[SHR] = armMesh(pal, 314);
     mesh[ELR] = forearmMesh(pal, 315);
     mesh[WRR] = handMesh(pal, -1.0, 316);
-    // NO TWO THE SAME LENGTH, and the ring of them is where the wabi-sabi lives on this creature: one mesh is shared by every instance, so the variation cannot be BETWEEN shades — it is between the tatters.
     const len = [HEM_N]f32{ 0.40, 0.29, 0.43, 0.34, 0.38, 0.26, 0.42, 0.31 };
     for (0..HEM_N) |i| {
         const a = std.math.tau * @as(f32, @floatFromInt(i)) / HEM_N;
@@ -1074,7 +1029,6 @@ fn shroudMesh(pal: Pal) rl.Mesh {
     return b.toMesh();
 }
 
-/// The shroud's half-width at height `y` (in stature): the profile above, interpolated, with the hem's own dome taking over under the waist. One answer, so a fold cannot sit beside the mass it belongs to.
 fn shroudHalf(y: f32) f32 {
     if (y <= PROF[PROF.len - 1][0]) {
         const t = mathx.clampF((PROF[PROF.len - 1][0] - y) / (PROF[PROF.len - 1][0] - HEM_DOME_Y), 0, 1);
@@ -1234,7 +1188,6 @@ test "THE BLINK: threatened or wounded, never mid-swing, and never while the roo
     try std.testing.expect(!wantsBlink(9.0, 0, false, .circle, false));
     try std.testing.expect(wantsBlink(9.0, 0, true, .circle, false));
     try std.testing.expect(!wantsBlink(1.0, 0.5, true, .circle, false));
-    // ROOTED it cannot go at all: a blink does not travel, it leaves the earth (`foe.canLeap`).
     try std.testing.expect(!wantsBlink(1.0, 0, true, .circle, true));
     try std.testing.expect(!wantsBlink(1.0, 0, true, .strike, false));
     try std.testing.expect(!wantsBlink(1.0, 0, true, .wind, false));
@@ -1257,7 +1210,6 @@ test "it blinks to a bearing swung round from where it stands, at the hero's own
     s.debugBlink(hero);
     try std.testing.expectEqual(State.blinkout, s.state);
     try std.testing.expectApproxEqAbs(BLINK_R, mathx.distXZ(s.blinkTo, hero), 1e-3);
-    // …and well round from the bearing it left on, which is the flank the guard arc cannot cover.
     const wasBearing = mathx.headingXZ(mathx.dirXZ(hero, v3(0, 0, 3)));
     const now = mathx.headingXZ(mathx.dirXZ(hero, s.blinkTo));
     const swung = @abs(mathx.degrees(mathx.wrapPi(now - wasBearing)));
@@ -1406,7 +1358,6 @@ test "THE UNRAVEL DOES NOT EAT ITSELF — a blink's rift is still up when the ki
     for (&s.parts) |*q| {
         if (q.life > 0) live += 1;
     }
-    // Every mote of that frame is still in the ring: the rift, the tear, the wound and the body coming apart.
     std.debug.print("\n  shade death frame: {d} live motes in a {d}-slot ring\n", .{ live, PARTS });
     try std.testing.expectEqual(@as(usize, RIFT_N + @as(usize, @intCast(foe.hitParts(TORN_N))) + UNRAVEL_N + foe.WOUND_PARTS), live);
 }
@@ -1481,8 +1432,6 @@ test "the hem TRAILS the drift and settles back through its own rest" {
     try std.testing.expectApproxEqAbs(@as(f32, 0), s.hemVel.z, 1e-3);
 }
 
-// **THE ONE THAT WOULD HAVE CAUGHT IT.** The test above pins the stored vector; the sign error was between the
-// vector and the rotation, so it asks the posed matrices where the cloth ended up.
 test "a shade flying forward leaves its gown BEHIND it, and the trailing edge is the one that lifts" {
     var s = Shade.spawn(mathx.zero3, 0, 1.0, 0.3);
     const dt = 1.0 / 60.0;
@@ -1513,7 +1462,6 @@ test "a shade flying forward leaves its gown BEHIND it, and the trailing edge is
         s.hemVel.z, pushed, HEM_N, lead, trail,
     });
     try std.testing.expectEqual(HEM_N, pushed);
-    // …AND THE SKIRT HAS A SHAPE. Both are negative (they hang DOWN), so streaming means the GREATER.
     try std.testing.expect(trail > lead + 0.05);
     try std.testing.expect(lead < 0 and trail < 0);
 }

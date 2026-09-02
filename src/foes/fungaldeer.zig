@@ -22,50 +22,27 @@ const mul3 = mathx.mul3;
 const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 
-// THE FUNGAL DEER (owner's creature, owner's name) — a leggy stag with a LARGE FLOWER growing out of its back.
-//
-// **THE QUADRUPED RIG'S FOURTH USER**, and the second one to carry the florid bloom: the bone layout, rest
-// chain, gait dials and limb solver come from `wolf.zig`, and the corolla — seven quills, seven tongues, the
-// lit throat behind a ring of fangs — is the ravager's, moved off the head and onto the WITHERS. What it left
-// behind is a real head: a muzzle, a jaw, ears, and a rack of antlers.
-//
-// **THE FLOWER IS NOT ITS FACE, IT IS ITS ARTILLERY.** It stands off the withers the animal's whole life — a
-// bud the size of its own barrel — and it OPENS: that is the whole tell (owner: no stalk rise; open/close on
-// the spore, and bigger instead). Wide, it spits a handful of spores straight up. They HANG in the air,
-// drifting, for long enough to be read and walked out of; then they turn over and come down at you.
-//
-// **AND IT DOES NOT WANT TO BE NEAR YOU.** It keeps its band and backs off when you close. The antlers are what
-// it does when backing off has stopped working — its own gap, its own clock, and never a read of him.
 
-/// Height at the WITHERS. Over the ravager's 1.34 and leggier with it: the barrel is the same animal's, the
-/// legs are longer, and the flower stands over the top of the hero at all times.
+/// Height at the WITHERS, over the ravager's 1.34 and leggier with it.
 pub const W: f32 = 1.46;
 
-/// **A RANGED BODY SEES FURTHER THAN A BITING ONE** — twice the ravager's 11, because a volley thrown from
-/// inside its own keep-band is the only thing this creature does at all.
+/// A ranged body sees further than a biting one — twice the ravager's 11.
 pub var AGGRO_R: f32 = 22.0;
 const HOME_R: f32 = 1.2;
 
 const BODY_R: f32 = 0.46;
-/// **IT HAS TO HOLD THE BLOOM AND THE BARREL** — the flower is the WEAK POINT and a weak point a blade cannot
-/// reach is not one. The bloom keeps ONE seat now (1.89 m, test-pinned), 0.33 m inside this sphere off a
-/// centre at 1.39 m. A quadruped's nose and hooves stay OUTSIDE, as the wolf's do at 0.42 on a 1.12 body — a
-/// sphere that swallowed a 1.37 m neck would be a sphere you could hit by swinging at open ground.
+/// The bloom keeps ONE seat (1.89 m, test-pinned), 0.33 m inside this sphere off a centre at 1.39 m. A
+/// quadruped's nose and hooves stay OUTSIDE, as the wolf's do at 0.42 on a 1.12 body.
 const HURT_R: f32 = 1.12;
 const CENTER_F: f32 = 0.95;
-/// **METRES OF `W` THE HURT SPHERE SITS FORWARD OF THE BODY'S OWN POSITION.** `wolf.restPose` puts the ROOT at
-/// `HIP_Z` and the chest at `CHEST_Z`, and `wx[ROOT]` translates in Y ONLY — so the whole trunk hangs 0.84 W
-/// FORWARD of `pos` and a ball over `pos` sits on the animal's tail. MEASURED: the withers came out 1.23 m in
-/// front of the centre and outside a 1.12 m sphere, which on a body you have to chase is a front half no blade
-/// answers. Half the trunk would be 0.42; 0.30 is what keeps the risen flower inside as well.
+/// `wx[ROOT]` translates in Y ONLY, so the whole trunk hangs 0.84 W FORWARD of `pos` and a ball over `pos` sits
+/// on the animal's tail. MEASURED: the withers came out 1.23 m in front of the centre and outside a 1.12 m
+/// sphere. Half the trunk would be 0.42; 0.30 is what keeps the risen flower inside as well.
 const BARREL_MID: f32 = 0.30;
 const TOP_F: f32 = 1.62;
 
-/// Tough in the barrel and nothing in the stalk — the ravager's arrangement, and the same reason: the fight is
-/// break the stance, then burst the open throat.
 const HP_MAX: f32 = 96.0;
-/// **BETWEEN THE HERO'S TWO SWINGS, NOT UNDER BOTH.** His light is 10 poise and his heavy 22, so a light poke
-/// may not interrupt the volley and a committed swing must.
+/// Between the hero's two swings, not under both: his light is 10 poise and his heavy 22.
 const POISE_MAX: f32 = 14.0;
 const STANCE_MAX: f32 = 44.0;
 const RESISTS = combat.resists(.{ .fire = -45, .cold = 30, .lightning = 0, .chaos = 20 });
@@ -79,41 +56,26 @@ const SINK_DEPTH: f32 = 0.34;
 
 const PARTS = 58;
 
-// **THE VOLLEY.** The open IS the wind-up — there is nothing else to read, and there does not need to be:
-// it takes most of a second and the flower is over two metres across at the end of it.
 
 const SPIT_WIND: f32 = 0.95;
 const SPIT_DUR: f32 = 0.22;
 const SPIT_REC: f32 = 0.70;
 const SPIT_COOL: f32 = 4.2;
-/// Where in the puff the spores actually leave the throat, as a share of it.
 const SPIT_RELEASE_K: f32 = 0.30;
-/// **IT WILL NOT SPIT INTO YOUR FACE.** Inside this the flower is no use and the antlers are the answer, which
-/// is what keeps the two moves off each other's ground.
 const SPIT_MIN: f32 = 4.5;
 const SPIT_MAX: f32 = 20.0;
 pub const SPORES_PER_VOLLEY: usize = 5;
 
-// **A BLOW YOU CAN SEE COMING FOR A SECOND AND A HALF.** The spore goes UP, hangs, and only then turns over.
-// Everything about it is built so the answer is your feet: it is slow, it is bright, and the hang is long.
 
 pub const SPORE_R: f32 = 0.15;
-/// Seconds of the climb out of the throat, and how far up and out it carries.
 const SPORE_RISE: f32 = 0.55;
 const SPORE_UP: f32 = 2.1;
 const SPORE_SPREAD: f32 = 1.5;
-/// **THE HANG IS THE WHOLE POINT** (owner: they hover for a bit before homing in). Long enough to count them,
-/// pick a direction and be somewhere else — a volley that turned over instantly would just be five arrows.
 pub const SPORE_HANG: f32 = 1.55;
-/// …and it BOBS while it waits, or five motes holding station read as a bug and not as a threat. **METRES OF
-/// AMPLITUDE, AND THE RATE HAS TO BE IN THE STEP OR IT IS NOT**: added to `at.y` as `A·cos(wt)·dt` this is the
-/// integral of the wave, not the wave — 0.16 m authored arrived as 0.02 m of wobble. The step carries `w`.
 const SPORE_BOB: f32 = 0.16;
 const SPORE_BOB_HZ: f32 = 1.3;
 const SPORE_BOB_W: f32 = SPORE_BOB_HZ * std.math.tau;
-/// **SLOWER THAN HE SPRINTS, AND THAT IS DELIBERATE.** `hero.SPRINT_SPEED` is 5.1, so a spore at 4.4 cannot
-/// run him down in a straight line at all — it is a thing you must not stand still in front of, not a thing
-/// that kills you for being outdoors.
+/// Slower than he sprints, deliberately: `hero.SPRINT_SPEED` is 5.1 against this 4.4.
 pub const SPORE_HOME: f32 = 4.4;
 /// Radians a second the homing steer may bend. Capped, so a ROLL beats it: at 2.2 it needs 1.43 s to reverse.
 const SPORE_TURN: f32 = 2.2;
@@ -127,34 +89,23 @@ comptime {
     std.debug.assert(SPIT_WIND >= foe.TELL_MIN);
     std.debug.assert(SPORE_HANG > SPORE_RISE);
     std.debug.assert(SPORE_LIFE > SPORE_RISE + SPORE_HANG);
-    // It may never outrun him in a straight line, or the hang buys nothing.
     std.debug.assert(SPORE_HOME < heromod.SPRINT_SPEED_BANK);
 }
 
-// **THE ANTLERS, AND THEY ARE WHAT IT DOES WHEN IT IS CORNERED** (owner). Not a second attack it picks between:
-// the flower is the creature, and this is the creature with its back to something.
 
 const BUTT_WIND: f32 = 0.55;
 const BUTT_STRIKE: f32 = 0.24;
 const BUTT_RECOVER: f32 = 0.62;
 const BUTT_COOL: f32 = 2.6;
-/// Metres of forward drive across the strike. It puts its weight behind the rack; it does not leave the ground.
 const BUTT_DRIVE: f32 = 1.05;
 const BUTT_R: f32 = 1.70;
-/// Where in the strike the crown arrives, as a share of it — the one frame the boards are asked about.
 const BUTT_IMPACT_K: f32 = 0.45;
 /// The cosine of the cone the rack covers: a head-down charge answers for what is in front of it, cos 62 deg.
 const BUTT_FRONT_DOT: f32 = 0.47;
-/// **NO LAUNCH AND A BIG SHOVE.** A stag puts you on your back foot, not in the air; the only thing in this
-/// game that throws a man is a two-handed overhead.
 const BUTT_HIT = combat.Hit{ .dmg = 20, .poise = 34, .stance = 12 };
 
-/// **CORNERED IS TWO FACTS ABOUT WHERE TWO BODIES ARE, AND A CLOCK** (the LAW): he is inside the ring the
-/// flower is useless in, AND the gap did not open this frame — it is backing off and not getting away. Held
-/// for this long, the rack comes down. Never a read of what he is holding or pressing.
 const CORNER_HOLD: f32 = 1.15;
 const CORNER_R: f32 = BUTT_R + 1.1;
-/// It drains faster than it fills, so breaking off for a moment genuinely spends the clock.
 const CORNER_DECAY: f32 = 1.6;
 
 comptime {
@@ -163,8 +114,6 @@ comptime {
     std.debug.assert(BUTT_R < CORNER_R);
 }
 
-// **THE BAND IT KEEPS.** A deer's whole plan is not being where you are. Inside `FLEE_R` it walks away from
-// you; past `KEEP_R` it closes enough to throw. Between them it holds and spits.
 const FLEE_R: f32 = 6.5;
 const KEEP_R: f32 = 13.0;
 
@@ -176,15 +125,12 @@ comptime {
 const TURN_RATE: f32 = 4.0;
 const ACCEL: f32 = 8.5;
 const GAIT_BLEND: f32 = 8.0;
-/// **IT RUNS FROM YOU FASTER THAN IT WALKS AT YOU.** The flight is the animal; the approach is only bookkeeping.
 const FLEE_SPEED: f32 = wolf.GALLOP_SPEED * 0.92;
 const CLOSE_SPEED: f32 = wolf.TROT_SPEED * 1.15;
 
 pub const SHOVE = foe.Push{ .light = 1.20, .heavy = 2.90 };
 const SHOVE_DECAY: f32 = 6.0;
 
-// **THE RIG.** Wolf's 27, and eleven more: the stalk out of the withers, the bloom on top of it, seven petals
-// hung off the bloom, and a beam of antler on each side of a head this creature actually kept.
 /// The corolla's count, and every bone after it is measured off it: written out it sat in five places.
 const NPETAL = 7;
 
@@ -213,51 +159,34 @@ comptime {
     std.debug.assert(PARENT.len == N);
 }
 
-/// The reticle rides the BARREL and never the flower — on the bloom it would travel a metre and a half every
-/// time the stalk rose (the ravager's own finding, and the same fix).
 const LOCK_AT = v3(0, 0.30 * W, 0.10 * W);
 
-// **THE STALK STANDS PLUMB OUT OF THE BACK, AND THE FLOWER IS WHAT ANGLES** (owner). It holds ONE stance the
-// animal's whole life (owner: no rise) — a shaft leaning back read as the whole assembly tipping over, so the
-// shaft is upright over the loins and all 24 degrees of lie-back sit in the bloom's own joint.
 const STALK_UP: f32 = 0.44;
-/// Degrees the bloom lies back off its plumb shaft. The stalk carries none of it.
 const BLOOM_TILT: f32 = 24.0;
 
-/// Degrees the head lowers and the rack comes forward across the charge. The crown has to arrive at chest
 /// height on him or it is a nod: reared it rides at 1.9 m, and 64 degrees brings it into his column.
 const BUTT_DUCK: f32 = 64.0;
 const BUTT_LOAD: f32 = 26.0;
-/// Fraction of `W` the body sinks loading the charge, and how far the forequarters drop into it.
 const CROUCH: f32 = 0.10;
 const GATHER_PITCH: f32 = 13.0;
 const DRIVE_PITCH: f32 = 18.0;
 
-/// Degrees of idle drift and how slowly it runs — `mathx.gutter`'s three incommensurate rates, so a standing
-/// herd never falls into step.
 const SWAY_DEG: f32 = 4.6;
 const SWAY_RATE: f32 = 0.42;
-/// …and how far the HEAD turns at him while it grazes. POSITION and BEARING only — the law.
 const LOOK_DEG: f32 = 24.0;
 const LOOK_RATE: f32 = 2.4;
 
-/// Death, in two acts: the stalk gives out over the first third, then the barrel rolls off its legs.
 const WILT_FOLD: f32 = 122.0;
 const DEAD_ROLL: f32 = 70.0;
 const DEAD_BUCKLE: f32 = 0.20;
 
-// The bloom's own clock, 0 shut to 1 wide, out of range at both ends: a bud tightens before it bursts and a
-// mass in motion overshoots its rest. The ravager's numbers, on the volley's clock instead of a leap's.
 const CLAMP_BY: f32 = 0.15;
 const BLOOM_CLAMP: f32 = 0.17;
 /// **WIDE BEFORE ANYTHING LEAVES IT.** The release is at `SPIT_WIND + SPIT_DUR * 0.30`, so the burst has to
-/// finish well inside the wind or the spores are in the air before the flower has said anything.
 const OPEN_BY: f32 = 0.46;
 const SETTLE_BY: f32 = 0.68;
 const BLOOM_SNAP: f32 = 0.15;
 const SHUT_BY: f32 = 0.75;
-/// **A HEAVY STUN BLOWS IT OPEN** (the ravager's, and the reason the window is worth aiming for). A LIGHT
-/// flinch leaves it shut.
 const BLOOM_STUN: f32 = 1.06;
 const SHIVER_DEG: f32 = 7.0;
 const SHIVER_HZ: f32 = 9.5;
@@ -268,12 +197,9 @@ comptime {
 }
 
 /// **THE OPEN BLOOM IS THE WEAK POINT** — 1.9x while it is wide. DAMAGE ONLY: `poise` and `stance` are left
-/// alone, because `POISE_MAX` is solved to sit between the hero's two swings and a multiplier here would
-/// quietly put a light poke through it.
 const BLOOM_FRAIL: f32 = 0.90;
 
 /// One petal. `ang` is degrees round the bloom's axis with 0 at the top; `bias` is degrees of fold this one
-/// carries at every open value; `gain` is its share of the shared swing, so the ring never arrives as one plate.
 const Petal = struct {
     bone: usize,
     ang: f32,
@@ -282,7 +208,6 @@ const Petal = struct {
     wide: f32,
     bias: f32,
     gain: f32,
-    /// Degrees it hangs by once it is dead. Uneven, because a wilted corolla is never a cone.
     sag: f32 = 0,
     /// **THE VARIATION IS BETWEEN THE SEVEN, NOT ALONG ONE** (AGENTS.md). 0 the dark, 1 the mid, 2 the bleached.
     tone: u8 = 1,
@@ -290,7 +215,6 @@ const Petal = struct {
 
 /// **HAND-AUTHORED, NOT STEPPED ROUND A CIRCLE** — a ring off `k/7 * 360` reads as a gear however good the
 /// quill is. Gaps of 34 to 64 against a mean of 51, and no gap over 64 or the open corolla comes back with a
-/// bald sector in it. The angles are the one thing `restPose` and `pose` must agree on, so they are a table.
 const PETALS = [NPETAL]Petal{
     .{ .bone = PET0 + 0, .ang = 196, .root = 1.00, .len = 1.34, .wide = 1.16, .bias = 0, .gain = 1.05, .sag = 34, .tone = 1 },
     .{ .bone = PET0 + 1, .ang = 96, .root = 0.94, .len = 1.04, .wide = 0.98, .bias = -3, .gain = 0.97, .sag = 21, .tone = 0 },
@@ -312,35 +236,24 @@ comptime {
     }
 }
 
-/// Degrees off the bloom's own axis. SHUT is NEGATIVE — a bud's petals converge PAST parallel, which is what
 /// closes the tip, and it is solved: the quill bows 0.42 of its own length off-axis, so the tip's radial is
 /// `|BLOOM_RIM + len*(0.42*cos f + sin f)|` and landing that on the axis is -33 deg.
 const PETAL_SHUT: f32 = -33.0;
-/// …and at the other end. **A BIGGER NUMBER HERE MAKES A SMALLER FLOWER PAST A POINT**: that same radial peaks
-/// at `atan(1/0.42)` = 67 deg and falls away after. 80 with the gains at 0.90..1.05 folds the family 69..86 —
-/// every blade UNDER flat, so the corolla is a dish and an eye-level camera reads blade backs, not shadowed
-/// undersides; at 95 the widest hung past horizontal and the whole flower was a mop.
+/// The bow peaks at `atan(1/0.42)` = 67 deg and falls away after; 80 with the gains at 0.90..1.05 folds the family 69..86.
 const PETAL_WIDE: f32 = 80.0;
 
-/// **ONE BLADE, THREE LENSES AND A RIB** (owner: much simpler, way too much going on). The petal used to be 27
-/// parts — a midrib in eight links, three vanes a side and six membrane lenses — and seven of those is a
-/// thicket at any distance. It is a bowed rib with three flattened lenses laid on it now: 7 parts, one outline.
-/// 0.62 against the old 0.48: the flower no longer buys its tell with a rise, so it buys it with SIZE
-/// (owner: bigger instead) — the open corolla spans past two and a half metres.
+/// ONE BLADE, THREE LENSES AND A RIB (owner: much simpler, way too much going on) — 7 parts against the old
+/// 27, one outline. 0.62 against the old 0.48: the flower buys its tell with SIZE rather than a rise.
 const PETAL_LEN: f32 = 0.62 * W;
 /// The rib's root radius. SUNK: the lens is 0.019 W half-thick and the rib has to sit mostly inside it, or
-/// it reads as a strand laid across the blade.
 const QUILL_R: f32 = 0.015 * W;
 const PETAL_SEGS: u32 = 3;
 /// The blade's half-width at its widest, as a share of its own length. 0.26 puts a petal near 2:1, which is
-/// petal and not paddle; the seven together open to a corolla over two metres across.
 const PETAL_HALFW: f32 = 0.26;
-/// How far the quill bows off the axis over its length and again over the last of it — the RECURVE. Their SUM,
 /// 0.42, is the tip's own off-axis share and it is what `PETAL_SHUT` and the width peak are solved against.
 const PETAL_BOW: f32 = 0.24;
 const PETAL_RECURVE: f32 = 0.18;
 
-/// Where the quills root, and how far forward of the receptacle. The throat's own size sets this.
 const BLOOM_RIM: f32 = 0.126 * W;
 const CALYX_Z: f32 = 0.052 * W;
 fn ringDir(angDeg: f32) rl.Vector3 {
@@ -367,7 +280,6 @@ fn rowFor(bone: usize) Petal {
 
 /// **A DEER CARRIES ITS HEAD HIGH AND FORWARD, NOT SLUNG LIKE A DOG'S.** Wolf's chain puts the skull at 0.82 W
 /// on a level neck; this lifts it to 1.16 and pushes it out, which is the whole difference between the two
-/// silhouettes before a single mesh is built.
 const HEAD_UP: f32 = 1.10;
 const HEAD_OUT: f32 = 0.52;
 const NECK_MID: f32 = 0.46;
@@ -384,7 +296,6 @@ fn restPose() [N]rl.Vector3 {
     r[EARR] = v3(-0.062 * W, r[HEAD].y + 0.070 * W, r[HEAD].z - 0.048 * W);
     r[ANTL] = v3(0.050 * W, r[HEAD].y + 0.086 * W, r[HEAD].z - 0.010 * W);
     r[ANTR] = v3(-0.050 * W, r[HEAD].y + 0.086 * W, r[HEAD].z - 0.010 * W);
-    // OUT OF THE BACK: the socket sits behind the withers, over the loins, and the shaft rises PLUMB off it.
     r[STALK] = v3(0, sh.y + 0.150 * W, sh.z - 0.120 * W);
     r[BLOOM] = v3(0, r[STALK].y + STALK_UP * W, r[STALK].z);
     for (PETALS) |q| r[q.bone] = petalRoot(r[BLOOM], q);
@@ -394,7 +305,6 @@ fn restPose() [N]rl.Vector3 {
 // **AUTHOR DARK, AND SOLVE IT RATHER THAN GUESS** — screen goes as albedo^(1/2.2), and a big smooth mass comes
 // back brighter than the field it stands in. **AND ALPHA IS INVERSE EMISSIVE, NOT OPACITY** (`shaders.zig`:
 // `emis = 1 - fragColor.a`): matter goes to 248+, and only the throat and the stamens keep the low alpha,
-// because they are the only things here that are light.
 const HIDE = rgba(13, 11, 9, 250);
 const HIDE_DK = rgba(7, 6, 6, 252);
 const HIDE_LT = rgba(20, 17, 13, 248);
@@ -411,23 +321,17 @@ const PETAL_DK = rgba(32, 24, 32, 250);
 const PETAL = rgba(58, 42, 54, 250);
 const PETAL_LT = rgba(92, 70, 82, 248);
 
-/// The centre is a WARM light now and not a gullet — the blood tones read as an open mouth on a thing that
-/// only ever spits pollen.
 const THROAT_LIP = rgba(138, 108, 44, 168);
 const THROAT = rgba(255, 226, 150, 22);
 
 const STAMEN = rgba(170, 146, 92, 196);
 const HUSK = rgba(36, 31, 24, 250);
-/// The rack. Dead bone weathered green at the base — the one PALE thing on a body authored this dark, so the
-/// silhouette has a crown on it from across a field.
 const HORN = rgba(52, 49, 38, 250);
 const HORN_LT = rgba(74, 70, 55, 248);
 const MUZZLE = rgba(9, 8, 8, 251);
 const EYE = rgba(118, 132, 76, 210);
-/// The catchlight. Off the eye's own tone and pale enough to survive the hide it sits in.
 const GLINT = rgba(196, 208, 164, 226);
 
-/// **THE SPORE IS A LIGHT, NOT A PEBBLE** — it has to be findable against dark ground for a second and a half.
 const SPORE_CORE = rgba(214, 230, 150, 40);
 const SPORE_SKIN = rgba(126, 158, 78, 150);
 
@@ -452,7 +356,6 @@ pub const Deer = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
@@ -464,21 +367,16 @@ pub const Deer = struct {
     seed: f32 = 0,
     state: State = .idle,
     t: f32 = 0,
-    /// A clock no state resets, because the idle drift may not restart every time it stops walking.
     elapsed: f32 = 0,
     phase: f32 = 0,
     speed: f32 = 0,
     speedS: f32 = 0,
     spitCool: f32 = 0,
     buttCool: f32 = 0,
-    /// **HOW LONG IT HAS BEEN CORNERED**, in seconds, and the only thing that asks for the antlers.
     pinned: f32 = 0,
-    /// Last frame's gap to him. A distance, remembered — which is how "backing off is not working" is said
-    /// without reading one thing about him.
     lastGap: f32 = 1e9,
     /// -1..1, how far round the head is turned AT him. Eased, and off his BEARING alone.
     look: f32 = 0,
-    /// The bloom's own value on the frame it died. A corpse wilts from whatever the blow caught it wearing.
     deathOpen: f32 = 0,
 
     vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
@@ -490,7 +388,6 @@ pub const Deer = struct {
     flash: f32 = 0,
     shove: rl.Vector3 = mathx.zero3,
     justDied: bool = false,
-    /// One-frame edges the loop reads for its voices, and the volley the herd's pool reads.
     opened: bool = false,
     spat: bool = false,
     spatFrom: rl.Vector3 = mathx.zero3,
@@ -505,8 +402,6 @@ pub const Deer = struct {
 
     parts: [PARTS]foe.Particle = [_]foe.Particle{.{}} ** PARTS,
     fxHead: usize = 0,
-    /// Read by `foe.dissipate` — the death fade's own emit accumulator, and part of the contract rather than
-    /// this creature's state. It looks unused from inside the file and is not.
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
 
@@ -565,11 +460,9 @@ pub const Deer = struct {
         return foe.flashFrac(self.flash);
     }
 
-    /// The throat's own mouth, off the posed bloom — where a volley leaves from.
     pub fn bloomPoint(self: *const Deer) rl.Vector3 {
         return foe.markOn(self.xf[BLOOM], v3(0, 0, CALYX_Z + 0.03 * W));
     }
-    /// …and where a portrait points. **THE FACE IS THE FACE** — unlike the ravager, this one has one.
     pub fn facePoint(self: *const Deer) rl.Vector3 {
         return foe.markOn(self.xf[HEAD], v3(0, 0, 0.06 * W));
     }
@@ -605,8 +498,7 @@ pub const Deer = struct {
         return mathx.pulse(self.t, 0, BUTT_WIND * 0.74, BUTT_WIND * 0.90, BUTT_WIND + BUTT_STRIKE);
     }
 
-    /// **HOW FAR INTO THE DRIVE IT IS**, -1 cocked through +1 followed through. One signed channel, so the head
-    /// coming up cannot promise a charge the body does not throw.
+/// How far into the drive it is: -1 cocked through +1 followed through, one signed channel.
     pub fn driveAmt(self: *const Deer) f32 {
         if (self.state != .butt) return 0;
         if (self.t < BUTT_WIND) return -mathx.smoothstep(0, BUTT_WIND * 0.88, self.t);
@@ -616,7 +508,6 @@ pub const Deer = struct {
         return 1.0 - mathx.smoothstep(BUTT_WIND + BUTT_STRIKE, BUTT_WIND + BUTT_STRIKE + BUTT_RECOVER * 0.7, self.t);
     }
 
-    /// Three incommensurate rates off one never-reset clock, offset by the map's own seed.
     fn swayAt(self: *const Deer) f32 {
         return mathx.gutter(self.elapsed * SWAY_RATE + self.seed * 9.7, self.seed * 6.1);
     }
@@ -686,15 +577,12 @@ pub const Deer = struct {
         const sensed = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         const gap = mathx.distXZ(self.pos, hero);
 
-        // **CORNERED: HE IS INSIDE THE RING AND THE GAP IS NOT OPENING.** Two distances and a clock — the world
-        // as any body standing in it could see it, and never a read of his state machine.
         const closing = gap <= self.lastGap + 1e-4;
         if (sensed <= AGGRO_R and gap <= CORNER_R * self.scale + foe.HERO_R and closing) {
             self.pinned += dt;
         } else self.pinned = mathx.maxF(0, self.pinned - dt * CORNER_DECAY);
         self.lastGap = gap;
 
-        // THE HEAD TURNS AT HIM WHILE IT GRAZES — his bearing, and nothing else about him.
         const wantLook: f32 = if (sensed <= AGGRO_R and self.state != .butt and self.state != .spit)
             mathx.clampF(self.sideOf(hero) * 1.6, -1, 1)
         else
@@ -709,11 +597,9 @@ pub const Deer = struct {
         }
 
         if (self.state == .spit) {
-            // It aims while the flower is still coming up, and not one degree after.
             if (self.t < SPIT_WIND * OPEN_BY) self.faceToward(hero, dt);
             self.speed = 0;
             const at = SPIT_WIND + SPIT_DUR * SPIT_RELEASE_K;
-            // The release is an EDGE, caught by the clock crossing it: a long frame cannot fire two volleys.
             if (self.t - dt < at and self.t >= at) {
                 self.spat = true;
                 self.spatFrom = self.bloomPoint();
@@ -728,11 +614,6 @@ pub const Deer = struct {
         }
 
         if (self.state == .butt) {
-            // IT DOES NOT TURN INTO IT. A head-down charge is committed to the line it loaded on, so stepping
-            // off that line is the answer — the same bargain every commitment in this game makes.
-            // **IT AIMS WHILE THE HEAD IS COMING DOWN AND COMMITS WHEN IT LEAVES** — the ravager's bargain.
-            // Aimed only by the single snap at the commit, a charge could be thrown 90 deg off him and the
-            // one move a cornered animal owns would answer nothing.
             if (self.t < BUTT_WIND) self.faceToward(hero, dt);
             if (self.t >= BUTT_WIND and self.t < BUTT_WIND + BUTT_STRIKE) {
                 mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), BUTT_DRIVE * self.scale * (dt / BUTT_STRIKE), bounds);
@@ -753,8 +634,6 @@ pub const Deer = struct {
         const hunting = sensed <= AGGRO_R;
         const round = foe.postWant(self, dt, sensed, AGGRO_R);
 
-        // **THE ANTLERS COME FIRST AND THEY ARE THE ONLY BRANCH THAT LOOKS INWARD.** Everything else this
-        // creature does is about not being here.
         if (hunting and self.pinned >= CORNER_HOLD and self.buttCool <= 0) {
             self.state = .butt;
             self.t = 0;
@@ -767,8 +646,6 @@ pub const Deer = struct {
             self.speed = 0;
             self.opened = true;
         } else if (hunting and gap < FLEE_R) {
-            // **IT WALKS AWAY FROM YOU, AND IT WALKS OFF THE LINE AS WELL AS BACK DOWN IT.** A straight
-            // backpedal is a thing you simply keep pace with; a quartering run is one you have to cut off.
             const away = mathx.scaleV(mathx.dirXZ(self.pos, hero), -1.0);
             const side: f32 = if (self.seed < 0.5) 1.0 else -1.0;
             const way = mathx.normV(mathx.addV(away, mathx.scaleV(mathx.perpXZ(away), side * 0.45)));
@@ -823,8 +700,6 @@ pub const Deer = struct {
 
     pub fn tryHit(self: *Deer, blade_: foe.Blade) void {
         if (self.state == .dead) return;
-        // **THE OPEN BLOOM IS PAID FOR HERE**, on the blade and not in the body's own bar, so the cull, the
-        // threat and the shield all see the blow that actually landed. `poise`/`stance` ride through untouched.
         var blade = blade_;
         const k = self.frailty();
         if (k > 1.0) {
@@ -843,8 +718,6 @@ pub const Deer = struct {
         }
     }
 
-    /// SECONDS BACK FROM THE CROWN ARRIVING, or null. **THE CHARGE ONLY** — a volley is not a stroke and there
-    /// is nothing for a board to be braced against.
     fn toImpact(self: *const Deer) ?f32 {
         const at = BUTT_WIND + BUTT_STRIKE * BUTT_IMPACT_K;
         return switch (self.state) {
@@ -853,8 +726,6 @@ pub const Deer = struct {
         };
     }
 
-    /// THE INSTANT THE RACK CAN BE CAUGHT IN, and how far out it reaches then — `tryButt`'s OWN extent through
-    /// the same `foe.hurtReach`, so a charge the boards could not have met is never offered as one.
     fn parryable(self: *const Deer) ?f32 {
         const left = self.toImpact() orelse return null;
         if (!foe.inParryWindow(left)) return null;
@@ -893,14 +764,11 @@ pub const Deer = struct {
         self.enterStun(heavy);
     }
 
-    /// The flower at full stand. **`stageGather` AND NOT `stageRise`**: `shots.runMapShots` finds a creature's
-    /// signature move off `@hasDecl` of this ONE name, and under any other the deer went unshot.
     pub fn stageGather(self: *Deer, u: f32) void {
         self.state = .spit;
         self.t = mathx.clampF(u, 0, 1) * SPIT_WIND;
         self.pose();
     }
-    /// …and the other half of it: the rack down and the body loaded.
     pub fn stageCharge(self: *Deer, u: f32) void {
         self.state = .butt;
         self.t = mathx.clampF(u, 0, 1) * (BUTT_WIND + BUTT_STRIKE);
@@ -920,7 +788,6 @@ pub const Deer = struct {
                 .r1 = 0.006,
                 .col = if (self.fxRng.float() < 0.5) PETAL else PETAL_LT,
                 .grav = 2.2,
-                // Petals FLUTTER — heavy drag against a light pull.
                 .drag = 2.8,
             });
         }
@@ -953,7 +820,6 @@ pub const Deer = struct {
 
         const crouch = CROUCH * gather + DEAD_BUCKLE * wilt;
         const pitch = GATHER_PITCH * gather + DRIVE_PITCH * mathx.maxF(drive, 0);
-        // Two rates, so the swell is a body breathing and not a metronome.
         const breath = (mathx.sinf(self.elapsed * 1.7) * 0.006 + mathx.sinf(self.elapsed * 0.61 + self.seed * 4.0) * 0.004) * W;
 
         var wx: [N]rl.Matrix = undefined;
@@ -967,8 +833,6 @@ pub const Deer = struct {
         heromod.setJoint(&wx, &self.rest, SPINE, ROOT, mul(rx(-flex * 0.5 - duck * 0.3), rz(SWAY_DEG * 0.5 * sway)));
         heromod.setJoint(&wx, &self.rest, CHEST, SPINE, mul(rx(-flex * 0.5 - duck * 0.3 - 9.0 * wilt), rz(-SWAY_DEG * 0.35 * sway)));
 
-        // **THE NECK IS A DEER'S: HIGH, AND IT DROPS FOR THE CHARGE.** A stag levels its rack by folding at the
-        // withers, not by nodding at the poll — the whole chain comes down and the crown arrives at his chest.
         const neckPitch = flex * 0.4 + 3.0 * m - duck * 1.2 - BUTT_LOAD * gather + BUTT_DUCK * mathx.maxF(drive, 0) - WILT_FOLD * wilt;
         const neckYaw = LOOK_DEG * self.look + SWAY_DEG * sway;
         heromod.setJoint(&wx, &self.rest, NECK, CHEST, mul3(rz(SWAY_DEG * 0.8 * sway), rx(neckPitch), ry(neckYaw)));
@@ -984,10 +848,6 @@ pub const Deer = struct {
         heromod.setJoint(&wx, &self.rest, ANTL, HEAD, rz(3.0 * sway));
         heromod.setJoint(&wx, &self.rest, ANTR, HEAD, rz(-3.0 * sway));
 
-        // **THE SHAFT STANDS UP; THE THROW RECOILS THROUGH IT.** It holds no lie-back of its own (owner: the
-        // stalk should not be angled) — the only things that move the bloom's seat are breath-scale sway, the
-        // stun, the wilt, and the volley leaving, which pushes back on the stalk that threw it, the bloom
-        // taking its share LATE, because joints peaking on the same frame read as one welded block.
         const stalkOff = mathx.subV(self.rest[BLOOM], self.rest[STALK]);
         const relK = SPIT_WIND + SPIT_DUR * SPIT_RELEASE_K;
         const spitting = self.state == .spit;
@@ -1014,7 +874,6 @@ pub const Deer = struct {
             heromod.setJoint(&wx, &self.rest, q.bone, BLOOM, mul(rx(-fold), rz(q.ang + shiver * 0.3)));
         }
 
-        // A deer's tail is a flag: up when it runs, clamped when it charges.
         const tailSwing = mathx.sinf(self.phase * std.math.tau + 1.1) * 6.0 * m + SWAY_DEG * 1.2 * sway;
         const tailUp = 34.0 * m - 26.0 * gather - 22.0 * wilt;
         heromod.setJoint(&wx, &self.rest, TAIL0, ROOT, mul(rx(-10.0 * m + 24.0 * react + tailUp), ry(tailSwing)));
@@ -1026,25 +885,19 @@ pub const Deer = struct {
     }
 };
 
-/// **A SPORE IN THE AIR.** Its whole life is one clock: it climbs out of the throat, it HANGS, and then it
-/// turns over and comes at where he is standing. No owner and no spirit — it is weather, and it answers for
-/// the hero and for nothing else.
 pub const Spore = struct {
     live: bool = false,
     at: rl.Vector3 = mathx.zero3,
     vel: rl.Vector3 = mathx.zero3,
-    /// Where it drifts to over the hang — chosen at the launch, so the five of them spread instead of stacking.
     drift: rl.Vector3 = mathx.zero3,
     t: f32 = 0,
     seed: f32 = 0,
-    /// The ground under the animal that spat it — what `foe.landed` measures against.
     floor: f32 = 0,
 
     /// 0 while it is still climbing or hanging, 1 once it has turned over.
     pub fn homing(self: *const Spore) bool {
         return self.live and self.t >= SPORE_RISE + SPORE_HANG;
     }
-    /// How lit it is: it BRIGHTENS as it turns over, which is the second half of the tell.
     pub fn heat(self: *const Spore) f32 {
         const start = SPORE_RISE + SPORE_HANG;
         return mathx.smoothstep(start - 0.35, start + 0.15, self.t);
@@ -1056,7 +909,6 @@ pub const SPORE_N: usize = 32;
 const CAP_N = wf.MAX_PER_KIND;
 const HERD_PARTS: usize = 72;
 
-/// An airborne spore belongs to nobody standing anywhere — a `Threat` with no spirit and no owner says so.
 const AIR_THREAT = foe.Threat{};
 
 pub const Herd = struct {
@@ -1064,9 +916,6 @@ pub const Herd = struct {
     deer: [CAP_N]Deer = undefined,
     n: usize = 0,
 
-    /// **SIZED FOR A HANDFUL OF ANIMALS AND A FULL POOL DROPS RATHER THAN WRAPS**: wrapping would put a spore
-    /// in the air that nothing had spat. Six volleys of five before it degrades, which is more than a herd
-    /// this size ever has in flight at once.
     spores: [SPORE_N]Spore = [_]Spore{.{}} ** SPORE_N,
 
     parts: [HERD_PARTS]foe.Particle = [_]foe.Particle{.{}} ** HERD_PARTS,
@@ -1086,8 +935,6 @@ pub const Herd = struct {
         self.clearAir();
         foe.resetGroup(Deer, &self.deer, &self.n, m, .fungal_deer);
     }
-    /// **`clear` EMPTIES THE FIELD** — the bodies AND what they left in the air over it, or a reload comes up
-    /// standing under a volley nothing spat.
     pub fn clear(self: *Herd) void {
         self.n = 0;
         self.clearAir();
@@ -1110,8 +957,6 @@ pub const Herd = struct {
         return worst;
     }
 
-    /// **A HANDFUL, THROWN UP AND OUT — NOT AT HIM.** The launch reads no direction to the hero at all: they go
-    /// where the flower is pointing and spread, and the aim happens a second and a half later.
     fn volley(self: *Herd, from: rl.Vector3, facing: f32, floor: f32) void {
         var placed: usize = 0;
         for (&self.spores) |*s| {
@@ -1142,17 +987,14 @@ pub const Herd = struct {
             if (!s.live) continue;
             s.t += dt;
             if (s.t < SPORE_RISE) {
-                // OUT OF THE THROAT: it decelerates as it climbs, so the top of the arc is where it stalls.
                 const u = s.t / SPORE_RISE;
                 s.vel = v3(s.vel.x, SPORE_UP * (1.0 - u), s.vel.z);
                 s.at = mathx.addV(s.at, mathx.scaleV(s.vel, dt));
             } else if (s.t < SPORE_RISE + SPORE_HANG) {
-                // THE HANG: it drifts on its own bearing and bobs. Nothing here reads the hero at all.
                 const bob = SPORE_BOB * SPORE_BOB_W * mathx.cosf((s.t + s.seed * 3.0) * SPORE_BOB_W) * dt;
                 s.at = mathx.addV(s.at, mathx.scaleV(s.drift, dt * 0.35));
                 s.at.y += bob;
             } else {
-                // AND THEN IT TURNS OVER. The steer is CAPPED, so a roll beats it and a walk does not.
                 const want = mathx.normV(mathx.subV(chest, s.at));
                 const have = if (mathx.lenV(s.vel) > 1e-4) mathx.normV(s.vel) else want;
                 s.vel = mathx.scaleV(mathx.turnToward(have, want, SPORE_TURN * dt), SPORE_HOME);
@@ -1200,7 +1042,6 @@ pub const Herd = struct {
             const heat = s.heat();
             const pulse = 1.0 + 0.12 * mathx.sinf((s.t + s.seed * 2.0) * 7.0);
             rl.drawSphereEx(s.at, SPORE_R * pulse, 7, 6, mathx.lerpColor(mathx.withAlpha(SPORE_SKIN, 255), mathx.withAlpha(SPORE_CORE, 255), heat));
-            // The halo is what carries at range, and it SWELLS as the thing turns over.
             rl.drawSphereEx(s.at, SPORE_R * (1.9 + 0.9 * heat) * pulse, 8, 6, mathx.withAlpha(SPORE_CORE, mathx.u8f(40.0 + 46.0 * heat)));
         }
         foe.drawParticles(&self.parts);
@@ -1266,8 +1107,6 @@ fn buildPelvis(b: *Builder, rng: *mathx.Rng) void {
     b.setMat(.hide);
     b.addBlob(v3(0, 0.006 * W, 0.02 * W), v3(0.150 * W, 0.166 * W, 0.216 * W), 6, 10, HIDE);
     b.addBlob(v3(0, 0.104 * W, -0.01 * W), v3(0.118 * W, 0.070 * W, 0.142 * W), 5, 9, HIDE_DK);
-    // THE HAUNCHES STAND PROUD of the croup: a deer's drive is all behind, and buried in one blob the rump
-    // reads as the end of a barrel.
     b.addBlob(v3(0.120 * W, -0.014 * W, -0.01 * W), v3(0.084 * W, 0.150 * W, 0.146 * W), 5, 9, HIDE_LT);
     b.addBlob(v3(-0.116 * W, -0.006 * W, 0.00 * W), v3(0.080 * W, 0.144 * W, 0.142 * W), 5, 9, HIDE_LT);
     b.addBlob(v3(0, -0.098 * W, 0.05 * W), v3(0.102 * W, 0.054 * W, 0.142 * W), 4, 8, BELLY);
@@ -1284,7 +1123,6 @@ fn buildPelvis(b: *Builder, rng: *mathx.Rng) void {
             STALK_DK,
         );
     }
-    // …and a cluster of shut buds over ONE hip. Asymmetric on purpose; a pair reads as anatomy.
     b.setMat(.plant);
     var j: u32 = 0;
     while (j < 3) : (j += 1) {
@@ -1295,16 +1133,12 @@ fn buildPelvis(b: *Builder, rng: *mathx.Rng) void {
     }
 }
 
-/// The loin, and **IT IS A WAIST OR THE WHOLE TRUNK IS ONE TUBE** — a real pinch between chest and hip is what
-/// lets the haunches read as haunches. A deer's is deeper than a hound's: the barrel is shallower and the
-/// coupling longer.
 fn buildLoin(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
     const off = mathx.subV(rest[CHEST], rest[SPINE]);
     const len = mathx.lenV(off);
     b.setMat(.hide);
     b.addCapsule(v3(0, 0, -0.03 * W), mathx.scaleV(off, 1.04), 0.118 * W, 0.148 * W, 11, HIDE);
     b.addBlob(v3(0, -0.078 * W, len * 0.55), v3(0.096 * W, 0.042 * W, len * 0.48), 4, 9, BELLY);
-    // FOUR vertebral knuckles, graded and uneven. Relief is a few PERCENT of the mass, no more.
     var k: u32 = 0;
     while (k < 4) : (k += 1) {
         const u = (@as(f32, @floatFromInt(k)) + 0.5) / 4.0;
@@ -1326,16 +1160,10 @@ fn buildChest(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
     b.addBlob(v3(0, -0.144 * W, 0.03 * W), v3(0.140 * W, 0.080 * W, 0.176 * W), 5, 9, BELLY);
     b.addBlob(v3(0.136 * W, 0.030 * W, 0.02 * W), v3(0.054 * W, 0.126 * W, 0.136 * W), 4, 8, HIDE_LT);
     b.addBlob(v3(-0.132 * W, 0.024 * W, 0.03 * W), v3(0.051 * W, 0.120 * W, 0.132 * W), 4, 8, HIDE_LT);
-    // **THE SOCKET, AND IT IS ON THE WITHERS.** The stalk is 0.12 m through where it leaves a 0.28 m chest, and
-    // a stem that thin butted onto a mass that thick reads as stuck on. Sunk, not stood on: proud it comes back
-    // as a ball bolted to the back, and relief is a few percent of the mass.
     const socket = mathx.subV(rest[STALK], rest[CHEST]);
     b.addBlob(v3(0, socket.y * 0.72, socket.z * 0.72), v3(0.124 * W, 0.076 * W, 0.120 * W), 5, 10, HIDE);
     b.setMat(.bark);
     b.addBlob(v3(0, socket.y, socket.z), v3(0.092 * W, 0.058 * W, 0.090 * W), 4, 10, STALK_DK);
-    // THE COLLAR where the stalk leaves the shoulders, and it is a ring of round BUDS, not the hanging husks
-    // it was — those drooped off the withers as tendrils. Round the BACK three-quarters only: the front is
-    // where a blade lands and a ruff there would read as armour it does not have.
     b.setMat(.plant);
     var k: u32 = 0;
     while (k < 9) : (k += 1) {
@@ -1347,15 +1175,12 @@ fn buildChest(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
     }
 }
 
-/// A DEER'S NECK IS MUSCLE, NOT A STALK — a graded column of hide with the crest standing along the top of it
-/// and the windpipe under. It is the one part of this animal that is only animal.
 fn buildNeck(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
     const off = mathx.subV(rest[HEAD], rest[NECK]);
     const len = mathx.lenV(off);
     const dir = if (len > 1e-5) mathx.scaleV(off, 1.0 / len) else v3(0, 1, 0);
     b.setMat(.hide);
     b.addCapsule(v3(0, 0, 0), mathx.scaleV(dir, len * 1.04), 0.098 * W, 0.062 * W, 10, HIDE);
-    // The CREST along the top and the throat-line under: two ridges of a few percent, which is all relief is.
     b.addCapsule(
         v3(0, 0.052 * W, -0.014 * W),
         v3(dir.x * len * 0.92, dir.y * len * 0.92 + 0.030 * W, dir.z * len * 0.92 - 0.008 * W),
@@ -1372,7 +1197,6 @@ fn buildNeck(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
         6,
         BELLY,
     );
-    // A few shut buds along the crest — the fungus has run up the neck as well as out of the back.
     b.setMat(.plant);
     var k: u32 = 0;
     while (k < 4) : (k += 1) {
@@ -1383,26 +1207,18 @@ fn buildNeck(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
     }
 }
 
-/// **A SKULL, NOT A MUZZLE ON A BALL.** A deer's head is a long wedge: braincase at the back, a straight nasal
-/// run forward of it, and the whole thing narrower than the neck that carries it.
 fn buildSkull(b: *Builder, rng: *mathx.Rng) void {
     b.setMat(.hide);
-    // A ROUNDER, SHORTER WEDGE. The braincase is up 20% and the nasal run in 12%: a long thin skull is the
-    // difference between a deer and a fawn, and this animal is meant to read as the second.
     b.addBlob(v3(0, 0.012 * W, -0.014 * W), v3(0.077 * W, 0.082 * W, 0.086 * W), 6, 10, HIDE);
     b.addBlob(v3(0, -0.004 * W, 0.058 * W), v3(0.050 * W, 0.053 * W, 0.072 * W), 6, 10, HIDE_DK);
     b.addBlob(v3(0, -0.016 * W, 0.111 * W), v3(0.038 * W, 0.039 * W, 0.034 * W), 5, 9, MUZZLE);
-    // The brow ridges and the cheek: a few percent proud, which is what a skull under hide looks like.
     b.addBlob(v3(0.046 * W, 0.040 * W, 0.016 * W), v3(0.026 * W, 0.020 * W, 0.030 * W), 4, 7, HIDE_LT);
     b.addBlob(v3(-0.046 * W, 0.040 * W, 0.016 * W), v3(0.026 * W, 0.020 * W, 0.030 * W), 4, 7, HIDE_LT);
     b.setMat(.plain);
-    // **BIG EYES, SET FORWARD.** Half again the diameter they were and carried onto the front of the wedge,
-    // each with a catchlight bead — one pale dot is most of what separates a cute eye from a dead one.
     b.addBlob(v3(0.055 * W, 0.014 * W, 0.034 * W), v3(0.029 * W, 0.031 * W, 0.026 * W), 6, 9, EYE);
     b.addBlob(v3(-0.055 * W, 0.014 * W, 0.034 * W), v3(0.029 * W, 0.031 * W, 0.026 * W), 6, 9, EYE);
     b.addBlob(v3(0.061 * W, 0.023 * W, 0.049 * W), v3(0.009 * W, 0.009 * W, 0.007 * W), 4, 7, GLINT);
     b.addBlob(v3(-0.049 * W, 0.023 * W, 0.049 * W), v3(0.009 * W, 0.009 * W, 0.007 * W), 4, 7, GLINT);
-    // …and the fungus has taken the poll. Small buds crowding the base of the rack, which is where it started.
     b.setMat(.plant);
     var k: u32 = 0;
     while (k < 5) : (k += 1) {
@@ -1427,18 +1243,12 @@ fn buildJaw(b: *Builder, rng: *mathx.Rng) void {
 
 fn buildEar(b: *Builder, side: f32) void {
     b.setMat(.hide);
-    // A deer's ear is a big cupped leaf — the one part of the animal that is bigger than a dog's, and BIGGER
-    // AGAIN here: a third longer and wider at the cup, because oversized ears are the cheapest cute there is.
     b.addCapsule(v3(0, 0, 0), v3(side * 0.048 * W, 0.104 * W, -0.038 * W), 0.023 * W, 0.040 * W, 7, HIDE);
     b.addBlob(v3(side * 0.040 * W, 0.086 * W, -0.030 * W), v3(0.035 * W, 0.058 * W, 0.017 * W), 5, 8, HIDE_LT);
 }
 
-/// **THE RACK, AND IT IS A SIMPLE ONE.** A three-link beam out and back, two blunt prongs off it, and every
-/// end a bead — nothing ends in a point (AGENTS.md). It used to be built out of the trees' own dead limb,
-/// which came back drooping and forked and read as bare twigs growing out of the skull.
 fn buildAntler(b: *Builder, rng: *mathx.Rng, side: f32) void {
     b.setMat(.bark);
-    // THE BEAM: up and out, sweeping back. Three links so it curves instead of leaning.
     const p0 = v3(0, 0, 0);
     const p1 = v3(side * 0.052 * W, 0.104 * W, -0.030 * W);
     const p2 = v3(side * 0.108 * W, 0.196 * W, -0.014 * W);
@@ -1446,9 +1256,7 @@ fn buildAntler(b: *Builder, rng: *mathx.Rng, side: f32) void {
     b.addCapsule(p0, p1, 0.024 * W, 0.019 * W, 6, HORN);
     b.addCapsule(p1, p2, 0.019 * W, 0.015 * W, 6, HORN);
     b.addCapsule(p2, p3, 0.015 * W, 0.011 * W, 6, HORN_LT);
-    // …and a blunt crown, because nothing ends in a point.
     b.addBlob(p3, v3(0.013 * W, 0.012 * W, 0.013 * W), 4, 7, HORN_LT);
-    // TWO TINES, uneven — the wabi-sabi is BETWEEN them, not along one.
     const AT = [2]rl.Vector3{ p1, p2 };
     const REACH = [2]f32{ 0.104, 0.076 };
     for (AT, REACH, 0..) |root, reach, k| {
@@ -1458,7 +1266,6 @@ fn buildAntler(b: *Builder, rng: *mathx.Rng, side: f32) void {
         b.addCapsule(root, tip, 0.014 * W, 0.010 * W, 6, HORN);
         b.addBlob(tip, v3(0.011 * W, 0.010 * W, 0.011 * W), 4, 7, HORN_LT);
     }
-    // The velvet has rotted and the fungus is in it: a few buds crowding the burr.
     b.setMat(.plant);
     var k: u32 = 0;
     while (k < 3) : (k += 1) {
@@ -1473,9 +1280,6 @@ fn buildAntler(b: *Builder, rng: *mathx.Rng, side: f32) void {
     }
 }
 
-/// **THE STALK IS WOOD, AND IT IS A CHAIN AND NOT A PIPE** — three sheaths overlapping past their own joints,
-/// radii grading down, and nothing else on it. Plumb: the shaft carries no lean of its own (owner), and the
-/// top is DELIBERATELY thin because the bloom's collar sleeves down over it.
 fn buildStalk(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
     _ = rng;
     const off = mathx.subV(rest[BLOOM], rest[STALK]);
@@ -1500,28 +1304,17 @@ fn buildStalk(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
     }
 }
 
-/// **A COLLAR, A RECEPTACLE AND THE LIGHT** (owner: much simpler). The scales, the sepal lobes and the corona
-/// of nine pads are gone — they were 30 parts of detail behind a corolla two metres across, and at any distance
-/// the flower reads as its outline and its one light.
 fn buildBloom(b: *Builder, rng: *mathx.Rng, rest: [N]rl.Vector3) void {
     const dn = mathx.normV(mathx.subV(rest[STALK], rest[BLOOM]));
     b.setMat(.bark);
     b.addCapsule(mathx.scaleV(dn, 0.14 * W), mathx.scaleV(dn, 0.012 * W), 0.054 * W, 0.064 * W, 9, STALK_DK);
 
     b.setMat(.plant);
-    // **THE RECEPTACLE** — the backing disc the blades root on, out past the petal ring so the shut bud has a
-    // floor under it and the open one grows out of a cup rather than off a bare knob.
     b.addBlob(v3(0, 0, -0.006 * W), v3(0.168 * W, 0.166 * W, 0.048 * W), 5, 12, CALYX);
 
-    // **THE ONE LIGHT ON THE ANIMAL, AND IT HAS TO BE FOUND FROM ACROSS A FIELD.** A PROUD BOSS and not a cup:
-    // a closed ellipsoid has no inside, so a sunk throat shows the player its dark back. Two shells stepping
-    // out and up the axis, the second hotter and smaller — a cone of light. **AND IT GRADES, OR EMISSIVE
-    // FLATTENS IT TO A LAMP**: form has to come from the ALBEDO STEPS.
     b.setMat(.plain);
     b.addBlob(v3(0, 0, 0.004 * W), v3(0.096 * W, 0.096 * W, 0.054 * W), 7, 11, THROAT_LIP);
     b.addBlob(v3(0, 0, 0.048 * W), v3(0.042 * W, 0.042 * W, 0.040 * W), 6, 10, THROAT);
-    // …and the ANTHERS: three round pollen beads sitting IN the light, no stalks. This is what the volley
-    // comes out of.
     var f: u32 = 0;
     while (f < 3) : (f += 1) {
         const a = std.math.tau * (@as(f32, @floatFromInt(f)) + rng.range(-0.20, 0.20)) / 3.0;
@@ -1540,14 +1333,11 @@ fn petalTone(t: u8) rl.Color {
     };
 }
 
-/// The blade's own half-width at `u` along the rib — narrow at the claw, widest past the middle, shut at the
-/// tip. What the lenses are measured against.
 fn bladeHalfW(u: f32, maxW: f32) f32 {
     const uc = mathx.clampF(u, 0, 1);
     return maxW * std.math.pow(f32, mathx.sinf(std.math.pi * (0.06 + 0.94 * uc)), 1.1);
 }
 
-/// **ONE BOWED RIB AND TWO LENSES.** The vanes and the swirl are gone (owner: way too much going on) — a petal
 /// is an outline and a tone, and seven of them make the corolla. **THE RIB STOPS AT 0.86 AND THE OUTER LENS
 /// RUNS PAST 1.0**: a rib that outran its own membrane read as a pin with a bead on the end of it.
 fn buildPetal(b: *Builder, q: Petal) void {
@@ -1566,7 +1356,6 @@ fn buildPetal(b: *Builder, q: Petal) void {
         at = to;
     }
 
-    // THE MEMBRANE — two overlapping lenses seated on the same bow, so the blade has ONE outline and follows
     // its own curve. A single lens cannot: the tip stands 0.42 of the length off the axis.
     for ([_][2]f32{ .{ 0.30, 0.34 }, .{ 0.74, 0.32 } }, 0..) |row, li| {
         const u = row[0];
@@ -1603,10 +1392,7 @@ fn buildTail(b: *Builder, rng: *mathx.Rng, i: usize, rest: [N]rl.Vector3) void {
     b.setMat(.hide);
     b.addCapsule(v3(0, 0, 0), to, r0, r0 * 0.74, 8, HIDE_DK);
     if (i != TAIL2) return;
-    // THE FLAG: a deer's tail ends pale, and it is the one bright thing at the back of a very dark animal.
     b.addBlob(v3(to.x, to.y - 0.012 * W, to.z - 0.022 * W), v3(0.034 * W, 0.048 * W, 0.056 * W), 5, 8, HIDE_LT);
-    // …and a small TUFT of round buds behind the flag. Five tapered spines used to stand off the tail tip,
-    // which is a wisp of hair on the one part of the animal a player sees while it runs away.
     b.setMat(.plant);
     var k: u32 = 0;
     while (k < 5) : (k += 1) {
@@ -1622,9 +1408,6 @@ fn buildTail(b: *Builder, rng: *mathx.Rng, i: usize, rest: [N]rl.Vector3) void {
     }
 }
 
-/// Off the rest chain's own segment lengths, so a resized animal cannot grow a leg the solver does not believe
-/// in. **THE LEGS ARE THE SEAM BETWEEN THE TWO HALVES**: hide over the shoulder, wood from the elbow down —
-/// and a deer's are longer and thinner than a hound's, which is most of the silhouette.
 fn buildLimbBone(b: *Builder, i: usize, rest: [N]rl.Vector3, rng: *mathx.Rng) void {
     const child: ?usize = blk: {
         for (0..N) |c| {
@@ -1647,10 +1430,7 @@ fn buildLimbBone(b: *Builder, i: usize, rest: [N]rl.Vector3, rng: *mathx.Rng) vo
         return;
     }
     b.setMat(.bark);
-    // **SLENDER, BECAUSE IT IS A DEER.** 0.034 W against the hound's 0.042 is a cannon bone you can see the
-    // ground through, and it is what makes the animal read as leggy rather than merely tall.
     b.addCapsule(v3(0, 0, 0), v3(0, -len, 0), 0.034 * W, 0.024 * W, 8, LIMB);
-    // The joint above it and the fetlock swelling at the bottom — SMALL, or they read as bamboo nodes.
     b.addBlob(v3(0, -0.006 * W, 0.004 * W), v3(0.040 * W, 0.034 * W, 0.038 * W), 4, 8, LIMB_LT);
     b.addBlob(v3(0, -len * 0.94, 0.004 * W), v3(0.032 * W, 0.026 * W, 0.032 * W), 4, 8, LIMB_LT);
     var k: u32 = 0;
@@ -1668,8 +1448,6 @@ fn buildLimbBone(b: *Builder, i: usize, rest: [N]rl.Vector3, rng: *mathx.Rng) vo
     }
 }
 
-/// **A CLOVEN HOOF, NOT A PAW** — two toes with a split between them and the dewclaws behind. It is the last
-/// thing that would still say "dog" if it were left alone.
 fn buildHoof(b: *Builder, rng: *mathx.Rng) void {
     b.setMat(.bark);
     const spread = 0.019 * W;
@@ -1677,17 +1455,13 @@ fn buildHoof(b: *Builder, rng: *mathx.Rng) void {
         const l = 0.062 * W * rng.range(0.92, 1.10);
         const tip = v3(side * spread * 1.15, -0.052 * W, 0.030 * W + l);
         b.addCapsule(v3(side * spread, -0.006 * W, 0.006 * W), tip, 0.020 * W, 0.013 * W, 6, LIMB);
-        // Blunt at the toe: nothing ends in a point, and a hoof least of all.
         b.addBlob(tip, v3(0.013 * W, 0.011 * W, 0.012 * W), 4, 7, LIMB_LT);
     }
-    // The dewclaws, high and behind, and only one of them is worth seeing.
     b.addCapsule(v3(0.024 * W, 0.010 * W, -0.026 * W), v3(0.030 * W, -0.020 * W, -0.040 * W), 0.009 * W, 0.004 * W, 4, LIMB);
     b.addCapsule(v3(-0.022 * W, 0.008 * W, -0.024 * W), v3(-0.027 * W, -0.016 * W, -0.036 * W), 0.008 * W, 0.004 * W, 4, LIMB);
 }
 
 test "THE FLOWER OPENS FOR THE VOLLEY AND NEVER MOVES HOUSE — the tell is the corolla, not a rise" {
-    // (owner: no stalk rise — open/close on the spore, and bigger instead.) The bloom stands over a man for
-    // the animal's whole life, and the volley may move its seat by recoil and breath only, never by a stage.
     var d = Deer.spawn(mathx.zero3, 0, 1.0, 0.30);
     d.pose();
     const atRest = rl.math.vector3Transform(mathx.zero3, d.xf[BLOOM]);
@@ -1695,14 +1469,12 @@ test "THE FLOWER OPENS FOR THE VOLLEY AND NEVER MOVES HOUSE — the tell is the 
     const atSpit = rl.math.vector3Transform(mathx.zero3, d.xf[BLOOM]);
     std.debug.print("\n  deer: the bloom stands {d:.2} m at rest and {d:.2} m at the volley on a {d:.2} m animal\n", .{ atRest.y, atSpit.y, W });
     try std.testing.expect(@abs(atSpit.y - atRest.y) < 0.12);
-    // …and it clears the top of a man AT ALL TIMES, which is what makes a volley come from over his head.
     try std.testing.expect(atRest.y > heromod.H);
     // **AND IT STANDS OVER ITS OWN BACK, NOT OVER THE ANIMAL'S HEAD** — measured against the WITHERS.
     const withers = rl.math.vector3Transform(mathx.zero3, d.xf[CHEST]).z;
     std.debug.print("    fore-aft: withers at {d:.2} m, the flower at {d:.2} m — {d:.2} m BEHIND the shoulder\n", .{ withers, atSpit.z, withers - atSpit.z });
     try std.testing.expect(atSpit.z < withers and atRest.z < withers);
 
-    // Shut everywhere but the volley, on its own clock and nothing else's — and WIDE at the throw.
     for ([_]State{ .idle, .move, .flee, .butt }) |st| {
         var k = Deer.spawn(mathx.zero3, 0, 1.0, 0.30);
         k.state = st;
@@ -1710,8 +1482,6 @@ test "THE FLOWER OPENS FOR THE VOLLEY AND NEVER MOVES HOUSE — the tell is the 
         try std.testing.expectApproxEqAbs(@as(f32, 0), k.openAmt(), 1e-6);
     }
     try std.testing.expect(d.openAmt() > 0.9);
-    // A HEAVY stun blows the bud open and a light one does not — the window is worth aiming for or it is
-    // not a window.
     var hurt = Deer.spawn(mathx.zero3, 0, 1.0, 0.30);
     hurt.stagger(true);
     hurt.t = combat.foeStunDur(true) * 0.4;
@@ -1722,8 +1492,6 @@ test "THE FLOWER OPENS FOR THE VOLLEY AND NEVER MOVES HOUSE — the tell is the 
 }
 
 test "THE SPORES HANG IN THE AIR BEFORE THEY COME AT YOU — measured, and it is the whole move" {
-    // **THE HANG IS THE ANSWER** (owner: they hover for a bit before homing in to you). Through the real pool:
-    // not one of them may be steering before its hang is out, and every one must be after.
     var h = Herd{ .model = undefined };
     h.volley(v3(0, 2.2, 0), 0, 0);
     var lit: usize = 0;
@@ -1734,7 +1502,6 @@ test "THE SPORES HANG IN THE AIR BEFORE THEY COME AT YOU — measured, and it is
     var worst: ?foe.Blow = null;
     var t: f32 = 0;
     var firstHoming: f32 = -1;
-    // The man is far enough off that nothing lands: this test is about the CLOCK, not the blow.
     const away = mathx.ground(0, 60);
     while (t < SPORE_LIFE) : (t += dt) {
         h.tickSpores(dt, away, &worst);
@@ -1749,9 +1516,7 @@ test "THE SPORES HANG IN THE AIR BEFORE THEY COME AT YOU — measured, and it is
     }
     std.debug.print("  spore: {d} thrown, hangs {d:.2} s and turns over at {d:.2} s — a walking man covers {d:.1} m in that\n", .{ SPORES_PER_VOLLEY, SPORE_HANG, firstHoming, firstHoming * heromod.WALK_SPEED_BANK });
     try std.testing.expect(firstHoming >= SPORE_RISE + SPORE_HANG - 0.02);
-    // …and the hang is worth having: long enough to WALK out of the volley, not merely to roll.
     try std.testing.expect(firstHoming * heromod.WALK_SPEED_BANK > 2.0);
-    // …and the pool is empty again, or a herd that throws for a minute stops being able to.
     for (&h.spores) |*s| try std.testing.expect(!s.live);
 }
 
@@ -1766,10 +1531,7 @@ test "A SPORE LANDS ON HIM, IS SPENT, AND CANNOT RUN HIM DOWN" {
     const b = worst orelse return error.TestUnexpectedResult;
     try std.testing.expectEqual(SPORE_HIT.elem.at(.chaos), b.hit.elem.at(.chaos));
     std.debug.print("  spore: {d:.1} m/s against a {d:.1} m/s sprint — {d:.0}% of it, so a straight line is never the answer to him\n", .{ SPORE_HOME, heromod.SPRINT_SPEED_BANK, 100.0 * SPORE_HOME / heromod.SPRINT_SPEED_BANK });
-    // **IT MAY NOT CHASE HIM DOWN A STRAIGHT LINE.** The hang is what makes the move fair, and a spore faster
-    // than his sprint would take that back.
     try std.testing.expect(SPORE_HOME < heromod.SPRINT_SPEED_BANK);
-    // A whole volley on one man is under the first boss's biggest single stroke.
     const volley = SPORE_HIT.raw() * @as(f32, @floatFromInt(SPORES_PER_VOLLEY));
     std.debug.print("  damage: one spore {d:.0}, a whole volley {d:.0}, the antlers {d:.0} | knight sweep {d:.0}, overhead {d:.0}\n", .{ SPORE_HIT.raw(), volley, BUTT_HIT.raw(), knightmod.SWEEP_HIT.raw(), knightmod.OVERHEAD_HIT.raw() });
     try std.testing.expect(volley < knightmod.OVERHEAD_HIT.raw());
@@ -1778,13 +1540,9 @@ test "A SPORE LANDS ON HIM, IS SPENT, AND CANNOT RUN HIM DOWN" {
 }
 
 test "A VOLLEY THROWN FROM BELOW HIM SURVIVES THE THROAT — the earth is not wherever he is standing" {
-    // **THE WORLD IS A SCULPTED HEIGHTFIELD** (AGENTS.md's Elevation), so `pos.y` is the ground under a body
-    // and the two bodies' are different numbers. Read off the hero's alone, the despawn floor sat ABOVE the
-    // bloom whenever he stood on a rise, and the deer's only ranged move died at the mouth of the flower.
     const dt = 1.0 / 120.0;
     const rise = 3.0;
     var worst: ?foe.Blow = null;
-    // Where the throat actually is at the release, off the posed rig rather than a guess.
     var d = Deer.spawn(mathx.zero3, 0, 1.0, 0.3);
     d.stageGather(1.0);
     const mouth = d.bloomPoint().y;
@@ -1799,7 +1557,6 @@ test "A VOLLEY THROWN FROM BELOW HIM SURVIVES THE THROAT — the earth is not wh
     try std.testing.expect(mouth < rise);
     try std.testing.expectEqual(SPORES_PER_VOLLEY, lit);
 
-    // …and it still dies on earth: run it out and the pool empties inside one life.
     var t: f32 = 0;
     while (t < SPORE_LIFE + 0.5) : (t += dt) h.tickSpores(dt, hero, &worst);
     for (&h.spores) |*sp| try std.testing.expect(!sp.live);
@@ -1827,8 +1584,6 @@ test "THE STEER IS A CAP AND NOT A LERP — a spore he rolled behind still comes
 }
 
 test "IT NEVER SPITS INTO YOUR FACE, AND IT NEVER CLOSES INSIDE ITS OWN SKIRT" {
-    // The two moves own different ground: inside `CORNER_R` the flower is no use, and the volley's band
-    // starts outside it. A ring where neither is the answer would be ground you could simply stand on.
     const dt = 1.0 / 60.0;
     var near = Deer.spawn(mathx.ground(0, 0), 0, 1.0, 0.30);
     const close = mathx.ground(0, 2.0);
@@ -1837,15 +1592,12 @@ test "IT NEVER SPITS INTO YOUR FACE, AND IT NEVER CLOSES INSIDE ITS OWN SKIRT" {
     while (t < 6.0) : (t += dt) {
         near.leash.noteSeen();
         _ = near.update(dt, close, 400.0, .{});
-        // He walks it down: the deer is put back on its post every frame, so the GAP is what is under test and
-        // not whether a fleeing animal eventually gets far enough away to throw.
         near.pos = mathx.ground(0, 0);
         if (near.state == .spit) spat = true;
     }
     try std.testing.expect(!spat);
     std.debug.print("  bands: antlers to {d:.1} m, cornered inside {d:.1}, the volley {d:.1}..{d:.1}, keeps to {d:.1}\n", .{ BUTT_R, CORNER_R, SPIT_MIN, SPIT_MAX, KEEP_R });
 
-    // …and stood on, it walks AWAY. A ranged animal that held its ground would be a melee one.
     var shy = Deer.spawn(mathx.ground(0, 0), 0, 1.0, 0.30);
     const start = mathx.distXZ(shy.pos, close);
     var u: f32 = 0;
@@ -1858,8 +1610,6 @@ test "IT NEVER SPITS INTO YOUR FACE, AND IT NEVER CLOSES INSIDE ITS OWN SKIRT" {
 }
 
 test "CORNERED IS A GAP AND A CLOCK — it gores when backing off stops working, and not before" {
-    // **THE LAW**: `pinned` reads how far apart two bodies are and whether that distance opened. It reads
-    // nothing about him. Held on it, the rack comes down; let it go and the clock is spent.
     const dt = 1.0 / 120.0;
     var d = Deer.spawn(mathx.ground(0, 0), 0, 1.0, 0.30);
     var t: f32 = 0;
@@ -1867,8 +1617,6 @@ test "CORNERED IS A GAP AND A CLOCK — it gores when backing off stops working,
     var at: f32 = -1;
     while (t < 8.0 and !gored) : (t += dt) {
         d.leash.noteSeen();
-        // He walks it down: the hero is held at a fixed short gap whatever the deer does, which is exactly
-        // what a corner is. Nothing here touches the deer's own state.
         const hero = mathx.addV(d.pos, mathx.scaleV(mathx.headingDir(d.facing), 1.4));
         if (d.update(dt, hero, 400.0, .{}) != null) {
             gored = true;
@@ -1879,13 +1627,11 @@ test "CORNERED IS A GAP AND A CLOCK — it gores when backing off stops working,
     std.debug.print("  cornered: held at 1.4 m, the rack came down at {d:.2} s (hold {d:.2} s)\n", .{ at, CORNER_HOLD });
     try std.testing.expect(gored);
 
-    // …and a deer that is being LET GO never reaches the clock, however long the fight is.
     var free = Deer.spawn(mathx.ground(0, 0), 0, 1.0, 0.30);
     var u: f32 = 0;
     var charged = false;
     while (u < 8.0) : (u += dt) {
         free.leash.noteSeen();
-        // The gap OPENS every frame — he is backing off, so it is never cornered.
         const hero = mathx.ground(0, 3.0 + u * 1.2);
         _ = free.update(dt, hero, 400.0, .{});
         if (free.state == .butt) charged = true;
@@ -1895,8 +1641,6 @@ test "CORNERED IS A GAP AND A CLOCK — it gores when backing off stops working,
 }
 
 test "THE RACK LANDS ON THE MAN WHERE HE STANDS — thrown for real, at every stand its own gate allows" {
-    // The knight's judge, asked of this one (AGENTS.md): the charge goes through the REAL `update` at a hero
-    // stood across its own band, with the man shoved out to `closestApproach` as `env.resolveActor` would.
     const dt = 1.0 / 120.0;
     const probe = Deer.spawn(mathx.zero3, 0, 1.0, 0.0);
     const apart = foe.closestApproach(probe.bodyR());
@@ -1919,7 +1663,6 @@ test "THE RACK LANDS ON THE MAN WHERE HE STANDS — thrown for real, at every st
                     hit = true;
                     break;
                 }
-                // The drive SHOVES a man it runs into, as `env.resolveActor` does in the game.
                 if (mathx.distXZ(d.pos, hero) < apart) {
                     const out = mathx.dirXZ(d.pos, hero);
                     hero = v3(d.pos.x + out.x * apart, 0, d.pos.z + out.z * apart);
@@ -1937,9 +1680,6 @@ test "THE RACK LANDS ON THE MAN WHERE HE STANDS — thrown for real, at every st
 }
 
 test "THE OPEN THROAT COSTS IT, and the sphere holds the flower at both ends of its travel" {
-    // **THE BLOOM IS THE WEAK POINT** — the same swing takes near twice off a bloomed body, and NOT off its
-    // poise: `POISE_MAX` is solved to sit between the hero's two swings and a multiplier there would put a
-    // light poke through it.
     var shut = Deer.spawn(mathx.zero3, 0, 1.0, 0.30);
     var open = Deer.spawn(mathx.zero3, 0, 1.0, 0.30);
     open.stageGather(1.0);
@@ -1948,9 +1688,6 @@ test "THE OPEN THROAT COSTS IT, and the sphere holds the flower at both ends of 
     try std.testing.expect(open.frailty() > 1.8);
     std.debug.print("  throat: a blow is worth {d:.2}x on an open bloom, {d:.2}x on a shut one\n", .{ open.frailty(), shut.frailty() });
 
-    // **AND THE SPHERE HAS TO HOLD IT** — a weak point no blade reaches is not one. The claim is the FLOWER
-    // and the barrel, not every bone: a quadruped's nose and hooves live outside its hurt sphere here (the
-    // wolf's at 0.42 on a 1.12 body), and swallowing a 1.37 m neck would mean hitting it by swinging at air.
     var probe = Deer.spawn(mathx.zero3, 0, 1.0, 1.0);
     probe.stageGather(1.0);
     const c = probe.centerWorld();
@@ -1976,16 +1713,11 @@ test "THE OPEN THROAT COSTS IT, and the sphere holds the flower at both ends of 
         }
     }
     std.debug.print("    furthest out is the {s}, {d:.2} m past the skin\n", .{ worstName, worst });
-    // THE FLOWER, RISEN, IS INSIDE IT. That is the claim, and it is the one the fight depends on.
     const bloomOut = mathx.lenV(mathx.subV(rl.math.vector3Transform(mathx.zero3, probe.xf[BLOOM]), c)) - r;
     try std.testing.expect(bloomOut <= 0.0);
-    // …and so is it furled, and so is the barrel between them.
     var low = Deer.spawn(mathx.zero3, 0, 1.0, 1.0);
     low.pose();
     const lowC = low.centerWorld();
-    // **THE BARREL AND THE FLOWER. NOT THE NOSE, NOT THE HOOVES** — a quadruped's extremities live outside its
-    // hurt sphere here (the wolf's is 0.42 on a 1.12 body), and a ball big enough to swallow a 1.37 m neck is a
-    // ball you hit by swinging at open ground.
     for ([_]struct { i: usize, name: []const u8 }{
         .{ .i = BLOOM, .name = "furled bloom" },
         .{ .i = SPINE, .name = "loin" },
@@ -2004,14 +1736,11 @@ test "PLANT FLESH: fire is the answer to it and cold is not, and it is a FOE wit
     var d = Deer.spawn(mathx.zero3, 0, 1.0, 0.30);
     try std.testing.expectEqual(wf.FoeKind.fungal_deer, d.kind());
     try std.testing.expect(SOULS > 0);
-    // **BETWEEN THE HERO'S TWO SWINGS**: a light poke may not interrupt a volley and a committed swing must.
     std.debug.print("  deer: {d:.0} HP / {d:.0} poise, {d:.2} m at the withers, aggro {d:.0} m\n", .{ HP_MAX, POISE_MAX, W, AGGRO_R });
     try std.testing.expect(POISE_MAX > 10.0 and POISE_MAX < 22.0);
 }
 
 test "A HERD CLEARS THE AIR WITH THE BODIES, not just the bodies" {
-    // `game.clearFoes` calls this on every group and reads nothing back — a `clear` that swept only the
-    // animals leaves a volley hanging over a field with nothing on it.
     var h = Herd{ .model = undefined };
     h.deer[0] = Deer.spawn(mathx.zero3, 0, 1.0, 0.3);
     h.n = 1;

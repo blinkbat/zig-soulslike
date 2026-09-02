@@ -118,7 +118,6 @@ pub fn unload() void {
     if (bigRT) |t| rl.unloadRenderTexture(t);
     thumbRT = null;
     bigRT = null;
-    // The prototype meshes inside it are permanent by the house rule; the slab around them is not.
     if (charSet) |cs| std.heap.c_allocator.destroy(cs);
     charSet = null;
 }
@@ -141,7 +140,6 @@ pub const Mode = enum {
     }
 };
 
-/// **THE GROUND VOLUMES, PLAYING, WITH THEIR OWN NUMBERS BESIDE THEM** (owner: a particle viewer, gas viewer, aoes) — a cloud is a RADIUS, a LIFE and a DOSE at once and none of the three reads off a source file. Every entry runs the real object on a loop over real ground, ringed at its true radius.
 const Volume = enum {
     spore_cloud,
     acid_pool,
@@ -154,7 +152,6 @@ const Volume = enum {
             .knight_gas => "Bone knight gas",
         };
     }
-    /// Seconds before it is restarted. A shade past its own life, so you see it thin out and go.
     fn loop(v: Volume) f32 {
         return switch (v) {
             .spore_cloud => shroommod.CLOUD_LIFE + 0.8,
@@ -211,9 +208,6 @@ const CHAR_KINDS = blk: {
 };
 const CHAR_N = CHAR_KINDS.len;
 
-/// **`openChar` IS A SLOT IN `CHAR_KINDS`, NOT A `FoeKind` ORDINAL** — the list skips the egg sac, so the two
-/// run past each other by one from `brood_sac` on. Handed a raw ordinal the viewer walked off the end of its
-/// own roster.
 pub fn charSlot(k: wf.FoeKind) ?usize {
     for (CHAR_KINDS, 0..) |c, i| {
         if (c == k) return i;
@@ -301,10 +295,6 @@ fn rtAspect(rt: rl.RenderTexture2D) f32 {
     return @as(f32, @floatFromInt(rt.texture.width)) / @as(f32, @floatFromInt(rt.texture.height));
 }
 
-/// **ONE STAGE, FOUR SUBJECTS.** Every cell in this file is the same lit box — a target opened on the backdrop,
-/// the scene bound with the shadow pass and the lights off, the ground drawn against this camera's own frustum
-/// — and only the CAMERA and the one thing drawn differ. Written out four times, the four drifted on which of
-/// the switches got put back.
 fn openStage(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, cam: rl.Camera3D, aspect: f32) void {
     rl.beginTextureMode(rt);
     rl.clearBackground(BACKDROP);
@@ -367,14 +357,10 @@ pub const CharSet = struct {
     vanguard: duomod.Vanguard,
     conclave: duomod.Conclave,
 };
-/// **TAKEN WHEN THE TAB IS FIRST OPENED AND NOT OUT OF BSS AT LOAD** — as a module `var` this was its whole
-/// size in commit charge from the image mapping onward whether or not a creature was ever looked at. Built
-/// field by field for `game.init`'s reason: a Debug frame reserves every temporary in a struct literal at once.
-/// The size is one group per creature and GROWS WITH THE ROSTER, so it is measured by the test at the foot of
-/// this file rather than written here — as a figure it read 112.4 MB and was 150.6 by the time anyone looked.
+/// One group per creature, so it GROWS WITH THE ROSTER and is measured by the test at the foot of this file: as
+/// a figure it read 112.4 MB and was 150.6 by the time anyone looked.
 var charSet: ?*CharSet = null;
 
-/// `game.FOE_GROUPS` is the other copy of this roster, and `game` pins the two against each other.
 pub const CHAR_GROUPS = @typeInfo(CharSet).@"struct".fields.len;
 
 fn ensureChars(scene: *gfx.Scene) *CharSet {
@@ -434,7 +420,6 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         .birchwight => .{ .top = 2.4, .bound = 1.4 },
         .salt_husk => .{ .top = 1.9, .bound = 1.2 },
         .fish_spearman, .fish_netter, .fish_shaman => .{ .top = 2.3, .bound = 1.3 },
-        // Hung in the air with the wings out: the bound is the SPAN, which is the widest thing here.
         .blinkbat => .{ .top = 4.2, .bound = 3.2 },
         .owlbear => .{ .top = 3.0, .bound = 1.9 },
         .leechfly => .{ .top = 2.9, .bound = 1.8 },
@@ -580,7 +565,6 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
         .fungal_deer => {
             cs.herd.n = 1;
             cs.herd.live()[0] = deermod.Deer.spawn(mathx.zero3, 0, 1.0, seed);
-            // Photographed with the flower UP: furled it is a hump on a deer's back and says nothing.
             cs.herd.live()[0].stageGather(1.0);
             cs.herd.draw(scene);
         },
@@ -601,7 +585,6 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
             cs.marsh.live()[0].stageGather(1.0);
             cs.marsh.draw(scene);
         },
-        // Each of the three is staged MID-TELL: a cell showing a creature standing still shows the one frame of it that says nothing.
         .bone_skitterer => {
             cs.clatter.n = 1;
             cs.clatter.live()[0] = skittermod.Skitterer.spawn(mathx.zero3, 0, 1.0, seed);
@@ -700,8 +683,6 @@ fn modalH() i32 {
 
 const GRID_INSET: i32 = 16;
 
-/// **ONE PAGE GRID FOR THE THREE PAGES THAT DRAW ONE** — the inset, the header band, the column count and the
-/// cell pitch. Five sites wrote the same two lines of arithmetic out, so a retuned cell moved some of them.
 fn gridCell(box: ui.ModalBox, slot: i32) rl.Rectangle {
     return ui.rect(
         box.x + GRID_INSET + @mod(slot, COLS) * cellW(),
@@ -838,12 +819,8 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
 
 
 const BIG_PAD: i32 = 16;
-/// **THE NUMBERS STAND BESIDE THE THING** (owner: file it with the object viewer so you can view the object
-/// details and edit them side by side), so this column carries a whole sheet of dials now and not three
-/// measurements — 300 against the 250 it was.
 const INFO_W: i32 = 300;
 
-/// **DRAG SPINS, WHEEL ZOOMS — ONE COPY.** The three modals (a prop, a creature, the FX bench) each had this nine-line block written out, so a rate or a clamp retuned in one left the other two turning differently.
 fn spinView(st: *State, ctx: *ui.Ctx, p: *Pose, viewR: rl.Rectangle) void {
     const overView = rl.checkCollisionPointRec(ctx.mouse, viewR);
     if (overView and ctx.wheel != 0) p.zoom = mathx.clampF(p.zoom * (1.0 + ZOOM_RATE * ctx.wheel), MIN_ZOOM, MAX_ZOOM);
@@ -1087,7 +1064,6 @@ fn bigIcon(st: *State, ctx: *ui.Ctx, at: usize) bool {
     const sw = rl.getScreenWidth();
     const sh = rl.getScreenHeight();
     // **A PICTURE OF A THING IS ALSO THE THING'S SHEET.** An editor glyph has no numbers behind it and keeps the
-    // narrow frame; an ITEM's picture stands beside every dial the bag reads off it.
     const kind: ?item.Kind = if (at >= GLYPH_N) @enumFromInt(at - GLYPH_N) else null;
     const wide = kind != null;
     const w = @min(sw - 60, @as(i32, if (wide) 900 else 720));
@@ -1198,7 +1174,6 @@ fn renderVolume(st: *State, rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gf
     // Framed on the volume's OWN reach, not on a fixed box: a 1.55 m pool and a 1.9 m cloud want different cameras, and the whole point of the bench is comparing what they actually cover.
     const reach = mathx.maxF(volRadius(st), 0.5) * 2.2;
     openStage(rt, env, scene, fitCam(reach * 0.5, reach, st.volPose, aspect), aspect);
-    // **THE RING IS THE POINT.** A cloud is a soft mass with no edge you can see, and where its edge is IS the mechanic — inside it you are being dosed and outside you are not.
     ringOnGround(volRadius(st), ui.LIVE);
     volDrawFx(st);
     closeStage();
@@ -1243,7 +1218,6 @@ fn volumePanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bo
     blit(bigRT.?, viewR);
     rl.drawRectangleLinesEx(viewR, 1, ui.alpha(ui.TRIM, 110));
 
-    // The numbers, which are the reason this page exists.
     const ix = box.x + w - INFO_W - BIG_PAD;
     var iy: i32 = @intFromFloat(viewR.y);
     var buf: [3 * 96]u8 = undefined;
@@ -1262,11 +1236,6 @@ fn volumePanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bo
 
 const VolFacts = struct { a: [:0]const u8, b: [:0]const u8, c: [:0]const u8 };
 
-/// **THE NUMBERS ARE READ OFF THE CREATURES, NOT TYPED IN BESIDE THEM.** These three rows were string literals
-/// — "r 1.90 m   life 3.40 s   build 42/s" — on the one page in the game whose whole reason is printing what a
-/// cloud actually costs. `SPORE_BUILD` has already been retuned once (24 to 42) and a caption that goes stale
-/// here is worse than no caption, because it is read as measured. `buf` is carved in three: the struct hands
-/// back three lines and they all have to outlive the call.
 fn volFacts(st: *const State, buf: []u8) VolFacts {
     const third = buf.len / 3;
     const b1 = buf[third .. third * 2];
@@ -1298,7 +1267,6 @@ fn benchPanel(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) boo
     const box = ui.beginModal(ctx, w, h, "Effects bench");
     if (modeTabs(st, ctx, box.x + 16, box.y + 44).changed) return true;
 
-    // THE GRID ITSELF, as two rows of chips: the element down one and the verb down the other, which is twelve cells reachable in two clicks rather than a page of thumbnails that cannot move.
     var tx = box.x + 16;
     const ey = box.y + 78;
     inline for (@typeInfo(combat.Elem).@"enum".fields) |f| {
@@ -1444,14 +1412,10 @@ pub fn back(st: *State) bool {
     return true;
 }
 
-// **THE SECOND-BIGGEST ALLOCATION IN THE PROGRAM, AND ITS SIZE WAS A NUMBER IN A COMMENT.** `CharSet` holds one
-// live group per creature, so every foe added grows it and nothing said so: the figure written beside it drifted
-// as the roster did. Measured here instead, and printed, so the comment can be read against a fact.
 test "THE CHARACTER BENCH'S SLAB, MEASURED — one live group per creature, taken when the tab is opened" {
     const MB = 1024.0 * 1024.0;
     const bytes = @sizeOf(CharSet);
     std.debug.print("\n  objview CharSet: {d:.1} MB over {d} groups\n", .{ @as(f64, @floatFromInt(bytes)) / MB, CHAR_GROUPS });
-    // Not a budget anyone tuned — a ceiling that says "this is still one lazy allocation and not a leak".
     try std.testing.expect(bytes < 512 * 1024 * 1024);
     try std.testing.expectEqual(@typeInfo(CharSet).@"struct".fields.len, CHAR_GROUPS);
 }

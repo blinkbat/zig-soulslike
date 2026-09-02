@@ -69,8 +69,6 @@ pub const View = struct {
     souls: u32,
     gold: u32 = 0,
     worn: heromod.Worn = .{},
-    /// **THE SMITH'S WORK, PER ARMAMENT** (`hero.tiers`). The sheet PREVIEWS damage, so a book that weighed a
-    /// blow without it would show the numbers of an unsharpened weapon and every upgrade would read as nothing.
     tiers: [heromod.NARM]u8 = [_]u8{0} ** heromod.NARM,
 
     pub fn tierOf(self: *const View, a: heromod.Armament) u8 {
@@ -99,22 +97,9 @@ const Loadout = struct {
     tier: u8 = 0,
 };
 
-/// `secs` is a CLOCK printed as a clock. **A SPEED DIAL IS NOT A SPEED** (owner: attack speed in some NUMBER
-/// corollary, not a percent) — "78% swing time" asks the reader to hold the sword's own 0.62 s in their head and
-/// do the arithmetic, and nothing on either page ever showed them that number to hold.
 const Unit = enum { flat, pct, count, secs };
 
-/// **THE ROWS A PLAYER PICKS GEAR ON, AND NOTHING ELSE** (owner). What a swing BILLS — stamina a light, stamina
-/// a heavy, the roll — went to make room: those are a details panel's, not the page you choose a sword on. The
-/// bare STAMINA pool went with them for a different reason: nothing in any socket moves it, so on the one page
-/// whose job is to show what a swap changes it could only ever be the same number twice.
-///
-/// **THE ORDER IS THE LAYOUT** — the run before `DER_SPLIT` is the left column and the run after it the right,
-/// because twenty rows in one column overflowed the box a picker leaves them (`rowStep` will not pitch under
-/// `rowFloor`, so the tail drew over the panel below). Two columns of ten, and the seam is where the page stops
-/// being about what he DOES and starts being about what he IS.
 const Der = enum {
-    // WHAT HE DOES.
     light,
     heavy,
     elem,
@@ -125,7 +110,6 @@ const Der = enum {
     spell_fp,
     quick,
     ammo,
-    // WHAT HE IS.
     hp,
     fp,
     armour,
@@ -139,8 +123,6 @@ const Der = enum {
 };
 const ND = @typeInfo(Der).@"enum".fields.len;
 
-/// The first row of the RIGHT column. Named off the enum, so moving a row between the two halves is moving it
-/// in the enum and nothing else.
 const DER_SPLIT: usize = @intFromEnum(Der.hp);
 const DER_CAPS = [2][:0]const u8{ "OFFENCE", "BODY" };
 
@@ -155,28 +137,20 @@ fn worth(d: [ND]f32, k: Der) f32 {
 
 const DerivedRow = struct { name: [:0]const u8, unit: Unit, cost: bool = false };
 
-/// KEYED BY VARIANT, never written down the page in order — but an unnamed row is then the silent failure, so the rows start blank and the assert below is what says a fifteenth `Der` has said what it is called.
 const DER = blk: {
     var rows = [_]DerivedRow{.{ .name = "", .unit = .flat }} ** ND;
     rows[@intFromEnum(Der.light)] = .{ .name = "Light attack", .unit = .flat };
     rows[@intFromEnum(Der.heavy)] = .{ .name = "Heavy attack", .unit = .flat };
-    // **`heavy.elem.total()`, WHICH HAS NEVER BEEN ONLY FIRE.** Rimewax hangs cold off the same sum and the
-    // row said "Fire damage" over it; the arrows are the only reason it read true.
     rows[@intFromEnum(Der.elem)] = .{ .name = "Elemental damage", .unit = .flat };
-    // A CLOCK, and the SHORTER one wins — `cost`, like every other row where less is better.
     rows[@intFromEnum(Der.swing)] = .{ .name = "Swing time", .unit = .secs, .cost = true };
     rows[@intFromEnum(Der.poise)] = .{ .name = "Poise damage", .unit = .flat };
     rows[@intFromEnum(Der.stance)] = .{ .name = "Stance damage", .unit = .flat };
     rows[@intFromEnum(Der.hp)] = .{ .name = "HP", .unit = .flat };
     rows[@intFromEnum(Der.fp)] = .{ .name = "Focus", .unit = .flat };
-    // **THE RAW NUMBER AND WHAT IT ACTUALLY TURNS ASIDE, BOTH.** `armourTaken` is a curve, so the value alone
-    // says nothing a player can use and the percentage alone hides which of two coats is the bigger number.
     rows[@intFromEnum(Der.armour)] = .{ .name = "Armour", .unit = .flat };
     rows[@intFromEnum(Der.negate)] = .{ .name = "Damage negated", .unit = .pct };
     rows[@intFromEnum(Der.guard)] = .{ .name = "Guard negation", .unit = .pct };
     rows[@intFromEnum(Der.arc)] = .{ .name = "Guard arc", .unit = .flat };
-    // Off `combat.elemName`, laid down as one contiguous run and pinned below, so a fifth element cannot leave
-    // a column of the sheet unnamed.
     for (0..combat.NELEM) |i| {
         rows[@intFromEnum(Der.res_fire) + i] = .{ .name = combat.elemName(@enumFromInt(i)) ++ " resistance", .unit = .pct };
     }
@@ -192,7 +166,6 @@ const DER = blk: {
 };
 
 comptime {
-    // `derive` and `DER` both index the four columns off `res_fire` — the same rule the picker's rate rows keep.
     if (@intFromEnum(Der.res_chaos) - @intFromEnum(Der.res_fire) != combat.NELEM - 1)
         @compileError("book: the `res_*` rows of `Der` are not one contiguous run of `combat.NELEM`");
 }
@@ -209,8 +182,6 @@ fn castFp(s: combat.Spell, perk: ptree.Bonus) f32 {
     return combat.spellFp(s) * perk.spellCost;
 }
 
-/// **THE COLUMNS THE LOADOUT ITSELF CARRIES** — the tree's nodes plus what is worn, and deliberately NOT the
-/// ward a draught put up: a page comparing two coats may not move a row because a minute-long flask is running.
 fn resOf(l: Loadout, perk: ptree.Bonus) combat.Resists {
     var r = perk.res;
     const worn = combat.resistsOf(heromod.suitOf(l.worn).plate.res);
@@ -220,9 +191,7 @@ fn resOf(l: Loadout, perk: ptree.Bonus) combat.Resists {
 
 fn derive(l: Loadout, v: View) [ND]f32 {
     const bow = heromod.handsHold(l.arm, l.off, .bow);
-    // …AND WHETHER THAT HAND HAS AN ATTACK AT ALL (`hero.armSwings`). `bow` alone was the whole question while there were two armaments; the BELL has neither a light nor a heavy, so every row below came off the SWORD and the page priced a swing he cannot take.
     const attacks = bow or heromod.armSwings(l.arm) or heromod.armSwings(l.off);
-    // WHICH SOCKET THE SWING IS PRICED FROM. `hand_sword` while there were three weapons in one socket; a dagger and a club have their own now, and reading the sword's here priced every club as a bare sword.
     const row = heromod.armRow(l.worn, if (bow) .hand_bow else heromod.swingSocket(l.arm, l.off));
     const perk = v.tree.bonus();
     const sheet = sheetOf(l, perk);
@@ -235,8 +204,6 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     d[@intFromEnum(Der.elem)] = if (attacks) heavy.elem.total() else 0;
     d[@intFromEnum(Der.poise)] = if (attacks) heavy.poise else 0;
     d[@intFromEnum(Der.stance)] = if (attacks) heavy.stance else 0;
-    // **THE CLOCK, IN SECONDS** (`hero.swingSecs`/`drawSecs`). The heavy's, because every offence row above it
-    // is the heavy one. `meleeArmOf` is non-null wherever `attacks` holds and the bow does not.
     const blade: ?heromod.Blade = if (heromod.meleeArmOf(l.arm, l.off)) |a| heromod.bladeOf(a) else null;
     d[@intFromEnum(Der.swing)] = if (!attacks) 0 else if (bow)
         heromod.drawSecs(true, row)
@@ -244,8 +211,6 @@ fn derive(l: Loadout, v: View) [ND]f32 {
         heromod.swingSecs(b, true, row)
     else
         0;
-    // **THE POOLS, PRICED OFF THE CANDIDATE'S OWN SHEET.** A signet worth +5 Vitality has to move the red bar
-    // here or the page cannot say what the ring is for; `sheetOf` is the tree plus the boons the loadout carries.
     d[@intFromEnum(Der.hp)] = heromod.hpMaxOf(sheet, l.worn, perk);
     d[@intFromEnum(Der.fp)] = heromod.fpMaxOf(sheet, l.worn, perk);
     const res = resOf(l, perk);
@@ -255,13 +220,10 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     // THE BOARD'S OWN NEGATION **PLUS THE TREE'S**, capped where the fight caps it (`combat.GUARD_NEGATE_CAP`) — a page promising 97% behind a door the fight holds to 95 is a page lying about the one number it exists to compare.
     d[@intFromEnum(Der.guard)] = if (guards) combat.guardNegation(board.negate, perk.guard) * 100.0 else 0;
     d[@intFromEnum(Der.arc)] = if (guards) combat.GUARD_ARC * board.arc else 0;
-    // THE VALUE, AND WHAT THE CURVE ACTUALLY MAKES OF IT against a blow the size of his own heavy.
     const armour = armourOf(l.worn);
     d[@intFromEnum(Der.armour)] = armour;
     d[@intFromEnum(Der.negate)] = 100.0 * (1.0 - combat.armourTaken(armour, heromod.ATK_HEAVY_HIT.dmg) / heromod.ATK_HEAVY_HIT.dmg);
-    // …and what he bought with it. Zero on both rows unless a wand is actually in that hand, and it is the SORCERY THAT IS LOADED that is priced: no two rungs of the ladder cost or deal the same (`combat.SPELLS`).
     const casts = heromod.handsHold(l.arm, l.off, .wand);
-    // …through the WHOLE multiple the cast takes (`hero.castBlow`), and **ONLY FOR THE THREE THAT ARE SCALED AT ALL**: `spellBlow` is null for the roots and the rime, which are billed flat a frame at a time and read no sheet. Multiplied here, the page promised a stronger grip and a colder breath than the fight gives.
     const spellK: f32 = if (combat.spellBlow(l.spell) != null) perk.spellDmg * sheet.scale(.intelligence) else 1.0;
     d[@intFromEnum(Der.spell)] = if (casts) combat.spellDamage(l.spell) * spellK else 0;
     d[@intFromEnum(Der.spell_fp)] = if (casts) castFp(l.spell, perk) else 0;
@@ -298,7 +260,6 @@ pub const SlotId = enum {
 };
 const NSLOT = @typeInfo(SlotId).@"enum".fields.len;
 
-/// A socket's ordinal, for the shot harness — so a frame is aimed at a NAME and not at a number that moves.
 pub fn slotOrdinal(s: SlotId) usize {
     return @intFromEnum(s);
 }
@@ -408,9 +369,7 @@ fn locked(s: SlotId, v: View) ?[:0]const u8 {
         else if (heromod.armTwoHanded(v.arm) or heromod.armTwoHanded(v.off))
             "The bow takes both hands."
         else
-            // THE WEAPON HAND IS ONE HAND (`hero.handsHold`) — say so, rather than draw a second weapon the rig has no bone for.
             "One weapon hand. The right takes it.",
-        // AN ALTERNATE IS NEVER LOCKED: it is what he is NOT holding, so nothing he is holding can deny it.
         .left2, .right2 => null,
         .sorcery => if (v.holds(.bow))
             "The bow takes both hands."
@@ -433,7 +392,6 @@ fn slotHas(s: SlotId, v: View) bool {
     return switch (s) {
         .right, .left2, .right2 => true,
         .left => v.offInHand(),
-        // …AND A ROD WITH AN EMPTY RACK IS AN EMPTY CELL (`hero.armed`): the wand in hand is not the spell.
         .sorcery => v.holds(.wand) and v.mem.holds(v.spell),
         .arrows => v.quiver.count(v.quiver.sel) > 0,
         else => quickAt(s, v) != null,
@@ -502,8 +460,6 @@ fn quickWorth(kind: ?item.Kind, worn: heromod.Worn, sheet: stats.Sheet, perk: pt
         .none => 0,
         .regen => |r| hpMax * r.frac,
         .lob => |b| b.dmg + b.fire + b.lightning,
-        // **A METER IS NOT A NUMBER OFF THE BAR** — the picker ranks by damage or healing, and a powder, a coat,
-        // a bottle and the bell cannot be weighed against a flask on that axis.
         .ward, .wind, .grease, .souls, .brew, .purge, .steady, .arrows, .dose, .coat, .toll => 0,
     };
 }
@@ -525,7 +481,6 @@ fn castsLeft(fp: f32, s: combat.Spell, v: View) u8 {
 
 const Cand = struct { name: [:0]const u8, tally: ?u8 = null, act: Action };
 
-/// The longest candidate list any slot can offer, off the enums themselves — the scratch every caller hands `candidates` is sized from this, so a third arrow cannot write past the end of one.
 const CAND_MAX = blk: {
     var n: usize = item.NK + 1;
     for ([_]type{ heromod.Arm, heromod.Off, combat.ArrowKind }) |T| {
@@ -547,8 +502,6 @@ fn handAct(s: SlotId, h: Hand) Action {
 
 fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
     if (locked(s, v) != null) return out[0..0];
-    // THE WORN SOCKETS, ASKED THROUGH `wearOf` AND NOT LISTED AGAIN — `locked`, `slotHas`, `slotFilled` and
-    // `slotTally` all open on exactly this line. Written out as a seven-tag prong instead, a socket added to `wearOf` fell through to the `else` below and offered a helm the QUICK BAR's rows. What he carries for it, plus an EMPTY row: a coat you cannot take off is a coat the player is stuck in.
     if (wearOf(s)) |w| {
         var n: usize = 1;
         out[0] = .{ .name = "(nothing)", .act = .{ .wear = .{ .slot = w, .kind = null } } };
@@ -566,10 +519,6 @@ fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
             var n: usize = 0;
             inline for (@typeInfo(heromod.Armament).@"enum".fields) |f| {
                 const a: heromod.Armament = @enumFromInt(f.value);
-                // **THE DAGGER AND THE CLUB ARE NEVER OFFERED BARE.** The straight sword is the one he was born
-                // holding; those two are things you FIND, and a selectable empty class both hands him one for free
-                // and offers an "unequip" that swaps the weapon for a mechanically identical copy of itself
-                // (`item.bareArm` IS their row). The weapon rows below are the only way in, and they are enough: picking one sets the armament AND fills its socket (`wearInto`).
                 if (comptime !heromod.armSwings(a) or a == .sword) {
                     out[n] = .{ .name = armName(a), .act = handAct(s, .{ .a = a }) };
                     n += 1;
@@ -616,8 +565,6 @@ fn wearInto(worn: *heromod.Worn, h: Hand) void {
     if (heromod.wearFor(h.a)) |w| worn.put(w, h.kind);
 }
 
-/// **THE SET ACTUALLY IN FORCE** — what the NOW column prices, and `withCand`'s starting point. Named because it
-/// is every axis of the loadout and leaving ONE of them out is silent: built inline with `worn` left at its default, the whole column priced a bare body, so a greatclub in his fist read the plain sword's damage.
 fn inForce(v: View) Loadout {
     return .{
         .arm = v.arm,
@@ -668,7 +615,6 @@ fn heldSame(h: Hand, v: View) bool {
 }
 
 /// On what is ALREADY equipped, never row 0 — a cursor landing anywhere else tricks you into swapping something
-/// you meant to look at. **ASKED OF THE LIST ITSELF, NEVER COUNTED A SECOND TIME**: three hand-walked copies of `candidates`' ordering were parallel lists kept in lockstep by hand.
 fn pickIndexOf(s: SlotId, v: View) usize {
     var out: [CAND_MAX]Cand = undefined;
     for (candidates(s, v, &out), 0..) |c, i| {
@@ -850,7 +796,6 @@ pub const Book = struct {
                 }
                 sfx.play(.menu_back);
             },
-            // Read-only: the tree owns the level, and the rack is filled at a fire or slots mean nothing.
             .stats, .spells, .tree => sfx.play(.menu_back),
         }
         return .none;
@@ -1025,7 +970,6 @@ fn slotFit(body: Box) SlotFit {
     };
 }
 
-/// Where socket `i` sits. One table (`SLOT_CELL`) feeds this and the cursor, so the picture and the walk cannot disagree.
 fn slotRect(body: Box, i: usize) rl.Rectangle {
     const f = slotFit(body);
     const c = SLOT_CELL[i];
@@ -1062,8 +1006,6 @@ fn pickRowH() i32 {
     return hud.lineH(hud.BODY) + 14;
 }
 
-/// What the sheet is owed before the picker above it takes a share. **THE TALLER COLUMN, NOT EVERY ROW** — it
-/// laid all twenty down one column and reserved twice the height the panel needs.
 fn derivedNeedH() i32 {
     const tallest: i32 = @intCast(@max(DER_SPLIT, ND - DER_SPLIT));
     return rowFloor() * tallest + hud.lineH(hud.TINY) + 6 + hud.lineH(hud.HINT) * 2 + 22 + 28;
@@ -1072,10 +1014,6 @@ fn derivedNeedH() i32 {
 fn pickBox(col: Box, n: usize) Box {
     const rows: i32 = @intCast(n);
     const want = pickRowH() * rows + titleH() + 24;
-    // **THE LIST MAY NEVER DRAW OUTSIDE ITS OWN PANEL.** `rowStep` will not pitch a row under `rowFloor`, so a
-    // box shorter than `n` rows at that floor puts the tail of the list on top of whatever is below it — the R
-    // hand offers eleven and the last two landed in the panel under it. That height is owed to the list before
-    // anything below gets a share; a quarter of the column was a guess that happened to be enough for nine.
     const least = @min(@min(want, col.h), rowFloor() * rows + titleH() + 24);
     const room = @max(least, col.h - derivedNeedH() - GUTTER);
     return .{ .x = col.x, .y = col.y, .w = col.w, .h = @min(room, want) };
@@ -1152,7 +1090,6 @@ const fmt = hud.fmt;
 
 var saysBuf: [256]u8 = undefined;
 
-/// A copy that outlives `fmt`'s rotating scratch. Anything drawn AFTER a run of `fmt` calls has to own its bytes; a slice into slot N is only good for the next fifteen.
 fn saysOwn(s: []const u8) [:0]const u8 {
     const n = @min(s.len, saysBuf.len - 1);
     @memcpy(saysBuf[0..n], s[0..n]);
@@ -1162,8 +1099,6 @@ fn saysOwn(s: []const u8) [:0]const u8 {
 
 var heldBuf: [256]u8 = undefined;
 
-/// …and a SECOND one, because the picker holds two of these alive at once — the worn piece's line and the
-/// candidate's — and one buffer means the first is overwritten by the second before either is drawn.
 fn saysHeld(s: []const u8) [:0]const u8 {
     const n = @min(s.len, heldBuf.len - 1);
     @memcpy(heldBuf[0..n], s[0..n]);
@@ -1214,7 +1149,6 @@ fn rowValueAt(s: [:0]const u8, right: i32, y: i32, size: i32, col: rl.Color) voi
 
 fn unitStr(u: Unit, x: f32) [:0]const u8 {
     return switch (u) {
-        // A NEGATIVE RESISTANCE IS THE WHOLE POINT OF THE ROW, so the blank is a zero and not a sign test:
         // the fishmen's -40 cold has to print, and `<= 0.005` swallowed it.
         .flat => if (@abs(x) <= 0.005) "-" else fmt("{d:.0}", .{x}),
         .pct => if (@abs(x) <= 0.005) "-" else fmt("{d:.0}%", .{x}),
@@ -1330,8 +1264,6 @@ fn drawTabs(self: *const Book, card: Box, v: View) void {
         }
         x += w[i] + gap;
     }
-    // **THE SAME MARK THE HUD USES** (`uiart.soulMark`), because a number with no mark beside it on a page that
-    // also prints gold is a number you have to read the label to identify.
     const souls = fmt("{d}", .{v.souls});
     const rx = card.right() - PAD - hud.textW(souls, hud.BODY);
     hud.text(souls, rx, y + 8, hud.BODY, uiart.TEXT_VALUE);
@@ -1364,14 +1296,9 @@ fn drawEquipment(self: *const Book, body: Box, v: View) void {
     if (self.picking) |s| drawPicker(self, cols[1], s, v);
     const cand: ?Cand = if (self.pick < cs.len) cs[self.pick] else null;
     const box = derivedBox(body, cs.len);
-    // A GEAR PICKER SHOWS THE TWO OBJECTS, EVERYTHING ELSE SHOWS THE SHEET (owner's call). `facing` is null for an
-    // arrow, a quick item or a sorcery — none of which is a thing with dials to set beside another one.
     if (cand) |c| {
         if (facing(v, c)) |f| return drawGearCompare(box, v, c, f);
     }
-    // **BROWSING THE DOLL SHOWS THE PIECE *AND* THE SHEET** (owner: we need to see equip info when browsing our
-    // equip, and the relevant stats). Both, because they answer two different questions: what is this thing, and
-    // what is the body carrying it. The card is skipped for a slot that holds no gear.
     if (self.picking == null) {
         if (browsing(on, v)) |f| {
             const says = saysHeld(pieceSays(f.now, f.socket));
@@ -1433,9 +1360,6 @@ fn handArt(a: heromod.Armament, worn: heromod.Worn, cx: f32, cy: f32, px: f32) v
     itemart.heldArt(armPic(a), heromod.heldGear(a, worn), cx, cy, px);
 }
 
-/// **WHAT A PIECE OF GEAR SAYS ABOUT ITSELF** — its own dials, not the sheet they end up moving. The picker
-/// compares two OBJECTS (owner's call), and the derived sheet cannot do that job: half its rows are the swing in
-/// the other hand, and a coat and a ring both land on "Armour, vs heavy" as one moved number.
 const GDial = enum {
     dmg_light,
     dmg_heavy,
@@ -1450,8 +1374,6 @@ const GDial = enum {
     res_cold,
     res_lightning,
     res_chaos,
-    // **ONE ROW PER METER, NOT ONE CALLED "STATUS"** — two helms slowing different meters on one line reads as
-    // one being strictly better. `Ail`'s own order, pinned below.
     rate_poison,
     rate_burning,
     rate_chill,
@@ -1472,12 +1394,8 @@ const GDial = enum {
 
 const NGD = @typeInfo(GDial).@"enum".fields.len;
 
-/// Keyed by variant for `DER`'s reason, and asserted whole: a dial with no row prints a bare number.
 const GROW = blk: {
     var rows = [_]DerivedRow{.{ .name = "", .unit = .flat }} ** NGD;
-    // **THE BLOW ITSELF, NOT THE DIAL THAT SCALED IT** (owner: attack damage in NUMBERS not percents). "74%
-    // damage" is a fact about a straight sword the page never shows you; these two are what the swing lands for,
-    // through `hero.weigh` and the live sheet — the same arithmetic the fight uses.
     rows[@intFromEnum(GDial.dmg_light)] = .{ .name = "Light attack", .unit = .flat };
     rows[@intFromEnum(GDial.dmg_heavy)] = .{ .name = "Heavy attack", .unit = .flat };
     rows[@intFromEnum(GDial.swing)] = .{ .name = "Swing time", .unit = .secs, .cost = true };
@@ -1491,7 +1409,6 @@ const GROW = blk: {
     rows[@intFromEnum(GDial.res_cold)] = .{ .name = "Cold resistance", .unit = .pct };
     rows[@intFromEnum(GDial.res_lightning)] = .{ .name = "Lightning resistance", .unit = .pct };
     rows[@intFromEnum(GDial.res_chaos)] = .{ .name = "Chaos resistance", .unit = .pct };
-    // Off `combat.ailName`, so a retuned or renamed ailment cannot leave a stale word on this panel.
     for (0..combat.NAIL) |i| {
         rows[@intFromEnum(GDial.rate_poison) + i] = .{ .name = combat.ailName(@enumFromInt(i)) ++ " fills at", .unit = .pct, .cost = true };
     }
@@ -1510,19 +1427,16 @@ const GROW = blk: {
 
 const Dials = struct {
     v: [NGD]?f32 = [_]?f32{null} ** NGD,
-    /// The boon row names the attribute it raises, so its label is the ITEM's and not the table's.
     boonName: ?[:0]const u8 = null,
 
     fn set(self: *Dials, d: GDial, x: f32) void {
         self.v[@intFromEnum(d)] = x;
     }
-    /// The rate rows are reached by INDEX (`rateDial`), because which of the ten a piece slows is a runtime fact.
     fn setAt(self: *Dials, i: usize, x: f32) void {
         self.v[i] = x;
     }
 };
 
-/// The ten rate rows are `Ail`'s own order laid down contiguously, pinned here rather than trusted.
 fn rateDial(a: combat.Ail) usize {
     return @intFromEnum(GDial.rate_poison) + @intFromEnum(a);
 }
@@ -1532,9 +1446,6 @@ comptime {
         @compileError("book: the `rate_*` dials are not one contiguous run of `combat.NAIL` — `rateDial` indexes off the first");
 }
 
-/// **WHICH ARMAMENT LIVES IN A SOCKET** — derived by walking `hero.wearFor` rather than written as a second
-/// table, so the inverse cannot drift from the map it inverts. The card weighs a SOCKET, and a tier is per
-/// armament, so this is what joins them.
 fn armInSocket(w: item.Wear) ?heromod.Armament {
     for (0..heromod.NARM) |i| {
         const a: heromod.Armament = @enumFromInt(i);
@@ -1545,7 +1456,6 @@ fn armInSocket(w: item.Wear) ?heromod.Armament {
     return null;
 }
 
-/// The four offence rows off one pair of blows, so the bow and the three blades cannot be weighed differently.
 /// STANCE comes off the HEAVY: a light stroke carries none (`hero.ATK_LIGHT_HIT`), and the row would read 0.
 fn setBlow(d: *Dials, lightHit: combat.Hit, heavyHit: combat.Hit, row: item.Arm, sheet: stats.Sheet, tier: u8) void {
     const lo = heromod.weigh(lightHit, row, sheet, tier);
@@ -1556,11 +1466,6 @@ fn setBlow(d: *Dials, lightHit: combat.Hit, heavyHit: combat.Hit, row: item.Arm,
     d.set(.stance, hi.stance);
 }
 
-/// A piece's dials, or a BARE socket's — an empty hand still swings, so what it is compared against is
-/// `item.bareArm`'s row and not a column of blanks. An empty WORN socket carries nothing and says so.
-/// **WHAT IS IN THE SLOT, AS AN `item.Equip`** — the one place a piece and a BARE held socket are turned into
-/// the same question. An empty hand still swings, so it answers with `item.bareArm`'s row; an empty worn socket
-/// carries nothing and says so.
 fn equipIn(k: ?item.Kind, socket: ?item.Wear) item.Equip {
     if (k) |kk| return item.equip(kk);
     const w = socket orelse return .none;
@@ -1574,9 +1479,6 @@ fn armIn(k: ?item.Kind, socket: ?item.Wear) ?item.Arm {
     };
 }
 
-/// **WHICH SKILL DRIVES IT, IN WORDS** — off `stats.displayName`, the one place an attribute is named, so a
-/// rename there carries. `quality` is the MEAN of the two curves (`hero.scaleOf`) and says so rather than
-/// printing the letter nobody outside the table knows.
 fn scalingWords(sc: item.Scaling) [:0]const u8 {
     return switch (sc) {
         .strength => stats.displayName(.strength),
@@ -1586,10 +1488,6 @@ fn scalingWords(sc: item.Scaling) [:0]const u8 {
 }
 const QUALITY_WORDS: [:0]const u8 = stats.displayName(.strength) ++ " and " ++ stats.displayName(.dexterity) ++ " both";
 
-/// **THE HALF OF A WEAPON A NUMBER CANNOT SAY**, for the footer under a table that now carries the rest: how
-/// much of the body goes into it, where it lands from, and which skill drives it — and that last has never
-/// appeared anywhere in the game. `item.effect` still prints the DIALS for the bag page, which has no table:
-/// here they were the percentages of a straight sword this panel never shows, directly under the real figures.
 fn armWords(k: ?item.Kind, socket: ?item.Wear) [:0]const u8 {
     const a = armIn(k, socket) orelse return "";
     if (a.slot == .hand_shield) return fmt("{s} {s}. A board to stand behind, and slower on your feet for it.", .{ a.heft.label(), a.reach.label() });
@@ -1597,8 +1495,6 @@ fn armWords(k: ?item.Kind, socket: ?item.Wear) [:0]const u8 {
     return fmt("{s} {s}, driven by {s}.", .{ a.heft.label(), a.reach.label(), scalingWords(a.scales) });
 }
 
-/// The line under a piece's table: a weapon's is its own (`armWords`), and everything else keeps the row it
-/// prints on the bag page, where the units are the ones the thing is actually measured in.
 fn pieceSays(k: ?item.Kind, socket: ?item.Wear) []const u8 {
     if (armIn(k, socket) != null) return armWords(k, socket);
     if (k) |kk| return rowSays(kk);
@@ -1613,10 +1509,6 @@ fn dialsOf(k: ?item.Kind, socket: ?item.Wear, v: View) Dials {
     switch (eq) {
         .none, .bind => {},
         .arm => |a| {
-            // **WHAT IT LANDS FOR ON THIS BODY**, through the same `hero.weigh` the fight uses, rather than the
-            // multiplier it applies to a straight sword the page never prints. **AND ONLY FOR A SOCKET THAT
-            // SWINGS** — read plainly a shield came out with the bare sword's blow beside it, which is a lie in
-            // numbers where it was merely noise in percentages ("Damage 100%").
             if (a.slot == .hand_bow) {
                 setBlow(&d, heromod.arrowBlow(v.quiver.sel, false, perk), heromod.arrowBlow(v.quiver.sel, true, perk), a, v.sheet.*, v.tierOf(.bow));
                 d.set(.swing, heromod.drawSecs(true, a));
@@ -1658,8 +1550,6 @@ fn dialsOf(k: ?item.Kind, socket: ?item.Wear, v: View) Dials {
 
 const Facing = struct { now: ?item.Kind, then: ?item.Kind, socket: ?item.Wear };
 
-/// **WHAT IS IN THE SLOT AGAINST WHAT THE CURSOR IS ON.** Null when the candidate is not a piece of gear at all
-/// — an arrow, a quick item, a sorcery — which is what sends the panel back to the derived sheet.
 fn facing(v: View, c: Cand) ?Facing {
     const held = struct {
         fn of(live: heromod.Armament, h: Hand, w: heromod.Worn) Facing {
@@ -1681,7 +1571,6 @@ fn facing(v: View, c: Cand) ?Facing {
 }
 
 /// **ALWAYS THE NUMBER, NEVER A DASH** — `unitStr` hides a zero, and a zero facing a 26 is the whole of what a
-/// coated edge buys. A blank is for a row the piece has NOTHING to say on, which is a different fact.
 fn dialStr(u: Unit, x: ?f32) [:0]const u8 {
     const val = x orelse return "-";
     return switch (u) {
@@ -1691,9 +1580,6 @@ fn dialStr(u: Unit, x: ?f32) [:0]const u8 {
     };
 }
 
-/// **THE PICKER COMPARES TWO OBJECTS, NOT TWO SHEETS** (owner's call): the piece in the socket beside the piece
-/// under the cursor, dial for dial, with both their one-line characters under the rule. A row neither of them has
-/// anything to say on is not drawn at all.
 fn drawGearCompare(box: Box, v: View, c: Cand, f: Facing) void {
     const inner = panel(box, "");
     const a = dialsOf(f.now, f.socket, v);
@@ -1704,8 +1590,6 @@ fn drawGearCompare(box: Box, v: View, c: Cand, f: Facing) void {
         if (a.v[i] != null or b.v[i] != null) shown += 1;
     }
 
-    // **BOTH LINES OFF THE ROTATING SCRATCH BEFORE ANY ROW RUNS** (`drawDerived`'s reason): `fmt` cycles 16 slots
-    // and the rows below spend two apiece, so a `says` taken after them is the tail of a percentage.
     const saysThen = saysOwn(if (armIn(f.then, f.socket) != null) armWords(f.then, f.socket) else candSays(c, v));
     const saysNow = saysHeld(if (f.now != null or armIn(null, f.socket) != null) pieceSays(f.now, f.socket) else "");
 
@@ -1751,18 +1635,12 @@ fn drawGearCompare(box: Box, v: View, c: Cand, f: Facing) void {
     }
 }
 
-/// **THE LONGEST OF THE TEN ROWS IN THE COLUMN, MEASURED.** The two halves of the sheet are not the same width
-/// and a straight bisection put "Lightning resistance" over the value beside it; the labels get what they need
-/// and the values take the rest.
 fn derSplitX(inner: Box, size: i32) i32 {
     var widest: i32 = 0;
     for (DER[0..DER_SPLIT]) |row| widest = @max(widest, hud.textW(row.name, size));
-    // Half the panel is the ceiling either way — a run of long labels may not starve the right column.
     return inner.x + mathx.clampI(widest + 96, @divTrunc(inner.w, 3), @divTrunc(inner.w, 2));
 }
 
-/// One column of the sheet, `lo` to `hi` of `DER`. Returns the y it finished at, so the footer sits under the
-/// taller of the two.
 fn derColumn(inner: Box, x: i32, right: i32, cap: [:0]const u8, now: [ND]f32, then: [ND]f32, cand: ?Cand, size: i32, step: i32, lo: usize, hi: usize) i32 {
     var y = inner.y;
     hud.text(cap, x, y, hud.TINY, mathx.withAlpha(uiart.GILT, 200));
@@ -1790,10 +1668,6 @@ fn derColumn(inner: Box, x: i32, right: i32, cap: [:0]const u8, now: [ND]f32, th
     return y;
 }
 
-/// **WHAT IS ACTUALLY IN THE SLOT THE CURSOR IS ON**, socket and piece, for the card that shows it while no
-/// picker is open. Null for a slot with no gear in it at all — an arrow, a quick item, a sorcery, and the three
-/// armaments with no socket of their own (bell, wand, torch): those have their tallies on the doll and no dials
-/// to print, and the sheet takes the whole column exactly as it did before.
 fn browsing(s: SlotId, v: View) ?Facing {
     if (wearOf(s)) |w| return .{ .now = v.worn.at(w), .then = null, .socket = w };
     const live: heromod.Armament = switch (s) {
@@ -1814,9 +1688,6 @@ fn cardRows(v: View, f: Facing) usize {
     return n;
 }
 
-/// Its rows at their natural pitch plus its one line of mechanic. **AND NEVER MORE THAN WHAT THE SHEET UNDER IT
-/// IS OWED** (`pickBox`'s rule): the card is half the answer to "what is this", the sheet is the other half, and
-/// a card that ate the column would put the sheet's tail through the bottom of the panel.
 fn cardBoxIn(col: Box, v: View, f: Facing, says: [:0]const u8) Box {
     const rows: i32 = @intCast(@max(cardRows(v, f), 1));
     const foot: i32 = if (says.len > 0) hud.proseH(says, col.w - 28, hud.HINT) + 12 else 0;
@@ -1825,9 +1696,6 @@ fn cardBoxIn(col: Box, v: View, f: Facing, says: [:0]const u8) Box {
     return .{ .x = col.x, .y = col.y, .w = col.w, .h = @min(want, room) };
 }
 
-/// **THE PIECE IN THE SLOT, ON ITS OWN.** Nothing on this page said what a piece he is WEARING does: its dials
-/// were reachable only by opening the picker over the socket, and then only as a column beside a candidate.
-/// Same rows and same units as that compare (`GROW`), one value column.
 fn drawGearCard(box: Box, v: View, f: Facing, says: [:0]const u8) void {
     const inner = panel(box, "");
     const d = dialsOf(f.now, f.socket, v);
@@ -1865,7 +1733,6 @@ fn drawDerived(box: Box, v: View, cand: ?Cand) void {
     // **TAKEN OFF THE ROTATING SCRATCH BEFORE THE ROWS RUN.** `rowSays` builds through `fmt`, which cycles a 16-slot buffer, and the loop below spends 28 slots on `unitStr` — so by the time this is drawn the slot it pointed at holds the tail of a stat value.
     const says = saysOwn(if (cand) |c| candSays(c, v) else armSays(v.arm, v.off));
     const foot = hud.proseH(says, inner.w, hud.HINT) + 22;
-    // **THE TALLER COLUMN SIZES THE PITCH**, or the ten-row side spills while the nine-row side has slack.
     const tallest = @max(DER_SPLIT, ND - DER_SPLIT);
     const head = hud.lineH(hud.TINY) + 6;
     const step = rowStep(inner.h - foot - head, tallest);
@@ -1880,7 +1747,6 @@ fn drawDerived(box: Box, v: View, cand: ?Cand) void {
 }
 
 comptime {
-    // AND THE ONE PLACE THE PAIR IS CHECKED. Two enums in lockstep with nothing asserting it is the trap `item.ORDER` and `warrior`'s contiguous run are each guarded against; `armPic` being exhaustive catches a MISSING row but not a renamed or reordered one.
     const A = @typeInfo(heromod.Armament).@"enum".fields;
     const B = @typeInfo(itemart.Arm).@"enum".fields;
     if (A.len != B.len) @compileError("book: hero.Armament and itemart.Arm have drifted in LENGTH");
@@ -1892,7 +1758,6 @@ comptime {
     }
 }
 
-/// **THE ONE PLACE THE TWO ENUMS MEET.** `itemart.Arm` is the picture's name for a thing in a hand and `hero.Armament` is the fight's, and they are separate because neither `hud` nor `itemart` may import `hero`. Exhaustive, so a NEW armament is a compile error HERE and nowhere else.
 pub fn armPic(a: heromod.Armament) itemart.Arm {
     return switch (a) {
         .sword => .sword,
@@ -1927,7 +1792,6 @@ fn armCandSays(a: heromod.Armament) []const u8 {
     };
 }
 
-/// **THE ONE PLACE A THING'S ROW BECOMES A LINE ON A PANEL** — gear and tools both (`item.effect`).
 fn rowSays(k: item.Kind) [:0]const u8 {
     var tmp: [item.EFFECT_BUF]u8 = undefined;
     return fmt("{s}", .{item.effect(k, &tmp)});
@@ -2031,9 +1895,6 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
     y = hud.prose(item.describe(k), inner.x, inner.y + plateH + 16, inner.w, hud.SMALL, uiart.TEXT_VALUE) + 10;
     uiart.divider(inner.x + @divTrunc(inner.w, 2), y, @divTrunc(inner.w, 2) - 10, 120);
     y += 12;
-    // **THE ROW IS WRAPPED, NOT CLIPPED, AND WHAT SITS UNDER IT IS PLACED OFF WHERE THE WRAP ENDED.** A row
-    // carrying four dials (the envenomed dirk's, a coated blade's) runs past this panel's width, and `hud.text`
-    // would draw it straight out through the frame.
     if (item.wearable(k)) {
         const hy = hud.prose(rowSays(k), inner.x, y, inner.w, hud.SMALL, uiart.GOOD) + 6;
         hud.text("Put it on from the Equipment page.", inner.x, hy, hud.HINT, uiart.TEXT_HINT);
@@ -2042,12 +1903,8 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
     var after = y + hud.lineH(hud.SMALL);
     switch (item.use(k)) {
         .none => hud.text("Nothing to use here.", inner.x, y, hud.HINT, uiart.TEXT_HINT),
-        // **THE TWO WORTH HIS OWN NUMBERS** — a heal and a wind are a FRACTION of a bar, so this panel prints
-        // what they are worth on the live sheet where the item's row can only print the fraction.
         .regen => |r| hud.text(fmt("+{d:.0} HP over {d:.0}s", .{ v.sheet.hp() * r.frac, r.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
         .wind => |w| hud.text(fmt("+{d:.0} stamina, clears the lockout", .{v.sheet.stamina() * w.share}), inner.x, y, hud.SMALL, uiart.GOOD),
-        // …and every other tool says what its ROW says, which is the line the gear branch above prints too.
-        // Written out a second time here, an element added to a ward reached one panel and not the other.
         else => after = hud.prose(rowSays(k), inner.x, y, inner.w, hud.SMALL, uiart.GOOD),
     }
     if (item.usable(k)) {
@@ -2083,7 +1940,6 @@ fn drawKnown(self: *const Book, col: Box, v: View) void {
         const on = self.cur[idx(.spells)] == i;
         const carried = combat.carriesSpell(v.bag, row.spell);
         if (on) uiart.rowHilite(inner.x - 10, y - 6, inner.w + 20, spellStep() - 4);
-        // Dimmed, never hidden: a rung he has no scroll for is the thing worth going looking for.
         const tint = if (on) uiart.HOT else if (!carried) mathx.withAlpha(uiart.TEXT_DIM, 150) else uiart.TEXT_VALUE;
         hud.text(row.name, inner.x, y, hud.BODY, tint);
         if (v.mem.slotOf(row.spell)) |slot| {
@@ -2134,7 +1990,6 @@ fn drawSpellRead(self: *const Book, box: Box, v: View) void {
     var y = inner.y + 2;
     hud.engraved(row.name, tx, y, hud.BODY, uiart.TEXT_TITLE);
     y += hud.lineH(hud.BODY) + 6;
-    // Billed through the tree's multiple and the sheet, or the page prices a spell nobody casts.
     const perk = v.tree.bonus();
     const scaled: f32 = if (row.blow != null) perk.spellDmg * v.sheet.scale(.intelligence) else 1.0;
     hud.text(fmt("{d:.0} focus a cast", .{castFp(row.spell, perk)}), tx, y, hud.SMALL, uiart.GILT);
@@ -2191,7 +2046,6 @@ fn drawAttributes(self: *const Book, col: Box, v: View) void {
     y += 6;
     uiart.divider(inner.x + @divTrunc(inner.w, 2), y, @divTrunc(inner.w, 2) - 10, 120);
     const a: stats.Attr = @enumFromInt(@min(self.cur[idx(.stats)], stats.NA - 1));
-    // A BAR STAT'S OWN FIGURE IS ALREADY IN THE BODY COLUMN, so only the skill multiple is worth printing.
     const says = if (v.sheet.barFor(a) == null and !stats.inert(a))
         fmt("{s}  x{d:.2}", .{ stats.governs(a), v.sheet.scale(a) })
     else
@@ -2208,11 +2062,8 @@ fn drawBody(col: Box, v: View) void {
         .{ "Poise", heromod.POISE_MAX },
         .{ "Stance", heromod.STANCE_MAX },
     };
-    // **WHAT HE ACTUALLY TURNS ASIDE, WHICH THIS PAGE NEVER SAID** (owner: armor/dmg negation). The value is the
     // sum of the sockets and the curve is what makes anything of it, so the two go together: 25 armour is
     // meaningless alone, and "negates 16%" alone hides which of two coats is the bigger number.
-    // **THE NUMBERS, NOT THE STRINGS** — `fmt` cycles sixteen slots and everything below this spends fifteen of
-    // them, so a pair of slices taken here is the tail of a resistance by the time it is drawn.
     const armour = heromod.armourOf(v.worn);
     const guard = [_]struct { [:0]const u8, f32, Unit }{
         .{ "Armour", armour, .flat },
@@ -2227,7 +2078,6 @@ fn drawBody(col: Box, v: View) void {
     else
         "");
 
-    // THE THREE BLOCKS ARE FITTED TO THE COLUMN. Fifteen rows at a fixed pitch ran off the bottom of it, so the pitch gives way before the content does.
     const sect = hud.lineH(hud.TINY) + 6 + 22;
     const nRows = pools.len + guard.len + combat.NELEM;
     const fixed = sect * 2 + hud.proseH(says, inner.w, hud.HINT) + 10;
@@ -2271,13 +2121,11 @@ fn section(inner: Box, y: i32, title: [:0]const u8) i32 {
     return y + 14 + hud.lineH(hud.TINY) + 6;
 }
 
-// The hero himself, rendered off-screen and blitted into the panel — the trick the editor's object viewer plays, for the same reason: it is the actual model in the actual pose, so it cannot go stale.
 
 const PORT_W: i32 = 460;
 const PORT_H: i32 = 760;
 var portRT: ?rl.RenderTexture2D = null;
 
-/// The doll's own framing — head-to-boots at arm's length, where `hud.PORTRAIT_*` is a face.
 const DOLL_EYE: f32 = 0.94;
 const DOLL_DIST: f32 = 3.5;
 const DOLL_PITCH: f32 = 0.14;
@@ -2286,7 +2134,6 @@ const DOLL_CLEAR = rgba(14, 12, 10, 255);
 
 fn drawDoll(ctx: *const anyopaque) void {
     const h: *const heromod.Hero = @ptrCast(@alignCast(ctx));
-    // LIT: the doll is its own little scene with no depth pass, so everything he is carrying belongs in it.
     h.draw(true);
 }
 
@@ -2314,7 +2161,6 @@ fn drawPortrait(self: *const Book, col: Box, portrait: ?Portrait, caption: [:0]c
     if (portRT == null) portRT = rl.loadRenderTexture(PORT_W, PORT_H) catch null;
     const rt = portRT orelse return;
 
-    // THROUGH THE ONE PATH (`hud.renderIntoTarget`), which is the law AGENTS.md already states — the book's doll, the conversation's speaker and the spirit panel are one way of photographing a body. Only the TARGET is the book's, because a full-length doll is not a head shot's aspect.
     hud.renderIntoTarget(rt, .{
         .scene = p.scene,
         .focus = v3(p.hero.pos.x, p.hero.pos.y + DOLL_EYE, p.hero.pos.z),
@@ -2436,7 +2282,6 @@ test "THE NOW COLUMN PRICES WHAT HE HAS ON — every axis of the set in force, `
     var v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
     const bareRows = derive(inForce(v), v);
 
-    // THE ARMAMENT AS WELL AS THE SOCKET: the club has its own socket now, and a club sitting in it while the sword is the thing in his fist prices the sword (`swingSocket`), which is the bug not the test.
     v.arm = .club;
     v.worn.put(.hand_club, .greatclub);
     v.worn.put(.hand_shield, .tower_shield);
@@ -2444,7 +2289,6 @@ test "THE NOW COLUMN PRICES WHAT HE HAS ON — every axis of the set in force, `
     const geared = derive(inForce(v), v);
     try std.testing.expect(worth(geared, .heavy) > worth(bareRows, .heavy));
     try std.testing.expect(worth(geared, .poise) > worth(bareRows, .poise));
-    // THE CLOCK, where the stamina bill used to stand: a greatclub is the slower stroke as well as the harder one.
     try std.testing.expect(worth(geared, .swing) > worth(bareRows, .swing));
     try std.testing.expect(worth(geared, .guard) > worth(bareRows, .guard));
     try std.testing.expect(worth(geared, .arc) > worth(bareRows, .arc));
@@ -2550,7 +2394,6 @@ test "THE WAND IS PRICED HONESTLY TOO: it buys a bolt and it costs him the guard
     const board = derive(.{ .arm = .sword, .off = .shield, .ammo = .plain, .quick = item.Kind.crimson_flask, .spell = .bolt }, v);
     const rod = derive(.{ .arm = .sword, .off = .wand, .ammo = .plain, .quick = item.Kind.crimson_flask, .spell = .bolt }, v);
     try std.testing.expect(worth(board, .guard) > 0 and worth(rod, .guard) == 0);
-    // …and what he got for it. Zero behind a shield, because a spell he cannot cast is not worth a number.
     try std.testing.expect(worth(board, .spell) == 0 and worth(rod, .spell) > 0);
     try std.testing.expect(worth(board, .spell_fp) == 0 and worth(rod, .spell_fp) > 0);
     const bowRod = derive(.{ .arm = .bow, .off = .wand, .ammo = .plain, .quick = item.Kind.crimson_flask, .spell = .bolt }, v);
@@ -2612,7 +2455,6 @@ test "THE DERIVED COLUMN PRICES THE TREE'S OWN MULTIPLES, not only its attribute
     rod.off = .wand;
     const bolt = derive(rod, v);
     try std.testing.expectApproxEqAbs(combat.BOLT_FP * perk.spellCost, worth(bolt, .spell_fp), 1e-3);
-    // **THE SCALING READS THE PERKED SHEET, NOT THE BARE ONE** — a `spellDmg` node that also rides a stat-up (`passivetree.Bump`) raises INTELLIGENCE as well, so priced off `stats.Sheet{}` the row came out under what the page shows.
     const perked = sheetOf(rod, perk);
     try std.testing.expect(perked.at(.intelligence) > sheet.at(.intelligence));
     try std.testing.expectApproxEqAbs(
@@ -2756,9 +2598,6 @@ test "the sockets are fitted to the panel, and never off the end of it" {
 }
 
 test "BOTH PAGES SPEAK IN NUMBERS, and the three classes are told apart by them" {
-    // Owner: attack damage in NUMBERS not percents, attack speed in some NUMBER corollary not percent. So the
-    // check is on the UNITS of the rows first, and then on whether the numbers those units carry actually
-    // separate the three weapons a player is choosing between.
     for ([_]Der{ .light, .heavy, .elem, .poise, .stance, .hp, .fp, .armour }) |k| {
         try std.testing.expectEqual(Unit.flat, DER[@intFromEnum(k)].unit);
     }
@@ -2767,9 +2606,6 @@ test "BOTH PAGES SPEAK IN NUMBERS, and the three classes are told apart by them"
     try std.testing.expectEqual(Unit.flat, GROW[@intFromEnum(GDial.dmg_heavy)].unit);
     try std.testing.expectEqual(Unit.secs, GROW[@intFromEnum(GDial.swing)].unit);
 
-    // **NEITHER PAGE CARRIES A BILL ANY MORE** (owner: remove stats like roll speed or stamina consumption).
-    // Named off the WORDS, because the rows they sat in are gone and an enum cannot be asked about a member it
-    // no longer has.
     for (DER) |row| {
         for ([_][]const u8{ "Stamina", "Roll", "Sprint" }) |bill| {
             if (std.mem.indexOf(u8, row.name, bill) != null) {
@@ -2819,28 +2655,22 @@ test "BOTH PAGES SPEAK IN NUMBERS, and the three classes are told apart by them"
             clubT = secs;
         }
     }
-    // HARDER AND SLOWER — the trade the two dials name, readable off the page now without arithmetic.
     try std.testing.expect(club > dirk and clubT > dirkT);
 
-    // …AND A BOARD PRICES NO BLOW. Read plainly it took the bare row of a sword and printed that damage beside
     // a shield, which in percentages was merely noise (Damage 100%) and in numbers is a lie.
     const board = dialsOf(item.Kind.tower_shield, .hand_shield, v);
     try std.testing.expect(board.v[@intFromEnum(GDial.dmg_heavy)] == null);
     try std.testing.expect(board.v[@intFromEnum(GDial.swing)] == null);
-    // Its negation is what the FIGHT gives, under the cap — not a multiple of a base nobody is shown.
     const neg = board.v[@intFromEnum(GDial.negate)].?;
     try std.testing.expectApproxEqAbs(combat.guardNegation(item.equip(.tower_shield).arm.negate, TEST_TREE.bonus().guard) * 100, neg, 1e-3);
     try std.testing.expect(neg <= combat.GUARD_NEGATE_CAP * 100 + 1e-3);
     try std.testing.expectApproxEqAbs(combat.GUARD_ARC * item.equip(.tower_shield).arm.arc, board.v[@intFromEnum(GDial.arc)].?, 1e-3);
     std.debug.print("  tower shield: negates {d:.0}% over a {d:.0} deg arc, and prices no swing\n", .{ neg, board.v[@intFromEnum(GDial.arc)].? });
 
-    // **EVERY GEAR SOCKET ON THE DOLL ANSWERS WHILE BROWSING** — the whole point of the card. A held socket has
-    // rows even bare (`item.bareArm`); a worn one may be empty and still names its own socket.
     var held: usize = 0;
     for (0..NSLOT) |i| {
         const s: SlotId = @enumFromInt(i);
         const f = browsing(s, v) orelse {
-            // Only a slot that holds no gear at all may refuse: the ammo, the sorcery, the ten quick cells.
             try std.testing.expect(wearOf(s) == null);
             continue;
         };
@@ -2852,14 +2682,12 @@ test "BOTH PAGES SPEAK IN NUMBERS, and the three classes are told apart by them"
     }
     try std.testing.expect(held >= 2);
 
-    // …and the piece he is WEARING is what the card reads, not the bare row under it.
     v.worn.put(.chest, .rimeward_mantle);
     const coat = browsing(.chest, v).?;
     try std.testing.expectEqual(item.Kind.rimeward_mantle, coat.now.?);
     const cd = dialsOf(coat.now, coat.socket, v);
     try std.testing.expectApproxEqAbs(item.equip(.rimeward_mantle).plate.a, cd.v[@intFromEnum(GDial.armour)].?, 1e-4);
     try std.testing.expectApproxEqAbs(item.equip(.rimeward_mantle).plate.res.cold, cd.v[@intFromEnum(GDial.res_cold)].?, 1e-4);
-    // A coat that does not move him prints no walk row at all.
     try std.testing.expect(cd.v[@intFromEnum(GDial.walk)] == null);
 }
 
@@ -2885,20 +2713,15 @@ test "THE SHEET CARRIES THE FOUR COLUMNS AND THE POOLS, and a swap moves them" {
     try std.testing.expect(c[cold] > b[cold]);
     try std.testing.expect(worth(c, .armour) > worth(b, .armour));
     try std.testing.expect(worth(c, .negate) > worth(b, .negate));
-    // THE CLAMPED COLUMN, so the page cannot promise past the cap the fight holds it to.
     try std.testing.expect(c[cold] <= combat.RES_CAP);
 
-    // **A BOON RING MOVES THE RED BAR ON THIS PAGE** — priced off the candidate own sheet, or a +5 Vitality
-    // signet is a row of two identical numbers.
     var ringed = bare;
     ringed.worn.put(.ring, .bloodtinge_signet);
     try std.testing.expect(worth(derive(ringed, v), .hp) > worth(b, .hp));
-    // …and the amulet that shortens the focus pool shows that too.
     var belled = bare;
     belled.worn.put(.neck, .gravebell_amulet);
     try std.testing.expect(worth(derive(belled, v), .fp) < worth(b, .fp));
 
-    // THE SPLIT IS A REAL SPLIT: neither column of the layout is empty, and every row is named.
     try std.testing.expect(DER_SPLIT > 0 and DER_SPLIT < ND);
     for (DER) |row| try std.testing.expect(row.name.len > 0);
 }

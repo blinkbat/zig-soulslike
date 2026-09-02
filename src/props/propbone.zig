@@ -12,22 +12,17 @@ const BONE_DK = art.BONE_DK;
 const MARROW = art.MARROW;
 const ASH_DK = art.ASH_DK;
 
-// The only props at architecture scale that were never BUILT, so they keep the DEAD-GROWTH laws and not the masonry ones: nothing dead is straight, nothing ends in a point, and a curved shaft draws its curl ONCE and applies it every segment (`propwood.deadLimbInto`'s rule).
 
 pub const RibKind = struct {
     /// Arc LENGTH along the shaft, not height — the height falls out of the curl and is measured, never typed.
     arc: f32,
-    /// Total turn from the socket to the snap, in degrees.
     curl: f32,
-    /// How far off plumb it already leans where it leaves the ground.
     tilt0: f32,
     r0: f32,
     r1: f32,
     segs: i32,
-    /// The pair the shaft is weathered BETWEEN — dark and damp at the socket, bleached at the snap. Each kind carries its own, which is where the variation lives: never along one shaft.
     foot: rl.Color = BONE_DK,
     tip: rl.Color = BONE_LT,
-    /// Sideways drift per segment, degrees — a rib that curves in ONE plane is a croquet hoop.
     yawPer: f32 = 0,
 };
 
@@ -83,12 +78,10 @@ pub fn ribPath(k: RibKind) RibPath {
 }
 
 fn ribR(k: RibKind, t: f32) f32 {
-    // Thickest a THIRD of the way up rather than at the socket: a rib is a blade, and one that only tapers reads as a horn.
     const swell = 1.0 + 0.22 * mathx.sinf(mathx.clampF(t, 0, 1) * std.math.pi);
     return mathx.lerpF(k.r0, k.r1, mathx.clampF(t, 0, 1)) * swell;
 }
 
-/// Spin a local point about Y and drop it at `base`. Shared by the rib and the skull because BOTH are authored along one axis and then faced wherever the map (or the swatch) wants them.
 fn put(base: rl.Vector3, cc: f32, ss: f32, q: rl.Vector3) rl.Vector3 {
     return v3(base.x + q.x * cc - q.z * ss, base.y + q.y, base.z + q.x * ss + q.z * cc);
 }
@@ -105,13 +98,11 @@ pub fn ribInto(b: *Builder, rng: *mathx.Rng, k: RibKind, at: rl.Vector3, yaw: f3
         const a1 = put(at, c, sn, path.p[i + 1]);
         b.addCapsule(a0, a1, ribR(k, t0), ribR(k, t1), 9, art.weathered(k.foot, k.tip, t0));
     }
-    // THE SNAP, and it is BLUNT: a dome of marrow across the cut, never a taper to nothing.
     const tipA = put(at, c, sn, path.p[path.n - 1]);
     const tipB = put(at, c, sn, path.p[path.n]);
     const away = mathx.normV(mathx.subV(tipB, tipA));
     b.addDome(tipB, away, ribR(k, 1.0) * 0.96, 7, MARROW);
 
-    // The socket it stands out of — a knuckle half in the ground, with the spoil it pushed up round it.
     const head = put(at, c, sn, v3(0, 0.10, 0));
     b.addBlob(head, v3(k.r0 * 1.85, k.r0 * 1.20, k.r0 * 1.70), 4, 8, BONE_DK);
     var i: i32 = 0;
@@ -122,7 +113,6 @@ pub fn ribInto(b: *Builder, rng: *mathx.Rng, k: RibKind, at: rl.Vector3, yaw: f3
         b.addBlob(v3(at.x + mathx.cosf(a) * d, r * 0.5, at.z + mathx.sinf(a) * d), v3(r, r * 0.45, r * 1.2), 3, 6, ASH_DK);
     }
 
-    // RELIEF IS SUBTLE: growth ridges at a few per cent of the shaft's own radius, sunk most of the way in.
     var j: usize = 1;
     while (j < path.n) : (j += 2) {
         const t = @as(f32, @floatFromInt(j)) / @as(f32, @floatFromInt(path.n));
@@ -157,7 +147,6 @@ pub fn archBound() f32 {
     const half = mathx.lenXZ(path.tip());
     var far: f32 = 0;
     for (path.p[0 .. path.n + 1]) |q| {
-        // Both halves, the far one mirrored through the origin — the same joint either side.
         far = @max(far, mathx.lenV(v3(q.x - half, q.y, q.z)));
         far = @max(far, mathx.lenV(v3(half - q.x, q.y, -q.z)));
     }
@@ -174,7 +163,6 @@ pub fn rib3(shader: rl.Shader) rl.Model {
     return ribModel(shader, 0xB0E3, RIB_SPLIT);
 }
 
-/// **THE PAIR THAT STILL MEET** — the only gate in the world nobody built. Both halves are the same shaft solved twice and faced at each other, so the span is the path's own reach and not a number typed here.
 pub fn ribArchMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xB0E4);
@@ -207,33 +195,26 @@ pub fn skullMesh(shader: rl.Shader) rl.Model {
     const o = mathx.zero3;
     b.setMat(.stone);
 
-    // **WHAT MAKES A SKULL A SKULL IS THE HOLES AND THE ARCHES, NOT THE DOME** — one smooth cranium came back an igloo. The muzzle stands clear of the braincase, the cheek arches carry daylight under them, and the sockets are RIDGE PLUS SHADOW: a depression in a closed hull is invisible outside.
 
-    // The braincase, canted and half into the ground. Darkest thing on the prop: it is the biggest face.
     b.addBlob(put(o, c, sn, v3(-0.70, 1.06, 0)), v3(1.38, 1.00, 1.24), 6, 11, BONE_DK);
     b.addBlob(put(o, c, sn, v3(-1.05, 1.34, 0)), v3(0.96, 0.72, 0.92), 5, 9, BONE_OLD);
     b.addBlob(put(o, c, sn, v3(-0.75, 1.94, 0)), v3(0.86, 0.16, 0.14), 3, 6, BONE_LT);
 
-    // THE NECK. Narrower than both the things either side of it, which is why the muzzle reads as a separate mass rather than as more dome.
     b.addCapsule(put(o, c, sn, v3(0.30, 1.10, 0)), put(o, c, sn, v3(0.92, 0.94, 0)), 0.62, 0.54, 9, BONE_DK);
 
-    // The muzzle, DIPPING into the ground — a head that died face-down.
     b.addCapsule(put(o, c, sn, v3(0.92, 0.94, 0)), put(o, c, sn, v3(2.34, 0.50, 0)), 0.56, 0.34, 9, BONE_OLD);
     b.addDome(put(o, c, sn, v3(2.34, 0.50, 0)), put(mathx.zero3, c, sn, v3(1, -0.25, 0)), 0.32, 8, BONE_LT);
     b.addBlob(put(o, c, sn, v3(1.72, 0.86, 0)), v3(0.30, 0.22, 0.16), 3, 6, BONE_DK); // the nasal opening
 
     for ([_]f32{ -1.0, 1.0 }) |sd| {
-        // THE CHEEK ARCH, the one piece with real daylight under it: it leaves the braincase, bows OUT past the widest part of the skull and lands on the muzzle. That gap is worth more to the silhouette than any amount of surface detail.
         b.addCapsule(put(o, c, sn, v3(-0.35, 1.14, sd * 1.02)), put(o, c, sn, v3(0.62, 0.96, sd * 1.34)), 0.19, 0.15, 7, BONE_OLD);
         b.addCapsule(put(o, c, sn, v3(0.62, 0.96, sd * 1.34)), put(o, c, sn, v3(1.24, 0.80, sd * 0.66)), 0.15, 0.13, 7, BONE_LT);
 
-        // THE SOCKET: a proud brow above it and a dark disc standing a hair off the surface below. Sunk INTO the hull it was invisible — a closed mesh has no inside to see.
         b.addBlob(put(o, c, sn, v3(0.30, 1.62, sd * 0.72)), v3(0.46, 0.15, 0.30), 3, 7, BONE_LT);
         b.addBlob(put(o, c, sn, v3(0.34, 1.26, sd * 0.80)), v3(0.40, 0.34, 0.30), 4, 8, BONE_DK);
         b.addBlob(put(o, c, sn, v3(0.42, 1.22, sd * 0.86)), v3(0.26, 0.23, 0.20), 3, 6, ASH_DK);
     }
 
-    // Teeth along the muzzle's underside — WORN BLUNT, and gapped. A full set is a dental chart.
     var i: i32 = 0;
     while (i < 8) : (i += 1) {
         const t = @as(f32, @floatFromInt(i)) / 7.0;
@@ -246,7 +227,6 @@ pub fn skullMesh(shader: rl.Shader) rl.Model {
         }
     }
 
-    // THE JAW CAME OFF. Nothing dead stays articulated, so it lies to one side and at its own angle.
     b.addCapsule(put(o, c, sn, v3(0.10, 0.20, -1.55)), put(o, c, sn, v3(1.95, 0.15, -0.95)), 0.23, 0.15, 7, BONE_OLD);
     b.addCapsule(put(o, c, sn, v3(1.95, 0.15, -0.95)), put(o, c, sn, v3(2.30, 0.14, -0.62)), 0.15, 0.11, 6, BONE_LT);
     b.addBlob(put(o, c, sn, v3(0.05, 0.30, -1.62)), v3(0.22, 0.26, 0.18), 3, 6, BONE_DK);
@@ -268,7 +248,6 @@ pub fn skullMesh(shader: rl.Shader) rl.Model {
 }
 
 
-/// One knuckle of the spine, boulder-sized. It is the piece that says the ribs had something to hang off.
 pub fn vertebraMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xB0E6);
@@ -280,7 +259,6 @@ pub fn vertebraMesh(shader: rl.Shader) rl.Model {
     b.addDome(mathx.scaleV(up, 1.05), up, 0.72, 9, BONE_LT);
     b.addBlob(v3(0, 0.16, 0), v3(0.90, 0.22, 0.86), 3, 9, BONE_DK);
 
-    // The spine off the top — a BLADE, so it is a flattened capsule and not a spike, and it snaps blunt.
     const base = mathx.scaleV(up, 0.98);
     const tipv = v3(base.x - 0.30, base.y + 1.28, base.z);
     b.addCapsule(base, tipv, 0.34, 0.20, 5, BONE_OLD);
@@ -306,9 +284,7 @@ test "a rib is solved once and the table's numbers are measured off that solve" 
     inline for (.{ RIB_TALL, RIB_STOUT, RIB_SPLIT }) |k| {
         const path = ribPath(k);
         try std.testing.expectEqual(@as(usize, @intCast(k.segs)), path.n);
-        // It LEANS OVER: a rib whose tip is still over its own socket is a post.
         try std.testing.expect(mathx.lenXZ(path.tip()) > path.height() * 0.30);
-        // …and it never turns past horizontal and starts coming back down.
         var prev: f32 = -1;
         for (path.p[0 .. path.n + 1]) |q| {
             try std.testing.expect(q.y >= prev);
@@ -322,7 +298,6 @@ test "a rib is solved once and the table's numbers are measured off that solve" 
 test "THE ARCH IS ITS OWN SHAFT TWICE, so the two halves cannot part company" {
     const path = ribPath(RIB_STOUT);
     try std.testing.expectApproxEqAbs(mathx.lenXZ(path.tip()), ARCH_HALF, 1e-4);
-    // The two snaps meet within a rib's own thickness of each other, which is what the keystone covers.
     try std.testing.expect(ARCH_HALF > RIB_STOUT.r1 * 2.0);
     std.debug.print(
         "\n  rib arch: span {d:.2} m, crown {d:.2} m, legs {d:.2} m apart\n",
@@ -338,7 +313,6 @@ test "the three ribs are three DIFFERENT ribs, not one at three scales" {
         "  ribs: tall {d:.2} m high / {d:.2} out, stout {d:.2} / {d:.2}, split {d:.2} / {d:.2}\n",
         .{ a.height(), mathx.lenXZ(a.tip()), b.height(), mathx.lenXZ(b.tip()), c.height(), mathx.lenXZ(c.tip()) },
     );
-    // WABI-SABI BETWEEN THE INSTANCES: no two share a height inside a metre, or the field reads as a pattern.
     try std.testing.expect(@abs(a.height() - b.height()) > 1.0);
     try std.testing.expect(@abs(b.height() - c.height()) > 1.0);
     try std.testing.expect(@abs(a.height() - c.height()) > 1.0);

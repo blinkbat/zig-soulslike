@@ -23,7 +23,6 @@ pub const LABEL = uiart.TEXT_DIM;
 pub const VALUE = rgba(228, 216, 194, 255);
 pub const TITLE = rgba(236, 226, 202, 255);
 pub const HOT = uiart.HOT;
-/// A gizmo that is DOING something as well as sitting there — a location that carries weather, against the plain ones drawn in `TRIM`. Cool against the whole rack's gilt, so it reads as a different KIND of thing.
 pub const LIVE = rgba(110, 178, 168, 255);
 pub const ACTIVE_FILL = rgba(96, 74, 40, 235);
 pub const IDLE_FILL = rgba(26, 22, 18, 228);
@@ -48,7 +47,6 @@ pub const Ctx = struct {
 
     pub fn begin(t: f32) Ctx {
         if (!rl.isMouseButtonDown(.left)) dragOwner = null;
-        // A claim on a field that is no longer on screen is a keyboard nobody owns.
         if (!kbSeen) kbOwner = null;
         kbSeen = false;
         kbTaken = false;
@@ -120,10 +118,8 @@ pub fn panel(ctx: *Ctx, r: rl.Rectangle, title: ?[:0]const u8) void {
     }
 }
 
-/// **EVERY CONTROL IN THE KIT TAKES ITS TOOLTIP, AND NONE OF THEM TAKES IT OPTIONALLY.** A label is four
-/// characters of room ("lean", "take", "r1") and the panels are full of them; what a thing DOES lives here or
+/// A tip is not optional: a button has four characters of room ("lean", "take", "r1") and what a thing DOES lives here or
 /// nowhere. Zig has no default arguments, which is the point: a widget added without a tip does not compile.
-/// An empty string is the deliberate opt-out, for a control whose own label already says the whole of it.
 pub fn button(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32, active: bool, tip: [:0]const u8) bool {
     tipFor(ctx, r, tip);
     const h = ctx.hot(r);
@@ -159,10 +155,8 @@ pub fn iconButton(ctx: *Ctx, r: rl.Rectangle, ic: Icon, label: [:0]const u8, siz
     return h and ctx.pressed;
 }
 
-/// **A LAYER BUTTON WITH ITS OWN EYE IN IT** — Tiled's arrangement. One widget and not two for WIDTH: six separate eye buttons pushed the editor's top strip off the right-hand edge. Returns which HALF was pressed, never both — the eye's rect is tested FIRST.
 pub const LayerHit = enum { none, select, toggle };
 
-/// An EMPTY label is the narrow form — icon, eye, and the name in the tooltip. `drawTopBar` measures the strip and falls back to it rather than letting the right-hand end run off the window.
 pub fn layerButtonW(label: [:0]const u8, size: i32) i32 {
     if (label.len == 0) return ICON_PAD * 2 + size + EYE_SLOT;
     return iconButtonW(label, size) + EYE_SLOT;
@@ -233,8 +227,6 @@ pub fn swatchButton(ctx: *Ctx, r: rl.Rectangle, paint: rl.Color, label: [:0]cons
     return h and ctx.pressed;
 }
 
-/// Looks like a button, cannot be pressed — for an action that doesn't apply to what is selected. **ITS TIP
-/// IS THE ONE THAT MATTERS MOST**: a greyed control that cannot say why it is greyed is worse than no control.
 pub fn disabled(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32, tip: [:0]const u8) void {
     tipFor(ctx, r, tip);
     _ = ctx.hot(r);
@@ -249,15 +241,12 @@ pub fn disabled(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32, tip:
 pub const TAB_H: i32 = 24;
 
 /// **A ROW OF TABS THAT OPENS INTO WHAT IS UNDER IT** — evenly divided over `w`, and the live one is the one
-/// with NO FLOOR, so the eye runs out of the tab and into its own list. That gap is the whole difference from a
-/// `chip` row: chips say "narrow this list", tabs say "this is a different list".
 pub fn tabs(ctx: *Ctx, x: i32, y: i32, w: i32, labels: []const [:0]const u8, sel: usize, tips: []const [:0]const u8) ?usize {
     std.debug.assert(tips.len == labels.len);
     var hit: ?usize = null;
     const n: i32 = @intCast(labels.len);
     if (n == 0) return null;
     const rule = alpha(TRIM, 150);
-    // The rule the whole row stands on, laid FIRST so the live tab's own face covers its share of it.
     rl.drawRectangle(x, y + TAB_H - 1, w, 1, rule);
     for (labels, 0..) |lab, i| {
         const ix: i32 = @intCast(i);
@@ -289,7 +278,6 @@ pub fn chip(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, active: bool, usedW:
 
 fn stepper(comptime T: type, ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *T, step: T, lo: T, hi: T, tip: [:0]const u8) bool {
     const clampfn = comptime if (T == f32) mathx.clampF else mathx.clampI;
-    // THE WHOLE ROW, not the two nudge buttons: the label and the readout are what a hand rests on.
     tipFor(ctx, rect(x, y, w, 22), tip);
     hud.mono(label, x, y + 4, hud.MONO, LABEL);
     const bw: i32 = 20;
@@ -329,7 +317,6 @@ pub fn stepperI(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *i32,
 pub fn slider(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, lo: f32, hi: f32, tip: [:0]const u8) bool {
     hud.mono(label, x, y, hud.MONO, LABEL);
     const barY = y + hud.monoLineH(hud.MONO) + 3;
-    // The caption row AND the bar — a slider is read by its label and grabbed by its track.
     tipFor(ctx, rect(x, y, w, barY + 12 - y), tip);
     const r = rect(x, barY, w, 12);
     const h = ctx.hot(r);
@@ -369,11 +356,6 @@ pub fn checkbox(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, v: *bool, tip: [
 }
 
 /// **ONE FIELD OWNS THE KEYBOARD, AND IT IS CLAIMED BY BEING CLICKED.** `rl.getCharPressed` DRAINS a global
-/// queue, so two fields drawn eligible in the same frame means the first drawn eats every keystroke and the
-/// second is dead however it is styled — the script modal's trigger id ate every letter meant for the banner
-/// line under it, and the region name field behind the modal ate them both. With nobody claiming, the first
-/// eligible field drawn keeps it, which is what every panel here did before. Returns whether it has the
-/// keyboard, because the editor's own w/a/s/d have to stand off exactly when it does.
 var kbOwner: ?u32 = null;
 var kbSeen = false;
 var kbTaken = false;
@@ -401,20 +383,16 @@ pub fn textField(ctx: *Ctx, r: rl.Rectangle, buf: []u8, len: *usize, id: u32, el
         }
         if ((rl.isKeyPressed(.backspace) or rl.isKeyPressedRepeat(.backspace)) and len.* > 0) len.* -= 1;
     }
-    // The terminator goes at `len`, so a caller that loaded a field AT its buffer's size writes one past it.
     len.* = @min(len.*, buf.len - 1);
     buf[len.*] = 0;
     const s: [:0]const u8 = buf[0..len.* :0];
 
     // **THE FIELD SCROLLS, IT DOES NOT SPILL.** A `worldfmt.TALK_SAY_CAP` greeting is 240 characters in a box
     // 60 wide; unclipped, the tail and the caret both ran out over the panel and off the window. Editing only
-    // ever happens at the end, so the tail is what has to stay on screen.
     const bx: i32 = @intFromFloat(r.x);
     const bw: i32 = @intFromFloat(r.width);
     const bh: i32 = @intFromFloat(r.height);
     const tw = hud.monoW(s, hud.MONO);
-    // …and only while it HAS the keyboard: at rest, a value scrolled to its tail reads as one beginning
-    // mid-word.
     const off: i32 = if (focused) @max(0, tw - (bw - 16 - CARET_W)) else 0;
     rl.beginScissorMode(bx + 1, @as(i32, @intFromFloat(r.y)) + 1, bw - 2, bh - 2);
     hud.mono(s, bx + 8 - off, @intFromFloat(r.y + 5), hud.MONO, VALUE);
@@ -474,30 +452,14 @@ pub fn list(ctx: *Ctx, r: rl.Rectangle, labels: []const [:0]const u8, sel: usize
     return clicked;
 }
 
-// ── DROPDOWNS ─────────────────────────────────────────────────────────────────────────────────────────────
-// **A REAL DROPDOWN, BECAUSE CLICK-TO-CYCLE IS NOT A CHOICE** (owner: actual dropdowns, names instead of ids,
-// human-usable). Everything in this kit used to advance by one on click, which means: to pick the fourth of
-// twelve you press four times and to go back you press eleven, you cannot see what the options ARE without
-// pressing through all of them, and you cannot tell a list of twelve from a list of two.
-//
-// **IT IS ONE WIDGET WITH A DEFERRED PANEL.** The open list has to draw OVER the rows beneath it, and those
-// rows are drawn after it in the caller's own order, so the button paints in place and the panel is parked in
-// `pending` and flushed by `endDropdowns` at the end of the frame. That is also what makes it exclusive: one
-// `openId` at a time, so two dropdowns cannot both be down.
 
 const DD_ROW_H: i32 = ROW_H;
 const DD_MAX_SHOWN: i32 = 10;
 
-/// Which dropdown is open, as the caller's own id. **NOT A POINTER** — the rows are rebuilt every frame and a
-/// pointer into last frame's array points at nothing.
 var openId: ?u32 = null;
 var openScroll: i32 = 0;
 var pending: ?Pending = null;
 
-/// **THE ROWS ARE COPIED HERE, NOT BORROWED** — `openId`'s rule, which the parked panel was breaking. Four
-/// callers build their `[][:0]const u8` as a LOCAL, so the array of slices dies when the caller returns and
-/// `endDropdowns` painted freed stack: an npc's `says` list segfaulted inside `DrawTextEx` on a garbage
-/// pointer. The label BYTES are the caller's to keep alive (`editor.slotLabels`); the slice table is ours.
 const DD_ROWS_CAP: usize = 128;
 var ddRows: [DD_ROWS_CAP][:0]const u8 = undefined;
 
@@ -514,21 +476,12 @@ const Pending = struct {
 fn ddPanel(r: rl.Rectangle, n: usize) rl.Rectangle {
     const rows: i32 = @min(@as(i32, @intCast(@max(n, 1))), DD_MAX_SHOWN);
     const h: f32 = @floatFromInt(rows * DD_ROW_H + 6);
-    // **DROPS UP IF IT WOULD RUN OFF THE BOTTOM.** A list opening past the window is one whose last rows cannot
-    // be reached at all.
     const below = r.y + r.height;
     const room = @as(f32, @floatFromInt(rl.getScreenHeight())) - below;
     const y = if (room < h) r.y - h else below;
     return .{ .x = r.x, .y = y, .width = @max(r.width, 168), .height = h };
 }
 
-/// **THE CLICK RESOLVES HERE, THE DRAWING DOES NOT.** The open panel has to paint OVER the rows below it, and
-/// those are drawn after this returns, so the panel is parked in `pending` and flushed by `endDropdowns`. The
-/// hit test cannot wait for that — a caller has to be able to apply the pick on the frame it happened — so it
-/// is done here against the same rect the flush will use.
-///
-/// Returns the index picked this frame, or null. `id` must be stable while the panel is open and unique on
-/// screen; `ddId` builds one from what the row edits.
 pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u8, sel: usize, tip: [:0]const u8) ?usize {
     tipFor(ctx, r, tip);
     const isOpen = openId != null and openId.? == id;
@@ -537,7 +490,6 @@ pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u
     rl.drawRectangleLinesEx(r, 1, alpha(TRIM, if (isOpen or h) 180 else 90));
     const shown: [:0]const u8 = if (sel < labels.len) labels[sel] else "(none)";
     hud.mono(shown, @as(i32, @intFromFloat(r.x)) + 6, @as(i32, @intFromFloat(r.y)) + 2, hud.MONO, if (isOpen) HOT else VALUE);
-    // The caret: down when shut, up when open. It is the only thing that says this row is a LIST and not a box.
     const cx = r.x + r.width - 10;
     const cy = r.y + r.height * 0.5;
     const d: f32 = if (isOpen) -1 else 1;
@@ -554,10 +506,6 @@ pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u
     }
     if (!isOpen) return null;
 
-    // **THE HIT TEST MAY NOT OUTRUN THE PARKED TABLE.** `endDropdowns` paints off `ddRows`, which is
-    // `DD_ROWS_CAP` wide; asked of the caller's own `labels.len` the scroll and the pick both reached rows the
-    // panel had no copy of and never drew. Nothing passes a longer list today, and this is what keeps that
-    // from becoming a click on a blank row.
     const nRows = @min(labels.len, DD_ROWS_CAP);
     const box = ddPanel(r, nRows);
     ctx.anyHot = true;
@@ -572,8 +520,6 @@ pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u
             const rel = ctx.mouse.y - (box.y + 3);
             const row = @divFloor(@as(i32, @intFromFloat(rel)), DD_ROW_H);
             const idx: usize = @intCast(@max(row, 0) + openScroll);
-            // The panel is `rows * DD_ROW_H + 6` tall, so its bottom 3 px divide to one row PAST the last one
-            // drawn: unclamped, a click on that border picked the entry under the one you were looking at.
             const drawn: i32 = @min(@as(i32, @intCast(nRows)), DD_MAX_SHOWN);
             if (row >= 0 and row < drawn and idx < nRows) {
                 picked = idx;
@@ -581,8 +527,6 @@ pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u
                 openScroll = 0;
             }
         } else {
-            // A press outside the panel and outside its own button shuts it without picking, which is what
-            // every dropdown in every tool does.
             openId = null;
             openScroll = 0;
         }
@@ -594,16 +538,12 @@ pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u
     return picked;
 }
 
-/// Draws whatever `dropdown` parked, last, over everything. Purely a paint — the click was already resolved.
 pub fn endDropdowns() void {
     const p = pending orelse return;
     pending = null;
     const rows_ = p.labels();
     const box = ddPanel(p.r, rows_.len);
     uiart.seat(@intFromFloat(box.x), @intFromFloat(box.y), @intFromFloat(box.width), @intFromFloat(box.height));
-    // **OPAQUE, NOT NEARLY OPAQUE.** At 246 the rows underneath read straight through it and the list became
-    // the hardest thing on the panel to read — which is the opposite of what a dropdown is for. Two passes: a
-    // flat black ground, then the panel tone over it, because one alpha over a lit row is still a lit row.
     rl.drawRectangleRec(box, rgba(0, 0, 0, 255));
     rl.drawRectangleRec(box, rgba(20, 18, 15, 255));
     rl.drawRectangleLinesEx(box, 1, alpha(TRIM, 190));
@@ -633,13 +573,10 @@ fn mouseNow() rl.Vector2 {
     return rl.getMousePosition();
 }
 
-/// Is any dropdown down? Callers use it to stop their own keyboard shortcuts firing under an open list.
 pub fn dropdownOpen() bool {
     return openId != null;
 }
 
-/// DEV ONLY: forces one open so the shot harness can photograph the panel. A still frame cannot click, and the
-/// panel is the whole of what this widget added over the button it replaced.
 pub fn openDropdownForShot(id: u32) void {
     openId = id;
     openScroll = 0;

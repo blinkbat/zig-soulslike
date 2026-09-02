@@ -24,17 +24,6 @@ const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 const approach = mathx.approach;
 
-// THE ROTGORGER (owner's creature, owner's brief) — the quadruped rig's THIRD user, and **IT EATS THE DEAD**.
-// Every body that falls anywhere on the field is food, its own kin included, and a gorger that is hurt will
-// BREAK OFF MID-FIGHT to go and take it.
-//
-// **WHAT IT PUNISHES IS A SLOW CLEAR.** Kill the room and then take your time and you have laid a table; kill
-// the gorger first, or fight it somewhere nothing has died. There is no other creature in the game whose
-// difficulty is a function of what you already killed.
-//
-// **AND THE FEED IS THE WINDOW.** Head down in a carcass it does not track, does not turn and does not
-// answer — `FEED_HEAL` back for `FEED_DUR` of standing still in front of you. Letting it eat is a TRADE, and
-// it is a trade you are allowed to want: the punish is worth more than the heal if you are in reach of it.
 
 pub const W: f32 = 1.02;
 const N = wolf.N;
@@ -50,8 +39,6 @@ const TAIL2 = wolf.TAIL2;
 const EARL = wolf.EARL;
 const EARR = wolf.EARR;
 
-/// **THE CAP IS MESH, NOT A BONE.** It is grown INTO the withers rather than worn on them — a fruiting body
-/// has no joint, and giving it one would let it lag the back it is part of.
 const HIDE = rgba(46, 42, 34, 255);
 const HIDE_DK = rgba(26, 24, 19, 255);
 const HIDE_LT = rgba(64, 58, 46, 255);
@@ -67,8 +54,6 @@ pub var AGGRO_R: f32 = 15.0;
 const HOME_R: f32 = 3.0;
 const WALK_SPEED: f32 = wolf.WALK_SPEED * 0.90;
 const CHASE_SPEED: f32 = wolf.TROT_SPEED * 1.02;
-/// **IT GOES TO FOOD FASTER THAN IT COMES TO YOU**, which is what makes breaking off read as a decision
-/// rather than as losing interest.
 const FEED_RUSH: f32 = wolf.TROT_SPEED * 1.35;
 const ACCEL: f32 = 5.0;
 const GAIT_BLEND: f32 = 6.0;
@@ -94,18 +79,13 @@ const BITE_RECOVER: f32 = 0.60;
 const BITE_CD: f32 = 1.9;
 pub var BITE_HIT = combat.Hit{ .dmg = 15, .poise = 13, .stance = 8, .elem = combat.elems(.{ .chaos = 9 }) };
 
-// **THE TABLE.** A `Carrion` is stamped where any body in the world falls (`game.billDeaths`, the one place a
-// death is billed) and keeps for `CARRION_LIFE`. It is FOOD, not a corpse: nothing else in the game reads it,
-// and it is gone the moment a gorger finishes with it.
 pub const CARRION_LIFE: f32 = 30.0;
 pub const SMELL_R: f32 = 22.0;
-/// It only leaves a fight for a meal it actually needs. At full health it stays on you.
 const HUNGER_FRAC: f32 = 0.86;
 const FEED_R: f32 = 1.0;
 const FEED_WIND: f32 = 0.45;
 const FEED_DUR: f32 = 2.4;
 const FEED_RISE: f32 = 0.40;
-/// **A THIRD OF ITS OWN BAR.** Small enough that one meal is not the fight; big enough that three are.
 pub const FEED_HEAL: f32 = 52.0;
 
 comptime {
@@ -134,12 +114,8 @@ const State = enum { idle, prowl, bite, rush, feed, stunlight, stunheavy, dead }
 
 const Choice = enum { rest, hold, close, bite, feed };
 
-/// Pure over one situation. `food` is the distance to the nearest carrion, or null for a clean field —
-/// **A GORGER WITH NOTHING TO EAT IS AN ORDINARY BEAST**, which is the whole design stated as a branch.
-/// **A BAND IS ASKED THE WAY THE STROKE BILLS IT** (`foe.hurtReach`, the ogre's `slamReach` law).
 /// Measured edge to edge against a centre-to-centre bill, the band ran 0.33 m past the reach at scale 1
 /// and 0.84 m at `wf.FOE_SCALE_LO` — and a body stops closing the frame its band takes it, so that
-/// sliver was where the bite was always thrown and never billed.
 fn classify(sensed: f32, homeGap: f32, scale: f32, hpFrac: f32, food: ?f32, biteReady: bool, rooted: bool) Choice {
     if (food) |d| {
         if (hpFrac < HUNGER_FRAC and d <= SMELL_R and !rooted) return .feed;
@@ -173,7 +149,6 @@ pub const Gorger = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
@@ -192,11 +167,8 @@ pub const Gorger = struct {
     speedS: f32 = 0,
     phase: f32 = 0,
 
-    /// Which carrion it is on its way to, and where that is — the INDEX so the group can retire it, the POINT
-    /// so a gorger whose meal is eaten out from under it still walks somewhere rather than to the origin.
     meal: ?usize = null,
     mealAt: rl.Vector3 = mathx.zero3,
-    /// One-frame, read by the group after `update`: this gorger has just finished a carcass.
     ate: ?usize = null,
     fed: bool = false,
 
@@ -265,8 +237,6 @@ pub const Gorger = struct {
     pub fn kind(_: *const Gorger) wf.FoeKind {
         return .rotgorger;
     }
-    /// **HEAD DOWN IS HEAD DOWN.** Feeding it does not track, does not turn and does not answer a blow with
-    /// anything but the flinch — which is the whole reason letting it eat is a trade and not a punishment.
     pub fn feeding(self: *const Gorger) bool {
         return self.state == .feed and self.t >= FEED_WIND;
     }
@@ -308,8 +278,6 @@ pub const Gorger = struct {
         return foe.stunCurve(self.t, self.state == .stunheavy);
     }
 
-    /// The nearest live carcass, as the group sees it. Handed IN rather than reached for — the creature reads
-    /// the field, it never walks the group's table itself (`foe.zig`'s cross-cutting-state law).
     pub const Smelled = struct { at: rl.Vector3, i: usize, d: f32 };
 
     pub fn update(self: *Gorger, dt: f32, quarry: rl.Vector3, bounds: f32, blade: foe.Blade, smelled: ?Smelled) ?combat.Hit {
@@ -356,7 +324,6 @@ pub const Gorger = struct {
                 }
             },
             .rush => {
-                // **THE MEAL CAN BE TAKEN OUT FROM UNDER IT** — another gorger, or the clock. Back to the fight.
                 if (self.meal == null) {
                     self.enter(.idle);
                 } else if (mathx.distXZ(self.pos, self.mealAt) <= FEED_R * self.scale) {
@@ -394,8 +361,6 @@ pub const Gorger = struct {
                     },
                     .rest => {
                         if (sensed <= AGGRO_R) self.faceToward(quarry, dt);
-                        // **ORDERS ARE WHAT IT DOES BETWEEN MEALS** (`foe.postWant`) — through its own
-                        // `travel`, so the prowl gait and the drag it leaves are the ones it already has.
                         if (foe.postWant(self, dt, sensed, AGGRO_R)) |go| {
                             self.faceToward(self.nav.aim(self.pos, go), dt);
                             self.speed = approach(self.speed, WALK_SPEED, ACCEL * dt);
@@ -467,8 +432,6 @@ pub const Gorger = struct {
     }
     fn enterStun(self: *Gorger, s: State) void {
         self.heroLatch = false;
-        // **A BLOW TAKES ITS HEAD OUT OF THE CARCASS**, and the meal is forfeit — interrupting the feed is the
-        // whole reason the window exists, so a stagger that left `meal` set would hand it straight back.
         self.meal = null;
         self.enter(s);
     }
@@ -550,8 +513,6 @@ pub const Gorger = struct {
         const bite = self.biteAmt();
         const feed = self.feedAmt();
 
-        // **THE WHOLE FRONT END GOES DOWN TO EAT** — the shoulders sink and the hind stays up, which is the
-        // silhouette that says "head in something" from across the field.
         const crouch = 0.30 * feed + 0.10 * react + 0.46 * dk;
         const pitch = 16.0 * mathx.maxF(0, bite) + 26.0 * feed - 8.0 * mathx.maxF(0, -bite);
         const breath = (mathx.sinf(self.elapsed * 1.5) * 0.007 + mathx.sinf(self.elapsed * 0.7 + self.seed * 4.0) * 0.005) * W;
@@ -569,7 +530,6 @@ pub const Gorger = struct {
         const neckPitch = flex * 0.4 + 4.0 * m - 10.0 * react - 30.0 * mathx.maxF(0, -bite) + 20.0 * mathx.maxF(0, bite) + 52.0 * feed;
         heromod.setJoint(&wx, &self.rest, NECK, CHEST, rx(neckPitch));
         heromod.setJoint(&wx, &self.rest, HEAD, NECK, rx(flex * 0.2 - 4.0 * m + 18.0 * react + 12.0 * bite + 24.0 * feed - 26.0 * dk));
-        // The jaw is the whole creature: it hangs slack at rest, gapes on the wind, and CHEWS through the feed.
         const chew = if (self.feeding()) 9.0 + 9.0 * mathx.sinf(self.elapsed * 11.0) else 0;
         heromod.setJoint(&wx, &self.rest, JAW, HEAD, rx(6.0 + 34.0 * mathx.maxF(0, -bite) + 8.0 * mathx.maxF(0, bite) + chew));
 
@@ -585,8 +545,6 @@ pub const Gorger = struct {
     }
 };
 
-/// A body on the ground, as food and nothing else. Stamped by `game.billDeaths` — the ONE place a death is
-/// billed — so nothing has to remember to call it twice.
 pub const Carrion = struct {
     pos: rl.Vector3 = mathx.zero3,
     t: f32 = 0,
@@ -635,9 +593,6 @@ pub const Gorge = struct {
         foe.setParry(self.live(), p);
     }
 
-    /// **EVERY BODY IS FOOD, ITS OWN INCLUDED.** Called once per death from `game.billDeaths`; a field with no
-    /// gorger on it stamps these and nothing ever reads them, which costs one write and keeps the caller
-    /// from having to know whether a gorger is present.
     pub fn noteCorpse(self: *Gorge, at: rl.Vector3) void {
         self.table[self.head] = .{ .pos = at, .live = true };
         self.head = (self.head + 1) % CARRION_CAP;
@@ -653,14 +608,6 @@ pub const Gorge = struct {
         return best;
     }
 
-    /// **TWO GORGERS MAY NOT SHARE ONE CARCASS** — the second would heal off a body that is already gone, and
-    /// the picture (two heads in one dead toad) is the arithmetic saying so out loud.
-    ///
-    /// **ONE PASS OVER THE BAND, NOT ONE PER MEMBER.** Asked per gorger this was O(n²) every frame — at the
-    /// group's own cap that is a quarter of a million comparisons a frame to answer a question one array can
-    /// hold. **AND IT IS KEPT LIVE THROUGH THE LOOP, NOT SNAPSHOT BEFORE IT**: a claim taken this frame has
-    /// to be visible to the gorger updated after it, or two of them pick the same carcass on the same frame
-    /// and the whole rule quietly stops applying.
     fn claims(self: *const Gorge) [CARRION_CAP]bool {
         var out = [_]bool{false} ** CARRION_CAP;
         for (self.liveConst()) |*g| {
@@ -682,11 +629,9 @@ pub const Gorge = struct {
             const g = &self.gorgers[i];
             var smelled = self.nearest(g.pos);
             if (smelled) |s| {
-                // Its OWN claim is not somebody else's — a gorger already walking at a carcass keeps it.
                 const mine = if (g.meal) |m| m == s.i else false;
                 if (spoken[s.i] and !mine) smelled = null;
             }
-            // A meal another gorger finished first is gone from under it; `rush` reads the null and gives up.
             if (g.meal) |m| {
                 if (!self.table[m].edible()) g.meal = null;
             }
@@ -733,8 +678,6 @@ pub const Gorge = struct {
     }
 };
 
-/// The rest chain is the only length that matters: a limb mesh shorter than the distance to its own child
-/// leaves the joint standing in air. Fractions of `W`, since every mesh here is authored in them.
 fn segLen(i: usize) f32 {
     const rest = restPose();
     for (0..N) |c| {
@@ -783,8 +726,6 @@ fn loinMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// **THE FRUITING BODY.** Caps growing straight out of the withers, biggest at the shoulder and dwindling down
-/// the loin — the one silhouette cue that says fungal from behind, where the mouth cannot be seen.
 fn withersMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x60A9);
@@ -815,8 +756,6 @@ fn neckMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// **THE MOUTH IS MOST OF THE FRONT OF IT.** No muzzle to speak of: a wide flat skull with the gape running
-/// back past where an eye ought to be, and the eyes pushed up and out to the sides where a grazer keeps them.
 fn headMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
@@ -901,7 +840,6 @@ fn pawMesh() rl.Mesh {
 test "A CLEAN FIELD MAKES IT AN ORDINARY BEAST — nothing dead, nothing to break off for" {
     try std.testing.expectEqual(Choice.close, classify(6.0, 0, 1.0, 0.4, null, true, false));
     try std.testing.expectEqual(Choice.bite, classify(1.5, 0, 1.0, 0.4, null, true, false));
-    // …and one body on the ground changes the same situation into a meal.
     try std.testing.expectEqual(Choice.feed, classify(6.0, 0, 1.0, 0.4, 8.0, true, false));
     try std.testing.expectEqual(Choice.feed, classify(1.5, 0, 1.0, 0.4, 8.0, true, false));
 }
@@ -910,9 +848,7 @@ test "IT ONLY LEAVES A FIGHT FOR A MEAL IT NEEDS — full health, it stays on yo
     try std.testing.expectEqual(Choice.close, classify(6.0, 0, 1.0, 1.0, 4.0, true, false));
     try std.testing.expectEqual(Choice.close, classify(6.0, 0, 1.0, HUNGER_FRAC + 0.01, 4.0, true, false));
     try std.testing.expectEqual(Choice.feed, classify(6.0, 0, 1.0, HUNGER_FRAC - 0.01, 4.0, true, false));
-    // And not for one it cannot smell.
     try std.testing.expectEqual(Choice.close, classify(6.0, 0, 1.0, 0.3, SMELL_R + 1.0, true, false));
-    // Rooted it cannot go and get it, whatever it can smell.
     try std.testing.expectEqual(Choice.rest, classify(6.0, 0, 1.0, 0.3, 4.0, true, true));
 }
 
@@ -940,7 +876,6 @@ test "IT BREAKS OFF, EATS, AND COMES BACK UP HEALED — and the carcass is gone 
     const after = g.gorgers[0].vit.hp;
     std.debug.print("\n  rotgorger: {d:.0} hp -> {d:.0} off one carcass (+{d:.0})\n", .{ before, after, after - before });
     try std.testing.expectApproxEqAbs(before + FEED_HEAL, after, 1e-3);
-    // Eaten is eaten: the table is empty and a second gorger finds nothing there.
     try std.testing.expectEqual(@as(u32, 0), g.carrionCount());
 }
 
@@ -960,7 +895,6 @@ test "A BLOW TAKES ITS HEAD OUT OF THE CARCASS — the feed is interruptible and
     g.gorgers[0].stagger(true);
     try std.testing.expect(g.gorgers[0].meal == null);
     try std.testing.expect(!g.gorgers[0].feeding());
-    // The carcass is still on the table — it was interrupted, not consumed.
     try std.testing.expectEqual(@as(u32, 1), g.carrionCount());
 }
 
@@ -979,7 +913,6 @@ test "TWO GORGERS MAY NOT SHARE ONE CARCASS" {
         if (g.gorgers[0].meal != null and g.gorgers[1].meal != null) bothClaimed = true;
     }
     try std.testing.expect(!bothClaimed);
-    // …and exactly one of them got fed by it.
     var fedN: u32 = 0;
     for (g.liveConst()) |*x| {
         if (x.vit.hp > HP_MAX * 0.4 + 1.0) fedN += 1;
@@ -1003,7 +936,6 @@ test "the feed is a WINDOW: head down it neither tracks nor answers" {
     g.n = 1;
     g.gorgers[0].vit.hp = HP_MAX * 0.4;
     g.noteCorpse(v3(0, 0, 4.0));
-    // The hero stands in its face the whole time; it must still never swing while it is eating.
     const hero = v3(0, 0, 1.0);
     var swungWhileFeeding = false;
     var fedFrames: u32 = 0;
@@ -1048,9 +980,6 @@ test "the bite is telegraphed and it only lands once per snap" {
     try std.testing.expect(firstAt >= foe.TELL_MIN);
 }
 
-// **THE BAND IT STOPS CLOSING AT HAS TO BE A BAND IT CAN BILL FROM** (AGENTS.md: a move is judged by THROWING
-// it, not by looking at it). The outer edge is asked of `classify` rather than re-derived here — which unit the
-// band is written in is the thing under test.
 test "THE BLOW LANDS ON THE MAN WHERE HE STANDS — thrown for real, anywhere its own band picks it" {
     const dt: f32 = 1.0 / 120.0;
     var misses: usize = 0;

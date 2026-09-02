@@ -6,10 +6,7 @@ const mathx = @import("../core/mathx.zig");
 const tune = @import("../play/tune.zig");
 const ui = @import("ui.zig");
 
-/// **THE STATS BENCH'S FACE** (owner: easy viewing and editing of stats, filed with the object viewer so you can
-/// see the thing and its numbers side by side). One file, because the same field column is drawn in two places:
 /// the editor's own sheet, and beside the model in `ui/objview.zig`.
-///
 /// Every number here is `play/tune.zig`'s. Nothing in this file knows what a spell or a shield IS.
 pub const State = struct {
     tab: usize = 0,
@@ -52,19 +49,16 @@ fn print(buf: []u8, v: f32, dp: u8) [:0]const u8 {
     };
 }
 
-/// Named once: the row Revert is drawn on the bench's own header AND beside the model in the object viewer.
 const REVERT: [:0]const u8 = "Revert";
 const REVERT_TIP: [:0]const u8 = "This row back to the numbers in the code";
 
 const NUDGE_W: i32 = 18;
 const VAL_W: i32 = 66;
-/// Pixels of drag that step the value once — a scrub, so a long ladder is one gesture and not forty clicks.
 const SCRUB_PX: f32 = 6.0;
 
 var scrubFrom: f32 = 0;
 var scrubAt: f32 = 0;
 
-/// ONE DIAL. Returns true if it moved.
 fn dial(ctx: *ui.Ctx, x: i32, y: i32, w: i32, t: usize, r: usize, c: usize) bool {
     const col = tune.colSpec(t, r, c);
     const v = tune.value(t, r, c);
@@ -87,7 +81,6 @@ fn dial(ctx: *ui.Ctx, x: i32, y: i32, w: i32, t: usize, r: usize, c: usize) bool
         moved = true;
     }
 
-    // The readout is also the grab handle.
     const valR = ui.rect(bx + NUDGE_W, y, VAL_W, ROW_H - 2);
     if (ctx.owns(valR)) {
         if (ctx.pressed) {
@@ -106,8 +99,6 @@ fn dial(ctx: *ui.Ctx, x: i32, y: i32, w: i32, t: usize, r: usize, c: usize) bool
     const s = print(&buf, tune.value(t, r, c), dp);
     if (ctx.hot(valR)) rl.drawRectangleRec(valR, ui.HOVER_FILL);
     hud.mono(s, @as(i32, @intFromFloat(valR.x)) + @divTrunc(VAL_W - hud.monoW(s, hud.MONO), 2), y + 4, hud.MONO, if (hit) ui.HOT else ui.VALUE);
-    // **WHAT THE CODE SAYS, BESIDE WHAT YOU MADE IT SAY.** An edited dial with no original next to it is a
-    // number you cannot judge and cannot put back by hand.
     if (hit) {
         var ob: [24]u8 = undefined;
         const os = print(&ob, was, dp);
@@ -116,9 +107,6 @@ fn dial(ctx: *ui.Ctx, x: i32, y: i32, w: i32, t: usize, r: usize, c: usize) bool
     return moved;
 }
 
-/// **THE PICK LIST IS PARKED, NOT BORROWED** (`ui.dropdown`'s own rule about `ddRows`). The label BYTES are
-/// static — an item's display name, a coin band's word — but the table of slices has to outlive the call, so
-/// it is file scope here rather than a local that dies when the row returns.
 const PICK_CAP: usize = 128;
 var pickBuf: [PICK_CAP][:0]const u8 = undefined;
 
@@ -134,15 +122,11 @@ comptime {
 
 /// The box's own padding: `ui.dropdown` insets its label 6 px and hangs its caret 10 px off the right edge.
 const PICK_PAD: i32 = 26;
-/// Room kept for the column's NAME on the left, so the box can never grow over its own label.
 const PICK_LABEL_W: i32 = 96;
 
-/// A box narrower than this is not a control, and a field too tight to hold one would otherwise solve to a
-/// negative width — which draws nothing and answers no click.
 const PICK_MIN_W: i32 = 120;
 
 /// **AS WIDE AS THE LONGEST NAME IN THE LIST, MEASURED AND NOT PICKED.** At a round 200 the twenty characters
-/// of "Sheaf of Fire Arrows" ran clean under the caret. The mono advance is the loaded font's, so this cannot
 /// be solved at comptime — and it is a modal's cost, not the loop's.
 fn pickWidth(p: tune.Pick, w: i32) i32 {
     var wide: i32 = 0;
@@ -150,7 +134,6 @@ fn pickWidth(p: tune.Pick, w: i32) i32 {
     return @max(PICK_MIN_W, @min(w - PICK_LABEL_W, wide + PICK_PAD));
 }
 
-/// ONE CHOICE, and it is `dial`'s twin — what that one does, this has to do.
 fn picker(ctx: *ui.Ctx, x: i32, y: i32, w: i32, t: usize, r: usize, c: usize) void {
     const col = tune.colSpec(t, r, c);
     const p = col.pick.?;
@@ -165,9 +148,6 @@ fn picker(ctx: *ui.Ctx, x: i32, y: i32, w: i32, t: usize, r: usize, c: usize) vo
     if (ui.dropdown(ctx, box, pickId(t, r, c), pickBuf[0..p.n], cur, col.tip)) |k| {
         tune.setValue(t, r, c, @floatFromInt(k));
     }
-    // **WHAT THE CODE SAYS, BESIDE WHAT YOU MADE IT SAY** — the dial's rule, and it matters more here: a name
-    // you replaced leaves no trace of itself the way a moved number does. Dropped when it will not fit, since
-    // a full item name is four times a number's width and the column's own label is what it would land on.
     if (hit) {
         const was = @as(usize, @intFromFloat(mathx.clampF(tune.baseValue(t, r, c), 0, @floatFromInt(p.n - 1))));
         const os = p.label(was);
@@ -178,10 +158,7 @@ fn picker(ctx: *ui.Ctx, x: i32, y: i32, w: i32, t: usize, r: usize, c: usize) vo
     }
 }
 
-/// The dropdown id's high byte, so a bench list can never collide with one of the editor's own.
 const PICK_TAG: u8 = 31;
-/// **TABLE AND COLUMN PACKED INTO ONE OF `ddId`'s TWO SLOTS**, so the row can have the other. A table wider
-/// than this would fold two columns onto one id and open the wrong list.
 const PICK_STRIDE: usize = 64;
 
 comptime {
@@ -194,8 +171,6 @@ fn pickId(t: usize, r: usize, c: usize) u32 {
     return ui.ddId(PICK_TAG, t * PICK_STRIDE + c, r);
 }
 
-/// DEV ONLY: the shot harness cannot click, and the open list is the whole of what a pick cell adds over a
-/// readout. Built off the same `ddId` the row draws with, so the two cannot drift.
 pub fn openPickForShot(t: usize, r: usize, c: usize) void {
     ui.openDropdownForShot(pickId(t, r, c));
 }
@@ -207,8 +182,6 @@ fn tableHasPick(t: usize) bool {
     return false;
 }
 
-/// **THE FIELD COLUMN FOR ONE ROW.** Draws only the dials that row actually has and returns the y it ended at,
-/// so the caller can stack something under it. Used by the bench and by the object viewer both.
 pub fn fields(ctx: *ui.Ctx, x: i32, y: i32, w: i32, t: usize, r: usize) i32 {
     var cy = y;
     for (0..tune.TABLES[t].cols.len) |c| {
@@ -231,7 +204,6 @@ pub fn rowHeight(t: usize, r: usize) i32 {
     return n * (ROW_H + GAP);
 }
 
-/// A title line with the row's name and whether it has been moved off the code, plus its Revert.
 pub fn header(ctx: *ui.Ctx, x: i32, y: i32, w: i32, t: usize, r: usize) void {
     const tb = tune.TABLES[t];
     hud.mono(tb.rowName(r), x, y, hud.MONO, ui.TITLE);
@@ -241,8 +213,6 @@ pub fn header(ctx: *ui.Ctx, x: i32, y: i32, w: i32, t: usize, r: usize) void {
     }
 }
 
-/// Where a thing's numbers live — what lets the object viewer stand the sheet beside the model. EVERY row that
-/// names it, not the first: a creature has its pools, its drop and one row per stroke it swings.
 pub const FACE_MAX = 20;
 
 pub const Hit = struct { t: usize, r: usize };
@@ -262,8 +232,6 @@ pub fn forFace(face: tune.Face, ordinal: u32, out: *[FACE_MAX]Hit) []const Hit {
     return out[0..n];
 }
 
-/// **THE WHOLE SHEET, BESIDE ITS THING.** The object viewer's own panel: the tables that know this face,
-/// stacked, each under its own name. Returns the y it ended at.
 pub fn faceSheet(ctx: *ui.Ctx, x: i32, y: i32, w: i32, face: tune.Face, ordinal: u32, bottom: i32) i32 {
     var hits: [FACE_MAX]Hit = undefined;
     const found = forFace(face, ordinal, &hits);
@@ -272,8 +240,6 @@ pub fn faceSheet(ctx: *ui.Ctx, x: i32, y: i32, w: i32, face: tune.Face, ordinal:
     var lastTable: ?usize = null;
     var left: usize = 0;
     for (found, 0..) |h, i| {
-        // **WHAT FITS, AND AN HONEST COUNT OF WHAT DOES NOT.** A knight has six strokes at nine dials apiece and
-        // the column beside his portrait is not eleven hundred pixels tall.
         if (cy + rowHeight(h.t, h.r) + line * 2 > bottom) {
             left = found.len - i;
             break;
@@ -283,8 +249,6 @@ pub fn faceSheet(ctx: *ui.Ctx, x: i32, y: i32, w: i32, face: tune.Face, ordinal:
             cy += line + 3;
             lastTable = h.t;
         }
-        // A table that puts SEVERAL rows on one body says which is which; one that puts a single row does not
-        // need to repeat its own name.
         if (multiRow(found, h.t)) {
             hud.mono(tune.TABLES[h.t].rowName(h.r), x + 8, cy, hud.MONO, ui.alpha(ui.LABEL, 210));
             cy += line + 1;
@@ -316,8 +280,6 @@ pub const H: i32 = 660;
 const LIST_W: i32 = 310;
 const PAD: i32 = 20;
 
-/// **THE BENCH.** Tables across the top, their rows down the left, that row's dials on the right. False when it
-/// has been closed.
 pub fn panel(st: *State, ctx: *ui.Ctx) bool {
     const box = ui.beginModal(ctx, W, H, "Stats");
     st.tab = @min(st.tab, tune.NT - 1);
@@ -344,10 +306,7 @@ pub fn panel(st: *State, ctx: *ui.Ctx) bool {
 
     const cx = box.x + PAD + LIST_W + 24;
     const cw = W - (cx - box.x) - PAD;
-    // **THE DIALS SIT UNDER THE NAME, NOT OUT AT THE FRAME.** Given the whole column the readout ends up a
-    // hand's width from its own label and the pair stops reading as one row. **A SHEET WITH NAMES ON IT GETS
     // MORE**: 340 is solved for a four-digit readout, and a picker's box is the widest item name in the game
-    // with the code's own answer standing beside it.
     const fieldW = @min(cw, if (tableHasPick(st.tab)) @as(i32, 520) else 340);
     var cy = listY + 2;
     header(ctx, cx, cy, fieldW, st.tab, st.row);

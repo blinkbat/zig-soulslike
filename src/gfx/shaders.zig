@@ -1,12 +1,5 @@
 const std = @import("std");
 
-/// **THE THREE KNOBS AN EDGE HAS, WRITTEN ONCE AND SPOKEN IN TWO LANGUAGES.** `warp` is how far the lookup
-/// wanders off the authored line in metres, `freq` the wavelength it wanders at in cycles/metre, `feather` how
-/// much of the soil's 4-tap neighbour ring survives (1 = full soft ring, 0 = a clean cut; water has no ring and
-/// ignores it). The GLSL `edgeShape` below is GENERATED from this table and `env.paintedDepth` evaluates the
-/// same numbers on the CPU — which it has to, or the coast you SEE and the coast you WADE INTO are two
-/// different lines. Ordinals are `wf.Edge`'s; the enum lives in `worldfmt`, which cannot be imported here
-/// without a cycle (worldfmt → gfx → shaders), so the pinning is the comptime length check in `env`.
 pub const EdgeK = struct { warp: f32, freq: f32, feather: f32 };
 
 pub const EDGE_K = [_]EdgeK{
@@ -25,41 +18,26 @@ pub const SCALLOP: usize = 6;
 pub const TILED: usize = 5;
 pub const SPECKLE: usize = 7;
 
-/// **HOW A CELL'S COAST SHAPE AND ITS LIQUID SHARE ONE BYTE** — `wf.Edge` in the low bits, `wf.Liquid` above
-/// it. Written HERE because the GLSL that unpacks it is generated from these three (`LIQUID_GLSL`) and
-/// `env.packLiquid` is the Zig half of the same pair; spelled `& 7` on one side and `>> 3` on the other they
-/// were four magic numbers across two languages.
 pub const EDGE_MASK: u8 = 7;
 pub const LIQUID_SHIFT: u3 = 3;
 pub const LIQUID_MASK: u8 = 3;
 
-/// **HOW MANY THINGS THE PAINTED SHEET CAN BE** (`wf.Liquid`, which asserts against it). Here rather than in
-/// `gfx` because the GLSL that indexes `liquidTone` is generated a few lines down; `gfx` re-exports it, which
-/// is how `props.LIQUID_TONES` sizes off it without importing a shader.
 pub const LIQUID_N: usize = 4;
 
-/// **THE WATERLINE, WHICH IS ONE NUMBER AND WAS FOUR.** The byte the field encodes the shore at — `env`'s bake
-/// writes it, `env.paintedDepth` reads back off it, and the sheet below discards on it. It was `128` in Zig
-/// against `0.5005` and two bare `0.5`s in the GLSL: 128/255 is **0.501961**, so the drawn waterline and the
-/// walkable one were set against three different thresholds. Here for `LIQUID_N`'s reason — the GLSL that
-/// tests it is generated from it, and `gfx` re-exports it so no caller has to import a shader.
+/// It was `128` in Zig against `0.5005` and two bare `0.5`s in the GLSL — 128/255 is **0.501961** — so the drawn
+/// waterline and the walkable one were set against three different thresholds.
 pub const WATER_SHORE: u8 = 128;
 
-/// `f` is the field normalized 0..1, so the shore sits here and the deep at 1. Both spellings are emitted, so
-/// the sheet's depth ramp divides by the span rather than assuming the line is half way up.
+/// `f` is the field normalized 0..1, so the shore sits here and the deep at 1.
 const WATER_GLSL = std.fmt.comptimePrint(
     "const float WATER_LINE = {d:.6};\nconst float WATER_SPAN = {d:.6};\n",
     .{ @as(f32, WATER_SHORE) / 255.0, 1.0 - @as(f32, WATER_SHORE) / 255.0 },
 );
 
 comptime {
-    // A shore byte at either end leaves the sheet with no dry ramp or no depth ramp, and one of the two
-    // divisions the GLSL does becomes a divide by zero.
     std.debug.assert(WATER_SHORE > 0 and WATER_SHORE < 255);
 }
 
-/// The liquids, by name and not by number, plus the flat `liquidTone` array they index — sized off `LIQUID_N` so a
-/// fifth liquid cannot leave the uniform one triple short.
 const LIQUID_GLSL = std.fmt.comptimePrint(
     "const int L_WATER = 0;\nconst int L_OIL = 1;\nconst int L_FUNGAL = 2;\nconst int L_LAVA = 3;\n" ++
         "const int LIQ_SHIFT = {d};\nconst int LIQ_MASK = {d};\nconst int EDGE_MASK = {d};\n" ++
@@ -68,14 +46,10 @@ const LIQUID_GLSL = std.fmt.comptimePrint(
 );
 
 comptime {
-    // The four names above are spelled out, so the count they cover is pinned rather than trusted.
     std.debug.assert(LIQUID_N == 4);
     std.debug.assert(LIQUID_N <= LIQUID_MASK + 1);
 }
 
-/// An ordinal off the end answers `natural`, exactly as the generated `edgeShape` does. Clamping to the LAST
-/// row instead handed the CPU `speckle` where the GPU took its default, which is the one thing this pair may
-/// not do.
 pub fn edgeK(e: usize) EdgeK {
     return if (e < EDGE_K.len) EDGE_K[e] else EDGE_K[NATURAL];
 }
@@ -84,9 +58,7 @@ fn fract(x: f32) f32 {
     return x - @floor(x);
 }
 
-/// **THE GLSL `hash21`/`vnoise` AGAIN, IN ZIG** — the same arithmetic in the same order, because the CPU has to
-/// land on the coast the GPU drew. Not `env.vnoise2`: that is a different field, and "close enough" here is a
-/// waterline you can see a metre from the one you can stand in.
+/// **THE GLSL `hash21`/`vnoise` AGAIN, IN ZIG** — the same arithmetic in the same order, because the CPU has to land on the coast the GPU drew.
 fn hash21(px: f32, pz: f32) f32 {
     var x = fract(px * 123.34);
     var y = fract(pz * 456.21);
@@ -110,20 +82,12 @@ fn vnoise(px: f32, pz: f32) f32 {
     return (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fz;
 }
 
-/// **A COAST IS A MUCH BIGGER FEATURE THAN A SOIL PATCH, SO THE SAME METRES OF WANDER READ AS NOTHING ON IT.**
 /// A courtyard is 10 m across and ±1.7 m of wiggle is a torn edge on it; a tarn is 40 m across and the same
-/// 1.7 m is invisible next to the ten-metre straight runs a brush leaves behind. What makes a coast read is a
-/// LOW octave — bays and headlands at tens of metres — with the shape's own wiggle riding on top of it. Water
-/// only: the soil's edges are already sized to the things they end.
 pub const BAY_FREQ: f32 = 0.045; // cycles/metre — about a 22 m bay
 /// **METRES, NOT A MULTIPLE OF THE SHAPE'S OWN WANDER.** As a multiple `jagged` got 8 m of bay and `natural`
-/// 4.25 for no reason anybody authored — the bay is a fact about how big a LAKE is, not about how torn its
-/// edge is. It also moves the waterline and `paintedDepth` follows it, so this stays small enough that a
-/// painted pond is still the pond somebody drew.
 pub const BAY_M: f32 = 3.5;
 
 /// The Zig twin of the shader's `edgeWarp`. Returns the position the field should actually be READ at.
-/// `bays` adds the coast's low octave; the soil passes false and gets exactly what it always got.
 pub fn warpEdge(x: f32, z: f32, e: usize, bays: bool) [2]f32 {
     const k = edgeK(e);
     if (k.warp <= 0.0001) return .{ x, z };
@@ -157,18 +121,14 @@ const EDGE_SHAPE_GLSL = blk: {
     break :blk s;
 };
 
-/// **THE THREE SHAPES THE GLSL SINGLES OUT, BY NAME AND NOT BY NUMBER.** `edgeWarp`, `waterAt` and
-/// `paintedSoil` each branch on one ordinal; spelled `e==5` in the source they were three magic indices into an
-/// enum that lives in `worldfmt`.
+/// The three shapes the GLSL singles out, by name and not by number: `edgeWarp`, `waterAt` and `paintedSoil` each branch on one ordinal.
 const EDGE_ID_GLSL = std.fmt.comptimePrint(
     "const int E_TILED = {d};\nconst int E_SCALLOP = {d};\nconst int E_SPECKLE = {d};\n",
     .{ TILED, SCALLOP, SPECKLE },
 );
 
-/// **ONE VALUE-NOISE BASIS, SPLICED INTO EVERY PROGRAM THAT WANTS IT.** GLSL has no linker here, so each
-/// shader carries its own copy of the source — but the source was written out by hand three times, and the
-/// magic tuple in `hash21` has to be the SAME tuple in all of them or the grain, the stars and the elemental
-/// FX are three different noise fields. The trailing blank `\\` line is what puts the newline back.
+/// One value-noise basis, spliced into every program that wants it: GLSL has no linker here, so each magic
+/// tuple in `hash21` has to be the SAME tuple in all of them.
 const HASH21 =
     \\float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
     \\

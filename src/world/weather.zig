@@ -9,7 +9,6 @@ const rgba = mathx.rgba;
 
 
 
-/// How long the sky stays clear between storms. Long, and RANGED: at a fixed gap it is a metronome.
 pub const DRY_LO: f32 = 150.0;
 pub const DRY_HI: f32 = 420.0;
 /// **THE FIRST GAP IS ITS OWN, AND IT IS SHORT.** The stream is SEEDED once at startup (`game.init`), so a long opening draw is the same wait on every launch of the build. Measured at the game's own seed the opening drew **394 s**.
@@ -17,7 +16,6 @@ pub const OPEN_LO: f32 = 45.0;
 pub const OPEN_HI: f32 = 110.0;
 pub const WET_LO: f32 = 55.0;
 pub const WET_HI: f32 = 145.0;
-/// **IT ARRIVES AND LEAVES OVER A REAL SPAN.** OUT is slower than IN — a shower stops raining in a hurry and the last of it hangs about, which is also the order that never strands the audio bed mid-swell.
 pub const RAMP_IN: f32 = 9.0;
 pub const RAMP_OUT: f32 = 14.0;
 
@@ -61,7 +59,6 @@ comptime {
 
 pub const DIM_MAX: f32 = 0.17;
 
-/// Taken off the LEVEL and not off the storm, because a location can be the thing setting it (`worldfmt.Location.wet`) and the world clock is then only one voice.
 pub fn dimOf(level: f32) f32 {
     return level * DIM_MAX;
 }
@@ -114,7 +111,6 @@ pub const Weather = struct {
                 self.left = self.rng.range(DRY_LO, DRY_HI);
             }
         }
-        // **THE SWELL RIDES ON THE TOP, not on the level**: the ramp still owns how fast the sheet may move, so the gust cannot become a step (`gustAt`).
         const want: f32 = if (self.wet) topFor(self.kind) * gustAt(self.gustT) else 0;
         const secs = if (want > self.level) RAMP_IN else RAMP_OUT;
         self.level = mathx.approach(self.level, want, dt / secs);
@@ -130,7 +126,6 @@ pub const Weather = struct {
                 self.flashT = 0;
                 const far = self.rng.range(STRIKE_LO, STRIKE_HI);
                 const u = (far - STRIKE_LO) / (STRIKE_HI - STRIKE_LO);
-                // REFUSED RATHER THAN OVERWRITING THE OLDEST — the ring is sized so it cannot come up (`PEALS`), and a silent overwrite is the bug this replaced.
                 if (self.npeals < PEALS) {
                     self.peals[self.npeals] = .{ .in = far / SOUND_MPS, .gain = mathx.lerpF(BOOM_NEAR, BOOM_FAR, u) };
                     self.npeals += 1;
@@ -153,7 +148,6 @@ pub const Weather = struct {
         }
     }
 
-    /// Seconds since boot, for anything whose period is longer than the rain's cell. Cast at the call so the accumulator keeps its precision and only the sine argument spends it.
     pub fn slowSecs(self: *const Weather) f32 {
         return @floatCast(self.slowT);
     }
@@ -171,7 +165,6 @@ pub const Weather = struct {
         return 0.10 * (1.0 - (u - 0.52) / 0.48);
     }
 
-    /// The thunder that just arrived, as a gain — a ONE-FRAME edge, null on every other frame.
     pub fn thunder(self: *const Weather) ?f32 {
         return if (self.boomNow) self.boomGain else null;
     }
@@ -270,7 +263,6 @@ pub const Rain = struct {
             const x = mathx.cosf(a) * rr;
             const z = mathx.sinf(a) * rr;
             const y = rng.float() * CELL_H;
-            // THE OUTER BAND THINS TO NOTHING, so the sheet has no far wall (`TAPER_FROM`). Baked into the GEOMETRY because it has to be: vertex alpha here is the EMISSIVE channel and the `fade` uniform is per-DRAW, so a per-streak opacity is the one thing this renderer cannot do.
             const t = mathx.smoothstep(TAPER_FROM * CELL_R, CELL_R, rr);
             const taper = 1.0 - t;
             const len = rng.range(LEN_LO, LEN_HI) * mathx.lerpF(0.55, 1.0, taper);
@@ -280,10 +272,6 @@ pub const Rain = struct {
         return .{ .model = b.toModel(shader) };
     }
 
-    /// **THE WHOLE STORM, IN `STACKS` DRAW CALLS** (twice that at the heavier end), slid down by a phase that
-    /// WRAPS on `CELL_H` so the seam never arrives. Drawn LAST with the depth mask off (`Scene.beginFade`) and
-    /// still depth TESTED, which puts the rain behind a wall you are standing under.
-    ///
     /// **CENTRED ON THE MAN, NOT ON THE LENS** — on the camera the disc reached 24 m behind the lens and 19 ahead of the hero, and it must be a point the CAMERA DOES NOT ROTATE or turning slides the rain.
     pub fn draw(self: *const Rain, scene: *gfx.Scene, eye: rl.Vector3, at: rl.Vector3, level: f32, t: f32) void {
         if (level <= 0.02) return;
@@ -614,11 +602,6 @@ test "THE FIRST STORM LANDS INSIDE A SESSION, at the seed the game actually ship
     }
 }
 
-// The haze (`gfx.HAZE_STORM`) is the AIR and has no shape; these are the shape.
-//
-// **THE GRADIENT IS IN THE GEOMETRY, NOT IN A TEXTURE AND NOT IN SHELLS** — a CLUSTER of overlapping lumps
-// through a flattened volume, so the alpha COMPOUNDS where they pile up. Vertex alpha here is the EMISSIVE
-// channel, and concentric shells each read as a ring. ONE DRAW per bank. `DRIFT_HI` is slow enough that a bank takes a minute and a half to cross its own width.
 
 pub const MIST_CAP: usize = 7;
 pub const MIST_KINDS: usize = 3;
@@ -649,7 +632,6 @@ const LIFE_LO: f32 = 110.0;
 const LIFE_HI: f32 = 260.0;
 const MIST_FADE: f32 = 26.0;
 
-/// **THE CEILING ON ONE BANK'S OPACITY AT FULL FOG.** Very low: a bank you cannot see the world through is a wall standing in the field.
 pub const MIST_TOP: f32 = 0.10;
 
 const NEAR_GONE: f32 = 0.80;
@@ -863,17 +845,11 @@ test "A BANK GIVES WAY AS YOU WALK INTO IT, AND COMES BACK AS YOU LEAVE" {
     std.debug.print("  mist: {d:.0}s ramps inside a {d:.0}..{d:.0}s life, gone within {d:.1}x its radius, full past {d:.1}x\n", .{ MIST_FADE, LIFE_LO, LIFE_HI, NEAR_GONE, NEAR_FULL });
 }
 
-// SPOREFALL. **IT IS NOT FOG WITH A FILTER ON IT** — it has to read on a bright noon as well as under cloud.
-// Three things off the one 0..1 dial: the distance haze turns peach and shortens (`daynight.bloom` +
-// `HAZE_SPORE_D`), the drifting banks become lit cloud (`bankTint`), and there are SPORES IN IT — this system,
-// a slow-falling mote cell round the camera, falling at `SPORE_MPS`, 3% of rain.
 
-/// **HOW FAR THE MOTES REACH.** Smaller than `CELL_R` on purpose — rain is a sheet you stand under, spores are something in the air AROUND YOU. Past this the peach haze carries it, and haze costs no fill.
 pub const SPORE_R: f32 = 26.0;
 pub const SPORE_CELL_H: f32 = 7.0;
 pub const SPORE_STACKS: usize = 3;
 
-/// Motes across the WHOLE field, split evenly between the shoals below. Raised with the fade: an average shoal sits at half strength.
 pub const MOTES: usize = 420;
 const MOTE_LO: f32 = 0.016;
 const MOTE_HI: f32 = 0.052;
@@ -885,7 +861,6 @@ const SWIM_X: f32 = 1.60;
 const SWIM_Z: f32 = 1.15;
 const SWIM_SECS_X: f32 = 54.0;
 const SWIM_SECS_Z: f32 = 37.0;
-/// How far apart the shoals are detuned, as a fraction either side of the base period. Wide enough that no two come back into step inside a session.
 const SWIM_SPREAD: f32 = 0.42;
 
 fn swimOf(t: f32, i: usize) rl.Vector3 {
@@ -904,12 +879,7 @@ fn swimOf(t: f32, i: usize) rl.Vector3 {
 const MOTE_WARM = rgba(255, 208, 178, 236);
 const MOTE_PALE = rgba(255, 232, 214, 214);
 
-// **A SPORE HAS TO ARRIVE AND LEAVE, NOT ENTER AND EXIT** — with one field the only way out of frame is to fall
-// out of the bottom, which at `SPORE_MPS` takes a minute and a half. Vertex alpha is the EMISSIVE channel and
-// `fade` is per-DRAW, so per-mote opacity is impossible and `Rain`'s baked-in taper cannot work on something
-// that moves. The field is cut into `SPORE_SHOALS` models, each on its own `fade` sine offset a fifth of a period from its neighbour's.
 pub const SPORE_SHOALS: usize = 5;
-/// Seconds for one shoal to come up and go back down. Under half a minute the field pulses like a heartbeat.
 pub const SHOAL_SECS: f32 = 41.0;
 
 /// One shoal's share of the light, 0..1, on its own offset cycle. Held off zero rather than run to it: a shoal that vanishes outright pops on the frame it comes back.
@@ -921,15 +891,8 @@ pub fn shoalFade(t: f32, i: usize) f32 {
 
 pub const SPORE_OPACITY: f32 = 0.62;
 const SPORE_TAPER: f32 = 0.70;
-/// What a bank of fog is multiplied by at a FULL bloom, on top of the hour's own colour — peach, and red is
-/// left alone because the bank may not come out brighter than the grey it was authored as.
 const SPORE_BANK_PEACH = v3(1.0, 196.0 / 255.0, 170.0 / 255.0);
 
-/// The tint the mist banks are drawn with, so ONE grey mesh serves every hour and both weathers — white leaves
-/// them the bank's own `MIST_COL`. **BOTH TERMS, NOT EITHER**: `hour` is the light actually standing in the
-/// bank (`daynight.mistTint`), and the spore bloom's peach rides on top of it, because a bloom at midnight is
-/// a lit fog in the dark and not a daylit one. Handed the hour as a factor rather than reading the clock,
-/// since this file sits under the weather and owns none of the day.
 pub fn bankTint(hour: rl.Vector3, spore: f32) rl.Color {
     const t = mathx.clampF(spore, 0, 1);
     const peach = mathx.lerpV(v3(1, 1, 1), SPORE_BANK_PEACH, t);
@@ -941,7 +904,6 @@ pub fn bankTint(hour: rl.Vector3, spore: f32) rl.Color {
     );
 }
 
-/// **BUILT ONCE AND PERMANENT**, same reasoning as `Rain` — the material holds the scene shader.
 pub const Spore = struct {
     shoals: [SPORE_SHOALS]rl.Model,
 
@@ -970,11 +932,9 @@ pub const Spore = struct {
         return out;
     }
 
-    /// Stacked and wrapped like the rain, but the wrap is on `SPORE_MPS` — and the whole column swims sideways, which the rain must never do. Each shoal carries its own `fade`.
     pub fn draw(self: *const Spore, scene: *gfx.Scene, eye: rl.Vector3, at: rl.Vector3, level: f32, t: f32) void {
         if (level <= 0.02) return;
         const lv = mathx.clampF(level, 0, 1);
-        // **NO `@floor` ON THE EYE.** `Rain` quantises its column to a whole metre so the sheet does not slide as
         // the camera bobs, and at 13 m/s that snap is a thirteenth of a second. At 0.085 m/s the SAME snap is twelve seconds of drift arriving on one frame.
         var any = false;
         for (&self.shoals, 0..) |*m, si| {
@@ -985,7 +945,6 @@ pub const Spore = struct {
                 any = true;
             } else scene.setFade(amt);
             const sw = swimOf(t, si);
-            // Each shoal falls on its OWN phase too, so they do not all wrap on the same frame.
             const lead = @as(f32, @floatFromInt(si)) * SPORE_CELL_H / @as(f32, @floatFromInt(SPORE_SHOALS));
             const phase = @mod(t * SPORE_MPS + lead, SPORE_CELL_H);
             const baseY = eye.y - SPORE_CELL_H * 1.5 - phase + sw.y;
@@ -1042,34 +1001,23 @@ test "THE SPORE FIELD IS NOT ON THE RAIN'S CLOCK - that one wraps 2.6 times a se
     }
 }
 
-// Owner: bird packs of different sizes crossing the sky, distantly, from different angles, infrequently, when it
-// is not raining — "just to feel alive". So it is an EVENT on the weather's own law and not a field standing
-// there: one flight arrives, crosses, and is gone, and most of the time there is nothing at all.
 
-/// Seconds between one flight leaving and the next arriving.
 pub const SKEIN_GAP_LO: f32 = 18.0;
 pub const SKEIN_GAP_HI: f32 = 62.0;
-/// Never while it rains, nor the moment it stops: a sky still wringing itself out has nothing flying in it.
 pub const SKEIN_DRY: f32 = 0.02;
 pub const SKEIN_AFTER_RAIN: f32 = 22.0;
 
-/// **DIFFERENT SIZES** (owner) — a pair, a whole ragged skein, and everything between.
 pub const BIRDS_LO: usize = 3;
 pub const BIRDS_HI: usize = 17;
 
-// **THEY WERE NEVER ONCE IN THE PICTURE** (owner: "i never see any fuckin birds in the sky"), and it was not
 // rarity — 62 flights an hour, something in the sky 30% of the time. It was the FRAME. The resting camera tops
 // out 11.46 deg above the horizon (`camera.skyTop`), and flying 30–62 m up at 96 m out and crossing to within
 // 56 m, the LOWEST elevation any bird reached over any flight was 15.1 deg and the closest approach was 48 deg,
-// near enough straight overhead. Every one of them passed above the top of the screen. The whole band is solved
-// against that number now, and against the cliffs they used to fly through.
 
-/// **THE CEILING IS A SHARE OF THE RESTING FRAME'S OWN TOP**, so the flock sits in the upper part of the
 /// picture instead of over it. At 0.70 that is 8.0 deg, which leaves the birds a clear third of sky above them.
 const SKY_SHARE: f32 = 0.70;
 
 /// Just clear of a cliff (`props.cliffParts` stands 15.5 m). They used to fly at 30–62 m and it bought nothing:
-/// nothing on the map is that tall, and the height was what put them off the top of the screen.
 pub const HIGH_LO: f32 = 17.0;
 pub const HIGH_HI: f32 = 24.0;
 
@@ -1078,30 +1026,22 @@ fn skyCeiling() f32 {
 }
 
 comptime {
-    // `skeinNear` divides by its tangent. A lens or a resting pitch that closed the sky would put the whole
-    // flock at infinity rather than fail, which is the one way this could break and say nothing.
     std.debug.assert(camera.skyTop() > 0.02);
     std.debug.assert(SKY_SHARE > 0 and SKY_SHARE < 1);
     std.debug.assert(HIGH_LO > 15.5 and HIGH_HI > HIGH_LO);
 }
 
-/// **HOW CLOSE THE LINE MAY COME**, solved and not picked: the highest bird at this range sits exactly on the
-/// ceiling, so no bird at any point of any crossing is above the top of the resting frame.
 pub fn skeinNear() f32 {
     return HIGH_HI / @tan(skyCeiling());
 }
-/// …and the far end of the offset, so a crossing is not always the same distance out.
 pub fn skeinWide() f32 {
     return skeinNear() * 1.18;
 }
-/// The rim it enters and leaves at. Past the widest offset, or there is no crossing left to make.
 pub fn skeinRim() f32 {
     return skeinWide() * 1.20;
 }
 
-/// **AND THE HAZE IS TURNED DOWN FOR THEM ALONE** (`gfx.Scene.setHaze`). `gfx.HAZE_DENSITY` is per metre,
 /// so exp(−0.013 d) leaves 15% of a thing at 130 m and 4% at 240 m — and the band HAS to be out there now, or
-/// it is back above the frame. A bird is not a surface the distance veils, it is a SILHOUETTE read against the
 /// sky, and the haze does not soften it: it deletes it by pulling it to the sky's own colour. At 0.35 the same
 /// two ranges keep 55% and 33%, which is a bird.
 pub const SKEIN_HAZE: f32 = 0.35;
@@ -1111,33 +1051,23 @@ pub const SKEIN_HAZE: f32 = 0.35;
 const SKEIN_MPS_LO: f32 = 14.0;
 const SKEIN_MPS_HI: f32 = 26.0;
 
-/// **THE MESH IS BUILT AT ONE METRE AND EVERY BIRD SCALES IT**, so a span is a number and not a rebuild. A flock
-/// is one kind of bird (`SPAN_LO`..`SPAN_HI` rolled per FLIGHT) and then ragged inside itself (`SPAN_JITTER`), so
-/// what varies is the size of the birds and not only the count of them — the owner asked for both.
 const WING: f32 = 1.0;
 /// Up with the range: at 170 m a 5 m span is 1.7 deg, about 24 px of an 800-line frame.
 const SPAN_LO: f32 = 2.6;
 const SPAN_HI: f32 = 5.0;
 const SPAN_JITTER: f32 = 0.22;
-/// The flap is a SQUASH of the V, not a bone: at this range a wing is two pixels and what reads is the
-/// silhouette breathing. Cheap enough that every bird gets its own phase, which is what stops the flock pulsing
-/// as one animal.
 const FLAP_LO: f32 = 0.35;
 const FLAP_HI: f32 = 1.35;
 const FLAP_SECS_LO: f32 = 0.42;
 const FLAP_SECS_HI: f32 = 0.72;
-/// A skein is RAGGED — metres of scatter back along the line and out to the sides, growing down the rank.
 const TRAIL_LO: f32 = 3.0;
 const TRAIL_HI: f32 = 7.0;
 const SPREAD: f32 = 4.5;
-/// **METRES OF RAMP AT EACH RIM, NOT A SHARE OF THE CROSSING.** They fade up off the near rim and out at the
-/// far one so nothing pops into being; as a fraction the ramp got steeper every time the line came in shorter,
 /// and the per-frame step is what "it never pops" actually means. At 70 m the worst step is
 /// `mps*dt*1.5/70` — under a hundredth of the alpha at the fastest a flock flies.
 const SKEIN_FADE_M: f32 = 70.0;
 pub const SKEIN_TOP: f32 = 1.0;
 
-/// **A BIRD IS A SILHOUETTE**, so it is opaque and nearly black: the vertex alpha is the EMISSIVE channel and at
 /// 210 they came up self-lit and pale, washing out into the very haze they are supposed to be read against.
 const BIRD_COL = rgba(16, 15, 18, 255);
 
@@ -1189,8 +1119,6 @@ pub const Skein = struct {
         return b.toModel(shader);
     }
 
-    /// The clock runs ONLY on a dry sky, so a long storm cannot bank up a flight that then arrives the instant
-    /// it clears. A flight already in the air is not deleted by a squall — it finishes its crossing.
     pub fn tick(self: *Skein, dt: f32, at: rl.Vector3, groundY: f32, rainLevel: f32) void {
         if (!self.armed) {
             self.armed = true;
@@ -1216,27 +1144,20 @@ pub const Skein = struct {
         self.launch(at, groundY, null, null);
     }
 
-    /// **A DIFFERENT ANGLE EVERY TIME** (owner). The bearing is free, the line is offset sideways so a crossing
-    /// is rarely straight overhead, and the height, the speed and the size are their own rolls.
     fn launch(self: *Skein, at: rl.Vector3, groundY: f32, count: ?usize, bearing: ?f32) void {
         const heading = bearing orelse self.rng.angle();
         const d = v3(mathx.cosf(heading), 0, mathx.sinf(heading));
-        // **THE OFFSET NEVER PASSES THROUGH ZERO NOW.** A line that crosses overhead is a line whose middle is
-        // at 90 deg of elevation, and the middle is the part you were meant to see.
         const side: f32 = if (self.rng.float() < 0.5) -1.0 else 1.0;
         const off = side * self.rng.range(skeinNear(), skeinWide());
         const rim = skeinRim();
         self.dir = d;
         self.high = groundY + self.rng.range(HIGH_LO, HIGH_HI);
         self.mps = self.rng.range(SKEIN_MPS_LO, SKEIN_MPS_HI);
-        // The chord the line actually cuts through the rim circle at this offset, not the diameter.
         self.cross = 2.0 * @sqrt(mathx.maxF(rim * rim - off * off, 1.0));
         self.flown = 0;
         self.at = v3(at.x - d.x * self.cross * 0.5 - d.z * off, self.high, at.z - d.z * self.cross * 0.5 + d.x * off);
         const lo: f32 = @floatFromInt(BIRDS_LO);
         const hi: f32 = @floatFromInt(BIRDS_HI);
-        // **THE COUNT IS THE LAUNCH'S** — raising it afterwards left the extra birds on their defaults, which is
-        // a flock where the tail all beats on one wingbeat.
         self.n = count orelse @intFromFloat(@round(self.rng.range(lo, hi)));
         const kind = self.rng.range(SPAN_LO, SPAN_HI);
         for (self.birds[0..self.n], 0..) |*bd, i| {
@@ -1263,7 +1184,6 @@ pub const Skein = struct {
         return SKEIN_TOP * mathx.smoothstep(0, f, u) * (1.0 - mathx.smoothstep(1.0 - f, 1.0, u));
     }
 
-    /// Where the lead bird is right now — the harness's own, and what a test measures the crossing on.
     pub fn leadAt(self: *const Skein) rl.Vector3 {
         return v3(self.at.x + self.dir.x * self.flown, self.high, self.at.z + self.dir.z * self.flown);
     }
@@ -1288,14 +1208,9 @@ pub const Skein = struct {
         scene.endFade();
     }
 
-    /// **ONE FLIGHT, NOW, ACROSS HIS FRONT** — the harness's own, because a photograph of a thing that happens
-    /// every few minutes cannot sit and wait for it.
     pub fn stageOne(self: *Skein, at: rl.Vector3, groundY: f32, heading: f32) void {
         self.dryFor = SKEIN_AFTER_RAIN;
         self.armed = true;
-        // **THE BEARING IS THE HARNESS'S AND NOTHING ELSE IS.** Overriding the line as well put the staged
-        // flight straight overhead — the one shape a real crossing can no longer take, so the photograph was
-        // of something the game does not do.
         self.launch(at, groundY, BIRDS_HI, heading);
         self.flown = self.cross * 0.42;
     }
@@ -1318,7 +1233,6 @@ test "EVERY BIRD IS IN THE PICTURE WITH THE CAMERA WHERE IT RESTS — which is w
         if (sk.flying() and !was) flights += 1;
         was = sk.flying();
         if (!sk.flying() or sk.alpha() <= 0.004) continue;
-        // The whole flock, not just the leader: the tail rides its own lift and side.
         const head = sk.leadAt();
         for (sk.birds[0..sk.n]) |bd| {
             const p = v3(
@@ -1339,7 +1253,6 @@ test "EVERY BIRD IS IN THE PICTURE WITH THE CAMERA WHERE IT RESTS — which is w
     });
     try std.testing.expect(flights > 20);
     try std.testing.expect(worst < top);
-    // …AND ABOVE THE HORIZON, or they are birds walking on the ground.
     try std.testing.expect(lowest > 0);
     // …AND CLEAR OF THE CLIFFS THEY USED TO FLY THROUGH (`props.cliffParts` stands 15.5 m).
     try std.testing.expect(HIGH_LO > 15.5);
@@ -1378,27 +1291,18 @@ test "THE BIRDS ARE AN EVENT, NOT A FLOCK THAT LIVES THERE — infrequent, dry-o
     }
     const share = visible / 3600.0;
     std.debug.print("\n  skein: {d} flights in an hour, {d} to {d} birds, in the sky {d:.0}% of it, lowest {d:.0} m up\n", .{ flights, smallest, biggest, share * 100.0, lowest });
-    // DERIVED FROM THE GAP, not a number pinned beside it: one cycle is a mean gap plus a crossing, and the
-    // count has to land within a third of what that predicts or the clock is not doing what it says.
-    // The mean chord, not the diameter: the line is offset, so it cuts the rim circle short of across it.
     const meanOff = (skeinNear() + skeinWide()) * 0.5;
     const meanChord = 2.0 * @sqrt(skeinRim() * skeinRim() - meanOff * meanOff);
     const meanCycle = (SKEIN_GAP_LO + SKEIN_GAP_HI) * 0.5 + meanChord / ((SKEIN_MPS_LO + SKEIN_MPS_HI) * 0.5);
     const want = 3600.0 / meanCycle;
     std.debug.print("  ...{d:.0} predicted from the gap and the crossing, {d} flown\n", .{ want, flights });
     try std.testing.expect(@as(f32, @floatFromInt(flights)) > want * 0.66 and @as(f32, @floatFromInt(flights)) < want * 1.34);
-    // DIFFERENT SIZES: over an hour it must have shown both ends of its own range, not one number.
     try std.testing.expect(smallest <= BIRDS_LO + 3 and biggest >= BIRDS_HI - 3);
     try std.testing.expect(smallest >= BIRDS_LO and biggest <= BIRDS_HI);
-    // DIFFERENT ANGLES: never a LANE. Summed as unit vectors, a set of bearings that all point one way has a
-    // resultant near 1 and a scattered set has one near zero — which is the claim, where "no two in a row within
-    // N degrees" is only a dice roll and fails on an honest sky about a third of the time.
     const lane = @sqrt(bearX * bearX + bearZ * bearZ) / @as(f32, @floatFromInt(flights));
     std.debug.print("  ...and their bearings pull {d:.2} one way (1.00 would be a flight path)\n", .{lane});
     try std.testing.expect(lane < 0.75);
-    // DISTANT: nothing ever comes down near the world he is standing in.
     try std.testing.expect(lowest >= HIGH_LO);
-    // …and the sky is still empty more often than not, which is what keeps a crossing worth looking up at.
     try std.testing.expect(share < 0.50);
 }
 
@@ -1410,7 +1314,6 @@ test "NOTHING FLIES IN THE RAIN, AND NOTHING IS WAITING TO THE SECOND IT STOPS" 
         wet.tick(dt, mathx.zero3, 0, 0.6);
         try std.testing.expect(!wet.flying());
     }
-    // …and the clock does not bank up while it rains: an hour of storm then a dry sky still owes the full wait.
     var dry = Skein{ .model = undefined };
     var e: f32 = 0;
     var firstDry: f32 = -1;
@@ -1421,7 +1324,6 @@ test "NOTHING FLIES IN THE RAIN, AND NOTHING IS WAITING TO THE SECOND IT STOPS" 
     std.debug.print("  first flight on a clear sky at {d:.0} s (gap {d:.0}..{d:.0}, and {d:.0} s of settling after rain)\n", .{ firstDry, SKEIN_GAP_LO, SKEIN_GAP_HI, SKEIN_AFTER_RAIN });
     try std.testing.expect(firstDry >= SKEIN_GAP_LO);
 
-    // A flight already up is NOT deleted by a squall arriving — it finishes its crossing.
     var caught = Skein{ .model = undefined };
     caught.stageOne(mathx.zero3, 0, 0.4);
     try std.testing.expect(caught.flying());
@@ -1457,10 +1359,7 @@ test "A CROSSING IS A CROSSING — it enters far, leaves far, and fades at both 
     std.debug.print("  a crossing: in at {d:.0} m, nearest {d:.0} m, took {d:.0} s; alpha peaks {d:.2}, worst step {d:.4}\n", .{ mathx.distXZ(entered, mathx.zero3), nearest, t, peak, worstStep });
     try std.testing.expect(mathx.distXZ(entered, mathx.zero3) > skeinRim() * 0.9);
     try std.testing.expect(peak > SKEIN_TOP * 0.9 and peak <= SKEIN_TOP + 1e-5);
-    // IT NEVER POPS: the fade is a ramp at both ends, so no frame steps it.
     try std.testing.expect(worstStep < 0.01);
-    // …and a crossing is a THING YOU CATCH, not a thing you wait out. Derived off the line and the speed, so
-    // moving either cannot leave a number sitting here that used to be true.
     const chord = 2.0 * @sqrt(skeinRim() * skeinRim() - skeinNear() * skeinNear());
     try std.testing.expect(t > chord / SKEIN_MPS_HI - 1.0);
     try std.testing.expect(t < 2.0 * skeinRim() / SKEIN_MPS_LO + 1.0);
@@ -1487,13 +1386,9 @@ test "THE FLOCK IS RAGGED AND EACH BIRD FLAPS ON ITS OWN — a pack, not one ani
     std.debug.print("  a skein of {d}: trails {d:.1} m back, {d:.1} m wide; wingbeats {d:.2}..{d:.2} s, spans {d:.1}..{d:.1} m\n", .{ sk.n, backs, sides, beatLo, beatHi, spanLo, spanHi });
     try std.testing.expect(backs > TRAIL_LO);
     try std.testing.expect(sides > 1.0);
-    // THE PACK IS NOT ONE ANIMAL COPIED: the beats are SPREAD across their range. "No two exactly equal" is a
-    // dice roll on a continuous range and fails on an honest flock.
     try std.testing.expect(beatHi - beatLo > (FLAP_SECS_HI - FLAP_SECS_LO) * 0.5);
-    // …and the BIRDS differ in size, not only the count of them (owner: more varied sizes).
     try std.testing.expect(spanHi - spanLo > spanLo * SPAN_JITTER * 0.8);
     try std.testing.expect(spanLo >= SPAN_LO * (1.0 - SPAN_JITTER) - 1e-3);
     try std.testing.expect(spanHi <= SPAN_HI * (1.0 + SPAN_JITTER) + 1e-3);
-    // AND THE WHOLE PACK IS ONE DRAW EACH, capped at what the rain's own sheet costs.
     try std.testing.expect(BIRDS_HI <= 20);
 }

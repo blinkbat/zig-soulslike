@@ -6,7 +6,6 @@ const item = @import("item.zig");
 
 pub const StunKind = enum { none, light, heavy };
 
-/// `Vitals.init` is his and `initFoe` is a creature's.
 pub const Side = enum { hero, foe };
 
 pub const HitResult = enum { none, light, heavy, death };
@@ -31,9 +30,6 @@ pub fn elemName(e: Elem) [:0]const u8 {
 pub const Spread = struct { fire: f32 = 0, cold: f32 = 0, lightning: f32 = 0, chaos: f32 = 0 };
 
 comptime {
-    // `item` is a LEAF (this file imports it, never the other way round), so a ward or a grease names its
-    // element with `item.ElemName`. The two enums are pinned here: a rename or a reorder either side is a
-    // compile error, never a tonic that silently wards the wrong column.
     const mine = @typeInfo(Elem).@"enum".fields;
     const theirs = @typeInfo(item.ElemName).@"enum".fields;
     if (mine.len != theirs.len) @compileError("combat: item.ElemName is not the four elements");
@@ -43,13 +39,10 @@ comptime {
     }
 }
 
-/// The one crossing between the leaf's element name and this file's, pinned above.
 pub fn elemOf(n: item.ElemName) Elem {
     return @enumFromInt(@intFromEnum(n));
 }
 
-/// The four columns of an `item.Res` as this file's own spread — `Resists` for a coat, and the same crossing
-/// the ward uses. Written by name for `Spread`'s reason.
 pub fn resistsOf(r: item.Res) Resists {
     return resists(.{ .fire = r.fire, .cold = r.cold, .lightning = r.lightning, .chaos = r.chaos });
 }
@@ -125,16 +118,8 @@ pub const Hit = struct {
     stance: f32 = 0,
     elem: Elems = .{},
     fp: f32 = 0,
-    /// **METRES OFF THE GROUND THIS BLOW THROWS HIM, AND ZERO FOR NEARLY EVERY BLOW IN THE GAME.** A LARGE SLAM
-    /// ONLY (owner's call). Authored as the APEX rather than a speed: `hero.startLaunch` solves the launch speed out of it under the JUMP's own gravity, so a thrown body falls exactly as a leaping one does.
     launch: f32 = 0,
-    /// **WHAT THIS BLOW PUTS IN THE BODY'S METERS, and zero on nearly every blow in the game** — a coating's
-    /// dose, never the damage. Elemental damage builds its own meter without a word here (`Vitals.hit`), so this
-    /// is only for the ailments no element carries: an envenomed edge, a soporific, a barbed one.
     dose: Doses = .{},
-    /// **DAMAGE NO ARMOUR ANSWERS AND NO RESISTANCE REACHES** — bleed's payout and nothing else (owner: it cuts
-    /// well through armour, and only a longer bar really helps). Flat, so a bigger pool IS the mitigation; what
-    /// gear can move is the meter's fill rate, not this.
     gore: f32 = 0,
 
     /// THE WHOLE BLOW BEFORE ANYBODY'S RESISTANCES — what a shield's stamina bill and "which of two blows was worse" are measured on.
@@ -152,10 +137,6 @@ pub const Hit = struct {
         return out;
     }
 
-    /// **`launch`, `dose` AND `gore` ARE CARRIED, NEVER SCALED.** How far a body is thrown is a fact about the
-    /// blow's WEIGHT, and a damage multiplier that also threw him twice as high would put the picture in his
-    /// character sheet. A dose is the EDGE's, not the swing's: a heavy stroke does not carry more venom than a
-    /// light one. `gore` is a meter's own payout and never arrives on a swing at all.
     pub fn scaled(self: Hit, k: f32) Hit {
         return .{
             .dmg = self.dmg * k,
@@ -170,9 +151,7 @@ pub const Hit = struct {
     }
 };
 
-/// **WHAT A BLOW DOSES, PER AILMENT.** Almost every blow that doses at all doses exactly ONE, so the ail is
-/// named at the call site (`Doses.one(.poison, 26)`) rather than through a ten-field spread — there is no
-/// positional order here for a new ailment to shift.
+/// Named at the call site (`Doses.one(.poison, 26)`) rather than through a ten-field spread.
 pub const Doses = struct {
     v: [NAIL]f32 = [_]f32{0} ** NAIL,
 
@@ -207,16 +186,10 @@ pub fn foeStunDur(heavy: bool) f32 {
     return if (heavy) FOE_HEAVY_STUN_DUR else FOE_LIGHT_STUN_DUR;
 }
 
-/// **A CREATURE'S LIGHT STUN IS HEALTH TAKEN IN BLOWS OVER A PERIOD, NOT A COUNT OF BLOWS** (owner: per hit
-/// isn't fair to dot builds — not that dots build stun, only hits do). Every point of damage a HIT takes pours
-/// this much into the poise pool; the pool refills on `POISE_REFILL`; full, it flinches. So a creature's
 /// `poiseMax` IS the damage it shrugs off inside the window — the knight's 78 against a 900 bar, a kobold's 12.
-/// A drip (`builds == false`) pours nothing. His own stagger keeps the blow's `poise`: the WEIGHT of what hit him.
-/// **0.82 PUTS HIS BASE BLOWS ON THE OLD SCALE** — 13 damage pours 10.7 where the light swing carried 10 poise,
-/// 27 pours 22.1 where the heavy carried 22 — so every creature's `poiseMax`, sized between those two, still means
-/// what it meant.
+/// 0.82 puts his base blows on the old scale: 13 damage pours 10.7 where the light swing carried 10 poise, and
+/// 27 pours 22.1 where the heavy carried 22.
 pub var FOE_POISE_PER_DMG: f32 = 0.82;
-/// **YOU CANNOT DO ONE THING OVER AND OVER** (owner). Each light stun, heavy stun and status proc on a creature
 /// leaves WEAR on that channel: the next takes (1 + wear × this) as much. Wear halves every `WEAR_HALFLIFE`.
 pub const LIGHT_WEAR: f32 = 0.60;
 pub const HEAVY_WEAR: f32 = 0.60;
@@ -248,20 +221,11 @@ pub const Vitals = struct {
     lightStun: f32 = LIGHT_STUN_DUR,
     heavyStun: f32 = HEAVY_STUN_DUR,
     res: Resists = .{},
-    /// **THE PHYSICAL HALF OF `res`.** Written for the hero and never worn by a foe until the spore homunculus, which is meant to be answered with fire — resistances alone could not say that, because there is no `.physical` element.
     armour: f32 = 0,
-    /// **EVERY METER IN THE GAME SITS ON THE BODY** — his and every creature's, one per `Ail`. `hit` fills them
-    /// (off `Hit.dose` and off elemental damage post-resistance), `tickAils` bills them, so a resistance column
-    /// already answers whatever a row is pulsed as.
     ails: [NAIL]Status = [_]Status{.{}} ** NAIL,
-    /// How fast each meter fills on this body: the hero's perks and what he is wearing, 1 for a creature. The
-    /// ONE place a dose is multiplied, so the spores' door (`hero.poisonBy`) and an edge's cannot disagree.
+/// How fast each meter fills on this body: the hero's perks and what he is wearing, 1 for a creature.
     ailRate: [NAIL]f32 = [_]f32{1} ** NAIL,
-    /// **WHICH SIDE THIS BODY IS ON, AND THE ONLY THING HERE THAT KNOWS.** `AILS`'s `bearer` column is refused
-    /// in one place (`build`) rather than at every source, so a foe-only ailment cannot land on him by accident.
     side: Side = .hero,
-    /// Diminishing returns, a creature's only (`LIGHT_WEAR`/`HEAVY_WEAR`/`AIL_WEAR`): how many times each
-    /// channel has already gone off here, decaying on `WEAR_HALFLIFE`.
     lightWear: f32 = 0,
     heavyWear: f32 = 0,
     ailWear: [NAIL]f32 = [_]f32{0} ** NAIL,
@@ -312,9 +276,6 @@ pub const Vitals = struct {
     pub fn ailEnded(self: *const Vitals, a: Ail) bool {
         return self.ails[@intFromEnum(a)].justEnded;
     }
-    /// How fast one meter fills on this body. Named rather than indexed, so no caller spells out an
-    /// `@intFromEnum` against a ten-wide array. **READ-SIDE ONLY**: the one writer is `hero.settleBody`, which
-    /// restamps all ten in a loop off the walked suit, and there is no setter for a single row on purpose.
     pub fn ailRateOf(self: *const Vitals, a: Ail) f32 {
         return self.ailRate[@intFromEnum(a)];
     }
@@ -327,11 +288,8 @@ pub const Vitals = struct {
         };
     }
 
-    /// **THE ONE DOOR INTO A METER.** The side gate and the body's own fill rate are applied here and nowhere
-    /// else, so a floor, a coating and a column of elemental damage cannot disagree about what a dose is worth.
     pub fn build(self: *Vitals, a: Ail, amt: f32) void {
         if (amt <= 0 or self.dead or !self.bears(a)) return;
-        // No kind of stun builds on a body already stunned (owner) — the lightning meter included.
         if (a == .stun and self.stunned()) return;
         const i = @intFromEnum(a);
         const wear = if (self.side == .foe) 1.0 + AIL_WEAR * self.ailWear[i] else 1.0;
@@ -342,9 +300,6 @@ pub const Vitals = struct {
         self.ails = [_]Status{.{}} ** NAIL;
     }
 
-    /// **WHAT THE METERS DO TO A BODY, ANSWERED IN ONE PLACE** — so a creature and the hero cannot disagree
-    /// about what being chilled or berserk is worth, and a second slow cannot be applied on one movement path
-    /// and not the others. **THE SLOWS MULTIPLY**: chilled and stupefied at once crawls, and neither cancels.
     pub fn travelMult(self: *const Vitals) f32 {
         var k: f32 = 1;
         if (self.ailOn(.chill)) k *= CHILL_TRAVEL;
@@ -357,25 +312,19 @@ pub const Vitals = struct {
         return if (self.ailOn(.berserk)) BERSERK_DMG else 1.0;
     }
 
-    /// What its own attack and cast CLOCKS are divided by. Its own clocks and never the world's — **NO TIME
-    /// DILATION**, the same law the chill is built under.
+/// What its own attack and cast CLOCKS are divided by — its own clocks, never the world's.
     pub fn hasteMult(self: *const Vitals) f32 {
         return if (self.ailOn(.berserk)) BERSERK_HASTE else 1.0;
     }
 
-    /// Stupefy is his alone, so nothing else ever moves this.
     pub fn focusMult(self: *const Vitals) f32 {
         return if (self.ailOn(.stupefy)) STUPEFY_FOCUS else 1.0;
     }
 
-    /// **ASLEEP IS NOT STAGGERED, AND IT IS NOT DEAD** — a third way to be unable to act, and the only one a
-    /// tick will not end. `wake` is what a real blow calls.
     pub fn asleep(self: *const Vitals) bool {
         return self.ailOn(.sleep);
     }
 
-    /// **ONLY A BLOW WAKES IT** (owner: dot does not wake). Called from the blow path and nowhere else, so a
-    /// poison tick arriving through `drip` leaves a sleeper where it lies.
     pub fn wake(self: *Vitals) void {
         self.ails[@intFromEnum(Ail.sleep)] = .{};
     }
@@ -395,10 +344,6 @@ pub const Vitals = struct {
         return self.stunAs == .heavy;
     }
 
-    /// **IT COMES BACK CLEAN, METERS INCLUDED.** `build` refuses to dose a corpse, so a body that carried its
-    /// poison through the raise was the one thing in the game carrying a meter nothing could have dosed: the
-    /// necromancer's skeleton stood up at `RAISE_HP_FRAC` and went straight back to bleeding out on the proc
-    /// that killed it, or woke asleep. The hero's own `makeWhole` has always come back with fresh `Vitals`.
     pub fn revive(self: *Vitals, frac: f32) void {
         self.dead = false;
         self.hp = mathx.maxF(1.0, self.hpMax * mathx.clampF(frac, 0, 1));
@@ -420,12 +365,6 @@ pub const Vitals = struct {
         };
     }
 
-    /// **A FLINCH THE ARMOUR REFUSED NEVER HAPPENED.** `strike` has already emptied the pool, taken
-    /// `LIGHT_BREAK_STANCE` off the stance, begun the stagger and charged `lightWear` by the time a caller with
-    /// hyper armour or a tower shield can answer for it, so the undo is ONE call and not four fields at each
-    /// site: hyper armour kept the wear from a flinch it had refused, and a blow the knight's door BLOCKED left
-    /// him `stunned()` — which under the stunned rule bought him a whole stun's poise and stance immunity while
-    /// his own state machine went on attacking. `poiseWas` is the pool the body walked into the blow with.
     pub fn refuseFlinch(self: *Vitals, poiseWas: f32) void {
         self.poise = poiseWas;
         self.stance = mathx.minF(self.stanceMax, self.stance + LIGHT_BREAK_STANCE * self.stanceMax);
@@ -451,11 +390,6 @@ pub const Vitals = struct {
     pub fn tick(self: *Vitals, dt: f32) void {
         self.sinceHit += dt;
         self.sinceHurt += dt;
-        // **THE HOLD, AND IT IS NOT WHAT MAKES SLEEP WORK ON A CREATURE.** Almost nothing reads `stunned()` — the
-        // creature that goes down does it through `foe.grip`'s `downed`, which is where the sleep proc is answered.
-        // What this buys is the two bodies that DO read it (`sporegolem`, and the bloom's own stun state) staying
-        // down for the whole clock instead of one stagger, and the hero's refusal to stand up (`hero.tickPoison`).
-        // REFRESHED, NEVER ADDED (the status law): set to the length, not lengthened.
         if (!self.dead and self.asleep()) {
             self.stunAs = .heavy;
             self.stunLeft = self.heavyStun;
@@ -477,8 +411,6 @@ pub const Vitals = struct {
         self.stance = mathx.minF(self.stanceMax, self.stance + self.stanceMax / STANCE_REFILL * self.regenRate * dt);
     }
 
-    /// A DRIP — damage billed EVERY FRAME by something that holds (`Root`). `hit` in every respect but the REGEN
-    /// CLOCK: stamped afresh every frame, `sinceHit` never opens the poise/stance refill, so a grip carrying no poise would deny most of a poise bar anyway. `sinceHurt` IS stamped. Poise-free drips only.
     pub fn drip(self: *Vitals, h: Hit) HitResult {
         const clock = self.sinceHit;
         const r = self.strike(h, false);
@@ -486,9 +418,6 @@ pub const Vitals = struct {
         return r;
     }
 
-    /// One frame of every meter already in the body. TRUE on the frame it killed — the caller owns the death,
-    /// the way `foe.grip` owns the wand's. **ONE DRIP FOR ALL TEN**: each row pulses in its own element and they
-    /// are summed into a single blow, so ten meters running is one call into `strike` and not ten.
     pub fn tickAils(self: *Vitals, dt: f32) bool {
         var owed = Hit{};
         var any = false;
@@ -510,8 +439,6 @@ pub const Vitals = struct {
         return self.strike(h, true);
     }
 
-    /// **BUILDUP IS ON A BLOW AND NEVER ON A DRIP.** Poison pulses chaos, burning pulses fire, the chill bites
-    /// cold: were a tick to build, each of the three would top up its own meter and never let go.
     fn strike(self: *Vitals, h: Hit, builds: bool) HitResult {
         if (self.dead) return .none;
         self.sinceHurt = 0;
@@ -522,28 +449,20 @@ pub const Vitals = struct {
             return .death;
         }
         self.sinceHit = 0;
-        // A blow that KILLED doses nothing — the death returned above, so nothing poisons a corpse.
         if (builds) {
-            // **ONLY A BLOW WAKES A SLEEPER** (owner: dot does not wake), and this is the one place a blow is
-            // told from a tick — his side and a creature's both, so neither can forget it.
             self.wake();
             for (h.dose.v, 0..) |amt, i| self.build(@enumFromInt(i), amt);
-            // **ELEMENTAL DAMAGE BUILDS ITS OWN METER, POST-RESISTANCE** (owner: so resists can help). One dial
-            // for the lot (`BUILD_PER_DMG`) and the pairing is `ailOf`, so no blow in the game names a meter.
             for (h.elem.v, 0..) |amt, i| {
                 if (amt == 0) continue;
                 const e: Elem = @enumFromInt(i);
                 self.build(ailOf(e), self.res.taken(e, amt) * BUILD_PER_DMG);
             }
         }
-        // **NOTHING BUILDS ON A BODY ALREADY STUNNED** (owner) — neither pool. The stagger is the punish window
-        // it earned, and stacking the next one inside it is doing one thing over and over.
         if (self.stunned()) return .none;
         const foe = self.side == .foe;
         const stanceWear = if (foe) 1.0 + HEAVY_WEAR * self.heavyWear else 1.0;
         self.stance -= h.stance / stanceWear;
         var light = false;
-        // A creature's flinch pool takes the HEALTH a blow took (`FOE_POISE_PER_DMG`), a drip pours nothing.
         const poiseHit = if (foe) (if (builds) taken * FOE_POISE_PER_DMG else 0) else h.poise;
         const poiseWear = if (foe) 1.0 + LIGHT_WEAR * self.lightWear else 1.0;
         self.poise -= poiseHit / poiseWear;
@@ -591,7 +510,6 @@ pub const Stamina = struct {
     sinceSpend: f32 = LONG_AGO,
     winded: bool = false,
     regenRate: f32 = 1.0,
-    /// THE TOADFLESH BROTH — the refill runs `brew.amount`× while its clock runs. One clock, refreshed never stacked (the status law); it speeds the trickle and touches nothing else.
     brew: Timed = .{},
 
     pub fn initFoe(max: f32) Stamina {
@@ -673,8 +591,6 @@ pub fn withinArc(bearing: f32, facing: f32, arc: f32) bool {
     return @abs(mathx.degrees(mathx.wrapPi(bearing - facing))) <= arc;
 }
 
-/// **HOW WIDE A THING OF HALF-WIDTH `half` IS FROM `dist` AWAY** — degrees, `withinArc`'s own unit, so an arc
-/// test can be widened by the width of the body it is testing rather than by a fudge. The knight's door, the rime cone against a giant's flank and the ogre's sweep are one triangle written three ways.
 pub fn subtendedArc(half: f32, dist: f32) f32 {
     return mathx.degrees(std.math.atan2(half, mathx.maxF(dist, 1e-4)));
 }
@@ -682,10 +598,7 @@ pub fn subtendedArc(half: f32, dist: f32) f32 {
 pub fn guardStamina(h: Hit) f32 {
     return GUARD_STAM_FLAT + GUARD_STAM_PER_DMG * h.raw();
 }
-/// WHAT GETS THROUGH — still a `Hit`, so the chip's elemental share meets the blocker's resistances instead of
-/// arriving as raw HP. DAMAGE ONLY: poise and stance are what the shield is FOR. **A CURVE, NOT A PERCENTAGE**
-/// (PoE2's own): `A/(A + 5*dmg)` is turned aside, so the same coat is worth a fifth of a middling blow and a
-/// tenth of the one that was going to kill you — which is why it can never become immunity and needs no cap. **PHYSICAL ONLY.**
+/// PoE2's own: `A/(A + 5*dmg)` is turned aside, so the same coat is worth a fifth of a middling blow.
 pub fn armourTaken(a: f32, dmg: f32) f32 {
     if (a <= 0 or dmg <= 0) return dmg;
     return dmg * (1.0 - a / (a + 5.0 * dmg));
@@ -703,9 +616,6 @@ pub fn guardChip(h: Hit, negate: f32) Hit {
     return guardChipSplit(h, negate, negate);
 }
 
-/// **A BOARD MAY ANSWER STEEL AND SORCERY DIFFERENTLY.** The hero's own shield does not — both columns take
-/// `guardChip`'s one figure; the bone knight's door does (`knight.TOWER_NEGATE`/`TOWER_NEGATE_ELEM`). `fp`
-/// rides the elemental share: a drain is not a blade either.
 pub fn guardChipSplit(h: Hit, negate: f32, negateElem: f32) Hit {
     const k = 1.0 - mathx.clampF(negate, 0, 1);
     const ke = 1.0 - mathx.clampF(negateElem, 0, 1);
@@ -714,10 +624,7 @@ pub fn guardChipSplit(h: Hit, negate: f32, negateElem: f32) Hit {
 
 
 pub var STAM_PARRY: f32 = 9.0;
-/// WHAT THE BOARDS DEAL WHEN THEY CATCH: nothing to the health, everything to the FOOTING. No `dmg` — a parry
-/// has never been damage, the punish after it is. And NO POISE, so a catch can never resolve as a mere flinch.
 /// Sized so the ogre's 90 stance takes two catches and lighter takes one.
-/// **THE ONE LAUNCH IN THE GAME** (owner: only large slams, for now) — metres of apex, authored by every
 /// `SLAM_HIT` in `foes/` and by nothing else. Here rather than in `hero.zig` so a creature can say its blow throws him without importing the man it throws.
 pub const SLAM_LAUNCH: f32 = 0.85;
 
@@ -740,7 +647,6 @@ pub const Focus = struct {
         self.cur = minF(self.max, self.cur + amt);
         return true;
     }
-    /// PAY THE WHOLE COST OR CAST NOTHING — the OPPOSITE of `Stamina.canAct`'s panic rule, and deliberately: the bottom of the stamina bar buys a roll you cannot afford, where a half-paid spell would half exist.
     pub fn spend(self: *Focus, amt: f32) bool {
         if (self.cur < amt) return false;
         self.cur -= amt;
@@ -808,19 +714,15 @@ pub const Root = struct {
     }
 };
 
-/// THE RIME BREATH — the rod's third sorcery, and **THE FIRST THING IN THE GAME THAT REACHES MORE THAN ONE BODY
-/// WITHOUT BEING A SWING** (owner's call; it overturns the no-area-spells law — see AGENTS.md). A CONE poured for `RIME_DUR`, so its area is a thing he aims and holds and a body walks out of it.
 pub const RIME_DUR: f32 = 0.85;
 pub const RIME_REACH: f32 = 6.0;
 pub const RIME_ARC: f32 = 30.0;
 pub const RIME_DPS: f32 = 18.0;
 
 pub const CHILL_HOLD: f32 = 4.0;
-/// WHAT A CHILLED BODY'S TRAVEL IS MULTIPLIED BY. **The feet, and nothing else** — `Root`'s own law. A chilled thing is not a slowed thing, it is a thing that cannot close.
 pub const CHILL_TRAVEL: f32 = 0.55;
 
 comptime {
-    // IT COSTS MORE THAN THE ROOTS AND DEALS LESS: reach across a field is what it sells, and it may not also be the better single-target spell. This is the half about the two DRIPS, which the `SPELLS` ladder cannot make for itself.
     std.debug.assert(RIME_DUR * RIME_DPS < ROOT_HOLD * ROOT_DPS);
     std.debug.assert(CHILL_HOLD > 3.0 * RIME_DUR);
     std.debug.assert(CHILL_TRAVEL > 0 and CHILL_TRAVEL < 1);
@@ -845,7 +747,6 @@ pub const Chill = struct {
         self.left = 0;
         self.owed = 0;
     }
-    /// The bite owed this frame, or null. A DRIP and never a blow — no poise and no stance (`Root.tick`'s reason): a cone that flinched would flinch everything in front of him at once.
     pub fn tick(self: *Chill, dt: f32) ?Hit {
         self.left = maxF(0, self.left - dt);
         if (self.owed <= 0) return null;
@@ -864,8 +765,6 @@ pub const Chill = struct {
 /// **THE TWO THAT DO NOT CROSS THE GROUND** — they arrive on ONE named body on the frame they are cast, so they need a REACH and an ARC rather than a speed. Narrower than the rime cone's 30 on purpose: that is a wash, these are aimed.
 pub const STRIKE_ARC: f32 = 22.0;
 
-/// **THE ONE THAT DOES NOT TRAVEL** — lightning's signature is the shortest-lived in `elemfx`, so a bolt of it
-/// sailing six metres as a thrown stone is a picture arguing with its element. What it sells is the INTERRUPT.
 /// POISE PAST EVERY CREATURE'S `POISE_MAX` BAR THE BONE KNIGHT'S 78 (the ogre's 30 is next), where his heavy
 /// swing at 22 leaves the giants standing. STANCE deliberately UNDER that swing's 14: a spell thrown from across the room may not be the better guard-breaker.
 pub const LEVIN_HIT = Hit{ .poise = 34, .stance = 10, .elem = elems(.{ .lightning = 22 }) };
@@ -876,27 +775,19 @@ pub const SIPHON_HIT = Hit{ .elem = elems(.{ .chaos = 18 }) };
 pub const SIPHON_SHARE: f32 = 0.55;
 pub const SIPHON_REACH: f32 = 12.0;
 
-/// **THE FIRST FIRE ON HIS SIDE OF THE FIGHT**, and the only spell that does not stop at the first body: a LANCE
 /// goes THROUGH. PER BODY and deliberately small, priced where the rime is — what it buys is the SECOND body and the third. Poise under the levin's 34 and over a hero light's.
 pub const LANCE_HIT = Hit{ .poise = 18, .stance = 6, .elem = elems(.{ .fire = 16.5 }) };
 pub const LANCE_REACH: f32 = 20.0;
 pub const LANCE_R: f32 = 0.55;
 
-/// **THE ROD'S ANSWER TO A SHIELD** — stance decides whether a guard holds, and nothing but a committed stroke
-/// inside reach moved it in quantity. **CAST IN MELEE RANGE ON PURPOSE** (`SUNDER_REACH`): it carries a parry's worth of stance and you have to be standing there to spend it. PHYSICAL, and the lowest damage of the seven.
 pub const SUNDER_HIT = Hit{ .dmg = 14, .poise = 12, .stance = 40 };
-/// INSIDE THE SWORD'S OWN REACH (`game.MELEE_AIM_R`). The one sorcery that is not a way to avoid being in the fight.
 pub const SUNDER_REACH: f32 = 4.0;
 
-/// **THE TWO THAT DO NOTHING TO A BODY AND EVERYTHING TO WHOSE SIDE IT IS ON.** The whole blow is the dose,
-/// which is why they sit OUTSIDE the damage ladder and above all of it. A meter apiece in ONE cast: nothing else
-/// builds confusion or charm, so a half-filling spell would have no second source and would never proc.
 pub const BABBLE_HIT = Hit{ .dose = Doses.one(.confusion, ailBank(.confusion).max) };
 /// PAST THE ROOTS' 7 m AND WELL SHORT OF THE BOLT'S 55 — cast INTO the room, not across the field.
 pub const BABBLE_REACH: f32 = 13.0;
 
 pub const BIDDING_HIT = Hit{ .dose = Doses.one(.charm, ailBank(.charm).max) };
-/// **INSIDE THE BABBLE'S**, because charm is the better of the two: the price is the walk in as well as the FP.
 pub const BIDDING_REACH: f32 = 9.0;
 
 pub const Spell = enum { bolt, roots, rime, levin, siphon, lance, sunder, babble, bidding };
@@ -906,15 +797,13 @@ pub const SpellRow = struct {
     name: [:0]const u8,
     fp: f32,
     scroll: item.Kind,
-    /// ONE LINE OF MECHANIC (`item.effect`'s rule): what the FP buys, which the numbers beside it cannot say.
     says: [:0]const u8,
     blow: ?Hit = null,
     reach: ?f32 = null,
     drip: f32 = 0,
 };
 
-/// **THE ROD'S SEVEN, AS ONE TABLE YOU CAN READ DOWN.** The FP column is the LADDER (the monotonicity assert
-/// below). **ROW ORDER IS `Spell`'S OWN**, pinned at comptime: an eighth spell is a compile error until it has said what it costs and what it does. This is the price, not the physics.
+/// **ROW ORDER IS `Spell`'S OWN**, pinned at comptime: an eighth spell is a compile error until it has said what it costs and what it does. This is the price, not the physics.
 pub const SPELLS_BANK = [_]SpellRow{
     .{ .spell = .bolt,   .name = "Chaos Bolt",   .fp = 8,  .scroll = .scroll_bolt,   .says = "A thrown stone of chaos. Crosses the ground, and cover stops it.",     .blow = BOLT_HIT },
     .{ .spell = .roots,  .name = "Roots",        .fp = 12, .scroll = .scroll_roots,  .says = "Holds a body where it stands and bleeds it while it is held.",        .drip = ROOT_HOLD * ROOT_DPS },
@@ -927,8 +816,6 @@ pub const SPELLS_BANK = [_]SpellRow{
     .{ .spell = .bidding, .name = "Bidding",     .fp = 24, .scroll = .scroll_bidding, .says = "Turns a body on the ones it came with. The dearest thing the rod does.", .blow = BIDDING_HIT, .reach = BIDDING_REACH },
 };
 
-/// **THE LIVE NINE.** `SPELLS_BANK` above is the code's own table and never moves — that is the revert
-/// (`play/tune.zig`). Every reader below is `rowFor`, which reads this one.
 pub var SPELLS: [SPELLS_BANK.len]SpellRow = SPELLS_BANK;
 
 comptime {
@@ -944,7 +831,6 @@ comptime {
                 " are written on the same scroll — one sheet cannot hand over two sorceries");
         }
     }
-    // …and every scroll in the world is some spell's, or the bag holds a sheet the fire cannot read.
     for (0..item.NK) |i| {
         const k: item.Kind = @enumFromInt(i);
         if (!item.isSpellScroll(k)) continue;
@@ -989,12 +875,10 @@ pub fn spellScroll(s: Spell) item.Kind {
     return bankRow(s).scroll;
 }
 
-/// THE ONE PLACE "does he carry it" is asked, so carried cannot mean two things on two panels.
 pub fn carriesSpell(bag: *const item.Bag, s: Spell) bool {
     return bag.count(spellScroll(s)) > 0;
 }
 
-/// WHAT EACH ONE BILLS. One place, so the HUD's "could he cast?" and the cast itself cannot disagree.
 pub fn spellFp(s: Spell) f32 {
     return rowFor(s).fp;
 }
@@ -1012,15 +896,11 @@ pub fn spellDamage(s: Spell) f32 {
     return if (row.blow) |b| b.raw() else row.drip;
 }
 
-/// A spell whose worth is a DOSE and not damage, so the ladder cannot price it. Its own rule sits beside it.
 pub fn spellDoses(s: Spell) bool {
     const row = rowFor(s);
     return if (row.blow) |b| b.dose.any() else false;
 }
 
-/// **WHICH METER A DOSER FILLS, OFF ITS OWN BLOW** — the pairing is already here, and a second copy of it
-/// (`game.whisperTint`) had an `else` arm that handed any third doser the confusion colour. The FIRST row it
-/// doses: no spell in the table doses two, and the burst can only be one colour.
 pub fn spellDose(s: Spell) ?Ail {
     const b = rowFor(s).blow orelse return null;
     for (b.dose.v, 0..) |amt, i| {
@@ -1029,16 +909,13 @@ pub fn spellDose(s: Spell) ?Ail {
     return null;
 }
 
-/// ER's memory slots: how many sorceries he may have about him at once. Owning a scroll is not casting off it.
 pub const MEM_SLOTS: usize = 3;
 
 comptime {
-    // Past eight, `uiart.numeral` has no name for a slot and both screens print "-".
     if (MEM_SLOTS == 0 or MEM_SLOTS > 8) @compileError("combat: MEM_SLOTS is 1..8 — a rack of none casts " ++
         "nothing, and past eight the screens have no numeral to call a slot by");
 }
 
-/// What is memorized, filled at a bonfire. **THE RING IS THE SLOT ORDER, NOT `SPELLS`'** — the rack is what the player arranged himself, and a list that re-sorts under him is one he cannot learn.
 pub const Memory = struct {
     slots: [MEM_SLOTS]?Spell = blk: {
         var s = [_]?Spell{null} ** MEM_SLOTS;
@@ -1076,7 +953,6 @@ pub const Memory = struct {
         return null;
     }
 
-    /// A spell already in another slot MOVES rather than doubling: the two cells swap (`hero.equip`'s rule).
     pub fn put(self: *Memory, i: usize, s: ?Spell) void {
         if (i >= MEM_SLOTS) return;
         if (s) |want| {
@@ -1085,7 +961,6 @@ pub const Memory = struct {
         self.slots[i] = s;
     }
 
-    /// Null if nothing is memorized; `from` itself when it is the only one, so a caller can tell a cycle that moved from one that could not.
     pub fn next(self: *const Memory, from: Spell) ?Spell {
         const start = self.slotOf(from) orelse return self.first();
         for (1..MEM_SLOTS + 1) |step| {
@@ -1098,9 +973,8 @@ pub const Memory = struct {
 pub const BOLT_FP: f32 = bankFp(.bolt);
 
 comptime {
-    // **THE LADDER IS MONOTONE, AND THAT IS THE WHOLE PRICE LIST**: 8→25, 11→22, 12→19.6, 13→18, 14→16.5,
-    // 15→15.3, 16→14. **AND EVERY RUNG CLEARS A FREE LIGHT SWING** (`hero.ATK_LIGHT_HIT`, 13) — five of the seven
-    // sat under it while costing a third of the pool. Asserted over every PAIR, so an eighth spell is priced by the rule without editing it.
+// The ladder is MONOTONE and that is the whole price list: 8→25, 11→22, 12→19.6, 13→18, 14→16.5, 15→15.3,
+// 16→14 — and every rung clears a free light swing (`hero.ATK_LIGHT_HIT`, 13).
     @setEvalBranchQuota(8000);
     for (std.enums.values(Spell)) |a| {
         for (std.enums.values(Spell)) |b| {
@@ -1108,8 +982,6 @@ comptime {
             if (bankFp(a) < bankFp(b)) std.debug.assert(bankDamage(a) > bankDamage(b));
         }
     }
-    // **AND A DOSER IS DEARER THAN EVERY SPELL THAT HURTS SOMETHING.** The ladder ranks worth as damage and a
-    // doser has none, so it is exempt from that and answers to this instead.
     for (std.enums.values(Spell)) |d| {
         if (!bankDoses(d)) continue;
         std.debug.assert(bankDamage(d) == 0);
@@ -1118,7 +990,6 @@ comptime {
             std.debug.assert(bankFp(d) > bankFp(s));
         }
     }
-    // …and every one of them is castable off a full pool, or the sheet's Mind curve promises what it cannot pay.
     for (std.enums.values(Spell)) |s| std.debug.assert(bankFp(s) > 0 and bankFp(s) <= FP_MAX);
 }
 
@@ -1226,7 +1097,6 @@ pub fn quickCount(k: item.Kind, flasks: *const Flasks, bag: *const item.Bag) u8 
 pub const QUICK_SLOTS: usize = 10;
 
 pub const Quick = struct {
-    /// ORDERED, and a removal leaves its hole rather than compacting: the bar is cycled by muscle memory mid-fight, and a list that shuffles under you is one you cannot learn. `add` takes the first free slot.
     slots: [QUICK_SLOTS]?item.Kind = blk: {
         var s = [_]?item.Kind{null} ** QUICK_SLOTS;
         s[0] = .crimson_flask;
@@ -1367,63 +1237,33 @@ pub const Ail = enum { poison, burning, chill, stun, bleed, sleep, confusion, ch
 
 pub const NAIL = @typeInfo(Ail).@"enum".fields.len;
 
-/// **WHO CAN CARRY IT.** A meter nothing can ever fill is the LUCK mistake, so a row says which bodies it is
-/// for and `Vitals.build` refuses the rest — one place, rather than every source remembering.
 pub const Bearer = enum { both, foe, hero };
 
-/// **HOW A FULL METER PAYS OUT.** `over` drains the meter as the clock and bills every frame of it; `burst`
-/// empties it in one blow and can start refilling the same frame (bleed alone).
 pub const Payout = enum { over, burst };
 
-/// A retune is a number in this table: everything that is not behaviour lives here.
 pub const AilRow = struct {
     ail: Ail,
     name: [:0]const u8,
-    /// ONE LINE OF MECHANIC (`SPELLS`' own `says`) — what the meter buys, which the numbers cannot say.
-    /// **NOTHING PRINTS IT YET**: `ailSays` is its only reader and nothing calls that, and `item.effect` writes
-    /// its own sentence off `ailWord`. Authored ahead of the panel that wants it; the comptime check below keeps
-    /// it filled meanwhile.
     says: [:0]const u8,
     bearer: Bearer = .both,
     payout: Payout = .over,
-    /// **THE ELEMENT WHOSE DAMAGE FILLS IT, POST-RESISTANCE** (owner: so resists can help), or null for one
-    /// nothing elemental builds. `Vitals.hit` is the only door; a `drip` never builds, or a status that bills
-    /// its own element would feed itself and never end.
     elem: ?Elem = null,
-    /// What a full meter is, in the same unit every source doses in.
     max: f32,
-    /// Quiet seconds before the meter starts falling, then how fast it falls. **DECAY IS WHAT MAKES IT
-    /// PRESSURE**: spaced doses never proc, so lingering is the whole cost.
     decayDelay: f32 = POISON_DECAY_DELAY,
     decay: f32,
-    /// Seconds the proc runs. Ignored by a `burst`.
     dur: f32 = 0,
-    /// Share of MAX HP the whole proc bills, so it is worth the same on a Vitality build as on a fresh sheet.
-    /// Zero for a proc whose worth is not damage (chill, sleep, charm).
     hpFrac: f32 = 0,
-    /// **A BURST'S BILL IS FLAT, AND THAT IS THE WHOLE POINT** (owner: only more hp really helps). A share of
-    /// max HP would scale with the bar and make a long bar no defence at all. Paid as `Hit.gore`.
     flat: f32 = 0,
-    /// What the bill is billed AS, so a resistance column answers it. Null bills nothing — or, on a burst,
-    /// bills `flat` as `gore`, which no column reaches.
     pulse: ?Elem = null,
 };
 
 pub const POISON_DECAY_DELAY: f32 = 1.1;
 
-/// **BUILDUP RIDES DAMAGE, ONE FOR ONE, AFTER RESISTANCES** (owner). So a coat's chaos column slows the meter
-/// and cuts the tick both — deliberately, and the reason `Plate`'s own buildup dials stay: those are the half a
-/// resistance cannot reach.
 pub const BUILD_PER_DMG: f32 = 1.0;
 
-/// **A LESSER CUT THAN THE CHILL'S** (owner) — the same channel and the same law (the FEET, never a clock), so
-/// the two multiply and being both is worse than being either.
 pub const STUPEFY_TRAVEL: f32 = 0.78;
-/// What it thins the focus pool to. His alone: a creature has no `Focus` for it to reach.
 pub const STUPEFY_FOCUS: f32 = 0.55;
 
-/// **THE BARGAIN.** Harder and faster on the way in, bleeding the whole time (`AILS`' own `hpFrac`), and it
-/// ends flat on your back — `Status.justEnded` is what the heavy stagger hangs on.
 pub const BERSERK_DMG: f32 = 1.35;
 pub const BERSERK_TRAVEL: f32 = 1.22;
 pub const BERSERK_HASTE: f32 = 1.25;
@@ -1441,7 +1281,6 @@ pub const AILS_BANK = [_]AilRow{
         .max = 100.0, .decay = 24.0, .dur = 14.0, .hpFrac = 0.26,
     },
     .{
-        // SHORTER AND HOTTER THAN THE POISON (owner) — the same share of a bar in a third of the time.
         .ail = .burning, .name = "Burning", .elem = .fire, .pulse = .fire,
         .says = "Burns hotter than poison and for a third as long.",
         .max = 100.0, .decay = 30.0, .dur = 4.6, .hpFrac = 0.22,
@@ -1454,15 +1293,11 @@ pub const AILS_BANK = [_]AilRow{
         .max = 14.0, .decay = 6.0, .dur = CHILL_HOLD,
     },
     .{
-        // LIGHTNING DOES NOT TRAVEL AND DOES NOT LINGER (`elemfx`'s signature) — the shortest meter and the
-        // fastest decay in the table, and what it buys is the INTERRUPT.
         .ail = .stun, .name = "Stun", .elem = .lightning,
         .says = "Fills fast and empties faster. Full, it staggers.",
         .max = 40.0, .decayDelay = 0.6, .decay = 60.0, .dur = HEAVY_STUN_DUR,
     },
     .{
-        // **NO ELEMENT AND NO INNATE COLUMN** (owner: equipment may carry bonuses for or against). It cuts
-        // well through armour, so the only thing that really answers it is a longer bar.
         .ail = .bleed, .name = "Bleed", .payout = .burst,
         .says = "Full, it opens you at once. Armour barely answers it.",
         .max = 100.0, .decay = 14.0, .flat = 45.0,
@@ -1483,7 +1318,6 @@ pub const AILS_BANK = [_]AilRow{
         .max = 100.0, .decay = 20.0, .dur = 8.0,
     },
     .{
-        // **IT IS A BARGAIN, NOT A DEBUFF** — harder, faster, and it costs health and ends on the floor.
         .ail = .berserk, .name = "Berserk",
         .says = "Harder and faster, bleeding out, and it ends flat on your back.",
         .max = 100.0, .decay = 16.0, .dur = 9.0, .hpFrac = 0.18, .pulse = .chaos,
@@ -1495,7 +1329,6 @@ pub const AILS_BANK = [_]AilRow{
     },
 };
 
-/// **THE LIVE TEN**, on `SPELLS`' arrangement: the bank above is the revert and `ailRow` reads this.
 pub var AILS: [AILS_BANK.len]AilRow = AILS_BANK;
 
 comptime {
@@ -1506,34 +1339,26 @@ comptime {
         if (row.max <= 0 or row.decay <= 0) @compileError("combat: " ++ row.name ++ " has a meter nothing can fill or empty");
         if (row.payout == .over and row.dur <= 0) @compileError("combat: " ++ row.name ++ " runs on a clock of zero");
         if (row.hpFrac > 0 and row.pulse == null) @compileError("combat: " ++ row.name ++ " bills health as nothing at all");
-        // **A BURST PAYS FLAT AND A CLOCK PAYS A SHARE**, never the other way: a burst billing `hpFrac` is a
-        // fixed slice of the bar that a longer bar cannot answer, which is the one thing bleed must not be.
         if (row.payout == .burst and row.hpFrac > 0) @compileError("combat: " ++ row.name ++ " bursts for a share of the bar — a burst bills `flat`");
         if (row.payout == .over and row.flat > 0) @compileError("combat: " ++ row.name ++ " runs on a clock and bills a flat sum — that is a burst");
     }
-    // **NO TWO AILMENTS SHARE AN ELEMENT.** The pairing is the law (fire-burn, cold-chill, lightning-stun,
-    // chaos-poison), and two rows on one element would split every blow's buildup between them.
     for (AILS_BANK, 0..) |a, i| {
         for (AILS_BANK[0..i]) |b| {
             if (a.elem != null and std.meta.eql(a.elem, b.elem))
                 @compileError("combat: " ++ a.name ++ " and " ++ b.name ++ " both build off one element");
         }
     }
-    // …and every element has a row, or a column of damage quietly builds nothing.
     for (std.enums.values(Elem)) |e| {
         var named = false;
         for (AILS_BANK) |row| named = named or std.meta.eql(row.elem, @as(?Elem, e));
         if (!named) @compileError("combat: nothing is built by " ++ @tagName(e) ++ " damage");
     }
-    // **THE ONE SPELL BUILT TO CHILL MUST FILL THE CHILL METER** — the pour is 15.3 cold and the meter is
-    // authored under it, so retuning either without the other is a compile error rather than a dead spell.
+    // The one spell built to chill must fill the chill meter: the pour is 15.3 cold.
     if (RIME_DUR * RIME_DPS < ailBank(.chill).max) @compileError("combat: the rime breath no longer fills a chill meter");
 }
 
 comptime {
     @setEvalBranchQuota(4000);
-    // **`item` NAMES THE TEN TOO, BECAUSE IT IS A LEAF** (`item.AilName`). Pinned tag for tag: a row added to
-    // one enum and not the other doses the meter one place along.
     const N = @typeInfo(item.AilName).@"enum".fields.len;
     if (N != NAIL) @compileError("combat: `item.AilName` is not one tag per `Ail`");
     for (@typeInfo(item.AilName).@"enum".fields, 0..) |f, i| {
@@ -1551,9 +1376,6 @@ pub fn ailRow(a: Ail) AilRow {
     return AILS[@intFromEnum(a)];
 }
 
-/// **WHAT THE CODE SAYS, FOR THE THINGS THAT ASK AT COMPTIME.** A `const` solved off a meter's size (the two
-/// dosing spells, the bat's bleed, the rite's berserk) cannot read the live table, and would not want to: it is
-/// the authored arithmetic, and the row it was solved against is the one the bench reverts to.
 pub fn ailBank(a: Ail) AilRow {
     return AILS_BANK[@intFromEnum(a)];
 }
@@ -1566,8 +1388,6 @@ pub fn ailSays(a: Ail) [:0]const u8 {
     return ailBank(a).says;
 }
 
-/// **WHICH METER AN ELEMENT FILLS** — fire-burn, cold-chill, lightning-stun, chaos-poison. Solved off `AILS`
-/// at comptime rather than written out again, so the pairing lives in exactly one column.
 const AIL_OF_ELEM: [NELEM]Ail = blk: {
     var out: [NELEM]Ail = undefined;
     for (std.enums.values(Elem)) |e| {
@@ -1585,25 +1405,16 @@ pub fn ailOf(e: Elem) Ail {
 pub const POISON_MAX: f32 = ailBank(.poison).max;
 
 comptime {
-    // **THE DIRK'S DOSE IS AUTHORED IN STROKES, AND `item` CANNOT SEE THIS NUMBER** (it is a leaf). Pinned here
-    // instead: four landed strokes fill a meter and three do not, so raising the cap without retuning the
-    // coating is a compile error rather than a weapon that quietly stopped working.
     const strokes = 4;
     if (item.ENVENOMED.venom * strokes < POISON_MAX) @compileError("combat: the envenomed edge no longer fills a meter in four strokes");
     if (item.ENVENOMED.venom * (strokes - 1) >= POISON_MAX) @compileError("combat: the envenomed edge fills a meter in three strokes or fewer");
 }
 
-/// ONE METER. Doses fill it; full, it **PROCS**; the same meter becomes the **CLOCK**, draining over the
-/// effect's life. **It cannot be topped up while it drains** — where a `burst` empties and re-arms at once.
-/// **THE ROW IS PASSED IN, NEVER STORED**: ten of these sit on every body in the game and a copy of the row on
-/// each is ten tables' worth of bytes per creature.
 pub const Status = struct {
     meter: f32 = 0,
     on: bool = false,
     sinceDose: f32 = LONG_AGO,
-    /// A ONE-FRAME EDGE (`justDied`'s idiom): the frame it went off, for the beat that says so.
     justProcced: bool = false,
-    /// …and the frame it let go, which is what `berserk` hangs its heavy stun on.
     justEnded: bool = false,
 
     pub fn frac(self: *const Status, row: AilRow) f32 {
@@ -1617,13 +1428,9 @@ pub const Status = struct {
         self.meter = minF(row.max, self.meter + amt);
         self.sinceDose = 0;
     }
-    /// The HP this frame owes, and the edges. A `burst` bills its whole flat sum on the proc frame and nothing
-    /// after; a clocked one bills its share of the bar spread over `dur`.
     pub fn tick(self: *Status, row: AilRow, dt: f32, hpMax: f32) f32 {
         self.justProcced = false;
         self.justEnded = false;
-        // TEN OF THESE PER BODY PER FRAME NOW, and nine of them are usually empty: an empty meter has nothing
-        // to decay and nothing reads its clock, so the arithmetic is skipped rather than run on zeroes.
         if (self.meter <= 0 and !self.on) return 0;
         if (self.on) {
             self.meter = maxF(0, self.meter - row.max / row.dur * dt);
@@ -1638,7 +1445,6 @@ pub const Status = struct {
         if (self.meter >= row.max) {
             self.justProcced = true;
             if (row.payout == .burst) {
-                // **IT EMPTIES AND RE-ARMS THE SAME FRAME**, so a fast edge can open you twice in a fight.
                 self.meter = 0;
                 self.sinceDose = 0;
                 return row.flat;
@@ -1655,8 +1461,6 @@ pub const Status = struct {
     }
 };
 
-/// What a proc bills, in the element its row names — so every creature's own column already answers it. A row
-/// with no element bills `gore`, which nothing answers but the size of the bar.
 pub fn ailPulse(row: AilRow, amt: f32) Hit {
     var out = Hit{};
     if (row.pulse) |e| out.elem.v[@intFromEnum(e)] = amt else out.gore = amt;
@@ -1676,7 +1480,6 @@ test "ELEMENTAL DAMAGE BUILDS ITS OWN METER, AFTER RESISTANCES — and a DRIP bu
         _ = body.hit(blow);
         const built = body.ail(ailOf(e)).meter;
         try std.testing.expectApproxEqAbs(@as(f32, 10) * BUILD_PER_DMG, built, 1e-4);
-        // …and NOTHING else moved: one column of damage fills one meter.
         for (std.enums.values(Ail)) |a| {
             if (a == ailOf(e)) continue;
             try std.testing.expectApproxEqAbs(@as(f32, 0), body.ail(a).meter, 1e-6);
@@ -1692,7 +1495,6 @@ test "ELEMENTAL DAMAGE BUILDS ITS OWN METER, AFTER RESISTANCES — and a DRIP bu
     var warded = Vitals.initFoe(400, 999, 999).withRes(resists(.{ .chaos = 75 }));
     _ = warded.hit(.{ .elem = elems(.{ .chaos = 40 }) });
     try std.testing.expectApproxEqAbs(@as(f32, 10), warded.ail(.poison).meter, 1e-4);
-    // …and a NEGATIVE column amplifies it, the same way it amplifies the damage.
     var bare = Vitals.initFoe(400, 999, 999).withRes(resists(.{ .chaos = -50 }));
     _ = bare.hit(.{ .elem = elems(.{ .chaos = 40 }) });
     try std.testing.expectApproxEqAbs(@as(f32, 60), bare.ail(.poison).meter, 1e-4);
@@ -1700,14 +1502,11 @@ test "ELEMENTAL DAMAGE BUILDS ITS OWN METER, AFTER RESISTANCES — and a DRIP bu
         @as(f32, 40), warded.ail(.poison).meter, bare.ail(.poison).meter,
     });
 
-    // **A DRIP NEVER BUILDS.** Poison pulses chaos and chaos builds poison: were a tick to build, the meter
-    // would top itself up for as long as it ran and never let go.
     var dripped = Vitals.initFoe(400, 999, 999);
     _ = dripped.drip(.{ .elem = elems(.{ .chaos = 40 }) });
     try std.testing.expectApproxEqAbs(@as(f32, 0), dripped.ail(.poison).meter, 1e-6);
     try std.testing.expect(dripped.hp < 400);
 
-    // A LANDED POISON RUNS OUT even while its own chaos keeps arriving through the drip.
     var rots = Vitals.initFoe(4000, 999, 999);
     rots.build(.poison, ailRow(.poison).max);
     var t: f32 = 0;
@@ -1760,7 +1559,6 @@ test "A TICK DOES NOT WAKE A SLEEPER, AND A BLOW DOES" {
     _ = v.tickAils(1.0 / 60.0);
     try std.testing.expect(v.asleep() and v.ailProcced(.sleep));
 
-    // A poison running underneath bills every frame and never lifts the sleep (owner: dot does not wake).
     v.build(.poison, ailRow(.poison).max);
     var t: f32 = 0;
     while (t < ailRow(.sleep).dur * 0.5) : (t += 1.0 / 60.0) _ = v.tickAils(1.0 / 60.0);
@@ -1768,7 +1566,6 @@ test "A TICK DOES NOT WAKE A SLEEPER, AND A BLOW DOES" {
     try std.testing.expect(v.asleep());
     try std.testing.expect(v.hp < 400);
 
-    // …and it runs out on its own clock if nothing ever strikes it.
     while (t < ailRow(.sleep).dur * 1.2) : (t += 1.0 / 60.0) _ = v.tickAils(1.0 / 60.0);
     try std.testing.expect(!v.asleep());
 
@@ -1781,8 +1578,6 @@ test "A TICK DOES NOT WAKE A SLEEPER, AND A BLOW DOES" {
 }
 
 test "A RAISED BODY COMES BACK CLEAN — it does not carry the meter that killed it" {
-    // The bug this pins: `revive` reset every other scrap of combat state and left the ten meters alone, so
-    // the necromancer's skeleton stood up still running the proc that put it down and bled straight back out.
     var v = Vitals.initFoe(400, 999, 999);
     v.build(.poison, ailRow(.poison).max);
     v.build(.sleep, ailRow(.sleep).max);
@@ -1797,7 +1592,6 @@ test "A RAISED BODY COMES BACK CLEAN — it does not carry the meter that killed
         try std.testing.expectApproxEqAbs(@as(f32, 0), v.ail(a).meter, 1e-6);
     }
     try std.testing.expect(!v.asleep());
-    // …and nothing bills it for the frame it came up on.
     const before = v.hp;
     _ = v.tickAils(1.0 / 60.0);
     try std.testing.expectApproxEqAbs(before, v.hp, 1e-6);
@@ -1873,11 +1667,9 @@ pub const Timed = struct {
     pub fn on(self: *const Timed) bool {
         return self.left > 0;
     }
-    /// What it is worth this frame — `off` while nothing is running, so the caller never writes the gate.
     pub fn value(self: *const Timed, off: f32) f32 {
         return if (self.left > 0) self.amount else off;
     }
-    /// REFRESHED, NEVER STACKED (the status law): a second dose sets the clock, it does not add to it.
     pub fn start(self: *Timed, amount: f32, secs: f32) void {
         self.amount = amount;
         self.left = secs;
@@ -1932,10 +1724,6 @@ pub const Regen = struct {
 pub const SOUL_ROLL_RATE = 7.0;
 pub const SOUL_ROLL_FLOOR = 26.0;
 
-/// **THE SECOND PURSE, AND IT IS NOT SOULS.** The same roll and the same saturation guard — a counter is a
-/// counter — but the two are spent on different things and lost on different terms: souls are DROPPED on death
-/// and walked back for (`souls.zig`), gold is KEPT. That difference is the whole reason there are two of them,
-/// and it is why this is an alias rather than a second copy of the arithmetic.
 pub const Gold = Souls;
 
 pub const Souls = struct {
@@ -2021,7 +1809,6 @@ test "LINGERING IS THE COST: the meter decays once the doses stop" {
     while (t < P.decayDelay + P.max / P.decay + 0.2) : (t += 1.0 / 60.0) _ = s.tick(P, 1.0 / 60.0, 70);
     try std.testing.expectApproxEqAbs(@as(f32, 0), s.frac(P), 1e-6);
     try std.testing.expect(!s.active());
-    // SPACED DOSES NEVER PROC (ER's own point): half a bar, wait it off, half a bar again.
     var spaced = Status{};
     for (0..6) |_| {
         spaced.add(P, P.max * 0.45);
@@ -2062,7 +1849,6 @@ test "the grip is ALL CHAOS and carries no stagger — a hold is not a flinch" {
 }
 
 test "THE GRIP DOES NOT DENY THE REFILL — a drip bills HP and leaves the regen clock alone" {
-    // Billed through `hit`, the bite re-stamps `sinceHit` every frame and the gate never opens, so a foe held for its whole span comes out of the roots with the poise it went in with.
     var held = Vitals.initFoe(100, 20, 40);
     var loose = Vitals.initFoe(100, 20, 40);
     for ([_]*Vitals{ &held, &loose }) |v| _ = v.hit(.{ .poise = 15 });
@@ -2107,7 +1893,6 @@ test "THE ROOTS COST MORE THAN THE BOLT AND DEAL LESS — a control tool, not a 
         const s: Spell = @enumFromInt(i);
         try std.testing.expect(spellName(s).len > 0);
         try std.testing.expect(spellFp(s) > 0);
-        // A doser bills nothing off the bar (`spellDoses`), so what it must have instead is the dose.
         if (spellDoses(s)) try std.testing.expect(spellBlow(s).?.dose.any()) else try std.testing.expect(spellDamage(s) > 0);
     }
     try std.testing.expect(spellDamage(.roots) < spellDamage(.bolt));
@@ -2136,7 +1921,6 @@ test "THE SIPHON FEEDS OFF WHAT IT ACTUALLY TOOK, so a body that resists chaos i
     const off_boned = boned.damageFrom(SIPHON_HIT);
     try std.testing.expect(off_bare > off_boned * 3.9); // 75% resisted is a quarter of the meal
     try std.testing.expect(off_bare * SIPHON_SHARE < off_bare);
-    // The heal is what a body actually lost, so it cannot outrun the damage even at full share.
     try std.testing.expect(SIPHON_SHARE > 0 and SIPHON_SHARE < 1);
 }
 
@@ -2193,7 +1977,6 @@ test "NOTHING BUILDS ON A BODY ALREADY STUNNED — a heavy landed inside a light
     try std.testing.expectEqual(HitResult.none, v.hit(.{ .dmg = 1, .stance = 20 }));
     try std.testing.expectApproxEqAbs(stanceAt, v.stance, 1e-5);
     try std.testing.expectApproxEqAbs(FOE_LIGHT_STUN_DUR, v.stunLeft, 1e-5);
-    // …and the lightning meter is refused too: no kind of stun builds on a stunned body.
     v.build(.stun, 30);
     try std.testing.expectApproxEqAbs(@as(f32, 0), v.ailFrac(.stun), 1e-6);
 }
@@ -2214,7 +1997,6 @@ test "A CREATURE'S FLINCH IS A SHARE OF ITS HEALTH IN BLOWS, NOT A COUNT OF THEM
     n = 0;
     while (n < 40) : (n += 1) try std.testing.expectEqual(HitResult.none, dripped.drip(.{ .dmg = 2 }));
     try std.testing.expectApproxEqAbs(dripped.poiseMax, dripped.poise, 1e-5);
-    // His own stagger is still the blow's weight.
     var hero = Vitals.init(100, 10, 999);
     try std.testing.expectEqual(HitResult.light, hero.hit(.{ .dmg = 1, .poise = 12 }));
 }
@@ -2246,7 +2028,6 @@ test "YOU CANNOT DO ONE THING OVER AND OVER — each flinch, break and proc wear
     p.clearAils();
     p.build(.poison, POISON_MAX);
     try std.testing.expect(p.ailFrac(.poison) < 0.7);
-    // The hero wears nothing: bosses do not get to learn him.
     var h = Vitals.init(100, 10, 999);
     _ = h.hit(.{ .poise = 12 });
     try std.testing.expectApproxEqAbs(@as(f32, 0), h.lightWear, 1e-6);
@@ -2695,8 +2476,6 @@ test "the quiver holds two kinds, and the SELECTED one is the one that flies" {
     q.add(.plain, 200);
     try std.testing.expectEqual(FIRE_ARROWS_MAX, q.count(.fire));
     try std.testing.expectEqual(ARROWS_MAX, q.count(.plain));
-    // **NOTHING REFILLS A QUIVER ANY MORE** (owner: arrows are found or bought). What used to be a `refill`
-    // here is the sheaf going back in through `add`, which is the only door left.
     q.fire = 0;
     q.arrows = 0;
     q.add(.plain, ARROWS_MAX);

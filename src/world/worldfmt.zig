@@ -19,22 +19,13 @@ pub const MAX_DECLARED_HALF: f32 = 312.0;
 pub const MAX_OPS: usize = 20480;
 pub const MAX_MIX: usize = 24;
 pub const MAX_LOOT: usize = 8;
-/// Creatures one fog gate may seal on. Two is the duo; the spare is for the warband nobody has authored yet.
 pub const MAX_SEAL: usize = 4;
 pub const MAX_ZONES: usize = 16;
 pub const MAX_CLEARINGS: usize = 32;
-/// Rooms a map may wall. A map wanting more than this many sealed fights is not one map.
 pub const MAX_ARENAS: usize = 8;
-/// Corners one room may have. **THREE IS THE FLOOR** — two points are a line and bound nothing — and the cap
-/// is what a hand-drawn room takes before it is really terrain.
 pub const MAX_ARENA_VERTS: usize = 24;
-/// **THE ONE FOE LIMIT** (owner: can u make it 512, this map is huge). Every group's slab is this wide too
-/// (`MAX_PER_KIND`), so raising it costs one slab per `game.FOE_GROUPS` row — and so does every creature added,
-/// which is the term that actually moves. **THE FIGURE IS NOT WRITTEN HERE, BECAUSE IT DRIFTS EVERY TIME A
-/// CREATURE LANDS** — `game.zig`'s "WHAT THE FRAME COSTS" prints the live total per group, and a number copied
-/// out of it here read 144.4 MB over twenty-nine rows while the tree had thirty and 150.6. `build.zig`'s
-/// stack reserve carries the same figure again because startup builds those
-/// groups BY VALUE. Both are address space rather than resident memory; the frame cost is nil, since every pass walks `live()`.
+/// **THE ONE FOE LIMIT** (owner: can u make it 512, this map is huge). Every group's slab is this wide too, and
+/// `game.zig`'s "WHAT THE FRAME COSTS" prints the live total per group.
 pub const MAX_FOES: usize = 512;
 pub const FOE_SCALE_LO: f32 = 0.5;
 pub const FOE_SCALE_HI: f32 = 2.0;
@@ -71,9 +62,6 @@ pub const Op = struct {
     r1: f32 = 0,
     yaw: f32 = 0,
     scale: f32 = 1,
-    /// **HOW FAR UP A STACKING KIND RUNS**, in metres (`props.Info.stack`, the ladder). It SNAPS to whole
-    /// sections at replay, so the file and the world agree on a number the author can read off the panel; 0
-    /// leaves the kind its own single section. Meaningless on anything that does not stack.
     rise: f32 = 0,
     /// TIP THE PROP OFF PLUMB: `lean` degrees, toward the compass direction `leanDir` (measured like yaw).
     lean: f32 = 0,
@@ -96,14 +84,11 @@ pub const Op = struct {
     /// What is in the CONTAINER this op placed — a chest, or an item pickup (`props.holdsLoot`). Written and parsed on `nloot > 0` alone and never on the kind, which is why the glow needed no format change.
     loot: [MAX_LOOT]item.Kind = undefined,
     nloot: u8 = 0,
-    /// **COIN IN THE CONTAINER**, read by the same kinds `loot` is (`props.holdsLoot`) and independent of it — a
-    /// chest may hold gold and nothing else, or items and no gold. 0 is an empty purse and writes no tail.
+/// A chest may hold gold and nothing else, or items and no gold. 0 is an empty purse and writes no tail.
     gold: u32 = 0,
-    /// WHAT MUST DIE BEFORE A FOG GATE OPENS AGAIN — read by `ward` kinds alone (`props.Info.ward`), the way `loot` is read by containers alone. `boss=-` in the file is a gate that never shuts: a doorway, not an arena. **A DUO IS TWO, SO THE SEAL IS A LIST** (`fungalduo`): the gate holds while ANY name on it still stands, and every bar behind it waits on the same list (`game.bossBars`). The default is the FIRST boss, so a stamped gate works with nothing typed and writes no tail.
     boss: [MAX_SEAL]FoeKind = [_]FoeKind{.bone_knight} ** MAX_SEAL,
     nboss: u8 = 1,
 
-    /// The creatures this gate is sealed on, in the order they were picked. Empty is a doorway.
     pub fn seal(self: *const Op) []const FoeKind {
         return sealList(&self.boss, self.nboss);
     }
@@ -171,18 +156,10 @@ pub fn defaults(k: OpKind) Op {
 
 pub const MAX_LOCATIONS: usize = 64;
 
-/// **THE ONE RECTANGLE TEST.** Four rows carry a corner pair — a location, a zone, the runway and `Cond.region` —
-/// and two of the four normalised the corners while two compared them raw, so a rect authored with `x1 < x`
-/// answered for nothing in one and for its own area in the other. The editor always emits them normalised
-/// (`normRect`); a hand-written map never had to.
 pub fn inRect(px: f32, pz: f32, x0: f32, z0: f32, x1: f32, z1: f32) bool {
     return px >= @min(x0, x1) and px <= @max(x0, x1) and pz >= @min(z0, z1) and pz <= @max(z0, z1);
 }
 
-/// StarEdit's Location: declared ONCE and referred to by name, where `Cond.region`'s inline coordinates meant
-/// two triggers about one doorway held two copies of it.
-///
-/// **THEY OVERLAP FREELY AND THE MOST RECENTLY PAINTED ONE WINS** — `locationAt` takes the FIRST match and the editor prepends. Any other rule makes a location you can see disagree with the one that answers.
 pub const Location = struct {
     name: [NAME_CAP]u8 = [_]u8{0} ** NAME_CAP,
     x: f32 = 0,
@@ -192,15 +169,12 @@ pub const Location = struct {
     /// **THE WEATHER THIS PLACE KEEPS**, or null for "no opinion". There is ONE sky, ONE sun and ONE rain sheet drawn round the camera, so a location cannot make it rain over there while it is dry here: what it does is drive the GLOBAL level while he is inside it, cross-faded over `blend`.
     wet: ?f32 = null,
     fog: ?f32 = null,
-    /// **SPOREFALL** — fog's third channel, and a DIFFERENT weather rather than a tint on the same one: it carries the peach haze, the lit banks and the motes together, and it is the only one of the three that reads at all on a clear bright hour.
     spore: ?f32 = null,
-    /// Seconds the cross-fade takes, in or out. A hard switch at the boundary is a pop.
     blend: f32 = 6.0,
 
     pub fn contains(self: *const Location, px: f32, pz: f32) bool {
         return inRect(px, pz, self.x, self.z, self.x1, self.z1);
     }
-    /// Does it say anything about the sky at all? A location with no weather is still a perfectly good location — it is a name for a place, and the script layer is its other customer.
     pub fn hasWeather(self: *const Location) bool {
         return self.wet != null or self.fog != null or self.spore != null;
     }
@@ -241,8 +215,6 @@ pub const Zone = struct {
     }
 };
 
-/// Do the two open segments properly cross? Written on the sign of four turns rather than on an intersection
-/// point, so a shared endpoint and a parallel pair answer FALSE without a division anywhere.
 fn segsCrossXZ(ax: f32, az: f32, bx: f32, bz: f32, cx: f32, cz: f32, dx: f32, dz: f32) bool {
     const d1 = turn(cx, cz, dx, dz, ax, az);
     const d2 = turn(cx, cz, dx, dz, bx, bz);
@@ -261,8 +233,6 @@ pub fn setMix(dst: *[MAX_MIX]Kind, n: *u8, mix: []const Kind) void {
     n.* = @intCast(k);
 }
 
-/// **THE DOOR AND THE ROOM CARRY THE SAME SEAL, SO THEY ASK IT THE SAME WAY.** Both keep it as plain fields
-/// because both are serialized off the format's own field table; every question about it lives here.
 pub fn sealList(boss: *const [MAX_SEAL]FoeKind, n: u8) []const FoeKind {
     return boss[0..@min(n, MAX_SEAL)];
 }
@@ -274,8 +244,6 @@ pub fn sealHas(seal: []const FoeKind, k: FoeKind) bool {
     return false;
 }
 
-/// **IS ANY NAME ON IT STILL STANDING** — a duo is two, and a seal that let go with half the fight up let you
-/// walk out of an arena you were sealed into. `alive` is the per-kind tally the loop already keeps.
 pub fn sealStanding(seal: []const FoeKind, alive: []const u32) bool {
     for (seal) |b| {
         const i = @intFromEnum(b);
@@ -284,7 +252,6 @@ pub fn sealStanding(seal: []const FoeKind, alive: []const u32) bool {
     return false;
 }
 
-/// `boss=a,b`, or `boss=-` for a seal that names nobody. The exact inverse of `parseSeal`.
 pub fn writeSeal(w: anytype, seal: []const FoeKind) !void {
     try w.writeAll(" boss=");
     if (seal.len == 0) try w.writeAll("-");
@@ -296,8 +263,6 @@ pub fn writeSeal(w: anytype, seal: []const FoeKind) !void {
 
 pub const Clearing = struct { x: f32 = 0, z: f32 = 0, r: f32 = 12 };
 
-/// **WHERE THE PLAYER STANDS UP.** Every world put him at (0, 4) facing south because `game.beginGame` said
-/// so and the format had no way to disagree — which is why every test map had to be built around that spot.
 /// `yaw` is the house convention, degrees, 0 facing +Z.
 pub const Start = struct {
     x: f32 = 0,
@@ -312,13 +277,7 @@ pub const Start = struct {
     }
 };
 
-/// **A ROOM, AND THE FOG GATE IS ONLY ITS DOOR.** The gate refuses one line 0.8 m thick, so an arena on open
-/// ground is a gate you walk round and a magus that dissolves out of its own fight (owner). An XZ polygon that
-/// holds every body inside it, his included, for as long as `boss` still stands.
-///
-/// **THE SEAL IS THE ROOM'S AND NOT THE DOOR'S** (`Op.boss` is the gate's own copy, same grammar) — a room can
-/// be walled with no gate in it, and a gate can be a doorway in no room. Where a map has both, a test pins the
-/// two lists against each other rather than trusting them to agree.
+/// A room, and the fog gate is only its door: the gate refuses one line 0.8 m thick.
 pub const Arena = struct {
     name: [NAME_CAP]u8 = [_]u8{0} ** NAME_CAP,
     vx: [MAX_ARENA_VERTS]f32 = [_]f32{0} ** MAX_ARENA_VERTS,
@@ -327,7 +286,6 @@ pub const Arena = struct {
     boss: [MAX_SEAL]FoeKind = [_]FoeKind{.bone_knight} ** MAX_SEAL,
     nboss: u8 = 1,
 
-    /// Empty is bounds that never hold.
     pub fn seal(self: *const Arena) []const FoeKind {
         return sealList(&self.boss, self.nboss);
     }
@@ -340,8 +298,6 @@ pub const Arena = struct {
         return @min(self.n, MAX_ARENA_VERTS);
     }
 
-    /// **EVEN-ODD, AND THE HALF-OPEN RULE ON Z IS WHAT MAKES A SHARED CORNER COUNT ONCE.** Written with two
-    /// `<=` a ray through a vertex crosses both its edges and the point outside reads as inside.
     pub fn contains(self: *const Arena, px: f32, pz: f32) bool {
         const n = self.verts();
         if (n < 3) return false;
@@ -359,11 +315,9 @@ pub const Arena = struct {
         return in;
     }
 
-    /// The distance is unsigned — `contains` answers which side of the wall `p` is on.
     pub fn nearestWall(self: *const Arena, p: rl.Vector3) struct { at: rl.Vector3, d: f32 } {
         const n = self.verts();
         // `j = n - 1` on a usize is the wrap, not -1: an Arena with no corners panicked here rather than
-        // answering. `hold` and `onWall` guard it themselves, but this is `pub` and the next caller will not.
         if (n < 3) return .{ .at = p, .d = 0 };
         var best = mathx.zero3;
         var bd: f32 = std.math.floatMax(f32);
@@ -380,20 +334,12 @@ pub const Arena = struct {
         return .{ .at = best, .d = bd };
     }
 
-    /// **THE WALL IS A PUSH-OUT, NOT A REFUSAL.** A blink lands a body wherever it lands and a refusal would
-    /// strand it; the room takes it by the shoulder and stands it `r` back inside its own line.
-    ///
-    /// It walks every wall on every call, and the obvious cache — the room's INRADIUS off `middle`, which by the
-    /// triangle inequality lets a body near the centre skip that walk in one distance test — is NOT applied.
     /// MEASURED on the shipped room: 11 walls, six bodies, two calls a frame each is **396 crossings a frame**,
-    /// and every map with no `arena:` row pays a zero-length loop. There is nothing there to buy.
     pub fn hold(self: *const Arena, p: rl.Vector3, r: f32) rl.Vector3 {
         if (self.verts() < 3) return p;
         const inside = self.contains(p.x, p.z);
         const near = self.nearestWall(p);
         if (inside and near.d >= r) return p;
-        // Toward the interior: away from the wall when he is in, toward it when he is out. On the line itself
-        // neither is defined, so the centroid is what breaks the tie.
         var dir = if (inside) mathx.dirXZ(near.at, p) else mathx.dirXZ(p, near.at);
         if (mathx.lenXZ(dir) < 1e-4) dir = mathx.dirXZ(near.at, self.middle());
         if (mathx.lenXZ(dir) < 1e-4) return p;
@@ -401,25 +347,19 @@ pub const Arena = struct {
         return mathx.v3(near.at.x + u.x * r, p.y, near.at.z + u.z * r);
     }
 
-    /// **HOW NEAR A GATE HAS TO STAND TO COUNT AS BEING IN THIS ROOM'S WALL.** A door is authored ON the line;
-    /// the slack is for a hand-typed corner, not for a gate somewhere in the middle of the floor.
     pub const GATE_ON_WALL: f32 = 2.0;
 
-    /// What pairs a fog gate to the room it is the door of.
     pub fn onWall(self: *const Arena, px: f32, pz: f32) bool {
         if (self.verts() < 3) return false;
         return self.nearestWall(mathx.ground(px, pz)).d <= GATE_ON_WALL;
     }
 
-    /// **DOES THE OUTLINE CROSS ITSELF.** A figure-of-eight room has an even-odd test that answers `false` in
-    /// its own middle, so it holds nothing where it looks most like a room — and it is drawn by hand, so
     /// nothing else would catch it. O(n2) over at most `MAX_ARENA_VERTS`, and only ever asked offline.
     pub fn simple(self: *const Arena) bool {
         const n = self.verts();
         if (n < 3) return false;
         for (0..n) |i| {
             for (0..n) |j| {
-                // Adjacent edges SHARE a corner, which is a touch and not a crossing.
                 if (j <= i + 1 or (i == 0 and j == n - 1)) continue;
                 if (segsCrossXZ(
                     self.vx[i],
@@ -436,7 +376,6 @@ pub const Arena = struct {
         return true;
     }
 
-    /// The corners' mean — a tie-break and a place to aim a camera, never a centre of area.
     pub fn middle(self: *const Arena) rl.Vector3 {
         const n = self.verts();
         if (n == 0) return mathx.zero3;
@@ -506,10 +445,6 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
     };
 }
 
-/// **WHAT A UNIT DOES BEFORE IT HAS SEEN ANYBODY.** The names are StarEdit's, because that is the vocabulary
-/// these maps are authored in: JUNKYARD DOG is roaming about a post, leashed or not. APPEND-ONLY like every
-/// other authored enum. **`hold` is what every unit did before this existed**, so a map that never mentions
-/// `ai=` loads unchanged.
 pub const FoeAi = enum(u8) {
     hold,
     roam,
@@ -517,7 +452,6 @@ pub const FoeAi = enum(u8) {
     patrol,
 };
 
-/// A painted patrol point. Ground only — the route follows the terrain the unit stands on.
 pub const Wp = struct { x: f32 = 0, z: f32 = 0 };
 /// Per unit. Eight legs is a long beat for a guard and keeps the map's foe table at 34 KB across `MAX_FOES`.
 pub const MAX_WP: usize = 8;
@@ -537,16 +471,12 @@ pub const Foe = struct {
         return self.wp[0..@min(self.nwp, MAX_WP)];
     }
 
-    /// **THE ROUTE IS WORLD-SPACE, SO IT MOVES WITH THE BODY.** Every editor gesture that shifts a spawn — the
-    /// marquee drag, the clipboard's centring and its paste, the inspector's steppers — moved `x`/`z` alone and
-    /// left a patrol walking back to the coordinates the unit was copied from.
     pub fn translate(self: *Foe, dx: f32, dz: f32) void {
         self.x += dx;
         self.z += dz;
         self.moveRoute(dx, dz);
     }
 
-    /// For the one mover that writes `x`/`z` in place (the inspector's steppers): the legs take the same delta.
     pub fn moveRoute(self: *Foe, dx: f32, dz: f32) void {
         if (dx == 0 and dz == 0) return;
         for (self.wp[0..@min(self.nwp, MAX_WP)]) |*q| {
@@ -560,7 +490,6 @@ pub const Foe = struct {
 /// per-kind cap sat under the global one: `foe.resetGroup` fills a fixed slab and `continue`s past the
 /// overflow, so a 25th shroom was a body the map placed, the editor drew, the save counted and the level never
 /// spawned — and `01_fallen_plain` stands on exactly 24. Set to the whole budget it cannot bite. It costs
-/// memory, and how much is `MAX_FOES`' own note: read it off "WHAT THE FRAME COSTS" and not off a comment.
 pub const MAX_PER_KIND: usize = MAX_FOES;
 
 pub const Runway = struct { x: f32 = -3.4, z: f32 = -44, x1: f32 = 3.4, z1: f32 = 30 };
@@ -590,10 +519,6 @@ pub const END_TARGET = "end";
 
 pub const Span = struct { at: u32 = 0, len: u16 = 0 };
 
-/// **AN ID THAT DOES NOT FIT IS A LOAD ERROR, NEVER A TRUNCATED ONE.** Every id here is a REFERENCE and
-/// `found` compares the stored text against the full name, so a clipped one never matches itself: a
-/// 26-character flag interned a fresh row per mention, and the `do:` that set it and the `need:` that read
-/// it landed on different rows with the gate never opening.
 pub fn setId(dst: *Id, s: []const u8) !void {
     if (s.len >= ID_CAP) return ParseError.NameTooLong;
     dst.* = [_]u8{0} ** ID_CAP;
@@ -620,8 +545,6 @@ pub const Cmp = enum(u8) {
             .gt => ">",
         };
     }
-    /// One comparison for both the counters' `i64` and the clocks' `f32` — the arms are the type's, not the
-    /// comparison's, so a sixth `Cmp` cannot be answered in one place and forgotten in the other.
     pub fn holdsOf(c: Cmp, comptime T: type, a: T, b: T) bool {
         return switch (c) {
             .lt => a < b,
@@ -687,9 +610,6 @@ pub const ActKind = enum(u8) {
     timer,
     wait,
     preserve,
-    /// **APPENDED, LIKE `FoeKind`** — the editor's picker cycles this enum and a map names an act by TAG, so a
-    /// kind inserted in the middle would re-point every act already authored. The two counters
-    /// (`play/counter.zig`) carry no payload: which one it is IS the kind.
     shop,
     smithy,
 };
@@ -755,8 +675,6 @@ pub const Dialog = struct {
     id: Id = [_]u8{0} ** ID_CAP,
     node0: u16 = 0,
     nnodes: u16 = 0,
-    /// **STOOD UP BY `link`, NOT BY THE FILE** (`seedDialogs`), and so never written back out. A body with no
-    /// `dlg=` on its line still has to be worth walking up to — a merchant you cannot buy from is scenery.
     synth: bool = false,
 
     pub fn label(self: *const Dialog) []const u8 {
@@ -764,18 +682,10 @@ pub const Dialog = struct {
     }
 };
 
-// ── THE EDITABLE CONVERSATION ─────────────────────────────────────────────────────────────────────────────
 
-/// **WHAT A COUNTER'S CONVERSATION IS, FLAT**: one greeting and up to `MAX_CHOICES` lines that each DO one
-/// thing. This is the SUBSET of the node tree the editor can author and round-trip — enough for a merchant, a
-/// smith and a goodbye, and nothing that needs a graph. A hand-written tree with more than one node is left
-/// strictly alone: `readTalk` refuses it, and the panel says so rather than flattening his work.
 pub const TALK_SAY_CAP: usize = 240;
 pub const TALK_LABEL_CAP: usize = 44;
 
-/// What pressing a line does. **THE COUNTER LINES END THE CONVERSATION**, because the stall is the answer to
-/// what was asked: `game.tickTalk` drains the ask on the frame the talk closes and `run` puts the counter's
-/// frame ahead of the talk's, so the panel is gone before the stall is drawn.
 pub const Does = enum(u8) {
     leave,
     again,
@@ -817,9 +727,6 @@ pub const TalkRow = struct {
 pub const Talk = struct {
     say: [TALK_SAY_CAP]u8 = [_]u8{0} ** TALK_SAY_CAP,
     sayLen: u16 = 0,
-    /// **THE NAME OVER THE PLATE, AND EMPTY MEANS THE BODY'S OWN** (`node.who`, which `dialog.draw` falls back
-    /// off to the speaker `game.startTalk` handed it). Carried here rather than ignored: a conversation that
-    /// named its speaker lost the name the first time the panel wrote it back, silently.
     who: [TALK_LABEL_CAP]u8 = [_]u8{0} ** TALK_LABEL_CAP,
     whoLen: u8 = 0,
     rows: [MAX_CHOICES]TalkRow = [_]TalkRow{.{}} ** MAX_CHOICES,
@@ -841,14 +748,8 @@ pub const Talk = struct {
     }
 };
 
-/// The one node id every authored conversation uses. Spelled once: `writeTalk` emits it and `.again` points a
-/// line back at it, so the two cannot disagree about what "the top" is called.
 pub const TALK_NODE: []const u8 = "root";
 
-/// **WHAT A BODY SAYS WHEN THE MAP GIVES IT NOTHING TO SAY.** One greeting per kind and the lines that go
-/// with it — the merchant opens his shop, the smith opens his smithy, and the wanderer passes the time. Lives
-/// here rather than in the editor because BOTH need it: the panel seeds a fresh conversation off it, and
-/// `seedDialogs` stands one up for every body the file left silent.
 pub fn seedTalk(kind: NpcKind, t: *Talk) void {
     switch (kind) {
         .merchant => {
@@ -876,13 +777,6 @@ pub fn seedTalk(kind: NpcKind, t: *Talk) void {
     }
 }
 
-/// **EVERY BODY TALKS, WHETHER OR NOT THE FILE SAID SO.** Run at the end of `link`: a merchant or a smith with
-/// no `dlg=` used to have no prompt over him at all, which on the shipped map is both of them. One SYNTHETIC
-/// dialog per kind that needs it — shared by every silent body of that kind, marked `synth` so `render` leaves
-/// it out and the file is exactly what the author wrote.
-///
-/// **NON-FATAL BY CONSTRUCTION.** Out of dialog slots or out of text arena leaves the body as it was — silent,
-/// which is where it started — rather than refusing to load a map that was fine before this existed.
 fn seedDialogs(m: *Map) void {
     for (m.npcs[0..m.nnpcs]) |*p| {
         if (p.dlg != NO_DIALOG) continue;
@@ -900,16 +794,11 @@ fn seedDialogs(m: *Map) void {
     }
 }
 
-/// **DECOMPILE, OR REFUSE.** Null means this dialog is not one the flat panel can express — more than one node,
-/// an act on the node itself, a gated line, a line that jumps somewhere, or an act that is not a counter.
-/// Refusing is the whole point: the editor may not quietly rewrite a tree it does not understand.
 pub fn readTalk(m: *const Map, dlg: u16) ?Talk {
     const d = m.dialogAt(dlg) orelse return null;
     if (d.nnodes != 1) return null;
     const nd = &m.nodes[d.node0];
     if (nd.nact != 0) return null;
-    // A node with no lines may only fall out of the conversation; with one node there is nowhere else it
-    // could point but at itself, which is a panel with no way out.
     if (nd.nchoices == 0 and nd.next != NO_NODE) return null;
     var t = Talk{};
     t.setLine(m.spanText(nd.text));
@@ -919,7 +808,6 @@ pub fn readTalk(m: *const Map, dlg: u16) ?Talk {
         const acts = m.dactRun(c.act0, c.nact);
         var does: Does = if (c.next == NO_NODE) .leave else if (c.next == d.node0) .again else return null;
         if (acts.len == 1) {
-            // `Does` has no shop-and-loop variant, so an act on a looping line is refused, not rewritten.
             if (c.next != NO_NODE) return null;
             does = switch (acts[0].kind) {
                 .shop => .shop,
@@ -934,9 +822,6 @@ pub fn readTalk(m: *const Map, dlg: u16) ?Talk {
     return t;
 }
 
-/// **ONE REBASE, TWO REBUILDERS.** `writeTalk` and `removeDialog` both rebuild the arena whole, and both have to
-/// carry every OTHER dialog across verbatim with its `next` shifted by however far its run moved. Written out
-/// twice the copies drifted — only one of them bounds-checked what it was filling.
 fn rebaseDialog(m: *Map, d: *Dialog, nodes: []Node, acts: []Act, nn: *u16, na: *u16) !void {
     const shift = @as(i32, nn.*) - @as(i32, d.node0);
     for (m.nodesOf(d)) |*src| {
@@ -963,15 +848,8 @@ fn rebaseDialog(m: *Map, d: *Dialog, nodes: []Node, acts: []Act, nn: *u16, na: *
     }
 }
 
-/// **THE ARENA IS REBUILT WHOLE, NOT PATCHED.** A dialog owns a CONTIGUOUS run of `nodes` and every node and
-/// choice a contiguous run of `dacts`, so adding one line to the first conversation would shift every index
-/// after it. Rebuilding in dialog order is the only edit that cannot leave a dangling `act0`; the other
-/// dialogs are copied VERBATIM (an arbitrary hand-written tree survives it), with their `next` re-based by the
-/// one offset their whole run moved.
 pub fn writeTalk(m: *Map, dlg: u16, t: *const Talk) !void {
     if (dlg >= m.ndialogs) return ParseError.UnknownRef;
-    // **SWEEP BEFORE WRITING, NOT AFTER.** A `Talk` carries its own BYTES rather than spans, so nothing here
-    // is invalidated by the sweep — and the greeting about to be re-added is exactly the copy it reclaims.
     compactText(m);
     var nodes: [MAX_NODES]Node = undefined;
     var acts: [MAX_DACTS]Act = undefined;
@@ -1010,7 +888,6 @@ pub fn writeTalk(m: *Map, dlg: u16, t: *const Talk) !void {
                 nd.choices[nd.nchoices] = c;
                 nd.nchoices += 1;
             }
-            // A node with no lines at all has to say `then: end`, or the panel is a wall with no way out.
             if (nd.nchoices == 0) nd.thenRef = Span{};
             nodes[nn] = nd;
             nn += 1;
@@ -1027,12 +904,6 @@ pub fn writeTalk(m: *Map, dlg: u16, t: *const Talk) !void {
     m.ndacts = na;
 }
 
-/// **`addText` ONLY EVER APPENDS, SO AN EDITOR HAS TO SWEEP UP AFTER ITSELF.** `DTEXT_CAP` is small and every
-/// re-commit of a conversation, every coined flag name and every re-pointed `dialog` act writes a fresh copy —
-/// re-saying one 240-byte greeting seventeen times fills the arena and the next edit is refused with the map
-/// looking fine. This walks EVERY `Span` the format has (the list is the ten fields, and it is exhaustive by
-/// construction — a new one that is not copied here loses its text the first time this runs) and rewrites the
-/// arena as just what is still pointed at.
 pub fn compactText(m: *Map) void {
     var out: [DTEXT_CAP]u8 = undefined;
     var n: u32 = 0;
@@ -1044,7 +915,6 @@ pub fn compactText(m: *Map) void {
                 s.* = .{};
                 return;
             }
-            // The same bytes twice is one copy: a conversation re-committed unchanged then costs nothing at all.
             if (std.mem.indexOf(u8, buf[0..at.*], txt)) |hit| {
                 s.* = .{ .at = @intCast(hit), .len = @intCast(txt.len) };
                 return;
@@ -1085,8 +955,6 @@ pub fn compactText(m: *Map) void {
     m.ndtext = n;
 }
 
-/// Every `Cond` the map owns, in one walk: a trigger's `when:` list and a choice's `need:` gate are the same
-/// type in two pools, and a fixup that reaches only one of them is a reference left dangling in the other.
 fn eachCond(m: *Map, ctx: anytype, comptime visit: fn (@TypeOf(ctx), *Cond) void) void {
     for (m.trigs[0..m.ntrigs]) |*t| {
         for (t.conds[0..t.nconds]) |*c| visit(ctx, c);
@@ -1094,7 +962,6 @@ fn eachCond(m: *Map, ctx: anytype, comptime visit: fn (@TypeOf(ctx), *Cond) void
     for (m.gates[0..m.ngates]) |*c| visit(ctx, c);
 }
 
-/// …and every `Act`, for the same reason: a trigger's `do:` list and a node's or choice's own.
 fn eachAct(m: *Map, ctx: anytype, comptime visit: fn (@TypeOf(ctx), *Act) void) void {
     for (m.trigs[0..m.ntrigs]) |*t| {
         for (t.acts[0..t.nacts]) |*a| visit(ctx, a);
@@ -1102,14 +969,8 @@ fn eachAct(m: *Map, ctx: anytype, comptime visit: fn (@TypeOf(ctx), *Act) void) 
     for (m.dacts[0..m.ndacts]) |*a| visit(ctx, a);
 }
 
-/// What a removal had to break to stay loadable. **A COUNT, NOT A SILENT REPAIR** — the editor says it out
-/// loud, because a condition that quietly stopped meaning what it said is worse than one that is gone.
 pub const Broke = struct { conds: usize = 0 };
 
-/// **DELETING A BODY REPOINTS EVERY `near` THAT COUNTED PAST IT.** `Cond.near` is a POSITIONAL index into
-/// `npcs` and `link` refuses one past the end, so deleting the body a trigger watched wrote a map that would
-/// not load at all — and deleting one BELOW it silently moved every watch onto the wrong body. A condition
-/// that watched the deleted body becomes `never`: it cannot fire on a stranger, and it is visible in the panel.
 pub fn removeNpc(m: *Map, i: usize) Broke {
     var broke = Broke{};
     if (i >= m.nnpcs) return broke;
@@ -1132,9 +993,6 @@ pub fn removeNpc(m: *Map, i: usize) Broke {
     return broke;
 }
 
-/// How many things still name this conversation — npcs that open it, `talked` conditions and `dialog` actions.
-/// **NOTHING IS RECLAIMED WHILE ANYTHING POINTS AT IT**: the alternative is neutralising acts and gates the
-/// author wrote, and a conversation left standing costs one row of a table.
 pub fn dialogUsers(m: *const Map, dlg: u16) usize {
     var n: usize = 0;
     for (m.npcs[0..m.nnpcs]) |*p| {
@@ -1157,10 +1015,6 @@ pub fn dialogUsers(m: *const Map, dlg: u16) usize {
     return n;
 }
 
-/// **RECLAIMS A CONVERSATION NOBODY OPENS.** `MAX_DIALOGS` is small and the talk panel coins one the moment a
-/// body is given a voice, so without this an afternoon of adding and deleting folk fills the table with
-/// conversations nothing can reach. Refuses while anything still names it (`dialogUsers`). The node arena is
-/// rebuilt around the hole for `writeTalk`'s reason — a dialog owns a CONTIGUOUS run of it.
 pub fn removeDialog(m: *Map, dlg: u16) bool {
     if (dlg >= m.ndialogs or dialogUsers(m, dlg) > 0) return false;
 
@@ -1171,7 +1025,6 @@ pub fn removeDialog(m: *Map, dlg: u16) bool {
     for (m.dialogs[0..m.ndialogs], 0..) |*d, di| {
         if (di == dlg) continue;
         const at = nn;
-        // Every dialog but one, out of a map that already fit: the rebase's caps cannot be reached from here.
         rebaseDialog(m, d, &nodes, &acts, &nn, &na) catch unreachable;
         d.node0 = at;
         d.nnodes = nn - at;
@@ -1184,8 +1037,6 @@ pub fn removeDialog(m: *Map, dlg: u16) bool {
     std.mem.copyForwards(Dialog, m.dialogs[dlg .. m.ndialogs - 1], m.dialogs[dlg + 1 .. m.ndialogs]);
     m.ndialogs -= 1;
 
-    // Everything that indexed a conversation ABOVE the hole counts one lower now. The NAMES are what the file
-    // stores and `link` re-resolves, so these are the live indices only — but the editor runs on them.
     for (m.npcs[0..m.nnpcs]) |*p| {
         if (p.dlg != NO_DIALOG and p.dlg > dlg) p.dlg -= 1;
     }
@@ -1204,8 +1055,6 @@ pub fn removeDialog(m: *Map, dlg: u16) bool {
     return true;
 }
 
-/// A conversation name no dialog is using yet. `talk{n}` after the body's own kind, walked until it is free —
-/// the record index alone collided the moment a body below it was deleted and the list closed up.
 pub fn freeDialogName(m: *const Map, buf: []u8, kind: NpcKind) []const u8 {
     var i: usize = 0;
     while (i < MAX_DIALOGS * 2) : (i += 1) {
@@ -1215,8 +1064,6 @@ pub fn freeDialogName(m: *const Map, buf: []u8, kind: NpcKind) []const u8 {
     return "talk";
 }
 
-/// Appends an empty conversation and hands back its index. The NAME is the caller's, and it is also what the
-/// npc's `dlg=` will spell — `findDialog` is how a reload finds it again.
 pub fn addTalk(m: *Map, name: []const u8, t: *const Talk) !u16 {
     if (m.ndialogs >= MAX_DIALOGS) return ParseError.TooManyDialogs;
     if (m.findDialog(name) != null) return ParseError.UnknownRef;
@@ -1273,7 +1120,6 @@ pub const Soil = enum(u8) {
 
     pub const N = @typeInfo(Soil).@"enum".fields.len;
 
-    /// Bone SCATTERS and burnt ground TEARS — a shard field has no line and a burn has a ragged one.
     pub fn defaultEdge(s: Soil) Edge {
         return switch (s) {
             .stone => .tiled,
@@ -1285,10 +1131,7 @@ pub const Soil = enum(u8) {
     }
 };
 
-/// **WHAT THE PAINTED SHEET IS MADE OF.** One per cell, beside the coast shape, so a map may hold a tarn and a
-/// lava run at once. `water` is 0, which is what every map written before this comes up as. The behaviour is
-/// the water's for all four — the wading, the coast, the gate a `Gait` reads — and only the LOOK, the STATUS it
-/// soaks into you and its voice differ.
+/// `water` is 0, which is what every map written before this comes up as.
 pub const Liquid = enum(u8) {
     water,
     oil,
@@ -1311,7 +1154,6 @@ pub const Liquid = enum(u8) {
     }
 };
 
-/// **HOW A PAINTED PATCH ENDS.** One authored property per CELL, beside its material and its coverage — not a property of the material, since six materials cannot carry eight shapes and the point is to lay a tiled courtyard and a torn scree of the same stone in one world.
 pub const Edge = enum(u8) {
     blend,
     natural,
@@ -1358,9 +1200,6 @@ comptime {
     // …and `shaders.liquidTone` is a flat 3-per-kind array indexed by THIS ordinal.
     std.debug.assert(Liquid.N == gfx.LIQUID_N);
     std.debug.assert(@intFromEnum(Liquid.water) == 0);
-    // **AND `props.LIQUID_TONES` IS THAT ARRAY ON THE CPU SIDE, PINNED TAG-FOR-TAG** — `game.LIQUID_VOICE`'s
-    // rule, applied to the one liquid table that was held in this order by a comment alone. It lives here and
-    // not beside the table because `props` cannot import this file; reordered, four lakes silently repaint.
     const art = @import("../props/propart.zig");
     for (0..Liquid.N) |i| {
         const tag = upperTag(@tagName(@as(Liquid, @enumFromInt(i))));
@@ -1372,8 +1211,6 @@ comptime {
     }
 }
 
-/// A tag in the SHOUTING spelling `propart` names its colours in — the only reason this exists is so a table
-/// can be pinned to an enum by NAME rather than by counting rows.
 fn upperTag(comptime s: []const u8) []const u8 {
     comptime {
         var out: [s.len]u8 = undefined;
@@ -1383,7 +1220,6 @@ fn upperTag(comptime s: []const u8) []const u8 {
     }
 }
 
-/// **IS EVERY CELL'S EDGE THE ONE ITS MATERIAL WOULD HAVE CHOSEN** — what decides whether the grid is worth a row in the file, and the exact inverse of `fillLegacyEdges`. As a `!= .natural` test every map with stone in it grew a row.
 fn edgesAllDefault(m: *const Map) bool {
     for (m.soil, m.soilEdge) |id, e| {
         const want: u8 = @intFromEnum(@as(Soil, @enumFromInt(@min(id, Soil.N - 1))).defaultEdge());
@@ -1419,7 +1255,6 @@ fn brushFalloff(d: f32, radius: f32) f32 {
     return u * u * (3.0 - 2.0 * u);
 }
 
-/// THE ONE PAINTED-GRID SAMPLER — world position → cell index over an `n`-a-side grid spanning `-half..+half`, or null outside it. The soil grid, the water mask and `env`'s water field all read it, so where the clamp happens relative to the cast cannot be written two ways.
 pub fn gridIndex(half: f32, n: usize, px: f32, pz: f32) ?usize {
     if (half <= 0) return null;
     const t = (px + half) / (2 * half);
@@ -1431,14 +1266,10 @@ pub fn gridIndex(half: f32, n: usize, px: f32, pz: f32) ?usize {
     return cz * n + cx;
 }
 
-/// `gridIndex`'s INVERSE — the world coordinate of cell `i`'s centre on one axis. Every brush walk and every
-/// scan over a painted grid needs it, and written out at the call site it was the same line in three files.
 pub fn cellCentre(half: f32, cell: f32, i: usize) f32 {
     return -half + (@as(f32, @floatFromInt(i)) + 0.5) * cell;
 }
 
-/// World coordinate → cell index on ONE axis, CLAMPED into the grid rather than refused. `gridIndex` is the
-/// point sampler and answers null off the end; a scan bounding a box by a radius wants the rim cell instead.
 pub fn cellAxis(half: f32, n: usize, w: f32) usize {
     if (n == 0 or !(half > 0)) return 0;
     const cell = 2 * half / @as(f32, @floatFromInt(n));
@@ -1556,10 +1387,7 @@ pub const Map = struct {
     soilCov: [SOIL_CELLS]u8 = [_]u8{COV_FULL} ** SOIL_CELLS,
     soilEdge: [SOIL_CELLS]u8 = [_]u8{@intFromEnum(Edge.natural)} ** SOIL_CELLS,
     water: [WATER_CELLS]u8 = [_]u8{0} ** WATER_CELLS,
-    /// …AND HOW ITS COAST RUNS, one `Edge` per cell, painted with the water brush as the soil's is. Baked into the field by `env.uploadWater` and never read at draw time.
     waterEdge: [WATER_CELLS]u8 = [_]u8{@intFromEnum(Edge.natural)} ** WATER_CELLS,
-    /// …AND WHAT IT IS, one `Liquid` per cell. Dilated one cell off the paint at upload like the coast is
-    /// (`env.dilateWaterEdge`), so the dry side of a bank answers with the pool's own kind.
     waterKind: [WATER_CELLS]u8 = [_]u8{@intFromEnum(Liquid.water)} ** WATER_CELLS,
     height: [HEIGHT_CELLS]u8 = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS,
 
@@ -1615,8 +1443,6 @@ pub const Map = struct {
         self.nops -= 1;
     }
 
-    /// Widen the one op at `i` into `n` slots, its neighbours keeping their order — how a generator op is
-    /// replaced by the props it made. `n == 0` deletes it. The slots come back UNWRITTEN.
     pub fn splice(self: *Map, i: usize, n: usize) !void {
         if (i >= self.nops) return error.NoSuchOp;
         if (n == 0) return self.remove(i);
@@ -1716,7 +1542,6 @@ pub const Map = struct {
         return self.nzones > 0 and i + 1 == self.nzones;
     }
 
-    /// FIRST MATCH, which is the most recently painted (the editor prepends). Null outside them all — unlike `zoneAt`, a location has no last-resort fallback: being nowhere in particular is a real answer.
     pub fn locationAt(self: *const Map, px: f32, pz: f32) ?*const Location {
         for (self.locations[0..self.nlocations]) |*l| {
             if (l.contains(px, pz)) return l;
@@ -1724,7 +1549,6 @@ pub const Map = struct {
         return null;
     }
 
-    /// …and the first one that actually has an opinion about the sky. A weatherless location standing over a rainy one may not silence it — it is a name for a place, not a hole in the storm.
     pub fn weatherAt(self: *const Map, px: f32, pz: f32) ?*const Location {
         for (self.locations[0..self.nlocations]) |*l| {
             if (l.hasWeather() and l.contains(px, pz)) return l;
@@ -1732,9 +1556,6 @@ pub const Map = struct {
         return null;
     }
 
-    /// FIRST MATCH, like a location — rooms are not expected to overlap, and if two do the one painted last
-    /// is the one that answers. **THE INDEX AND NOT THE POINTER** is the primitive, because whether a room is
-    /// SHUT is per-frame state `game` holds beside the map and looks up by the same number.
     pub fn arenaIndexAt(self: *const Map, px: f32, pz: f32) ?usize {
         for (self.arenas[0..self.narenas], 0..) |*a, i| {
             if (a.contains(px, pz)) return i;
@@ -1993,8 +1814,6 @@ pub fn write(m: *const Map, w: anytype) !void {
     }
     for (m.arenas[0..m.narenas]) |*a| {
         try w.print("arena: {s}", .{a.label()});
-        // ALWAYS, and not on a difference the way `writeOp` writes the gate's: a room whose line reads as
-        // bounds alone is a room that silently holds nothing, and there is no stamped default here.
         try writeSeal(w, a.seal());
         for (0..a.verts()) |i| try w.print(" {d:.2} {d:.2}", .{ a.vx[i], a.vz[i] });
         try w.writeAll("\n");
@@ -2030,7 +1849,6 @@ pub fn write(m: *const Map, w: anytype) !void {
                 break;
             }
         }
-        // …and the same rule for the kind: a map that is all water writes no row and comes back byte for byte.
         for (m.waterKind) |k| {
             if (k != @intFromEnum(Liquid.water)) {
                 try writeGrid(w, "liquid", &m.waterKind);
@@ -2045,8 +1863,6 @@ pub fn write(m: *const Map, w: anytype) !void {
 
     if (m.nfoes > 0) try w.writeAll("\n");
     for (m.foes[0..m.nfoes]) |f| {
-        // **THE TAIL IS WRITTEN ONLY WHEN IT SAYS SOMETHING.** A unit on the default AI emits exactly the line it
-        // always did, so a map authored before any of this round-trips byte for byte.
         try w.print("foe: {s} {d:.2} {d:.2} {d:.1} {d:.2} {d:.2}", .{ @tagName(f.kind), f.x, f.z, f.yaw, f.scale, f.seed });
         if (f.ai != .hold) try w.print(" ai={s}", .{@tagName(f.ai)});
         for (f.route()) |q| try w.print(" wp={d:.2},{d:.2}", .{ q.x, q.z });
@@ -2083,7 +1899,6 @@ fn writeScript(m: *const Map, w: anytype) !void {
     }
 
     for (m.dialogs[0..m.ndialogs]) |*d| {
-        // A SYNTHETIC IS NOT THE AUTHOR'S (`seedDialogs`), so it never lands in his file.
         if (d.synth) continue;
         try w.print("\ndlg: {s}\n", .{d.label()});
         for (m.nodesOf(d)) |*nd| {
@@ -2129,8 +1944,6 @@ fn writeScript(m: *const Map, w: anytype) !void {
 
 /// **A SLOT PAST THE END OF ITS TABLE IS `undefined` MEMORY, AND THE WRITER MUST NEVER READ IT.** The tables
 /// are sized `MAX_*` and filled to `n*`; a condition on a flag the map never declared pointed at slot 0 of
-/// nothing and would have put those bytes in the file. `unset` parses straight back as a declared name, so the
-/// round trip stays lossless rather than the row being dropped.
 fn slotName(table: []const Id, n: usize, i: u16) []const u8 {
     return if (i < n) idText(&table[i]) else "unset";
 }
@@ -2368,7 +2181,6 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
                 .scale = try band(&it, FOE_SCALE_LO, FOE_SCALE_HI),
                 .seed = try band(&it, 0, 1),
             };
-            // OPTIONAL AND ORDERLESS. A line written before any of this has none of it and takes the defaults.
             while (it.next()) |tok| {
                 const eq = std.mem.indexOfScalar(u8, tok, '=') orelse return ParseError.UnknownKey;
                 const key = tok[0..eq];
@@ -2663,7 +2475,6 @@ fn parseAct(m: *Map, rest: []const u8, it: *Toks) !Act {
             a.v = try nextFloat(it);
             if (a.v < 0) return ParseError.BadNumber;
         },
-        // Payload-free, like `preserve`: the kind is the whole of the instruction.
         .preserve, .shop, .smithy => {},
     }
     if (it.next() != null) return ParseError.ExtraField;
@@ -2701,8 +2512,6 @@ fn link(m: *Map) !void {
         if (a.kind != .dialog) continue;
         a.slot = m.findDialog(m.spanText(a.ref)) orelse return ParseError.UnknownRef;
     }
-    // **AFTER EVERY NAMED REFERENCE IS RESOLVED.** The synthetics are appended through `addTalk`, which writes
-    // its own node indices, so nothing above may still be resolving a name against the table this extends.
     seedDialogs(m);
     for (m.dialogs[0..m.ndialogs]) |*d| {
         const run = m.nodes[d.node0 .. d.node0 + d.nnodes];
@@ -2715,7 +2524,6 @@ fn link(m: *Map) !void {
     }
 }
 
-/// One condition's forward references — `talked` names a dialog, `near` indexes the npc table. Every pool a `Cond` can live in goes through here, so a new pool cannot inherit half the resolution.
 fn linkCond(m: *Map, c: *Cond) !void {
     if (c.kind == .near and c.slot >= m.nnpcs) return ParseError.UnknownRef;
     if (c.kind != .talked) return;
@@ -2777,7 +2585,6 @@ test "LOCATIONS OVERLAP AND THE LAST PAINTED WINS, and a weatherless one does no
     try std.testing.expect(m.locationAt(80, 80) == null);
     try std.testing.expectApproxEqAbs(@as(f32, 0.9), m.weatherAt(0, 0).?.wet.?, 1e-6);
 
-    // A NAMED PLACE WITH NO SKY OPINION IS STILL A PLACE. Standing over a wet one it must not answer for the weather, or every trigger rectangle you draw punches a dry hole in the storm.
     m.locations[0].wet = null;
     m.locations[0].fog = null;
     try std.testing.expectEqualStrings("inner", m.locationAt(0, 0).?.label());
@@ -2826,9 +2633,6 @@ fn parseZone(it: *std.mem.TokenIterator(u8, .any)) !Zone {
     return z;
 }
 
-/// **THE SEAL COMES BEFORE THE CORNERS AND THE CORNERS ARE THE REST OF THE LINE.** Written the other way round
-/// a room with an odd float in it eats its own `boss=` tail; parsed this way a truncated line is a `ShortArena`
-/// and never a room silently one corner smaller than it was authored.
 fn parseArena(it: *std.mem.TokenIterator(u8, .any)) !Arena {
     var a = Arena{};
     a.setName(it.next() orelse return ParseError.MissingField);
@@ -2899,7 +2703,6 @@ fn parseLoot(s: []const u8, out: *[MAX_LOOT]item.Kind) !u8 {
     return n;
 }
 
-/// `-` is the doorway, and it is the only token that may stand alone: a gate sealed on nothing never shuts.
 fn parseSeal(s: []const u8, out: *[MAX_SEAL]FoeKind) !u8 {
     var n: u8 = 0;
     var parts = std.mem.splitScalar(u8, s, ',');
@@ -2978,9 +2781,7 @@ const OP_LINE_TYPICAL: usize = 64;
 /// Worst-case bytes an RLE grid cell spends: `" 255x1"` plus a share of the per-16-run label.
 const GRID_CELL_CAP: usize = 7;
 
-/// **THE READ BUFFER IS DERIVED FROM THE CAPS, NOT PICKED.** At `MAX_OPS` the ops alone outgrew the 1 MB it
-/// used to be, so a map filling every cap was one `load` could only answer `MapTooLarge` to. An op carrying a
-/// full `mix=` or `loot=` still runs far past `OP_LINE_TYPICAL` — `save` measures and refuses for that.
+/// The read buffer is DERIVED from the caps, not picked: at `MAX_OPS` the ops alone outgrew the 1 MB it was.
 pub const TEXT_CAP: usize =
     256 + NAME_CAP + 48 +
     MAX_ZONES * (NAME_CAP + 64 + MAX_MIX * (longestTag(Kind) + 1)) +
@@ -3024,10 +2825,6 @@ pub fn loadOrPanic(path: []const u8, m: *Map) void {
     };
 }
 
-/// **ONLY A MISSING FILE MAY SKIP A TEST.** `FileNotFound` means the suite is not being run from the repo
-/// root; every other error — a `ParseError`, `MapTooLarge` — is the MAP being broken, which is the thing the
-/// test was standing there to catch. MEASURED: with `test_liquids`' `version:` row wrecked, the footing test
-/// still reported passed under a bare `catch return error.SkipZigTest`; through this it fails.
 pub fn loadForTest(path: []const u8, m: *Map, lineOut: *usize) !void {
     load(path, m, lineOut) catch |e| {
         if (e == error.FileNotFound) return error.SkipZigTest;
@@ -3036,8 +2833,6 @@ pub fn loadForTest(path: []const u8, m: *Map, lineOut: *usize) !void {
     };
 }
 
-/// The same rule for a test that wants the raw text — `FileTooBig` is a map that OUTGREW the cap, which is
-/// exactly what the ops-budget tests exist to notice.
 pub fn readForTest(alloc: std.mem.Allocator, path: []const u8, cap: usize) ![]u8 {
     return std.fs.cwd().readFileAlloc(alloc, path, cap) catch |e| {
         if (e == error.FileNotFound) return error.SkipZigTest;
@@ -3117,9 +2912,6 @@ pub fn pathFor(dst: []u8, name: []const u8) []const u8 {
     return dst[0..n];
 }
 
-/// **A MAP IS RENDERED BESIDE ITS FILE AND ONLY THEN PUT IN ITS PLACE.** `createFile` truncates first, so a
-/// failed save in place — full disk, or a map past `TEXT_CAP` — destroyed the last good copy. The size is
-/// checked here because this is the last moment the old file still exists.
 pub fn save(path: []const u8, m: *const Map) !void {
     try std.fs.cwd().makePath(DIR);
     var tmpBuf: [PATH_CAP + 8]u8 = undefined;
@@ -3156,7 +2948,6 @@ fn canTail(comptime k: OpKind, comptime name: []const u8) bool {
     return !isPositional(k, name);
 }
 
-/// A tail is written only when it says something (`writeOp`), and the seal is compared over its LIVE entries — the slots past `nboss` are stale picks nobody reads.
 fn sameSeal(a: *const Op, b: *const Op) bool {
     return a.nboss == b.nboss and std.mem.eql(FoeKind, a.seal(), b.seal());
 }
@@ -3171,9 +2962,6 @@ fn eqlVal(a: anytype, b: @TypeOf(a)) bool {
 fn enumFromName(comptime T: type, s: []const u8) !T {
     if (std.meta.stringToEnum(T, s)) |v| return v;
     if (T == FoeKind) {
-        // **A KIND THAT WAS REPLACED STILL HAS TO LOAD.** The florid ravager was scrapped and rebuilt as the
-        // fungal deer on its own bones; every map already on disk names the old tag. Reading it is a rename,
-        // not a compatibility layer — a WRITE always emits the current one, so a map re-saved is a map migrated.
         inline for (FOE_RENAMED) |r| {
             if (std.mem.eql(u8, r[0], s)) return @field(FoeKind, r[1]);
         }
@@ -3223,7 +3011,6 @@ pub const TEST_HEAD =
 ;
 const SCRIPT_HEAD = TEST_HEAD;
 
-/// …and the parse behind it, reporting the LINE a failure landed on. The caller owns the `Map` (it is far too big for a stack frame) and destroys it.
 pub fn testMap(alloc: std.mem.Allocator, text: []const u8) !*Map {
     const m = try alloc.create(Map);
     errdefer alloc.destroy(m);
@@ -3431,8 +3218,6 @@ test "AN ID TOO LONG TO STORE IS REFUSED, not quietly clipped into a second flag
     var ln: usize = 0;
     try std.testing.expectError(ParseError.NameTooLong, parse(TEST_HEAD ++ "flags: " ++ long ++ "\n", m, &ln));
 
-    // The longest that still fits round-trips, and interning it twice is one row — which is the whole point:
-    // the `do:` that sets a flag and the `need:` that reads it have to land on the same one.
     const fits = "b" ** (ID_CAP - 1);
     try parse(TEST_HEAD ++ "flags: " ++ fits ++ "\n", m, &ln);
     try std.testing.expectEqual(@as(usize, 1), m.nflags);
@@ -3450,12 +3235,9 @@ test "A MAP THAT FILLS EVERY CAP IS STILL A MAP THAT LOADS" {
     var o = defaults(.at);
     o.kind = .pillar;
     while (m.nops < MAX_OPS) _ = try m.add(o);
-    // The grids resist: RLE'd, a painted map is a few tens of KB. It is the OPS that carry a file.
     for (&m.soil, 0..) |*c, i| c.* = @intCast(i % 4);
     for (&m.height, 0..) |*c, i| c.* = @intCast(HEIGHT_ZERO -% @as(u8, @intCast(i % 3)));
     for (&m.water, 0..) |*c, i| c.* = @intCast(i % 2);
-    // …and the two grids that ride the water, at the same churn: every cell its own run, which is the worst
-    // case the buffer is sized for and the only way `TEXT_CAP` is honestly tested.
     for (&m.waterEdge, 0..) |*c, i| c.* = @intCast(i % Edge.N);
     for (&m.waterKind, 0..) |*c, i| c.* = @intCast(i % Liquid.N);
     try write(m, n.writer());
@@ -3473,8 +3255,6 @@ test "THE SHIPPED MAPS SIT INSIDE THE READ BUFFER, and `save` refuses to write o
     var worstName: [PATH_CAP]u8 = [_]u8{0} ** PATH_CAP;
     while (try it.next()) |ent| {
         if (ent.kind != .file or !std.mem.endsWith(u8, ent.name, EXT)) continue;
-        // An entry that vanishes between the listing and the stat is not a shipped map: this test writes
-        // `test_saveroundtrip` into the very directory it scans, and the live editor renames over maps here.
         const st = dir.statFile(ent.name) catch continue;
         if (st.size <= worst) continue;
         worst = st.size;
@@ -3505,7 +3285,6 @@ test "THE SHIPPED MAPS SIT INSIDE THE READ BUFFER, and `save` refuses to write o
     try std.testing.expectEqual(m.nops, back.nops);
     try std.testing.expectEqual(at.x, back.ops[0].x);
 
-    // A map past the buffer is REFUSED, and the file it would have replaced is left exactly as it was.
     var o = defaults(.at);
     o.kind = .pillar;
     o.nmix = MAX_MIX;
@@ -3574,7 +3353,6 @@ test "A FOG GATE'S BOSS ROUND-TRIPS, and the default costs the file nothing" {
     never.kind = .foggate;
     never.nboss = 0;
     _ = try m.add(never);
-    // A DUO IS TWO NAMES ON ONE GATE, which is the whole reason the seal is a list.
     var pair = defaults(.at);
     pair.kind = .foggate;
     pair.boss[0] = .fungal_swordsman;
@@ -3586,7 +3364,6 @@ test "A FOG GATE'S BOSS ROUND-TRIPS, and the default costs the file nothing" {
     var fbs = std.io.fixedBufferStream(&buf);
     try write(&m, fbs.writer());
     const text = fbs.getWritten();
-    // The default is the only boss in the game, so an untouched gate writes no tail at all.
     try std.testing.expectEqual(@as(usize, 0), std.mem.count(u8, text, "boss=bone_knight"));
     try std.testing.expect(std.mem.indexOf(u8, text, "boss=ogre") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "boss=-") != null);
@@ -3754,7 +3531,6 @@ test "THE LIQUID GRID ROUND-TRIPS, and a map of plain water writes no `liquid:` 
         try std.testing.expectEqual(@as(u8, 1), back.water[i]);
         try std.testing.expectEqual(@as(u8, @intFromEnum(p[2])), back.waterKind[i]);
     }
-    // AN ERASED POOL TAKES ITS KIND WITH IT, or plain water painted over an old lava run comes up molten.
     try std.testing.expect(m.paintWater(60, 60, 25, false, null, .water));
     const lav = gridIndex(m.half, WATER_N, 60, 60).?;
     try std.testing.expectEqual(@as(u8, 0), m.water[lav]);
@@ -3904,7 +3680,6 @@ test "ONE FOE LIMIT, AND A MAP MAY SPEND ALL OF IT ON ONE KIND" {
     try parse(try std.fmt.bufPrint(&doc, "{s}{s}", .{ head, rows[0..at] }), &m, &ln);
     try std.testing.expectEqual(MAX_FOES, m.nfoes);
 
-    // …and every one of them fits the group that will have to hold it.
     try std.testing.expect(MAX_PER_KIND >= MAX_FOES);
 
     // One past the global budget is still a refusal, because that one is the map's own table.
@@ -4005,8 +3780,6 @@ test "A UNIT'S IDLE AI AND ITS ROUTE SURVIVE A ROUND TRIP — and a map that nev
     const head = "version: 1\n";
     var m: Map = undefined;
     var ln: usize = 0;
-    // **THE OLD LINE STILL PARSES AND STILL WRITES ITSELF BACK IDENTICALLY.** This is the whole reason the tail
-    // is optional: `01_fallen_plain.world` is authored and shipping, and it must not be rewritten by loading it.
     try parse(head ++ "foe: toad 3.00 -4.00 90.0 1.00 0.50\n", &m, &ln);
     try std.testing.expectEqual(FoeAi.hold, m.foes[0].ai);
     try std.testing.expectEqual(@as(u8, 0), m.foes[0].nwp);
@@ -4018,7 +3791,6 @@ test "A UNIT'S IDLE AI AND ITS ROUTE SURVIVE A ROUND TRIP — and a map that nev
     try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "ai=") == null);
     try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "wp=") == null);
 
-    // …and a unit that DOES carry one comes back with every point where it was put.
     ln = 0;
     try parse(head ++ "foe: ogre 1.00 2.00 0.0 1.00 0.25 ai=patrol wp=8.00,-3.00 wp=12.00,5.00\n", &m, &ln);
     try std.testing.expectEqual(FoeAi.patrol, m.foes[0].ai);
@@ -4032,14 +3804,12 @@ test "A UNIT'S IDLE AI AND ITS ROUTE SURVIVE A ROUND TRIP — and a map that nev
     const out = fbs.getWritten();
     try std.testing.expect(std.mem.indexOf(u8, out, "ai=patrol") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "wp=8.00,-3.00") != null);
-    // AND IT LOADS BACK THE SAME — the round trip is the claim, not the spelling.
     var back: Map = undefined;
     var bl: usize = 0;
     try parse(out, &back, &bl);
     try std.testing.expectEqual(m.foes[0].ai, back.foes[0].ai);
     try std.testing.expectEqual(m.foes[0].nwp, back.foes[0].nwp);
 
-    // A ROUTE MAY NOT OVERRUN ITS OWN CAP, and a mode nobody has heard of is an error rather than a silent hold.
     ln = 0;
     try std.testing.expectError(ParseError.BadKind, parse(head ++ "foe: toad 0 0 0 1 0 ai=chase\n", &m, &ln));
     ln = 0;
@@ -4065,10 +3835,8 @@ test "A SPAWN CARRIES ITS ROUTE WHEN IT MOVES — the legs are world-space, so a
     try std.testing.expectApproxEqAbs(@as(f32, 3), f.wp[0].z, 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 11), f.wp[1].x, 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 13), f.wp[1].z, 1e-5);
-    // The leg offsets off the body are what a move may not change.
     for (f.route()) |q| try std.testing.expect(q.x - f.x == 4);
 
-    // Nothing past `nwp` is touched, so an unpainted slot cannot drift into the route on the next paint.
     try std.testing.expectApproxEqAbs(@as(f32, 0), f.wp[2].x, 1e-6);
     try std.testing.expectApproxEqAbs(@as(f32, 0), f.wp[2].z, 1e-6);
 }
@@ -4076,7 +3844,6 @@ test "A SPAWN CARRIES ITS ROUTE WHEN IT MOVES — the legs are world-space, so a
 test "A ROOM IS A POLYGON — inside, outside, and the shared corner a ray must cross exactly once" {
     var a = Arena{};
     a.setName("hall");
-    // An L, so a convex test cannot pass by accident: the notch at (+x, +z) is OUTSIDE.
     const pts = [_][2]f32{ .{ -10, -10 }, .{ 10, -10 }, .{ 10, 0 }, .{ 0, 0 }, .{ 0, 10 }, .{ -10, 10 } };
     for (pts, 0..) |p, i| {
         a.vx[i] = p[0];
@@ -4087,17 +3854,13 @@ test "A ROOM IS A POLYGON — inside, outside, and the shared corner a ray must 
     try std.testing.expect(a.contains(-5, 0));
     try std.testing.expect(a.contains(5, -5));
     try std.testing.expect(a.contains(-5, 5));
-    // THE NOTCH. A rect over the same corners would answer true here, which is the whole point of a polygon.
     try std.testing.expect(!a.contains(5, 5));
     try std.testing.expect(!a.contains(-11, 0));
     try std.testing.expect(!a.contains(0, 11));
-    // A RAY THROUGH A VERTEX CROSSES ITS TWO EDGES AND MUST STILL COUNT ONCE: swept along the corner row, a
-    // `<=` on both ends flips twice and every point outside reads as in.
     for ([_]f32{ -10, 0, 10 }) |z| {
         try std.testing.expect(!a.contains(-40, z));
         try std.testing.expect(!a.contains(40, z));
     }
-    // Fewer than three corners bounds nothing rather than crashing on the wrap.
     var thin = Arena{ .n = 2 };
     try std.testing.expect(!thin.contains(0, 0));
     try std.testing.expectApproxEqAbs(@as(f32, 7.0), thin.hold(mathx.ground(7, 7), 1).x, 1e-4);
@@ -4123,7 +3886,6 @@ test "AND THE WALL STANDS A BODY BACK INSIDE IT — the blink's answer, since th
     const lean = a.hold(mathx.ground(-19.9, 0), R);
     try std.testing.expectApproxEqAbs(@as(f32, -20.0 + R), lean.x, 1e-4);
 
-    // A corner and a point ON the line are the two cases with no single answer.
     const corner = a.hold(mathx.ground(26, 26), R);
     try std.testing.expect(a.contains(corner.x, corner.z));
     const onLine = a.hold(mathx.ground(20, 0), R);
@@ -4144,7 +3906,6 @@ test "AN ARENA ROUND-TRIPS WITH ITS SEAL, and a room with under three corners is
         a.vz[i] = p[1];
     }
     m.arenas[0] = a;
-    // …and a second room that holds NOTHING, which is bounds with no fight in them.
     var open = Arena{ .n = 3, .nboss = 0 };
     open.setName("yard");
     open.vx = [_]f32{0} ** MAX_ARENA_VERTS;
@@ -4158,7 +3919,6 @@ test "AN ARENA ROUND-TRIPS WITH ITS SEAL, and a room with under three corners is
     var fbs = std.io.fixedBufferStream(&buf);
     try write(&m, fbs.writer());
     const text = fbs.getWritten();
-    // The seal is written even when it is the default — there is no stamped room, so a silent one holds nothing.
     try std.testing.expect(std.mem.indexOf(u8, text, "arena: mycelian_hall boss=fungal_swordsman,fungal_magus") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "arena: yard boss=-") != null);
 
@@ -4177,7 +3937,6 @@ test "AN ARENA ROUND-TRIPS WITH ITS SEAL, and a room with under three corners is
     try std.testing.expectEqual(@as(?usize, 0), back.arenaIndexAt(0, 0));
     try std.testing.expectEqual(@as(?usize, null), back.arenaIndexAt(0, 200));
 
-    // TWO CORNERS ARE A LINE, and a truncated row may not come up as a room one corner smaller than authored.
     var bad = Map{};
     ln = 0;
     try std.testing.expectError(ParseError.ShortArena, parse("version: 1\narena: thin boss=- 0 0 1 1\n", &bad, &ln));
@@ -4187,9 +3946,6 @@ test "AN ARENA ROUND-TRIPS WITH ITS SEAL, and a room with under three corners is
 }
 
 test "EVERY SHIPPED ROOM AND THE GATE STANDING IN IT SEAL ON THE SAME NAMES" {
-    // **THE ROOM'S SEAL AND THE DOOR'S ARE TWO COPIES, SO THEY ARE PINNED RATHER THAN TRUSTED.** A wall that
-    // outlives its door locks you in a fight that is over; a door that outlives its wall is a room you walk
-    // out of the back of. Both are silent, and neither fails any other test.
     var dir = std.fs.cwd().openDir(DIR, .{ .iterate = true }) catch return error.SkipZigTest;
     defer dir.close();
     const m = try std.testing.allocator.create(Map);
@@ -4231,7 +3987,6 @@ test "AND EVERY SHIPPED ROOM IS A ROOM — an outline that does not cross itself
         var ln: usize = 0;
         load(p, m, &ln) catch continue;
         for (m.arenas[0..m.narenas]) |*a| {
-            // A FIGURE-OF-EIGHT holds nothing in its own middle, and it is drawn by HAND: nothing else catches it.
             try std.testing.expect(a.simple());
             for (a.seal()) |k| {
                 var placed: usize = 0;
@@ -4241,7 +3996,6 @@ test "AND EVERY SHIPPED ROOM IS A ROOM — an outline that does not cross itself
                     placed += 1;
                     if (a.contains(f.x, f.z)) held += 1;
                 }
-                // A body a room seals on and does NOT stand in is a room that never lets go.
                 if (placed > 0) try std.testing.expect(held > 0);
                 checked += 1;
             }
@@ -4263,7 +4017,6 @@ test "A FIGURE-OF-EIGHT IS NOT A ROOM, and adjacent corners touching is not a cr
     }
     try std.testing.expect(ok.simple());
 
-    // The same four corners with two of them swapped, which is the bow-tie a hand-drawn room makes.
     var bow = Arena{ .n = 4 };
     const tie = [_][2]f32{ .{ -10, -10 }, .{ 10, -10 }, .{ -10, 10 }, .{ 10, 10 } };
     for (tie, 0..) |p, i| {
@@ -4271,7 +4024,6 @@ test "A FIGURE-OF-EIGHT IS NOT A ROOM, and adjacent corners touching is not a cr
         bow.vz[i] = p[1];
     }
     try std.testing.expect(!bow.simple());
-    // …and it is exactly the shape whose own middle answers FALSE, which is why it has to be refused.
     try std.testing.expect(!bow.contains(0, 0));
 }
 
@@ -4285,15 +4037,11 @@ test "WHAT A ROOM COSTS A FRAME — the per-body wall test, counted rather than 
     if (m.narenas == 0) return error.SkipZigTest;
     const a = &m.arenas[0];
     const n = a.verts();
-    // Every body pays `arenaIndexAt` (one `contains` per room) and, inside a SHUT one, a `hold`: a second
-    // `contains` plus one segment projection per wall. `game` asks twice a frame — the step gate and the settle.
     const perOutside = m.narenas * n;
     const perInside = perOutside + n + n;
     std.debug.print("\n  room cost: {d} rooms x {d} walls — a body outside pays {d} crossings a call, one inside {d} + {d} projections; {d} bodies in it x2 calls = {d}\n", .{
         m.narenas, n, perOutside, perOutside + n, n, 6, 2 * 6 * perInside,
     });
-    // The shape of the bill is what matters: LINEAR in the walls, and the common map pays nothing at all
-    // because `narenas` is 0 and the loop never runs.
     try std.testing.expect(2 * 6 * perInside < 1000);
 }
 
@@ -4315,7 +4063,6 @@ test "A MAP SAYS WHERE THE PLAYER STARTS, and one that does not says the old har
     try std.testing.expectApproxEqAbs(mathx.radians(65.0), back.start.facing(), 1e-4);
 
     // **A MAP WITH NO `start:` ROW COMES UP WHERE EVERY MAP USED TO** — (0, 4) facing south, which is what
-    // `game.beginGame` hard-coded, so nothing shipped moves under this.
     var old = Map{};
     ln = 0;
     try parse("version: 1\nname: Old\n", &old, &ln);
@@ -4337,7 +4084,6 @@ test "AND EVERY SHIPPED MAP STARTS HIM SOMEWHERE INSIDE ITSELF" {
         const p = try std.fmt.bufPrint(&path, DIR ++ "/{s}", .{ent.name});
         var ln: usize = 0;
         load(p, m, &ln) catch continue;
-        // A start outside the world is a man who wakes up in the void, and it is one typo away at all times.
         try std.testing.expect(@abs(m.start.x) <= m.half and @abs(m.start.z) <= m.half);
         n += 1;
     }
@@ -4366,9 +4112,7 @@ test "WHAT THE ROOMS PANEL COSTS A FRAME — the op walk that finds a room's gat
 }
 
 test "A TRIGGER ON A NAME THE MAP NEVER DECLARED WRITES A NAME, NOT UNDEFINED MEMORY" {
-    // The editor can add a `flag` condition to a map with no flags in it (`editor.drawScriptModal`), and the
-    // name tables are `undefined` past their count — so the writer read whatever was in the slab and put it in
-    // the file. `unset` parses straight back as a declared name, so the row survives the round trip.
+    // The name tables are `undefined` past their count, so the writer read whatever was in the slab.
     const m = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(m);
     m.* = .{};
@@ -4392,7 +4136,6 @@ test "A TRIGGER ON A NAME THE MAP NEVER DECLARED WRITES A NAME, NOT UNDEFINED ME
     try std.testing.expect(std.mem.indexOf(u8, text, "counter unset >= 2") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "timer unset=5") != null);
 
-    // …and it comes back as a real declared name rather than a load error.
     const back = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(back);
     var ln: usize = 0;
@@ -4434,8 +4177,6 @@ test "A COUNTER'S CONVERSATION AUTHORS, SAVES AND LOADS BACK — greeting, lines
     var back: Map = undefined;
     var bl: usize = 0;
     try parse(out, &back, &bl);
-    // **BY NAME, NOT BY INDEX.** The file stores the name and `link` resolves it, and the table the index
-    // points into is not the one it was built in — `seedDialogs` stands a `merchant_default` up beside it.
     const at = back.findDialog("merchant_talk") orelse return error.TestUnexpectedResult;
     try std.testing.expectEqual(at, back.npcs[0].dlg);
     try std.testing.expect(!back.dialogs[at].synth);
@@ -4471,7 +4212,6 @@ test "EDITING ONE CONVERSATION LEAVES A HAND-WRITTEN TREE BESIDE IT ALONE" {
     try std.testing.expect(readTalk(m, 0) != null);
     try std.testing.expect(readTalk(m, 1) == null);
 
-    // Grow the smith by a line: every index the hunter's tree stands on has to be re-based, not left behind.
     var t = readTalk(m, 0).?;
     t.rows[1] = .{ .does = .again };
     t.rows[1].setLabel("Tell me of the wood.");
@@ -4488,7 +4228,6 @@ test "EDITING ONE CONVERSATION LEAVES A HAND-WRITTEN TREE BESIDE IT ALONE" {
     try std.testing.expectEqual(hunter.node0, north.next);
     try std.testing.expectEqual(@as(u8, 1), north.nact);
     try std.testing.expectEqual(ActKind.flag, m.dactRun(north.act0, north.nact)[0].kind);
-    // …and the smith's own `.again` points at the smith's node, not at whatever now sits at that index.
     const smith = m.dialogAt(0).?;
     try std.testing.expectEqual(smith.node0, m.nodes[smith.node0].choices[1].next);
     try std.testing.expectEqual(NO_NODE, m.nodes[smith.node0].choices[2].next);
@@ -4523,7 +4262,6 @@ test "RE-SAYING A GREETING DOES NOT FILL THE TEXT ARENA — the editor commits o
     var t = readTalk(m, 0) orelse return error.TestUnexpectedResult;
     t.setLine("Salt and iron, traveller. Both keep. Both are heavy, and both are worth the carrying.");
 
-    // A COMMIT IS NOT A LEAK. Two hundred of them is far past what any authoring session does.
     const before = m.ndtext;
     for (0..200) |_| try writeTalk(m, 0, &t);
     std.debug.print("\n  talk arena: {d} bytes before 200 commits, {d} after (cap {d})\n", .{ before, m.ndtext, DTEXT_CAP });
@@ -4561,7 +4299,6 @@ test "DELETING A BODY KEEPS EVERY `near` POINTING AT THE BODY IT MEANT — and t
     );
     defer alloc.destroy(m);
 
-    // Delete the WANDERER, which is below both watches: each has to count one lower or it watches a stranger.
     const broke = removeNpc(m, 0);
     try std.testing.expectEqual(@as(usize, 0), broke.conds);
     try std.testing.expectEqual(@as(usize, 2), m.nnpcs);
@@ -4569,13 +4306,10 @@ test "DELETING A BODY KEEPS EVERY `near` POINTING AT THE BODY IT MEANT — and t
     try std.testing.expectEqual(@as(u16, 1), m.trigs[0].conds[0].slot); // the smith, now #1
     try std.testing.expectEqual(@as(u16, 0), m.trigs[1].conds[0].slot); // the merchant, now #0
 
-    // Now delete the body a trigger is actually watching: it may not be left pointing past the end.
     const broke2 = removeNpc(m, 1);
     try std.testing.expectEqual(@as(usize, 1), broke2.conds);
     try std.testing.expectEqual(CondKind.never, m.trigs[0].conds[0].kind);
 
-    // **THE CLAIM IS THAT IT STILL LOADS.** `link` refuses a `near` past the end, so before this the editor
-    // could write a map it could not open again.
     var buf: [8192]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&buf);
     try write(m, fbs.writer());
@@ -4612,7 +4346,6 @@ test "A CONVERSATION NOBODY OPENS IS RECLAIMED, and one anything still names is 
     defer alloc.destroy(m);
     try std.testing.expectEqual(@as(usize, 3), m.ndialogs);
 
-    // `spare` is named by a `talked` condition, so it stays whatever else happens.
     try std.testing.expectEqual(@as(usize, 1), dialogUsers(m, 2));
     try std.testing.expect(!removeDialog(m, 2));
 
@@ -4654,8 +4387,6 @@ test "A COINED CONVERSATION NAME IS FREE — the record index alone collided as 
     seed.rows[0].setLabel("Show me.");
     seed.nrows = 1;
 
-    // Every coin walks past the names already taken, so a map can hold the whole table without a collision.
-    // Counted as a DELTA: the body arrived with `merchant_default` already standing behind it (`seedDialogs`).
     const had = m.ndialogs;
     var made: usize = 0;
     while (made < 8) : (made += 1) {
@@ -4745,7 +4476,6 @@ test "A CONVERSATION THAT NAMES ITS SPEAKER KEEPS THE NAME THROUGH THE PANEL" {
     try parse(fbs.getWritten(), &back, &bl);
     try std.testing.expectEqualStrings("The Salt-Factor", readTalk(&back, 0).?.speaker());
 
-    // …and clearing it writes no `who:` at all, which is what falls back to the body's own name.
     var t2 = readTalk(&back, 0).?;
     t2.setSpeaker("");
     try writeTalk(&back, 0, &t2);
@@ -4765,8 +4495,6 @@ test "A ONE-NODE CONVERSATION THAT POINTS AT ITSELF IS NOT ONE THE PANEL WILL TO
         \\
     );
     defer alloc.destroy(m);
-    // No lines to press and a `then:` that comes back here is a panel with no way out — refused, so the
-    // editor shows it as a tree rather than quietly rewriting it into one that ends.
     try std.testing.expect(readTalk(m, 0) == null);
 }
 
@@ -4780,7 +4508,6 @@ test "A BODY THE FILE LEFT SILENT STILL TALKS — and the default never lands ba
     );
     defer alloc.destroy(m);
 
-    // The shipped map's own shape: a merchant and a smith with no `dlg=`, and no prompt over either before this.
     for (m.npcSlice()) |*p| try std.testing.expect(p.dlg != NO_DIALOG);
     try std.testing.expectEqual(m.npcs[0].dlg, m.npcs[2].dlg);
     try std.testing.expect(m.npcs[0].dlg != m.npcs[1].dlg);
@@ -4792,7 +4519,6 @@ test "A BODY THE FILE LEFT SILENT STILL TALKS — and the default never lands ba
     try std.testing.expectEqual(Does.smithy, forge.rows[0].does);
     std.debug.print("\n  silent bodies: {d} kinds seeded, merchant says \"{s}\"\n", .{ m.ndialogs, shop.rows[0].label() });
 
-    // His file stays exactly what he wrote: no `dlg=` on the lines, no `dlg:` block for either default.
     var buf: [16384]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&buf);
     try write(m, fbs.writer());

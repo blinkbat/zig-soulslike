@@ -29,7 +29,6 @@ pub const Pickup = struct {
     nloot: u8 = 0,
     /// **COIN THIS GLOW IS CARRYING.** On a MAP glow the purse is the placing op's (`wf.Op.gold`); on a BODY
     /// drop it is what the corpse was worth, and it rides the SAME glow as the loot rather than standing up a
-    /// second one beside it — one thing on the ground per body is what a body leaving something looks like.
     gold: u32 = 0,
     taken: bool = false,
     fade: f32 = 0,
@@ -38,7 +37,6 @@ pub const Pickup = struct {
         return v3(self.pos.x, self.pos.y + (fx.PICKUP_H + 0.28) * self.scale, self.pos.z);
     }
 
-    /// **GONE FOR GOOD ONLY ONCE THE FADE IS OUT.** `taken` is the mechanic and this is the picture: the prop grid stops drawing it here, so the two cannot disagree about whether there is still something to see.
     pub fn spent(self: *const Pickup) bool {
         return self.taken and self.fade >= 1.0;
     }
@@ -47,7 +45,6 @@ pub const Pickup = struct {
         return 1.0 - self.fade;
     }
 
-    /// **A PURSE ALONE IS STILL A DROP.** Keyed off the coin as well as the loot, or a body that left nothing
     /// but money read as a map glow and `takeNear` went looking for a placing op that was never there.
     pub fn dropped(self: *const Pickup) bool {
         return self.nloot > 0 or self.gold > 0;
@@ -57,8 +54,6 @@ pub const Pickup = struct {
 pub const Taken = struct {
     at: rl.Vector3,
     loot: []const item.Kind,
-    /// **PICKED UP, NOT CREDITED ON THE KILL** (owner): gold used to go straight into his hands the way souls
-    /// do, so a fight paid you from across the field and there was nothing to walk over.
     gold: u32 = 0,
 };
 
@@ -66,7 +61,6 @@ pub const Pickups = struct {
     list: [CAP]Pickup = undefined,
     n: usize = 0,
     near: ?usize = null,
-    /// **HOW MANY OF THE LIST THE MAP PLACED.** Everything below it has a prop in `env` drawing it (fed `sizeLeft`/`spent` through `env.setPickupDraw`, which is indexed by exactly this order); everything at or above it was dropped by a body and is drawn by the loop. Written by `reset` and by nothing else.
     mapped: usize = 0,
 
     pub fn live(self: *Pickups) []Pickup {
@@ -104,10 +98,10 @@ pub const Pickups = struct {
 
     pub fn clearDropped(self: *Pickups) void {
         self.n = @min(self.mapped, self.n);
+        self.near = null;
     }
 
     /// Refuses an empty list, so `nloot > 0` stays the honest test for "this one is a drop".
-    ///
     /// **A FULL LIST RECYCLES A SPENT SLOT BEFORE IT REFUSES** — a session kills far more than the 96 the cap shares with the map's glows, and a picked-up glow is a slot nobody can see. With none spendable the drop is DROPPED rather than overwriting a glow standing in front of you.
     pub fn spawn(self: *Pickups, at: rl.Vector3, kinds: []const item.Kind, gold: u32) void {
         if (kinds.len == 0 and gold == 0) return;

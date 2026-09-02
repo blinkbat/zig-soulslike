@@ -25,9 +25,6 @@ const lerpF = mathx.lerpF;
 const approach = mathx.approach;
 const setLocal = heromod.setHumanoid;
 
-// THE TOLLING HOLLOW (owner's creature, owner's name). One blow, a bite, and a BRONZE BELL on its back: left
-// alone past bite reach it rings and every body inside 34 m turns and comes (`foe.rouseWithin`). 340 HP, no
-// armour. **THE TOLL IS REFUSED WHILE HE IS INSIDE BITE REACH** — a range, not a cooldown, and it reads no inputs.
 
 const N = heromod.N;
 const ROOT = heromod.ROOT;
@@ -47,18 +44,15 @@ const WRL = heromod.WRL;
 const SHR = heromod.SHR;
 const ELR = heromod.ELR;
 const WRR = heromod.WRR;
-/// The rig's spare bone; on this body it is the CLAPPER.
 const CLAPPER = heromod.HELD;
 
 const H: f32 = heromod.H;
 
 /// 3.25 m of stature bent through `HUNCH`'s 52 degrees at the waist: crown at ~2.4 m, shoulders at 2.2 —
-/// the head at the hero's own reach on a frame half again his height. The hunch is what makes the bell a PLATFORM.
 pub const SCALE = (H + 1.45) / H;
 const HIP_HALF = heromod.HIP_HALF * 1.55;
 const SHOULDER_HALF = heromod.SHOULDER_HALF * 1.62;
 /// `restHumanoid` gives a man a 0.07 H neck, and on a chest this heavy the skull sat INSIDE the ribcage mass.
-/// A bull's neck: the joint comes up a little and the skull goes out in FRONT of the chest, where the bite says the jaws are.
 const REST = blk: {
     var r = heromod.restHumanoid(HIP_HALF, SHOULDER_HALF, H);
     r[heromod.NECK] = v3(0, 0.828 * H, 0.022 * H);
@@ -87,17 +81,13 @@ const HP_MAX: f32 = 340.0;
 /// Over the cyclops's 30 and well under the bone knight's 78: the hero's heavy swing at 22 does not flinch it.
 const POISE_MAX: f32 = 34.0;
 const STANCE_MAX: f32 = 62.0;
-/// A hundredweight of bronze with no earth under it — the worst lightning weakness in the field. Cold and chaos are the skeleton family's own answer.
 const RESISTS = combat.resists(.{ .fire = -30, .cold = 55, .lightning = -70, .chaos = 40 });
 
 const DEATH_DUR: f32 = 1.55;
 const DISS_DUR: f32 = 1.10;
 const SHOVE_DECAY: f32 = 6.0;
 const A_PROT: f32 = 3.0;
-/// A BIG BODY HINGES AT THE WAIST AND ITS LEGS STAY PLANTED — the law's one number (`ogre.PELVIS_SHARE`).
 const PELVIS_SHARE = ogremod.PELVIS_SHARE;
-/// Degrees of permanent stoop, carried at the WAIST — leaned at the root the legs rotate with it and the whole
-/// thing lurches. At 52 the spine is nearer horizontal than vertical, which lays the bell flat enough to ride.
 const HUNCH: f32 = 52.0;
 
 const CHIP_SPRAY = archermod.boneChips(1.25);
@@ -117,32 +107,24 @@ const BITE_LUNGE: f32 = 0.62;
 /// 1.55 m arrival plus the hero's own 0.55 m footprint. The test prints both.
 const BITE_R: f32 = 1.10;
 const BITE_TRIGGER_R: f32 = BITE_R + BITE_LUNGE * 0.7;
-/// Share of `BITE_R`, not of the trigger ring. The skitterer's same-named dial is a share of ITS trigger ring.
 const STOP_FRAC: f32 = 0.8;
 /// cos 66 degrees. A head on a neck this short cannot reach its own flank, which is what makes its hip safe ground.
 const BITE_FRONT_DOT: f32 = 0.40;
-/// Under the kobold berserker's chop and half the cyclops's swipe. The POISE is a big body's, which is what stops "low damage" reading as "harmless".
 const BITE_HIT = combat.Hit{ .dmg = 13, .poise = 26, .stance = 9 };
 
 const TOLL_WIND: f32 = 1.10;
 const TOLL_SWING: f32 = 0.42;
 const TOLL_RECOVER: f32 = 1.25;
 const TOLL_COOL: f32 = 12.0;
-/// Two and a half times its own notice ring, and wider than the spacing between camps in `worlds/`.
 pub const TOLL_R: f32 = 34.0;
-/// The frame the clapper strikes, as a share of the swing.
 const TOLL_HIT_AT: f32 = 0.38;
 
-// **THE GREMLIN'S VOLLEY** (owner: "a staggered 3-spark volley"). The host has nothing past its own jaws. The
-// STAGGER is what makes it fair: three things to dodge separately, not one wall of light.
 const SPARK_WIND: f32 = 0.72;
 pub const SPARK_N: u8 = 3;
-/// Seconds between one spark leaving and the next. **OVER THE ROLL'S INVULNERABLE WINDOW** (`hero.ROLL_IFRAME_END`,
 /// 0.46 s) and not merely over its animation: two sparks inside one set of i-frames are one blow with a fatter shape.
 const SPARK_GAP: f32 = 0.58;
 const SPARK_RECOVER: f32 = 0.70;
 const SPARK_CD: f32 = 5.5;
-/// Inside `AGGRO_R` with room and past the bite ring by a wide margin — two moves answering one distance is one move with a coin flip.
 pub const SPARK_MAX: f32 = 16.0;
 pub const SPARK_SPEED: f32 = 17.0;
 /// **THE VOLLEY CARRIES ITS DAMAGE, BECAUSE THE BITE MAY NOT** — that one is pinned under 16 and under half the
@@ -175,7 +157,6 @@ const HIDE_DK = rgba(30, 27, 25, 255);
 const GUT = rgba(22, 18, 17, 255);
 const BONE = archermod.BONE;
 const BONE_DK = archermod.BONE_DK;
-/// BRONZE, not steel and not gold (`gfx.Mat.gilt`'s row). **SOLVED OFF THE RENDER** (`AGENTS.md`): at
 /// (104, 88, 46) the lit skirt came back at 182 luma against the hide's 128 and the ground's 106. Wanted ~140,
 /// i.e. 0.77 on screen, and screen goes as albedo^(1/2.2), so 0.77^2.2 = 0.56 on the albedo.
 const BRONZE = rgba(58, 49, 26, 255);
@@ -187,10 +168,6 @@ const EYE = rgba(196, 168, 96, 90);
 const State = enum { idle, walk, bite, toll, spark, stunlight, stunheavy, dead };
 
 const Choice = enum { bite, toll, spark, walk, hold };
-/// `biteR` is `triggerR`'s own answer, not a second spelling of it: written out as `BITE_TRIGGER_R + foe.HERO_R`
-/// the ring the state machine gates on and the ring this decides on were two copies of one number.
-/// **THE BELL FIRST, THEN THE SPARKS.** Both live past the jaws, so the order between them is the decision and
-/// not a roll; the toll comes off a 12 s clock, and the volley owns the between-times.
 fn classify(dist: f32, biteR: f32, biteReady: bool, tollReady: bool, sparkReady: bool) Choice {
     if (dist > AGGRO_R) return .hold;
     if (dist <= biteR) return if (biteReady) .bite else .walk;
@@ -202,23 +179,17 @@ fn classify(dist: f32, biteR: f32, biteReady: bool, tollReady: bool, sparkReady:
 /// `zeta` under 1 so it RINGS on rather than arriving (`AGENTS.md`). **SOLVED**: the haul is driven over
 /// `TOLL_SWING` and natural frequency is sqrt(stiff) rad/s — at 46 the period was 0.93 s and the bell
 /// reached 37 of the 52 degrees it was pulled through. 165 gives 12.8 rad/s and a 0.49 s period, so the mass
-/// arrives inside the drive and carries PAST it.
 const BELL_STIFF: f32 = 165.0;
 const BELL_ZETA: f32 = 0.30;
-/// Degrees the bell lags a walking body, per metre-per-second of travel.
 const BELL_DRAG: f32 = 5.2;
 /// Degrees the toll drives it through — 5x anything walking can produce. THE TOLL IS THE ONLY TIME THE BELL IS A WEAPON.
 const BELL_HAUL: f32 = 52.0;
 /// **CLEAR OF THE BACK, OR IT IS A LUMP.** Measured: at -0.088 H it sat inside the chest mass and nothing showed. -0.215 H hangs the crown a hand's breadth off the spine.
 const BELL_AT = v3(0, 0.052 * H, -0.215 * H);
-/// The clapper swings further than the skirt it hangs in, which is what makes it strike the wall.
 const CLAPPER_LAG: f32 = 1.35;
 const BELL_R: f32 = 0.150 * H;
 const BELL_DROP: f32 = 0.235 * H;
 
-// **THE GREMLIN IS NOT A SECOND BODY.** No HP of its own, no leash, no place in `FOE_GROUPS`: seven bones and
-// six meshes riding the host's own transform, so killing the hollow takes the gremlin with it. It is the only
-// thing here with a ranged answer; the hollow is the legs and the bar.
 
 /// Stature in shares of the hero's. MEASURED AGAINST THE BELL, not the hero: at 0.34 H it came out 1.10 m —
 /// as tall as the bronze is wide, a second creature rather than a passenger. 0.20 H is 0.65 m.
@@ -233,17 +204,12 @@ const G_LEGR = 6;
 const G_N = 7;
 
 /// In the BELL's own frame: the crown blob rises `BELL_R * 0.30` off the bell's origin, and `G_REST[G_RUMP]`
-/// is the ZERO of the rider's rig, so this point IS the seat. Posed off the FEET instead, the splayed legs
 /// lifted the whole thing 0.3 m clear of the bronze.
 const G_SEAT: f32 = BELL_R * 0.30 + 0.008 * H;
 /// Degrees per degree the bell moves. Well under 1: mounted rigidly in the bell's frame it lay on its side the moment `HUNCH` went past forty.
 const G_BRACE: f32 = 0.34;
-/// Degrees it leans forward at rest.
 const G_STOOP: f32 = 22.0;
 
-/// **THE RUMP IS THE ORIGIN, BECAUSE THE RUMP IS WHAT TOUCHES THE BELL.** A seated creature's feet are wherever
-/// its knees put them, so a rig measured off the feet drifted the seat with every change to the leg pose.
-/// **And the joints OVERLAP their masses**: the torso's capsule reaches back down through the rump.
 const G_REST = [G_N]rl.Vector3{
     v3(0, 0, 0), // rump — the seat
     v3(0, 0.22 * G_H, -0.01 * G_H), // torso, close over it
@@ -263,7 +229,6 @@ const G_FIST = v3(0.05 * G_H, -0.30 * G_H, 0.06 * G_H);
 const G_HIDE = rgba(28, 26, 27, 255);
 const G_HIDE_LT = rgba(41, 38, 39, 255);
 const G_HIDE_DK = rgba(17, 15, 16, 255);
-/// The same lightning the sparks are, so what you read before the volley is the volley's own colour.
 const G_SPARK = rgba(196, 214, 255, 255);
 const G_EYE = rgba(226, 236, 255, 110);
 
@@ -318,7 +283,6 @@ pub const Hollow = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
@@ -335,7 +299,6 @@ pub const Hollow = struct {
     biteCool: f32 = 0,
     tollCool: f32 = 0,
     sparkCool: f32 = 0,
-    /// How many of the volley's `SPARK_N` have left, so a long frame can never drop one and never fire two.
     sparksOut: u8 = 0,
 
     bell: anim.Spring = .{},
@@ -350,8 +313,6 @@ pub const Hollow = struct {
     shove: rl.Vector3 = mathx.zero3,
     justDied: bool = false,
     parried: bool = false,
-    /// A one-frame edge (`justDied`'s idiom) cleared at the TOP of `update`: the creature cannot rouse anything
-    /// itself, because every other body is in another group, another array, another type.
     tolled: bool = false,
     gaped: bool = false,
     snapped: bool = false,
@@ -367,7 +328,6 @@ pub const Hollow = struct {
     latB: f32 = 0,
     speed: f32 = 0,
     speedS: f32 = 0,
-    /// Which way its shoulders were passing last knock, so a walking clank fires on the FOOTFALL rather than on a clock beside it.
     knockWas: f32 = 0,
 
     fade: f32 = 0,
@@ -380,7 +340,6 @@ pub const Hollow = struct {
 
     xf: [N]rl.Matrix = undefined,
     bellMat: rl.Matrix = undefined,
-    /// Its own array because it is not on the humanoid rig: bolting a second creature's joints into `N` would be a different layout, not a wider one.
     gxf: [G_N]rl.Matrix = undefined,
     rest: [N]rl.Vector3 = undefined,
 
@@ -461,7 +420,6 @@ pub const Hollow = struct {
         foe.faceToward(self.pos, &self.facing, at, TURN_RATE, dt);
     }
 
-    /// SECONDS BACK FROM THE JAWS CLOSING, or null. One rule for every weapon in the field (`foe.PARRY_LEAD`).
     fn toImpact(self: *const Hollow) ?f32 {
         if (self.state != .bite) return null;
         return BITE_WIND + BITE_STRIKE * 0.45 - self.t;
@@ -540,10 +498,8 @@ pub const Hollow = struct {
             .bite => {
                 if (self.t < BITE_WIND) self.faceToward(hero, dt);
                 self.speed = 0;
-                // Through `stepXZ` like any other committed travel, so the terrain gate still gets the last word.
                 if (self.t >= BITE_WIND * 0.55 and self.t < BITE_WIND + BITE_STRIKE) {
                     const span = BITE_WIND * 0.45 + BITE_STRIKE;
-                    // NOT handed to `advanceGait`: billed as travel it advanced the legs' stride phase with the walk speed sitting at zero.
                     mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), BITE_LUNGE * self.scale * (dt / span), bounds);
                 }
                 if (self.t >= BITE_WIND and self.t < BITE_WIND + BITE_STRIKE) self.tryBite(hero);
@@ -567,7 +523,6 @@ pub const Hollow = struct {
                 }
                 if (self.t >= TOLL_WIND + TOLL_SWING + TOLL_RECOVER) self.enter(.idle);
             },
-            // The host holds still for the whole volley and tracks slowly, so walking round it works and standing in it does not.
             .spark => {
                 self.faceToward(hero, dt * 0.5);
                 self.speed = 0;
@@ -614,8 +569,6 @@ pub const Hollow = struct {
                         }
                     },
                     .hold => {
-                        // **ORDERS COME BEFORE GOING HOME**, because for a unit that has them the round IS
-                        // where it belongs (`foe.homeFor`); the walk-home below is what a HELD body does.
                         const ps = foe.postStep(self, dt, bounds, WALK_SPEED, sensed, AGGRO_R);
                         if (ps.yaw) |w| {
                             self.speed = approach(self.speed, ps.speed, ACCEL * dt);
@@ -643,19 +596,16 @@ pub const Hollow = struct {
         self.pose();
     }
 
-    /// **THE BELL IS DRIVEN, NEVER ASSIGNED.** One spring, one target; below critical damping it rings on after both the walk's lag and the haul.
     fn tickBell(self: *Hollow, dt: f32) void {
         var want = -BELL_DRAG * self.speedS;
         if (self.state == .toll) {
             const swingT = self.t - TOLL_WIND;
             want = if (swingT < 0)
-                // The gather is the bell going the WRONG way — the haul has to come from somewhere.
                 BELL_HAUL * 0.42 * mathx.smoothstep(0, TOLL_WIND * 0.9, self.t)
             else
                 -BELL_HAUL * foe.swingCurve(mathx.clampF(swingT / TOLL_SWING, 0, 1));
         }
         self.bellAng = self.bell.step(want, BELL_STIFF, BELL_ZETA, dt);
-        // The clapper touches the wall when the swing changes SIGN, so the clank lands with the footfall that caused it.
         const crossed = (self.knockWas < 0) != (self.bellAng < 0);
         if (crossed and self.state != .toll and @abs(self.bell.vel) > 6.0) self.clanked = true;
         self.knockWas = self.bellAng;
@@ -730,7 +680,6 @@ pub const Hollow = struct {
         self.heroLatch = false;
         self.enter(.bite);
     }
-    /// `stageGather` and not `stageToll`: the shot harness stages every creature's signature move through this one name (`shots.runMapShots`).
     pub fn stageGather(self: *Hollow, u: f32) void {
         self.state = .toll;
         self.t = mathx.clampF(u, 0, 1) * (TOLL_WIND + TOLL_SWING);
@@ -786,7 +735,6 @@ pub const Hollow = struct {
         const bite = self.biteAmt();
         const toll = self.tollAmt();
 
-        // Routed through the WAIST with a sixth at the pelvis — leaned at the root the legs rotate with it (`ogre.PELVIS_SHARE`).
         const bodyPitch = HUNCH + 9.0 * bite + 6.0 * toll - 26.0 * stun + 40.0 * dk;
         const leanX = PELVIS_SHARE * bodyPitch;
         const waist = (1.0 - PELVIS_SHARE) * bodyPitch;
@@ -812,8 +760,6 @@ pub const Hollow = struct {
         self.poseGremlin(fs, dead, dk);
     }
 
-    /// Its POSITION is the bell's crown, so it goes where the bell goes; its ORIENTATION is the host's yaw plus
-    /// a `G_BRACE` fraction of the swing. Posed in the bell's own frame it lay on its side once `HUNCH` passed forty.
     fn poseGremlin(self: *Hollow, fs: f32, dead: bool, dk: f32) void {
         const seat = foe.markOn(self.bellMat, v3(0, G_SEAT, 0));
         const gs = fs;
@@ -825,7 +771,6 @@ pub const Hollow = struct {
         const fidget = if (dead) 0 else mathx.sinf(self.elapsed * 5.4 + self.seed * 6.28) * 3.4;
 
         var g: [G_N]rl.Matrix = undefined;
-        // NO LIFT OFF THE SEAT: `G_REST[G_RUMP]` is zero, so the seat point IS the rump and the two cannot part.
         g[G_RUMP] = mul(
             mul(scaleM(gs, gs, gs), mul3(
                 rz(-18.0 * swing + fidget * 0.4 + 26.0 * dk),
@@ -847,7 +792,6 @@ pub const Hollow = struct {
                 rz(side * (26.0 - 14.0 * aim - 10.0 * haul)),
             ));
         }
-        // **IT IS SEATED, NOT STANDING.** Posed as a standing creature the legs kicked backwards and lifted the whole rider clear of the bronze.
         inline for (.{ G_LEGL, G_LEGR }, .{ 1.0, -1.0 }) |leg, side| {
             heromod.setJoint(&g, &G_REST, leg, G_RUMP, mul(
                 rx(38.0 + 12.0 * haul - 24.0 * dk),
@@ -882,7 +826,6 @@ pub const Hollow = struct {
         return 0;
     }
 
-    /// **ONE MOUNT FOR BOTH HALVES OF THE BELL** — written out twice, a move of `BELL_AT` took the bell off the back and left the clapper where it was.
     fn hungOnChest(chest: rl.Matrix, ang: f32) rl.Matrix {
         return mul(mul(tr(BELL_AT.x, BELL_AT.y, BELL_AT.z), rx(ang)), chest);
     }
@@ -915,7 +858,6 @@ pub const Hollow = struct {
             rz(wonk),
         ));
 
-        // THE ARMS HANG AND NEVER COME UP: they are not weapons, and a brute reading as a boxer is the lie the swing would tell.
         const armStun = -48.0 * stun;
         const swing = -14.0 * heromod.armSwing(self.phase) * m * @abs(self.fwdB);
         const reach = 34.0 * mathx.maxF(bite, 0);
@@ -925,7 +867,6 @@ pub const Hollow = struct {
             setLocal(wx, el, rest, rx(-(26.0 + 10.0 * @abs(s) * 0.1)));
             setLocal(wx, wr, rest, rz(side * 6.0));
         }
-        // The clapper hangs inside the bell and lags it — which is why the two are separate bones at all.
         wx[CLAPPER] = hungOnChest(wx[CHEST], self.bellAng * CLAPPER_LAG);
     }
 };
@@ -933,7 +874,6 @@ pub const Hollow = struct {
 pub fn triggerR(quarryR: f32) f32 {
     return BITE_TRIGGER_R + quarryR;
 }
-/// Off the BITE's own reach, not off the trigger ring the way `skitterer.stopR` is — and NEITHER ring is scaled by the body,
 /// or the two invert: at `BITE_R * scale * STOP_FRAC` a placement at 1.25 halted 3.0 m out with a trigger ring at 2.08.
 fn stopR(quarryR: f32) f32 {
     return BITE_R * STOP_FRAC + quarryR;
@@ -1000,9 +940,6 @@ pub const Belfry = struct {
 };
 
 
-/// **A SPARK CRACKLES — IT IS NOT A GLOWING PILL** (owner: they don't look like sparks). Lightning's signature
-/// (`elemfx`): a near-COLOURLESS core, blue only in the fringe, jagged blunt-ended arms off the flight axis.
-/// **Vertex alpha is the emissive channel**, so the core is authored near-transparent to make it burn.
 pub fn sparkMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5AA7);
@@ -1050,7 +987,6 @@ fn gTorsoMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xB402);
     b.setMat(.hide);
-    // Overlap the joint well past it or the two masses show daylight and read as two creatures (`propart.courseInto`'s rule, on a body).
     b.addCapsule(v3(0, -0.10 * G_H, 0), v3(0, 0.16 * G_H, 0.02 * G_H), 0.17 * G_H, 0.18 * G_H, 9, G_HIDE);
     var i: u32 = 0;
     while (i < 3) : (i += 1) {
@@ -1131,7 +1067,6 @@ fn abdomenMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xB302);
     b.setMat(.hide);
-    // THE BELLY IS THE MASS (owner: chubsy).
     b.addCapsule(v3(0, -0.012 * H, 0), v3(0, 0.070 * H, -0.004 * H), 0.124 * H, 0.132 * H, 11, HIDE);
     b.addBlob(v3(0, 0.008 * H, 0.062 * H), v3(0.108 * H, 0.088 * H, 0.070 * H), 6, 10, HIDE);
     inline for (.{ 1.0, -1.0 }) |side| {
@@ -1146,7 +1081,6 @@ fn chestMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xB303);
     b.setMat(.hide);
-    // A BARREL WITH THE SHOULDERS ON IT (owner: chubsy — the old narrow trunk read anemic). The shoulder masses OVERLAP the arm sockets.
     b.addCapsule(v3(0, -0.006 * H, -0.004 * H), v3(0, 0.058 * H, -0.008 * H), 0.112 * H, 0.120 * H, 12, HIDE);
     b.addBlob(v3(0.128 * H, 0.052 * H, -0.006 * H), v3(0.068 * H, 0.056 * H, 0.060 * H), 5, 9, HIDE_LT);
     b.addBlob(v3(-0.128 * H, 0.038 * H, -0.002 * H), v3(0.062 * H, 0.050 * H, 0.056 * H), 5, 9, HIDE_LT);
@@ -1258,7 +1192,6 @@ fn handMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// Sides over relief (`AGENTS.md`): the bands are a couple of percent proud and the side count is what makes it round.
 fn bellMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xB30B);
@@ -1362,7 +1295,6 @@ test "A STAGGERED THREE — the volley fires exactly `SPARK_N`, one at a time, a
             const wasState = h.state;
             _ = h.update(dt, mathx.ground(0, 9.0), 200.0, .{});
             if (h.sparked) {
-                // `sparksOut` is a COUNT, not an edge, so a long frame catches up rather than firing the rest of the volley at once.
                 if (lastAt >= 0) gaps[fired - 1] = t - lastAt;
                 lastAt = t;
                 fired += 1;
@@ -1440,7 +1372,6 @@ test "A TOLL IS A SUMMONS, NOT A WOUND — it rouses a camp without breaking its
     try std.testing.expect(camp[0].leash.roused() and camp[1].leash.roused());
     try std.testing.expect(!camp[2].leash.roused());
     try std.testing.expect(!camp[3].leash.roused()); // a body already falling does not answer a bell
-    // FOUR TOLLS MAY NOT BUY WHAT THREE BLOWS DO: the break belongs to being hit.
     var k: usize = 0;
     while (k < 4) : (k += 1) _ = foe.rouseWithin(&camp, mathx.zero3, TOLL_R);
     try std.testing.expectApproxEqAbs(@as(f32, 0), camp[0].leash.provoked, 1e-6);
@@ -1457,7 +1388,6 @@ test "THE BELL IS SPRUNG, NOT ASSIGNED — it overshoots the haul and settles ba
     var h = Hollow.spawn(mathx.zero3, 0, 1.0, 0.3);
     h.debugToll();
     const dt: f32 = 1.0 / 120.0;
-    // …with nobody in its patch, so what the bell settles ONTO is rest and not the walk's own lag.
     const away = mathx.ground(0, AGGRO_R * 4.0);
     var t: f32 = 0;
     var lo: f32 = 0;

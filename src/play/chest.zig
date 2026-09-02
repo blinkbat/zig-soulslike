@@ -15,7 +15,6 @@ pub const CAP: usize = 64;
 /// How close you have to be for the prompt (metres, measured on XZ from the box's own origin).
 pub const REACH: f32 = 2.1;
 pub const OPEN_DUR: f32 = 0.85;
-/// How far back the lid falls, in degrees about the hinge.
 pub const OPEN_DEG: f32 = 104.0;
 
 pub const Chest = struct {

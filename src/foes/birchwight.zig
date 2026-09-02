@@ -24,19 +24,7 @@ const lerpF = mathx.lerpF;
 const approach = mathx.approach;
 const setLocal = heromod.setHumanoid;
 
-// THE BIRCHWIGHT (owner's creature, owner's brief) — a dead birch standing up and walking, and **THE FIRE IS
-// THE WHOLE FIGHT, BOTH WAYS**. Nothing else in the game has a counter that is also an escalation.
-//
 // **BIRCH BARK IS 10-25% BETULIN**, an oily terpene, which is why it takes a flame wet or green and why it is
-// the firestarter every woodsman carries. That is the creature: unlit it is a slow, heavy, high-poise thing
-// you grind down; CAUGHT it is half again as fast and every blow it lands sets you alight too.
-//
-// **AND CATCHING IT KILLS IT.** `LIT_DPS` burns it down on its own clock, so putting a torch to one is a
-// decision to end the fight in fifteen seconds instead of forty — on much worse terms. The player is allowed
-// to want either.
-//
-// **A CAUGHT ONE LIGHTS THE NEXT ONE** (`SPREAD_R`). In a stand of them the torch is a mistake; alone it is a
-// tool. Same creature, opposite answer, and the map is what decides which.
 
 pub const H: f32 = 2.15;
 const HIP_HALF = heromod.HIP_HALF * 0.78;
@@ -69,11 +57,9 @@ const solePatches = [_]heromod.SolePatch{
     .{ .bone = ANKR, .heel = 0.030 * H, .toe = 0.120 * H, .halfW = 0.052 * H, .drop = 0.026 * H },
 };
 
-// **BIRCH IS THE ONE PALE TREE, AND PALE IS THE WHOLE POINT** — every other body on this field is authored
 // dark. **SOLVED OFF THE CHAIN, NOT PICKED**: `gfx`'s own ladder is albedo 76 -> screen 188 and 109 -> 222,
 // and anything over 148 clips white. Authored at 168 the trunk clipped and the creature read as a bare
 // mannequin with no bark on it at all; at 92 it samples ~205 — the palest body on the field and still a
-// surface, with the lenticels able to sit dark against it.
 const BARK = rgba(92, 89, 82, 255);
 const BARK_LT = rgba(116, 113, 106, 255);
 const LENTICEL = rgba(38, 36, 32, 255);
@@ -95,11 +81,8 @@ const CENTER_F: f32 = 0.58;
 const TOP_F: f32 = 1.02;
 
 const HP_MAX: f32 = 180.0;
-/// **DEAD WOOD DOES NOT FLINCH.** There is no physical resistance column in this game (armour is its own
-/// number), so "heavy and dense" is spent on POISE — light spam does not interrupt a bough.
 const POISE_MAX: f32 = 34.0;
 const STANCE_MAX: f32 = 38.0;
-/// Fire is the answer twice over: the damage AND the catch. Lightning is the second — it is still a tree.
 const RESISTS = combat.resists(.{ .fire = -85, .lightning = -20, .cold = 25, .chaos = 40 });
 pub var SOULS: u32 = 210;
 
@@ -110,27 +93,19 @@ const BOUGH_STRIKE: f32 = 0.22;
 const BOUGH_RECOVER: f32 = 0.95;
 const BOUGH_CD: f32 = 3.0;
 pub var BOUGH_HIT = combat.Hit{ .dmg = 22, .poise = 22, .stance = 14 };
-/// What the same swing carries once it is alight — added on top, so the LIT blow is the unlit one plus fire.
 pub const LIT_FIRE: f32 = 14.0;
 
-// **THE CATCH.** `lit` is 0..1 of a meter that raw fire fills and that leaks back down; at 1 it LATCHES
-// (`caught`) and never goes out. Two dials so a stray fire arrow cannot light one by accident and a torch
-// held on it can.
 /// Raw fire damage to take one from cold to caught. A fire arrow is 8-ish, so it is a committed act.
 pub const LIGHT_AT: f32 = 40.0;
-/// Per second the partial meter leaks. Well over one fire arrow's worth a second, so it must be SUSTAINED.
 const LIT_DECAY: f32 = 0.35;
 /// **CATCHING IT KILLS IT** — its own bark burns it down over `HP_MAX / LIT_DPS` = 15 s (printed by the test).
 pub const LIT_DPS: f32 = 12.0;
-/// Half again as fast, on the feet AND on the swing.
 pub const LIT_HASTE: f32 = 1.55;
-/// A caught one lights the next one: within this, per second, of the neighbour's own meter.
 pub const SPREAD_R: f32 = 2.0;
 const SPREAD_RATE: f32 = 0.85;
 
 comptime {
     std.debug.assert(BOUGH_WIND >= foe.TELL_MIN);
-    // The wind stays a real tell even at full haste, or lighting one makes its only blow unreactable.
     std.debug.assert(BOUGH_WIND / LIT_HASTE >= foe.TELL_MIN);
     std.debug.assert(LIT_DECAY * LIGHT_AT > 12.0);
 }
@@ -158,10 +133,8 @@ const State = enum { idle, walk, bough, stunlight, stunheavy, dead };
 
 const Choice = enum { rest, hold, close, bough };
 
-/// **A BAND IS ASKED THE WAY THE STROKE BILLS IT** (`foe.hurtReach`, the ogre's `slamReach` law).
 /// Measured edge to edge against a centre-to-centre bill, the band ran 0.19 m past the reach at scale 1
 /// and 1.15 m at `wf.FOE_SCALE_LO` — and a body stops closing the frame its band takes it, so that
-/// sliver was where the bough was always thrown and never billed.
 fn classify(sensed: f32, homeGap: f32, scale: f32, boughReady: bool, rooted: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     if (sensed <= foe.hurtReach(BOUGH_R, scale) and boughReady) return .bough;
@@ -188,7 +161,6 @@ pub const Wight = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
@@ -214,7 +186,6 @@ pub const Wight = struct {
     /// 0..1 of the catch. Fire fills it, `LIT_DECAY` empties it, and at 1 `caught` latches for good.
     lit: f32 = 0,
     caught: bool = false,
-    /// One-frame edge for the beat that says so.
     justCaught: bool = false,
 
     vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
@@ -282,11 +253,9 @@ pub const Wight = struct {
         return .birchwight;
     }
 
-    /// **ONE DIAL DRIVES EVERY FAST THING IT DOES**, so the fight speeding up is one number and not five.
     pub fn haste(self: *const Wight) f32 {
         return if (self.caught) LIT_HASTE else 1.0;
     }
-    /// The blow it is actually carrying — the unlit one, plus fire once the bark has taken.
     pub fn boughHit(self: *const Wight) combat.Hit {
         var h = BOUGH_HIT;
         if (self.caught) h.elem = combat.elems(.{ .fire = LIT_FIRE });
@@ -302,9 +271,6 @@ pub const Wight = struct {
         return BOUGH_RECOVER / self.haste();
     }
 
-    /// **THE ONE DOOR THE BARK CATCHES THROUGH**, so a torch, an arrow, a spell and a neighbour cannot each
-    /// have their own arithmetic. `raw` is fire BEFORE resistance: the creature's fire weakness is already
-    /// spent on the damage, and billing it twice would make one arrow light a tree.
     pub fn kindle(self: *Wight, raw: f32) void {
         if (self.caught or self.state == .dead or raw <= 0) return;
         self.lit = mathx.clampF(self.lit + raw / LIGHT_AT, 0, 1);
@@ -394,7 +360,6 @@ pub const Wight = struct {
                 switch (classify(sensed, homeGap, self.scale, self.boughCd <= 0, self.root.held())) {
                     .rest => {
                         if (sensed <= AGGRO_R) self.faceToward(quarry, dt);
-                        // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postAmble`), refused inside the ring.
                         self.state = if (foe.postAmble(self, dt, bounds, WALK_SPEED, ACCEL, sensed, AGGRO_R, TURN_RATE, &movedDist, &moveSpeed, &moveYaw)) .walk else .idle;
                     },
                     .bough => {
@@ -422,15 +387,12 @@ pub const Wight = struct {
         return self.heroHit;
     }
 
-    /// **CAUGHT, IT IS BURNING ITSELF DOWN.** Billed as a `drip` so nothing it does can build its own meters
-    /// off it, and so the death goes through the ordinary door.
     fn tickFire(self: *Wight, dt: f32) void {
         if (self.state == .dead) return;
         if (!self.caught) {
             self.lit = mathx.maxF(0, self.lit - LIT_DECAY * dt);
             return;
         }
-        // `gore` — no element, so its own fire resistance cannot make it fireproof against its own bark.
         _ = self.vit.drip(.{ .gore = LIT_DPS * dt });
         if (self.vit.dead) self.enterDeath();
     }
@@ -446,8 +408,6 @@ pub const Wight = struct {
     pub fn tryHit(self: *Wight, blade: foe.Blade) void {
         if (self.state == .dead) return;
         const s = foe.reached(self, blade) orelse return;
-        // **THE BARK READS THE BLOW ITSELF**, before the reaction, so a killing fire blow still lit it on the
-        // way past — which is what makes a lit corpse look like the thing that killed it.
         self.kindle(blade.hit.elem.at(.fire));
         const heavy = foe.wounded(self, s, blade, .{ .light = 0.35, .heavy = 0.9 });
         self.chips(s.contact, s.dir, foe.hitParts(if (heavy) HIT_CHIP_HEAVY else HIT_CHIP_LIGHT));
@@ -506,16 +466,12 @@ pub const Wight = struct {
         foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, 2.6, self.scale, CHIP_SPRAY);
     }
 
-    /// **THE CATCH IS VISIBLE BEFORE IT LATCHES** — smoke off a kindling one, flame off a caught one. A player
-    /// who cannot see the meter filling cannot decide whether to keep the torch on it.
     fn emitFire(self: *Wight, dt: f32) void {
         if (self.state == .dead or (self.lit <= 0.02 and !self.caught)) return;
         const rate = if (self.caught) FLAME_RATE_LIT else SMOKE_RATE * self.lit;
         var owed = foe.emitDue(&self.fxAccum, dt, rate);
         const sig = elemfx.sig(.fire);
         while (owed > 0) : (owed -= 1) {
-            // Up the trunk from the feet: a tree takes from the bottom, and a mote at the crown of an
-            // ankle-high flame is the picture disagreeing with the meter.
             const up = self.fxRng.float() * (if (self.caught) 1.0 else self.lit);
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.02, 0.07) * H * self.scale;
@@ -558,8 +514,6 @@ pub const Wight = struct {
         const pel = heromod.pelvisChannels(self.phase, m, self.fwdB, self.latB, A_PROT);
         const bough = self.boughAmt();
 
-        // A standing tree does not hunch. It LEANS, slowly, and the lean is most of the idle — on `gutter`'s
-        // three incommensurate rates, because one sine is a metronome and a stand of them falls into step.
         const creak = SWAY * mathx.gutter(self.elapsed * 0.42 + self.seed * 6.28, self.seed * 4.3) * (1.0 - m);
         const bodyPitch = 20.0 * mathx.maxF(0, bough) - 12.0 * mathx.maxF(0, -bough) - 18.0 * stun + 74.0 * dk;
         const leanX = PELVIS_SHARE * bodyPitch;
@@ -567,8 +521,6 @@ pub const Wight = struct {
         const lumber = 2.4 * mathx.sinf(std.math.tau * self.phase) * m;
 
         var wx: [N]rl.Matrix = undefined;
-        // **A FELLED TREE GOES OVER, IT DOES NOT SIT DOWN** — the death is a topple about the ankles, so the
-        // pelvis barely drops and the whole length of it swings through the pitch instead.
         const pelvY = if (dead) lerpF(hipY, hipY * 0.72, dk) else hipY + pel.bob - pel.dip;
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
             mul3(rz(creak * 0.6 + lumber * 0.4 + 6.0 * dk), rx(leanX), ry(pel.prot)),
@@ -594,10 +546,6 @@ pub const Wight = struct {
         setLocal(wx, NECK, rest, rx(-6.0 * bough + 5.0 * dk - 4.0 * stun));
         setLocal(wx, CROWN, rest, mul3(rx(-12.0 * bough + 10.0 * dk - 20.0 * stun), ry(-0.3 * prot), rz(lean + creak)));
 
-        // **BOTH BOUGHS COME OVERHEAD AND COME DOWN TOGETHER** — the tell is the whole tree rearing back, and
-        // at this stature it is readable from further out than the swing can reach. Together is not WELDED:
-        // each side carries its own few percent of the haul, and the elbows ride |bough|^1.5 so they peak
-        // after the shoulders — mass flows root to tip even on a double slam.
         const armStun = -34.0 * stun;
         const swing = -7.0 * heromod.armSwing(self.phase) * m * @abs(self.fwdB);
         const haul = -128.0 * mathx.maxF(0, -bough);
@@ -647,9 +595,6 @@ pub const Stand = struct {
         return foe.groupBlow(self.live(), dt, hero, bounds, blade);
     }
 
-    /// **A CAUGHT ONE LIGHTS THE NEXT ONE.** Read off the caught bodies and written onto the cold ones in one
-    /// pass, so the order of the group cannot decide who catches — and a body already caught is skipped, or a
-    /// pair of them would sit trading a meter that is already full.
     fn spread(self: *Stand, dt: f32) void {
         var anyLit = false;
         for (self.liveConst()) |*w| {
@@ -724,8 +669,6 @@ fn buildBones() [N]rl.Mesh {
     return mesh;
 }
 
-/// **THE LENTICELS ARE THE WHOLE TREE.** Birch is a pale bole with dark horizontal dashes; without them the
-/// mesh is a white pipe and reads as bone, which is the one thing on this field it must not be mistaken for.
 fn lenticels(b: *Builder, rng: *mathx.Rng, len: f32, r: f32, n: u32) void {
     var i: u32 = 0;
     while (i < n) : (i += 1) {
@@ -768,8 +711,6 @@ fn trunkMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// No face. A crown of dead twigs and one ember caught in the fork where a bird's nest went — the only warm
-/// thing on it before it catches, and what a player's eye finds in a stand of them.
 fn crownMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x8C0E);
@@ -799,7 +740,6 @@ fn limbMesh(side: f32, len: f32, rTop: f32, rBot: f32, seed: u64) rl.Mesh {
     var rng = mathx.Rng.init(seed);
     b.setMat(.skin);
     b.addCapsule(v3(0, 0, 0), v3(side * 0.008 * H, -len * H, 0), rTop * H, rBot * H, 8, BARK);
-    // The knot at the joint: bark over the socket, and what stops the limb reading as a cut pipe.
     b.addBlob(v3(0, 0.004 * H, 0), v3(rTop * 1.16 * H, rTop * 1.05 * H, rTop * 1.16 * H), 7, 5, BARK);
     b.setMat(.plain);
     lenticels(&b, &rng, len, rBot, 8);
@@ -847,7 +787,6 @@ fn twigMesh(side: f32) rl.Mesh {
 
 test "IT TAKES A SUSTAINED FLAME, NOT A STRAY ARROW" {
     var w = Wight.spawn(mathx.zero3, 0, 1.0, 0.3);
-    // One fire arrow's worth, then left alone: it smoulders and goes out.
     w.kindle(8.0);
     try std.testing.expect(!w.caught);
     try std.testing.expect(w.lit > 0);
@@ -856,7 +795,6 @@ test "IT TAKES A SUSTAINED FLAME, NOT A STRAY ARROW" {
     try std.testing.expectApproxEqAbs(@as(f32, 0), w.lit, 1e-4);
     try std.testing.expect(!w.caught);
 
-    // Held on it, it catches — and once caught it never goes out.
     var lit = Wight.spawn(mathx.zero3, 0, 1.0, 0.3);
     var fed: f32 = 0;
     t = 0;
@@ -901,7 +839,6 @@ test "A CAUGHT ONE LIGHTS THE NEXT ONE — the torch is a mistake in a stand of 
     var s = Stand{ .model = undefined };
     s.wights[0] = Wight.spawn(mathx.zero3, 0, 1.0, 0.3);
     s.wights[1] = Wight.spawn(v3(0, 0, SPREAD_R * 0.8), 0, 1.0, 0.5);
-    // Well outside the spread, and it must stay cold.
     s.wights[2] = Wight.spawn(v3(0, 0, SPREAD_R * 6.0), 0, 1.0, 0.7);
     s.n = 3;
     s.wights[0].debugLight();
@@ -927,7 +864,6 @@ test "A FIRE BLOW LIGHTS IT THROUGH THE ORDINARY DOOR — the bark reads the bla
     };
     w.tryHit(torch);
     try std.testing.expect(w.caught);
-    // …and a steel blade of the same weight never lights one.
     var steel = Wight.spawn(mathx.zero3, 0, 1.0, 0.3);
     var b2 = torch;
     b2.hit = .{ .dmg = 40 };
@@ -974,9 +910,6 @@ test "the pick is positional, and the bough is telegraphed once per swing" {
     try std.testing.expect(firstAt >= foe.TELL_MIN);
 }
 
-// **THE BAND IT STOPS CLOSING AT HAS TO BE A BAND IT CAN BILL FROM** (AGENTS.md: a move is judged by THROWING
-// it, not by looking at it). The outer edge is asked of `classify` rather than re-derived here — which unit the
-// band is written in is the thing under test.
 test "THE BLOW LANDS ON THE MAN WHERE HE STANDS — thrown for real, anywhere its own band picks it" {
     const dt: f32 = 1.0 / 120.0;
     var misses: usize = 0;

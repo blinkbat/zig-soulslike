@@ -35,24 +35,16 @@ const SPRUCE = art.SPRUCE;
 const WEAVE = art.WEAVE;
 
 
-/// **ONE SECTION, AND THE PITCH A LADDER TILES AT** (`props.Info.stack`, `env.drawProp`). A run of any height is
 /// whole sections spliced end to end, so the rung spacing is the same at 0.9 m and at 12 — the one thing a
-/// uniform `scale` could not give, since it drags the rungs apart with the rails.
-///
 /// **THREE RUNGS, BECAUSE THE SECTION IS THE AUTHORING GRANULARITY.** At eight it was 2.40 m, and a run can
-/// only be a whole number of them: against a cliff quantised to `wf.HEIGHT_STEP` that leaves most lips
-/// unreachable — the head lands a metre over the ledge or a metre under it and `game.ladderExit` refuses both.
 /// At 0.90 it is finer than the band that exit accepts, so EVERY height has a run that serves it — and that
 /// relation is a comptime assert beside `env.LADDER_PROUD`, not a number to be re-derived here.
 pub const LADDER_SEG: f32 = 0.90;
 const LADDER_RUNGS: i32 = 3;
-/// Rail centres either side of the prop's axis. The rungs are what he climbs, so the axis IS the climbing line.
 pub const LADDER_HALF: f32 = 0.26;
-/// How far out of the rung plane the climber's own axis sits, on the prop's local +Z — the side it faces.
 pub const LADDER_STANDOFF: f32 = 0.30;
 const RAIL_R: f32 = 0.058;
 const RUNG_R: f32 = 0.038;
-/// How far each rail runs past its own section, both ends. Over the cap radius, or the dome still shows.
 const RAIL_LAP: f32 = 0.075;
 
 pub fn ladderMesh(shader: rl.Shader) rl.Model {
@@ -60,8 +52,6 @@ pub fn ladderMesh(shader: rl.Shader) rl.Model {
     var rng = mathx.Rng.init(6431);
     const seg = LADDER_SEG;
     b.setMat(.wood);
-    // **THE RAILS OVERRUN THEIR OWN SECTION AT BOTH ENDS**, so a stack buries each capsule's dome inside its
-    // neighbour and the stile reads as one continuous pole. Butted exactly at the seam it beads like bamboo.
     for ([_]f32{ -LADDER_HALF, LADDER_HALF }) |rx| {
         const bow = rng.range(-0.005, 0.005);
         b.addCapsule(
@@ -88,7 +78,6 @@ pub fn ladderMesh(shader: rl.Shader) rl.Model {
             6,
             if (rng.float() < 0.3) SPRUCE else if (rng.float() < 0.4) TIMBER_DK else TIMBER,
         );
-        // Not every rung is bound, and a ladder where every one is reads as machined.
         if (rng.float() < 0.55) {
             b.setMat(.cloth);
             for ([_]f32{ -LADDER_HALF, LADDER_HALF }) |rx| {
@@ -186,44 +175,24 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// **THE PLANK FLOOR, AND THE HOLE THE LADDER COMES UP THROUGH.** The mesh and `props.INFO`'s deck are solved
-/// off these three: a hatch cut in one and not the other is a floor you fall through or a hole you stand on.
-/// Boards are this thick, and a deck's TOP is half of one above the line the planks are centred on. The mesh
-/// and `props.WATCH_DECKS` are the two readers and they may not each carry their own copy of the half.
 pub const PLANK_T: f32 = 0.14;
-/// How far off the axis a hatch sits, on whichever of the two horizontals its floor uses. **A NUMBER WITH A
-/// CEILING**: the shaft's colliders leave clear standing only inside `props.TOWER_CLEAR` of the axis, so a
-/// hatch further out is one the push-out shoulders him off before he can step onto the floor. It stayed at
 /// 1.10 through the doubling — that is what keeps the shipped flights lined up on their trapdoors — so the
-/// widened floor is all standing room, which is the point of it.
 pub const WATCH_HATCH_Z: f32 = 1.10;
 pub const WATCH_HATCH_R: f32 = 0.70;
 
-/// One boarded storey: the line its planks are centred on, and where its trapdoor is cut.
 pub const Storey = struct {
     y: f32,
     hx: f32 = 0,
     hz: f32 = 0,
 
-    /// What a body stands on — half a board above the centre line.
     pub fn top(self: Storey) f32 {
         return self.y + PLANK_T * 0.5;
     }
 };
 
-/// **THE ONE PLACE A FLOOR AND ITS HATCH ARE DECLARED TOGETHER.** `watchtowerMesh` boards these and
-/// `props.WATCH_DECKS` turns the same rows into decks and holes; declared twice, a hatch moved in one and not
-/// the other is a floor you fall through or a hole you stand on.
-///
 /// **THE FIRST TWO DID NOT MOVE WHEN THE SHAFT DOUBLED.** The shipped map's flights are authored against 4.69
 /// and 11.90 (`worlds/01_fallen_plain.world`), so the tower grew UPWARD out of the building that was already
-/// there rather than being re-spaced under them. The last row is THE ROOF, and it goes between the head of the
-/// last course and the parapet standing on it — the rows stay AUTHORED rather than solved off `art.TOWER_HEAD`,
-/// because a flight in a shipped map is nailed to the storey it serves and a derived roof moves it; the
 /// comptime block below is what says the two still agree.
-///
-/// **NO TWO FLIGHTS SHARE A LINE** — the hatches take the four quarters of the shaft in turn, so every storey
-/// is crossed to reach the next one rather than passed straight through, and no ladder stands over another.
 pub const WATCH_STOREYS = [_]Storey{
     .{ .y = 4.62, .hz = WATCH_HATCH_Z },
     .{ .y = 11.83, .hz = -WATCH_HATCH_Z },
@@ -231,13 +200,9 @@ pub const WATCH_STOREYS = [_]Storey{
     .{ .y = 23.23, .hx = -WATCH_HATCH_Z },
 };
 
-/// The floor the doorway opens under, and the roof. The storeys between them have no name worth carrying.
 pub const WATCH_DECK_TOP: f32 = WATCH_STOREYS[0].top();
 pub const WATCH_ROOF_TOP: f32 = WATCH_STOREYS[WATCH_STOREYS.len - 1].top();
 
-/// **THE ARROW SLITS** — two courses of one, one band every `SLIT_BAND` courses up the shaft, and the pair is
-/// on opposite sides. `SLIT_SIDE` is a SIXTH of the circle off the doorway, which is what keeps the opening's
-/// own three sides whole.
 const SLIT_BAND: i32 = 12;
 const SLIT_LO: i32 = 7;
 const SLIT_HI: i32 = 8;
@@ -245,30 +210,20 @@ const SLIT_SIDE: i32 = @divTrunc(TOWER_SIDES, 6);
 
 comptime {
     std.debug.assert(SLIT_LO < SLIT_BAND and SLIT_HI < SLIT_BAND and SLIT_HI > SLIT_LO);
-    // A slit cut through the doorway's own side takes stone out of the lintel over the door.
     std.debug.assert(!art.towerDoorway(SLIT_SIDE));
     std.debug.assert(!art.towerDoorway(SLIT_SIDE + @divTrunc(TOWER_SIDES, 2)));
 }
 
-/// **THE MERLONS, AND THEY ARE THE TALLEST THING ON THE PROP.** They stand on the roof boards, so the kind's
-/// own `top` is this and not the roof (`props.WATCH_TOP`) — a `top` short of the geometry is a shadow cull that
-/// drops the parapet at the range it starts to matter.
 const MERLON_H_LO: f32 = 0.40;
 const MERLON_H_HI: f32 = 0.95;
-/// Everything the watchtower's mesh reaches, for the kind's row to read instead of keeping its own number.
 pub const WATCH_TOP: f32 = WATCH_ROOF_TOP + MERLON_H_HI;
 
 comptime {
-    // **THE WALL HOLDS A BODY IN ON EVERY FLOOR AND LETS GO OF THE ROOF** (`propart.TOWER_WALL_H`), which is
-    // the one relation `propart` cannot state for itself — it sits under this file and owns none of these.
     std.debug.assert(TOWER_WALL_H > WATCH_STOREYS[WATCH_STOREYS.len - 2].top());
     std.debug.assert(TOWER_WALL_H < WATCH_ROOF_TOP);
-    // **AND THE ROOF IS THE HEAD OF THE SHAFT, WITHIN A BOARD.** The rows are authored; this is what catches a
-    // course count or a course height moved in `propart` without the storey over them following.
     std.debug.assert(@abs(WATCH_STOREYS[WATCH_STOREYS.len - 1].y - TOWER_HEAD) <= PLANK_T);
     for (WATCH_STOREYS, 0..) |st, i| {
         if (i > 0) std.debug.assert(st.y > WATCH_STOREYS[i - 1].y);
-        // A hatch a body cannot stand beside is one the push-out shoulders him off before he lands on it.
         std.debug.assert(@abs(st.hx) + @abs(st.hz) + WATCH_HATCH_R < art.TOWER_CLEAR);
     }
 }
@@ -279,17 +234,10 @@ fn inHatch(hx: f32, hz: f32, x: f32, z: f32) bool {
     return dx * dx + dz * dz < WATCH_HATCH_R * WATCH_HATCH_R;
 }
 
-/// Plank pitch across a floor, so the board count follows the shaft's width instead of being a count that was
-/// right at one radius.
 const PLANK_W: f32 = 0.60;
 
-/// One boarded floor across the shaft, with its hatch cut out. Every storey is this: a plank is laid in the
-/// PIECES either side of the opening, so the hole is a real hole and not a gap in a row of boards.
 fn floorInto(b: *Builder, rng: *mathx.Rng, y: f32, hx: f32, hz: f32, R: f32, sides: i32) void {
     b.setMat(.wood);
-    // **NO BOARD IS MISSING FROM A FLOOR THAT HOLDS A BODY.** The deck is the whole disc (`props.WATCH_DECKS`),
-    // so a dropped plank is a hole he stands on — the picture and the footing have to be the same floor. The
-    // wabi-sabi is in the WIDTH and the tone instead, which is where it belongs on sawn timber anyway.
     const boards: i32 = @intFromFloat(@ceil(2.0 * R / PLANK_W));
     var pl: i32 = 0;
     while (pl < boards) : (pl += 1) {
@@ -305,7 +253,6 @@ fn floorInto(b: *Builder, rng: *mathx.Rng, y: f32, hx: f32, hz: f32, R: f32, sid
         }
     }
     b.addCylinder(v3(0, y - 0.20, 0), v3(0, y - 0.08, 0), R * 0.94, R * 0.94, sides, TIMBER_DK);
-    // THE HATCH IS FRAMED — a sawn hole in bare boards reads as missing geometry.
     var hf: i32 = 0;
     while (hf < 10) : (hf += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(hf)) / 10.0;
@@ -323,15 +270,11 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// Split off the model so the tower's COST can be counted without a GL context — it is the biggest prop in
-/// the game and the test below prints the number every build.
 fn watchtowerInto(b: *Builder) void {
     var rng = mathx.Rng.init(7788);
     b.setMat(.stone);
     const sides: i32 = TOWER_SIDES;
     const R: f32 = TOWER_R;
-    // A course is a course whatever the tower is: the shaft doubled by taking twice as many of them. Both come
-    // off `propart`'s grid, which is what the doorway's head and the roof storey are solved against.
     const courses: i32 = TOWER_COURSES;
     const ch: f32 = TOWER_COURSE_H;
     const radial = struct {
@@ -376,7 +319,6 @@ fn watchtowerInto(b: *Builder) void {
             const fi = @as(f32, @floatFromInt(i)) + skew;
             const a = std.math.tau * fi / @as(f32, @floatFromInt(sides));
             if (c < art.TOWER_DOOR_COURSES and towerDoorway(i)) continue;
-            // Arrow slits: a PAIR of courses, opposite each other, one band every `SLIT_BAND` up the shaft
             // — so a 30-course tower gets two bands and the top storey none. The bearing is a sixth of the
             // circle off the doorway, which the comptime block below pins clear of the opening's own sides.
             const band = @mod(c, SLIT_BAND);

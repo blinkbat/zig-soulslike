@@ -135,7 +135,6 @@ fn spec(r: Role) *const Spec {
 
 comptime {
     if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("kobold: a Role with no spec row");
-    // …and the kinds are a CONTIGUOUS RUN off `berserker` in role order, since `roleOf`/`kindOf` are an ordinal shift. Unpinned, a kind inserted mid-run silently posts the wrong role — the priest spawns as a berserker and nothing fails to compile.
     for (@typeInfo(Role).@"enum".fields, 0..) |f, i| {
         const fk: wf.FoeKind = @enumFromInt(@intFromEnum(wf.FoeKind.berserker) + i);
         if (!std.mem.eql(u8, f.name, @tagName(fk))) {
@@ -199,7 +198,6 @@ pub const ZERK_HIT = combat.Hit{ .dmg = 11, .poise = 9 };
 const CAST_DUR = 1.25;
 const CAST_CD = 9.0;
 const HEAL_AMT = 30.0;
-/// **A FULL METER IN ONE RITE.** Half of one would decay away before a second cast could land on it
 /// (`combat.AILS`' berserk row decays at 16/s), so the rite would visibly do nothing.
 const RITE_ZERK = combat.ailBank(.berserk).max;
 const HEAL_SLACK = 4.0;
@@ -284,7 +282,6 @@ pub const Kobold = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
@@ -339,7 +336,6 @@ pub const Kobold = struct {
     xf: [N]rl.Matrix = undefined,
     jawXf: rl.Matrix = undefined,
     tailXf: [TAIL_N]rl.Matrix = undefined,
-    /// The tail's lash, in degrees, eased so a hit or a swing whips it rather than teleporting it.
     tailWhip: f32 = 0,
     rest: [N]rl.Vector3 = undefined,
 
@@ -443,8 +439,6 @@ pub const Kobold = struct {
             else => 0,
         };
     }
-    /// **THE FIRST CREATURE TO TAKE THE BARGAIN, AND IT READS THE HERO'S OWN THREE DIALS**
-    /// (`combat.Vitals.dmgMult`/`hasteMult`/`travelMult`). The price too: `AILS`' `hpFrac`, then `justEnded`.
     pub fn hurtBlow(self: *const Kobold) combat.Hit {
         const base: combat.Hit = switch (self.state) {
             .chop => ZERK_HIT,
@@ -469,10 +463,8 @@ pub const Kobold = struct {
         if (grip.killed) self.enterDeath();
         if (grip.downed) self.stagger(true);
         self.elapsed += dt;
-        // **ITS OWN CLOCK, NEVER THE WORLD'S** (the chill's law) — nothing else in the frame changes rate.
         self.t += dt * self.vit.hasteMult();
         self.vit.tick(dt);
-        // THE BILL COMES DUE ON THE WAY OUT: the one stagger nothing hit it for (`hero.tickPoison`'s beat).
         if (self.vit.ailEnded(.berserk) and !self.gone) self.stagger(true);
         foe.fadeFlash(&self.flash, dt);
         foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
@@ -493,7 +485,6 @@ pub const Kobold = struct {
         switch (self.state) {
             .idle => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
-                // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postDrive`), refused inside the ring.
                 _ = foe.postDrive(self, dt, bounds, WALK_SPEED, d, AGGRO_R, TURN_RATE, &movedDist, &moveSpeed, &moveYaw);
                 if (self.t >= 0.25) self.decide(d);
             },
@@ -579,7 +570,6 @@ pub const Kobold = struct {
         return act;
     }
 
-    /// SECONDS BACK FROM THE AXE OR THE JAWS ARRIVING, or null. **THE TWO STROKES THAT HURT, AND NOT THE DASH** — the leap is answered by not being where it lands (the bone knight's HOP rule), and the whirl and the chant are not blows at all. The impact frame is the OPENING of `hurtOpen`'s own window.
     fn toImpact(self: *const Kobold) ?f32 {
         return switch (self.state) {
             .chop => ZERK_CHOP * ZERK_HIT_A - self.t,
@@ -588,7 +578,6 @@ pub const Kobold = struct {
         };
     }
 
-    /// THE INSTANT IT CAN BE CAUGHT IN, and how far out it reaches then — `hurtReach`'s OWN answer, which is already the per-state one, so a stroke the boards could not have met is never offered as one.
     fn parryable(self: *const Kobold) ?f32 {
         if (self.dealt) return null;
         const left = self.toImpact() orelse return null;
@@ -596,7 +585,6 @@ pub const Kobold = struct {
         return self.hurtReach();
     }
 
-    /// **THE BOARDS TAKE IT.** `enterStun` already spends `dealt`, which is what stops the rest of the swing still billing through `Warband.update`'s own reach test.
     fn takeParry(self: *Kobold) void {
         const reach = self.parryable() orelse return;
         if (!foe.caught(self, reach)) return;
@@ -689,7 +677,6 @@ pub const Kobold = struct {
                     return self.enter(.approach);
                 }
                 if (self.slingCd <= 0) return self.enter(.whirl);
-                // The sling is cooling: DRIFT (the archer's reload lesson) — a skirmisher between shots circles his own way, he does not stand on the mark the last clump was thrown from.
                 self.moveDir = mathx.headingDir(self.facing + (if (self.seed < 0.5) @as(f32, 1) else -1) * std.math.pi * 0.5);
                 return self.enter(.reposition);
             },
@@ -883,7 +870,6 @@ pub const Kobold = struct {
         self.justDied = true;
     }
 
-    /// THE IDLE'S CLOCKS (the wanderer's law): breath, its lagged echo one joint down, and a slow weight rock — every RATE and PHASE dealt off the seed, at rates that never line up. Three identical mannequins PHASE-LOCKED is what a warband at its post read as.
     fn idleSway(self: *const Kobold, m: f32, dk: f32) struct { br: f32, brLag: f32, rock: f32, deal: f32 } {
         const s1 = 0.5 + 0.5 * mathx.sinf(self.seed * 12.98);
         const s2 = 0.5 + 0.5 * mathx.sinf(self.seed * 78.23);
@@ -1061,7 +1047,6 @@ pub const Kobold = struct {
         return mathx.pulse(u, 0, knee, knee, BITE_HIT_A);
     }
 
-    // AGENTS.md: legs alone are NOT a gait. `o` is pose()'s own idleSway, handed down rather than recomputed.
     fn poseUpper(self: *Kobold, wx: *[N]rl.Matrix, dk: f32, stunAmt: f32, prot: f32, o: anytype) void {
         const twoPi = std.math.tau;
         const ph = self.phase;
@@ -1071,7 +1056,6 @@ pub const Kobold = struct {
         const nod = 3.6 * mathx.sinf(2.0 * twoPi * ph) * m;
         const counter = -0.62 * prot;
         // THE WAIST TAKES THE FOLD, over knees that pay for it (`legCrouch`). 46 deg through the lumbar and 30
-        // more through the chest: the spine leads and the chest follows, which makes it a fold rather than a hinge.
         const lunge = self.biteLunge();
         const coil = self.biteCoil();
         const fold = 46.0 * heave + BITE_FOLD * lunge - BITE_ARCH * coil + DASH_LEAN * self.dashFly();
@@ -1764,8 +1748,6 @@ pub const Warband = struct {
     ) ?foe.Blow {
         for (self.live()) |*k| {
             if (k.role != .priest) continue;
-            // **ONE RITE, ONE COOLDOWN, TWO THINGS IT CAN BE** — a full-health band is what it spends the cast
-            // on, which is what makes killing it FIRST the read.
             k.healWanted = self.neediest(k.pos) != null or self.unrousedIdx(k.pos) != null;
         }
         var blow: ?foe.Blow = null;
@@ -1773,7 +1755,6 @@ pub const Warband = struct {
             switch (k.update(dt, k.threat.aim(hero), bounds, blade)) {
                 .none => {},
                 .sling => |from| loose(ctx, from),
-                // **THE WOUND COMES FIRST** — the bargain bills a share of the bar on top of whatever opened it.
                 .healed => {
                     if (self.neediestIdx(k.pos)) |ti| {
                         if (self.band[ti].vit.heal(HEAL_AMT) > 0) {
@@ -1812,8 +1793,6 @@ pub const Warband = struct {
         }
         return best;
     }
-    /// Nearest rather than healthiest: the one standing next to it is the one the player is fighting. Anything
-    /// at all in the meter is skipped — refresh-not-stack, so a second rite would spend the cast for nothing.
     fn unrousedIdx(self: *const Warband, from: rl.Vector3) ?usize {
         var best: ?usize = null;
         var near: f32 = HEAL_RANGE;
@@ -1838,7 +1817,6 @@ pub const Warband = struct {
 
 test "the role table, the enum and the map's foe kinds agree" {
     // The comptime block above pins the ordinal shift; this pins the accessor built on it, and that non-kobold
-    // kinds are rejected rather than folded into a role.
     try std.testing.expectEqual(Role.berserker, roleOf(.berserker).?);
     try std.testing.expectEqual(Role.priest, roleOf(.priest).?);
     try std.testing.expectEqual(Role.slinger, roleOf(.slinger).?);
@@ -1846,7 +1824,6 @@ test "the role table, the enum and the map's foe kinds agree" {
     try std.testing.expect(roleOf(.archer) == null);
     try std.testing.expect(roleOf(.ogre) == null);
     // …and `kindOf` is its INVERSE, the direction the lock-on takes: game.zig used to spell this arithmetic
-    // out a second time, where the comptime block above could not reach it.
     for (0..SPEC.len) |i| {
         const r: Role = @enumFromInt(i);
         try std.testing.expectEqual(r, roleOf(kindOf(r)).?);
@@ -1924,7 +1901,6 @@ test "BOTH KOBOLD STROKES CAN BE CAUGHT, and the DASH cannot — a leap is not a
         k.takeParry();
         try std.testing.expect(k.parried);
         try std.testing.expect(k.state == .stunlight or k.state == .stunheavy);
-        // `enterStun` spends `dealt`, which is what stops the rest of the stroke billing through the group.
         try std.testing.expect(!k.hurtOpen());
     }
     var d = Kobold.spawnAs(.berserker, mathx.zero3, 0, 1.0, 0.3);

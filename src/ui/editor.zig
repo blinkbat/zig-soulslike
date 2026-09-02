@@ -33,15 +33,8 @@ const ERASE_HZ: f32 = 5.0;
 const ERASE_STEP: f32 = 0.6;
 const MAX_MARKERS: usize = 500;
 
-/// **EVERY COAST IS `speckle`, AND THE OTHER SEVEN ARE OFF THE WATER BRUSH FOR NOW** (owner's call — it is the
-/// one that reads right, and its numbers say why: the smallest wander of the set AND a real feather, so the
-/// fold that shatters a `jagged` coast comes out as the flecks speckle is FOR). The FORMAT still carries all
-/// eight and the shader still honours whatever a file holds, so `worlds/test_wateredge.world` keeps working
-/// and putting the picker back is deleting this constant. The SOIL keeps its full set — this is water only.
 const WATER_EDGE: wf.Edge = .speckle;
 
-/// **WHAT THE UNITS LAYER IS POINTING AT.** A foe and an NPC are two arrays on the map and two index spaces, so
-/// the cursor and the selection carry WHICH — an untagged `usize` would delete a caravaneer by a foe's number.
 const Unit = union(enum) { foe: usize, npc: usize };
 const Hover = union(enum) { none, prop: usize, foe: usize, npc: usize };
 
@@ -52,8 +45,6 @@ const MAX_MARKED: usize = 512;
 
 const FULL_MSG = "map is full - worldfmt.MAX_OPS reached";
 const FOES_FULL_MSG = "foe cap reached";
-/// Its own message, beside the foes' — the two arrays fill independently and "foe cap reached" on a full npc
-/// list is a lie the editor tells about which limit was hit.
 const FOLK_FULL_MSG = "folk cap reached";
 
 const DUPE_OFFSET: f32 = 6.0;
@@ -64,10 +55,7 @@ const NEW_ZONE_DENSITY: f32 = 0.7;
 
 const FOE_PICK_R: f32 = 1.6;
 
-// File scope: BSS, not inside Game and not on an allocator. A Map is megabytes and the ring is `UNDO_CAP` of
-// them; the live figures are printed by worldfmt's "THE OP CAP IS MEMORY" rather than frozen here, because a
-// field added to `Map` moves them without touching `MAX_OPS` — copied out, they read 2.79 MB and 66.9 while
-// the tree measured 3.2 and 76.3.
+// File scope: BSS, not inside Game and not on an allocator — a `Map` is megabytes and the ring is `UNDO_CAP` of them.
 var undoRing: [UNDO_CAP]wf.Map = undefined;
 var undoBase: usize = 0;
 var undoN: usize = 0;
@@ -134,7 +122,6 @@ const layerTips = [Layer.N][:0]const u8{
     "Creatures and folk (the Foes tab files creatures by kingdom)",
 };
 
-/// **TWO SECTIONS IN ONE LIST, and the split is `GROUND_SOIL_0`** — the sculpt tools first (pinned to `wf.Sculpt`), then one row per `wf.Soil` past the first, then one row per `wf.Liquid` and the eraser. Laid out to SHOW the seam: the index arithmetic either side of it is why this list cannot simply be appended to.
 const groundBrushes = [_][:0]const u8{
     "Raise",
     "Lower",
@@ -160,8 +147,6 @@ const locationBrushes = [_][:0]const u8{ "Clearing", "Zone", "Location", "Arena"
 const decorBrushes = [_][:0]const u8{ "Single", "Patch", "Scatter", "Erase" };
 const propBrushes = [_][:0]const u8{ "Stamp", "Row", "Ring", "Cluster", "Ivy", "Erase" };
 const interactBrushes = [_][:0]const u8{ "Stamp", "Erase" };
-/// **THE FOE NAMES, THEN THE NPC NAMES, THEN THE ERASER** — one palette, because the units layer places both and
-/// one eraser has to take either back off. `brushIdx` splits on `NFOE_KIND`.
 const unitBrushes = blk: {
     var out: [NFOE_KIND + NNPC_KIND + 1][:0]const u8 = undefined;
     for (0..NFOE_KIND) |i| out[i] = wf.foeName(@enumFromInt(i));
@@ -170,9 +155,6 @@ const unitBrushes = blk: {
     break :blk out;
 };
 
-/// **WHICH HALF OF THE UNITS PALETTE IS SHOWING.** Foes and folk are already two arrays on the map and two
-/// index spaces (`Unit`); this is that same split in the brush list, because forty-one icon rows in one
-/// column is a scroll and not a palette.
 const UnitTab = enum {
     foes,
     folk,
@@ -192,8 +174,6 @@ const unitTabTips = [UnitTab.N][:0]const u8{
     "Bodies that talk - give one a `dlg=` in the file and it says something",
 };
 
-/// The kingdoms that actually hold a creature, `any` excluded: those answer EVERY chip (`foe.atHome`) and a
-/// chip of their own would be a list nothing is missing from.
 const foeBiomes = blk: {
     var t = [_]bool{false} ** props.Biome.N;
     for (0..NFOE_KIND) |i| {
@@ -210,9 +190,6 @@ const FIRST_FOE_BIOME: props.Biome = blk: {
     @compileError("editor: no kingdom holds a creature");
 };
 
-/// The longest brush list there is, which is what `visibleBrushes` sizes its scratch off. **TAKEN OFF
-/// `brushesFor`, NOT NAMED** — `visibleBrushes` writes one index per shown row into a caller's buffer, so a
-/// palette that outgrew a hand-picked maximum here would run off the end of a stack array.
 const MAX_BRUSHES: usize = blk: {
     var most: usize = 0;
     for (0..Layer.N) |i| most = @max(most, brushesFor(@enumFromInt(i)).len);
@@ -229,7 +206,6 @@ const RAISE_SWATCH = ui.col(126, 100, 62, 255);
 const LOWER_SWATCH = ui.col(74, 60, 44, 255);
 const EVEN_SWATCH = ui.col(96, 100, 104, 255);
 
-// THE SOIL ROWS CARRY NO TIP: `groundBrushes` already names each one, and a tooltip that repeats the label is a hover that costs a read and says nothing.
 const groundTips = [_][:0]const u8{
     "Sweep to raise. [ ] sets size, the panel sets strength",
     "Sweep to lower",
@@ -276,10 +252,6 @@ const interactTips = [_][:0]const u8{
     "Click to place. Right-click > Items... to fill",
     "Sweep to erase",
 };
-/// **THE CAPTIONS, IN THREE PIECES AND ASSEMBLED LIKE THE NAMES.** As one flat table of 41 it was pinned by
-/// LENGTH only, so a creature APPENDED to `wf.FoeKind` slid every one of the folk's captions onto the wrong
-/// body — the count assert still passed and a wrong caption fails no test. Each half is now the length of its
-/// own enum, and the eraser's is the eraser's.
 const foeTips = [NFOE_KIND][:0]const u8{
     "",
     "",
@@ -405,9 +377,6 @@ comptime {
     std.debug.assert(propIcons.len == propBrushes.len);
     std.debug.assert(interactIcons.len == interactBrushes.len);
     std.debug.assert(unitIcons.len == unitBrushes.len);
-    // **THE TIP IS THE THIRD LIST IN THE LOCKSTEP AND IT WAS THE ONE NOT PINNED.** Icons and names were held
-    // against each other and the crib against neither, so a brush appended anywhere but the end silently
-    // shifted every tip after it onto the wrong tool — and a wrong caption fails no test.
     std.debug.assert(groundTips.len == groundBrushes.len);
     std.debug.assert(locationTips.len == locationBrushes.len);
     std.debug.assert(decorTips.len == decorBrushes.len);
@@ -416,9 +385,6 @@ comptime {
     std.debug.assert(unitTips.len == unitBrushes.len);
 }
 
-/// **WHAT THE BRUSH LIST ACTUALLY SHOWS, AND THE ONLY PLACE IT IS DECIDED.** The digit keys and the panel both
-/// walk this: filtered in one and not the other, `3` armed a creature the list was not showing. The ERASER is
-/// in every tab — it is a tool, not a category — and it is the last row either way.
 fn brushShown(ed: *const Editor, i: usize) bool {
     if (ed.layer != .units) return true;
     if (i + 1 == unitBrushes.len) return true;
@@ -426,7 +392,6 @@ fn brushShown(ed: *const Editor, i: usize) bool {
     return ed.unitTab == .foes and foemod.atHome(@enumFromInt(i), ed.foeBiome);
 }
 
-/// The visible rows, in the order they are drawn. `out` must hold the widest palette there is.
 fn visibleBrushes(ed: *const Editor, out: []usize) []const usize {
     var n: usize = 0;
     for (0..brushesFor(ed.layer).len) |i| {
@@ -485,7 +450,6 @@ fn brushTipsFor(l: Layer) []const [:0]const u8 {
 }
 
 comptime {
-    // The six tip/brush counts are pinned once, up beside `pinIcons` where the lockstep lives.
     std.debug.assert(layerTips.len == Layer.N);
     std.debug.assert(groundBrushes.len == GROUND_SOIL_0 + (wf.Soil.N - 1) + wf.Liquid.N + 1);
     for (0..wf.Liquid.N) |i| {
@@ -496,8 +460,6 @@ comptime {
         std.debug.assert(soilOf(b).? == @as(wf.Soil, @enumFromInt(i + 1)));
         std.debug.assert(std.mem.eql(u8, groundBrushes[GROUND_SOIL_0 + i], @tagName(soilOf(b).?)));
     }
-    // `GROUND_SOIL_0` IS `wf.Sculpt`'s length, so the sculpt half needs no count assert of its own. The NAMES
-    // are not tag-for-tag there (`Flat` is `wf.Sculpt.flatten`), which is why only the soils are pinned by tag above.
     std.debug.assert(unitBrushes.len == NFOE_KIND + NNPC_KIND + 1);
     for (0..NFOE_KIND) |i| {
         const tag = @tagName(@as(wf.FoeKind, @enumFromInt(i)));
@@ -511,18 +473,12 @@ comptime {
 
 pub const GroundBrush = enum { raise, lower, smooth, flat, dirt, turf, stone, silt, ash, moss, bone, cinder, spore, bloom, water, oil, fungal, lava, erase };
 
-/// **THE SOIL ROWS, AND `null` FOR EVERY OTHER BRUSH.** `liquidOf`'s twin, and for its reason: the ordinal is
-/// `i - GROUND_SOIL_0 + 1` — the `+ 1` is `wf.Soil.none`, which has no row — and that arithmetic was written out
-/// at the paint arm, at the swatch and in the comptime assert. Three copies of the seam the brush list is
-/// LAID OUT to show is exactly one too many for a list that gets appended to.
 fn soilOf(b: GroundBrush) ?wf.Soil {
     const i = @intFromEnum(b);
     if (i < GROUND_SOIL_0 or i >= GROUND_SOIL_0 + wf.Soil.N - 1) return null;
     return @enumFromInt(i - GROUND_SOIL_0 + 1);
 }
 
-/// **THE FOUR LIQUID ROWS, AND `null` FOR EVERY OTHER BRUSH.** One place the brush list and `wf.Liquid` are tied
-/// together, so the panel, the paint arm and the readout cannot disagree about which rows are wet.
 fn liquidOf(b: GroundBrush) ?wf.Liquid {
     return switch (b) {
         .water => .water,
@@ -536,7 +492,6 @@ const LocationBrush = enum { clearing, zone, location, arena, erase };
 pub const DecorBrush = enum { single, patch, scatter, erase };
 const PropBrush = enum { stamp, row, ring, cluster, ivy, erase };
 const InteractBrush = enum { stamp, erase };
-/// **`wf.FoeKind`'S OWN TAGS, IN ITS OWN ORDER, PLUS `erase`** — pinned name-for-name by the comptime block below, so a creature APPENDED to that enum is appended here and nowhere else has to be touched.
 const UnitBrush = enum {
     toad,
     archer,
@@ -576,8 +531,6 @@ const UnitBrush = enum {
     fungal_swordsman,
     fungal_magus,
     owlbear,
-    // **THE FOLK COME AFTER THE FOES AND BEFORE THE ERASER**, which is what `brushIdx` splits on: under
-    // `NFOE_KIND` it is a creature, over it a body that talks.
     wanderer,
     merchant,
     smith,
@@ -661,10 +614,6 @@ fn layerHasGroup(l: Layer, g: props.Group) bool {
     return layerGroups[@intFromEnum(l)][@intFromEnum(g)];
 }
 
-/// **THE SHELVES THE ZONE MIX IS FILED ON** — every `props.Group` that holds a flora kind, in the enum's own
-/// order, taken off `layerGroups` so it is the SAME set the decor palette's chips narrow on. Laid out as a grid
-/// rather than a wrapping chip row: the modal's height has to be known before `beginModal` opens it, and a grid
-/// gives the row count as arithmetic instead of a measuring pass.
 const MIX_COLS: i32 = 3;
 const MIX_GROUPS = blk: {
     var n = 0;
@@ -698,18 +647,14 @@ pub const Action = enum { none, leave, playtest };
 
 pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot, boss, jukebox, stats, world, zonemix, script, talk, options };
 
-/// The bench lists off the AUDIO module's own table (`sfx.NAMES`), which `settings.cfg` is already keyed on. A second comptime walk over `sfx.Id` here was the same list built twice.
 const VOICE_NAMES = sfx.NAMES;
 
 const JUKE_W: i32 = 1010;
 const JUKE_H: i32 = 560;
 const JUKE_LIST_W: i32 = 300;
 const JUKE_LIST_H: i32 = JUKE_H - 150;
-/// The bench column between the list and the rack, MEASURED off the modal rather than picked: the rack is pinned to the right edge, so this is whatever is left after both gutters.
 const JUKE_COL_W: i32 = JUKE_W - JUKE_LIST_W - RACK_W - 80;
 
-/// The width the three LIST modals (loot, seal, zone mix) are laid out at. It was the literal `470` in four
-/// places, one of them the loot tabs' own column arithmetic — so widening the box left the tabs where they were.
 const LIST_W: i32 = 470;
 
 const DLG_PAD: i32 = 24;
@@ -717,8 +662,6 @@ const DLG_BTN_H: i32 = 28;
 const DLG_FOOT: i32 = 44;
 const TAB_H: i32 = 26;
 const LOOT_ROW_H: i32 = 26;
-/// Where a list modal's TAB ROW starts, under the header line each of them prints at `box.y + 58`. As
-/// `LOOT_TOP - TAB_H` the tabs were laid at exactly 58 and the header read through them.
 const LOOT_TOP: i32 = 84;
 
 pub const Pending = enum { none, new, open, leave };
@@ -734,20 +677,12 @@ const Rect = struct {
     }
 };
 
-/// **A STEPPER IS 102 px OF FURNITURE BEFORE IT IS ANYTHING ELSE** (`ui.stepper`: two 20 px buttons and a
-/// 62 px readout). Handed less it lays its minus button out to the LEFT of the x it was given and walks over
-/// whatever is there — which is what the trigger rows did to their own kind buttons.
+/// A stepper is 102 px of furniture before it is anything else (`ui.stepper`: two 20 px buttons and a 62 px
+/// readout). Handed less it lays its minus button out to the LEFT of the x it was given.
 const STEP_MIN_W: i32 = 112;
 
-/// **THE FOG GATE STANDING IN THIS ROOM'S WALL**, asked in one place. It walks the whole op list and the panel
-/// asks it once a frame, which is the shape AGENTS.md calls out as the editor's own freeze (`drawMinimap`).
-/// MEASURED before reaching for a fix: **22.8 us over `01_fallen_plain`'s 16,637 ops, 0.14% of a 16.7 ms
-/// frame** — and that is the Debug build. A ward index off `env` would make it 2 iterations, but the side panel
-/// is handed no `env` and 0.14% does not buy the plumbing.
-///
-/// Three copies walked the op list for it:
-/// the seal the editor inherits when a room is closed, the "seal from gate" button, and the warning that says
-/// a room has no door — and a room whose three answers could disagree is a room nobody can trust.
+/// Walks the whole op list, once a frame: MEASURED at 22.8 us over `01_fallen_plain`'s 16,637 ops, 0.14% of a
+/// 16.7 ms frame in Debug.
 fn gateOnWall(m: *const wf.Map, a: *const wf.Arena) ?*const wf.Op {
     for (m.ops[0..m.nops]) |*o| {
         if (props.info(o.kind).ward and a.onWall(o.x, o.z)) return o;
@@ -755,9 +690,6 @@ fn gateOnWall(m: *const wf.Map, a: *const wf.Arena) ?*const wf.Op {
     return null;
 }
 
-/// **EVERY TEXT FIELD'S CLAIM ON THE KEYBOARD, IN ONE PLACE** (`ui.textField`). One tag of its own so a field
-/// can never collide with a dropdown's id, and one row per field rather than a pointer, because these are
-/// singletons: there is one arena name field on screen, not one per room.
 const KB_TAG: u8 = 20;
 const KB_ARENA_NAME = ui.ddId(KB_TAG, 1, 0);
 const KB_LOC_NAME = ui.ddId(KB_TAG, 2, 0);
@@ -766,16 +698,10 @@ const KB_TRIG_ID = ui.ddId(KB_TAG, 4, 0);
 const KB_FILE_NAME = ui.ddId(KB_TAG, 5, 0);
 const KB_TALK_SAY = ui.ddId(KB_TAG, 6, 0);
 const KB_TALK_WHO = ui.ddId(KB_TAG, 8, 0);
-/// One per line the conversation offers — these are NOT singletons, so the row index is part of the id.
 fn kbTalkRow(i: usize) u32 {
     return ui.ddId(KB_TAG, 7, i);
 }
 
-/// **ONE NAME FIELD.** The zone's, the location's, the room's and the trigger's were four copies of: draw the
-/// field, turn spaces and `#` into `_`, compare with what is stored, bank and write. Returns the typed name
-/// when it differs from `cur`, and null when nothing changed. `eligible` is the CALLER's: the panel's fields
-/// are the map's and the modal's are the modal's, and a field eligible behind an open modal is one that eats
-/// the keystrokes meant for it (`ui.textField`).
 fn nameField(ed: *Editor, ctx: *ui.Ctx, x: i32, y: i32, w: i32, buf: []u8, len: *usize, cur: []const u8, id: u32, eligible: bool, tip: [:0]const u8) ?[]const u8 {
     const focused = ui.textField(ctx, ui.rect(x, y, w, 26), buf, len, id, eligible, tip);
     if (focused) ed.textFocus = true;
@@ -788,19 +714,12 @@ fn nameField(ed: *Editor, ctx: *ui.Ctx, x: i32, y: i32, w: i32, buf: []u8, len: 
     return typed;
 }
 
-/// How many declared names a slot dropdown lists. The map's own tables are this deep or deeper, and a list
-/// longer than a screen is one nobody scrolls anyway.
 const MAX_SLOT_ROWS: usize = 32;
-/// **COIN A CONTAINER MAY HOLD.** Stepped coarsely, because a chest is authored in purses and not in pennies,
-/// and capped: past this it is a reward the economy is built around rather than a thing in a box, and that is a
-/// design decision rather than a number to nudge. The band it is priced against is `drops.Coin.hoard`.
 const GOLD_LIM: i32 = 5000;
 const GOLD_STEP: i32 = 25;
-/// Metres of run a stacking kind may be given. Twenty-six sections of ladder; past that it is a shaft, not a
-/// prop, and `env.MAX_SECTIONS` is the hard stop behind it.
+/// Metres of run a stacking kind may be given; `env.MAX_SECTIONS` is the hard stop behind it.
 const RISE_LIM: f32 = 24.0;
-/// Metres an `at` may be lifted off or bedded into the ground. Over head height either way, and no further:
-/// a prop pushed further than this is a prop in the wrong place, not a prop that needs a bigger number.
+/// Metres an `at` may be lifted off or bedded into the ground.
 const LIFT_LIM: f32 = 12.0;
 
 fn aiTip(a: wf.FoeAi) [:0]const u8 {
@@ -812,13 +731,11 @@ fn aiTip(a: wf.FoeAi) [:0]const u8 {
     };
 }
 
-/// Smallest a clearing may be dragged or stepped down to, in metres. File scope: the brush that makes one and
-/// the two controls that resize one are in three different scopes and must agree.
+/// Smallest a clearing may be dragged or stepped down to, in metres.
 const MIN_CLEARING_R: f32 = 2.0;
 
-/// **EVERY REGION IS DRAGGED THE SAME WAY**, so there is one union and not a flag apiece. The payload is
-/// WHICH HANDLE: a rect's corner 0..3 in `(x,z) (x1,z) (x1,z1) (x,z1)` order, a room's corner index, or the
-/// clearing's rim. `null` — and `false` for the clearing — is the BODY, which moves the whole thing.
+/// The payload is WHICH HANDLE: a rect's corner 0..3 in `(x,z) (x1,z) (x1,z1) (x,z1)` order, a room's corner
+/// index, or the clearing's rim. `null` — and `false` for the clearing — is the BODY.
 const Grab = union(enum) {
     arena: ?u8,
     zone: ?u8,
@@ -826,8 +743,6 @@ const Grab = union(enum) {
     clearing: bool,
 };
 
-/// The four corners of a rect in the order `Grab` names them. Written once, because the pick and the drag and
-/// the draw all have to agree about which corner is number 2.
 fn rectCorner(x: f32, z: f32, x1: f32, z1: f32, i: u8) rl.Vector3 {
     return switch (i & 3) {
         0 => mathx.ground(x, z),
@@ -897,22 +812,9 @@ pub const Editor = struct {
 
     selecting: bool = false,
     layer: Layer = .props,
-    /// **WHAT IS ON SCREEN, WHICH IS NOT WHAT IS SELECTED.** One eye per layer plus the sky's own, and the two
-    /// axes stay independent on purpose: you hide the wood to place a wall under it and the Props layer is still
-    /// the one your brush is on. Hiding is a VIEW and never touches the map, so nothing here is saved, nothing is undoable and a hidden layer still parses, still builds and still spawns.
     shown: [Layer.N]bool = [_]bool{true} ** Layer.N,
-    /// The rain, the mist and the sporefall — not a layer, because it is not a thing the map places in a
-    /// rectangle. **OFF ON ENTRY** (owner): it is the one overlay that hides the GROUND you are trying to
-    /// sculpt, so the editor opens on the ground and the eye is what asks to see the sky's mood over it.
     showWeather: bool = false,
-    /// **THE DISTANCE HAZE, AND IT IS ON.** Separate from the weather eye: the eye is about rain and mist over
-    /// the ground you are sculpting, this is the clear-air falloff the 560 m world is sized for
-    /// (`gfx.HAZE_DENSITY`, 0.013 a metre). Off, every prop out to `env`'s view distance draws at full contrast.
     showFog: bool = true,
-    /// **CAST SHADOWS ARE OFF IN HERE.** The depth pass is a SECOND draw of every caster in the ortho box
-    /// (`game.drawCasters` runs twice) and the editor's box opens with the orbit (`game.shadowSpanOf`, up to
-    /// `gfx.SHADOW_SPAN_MAX`), so it is the most expensive thing on a pulled-back frame and the least useful:
-    /// a shadow tells you nothing about where a prop SITS. On, and it is the game's own pass again.
     showShadows: bool = false,
     brush: [Layer.N]usize = [_]usize{0} ** Layer.N,
     decorKind: Kind = .fern,
@@ -929,14 +831,9 @@ pub const Editor = struct {
     sel: ?usize = null,
     selUnit: ?Unit = null,
     dirty: bool = false,
-    /// BUMPED WHENEVER THE FOLK TABLE MOVES — entering, every Open / New / Reload, and every post, erase,
-    /// delete, nudge and undo of an npc (`touchFolk`). What the game watches to re-post its live copy: the foe
-    /// groups are re-homed every editor frame, the folk are not, so a placed caravaneer stays invisible and an
-    /// erased one stays standing until this moves.
     mapGen: u32 = 0,
     folkDue: bool = false,
     folkT: f32 = 0,
-    /// Bumped by every path that can move what the minimap draws, which is what lets it hold a painted face.
     miniGen: u64 = 0,
 
     kindScroll: i32 = 0,
@@ -975,29 +872,16 @@ pub const Editor = struct {
     jukeWorld: bool = false,
     rackMix: sfx.Submix = .combat,
     rackOnVoice: bool = false,
-    /// WHICH ZONE the name field and the mix modal are editing. A zone is not an `Op`, so it cannot ride `sel` — and its mix was the one thing in the whole format the editor could only ever INHERIT.
     zoneSel: ?usize = null,
     locSel: ?usize = null,
     arenaSel: ?usize = null,
     clearSel: ?usize = null,
-    /// **WHAT THE MOUSE HAS HOLD OF ON THIS LAYER, AS ONE THING.** A flag per region kind is four copies of
-    /// the same gesture: grab a handle or grab the body, then drag. `null` in the payload means the BODY.
     grab: ?Grab = null,
-    /// **WHICH HANDLE IS SELECTED AND WHETHER A DRAG IS LIVE ARE TWO THINGS.** `grab` persists so the panel's
-    /// "- corner" and the Delete key know what to aim at and the draw knows what to highlight; `grabLive` is
-    /// true only between the press and the release. Run off `grab` alone, a panel button that set it — the
-    /// "+ corner" one did — latched a drag with no button held that followed the cursor and ate every click.
     grabLive: bool = false,
     grabFrom: rl.Vector3 = mathx.zero3,
-    /// Banked LAZILY, on the first frame a drag actually moves something: a plain selection click arms the
-    /// drag too, and banking on the press filled the undo ring with no-op steps for every region you looked at.
     grabBanked: bool = false,
-    /// **LAYING A PATROL IS A MODE**, like drawing a room: a leg per click until it is turned off. It belongs
-    /// to whichever unit is selected and is dropped the moment the selection changes.
     routing: bool = false,
     trigSel: ?usize = null,
-    /// Scratch for `slotRow`'s dropdown labels. The panel is PAINTED after the row returns (`ui.endDropdowns`),
-    /// so the strings have to outlive the call that built them.
     slotLabels: [MAX_SLOT_ROWS][wf.ID_CAP]u8 = undefined,
     trigNameBuf: [wf.ID_CAP]u8 = [_]u8{0} ** wf.ID_CAP,
     trigNameLen: usize = 0,
@@ -1008,26 +892,14 @@ pub const Editor = struct {
     arenaNameLen: usize = 0,
     locNameBuf: [wf.NAME_CAP]u8 = [_]u8{0} ** wf.NAME_CAP,
     locNameLen: usize = 0,
-    /// **THE ROOM UNDER CONSTRUCTION** — the one brush that is neither a stamp nor a drag, so the half-built
-    /// polygon has to live between the clicks. `nPend` 0 is "no room being drawn"; nothing else reads it.
     pendX: [wf.MAX_ARENA_VERTS]f32 = [_]f32{0} ** wf.MAX_ARENA_VERTS,
     pendZ: [wf.MAX_ARENA_VERTS]f32 = [_]f32{0} ** wf.MAX_ARENA_VERTS,
     nPend: u8 = 0,
     lootTab: item.Class = .tool,
-    /// WHICH SHELF the zone-mix modal is showing (`MIX_GROUPS`). Its own field and not `groupSel`: that one is
-    /// what the BRUSH places and the mix is what a zone grows, and moving one from the other would retarget the
-    /// brush every time a mix was looked at.
     mixTab: props.Group = FIRST_MIX_GROUP,
-    /// **THE CONVERSATION BEING WRITTEN, HELD OUTSIDE THE MAP UNTIL IT IS COMMITTED.** Typing goes here and
-    /// `wf.writeTalk` rebuilds the node arena once, on Done — a rebuild per keystroke would re-add the whole
-    /// greeting to the text arena sixty times a second. `talkFlat` false means `readTalk` refused the tree and
-    /// the panel is a read-only notice: the editor may not flatten a conversation it cannot express.
     talkNpc: ?usize = null,
     talkDlg: u16 = wf.NO_DIALOG,
     talkFlat: bool = true,
-    /// **ONE PAST THE FORMAT'S CAP, BECAUSE `ui.textField` PUTS THE TERMINATOR AT `len`.** Sized to the cap
-    /// itself, a line loaded at it wrote one past the buffer, and the typing guard stopped a character short
-    /// of the count the panel prints.
     talkSay: [wf.TALK_SAY_CAP + 1]u8 = [_]u8{0} ** (wf.TALK_SAY_CAP + 1),
     talkSayLen: usize = 0,
     talkWho: [wf.TALK_LABEL_CAP + 1]u8 = [_]u8{0} ** (wf.TALK_LABEL_CAP + 1),
@@ -1038,7 +910,6 @@ pub const Editor = struct {
     talkRows: usize = 0,
     zoneNameLen: usize = 0,
     zoneNameBuf: [wf.NAME_CAP]u8 = [_]u8{0} ** wf.NAME_CAP,
-    /// The zone name field owns the keyboard while it is on screen — set by the draw pass, read by `update` a frame later, so w/a/s/d, digits, g/r, Tab and Delete type letters instead of firing.
     textFocus: bool = false,
     nameBuf: [wf.NAME_CAP]u8 = undefined,
     nameLen: usize = 0,
@@ -1116,8 +987,6 @@ pub const Editor = struct {
         self.menuOpen = false;
         self.marquee = false;
         self.moving = false;
-        // OFF ON ENTRY, which is what the field's own note says and what `enter` was not doing: it is the one
-        // overlay that hides the ground you came in to sculpt.
         self.showWeather = false;
         self.dropSelection();
         self.dropPendingRoom();
@@ -1185,12 +1054,9 @@ pub const Editor = struct {
         if (self.layer != l) self.nMarked = 0;
         self.layer = l;
         if (l.opLayer() and !layerHasGroup(l, self.groupSel)) self.groupSel = firstGroup(l);
-        // **THE TAB MOVES TO THE BRUSH, NOT THE BRUSH TO THE TAB.** Coming back to the units layer with a fen
-        // lurker armed and the palette on Bonefield, the selection was live and invisible.
         if (l == .units) self.showArmedUnit();
     }
 
-    /// Put the palette where the armed unit brush can be seen. The eraser is in every tab, so it moves nothing.
     fn showArmedUnit(self: *Editor) void {
         const i = self.brush[@intFromEnum(Layer.units)];
         if (i + 1 == unitBrushes.len) return;
@@ -1269,7 +1135,7 @@ pub const Editor = struct {
         self.resolveCursor();
     }
 
-    /// Where the cursor meets the ground, as resolved for THIS frame. `env.rayGround` is a MARCH over the height lattice — a ray that never lands walks some 1600 bilinear samples — and five sites ask it a frame.
+    /// Where the cursor meets the ground, resolved once for THIS frame: `env.rayGround` is a march over the height lattice, some 1600 bilinear samples for a ray that never lands, and five sites ask it a frame.
     pub fn groundAt(self: *const Editor) ?rl.Vector3 {
         return self.cursor;
     }
@@ -1343,22 +1209,11 @@ pub const Editor = struct {
         return true;
     }
 
-    /// **THE ONE SIGNAL THAT THE FOLK TABLE MOVED.** Every editor path that adds, removes or shifts a `wf.Npc`
-    /// ends here, because nothing else re-posts the live bodies (`game`'s editor branch re-homes the FOES every
-    /// frame and the folk only on this).
-    /// **RE-POSTS THE FOLK, AND IT IS NOT FREE.** `game` answers a `mapGen` bump with `folk.reset`, which
-    /// re-posts every body on the map and throws away where each was walking. Called straight from a stepper it
-    /// fired ONCE PER CLICK, so nudging an npc's scale re-posted the whole layer a dozen times and the man you
-    /// were sizing kept snapping back to his pin. It also bumped `miniGen` per click, which `blitMinimap`'s own
-    /// note says may only move on a stroke's start or on the debounced rebuild.
     fn touchFolk(self: *Editor) void {
         self.mapGen +%= 1;
         self.miniGen +%= 1;
     }
 
-    /// **THE DEBOUNCED DOOR, AND THE ONE A PANEL USES** — `requestRebuild`'s shape, for the same reason: a
-    /// visual field is dragged through a dozen values on the way to the one the author wants, and only the last
-    /// of them is worth paying for.
     fn requestFolk(self: *Editor) void {
         self.folkDue = true;
         self.folkT = 0;
@@ -1386,10 +1241,6 @@ pub const Editor = struct {
         self.routing = false;
     }
 
-    /// **A HALF-DRAWN ROOM DOES NOT OUTLIVE THE MAP IT WAS BEING DRAWN ON.** Corners are world coordinates, so
-    /// carried across a load or an undo, Enter builds a room out of the last map's floor plan — silently, and in
-    /// the right shape to look deliberate. NOT in `dropSelection`, which also fires on every delete: deleting a
-    /// prop may not cost you the room you are drawing.
     fn dropPendingRoom(self: *Editor) void {
         self.nPend = 0;
     }
@@ -1409,7 +1260,6 @@ pub const Editor = struct {
         self.grabLive = false;
     }
 
-    /// The room corner the mouse has hold of, or null — the one question three call sites ask of `grab`.
     fn grabbedVert(self: *const Editor) ?u8 {
         const g = self.grab orelse return null;
         return switch (g) {
@@ -1431,8 +1281,6 @@ pub const Editor = struct {
         self.marqueeSelect(m, a, b);
     }
 
-    /// Put the units palette on one tab and one kingdom, and arm its first row — the harness's door into the
-    /// same call a click makes, rather than poking `unitTab` and leaving a hidden brush armed.
     pub fn unitsForShot(self: *Editor, tab: UnitTab, home: props.Biome) void {
         self.layer = .units;
         self.unitTab = tab;
@@ -1484,7 +1332,6 @@ pub const Editor = struct {
         o.gFloor = 0.25;
     }
 
-    /// The bench on one named table and row — the harness's door into the same sheet the Stats button opens.
     pub fn statsForShot(self: *Editor, tableName: []const u8, row: usize) void {
         self.modal = .stats;
         self.menuOpen = false;
@@ -1495,8 +1342,6 @@ pub const Editor = struct {
         self.stats.row = @min(row, tunemod.TABLES[self.stats.tab].n - 1);
     }
 
-    /// DEV ONLY: the sheet with one of its choice lists hanging open, which is the only frame that shows what
-    /// a pick cell IS. `c` is the column's index in the table's own `cols`.
     pub fn statsPickForShot(self: *Editor, c: usize) void {
         tuneui.openPickForShot(self.stats.tab, self.stats.row, c);
     }
@@ -1505,7 +1350,6 @@ pub const Editor = struct {
         return self.stats.tab;
     }
 
-    /// One item's picture, full-frame, with its sheet beside it.
     pub fn itemForShot(self: *Editor, k: item.Kind) void {
         self.modal = .objects;
         self.menuOpen = false;
@@ -1520,8 +1364,6 @@ pub const Editor = struct {
         self.jukeReveal();
     }
 
-    /// Open the character viewer on ONE creature, full-frame — the harness's door into the same panel a click
-    /// reaches, which is the only place in the game a body is seen big and alone.
     pub fn charForShot(self: *Editor, k: wf.FoeKind) void {
         self.modal = .objects;
         self.objects.mode = .chars;
@@ -1551,7 +1393,6 @@ pub const Editor = struct {
         self.lookAtGround(c.x, c.z, span);
     }
 
-    // Capped well inside the haze: framing a 250 m belt by its full extent puts the eye so far back that every prop is past its own view distance and all you get is fog with markers in it.
     fn lookAtGround(self: *Editor, cx: f32, cz: f32, span: f32) void {
         self.dist = mathx.clampF(span * 0.8 + 12, 14, 150);
         self.pitch = if (span > 90) -1.05 else -0.72;
@@ -1646,8 +1487,6 @@ pub const Editor = struct {
             }
             return .none;
         }
-        // **A SELECTED ROOM OWNS DELETE AND INSERT**, above `deleteSel`: on this layer Delete otherwise reaches
-        // for an op, and the thing under the cursor is a corner.
         if (self.arenaSel != null and self.layer == .locations) {
             if (rl.isKeyPressed(.insert)) {
                 self.splitLongestWall(m);
@@ -1658,8 +1497,6 @@ pub const Editor = struct {
                 return .none;
             }
         }
-        // **A HALF-DRAWN ROOM OWNS THESE THREE KEYS**, above the escape chain: Esc otherwise drops you into
-        // select mode with the corners still standing on the floor and no way left to close them.
         if (self.nPend > 0) {
             if (rl.isKeyPressed(.enter)) {
                 self.closeArena(m);
@@ -1762,7 +1599,6 @@ pub const Editor = struct {
         if (self.rebuildT >= REBUILD_QUIET) self.rebuild(m, env);
     }
 
-    /// Closes the one banked gesture (`bankGesture`, `bankWorld`), so the next drag banks again.
     fn endGesture(self: *Editor) void {
         self.editing = false;
     }
@@ -1783,7 +1619,6 @@ pub const Editor = struct {
         @memcpy(self.zoneNameBuf[0..self.zoneNameLen], lab[0..self.zoneNameLen]);
     }
 
-    /// The World panel edits two UNRELATED fields of the map itself, so it cannot use `bankGesture`'s single-target trick: it puts both back, banks, and restores the live pair. One undo step per gesture, closed by `endGesture`.
     fn bankWorld(self: *Editor, m: *wf.Map, half: f32, runway: wf.Runway) void {
         if (self.editing) return;
         const liveHalf = m.half;
@@ -1853,7 +1688,6 @@ pub const Editor = struct {
             return;
         }
 
-        // ABOVE the pan and the marquee: a region being dragged owns the whole gesture until the button is let go.
         if (self.grabLive) {
             if (rl.isMouseButtonDown(.left)) {
                 if (ground) |g| self.dragRegion(m, g);
@@ -1896,8 +1730,6 @@ pub const Editor = struct {
                         },
                         .erase => {
                             if (m.paintSoil(g.x, g.z, self.radius, .none, 1, null)) env.uploadSoil(m);
-                            // The KIND goes back to water with the paint, or an erased lava run leaves its
-                            // ordinal behind and the next stroke of plain water there comes up molten.
                             if (m.paintWater(g.x, g.z, self.radius, false, null, .water)) {
                                 env.uploadWater(m);
                                 self.wetStroke = true;
@@ -1949,8 +1781,6 @@ pub const Editor = struct {
                     return;
                 }
                 if (self.pickInLayer(m, env)) {
-                    // A pick that landed on a region arms its drag: the same press moves the handle it grabbed,
-                    // or the whole thing when it grabbed the body.
                     if (self.grab != null) {
                         if (ground) |g| {
                             self.grabLive = true;
@@ -1966,14 +1796,10 @@ pub const Editor = struct {
                 }
                 return;
             }
-            // **THE ROOM IS THE ONE BRUSH THAT IS NEITHER A STAMP NOR A DRAG** — a corner per click, so it is
-            // taken before the drag arms rather than as a case inside `commitDrag`, which only ever sees two points.
             if (self.layer == .locations and self.brushIdx() == @intFromEnum(LocationBrush.arena)) {
                 if (ground) |g| self.arenaCorner(m, g);
                 return;
             }
-            // **LAYING A PATROL OWNS THE CLICK**, above the unit brush: while the mode is on, clicking the
-            // ground drops the next leg rather than posting another creature on top of the one being routed.
             if (self.routing) {
                 if (ground) |g| self.layLeg(m, g);
                 return;
@@ -1989,7 +1815,6 @@ pub const Editor = struct {
                         self.dragTo = g;
                     }
                 },
-                // Guarded above (the ground layer paints and returns); a message beats UB in Release.
                 .ground => @panic("editor: ground layer reached the op placer"),
             }
             return;
@@ -2013,8 +1838,6 @@ pub const Editor = struct {
         return .{ .position = ray.position, .direction = mathx.normV(ray.direction) };
     }
 
-    /// **WHAT "ON SCREEN" MEANS HERE**, and the two callers that need it are the two that used to walk every
-    /// prop in the map: the cursor pick and the selected op's markers.
     fn camView(self: *const Editor) envmod.View {
         const aspect = @as(f32, @floatFromInt(rl.getScreenWidth())) / @as(f32, @floatFromInt(rl.getScreenHeight()));
         return envmod.View.fromCamera(self.cam, aspect);
@@ -2063,8 +1886,6 @@ pub const Editor = struct {
         }
         if (self.layer == .units) {
             const g = self.groundAt() orelse return .none;
-            // **BOTH ARRAYS THROUGH ONE `Nearest`.** The npc indices are offered offset past the foes so a single
-            // winner comes out; splitting it into two searches picks whichever list was asked second.
             var near = mathx.Nearest.within(FOE_PICK_R);
             for (m.foes[0..m.nfoes], 0..) |f, i| near.offer(i, v3(f.x, 0, f.z), g);
             for (m.npcs[0..m.nnpcs], 0..) |nn, i| near.offer(wf.MAX_FOES + i, v3(nn.x, 0, nn.z), g);
@@ -2102,8 +1923,6 @@ pub const Editor = struct {
         return false;
     }
 
-    /// **A HANDLE ON THE THING ALREADY SELECTED ANSWERS BEFORE ANY BODY DOES.** A corner standing inside
-    /// another region could otherwise never be taken hold of, and the handle is what you are aiming at.
     fn pickRegion(self: *Editor, m: *wf.Map) bool {
         const g = self.groundAt() orelse return false;
         if (self.arenaSel) |ai| {
@@ -2138,10 +1957,8 @@ pub const Editor = struct {
         if (self.clearSel) |ci| {
             if (ci < m.nclearings) {
                 const c = m.clearings[ci];
-                // The RIM is a band about the circle, not the whole disc: inside it is the body.
                 const d = mathx.distXZ(mathx.ground(c.x, c.z), g);
-                // **THE RIM IS THE OUTER HALF, NOT A BAND OF ITS OWN.** At `HANDLE_R` 2.5 the band reached the
-                // middle of any circle under 5 m across, so a small clearing could be resized and never moved.
+                // The rim is the outer HALF, not a band: at `HANDLE_R` 2.5 a band reaches the middle of any circle under 5 m across.
                 if (@abs(d - c.r) <= HANDLE_R and d >= c.r * 0.5) {
                     self.grab = .{ .clearing = true };
                     self.sayFmt("clearing r {d:.0} - drag to resize", .{c.r});
@@ -2149,7 +1966,6 @@ pub const Editor = struct {
                 }
             }
         }
-        // …then the bodies. SMALLEST FIRST, so a clearing inside a zone inside the fallback is reachable.
         for (m.arenas[0..m.narenas], 0..) |*a, i| {
             if (!a.contains(g.x, g.z)) continue;
             self.selectArena(m, i);
@@ -2172,8 +1988,6 @@ pub const Editor = struct {
             return true;
         }
         for (m.zones[0..m.nzones], 0..) |*z, i| {
-            // The FALLBACK zone is the whole world and has no edges to take hold of; grabbing it would move
-            // the ground out from under every other region on the map.
             if (m.isFallbackZone(i) or !z.contains(g.x, g.z)) continue;
             self.selectZone(m, i);
             self.grab = .{ .zone = null };
@@ -2183,7 +1997,6 @@ pub const Editor = struct {
         return false;
     }
 
-    /// Which corner of this rect the cursor is on, if any.
     fn rectHandle(x: f32, z: f32, x1: f32, z1: f32, at: rl.Vector3) ?u8 {
         var best: ?u8 = null;
         var bd = HANDLE_R * HANDLE_R;
@@ -2239,7 +2052,6 @@ pub const Editor = struct {
                     var l = wf.Location{ .x = box.x0, .z = box.z0, .x1 = box.x1, .z1 = box.z1 };
                     var nbuf: [wf.NAME_CAP]u8 = undefined;
                     l.setName(std.fmt.bufPrint(&nbuf, "loc{d}", .{m.nlocations + 1}) catch "loc");
-                    // PREPENDED, and that IS the overlap rule: `locationAt` takes the first match, so the one you painted last is the one that answers. Any other order makes the rectangle you can see disagree with the rectangle that fires.
                     std.mem.copyBackwards(wf.Location, m.locations[1 .. m.nlocations + 1], m.locations[0..m.nlocations]);
                     m.locations[0] = l;
                     m.nlocations += 1;
@@ -2257,7 +2069,6 @@ pub const Editor = struct {
                     m.nclearings += 1;
                     self.sayFmt("+clearing r {d:.0}", .{r});
                 },
-                // Taken a corner at a time before the drag arms (`arenaCorner`), so a drag here commits nothing.
                 .arena => return,
                 .erase => return,
             }
@@ -2267,7 +2078,6 @@ pub const Editor = struct {
 
         var o = wf.defaults(.at);
         o.kind = self.kindForLayer();
-        // A stacking kind stamped at its own single section is a ladder to nothing. Four sections is a storey.
         o.rise = props.info(o.kind).stack * 4.0;
         switch (self.layer) {
             .ground, .units => return,
@@ -2400,8 +2210,6 @@ pub const Editor = struct {
         return s + 1;
     }
 
-    /// **A CORNER IS GRABBED BY THE SAME REACH THAT CLOSES A RUN**, so the two gestures cannot disagree about
-    /// what counts as being on one.
     fn nearestCorner(a: *const wf.Arena, at: rl.Vector3) ?u8 {
         var best: ?u8 = null;
         var bd = ARENA_CLOSE_R * ARENA_CLOSE_R;
@@ -2414,9 +2222,6 @@ pub const Editor = struct {
         return best;
     }
 
-    /// **ONE NAMED THING AT A TIME.** The name fields are live text fields on the same panel, and two focused
-    /// fields take the same keystroke twice — so every selector opens on this, rather than each clearing the
-    /// other three and a fifth region kind quietly not being cleared by any of them.
     fn clearRegionSel(self: *Editor) void {
         self.zoneSel = null;
         self.locSel = null;
@@ -2437,9 +2242,6 @@ pub const Editor = struct {
         @memcpy(self.arenaNameBuf[0..self.arenaNameLen], lab[0..self.arenaNameLen]);
     }
 
-    /// **ONE DRAG FOR EVERY REGION.** A handle moves that handle; the body moves the whole thing by the
-    /// cursor's own travel. Banked on the first frame that actually moves something, so a plain selection
-    /// click — which arms this too — leaves no step in the undo ring.
     fn dragRegion(self: *Editor, m: *wf.Map, to: rl.Vector3) void {
         const g = self.grab orelse return;
         if (mathx.distXZ(to, self.grabFrom) < 1e-4) return;
@@ -2492,10 +2294,6 @@ pub const Editor = struct {
         self.requestRebuild();
     }
 
-    /// A rect by one corner or by its body. **RE-NORMALISED AFTER**, because dragging a corner past its
-    /// opposite inverts the pair and `inRect` is the one test four record kinds share — and the caller is
-    /// handed back WHICH CORNER the hand is now on, because normalising renames it. Left naming the old one,
-    /// the next frame wrote the other pair and the rect flipped back and forth under the cursor.
     fn dragRect(x: *f32, z: *f32, x1: *f32, z1: *f32, ci: ?u8, to: rl.Vector3, dx: f32, dz: f32) ?u8 {
         if (ci) |c| {
             switch (c & 3) {
@@ -2540,8 +2338,6 @@ pub const Editor = struct {
         return null;
     }
 
-    /// One leg of the selected foe's patrol. **THE ROUTE IS WORLD-SPACE** (`Foe.translate`'s note), so a leg is
-    /// stored where it was clicked and travels with the body from then on.
     fn layLeg(self: *Editor, m: *wf.Map, at: rl.Vector3) void {
         const su = self.selUnit orelse {
             self.routing = false;
@@ -2596,7 +2392,6 @@ pub const Editor = struct {
         @memcpy(self.locNameBuf[0..self.locNameLen], lab[0..self.locNameLen]);
     }
 
-    /// **A ROOM MUST KEEP THREE CORNERS**, and the one taken out is the one under the cursor.
     fn dropCorner(self: *Editor, m: *wf.Map) void {
         const ai = self.arenaSel orelse return;
         if (ai >= m.narenas) return;
@@ -2618,7 +2413,6 @@ pub const Editor = struct {
         self.sayFmt("{d} corners", .{a.verts()});
     }
 
-    /// A new corner goes at the MIDDLE OF THE LONGEST WALL, which is the one a reader would have split anyway.
     fn splitLongestWall(self: *Editor, m: *wf.Map) void {
         const ai = self.arenaSel orelse return;
         if (ai >= m.narenas) return;
@@ -2649,14 +2443,11 @@ pub const Editor = struct {
         a.vx[at + 1] = mx;
         a.vz[at + 1] = mz;
         a.n += 1;
-        // The SELECTION, not a drag (`grabLive`): the new corner is what Delete and the panel now aim at.
         self.grab = .{ .arena = @intCast(at + 1) };
         self.grabLive = false;
         self.sayFmt("+corner on the {d:.0} m wall", .{best});
     }
 
-    /// **THE SEAL COMES OFF THE GATE STANDING IN THIS ROOM'S WALL**, the one place it can be got right without
-    /// being typed twice. False when no gate stands on it, which is a room the author has to look at.
     fn sealFromGate(self: *Editor, m: *wf.Map) bool {
         const ai = self.arenaSel orelse return false;
         if (ai >= m.narenas) return false;
@@ -2669,14 +2460,11 @@ pub const Editor = struct {
         return true;
     }
 
-    /// How near a region's handle has to be taken hold of, in metres. Shared with the room's own close reach,
-    /// so no two gestures on this layer disagree about what counts as being on a corner.
     const HANDLE_R: f32 = ARENA_CLOSE_R;
 
     /// How near the first corner closes the run, in metres — forgiving, because the camera is usually wide.
     const ARENA_CLOSE_R: f32 = 2.5;
 
-    /// Clicking back onto the first corner closes the room, the same act as pressing Enter.
     fn arenaCorner(self: *Editor, m: *wf.Map, at: rl.Vector3) void {
         if (self.nPend >= 3 and mathx.distXZ(at, mathx.ground(self.pendX[0], self.pendZ[0])) <= ARENA_CLOSE_R) {
             self.closeArena(m);
@@ -2692,9 +2480,6 @@ pub const Editor = struct {
         self.sayFmt("corner {d} - Enter closes, Esc drops", .{self.nPend});
     }
 
-    /// **THE SEAL IS INHERITED FROM THE GATE STANDING IN THE WALL YOU JUST DREW**, and from nothing else: a
-    /// default of `bone_knight` would silently author a room whose floor and whose door name different fights.
-    /// With no gate on the line it holds nothing and says so.
     fn closeArena(self: *Editor, m: *wf.Map) void {
         if (self.nPend < 3) {
             self.say("a room needs three corners");
@@ -2715,7 +2500,6 @@ pub const Editor = struct {
             a.boss = o.boss;
             a.nboss = o.nboss;
         }
-        // PREPENDED, and that IS the overlap rule — `arenaIndexAt` takes the first match, like a location.
         std.mem.copyBackwards(wf.Arena, m.arenas[1 .. m.narenas + 1], m.arenas[0..m.narenas]);
         m.arenas[0] = a;
         m.narenas += 1;
@@ -2728,9 +2512,6 @@ pub const Editor = struct {
         self.nPend = 0;
     }
 
-    /// **ONE BRUSH INDEX, TWO ARRAYS.** Under `NFOE_KIND` the palette is placing a creature and over it a body
-    /// that talks; the seed is spread off the array's own length either way, so two posted side by side do not
-    /// come up identical.
     fn addUnit(self: *Editor, m: *wf.Map, at: rl.Vector3) void {
         if (self.erasing()) return;
         const bi = self.brushIdx();
@@ -2781,10 +2562,6 @@ pub const Editor = struct {
 
     fn wipeEnd(self: *Editor) void {
         if (self.wipe.n > 1) self.sayFmt("erased {d}", .{self.wipe.n});
-        // **THE HELD FACE IS REPAINTED AT THE STROKE'S END, NOT ONLY AT ITS START.** Only the FIRST erase of a
-        // sweep banks (`bankStroke`), and on the units layer a banked foe is the only thing that moves
-        // `miniGen` — so a sweep that took nine spawns left eight of them still drawn in red on the minimap
-        // until some unrelated edit. Once per stroke, not once per erase.
         if (self.wipe.n > 0) self.miniGen +%= 1;
         self.wipe.on = false;
     }
@@ -2808,8 +2585,6 @@ pub const Editor = struct {
                     self.sayFmt("-foe ({d:.0}, {d:.0})", .{ f.x, f.z });
                     return true;
                 }
-                // **THE FOLK ARE ERASED BY THE SAME SWEEP.** One eraser for the layer, or he wipes a camp and the
-                // caravaneer is still standing in it.
                 var j: usize = m.nnpcs;
                 while (j > 0) : (j -= 1) {
                     const nn = m.npcs[j - 1];
@@ -2896,12 +2671,9 @@ pub const Editor = struct {
         self.sayFmt("re-rolled #{d} - seed {d}", .{ s, m.ops[s].seed });
     }
 
-    /// The group stops being one thing: every instance it made becomes its own `at:` op, standing where it
-    /// already stood. There is no way back short of undo, so the seed and the shape go with it.
     fn explodeSel(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
         const s = self.sel orelse return;
         if (s >= m.nops or m.ops[s].op == .at) return;
-        // It writes down where the props ARE, so a pending rebuild would bake the arrangement before the edit.
         if (self.rebuildDue) self.rebuild(m, env);
         self.bank(m);
         const n = env.explodeOp(m, s) catch {
@@ -2913,14 +2685,8 @@ pub const Editor = struct {
         self.sayFmt("broke apart into {d}", .{n});
     }
 
-    /// What taking a body off the map had to break, for the caller's own line.
     const FolkGone = struct { conds: usize, freed: bool };
 
-    /// **ONE DOOR OUT FOR A BODY.** Delete and the eraser each did this by hand and the eraser's copy was a bare
-    /// `copyForwards`: `Cond.near` is a POSITIONAL npc index (`wf.removeNpc`), so it moved every watch onto the
-    /// wrong body and taking the LAST one wrote a map `link` refuses outright. The conversation it was the last
-    /// owner of goes with it too, or the table fills with voices nothing can reach (`wf.MAX_DIALOGS` is small and
-    /// the talk panel coins one on sight).
     fn removeFolk(self: *Editor, m: *wf.Map, i: usize) FolkGone {
         const doomed = m.npcs[i].dlg;
         const broke = wf.removeNpc(m, i);
@@ -3008,10 +2774,8 @@ pub const Editor = struct {
             for (m.foes[0..m.nfoes], 0..) |f, i| {
                 if (box.holds(f.x, f.z)) self.mark(i);
             }
-            // `marked` is the FOE index space (the marquee walks `m.foes`), so a marquee hand-off is a foe.
             self.selUnit = if (self.nMarked > 0) Unit{ .foe = self.marked[0] } else null;
             self.sel = null;
-            // would show a properties panel for something this marquee cannot touch
         } else if (self.layer.opLayer()) {
             for (m.ops[0..m.nops], 0..) |*o, i| {
                 if (layerOf(o) != self.layer) continue;
@@ -3260,17 +3024,10 @@ pub const Editor = struct {
     }
 
 
-    /// **THE LAYER YOU ARE STANDING ON IS ALWAYS VISIBLE**, whatever its eye says. Hiding the layer your brush is
-    /// on would leave the cursor, the marquee and the selection gizmos all drawing for something invisible. The eye stays as you left it, so selecting away restores the hidden state.
     pub fn visible(self: *const Editor, l: Layer) bool {
         return self.layer == l or self.shown[@intFromEnum(l)];
     }
 
-    /// **DOES THE TOP STRIP FIT WITH ITS LAYER NAMES SPELLED OUT.** Measured, not guessed: `BarRow`'s own widths for the layers plus the same arithmetic for the fixed tail, so a label added is answered here rather than discovered as a clipped button on the right-hand edge.
-    ///
-    /// **THE STRIP'S OWN WIDTH IS MEASURED ONCE**, `drawStatus`'s `cribW` for the same reason: ten compile-time
-    /// literals against a font that never moves, and `hud.monoW` is a glyph lookup per character. Only `sw`
-    /// can change the answer, so `sw` is the whole key.
     var barFitFor: i32 = -1;
     var barFit = false;
 
@@ -3292,7 +3049,6 @@ pub const Editor = struct {
         return barFit;
     }
 
-    /// Room for the unsaved-changes `*` that `drawTopBar` sets down past the last button.
     const DIRTY_W: i32 = 20;
 
     fn drawRectHandles(self: *const Editor, x: f32, z: f32, x1: f32, z1: f32, y: f32, comptime which: std.meta.Tag(Grab)) void {
@@ -3325,7 +3081,6 @@ pub const Editor = struct {
             }
             for (m.clearings[0..m.nclearings]) |c| ringXZ(c.x, c.z, c.r, y, ui.alpha(ui.HOT, locA));
         }
-        // A weather region reads GOLD and a plain one reads cool, so you can see at a glance which rectangles are doing something to the sky.
         if (self.visible(.locations)) {
             for (m.locations[0..m.nlocations], 0..) |*l, i| {
                 const on = self.locSel == i;
@@ -3344,7 +3099,6 @@ pub const Editor = struct {
                 if (ci < m.nclearings) {
                     const c = m.clearings[ci];
                     ringXZ(c.x, c.z, c.r, y + 0.02, ui.HOT);
-                    // The rim handle sits due EAST, which is where `rectCorner` puts a rect's corner 1: one convention.
                     const rimGrab = if (self.grab) |g| g == .clearing and g.clearing else false;
                     handlePost(c.x + c.r, c.z, y, rimGrab);
                     handlePost(c.x, c.z, y, false);
@@ -3352,9 +3106,6 @@ pub const Editor = struct {
             }
         }
 
-        // **A ROOM IS DRAWN AS ITS WALL AND ITS CORNERS**, and the run being built is drawn open — a closed
-        // outline under the cursor reads as a room that already exists and is the one thing this brush must not
-        // lie about. `LIVE` is the sealed one, `TRIM` bounds that hold nothing.
         if (self.visible(.locations)) {
             for (m.arenas[0..m.narenas], 0..) |*a, i| {
                 const on = self.arenaSel == i;
@@ -3364,8 +3115,6 @@ pub const Editor = struct {
                 for (0..n) |vi| {
                     const vj = (vi + 1) % n;
                     arenaWall(a.vx[vi], a.vz[vi], a.vx[vj], a.vz[vj], y + 0.03, wall);
-                    // The GRABBED corner is bigger and in the live tone: Delete takes that one, and a post you
-                    // cannot pick out of eleven identical posts is a delete you cannot aim.
                     const held = on and self.grabbedVert() != null and self.grabbedVert().? == vi;
                     const ph: f32 = if (held) ARENA_PIN_H * 1.6 else ARENA_PIN_H;
                     const pw: f32 = if (held) ARENA_PIN_W * 1.7 else ARENA_PIN_W;
@@ -3378,12 +3127,9 @@ pub const Editor = struct {
                 if (vi + 1 < self.nPend) arenaWall(self.pendX[vi], self.pendZ[vi], self.pendX[vi + 1], self.pendZ[vi + 1], y + 0.04, ui.HOT);
                 rl.drawCubeWires(liftAt(self.pendX[vi], self.pendZ[vi], y + ARENA_PIN_H * 0.5), ARENA_PIN_W, ARENA_PIN_H, ARENA_PIN_W, ui.HOT);
             }
-            // The leg back to the first corner is the CLOSE, so it is dashed off in a dimmer tone than the wall.
             if (self.nPend >= 3) groundLine(self.pendX[self.nPend - 1], self.pendZ[self.nPend - 1], self.pendX[0], self.pendZ[0], y + 0.04, ui.alpha(ui.HOT, 90));
         }
 
-        // **THE START IS A PLACE, SO IT IS DRAWN AS ONE.** Three numbers in a modal is a spot you cannot see and
-        // therefore cannot check against the ground it lands on.
         {
             const sp = m.start.at();
             const dir = mathx.headingDir(m.start.facing());
@@ -3396,19 +3142,13 @@ pub const Editor = struct {
         if (self.visible(.units)) {
             for (m.foes[0..m.nfoes], 0..) |f, i| {
                 const sel = self.layer == .units and self.selUnit != null and self.selUnit.? == .foe and self.selUnit.?.foe == i;
-                // **A UNIT UNDER ORDERS READS AS ONE FROM ACROSS THE MAP.** Which bodies have a round is the
-                // one thing you cannot see by looking at a map full of identical boxes, and clicking each of a
-                // hundred to find out is not an answer.
                 const ordered = f.ai != .hold;
                 const col = if (sel) ui.HOT else if (ordered) ui.alpha(ui.LIVE, unitA) else ui.alpha(foeSwatch(f.kind), unitA);
                 const at = liftAt(f.x, f.z, y + FOE_BOX_H * 0.5);
                 rl.drawCubeWires(at, FOE_BOX_W, FOE_BOX_H, FOE_BOX_W, col);
-                // …and a LEASHED roamer's tether is a circle you can judge against the ground it is standing on.
                 if (ordered and self.layer == .units and f.ai == .roam) {
                     ringXZ(f.x, f.z, foemod.ROAM_R, y + 0.02, ui.alpha(ui.LIVE, if (sel) 190 else 70));
                 }
-                // **A ROUTE YOU CANNOT SEE IS A ROUTE YOU CANNOT CHECK.** The SELECTED unit's only — every
-                // patrol on a busy map at once is a cat's cradle — and closed back to the post, because it loops.
                 const route = f.route();
                 if (!sel or route.len == 0) continue;
                 var prev = mathx.ground(f.x, f.z);
@@ -3427,11 +3167,6 @@ pub const Editor = struct {
         if (self.sel) |s| {
             if (s < m.nops and self.layer.opLayer()) {
                 drawOpGizmo(&m.ops[s], y);
-                // **ONLY THE ONES YOU CAN SEE** (owner). This walked all ~17k props every frame something was
-                // selected — which during prop editing is most of the time — to find the few one op owns. The
-                // draw's own index answers "what is in frame" in a per-cell reject, and a marker you cannot see
-                // is not worth finding. The COUNT is not in here at all any more: `env.ownedBy` is tallied when
-                // the props are built, so the readout stays the op's true total rather than what is on screen.
                 self.selOwned = env.ownedBy(@intCast(s));
                 const view = self.camView();
                 const Mark = struct {
@@ -3518,7 +3253,6 @@ pub const Editor = struct {
                 switch (@as(LocationBrush, @enumFromInt(self.brushIdx()))) {
                     .zone, .location => outlineOf(box, y, ui.HOT),
                     .clearing => ringXZ(a.x, a.z, rad, y, ui.HOT),
-                    // The room draws its own run in `draw3D`; it never arms a drag, so there is no box here.
                     .arena, .erase => {},
                 }
             } else if (self.layer == .decor) {
@@ -3553,7 +3287,6 @@ fn drawOpGizmo(o: *const wf.Op, y: f32) void {
     switch (o.op) {
         .at => {
             ringXZ(o.x, o.z, GIZMO_R, y, ui.HOT);
-            // A HEADING SPOKE, because a circle cannot show yaw.
             const d = mathx.headingDir(mathx.radians(o.yaw));
             groundLine(o.x, o.z, o.x + d.x * GIZMO_SPOKE, o.z + d.z * GIZMO_SPOKE, y, ui.HOT);
         },
@@ -3627,19 +3360,12 @@ fn liftAt(x: f32, z: f32, lift: f32) rl.Vector3 {
     return v3(x, envmod.groundY() + lift, z);
 }
 
-/// **A HANDLE YOU CANNOT SEE IS A HANDLE THAT DOES NOT EXIST.** Every draggable corner on this layer gets the
-/// same post as a room's, and the one under the mouse is bigger and in the live tone.
 fn handlePost(x: f32, z: f32, y: f32, held: bool) void {
     const h: f32 = if (held) ARENA_PIN_H * 1.6 else ARENA_PIN_H;
     const w: f32 = if (held) ARENA_PIN_W * 1.7 else ARENA_PIN_W;
     rl.drawCubeWires(liftAt(x, z, y + h * 0.5), w, h, w, if (held) ui.LIVE else ui.HOT);
 }
 
-/// **A ROOM'S WALL IS DRAWN AS A WALL, NOT AS A LINE ON THE FLOOR.** 37 `drawLine3D` a wall against
-/// `groundLine`'s 12 — 407 for the shipped room's eleven, beside the 2,175 props the same frame draws. At a working camera a `groundLine` and a
-/// 2.4 m post are a few grey pixels lost in the rock the room was traced off; the invisible barrier the player
-/// runs into has to be the obvious thing on the face. A ground line, a line at `ARENA_WALL_H`, and a picket
-/// between them at every terrain sample — so it follows the ground and still reads from directly overhead.
 fn arenaWall(x0: f32, z0: f32, x1: f32, z1: f32, lift: f32, col: rl.Color) void {
     const SEG = GROUND_SEG;
     const top = ui.alpha(col, @intFromFloat(@as(f32, @floatFromInt(col.a)) * 0.55));
@@ -3658,8 +3384,6 @@ fn arenaWall(x0: f32, z0: f32, x1: f32, z1: f32, lift: f32, col: rl.Color) void 
     }
 }
 
-/// Segments a straight run on the ground is drawn in. It FOLLOWS the terrain, so this is the sampling rate and
-/// not a smoothness dial — and `arenaWall`'s own measured line counts are quoted off it.
 const GROUND_SEG: i32 = 12;
 
 fn groundLine(x0: f32, z0: f32, x1: f32, z1: f32, lift: f32, col: rl.Color) void {
@@ -3676,8 +3400,7 @@ fn groundLine(x0: f32, z0: f32, x1: f32, z1: f32, lift: f32, col: rl.Color) void
     }
 }
 
-/// The post at each corner of a room, and the height its wall is drawn to — metres. The wall is over head
-/// height on purpose: it is the only thing on this face that stops a body, so it may not read as a kerb.
+/// The post at each corner of a room, and the height its wall is drawn to — metres.
 const ARENA_PIN_W: f32 = 0.9;
 const ARENA_PIN_H: f32 = 3.2;
 const ARENA_WALL_H: f32 = 4.5;
@@ -3725,8 +3448,6 @@ const RING_N_MAX: i32 = 64;
 const LEAN_LIM: f32 = 40;
 
 fn edgeTip(e: wf.Edge, wet: bool) [:0]const u8 {
-    // The water rows are kept for `test_wateredge.world` and for the day the picker comes back; the brush only
-    // ever stamps `WATER_EDGE` now, so `speckle`'s is the one a coast actually shows.
     if (wet) return switch (e) {
         .blend => "A margin you cannot find the edge of. Metres of ground that is neither",
         .natural => "What a lake does on its own. A slow wander either side of the line",
@@ -3773,13 +3494,9 @@ pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene,
     } else if (ed.menuOpen) {
         drawContextMenu(ed, m, env, &ctx);
     }
-    // **LAST, OVER EVERYTHING.** An open dropdown's panel is parked while its row draws (`ui.dropdown`) so it
-    // lands on top of the rows beneath it rather than under them. Before the TIP, which is the only thing
-    // allowed over an open list.
     ui.endDropdowns();
     ui.drawTip(&ctx);
 
-    // A shut modal cannot leave a panel hanging in the air over the map.
     if (ed.modal == .none and !ed.menuOpen) ui.closeDropdown();
     ed.hotFrame = ctx.anyHot or ui.dropdownOpen();
 }
@@ -3819,8 +3536,6 @@ const BarRow = struct {
 fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) void {
     ui.panel(ctx, ui.rect(0, 0, sw, BAR_H), null);
     var row = BarRow{ .ctx = ctx, .x = 8 };
-    // **THE STRIP MEASURES ITSELF AND DROPS THE LABELS RATHER THAN RUN OFF THE WINDOW.** The eyes cost `EYE_SLOT`
-    // apiece and pushed `Sounds` off the right-hand edge at 1280. `barWide` is the one place the decision is made, so the widths the layout uses and the widths it measured cannot disagree.
     const named = Editor.barWide(sw);
     inline for (@typeInfo(Layer).@"enum".fields) |f| {
         const l: Layer = @enumFromInt(f.value);
@@ -3840,7 +3555,6 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
     }
     if (row.verb(.reload, "Reload - throw away every unsaved change and re-read the file")) {
         var line: usize = 0;
-        // A failed load leaves `m` untouched (`wf.load` parses into scratch first) — and must not take the rest of the bar with it, or the frame it fails on has no undo, no Objects and no chrome to claim the pointer.
         if (wf.load(ed.curPath(), m, &line)) |_| {
             ed.adopt(m, env, false);
             ed.say("reloaded from disk");
@@ -3885,8 +3599,6 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
     if (ed.dirty) hud.mono("*", row.x + 8, 8, hud.MONO, ui.HOT);
 }
 
-/// **THE ROOMS PANEL** — the one place a boss arena is named, re-shaped, sealed and thrown away. The polygon
-/// itself is drawn and dragged in the world; everything a click cannot express lives here.
 fn drawRoomsPanel(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, x: i32, y0: i32, w: i32) i32 {
     var y = y0;
     var hb: [40]u8 = undefined;
@@ -3901,7 +3613,6 @@ fn drawRoomsPanel(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, x: i32, y0: i32, w: i32
     for (m.arenas[0..m.narenas], 0..) |*a, i| {
         var lb: [56]u8 = undefined;
         const on = ed.arenaSel == i;
-        // The seal is what the row is FOR, so the row says it: a nameless count would need a click to read.
         const lab = std.fmt.bufPrintZ(&lb, "{s} ({d})", .{ a.label(), a.verts() }) catch "?";
         if (ui.button(ctx, ui.rect(x, y, w, 22), lab, hud.MONO, on, "Select this room. Then drag its corners, or drag inside it to move the whole thing")) {
             if (on) ed.arenaSel = null else ed.selectArena(m, i);
@@ -3923,8 +3634,6 @@ fn drawRoomsPanel(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, x: i32, y0: i32, w: i32
     }
     y += 32;
 
-    // **WHAT IT HOLDS, AND WHERE THAT CAME FROM.** A room with an empty seal is bounds that never hold, which
-    // is legal and almost never what was meant, so it says so in the loud colour rather than showing "0".
     var sb: [96]u8 = undefined;
     if (a.seal().len == 0) {
         hud.mono("holds nothing", x, y, hud.MONO, ui.HOT);
@@ -3945,12 +3654,6 @@ fn drawRoomsPanel(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, x: i32, y0: i32, w: i32
     }
     y += ROW_H;
 
-    // **THE CANDIDATES ARE THE BOSSES ACTUALLY STANDING IN THIS ROOM**, not all 37 kinds: the seal is a fact
-    // about this floor, so the only names worth offering are the ones on it — and only the ones a ward can wait
-    // on (`foe.isBoss`), because **THE ROOM'S SEAL AND ITS DOOR'S ARE PINNED EQUAL** over every shipped map
-    // (`worldfmt`'s own test). Offering the room a name the gate modal cannot is a room the author can put out
-    // of step with its own door, and that test is what catches it — after he has saved. Whatever it ALREADY
-    // seals stays offered, so a name written into the file by hand can still be taken off.
     var offered: [wf.MAX_SEAL * 4]wf.FoeKind = undefined;
     var non: usize = 0;
     for (m.foes[0..m.nfoes]) |f| {
@@ -3983,14 +3686,11 @@ fn drawRoomsPanel(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, x: i32, y0: i32, w: i32
         }
     }
 
-    // **AND THE ONE THING THAT CANNOT GO STALE**: the gate's own list, taken whole.
     if (ui.button(ctx, ui.rect(x, y, w, 22), "seal from gate", hud.MONO, false, "Copy the seal off the fog gate standing in this room's wall - the one way the two cannot disagree")) {
         if (!ed.sealFromGate(m)) ed.say("no fog gate on this room's wall");
     }
     y += ROW_H;
 
-    // **THE TWO THINGS THAT ARE SILENTLY WRONG**, said out loud: a room whose outline crosses itself holds
-    // nothing in its own middle, and a room with no gate on its wall is one the player walks straight into.
     if (!a.simple()) {
         hud.mono("outline crosses itself", x, y, hud.MONO, ui.HOT);
         y += ROW_H;
@@ -4041,7 +3741,6 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
             y += hud.monoLineH(hud.MONO);
         }
         var lab: [40]u8 = undefined;
-        // NUMBERED BY WHERE IT SITS, not by its ordinal — the digit keys walk the same visible list.
         const s = if (slot < DIGIT_KEYS) (std.fmt.bufPrintZ(&lab, "{d} {s}", .{ slot + 1, b }) catch b) else b;
         const r = ui.rect(8, y, SIDE_W - 16, ROW_H - 4);
         const on = !ed.selecting and ed.brushIdx() == i;
@@ -4109,8 +3808,6 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
 }
 
 
-/// The units palette's own header: FOES / FOLK, and under the foes a chip per kingdom that holds one. Returns
-/// the y the brush rows start at.
 fn drawUnitTabs(ed: *Editor, ctx: *ui.Ctx, y0: i32) i32 {
     var y = y0;
     var labels: [UnitTab.N][:0]const u8 = undefined;
@@ -4229,8 +3926,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             hud.mono(if (wet) "coast" else "edge", x, y, hud.MONO, ui.LABEL);
             y += ROW_H;
             if (wet) {
-                // ONE SHAPE, AND IT IS NOT A CHOICE (`WATER_EDGE`). Shown rather than hidden, because a brush
-                // that quietly stamps something the panel never mentions is worse than a row you cannot press.
                 ui.disabled(ctx, ui.rect(x, y, w, ROW_H), WATER_EDGE.label(), hud.MONO, edgeTip(WATER_EDGE, true));
                 y += ROW_H + 6;
             } else {
@@ -4277,7 +3972,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             }
             return;
         }
-        // A full scan of the armed brush's grid every frame (12,544 bytes soil / 50,176 water) to print one number — measured, and deliberately left.
         var painted: usize = 0;
         if (liquid) |l| {
             const want: u8 = @intFromEnum(l);
@@ -4306,7 +4000,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             const s4 = std.fmt.bufPrintZ(&buf, "wet sand {d:.1} m out", .{gfx.WATER_WET_OUT}) catch "";
             hud.mono(s4, x, y, hud.MONO, ui.alpha(ui.LABEL, 190));
             y += ROW_H;
-            // WHAT IT DOES TO YOU, off the one table the game bills from (`liquidmod.SOAK`).
             const soak = liquidmod.soakOf(l);
             const s5: [:0]const u8 = if (soak) |sk|
                 (std.fmt.bufPrintZ(&buf, "{s} {d:.0}/s{s}", .{
@@ -4371,9 +4064,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 y += ROW_H;
                 changed = ui.stepperF(ctx, x, y, w, "phase", &fo.seed, 0.05, 0, 1, "Its own seed - where in its idle it starts, and the wabi-sabi in its body. Two side by side should not match") or changed;
                 y += ROW_H;
-                // **THE ORDERS AND THE ROUTE, WHICH THE FORMAT HELD AND NO PANEL PAINTED** (`wf.FoeAi`,
-                // `Foe.wp`) — parsed, written, round-tripped and moved with the body since the format grew
-                // them, and reachable only by hand-editing the file. Chips rather than a dropdown: four names.
                 hud.mono("orders", x, y, hud.MONO, ui.LABEL);
                 y += hud.monoLineH(hud.MONO) + 2;
                 var aiW: i32 = 0;
@@ -4383,8 +4073,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                     defer aiX += aiW;
                     if (ui.chip(ctx, aiX, y, @tagName(a), fo.ai == a, &aiW, aiTip(a))) {
                         ed.bank(m);
-                        // **A CONTROL THAT BANKS ITSELF CLOSES THE GESTURE ITSELF.** Left open, `bankGesture`
-                        // below banked a SECOND identical step off `before` and one chip press took two Ctrl+Z.
                         ed.editing = true;
                         fo.ai = a;
                         changed = true;
@@ -4395,8 +4083,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 const wlab = std.fmt.bufPrintZ(&wb, "route: {d} of {d} legs", .{ fo.route().len, wf.MAX_WP }) catch "";
                 hud.mono(wlab, x, y, hud.MONO, if (fo.ai == .patrol and fo.nwp == 0) ui.HOT else ui.LABEL);
                 y += ROW_H;
-                // **A PATROL WITH NO ROUTE IS A UNIT THAT STANDS STILL AND SAYS IT IS PATROLLING**, which is
-                // the one way these two fields can disagree, so it is said in the loud colour above.
                 const half2 = @divTrunc(w - 6, 2);
                 if (ui.button(ctx, ui.rect(x, y, half2, 22), if (ed.routing) "stop laying" else "lay route", hud.MONO, ed.routing, "Click the ground to drop each leg of the patrol. Click here again when you are done")) {
                     ed.routing = !ed.routing;
@@ -4425,9 +4111,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                     ed.bankGesture(wf.Foe, m, fo, before);
                 } else if (!ctx.down) ed.endGesture();
             },
-            // **THE FOLK GET `roam` AND THE FOES DO NOT** — it is the one dial that is theirs (`npc.Wanderer.roamR`),
-            // and at 0 the body stands on its post. The `call:` name and the `dlg=` it opens are still file-only
-            // (see the editor audit): what this panel owns is where a body stands and how far it wanders.
             .npc => |i| {
                 if (i >= m.nnpcs) return;
                 const np = &m.npcs[i];
@@ -4449,11 +4132,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 y += ROW_H;
                 changed = ui.stepperF(ctx, x, y, w, "roam", &np.roam, 0.5, 0, wf.NPC_ROAM_MAX, "How far it wanders from this post, in metres. At 0 it stands still") or changed;
                 y += ROW_H;
-                // **WHICH CONVERSATION THIS BODY OPENS** (`Npc.dlg`) — the format has carried it since the
-                // dialog layer landed and the editor could only round-trip it. The dialogs themselves are still
-                // hand-written, so this offers the ones the MAP already declares and nothing else.
-                // **ONE ROW, NOT ONE ROW PER CONVERSATION.** A chip apiece cost the side panel a row for every
-                // dialog the map declares and pushed `delete` off the bottom the moment there were four.
                 hud.mono("says", x, y + 4, hud.MONO, ui.LABEL);
                 {
                     const shown = @min(m.ndialogs, MAX_SLOT_ROWS);
@@ -4471,9 +4149,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                         ed.bank(m);
                         ed.editing = true;
                         np.dlg = if (pick == 0) wf.NO_DIALOG else @intCast(pick - 1);
-                        // **THE FILE STORES THE NAME, NOT THE INDEX** (`Npc.dlgRef`, and `link` resolves it on
-                        // load). Setting `dlg` alone left `dlg=` off the written line entirely, so every
-                        // conversation attached in the editor was gone the next time the map was opened.
                         np.dlgRef = if (pick == 0) wf.Span{} else (m.addText(m.dialogs[pick - 1].label()) catch blk: {
                             ed.say("the map's text arena is full");
                             break :blk wf.Span{};
@@ -4493,8 +4168,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 }
                 if (changed) {
                     ed.bankGesture(wf.Npc, m, np, before);
-                    // The live body is posted off the RECORD, so a moved record has to re-post — DEBOUNCED,
-                    // because a stepper walks through a dozen values on the way to the one you want.
                     ed.requestFolk();
                 } else if (!ctx.down) ed.endGesture();
             },
@@ -4503,7 +4176,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
     }
 
     if (ed.layer == .locations) {
-        // **THE LOCATIONS FIRST, because they are the ones that do something.** Weather is per location and the ONE sky cross-fades toward whichever one he is standing in (`game.settleSky`): how wet, how thick, and how long it takes to arrive.
         if (m.nlocations > 0) {
             hud.mono("LOCATIONS", x, y, hud.MONO, ui.TITLE);
             y += ROW_H + 4;
@@ -4518,14 +4190,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 }
                 y += ROW_H;
                 if (!on) continue;
-                // **THE WEATHER KNOBS ARE ONE GESTURE, AND THEY WERE BANKING NOTHING AT ALL.** They set
-                // `dirty` and nothing else, so a rain or a fog you dragged wrong could only be undone by
-                // undoing whatever came BEFORE it, and if it was the first edit after a load there was nothing
-                // in the ring to undo. One step per gesture, the same shape as the spawn panel's.
                 const lbefore = l.*;
-                // **A LOCATION'S NAME IS THE WHOLE POINT OF IT** — `Cond.region` and every trigger find one by
-                // name (`Map.findLocation`), and the editor could only ever call them `locN`. A rectangle
-                // nothing can refer to is a rectangle that does nothing.
                 hud.mono("name", x, y, hud.MONO, ui.LABEL);
                 y += hud.monoLineH(hud.MONO) + 2;
                 if (nameField(ed, ctx, x, y, w, &ed.locNameBuf, &ed.locNameLen, l.label(), KB_LOC_NAME, ed.modal == .none, "The name triggers find this region by. Spaces and # become _")) |typed| {
@@ -4535,7 +4200,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                     lchanged = true;
                 }
                 y += 32;
-                // A location with NO opinion leaves the world's own storm alone, which is not the same as one that says "dry": the toggle is the difference and it has to be explicit.
                 var wet = l.wet orelse 0;
                 var fog = l.fog orelse 0;
                 var spore = l.spore orelse 0;
@@ -4583,7 +4247,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             var zb: [48]u8 = undefined;
             const lab = std.fmt.bufPrintZ(&zb, "{d} {s} ({d})", .{ i, z.label(), z.nmix }) catch "?";
             changed = ui.slider(ctx, x, y, w - 34, lab, &z.density, 0, 1, "How thickly this zone grows. The cover field thins it further in clearings") or changed;
-            // …and the way IN to the two things a zone carries that nothing here could reach: its NAME and the MIX it grows. Its own button, so it cannot fight the slider for the same click.
             if (ui.button(ctx, ui.rect(x + w - 30, y + 14, 30, 22), "...", hud.MONO, ed.zoneSel == i, "Name this zone and choose what grows in it")) {
                 ed.selectZone(m, i);
                 ed.modal = .zonemix;
@@ -4649,14 +4312,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         return;
     }
 
-    // **THE SWEEP SITS ABOVE THE SELECTION AND NOT INSIDE IT**, because the whole point is the frames where
-    // nothing is selected yet — a jump that is only offered once you have already found a container is no help
-    // finding one. Drawn before the early return for that reason.
-    //
-    // **THE COUNT IS A WALK OF EVERY OP, EVERY FRAME** — 81 us at the format's 20480 (the test at the foot of
-    // this file), 0.49% of a frame. Paid only on this layer, and only in the editor: `nloot` moves inside the
-    // Items... modal with no rebuild behind it, so there is no generation to hang a memo on that would not go
-    // stale on the one edit that matters.
+    // A walk of every op, every frame: 81 us at the format's 20480 (the test at the foot of this file), 0.49% of a frame.
     if (ed.layer == .interact) {
         const left = unfilledCount(m);
         var eb: [40]u8 = undefined;
@@ -4719,13 +4375,8 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             y += ROW_H;
             changed = ui.stepperF(ctx, x, y, w, "lean dir", &o.leanDir, 15, -360, 720, "Which way it leans, in degrees") or changed;
             y += ROW_H;
-            // **HOW FAR OFF THE GROUND IT SITS** (`env.Placer.expand`: `groundY + r1`) — the format has carried
-            // it for every `at` and no panel exposed it, so anything that hangs, floats or is bedded into a
-            // slope could only be placed by hand-editing the file.
             changed = ui.stepperF(ctx, x, y, w, "lift", &o.r1, 0.1, -LIFT_LIM, LIFT_LIM, "Metres off the ground it sits. Negative beds it in, which is how a boulder half-buried in a slope is authored") or changed;
             y += ROW_H;
-            // **STEPPED BY THE SECTION, BECAUSE THAT IS THE ONLY HEIGHT IT CAN BE BUILT AT** (`env.snapRise`).
-            // A free metres knob would show a number the world rounds off behind the author's back.
             const seg = props.info(o.kind).stack * o.scale;
             if (seg > 0) {
                 changed = ui.stepperF(ctx, x, y, w, "rise", &o.rise, seg, seg, RISE_LIM, "How far up it runs, in metres. One step is one section - the rungs keep their spacing however tall it gets") or changed;
@@ -4883,16 +4534,11 @@ fn onMini(wx: f32, wz: f32, half: f32) bool {
     return @abs(wx) <= half and @abs(wz) <= half;
 }
 
-/// **THE MAP LAYER IS PAINTED ON CHANGE, NOT ON FRAME.** `paintMinimap` spends one rectangle per op, and
-/// `01_fallen_plain` stands at 16,563 of them — measured, they collapse only 1.33x onto the 182x182 face, so
-/// there is no bucketing that makes a per-frame walk cheap. Held in a texture it costs one blit instead, and
-/// the bill stops growing every time a scatter is exploded into `at:` ops.
+/// Painted on change, not per frame: one rectangle per op, and `01_fallen_plain` stands at 16,563 of them —
+/// measured, they collapse only 1.33x onto the 182x182 face.
 var miniRT: ?rl.RenderTexture2D = null;
 var miniPainted: u64 = std.math.maxInt(u64);
 var miniLayer: Layer = .ground;
-/// **THE MAP ITSELF IS PART OF THE KEY, BECAUSE A MAP CAN BE SWAPPED WITHOUT AN EDITOR HAND ON IT.**
-/// `game.enterMap` loads a whole new `Map` over this one and replays the world; nothing it does moves
-/// `miniGen`, so the held face was the map he walked out of until his first edit.
 var miniOf: [wf.NAME_CAP]u8 = [_]u8{0} ** wf.NAME_CAP;
 var miniHalf: f32 = 0;
 
@@ -4917,10 +4563,8 @@ fn blitMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, px: i32, p
         paintMinimap(m, env, 0, 0, inner);
         rl.endTextureMode();
     }
-    // **A STRAIGHT COPY, NOT A BLEND.** Every translucent thing painted into the target drives the target's OWN
-    // alpha below 1 (raylib blends the alpha channel by `SRC_ALPHA` like the colour), and blending that back
-    // over the panel multiplies the face a second time — measured, it came out 49/765 darker across 78% of it.
-    // The face is opaque by construction, so src replaces dst.
+    // A straight copy, not a blend: raylib blends the target's OWN alpha by `SRC_ALPHA` like the colour, and
+    // blending that back over the panel multiplies the face a second time — measured, 49/765 darker over 78% of it.
     rl.gl.rlSetBlendFactors(gfx.GL_ONE, gfx.GL_ZERO, gfx.GL_FUNC_ADD);
     rl.beginBlendMode(.custom);
     // A render texture reads bottom-up, so the source height is negative.
@@ -4933,25 +4577,12 @@ fn blitMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, px: i32, p
     rl.endBlendMode();
 }
 
-/// **A MAP IS FIVE THINGS, NOT EVERYTHING** (owner). It used to blit the whole soil grid, shade the relief and
-/// put a dot on every op — which on the shipped map is 16,587 dots over a painted floor, and nothing in it told
-/// you where you were. What a map is for is WHERE CAN I NOT GO, WHERE IS THE WATER, WHERE IS THE COVER, WHERE
-/// IS THE FIRE, WHERE ARE THEY. So: walls, water, trees (subtly), fires, and red for the foes.
-///
-/// **READ OFF THE PLACED PROPS, NOT OFF THE OPS.** A belt of a hundred trees is ONE op, so an op walk drew one
-/// tree where there is a wood.
-///
-/// **FOUR WALKS OF 16,587 PROPS, AND THAT IS ON PURPOSE.** Order is the whole point — water under trees under
-/// walls under fires — so one binning pass would need a byte per prop to sort into. It is not a per-frame
-/// cost: `miniGen` bumps on a stroke's START and on the debounced rebuild (`REBUILD_QUIET`), never per frame
-/// while painting, and the panel beside it already spends a 50,176-cell scan every frame by choice.
 fn paintMinimap(m: *const wf.Map, env: *const envmod.Env, px: i32, py: i32, inner: f32) void {
     rl.drawRectangle(px, py, MINI_W - 8, MINI_W - 8, MINI_GROUND);
 
     for (m.water, m.waterKind, 0..) |wet, k, i| miniLiquid[i] = if (wet != 0) k + 1 else 0;
     blitField(miniLiquid[0..], wf.WATER_N, px, py, inner, liquidByte);
 
-    // AN AUTHORED POOL IS A SHAPE, NOT A DOT: it is one prop 30 m across, so it is drawn at its own bound.
     for (env.placed()) |*pr| {
         if (pr.gone or miniMark(pr.kind) != .water) continue;
         if (!onMini(pr.pos.x, pr.pos.z, m.half)) continue;
@@ -4959,7 +4590,6 @@ fn paintMinimap(m: *const wf.Map, env: *const envmod.Env, px: i32, py: i32, inne
         rl.drawCircleV(p, props.info(pr.kind).bound * pr.scale * inner / (2.0 * m.half), liquidSwatch(.water));
     }
 
-    // TWO PASSES, so a wall is never lost under the wood it stands in.
     for ([_]MiniMark{ .tree, .wall }) |want| {
         for (env.placed()) |*pr| {
             if (pr.gone) continue;
@@ -4968,10 +4598,7 @@ fn paintMinimap(m: *const wf.Map, env: *const envmod.Env, px: i32, py: i32, inne
             if (!onMini(pr.pos.x, pr.pos.z, m.half)) continue;
             const p = toMini(pr.pos.x, pr.pos.z, m.half, px, py, inner);
             switch (mark) {
-                // SUBTLY (owner): a wood has to read as a texture and not as a wall of green.
                 .tree => rl.drawRectangleV(.{ .x = p.x - 0.5, .y = p.y - 0.5 }, .{ .x = 1.5, .y = 1.5 }, MINI_TREE),
-                // …and a barrier is drawn at its OWN SIZE, so the cliff ring reads as a ring and not as a
-                // dotted line. Floored at 2 px, or a wall at the far end of a big map disappears.
                 .wall => {
                     const wpx = mathx.maxF(MINI_W_OF[@intFromEnum(pr.kind)] * pr.scale * inner / (2.0 * m.half), 2.0);
                     rl.drawRectangleV(.{ .x = p.x - wpx * 0.5, .y = p.y - wpx * 0.5 }, .{ .x = wpx, .y = wpx }, MINI_WALL);
@@ -4980,9 +4607,6 @@ fn paintMinimap(m: *const wf.Map, env: *const envmod.Env, px: i32, py: i32, inne
             }
         }
     }
-    // **THE FIRES YOU STEER BY, AND NOT EVERY FLAME ON THE MAP.** `group == .fire` is torches and braziers too,
-    // which on the shipped map is dressing by the hundred and it buried the thing under a field of orange.
-    // A landmark is somewhere you can SIT (`rest.isRestKind`).
     for (env.placed()) |*pr| {
         if (pr.gone or !restmod.isRestKind(pr.kind)) continue;
         if (!onMini(pr.pos.x, pr.pos.z, m.half)) continue;
@@ -4990,8 +4614,6 @@ fn paintMinimap(m: *const wf.Map, env: *const envmod.Env, px: i32, py: i32, inne
         rl.drawCircleV(p, 3.0, MINI_FIRE_HALO);
         rl.drawCircleV(p, 1.5, MINI_FIRE);
     }
-    // …and the foes last. SMALL: 173 of them at 2.5 px is 3,400 px of red on a 264 px map, and what you want to
-    // read off it is WHERE they are thick, not to count them.
     for (m.foes[0..m.nfoes]) |f| {
         if (!onMini(f.x, f.z, m.half)) continue;
         const p = toMini(f.x, f.z, m.half, px, py, inner);
@@ -5001,14 +4623,7 @@ fn paintMinimap(m: *const wf.Map, env: *const envmod.Env, px: i32, py: i32, inne
 
 const MiniMark = enum { water, wall, tree, fire };
 
-/// **A WALL IS WHATEVER THE CAMERA WILL NOT THIN** (`props.Info.solid`) — architecture, cliffs, the bonfire —
-/// which is the same set the hero cannot walk through, so the map's barriers and the world's are one list and
-/// cannot drift. The fire is asked FIRST, because a bonfire is `solid` too and it is a landmark before it is a
-/// wall.
 fn markOf(k: Kind) ?MiniMark {
-    // **THE FIRE AND THE WATER ARE ASKED BEFORE `solid`.** A bonfire is solid and a tarn is solid — the flag is
-    // "the camera will not thin this" — so read plainly they both came out as WALLS, and the map grew a barrier
-    // where the one landmark and the one crossing are.
     return switch (props.group(k)) {
         .fire => .fire,
         .water => .water,
@@ -5017,9 +4632,7 @@ fn markOf(k: Kind) ?MiniMark {
     };
 }
 
-/// **A WALL IS SOLID *AND* LONG.** `solid` alone is every pillar, block, arch and sarcophagus on the map, and
-/// four hundred white specks is not a map of anything. What you steer round is the thing you cannot go PAST,
-/// so the test is its own footprint: a cliff is 16.6 m across, a ruined wall 6.8, and a pillar 1.6.
+/// A wall is solid AND long — measured, a cliff is 16.6 m across, a ruined wall 6.8, and a pillar 1.6.
 const WALL_W: f32 = 4.0;
 
 fn footprintW(k: Kind) f32 {
@@ -5032,10 +4645,6 @@ fn footprintW(k: Kind) f32 {
     return w;
 }
 
-/// **BOTH ANSWERS ARE A FACT ABOUT THE KIND, SO BOTH ARE SOLVED ONCE AT COMPTIME.** `markOf` walks the kind's
-/// own parts list to measure a footprint and the wall pass measures it a second time, and `paintMinimap` asks
-/// four times over every placed prop: on `01_fallen_plain` that is 66,252 switches and two parts walks apiece
-/// on every repaint, and a repaint fires `REBUILD_QUIET` after every edit. Two array reads instead.
 const MINI_OF = blk: {
     @setEvalBranchQuota(200000);
     var out: [props.NK]?MiniMark = undefined;
@@ -5053,9 +4662,6 @@ fn miniMark(k: Kind) ?MiniMark {
     return MINI_OF[@intFromEnum(k)];
 }
 
-// **THE FIVE TONES, IN THE ORDER THEY MUST BEAT EACH OTHER**: the fire is the brightest thing on it because it
-// is the one place you are going, then the foes, then the walls as MASS (not as glare — at 196 they were a
-// white sheet the water and the wood vanished under), then the wood as texture.
 const MINI_GROUND = ui.col(18, 20, 14, 255);
 const MINI_WALL = ui.col(146, 140, 126, 235);
 const MINI_TREE = ui.col(74, 106, 56, 190);
@@ -5080,10 +4686,8 @@ fn liquidByte(v: u8) rl.Color {
     return liquidSwatch(@enumFromInt(@min(v -| 1, wf.Liquid.N - 1)));
 }
 
-/// `swatch` turns a cell's byte into its colour; a 0 cell is never drawn. The liquid layer keys it on the
-/// `wf.Liquid` plus one, so the dry cells fall out for free.
 fn blitField(cells: []const u8, n: usize, px: i32, py: i32, inner: f32, swatch: *const fn (u8) rl.Color) void {
-    // The caller passes a comptime grid width, so this cannot fire today — it is here because the same shape (a divide by a caller's count) was a live crash in `book.rowStep`, reached through a picker whose candidate list came back empty.
+    // Unreachable today (the caller passes a comptime grid width); the same shape was a live crash in `book.rowStep`.
     if (n == 0) return;
     const cellPx = inner / @as(f32, @floatFromInt(n));
     for (0..n) |cz| {
@@ -5151,16 +4755,11 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
     const rightX = sw - hud.monoW(right, hud.MONO) - CHROME_PAD;
     hud.mono(right, rightX, ty, hud.MONO, if (ed.dirty) ui.HOT else ui.LABEL);
 
-    // **NO SILENT CAP** (`env.Placer.BUDGET`'s own rule) — the count existed and was printed by a TEST and
-    // nowhere else, so the one person who needs it, the author cranking a belt's count, never saw it. A budget
-    // that bites real content has made the world quietly smaller, and that has to be visible while it happens.
     var capBuf: [56]u8 = undefined;
     if (env.opsCapped > 0 or env.lightsCapped > 0) {
         const cap = if (env.opsCapped > 0)
             std.fmt.bufPrintZ(&capBuf, "{d} ops hit the budget", .{env.opsCapped}) catch ""
         else
-            // A fire the world placed and never lit is the same silent loss as a capped op, and it is reached
-            // by scattering glowing flora rather than by placing torches, so the author needs telling.
             std.fmt.bufPrintZ(&capBuf, "{d} props left UNLIT (light cap)", .{env.lightsCapped}) catch "";
         hud.mono(cap, rightX - hud.monoW(cap, hud.MONO) - GUTTER, ty, hud.MONO, ui.HOT);
     }
@@ -5179,7 +4778,6 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
         hud.mono(msg[0..len :0], CHROME_PAD, ty, hud.MONO, ui.HOT);
         return;
     }
-    // MEASURED ONCE: four compile-time literals against a size that never moves, re-measured every frame.
     for (CRIBS, 0..) |c, i| {
         if (cribW[i] < 0) cribW[i] = hud.monoW(c, hud.MONO);
         if (CHROME_PAD + cribW[i] <= room) {
@@ -5192,10 +4790,6 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
 const EDIT_HOUR_RATE: f32 = 6.0;
 const EDIT_HOUR_FAST: f32 = 24.0;
 
-/// **THE CRIB NAMED EIGHT GESTURES AND THE EDITOR BINDS TWENTY-FIVE.** Undo, delete, copy, paste, select-all,
-/// save, grid snap, brush size, re-roll and playtest were all bound and named NOWHERE on screen — an editing
-/// tool whose edit verbs are undiscoverable is a tool you can only build in, not revise in. Widest-that-fits
-/// (`drawStatus`, at the foot of it), so a narrow window still gets the navigation and a wide one the whole keyboard.
 const CRIBS = [_][:0]const u8{
     "LMB brush   Shift+LMB marquee   RMB menu / deselect, drag rotates   wheel zoom   WASD+arrows pan   Tab layer   Ctrl+Z/Y undo   Ctrl+C/X/V copy   Ctrl+A all   Del delete   R re-roll   G grid   [ ] size   ,/. time   Ctrl+S save   F5 play   Esc back",
     "LMB brush   Shift+LMB marquee   RMB menu/rotate   wheel zoom   WASD pan   Tab layer   Ctrl+Z undo   Ctrl+C/V copy   Del delete   G grid   [ ] size   ,/. time   F5 play   Esc back",
@@ -5240,7 +4834,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             }
         },
         .loot => {
-            // **TABBED BY CLASS** (owner: organize the item menus by type). Thirty-seven items in one column ran off the bottom of a 1080 screen — `item.Class` is the shelf a thing belongs on and it already exists.
             const sPre = lootOp(ed, m) orelse {
                 ed.modal = .none;
                 return;
@@ -5262,11 +4855,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             const total = std.fmt.bufPrintZ(&buf, "{d} / {d} items", .{ o.nloot, wf.MAX_LOOT }) catch "";
             hud.mono(total, box.x + DLG_PAD, box.y + 58, hud.MONO, ui.LABEL);
 
-            // The tabs. A class carrying something already in this container is marked, so you can find what you put in without walking every shelf.
-            // **AN AUTHORED ORDER, PINNED FOR COVERAGE.** It is not `item.Class`'s own order — tools first, keys
-            // last is the reading order — so it cannot be derived; but a class appended to the enum and not to
-            // this row is a shelf with no tab, and every item on it unreachable from the one panel that fills a
-            // chest. Length alone does not catch a swap, so each variant is looked for by name.
             const CLASSES = [_]item.Class{ .tool, .gear, .material, .treasure, .key };
             comptime {
                 for (@typeInfo(item.Class).@"enum".fields) |f| {
@@ -5313,12 +4901,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                     lootAdd(o, k);
                 }
             }
-            // **AND THE COIN IN IT** (`wf.Op.gold`). A container holds gold INDEPENDENTLY of its things — a
-            // purse with nothing else in it is the commonest thing to put in a chest, and threading it through
-            // the item shelves would have made it an item, which it is not.
             var coin: i32 = @intCast(@min(o.gold, GOLD_LIM));
-            // BANKED BEFORE THE WRITE, like every other row here: banking after it stores the map that already
-            // holds the new number, so the undo step it costs restores the value it was meant to take back.
             if (ui.stepperI(ctx, box.x + DLG_PAD, box.y + box.h - DLG_FOOT - ROW_H - 6, 420, "gold", &coin, GOLD_STEP, 0, GOLD_LIM, "Coin in this container. It goes straight into his purse on opening, and is not one of the eight item kinds")) {
                 ed.bank(m);
                 o.gold = @intCast(@max(coin, 0));
@@ -5333,12 +4916,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 return;
             };
             const o = &m.ops[sPre];
-            // **THE BOSSES, AND NOT ALL THIRTY-EIGHT KINDS** (owner: gate seal should be bosses only). At every
-            // kind the modal stood **1124 px** tall in an 800 px window: its title band was off the top of the
-            // screen and `Done` and the last twelve rows off the bottom, so the panel could not be shut. What a
-            // ward waits on is a FIGHT (`foe.isBoss`, railed to `game.BOSS_RAILS`) — a seal held on a broodling
-            // is a door that opens when a broodling dies. **PLUS WHATEVER THIS GATE ALREADY NAMES**, so a seal
-            // hand-written into the file can still be seen and taken off.
             var offer: [NFOE_KIND]wf.FoeKind = undefined;
             var non: usize = 0;
             for (0..NFOE_KIND) |ki| {
@@ -5357,7 +4934,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 hud.MONO,
                 ui.LABEL,
             );
-            // Row 0 is the OPT-OUT, and it has to exist: a gate with no boss is an ordinary doorway, which is what a gate hung anywhere but an arena mouth needs to be.
             var i: usize = 0;
             while (i < rows) : (i += 1) {
                 const pick: ?wf.FoeKind = if (i == 0) null else offer[i - 1];
@@ -5375,11 +4951,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             }
         },
         .zonemix => {
-            // **THE ZONE MIX IS FILED ON `props.Group`**, the same axis the decor palette narrows on, for the
-            // reason the loot modal was tabbed on `item.Class`: thirty flora rows in one column stood the box
-            // **916 px** tall in an 800 px window, so its title band was off the top of the screen and `Done`
-            // was off the bottom — the panel could not be shut except with Esc. The zone is resolved BEFORE the
-            // box, because the shelf decides how many rows there are and so how tall the box is.
             const zi = ed.zoneSel orelse {
                 ed.modal = .none;
                 return;
@@ -5407,8 +4978,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 ui.LABEL,
             );
 
-            // A shelf already carrying a share of this zone's mix is marked, so a mix can be read back without
-            // walking every shelf — the loot modal's `*`, for its reason.
             const tabW: i32 = @divTrunc(box.w - DLG_PAD * 2 - (MIX_COLS - 1) * 3, MIX_COLS);
             for (MIX_GROUPS, 0..) |g, gi| {
                 var carried: u8 = 0;
@@ -5490,8 +5059,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             y += ROW_H;
             changed = ui.stepperF(ctx, x, y, w, "z1", &m.runway.z1, 0.5, -COORD_LIM, COORD_LIM, "North edge of the runway") or changed;
             y += ROW_H + 8;
-            // **WHERE THE PLAYER STANDS UP** — beside the runway because that lane exists to keep his first
-            // steps clear, and the two were meant to agree all along.
             hud.mono("START", x, y, hud.MONO, ui.TITLE);
             y += ROW_H;
             hud.mono("where the player stands up in a new game", x, y, hud.MONO, ui.alpha(ui.LABEL, 170));
@@ -5511,13 +5078,10 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             }
             y += ROW_H + 10;
 
-            // **THE HOUR, WHERE YOU CAN FIND IT** (owner: add way to change time of day in editor — world menu). `,`/`.` still scrub it and the crib names them — the editor is AGENTS.md's one keyboard exception.
             hud.mono("LIGHT", x, y, hud.MONO, ui.TITLE);
             y += ROW_H + 4;
             var cb: [10]u8 = undefined;
             var lb: [80]u8 = undefined;
-            // TWO LINES, MEASURED: as one it was 52 characters of `hud.MONO` — 499 px against 372 px of
-            // content inside `WORLD_W` — and the key hint ran out over the map past the modal's own frame.
             hud.mono(
                 std.fmt.bufPrintZ(&lb, "{s}  {s}", .{
                     daynight.clockTextZ(day.hour, &cb),
@@ -5547,7 +5111,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
 
             if (changed) {
                 ed.bankWorld(m, halfBefore, before);
-                // A size change moves the painted grids as well as the props, so it is the FULL rebuild and not just a re-materialize: `half` is what every one of those uploads is measured in.
                 ed.rebuild(m, env);
             } else if (!ctx.down) ed.endGesture();
 
@@ -5573,7 +5136,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             const edited = sfx.voiceEdited(vid);
             if (edited) hud.mono("EDITED", cx + JUKE_COL_W - 60, cy, hud.MONO, ui.HOT);
             cy += ROW_H + 6;
-            // THE DIALS THEMSELVES, not a readout of them. Each answers under the finger — none re-renders the take, which is what separates them from the rack below.
             inline for (@typeInfo(sfx.Dial).@"enum".fields) |dfld| {
                 const d: sfx.Dial = @enumFromInt(dfld.value);
                 const spec = sfx.dialSpec(d);
@@ -5582,7 +5144,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 cy += RACK_ROW;
             }
             cy += 4;
-            // …and what a row IS rather than how it sounds: `vars` and `poly` size the alias table that frees it, so they are not on the bench at all (`audio.live`).
             const shape = std.fmt.bufPrintZ(&buf, "{d} takes x {d} voices, {s}", .{ nfo.vars, nfo.poly, @tagName(nfo.mix) }) catch "";
             hud.mono(shape, cx, cy, hud.MONO, ui.alpha(ui.LABEL, 170));
             cy += ROW_H + 6;
@@ -5669,8 +5230,6 @@ const menuRows = [_]struct { act: MenuItem, label: [:0]const u8, tip: [:0]const 
     .{ .act = .close, .label = "Close", .tip = "Shut this menu (Esc)" },
 };
 
-/// **WHY A ROW IS GREYED, WHICH IS THE ONE THING A GREYED ROW CANNOT SAY FOR ITSELF.** Each answers the test
-/// `menuEnabled` just failed, so the two cannot drift into disagreeing about what a row needs.
 fn menuWhy(act: MenuItem) [:0]const u8 {
     return switch (act) {
         .close => "",
@@ -5691,15 +5250,10 @@ fn lootOp(ed: *const Editor, m: *const wf.Map) ?usize {
     return if (isContainer(&m.ops[s])) s else null;
 }
 
-/// **WHAT THE ITEMS... DOOR WILL OPEN ON.** Off `props.holdsLoot` and not a list of kinds by name, so a second
-/// container kind gets both the door and the sweep for free.
 fn isContainer(o: *const wf.Op) bool {
     return o.op == .at and props.holdsLoot(o.kind);
 }
 
-/// **A CONTAINER NOBODY HAS PUT ANYTHING IN.** Coin counts as filling it — `wf.Op.gold` is independent of
-/// `loot` and a chest of nothing but money is authored — so this is the same two fields that door edits and
-/// not a third idea of "empty".
 fn unfilledContainer(o: *const wf.Op) bool {
     return isContainer(o) and o.nloot == 0 and o.gold == 0;
 }
@@ -5712,9 +5266,6 @@ fn unfilledCount(m: *const wf.Map) usize {
     return n;
 }
 
-/// **THE NEXT ONE PAST THE SELECTION, WRAPPING ROUND THE MAP.** Walked from `sel + 1` rather than from the
-/// nearest, so pressing it again and again rounds the whole map instead of sitting on the one you just filled
-/// — and filling one takes it off the list, so the walk shortens as you go.
 fn nextUnfilled(ed: *const Editor, m: *const wf.Map) ?usize {
     if (m.nops == 0) return null;
     const from = if (ed.sel) |s| (s + 1) % m.nops else 0;
@@ -5725,8 +5276,6 @@ fn nextUnfilled(ed: *const Editor, m: *const wf.Map) ?usize {
     return null;
 }
 
-/// The layer moves with the selection, because a container the panel cannot show is a jump that looks like
-/// nothing happened.
 fn goToUnfilled(ed: *Editor, m: *const wf.Map) void {
     const i = nextUnfilled(ed, m) orelse {
         ed.say("every chest and item on the map holds something");
@@ -5740,13 +5289,6 @@ fn goToUnfilled(ed: *Editor, m: *const wf.Map) void {
     ed.sayFmt("#{d} {s} - {d} still empty", .{ i, @tagName(m.ops[i].kind), unfilledCount(m) });
 }
 
-/// Name a creature on the seal, or take it off. **A FULL SEAL DROPS THE PRESS** rather than wrapping — silently
-/// evicting a name he picked earlier is worse than doing nothing.
-///
-/// **THE GATE'S SEAL AND THE ROOM'S ARE THE SAME LIST AND NOW THE SAME EDIT.** `wf.Op` and `wf.Arena` each
-/// carry `boss`/`nboss` and AGENTS.md pins the pair against each other; the toggle was written out twice, once
-/// here for the door and once inline in `drawRoomsPanel` for the wall, so the two could come to disagree about
-/// what a full seal does. Duck-typed on the two fields, which is all either row is.
 fn sealToggle(o: anytype, k: wf.FoeKind) void {
     for (o.seal(), 0..) |s, i| {
         if (s != k) continue;
@@ -5760,7 +5302,6 @@ fn sealToggle(o: anytype, k: wf.FoeKind) void {
     o.nboss += 1;
 }
 
-/// A GATE'S SEAL IS EDITED WHERE ITS LOOT WOULD BE, and it is offered on the same test the mechanic reads (`props.Info.ward`) rather than on the kind by name, so a second ward kind gets the panel for free.
 fn bossOp(ed: *const Editor, m: *const wf.Map) ?usize {
     const s = ed.sel orelse return null;
     if (s >= m.nops) return null;
@@ -5827,11 +5368,6 @@ const RACK_GAP: i32 = 14;
 const SCRIPT_W: i32 = 780;
 const SCRIPT_H: i32 = 610;
 
-/// **NAMED PER KIND AND NOT PER FIELD.** A `Cond` carries eleven fields because eleven kinds share the struct,
-/// and showing all eleven on every row is how a trigger editor becomes unreadable.
-// **NAMES, NOT TAGS** (owner: names instead of ids all over). `@tagName` gave the author `deaths`, `alive`,
-// `elapsed` and `preserve` — the identifiers a programmer chose — in a panel meant to read as a sentence. These
-// are what a dropdown shows; the tags stay the FILE's business and nothing here writes them.
 
 const COND_NAMES = blk: {
     var out: [@typeInfo(wf.CondKind).@"enum".fields.len][:0]const u8 = undefined;
@@ -5905,16 +5441,11 @@ fn actTip(k: wf.ActKind) [:0]const u8 {
     };
 }
 
-// ── EDITOR OPTIONS ────────────────────────────────────────────────────────────────────────────────────────
 
 const OPT_W: i32 = 420;
 const OPT_ROWS: i32 = 4;
 const OPT_H: i32 = 56 + OPT_ROWS * (ROW_H + hud.monoLineH(hud.MONO) + 8) + 3 * (ROW_H + 6) + DLG_FOOT;
 
-/// **WHAT THE VIEWPORT SHOWS, AND NOTHING THE MAP KEEPS.** Every switch here is a VIEW: none of it is written
-/// to the `.world` file, none of it is undoable, and a hidden overlay still parses, still builds and still
-/// spawns (the layer eyes' own rule, `Editor.visible`). Gathered off the top strip because the strip measures
-/// itself against the window (`barWide`) and a lone icon with no label is the first thing to become a mystery.
 fn drawOptionsModal(ed: *Editor, ctx: *ui.Ctx) void {
     const box = ui.beginModal(ctx, OPT_W, OPT_H, "Editor Options");
     const x = box.x + DLG_PAD;
@@ -5947,7 +5478,6 @@ fn drawOptionsModal(ed: *Editor, ctx: *ui.Ctx) void {
     if (ui.button(ctx, ui.rect(box.x + box.w - DLG_PAD - 110, box.y + box.h - DLG_FOOT, 110, DLG_BTN_H), "Close", hud.MONO, false, "Back to the map (Esc)")) ed.modal = .none;
 }
 
-// ── THE CONVERSATION PANEL ────────────────────────────────────────────────────────────────────────────────
 
 comptime {
     // `openTalk` copies a node in AT the format's cap and `ui.textField` writes the terminator at `len`, so a
@@ -5958,10 +5488,6 @@ comptime {
     if (E.talkRow[0].len <= wf.TALK_LABEL_CAP) @compileError("editor: talkRow must be wider than wf.TALK_LABEL_CAP");
 }
 
-/// Loads the npc's conversation into the editor's scratch and opens the panel. **NOTHING IS WRITTEN HERE** —
-/// a body with no voice yet gets a SEEDED scratch and `talkDlg` stays `NO_DIALOG`, so backing out with Esc or
-/// Cancel leaves the map exactly as it was. Coining the row on open left an orphan conversation behind every
-/// time the panel was opened and closed again, and `wf.MAX_DIALOGS` is small.
 fn openTalk(ed: *Editor, m: *wf.Map, rec: usize) void {
     if (rec >= m.nnpcs) return;
     const np = &m.npcs[rec];
@@ -5970,9 +5496,6 @@ fn openTalk(ed: *Editor, m: *wf.Map, rec: usize) void {
     ed.talkSayLen = 0;
     ed.talkWhoLen = 0;
     ed.talkFlat = true;
-    // **A DEFAULT IS SOMETHING TO START FROM, NOT SOMETHING TO EDIT** (`wf.seedDialogs`). It is shared by
-    // every silent body of its kind and it is not in the file, so Done coins a REAL conversation for THIS body
-    // rather than rewriting a row the author never wrote.
     const synth = np.dlg != wf.NO_DIALOG and np.dlg < m.ndialogs and m.dialogs[np.dlg].synth;
     ed.talkDlg = if (synth) wf.NO_DIALOG else np.dlg;
 
@@ -5981,7 +5504,6 @@ fn openTalk(ed: *Editor, m: *wf.Map, rec: usize) void {
         wf.seedTalk(np.kind, &t);
     } else {
         t = wf.readTalk(m, np.dlg) orelse {
-            // A hand-written tree. Shown, never rewritten.
             ed.talkFlat = false;
             ed.modal = .talk;
             return;
@@ -6000,9 +5522,6 @@ fn openTalk(ed: *Editor, m: *wf.Map, rec: usize) void {
     ed.modal = .talk;
 }
 
-/// **ONE REBUILD, ON DONE**, and the conversation is coined here if the body had none. Everything typed lives
-/// in the editor's own buffers until this runs, so a rebuild per keystroke cannot re-add the greeting to the
-/// text arena sixty times a second.
 fn commitTalk(ed: *Editor, m: *wf.Map) void {
     if (!ed.talkFlat) return;
     const rec = ed.talkNpc orelse return;
@@ -6027,7 +5546,6 @@ fn commitTalk(ed: *Editor, m: *wf.Map) void {
             ed.sayFmt("this map already holds {d} conversations", .{wf.MAX_DIALOGS});
             return;
         };
-        // **THE FILE STORES THE NAME** (`Npc.dlgRef`), and `link` is what turns it back into an index.
         np.dlgRef = m.addText(name) catch {
             _ = wf.removeDialog(m, di);
             ed.say("the map's text arena is full");
@@ -6048,10 +5566,6 @@ fn commitTalk(ed: *Editor, m: *wf.Map) void {
 const TALK_W: i32 = 700;
 const TALK_ROW_H: i32 = 30;
 const DOES_W: i32 = 190;
-/// **THE GREETING IS A PARAGRAPH AND THE FIELD IS A LINE**, so the panel shows it BOTH ways: you type into a
-/// box that scrolls (`ui.textField`) and you read it back wrapped to the plate's own width, at the same cap
-/// the panel enforces. `dialog.MAX_LINES` is the cap and everything past it is dropped SILENTLY at runtime — a
-/// sentence that vanishes with nothing said — so the count is on screen while it is being written.
 const TALK_PREVIEW_LINES: usize = 7;
 
 fn talkPreviewSize() i32 {
@@ -6064,8 +5578,6 @@ fn talkModalH(rows: usize) i32 {
         @as(i32, @intCast(TALK_PREVIEW_LINES)) * hud.lineH(talkPreviewSize()) + 20;
 }
 
-/// **A NOTICE IS NOT A FORM, SO IT DOES NOT GET A FORM'S BOX.** Sized for the two lines it says and the one
-/// button under them: a hand-written tree used to open the whole authoring panel's height with nothing in it.
 fn talkNoticeH() i32 {
     return DLG_PAD * 2 + 34 + 26 + ROW_H * 2 + DLG_FOOT;
 }
@@ -6077,8 +5589,6 @@ const DOES_NAMES = blk: {
     break :blk out;
 };
 
-/// The shape `worldfmt.Talk` can round-trip: a greeting and up to `wf.MAX_CHOICES` lines that each end the
-/// talk, go back to the top, or open a counter. A tree with branches stays a job for the file.
 fn drawTalkModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map) void {
     const rec = ed.talkNpc orelse {
         ed.modal = .none;
@@ -6101,10 +5611,6 @@ fn drawTalkModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map) void {
         if (np.dlg < m.ndialogs) m.dialogs[np.dlg].label() else "(new)",
     }) catch "";
     hud.mono(who, x, y, hud.MONO, ui.LABEL);
-    // Two bodies pointed at one row is a rewrite the author does not know he is making.
-    // **BODIES, NOT REFERENCES.** `wf.dialogUsers` also counts the `talked` conditions and `dialog` actions
-    // that name it, and rewriting the lines changes nothing for those — said as "shared by 2" over a body with
-    // one trigger watching it, the warning was about a second speaker that did not exist.
     if (np.dlg != wf.NO_DIALOG) {
         var users: usize = 0;
         for (m.npcSlice()) |*q| {
@@ -6126,8 +5632,6 @@ fn drawTalkModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map) void {
         return;
     }
 
-    // **THE NAME OVER THE PLATE, AND BLANK IS THE BODY'S OWN.** `dialog.draw` falls back to what `startTalk`
-    // handed it (the `call:` line, or the kind's name), so an empty field is not a missing name.
     hud.mono("called", x, y, hud.MONO, ui.LABEL);
     var fb2: [72]u8 = undefined;
     const fallback = std.fmt.bufPrintZ(&fb2, "blank = {s}", .{if (np.call.len > 0) m.spanText(np.call) else wf.npcName(np.kind)}) catch "";
@@ -6144,13 +5648,7 @@ fn drawTalkModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map) void {
     _ = ui.textField(ctx, ui.rect(x, y, w, 26), &ed.talkSay, &ed.talkSayLen, KB_TALK_SAY, true, "The line this body opens with");
     y += 30;
 
-    // A line past the cap is drawn in the refusal colour rather than left off: the sentence you are about to
-    // lose is the one worth seeing.
     {
-        // **A MINIATURE OF THE PLATE, NOT A SECOND LAYOUT.** The break is solved at the PLAYER's width and
-        // font (`dialog.innerWidth`, `hud.BODY`) and then drawn smaller to fit the box — wrapped at the box's
-        // own width instead, the line COUNT would be this panel's and not the one `dialog.MAX_LINES` refuses
-        // against, which is the only number here worth anything.
         const playW = dialogmod.innerWidth();
         var wrapBuf: [wf.TALK_SAY_CAP * 2]u8 = undefined;
         var rows: [TALK_PREVIEW_LINES + 4][:0]const u8 = undefined;
@@ -6219,10 +5717,6 @@ fn drawTalkModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map) void {
     if (ui.button(ctx, ui.rect(x + 134, by, 120, DLG_BTN_H), "Cancel", hud.MONO, false, "Leave the conversation as it was (Esc)")) ed.modal = .none;
 }
 
-/// **THE SCRIPT LAYER, AT LAST AUTHORABLE.** `worldfmt` has parsed, written and round-tripped triggers since
-/// the layer landed and the editor could only carry them through untouched, so every condition and every action
-/// in every shipped map was typed into the `.world` file by hand. A MODAL and not a map layer: a trigger is not
-/// a place, and the one condition that is a rectangle already has Locations to name it.
 fn drawScriptModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, confirm: bool) void {
     const box = ui.beginModal(ctx, SCRIPT_W, SCRIPT_H, "Script");
     const x = box.x + DLG_PAD;
@@ -6297,7 +5791,6 @@ fn drawScriptModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, confirm: bool) void {
         ed.dirty = true;
     }
     ry += ROW_H;
-    // Banked like every other row in this modal — it was the one control here that set `dirty` and left no step.
     const priBefore = t.pri;
     if (ui.stepperI(ctx, rx, ry, rw, "priority", &t.pri, 1, -99, 99, "Higher runs first when two are ready on the same frame")) {
         ed.bankGesture(i32, m, &t.pri, priBefore);
@@ -6356,7 +5849,6 @@ fn drawScriptModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, confirm: bool) void {
             ed.dirty = true;
         }
         if (actFields(ed, ctx, m, a, rx + 154, ry, rw - 154 - 26)) ed.dirty = true;
-        // The banner line rides UNDER its own row, so that row is two tall or it writes over what follows.
         const tall = a.kind == .text;
         if (ui.button(ctx, ui.rect(rx + rw - 22, ry, 22, 20), "x", hud.MONO, false, "Remove this action")) {
             ed.bank(m);
@@ -6370,7 +5862,6 @@ fn drawScriptModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, confirm: bool) void {
     }
     ry += 8;
 
-    // **A TRIGGER WITH NO ACTIONS DOES NOTHING**, which is the one state this editor can author by accident.
     if (t.nacts == 0) {
         hud.mono("no actions - this does nothing", rx, ry, hud.MONO, ui.HOT);
         ry += ROW_H;
@@ -6392,18 +5883,6 @@ fn scriptDone(ed: *Editor, ctx: *ui.Ctx, box: ui.ModalBox, confirm: bool) void {
     }
 }
 
-/// **A NAMED SLOT IS PICKED, NEVER TYPED TWICE.** Flags, counters and timers are interned tables; offering the
-/// declared names and one "+ new" is the only way an editor can reach them without inventing a second grammar.
-/// **AND IT DECLARES ONE WHEN THE MAP HAS NONE.** The tables are `undefined` memory up to their count, so a
-/// `flag` condition added to a map with no flags pointed at slot 0 of nothing — and `writeCond` would have put
-/// those bytes in the file. Cycling an empty table coins the first name rather than leaving that state reachable.
-/// **THE MAP'S OWN NAMES, IN A LIST, WITH "new..." ON THE END** (owner: names instead of ids). It cycled before:
-/// to reach the fourth of nine switches you pressed four times, and you could not see the other eight at all.
-/// The last row COINS one, so declaring a switch and using it is still a single gesture.
-///
-/// **A NUL-TERMINATED COPY PER ROW, HELD ACROSS THE FRAME.** `wf.idText` hands back a slice into the map and the
-/// dropdown wants `[:0]const u8`, so the labels live in the editor's own scratch (`slotLabels`) — a stack buffer
-/// would be gone by the time `endDropdowns` paints them.
 fn slotRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, slot: *u16, table: []const wf.Id, n: usize, x: i32, y: i32, w: i32, comptime what: []const u8) bool {
     const shown = @min(n, MAX_SLOT_ROWS);
     var labels: [MAX_SLOT_ROWS + 1][:0]const u8 = undefined;
@@ -6427,7 +5906,6 @@ fn slotRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, slot: *u16, table: []const wf.
     return true;
 }
 
-/// Coins `<what>1`, `<what>2`… in the map's own table. One name per press, which is all a cycling row needs.
 fn coinName(ed: *Editor, m: *wf.Map, comptime what: []const u8) ?u16 {
     var nb: [wf.ID_CAP]u8 = undefined;
     var i: usize = 1;
@@ -6452,8 +5930,6 @@ fn coinName(ed: *Editor, m: *wf.Map, comptime what: []const u8) ?u16 {
 const ON_OFF_NAMES = [_][:0]const u8{ "is off", "is on" };
 const TIMER_NAMES = [_][:0]const u8{ "is running", "has finished" };
 
-/// **THE BODY BY ITS NAME AND ITS KIND, NOT ITS ROW NUMBER.** `Cond.near` indexed the npc table, so the author
-/// read "npc 0" and had to go count rows in another layer to find out who that was.
 fn npcRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, slot: *u16, x: i32, y: i32, w: i32) bool {
     if (m.nnpcs == 0) {
         hud.mono("no folk on this map", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 160));
@@ -6523,8 +5999,6 @@ fn cmpRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, cmp: *wf.Cmp, x: i32, y: i32) b
     return true;
 }
 
-/// **THE CREATURE BY ITS DISPLAY NAME.** `@tagName` gave the author `fish_netter` and `fungal_swordsman`;
-/// `wf.foeName` is what the rest of the tool already shows and `unitBrushes` is already built from it.
 fn foeRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, k: *wf.FoeKind, x: i32, y: i32, w: i32) bool {
     const pick = ui.dropdown(ctx, ui.rect(x, y, @min(w, 176), 20), ui.ddId(7, ed.trigSel orelse 0, @intFromPtr(k) & 0xfff), &unitBrushes, @intFromEnum(k.*), "Which creature this counts") orelse return false;
     ed.bank(m);
@@ -6535,9 +6009,6 @@ fn foeRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, k: *wf.FoeKind, x: i32, y: i32,
     return false;
 }
 
-/// **EVERY CONVERSATION THIS MAP DECLARES, IN A LIST.** `Cond.talked` and `Act.dialog` both name a dialog by
-/// TEXT and both used to CYCLE it, so the author could not see what a map declared without pressing through all
-/// of it. One row, both callers, so the condition and the action cannot come to name different conversations.
 fn dialogRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, span: *wf.Span, x: i32, y: i32, w: i32, tag: u8) bool {
     if (m.ndialogs == 0) {
         hud.mono("no conversations in this map", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 160));
@@ -6627,15 +6098,12 @@ fn condFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, c: *wf.Cond, x: i32, y: i32
 fn actFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, a: *wf.Act, x: i32, y: i32, w: i32) bool {
     var hit = false;
     switch (a.kind) {
-        // **NO FIELDS, BECAUSE THE KIND IS THE WHOLE INSTRUCTION.** Which counter it opens is the act itself.
         .preserve, .shop, .smithy => hud.mono("-", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 140)),
         .dialog => hit = dialogRow(ed, ctx, m, &a.ref, x, y, w, 8) or hit,
         .text => {
             const txt = m.spanText(a.line);
             var tb: [64]u8 = undefined;
             hud.mono(std.fmt.bufPrintZ(&tb, "{s}", .{if (txt.len > 0) txt else "(empty banner)"}) catch "", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 200));
-            // **COMMITTED ON A BUTTON AND NEVER PER KEYSTROKE.** `Map.addText` only ever APPENDS, so a field
-            // that wrote through on every letter would eat `DTEXT_CAP` a character at a time.
             _ = ui.textField(ctx, ui.rect(x, y + 22, @max(w - 60, 90), 24), &ed.lineBuf, &ed.lineLen, ui.ddId(KB_TAG, 6, @intFromPtr(a) & 0xfff), true, "Type a REPLACEMENT line here, then press set. The line it carries now is shown above");
             if (ui.button(ctx, ui.rect(x + @max(w - 56, 94), y + 22, 56, 24), "set", hud.MONO, false, "Write it into the map")) {
                 ed.bank(m);
@@ -6679,15 +6147,10 @@ fn actFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, a: *wf.Act, x: i32, y: i32, 
 }
 
 const WORLD_W: i32 = 420;
-/// **MEASURED OFF THE ROWS IT DRAWS, NOT PICKED.** As a flat `470 + 96` the box was **66 px short**: the hour
-/// stepper hung half out of the frame, the four hour marks were laid over the map below it, and `Done` — which
-/// sits at `box.h - DLG_FOOT` — came down on top of the LIGHT caption. The panel lays out sixteen label/stepper
-/// rows, four wrapped captions and 62 px of the gaps that group its four sections, under `beginModal`'s own
-/// 56 px title band and over the footer.
 const WORLD_H: i32 = 56 + 16 * ROW_H + 4 * hud.monoLineH(hud.MONO) + 62 + DLG_FOOT;
 
 const HOUR_STEP: f32 = 0.25;
-/// THE HOURS WORTH AUTHORING AT. The anchor is not negotiable (every albedo in the game was measured under it); the other three are the lights a belt of flora has to survive.
+/// THE HOURS WORTH AUTHORING AT. The anchor is not negotiable — every albedo in the game was measured under it.
 const HourMark = struct { name: [:0]const u8, at: f32, tip: [:0]const u8 };
 const HOUR_MARKS = [_]HourMark{
     .{ .name = "Dawn", .at = 6.5, .tip = "First light - the coldest key in the day" },
@@ -6696,13 +6159,11 @@ const HOUR_MARKS = [_]HourMark{
     .{ .name = "Night", .at = 0.5, .tip = "Moonlight - what the fires have to carry" },
 };
 
-/// The eleven dials, over either a FAMILY or the ONE VOICE the bench has selected. Same rack both ways: a filter that behaved differently depending on whose it was would be two things sharing a name.
 fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32, voice: ?sfx.Id) void {
     var y = y0;
     hud.mono("FILTER RACK", x, y, hud.MONO, ui.TITLE);
     y += ROW_H + 4;
 
-    // WHOSE rack. The same three families, in the same order, as the volume sliders in the game's options — "which slider moves this" and "which rack filters it" must never disagree — plus the selected voice itself, filtered on TOP of its family.
     var cx = x;
     inline for (@typeInfo(sfx.Submix).@"enum".fields) |fld| {
         const mx: sfx.Submix = @enumFromInt(fld.value);
@@ -6749,7 +6210,6 @@ fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32, voice: ?sfx.Id) void {
         }
     }
     y += 26 * 3 + 4;
-    // A VOICE'S OWN DEFAULT IS OFF, and the caption has to say so. Its rack is applied ON TOP of the family's, so "the house sound" is what the family is already giving it.
     const dflt: [:0]const u8 = if (onVoice)
         "This voice adds nothing of its own - the family's rack still applies"
     else
@@ -6770,7 +6230,7 @@ fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32, voice: ?sfx.Id) void {
     );
 }
 
-/// A slider is a LABEL LINE plus a 12 px bar plus its seat, so the row has to clear both — at 30 the bars sat on the next label. MEASURED off `ui.slider`'s own layout.
+/// A slider is a label line plus a 12 px bar plus its seat: at 30 the bars sat on the next label.
 const RACK_ROW: i32 = ui.ROW_H + 14;
 
 fn menuEnabled(ed: *const Editor, m: *const wf.Map, act: MenuItem) bool {
@@ -6849,7 +6309,6 @@ test "a held eraser sweeps, and holding still erases exactly once" {
     const env = try testEnv(std.testing.allocator);
     defer std.testing.allocator.destroy(env);
     m.blank("erase");
-    // Four spawns in a row, 4 m apart, well outside one brush of each other.
     for (0..4) |i| {
         m.foes[i] = .{ .kind = .toad, .x = @as(f32, @floatFromInt(i)) * 4.0, .z = 0 };
     }
@@ -6917,8 +6376,6 @@ test "the rate gate paces a sweep, and an empty sweep costs no undo step" {
 
 
 test "THE UNITS PALETTE SPLITS AT `NFOE_KIND` — a creature on one side, a body that talks on the other" {
-    // The pin above is name-for-name; this is the arithmetic `addUnit` and the inspector both branch on, and it
-    // is the thing that would silently post a caravaneer as a toad.
     try std.testing.expectEqual(unitBrushes.len, NFOE_KIND + NNPC_KIND + 1);
     try std.testing.expectEqualStrings(wf.foeName(@enumFromInt(0)), unitBrushes[0]);
     try std.testing.expectEqualStrings(wf.foeName(@enumFromInt(NFOE_KIND - 1)), unitBrushes[NFOE_KIND - 1]);
@@ -6932,7 +6389,6 @@ test "EVERY UNIT IS REACHABLE FROM EXACTLY ONE TAB, and the tallest list now fit
     ed.layer = .units;
     var buf: [MAX_BRUSHES]usize = undefined;
 
-    // Every brush is shown by exactly one (tab, kingdom) — except the eraser, which is in all of them.
     var reach = [_]usize{0} ** unitBrushes.len;
     var tallest: usize = 0;
     for (0..UnitTab.N) |t| {
@@ -6943,7 +6399,6 @@ test "EVERY UNIT IS REACHABLE FROM EXACTLY ONE TAB, and the tallest list now fit
             const shown = visibleBrushes(&ed, &buf);
             for (shown) |i| reach[i] += 1;
             tallest = @max(tallest, shown.len);
-            // …and the eraser is the LAST row of every one of them, or a filtered list ends on a creature.
             try std.testing.expectEqual(unitBrushes.len - 1, shown[shown.len - 1]);
             if (ed.unitTab == .folk) break;
         }
@@ -6954,8 +6409,6 @@ test "EVERY UNIT IS REACHABLE FROM EXACTLY ONE TAB, and the tallest list now fit
         break :blk n;
     };
     for (reach[0 .. unitBrushes.len - 1], 0..) |n, i| {
-        // A creature filed `any` is in EVERY kingdom's list, which is the whole reason it has no chip of its
-        // own (`foe.atHome`). Everything else is in exactly one, and the folk are in exactly the Folk tab.
         const want: usize = if (i < NFOE_KIND and foemod.homeOf(@enumFromInt(i)) == .any) kingdoms else 1;
         if (n == want) continue;
         std.debug.print("\n  {s} is shown by {d} lists, wanted {d}\n", .{ unitBrushes[i], n, want });
@@ -6963,13 +6416,9 @@ test "EVERY UNIT IS REACHABLE FROM EXACTLY ONE TAB, and the tallest list now fit
     }
     try std.testing.expectEqual(kingdoms + 1, reach[unitBrushes.len - 1]);
 
-    // **THE OLD LIST DID NOT FIT AND WAS NEVER GOING TO.** The side panel is `SCREEN_H - BAR_H - STATUS_H`
-    // tall and the rows start below a Select button and a header; nothing here scrolls, so the tail of a
-    // forty-one-row palette was drawn off the bottom of the window and could not be clicked at all.
     const panel = 800 - BAR_H - STATUS_H;
     const rows0 = 8 + (ROW_H + 8) + ROW_H;
     const was = @as(i32, @intCast(unitBrushes.len)) * ROW_H;
-    // Tabs, then the chips, which wrap over at most one row per two kingdoms.
     const head = ui.TAB_H + 6 + 28 * @as(i32, @intCast((kingdoms + 1) / 2)) + 34;
     const now = head + @as(i32, @intCast(tallest)) * ROW_H;
     std.debug.print("\n  units palette: was {d} px of rows in a {d} px panel; tallest tab is now {d} rows, {d} px\n", .{ rows0 + was, panel, tallest, rows0 + now });
@@ -6978,14 +6427,9 @@ test "EVERY UNIT IS REACHABLE FROM EXACTLY ONE TAB, and the tallest list now fit
 }
 
 test "EVERY LIST MODAL FITS THE WINDOW IT OPENS IN" {
-    // **BOTH OF THESE WERE TALLER THAN THE SCREEN.** `beginModal` centres on `getScreenHeight`, so a box past it
-    // puts its own title band above y=0 and `Done` below the bottom edge — a panel you cannot read the name of
-    // and cannot shut. The gate seal listed all 38 creatures (1124 px) and the zone mix all 30 flora (916 px)
-    // against the window's 800. Spelled here rather than imported: `game.SCREEN_H` sits above this file.
     const SCREEN_H: i32 = 800;
     const foot = 8 + DLG_FOOT;
 
-    // The gate offers the bosses, plus at most a full seal of names a file already carried.
     var bosses: usize = 0;
     for (0..NFOE_KIND) |i| {
         if (foemod.isBoss(@enumFromInt(i))) bosses += 1;
@@ -6993,7 +6437,6 @@ test "EVERY LIST MODAL FITS THE WINDOW IT OPENS IN" {
     const sealRows: i32 = @intCast(bosses + wf.MAX_SEAL + 1);
     const sealH = LOOT_TOP + sealRows * LOOT_ROW_H + foot;
 
-    // The mix offers one shelf at a time, so the tallest shelf is what sizes it.
     var tallest: usize = 0;
     var counted: usize = 0;
     for (MIX_GROUPS) |g| {
@@ -7001,12 +6444,10 @@ test "EVERY LIST MODAL FITS THE WINDOW IT OPENS IN" {
         for (props.FLORA_KINDS) |k| {
             if (props.group(k) == g) n += 1;
         }
-        // A shelf with nothing on it is a tab that opens onto nothing.
         try std.testing.expect(n > 0);
         counted += n;
         tallest = @max(tallest, n);
     }
-    // …and every flora kind is on exactly one shelf, or a plant is unreachable from this panel.
     try std.testing.expectEqual(props.FLORA_KINDS.len, counted);
     const mixH = LOOT_TOP + MIX_TAB_ROWS * TAB_H + @as(i32, @intCast(tallest)) * LOOT_ROW_H + foot;
 
@@ -7021,7 +6462,6 @@ test "EVERY LIST MODAL FITS THE WINDOW IT OPENS IN" {
     );
     try std.testing.expect(sealH <= SCREEN_H);
     try std.testing.expect(mixH <= SCREEN_H);
-    // The pair they were fixed against: both really did overflow, so this test cannot pass vacuously.
     try std.testing.expect(LOOT_TOP + (NFOE_KIND + 1) * LOOT_ROW_H + foot > SCREEN_H);
     try std.testing.expect(LOOT_TOP + @as(i32, @intCast(props.FLORA_KINDS.len)) * LOOT_ROW_H + foot > SCREEN_H);
 }
@@ -7037,7 +6477,6 @@ test "the units layer POSTS and ERASES both kinds, and the eraser does not care 
     ed.layer = .units;
     ed.radius = 2.0;
 
-    // A foe from the low half of the palette, a caravaneer from the high half.
     ed.setBrush(0);
     ed.addUnit(m, v3(0, 0, 0));
     ed.setBrush(NFOE_KIND + 1);
@@ -7057,8 +6496,6 @@ test "the units layer POSTS and ERASES both kinds, and the eraser does not care 
 test "THE ERASER TAKES A BODY OFF THROUGH THE FORMAT — the watch on the one above it follows it down" {
     undoReset();
     const alloc = std.testing.allocator;
-    // The eraser was a bare `copyForwards`, so `Cond.near`'s POSITIONAL index stayed where it was and the
-    // trigger came out watching whoever had closed up into that slot.
     const m = try wf.testMap(alloc, wf.TEST_HEAD ++
         \\dlg: hi
         \\  node: root
@@ -7084,7 +6521,6 @@ test "THE ERASER TAKES A BODY OFF THROUGH THE FORMAT — the watch on the one ab
     try std.testing.expectEqual(wf.NpcKind.merchant, m.npcs[0].kind);
     try std.testing.expectEqual(wf.CondKind.near, m.trigs[0].conds[0].kind);
     try std.testing.expectEqual(@as(u16, 0), m.trigs[0].conds[0].slot);
-    // …and the conversation nobody opens any more went with the body, the way Delete's does.
     try std.testing.expectEqual(dialogsWas - 1, m.ndialogs);
     try std.testing.expect(m.npcs[0].dlg < m.ndialogs);
 }
@@ -7098,8 +6534,6 @@ test "THE MINIMAP'S HELD FACE IS REPAINTED BY EVERY HAND THAT MOVES IT" {
     m.blank("mini");
     var ed = Editor{};
 
-    // A prop posted, a unit posted, an eraser sweep, an undo and a rebuild each have to move the key —
-    // a face held past any one of them is a minimap showing a map that is no longer there.
     ed.layer = .props;
     ed.radius = 2.0;
     var last = ed.miniGen;
@@ -7130,8 +6564,6 @@ test "THE SWEEP FINDS EVERY CONTAINER NOBODY HAS FILLED, and rounds the map rath
     defer std.testing.allocator.destroy(m);
     m.blank("loot");
 
-    // A chest with things in it, a chest with only COIN, two empty ones, and a pillar that holds nothing at
-    // all — so what this walks is `holdsLoot` plus BOTH purse and shelf, not "is it a chest".
     const rows = [_]struct { kind: props.Kind, nloot: u8, gold: u32 }{
         .{ .kind = .chest, .nloot = 2, .gold = 0 },
         .{ .kind = .pickup, .nloot = 0, .gold = 0 },
@@ -7151,15 +6583,12 @@ test "THE SWEEP FINDS EVERY CONTAINER NOBODY HAS FILLED, and rounds the map rath
     try std.testing.expectEqual(@as(usize, 2), unfilledCount(m));
 
     var ed = Editor{};
-    // The pillar and the chest that holds coin are both stepped over, and the last one rounds to the first.
     try std.testing.expectEqual(@as(?usize, 1), nextUnfilled(&ed, m));
     ed.sel = 1;
     try std.testing.expectEqual(@as(?usize, 4), nextUnfilled(&ed, m));
     ed.sel = 4;
     try std.testing.expectEqual(@as(?usize, 1), nextUnfilled(&ed, m));
 
-    // **FILLING ONE TAKES IT OFF THE SWEEP**, which is the whole loop — the count is the work left, and either
-    // field alone is enough to fill a container.
     m.ops[1].gold = 5;
     ed.sel = null;
     try std.testing.expectEqual(@as(usize, 1), unfilledCount(m));
@@ -7190,7 +6619,6 @@ test "going to an empty container selects it, brings the layer with it and puts 
     ed.focus = mathx.ground(300, 300);
     goToUnfilled(&ed, m);
     try std.testing.expectEqual(@as(?usize, 1), ed.sel);
-    // The panel that fills it only draws on the container's own layer, so the jump has to bring that with it.
     try std.testing.expectEqual(Layer.interact, ed.layer);
     try std.testing.expectApproxEqAbs(@as(f32, 42), ed.focus.x, 1e-3);
     try std.testing.expectApproxEqAbs(@as(f32, -18), ed.focus.z, 1e-3);
@@ -7198,7 +6626,6 @@ test "going to an empty container selects it, brings the layer with it and puts 
         ed.focus.x, ed.focus.z, ed.dist, unfilledCount(m),
     });
 
-    // Nothing left empty is a message and not a jump — the selection and the eye stay where they were.
     m.ops[1].nloot = 1;
     ed.focus = mathx.ground(7, 7);
     goToUnfilled(&ed, m);
@@ -7209,8 +6636,6 @@ test "WHAT THE EMPTY-CONTAINER COUNT COSTS A FRAME — the button's label is a w
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     m.blank("cost");
-    // The worst map this format can hold, and every op a container so the predicate never short-circuits on
-    // its cheapest term. The panel redraws this label every frame the interactables layer is up.
     var o = wf.defaults(.at);
     o.kind = .pickup;
     while (m.nops < wf.MAX_OPS) _ = try m.add(o);

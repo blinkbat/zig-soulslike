@@ -34,7 +34,6 @@ const FANG = rgba(70, 70, 62, 255);
 const EYE = rgba(226, 108, 40, 92);
 const EYE_HOT = rgba(255, 58, 30, 58);
 const VENOM = rgba(42, 104, 18, 235);
-/// Venom DARKENS as it thickens and dries; the pool's rise is the same fluid as vapour, so it THINS instead.
 const VENOM_DARK = rgba(20, 52, 10, 200);
 const VENOM_VAPOUR = rgba(96, 148, 62, 60);
 const VENOM_DK = rgba(26, 62, 12, 255);
@@ -42,7 +41,6 @@ const SAC_MEM = rgba(67, 93, 62, 220);
 const SAC_EGG = rgba(48, 70, 38, 255);
 const SAC_VEIN = rgba(26, 22, 16, 255);
 const GORE = rgba(46, 9, 7, 235);
-/// The lightest of the three: it opens WIDE and dies short rather than being thrown far, and `drag` is what makes it a burst instead of a drift.
 const GORE_SPRAY = foe.Spray{
     .fanLo = 0.5,  .fanHi = 3.0,
     .upLo = 0.7,   .upHi = 3.0,
@@ -201,8 +199,7 @@ const SAC_PULSE_HZ = 1.6;
 const SAC_UNFLINCHING: f32 = 1e9;
 const SAC_RESISTS = combat.resists(.{ .fire = -70, .chaos = 75 });
 
-/// **ONE NUMBER CANNOT SIZE THREE UNRELATED RINGS** — sized for the smallest, the spider's ring silently ate its
-/// own blood. Each is arithmetic over its OWN worst frame (the ring law). SPIDER: a killing heavy blow while dragging — the heavy spray (24), the death spray (18) and the wound, on the ~21 `emitDrag` leaves resident (26/s at a 0.8 s life).
+/// Each is arithmetic over its OWN worst frame (the ring law). SPIDER: a killing heavy blow while dragging — the heavy spray (24), the death spray (18) and the wound, on the ~21 `emitDrag` leaves resident (26/s at a 0.8 s life).
 const SPIDER_PARTS = 68;
 /// SAC: its one burst (`burstFx`, 14) plus `foe.wounded`'s 3.
 const SAC_PARTS = 20;
@@ -886,7 +883,6 @@ pub const Sac = struct {
         foe.drawParticles(&self.parts);
     }
 
-    /// A burst sac wears the wreck. Present so the sacs go out through `foe.drawGroup` like every other body.
     pub fn draw(self: *const Sac, model: *const Model) void {
         rl.drawMesh(if (self.killed or self.hatched) model.wreck else model.sac, model.mat, self.xform());
     }
@@ -915,7 +911,6 @@ pub const Spider = struct {
     guard: ?rl.Vector3 = null,
     layWanted: bool = false,
     leash: foe.Leash = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
@@ -1082,7 +1077,6 @@ pub const Spider = struct {
         self.enterDeath();
     }
 
-    /// WHAT SHE ASKED THE WORLD FOR THIS FRAME — the two things a spider cannot do to itself.
     pub const Act = union(enum) {
         none,
         spit: rl.Vector3,
@@ -1130,7 +1124,6 @@ pub const Spider = struct {
         switch (self.state) {
             .idle => {
                 if (d <= M_AGGRO) self.faceToward(hero, dt);
-                // **ORDERS ARE WHAT SHE DOES BEFORE SHE HAS SEEN ANYBODY** (`foe.postStep`), refused inside her ring.
                 const ps = foe.postStep(self, dt, bounds, M_SPEED, d, M_AGGRO);
                 if (ps.yaw) |w| {
                     self.gait += ps.moved / (skinOf(self.role).stride * self.scale);
@@ -1373,13 +1366,11 @@ pub const Spider = struct {
         if (self.role != .mother or self.throwing) return null;
         return switch (self.state) {
             .windup => BITE_WINDUP - self.t,
-            // Already snapping: `t` has been advanced by the time this is asked, so `left` is negative from the first frame and the window is shut. The blow and the catch can never both happen.
             .strike => -self.t,
             .idle, .walk, .recover, .lay, .leap, .stunlight, .stunheavy, .dead => null,
         };
     }
 
-    /// THE INSTANT THE FANGS CAN BE CAUGHT IN, and how far out they reach then — `tryReach`'s OWN extent through the same `foe.hurtReach` (the ogre's `slamReach` law: the parry's reach is the blow's reach and not a second number).
     fn parryable(self: *const Spider) ?f32 {
         const left = self.toImpact() orelse return null;
         if (!foe.inParryWindow(left)) return null;
@@ -1462,7 +1453,6 @@ pub const Spider = struct {
         }
     }
 
-    /// **THE LIFT IS OFF THE BURST POINT, NOT ITS FEET** — a sac popping at chest height does not spray dust off the floor.
     const PUFF = foe.Puff{
         .blast = foe.Blast.of(foe.DUST_DRAG, 0.32, 0.6),
         .spdLo = 0.5,
@@ -1726,15 +1716,9 @@ pub const Spider = struct {
 
 pub const CAP = ROLE_KIND.len * wf.MAX_PER_KIND;
 const SAC_REUSE: usize = 8;
-/// **THE MAP POSTS `.brood_sac` ROWS STRAIGHT INTO THIS ARRAY** (`Brood.reset`), so it is map-fed as well as
-/// mother-fed — and `game.zig`'s "no group may be narrower than the map can place" pin only measures the array
-/// `live()` returns. At `MAX_SACS * SAC_REUSE` (24) a map painting a 25th egg sac lost it without a word, and
-/// map-placed sacs ate the mothers' re-lay budget on top.
 pub const SAC_CAP = wf.MAX_PER_KIND + MAX_SACS * SAC_REUSE;
 
 comptime {
-    // A pin on `SAC_CAP` against its own definition can never fire. What CAN go wrong is a term going to zero:
-    // then a full map leaves no room at all for a mother to lay into, and `addSac` refuses in silence.
     std.debug.assert(MAX_SACS >= 1 and SAC_REUSE >= 1);
 }
 
@@ -1822,7 +1806,6 @@ pub const Brood = struct {
     pub fn setParry(self: *Brood, p: foe.Parry) void {
         foe.setParry(self.live(), p);
     }
-    /// …and whether any of them was caught on it this frame. A ONE-FRAME edge, `anyDied`'s, read after `update`.
     pub fn anyParried(self: *const Brood) bool {
         return foe.anyParried(self.liveConst());
     }
@@ -2223,7 +2206,6 @@ test "A FIRE ARROW IS FOR THE CLUTCH: silk burns where the mother mostly shrugs 
     var mother = Spider.spawnAs(.mother, mathx.ground(0, 0), 0, 1.0, 0.5);
     try std.testing.expect(sac.vit.damageFrom(tipped) > mother.vit.damageFrom(tipped));
     try std.testing.expectApproxEqAbs(sac.vit.damageFrom(heromod.BOW_AIMED_HIT), mother.vit.damageFrom(heromod.BOW_AIMED_HIT), 1e-5);
-    // She is proof against her OWN weapon, at the cap — a pool she laid cannot take her with it.
     try std.testing.expectApproxEqAbs(combat.RES_CAP, mother.vit.res.at(.chaos), 1e-5);
 }
 
@@ -2282,8 +2264,6 @@ test "a pool spreads, DOSES while he stands in it, thins out and stops" {
     try std.testing.expect(b.burning(at));
     try std.testing.expect(!b.burning(mathx.ground(ACID_R + 1, 0)));
 
-    // **A SECOND IN IT COSTS A SECOND'S BUILD PLUS THE ENTRY** (`foe.Soak`) — stepping in bills up front and
-    // the clock runs after, so clipping the rim is no longer free.
     var dosed: f32 = 0;
     t = 0;
     while (t < 1.0) : (t += 1.0 / 60.0) dosed += b.burn(1.0 / 60.0, at);
@@ -2322,7 +2302,6 @@ test "she cannot outstay her own leash, and one shaft still rouses her" {
 test "NO ATTACK COMES OUT OF NOWHERE: both ages telegraph before they can hurt" {
     try std.testing.expect(SPIT_WINDUP >= foe.TELL_MIN);
     try std.testing.expect(BITE_WINDUP >= foe.TELL_MIN);
-    // THE HATCHLING IS THE FAST ONE and it is the one this law is really about: it reared and bit inside
     // 0.29 s, which is under what an eye resolves.
     try std.testing.expect(B_BITE_WINDUP >= foe.TELL_MIN);
     try std.testing.expect(B_LEAP_COIL >= foe.TELL_MIN);

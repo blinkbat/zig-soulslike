@@ -9,7 +9,6 @@ const uiart = @import("../ui/uiart.zig");
 
 const rgba = mathx.rgba;
 
-/// NEVER NAMED ON SCREEN (owner's call) — no caption, no blurb, no arm in a lock message. The colour and the direction carry which one you are on.
 pub const Arm = enum {
     warrior,
     rogue,
@@ -44,18 +43,27 @@ pub const Branch = enum {
     wizard_cast,
 
     pub fn arm(b: Branch) Arm {
-        return @enumFromInt(@intFromEnum(b) / 2);
+        return @enumFromInt(@intFromEnum(b) / PER_ARM_BRANCH);
     }
     pub fn lane(b: Branch) usize {
-        return @intFromEnum(b) % 2;
+        return @intFromEnum(b) % PER_ARM_BRANCH;
+    }
+    /// The INVERSE of `arm`/`lane`, so the run's stride is never spelled at a call site.
+    pub fn on(a: Arm, lane_: usize) Branch {
+        return @enumFromInt(@intFromEnum(a) * PER_ARM_BRANCH + lane_);
     }
 };
 
 pub const NBRANCH = @typeInfo(Branch).@"enum".fields.len;
 
-/// A bridge in a seam is reachable from EITHER side and opens the other, so a warrior buys ACROSS instead of
-/// paying for the rogue's first four rings again. The arms sit at DECREASING angle in enum order (`armAngle`),
-/// so the seam is a NEGATIVE sixth of a turn off `from`, and the branch facing it is `from`'s LANE 0 and `to`'s LANE 1.
+/// TIED TO THE TWO ENUMS, never written as a literal: a third branch on an arm is then a compile error here
+/// rather than six silently-wrong divisions.
+pub const PER_ARM_BRANCH: usize = NBRANCH / NARM;
+
+comptime {
+    if (NBRANCH % NARM != 0) @compileError("passivetree: Branch is not a whole number of branches per Arm");
+}
+
 pub const Seam = enum {
     warrior_rogue,
     rogue_wizard,
@@ -80,7 +88,6 @@ pub const NBRIDGE: usize = NSEAM * PER_SEAM;
 /// The ONE table the wiring, the wheel, the feeder buffer and the comptime walk are all solved from.
 const BRANCH_RINGS = [_]u8{ 1, 2, 3, 3, 2, 1 };
 
-/// Off the table, never a number beside it: a buffer one short drops a parent in silence, which looks exactly like a rung nobody linked. **PLUS ONE FOR THE BRIDGE** — an anchor keeps its in-arm parents and gains the seam's edge on top.
 pub const MAX_FEED: usize = blk: {
     var w: usize = 1;
     for (BRANCH_RINGS) |s| w = @max(w, s);
@@ -92,9 +99,8 @@ pub const PER_BRANCH: usize = blk: {
     for (BRANCH_RINGS) |s| n += s;
     break :blk n;
 };
-pub const PER_ARM: usize = 1 + PER_BRANCH * 2;
+pub const PER_ARM: usize = 1 + PER_BRANCH * PER_ARM_BRANCH;
 
-/// The bridges are indexed AFTER the arms' block, so adding a seam renumbers nothing — including a save's bit run (`save.readBits`: a short run is legal, so an old file loads its new tail unspent).
 pub const NTREE: usize = NARM * PER_ARM;
 pub const N: usize = NTREE + NBRIDGE;
 pub const RINGS: u8 = @intCast(1 + BRANCH_RINGS.len);
@@ -109,7 +115,6 @@ pub fn bridgeFirst(s: Seam) usize {
     return NTREE + @intFromEnum(s) * PER_SEAM;
 }
 
-/// The first index of the ring `BRANCH_RINGS[br]` describes, inside its own branch.
 fn ringFirst(b: Branch, br: usize) usize {
     var at = branchFirst(b);
     for (0..br) |r| at += BRANCH_RINGS[r];
@@ -120,17 +125,15 @@ fn ringFirst(b: Branch, br: usize) usize {
 pub fn bridgeAnchors(s: Seam, ring: u8) [2]usize {
     const br: usize = ring - 1;
     const wide = BRANCH_RINGS[br];
-    const near: Branch = @enumFromInt(@as(usize, @intFromEnum(s.from())) * 2);
-    const far: Branch = @enumFromInt(@as(usize, @intFromEnum(s.to())) * 2 + 1);
+    const near = Branch.on(s.from(), 0);
+    const far = Branch.on(s.to(), PER_ARM_BRANCH - 1);
     return .{ ringFirst(near, br), ringFirst(far, br) + wide - 1 };
 }
 
-/// **A RUNG IS FED BY WHATEVER IT OVERLAPS ONE RING IN.** Each ring cuts the branch's width into as many equal intervals as it has slots and an edge exists where two intervals meet — ONE rule for every pairing of widths.
 fn overlaps(p: usize, wp: usize, s: usize, wc: usize) bool {
     return p * wc < (s + 1) * wp and s * wp < (p + 1) * wc;
 }
 
-/// **A BRIDGE'S EDGE RUNS BOTH WAYS.** `reached` asks whether any FEEDER is taken, so an edge on one end only is a crossing you pay for and cannot walk.
 fn bridgeOn(i: usize, out: *[MAX_FEED]usize, k: usize) usize {
     var n = k;
     for (0..NSEAM) |si| {
@@ -213,7 +216,6 @@ pub const Bump = struct { a: stats.Attr, n: u8 };
 pub const Node = struct {
     arm: Arm,
     branch: ?Branch = null,
-    /// Set on a BRIDGE and on nothing else. `arm` is then the seam's `from` side, which is only what the node is filed under — a bridge is drawn in both arms' inks and counted in neither's `spentIn`.
     seam: ?Seam = null,
     ring: u8,
     slot: u8 = 0,
@@ -235,7 +237,6 @@ fn classNode(a: Arm, name: [:0]const u8) Node {
     return .{ .arm = a, .ring = 0, .name = name, .grant = attr(a.stat(), 3) };
 }
 
-/// Grant is one stat, rider the other, so no new `Grant` arm is needed. `near` is the `from` arm's stat and `far` the `to` arm's, in that order: the panel prints the grant first.
 fn bridgeNode(s: Seam, ring: u8, name: [:0]const u8, near: stats.Attr, far: stats.Attr, n: u8) Node {
     return .{ .arm = s.from(), .seam = s, .ring = ring, .name = name, .grant = attr(near, n), .bump = rides(far, n) };
 }
@@ -251,13 +252,10 @@ pub const NODES_BANK = [N]Node{
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 3, .slot = 1, .name = "Stubborn Flesh", .grant = attr(.vitality, 3) },
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 3, .slot = 2, .name = "Scar Tissue", .grant = .{ .hpRegen = 0.5 }, .bump = rides(.vitality, 1) },
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 4, .slot = 0, .name = "Stalwart", .grant = .{ .guard = 0.05 } },
-    // **THE ONE THING IN THE TREE THAT BUYS THE STAGGER BAR** (`hero.POISE_MAX`). It lengthens the bar, never the refill — moved together the two dials read as one.
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 4, .slot = 1, .name = "Unshaken", .grant = .{ .poiseMax = 1.20 }, .bump = rides(.strength, 1) },
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 4, .slot = 2, .name = "Bloodfeast", .grant = .{ .leech = 0.3 } },
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 5, .slot = 0, .name = "Ironbound", .grant = .{ .armour = 14.0 }, .bump = rides(.vitality, 2) },
-    // THE FLASK ITSELF, which every sustain node in the file is priced against.
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 5, .slot = 1, .name = "Long Draught", .grant = .{ .flaskHeal = 1.25 }, .bump = rides(.vitality, 1) },
-    // **THE KEYSTONE IS WORTH HALF THE BRANCH'S RING** (owner, third time: lifesteal nodes are STILL op). Priced
     // by the RATE, not the hit: a light chain lands ~1.5 blows/s, so 5.5 → 2.0 → 1.0 per blow. At 2.0 that was
     // 3 HP/s forever, refilling the whole 70 HP bar every 23 s; at 1.0 it is 1.5/s and a flask charge is ~32 blows.
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 6, .name = "Sanguine Pact", .grant = .{ .leech = 0.7 }, .key = true },
@@ -266,7 +264,6 @@ pub const NODES_BANK = [N]Node{
     .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 2, .slot = 0, .name = "Blood Price", .grant = .{ .sacrifice = .{ .hpFrac = 0.08, .dmg = 1.10 } } },
     .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 2, .slot = 1, .name = "Culling Blow", .grant = .{ .cull = 0.10 } },
     .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 3, .slot = 0, .name = "Brute Force", .grant = attr(.strength, 3) },
-    // `strike` rides the same `Bonus.dmg` the sacrifices multiply, and is priced small because it asks for nothing back.
     .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 3, .slot = 1, .name = "Heavy Hands", .grant = .{ .strike = 1.08 }, .bump = rides(.strength, 1) },
     .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 3, .slot = 2, .name = "Butcher's Eye", .grant = .{ .cull = 0.14 }, .bump = rides(.dexterity, 1) },
     // **A BODY IS WORTH A TENTH OF A FLASK CHARGE**: 20 → 6 → 3 a kill. At 6 a six-body fight handed back 18 HP of the 63 a man carries between bonfires.
@@ -286,7 +283,6 @@ pub const NODES_BANK = [N]Node{
     .{ .arm = .rogue, .branch = .rogue_evade, .ring = 3, .slot = 1, .name = "Tumbler", .grant = .{ .rollStam = 0.88 }, .bump = rides(.endurance, 1) },
     .{ .arm = .rogue, .branch = .rogue_evade, .ring = 3, .slot = 2, .name = "Long Legs", .grant = .{ .moveSpeed = 1.05 }, .bump = rides(.endurance, 1) },
     .{ .arm = .rogue, .branch = .rogue_evade, .ring = 4, .slot = 0, .name = "Wind at Heel", .grant = .{ .stamRegen = 1.25 } },
-    // **THE POOL'S SIZE, WHICH IS NOT ITS REFILL** (`stamRegen` paces a flurry). ENDURANCE owns the bar (`stats.staminaFor`), so this MULTIPLIES what the attribute yields rather than replacing it.
     .{ .arm = .rogue, .branch = .rogue_evade, .ring = 4, .slot = 1, .name = "Deep Lungs", .grant = .{ .stamMax = 1.18 }, .bump = rides(.endurance, 2) },
     .{ .arm = .rogue, .branch = .rogue_evade, .ring = 4, .slot = 2, .name = "Warded Blood", .grant = .{ .poison = 0.70 } },
     .{ .arm = .rogue, .branch = .rogue_evade, .ring = 5, .slot = 0, .name = "Slip", .grant = .{ .iframe = 0.04 }, .bump = rides(.dexterity, 1) },
@@ -298,7 +294,6 @@ pub const NODES_BANK = [N]Node{
     .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 2, .slot = 1, .name = "Wayfinder", .grant = attr(.luck, 2) },
     .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 3, .slot = 0, .name = "Fletcher", .grant = .{ .bowDmg = 1.10 }, .bump = rides(.dexterity, 1) },
     .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 3, .slot = 1, .name = "Steady Hand", .grant = attr(.dexterity, 2) },
-    // LUCK is the one attribute nothing else reads (`stats.inert`); the drop table's rare column is all it buys.
     .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 3, .slot = 2, .name = "Lucky Find", .grant = attr(.luck, 3) },
     .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 4, .slot = 0, .name = "Broadhead", .grant = .{ .bowDmg = 1.18 } },
     .{ .arm = .rogue, .branch = .rogue_ranged, .ring = 4, .slot = 1, .name = "Strong Draw", .grant = attr(.strength, 2) },
@@ -318,7 +313,6 @@ pub const NODES_BANK = [N]Node{
     .{ .arm = .wizard, .branch = .wizard_well, .ring = 4, .slot = 0, .name = "Veil", .grant = .{ .res = combat.resists(.{ .chaos = 20, .lightning = 10 }) } },
     .{ .arm = .wizard, .branch = .wizard_well, .ring = 4, .slot = 1, .name = "Warded", .grant = .{ .res = combat.resists(.{ .fire = 15, .cold = 15 }) } },
     .{ .arm = .wizard, .branch = .wizard_well, .ring = 4, .slot = 2, .name = "Brimming", .grant = .{ .fpMax = 1.12 }, .bump = rides(.mind, 2) },
-    // **CHAOS IS WHAT POISON IS BILLED AS** (`combat.poisonPulse`) — this row wards the spore creatures as well as the knight's gas.
     .{ .arm = .wizard, .branch = .wizard_well, .ring = 5, .slot = 0, .name = "Sealed Mind", .grant = .{ .res = combat.resists(.{ .chaos = 15 }) }, .bump = rides(.intelligence, 1) },
     .{ .arm = .wizard, .branch = .wizard_well, .ring = 5, .slot = 1, .name = "Stormproof", .grant = .{ .res = combat.resists(.{ .lightning = 20 }) }, .bump = rides(.vitality, 1) },
     .{ .arm = .wizard, .branch = .wizard_well, .ring = 6, .name = "Wellspring", .grant = .{ .fpRegen = 2.4 }, .key = true },
@@ -336,7 +330,6 @@ pub const NODES_BANK = [N]Node{
     .{ .arm = .wizard, .branch = .wizard_cast, .ring = 5, .slot = 1, .name = "Sharp Tongue", .grant = .{ .castSpeed = 1.12 }, .bump = rides(.intelligence, 1) },
     .{ .arm = .wizard, .branch = .wizard_cast, .ring = 6, .name = "Chaos Bloom", .grant = .boltCloud, .key = true },
 
-    // THE SEAMS, in `Seam` order and shallow-to-deep. The shallow crossing trades what an arm supports itself with, the deep one trades its CLASS STAT (`Arm.stat`). No two bridges spend the same pair.
     bridgeNode(.warrior_rogue, 3, "Rough Luck", .vitality, .luck, 1),
     bridgeNode(.warrior_rogue, 5, "Duellist", .strength, .dexterity, 2),
     bridgeNode(.rogue_wizard, 3, "Long Breath", .endurance, .mind, 1),
@@ -345,8 +338,6 @@ pub const NODES_BANK = [N]Node{
     bridgeNode(.wizard_warrior, 5, "Battlemage", .intelligence, .strength, 2),
 };
 
-/// **THE LIVE BOARD.** `NODES_BANK` above is the code's own and never moves — that is the revert
-/// (`play/tune.zig`); the walk below is asked of the bank, and everything at runtime reads this.
 pub var NODES: [N]Node = NODES_BANK;
 
 comptime {
@@ -361,8 +352,8 @@ comptime {
             else => @compileError("passivetree: an arm's class node must be its own attribute"),
         }
         i += 1;
-        for (0..2) |lane| {
-            const b: Branch = @as(Branch, @enumFromInt(a * 2 + lane));
+        for (0..PER_ARM_BRANCH) |lane| {
+            const b = Branch.on(arm, lane);
             std.debug.assert(b.arm() == arm and b.lane() == lane);
             std.debug.assert(i == branchFirst(b));
             for (BRANCH_RINGS, 0..) |slots, br| {
@@ -387,7 +378,6 @@ comptime {
             const n = NODES_BANK[i];
             std.debug.assert(n.seam.? == s and n.branch == null and !n.key);
             std.debug.assert(n.ring == ring);
-            // Two rungs wide, or "the outermost slot" is the only slot and the crossing hangs off the centre.
             std.debug.assert(BRANCH_RINGS[ring - 1] >= 2);
             const a = bridgeAnchors(s, ring);
             std.debug.assert(NODES_BANK[a[0]].arm == s.from() and NODES_BANK[a[1]].arm == s.to());
@@ -404,7 +394,6 @@ comptime {
     }
     std.debug.assert(keys == NBRANCH);
 
-    // **AT LEAST HALF THE BOARD PAYS A POINT** (owner's call). A rider may not double its grant on the SAME attribute; two DIFFERENT ones are a bridge's whole point.
     var carry: usize = 0;
     for (NODES_BANK) |n| {
         const pureOn: ?stats.Attr = switch (n.grant) {
@@ -463,7 +452,6 @@ pub fn grantSays(g: Grant) [:0]const u8 {
     };
 }
 
-/// Drawn UNDER the grant's line, never folded into it. THREE ASCII DOTS AND NOT AN ELLIPSIS: the Balthazar atlas is ASCII-only and a `…` draws as tofu.
 pub fn bumpSays(b: Bump) [:0]const u8 {
     return fmt("+{d} {s}", .{ b.n, stats.displayName(b.a) });
 }
@@ -518,7 +506,6 @@ pub fn costAt(level: u32) u32 {
 pub const Tree = struct {
     taken: [N]bool = [_]bool{false} ** N,
 
-    /// TAKING A NODE IS THE LEVEL (owner's call) — no pool of points between the two. LEVEL IS COUNTED, never stored (`stats.Sheet.level`'s law): the nodes on the board plus one.
     pub fn spent(self: *const Tree) u32 {
         var n: u32 = 0;
         for (self.taken) |t| n += @intFromBool(t);
@@ -609,14 +596,12 @@ pub const Tree = struct {
                 .castSpeed => |x| b.castSpeed *= x,
                 .boltCloud => b.boltCloud = true,
             }
-            // THE RIDER, after its own grant — one place, so a node cannot pay its point through the picture and not through the sheet.
             if (NODES[i].bump) |x| b.attrs[@intFromEnum(x.a)] += x.n;
         }
         return b;
     }
 };
 
-// THE WHEEL. Positions are solved in UNITS about a centre — one ring apart — so the walk and the draw read the same geometry and a resized card cannot move a node out from under the cursor.
 
 fn armAngle(a: Arm) f32 {
     return switch (a) {
@@ -633,7 +618,6 @@ fn branchAngle(b: Branch) f32 {
     return armAngle(b.arm()) + side * BRANCH_SPLIT;
 }
 
-/// It WIDENS outward — a constant spread draws parallel rails, which is a ladder and not a branch. Solved against `BRANCH_SPLIT`, never picked: the widest fan may not reach the lane's own half-width, or the two branches of an arm cross.
 fn spreadAt(ring: u8) f32 {
     return 0.130 + 0.032 * @as(f32, @floatFromInt(ring));
 }
@@ -642,13 +626,11 @@ comptime {
     std.debug.assert(spreadAt(RINGS - 1) < BRANCH_SPLIT);
 }
 
-/// Halfway between `from` and `to`. The arms sit at DECREASING angle in enum order, so the next one round is a third of a turn back and the seam is a sixth.
 fn seamAngle(s: Seam) f32 {
     return armAngle(s.from()) - std.math.tau / 6.0;
 }
 
 comptime {
-    // The seam has to clear the widest fan either lane can open, or a bridge sits on top of the rung it is tied to. Half a turn's sixth is the room there is.
     std.debug.assert(BRANCH_SPLIT + spreadAt(RINGS - 1) < std.math.tau / 6.0);
 }
 
@@ -665,8 +647,6 @@ fn radiusOf(n: Node) f32 {
     return @as(f32, @floatFromInt(n.ring)) + 1.0;
 }
 
-/// THE MIDDLE, as a cursor position. Not a node and nothing is ever spent on it — but it IS where you start.
-/// Indexed one past the last node, so every `NODES[i]` site is untouched.
 pub const HUB: usize = N;
 pub const SPOTS: usize = N + 1;
 
@@ -680,15 +660,9 @@ fn unitPos(i: usize) rl.Vector2 {
 
 const STEP_CONE: f32 = 0.5;
 
-/// **THE PICK IS THE NODE NEAREST THE LINE YOU PUSHED, NOT THE NEAREST NODE INSIDE THE WEDGE.** On a lattice a
-/// rung's children sit DIAGONALLY out while its siblings sit LEVEL, so a sibling is always the shorter hop and
-/// a distance score landed on it every time. The PERPENDICULAR offset from the pushed ray decides.
-///
-/// **THE WEIGHT IS BRACKETED AT BOTH ENDS.** Too small and pushing UP from the warrior's class node aims within
 /// 3 degrees of the WIZARD's node two rings away, past the hub one unit off the line. Too large and it degenerates to the distance walk. The cases bound it to (0.45, 0.86).
 const STEP_ALONG: f32 = 0.65;
 
-/// MOVE BY GEOMETRY, not by ordinal (`book.slotStep`'s law) — on a wheel an ordinal walk steps between nodes that are nowhere near each other.
 pub fn step(cur: usize, dx: f32, dy: f32) usize {
     const push = std.math.hypot(dx, dy);
     if (push < 1e-6) return cur;
@@ -727,7 +701,6 @@ pub const Wheel = struct {
     zoom: f32 = ZOOM_MIN,
     pan: rl.Vector2 = .{ .x = 0, .y = 0 },
 
-    /// Directional, never cyclic (`step`'s law). `dx`/`dy` are a HEADING, not a pair of steps. True if it actually went somewhere.
     pub fn move(self: *Wheel, dx: f32, dy: f32) bool {
         const next = step(self.cursor, dx, dy);
         if (next == self.cursor) return false;
@@ -768,7 +741,6 @@ const KEY_R: f32 = 0.30;
 const SEAM_R: f32 = 0.23;
 const HALO_K: f32 = 2.1;
 
-/// Half-extent in units (owner: "square with central node in center, so it starts pannable, not bottom heavy").
 const VIEW_R: f32 = @as(f32, @floatFromInt(RINGS)) + KEY_R * HALO_K;
 
 fn layout(wh: Wheel, x: i32, y: i32, w: i32, h: i32) Lay {
@@ -801,14 +773,12 @@ fn radiusPx(l: Lay, i: usize) f32 {
     });
 }
 
-/// **A BRIDGE IS DRAWN IN BOTH ARMS' INKS, HALF AND HALF** — drawn in one arm's colour it reads as that arm having grown a rung out into open ground.
 fn inkOf(i: usize) rl.Color {
     const n = NODES[i];
     const s = n.seam orelse return n.arm.ink();
     return mathx.lerpColor(s.from().ink(), s.to().ink(), 0.5);
 }
 
-/// Off the same layout the wheel is drawn from, so they cannot drift off the node they are naming however far it is zoomed.
 pub fn nodeRect(wh: Wheel, x: i32, y: i32, w: i32, h: i32) rl.Rectangle {
     const l = layout(wh, x, y, w, h);
     const i = @min(wh.cursor, HUB);
@@ -839,7 +809,6 @@ pub fn draw(t: *const Tree, wh: Wheel, x: i32, y: i32, w: i32, h: i32, spendable
         for (fs) |f| {
             const walked = t.taken[i] and t.taken[f];
             const open = t.taken[f];
-            // A SEAM'S EDGE TAKES THE COLOUR OF THE END IT IS COMING FROM, so a crossing reads as the neighbouring arm reaching in rather than as one arm owning both rails.
             const line = if (n.seam != null) inkOf(f) else if (NODES[f].seam != null) inkOf(f) else n.arm.ink();
             rl.drawLineEx(
                 place(l, f),
@@ -868,7 +837,6 @@ pub fn draw(t: *const Tree, wh: Wheel, x: i32, y: i32, w: i32, h: i32, spendable
             rl.drawCircleV(p, r, mathx.withAlpha(uiart.STONE_DK, 235));
             rl.drawCircleLinesV(p, r, mathx.withAlpha(ink, if (open) 235 else 80));
         }
-        // A BRIDGE WEARS A RING OF EACH SIDE, so which two arms it joins is legible without reading its name.
         if (n.seam) |s| {
             const a = mathx.u8f(if (t.taken[i]) 220.0 else if (open) 190.0 else 70.0);
             rl.drawCircleLinesV(p, r + 2.5, mathx.withAlpha(s.from().ink(), a));
@@ -898,7 +866,6 @@ pub fn draw(t: *const Tree, wh: Wheel, x: i32, y: i32, w: i32, h: i32, spendable
 }
 
 
-/// `book.panel`'s dressing without book's layout types — this file cannot import that one.
 fn well(x: i32, y: i32, w: i32, h: i32) void {
     uiart.well(x, y, w, h, 210);
     rl.drawRectangleLinesEx(uiart.rect(x, y, w, h), 1, mathx.withAlpha(uiart.GILT_DIM, 90));
@@ -1009,7 +976,6 @@ test "EVERY GRANT IS ON THE BOARD, and an EMPTY bonus changes nothing" {
     try std.testing.expect(all.bowDmg > 1 and all.thrownDmg > 1 and all.fpMax > 1 and all.castSpeed > 1);
     try std.testing.expect(all.poiseMax > 1 and all.stamMax > 1 and all.flaskHeal > 1);
     try std.testing.expect(all.boltCloud);
-    // THE BARGAIN MAY NEVER EAT THE WHOLE BAR — both sacrifices together, against `hero.hpMaxOf`'s floor.
     try std.testing.expect(all.hpFrac < 0.9);
     std.debug.print("  every branch taken: {d:.0}% of the red bar sold for {d:.2}x damage, cull at {d:.0}%\n", .{ all.hpFrac * 100, all.dmg, all.cull * 100 });
 }
@@ -1021,8 +987,8 @@ test "you start in the MIDDLE: every arm's CLASS NODE hangs off the hub, and not
         const root = armFirst(a);
         try std.testing.expect(t.locked(root, RICH) == null);
         try std.testing.expect(NODES[root].branch == null);
-        for (0..2) |lane| {
-            const b: Branch = @enumFromInt(ai * 2 + lane);
+        for (0..PER_ARM_BRANCH) |lane| {
+            const b = Branch.on(a, lane);
             try std.testing.expect(t.locked(branchFirst(b), RICH) != null);
         }
     }
@@ -1059,7 +1025,6 @@ test "EVERY BRANCH HAS ITS OWN KEYSTONE, and EVERY line up the lattice climbs to
         const key = base + PER_BRANCH - 1;
         try std.testing.expect(NODES[key].key);
         try std.testing.expectEqual(b, NODES[key].branch.?);
-        // ONE RUNG PER RING and no more — walked from the keystone DOWN through a feeder each time, which is every distinct line through the branch. The shortest climb is `RINGS` presses whichever line it takes.
         for (0..MAX_FEED) |pick| {
             var t = Tree{};
             var line: [RINGS]usize = undefined;
@@ -1070,7 +1035,6 @@ test "EVERY BRANCH HAS ITS OWN KEYSTONE, and EVERY line up the lattice climbs to
                 depth += 1;
                 var buf: [MAX_FEED]usize = undefined;
                 const all = feeders(at, &buf);
-                // IN-ARM ONLY. A rung that anchors a bridge names it as a feeder too (`bridgeOn`), and a climb that crossed the seam would be measuring the far arm's depth.
                 var own: usize = 0;
                 for (all) |f| own += @intFromBool(NODES[f].seam == null);
                 if (own == 0) break;
@@ -1100,10 +1064,6 @@ test "SIX BRANCHES, TWO PER CLASS — and each one is its own idea end to end" {
     }
     try std.testing.expectEqual(PER_ARM, 1 + PER_BRANCH * 2);
     try std.testing.expectEqual(NTREE, NARM * PER_ARM);
-    // THE BRIDGES ARE THE ONLY THING PAST THE ARMS. **THAT IS NOT SAVE COMPATIBILITY AND MAY NOT BE READ AS ANY.**
-    // Appending the seams alone would have been, but `BRANCH_RINGS` grew in the MIDDLE at the same time (39 nodes
-    // to 81), so every in-arm index moved and `save.readBits` takes a short run in silence: an old `tree:` line
-    // loads a different set of passives with nothing said. Only a save format bump answers that.
     try std.testing.expectEqual(N, NTREE + NBRIDGE);
     for (0..NTREE) |i| try std.testing.expect(NODES[i].seam == null);
     for (NTREE..N) |i| try std.testing.expect(NODES[i].seam != null);
@@ -1116,14 +1076,12 @@ test "THE LINK IS THE RULE — every feeder is its own arm's and its own branch'
         var buf: [MAX_FEED]usize = undefined;
         const fs = feeders(i, &buf);
         for (fs) |f| {
-            // **A SEAM IS THE ONE EDGE THAT BREAKS BOTH HALVES OF THIS RULE, AND THAT IS WHAT IT IS FOR** — it crosses arms and it runs LEVEL rather than one ring in.
             if (NODES[i].seam != null or NODES[f].seam != null) {
                 try std.testing.expectEqual(NODES[i].ring, NODES[f].ring);
                 continue;
             }
             try std.testing.expectEqual(NODES[i].arm, NODES[f].arm);
             try std.testing.expectEqual(NODES[i].ring - 1, NODES[f].ring);
-            // …and its own BRANCH, unless the feeder is the arm's class node, which both branches share.
             if (NODES[f].ring > 0) try std.testing.expectEqual(NODES[i].branch.?, NODES[f].branch.?);
         }
         widest = @max(widest, fs.len);
@@ -1154,11 +1112,9 @@ test "A BRIDGE CROSSES BOTH WAYS: taken from either arm, it opens the other" {
         const s = NODES[bi].seam.?;
         const a = bridgeAnchors(s, NODES[bi].ring);
 
-        // Nothing taken, nothing reached: a seam is never free.
         var cold = Tree{};
         try std.testing.expect(!cold.reached(bi));
 
-        // …and from EITHER end it opens, then opens the other end back.
         for (0..2) |side| {
             var t = Tree{};
             t.taken[a[side]] = true;
@@ -1178,7 +1134,6 @@ test "…AND WHAT IT SAVES IS THE FAR ARM'S CLIMB, which is the whole reason to 
         for (0..2) |side| {
             const want = a[1 - side];
 
-            // THE LONG WAY: the far anchor's own shortest climb from a standing start, counted by walking its feeders down inside its own arm.
             var own: usize = 0;
             var at = want;
             while (true) {
@@ -1191,7 +1146,6 @@ test "…AND WHAT IT SAVES IS THE FAR ARM'S CLIMB, which is the whole reason to 
                 at = next orelse break;
             }
 
-            // THE CROSSING: the near anchor, the bridge and the far rung. Two presses whatever ring it is at — which is what makes the deep seam worth more than the shallow one.
             var t = Tree{};
             t.taken[a[side]] = true;
             try std.testing.expect(t.take(bi, RICH) != null);
@@ -1221,7 +1175,6 @@ test "A BRIDGE PAYS BOTH SIDES: the split lands two DIFFERENT attributes on the 
         try std.testing.expectEqual(g.n, bonus.attrs[@intFromEnum(g.a)]);
         try std.testing.expectEqual(b.n, bonus.attrs[@intFromEnum(b.a)]);
 
-        // NEITHER SIDE IS THE OTHER ARM'S LEFTOVER: a crossing spends a pair nothing else on the board does.
         for (NTREE..N) |oj| {
             if (oj == bi) continue;
             const o = NODES[oj];
@@ -1265,7 +1218,6 @@ test "IT IS PAID FOR IN SOULS, and one short buys nothing" {
     var t = Tree{};
     const c = t.cost();
     try std.testing.expect(t.locked(0, c - 1) != null);
-    // **THE PREDICATE AND THE SENTENCE MAY NEVER DISAGREE** — `canTake` is what the board is drawn from and `locked` is what the node under the cursor says.
     for (0..N) |i| {
         for ([_]u32{ 0, 100, 359, 360, 1000, RICH }) |purse| {
             try std.testing.expectEqual(t.canTake(i, purse), t.locked(i, purse) == null);
@@ -1305,7 +1257,6 @@ test "EVERY ATTRIBUTE PAST THE STARTING SHEET CAME OFF A NODE" {
             .attr => |x| want[@intFromEnum(x.a)] += x.n,
             else => {},
         }
-        // …AND OFF EVERY RIDER TOO. Counted only through the grant, a node that paid its point as a rider would be a sheet the board cannot account for.
         if (n.bump) |x| want[@intFromEnum(x.a)] += x.n;
     }
     for (0..stats.NA) |i| {
@@ -1334,10 +1285,8 @@ test "HALF THE BOARD PAYS A POINT, and a rider pays it through the SHEET and not
         .{ carry, N, pure, ride, @as(f32, @floatFromInt(carry)) * 100.0 / @as(f32, @floatFromInt(N)) },
     );
     try std.testing.expect(carry * 2 >= N);
-        // …and BOTH kinds are actually on the board: no riders at all would make the whole `Bump` machinery a thing that compiles and never runs.
     try std.testing.expect(pure > 0 and ride > 0);
 
-    // ONE RIDER, THROUGH THE SHEET. Taken alone, the node's own attribute must move by exactly its `n`.
     for (NODES, 0..) |n, i| {
         const bp = n.bump orelse continue;
         var t = Tree{};
@@ -1369,9 +1318,6 @@ test "the guard perk cannot hand a shield a hundred percent" {
 }
 
 test "EVERY WORD ON THE CARD IS ASCII — the atlas has nothing else, and a tofu is silent" {
-    // The Balthazar atlas is ASCII-only (AGENTS.md), so one `…` or `—` in a string draws as a `?` and nothing
-    // says so: `bumpSays` shipped an ellipsis and the rider line read "?and +1 Vitality" in the shot. Every
-    // sentence this file can put on screen, walked — the names, the grants, and the riders.
     const Chk = struct {
         fn ascii(s: []const u8) bool {
             for (s) |c| {
@@ -1470,12 +1416,8 @@ test "…and from the MIDDLE each arm is under the thumb that points at it" {
 }
 
 test "POINT AT A NODE AND YOU GO TO THAT NODE — the stick's bearing IS the step" {
-    // THE COMPLAINT, as arithmetic (owner: walking the tree with the stick "feels horrible"). Arms run out at
     // 0, 120 and 240 degrees, so ring-0 nodes sit at ∓15, 105, 135, 225 and 255 and every outward step on the
     // two lower arms runs near 96 or 216 — snapped to four screen axes inside a 32-degree dead cone
-    // (`menu.STICK_CONE`), the push aimed AT a node did nothing on two arms of three. `stickPush`'s `radial`
-    // hands the bearing over instead, so:
-    //   1. from the MIDDLE, a push aimed at any ring-0 node reaches THAT node and not its neighbour…
     for (0..N) |i| {
         if (NODES[i].ring != 0) continue;
         const p = unitPos(i);
@@ -1489,8 +1431,6 @@ test "POINT AT A NODE AND YOU GO TO THAT NODE — the stick's bearing IS the ste
             try std.testing.expectEqual(i, step(f, b.x - a.x, b.y - a.y));
         }
     }
-    //   3. …and it is not required to arrive normalised: a raw node-minus-node delta is a bearing, and its own
-    //      LENGTH must not decide how wide the wedge is.
     const up = unitPos(14);
     try std.testing.expectEqual(step(HUB, up.x, up.y), step(HUB, up.x * 40.0, up.y * 40.0));
     try std.testing.expectEqual(HUB, step(HUB, 0, 0));
@@ -1498,9 +1438,6 @@ test "POINT AT A NODE AND YOU GO TO THAT NODE — the stick's bearing IS the ste
 }
 
 test "AND A ROUGH PUSH IS ENOUGH — a thumb within 20 degrees of an arm finds that arm" {
-    // A player does not aim to the degree; what he does is shove the thumb at the branch he wants. Each arm's
-    // own axis and twenty degrees either side of it, which is the width of a shove — a bearing that reached the
-    // WRONG arm would be the old failure back in a new shape.
     for (0..NARM) |a| {
         const arm: Arm = @enumFromInt(a);
         for ([_]f32{ -20.0, -8.0, 0.0, 8.0, 20.0 }) |off| {
@@ -1514,8 +1451,6 @@ test "AND A ROUGH PUSH IS ENOUGH — a thumb within 20 degrees of an arm finds t
 }
 
 test "NO NODE IS UNREACHABLE — four directions get you from any one of them to every other spot" {
-    // A wheel is not a grid, and a node the cursor cannot be walked onto is a node nobody can take. Flooded
-    // from every start, because a walk that only works from the middle is a walk that strands the tips.
     for (0..SPOTS) |from| {
         var seen = [_]bool{false} ** SPOTS;
         var stack: [SPOTS]usize = undefined;
@@ -1549,8 +1484,6 @@ test "the wheel's geometry cannot collide two nodes, and every node hangs off it
             try std.testing.expect(d > 0.30);
         }
         const n = NODES[i];
-        // A BRIDGE HANGS OFF THE SEAM, WHICH IS THE ONE PLACE THAT IS NOBODY'S ARM — dead on it, and exactly
-        // half a gap from each of the two it joins.
         if (n.seam) |s| {
             try std.testing.expectApproxEqAbs(seamAngle(s), angleOf(n), 1e-5);
             const near = @abs(mathx.wrapPi(angleOf(n) - armAngle(s.from())));
@@ -1584,20 +1517,16 @@ test "SUSTAIN IS PRICED AGAINST THE FLASK, WHICH IS THE ONLY OTHER HEALING IN TH
         .{ bar, charge, budget, all.leech, hitsPerCharge, all.onKill, killsPerCharge },
     );
 
-    // **A BLOW MAY NOT BE A SIP, AND IT IS PRICED BY THE RATE AND NOT BY THE BLOW** (owner, three times over:
-    // lifesteal is STILL op). 5.5 was six blows a charge, 2.0 was sixteen — and sixteen still reads as
     // unlimited, because a light chain lands about 1.5 blows a second and that made the bar refill itself
     // every 23 s while you fought. THIRTY at the very least now, with every node in the tree taken.
     try std.testing.expect(hitsPerCharge >= 30.0);
     try std.testing.expect(killsPerCharge >= 8.0);
-    // …and a whole camp cleared may not be a charge, let alone two: it is the FIGHT that has to cost you.
     const sixBodies = all.onKill * 6.0;
     try std.testing.expect(sixBodies < budget * 0.4);
     // **AND THE RING IS NOW CLEAR OF THE WHOLE BRANCH FOR ONE HIT** (`item.leech_signet`: 2.0 for a permanent
     // 6% of the bar), where the tree used to draw level with it. Points buy the trickle, health buys the size.
     try std.testing.expect(all.leech <= 1.0);
     try std.testing.expect(all.leech > 0.25 and all.onKill >= 2.0);
-    // …and the two together, at the rate a fight actually runs at, may not out-heal the poison ticking on you.
     const perSecond = all.leech * 1.5 + all.hpRegen;
     std.debug.print("  sustain: {d:.2} HP a second at 1.5 blows a second, against a {d:.0} bar\n", .{ perSecond, bar });
     try std.testing.expect(perSecond < bar * 0.06);

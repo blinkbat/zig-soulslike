@@ -87,9 +87,6 @@ fn runBake(alloc: std.mem.Allocator) !void {
     );
 }
 
-/// **THE WOOD BECOMES TREES.** Replays `path` the way the loop does, then walks it BACKWARDS turning every
-/// generator op into the props it made, and writes it back. Verified by re-loading and replaying the result:
-/// same prop, solid and light counts, or the map moved and it says so.
 fn runExplode(alloc: std.mem.Allocator, path: []const u8) !void {
     const m = try alloc.create(wf.Map);
     defer alloc.destroy(m);

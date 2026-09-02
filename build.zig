@@ -20,13 +20,9 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    // **STARTUP BUILDS THE FOE GROUPS BY VALUE, AND THEY ARE BIG.** `game.init` and `objview.ensureChars` both
-    // assign every `game.FOE_GROUPS` row's `Group.init(shader)` result, one field at a time; a Debug frame reserves every
-    // temporary up front, so the reserve has to clear the largest group's `sizeOf` many times over. It
-    // overflowed the default at boot when a group grew from 24 bodies to `worldfmt.MAX_FOES`. Windows COMMITS
-    // stack lazily, so this is address space and not memory. **THE ROW COUNT MOVES IT TOO** — `game.zig`'s
+// The default stack overflowed at boot when a group grew from 24 bodies to `worldfmt.MAX_FOES`. Windows COMMITS
+// stack lazily, so this is address space and not memory, and the ROW COUNT moves it too.
     // "WHAT THE FRAME COSTS" measures 144.4 MB of slabs across 29 rows against this 192 MB, so a handful more
-    // creatures wants this raised as surely as another `MAX_FOES` does.
     exe.stack_size = 192 * 1024 * 1024;
     exe.linkLibrary(raylib_artifact);
     exe.root_module.addImport("raylib", raylib);
@@ -41,8 +37,6 @@ pub fn build(b: *std.Build) void {
 
     // DEV ONLY: `zig build test -Dtest-filter=knight` runs the tests whose name contains that, and skips the
     // rest — `shots.onlyStage`'s lever for the suite. The whole run is 1130 tests and a chunk of them rebuild
-    // the entire shipped world or bake eighty synthesized voices, so an edit loop on one module was paying for
-    // all of it. The roster check still walks the tree, so a filtered run cannot hide a module from it.
     const test_filter = b.option([]const u8, "test-filter", "Run only tests whose name contains this");
     const unit_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -63,7 +57,6 @@ pub fn build(b: *std.Build) void {
     // DEV ONLY: `zig build check` type-checks and stops. `Step.Compile` passes `-fno-emit-bin` whenever
     // nothing asks for its binary, so no step here may install or run these two. Measured on this tree:
     // 1.4 s against 8.4 s, because sema is 1.4 s of a build and LLVM plus LLD are the other 7. The exe and
-    // the test root are separate compilations — a `test { }` block's errors only surface in the second.
     const check_exe = b.addExecutable(.{
         .name = "check-exe",
         .root_module = b.createModule(.{
@@ -89,13 +82,9 @@ pub fn build(b: *std.Build) void {
 }
 
 /// THE TEST ROSTER IS A LOCKSTEP LIST, AND NOTHING WAS CHECKING IT. `main.zig`'s `test { _ = @import(…) }`
-/// block is what pulls a module's tests into the binary — a module missing from it compiles, ships and reports
 /// "all tests passed" while every test it carries goes unrun. `shade.zig` went in with seventeen of them and
-/// the suite total did not move; two were failing.
-///
 /// A comptime assert cannot see the filesystem, so the check lives HERE. Every `src/**/*.zig` must be named in
 /// that block, by the path `main.zig` imports it as (`foes/knight.zig`).
-///
 /// **AND IT IS SCOPED TO THE BLOCK, NOT TO THE FILE.** Searching the whole of `main.zig` counted the ORDINARY
 /// imports at the top of it, so `bake.zig` passed this check while a top-level import pulls no tests in.
 /// Bytes under which a `src/**/*.zig` is a truncation rather than a module — the smallest real one is
@@ -109,7 +98,6 @@ fn checkTestRoster(b: *std.Build) void {
     const root = file[at..];
     var dir = b.build_root.handle.openDir("src", .{ .iterate = true }) catch return;
     defer dir.close();
-    // WALKED, not iterated: `src` is in subdirectories now, and a flat `iterate` sees four files and passes every module in them silently unrun — the exact failure this check exists for.
     var it = dir.walk(b.allocator) catch return;
     defer it.deinit();
     while (it.next() catch null) |ent| {

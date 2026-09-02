@@ -18,7 +18,6 @@ comptime {
 }
 
 /// The gold stands about chest height on the 1.8 m rig — tall enough to find across a clearing, short enough
-/// that it never hides the thing that killed you standing behind it.
 pub const H: f32 = 1.25;
 const TOP_LIFT: f32 = 0.30;
 
@@ -46,8 +45,6 @@ const TAKE_INTO: f32 = 1.05;
 const HUM_EVERY: f32 = 1.15;
 
 /// It must read as GOLD and not as BONE. Vertex alpha is the emissive channel (255 = lit by the sun, lower =
-/// self-lit), so ONE alpha across all three tones or the shaft bands where the level changes.
-///
 /// MEASURED: at alpha 58 screen = 255·(albedo/255 · 1.236)^(1/2.2), so anything over albedo ~205 clips — tips
 /// authored at 246,220,150 came back a white knuckle and read as bone. FOUR TONES: the reds step 150 → 214 → 246 → 254 and the blues 24 → 60 → 100 → 170, so it DESATURATES as it brightens, which is what hot metal does.
 const EMISSIVE: u8 = 58;
@@ -62,7 +59,6 @@ const MOTE = rgba(250, 200, 96, 190);
 const BOLE_R0: f32 = 0.082;
 const BOLE_R1: f32 = 0.038;
 const BOLE_TOP: f32 = 0.68;
-/// Segments in it. Five, because three straight capsules over half a metre cannot be crooked.
 const BOLE_SEGS = 5;
 const FORKS = [_]f32{ 0.42, 0.66, 0.88 };
 const PER_FORK = [_]u32{ 3, 3, 2 };
@@ -94,7 +90,6 @@ pub const Souls = struct {
     fxAccum: f32 = 0,
     humLeft: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(0x50015),
-    /// THE GROUND THE MOTES CAME OFF, kept apart from the drop: `take` clears the drop on the frame it fires the retrieval burst, so reading the floor off `drop.at.y` afterwards floors that whole shower at the DATUM instead of at the earth it left.
     fxFloor: f32 = 0,
 
     pub fn init(shader: rl.Shader) Souls {
@@ -188,7 +183,6 @@ pub const Souls = struct {
             );
             const life = self.fxRng.range(TAKE_PULL * 0.6, TAKE_PULL);
             const v = mathx.scaleV(mathx.subV(into, from), 1.0 / life);
-            // The take is a FLOW, not a scatter — streaked along the pull so the gold visibly runs into him.
             foe.emitPart(&self.parts, &self.fxHead, .{
                 .p = from,
                 .v = v3(v.x, v.y + self.fxRng.range(-0.4, 0.8), v.z),

@@ -18,7 +18,6 @@ comptime {
     std.debug.assert(wf.MAX_ACTS <= std.math.maxInt(u8) + 1);
 }
 
-/// What the conditions need to know about the world this frame. Handed IN, because the machine must not reach into the game to find a foe list — the same rule the creatures' `Leash` follows.
 pub const World = struct {
     heroPos: rl.Vector3 = mathx.zero3,
     npcs: []const rl.Vector3 = &.{},
@@ -26,11 +25,9 @@ pub const World = struct {
 };
 
 pub const Runtime = struct {
-    /// Set by `apply`, drained by `takeCounter`.
     wantCounter: ?wf.ActKind = null,
     flags: [wf.MAX_FLAGS]bool = [_]bool{false} ** wf.MAX_FLAGS,
     counters: [wf.MAX_COUNTERS]i32 = [_]i32{0} ** wf.MAX_COUNTERS,
-    /// Seconds left on each countdown. A timer nobody started reads as NOT done, so `timer x=done` cannot pass before something armed it — the alternative makes every unstarted timer a free `always`.
     timers: [wf.MAX_TIMERS]f32 = [_]f32{0} ** wf.MAX_TIMERS,
     armed: [wf.MAX_TIMERS]bool = [_]bool{false} ** wf.MAX_TIMERS,
     deaths: [NFOE]u32 = [_]u32{0} ** NFOE,
@@ -126,7 +123,6 @@ pub const Runtime = struct {
     }
 
     fn satisfied(self: *const Runtime, t: *const wf.Trigger, w: World) bool {
-        // AN EMPTY CONDITION LIST NEVER FIRES. `always` is a condition you have to write down — a trigger whose `when:` lines were still to come would otherwise go off the moment the map loaded.
         if (t.nconds == 0) return false;
         for (t.condSlice()) |*c| {
             if (!self.holds(c, w)) return false;
@@ -186,7 +182,6 @@ pub const Runtime = struct {
         return null;
     }
 
-    /// **WHICH COUNTER A TRIGGER ASKED FOR**, drained by whoever opens it. Null on every other frame.
     pub fn takeCounter(self: *Runtime) ?wf.ActKind {
         const want = self.wantCounter;
         self.wantCounter = null;
@@ -196,8 +191,6 @@ pub const Runtime = struct {
     pub fn apply(self: *Runtime, m: *const wf.Map, a: *const wf.Act) void {
         switch (a.kind) {
             .dialog, .wait, .preserve => {},
-            // **A COUNTER IS A DOOR AND THE GAME OPENS IT**, exactly as `.dialog` is: a runtime that reached
-            // into the hero's purse from here would be the script layer doing gameplay. This only says which.
             .shop, .smithy => self.wantCounter = a.kind,
             .text => self.say(m.spanText(a.line)),
             .flag => if (a.slot < wf.MAX_FLAGS) {
@@ -229,7 +222,6 @@ pub const Runtime = struct {
 
 // `arm` fills `order` with `@intCast(i)` over `0..n`, so the slot has to hold the last index. Raising
 // `MAX_TRIGGERS` past 256 without widening it truncates the sort in ReleaseFast and panics in Debug — on a
-// number of triggers the MAP supplies.
 comptime {
     std.debug.assert(wf.MAX_TRIGGERS - 1 <= std.math.maxInt(@typeInfo(@FieldType(Runtime, "order")).array.child));
 }

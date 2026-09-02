@@ -10,12 +10,10 @@ const item = @import("item.zig");
 const rgba = mathx.rgba;
 
 
-/// How many first-time cards may be queued at once. `wf.MAX_LOOT` is the real bound — one chest cannot hand over more than it holds — and the queue only ever holds the NEW kinds out of one award.
 pub const CARD_CAP: usize = 12;
 pub const TOAST_CAP: usize = 5;
 
 comptime {
-    // ONE CONTAINER CAN NEVER FILL THE QUEUE. Past this the first-time card for something in the same chest would have to wait for a dismissal, which `gain` handles safely.
     std.debug.assert(CARD_CAP > wf.MAX_LOOT);
 }
 
@@ -34,18 +32,13 @@ const CARD_H: i32 = 300;
 const PIC_BOX: i32 = 96;
 const PIC_PX: f32 = 74.0;
 
-/// A toast that is standing. `t` counts UP from the moment it was made, which is what both the slide and the fade are read off — one clock, so the two cannot disagree about when it is leaving.
 const Toast = struct {
     kind: item.Kind = .crimson_flask,
     n: u16 = 1,
     t: f32 = 0,
-    /// **NON-ZERO MAKES IT A PURSE AND NOT A THING** (`COIN_NAME`). Coin is the one drop with no `item.Kind`
-    /// behind it — it never enters the bag — so it rides the strip on its own field rather than as a fake row
-    /// in `item`, and `kind` means nothing on this toast.
     coin: u32 = 0,
 };
 
-/// What a purse on the ground is called, spelled once so the strip and anything after it cannot disagree.
 pub const COIN_NAME: [:0]const u8 = "Pile of Coins";
 
 const Card = struct {
@@ -64,7 +57,6 @@ pub const Award = struct {
     pub fn gain(self: *Award, k: item.Kind) void {
         const i = @intFromEnum(k);
         if (!self.seen[i]) {
-            // **SEEN IS SET ONLY IF THE CARD IS ACTUALLY QUEUED.** Marked first and then dropped on a full queue, the kind would be silently discovered and its one first-time card LOST for the run. One container cannot fill the queue, but two opened before a single dismissal can, so the order matters.
             if (self.ncards >= CARD_CAP) return;
             self.seen[i] = true;
             self.cards[self.ncards] = .{ .kind = k, .n = 1 };
@@ -85,7 +77,6 @@ pub const Award = struct {
         self.push(.{ .kind = k, .n = 1, .t = 0 });
     }
 
-    /// THE OLDEST GOES when the stack is full: a notice you cannot see because five newer ones are over it is worse than one that never appeared, and the newest is always the one being explained.
     fn push(self: *Award, t: Toast) void {
         if (self.ntoasts >= TOAST_CAP) {
             var i: usize = 1;
@@ -96,9 +87,7 @@ pub const Award = struct {
         self.ntoasts += 1;
     }
 
-    /// **A PURSE TOASTS, IT DOES NOT CARD.** There is no first-time card for money — nothing about the tenth
     /// pile is different from the first, and a modal over a running fight for 30 coin is an interruption and
-    /// not news. Merges into the purse already standing rather than stacking a strip of them off one fight.
     pub fn gainCoin(self: *Award, n: u32) void {
         if (n == 0) return;
         for (self.toasts[0..self.ntoasts]) |*t| {
@@ -107,12 +96,7 @@ pub const Award = struct {
             t.t = 0;
             return;
         }
-        if (self.ntoasts >= TOAST_CAP) {
-            std.mem.copyForwards(Toast, self.toasts[0 .. TOAST_CAP - 1], self.toasts[1..TOAST_CAP]);
-            self.ntoasts = TOAST_CAP - 1;
-        }
-        self.toasts[self.ntoasts] = .{ .coin = n };
-        self.ntoasts += 1;
+        self.push(.{ .coin = n });
     }
 
     pub fn carding(self: *const Award) bool {

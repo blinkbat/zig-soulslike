@@ -39,23 +39,11 @@ const wolfmod = @import("../foes/wolf.zig");
 const mathx = @import("../core/mathx.zig");
 const wf = @import("../world/worldfmt.zig");
 
-/// **THE BENCH BEHIND EVERY NUMBER IN THE GAME** (owner: easy viewing and editing of stats, for basically every
-/// table-able thing). `core/audio.zig`'s arrangement one floor up: the code's own table is the BANK and never
-/// moves — that IS the revert — a `live` copy is what every play path reads and the editor writes, and
-/// `tuning.cfg` carries the DIFFERENCE only, so a row re-authored in code flows through to a save that never
-/// mentioned it.
-///
-/// **A TABLE IS A GETTER AND A SETTER, NOT A POINTER LIST.** Half of what wants editing sits behind an optional
-/// (`SpellRow.blow`), a union (`item.Equip`, `passivetree.Grant`) or a switch (`item.price`), and an address
-/// through any of those is not comptime-known. One `get`/`set` pair per table reaches all of it, and the base
-/// value is READ BACK at `init` rather than authored twice.
-/// **A CHOICE, NOT A DIAL** — one `f32` through the table's own `get`/`set`, but an ORDINAL into a named list.
-/// **THE FILE CARRIES THE NAME**: an ordinal written against 59 item kinds lands on a different item the day a
-/// sixtieth is authored.
+/// **A CHOICE, NOT A DIAL** — one `f32` through the table's own `get`/`set`, but an ORDINAL into a named list,
+/// and the FILE carries the NAME: an ordinal written against 59 item kinds lands on a different item the day one is added.
 pub const Pick = struct {
     n: usize,
     label: *const fn (usize) [:0]const u8,
-    /// The file's token. Must be one word, and stable once shipped — it is the same promise `Table.rowKey` makes.
     key: *const fn (usize) []const u8,
 
     fn find(self: Pick, token: []const u8) ?usize {
@@ -71,52 +59,32 @@ pub const Col = struct {
     hi: f32,
     lo: f32 = 0,
     step: f32 = 1,
-    /// Shown and stored whole. The underlying field may still be a float.
     int: bool = false,
-    /// What this cell is a choice OUT OF, or null for a plain number. `hi` still governs the clamp, so a pick
-    /// column names its own last index there rather than being trusted to.
     pick: ?Pick = null,
-    /// **SHOWN ABSOLUTE, KEPT AS A RATIO.** A column whose base is not in the source but learned off the first
-    /// body of a kind (`foes/foestat.zig`): the screen says 192 HP, the file says x2, and a creature re-authored
-    /// in code stays twice as tough instead of being pinned to a number that moved.
     ratio: bool = false,
     tip: [:0]const u8 = "",
 };
 
-/// What the row IS, so the bench can stand a picture of it beside the numbers (owner: file it with the object
-/// viewer). The ordinal is the enum's own — `wf.FoeKind`, `item.Kind`, `props.Kind`.
 pub const Face = enum { none, foe, item };
 
 pub const Table = struct {
     name: [:0]const u8,
-    /// The save file's prefix for this table. No spaces, and it never changes once shipped.
     key: [:0]const u8,
     tip: [:0]const u8 = "",
     n: usize,
     cols: []const Col,
     rowName: *const fn (usize) [:0]const u8,
-    /// A token for the save file — stable across a reorder, which an index is not.
     rowKey: *const fn (usize) []const u8,
     get: *const fn (usize, usize) f32,
     set: *const fn (usize, usize, f32) void,
     face: Face = .none,
     faceOf: ?*const fn (usize) u32 = null,
-    /// **A COLUMN A ROW HAS NO BUSINESS WITH IS NOT DRAWN.** A bag of consumables is a dozen different payloads
-    /// and only three or four dials belong to any one of them; a grid that showed all twelve would be mostly
-    /// zeroes you must not touch.
     has: ?*const fn (usize, usize) bool = null,
-    /// A row whose columns are its OWN — the knob sheets, where every row is a different number with a
-    /// different range. Null means the table's `cols` govern.
     limits: ?*const fn (usize, usize) Col = null,
-    /// What the CODE says this cell is, for a table whose base cannot be read at `init` — see `Col.ratio`. Zero
-    /// means not known yet.
     codeValue: ?*const fn (usize, usize) f32 = null,
-    /// How a `ratio` cell lands off the file, where the absolute it was written from is not knowable.
     setRatio: ?*const fn (usize, usize, f32) void = null,
 };
 
-/// **ONE NAMED NUMBER.** What a knob sheet is made of: the hero's own dials, the smith's prices, anything that
-/// is a `pub var` somewhere rather than a row in a table.
 pub const Knob = struct {
     name: [:0]const u8,
     key: []const u8,
@@ -152,9 +120,6 @@ pub const Ptr = union(enum) {
 
 const KNOB_COL = [_]Col{.{ .name = "value", .hi = 1 }};
 
-/// **A KNOB SHEET IS ONE GENERATOR, NOT FIVE FUNCTIONS PER SHEET.** The hero's dials and the smith's ladder
-/// carried a byte-identical name/key/get/set/limit set apiece, and the "value" caption was written out a third
-/// time in each `limit` beside the one `KNOB_COL` already holds.
 fn Knobs(comptime bank: []const Knob) type {
     return struct {
         fn name(i: usize) [:0]const u8 {
@@ -169,7 +134,6 @@ fn Knobs(comptime bank: []const Knob) type {
         fn set(r: usize, _: usize, v: f32) void {
             bank[r].p.write(v);
         }
-        /// A knob sheet's rows each carry their own range, so the column is the ROW'S and not the table's.
         fn limit(r: usize, _: usize) Col {
             const k = bank[r];
             return .{ .name = KNOB_COL[0].name, .lo = k.lo, .hi = k.hi, .step = k.step, .int = k.int, .tip = k.tip };
@@ -212,8 +176,6 @@ fn spellGet(r: usize, c: usize) f32 {
     };
 }
 
-/// The two doserless columns: a spell with no blow has no damage of any kind, and the seven with one have no
-/// drip. Showing a dead 0 beside a live number is how a bench starts lying.
 fn spellHas(r: usize, c: usize) bool {
     const row = combat.SPELLS[r];
     return switch (c) {
@@ -228,8 +190,6 @@ fn spellSet(r: usize, c: usize, v: f32) void {
     const row = &combat.SPELLS[r];
     switch (c) {
         0 => row.fp = v,
-        // **A REACH IS NOT GROWN HERE, ONLY MOVED.** The two spells authored without one have no projectile and
-        // no cone for a number to mean anything about.
         1 => if (row.reach != null) {
             row.reach = v;
         },
@@ -290,8 +250,6 @@ fn ailSet(r: usize, c: usize, v: f32) void {
     }
 }
 
-/// The kinds whose gear row is an `.arm`, an `.plate`, a trinket or a `use`, solved off the BANK at comptime —
-/// four sheets instead of one wall with a column for every dial any item has ever had.
 fn kindsWhere(comptime want: fn (item.Kind) bool) []const item.Kind {
     comptime {
         var out: [item.NK]item.Kind = undefined;
@@ -342,9 +300,7 @@ fn priceSet(k: item.Kind, v: f32) void {
 
 const PRICE_COL = Col{ .name = "price", .hi = 4000, .step = 10, .int = true, .tip = "What a counter charges. 0 is untradeable" };
 
-/// **THE PRICE IS THE LAST COLUMN ON ALL FOUR ITEM SHEETS, AND ITS INDEX IS ASKED FOR RATHER THAN COUNTED.**
-/// The getter, the setter and the `has` of each sheet carried their own literal 5, 7, 8 and 12, so a column
-/// inserted anywhere above put a shelf price into whatever dial had been sitting on that number.
+/// The getter, the setter and the `has` of each sheet each carried their own literal 5, 7, 8 and 12.
 fn priceAt(comptime cols: []const Col) usize {
     comptime {
         if (!std.mem.eql(u8, cols[cols.len - 1].name, PRICE_COL.name))
@@ -358,10 +314,6 @@ const PLATE_PRICE = priceAt(&PLATE_COLS);
 const TRINKET_PRICE = priceAt(&TRINKET_COLS);
 const USE_PRICE = priceAt(&USE_COLS);
 
-/// **THE FOUR COLUMNS RUN IN `combat.Elem`'S OWN ORDER AND SIT SIDE BY SIDE**, because the two sheets that
-/// carry a whole spread index it by subtracting the block's start (`spellGet`'s `c - 5`, `blowGet`'s `c - 3`).
-/// Pinned rather than rewritten: the arithmetic reads better than a named offset would, but a column moved
-/// above the block, or an element renamed, would silently pour fire into the cold slot.
 fn elemBlockAt(comptime cols: []const Col, comptime at: usize) void {
     comptime {
         for (std.enums.values(combat.Elem), 0..) |e, i| {
@@ -444,8 +396,6 @@ fn armSet(r: usize, c: usize, v: f32) void {
     }
 }
 
-/// A board has no edge and an edge has no compass — the three guard dials belong to the shield alone, which is
-/// the same rule `item`'s own comptime check enforces on the authored row.
 fn armHas(r: usize, c: usize) bool {
     const shield = armOf(ARM_ROWS[r]).slot == .hand_shield;
     return switch (c) {
@@ -515,8 +465,6 @@ fn plateSet(r: usize, c: usize, v: f32) void {
         3 => g.equip.plate.res.lightning = v,
         4 => g.equip.plate.res.chaos = v,
         5 => g.equip.plate.move = v,
-        // **A PIECE THAT SLOWS NO METER MAY NOT GROW ONE HERE** — the row names WHICH meter, and a bare number
-        // with no name on it would slow whichever one the struct happened to default to.
         6 => if (g.equip.plate.rate != null) {
             g.equip.plate.rate.?.k = v;
         },
@@ -596,8 +544,6 @@ fn trinketHas(r: usize, c: usize) bool {
     };
 }
 
-/// **ONE SHEET FOR A DOZEN PAYLOADS.** `item.Use` is a union with a different shape per arm, so the columns are
-/// the vocabulary all of them are written in and each row shows only the ones its own arm has (`useHas`).
 const USE_COLS = [_]Col{
     .{ .name = "dmg", .hi = 200, .step = 1, .tip = "What a thrown one does on impact" },
     .{ .name = "poise", .hi = 120, .step = 1 },
@@ -775,9 +721,6 @@ fn useHas(r: usize, c: usize) bool {
     };
 }
 
-/// **THE BOARD IS NINETY ROWS OF ONE NUMBER.** A node's grant is a union with thirty arms and all but two of
-/// them carry a single f32, so the sheet is that number, the rider's points, and nothing else — which arm it is
-/// is the node's identity and not a tuning (`passivetree.grantSays` prints it either way).
 const NODE_COLS = [_]Col{
     .{ .name = "grant", .hi = 400, .step = 0.05, .tip = "What the node gives. Its own units — a share, a multiplier, a flat pool, or points of an attribute" },
     .{ .name = "rider", .hi = 20, .step = 1, .int = true, .tip = "The stat-up riding it, in points" },
@@ -791,8 +734,6 @@ fn nodeKey(i: usize) []const u8 {
     return passivetree.NODES_BANK[i].name;
 }
 
-/// The one number a grant carries, whichever arm it is. `res` is a spread of four and `boltCloud` is a fact
-/// rather than a quantity — neither has a single dial, so neither draws one.
 fn grantValue(g: passivetree.Grant) ?f32 {
     return switch (g) {
         .attr => |x| @floatFromInt(x.n),
@@ -832,7 +773,6 @@ fn nodeHas(r: usize, c: usize) bool {
 
 /// **AN ATTRIBUTE GRANT IS POINTS, AND POINTS ARE WHOLE** — `Grant.attr.n` is a `u8`, so the column's 0.05 step
 /// moved nothing at all on those rows: twenty nudges rounded straight back to where they started, and the 400
-/// ceiling promised a range the store refuses. The rider column already carries the same unit at the same bound.
 fn nodeLimit(r: usize, c: usize) Col {
     if (c == 0 and std.meta.activeTag(passivetree.NODES[r].grant) == .attr) {
         return .{ .name = NODE_COLS[0].name, .hi = NODE_COLS[1].hi, .step = 1, .int = true, .tip = NODE_COLS[0].tip };
@@ -840,7 +780,6 @@ fn nodeLimit(r: usize, c: usize) Col {
     return NODE_COLS[c];
 }
 
-/// **HIS OWN DIALS.** The pace, the roll, what a swing bills and what a guard turns aside — the numbers
 /// `play/hero.zig` and `play/combat.zig` call the place to retune feel. A creature's pace is NOT here: every
 /// foe solves its walk off `hero.WALK_SPEED_BANK` at comptime, so this moves the man and not the field.
 const HERO_KNOBS = [_]Knob{
@@ -866,10 +805,6 @@ const HERO_KNOBS = [_]Knob{
 
 const HeroSheet = Knobs(&HERO_KNOBS);
 
-/// **EVERY NAMED STROKE IN THE GAME, ON ONE SHEET.** Some creatures keep their blow as a module dial and swing
-/// it straight (`ogre.SLAM_HIT`); the ones with a kit keep it inside a comptime move table, where the const is
-/// the SEED and `MOVES[i].hit` is what is actually swung — so that is what this points at. Both end up here as
-/// a `*combat.Hit`, and the row says whose it is so the object viewer can stand it beside the body.
 const Blow = struct {
     of: ?wf.FoeKind,
     move: [:0]const u8,
@@ -877,7 +812,6 @@ const Blow = struct {
 };
 
 const BLOWS = [_]Blow{
-    // HIS OWN TWO FIRST — the reference every creature's stroke is read against.
     .{ .of = null, .move = "hero light", .p = &heromod.ATK_LIGHT_HIT },
     .{ .of = null, .move = "hero heavy", .p = &heromod.ATK_HEAVY_HIT },
     .{ .of = .toad, .move = "lunge", .p = &frogmod.LUNGE_HIT },
@@ -922,8 +856,6 @@ const BLOWS = [_]Blow{
     .{ .of = .blinkbat, .move = "bite", .p = &blinkbatmod.BITE_HIT },
     .{ .of = .owlbear, .move = "rake", .p = &owlbearmod.MOVES[owlbearmod.RAKE].hit },
     .{ .of = .owlbear, .move = "slam", .p = &owlbearmod.MOVES[owlbearmod.SLAM].hit },
-    // THE ONE ROW THAT IS NOT A FOE — the wolf is a spirit, and the bench is where its bite is priced against
-    // everything it is called in to fight.
     .{ .of = null, .move = "wolf bite", .p = &wolfmod.BITE_HIT },
 };
 
@@ -994,10 +926,6 @@ fn blowSet(r: usize, c: usize, v: f32) void {
     }
 }
 
-/// **THE RING EACH CREATURE NOTICES YOU AT**, and the souls its body is worth. Both are module-level dials the
-/// creature reads every frame, so a pointer reaches them; the pools cannot be reached that way at all and go
-/// through `foes/foestat.zig` instead. Kinds that share a file share the ring (a warband has ONE), and the
-/// roles' own souls live in their spec tables, which is why some rows show fewer dials than others.
 fn foeAggro(k: wf.FoeKind) ?*f32 {
     return switch (k) {
         .toad => &frogmod.AGGRO_R,
@@ -1061,9 +989,6 @@ fn foeSouls(k: wf.FoeKind) ?*u32 {
         .fungal_swordsman => &fungalduomod.SW_SOULS,
         .fungal_magus => &fungalduomod.MG_SOULS,
         // **THE FOUR ROLE GROUPS ARE NAMED, NOT LEFT TO AN `else`.** They keep theirs in a comptime role table,
-        // which a pointer cannot reach and an edit could not move: a `spec(role)` row is baked into the switch
-        // that returns it. Written out because `foeAggro` beside this is exhaustive, so a creature added to
-        // `FoeKind` is a compile error there and was silence here — arriving on the bench worth nothing.
         .berserker, .priest, .slinger => null,
         .brood_mother, .broodling, .brood_sac => null,
         .shieldman, .greatsword => null,
@@ -1129,9 +1054,6 @@ fn foeSet(r: usize, c: usize, v: f32) void {
     }
 }
 
-/// **A POOL NOBODY HAS SEEN YET IS NOT A ZERO, IT IS A BLANK.** The authored numbers are read off the first
-/// body of a kind that is made (`foestat`), so a creature nowhere in the open map has no pools to show and the
-/// bench says so by not drawing them.
 fn foeCode(r: usize, c: usize) f32 {
     const p = foestat.pools(@enumFromInt(r));
     return switch (c) {
@@ -1161,9 +1083,6 @@ fn foeHas(r: usize, c: usize) bool {
     };
 }
 
-/// **NOTHING IS THE FIRST CHOICE, NOT A MISSING ONE.** `Row.common` and `Row.rare` are optionals, so the list
-/// they pick out of has to carry the empty answer as an entry you can land on — otherwise a body that leaves
-/// nothing is a cell with no legal value.
 const NOTHING: [:0]const u8 = "- nothing -";
 const NOTHING_KEY = "-";
 
@@ -1177,8 +1096,6 @@ fn itemPickKey(i: usize) []const u8 {
 
 const ITEM_PICK = Pick{ .n = item.NK + 1, .label = itemPickLabel, .key = itemPickKey };
 
-/// An item's place in the `common`/`rare` list — public because a caller reaching a drop cell from outside
-/// (the shot harness, a test) may not spell the +1 that `- nothing -` costs the ordinal.
 pub fn itemOrdinal(k: ?item.Kind) f32 {
     return if (k) |v| @floatFromInt(@intFromEnum(v) + 1) else 0;
 }
@@ -1206,8 +1123,6 @@ fn coinPickKey(i: usize) []const u8 {
 
 const COIN_PICK = Pick{ .n = NCOIN, .label = coinPickLabel, .key = coinPickKey };
 
-/// **WHAT IT LEAVES SITS ABOVE HOW OFTEN**, because the odds are meaningless until you know what they are odds
-/// ON — and a row whose item is `- nothing -` hides its number entirely (`dropHas`).
 const DROP_COLS = [_]Col{
     .{ .name = "common", .hi = item.NK, .int = true, .pick = ITEM_PICK, .tip = "What this body usually leaves. Pick `- nothing -` and it drops no item at all" },
     .{ .name = "odds", .hi = 1, .step = 0.01, .tip = "How often the body leaves its common item at all" },
@@ -1244,18 +1159,12 @@ fn dropSet(r: usize, c: usize, v: f32) void {
     switch (c) {
         0 => row.common = itemAt(v),
         1 => row.odds = v,
-        // **NAMING ONE DOES NOT ARM ITS CHANCE** — a cell writes its own field and nothing beside it, which
-        // the bench's own bleed test pins. What it does instead is UNHIDE `chance` (`dropHas`), so the dial
-        // that is still 0 appears on the row under it and says so.
         2 => row.rare = itemAt(v),
         3 => row.chance = v,
         else => row.gold = @enumFromInt(@as(u8, @intFromFloat(mathx.clampF(v, 0, NCOIN - 1)))),
     }
 }
 
-/// A body with nothing in a slot has no number to move — the pair is one claim, and `drops`' own comptime walk
-/// refuses a rare without a chance. The two PICKS are always offered: naming the thing is how an empty slot
-/// stops being empty.
 fn dropHas(r: usize, c: usize) bool {
     return switch (c) {
         1 => drops.TABLE[r].common != null,
@@ -1301,7 +1210,6 @@ fn soakSet(r: usize, c: usize, v: f32) void {
     if (c == 0) slot.*.?.build = v else slot.*.?.dpsFrac = v;
 }
 
-/// **THE SMITH AND THE SHELF.** Four numbers and a share, and every one of them is a price the player feels.
 const TRADE_KNOBS = [_]Knob{
     .{ .name = "stone base", .key = "stone_base", .p = .{ .u = &counter.STONE_BASE }, .lo = 1, .hi = 20, .int = true, .tip = "Stones for the first tier" },
     .{ .name = "stone per tier", .key = "stone_per", .p = .{ .u = &counter.STONE_PER }, .hi = 20, .int = true, .tip = "Halved into the step, so the early tiers are one stone apiece" },
@@ -1501,8 +1409,6 @@ const OFF = blk: {
 
 pub const NCELL = OFF[NT];
 
-/// **THE CODE'S OWN NUMBER, READ BACK ONCE.** `init` runs BEFORE `load`, so this is what the source says and
-/// never what a settings file said — which is what makes Revert mean "back to the code".
 var base: [NCELL]f32 = [_]f32{0} ** NCELL;
 var armed = false;
 
@@ -1523,8 +1429,6 @@ pub fn table(t: usize) Table {
     return TABLES[t];
 }
 
-/// **A TABLE AND A COLUMN BY NAME, NOT BY WHERE THEY SIT.** An index into `cols` moves the day a column is
-/// added in front of it — silently, onto a cell that is still a valid cell.
 pub fn tableIndex(key: []const u8) ?usize {
     for (TABLES, 0..) |tb, i| {
         if (std.mem.eql(u8, tb.key, key)) return i;
@@ -1550,15 +1454,11 @@ pub fn baseValue(t: usize, r: usize, c: usize) f32 {
     return base[cell(t, r, c)];
 }
 
-/// Out of range is CLAMPED and not refused (`audio.setDial`'s rule): a dial dragged to its end is a value, and
-/// a tuning file written against an older column may not take a row out with it.
-/// The column as THIS row sees it — a knob sheet's rows each carry their own range.
 pub fn colSpec(t: usize, r: usize, c: usize) Col {
     if (TABLES[t].limits) |f| return f(r, c);
     return TABLES[t].cols[c];
 }
 
-/// Whether the row has this column at all.
 pub fn shows(t: usize, r: usize, c: usize) bool {
     if (TABLES[t].has) |f| return f(r, c);
     return true;
@@ -1610,7 +1510,6 @@ pub fn revertAll() void {
 
 pub const PATH = "tuning.cfg";
 
-/// A row name with the spaces taken out, so one line is three tokens and a number however the row is titled.
 fn writeToken(w: anytype, s: []const u8) !void {
     for (s) |ch| {
         try w.writeByte(switch (ch) {
@@ -1644,8 +1543,6 @@ fn tokenEql(a: []const u8, b: []const u8) bool {
     return i == a.len and j == b.len;
 }
 
-/// **THE DIFFERENCE AND NOTHING ELSE.** A cell left where the code put it writes no line, so a table
-/// re-authored in the source reaches a tuning file that never named it.
 pub fn writeDiff(w: anytype) !void {
     for (TABLES, 0..) |tb, ti| {
         for (0..tb.n) |r| {
@@ -1660,7 +1557,6 @@ pub fn writeDiff(w: anytype) !void {
                 }
                 try w.print("{s}.", .{tb.key});
                 try writeToken(w, tb.rowKey(r));
-                // **A CHOICE GOES OUT BY NAME** (`Pick`), never as this build's ordinal.
                 if (tb.cols[c].pick) |p| {
                     const at = @as(usize, @intFromFloat(mathx.clampF(out, 0, @floatFromInt(p.n - 1))));
                     try w.print(".{s} {s}\n", .{ tb.cols[c].name, p.key(at) });
@@ -1674,8 +1570,6 @@ pub fn writeDiff(w: anytype) !void {
 
 const TMP = PATH ++ ".tmp";
 
-/// **RENDERED BESIDE THE FILE AND ONLY THEN PUT IN ITS PLACE** (`worldfmt.save`'s rule). `createFile` truncates
-/// first, so a write that failed part-way left a HALF tuning that `load` would then apply as a whole one.
 pub fn save() void {
     if (writeTmp()) {
         std.fs.cwd().rename(TMP, PATH) catch {
@@ -1717,8 +1611,6 @@ pub fn load() void {
     }
 }
 
-/// **THE CLAMP IS THE LOADER'S PROMISE AND A RATIO CELL WAS NOT KEEPING IT** (`colSpec`: a tuning file may not
-/// take a row out with it). The bench itself can only ever write `absolute / code` with the absolute already
 /// inside the column, so a hand-edited `hp 1e9` was the one door in with no bound on it at all — and `load`
 /// runs before any body exists, so the code value is usually 0 and there is no absolute to clamp through.
 /// Bounded by the column's own span in that case, which at least refuses a NaN, an infinity and a negative.
@@ -1729,8 +1621,6 @@ fn ratioIn(t: usize, r: usize, c: usize, v: f32) f32 {
     return if (std.math.isNan(v)) 0 else mathx.clampF(v, 0, col.hi);
 }
 
-/// **THE ONE WALK FROM THREE TOKENS TO A CELL**, and it has to come before the decode: whether the third token
-/// is a number or a name is the COLUMN's answer and not the line's.
 fn find(tkey: []const u8, rkey: []const u8, ckey: []const u8) ?[3]usize {
     for (TABLES, 0..) |tb, ti| {
         if (!std.mem.eql(u8, tkey, tb.key)) continue;
@@ -1759,9 +1649,6 @@ fn apply(tkey: []const u8, rkey: []const u8, ckey: []const u8, v: f32) void {
     land(at[0], at[1], at[2], v);
 }
 
-/// **A NAME THIS BUILD DOES NOT KNOW LEAVES THE CELL WHERE THE CODE PUT IT.** An item taken out of the game
-/// is a token nothing can resolve, and guessing at it would silently move a drop onto whatever happened to
-/// land at that ordinal — so the line is dropped and the row keeps its authored answer.
 fn applyText(tkey: []const u8, rkey: []const u8, ckey: []const u8, tok: []const u8) void {
     const at = find(tkey, rkey, ckey) orelse return;
     if (TABLES[at[0]].cols[at[2]].pick) |p| {
@@ -1794,7 +1681,6 @@ test "a cell edits, clamps to its own column and comes back on a revert" {
     setValue(t, 0, 0, was + 3);
     try std.testing.expectEqual(was + 3, value(t, 0, 0));
     try std.testing.expect(edited(t, 0, 0) and rowEdited(t, 0) and anyEdited());
-    // The dial's end is a value, not a refusal.
     setValue(t, 0, 0, 1e9);
     try std.testing.expectEqual(TABLES[t].cols[0].hi, value(t, 0, 0));
     revertRow(t, 0);
@@ -1825,8 +1711,6 @@ test "an edited cell writes one line, and reading it back puts the number where 
     defer revertAll();
     setValue(0, 1, 0, value(0, 1, 0) + 2);
     const want = value(0, 1, 0);
-    // **THROUGH `save`'S OWN WRITER**, without going near the real file — a test that re-typed the three tokens
-    // was a second copy of the format to keep in step with the first.
     var buf: [256]u8 = undefined;
     var st = std.io.fixedBufferStream(&buf);
     try writeDiff(st.writer());
@@ -1854,8 +1738,6 @@ test "a pool is typed in absolute and kept as a ratio, so a re-authored creature
     const deer: usize = @intFromEnum(wf.FoeKind.fungal_deer);
     foestat.mult[deer] = .{};
 
-    // The pools are LEARNED off a body, so make one. (Not asserted the other way round: the suite shares one
-    // process and another test may have armed this kind already.)
     var vit = combat.Vitals.initFoe(96, 14, 44);
     foestat.arm(&vit, .fungal_deer);
     try std.testing.expect(shows(foes, deer, 0));
@@ -1875,9 +1757,6 @@ test "a pool is typed in absolute and kept as a ratio, so a re-authored creature
     foestat.mult[deer] = .{};
 }
 
-// **EVERY CELL, NOT CELL (0,0,0).** A column whose step is finer than its own store reads back where it
-// started, and a getter and a setter that name different fields make the bench show one number and move
-// another — neither shows up on the one cell the tests above nudge.
 test "a dial writes the field its own getter reads, at its own step, and moves nothing beside it" {
     init();
     defer revertAll();
@@ -1944,7 +1823,6 @@ test "WHAT A BODY LEAVES IS A CHOICE ON THE SHEET, AND THE FILE CARRIES ITS NAME
     // **NOTHING IS A VALUE YOU CAN LAND ON**, not a missing one: the sac leaves nothing and its cell reads 0.
     const sac: usize = @intFromEnum(wf.FoeKind.brood_sac);
     try std.testing.expectEqual(@as(f32, 0), value(dt, sac, cCommon));
-    // …and naming a rare UNHIDES its chance without moving it (`dropSet`).
     try std.testing.expectEqual(@as(?item.Kind, null), drops.TABLE[sac].rare);
     try std.testing.expect(!shows(dt, sac, cChance));
     setValue(dt, sac, cRare, itemOrdinal(.golden_seed));
@@ -1980,7 +1858,6 @@ test "WHAT A BODY LEAVES IS A CHOICE ON THE SHEET, AND THE FILE CARRIES ITS NAME
     try std.testing.expectEqual(item.Kind.golden_seed, drops.TABLE[sac].rare.?);
     try std.testing.expectEqual(drops.Coin.heavy, drops.TABLE[sac].gold);
 
-    // An item cut from the game must not silently move a drop onto whatever now stands at that ordinal.
     applyText("drop", "toad", "common", "a_thing_that_was_cut");
     try std.testing.expectEqual(item.Kind.smithing_stone, drops.TABLE[toad].common.?);
 }
@@ -1991,12 +1868,10 @@ test "EVERY PICK COLUMN'S KEYS ARE UNIQUE AND ITS CLAMP REACHES ITS WHOLE LIST" 
         for (tb.cols, 0..) |col, ci| {
             const p = col.pick orelse continue;
             picks += 1;
-            // The clamp is the column's, so a list longer than `hi` has choices nothing can select.
             try std.testing.expectEqual(@as(f32, @floatFromInt(p.n - 1)), col.hi);
             try std.testing.expectEqual(@as(f32, 0), col.lo);
             try std.testing.expect(col.int);
             for (0..p.n) |i| {
-                // One word, or a saved line is four tokens and the loader reads the wrong one.
                 try std.testing.expect(p.key(i).len > 0);
                 for (p.key(i)) |ch| try std.testing.expect(ch != ' ');
                 for (0..p.n) |j| {

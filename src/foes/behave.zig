@@ -31,7 +31,6 @@ pub const Step = union(enum) {
     open: struct { to: f32 },
     orbit: struct { r: f32, secs: f32 },
     dwell: struct { secs: f32 },
-    /// **LEAVE THIS SPOT.** Walk to a place `d` away on a bearing `turn` radians off the line back to the quarry, eyes on it the whole way. THE DESTINATION IS COMMITTED AT THE FIRST FRAME (`mark`) — one that re-derived its target every frame as the quarry moved would be a chase.
     shift: struct { d: f32, turn: f32 },
     /// **HOLD THE RANGE YOU ARE ON AND CIRCLE.** An orbit whose radius is taken from where the creature ALREADY stands, committed at the first frame — so one script serves a skirmisher at 9 m and at 19 without walking either of them to an authored ring.
     strafe: struct { secs: f32 },
@@ -43,7 +42,6 @@ pub const Routine = struct {
     t: f32 = 0,
     side: f32 = 1,
     mark: rl.Vector3 = mathx.zero3,
-    /// The strafe's committed radius — the range it stood at when the step began.
     markR: f32 = 0,
     marked: bool = false,
     running: bool = false,
@@ -280,7 +278,6 @@ test "A STRAFE CIRCLES AT THE RANGE IT STOOD AT — committed at the first frame
             was = now;
         }
         try std.testing.expectApproxEqAbs(start, mathx.distXZ(at, quarry), 0.4);
-        // Judged as ARC LENGTH — the same metres of walking sweep fewer radians on a wider ring.
         try std.testing.expect(swept * start > 3.0);
     }
 }

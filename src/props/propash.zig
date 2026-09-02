@@ -15,27 +15,21 @@ const CHAR_LT = art.CHAR_LT;
 const CINDER_GREY = art.CINDER_GREY;
 const EMBER_LIVE = art.EMBER_LIVE;
 
-// **A DRIFT HAS A WINDWARD SIDE AND A LEE, AND THAT IS THE WHOLE OF WHY IT READS AS ASH** — a symmetrical mound is a pile of anything. Every heap below is laid on the same +X wind, so a field of them agrees about which way the weather came from.
 
 const Drift = struct {
-    /// Along the RIDGE, which runs across the wind.
     len: f32,
-    /// Across it, which is the axis the asymmetry lives on.
     wide: f32,
     high: f32,
     /// Where the crest sits across the section, -1 (windward toe) to 1 (lee toe). Positive: the long ramp is on the windward side and the short slip face on the lee, which is the whole silhouette.
     crest: f32 = 0.18,
-    /// How far the windward toe reaches. The lee toe is fixed just past the crest — that IS the slip face.
     toe: f32 = -0.80,
     seed: u64 = 1,
 };
 
 /// Height of the drift's surface at (`u` across, `v` along), both -1..1 / 0..1. A PURE FUNCTION, so the mesh and its normals come off the same shape and the test below can measure the profile without a builder.
 fn duneH(d: Drift, u: f32, v: f32, jitter: f32) f32 {
-    // Along the ridge it swells and dies at both ends, off centre so it is not a sausage.
     const env = std.math.pow(f32, mathx.clampF(mathx.sinf(v * std.math.pi), 0, 1), 0.62) *
         (0.86 + 0.14 * mathx.sinf(v * 7.3 + jitter));
-    // Across it: a LONG ramp into the wind, a SHORT drop out of it. Everything about a dune is this line.
     const prof = if (u <= d.crest)
         mathx.smoothstep(d.toe, d.crest, u)
     else
@@ -46,7 +40,6 @@ fn duneH(d: Drift, u: f32, v: f32, jitter: f32) f32 {
 const DUNE_NV: usize = 15;
 const DUNE_NU: usize = 13;
 
-/// **ONE CONTINUOUS SURFACE.** Built as a row of blobs it was a line of loaves however far they overlapped — each one keeps its own crown, and a dune has exactly one. So it is swept: a profile walked along the ridge with smoothed normals.
 fn driftInto(b: *Builder, rng: *mathx.Rng, d: Drift, cx: f32, cz: f32, yaw: f32) void {
     b.setMat(.stone);
     const c = mathx.cosf(yaw);
@@ -81,7 +74,6 @@ fn driftInto(b: *Builder, rng: *mathx.Rng, d: Drift, cx: f32, cz: f32, yaw: f32)
             const p10 = at(d, ub, v0, jit, cx, cz, c, sn);
             const p11 = at(d, ub, v1, jit, cx, cz, c, sn);
             const p01 = at(d, ua, v1, jit, cx, cz, c, sn);
-            // TONE FOLLOWS THE HEIGHT, not the station: a gradient across the slope, never a band along it. A CONTINUOUS TWO-STOP GRADIENT — switching the lerp's TARGET at a threshold puts a hard ring round the crest.
             const t = mathx.clampF(0.5 * (p00.y + p11.y) / mathx.maxF(d.high, 0.01), 0, 1);
             const CREST: f32 = 0.80;
             const tone = if (t < CREST)
@@ -101,7 +93,6 @@ fn driftInto(b: *Builder, rng: *mathx.Rng, d: Drift, cx: f32, cz: f32, yaw: f32)
             );
         }
     }
-    // What the drift did not bury: char at its feet, on the windward side where it is being scoured out.
     var j: i32 = 0;
     while (j < 8) : (j += 1) {
         const uu = rng.range(d.toe * 1.25, d.toe * 0.7);
@@ -113,32 +104,24 @@ fn driftInto(b: *Builder, rng: *mathx.Rng, d: Drift, cx: f32, cz: f32, yaw: f32)
     }
 }
 
-// **THE ASHFIELD'S OWN ROCK.** Everything above is soft, and a region needs three layers (AGENTS.md). What makes
-// these four read as rock in an ASHFIELD is `bankInto`: the ash is drifted up the windward side of every one.
-//
 // Solved through the chain, not picked (screen = 255 x (albedo x 1.72)^(1/2.2)):
 //   clinker 96 -> 17    clinker face 130 -> 34    dripstone 175 -> 65    dripstone band 140 -> 40
 
 /// FUSED ASH, not stone: it ran and set, so it is glassy and the darkest thing in the region by a long way.
 const CLINKER = mathx.rgba(18, 17, 16, 255);
 const CLINKER_LT = mathx.rgba(36, 33, 30, 255);
-/// Dripstone: pale, and the ONE wet-looking thing in a region made of dry powder.
 const DRIP = mathx.rgba(66, 64, 58, 255);
 const DRIP_BAND = mathx.rgba(42, 39, 35, 255);
 
-/// The ash banked up the windward side, off the SAME +X wind the drifts are laid on — so a crag and a dune
-/// fifty metres apart agree about the weather.
 fn bankInto(b: *Builder, rng: *mathx.Rng, r: f32, high: f32) void {
     b.setMat(.stone);
     var i: i32 = 0;
     while (i < 6) : (i += 1) {
         const fi = @as(f32, @floatFromInt(i)) / 5.0;
-        // Across the windward face only — a skirt all the way round is a plinth, not a drift.
         const a = -1.0 + fi * 2.0;
         const d = r * rng.range(0.55, 0.92);
         const h = high * (0.40 + 0.60 * mathx.sinf(fi * std.math.pi)) * rng.range(0.85, 1.12);
         // **SUNK TO THE WAIST, NOT STOOD ON THE GRASS.** Centred at `h * 0.34` these were flat pale discs that
-        // read as PAVING SLABS; centred at the ground only the crown shows and the toes feather out.
         b.addBlob(
             v3(-mathx.cosf(a) * d, 0, mathx.sinf(a) * d),
             v3(r * rng.range(0.34, 0.52), h, r * rng.range(0.30, 0.44)),
@@ -149,8 +132,6 @@ fn bankInto(b: *Builder, rng: *mathx.Rng, r: f32, high: f32) void {
     }
 }
 
-/// **A CRAG OF CLINKER, BLOCKY where everything else in the region is smooth** — ash that ran, set and cracked
-/// along flat planes. Plates each rotated off the one below, so the silhouette is a tilted stack and never a cone.
 pub const CRAG_TOP: f32 = 5.20;
 pub const CRAG_R: f32 = 1.55;
 pub fn ashCragMesh(shader: rl.Shader) rl.Model {
@@ -158,7 +139,6 @@ pub fn ashCragMesh(shader: rl.Shader) rl.Model {
     var rng = mathx.Rng.init(0xA5C0);
     b.setMat(.stone);
     const plates = 9;
-    // It leans INTO the wind: a mass scoured from one side falls the other way.
     const leanA = rng.range(0.25, 0.55);
     var y: f32 = 0;
     var cx: f32 = 0;
@@ -182,7 +162,6 @@ pub fn ashCragMesh(shader: rl.Shader) rl.Model {
         cx += mathx.cosf(leanA) * CRAG_TOP * 0.028 + rng.signed() * 0.06;
         cz += mathx.sinf(leanA) * CRAG_TOP * 0.028 + rng.signed() * 0.06;
     }
-    // A FEW PERCENT OF THE MASS (the relief law): spalled flakes hanging off the faces, sunk most of the way in.
     var f: i32 = 0;
     while (f < 12) : (f += 1) {
         const t = rng.float();
@@ -201,8 +180,6 @@ pub fn ashCragMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// **STALAGMITES — AND NOTHING ENDS IN A POINT** (AGENTS.md). Seven heights, banded because dripstone grew a
-/// layer at a time, and blunt is what stops a field of them reading as a bed of nails.
 pub const STAL_TOP: f32 = 2.35;
 pub const STAL_R: f32 = 1.10;
 pub fn stalagmiteMesh(shader: rl.Shader) rl.Model {
@@ -217,11 +194,8 @@ pub fn stalagmiteMesh(shader: rl.Shader) rl.Model {
         const bz = mathx.sinf(a) * d * 0.84;
         const top = STAL_TOP * hs;
         const base = 0.30 * mathx.lerpF(0.55, 1.0, hs) * rng.range(0.85, 1.15);
-        // A DRIP LEANS toward where the water came off: none of these are plumb.
         const tipA = rng.angle();
         const off = top * rng.range(0.03, 0.11);
-        // **A CLEAN LINEAR TAPER IS A TRAFFIC CONE.** Per-segment radius jitter and a sideways step, so the
-        // shaft bulges and pinches: the growth was never even and the silhouette is the only place to show it.
         const segs = 6;
         var y: f32 = 0;
         var wx: f32 = bx;
@@ -241,7 +215,6 @@ pub fn stalagmiteMesh(shader: rl.Shader) rl.Model {
                 9,
                 if (@mod(j, 2) == 0) DRIP else DRIP_BAND,
             );
-            // The ring a wet season leaves — wider than both ends it joins.
             if (j + 1 < segs) {
                 b.addBlob(v3(nx, top * t1, nz), v3(r1 * 1.22, r1 * 0.34, r1 * 1.16), 3, 8, if (rng.float() < 0.4) DRIP else DRIP_BAND);
             }
@@ -259,23 +232,16 @@ pub fn stalagmiteMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// **A RAISED STONE, NOT A DRESSED ONE** — `propruins.obeliskMesh` is the surveyed, four-square version. This is the
-/// same idea from before anybody could cut stone: one unworked block, packed at the foot and leaning where the
-/// packing gave.
 pub const MENHIR_TOP: f32 = 4.40;
 pub const MENHIR_R: f32 = 0.72;
 pub fn menhirMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xA5C2);
     b.setMat(.stone);
-    // THE LEAN IS THE WHOLE OBJECT. Six degrees is plenty: at fifteen it reads as falling over.
     const leanDeg = rng.range(4.0, 7.5);
     const leanA = rng.angle();
     const tipX = mathx.cosf(leanA) * MENHIR_TOP * mathx.sinf(mathx.radians(leanDeg));
     const tipZ = mathx.sinf(leanA) * MENHIR_TOP * mathx.sinf(mathx.radians(leanDeg));
-    // **ONE STONE, AND NEVER A STACK.** Five boxes head to foot read as COURSES OF MASONRY: a horizontal joint
-    // across the shaft makes it a wall. Three slabs that each span most of the height and OVERLAP hard, so the
-    // irregularity comes from their disagreement and never from a seam.
     const SPANS = [3][2]f32{ .{ 0.00, 0.78 }, .{ 0.14, 0.94 }, .{ 0.34, 1.00 } };
     const WIDE = [3]f32{ 1.00, 0.82, 0.61 };
     for (SPANS, WIDE, 0..) |sp, wide, i| {
@@ -289,15 +255,12 @@ pub fn menhirMesh(shader: rl.Shader) rl.Model {
         b.addBox(
             v3(tipX * tm, MENHIR_TOP * tm, tipZ * tm),
             v3(u.x * half, rng.signed() * 0.05, u.z * half),
-            // The SHEAR carries the lean through the block itself, so the faces are not plumb either.
             v3(tipX * (t1 - t0) * 0.5, MENHIR_TOP * (t1 - t0) * 0.5, tipZ * (t1 - t0) * 0.5),
             v3(w.x * half * rng.range(0.54, 0.82), rng.signed() * 0.05, w.z * half * rng.range(0.54, 0.82)),
             art.weathered(art.STONE_DK, art.STONE_LT, @as(f32, @floatFromInt(i)) * 0.5),
         );
     }
-    // Nothing dead ends in a point, and the top is where the frost got in.
     b.addBlob(v3(tipX, MENHIR_TOP, tipZ), v3(MENHIR_R * 0.44, MENHIR_R * 0.22, MENHIR_R * 0.36), 4, 9, art.STONE_LT);
-    // RELIEF: a few percent of the mass, sunk most of the way in (the relief law).
     var f: i32 = 0;
     while (f < 14) : (f += 1) {
         const t = rng.float();
@@ -312,7 +275,6 @@ pub fn menhirMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.45) art.STONE_DK else art.STONE,
         );
     }
-    // The wedges driven in to stand it up: the only worked stone on the object.
     var k: i32 = 0;
     while (k < 6) : (k += 1) {
         const a = rng.angle();
@@ -330,26 +292,15 @@ pub fn menhirMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// **CRUDE STONE ART, AND THE HACKING IS THE OBJECT.** A low boulder with one flattened side; the marks are SUNK
-/// relief, a couple of centimetres into a two-metre mass (the relief law), because carving is subtraction.
-///
-/// **THE MARKS ARE DARKER THAN THE FACE AND THAT IS WHY THEY READ** — cut stone holds shadow in the groove, and a
-/// carving in a lighter tone reads as paint.
 pub const CARVE_TOP: f32 = 1.35;
 pub const CARVE_R: f32 = 1.45;
 pub fn stoneCarveMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xA5C3);
     b.setMat(.stone);
-    // Three blobs, so the back and sides stay boulder while one side is a face.
     b.addBlob(v3(0, CARVE_TOP * 0.42, -0.10), v3(CARVE_R, CARVE_TOP * 0.50, CARVE_R * 0.72), 5, 12, art.STONE);
     b.addBlob(v3(rng.signed() * 0.20, CARVE_TOP * 0.72, -0.22), v3(CARVE_R * 0.66, CARVE_TOP * 0.30, CARVE_R * 0.50), 4, 10, art.STONE_LT);
     b.addBlob(v3(rng.signed() * 0.25, CARVE_TOP * 0.18, 0.10), v3(CARVE_R * 0.86, CARVE_TOP * 0.24, CARVE_R * 0.58), 4, 10, art.STONE_DK);
-    // **DRESSED INTO THE MASS, NOT STOOD IN FRONT OF IT** — set proud it reads as a separate white panel leaning
-    // on a boulder, where flush it is one side of the rock knocked flat.
-    //
-    // **AND BOTH FACES ARE WORKED, WHICH IS NOT DECORATION**: cut on one side only, the whole point of the object
-    // is invisible from half the bearings a map can place it at.
     const faceY = CARVE_TOP * 0.52;
     const tilt: f32 = 0.16;
     const groove = art.weathered(art.STONE_DK, art.ROCK_DEEP, 0.7);
@@ -379,7 +330,6 @@ pub fn stoneCarveMesh(shader: rl.Shader) rl.Model {
                 prev = p;
             }
         } else {
-            // UNEVEN, because whoever cut them was not measuring.
             var i: i32 = 0;
             const n = 7;
             while (i < n) : (i += 1) {
@@ -394,7 +344,6 @@ pub fn stoneCarveMesh(shader: rl.Shader) rl.Model {
                     groove,
                 );
             }
-            // No head, which is how these always come out.
             const fx = CARVE_R * 0.36;
             const fy = faceY - CARVE_TOP * 0.12;
             b.addCapsule(v3(fx, fy, gz), v3(fx + 0.02, fy + 0.32, gz), 0.048, 0.044, 5, groove);
@@ -418,7 +367,6 @@ pub fn ashDuneMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xA512);
     driftInto(&b, &rng, .{ .len = 9.2, .wide = 3.9, .high = 2.05, .seed = 5 }, 0, 0, 0);
-    // A SECOND RUN BEHIND THE FIRST, shorter and offset — one ridge is a wall, two are a dune field.
     driftInto(&b, &rng, .{ .len = 5.6, .wide = 2.6, .high = 1.10, .seed = 11 }, 1.9, 3.4, mathx.radians(-13.0));
     return b.toModel(shader);
 }
@@ -428,7 +376,6 @@ pub fn cindersMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xA513);
     b.setMat(.stone);
-    // The crust: flat plates, cracked apart, most of the mass sunk so only a few centimetres stand proud.
     var i: i32 = 0;
     while (i < 11) : (i += 1) {
         const a = rng.angle();
@@ -447,7 +394,6 @@ pub fn cindersMesh(shader: rl.Shader) rl.Model {
         const a = rng.angle();
         const d = rng.range(0.05, 0.95);
         const r = rng.range(0.030, 0.075);
-        // IN THE CRACKS, not on the plates: a coal sitting on top of the crust is a berry.
         b.addBlob(v3(mathx.cosf(a) * d, r * 0.35, mathx.sinf(a) * d), v3(r, r * 0.55, r), 3, 5, EMBER_LIVE);
     }
     var k: i32 = 0;
@@ -462,7 +408,6 @@ pub fn cindersMesh(shader: rl.Shader) rl.Model {
 
 pub const SPAR_H: f32 = 5.4;
 
-/// A tree that burned standing. Charcoal is the darkest albedo in the world and it needs to be: this is a tall smooth mass and anything lighter comes back grey. The limbs are `propwood`'s own — the dead-growth law is the same whether the limb rotted off or burned off.
 pub fn charSparMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xA514);
@@ -479,7 +424,6 @@ pub fn charSparMesh(shader: rl.Shader) rl.Model {
         b.addCapsule(prev, p1, mathx.lerpF(0.44, 0.17, t0), mathx.lerpF(0.44, 0.17, t1), 9, art.weathered(CHAR, CHAR_LT, t0));
         prev = p1;
     }
-    // Snapped off, and the break shows the one un-burnt thing on it.
     b.addDome(prev, dir, 0.17, 6, art.PUNK_DK);
     var l: i32 = 0;
     while (l < 3) : (l += 1) {
@@ -487,7 +431,6 @@ pub fn charSparMesh(shader: rl.Shader) rl.Model {
         const root = mathx.scaleV(dir, SPAR_H * t);
         wood.deadLimbTinted(&b, &rng, root, rng.angle(), rng.range(1.1, 2.0), rng.range(0.25, 0.65), rng.range(0.13, 0.19), 2, CHAR, CHAR_LT);
     }
-    // The root flare, and the ash the fire left banked against it.
     b.setMat(.stone);
     var f: i32 = 0;
     while (f < 6) : (f += 1) {
@@ -502,7 +445,6 @@ pub fn charSparMesh(shader: rl.Shader) rl.Model {
 test "A DUNE IS ASYMMETRIC OR IT IS A PUDDING — the long ramp and the short slip face, measured" {
     const d = Drift{ .len = 9.2, .wide = 3.9, .high = 2.05, .seed = 5 };
     const mid: f32 = 0.5;
-    // The crest is where the surface is highest, and it is nowhere near the middle of the section.
     var best: f32 = -1;
     var bestU: f32 = 0;
     var u: f32 = d.toe;
@@ -517,7 +459,6 @@ test "A DUNE IS ASYMMETRIC OR IT IS A PUDDING — the long ramp and the short sl
     const lee = (d.crest + 0.34) - bestU;
     std.debug.print("\n  ash dune: {d:.2} m high, windward ramp {d:.2} of the section, slip face {d:.2}\n", .{ best, windward, lee });
     try std.testing.expect(windward > lee * 2.0);
-    // …and it dies at both ends of the ridge rather than being cut off square.
     try std.testing.expect(duneH(d, bestU, 0.02, 0) < best * 0.25);
     try std.testing.expect(duneH(d, bestU, 0.98, 0) < best * 0.25);
 }
@@ -527,6 +468,5 @@ test "the coals are EMISSIVE and the ash around them is not" {
     try std.testing.expect(EMBER_LIVE.a < 128);
     try std.testing.expectEqual(@as(u8, 255), CINDER_GREY.a);
     try std.testing.expectEqual(@as(u8, 255), DRIFT_DK.a);
-    // …and char is the darkest thing in the world, because it is the smoothest big mass in it.
     try std.testing.expect(CHAR.r < art.BARK_OLD.r);
 }

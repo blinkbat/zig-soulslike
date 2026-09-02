@@ -56,7 +56,6 @@ pub const Input = struct {
     pick: ?usize = null,
 };
 
-/// **THE PLATE'S HEIGHT, IN THE ORDER THE DRAW WALKS IT** — one pass ahead of the other, so a row added below
 /// cannot silently overflow a box laid out for the row count before it. Its own function so the fit can be
 /// MEASURED with no window open: what a counter's greeting costs is arithmetic, not a screenshot.
 pub fn plateNeed(named: bool, nlines: usize, nchoices: usize, portrait: bool) i32 {
@@ -71,13 +70,10 @@ pub fn plateNeed(named: bool, nlines: usize, nchoices: usize, portrait: bool) i3
     return need;
 }
 
-/// **HOW WIDE THE PROSE GETS**, portrait aside — the width `draw` wraps the greeting against, exposed so the
-/// editor's talk panel can show the author the SAME break the player will see rather than its own.
 pub fn innerWidth() i32 {
     return rl.getScreenWidth() - SIDE_MARGIN * 2 - PAD * 2;
 }
 
-/// The tallest plate the window will grant, which is what `plateNeed` has to come in under.
 pub fn plateCap(screenH: i32) i32 {
     return @intFromFloat(@as(f32, @floatFromInt(screenH)) * MAX_FRAC);
 }
@@ -249,10 +245,6 @@ pub const Session = struct {
 
         // THE FOOTER IS THE FLOOR EVERYTHING INSIDE THE PLATE IS MEASURED AGAINST — the prose as much as the rows. `need` asked for the height it wanted and `MAX_FRAC` may have refused it on a short window, and a line that will not fit is not drawn OUTSIDE the plate.
         const footer = y + hpx - PAD - hud.lineH(hud.HINT);
-        // **THE ROWS ARE RESERVED BEFORE THE PROSE, BECAUSE ONLY THE ROWS CAN BE PRESSED.** `MAX_FRAC` can
-        // refuse the height `need` asked for on a short window, and the clip then ate the BOTTOM of the plate
-        // — the last choices. `offered` still returned them and the cursor still walked them, so a body could
-        // confirm a line that was nowhere on screen. A dropped line of prose is legible; a dropped choice is not.
         const rowsH: i32 = if (shown.len > 0) RULE_GAP * 2 + @as(i32, @intCast(shown.len)) * rowStep else 0;
         const proseFloor = footer - rowsH;
         for (lines) |ln| {
@@ -469,10 +461,8 @@ test "A LINE THAT OPENS A STALL ASKS FOR IT ON THE FRAME IT IS PRESSED, and the 
     pick(&s, m, &rt, 1);
     try std.testing.expectEqual(@as(?wf.ActKind, .shop), rt.takeCounter());
     try std.testing.expect(!s.active());
-    // …and it is DRAINED — a stale ask would re-open the stall the next time anything looked.
     try std.testing.expect(rt.takeCounter() == null);
 
-    // THE SMITHY LINE GOES BACK TO THE TOP, so the stall opens over a conversation that is still running.
     _ = s.open(m, &rt, 0, "Caravaneer", null);
     pick(&s, m, &rt, 2);
     try std.testing.expectEqual(@as(?wf.ActKind, .smithy), rt.takeCounter());
@@ -486,11 +476,8 @@ test "A LINE THAT OPENS A STALL ASKS FOR IT ON THE FRAME IT IS PRESSED, and the 
 
 test "THE PANEL FITS EVERY LINE IT WILL OFFER — the choices are what can be pressed, so they may not be clipped" {
     // **MEASURED, NOT LOOKED AT.** `MAX_FRAC` of the window is the ceiling; a counter's greeting wraps to a few
-    // lines and offers up to `wf.MAX_CHOICES`. What this pins is the SHORT window, where the plate is refused
-    // the height it asked for and the draw has to spend the shortfall on prose rather than on rows.
     for ([_]i32{ 720, 800, 1009, 1440 }) |sh| {
         const cap = plateCap(sh);
-        // The rows and the chrome round them must always fit, or a line is offered that cannot be shown.
         const bare = plateNeed(true, 0, wf.MAX_CHOICES, false);
         std.debug.print("\n  {d}px window: plate cap {d}, {d} lines + chrome need {d}", .{ sh, cap, wf.MAX_CHOICES, bare });
         try std.testing.expect(bare <= cap);
@@ -500,6 +487,5 @@ test "THE PANEL FITS EVERY LINE IT WILL OFFER — the choices are what can be pr
         try std.testing.expect(proseFits >= 1);
         if (full <= cap) try std.testing.expect(proseFits >= MAX_LINES);
     }
-    // A PORTRAIT NEVER SHRINKS THE PLATE, it only ever sets a floor under it.
     try std.testing.expect(plateNeed(true, 1, 1, true) >= plateNeed(true, 1, 1, false));
 }

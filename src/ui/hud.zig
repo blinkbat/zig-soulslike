@@ -207,7 +207,6 @@ pub const Glyph = union(enum) {
 
 pub const Hint = struct { glyph: Glyph, label: [:0]const u8 };
 
-/// THE BUTTONS THE GAME ACTUALLY BINDS, named once so a caption and the press cannot drift.
 pub const BTN_INTERACT: PadBtn = .y;
 pub const BTN_CONFIRM: PadBtn = .a;
 pub const BTN_JUMP: PadBtn = .a;
@@ -387,8 +386,6 @@ const BAR_GAP: i32 = 6;
 const DIAL_R: i32 = 21;
 const DIAL_GAP: i32 = 14;
 const BARS_X: i32 = MARGIN + DIAL_R * 2 + DIAL_GAP;
-/// **THE STATUS BUILDUP METERS SIT AT THE BOTTOM MIDDLE** (owner) — stacked upward off this margin, the
-/// status word above them. The vitals keep the top-left corner beside the day dial.
 const STATUS_BOTTOM_MARGIN: i32 = 34;
 fn centreX(w: i32) i32 {
     return @divTrunc(rl.getScreenWidth() - w, 2);
@@ -431,10 +428,6 @@ fn refuseRing(x: i32, y: i32, w: i32, h: i32, k: f32) void {
 
 pub const Status = struct { frac: f32 = 0, on: bool = false };
 
-/// **AN AILMENT IS ITS GLYPH.** Ten meters is more rows than any player will read as words, so the icon IS the
-/// name (owner: make it synonymous with that status) — drawn beside its own bar here, and the same call is what
-/// the book and an item's line use, so a status is never described two ways. **HERE AND NOT `uiart`**: that file
-/// is dressing and knows nothing about the game, the same reason the pad glyphs live in this one.
 /// Vector, from primitives, so it reads at 8 px and at 40.
 pub fn ailTint(a: combat.Ail) rl.Color {
     return switch (a) {
@@ -455,7 +448,6 @@ fn gl(x0: f32, y0: f32, x1: f32, y1: f32, w: f32, c: rl.Color) void {
     rl.drawLineEx(.{ .x = x0, .y = y0 }, .{ .x = x1, .y = y1 }, w, c);
 }
 
-/// One silhouette apiece — told apart by SHAPE with the colour taken away, the way `elemfx`'s four are.
 pub fn ailGlyph(a: combat.Ail, cx: f32, cy: f32, size: f32, col: rl.Color) void {
     const r = size * 0.5;
     const w = mathx.maxF(size * 0.13, 1.0);
@@ -469,14 +461,12 @@ pub fn ailGlyph(a: combat.Ail, cx: f32, cy: f32, size: f32, col: rl.Color) void 
             );
             rl.drawCircleV(.{ .x = cx, .y = cy + r * 0.22 }, r * 0.62, col);
         },
-        // THREE drops falling off the line — the same fluid as the poison, told apart by count and slant.
         .bleed => {
             for ([_]f32{ -0.55, 0.05, 0.65 }, [_]f32{ 0.5, -0.1, 0.35 }) |dx, dy| {
                 rl.drawCircleV(.{ .x = cx + r * dx, .y = cy + r * dy }, r * 0.28, col);
                 gl(cx + r * dx, cy + r * dy - r * 0.30, cx + r * dx, cy + r * dy - r * 0.62, w * 0.8, col);
             }
         },
-        // A TONGUE: two nested points, the inner one shorter, which is what reads as flame and not as an arrow.
         .burning => {
             rl.drawTriangle(
                 .{ .x = cx, .y = cy - r },
@@ -491,7 +481,6 @@ pub fn ailGlyph(a: combat.Ail, cx: f32, cy: f32, size: f32, col: rl.Color) void 
                 mathx.withAlpha(rl.Color.black, 120),
             );
         },
-        // Six spokes. Not four: a cross is a plus sign, and a plus sign is already health everywhere.
         .chill => {
             var i: usize = 0;
             while (i < 3) : (i += 1) {
@@ -519,14 +508,12 @@ pub fn ailGlyph(a: combat.Ail, cx: f32, cy: f32, size: f32, col: rl.Color) void 
                 gl(x - s, y + s, x + s, y + s, w * 0.85, col);
             }
         },
-        // Two arrows crossing: it is swinging, and not at what it meant to.
         .confusion => {
             gl(cx - r * 0.8, cy - r * 0.6, cx + r * 0.8, cy + r * 0.6, w, col);
             gl(cx + r * 0.8, cy - r * 0.6, cx - r * 0.8, cy + r * 0.6, w, col);
             rl.drawCircleV(.{ .x = cx + r * 0.8, .y = cy + r * 0.6 }, w * 1.3, col);
             rl.drawCircleV(.{ .x = cx - r * 0.8, .y = cy + r * 0.6 }, w * 1.3, col);
         },
-        // A heart, because it has changed whose side it is on.
         .charm => {
             rl.drawCircleV(.{ .x = cx - r * 0.38, .y = cy - r * 0.28 }, r * 0.44, col);
             rl.drawCircleV(.{ .x = cx + r * 0.38, .y = cy - r * 0.28 }, r * 0.44, col);
@@ -537,7 +524,6 @@ pub fn ailGlyph(a: combat.Ail, cx: f32, cy: f32, size: f32, col: rl.Color) void 
                 col,
             );
         },
-        // Two chevrons up — the same arrow a level-up wears, doubled, because it is a boost with a bill.
         .berserk => {
             for ([_]f32{ 0.30, -0.35 }) |off| {
                 gl(cx - r * 0.75, cy + r * (off + 0.45), cx, cy + r * (off - 0.35), w * 1.1, col);
@@ -564,9 +550,6 @@ pub fn ailGlyph(a: combat.Ail, cx: f32, cy: f32, size: f32, col: rl.Color) void 
 const PSN_W: i32 = 196;
 const PSN_H: i32 = 9;
 /// **A ROW PER METER, GLYPH FIRST** (owner: separate rows for each status buildup, along with an icon for each).
-/// Centred at the bottom of the screen, laid UPWARD from `bottomY` in `Ail` order and only what is actually
-/// filling — so the same status is always the same distance from the floor. Returns the top of the stack,
-/// which is where the word goes.
 fn statusBarsUp(bottomY: i32, ails: Ails) i32 {
     const x = centreX(PSN_W);
     var yy = bottomY - PSN_H;
@@ -601,7 +584,6 @@ pub fn unloadPortrait() void {
     spiritHeld = false;
 }
 
-/// WHAT IT TAKES TO PHOTOGRAPH A BODY: the scene to draw it through, the point to frame on, where the camera stands relative to that point, and how to draw the thing. `drawFn` is a callback so this file never has to know what a wanderer or a wolf is.
 pub const LivePortrait = struct {
     scene: *gfx.Scene,
     focus: rl.Vector3,
@@ -609,7 +591,6 @@ pub const LivePortrait = struct {
     pitch: f32,
     dist: f32,
     fov: f32 = 34.0,
-    /// What the target is wiped to before the subject goes in. A FIELD because the book's doll stands against its own near-black and the head shots against theirs.
     clear: rl.Color = PORT_CLEAR,
     ctx: *const anyopaque,
     drawFn: *const fn (*const anyopaque) void,
@@ -617,9 +598,6 @@ pub const LivePortrait = struct {
 
 const PORT_CLEAR = rgba(13, 12, 11, 255);
 
-/// **TAKING THE PICTURE AND MOUNTING IT ARE TWO CALLS, AND THE SPLIT IS LOAD-BEARING.** `endTextureMode`
-/// restores the DEFAULT framebuffer, not whatever was bound before it, so a render nested inside another target
-/// redirects the rest of the frame at the backbuffer. The chrome fade is such a target, so the toast RENDERS
 /// before it opens and only BLITS within. **RE-TAKEN EVERY FRAME, AND THAT IS MEASURED**: one target switch, one
 /// shader bind and the subject's own meshes — 27 for the wolf, 18 for a wanderer — against a full shadow pass over hundreds.
 pub fn renderPortrait(p: LivePortrait) bool {
@@ -740,9 +718,6 @@ pub fn spiritPanel(hasFace: bool, name: [:0]const u8, hp: f32, k: f32) void {
     bar(tx, by, SP_BAR_W, SP_BAR_H, mathx.clampF(hp, 0, 1), 0, SP_LIFE_HI, SP_LIFE_LO, SP_LIFE_TP);
 }
 
-/// **THE WORD A STATUS SAYS WHEN IT LANDS, AND THE ONE THAT SAYS NOTHING.** A stun is the one status the
-/// player is already being told about by the thing that took his feet, and a caption on that frame is noise
-/// laid over the frame he can least afford to read (owner: don't show one for stun/heavy stun).
 fn ailWord(a: combat.Ail) ?[:0]const u8 {
     return switch (a) {
         .poison => "Poisoned!",
@@ -762,15 +737,11 @@ const FLASH_IN: f32 = 0.16;
 const FLASH_HOLD: f32 = 0.90;
 const FLASH_OUT: f32 = 0.60;
 const FLASH_DUR: f32 = FLASH_IN + FLASH_HOLD + FLASH_OUT;
-/// How far the word drifts up over its life. It ARRIVES rather than appearing, which is what stops a caption
-/// on a busy frame reading as a HUD element that was always there.
 const FLASH_RISE: f32 = 9.0;
 var flashLeft: f32 = 0;
 var flashAil: combat.Ail = .poison;
 var ailWas: [combat.NAIL]bool = [_]bool{false} ** combat.NAIL;
 
-/// The rising edge of a meter actually PROCCING, watched here rather than plumbed in: `Status.on` is already
-/// the fact, and the game hands it over every frame.
 fn watchAils(dt: f32, psn: Ails) void {
     for (psn, 0..) |s, i| {
         const a: combat.Ail = @enumFromInt(i);
@@ -783,7 +754,6 @@ fn watchAils(dt: f32, psn: Ails) void {
     if (flashLeft > 0) flashLeft = mathx.maxF(0, flashLeft - dt);
 }
 
-/// FADES IN AND THEN OUT (owner), off its own clock and nothing else.
 fn flashAmt() f32 {
     if (flashLeft <= 0) return 0;
     const spent = FLASH_DUR - flashLeft;
@@ -840,7 +810,6 @@ const DIAL_GROUND = rgba(20, 17, 14, 214);
 const SUN_COL = rgba(244, 206, 118, 255);
 const MOON_COL = rgba(206, 216, 234, 255);
 
-/// THE WORLD CLOCK, drawn as the thing it actually is: a horizon, and the key light travelling across it left to right. The hour is the ONLY input and every shape comes off `daynight`'s own arithmetic, so the dial cannot tell a different time than the sun the scene is lit by.
 pub fn dayDial(hour: f32) void {
     const cx = MARGIN + DIAL_R;
     const cy = BAR_TOP + @divTrunc(BARS_H, 2);
@@ -913,17 +882,12 @@ const CHILL_STRIP = rgba(148, 202, 232, 235);
 /// A STATUS ROW under a foe's health: 2 px tall on a 5 px bar, one clear pixel above each.
 const STRIP_H: i32 = 2;
 const STRIP_GAP: i32 = 1;
-/// A BAR MAY NOT CLIMB OUT OF THE FRAME. Over the head is right at every distance you can see the whole creature
-/// at, and wrong the moment you close on a TALL one: the ogre's crown is 4.4 m up. So the bar has a CEILING in screen space — far off it rides the head, walking in it stops climbing and hangs against the body.
+/// A fraction of stature is wrong the moment you close on a TALL one — the ogre's crown is 4.4 m up — so the bar has a CEILING in screen space: far off it rides the head, walking in it stops climbing and hangs against the body.
 const FOE_CEIL: f32 = 0.25; // …measured from the TOP, so 0.25 is three quarters up
 
-/// One entry per `combat.Ail`, in the enum's own order, so the caller hands over the body's meters and this
-/// file decides what is worth a row. A meter reading zero costs a compare and nothing else.
 pub const Ails = [combat.NAIL]Status;
 
-/// **A ROW PER LIVE METER, AND THE GLYPH IS ITS LABEL** (owner). Rows are laid in `Ail` order so the same
-/// ailment is always at the same height on the same creature, and only the ones that are actually filling take
-/// a row — ten at once would be 30 px of strip under a 5 px bar.
+/// **A ROW PER LIVE METER, GLYPH FIRST**, laid in `Ail` order — ten at once would be 30 px of strip under a 5 px bar.
 pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool, ails: Ails) void {
     const wf: f32 = @floatFromInt(FOE_W);
     const x: i32 = @intFromFloat(sx - wf * 0.5);
@@ -936,8 +900,6 @@ pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool, ails: Ails) void {
     // 5 px tall, so the shade band is 2 rather than the vitals bars' third and the tip is a single column.
     fillThree(x, y, fw, FOE_H, frac, HP_HI, HP_LO, mathx.withAlpha(HP_TP, 200), 2, 1, 120);
     // A tint on a red bar at 54 px is a hue nobody can name, so every status is its OWN row under the health.
-    // **A RUNNING METER IS BRIGHT AND A FILLING ONE IS NOT** — that flip is the only difference a player has to
-    // read, and it is the same flip on every row rather than a colour pair per ailment.
     var row: i32 = 0;
     for (ails, 0..) |s, i| {
         if (s.frac <= 0.001) continue;
@@ -956,23 +918,15 @@ const FOE_GLYPH: i32 = 6;
 const FOE_GLYPH_S: f32 = 7.0;
 const BOSS_H: i32 = 13;
 const BOSS_LIFT: i32 = 158;
-/// **A BAR PER BOSS ON THE FIELD, EACH KEEPING ITS OWN CHIP** — the delayed white tail is a memory of THAT
-/// bar's last hit, so one set of module scratch across two bosses had the second replaying the first one's
 /// damage. Rail 0 is the lowest. **A RAIL IS A ROW OF `game.BOSS_RAILS` AND NOT A PLACE IN A QUEUE** — it is
-/// the same rail whether or not the ones under it are up, because a bar that slid down when another boss died
-/// would move mid-fight. Three, because the shipped map holds three bosses.
 pub const BOSS_SLOTS: usize = 3;
-/// **THE PITCH BETWEEN TWO BARS IS THE BAR PLUS ITS OWN NAME, NOT A ROUND NUMBER.** The name is engraved ABOVE
 /// the rail (`y - lineH(SMALL) - 3`), so at a 20 px pitch on a 13 px bar the upper bar sat straight on top of
-/// the lower one's name. Derived, so restyling either the bar or the caption cannot leave the two overlapping.
 const BOSS_NAME_LIFT: i32 = 3;
 const BOSS_GAP: i32 = BOSS_H + BOSS_NAME_LIFT + 8 + lineH(SMALL);
 var bossChip: [BOSS_SLOTS]f32 = [_]f32{0} ** BOSS_SLOTS;
 var bossHold: [BOSS_SLOTS]f32 = [_]f32{0} ** BOSS_SLOTS;
 var bossLast: [BOSS_SLOTS]f32 = [_]f32{0} ** BOSS_SLOTS;
 
-/// **THE CHIP TAIL IS A MEMORY OF ONE RUN, AND A BLACK SCREEN ENDS THE RUN.** Module scratch, so without this
-/// the last blow of the fight you died in was still on the rail when the bar next opened.
 pub fn dropBossBars() void {
     bossChip = [_]f32{0} ** BOSS_SLOTS;
     bossHold = [_]f32{0} ** BOSS_SLOTS;
@@ -1034,9 +988,6 @@ const SOUL_H: i32 = 32;
 const SOUL_FILL_A: u8 = 170;
 const SOUL_TEXT = rgba(228, 216, 190, 255);
 
-/// **ONE PLATE, TWO PURSES.** The box, the drop shadow, the rim and the gilt top line are the same picture for
-/// both counters; only the mark on the left and the tone of the numeral differ, which is the whole point of
-/// having two. Spelled twice they drifted the moment either changed height.
 fn pursePlate(x: i32, y: i32, w: i32, h: i32, n: u32, col: rl.Color, jewels: bool) void {
     var buf: [16]u8 = undefined;
     const s = std.fmt.bufPrintZ(&buf, "{d}", .{n}) catch return;
@@ -1060,32 +1011,17 @@ const COIN_GAP: i32 = 5;
 const COIN_W: i32 = SOUL_W;
 const COIN_TEXT = rgba(238, 216, 158, 255);
 
-/// **HOW TALL THE PAIR OF PURSES STANDS.** One number, because the save tree anchors off the bottom-right stack
-/// too and a second copy of the sum would put the tree over the gold the first time either plate changed height.
 pub fn purseStackH() i32 {
     return SOUL_H + COIN_GAP + COIN_H;
 }
 
-/// **GOLD SITS OVER SOULS AND IT IS A COIN, NOT A JEWEL** (owner: a different icon). The souls plate carries
-/// `uiart.diamond`; a second diamond in a second box a few pixels above it is the same readout twice. A disc
-/// with a rim and a struck face is the one shape nobody confuses for a soul.
 pub fn gold(n: u32) void {
     const x = rl.getScreenWidth() - COIN_W - MARGIN;
     const y = rl.getScreenHeight() - BOTTOM - purseStackH();
-    // No corner jewels: the shallower plate has no room for them, and they are what makes the souls box the
-    // one your eye lands on first.
     pursePlate(x, y, COIN_W, COIN_H, n, COIN_TEXT, false);
     uiart.coinMark(uiart.fi(x + 14), uiart.fi(y + @divTrunc(COIN_H, 2)), uiart.MARK_R, 240);
 }
 
-// **THE ONE THING THAT SAYS THE DISK WAS TOUCHED** (owner: a save spinner, bottom right — a tree that grows; a
-// DEAD one). Not a spinner: the file is on disk before the first frame of this draws.
-//
-// **IT IS FORLORN AND IT DOES NOT BOUNCE** (owner's call, and the one place in this codebase where **A MASS IN
-// MOTION OVERSHOOTS ITS REST** does NOT apply — do not put the overshoot back).
-//
-// **AND IT IS BUILT TO THE DEAD-GROWTH LAW** (`propwood.deadLimbInto`, at HUD scale in two dimensions): NOTHING
-// DEAD IS STRAIGHT AND NOTHING ENDS IN A POINT. No crown and no leaf anywhere — the fork at the top is finer limbs.
 
 pub const SAVE_GROW: f32 = 0.92;
 pub const SAVE_HOLD: f32 = 0.50;
@@ -1100,7 +1036,6 @@ const SAVE_BARK = rgba(58, 47, 38, 255);
 const SAVE_BARK_LT = rgba(92, 76, 58, 255);
 const SAVE_HEART = rgba(142, 126, 100, 255);
 
-/// **NO OVERSHOOT** (see above — the owner's exemption from the house law). Slow off the mark, slow onto its rest, and it never goes past it.
 fn saveEase(p: f32) f32 {
     return mathx.smoothstep(0, 1, p);
 }
@@ -1217,7 +1152,6 @@ const BANNER_TOP: i32 = 96;
 const BANNER_ROWS: usize = 3;
 const BANNER_WIDE: i32 = 620;
 
-/// A LINE THE WORLD IS SAYING, not a thing you can answer — no frame, no plate, just words with a shadow under them. Wrapped with the real face, since a script's sentence is written to be read and not to fit.
 pub fn banner(s: []const u8) void {
     var buf: [320]u8 = undefined;
     var rows: [BANNER_ROWS][:0]const u8 = undefined;
@@ -1308,7 +1242,6 @@ fn slot(x: i32, y: i32, holds: Slot, charges: u8) void {
     switch (holds) {
         .empty => {},
         .held => |h| itemart.heldArt(h.arm, h.gear, cx, cy, px),
-        // The sorcery cell's picture greys out when the FP will not cover a cast, which is the ammo box's own rule. WHICH picture is `itemart`'s one answer, shared with the character book's socket.
         .sorcery => |sp| itemart.spellArt(sp, cx, cy, px, charges > 0),
     }
 }
@@ -1340,7 +1273,6 @@ pub fn wrap(s: []const u8, size: i32, maxW: i32, buf: []u8, lines: [][:0]const u
     return wrapBy(textW, s, size, maxW, buf, lines);
 }
 
-/// **ONE ROTATING SCRATCH FOR EVERY PANEL'S LABELS.** The book, the bonfire and the passive tree each kept their own copy — and a slice into slot N is only good for the next fifteen calls, which is a rule worth having in ONE place next to the drawing it feeds.
 var scratch: [16][160]u8 = undefined;
 var scratchAt: usize = 0;
 
@@ -1354,7 +1286,6 @@ const PROSE_BUF = 768;
 var proseLines: [PROSE_LINES][:0]const u8 = undefined;
 var proseBuf: [PROSE_BUF]u8 = undefined;
 
-/// Draws one wrapped paragraph; returns the y past the last line.
 pub fn prose(s: []const u8, x: i32, y: i32, w: i32, size: i32, col: rl.Color) i32 {
     var yy = y;
     for (proseWrap(s, w, size)) |line| {
@@ -1479,7 +1410,6 @@ test "THE WORD FADES IN AND THEN OUT, and a stun never starts one" {
     try std.testing.expect(peak > 0.9);
     while (t < FLASH_DUR + 0.1) : (t += dt) watchAils(dt, ails);
     try std.testing.expectApproxEqAbs(@as(f32, 0), flashAmt(), 1e-6);
-    // …and it does not re-fire while the meter simply STAYS on. Only the edge speaks.
     watchAils(dt, ails);
     try std.testing.expectApproxEqAbs(@as(f32, 0), flashAmt(), 1e-6);
     flashLeft = 0;

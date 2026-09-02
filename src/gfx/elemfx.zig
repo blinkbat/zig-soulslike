@@ -20,11 +20,8 @@ pub const Sig = struct {
     r1: f32,
     inward: bool = false,
     ash: ?rl.Color = null,
-    /// What the mote COOLS TO across its life — fire dies to ember red, cold whitens to frost, chaos sinks to a deeper violet. Null (lightning) is a spark that vanishes at full heat: white has nothing to cool to.
     cool: ?rl.Color = null,
-    /// Air resistance — only fire has any: a flame leaps and then HANGS, which is most of what says "flame".
     drag: f32 = 0,
-    /// Velocity trail (seconds) — lightning owns this: at its speeds the motes draw as jagged white streaks.
     stretch: f32 = 0,
 };
 
@@ -58,7 +55,6 @@ const COLD = Sig{
     .stretch = 0.020,
 };
 
-/// LIGHTNING — **THE ONLY COLOURLESS ONE IN THE TABLE.** As the thundercrock's pale blue the hue test refused it: against COLD, which owns the blues, the two were one substance at two brightnesses. A spark is white-hot, so it is the achromatic one. (The crock's STREAK stays as it is — a thing in the SKY at range.)
 const LIGHTNING = Sig{
     .core = rgba(255, 255, 224, 255),
     .edge = rgba(226, 230, 232, 245),
@@ -97,7 +93,6 @@ pub fn sig(e: combat.Elem) Sig {
 }
 
 
-/// A gather is an INHALE, not a blast — it converges at the old pace (this factor un-does fire's drag-solved speed raise) and carries no drag, which would stall the convergence it exists to show.
 const GATHER_PACE: f32 = 0.55;
 
 pub fn gather(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3, e: combat.Elem, n: usize, r: f32, scale: f32) void {
@@ -123,11 +118,9 @@ pub fn gather(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector
     }
 }
 
-/// One in this many of a burst's motes is a CORE rather than an edge, and — for the one element that leaves a residue — the mote at this offset in that cadence is followed by an ash mote.
 const BURST_EVERY: usize = 3;
 const BURST_ASH_AT: usize = 1;
 
-/// How many motes ONE `burst` of `n` actually emits — `pourCount`'s counterpart, and it is not `n`: fire lays an ASH mote beside every third, so a caller sizing its ring off `n` alone is a third short of the frame.
 pub fn burstCount(e: combat.Elem, n: usize) usize {
     if (sig(e).ash == null) return n;
     return n + (n + BURST_EVERY - 1 - BURST_ASH_AT) / BURST_EVERY;
@@ -157,7 +150,6 @@ pub fn burst(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3
     var i: usize = 0;
     while (i < n) : (i += 1) {
         var out = randomUnit(rng);
-        // A cone about the axis, biased outward — never a hemisphere, which reads as a puff rather than a blow.
         if (aimed) out = mathx.normV(mathx.addV(axis, mathx.scaleV(out, 0.62)));
         const sp = rng.range(s.speedLo, s.speedHi) * scale;
         const v = mathx.scaleV(out, if (s.inward) -sp * 0.55 else sp);
@@ -209,8 +201,6 @@ const POUR_ROOT_R: f32 = 1.6;
 const POUR_ROOT_LIFE_LO: f32 = 0.05;
 const POUR_ROOT_LIFE_HI: f32 = 0.13;
 
-/// How many motes ONE `pour` of `n` actually emits, root included — the pool arithmetic every caller sizes its
-/// ring off (`hero.FX_N`). **It is the count for ONE CALL**: a caller making `k` calls owes `k * pourCount(n)`, and `pourCount(k * n)` is not the same number — the knot restarts every call.
 pub fn pourCount(n: usize) usize {
     return n + (n + POUR_ROOT_EVERY - 1) / POUR_ROOT_EVERY;
 }
@@ -220,7 +210,6 @@ pub fn pour(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, from: rl.Vector
     if (mathx.lenV(dir) < 1e-3) return;
     const scale = callerScale * POUR_GRAIN;
     const axis = mathx.normV(dir);
-    // **THE SPREAD IS A DISC ACROSS THE AXIS, NOT A BALL AROUND IT** — the sector drawn IS the sector that bites
     // (`game.rimeBreathe`, `shroommage.flick`). Off a full 3D unit vector the offset's own axial component skews
     // the angle: MEASURED, 7.6% of the rime stream landed outside its 30 deg and the widest reached 35.2, which
     // is 0.78 m of frost past the arc at six metres.
@@ -240,7 +229,6 @@ pub fn pour(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, from: rl.Vector
         const life = rng.range(s.lifeLo, s.lifeHi);
         const sp = (reach / mathx.maxF(life, 0.05)) * rng.range(0.55, 1.0);
         const grain = rng.range(POUR_SIZE_LO, POUR_SIZE_HI);
-        // NO DRAG on a pour — its speed is solved as reach/life, and drag would take back the reach it claims.
         foe.emitPart(pool, head, .{
             .p = from,
             .v = mathx.scaleV(out, sp),
@@ -294,10 +282,8 @@ test "the four are told apart with the COLOUR TAKEN AWAY" {
     try std.testing.expect(x.inward);
     for ([_]Sig{ f, c, l }) |s| try std.testing.expect(!s.inward);
 
-    // Fire is the only one the air holds back — and the drag is SOLVED with the speeds (see FIRE), not on top.
     try std.testing.expect(f.drag > 0);
     for ([_]Sig{ c, l, x }) |s| try std.testing.expect(s.drag == 0);
-    // Lightning streaks hardest; a flame never streaks — a smeared flame is a comet, not a fire.
     try std.testing.expect(f.stretch == 0);
     for ([_]Sig{ c, x }) |s| try std.testing.expect(l.stretch > 1.3 * s.stretch);
 }
@@ -308,7 +294,6 @@ test "every element COOLS to its own colour, and lightning to none" {
     const l = sig(.lightning);
     const x = sig(.chaos);
     try std.testing.expect(l.cool == null);
-    // Fire dies DOWN (to ember red, darker than its core); cold dies WHITER (frost settling).
     const fcool = f.cool.?;
     try std.testing.expect(@as(u16, fcool.r) + fcool.g + fcool.b < @as(u16, f.core.r) + f.core.g + f.core.b);
     const ccool = c.cool.?;
@@ -318,10 +303,6 @@ test "every element COOLS to its own colour, and lightning to none" {
     try std.testing.expect(hueApart(ccool, x.cool.?) > 45);
 }
 
-/// HOW FAR APART TWO PARTICLE COLOURS ACTUALLY LOOK — the distance on the two OPPONENT axes (red-green and
-/// green-blue), which is a hue comparison that brightness cannot fake. A single axis cannot do this job: the
-/// first pass compared red-against-blue alone and passed a cyan frost mote and a violet chaos mote as
-/// separate while calling the frost and the lightning spark identical, which is both answers wrong.
 fn hueApart(a: rl.Color, b: rl.Color) f32 {
     const arg = @as(f32, @floatFromInt(@as(i32, a.r) - @as(i32, a.g)));
     const agb = @as(f32, @floatFromInt(@as(i32, a.g) - @as(i32, a.b)));
@@ -377,7 +358,6 @@ test "a gather actually converges" {
 }
 
 test "A POURED CONE IS THE SECTOR THAT BITES — no mote lands outside the arc the hitbox uses" {
-    // All three pours hand this the arc their own hit test reads, so a mote outside it is frost or fire on a
     // body taking none. BEFORE: p99 33.7 deg, widest 35.2 against a claimed 30 — 0.78 m of overspray at six metres.
     var pool = [_]foe.Particle{.{}} ** 4096;
     var head: usize = 0;
@@ -397,7 +377,6 @@ test "A POURED CONE IS THE SECTOR THAT BITES — no mote lands outside the arc t
         const l = mathx.lenV(p.v);
         if (l < 1e-4) continue;
         const travel = l * p.life;
-        // The nozzle knot is a puff at the source, not the stream, and it is not what draws the cone.
         if (travel < REACH * 0.2) continue;
         const u = mathx.scaleV(p.v, 1.0 / l);
         const dot = mathx.clampF(u.x * axis.x + u.y * axis.y + u.z * axis.z, -1, 1);
@@ -408,8 +387,6 @@ test "A POURED CONE IS THE SECTOR THAT BITES — no mote lands outside the arc t
     std.debug.print("\n  pour: {d} stream motes, widest {d:.1} deg against an arc of {d:.1}, farthest {d:.2} m against a reach of {d:.2}\n", .{ n, worst, ARC, farthest, REACH });
     try std.testing.expect(n > 500);
     try std.testing.expect(worst <= ARC + 0.05);
-    // …and it still FILLS the arc, or the fix has narrowed the cone instead of bounding it.
     try std.testing.expect(worst > ARC - 1.0);
-    // The reach half of the same contract: the far end is reached and not overshot.
     try std.testing.expect(farthest >= REACH * 0.95 and farthest <= REACH + 0.01);
 }

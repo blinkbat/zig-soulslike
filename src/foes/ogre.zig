@@ -33,7 +33,6 @@ const IRON_RUST = rgba(72, 46, 26, 255);
 const MAW = rgba(14, 8, 7, 255);
 const TONGUE = rgba(58, 25, 23, 255);
 const PARRY_SPARK = rgba(236, 170, 84, 230);
-/// A struck spark is LIGHT and it COOLS — the hero's own catch cools the same way (`hero.PARRY_SPARK_COOL`).
 const PARRY_SPARK_COOL = rgba(206, 96, 30, 190);
 
 const N = 24;
@@ -87,7 +86,6 @@ fn restPositions() [N]rl.Vector3 {
     r[CHEST] = v3(0, 0.775, 0);
     r[NECK] = v3(0, 0.842, 0.048);
     r[SKULL] = v3(0, 0.925, 0.104); // MEASURED against the chest barrel's top: at 0.070 the whole head sat
-    // between the shoulder blobs and vanished from every rear quarter
     r[HIPL] = v3(hx, 0.530, 0);
     r[KNEEL] = v3(hx, 0.285, 0);
     r[ANKL] = v3(hx, 0.039, 0);
@@ -135,7 +133,6 @@ const WALK_SPEED = heromod.WALK_SPEED_BANK * 0.72;
 pub var AGGRO_R: f32 = 18.0;
 const SLAM_R = 2.3;
 const SWIPE_R = 4.4;
-/// **THE REFERENCE FOR HOW HARD A BIG BODY FOLLOWS YOU** — PUBLIC because the bone knight is pinned into this
 /// class rather than tuned against nothing (owner: track like the ogre). rad/s; ~195 deg/s.
 pub const TURN_RATE = 3.4;
 pub const SWIPE_TURN = 5.4;
@@ -190,8 +187,6 @@ pub var SLAM_HIT = combat.Hit{ .dmg = 36, .poise = 44, .stance = 20, .launch = c
 pub var SWIPE_HIT = combat.Hit{ .dmg = 23, .poise = 30, .stance = 11 };
 pub var DRIVE_HIT = combat.Hit{ .dmg = 31, .poise = 40, .stance = 20 };
 const DEATH_DUR = 1.7;
-/// Fraction of `DEATH_DUR` at which the trunk ARRIVES on the earth — the fall accelerates to here
-/// (a mass on a hinge, the knight's law), the settle overshoots past it, and the landing is an EVENT.
 const DEATH_LAND = 0.62;
 pub var SOULS: u32 = 900;
 const DISS_DUR = 1.1;
@@ -203,21 +198,15 @@ const SLAM_HALF_W = 0.45; // crush strip HALF-width (pre-scale) — about the cl
 const SWIPE_INNER = 1.18; // pre-scale: nearer than this and the club passes over you.
 const SWIPE_SLACK_MIN_D = 0.5;
 const SWIPE_OUTER = 1.95;
-// The sector is NOT centred on his facing: the club starts cocked behind his right shoulder and finishes
 // past his left, so the swept bearings run ~−119..+22 (MEASURED off the posed bone, height 2.37 → 1.07).
 const SWIPE_ARC_MID = -48.0;
 const SWIPE_ARC = 144.0;
 
-// ONE NUMBER FOR BOTH MOVES (owner's call), IN SECONDS back from that move's own impact frame: a parry reads
-// the blow ARRIVING, never the tell starting, so the window ends where the club does. As two fractions of two
-// state clocks the slam's came out at 0.29 s, most of it with the club overhead and motionless. Now the whole
-// game's (`foe.PARRY_LEAD`).
 const PARRY_LEAD = foe.PARRY_LEAD;
 
 const HUNCH = 9.0;
 // HE HINGES AT THE WAIST (owner's law): the fraction of any body pitch the PELVIS may take. **PUBLIC because it is the LAW and not his own number** (`AGENTS.md` names it `ogre.PELVIS_SHARE`) — a second copy of 0.16 is a second thing to forget when the law is retuned.
 pub const PELVIS_SHARE = 0.16;
-// THE CARRY (owner's law): the club is HEFTED AT HIS SIDE, never dragged.
 const CARRY_SH = 5.0;
 const CARRY_EL = -13.0;
 const CARRY_TILT = 44.0;
@@ -284,7 +273,6 @@ const A_BREATHE = 0.012 * H;
 const A_IDLE_SWAY = 0.020 * H;
 const IDLE_ROLL = 3.2;
 const STANCE_WIDEN = 3.5;
-// THE LEGS STAND PLANTED (owner's law).
 const BRACE_HIP = 12.0;
 const BRACE_KNEE = 24.0;
 const BRACE_SINK = 0.011 * H;
@@ -292,7 +280,6 @@ const BRACE_SINK = 0.011 * H;
 /// Sized by ARITHMETIC over the worst frame (the ring law): a KILLING HEAVY BLOW landing on the frame the DRIVE hits. The drive lays 42 dust; `tryHit` then fires the heavy spray (30), the death spray (24) and `foe.wounded`'s 3. That is 99.
 const FX_MAX = 100;
 const DUST = foe.DUST;
-/// A BIGGER BODY THROWS FURTHER — the toad's dials over a giant's wound read as a nick. Same shape as `frog.BLOOD_SPRAY`: the fan is the number that opens it, and drag turns the throw into a burst.
 const BLOOD_SPRAY = foe.Spray{
     .fanLo = 0.8,  .fanHi = 4.6,
     .upLo = 1.0,   .upHi = 4.2,
@@ -322,12 +309,8 @@ const SWIPE_BEARING = 32.0;
 /// UP IN HIS FACE THE QUICK ONE WINS (owner's call). Fraction of the sweep band, out from its inner edge, inside which the swipe beats the slam even squared up with the slam ready — the 0.52 s cock-back rather than the 1.35 s rear.
 const SWIPE_NEAR_K = 0.5;
 
-/// Share of `TURN_RATE` the rear-back is allowed to aim at — the one number the windup turns on and the slam's
-/// own bearing gate is solved from, so a retune cannot move one without the other.
 const WIND_TURN_SHARE: f32 = 0.4;
 
-/// **A BEARING THE CRUSH STRIP CANNOT BE BROUGHT ROUND TO IS A HARD GATE, NOT A WORSE CHOICE** (the knight's
-/// law). The drop itself turns not at all, so all the aiming the slam ever gets is the rear-back's, and its
 /// floor is the wind with no hang on it. Measured before the gate: thrown at a man 170° off he came round to
 /// 64° and billed nothing at three of four stands.
 fn slamBearing(dist: f32, scale: f32) f32 {
@@ -342,13 +325,10 @@ fn swipeInnerAt(scale: f32) f32 {
 fn classify(dist: f32, bearingDeg: f32, slamReady: bool, swipeReady: bool, driveReady: bool, scale: f32) Choice {
     if (dist > AGGRO_R) return .idle;
     const offFront = @abs(bearingDeg) > SWIPE_BEARING;
-    // AND THE SWIPE HAS TO BE ABLE TO LAND. Its arc passes clean OUTSIDE anything hugging his legs, and collision
-    // holds the hero at 1.63 m where the sweep only starts biting at 2.16 — so toe to toe, choosing it spent two thirds of a second on a guaranteed miss. The pocket at his feet is EARNED; he looms instead (`.wait`).
     const swipeInner = swipeInnerAt(scale);
     const inSweep = dist >= swipeInner and dist <= SWIPE_R;
     const near = swipeInner + (SWIPE_R - swipeInner) * SWIPE_NEAR_K;
     if (inSweep and swipeReady and (offFront or !slamReady or dist <= near)) return .swipe;
-    // Off the gate he LOOMS, and looming is the turn: `.wait` is `enterIdle`, and idle faces him at the full rate.
     if (dist <= SLAM_R) return if (slamReady and @abs(bearingDeg) <= slamBearing(dist, scale)) .slam else .wait;
     if (dist >= DRIVE_MIN and dist <= DRIVE_MAX and driveReady) return .drive;
     return .approach;
@@ -374,7 +354,6 @@ pub const Ogre = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
@@ -394,7 +373,6 @@ pub const Ogre = struct {
     blowKind: enum { slam, swipe, backswipe, drive } = .slam,
     homing: bool = false,
 
-    // posture channels (degrees) resolved each frame by the state, read by pose().
     clubShoulder: f32 = CARRY_SH,
     clubElbow: f32 = CARRY_EL,
     offShoulder: f32 = OFF_SH,
@@ -440,7 +418,6 @@ pub const Ogre = struct {
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
     wade: foe.Wade = .{},
-    /// The DECISION stream — every hold, chain roll and cooldown jitter comes off this, its own stream so a dust budget change cannot re-deal the fight (fxRng's law). Seeded, so --shot stays deterministic.
     aiRng: mathx.Rng = mathx.Rng.init(2),
 
     xf: [N]rl.Matrix = undefined,
@@ -541,14 +518,11 @@ pub const Ogre = struct {
             .idle => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
                 self.setCarry(dt);
-                // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postDrive`). No `moveSpeed`
-                // local: the gait speed below is derived from `movedDist` alone.
                 _ = foe.postDrive(self, dt, bounds, WALK_SPEED, d, AGGRO_R, TURN_RATE, &movedDist, null, &moveYaw);
                 if (self.t >= 0.2) self.decide(d, bearing);
             },
             .approach => {
                 const tgt = if (self.homing) self.home else hero;
-                // …AND HE TURNS ROUND WHAT IS IN THE WAY (`foe.Nav`). It goes through the FACING and not the step, because he walks where he is looking and HE NEVER STRAFES: bent at the step he would sidle round a wall still square to the hero.
                 self.faceToward(self.nav.aim(self.pos, tgt), dt);
                 const f = self.fdir();
                 const moved = WALK_SPEED * dt;
@@ -607,7 +581,6 @@ pub const Ogre = struct {
                     }
                 }
                 if (self.t >= SWIPE_DUR) {
-                    // THE TAIL IS NEVER SAFE, ONLY USUALLY SAFE: still in the band, the club sometimes comes straight back (`.backwind`). Rolled HERE, at the overswing, so the choice is made where the club is — and only where the return could actually land.
                     if (d >= self.swipeInner() and d <= self.swipeReach() and self.aiRng.float() < BACK_CHANCE) {
                         self.enter(.backwind);
                     } else {
@@ -688,7 +661,6 @@ pub const Ogre = struct {
             },
             .dead => {
                 self.easeChannelsNeutral(dt);
-                // THE BODY ARRIVING IS AN EVENT (the knight's law) — four metres of flesh used to reach the ground in silence with nothing moving. Dust the length of the fallen trunk, once.
                 const land = DEATH_DUR * DEATH_LAND;
                 if (self.t >= land and self.t - dt < land) {
                     const f = self.fdir();
@@ -718,8 +690,6 @@ pub const Ogre = struct {
             .slam, .swipe, .backswipe, .drive => {
                 self.slammed = false;
                 self.heroLatch = false;
-                // Named through, not `else => .drive`: a fifth strike added to the prong list above wore the
-                // DRIVE's blow silently, and a wrong-blow bug does not fail a test.
                 self.blowKind = switch (s) {
                     .slam => .slam,
                     .swipe => .swipe,
@@ -1207,7 +1177,6 @@ pub const Ogre = struct {
         const dead = self.state == .dead;
         const du = if (dead) mathx.clampF(self.t / DEATH_DUR, 0, 1) else 0;
         const dk1 = mathx.smoothstep(0, 0.32, du);
-        // HE FALLS, HE IS NOT LOWERED: a mass on a hinge ACCELERATES the whole way down, so the topple is quadratic to `DEATH_LAND` — a smoothstep is slowest at both ends, which is a body on a wire.
         const fall = mathx.clampF((du - 0.22) / (DEATH_LAND - 0.22), 0, 1);
         const dk2 = fall * fall;
         const settle = mathx.pulse(du, DEATH_LAND, 0.72, 0.72, 0.88);
@@ -1444,7 +1413,6 @@ pub const Grief = struct {
     pub fn setParry(self: *Grief, p: foe.Parry) void {
         foe.setParry(self.live(), p);
     }
-    /// …and whether any of them was caught on it this frame. A ONE-FRAME edge, `anyDied`'s, read after `update`.
     pub fn anyParried(self: *const Grief) bool {
         return foe.anyParried(self.liveConst());
     }
@@ -1862,9 +1830,6 @@ test "the SLAM reaches the earth, and the crush strip ends where the club does" 
 }
 
 test "the head clears the chest barrel — a giant with no visible head is the fail this guards" {
-    // THE MASSES, NOT THE JOINTS, and the WHOLE STRIDE: the skull joint sits 0.150·H under the cranium it
-    // carries, so a joint comparison is that much stricter than the test's name — and sampled at one frame it
-    // flipped on a nudge to `SCALE` with the rig unmoved.
     var o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.4);
     var worst: f32 = 99;
     var k: i32 = 0;
@@ -1929,8 +1894,6 @@ test "attack choice: squared up crushes, flanked SWIPES, cooling looms, far clos
     try std.testing.expectEqual(Choice.approach, classify(DRIVE_MAX + 0.5, 0, true, true, true, o.scale));
     try std.testing.expect(DRIVE_MIN > SWIPE_R);
 
-    // HE NEVER SWIPES AT SOMETHING HUGGING HIS LEGS. Inside the band the arc passes clean outside the hero, so
-    // the move is a guaranteed miss however flanked he is — he looms or crushes instead.
     const hugging = inner - 0.3;
     try std.testing.expectEqual(Choice.slam, classify(hugging, 80, true, true, false, o.scale));
     try std.testing.expectEqual(Choice.wait, classify(hugging, 80, false, true, false, o.scale));
@@ -1938,14 +1901,11 @@ test "attack choice: squared up crushes, flanked SWIPES, cooling looms, far clos
     try std.testing.expect(toeToToe < inner);
     try std.testing.expectEqual(Choice.wait, classify(toeToToe, 0, false, true, false, o.scale));
 
-    // AND HE NEVER DROPS THE CLUB ON A MAN HE CANNOT BE FACING BY THEN. Only the rear-back aims, at a share of
-    // his rate; behind him the choice is the LOOM, which is idle turning at the full rate until it can.
     const gate = slamBearing(hugging, o.scale);
     try std.testing.expect(gate > 90 and gate < 180);
     try std.testing.expectEqual(Choice.slam, classify(hugging, gate - 5, true, false, false, o.scale));
     try std.testing.expectEqual(Choice.wait, classify(hugging, gate + 5, true, false, false, o.scale));
     try std.testing.expectEqual(Choice.wait, classify(hugging, 180, true, false, false, o.scale));
-    // The strip is wider close in, so the gate opens as he is crowded — never the other way about.
     try std.testing.expect(slamBearing(toeToToe, o.scale) > slamBearing(SLAM_R, o.scale));
 }
 
@@ -1954,8 +1914,6 @@ test "range bands are ordered and sit inside aggro — and each is INSIDE the bi
     try std.testing.expect(SWIPE_R < DRIVE_MIN);
     try std.testing.expect(DRIVE_MAX < AGGRO_R);
 
-    // A BAND WIDER THAN ITS OWN BILL IS A PROMISED MISS (the knight's `bandR`). These are picked, not derived,
-    // so what is pinned is only that a retune cannot push one past the reach that answers it.
     const o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     std.debug.print("\n  bands vs bills: slam {d:.2}/{d:.2} m, swipe {d:.2}-{d:.2}/{d:.2}-{d:.2}, drive {d:.2}/{d:.2}\n", .{ SLAM_R, o.slamReach(), swipeInnerAt(o.scale), SWIPE_R, o.swipeInner(), o.swipeReach(), DRIVE_MAX, DRIVE_SPEED * DRIVE_DUR * DRIVE_IMPACT_K + o.slamReach() });
     try std.testing.expect(SLAM_R <= o.slamReach());
@@ -1964,7 +1922,6 @@ test "range bands are ordered and sit inside aggro — and each is INSIDE the bi
 }
 
 test "THE DRIVE ALWAYS REACHES: surge travel + the crush strip covers its own band's far edge" {
-    // The swipe's lesson (the cannot-land law): a move chosen at a range it cannot cover is a promised miss.
     const travel = DRIVE_SPEED * DRIVE_DUR * DRIVE_IMPACT_K;
     const o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     try std.testing.expect(travel + o.slamReach() >= DRIVE_MAX);
@@ -1987,14 +1944,9 @@ test "THE DRIVE ALWAYS REACHES: surge travel + the crush strip covers its own ba
 }
 
 test "THE CLUB LANDS ON THE MAN WHERE HE STANDS — every move thrown for real, anywhere its own band picks it" {
-    // The knight's judge (`THE SWORD IS SWUNG AT THE MAN WHERE HE STANDS`) asked of the ogre. The sector tests
-    // above say the hurt shape matches where the club goes; this one says the shape ARRIVES ON HIM, at every
-    // stand and bearing `classify` hands that move out at.
     const dt = 1.0 / 120.0;
     const probe = Ogre.spawn(mathx.zero3, 0, 1.0, 0.0);
     const apart = foe.closestApproach(probe.bodyR());
-    // The RETURN has no row in `classify` — it is rolled at the swipe's own overswing, so its band is the
-    // sector's and not a pick.
     const rows = [_]struct { name: []const u8, wind: State, strike: State, pick: ?Choice, near: f32, far: f32 }{
         .{ .name = "slam", .wind = .windup, .strike = .slam, .pick = .slam, .near = apart, .far = SLAM_R },
         .{ .name = "swipe", .wind = .swipewind, .strike = .swipe, .pick = .swipe, .near = probe.swipeInner(), .far = SWIPE_R },
@@ -2008,7 +1960,6 @@ test "THE CLUB LANDS ON THE MAN WHERE HE STANDS — every move thrown for real, 
         for ([_]f32{ 0, 60, 120, 170 }) |deg| {
             for ([_]f32{ 0.0, 0.34, 0.67, 1.0 }) |u| {
                 const stand = lerpF(mathx.maxF(row.near, apart) + 0.05, row.far * 0.97, u);
-                // A gate is a stand he never throws it from, not a stand he throws it from and misses.
                 if (row.pick) |want| {
                     if (classify(stand, deg, want == .slam, want == .swipe, want == .drive, probe.scale) != want) {
                         refused += 1;
@@ -2030,7 +1981,6 @@ test "THE CLUB LANDS ON THE MAN WHERE HE STANDS — every move thrown for real, 
                         hit = true;
                         break;
                     }
-                    // The drive SHOVES a man it runs into, as `env.resolveActor` does in the game.
                     if (mathx.distXZ(o.pos, hero) < apart) {
                         const out = mathx.dirXZ(o.pos, hero);
                         hero = v3(o.pos.x + out.x * apart, 0, o.pos.z + out.z * apart);
@@ -2051,7 +2001,6 @@ test "THE CLUB LANDS ON THE MAN WHERE HE STANDS — every move thrown for real, 
     }
     std.debug.print("\n  club: {d} stands thrown for real and landed, {d} refused by a bearing gate\n", .{ thrown, refused });
     try std.testing.expectEqual(@as(usize, 0), misses);
-    // NO SILENT CAP: a gate that swallowed the whole sweep would pass this test with nothing thrown.
     try std.testing.expect(thrown >= 48);
 }
 
@@ -2114,8 +2063,6 @@ test "the RETURN's hurt sector matches where the club actually goes (band + arc,
     }
     try std.testing.expect(frames > 6);
     try std.testing.expect(maxB - minB > 100.0);
-    // …and it stays INSIDE the hero column through the front (a RISING cut, chest-high where it re-crosses
-    // — the deep scythe was the outbound's job; a return over his head would be a hit the sector cannot bill).
     try std.testing.expect(lowest < 1.5 and highest > 1.6);
 }
 
@@ -2142,7 +2089,6 @@ test "THE TAIL IS NEVER SAFE, ONLY USUALLY SAFE: the swipe sometimes returns, an
     try std.testing.expect(chains > 0);
     try std.testing.expect(recovers > 0);
 
-    // Out of the band there is no roll at all — a return that cannot land is not a decision.
     var s2: u32 = 0;
     while (s2 < 14) : (s2 += 1) {
         var o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, @as(f32, @floatFromInt(s2)) * 0.37 + 0.1);
@@ -2200,9 +2146,6 @@ test "THE WINDOW IS AN INSTANT BEFORE THE HIT — the same instant for both move
     try std.testing.expect(PARRY_LEAD < SWIPE_WIND_DUR * 0.4);
 
     var o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-    // MEASURED off the state machine rather than asserted about the constants: walk each move frame by frame
-    // from its first and collect the span that is actually parryable. The slam runs with a HELD tell on
-    // purpose — the hold stretches the rear, and the window must not move with it: what is parried is the drop.
     const HOLD = 0.4;
     for ([_]struct { wind: State, swing: State, windDur: f32, impact: f32 }{
         .{ .wind = .windup, .swing = .slam, .windDur = WINDUP_DUR + HOLD, .impact = SLAM_DUR * SLAM_IMPACT_K },
@@ -2296,15 +2239,12 @@ test "HE FALLS, HE IS NOT LOWERED — the topple accelerates, overshoots flat, a
             return foe.markOn(og.xf[SKULL], mathx.zero3).y;
         }
     }.y;
-    // The second half of the fall covers far more height than the first — quadratic, not eased.
     const drop1 = skullAt(&o, 0.22) - skullAt(&o, 0.42);
     const drop2 = skullAt(&o, 0.42) - skullAt(&o, DEATH_LAND);
     std.debug.print("\n  ogre death: skull drops {d:.2} m then {d:.2} m — the fall accelerates\n", .{ drop1, drop2 });
     try std.testing.expect(drop2 > drop1 * 2.0);
-    // …and it OVERSHOOTS its rest and settles back onto it: past the landing the skull dips lower still.
     try std.testing.expect(skullAt(&o, 0.72) < skullAt(&o, 0.88));
 
-    // THE BODY ARRIVING IS AN EVENT — the landing frame throws dust, once.
     var g = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.2);
     g.debugKill();
     const dt: f32 = 1.0 / 60.0;

@@ -26,15 +26,7 @@ const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 const setLocal = heromod.setHumanoid;
 
-// THE MUSHROOM MAGE (owner's creature, owner's brief) — a cloaked fungal caster that throws SLOW, BOUNCING
-// fireballs. **THE CAP IS THE HOOD** — one silhouette, not a hood WITH a mushroom under it.
-//
-// **AND THE FIREBALL IS THE FIGHT.** It BOUNCES (`archer.bouncesOf`), so it threatens a LINE running away from
-// the caster: measured, a ball aimed at 11 m touches at 11.9, 18.1 and 21.0 and rests at 22.4. **WHAT IT
-// PUNISHES IS BACKING OFF** — backwards is down the bounce line. The answer is sideways.
-//
-// **AND ITS FACE IS NO LONGER FREE** (owner: quick fingertip flame and jumpback when closed in on). A FLAME off
-// the fingers, then it SPRINGS back out to its own band. One move, two halves, on one clock.
+// Measured: a ball aimed at 11 m touches at 11.9, 18.1 and 21.0 and rests at 22.4.
 
 /// **IT STANDS OVER YOU NOW** (owner: taller, bigger). It was a head shorter than the hero at 0.82; at 1.13 it is 2.04 m to the crown of the cap.
 pub const SCALE = (heromod.H + 0.24) / heromod.H;
@@ -71,7 +63,6 @@ const SOLES = [_]heromod.SolePatch{
 
 // **AUTHOR DARK AND SOLVE IT** — screen goes as albedo^(1/2.2), so the bigger and smoother the mass the darker it has to start. The cloak is the biggest face here.
 
-/// Damp and GREEN-BLACK, and it may NOT go blue-black: that is the necromancer's separation, and two dark
 /// robed things at one colour cannot be told apart at fighting range. **SOLVED OFF THE RENDER**: at (16,22,15)
 /// it sampled 83 luma against ground at 102 — 0.81 of its field. Wanted ~0.64, so the albedo factor is 0.79^2.2 = 0.59.
 const CLOAK = rgba(10, 13, 9, 255);
@@ -93,7 +84,6 @@ const FIRE_EDGE = elemfx.sig(.fire).edge;
 
 pub var AGGRO_R: f32 = 22.0;
 const TURN_RATE: f32 = 2.6;
-/// **SLOWER, BECAUSE IT IS NOW WORTH DODGING** (owner: tougher, slower, more dangerous). Three-fifths of a walk: it cannot chase and it is not meant to.
 const WALK_SPEED: f32 = heromod.WALK_SPEED_BANK * 0.60;
 
 const BODY_R: f32 = 0.43;
@@ -120,7 +110,6 @@ const SHOVE_DECAY: f32 = 6.5;
 const A_PROT: f32 = 3.2;
 
 
-/// Longer wind-up with the bigger blast: the tell has to be worth the damage behind it.
 pub const LOB_WIND: f32 = 0.94;
 const LOB_THROW: f32 = 0.16;
 const LOB_RECOVER: f32 = 0.54;
@@ -136,17 +125,14 @@ const LOB_MAX: f32 = 16.0;
 const FLEE_R: f32 = 3.6;
 const DRIFT_DUR: f32 = 0.75;
 
-/// **THE FLAME'S OWN RING, INSIDE THE RETREAT'S.** Between this and `FLEE_R` it still just walks away. This is the ring where walking away has stopped working.
 const FLICK_R: f32 = 2.4;
 const FLICK_WIND: f32 = 0.34; // over `foe.TELL_MIN`: the hands come up and light before anything burns
 const FLICK_DUR: f32 = 0.18;
 const FLICK_CD: f32 = 4.2;
 /// cos 62 deg. A flame off the fingers answers for what the fingers are pointing at and nothing behind them.
 const FLICK_FRONT_DOT: f32 = 0.47;
-/// **FIRE, LIKE EVERYTHING ELSE IT OWNS** — and a third of the ball, because the point of it is the ROOM it buys. No `stance`: the spring is the punish, not a flattening.
 const FLICK_HIT = combat.Hit{ .poise = 12, .elem = combat.elems(.{ .fire = 15 }) };
 
-/// …AND THEN IT LEAVES. Far enough to land back inside its own lob band from the ring the flame answers.
 const HOP_DIST: f32 = 3.7;
 const HOP_DUR: f32 = 0.40;
 const HOP_UP: f32 = 0.46;
@@ -160,13 +146,10 @@ comptime {
     std.debug.assert(FLICK_R < FLEE_R);
     std.debug.assert(FLICK_R + HOP_DIST >= LOB_MIN);
     std.debug.assert(FLICK_HIT.stance == 0);
-    // **COUNTED OVER THE WHOLE FLAME, NOT PER CALL**: a fire mote lives under 0.6 s and the flick is 0.18, so
-    // every mote it lays is still in the air at the end of it — and `pourCount` is the count for ONE call.
     const flameMotes = elemfx.pourCount(@as(usize, @intFromFloat(@ceil(FLAME_RATE * FLICK_DUR))));
     std.debug.assert(NPART >= flameMotes + KINDLE_CAP * 4 + THROW_PUFF);
 }
 
-// **AN ATTACK IS A SEQUENCE OF KEY POSES CHASED BY SPRINGS, NEVER TWO CONSTANTS AND A LERP.** Channels are flattened ROOT-most to TIP-most and the bank's falloff lags the hands behind the trunk.
 
 const CHAN_N = 7;
 const Chan = [CHAN_N]f32;
@@ -227,7 +210,6 @@ const THROW_KEYS = [_]PoseKey{
     .{ .t = 1.00, .p = .{ .lean = -10.0, .head = -9.0, .sh = 132.0, .abd = 24.0, .el = 13.0, .cup = 0 } },
 };
 
-// THE FLAME'S OWN POSES, and they are NOT the lob's: the ball is cupped between both hands and heaved from the chest, where this is one hand thrown OUT flat. Two moves sharing a wind would be one move.
 const FLICK_WIND_KEYS = [_]PoseKey{
     .{ .t = 0.00, .p = .{} },
     .{ .t = 0.62, .p = .{ .lean = -6.0, .twist = -16.0, .head = 4.0, .sh = 30.0, .abd = 26.0, .el = 96.0, .cup = 0.55 }, .ease = .accel },
@@ -240,7 +222,6 @@ const FLICK_KEYS = [_]PoseKey{
     .{ .t = 1.00, .p = .{ .lean = 13.0, .twist = 10.0, .head = -4.0, .sh = 90.0, .abd = 6.0, .el = 6.0, .cup = 0.2 } },
 };
 
-/// The spring: it throws its weight BACK off the same arm, and the cloak follows through the bank.
 const HOP_KEYS = [_]PoseKey{
     .{ .t = 0.00, .p = .{ .lean = 13.0, .twist = 10.0, .head = -4.0, .sh = 90.0, .abd = 6.0, .el = 6.0, .cup = 0.2 } },
     .{ .t = 0.45, .p = .{ .lean = -22.0, .head = 12.0, .sh = 52.0, .abd = 34.0, .el = 62.0 }, .ease = .decel },
@@ -259,7 +240,6 @@ const State = enum { idle, drift, lob_wind, lob_throw, recover, flick_wind, flic
 const Choice = enum { hold, back, lob, keep, flick };
 fn classify(dist: f32, lobReady: bool, flickReady: bool) Choice {
     if (dist > AGGRO_R) return .hold;
-    // INSIDE ITS OWN FACE FIRST: the flame answers the ring the retreat cannot, and only there.
     if (dist <= FLICK_R and flickReady) return .flick;
     if (dist < FLEE_R) return .back;
     if (lobReady and dist >= LOB_MIN and dist <= LOB_MAX) return .lob;
@@ -289,7 +269,6 @@ pub const Mage = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
@@ -305,15 +284,12 @@ pub const Mage = struct {
     elapsed: f32 = 0,
     lobCd: f32 = 0,
     flickCd: f32 = 0,
-    /// Metres off the earth on the spring, and how much of it is spent — the archer's backstep arrangement.
     hop: f32 = 0,
     hopDone: f32 = 0,
     hopDir: rl.Vector3 = mathx.zero3,
-    /// This frame's blow. **A CASTER THAT COULD NOT TOUCH YOU AT ALL** returned null unconditionally; the flame is the one thing it owns that lands off its own hands.
     heroHit: ?combat.Hit = null,
     heroLatch: bool = false,
     flamed: bool = false,
-    /// **A FIREBALL LEFT ITS HANDS THIS FRAME** — a one-frame edge, reset at the TOP of `update`, because the pool the ball flies in belongs to nobody here. Latched inside the throw so a long frame cannot fire two.
     lobbed: bool = false,
     lobFrom: rl.Vector3 = mathx.zero3,
     kindled: bool = false,
@@ -322,7 +298,6 @@ pub const Mage = struct {
     moveDir: rl.Vector3 = mathx.zero3,
     homing: bool = false,
 
-    // posture channels (degrees, and `cup` a fraction) — written by the state and settled by the bank
     bodyLean: f32 = CARRY_LEAN,
     twist: f32 = 0,
     headPitch: f32 = CARRY_HEAD,
@@ -467,14 +442,12 @@ pub const Mage = struct {
     fn enter(self: *Mage, s: State) void {
         self.state = s;
         self.t = 0;
-        // **AND IT PUTS THE BODY BACK ON THE GROUND** (`sporegolem.enter`'s note): `.hop` is the only state that writes `hop`, so a stagger mid-spring would leave the whole creature in the air.
         if (s != .hop) {
             self.hop = 0;
             self.hopDone = 0;
         }
     }
 
-    /// Off the earth on the spring, and nothing else it does leaves the ground.
     pub fn airborne(self: *const Mage) bool {
         return self.hop > foe.AIRBORNE_LIFT;
     }
@@ -520,7 +493,6 @@ pub const Mage = struct {
             .idle => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
                 self.chanSet(CARRY);
-                // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postDrive`), refused inside the ring.
                 _ = foe.postDrive(self, dt, bounds, WALK_SPEED, d, AGGRO_R, TURN_RATE, &movedDist, &moveSpeed, &moveYaw);
                 if (self.t >= 0.18) self.decide(d);
             },
@@ -549,7 +521,6 @@ pub const Mage = struct {
                 if (self.t < LOB_THROW * RELEASE_K) self.faceToward(hero, dt * 0.35);
                 const u = mathx.clampF(self.t / LOB_THROW, 0, 1);
                 self.chanSet(samplePose(&THROW_KEYS, u));
-                // THE RELEASE IS AN EDGE, caught by the clock CROSSING it — a long frame cannot fire it twice.
                 const at = LOB_THROW * RELEASE_K;
                 if (self.t - dt < at and self.t >= at) {
                     self.lobbed = true;
@@ -574,8 +545,6 @@ pub const Mage = struct {
                 if (self.t >= FLICK_WIND) self.enter(.flick);
             },
             .flick => {
-                // A THIRD OF A TURN ONLY: the flame is committed to the line it was lit on. NOT PARRYABLE, AND
-                // THAT IS A DECISION (the priest's breath, one element over) — a poured gout has no swung mass to catch. The answer is the sidestep.
                 self.faceToward(hero, dt * 0.33);
                 const u = mathx.clampF(self.t / FLICK_DUR, 0, 1);
                 self.chanSet(samplePose(&FLICK_KEYS, u));
@@ -583,12 +552,10 @@ pub const Mage = struct {
                 self.tryFlick(hero);
                 if (self.t >= FLICK_DUR) {
                     self.flickCd = FLICK_CD;
-                    // **HELD FEET CANNOT SPRING** (`foe.canLeap`) — the flame is still its answer, it just does not get to leave afterwards.
                     if (foe.canLeap(&self.root)) {
                         self.hopDir = mathx.scaleV(self.fdir(), -1.0);
                         self.enter(.hop);
                     } else {
-                        // …and NOT into `.recover`, whose keys start from the LOB's follow-through: a held mage would snap from an arm thrown out flat into a two-handed heave it never made.
                         self.enter(.idle);
                     }
                 }
@@ -624,8 +591,6 @@ pub const Mage = struct {
         self.pose();
     }
 
-    /// The pick is `classify`'s and the plumbing is here, so the decision pins by test with no world near it.
-    /// **IT MOVES OFF ITS OWN BEARING, NEVER OFF HIS POSITION**: every branch above has already spent the frame facing him, so `fdir()` IS toward the hero. Which way it circles is SEEDED.
     fn decide(self: *Mage, dist: f32) void {
         if (self.leash.goingHome()) {
             self.homing = true;
@@ -674,14 +639,12 @@ pub const Mage = struct {
         elemfx.gather(&self.parts, &self.fxHead, &self.fxRng, self.cupWorld(), .fire, n, BALL_R * (0.4 + 0.6 * u) * self.scale, self.scale);
     }
 
-    /// `elemfx.pour`, the same helper the hero's rime breath is made of. Its reach is the mechanic's own, so what you see is the sector that burns.
     fn pourFlame(self: *Mage, dt: f32) void {
         const n = foe.emitTicks(&self.fxAccum, dt, FLAME_RATE, FLAME_CAP);
         if (n == 0) return;
         elemfx.pour(&self.parts, &self.fxHead, &self.fxRng, self.cupWorld(), self.fdir(), .fire, n, mathx.radians(FLAME_ARC), FLICK_R * self.scale, self.scale);
     }
 
-    /// ONE LANDING PER FLAME, and it answers for its own front. Distance and bearing only.
     fn tryFlick(self: *Mage, hero: rl.Vector3) void {
         if (self.heroLatch) return;
         if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(FLICK_R, self.scale), FLICK_FRONT_DOT)) return;
@@ -711,7 +674,6 @@ pub const Mage = struct {
     fn enterStun(self: *Mage, heavy: bool) void {
         self.enter(if (heavy) .stunheavy else .stunlight);
         self.yelped = true;
-        // **AND WHATEVER WAS IN ITS HANDS GOES OUT.** Left standing, an interrupted mage keeps a fireball cupped in its fists through the whole flinch and the player who earned the interrupt cannot tell it worked.
         self.cup = 0;
     }
 
@@ -853,7 +815,6 @@ pub const Mage = struct {
         model.draw(self);
     }
 
-    /// The unlit pass. Drawn here rather than baked into the mesh for the leechfly's reason: vertex alpha is a FIXED emissive channel and cannot brighten, and brightening from nothing to a held ball is the whole cue.
     pub fn drawFx(self: *const Mage) void {
         self.drawCup();
         foe.drawParticles(&self.parts);
@@ -869,26 +830,19 @@ pub const Mage = struct {
     }
 };
 
-/// How far the cloak is dragged back by walking, in degrees, and the spring that gets it there.
 const CLOAK_DRAG: f32 = 9.0;
 const CLOAK_SWAY: f32 = 4.0;
 const CLOAK_STIFF: f32 = 90.0;
 const CLOAK_DAMP: f32 = 11.0;
 
-/// **ONE NUMBER FOR BOTH ENDS OF THE MOVE** — the thing cupped in its hands and the thing flying at you are the
-/// SAME OBJECT. Written out twice they drifted to 0.178 and 0.170: a spell that changes size on the frame it is
-/// thrown. METRES, before the creature's own scale. **A DETONATOR, NOT AN EMBER** (owner: bigger fireball, fungal detonator).
 pub const BALL_R: f32 = 0.212;
 pub const BALL_CORE: f32 = BALL_R * 0.64;
 const KINDLE_RATE_0: f32 = 8.0;
 const KINDLE_RATE_1: f32 = 74.0;
-/// …and a ceiling per frame, so a hitched frame cannot spend the whole pool on one gather.
 const KINDLE_CAP: usize = 6;
 const THROW_PUFF: usize = 14;
-/// The flame's own emitter, and a per-frame ceiling like the gather's — a hitched frame may not spend the whole pool on one puff.
 const FLAME_RATE: f32 = 96.0;
 const FLAME_CAP: usize = 5;
-/// Degrees either side of its fingers. Narrow: it is a flame off a hand, not a dragon's breath.
 const FLAME_ARC: f32 = 17.0;
 
 pub const SHOVE = foe.Push{ .light = 1.35, .heavy = 3.10 };
@@ -971,8 +925,6 @@ fn capMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x9C4B);
     b.setMat(.skin);
-    // **AND WIDE HAS A CEILING, WHICH IS THE BODY.** At 0.196·H the brim was 0.35 m of half-width on a 1.48 m
-    // creature: as broad as the whole cloak, and it swallowed the hollow, the eyes and the fire in its hands. `RIM` is that half-width and everything under the dome is a share of it.
     b.addBlob(v3(0, 0.072 * H, 0.004 * H), v3(RIM, 0.090 * H, RIM * 0.94), 11, 9, CAP_COL);
     b.addBlob(v3(0.016 * H, 0.114 * H, -0.012 * H), v3(RIM * 0.56, 0.052 * H, RIM * 0.53), 8, 6, CAP_COL);
     b.addBlob(v3(0, 0.042 * H, 0.006 * H), v3(RIM * 0.90, 0.022 * H, RIM * 0.85), 7, 7, GILL);
@@ -1190,7 +1142,6 @@ pub const Ring = struct {
 
 test "THE GATHER IS A REAL TELL, and the ball leaves inside the throw that follows it" {
     try std.testing.expect(LOB_WIND >= foe.TELL_MIN);
-    // …and it is the LONGEST part of the move: the thing being read is the FACING at the release.
     try std.testing.expect(LOB_WIND > LOB_THROW * 3.0);
     try std.testing.expect(RELEASE_K > 0 and RELEASE_K < 0.5);
 }
@@ -1231,11 +1182,9 @@ test "IT KEEPS ITS DISTANCE: it throws from its band, backs off inside it, and c
 }
 
 test "THE FLAME OWNS THE RING THE RETREAT CANNOT, and it is the LAST thing that answers there" {
-    // Between the two rings it still just walks away; inside the flame's own it burns.
     try std.testing.expectEqual(Choice.back, classify(FLICK_R + 0.4, true, true));
     try std.testing.expectEqual(Choice.flick, classify(FLICK_R - 0.4, true, true));
     try std.testing.expectEqual(Choice.back, classify(FLICK_R - 0.4, true, false));
-    // A flame is not a fireball: no direct damage on the ball, all fire on the flame, and the flame is small.
     try std.testing.expect(FLICK_HIT.elem.total() > 0 and FLICK_HIT.elem.total() < EMBER_HIT.elem.total() * 0.7);
 }
 
@@ -1246,7 +1195,6 @@ test "IT BURNS ONCE AND THEN LEAVES — the spring lands it back in its own band
     var lands: u32 = 0;
     var duringWind: u32 = 0;
     var t: f32 = 0;
-    // Long enough for the whole move and no longer, or the cooldown lapses and it throws a second one into the count.
     while (t < FLICK_WIND + FLICK_DUR + HOP_DUR + HOP_LAND + 0.4) : (t += dt) {
         const winding = m.state == .flick_wind;
         if (m.update(dt, hero, 400, .{}) != null) {
@@ -1263,7 +1211,6 @@ test "IT BURNS ONCE AND THEN LEAVES — the spring lands it back in its own band
     try std.testing.expectApproxEqAbs(@as(f32, 0), m.hop, 1e-6);
     try std.testing.expect(!m.airborne());
 
-    // ROOTED: it still burns, and it does not get to leave.
     var r = Mage.spawn(mathx.zero3, 0, 1.0, 0.3);
     r.root.grab();
     var burned = false;
@@ -1334,7 +1281,6 @@ test "THE CAP CARRIES THE MARK AND THE HURT SPHERE HOLDS IT" {
     const mark = k.lockPoint();
     const c = k.centerWorld();
     const r = k.hurtRadius();
-    // The mark rides the posed cap, so it is above the hurt centre and inside the sphere.
     try std.testing.expect(mark.y > c.y);
     try std.testing.expect(mathx.lenV(mathx.subV(mark, c)) <= r);
     try std.testing.expect(k.topWorld().y > mark.y);
@@ -1356,6 +1302,5 @@ test "THE CUP IS BETWEEN THE HANDS AND IN FRONT OF THE BODY, at the frame it thr
     try std.testing.expect(at.z > 0.10);
     // **SHARES OF THE CREATURE, NOT METRE MARKS.** It grew (`SCALE`) and both bounds here were the OLD mage written down as constants — 1.35 m of chest height and 0.55 m of shoulder span.
     try std.testing.expect(at.y > tall * 0.30 and at.y < tall * 0.85);
-    // Two hands cupping ONE ball may not be further apart than the ball is wide, twice over.
     try std.testing.expect(apart < BALL_R * 4.0 * SCALE);
 }

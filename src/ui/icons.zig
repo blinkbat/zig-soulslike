@@ -76,9 +76,7 @@ pub const Icon = enum {
 };
 
 /// Filled silhouettes, drawn in ONE colour: the glyph sits on a button face that changes with state, so
-/// interior detail is a translucent black CUT over the fill rather than a second colour, and reads the same on
 /// every face. Every stroke is `s * 0.12` — 2.2 px at the 18 px the editor draws at, which is the weight of the
-/// mono text beside it.
 pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
     var g = G{ .cx = cx, .cy = cy, .s = size, .w = @max(2.0, size * 0.12), .col = col, .cut = cutOf(col), .soft = softOf(col) };
     g.glyph(ic);
@@ -138,7 +136,6 @@ const G = struct {
         g.tri(ax, ay, bx, by, cx_, cy_, c);
         g.tri(ax, ay, cx_, cy_, dx, dy, c);
     }
-    /// Symmetric trapezoid: `wt` wide at `yt`, `wb` wide at `yb`.
     fn trap(g: *const G, x: f32, yt: f32, yb: f32, wt: f32, wb: f32, c: rl.Color) void {
         g.quad(x - wt * 0.5, yt, x + wt * 0.5, yt, x + wb * 0.5, yb, x - wb * 0.5, yb, c);
     }
@@ -441,21 +438,15 @@ const G = struct {
             },
             .smith => {
                 // **THE MOUSTACHE AND THE RAISED HAMMER, AND NOTHING ELSE FITS AT 18 px.** A bowed slab of a
-                // body under a burl, two lichen ropes off it, and the head of the hammer up and behind — which
-                // is the one silhouette that says smith rather than tree.
                 g.trap(-0.04, -0.10, 0.46, 0.30, 0.44, col);
                 g.disc(-0.02, -0.28, 0.19, col);
-                // The moustache: two ropes hanging forward off the burl.
                 g.bar(-0.16, -0.22, -0.28, 0.10, 0.075, col);
                 g.bar(0.12, -0.22, 0.24, 0.12, 0.075, col);
-                // The two coals under the brow.
                 g.disc(-0.09, -0.33, 0.045, cut);
                 g.disc(0.06, -0.33, 0.045, cut);
-                // The hammer arm, cocked, with the head squared off at the top of the raise.
                 g.bar(0.20, -0.02, 0.40, -0.34, 0.09, col);
                 g.bar(0.40, -0.34, 0.34, -0.60, 0.075, col);
                 g.rect(0.36, -0.68, 0.30, 0.15, col);
-                // Roots.
                 g.bar(-0.18, 0.42, -0.36, 0.56, 0.08, col);
                 g.bar(0.12, 0.42, 0.32, 0.56, 0.08, col);
             },
@@ -627,11 +618,9 @@ const G = struct {
                 g.bar(-0.28, 0.04, -0.40, -0.08, 0.06, col);
                 g.bar(0.20, 0.04, 0.34, -0.22, 0.09, col);
                 g.ellipse(0.44, -0.28, 0.13, 0.06, -20, col);
-                // The rack: two beams off the poll, each with one tine, blunt at the crown.
                 g.bar(0.34, -0.34, 0.26, -0.62, 0.045, col);
                 g.bar(0.30, -0.50, 0.42, -0.56, 0.040, col);
                 g.bar(0.42, -0.32, 0.50, -0.58, 0.045, col);
-                // The stalk out of the withers, and the corolla standing over it.
                 g.bar(-0.06, 0.02, -0.10, -0.24, 0.075, col);
                 var k: u32 = 0;
                 while (k < 6) : (k += 1) {
@@ -745,7 +734,6 @@ const G = struct {
     }
 
     /// A lens and a solid pupil — the smallest glyph in the set, about a dozen pixels, where anything more came
-    /// out as one grey blob. `eyeOff` keeps the whole open eye and strikes it: a closed lid is a dash.
     fn eyeInto(g: *const G, struck: bool) void {
         const body = if (struck) g.soft else g.col;
         const w = g.w / g.s;

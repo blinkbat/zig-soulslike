@@ -14,25 +14,17 @@ const rgba = mathx.rgba;
 const fi = uiart.fi;
 
 // **THE COUNTER'S PANEL, AND NOTHING ELSE.** Every number on it comes off `play/counter.zig`, which is where the
-// arithmetic and the tests live; this file decides only where things sit. Two screens share it because a shop
-// and a smithy are one interaction (`counter.Trade`).
-//
-// **IT IS THE DIALOG PANEL'S SHAPE, NOT THE BOOK'S.** A counter opens in the WORLD off a trigger, so it is a
 // panel over a running frame like `world/dialog.zig` — same plate, same divider, same live portrait of the body
-// behind the counter. That is why it draws its own purse line: the HUD is hidden behind it.
 
 const PAD: i32 = 18;
 const ROW_H: i32 = 34;
 const HEAD_H: i32 = 58;
 const FOOT_H: i32 = 36;
 const W: i32 = 700;
-// The portrait is the DIALOG's, at the dialog's own size — retune it there and both panels move together.
 const PORT_W = dialogmod.PORT_W;
 const PORT_H = dialogmod.PORT_H;
 const PORT_GAP = dialogmod.PORT_GAP;
 const CARD_H: i32 = 104;
-/// The list is a WINDOW, not the whole bag — a sell list can run past the plate, and a plate sized to it
-/// would walk off the screen. The rail says there is more.
 const VIS_ROWS: usize = 9;
 const ROW_ART: f32 = 20;
 const CARD_ART: f32 = 46;
@@ -53,11 +45,8 @@ fn title(t: counter.Trade, selling: bool) [:0]const u8 {
     };
 }
 
-/// He says it after a refused press AND on the card of a finished row, so it is spelled once.
 const MASTERED_LINE = "There is nothing more I can do to it.";
 
-/// The one line the panel says back after a press. **EVERY REFUSAL SAYS WHY** — a button that does nothing and
-/// explains nothing is one the player decides is broken.
 fn saidLine(s: counter.Counter.Said, t: counter.Trade) [:0]const u8 {
     return switch (s) {
         .none => "",
@@ -71,8 +60,6 @@ fn saidLine(s: counter.Counter.Said, t: counter.Trade) [:0]const u8 {
     };
 }
 
-/// What one more tier is worth on THIS hand, through the real `weigh` — the delta is the tier's flat share
-/// times the row's own multipliers, so it holds for the bow as much as the blades.
 fn tierGain(a: heromod.Armament, h: *const heromod.Hero) f32 {
     const w = heromod.wearFor(a) orelse return 0;
     const row = heromod.armRow(h.worn, w);
@@ -82,7 +69,6 @@ fn tierGain(a: heromod.Armament, h: *const heromod.Hero) f32 {
     return next - now;
 }
 
-/// The tier ladder as PIPS — ten small diamonds, lit to the tier. A number says where you are; the row of
 /// lamps says how far the road goes, at a glance and without arithmetic.
 fn tierPips(x: i32, cy: i32, tier: u8, r: f32) void {
     var p: u8 = 0;
@@ -100,8 +86,6 @@ fn pipsW(r: f32) i32 {
     return @intFromFloat(fi(heromod.TIER_MAX) * (r * 2.0 + 2.6));
 }
 
-/// Both currencies read as THINGS — a struck disc, or the stone's own picture — so a price is one block with
-/// two marks rather than two blocks. In one call so the row and the header cannot draw the pair two ways.
 const Mark = enum { coin, stone };
 
 fn priceBlock(right: i32, cy: i32, n: u32, col: rl.Color, mark: Mark) i32 {
@@ -140,13 +124,11 @@ pub fn draw(c: *const counter.Counter, h: *const heromod.Hero, bag: *const item.
     uiart.plate(x, y, W, height, PANEL_A);
     uiart.frame(x, y, W, height, 220);
 
-    // ── THE HEADER: his line engraved, and both purses where the eye checks them ────────────────────────────
     hud.engraved(title(c.trade, c.selling), x + PAD, y + 13, hud.BODY, NAME);
     const right = priceBlock(x + W - PAD, y + 13, h.gold.display(), COIN_OK, .coin);
     if (c.trade == .smithy) _ = priceBlock(right - 14, y + 13, bag.count(counter.STONE), mathx.withAlpha(NAME, 235), .stone);
     uiart.divider(x + @divTrunc(W, 2), y + HEAD_H - 8, @divTrunc(W - PAD * 2, 2), 220);
 
-    // ── THE PORTRAIT AND THE LIST, THE DIALOG'S TWO COLUMNS ─────────────────────────────────────────────────
     const ly = y + HEAD_H + 4;
     const lx = if (hasPort) x + PAD + PORT_W + PORT_GAP else x + PAD;
     const lw = x + W - PAD - lx;
@@ -162,7 +144,6 @@ pub fn draw(c: *const counter.Counter, h: *const heromod.Hero, bag: *const item.
         );
     }
 
-    // The window keeps the cursor in the middle third, so walking a long sell list scrolls it.
     const first = if (len <= VIS_ROWS) 0 else @min(sel -| VIS_ROWS / 2, len - VIS_ROWS);
     var i: usize = first;
     while (i < first + vis) : (i += 1) {
@@ -211,7 +192,6 @@ pub fn draw(c: *const counter.Counter, h: *const heromod.Hero, bag: *const item.
         );
     }
 
-    // ── THE CARD: what the chosen row IS, in the words the bag uses ─────────────────────────────────────────
     const cy = y + HEAD_H + listH + 2;
     uiart.well(x + PAD, cy, W - PAD * 2, CARD_H, 205);
     if (len > 0) drawCard(list[sel], h, x + PAD, cy);
@@ -221,7 +201,6 @@ pub fn draw(c: *const counter.Counter, h: *const heromod.Hero, bag: *const item.
         hud.text(said, x + PAD, y + height - FOOT_H - 2, hud.HINT, if (counter.Counter.refused(c.said)) COIN_NO else SAID);
     }
 
-    // The button strip, in the house's own pictograms — no key captions anywhere in the GAME (AGENTS.md).
     var hints: [4]hud.Hint = undefined;
     var nh: usize = 0;
     if (len > 1) {
@@ -239,8 +218,6 @@ pub fn draw(c: *const counter.Counter, h: *const heromod.Hero, bag: *const item.
     hud.hintRowAt(hints[0..nh], x + PAD, y + height - @divTrunc(FOOT_H, 2), hud.HINT, uiart.GILT_DIM);
 }
 
-/// The chosen row, said properly: the picture at a plate's size, the mechanic in one line (`item.effect`, which
-/// is test-pinned to exist), and the flavour under it. The smithy's card says what the coin actually buys —
 /// the tier and the damage it adds — which the old panel left to be inferred from "+3 -> +4".
 fn drawCard(r: counter.Row, h: *const heromod.Hero, cx: i32, cy: i32) void {
     const cell = CARD_H - 24;
@@ -272,8 +249,6 @@ fn drawCard(r: counter.Row, h: *const heromod.Hero, cx: i32, cy: i32) void {
     }
 }
 
-/// Flavour is allowed exactly the lines the card has room for — a cut sentence gets an ellipsis, never a
-/// spill over the footer.
 fn proseClipped(s: []const u8, x: i32, y: i32, w: i32, maxLines: usize) void {
     const lines = hud.proseWrap(s, w, hud.HINT);
     const n = @min(lines.len, maxLines);

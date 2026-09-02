@@ -14,12 +14,6 @@ const SPORE_GLOW = art.SPORE_GLOW;
 const STIPE_DK = art.STIPE_DK;
 const PUNK_DK = art.PUNK_DK;
 
-// A REEF, not a wood with the wood taken out — a mushroom city (owner's word). The four families read
-// differently at a hundred metres, the only test a silhouette has to pass: TUBES clustered vertical pipes OPEN
-// at the mouth; CORAL a flat fan and a branching antler, both HOLES where everything else here is mass;
-// FLOATERS a bladder on a taut tether; HANGERS a spar that brings its own ceiling.
-//
-// **A CAPLESS CYLINDER IS THE HOUSE LAW AND HERE IT IS ALSO THE POINT** (AGENTS.md): every mouth is open and every one is a different width, because a rack of identical pipes is the barber's pole stood on end.
 
 // **NEAR-BLACK, LIKE EVERYTHING ELSE BIG AND SMOOTH IN THIS GAME** — screen goes as albedo^(1/2.2), so a mid-grey mass comes out chalk: the spire at 150,96,92 photographed as a pink concrete slab eight metres high. These sit with `CAP_FLESH_DK` (29,23,28) and `FLESH_PINK` (74,44,54).
 const TUBE = rgba(34, 20, 22, 255);
@@ -37,7 +31,6 @@ fn swell(t: f32) f32 {
     return 0.80 + 0.34 * mathx.sinf(std.math.pi * mathx.clampF(t, 0, 1) * 0.86);
 }
 
-/// One open pipe, leaning off `lean` and swelling in the middle. **THE MOUTH IS A RING, NOT A DISC** — the inside is a second cylinder a shade smaller and much darker, which is what a hole looks like from outside.
 fn tubeInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, h: f32, r: f32, lean: f32) void {
     const dir = rng.angle();
     const ox = mathx.cosf(dir) * mathx.sinf(lean) * h;
@@ -56,7 +49,6 @@ fn tubeInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, h: f32, r: f32, lean
             art.weathered(TUBE, TUBE_LT, t0),
         );
     }
-    // THE THROAT, and it goes DEEP: a shallow dish at the top reads as a dent. Two metres of tube radius down, with the near-black wall flaring out to meet the rim.
     const rm = r * swell(1.0);
     b.addCylinder(v3(cx + ox, h - rm * 2.4, cz + oz), v3(cx + ox, h + 0.02, cz + oz), rm * 0.52, rm * 0.84, 11, TUBE_MOUTH);
     var p: i32 = 0;
@@ -69,7 +61,6 @@ fn tubeInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, h: f32, r: f32, lean
     }
 }
 
-/// A stand of them: **SIX HEIGHTS, NOT SIX COPIES.** The tallest is over twice the shortest, which is what makes a cluster read as grown rather than as a fence.
 pub fn tubeCoralMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xC02A11);
@@ -88,7 +79,6 @@ pub const SPIRE_H: f32 = 8.6;
 pub const SPIRE_R: f32 = 2.30;
 pub const SPIRE_LIGHT_Y: f32 = SPIRE_H - 0.9;
 
-/// **THE CITY'S TOWER BLOCK.** The same pipe at three times the height with windows cut in it — pores big enough to read from the street, and a lit throat so the thing is a landmark after dark.
 pub fn tubeSpireMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xC02A17);
@@ -96,7 +86,6 @@ pub fn tubeSpireMesh(shader: rl.Shader) rl.Model {
     tubeInto(&b, &rng, 0, 0, SPIRE_H, 1.22, 0.05);
     tubeInto(&b, &rng, 1.32, 0.48, SPIRE_H * 0.54, 0.62, 0.10);
     tubeInto(&b, &rng, -0.96, -1.14, SPIRE_H * 0.33, 0.47, 0.12);
-    // Windows. Emissive, so the tower is legible at night without spending one of sixteen real lights on it.
     var i: i32 = 0;
     while (i < 26) : (i += 1) {
         const t = rng.range(0.22, 0.94);
@@ -121,7 +110,6 @@ pub fn tubeSpireMesh(shader: rl.Shader) rl.Model {
 pub const FAN_H: f32 = 3.2;
 pub const FAN_W: f32 = 3.6;
 
-/// **A FAN IS A PLANE WITH HOLES IN IT, AND THE HOLES ARE THE READ.** Built as a lattice: ribs fanning up from one foot, cross-struts between neighbours, nothing filling the gaps. Solid geometry here is a signboard.
 pub fn fanCoralMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xC02A12);
@@ -135,7 +123,6 @@ pub fn fanCoralMesh(shader: rl.Shader) rl.Model {
     var i: usize = 0;
     while (i < RIBS) : (i += 1) {
         const u = @as(f32, @floatFromInt(i)) / (RIBS - 1) * 2.0 - 1.0;
-        // The outline is an ELLIPSE, so the outer ribs are short — a rectangle of ribs is a comb.
         const h = FAN_H * @sqrt(mathx.maxF(1.0 - u * u * 0.86, 0.05)) * rng.range(0.93, 1.07);
         const spread = FAN_W * 0.5 * u;
         const SEG = 6;
@@ -143,7 +130,6 @@ pub fn fanCoralMesh(shader: rl.Shader) rl.Model {
         var s: i32 = 1;
         while (s <= SEG) : (s += 1) {
             const t = @as(f32, @floatFromInt(s)) / SEG;
-            // Ribs LEAVE the foot together and part as they climb: a fan, not a bundle of parallel sticks.
             const w = spread * t * t;
             const p = v3(nx * w + rng.signed() * 0.03, 0.10 + h * t, nz * w + rng.signed() * 0.03);
             const r = mathx.lerpF(0.075, 0.026, t);
@@ -183,7 +169,6 @@ fn branchInto(b: *Builder, rng: *mathx.Rng, from: rl.Vector3, dir: rl.Vector3, r
     }
 }
 
-/// The fan's opposite: the same branching idea taken into three dimensions and made THICK, so the two standing together do not read as one prop placed twice.
 pub fn antlerCoralMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xC02A13);
@@ -198,17 +183,14 @@ pub const FLOAT_Y: f32 = 4.10;
 pub const FLOAT_R: f32 = 0.92;
 pub const FLOAT_LIGHT_Y: f32 = FLOAT_Y - 0.20;
 
-/// **THE TETHER IS NOT DECORATION, IT IS THE ARGUMENT** — a sac in mid-air reads as a prop that failed to drop. Drawn first and drawn TIGHT: a slack tether says the thing above it has no lift.
 fn sacInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, y: f32, r: f32, glow: bool) void {
     const ax = cx + rng.signed() * 0.10;
     const az = cz + rng.signed() * 0.10;
     b.addCylinder(v3(ax, 0.05, az), v3(cx, y - r * 0.90, cz), 0.030, 0.020, 5, STIPE_DK);
     b.addBlob(v3(ax, 0.09, az), v3(0.17, 0.09, 0.16), 3, 8, STIPE_DK);
-    // Two stacked ellipsoids: one is a balloon, two make a bladder with a neck.
     b.addBlob(v3(cx, y, cz), v3(r, r * 1.16, r * 0.94), 4, 11, SAC);
     b.addBlob(v3(cx, y - r * 0.78, cz), v3(r * 0.52, r * 0.44, r * 0.50), 3, 9, CAP_FLESH_DK);
     if (glow) b.addBlob(v3(cx, y + r * 0.10, cz), v3(r * 0.42, r * 0.50, r * 0.42), 3, 8, CAP_GLOW);
-    // Trailing filaments. They hang STRAIGHT DOWN whatever the tether does — that is what says the sac is being pulled up and the strands are only heavy.
     var i: i32 = 0;
     while (i < 6) : (i += 1) {
         const a = rng.angle();
@@ -232,7 +214,6 @@ pub fn floatSacMesh(shader: rl.Shader) rl.Model {
 
 pub const SHOAL_TOP: f32 = 5.40;
 
-/// Five of them **AT FIVE HEIGHTS** — a shoal all at one altitude is a washing line.
 pub fn floatShoalMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xC02A15);
@@ -256,7 +237,6 @@ fn sparY(x: f32) f32 {
     return 0.06 + HANG_H * mathx.sinf(std.math.pi * t * 0.82) / mathx.sinf(std.math.pi * 0.82);
 }
 
-/// **A HANGING THING NEEDS A CEILING, SO IT BRINGS ONE.** There is nothing overhead in an open field, and a strand starting in mid-air is the same failure as a floating sac with no tether. The spar is as much the prop as the curtain is.
 pub fn hangCurtainMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xC02A16);
@@ -274,7 +254,6 @@ pub fn hangCurtainMesh(shader: rl.Shader) rl.Model {
     }
     b.addBlob(prev, v3(0.16, 0.20, 0.16), 3, 7, TUBE_LT);
     b.addBlob(v3(-half, 0.12, 0), v3(0.36, 0.18, 0.33), 3, 9, STIPE_DK);
-    // Lengths follow the SPAR's height, not one length for all — strands of equal length under a curved spar hang to a curved line, which reads as a mistake rather than as a fringe.
     var i: i32 = 0;
     while (i < 22) : (i += 1) {
         const u = @as(f32, @floatFromInt(i)) / 21.0;
@@ -292,21 +271,16 @@ pub fn hangCurtainMesh(shader: rl.Shader) rl.Model {
 
 test "A REEF IS HOLES AND HEIGHTS — the tubes are open, the fan is a lattice, the floaters are off the floor" {
     std.debug.print("\n  reef: tubes {d:.1} m, spire {d:.1} m, fan {d:.1} m, antler {d:.1} m, floater {d:.1} m, shoal {d:.1} m, curtain {d:.1} m\n", .{ TUBE_H, SPIRE_H, FAN_H, ANTLER_H, FLOAT_Y, SHOAL_TOP, HANG_H });
-    // The city's tower has to clear its own street furniture by enough to navigate by.
     try std.testing.expect(SPIRE_H > TUBE_H * 2.5);
     try std.testing.expect(SHOAL_TOP > FLOAT_Y);
     try std.testing.expect(FLOAT_Y > FAN_H);
-    // A floater is OFF THE GROUND by more than a man is tall, or it is not floating.
     try std.testing.expect(FLOAT_Y - FLOAT_R > 2.4);
-    // The lamp under a curtain hangs at chest height — it lights the floor, not the sky.
     try std.testing.expect(HANG_LIGHT_Y < HANG_H * 0.6);
-    // A spar is an ARCH: highest in its middle, down at both ends, so a curtain under it is a fringe.
     const lo = sparY(-HANG_SPAN * 0.5);
     const mid = sparY(0);
     const hi = sparY(HANG_SPAN * 0.5);
     std.debug.print("  ...spar {d:.2} m at the foot, {d:.2} m at the crown, {d:.2} m at the tip\n", .{ lo, mid, hi });
     try std.testing.expect(mid > lo and mid > hi);
-    // …and the tube's swell is a swell: fattest in the lower half, drawn in at the mouth.
     const s0 = swell(0.0);
     const sm = swell(0.36);
     const s1 = swell(1.0);
@@ -316,12 +290,10 @@ test "A REEF IS HOLES AND HEIGHTS — the tubes are open, the fan is a lattice, 
 }
 
 
-// The spires and fans stand up; these lie down. Same three-layer debt the fungal side owes, paid in the reef's own vocabulary — a groove, a bundle and a crust.
 
 pub const BRAIN_R: f32 = 0.98;
 pub const BRAIN_H: f32 = 0.66;
 
-/// **RIDGED, NOT GROOVED**: an additive builder cannot cut, so dark blobs along a walk came out as lumps on a pink cake. The dome is DARK and the walk a PALE RAISED WORM over it. One wandering channel, never concentric rings, which are a tree stump.
 pub fn brainKnotMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xB2A17);
@@ -343,26 +315,22 @@ pub fn brainKnotMesh(shader: rl.Shader) rl.Model {
         const step = 0.098;
         var nx = x + mathx.cosf(a) * step;
         var nz = z + mathx.sinf(a) * step;
-        // Turned back at the rim rather than clamped, so the walk fills the whole cap instead of pooling in the middle — the first cut only ever covered the inner third.
         if (@sqrt(nx * nx + nz * nz) > BRAIN_R * 0.84) {
             a += std.math.pi * rng.range(0.62, 1.38);
             nx = x + mathx.cosf(a) * step;
             nz = z + mathx.sinf(a) * step;
         }
         const r = rng.range(0.070, 0.098);
-        // Half-buried: the ridge is a rounded wall standing out of the dome, not a bead resting on it.
         b.addBlob(v3(nx, dome.y(nx, nz) - r * 0.34, nz), v3(r, r * 0.86, r), 3, 9, art.weathered(FAN, FAN_LT, rng.float()));
         x = nx;
         z = nz;
     }
-    // The skirt hides the seam where a round base meets uneven ground, so it has to be DARKER than the dome — at `STIPE_DK` it read as a cream plate the coral was standing on.
     b.addBlob(v3(0, 0.030, 0), v3(BRAIN_R * 0.96, 0.042, BRAIN_R * 0.90), 3, 11, TUBE_MOUTH);
     return b.toModel(shader);
 }
 
 pub const CLUTCH_H: f32 = 0.78;
 
-/// BUNDLED. A tight clutch of short organ pipes, packed shoulder to shoulder — the tube spire's own habit at knee height, and the one prop here that is all mouths.
 pub fn pipeClutchMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xC107C4);
@@ -408,7 +376,6 @@ test "THE REEF FLOOR IS A GROOVE, A BUNDLE AND A CRUST — all three under the k
     std.debug.print("\n  reef floor: brain {d:.2} m, clutch {d:.2} m, crust {d:.2} m across\n", .{ BRAIN_H, CLUTCH_H, CCRUST_R * 2 });
     try std.testing.expect(BRAIN_H < 1.0);
     try std.testing.expect(CLUTCH_H < 1.0);
-    // The floor never competes with what stands on it.
     try std.testing.expect(CLUTCH_H < TUBE_H * 0.4);
     try std.testing.expect(CCRUST_R * 2 > BRAIN_R * 2 * 0.9);
 }

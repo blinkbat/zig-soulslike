@@ -40,7 +40,6 @@ pub fn governs(a: Attr) [:0]const u8 {
     };
 }
 
-/// **AN ATTRIBUTE NOTHING READS, AND TODAY THERE IS NONE** — it was LUCK until the drop tables gave it a job. The predicate STAYS because the next attribute arrives dead the way that one did, and a row nothing reads has to be greyed.
 pub fn inert(a: Attr) bool {
     _ = a;
     return false;
@@ -144,7 +143,6 @@ pub const Sheet = struct {
         return staminaFor(self.at(.endurance));
     }
 
-    /// WHAT HIS LUCK IS MULTIPLYING A RARE ROW BY right now — the sheet's own read of `findFor`, so the page and `drops.roll` cannot print and roll two different numbers.
     pub fn finds(self: *const Sheet) f32 {
         return findFor(self.at(.luck));
     }

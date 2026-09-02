@@ -20,30 +20,20 @@ const PUNK_DK = art.PUNK_DK;
 const BARK_OLD = art.BARK_OLD;
 
 
-// A wood with no wood in it, and all three layers a region owes are fungal. **THE GILLS ARE THE WHOLE THING** — the one surface permanently in its own shade, so `GILL` is authored PALE where every other albedo here is near-black.
 
-/// Share of the cap's own drop. Deep enough to be in shadow from any angle you can stand at, shallow enough that the rim still reads as an edge.
 const GILL_IN: f32 = 0.62;
 
-// **A HANGING THING SWINGS, AND IT IS THE ONLY THING HERE THAT MOVES** — caps are roofs and stalks are
-// structure. `Builder.setAnimY` carries the MODEL-SPACE HEIGHT OF THE POINT A VERTEX HANGS FROM and the
-// shader's `plant` branch throws it sideways in proportion to the drop below that anchor. Zero means rigid.
 
-/// The mote radius every spore bead here is drawn at the top of — the deepest hang is a bead's underside.
 const SPORE_R_HI: f32 = 0.045;
 /// How far below the glowcap's crown its lowest bead hangs, and below the lamp's bulb its lowest.
 const GLOW_SPORE_DROP_HI: f32 = 1.30;
 const LAMP_SPORE_DROP_HI: f32 = 0.70;
-/// The bulb's own thread, off the arc's tip.
 const LAMP_BULB_DROP: f32 = 0.46;
 
-/// THE DEEPEST HANG IN THE KINGDOM, solved off the two meshes that author one rather than typed beside them.
 pub const DANGLE_DROP_MAX: f32 = @max(GLOW_SPORE_DROP_HI, LAMP_BULB_DROP + LAMP_SPORE_DROP_HI) + SPORE_R_HI;
 
-/// Lateral metres per metre of drop. **THE SCENE SHADER CARRIES THIS SAME LITERAL** (`shaders.sceneVS`, the `plant` branch); the test below is what stops a deepened hang turning a sway into a swing.
 pub const DANGLE_PER_M: f32 = 0.017;
 
-/// What the two sine terms peak at together.
 const DANGLE_PEAK: f32 = 1.3;
 
 /// **AT THE CAP'S OWN CENTRE, NOT AT THE ORIGIN.** Every cap here LEANS, so its crown sits off the axis its stalk came out of — and the gills were being laid at 0,0 regardless. On a 6-degree lean over 6.4 m that is half a metre of offset, which is why they came out of one side of the brim as a saw blade.
@@ -71,15 +61,12 @@ fn gillsInto(b: *Builder, cx: f32, cz: f32, r: f32, y: f32, drop: f32, n: i32, c
 pub const CapSpec = struct {
     h: f32,
     capR: f32,
-    /// How far the cap's rim hangs below its crown — a flat cap is a plate.
     drop: f32,
     stipeR: f32,
-    /// Degrees off plumb. Nothing that grew is plumb.
     lean: f32 = 0,
     gills: i32 = 16,
     warts: i32 = 0,
     glow: bool = false,
-    /// **THE VARIATION LIVES HERE.** One canopy mesh placed a dozen times reads as a periodic pattern and yaw and scale do not hide it (the `bigtree` law) — so the three great caps differ in proportion AND in tone.
     flesh: rl.Color = CAP_FLESH,
     fleshDk: rl.Color = CAP_FLESH_DK,
     rim: rl.Color = CAP_RIM,
@@ -97,19 +84,16 @@ fn capInto(b: *Builder, rng: *mathx.Rng, sp: CapSpec, cx: f32, cz: f32, yaw: f32
     b.addCapsule(foot, waist, sp.stipeR * 1.15, sp.stipeR * 0.82, 8, STIPE);
     b.addCapsule(waist, head, sp.stipeR * 0.82, sp.stipeR * 1.05, 8, STIPE_DK);
 
-    // The ring — what is left of the veil that covered the gills before it opened.
     const ring = mathx.addV(foot, mathx.scaleV(dir, sp.h * 0.74));
     b.addBlob(ring, v3(sp.stipeR * 1.7, sp.stipeR * 0.20, sp.stipeR * 1.7), 2, 8, GILL);
 
     gillsInto(b, head.x, head.z, sp.capR, head.y, sp.drop, sp.gills, if (sp.glow) CAP_GLOW else GILL);
 
-    // Two shells: the crown, and a rim that turns DOWN under it.
     b.setMat(.plant);
     b.addBlob(v3(head.x, head.y, head.z), v3(sp.capR, sp.drop * 1.35, sp.capR), 5, 12, sp.fleshDk);
     b.addBlob(v3(head.x, head.y + sp.drop * 0.30, head.z), v3(sp.capR * 0.74, sp.drop * 1.15, sp.capR * 0.74), 4, 11, sp.flesh);
     b.addBlob(v3(head.x, head.y - sp.drop * 0.28, head.z), v3(sp.capR * 1.01, sp.drop * 0.30, sp.capR * 1.01), 2, 12, sp.rim);
 
-    // WARTS ARE RELIEF, so they are a few per cent of the cap and sunk most of the way into it.
     var i: i32 = 0;
     while (i < sp.warts) : (i += 1) {
         const a = rng.angle();
@@ -131,7 +115,6 @@ pub const GIANT_R: f32 = 3.3;
 pub const GIANT_DROP: f32 = 0.95;
 pub const GIANT_STIPE: f32 = 0.52;
 
-/// **THREE CANOPIES, NOT ONE AT THREE SCALES** — `bigtree`'s reason exactly. A parasol, a broad one and a squat table, separating on HUE as well as proportion because one silhouette at three sizes still reads as a pattern.
 pub const GIANT_BROAD = CapSpec{ .h = GIANT_H, .capR = GIANT_R, .drop = GIANT_DROP, .stipeR = GIANT_STIPE, .lean = 6.0, .gills = 40, .warts = 14 };
 pub const GIANT_TALL = CapSpec{
     .h = 8.3,
@@ -158,26 +141,20 @@ pub const GIANT_TABLE = CapSpec{
     .rim = rgba(64, 53, 43, 255),
 };
 
-// **THE YOUNG ONE'S PLACE IS THE MESH'S, AND SO IS EVERY NUMBER THE TABLE CARRIES.** All four were typed into
-// `props.INFO` by hand next to a mesh that computes them, and they drifted the moment a spec moved: the broad
-// cap's second collider sat 0.10 m off the stipe, and the parasol under-declared its own `top` by a metre — which culls a 10 m mushroom out of the shadow pass while you are standing under it.
 pub const YOUNG_OUT: f32 = 0.68;
 pub const YOUNG_SIDE: f32 = -0.40;
 pub const YOUNG_H: f32 = 0.32;
 pub const YOUNG_STIPE: f32 = 0.38;
 
-/// The crown of the taller of the two shells, which is the highest thing on the prop.
 pub fn capTop(sp: CapSpec) f32 {
     return sp.h + sp.drop * 1.45;
 }
 
-/// …and the sphere that holds it: the crown, or the rim swung out at cap radius, whichever reaches further.
 pub fn capBound(sp: CapSpec) f32 {
     const rim = @sqrt(sp.capR * sp.capR + (sp.h - sp.drop * 0.28) * (sp.h - sp.drop * 0.28));
     return mathx.maxF(capTop(sp), rim) + 0.25;
 }
 
-/// Both stipes. The cap is a ROOF: neither collider reaches it, so you walk under.
 pub fn capParts(sp: CapSpec) [2]art.Part {
     const yx = sp.capR * YOUNG_OUT;
     const yz = sp.capR * YOUNG_SIDE;
@@ -187,7 +164,6 @@ pub fn capParts(sp: CapSpec) [2]art.Part {
     };
 }
 
-/// Bole then crown, `bigtree`'s reason: one cylinder cannot be narrow at the foot and a cap's width at the brim.
 pub fn capOccl(sp: CapSpec) [2]art.Blocker {
     return .{
         .{ .r = sp.stipeR * 1.70, .y1 = sp.h * 0.82 },
@@ -199,7 +175,6 @@ fn giantModel(shader: rl.Shader, seed: u64, sp: CapSpec, yaw: f32) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(seed);
     capInto(&b, &rng, sp, 0, 0, yaw);
-    // A young one beside it, a third the height — the same organism twice, which is how fungus grows.
     var young = sp;
     young.h = sp.h * YOUNG_H;
     young.capR = sp.capR * 0.32;
@@ -213,7 +188,6 @@ fn giantModel(shader: rl.Shader, seed: u64, sp: CapSpec, yaw: f32) rl.Model {
     return b.toModel(shader);
 }
 
-/// **THE CANOPY.** You walk under these, so the collider is the stipe and nothing else.
 pub fn capGiantMesh(shader: rl.Shader) rl.Model {
     return giantModel(shader, 0xF0A1, GIANT_BROAD, 0.7);
 }
@@ -224,7 +198,6 @@ pub fn capGiant3Mesh(shader: rl.Shader) rl.Model {
     return giantModel(shader, 0xF0A7, GIANT_TABLE, 4.1);
 }
 
-/// The understorey: four at knee-to-shoulder height off one mat, no two alike.
 pub fn capClusterMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0A2);
@@ -250,7 +223,6 @@ pub fn capClusterMesh(shader: rl.Shader) rl.Model {
 
 pub const BRACKET_H: f32 = 2.4;
 
-/// Shelves stepping up a rotted stub — the one fungus here that needs something dead to stand on, so it brings its own.
 pub fn bracketMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0A3);
@@ -273,7 +245,6 @@ pub fn bracketMesh(shader: rl.Shader) rl.Model {
         const s = mathx.sinf(a);
         const cx = c * (stub + out * 0.55);
         const cz = s * (stub + out * 0.55);
-        // A HALF-DISC ON EDGE, not a plate: thick where it meets the wood and thin at its lip.
         b.addBlob(v3(cx, y, cz), v3(out * (0.55 + 0.45 * @abs(c)), rng.range(0.05, 0.10), out * (0.55 + 0.45 * @abs(s))), 2, 8, art.weathered(CAP_FLESH_DK, CAP_FLESH, t));
         b.addBlob(v3(cx, y - 0.035, cz), v3(out * 0.86 * (0.55 + 0.45 * @abs(c)), 0.028, out * 0.86 * (0.55 + 0.45 * @abs(s))), 2, 7, GILL);
     }
@@ -312,7 +283,6 @@ pub fn glowCapMesh(shader: rl.Shader) rl.Model {
 
 pub const POD_H: f32 = 1.15;
 
-/// The one fungus that takes the FLORA sway — `flora = true` in the INFO row is what puts it in the wind, and the stalk is thin enough to earn it where a cap the size of a roof is not.
 pub fn sporePodMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0A5);
@@ -334,14 +304,12 @@ pub fn sporePodMesh(shader: rl.Shader) rl.Model {
 }
 
 test "a cap hangs its gills in its own shade, and they are the one pale albedo here" {
-    // The gills sit BELOW the cap's underside by most of its drop, which keeps them unlit from any angle a body can stand at — and why they may be authored light when everything outdoors is authored dark.
     try std.testing.expect(GILL_IN > 0.5 and GILL_IN < 1.0);
     try std.testing.expect(@as(f32, @floatFromInt(GILL.r)) > @as(f32, @floatFromInt(CAP_FLESH.r)) * 1.5);
     try std.testing.expect(CAP_FLESH_DK.r < CAP_FLESH.r);
 }
 
 test "THE THREE LAYERS ARE ALL FUNGAL — canopy, understorey and floor, and they do not overlap" {
-    // A region needs a ground-hugger, an understorey and a canopy or it reads sparse. This kingdom has no wood at all, so all three come out of this file.
     try std.testing.expect(POD_H < BRACKET_H);
     try std.testing.expect(BRACKET_H < GIANT_H * 0.5);
     try std.testing.expect(GLOW_H < GIANT_H * 0.5);
@@ -350,7 +318,6 @@ test "THE THREE LAYERS ARE ALL FUNGAL — canopy, understorey and floor, and the
     inline for (.{ GIANT_BROAD, GIANT_TALL, GIANT_TABLE }) |sp| {
         try std.testing.expect(sp.h - sp.drop * 1.35 > 2.2);
     }
-    // THREE SILHOUETTES: no two share a crown height or a cap radius inside a metre.
     try std.testing.expect(@abs(GIANT_BROAD.h - GIANT_TALL.h) > 1.0);
     try std.testing.expect(@abs(GIANT_BROAD.h - GIANT_TABLE.h) > 1.0);
     try std.testing.expect(@abs(GIANT_TALL.capR - GIANT_TABLE.capR) > 1.0);
@@ -364,7 +331,6 @@ test "a hanging thing sways a BIT: the deepest bead's throw stays inside its own
     // …AND IT IS THE WHOLE MESH-TO-SHADOW DIVORCE, because the depth pass has no wind term. Under three texels of the sun's map, which is 108 m over 8192.
     const texel = gfx.SHADOW_ORTHO / @as(f32, gfx.SHADOWMAP_RES);
     try std.testing.expect(throw < texel * 3.0);
-    // The lamp's bulb hangs on the shallower of the two, so the arc it swings on is the gentler one.
     try std.testing.expect(LAMP_BULB_DROP < GLOW_SPORE_DROP_HI);
 }
 
@@ -375,9 +341,7 @@ test "the glow's light sits under its own cap rather than on top of it" {
     try std.testing.expect(CAP_GLOW.a < 255 and SPORE_GLOW.a < 255);
 }
 
-// The three great caps are a wood. These are what make it a KINGDOM: one cap at landmark scale, two structures nothing grew on purpose, and three more sources of light so the floor is never black.
 
-/// **THE COLOSSAL CAP.** Seventeen metres to the crown — `tower` scale, and the only fungus you navigate by. The same `CapSpec` as the other three, so its table numbers come off the same solve.
 pub const GIANT_COLOSSAL = CapSpec{
     .h = 14.5,
     .capR = 7.2,
@@ -398,7 +362,6 @@ pub fn capColossalMesh(shader: rl.Shader) rl.Model {
 pub const TOWER_H: f32 = 9.4;
 pub const TOWER_R: f32 = 1.9;
 
-/// **A COLUMN OF FUSED CAPS.** Six grown through one another, each smaller than the last, so it reads as a thing that kept going rather than a thing that was built. Weathered foot to tip and never banded per tier — that is the barber's pole.
 pub fn capTowerMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0A9);
@@ -412,7 +375,6 @@ pub fn capTowerMesh(shader: rl.Shader) rl.Model {
         const off = mathx.sinf(lean) * y;
         const r = TOWER_R * (1.0 - 0.62 * t) * rng.range(0.92, 1.08);
         const drop = r * 0.34;
-        // The shelf, and the gills under it — a tier with no gills is a plate on a pole.
         gillsInto(&b, off, 0, r, y, drop, 12 + @as(i32, @intFromFloat(r * 6.0)), GILL);
         b.setMat(.plant);
         b.addBlob(v3(off, y, 0), v3(r, drop * 1.25, r * rng.range(0.88, 1.12)), 4, 11, art.weathered(CAP_FLESH_DK, CAP_RIM, t));
@@ -428,7 +390,6 @@ pub fn capTowerMesh(shader: rl.Shader) rl.Model {
 pub const ARCH_SPAN: f32 = 6.6;
 pub const ARCH_H: f32 = 5.4;
 
-/// **AN ARCH NOBODY GREW ON PURPOSE** — two stalks that leant into each other and fused, with a fan of gills hanging under the join. The rib arch is a semicircle solved from one shaft; this is two straight leans meeting at a knuckle.
 pub fn hyphaArchMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0AA);
@@ -488,7 +449,6 @@ pub fn glowClusterMesh(shader: rl.Shader) rl.Model {
 pub const LAMP_H: f32 = 4.2;
 pub const LAMP_LIGHT_Y: f32 = 3.0;
 
-/// **A STALK THAT ARCS OVER AND HANGS A LIGHT OFF ITS END.** The tallest lamp in the kingdom and the only one above head height. The bulb hangs BELOW the arc — nothing living hangs a weight on a straight stem.
 pub fn lampStalkMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0AC);
@@ -528,7 +488,6 @@ pub fn lampStalkMesh(shader: rl.Shader) rl.Model {
 pub const FOLD_H: f32 = 1.35;
 pub const FOLD_L: f32 = 3.4;
 
-/// **A FOLDED MASS ON THE GROUND, AND IT IS NOT A MUSHROOM AT ALL.** Overlapping lobes packed along a wandering seam, like a morel laid flat — the region's one thing with no stalk, no cap and no symmetry.
 pub fn fleshFoldMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0AD);
@@ -539,13 +498,11 @@ pub fn fleshFoldMesh(shader: rl.Shader) rl.Model {
     var i: i32 = 0;
     while (i < N) : (i += 1) {
         const t = @as(f32, @floatFromInt(i)) / (N - 1);
-        // The seam WANDERS: a row of lobes on a straight line is a caterpillar.
         z += rng.signed() * 0.34;
         const swell = mathx.sinf(t * std.math.pi);
         const r = (0.42 + 0.46 * swell) * rng.range(0.88, 1.12);
         const h = FOLD_H * (0.34 + 0.66 * swell);
         b.addBlob(v3(x, h * 0.45, z), v3(r, h * 0.55, r * rng.range(0.8, 1.25)), 4, 9, art.weathered(art.FLESH_PINK_DK, art.FLESH_PINK, swell));
-        // …and every lobe is CREASED, which is the whole read: a fold, not a boulder.
         b.addBlob(v3(x + rng.signed() * 0.12, h * 0.86, z + rng.signed() * 0.12), v3(r * 0.30, h * 0.20, r * 0.86), 3, 7, art.FLESH_PINK_DK);
         b.addBlob(v3(x, h * 0.30, z), v3(r * 1.06, h * 0.16, r * 0.62), 2, 8, art.FLESH_PINK);
         x += r * rng.range(0.72, 0.96);
@@ -576,7 +533,6 @@ pub fn sporeVentMesh(shader: rl.Shader) rl.Model {
     while (i < N) : (i += 1) {
         const t = @as(f32, @floatFromInt(i)) / (N - 1);
         const r = mathx.lerpF(0.95, 0.44, t) * rng.range(0.94, 1.06);
-        // Collars stack thinner as the throat narrows, so the stack tapers in TWO ways, not one.
         const h = VENT_H / N * mathx.lerpF(1.24, 0.72, t);
         b.addCylinder(v3(cx, y, cz), v3(cx, y + h, cz), r, r * 0.93, 11, art.weathered(art.FLESH_PINK_DK, PUNK_DK, t));
         b.addBlob(v3(cx, y + h * 0.5, cz), v3(r * 1.09, h * 0.26, r * 1.09), 2, 11, art.weathered(STIPE_DK, art.FLESH_PINK_DK, t));
@@ -601,7 +557,6 @@ pub fn sporeVentMesh(shader: rl.Shader) rl.Model {
 
 pub const VEIN_R: f32 = 2.1;
 
-/// Ground cover, and the region's cheapest light: mycelial cord over the floor, emissive, with no `LightSpec` at all. Sown by the hundred where sixteen real lights is the whole budget.
 pub fn glowVeinMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0AF);
@@ -626,26 +581,21 @@ pub fn glowVeinMesh(shader: rl.Shader) rl.Model {
 }
 
 test "THE KINGDOM IS FOUR CANOPY SILHOUETTES AND THREE KINDS OF LIGHT, not one shape at nine sizes" {
-    // The colossal one is a landmark: it must clear the others by enough that you navigate by it.
     try std.testing.expect(capTop(GIANT_COLOSSAL) > capTop(GIANT_TALL) * 1.6);
     inline for (.{ GIANT_BROAD, GIANT_TALL, GIANT_TABLE, GIANT_COLOSSAL }) |sp| {
         try std.testing.expect(sp.h - sp.drop * 1.35 > 2.2);
     }
-    // Three lamps at three heights, so the floor is lit from knee, chest and overhead rather than one band.
     try std.testing.expect(CLUSTER_LIGHT_Y < GLOW_LIGHT_Y);
     try std.testing.expect(GLOW_LIGHT_Y < LAMP_LIGHT_Y);
     try std.testing.expect(LAMP_LIGHT_Y > 1.8); // over a man's head, which is the whole point of it
-    // The two structures are not the same idea twice: one is a column, one is a span.
     try std.testing.expect(TOWER_H > ARCH_H);
     try std.testing.expect(ARCH_SPAN > TOWER_R * 2.0);
 }
 
 
-// **A REGION OWES THREE LAYERS AND THE LOWEST ONE IS THE EASIEST TO SKIP** — the canopy got nine props and the floor two, which is why the mycelian photographed as furniture on a lawn. Four different HABITS rather than four sizes: a sphere, a spike, a crust and a shelf.
 
 pub const PUFF_R: f32 = 0.62;
 
-/// SPHERES, and one of them has GONE. A clutch of puffballs where the biggest has split and is venting — the burst one is the whole prop, because eight intact spheres is a bag of marbles.
 pub fn puffballsMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0FF1);
@@ -658,11 +608,9 @@ pub fn puffballsMesh(shader: rl.Shader) rl.Model {
         const x = mathx.cosf(a) * d;
         const z = mathx.sinf(a) * d;
         const burst = i == 0;
-        // A puffball sits ON the ground, squashed — a sphere with its equator at ground level is a marble.
         const squash: f32 = if (burst) 0.72 else 0.86;
         b.addBlob(v3(x, r * 0.78, z), v3(r, r * squash, r * rng.range(0.9, 1.1)), 3, 9, art.weathered(CAP_FLESH_DK, CAP_FLESH, 0.5));
         if (burst) {
-            // The crater, and the puff coming out of it. Emissive, so it reads in the dark.
             b.addBlob(v3(x, r * 1.28, z), v3(r * 0.52, r * 0.30, r * 0.52), 3, 8, art.BLOOM_CORE);
             var s: i32 = 0;
             while (s < 6) : (s += 1) {
@@ -678,7 +626,6 @@ pub fn puffballsMesh(shader: rl.Shader) rl.Model {
 
 pub const FINGER_H: f32 = 0.54;
 
-/// SPIKES. Dead men's fingers: blunt black clubs pushing straight up out of the litter, pale only at the very tip. **NOT POINTED** — nothing dead in this game ends in a point (AGENTS.md).
 pub fn deadFingersMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF17E5);
@@ -700,7 +647,6 @@ pub fn deadFingersMesh(shader: rl.Shader) rl.Model {
 
 pub const CRUST_R: f32 = 1.35;
 
-/// A CRUST. Encrusting fungus spreading flat over the ground in wrinkled lobes — the one thing here with no height at all, and the layer that makes the other three look like they grew out of something.
 pub fn crustFungusMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xC2057);
@@ -710,7 +656,6 @@ pub fn crustFungusMesh(shader: rl.Shader) rl.Model {
         const a = rng.angle();
         const d = rng.range(0, CRUST_R * 0.86) * @sqrt(rng.float());
         const r = rng.range(0.13, 0.34) * (1.0 - d / (CRUST_R * 1.6));
-        // Lobes THIN toward the rim, so the patch has an edge instead of a wall.
         b.addBlob(
             v3(mathx.cosf(a) * d, rng.range(0.015, 0.055), mathx.sinf(a) * d),
             v3(r, rng.range(0.012, 0.034), r * rng.range(0.7, 1.3)),
@@ -730,7 +675,6 @@ pub fn crustFungusMesh(shader: rl.Shader) rl.Model {
 
 pub const SHELF_H: f32 = 1.15;
 
-/// A SHELF, CLIMBING. Brackets up a rotted stub, each one WIDER than the one above it — what a real shelf fungus does, and what makes the stack read as a staircase rather than a stack of discs.
 pub fn shelfStackMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5431F);
@@ -746,7 +690,6 @@ pub fn shelfStackMesh(shader: rl.Shader) rl.Model {
         const cx = mathx.cosf(a) * out * 0.5;
         const cz = mathx.sinf(a) * out * 0.5;
         b.addBlob(v3(cx, y, cz), v3(out * 0.62, 0.032, out * 0.52), 3, 9, art.weathered(CAP_FLESH_DK, CAP_RIM, t));
-        // The pale underside — a bracket seen from below is the only white in the palette.
         b.addBlob(v3(cx, y - 0.030, cz), v3(out * 0.52, 0.016, out * 0.44), 3, 8, GILL);
     }
     return b.toModel(shader);
@@ -754,9 +697,7 @@ pub fn shelfStackMesh(shader: rl.Shader) rl.Model {
 
 test "THE FLOOR IS FOUR HABITS, NOT FOUR SIZES — a sphere, a spike, a crust and a shelf" {
     std.debug.print("\n  floor: puffballs {d:.2} m across, fingers {d:.2} m up, crust {d:.2} m across, shelf {d:.2} m up\n", .{ PUFF_R * 2, FINGER_H, CRUST_R * 2, SHELF_H });
-    // The crust is the WIDEST and the flattest; the shelf is the tallest. Neither is the other's scale.
     try std.testing.expect(CRUST_R > PUFF_R);
     try std.testing.expect(SHELF_H > FINGER_H * 2.0);
-    // Every one of them is understorey — none reaches the giant caps' stipe clearance.
     try std.testing.expect(SHELF_H < GIANT_BROAD.h - GIANT_BROAD.drop * 1.35);
 }

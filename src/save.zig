@@ -18,7 +18,6 @@ pub const VERSION: u32 = 1;
 
 pub const SLOTS: usize = 3;
 
-/// **THE FILE AND ITS PICTURE ARE ONE NAME AND ONE EXTENSION APART, so they are not two lists.** Written out they were three stems typed twice in lockstep, and a slot whose `.png` row disagreed with its `.dat` row shows the picker the WRONG SAVE'S picture — a mislabel with nothing to catch it, since both files exist.
 fn slotNames(comptime stem: []const u8, comptime ext: []const u8) [SLOTS][:0]const u8 {
     var out: [SLOTS][:0]const u8 = undefined;
     for (&out, 0..) |*p, i| p.* = std.fmt.comptimePrint(stem ++ "{d}." ++ ext, .{i + 1});
@@ -36,9 +35,6 @@ comptime {
     std.debug.assert(std.mem.eql(u8, DEV_PATHS[0], "devsave1.dat"));
 }
 
-/// **A DEV RUN MAY NOT TOUCH THE PLAYED SHELF.** `--map` and `--shot` wrote through these three filenames too:
-/// one rest at a test map's bonfire overwrote `save1.dat`, and because the file then named a map the shipping
-/// boot cannot match, the picker showed that slot EMPTY and New Game finished the character off. Every reader and writer here goes through `path`/`shotPath`, never the arrays.
 var devShelf = false;
 
 pub fn useDevShelf(on: bool) void {
@@ -63,10 +59,6 @@ pub const Slot = struct {
     trig: *trigmod.Runtime,
     chests: *chestmod.Chests,
     pickups: *pickupmod.Pickups,
-    /// **EVERY BOSS STAYS DEAD** (owner's call), one row per BOSS RAIL and one bit per body that rail placed.
-    /// Filled and applied by the caller rather than held as groups: the group TYPES differ (a duo is two of
-    /// them) and this file has to run headless, so it may not touch a mesh. Keyed to placing order, which
-    /// `foe.resetGroup` fills in the map's own foe-table order — the stable index the chest and pickup bits use.
     bosses: *BossBits,
     award: *awardmod.Award,
     map: []const u8,
@@ -78,8 +70,6 @@ comptime {
 }
 
 /// **RAIL 0 IS THE FILE'S ORIGINAL `bosses:` ROW AND STAYS THAT WAY.** Every save written before the duo
-/// existed describes one rail, and a row nobody wrote reads back as nobody dead — which is what those files
-/// mean. `game` owns the rail ORDER (`game.BOSS_RAILS`) and pins this cap against it.
 pub const BOSS_RAILS: usize = 4;
 pub const BossBits = [BOSS_RAILS][wf.MAX_PER_KIND]bool;
 
@@ -87,9 +77,6 @@ pub const Drop = struct {
     at: rl.Vector3 = mathx.zero3,
     n: u8 = 0,
     loot: [pickupmod.DROP_MAX]item.Kind = undefined,
-    /// **THE PURSE ON THE GROUND IS STATE NOW** (`pickup.Pickup.gold`) — coin is picked up rather than credited
-    /// on the kill, so a drop left standing has to survive a reload or the money is gone. Written as a trailing
-    /// `g<n>` token only when there is any, so every slot written before this reads back unchanged.
     gold: u32 = 0,
 };
 
@@ -97,18 +84,10 @@ pub const Data = struct {
     map: [MAP_CAP]u8 = [_]u8{0} ** MAP_CAP,
     mapLen: usize = 0,
 
-    /// **WHERE THE SAVE WAS TAKEN, WHICH IS A BONFIRE SEAT AND THE CHECKPOINT BOTH.** Every write in the game is
-    /// inside the rest flow (`game.tickRest`), so there is nothing else this point could be — the file used to
-    /// carry a second copy of it in a `spawn:` row, and that copy held the MAP ENTRY in every file written
-    /// before the checkpoint existed.
     at: rl.Vector3 = mathx.zero3,
     facing: f32 = 0,
     souls: u32 = 0,
-    /// **AND THE PURSE, OR "KEPT ON DEATH" MEANS NOTHING.** Gold survives a death by design (`combat.Gold`), so
-    /// a slot that did not carry it would take the whole of it back on the next load instead.
     gold: u32 = 0,
-    /// **THE SMITH'S WORK** (`hero.tiers`), one per `heromod.Armament`. A slot that lost these would hand back a
-    /// +10 sword as a bare one, which is the whole of what the gold was spent on.
     tiers: [heromod.NARM]u8 = [_]u8{0} ** heromod.NARM,
 
     arm: heromod.Armament = .sword,
@@ -116,12 +95,8 @@ pub const Data = struct {
     armAlt: heromod.Armament = .bow,
     offAlt: heromod.Armament = .wand,
     spell: combat.Spell = .bolt,
-    /// ABSENT FROM AN OLDER FILE, which loads as the starting rack (`worn:`'s rule); `hero.tidySpells` then re-seats the selection.
     memory: [combat.MEM_SLOTS]?combat.Spell = (combat.Memory{}).slots,
     arrow: combat.ArrowKind = .plain,
-    /// **THE COUNTS, NOT JUST WHICH BANK IS SELECTED.** Nothing refills a quiver any more, so leaving these out
-    /// meant a reload handed back a full one — the same free arrows the bonfire used to, through a different door.
-    /// Absent from an older save they default to `Quiver{}`'s own full load, which is what that save described.
     arrows: u8 = combat.ARROWS_MAX,
     fireArrows: u8 = combat.FIRE_ARROWS_MAX,
     flask: combat.FlaskKind = .crimson,
@@ -154,7 +129,6 @@ pub const Data = struct {
     pickupTaken: [pickupmod.CAP]bool = [_]bool{false} ** pickupmod.CAP,
     ground: [pickupmod.CAP]Drop = [_]Drop{.{}} ** pickupmod.CAP,
     groundN: usize = 0,
-    /// One bit per boss the map placed, in placing order, per rail. A missing row leaves them all standing, which is honestly what a save written before bosses stayed dead describes.
     bossDead: BossBits = [_][wf.MAX_PER_KIND]bool{[_]bool{false} ** wf.MAX_PER_KIND} ** BOSS_RAILS,
     seen: [item.NK]bool = [_]bool{false} ** item.NK,
 
@@ -168,8 +142,6 @@ const NWEAR = @typeInfo(item.Wear).@"enum".fields.len;
 
 const CAP: usize =
     64 + MAP_CAP +
-    // `quiver: 255 255` and its newline. Its own term rather than eaten out of the 64 above, so the next line
-    // added does not quietly run the buffer dry (the test at the foot of this file is what would catch it).
     20 +
     3 * 48 +
     5 * 32 +
@@ -190,9 +162,6 @@ const CAP: usize =
     chestmod.CAP + 10 +
     pickupmod.CAP + 10 +
     BOSS_RAILS * (wf.MAX_PER_KIND + 12) +
-    // One drop's row: three coordinates, its count, its loot tags, and the ` g<coin>` purse `render` writes
-    // when there is any. The purse was in the FILE and not in this sum, and the worst-case test below left it
-    // at zero — so the one term that scales with a `u32` was both unbudgeted and unmeasured.
     pickupmod.CAP * (3 * 11 + 4 + pickupmod.DROP_MAX * (item.TAG_MAX + 1) + 12) + 10 +
     item.NK + 8;
 
@@ -224,7 +193,6 @@ pub const Shelf = struct {
     }
 };
 
-/// **A SLOT ONLY LISTS IF IT WOULD ACTUALLY LOAD**, which is why the map is asked for here and not just at `readFrom`. A file this build cannot honestly read is not a row with a level on it that dies when pressed — that is the "looks available and does nothing" the picker's own greying law refuses.
 pub fn survey(map: []const u8) Shelf {
     var sh = Shelf{};
     for (0..SLOTS) |i| sh.head[i] = peek(map, i);
@@ -271,7 +239,6 @@ pub fn writeShot(i: usize) bool {
 }
 
 pub fn writeTo(file: []const u8, s: Slot) bool {
-    // A NAME THAT DOES NOT FIT IS A REFUSED SAVE, NEVER A TRUNCATED ONE. `gather` clips to `MAP_CAP`, and a clipped name is one `readFrom` can never match again — every save silently unloadable, which is the worst failure this file has.
     if (s.map.len > MAP_CAP) return false;
     const d = gather(s);
     const f = std.fs.cwd().createFile(file, .{}) catch return false;
@@ -350,12 +317,11 @@ pub fn gather(s: Slot) Data {
     for (s.pickups.mappedConst(), 0..) |p, i| d.pickupTaken[i] = p.taken;
     d.groundN = 0;
     for (s.pickups.droppedConst()) |p| {
-        if (p.taken or p.nloot == 0) continue;
+        if (p.taken or !p.dropped()) continue;
         if (d.groundN >= d.ground.len) break;
         d.ground[d.groundN] = .{ .at = p.pos, .n = p.nloot, .loot = p.loot, .gold = p.gold };
         d.groundN += 1;
     }
-    // From the frame the killing blow lands, not the frame the body finishes dissolving: `vit.dead` is the mechanic and `gone` is only the picture catching up with it.
     d.bossDead = s.bosses.*;
     d.seen = s.award.seen;
     return d;
@@ -365,16 +331,11 @@ pub fn scatter(d: *const Data, s: Slot) void {
     const h = s.hero;
     h.pos = d.at;
     h.facing = d.facing;
-    // **LOADING AT A FIRE MAKES IT THE FIRE HE COMES BACK TO.** Taken off `at:` rather than a stored spawn: the
-    // two were always the same point in any file this game writes, and where they disagreed the stored one was
-    // the stale one.
     h.setSpawn(d.at, d.facing);
     h.souls.total = d.souls;
     h.souls.shown = @floatFromInt(d.souls);
     h.gold.total = d.gold;
     h.gold.shown = @floatFromInt(d.gold);
-    // Clamped on the way in, as `quiver` and `quicksel` below are: `weigh` caps the tier it prices but the
-    // sheet and the smithy's rows print the stored number, so an out-of-band row read back as "+200 (finished)".
     for (&h.tiers, d.tiers) |*t, v| t.* = @min(v, heromod.TIER_MAX);
     h.arm = d.arm;
     h.off = d.off;
@@ -436,9 +397,6 @@ pub fn render(w: anytype, d: *const Data) !void {
     try w.print("map: {s}\n", .{d.mapName()});
     try w.print("at: {d:.3} {d:.3} {d:.3} {d:.4}\n", .{ d.at.x, d.at.y, d.at.z, d.facing });
     try w.print("souls: {d}\n", .{d.souls});
-    // **ITS OWN LINE, LIKE `souls:`.** Not a second token there: a reader expecting one and finding two is
-    // the trap the `ready:` note below already records. Written only when there IS gold, so every slot on
-    // disk from before the purse existed stays byte-identical and still round-trips.
     if (d.gold > 0) try w.print("gold: {d}\n", .{d.gold});
     var anyTier = false;
     for (d.tiers) |t| anyTier = anyTier or t > 0;
@@ -449,9 +407,6 @@ pub fn render(w: anytype, d: *const Data) !void {
     }
     try w.print("hands: {s} {s} {s} {s} {s}\n", .{ @tagName(d.arm), @tagName(d.off), @tagName(d.spell), @tagName(d.armAlt), @tagName(d.offAlt) });
     try w.print("ready: {s} {s}\n", .{ @tagName(d.arrow), @tagName(d.flask) });
-    // **ITS OWN LINE, NOT A THIRD TOKEN ON `ready:`.** A reader expecting two tokens there and finding four
-    // fails the field; absent, this key just leaves the two counts at `Quiver{}`'s full load, which is what a
-    // save written before arrows were finite actually described.
     try w.print("quiver: {d} {d}\n", .{ d.arrows, d.fireArrows });
     try w.writeAll("memory:");
     for (d.memory) |m| try w.print(" {s}", .{if (m) |sp| @tagName(sp) else "-"});
@@ -531,9 +486,6 @@ pub fn parse(text: []const u8, d: *Data) !void {
             d.at = try vec(&it);
             d.facing = try float(&it);
         } else if (std.mem.eql(u8, key, "spawn:")) {
-            // **READ AND DROPPED, AND THE KEY MAY NEVER BE DELETED FROM THIS PARSER**: an unknown key is a
-            // REFUSED save (whole, not in half), and every file already on disk carries this row. The
-            // checkpoint is `at:` now — see `scatter`.
             _ = try vec(&it);
             _ = try float(&it);
         } else if (std.mem.eql(u8, key, "souls:")) {
@@ -541,15 +493,11 @@ pub fn parse(text: []const u8, d: *Data) !void {
         } else if (std.mem.eql(u8, key, "gold:")) {
             d.gold = try int(u32, &it);
         } else if (std.mem.eql(u8, key, "tiers:")) {
-            // **SHORT IS FINE.** A file written before an armament existed names fewer than there are now, and
-            // the ones it does not name keep their 0 rather than refusing the whole slot.
             for (&d.tiers) |*t| t.* = int(u8, &it) catch break;
         } else if (std.mem.eql(u8, key, "hands:")) {
             d.arm = try tagged(heromod.Armament, &it);
             d.off = try tagged(heromod.Armament, &it);
             d.spell = try tagged(combat.Spell, &it);
-            // SHORT IS FINE, GARBAGE IS NOT: a file from before the alt rack simply ends here, but a token
-            // that is present and unknown is corruption and refuses the slot like every other field.
             if (it.next()) |tok| d.armAlt = std.meta.stringToEnum(heromod.Armament, tok) orelse return Error.BadField;
             if (it.next()) |tok| d.offAlt = std.meta.stringToEnum(heromod.Armament, tok) orelse return Error.BadField;
         } else if (std.mem.eql(u8, key, "ready:")) {
@@ -570,7 +518,6 @@ pub fn parse(text: []const u8, d: *Data) !void {
             d.memory = [_]?combat.Spell{null} ** combat.MEM_SLOTS;
             var i: usize = 0;
             while (it.next()) |tok| : (i += 1) {
-                // A rack wider than this build's is a narrowed `MEM_SLOTS`, not a corrupt file: drop the tail.
                 if (i >= d.memory.len) break;
                 if (std.mem.eql(u8, tok, "-")) continue;
                 d.memory[i] = std.meta.stringToEnum(combat.Spell, tok) orelse return Error.BadField;
@@ -578,13 +525,7 @@ pub fn parse(text: []const u8, d: *Data) !void {
         } else if (std.mem.eql(u8, key, "quicksel:")) {
             d.quickSel = try int(usize, &it);
         } else if (std.mem.eql(u8, key, "worn:")) {
-            // **THE KIND NAMES ITS OWN SOCKET; THE POSITION IS ONLY A CURSOR FOR THE DASHES.** Every kind has
-            // exactly one `wearSlot`, so for a named item the position carries nothing the kind does not — and a
-            // positional mismatch is a socket that MOVED under a file already on disk, not corruption. Refusing
-            // it cost a real save: `fang_dirk` was written at `hand_sword` and re-socketed to `hand_dagger`, and
-            // the guard threw out the whole file. What is still refused is a tag this build does not know (`fromTag`) and an item with no socket at all.
             d.worn = .{};
-            // The position is only a CURSOR for the dashes now, so this counts to `NWEAR` rather than walking the enum: an `inline for` whose index nothing reads is `NWEAR` copies of the body for nothing.
             var wi: usize = 0;
             while (wi < NWEAR) : (wi += 1) {
                 const tok = it.next() orelse break;
@@ -646,9 +587,6 @@ pub fn parse(text: []const u8, d: *Data) !void {
                     const tok = it.next() orelse return Error.BadField;
                     g.loot[j] = item.fromTag(tok) orelse return Error.BadField;
                 }
-                // The purse rides after the loot and is OPTIONAL, so the next token is either this drop's coin
-                // or the next drop's x — `g` is what tells them apart, and a slot written before it had one
-                // simply has no such token.
                 if (it.peek()) |tok| {
                     if (tok.len > 1 and tok[0] == 'g') {
                         g.gold = std.fmt.parseInt(u32, tok[1..], 10) catch return Error.BadField;
@@ -700,7 +638,6 @@ fn bits(w: anytype, key: []const u8, run: []const bool) !void {
     try w.writeByte('\n');
 }
 
-/// A SHORT RUN IS LEGAL AND A LONG ONE IS NOT. Every run here defaults to zero, so a file written before a cap grew loads its tail at exactly what a fresh runtime has; one written after it grew is from a build this one cannot honestly read, and guessing which end to cut is how a save loads as a different game.
 fn readBits(it: *Tok, out: []bool) !void {
     @memset(out, false);
     const txt = it.next() orelse return;
@@ -726,9 +663,6 @@ fn readNums(comptime T: type, it: *Tok, out: []T) !void {
     while (it.next()) |tok| : (i += 1) {
         if (i >= out.len) return Error.BadField;
         out[i] = switch (@typeInfo(T)) {
-            // NON-FINITE IS A BAD FIELD HERE TOO — `float` above states the rule and these runs came in under it:
-            // a NaN `timers:` row is neither running nor done (both compares are false), so the trigger waiting on
-            // it never fires again and nothing reports why.
             .float => blk: {
                 const v = std.fmt.parseFloat(T, tok) catch return Error.BadField;
                 if (!std.math.isFinite(v)) return Error.BadField;
@@ -769,8 +703,6 @@ fn sample() Data {
     d.spell = .roots;
     d.memory = .{ null, .roots, .levin };
     d.arrow = .fire;
-    // **OFF THEIR DEFAULTS ON PURPOSE.** `Data{}` starts these at the full load, so at the default a round-trip
-    // that dropped the `quiver:` row entirely would still come back equal and pass.
     d.arrows = 3;
     d.fireArrows = 1;
     d.flask = .cerulean;
@@ -802,9 +734,11 @@ fn sample() Data {
     d.elapsed = 421.5;
     d.chestOpen[1] = true;
     d.pickupTaken[3] = true;
-    d.ground[0] = .{ .at = .{ .x = -12.5, .y = 0.75, .z = 4.25 }, .n = 1, .loot = .{ .kobold_fang, .kobold_fang } };
+    d.ground[0] = .{ .at = .{ .x = -12.5, .y = 0.75, .z = 4.25 }, .n = 1, .loot = .{ .kobold_fang, .kobold_fang }, .gold = 41 };
     d.ground[1] = .{ .at = .{ .x = 3.0, .y = 0.0, .z = -8.5 }, .n = 2, .loot = .{ .mushroom_jerky, .quilted_gambeson } };
-    d.groundN = 2;
+    // A PURSE WITH NO ITEM UNDER IT IS A ROW: `pickup.spawn` makes one whenever the coin roll lands and the item roll does not.
+    d.ground[2] = .{ .at = .{ .x = -30.25, .y = 1.5, .z = 19.0 }, .n = 0, .gold = 7 };
+    d.groundN = 3;
     d.bossDead[0][0] = true;
     d.bossDead[2][1] = true;
     d.seen[@intFromEnum(item.Kind.mushroom_jerky)] = true;
@@ -832,9 +766,6 @@ test "A FILE WITH NO RACK IN IT LOADS AS THE STARTING RACK, and a bad sorcery is
     try testing.expectEqual(combat.Spell.bolt, wide.memory[0].?);
 }
 
-/// One field of a slot, either side of the file. **FLOATS AT THE FILE'S OWN COARSEST PRECISION** — `text`
-/// writes every one of them with at least `{d:.3}`, so half a thousandth is the whole of what a round trip may
-/// lose; anything else has to come back bit for bit.
 fn expectSame(comptime T: type, comptime where: []const u8, a: T, b: T) !void {
     switch (@typeInfo(T)) {
         .float => testing.expectApproxEqAbs(a, b, 1e-3) catch |e| {
@@ -855,11 +786,7 @@ fn expectSame(comptime T: type, comptime where: []const u8, a: T, b: T) !void {
 test "a save round-trips through its own text" {
     const d = sample();
     const back = try roundTrip(&d);
-    // **THE STRUCT IS WALKED, NOT LISTED.** Named by hand, a field added to `Data` was one nothing compared
-    // and a row that stopped being written passed in silence. It had already bitten the ALT RACK, which is half
-    // the hands and read back as the starting pair.
     inline for (@typeInfo(Data).@"struct".fields) |f| {
-        // `ground` is the one field a whole-array compare cannot touch: only the first `n` loot slots of a drop
         // are written, and `Drop.loot` past that is `undefined` on both sides.
         if (comptime std.mem.eql(u8, f.name, "ground")) continue;
         try expectSame(f.type, f.name, @field(d, f.name), @field(back, f.name));
@@ -875,23 +802,18 @@ test "a save round-trips through its own text" {
 test "the buffer holds the biggest save this build can write" {
     var d = sample();
     for (&d.bag) |*c| c.* = item.CAP;
-    // THE LONGEST TAG, ASKED FOR RATHER THAN NAMED. `CAP` sizes both these rows off `item.TAG_MAX`, so a hand-picked kind understates them by however far it is off the longest — silently, and again on the next item added.
     for (&d.quick) |*q| q.* = item.LONGEST_TAG;
     for (&d.counters) |*c| c.* = std.math.minInt(i32);
     for (&d.waitLeft) |*v| v.* = -99999.5;
     for (&d.actAt) |*v| v.* = 255;
     for (&d.deaths) |*v| v.* = std.math.maxInt(u32);
     for (&d.timers) |*v| v.* = -99999.5;
-    // EVERY RAIL WRITTEN — the rows past the first are skipped when empty, so an all-standing sample never
-    // touches them and the buffer they need goes unmeasured.
     for (&d.bossDead) |*row| @memset(row, true);
     d.groundN = d.ground.len;
     for (&d.ground) |*g| g.* = .{
         .at = .{ .x = -99999.5, .y = -99999.5, .z = -99999.5 },
         .n = pickupmod.DROP_MAX,
         .loot = [_]item.Kind{item.LONGEST_TAG} ** pickupmod.DROP_MAX,
-        // …AND EVERY PURSE SATURATED. `render` writes ` g<coin>` only when there is coin, so a sample left at
-        // zero never measures the widest token on the row.
         .gold = std.math.maxInt(u32),
     };
     var buf: [CAP]u8 = undefined;
@@ -930,8 +852,6 @@ test "A NON-FINITE NUMBER IS REFUSED IN EVERY RUN, not just the scalar rows" {
     var d = Data{};
     try testing.expectError(Error.BadField, parse("version: 1\nat: nan 0 0 0\n", &d));
     try testing.expectError(Error.BadField, parse("version: 1\nhour: inf\n", &d));
-    // …and the RUNS, which read through `readNums`: a NaN there is neither running nor done, so the trigger
-    // waiting on the timer hangs forever and nothing on screen says why.
     try testing.expectError(Error.BadField, parse("version: 1\ntimers: nan 0 0\n", &d));
     try testing.expectError(Error.BadField, parse("version: 1\nwaitleft: 1.0 -inf\n", &d));
     try parse("version: 1\ntimers: 1.5 0 0\n", &d);
@@ -950,7 +870,6 @@ test "WHAT HE WAS WEARING SURVIVES THE FILE, a short line loads bare, and a MOVE
         try testing.expectEqual(sample().worn.at(w), back.worn.at(w));
     }
 
-    // **A LINE SHORTER THAN THE SOCKET LIST LOADS WHAT IT NAMES AND CLEARS THE REST** — which is what makes `item.Wear` safe to APPEND to.
     var short = Data{};
     short.worn.put(.ring2, .deft_signet);
     try parse("version: 1\nworn: - grave_warbow\n", &short);
@@ -958,7 +877,6 @@ test "WHAT HE WAS WEARING SURVIVES THE FILE, a short line loads bare, and a MOVE
     try testing.expect(short.worn.at(.ring2) == null);
     try testing.expect(short.worn.at(.hand_club) == null);
 
-    // **AND A SOCKET THAT MOVED UNDER A FILE ALREADY ON DISK STILL LOADS IT** — this is a REAL save, written when the dagger and the club shared `hand_sword`. Refusing it threw away the position, the souls, the tree and the bag along with the weapon.
     var moved = Data{};
     try parse("version: 1\nworn: fang_dirk - - quilted_gambeson\nsouls: 3558\n", &moved);
     try testing.expectEqual(item.Kind.fang_dirk, moved.worn.at(.hand_dagger).?);
@@ -966,7 +884,6 @@ test "WHAT HE WAS WEARING SURVIVES THE FILE, a short line loads bare, and a MOVE
     try testing.expectEqual(item.Kind.quilted_gambeson, moved.worn.at(.chest).?);
     try testing.expectEqual(@as(u32, 3558), moved.souls);
 
-    // A coat at the sword's position is a MOVED socket as far as the file can tell, so it lands in the one socket it fits. A TAG THIS BUILD DOES NOT KNOW, and an item with no socket at all, are still refused.
     var wrong = Data{};
     try parse("version: 1\nworn: quilted_gambeson\n", &wrong);
     try testing.expectEqual(item.Kind.quilted_gambeson, wrong.worn.at(.chest).?);
@@ -974,7 +891,6 @@ test "WHAT HE WAS WEARING SURVIVES THE FILE, a short line loads bare, and a MOVE
     try testing.expectError(Error.BadField, parse("version: 1\nworn: crimson_flask\n", &wrong));
 }
 
-/// The live objects a `Slot` points at, with only the fields `gather`/`scatter` touch made real. The three mesh-bearing ones cannot be `init`ed without a GL context, and none of their meshes is read here.
 const Live = struct {
     hero: heromod.Hero = undefined,
     bag: item.Bag = .{},
@@ -1067,18 +983,36 @@ test "THE SLOT CARRIES EVERY FIELD IT NAMES — live game out, text, live game b
     scatter(&back, b.slot());
     try testing.expectEqual(out, gather(b.slot()));
 
-    // …and the things `scatter` derives rather than copies, which a re-gather cannot see.
     try testing.expectEqual(@as(f32, 4321), b.hero.souls.shown);
-    // **THE FIRE HE LOADED AT IS THE FIRE HE COMES BACK TO** — a save is only ever written sitting at one, so
-    // the checkpoint is the position in the file and never a second stored point that could be a stale map entry.
     try testing.expectApproxEqAbs(b.hero.pos.x, b.hero.spawnPos.x, 1e-4);
     try testing.expectApproxEqAbs(b.hero.pos.z, b.hero.spawnPos.z, 1e-4);
     try testing.expectApproxEqAbs(b.hero.facing, b.hero.spawnFacing, 1e-4);
     try testing.expect(b.chests.list[2].swing == 1 and b.chests.list[0].swing == 0);
-    // **THE BOSS COMES BACK ALREADY GONE, NOT DYING.** A load that re-played the collapse would pay the
-    // souls, the quake and the dissolve a second time, and leave a body standing in the arena while it did.
     try testing.expect(b.bosses[0][1] and !b.bosses[0][0]);
     try testing.expect(b.bosses[2][0]);
+}
+
+test "A PURSE ON THE GROUND IS SAVED — `pickup.spawn` makes a glow with coin and no item, and the filter was `nloot`" {
+    var a = Live.blank(0);
+    a.pickups.reset(&.{});
+    a.pickups.spawn(.{ .x = 5.5, .y = 0.25, .z = -2.0 }, &.{}, 63);
+    a.pickups.spawn(.{ .x = -9.0, .y = 0, .z = 3.5 }, &.{.kobold_fang}, 18);
+
+    const out = gather(a.slot());
+    try testing.expectEqual(@as(usize, 2), out.groundN);
+    try testing.expectEqual(@as(u32, 63), out.ground[0].gold);
+    try testing.expectEqual(@as(u8, 0), out.ground[0].n);
+    try testing.expectEqual(@as(u32, 18), out.ground[1].gold);
+
+    const back = try roundTrip(&out);
+    var b = Live.blank(0);
+    b.pickups.reset(&.{});
+    scatter(&back, b.slot());
+    try testing.expectEqual(@as(usize, 2), b.pickups.droppedOnes().len);
+    try testing.expectEqual(@as(u32, 63), b.pickups.droppedOnes()[0].gold);
+    try testing.expectEqual(@as(u8, 0), b.pickups.droppedOnes()[0].nloot);
+    try testing.expectEqual(@as(u32, 18), b.pickups.droppedOnes()[1].gold);
+    try testing.expectEqual(item.Kind.kobold_fang, b.pickups.droppedOnes()[1].loot[0]);
 }
 
 test "the file itself round-trips, and one written for another map is refused" {
@@ -1204,8 +1138,6 @@ test "an empty bag line clears the bag rather than leaving the last one" {
 }
 
 test "AN OLDER FILE'S `spawn:` ROW IS READ AND DROPPED, and the checkpoint is where the save was taken" {
-    // What every file on disk written before the checkpoint existed looks like: a `spawn:` holding the MAP
-    // ENTRY, metres away from the fire the save was actually taken at.
     const older =
         "version: 1\n" ++
         "map: " ++ wf.START_MAP ++ "\n" ++
@@ -1249,8 +1181,6 @@ test "ARROWS ARE FOUND OR BOUGHT, NEVER GRANTED — a spent quiver survives the 
 }
 
 test "A SAVE WRITTEN BEFORE ARROWS WERE FINITE LOADS FULL, which is what it described" {
-    // `parse` writes only what the file HOLDS — it does not reset the struct — so the DEFAULTS are the whole
-    // mechanism, and they are `Quiver{}`'s own full load rather than zero.
     var d = Data{};
     try parse("version: 1\nmap: " ++ wf.START_MAP ++ "\n", &d);
     try testing.expectEqual(combat.ARROWS_MAX, d.arrows);

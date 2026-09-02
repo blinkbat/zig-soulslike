@@ -28,9 +28,7 @@ const STALK_DK = rgba(52, 44, 32, 255);
 const MOUTH = rgba(10, 8, 7, 255);
 const SPORE = rgba(192, 172, 136, 215);
 const SPORE_VIO = rgba(134, 92, 172, 210);
-/// What a spore cloud THINS TO as it disperses — both tints wash out to the same pale nothing.
 const SPORE_THIN = rgba(196, 186, 176, 70);
-/// Spores are the finest thing anything here sheds: they leave the cap and STOP, then hang and drift.
 const SPORE_DRAG: f32 = 6.0;
 const SPORE_VIO_SHARE: f32 = 0.48;
 
@@ -62,7 +60,6 @@ const HOP_FLIGHT: f32 = 0.34;
 const HOP_LAND: f32 = 0.14;
 const HOP_SETTLE: f32 = 0.10;
 
-/// THE FLING. It gathers (deep squat, cap tipped back, trembling), then throws its whole body in a high arc and pops its cloud where it lands. Chosen ONLY inside its own reach (the cannot-land law).
 const FLING_MAX: f32 = 5.4;
 const GATHER_DUR: f32 = 0.62;
 const FLING_FLIGHT: f32 = 0.55;
@@ -155,7 +152,6 @@ pub const Shroom = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
@@ -296,7 +292,6 @@ pub const Shroom = struct {
                 if (self.t >= GATHER_DUR * 0.7) self.emitTremble(dt);
                 if (self.t >= GATHER_DUR) {
                     if (self.tripping or !foe.canLeap(&self.root)) {
-                        // THE ROOT IT CAUGHT. Same gather to the last frame — the difference is only ever visible one frame too late, which is the whole joke and the whole tax.
                         sfx.world(.shroom_hurt, self.pos);
                         self.enter(.trip);
                     } else {
@@ -363,7 +358,6 @@ pub const Shroom = struct {
         self.kick = mathx.approach(self.kick, 0, dt * 4.0);
         const wait = if (d <= AGGRO_R) mathx.minF(self.idleWait, 0.14) else self.idleWait;
         if (self.t < wait) return;
-        // **IT WALKS ITS ORDERS THE ONLY WAY IT MOVES — IN HOPS** (`foe.postWant`, the toad's arrangement).
         if (foe.postWant(self, dt, d, AGGRO_R)) |go| {
             if (mathx.distXZ(self.pos, go) > 0.3) {
                 self.beginHop(go, bounds);
@@ -405,7 +399,6 @@ pub const Shroom = struct {
     }
 
     fn beginFling(self: *Shroom, hero: rl.Vector3) void {
-        // Committed AT THE DECISION: where it goes, and whether it goes at all (`tripping`) — rolled here so the gather cannot leak the outcome.
         self.hopAim = hero;
         self.hopReach = mathx.clampF(mathx.distXZ(self.pos, hero), 0.8, FLING_MAX);
         self.hopDur = FLING_FLIGHT;
@@ -442,7 +435,6 @@ pub const Shroom = struct {
                     self.emitPuff(self.pos, FLING_PUFF);
                     sfx.world(.shroom_puff, self.pos);
                     self.burstAt = self.pos;
-                    // NOT PARRYABLE, AND THAT IS A DECISION: the splat is a disc round the landing with the CLOUD as its real payload, and boards cannot refuse a gas. The counter is the mark — the whole arc is the tell, and a walk clears it.
                     if (mathx.distXZ(self.pos, hero) <= foe.hurtReach(SPLAT_R, self.scale)) {
                         self.heroHit = FLING_HIT;
                         self.leash.noteCombat();
@@ -518,8 +510,6 @@ pub const Shroom = struct {
         }
     }
 
-    /// **THE ONE PUFF THE BODY DOES NOT SCALE**, flare included: a sporeling is small enough that a placement
-    /// dial on its dust made the mote read as the creature rather than as the ground it landed on.
     const PUFF = foe.Puff{
         .blast = foe.Blast.of(foe.DUST_DRAG, 0.3, 0.5),
         .spdLo = 0.5,
@@ -532,7 +522,6 @@ pub const Shroom = struct {
     fn dustBurst(self: *Shroom, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
         foe.puff(&self.parts, &self.fxHead, &self.fxRng, v3(c.x, self.pos.y + 0.04, c.z), n, spd, big, 1.0, PUFF);
     }
-    /// MOTES, not a wound's worth of them: `foe.HIT_PARTS` is how heavy a LANDED BLOW reads, and a fling landing is not a blow. Read off it, the field-wide dial silently rescaled a trip and a fling too.
     fn emitPuff(self: *Shroom, at: rl.Vector3, motes: i32) void {
         var i: i32 = 0;
         while (i < motes) : (i += 1) {
@@ -657,7 +646,6 @@ pub const Cloud = struct {
             return;
         }
         // **IT HAS TO BE A VOLUME, AND IT HAS TO HAVE AN EDGE** (owner's call). Thirty-odd puffs over a 1.9 m disc
-        // was a few translucent blobs. HEIGHT: spores to a metre and a half, his own chest. A RIM: one puff in three is laid on the boundary, so the cloud says where it STOPS — a gradient has no line to be on the safe side of.
         const emitRate = (CLOUD_RATE + CLOUD_RATE_FRESH * (1.0 - self.t / CLOUD_LIFE));
         var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
@@ -719,7 +707,6 @@ pub const Cluster = struct {
         self.model.setShader(sh);
     }
 
-    /// PUBLIC because the SPORE GOLEM's lobbed sac lands in this pool too — one cloud pool and one poison meter for every spore in the game, or `spores` would be two accumulators filling one bar.
     pub fn spawnCloud(self: *Cluster, at: rl.Vector3) void {
         self.clouds[self.cloudHead] = .{ .pos = at, .live = true, .fxRng = foe.fxStream(at.x + at.z, 977.0, 0xC10D) };
         self.cloudHead = (self.cloudHead + 1) % CLOUD_CAP;
@@ -838,7 +825,6 @@ fn armMesh(side: f32) rl.Mesh {
 
 
 test "the fling is only chosen where it can land, and rooted it can only tremble" {
-    // The cannot-land law: a fling at nine metres travels five and pops its cloud on empty grass.
     try std.testing.expectEqual(Choice.fling, classify(FLING_MAX - 0.5, true, false));
     try std.testing.expectEqual(Choice.hop, classify(FLING_MAX + 0.5, true, false));
     try std.testing.expectEqual(Choice.hop, classify(4.0, false, false));
@@ -910,7 +896,6 @@ test "THE CLOUD POISONS, IT DOES NOT BURN: linger and the meter fills, step out 
         _ = psn.tick(P, 1.0 / 60.0, 70);
         if (psn.active()) broke = true;
     }
-    // **IT BREAKS NOW, AND IT DID NOT BEFORE** (owner: accrue more rapidly). At the old `SPORE_BUILD` a whole cloud lifetime left the meter half full; at the one it carries now, plus the entry bolus (`foe.Soak`), standing in one to the end poisons you.
         std.debug.print("  sporeling cloud: {d:.0}/s over {d:.1} s of cloud -> poison {s}\n", .{ SPORE_BUILD, CLOUD_LIFE, if (broke) "BROKE" else "held" });
     try std.testing.expect(broke);
     try std.testing.expectApproxEqAbs(@as(f32, 0), c.spores(1.0 / 60.0, outside), 1e-6);

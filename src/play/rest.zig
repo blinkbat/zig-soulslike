@@ -26,13 +26,10 @@ const BED_IN: f32 = 2.6;
 const BED_OUT: f32 = 0.55;
 const SEAT_TURN: f32 = 0.20;
 
-// THE BONFIRE IS A SCREEN NOW, not a pause with a fade. He sits on the RIGHT of the frame and the fire's own
-// menu is a list down the LEFT. GETTING UP IS A ROW ON THAT LIST **OR BACK** (owner's call), never "any button": what the old any-button rule guaranteed was a press that both chose a row and stood him up.
 
 pub const Row = enum {
     level,
     memorize,
-    /// **WAIT OUT THE CLOCK.** A bonfire is where you stop, so it is the one place that may spend HOURS. Two, and they are the two hours worth naming (`daynight.Until`) rather than a scrub — the fire is not an authoring tool, and "which light do I want to fight in" has two answers.
     untilMorning,
     untilEvening,
     leave,
@@ -64,7 +61,6 @@ pub const Pick = union(enum) {
     none,
     take: usize,
     wait: daynight.Until,
-    /// A null spell EMPTIES the slot.
     memorize: struct { slot: usize, spell: ?combat.Spell },
     leave,
 };
@@ -97,7 +93,6 @@ pub const Rest = struct {
     row: usize = 0,
     wheel: ptree.Wheel = .{},
 
-    /// `memPick` null is the slot list; set, the picker is open on that row (`book.picking`/`pick`'s pair).
     memRow: usize = 0,
     memPick: ?usize = null,
 
@@ -176,7 +171,6 @@ pub const Rest = struct {
     pub fn update(self: *Rest, dt: f32) void {
         self.justEntered = false;
         self.justLeft = false;
-        // Clamped in `.off` so the idle clock cannot run away over a long session.
         self.t = if (self.phase == .off) @min(self.t + dt, mathx.LONG_AGO) else self.t + dt;
         switch (self.phase) {
             .off => {},
@@ -214,7 +208,6 @@ pub fn siteFromProp(pos: rl.Vector3, yaw: f32) Site {
 }
 
 
-/// What the fire is allowed to know (`game.bookView`'s shape): it owns no game state and reaches for nothing.
 pub const View = struct {
     tree: *const Tree,
     souls: u32,
@@ -229,7 +222,6 @@ fn memCands(v: View, out: *[MEM_CANDS]?combat.Spell) []const ?combat.Spell {
     out[0] = null;
     var n: usize = 1;
     for (combat.SPELLS) |row| {
-        // Memorizing never SPENDS the scroll: owned once, racked as often as you like (ER's own).
         if (!combat.carriesSpell(v.bag, row.spell)) continue;
         out[n] = row.spell;
         n += 1;
@@ -256,13 +248,11 @@ pub fn navigate(self: *Rest, dx: f32, dy: f32) void {
             self.row = @intCast(next);
             sfx.play(.menu_move);
         },
-        // THE WHEEL IS WALKED BY DIRECTION, never cycled (`ptree.step`'s law).
         .tree => if (self.wheel.move(dx, dy)) sfx.play(.menu_move),
         .spells => {},
     }
 }
 
-/// Its own door, not a prong of `navigate`: the walk needs the bag to measure the open list.
 pub fn navigateSpells(self: *Rest, dy: f32, v: View) void {
     if (self.screen != .spells) return;
     const dv = mathx.signI(dy);
@@ -275,7 +265,6 @@ pub fn navigateSpells(self: *Rest, dy: f32, v: View) void {
     if (n <= 0) return;
     const at: i32 = @intCast(if (self.memPick) |i| i else self.memRow);
     const next = @mod(at + dv + n, n);
-    // A one-row list does not click: a cursor that cannot move may not sound like it did.
     if (next == at) return;
     if (self.memPick != null) self.memPick = @intCast(next) else self.memRow = @intCast(next);
     sfx.play(.menu_move);
@@ -332,7 +321,6 @@ pub fn confirm(self: *Rest, v: View) Pick {
                 sfx.play(.item_get);
                 return .{ .memorize = .{ .slot = self.memRow, .spell = want } };
             }
-            // Nothing to choose from opens no picker: the panel says so instead.
             if (cs.len <= 1 and v.mem.at(self.memRow) == null) {
                 sfx.play(.menu_back);
                 return .none;
@@ -344,7 +332,6 @@ pub fn confirm(self: *Rest, v: View) Pick {
     }
 }
 
-/// COUNTED, never taken as an ordinal (`book.pickIndexOf`'s law): the list holds only carried scrolls.
 fn pickIndexOf(v: View, slot: usize) usize {
     var buf: [MEM_CANDS]?combat.Spell = undefined;
     const cs = memCands(v, &buf);
@@ -448,7 +435,6 @@ fn drawList(self: *const Rest, a: f32) void {
     }
 }
 
-/// One frame for both big screens; returns the BODY, which is all either of them draws into.
 fn bigScreen(title: [:0]const u8, foot: i32, a: f32) struct { x: i32, y: i32, w: i32, h: i32, headY: i32, right: i32, bottom: i32 } {
     const sw = rl.getScreenWidth();
     const sh = rl.getScreenHeight();

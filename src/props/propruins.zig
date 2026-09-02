@@ -538,7 +538,6 @@ pub fn bonfireGuitarMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// Where the rock and its guitar sit in the camp's local frame — read by BOTH meshes, so the guitar cannot drift off the rock it leans on. The placement itself is `propart`'s now: the campfire grew one too.
 const GUITAR_CX: f32 = -1.62;
 const GUITAR_CZ: f32 = 1.18;
 const GUITAR_YAW: f32 = -1.56;
@@ -551,7 +550,6 @@ pub fn towerMesh(shader: rl.Shader) rl.Model {
     const W: f32 = 6.4;
     b.addBox(v3(0, 0.55, 0), v3(W * 0.60, rng.signed() * 0.01, 0), v3(0, 0.55, 0), v3(0, 0, W * 0.60), STONE_DK);
     b.addBox(v3(0, 1.20, 0), v3(W * 0.545, rng.signed() * 0.01, 0), v3(0, 0.30, 0), v3(0, 0, W * 0.545), STONE);
-    // Coursed per FACE: one box per course banded the whole shaft — the barber's pole, on a tower.
     const t1 = art.Course{ .thick = 0.30, .height = 0.86 * 8, .y0 = 1.42, .courses = 8, .blockW = 0.88, .crumbleTop = 0.10, .crumble = 0.03 };
     const h1 = W * 0.5 - t1.thick;
     courseInto(&b, &rng, -h1, -h1, h1, -h1, t1);
@@ -934,11 +932,9 @@ pub fn rubbleMesh(shader: rl.Shader) rl.Model {
 }
 
 
-// Dressed stone, so `.marble` where a face was worked and `.stone` where it was only laid — the two-material rule, and the reason the obelisk reads as carved and the altar's footings do not.
 
 pub const OBELISK_H: f32 = 8.6;
 
-/// A four-sided shaft on a stepped base, and the LOSS is the point: the pyramidion is off, so it ends in a broken bench and the last two courses have gone with it. `addCylinder` at four sides IS a tapered prism.
 pub fn obeliskMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x0B11);
@@ -946,24 +942,20 @@ pub fn obeliskMesh(shader: rl.Shader) rl.Model {
     b.setMat(.marble);
     const foot = v3(0, baseTop, 0);
     const shaftH = OBELISK_H - baseTop;
-    // A shaft that leans a HAIR. Perfectly plumb is the one thing a thing this old cannot be.
     const head = v3(0.13, baseTop + shaftH, -0.07);
     b.addCylinder(foot, head, 0.74, 0.42, 4, MARBLE);
     b.addBlob(v3(head.x, head.y - 0.06, head.z), v3(0.46, 0.09, 0.46), 2, 5, MARBLE_LT);
-    // The face weathering: shallow flutes down two sides, and a crack running most of the shaft.
     var i: i32 = 0;
     while (i < 6) : (i += 1) {
         const t = 0.12 + 0.14 * @as(f32, @floatFromInt(i));
         const y = baseTop + shaftH * t;
         const r = mathx.lerpF(0.74, 0.42, t);
         for ([_]f32{ -1.0, 1.0 }) |sd| {
-            // RELIEF IS SUBTLE — a few per cent of the shaft, sunk most of the way in.
             b.addBlob(v3(sd * r * 0.86, y, rng.signed() * 0.10), v3(r * 0.07, shaftH * 0.055, r * 0.20), 2, 5, MARBLE_DK);
         }
     }
     crackInto(&b, v3(0.30, baseTop + shaftH * 0.86, 0.52), v3(0.06, -1.0, -0.10), v3(1, 0, 0), shaftH * 0.62, 0.055, 0.09);
     b.setMat(.stone);
-    // The pyramidion, on the ground where it landed and half into the turf.
     b.addCylinder(v3(2.35, 0.10, -0.80), v3(2.62, 0.62, -1.05), 0.44, 0.06, 4, MARBLE_DK);
     chipsInto(&b, &rng, 0, 0, 2.2, 0.08, 0.22, 7);
     lichenInto(&b, &rng, v3(0, baseTop + 0.3, 0), v3(0.70, 0.04, 0.70), 4);
@@ -975,18 +967,15 @@ pub fn obeliskMesh(shader: rl.Shader) rl.Model {
 
 pub const PLINTH_H: f32 = 1.95;
 
-/// **A STATUE BASE WITH NO STATUE.** What sells it is the two feet still standing on it, snapped at the ankle — an empty block is a block, and the ankles are what make it a loss.
 pub fn plinthMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x0B12);
     const top = courseStack(&b, &rng, 0, 0, 0, 1.85, 1.55, 0.30, 5, 0.13);
     b.setMat(.marble);
-    // The cornice the figure stood on, proud of the courses below it.
     b.addCube(v3(0, top + 0.10, 0), v3(1.72, 0.20, 1.44), MARBLE);
     b.addCube(v3(0, top + 0.21, 0), v3(1.52, 0.06, 1.26), MARBLE_LT);
     const fy = top + 0.20;
     for ([_]f32{ -1.0, 1.0 }) |sd| {
-        // A FOOT: the sole is a slab, the ankle a stub, and the stub ends in a SNAP and not a taper.
         const fx = sd * 0.26;
         b.addRoundBox(v3(fx, fy + 0.07, 0.06), v3(0.30, 0.14, 0.66), 0.35, 3, 6, MARBLE);
         b.addRoundBox(v3(fx, fy + 0.13, -0.14), v3(0.26, 0.22, 0.30), 0.45, 3, 6, MARBLE_LT);
@@ -1000,7 +989,6 @@ pub fn plinthMesh(shader: rl.Shader) rl.Model {
         }
     }
     b.setMat(.stone);
-    // Whatever stood here is in pieces at the foot of it.
     var i: i32 = 0;
     while (i < 5) : (i += 1) {
         const a = rng.angle();
@@ -1017,7 +1005,6 @@ pub fn plinthMesh(shader: rl.Shader) rl.Model {
 
 pub const ALTAR_H: f32 = 1.15;
 
-/// A slab across two footings, with a CHANNEL cut down it and a lip round three sides. The channel is the only thing that makes it an altar rather than a table, so it is cut properly: sunk, and running OUT.
 pub fn altarMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x0B13);
@@ -1029,12 +1016,10 @@ pub fn altarMesh(shader: rl.Shader) rl.Model {
     const y = 0.82;
     b.addCube(v3(0, y, 0), v3(2.70, 0.26, 1.36), MARBLE);
     b.addCube(v3(0, y + 0.14, 0), v3(2.54, 0.05, 1.20), MARBLE_LT);
-    // The lip, three sides — the fourth is where the channel runs out over the edge.
     b.addCube(v3(0, y + 0.19, -0.60), v3(2.62, 0.10, 0.12), MARBLE_DK);
     for ([_]f32{ -1.0, 1.0 }) |sd| {
         b.addCube(v3(sd * 1.29, y + 0.19, 0), v3(0.12, 0.10, 1.28), MARBLE_DK);
     }
-    // The channel: a sunk trough down the middle, dark because it is always in its own shadow.
     b.addCube(v3(0, y + 0.15, 0.10), v3(0.30, 0.06, 1.16), MARBLE_DK);
     b.addBlob(v3(0, y + 0.16, 0.62), v3(0.16, 0.05, 0.14), 2, 6, ROCK_DEEP);
     crackInto(&b, v3(-1.05, y + 0.17, -0.30), v3(1.0, 0, 0.45), v3(0, 0, 1), 1.5, 0.045, 0.06);

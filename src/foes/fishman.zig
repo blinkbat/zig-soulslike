@@ -23,16 +23,6 @@ const lerpF = mathx.lerpF;
 const approach = mathx.approach;
 const setLocal = heromod.setHumanoid;
 
-// THE FISHMEN (owner's creature, owner's brief) — the dried lake's own people, stranded on the bed of the
-// water they were born in. **THE SECOND WARBAND**, and it is a warband for a different reason than the
-// kobolds are: theirs is held together by a priest keeping them alive, and this one by a NET.
-//
-// **THE THREE ARE ONE MOVE IN THREE PARTS.** The netter takes the hero's feet; the spearman drives a
-// two-handed trident down the line he can no longer step out of; the shaman puts back what you took off all
-// of them. Pull any one out and the other two are ordinary.
-//
-// **AND THE SHAMAN IS THE ANSWER, BUT THE NETTER IS WHAT KILLS YOU** — the lesson every player learns in the
-// wrong order, which is the whole reason to build it this way.
 
 pub const H: f32 = 2.05;
 const HIP_HALF = heromod.HIP_HALF * 1.04;
@@ -57,8 +47,6 @@ const WRL = heromod.WRL;
 const SHR = heromod.SHR;
 const ELR = heromod.ELR;
 const WRR = heromod.WRR;
-/// **THE ONE CREATURE HERE THAT USES BONE 17.** The trident, the net and the rattle are all HELD things, so
-/// each role fills the weapon slot with its own mesh and `Model.draw` walks the whole rig.
 const HELD = heromod.HELD;
 
 const solePatches = [_]heromod.SolePatch{
@@ -68,30 +56,19 @@ const solePatches = [_]heromod.SolePatch{
 
 const A_PROT: f32 = 4.0;
 
-// **THE ROLL** (owner: the two that fight can roll, and they get i-frames for it). A committed dive with a
-// window in the middle where the body is not there — the same bargain the player's own roll is, on the same
-// terms: the frames at both ends are real, so a stroke that leads it still lands.
 const ROLL_DUR: f32 = 0.60;
 const ROLL_DIST: f32 = 3.30;
-/// **THE WINDOW IS A FIXED CLOCK, NOT A DIE** — learnable, which is the only way an invulnerable enemy is fair.
 /// 0.23 s of a 0.60 s dive: the launch and the whole rise are real frames, so a stroke that LEADS it still
-/// lands and only a stroke thrown at where it used to be is eaten.
 const ROLL_IFRAME_IN: f32 = 0.15;
 const ROLL_IFRAME_OUT: f32 = 0.38;
 const ROLL_CD: f32 = 3.40;
-/// How close a body has to be before it wants off. Inside its own thrust, so a spearman rolls out of the range
-/// it just thrust from rather than standing in the recovery.
 const ROLL_TRIGGER_R: f32 = 2.55;
 comptime {
     std.debug.assert(ROLL_IFRAME_IN > 0 and ROLL_IFRAME_OUT < ROLL_DUR);
-    // **BOTH ENDS ARE REAL FRAMES**, and together they are more of the roll than the window is. An enemy dodge
-    // that is mostly invulnerable is an enemy dodge that eats a correctly-timed stroke.
     std.debug.assert((ROLL_IFRAME_OUT - ROLL_IFRAME_IN) < ROLL_DUR * 0.45);
     std.debug.assert(ROLL_DIST > ROLL_TRIGGER_R);
 }
 
-/// How much of the dive is behind it at `u`. Front-loaded and settling: a body throws itself and then arrives,
-/// which is the opposite of the glide-to-a-stop AGENTS.md forbids.
 fn rollEase(u: f32) f32 {
     const k = 1.0 - mathx.clampF(u, 0, 1);
     return 1.0 - k * k;
@@ -119,7 +96,6 @@ const TOTEM = rgba(84, 62, 44, 255);
 /// The shaman's robe. **SOLVED OFF A SAMPLED RENDER, NOT PICKED** (AGENTS.md): at (46, 62, 66) the cloth came
 /// back at 128,138,125 — paler than the fishman hide beside it at 111,116,97, so the one body in a garment read
 /// as the one body in a bedsheet. Wanted ~85, i.e. (85/130)^2.2 = 0.39 of it. Kelp-dark and COOL against a
-/// field that is warm everywhere.
 const ROBE = rgba(16, 22, 28, 255);
 const ROBE_DK = rgba(10, 14, 19, 255);
 
@@ -133,14 +109,9 @@ const Spec = struct {
     bodyR: f32,
     hurtR: f32,
     souls: u32,
-    /// The band it wants to stand in.
     wantMin: f32,
     wantMax: f32,
-    /// **HOW MUCH OF THE ONE BODY EACH ROLE IS.** One mesh, one stature, one rig — size is a COLUMN, never a
-    /// second skeleton.
     size: f32,
-    /// Whether this role can throw itself out of the way. The shaman cannot: a fat man in a robe is the one
-    /// body on this field that has to be caught, and taking that away is what makes killing it first the read.
     rolls: bool,
 };
 
@@ -156,8 +127,6 @@ fn spec(r: Role) *const Spec {
 
 comptime {
     if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("fishman: a Role with no spec row");
-    // A CONTIGUOUS RUN off `spearman` in role order — `roleOf`/`kindOf` are an ordinal shift, so a kind
-    // inserted mid-run would silently post the wrong role with nothing failing to compile.
     for (@typeInfo(Role).@"enum".fields, 0..) |f, i| {
         const fk: wf.FoeKind = @enumFromInt(@intFromEnum(wf.FoeKind.fish_spearman) + i);
         if (!std.mem.eql(u8, f.name, @tagName(fk)[5..])) {
@@ -185,8 +154,6 @@ pub fn kindOf(r: Role) wf.FoeKind {
 
 pub var AGGRO_R: f32 = 16.0;
 const HOME_R: f32 = 2.0;
-/// Raised with the size and the gait (owner: bigger AND more agile). Still under the hero's own, so squaring
-/// up to one is possible; what it costs is that walking a ring round it no longer is.
 const TURN_RATE: f32 = 4.4;
 const ACCEL: f32 = 4.0;
 const WALK_BASE: f32 = heromod.WALK_SPEED_BANK;
@@ -196,15 +163,11 @@ const TOP_F: f32 = 1.02;
 
 const RESISTS = combat.resists(.{ .cold = -40, .lightning = -30, .fire = 20, .chaos = 25 });
 
-// **THE TRIDENT.** Two-handed, both hands on the shaft, and it THRUSTS — the longest melee reach any common
-// body has, paid for with the slowest recovery.
 const THRUST_R: f32 = 3.18;
-/// **A THRUST IS A LINE, NOT A FAN — AND THE DOT IS SOLVED OFF THE THING ON THE END, NEVER PICKED**
 /// (`knight.SWING_BEARING`'s law). At 0.62 this was a 103-degree cone on the LONGEST reach in the game: a body
 /// standing 2.93 m to the SIDE of the drive was billed by it, which is 12.6 m2 of floor answering to one
 /// forward stab. Solved back to the prongs plus the man's own footprint, it is 1.16 m and 4.4 m2.
 const THRUST_FRONT_DOT: f32 = 0.95;
-/// How far off the line of the drive the thrust may still bill, at full extension.
 const THRUST_HALF_W: f32 = (THRUST_R + foe.HERO_REACH) * @sqrt(1.0 - THRUST_FRONT_DOT * THRUST_FRONT_DOT);
 const THRUST_WIND: f32 = 0.52;
 const THRUST_STRIKE: f32 = 0.16;
@@ -212,8 +175,6 @@ const THRUST_RECOVER: f32 = 0.86;
 const THRUST_CD: f32 = 2.6;
 pub const THRUST_HIT = combat.Hit{ .dmg = 32, .poise = 26, .stance = 16 };
 
-// **THE NET.** Almost no damage. What it does is take his FEET, and everything else in the band is priced
-// against that.
 const NET_R: f32 = 8.5;
 const NET_MIN: f32 = 2.2;
 const NET_WIND: f32 = 0.58;
@@ -221,35 +182,22 @@ const NET_RECOVER: f32 = 0.74;
 const NET_CD: f32 = 7.5;
 const NET_SPEED: f32 = 12.0;
 const NET_HIT_R: f32 = 0.95;
-/// How far off his chest the net still takes him. Deep, because the throw is a LOB and the arc crosses that
-/// height fast — a band solved off the mesh would drop the hit between two frames of flight.
 const NET_HIT_H: f32 = 1.4;
-/// Seconds a net stays in the air with nothing under it. It is the backstop behind `foe.landed`, not the
-/// ordinary end of a flight.
 const NET_LIFE: f32 = 2.0;
-/// **ONE GRAVITY FOR THE SOLVE AND THE FLIGHT.** `loose` solves the lob against it and `Net.step` integrates
-/// with it; two spellings drift and the net quietly stops landing where it was aimed.
 const NET_GRAV: f32 = 6.0;
-/// Seconds of held feet. Priced against the trident: one net has to be long enough for a spearman to WIND
-/// and land one thrust, and no longer — being netted through two of them is a death with no decision in it.
 pub const NET_HOLD: f32 = 1.35;
 pub const NET_HIT = combat.Hit{ .dmg = 8, .poise = 10 };
 
-// **THE RATTLE.** No blow at all. It puts health back on everything in the band including itself, which is
-// what makes killing it first the answer and killing it last the mistake.
 const RITE_WIND: f32 = 0.68;
 const RITE_DUR: f32 = 0.55;
 const RITE_RECOVER: f32 = 0.80;
 const RITE_CD: f32 = 9.0;
 const RITE_RANGE: f32 = 14.0;
 pub const RITE_HEAL_FRAC: f32 = 0.22;
-/// It will not spend the rite on scratches.
 const RITE_SLACK: f32 = 0.80;
 
 comptime {
     std.debug.assert(THRUST_WIND >= foe.TELL_MIN);
-    // The three prongs plus the body it is aimed at, and no more. Bracketed from BOTH sides: under the hero's
-    // own radius the longest weapon in the game would miss a man standing on the line of it.
     std.debug.assert(THRUST_HALF_W < 1.25);
     std.debug.assert(THRUST_HALF_W > foe.HERO_R);
     std.debug.assert(NET_WIND >= foe.TELL_MIN);
@@ -276,39 +224,27 @@ const State = enum { idle, walk, roll, thrust, cast, rite, stunlight, stunheavy,
 
 const Choice = enum { rest, hold, close, back, roll, thrust, net, rite };
 
-/// Pure over one situation, so every role's pick is testable without a body on a field.
 fn classify(role: Role, gap: f32, sensed: f32, homeGap: f32, scale: f32, ready: bool, wounded: bool, rooted: bool, rollReady: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     const s = spec(role);
     switch (role) {
-        // **THE BAND IS ASKED THE WAY THE THRUST BILLS IT** (`foe.hurtReach` on the same `rigSize`, the ogre's
-        // `slamReach` law). Edge to edge against a centre-to-centre bill, a half-scale spearman was handed the
-        // thrust out to 3.81 m and landed it to 2.39.
         .spearman => if (sensed <= foe.hurtReach(THRUST_R, scale * s.size) and ready) return .thrust,
         .netter => if (ready and gap <= NET_R and gap >= NET_MIN) return .net,
         .shaman => if (ready and wounded) return .rite,
     }
     if (rooted) return .rest;
-    // **IT THROWS ITSELF OUT OF THE WAY RATHER THAN WALKING OUT OF IT.** Chosen on a DISTANCE and its own
-    // clock and nothing else: a body this close is a body it wants off, whatever that body is doing. Reading
-    // the swing would be reading an input, and this creature may not (`foe.zig`'s law).
     if (s.rolls and rollReady and gap <= ROLL_TRIGGER_R) return .roll;
     if (sensed < s.wantMin) return .back;
     if (sensed > s.wantMax) return .close;
     return .rest;
 }
 
-/// A net in the air. It has TRAVEL, so the throw is dodgeable sideways and not just outrun — the one thing
-/// that keeps a 1.35 s hold from being a coin toss.
 pub const Net = struct {
     at: rl.Vector3 = mathx.zero3,
     vel: rl.Vector3 = mathx.zero3,
     live: bool = false,
     t: f32 = 0,
     spin: f32 = 0,
-    /// The ground under the fishman that threw it — what `foe.landed` measures against. Tested against WORLD
-    /// zero, a net thrown anywhere the land is sculpted sailed straight through the beach it was thrown over
-    /// and only ever expired on its own 2 s clock.
     floor: f32 = 0,
 
     pub fn step(self: *Net, dt: f32, target: rl.Vector3) bool {
@@ -331,7 +267,6 @@ pub const Net = struct {
 
 pub const Model = struct {
     bone: [N]rl.Mesh,
-    /// Per-role heads and held things. The BODY is one mesh set for all three — they are one people.
     head: [SPEC.len]rl.Mesh,
     hand: [SPEC.len]rl.Mesh,
     hips: [SPEC.len]rl.Mesh,
@@ -340,13 +275,8 @@ pub const Model = struct {
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
-        // **THE TWO PER-ROLE SLOTS ARE FILLED FROM THE ROLE TABLES, NOT BUILT TWICE.** `bone[SKULL]` and
-        // `bone[HELD]` are never drawn — `draw` reaches into `head`/`hand` for those — so building them a
-        // second time inside `buildBones` uploaded two meshes nothing would ever reference.
         const head = [SPEC.len]rl.Mesh{ headMesh(.spearman), headMesh(.netter), headMesh(.shaman) };
         const hand = [SPEC.len]rl.Mesh{ tridentMesh(), netBundleMesh(), rattleMesh() };
-        // **THE SHAMAN IS A DIFFERENT SHAPE, NOT A SMALLER ONE** — a gut and a robe, so the two trunk bones
-        // join the head and the hand as things this creature does NOT hold in common.
         const hips = [SPEC.len]rl.Mesh{ pelvisMesh(.spearman), pelvisMesh(.netter), pelvisMesh(.shaman) };
         const trunk = [SPEC.len]rl.Mesh{ lumbarMesh(.spearman), lumbarMesh(.netter), lumbarMesh(.shaman) };
         var bone = buildBones();
@@ -373,7 +303,6 @@ pub const Model = struct {
         }
         rl.drawMesh(self.head[r], self.mat, f.xf[SKULL]);
         for (SKULL + 1..HELD) |i| rl.drawMesh(self.bone[i], self.mat, f.xf[i]);
-        // The netter's bundle goes with the net: once it is in the air his hand is empty.
         if (!(f.role == .netter and f.net.live)) rl.drawMesh(self.hand[r], self.mat, f.xf[HELD]);
         if (f.net.live) rl.drawMesh(self.net, self.mat, f.netMat());
     }
@@ -383,7 +312,6 @@ pub const Fishman = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
@@ -408,10 +336,8 @@ pub const Fishman = struct {
     speedS: f32 = 0,
 
     net: Net = .{},
-    /// One-frame edges the group reads after `update`.
     threw: bool = false,
     rang: bool = false,
-    /// One-frame: the net closed on the hero this frame, and for how long it holds him.
     snared: f32 = 0,
 
     vit: combat.Vitals = combat.Vitals.initFoe(1, 1, 1),
@@ -424,7 +350,6 @@ pub const Fishman = struct {
     justDied: bool = false,
     parry: foe.Parry = .{},
     parried: bool = false,
-    /// Seconds until it can throw itself again, and the heading it committed to at the launch.
     rollCd: f32 = 0,
     rollDir: rl.Vector3 = mathx.zero3,
     fade: f32 = 0,
@@ -458,8 +383,6 @@ pub const Fishman = struct {
         return kindOf(self.role);
     }
 
-    /// **THE ONE SIZE EVERY WORLD POINT AND EVERY REACH IS MEASURED ON** — the map's own placement times the
-    /// role's column. Asked as bare `scale` anywhere, a role would draw at one size and be hit at another.
     pub fn rigSize(self: *const Fishman) f32 {
         return self.scale * spec(self.role).size;
     }
@@ -510,7 +433,6 @@ pub const Fishman = struct {
     }
 
     /// -1 gathered, +1 driven through, easing home across the recovery. One shape for all three roles' one
-    /// move, so the tell reads the same whichever of them is doing it.
     fn actAmt(self: *const Fishman, wind: f32, strike: f32, recover: f32) f32 {
         if (self.t < wind) return -mathx.smoothstep(0, wind * 0.92, self.t);
         const s = self.t - wind;
@@ -543,8 +465,6 @@ pub const Fishman = struct {
         );
     }
 
-    /// `bandHurt` is what the group has seen of its own health — the shaman reads the field, it never walks
-    /// the band itself (`foe.zig`'s cross-cutting-state law).
     pub fn update(self: *Fishman, dt: f32, quarry: rl.Vector3, bounds: f32, blade: foe.Blade, bandHurt: bool) ?combat.Hit {
         if (self.gone) {
             foe.tickParticles(&self.parts, dt, self.pos.y);
@@ -568,8 +488,6 @@ pub const Fishman = struct {
         foe.tickParticles(&self.parts, dt, self.pos.y);
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
-        // **THE NET FLIES ON ITS OWN CLOCK**, outliving the throw and even the thrower: a body cut down mid-
-        // throw has already let go, and the net in the air is not his any more.
         if (self.net.step(dt, quarry)) self.snared = NET_HOLD;
 
         var movedDist: f32 = 0;
@@ -588,9 +506,6 @@ pub const Fishman = struct {
                 if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enter(.idle);
             },
             .roll => {
-                // **A COMMITTED LINE, COMMITTED AT THE LAUNCH** — it does not steer and it does not track, so
-                // the place it lands is readable from the frame it leaves the ground.
-                // **THE DIVE IS DRIVEN BY THE DISTANCE IT HAS COVERED, NEVER BY A SPEED INTEGRATED PER
                 // FRAME.** Written as a rate the arc came out at 2.33 m of an advertised 3.30 — the profile's
                 // own mean silently rescaled it, which is the kind of number a comptime assert cannot see.
                 const u = mathx.clampF(self.t / ROLL_DUR, 0, 1);
@@ -637,7 +552,6 @@ pub const Fishman = struct {
                 switch (classify(self.role, gap, sensed, homeGap, self.scale, self.cd <= 0, bandHurt, self.root.held(), self.rollCd <= 0 and foe.canLeap(&self.root))) {
                     .rest => {
                         if (sensed <= AGGRO_R) self.faceToward(quarry, dt);
-                        // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postAmble`), refused inside the ring.
                         self.state = if (foe.postAmble(self, dt, bounds, WALK_BASE, ACCEL, sensed, AGGRO_R, TURN_RATE, &movedDist, &moveSpeed, &moveYaw)) .walk else .idle;
                     },
                     .roll => self.enterRoll(quarry),
@@ -661,9 +575,6 @@ pub const Fishman = struct {
                         self.speed = approach(self.speed, want, ACCEL * dt);
                         moveSpeed = self.speed;
                         const moved = moveSpeed * dt * self.chill.travel();
-                        // **BACKING OFF IS WALKING BACKWARDS, NOT TURNING ROUND** — a shaman that turns its
-                        // back to reposition is a shaman you cannot read, and the gait channel already knows
-                        // how to walk a body in a direction it is not facing.
                         const face = self.nav.along(mathx.headingDir(self.facing));
                         const way = if (ch == .back) v3(-face.x, 0, -face.z) else face;
                         mathx.stepXZ(&self.pos, way, moved, bounds);
@@ -698,7 +609,6 @@ pub const Fishman = struct {
         self.net = .{
             .at = from,
             .floor = self.pos.y,
-            // Solved for the arc rather than aimed flat: the lob is what makes the throw readable in the air.
             .vel = v3(d.x / tof, d.y / tof + 0.5 * NET_GRAV * tof, d.z / tof),
             .live = true,
         };
@@ -707,16 +617,12 @@ pub const Fishman = struct {
         sfx.world(.shroom_fling, self.pos);
     }
 
-    /// **THE FRAMES IT IS NOT THERE FOR.** A fixed window in the middle of the dive, off the roll's own clock
-    /// — the same thing the player buys with his own roll, and readable for exactly the same reason.
     pub fn invulnerable(self: *const Fishman) bool {
         return self.state == .roll and self.t >= ROLL_IFRAME_IN and self.t < ROLL_IFRAME_OUT;
     }
 
     pub fn tryHit(self: *Fishman, blade: foe.Blade) void {
         if (self.state == .dead) return;
-        // A blow that passes through leaves NO latch: the sword is still live when the body comes back down,
-        // and a stroke that swept an empty roll must be able to catch the rise.
         if (self.invulnerable()) return;
         const s = foe.reached(self, blade) orelse return;
         const heavy = foe.wounded(self, s, blade, .{ .light = 0.75, .heavy = 1.45 });
@@ -730,8 +636,6 @@ pub const Fishman = struct {
         }
     }
 
-    /// The heading is committed here and never re-aimed. **AWAY FROM THE BODY THAT CROWDED IT**, with a
-    /// lateral bias off its own stream so two of them do not dive onto the same spot.
     fn enterRoll(self: *Fishman, quarry: rl.Vector3) void {
         var away = mathx.dirXZ(quarry, self.pos);
         if (mathx.lenXZ(away) < 1e-4) away = mathx.headingDir(self.facing);
@@ -875,8 +779,6 @@ pub const Fishman = struct {
         const armStun = -44.0 * stun;
         const swing = -11.0 * heromod.armSwing(self.phase) * m * @abs(self.fwdB);
         switch (self.role) {
-            // **BOTH HANDS ON THE SHAFT.** The off hand is posed to the same angles as the weapon hand and
-            // one socket further down, so the grip reads as two hands on one pole and not as a spare arm.
             .spearman => {
                 const drive = 74.0 * mathx.maxF(0, act);
                 const haul = -30.0 * mathx.maxF(0, -act);
@@ -897,8 +799,6 @@ pub const Fishman = struct {
                 setLocal(wx, ELL, rest, rx(-26.0));
                 setLocal(wx, WRL, rest, rz(6.0));
             },
-            // The rattle goes UP and STAYS up through the rite — the one silhouette worth reading at range,
-            // because it is the one you are supposed to interrupt.
             .shaman => {
                 const up = 128.0 * mathx.maxF(0, act) + 40.0 * mathx.maxF(0, -act);
                 setLocal(wx, SHR, rest, mul3(rx(-(10.0 - swing) - up + armStun - 18.0 * dk), ry(0), rz(-12.0 - 20.0 * mathx.maxF(0, act))));
@@ -911,9 +811,6 @@ pub const Fishman = struct {
         }
         // **ONLY THE TRIDENT OWES THE KIT FIT** (`hero.staffFit`, the warriors' 180-is-plumb convention). At a
         // bare `ry(0)` the mesh keeps its authored +Y, which off a hanging wrist points back up the forearm —
-        // so the trident was carried PRONGS BACKWARD over his shoulder with the butt leading. The bundle and
-        // the rattle are near-symmetric masses hung off the hand and were never wrong; re-basing those would
-        // be a change to two things nobody reported.
         heromod.setJoint(wx, &rest, HELD, WRR, if (self.role == .spearman) heromod.staffFit(TRIDENT_TILT) else ry(0));
     }
 };
@@ -925,7 +822,6 @@ pub const Shoal = struct {
     band: [CAP_N]Fishman = undefined,
     n: usize = 0,
     /// One-frame: seconds of net the hero is owed, or 0. `game` reads it after the group's update, which is
-    /// the same shape the sporeling's cloud and the bloom's gas are taken in.
     pendingSnare: f32 = 0,
 
     pub fn init(shader: rl.Shader) Shoal {
@@ -950,8 +846,6 @@ pub const Shoal = struct {
         foe.setParry(self.live(), p);
     }
 
-    /// Whether anything in the band is hurt enough to be worth a rite. Read ONCE per frame and handed to
-    /// every member, so two shamans see the same field and cannot answer differently within one frame.
     fn hurt(self: *const Shoal) bool {
         for (self.liveConst()) |*f| {
             if (!foe.corporeal(f)) continue;
@@ -970,8 +864,6 @@ pub const Shoal = struct {
             if (f.update(dt, f.threat.aim(hero), bounds, blade, bandHurt)) |h| foe.worseBlow(&worst, h, f.pos, &f.threat);
             if (f.snared > 0) {
                 snare = @max(snare, f.snared);
-                // The net is a blow as well as a hold, and it goes through the ordinary door so a shield
-                // and a parry board both get their say about the thing that took his feet.
                 foe.worseBlow(&worst, NET_HIT, f.pos, &f.threat);
             }
             if (f.rang) self.mend(f.pos);
@@ -986,8 +878,6 @@ pub const Shoal = struct {
         return s;
     }
 
-    /// **THE RITE HEALS ITS OWN, INCLUDING THE SHAMAN THAT RANG IT** — a share of each body's OWN maximum, so
-    /// it is worth the same to the spearman as to the netter and cannot be tuned per role by accident.
     fn mend(self: *Shoal, from: rl.Vector3) void {
         for (self.live()) |*f| {
             if (!foe.corporeal(f)) continue;
@@ -1023,7 +913,6 @@ pub const Shoal = struct {
 };
 
 /// The body every role shares. `SKULL` and `HELD` are left undefined here and filled by `Model.init` from
-/// the per-role tables — they are the two bones this creature does NOT hold in common.
 fn buildBones() [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
     mesh[ROOT] = pelvisMesh(.spearman);
@@ -1045,8 +934,6 @@ fn buildBones() [N]rl.Mesh {
     return mesh;
 }
 
-/// **FAT IS A WIDER BODY, NOT A SCALED ONE** — the shaman's gut and hips are authored, so it reads as one
-/// heavy man among two lean ones rather than as the same man drawn bigger. `FAT` is the whole of the dial.
 const FAT: f32 = 1.62;
 
 fn fatOf(role: Role) f32 {
@@ -1061,9 +948,6 @@ fn pelvisMesh(role: Role) rl.Mesh {
     b.addBlob(v3(0, 0, 0), v3(0.086 * H * fat, 0.068 * H, 0.074 * H * fat), 9, 6, SCALE);
     b.addBlob(v3(0, -0.020 * H, 0.030 * H * fat), v3(0.070 * H * fat, 0.044 * H, 0.052 * H * fat), 8, 5, BELLY);
     if (role != .shaman) return b.toMesh();
-    // **THE ROBE.** Three courses of hem off the one shared garment primitive, widening as they fall, so the
-    // silhouette from behind is a bell and not a man. It hangs BELOW the pelvis and over the thighs, which is
-    // what makes the shaman the one body here with no legs to read.
     b.setMat(.cloth);
     const hip = -0.010 * H;
     const knee = -0.150 * H;
@@ -1091,8 +975,6 @@ fn lumbarMesh(role: Role) rl.Mesh {
     return b.toMesh();
 }
 
-/// **THE DORSAL FIN IS THE SILHOUETTE.** From behind, with no face and no weapon visible, the ridge is the
-/// only thing that says what these are — so it is on the trunk and not on the head.
 fn chestMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
@@ -1106,7 +988,6 @@ fn chestMesh() rl.Mesh {
         const hgt = (0.030 + 0.026 * mathx.sinf(f * std.math.pi)) * H;
         // 0.116·H seats the sail's roots inside the chest's own crown (top 0.122·H) with the crest proud.
         // The old `(0.070 + hgt*0.5) * H / H` cancelled its own H and buried the whole ridge mid-chest —
-        // which is why all three read as smooth mannequins from behind.
         b.addBlob(
             v3(0, 0.116 * H + hgt * 0.45, (-0.040 + 0.060 * f) * H),
             v3(0.006 * H, hgt, 0.016 * H),
@@ -1133,8 +1014,6 @@ fn neckMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// **THE THREE ARE TOLD APART AT THE HEAD**, because that is what a player can see over a shield wall: the
-/// spearman is bare, the netter has a swept crest, the shaman wears a fish skull over its own.
 fn headMesh(role: Role) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
@@ -1242,8 +1121,6 @@ fn handMesh(side: f32) rl.Mesh {
     return b.toMesh();
 }
 
-/// **THREE PRONGS AND A BARB ON EACH**, because the whole reach of this creature is one thrust and the thing
-/// on the end has to look like it earns 3.2 m.
 fn tridentMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
@@ -1259,9 +1136,6 @@ fn tridentMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// **A CARRIED NET IS ROPE HANGING, NOT A WAD** (owner: prop-holders hold things wrong — this one held a
-/// fist-sized lump). Gathered at the fist, a skirt of uneven two-link cords sagging to knots, two floats
-/// riding the outside. The THROWN net is `netFlightMesh`; this is what the hand carries between throws.
 fn netBundleMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF15E);
@@ -1413,14 +1287,11 @@ test "THE RITE PUTS BACK A SHARE OF EACH BODY'S OWN BAR — and it reaches the w
     s.band[0] = Fishman.spawnAs(.shaman, mathx.zero3, 0, 1.0, 0.3);
     s.band[1] = Fishman.spawnAs(.spearman, v3(0, 0, 3.0), 0, 1.0, 0.5);
     s.band[2] = Fishman.spawnAs(.netter, v3(0, 0, 6.0), 0, 1.0, 0.7);
-    // …and one the far side of the field, out of the rite AND out of aggro so it stays there.
     s.band[3] = Fishman.spawnAs(.spearman, v3(0, 0, -(RITE_RANGE + 6.0)), 0, 1.0, 0.9);
     s.n = 4;
     for (s.live()) |*f| f.vit.hp = f.vit.hpMax * 0.5;
     const before = [_]f32{ s.band[0].vit.hp, s.band[1].vit.hp, s.band[2].vit.hp, s.band[3].vit.hp };
 
-    // **INSIDE ITS EYES**: past `AGGRO_R` the band is at rest and no rite is ever chosen, so a hero parked
-    // forty metres off tests nothing at all.
     const hero = v3(0, 0, 12.0);
     var rang = false;
     var t: f32 = 0;
@@ -1484,8 +1355,7 @@ test "the trident is the longest common reach in the game, and it is telegraphed
     std.debug.print("  trident: {d:.1} m of reach, arriving at {d:.2} s\n", .{ THRUST_R, firstAt });
 }
 
-/// The trident's own axis in the WORLD, off the POSED bone: mesh-local +Y is the prongs (`tridentMesh` builds
-/// the shaft down to -0.60 H and the tips up to +0.50 H), so this is butt-to-point.
+/// The shaft runs -0.60 H to +0.50 H, so this is butt-to-point.
 fn tridentAxis(f: *const Fishman) rl.Vector3 {
     const butt = foe.markOn(f.xf[HELD], v3(0, -0.60 * H, 0));
     const tip = foe.markOn(f.xf[HELD], v3(0, 0.50 * H, 0));
@@ -1500,10 +1370,7 @@ test "THE TRIDENT IS CARRIED POINT-FIRST — measured off the posed bone, never 
     const lead = ax.x * fwd.x + ax.z * fwd.z;
     const pitch = mathx.degrees(std.math.asin(mathx.clampF(ax.y, -1, 1)));
     std.debug.print("\n  trident at tilt {d:.0}: leads {d:.2} along his facing, pitch {d:.0} deg\n", .{ TRIDENT_TILT, lead, pitch });
-    // **THE PRONGS GO WHERE HE IS LOOKING.** Backwards this read -1: the butt led and the points sat over his
-    // own shoulder, which is the bug this pins.
     try std.testing.expect(lead > 0.55);
-    // …and couched, not shouldered: level to a little raised, never straight up and never into the ground.
     try std.testing.expect(pitch > -30.0 and pitch < 45.0);
 }
 
@@ -1584,9 +1451,6 @@ test "BIGGER: the two that fight out-measure the one that hides behind them" {
     try std.testing.expect(sham.bodyR() > spear.bodyR() and sham.bodyR() > net.bodyR());
 }
 
-// **THE BAND IT STOPS CLOSING AT HAS TO BE A BAND IT CAN BILL FROM** (AGENTS.md: a move is judged by THROWING
-// it). The spearman is the one role here with a stroke; the outer edge is asked of `classify` rather than
-// re-derived, because which unit the band is written in is the thing under test.
 test "THE TRIDENT LANDS ON THE MAN WHERE HE STANDS — thrown for real, anywhere its own band picks it" {
     const dt: f32 = 1.0 / 120.0;
     var misses: usize = 0;

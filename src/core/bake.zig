@@ -160,8 +160,6 @@ pub const Emit = struct {
     }
 };
 
-/// One implementation, `wf.setMix`. It TRUNCATES, though, and a bake that overran the cap would then emit a
-/// mix quietly missing kinds — so the door refuses loudly first and copies through the one writer.
 fn setMix(dst: *[wf.MAX_MIX]Kind, n: *u8, src: []const Kind) void {
     if (src.len > wf.MAX_MIX) @panic("bake: kind mix longer than worldfmt.MAX_MIX");
     wf.setMix(dst, n, src);

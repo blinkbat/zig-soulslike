@@ -15,7 +15,6 @@ const SLOT_SOIL: i32 = 13;
 const SLOT_WATER: i32 = 14;
 const SLOT_SOILCOV: i32 = 15;
 const SLOT_SOILEDGE: i32 = 16;
-/// The COAST SHAPE and the LIQUID, packed into one byte a cell (`env.packLiquid`).
 const SLOT_WATEREDGE: i32 = 17;
 
 pub const SOIL_N: i32 = 112;
@@ -26,34 +25,22 @@ pub const WATER_N: i32 = 224;
 pub const HEIGHT_N: i32 = 224;
 
 /// Re-exported from the shader, which is where the GLSL that indexes `liquidTone` is generated from it.
-/// `props.LIQUID_TONES` sizes off this and `wf.Liquid` asserts against it.
 pub const LIQUID_N: usize = glsl.LIQUID_N;
 
-/// Re-exported for `LIQUID_N`'s reason — the GLSL that discards on it is generated from it over there, so the
-/// byte `env`'s bake writes, the one `env.paintedDepth` reads back and the one the sheet tests are one number.
 pub const WATER_SHORE: u8 = glsl.WATER_SHORE;
 pub const WATER_DEEP_AT: f32 = 11.0;
 pub const WATER_WET_OUT: f32 = 3.4;
 
 /// **THE RAW GL BLEND ENUMS, NAMED ONCE.** `rl.gl.rlSetBlendFactors` takes them as bare ints and two callers
-/// want them (`env`'s occluder pass, the editor's opaque minimap blit); the editor was writing `1, 0, 0x8006`
-/// with the names in a comment beside it.
 pub const GL_ZERO: i32 = 0;
 pub const GL_ONE: i32 = 1;
 pub const GL_FUNC_ADD: i32 = 0x8006;
 
-/// THE ANCHOR SUN — what the game was authored and photographed under, and the bearing every frame in `shots/` is framed off (`shots.LIT_YAW`). It is NOT what casts any more (`daynight.keyDir`); it stays because the cycle is SOLVED THROUGH it.
 pub const SUN_DIR = daynight.ANCHOR_DIR;
 
-/// WHAT IS CASTING THIS FRAME, and it is STILL ONE SOURCE (AGENTS.md): the shader's `sunDir`, the shadow camera's position and `env`'s shadow-reach cull all read this and nothing else. Written once a frame by `Scene.setHour` — never by hand.
 pub var sun: rl.Vector3 = SUN_DIR;
 pub var sunReach: f32 = daynight.reachOf(SUN_DIR);
 
-/// **THE HOT KEY AND THE OUTPUT GAMMA, NAMED ONCE.** The whole chain every albedo in the game is SOLVED
-/// through (AGENTS.md) lives in two places in the scene shader — `keyCol*diff*1.72` and the `pow(1.0/2.2)` on
-/// the way out — and the GLSL is a raw string, so it cannot import a constant. The comptime pin below is what
-/// keeps the two in step: move the key in the shader and the build stops here rather than letting the art
-/// tests go on measuring the old chain and passing.
 pub const KEY_HOT: f32 = 1.72;
 pub const OUT_GAMMA: f32 = 2.2;
 
@@ -66,19 +53,15 @@ comptime {
         @compileError("gfx: the scene shader no longer gammas at 1/2.2 — `OUT_GAMMA` has parted company with it");
 }
 
-/// What an authored albedo BYTE (0..255) comes up as ON SCREEN, in the same units. The one place the chain is
-/// arithmetic rather than prose — `propgold` and `propmarket` each carried their own copy of it.
+/// What an authored albedo BYTE (0..255) comes up as ON SCREEN, in the same units.
 pub fn screenOf(albedo: f32) f32 {
     return 255.0 * std.math.pow(f32, mathx.clampF(albedo / 255.0 * KEY_HOT, 0, 1), 1.0 / OUT_GAMMA);
 }
 
-/// The same chain read backwards: the albedo byte that lands on a wanted SCREEN byte. This is the solve the
-/// palettes are authored with, and guessing it instead is what the law exists to stop.
 pub fn albedoFor(screen: f32) f32 {
     return std.math.pow(f32, mathx.clampF(screen, 0, 255) / 255.0, OUT_GAMMA) / KEY_HOT * 255.0;
 }
 
-/// A colour's screen value taken off its own MEAN channel — what a "is this paler than that" test compares.
 pub fn screenOfColor(c: rl.Color) f32 {
     const mean = (@as(f32, @floatFromInt(c.r)) + @as(f32, @floatFromInt(c.g)) + @as(f32, @floatFromInt(c.b))) / 3.0;
     return screenOf(mean);
@@ -92,7 +75,6 @@ const SUN_DIST = 120.0;
 const SHADOW_DEPTH = 0.78;
 const SHADOW_NEAR = SUN_DIST - SHADOW_ORTHO * SHADOW_DEPTH;
 
-/// HOW WIDE THE BOX IS THIS FRAME, read by `env`'s caster cull the way `sun` is. Written only by `beginShadowPass`.
 pub var shadowSpan: f32 = SHADOW_ORTHO;
 
 const HAZE_DENSITY: f32 = 0.013;
@@ -119,7 +101,6 @@ pub const Sky = struct {
     loc_up: i32,
     loc_res: i32,
     loc_time: i32,
-    /// The hour's own uniforms. Held as locations rather than looked up per push: `getShaderLocation` is a string compare against the program's uniform table, and eleven of those a frame for numbers that never move is eleven for nothing.
     loc_sun: i32,
     loc_moon: i32,
     loc_stars: i32,
@@ -149,7 +130,6 @@ pub const Sky = struct {
             .loc_stars = rl.getShaderLocation(sh, "stars"),
             .loc_pal = pal,
         };
-        // A SKY WITH NO HOUR IN IT IS BLACK, so it is armed at the anchor here rather than left to the first frame: the menu draws over a live sky before the loop has ticked anything.
         out.setHour(daynight.SHOT_HOUR, 0, 0);
         return out;
     }
@@ -508,8 +488,6 @@ pub const Scene = struct {
             .loc_soilHalf = rl.getShaderLocation(shader, "soilHalf"),
             .loc_soilCell = rl.getShaderLocation(shader, "soilCell"),
             .waterTex = loadFieldTexture(WATER_N, .bilinear),
-            // POINT, like the soil edge map: both ordinals it packs are ordinals, and blending two of them
-            // names a third shape and a fifth liquid.
             .waterEdgeTex = loadFieldTexture(WATER_N, .point),
             .loc_waterOn = rl.getShaderLocation(shader, "waterOn"),
             .loc_waterHalf = rl.getShaderLocation(shader, "waterHalf"),
@@ -543,9 +521,6 @@ pub const Scene = struct {
         return out;
     }
 
-    /// The ONE writer of `gfx.sun`/`gfx.sunReach`, keeping the shader key, the shadow camera and `env`'s depth
-    /// cull one source. Called once a frame, before either pass.
-    ///
     /// **THE STORM IS A LAYER ON TOP** (`daynight.overcast`, owner: affect lighting depending on weather). `wet` is `weather.Weather.rain()`, 0 leaving the hour's palette untouched; `fogK` is the DEBUG haze override, 1 in the game; `spore` turns the distance PEACH and shortens it.
     pub fn setHour(self: *Scene, hour: f32, wet: f32, fogK: f32, spore: f32) void {
         const p = daynight.bloom(daynight.overcast(daynight.paletteAt(hour), wet), spore);
@@ -570,9 +545,6 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_hazeD, &density, .float);
     }
 
-    /// `span` is the width of the ortho box in metres — `SHADOW_ORTHO` in play, wider as the editor pulls
-    /// back. The camera's distance and both clip planes ride it, so the depth slab stays the same +-0.78 span
-    /// around the focus at every width and the shader's NDC bias keeps costing the same 16.6 texels.
     pub fn beginShadowPass(self: *Scene, focus: rl.Vector3, span: f32) void {
         shadowSpan = mathx.clampF(span, SHADOW_ORTHO, SHADOW_SPAN_MAX);
         const dist = SHADOW_NEAR + shadowSpan * SHADOW_DEPTH;
@@ -649,9 +621,6 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_ground, &m, .int);
     }
 
-    /// `field` is the plain signed distance and `edge` the PACKED coast-shape-plus-liquid byte, already dilated
-    /// (`env.dilateWaterEdge`). **THE SHAPE IS APPLIED PER FRAGMENT NOW** and is no longer baked into `field`,
-    /// which survives being sampled.
     pub fn setWater(self: *Scene, field: []const u8, edge: []const u8, half: f32, any: bool) void {
         const n: usize = @intCast(WATER_N);
         std.debug.assert(field.len == n * n);
@@ -666,8 +635,6 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_waterCell, &cell, .float);
     }
 
-    /// `tones` is shallow/mid/deep for every `wf.Liquid`, flat and in its order (`props.LIQUID_TONES`) — the
-    /// sheet picks per fragment off the packed edge byte, so one draw covers a tarn and a lava run at once.
     pub fn setWaterSheet(self: *Scene, on: bool, tones: [LIQUID_N * 3]rl.Vector3) void {
         var v: i32 = if (on) 1 else 0;
         rl.setShaderValue(self.shader, self.loc_waterSheet, &v, .int);
@@ -678,11 +645,6 @@ pub const Scene = struct {
 
 var soilEdgeDilated: [@as(usize, @intCast(SOIL_N)) * @as(usize, @intCast(SOIL_N))]u8 = undefined;
 
-/// **THE BARE SIDE OF A BOUNDARY ANSWERS WITH THE PAINTED SIDE'S POLICY.** Without it a tiled courtyard is
-/// tiled looking out and soft looking in - and a coast is read from OUTSIDE the water as often as from in it.
-/// One walk for both grids; `ids` is whatever counts as painted on that grid. The soil's runs at upload and is
-/// the GPU's alone; the water's is `env.dilateWaterEdge`, which HOLDS its result because the footing reads it
-/// too — so this is public, and there is not a second copy of the walk over there.
 pub fn dilateEdges(out: []u8, n: usize, ids: []const u8, edge: []const u8) []const u8 {
     @memcpy(out, edge);
     for (0..n) |z| {
@@ -758,7 +720,6 @@ pub fn dilateEdges(out: []u8, n: usize, ids: []const u8, edge: []const u8) []con
     }
 
     /// A PER-DRAW share of the world's haze, 1 for everything but the birds. Paired like `beginFade`: whatever
-    /// turns it down puts it back, or the next thing drawn comes out of the distance too clean.
     pub fn setHaze(self: *Scene, amt: f32) void {
         var a = mathx.clampF(amt, 0, 1);
         rl.setShaderValue(self.shader, self.loc_hazeScale, &a, .float);
@@ -782,8 +743,6 @@ pub fn dilateEdges(out: []u8, n: usize, ids: []const u8, edge: []const u8) []con
 pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble, flame, smoke, ember, bark, fog, gilt };
 comptime {
     // **THE HEAD IS PINNED AS WELL AS THE TAIL.** `water == 9` catches an INSERT below it, but the shader
-    // branches on 1 through 8 too (`matAlbedo`), and a reorder inside that run leaves water where it is —
-    // stone would silently come out as wood.
     std.debug.assert(@intFromEnum(Mat.stone) == 1);
     std.debug.assert(@intFromEnum(Mat.wood) == 2);
     std.debug.assert(@intFromEnum(Mat.cloth) == 3);
@@ -881,7 +840,6 @@ pub const Builder = struct {
         self.vert(d, n, cd, d.x, d.z);
     }
 
-    /// `quadFade` with the ANIM channel graded across the cell as well. The fog gate's height fraction rides `animY` and is read by both the vertex billow and the fade — constant per cell it steps, and a sheet that fades in stripes is a sheet with nine edges in it.
     pub fn quadFadeAnim(self: *Builder, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3, n: rl.Vector3, ab: rl.Color, cd: rl.Color, animAB: f32, animCD: f32) void {
         const keep = self.animY;
         self.animY = animAB;
@@ -1003,10 +961,7 @@ pub const Builder = struct {
         }
     }
 
-    /// **A GARMENT THAT HANGS OFF A BODY** — a ring of thin panels from `rTop` out to `rBot` over `drop`, each
-    /// wobbled and sagged on the caller's own seeded stream so the hem is uneven (WABI-SABI). Panels are thin
     /// WALLS AT THE RIM: `addBox` takes HALF-axes, so a radial extent of `(rTop - rBot)/2` centred on the mean
-    /// radius spans one to the other, and writing the extents instead gives every panel a solid pie slice.
     pub fn addSkirt(self: *Builder, c: rl.Vector3, rTop: f32, drop: f32, rBot: f32, thick: f32, sides: i32, col: rl.Color, rng: *mathx.Rng) void {
         var i: i32 = 0;
         while (i < sides) : (i += 1) {
@@ -1109,8 +1064,6 @@ pub const Builder = struct {
         return model;
     }
 
-    /// For a builder that never reaches `toMesh`, which is otherwise the only release: it hands the five
-    /// arrays to raylib.
     pub fn deinit(self: *Builder) void {
         self.pos.deinit();
         self.nrm.deinit();
@@ -1184,8 +1137,6 @@ fn norm3(a: rl.Vector3) rl.Vector3 {
 const cross = mathx.crossV;
 
 test "THE CHAIN AND ITS INVERSE ARE ONE SOLVE — an albedo run through both comes back where it started" {
-    // `albedoFor` is what a palette is authored with and `screenOf` is what an art test measures; drifting apart
-    // they would each pass on their own while the two halves of the law disagreed.
     for ([_]f32{ 8, 22, 45, 76, 95, 109, 148 }) |albedo| {
         try std.testing.expectApproxEqAbs(albedo, albedoFor(screenOf(albedo)), 0.01);
     }
@@ -1244,11 +1195,9 @@ test "EVERY PROGRAM THAT USES THE NOISE BASIS DECLARES IT ONCE — spliced, not 
     const DECL = "float hash21(vec2 p){";
     for ([_][]const u8{ glsl.sceneFS, glsl.skyFS, glsl.retroFS }) |src| {
         try std.testing.expectEqual(@as(usize, 1), count(src, DECL));
-        // The splice has to leave the declaration on a line of its own, or it lands inside the `//` comment above it.
         const at = std.mem.indexOf(u8, src, DECL).?;
         try std.testing.expectEqual(@as(u8, '\n'), src[at - 1]);
     }
-    // …and the two that call `vnoise` carry its definition, which only the shared source can give them.
     for ([_][]const u8{ glsl.sceneFS, glsl.skyFS }) |src| {
         try std.testing.expectEqual(@as(usize, 1), count(src, "float vnoise(vec2 p){"));
     }

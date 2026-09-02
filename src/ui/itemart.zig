@@ -10,10 +10,6 @@ const elemfx = @import("../gfx/elemfx.zig");
 
 const rgba = mathx.rgba;
 
-/// **THE DROP SHADOW UNDER A PICTURE, NAMED ONCE.** Nineteen `drawCircleV`s laid the same black wash and every
-/// one of them spelled it out, in a file that names every other colour it uses — so the one value the whole set
-/// shares was the one nothing could retune. The handful of pictures that ask for a heavier or lighter wash keep
-/// their own literal on purpose.
 const SHADOW = rgba(0, 0, 0, 110);
 
 pub const STEEL = rgba(232, 234, 238, 255);
@@ -29,9 +25,6 @@ pub const CORD = rgba(158, 142, 108, 255);
 pub const FIRE = rgba(255, 158, 62, 255);
 const FIRE_DIM = rgba(226, 108, 30, 150);
 pub const CHAOS = rgba(178, 92, 224, 255);
-/// **POISON'S VIOLET, UP HERE WITH THE REST OF THE PALETTE.** The dirk drew it inline off a `hud` constant that
-/// nothing has read since the ten meters replaced the one poison bar (`hud.ailTint`), so the citation and the
-/// figure had already parted company.
 const VENOM = rgba(96, 62, 118, 255);
 const VENOM_LT = rgba(158, 118, 186, 255);
 const CHAOS_LT = rgba(226, 182, 252, 255);
@@ -53,9 +46,6 @@ const STONE = rgba(132, 130, 126, 255);
 const STONE_LT = rgba(186, 184, 178, 255);
 const STONE_DK = rgba(74, 73, 70, 255);
 const SPARK = rgba(180, 214, 236, 255);
-/// **THE OIL IN THE JAR IS THE ELEMENT IT POURS.** Named here like every other colour in this file, but off
-/// `elemfx`'s own signature rather than spelled again: retuned there, a literal here leaves the bag picture on
-/// the old hue with nothing to say so. The alpha is the picture's, not the mote's.
 const RIME_ICE = mathx.withAlpha(elemfx.sig(.cold).edge, 255);
 const RIME_LT = mathx.withAlpha(elemfx.sig(.cold).core, 255);
 const LEVIN_HOT = mathx.withAlpha(elemfx.sig(.lightning).core, 255);
@@ -158,7 +148,6 @@ fn arrowSheaf(cx: f32, cy: f32, px: f32, hot: bool) void {
         const foot = v2(cx + lean * s * 1.4 - s * 0.02, cy + s * 0.36);
         const head = v2(cx + lean * s * 0.5, cy - s * 0.34);
         rl.drawLineEx(foot, head, 2.2 * k, if (i == 1) BOWWOOD_LT else BOWWOOD);
-        // The head: a leaf point in steel, or a wrapped bundle if it is meant to burn.
         if (hot) {
             rl.drawCircleV(v2(head.x, head.y + s * 0.03), 3.4 * k, CORD);
             rl.drawCircleV(v2(head.x, head.y + s * 0.01), 2.4 * k, if (@mod(t, 2.0) == 0) FIRE else FIRE_DIM);
@@ -170,7 +159,6 @@ fn arrowSheaf(cx: f32, cy: f32, px: f32, hot: bool) void {
                 STEEL_MID,
             );
         }
-        // Fletching, on the near side only — three sets of both is a hedge.
         const fl = v2(mathx.lerpF(foot.x, head.x, 0.16), mathx.lerpF(foot.y, head.y, 0.16));
         rl.drawLineEx(fl, v2(fl.x - s * 0.07, fl.y + s * 0.03), 1.6 * k, BONE_DK);
         rl.drawLineEx(v2(fl.x, fl.y + s * 0.05), v2(fl.x - s * 0.06, fl.y + s * 0.08), 1.5 * k, BONE_DK);
@@ -246,10 +234,6 @@ const SLEEP_WAX = rgba(150, 158, 206, 255);
 const SLEEP_WAX_DK = rgba(96, 104, 152, 255);
 const GILL_DUST = rgba(186, 208, 96, 255);
 const GILL_DUST_DK = rgba(126, 144, 58, 255);
-/// **THE TWO METER COLOURS A PICTURE IS BUILT FROM, UP HERE WITH THE REST OF THE PALETTE.** `hud` imports this
-/// file and not the other way round, so this is the only side the one value can live on: `hud.ailTint` reads
-/// these two and the babble and bidding pictures read them. It was three hand-copies of the green and two of
-/// the rose, under a comment saying the icon and the bar agree — which nothing made true.
 pub const BABBLE_GILL = rgba(172, 202, 82, 255);
 pub const CHARM_ROSE = rgba(228, 122, 172, 255);
 const WINE_BLACK = rgba(46, 18, 26, 255);
@@ -257,9 +241,6 @@ const WINE_RED = rgba(140, 26, 40, 255);
 const PAPER = rgba(206, 192, 156, 255);
 const PAPER_DK = rgba(160, 144, 112, 255);
 
-/// **ONE JAR, THREE FATS.** "Same cloth, same cord, only the fat swapped" is the law all three greases are
-/// written under, and all three drew it out by hand. Split in two calls rather than one, because the tallow
-/// threads its wick BETWEEN them — behind the lump, which is where a wick goes.
 fn greaseRag(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
@@ -276,8 +257,6 @@ fn greaseFat(cx: f32, cy: f32, px: f32, rng: *mathx.Rng, fat: rl.Color, dk: rl.C
     rl.drawCircleV(v2(cx - s * 0.09, cy - s * 0.08), s * 0.05, glint);
 }
 
-/// **THE THIRD JAR ON THE TALLOW'S SHELF AND IT READS AS THE THIRD** (`rimewax`'s law) — same cloth, same cord,
-/// only the fat swapped.
 fn nightcapGrease(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
@@ -287,7 +266,6 @@ fn nightcapGrease(cx: f32, cy: f32, px: f32) void {
     rl.drawLineEx(v2(cx + s * 0.04, cy + s * 0.09), v2(cx + s * 0.06, cy + s * 0.26), 2.0 * k, SLEEP_WAX_DK);
 }
 
-/// A NAIL BENT INTO A RING and not a cast band — the head still stands proud of the circle.
 fn wakersNail(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
@@ -305,7 +283,6 @@ fn wakersNail(cx: f32, cy: f32, px: f32) void {
     rl.drawLineEx(v2(cx - s * 0.15, cy + s * 0.16), v2(cx - s * 0.05, cy + s * 0.20), 1.4 * k, rgba(96, 88, 78, 255));
 }
 
-/// A PAPER TWIST WITH ITS SEAM ALREADY GOING — the dust leaking out is the only thing that says which powder.
 fn madcapPowder(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
@@ -313,7 +290,6 @@ fn madcapPowder(cx: f32, cy: f32, px: f32) void {
     rl.drawCircleV(v2(cx + 1.1 * k, cy + s * 0.10 + 1.3 * k), s * 0.23, rgba(0, 0, 0, 112));
     quad(v2(cx - s * 0.19, cy - s * 0.09), v2(cx + s * 0.20, cy - s * 0.13), v2(cx + s * 0.17, cy + s * 0.21), v2(cx - s * 0.21, cy + s * 0.17), PAPER);
     quad(v2(cx - s * 0.19, cy - s * 0.09), v2(cx - s * 0.02, cy - s * 0.11), v2(cx - s * 0.04, cy + s * 0.19), v2(cx - s * 0.21, cy + s * 0.17), PAPER_DK);
-    // Neither on the axis and neither the same length.
     rl.drawLineEx(v2(cx - s * 0.03, cy - s * 0.11), v2(cx + s * 0.05, cy - s * 0.30), 3.2 * k, PAPER_DK);
     rl.drawLineEx(v2(cx - s * 0.06, cy + s * 0.18), v2(cx - s * 0.16, cy + s * 0.32), 2.8 * k, PAPER_DK);
     rl.drawLineEx(v2(cx - s * 0.10, cy - s * 0.05), v2(cx + s * 0.09, cy + s * 0.15), 1.2 * k, rgba(140, 126, 96, 200));
@@ -325,7 +301,6 @@ fn madcapPowder(cx: f32, cy: f32, px: f32) void {
     }
 }
 
-/// A HAND-BELL, not the summoning bell (`bell`): a HANDLE where that one has a crown.
 fn stolenGravebell(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
@@ -351,12 +326,10 @@ fn stolenGravebell(cx: f32, cy: f32, px: f32) void {
     ellipseV(cx, mouthY, hw, s * 0.036, BRONZE_BORE);
     arc(cx + lean * 0.5, cy - s * 0.22, s * 0.070, std.math.pi * 1.02, std.math.tau * 0.99, 10, 2.9 * k, 2.4 * k, BRONZE_LT);
     rl.drawLineEx(v2(cx + lean * 0.5, cy - s * 0.29), v2(cx + lean * 0.5 + s * 0.02, cy - s * 0.36), 3.0 * k, rgba(120, 92, 52, 255));
-    // Off the middle: a bell hanging true is a bell nobody has rung.
     rl.drawCircleV(v2(cx + s * 0.045, mouthY - s * 0.045), s * 0.042, rgba(84, 62, 30, 255));
     arc(cx + s * 0.09, cy - s * 0.02, s * 0.10, std.math.pi * 1.30, std.math.pi * 1.94, 8, 1.5 * k, 0.6 * k, rgba(238, 220, 176, 130));
 }
 
-/// A BOTTLE WITH THE RED SETTLED OUT OF IT: the sediment in the bottom is the whole picture.
 fn bloodwine(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
@@ -536,7 +509,6 @@ fn gravebellAmulet(cx: f32, cy: f32, px: f32) void {
     arc(cx + s * 0.22, cy + s * 0.02, s * 0.11, std.math.pi * 1.25, std.math.pi * 1.92, 8, 1.6 * k, 0.6 * k, rgba(238, 226, 190, 120));
 }
 
-/// **WHICH PICTURE A SORCERY IS, AND THE ONE PLACE IT IS DECIDED** — `drawHeld`'s own shape one enum along. One list of five lived at the HUD's cross AND the book's socket, differing only in how each spelled "can he afford it". `lit` is that affordability.
 pub fn spellArt(s: combat.Spell, cx: f32, cy: f32, px: f32, lit: bool) void {
     switch (s) {
         .bolt => spell(cx, cy, px, lit),
@@ -551,7 +523,6 @@ pub fn spellArt(s: combat.Spell, cx: f32, cy: f32, px: f32, lit: bool) void {
     }
 }
 
-/// **THREE MOUTHS AND NO TWO SAYING THE SAME THING.** The confusion meter's colour, so the icon and the bar agree.
 fn babble(cx: f32, cy: f32, px: f32, lit: bool) void {
     const s = px;
     const k = strokeK(px);
@@ -570,8 +541,6 @@ fn babble(cx: f32, cy: f32, px: f32, lit: bool) void {
     rl.drawCircleV(v2(cx - s * 0.30, cy + s * 0.28), 1.6 * k, cool);
 }
 
-/// **A HAND HELD OUT WITH A COIN IN IT.** Not a crown and not a chain: this spell PAYS. Charm's rose, for the
-/// babble's reason.
 fn bidding(cx: f32, cy: f32, px: f32, lit: bool) void {
     const s = px;
     const k = strokeK(px);
@@ -753,7 +722,6 @@ fn spiritScroll(cx: f32, cy: f32, px: f32, glyph: SpiritGlyph) void {
     scrollRoll(cx, cy, px);
 }
 
-/// One scroll picture in the game; the sigil inked on it is what says which scroll it is.
 fn sorceryScroll(cx: f32, cy: f32, px: f32, sp: combat.Spell) void {
     const s = px;
     scrollSheet(cx, cy, px);
@@ -764,7 +732,6 @@ fn sorceryScroll(cx: f32, cy: f32, px: f32, sp: combat.Spell) void {
     scrollRoll(cx, cy, px);
 }
 
-/// The colour each spell picture is built from, for the one place the picture itself is too small to read.
 pub fn spellTint(sp: combat.Spell) rl.Color {
     return switch (sp) {
         .bolt, .siphon => CHAOS,
@@ -957,16 +924,12 @@ fn fireTallow(cx: f32, cy: f32, px: f32) void {
     rl.drawLineEx(v2(cx + s * 0.05, cy + s * 0.08), v2(cx + s * 0.07 + rng.range(0, 2) * k, cy + s * 0.25), 2.2 * k, EMBER_FAT_DK);
 }
 
-/// **THE TALLOW'S COLD TWIN, AND IT HAS TO READ AS THE TWIN** — same twist of waxed cloth, same cord, and the
-/// only thing swapped is the fat for rime-clouded wax. Two greases that look nothing alike is two pictures to
-/// learn where one would have done.
 fn rimewax(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
     var rng = mathx.Rng.init(0x21CE);
     greaseRag(cx, cy, px);
     greaseFat(cx, cy, px, &rng, RIME_ICE, rgba(104, 152, 184, 255), RIME_LT);
-    // Three frost needles off the lump — the only part of the picture the tallow does not have.
     var i: u32 = 0;
     while (i < 3) : (i += 1) {
         const a = std.math.pi * (1.15 + 0.28 * @as(f32, @floatFromInt(i)));
@@ -976,8 +939,6 @@ fn rimewax(cx: f32, cy: f32, px: f32) void {
     rl.drawLineEx(v2(cx + s * 0.05, cy + s * 0.08), v2(cx + s * 0.07 + rng.range(0, 2) * k, cy + s * 0.25), 2.2 * k, rgba(104, 152, 184, 255));
 }
 
-/// A horn cup of kiln-grit in oil, the ash settled in a band and one ember still live in it. The BAND is the
-/// read: a cup of plain dark liquid is the toad broth already in the tray.
 fn kilnDraught(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
@@ -990,7 +951,6 @@ fn kilnDraught(cx: f32, cy: f32, px: f32) void {
     quad(v2(cx + s * 0.06, cy - s * 0.07), v2(cx + s * 0.25, cy - s * 0.08), v2(cx + s * 0.13, cy + s * 0.30), v2(cx + s * 0.02, cy + s * 0.30), hornLo);
     ellipseV(cx + s * 0.005, cy - s * 0.07, s * 0.245, s * 0.070, rgba(52, 44, 38, 255));
     ellipseV(cx - s * 0.01, cy - s * 0.08, s * 0.185, s * 0.048, ash);
-    // The ember: the one warm mark, and it sits IN the ash rather than over the rim.
     rl.drawCircleV(v2(cx + s * 0.05 + rng.range(-1.0, 1.0) * k, cy - s * 0.085), s * 0.052, FIRE);
     rl.drawCircleV(v2(cx + s * 0.045, cy - s * 0.095), s * 0.026, rgba(255, 226, 168, 255));
     var i: u32 = 0;
@@ -1000,9 +960,6 @@ fn kilnDraught(cx: f32, cy: f32, px: f32) void {
     rl.drawLineEx(v2(cx - s * 0.22, cy - s * 0.03), v2(cx - s * 0.10, cy + s * 0.27), 1.4 * k, hornLo);
 }
 
-/// **THE THIRD RUNG OF THE SOUL LADDER, AND THE PICTURE SAYS SO** — the nameless soul is a cracked lump and the
-/// salt is a brick; this is a TIED PURSE with the lump inside and a coin at the knot, so the tray reads a tier
-/// off the shape and never off the number.
 fn pilgrimsOffering(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
@@ -1015,11 +972,9 @@ fn pilgrimsOffering(cx: f32, cy: f32, px: f32) void {
     // The glow through the weave: what is inside is somebody, and it is the only lit part.
     rl.drawCircleV(v2(cx - s * 0.05, cy + s * 0.05), s * 0.105, rgba(206, 178, 118, 200));
     rl.drawCircleV(v2(cx - s * 0.05, cy + s * 0.04), s * 0.055, RING_SOUL);
-    // The neck, gathered and tied.
     quad(v2(cx - s * 0.10, cy - s * 0.20), v2(cx + s * 0.10, cy - s * 0.20), v2(cx + s * 0.14, cy - s * 0.04), v2(cx - s * 0.14, cy - s * 0.04), cloth);
     rl.drawLineEx(v2(cx - s * 0.13, cy - s * 0.11), v2(cx + s * 0.13, cy - s * 0.13), 2.8 * k, CORD);
     rl.drawLineEx(v2(cx + s * 0.11, cy - s * 0.13), v2(cx + s * 0.24, cy - s * 0.22 + rng.range(-1.4, 1.4) * k), 1.6 * k, CORD);
-    // The coin on the tie, edge-on so it is a coin and not a bead.
     ellipseV(cx - s * 0.20, cy - s * 0.16, s * 0.075, s * 0.095, BRONZE);
     ellipseV(cx - s * 0.205, cy - s * 0.165, s * 0.045, s * 0.060, BRONZE_LT);
     var i: u32 = 0;
@@ -1029,9 +984,6 @@ fn pilgrimsOffering(cx: f32, cy: f32, px: f32) void {
     }
 }
 
-/// **THE DIRK IS DRAWN ONCE.** The fang, the corded haft and the iron collar are one picture; a variant owns
-/// only its SEED (which is the bend and the cord's jitter), the edge's tone and the glint laid down it. Returns
-/// the POINT, because that is the one place a coating has anything of its own to hang.
 fn dirkInto(cx: f32, cy: f32, px: f32, seed: u64, edge: rl.Color, glint: rl.Color) rl.Vector2 {
     const s = px;
     const k = strokeK(px);
@@ -1061,19 +1013,13 @@ fn dirkInto(cx: f32, cy: f32, px: f32, seed: u64, edge: rl.Color, glint: rl.Colo
     return tipP;
 }
 
-/// **THE DIRK'S SILHOUETTE, THE COATING'S COLOUR** — same fang, same corded haft, and the blade carried in
-/// poison's own violet, with the bead at the point that says it is WET.
 fn envenomedDagger(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const tipP = dirkInto(cx, cy, px, 0x0E2D, VENOM, VENOM_LT);
-    // The drop hanging off the point: two circles, because one is a dot on a line.
     rl.drawCircleV(v2(tipP.x + s * 0.03, tipP.y + s * 0.05), s * 0.048, VENOM);
     rl.drawCircleV(v2(tipP.x + s * 0.025, tipP.y + s * 0.040), s * 0.024, VENOM_LT);
 }
 
-/// **THE BOOTS' SILHOUETTE IN SILK** — the pair reads as the pair (same two uppers, same sole line) and what is
-/// swapped is hide for pale spider-silk, plus the strand still off the heel. The moccasin has NO hard sole:
-/// that is the whole difference a player can see at 32 px.
 fn spidersilkMoccasins(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
@@ -1087,7 +1033,6 @@ fn spidersilkMoccasins(cx: f32, cy: f32, px: f32) void {
     quad(v2(cx - s * 0.26, cy - s * 0.19), v2(cx - s * 0.07, cy - s * 0.21), v2(cx - s * 0.05, cy + s * 0.14), v2(cx - s * 0.24, cy + s * 0.14), silk);
     quad(v2(cx - s * 0.25, cy + s * 0.09), v2(cx + s * 0.08, cy + s * 0.13), v2(cx + s * 0.08, cy + s * 0.21), v2(cx - s * 0.25, cy + s * 0.19), silk);
     rl.drawLineEx(v2(cx - s * 0.26, cy + s * 0.21), v2(cx + s * 0.09, cy + s * 0.23), 1.6 * k, silkDk);
-    // The binding round the ankle, and one loose strand: silk, not leather.
     rl.drawLineEx(v2(cx - s * 0.27, cy - s * 0.10), v2(cx - s * 0.04, cy - s * 0.12), 1.7 * k, bind);
     rl.drawLineEx(v2(cx - s * 0.27, cy - s * 0.02), v2(cx - s * 0.04, cy - s * 0.04), 1.5 * k, bind);
     var prev = v2(cx - s * 0.25, cy + s * 0.20);
@@ -1099,8 +1044,6 @@ fn spidersilkMoccasins(cx: f32, cy: f32, px: f32) void {
     }
 }
 
-/// The deft signet's band with the stone SET INTO it rather than perched on top, and the stone dark enough that
-/// the two rings are never the same picture. A garnet gone black reads as a hole, so it keeps one red highlight.
 fn bloodtingeSignet(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
@@ -1112,8 +1055,6 @@ fn bloodtingeSignet(cx: f32, cy: f32, px: f32) void {
     rl.drawCircleV(v2(cx - s * 0.02, cy - s * 0.195), s * 0.030, WEED_LT);
 }
 
-/// A holed coin on a twist of wire — the hole is the whole read, and it is drawn as a RING of coin rather than
-/// a disc with a dot so it survives the tray at 32 px.
 fn loopOfChance(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
@@ -1122,7 +1063,6 @@ fn loopOfChance(cx: f32, cy: f32, px: f32) void {
     arc(cx, cy + s * 0.05, s * 0.19, 0, std.math.tau, 22, s * 0.105, s * 0.105, BRONZE);
     arc(cx - s * 0.02, cy + s * 0.03, s * 0.19, std.math.pi * 0.55, std.math.pi * 1.35, 12, s * 0.055, s * 0.045, BRONZE_LT);
     arc(cx, cy + s * 0.05, s * 0.135, 0, std.math.tau, 18, 1.4 * k, 1.4 * k, BRONZE_BORE);
-    // The wire through the hole, closed at the top with a twist rather than a bead.
     const top = v2(cx + s * 0.02, cy - s * 0.28);
     arc(cx + s * 0.01, cy - s * 0.20, s * 0.095, std.math.pi * 0.20, std.math.pi * 1.80, 12, 1.5 * k, 1.5 * k, STEEL_MID);
     rl.drawLineEx(v2(top.x - s * 0.03, top.y + s * 0.02 + rng.range(-1.0, 1.0) * k), v2(top.x + s * 0.04, top.y - s * 0.02), 1.4 * k, STONE_LT);
@@ -1530,14 +1470,12 @@ pub fn wand(cx: f32, cy: f32, px: f32) void {
     rl.drawCircleV(v2(head.x - 1.9 * k, head.y - 2.1 * k), sr * 0.15, uiart.CATCH);
 }
 
-/// **WHAT A HAND HAS A PICTURE OF, ASKED ONCE** — the HUD cell, the book's four hand sockets and the doll all come through here, the way `spellArt` is already the one answer for the sorcery cell. Named apart from `hero.Armament` because `hud` and this file may not import `hero`.
 pub const Arm = enum { sword, dagger, club, bow, bell, shield, wand, torch };
 
 pub fn heldArt(a: Arm, gear: ?item.Kind, cx: f32, cy: f32, px: f32) void {
     if (gear) |k| return drawHeld(k, cx, cy, px, true);
     switch (a) {
         .sword => sword(cx, cy, px),
-        // THE CLASS PICTURE IS ITS ONE WEAPON'S, because in this world it IS the class — and the hand cell never offers either of these two bare (`book.candidates`), so this is the fallback and not the view.
         .dagger => fangDirk(cx, cy, px),
         .club => greatclub(cx, cy, px),
         .bow => bow(cx, cy, px),
@@ -1548,7 +1486,6 @@ pub fn heldArt(a: Arm, gear: ?item.Kind, cx: f32, cy: f32, px: f32) void {
     }
 }
 
-/// On the ROD'S OWN DIAGONAL, so the two left-hand pictures read as one set — and shorter, because the flame is what has to fit in the box above it.
 pub fn torch(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);
@@ -1566,7 +1503,6 @@ pub fn torch(cx: f32, cy: f32, px: f32) void {
     }
     const neck = onAxis(butt, head, 0.80, 0);
     rl.drawLineEx(onAxis(butt, head, 0.72, 0), neck, 4.4 * k, IRON_DK);
-    // The pitch wad, then the flame off ITS far face — a torch is read by the fire, not by the stick.
     const wad = onAxis(butt, head, 1.0, 0);
     rl.drawCircleV(v2(wad.x, wad.y), s * 0.085, rgba(24, 20, 18, 255));
     rl.drawLineEx(v2(wad.x - u * 3.0 * k, wad.y + u * 3.0 * k), v2(wad.x + u * 3.0 * k, wad.y - u * 3.0 * k), 1.2 * k, CORD);

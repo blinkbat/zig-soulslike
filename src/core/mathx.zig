@@ -136,8 +136,6 @@ pub fn lenV(a: rl.Vector3) f32 {
 pub fn normV(a: rl.Vector3) rl.Vector3 {
     return normVOr(a, v3(0, 0, 0));
 }
-/// A mesh normal may not come back zero — a degenerate face wants a sane axis, not a black one — so the
-/// caller says what nothing normalises to.
 pub fn normVOr(a: rl.Vector3, fallback: rl.Vector3) rl.Vector3 {
     const l = lenV(a);
     if (l < 1e-6) return fallback;
@@ -153,7 +151,6 @@ pub fn lerpV(a: rl.Vector3, b: rl.Vector3, t: f32) rl.Vector3 {
     return v3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
 }
 
-/// Rotate `from` toward `want` by at most `maxRad`. **NOT `normV(from + k*(want - from))`** — that stalls as
 /// the angle grows and at dead opposite is `(1-2k)*from`, a fixed point: measured, a 2.2 rad/s steer took
 /// 5.15 s to reverse against the 1.43 s a cap gives. Dead opposite also has no slerp axis (`sin(ang)` → 0 →
 /// NaN), so any perpendicular does for one step.
@@ -225,7 +222,6 @@ test "pulse rises, holds and falls, and is flat outside its span" {
     try std.testing.expect(pulse(0.6, 0, 0.5, 0.5, 1.0) < 1.0);
 }
 
-/// Ease `cur` toward `target` by a rate-limited step of `rate*dt`, landing exactly ON it — where `lerpF(cur, target, k)` is an exponential ease that never quite arrives. THE ONE COPY: an `approachF` with the identical contract sat beside this for one caller.
 pub fn approach(cur: f32, target: f32, maxStep: f32) f32 {
     const d = target - cur;
     if (@abs(d) <= maxStep) return target;
@@ -242,7 +238,6 @@ pub fn approachV(cur: rl.Vector3, target: rl.Vector3, maxStep: f32) rl.Vector3 {
     return v3(cur.x + dx * k, cur.y + dy * k, cur.z + dz * k);
 }
 
-/// Wrap a radian angle into (-pi, pi].
 pub fn wrapPi(a: f32) f32 {
     if (!std.math.isFinite(a)) return 0;
     var x = a;
@@ -258,7 +253,6 @@ pub fn wrapDeg(a: f32) f32 {
     return degrees(wrapPi(radians(a)));
 }
 
-/// Shortest-arc ease of a radian angle toward target by at most `maxStep`.
 pub fn approachAngle(cur: f32, target: f32, maxStep: f32) f32 {
     const d = wrapPi(target - cur);
     if (@abs(d) <= maxStep) return target;

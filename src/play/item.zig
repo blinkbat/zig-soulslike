@@ -2,23 +2,14 @@ const std = @import("std");
 const stats = @import("stats.zig");
 
 
-/// **THE FOUR ELEMENTS BY NAME, FOR A FILE THAT CANNOT SEE `combat`.** This one is a leaf on purpose (`combat`
-/// imports it), so a ward or a grease says which column it is in these terms and `combat.elemOf` crosses over —
-/// pinned field for field against `combat.Elem` at comptime there.
 pub const ElemName = enum(u8) { fire, cold, lightning, chaos };
 
-/// **THE TEN BY NAME, FOR `ElemName`'S REASON** — this file is a leaf and cannot see `combat.Ail`. Pinned tag
-/// for tag at comptime there (`combat.ailOfName`).
 pub const AilName = enum(u8) { poison, burning, chill, stun, bleed, sleep, confusion, charm, berserk, stupefy };
 
-/// What a source puts in ONE meter, out of that row's own `max`.
 pub const AilDose = struct { ail: AilName, amt: f32 };
 
-/// A MULTIPLIER on how fast one meter fills on the wearer. Named, so a helm cannot slow all ten at once by accident.
 pub const AilRate = struct { ail: AilName, k: f32 };
 
-/// **LOWER CASE, BECAUSE IT LANDS MID-SENTENCE** — `combat.ailName` is the capitalised bar label; a gear line
-/// reads "sleep fills at 40%".
 pub fn ailWord(a: AilName) [:0]const u8 {
     return switch (a) {
         .poison => "poison",
@@ -209,26 +200,17 @@ pub const Class = enum {
     }
 };
 
-/// **WHAT A THING IS WORTH IN COIN, AND 0 MEANS IT DOES NOT TRADE.** Derived from the SHELF it sits on rather
-/// than authored sixty times: a tool is a tool, and the handful that are genuinely dearer or genuinely priceless
-/// say so below. Guessed on the owner's say-so and meant to be retuned — the test beside it prints the whole
-/// list so the spread can be read at once instead of hunted for.
-///
+/// **WHAT A THING IS WORTH IN COIN, AND 0 MEANS IT DOES NOT TRADE.** Derived from the SHELF it sits on.
 /// **UNTRADEABLE IS A PRICE OF 0** and it is one rule, not a second flag: the two flasks are the ESTUS of this
-/// game, a key is a key, and a boss's ring is the record of a fight. None of those has a number a shop could
-/// name without breaking something.
 pub fn priceBank(k: Kind) u32 {
     return switch (k) {
-        // The things no counter may touch.
         .crimson_flask, .cerulean_flask, .iron_key, .soul_binding_ring, .golden_seed => 0,
 
-        // Dearer than their shelf: a made weapon, and the two scrolls a boss dies for.
         .envenomed_dagger => 900,
         .grave_warbow => 850,
         .tower_shield => 700,
         .greatclub => 480,
         .scroll_babble, .scroll_bidding => 620,
-        // The one material the smith actually eats, so it has a price a player will feel.
         .smithing_stone => 150,
         .rune_arc => 520,
 
@@ -254,8 +236,6 @@ pub fn price(k: Kind) u32 {
     return PRICE[@intFromEnum(k)];
 }
 
-/// What a counter pays for one. **A SHOP IS NOT A BANK** — buying back what you sold has to cost something, or
-/// the stock list is a free storage chest with extra steps.
 pub var SELL_SHARE: f32 = 0.40;
 
 pub fn sellPrice(k: Kind) u32 {
@@ -397,35 +377,22 @@ pub fn describe(k: Kind) [:0]const u8 {
 
 pub const Use = union(enum) {
     none,
-    /// Refills one bank of the quiver (`combat.Quiver`). `n` is arrows, and the quiver caps it.
     arrows: struct { fire: bool, n: u8 },
     regen: struct { frac: f32, secs: f32 },
-    /// `r` and `dose` together are the POWDER: no damage, one meter filled in everything inside the ring where
     /// it lands. `r` of 0 is the candle and the crock — the blow is the shaft's own and nothing spreads.
     lob: struct { dmg: f32, fire: f32 = 0, lightning: f32 = 0, poise: f32, dose: ?AilDose = null, r: f32 = 0 },
-    /// A timed ward: `amount` of resistance in ONE named column for `secs` seconds. Refreshes, never stacks (the status law). **ONE COLUMN, NOT A SPREAD** — two tonics that each ward two things is a resistance sheet nobody can read off the bag.
     ward: struct { elem: ElemName, amount: f32, secs: f32 },
     wind: struct { share: f32 },
-    /// `frac` of the blow hung on the edge as `elem`, on TOP of what the sword already did.
     grease: struct { elem: ElemName, frac: f32, secs: f32 },
     souls: struct { n: u32 },
     brew: struct { mult: f32, secs: f32 },
     purge,
     steady: struct { mult: f32, secs: f32 },
-    /// **THE ONE USE THAT DOSES THE DRINKER.** `combat.Bearer` refusing a foe-only row in one place
-    /// (`Vitals.build`) is what keeps a bottle of charm off the shelf.
     dose: AilDose,
-    /// A COATING, not a grease (`grease` hangs an element on the blow). Both may run at once.
     coat: struct { ail: AilName, amt: f32, secs: f32 },
-    /// **THE BELL — THE ONE ITEM THAT IS NOT SPENT.** Bills FOCUS instead of a charge, so what limits it is the
-    /// pool and the walk in, not the count in the bag.
     toll: struct { ail: AilName, amt: f32, fp: f32, r: f32 },
 };
 
-/// `book.SlotId`'s own subset, named HERE because which socket a thing belongs in is a fact about the THING.
-/// This file imports nothing but std, so `hero.wearFor` is the one place the two are matched up.
-/// **APPENDED, NEVER INSERTED** — a save's `worn:` line is one word per socket in THIS order and the parser
-/// stops at the end of a short line, so an older save loads with the new sockets empty. Inserting a tag re-points every equipped item in every file on disk.
 pub const Wear = enum {
     hand_sword,
     hand_bow,
@@ -449,15 +416,9 @@ pub const Wear = enum {
     }
 };
 
-/// **PRICED AS MULTIPLIERS ON THE ONE IT REPLACES**, never a fresh set of absolutes: `hero.ATK_*_HIT`,
-/// `combat.STAM_*` and `combat.GUARD_*` stay the single place a swing, a block and their bills are written, and a
 /// weapon says only how it DIFFERS. Bare-handed every dial is 1.
-/// **WHICH SKILL DRIVES A WEAPON** — ER's scaling letters, ONE per armament. `quality` is the MEAN of the two curves, so either build carries the starting sword and neither is best with it.
 pub const Scaling = enum { strength, dexterity, quality };
 
-/// **WHAT KIND OF WEAPON IT IS, ON THE TWO AXES A FIGHT ACTUALLY ASKS ABOUT.** `reach` is where the blow lands
-/// from and is pinned to the socket below — a thing in the bow hand is the ranged one. `heft` is how much of the
-/// body goes into it: the multipliers say a club is slower and hits harder, but only this says it is swung like a club. The STROKES are the armament's (`hero.MOVES`); what reads `heft` is the book's own wording.
 pub const Heft = enum {
     light,
     heavy,
@@ -504,8 +465,6 @@ pub const Res = struct {
     lightning: f32 = 0,
     chaos: f32 = 0,
 
-    /// **THE COLUMNS ADD** (the plate law), walked rather than written out four times — a fifth element added to
-    /// this struct is summed by every caller for free instead of being silently dropped by whoever forgot a line.
     pub fn plus(self: Res, other: Res) Res {
         var out = self;
         inline for (@typeInfo(Res).@"struct".fields) |f| @field(out, f.name) += @field(other, f.name);
@@ -513,11 +472,8 @@ pub const Res = struct {
     }
 };
 
-/// `a` is the armour value in `A/(A + 5*dmg)` (`combat.armourTaken`), `res` the four elemental columns, `rate`
-/// the ONE meter this piece slows and by how much, and `move` a multiplier on how fast he walks — one row, not
-/// four verbs each stacked separately.
+/// `a` is the armour value in `A/(A + 5*dmg)` (`combat.armourTaken`) and `res` the four elemental columns.
 /// **THE RATE NAMES ITS METER** — a bare `poison: f32` was fine while poison was the only meter; at ten, a piece
-/// that slowed "the status meter" slows all ten for free.
 pub const Plate = struct { slot: Wear, a: f32 = 0, res: Res = .{}, rate: ?AilRate = null, move: f32 = 1 };
 
 pub const Charm = struct { slot: Wear, leech: f32 = 0, hpFrac: f32 = 0, spiritFp: f32 = 1, fpFrac: f32 = 0 };
@@ -539,9 +495,6 @@ pub const Equip = union(enum) {
 pub const DAGGER = Arm{ .slot = .hand_dagger, .heft = .light, .dmg = 0.74, .poise = 0.72, .dur = 0.78, .stam = 0.76, .scales = .dexterity };
 pub const CLUB = Arm{ .slot = .hand_club, .heft = .heavy, .dmg = 1.48, .poise = 1.60, .dur = 1.34, .stam = 1.48, .scales = .strength };
 
-/// **DERIVED FROM THE DAGGER'S ROW, NOT WRITTEN BESIDE IT** — a dirk retuned above retunes this one, and the two
-/// dials named here are the whole of what the coating costs and buys: a duller edge, and four landed strokes to
-/// a full meter (`combat.POISON_MAX` is 100).
 pub const ENVENOMED = blk: {
     var a = DAGGER;
     a.dmg = 0.66;
@@ -570,12 +523,10 @@ pub const Gear = struct {
 
 pub const GEAR = [_]Gear{
     .{ .kind = .fang_dirk, .equip = .{ .arm = DAGGER } },
-    // **THE FIRST EDGE IN THE GAME THAT LEAVES SOMETHING BEHIND.** Poison was the HERO's alone until this row.
     .{ .kind = .envenomed_dagger, .equip = .{ .arm = ENVENOMED } },
     .{ .kind = .greatclub, .equip = .{ .arm = CLUB } },
     .{ .kind = .grave_warbow, .equip = .{ .arm = .{ .slot = .hand_bow, .heft = .heavy, .reach = .ranged, .dmg = 1.62, .poise = 1.45, .dur = 1.28, .stam = 1.34, .scales = .dexterity } } },
-    // A DOOR — half again the compass of the small shield, at four fifths of the speed and more per blow. **THE
-    // NEGATION DIAL STOPS UNDER THE CAP ON PURPOSE**: `combat.GUARD_NEGATE_CAP` sits just under 1 on the base, so anything past ~1.118 is silently clamped — and `effect` PRINTS this figure.
+// `combat.GUARD_NEGATE_CAP` sits just under 1 on the base, so anything past ~1.118 is silently clamped.
     .{ .kind = .tower_shield, .equip = .{ .arm = .{ .slot = .hand_shield, .heft = .heavy, .negate = 1.10, .arc = 1.45, .walk = 0.80, .stam = 1.30 } } },
     // **A WHOLE SUIT IS WORTH 25, NOT 45** (owner: too much armour). The curve is `a/(a + 5*dmg)`, so at 45 a
     // best-in-slot kit turned aside HALF of every rank-and-file blow before the tree's own 32 went on top.
@@ -583,11 +534,9 @@ pub const GEAR = [_]Gear{
     .{ .kind = .leech_signet, .equip = .{ .charm = .{ .slot = .ring, .leech = 2.0, .hpFrac = 0.06 } } },
     .{ .kind = .pitted_helm, .equip = .{ .plate = .{ .slot = .helm, .a = 8.0 } } },
     .{ .kind = .marchboots, .equip = .{ .plate = .{ .slot = .feet, .a = 5.0 } } },
-    // **CHAOS IS WHAT HE MEETS MOST AND NOTHING ON HIS SIDE ANSWERED IT** — the wand's bolt and roots, the knight's lit blow and gas, and what poison itself is billed as. LESS armour than the boots beside them on purpose: the trade is the column and the pace, not a strictly better shoe.
     .{ .kind = .spidersilk_moccasins, .equip = .{ .plate = .{ .slot = .feet, .a = 4.0, .res = .{ .chaos = 25 }, .move = 1.06 } } },
     .{ .kind = .banded_warbelt, .equip = .{ .boon = .{ .slot = .belt, .attr = .strength, .n = 3 } } },
     .{ .kind = .deft_signet, .equip = .{ .boon = .{ .slot = .ring2, .attr = .dexterity, .n = 3 } } },
-    // THE TWO FINGERS TAKE ONE EACH so both can be on at once, and neither shares a socket with the other's attribute.
     .{ .kind = .bloodtinge_signet, .equip = .{ .boon = .{ .slot = .ring, .attr = .vitality, .n = 5 } } },
     .{ .kind = .loop_of_chance, .equip = .{ .boon = .{ .slot = .ring2, .attr = .luck, .n = 4 } } },
     .{ .kind = .ashen_amulet, .equip = .{ .boon = .{ .slot = .neck, .attr = .intelligence, .n = 3 } } },
@@ -607,19 +556,14 @@ pub const GEAR = [_]Gear{
     .{ .kind = .purgeleaf, .use = .purge },
     .{ .kind = .pilgrims_salt, .use = .{ .souls = .{ .n = 600 } } },
     .{ .kind = .ironwort_tea, .use = .{ .steady = .{ .mult = 2.2, .secs = 40 } } },
-    // THE SPORELING CAP'S TWO SIBLINGS, one column over each: the same 40 for the same minute, so which element
-    // a fight is made of is the only question the bag asks.
     .{ .kind = .kiln_draught, .use = .{ .ward = .{ .elem = .fire, .amount = 40, .secs = 60 } } },
     .{ .kind = .rimewax, .use = .{ .grease = .{ .elem = .cold, .frac = 0.5, .secs = 60 } } },
     .{ .kind = .pilgrims_offering, .use = .{ .souls = .{ .n = 2000 } } },
     // **AMMUNITION IS AN ITEM NOW** (owner: arrows need to be droppable, placeable, all kinds) — both banks. **SIZED TO THE BANK, NOT GUESSED**: 12 into a quiver of 10 wasted two shafts on every pickup. This file imports nothing but std, so a test holds the two together.
     .{ .kind = .plain_arrows, .use = .{ .arrows = .{ .fire = false, .n = 10 } } },
     .{ .kind = .fire_arrows, .use = .{ .arrows = .{ .fire = true, .n = 5 } } },
-    // FOUR STROKES TO A FULL METER — the dirk's own arithmetic (`ENVENOMED`), pinned in `combat`. A minute is
-    // the tallow's clock.
     .{ .kind = .nightcap_grease, .use = .{ .coat = .{ .ail = .sleep, .amt = 26, .secs = 60 } } },
     .{ .kind = .wakers_nail, .equip = .{ .plate = .{ .slot = .ring, .rate = .{ .ail = .sleep, .k = 0.40 } } } },
-    // **THE WHOLE METER IN ONE THROW.** Half-filling one nothing else can build never procs (`combat.AILS`).
     .{ .kind = .madcap_powder, .use = .{ .lob = .{ .dmg = 0, .poise = 0, .dose = .{ .ail = .confusion, .amt = 100 }, .r = 3.4 } } },
     .{ .kind = .stolen_gravebell, .use = .{ .toll = .{ .ail = .charm, .amt = 100, .fp = 24, .r = 5.0 } } },
     .{ .kind = .bloodwine, .use = .{ .dose = .{ .ail = .berserk, .amt = 100 } } },
@@ -630,7 +574,6 @@ pub const INERT = [_]Kind{
     .crimson_flask,  .cerulean_flask, .rune_arc,    .golden_seed,
     .smithing_stone, .bloodgrass,     .kobold_fang, .iron_key,
     .spirit_scroll_wolf,
-    // Inert on purpose: a scroll is neither worn nor used — it is CARRIED to a bonfire and racked there.
     .scroll_bolt,    .scroll_roots,   .scroll_rime, .scroll_levin,
     .scroll_siphon,  .scroll_lance,   .scroll_sunder,
     .scroll_babble,  .scroll_bidding,
@@ -649,8 +592,6 @@ comptime {
     }
 }
 
-/// **THE CODE'S OWN GEAR, AND IT NEVER MOVES** — the revert (`play/tune.zig`). `LIVE` under it is what
-/// `equip`/`use` read and what the bench writes.
 pub const GEAR_BANK: [NK]Gear = blk: {
     var out: [NK]Gear = undefined;
     for (0..NK) |i| out[i] = .{ .kind = @enumFromInt(i) };
@@ -678,8 +619,6 @@ pub fn useBank(k: Kind) Use {
 }
 
 
-/// WHICH SOCKET A THING GOES IN IS NOT A TUNING, so the identity questions read the bank and stay
-/// comptime-answerable (book.zig sockets its whole paper doll at comptime).
 pub fn wearable(k: Kind) bool {
     return std.meta.activeTag(equipBank(k)) != .none;
 }
@@ -737,7 +676,6 @@ comptime {
     }
 }
 
-/// Closes a line built up clause by clause: the full stop and the NUL, in ONE place, or null if the buffer is out.
 fn sentence(buf: []u8, n: usize) ?[:0]const u8 {
     if (n + 2 > buf.len) return null;
     buf[n] = '.';
@@ -771,9 +709,6 @@ pub fn isSpellScroll(k: Kind) bool {
 }
 
 comptime {
-    // **THE NINE SCROLL TAGS ARE WRITTEN TWICE** — once here and once in `class`'s `.treasure` arm — and
-    // nothing but this held them together. A tenth sheet added to one list and not the other shelves as a
-    // TOOL and lands on the quick bar, which is the one place the bag's own categories cannot say it is wrong.
     for (0..NK) |i| {
         const k: Kind = @enumFromInt(i);
         if (isSpellScroll(k) and class(k) != .treasure)
@@ -791,20 +726,16 @@ pub fn dosed(k: Kind) bool {
     };
 }
 
-/// Named so the test asserting a kind never falls through to it cannot drift when the wording changes.
 pub const NO_USE_LINE = "No use in the field.";
 
-/// **WHAT IT DOES, IN ONE LINE OF MECHANIC** — the answer to "which of these two flasks did I just put in the box", which the flavour prose (`describe`) deliberately does not give. Read off `use` wherever there is a `Use` to read, so a dose retuned there reads here.
 pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
     if (isFlask(k)) return switch (k) {
         .crimson_flask => "Heals. Charges refill at a bonfire, not from the bag.",
         else => "Restores Focus. Charges refill at a bonfire, not from the bag.",
     };
     if (k == .spirit_scroll_wolf) return "Carried: the bell can call Hildebrand.";
-    // This file cannot import `combat`, so it will not write a second copy of the spell's name to say which.
     if (isSpellScroll(k)) return "Carried: memorize it at a bonfire to cast it.";
     if (k == .iron_key) return "Opens the one lock it was cut for.";
-    // GEAR SAYS WHAT IT DOES IN THE SAME PLACE A TOOL DOES, off `equip` for the same reason the tools read `use`: a dial retuned in the table reads here.
     switch (equip(k)) {
         .none => {},
         .arm => |a| {
@@ -886,7 +817,6 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
 
 pub const EFFECT_BUF: usize = 128;
 
-/// THE TWO THE FLASK SYSTEM OWNS. They sit on the quick bar like anything else, but their charges live in `combat.Flasks` and come back at a bonfire, so spending one never touches the bag. Named here rather than in `combat` because it is a fact about the ITEM.
 pub fn isFlask(k: Kind) bool {
     return k == .crimson_flask or k == .cerulean_flask;
 }
@@ -901,7 +831,6 @@ pub fn quickable(k: Kind) bool {
 
 pub const TAG_MAX: usize = @tagName(LONGEST_TAG).len;
 
-/// The kind whose tag IS `TAG_MAX`. `save.CAP`'s worst case is sized off the longest tag, so the test that proves the buffer holds it has to WRITE that tag — hand-picking a plausible one understated the row by two characters a slot, silently.
 pub const LONGEST_TAG: Kind = blk: {
     var worst: Kind = @enumFromInt(0);
     for (@typeInfo(Kind).@"enum".fields) |f| {
@@ -911,7 +840,6 @@ pub const LONGEST_TAG: Kind = blk: {
 };
 
 comptime {
-    // `TAG_MAX` is now DERIVED from `LONGEST_TAG`, so the two cannot disagree — which also means a wrong argmax would go unnoticed. This is the independent pass the derivation replaced.
     for (@typeInfo(Kind).@"enum".fields) |f| std.debug.assert(f.name.len <= TAG_MAX);
 }
 
@@ -1037,8 +965,6 @@ test "every usable kind carries its OWN dose, and the rest do nothing" {
                 try std.testing.expect(r.frac > 0 and r.frac <= 1.0);
                 try std.testing.expect(r.secs > 0);
             },
-            // **DAMAGE OR A DOSE, AND EXACTLY ONE OF THE TWO.** A lob that does neither is the real mistake, and
-            // one that doses without a ring puts its whole worth on a direct hit with a lobbed projectile.
             .lob => |l| {
                 found += 1;
                 try std.testing.expect(usable(k));
@@ -1054,7 +980,6 @@ test "every usable kind carries its OWN dose, and the rest do nothing" {
             .arrows => |a| {
                 found += 1;
                 try std.testing.expect(usable(k));
-                // A sheaf worth nothing is a sheaf that shelves as clutter. The upper bound is checked against `combat.Quiver.cap` where the two can see each other.
                 try std.testing.expect(a.n > 0 and a.n < 100);
             },
             .ward => |w| {
@@ -1104,7 +1029,6 @@ test "every usable kind carries its OWN dose, and the rest do nothing" {
                 try std.testing.expect(usable(k));
                 try std.testing.expect(c.amt > 0 and c.secs > 0);
             },
-            // **THE BELL IS THE ONE USE WITH A PRICE ON IT** — free, there is no reason not to stand ringing it.
             .toll => |t| {
                 found += 1;
                 try std.testing.expect(usable(k));

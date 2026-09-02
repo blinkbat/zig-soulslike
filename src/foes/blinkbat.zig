@@ -22,41 +22,12 @@ const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 const approach = mathx.approach;
 
-// THE BLINKBAT (owner's creature, owner's brief) — large, weirdly humanoid, a flyer, and **IT IS NEVER WHERE
-// YOU LAST HIT IT**. It BLINKS in on your flank, takes one bite, and blinks back out to a ring. Hit and run.
-//
-// **THE BLINK IS THE TRAVEL AND THE BITE IS THE POINT.** Nothing about it closes ground: it does not chase, it
-// does not circle, it does not walk. It hangs at `BLINK_FAR`, disappears, and reappears inside its own reach.
-// You cannot back away from a thing that does not travel, so the fight is not about distance at all — it is
-// about the ARRIVAL, which is the longest thing it does (`BLINK_IN` of a body fading back in, and then
-// `BITE_WIND` on top before the jaws move).
-//
-// **IT IS A VAMPIRE, SO A BITE THAT DRAWS BLOOD IS THE ONLY THING THAT FEEDS IT.** The bite is an ordinary
-// `foe.Blow` — blockable, parryable, carrying where it came from. What it does with that blow is the creature:
-// a bite that LANDS puts it into `.feed`, PLANTED, drinking `DRAIN_SHARE` of what it took over `FEED_DUR`.
-//   - **A SHIELD DENIES THE HEAL OUTRIGHT** — no blood, no feed, and it recoils off the boards instead.
-//   - **AND THE FEED IS INTERRUPTIBLE**, which is the whole answer to a healer: it is planted, it cannot blink,
-//     it is paying the heal by the SECOND rather than banking it, and its poise is the lowest of anything this
-//     large. Stagger it and the rest of the drink is gone.
-// **AND THAT IS NOT INPUT READING.** `fedOn` is stamped by `game.zig` off `heroTakes`' own outcome — whether
-// this creature's jaws drew blood, which is a fact about the world and about ITS OWN BLOW. It never learns that
-// a button was pressed; it learns that it bit something hard (`foe.zig`'s cross-cutting-state law, and the same
-// shape the leechfly's drink and the fishman's snare already take).
-//
-// **WHAT IT IS NOT** is the leechfly. That one answers a sword by CLIMBING — it goes where the blade is not, and
-// the trade is your bow against its altitude. This one stays in reach the whole time and answers a sword by not
-// being there when it lands. Two flyers, two different refusals, and neither is the other's dial.
-//
-// **FIRE IS THE COUNTER.** The wing is a stretched membrane and it is the biggest surface on the field.
 
 pub const H: f32 = 2.35;
 const HIP_HALF = heromod.HIP_HALF * 0.86;
-/// Broad across the shoulders and narrow at the hip: the whole mass is chest, because the whole animal is a
-/// pair of wings with a man hung off them.
 const SHOULDER_HALF = heromod.SHOULDER_HALF * 1.26;
 
 /// **THE ARMS ARE THE WINGS** — which is what "weirdly humanoid" is: the hero's own 18-bone scaffold with the
-/// forearm drawn out to nearly twice its length and a membrane stretched off it. Not one joint is invented.
 const UPPER_LEN: f32 = 0.255;
 const FORE_LEN: f32 = 0.395;
 
@@ -81,8 +52,6 @@ const WRR = heromod.WRR;
 /// Bone 17 is the hero's held-weapon slot. This thing carries nothing — `Model.draw` skips it.
 const HELD = heromod.HELD;
 
-/// **THE THREE THE MAN HAS NO USE FOR.** Appended ABOVE the scaffold's 18, so every index the shared rig solves
-/// is where it was. The JAW is the bite's own tell and the EARS are the character: a face that is mostly ear.
 const JAW = heromod.N + 0;
 const EARL = heromod.N + 1;
 const EARR = heromod.N + 2;
@@ -98,8 +67,6 @@ fn restPose() [N]rl.Vector3 {
     var r: [N]rl.Vector3 = undefined;
     const base = heromod.restHumanoid(HIP_HALF, SHOULDER_HALF, H);
     for (base, 0..) |p, i| r[i] = p;
-    // The scaffold hangs a man's arm; this one is a spar. Both sides re-cut off the SHOULDER so the shared
-    // `restHumanoid` stays the one place a joint layout is written down.
     r[ELL] = v3(base[SHL].x, base[SHL].y - UPPER_LEN * H, 0);
     r[WRL] = v3(base[SHL].x, r[ELL].y - FORE_LEN * H, 0);
     r[ELR] = v3(base[SHR].x, base[SHR].y - UPPER_LEN * H, 0);
@@ -121,16 +88,11 @@ fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix
 pub var AGGRO_R: f32 = 18.0;
 const HOME_R: f32 = 3.0;
 
-/// **`pos.y` IS THE GROUND UNDER IT AND `hover` IS WHAT IT FLIES ABOVE THAT** (the leechfly's law) — every world
-/// point it owns is measured off `pos.y + hover * scale`, so one hanging over a bank keeps its bar over its own
-/// head instead of down in the field.
 const HOVER_BITE: f32 = 1.02;
 const HOVER_IDLE: f32 = 2.05;
 const HOVER_WAIT: f32 = 2.60;
 const HOVER_RATE: f32 = 5.4;
 
-// **IT DOES NOT CLIMB OUT OF REACH** — that is the leechfly's answer and this one may not borrow it, or the two
-// flyers are one creature. The whole band sits under a swing off a 1.8 m man's shoulder.
 comptime {
     std.debug.assert(HOVER_WAIT < 3.2);
     std.debug.assert(HOVER_BITE < HOVER_IDLE and HOVER_IDLE < HOVER_WAIT);
@@ -139,15 +101,10 @@ comptime {
 const BLINK_OUT: f32 = 0.20;
 const BLINK_IN: f32 = 0.30;
 /// **THE BLINK IS RARE, AND THAT IS WHAT MAKES IT THE MOVE.** At 2.40 it vanished after every single pass and
-/// the whole fight was strobing: the arrival is the thing worth watching and you cannot watch a thing that
-/// happens every two seconds. Now most withdrawals are flown (`RETREAT_CHANCE`) and the teleport is what it
-/// spends when it wants to be somewhere you are not looking.
 const BLINK_CD: f32 = 5.60;
 /// Where it puts itself down for a pass, and where it withdraws to. **BOTH ARE MEASURED FROM THE QUARRY'S HIDE**
-/// (`wolf.triggerR`'s law): asked centre-to-centre a flat radius is unsatisfiable on anything broad.
 const BLINK_NEAR: f32 = 1.62;
 const BLINK_FAR: f32 = 6.40;
-/// How far round the quarry a pass lands — never in front, or the arrival is a thing you were already looking at.
 const BLINK_ARC_MIN: f32 = 88.0;
 const BLINK_ARC_MAX: f32 = 168.0;
 
@@ -157,38 +114,24 @@ const BITE_RECOVER: f32 = 0.46;
 const BITE_R: f32 = 2.05;
 const BITE_FRONT_DOT: f32 = 0.34;
 
-/// **IT DOES NOT ALWAYS VANISH TO LEAVE.** A withdrawal under its own wings is in the OPEN the whole way —
-/// travelling, facing you, hittable — which is the window a blink never gives, and it is the only reason the
-/// long `BLINK_CD` reads as a rhythm rather than as a bat standing still. Rolled once, at the moment the pass
-/// is spent, so the exit is committed rather than re-decided every frame.
 const RETREAT_CHANCE: f32 = 0.62;
 const RETREAT_SPEED: f32 = DRIFT_SPEED * 1.7;
 const RETREAT_MAX: f32 = 1.70;
-/// How far out it is trying to get. Short of `BLINK_FAR` on purpose — flown, it does not make the full ring,
-/// so a retreat leaves it closer than a blink does and you can still reach it.
 const RETREAT_R: f32 = BLINK_FAR * 0.82;
 
-/// Seconds it hangs at the ring doing nothing between passes. The lull IS the reposition window, and it is the
-/// only ground the fight gives you.
 const WAIT_MIN: f32 = 0.55;
 const WAIT_MAX: f32 = 1.15;
 
-/// **THE DRINK IS PAID BY THE SECOND, NEVER BANKED** — an interrupted feed loses the rest, which is what makes
-/// staggering it the answer rather than a nicety.
 const FEED_DUR: f32 = 1.50;
 const DRAIN_SHARE: f32 = 0.90;
-/// After it has fed it cannot vanish for this long — the drink is bought with the escape.
 const FEED_BLINK_LOCK: f32 = 0.85;
 
 const HP_MAX: f32 = 138;
-/// **THE LOWEST POISE OF ANYTHING THIS LARGE, ON PURPOSE.** A healer that could not be interrupted would be a
-/// healer with no answer; a light stroke has to be able to take the drink off it.
 const POISE_MAX: f32 = 13;
 const STANCE_MAX: f32 = 30;
 const RESISTS = combat.resists(.{ .fire = -55, .cold = 20, .lightning = -15, .chaos = 15 });
 pub var SOULS: u32 = 265;
 
-/// Five bites fill the bleed meter, solved rather than picked (`item.ENVENOMED`'s idiom).
 const BITE_BLEED: f32 = combat.ailBank(.bleed).max / 5.0;
 
 pub var BITE_HIT = combat.Hit{
@@ -217,30 +160,21 @@ const WING_HZ_BEAT: f32 = 7.2;
 
 comptime {
     std.debug.assert(BITE_WIND > foe.TELL_MIN);
-    // **THE WITHDRAWAL HAS TO LEAVE REACH**, or "hit and run" is a body standing in your swing.
     std.debug.assert(BLINK_FAR > BITE_R + 2.0);
-    // …and the arrival has to be INSIDE it, or the gather is spent closing and the bite whiffs on its own.
     std.debug.assert(BLINK_NEAR + foe.HERO_R < BITE_R);
-    // A pass costs more than the drink it buys, so a bat that lands every bite still cannot out-heal a fight.
     std.debug.assert(BLINK_OUT + BLINK_IN + BITE_WIND + BITE_STRIKE + BITE_RECOVER > FEED_DUR);
 }
 
-// **AUTHOR DARK, AND SOLVE IT OFF A SAMPLED RENDER RATHER THAN BY EYE** (the ravager's lesson, AGENTS.md).
 // Screen goes as albedo^(1/2.2) through a x1.72 key: at the (46, 34, 40) this was first written on, the lit
 // torso SAMPLED 135,108,102 against a field of 99,102,64 — a nocturnal animal reading BRIGHTER and PINKER
 // than the grass it hangs over. Wanted ~85 on screen, i.e. (85/135)^2.2 = 0.36 of the albedo.
-// **AND IT SEPARATES ON HUE AS WELL AS VALUE**: everything outdoors here is warm, so the hide runs COLD
-// (blue over red) and the one warm thing on the animal is the membrane it flies on.
 const HIDE = rgba(13, 11, 17, 255);
 const HIDE_DK = rgba(8, 7, 11, 255);
 const MEMBRANE = rgba(26, 14, 16, 255);
 const MEMBRANE_DK = rgba(17, 9, 11, 255);
 const SNOUT = rgba(30, 19, 19, 255);
-// Small and proud, so these are the only things allowed near the top of the range — and still under the 148
-// where the chain clips to white.
 const FANG = rgba(138, 132, 118, 255);
 const CLAW = rgba(96, 90, 82, 255);
-/// Literal screen values — drawn unlit over the opaque pass, where a mesh colour would be an albedo.
 const EYE = rgba(228, 74, 62, 255);
 const MOTE = rgba(150, 92, 128, 255);
 const RIFT = rgba(126, 78, 150, 255);
@@ -269,26 +203,12 @@ const State = enum { hang, wait, retreat, blinkout, blinkin, wind, strike, recov
 
 const Choice = enum { blink, retreat, bite, drift, hold, rest };
 
-/// **THE WHOLE DECISION, AND IT READS FIVE NUMBERS** — a distance, a distance home, two clocks and whether the
-/// roots have it. No hero state reaches this function, which is what makes NO INPUT READING checkable rather
-/// than asserted (`foe.zig`'s law), and pure over its arguments, which is what makes it testable at all.
 fn classify(sensed: f32, homeGap: f32, scale: f32, blinkReady: bool, rooted: bool, spent: bool, runs: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     // **IT DOES NOT TAKE TWO BITES FROM ONE SPOT.** Measured before this existed: 20 s stood in its face was 6
-    // bites and ZERO blinks — the creature was a slow leechfly and the whole run half of hit-and-run was dead
-    // code, because nothing ever asked it to leave a place it could still reach from.
-    // …and while it is spent it does not bite AT ALL: it goes if it can, and hangs there waiting to if it
-    // cannot. That wait is the reposition window, and gating only the blink left it chewing through the
-    // `FEED_BLINK_LOCK` it had just bought — two bites off one spot, which is the thing this rule forbids.
-    // …and it ALWAYS leaves now, on the wing when it is not blinking. Hanging there spent (the old `.rest`)
-    // was the long cooldown's only face and it read as the creature having stopped working.
     if (spent and !rooted) return if (blinkReady and !runs) .blink else .retreat;
-    // **THE BAND IS ASKED THE WAY THE BITE BILLS IT** (`foe.hurtReach`, the ogre's `slamReach` law). Edge to
     // edge against a centre-to-centre bill, the bite was handed out to 2.93 m and landed to 2.60 — and a
-    // hovering bat does not close inside `.wind`, so that outer sliver was a gape that never billed.
     if (sensed <= foe.hurtReach(BITE_R, scale)) return .bite;
-    // **ROOTED IT CANNOT VANISH, SO IT HAS TO FLY THE DISTANCE LIKE ANYTHING ELSE** — which is the only time
-    // this creature is ever chaseable, and it is what a rod buys.
     if (!blinkReady or rooted) return .drift;
     return .blink;
 }
@@ -305,7 +225,6 @@ pub const Model = struct {
         self.mat.shader = sh;
     }
     pub fn draw(self: *const Model, b: *const Bat) void {
-        // HALFWAY THROUGH A BLINK THERE IS NOTHING TO DRAW — `thin` is what the rift replaces.
         if (b.thin >= 0.999) return;
         for (0..N) |i| {
             if (i == HELD) continue;
@@ -318,7 +237,6 @@ pub const Bat = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
@@ -335,34 +253,22 @@ pub const Bat = struct {
     waitFor: f32 = 0,
     speed: f32 = 0,
 
-    /// Metres off the ground under it. The one field that makes this a flyer.
     hover: f32 = HOVER_IDLE,
     hoverTo: f32 = HOVER_IDLE,
     /// 0 solid, 1 gone. The blink's own fade, and what `Model.draw` reads.
     thin: f32 = 0,
-    /// Where the current blink is putting it down. **COMMITTED AT `blinkout`**, so an arrival cannot chase a
-    /// quarry that moved during the fade — that would read as a lunge rather than as a place it went to.
     blinkTo: rl.Vector3 = mathx.zero3,
-    /// True while the committed blink is a PASS at the quarry rather than a withdrawal to the ring.
     blinkNear: bool = false,
-    /// Which way round the quarry it works. Kept between passes so a bat does not saw back and forth.
     arcSign: f32 = 1,
-    /// **THE PASS IS SPENT** — it has bitten from here, so wherever it stands is somewhere it is leaving.
-    /// Cleared at the launch of the blink that takes it away, and by a stagger, which ends the pass for it.
     spent: bool = false,
-    /// **HOW THIS SPENT PASS IS LEAVING** — flown out (`RETREAT_CHANCE`) rather than blinked. Rolled once, by
-    /// `markSpent`, because `classify` is asked every frame and a coin in there would flicker.
     wantRun: bool = false,
     wingPhase: f32 = 0,
     jawOpen: f32 = 0,
 
-    /// How much blood is still to come out of the current drink, and how fast. Set by `fedOn`, spent by `.feed`.
     drinkLeft: f32 = 0,
     /// 0 empty, 1 gorged. Cosmetic only — the belly fills and the eyes come up.
     gorge: f32 = 0,
-    /// One-frame, read by the group after `update`: this bat's jaws closed on something this frame.
     bit: bool = false,
-    /// One-frame: it started a drink. `game` sizes the beat off it.
     drank: bool = false,
 
     vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
@@ -426,8 +332,6 @@ pub const Bat = struct {
     pub fn staggered(self: *const Bat) bool {
         return self.state == .stunlight or self.state == .stunheavy or self.state == .repelled or self.state == .dead;
     }
-    /// **ALWAYS TRUE** — it never lands. Nothing on the ground shoulders it, the terrain riser rule never
-    /// applies, and it is never steered (`game.gateTerrain`'s `airborne` skip: the probe is a rule for FEET).
     pub fn airborne(self: *const Bat) bool {
         return !self.gone;
     }
@@ -438,15 +342,10 @@ pub const Bat = struct {
         return .blinkbat;
     }
 
-    /// **MIDWAY THROUGH A BLINK IT IS NOWHERE**, so there is nothing to lock on to and nothing to hit — the
-    /// swept test refuses it because `hurtRadius` has gone with the body (`hidden` is the Rooted's predicate,
-    /// found by `@hasDecl` in `game.disguised`).
     pub fn hidden(self: *const Bat) bool {
         return self.thin >= 0.5;
     }
 
-    /// **HEAD DOWN IS HEAD DOWN** (the rotgorger's rule, on a body that flies): drinking it does not track, does
-    /// not turn, and cannot vanish. That is what makes letting it feed a real cost and not a formality.
     pub fn feeding(self: *const Bat) bool {
         return self.state == .feed;
     }
@@ -480,14 +379,11 @@ pub const Bat = struct {
                 foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE);
             },
             .stunlight, .stunheavy => {
-                // A SWATTED BAT DROPS (the leechfly's rule) — the stun pulls the hover down and it climbs back.
                 self.hoverTo = HOVER_BITE * 0.72;
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enter(.hang);
             },
             .repelled => {
-                // **A BITE THE BOARDS ATE THROWS IT BACK** and it hangs there, open, for as long as the wind
-                // it wasted. No feed, and no free exit either.
                 self.hoverTo = HOVER_IDLE;
                 self.speed = approach(self.speed, 0, ACCEL * 2.4 * dt);
                 self.driftAway(quarry, dt, bounds, DRIFT_SPEED * 0.9);
@@ -499,9 +395,6 @@ pub const Bat = struct {
                 if (self.t >= BLINK_OUT) {
                     self.pos.x = self.blinkTo.x;
                     self.pos.z = self.blinkTo.z;
-                    // **THE ONE MOVER THAT WRITES `pos` INSTEAD OF STEPPING IT**, so it is the one that has to
-                    // ask the bounds itself: `mathx.stepXZ` clamps every other metre travelled in this game,
-                    // and a mark taken off a quarry at the edge stands up to `BLINK_FAR` outside the square.
                     mathx.holdXZ(&self.pos, bounds);
                     self.faceNow(quarry);
                     self.enter(.blinkin);
@@ -524,8 +417,6 @@ pub const Bat = struct {
                 }
             },
             .retreat => {
-                // **IT BACKS OFF FACING YOU.** A body that turns its back is fleeing; this one is withdrawing,
-                // and it stays pointed at the quarry the whole way so the next pass has no turn to pay for.
                 self.hoverTo = HOVER_WAIT;
                 self.faceToward(quarry, dt);
                 self.speed = approach(self.speed, RETREAT_SPEED, ACCEL * dt);
@@ -545,8 +436,6 @@ pub const Bat = struct {
             .wind => {
                 self.hoverTo = HOVER_BITE;
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
-                // **THE GATHER AIMS AND THE COMMIT DOES NOT** (the knight's law) — once the jaws move it is
-                // pointed where it was pointed, so a sidestep off the arrival beats it.
                 self.faceToward(quarry, dt);
                 self.jawOpen = mathx.smoothstep(0, BITE_WIND, self.t);
                 if (self.t >= BITE_WIND) {
@@ -557,10 +446,6 @@ pub const Bat = struct {
             },
             .strike => {
                 self.hoverTo = HOVER_BITE;
-                // **THE JAWS SHUT ON THE STRIKE, AND THE SHUTTING IS THE BITE.** `jawOpen` only ever decayed
-                // OUTSIDE wind and strike, so the gape was held wide through the whole blow and the snap
-                // happened half a second later in `recover` — a lunge with the mouth still open. Same curve
-                // the head drives forward on (`biteAmt`), so the two are one motion.
                 self.jawOpen = 1.0 - foe.swingCurve(mathx.clampF(self.t / BITE_STRIKE, 0, 1));
                 self.tryBite(quarry);
                 if (self.t >= BITE_STRIKE) self.enter(.recover);
@@ -568,7 +453,6 @@ pub const Bat = struct {
             .recover => {
                 self.hoverTo = HOVER_IDLE;
                 self.speed = approach(self.speed, 0, ACCEL * dt);
-                // A MISS IS THE ONE OUTCOME IT WALKS AWAY FROM CLEAN — but it still walks away.
                 if (self.t >= BITE_RECOVER) {
                     self.markSpent();
                     self.enter(.hang);
@@ -595,9 +479,6 @@ pub const Bat = struct {
                 self.hoverTo = HOVER_IDLE;
                 switch (classify(sensed, homeGap, self.scale, self.blinkCd <= 0, !foe.canLeap(&self.root), self.spent, self.wantRun)) {
                     .rest => {
-                        // **IT DRIFTS ITS ROUND RATHER THAN BLINKING IT** (`foe.postWant`). The blink is what
-                        // it spends on a FLANK — a bat that teleported its way round a patrol would have no
-                        // tell left for the one move that matters, and its own `travel` is already this drift.
                         if (foe.postWant(self, dt, sensed, AGGRO_R)) |go| {
                             self.faceToward(go, dt);
                             self.speed = approach(self.speed, DRIFT_SPEED, ACCEL * dt);
@@ -638,8 +519,6 @@ pub const Bat = struct {
         return self.heroHit;
     }
 
-    /// Whether THIS blink is a pass at the quarry or a withdrawal to the ring. **DECIDED AT THE LAUNCH**, so
-    /// the arrival reads a committed flag rather than re-measuring a distance the quarry has since changed.
     fn wantsPass(self: *const Bat) bool {
         return self.blinkNear;
     }
@@ -655,8 +534,6 @@ pub const Bat = struct {
         mathx.stepXZ(&self.pos, mathx.normV(away), speed * self.chill.travel() * dt, bounds);
     }
 
-    /// A pass is done with. **HOW IT LEAVES IS DECIDED HERE AND NOT RE-ROLLED**, because `classify` runs every
-    /// frame and a coin flipped in there would flicker between the two exits until one of them happened to win.
     fn markSpent(self: *Bat) void {
         self.spent = true;
         self.wantRun = self.aiRng.float() < RETREAT_CHANCE;
@@ -679,8 +556,6 @@ pub const Bat = struct {
         self.leash.noteCombat();
     }
 
-    /// **STAMPED BY THE GAME, OFF ITS OWN BLOW'S OUTCOME** — not off anything the player did. `landed` is
-    /// whether this creature's jaws reached flesh; a shield in the way makes it false and there is no drink.
     pub fn fedOn(self: *Bat, landed: bool) void {
         if (self.state == .dead) return;
         if (!landed) {
@@ -724,8 +599,6 @@ pub const Bat = struct {
 
     fn enterStun(self: *Bat, s: State) void {
         self.heroLatch = false;
-        // **A STAGGER TAKES THE DRINK OFF IT** — the rest of the blood is forfeit, which is the whole reason
-        // the window exists. Left set, an interrupted feed handed the heal straight back on the next entry.
         self.drinkLeft = 0;
         self.thin = 0;
         self.spent = false;
@@ -747,8 +620,6 @@ pub const Bat = struct {
         self.enterStun(if (heavy) .stunheavy else .stunlight);
     }
 
-    /// Where this pass puts it down, committed here and never re-aimed. **THE ARC IS SWUNG OFF THE QUARRY'S
-    /// BEARING, NOT OFF ITS FACING** — world state, so NO INPUT READING holds by construction.
     fn enterBlink(self: *Bat, quarry: rl.Vector3) void {
         const near = self.aiRng.float() < 0.72;
         const outR = if (near) BLINK_NEAR + foe.HERO_R else BLINK_FAR;
@@ -760,7 +631,6 @@ pub const Bat = struct {
         self.spent = false;
         self.wantRun = false;
         self.blinkCd = BLINK_CD * self.aiRng.range(0.85, 1.25);
-        // It works one way round for a while and then changes its mind, so a player cannot pre-aim the ring.
         if (self.aiRng.float() < 0.22) self.arcSign = -self.arcSign;
         self.enter(.blinkout);
         self.rift();
@@ -774,7 +644,6 @@ pub const Bat = struct {
     pub fn debugKill(self: *Bat) void {
         self.enterDeath();
     }
-    /// The shot harness stages every creature's signature move through this one name (`shots.runMapShots`).
     pub fn stageGather(self: *Bat, u: f32) void {
         self.state = .wind;
         self.t = BITE_WIND * mathx.clampF(u, 0, 1);
@@ -829,8 +698,6 @@ pub const Bat = struct {
     pub fn drawFx(self: *const Bat) void {
         foe.drawParticles(&self.parts);
         if (self.gone or self.hidden()) return;
-        // **THE EYES ARE UNLIT SPHERES OVER THE OPAQUE PASS** (the leechfly's rule): vertex alpha is a FIXED
-        // emissive channel and cannot be brightened, so a fed bat's eyes have to be drawn, not tinted.
         const glow = 0.34 + 0.66 * self.gorge;
         const r = (0.026 + 0.012 * self.gorge) * H * self.scale * (1.0 - self.fade);
         if (r <= 0) return;
@@ -850,15 +717,11 @@ pub const Bat = struct {
 
         const bite = self.biteAmt();
         const feed = if (self.state == .feed) mathx.smoothstep(0, 0.18, self.t) else 0;
-        // A MASS IN MOTION LEANS AGAINST ITS OWN TRAVEL: backing off, the chest comes UP and the head stays on
-        // you. Without it a retreat was the idle hover playing while the body slid backwards.
         const run = self.retreatAmt();
         const beat = mathx.sinf(self.wingPhase * std.math.tau);
         const wing = beat * (1.0 - dk);
         const bob = mathx.sinf((self.elapsed + self.seed) * 1.6) * 0.045 * H * (1.0 - dk);
 
-        // **THE BODY HINGES AT THE WAIST AND THE PELVIS STAYS NEAR-UPRIGHT** (`ogre.PELVIS_SHARE`'s law on a
-        // hanging body): a lean taken at the ROOT rotates the legs and reads as the whole animal tipping.
         const bodyPitch = 16.0 + 30.0 * bite + 46.0 * feed - 34.0 * stun - 30.0 * run + 74.0 * dk;
         const leanX = 0.28 * bodyPitch;
         const waist = bodyPitch - leanX;
@@ -876,7 +739,6 @@ pub const Bat = struct {
         setLocal(&wx, NECK, self.rest, rx(neckPitch * 0.45));
         setLocal(&wx, SKULL, self.rest, mul(rx(neckPitch * 0.55), rz(4.0 * mathx.sinf(self.elapsed * 0.7 + self.seed))));
 
-        // JAW: the gape IS the tell, and it is the widest thing on the creature before the jaws move.
         setLocal(&wx, JAW, self.rest, rx(6.0 + 42.0 * self.jawOpen - 30.0 * feed));
         const flick = mathx.sinf(self.elapsed * 2.3 + self.seed * 6.28) * 5.0;
         setLocal(&wx, EARL, self.rest, mul(rz(-16.0 - 10.0 * bite + flick), rx(-10.0)));
@@ -887,7 +749,6 @@ pub const Bat = struct {
         const cam = 12.0 + 16.0 * wing;
         inline for (.{ .{ SHL, ELL, WRL, 1.0 }, .{ SHR, ELR, WRR, -1.0 } }) |w| {
             const side: f32 = w[3];
-            // **STAGGER THE LAGS** — a wing whose spar, elbow and hand peak on one frame reads as a plank.
             const lagE = mathx.sinf((self.wingPhase - 0.08) * std.math.tau) * (1.0 - dk);
             const lagW = mathx.sinf((self.wingPhase - 0.17) * std.math.tau) * (1.0 - dk);
             setLocal(&wx, w[0], self.rest, mul3(rz(side * sweep), rx(-cam), ry(side * (10.0 + 8.0 * wing))));
@@ -895,7 +756,6 @@ pub const Bat = struct {
             setLocal(&wx, w[2], self.rest, mul(rz(side * (fold * 0.7 + 18.0 * lagW)), rx(-6.0 - 12.0 * lagW)));
         }
 
-        // It never stands, so there is no gait and no sole to level: no `legChain` call, on purpose.
         const tuck = 46.0 + 16.0 * bite + 26.0 * feed - 30.0 * dk;
         const swayL = mathx.sinf((self.elapsed * 1.1 + self.seed) * std.math.tau) * 4.0;
         inline for (.{ .{ HIPL, KNEEL, ANKL, 1.0 }, .{ HIPR, KNEER, ANKR, -1.0 } }) |l| {
@@ -909,7 +769,6 @@ pub const Bat = struct {
         self.xf = wx;
     }
 
-    /// Off again before the state ends, so the lean settles rather than snapping back on its last frame.
     fn retreatAmt(self: *const Bat) f32 {
         if (self.state != .retreat) return 0;
         return mathx.smoothstep(0, 0.16, self.t) * (1.0 - mathx.smoothstep(RETREAT_MAX - 0.30, RETREAT_MAX, self.t));
@@ -938,9 +797,6 @@ pub const Roost = struct {
     model: Model,
     bats: [CAP_N]Bat = undefined,
     n: usize = 0,
-    /// Which row's blow the group actually handed back this frame. **THE ONLY ROW A FEED CAN BE STAMPED ONTO**,
-    /// because it is the only one `game` bills: a second bat biting on the same frame goes hungry rather than
-    /// drinking off a blow nobody took.
     bitter: ?usize = null,
 
     pub fn init(shader: rl.Shader) Roost {
@@ -973,8 +829,6 @@ pub const Roost = struct {
         for (self.live(), 0..) |*b, i| {
             if (b.update(dt, b.threat.aim(hero), bounds, blade)) |h| {
                 foe.worseBlow(&worst, h, b.pos, &b.threat);
-                // The winner is whoever's `from` is standing in `worst` right now. An exact compare is honest
-                // here: it is the same value COPIED in, not one computed twice.
                 if (worst) |w| {
                     if (w.from.x == b.pos.x and w.from.y == b.pos.y and w.from.z == b.pos.z) self.bitter = i;
                 }
@@ -983,7 +837,6 @@ pub const Roost = struct {
         return worst;
     }
 
-    /// **THE OUTCOME OF THE BLOW, HANDED BACK** (`game.heroTakes`). Blood feeds it; a shield does not.
     pub fn fedOn(self: *Roost, landed: bool) void {
         const i = self.bitter orelse return;
         self.bitter = null;
@@ -1023,7 +876,6 @@ pub const Roost = struct {
     }
 };
 
-// THE BODY. Flesh is round; the membrane is the one thing on it that is not.
 
 fn buildBones() [N]rl.Mesh {
     var out: [N]rl.Mesh = undefined;
@@ -1049,8 +901,6 @@ fn boneMesh(i: usize) rl.Mesh {
             b.setMat(.hide);
             const up: f32 = len(CHEST, SPINE);
             b.addCapsule(v3(0, 0, 0), v3(0, up, 0), 0.086 * H, 0.104 * H, 10, HIDE);
-            // The swell is authored: a mesh cannot show `gorge`, so the eyes carry it (`drawFx`) — the one
-            // channel that can brighten.
             b.addBlob(v3(0, up * 0.35, 0.052 * H), v3(0.074 * H, 0.070 * H, 0.056 * H), 5, 9, HIDE_DK);
         },
         CHEST => {
@@ -1064,9 +914,6 @@ fn boneMesh(i: usize) rl.Mesh {
                 const rr = (0.020 + rng.range(-0.004, 0.006)) * H;
                 b.addCapsule(v3(-0.104 * H, y, 0.010 * H), v3(0.104 * H, y, 0.010 * H), rr, rr, 6, HIDE_DK);
             }
-            // THE FLANK WEB — a skewed panel drooping off each side toward the armpit, overlapping the arm's
-            // own panels in any pose either bone can take. Each panel stays on ONE bone; the OVERLAP is what
-            // closes the sheet, never a span between two bones that move apart.
             b.setMat(.cloth);
             inline for (.{ 1.0, -1.0 }) |sgn| {
                 const sx: f32 = sgn;
@@ -1119,8 +966,6 @@ fn boneMesh(i: usize) rl.Mesh {
             }
         },
         EARL, EARR => {
-            // **A FACE THAT IS MOSTLY EAR.** Authored as a membrane, not as flesh — thin panels on a rib, which
-            // is also what makes the ears read as the same substance as the wings.
             const side: f32 = if (i == EARL) 1.0 else -1.0;
             b.setMat(.hide);
             b.addCapsule(v3(0, 0, 0), v3(side * 0.030 * H, 0.150 * H, -0.006 * H), 0.013 * H, 0.005 * H, 7, HIDE);
@@ -1139,8 +984,6 @@ fn boneMesh(i: usize) rl.Mesh {
             const down: f32 = -len(if (i == SHL) @as(usize, ELL) else @as(usize, ELR), i);
             b.addCapsule(v3(0, 0, 0), v3(0, down, 0), 0.052 * H, 0.040 * H, 9, HIDE);
             b.addBlob(v3(side * 0.014 * H, -0.012 * H, 0), v3(0.048 * H, 0.044 * H, 0.044 * H), 5, 8, HIDE_DK);
-            // The upper arm's own share of the inner membrane — the forearm's strip alone left the armpit
-            // open sky at the wing root, and a wing is one sheet from spar to flank.
             b.setMat(.cloth);
             b.addBox(
                 v3(side * -0.050 * H, down * 0.48, 0.004 * H),
@@ -1155,8 +998,6 @@ fn boneMesh(i: usize) rl.Mesh {
             const down: f32 = -len(if (i == ELL) @as(usize, WRL) else @as(usize, WRR), i);
             b.setMat(.hide);
             b.addCapsule(v3(0, 0, 0), v3(0, down, 0), 0.040 * H, 0.028 * H, 9, HIDE);
-            // THE INNER MEMBRANE, on the forearm's own bone so the wing folds at the elbow like an arm and no
-            // panel is ever asked to span two bones that move apart.
             b.setMat(.cloth);
             b.addBox(
                 v3(side * -0.052 * H, down * 0.5, 0.004 * H),
@@ -1167,8 +1008,6 @@ fn boneMesh(i: usize) rl.Mesh {
             );
         },
         WRL, WRR => {
-            // **THE HAND IS THE WING.** Three struts fanning off the wrist with the membrane hung between them:
-            // uneven lengths and uneven spread, because a fan of three identical spokes reads as a paper toy.
             const side: f32 = if (i == WRL) 1.0 else -1.0;
             const spokes = [3][2]f32{ .{ 0.560, -26.0 }, .{ 0.640, 6.0 }, .{ 0.470, 40.0 } };
             var prev: ?rl.Vector3 = null;
@@ -1190,8 +1029,6 @@ fn boneMesh(i: usize) rl.Mesh {
                 );
                 if (prev) |p| {
                     b.setMat(.cloth);
-                    // The panel is a quad standing between two struts: a HALF-axis from their midpoint out to
-                    // each, which is what `addBox` takes (`necro`'s skirt rule — half-axes, never extents).
                     const mid = mathx.lerpV(p, tip, 0.5);
                     b.addBox(
                         v3(mid.x * 0.62, mid.y * 0.62, mid.z * 0.62),
@@ -1319,8 +1156,6 @@ test "THE ROOTS REFUSE THE BLINK — the one time this creature is chaseable" {
 }
 
 test "IT IS NOT THE LEECHFLY: it never climbs out of a swing" {
-    // The leechfly answers a sword with ALTITUDE (`HOVER_HIGH`). This one stays in reach the whole time and
-    // answers with the blink, and a test says so because two flyers sharing one refusal is one creature twice.
     try std.testing.expect(HOVER_WAIT < 3.2);
     var b = testBat();
     const dt = 1.0 / 60.0;
@@ -1393,9 +1228,6 @@ test "IT DOES NOT TAKE TWO BITES FROM ONE SPOT — hit and RUN" {
     var wasBlink = false;
     var wasRun = false;
     while (t < 20.0) : (t += dt) {
-        // **THE GAME FEEDS SIGHT EVERY FRAME AND A UNIT TEST HAS TO TOO.** `foe.SIGHT_MEMORY` outlives a frame, so
-        // without this the back two thirds of the run is a BLIND bat hovering at its post and the counts below
-        // measure nothing (the fungal deer's and the priest's own tests already do this).
         b.leash.noteSeen();
         _ = b.update(dt, hero, 400, .{});
         if (b.bit) {
@@ -1403,7 +1235,6 @@ test "IT DOES NOT TAKE TWO BITES FROM ONE SPOT — hit and RUN" {
             sinceLeft += 1;
             worst = @max(worst, sinceLeft);
         }
-        // **A RETREAT IS A LEAVING TOO**, and it is now the commoner of the two exits.
         const nowBlink = b.state == .blinkout;
         const nowRun = b.state == .retreat;
         if (nowBlink and !wasBlink) {
@@ -1419,7 +1250,6 @@ test "IT DOES NOT TAKE TWO BITES FROM ONE SPOT — hit and RUN" {
     }
     std.debug.print("\n  20 s stood in its face: {d} bites, {d} blinks, {d} flown retreats, never more than {d} from one spot\n", .{ bites, blinks, runs, worst });
     try std.testing.expect(bites > 0);
-    // **MOST EXITS ARE FLOWN.** The teleport is what it spends, not what it does.
     try std.testing.expect(runs > blinks);
     try std.testing.expectEqual(@as(u32, 1), worst);
 }
@@ -1467,21 +1297,13 @@ test "IT FLIES ITS WITHDRAWAL, AND THE WITHDRAWAL OPENS REAL DISTANCE" {
 
 test "A SPENT PASS ALWAYS LEAVES — by teleport or on the wing, and rooted not at all" {
     try std.testing.expectEqual(Choice.bite, classify(2.0, 0, 1.0, true, false, false, false));
-    // Spent, with the blink up and the coin against a run: it vanishes.
     try std.testing.expectEqual(Choice.blink, classify(2.0, 0, 1.0, true, false, true, false));
-    // …with the coin FOR a run it flies out instead, blink or no blink. **THE OLD `.rest` IS GONE**: a spent
-    // bat with the blink still cooling used to hang in your face doing nothing, which at `BLINK_CD` would
-    // now be five seconds of a creature that had stopped working.
     try std.testing.expectEqual(Choice.retreat, classify(2.0, 0, 1.0, true, false, true, true));
     try std.testing.expectEqual(Choice.retreat, classify(2.0, 0, 1.0, false, false, true, false));
     try std.testing.expectEqual(Choice.retreat, classify(2.0, 0, 1.0, false, false, true, true));
-    // …unless the roots have it, and then it has to finish the fight where it stands.
     try std.testing.expectEqual(Choice.bite, classify(2.0, 0, 1.0, true, true, true, false));
 }
 
-// **THE BAND IT STOPS CLOSING AT HAS TO BE A BAND IT CAN BILL FROM** (AGENTS.md: a move is judged by THROWING
-// it). The bat hovers through its whole wind, so a band wider than the jaws is a gape thrown at nothing. The
-// outer edge is asked of `classify`, not re-derived: which unit the band is written in is the thing under test.
 test "THE JAWS SHUT ON THE MAN WHERE HE STANDS — thrown for real, anywhere its own band picks it" {
     const dt: f32 = 1.0 / 120.0;
     var misses: usize = 0;

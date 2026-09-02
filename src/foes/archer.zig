@@ -125,10 +125,8 @@ const TURN_RATE = 6.0;
 const BODY_R = 0.34;
 const HURT_R = 0.42;
 // MEASURED off `footMesh`: the metatarsal plate and heel, with the toe bones fanning out to ~0.245·H ahead.
-/// WHERE THE HP BAR HANGS, as a fraction of stature. Shared with `warrior.zig` and `necro.zig` — literally the
-/// same body. The hurt sphere is NOT here any more: it rides the chest bone, so it follows the pose.
+/// WHERE THE HP BAR HANGS, as a fraction of stature. Shared with `warrior.zig` and `necro.zig`.
 pub const TOP_F: f32 = 1.15;
-/// WHERE THE RETICLE SITS IN THE SKULL'S OWN FRAME — the middle of the head, a hair above the joint the neck ends at. Expressed here and not as a height, because a height is exactly what it must stop being.
 pub const LOCK_AT = v3(0, 0.015 * H, 0);
 
 /// Shared with `warrior.zig`: the same skeleton stands on the same feet, and `footMesh` is the one thing these are measured off.
@@ -150,13 +148,10 @@ const STEP_IN = [_]behave.Step{
     .{ .close = .{ .to = RANGE_MAX - 2.0 } },
 };
 
-/// **A BOWMAN RELOADING IS NOT A TURRET.** With the string slack he used to stand exactly where the last shot was loosed from. He drifts sideways at the range he is already on instead; each archer circles his own way (`seed`), so a line of them scissors.
 const STRAFE = [_]behave.Step{
     .{ .strafe = .{ .secs = 0.8 } },
 };
 
-// **HUGGING A BOWMAN IS NOT FREE ANY MORE.** He owns no blade and the leap is on a 7 s clock. This is the bow's
-// own limb swung flat: cheap, fast, and it buys back the metres a shot needs. IT IS THE LEAP'S UNDERSTUDY — only thrown when the leap cannot be (cooling, or held).
 const BUTT_R = 1.7;
 const BUTT_WIND = 0.36; // over `foe.TELL_MIN`: the stave turns flat and the shoulder cocks before anything lands
 const BUTT_STRIKE = 0.14;
@@ -164,12 +159,9 @@ const BUTT_CD = 2.6;
 const BUTT_STEP = 0.30; // metres he steps into it — a jab off planted feet reads as swatting a fly
 /// cos 62 deg: the front the stave answers for. A hero round the back of the shoulder driving it is not in it.
 const BUTT_FRONT_DOT = 0.47;
-/// Where in the strike the stave arrives, as a share of it — the ONE frame the boards are asked about (`foe.PARRY_LEAD` back from here) and the fraction the jab's own `swingCurve` crosses zero at.
 const BUTT_IMPACT_K: f32 = 0.45;
-/// No `stance`, so it is not one of the heavy blows: it is a NUDGE with a bow, and the damage says so.
 const BUTT_HIT = combat.Hit{ .dmg = 8, .poise = 14 };
-/// Metres it puts between them. Well under the leap's 4.7 — this returns him to a shot, it does not do the
-/// leap's job. **A HAND'S BREADTH, NOT A BODY'S LENGTH** (owner: attacks knock you back too much, feels weird).
+/// Metres it puts between them, well under the leap's 4.7 — this returns him to a shot.
 /// At 2.2 it moved the hero further in ONE frame than the archer's own 0.30 m step into the jab, and `heroShoved` is an instant `walkStep`, so the magnitude read as a teleport.
 pub const BUTT_SHOVE = 0.40;
 
@@ -191,9 +183,6 @@ pub var SOULS: u32 = 130;
 pub const DISS_DUR = 0.9;
 pub const BONE_CHIP = rgba(150, 140, 116, 235);
 pub const DISSOLVE = foe.Dissolve{ .flake = BONE_CHIP };
-/// **EVERY SKELETON IN THE FIELD CHIPS THE SAME WAY, GRADED BY BODY SIZE** — `k` is the grade, 1.0 being the
-/// archer's own. Four bodies had this written out by hand with the fan, the throw, the life and the radii each
-/// stepped by the same fifth. The bounce and the stretch are NOT graded: a chip's restitution is a fact about bone.
 pub fn boneChips(k: f32) foe.Spray {
     return .{
         .fanLo = 0.2,          .fanHi = 1.0 * k,
@@ -204,14 +193,12 @@ pub fn boneChips(k: f32) foe.Spray {
         .stretch = 0.030,      .bounce = 0.42,
     };
 }
-// The one skeleton that shed nothing when struck — its twin the warrior chips, so it does, a size down.
 const CHIP_SPRAY = boneChips(1.0);
 const CHIP_LIGHT = 10;
 const CHIP_HEAVY = 16;
 const CHIP_DEATH = 18;
 const NPART = 56;
 comptime {
-    // THE RING LAW, EXECUTABLE: a killing heavy blow is both chip sprays and the shared wound on one frame, and the dissolve waits out `DEATH_DUR`.
     std.debug.assert(NPART >= foe.hitParts(CHIP_HEAVY) + foe.hitParts(CHIP_DEATH) + foe.WOUND_PARTS);
 }
 const SHOVE_DECAY = 7.0;
@@ -225,17 +212,12 @@ const VENOM_GRAV: f32 = 11.0;
 const BOLT_GRAV: f32 = 0.8;
 const WISP_GRAV: f32 = 1.1;
 const EMBER_GRAV: f32 = 10.5;
-/// A wet sac lobbed by something enormous: heavier than the mage's ball, so the arc is high and short and reading where it will land is the whole of dodging it.
 const SAC_GRAV: f32 = 12.0;
-/// **THE LIGHTEST THING THROWN IN THIS GAME**, between the spark's flat line and the crock's arc: it is lobbed
-/// INTO a group, so where it lands must be readable while it is still up.
 const POWDER_GRAV: f32 = 10.0;
-/// **A SPARK BARELY DROPS.** Light and fast, so it flies nearly flat — which is what makes it a thing you sidestep rather than a thing you get under.
 const SPARK_GRAV: f32 = 3.0;
 const ARROW_LIFE = 3.5;
 const ARROW_STICK_FADE = 1.4;
 
-/// **NOT EVERY SHOT LEAVES A BODY LYING THERE** (owner). WOOD sticks and stays. ROCK and CLAY break the frame they land; anything IMMATERIAL pops at once, and its splash is the only thing left. Seconds a planted shot lies in the world.
 pub fn lingerOf(s: Shot) f32 {
     return switch (s) {
         .arrow, .firearrow => ARROW_STICK_FADE,
@@ -254,13 +236,10 @@ const TRAIL_FIRE = rgba(255, 146, 40, 255);
 /// **THE FUNGAL DETONATOR IS NOT A CAMPFIRE** (owner: pink/orange). It shares the fire trail's heat and disagrees with it in hue, so a mage's shot is legible against an archer's fire arrow at a glance.
 const TRAIL_SPORE = rgba(255, 108, 152, 255);
 const TRAIL_BOLT = rgba(178, 92, 224, 255);
-/// …and the shade's, which must not be the bolt's: the wand's violet is the HERO's colour in the sky, and two things flying at once that read the same are two you cannot tell apart. Colder and dimmer, because it eats light.
 const TRAIL_WISP = rgba(96, 118, 176, 255);
 const TRAIL_CROCK = rgba(198, 228, 252, 255);
 
-/// …AND THE GOLEM'S SAC IS NOT THE MAGE'S DETONATOR. Both are fungal and both come over your head, so they may not read alike: dusty and pale against that one's hot pink.
 const TRAIL_SAC = rgba(206, 186, 202, 255);
-/// …AND THE POWDER READS AS FUNGAL, NOT as any of the four elements: the sporeling's own yellow-green.
 const TRAIL_POWDER = rgba(186, 208, 96, 255);
 /// …AND THE GREMLIN'S SPARK IS THE ONLY COLD-BLUE THING IN THE AIR: the one lightning shot in the game may not be mistaken for an arrow at a glance.
 const TRAIL_SPARK = rgba(196, 214, 255, 255);
@@ -296,7 +275,6 @@ pub fn dropOf(s: Shot) f32 {
 }
 
 /// **HOW MUCH OF THE BALLISTIC SOLVE A SHOT ACTUALLY TAKES.** 1.0 is the honest arc that lands on the target;
-/// below it the shot comes in FLAT and short. The fungal detonator is the only thing here that wants it (owner: "lower lob") — a high arc drops on your head and there is nothing to read.
 fn loftOf(s: Shot) f32 {
     return switch (s) {
         .emberball => EMBER_LOFT,
@@ -305,7 +283,6 @@ fn loftOf(s: Shot) f32 {
 }
 pub const EMBER_LOFT: f32 = 0.52;
 
-/// A bounce keeps this much of its speed. The detonator keeps LESS in both axes: it is a heavy wet thing, and the owner's "slower bounce" is what stops the second and third touch outrunning a sideways dodge.
 fn keepY(s: Shot) f32 {
     return if (s == .emberball) EMBER_KEEP_Y else BOUNCE_KEEP_Y;
 }
@@ -325,7 +302,6 @@ const EMBER_BOUNCES: u8 = 3;
 const BOUNCE_KEEP_Y: f32 = 0.56;
 const BOUNCE_KEEP_XZ: f32 = 0.86;
 const BOUNCE_MIN_UP: f32 = 1.0;
-/// **A SLOWER BOUNCE IS STILL A BOUNCE.** The floor above stops a shaft jittering itself to death on the ground
 /// and is sized against `BOUNCE_KEEP_Y` at 0.56. The detonator keeps 0.42, so on the shared floor its third touch never happened, and the whole read of this weapon is that you have to think about where it will be TWICE.
 const EMBER_MIN_UP: f32 = 0.45;
 fn minUp(s: Shot) f32 {
@@ -340,7 +316,6 @@ fn lifeOf(s: Shot) f32 {
     };
 }
 const EMBER_LIFE: f32 = 6.0;
-/// Readable from outside so the loop's own test can show the ball always reaches the earth well inside its life — which is what makes "ran out of time still in the air" not a route the blast has to cover.
 pub const EMBER_LIFE_S: f32 = EMBER_LIFE;
 
 pub const Arrow = struct {
@@ -410,7 +385,6 @@ pub fn launchShaft(from: rl.Vector3, target: rl.Vector3, speed: f32, blow: comba
 pub const SHAFT_R: f32 = 0.16;
 
 const COVER_STEP: f32 = 0.18;
-/// …and a ceiling, so a hitched frame cannot turn one shaft into a thousand point tests.
 const COVER_SAMPLES_MAX: f32 = 24;
 
 fn coverHit(prev: rl.Vector3, to: rl.Vector3, solids: []const collision.Solid) ?struct { at: rl.Vector3, surf: collision.Surface } {
@@ -455,8 +429,6 @@ fn plantIn(a: *Arrow, at: rl.Vector3, surf: collision.Surface) void {
     plantShaft(a);
 }
 
-/// True = it is finished with, either way. IT REACHED THE EARTH, or IT RAN OUT OF TIME STILL IN THE AIR — two
-/// different endings that used to be one. `ARROW_GRAV` is under `BOLT_GRAV`, so anything loosed steeply upward is still climbing at `ARROW_LIFE`; planted there it hung forty metres up.
 fn plantGround(a: *Arrow, groundY: f32) bool {
     const floor = groundY + GROUND_BITE;
     if (a.pos.y <= floor) {
@@ -505,7 +477,6 @@ fn hitBoxOf(s: Shot) struct { r: f32, halfH: f32 } {
 }
 const EMBER_HIT_R: f32 = 0.62;
 const EMBER_HIT_HALF_H: f32 = 1.15;
-/// A SAC IS A BAG, not a shaft — and it comes down out of the sky, so like the ball it has to reach from his soles to over his head.
 const SAC_HIT_R: f32 = 0.58;
 const SAC_HIT_HALF_H: f32 = 1.15;
 
@@ -529,7 +500,6 @@ pub fn stepArrow(a: *Arrow, hero: rl.Vector3, heroCenterY: f32, groundY: f32, he
         }
     }
     const prev = advance(a, dt);
-    // COVER first (a wall beats a hero hugging its far side), sampled the LENGTH of the frame's travel so a fast shaft cannot tunnel a thin trunk.
     if (coverHit(prev, a.pos, solids)) |c| return plantIn(a, c.at, c.surf);
     const mid = mathx.lerpV(prev, a.pos, 0.5);
     if (!heroDodging and (heroReached(a, a.pos, hero, heroCenterY) or heroReached(a, mid, hero, heroCenterY))) {
@@ -564,7 +534,6 @@ fn wantsBackstep(dist: f32, cd: f32, s: State, rooted: bool) bool {
     };
 }
 
-/// Same states the leap may interrupt, and the same NOT-mid-loose rule — but ROOTED IS NO OBJECTION, because this is the one thing he owns that never leaves the ground.
 fn wantsButt(dist: f32, cd: f32, s: State) bool {
     if (dist > BUTT_R or cd > 0) return false;
     return switch (s) {
@@ -606,7 +575,6 @@ pub const Archer = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
@@ -678,11 +646,8 @@ pub const Archer = struct {
         return a;
     }
 
-    // All three ride `hop`: the backstep lifts the whole rig off the earth (`pose` adds it to the pelvis), so a
-    // hurt sphere / reticle / HP bar pinned to ground height DETACHES from the body for the whole 0.44 s leap.
     /// **THE HURT SPHERE RIDES THE CHEST BONE, NOT A FRACTION OF STATURE.** At a flat 0.95·H it sat at 1.71 m
     /// — above the skull joint's own 1.593 — so half of it was empty air and everything under 1.29 m, pelvis
-    /// included, could not be hit at all. Off the bone it also FOLLOWS THE POSE, which is the whole of why a
     /// kneeling body (`KNEEL_SINK`, 0.567 m) was unreachable: the sphere stayed standing while the man went down.
     pub fn centerWorld(self: *const Archer) rl.Vector3 {
         return foe.markOn(self.xf[CHEST], mathx.zero3);
@@ -770,8 +735,6 @@ pub const Archer = struct {
                 } else {
                     self.headScan = mathx.approach(self.headScan, 32.0 * mathx.sinf(self.elapsed * 0.55 + self.seed * 9.0), dt * 45.0);
                 }
-                // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postDrive`). No `moveSpeed`
-                // local: the gait speed below is derived from `movedDist` alone.
                 _ = foe.postDrive(self, dt, bounds, WALK_SPEED, d, AGGRO_R, TURN_RATE, &movedDist, null, &moveYaw);
                 self.decide(d);
             },
@@ -861,7 +824,6 @@ pub const Archer = struct {
                 if (self.t >= BUTT_WIND) self.enter(.butt);
             },
             .butt => {
-                // A HALF-TURN ONLY: the jab is committed, and a stave that tracks all the way round is a homing attack with a bone on the end of it.
                 foe.faceToward(self.pos, &self.facing, hero, TURN_RATE * 0.5, dt);
                 const u = mathx.clampF(self.t / BUTT_STRIKE, 0, 1);
                 const e = foe.swingCurve(u);
@@ -898,7 +860,6 @@ pub const Archer = struct {
         return loosed;
     }
 
-    /// SECONDS BACK FROM THE STAVE ARRIVING, or null — the jab is the only thing on this body a shield can catch (`foe.PARRY_LEAD`).
     fn toImpact(self: *const Archer) ?f32 {
         const at = BUTT_STRIKE * BUTT_IMPACT_K;
         return switch (self.state) {
@@ -908,14 +869,12 @@ pub const Archer = struct {
         };
     }
 
-    /// THE INSTANT THE STAVE CAN BE CAUGHT IN, and how far out it reaches then — `tryButt`'s OWN extent through the same `foe.hurtReach`, so a jab the boards could not have met is never offered as one.
     fn parryable(self: *const Archer) ?f32 {
         const left = self.toImpact() orelse return null;
         if (!foe.inParryWindow(left)) return null;
         return foe.hurtReach(BUTT_R, self.scale);
     }
 
-    /// The cooldown goes back on, the latch is spent so the recovery cannot still land it, and `enterStun` drops the stroke.
     fn takeParry(self: *Archer) void {
         const reach = self.parryable() orelse return;
         if (!foe.caught(self, reach)) return;
@@ -986,7 +945,6 @@ pub const Archer = struct {
         sfx.world(.swing_light, self.pos);
     }
 
-    /// One landing per jab (the warrior's latch), and it answers for its own front: a stave driven forward cannot reach the hero standing behind the elbow that drives it.
     fn tryButt(self: *Archer, hero: rl.Vector3) void {
         if (self.heroLatch) return;
         if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(BUTT_R, self.scale), BUTT_FRONT_DOT)) return;
@@ -1011,8 +969,6 @@ pub const Archer = struct {
         self.justDied = true;
     }
 
-    /// The one hook every creature carries, so a meter that puts a body on the floor (`foe.Grip.downed`) needs
-    /// to know nothing about which body it is.
     pub fn stagger(self: *Archer, heavy: bool) void {
         self.enterStun(if (heavy) .stunheavy else .stunlight);
     }
@@ -1136,7 +1092,6 @@ pub const Archer = struct {
         const swy = mathx.sinf(swayArg) * idleAmt;
         const swyLag = mathx.sinf(swayArg - 0.8) * idleAmt;
 
-        // Thrown off the WAIST, not the arm alone: the chest winds away from the hero and unwinds through him. Signed off `buttK` like everything else the stave does.
         const twist = 26.0 * self.buttK;
         const spineX = 4.0 - 3.0 * dr + 22.0 * dk - 20.0 * stun + 26.0 * self.leapLean() + 7.0 * self.buttK;
         setLocal(wx, SPINE, rest, mul3(rx(spineX * 0.5 + 0.8 * swy), ry(-0.35 * prot + twist * 0.35), rz(wonk * 0.5 + 1.1 * swy)));
@@ -1545,7 +1500,6 @@ pub fn crockMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// **PAPER IS THE ONE THING HERE THAT IS NOT ROUND** — the flesh law is for flesh.
 pub fn powderMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x9A5D);
@@ -1565,7 +1519,6 @@ pub fn powderMesh(shader: rl.Shader) rl.Model {
             if (i == 1) paper else paperDk,
         );
     }
-    // Pinched off-axis: nothing dead is straight and nothing ends in a point.
     b.addCapsule(v3(0.004, 0.006, 0.042), v3(-0.006, -0.010, 0.070), 0.011, 0.006, 5, paperDk);
     b.addCapsule(v3(-0.003, -0.005, -0.042), v3(0.008, 0.009, -0.066), 0.011, 0.006, 5, paperDk);
     b.setMat(.flame);
@@ -1674,7 +1627,6 @@ test "THE BUTT IS THE LEAP'S UNDERSTUDY: it covers the leap's cooldown, and a RO
     for ([_]State{ .loose, .backstep, .buttwind, .butt, .stunlight, .stunheavy, .dead }) |s| {
         try std.testing.expect(!wantsButt(0.4, 0, s));
     }
-    // THE LEAP GETS FIRST REFUSAL. Crowded with both available he leaps; with the leap spent he swings.
     var a = Archer.spawn(mathx.zero3, 0, 1.0, 0.3);
     _ = a.update(1.0 / 60.0, v3(0, 0, 1.0), 500.0, .{});
     try std.testing.expectEqual(State.backstep, a.state);
@@ -1684,7 +1636,6 @@ test "THE BUTT IS THE LEAP'S UNDERSTUDY: it covers the leap's cooldown, and a RO
     _ = b.update(1.0 / 60.0, v3(0, 0, 1.0), 500.0, .{});
     try std.testing.expectEqual(State.buttwind, b.state);
 
-    // …AND HELD FEET STILL SWING IT, because nothing in it leaves the ground.
     var c = Archer.spawn(mathx.zero3, 0, 1.0, 0.3);
     c.root.grab();
     _ = c.update(1.0 / 60.0, v3(0, 0, 1.0), 500.0, .{});
@@ -1695,7 +1646,6 @@ test "THE BUTT IS THE LEAP'S UNDERSTUDY: it covers the leap's cooldown, and a RO
 test "A PARRIED JAB IS DROPPED AND PAID FOR — and there is a window to catch it in at all" {
     var a = Archer.spawn(mathx.zero3, 0, 1.0, 0.3);
     a.enterButt();
-    // The window opens `foe.PARRY_LEAD` before the stave arrives and shuts AT it.
     a.t = BUTT_WIND + BUTT_STRIKE * BUTT_IMPACT_K - foe.PARRY_LEAD * 0.5;
     try std.testing.expect(a.parryable() != null);
     a.t = BUTT_WIND + BUTT_STRIKE * BUTT_IMPACT_K + 0.01;
@@ -1709,7 +1659,6 @@ test "A PARRIED JAB IS DROPPED AND PAID FOR — and there is a window to catch i
     try std.testing.expect(a.parried);
     try std.testing.expect(a.state == .stunlight or a.state == .stunheavy);
     try std.testing.expect(a.buttCd > 0);
-    // …AND THE STROKE IS SPENT: the rest of the jab may not still land.
     a.state = .butt;
     a.t = BUTT_WIND;
     a.tryButt(mathx.ground(0, 0.8));
@@ -1734,7 +1683,6 @@ test "THE BUTT LANDS ONCE, IN FRONT, AND ONLY AFTER THE TELL" {
     try std.testing.expectEqual(@as(u32, 1), lands);
     try std.testing.expectEqual(@as(u32, 0), duringWind);
 
-    // A HERO BEHIND THE ELBOW IS NOT IN IT — the front the stave answers for is its own.
     var b = Archer.spawn(mathx.zero3, 0, 1.0, 0.3);
     b.backstepCd = BACKSTEP_CD;
     b.facing = std.math.pi;
@@ -1788,8 +1736,6 @@ test "the leap clears sword reach, lands where its curve says, and never oversho
 test "an arrow in flight lays a trail, and a pooled one never inherits the last shot's" {
     const dt: f32 = 1.0 / 60.0;
     var a = launchArrow(v3(0, 1.4, 0), v3(0, 1.0, 14.0));
-    // A FRESH arrow has no trail at all: every age starts saturated, so the ribbon cannot draw a streak from
-    // wherever this pool slot was last used — which would flash a band across the map on the shot's first frame.
     for (a.trailAge) |g| try std.testing.expect(g >= TRAIL_LIFE);
     var i: u32 = 0;
     while (i < 6) : (i += 1) stepArrow(&a, v3(0, 0, 14.0), 1.0, 0, false, &.{}, dt);
@@ -1850,7 +1796,6 @@ test "NOT EVERY SHOT LEAVES A BODY — wood sticks and stays, rock and light are
 }
 
 test "A SHAFT LOOSED AT THE SKY IS GONE, not planted in mid-air" {
-    // `ARROW_LIFE` runs out under `ARROW_GRAV`, so a steep shot is still climbing when it expires. Planted there it stuck to the sky and faded over `ARROW_STICK_FADE` where anybody looking up could see it.
     const dt: f32 = 1.0 / 60.0;
     var up = launchShaft(v3(0, 1.3, 0), v3(0, 400, 20), 40.0, .{ .dmg = 1 }, false, .arrow);
     var i: u32 = 0;
@@ -1971,8 +1916,6 @@ test "A FIREBALL BOUNCES, AND EACH ARC IS SHORTER THAN THE ONE BEFORE IT" {
         }
     }
     std.debug.print("\n  fireball: {d} touches at {d:.1} {d:.1} {d:.1}, rests at {d:.1} m\n", .{ n, touches[0], touches[1], touches[2], a.pos.z });
-    // **THE CAP IS A CEILING, NOT A QUOTA.** It used to be spent exactly, because the shot took the full
-    // ballistic solve and arrived with the energy for three touches. Flattened (`EMBER_LOFT`) and damped harder (`EMBER_KEEP_Y`) it leaves on the second. Two is the floor; three is the cap.
     try std.testing.expect(n >= 2 and n <= bouncesOf(.emberball));
     try std.testing.expect(a.stuck);
 

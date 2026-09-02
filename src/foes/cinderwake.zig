@@ -24,22 +24,7 @@ const lerpF = mathx.lerpF;
 const approach = mathx.approach;
 const setLocal = heromod.setHumanoid;
 
-// THE CINDER WAKE (owner's creature, owner's brief) — a body burnt down to the core that is still walking,
-// and **THE GROUND IT WALKS OVER STAYS BURNING**. Every other hazard in the game is thrown at a place; this
-// one is LAID, continuously, by the creature's own feet.
-//
-// **THE ARENA IS THE FIGHT.** It lays trail only while it MOVES, so a standing wake is standing on safe
-// ground and a chasing one is spending the room. At `CHASE_SPEED` over `EMBER_LIFE` the live trail is 11.3 m
-// of burning line behind it (asserted below) — a wall that expires, not a flood that does not.
-//
-// **AND IT IS SLOWER THAN YOU ARE.** `CHASE_SPEED` sits just over the hero's WALK and well under his run, so
-// distance is always available. What it costs is the direction you spend getting it, which is the whole
-// lesson: kill it early, and never circle the way it came.
-//
-// **COLD IS THE COUNTER AND FIRE IS NOTHING AT ALL TO IT.** Not the same bargain the birchwight offers: a
-// torch makes THAT one worse and kills it, while a torch spent on this one is a torch spent on nothing.
 
-/// **A MAN-SHAPE STANDS OVER THE HERO** (owner: all humanoids bigger than us) — asserted below.
 pub const H: f32 = 2.08;
 const HIP_HALF = heromod.HIP_HALF * 0.92;
 const SHOULDER_HALF = heromod.SHOULDER_HALF * 0.88;
@@ -71,7 +56,6 @@ const solePatches = [_]heromod.SolePatch{
     .{ .bone = ANKR, .heel = 0.040 * H, .toe = 0.158 * H, .halfW = 0.048 * H, .drop = 0.032 * H },
 };
 
-// **AUTHOR THE CRUST DARK AND LET THE SEAMS BE THE ONLY BRIGHT THING.** The body is a large smooth mass, so
 // screen ∝ albedo^(1/2.2) puts it well above its albedo; the seam has to out-read it by a lot or the creature
 // is a grey man. Crust 34 -> screen ~112, seam 226 clips toward white, which is the point.
 const CRUST = rgba(34, 30, 28, 255);
@@ -86,7 +70,6 @@ pub var AGGRO_R: f32 = 14.0;
 const HOME_R: f32 = 2.4;
 const WALK_SPEED: f32 = heromod.WALK_SPEED_BANK * 0.55;
 /// Just over the hero's WALK (1.7) and half his run. Backing off on foot does not shake it; RUNNING does, and
-/// running is the whole cost — it commits you to a bearing while the trail eats the one behind you.
 const CHASE_SPEED: f32 = heromod.WALK_SPEED_BANK * 1.02;
 const ACCEL: f32 = 2.6;
 const TURN_RATE: f32 = 2.4;
@@ -99,8 +82,6 @@ const TOP_F: f32 = 1.00;
 const HP_MAX: f32 = 130.0;
 const POISE_MAX: f32 = 22.0;
 const STANCE_MAX: f32 = 34.0;
-/// **FIRE IS NOTHING TO IT AND COLD IS THE ANSWER** — the one body a torch makes worse. `RES_CAP` is what caps it, so
-/// the fire row is written at the cap rather than at a number that reads stronger than it can be.
 const RESISTS = combat.resists(.{ .fire = 75, .cold = -70, .chaos = 25 });
 pub var SOULS: u32 = 180;
 
@@ -112,9 +93,6 @@ const RAKE_RECOVER: f32 = 0.72;
 const RAKE_CD: f32 = 2.4;
 pub var RAKE_HIT = combat.Hit{ .dmg = 13, .poise = 12, .stance = 9, .elem = combat.elems(.{ .fire = 11 }) };
 
-// **THE TRAIL.** One `Ember` every `TRAIL_SPACING` of travel, each a disc of `EMBER_R` that burns for
-// `EMBER_LIFE`. Spacing is under one diameter, so the line is CONTINUOUS rather than a row of dots you can
-// thread — asserted below, because a gap you can walk through is the mechanic not existing.
 pub const EMBER_R: f32 = 0.52;
 pub const EMBER_LIFE: f32 = 6.5;
 const TRAIL_SPACING: f32 = 0.42;
@@ -128,7 +106,6 @@ comptime {
     std.debug.assert(TRAIL_SPACING < 2.0 * EMBER_R);
     std.debug.assert(RAKE_WIND >= foe.TELL_MIN);
     std.debug.assert(CHASE_SPEED > heromod.WALK_SPEED_BANK and CHASE_SPEED < heromod.RUN_SPEED_BANK);
-    // The live trail the header quotes, held here rather than only printed by a test.
     std.debug.assert(CHASE_SPEED * EMBER_LIFE > 8.0 and CHASE_SPEED * EMBER_LIFE < 14.0);
 }
 
@@ -145,8 +122,6 @@ const SEAM_RATE: f32 = 14.0;
 const SEAM_RATE_RAKE: f32 = 60.0;
 const HIT_ASH_LIGHT = 4;
 const HIT_ASH_HEAVY = 9;
-/// Sized by ARITHMETIC over the worst frame: the seam emitter at its rake rate for one mote-life, plus a heavy
-/// blow's ash and the wound haze the shared code lays on top.
 const PARTS = 52;
 comptime {
     std.debug.assert(@as(f32, PARTS) >= SEAM_RATE_RAKE * 0.52 +
@@ -157,10 +132,8 @@ const State = enum { idle, walk, rake, stunlight, stunheavy, dead };
 
 const Choice = enum { rest, hold, close, rake };
 
-/// **A BAND IS ASKED THE WAY THE STROKE BILLS IT** (`foe.hurtReach`, the ogre's `slamReach` law).
 /// Measured edge to edge against a centre-to-centre bill, the band ran 0.24 m past the reach at scale 1
 /// and 1.00 m at `wf.FOE_SCALE_LO` — and a body stops closing the frame its band takes it, so that
-/// sliver was where the rake was always thrown and never billed.
 fn classify(sensed: f32, homeGap: f32, scale: f32, rakeReady: bool, rooted: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     if (sensed <= foe.hurtReach(RAKE_R, scale) and rakeReady) return .rake;
@@ -187,7 +160,6 @@ pub const Cinder = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
@@ -211,10 +183,7 @@ pub const Cinder = struct {
     latB: f32 = 0,
     speedS: f32 = 0,
 
-    /// Metres of travel banked since the last ember. The trail is laid off DISTANCE, never a clock, or a
-    /// chilled wake lays the same line in the same seconds while covering a third of the ground.
     laid: f32 = 0,
-    /// One-frame, read by the group after `update`: where an ember is owed this frame.
     dropAt: ?rl.Vector3 = null,
 
     vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
@@ -272,8 +241,6 @@ pub const Cinder = struct {
     pub fn staggered(self: *const Cinder) bool {
         return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
     }
-    /// **IT NEVER LEAVES THE GROUND, AND THAT IS THE MECHANIC** — the trail is laid by feet on earth, so a
-    /// wake with a hop would have a way to cross its own line without paying for it.
     pub fn airborne(_: *const Cinder) bool {
         return false;
     }
@@ -360,7 +327,6 @@ pub const Cinder = struct {
                 switch (classify(sensed, homeGap, self.scale, self.rakeCd <= 0, self.root.held())) {
                     .rest => {
                         if (sensed <= AGGRO_R) self.faceToward(quarry, dt);
-                        // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postAmble`), refused inside the ring.
                         self.state = if (foe.postAmble(self, dt, bounds, WALK_SPEED, ACCEL, sensed, AGGRO_R, TURN_RATE, &movedDist, &moveSpeed, &moveYaw)) .walk else .idle;
                     },
                     .rake => {
@@ -390,15 +356,11 @@ pub const Cinder = struct {
         return self.heroHit;
     }
 
-    /// **LAID OFF DISTANCE, AND ONLY WHILE IT TRAVELS.** A standing wake stands on safe ground, which is the
-    /// one thing that makes the trail readable: what is burning is exactly where it has BEEN.
     fn layTrail(self: *Cinder, moved: f32) void {
         if (self.state == .dead) return;
         const step = TRAIL_SPACING * self.scale;
         self.laid += moved;
         if (self.laid < step) return;
-        // **THE SURPLUS IS CARRIED, NOT DROPPED.** Zeroed, a frame long enough to cover more than one spacing
-        // threw the remainder away and the line thinned wherever the frame rate did.
         self.laid -= step;
         self.dropAt = v3(self.pos.x, self.pos.y, self.pos.z);
     }
@@ -451,8 +413,6 @@ pub const Cinder = struct {
         self.enterDeath();
     }
 
-    /// **THE SEAMS ARE WHERE THE CREATURE IS, NOT WHERE IT WENT** — they rise off the chest and the raking
-    /// hands, so the body reads hot while the trail behind it reads spent.
     fn emitSeams(self: *Cinder, dt: f32) void {
         if (self.state == .dead) return;
         const raking = self.state == .rake;
@@ -479,8 +439,6 @@ pub const Cinder = struct {
         }
     }
 
-    /// **ASH LEAVES A BURNT BODY, NOT BLOOD.** A puff rather than a chip spray: nothing solid comes off it,
-    /// which is also why a heavy blow reads as a cloud and not as a wound.
     const ASH_PUFF = foe.Puff{
         .blast = foe.Blast.of(foe.DUST_DRAG, 0.30, 0.55),
         .spdLo = 0.4,
@@ -549,8 +507,6 @@ pub const Cinder = struct {
         setLocal(wx, NECK, rest, rx(-10.0 * rake + 7.0 * dk - 5.0 * stun));
         setLocal(wx, SKULL, rest, mul3(rx(-18.0 * rake + 14.0 * dk - 22.0 * stun + 2.5 * bellows), ry(-0.4 * prot), rz(wonk)));
 
-        // **BOTH ARMS ARE THE WEAPON**: the rake hauls them overhead together and drags them down through the
-        // hero, so the tell is a silhouette rather than a side to read.
         const armStun = -44.0 * stun;
         const swing = -12.0 * heromod.armSwing(self.phase) * m * @abs(self.fwdB);
         const haul = -96.0 * mathx.maxF(0, -rake);
@@ -564,8 +520,6 @@ pub const Cinder = struct {
     }
 };
 
-/// One burning patch of ground. It carries NO particles of its own — the group's single pool feeds every live
-/// ember, so the flame cost is flat in the number of embers rather than linear in it.
 pub const Ember = struct {
     pos: rl.Vector3 = mathx.zero3,
     t: f32 = 0,
@@ -582,8 +536,6 @@ pub const Ember = struct {
 };
 
 /// **THE WHOLE FIELD'S TRAIL IN ONE RING.** At `CHASE_SPEED` one wake keeps 27 embers alive (asserted); the
-/// ring holds nine wakes' worth and a tenth simply recycles the oldest patch, which is the right failure — an
-/// old cinder going out early, never a young one missing.
 const TRAIL_CAP: usize = 256;
 const PER_WAKE = @as(usize, @intFromFloat(@ceil(CHASE_SPEED * EMBER_LIFE / TRAIL_SPACING)));
 comptime {
@@ -666,8 +618,6 @@ pub const Scorch = struct {
             liveN += 1;
         }
         if (liveN == 0) return;
-        // **ONE POOL OVER EVERY PATCH**: each owed mote picks a live ember at random, so a long trail thins
-        // evenly rather than the near end burning and the far end going dark.
         var owed = foe.emitDue(&self.flameAccum, dt, FLAME_RATE);
         const sig = elemfx.sig(.fire);
         while (owed > 0) : (owed -= 1) {
@@ -702,7 +652,6 @@ pub const Scorch = struct {
         return null;
     }
 
-    /// The hero's bill for standing on burnt ground, in the same coin the sporeling's cloud bills poison.
     pub fn scorching(self: *Scorch, dt: f32, hero: rl.Vector3) f32 {
         return self.soak.step(self.burning(hero), dt, TRAIL_BUILD);
     }
@@ -769,8 +718,6 @@ fn buildBones() [N]rl.Mesh {
     return mesh;
 }
 
-/// A crack laid ALONG the limb rather than a dot on it: burnt wood splits with the grain, and a scatter of
-/// specks reads as damage to the mesh instead of heat inside the body.
 fn seamStripe(b: *Builder, from: rl.Vector3, to: rl.Vector3, w: f32, col: rl.Color) void {
     b.addCapsule(from, to, w, w * 0.7, 5, col);
 }
@@ -795,8 +742,6 @@ fn lumbarMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// **THE FURNACE.** The chest is where the seam is widest and where the heat visibly comes from — the one
-/// place on the body authored bright, so the silhouette says which end of the creature is still burning.
 fn chestMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x0C1D);
@@ -859,8 +804,6 @@ fn shinMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// **THE FEET ARE THE APPLICATOR** — burnt through to the bone and glowing under, because they are what lays
-/// the trail and the picture may not disagree with the mechanic.
 fn footMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
@@ -892,7 +835,6 @@ fn forearmMesh(side: f32) rl.Mesh {
     return b.toMesh();
 }
 
-/// Fingers burnt to points. The rake is these, so they are the one small thing on the body allowed to read hot.
 fn clawMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
@@ -918,7 +860,6 @@ test "THE TRAIL IS LAID BY TRAVEL, NOT BY THE CLOCK — a standing wake burns no
     var c = Cinder.spawn(mathx.zero3, 0, 1.0, 0.3);
     var laid: u32 = 0;
     var t: f32 = 0;
-    // Quarry forty metres off: outside `AGGRO_R` and already at home, so it never takes a step.
     while (t < 6.0) : (t += 1.0 / 60.0) {
         _ = c.update(1.0 / 60.0, v3(0, 0, 40), 400, .{});
         if (c.dropAt != null) laid += 1;
@@ -931,7 +872,6 @@ test "A WALKING WAKE LAYS ONE EMBER EVERY `TRAIL_SPACING` OF GROUND, and the lin
     var s = Scorch{ .model = undefined };
     s.wakes[0] = Cinder.spawn(mathx.zero3, 0, 1.0, 0.3);
     s.n = 1;
-    // INSIDE ITS EYES, or it stands at home and the whole test passes on zero embers.
     const hero = v3(0, 0, AGGRO_R - 1.0);
     var t: f32 = 0;
     while (t < 4.0) : (t += 1.0 / 60.0) _ = s.update(1.0 / 60.0, hero, 400, .{});
@@ -942,7 +882,6 @@ test "A WALKING WAKE LAYS ONE EMBER EVERY `TRAIL_SPACING` OF GROUND, and the lin
     std.debug.print("\n  cinder wake: walked {d:.2} m, laid {d:.0} embers (one per {d:.2} m)\n", .{ travelled, got, TRAIL_SPACING });
     try std.testing.expect(got >= expect - 2.0 and got <= expect + 2.0);
 
-    // NO GAP: every point along the line it walked is inside some live ember.
     var d: f32 = 0.1;
     while (d < travelled - 0.1) : (d += 0.05) {
         try std.testing.expect(s.burning(v3(0, 0, d)));
@@ -966,7 +905,6 @@ test "THE TRAIL BURNS AND THEN GOES OUT — stand in it and the meter breaks, st
     try std.testing.expect(broke);
     try std.testing.expectApproxEqAbs(@as(f32, 0), s.scorching(1.0 / 60.0, v3(20, 0, 20)), 1e-6);
 
-    // …and past its life the patch is cold ground again.
     s.tickTrail(0.5);
     try std.testing.expect(!s.burning(mathx.zero3));
     try std.testing.expectEqual(@as(u32, 0), s.emberCount());
@@ -992,7 +930,6 @@ test "ONE CROSSING IS A BILL, NOT A BURN — the entry bolus alone never breaks 
     std.debug.print("  one crossing costs {d:.0} of the {d:.0} burning meter\n", .{ afterOne, B.max });
     try std.testing.expect(afterOne > B.max * 0.15 and afterOne < B.max * 0.6);
 
-    // Off it, the meter empties on its own — the quiet spell first, then the fall.
     _ = s.scorching(1.0 / 60.0, outside);
     const clears = B.decayDelay + afterOne / B.decay;
     t = 0;
@@ -1014,7 +951,6 @@ test "THE TRAIL OUTLIVES THE BODY — killing it late leaves you standing in wha
     t = 0;
     while (t < 0.5) : (t += 1.0 / 60.0) _ = s.update(1.0 / 60.0, hero, 400, .{});
     try std.testing.expect(s.emberCount() >= before - 2);
-    // A corpse lays nothing more, whatever it does while it falls.
     const held = s.emberCount();
     t = 0;
     while (t < 1.0) : (t += 1.0 / 60.0) _ = s.update(1.0 / 60.0, hero, 400, .{});
@@ -1035,7 +971,6 @@ test "the pick is positional: rake in reach, close outside it, and it goes home 
     try std.testing.expectEqual(Choice.close, classify(4.0, 0, 1.0, true, false));
     try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1.0, 0, 1.0, true, false));
     try std.testing.expectEqual(Choice.hold, classify(AGGRO_R + 1.0, HOME_R + 1.0, 1.0, true, false));
-    // Rooted it still rakes what is already in reach — the grip takes the FEET, not the arms.
     try std.testing.expectEqual(Choice.rake, classify(2.0, 0, 1.0, true, true));
     try std.testing.expectEqual(Choice.rest, classify(4.0, 0, 1.0, true, true));
 }
@@ -1071,9 +1006,6 @@ test "the rake is telegraphed and it only lands once per swing" {
     try std.testing.expect(firstAt >= foe.TELL_MIN);
 }
 
-// **THE BAND IT STOPS CLOSING AT HAS TO BE A BAND IT CAN BILL FROM** (AGENTS.md: a move is judged by THROWING
-// it, not by looking at it). The outer edge is asked of `classify` rather than re-derived here — which unit the
-// band is written in is the thing under test.
 test "THE BLOW LANDS ON THE MAN WHERE HE STANDS — thrown for real, anywhere its own band picks it" {
     const dt: f32 = 1.0 / 120.0;
     var misses: usize = 0;

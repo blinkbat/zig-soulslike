@@ -82,7 +82,6 @@ const setLocal = heromod.setHumanoid;
 const FIST_Y = -0.05 * H;
 const FIST_Z = 0.02 * H;
 
-/// Both kits are authored pointing UP off the grip (built in the archer's bow frame, whose +Y runs back up the forearm), so the fit FLIPS them. After it, `wpnTilt` means degrees the weapon leads forward of the forearm line.
 const wpnFit = heromod.staffFit;
 
 /// Authors where the kit POINTS in the world (deg forward of straight down: 0 down, 90 level, 180 on end) and
@@ -114,7 +113,6 @@ pub const Role = enum { shieldman, greatsword };
 comptime {
     // …and a SPEC ROW PER ROLE, which `kobold.zig` and `brood.zig` both pin and this did not: `roleOf` measures the run with `SPEC.len`, so a role added without a row returns null for its own kind and `spec()` walks off the end.
     if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("warrior: a Role with no spec row");
-    // A CONTIGUOUS RUN off `shieldman`, in role order — `roleOf`/`kindOf` are an ordinal shift.
     for (@typeInfo(Role).@"enum".fields, 0..) |f, i| {
         const fk: wf.FoeKind = @enumFromInt(@intFromEnum(wf.FoeKind.shieldman) + i);
         if (!std.mem.eql(u8, f.name, @tagName(fk))) {
@@ -134,7 +132,6 @@ pub fn kindOf(r: Role) wf.FoeKind {
     return @enumFromInt(@intFromEnum(wf.FoeKind.shieldman) + @intFromEnum(r));
 }
 
-/// WHICH ANIMATION A ROW WEARS, and nothing else — `hyper`/`lunge`/`crash` still carry the MECHANICS. The pose functions used to sniff those columns for identity, which left a third greatsword stroke with no way to be anything but a slam.
 const Style = enum { mace, slam, lunge, sweep };
 
 const Attack = struct {
@@ -228,10 +225,8 @@ const Spec = struct {
     souls: u32,
     moves: []const Attack,
 };
-/// **THE LIVE KIT.** The bank above is the code's own and never moves — that is the revert; every blow
 /// the bench can reach is `MOVES[i].hit`, so a move retuned in the source flows through (`play/tune.zig`).
 pub var MOVES_GREATSWORD = MOVES_GREATSWORD_BANK;
-/// **THE LIVE KIT.** The bank above is the code's own and never moves — that is the revert; every blow
 /// the bench can reach is `MOVES[i].hit`, so a move retuned in the source flows through (`play/tune.zig`).
 pub var MOVES_SHIELDMAN = MOVES_SHIELDMAN_BANK;
 
@@ -249,7 +244,6 @@ comptime {
     for (SPEC) |s| std.debug.assert(s.moves.len > 0);
 }
 
-/// THE WIDEST MOVESET ANY ROLE HAS, off the table itself — the per-move cooldowns and the readiness scratch are sized from this, so giving a role a third move cannot silently index past either.
 const MAX_MOVES = blk: {
     var m: usize = 0;
     for (SPEC) |s| m = @max(m, s.moves.len);
@@ -274,7 +268,6 @@ const SHOVE_DECAY = 7.0;
 const A_BOB = heromod.A_BOB;
 const A_PROT = 3.8;
 
-/// DRY BONE AND NOTHING ELSE — the archer's table, because it is the archer's body: it burns, and there is no flesh in it for cold to bite or a poison to find.
 const RESISTS = combat.resists(.{ .fire = -35, .cold = 60, .chaos = 45 });
 
 const SHIELD_STAM: f32 = 62.0;
@@ -352,7 +345,6 @@ const SWEEP_HIT_LEAN = 15.0;
 const SWEEP_HIT_SWEEP = 84.0;
 const SWEEP_END_ATT = 74.0;
 const SWEEP_STEP = 0.52; // metres the stroke carries him forward, pre-scale
-/// The two ends of the horizontal's tilt, SOLVED rather than typed: `levelTilt`'s own arithmetic (attitude - shoulder + elbow) at each end. Both the wind and the recover had it written out by hand.
 const SWEEP_WIND_TILT = SWEEP_WIND_ATT - SWEEP_WIND_SH + SWEEP_WIND_EL;
 const SWEEP_END_TILT = SWEEP_END_ATT - SWEEP_HIT_SH + SWEEP_HIT_EL;
 
@@ -488,7 +480,6 @@ pub const Warrior = struct {
     leapDone: f32 = 0,
     hop: f32 = 0,
     leapt: bool = false,
-    /// THE SHIELD CAUGHT HIS STROKE THIS FRAME — a one-frame flag, reset at the top of `update`. A latch would bill the beat sixty times a second for the whole stumble.
     parried: bool = false,
     covered: bool = false,
     shieldGone: bool = false,
@@ -496,7 +487,6 @@ pub const Warrior = struct {
     stam: combat.Stamina = combat.Stamina.initFoe(SHIELD_STAM),
     blockT: f32 = mathx.LONG_AGO,
 
-    // posture channels (degrees), resolved by the state and read by pose()
     armSh: f32 = CARRY_SH,
     armEl: f32 = CARRY_EL,
     armAbd: f32 = CARRY_ABD,
@@ -526,10 +516,8 @@ pub const Warrior = struct {
     justDied: bool = false,
     threat: foe.Threat = .{},
     nav: foe.Nav = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`). Stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     heldOpen: bool = false,
-    /// …AND A BODY MAY BE RAISED ONCE. A latch nothing clears (`shieldGone`'s arrangement): twice is a fight that cannot be won by killing things.
     wasRaised: bool = false,
     fade: f32 = 0,
     gone: bool = false,
@@ -679,7 +667,6 @@ pub const Warrior = struct {
             .idle => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
                 self.setCarry(dt);
-                // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postDrive`), refused inside the ring.
                 _ = foe.postDrive(self, dt, bounds, WALK_SPEED, d, AGGRO_R, TURN_RATE, &movedDist, &moveSpeed, &moveYaw);
                 if (self.t >= 0.18) self.decide(d);
             },
@@ -973,14 +960,12 @@ pub const Warrior = struct {
         };
     }
 
-    /// THE INSTANT THE KIT CAN BE CAUGHT IN, and how far out it reaches then — null when there is nothing to catch. The window is the last `PARRY_LEAD` seconds of the blow's approach, so it shuts AT the impact frame by construction.
     fn parryable(self: *const Warrior) ?f32 {
         const left = self.toImpact() orelse return null;
         if (!foe.inParryWindow(left)) return null;
         return self.parryReach(self.move());
     }
 
-    /// THE SHIELD TAKES THE STROKE, and HYPER ARMOUR IS NO DEFENCE AGAINST IT — `hyperArmor` refuses POISE off the blade and a parry deals none, so the one move you cannot interrupt is the one the boards can still stop outright.
     fn takeParry(self: *Warrior) void {
         const reach = self.parryable() orelse return;
         if (!foe.caught(self, reach)) return;
@@ -994,7 +979,6 @@ pub const Warrior = struct {
         }
     }
 
-    /// The hurt shape IS the kit: what it swept this frame, against the column the hero stands in, latched to one blow per stroke — never a yaw-guessed sector.
     fn tryReach(self: *Warrior, hero: rl.Vector3) void {
         if (self.dealt) return;
         const r = foe.hurtReach(KIT_R[@intFromEnum(self.role)], self.scale);
@@ -1022,8 +1006,6 @@ pub const Warrior = struct {
         } else if (self.hyperArmor()) {
             b.hit = .{ .dmg = blade.hit.dmg, .elem = blade.hit.elem };
         }
-        // A creature's flinch pours off the DAMAGE now (`combat.FOE_POISE_PER_DMG`), so hyper armour has to refuse
-        // the pool itself — a blow stripped of its `poise` still takes health.
         const hyper = !blocked and self.hyperArmor();
         const poiseWas = self.vit.poise;
         var s = foe.reached(self, b) orelse return;
@@ -1343,7 +1325,6 @@ pub const Warrior = struct {
     fn setRecover(self: *Warrior, u: f32) void {
         const over = 1.0 - mathx.smoothstep(0.30, 1.0, u);
         const heave = mathx.sinf(self.elapsed * 8.0) * 2.4 * over;
-        // EXHAUSTIVE, like `setWind` and `setSwing`: written as an if-chain falling through to the mace, a fifth style silently wore the club's recovery instead of failing to compile.
         switch (self.move().style) {
             .sweep => {
                 self.armSh = lerpF(GS_CARRY_SH, SWEEP_HIT_SH, over) + heave * 0.5;
@@ -1443,7 +1424,6 @@ pub const Warrior = struct {
         const prot = A_PROT * mathx.sinf(twoPi * self.phase) * m * @abs(self.fwdB) +
             heromod.strafeProt(self.phase, self.latB, m);
         const dip = heromod.STRAFE_DIP * latW;
-        // THE LEGS TAKE THE BRACE IN THE KNEES, they do not squat (owner's law) — only the small pelvis drop a real knee bend costs.
         const braceSink = 0.030 * H * self.legBrace + KNEEL_SINK * H * kn;
 
         var wx: [N]rl.Matrix = undefined;
@@ -1539,46 +1519,45 @@ pub const Warrior = struct {
     fn dustBurst(self: *Warrior, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
         foe.puff(&self.parts, &self.fxHead, &self.fxRng, v3(c.x, self.pos.y + 0.05, c.z), n, spd, big, self.scale, PUFF);
     }
+    const GRIT = foe.Grit{
+        .spdLo = 1.2,
+        .spdHi = 3.4,
+        .upLo = 2.4,
+        .upHi = 5.2,
+        .lifeLo = 0.45,
+        .lifeHi = 0.85,
+        .rLo = 0.025,
+        .rHi = 0.055,
+        .r1 = 0.012,
+        .col = CHIP,
+        .grav = 9.0,
+        .stretch = 0.030,
+        .bounce = 0.42,
+    };
     fn grit(self: *Warrior, c: rl.Vector3, n: i32) void {
-        var i: i32 = 0;
-        while (i < n) : (i += 1) {
-            const a = self.fxRng.angle();
-            const s = self.fxRng.range(1.2, 3.4) * self.scale;
-            foe.emitPart(&self.parts, &self.fxHead, .{
-                .p = v3(c.x, self.pos.y + 0.08, c.z),
-                .v = v3(mathx.cosf(a) * s, self.fxRng.range(2.4, 5.2), mathx.sinf(a) * s),
-                .life = self.fxRng.range(0.45, 0.85),
-                .r0 = self.fxRng.range(0.025, 0.055) * self.scale,
-                .r1 = 0.012,
-                .col = CHIP,
-                .grav = 9.0,
-                .stretch = 0.030,
-                .bounce = 0.42,
-            });
-        }
+        foe.grit(&self.parts, &self.fxHead, &self.fxRng, v3(c.x, self.pos.y + 0.08, c.z), n, self.scale, GRIT);
     }
     fn chips(self: *Warrior, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
         foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, CHIP_SPRAY);
     }
+    const SPARKS = foe.Sparks{
+        .spdLo = 1.4,
+        .spdHi = 4.2,
+        .upLo = 1.2,
+        .upHi = 3.6,
+        .lifeLo = 0.16,
+        .lifeHi = 0.34,
+        .rLo = 0.014,
+        .rHi = 0.030,
+        .r1 = 0.002,
+        .col = SPARK,
+        .col1 = SPARK_COOL,
+        .grav = 6.0,
+        .stretch = 0.055,
+        .bounce = 0.45,
+    };
     fn sparks(self: *Warrior, at: rl.Vector3, dir: rl.Vector3, n: i32) void {
-        var i: i32 = 0;
-        while (i < n) : (i += 1) {
-            const a = self.fxRng.angle();
-            const sp = self.fxRng.range(1.4, 4.2);
-            foe.emitPart(&self.parts, &self.fxHead, .{
-                .p = at,
-                .v = v3(-dir.x * sp * 0.5 + mathx.cosf(a) * sp * 0.6, self.fxRng.range(1.2, 3.6), -dir.z * sp * 0.5 + mathx.sinf(a) * sp * 0.6),
-                .life = self.fxRng.range(0.16, 0.34),
-                .r0 = self.fxRng.range(0.014, 0.030),
-                .r1 = 0.002,
-                .col = SPARK,
-                .col1 = SPARK_COOL,
-                .grav = 6.0,
-                .stretch = 0.055,
-                .bounce = 0.45,
-                .add = true,
-            });
-        }
+        foe.sparks(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, SPARKS);
     }
     fn shatter(self: *Warrior, at: rl.Vector3) void {
         var i: i32 = 0;
@@ -1670,7 +1649,6 @@ pub const Muster = struct {
     pub fn setParry(self: *Muster, p: foe.Parry) void {
         foe.setParry(self.live(), p);
     }
-    /// …and whether any of them was caught on it this frame. A ONE-FRAME edge, `anyDied`'s, read after `update`.
     pub fn anyParried(self: *const Muster) bool {
         return foe.anyParried(self.liveConst());
     }
@@ -1693,7 +1671,6 @@ pub const Muster = struct {
     pub fn aliveCount(self: *const Muster) u32 {
         return foe.aliveCount(self.liveConst());
     }
-    /// ONE OF THEM LEFT THE GROUND THIS FRAME. The lunge is only ever thrown from inside its own trigger radius, so a leap is always near enough for the frame to be allowed to feel it.
     pub fn anyLeapt(self: *const Muster) bool {
         for (self.liveConst()) |*w| {
             if (w.leapt) return true;
@@ -2011,7 +1988,6 @@ test "THE WINDOW IS AN INSTANT BEFORE THE HIT, on every stroke a warrior throws"
 }
 
 test "A CAUGHT STROKE NEVER LANDS, and HYPER ARMOUR is no defence against the boards" {
-    // The slam cannot be TRADED with (`hyperArmor` refuses its poise), which is why being able to refuse it outright is worth having.
     var w = Warrior.spawnAs(.greatsword, mathx.ground(0, 0), 0, 1.0, 0.0);
     const hero = mathx.v3(0, 0, 1.6);
     w.atk = 0;
@@ -2077,7 +2053,6 @@ test "the greatsword answers at his own reach with the slam, and LEAPS the gap w
     try std.testing.expectEqual(@as(usize, 1), pick(.greatsword, 3.2, 1.0, &all).?);
     try std.testing.expect(pick(.greatsword, triggerR(LUNGE, 1.0) + 0.5, 1.0, &all) == null);
     try std.testing.expectEqual(@as(usize, 0), pick(.greatsword, 1.2, 1.0, &all).?);
-    // WITH THE SLAM COOLING, THE HORIZONTAL IS THE CLOSE ANSWER and the lunge stays the stroke that covers ground. Only when both are spent does he throw the leap at his own feet.
     const slamSpent = [_]bool{ false, true, true };
     try std.testing.expectEqual(@as(usize, 2), pick(.greatsword, 1.2, 1.0, &slamSpent).?);
     const swordOnly = [_]bool{ false, true, false };
@@ -2118,9 +2093,7 @@ test "THE SWEEP IS THE STRAFE TAX: a wide LEVEL sector where the slam and the lu
     try std.testing.expect(near.deg >= 90 and far.deg >= 80);
     try std.testing.expect(far.deg > covered(0, 2.0).deg * 1.7);
     try std.testing.expect(far.deg > covered(1, 2.0).deg * 1.7);
-    // …and it is CENTRED on him rather than trailing off one shoulder, so the tax is the same either way he steps.
     try std.testing.expect(@abs(far.lo + far.hi) < 20.0);
-    // A hero stood the width of a roll off the line the slam comes down is inside this stroke, not that one.
     const off = v3(1.28, 0, 1.28);
     try std.testing.expect(swungAt(.greatsword, 2, 0, off).hit);
     try std.testing.expect(!swungAt(.greatsword, 0, 0, off).hit);
@@ -2355,15 +2328,11 @@ test "a shieldman with his boards down takes a blow like anything else" {
     try std.testing.expectApproxEqAbs(w.stam.max, w.stam.cur, 1e-5);
 }
 
-/// Drive one whole stroke on the real clock and hand back what it did: whether it reached a hero standing `at`
-/// metres dead ahead, the tip's furthest reach, the height at the top of the tell, the lowest the tip went, and
-/// the SECTOR its tip swept (degrees off his facing, least to most). EVERY hurt-shape test below measures through here, which is the ogre's law (`clubLowWorld`).
 const Swung = struct {
     hit: bool,
     maxD: f32,
     apex: f32,
     lowY: f32,
-    /// Where the tip sits at the END of the tell, in his own frame: how far OUT TO THE SIDE, and how far up. A raised weapon is not the only readable tell — a horizontal's is entirely lateral.
     windLat: f32 = 0,
     windY: f32 = 0,
 };
@@ -2449,7 +2418,6 @@ test "NO STROKE PLOUGHS THE TURF BESIDE HIM, and the slam's point really does re
     // 0.44 m beneath it, next to his own boot, which is why `swingTilt` drives the attitude instead.
     try std.testing.expect(swung(.shieldman, 0, 0, 1.2).lowY > 0.35);
     try std.testing.expect(swung(.greatsword, 1, 0, 2.0).lowY > 0.35);
-    // The horizontal is held LEVEL, so its floor is the highest of the three and its ceiling is low.
     try std.testing.expect(swung(.greatsword, 2, 0, 2.0).lowY > 0.60);
     var g = Warrior.spawnAs(.greatsword, mathx.zero3, 0, 1.0, 0.3);
     g.debugSwing(0);
@@ -2483,8 +2451,6 @@ test "the stroke latches, so one swing lands once — and a COMBO gets one landi
 }
 
 test "HE STEPS INTO THE BLOW: the mace's stroke covers its own ground, and never leaves the earth" {
-    // `MACE_STEP` was declared, documented ("a blow thrown off planted feet reads as a man swatting a
-    // fly") and never read by anything — so the blow was thrown off planted feet. This is the guard.
     try std.testing.expect(MACE.step > 0.2);
     var m = Warrior.spawnAs(.shieldman, mathx.zero3, 0, 1.0, 0.3);
     m.facing = 0;
@@ -2498,7 +2464,6 @@ test "HE STEPS INTO THE BLOW: the mace's stroke covers its own ground, and never
 }
 
 test "EVERY STROKE'S COMMITTED TRAVEL STARTS AT ZERO, whichever stroke of the combo it is" {
-    // `flyStroke` moves him by `want - leapDone`, so a stroke that inherits its predecessor's total walks
     // BACKWARD out of the gate. Zeroed on entering `.wind` instead, only stroke 0 was ever safe.
     var g = Warrior.spawnAs(.greatsword, mathx.zero3, 0, 1.0, 0.4);
     g.debugSwing(1);
@@ -2636,15 +2601,12 @@ test "THE HURT SPHERE IS ON THE BODY, AND IT KNEELS WHEN HE DOES" {
     const skull = w.rest[SKULL].y * w.scale;
     const r = w.hurtRadius();
 
-    // Standing: the sphere has to REACH the pelvis and not overshoot the skull by its own radius — a centre at
     // 0.95*H put its floor at 1.29 m, above the hips, and half of it in the air over his head.
     const up = w.centerWorld().y - w.pos.y;
     try std.testing.expect(up - r <= hip);
     try std.testing.expect(up + r >= skull);
     try std.testing.expect(up < skull);
 
-    // …and kneeling it comes DOWN with him. `KNEEL_SINK` drops the pelvis 0.315*H; a sphere that stayed put left
-    // a broken shieldman standing in a hitbox he was no longer inside.
     w.debugBreak();
     var f: i32 = 0;
     while (f < 40) : (f += 1) _ = w.update(1.0 / 60.0, mathx.ground(0, 40), 200, .{});
@@ -2695,7 +2657,6 @@ test "NO ATTACK COMES OUT OF NOWHERE: every stroke of every moveset is visible f
 test "A UNIT WALKS ITS ORDERS — the junkyard dog roams its post, the held one does not, and neither notices the hero doing it" {
     const dt: f32 = 1.0 / 60.0;
     const home = mathx.ground(0, 0);
-    // Well outside `AGGRO_R`, so nothing here is a fight: these are the orders and nothing else.
     const far = mathx.ground(0, AGGRO_R * 6);
 
     var strayed: [3]f32 = .{ 0, 0, 0 };
@@ -2709,13 +2670,9 @@ test "A UNIT WALKS ITS ORDERS — the junkyard dog roams its post, the held one 
         }
     }
     std.debug.print("\n  orders over 4 min: hold strayed {d:.1} m, roam {d:.1} m, roam_free {d:.1} m (leash {d:.0} m)\n", .{ strayed[0], strayed[1], strayed[2], foe.ROAM_R });
-    // HOLD is what every unit did before any of this existed, and it must still do exactly that.
     try std.testing.expectApproxEqAbs(@as(f32, 0), strayed[0], 1e-3);
-    // The leashed dog actually leaves its post…
     try std.testing.expect(strayed[1] > foe.ROAM_R * 0.5);
-    // …and cannot walk itself off the leash one step at a time.
     try std.testing.expect(strayed[1] <= foe.ROAM_R + 2.0);
-    // The unleashed one goes further than the leash ever allows, which is the whole difference between them.
     try std.testing.expect(strayed[2] > foe.ROAM_R + 2.0);
 }
 
@@ -2743,12 +2700,10 @@ test "AND A PATROL WALKS ITS LEGS, out and back rather than round and round" {
 test "AN ORDERED UNIT IS STILL ON A TETHER — only the free roamer is off it, and it is off it by definition" {
     const dt: f32 = 1.0 / 60.0;
     const home = mathx.ground(0, 0);
-    // **THE LEASH ASKS A DIFFERENT QUESTION FROM "AM I AT MY POST"** (`foe.tetherFor` against `foe.homeFor`).
     // Fed the go-home anchor it measured zero for ever, and an ordered guard followed him across the map.
     for ([_]wf.FoeAi{ .hold, .roam, .patrol }) |ai| {
         var w = Warrior.spawnAs(.shieldman, home, 0, 1.0, 0.4);
         w.post.arm(ai, home, &.{.{ .x = 6, .z = 0 }}, 0.4);
-        // Dragged well past the tether, with nobody near enough to hold its attention.
         w.pos = mathx.ground(0, foe.leashR(AGGRO_R) + 30.0);
         w.leash.noteSeen();
         var t: f32 = 0;
@@ -2757,7 +2712,6 @@ test "AN ORDERED UNIT IS STILL ON A TETHER — only the free roamer is off it, a
         }
         try std.testing.expect(w.leash.goingHome());
     }
-    // …and the UNLEASHED one is not dragged back, which is the whole difference between the two dogs.
     var free = Warrior.spawnAs(.shieldman, home, 0, 1.0, 0.4);
     free.post.arm(.roam_free, home, &.{}, 0.4);
     free.pos = mathx.ground(0, foe.leashR(AGGRO_R) + 30.0);

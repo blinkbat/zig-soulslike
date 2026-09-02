@@ -8,20 +8,6 @@ const v3 = mathx.v3;
 const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
-// **THE GILDED RUINS** (owner's brief: golden ruins, Arabic influence, shiny gold, Moebius, FromSoft, on the
-// ASH). Sunbleached limestone gold-leafed and then burned. The gold is `Mat.gilt` — its own shader branch,
-// warm on both hotspot and rim, because gold under steel's cool fresnel comes back blued silver.
-//
-// **THE GOLD IS A SKIN AND THE SKIN HAS COME OFF.** Every piece is masonry FIRST, gilded second, and the
-// gilding is authored as MISSING in patches. A fully gilt object is a gold prop; a half-gilt one is a ruin
-// that used to be gold.
-//
-// **THE FORMS ARE ARABIC**: the horseshoe arch carrying past its own semicircle, muqarnas for every capital
-// and corbel, an eight-point star for every plan, a pierced jali screen, a ribbed melon dome, an octagonal
-// minaret. No Gothic pointed arch, no classical column, nothing symmetrical.
-//
-// `props.biome` files the family under `.ash`, which RECORDS that and does not act on it: nothing sows off
-// that table, so the pieces go down by hand.
 
 // **SOLVE IT, DO NOT GUESS IT** (AGENTS.md): screen = 255 x (albedo x 1.72)^(1/2.2). MEASURED through that
 // chain, `propart.DRIFT` lands at 161 and ordinary `STONE` at 168, so an "off-white" authored by eye comes up
@@ -34,13 +20,11 @@ pub const SCORCH = rgba(30, 27, 23, 255);
 /// Leaf over stone, solved to 178 — a hair UNDER the ashlar in diffuse, because `Mat.gilt` puts a 2.4 hotspot and a warm rim on top of it and a bright base under that is a flat lemon.
 pub const GOLD = rgba(67, 47, 17, 255);
 pub const GOLD_LT = rgba(86, 62, 24, 255);
-/// The tarnish authored in the MESH as well as the shader, so a piece reads worn from across the field and not only up close.
 pub const GOLD_DK = rgba(38, 30, 14, 255);
 
 /// **EVERY ARCH IN THE FAMILY IS A HORSESHOE**: it carries PAST the semicircle and tucks back in under itself. Degrees each side beyond 180 — at 0 this is a Roman arch.
 const HORSE_EXTRA: f32 = 32.0;
 
-/// Tiers, and how far each steps out over the one below as a share of its own width.
 const MUQ_TIERS: i32 = 4;
 // Share of the whole rise each tier hangs out past the one below. At 0.34 the top tier cantilevered a metre off a metre-high corbel. Real ones project under half.
 const MUQ_STEP: f32 = 0.15;
@@ -52,7 +36,6 @@ comptime {
 /// **THE FAMILY'S PLAN IS AN OCTAGON.** One number: two meshes each declaring `SIDES = 8` is two chances for a nine-sided minaret on an eight-sided plinth.
 const OCTAGON: i32 = 8;
 
-/// Sides on a NICHE, the one shape here sown by the dozen: a column carries four corbels of fourteen hollows
 /// and `addDome` spends `sides * 3` triangles on each. At 8 that is 2,688 triangles of niche on one column; at
 /// 6 it is 2,016, and the difference is invisible on a hollow 0.34 m across at the 320 m the kind is drawn to.
 const NICHE_SIDES: i32 = 6;
@@ -72,12 +55,6 @@ fn goldTone(r: *mathx.Rng) rl.Color {
     return GOLD;
 }
 
-/// **THE HONEYCOMB, ONE CORBEL OF IT** — and it must CORBEL, every tier hanging further out over the one
-/// below. Built the other way (cells sunk into a mass) the whole form vanishes: the block shipped once as a
-/// plain white box because its honeycomb was authored INSIDE its own footprint.
-///
-/// `face` is the outward direction in XZ. Tier 0 sits at the wall and each one above steps `MUQ_STEP` of the
-/// rise further out. The niche MOUTHS are gilt and the cell walls stone: that contrast is what reads as depth.
 fn muqarnasInto(b: *Builder, r: *mathx.Rng, c: rl.Vector3, face: rl.Vector3, w: f32, up: f32, gild: f32) void {
     const th = up / @as(f32, @floatFromInt(MUQ_TIERS));
     const f = mathx.normV(v3(face.x, 0, face.z));
@@ -89,8 +66,6 @@ fn muqarnasInto(b: *Builder, r: *mathx.Rng, c: rl.Vector3, face: rl.Vector3, w: 
         const grow = 0.58 + 0.42 * ft / @as(f32, @floatFromInt(MUQ_TIERS - 1));
         const half = w * 0.5 * grow;
         const out = MUQ_STEP * up * ft;
-        // **THE SHELF IS ONE PIECE AND THE NICHES HANG UNDER IT.** One box per cell and the cells met their
-        // neighbours, so every tier came back a solid bar: what reads as a honeycomb is the ROW OF HOLLOWS under a lip.
         const depth = th * 1.05;
         b.setMat(.stone);
         b.addBox(
@@ -106,7 +81,6 @@ fn muqarnasInto(b: *Builder, r: *mathx.Rng, c: rl.Vector3, face: rl.Vector3, w: 
             const u = (@as(f32, @floatFromInt(i)) + 0.5) / @as(f32, @floatFromInt(cells));
             const off = (u - 0.5) * half * 2.0;
             const pitch = half * 2.0 / @as(f32, @floatFromInt(cells));
-            // A third of the pitch, so two thirds of the tier is hollow.
             const cx = c.x + s.x * (off + pitch * 0.5) + f.x * (out + depth * 0.42);
             const cz = c.z + s.z * (off + pitch * 0.5) + f.z * (out + depth * 0.42);
             if (i + 1 < cells) {
@@ -118,11 +92,9 @@ fn muqarnasInto(b: *Builder, r: *mathx.Rng, c: rl.Vector3, face: rl.Vector3, w: 
                     ashlarTone(r),
                 );
             }
-            // Set BACK behind the shelf's lip, so it is a shadowed niche and never a proud bead (RELIEF IS SUBTLE).
             const nx = c.x + s.x * off + f.x * (out + depth * 0.12);
             const nz = c.z + s.z * off + f.z * (out + depth * 0.12);
             const nr = @min(pitch * 0.40, th * 0.42);
-            // ONE DRAW, not two: rolled separately for the material and the colour, a fifth of the niches came out gilt-shaded and scorch-coloured.
             const leaf = r.float() < gild;
             b.setMat(if (leaf) .gilt else .stone);
             b.addDome(
@@ -136,16 +108,10 @@ fn muqarnasInto(b: *Builder, r: *mathx.Rng, c: rl.Vector3, face: rl.Vector3, w: 
     }
 }
 
-/// A band of gilt round a RECTANGULAR mass — four thin plates with the corners left open, so it reads as leaf
-/// on stone and not as a gold ring.
-///
-/// **IT TAKES BOTH HALF-EXTENTS AND IT HAS TO.** Given one it was a square band, and three of its callers are
-/// not square: on a 0.34 m wall its cross-plates stood 0.68 m out either side as gold planks in mid-air. Round masses take `giltRingInto`.
 fn giltBandInto(b: *Builder, r: *mathx.Rng, cx: f32, y: f32, cz: f32, halfX: f32, halfZ: f32, h: f32) void {
     b.setMat(.gilt);
     for ([_][2]f32{ .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 } }) |s| {
         if (r.float() < 0.22) continue; // A COURSE OF IT IS ALWAYS GONE
-        // The plate runs ALONG the face it is on, so its length comes off the other axis' half-extent.
         const along = v3(s[1] * halfX * 0.92, 0, s[0] * halfZ * 0.92);
         b.addBox(
             v3(cx + s[0] * halfX, y + r.signed() * 0.01, cz + s[1] * halfZ),
@@ -167,7 +133,6 @@ fn giltRingInto(b: *Builder, r: *mathx.Rng, cx: f32, y: f32, cz: f32, radius: f3
         const a = std.math.tau * (@as(f32, @floatFromInt(i)) + 0.5) / n;
         const ca = mathx.cosf(a);
         const sa = mathx.sinf(a);
-        // Half the chord, so consecutive plates all but meet and the gaps read as lost leaf.
         const half = std.math.tau * radius / n * 0.46;
         b.addBox(
             v3(cx + ca * radius, y + r.signed() * 0.01, cz + sa * radius),
@@ -195,7 +160,6 @@ fn starInto(b: *Builder, r: *mathx.Rng, c: rl.Vector3, out: f32, h: f32, col: rl
     }
 }
 
-// THE GATE ARCH. A horseshoe on two piers with the crown broken out on one side, and you go THROUGH it (`props` gives it two foot colliders and the gap between them).
 
 pub const ARCH_HALF: f32 = 2.35;
 pub const ARCH_SPRING: f32 = 3.10;
@@ -207,10 +171,8 @@ pub const ARCH_TOP: f32 = ARCH_SPRING + ARCH_R + 1.05;
 // (`albedo = screen^2.2 / 1.72`): body 208 -> 95, lit 222 -> 109, break 168 -> 59.
 pub const MARBLE = rgba(95, 93, 88, 255);
 pub const MARBLE_LT = rgba(109, 107, 101, 255);
-/// The inside of a break, where marble is DARKEST: a fresh fracture is in shadow all day.
 pub const MARBLE_DK = rgba(59, 57, 54, 255);
-/// **THE VEINING IS COOL AND EVERYTHING ELSE HERE IS WARM.** Solved to 132, and separated on HUE from the
-/// ashlar as much as on value (AGENTS.md) — grey-blue against a warm limestone gold.
+/// The veining is COOL where everything else here is warm; solved to 132.
 pub const VEIN = rgba(32, 35, 40, 255);
 
 fn marbleTone(r: *mathx.Rng) rl.Color {
@@ -220,8 +182,6 @@ fn marbleTone(r: *mathx.Rng) rl.Color {
     return MARBLE;
 }
 
-/// One vein across a flag or a face. **A CAPSULE AND NOT A SECOND FLAG**: geometry the flag's own size is a
-/// stripe, and a stripe is a painted line. Sunk `depth` in so only its crown shows (the relief law).
 fn veinAcross(b: *Builder, r: *mathx.Rng, c: rl.Vector3, half: f32, y: f32, depth: f32) void {
     const a = r.angle();
     const d = v3(mathx.cosf(a), 0, mathx.sinf(a));
@@ -232,8 +192,6 @@ fn veinAcross(b: *Builder, r: *mathx.Rng, c: rl.Vector3, half: f32, y: f32, dept
     b.addCapsule(mid, v3(c.x + d.x * half, y - depth, c.z + d.z * half), w * 0.8, w * 0.55, 5, VEIN);
 }
 
-/// **THIS FAMILY'S THESIS AS AN OBJECT** — the note at the top of the file: the gold is a skin and the skin has
-/// come off. Ankle-high, so no collider; it still casts, because a 0.3 m mass with no shadow is a decal.
 pub const LEAF_R: f32 = 1.30;
 pub const LEAF_TOP: f32 = 0.34;
 pub fn giltLeafMesh(shader: rl.Shader) rl.Model {
@@ -242,7 +200,6 @@ pub fn giltLeafMesh(shader: rl.Shader) rl.Model {
     b.setMat(.stone);
     b.addBlob(v3(0, 0.020, 0), v3(LEAF_R * 0.86, 0.036, LEAF_R * 0.72), 3, 11, ASHLAR_DK);
     b.setMat(.gilt);
-    // **CURLED, NEVER FLAT** — a flat quad of leaf is a sticker; the ROLL at one edge is what says thin metal.
     var i: i32 = 0;
     while (i < 14) : (i += 1) {
         const a = rng.angle();
@@ -263,7 +220,6 @@ pub fn giltLeafMesh(shader: rl.Shader) rl.Model {
             v3(w.x * half * rng.range(0.42, 0.86), rng.signed() * 0.03, w.z * half * rng.range(0.42, 0.86)),
             tone,
         );
-        // On ONE side only, whichever way the sheet lifted.
         const side: f32 = if (rng.float() < 0.5) 1.0 else -1.0;
         b.addCapsule(
             v3(cx - u.x * half + w.x * side * half * 0.5, lift + rise * 1.1, cz - u.z * half + w.z * side * half * 0.5),
@@ -284,21 +240,17 @@ pub fn giltLeafMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// **FLAGS WITH GAPS, NOT A SLAB WITH LINES ON IT.** Each flag has its own height and its own hair of yaw, so
-/// the joints are real geometry. Walked over: no collider, and `casts = false` — paving shadow on paving is mud.
 pub const FLOOR_R: f32 = 2.60;
 pub fn marbleFloorMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x601E);
     b.setMat(.stone);
-    // THE BED under the flags — without it the joints leak sky (the packed-stone law).
     b.addBox(v3(0, -0.055, 0), v3(FLOOR_R * 0.98, 0, 0), v3(0, 0.055, 0), v3(0, 0, FLOOR_R * 0.94), ASHLAR_DK);
     const grid = 4;
     var ix: i32 = 0;
     while (ix < grid) : (ix += 1) {
         var iz: i32 = 0;
         while (iz < grid) : (iz += 1) {
-            // A quarter GONE: a floor with every flag in it was never walked on.
             if (rng.float() < 0.24) continue;
             const ux = (@as(f32, @floatFromInt(ix)) + 0.5) / grid * 2.0 - 1.0;
             const uz = (@as(f32, @floatFromInt(iz)) + 0.5) / grid * 2.0 - 1.0;
@@ -323,7 +275,6 @@ pub fn marbleFloorMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// Two pieces parted along one crack, the smaller tipped off the line: a single tidy box is a crate.
 pub const SLAB_TOP: f32 = 1.05;
 pub fn marbleSlabMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
@@ -340,7 +291,6 @@ pub fn marbleSlabMesh(shader: rl.Shader) rl.Model {
         v3(0, rng.signed() * 0.03, W * 0.5),
         MARBLE,
     );
-    // Tipped up on the greater's shoulder: this is the whole silhouette.
     const tip = rng.range(0.20, 0.34);
     b.addBox(
         v3(L * 0.52, Hh * 0.86, rng.signed() * 0.10),
@@ -349,7 +299,6 @@ pub fn marbleSlabMesh(shader: rl.Shader) rl.Model {
         v3(0, 0, W * 0.42),
         MARBLE_LT,
     );
-    // The break face: the one thing that says stone and not a casting.
     var i: i32 = 0;
     while (i < 7) : (i += 1) {
         const t = (@as(f32, @floatFromInt(i)) + 0.5) / 7.0;
@@ -365,7 +314,6 @@ pub fn marbleSlabMesh(shader: rl.Shader) rl.Model {
     veinAcross(&b, &rng, v3(-0.16, 0, 0), L * 0.55, Hh * 1.04, 0.010);
     veinAcross(&b, &rng, v3(L * 0.50, 0, 0), L * 0.28, Hh * 1.28, 0.008);
     veinAcross(&b, &rng, v3(L * 0.55, 0, 0), L * 0.20, Hh * 1.30, 0.007);
-    // Centuries on the turf: soil splash low on the flanks, moss at the ground line.
     var sb: i32 = 0;
     while (sb < 3) : (sb += 1) {
         const side: f32 = if (sb == 2) -1 else 1;
@@ -389,7 +337,6 @@ pub fn marbleSlabMesh(shader: rl.Shader) rl.Model {
     b.setMat(.plant);
     art.lichenInto(&b, &rng, v3(-0.35, 0.06, rng.range(0.28, 0.36)), v3(0.42, 0.05, 0.10), 4);
     art.lichenInto(&b, &rng, v3(-L * 0.68, 0.08, -0.08), v3(0.12, 0.07, 0.18), 3);
-    // It was gilt once.
     b.setMat(.gilt);
     b.addBox(
         v3(rng.range(-0.5, 0.2), Hh * 1.05, rng.signed() * 0.18),
@@ -401,8 +348,6 @@ pub fn marbleSlabMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// **A FLIGHT THAT ARRIVES NOWHERE** — the top treads carried away, so the run stops in mid-air, which is the
-/// only thing separating a ruin's stair from a building's. The risers are the ashlar core showing through.
 pub const STAIR_RISE: f32 = 0.26;
 pub const STAIR_N: i32 = 6;
 pub const STAIR_TOP: f32 = STAIR_RISE * @as(f32, @floatFromInt(STAIR_N));
@@ -410,18 +355,14 @@ pub const STAIR_W: f32 = 2.05;
 pub fn marbleStairMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x6010);
-    // **THE TREADS OVERLAP THEIR RISERS OR IT IS NOT A STAIR.** With a gap between each tread and its core, six
-    // steps read as six crates: a run reads as a run because each nosing HANGS OVER the riser below.
     const tread: f32 = 0.52;
     var i: i32 = 0;
     while (i < STAIR_N) : (i += 1) {
         const fi = @as(f32, @floatFromInt(i));
         const y = STAIR_RISE * fi;
-        // Only the top TWO, and only their ends: a flight that narrows all the way up is a ziggurat.
         const gone = if (i >= STAIR_N - 2) rng.range(0.20, 0.44) else 0;
         const half = STAIR_W * 0.5 * (1.0 - gone);
         const off = if (gone > 0) rng.signed() * STAIR_W * 0.10 else 0;
-        // From the ground up, so no joint can leak sky (the packed-stone law).
         b.setMat(.stone);
         b.addBox(
             v3(off, (y + STAIR_RISE) * 0.5, -fi * tread),
@@ -430,7 +371,6 @@ pub fn marbleStairMesh(shader: rl.Shader) rl.Model {
             v3(0, 0, tread * 0.52),
             ashlarTone(&rng),
         );
-        // NOSING OUT past the riser by a fifth of its own depth.
         b.addBox(
             v3(off + rng.signed() * 0.015, y + STAIR_RISE + 0.022, -fi * tread + tread * 0.14),
             v3(half * rng.range(0.96, 1.00), rng.signed() * 0.005, 0),
@@ -440,7 +380,6 @@ pub fn marbleStairMesh(shader: rl.Shader) rl.Model {
         );
         if (rng.float() < 0.6) veinAcross(&b, &rng, v3(off, 0, -fi * tread + tread * 0.14), half * 0.66, y + STAIR_RISE + 0.044, 0.006);
     }
-    // THE CHEEKS: what stops the flight reading as a stack of slabs end-on. Broken at different heights.
     b.setMat(.stone);
     for ([_]f32{ -1.0, 1.0 }) |side| {
         const upto = rng.range(0.55, 0.80);
@@ -501,7 +440,6 @@ pub fn giltArchMesh(shader: rl.Shader) rl.Model {
         const key = i == NV / 2;
         const rad = 0.40 * (if (key) @as(f32, 1.26) else rng.range(0.92, 1.06));
         const cr = ARCH_R + rad * 0.12;
-        // **ALTERNATING VOUSSOIRS** (Córdoba's own trick, gold for its red), and the gilt ones are the ones the weather took, so the alternation is broken in places.
         const gilded = @mod(i, 2) == 0 and rng.float() < 0.78;
         b.setMat(if (gilded) .gilt else .stone);
         b.addBox(
@@ -544,7 +482,6 @@ pub fn giltArchMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// THE CORBEL FRAGMENT — the one place in the family where the honeycomb is at eye level. **IT NEEDED A WALL**: authored as a loose block the corbel photographed as shelves floating in the air.
 
 pub const MUQ_W: f32 = 1.55;
 pub const MUQ_WALL: f32 = 1.60;
@@ -554,7 +491,6 @@ pub fn muqarnasBlockMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x60_1D_A2);
     b.setMat(.stone);
-    // Packed stone has a core (`courseInto`).
     art.courseInto(&b, &rng, -MUQ_W * 0.5, -0.30, MUQ_W * 0.5, -0.30, .{
         .thick = 0.34,
         .height = MUQ_WALL,
@@ -564,8 +500,6 @@ pub fn muqarnasBlockMesh(shader: rl.Shader) rl.Model {
         .crumble = 0.05,
     });
     giltBandInto(&b, &rng, 0, 0.72, -0.30, MUQ_W * 0.44, 0.19, 0.13);
-    // UNDER the wall's own top, not above it: a corbel carries something, so it cannot be the highest thing.
-    // **AND ON BOTH FACES**, because a cornice runs both sides of a wall — authored on one, the honeycomb was invisible from every angle that showed the coursing.
     muqarnasInto(&b, &rng, v3(0, MUQ_WALL - 1.06, -0.13), v3(0, 0, 1), MUQ_W * 0.86, 0.94, 0.78);
     muqarnasInto(&b, &rng, v3(0, MUQ_WALL - 1.06, -0.47), v3(0, 0, -1), MUQ_W * 0.86, 0.94, 0.72);
     b.setMat(.stone);
@@ -575,7 +509,6 @@ pub fn muqarnasBlockMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// THE SPLIT DOME. A ribbed melon dome off a drum, cracked open across the crown. **A DOME IS A SHELL AND A SHELL HAS AN INSIDE** — the whole reason to break it open.
 
 pub const DOME_R: f32 = 2.75;
 pub const DOME_DRUM: f32 = 1.45;
@@ -592,7 +525,6 @@ pub fn giltDomeMesh(shader: rl.Shader) rl.Model {
     while (s < SIDES) : (s += 1) {
         const a0 = std.math.tau * @as(f32, @floatFromInt(s)) / @as(f32, SIDES);
         const a1 = std.math.tau * @as(f32, @floatFromInt(s + 1)) / @as(f32, SIDES);
-        // The drum is WIDER than the shell that sits on it, so the springing course is visible all round: a shell that overhangs its own drum hides the building it is a roof for.
         const r0 = DOME_R * 1.06;
         art.courseInto(&b, &rng, mathx.cosf(a0) * r0, mathx.sinf(a0) * r0, mathx.cosf(a1) * r0, mathx.sinf(a1) * r0, .{
             .thick = 0.30,
@@ -605,14 +537,12 @@ pub fn giltDomeMesh(shader: rl.Shader) rl.Model {
     }
     giltRingInto(&b, &rng, 0, DOME_DRUM - 0.16, 0, DOME_R * 1.09, 0.16, SIDES);
 
-    // Ribs over the break stop short, so the hole has ragged edges rather than a cut line.
     const NSEG: i32 = 7;
     var k: i32 = 0;
     while (k < DOME_RIBS) : (k += 1) {
         const az = std.math.tau * (@as(f32, @floatFromInt(k)) + 0.5) / @as(f32, DOME_RIBS);
         const broken = k >= 4 and k <= 7;
         const upTo: i32 = if (broken) 3 + @as(i32, @intFromFloat(rng.range(0, 1.9))) else NSEG;
-        // ONE RIB IN THREE, not one in two: at every other rib the shell photographed as a gold pinecone.
         const gilded = @mod(k, 3) == 0;
         var j: i32 = 0;
         while (j < upTo) : (j += 1) {
@@ -634,7 +564,6 @@ pub fn giltDomeMesh(shader: rl.Shader) rl.Model {
                 if (gilded) goldTone(&rng) else ashlarTone(&rng),
             );
         }
-        // The web between ribs — set BACK off them, which is what makes the ribs read as ribs.
         if (broken) continue;
         b.setMat(.stone);
         var w: i32 = 0;
@@ -660,7 +589,6 @@ pub fn giltDomeMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// THE MINARET. An octagonal shaft snapped off two thirds up, with a corbelled balcony and a gilt band under it. LANDMARK scale.
 
 pub const MIN_R: f32 = 0.86;
 pub const MIN_H: f32 = 11.4;
@@ -672,12 +600,10 @@ pub fn minaretMesh(shader: rl.Shader) rl.Model {
     var rng = mathx.Rng.init(0x60_1D_A4);
     const SIDES = OCTAGON;
 
-    // A square base under an octagonal shaft, which is how every one of these is built.
     b.setMat(.stone);
     b.addBox(v3(0, 0.26, 0), v3(1.42, rng.signed() * 0.012, 0.02), v3(0, 0.26, 0), v3(0.02, 0, 1.42), ASHLAR_DK);
     _ = art.courseStack(&b, &rng, 0, 0.50, 0, 2.20, 2.14, 0.44, 4, 0.05);
 
-    // LEANING — a tower this thin that stands plumb reads as a pipe. The lean is a whole-mesh shear applied per course by offsetting the ring centre.
     const LEAN: f32 = 0.16; // metres of drift at the break, over 9 m of shaft
     const CH: f32 = 0.52;
     const y0: f32 = 2.26;
@@ -722,7 +648,6 @@ pub fn minaretMesh(shader: rl.Shader) rl.Model {
         }
     }
 
-    // THE BALCONY, on a muqarnas corbel — the one place the form steps out.
     const bx = LEAN * std.math.pow(f32, (MIN_BALCONY - y0) / (MIN_H - 0.9 - y0), 2.0);
     var q: i32 = 0;
     while (q < SIDES) : (q += 1) {
@@ -751,7 +676,6 @@ pub fn minaretMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// THE JALI SCREEN. A pierced lattice panel in a frame. **THE HOLES ARE THE OBJECT**: the lattice is drawn as the STONE between the voids, so the sun comes through it and lays the pattern on the ash.
 
 pub const JALI_W: f32 = 3.20;
 pub const JALI_H: f32 = 3.05;
@@ -764,7 +688,6 @@ pub fn jaliScreenMesh(shader: rl.Shader) rl.Model {
     const lean = mathx.radians(JALI_LEAN);
     const cl = mathx.cosf(lean);
     const sl = mathx.sinf(lean);
-    // Every point on the panel is placed through this, so the lean is one number and not a per-shape guess.
     const at = struct {
         fn f(x: f32, y: f32, z: f32, c: f32, s: f32) rl.Vector3 {
             return v3(x, y * c, z + y * s);
@@ -798,7 +721,6 @@ pub fn jaliScreenMesh(shader: rl.Shader) rl.Model {
         );
     }
 
-    // Bars on the two diagonals plus the two axes, which is what makes an eight-point star repeat.
     const COLS: i32 = 7;
     const ROWS: i32 = 7;
     const cw = JALI_W / @as(f32, COLS);
@@ -814,7 +736,6 @@ pub fn jaliScreenMesh(shader: rl.Shader) rl.Model {
             const gilded = @mod(r + c, 3) == 0 and rng.float() < 0.62;
             b.setMat(if (gilded) .gilt else .stone);
             const col = if (gilded) goldTone(&rng) else ashlarTone(&rng);
-            // The star's own two squares at cell scale; the voids between them are the piercing.
             for ([_]f32{ 0, 45.0 }) |deg| {
                 const a = mathx.radians(deg + rng.signed() * 2.0);
                 const ca = mathx.cosf(a);
@@ -837,7 +758,6 @@ pub fn jaliScreenMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// THE COLUMN. Slender, standing, muqarnas capital, gilt necking — the mid-layer piece sown in numbers so the region reads as a hall that lost its roof.
 
 pub const COL_H: f32 = 4.35;
 pub const COL_R: f32 = 0.40;
@@ -847,10 +767,8 @@ pub fn giltColumnMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x60_1D_A6);
     b.setMat(.stone);
-    // Two square plinths, the upper turned a few degrees off the lower.
     b.addBox(v3(0, 0.14, 0), v3(0.72, 0, 0.03), v3(0, 0.14, 0), v3(0.03, 0, 0.72), ASHLAR_DK);
     b.addBox(v3(0, 0.38, 0), v3(0.58, 0, 0.09), v3(0, 0.11, 0), v3(0.09, 0, 0.56), ASHLAR);
-    // Sixteen flutes: `addCylinder` alone leaves a pipe (AGENTS.md).
     const FL: i32 = 16;
     var f: i32 = 0;
     while (f < FL) : (f += 1) {
@@ -868,7 +786,6 @@ pub fn giltColumnMesh(shader: rl.Shader) rl.Model {
     b.addCylinder(v3(0, 0.46, 0), v3(0, COL_H - 0.52, 0), COL_R * 0.90, COL_R * 0.78, 12, ASHLAR_DK);
     giltRingInto(&b, &rng, 0, 0.62, 0, COL_R * 1.06, 0.11, 12);
     giltRingInto(&b, &rng, 0, COL_H - 0.66, 0, COL_R * 0.98, 0.14, 12);
-    // A muqarnas block on each of four faces, so it grows out to a square abacus.
     for ([_][2]f32{ .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 } }) |s| {
         muqarnasInto(
             &b,
@@ -887,7 +804,6 @@ pub fn giltColumnMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// THE STAR BASIN. An eight-point fountain basin, bone dry, gilt-lined, filled to the brim with ash. Knee-high ground furniture.
 
 pub const BASIN_R: f32 = 1.70;
 pub const BASIN_TOP: f32 = 0.98;
@@ -896,10 +812,8 @@ pub fn giltBasinMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x60_1D_A7);
     b.setMat(.stone);
-    // The plan is the khatim, twice: a wide low apron and the basin standing on it.
     starInto(&b, &rng, v3(0, 0.09, 0), BASIN_R, 0.18, ASHLAR_DK);
     starInto(&b, &rng, v3(0, 0.26, 0), BASIN_R * 0.86, 0.18, ASHLAR);
-    // **AND IT IS A BOWL, WHICH MEANS IT HAS A WALL.** It shipped once as two flat slabs with gold plates lying on them, which photographed as ingots on a doorstep.
     var w: i32 = 0;
     while (w < 16) : (w += 1) {
         const a = std.math.tau * (@as(f32, @floatFromInt(w)) + 0.5) / 16.0;
@@ -914,7 +828,6 @@ pub fn giltBasinMesh(shader: rl.Shader) rl.Model {
             v3(mathx.cosf(a) * 0.13, 0, mathx.sinf(a) * 0.13),
             ashlarTone(&rng),
         );
-        // …and the gilt coping ON that wall, so the gold sits where a hand would rest.
         if (rng.float() < 0.32) continue;
         b.setMat(.gilt);
         b.addBox(
@@ -936,14 +849,12 @@ pub fn giltBasinMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-// THE FALLEN FINIAL. Ground clutter: the crescent off the top of something, lying in its own rubble. **A REGION NEEDS THREE LAYERS** (AGENTS.md) and this is the ground-hugger.
 
 pub const FINIAL_TOP: f32 = 0.95;
 
 pub fn giltFinialMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x60_1D_A8);
-    // The rubble it landed in, first — the finial sits ON this, not beside it.
     b.setMat(.stone);
     b.addBlob(v3(0, 0.13, 0), v3(0.82, 0.13, 0.74), 6, 10, ASHLAR_DK);
     var i: i32 = 0;
@@ -961,12 +872,9 @@ pub fn giltFinialMesh(shader: rl.Shader) rl.Model {
     b.setMat(.gilt);
     b.addCapsule(v3(-0.62, 0.20, 0.14), v3(0.18, 0.30, -0.08), 0.055, 0.048, 7, GOLD_DK);
     b.addCapsule(v3(0.18, 0.30, -0.08), v3(0.44, 0.42, -0.02), 0.048, 0.042, 7, GOLD);
-    // Two arcs of small blocks, the inner set back, so it is a crescent and not a doughnut. **IT HAS TO BE A
-    // RING WITH A BITE OUT OF IT**, which means a real circle in a real plane: driven off one angle into both x and z it came out a flattened ellipse seen edge-on.
     const CR: f32 = 0.34;
     const NC: i32 = 11;
     const hub = v3(0.46, 0.48, -0.02);
-    // The plane the crescent lies in — tipped off vertical, because it fell.
     const cu = mathx.normV(v3(0.86, 0.18, 0.48));
     const cw = mathx.normV(v3(-0.24, 0.94, 0.10));
     var k: i32 = 0;
@@ -976,7 +884,6 @@ pub fn giltFinialMesh(shader: rl.Shader) rl.Model {
         const a = mathx.radians(-123.0 + 246.0 * t);
         const ca = mathx.cosf(a);
         const sa = mathx.sinf(a);
-        // Tapers to the horns, because a crescent is thick at its back and thin at its points.
         const thick = 0.075 * (0.45 + 0.55 * mathx.cosf(a * 0.5));
         const px = hub.x + cu.x * ca * CR + cw.x * sa * CR;
         const py = hub.y + cu.y * ca * CR + cw.y * sa * CR;
@@ -995,21 +902,16 @@ pub fn giltFinialMesh(shader: rl.Shader) rl.Model {
 }
 
 test "the family's forms are the ARABIC ones, and its three layers are three heights" {
-    // The mesh builders upload through GL, so what is pinned here is the SPEC they are laid out from.
     try std.testing.expect(HORSE_EXTRA > 20.0); // a horseshoe, not a Roman arch
     // MEASURED: the top tier hangs `MUQ_STEP * (MUQ_TIERS - 1)` of the rise past the wall, which is 0.45 of it.
     try std.testing.expect(MUQ_TIERS >= 3);
     try std.testing.expect(MUQ_STEP > 0.08 and MUQ_STEP * @as(f32, @floatFromInt(MUQ_TIERS - 1)) < 0.6);
     try std.testing.expect(JALI_LEAN > 5.0); // propped, not built
     try std.testing.expect(ARCH_TOP > DOME_TOP and MIN_TOP > ARCH_TOP); // three layers, and the tower is the landmark
-    // …and the ground furniture stays under the knee-and-a-half a player steps over.
     try std.testing.expect(FINIAL_TOP < 1.0 and BASIN_TOP < 1.1);
 }
 
 test "the palette reads PALE against ash and the gold is authored DIM for its own shine" {
-    // Screen goes through `gfx.screenOf`, which is the shader's own key and gamma and is pinned to them. The
-    // ashlar has to come up brighter than `propart.DRIFT`, which is what the region is made of. RED channel:
-    // this family is warm and its red is the one that carries.
     const lit = struct {
         fn f(c: rl.Color) f32 {
             return gfx.screenOf(@floatFromInt(c.r));
@@ -1021,6 +923,5 @@ test "the palette reads PALE against ash and the gold is authored DIM for its ow
     try std.testing.expect(ashlar > drift * 1.10);
     // …and the gold's albedo stays under the stone's screen value: `Mat.gilt` adds a 2.4 hotspot and a warm rim, and a bright base under that is a flat lemon.
     try std.testing.expect(lit(GOLD) < ashlar);
-    // Warm by a MARGIN — a grey-yellow gold is a brass doorknob.
     try std.testing.expect(@as(f32, @floatFromInt(GOLD.r)) > @as(f32, @floatFromInt(GOLD.b)) * 3.0 and GOLD.g > GOLD.b);
 }

@@ -17,28 +17,21 @@ const PITCH_MIN = -0.38;
 const PITCH_MAX = 1.15; // ~  66 deg (looking down)
 pub const SHOULDER = 0.55;
 pub const TARGET_RAISE = 0.15;
-/// Vertical field of view, degrees. The only place the lens is described, so a framing solved against it cannot go stale on a different number.
 pub const FOVY: f32 = 55.0;
 
-/// **HOW FAR ABOVE THE HORIZON THE RESTING FRAME REACHES**, in radians: half the lens, less the pitch the rig
-/// sits at. Anything higher than this is off the top of the screen unless the player is holding the stick up.
 /// **THE SKY IS SMALLER THAN IT LOOKS** — 0.200 rad, 11.5 deg — and anything meant to be SEEN in it without
-/// being looked for has to be solved against this number (`weather.SKY_SHARE`), not placed by eye.
 pub fn skyTop() f32 {
     return std.math.degreesToRadians(FOVY * 0.5) - DEFAULT_PITCH;
 }
 const GROUND_CLEAR = 0.7;
 /// …and how much boom one probe of that search gives up. Named beside the clearance it is searching for: the two are only ever chosen against each other, and a bare 0.25 in the loop reads as arbitrary.
 const GROUND_PROBE = 0.25;
-/// How far the ground under the eye must stand PROUD of the ground under the hero before it counts as a hill worth paying boom for — just under one terrain riser (`wf.HEIGHT_STEP`), so quantisation noise never bills a step of zoom.
 const GROUND_RISE = 0.2;
 
 const AIM_DIST = 0.7;
 const AIM_SHOULDER = 0.30;
 const AIM_RAISE = 0.42;
 
-/// How much of a JUMP the lens takes. A climb and a fall off a deck take all of it (`game.liftShare`) — those
-/// are the body leaving the ground for good, not a hop the camera can ride out.
 pub const LIFT_SHARE: f32 = 0.55;
 const LIFT_RATE: f32 = 10.0;
 
@@ -148,7 +141,6 @@ pub const CamRig = struct {
         return .{ .origin = c.cam.position, .dir = mathx.normV(mathx.subV(c.cam.target, c.cam.position)) };
     }
 
-    /// THE BOOM GIVES WAY TO TERRAIN, NEVER TO ITS OWN PITCH — an up-tilt puts the eye low ON PURPOSE (`game.lockPitch`), and shortening to buy that altitude back read as a hard zoom onto every ogre. Only ground PROUD of the hero's own level is paid for in boom.
     pub fn followClear(c: *CamRig, shoulder: rl.Vector3, ctx: anytype, comptime groundAt: fn (@TypeOf(ctx), f32, f32) f32) void {
         const target = c.targetFor(shoulder);
         const back = c.backDir();

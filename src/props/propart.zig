@@ -15,7 +15,6 @@ pub const MORTAR = rgba(36, 33, 29, 255);
 pub const MARBLE = rgba(54, 54, 52, 255);
 pub const MARBLE_LT = rgba(70, 70, 68, 255);
 pub const MARBLE_DK = rgba(34, 34, 34, 255);
-// Living rock — and the three tones separate on HUE, not value alone: the noon sun flattens any value pair on a face this big (AGENTS.md), so as three neutral greys every cliff came back one slab of pale concrete. Warm base, COOL shadow seams, buff caught-light.
 pub const CLIFF_ROCK = rgba(46, 42, 36, 255);
 pub const CLIFF_DK = rgba(27, 27, 29, 255);
 pub const CLIFF_LT = rgba(56, 51, 42, 255);
@@ -59,7 +58,6 @@ pub const STEM = rgba(44, 54, 28, 255);
 pub const PETAL = rgba(210, 196, 152, 255);
 pub const SEED = rgba(118, 94, 46, 255);
 pub const PETAL_GLOW = rgba(242, 206, 118, 200);
-// The leaf family spans a real HUE range, not one olive at five values: the undersides go COOL blue-green and the crowns warm lime, which is the split daylight cannot take away.
 pub const LEAF_DK = rgba(19, 32, 24, 255);
 pub const LEAF = rgba(35, 46, 25, 255);
 pub const LEAF_LT = rgba(55, 58, 25, 255);
@@ -91,12 +89,10 @@ pub const BONE = rgba(108, 104, 92, 255);
 pub const BONE_OLD = rgba(44, 45, 41, 255);
 pub const BONE_LT = rgba(58, 59, 53, 255);
 pub const BONE_DK = rgba(28, 29, 27, 255);
-/// The snap face, and the ONE warm tone on a bone — small enough an area to carry it.
 pub const MARROW = rgba(70, 63, 50, 255);
 // **CHARCOAL IS THE DARKEST ALBEDO IN THE WORLD** and has to be: a burnt spar is a tall smooth mass, and anything above the oldest bark comes back off the hot key as grey. 18 lands at 98/255 on screen.
 pub const CHAR = rgba(18, 16, 15, 255);
 pub const CHAR_LT = rgba(30, 27, 24, 255);
-/// A live coal in a crust. Its ALPHA is the emissive channel, not its opacity.
 pub const EMBER_LIVE = rgba(198, 92, 26, 60);
 pub const CINDER_GREY = rgba(46, 42, 39, 255);
 // **A DRIFT IS NOT THE CAMPFIRE'S ASH.** `ASH`/`ASH_LT` are a handful in a hearth; a two-metre dune is a BIG SMOOTH MASS and at 96 it came back at 214/255 — a snowbank. Same material solved for the size it is drawn at.
@@ -105,10 +101,8 @@ pub const DRIFT_LT = rgba(70, 66, 62, 255);
 pub const DRIFT_DK = rgba(37, 34, 32, 255);
 pub const PUNK = rgba(66, 54, 36, 255);
 pub const PUNK_DK = rgba(42, 34, 23, 255);
-// The Mycelian. Caps read against a wood by being COOL and slightly violet where bark is warm brown; the gills stay pale because they are always in the cap's own shade and never take the sun.
 pub const CAP_FLESH = rgba(44, 35, 40, 255);
 pub const CAP_FLESH_DK = rgba(29, 23, 28, 255);
-/// **A FUNGUS STANDS IN NOTHING.** A horizontal disc of any colour that is not the ground's takes the key square-on and reads as a PLATE THE PROP IS STANDING ON, so the pads at every stipe's foot are gone. Moss on STONE is still moss — that is the rock palette.
 pub const CAP_RIM = rgba(58, 46, 50, 255);
 pub const GILL = rgba(104, 96, 88, 255);
 pub const STIPE = rgba(72, 66, 58, 255);
@@ -128,9 +122,6 @@ pub const WATER_DEEP = rgba(13, 19, 21, 255);
 pub const WATER_MID = rgba(18, 25, 26, 255);
 pub const WATER_SHALLOW = rgba(30, 35, 31, 255);
 pub const WATER_MUD = rgba(40, 35, 25, 255);
-// **THE OTHER THREE LIQUIDS' SHEET TONES** (`props.LIQUID_TONES`, shallow -> deep). Water is dark because it is
-// mostly a reflection of a slate sky; these three are OPAQUE, so they are read at their own albedo and sit
-// brighter. Lava runs the other way round — the rim is the cool crust and the middle is the hot core.
 pub const OIL_SHALLOW = rgba(20, 17, 14, 255);
 pub const OIL_MID = rgba(11, 10, 9, 255);
 pub const OIL_DEEP = rgba(5, 5, 6, 255);
@@ -138,7 +129,6 @@ pub const OIL_DEEP = rgba(5, 5, 6, 255);
 // gamma 1/2.2) the old rim came back 255/205/172 — past the clip on red, and BRIGHTER on green and blue than
 // lava's own crust — over a fungal bloom that reads 121/87/98. Solved back against that bank rather than
 // picked: the rim now lands a shade over it at 145/95/84 and the deep well under it at 87/43/59, so a pool
-// reads as a body sunk into the ground it lies in. Its wet look is the SHEEN's job (`shaders`), not the albedo's.
 pub const FUNGAL_SHALLOW = rgba(43, 17, 13, 255);
 pub const FUNGAL_MID = rgba(26, 8, 9, 255);
 pub const FUNGAL_DEEP = rgba(14, 4, 6, 255);
@@ -150,47 +140,26 @@ pub const LAVA_DEEP = rgba(255, 232, 148, 255);
 /// (`collision.Solid.y0`) — the stone over a doorway, open to a body on the ground and solid to one on a deck.
 pub const Part = struct { ax: f32 = 0, az: f32 = 0, bx: f32 = 0, bz: f32 = 0, r: f32, h: f32, y0: f32 = 0 };
 
-/// **WHAT A BODY CAN STAND ON ABOVE THE GROUND** (`props.Info.decks`, `env.deckAt`) — a disc at local height
-/// `y`, in the prop's own frame. `hole` cuts one back out of another at the same `y`: a trapdoor a ladder comes
-/// up through, and the ONE way a deck is not simply convex.
 pub const Deck = struct { x: f32 = 0, z: f32 = 0, r: f32, y: f32, hole: bool = false };
 
 /// A volume a prop blocks the VIEW with (`props.Info.occl`). Here beside `Part` rather than in `props.zig` because a family file that builds its own colliders needs to build its own occluders too, and `props.zig` imports the families.
 pub const Blocker = struct { r: f32, y0: f32 = 0, y1: f32, x: f32 = 0, z: f32 = 0 };
 
-/// **THE SHAFT, AT TWICE THE TOWER IT WAS.** Radius and height both doubled; the STONE did not, which is why
-/// `TOWER_SIDES` doubled with the radius — 2*pi*R/sides is 1.055 m either way, so every block, the plinth under
-/// them and the three-side doorway are the size they always were and only the building grew.
 pub const TOWER_R: f32 = 4.70;
 pub const TOWER_SIDES: i32 = 28;
 pub const TOWER_DOOR: i32 = 3;
-/// **THE COURSE GRID THE WHOLE TOWER IS SET OUT ON**, and it lives here rather than inside the mesh because
-/// three numbers in two files were hand-solved off it and none of them said so: the head of the doorway, the
-/// top of the wall capsules and the roof storey. `propbuild.watchtowerInto` lays the stone on these.
 pub const TOWER_PLINTH: f32 = 0.44;
 pub const TOWER_COURSE_H: f32 = 0.76;
 pub const TOWER_COURSES: i32 = 30;
 fn courseTop(n: i32) f32 {
     return TOWER_PLINTH + @as(f32, @floatFromInt(n)) * TOWER_COURSE_H;
 }
-/// The top of the last course — what the roof boards go between and the parapet stands over.
 pub const TOWER_HEAD: f32 = courseTop(TOWER_COURSES);
-/// Courses the opening skips. Over them is the lintel, and `towerRing` starts the three door capsules there.
 pub const TOWER_DOOR_COURSES: i32 = 4;
-/// Where the stone over the doorway begins — the first course the opening does not skip
-/// (`propbuild.watchtowerMesh`). Under it the door is a hole; at deck height it is wall like every other side.
 pub const TOWER_DOOR_HEAD: f32 = courseTop(TOWER_DOOR_COURSES);
-/// Radius of one wall capsule, and it is what eats the shaft: `props.TOWER_CLEAR` is `TOWER_R` less this and
-/// less the body's own, so the number the hatches are placed against reads it rather than repeating it.
 pub const TOWER_WALL_R: f32 = 0.62;
-/// **THE BODY'S OWN HALF, AND IT IS A NUMBER FROM ANOTHER MODULE** — `foe.HERO_R`, which nothing under
-/// `props/` may import. Spelled at the BOTTOM of the three so `propbuild` can state the shaft's real clearance
-/// at comptime and `props.TOWER_CLEAR` can read it rather than keep a second copy; `game.zig` asserts the pair.
 pub const HERO_R_HERE: f32 = 0.36;
-/// How near the shaft's axis a body can actually stand: its radius less the wall capsules and its own.
 pub const TOWER_CLEAR: f32 = TOWER_R - TOWER_WALL_R - HERO_R_HERE;
-/// **HOW FAR UP THE WALL HOLDS A BODY IN**, and it stops SHORT of the roof deck on purpose: the merlons up
-/// there are scenery and the edge is real. `propbuild` owns the deck heights and asserts the pair.
 pub const TOWER_WALL_H: f32 = 22.40;
 pub const towerRing = blk: {
     var out: [TOWER_SIDES]Part = undefined;
@@ -211,13 +180,11 @@ pub fn towerDoorway(i: i32) bool {
 }
 
 comptime {
-    // The head of the doorway is a course line, and it has to be one the shaft actually has.
     std.debug.assert(TOWER_DOOR_COURSES < TOWER_COURSES);
     std.debug.assert(TOWER_DOOR_HEAD < TOWER_HEAD);
 }
 
 
-// PACKED STONE HAS A CORE (owner's law).
 
 pub const Course = struct {
     thick: f32,
@@ -375,26 +342,16 @@ pub fn crackInto(bb: *Builder, a: rl.Vector3, dir: rl.Vector3, side: rl.Vector3,
     );
 }
 
-/// **THE ONE LOOM.** The caravaneer wears this and his stall is hung with it (`npc`, `propmarket`) — both files
-/// held their own copy of the same four literals, one of them under a comment claiming they came from here.
-/// The warm weave is the body of the cloth and the COLD one is the stripe on it; the madder is the trim.
 pub const WEAVE = rgba(88, 80, 62, 255);
 pub const WEAVE_DK = rgba(28, 32, 44, 255);
 pub const MADDER = rgba(66, 34, 28, 255);
 pub const MADDER_LT = rgba(86, 48, 38, 255);
 
-/// **WHAT A HEARTH'S FLAMES ARE, ONCE.** Three tongues, tallest first. The bonfire had them as literals and the
-/// campfire re-derived the same three off its own scale — a retune of the fire meant editing two files, and one
-/// of them would have been missed.
 pub const HEARTH_FLAMES = [3]f32{ 2.20, 1.45, 1.05 };
 
-// **THE CAMP'S OWN FURNITURE LIVES BESIDE ITS FLAME.** `flameInto` is here for the same reason: every fire in the
-// game — the bonfire, the campfire, whatever is lit next — wants the same bedroll and the same smoke column, and
-// two copies of either is two things to retune.
 
 /// Drab, because a bedroll is not a banner. Solved (`albedo = screen^2.2 / 1.72`): mat 157 -> 52, wool 141 -> 40,
 /// sack 131 -> 34. **THE ONE WARM STRIPE IS THE WHOLE ACCENT** — authored in the hero's crimson (`CLOTH`, 76,20,12)
-/// the thing was a salmon-pink caterpillar beside the fire, and the fire is what the eye is supposed to find.
 pub const MAT = rgba(52, 46, 32, 255);
 pub const MAT_DK = rgba(34, 30, 21, 255);
 pub const WOOL = rgba(40, 38, 34, 255);
@@ -403,13 +360,6 @@ pub const WOOL_STRIPE = rgba(86, 44, 34, 255);
 pub const KIT = rgba(34, 28, 21, 255);
 pub const KIT_LT = rgba(48, 40, 30, 255);
 
-/// **FLAT WITH A STEP ON IT, NOT A PLANK.** Two failed passes are in these numbers. Nine spheres in a row read as
-/// a caterpillar; a single 6 cm slab read as a BOARD. What says "bed" is the SECTION: a groundsheet on the earth,
-/// a mattress standing a clear step proud of it, and a fold-back roll across the head of that — three heights,
-/// visible from any bearing, and the only round things are the roll, the pillow and the pack.
-///
-/// **`yaw` LIES ALONG THE SLEEPER, HEAD AT +u, AND IT IS TANGENTIAL TO THE FIRE AT EVERY CALL SITE.** Pointed at
-/// the hearth the head end lay in the flames. You sleep BESIDE a fire.
 pub fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) void {
     const ux = mathx.cosf(yaw);
     const uz = mathx.sinf(yaw);
@@ -427,7 +377,6 @@ pub fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) voi
         v3(vx * WIDE, rng.signed() * 0.008, vz * WIDE),
         MAT_DK,
     );
-    // …with NEITHER LONG EDGE STRAIGHT. A hemmed rectangle on grass is a doormat.
     for ([_]f32{ -1.0, 1.0 }) |side| {
         var i: i32 = 0;
         while (i < 5) : (i += 1) {
@@ -444,8 +393,6 @@ pub fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) voi
         }
     }
 
-    // **THE MATTRESS — THE STEP, AND THE WHOLE READ.** It sits 9 cm proud of the sheet and stops short of the
-    // head, so there is a lip you can see over from any angle.
     b.addBox(
         v3(cx - ux * HALF * 0.16, 0.140, cz - uz * HALF * 0.16),
         v3(ux * HALF * 0.78, rng.signed() * 0.012, uz * HALF * 0.78),
@@ -453,7 +400,6 @@ pub fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) voi
         v3(vx * WIDE * 0.90, rng.signed() * 0.010, vz * WIDE * 0.90),
         WOOL,
     );
-    // Its own edges lumpy too, and lower down the sides, so the blanket drapes rather than sits.
     for ([_]f32{ -1.0, 1.0 }) |side| {
         var i: i32 = 0;
         while (i < 4) : (i += 1) {
@@ -468,7 +414,6 @@ pub fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) voi
             );
         }
     }
-    // TWO STRIPES, and they are the only warm thing on it. Across the weave, never along.
     for ([_]f32{ -0.56, -0.18 }) |t| {
         b.addBox(
             v3(cx + ux * HALF * t, 0.148, cz + uz * HALF * t),
@@ -478,8 +423,6 @@ pub fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) voi
             WOOL_STRIPE,
         );
     }
-    // **THE FOLD-BACK** across the head of the mattress — the turned-down edge you get in under, and the second
-    // step. A bed with a flat top is a bench.
     b.addCylinder(
         v3(cx + ux * HALF * 0.60 + vx * WIDE * 0.86, 0.188, cz + uz * HALF * 0.60 + vz * WIDE * 0.86),
         v3(cx + ux * HALF * 0.64 - vx * WIDE * 0.86, 0.182, cz + uz * HALF * 0.64 - vz * WIDE * 0.86),
@@ -489,11 +432,9 @@ pub fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) voi
         WOOL_LT,
     );
 
-    // THE PILLOW: bunched cloth, not a cushion — two lumps, off centre.
     b.addBlob(v3(cx + ux * HALF * 0.80 - vx * 0.05, 0.150, cz + uz * HALF * 0.80 - vz * 0.05), v3(0.155, 0.070, 0.140), 4, 9, WOOL_LT);
     b.addBlob(v3(cx + ux * HALF * 0.86 + vx * 0.08, 0.170, cz + uz * HALF * 0.86 + vz * 0.08), v3(0.105, 0.055, 0.095), 3, 8, WOOL);
 
-    // THE ROLL at the foot, tied: the spare blanket, and the only cylinder that reads as rolled.
     const rfx = cx - ux * (HALF + 0.06);
     const rfz = cz - uz * (HALF + 0.06);
     b.addCylinder(
@@ -515,7 +456,6 @@ pub fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) voi
         KIT,
     );
 
-    // THE PACK, OFF the mat at the head: what makes it a camp and not a bed. Lumpy, roped, leaning.
     b.setMat(.leather);
     const hx = cx + ux * (HALF + 0.24) + vx * 0.30;
     const hz = cz + uz * (HALF + 0.24) + vz * 0.30;
@@ -529,7 +469,6 @@ pub fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) voi
         6,
         MAT_DK,
     );
-    // …and the BOOTS off, on their sides, because whoever this is went to sleep.
     for ([_]f32{ -1.0, 1.0 }) |side| {
         const bx = cx + ux * (HALF + 0.10) - vx * (0.44 + side * 0.11);
         const bz = cz + uz * (HALF + 0.10) - vz * (0.44 + side * 0.11);
@@ -546,9 +485,6 @@ pub fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) voi
     b.setMat(.plain);
 }
 
-/// **THE COLUMN, AND EVERY FIRE THAT IS LIT GETS THE SAME ONE.** Smoke on `Mat.smoke`'s own scroll (`gfx.smokeAnim`)
-/// with embers riding under it, so the whole thing is one mesh and costs one draw. `src` is the height it leaves
-/// from and `s` scales the puffs — the bonfire's 1.0 against a hearth that sits lower and burns smaller.
 pub fn smokeInto(b: *Builder, rng: *mathx.Rng, src: f32, s: f32) void {
     const PUFFS = 14;
     b.setMat(.smoke);
@@ -626,7 +562,6 @@ pub fn weathered(foot: rl.Color, tip: rl.Color, t: f32) rl.Color {
     return mathx.lerpColor(foot, tip, mathx.smoothstep(0.0, 1.0, t));
 }
 
-/// …and the ONE seam a stack is allowed, so strata still read: a single darker bed every `every` courses. Anything more often is the barber's pole again wearing a geologist's hat.
 pub fn seam(base: rl.Color, dark: rl.Color, i: i32, every: i32) rl.Color {
     return if (@mod(i, every) == every - 1) dark else base;
 }

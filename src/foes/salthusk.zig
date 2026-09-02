@@ -23,20 +23,7 @@ const lerpF = mathx.lerpF;
 const approach = mathx.approach;
 const setLocal = heromod.setHumanoid;
 
-// THE SALT HUSK (owner's creature, owner's brief) — a body the dried lake took all the water out of, walking
-// under a crust of salt. **THE DEATH IS THE ATTACK.** It is the weakest thing on the field and the only one
-// whose kill is the dangerous part.
-//
-// **AND IT IS A FUSE, NOT A TRAP.** The crust cracks, it swells, and it holds for its own roll of
-// `BURST_FUSE` — and only then does it go. That window is over the tell floor and long enough to RUN out of
-// (walking is not enough; the test measures both), so the burst is something you were shown and chose to
-// stand in. A trap that kills you for a killing blow you could not have known about is the one thing this
-// must not be.
-//
-// **THEY CHAIN.** A burst that finishes another husk lights its fuse too, so a line of them is a line of
-// fuses — the reason to kill them one at a time, from range, or in the right order.
 
-/// **A MAN-SHAPE STANDS OVER THE HERO** (owner: all humanoids bigger than us) — asserted below.
 pub const H: f32 = 2.00;
 const HIP_HALF = heromod.HIP_HALF * 0.88;
 const SHOULDER_HALF = heromod.SHOULDER_HALF * 0.92;
@@ -67,8 +54,6 @@ const solePatches = [_]heromod.SolePatch{
     .{ .bone = ANKR, .heel = 0.042 * H, .toe = 0.168 * H, .halfW = 0.054 * H, .drop = 0.034 * H },
 };
 
-// The crust is the brightest thing it has and the body under it is the darkest — the contrast IS the creature,
-// and it is what makes the swell readable at the moment it matters.
 const CRUST = rgba(196, 194, 186, 255);
 const CRUST_LT = rgba(224, 223, 216, 255);
 const RIME = rgba(238, 240, 236, 255);
@@ -90,12 +75,9 @@ const HURT_R: f32 = 0.60;
 const CENTER_F: f32 = 0.56;
 const TOP_F: f32 = 1.00;
 
-/// **THE WEAKEST BODY ON THE FIELD, ON PURPOSE.** Dying easily is the whole trap: it invites the greedy
-/// finishing blow that the burst is priced against.
 const HP_MAX: f32 = 70.0;
 const POISE_MAX: f32 = 10.0;
 const STANCE_MAX: f32 = 20.0;
-/// Salt-cured and bone dry: nothing left to rot and nothing left to freeze. Lightning runs straight through it.
 const RESISTS = combat.resists(.{ .chaos = 60, .cold = 30, .fire = 15, .lightning = -35 });
 pub var SOULS: u32 = 95;
 
@@ -105,20 +87,12 @@ const CLOUT_WIND: f32 = 0.42;
 const CLOUT_STRIKE: f32 = 0.18;
 const CLOUT_RECOVER: f32 = 0.66;
 const CLOUT_CD: f32 = 2.2;
-/// Feeble, and it has to be: everything this creature is worth is in the burst. **NO STANCE** — `Hit.heavy`
-/// is `stance > 0`, and the weakest blow on the field reading as a heavy one is the beat lying about it.
 pub var CLOUT_HIT = combat.Hit{ .dmg = 9, .poise = 8 };
 
-// **THE BURST.** The one blow that matters, and the only one in the game a corpse throws.
 pub const SHATTER_R: f32 = 3.20;
-/// Seconds between the killing blow and the burst, before the jitter below.
 pub const BURST_FUSE: f32 = 0.85;
-/// **EVERY HUSK'S FUSE IS ITS OWN LENGTH.** Without this a cluster lit by one burst goes off on ONE FRAME —
-/// an instant wipe with a single tell, rather than the run of separate cracks a player can read and walk out
-/// of. Rolled at ignition off the body's own stream, so it is a property of the husk and not of the frame.
 pub const FUSE_LO: f32 = 0.85;
 pub const FUSE_HI: f32 = 1.30;
-/// Salt in an open cut. It is `bleed` and not an element, so no ward answers it and only a longer bar does.
 pub const SHATTER_BLEED: f32 = 34.0;
 pub var SHATTER_HIT = combat.Hit{
     .dmg = 26,
@@ -132,7 +106,6 @@ comptime {
     std.debug.assert(CLOUT_WIND >= foe.TELL_MIN);
     // The SHORTEST fuse any husk can roll is what the tell floor has to be measured against.
     std.debug.assert(BURST_FUSE * FUSE_LO >= foe.TELL_MIN * 2.0);
-    // The burst has to out-reach its own body by a real margin, or "step out" is not an instruction.
     std.debug.assert(SHATTER_R > BODY_R * 4.0);
 }
 
@@ -155,15 +128,12 @@ comptime {
         @as(f32, @floatFromInt(SHARD_PARTS + foe.hitParts(HIT_GRIT_HEAVY) + foe.WOUND_PARTS)));
 }
 
-/// `bursting` is the fuse: dead for every purpose the game asks about, still standing, and about to go.
 const State = enum { idle, walk, clout, bursting, stunlight, stunheavy, dead };
 
 const Choice = enum { rest, hold, close, clout };
 
-/// **A BAND IS ASKED THE WAY THE STROKE BILLS IT** (`foe.hurtReach`, the ogre's `slamReach` law).
 /// Measured edge to edge against a centre-to-centre bill, the band ran 0.21 m past the reach at scale 1
 /// and 0.87 m at `wf.FOE_SCALE_LO` — and a body stops closing the frame its band takes it, so that
-/// sliver was where the clout was always thrown and never billed.
 fn classify(sensed: f32, homeGap: f32, scale: f32, cloutReady: bool, rooted: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     if (sensed <= foe.hurtReach(CLOUT_R, scale) and cloutReady) return .clout;
@@ -190,7 +160,6 @@ pub const Husk = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     leash: foe.Leash = .{},
-    /// **THE FIELD A UNIT OWES ITS ORDERS** (`foe.Post`), stamped at spawn off the map's `ai=` and `wp=`.
     post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
@@ -213,9 +182,7 @@ pub const Husk = struct {
     latB: f32 = 0,
     speedS: f32 = 0,
 
-    /// One-frame, read by the group after `update`: the crust let go here.
     burstAt: ?rl.Vector3 = null,
-    /// This body's own fuse, rolled at ignition. Zero until it is lit.
     fuse: f32 = 0,
 
     vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
@@ -267,9 +234,6 @@ pub const Husk = struct {
     pub fn alive(self: *const Husk) bool {
         return !self.gone;
     }
-    /// **A LIT FUSE IS ALREADY A CORPSE.** `dying` is what `foe.corporeal` asks, so a husk on its fuse stops
-    /// being a collider and stops being a target the moment the killing blow lands — the burst is not a second
-    /// health bar, and hitting one again may not put the fuse out.
     pub fn dying(self: *const Husk) bool {
         return self.state == .bursting or self.state == .dead;
     }
@@ -373,7 +337,6 @@ pub const Husk = struct {
                 switch (classify(sensed, homeGap, self.scale, self.cloutCd <= 0, self.root.held())) {
                     .rest => {
                         if (sensed <= AGGRO_R) self.faceToward(quarry, dt);
-                        // **ORDERS ARE WHAT IT DOES BEFORE IT HAS SEEN ANYBODY** (`foe.postAmble`), refused inside the ring.
                         self.state = if (foe.postAmble(self, dt, bounds, WALK_SPEED, ACCEL, sensed, AGGRO_R, TURN_RATE, &movedDist, &moveSpeed, &moveYaw)) .walk else .idle;
                     },
                     .clout => {
@@ -409,7 +372,6 @@ pub const Husk = struct {
     }
 
     pub fn tryHit(self: *Husk, blade: foe.Blade) void {
-        // **A LIT FUSE CANNOT BE PUT OUT** — nor hit again for a second set of souls.
         if (self.dying()) return;
         const s = foe.reached(self, blade) orelse return;
         const heavy = foe.wounded(self, s, blade, .{ .light = 1.0, .heavy = 1.7 });
@@ -422,9 +384,6 @@ pub const Husk = struct {
         }
     }
 
-    /// **THE ONE DOOR A HUSK DIES THROUGH**, whatever killed it — a blade, a meter, or another husk's burst.
-    /// `justDied` fires HERE, at the killing blow, not at the burst: souls and the drop are the kill's, and a
-    /// player who walks away during the fuse is still owed them.
     pub fn enterBurst(self: *Husk) void {
         if (self.dying()) return;
         self.heroLatch = false;
@@ -480,8 +439,6 @@ pub const Husk = struct {
         foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, 2.2, self.scale, GRIT_SPRAY);
     }
 
-    /// **THE SHARDS GO OUT FLAT AND THEY GO OUT FAR** — the mote reach is the blow's reach, because the ring
-    /// of salt IS how a player learns where `SHATTER_R` ends.
     fn shards(self: *Husk) void {
         const c = self.centerWorld();
         var i: i32 = 0;
@@ -502,8 +459,6 @@ pub const Husk = struct {
         }
     }
 
-    /// The crust venting through its own cracks. It accelerates over the fuse, so the last third of the window
-    /// looks like the last third of the window.
     fn emitFuse(self: *Husk, dt: f32) void {
         const u = self.fuseAmt();
         var owed = foe.emitDue(&self.fxAccum, dt, FUSE_RATE * (0.25 + 0.75 * u * u));
@@ -543,8 +498,6 @@ pub const Husk = struct {
         const m = self.moving * (1.0 - dk);
         const pel = heromod.pelvisChannels(self.phase, m, self.fwdB, self.latB, A_PROT);
         const clout = self.cloutAmt();
-        // **THE SWELL IS THE TELL.** It rears back, opens out and inflates over the fuse — a silhouette
-        // change, not a colour change, so it reads at range and in any light.
         const fuse = self.fuseAmt();
         const swell = 1.0 + 0.26 * fuse * fuse;
 
@@ -569,9 +522,6 @@ pub const Husk = struct {
         const rest = self.rest;
         const m = self.moving * (1.0 - dk);
         const wonk = (self.seed - 0.5) * 5.0;
-        // **NOT QUITE DEAD.** No breath in a salt-cured body — what it has is a SETTLING LIST, a couple of
-        // degrees on `gutter`'s three incommensurate rates, the trunk arriving before the skull. Bolt still,
-        // it read as a prop; a corpse that stands is a corpse that balances.
         const idleAmt = (1.0 - mathx.clampF(self.moving * 2.0, 0, 1)) * (1.0 - dk);
         const settle = mathx.gutter(self.elapsed * 0.30 + self.seed * 8.1, self.seed * 3.7) * idleAmt;
         const settleLag = mathx.gutter(self.elapsed * 0.30 - 0.7 + self.seed * 8.1, self.seed * 3.7) * idleAmt;
@@ -581,7 +531,6 @@ pub const Husk = struct {
         setLocal(wx, NECK, rest, rx(-8.0 * clout + 6.0 * dk - 4.0 * stun - 18.0 * fuse));
         setLocal(wx, SKULL, rest, mul3(rx(-14.0 * clout + 12.0 * dk - 20.0 * stun - 26.0 * fuse + 0.9 * settle), ry(-0.4 * prot), rz(wonk + 1.5 * settleLag)));
 
-        // Arms out and away as it swells: the body opening is what "about to come apart" looks like.
         const armStun = -40.0 * stun;
         const swing = -10.0 * heromod.armSwing(self.phase) * m * @abs(self.fwdB);
         const haul = -70.0 * mathx.maxF(0, -clout);
@@ -605,7 +554,6 @@ pub const Pan = struct {
     model: Model,
     husks: [CAP_N]Husk = undefined,
     n: usize = 0,
-    /// One-frame count for the beat: how many crusts let go this frame.
     burstsThisFrame: u32 = 0,
 
     pub fn init(shader: rl.Shader) Pan {
@@ -649,9 +597,6 @@ pub const Pan = struct {
         return worst;
     }
 
-    /// **THEY CHAIN.** A burst that finishes a neighbour lights its fuse, and its fuse is its own — so a line
-    /// of husks goes off as a run of separate cracks rather than all at once, which is what makes running
-    /// through them a readable mistake instead of an instant one.
     fn splash(self: *Pan, from: usize, at: rl.Vector3, r: f32) void {
         var j: usize = 0;
         while (j < self.n) : (j += 1) {
@@ -711,8 +656,6 @@ fn buildBones() [N]rl.Mesh {
     return mesh;
 }
 
-/// The crust is grown ON, in lumps, never painted: a salt flat crystallises in plates and the silhouette has
-/// to be lumpy or the creature is a pale man.
 fn crustOn(b: *Builder, rng: *mathx.Rng, c: rl.Vector3, r: rl.Vector3, n: u32) void {
     var i: u32 = 0;
     while (i < n) : (i += 1) {
@@ -856,7 +799,6 @@ test "THE DEATH IS THE ATTACK — and it is a FUSE, so it can be walked out of" 
     var p = Pan{ .model = undefined };
     p.husks[0] = Husk.spawn(mathx.zero3, 0, 1.0, 0.3);
     p.n = 1;
-    // He stands well inside the burst and never moves: he takes it.
     const inside = v3(0, 0, SHATTER_R * 0.5);
     p.husks[0].debugBurst();
     try std.testing.expect(p.husks[0].fusing());
@@ -869,16 +811,9 @@ test "THE DEATH IS THE ATTACK — and it is a FUSE, so it can be walked out of" 
     try std.testing.expectApproxEqAbs(SHATTER_HIT.dmg, took.?.hit.dmg, 1e-4);
     std.debug.print("\n  salt husk: {d:.2} s of fuse, {d:.1} m of burst, {d:.0} dmg + {d:.0} bleed\n", .{ BURST_FUSE, SHATTER_R, SHATTER_HIT.dmg, SHATTER_BLEED });
 
-    // **THE ESCAPE IS A RUN, NOT A STROLL — AND THAT GAP IS THE PRICE.** Measured off the reach the burst
-    // actually bills at (`foe.hurtReach`: its own radius plus his). From where the killing blow was thrown,
-    // walking does not clear it inside the fuse and running does; both are asserted, because the design is
-    // the distance between those two answers and not either one of them.
     const reach = foe.hurtReach(SHATTER_R, 1.0);
     const from: f32 = 1.5; // melee range — where the blow that killed it came from
     const owed = reach - from;
-    // **BOTH ENDS OF THE JITTER**, and each leg's fuse is FORCED rather than rolled: a pin that holds only
-    // for the length this seed happened to draw is not a pin. A run clears the shortest fuse; a walk fails to
-    // clear even the longest.
     const worst = BURST_FUSE * FUSE_LO;
     const best = BURST_FUSE * FUSE_HI;
     std.debug.print("  burst bills at {d:.2} m; from {d:.1} m that is {d:.2} m — {d:.2} m/s on the short fuse, {d:.2} on the long\n", .{ reach, from, owed, owed / worst, owed / best });
@@ -932,7 +867,6 @@ test "THE KILL IS BILLED AT THE KILLING BLOW, NOT AT THE BURST" {
     var h = Husk.spawn(mathx.zero3, 0, 1.0, 0.3);
     h.debugBurst();
     try std.testing.expect(h.justDied);
-    // …and it is a ONE-FRAME edge, so the fuse does not bill it again every frame it stands there.
     var fired: u32 = 0;
     var t: f32 = 0;
     while (t < BURST_FUSE * FUSE_HI + 0.4) : (t += 1.0 / 60.0) {
@@ -951,7 +885,6 @@ test "A BURST DOES NOT HARVEST THE CLUSTER — a whole neighbour survives it, an
     const away = v3(400, 0, 400);
     var t: f32 = 0;
     while (t < BURST_FUSE * FUSE_HI * 2.0) : (t += 1.0 / 60.0) _ = p.update(1.0 / 60.0, away, 400, .{});
-    // It was hurt, badly, and it is still standing: one kill may not pay out a line of them.
     try std.testing.expect(!p.husks[1].dying());
     try std.testing.expect(p.husks[1].vit.hp < HP_MAX);
     std.debug.print("  a burst leaves a whole neighbour on {d:.0}/{d:.0} hp — hurt, not harvested\n", .{ p.husks[1].vit.hp, HP_MAX });
@@ -963,10 +896,8 @@ test "…BUT THEY DO CHAIN OFF A HURT ONE, and each keeps its OWN fuse so a line
     p.husks[0] = Husk.spawn(mathx.zero3, 0, 1.0, 0.3);
     p.husks[1] = Husk.spawn(v3(0, 0, SHATTER_R * 0.6), 0, 1.0, 0.5);
     p.husks[2] = Husk.spawn(v3(0, 0, SHATTER_R * 1.2), 0, 1.0, 0.7);
-    // Far out of every reach: it must survive the whole run whatever the others do.
     p.husks[3] = Husk.spawn(v3(0, 0, SHATTER_R * 9.0), 0, 1.0, 0.9);
     p.n = 4;
-    // Softened the way a fight softens them — which is what makes a cluster a chain rather than a queue.
     p.husks[1].vit.hp = SHATTER_HIT.dmg * 0.8;
     p.husks[2].vit.hp = SHATTER_HIT.dmg * 0.8;
     p.husks[3].vit.hp = SHATTER_HIT.dmg * 0.8;
@@ -982,7 +913,6 @@ test "…BUT THEY DO CHAIN OFF A HURT ONE, and each keeps its OWN fuse so a line
     try std.testing.expect(p.husks[1].state == .dead);
     try std.testing.expect(p.husks[2].state == .dead);
     try std.testing.expect(!p.husks[3].dying());
-    // **NEVER TWO ON ONE FRAME** — the run is what makes it readable instead of a single instant wipe.
     try std.testing.expectEqual(@as(u32, 0), everSimultaneous);
     std.debug.print("  chain: husks {d:.1} m apart go in a run, never on one frame; one at {d:.1} m stays cold\n", .{ SHATTER_R * 0.6, SHATTER_R * 9.0 });
 }
@@ -991,7 +921,6 @@ test "IT DIES EASILY AND IT HITS FEEBLY — everything it is worth is in the bur
     try std.testing.expect(HP_MAX < 100.0);
     try std.testing.expect(SHATTER_HIT.dmg > CLOUT_HIT.dmg * 2.5);
     std.debug.print("  clout {d:.0} dmg against a burst of {d:.0}\n", .{ CLOUT_HIT.dmg, SHATTER_HIT.dmg });
-    // The bleed is the real bill and no ward answers it — the row carries no element.
     try std.testing.expect(combat.ailRow(.bleed).elem == null);
     try std.testing.expect(SHATTER_HIT.dose.at(.bleed) > 0);
 }
@@ -1014,9 +943,6 @@ test "the pick is positional and the clout lands once per swing" {
     try std.testing.expectEqual(@as(u32, 1), landed);
 }
 
-// **THE BAND IT STOPS CLOSING AT HAS TO BE A BAND IT CAN BILL FROM** (AGENTS.md: a move is judged by THROWING
-// it, not by looking at it). The outer edge is asked of `classify` rather than re-derived here — which unit the
-// band is written in is the thing under test.
 test "THE BLOW LANDS ON THE MAN WHERE HE STANDS — thrown for real, anywhere its own band picks it" {
     const dt: f32 = 1.0 / 120.0;
     var misses: usize = 0;

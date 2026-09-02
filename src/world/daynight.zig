@@ -4,16 +4,8 @@ const mathx = @import("../core/mathx.zig");
 
 const v3 = mathx.v3;
 
-// THE WORLD CLOCK — one number, `hour`, and everything the light does is a function of it.
-//
-// **ONE DIRECTION CASTS, AND IT IS THE SAME ONE THE SHADER KEYS OFF** (AGENTS.md: "Sun + shadows are ONE
-// source"). `keyDir` is the whole of it: the SUN while it is up, the MOON once it is down.
-//
 // **THE SKY DRAWS THE TRUE PATH; THE SHADOWS DO NOT.** A sun at two degrees throws a 300 m shadow, which the
 // 108 m ortho box cannot hold, so `keyDir` FLOORS the altitude (`KEY_ALT_MIN`) while `sunDir`/`moonDir` keep
-// the honest angle for the disc.
-//
-// **THE ANCHOR IS NOT A KEYFRAME.** `SHOT_HOUR` reproduces the sun this game was authored under
 // (`shots.LIT_YAW` = 53). Retuning the path without moving the anchor silently re-lights 362 photographs.
 
 pub const HOURS: f32 = 24.0;
@@ -41,9 +33,6 @@ comptime {
 
 const KEY_ALT_MIN: f32 = 15.0;
 
-/// **NOT SUNRISE AND SUNSET.** The moon is the ANTI-sun, so the handover turns the key most of the way round the
-/// compass: swapped on `isDay` it lands at 20:00 and measured 179.9 degrees in a hundredth of an hour with the
-/// key still at half the anchor's brightness. The swap sits at the DIMMEST hours of each ramp instead. **`isDay` IS NOT TOUCHED** — this is the CASTER's question.
 const KEY_SWAP_DAWN: f32 = 5.0;
 const KEY_SWAP_DUSK: f32 = 20.8;
 
@@ -52,7 +41,6 @@ comptime {
     std.debug.assert(KEY_SWAP_DUSK > SUNSET);
 }
 
-/// HOW LONG THE HANDOVER TAKES, in hours either side of the swap hour. **THE TWO CASTERS ARE FADED TOGETHER RATHER THAN SWITCHED** (owner's call), so the eye gets the light SWEEPING round. Kept inside the dim band, so the sweep never runs during sunset.
 const KEY_SWAP_FADE: f32 = 0.45;
 
 fn moonShare(hour: f32) f32 {
@@ -79,7 +67,6 @@ pub const RATE_MULTS = [_]f32{ 1, 4, 20, 120 };
 pub const Clock = struct {
     hour: f32 = SHOT_HOUR,
     rate: f32 = RATE_DEFAULT,
-    /// THE RATE A HOLD COMES BACK TO, so the two debug rows cannot fight: pick a speed, hold the clock, let it go, and it runs at the speed you picked.
     resumeRate: f32 = RATE_DEFAULT,
 
     pub fn tick(self: *Clock, dt: f32) void {
@@ -187,7 +174,6 @@ pub fn keyDir(hour: f32) rl.Vector3 {
     const share = moonShare(hour);
     const az = std.math.atan2(s.x, s.z) + std.math.pi * share * KEY_SWEEP;
     const alt = std.math.asin(mathx.clampF(s.y, -1, 1)) * (1.0 - 2.0 * share);
-    // …AND THE FLOOR, which is what makes a caster under the horizon usable at all: the altitude crosses zero inside every handover, and a key coming from the horizon casts a shadow the depth box cannot hold. Held ON the floor through the crossing, so what moves there is the BEARING alone.
     const minY = mathx.sinf(mathx.radians(KEY_ALT_MIN));
     const y = mathx.maxF(mathx.sinf(alt), minY);
     const c = @sqrt(mathx.maxF(0, 1.0 - y * y));
@@ -237,9 +223,6 @@ pub const Palette = struct {
     }
 };
 
-// **WEATHER CHANGES THE LIGHT, NOT JUST THE FRAME** (owner: affect lighting depending on weather). Cloud does
-// four things a slate rectangle cannot: puts the KEY out so the shadows go with it, leaves the AMBIENT alone
-// (an overcast sky is one enormous soft source), takes the WARMTH out, and closes the DISTANCE. Here and not in
 // `weather.zig` because it is a PALETTE operation. **AND EVERY TERM IS A FACTOR ON THE HOUR'S OWN VALUE, NEVER A CONSTANT** — absolute storm colours would light the world at 3 a.m.
 
 const STORM_KEY: f32 = 0.34;
@@ -273,7 +256,6 @@ pub fn overcast(p: Palette, wet: f32) Palette {
     o.skyLow = toward(p.skyLow, mathx.scaleV(lid, 1.10), k);
     o.skyMid = toward(p.skyMid, lid, k);
     o.skyHigh = toward(p.skyHigh, mathx.scaleV(lid, 0.86), k);
-    // NO DISC AND NO AUREOLE: you cannot see the sun through this.
     o.skyBank = toward(p.skyBank, mathx.scaleV(slate(p.skyBank), 0.20), k);
     o.skyGlow = toward(p.skyGlow, mathx.scaleV(slate(p.skyGlow), 0.14), k);
     o.skyDisc = toward(p.skyDisc, mathx.scaleV(slate(p.skyDisc), 0.10), k);
@@ -283,9 +265,6 @@ pub fn overcast(p: Palette, wet: f32) Palette {
     return o;
 }
 
-// **A SPORE BLOOM BRIGHTENS THE AIR. Every other weather in this game slates it.** It leaves the key alone,
-// pushes PEACH into everything the distance is made of, and shortens it — standing inside a lamp, not under
-// cloud, which is why it reads at noon as well as at dusk. **AND IT THINS WITH ALTITUDE**: `skyLow` takes the full tint, `skyMid` two thirds, `skyHigh` a fifth, or the whole dome reads as a sunset.
 
 /// **A FACTOR ON THE HOUR'S OWN VALUE, NEVER A CONSTANT** (`overcast`'s law): lerping toward an absolute peach DARKENED noon's horizon by 0.140 while lifting its zenith. `peach` is `slate` written warm — take the luminance the hour actually has and re-split it toward the red end.
 fn peach(c: rl.Vector3) rl.Vector3 {
@@ -295,16 +274,11 @@ fn peach(c: rl.Vector3) rl.Vector3 {
 
 /// How much brighter than the hour a full bloom is. Over 1 in every channel-weighted sense, which is the whole claim: a bloom is a source.
 const BLOOM_LIFT: f32 = 1.08;
-/// The haze is lifted harder than the sky — it is the part standing between him and everything.
 const BLOOM_HAZE_LIFT: f32 = 2.10;
 const BLOOM_BANK_LIFT: f32 = 1.35;
-/// How much of the tint each band of the dome takes. Full at the horizon, a fifth at the zenith: spores hang at head height and settle.
 const BLOOM_BANDS = [3]f32{ 1.0, 0.62, 0.20 };
-/// Multiplier on `hazeDensity` at full bloom — the far field goes SHORT, the way pollen closes a valley.
 pub const HAZE_SPORE_D: f32 = 2.30;
-/// The ambient goes with it: a lit fog is a source, and the ground under one is not lit by the sun alone.
 const BLOOM_AMB: f32 = 1.35;
-/// …and the stars go out. You cannot see through it.
 const BLOOM_STARS: f32 = 0.25;
 
 /// **AND IT MAY NOT CLIP.** A channel over 1 is a white hole in the dome, and the bands that blow first are
@@ -343,7 +317,6 @@ pub fn keyAmt(p: Palette) f32 {
 const ANCHOR_KEY_LUMA: f32 = 1.13158; // luma(1.32, 1.10, 0.80)
 
 /// A colour's HUE alone, as a factor on white — its channels at unit luminance. `slate` and `peach` make the
-/// same split the other way about: they impose a hue, this one reads one off.
 fn hueOf(c: rl.Vector3) rl.Vector3 {
     const l = luma(c);
     if (l <= 1e-6) return v3(1, 1, 1);
@@ -352,21 +325,11 @@ fn hueOf(c: rl.Vector3) rl.Vector3 {
 
 /// **HOW MUCH OF THE HOUR'S OWN HUE A BANK OF FOG TAKES.** 0 leaves the mesh its authored grey at every hour,
 /// 1 gives it the full hue the hour's lit haze has. THE one number to move if the banks read too warm at dusk
-/// or too cold at midnight — the brightness beside it is solved and not authored, so this is the whole retune.
 const MIST_HUE: f32 = 0.65;
-/// The ambient the mesh's own grey was authored under (`SHOT_HOUR`'s `ambSky`). The tint never climbs past
-/// white, so every daylight hour is the look that was already there and only the dark ones come down off it.
 const ANCHOR_AMB_LUMA: f32 = luma(v3(0.168, 0.188, 0.244));
 
-/// **A BANK OF FOG IS MADE OF NOTHING BUT THE LIGHT STANDING IN IT** — the one body in the world with no
-/// albedo worth speaking of, which is why it takes the hour's colour outright instead of the hour's colour
-/// laid over a material. A factor on `weather.MIST_COL`: BRIGHTNESS off the sky's own ambient, because a bank
-/// is grey cloud lit from above and not by the key, and HUE off the hour's LIT HAZE, which is the same air a
-/// hundred metres further out — the banks and the distance they stand in front of cannot be two colours.
-/// **A BANK IS NEVER A SOURCE**, so the hue goes through `ceiling` before the dim: splitting white toward a
-/// warm hour puts red over 1 on its own (1.146 at 8.30 am, measured), and a channel over white is a bank
-/// brighter than the daylight grey it was authored as. Scaled as a WHOLE VECTOR for `ceiling`'s own reason —
-/// clamping red at 1 while green rides under it turns the morning's warmth into yellow.
+/// A warm hour puts red over 1 on its own (1.146 at 8.30 am, measured), and clamping red at 1 while green rides
+/// under it turns the morning's warmth into yellow.
 pub fn mistTint(hour: f32, wet: f32) rl.Vector3 {
     const p = overcast(paletteAt(hour), wet);
     const dim = mathx.clampF(luma(p.ambSky) / ANCHOR_AMB_LUMA, 0, 1);
@@ -550,7 +513,6 @@ pub const Until = enum {
     }
 };
 
-/// HOW LONG A REST HAS TO CARRY THE CLOCK to reach `to`, always FORWARD: a fire cannot take you backwards through a night you have already spent. Landing exactly on the hour asked for is a full day round.
 pub fn hoursUntil(from: f32, to: f32) f32 {
     const d = wrapHour(to - from);
     return if (d <= 1e-4) HOURS else d;
@@ -586,8 +548,6 @@ pub fn phaseName(hour: f32) [:0]const u8 {
 pub const ANCHOR_DIR = mathx.normV(v3(-0.60, 0.50, -0.46));
 
 test "A BANK OF FOG IS THE HOUR'S OWN COLOUR, and the night never lights one" {
-    // The TINT is what this owns; the grey it multiplies is `weather.MIST_COL` and stays over there rather
-    // than being copied in to make the print prettier.
     const rows = [_]struct { at: f32, name: []const u8 }{
         .{ .at = 0.0, .name = "midnight" },
         .{ .at = 5.0, .name = "first light" },
@@ -610,23 +570,17 @@ test "A BANK OF FOG IS THE HOUR'S OWN COLOUR, and the night never lights one" {
         });
         if (r.at == 12.0) noon = l;
         if (r.at == 0.0) dark = l;
-        // **NEVER A SOURCE.** A bank is grey cloud: the tint may cool or warm it but may not brighten it past
-        // the daylight grey it was authored as, or the poofs stop being fog and start being lamps.
         try std.testing.expect(tn.x <= 1.001 and tn.y <= 1.001 and tn.z <= 1.001);
         try std.testing.expect(l > 0.0);
     }
-    // Printed, not asserted: how dark a bank goes and how warm it runs are HIS calls, not a contract.
     std.debug.print("  midnight is {d:.2}x noon\n", .{dark / noon});
-    // **A RAMP AND NEVER A STEP** (the rig's law) — and a quarter-hour sample cannot tell the two apart: the
     // banks move 0.129 across the 5 am hour because the PALETTE does, which is a fast ramp and not a seam.
-    // What separates them is that halving the sample halves a ramp's worst step and does nothing to a step's.
     const fine = worstStep(1.0 / 240.0);
     const coarse = worstStep(1.0 / 120.0);
     std.debug.print("  worst step {d:.5} per 15 s against {d:.5} per 30 s — a ramp halves, a seam would not\n", .{ fine, coarse });
     try std.testing.expect(fine < coarse * 0.62);
 }
 
-/// The largest one-sample move in the tint over a whole day, for the continuity check above.
 fn worstStep(dh: f32) f32 {
     var was = mistTint(0, 0);
     var h: f32 = dh;
@@ -747,7 +701,6 @@ test "THE DAY SPEED AND THE HOLD ARE TWO QUESTIONS — neither row reaches into 
     var c = Clock{};
     try std.testing.expectApproxEqAbs(@as(f32, 1), c.speed(), 1e-5);
     try std.testing.expectApproxEqAbs(DAY_MINUTES * 60.0, c.dayLen(), 1e-2);
-    // It walks the published steps and WRAPS, so the row is one button and cannot dead-end at the top.
     for (RATE_MULTS[1..]) |m| {
         c.cycleSpeed();
         try std.testing.expectApproxEqAbs(m, c.speed(), 1e-4);
@@ -811,7 +764,6 @@ test "a rest always carries the clock FORWARD, and asking for the hour you are o
         try std.testing.expect(u.label().len > 0);
         try std.testing.expect(u.hour() >= 0 and u.hour() < HOURS);
     }
-    // MORNING IS A DAY HOUR AND EVENING IS NOT (owner's call): one row puts you out in the clean light and the other after the sun has gone.
     try std.testing.expect(isDay(Until.morning.hour()));
     try std.testing.expect(!isDay(Until.evening.hour()));
     try std.testing.expect(sunDir(Until.evening.hour()).y < 0);
@@ -836,15 +788,12 @@ test "A BLOOM BRIGHTENS THE DISTANCE, and it thins with altitude — every other
     try std.testing.expect(lit.haze.x > lit.haze.y and lit.haze.y > lit.haze.z);
     try std.testing.expect(lit.haze.x > noon.haze.x);
     try std.testing.expect(HAZE_SPORE_D > 1.0);
-    // The KEY is the one thing it does not touch — that is what makes it the opposite of `overcast`.
     try std.testing.expectEqual(noon.key.x, lit.key.x);
     try std.testing.expect(overcast(noon, 1.0).key.x < noon.key.x);
-    // Horizon takes the full tint, zenith a fifth: without the ramp the dome reads as a sunset.
     const dLow = lit.skyLow.x - noon.skyLow.x;
     const dHigh = lit.skyHigh.x - noon.skyHigh.x;
     std.debug.print("  ...dome tint: low +{d:.3}, mid +{d:.3}, high +{d:.3}\n", .{ dLow, lit.skyMid.x - noon.skyMid.x, dHigh });
     try std.testing.expect(dLow > dHigh * 3.0);
-    // …and it LIFTS every band at every hour. The first cut lerped to an absolute peach and darkened noon.
     var hi: f32 = 0;
     for ([_]f32{ 0.0, 3.0, 6.0, 9.0, 12.0, 15.0, 17.5, 20.0, 21.0 }) |h| {
         const q = paletteAt(h);

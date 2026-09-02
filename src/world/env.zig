@@ -24,10 +24,7 @@ comptime {
     std.debug.assert(MAX_HALF >= wf.MAX_DECLARED_HALF);
 }
 const CLIFF_BOUND: f32 = 18.0;
-/// **HOW FAR THE FLOOR REACHES PAST THE PLAYABLE BOUND**, as a SHARE of the map's own half — so the horizon is
-/// ground and not an edge, and a small map looks like a small map. As a flat 220 m it made a 95 m test bench a
-/// 190 m island sitting in a 1000 m floor, with the editor's bound box drawn round the island. The shipped
-/// 280 m map moves 4 m by this (500 -> 504), which is the point: it was already right THERE and nowhere else.
+/// The shipped 280 m map moves 4 m by this (500 -> 504). As a flat 220 m it made a 95 m test bench a 190 m island sitting in a 1000 m floor.
 const GROUND_APRON: f32 = 0.80;
 const GROUND_APRON_MIN: f32 = 60.0;
 
@@ -35,20 +32,14 @@ pub fn groundOut(half: f32) f32 {
     return half + mathx.maxF(GROUND_APRON_MIN, half * GROUND_APRON);
 }
 
-/// The WIDEST floor there can be — what the flat quad is built at once, and the far distance every culler
-/// measures against. The draw scales it down to `groundOut(mapHalf)`.
 const GROUND_HALF: f32 = wf.MAX_DECLARED_HALF * (1.0 + GROUND_APRON);
 
 comptime {
-    // …AND IT HAS TO BE THE WIDEST, which is only true while the SHARE beats the floor at the biggest map
-    // there can be. Drop `MAX_DECLARED_HALF` under `GROUND_APRON_MIN / GROUND_APRON` and `drawGround` scales
-    // the quad UP past what it was built at, which is a floor that ends short of its own edge.
     std.debug.assert(groundOut(wf.MAX_DECLARED_HALF) <= GROUND_HALF);
 }
 
 const MAX_PROPS = 24576;
 const MAX_SOLIDS = 8192;
-/// A ward is an ARENA DOOR (`props.Info.ward`). A map wanting more than this many is not laid out.
 pub const MAX_WARDS = 64;
 /// How far past a fog gate a crossing puts him down — clear of the sheet AND clear of the prompt's own reach. That second half is a relationship with a number in another module, so `game.zig` asserts it.
 pub const WARD_CLEAR: f32 = 1.30;
@@ -57,9 +48,7 @@ const MAX_DECKS = 512;
 const MAX_DECK_REFS = 4 * MAX_DECKS;
 
 comptime {
-    // **FOUR REFS A DECK HOLDS ONLY WHILE A DECK FITS A 2x2 BLOCK OF CELLS.** The watchtower's boards are
-    // 9.4 m across a 16 m grid; author one wider than a cell and the budget stops being a number checked here
-    // and becomes a panic on load. Scale is the map's, so `materialize` still counts the refs it really makes.
+// A deck holds four refs only while it fits a 2x2 block of cells: the watchtower's boards are 9.4 m across a 16 m grid.
     var widest: f32 = 0;
     for (props.INFO) |row| {
         for (row.decks) |d| {
@@ -68,14 +57,8 @@ comptime {
     }
     std.debug.assert(2.0 * widest <= CELL);
 }
-/// **NOT A RENDER BUDGET — THE ARRAY THE WORLD'S FIRES LIVE IN.** `uploadLights` already skips every light the
-/// view rejects and hands the shader the nearest `gfx.MAX_LIGHTS` of what is left, so nothing off screen costs a
-/// draw. This is the cap on how many can EXIST, refused at build time in `Placer.addLight`, and a fire refused
-/// here is placed, drawn and never lit — there is nothing left to cull. Raised from 192 because the shipped map
-/// sat at 192 of 192 with 46 props dark, the forge yard among them: sixteen kinds carry a `LightSpec` and half
-/// are SCATTER kinds (the glowing flora, and every `pickup` glow), so the budget goes on dressing a biome.
-/// **MEASURED before moving it** — the per-frame scan is 0.013 us a light, so this costs 6.7 us a frame (0.04%)
-/// and 20 KB in `Env`; the test beside `lightsCapped` prints both every build.
+/// Raised from 192 because the shipped map sat at 192 of 192 with 46 props dark. MEASURED before moving it: the
+/// per-frame scan is 0.013 us a light, so this costs 6.7 us a frame (0.04%) and 20 KB in `Env`.
 const MAX_LIGHTS = 512;
 const MAX_DRESSED = 64;
 
@@ -113,17 +96,14 @@ const EASE_NORM: f32 = blk: {
     for (0..N) |i| acc += 1.0 / easeAt((@as(f64, @floatFromInt(i)) + 0.5) / N);
     break :blk @floatCast(acc / N);
 };
-/// A thinned occluder NEVER disappears: you must still be able to tell a tree is there.
 const OCCL_FLOOR: f32 = 0.28;
 const OCCL_MIN: f32 = 0.15;
 const OCCL_FULL: f32 = 0.55;
 /// The hero's own screen box, in metres — what "a share of him" is measured against.
 const HERO_HALF_W: f32 = 0.42;
 const HERO_HALF_H: f32 = 0.90;
-/// How far past its own collider a standing mass still blocks the view. **ONLY FOR KINDS WITH NO `occl` LIST**: a fixed skirt cannot describe a canopy, which is why the trees carry their own volumes.
 const OCCL_SKIRT: f32 = 0.9;
 const OCCL_GIRTH: f32 = 0.55;
-/// **HOW TALL GROUND COVER HAS TO STAND BEFORE IT THINS AT ALL, in metres** — HIS WAIST, the rig's SPINE at
 /// 0.640·H on the 1.8 m stature. A tuft up against the lens scores 0.54, over three times `OCCL_MIN`, so
 /// ungated the commonest thing in the world ghosts round his boots. TESTED ON THE INSTANCE (`top * scale`), not the kind — the cover scatter stamps 0.72..1.38.
 const OCCL_TALL: f32 = 1.15;
@@ -157,12 +137,8 @@ const WATER_Y: f32 = 0.055;
 
 var scratchIn: [wf.WATER_CELLS]f32 = undefined;
 var scratchOut: [wf.WATER_CELLS]f32 = undefined;
-/// The UNDILATED packed coast byte, built off the map each upload and handed to `dilateEdges` as its source.
 var scratchPack: [wf.WATER_CELLS]u8 = undefined;
 
-/// **ONE BYTE CARRIES BOTH ORDINALS** — `wf.Edge` in the low three bits, `wf.Liquid` in the next two. The
-/// shader unpacks the same way (`waterCellAt`), and they travel together because they are dilated by one walk
-/// off one paint and a second point-sampled field would be an eighteenth texture unit.
 pub fn packLiquid(edge: u8, kind: u8) u8 {
     const e: u8 = @min(edge, wf.Edge.N - 1) & glsl.EDGE_MASK;
     const k: u8 = @min(kind, wf.Liquid.N - 1) & glsl.LIQUID_MASK;
@@ -170,16 +146,11 @@ pub fn packLiquid(edge: u8, kind: u8) u8 {
 }
 
 comptime {
-    // **THE TWO ORDINALS HAVE TO FIT THE BYTE THEY SHARE.** Grow either enum past its mask and the pack aliases
-    // silently: a ninth `Edge` would read back as `blend`, a fifth `Liquid` as water.
     std.debug.assert(wf.Edge.N <= glsl.EDGE_MASK + 1);
     std.debug.assert(wf.Liquid.N <= glsl.LIQUID_MASK + 1);
     std.debug.assert((glsl.LIQUID_MASK << glsl.LIQUID_SHIFT) | glsl.EDGE_MASK <= 255);
 }
 
-/// **HOW WIDE THE WALK BACK TO DRY LAND IS, PER SHAPE** — and the only part of an edge policy still baked into
-/// the field, because a ramp WIDTH is a smooth scalar and survives being sampled. Where the coast actually
-/// LANDS is `shaders.waterAt`'s, per fragment, off the same `edgeShape`/`edgeWarp` the soil uses.
 fn coastBand(e: wf.Edge) f32 {
     return switch (e) {
         .blend => 3.2,
@@ -207,48 +178,31 @@ pub const Prop = struct {
     fadeTo: f32 = 1,
     gone: bool = false,
     shrink: f32 = 1,
-    /// **HOW FAR UP A STACKING KIND RUNS**, in metres and already snapped to whole sections (`wf.Op.rise`,
-    /// `props.Info.stack`). 0 on everything else, which is what `runOf`/`reachOf` read to fall back to the
-    /// kind's own single mesh.
     rise: f32 = 0,
 };
 
-/// One `props.Deck` planted: the disc in world XZ, its top in world Y, and whether it is the hole rather than
-/// the floor. `y` is a TOP — what a body's feet rest at, not a local offset.
 pub const WorldDeck = struct { x: f32, z: f32, r: f32, y: f32, hole: bool };
 
-/// A ladder as the climb reads it: the foot of the run, the way it faces, and how far up it goes.
-/// **THE FACE IS THE WHOLE CONVENTION** — local +Z is the open side he mounts from and stands off, local -Z is
-/// the wall it leans on and the surface he tops out onto.
 pub const Rung = struct {
     foot: rl.Vector3,
-    /// The world line his BODY stands on — the rung plane pushed out on the ladder's own +Z. Solved here, where
-    /// the prop's frame already is, rather than re-derived by whoever is doing the climbing.
     axis: rl.Vector3,
     yaw: f32,
     run: f32,
     scale: f32,
 };
 
-/// The prop's own height in metres — the stacked run where there is one, the kind's `top` otherwise.
 pub fn runOf(pr: *const Prop, nfo: *const props.Info) f32 {
     if (nfo.stack > 0 and pr.rise > 0) return pr.rise;
     return nfo.top * pr.scale;
 }
 
-/// **THE CULLING SPHERE ABOUT THE PROP'S FOOT.** A ladder's mesh is 2.4 m and its run can be twelve, so every
-/// culler that took `bound * scale` would drop the thing the moment its base left the frustum.
+/// The culling sphere about the prop's foot: a ladder's mesh is 2.4 m and its run can be twelve.
 pub fn reachOf(pr: *const Prop, nfo: *const props.Info) f32 {
     const b = nfo.bound * pr.scale;
-    // The sphere is centred on the FOOT, so a run needs its own height PLUS the girth — at exactly `rise` the
-    // top corner of the last section sits outside it and the culler drops the head of the ladder.
     if (nfo.stack > 0 and pr.rise > 0) return pr.rise + b;
     return b;
 }
 
-/// **THE BALL THE CURSOR IS TESTED AGAINST** — centred halfway up whatever the prop actually stands, and wide
-/// enough to hold it. Off `nfo.top`/`nfo.bound` it was the bottom bay of a twelve-metre ladder, so every click
-/// above the third rung picked the ground behind it.
 pub fn pickSphere(pr: *const Prop, nfo: *const props.Info) struct { c: rl.Vector3, r: f32 } {
     const half = runOf(pr, nfo) * 0.5;
     const sw = leanSwing(pr, half);
@@ -258,9 +212,6 @@ pub fn pickSphere(pr: *const Prop, nfo: *const props.Info) struct { c: rl.Vector
     };
 }
 
-/// Whole sections a run of `rise` metres is drawn as — at least one, so a stacking kind is never invisible,
-/// and never more than `MAX_SECTIONS`: the number comes off an authored file, and one draw call per section
-/// means an unbounded `rise=` is an unbounded loop rather than a big ladder.
 pub const MAX_SECTIONS: u32 = 64;
 pub fn sectionsIn(rise: f32, seg: f32) u32 {
     if (seg <= 1e-3 or !std.math.isFinite(rise)) return 1;
@@ -268,8 +219,6 @@ pub fn sectionsIn(rise: f32, seg: f32) u32 {
     return @intCast(@max(n, 1));
 }
 
-/// **THE RUN THE FILE ASKS FOR, ROUNDED TO WHOLE SECTIONS** — the world may not show a height the panel does
-/// not, so the snap happens once, here, and both the draw and the climb read the result.
 pub fn snapRise(kind: Kind, scale: f32, rise: f32) f32 {
     const nfo = props.info(kind);
     if (nfo.stack <= 0 or rise <= 0) return 0;
@@ -305,19 +254,10 @@ fn inDisc(d: WorldDeck, x: f32, z: f32) bool {
     return dx * dx + dz * dz < d.r * d.r;
 }
 
-/// How far above or below a ladder's run he may be and still count as standing beside it — one riser at the
-/// foot, the same at the lip, so topping out and turning round to go back down is the same reach.
 pub const LADDER_GRAB: f32 = 1.2;
 
-/// Sections `stageOne` gives a stacking kind, so `--shot-props` shows a RUN and its splices rather than one
-/// bay. The object viewer draws the MODEL and so still shows the single section, which is what it is for.
 const STAGE_SECTIONS: f32 = 5;
 
-/// **THE HEAD MAY STAND THIS FAR PROUD OF WHAT IT SERVES** (`game.ladderExit`); short of it, the allowance is
-/// the walk's own `STEP_UP`. Rails over a floor are what you haul on and are how a ladder through a hatch is
-/// built; a head UNDER the lip is a pull-up, and past a riser it is a climb the ladder did not make.
-/// **THE PAIR IS WHAT SIZES `propbuild.LADDER_SEG`** — a section coarser than this band leaves lip heights no
-/// run can reach — so the two live together and a comptime check keeps them that way.
 pub const LADDER_PROUD: f32 = 1.00;
 comptime {
     if (props.info(.ladder).stack >= LADDER_PROUD + STEP_UP) @compileError("env: the ladder's section is coarser " ++
@@ -349,16 +289,12 @@ const Index = struct {
     ylo: [NCELL]f32 = [_]f32{0} ** NCELL,
     yhi: [NCELL]f32 = [_]f32{0} ** NCELL,
 
-    /// Lifted onto the cell's own props, for the reason above.
     fn cellAt(idx: *const Index, c: usize) rl.Vector3 {
         var centre = cellCentre(c);
         centre.y = (idx.ylo[c] + idx.yhi[c]) * 0.5;
         return centre;
     }
 
-    /// **ONE SPHERE, AND EVERY WALK OVER THE CELLS ASKS FOR IT HERE.** `drawIndexed` and `eachInView` had the
-    /// centre lift, the vertical span and the radius spelled out separately, so "what is on screen" was two
-    /// pieces of arithmetic that only happened to agree.
     fn cellSeen(idx: *const Index, c: usize, vw: *const View) bool {
         const vspan = (idx.yhi[c] - idx.ylo[c]) * 0.5;
         return vw.visible(idx.cellAt(c), CELL_CIRCUM + idx.bound[c] + vspan, idx.view[c]);
@@ -368,8 +304,7 @@ const Index = struct {
 pub const View = struct {
     pos: rl.Vector3,
     n: [4]rl.Vector3,
-    /// **THE EDITOR'S "SHOW ME EVERYTHING"**: every per-kind view distance is lifted to at least this many
-    /// metres, so what culls is the frustum and the far clip plane and never a prop's own LOD reach. 0 in play,
+/// Metres. What culls is the frustum and the far clip plane, never a prop's own LOD reach; 0 in play.
     /// where a rubble pile has no business drawing at 300 m.
     floor: f32 = 0,
 
@@ -377,7 +312,6 @@ pub const View = struct {
         const fwd = mathx.normV(mathx.subV(cam.target, cam.position));
         const right = mathx.normV(cross(fwd, cam.up));
         const up = cross(right, fwd);
-        // A couple of degrees of slack: a plane hugging the frustum exactly pops a prop whose authored `bound` is a touch tight.
         const vf = mathx.radians(cam.fovy) * 0.5 + mathx.radians(2.5);
         const hf = std.math.atan(@tan(mathx.radians(cam.fovy) * 0.5) * aspect) + mathx.radians(2.5);
         const cv = mathx.cosf(vf);
@@ -412,11 +346,8 @@ pub const Cull = union(enum) {
     sun: rl.Vector3,
 };
 
-/// **`Env.build` MAY RUN ONCE PER PROCESS** — a second run strands every prototype the first made. File scope
-/// and not a field: `Env` comes off `alloc.create` inside `Game`, where a defaulted field never runs.
 var envBuilt = false;
 
-/// The only way the two upload skips are visible to a test — building a tile needs a GL context.
 var terrainBuilds: usize = 0;
 var waterBuilds: usize = 0;
 var soilBuilds: usize = 0;
@@ -450,28 +381,18 @@ pub const Env = struct {
     scene: ?*gfx.Scene = null,
     props: [MAX_PROPS]Prop = undefined,
     nprops: usize = 0,
-    /// How many props each op placed, by op slot. `MAX_PROPS` fits a `u16` with room, and the add saturates so
-    /// a runaway op reads as "all of them" rather than wrapping to nearly none.
+/// How many props each op placed, by op slot; `MAX_PROPS` fits a `u16` with room and the add saturates.
     opOwned: [wf.MAX_OPS]u16 = [_]u16{0} ** wf.MAX_OPS,
-    /// **NO SILENT CAP** — how many ops hit their work budget on the last `materialize`, so a runaway one is a
-    /// number somebody can see rather than a machine that has quietly stopped responding.
     opsCapped: usize = 0,
-    /// **AND THE LIGHTS HAVE A BUDGET TOO** (`MAX_LIGHTS`), counted for `opsCapped`'s reason: `addLight` used to
-    /// refuse the 193rd fire with a bare `return`, so the torch was still placed, still drawn and simply never
-    /// lit — and nothing anywhere said so. Which fires keep their light is decided by OP ORDER, so moving an op
-    /// earlier silently puts out one further down the file.
     lightsCapped: usize = 0,
     solid_buf: [MAX_SOLIDS]collision.Solid = undefined,
     nsolids: usize = 0,
     /// THE FOG GATES, in the order `buildSolids` met them; `collision.Solid.ward` is a slot here PLUS ONE, so that 0 can mean "an ordinary solid".
     wardProps: [MAX_WARDS]u32 = undefined,
-    /// …and where its capsules sit in `solid_buf`, as the contiguous run `buildSolids` emits them in.
     wardSolid0: [MAX_WARDS]u32 = undefined,
     wardSolidN: [MAX_WARDS]u8 = [_]u8{0} ** MAX_WARDS,
     nwards: usize = 0,
-    /// HE HAS BEEN THROUGH IT. Latched by his own step (`game.markWards`), cleared whenever the foes are put back, or a respawned boss would shut a door with him on the wrong side of it.
     wardIn: [MAX_WARDS]bool = [_]bool{false} ** MAX_WARDS,
-    /// …AND ITS BOSS IS STILL STANDING. The only thing that shuts a gate on HIM; stamped by the game.
     wardShut: [MAX_WARDS]bool = [_]bool{false} ** MAX_WARDS,
     /// 1 WHILE IT STANDS, RUNNING TO 0 ONCE THE FIGHT IT SEALED IS OVER. **At 0 the gate is GONE**, and `eachSolid` is where that is enforced — one line there retires it from sight, from feet and from arrows together.
     wardLife: [MAX_WARDS]f32 = [_]f32{1} ** MAX_WARDS,
@@ -481,8 +402,6 @@ pub const Env = struct {
     noccl: usize = 0,
     sgrid_start: [NCELL + 1]u32 = [_]u32{0} ** (NCELL + 1),
     sgrid_items: [MAX_SOLID_REFS]u32 = undefined,
-    /// **THE FLOORS ABOVE THE FLOOR** (`props.Info.decks`), in world coordinates and on their own grid: a deck
-    /// is not a wall, and every solid in the game answers a question this one must not.
     deck_buf: [MAX_DECKS]WorldDeck = undefined,
     ndecks: usize = 0,
     dgrid_start: [NCELL + 1]u32 = [_]u32{0} ** (NCELL + 1),
@@ -493,15 +412,9 @@ pub const Env = struct {
     npools: usize = 0,
     waterSheet: rl.Model = undefined,
     waterField: [wf.WATER_CELLS]u8 = [_]u8{gfx.WATER_SHORE} ** wf.WATER_CELLS,
-    /// The coast POLICY *and the liquid* per cell, packed (`packLiquid`) and dilated one cell off the painted
-    /// water so the dry side of a boundary answers with the same shape as the wet side. Held here rather than
-    /// in `gfx` because BOTH sides read it: the shader gets this exact buffer, and `paintedDepth` walks it for
-    /// the footing.
     waterEdgeField: [wf.WATER_CELLS]u8 = [_]u8{@intFromEnum(wf.Edge.natural)} ** wf.WATER_CELLS,
     waterAny: bool = false,
     waterHalf: f32 = 0,
-    /// Every input `uploadWater` reads. Its OWN copy of the height, not `heightField`: `sculptHeight` moves
-    /// that one mid-stroke, so sharing it leaves the dig tone stale for the rest of the session.
     waterSrc: [wf.WATER_CELLS]u8 = [_]u8{0} ** wf.WATER_CELLS,
     soilSrc: [wf.SOIL_CELLS]u8 = [_]u8{0} ** wf.SOIL_CELLS,
     soilCovSrc: [wf.SOIL_CELLS]u8 = [_]u8{0} ** wf.SOIL_CELLS,
@@ -514,8 +427,6 @@ pub const Env = struct {
     waterReady: bool = false,
     waterMid: rl.Vector3 = mathx.zero3,
     waterSpan: rl.Vector3 = mathx.zero3,
-    /// **THE HALF THE LOADED MAP DECLARED**, which is what the floor is sized against. Not `heightHalf`: that
-    /// one is the sculpt grid's and is only right once `uploadHeight` has run.
     mapHalf: f32 = wf.DEFAULT_HALF,
     heightField: [wf.HEIGHT_CELLS]u8 = [_]u8{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS,
     heightHalf: f32 = wf.DEFAULT_HALF,
@@ -569,7 +480,6 @@ pub const Env = struct {
         self.heightAny = false;
     }
 
-    /// Putting a map into the world: what `game.init`, `game.enterMap` and `editor.rebuild` all want.
     pub fn replay(self: *Env, m: *const wf.Map) void {
         self.mapHalf = m.half;
         self.uploadSoil(m);
@@ -578,8 +488,6 @@ pub const Env = struct {
         self.materialize(m);
     }
 
-    /// Guarded like `uploadHeight` and `uploadWater`: three texture uploads and a 12,544-cell edge dilation are
-    /// small beside a terrain rebuild, but every editor edit reaches here whatever it touched.
     pub fn uploadSoil(self: *Env, m: *const wf.Map) void {
         const same = self.soilReady and self.soilHalf == m.half and
             std.mem.eql(u8, &self.soilSrc, &m.soil) and
@@ -595,9 +503,7 @@ pub const Env = struct {
         if (self.scene) |sc| sc.setSoil(&m.soil, &m.soilCov, &m.soilEdge, m.half);
     }
 
-    /// **AN UNCHANGED FIELD COSTS A COMPARE, NOT A REBUILD.** Every editor edit reaches here whatever it
-    /// touched, and `rebuildTerrain` remakes all 225 tiles: 12.5 MB of vertices, 1350 GL objects, 27.6 ms of
-    /// CPU before the driver's share. Five a second under a dragged eraser is what stalled the machine.
+/// `rebuildTerrain` remakes all 225 tiles: 12.5 MB of vertices, 1350 GL objects, 27.6 ms.
     pub fn uploadHeight(self: *Env, m: *const wf.Map) void {
         const any = m.anyHeight();
         const same = self.heightAny == any and self.heightHalf == m.half and
@@ -759,8 +665,7 @@ pub const Env = struct {
         return mathx.normV(v3(-dx, 1.0, -dz));
     }
 
-    /// **THE COAST IS DERIVED ONLY WHEN SOMETHING IT READS MOVED** — 7.1 ms over the whole 224² field, and
-    /// `replay` reaches here for every prop placed. Compared byte for byte rather than by hash or flag.
+/// Derived only when something it reads moved — 7.1 ms over the whole 224² field.
     pub fn uploadWater(self: *Env, m: *const wf.Map) void {
         const N = wf.WATER_N;
         const same = self.waterReady and self.waterHalf == m.half and
@@ -859,9 +764,6 @@ pub const Env = struct {
                 const ex = edge(cx, m.half, cell);
                 const wet = m.water[i];
                 const shape: wf.Edge = @enumFromInt(@min(m.waterEdge[i], wf.Edge.N - 1));
-                // **A PLAIN SIGNED DISTANCE, AND NOTHING SHAPED INTO IT.** The wander is the shader's now
-                // (`shaders.waterAt`), for the reason the soil's always was: baked at one sample per cell it is
-                // undersampled by its own wavelength, and bilinear filtering then smooths off what survived.
                 const sd = if (wet != 0)
                     @max(0.0, (dIn[i] - 0.5) * cell)
                 else
@@ -869,11 +771,6 @@ pub const Env = struct {
                 const enc: f32 = if (sd >= 0) blk: {
                     const byShore = mathx.clampF(sd / gfx.WATER_DEEP_AT, 0, 1);
                     const dug = WATER_Y - (GROUND_Y + m.heightAt(ex, ez));
-                    // **A BANK THROUGH THE SURFACE IS NOT WATER, WHATEVER THE PAINT SAYS** — and it gets the
-                    // same walk-off a painted coast gets, so a rise inside a lake comes with a shore instead of
-                    // the terrain mesh ruling a hard line across the flat sheet. Only a bed ABOVE the waterline
-                    // does this: un-sculpted ground sits 0.045 m under it, and capping the tone by the bed
-                    // there would erase every lake nobody happened to dig out.
                     if (dug <= 0) break :blk shoreF * (1.0 - mathx.clampF(-dug / (gfx.WATER_WET_OUT * coastBand(shape)), 0, 1));
                     break :blk shoreF + @max(byShore, digTone(dug)) * (255.0 - shoreF);
                 } else blk: {
@@ -896,7 +793,6 @@ pub const Env = struct {
     }
 
     pub fn materialize(self: *Env, m: *const wf.Map) void {
-        // Here as well as in `replay`: a test and the editor's own rebuild reach this one without the other.
         self.mapHalf = m.half;
         self.nprops = 0;
         self.opsCapped = 0;
@@ -909,7 +805,6 @@ pub const Env = struct {
         self.noccl = 0;
         @memset(&self.sgrid_start, 0);
 
-        // **ONE PASS NOW.** There used to be two, with `buildSolids` between them, because the global cover op had to ask `blockedHere` about walls the explicit ops had just put up. Every plant is its own `at:` op now.
         var p = Placer{ .e = self, .m = m, .flat = !m.anyHeight() };
         for (m.slice(), 0..) |*o, i| {
             p.cur = @intCast(i);
@@ -919,14 +814,6 @@ pub const Env = struct {
         indexProps(self);
     }
 
-    /// **THE WOOD BECOMES TREES.** Break a generator op into the props it made — one `at:` apiece, in its
-    /// place, so a wood stops being one thing to select and delete. The world does not move: every generator
-    /// plants at `groundY(x, z)`, which is exactly where an `at` with no lift replays, and each instance
-    /// carries its own yaw, scale and lean out of the props it already stands as.
-    ///
-    /// Reads THIS env's last `materialize`, so the caller must have replayed `m` (water uploaded) and must
-    /// rebuild after. Walking the map BACKWARDS explodes the whole thing off one replay: splicing at `i` never
-    /// moves an op before it, so the prop records for the ops still to come keep their `op` numbers.
     pub fn explodeOp(self: *const Env, m: *wf.Map, s: usize) !usize {
         if (s >= m.nops) return error.NoSuchOp;
         if (m.ops[s].op == .at) return 0;
@@ -955,7 +842,6 @@ pub const Env = struct {
             o.nloot = src.nloot;
             o.boss = src.boss;
             o.nboss = src.nboss;
-            // A flame's phase is drawn off its op's stream, so one seed for the lot beats every torch of a ring in time.
             if (props.info(pr.kind).light != null) o.seed = src.seed +% k;
             m.ops[s + k] = o;
         }
@@ -964,18 +850,12 @@ pub const Env = struct {
 
     pub fn stageOne(self: *Env, kind: Kind) void {
         self.nprops = 0;
-        // The two cap counters belong to the world that is being torn down with it — left behind, `opsCapped`
-        // and `lightsCapped` describe a map this `Env` no longer holds, and a counter that lies is worse than
-        // no counter. `materialize` clears them for the same reason.
         self.opsCapped = 0;
         self.lightsCapped = 0;
         self.nsolids = 0;
         self.nlights = 0;
         self.npools = 0;
         self.noccl = 0;
-        // **A STACKING KIND IS STAGED STACKED.** `--shot-props` is the one frame that photographs a kind
-        // alone, and a ladder shown as a single section is not the thing being judged — the splice between
-        // sections is most of what there is to look at.
         const nfo = props.info(kind);
         self.props[0] = .{ .kind = kind, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1.0, .op = 0, .rise = nfo.stack * STAGE_SECTIONS };
         self.nprops = 1;
@@ -984,7 +864,6 @@ pub const Env = struct {
             self.nlights = 1;
         }
         buildSolids(self);
-        // `buildSolids` rebuilds `nwards` and `wardProps`; the LATCHES those index are a separate array and a staged prop inherited the last map's. A gate whose `wardLife` had run out photographs as absent.
         self.openWards();
         indexProps(self);
     }
@@ -1139,7 +1018,6 @@ pub const Env = struct {
         return look.clear;
     }
 
-    /// WHICH FOG GATE THE LINE FROM `a` TO `b` GOES THROUGH, if any. A push-out only answers where a body IS, so a move that ARRIVES rather than travels — a blink, a burrow, a leap over the sheet — has to be asked about the whole segment.
     pub fn wardCrossed(self: *const Env, a: rl.Vector3, b: rl.Vector3) ?u8 {
         const Look = struct {
             a: rl.Vector3,
@@ -1156,7 +1034,6 @@ pub const Env = struct {
         return look.slot;
     }
 
-    /// THE ONE WALK. Every question about a particular gate is about ITS OWN capsules; as a filtered pass over the whole buffer that was eighteen hundred solids apiece.
     pub fn wardSolids(self: *const Env, i: u8) []const collision.Solid {
         if (i >= self.nwards) return &.{};
         const a = self.wardSolid0[i];
@@ -1172,12 +1049,10 @@ pub const Env = struct {
         return w;
     }
 
-    /// Standing, and passable: the one predicate for "is this a door he could use".
     pub fn wardOpen(self: *const Env, i: u8) bool {
         return i < self.nwards and !self.wardShut[i] and self.wardLife[i] > 0;
     }
 
-    /// Is `p` STANDING CLEAR of ward `i`? A door may not shut on the man in the doorway — pushed out of a gate he is halfway through he can land back on the side he came from, locked OUT of his own fight.
     pub fn wardClear(self: *const Env, i: u8, p: rl.Vector3, r: f32) bool {
         for (self.wardSolids(i)) |s| {
             if (collision.blocksPoint(p, r, s)) return false;
@@ -1185,7 +1060,6 @@ pub const Env = struct {
         return true;
     }
 
-    /// THE GATE HE IS STANDING AT, and only one he could walk through. `margin` is how far off the sheet counts as at it.
     pub fn nearWard(self: *const Env, p: rl.Vector3, margin: f32) ?u8 {
         for (0..self.nwards) |wi| {
             const i: u8 = @intCast(wi);
@@ -1197,11 +1071,8 @@ pub const Env = struct {
         return null;
     }
 
-    /// **THE WHOLE LINE OF A CROSSING, DERIVED FROM THE SHEET AND NOT FROM WHERE HE HAPPENED TO STOP.** The
-    /// heading is the gate's own normal (off the SOLID, so the walk and the wall cannot disagree), and `to` is that heading run far enough to clear the sheet's half-thickness plus the body's radius WHEREVER he started.
     pub const Crossing = struct { dir: rl.Vector3, to: rl.Vector3 };
 
-    /// **THE SHEET IS THE GATE'S FIRST PART AND THE LINE COMES OFF THAT ONE.** Written as a loop over `wardSolids` whose body returned on the first iteration either way, every part after it was dead and silently so.
     pub fn wardCross(self: *const Env, i: u8, p: rl.Vector3, r: f32) ?Crossing {
         const parts = self.wardSolids(i);
         if (parts.len == 0) return null;
@@ -1215,7 +1086,6 @@ pub const Env = struct {
         return .{ .dir = dir, .to = mathx.addV(p, mathx.scaleV(dir, span)) };
     }
 
-    /// PUT THE DOORS BACK. Called wherever the bestiary is (`game.rehomeFoes`): a spent door and a live boss is an arena with no mouth.
     pub fn openWards(self: *Env) void {
         self.wardIn = [_]bool{false} ** MAX_WARDS;
         self.wardShut = [_]bool{false} ** MAX_WARDS;
@@ -1242,12 +1112,10 @@ pub const Env = struct {
         return probe.hit;
     }
 
-    /// Every solid in the world, the fog gate's ward included — foes, folk, and the steering probe that asks on their behalf (`game.wayClear`).
     pub fn resolveActor(self: *const Env, p: rl.Vector3, r: f32, footY: f32) rl.Vector3 {
         return self.resolveActorPast(p, r, footY, false);
     }
 
-    /// HIS OWN SIDE — the hero, and the spirit he summons. The one thing a ward lets through; nothing here touches SIGHT, which a fog gate stops for him too.
     pub fn resolveHeroSide(self: *const Env, p: rl.Vector3, r: f32, footY: f32) rl.Vector3 {
         return self.resolveActorPast(p, r, footY, true);
     }
@@ -1261,17 +1129,12 @@ pub const Env = struct {
             fn one(c: *@This(), s: collision.Solid) bool {
                 if (s.ward > 0 and s.ward <= c.open.len and c.open[s.ward - 1]) return true;
                 if (c.footY >= s.h) return true;
-                // **AND A LINTEL IS OPEN TO WHAT WALKS UNDER IT** — the same rule `blocksPoint` and
-                // `blocksSight` carry, and the push-out was the one consumer that did not have it: the stone
-                // over the watchtower's doorway sealed the doorway. The walk's own riser is the allowance,
-                // beside the `s.h` test above it, so a body up on a deck is stopped by the very same course.
                 if (c.footY + STEP_UP < s.y0) return true;
                 c.at = collision.pushOut(c.at, c.r, s);
                 return true;
             }
         };
         const q = r + 1.0;
-        // HIS SIDE WALKS THROUGH A GATE THAT IS STILL OPEN, and through nothing else. An empty slice is every ward standing: that is what a foe is handed, and what he is handed once one shuts.
         var passable = [_]bool{false} ** MAX_WARDS;
         if (crossesWards) {
             for (0..self.nwards) |i| passable[i] = !self.wardShut[i];
@@ -1289,9 +1152,6 @@ pub const Env = struct {
         return GROUND_Y + wf.sampleHeight(&self.heightField, self.heightHalf, x, z);
     }
 
-    /// **THE HIGHEST FLOOR UNDER HIS FEET THAT IS NOT THE GROUND**, or null. A deck he is not already up at is
-    /// no floor at all: the gate is the walk's own riser (`STEP_UP`), which is what stops a body on the ground
-    /// being snapped onto a platform five metres over its head.
     pub fn deckAt(self: *const Env, x: f32, z: f32, footY: f32) ?f32 {
         const c = cellOf(x, z);
         var best: ?f32 = null;
@@ -1309,8 +1169,6 @@ pub const Env = struct {
         return best;
     }
 
-    /// A hatch cancels the floor it is cut in and only that one — matched on the deck's own `y`, so two floors
-    /// stacked in one shaft each keep their own opening.
     fn holedAt(self: *const Env, c: usize, floor: WorldDeck, x: f32, z: f32) bool {
         var k = self.dgrid_start[c];
         while (k < self.dgrid_start[c + 1]) : (k += 1) {
@@ -1321,24 +1179,16 @@ pub const Env = struct {
         return false;
     }
 
-    /// **WHAT A BODY AT (x, z) IS STANDING ON** — the deck if it is up on one, the sculpted ground otherwise.
-    /// The one thing `game.groundActor` asks; `groundAt` stays the question about the LAND.
     pub fn standAt(self: *const Env, x: f32, z: f32, footY: f32) f32 {
         const g = self.groundAt(x, z);
         if (self.deckAt(x, z, footY)) |d| return mathx.maxF(g, d);
         return g;
     }
 
-    /// The nearest thing he can get on, measured to its CLIMBING LINE and not to its mesh. `footY` picks the
-    /// run: a body at the head of a shaft and one at its foot are both beside the same ladder.
     pub fn ladderNear(self: *const Env, p: rl.Vector3, footY: f32, reach: f32) ?Rung {
         var best = reach * reach;
         var out: ?Rung = null;
-        // **THE CELLS THE REACH ACTUALLY TOUCHES**, not a whole 16 m block either way: props are bucketed by
-        // their own origin, so the box round the query point is the complete answer. The HUD asks this every
-        // frame through `reachable`, and on the shipped map nine cells of structures is a few thousand rows.
-        // …and the box is widened by the STANDOFF, because the reach is measured to the climbing line while the
-        // prop is bucketed by its rung plane: a ladder in reach can have its origin that much further out.
+    // The cells the reach actually touches, widened by the STANDOFF because the reach is measured to the climbing line.
         const box = reach + props.LADDER_STANDOFF;
         const x0 = cellCoord(p.x - box);
         const x1 = cellCoord(p.x + box);
@@ -1393,7 +1243,6 @@ pub const Env = struct {
         return self.walkStepPast(from, dir, dist, WADE_MAX);
     }
 
-    /// **THE STEP A BODY HAS ALREADY TAKEN, ASKED OF THE GROUND** — `walkStepPast` put as the SEGMENT its callers actually hold. Both post-step gates had the same four lines solving a heading and a length out of `was`→`now` first. A move too small to have a direction is handed straight back.
     pub fn walkSegmentPast(self: *const Env, from: rl.Vector3, to: rl.Vector3, wade: f32) rl.Vector3 {
         const dx = to.x - from.x;
         const dz = to.z - from.z;
@@ -1488,36 +1337,22 @@ pub const Env = struct {
         return self.paintedDepth(x, z) * gfx.WATER_DEEP_AT > margin + 0.01;
     }
 
-    /// **THE BARE SIDE OF A COAST ANSWERS WITH THE POOL'S OWN POLICY AND ITS OWN LIQUID.** The soil's dilation happens inside
-    /// `setSoil` and is the GPU's alone; the coast needs the result HELD, because the footing reads the map as
-    /// well as the shader does and the two have to be looking at the same one. Same walk either way
-    /// (`gfx.Scene.dilateEdges`) — two copies of it is how the two sides part company.
     fn dilateWaterEdge(self: *Env, m: *const wf.Map) void {
         for (m.waterEdge, m.waterKind, 0..) |e, k, i| scratchPack[i] = packLiquid(e, k);
         _ = gfx.Scene.dilateEdges(&self.waterEdgeField, wf.WATER_N, &m.water, &scratchPack);
     }
 
-    /// Off the end is `natural`, which is what both `waterEdgeAt`s answer out of bounds — the range check is
-    /// `glsl.edgeK`'s and stays there, so the CPU cannot clamp to a shape the GPU never picked.
     fn waterEdgeAt(self: *const Env, x: f32, z: f32) usize {
         const i = wf.gridIndex(self.waterHalf, wf.WATER_N, x, z) orelse return glsl.NATURAL;
         return self.waterEdgeField[i] & glsl.EDGE_MASK;
     }
 
-    /// **WHAT THE POOL UNDER A BODY IS MADE OF** — the dilated field, so a foot on the bank answers with the
-    /// pool's own kind exactly as the shader colours that fragment. Dry ground answers `water`, which is why
-    /// nothing may read this without first asking `paintedDepth` whether there is a pool here at all.
     pub fn liquidAt(self: *const Env, x: f32, z: f32) wf.Liquid {
         const i = wf.gridIndex(self.waterHalf, wf.WATER_N, x, z) orelse return .water;
         return @enumFromInt((self.waterEdgeField[i] >> glsl.LIQUID_SHIFT) & glsl.LIQUID_MASK);
     }
 
-    /// **AND IT FILTERS THE FIELD THE WAY THE GPU DOES.** `gfx` loads `waterTex` `.bilinear` with
-    /// CLAMP_TO_EDGE, so the shader's `texture()` blends the four cells round the sample and the waterline
-    /// lands BETWEEN cell centres; indexing the one cell instead quantized the footing's coast to the grid.
     /// MEASURED on the shipped map's 2.50 m cell: the walkable line sat **1.00 m** outside the drawn one.
-    /// `snap` is `waterField`'s own argument — only `tiled` point-samples, and there a cell index IS the snap.
-    ///
     /// The three extra byte reads are free beside what `warpEdge` already spends here: MEASURED at two calls
     /// per body across `MAX_FOES`, **1,024 a frame is 199 us in Debug, 1.2% of a 16.7 ms frame**, and sixteen
     /// `hash21` evaluations of the domain warp are nearly all of it.
@@ -1547,10 +1382,7 @@ pub const Env = struct {
         return acc;
     }
 
-    /// **THE ONE DOOR INTO THE WATER FIELD FOR EVERYTHING THAT IS NOT A PIXEL** — wading, the fen lurker's
-    /// water, what blocks a step. **IT WARPS EXACTLY AS THE SHADER DOES** (`glsl.warpEdge`, off the same
-    /// `EDGE_K` row), because the field is ONE field feeding the look and the footing: shaped only on the GPU,
-    /// the coast you see would sit up to `warp` metres from the coast you walk into.
+/// It warps exactly as the shader does (`glsl.warpEdge`, off the same field).
     pub fn paintedDepth(self: *const Env, x: f32, z: f32) f32 {
         if (!self.waterAny) return 0;
         const e = self.waterEdgeAt(x, z);
@@ -1570,16 +1402,12 @@ pub const Env = struct {
         return self.deepRefusedPast(fromX, fromZ, toX, toZ, WADE_MAX);
     }
 
-    /// …AND THE SAME RULE AT A WATERLINE THE CALLER CHOOSES. A creature turns back at its own hips (`foe.wadeLimit`), and a thing the water is no obstacle to is handed an infinite one, not a second path.
     pub fn deepRefusedPast(self: *const Env, fromX: f32, fromZ: f32, toX: f32, toZ: f32, limit: f32) bool {
         const deep = self.wadeDepth(toX, toZ);
         return deep > limit and deep > self.wadeDepth(fromX, fromZ);
     }
 
 
-    /// **A CURSOR RAY CANNOT HIT WHAT IS NOT ON SCREEN**, so this asks the draw's own index rather than the
-    /// whole list: the mouse is in the viewport by construction. It ran every frame the select tool was up,
-    /// ray-testing all ~17k props to light one of them.
     pub fn pickIf(
         self: *const Env,
         view: *const View,
@@ -1612,8 +1440,6 @@ pub const Env = struct {
                 }
             }
         };
-        // The cells come in index order rather than near-to-far, so the `bestT` compare is what keeps the
-        // NEAREST — the same test the flat walk used, and it does not care what order the candidates arrive in.
         var p = Pick{ .e = self, .origin = origin, .dir = dir, .ctx = ctx };
         self.eachInView(view, &p, Pick.at);
         return p.best;
@@ -1645,9 +1471,6 @@ pub const Env = struct {
 
     pub fn drawGround(self: *Env, view: ?*const View) void {
         if (!self.heightAny) {
-            // ONE QUAD, BUILT AT THE WIDEST AND SCALED DOWN. A flat plane scales exactly, and every field the
-            // shader reads over it (soil, water, the terrain albedo) is indexed in WORLD xz, so the scale
-            // moves the floor's edge and nothing else.
             const k = groundOut(self.mapHalf) / GROUND_HALF;
             rl.drawModelEx(self.ground, mathx.zero3, v3(0, 1, 0), 0, v3(k, 1, k), rl.Color.white);
             return;
@@ -1689,8 +1512,6 @@ pub const Env = struct {
         self.stat_cells = 0;
     }
 
-    /// Everything `materialize` actually put on the ground, which is what the minimap draws: an OP is one dot
-    /// and a belt of a hundred trees is one op, so the map has to be read off the props and not off the ops.
     pub fn placed(self: *const Env) []const Prop {
         return self.props[0..self.nprops];
     }
@@ -1755,7 +1576,6 @@ pub const Env = struct {
             const nfo = props.info(pr.kind);
             if (!view.visible(pr.pos, reachOf(pr, nfo), nfo.view)) continue;
             self.stat_draws += 1;
-            // The SHEET does not shrink as it goes — a wall that got smaller would read as retreating rather than as thinning — so only the fade is taken and the scale stays the gate's own.
             const sc = v3(pr.scale, pr.scale, pr.scale);
             const fading = pr.shrink < 1.0;
             if (fading) {
@@ -1811,10 +1631,6 @@ pub const Env = struct {
         }
     }
 
-    /// **WHAT IS ON SCREEN, THROUGH THE SAME TWO REJECTS THE DRAW USES** — the cell's sphere, then the prop's.
-    /// Both indexes, because "on screen" means flora too. Yields the prop's INDEX, so a caller reads
-    /// `env.props[i]` the way it already did. No fade or `gone` filter: those decide how a prop is DRAWN, and a
-    /// tree faded out because it stands in front of you is still a prop you are looking at.
     pub fn eachInView(
         self: *const Env,
         view: *const View,
@@ -1838,9 +1654,6 @@ pub const Env = struct {
         }
     }
 
-    /// **HOW MANY PROPS ONE OP PLACED, WITHOUT LOOKING FOR THEM.** Tallied in `indexProps`, which already walks
-    /// the list once. The editor's gizmo used to recover this by scanning all of them every frame; now the
-    /// scan is gone and the COUNT must not go with it, or a scatter's readout becomes "what is in frame".
     pub fn ownedBy(self: *const Env, op: u16) usize {
         return if (op < self.opOwned.len) self.opOwned[op] else 0;
     }
@@ -1859,9 +1672,6 @@ pub const Env = struct {
         rl.drawModelEx(mdl, pr.pos, leanAxis(pr.leanDir), pr.lean, sc, rl.Color.white);
     }
 
-    /// **A RUN IS WHOLE SECTIONS SPLICED, AND EVERY OTHER ONE IS TURNED.** The mesh is authored once, so
-    /// stacked straight its wabi-sabi repeats every `stack` metres and bands the ladder like a barber's pole;
-    /// the half-turn mirrors the jitter about the climbing axis without moving one rung off it.
     fn drawStack(self: *const Env, pr: *const Prop, nfo: *const props.Info, sc: rl.Vector3) void {
         const seg = nfo.stack * pr.scale;
         if (seg <= 1e-3) return;
@@ -2016,8 +1826,8 @@ const PropFrame = struct {
     }
 };
 
-/// 0 (solid) .. 1 (as thin as it gets) — the deepest ask any of its masses makes. Three sources in order: the
-/// kind's declared volumes, the COLLIDERS plus a skirt, and for a kind with neither a share of the bound. A collider is sized for what you WALK INTO and on a tree it is wrong by metres: a conifer's 1.48 m cylinder against boughs that block the view at 3.8 m.
+/// 0 (solid) .. 1 (as thin as it gets). A collider is sized for what you WALK INTO and on a tree it is wrong by
+/// metres: a conifer's 1.48 m cylinder against boughs that block the view at 3.8 m.
 fn thinFor(pr: *const Prop, nfo: *const props.Info, eye: rl.Vector3, at: rl.Vector3) f32 {
     var thin: f32 = 0;
     const fr = PropFrame.of(pr);
@@ -2033,8 +1843,6 @@ fn thinFor(pr: *const Prop, nfo: *const props.Info, eye: rl.Vector3, at: rl.Vect
         thin = mathx.maxF(thin, thinOf(eye, at, fr.partFoot(part), part.h * pr.scale, r));
     }
     if (nfo.parts.len == 0) {
-        // The HEIGHT is the run (`runOf`); the girth is not, because splicing sections up an axis makes a
-        // thing taller and never fatter.
         thin = thinOf(eye, at, pr.pos, runOf(pr, nfo), nfo.bound * pr.scale * OCCL_GIRTH);
     }
     return thin;
@@ -2052,7 +1860,6 @@ const Cover = struct {
 };
 const NO_COVER = Cover{ .cover = 0, .ahead = 0 };
 
-/// Overlap of two boxes in the EYE'S TANGENT PLANE, before any FOV scale, so the answer is in fractions of him. Distance to the sight line cannot answer it: a stump on the line covers his boots, a canopy fifteen metres up covers nothing.
 fn coverFrac(eye: rl.Vector3, at: rl.Vector3, foot: rl.Vector3, h: f32, r: f32) Cover {
     const toH = mathx.subV(at, eye);
     const dh = mathx.lenV(toH);
@@ -2114,12 +1921,10 @@ const Placer = struct {
     m: *const wf.Map,
     flat: bool,
     cur: u16 = 0,
-    /// Candidates left to this op (`BUDGET`, reset per op in `expand`).
     left: i32 = 0,
     lean: f32 = 0,
     leanDir: f32 = 0,
     leanExact: bool = false,
-    /// The op's authored `rise`; `atY` is where it is snapped, since the snap needs the instance's own scale.
     rise: f32 = 0,
 
     // PLANTED ON THE GROUND, which with elevation means the sculpted height there and not y = 0.
@@ -2136,10 +1941,6 @@ const Placer = struct {
         if (self.e.nprops >= MAX_PROPS) @panic("env: MAX_PROPS exceeded — raise the cap");
         var lean: f32 = 0;
         var leanDir: f32 = self.leanDir;
-        // **NOTHING YOU CLIMB OR STACK LEANS** (`props.upright`). Refused here rather than hidden in the
-        // editor, so a hand-written map cannot do it — and refused for THIS prop rather than by clearing the
-        // op's own tilt: a `mix=` that holds a ladder among leaning kinds would otherwise stand every prop
-        // drawn after the first ladder bolt upright.
         const tilt: f32 = if (props.upright(kind)) 0 else self.lean;
         if (tilt != 0) {
             if (self.leanExact) {
@@ -2192,13 +1993,8 @@ const Placer = struct {
         return self.e.blockedNear(v3(x, self.groundY(x, z) + SOLID_PROBE_Y, z), SOLID_PROBE_M, SOLID_PROBE_R);
     }
 
-    /// **AN OP MAY NOT SPIN.** Candidates it is allowed to consider, placed or rejected. The loops were bounded
-    /// only by authored numbers — `n` is an unbounded i32 and a `line`'s step only has to clear 1e-4 — and a
-    /// candidate that is REJECTED costs time without ever filling `MAX_PROPS`, so nothing stopped it and nothing
-    /// showed. MEASURED: one line op at 0.001 m spacing over 400 m burns 21 ms a rebuild and places NOTHING; at
-    /// the parser's own floor, 227 ms. A rebuild fires 0.28 s after every edit and a map holds 20,480 ops.
-    /// 8192 is far past any honest scatter (the shipping map's largest is a few hundred) and caps one op at
-    /// well under a millisecond.
+/// MEASURED: one line op at 0.001 m spacing over 400 m burns 21 ms a rebuild and places NOTHING; at the parser's
+/// own floor, 227 ms. A rebuild fires 0.28 s after every edit and a map holds 20,480 ops.
     const BUDGET: i32 = 8192;
 
     fn spend(self: *Placer) bool {
@@ -2362,8 +2158,6 @@ fn buildSolids(e: *Env) void {
             const b = fr.at(part.bx, 0, part.bz);
             var sol = collision.capsule(a.x, a.z, b.x, b.z, part.r * s);
             sol.h = pr.pos.y + part.h * s;
-            // …AND ITS FOOT, which is a WORLD height like `h` and 0 for all but a lintel. Left behind, the
-            // course over the watchtower's doorway came out as a wall from the ground up and sealed the door.
             if (part.y0 > 0) sol.y0 = pr.pos.y + part.y0 * s;
             sol.surf = nfo.surf;
             sol.ward = ward;
@@ -2437,8 +2231,6 @@ const SolidCells = struct {
     }
 };
 
-/// **RESETS, for `buildSolids`' own reason** — `materialize` runs it twice and an appending version doubles
-/// every floor in the world.
 fn buildDecks(e: *Env) void {
     e.ndecks = 0;
     for (e.props[0..e.nprops]) |*pr| {
@@ -2902,7 +2694,6 @@ test "A FOG GATE IS A DOOR TO HIM AND A WALL TO A FOE, ENTERING AND LEAVING ALIK
     const ward = props.info(.foggate).parts[0];
     const past = v3(ward.bx + ward.r + R + 1.0, 0, 0);
     try std.testing.expectEqual(past.z, e.resolveActor(past, R, 0).z);
-    // And a ward is a doorway, not a lid: a body whose feet are above it is not held by it.
     try std.testing.expectEqual(@as(f32, 0.25), e.resolveActor(v3(0, 0, 0.25), R, ward.h + 0.1).z);
 }
 
@@ -2932,7 +2723,6 @@ test "A CROSSING CLEARS THE SHEET WHEREVER HE STARTED FROM" {
     const e = try envWithFogGate();
     defer std.testing.allocator.destroy(e);
     const R: f32 = 0.42;
-    // Triggered from hard against it and from a metre and a half back: both have to END clear on the far side, which is what a fixed travel distance gets wrong at one end or the other.
     for ([_]f32{ -0.55, -1.50, -2.20 }) |z| {
         const at = v3(0.3, 0, z);
         const x = e.wardCross(0, at, R).?;
@@ -2953,7 +2743,6 @@ test "A FOG GATE BLOCKS HIM UNTIL HE ASKS TO PASS IT — the walk is the only wa
     const back = v3(0, 0, 5);
     try std.testing.expectEqual(@as(?u8, 0), e.wardRefusing(there, back, null));
     try std.testing.expectEqual(@as(?u8, 0), e.wardRefusing(back, there, null));
-    // THE ONE EXEMPTION is the walk `enterGate` started, and only through the ward that walk is on.
     try std.testing.expectEqual(@as(?u8, null), e.wardRefusing(there, back, 0));
     try std.testing.expectEqual(@as(?u8, 0), e.wardRefusing(there, back, 1)); // a walk at another door is not this one
     try std.testing.expectEqual(@as(?u8, null), e.wardRefusing(v3(6, 0, -5), v3(6, 0, 5), null));
@@ -3043,7 +2832,6 @@ test "flyStep: a jump crosses what it is OVER, and a cliff is a wall at any alti
     try std.testing.expectApproxEqAbs(at.x, e.flyStep(at, east, 2.0, foot).x, 1e-4);
     try std.testing.expectApproxEqAbs(at.x, e.flyStep(at, east, 2.0, foot + 1.0).x, 1e-4);
     try std.testing.expect(e.flyStep(at, east, 2.0, foot + WALL).x > at.x);
-    // A jump may never travel WORSE than a step: a rise inside the walk's own allowance is taken from the takeoff frame, feet still on the ground.
     const low = try envWithRamp(0.30);
     defer std.testing.allocator.destroy(low);
     const g0 = low.groundAt(0, 0);
@@ -3320,7 +3108,6 @@ test "PAINTING NO SOIL UPLOADS NO SOIL — the third field skips on an unchanged
     e.uploadSoil(m);
     try std.testing.expectEqual(first + 1, soilBuildCount());
 
-    // Each of the three fields it reads is on its own — a coverage or edge change with the same ids still uploads.
     m.soil[wf.SOIL_CELLS / 2] = 1;
     e.uploadSoil(m);
     try std.testing.expectEqual(first + 2, soilBuildCount());
@@ -3355,8 +3142,6 @@ test "THE COAST IS DERIVED ONLY WHEN SOMETHING IT READS MOVED — the DIG is one
     e.uploadWater(m);
     try std.testing.expectEqual(first + 2, waterBuildCount());
 
-    // `digTone` reads how far the bed was dug, so the height is a water input that moves on its own — and
-    // `sculptHeight` runs first, which is what makes a shared compare read this as unchanged.
     e.sculptHeight(m, wf.EMPTY_SPAN);
     m.height[wf.HEIGHT_CELLS / 2] = wf.HEIGHT_ZERO - 4;
     e.uploadWater(m);
@@ -3374,28 +3159,17 @@ test "A FLOOR IS A FLOOR AND ITS HATCH IS A HOLE, and neither is anything to a b
     const roof = propbuild.WATCH_ROOF_TOP;
     const hz = propbuild.WATCH_HATCH_Z;
 
-    // FROM THE GROUND, no floor exists: `STEP_UP` is the whole gate, and it is what stops a body being
-    // snapped onto a platform five metres over its head.
     try std.testing.expectEqual(@as(?f32, null), e.deckAt(0, 0, 0));
-    // Up at the boards, the first floor answers — but not through its own hatch.
     try std.testing.expectEqual(@as(?f32, mid), e.deckAt(0, 0, mid));
     try std.testing.expectEqual(@as(?f32, null), e.deckAt(0, hz, mid));
-    // **EVERY STOREY, WALKED OFF THE TABLE AND NOT OFF THREE INDICES.** Each answers at its own height, is out
-    // of reach from the one below, and its own hatch drops him to the floor under it rather than to the ground
-    // — a hole cancels the deck at ITS OWN height and no other. Written as a loop so it holds at whatever
-    // storeys the tower is authored with rather than at the four it has today.
     for (propbuild.WATCH_STOREYS, 0..) |st, i| {
         const y = st.top();
         try std.testing.expectEqual(@as(?f32, y), e.deckAt(0, 0, y));
         const under: ?f32 = if (i == 0) null else propbuild.WATCH_STOREYS[i - 1].top();
         try std.testing.expectEqual(under, e.deckAt(st.hx, st.hz, y));
     }
-    // `standAt` is what an actor asks, and the land is still under all of it.
     try std.testing.expectApproxEqAbs(roof, e.standAt(0, 0, roof), 1e-4);
     try std.testing.expectApproxEqAbs(e.groundAt(0, hz), e.standAt(0, hz, mid), 1e-4);
-    // **AND A FALLING BODY WALKS DOWN THE FLOORS**, which is the whole reason `game.groundActorFrom` is handed
-    // his FEET and not his `pos.y`: asked with the floor it is already heading for, each deck refuses itself on
-    // its own `STEP_UP` gate and he drops through every one of them to the ground.
     const under = propbuild.WATCH_STOREYS[propbuild.WATCH_STOREYS.len - 2].top();
     try std.testing.expectApproxEqAbs(roof, e.standAt(0, 0, roof + 0.5), 1e-4);
     try std.testing.expectApproxEqAbs(under, e.standAt(0, 0, under + STEP_UP * 0.5), 1e-4);
@@ -3408,15 +3182,12 @@ test "A FLOOR IS A FLOOR AND ITS HATCH IS A HOLE, and neither is anything to a b
 test "A RUN IS WHOLE SECTIONS, AND THE FILE MAY NOT SHOW A HEIGHT THE WORLD ROUNDS OFF" {
     const seg = props.info(.ladder).stack;
     try std.testing.expect(seg > 0);
-    // Nothing else stacks, or `runOf` starts answering for kinds whose `top` is their real height.
     for (props.INFO) |row| {
         if (row.stack > 0) try std.testing.expectEqual(props.Kind.ladder, row.kind);
     }
     try std.testing.expectApproxEqAbs(seg * 8, snapRise(.ladder, 1, 7.15), 1e-4);
     try std.testing.expectApproxEqAbs(seg * 8, snapRise(.ladder, 1, 7.20), 1e-4);
-    // A scaled ladder snaps to ITS OWN section, not the kind's.
     try std.testing.expectApproxEqAbs(seg * 2 * 4, snapRise(.ladder, 2, 7.20), 1e-4);
-    // Zero is the kind's single mesh and stays zero, or every prop in the world gains a stacked draw.
     try std.testing.expectEqual(@as(f32, 0), snapRise(.ladder, 1, 0));
     try std.testing.expectEqual(@as(f32, 0), snapRise(.pillar, 1, 7.2));
     // The grain against the band is a comptime assert beside `LADDER_PROUD`; this prints the numbers.
@@ -3437,9 +3208,7 @@ test "A LADDER IS FOUND BY ITS CLIMBING LINE, from the foot of the run and from 
     // The axis stands off the rung plane on the ladder's own +Z — yaw 270 is world −x.
     try std.testing.expectApproxEqAbs(4.0 - props.LADDER_STANDOFF, r.axis.x, 1e-3);
     try std.testing.expectApproxEqAbs(@as(f32, 0), r.axis.z, 1e-3);
-    // From the head of it, because turning round to go back down is the same reach.
     try std.testing.expect(e.ladderNear(v3(3.7, 0, 0), 7.2, 1.5) != null);
-    // …and from neither halfway out to sea nor from a storey above the head.
     try std.testing.expectEqual(@as(?Rung, null), e.ladderNear(v3(-4, 0, 0), 0, 1.5));
     try std.testing.expectEqual(@as(?Rung, null), e.ladderNear(v3(3.7, 0, 0), 7.2 + LADDER_GRAB + 0.1, 1.5));
 }
@@ -3453,18 +3222,12 @@ test "WHAT THE CLIMB PROMPT COSTS A FRAME — `ladderNear` on the shipped map, t
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
     e.materialize(m);
-    // `game.reachable` asks this EVERY FRAME once the five cheaper reaches miss, so the case that matters is
-    // the one where the answer is no: he is standing somewhere ordinary and the walk finds nothing.
-    // **THE LOADED CASE IS FOUND, NOT NAMED.** As a literal off the working map it went stale the day that
-    // ladder moved and quietly timed the empty case twice.
     var beside = v3(0, 0, 4);
     for (e.props[0..e.nprops]) |pr| {
         if (pr.kind != .ladder) continue;
         beside = pr.pos;
         break;
     }
-    // **AND ASKED AT THE RUN'S OWN FOOT.** `ladderNear` gates on `LADDER_GRAB` about the run, so a flat 0 here
-    // misses any flight based on a floor — which is the same silent empty-case timing as the stale literal was.
     const spots = [_]struct { name: []const u8, at: rl.Vector3, footY: f32 }{
         .{ .name = "beside a ladder", .at = beside, .footY = beside.y },
         .{ .name = "open ground    ", .at = v3(0, 0, 4), .footY = 0 },
@@ -3568,10 +3331,6 @@ test "replaying the SHIPPED map produces a stable world" {
     try std.testing.expectEqual(solids0, e.solidCount());
     try std.testing.expectEqual(lights0, e.lightCount());
 
-    // **NO EXACT COUNT IS PINNED AGAINST THE SHIPPED MAP.** It is AUTHORED CONTENT and it moves whenever the
-    // owner opens the editor, so a pin on it fails for the one reason that is never a defect — and a test that
-    // is red for a benign reason is a test nobody reads on the day it goes red for a real one. What this test
-    // is NAMED for is the double `materialize` above, and that holds however many props the map carries.
     var chestOps: usize = 0;
     for (m.ops[0..m.nops]) |*op| {
         if (op.kind == .chest) chestOps += 1;
@@ -3715,9 +3474,6 @@ test "the map's half drives the world, not a constant in this file" {
 
 
 test "A BLOCKED PROBE AND A MOVED PUSH-OUT ARE ONE PREDICATE — what `game.wayClear` swapped to" {
-    // `blockedNear` answers "is this point blocked" directly and stops at the first blocker, where
-    // `wayClear` ran `resolveActor` and measured a displacement. The slack comes off the MARGIN
-    // (`game.WAY_SLACK`): blocked iff the gap closes past `r + s.r - slack`, the same inequality.
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
@@ -3744,14 +3500,11 @@ test "A BLOCKED PROBE AND A MOVED PUSH-OUT ARE ONE PREDICATE — what `game.wayC
             }
         }
     }
-    // The sweep has to actually straddle the wall, or two predicates agreeing on "clear" everywhere proves
-    // nothing about the one answer that costs anything.
     try std.testing.expect(blocked > 200);
     try std.testing.expectEqual(@as(usize, 61 * 61 * 3), agreed);
 }
 
 test "AN OP MAY NOT SPIN — the rebuild's cost is the map's size, never a number somebody dragged" {
-    // Owner: the editor freezes the PC, usually mid prop-edit, "spinning endlessly, almost crashing". It was not a leak.
     const ta = std.testing.allocator;
     const m = try ta.create(wf.Map);
     defer ta.destroy(m);
@@ -3769,7 +3522,6 @@ test "AN OP MAY NOT SPIN — the rebuild's cost is the map's size, never a numbe
     std.debug.print("\n  a line op at the parser's own floor: {d:.1} ms a rebuild, {d} ops capped\n", .{ spin, e.opsCapped });
     try std.testing.expect(e.opsCapped == 1);
 
-    // …and a COUNT nobody bounded is the same fault the other way: it used to reach the MAX_PROPS panic.
     m.ops[0] = .{ .op = .belt, .kind = .block, .x = -200, .z = -200, .x1 = 200, .z1 = 200, .n = 2_000_000, .sLo = 1, .sHi = 1 };
     t.reset();
     e.materialize(m);
@@ -3780,7 +3532,6 @@ test "AN OP MAY NOT SPIN — the rebuild's cost is the map's size, never a numbe
 }
 
 test "…AND NO HONEST OP IN THE SHIPPING MAP IS TRUNCATED BY IT" {
-    // The budget is only safe if it never bites real content. If this ever fails, the world got quietly smaller.
     const ta = std.testing.allocator;
     const m = try ta.create(wf.Map);
     defer ta.destroy(m);
@@ -3794,9 +3545,6 @@ test "…AND NO HONEST OP IN THE SHIPPING MAP IS TRUNCATED BY IT" {
     var t = try std.time.Timer.start();
     e.materialize(m);
     std.debug.print("  {s}: {d} ops built {d} props in {d:.1} ms, {d} capped\n", .{ wf.START_MAP, m.nops, e.nprops, @as(f64, @floatFromInt(t.read())) / 1e6, e.opsCapped });
-    // **AND THE SAME FOR THE FIRES.** Sixteen prop kinds carry a `LightSpec` and half of them are SCATTER kinds
-    // — the glowing flora, and every `pickup` glow — so this budget is reached by authoring a biome rather than
-    // by placing torches one at a time.
     std.debug.print("  ...and {d} of {d} lights ({d:.0}% of the budget), {d} props left unlit for want of a slot\n", .{
         e.lightCount(),
         MAX_LIGHTS,
@@ -3805,12 +3553,7 @@ test "…AND NO HONEST OP IN THE SHIPPING MAP IS TRUNCATED BY IT" {
     });
     try std.testing.expectEqual(@as(usize, 0), e.opsCapped);
     // NOT asserted the way `opsCapped` is: the shipped map is over this budget TODAY (44 props placed unlit),
-    // and pinning the suite red on it would hide every test behind the failure. The editor's status line is
     // where the author is told, and raising `MAX_LIGHTS` or thinning the glow is his call, not this test's.
-    // **WHAT THE BUDGET COSTS A FRAME**, since raising it is the obvious answer to running out and the cost is
-    // the thing nobody measures: `uploadLights` walks EVERY light every frame — a frustum test and a distance —
-    // to pick the nearest sixteen the shader takes. That walk is linear in `MAX_LIGHTS`, so this is the number
-    // to read before moving it.
     {
         var cam: rl.Camera3D = undefined;
         cam.position = v3(0, 12, -20);
@@ -3845,7 +3588,6 @@ test "THE GIZMO PASS WALKS WHAT IS IN FRAME, NOT THE WHOLE MAP — and the owned
     e.* = .{ .ground = undefined, .models = undefined };
     e.materialize(m);
 
-    // An editor eye at the map's middle, looking the way `shots.LIT_YAW` does, at the boom the editor opens on.
     const view = viewLooking(v3(0, 26, -34), v3(0, 0, 0));
     const Count = struct {
         n: usize = 0,
@@ -3859,8 +3601,6 @@ test "THE GIZMO PASS WALKS WHAT IS IN FRAME, NOT THE WHOLE MAP — and the owned
     std.debug.print("  gizmo pass: {d} of {d} props in frame ({d:.1}% — the walk it replaces was all of them)\n", .{ c.n, e.nprops, share * 100.0 });
     try std.testing.expect(c.n < e.nprops);
 
-    // **THE COUNT IS NOT THE WALK'S ANY MORE.** Every prop is owned by exactly one op, so the tallies sum back
-    // to the whole list — which a per-frame scan of what is on screen could never have told you.
     var summed: usize = 0;
     var widest: usize = 0;
     for (0..m.nops) |i| {
@@ -3868,8 +3608,6 @@ test "THE GIZMO PASS WALKS WHAT IS IN FRAME, NOT THE WHOLE MAP — and the owned
         widest = @max(widest, e.ownedBy(@intCast(i)));
     }
     try std.testing.expectEqual(e.nprops, summed);
-    // NOT PINNED: `widest` is 1 on a map whose scatters have all been exploded into `at:` ops, and hundreds on
-    // one that still carries a `belt`. The claim is the SUM, which holds either way.
     std.debug.print("  widest op owns {d} props; ownedBy sums to {d}\n", .{ widest, summed });
 }
 
@@ -3891,7 +3629,6 @@ test "THE CURSOR PICK ANSWERS THE SAME PROP OFF THE INDEX AS OFF THE WHOLE LIST 
             return true;
         }
     };
-    // **THE REFERENCE IS THE WALK THIS REPLACED**, written out here so the claim is an equality and not a hope.
     const flat = struct {
         fn pick(env: *const Env, origin: rl.Vector3, dir: rl.Vector3) ?usize {
             var best: ?usize = null;
@@ -3912,7 +3649,6 @@ test "THE CURSOR PICK ANSWERS THE SAME PROP OFF THE INDEX AS OFF THE WHOLE LIST 
         }
     }.pick;
 
-    // A grid of cursor positions over the ground the eye is looking at — the rays a hand actually casts.
     const eye = v3(0, 26, -34);
     var rng = mathx.Rng.init(0xC0FFEE);
     var agree: usize = 0;
@@ -3947,12 +3683,6 @@ test "THE CURSOR PICK ANSWERS THE SAME PROP OFF THE INDEX AS OFF THE WHOLE LIST 
 
 
 test "THE BAKED WATER FIELD CARRIES NO SHAPE — the coast is the shader's, so the field is a plain distance" {
-    // **THE INVARIANT THE NEW COAST RESTS ON.** `uploadWater` used to write `coastWarp` into the field and then
-    // re-facet it on a 3.6 m lattice; measured, that left `natural` with 1.6% more waterline than `straight`,
-    // which applies no wander at all — eight authored shapes arriving as one smooth blob. The wander is
-    // `shaders.waterAt`'s now, per fragment, off the same `edgeShape`/`edgeWarp` the soil has always used.
-    // What has to stay true here is that the field is a clean signed distance: bilinear-safe, and identical
-    // whatever the policy says, because a shape baked at one sample per cell is a shape undersampled.
     const ta = std.testing.allocator;
     const m = try ta.create(wf.Map);
     defer ta.destroy(m);
@@ -3981,16 +3711,12 @@ test "THE BAKED WATER FIELD CARRIES NO SHAPE — the coast is the shader's, so t
             first = e.waterField;
             continue;
         }
-        // The WET side is the distance and nothing else. (The dry ramp still narrows per shape — `coastBand`
-        // is a width, which is a smooth scalar and survives being sampled.)
         for (first, e.waterField) |a, b| {
             if (a < gfx.WATER_SHORE and b < gfx.WATER_SHORE) continue;
             try std.testing.expectEqual(a, b);
         }
     }
 
-    // …and it is MONOTONE out from the middle, which is what makes a 3 m warp of the lookup land somewhere
-    // meaningful rather than on a facet's corner.
     const N = wf.WATER_N;
     const mid = N / 2;
     var prev: u8 = 255;
@@ -4002,8 +3728,6 @@ test "THE BAKED WATER FIELD CARRIES NO SHAPE — the coast is the shader's, so t
 }
 
 test "THE COAST YOU SEE IS THE COAST YOU WADE INTO — one warp, evaluated on both sides" {
-    // The shader shapes the coast per fragment now, so `paintedDepth` has to walk the SAME displacement or the
-    // waterline drifts up to `EDGE_K[e].warp` metres from the one you can stand in. This is the pin on that.
     const ta = std.testing.allocator;
     const m = try ta.create(wf.Map);
     defer ta.destroy(m);
@@ -4011,13 +3735,10 @@ test "THE COAST YOU SEE IS THE COAST YOU WADE INTO — one warp, evaluated on bo
     defer ta.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
 
-    // `wf.Edge` and the shader's shape table are two lists that have to stay the same length.
     try std.testing.expectEqual(@as(usize, wf.Edge.N), glsl.EDGE_K.len);
     try std.testing.expectEqual(@as(usize, @intFromEnum(wf.Edge.scallop)), glsl.SCALLOP);
     try std.testing.expectEqual(@as(usize, @intFromEnum(wf.Edge.tiled)), glsl.TILED);
     try std.testing.expectEqual(@as(usize, @intFromEnum(wf.Edge.speckle)), glsl.SPECKLE);
-    // …and the row an ordinal off the end falls back to, on BOTH sides: `edgeShape`'s generated default is
-    // `EDGE_K[NATURAL]` and `waterEdgeAt` answers the same number out of bounds.
     try std.testing.expectEqual(@as(usize, @intFromEnum(wf.Edge.natural)), glsl.NATURAL);
     try std.testing.expectEqual(glsl.EDGE_K[glsl.NATURAL], glsl.edgeK(wf.Edge.N + 4));
 
@@ -4037,8 +3758,6 @@ test "THE COAST YOU SEE IS THE COAST YOU WADE INTO — one warp, evaluated on bo
     e.waterReady = false;
     e.uploadWater(m);
 
-    // **THE WATERLINE MOVED, AND IT MOVED FOR THE FOOTING TOO.** Walk out along +x and find where the footing
-    // says the water stops; against a painted circle of r = 60 the warp has to have shifted it.
     var wetTo: f32 = 0;
     var t: f32 = 0;
     while (t < 90) : (t += 0.25) {
@@ -4049,7 +3768,6 @@ test "THE COAST YOU SEE IS THE COAST YOU WADE INTO — one warp, evaluated on bo
     try std.testing.expect(@abs(wetTo - 60.0) > 0.3);
     try std.testing.expect(@abs(wetTo - 60.0) < k.warp + glsl.BAY_M + 2.0);
 
-    // …and `straight` warps by nothing, so its footing sits on the painted line to within a cell.
     for (&m.waterEdge) |*v| v.* = @intFromEnum(wf.Edge.straight);
     e.waterReady = false;
     e.uploadWater(m);
@@ -4060,9 +3778,8 @@ test "THE COAST YOU SEE IS THE COAST YOU WADE INTO — one warp, evaluated on bo
     }
     try std.testing.expect(@abs(wetTo - 60.0) <= cell + 0.3);
 
-    // **AND THE FILTER IS THE GPU'S, NOT A CELL LOOKUP** (`waterFieldAt`). `waterTex` is `.bilinear`, so the
-    // drawn coast lands between cell centres; point-sampled the footing's line stood a WHOLE CELL out — 1.00 m
-    // measured here at half 280. Re-solved against a bilinear read of the same field, which is what the shader does.
+    // Point-sampled, the footing's line stood a WHOLE CELL out — 1.00 m measured here at half 280. Re-solved
+    // against a bilinear read of the same field, which is what the shader does.
     const bil = struct {
         fn at(en: *const Env, half: f32, x: f32, z: f32) f32 {
             const NN = wf.WATER_N;
@@ -4097,8 +3814,6 @@ test "THE COAST YOU SEE IS THE COAST YOU WADE INTO — one warp, evaluated on bo
 }
 
 test "THE FOOTING READS THE LIQUID THE SHADER PAINTED - every pool on the bench answers with its own kind" {
-    // `game.stepOverlay` asks these two questions and nothing else, so this is the whole of the path between a
-    // painted pool and the sound a boot makes in it.
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     var line: usize = 0;
@@ -4119,7 +3834,6 @@ test "THE FOOTING READS THE LIQUID THE SHADER PAINTED - every pool on the bench 
         try std.testing.expect(e.inWater(c.x, c.z, 1.0));
         try std.testing.expectEqual(c.want, e.liquidAt(c.x, c.z));
     }
-    // ...and dry ground between them is dry, or every step on the map is a splash.
     try std.testing.expect(!e.inWater(0, 0, 1.0));
     std.debug.print("\n  footing: four pools, each answering with its own kind, dry in the middle\n", .{});
 }
@@ -4136,7 +3850,6 @@ test "A FEN LURKER IS SUBMERGED WHEREVER IT IS POSTED, on every map but the benc
     var it = dir.iterate();
     while (try it.next()) |ent| {
         if (ent.kind != .file or !std.mem.endsWith(u8, ent.name, wf.EXT)) continue;
-        // The lurker bench posts one on dry land ON PURPOSE, and its own test pins that.
         if (std.mem.eql(u8, ent.name, "test_fenlurker" ++ wf.EXT)) continue;
         var buf: [256]u8 = undefined;
         const path = try std.fmt.bufPrint(&buf, wf.DIR ++ "/{s}", .{ent.name});

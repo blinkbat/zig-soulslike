@@ -683,7 +683,7 @@ plus swat / hop / leap / shove / charge / fall. Memorization and attrition, neve
   still rides the body.
 - **STOOD DEAD BEHIND HIM HE FALLS ON YOU.** `fallwind` is the one move that steers AWAY from the hero — the
   spine coming round IS the tell. The crush is a STRIP down the line behind him, DERIVED off the rig, carrying
-  the biggest POISE and STANCE in the game (`game.BLOW_HEAVIEST` is a `@max` over it and the ogre's slam) at
+  the biggest POISE and STANCE in the game (`game.blowHeaviest` is a `@max` over it and the ogre's slam) at
   only 34 damage, because it is the hardest to read. **THE SAFE POCKET IS HIS QUARTER, NOT HIS BACK**:
   `FALL_SECTOR` 70° is strictly outside `TOWER_ARC`, the gap between them test-pinned over 20° wide, and the
   widening is paid for with the AIM (`FALL_AIM` 0.62 rad/s, still under `TURN_RATE`).
@@ -2026,7 +2026,8 @@ where there is one and `groundAt` stays the question about the LAND.
   stops a body on the ground being snapped onto a platform five metres over its head.
 - **A `hole` CANCELS THE DECK AT ITS OWN `y` AND NO OTHER** (`env.holedAt`) — a trapdoor, and the ONE way a deck
   is not simply convex. The mesh and the deck are solved off the same constants or it is a floor you fall
-  through (`propbuild.WATCH_DECK_Y`/`WATCH_ROOF_Y`/`WATCH_HATCH_Z`).
+  through. One row per storey in `propbuild.WATCH_STOREYS` is that single source: the mesh boards each row and
+  `props.WATCH_DECKS` turns the same rows into decks and holes.
 - **WALKING OFF A DECK EDGE IS A FALL, NOT A SNAP** (`game.heroFooting`, `hero.startFall`). `groundActor` PLANTS
   past `GROUND_SNAP`, which off a five-metre floor is a teleport with a footstep on the end of it. Only a deck
   does this; the land keeps the snap it has always had.
@@ -2055,9 +2056,14 @@ he mounts from and stands off (`propbuild.LADDER_STANDOFF`); local −Z is the w
 - **HEIGHT IS A `lift`, NOT A `pos.y`** — the jump's own machinery, so `footPos` and the shadow follow for free
   and a knock-off is `hero.launchFrom` with the climb height. `game.updateClimb` owns his XZ outright (no
   terrain gate, no push-out, like the fog-gate walk), and the phase is driven by DISTANCE climbed.
+- **TOPPING OUT IS A HAUL, AND IT IS STILL THE LADDER** (`game.Mantle`, `hero.startMantle`/`poseMantle`). He
+  lets go `MANTLE_RISE` under the lip rather than riding the top rungs, and the beat presses and stands him a
+  full `LADDER_EXIT` in from the edge. **EVERY GATE THAT LEAVES A BODY ON A LADDER ALONE ASKS `hero.onLadder`,
+  NOT `climbing`** — the footing, the terrain gate, the push-out, the lens lift and the INTERACT button, which
+  is not one of the things `committed()` refuses and reached a bonfire in the yard through the haul.
 - Forward climbs, back climbs down, back + sprint SLIDES; jump or roll lets go. Everything else is refused by
   `committed()`. **NOTHING BUT THE HERO CLIMBS**, so a ladder is an escape from whatever cannot follow.
-- `worlds/test_ladder.world` is the bench — two shelves, the watchtower's two flights to its roof, and the
+- `worlds/test_ladder.world` is the bench — two shelves, the watchtower's four flights to its roof, and the
   three runs that must REFUSE to top out. The test beside it prints every head and exit in metres.
 
 ### Performance — how a 560 m world stays cheap (`env.zig`)

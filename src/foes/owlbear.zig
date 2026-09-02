@@ -488,7 +488,9 @@ pub const Owlbear = struct {
         self.justWoke = false;
         self.threw = false;
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
-        defer grip.hold(&self.pos);
+        // Already off the ground when the roots close, the hop finishes its arc — pinned, the burst plays out
+        // on the spot and looses its fan from ground it never left.
+        defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         if (grip.downed) self.stagger(true);
         self.vit.tick(dt);

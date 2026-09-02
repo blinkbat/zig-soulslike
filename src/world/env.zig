@@ -55,6 +55,19 @@ pub const WARD_CLEAR: f32 = 1.30;
 const MAX_SOLID_REFS = 4 * MAX_SOLIDS;
 const MAX_DECKS = 512;
 const MAX_DECK_REFS = 4 * MAX_DECKS;
+
+comptime {
+    // **FOUR REFS A DECK HOLDS ONLY WHILE A DECK FITS A 2x2 BLOCK OF CELLS.** The watchtower's boards are
+    // 9.4 m across a 16 m grid; author one wider than a cell and the budget stops being a number checked here
+    // and becomes a panic on load. Scale is the map's, so `materialize` still counts the refs it really makes.
+    var widest: f32 = 0;
+    for (props.INFO) |row| {
+        for (row.decks) |d| {
+            if (d.r > widest) widest = d.r;
+        }
+    }
+    std.debug.assert(2.0 * widest <= CELL);
+}
 /// **NOT A RENDER BUDGET — THE ARRAY THE WORLD'S FIRES LIVE IN.** `uploadLights` already skips every light the
 /// view rejects and hands the shader the nearest `gfx.MAX_LIGHTS` of what is left, so nothing off screen costs a
 /// draw. This is the cap on how many can EXIST, refused at build time in `Placer.addLight`, and a fire refused
@@ -3361,29 +3374,34 @@ test "A FLOOR IS A FLOOR AND ITS HATCH IS A HOLE, and neither is anything to a b
     const roof = propbuild.WATCH_ROOF_TOP;
     const hz = propbuild.WATCH_HATCH_Z;
 
-    // FROM THE GROUND, neither floor exists: `STEP_UP` is the whole gate, and it is what stops a body being
+    // FROM THE GROUND, no floor exists: `STEP_UP` is the whole gate, and it is what stops a body being
     // snapped onto a platform five metres over its head.
     try std.testing.expectEqual(@as(?f32, null), e.deckAt(0, 0, 0));
-    // Up at the boards, the middle floor answers — but not through its own hatch.
+    // Up at the boards, the first floor answers — but not through its own hatch.
     try std.testing.expectEqual(@as(?f32, mid), e.deckAt(0, 0, mid));
     try std.testing.expectEqual(@as(?f32, null), e.deckAt(0, hz, mid));
-    // The roof is out of reach from the middle floor and is the answer once he is up there…
-    try std.testing.expectEqual(@as(?f32, mid), e.deckAt(0, 0, mid));
-    try std.testing.expectEqual(@as(?f32, roof), e.deckAt(0, 0, roof));
-    // …and the roof's hatch drops him back to the floor below rather than to the ground, because a hole
-    // cancels the deck at ITS OWN height and no other.
-    try std.testing.expectEqual(@as(?f32, mid), e.deckAt(0, propbuild.WATCH_ROOF_HATCH_Z, roof));
+    // **EVERY STOREY, WALKED OFF THE TABLE AND NOT OFF THREE INDICES.** Each answers at its own height, is out
+    // of reach from the one below, and its own hatch drops him to the floor under it rather than to the ground
+    // — a hole cancels the deck at ITS OWN height and no other. Written as a loop so it holds at whatever
+    // storeys the tower is authored with rather than at the four it has today.
+    for (propbuild.WATCH_STOREYS, 0..) |st, i| {
+        const y = st.top();
+        try std.testing.expectEqual(@as(?f32, y), e.deckAt(0, 0, y));
+        const under: ?f32 = if (i == 0) null else propbuild.WATCH_STOREYS[i - 1].top();
+        try std.testing.expectEqual(under, e.deckAt(st.hx, st.hz, y));
+    }
     // `standAt` is what an actor asks, and the land is still under all of it.
     try std.testing.expectApproxEqAbs(roof, e.standAt(0, 0, roof), 1e-4);
     try std.testing.expectApproxEqAbs(e.groundAt(0, hz), e.standAt(0, hz, mid), 1e-4);
     // **AND A FALLING BODY WALKS DOWN THE FLOORS**, which is the whole reason `game.groundActorFrom` is handed
     // his FEET and not his `pos.y`: asked with the floor it is already heading for, each deck refuses itself on
     // its own `STEP_UP` gate and he drops through every one of them to the ground.
+    const under = propbuild.WATCH_STOREYS[propbuild.WATCH_STOREYS.len - 2].top();
     try std.testing.expectApproxEqAbs(roof, e.standAt(0, 0, roof + 0.5), 1e-4);
-    try std.testing.expectApproxEqAbs(mid, e.standAt(0, 0, roof - 1.0), 1e-4);
+    try std.testing.expectApproxEqAbs(under, e.standAt(0, 0, under + STEP_UP * 0.5), 1e-4);
     try std.testing.expectApproxEqAbs(e.groundAt(0, 0), e.standAt(0, 0, mid - 1.0), 1e-4);
-    std.debug.print("\n  watchtower: floor {d:.2} m, roof {d:.2} m, hatches at z {d:.2} / {d:.2}, shaft clear to {d:.2} m of the axis\n", .{
-        mid, roof, hz, propbuild.WATCH_ROOF_HATCH_Z, props.TOWER_CLEAR,
+    std.debug.print("\n  watchtower: {d} storeys, first at {d:.2} m and the roof at {d:.2} m, shaft clear to {d:.2} m of the axis\n", .{
+        propbuild.WATCH_STOREYS.len, mid, roof, props.TOWER_CLEAR,
     });
 }
 
@@ -3437,9 +3455,19 @@ test "WHAT THE CLIMB PROMPT COSTS A FRAME — `ladderNear` on the shipped map, t
     e.materialize(m);
     // `game.reachable` asks this EVERY FRAME once the five cheaper reaches miss, so the case that matters is
     // the one where the answer is no: he is standing somewhere ordinary and the walk finds nothing.
-    const spots = [_]struct { name: []const u8, at: rl.Vector3 }{
-        .{ .name = "at the tower", .at = v3(-52.479, 0, -105.316) },
-        .{ .name = "open ground ", .at = v3(0, 0, 4) },
+    // **THE LOADED CASE IS FOUND, NOT NAMED.** As a literal off the working map it went stale the day that
+    // ladder moved and quietly timed the empty case twice.
+    var beside = v3(0, 0, 4);
+    for (e.props[0..e.nprops]) |pr| {
+        if (pr.kind != .ladder) continue;
+        beside = pr.pos;
+        break;
+    }
+    // **AND ASKED AT THE RUN'S OWN FOOT.** `ladderNear` gates on `LADDER_GRAB` about the run, so a flat 0 here
+    // misses any flight based on a floor — which is the same silent empty-case timing as the stale literal was.
+    const spots = [_]struct { name: []const u8, at: rl.Vector3, footY: f32 }{
+        .{ .name = "beside a ladder", .at = beside, .footY = beside.y },
+        .{ .name = "open ground    ", .at = v3(0, 0, 4), .footY = 0 },
     };
     const ROUNDS = 2000;
     std.debug.print("\n", .{});
@@ -3447,7 +3475,7 @@ test "WHAT THE CLIMB PROMPT COSTS A FRAME — `ladderNear` on the shipped map, t
         var timer = try std.time.Timer.start();
         var found: usize = 0;
         for (0..ROUNDS) |_| {
-            if (e.ladderNear(s.at, 0, 1.5) != null) found += 1;
+            if (e.ladderNear(s.at, s.footY, 1.5) != null) found += 1;
         }
         const us = @as(f64, @floatFromInt(timer.read())) / 1000.0 / @as(f64, @floatFromInt(ROUNDS));
         std.debug.print("  climb prompt {s}: {d:.3} us a frame — {d:.4}% of a 16.7 ms frame ({s})\n", .{

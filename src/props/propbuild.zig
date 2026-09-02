@@ -22,6 +22,11 @@ const TIMBER = art.TIMBER;
 const TIMBER_DK = art.TIMBER_DK;
 const TOWER_R = art.TOWER_R;
 const TOWER_SIDES = art.TOWER_SIDES;
+const TOWER_WALL_H = art.TOWER_WALL_H;
+const TOWER_COURSES = art.TOWER_COURSES;
+const TOWER_COURSE_H = art.TOWER_COURSE_H;
+const TOWER_PLINTH = art.TOWER_PLINTH;
+const TOWER_HEAD = art.TOWER_HEAD;
 const courseInto = art.courseInto;
 const lichenInto = art.lichenInto;
 const towerDoorway = art.towerDoorway;
@@ -186,44 +191,116 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
 /// Boards are this thick, and a deck's TOP is half of one above the line the planks are centred on. The mesh
 /// and `props.WATCH_DECKS` are the two readers and they may not each carry their own copy of the half.
 pub const PLANK_T: f32 = 0.14;
-pub const WATCH_DECK_Y: f32 = 4.62;
-pub const WATCH_DECK_TOP: f32 = WATCH_DECK_Y + PLANK_T * 0.5;
-/// **THE ROOF** — boards laid over the head of the shaft, which the merlons then stand on. The last course
-/// tops out at 0.44 + 15 x 0.76 = 11.84 and the parapet is authored from 11.90, so the deck goes between them
-/// and nothing else moves.
-pub const WATCH_ROOF_Y: f32 = 11.83;
-pub const WATCH_ROOF_TOP: f32 = WATCH_ROOF_Y + PLANK_T * 0.5;
-/// Where a hatch sits, and it is a NUMBER WITH A CEILING: the shaft's colliders leave clear standing only
-/// inside `TOWER_R - 0.62 - HERO_R` = 1.37 m of the axis, so a hatch further out is one the push-out shoulders
-/// him off before he can step onto the floor.
+/// How far off the axis a hatch sits, on whichever of the two horizontals its floor uses. **A NUMBER WITH A
+/// CEILING**: the shaft's colliders leave clear standing only inside `props.TOWER_CLEAR` of the axis, so a
+/// hatch further out is one the push-out shoulders him off before he can step onto the floor. It stayed at
+/// 1.10 through the doubling — that is what keeps the shipped flights lined up on their trapdoors — so the
+/// widened floor is all standing room, which is the point of it.
 pub const WATCH_HATCH_Z: f32 = 1.10;
 pub const WATCH_HATCH_R: f32 = 0.70;
-/// **THE TWO HATCHES ARE ON OPPOSITE SIDES OF THE SHAFT** — one flight per floor, and crossing the boards
-/// between them is what makes the middle storey a place rather than a landing.
-pub const WATCH_ROOF_HATCH_Z: f32 = -WATCH_HATCH_Z;
 
-fn inHatch(hz: f32, x: f32, z: f32) bool {
-    const dz = z - hz;
-    return x * x + dz * dz < WATCH_HATCH_R * WATCH_HATCH_R;
+/// One boarded storey: the line its planks are centred on, and where its trapdoor is cut.
+pub const Storey = struct {
+    y: f32,
+    hx: f32 = 0,
+    hz: f32 = 0,
+
+    /// What a body stands on — half a board above the centre line.
+    pub fn top(self: Storey) f32 {
+        return self.y + PLANK_T * 0.5;
+    }
+};
+
+/// **THE ONE PLACE A FLOOR AND ITS HATCH ARE DECLARED TOGETHER.** `watchtowerMesh` boards these and
+/// `props.WATCH_DECKS` turns the same rows into decks and holes; declared twice, a hatch moved in one and not
+/// the other is a floor you fall through or a hole you stand on.
+///
+/// **THE FIRST TWO DID NOT MOVE WHEN THE SHAFT DOUBLED.** The shipped map's flights are authored against 4.69
+/// and 11.90 (`worlds/01_fallen_plain.world`), so the tower grew UPWARD out of the building that was already
+/// there rather than being re-spaced under them. The last row is THE ROOF, and it goes between the head of the
+/// last course and the parapet standing on it — the rows stay AUTHORED rather than solved off `art.TOWER_HEAD`,
+/// because a flight in a shipped map is nailed to the storey it serves and a derived roof moves it; the
+/// comptime block below is what says the two still agree.
+///
+/// **NO TWO FLIGHTS SHARE A LINE** — the hatches take the four quarters of the shaft in turn, so every storey
+/// is crossed to reach the next one rather than passed straight through, and no ladder stands over another.
+pub const WATCH_STOREYS = [_]Storey{
+    .{ .y = 4.62, .hz = WATCH_HATCH_Z },
+    .{ .y = 11.83, .hz = -WATCH_HATCH_Z },
+    .{ .y = 17.83, .hx = WATCH_HATCH_Z },
+    .{ .y = 23.23, .hx = -WATCH_HATCH_Z },
+};
+
+/// The floor the doorway opens under, and the roof. The storeys between them have no name worth carrying.
+pub const WATCH_DECK_TOP: f32 = WATCH_STOREYS[0].top();
+pub const WATCH_ROOF_TOP: f32 = WATCH_STOREYS[WATCH_STOREYS.len - 1].top();
+
+/// **THE ARROW SLITS** — two courses of one, one band every `SLIT_BAND` courses up the shaft, and the pair is
+/// on opposite sides. `SLIT_SIDE` is a SIXTH of the circle off the doorway, which is what keeps the opening's
+/// own three sides whole.
+const SLIT_BAND: i32 = 12;
+const SLIT_LO: i32 = 7;
+const SLIT_HI: i32 = 8;
+const SLIT_SIDE: i32 = @divTrunc(TOWER_SIDES, 6);
+
+comptime {
+    std.debug.assert(SLIT_LO < SLIT_BAND and SLIT_HI < SLIT_BAND and SLIT_HI > SLIT_LO);
+    // A slit cut through the doorway's own side takes stone out of the lintel over the door.
+    std.debug.assert(!art.towerDoorway(SLIT_SIDE));
+    std.debug.assert(!art.towerDoorway(SLIT_SIDE + @divTrunc(TOWER_SIDES, 2)));
 }
 
-/// One boarded floor across the shaft, with its hatch cut out. Both storeys are this: a plank is laid in the
+/// **THE MERLONS, AND THEY ARE THE TALLEST THING ON THE PROP.** They stand on the roof boards, so the kind's
+/// own `top` is this and not the roof (`props.WATCH_TOP`) — a `top` short of the geometry is a shadow cull that
+/// drops the parapet at the range it starts to matter.
+const MERLON_H_LO: f32 = 0.40;
+const MERLON_H_HI: f32 = 0.95;
+/// Everything the watchtower's mesh reaches, for the kind's row to read instead of keeping its own number.
+pub const WATCH_TOP: f32 = WATCH_ROOF_TOP + MERLON_H_HI;
+
+comptime {
+    // **THE WALL HOLDS A BODY IN ON EVERY FLOOR AND LETS GO OF THE ROOF** (`propart.TOWER_WALL_H`), which is
+    // the one relation `propart` cannot state for itself — it sits under this file and owns none of these.
+    std.debug.assert(TOWER_WALL_H > WATCH_STOREYS[WATCH_STOREYS.len - 2].top());
+    std.debug.assert(TOWER_WALL_H < WATCH_ROOF_TOP);
+    // **AND THE ROOF IS THE HEAD OF THE SHAFT, WITHIN A BOARD.** The rows are authored; this is what catches a
+    // course count or a course height moved in `propart` without the storey over them following.
+    std.debug.assert(@abs(WATCH_STOREYS[WATCH_STOREYS.len - 1].y - TOWER_HEAD) <= PLANK_T);
+    for (WATCH_STOREYS, 0..) |st, i| {
+        if (i > 0) std.debug.assert(st.y > WATCH_STOREYS[i - 1].y);
+        // A hatch a body cannot stand beside is one the push-out shoulders him off before he lands on it.
+        std.debug.assert(@abs(st.hx) + @abs(st.hz) + WATCH_HATCH_R < art.TOWER_CLEAR);
+    }
+}
+
+fn inHatch(hx: f32, hz: f32, x: f32, z: f32) bool {
+    const dx = x - hx;
+    const dz = z - hz;
+    return dx * dx + dz * dz < WATCH_HATCH_R * WATCH_HATCH_R;
+}
+
+/// Plank pitch across a floor, so the board count follows the shaft's width instead of being a count that was
+/// right at one radius.
+const PLANK_W: f32 = 0.60;
+
+/// One boarded floor across the shaft, with its hatch cut out. Every storey is this: a plank is laid in the
 /// PIECES either side of the opening, so the hole is a real hole and not a gap in a row of boards.
-fn floorInto(b: *Builder, rng: *mathx.Rng, y: f32, hz: f32, R: f32, sides: i32) void {
+fn floorInto(b: *Builder, rng: *mathx.Rng, y: f32, hx: f32, hz: f32, R: f32, sides: i32) void {
     b.setMat(.wood);
     // **NO BOARD IS MISSING FROM A FLOOR THAT HOLDS A BODY.** The deck is the whole disc (`props.WATCH_DECKS`),
     // so a dropped plank is a hole he stands on — the picture and the footing have to be the same floor. The
     // wabi-sabi is in the WIDTH and the tone instead, which is where it belongs on sawn timber anyway.
+    const boards: i32 = @intFromFloat(@ceil(2.0 * R / PLANK_W));
     var pl: i32 = 0;
-    while (pl < 8) : (pl += 1) {
-        const x = (@as(f32, @floatFromInt(pl)) - 3.5) * 0.60 + rng.range(-0.02, 0.02);
+    while (pl < boards) : (pl += 1) {
+        const x = (@as(f32, @floatFromInt(pl)) - 0.5 * (@as(f32, @floatFromInt(boards)) - 1.0)) * PLANK_W + rng.range(-0.02, 0.02);
         const halfSpan = @sqrt(@max(R * R - x * x, 0.04));
         var pz: f32 = -halfSpan;
         while (pz < halfSpan - 0.05) {
             var run = pz;
-            while (run < halfSpan and !inHatch(hz, x, run)) run += 0.08;
-            if (run - pz > 0.12) b.addCube(v3(x, y + rng.range(-0.006, 0.006), (pz + run) * 0.5), v3(rng.range(0.55, 0.60), PLANK_T, run - pz), if (rng.float() < 0.42) TIMBER else TIMBER_DK);
-            while (run < halfSpan and inHatch(hz, x, run)) run += 0.08;
+            while (run < halfSpan and !inHatch(hx, hz, x, run)) run += 0.08;
+            if (run - pz > 0.12) b.addCube(v3(x, y + rng.range(-0.006, 0.006), (pz + run) * 0.5), v3(rng.range(PLANK_W - 0.05, PLANK_W), PLANK_T, run - pz), if (rng.float() < 0.42) TIMBER else TIMBER_DK);
+            while (run < halfSpan and inHatch(hx, hz, x, run)) run += 0.08;
             pz = run;
         }
     }
@@ -233,7 +310,7 @@ fn floorInto(b: *Builder, rng: *mathx.Rng, y: f32, hz: f32, R: f32, sides: i32) 
     while (hf < 10) : (hf += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(hf)) / 10.0;
         b.addCube(
-            v3(mathx.cosf(a) * (WATCH_HATCH_R + 0.06), y + 0.06, hz + mathx.sinf(a) * (WATCH_HATCH_R + 0.06)),
+            v3(hx + mathx.cosf(a) * (WATCH_HATCH_R + 0.06), y + 0.06, hz + mathx.sinf(a) * (WATCH_HATCH_R + 0.06)),
             v3(0.30, 0.09, 0.30),
             if (rng.float() < 0.35) TIMBER else TIMBER_DK,
         );
@@ -242,12 +319,21 @@ fn floorInto(b: *Builder, rng: *mathx.Rng, y: f32, hz: f32, R: f32, sides: i32) 
 
 pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
+    watchtowerInto(&b);
+    return b.toModel(shader);
+}
+
+/// Split off the model so the tower's COST can be counted without a GL context — it is the biggest prop in
+/// the game and the test below prints the number every build.
+fn watchtowerInto(b: *Builder) void {
     var rng = mathx.Rng.init(7788);
     b.setMat(.stone);
     const sides: i32 = TOWER_SIDES;
     const R: f32 = TOWER_R;
-    const courses: i32 = 15;
-    const ch: f32 = 0.76;
+    // A course is a course whatever the tower is: the shaft doubled by taking twice as many of them. Both come
+    // off `propart`'s grid, which is what the doorway's head and the roof storey are solved against.
+    const courses: i32 = TOWER_COURSES;
+    const ch: f32 = TOWER_COURSE_H;
     const radial = struct {
         fn v(a: f32, len: f32) rl.Vector3 {
             return v3(mathx.sinf(a) * len, 0, -mathx.cosf(a) * len);
@@ -265,14 +351,14 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
         b.addBox(v3(base.x, 0.22, base.z), tangent(a, 0.58), v3(0, 0.22, 0), radial(a, 0.42), STONE_DK);
     }
     var cr: i32 = 0;
-    while (cr < 12) : (cr += 1) {
+    while (cr < @divTrunc(courses * 4, 5)) : (cr += 1) {
         var ci: i32 = 0;
         while (ci < sides) : (ci += 1) {
-            if (cr < 4 and towerDoorway(ci)) continue;
+            if (cr < art.TOWER_DOOR_COURSES and towerDoorway(ci)) continue;
             const a = std.math.tau * (@as(f32, @floatFromInt(ci)) + 0.5) / @as(f32, @floatFromInt(sides));
             const at = radial(a, R);
             b.addBox(
-                v3(at.x, 0.44 + (@as(f32, @floatFromInt(cr)) + 0.5) * ch * 1.25, at.z),
+                v3(at.x, TOWER_PLINTH + (@as(f32, @floatFromInt(cr)) + 0.5) * ch * 1.25, at.z),
                 tangent(a, std.math.tau * R / @as(f32, @floatFromInt(sides)) * 0.80),
                 v3(0, ch * 0.66, 0),
                 radial(a, 0.24),
@@ -282,15 +368,19 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
     }
     var c: i32 = 0;
     while (c < courses) : (c += 1) {
-        const yc = 0.44 + (@as(f32, @floatFromInt(c)) + 0.5) * ch;
+        const yc = TOWER_PLINTH + (@as(f32, @floatFromInt(c)) + 0.5) * ch;
         const skew: f32 = if (@mod(c, 2) == 0) 0.0 else 0.5;
-        const crumble: f32 = if (c >= 12) 0.42 else 0.03;
+        const crumble: f32 = if (c >= courses - 3) 0.42 else 0.03;
         var i: i32 = 0;
         while (i < sides) : (i += 1) {
             const fi = @as(f32, @floatFromInt(i)) + skew;
             const a = std.math.tau * fi / @as(f32, @floatFromInt(sides));
-            if (c < 4 and towerDoorway(i)) continue;
-            if ((c == 7 or c == 8) and (i == 2 or i == 9)) continue;
+            if (c < art.TOWER_DOOR_COURSES and towerDoorway(i)) continue;
+            // Arrow slits: a PAIR of courses, opposite each other, one band every `SLIT_BAND` up the shaft
+            // — so a 30-course tower gets two bands and the top storey none. The bearing is a sixth of the
+            // circle off the doorway, which the comptime block below pins clear of the opening's own sides.
+            const band = @mod(c, SLIT_BAND);
+            if ((band == SLIT_LO or band == SLIT_HI) and (i == SLIT_SIDE or i == SLIT_SIDE + @divTrunc(sides, 2))) continue;
             if (rng.float() < crumble) continue;
             const at = radial(a, R);
             const bw = (std.math.tau * R / @as(f32, @floatFromInt(sides))) * rng.range(1.24, 1.52);
@@ -306,16 +396,15 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
     b.addBox(v3(0, 3.55, -R), v3(1.30, 0, 0), v3(0, 0.28, 0), v3(0, 0, 0.42), STONE_LT);
     for ([_]f32{ -1.18, 1.18 }) |jx| b.addBox(v3(jx, 1.85, -R), v3(0.22, 0, 0), v3(0, 1.85, 0), v3(0, 0, 0.40), STONE_DK);
     b.addCylinder(v3(0, 0.02, 0), v3(0, 0.16, 0), R + 0.1, R + 0.1, sides, STONE_DK);
-    floorInto(&b, &rng, WATCH_DECK_Y, WATCH_HATCH_Z, R, sides);
-    floorInto(&b, &rng, WATCH_ROOF_Y, WATCH_ROOF_HATCH_Z, R, sides);
+    for (WATCH_STOREYS) |st| floorInto(b, &rng, st.y, st.hx, st.hz, R, sides);
     b.setMat(.stone);
     var m: i32 = 0;
     while (m < sides) : (m += 1) {
         if (rng.float() < 0.45) continue;
         const a = std.math.tau * @as(f32, @floatFromInt(m)) / @as(f32, @floatFromInt(sides));
         const at = radial(a, R);
-        const h = rng.range(0.4, 0.95);
-        b.addBox(v3(at.x, 11.9 + h * 0.5, at.z), tangent(a, 0.42), v3(0, h * 0.5, 0), radial(a, 0.34), STONE_DK);
+        const h = rng.range(MERLON_H_LO, MERLON_H_HI);
+        b.addBox(v3(at.x, WATCH_ROOF_TOP + h * 0.5, at.z), tangent(a, 0.42), v3(0, h * 0.5, 0), radial(a, 0.34), STONE_DK);
     }
     var s: i32 = 0;
     while (s < 7) : (s += 1) {
@@ -325,8 +414,17 @@ pub fn watchtowerMesh(shader: rl.Shader) rl.Model {
         b.addBlob(v3(mathx.sinf(a) * d, r * 0.6, -mathx.cosf(a) * d), v3(r, r * 0.7, r), 3, 5, if (rng.float() < 0.4) STONE_MOSS else STONE_DK);
     }
     b.setMat(.plant);
-    tuftInto(&b, &rng, R + 1.0, 0.8, 0.85);
-    return b.toModel(shader);
+    tuftInto(b, &rng, R + 1.0, 0.8, 0.85);
+}
+
+test "THE WATCHTOWER IS THE HEAVIEST PROP IN THE WORLD, and doubling it did not quadruple the draw twice" {
+    var b = Builder.init();
+    defer b.deinit();
+    watchtowerInto(&b);
+    const tris = b.pos.items.len / 9;
+    std.debug.print("\n  watchtower mesh: {d} tris over {d} storeys, {d:.1} m of shaft on a {d}-gon\n", .{
+        tris, WATCH_STOREYS.len, WATCH_ROOF_TOP, TOWER_SIDES,
+    });
 }
 
 pub fn cottageMesh(shader: rl.Shader) rl.Model {

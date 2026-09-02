@@ -865,7 +865,7 @@ test "A BANK GIVES WAY AS YOU WALK INTO IT, AND COMES BACK AS YOU LEAVE" {
 
 // SPOREFALL. **IT IS NOT FOG WITH A FILTER ON IT** — it has to read on a bright noon as well as under cloud.
 // Three things off the one 0..1 dial: the distance haze turns peach and shortens (`daynight.bloom` +
-// `HAZE_SPORE_D`), the drifting banks become lit cloud (`sporeTint`), and there are SPORES IN IT — this system,
+// `HAZE_SPORE_D`), the drifting banks become lit cloud (`bankTint`), and there are SPORES IN IT — this system,
 // a slow-falling mote cell round the camera, falling at `SPORE_MPS`, 3% of rain.
 
 /// **HOW FAR THE MOTES REACH.** Smaller than `CELL_R` on purpose — rain is a sheet you stand under, spores are something in the air AROUND YOU. Past this the peach haze carries it, and haze costs no fill.
@@ -921,14 +921,22 @@ pub fn shoalFade(t: f32, i: usize) f32 {
 
 pub const SPORE_OPACITY: f32 = 0.62;
 const SPORE_TAPER: f32 = 0.70;
+/// What a bank of fog is multiplied by at a FULL bloom, on top of the hour's own colour — peach, and red is
+/// left alone because the bank may not come out brighter than the grey it was authored as.
+const SPORE_BANK_PEACH = v3(1.0, 196.0 / 255.0, 170.0 / 255.0);
 
-/// The tint the mist banks are drawn with, so one grey mesh serves both weathers. White is the bank's own `MIST_COL`; at full spore it is peach lit from inside.
-pub fn sporeTint(k: f32) rl.Color {
-    const t = mathx.clampF(k, 0, 1);
+/// The tint the mist banks are drawn with, so ONE grey mesh serves every hour and both weathers — white leaves
+/// them the bank's own `MIST_COL`. **BOTH TERMS, NOT EITHER**: `hour` is the light actually standing in the
+/// bank (`daynight.mistTint`), and the spore bloom's peach rides on top of it, because a bloom at midnight is
+/// a lit fog in the dark and not a daylit one. Handed the hour as a factor rather than reading the clock,
+/// since this file sits under the weather and owns none of the day.
+pub fn bankTint(hour: rl.Vector3, spore: f32) rl.Color {
+    const t = mathx.clampF(spore, 0, 1);
+    const peach = mathx.lerpV(v3(1, 1, 1), SPORE_BANK_PEACH, t);
     return rgba(
-        255,
-        @intFromFloat(mathx.lerpF(255, 196, t)),
-        @intFromFloat(mathx.lerpF(255, 170, t)),
+        mathx.u8f(hour.x * peach.x * 255.0),
+        mathx.u8f(hour.y * peach.y * 255.0),
+        mathx.u8f(hour.z * peach.z * 255.0),
         255,
     );
 }

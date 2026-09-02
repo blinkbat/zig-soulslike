@@ -335,7 +335,7 @@ fn render(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, kind: Kin
 }
 
 // ONE GROUP OF EACH, exactly as the game holds them — the group is every creature's own draw contract (model, flash, scale), so the viewer cannot drift from what the field shows. Members are respawned into slot 0 per render; a spawn poses before it returns, so the cell is the creature's own first frame.
-const CharSet = struct {
+pub const CharSet = struct {
     warren: frogmod.Knot,
     line: archermod.Line,
     grief: ogremod.Grief,

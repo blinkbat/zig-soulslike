@@ -286,6 +286,8 @@ pub const Game = struct {
     /// `= null` here never runs.
     gateWalk: ?GateWalk = null,
     climb: ?Climb = null,
+    /// A DEFAULTED FIELD, and the second half of a climb: cleared through `leaveLadder` and never on its own.
+    mantle: ?Mantle = null,
     /// **THE TRADE COUNTER** (`play/counter.zig`), opened by a `shop`/`smithy` trigger act. A DEFAULTED FIELD:
     /// assigned in `init` and in `beginGame`, because `Game` comes off `alloc.create`.
     counter: countermod.Counter = .{},
@@ -1182,7 +1184,17 @@ comptime {
         }
     }
     // **THE ROSTER IS WRITTEN TWICE** — here and as `objview.CharSet`, because the viewer draws a creature
-    // through its own group.
+    // through its own group. NAME FOR NAME and not just a count: two lists of equal length are not the same
+    // roster, and the count alone let a rename, a swap, or one row traded for another through unsaid.
+    for (FOE_GROUPS) |f| {
+        if (!@hasField(objviewmod.CharSet, f.field)) {
+            @compileError("game: FOE_GROUPS row '" ++ f.field ++ "' has no objview.CharSet field of that name");
+        }
+        if (@FieldType(objviewmod.CharSet, f.field) != @FieldType(Game, f.field)) {
+            @compileError("game: FOE_GROUPS row '" ++ f.field ++ "' is a different group in objview.CharSet");
+        }
+    }
+    // …and the count closes it into a bijection: every CharSet field is one of the rows checked above.
     if (FOE_GROUPS.len != objviewmod.CHAR_GROUPS) {
         @compileError("game: FOE_GROUPS and objview.CharSet no longer hold the same roster");
     }
@@ -1773,7 +1785,7 @@ fn plantActor(g: *const Game, pos: *rl.Vector3) void {
 /// this — the land keeps the snap it has always had, because terrain has no lip a body can be standing over.
 fn heroFooting(g: *Game, was_: rl.Vector3) void {
     const h = &g.hero;
-    if (h.climbing or h.dead) {
+    if (h.onLadder() or h.dead) {
         g.heroDeck = null;
         return;
     }
@@ -1794,7 +1806,7 @@ pub fn envGroundAt(e: *const envmod.Env, x: f32, z: f32) f32 {
 }
 
 /// **THE LENS CLEARS THE FLOOR HE IS ON, NOT THE LAND UNDER IT.** `followClear` was handed `groundAt`, which on
-/// the watchtower's roof is eleven metres below his boots — so the boom paid nothing, the eye sank through the
+/// the watchtower's roof is twenty-three metres below his boots — so the boom paid nothing, the eye sank through the
 /// boards and the shot was the inside of the shaft. Off `standAt` the deck is the floor; past its edge the same
 /// call answers with the land again, which is what a camera hanging out over a drop should see. Plumb ground is
 /// unchanged: `standAt` IS `groundAt` wherever no deck is within the walk's own riser of him.
@@ -1929,8 +1941,7 @@ test "EVERY LADDER ON THE BENCH TOPS OUT WHERE IT WAS AUTHORED TO, AND THE THREE
     e.heightAny = m.anyHeight();
     e.materialize(m);
 
-    const floor = propsmod.info(.watchtower).decks[0].y;
-    const roof = propsmod.info(.watchtower).decks[2].y;
+    const fl = propsmod.WATCH_FLOORS;
     // Authored foot (x, z), the height a body stands beside it at, and the ground it must put him down on —
     // null for a run that serves nothing and has to be refused.
     const want = [_]struct { x: f32, z: f32, at: f32 = 0, top: ?f32 }{
@@ -1938,8 +1949,10 @@ test "EVERY LADDER ON THE BENCH TOPS OUT WHERE IT WAS AUTHORED TO, AND THE THREE
         .{ .x = 7.2, .z = -14, .top = null },
         .{ .x = -29.8, .z = 20, .top = 3.00 },
         .{ .x = -29.8, .z = 26, .top = null },
-        .{ .x = -20, .z = 1.4, .top = floor },
-        .{ .x = -20, .z = -1.4, .at = floor, .top = roof },
+        .{ .x = -20, .z = 1.4, .top = fl[0] },
+        .{ .x = -20, .z = -1.4, .at = fl[0], .top = fl[1] },
+        .{ .x = -18.6, .z = 0, .at = fl[1], .top = fl[2] },
+        .{ .x = -21.4, .z = 0, .at = fl[2], .top = fl[3] },
         .{ .x = -8, .z = -34, .top = null },
     };
     var found: usize = 0;
@@ -1964,112 +1977,18 @@ test "EVERY LADDER ON THE BENCH TOPS OUT WHERE IT WAS AUTHORED TO, AND THE THREE
             try std.testing.expectApproxEqAbs(t, x.y, 0.02);
             // …and it is a step he could have taken on foot, in the band the exit is allowed to accept.
             try std.testing.expect(head - x.y <= envmod.LADDER_PROUD and x.y - head <= envmod.STEP_UP);
+            // **AND HE LETS GO BEFORE THE TOP RUNG.** The haul begins where his boots are `MANTLE_RISE` under
+            // the lip — never above the head of the run, and never so far down it that `MANTLE_LOOK`, which is
+            // what keeps `ladderExit` off every frame of a twelve-metre climb, has not started looking yet.
+            const haul = mantleAt(r, x.y);
+            std.debug.print("      hauls from {d:5.2} of {d:5.2} — {d:.2} m of run he no longer rides\n", .{ haul, r.run, r.run - haul });
+            try std.testing.expectApproxEqAbs(x.y - MANTLE_RISE, r.foot.y + haul, 0.02);
+            try std.testing.expect(haul <= r.run and haul >= r.run - MANTLE_LOOK);
         } else {
             try std.testing.expectEqual(@as(?rl.Vector3, null), exit);
         }
     }
     try std.testing.expectEqual(want.len, found);
-}
-
-test "THE SHIPPED MAP'S WATCHTOWER IS CLIMBABLE TO ITS ROOF, in two flights" {
-    const m = try std.testing.allocator.create(worldfmt.Map);
-    defer std.testing.allocator.destroy(m);
-    var ln: usize = 0;
-    try worldfmt.loadForTest(worldfmt.START_MAP, m, &ln);
-    const e = try std.testing.allocator.create(envmod.Env);
-    defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
-    e.heightField = m.height;
-    e.heightHalf = m.half;
-    e.heightAny = m.anyHeight();
-    e.materialize(m);
-
-    // The tower north-west of the colossal gate, and the ground under all of it is flat. The two floors are
-    // read off the WORLD rather than off the kind's table, so what is asserted is the deck a body would find.
-    const base = e.groundAt(-52, -104);
-    const floor = e.deckAt(-52, -104, 5.0) orelse return error.TestUnexpectedResult;
-    const roof = e.deckAt(-52, -104, 12.0) orelse return error.TestUnexpectedResult;
-    try std.testing.expect(roof - floor > 6.5);
-    const lower = e.ladderNear(v3(-52.479, 0, -105.316), base, LADDER_REACH) orelse return error.TestUnexpectedResult;
-    const upper = e.ladderNear(v3(-51.521, 0, -102.684), floor, LADDER_REACH) orelse return error.TestUnexpectedResult;
-    const outLo = ladderExit(e, lower) orelse return error.TestUnexpectedResult;
-    const outHi = ladderExit(e, upper) orelse return error.TestUnexpectedResult;
-    std.debug.print("\n  fallen plain watchtower: ground {d:.2} -> floor {d:.2} ({d:.2} m off the axis) -> roof {d:.2} ({d:.2} m off)\n", .{
-        base, outLo.y, mathx.distXZ(outLo, v3(-52, 0, -104)), outHi.y, mathx.distXZ(outHi, v3(-52, 0, -104)),
-    });
-    try std.testing.expectApproxEqAbs(floor, outLo.y, 0.02);
-    try std.testing.expectApproxEqAbs(roof, outHi.y, 0.02);
-    // **HE STEPS OFF INBOARD, NOT THROUGH THE WALL AND NOT ONTO THE MERLONS.** Both exits must land inside the
-    // shaft's clear radius: below, stone refuses the wall side; on the roof, the ledge test does.
-    try std.testing.expect(mathx.distXZ(outLo, v3(-52, 0, -104)) < propsmod.TOWER_CLEAR);
-    try std.testing.expect(mathx.distXZ(outHi, v3(-52, 0, -104)) < propsmod.TOWER_CLEAR);
-
-    // **AND HE CAN GET IN AT ALL.** Not a straight line — the forecourt has a brazier in it and a body walks
-    // round that — so this is a FLOOD over the floor at ankle height, from outside the door to the foot of the
-    // lower ladder. It is the whole question the lintel broke: the course over the doorway is a wall to a body
-    // on a deck and has to be nothing at all to one on the ground.
-    const G: f32 = 0.15;
-    const SPAN: usize = 96;
-    const org = v3(-52 - 0.5 * G * SPAN, 0, -104 - 0.5 * G * SPAN);
-    var open = [_]bool{false} ** (SPAN * SPAN);
-    var seen = [_]bool{false} ** (SPAN * SPAN);
-    for (0..SPAN) |iz| {
-        for (0..SPAN) |ix| {
-            const at = v3(org.x + G * @as(f32, @floatFromInt(ix)), base + 0.20, org.z + G * @as(f32, @floatFromInt(iz)));
-            open[iz * SPAN + ix] = !e.blockedNear(at, HERO_R, 1.2);
-        }
-    }
-    const cellOfXZ = struct {
-        fn go(o: rl.Vector3, x: f32, z: f32) usize {
-            const ix: usize = @intFromFloat(@round((x - o.x) / G));
-            const iz: usize = @intFromFloat(@round((z - o.z) / G));
-            return @min(iz, SPAN - 1) * SPAN + @min(ix, SPAN - 1);
-        }
-    }.go;
-    const th = mathx.radians(200.0);
-    const face = v3(-mathx.sinf(th), 0, -mathx.cosf(th));
-    const from = cellOfXZ(org, -52 + face.x * 6.6, -104 + face.z * 6.6);
-    const want = cellOfXZ(org, lower.axis.x, lower.axis.z);
-    try std.testing.expect(open[from] and open[want]);
-    var queue: [SPAN * SPAN]usize = undefined;
-    var head: usize = 0;
-    var tail: usize = 1;
-    queue[0] = from;
-    seen[from] = true;
-    while (head < tail) : (head += 1) {
-        const c = queue[head];
-        const cx = c % SPAN;
-        const cz = c / SPAN;
-        for ([_][2]i32{ .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 } }) |d| {
-            const nx = @as(i32, @intCast(cx)) + d[0];
-            const nz = @as(i32, @intCast(cz)) + d[1];
-            if (nx < 0 or nz < 0 or nx >= SPAN or nz >= SPAN) continue;
-            const n = @as(usize, @intCast(nz)) * SPAN + @as(usize, @intCast(nx));
-            if (seen[n] or !open[n]) continue;
-            seen[n] = true;
-            queue[tail] = n;
-            tail += 1;
-        }
-    }
-    std.debug.print("  doorway: {d} of {d} cells reachable on foot from outside; foot of the ladder {s}\n", .{
-        tail, SPAN * SPAN, if (seen[want]) "REACHED" else "WALLED OFF",
-    });
-    if (!seen[want]) {
-        var iz: usize = 0;
-        while (iz < SPAN) : (iz += 2) {
-            var line: [SPAN / 2]u8 = undefined;
-            var ix: usize = 0;
-            while (ix < SPAN) : (ix += 2) {
-                const c = iz * SPAN + ix;
-                line[ix / 2] = if (c == want) 'L' else if (c == from) 'S' else if (seen[c]) '.' else if (open[c]) 'o' else '#';
-            }
-            std.debug.print("    {s}\n", .{line[0..]});
-        }
-    }
-    try std.testing.expect(seen[want]);
-
-    // …and the same walk at deck height is stopped, because up there the doorway is wall like every other side.
-    try std.testing.expect(e.blockedNear(v3(-52 + face.x * 2.35, floor + 0.20, -104 + face.z * 2.35), HERO_R, 1.2));
 }
 
 test "THE ROLL OBEYS THE GROUND — a committed move may not take him up what a walk refuses" {
@@ -2644,7 +2563,7 @@ const Reach = enum {
 /// **A REACH IS A CIRCLE IN THE GROUND PLANE, AND A FLOOR IS NOT.** Every `near` ring — the drop, the bonfire,
 /// the glow, the box, the folk — is `mathx.Nearest`, which is XZ and pinned to be (its own test offers a body
 /// forty metres up and expects it taken). That was the whole truth while every body stood on the land; with
-/// decks a man on the watchtower's roof stands 11.9 m over its yard and inside all five rings, so he reclaimed
+/// decks a man on the watchtower's roof stands 23.3 m over its yard and inside all five rings, so he reclaimed
 /// his souls, opened a box and sat down at a bonfire through the boards.
 ///
 /// **AND THE BAND IS ONLY EVER ASKED OF A BODY UP ON A DECK** (`Game.heroDeck`). Sculpted LAND inside a ring
@@ -2655,7 +2574,7 @@ const Reach = enum {
 /// riser does that with room to spare.
 const REACH_RISE: f32 = 2.0 * envmod.STEP_UP;
 comptime {
-    std.debug.assert(REACH_RISE < propsmod.info(.watchtower).decks[0].y);
+    std.debug.assert(REACH_RISE < propsmod.WATCH_FLOORS[0]);
 }
 
 /// Is the thing on the floor he is standing on? `null` is the LAND, which is never gated.
@@ -2669,8 +2588,8 @@ fn atHisLevel(g: *const Game, y: f32) bool {
 }
 
 test "A REACH IS REFUSED THROUGH A FLOOR, AND NEVER REFUSED ACROSS THE LAND" {
-    const floor = propsmod.info(.watchtower).decks[0].y;
-    const roof = propsmod.info(.watchtower).decks[2].y;
+    const floor = propsmod.WATCH_FLOORS[0];
+    const roof = propsmod.WATCH_FLOORS[propsmod.WATCH_FLOORS.len - 1];
     // **ON THE LAND THERE IS NO GATE AT ALL**, whatever the hillside is doing — that is the whole shape of the
     // rule, and the ring walk below is why.
     try std.testing.expect(onSameFloor(null, 0));
@@ -2781,7 +2700,29 @@ pub const LADDER_REACH: f32 = 1.5;
 /// The step off the head of a ladder onto whatever holds him. **PAST THE LIP AND NOT ONTO IT** — a heightfield
 /// cliff ramps over one lattice cell (0.54 m at the shipped map's spacing), so a shorter stride lands him
 /// halfway up the ramp, reads as not solid ground, and refuses the exit.
-const LADDER_EXIT: f32 = 1.20;
+/// **AND IT IS A STRIDE, NOT A TOEHOLD.** At 1.20 he arrived with his heels over the drop and the first thing
+/// the stick did was walk him back off; the ledge test asks for one MORE of these the same way, so a lip has
+/// to hold 3.20 m of standing room before a ladder will put him on it.
+const LADDER_EXIT: f32 = 1.60;
+/// **HOW HIGH THE LIP STANDS OVER HIS BOOTS WHEN THE CLIMB ENDS AND THE HAUL BEGINS** — CHEST, on the 1.8 m
+/// rig, which is where a body stops climbing and gets a knee up instead. Nothing waits for the top rung: a
+/// head standing `env.LADDER_PROUD` over the lip it serves is a metre of ladder above a floor he is already
+/// clear of, and riding it and then stepping DOWN was the thing that read as falling back onto the run.
+const MANTLE_RISE: f32 = 1.30;
+/// How far under the head the exit is worth solving at all. The lip may sit a whole `LADDER_PROUD` below it,
+/// so that plus the haul is the earliest his arms can be clear, and under that the climb pays for nothing.
+const MANTLE_LOOK: f32 = MANTLE_RISE + envmod.LADDER_PROUD;
+/// **THE HAUL IS TWO MOVES THAT OVERLAP.** He goes UP first and FORWARD second, because a straight line from
+/// the rung to the lip drags him through the corner of the stone. The rise finishes exactly where the pose's
+/// press does (`hero.MANTLE_PRESS`) — two numbers for one instant is a body standing up mid-climb — and only
+/// where the STRIDE opens is this file's to choose, as a share of `hero.MANTLE_DUR`.
+const MANTLE_STEP_FROM: f32 = 0.34;
+
+comptime {
+    // OVERLAP, not two beats in a row: the stride has to open before the rise closes, or he comes to a stop
+    // standing plumb on the last rung and then slides forward onto the lip.
+    std.debug.assert(MANTLE_STEP_FROM >= 0 and MANTLE_STEP_FROM < heromod.MANTLE_PRESS);
+}
 /// Metres of run he covers in the beat between one hand-over-hand voice and the next.
 const CLIMB_STEP_EVERY: f32 = 0.62;
 /// Apex of the peel-off when a blow lands on him up there. Small: he is knocked LOOSE, and the drop does the
@@ -2801,6 +2742,17 @@ const Climb = struct {
     beat: f32 = 0,
 };
 
+/// **THE HAUL OVER THE LIP, AND IT IS STILL THE LADDER.** Everything that lets go of a climb lets go of this
+/// too (`leaveLadder`), because a man half over an edge with the run deleted under him is standing in the air.
+const Mantle = struct {
+    /// His FEET at the last rung, and where they land. `hero.pos.y` does not move through either: the height
+    /// is carried in the `lift`, exactly as it is all the way up the run.
+    from: rl.Vector3,
+    to: rl.Vector3,
+    face: f32,
+    t: f32 = 0,
+};
+
 /// **A CLIMB AND A FALL OFF A FLOOR ARE NOT A JUMP** — the lens takes all of those, where it takes just over
 /// half a hop (`camera.LIFT_SHARE`). Split on the height itself and not on the state, so the knock-off's own
 /// arc, which starts as a launch and ends as a plain landing, never changes rule mid-flight.
@@ -2814,12 +2766,12 @@ fn syncLensLift(g: *Game) void {
 }
 
 fn liftShare(h: *const heromod.Hero) f32 {
-    if (h.climbing or h.lift > heromod.JUMP_APEX) return 1.0;
+    if (h.onLadder() or h.lift > heromod.JUMP_APEX) return 1.0;
     return cameramod.LIFT_SHARE;
 }
 
 fn ladderAt(g: *const Game) ?envmod.Rung {
-    if (g.climb != null or g.gateWalk != null or !g.hero.bodyFree()) return null;
+    if (g.climb != null or g.mantle != null or g.gateWalk != null or !g.hero.bodyFree()) return null;
     return g.env.ladderNear(g.hero.pos, g.hero.footY(), LADDER_REACH);
 }
 
@@ -2851,6 +2803,7 @@ fn mountLadder(g: *Game) void {
 /// hero left holding a `lift` is a man standing in the air.
 fn leaveLadder(g: *Game) void {
     g.climb = null;
+    g.mantle = null;
     g.hero.endClimb();
 }
 
@@ -2878,7 +2831,7 @@ fn footOffLadder(g: *Game) void {
 }
 
 fn dropOffLadder(g: *Game) void {
-    if (g.climb == null) return;
+    if (g.climb == null and g.mantle == null) return;
     const face = g.hero.facing;
     const from = g.hero.footY();
     leaveLadder(g);
@@ -2888,7 +2841,7 @@ fn dropOffLadder(g: *Game) void {
 /// **A BLOW UP THERE TAKES THE LADDER AWAY.** Routed through the launch, so the arc, the pose and the landing
 /// beat are the ones a slam already gives — the only new thing is the height it starts from.
 fn knockOffLadder(g: *Game, b: foemod.Blow) void {
-    if (g.climb == null) return;
+    if (g.climb == null and g.mantle == null) return;
     const from = g.hero.footY();
     const away = mathx.dirXZ(b.from, g.hero.pos);
     leaveLadder(g);
@@ -2921,9 +2874,54 @@ fn ladderExit(e: *const envmod.Env, r: envmod.Rung) ?rl.Vector3 {
     return ledge;
 }
 
-fn topOutLadder(g: *Game) void {
+/// **HE LEAVES THE LADDER THE MOMENT HIS ARMS ARE CLEAR OF THE LIP, NOT AT THE TOP RUNG.** True the whole way
+/// up and asked every frame he gains ground, so a run that heads a metre proud of what it serves hands him
+/// over at the height a body would actually get its elbows on the stone. `MANTLE_LOOK` is what keeps that from
+/// being an `env.standAt` and two `blockedNear` calls per frame of a twelve-metre climb.
+fn tryTopOut(g: *Game, c: *const Climb) bool {
+    if (c.at < c.rung.run - MANTLE_LOOK) return false;
+    const at = ladderExit(&g.env, c.rung) orelse return false;
+    if (c.at < mantleAt(c.rung, at.y)) return false;
+    startMantle(g, at);
+    return true;
+}
+
+/// **HOW FAR UP THE RUN THE HAUL BEGINS** — where his boots sit `MANTLE_RISE` under the lip. Clamped into the
+/// run itself: a lip lower than that is one he is already level with, and there is nothing to haul from above
+/// the head of the ladder.
+fn mantleAt(r: envmod.Rung, lipY: f32) f32 {
+    return mathx.clampF(lipY - MANTLE_RISE - r.foot.y, 0, r.run);
+}
+
+fn startMantle(g: *Game, to: rl.Vector3) void {
     const c = &(g.climb orelse return);
-    const at = ladderExit(&g.env, c.rung) orelse return;
+    const from = v3(g.hero.pos.x, c.rung.foot.y + c.at, g.hero.pos.z);
+    const face = c.face;
+    const lift = from.y - g.hero.pos.y;
+    leaveLadder(g);
+    g.mantle = .{ .from = from, .to = to, .face = face };
+    g.hero.startMantle(lift, face);
+    sfx.playAt(.step_hard, 0.75);
+}
+
+/// **THE RISE LEADS AND THE STRIDE FOLLOWS**, overlapping across the middle of the beat, so his boot arrives on
+/// the lip after his weight is already over it. `hero.pos.y` is left where the climb had it — the ground under
+/// the ladder's foot — and the whole haul is carried in the `lift`, which is what the run below it does too.
+fn updateMantle(g: *Game, dt: f32) void {
+    const mn = &(g.mantle orelse return);
+    mn.t = mathx.minF(mn.t + dt / heromod.MANTLE_DUR, 1.0);
+    const up = mathx.smoothstep(0, 1, mathx.minF(mn.t / heromod.MANTLE_PRESS, 1.0));
+    const out = mathx.smoothstep(0, 1, mathx.maxF((mn.t - MANTLE_STEP_FROM) / (1.0 - MANTLE_STEP_FROM), 0));
+    g.hero.pos.x = mathx.lerpF(mn.from.x, mn.to.x, out);
+    g.hero.pos.z = mathx.lerpF(mn.from.z, mn.to.z, out);
+    g.hero.facing = mn.face;
+    g.hero.tickMantle(dt, mathx.lerpF(mn.from.y, mn.to.y, up) - g.hero.pos.y, mn.t);
+    g.hero.pose();
+    if (mn.t >= 1.0) finishMantle(g);
+}
+
+fn finishMantle(g: *Game) void {
+    const at = (g.mantle orelse return).to;
     leaveLadder(g);
     g.hero.pos = at;
     g.heroDeck = g.env.deckAt(at.x, at.z, at.y);
@@ -2953,7 +2951,7 @@ fn updateClimb(g: *Game, dt: f32, mv: Move) void {
         c.beat = 0;
         sfx.playAt(.step_hard, 0.62);
     }
-    if (moved > 0 and c.at >= c.rung.run - 1e-4) return topOutLadder(g);
+    if (moved > 0 and tryTopOut(g, c)) return;
     if (moved < 0 and c.at <= 1e-4) return footOffLadder(g);
 }
 
@@ -3408,7 +3406,7 @@ fn openCounter(g: *Game, k: worldfmt.ActKind) void {
         else => return,
     };
     // A counter may not open over a crossing, a climb or a death — every other door here refuses the same way.
-    if (g.hero.dead or g.gateWalk != null or g.climb != null) return;
+    if (g.hero.dead or g.gateWalk != null or g.climb != null or g.mantle != null) return;
     g.counter.begin(trade);
     g.counterT = 0;
     // The body behind the counter: whoever the dialog that opened it was with, else whoever is at hand.
@@ -3592,6 +3590,13 @@ fn saveMark(g: *Game, dt: f32) void {
     if (g.saveT <= 0) return;
     g.saveT = mathx.maxF(0, g.saveT - dt);
     hud_.saveTree(g.saveT);
+}
+
+/// **THE HOUR IS THE FOG'S COLOUR** (`daynight.mistTint`), with the bloom's peach over it. Solved here rather
+/// than in `weather`, which sits under the day and may not read its clock. One `paletteAt` walk a frame, and
+/// only on the frames a bank is actually drawn.
+fn bankTint(g: *const Game) rl.Color {
+    return weathermod.bankTint(daynight.mistTint(g.day.hour, g.wetNow), g.sporeNow);
 }
 
 fn applyStow(g: *Game) void {
@@ -4766,7 +4771,7 @@ pub fn drawScene(g: *Game) void {
         // **ONE PREDICATE FOR ALL THREE SHEETS** (`skyLive`). The SPOREFALL was the thick one and was not routed through it, so the eye had nothing to shut.
     if (skyLive(g)) {
         if (!g.editor.on) g.rainfall.draw(&g.scene, cam.position, g.hero.pos, g.wetNow, g.weather.t);
-        if (!g.editor.on) g.mist.draw(&g.scene, cam.position, fogAmt(g), weathermod.sporeTint(g.sporeNow));
+        if (!g.editor.on) g.mist.draw(&g.scene, cam.position, fogAmt(g), bankTint(g));
         g.sporefall.draw(&g.scene, cam.position, if (g.editor.on) cam.position else g.hero.pos, g.sporeNow, g.weather.slowSecs());
         if (!g.editor.on) g.skein.draw(&g.scene);
     }
@@ -5391,11 +5396,13 @@ pub fn run(mode: Mode) void {
         if (arrowReq and g.hero.cycleArrow()) sfx.play(.flask_cycle);
 
         const useReq = rl.isKeyPressed(INTERACT_KEY) or padPressed(INTERACT_PAD);
-        // **NOT FROM A RUNG.** Every other reach is measured in XZ, so eight metres up a ladder he was still
-        // beside the bonfire he had climbed away from and could sit down at it.
+        // **NOT FROM A RUNG, AND NOT OFF THE HAUL EITHER** (`hero.onLadder`). Every other reach is measured in
+        // XZ, so eight metres up a ladder he was still beside the bonfire he had climbed away from and could
+        // sit down at it — and the haul is where he is HIGHEST, with `heroDeck` still null so the floor gate
+        // passes everything.
         // **NOR MID-CROSSING** — a rest or talk taken inside a fog-gate walk suspends the lerp, and its end
         // snaps him back onto the pre-rest line. The counter's own door already refuses the same way.
-        if (useReq and !g.hero.dead and g.climb == null and g.gateWalk == null) interact(g);
+        if (useReq and !g.hero.dead and !g.hero.onLadder() and g.gateWalk == null) interact(g);
 
         var rollReq = rl.isKeyPressed(.space);
         const bDown = padDown(hud_.padOf(hud_.BTN_BACK));
@@ -5447,7 +5454,7 @@ pub fn run(mode: Mode) void {
         const jumpReq = rl.isKeyPressed(JUMP_KEY) or padPressed(JUMP_PAD);
         // **THE ONE INPUT A LADDER ANSWERS BESIDES THE STICK.** Everything else is refused by `committed()`, so
         // this has to be read before the block that asks it.
-        if (g.climb != null and (jumpReq or rollReq)) dropOffLadder(g);
+        if ((g.climb != null or g.mantle != null) and (jumpReq or rollReq)) dropOffLadder(g);
         if (!g.hero.dead and !g.hero.staggered() and g.gateWalk == null) {
             if (rollReq) {
                 g.hero.requestRoll(rollDir(g, mv));
@@ -5511,6 +5518,8 @@ pub fn run(mode: Mode) void {
             updateGateWalk(g, dt);
         } else if (g.climb != null) {
             updateClimb(g, dt, mv);
+        } else if (g.mantle != null) {
+            updateMantle(g, dt);
         } else if (g.hero.airborne()) {
             moveHeroAir(g, dt, mv, faceYaw);
         } else if (g.hero.rolling) {
@@ -5532,7 +5541,7 @@ pub fn run(mode: Mode) void {
         } else {
             moveHero(g, dt, mv, faceYaw);
         }
-        if (heroAfoot and !g.hero.climbing) gateHeroTerrain(g, heroWas);
+        if (heroAfoot and !g.hero.onLadder()) gateHeroTerrain(g, heroWas);
         const wasPos = &frameWasPos;
         var wasN: [FOE_GROUPS.len]usize = undefined;
         inline for (FOE_GROUPS, 0..) |f, gi| {
@@ -5872,7 +5881,9 @@ pub fn run(mode: Mode) void {
         }
         collideActors(g, dt);
         heroFooting(g, heroWas);
-        if (!g.hero.climbing) {
+        // **A HAUL OVER A LIP IS NOT A BODY STANDING ON ANYTHING YET.** Its height is the `lift`, exactly as
+        // the run's is, and one pass of the footing would plant him on the ground under the ladder and zero it.
+        if (!g.hero.onLadder()) {
             groundActorFrom(g, &g.hero.pos, g.hero.footY(), dt);
             g.hero.syncLift();
         }
@@ -6335,7 +6346,7 @@ fn heroTakes(g: *Game, b: foemod.Blow, heavy: bool, voice: bool) combat.HitOutco
         .ignored => {},
         .taken => {
             // **BEFORE THE BEAT** — the knock-off has to read his climb height, and the beat does not care.
-            if (g.climb != null) knockOffLadder(g, b);
+            if (g.climb != null or g.mantle != null) knockOffLadder(g, b);
             heroHurtBeat(g, heavy, voice);
         },
         .blocked => heroBlockBeat(g, b.hit),
@@ -6519,7 +6530,7 @@ fn collideActors(g: *Game, dt: f32) void {
     // **A BODY ON A LADDER IS NOT PUSHED.** It stands hard against the wall the thing leans on, and one frame
     // of push-out is what takes him off it; the climb owns his XZ outright, exactly as the gate walk does.
     var hp = g.hero.pos;
-    if (!g.hero.climbing) {
+    if (!g.hero.onLadder()) {
         hp = g.env.resolveHeroSide(g.hero.pos, HERO_R, g.hero.footY());
         inline for (FOE_GROUPS) |gr| {
             for (@field(g, gr.field).live()) |*a| {

@@ -1779,8 +1779,9 @@ pub fn runShots(g: *Game) void {
         standHero(g, -30.6, -66.0, -std.math.pi * 0.5);
         shootAt(g, "shots/75_chapel_altar.png", v3(-32.6, 1.0, -66.0), 270, 0.10, 4.8);
 
+        // Twice the tower wants twice the standoff and the eye further up it, or the frame is a wall of stone.
         standHero(g, 34.0, -95.0, mathx.radians(20));
-        shootAt(g, "shots/76_watchtower.png", mathx.ground(36, -88), 20, 0.16, 27.0);
+        shootAt(g, "shots/76_watchtower.png", mathx.ground(36, -88), 20, 0.30, 52.0);
         standHero(g, 36.4, -88.4, 0);
         shootAt(g, "shots/77_watchtower_inside.png", v3(35.7, 1.7, -87.6), 200, 0.06, 2.0);
 

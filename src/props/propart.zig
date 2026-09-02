@@ -158,22 +158,47 @@ pub const Deck = struct { x: f32 = 0, z: f32 = 0, r: f32, y: f32, hole: bool = f
 /// A volume a prop blocks the VIEW with (`props.Info.occl`). Here beside `Part` rather than in `props.zig` because a family file that builds its own colliders needs to build its own occluders too, and `props.zig` imports the families.
 pub const Blocker = struct { r: f32, y0: f32 = 0, y1: f32, x: f32 = 0, z: f32 = 0 };
 
-pub const TOWER_R: f32 = 2.35;
-pub const TOWER_SIDES: i32 = 14;
+/// **THE SHAFT, AT TWICE THE TOWER IT WAS.** Radius and height both doubled; the STONE did not, which is why
+/// `TOWER_SIDES` doubled with the radius — 2*pi*R/sides is 1.055 m either way, so every block, the plinth under
+/// them and the three-side doorway are the size they always were and only the building grew.
+pub const TOWER_R: f32 = 4.70;
+pub const TOWER_SIDES: i32 = 28;
 pub const TOWER_DOOR: i32 = 3;
-/// Where the stone over the doorway begins — course 4 of the shaft, the first one the opening does not skip
+/// **THE COURSE GRID THE WHOLE TOWER IS SET OUT ON**, and it lives here rather than inside the mesh because
+/// three numbers in two files were hand-solved off it and none of them said so: the head of the doorway, the
+/// top of the wall capsules and the roof storey. `propbuild.watchtowerInto` lays the stone on these.
+pub const TOWER_PLINTH: f32 = 0.44;
+pub const TOWER_COURSE_H: f32 = 0.76;
+pub const TOWER_COURSES: i32 = 30;
+fn courseTop(n: i32) f32 {
+    return TOWER_PLINTH + @as(f32, @floatFromInt(n)) * TOWER_COURSE_H;
+}
+/// The top of the last course — what the roof boards go between and the parapet stands over.
+pub const TOWER_HEAD: f32 = courseTop(TOWER_COURSES);
+/// Courses the opening skips. Over them is the lintel, and `towerRing` starts the three door capsules there.
+pub const TOWER_DOOR_COURSES: i32 = 4;
+/// Where the stone over the doorway begins — the first course the opening does not skip
 /// (`propbuild.watchtowerMesh`). Under it the door is a hole; at deck height it is wall like every other side.
-pub const TOWER_DOOR_HEAD: f32 = 3.48;
+pub const TOWER_DOOR_HEAD: f32 = courseTop(TOWER_DOOR_COURSES);
 /// Radius of one wall capsule, and it is what eats the shaft: `props.TOWER_CLEAR` is `TOWER_R` less this and
 /// less the body's own, so the number the hatches are placed against reads it rather than repeating it.
 pub const TOWER_WALL_R: f32 = 0.62;
+/// **THE BODY'S OWN HALF, AND IT IS A NUMBER FROM ANOTHER MODULE** — `foe.HERO_R`, which nothing under
+/// `props/` may import. Spelled at the BOTTOM of the three so `propbuild` can state the shaft's real clearance
+/// at comptime and `props.TOWER_CLEAR` can read it rather than keep a second copy; `game.zig` asserts the pair.
+pub const HERO_R_HERE: f32 = 0.36;
+/// How near the shaft's axis a body can actually stand: its radius less the wall capsules and its own.
+pub const TOWER_CLEAR: f32 = TOWER_R - TOWER_WALL_R - HERO_R_HERE;
+/// **HOW FAR UP THE WALL HOLDS A BODY IN**, and it stops SHORT of the roof deck on purpose: the merlons up
+/// there are scenery and the edge is real. `propbuild` owns the deck heights and asserts the pair.
+pub const TOWER_WALL_H: f32 = 22.40;
 pub const towerRing = blk: {
     var out: [TOWER_SIDES]Part = undefined;
     var n: usize = 0;
     for (0..TOWER_SIDES) |i| {
         const a = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, TOWER_SIDES);
         const door = towerDoorway(@intCast(i));
-        out[n] = .{ .ax = @sin(a) * TOWER_R, .az = -@cos(a) * TOWER_R, .bx = @sin(a) * TOWER_R, .bz = -@cos(a) * TOWER_R, .r = TOWER_WALL_R, .h = 11.0, .y0 = if (door) TOWER_DOOR_HEAD else 0 };
+        out[n] = .{ .ax = @sin(a) * TOWER_R, .az = -@cos(a) * TOWER_R, .bx = @sin(a) * TOWER_R, .bz = -@cos(a) * TOWER_R, .r = TOWER_WALL_R, .h = TOWER_WALL_H, .y0 = if (door) TOWER_DOOR_HEAD else 0 };
         n += 1;
     }
     std.debug.assert(n == out.len);
@@ -183,6 +208,12 @@ pub const towerRing = blk: {
 pub fn towerDoorway(i: i32) bool {
     const half = @divTrunc(TOWER_DOOR, 2);
     return @mod(i + half, TOWER_SIDES) < TOWER_DOOR;
+}
+
+comptime {
+    // The head of the doorway is a course line, and it has to be one the shaft actually has.
+    std.debug.assert(TOWER_DOOR_COURSES < TOWER_COURSES);
+    std.debug.assert(TOWER_DOOR_HEAD < TOWER_HEAD);
 }
 
 

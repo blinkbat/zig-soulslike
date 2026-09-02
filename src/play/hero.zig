@@ -249,6 +249,28 @@ const CLIMB_ARM_ABD: f32 = 4.0;
 const CLIMB_ELBOW_LO: f32 = 14.0;
 const CLIMB_ELBOW_HI: f32 = 74.0;
 const CLIMB_WRIST: f32 = 18.0;
+/// **THE HAUL OVER A LIP** — the beat between letting go of the rungs and standing on what the ladder served.
+/// A SPEED would be wrong here: the distance is the same every time (`game.MANTLE_RISE` up and one stride
+/// out), so what is authored is the beat, long enough to read as a whole body and short enough that it never
+/// feels like the game took the stick away.
+pub const MANTLE_DUR: f32 = 0.62;
+/// **WHERE THE PRESS ENDS AND THE STAND BEGINS**, as a share of that beat — and the height is done at the
+/// same instant (`game.updateMantle`), or the pose stands him up over ground he has not reached yet.
+pub const MANTLE_PRESS: f32 = 0.62;
+const MANTLE_FOLD: f32 = 44.0;
+/// The hips pass THROUGH standing height and settle back onto it (the rig's law). A body that arrives exactly
+/// at rest reads as a lift; this is a man getting his weight over an edge.
+const MANTLE_POP = 0.045 * H;
+const MANTLE_HEAD_UP: f32 = 18.0;
+/// Positive is BEHIND him: at the top of the press his hands are down by his hips, on the stone.
+const MANTLE_ARM_PRESS: f32 = 34.0;
+const MANTLE_ELBOW_PRESS: f32 = 12.0;
+const MANTLE_ARM_ABD: f32 = 12.0;
+const MANTLE_HIP_UP: f32 = 84.0;
+const MANTLE_KNEE_UP: f32 = 96.0;
+/// The share of the lead leg's drive the trailing one takes — it hangs long under him and does not also climb.
+const MANTLE_TRAIL: f32 = 0.35;
+const MANTLE_ANKLE: f32 = -16.0;
 
 pub var ROLL_DUR: f32 = 0.70;
 pub const ROLL_IFRAME_END_BANK: f32 = 0.46;
@@ -1547,6 +1569,11 @@ pub const Hero = struct {
     /// Rungs crossed, as a repeating phase. Driven by DISTANCE climbed and never by time (the rig's law), so
     /// hands and feet cannot skate off the rungs at any climb speed.
     climbPhase: f32 = 0,
+    /// **THE HAUL OFF THE HEAD OF A LADDER.** Not a climb and not a jump: `game.Mantle` drives where his body
+    /// goes and this holds only the pose, the same split `climbing`/`game.Climb` make of the run below it.
+    mantling: bool = false,
+    /// 0 at the last rung, 1 standing on the lip. Written by `game.updateMantle`, which owns the clock.
+    mantlePhase: f32 = 0,
     jumps: u32 = 0,
     airYaw: f32 = 0,
     airSpeed: f32 = 0,
@@ -1811,6 +1838,14 @@ pub const Hero = struct {
         return self.jumping or self.launched;
     }
 
+    /// **THE WHOLE RUN, BOTH HALVES OF IT.** The climb owns his XZ and his height outright, and so does the
+    /// haul off the head of it — the ground under him is a storey down through both. Every gate that has to
+    /// leave a body on a ladder alone asks THIS: spelled as `climbing` at each site, the half added later is
+    /// the half one of them forgets, and the one that forgot was the footing.
+    pub fn onLadder(self: *const Hero) bool {
+        return self.climbing or self.mantling;
+    }
+
     pub fn startJump(self: *Hero, dir: rl.Vector3, speed: f32) bool {
         if (!self.bodyFree()) return false;
         self.jumping = true;
@@ -1885,11 +1920,42 @@ pub const Hero = struct {
         self.lift = if (self.airborne()) mathx.maxF(self.airY - self.pos.y, 0) else 0;
     }
 
+    /// **LETTING GO OF THE LADDER IS LETTING GO OF BOTH HALVES OF IT.** The haul over the lip is the same run
+    /// — a launch, a fall and a stagger all arrive here, and one that dropped the climb and left him mantling
+    /// is a man hauling himself onto thin air.
     pub fn endClimb(self: *Hero) void {
-        if (!self.climbing) return;
+        if (!self.climbing and !self.mantling) return;
         self.climbing = false;
+        self.mantling = false;
         self.lift = 0;
         self.startXfade();
+    }
+
+    /// **HE STOPS CLIMBING THE MOMENT HIS ARMS ARE CLEAR OF THE LIP** and hauls himself over it — no input,
+    /// and no last rungs ridden for nothing. Height comes in as the caller's `lift`, as it does on the run.
+    pub fn startMantle(self: *Hero, lift: f32, facing: f32) void {
+        self.dropActions();
+        self.clearAir();
+        self.sprinting = false;
+        self.mantling = true;
+        self.mantlePhase = 0;
+        self.lift = mathx.maxF(lift, 0);
+        self.facing = facing;
+        self.moving = 0;
+        self.speed = 0;
+        self.speedS = 0;
+        self.startXfade();
+    }
+
+    /// `u` is the haul's own 0..1 and belongs to `game.Mantle`; the body only holds the pose (`tickClimb`).
+    pub fn tickMantle(self: *Hero, dt: f32, lift: f32, u: f32) void {
+        self.tickClocks(dt);
+        self.tickFogGrace(dt);
+        self.lift = mathx.maxF(lift, 0);
+        self.mantlePhase = mathx.clampF(u, 0, 1);
+        self.speed = 0;
+        self.speedS = 0;
+        self.moving = 0;
     }
 
     /// **WALKED OFF AN EDGE** — no impulse, no toss, just gravity from where his feet were. `startJump` is a
@@ -2007,7 +2073,7 @@ pub const Hero = struct {
 
 
     pub fn committed(self: *const Hero) bool {
-        return self.jumping or self.launched or self.climbing or self.rolling or self.attacking or self.drinking or self.shooting or self.casting or self.parrying or self.ringing;
+        return self.jumping or self.launched or self.climbing or self.mantling or self.rolling or self.attacking or self.drinking or self.shooting or self.casting or self.parrying or self.ringing;
     }
 
     pub fn holds(self: *const Hero, a: Armament) bool {
@@ -3588,6 +3654,7 @@ pub const Hero = struct {
         self.jumping = false;
         self.launched = false;
         self.climbing = false;
+        self.mantling = false;
         self.lift = 0;
         self.airY = self.pos.y;
         self.vertVel = 0;
@@ -3686,6 +3753,7 @@ pub const Hero = struct {
         if (self.dead) return self.poseDeath();
         if (self.stun != .none) return self.poseStun();
         if (self.launched) return self.poseLaunch();
+        if (self.mantling) return self.poseMantle();
         if (self.climbing) return self.poseClimb();
         if (self.jumping) return self.poseJump();
         if (self.rolling) return self.poseRoll();
@@ -4021,6 +4089,33 @@ pub const Hero = struct {
         climbLeg(&wx, self.rest, ph + 0.5, -1.0, HIPR, KNEER, ANKR);
         climbArm(&wx, self.rest, ph + 0.5, 1.0, SHL, ELL, WRL);
         climbArm(&wx, self.rest, ph, -1.0, SHR, ELR, WRR);
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
+        self.poseCarried(&wx);
+        self.publish(&wx);
+    }
+
+    /// **THE ONE MOVE ON A LADDER THE STICK DOES NOT DRIVE.** Two beats that share a middle: PRESS — folded
+    /// over the lip, hands driving down onto the stone, the lead knee up onto it — then STAND, where the arms
+    /// drop to rest and the hips come up through standing height and settle back onto it.
+    fn poseMantle(self: *Hero) void {
+        const u = self.mantlePhase;
+        const haul = mathx.clampF(u / MANTLE_PRESS, 0, 1);
+        const rise = mathx.clampF((u - MANTLE_PRESS) / (1.0 - MANTLE_PRESS), 0, 1);
+        const facingDeg = mathx.degrees(self.facing);
+        const hipY = self.rest[ROOT].y - CLIMB_SINK * (1.0 - rise) + MANTLE_POP * mathx.sinf(std.math.pi * rise);
+        const fold = MANTLE_FOLD * haul * (1.0 - rise);
+
+        var wx: [N]rl.Matrix = undefined;
+        wx[ROOT] = mul(mul(tr(0, hipY, 0), ry(facingDeg)), rootAt(self.footPos()));
+        setLocal(&wx, SPINE, self.rest, rx(fold * 0.45));
+        setLocal(&wx, CHEST, self.rest, rx(fold * 0.55));
+        setLocal(&wx, NECK, self.rest, rx(-MANTLE_HEAD_UP * 0.35 * (1.0 - rise)));
+        // He is LOOKING AT THE LIP the whole haul: the trunk folds forward and the head cancels it and more.
+        setLocal(&wx, HEAD, self.rest, rx(-MANTLE_HEAD_UP * (1.0 - rise) - fold * 0.5));
+        mantleLeg(&wx, self.rest, haul, rise, 1.0, HIPL, KNEEL, ANKL);
+        mantleLeg(&wx, self.rest, haul * MANTLE_TRAIL, rise, -1.0, HIPR, KNEER, ANKR);
+        mantleArm(&wx, self.rest, haul, rise, 1.0, SHL, ELL, WRL);
+        mantleArm(&wx, self.rest, haul, rise, -1.0, SHR, ELR, WRR);
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         self.poseCarried(&wx);
         self.publish(&wx);
@@ -4661,6 +4756,23 @@ fn climbArm(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, ph: f32, side: f32, sh: usiz
     setLocal(wx, sh, rest, mul(rx(-(CLIMB_ARM_LO + (CLIMB_ARM_HI - CLIMB_ARM_LO) * up)), rz(side * CLIMB_ARM_ABD)));
     setLocal(wx, el, rest, rx(-(CLIMB_ELBOW_HI - (CLIMB_ELBOW_HI - CLIMB_ELBOW_LO) * up)));
     setLocal(wx, wr, rest, rx(CLIMB_WRIST));
+}
+
+/// The lead leg drives its knee up over the lip and then stands on it. The trail leg is handed a fraction of
+/// the same `up` and hangs long under him — both legs climbing is a frog, not a man.
+fn mantleLeg(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, up: f32, rise: f32, side: f32, hip: usize, knee: usize, ank: usize) void {
+    const k = up * (1.0 - rise);
+    setLocal(wx, hip, rest, mul(rx(-MANTLE_HIP_UP * k), rz(-side * (HIP_ADDUCT + CLIMB_LEG_OUT * k))));
+    setLocal(wx, knee, rest, rx(IDLE_KNEE + MANTLE_KNEE_UP * k));
+    setLocal(wx, ank, rest, mul(rx(MANTLE_ANKLE * k), ry(side * FOOT_TOEOUT)));
+}
+
+/// Overhead on the rungs, straightening DOWN onto the stone through the press, dropped to rest as he stands.
+fn mantleArm(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, up: f32, rise: f32, side: f32, sh: usize, el: usize, wr: usize) void {
+    const settle = 1.0 - rise;
+    setLocal(wx, sh, rest, mul(rx(mathx.lerpF(-CLIMB_ARM_HI, MANTLE_ARM_PRESS, up) * settle), rz(side * MANTLE_ARM_ABD * settle)));
+    setLocal(wx, el, rest, rx(mathx.lerpF(-CLIMB_ELBOW_HI, -MANTLE_ELBOW_PRESS, up) * settle));
+    setLocal(wx, wr, rest, rx(CLIMB_WRIST * settle));
 }
 
 fn sitLeg(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, side: f32, hip: usize, knee: usize, ank: usize) void {

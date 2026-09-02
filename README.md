@@ -122,6 +122,8 @@ attack, no fall damage.
 
 **Ladders** are placed in the editor and run up cliffs and structures. Interact to get on; forward climbs, back
 climbs down, back + sprint slides; jump or roll lets go. Nothing else can be done while you are on one, and a
-blow that lands peels you off it. The watchtower is hollow and now has two flights and a hatch in each floor,
-so it can be climbed to its roof — which has no rail. Nothing but the player climbs, so a ladder is an escape
-from whatever cannot follow.
+blow that lands peels you off it. **You never ride the last rungs**: the moment your arms are clear of the lip
+the climb hands over to a haul — press, knee up, stand — and puts you a full stride in from the edge. The
+watchtower is hollow, 23 m to its roof, with four boarded storeys and a hatch in each on a different quarter of
+the shaft, so every floor is crossed rather than passed through. The roof has no rail. Nothing but the player
+climbs, so a ladder is an escape from whatever cannot follow.

@@ -2002,9 +2002,11 @@ pub const Knight = struct {
         self.live = false;
         self.quake = 0;
         self.gasAt = null;
-        // THE ROOTS HAVE THE FEET AND NOTHING ELSE, held unconditionally: he cannot leave the ground.
+        // THE ROOTS HAVE THE FEET AND NOTHING ELSE. `canLeap` refuses a leap that has not started; one already
+        // in the air finishes its arc, or the roots close on `.leap` and hold him hanging over his own take-off
+        // while `self.air` rises and falls and `plantBurst` fires on ground he never left.
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
-        defer grip.hold(&self.pos);
+        defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         if (grip.downed) self.stagger(true);
         self.elapsed += dt;
@@ -5146,6 +5148,26 @@ test "THE LEAP — he buys ground and lands facing you, and the roots refuse it"
     var held = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
     held.root.grab();
     try std.testing.expect(!foe.canLeap(&held.root));
+
+    // **AND THE ROOTS CLOSING MID-FLIGHT DO NOT HANG HIM OVER HIS OWN TAKE-OFF** (`foe.grip`'s airborne half,
+    // which twelve other creatures already spend). Through the real `update`: leap, grab the feet the frame he
+    // is off the ground, and he still has to come down where the arc was going.
+    var mid = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    mid.facing = 0;
+    mid.enter(.leapwind);
+    var grabbed = false;
+    var mt: f32 = 0;
+    const midZ = mid.pos.z;
+    while (mt < LEAP.windDur + LEAP.flightDur + LEAP.landDur + 0.1) : (mt += dt) {
+        _ = mid.update(dt, hero, 400.0, .{});
+        if (!grabbed and mid.airborne()) {
+            mid.root.grab();
+            grabbed = true;
+        }
+    }
+    std.debug.print("\n  rooted mid-leap: flew {d:.2} m of the {d:.2} m a free leap covers\n", .{ mid.pos.z - midZ, k.pos.z - startZ });
+    try std.testing.expect(grabbed);
+    try std.testing.expect(mid.pos.z - midZ > (k.pos.z - startZ) * 0.8);
 }
 
 test "THE SWORD SIDE HAS AN ANSWER — the shove, and it pays for that flank with his front" {

@@ -30,15 +30,16 @@ at: ladder 7.2 -14 270 1 rise=14.4
 at: ladder -29.8 20 90 1 rise=3.6
 at: ladder -29.8 26 90 1 rise=1.8
 
-# FOUR: THE WATCHTOWER, GROUND TO ROOF IN TWO FLIGHTS. Boards at 4.69 m and 11.90 m, a hatch in each, on
-# OPPOSITE sides of the shaft - so the middle storey is crossed rather than passed through. The lower flight
-# stands on the ground under the +z hatch and heads 0.71 m proud of the boards; the upper one stands ON the
-# middle floor (`r1=4.69`) under the -z hatch and heads level with the roof. Both face the shaft's centre, so
-# the wall-side exit is refused by stone and he steps off inboard.
-# The roof has NO rail: the shaft's colliders stop at 11.0 m, so the merlons are scenery and the edge is real.
+# FOUR: THE WATCHTOWER, GROUND TO ROOF IN FOUR FLIGHTS. Boards at 4.69, 11.90, 17.90 and a roof at 23.30, a
+# hatch in each, on the four QUARTERS of the shaft - so every storey is crossed rather than passed through and
+# no flight stands over another. Each ladder sits 0.30 m out from its hatch (`propbuild.LADDER_STANDOFF`) and
+# faces the shaft's centre; the wall side is 2.70 m of clear board, which is where he steps off.
+# The roof has NO rail: the shaft's colliders stop at 22.40 m, so the merlons are scenery and the edge is real.
 at: watchtower -20 0 0 1
 at: ladder -20 1.4 180 1 rise=5.4
 at: ladder -20 -1.4 0 1 r1=4.69 rise=7.2
+at: ladder -18.6 0 270 1 r1=11.90 rise=6.3
+at: ladder -21.4 0 90 1 r1=17.90 rise=5.4
 
 # FIVE: A LADDER TO NOWHERE on the open plain, for the same refusal with no wall anywhere near it.
 at: ladder -8 -34 0 1 rise=7.2

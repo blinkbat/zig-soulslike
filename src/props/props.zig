@@ -613,12 +613,12 @@ pub const Deck = art.Deck;
 
 pub const LADDER_STANDOFF = build.LADDER_STANDOFF;
 
-/// How near the watchtower's axis a body can actually stand: the shaft's own radius less the wall capsules and
-/// his own. Every hatch in that tower is authored inside it, and the test beside `WATCH_DECKS` says so.
-/// **THE BODY'S HALF IS A NUMBER IN ANOTHER MODULE** — `foe.HERO_R`, which this file may not import (it sits
-/// UNDER `foes/`), so it is spelled here and `game.zig` asserts the pair, exactly as it does `env.WARD_CLEAR`.
-pub const HERO_R_HERE: f32 = 0.36;
-pub const TOWER_CLEAR = art.TOWER_R - art.TOWER_WALL_R - HERO_R_HERE;
+/// Both live in `propart`, which is the lowest file that can hold them — every hatch in the tower is asserted
+/// inside `TOWER_CLEAR` at comptime there, and `game.zig` pins `HERO_R_HERE` against `foe.HERO_R`.
+pub const HERO_R_HERE = art.HERO_R_HERE;
+pub const TOWER_CLEAR = art.TOWER_CLEAR;
+/// The outside of the shaft — what a dressing pass keeps its braziers and its rubble clear of.
+pub const TOWER_OUT = art.TOWER_R;
 
 pub const Blocker = art.Blocker;
 
@@ -667,13 +667,24 @@ fn circleParts(comptime r: f32, comptime h: f32) []const Part {
 /// **THE FLOOR AND THE HOLE IN IT ARE ONE DECLARATION.** The disc is the whole plank field — the shaft walls
 /// keep his centre inside `TOWER_R` anyway, so a smaller one would only leave a rim he could drop through — and
 /// the `hole` is the hatch, cut at the same `y` and off `propbuild`'s own numbers.
-const WATCH_DECKS = [_]Deck{
-    .{ .r = art.TOWER_R, .y = build.WATCH_DECK_TOP },
-    .{ .z = build.WATCH_HATCH_Z, .r = build.WATCH_HATCH_R, .y = build.WATCH_DECK_TOP, .hole = true },
-    // **THE ROOF, AND IT HAS NO RAIL.** The shaft's colliders stop at 11.0 m, so nothing at the parapet holds
-    // a body in: he walks to the merlons and off them, which is the whole point of standing up there.
-    .{ .r = art.TOWER_R, .y = build.WATCH_ROOF_TOP },
-    .{ .z = build.WATCH_ROOF_HATCH_Z, .r = build.WATCH_HATCH_R, .y = build.WATCH_ROOF_TOP, .hole = true },
+/// **THE LAST OF THEM IS THE ROOF, AND IT HAS NO RAIL.** The shaft's colliders stop at `art.TOWER_WALL_H`, so
+/// nothing at the parapet holds a body in: he walks to the merlons and off them, which is the point of
+/// standing up there.
+const WATCH_DECKS = blk: {
+    var out: [build.WATCH_STOREYS.len * 2]Deck = undefined;
+    for (build.WATCH_STOREYS, 0..) |st, i| {
+        out[i * 2] = .{ .r = art.TOWER_R, .y = st.top() };
+        out[i * 2 + 1] = .{ .x = st.hx, .z = st.hz, .r = build.WATCH_HATCH_R, .y = st.top(), .hole = true };
+    }
+    break :blk out;
+};
+
+/// **THE STOREYS BY HEIGHT, GROUND UPWARD.** `decks` interleaves a hole after each floor, so an index into
+/// THAT is a number that moves the next time a storey is added.
+pub const WATCH_FLOORS = blk: {
+    var out: [build.WATCH_STOREYS.len]f32 = undefined;
+    for (build.WATCH_STOREYS, 0..) |st, i| out[i] = st.top();
+    break :blk out;
 };
 
 const cliffParts = [_]Part{
@@ -710,7 +721,7 @@ pub const INFO = [NK]Info{
         .{ .ax = 1.15, .az = -3.6, .bx = 2.6, .bz = -3.6, .r = 0.42, .h = 4.4 },
         .{ .ax = -1.5, .az = 2.9, .bx = 1.5, .bz = 2.9, .r = 0.55, .h = 1.1 },
     } },
-    .{ .kind = .watchtower, .build = build.watchtowerMesh, .bound = 13.0, .top = 12.4, .view = FAR, .solid = true, .parts = &art.towerRing, .decks = &WATCH_DECKS },
+    .{ .kind = .watchtower, .build = build.watchtowerMesh, .bound = 25.0, .top = build.WATCH_TOP, .view = FAR, .solid = true, .parts = &art.towerRing, .decks = &WATCH_DECKS },
     .{ .kind = .cottage, .build = build.cottageMesh, .bound = 5.6, .top = 4.0, .view = 280, .solid = true, .parts = &.{
         .{ .ax = -2.3, .az = -1.9, .bx = -2.3, .bz = 1.9, .r = 0.34, .h = 2.6 },
         .{ .ax = 2.3, .az = -1.9, .bx = 2.3, .bz = 1.9, .r = 0.34, .h = 2.6 },
@@ -974,6 +985,13 @@ comptime {
             std.debug.assert(bl.y1 <= row.top + 0.001);
             std.debug.assert(@sqrt(bl.x * bl.x + bl.z * bl.z) + bl.r <= row.bound + 0.001);
         }
+        // **A FLOOR IS INSIDE THE KIND'S OWN ENVELOPE**, or the cullers do not know it is there: `top` feeds
+        // the shadow reach and the pick sphere, `bound` the view sphere. It was a test on the watchtower alone
+        // and the watchtower is not the last kind that will grow a deck.
+        for (row.decks) |d| {
+            std.debug.assert(d.y <= row.top + 0.001);
+            std.debug.assert(@sqrt(d.x * d.x + d.z * d.z) + d.r <= row.bound + 0.001);
+        }
     }
 }
 
@@ -1013,14 +1031,18 @@ test "collider parts stay inside their kind's bounding sphere" {
 test "the watchtower's doorway is a hole on the floor and wall at deck height" {
     // Every side is a collider now; the three across the doorway are LINTELS, starting at the course over it.
     try std.testing.expectEqual(@as(usize, art.TOWER_SIDES), art.towerRing.len);
+    // The opening is an ARC and not a distance: at twice the sides a doorway of the same width subtends half
+    // the angle, so what is asserted is the bearing off -Z against the door's own half-arc.
+    const halfArc = std.math.pi * @as(f32, @floatFromInt(art.TOWER_DOOR)) / @as(f32, art.TOWER_SIDES);
     var doors: usize = 0;
     for (art.towerRing) |part| {
+        const bearing = @abs(std.math.atan2(part.ax, -part.az));
         if (part.y0 == 0) {
-            try std.testing.expect(part.az > -art.TOWER_R * 0.85);
+            try std.testing.expect(bearing > halfArc);
             continue;
         }
         doors += 1;
-        try std.testing.expect(part.az <= -art.TOWER_R * 0.85);
+        try std.testing.expect(bearing < halfArc);
         try std.testing.expectEqual(art.TOWER_DOOR_HEAD, part.y0);
     }
     try std.testing.expectEqual(@as(usize, art.TOWER_DOOR), doors);
@@ -1028,13 +1050,11 @@ test "the watchtower's doorway is a hole on the floor and wall at deck height" {
     try std.testing.expect(art.TOWER_DOOR_HEAD < build.WATCH_DECK_TOP);
 }
 
-test "the watchtower's two floors each carry their own hatch, on opposite sides of the shaft" {
+test "EVERY STOREY OF THE WATCHTOWER CARRIES ITS OWN HATCH, and no two flights share a line" {
     var floors: usize = 0;
     var holes: usize = 0;
     for (WATCH_DECKS) |d| {
         if (d.hole) holes += 1 else floors += 1;
-        // A hatch a body cannot stand beside is a hatch the wall shoulders him off (`propbuild.WATCH_HATCH_Z`).
-        if (d.hole) try std.testing.expect(@abs(d.z) < TOWER_CLEAR);
         // Every deck is matched by a hole at its own height, or `env.holedAt` cancels nothing.
         var matched = false;
         for (WATCH_DECKS) |o| {
@@ -1042,12 +1062,26 @@ test "the watchtower's two floors each carry their own hatch, on opposite sides 
         }
         try std.testing.expect(matched);
     }
-    try std.testing.expectEqual(@as(usize, 2), floors);
-    try std.testing.expectEqual(@as(usize, 2), holes);
-    try std.testing.expect(build.WATCH_ROOF_HATCH_Z * build.WATCH_HATCH_Z < 0);
-    // The roof is over the last course and under the parapet the merlons are authored from.
-    try std.testing.expect(build.WATCH_ROOF_TOP > build.WATCH_DECK_TOP);
+    // ONE DECK AND ONE HOLE PER STOREY, however many storeys the tower is authored with — the count itself
+    // is not this test's business, only that the two lists came off the same table.
+    try std.testing.expectEqual(build.WATCH_STOREYS.len, floors);
+    try std.testing.expectEqual(build.WATCH_STOREYS.len, holes);
+    // **EVERY STOREY IS CROSSED, NOT PASSED THROUGH.** No two hatches sit within a hatch's own width of each
+    // other in XZ, so the ladder out of a floor is never the one you came up and never stands over it either.
+    for (WATCH_DECKS, 0..) |d, i| {
+        if (!d.hole) continue;
+        for (WATCH_DECKS[i + 1 ..]) |o| {
+            if (!o.hole) continue;
+            const dx = d.x - o.x;
+            const dz = d.z - o.z;
+            try std.testing.expect(@sqrt(dx * dx + dz * dz) > 2.0 * build.WATCH_HATCH_R);
+        }
+    }
+    // The roof is inside the kind's own `top`, or the culling sphere is shorter than the geometry in it.
     try std.testing.expect(build.WATCH_ROOF_TOP <= info(.watchtower).top);
+    std.debug.print("\n  watchtower: {d} floors, {d:.2} m to the roof, shaft clear to {d:.2} m of the axis\n", .{
+        floors, build.WATCH_ROOF_TOP, TOWER_CLEAR,
+    });
 }
 
 test "fires carry a light above their base and inside their own bound" {

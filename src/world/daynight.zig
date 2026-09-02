@@ -342,6 +342,37 @@ pub fn keyAmt(p: Palette) f32 {
 }
 const ANCHOR_KEY_LUMA: f32 = 1.13158; // luma(1.32, 1.10, 0.80)
 
+/// A colour's HUE alone, as a factor on white — its channels at unit luminance. `slate` and `peach` make the
+/// same split the other way about: they impose a hue, this one reads one off.
+fn hueOf(c: rl.Vector3) rl.Vector3 {
+    const l = luma(c);
+    if (l <= 1e-6) return v3(1, 1, 1);
+    return v3(c.x / l, c.y / l, c.z / l);
+}
+
+/// **HOW MUCH OF THE HOUR'S OWN HUE A BANK OF FOG TAKES.** 0 leaves the mesh its authored grey at every hour,
+/// 1 gives it the full hue the hour's lit haze has. THE one number to move if the banks read too warm at dusk
+/// or too cold at midnight — the brightness beside it is solved and not authored, so this is the whole retune.
+const MIST_HUE: f32 = 0.65;
+/// The ambient the mesh's own grey was authored under (`SHOT_HOUR`'s `ambSky`). The tint never climbs past
+/// white, so every daylight hour is the look that was already there and only the dark ones come down off it.
+const ANCHOR_AMB_LUMA: f32 = luma(v3(0.168, 0.188, 0.244));
+
+/// **A BANK OF FOG IS MADE OF NOTHING BUT THE LIGHT STANDING IN IT** — the one body in the world with no
+/// albedo worth speaking of, which is why it takes the hour's colour outright instead of the hour's colour
+/// laid over a material. A factor on `weather.MIST_COL`: BRIGHTNESS off the sky's own ambient, because a bank
+/// is grey cloud lit from above and not by the key, and HUE off the hour's LIT HAZE, which is the same air a
+/// hundred metres further out — the banks and the distance they stand in front of cannot be two colours.
+/// **A BANK IS NEVER A SOURCE**, so the hue goes through `ceiling` before the dim: splitting white toward a
+/// warm hour puts red over 1 on its own (1.146 at 8.30 am, measured), and a channel over white is a bank
+/// brighter than the daylight grey it was authored as. Scaled as a WHOLE VECTOR for `ceiling`'s own reason —
+/// clamping red at 1 while green rides under it turns the morning's warmth into yellow.
+pub fn mistTint(hour: f32, wet: f32) rl.Vector3 {
+    const p = overcast(paletteAt(hour), wet);
+    const dim = mathx.clampF(luma(p.ambSky) / ANCHOR_AMB_LUMA, 0, 1);
+    return mathx.scaleV(ceiling(toward(v3(1, 1, 1), hueOf(p.hazeBank), MIST_HUE)), dim);
+}
+
 const Key = struct { at: f32, p: Palette };
 
 const NIGHT_P = Palette{
@@ -553,6 +584,61 @@ pub fn phaseName(hour: f32) [:0]const u8 {
 
 /// THE ANCHOR SUN — the light this whole game was authored, measured and photographed under. **AND IT IS THE ONE COPY**: `gfx.SUN_DIR` is this, not a second triple beside it. Written out in both files, the test below compared the clock against `daynight`'s own copy.
 pub const ANCHOR_DIR = mathx.normV(v3(-0.60, 0.50, -0.46));
+
+test "A BANK OF FOG IS THE HOUR'S OWN COLOUR, and the night never lights one" {
+    // The TINT is what this owns; the grey it multiplies is `weather.MIST_COL` and stays over there rather
+    // than being copied in to make the print prettier.
+    const rows = [_]struct { at: f32, name: []const u8 }{
+        .{ .at = 0.0, .name = "midnight" },
+        .{ .at = 5.0, .name = "first light" },
+        .{ .at = 6.0, .name = "sunrise" },
+        .{ .at = 8.5, .name = "morning" },
+        .{ .at = 12.0, .name = "noon" },
+        .{ .at = SHOT_HOUR, .name = "golden hour" },
+        .{ .at = 19.4, .name = "sunset" },
+        .{ .at = 20.8, .name = "dusk" },
+        .{ .at = 22.5, .name = "night" },
+    };
+    std.debug.print("\n", .{});
+    var noon: f32 = 0;
+    var dark: f32 = 0;
+    for (rows) |r| {
+        const tn = mistTint(r.at, 0);
+        const l = luma(tn);
+        std.debug.print("  fog bank {s:>12} {d:5.2}h: tint {d:.3} {d:.3} {d:.3} (luma {d:.3})\n", .{
+            r.name, r.at, tn.x, tn.y, tn.z, l,
+        });
+        if (r.at == 12.0) noon = l;
+        if (r.at == 0.0) dark = l;
+        // **NEVER A SOURCE.** A bank is grey cloud: the tint may cool or warm it but may not brighten it past
+        // the daylight grey it was authored as, or the poofs stop being fog and start being lamps.
+        try std.testing.expect(tn.x <= 1.001 and tn.y <= 1.001 and tn.z <= 1.001);
+        try std.testing.expect(l > 0.0);
+    }
+    // Printed, not asserted: how dark a bank goes and how warm it runs are HIS calls, not a contract.
+    std.debug.print("  midnight is {d:.2}x noon\n", .{dark / noon});
+    // **A RAMP AND NEVER A STEP** (the rig's law) — and a quarter-hour sample cannot tell the two apart: the
+    // banks move 0.129 across the 5 am hour because the PALETTE does, which is a fast ramp and not a seam.
+    // What separates them is that halving the sample halves a ramp's worst step and does nothing to a step's.
+    const fine = worstStep(1.0 / 240.0);
+    const coarse = worstStep(1.0 / 120.0);
+    std.debug.print("  worst step {d:.5} per 15 s against {d:.5} per 30 s — a ramp halves, a seam would not\n", .{ fine, coarse });
+    try std.testing.expect(fine < coarse * 0.62);
+}
+
+/// The largest one-sample move in the tint over a whole day, for the continuity check above.
+fn worstStep(dh: f32) f32 {
+    var was = mistTint(0, 0);
+    var h: f32 = dh;
+    var worst: f32 = 0;
+    while (h <= HOURS) : (h += dh) {
+        const now = mistTint(h, 0);
+        const d = @max(@abs(now.x - was.x), @max(@abs(now.y - was.y), @abs(now.z - was.z)));
+        if (d > worst) worst = d;
+        was = now;
+    }
+    return worst;
+}
 
 test "SHOT_HOUR REPRODUCES THE SUN THE GAME WAS PHOTOGRAPHED UNDER — 362 reference frames ride on it" {
     // A THOUSANDTH OF A UNIT VECTOR is under a twentieth of a degree of sun, where one shadow-map texel across the 108 m box is already a third of a degree at the distances that matter.

@@ -365,13 +365,16 @@ fn fallenCity(p: *Emit) void {
     p.at(.tower, 132, -78, -30, 1.0);
 }
 
+/// **THE DRESSING IS MEASURED OFF THE WALL, NOT OFF THE MIDDLE.** The shaft doubled, and a brazier at a fixed
+/// 3.6 m from the axis went from standing outside the door to standing inside the tower.
 fn towerSite(p: *Emit, x: f32, z: f32, yaw: f32) void {
+    const R = props.TOWER_OUT;
     p.at(.watchtower, x, z, yaw, 1.0);
     p.at(.torch, x + p.rng.signed() * 0.9, z + p.rng.signed() * 0.9, p.rng.range(0, 360), 0.9);
-    const door = localToWorld(0, -3.6, yaw, 1.0);
+    const door = localToWorld(0, -(R + 1.25), yaw, 1.0);
     p.at(.brazier, x + door[0], z + door[1], 0, 1.0);
-    p.belt(.rubble, x - 6, z - 6, x + 6, z + 6, 5, 0.8, 1.3);
-    p.belt(.block, x - 8, z - 8, x + 8, z + 8, 3, 0.8, 1.1);
+    p.belt(.rubble, x - (R + 3.65), z - (R + 3.65), x + (R + 3.65), z + (R + 3.65), 5, 0.8, 1.3);
+    p.belt(.block, x - (R + 5.65), z - (R + 5.65), x + (R + 5.65), z + (R + 5.65), 3, 0.8, 1.1);
 }
 
 fn theTarn(p: *Emit) void {

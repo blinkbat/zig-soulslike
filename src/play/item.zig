@@ -575,7 +575,7 @@ pub const GEAR = [_]Gear{
     .{ .kind = .greatclub, .equip = .{ .arm = CLUB } },
     .{ .kind = .grave_warbow, .equip = .{ .arm = .{ .slot = .hand_bow, .heft = .heavy, .reach = .ranged, .dmg = 1.62, .poise = 1.45, .dur = 1.28, .stam = 1.34, .scales = .dexterity } } },
     // A DOOR — half again the compass of the small shield, at four fifths of the speed and more per blow. **THE
-    // NEGATION DIAL STOPS UNDER THE CAP ON PURPOSE**: `combat.GUARD_NEGATE_CAP` is 0.95 on a 0.85 base, so anything past ~1.118 is silently clamped — and `effect` PRINTS this figure.
+    // NEGATION DIAL STOPS UNDER THE CAP ON PURPOSE**: `combat.GUARD_NEGATE_CAP` sits just under 1 on the base, so anything past ~1.118 is silently clamped — and `effect` PRINTS this figure.
     .{ .kind = .tower_shield, .equip = .{ .arm = .{ .slot = .hand_shield, .heft = .heavy, .negate = 1.10, .arc = 1.45, .walk = 0.80, .stam = 1.30 } } },
     // **A WHOLE SUIT IS WORTH 25, NOT 45** (owner: too much armour). The curve is `a/(a + 5*dmg)`, so at 45 a
     // best-in-slot kit turned aside HALF of every rank-and-file blow before the tree's own 32 went on top.

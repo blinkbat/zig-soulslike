@@ -664,14 +664,6 @@ pub const Pan = struct {
         }
     }
 
-    pub fn fusingCount(self: *const Pan) u32 {
-        var n: u32 = 0;
-        for (self.liveConst()) |*h| {
-            if (h.fusing()) n += 1;
-        }
-        return n;
-    }
-
     pub fn draw(self: *const Pan, scene: ?*gfx.Scene) void {
         foe.drawGroup(self.liveConst(), &self.model, scene);
     }

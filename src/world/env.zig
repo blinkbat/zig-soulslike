@@ -15,7 +15,6 @@ const restmod = @import("../play/rest.zig");
 
 const v3 = mathx.v3;
 const Kind = props.Kind;
-const alloc = std.heap.raw_c_allocator;
 
 
 pub const PLAY_INSET: f32 = 2.0;

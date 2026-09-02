@@ -2829,7 +2829,7 @@ const BANK = [NV]Row{
     // THE CALL CARRIES: it is a tell, and a tell you cannot hear from where the fight is happening is not one.
     .{ .id = .priest_call, .make = mkPriestCall, .gain = battle(0.66), .mix = .combat, .jit = 0.08, .vjit = 0.12, .vars = 3, .poly = 3, .reach = 44 },
     .{ .id = .priest_breath, .make = mkPriestBreath, .gain = battle(0.60), .mix = .combat, .jit = 0.10, .vjit = 0.14, .vars = 3, .poly = 3, .reach = 26 },
-    // …AND THE BELL CARRIES AS FAR AS IT REACHES (`hollow.TOLL_R` is 34 m): a voice that faded first would be a lie about the mechanic.
+    // …AND THE BELL CARRIES AS FAR AS IT REACHES (`hollow.TOLL_R`): a voice that faded first would be a lie about the mechanic.
     .{ .id = .hollow_toll, .make = mkHollowToll, .gain = battle(0.92), .mix = .combat, .jit = 0.05, .vjit = 0.06, .vars = 3, .poly = 2, .reach = 40 },
     .{ .id = .hollow_clank, .make = mkHollowClank, .gain = battle(0.30), .mix = .combat, .jit = 0.16, .vjit = 0.24, .vars = 4, .poly = 4, .reach = 20 },
     .{ .id = .step_oil, .make = mkStepOil, .gain = 0.145, .jit = 0.12, .vjit = 0.26, .vars = 4, .poly = 3 },
@@ -2943,9 +2943,9 @@ fn seconds(id: Id) f32 {
         // The bell's HUM is the sound; cut to the default 0.5 s it was a hammer on a pipe.
         .hollow_toll => 3.4,
         .hollow_clank => 0.55,
-        // The call must cover the raise's own gather (`ancientpriest.RAISE_WIND` is 1.55 s).
+        // The call must cover the raise's own gather (`ancientpriest.RAISE_WIND`).
         .priest_call => 1.6,
-        // …and the breath must cover the pour (`BREATH_DUR` 0.95 s) plus the tail off it.
+        // …and the breath must cover the pour (`BREATH_DUR`) plus the tail off it.
         .priest_breath => 1.15,
         .skitter_slice => 0.55,
         // Short on purpose: three a volley, and a long take smears them into one noise.

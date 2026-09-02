@@ -661,17 +661,17 @@ pub const Necro = struct {
 
     fn setCarry(self: *Necro, dt: f32) void {
         const e = dt * 6.0;
-        self.staffSh = approach(self.staffSh, STAFF_CARRY_SH, e);
-        self.staffEl = approach(self.staffEl, STAFF_CARRY_EL, e);
-        self.staffAbd = approach(self.staffAbd, STAFF_CARRY_ABD, e);
-        self.staffTilt = approach(self.staffTilt, STAFF_CARRY_TILT, e);
-        self.castSh = approach(self.castSh, FREE_CARRY_SH, e);
-        self.castEl = approach(self.castEl, FREE_CARRY_EL, e);
-        self.castAbd = approach(self.castAbd, FREE_CARRY_ABD, e);
-        self.bodyLean = approach(self.bodyLean, 6.0, e);
-        self.twist = approach(self.twist, 0, e);
-        self.headPitch = approach(self.headPitch, 4.0, e);
-        self.headYaw = approach(self.headYaw, 0, e);
+        self.staffSh = easeTo(self.staffSh, STAFF_CARRY_SH, e);
+        self.staffEl = easeTo(self.staffEl, STAFF_CARRY_EL, e);
+        self.staffAbd = easeTo(self.staffAbd, STAFF_CARRY_ABD, e);
+        self.staffTilt = easeTo(self.staffTilt, STAFF_CARRY_TILT, e);
+        self.castSh = easeTo(self.castSh, FREE_CARRY_SH, e);
+        self.castEl = easeTo(self.castEl, FREE_CARRY_EL, e);
+        self.castAbd = easeTo(self.castAbd, FREE_CARRY_ABD, e);
+        self.bodyLean = easeTo(self.bodyLean, 6.0, e);
+        self.twist = easeTo(self.twist, 0, e);
+        self.headPitch = easeTo(self.headPitch, 4.0, e);
+        self.headYaw = easeTo(self.headYaw, 0, e);
     }
 
     /// **THE GATHER TRAVELS HARD, AND IT TRAVELS AWAY FROM WHERE IT ENDS** (the knight's tell lesson). Every channel is moving for the whole 1.9 s, because a committed action that shows nothing never began.
@@ -1102,7 +1102,9 @@ pub const Necro = struct {
     }
 };
 
-fn approach(cur: f32, want: f32, e: f32) f32 {
+/// **NOT `mathx.approach`** — that one is a rate-limited step that LANDS on its target; this is the exponential
+/// ease that never quite arrives. Named apart because the two read identically at a call site.
+fn easeTo(cur: f32, want: f32, e: f32) f32 {
     return lerpF(cur, want, mathx.clampF(e, 0, 1));
 }
 

@@ -30,7 +30,7 @@ pub const H: f32 = 2.55;
 /// It feels this far through the water. Generous, because it cannot come after you: the ring is what makes crossing a pool a decision rather than a surprise.
 pub var AGGRO_R: f32 = 9.0;
 
-/// **HOW DEEP HE HAS TO BE STANDING FOR IT TO FEEL HIM AT ALL.** Ankle-deep is enough: the trigger is being IN the water rather than far into it. Well under `env.WADE_MAX` (1.37), which is the depth that refuses him outright.
+/// **HOW DEEP HE HAS TO BE STANDING FOR IT TO FEEL HIM AT ALL.** Ankle-deep is enough: the trigger is being IN the water rather than far into it. Well under `env.WADE_MAX`, which is the depth that refuses him outright.
 pub const WADE_MIN: f32 = 0.30;
 
 pub const POOL_MIN: f32 = 0.22;

@@ -36,9 +36,7 @@ const bookmod = @import("ui/book.zig");
 const savemod = @import("save.zig"); // for the boot screen's shelf — staged, never read off the disk
 const sfx = @import("core/audio.zig");
 const worldfmt = @import("world/worldfmt.zig");
-const wf = worldfmt;
 const env = @import("world/env.zig");
-const alloc = std.heap.raw_c_allocator;
 
 const Game = game.Game;
 const v3 = mathx.v3;

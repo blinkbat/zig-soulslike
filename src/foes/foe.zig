@@ -1634,7 +1634,7 @@ pub fn postStep(self: anytype, dt: f32, bounds: f32, speed: f32, sensed: f32, ag
 /// it was placed on; a body under orders is ALREADY at its post, because walking is what its orders are.
 ///
 /// Without this every roamer got three metres out and turned round: the `.hold` arm of a creature's own
-/// `decide` compares against its spawn point and `LEASH_HOME_R` is 3 m, so the orders and the go-home rule
+/// `decide` compares against its spawn point and `LEASH_HOME_R` is a stride, so the orders and the go-home rule
 /// pulled against each other and the orders lost. The same anchor feeds `tickLeash`, or `roam_free` — the one
 /// that is unleashed BY DEFINITION — trips the tether at `leashR` and is dragged back anyway.
 pub fn homeFor(self: anytype) rl.Vector3 {

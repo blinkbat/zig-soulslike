@@ -17,6 +17,7 @@ const countermod = @import("play/counter.zig");
 const counterui = @import("ui/counterui.zig");
 const frogmod = @import("foes/frog.zig");
 const foemod = @import("foes/foe.zig");
+const foestat = @import("foes/foestat.zig");
 const combat = @import("play/combat.zig");
 const liquidmod = @import("play/liquid.zig");
 const collision = @import("core/collision.zig");
@@ -838,7 +839,7 @@ comptime {
 // **EVERY CREATURE THAT TAKES ORDERS HAS TO WALK THEM.** The comptime block above only pins that each group
 // HAS a `foe.Post`; `warrior.zig` then pinned that ITS dog roams, and nothing asked the other twenty-five.
 // MEASURED: twelve of them tested the go-home arm against `self.home` instead of `foe.homeFor`, and their own
-// `HOME_R` is 1.5-3.0 m against `foe.ROAM_R`'s 9 — eight never got further than 1.9-3.4 m off the post, and
+// `HOME_R` against `foe.ROAM_R` — eight never got further than 1.9-3.4 m off the post, and
 // the other four reached the mark and were walked straight back off it again instead of standing there.
 // Four minutes each, hero six aggro rings away, so nothing here is a fight.
 // **THE ROW'S DEBT TO `run` IS NOW CHECKED.** `FOE_GROUPS` says a row owes an `update(...)` call or "the
@@ -1107,7 +1108,7 @@ fn rehomeFoes(g: *Game, sighted: Sighted) void {
     // **AND THE GROUND THE RUN LAID GOES WITH THE BODIES** — every group that leaves a hazard clears it in its
     // own `reset` (`knight.Vigil.clearGas`, `shroom.Cluster.clearClouds`, `cinderwake.Scorch.clearTrail`); the
     // hero's bolt cloud is the one of them that lives on `Game` and had nobody to clear it. MEASURED:
-    // `knight.GAS_LIFE` 4.2 s against `hero.DEATH_DUR` 3.6 s, so 0.6 s of the dead run's cloud hung at the old
+    // `knight.GAS_LIFE` against `hero.DEATH_DUR`, so 0.6 s of the dead run's cloud hung at the old
     // spot dosing the re-homed field — and a bonfire or a map cut has no card at all, so there it was all 4.2.
     g.boltGas = [_]knightmod.Gas{.{}} ** BOLT_GAS_CAP;
     g.boltGasHead = 0;
@@ -1118,6 +1119,27 @@ fn rehomeFoes(g: *Game, sighted: Sighted) void {
             for (@field(g, f.field).live()) |*x| x.leash.blindNow();
         }
     }
+}
+
+/// **THE EDITOR RE-HOMED EVERY BODY ON THE MAP EVERY FRAME, AND NOTHING IN THAT BRANCH CAN MOVE ONE** — no foe
+/// group is handed a `dt` there, so the re-spawn wrote back the values it had just written. MEASURED over
+/// `01_fallen_plain`'s 188 placements: 666 us a frame, 4.0% of a 16.7 ms one. Compared before it is rebuilt,
+/// the way the three terrain fields already are (`env.uploadSoil`).
+///
+/// **IT IS A STAMP OF THE INPUTS AND NOT A GENERATION COUNTER** on purpose: `editor.mapGen` moves only for the
+/// FOLK table and a counter bumped per edit site is one site away from a foe edit that silently never shows.
+/// This reads exactly what `foe.resetGroup` reads — the rows, the ground under each, and the bench's pools — so
+/// an edit, an undo and a dialled stat all trip it by construction.
+fn foePlacementStamp(m: *const worldfmt.Map) u64 {
+    var h = std.hash.Wyhash.init(0);
+    h.update(std.mem.asBytes(&m.nfoes));
+    for (m.foes[0..m.nfoes]) |f| {
+        h.update(std.mem.asBytes(&f));
+        const y = m.heightAt(f.x, f.z);
+        h.update(std.mem.asBytes(&y));
+    }
+    h.update(std.mem.asBytes(&foestat.mult));
+    return h.final();
 }
 
 fn eachTarget(g: *const Game, ctx: anytype, comptime visit: anytype) void {
@@ -2056,7 +2078,7 @@ test "THE ROLL OBEYS THE GROUND — a committed move may not take him up what a 
     e.* = .{ .ground = undefined, .models = undefined };
     e.heightAny = true;
     e.heightHalf = 100.0;
-    // One lattice pitch is 2*half/(N-1) ≈ 0.90 m, so the riser is far past `STEP_UP` (0.55) and its slope far past `MAX_SLOPE` (tan 40).
+    // One lattice pitch is 2*half/(N-1) ≈ 0.90 m, so the riser is far past `STEP_UP` and its slope far past `MAX_SLOPE` (tan 40).
     const pitch = 2 * e.heightHalf / @as(f32, @floatFromInt(worldfmt.HEIGHT_N - 1));
     for (0..worldfmt.HEIGHT_N) |zi| {
         for (0..worldfmt.HEIGHT_N) |xi| {
@@ -2428,8 +2450,15 @@ pub fn endRestForShot(g: *Game) void {
     g.rest.reset(fires[0..g.env.restSites(&fires)]);
     rehomeFoes(g, .blind);
 }
+/// The black a slot's picture may not be taken through. TWO screens now, not one: the bonfire's own fade and
+/// the death card's, which is what the respawn saves behind.
+fn slotBlack(g: *const Game) f32 {
+    const dying: f32 = if (g.hero.dead) 1.0 else mathx.clampF(g.deathFade / RESPAWN_FADE, 0, 1);
+    return mathx.maxF(g.rest.fade(), dying);
+}
+
 pub fn takeSlotShot(g: *Game) void {
-    if (!g.shotOwed or g.rest.fade() > SHOT_CLEAR) return;
+    if (!g.shotOwed or slotBlack(g) > SHOT_CLEAR) return;
     g.shotOwed = false;
     _ = savemod.writeShot(g.slot);
 }
@@ -2746,7 +2775,7 @@ fn interact(g: *Game) void {
     }
 }
 
-/// How far from a ladder's climbing line he may stand and still get on it. Between `chest.REACH` 2.1 and the
+/// How far from a ladder's climbing line he may stand and still get on it. Between `chest.REACH` and the
 /// pickup's 2.4 would be far too generous for a thing 0.5 m wide: this is a reach for the RAILS.
 pub const LADDER_REACH: f32 = 1.5;
 /// The step off the head of a ladder onto whatever holds him. **PAST THE LIP AND NOT ONTO IT** — a heightfield
@@ -5063,6 +5092,8 @@ pub fn run(mode: Mode) void {
     var wasStun: combat.StunKind = .none;
     var lastPhase: f32 = 0.75;
     var bankT: f32 = 0;
+    var homedStamp: u64 = 0;
+    var wasEditing = false;
     defer g.rumble.stop();
     while (!rl.windowShouldClose()) {
         const rawDt = rl.getFrameTime();
@@ -5127,7 +5158,14 @@ pub fn run(mode: Mode) void {
             g.hero.held = true;
             g.hero.setGuard(false);
             g.hero.pose();
-            rehomeFoes(g, .blind);
+            const placed = foePlacementStamp(&g.map);
+            if (!wasEditing or placed != homedStamp) {
+                rehomeFoes(g, .blind);
+                homedStamp = placed;
+            }
+            wasEditing = true;
+            // NOT BEHIND THE STAMP: this one reads the ENV's prop index, which a chest or a bonfire placed as a
+            // prop moves without touching a foe row. It walks those three short index lists and nothing else.
             rehomeChests(g);
             if (g.folkGen != g.editor.mapGen) {
                 g.folk.reset(&g.map);
@@ -5140,6 +5178,7 @@ pub fn run(mode: Mode) void {
             rl.endDrawing();
             continue;
         }
+        wasEditing = false;
 
         g.hero.held = g.menu.isOpen();
         if (g.menu.isOpen()) {
@@ -5459,7 +5498,13 @@ pub fn run(mode: Mode) void {
         }
         if (g.hero.dead) {
             g.hero.updateDeath(dt);
-            if (!g.hero.dead) resetFoes(g);
+            // **STANDING UP IS TOUCHING THE FIRE** (owner) — the respawn is the same door the bonfire is: the
+            // field re-homed, the run's bars dropped, the pile left where he fell. It saves for the same reason
+            // and behind the same black, so the slot's picture is the world he woke up in and not the last fire.
+            if (!g.hero.dead) {
+                resetFoes(g);
+                saveNow(g, .withShot);
+            }
         } else if (g.hero.staggered()) {
             g.hero.updateStun(dt);
         } else if (g.gateWalk != null) {
@@ -5669,7 +5714,8 @@ pub fn run(mode: Mode) void {
             if (p.raised) {
                 // **ON THE GROUND UNDER THE SPOT, NOT AT THE CASTER'S OWN FEET**: the priest carries its own
                 // `pos.y` into `raiseAt`, so on a bank the body came up buried. And INSIDE THE MOVEMENT CLAMP
-                // first — `RAISE_OUT` is 5.6 m out, and a body whose `home` is outside `PLAY_HALF` never walks.
+                // first — `RAISE_OUT` puts it out from the caster, and a body whose `home` is outside
+                // `PLAY_HALF` never walks.
                 const spot = mathx.clampXZ(p.raiseAt, PLAY_HALF);
                 const at = v3(spot.x, g.env.groundAt(spot.x, spot.z), spot.z);
                 g.clatter.raise(at, mathx.headingXZ(mathx.dirXZ(at, g.hero.pos)));
@@ -5884,6 +5930,7 @@ pub fn run(mode: Mode) void {
         g.rumble.update(rawDt, rl.isGamepadAvailable(PAD));
 
         drawScene(g);
+        takeSlotShot(g);
         hud(g, rawDt);
         saveMark(g, rawDt);
         tickEnter(g, rawDt);
@@ -6840,8 +6887,8 @@ fn resetFoes(g: *Game) void {
     dropRunHud(g);
 }
 
-/// **EVERY BAR THE RUN LEFT ON SCREEN GOES WHILE THE SCREEN IS BLACK** (owner) — the death card's black and the
-/// bonfire's are the two doors, and both already re-home the field behind them.
+/// **EVERY BAR THE RUN LEFT ON SCREEN GOES WHILE THE SCREEN IS BLACK** (owner) — the death card's black, the
+/// bonfire's and the map cut's are the three doors, and all three already re-home the field behind them.
 ///
 /// `bossK` and `spiritK` only tick inside `hud`, which the chrome fade and `rest.active()` both stop calling, so
 /// they FROZE at full: the rail came back up carrying the dead run's HP and the dead run's chip tail and then
@@ -6908,3 +6955,61 @@ test "A RING IN THE BAG SAVES NOTHING — the snap is asked of the FINGER" {
     try std.testing.expect(bindingWorn(worn) == null);
 }
 
+
+// **AN EDIT THAT DOES NOT TRIP THE STAMP IS AN EDIT THAT NEVER SHOWS**, which is a far worse bug than the
+// 666 us a frame the stamp saves. One case per thing `foe.resetGroup` reads.
+test "the editor's re-home stamp trips on every edit a placed body can take, and holds still otherwise" {
+    const alloc = std.testing.allocator;
+    const m = try alloc.create(worldfmt.Map);
+    defer alloc.destroy(m);
+    var line: usize = 0;
+    try worldfmt.load(worldfmt.DIR ++ "/01_fallen_plain" ++ worldfmt.EXT, m, &line);
+    try std.testing.expect(m.nfoes > 0);
+
+    const at0 = foePlacementStamp(m);
+    try std.testing.expectEqual(at0, foePlacementStamp(m));
+
+    const was = m.foes[0];
+    m.foes[0].x += 0.25;
+    try std.testing.expect(foePlacementStamp(m) != at0);
+    m.foes[0] = was;
+    try std.testing.expectEqual(at0, foePlacementStamp(m));
+
+    m.foes[0].yaw += 1;
+    try std.testing.expect(foePlacementStamp(m) != at0);
+    m.foes[0] = was;
+
+    m.foes[0].scale += 0.1;
+    try std.testing.expect(foePlacementStamp(m) != at0);
+    m.foes[0] = was;
+
+    m.foes[0].ai = if (m.foes[0].ai == .hold) .roam else .hold;
+    try std.testing.expect(foePlacementStamp(m) != at0);
+    m.foes[0] = was;
+
+    // A ROUTE LEG MOVES THE BODY'S ORDERS, and `armPost` reads it off the same row.
+    m.foes[0].wp[0].x += 1;
+    try std.testing.expect(foePlacementStamp(m) != at0);
+    m.foes[0] = was;
+
+    // ONE MORE BODY, AND ONE FEWER.
+    const n = m.nfoes;
+    m.nfoes = n - 1;
+    try std.testing.expect(foePlacementStamp(m) != at0);
+    m.nfoes = n;
+    try std.testing.expectEqual(at0, foePlacementStamp(m));
+
+    // SCULPTING THE GROUND UNDER ONE re-homes it: `resetGroup` takes its Y off `heightAt`.
+    const hb = m.height;
+    for (&m.height) |*c| c.* += 3;
+    try std.testing.expect(foePlacementStamp(m) != at0);
+    m.height = hb;
+    try std.testing.expectEqual(at0, foePlacementStamp(m));
+
+    // AND A DIALLED POOL, which `armStats` lays on at the same door.
+    const k = @intFromEnum(m.foes[0].kind);
+    foestat.mult[k].hp = 2.0;
+    try std.testing.expect(foePlacementStamp(m) != at0);
+    foestat.mult[k] = .{};
+    try std.testing.expectEqual(at0, foePlacementStamp(m));
+}

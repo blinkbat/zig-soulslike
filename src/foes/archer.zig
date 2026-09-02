@@ -456,7 +456,7 @@ fn plantIn(a: *Arrow, at: rl.Vector3, surf: collision.Surface) void {
 }
 
 /// True = it is finished with, either way. IT REACHED THE EARTH, or IT RAN OUT OF TIME STILL IN THE AIR — two
-/// different endings that used to be one. `ARROW_GRAV` is 3.0 and `BOLT_GRAV` 0.8, so anything loosed steeply upward is still climbing at `ARROW_LIFE`; planted there it hung forty metres up.
+/// different endings that used to be one. `ARROW_GRAV` is under `BOLT_GRAV`, so anything loosed steeply upward is still climbing at `ARROW_LIFE`; planted there it hung forty metres up.
 fn plantGround(a: *Arrow, groundY: f32) bool {
     const floor = groundY + GROUND_BITE;
     if (a.pos.y <= floor) {
@@ -1851,7 +1851,7 @@ test "NOT EVERY SHOT LEAVES A BODY — wood sticks and stays, rock and light are
 }
 
 test "A SHAFT LOOSED AT THE SKY IS GONE, not planted in mid-air" {
-    // `ARROW_LIFE` is 3.5 s and `ARROW_GRAV` 3.0, so a steep shot is still climbing when it expires. Planted there it stuck to the sky and faded over `ARROW_STICK_FADE` where anybody looking up could see it.
+    // `ARROW_LIFE` runs out under `ARROW_GRAV`, so a steep shot is still climbing when it expires. Planted there it stuck to the sky and faded over `ARROW_STICK_FADE` where anybody looking up could see it.
     const dt: f32 = 1.0 / 60.0;
     var up = launchShaft(v3(0, 1.3, 0), v3(0, 400, 20), 40.0, .{ .dmg = 1 }, false, .arrow);
     var i: u32 = 0;

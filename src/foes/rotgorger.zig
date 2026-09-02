@@ -707,13 +707,6 @@ pub const Gorge = struct {
         }
         return n;
     }
-    pub fn anyFed(self: *const Gorge) bool {
-        for (self.liveConst()) |*g| {
-            if (g.fed) return true;
-        }
-        return false;
-    }
-
     pub fn draw(self: *const Gorge, scene: ?*gfx.Scene) void {
         foe.drawGroup(self.liveConst(), &self.model, scene);
     }

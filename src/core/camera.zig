@@ -30,7 +30,7 @@ pub fn skyTop() f32 {
 const GROUND_CLEAR = 0.7;
 /// …and how much boom one probe of that search gives up. Named beside the clearance it is searching for: the two are only ever chosen against each other, and a bare 0.25 in the loop reads as arbitrary.
 const GROUND_PROBE = 0.25;
-/// How far the ground under the eye must stand PROUD of the ground under the hero before it counts as a hill worth paying boom for — just under one terrain riser (`wf.HEIGHT_STEP` 0.25), so quantisation noise never bills a step of zoom.
+/// How far the ground under the eye must stand PROUD of the ground under the hero before it counts as a hill worth paying boom for — just under one terrain riser (`wf.HEIGHT_STEP`), so quantisation noise never bills a step of zoom.
 const GROUND_RISE = 0.2;
 
 const AIM_DIST = 0.7;

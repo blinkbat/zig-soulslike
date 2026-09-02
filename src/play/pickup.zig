@@ -13,7 +13,7 @@ const v3 = mathx.v3;
 
 pub const CAP: usize = 96;
 
-/// METRES on XZ from the glow's own origin. **Wider than the box and narrower than the drop**: `souls.REACH` is 2.6 because you come back for that one under pressure, and this is 2.4 because a wisp of light has no body to bump into. NOT the widest ring in the game — `rest.REACH` is 3.2.
+/// METRES on XZ from the glow's own origin. **Wider than the box and narrower than the drop**: `souls.REACH` is wider because you come back for that one under pressure, and this is narrower because a wisp of light has no body to bump into. NOT the widest ring in the game — `rest.REACH` is.
 pub const REACH: f32 = 2.4;
 
 pub const FADE_DUR: f32 = 0.42;

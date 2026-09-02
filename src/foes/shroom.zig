@@ -910,7 +910,7 @@ test "THE CLOUD POISONS, IT DOES NOT BURN: linger and the meter fills, step out 
         _ = psn.tick(P, 1.0 / 60.0, 70);
         if (psn.active()) broke = true;
     }
-    // **IT BREAKS NOW, AND IT DID NOT BEFORE** (owner: accrue more rapidly). At `SPORE_BUILD` 24 a whole cloud lifetime left the meter half full; at 42, plus the entry bolus (`foe.Soak`), standing in one to the end poisons you.
+    // **IT BREAKS NOW, AND IT DID NOT BEFORE** (owner: accrue more rapidly). At the old `SPORE_BUILD` a whole cloud lifetime left the meter half full; at the one it carries now, plus the entry bolus (`foe.Soak`), standing in one to the end poisons you.
         std.debug.print("  sporeling cloud: {d:.0}/s over {d:.1} s of cloud -> poison {s}\n", .{ SPORE_BUILD, CLOUD_LIFE, if (broke) "BROKE" else "held" });
     try std.testing.expect(broke);
     try std.testing.expectApproxEqAbs(@as(f32, 0), c.spores(1.0 / 60.0, outside), 1e-6);

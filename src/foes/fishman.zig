@@ -1048,8 +1048,10 @@ fn buildBones() [N]rl.Mesh {
 
 /// **FAT IS A WIDER BODY, NOT A SCALED ONE** — the shaman's gut and hips are authored, so it reads as one
 /// heavy man among two lean ones rather than as the same man drawn bigger. `FAT` is the whole of the dial.
+const FAT: f32 = 1.62;
+
 fn fatOf(role: Role) f32 {
-    return if (role == .shaman) 1.62 else 1.0;
+    return if (role == .shaman) FAT else 1.0;
 }
 
 fn pelvisMesh(role: Role) rl.Mesh {

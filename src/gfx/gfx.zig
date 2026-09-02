@@ -86,7 +86,7 @@ pub fn screenOfColor(c: rl.Color) f32 {
 
 pub const SHADOWMAP_RES = 8192;
 pub const SHADOW_ORTHO = 108.0;
-/// The widest the box may open, for the editor zoomed out over a whole map (`worldfmt.MAX_DECLARED_HALF` is 312 a side). 8192 over 1024 m is 12.5 cm a texel: a pillar still lays a shadow, a fern's is gone.
+/// The widest the box may open, for the editor zoomed out over a whole map (`worldfmt.MAX_DECLARED_HALF` a side). 8192 over 1024 m is 12.5 cm a texel: a pillar still lays a shadow, a fern's is gone.
 pub const SHADOW_SPAN_MAX = 1024.0;
 const SUN_DIST = 120.0;
 const SHADOW_DEPTH = 0.78;

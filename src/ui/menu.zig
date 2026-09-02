@@ -817,9 +817,14 @@ pub fn unload() void {
     unloadShots();
 }
 
+/// The widest a row can say, in seconds: 999h 59m.
+const PLAYTIME_CAP: f32 = 999.0 * 3600.0 + 59.0 * 60.0;
+
 /// "2h 14m" — hours and minutes, never seconds. What a slot row answers is "which of these have I played", and a number that ticks is not what that question is asking.
 fn playtimeText(secs: f32, buf: []u8) [:0]const u8 {
-    const total: u32 = @intFromFloat(@max(0, secs));
+    // A slot's `elapsed:` is whatever the file says (`save.float` refuses only non-finite), and a `u32` cast
+    // past its range is illegal rather than merely wrong. Clamped at the widest the row can print.
+    const total: u32 = @intFromFloat(mathx.clampF(secs, 0, PLAYTIME_CAP));
     const h = total / 3600;
     const m = (total % 3600) / 60;
     if (h > 0) return std.fmt.bufPrintZ(buf, "{d}h {d}m", .{ h, m }) catch "?";

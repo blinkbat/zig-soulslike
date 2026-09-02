@@ -163,12 +163,6 @@ comptime {
     std.debug.assert(BUTT_R < CORNER_R);
 }
 
-/// **THE GATE IS MEASURED FROM THE QUARRY'S HIDE** (`wolf.triggerR`'s law): asked centre-to-centre a flat
-/// radius is unsatisfiable on anything broad, because `env.resolveActor` holds the body `bodyR + its own` out.
-pub fn buttR(quarryR: f32) f32 {
-    return BUTT_R + quarryR;
-}
-
 // **THE BAND IT KEEPS.** A deer's whole plan is not being where you are. Inside `FLEE_R` it walks away from
 // you; past `KEEP_R` it closes enough to throw. Between them it holds and spits.
 const FLEE_R: f32 = 6.5;
@@ -407,7 +401,6 @@ const HIDE_LT = rgba(20, 17, 13, 248);
 const BELLY = rgba(10, 11, 13, 250);
 
 const STALKC = rgba(21, 20, 14, 250);
-const STALK_LT = rgba(34, 33, 22, 248);
 const STALK_DK = rgba(12, 12, 9, 252);
 const LIMB = rgba(14, 13, 11, 250);
 const LIMB_LT = rgba(22, 20, 16, 248);
@@ -417,13 +410,10 @@ const CALYX_LT = rgba(31, 34, 22, 248);
 const PETAL_DK = rgba(32, 24, 32, 250);
 const PETAL = rgba(58, 42, 54, 250);
 const PETAL_LT = rgba(92, 70, 82, 248);
-const PETAL_TIP = rgba(132, 110, 112, 246);
 
 /// The centre is a WARM light now and not a gullet — the blood tones read as an open mouth on a thing that
 /// only ever spits pollen.
-const THROAT_HALO = rgba(52, 42, 20, 236);
 const THROAT_LIP = rgba(138, 108, 44, 168);
-const THROAT_DEEP = rgba(214, 168, 66, 96);
 const THROAT = rgba(255, 226, 150, 22);
 
 const STAMEN = rgba(170, 146, 92, 196);

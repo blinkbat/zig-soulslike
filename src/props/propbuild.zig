@@ -35,7 +35,7 @@ const WEAVE = art.WEAVE;
 /// uniform `scale` could not give, since it drags the rungs apart with the rails.
 ///
 /// **THREE RUNGS, BECAUSE THE SECTION IS THE AUTHORING GRANULARITY.** At eight it was 2.40 m, and a run can
-/// only be a whole number of them: against a cliff quantised to `wf.HEIGHT_STEP` 0.25 that leaves most lips
+/// only be a whole number of them: against a cliff quantised to `wf.HEIGHT_STEP` that leaves most lips
 /// unreachable — the head lands a metre over the ledge or a metre under it and `game.ladderExit` refuses both.
 /// At 0.90 it is finer than the band that exit accepts, so EVERY height has a run that serves it — and that
 /// relation is a comptime assert beside `env.LADDER_PROUD`, not a number to be re-derived here.

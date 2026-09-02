@@ -200,7 +200,7 @@ fn classify(dist: f32, biteR: f32, biteReady: bool, tollReady: bool, sparkReady:
 }
 
 /// `zeta` under 1 so it RINGS on rather than arriving (`AGENTS.md`). **SOLVED**: the haul is driven over
-/// `TOLL_SWING` (0.42 s) and natural frequency is sqrt(stiff) rad/s — at 46 the period was 0.93 s and the bell
+/// `TOLL_SWING` and natural frequency is sqrt(stiff) rad/s — at 46 the period was 0.93 s and the bell
 /// reached 37 of the 52 degrees it was pulled through. 165 gives 12.8 rad/s and a 0.49 s period, so the mass
 /// arrives inside the drive and carries PAST it.
 const BELL_STIFF: f32 = 165.0;

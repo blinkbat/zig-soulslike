@@ -1027,7 +1027,7 @@ pub fn writeTalk(m: *Map, dlg: u16, t: *const Talk) !void {
     m.ndacts = na;
 }
 
-/// **`addText` ONLY EVER APPENDS, SO AN EDITOR HAS TO SWEEP UP AFTER ITSELF.** `DTEXT_CAP` is 8 KB and every
+/// **`addText` ONLY EVER APPENDS, SO AN EDITOR HAS TO SWEEP UP AFTER ITSELF.** `DTEXT_CAP` is small and every
 /// re-commit of a conversation, every coined flag name and every re-pointed `dialog` act writes a fresh copy —
 /// re-saying one 240-byte greeting seventeen times fills the arena and the next edit is refused with the map
 /// looking fine. This walks EVERY `Span` the format has (the list is the ten fields, and it is exhaustive by
@@ -1157,7 +1157,7 @@ pub fn dialogUsers(m: *const Map, dlg: u16) usize {
     return n;
 }
 
-/// **RECLAIMS A CONVERSATION NOBODY OPENS.** `MAX_DIALOGS` is 32 and the talk panel coins one the moment a
+/// **RECLAIMS A CONVERSATION NOBODY OPENS.** `MAX_DIALOGS` is small and the talk panel coins one the moment a
 /// body is given a voice, so without this an afternoon of adding and deleting folk fills the table with
 /// conversations nothing can reach. Refuses while anything still names it (`dialogUsers`). The node arena is
 /// rebuilt around the hole for `writeTalk`'s reason — a dialog owns a CONTIGUOUS run of it.
@@ -1740,10 +1740,6 @@ pub const Map = struct {
             if (a.contains(px, pz)) return i;
         }
         return null;
-    }
-
-    pub fn arenaAt(self: *const Map, px: f32, pz: f32) ?*const Arena {
-        return &self.arenas[self.arenaIndexAt(px, pz) orelse return null];
     }
 
     pub fn findLocation(self: *const Map, name: []const u8) ?u16 {

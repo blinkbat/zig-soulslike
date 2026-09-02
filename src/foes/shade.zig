@@ -159,7 +159,7 @@ pub fn spec(r: Role) Spec {
 pub const WISP_HIT = combat.Hit{ .dmg = 20, .poise = 10 };
 pub const WISP_SPEED: f32 = 13.5;
 
-/// One row per move. Every window here clears `foe.TELL_MIN` (0.30) — the law that no attack comes out of nowhere — and the test at the foot of this file pins that rather than trusting the reading.
+/// One row per move. Every window here clears `foe.TELL_MIN` — the law that no attack comes out of nowhere — and the test at the foot of this file pins that rather than trusting the reading.
 const Attack = struct {
     windDur: f32,
     strikeDur: f32,

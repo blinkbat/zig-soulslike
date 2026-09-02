@@ -112,7 +112,7 @@ const GAIT_BLEND: f32 = 11.0;
 ///
 /// **THE LOWER RIB HAD TO GROW WITH IT.** A tip at radius `R` swept through ±θ covers `2·R·sin θ`, so this
 /// stride off the old 0.31 m rib asked for `sin θ = 1.21` — unsatisfiable, and `RIB`'s clamp would have
-/// silently delivered a short swing under a long stride. `RIB_KNEE_Y` 0.78 puts the rib at 0.48 m and lands the solve at `sin θ = 0.77`.
+/// silently delivered a short swing under a long stride. `RIB_KNEE_Y` puts the rib at 0.48 m and lands the solve at `sin θ = 0.77`.
 const STRIDE: f32 = 1.10;
 /// Fraction of the wave each rib is DOWN. Over 0.5 by a wide margin — with six legs and a metachronal wave most are always planted, which is what stops it hopping.
 const RIB_DUTY: f32 = 0.68;

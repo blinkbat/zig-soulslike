@@ -299,8 +299,8 @@ const SW_BACK_CD: f32 = 6.5;
 /// slash and 32 to 25 on the lunge, all of it off `dmg`, so the venom clock the fight is built on is untouched.
 const SW_SLASH_HIT = combat.Hit{ .dmg = 7, .poise = 30, .stance = 26, .elem = combat.elems(.{ .chaos = 11 }) };
 /// **A THRUST DOES NOT THROW A MAN OFF HIS FEET** (owner: stop juggling you). It carried `launch = 3.4` — an
-/// apex nearly three times the biggest slam in the game (`combat.SLAM_LAUNCH` 0.85) and past the ceiling the
-/// airborne pose is even solved against (`hero.LAUNCH_MAX_APEX` 1.2), which is 1.33 s off the ground per hit
+/// apex nearly three times the biggest slam in the game (`combat.SLAM_LAUNCH`) and past the ceiling the
+/// airborne pose is even solved against (`hero.LAUNCH_MAX_APEX`), which is 1.33 s off the ground per hit
 /// from a move that closes 7.7 m. The throw moved to the OVERHEAD, where a two-hander's weight belongs.
 const SW_LUNGE_HIT = combat.Hit{ .dmg = 13, .poise = 44, .stance = 34, .elem = combat.elems(.{ .chaos = 12 }) };
 
@@ -541,7 +541,8 @@ const MG_BUNCH_R: f32 = 1.8;
 const CAP_STAGGER: f32 = 0.45;
 
 /// **IT DISSOLVES SLOWLY WHEN THREATENED** (owner) — slow enough to be interrupted, which is what makes closing
-/// on it worth doing. `threatened` is its OWN clock and its own health, never a read of him.
+/// on it worth doing. Threatened is its OWN clock (`fadeCd`) and its own health (`mgHarm`, `press`), never a
+/// read of him.
 const MG_FADE_OUT: f32 = 1.15;
 const MG_GONE_DUR: f32 = 0.55;
 const MG_FADE_IN: f32 = 0.60;

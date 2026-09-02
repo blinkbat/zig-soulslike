@@ -123,7 +123,7 @@ fn towerArc() f32 {
     return combat.subtendedArc(half, out) + TOWER_SWEPT_ALLOW;
 }
 const TOWER_SWEPT_ALLOW = 17.0;
-/// **OAK ANSWERS A BLADE BETTER THAN IT ANSWERS A SPELL** (owner) — over the hero's own `GUARD_NEGATE` (0.85)
+/// **OAK ANSWERS A BLADE BETTER THAN IT ANSWERS A SPELL** (owner) — over the hero's own `GUARD_NEGATE`
 /// against steel, well under it against anything thrown, so a rod is the way through his front.
 const TOWER_NEGATE: f32 = 0.90;
 const TOWER_NEGATE_ELEM: f32 = 0.60;
@@ -292,7 +292,7 @@ const SWEEP = Attack{
 
 const SWEEP2 = Attack{
     .reachOut = 1.28, // MEASURED down his facing while live: 3.75 m
-    // FLOORED: `foe.PARRY_LEAD` (0.18 s) may never be more than about a fifth of a wind.
+    // FLOORED: `foe.PARRY_LEAD` may never be more than about a fifth of a wind.
     .windDur = 0.58,
     .strikeDur = 0.34,
     .impactK = 0.25,

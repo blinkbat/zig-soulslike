@@ -28,7 +28,7 @@ const approach = mathx.approach;
 // **THE BLINK IS THE TRAVEL AND THE BITE IS THE POINT.** Nothing about it closes ground: it does not chase, it
 // does not circle, it does not walk. It hangs at `BLINK_FAR`, disappears, and reappears inside its own reach.
 // You cannot back away from a thing that does not travel, so the fight is not about distance at all — it is
-// about the ARRIVAL, which is the longest thing it does (`BLINK_IN` 0.30 s of a body fading back in, and then
+// about the ARRIVAL, which is the longest thing it does (`BLINK_IN` of a body fading back in, and then
 // `BITE_WIND` on top before the jaws move).
 //
 // **IT IS A VAMPIRE, SO A BITE THAT DRAWS BLOOD IS THE ONLY THING THAT FEEDS IT.** The bite is an ordinary
@@ -1319,7 +1319,7 @@ test "THE ROOTS REFUSE THE BLINK — the one time this creature is chaseable" {
 }
 
 test "IT IS NOT THE LEECHFLY: it never climbs out of a swing" {
-    // The leechfly answers a sword with ALTITUDE (`HOVER_HIGH` 4.6). This one stays in reach the whole time and
+    // The leechfly answers a sword with ALTITUDE (`HOVER_HIGH`). This one stays in reach the whole time and
     // answers with the blink, and a test says so because two flyers sharing one refusal is one creature twice.
     try std.testing.expect(HOVER_WAIT < 3.2);
     var b = testBat();
@@ -1393,7 +1393,7 @@ test "IT DOES NOT TAKE TWO BITES FROM ONE SPOT — hit and RUN" {
     var wasBlink = false;
     var wasRun = false;
     while (t < 20.0) : (t += dt) {
-        // **THE GAME FEEDS SIGHT EVERY FRAME AND A UNIT TEST HAS TO TOO.** `foe.SIGHT_MEMORY` is 6 s, so
+        // **THE GAME FEEDS SIGHT EVERY FRAME AND A UNIT TEST HAS TO TOO.** `foe.SIGHT_MEMORY` outlives a frame, so
         // without this the back two thirds of the run is a BLIND bat hovering at its post and the counts below
         // measure nothing (the fungal deer's and the priest's own tests already do this).
         b.leash.noteSeen();
@@ -1470,7 +1470,7 @@ test "A SPENT PASS ALWAYS LEAVES — by teleport or on the wing, and rooted not 
     // Spent, with the blink up and the coin against a run: it vanishes.
     try std.testing.expectEqual(Choice.blink, classify(2.0, 0, 1.0, true, false, true, false));
     // …with the coin FOR a run it flies out instead, blink or no blink. **THE OLD `.rest` IS GONE**: a spent
-    // bat with the blink still cooling used to hang in your face doing nothing, which at `BLINK_CD` 5.60 would
+    // bat with the blink still cooling used to hang in your face doing nothing, which at `BLINK_CD` would
     // now be five seconds of a creature that had stopped working.
     try std.testing.expectEqual(Choice.retreat, classify(2.0, 0, 1.0, true, false, true, true));
     try std.testing.expectEqual(Choice.retreat, classify(2.0, 0, 1.0, false, false, true, false));

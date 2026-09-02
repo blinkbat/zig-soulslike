@@ -99,7 +99,7 @@ const TOP_F: f32 = 1.00;
 const HP_MAX: f32 = 130.0;
 const POISE_MAX: f32 = 22.0;
 const STANCE_MAX: f32 = 34.0;
-/// **FIRE IS NOTHING TO IT AND COLD IS THE ANSWER** — the one body a torch makes worse. `RES_CAP` is 75, so
+/// **FIRE IS NOTHING TO IT AND COLD IS THE ANSWER** — the one body a torch makes worse. `RES_CAP` is what caps it, so
 /// the fire row is written at the cap rather than at a number that reads stronger than it can be.
 const RESISTS = combat.resists(.{ .fire = 75, .cold = -70, .chaos = 25 });
 pub var SOULS: u32 = 180;

@@ -618,7 +618,7 @@ test "THE FIRST STORM LANDS INSIDE A SESSION, at the seed the game actually ship
 //
 // **THE GRADIENT IS IN THE GEOMETRY, NOT IN A TEXTURE AND NOT IN SHELLS** — a CLUSTER of overlapping lumps
 // through a flattened volume, so the alpha COMPOUNDS where they pile up. Vertex alpha here is the EMISSIVE
-// channel, and concentric shells each read as a ring. ONE DRAW per bank. `DRIFT_HI` is 0.16 m/s, so a bank takes a minute and a half to cross its own width.
+// channel, and concentric shells each read as a ring. ONE DRAW per bank. `DRIFT_HI` is slow enough that a bank takes a minute and a half to cross its own width.
 
 pub const MIST_CAP: usize = 7;
 pub const MIST_KINDS: usize = 3;
@@ -1091,7 +1091,7 @@ pub fn skeinRim() f32 {
     return skeinWide() * 1.20;
 }
 
-/// **AND THE HAZE IS TURNED DOWN FOR THEM ALONE** (`gfx.Scene.setHaze`). `gfx.HAZE_DENSITY` is 0.013 a metre,
+/// **AND THE HAZE IS TURNED DOWN FOR THEM ALONE** (`gfx.Scene.setHaze`). `gfx.HAZE_DENSITY` is per metre,
 /// so exp(−0.013 d) leaves 15% of a thing at 130 m and 4% at 240 m — and the band HAS to be out there now, or
 /// it is back above the frame. A bird is not a surface the distance veils, it is a SILHOUETTE read against the
 /// sky, and the haze does not soften it: it deletes it by pulling it to the sky's own colour. At 0.35 the same

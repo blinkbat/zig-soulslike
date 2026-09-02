@@ -10,7 +10,7 @@ Owner's asks, in order, and what answered them:
 
 | ask | answer | pinned by |
 | --- | --- | --- |
-| "less jumpbacks — last resort under heavy damage" | `RETREAT_AT` 0.20 tier gates every leap door; rear blow answered by the FALL | `THE LEAP`, `A FLANK BLOW HE SHRUGS OFF`, `SWIPE-AND-LEAP` |
+| "less jumpbacks — last resort under heavy damage" | `RETREAT_AT` tier gates every leap door; rear blow answered by the FALL | `THE LEAP`, `A FLANK BLOW HE SHRUGS OFF`, `SWIPE-AND-LEAP` |
 | "sword goes over my head / swinging at emotions" | every stroke re-authored to cross his FRONT, low; `reachIn`/`bandR`/`stepLands`; reach measured down the facing while live through the real update | `THE SWORD IS SWUNG AT THE MAN WHERE HE STANDS`, `EACH STROKE'S DECLARED REACH…` |
 | "tighter particles" | rim-weighted gas, metres not scale, ember colour | gas tests |
 | "he should step-turn, not turn constantly" | idle no longer tracks; `STEPTURN.least` 30 | `HE IS NOT DULL` soak (23 blows / 95% / 0.73 s) |
@@ -18,9 +18,9 @@ Owner's asks, in order, and what answered them:
 | "shield floats / bizarre angles" | same strap; face-normal pins on guard / ram / slam | `THE DOOR FACES WHAT IT MEETS` |
 | "more damage, more windup" | +12% / +15% | `LIGHT AND HEAVY ARE TELLABLE APART` |
 | "better tells, better posture, swordsmen data" | `.hold` at the end of every gather; Pflug carry | `THE SWORD IS PRESENTED — Pflug` |
-| "good parry potential" | two parries break his stance (`PARRY_STANCE` 70) | `HE DOES NOT FLINCH AT A POKE` |
+| "good parry potential" | two parries break his stance (`PARRY_STANCE`) | `HE DOES NOT FLINCH AT A POKE` |
 | "orange gas" | ember palette at the one call site | — (colour is not tested) |
-| global: "stun buildup = % HP over a period from HITS; nothing builds while stunned; diminishing returns on stuns and statuses" | `combat.zig`: `FOE_POISE_PER_DMG` 0.82, stunned gate, `lightWear`/`heavyWear`/`ailWear` | three new tests in `combat.zig`; warrior hyper armour and knight door restore the pool |
+| global: "stun buildup = % HP over a period from HITS; nothing builds while stunned; diminishing returns on stuns and statuses" | `combat.zig`: `FOE_POISE_PER_DMG`, stunned gate, `lightWear`/`heavyWear`/`ailWear` | three new tests in `combat.zig`; warrior hyper armour and knight door restore the pool |
 
 ## The tools that made it possible — use them, don't rebuild them
 
@@ -39,7 +39,7 @@ Owner's asks, in order, and what answered them:
 - Sweep far stand: 0.97·`bandR` sits ~10 cm inside the measured far edge. `stepLands` 0.87 is what holds it.
 - Bash reach: declared 2.65 vs measured 2.46 — inside the +0.65 tolerance but the wide side of it. The door
   pose (`BASH_HIT_*`) moved three times; re-measure before touching.
-- Door clearance: swat 0.38 and sweep2 0.39 against a 0.36 clearance. `CARRY_ABD` 24 and `SWT_ABD` 20 are
+- Door clearance: swat 0.38 and sweep2 0.39 against a 0.36 clearance. `CARRY_ABD` and `SWT_ABD` are
   what buy it; the Pflug hilt lives 0.48 m off the plank's right edge.
 - `SWING_BEARING` 19 / `BASH.bearing` 20 are derived from the ram's subtended half-angle at 2.7 m.
 
@@ -81,7 +81,7 @@ Owner's asks, in order, and what answered them:
    2.16–4.40/2.16–5.04, drive 7.00/7.32).
    **NOT lifted, and deliberately:** `Sense` two-tier pressure has nothing to buy on the ogre — it owns no
    retreat and no reposition, so `REPOSITION_AT`/`RETREAT_AT` would be new moves, which is design. And the
-   ogre's choose bands stay PICKED (`SLAM_R` 2.3 under a 2.96 m bill): deriving them off the reach the way
+   ogre's choose bands stay PICKED (`SLAM_R` under a 2.96 m bill): deriving them off the reach the way
    `knight.bandR` does would hand him more slams, which is a change to the fight and his to make.
 3b. **THE SWORD STILL CROSSES THE DOOR IN THE STATES NOBODY CHOREOGRAPHED.** The pinned clearance test covers
    the five strokes wind-to-recover and reads 0.38-0.43 m against a 0.36 m clearance. Walked across EVERY state,
@@ -94,7 +94,7 @@ Owner's asks, in order, and what answered them:
 4. **`counterFlank`'s rear answer is the FALL** on cooldown 0 — first rear poke of every fight gets the fall.
    If that reads as a script, gate it on `pressed` (the reposition tier) as well. **His eye decides.**
 5. **Damage/windup** are one knob each per row; he asked for "a bit" and got 12/15%. Expect a second pass.
-6. **Parry**: two parries now open him. The parry window is `foe.PARRY_LEAD` 0.18 s, global. A knight-specific
+6. **Parry**: two parries now open him. The parry window is `foe.PARRY_LEAD`, global. A knight-specific
    longer window would be the next "badass" lever if two parries still feel unreachable.
 
 ## Laws touched this session (so you don't undo them)

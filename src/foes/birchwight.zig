@@ -677,13 +677,6 @@ pub const Stand = struct {
         }
         return n;
     }
-    pub fn anyCaught(self: *const Stand) bool {
-        for (self.liveConst()) |*w| {
-            if (w.justCaught) return true;
-        }
-        return false;
-    }
-
     pub fn draw(self: *const Stand, scene: ?*gfx.Scene) void {
         foe.drawGroup(self.liveConst(), &self.model, scene);
     }

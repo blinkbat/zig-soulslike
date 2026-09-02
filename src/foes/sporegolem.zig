@@ -6,7 +6,6 @@ const combat = @import("../play/combat.zig");
 const foe = @import("foe.zig");
 const wf = @import("../world/worldfmt.zig");
 const sfx = @import("../core/audio.zig");
-const art = @import("../props/propart.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;

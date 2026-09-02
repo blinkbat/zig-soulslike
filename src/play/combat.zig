@@ -885,7 +885,7 @@ pub const LANCE_R: f32 = 0.55;
 /// **THE ROD'S ANSWER TO A SHIELD** — stance decides whether a guard holds, and nothing but a committed stroke
 /// inside reach moved it in quantity. **CAST IN MELEE RANGE ON PURPOSE** (`SUNDER_REACH`): it carries a parry's worth of stance and you have to be standing there to spend it. PHYSICAL, and the lowest damage of the seven.
 pub const SUNDER_HIT = Hit{ .dmg = 14, .poise = 12, .stance = 40 };
-/// INSIDE THE SWORD'S OWN REACH (`game.MELEE_AIM_R` is 3.6). The one sorcery that is not a way to avoid being in the fight.
+/// INSIDE THE SWORD'S OWN REACH (`game.MELEE_AIM_R`). The one sorcery that is not a way to avoid being in the fight.
 pub const SUNDER_REACH: f32 = 4.0;
 
 /// **THE TWO THAT DO NOTHING TO A BODY AND EVERYTHING TO WHOSE SIDE IT IS ON.** The whole blow is the dose,

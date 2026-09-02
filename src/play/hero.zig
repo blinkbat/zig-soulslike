@@ -3671,7 +3671,7 @@ pub const Hero = struct {
         self.fx = [_]foemod.Particle{.{}} ** FX_N;
         self.fxHead = 0;
         // Drawn off `rootSites`, not out of `fx`, so clearing the pool missed it: `ROOT_SITE_LIFE` 5.86 s against
-        // `DEATH_DUR` 3.6 left root fans tearing out of the old spot for 2.26 s of the next run.
+        // `DEATH_DUR` left root fans tearing out of the old spot for 2.26 s of the next run.
         self.rootSites = [_]RootSite{.{}} ** ROOT_SITES;
         self.rootHead = 0;
         self.startXfade();

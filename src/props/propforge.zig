@@ -62,7 +62,7 @@ fn roundBoxH(b: *Builder, c: rl.Vector3, half: rl.Vector3, round: f32, segs: i32
 
 /// Height of the working face off the ground. **SOLVED, NOT PICKED** — `npc`'s stroke bottoms its hammer head
 /// here and a test re-measures the pair every build. A giant bent over a low anvil is the whole read, so this
-/// number MOVES whenever he does: it went 0.88 -> 0.98 with `npc.SMITH_SIZE` 1.52 -> 1.76, and the rest of the
+/// number MOVES whenever he does: it moved when `npc.SMITH_SIZE` did, and the rest of the
 /// iron went with it rather than leaving a footstool under a 3.24 m body.
 pub const ANVIL_FACE: f32 = 0.98;
 pub const ANVIL_TOP: f32 = ANVIL_FACE + 0.02;
@@ -382,12 +382,13 @@ pub fn toolRackMesh(shader: rl.Shader) rl.Model {
     b.addCylinder(v3(-RACK_HW, RACK_TOP * 0.40, 0.02), v3(RACK_HW, RACK_TOP * 0.40, 0.02), 0.040, 0.040, 7, OAK_DK);
     // FIVE TOOLS, and no two the same length — a rack where every peg hangs to the same height reads as a shop
     // display. **THE HEADS ARE BIG**: at 18 m a hammer head under 0.10 m is four grey pixels and says nothing.
-    const hang = [_]struct { x: f32, drop: f32, head: f32, kind: u8 }{
-        .{ .x = -0.44, .drop = 0.46, .head = 0.115, .kind = 0 },
-        .{ .x = -0.16, .drop = 0.66, .head = 0.090, .kind = 0 },
-        .{ .x = 0.08, .drop = 0.84, .head = 0.070, .kind = 1 },
-        .{ .x = 0.33, .drop = 0.56, .head = 0.135, .kind = 2 },
-        .{ .x = 0.53, .drop = 0.74, .head = 0.062, .kind = 1 },
+    const Tool = enum { hammer, tongs, sledge };
+    const hang = [_]struct { x: f32, drop: f32, head: f32, kind: Tool }{
+        .{ .x = -0.44, .drop = 0.46, .head = 0.115, .kind = .hammer },
+        .{ .x = -0.16, .drop = 0.66, .head = 0.090, .kind = .hammer },
+        .{ .x = 0.08, .drop = 0.84, .head = 0.070, .kind = .tongs },
+        .{ .x = 0.33, .drop = 0.56, .head = 0.135, .kind = .sledge },
+        .{ .x = 0.53, .drop = 0.74, .head = 0.062, .kind = .tongs },
     };
     for (hang) |t| {
         const topY = RACK_TOP - 0.16;
@@ -397,12 +398,12 @@ pub fn toolRackMesh(shader: rl.Shader) rl.Model {
         b.setMat(.steel);
         switch (t.kind) {
             // A HAMMER: a square head across the haft, with a lighter face on one end.
-            0 => {
+            .hammer => {
                 boxH(&b, v3(t.x, botY + t.head * 0.5, 0.01), v3(t.head * 1.5, t.head * 0.60, t.head * 0.60), IRON);
                 boxH(&b, v3(t.x + t.head * 1.5, botY + t.head * 0.5, 0.01), v3(t.head * 0.14, t.head * 0.52, t.head * 0.52), FACE_DK);
             },
             // TONGS: two legs off one pivot, hanging open.
-            1 => {
+            .tongs => {
                 for ([_]f32{ -1, 1 }) |sx| {
                     b.addCapsule(
                         v3(t.x, botY + t.head, 0.01),
@@ -416,7 +417,7 @@ pub fn toolRackMesh(shader: rl.Shader) rl.Model {
                 b.addCylinder(v3(t.x, botY + t.head, -0.01), v3(t.x, botY + t.head, 0.03), 0.024, 0.024, 6, IRON_LT);
             },
             // A SLEDGE, the heaviest thing on the wall and hung where he can get two hands to it.
-            else => {
+            .sledge => {
                 boxH(&b, v3(t.x, botY + t.head * 0.5, 0.01), v3(t.head * 0.85, t.head * 0.95, t.head * 0.75), IRON);
                 boxH(&b, v3(t.x, botY - t.head * 0.42, 0.01), v3(t.head * 0.50, t.head * 0.14, t.head * 0.50), FACE_DK);
             },

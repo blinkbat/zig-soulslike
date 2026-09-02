@@ -2909,7 +2909,7 @@ pub const Editor = struct {
     /// **ONE DOOR OUT FOR A BODY.** Delete and the eraser each did this by hand and the eraser's copy was a bare
     /// `copyForwards`: `Cond.near` is a POSITIONAL npc index (`wf.removeNpc`), so it moved every watch onto the
     /// wrong body and taking the LAST one wrote a map `link` refuses outright. The conversation it was the last
-    /// owner of goes with it too, or the table fills with voices nothing can reach (`wf.MAX_DIALOGS` is 32 and
+    /// owner of goes with it too, or the table fills with voices nothing can reach (`wf.MAX_DIALOGS` is small and
     /// the talk panel coins one on sight).
     fn removeFolk(self: *Editor, m: *wf.Map, i: usize) FolkGone {
         const doomed = m.npcs[i].dlg;
@@ -5880,7 +5880,7 @@ comptime {
 /// Loads the npc's conversation into the editor's scratch and opens the panel. **NOTHING IS WRITTEN HERE** —
 /// a body with no voice yet gets a SEEDED scratch and `talkDlg` stays `NO_DIALOG`, so backing out with Esc or
 /// Cancel leaves the map exactly as it was. Coining the row on open left an orphan conversation behind every
-/// time the panel was opened and closed again, and `wf.MAX_DIALOGS` is 32.
+/// time the panel was opened and closed again, and `wf.MAX_DIALOGS` is small.
 fn openTalk(ed: *Editor, m: *wf.Map, rec: usize) void {
     if (rec >= m.nnpcs) return;
     const np = &m.npcs[rec];
@@ -5969,7 +5969,7 @@ const TALK_ROW_H: i32 = 30;
 const DOES_W: i32 = 190;
 /// **THE GREETING IS A PARAGRAPH AND THE FIELD IS A LINE**, so the panel shows it BOTH ways: you type into a
 /// box that scrolls (`ui.textField`) and you read it back wrapped to the plate's own width, at the same cap
-/// the panel enforces. `dialog.MAX_LINES` is 7 and everything past that is dropped SILENTLY at runtime — a
+/// the panel enforces. `dialog.MAX_LINES` is the cap and everything past it is dropped SILENTLY at runtime — a
 /// sentence that vanishes with nothing said — so the count is on screen while it is being written.
 const TALK_PREVIEW_LINES: usize = 7;
 

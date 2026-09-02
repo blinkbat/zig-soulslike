@@ -11,7 +11,6 @@ const ancientpriestmod = @import("../foes/ancientpriest.zig");
 const archermod = @import("../foes/archer.zig");
 const birchwightmod = @import("../foes/birchwight.zig");
 const blinkbatmod = @import("../foes/blinkbat.zig");
-const broodmod = @import("../foes/brood.zig");
 const cinderwakemod = @import("../foes/cinderwake.zig");
 const delvermod = @import("../foes/delver.zig");
 const fenlurkermod = @import("../foes/fenlurker.zig");
@@ -158,8 +157,6 @@ fn Knobs(comptime bank: []const Knob) type {
     };
 }
 
-// ---------------------------------------------------------------- spells
-
 const SPELL_COLS = [_]Col{
     .{ .name = "fp", .hi = 60, .step = 1, .tip = "Focus the cast bills" },
     .{ .name = "reach", .hi = 80, .step = 0.5, .tip = "Metres it carries. 0 on the two that have no reach of their own" },
@@ -232,8 +229,6 @@ fn spellSet(r: usize, c: usize, v: f32) void {
     }
 }
 
-// -------------------------------------------------------------- ailments
-
 const AIL_COLS = [_]Col{
     .{ .name = "max", .hi = 300, .step = 1, .tip = "The meter's own size — what a full bar is worth in buildup" },
     .{ .name = "decay", .hi = 120, .step = 0.5, .tip = "Meter a second it empties at once nothing is filling it" },
@@ -274,8 +269,6 @@ fn ailSet(r: usize, c: usize, v: f32) void {
         else => row.flat = v,
     }
 }
-
-// ----------------------------------------------------------------- the bag
 
 /// The kinds whose gear row is an `.arm`, an `.plate`, a trinket or a `use`, solved off the BANK at comptime —
 /// four sheets instead of one wall with a column for every dial any item has ever had.
@@ -364,8 +357,6 @@ comptime {
     elemBlockAt(&BLOW_COLS, 3);
 }
 
-// ------------------------------------------------------------- armaments
-
 const ARM_COLS = [_]Col{
     .{ .name = "dmg", .hi = 4, .step = 0.02, .tip = "Multiplier on the bare stroke's damage — the straight sword is 1 on every dial" },
     .{ .name = "poise", .hi = 4, .step = 0.02, .tip = "Multiplier on what the stroke takes off a body's flinch pool" },
@@ -444,8 +435,6 @@ fn armHas(r: usize, c: usize) bool {
     };
 }
 
-// ---------------------------------------------------------------- armour
-
 const PLATE_COLS = [_]Col{
     .{ .name = "armour", .hi = 60, .step = 0.5, .tip = "The `a` in a/(a + 5*dmg). A whole suit is worth 25" },
     .{ .name = "fire", .hi = 75, .step = 1, .tip = "Per cent taken off the fire column" },
@@ -519,8 +508,6 @@ fn plateHas(r: usize, c: usize) bool {
     return c != 6 or plateOf(PLATE_ROWS[r]).rate != null;
 }
 
-// -------------------------------------------------------------- trinkets
-
 const TRINKET_COLS = [_]Col{
     .{ .name = "leech", .hi = 20, .step = 0.1, .tip = "Health a landed stroke gives back" },
     .{ .name = "hpFrac", .hi = 1, .step = 0.01, .tip = "Share added to the health pool" },
@@ -588,8 +575,6 @@ fn trinketHas(r: usize, c: usize) bool {
         else => false,
     };
 }
-
-// ----------------------------------------------------------- consumables
 
 /// **ONE SHEET FOR A DOZEN PAYLOADS.** `item.Use` is a union with a different shape per arm, so the columns are
 /// the vocabulary all of them are written in and each row shows only the ones its own arm has (`useHas`).
@@ -770,8 +755,6 @@ fn useHas(r: usize, c: usize) bool {
     };
 }
 
-// -------------------------------------------------------------- passives
-
 /// **THE BOARD IS NINETY ROWS OF ONE NUMBER.** A node's grant is a union with thirty arms and all but two of
 /// them carry a single f32, so the sheet is that number, the rider's points, and nothing else — which arm it is
 /// is the node's identity and not a tuning (`passivetree.grantSays` prints it either way).
@@ -827,7 +810,15 @@ fn nodeHas(r: usize, c: usize) bool {
     return if (c == 1) n.bump != null else grantValue(n.grant) != null;
 }
 
-// ------------------------------------------------------------------ hero
+/// **AN ATTRIBUTE GRANT IS POINTS, AND POINTS ARE WHOLE** — `Grant.attr.n` is a `u8`, so the column's 0.05 step
+/// moved nothing at all on those rows: twenty nudges rounded straight back to where they started, and the 400
+/// ceiling promised a range the store refuses. The rider column already carries the same unit at the same bound.
+fn nodeLimit(r: usize, c: usize) Col {
+    if (c == 0 and std.meta.activeTag(passivetree.NODES[r].grant) == .attr) {
+        return .{ .name = NODE_COLS[0].name, .hi = NODE_COLS[1].hi, .step = 1, .int = true, .tip = NODE_COLS[0].tip };
+    }
+    return NODE_COLS[c];
+}
 
 /// **HIS OWN DIALS.** The pace, the roll, what a swing bills and what a guard turns aside — the numbers
 /// `play/hero.zig` and `play/combat.zig` call the place to retune feel. A creature's pace is NOT here: every
@@ -854,8 +845,6 @@ const HERO_KNOBS = [_]Knob{
 };
 
 const HeroSheet = Knobs(&HERO_KNOBS);
-
-// ---------------------------------------------------------------- blows
 
 /// **EVERY NAMED STROKE IN THE GAME, ON ONE SHEET.** Some creatures keep their blow as a module dial and swing
 /// it straight (`ogre.SLAM_HIT`); the ones with a kit keep it inside a comptime move table, where the const is
@@ -984,8 +973,6 @@ fn blowSet(r: usize, c: usize, v: f32) void {
         else => h.launch = v,
     }
 }
-
-// ------------------------------------------------------------------ foes
 
 /// **THE RING EACH CREATURE NOTICES YOU AT**, and the souls its body is worth. Both are module-level dials the
 /// creature reads every frame, so a pointer reaches them; the pools cannot be reached that way at all and go
@@ -1154,8 +1141,6 @@ fn foeHas(r: usize, c: usize) bool {
     };
 }
 
-// ----------------------------------------------------------------- drops
-
 const DROP_COLS = [_]Col{
     .{ .name = "odds", .hi = 1, .step = 0.01, .tip = "How often the body leaves its common item at all" },
     .{ .name = "chance", .hi = 0.85, .step = 0.01, .tip = "How often it leaves the rare one. Luck moves this and nothing else" },
@@ -1189,8 +1174,6 @@ fn dropHas(r: usize, c: usize) bool {
         else => drops.TABLE[r].rare != null,
     };
 }
-
-// --------------------------------------------------------------- liquids
 
 const SOAK_ROWS = blk: {
     var out: [wf.Liquid.N]usize = undefined;
@@ -1229,8 +1212,6 @@ fn soakSet(r: usize, c: usize, v: f32) void {
     if (c == 0) slot.*.?.build = v else slot.*.?.dpsFrac = v;
 }
 
-// ---------------------------------------------------------------- knobs
-
 /// **THE SMITH AND THE SHELF.** Four numbers and a share, and every one of them is a price the player feels.
 const TRADE_KNOBS = [_]Knob{
     .{ .name = "stone base", .key = "stone_base", .p = .{ .u = &counter.STONE_BASE }, .lo = 1, .hi = 20, .int = true, .tip = "Stones for the first tier" },
@@ -1241,8 +1222,6 @@ const TRADE_KNOBS = [_]Knob{
 };
 
 const TradeSheet = Knobs(&TRADE_KNOBS);
-
-// --------------------------------------------------------------- the list
 
 pub const TABLES = [_]Table{
     .{
@@ -1376,6 +1355,7 @@ pub const TABLES = [_]Table{
         .get = nodeGet,
         .set = nodeSet,
         .has = nodeHas,
+        .limits = nodeLimit,
     },
     .{
         .name = "Drops",
@@ -1522,8 +1502,6 @@ pub fn revertTable(t: usize) void {
 pub fn revertAll() void {
     for (0..NT) |t| revertTable(t);
 }
-
-// ------------------------------------------------------------- the file
 
 pub const PATH = "tuning.cfg";
 
@@ -1762,4 +1740,54 @@ test "a pool is typed in absolute and kept as a ratio, so a re-authored creature
     apply("foe", "fungal_deer", "hp", 1.5);
     try std.testing.expectApproxEqAbs(@as(f32, 144), value(foes, deer, 0), 1e-3);
     foestat.mult[deer] = .{};
+}
+
+// **EVERY CELL, NOT CELL (0,0,0).** A column whose step is finer than its own store reads back where it
+// started, and a getter and a setter that name different fields make the bench show one number and move
+// another — neither shows up on the one cell the tests above nudge.
+test "a dial writes the field its own getter reads, at its own step, and moves nothing beside it" {
+    init();
+    defer revertAll();
+    var bad: usize = 0;
+    for (0..NT) |t| {
+        const tb = TABLES[t];
+        for (0..tb.n) |r| {
+            for (0..tb.cols.len) |c| {
+                if (!shows(t, r, c)) continue;
+                const col = colSpec(t, r, c);
+                const v0 = value(t, r, c);
+                var want = if (v0 + col.step <= col.hi) v0 + col.step else v0 - col.step;
+                if (col.int) want = @round(want);
+                want = mathx.clampF(want, col.lo, col.hi);
+                if (want == v0) continue;
+
+                var before: [64]f32 = undefined;
+                var n: usize = 0;
+                for (0..tb.cols.len) |q| {
+                    if (q >= before.len) break;
+                    before[q] = value(t, r, q);
+                    n = q + 1;
+                }
+
+                setValue(t, r, c, want);
+                const got = value(t, r, c);
+                if (@abs(got - want) > 1e-3 * @max(1, @abs(want))) {
+                    std.debug.print("SET/GET MISMATCH {s}.{s}.{s}: set {d} got {d}\n", .{ tb.key, tb.rowKey(r), col.name, want, got });
+                    bad += 1;
+                }
+                for (0..n) |q| {
+                    if (q == c) continue;
+                    if (value(t, r, q) != before[q]) {
+                        std.debug.print("BLEED {s}.{s}: writing {s} moved {s} ({d} -> {d})\n", .{ tb.key, tb.rowKey(r), col.name, tb.cols[q].name, before[q], value(t, r, q) });
+                        bad += 1;
+                    }
+                }
+                revertRow(t, r);
+            }
+        }
+    }
+    if (bad != 0) {
+        std.debug.print("bench: {d} bad cells\n", .{bad});
+        return error.BenchCellMismatch;
+    }
 }

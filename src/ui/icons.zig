@@ -1,6 +1,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
+const uiart = @import("uiart.zig");
 
 pub const Icon = enum {
     ground,
@@ -91,10 +92,7 @@ fn softOf(c: rl.Color) rl.Color {
 
 const V = rl.Vector2;
 
-fn triV(a: V, b: V, c: V, col: rl.Color) void {
-    const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-    if (cross > 0) rl.drawTriangle(a, c, b, col) else rl.drawTriangle(a, b, c, col);
-}
+const triV = uiart.triangle;
 
 const G = struct {
     cx: f32,

@@ -13,6 +13,7 @@ const cameramod = @import("core/camera.zig");
 const hud_ = @import("ui/hud.zig");
 const menumod = @import("ui/menu.zig");
 const bookmod = @import("ui/book.zig");
+const mapart = @import("ui/mapart.zig");
 const countermod = @import("play/counter.zig");
 const counterui = @import("ui/counterui.zig");
 const frogmod = @import("foes/frog.zig");
@@ -259,6 +260,7 @@ pub const Game = struct {
     rest: restmod.Rest = .{},
     bootT: f32 = 0,
     bossBits: savemod.BossBits = NO_BOSSES,
+    seenMap: mapart.Seen = .{},
     bossK: [hud_.BOSS_SLOTS]f32 = [_]f32{0} ** hud_.BOSS_SLOTS,
     bossFrac: [hud_.BOSS_SLOTS]f32 = [_]f32{0} ** hud_.BOSS_SLOTS,
     arenaShut: [worldfmt.MAX_ARENAS]bool = [_]bool{false} ** worldfmt.MAX_ARENAS,
@@ -438,6 +440,7 @@ pub const Game = struct {
         g.boltGasT = 0;
         g.dropRng = mathx.Rng.init(0xD0DEC0DE);
         g.bossBits = NO_BOSSES;
+        g.seenMap = .{};
         g.arenaShut = [_]bool{false} ** worldfmt.MAX_ARENAS;
         g.liquidRng = mathx.Rng.init(0x11C0D5EA);
         g.liquidSoak = .{};
@@ -519,6 +522,7 @@ fn beginGame(g: *Game) void {
     g.tree = .{};
     applyTree(g);
     g.hero.respawnNow();
+    seedChart(g);
     rehomeFoes(g, .blind);
     g.rest = .{};
     rehomeChests(g);
@@ -575,6 +579,7 @@ fn enterMap(g: *Game, path: []const u8, at: rl.Vector3, facing: f32) void {
     plantActor(g, &g.hero.pos);
     g.hero.pos = g.env.resolveHeroSide(g.hero.pos, HERO_R, g.hero.pos.y);
     g.hero.setSpawn(g.hero.pos, facing);
+    seedChart(g);
     rehomeFoes(g, .blind);
     rehomeChests(g);
     armScript(g);
@@ -647,6 +652,7 @@ fn slotOf(g: *Game) savemod.Slot {
         .pickups = &g.pickups,
         .bosses = &g.bossBits,
         .award = &g.award,
+        .seenMap = &g.seenMap,
         .map = saveMap(g),
     };
 }
@@ -1721,6 +1727,8 @@ fn gateHeroTerrain(g: *Game, was: rl.Vector3) void {
     g.hero.pos.x = room.x;
     g.hero.pos.z = room.z;
     markWardStep(g, was);
+    // AFTER the gates and the room, or he maps ground a ward just refused him.
+    g.seenMap.walked(g.hero.pos, g.map.half);
 }
 
 fn gatedXZ(e: *const envmod.Env, was: rl.Vector3, to: rl.Vector3, airborne: bool) rl.Vector3 {
@@ -5581,6 +5589,7 @@ pub fn bookView(g: *Game) bookmod.View {
         .gold = g.hero.gold.display(),
         .worn = g.hero.worn,
         .tiers = g.hero.tiers,
+        .world = .{ .map = &g.map, .env = &g.env, .seen = &g.seenMap, .at = g.hero.pos, .facing = g.hero.facing },
     };
 }
 
@@ -6301,6 +6310,12 @@ fn resetFoes(g: *Game) void {
     g.lock = null;
     g.pack.clear();
     dropRunHud(g);
+}
+
+// The mask is cells of THIS map, and the sheet has to show where he is STANDING before he has taken a step.
+fn seedChart(g: *Game) void {
+    g.seenMap.clear();
+    g.seenMap.walked(g.hero.pos, g.map.half);
 }
 
 fn dropRunHud(g: *Game) void {

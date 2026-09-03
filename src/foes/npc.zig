@@ -219,7 +219,8 @@ const STAFF_UP = 0.32 * H;
 const STAFF_R = 0.020 * H;
 
 const FREE_SH = 8.0;
-const FREE_EL = -22.0;
+/// POSITIVE flex, negated at the joint like `HOLD_EL` beside it. At -22 it bent BACKWARD, 78 on the beckon.
+const FREE_EL = 22.0;
 const FREE_ABD = 9.0;
 
 pub const Gesture = enum { none, beckon, point, bow };
@@ -659,16 +660,16 @@ pub const Wanderer = struct {
             .beckon => {
                 const u = self.gfrac();
                 const up = mathx.sinf(std.math.pi * u);
-                sh -= 52.0 * up;
+                sh += 52.0 * up;
                 abd += 16.0 * up;
-                el -= (26.0 + 30.0 * mathx.sinf(twoPi * 2.0 * u)) * up;
+                el += (26.0 + 30.0 * mathx.sinf(twoPi * 2.0 * u)) * up;
                 wrist += 14.0 * up;
             },
             .point => {
                 const u = self.gfrac();
                 const out = mathx.sinf(std.math.pi * u);
-                sh -= 62.0 * out;
-                el = lerpF(el, -4.0, out);
+                sh += 62.0 * out;
+                el = lerpF(el, 4.0, out);
                 abd -= 5.0 * out;
             },
         }
@@ -1820,3 +1821,17 @@ test "THE ANVIL IS SOLVED OFF THE STROKE, not the other way round" {
     try std.testing.expect(SMITH_ANVIL_Z > BODY_R * SCALE * SMITH_SIZE);
 }
 
+test "A BECKON WAVES IN FRONT OF THE BODY — the arm rises FORWARD and the elbow CURLS" {
+    // `rx(-sh)` raises the arm forward and `rx(-el)` flexes the elbow forward (`hero.BOW_SH_FLEX` 88 aims a bow).
+    try std.testing.expect(FREE_EL > 0);
+    try std.testing.expect(HOLD_EL > 0);
+    const peak: f32 = 0.5; // `gfrac` at the middle of the gesture, where `sinf(pi*u)` is 1
+    const up = mathx.sinf(std.math.pi * peak);
+    const beckonSh = FREE_SH + 52.0 * up;
+    const beckonEl = FREE_EL + (26.0 + 30.0 * mathx.sinf(std.math.tau * 2.0 * peak)) * up;
+    try std.testing.expect(beckonSh > FREE_SH);
+    try std.testing.expect(beckonEl > FREE_EL);
+    const pointSh = FREE_SH + 62.0;
+    try std.testing.expect(pointSh > 0);
+    std.debug.print("\n  folk arm: rest {d:.0}/{d:.0}, beckon {d:.0}/{d:.0}, point {d:.0} (shoulder/elbow, forward)\n", .{ FREE_SH, FREE_EL, beckonSh, beckonEl, pointSh });
+}

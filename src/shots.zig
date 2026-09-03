@@ -3153,6 +3153,10 @@ fn chestShots(g: *Game) void {
     bookShot(g, "shots/106h_book_stats.png", .stats, @intFromEnum(stats.Attr.endurance), null, 0);
     bookShot(g, "shots/106h2_book_stats_skill.png", .stats, @intFromEnum(stats.Attr.strength), null, 0);
     bookShot(g, "shots/106i_book_tree.png", .tree, ptree.armFirst(.wizard) + ptree.PER_ARM - 1, null, 0);
+    mapShot(g, "shots/106m_book_map.png", 1.0, false);
+    walkTheMap(g);
+    mapShot(g, "shots/106m2_book_map_walked.png", 1.0, false);
+    mapShot(g, "shots/106m3_book_map_zoom.png", 3.4, true);
 
     const memWas = g.hero.mem;
     g.hero.mem.put(1, .levin);
@@ -3661,6 +3665,35 @@ fn bagOrdinalOf(g: *const Game, want: item.Kind) usize {
 fn bookShot(g: *Game, name: [:0]const u8, page: bookmod.Page, cursor: usize, pickSlot: ?usize, row: usize) void {
     g.menu.book.debugShow(page, cursor, pickSlot, row);
     const shelf = savemod.Shelf{};
+    _ = g.menu.update(&g.retro, &g.day, &g.weather, SHOT_DT, game.bookView(g), &shelf);
+    drawScene(g);
+    g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), .{ .hero = &g.hero, .scene = &g.scene }, &shelf);
+    snap(name);
+}
+
+/// A route across `01_fallen_plain`, walked at the mask's own cell pitch — the sheet reveals a cell at a time.
+fn walkTheMap(g: *Game) void {
+    const legs = [_][2]f32{
+        .{ 0, 0 },    .{ -40, -30 }, .{ -80, -20 }, .{ -95, 20 },
+        .{ -60, 60 },  .{ -10, 70 },  .{ 30, 40 },   .{ 45, -10 },
+        .{ 20, -55 },  .{ -20, -70 },
+    };
+    var i: usize = 1;
+    while (i < legs.len) : (i += 1) {
+        const a = legs[i - 1];
+        const b = legs[i];
+        var t: f32 = 0;
+        while (t <= 1.0) : (t += 0.02) {
+            const x = a[0] + (b[0] - a[0]) * t;
+            const z = a[1] + (b[1] - a[1]) * t;
+            g.seenMap.walked(v3(x, 0, z), g.map.half);
+        }
+    }
+}
+
+fn mapShot(g: *Game, name: [:0]const u8, zoom: f32, onHero: bool) void {
+    const shelf = savemod.Shelf{};
+    g.menu.book.debugMap(game.bookView(g), zoom, onHero);
     _ = g.menu.update(&g.retro, &g.day, &g.weather, SHOT_DT, game.bookView(g), &shelf);
     drawScene(g);
     g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), .{ .hero = &g.hero, .scene = &g.scene }, &shelf);

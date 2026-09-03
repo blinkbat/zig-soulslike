@@ -84,13 +84,8 @@ fn strokeK(px: f32) f32 {
 }
 
 fn quad(a: rl.Vector2, b: rl.Vector2, c: rl.Vector2, d: rl.Vector2, col: rl.Color) void {
-    if ((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x) <= 0) {
-        rl.drawTriangle(a, b, c, col);
-        rl.drawTriangle(a, c, d, col);
-    } else {
-        rl.drawTriangle(a, d, c, col);
-        rl.drawTriangle(a, c, b, col);
-    }
+    uiart.triangle(a, b, c, col);
+    uiart.triangle(a, c, d, col);
 }
 
 fn onAxis(from: rl.Vector2, to: rl.Vector2, along: f32, off: f32) rl.Vector2 {

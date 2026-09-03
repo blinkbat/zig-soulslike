@@ -331,8 +331,8 @@ pub const Menu = struct {
     }
 
     fn updateBook(self: *Menu, dt: f32, v: bookmod.View) Action {
-        if (tabPressed(-1)) self.book.onTab(-1);
-        if (tabPressed(1)) self.book.onTab(1);
+        if (tabPressed(-1)) self.book.onTab(-1, v);
+        if (tabPressed(1)) self.book.onTab(1, v);
         const nav = navFor(self.book.wheelUp());
         if (nav(.up)) self.book.move(0, -1, v);
         if (nav(.down)) self.book.move(0, 1, v);

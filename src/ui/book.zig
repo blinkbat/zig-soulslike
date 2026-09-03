@@ -10,6 +10,7 @@ const ptree = @import("../play/passivetree.zig");
 const combat = @import("../play/combat.zig");
 const heromod = @import("../play/hero.zig");
 const gfx = @import("../gfx/gfx.zig");
+const mapart = @import("mapart.zig");
 const sfx = @import("../core/audio.zig");
 
 
@@ -22,6 +23,7 @@ pub const Page = enum {
     stats,
     spells,
     tree,
+    map,
 
     fn label(p: Page) [:0]const u8 {
         return switch (p) {
@@ -30,7 +32,13 @@ pub const Page = enum {
             .stats => "STATS",
             .spells => "SPELLS",
             .tree => "PASSIVES",
+            .map => "MAP",
         };
+    }
+
+    /// Driven by a LENS, not a row cursor — nothing on them to point at.
+    fn panned(p: Page) bool {
+        return p == .tree or p == .map;
     }
 };
 
@@ -70,6 +78,8 @@ pub const View = struct {
     gold: u32 = 0,
     worn: heromod.Worn = .{},
     tiers: [heromod.NARM]u8 = [_]u8{0} ** heromod.NARM,
+    /// Null in the harness and in every headless test.
+    world: ?World = null,
 
     pub fn tierOf(self: *const View, a: heromod.Armament) u8 {
         return self.tiers[@intFromEnum(a)];
@@ -84,6 +94,8 @@ pub const View = struct {
 };
 
 pub const Portrait = struct { hero: *const heromod.Hero, scene: *gfx.Scene };
+
+pub const World = mapart.World;
 
 
 const Loadout = struct {
@@ -637,6 +649,7 @@ pub const Book = struct {
         break :blk c;
     },
     wheel: ptree.Wheel = .{},
+    lens: mapart.Lens = .{},
     picking: ?SlotId = null,
     pick: usize = 0,
     scroll: usize = 0,
@@ -651,6 +664,13 @@ pub const Book = struct {
         self.settled = false;
         self.press = 0;
         self.pop = 0;
+        mapart.restage();
+    }
+
+    /// He cannot move while the book is open, so centring once on the turn to the page is the whole of it.
+    pub fn onMap(self: *Book, v: View) void {
+        const w = v.world orelse return;
+        self.lens.centreOn(w.at.x, w.at.z, w.map.half);
     }
 
     fn moved(self: *Book) void {
@@ -691,11 +711,12 @@ pub const Book = struct {
         self.pop = POP_DUR;
     }
 
-    pub fn onTab(self: *Book, dir: i32) void {
+    pub fn onTab(self: *Book, dir: i32, v: View) void {
         if (self.picking != null) return; // a page cannot change under an open picker
         const n: i32 = NPAGE;
         const i: i32 = @intCast(@intFromEnum(self.page));
         self.page = @enumFromInt(@as(usize, @intCast(@mod(i + dir + n, n))));
+        if (self.page == .map) self.onMap(v);
         self.settled = false;
         sfx.play(.flask_cycle);
     }
@@ -724,6 +745,10 @@ pub const Book = struct {
             if (self.wheel.move(dx, dy)) self.moved();
             return;
         }
+        if (self.page == .map) {
+            self.lens.panStep(@floatFromInt(sx), @floatFromInt(sy));
+            return;
+        }
         const i = idx(self.page);
         const next = switch (self.page) {
             .equipment => slotStep(self.cur[i], sx, sy),
@@ -736,7 +761,7 @@ pub const Book = struct {
                 @as(i32, @intCast(self.cur[i])) + sy + @as(i32, combat.SPELLS.len),
                 @as(i32, combat.SPELLS.len),
             ))),
-            .tree => unreachable,
+            .tree, .map => unreachable,
         };
         if (next == self.cur[i]) return;
         self.cur[i] = next;
@@ -749,17 +774,19 @@ pub const Book = struct {
     }
 
     pub fn zoomBy(self: *Book, dv: f32, dt: f32) void {
-        if (self.page != .tree or self.picking != null or dv == 0) return;
+        if (!self.page.panned() or self.picking != null or dv == 0) return;
+        if (self.page == .map) return self.lens.zoomBy(dv, dt);
         self.wheel.zoomBy(dv, dt);
     }
 
     pub fn panBy(self: *Book, v: rl.Vector2, dt: f32) void {
-        if (self.page != .tree or self.picking != null) return;
+        if (!self.page.panned() or self.picking != null) return;
+        if (self.page == .map) return self.lens.panBy(v, dt);
         self.wheel.panBy(v, dt);
     }
 
     pub fn wheelUp(self: *const Book) bool {
-        return self.page == .tree and self.picking == null;
+        return self.page.panned() and self.picking == null;
     }
 
     pub fn confirm(self: *Book, v: View) Action {
@@ -796,7 +823,7 @@ pub const Book = struct {
                 }
                 sfx.play(.menu_back);
             },
-            .stats, .spells, .tree => sfx.play(.menu_back),
+            .stats, .spells, .tree, .map => sfx.play(.menu_back),
         }
         return .none;
     }
@@ -811,6 +838,15 @@ pub const Book = struct {
         self.settled = false;
         self.press = 0;
         self.pop = 0;
+    }
+
+    /// Stage the chart for the shot harness.
+    pub fn debugMap(self: *Book, v: View, zoom: f32, onHero: bool) void {
+        self.page = .map;
+        self.picking = null;
+        self.settled = false;
+        self.lens = .{ .zoom = zoom };
+        if (onHero) self.onMap(v);
     }
 
     fn cursorRect(self: *const Book, v: View) rl.Rectangle {
@@ -831,6 +867,7 @@ pub const Book = struct {
             .stats => return attrRow(statsCols(body)[0], self.cur[idx(.stats)]),
             .spells => return spellRow(spellCols(body)[0], self.cur[idx(.spells)]),
             .tree => return ptree.nodeRect(self.wheel, body.x, body.y, body.w, body.h),
+            .map => return .{ .x = 0, .y = 0, .width = 0, .height = 0 },
         }
     }
 
@@ -1172,9 +1209,10 @@ pub fn draw(self: *const Book, v: View, portrait: ?Portrait) void {
         .stats => drawStats(self, body, v, portrait),
         .spells => drawSpells(self, body, v),
         .tree => drawTree(self, body, v),
+        .map => mapart.draw(body.x, body.y, body.w, body.h, v.world, self.lens),
     }
 
-    if (self.at.width > 1 and self.page != .tree) {
+    if (self.at.width > 1 and !self.page.panned()) {
         uiart.slotCursor(
             @intFromFloat(self.at.x),
             @intFromFloat(self.at.y),
@@ -1229,6 +1267,13 @@ pub fn draw(self: *const Book, v: View, portrait: ?Portrait) void {
             buf[3] = CLOSE;
             break :blk buf[0..4];
         },
+        .map => blk: {
+            buf[0] = .{ .glyph = .{ .bumper = "RS" }, .label = "Pan" };
+            buf[1] = .{ .glyph = .{ .dpad = .updown }, .label = "Zoom" };
+            buf[2] = PAGE;
+            buf[3] = CLOSE;
+            break :blk buf[0..4];
+        },
     };
     const hw = hud.hintRowW(hints, hud.HINT);
     hud.hintRowAt(
@@ -1240,6 +1285,9 @@ pub fn draw(self: *const Book, v: View, portrait: ?Portrait) void {
     );
 }
 
+const SOULS_GAP: i32 = 26;
+const TAB_GAP_MIN: i32 = 26;
+
 fn drawTabs(self: *const Book, card: Box, v: View) void {
     const y = card.y + 12;
     var w: [NPAGE]i32 = undefined;
@@ -1249,8 +1297,12 @@ fn drawTabs(self: *const Book, card: Box, v: View) void {
         w[i] = hud.textW(p.label(), hud.TITLE);
         total += w[i];
     }
-    const gap: i32 = @max(40, @divTrunc(card.w - total - 260, @as(i32, NPAGE) + 1));
-    var x = card.x + @divTrunc(card.w - (total + gap * (@as(i32, NPAGE) - 1)), 2);
+    // Centred in what is left BESIDE the souls block: centred in the whole card, a sixth tab ran under it.
+    const souls = fmt("{d}", .{v.souls});
+    const keep = PAD + hud.textW(souls, hud.BODY) + 13 + hud.textW("SOULS", hud.TINY) + 10 + SOULS_GAP;
+    const room = card.w - keep;
+    const gap: i32 = @max(TAB_GAP_MIN, @divTrunc(room - total, @as(i32, NPAGE) + 1));
+    var x = card.x + @divTrunc(room - (total + gap * (@as(i32, NPAGE) - 1)), 2);
     inline for (0..NPAGE) |i| {
         const p: Page = @enumFromInt(i);
         if (self.page == p) {
@@ -1264,7 +1316,6 @@ fn drawTabs(self: *const Book, card: Box, v: View) void {
         }
         x += w[i] + gap;
     }
-    const souls = fmt("{d}", .{v.souls});
     const rx = card.right() - PAD - hud.textW(souls, hud.BODY);
     hud.text(souls, rx, y + 8, hud.BODY, uiart.TEXT_VALUE);
     uiart.soulMark(fi(rx) - 13, fi(y + 8) + fi(hud.lineH(hud.BODY)) * 0.5, uiart.MARK_R * 0.86, 225);
@@ -2140,6 +2191,7 @@ fn drawDoll(ctx: *const anyopaque) void {
 pub fn unload() void {
     if (portRT) |t| rl.unloadRenderTexture(t);
     portRT = null;
+    mapart.unload();
 }
 
 fn drawPortrait(self: *const Book, col: Box, portrait: ?Portrait, caption: [:0]const u8) void {
@@ -2480,7 +2532,9 @@ test "the bag cursor is pulled back onto a real cell when the last of something 
     bag.add(.bloodgrass, 1);
     bag.add(.kobold_fang, 1);
     bag.add(.iron_key, 1);
-    var b = Book{ .page = .inventory, .cur = .{ 0, 2, 0, 0, 0 } };
+    // Named, not counted — a positional literal goes stale the moment a page is added.
+    var b = Book{ .page = .inventory };
+    b.cur[idx(.inventory)] = 2;
     b.clamp(testView(&bag, &sheet, &res, &flasks, &quiver, .sword));
     try std.testing.expectEqual(@as(usize, 2), b.cur[idx(.inventory)]);
     _ = bag.take(.iron_key, 1);

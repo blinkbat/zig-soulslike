@@ -4,6 +4,7 @@ const hud = @import("hud.zig");
 const mathx = @import("../core/mathx.zig");
 const props = @import("../props/props.zig");
 const ui = @import("ui.zig");
+const mapart = @import("mapart.zig");
 const wf = @import("../world/worldfmt.zig");
 const dialogmod = @import("../world/dialog.zig");
 const envmod = @import("../world/env.zig");
@@ -3762,7 +3763,7 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
                 .raise => ui.swatchButton(ctx, r, RAISE_SWATCH, s, hud.MONO, on, tips[i]),
                 .lower => ui.swatchButton(ctx, r, LOWER_SWATCH, s, hud.MONO, on, tips[i]),
                 .smooth, .flat => ui.swatchButton(ctx, r, EVEN_SWATCH, s, hud.MONO, on, tips[i]),
-                .water, .oil, .fungal, .lava => |lq| ui.swatchButton(ctx, r, liquidSwatch(liquidOf(lq).?), s, hud.MONO, on, tips[i]),
+                .water, .oil, .fungal, .lava => |lq| ui.swatchButton(ctx, r, mapart.liquidSwatch(liquidOf(lq).?), s, hud.MONO, on, tips[i]),
                 else => |sl| ui.swatchButton(ctx, r, soilSwatch(soilOf(sl) orelse .none), s, hud.MONO, on, tips[i]),
             });
         if (hit) {
@@ -4321,9 +4322,8 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         return;
     }
 
-    // A walk of every op, every frame: 81 us at the format's 20480 (the test at the foot of this file), 0.49% of a frame.
     if (ed.layer == .interact) {
-        const left = unfilledCount(m);
+        const left = unfilledCount(ed, m);
         var eb: [40]u8 = undefined;
         const lab = if (left > 0)
             std.fmt.bufPrintZ(&eb, "next empty ({d})", .{left}) catch "next empty"
@@ -4512,7 +4512,7 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.C
 
     blitMinimap(ed, m, env, px, py, inner);
 
-    const cp = toMini(
+    const cp = mapart.toFlat(
         mathx.clampF(ed.cam.position.x, -m.half, m.half),
         mathx.clampF(ed.cam.position.z, -m.half, m.half),
         m.half,
@@ -4530,17 +4530,6 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.C
         ed.lookAtGround(-m.half + t * 2 * m.half, -m.half + u * 2 * m.half, 60);
     }
     ui.tipFor(ctx, r, "Click to fly there");
-}
-
-fn toMini(wx: f32, wz: f32, half: f32, ox: i32, oy: i32, span: f32) rl.Vector2 {
-    return .{
-        .x = @as(f32, @floatFromInt(ox)) + (wx + half) / (2 * half) * span,
-        .y = @as(f32, @floatFromInt(oy)) + (wz + half) / (2 * half) * span,
-    };
-}
-
-fn onMini(wx: f32, wz: f32, half: f32) bool {
-    return @abs(wx) <= half and @abs(wz) <= half;
 }
 
 /// Painted on change, not per frame: one rectangle per op, and `01_fallen_plain` stands at 16,563 of them —
@@ -4587,30 +4576,30 @@ fn blitMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, px: i32, p
 }
 
 fn paintMinimap(m: *const wf.Map, env: *const envmod.Env, px: i32, py: i32, inner: f32) void {
-    rl.drawRectangle(px, py, MINI_W - 8, MINI_W - 8, MINI_GROUND);
+    rl.drawRectangle(px, py, MINI_W - 8, MINI_W - 8, mapart.GROUND);
 
     for (m.water, m.waterKind, 0..) |wet, k, i| miniLiquid[i] = if (wet != 0) k + 1 else 0;
-    blitField(miniLiquid[0..], wf.WATER_N, px, py, inner, liquidByte);
+    mapart.blitField(miniLiquid[0..], wf.WATER_N, px, py, inner, mapart.liquidByte);
 
     for (env.placed()) |*pr| {
-        if (pr.gone or miniMark(pr.kind) != .water) continue;
-        if (!onMini(pr.pos.x, pr.pos.z, m.half)) continue;
-        const p = toMini(pr.pos.x, pr.pos.z, m.half, px, py, inner);
-        rl.drawCircleV(p, props.info(pr.kind).bound * pr.scale * inner / (2.0 * m.half), liquidSwatch(.water));
+        if (pr.gone or mapart.markFor(pr.kind) != .water) continue;
+        if (!mapart.onFlat(pr.pos.x, pr.pos.z, m.half)) continue;
+        const p = mapart.toFlat(pr.pos.x, pr.pos.z, m.half, px, py, inner);
+        rl.drawCircleV(p, props.info(pr.kind).bound * pr.scale * inner / (2.0 * m.half), mapart.liquidSwatch(.water));
     }
 
-    for ([_]MiniMark{ .tree, .wall }) |want| {
+    for ([_]mapart.Mark{ .tree, .wall }) |want| {
         for (env.placed()) |*pr| {
             if (pr.gone) continue;
-            const mark = miniMark(pr.kind) orelse continue;
+            const mark = mapart.markFor(pr.kind) orelse continue;
             if (mark != want) continue;
-            if (!onMini(pr.pos.x, pr.pos.z, m.half)) continue;
-            const p = toMini(pr.pos.x, pr.pos.z, m.half, px, py, inner);
+            if (!mapart.onFlat(pr.pos.x, pr.pos.z, m.half)) continue;
+            const p = mapart.toFlat(pr.pos.x, pr.pos.z, m.half, px, py, inner);
             switch (mark) {
                 .tree => rl.drawRectangleV(.{ .x = p.x - 0.5, .y = p.y - 0.5 }, .{ .x = 1.5, .y = 1.5 }, MINI_TREE),
                 .wall => {
-                    const wpx = mathx.maxF(MINI_W_OF[@intFromEnum(pr.kind)] * pr.scale * inner / (2.0 * m.half), 2.0);
-                    rl.drawRectangleV(.{ .x = p.x - wpx * 0.5, .y = p.y - wpx * 0.5 }, .{ .x = wpx, .y = wpx }, MINI_WALL);
+                    const wpx = mathx.maxF(mapart.widthFor(pr.kind) * pr.scale * inner / (2.0 * m.half), 2.0);
+                    rl.drawRectangleV(.{ .x = p.x - wpx * 0.5, .y = p.y - wpx * 0.5 }, .{ .x = wpx, .y = wpx }, mapart.WALL);
                 },
                 .fire, .water => {},
             }
@@ -4618,61 +4607,18 @@ fn paintMinimap(m: *const wf.Map, env: *const envmod.Env, px: i32, py: i32, inne
     }
     for (env.placed()) |*pr| {
         if (pr.gone or !restmod.isRestKind(pr.kind)) continue;
-        if (!onMini(pr.pos.x, pr.pos.z, m.half)) continue;
-        const p = toMini(pr.pos.x, pr.pos.z, m.half, px, py, inner);
+        if (!mapart.onFlat(pr.pos.x, pr.pos.z, m.half)) continue;
+        const p = mapart.toFlat(pr.pos.x, pr.pos.z, m.half, px, py, inner);
         rl.drawCircleV(p, 3.0, MINI_FIRE_HALO);
         rl.drawCircleV(p, 1.5, MINI_FIRE);
     }
     for (m.foes[0..m.nfoes]) |f| {
-        if (!onMini(f.x, f.z, m.half)) continue;
-        const p = toMini(f.x, f.z, m.half, px, py, inner);
+        if (!mapart.onFlat(f.x, f.z, m.half)) continue;
+        const p = mapart.toFlat(f.x, f.z, m.half, px, py, inner);
         rl.drawCircleV(p, 1.5, MINI_FOE);
     }
 }
 
-const MiniMark = enum { water, wall, tree, fire };
-
-fn markOf(k: Kind) ?MiniMark {
-    return switch (props.group(k)) {
-        .fire => .fire,
-        .water => .water,
-        .trees => .tree,
-        else => if (props.info(k).solid and footprintW(k) >= WALL_W) .wall else null,
-    };
-}
-
-/// A wall is solid AND long — measured, a cliff is 16.6 m across, a ruined wall 6.8, and a pillar 1.6.
-const WALL_W: f32 = 4.0;
-
-fn footprintW(k: Kind) f32 {
-    var w: f32 = 0;
-    for (props.info(k).parts) |p| {
-        const dx = @abs(p.bx - p.ax);
-        const dz = @abs(p.bz - p.az);
-        w = @max(w, @max(dx, dz) + 2.0 * p.r);
-    }
-    return w;
-}
-
-const MINI_OF = blk: {
-    @setEvalBranchQuota(200000);
-    var out: [props.NK]?MiniMark = undefined;
-    for (0..props.NK) |i| out[i] = markOf(@enumFromInt(i));
-    break :blk out;
-};
-const MINI_W_OF = blk: {
-    @setEvalBranchQuota(200000);
-    var out: [props.NK]f32 = undefined;
-    for (0..props.NK) |i| out[i] = footprintW(@enumFromInt(i));
-    break :blk out;
-};
-
-fn miniMark(k: Kind) ?MiniMark {
-    return MINI_OF[@intFromEnum(k)];
-}
-
-const MINI_GROUND = ui.col(18, 20, 14, 255);
-const MINI_WALL = ui.col(146, 140, 126, 235);
 const MINI_TREE = ui.col(74, 106, 56, 190);
 const MINI_FIRE = ui.col(255, 220, 150, 255);
 const MINI_FIRE_HALO = ui.col(236, 132, 46, 120);
@@ -4682,44 +4628,6 @@ const MINI_FOE = ui.col(232, 58, 44, 255);
 /// water (ordinal 0) needs the shift to be drawn at all.
 var miniLiquid: [wf.WATER_CELLS]u8 = [_]u8{0} ** wf.WATER_CELLS;
 
-fn liquidSwatch(l: wf.Liquid) rl.Color {
-    return switch (l) {
-        .water => ui.col(32, 55, 62, 255),
-        .oil => ui.col(26, 24, 22, 255),
-        .fungal => ui.col(158, 84, 66, 255),
-        .lava => ui.col(206, 88, 30, 255),
-    };
-}
-
-fn liquidByte(v: u8) rl.Color {
-    return liquidSwatch(@enumFromInt(@min(v -| 1, wf.Liquid.N - 1)));
-}
-
-fn blitField(cells: []const u8, n: usize, px: i32, py: i32, inner: f32, swatch: *const fn (u8) rl.Color) void {
-    // Unreachable today (the caller passes a comptime grid width); the same shape was a live crash in `book.rowStep`.
-    if (n == 0) return;
-    const cellPx = inner / @as(f32, @floatFromInt(n));
-    for (0..n) |cz| {
-        const row = cells[cz * n ..][0..n];
-        var cx: usize = 0;
-        while (cx < n) {
-            const id = row[cx];
-            if (id == 0) {
-                cx += 1;
-                continue;
-            }
-            var run: usize = 1;
-            while (cx + run < n and row[cx + run] == id) run += 1;
-            rl.drawRectangleRec(.{
-                .x = @as(f32, @floatFromInt(px)) + @as(f32, @floatFromInt(cx)) * cellPx,
-                .y = @as(f32, @floatFromInt(py)) + @as(f32, @floatFromInt(cz)) * cellPx,
-                .width = @ceil(@as(f32, @floatFromInt(run)) * cellPx),
-                .height = @ceil(cellPx),
-            }, swatch(id));
-            cx += run;
-        }
-    }
-}
 
 fn soilSwatch(s: wf.Soil) rl.Color {
     return switch (s) {
@@ -5267,12 +5175,26 @@ fn unfilledContainer(o: *const wf.Op) bool {
     return isContainer(o) and o.nloot == 0 and o.gold == 0;
 }
 
-fn unfilledCount(m: *const wf.Map) usize {
+fn countUnfilled(m: *const wf.Map) usize {
     var n: usize = 0;
     for (m.ops[0..m.nops]) |*o| {
         if (unfilledContainer(o)) n += 1;
     }
     return n;
+}
+
+/// MEASURED over the format's 20,480 ops: 78.9 us a frame walked, 0.002 us held. Every container edit banks
+/// first, so `miniGen` is an exact stamp.
+var unfilledAt: u64 = std.math.maxInt(u64);
+var unfilledOps: usize = std.math.maxInt(usize);
+var unfilledWas: usize = 0;
+
+fn unfilledCount(ed: *const Editor, m: *const wf.Map) usize {
+    if (unfilledAt == ed.miniGen and unfilledOps == m.nops) return unfilledWas;
+    unfilledAt = ed.miniGen;
+    unfilledOps = m.nops;
+    unfilledWas = countUnfilled(m);
+    return unfilledWas;
 }
 
 fn nextUnfilled(ed: *const Editor, m: *const wf.Map) ?usize {
@@ -5295,7 +5217,7 @@ fn goToUnfilled(ed: *Editor, m: *const wf.Map) void {
     ed.selecting = true;
     ed.sel = i;
     ed.focusOn(m, i);
-    ed.sayFmt("#{d} {s} - {d} still empty", .{ i, @tagName(m.ops[i].kind), unfilledCount(m) });
+    ed.sayFmt("#{d} {s} - {d} still empty", .{ i, @tagName(m.ops[i].kind), countUnfilled(m) });
 }
 
 fn sealToggle(o: anytype, k: wf.FoeKind) void {
@@ -6588,7 +6510,7 @@ test "THE SWEEP FINDS EVERY CONTAINER NOBODY HAS FILLED, and rounds the map rath
         for (0..r.nloot) |k| o.loot[k] = .mushroom_jerky;
         _ = try m.add(o);
     }
-    try std.testing.expectEqual(@as(usize, 2), unfilledCount(m));
+    try std.testing.expectEqual(@as(usize, 2), countUnfilled(m));
 
     var ed = Editor{};
     try std.testing.expectEqual(@as(?usize, 1), nextUnfilled(&ed, m));
@@ -6599,10 +6521,10 @@ test "THE SWEEP FINDS EVERY CONTAINER NOBODY HAS FILLED, and rounds the map rath
 
     m.ops[1].gold = 5;
     ed.sel = null;
-    try std.testing.expectEqual(@as(usize, 1), unfilledCount(m));
+    try std.testing.expectEqual(@as(usize, 1), countUnfilled(m));
     try std.testing.expectEqual(@as(?usize, 4), nextUnfilled(&ed, m));
     m.ops[4].nloot = 1;
-    try std.testing.expectEqual(@as(usize, 0), unfilledCount(m));
+    try std.testing.expectEqual(@as(usize, 0), countUnfilled(m));
     try std.testing.expectEqual(@as(?usize, null), nextUnfilled(&ed, m));
 }
 
@@ -6631,13 +6553,31 @@ test "going to an empty container selects it, brings the layer with it and puts 
     try std.testing.expectApproxEqAbs(@as(f32, 42), ed.focus.x, 1e-3);
     try std.testing.expectApproxEqAbs(@as(f32, -18), ed.focus.z, 1e-3);
     std.debug.print("\n  empty container sweep: eye on ({d:.1}, {d:.1}) at {d:.1} m, {d} left to fill\n", .{
-        ed.focus.x, ed.focus.z, ed.dist, unfilledCount(m),
+        ed.focus.x, ed.focus.z, ed.dist, countUnfilled(m),
     });
 
     m.ops[1].nloot = 1;
     ed.focus = mathx.ground(7, 7);
     goToUnfilled(&ed, m);
     try std.testing.expectApproxEqAbs(@as(f32, 7), ed.focus.x, 1e-3);
+}
+
+test "THE COUNT IS HELD, AND AN EDIT MOVES IT — a stale label sends the author to a chest he already filled" {
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    m.blank("held");
+    var o = wf.defaults(.at);
+    o.kind = .chest;
+    _ = try m.add(o);
+    _ = try m.add(o);
+    var ed = Editor{};
+    try std.testing.expectEqual(@as(usize, 2), unfilledCount(&ed, m));
+    // Filled WITHOUT banking, so a cache is entitled to be stale here.
+    m.ops[0].gold = 40;
+    try std.testing.expectEqual(@as(usize, 2), unfilledCount(&ed, m));
+    ed.bank(m);
+    try std.testing.expectEqual(@as(usize, 1), unfilledCount(&ed, m));
+    try std.testing.expectEqual(countUnfilled(m), unfilledCount(&ed, m));
 }
 
 test "WHAT THE EMPTY-CONTAINER COUNT COSTS A FRAME — the button's label is a walk of every op" {
@@ -6651,10 +6591,17 @@ test "WHAT THE EMPTY-CONTAINER COUNT COSTS A FRAME — the button's label is a w
     const ROUNDS = 200;
     var timer = try std.time.Timer.start();
     var sink: usize = 0;
-    for (0..ROUNDS) |_| sink += unfilledCount(m);
-    const us = @as(f64, @floatFromInt(timer.read())) / 1000.0 / @as(f64, @floatFromInt(ROUNDS));
+    for (0..ROUNDS) |_| sink += countUnfilled(m);
+    const raw = @as(f64, @floatFromInt(timer.read())) / 1000.0 / @as(f64, @floatFromInt(ROUNDS));
     try std.testing.expectEqual(wf.MAX_OPS * ROUNDS, sink);
-    std.debug.print("\n  empty-container count over {d} ops: {d:.2} us a frame — {d:.3}% of a 16.7 ms frame\n", .{
-        m.nops, us, us / 16700.0 * 100.0,
+
+    var ed = Editor{};
+    _ = unfilledCount(&ed, m);
+    timer.reset();
+    for (0..ROUNDS) |_| sink += unfilledCount(&ed, m);
+    const held = @as(f64, @floatFromInt(timer.read())) / 1000.0 / @as(f64, @floatFromInt(ROUNDS));
+    std.debug.print("\n  empty-container count over {d} ops: {d:.2} us a frame walked ({d:.3}% of a 16.7 ms frame), {d:.3} us held\n", .{
+        m.nops, raw, raw / 16700.0 * 100.0, held,
     });
+    try std.testing.expect(held < raw);
 }

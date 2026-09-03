@@ -214,29 +214,30 @@ const Posture = struct {
     }
 };
 
+/// POSITIVE flex on both elbows — negated at the joint (`rx(-staffEl)`). Authored negative they bend BACKWARD.
 const CARRY = Posture{
-    .staffSh = -12.0, .staffEl = -22.0, .staffAbd = 8.0, .staffTilt = 174.0,
-    .freeSh = -5.0,   .freeEl = -18.0,  .freeAbd = 6.0,
+    .staffSh = -12.0, .staffEl = 22.0, .staffAbd = 8.0, .staffTilt = 174.0,
+    .freeSh = -5.0,   .freeEl = 18.0,  .freeAbd = 6.0,
     .lean = 5.0,      .twist = 0,       .headPitch = 3.0, .headYaw = 0,
 };
 const RAISE_UP = Posture{
-    .staffSh = 62.0,  .staffEl = -8.0,  .staffAbd = 12.0, .staffTilt = 146.0,
-    .freeSh = -96.0,  .freeEl = -52.0,  .freeAbd = 30.0,
+    .staffSh = 62.0,  .staffEl = 8.0,  .staffAbd = 12.0, .staffTilt = 146.0,
+    .freeSh = -96.0,  .freeEl = 52.0,  .freeAbd = 30.0,
     .lean = -20.0,    .twist = -22.0,   .headPitch = 24.0, .headYaw = -12.0,
 };
 const RAISE_PLANT = Posture{
-    .staffSh = -58.0, .staffEl = -30.0, .staffAbd = 4.0,  .staffTilt = 196.0,
-    .freeSh = 40.0,   .freeEl = -14.0,  .freeAbd = -6.0,
+    .staffSh = -58.0, .staffEl = 30.0, .staffAbd = 4.0,  .staffTilt = 196.0,
+    .freeSh = 40.0,   .freeEl = 14.0,  .freeAbd = -6.0,
     .lean = 26.0,     .twist = 8.0,     .headPitch = -18.0, .headYaw = 0,
 };
 const BREATH_GATHER = Posture{
-    .staffSh = -34.0, .staffEl = -46.0, .staffAbd = 20.0, .staffTilt = 158.0,
-    .freeSh = -62.0,  .freeEl = -74.0,  .freeAbd = 22.0,
+    .staffSh = -34.0, .staffEl = 46.0, .staffAbd = 20.0, .staffTilt = 158.0,
+    .freeSh = -62.0,  .freeEl = 74.0,  .freeAbd = 22.0,
     .lean = -13.0,    .twist = -8.0,    .headPitch = -26.0, .headYaw = 0,
 };
 const BREATH_OUT = Posture{
-    .staffSh = -26.0, .staffEl = -40.0, .staffAbd = 16.0, .staffTilt = 164.0,
-    .freeSh = -30.0,  .freeEl = -34.0,  .freeAbd = 12.0,
+    .staffSh = -26.0, .staffEl = 40.0, .staffAbd = 16.0, .staffTilt = 164.0,
+    .freeSh = -30.0,  .freeEl = 34.0,  .freeAbd = 12.0,
     .lean = 15.0,     .twist = -4.0,    .headPitch = 14.0, .headYaw = 0,
 };
 
@@ -1230,4 +1231,21 @@ test "TWO PRIESTS IN A CAMP DO NOT CHANT IN STEP" {
     const b = Ancient.spawn(mathx.zero3, 0, 1.0, 0.8);
     try std.testing.expect(@abs(a.raiseCd - b.raiseCd) > 0.5);
     try std.testing.expect(@abs(a.breathCd - b.breathCd) > 0.3);
+}
+
+test "AN ELBOW BENDS ONE WAY — every posture's flex is FORWARD, or the priest folds its arms behind it" {
+    const rows = [_]struct { name: []const u8, p: Posture }{
+        .{ .name = "carry", .p = CARRY },
+        .{ .name = "raise up", .p = RAISE_UP },
+        .{ .name = "raise plant", .p = RAISE_PLANT },
+        .{ .name = "breath gather", .p = BREATH_GATHER },
+        .{ .name = "breath out", .p = BREATH_OUT },
+    };
+    std.debug.print("\n  priest elbows:", .{});
+    for (rows) |r| {
+        std.debug.print(" {s} staff {d:.0} free {d:.0};", .{ r.name, r.p.staffEl, r.p.freeEl });
+        try std.testing.expect(r.p.staffEl >= 0);
+        try std.testing.expect(r.p.freeEl >= 0);
+    }
+    std.debug.print("\n", .{});
 }

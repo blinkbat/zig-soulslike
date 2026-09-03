@@ -187,6 +187,7 @@ test {
     _ = @import("core/audio.zig");
     _ = @import("ui/hud.zig");
     _ = @import("ui/book.zig");
+    _ = @import("ui/mapart.zig");
     _ = @import("game.zig");
     _ = @import("core/bake.zig");
     _ = @import("play/chest.zig");

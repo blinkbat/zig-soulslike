@@ -179,7 +179,8 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `ui/uiart.zig` | chrome DRESSING shared by hud/menu/book/ui |
 | `ui/itemart.zig` | pictures of things — armaments and bag items as objects, sized by the caller |
 | `ui/icons.zig` | editor glyph set, drawn from primitives (vector, not an atlas) |
-| `ui/book.zig` | THE CHARACTER BOOK (pad START) — paper doll + ten quick sockets, the bag, the sheet, the piece-under-the-cursor card |
+| `ui/mapart.zig` | THE WORLD SEEN FROM STRAIGHT UP — the one wall/water/big-tree classification, the flat palette, the projection, the pan/zoom `Lens` and `Seen`, the walked mask. The editor's minimap and the book's MAP page are the two faces of it |
+| `ui/book.zig` | THE CHARACTER BOOK (pad START) — paper doll + ten quick sockets, the bag, the sheet, the piece-under-the-cursor card, and the MAP page |
 | `ui/counterui.zig` | the counter's panel — the DIALOG's shape over a running frame, not the book's; every number off `play/counter.zig` |
 | `ui/menu.zig` | boot screen, pause/debug menu, sound LEVELS, retro filter rack |
 | `ui/editor.zig` | THE EDITOR (Menu > Editor), layered StarEdit-style; biggest file, next split candidate |
@@ -2391,6 +2392,30 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   (`setCasterShaders`) and runs BEFORE `beginDrawing`. Terrain and FLORA receive but do not cast. The ortho box
   tracks the hero, snapped to shadow texels, and tracks Y as well.
 - **The hero is per-bone matrices, not `drawModelEx`.**
+- **THE CHART IS TWO HELD SHEETS AND A LENS** (`ui/mapart.zig`). The map is painted ONCE into a 2048 texture in
+  world space and the fog into a 128 one; the lens only ever blits a sub-rect of each. Per-prop per-frame is
+  `editor.blitMinimap`'s 16,510 rects, and re-running that walk on every notch of a zoom is the same freeze with
+  a stick held down. Walls are drawn as the COLLIDERS (`env.PropFrame`, now public), all haloes before any fill.
+  - **THE MASK IS BINARY AND THE PICTURE OF IT IS NOT** — one bit a 4.38 m cell, blown up through a BILINEAR
+    filter, which is what makes the reveal a soft disc rather than a staircase. Punched with `GL_ONE, GL_ZERO`:
+    raylib blends a target's OWN alpha by `SRC_ALPHA`, so an ordinary-blended hole comes back half-opaque.
+  - **REVEALED ONCE A CELL, NOT ONCE A FRAME**, after the gates and the room have had their say, and the reach is
+    CAPPED at the sheet or a map smaller than `REVEAL_R` walks (2n+1)^2 cells of nothing. Seeded at the spawn, so
+    the sheet shows where he stands before he has taken a step. Saved as `seenmap:`, the widest row the file has.
+- **AN ELBOW BENDS ONE WAY, AND THAT WAY IS `rx(NEGATIVE)`.** The bow arm settles it: `BOW_SH_FLEX` 88 goes in
+  as `rx(-shFlex)` and points the bow AT the target, and `BOW_DRAW_ELBOW` 152 as `rx(-)` folds the string to the
+  cheek. So a positive number is negated at the joint (`rx(-el)`, the folk and the two staff casters) or the
+  constant is authored negative and passed raw (`knight.CARRY_EL` -10, `ogre.OFF_EL` -18, `warrior.GUARD_EL`
+  -52) — never both, which is how it broke. **It broke three times**: `npc.FREE_EL` at -22 through `rx(-el)`
+  gave the folk a 22-degree BACKWARD elbow and the beckon drove it to 78, so all three waved behind their own
+  backs; every `ancientpriest` Posture's `staffEl`/`freeEl` was negative through the same negation, up to 74 on
+  the breath; and all eight of `necro`'s `*_EL`. The gesture DELTAS carry the sign too — a beckon that
+  subtracts is an arm going the wrong way twice. Each of the three files now pins its own signs in a test.
+  - **A POSE AUTHORED AROUND THE BUG DOES NOT SURVIVE THE FIX.** `necro.FROST_STAFF_SH` is -74, so the upper arm
+    swings BACK 74 degrees; the old +34 elbow swung the forearm a further 34 back and folded the hand up behind
+    the shoulder, which is the only reason the ferrule sat at 0.86 m. With the joint bent the right way the arm's
+    pitch is 40 rather than 108 and the ferrule is at 0.47. `staffFit` counter-rotates the pole exactly, so the
+    staff's ANGLE never moved (30.8 to 29.8 deg) — the HEIGHT did, and restoring it means re-authoring the pose.
 - **The scene shader gammas output (`pow 1/2.2`): author dark colours near-black.**
 - **Vertex alpha is the EMISSIVE channel** (255 = fully lit; lower = self-lit).
 - **…AND MATTER WANTS 248+, NOT 206.** `lit = mix(lit, base*1.35, 1 - a)`, so an alpha of 206 puts 0.19 of the
@@ -2580,6 +2605,10 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
     `SRC_ALPHA` like the colour, so every translucent thing painted into it drives the target's alpha below 1
     and blending that over the panel multiplies the face a SECOND time — measured, 49/765 darker across 78% of
     it. Blit an opaque face with `rlSetBlendFactors(GL_ONE, GL_ZERO, GL_FUNC_ADD)` under `.custom`.
+  - **AND THE SAME LESSON REACHES A BUTTON'S LABEL** (`editor.unfilledCount`). "next empty (N)" walked all
+    20,480 ops every frame the Interact layer was open — MEASURED 78.9 us a frame, 0.47% of a 16.7 ms one, for a
+    number that only moves when a container is edited. Held against `miniGen` (every op edit banks first, so the
+    stamp is exact) it is 0.002 us. A test fills without banking to prove it is a CACHE and not a second walk.
   - A target has no MSAA and the window does: the held face carries 2,182 distinct colours where the direct
     draw carried 6,538. Same picture, crisper edges — expected, not a regression.
 - **THE THIRD FIELD SKIPS TOO** (`env.uploadSoil`). `uploadHeight` and `uploadWater` each compare before they

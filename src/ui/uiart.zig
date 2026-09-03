@@ -86,6 +86,12 @@ pub fn numeral(i: usize) [:0]const u8 {
     return if (i < N.len) N[i] else "-";
 }
 
+/// raylib wants ONE winding and silently drops the other.
+pub fn triangle(a: rl.Vector2, b: rl.Vector2, c: rl.Vector2, col: rl.Color) void {
+    const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    if (cross > 0) rl.drawTriangle(a, c, b, col) else rl.drawTriangle(a, b, c, col);
+}
+
 pub fn diamond(cx: f32, cy: f32, r: f32, col: rl.Color) void {
     rl.drawPoly(.{ .x = cx, .y = cy }, 4, r, 0, col);
 }

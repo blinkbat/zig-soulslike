@@ -1138,42 +1138,43 @@ fn ringOfGrains(at: rl.Vector3, r: f32, size: f32, col: rl.Color, n: i32) void {
 
 
 const STAFF_CARRY_SH = -14.0;
-const STAFF_CARRY_EL = -26.0;
+/// POSITIVE flex — negated at the joint (`rx(-staffEl)`), unlike the knight's and the ogre's, which are raw.
+const STAFF_CARRY_EL = 26.0;
 const STAFF_CARRY_ABD = 9.0;
 const STAFF_CARRY_TILT = 172.0;
 
 const FREE_CARRY_SH = -6.0;
-const FREE_CARRY_EL = -22.0;
+const FREE_CARRY_EL = 22.0;
 const FREE_CARRY_ABD = 7.0;
 
 const RAISE_STAFF_SH = 26.0;
-const RAISE_STAFF_EL = -12.0;
+const RAISE_STAFF_EL = 12.0;
 const RAISE_STAFF_ABD = 8.0;
 /// **THE TRUNK IS NOT BILLED BY THE FIT, ONLY THE ARM IS — so a pose that arches the spine pays for it here.** `RAISE_LEAN` takes the chest back 22 degrees and the staff inherits every one of them, so the same 180-is-plumb number that stands the pole up at the carry laid it out at nearly 50 degrees.
 const RAISE_STAFF_TILT = 150.0;
 const RAISE_FREE_SH = -128.0;
-const RAISE_FREE_EL = -58.0;
+const RAISE_FREE_EL = 58.0;
 const RAISE_FREE_ABD = 34.0;
 const RAISE_LEAN = -22.0;
 const RAISE_TWIST = -26.0;
 const RAISE_HEAD = 26.0;
 const RAISE_HEAD_YAW = -14.0;
 const RAISE_THROW_SH = 74.0;
-const RAISE_THROW_EL = -10.0;
+const RAISE_THROW_EL = 10.0;
 const RAISE_THROW_ABD = -8.0;
 const RAISE_THROW_LEAN = 30.0;
 
 const FROST_STAFF_SH = -74.0;
-const FROST_STAFF_EL = -34.0;
+const FROST_STAFF_EL = 34.0;
 const FROST_STAFF_ABD = 16.0;
 const FROST_STAFF_TILT = 138.0;
 const FROST_FREE_SH = -86.0;
-const FROST_FREE_EL = -66.0;
+const FROST_FREE_EL = 66.0;
 const FROST_FREE_ABD = 26.0;
 const FROST_LEAN = -14.0;
 const FROST_TWIST = -18.0;
 const FROST_THROW_SH = 58.0;
-const FROST_THROW_EL = -8.0;
+const FROST_THROW_EL = 8.0;
 const FROST_THROW_ABD = -6.0;
 const FROST_THROW_LEAN = 24.0;
 
@@ -1574,7 +1575,9 @@ test "…AND IT STAYS A STAFF THROUGH BOTH CASTS — the trunk's own lean is bil
     const fSeg = f.staffSeg();
     std.debug.print("  necro frost: staff lean {d:.1} deg, ferrule y {d:.2}\n", .{ at(&f), fSeg[0].y });
     try std.testing.expect(fSeg[1].y > fSeg[0].y);
-    try std.testing.expect(fSeg[0].y > rSeg[0].y + 0.30);
+    // The old 0.30 m gap was bought with a BACKWARD elbow: arm pitch 108, ferrule 0.86. Bent the right way it
+    // is pitch 40 and ferrule 0.47, still clear of the planted raise's 0.31. The ORDER is what this pins.
+    try std.testing.expect(fSeg[0].y > rSeg[0].y + 0.12);
 }
 
 test "THE HEM REACHES THE GROUND AND PAST IT — that is what dragging means" {
@@ -1814,4 +1817,13 @@ test "A CORPSE IS HELD OPEN WITHIN REACH AND NOWHERE ELSE, so walking the fight 
     k.vigil.at = null;
     try std.testing.expect(!k.vigil.any());
     try std.testing.expect(RAISE_R > FROST_R_MIN);
+}
+
+test "AN ELBOW BENDS ONE WAY — every cast's flex is FORWARD, and a throw ENDS straighter than it started" {
+    inline for (.{ STAFF_CARRY_EL, FREE_CARRY_EL, RAISE_STAFF_EL, RAISE_FREE_EL, RAISE_THROW_EL, FROST_STAFF_EL, FROST_FREE_EL, FROST_THROW_EL }) |v| {
+        try std.testing.expect(v >= 0);
+    }
+    try std.testing.expect(RAISE_THROW_EL < RAISE_FREE_EL);
+    try std.testing.expect(FROST_THROW_EL < FROST_FREE_EL);
+    std.debug.print("\n  necro free arm: carry {d:.0} -> gather {d:.0} -> throw {d:.0} degrees of flex\n", .{ FREE_CARRY_EL, FROST_FREE_EL, FROST_THROW_EL });
 }

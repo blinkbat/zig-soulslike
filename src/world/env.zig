@@ -1801,16 +1801,17 @@ fn cellOf(x: f32, z: f32) usize {
     return cellCoord(z) * GRID_N + cellCoord(x);
 }
 
-const PropFrame = struct {
+/// Public: `ui/mapart.zig` draws the very colliders this builds, off the same rotation.
+pub const PropFrame = struct {
     pr: *const Prop,
     c: f32,
     sn: f32,
 
-    fn of(pr: *const Prop) PropFrame {
+    pub fn of(pr: *const Prop) PropFrame {
         const th = mathx.radians(pr.yaw);
         return .{ .pr = pr, .c = mathx.cosf(th), .sn = mathx.sinf(th) };
     }
-    fn at(self: PropFrame, lx: f32, ly: f32, lz: f32) rl.Vector3 {
+    pub fn at(self: PropFrame, lx: f32, ly: f32, lz: f32) rl.Vector3 {
         const s = self.pr.scale;
         return v3(
             self.pr.pos.x + s * (lx * self.c + lz * self.sn),

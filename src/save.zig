@@ -4,6 +4,7 @@ const rl = @import("raylib");
 const chestmod = @import("play/chest.zig");
 const pickupmod = @import("play/pickup.zig");
 const awardmod = @import("play/award.zig");
+const mapart = @import("ui/mapart.zig");
 const combat = @import("play/combat.zig");
 const daynight = @import("world/daynight.zig");
 const heromod = @import("play/hero.zig");
@@ -61,6 +62,7 @@ pub const Slot = struct {
     pickups: *pickupmod.Pickups,
     bosses: *BossBits,
     award: *awardmod.Award,
+    seenMap: *mapart.Seen,
     map: []const u8,
 };
 
@@ -131,6 +133,8 @@ pub const Data = struct {
     groundN: usize = 0,
     bossDead: BossBits = [_][wf.MAX_PER_KIND]bool{[_]bool{false} ** wf.MAX_PER_KIND} ** BOSS_RAILS,
     seen: [item.NK]bool = [_]bool{false} ** item.NK,
+    /// One bit a chart cell (`mapart.Seen`) — the widest row the file carries.
+    seenMap: [mapart.SEEN_CELLS]bool = [_]bool{false} ** mapart.SEEN_CELLS,
 
     pub fn mapName(self: *const Data) []const u8 {
         return self.map[0..self.mapLen];
@@ -163,7 +167,8 @@ const CAP: usize =
     pickupmod.CAP + 10 +
     BOSS_RAILS * (wf.MAX_PER_KIND + 12) +
     pickupmod.CAP * (3 * 11 + 4 + pickupmod.DROP_MAX * (item.TAG_MAX + 1) + 12) + 10 +
-    item.NK + 8;
+    item.NK + 8 +
+    mapart.SEEN_CELLS + 12;
 
 pub const Head = struct {
     level: u32,
@@ -324,6 +329,7 @@ pub fn gather(s: Slot) Data {
     }
     d.bossDead = s.bosses.*;
     d.seen = s.award.seen;
+    d.seenMap = s.seenMap.cell;
     return d;
 }
 
@@ -390,6 +396,9 @@ pub fn scatter(d: *const Data, s: Slot) void {
     s.bosses.* = d.bossDead;
     s.award.seen = d.seen;
     s.award.clearPending();
+    s.seenMap.cell = d.seenMap;
+    s.seenMap.gen +%= 1;
+    s.seenMap.at = -1;
 }
 
 pub fn render(w: anytype, d: *const Data) !void {
@@ -463,6 +472,7 @@ pub fn render(w: anytype, d: *const Data) !void {
         try bits(w, try std.fmt.bufPrint(&kb, "bosses{d}", .{i}), &row);
     }
     try bits(w, "seen", &d.seen);
+    try bits(w, "seenmap", &d.seenMap);
 }
 
 pub fn parse(text: []const u8, d: *Data) !void {
@@ -604,6 +614,8 @@ pub fn parse(text: []const u8, d: *Data) !void {
             try readBits(&it, &d.bossDead[n]);
         } else if (std.mem.eql(u8, key, "seen:")) {
             try readBits(&it, &d.seen);
+        } else if (std.mem.eql(u8, key, "seenmap:")) {
+            try readBits(&it, &d.seenMap);
         } else {
             return Error.BadKey;
         }
@@ -902,6 +914,7 @@ const Live = struct {
     pickups: pickupmod.Pickups = .{},
     bosses: BossBits = [_][wf.MAX_PER_KIND]bool{[_]bool{false} ** wf.MAX_PER_KIND} ** BOSS_RAILS,
     award: awardmod.Award = .{},
+    seenMap: mapart.Seen = .{},
 
     fn blank(nChests: usize) Live {
         var l = Live{};
@@ -934,6 +947,7 @@ const Live = struct {
             .pickups = &self.pickups,
             .bosses = &self.bosses,
             .award = &self.award,
+            .seenMap = &self.seenMap,
             .map = wf.START_MAP,
         };
     }
@@ -975,6 +989,7 @@ test "THE SLOT CARRIES EVERY FIELD IT NAMES — live game out, text, live game b
     a.chests.list[2].opened = true;
     a.bosses[0][1] = true; // …one of the knight's two is down
     a.bosses[2][0] = true; // …and one HALF of the duo behind the second gate, which rail 0 could never say
+    a.seenMap.walked(.{ .x = 40, .y = 0, .z = -60 }, 280);
 
     const out = gather(a.slot());
     const back = try roundTrip(&out);
@@ -990,6 +1005,10 @@ test "THE SLOT CARRIES EVERY FIELD IT NAMES — live game out, text, live game b
     try testing.expect(b.chests.list[2].swing == 1 and b.chests.list[0].swing == 0);
     try testing.expect(b.bosses[0][1] and !b.bosses[0][0]);
     try testing.expect(b.bosses[2][0]);
+    try testing.expectEqual(a.seenMap.count(), b.seenMap.count());
+    try testing.expect(b.seenMap.count() > 0);
+    try testing.expectEqual(a.seenMap.cell, b.seenMap.cell);
+    try testing.expectEqual(@as(i32, -1), b.seenMap.at);
 }
 
 test "A PURSE ON THE GROUND IS SAVED — `pickup.spawn` makes a glow with coin and no item, and the filter was `nloot`" {

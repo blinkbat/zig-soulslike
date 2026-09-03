@@ -24,7 +24,7 @@ const lerpF = mathx.lerpF;
 const approach = mathx.approach;
 const setLocal = heromod.setHumanoid;
 
-// **BIRCH BARK IS 10-25% BETULIN**, an oily terpene, which is why it takes a flame wet or green and why it is
+// **BIRCH BARK IS 10-25% BETULIN**, an oily terpene, which is why it takes a flame wet or green.
 
 pub const H: f32 = 2.15;
 const HIP_HALF = heromod.HIP_HALF * 0.78;
@@ -59,7 +59,7 @@ const solePatches = [_]heromod.SolePatch{
 
 // dark. **SOLVED OFF THE CHAIN, NOT PICKED**: `gfx`'s own ladder is albedo 76 -> screen 188 and 109 -> 222,
 // and anything over 148 clips white. Authored at 168 the trunk clipped and the creature read as a bare
-// mannequin with no bark on it at all; at 92 it samples ~205 — the palest body on the field and still a
+// mannequin with no bark on it at all; at 92 it samples ~205, the palest body on the field.
 const BARK = rgba(92, 89, 82, 255);
 const BARK_LT = rgba(116, 113, 106, 255);
 const LENTICEL = rgba(38, 36, 32, 255);
@@ -134,7 +134,7 @@ const State = enum { idle, walk, bough, stunlight, stunheavy, dead };
 const Choice = enum { rest, hold, close, bough };
 
 /// Measured edge to edge against a centre-to-centre bill, the band ran 0.19 m past the reach at scale 1
-/// and 1.15 m at `wf.FOE_SCALE_LO` — and a body stops closing the frame its band takes it, so that
+/// and 1.15 m at `wf.FOE_SCALE_LO`.
 fn classify(sensed: f32, homeGap: f32, scale: f32, boughReady: bool, rooted: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     if (sensed <= foe.hurtReach(BOUGH_R, scale) and boughReady) return .bough;

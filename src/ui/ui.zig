@@ -240,7 +240,7 @@ pub fn disabled(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32, tip:
 
 pub const TAB_H: i32 = 24;
 
-/// **A ROW OF TABS THAT OPENS INTO WHAT IS UNDER IT** — evenly divided over `w`, and the live one is the one
+/// **A ROW OF TABS THAT OPENS INTO WHAT IS UNDER IT** — evenly divided over `w`.
 pub fn tabs(ctx: *Ctx, x: i32, y: i32, w: i32, labels: []const [:0]const u8, sel: usize, tips: []const [:0]const u8) ?usize {
     std.debug.assert(tips.len == labels.len);
     var hit: ?usize = null;
@@ -388,7 +388,7 @@ pub fn textField(ctx: *Ctx, r: rl.Rectangle, buf: []u8, len: *usize, id: u32, el
     const s: [:0]const u8 = buf[0..len.* :0];
 
     // **THE FIELD SCROLLS, IT DOES NOT SPILL.** A `worldfmt.TALK_SAY_CAP` greeting is 240 characters in a box
-    // 60 wide; unclipped, the tail and the caret both ran out over the panel and off the window. Editing only
+    // 60 wide; unclipped, the tail and the caret both ran out over the panel and off the window.
     const bx: i32 = @intFromFloat(r.x);
     const bw: i32 = @intFromFloat(r.width);
     const bh: i32 = @intFromFloat(r.height);

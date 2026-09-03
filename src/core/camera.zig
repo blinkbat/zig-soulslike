@@ -11,7 +11,8 @@ pub const MAX_DIST = 9.0;
 pub const DEFAULT_DIST = 4.6;
 pub const DEFAULT_PITCH = 0.28;
 const ZOOM_STEP = 0.6;
-const LOOK_SENS = 0.0032; // radians per pixel of mouse motion
+/// Radians per pixel of mouse motion. Public because the EDITOR's fly camera looks with the same hand.
+pub const LOOK_SENS = 0.0032;
 /// ~ -22 deg, looking UP from below. Wider than the -0.20 the free look ever asked for, because the LOCK now tilts the rig onto whatever it is fixed on (`game.lockPitch`): an ogre's chest is two and a half metres up and eleven degrees of lift clipped short of framing it.
 const PITCH_MIN = -0.38;
 const PITCH_MAX = 1.15; // ~  66 deg (looking down)
@@ -19,7 +20,7 @@ pub const SHOULDER = 0.55;
 pub const TARGET_RAISE = 0.15;
 pub const FOVY: f32 = 55.0;
 
-/// **THE SKY IS SMALLER THAN IT LOOKS** — 0.200 rad, 11.5 deg — and anything meant to be SEEN in it without
+/// **THE SKY IS SMALLER THAN IT LOOKS** — 0.200 rad, 11.5 deg.
 pub fn skyTop() f32 {
     return std.math.degreesToRadians(FOVY * 0.5) - DEFAULT_PITCH;
 }

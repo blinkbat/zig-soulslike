@@ -55,7 +55,7 @@ pub fn anvilMesh(shader: rl.Shader) rl.Model {
     var rng = mathx.Rng.init(0x5A17);
     stumpInto(&b, &rng, STUMP_H, STUMP_R);
     anvilBodyInto(&b, STUMP_H);
-    // **NO SCATTER ON THE FLOOR.** Hammer scale was authored here as sixteen 6 mm discs and came back as a
+    // **NO SCATTER ON THE FLOOR.** Hammer scale was authored here as sixteen 6 mm discs.
     return b.toModel(shader);
 }
 

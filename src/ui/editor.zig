@@ -18,12 +18,17 @@ const restmod = @import("../play/rest.zig");
 const liquidmod = @import("../play/liquid.zig");
 const sfx = @import("../core/audio.zig");
 const foemod = @import("../foes/foe.zig");
+const cameramod = @import("../core/camera.zig");
 
 const Kind = props.Kind;
 const v3 = mathx.v3;
 
 
-const LOOK_SENS: f32 = 0.0032;
+const LOOK_SENS: f32 = cameramod.LOOK_SENS;
+
+/// **THE WINDOW THE PANELS HAVE TO FIT, READ AND NOT COPIED.** `game.SCREEN_H` is the authority (AGENTS.md);
+/// two fit tests carried their own `800` and would have kept passing against a window that had moved.
+const SCREEN_H: i32 = @import("../game.zig").SCREEN_H;
 const UNDO_CAP: usize = 24;
 const DRAG_PX = ui.DRAG_PX;
 const SNAP: f32 = 1.0;
@@ -6416,7 +6421,7 @@ test "EVERY UNIT IS REACHABLE FROM EXACTLY ONE TAB, and the tallest list now fit
     }
     try std.testing.expectEqual(kingdoms + 1, reach[unitBrushes.len - 1]);
 
-    const panel = 800 - BAR_H - STATUS_H;
+    const panel = SCREEN_H - BAR_H - STATUS_H;
     const rows0 = 8 + (ROW_H + 8) + ROW_H;
     const was = @as(i32, @intCast(unitBrushes.len)) * ROW_H;
     const head = ui.TAB_H + 6 + 28 * @as(i32, @intCast((kingdoms + 1) / 2)) + 34;
@@ -6427,7 +6432,6 @@ test "EVERY UNIT IS REACHABLE FROM EXACTLY ONE TAB, and the tallest list now fit
 }
 
 test "EVERY LIST MODAL FITS THE WINDOW IT OPENS IN" {
-    const SCREEN_H: i32 = 800;
     const foot = 8 + DLG_FOOT;
 
     var bosses: usize = 0;

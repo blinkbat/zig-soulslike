@@ -1502,7 +1502,7 @@ pub const Hero = struct {
     jumping: bool = false,
     launched: bool = false,
     climbing: bool = false,
-    /// Rungs crossed, as a repeating phase. Driven by DISTANCE climbed and never by time (the rig's law), so
+    /// Rungs crossed, as a repeating phase. Driven by DISTANCE climbed and never by time (the rig's law).
     climbPhase: f32 = 0,
     mantling: bool = false,
     /// 0 at the last rung, 1 standing on the lip. Written by `game.updateMantle`, which owns the clock.

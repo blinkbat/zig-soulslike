@@ -25,10 +25,10 @@ pub const GOOD = rgba(146, 194, 118, 255);
 pub const BAD = rgba(206, 96, 78, 255);
 
 // **ONE PAIR OF MARKS, DEFINED HERE AND NOWHERE ELSE** (owner: use global). Souls and gold are both GILT — the
-// drop itself is authored gold (`play/souls.zig`) — so they cannot be told apart by HUE, and the first cut had
+// drop itself is authored gold (`play/souls.zig`) — so they cannot be told apart by HUE.
 // They separate on SHAPE and on VALUE instead, which survives both the retro filters and a 26 px plate:
 
-/// The radius both marks are authored at. A plate is 26–32 px tall, so this is about a third of it: smaller and
+/// The radius both marks are authored at. A plate is 26–32 px tall, so this is about a third of it.
 pub const MARK_R: f32 = 5.2;
 
 fn ray(cx: f32, cy: f32, ang: f32, len: f32, wid: f32, col: rl.Color) void {

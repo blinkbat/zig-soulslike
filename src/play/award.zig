@@ -87,7 +87,7 @@ pub const Award = struct {
         self.ntoasts += 1;
     }
 
-    /// pile is different from the first, and a modal over a running fight for 30 coin is an interruption and
+    /// pile is different from the first, and a modal over a running fight for 30 coin is an interruption.
     pub fn gainCoin(self: *Award, n: u32) void {
         if (n == 0) return;
         for (self.toasts[0..self.ntoasts]) |*t| {

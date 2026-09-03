@@ -77,7 +77,7 @@ const SLAM_HIT_BANK = combat.Hit{ .dmg = 48, .poise = 44, .stance = 26, .launch 
 pub var SLAM_HIT = SLAM_HIT_BANK;
 
 // **AND THE ANSWER TO WALKING AWAY.** Past the slam's 7.2 m this creature had nothing: at 1.05 m/s against a
-// hero who runs at 3.4 the whole band out to its aggro ring was free. A SAC OF SPORES, LOBBED — it does not
+// hero who runs at 3.4 the whole band out to its aggro ring was free. A SAC OF SPORES, LOBBED.
 pub const SAC_WIND: f32 = 1.55;
 const SAC_THROW: f32 = 0.24;
 const SAC_RECOVER: f32 = 1.30;

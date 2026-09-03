@@ -182,7 +182,7 @@ const DEAD_BUCKLE: f32 = 0.20;
 
 const CLAMP_BY: f32 = 0.15;
 const BLOOM_CLAMP: f32 = 0.17;
-/// **WIDE BEFORE ANYTHING LEAVES IT.** The release is at `SPIT_WIND + SPIT_DUR * 0.30`, so the burst has to
+/// **WIDE BEFORE ANYTHING LEAVES IT.** The release is at `SPIT_WIND + SPIT_DUR * 0.30`.
 const OPEN_BY: f32 = 0.46;
 const SETTLE_BY: f32 = 0.68;
 const BLOOM_SNAP: f32 = 0.15;
@@ -199,7 +199,7 @@ comptime {
 /// **THE OPEN BLOOM IS THE WEAK POINT** — 1.9x while it is wide. DAMAGE ONLY: `poise` and `stance` are left
 const BLOOM_FRAIL: f32 = 0.90;
 
-/// One petal. `ang` is degrees round the bloom's axis with 0 at the top; `bias` is degrees of fold this one
+/// One petal. `ang` is degrees round the bloom's axis with 0 at the top; `bias` is degrees of fold.
 const Petal = struct {
     bone: usize,
     ang: f32,
@@ -214,7 +214,7 @@ const Petal = struct {
 };
 
 /// **HAND-AUTHORED, NOT STEPPED ROUND A CIRCLE** — a ring off `k/7 * 360` reads as a gear however good the
-/// quill is. Gaps of 34 to 64 against a mean of 51, and no gap over 64 or the open corolla comes back with a
+/// quill is. Gaps of 34 to 64 against a mean of 51, and no gap over 64.
 const PETALS = [NPETAL]Petal{
     .{ .bone = PET0 + 0, .ang = 196, .root = 1.00, .len = 1.34, .wide = 1.16, .bias = 0, .gain = 1.05, .sag = 34, .tone = 1 },
     .{ .bone = PET0 + 1, .ang = 96, .root = 0.94, .len = 1.04, .wide = 0.98, .bias = -3, .gain = 0.97, .sag = 21, .tone = 0 },
@@ -245,10 +245,10 @@ const PETAL_WIDE: f32 = 80.0;
 /// ONE BLADE, THREE LENSES AND A RIB (owner: much simpler, way too much going on) — 7 parts against the old
 /// 27, one outline. 0.62 against the old 0.48: the flower buys its tell with SIZE rather than a rise.
 const PETAL_LEN: f32 = 0.62 * W;
-/// The rib's root radius. SUNK: the lens is 0.019 W half-thick and the rib has to sit mostly inside it, or
+/// The rib's root radius. SUNK: the lens is 0.019 W half-thick and the rib has to sit mostly inside it.
 const QUILL_R: f32 = 0.015 * W;
 const PETAL_SEGS: u32 = 3;
-/// The blade's half-width at its widest, as a share of its own length. 0.26 puts a petal near 2:1, which is
+/// The blade's half-width at its widest, as a share of its own length. 0.26 puts a petal near 2:1.
 const PETAL_HALFW: f32 = 0.26;
 /// 0.42, is the tip's own off-axis share and it is what `PETAL_SHUT` and the width peak are solved against.
 const PETAL_BOW: f32 = 0.24;
@@ -279,7 +279,7 @@ fn rowFor(bone: usize) Petal {
 }
 
 /// **A DEER CARRIES ITS HEAD HIGH AND FORWARD, NOT SLUNG LIKE A DOG'S.** Wolf's chain puts the skull at 0.82 W
-/// on a level neck; this lifts it to 1.16 and pushes it out, which is the whole difference between the two
+/// on a level neck; this lifts it to 1.16 and pushes it out.
 const HEAD_UP: f32 = 1.10;
 const HEAD_OUT: f32 = 0.52;
 const NECK_MID: f32 = 0.46;

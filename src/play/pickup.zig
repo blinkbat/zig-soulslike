@@ -28,7 +28,7 @@ pub const Pickup = struct {
     loot: [DROP_MAX]item.Kind = undefined,
     nloot: u8 = 0,
     /// **COIN THIS GLOW IS CARRYING.** On a MAP glow the purse is the placing op's (`wf.Op.gold`); on a BODY
-    /// drop it is what the corpse was worth, and it rides the SAME glow as the loot rather than standing up a
+    /// drop it is what the corpse was worth, and it rides the SAME glow as the loot.
     gold: u32 = 0,
     taken: bool = false,
     fade: f32 = 0,

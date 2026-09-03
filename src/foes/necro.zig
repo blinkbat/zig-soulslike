@@ -135,7 +135,7 @@ comptime {
     std.debug.assert(WANT_MIN > FROST_R * SCALE);
 }
 
-/// Sized by ARITHMETIC over the worst FRAME, not over the biggest burst — which is what 104 was. The sigil's
+/// Sized by ARITHMETIC over the worst FRAME, not over the biggest burst — which is what 104 was.
 /// The fuse runs on its own clock, so the ring going off (60) lands on the creep it has been laying the whole 2.70 s (22/s at a 1.0 s life).
 const NPART = 144;
 const RAISE_BLOOM: u32 = 40;

@@ -1063,7 +1063,7 @@ fn galleryIcons(st: *State, ctx: *ui.Ctx) bool {
 fn bigIcon(st: *State, ctx: *ui.Ctx, at: usize) bool {
     const sw = rl.getScreenWidth();
     const sh = rl.getScreenHeight();
-    // **A PICTURE OF A THING IS ALSO THE THING'S SHEET.** An editor glyph has no numbers behind it and keeps the
+    // **A PICTURE OF A THING IS ALSO THE THING'S SHEET.** An editor glyph has no numbers behind it.
     const kind: ?item.Kind = if (at >= GLYPH_N) @enumFromInt(at - GLYPH_N) else null;
     const wide = kind != null;
     const w = @min(sw - 60, @as(i32, if (wide) 900 else 720));

@@ -27,7 +27,7 @@ pub const H: f32 = 2.35;
 const HIP_HALF = heromod.HIP_HALF * 0.86;
 const SHOULDER_HALF = heromod.SHOULDER_HALF * 1.26;
 
-/// **THE ARMS ARE THE WINGS** — which is what "weirdly humanoid" is: the hero's own 18-bone scaffold with the
+/// **THE ARMS ARE THE WINGS** — which is what "weirdly humanoid" is: the hero's own 18-bone scaffold.
 const UPPER_LEN: f32 = 0.255;
 const FORE_LEN: f32 = 0.395;
 
@@ -100,7 +100,7 @@ comptime {
 
 const BLINK_OUT: f32 = 0.20;
 const BLINK_IN: f32 = 0.30;
-/// **THE BLINK IS RARE, AND THAT IS WHAT MAKES IT THE MOVE.** At 2.40 it vanished after every single pass and
+/// **THE BLINK IS RARE, AND THAT IS WHAT MAKES IT THE MOVE.** At 2.40 it vanished after every single pass.
 const BLINK_CD: f32 = 5.60;
 /// Where it puts itself down for a pass, and where it withdraws to. **BOTH ARE MEASURED FROM THE QUARRY'S HIDE**
 const BLINK_NEAR: f32 = 1.62;
@@ -207,7 +207,7 @@ fn classify(sensed: f32, homeGap: f32, scale: f32, blinkReady: bool, rooted: boo
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     // **IT DOES NOT TAKE TWO BITES FROM ONE SPOT.** Measured before this existed: 20 s stood in its face was 6
     if (spent and !rooted) return if (blinkReady and !runs) .blink else .retreat;
-    // edge against a centre-to-centre bill, the bite was handed out to 2.93 m and landed to 2.60 — and a
+    // edge against a centre-to-centre bill, the bite was handed out to 2.93 m and landed to 2.60.
     if (sensed <= foe.hurtReach(BITE_R, scale)) return .bite;
     if (!blinkReady or rooted) return .drift;
     return .blink;

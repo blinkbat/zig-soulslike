@@ -69,7 +69,7 @@ const EYE = rgba(255, 172, 72, 255);
 pub var AGGRO_R: f32 = 14.0;
 const HOME_R: f32 = 2.4;
 const WALK_SPEED: f32 = heromod.WALK_SPEED_BANK * 0.55;
-/// Just over the hero's WALK (1.7) and half his run. Backing off on foot does not shake it; RUNNING does, and
+/// Just over the hero's WALK (1.7) and half his run. Backing off on foot does not shake it; RUNNING does.
 const CHASE_SPEED: f32 = heromod.WALK_SPEED_BANK * 1.02;
 const ACCEL: f32 = 2.6;
 const TURN_RATE: f32 = 2.4;
@@ -133,7 +133,7 @@ const State = enum { idle, walk, rake, stunlight, stunheavy, dead };
 const Choice = enum { rest, hold, close, rake };
 
 /// Measured edge to edge against a centre-to-centre bill, the band ran 0.24 m past the reach at scale 1
-/// and 1.00 m at `wf.FOE_SCALE_LO` — and a body stops closing the frame its band takes it, so that
+/// and 1.00 m at `wf.FOE_SCALE_LO`.
 fn classify(sensed: f32, homeGap: f32, scale: f32, rakeReady: bool, rooted: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     if (sensed <= foe.hurtReach(RAKE_R, scale) and rakeReady) return .rake;
@@ -535,7 +535,7 @@ pub const Ember = struct {
     }
 };
 
-/// **THE WHOLE FIELD'S TRAIL IN ONE RING.** At `CHASE_SPEED` one wake keeps 27 embers alive (asserted); the
+/// **THE WHOLE FIELD'S TRAIL IN ONE RING.** At `CHASE_SPEED` one wake keeps 27 embers alive (asserted).
 const TRAIL_CAP: usize = 256;
 const PER_WAKE = @as(usize, @intFromFloat(@ceil(CHASE_SPEED * EMBER_LIFE / TRAIL_SPACING)));
 comptime {

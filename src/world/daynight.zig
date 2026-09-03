@@ -316,7 +316,7 @@ pub fn keyAmt(p: Palette) f32 {
 }
 const ANCHOR_KEY_LUMA: f32 = 1.13158; // luma(1.32, 1.10, 0.80)
 
-/// A colour's HUE alone, as a factor on white — its channels at unit luminance. `slate` and `peach` make the
+/// A colour's HUE alone, as a factor on white — its channels at unit luminance.
 fn hueOf(c: rl.Vector3) rl.Vector3 {
     const l = luma(c);
     if (l <= 1e-6) return v3(1, 1, 1);

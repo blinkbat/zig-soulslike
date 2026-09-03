@@ -918,9 +918,9 @@ const FOE_GLYPH: i32 = 6;
 const FOE_GLYPH_S: f32 = 7.0;
 const BOSS_H: i32 = 13;
 const BOSS_LIFT: i32 = 158;
-/// damage. Rail 0 is the lowest. **A RAIL IS A ROW OF `game.BOSS_RAILS` AND NOT A PLACE IN A QUEUE** — it is
+/// damage. Rail 0 is the lowest. **A RAIL IS A ROW OF `game.BOSS_RAILS` AND NOT A PLACE IN A QUEUE.**
 pub const BOSS_SLOTS: usize = 3;
-/// the rail (`y - lineH(SMALL) - 3`), so at a 20 px pitch on a 13 px bar the upper bar sat straight on top of
+/// the rail (`y - lineH(SMALL) - 3`), so at a 20 px pitch on a 13 px bar the upper bar sat on the lower one.
 const BOSS_NAME_LIFT: i32 = 3;
 const BOSS_GAP: i32 = BOSS_H + BOSS_NAME_LIFT + 8 + lineH(SMALL);
 var bossChip: [BOSS_SLOTS]f32 = [_]f32{0} ** BOSS_SLOTS;

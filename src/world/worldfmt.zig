@@ -317,7 +317,7 @@ pub const Arena = struct {
 
     pub fn nearestWall(self: *const Arena, p: rl.Vector3) struct { at: rl.Vector3, d: f32 } {
         const n = self.verts();
-        // `j = n - 1` on a usize is the wrap, not -1: an Arena with no corners panicked here rather than
+        // `j = n - 1` on a usize is the wrap, not -1: an Arena with no corners panicked here.
         if (n < 3) return .{ .at = p, .d = 0 };
         var best = mathx.zero3;
         var bd: f32 = std.math.floatMax(f32);
@@ -1943,7 +1943,7 @@ fn writeScript(m: *const Map, w: anytype) !void {
 }
 
 /// **A SLOT PAST THE END OF ITS TABLE IS `undefined` MEMORY, AND THE WRITER MUST NEVER READ IT.** The tables
-/// are sized `MAX_*` and filled to `n*`; a condition on a flag the map never declared pointed at slot 0 of
+/// are sized `MAX_*` and filled to `n*`.
 fn slotName(table: []const Id, n: usize, i: u16) []const u8 {
     return if (i < n) idText(&table[i]) else "unset";
 }
@@ -4062,7 +4062,7 @@ test "A MAP SAYS WHERE THE PLAYER STARTS, and one that does not says the old har
     try std.testing.expectApproxEqAbs(@as(f32, -137.25), back.start.z, 1e-3);
     try std.testing.expectApproxEqAbs(mathx.radians(65.0), back.start.facing(), 1e-4);
 
-    // **A MAP WITH NO `start:` ROW COMES UP WHERE EVERY MAP USED TO** — (0, 4) facing south, which is what
+    // **A MAP WITH NO `start:` ROW COMES UP WHERE EVERY MAP USED TO** — (0, 4) facing south.
     var old = Map{};
     ln = 0;
     try parse("version: 1\nname: Old\n", &old, &ln);

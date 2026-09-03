@@ -89,7 +89,7 @@ const LOCK_AT = v3(0, 0.06 * H, 0);
 /// **TOUGH IS HP AND POISE, NOT SPEED** (owner: a tough melee fighter). Between the rooted's 130, which cannot
 /// chase, and the birchwight's 180, which is a slower thing than this.
 const HP_MAX: f32 = 165.0;
-/// **STONE DOES NOT FLINCH OFF A POKE.** Over the hero's heavy (22), so a committed swing is worth about one
+/// **STONE DOES NOT FLINCH OFF A POKE.** Over the hero's heavy (22).
 const POISE_MAX: f32 = 30.0;
 const STANCE_MAX: f32 = 46.0;
 const RESISTS = combat.resists(.{ .fire = 55, .cold = -45, .lightning = -30, .chaos = 25 });
@@ -170,9 +170,9 @@ comptime {
 pub const QUILLS_PER_BURST: usize = 5;
 const QUILL_FAN: f32 = 62.0;
 pub const QUILL_R: f32 = 0.075;
-/// **UNDER A SPRINT AND OVER A WALK.** `hero.SPRINT_SPEED` is 5.1: a quill at 12.5 cannot be outrun in a
+/// **UNDER A SPRINT AND OVER A WALK.** `hero.SPRINT_SPEED` is 5.1, so a quill at 12.5 cannot be outrun.
 pub const QUILL_SPEED: f32 = 12.5;
-/// Seconds in the air. At 12.5 m/s this is 16 m of reach, past `AGGRO_R` — the fan is spent by distance, not
+/// Seconds in the air. At 12.5 m/s this is 16 m of reach, past `AGGRO_R` — the fan is spent by distance.
 pub const QUILL_LIFE: f32 = 1.3;
 /// Its gravity, in m/s² — a tenth of the world's, so a full `QUILL_LIFE` of flight drops it 1.35 m. A stone
 /// quill is heavy and fast, and a visible arc on a 1.3 s shot reads as a lobbed rock.
@@ -198,7 +198,7 @@ const State = enum { stone, wake, seat, idle, walk, rake, slam, burst, stunlight
 const Choice = enum { rest, hold, close, rake, slam, burst };
 
 /// Measured EDGE TO EDGE against a centre-to-centre bill: the rake was handed out to 3.33 m and landed to 3.00,
-/// the slam to 3.08 and 2.75 — and a body stops closing the frame a band takes it, so the outer 0.33 m of each
+/// the slam to 3.08 and 2.75.
 fn classify(gap: f32, sensed: f32, homeGap: f32, scale: f32, rakeReady: bool, slamReady: bool, burstReady: bool, rooted: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     if (gap <= BURST_R and burstReady and !rooted) return .burst;
@@ -334,7 +334,7 @@ pub const Owlbear = struct {
         return false;
     }
 
-    /// **HOW LIT THE EYES ARE**, 0..1 — the first half of the wake has them to itself, and they are the only
+    /// **HOW LIT THE EYES ARE**, 0..1 — the first half of the wake has them to itself.
     pub fn eyeGlow(self: *const Owlbear) f32 {
         if (self.state == .dead) return 0;
         return mathx.clampF(self.rouse / EYE_LEAD, 0, 1);

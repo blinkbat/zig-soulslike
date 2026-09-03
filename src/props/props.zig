@@ -735,7 +735,7 @@ pub const INFO = [NK]Info{
     .{ .kind = .campfire, .build = fx.deadCampfireMesh, .bound = 1.5, .top = 0.6, .view = 200, .parts = circleParts(0.45, 0.5), .surf = .stone },
     // …AND ONE YOU CAN SIT AT. `interact` shelves it under the editor's Interactables layer; `rest.isRestKind` is what makes it a bonfire. `stow` for the bonfire's reason. `bound` is up from 1.5 to hold the rock and the instrument, which stand outside the ring of stones.
     // **THE BOUND AND THE VIEW ARE THE SMOKE'S NOW, NOT THE STONES'.** At 2.6/1.1 the column was culled the moment
-    // the hearth left frame and the fire read as unlit from any distance; the bonfire's row is 7.2/5.4/300 for the
+    // the hearth left frame and the fire read as unlit from any distance; the bonfire's row is 7.2/5.4/300.
     .{ .kind = .campfire_lit, .build = fx.campfireMesh, .veil = fx.campfireVeilMesh, .stow = fx.campfireGuitarMesh, .bound = 5.6, .top = 4.2, .view = 300, .interact = true, .solid = true, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(1.05, 0.52, 0.17), .radius = 13.0, .flicker = 0.18 } },
     .{ .kind = .water, .build = fx.waterMesh, .bound = 30.0, .top = 0.1, .view = FAR, .solid = true, .casts = false },
     .{ .kind = .tuft, .build = flora.tuftMesh, .bound = 0.9, .top = 0.8, .view = 85, .flora = true, .casts = false },

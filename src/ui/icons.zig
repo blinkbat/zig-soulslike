@@ -76,7 +76,7 @@ pub const Icon = enum {
 };
 
 /// Filled silhouettes, drawn in ONE colour: the glyph sits on a button face that changes with state, so
-/// every face. Every stroke is `s * 0.12` — 2.2 px at the 18 px the editor draws at, which is the weight of the
+/// every face. Every stroke is `s * 0.12` — 2.2 px at the 18 px the editor draws at.
 pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
     var g = G{ .cx = cx, .cy = cy, .s = size, .w = @max(2.0, size * 0.12), .col = col, .cut = cutOf(col), .soft = softOf(col) };
     g.glyph(ic);
@@ -437,7 +437,7 @@ const G = struct {
                 g.disc(-0.36, -0.36, 0.035, cut);
             },
             .smith => {
-                // **THE MOUSTACHE AND THE RAISED HAMMER, AND NOTHING ELSE FITS AT 18 px.** A bowed slab of a
+                // **THE MOUSTACHE AND THE RAISED HAMMER, AND NOTHING ELSE FITS AT 18 px.**
                 g.trap(-0.04, -0.10, 0.46, 0.30, 0.44, col);
                 g.disc(-0.02, -0.28, 0.19, col);
                 g.bar(-0.16, -0.22, -0.28, 0.10, 0.075, col);

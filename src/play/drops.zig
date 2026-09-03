@@ -186,7 +186,7 @@ pub fn roll(k: wf.FoeKind, luck: u8, rng: *mathx.Rng, out: *[MAX_PER_BODY]item.K
     return out[0..n];
 }
 
-/// **WHAT THE BODY'S PURSE ACTUALLY HELD**, or 0. **LUCK DOES NOT READ THIS** — `stats.inert`'s note and
+/// **WHAT THE BODY'S PURSE ACTUALLY HELD**, or 0. **LUCK DOES NOT READ THIS** (`stats.inert`'s note).
 pub fn rollGold(k: wf.FoeKind, rng: *mathx.Rng) u32 {
     const hit = rng.float();
     const pick = rng.float();
@@ -217,7 +217,7 @@ test "A BODY MOSTLY LEAVES NOTHING, and what it does leave is its own row" {
             }
         }
         if (k == .brood_sac) try std.testing.expectEqual(@as(usize, 0), seen);
-        // as an equality: the knight carries a stone at `.chance` now, so an exact 4000 was the old table's
+        // NOT an equality: the knight carries a stone at `.chance`, so the count is a range.
         if (k == .bone_knight) {
             try std.testing.expect(seen >= 4000);
             try std.testing.expect(seen <= 8000);

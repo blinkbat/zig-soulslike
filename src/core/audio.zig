@@ -3462,8 +3462,8 @@ pub fn worldAt(id: Id, at: rl.Vector3, gain: f32) void {
     worldThrough(id, at, gain, 1.0);
 }
 
-/// **WHAT A WALL DOES TO A SOUND.** `clear` is 1 on an open line and 0 with rock in the way; the caller is who
-/// **IT IS A CUT AND A DROOP, NOT A FILTER.** raylib cannot filter a playing voice (AGENTS.md) — the rack is
+/// **WHAT A WALL DOES TO A SOUND.** `clear` is 1 on an open line and 0 with rock in the way.
+/// **IT IS A CUT AND A DROOP, NOT A FILTER** — raylib cannot filter a playing voice (AGENTS.md).
 pub const MUFFLE_GAIN: f32 = 0.34;
 pub const MUFFLE_DROOP: f32 = 0.06;
 

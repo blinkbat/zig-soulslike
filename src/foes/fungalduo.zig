@@ -178,7 +178,7 @@ const SW_KIT_R: f32 = 0.30;
 /// The MEASURED reach of the stroke, not a number beside one: thrown at a man dead ahead the slash lands out to 2.35 m.
 const SW_SLASH_R: f32 = 2.2;
 
-/// Half the arc the stroke sweeps on its own, in degrees — measured off the blade's own path, and what the
+/// Half the arc the stroke sweeps on its own, in degrees — measured off the blade's own path.
 const SW_SWEEP_HALF: f32 = 46.0;
 
 /// Thrown at a man 165 deg off he came round to 72 and billed nothing; given the slash's allowance he was handed
@@ -960,7 +960,7 @@ pub const Swordsman = struct {
         };
     }
 
-    /// **THE RETURN CUT IS NOT PARRYABLE AND THAT IS THE POINT OF IT** — `.slash2` is off the follow-through
+    /// **THE RETURN CUT IS NOT PARRYABLE AND THAT IS THE POINT OF IT** — `.slash2` is off the follow-through.
     fn parryable(self: *const Swordsman) ?f32 {
         const left = self.toImpact() orelse return null;
         if (!foe.inParryWindow(left)) return null;

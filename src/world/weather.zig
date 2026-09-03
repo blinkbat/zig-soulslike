@@ -1012,7 +1012,7 @@ pub const BIRDS_HI: usize = 17;
 
 // rarity — 62 flights an hour, something in the sky 30% of the time. It was the FRAME. The resting camera tops
 // out 11.46 deg above the horizon (`camera.skyTop`), and flying 30–62 m up at 96 m out and crossing to within
-// 56 m, the LOWEST elevation any bird reached over any flight was 15.1 deg and the closest approach was 48 deg,
+// 56 m, the LOWEST elevation any bird reached over any flight was 15.1 deg and the closest approach 48 deg.
 
 /// picture instead of over it. At 0.70 that is 8.0 deg, which leaves the birds a clear third of sky above them.
 const SKY_SHARE: f32 = 0.70;

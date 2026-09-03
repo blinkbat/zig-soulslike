@@ -121,7 +121,7 @@ fn bankInto(b: *Builder, rng: *mathx.Rng, r: f32, high: f32) void {
         const a = -1.0 + fi * 2.0;
         const d = r * rng.range(0.55, 0.92);
         const h = high * (0.40 + 0.60 * mathx.sinf(fi * std.math.pi)) * rng.range(0.85, 1.12);
-        // **SUNK TO THE WAIST, NOT STOOD ON THE GRASS.** Centred at `h * 0.34` these were flat pale discs that
+        // **SUNK TO THE WAIST, NOT STOOD ON THE GRASS.** Centred at `h * 0.34` these were flat pale discs.
         b.addBlob(
             v3(-mathx.cosf(a) * d, 0, mathx.sinf(a) * d),
             v3(r * rng.range(0.34, 0.52), h, r * rng.range(0.30, 0.44)),

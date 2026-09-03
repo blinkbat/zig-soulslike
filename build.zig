@@ -20,9 +20,9 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-// The default stack overflowed at boot when a group grew from 24 bodies to `worldfmt.MAX_FOES`. Windows COMMITS
-// stack lazily, so this is address space and not memory, and the ROW COUNT moves it too.
-    // "WHAT THE FRAME COSTS" measures 144.4 MB of slabs across 29 rows against this 192 MB, so a handful more
+    // The default stack overflowed at boot when a group grew from 24 bodies to `worldfmt.MAX_FOES`. Windows
+    // COMMITS stack lazily, so this is address space and not memory, and the ROW COUNT moves it too.
+    // "WHAT THE FRAME COSTS" measures 144.4 MB of slabs across 29 rows against this 192 MB.
     exe.stack_size = 192 * 1024 * 1024;
     exe.linkLibrary(raylib_artifact);
     exe.root_module.addImport("raylib", raylib);
@@ -36,7 +36,7 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     // DEV ONLY: `zig build test -Dtest-filter=knight` runs the tests whose name contains that, and skips the
-    // rest — `shots.onlyStage`'s lever for the suite. The whole run is 1130 tests and a chunk of them rebuild
+    // rest — `shots.onlyStage`'s lever for the suite.
     const test_filter = b.option([]const u8, "test-filter", "Run only tests whose name contains this");
     const unit_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -56,7 +56,7 @@ pub fn build(b: *std.Build) void {
 
     // DEV ONLY: `zig build check` type-checks and stops. `Step.Compile` passes `-fno-emit-bin` whenever
     // nothing asks for its binary, so no step here may install or run these two. Measured on this tree:
-    // 1.4 s against 8.4 s, because sema is 1.4 s of a build and LLVM plus LLD are the other 7. The exe and
+    // 1.4 s against 8.4 s, because sema is 1.4 s of a build and LLVM plus LLD are the other 7.
     const check_exe = b.addExecutable(.{
         .name = "check-exe",
         .root_module = b.createModule(.{
@@ -81,36 +81,44 @@ pub fn build(b: *std.Build) void {
     }
 }
 
-/// THE TEST ROSTER IS A LOCKSTEP LIST, AND NOTHING WAS CHECKING IT. `main.zig`'s `test { _ = @import(…) }`
-/// "all tests passed" while every test it carries goes unrun. `shade.zig` went in with seventeen of them and
+/// THE TEST ROSTER IS A LOCKSTEP LIST, AND NOTHING WAS CHECKING IT: a module missing from `main.zig`'s
+/// `test { _ = @import(…) }` block reports "all tests passed" while every test it carries goes unrun.
 /// A comptime assert cannot see the filesystem, so the check lives HERE. Every `src/**/*.zig` must be named in
 /// that block, by the path `main.zig` imports it as (`foes/knight.zig`).
 /// **AND IT IS SCOPED TO THE BLOCK, NOT TO THE FILE.** Searching the whole of `main.zig` counted the ORDINARY
 /// imports at the top of it, so `bake.zig` passed this check while a top-level import pulls no tests in.
+
 /// Bytes under which a `src/**/*.zig` is a truncation rather than a module — the smallest real one is
-/// `play/liquid.zig` at 4293.
+/// `foes/foestat.zig` at 2468.
 const MIN_SRC: u64 = 512;
 
 fn checkTestRoster(b: *std.Build) void {
-    const file = b.build_root.handle.readFileAlloc(b.allocator, "src/main.zig", 1 << 20) catch return;
+    // A GUARD THAT `catch return`s HAS DISARMED ITSELF, which is the failure it exists to catch.
+    const file = b.build_root.handle.readFileAlloc(b.allocator, "src/main.zig", 1 << 20) catch |e|
+        std.debug.panic("src/main.zig could not be read ({s}) — the roster check cannot run", .{@errorName(e)});
     const at = std.mem.indexOf(u8, file, "\ntest {") orelse
         std.debug.panic("src/main.zig has no `test {{` block — the whole suite hangs off it", .{});
     const root = file[at..];
-    var dir = b.build_root.handle.openDir("src", .{ .iterate = true }) catch return;
+    var dir = b.build_root.handle.openDir("src", .{ .iterate = true }) catch |e|
+        std.debug.panic("src/ could not be opened ({s}) — the roster check cannot run", .{@errorName(e)});
     defer dir.close();
-    var it = dir.walk(b.allocator) catch return;
+    var it = dir.walk(b.allocator) catch |e|
+        std.debug.panic("src/ could not be walked ({s}) — the roster check cannot run", .{@errorName(e)});
     defer it.deinit();
-    while (it.next() catch null) |ent| {
+    while (it.next() catch |e|
+        std.debug.panic("src/ walk failed part-way ({s}) — the roster check saw only some of the tree", .{@errorName(e)})) |ent|
+    {
         if (ent.kind != .file or !std.mem.endsWith(u8, ent.path, ".zig")) continue;
         if (std.mem.eql(u8, ent.path, "main.zig")) continue;
         // The roster names a module by the path `main.zig` imports it as, which on Windows comes back off the walker with backslashes.
-        const slashed = b.allocator.dupe(u8, ent.path) catch return;
+        const slashed = b.allocator.dupe(u8, ent.path) catch @panic("OOM in the roster check");
         std.mem.replaceScalar(u8, slashed, '\\', '/');
         // **AND A MODULE NAMED BUT EMPTIED IS THE SAME FAILURE WITH NOTHING LEFT TO RUN.** `ui/editor.zig` was
         // truncated to 0 bytes and committed that way (c08f4f7): the roster still named it, this walk passed,
         // and the only complaint was `game.zig` asking a now-empty struct for `Editor`. The smallest real module
-        // in the tree is 4.2 KB, so anything under `MIN_SRC` is a truncation and never something anyone wrote.
-        const st = ent.dir.statFile(ent.basename) catch continue;
+        // in the tree is 2.4 KB, so anything under `MIN_SRC` is a truncation and never something anyone wrote.
+        const st = ent.dir.statFile(ent.basename) catch |e|
+            std.debug.panic("src/{s} could not be stat'd ({s}) — the truncation check cannot run", .{ slashed, @errorName(e) });
         if (st.size < MIN_SRC) std.debug.panic(
             "src/{s} is {d} bytes — that is a truncated file, not a module. Restore it " ++
                 "(`git log --oneline -- src/{s}`, then `git show <rev>:src/{s}`) instead of building over it.",

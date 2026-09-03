@@ -425,7 +425,7 @@ pub fn runLandShots(g: *Game) void {
     std.debug.print("LAND SHOTS: {s} - 7 frames, {d} props / {d} solids / {d} lights into " ++ DIR_LAND ++ "/\n", .{ stem, g.env.propCount(), g.env.solidCount(), g.env.lightCount() });
 }
 
-/// DEV ONLY: `--shot-only <substr>` names one stage, because a full harness run is 3m38s and an eye pass is a
+/// DEV ONLY: `--shot-only <substr>` names one stage, because a full harness run is 3m38s.
 pub var onlyStage: []const u8 = "";
 fn stageOn(tag: []const u8) bool {
     if (onlyStage.len == 0) return true;
@@ -570,7 +570,7 @@ pub fn runShots(g: *Game) void {
     g.rig.follow(jumpGround);
     shoot(g, "shots/9d_jump_land.png");
 
-    // **THE THROW, BESIDE THE JUMP IT IS MEASURED AGAINST** (`hero.startLaunch`). Same three fractions and the
+    // **THE THROW, BESIDE THE JUMP IT IS MEASURED AGAINST** (`hero.startLaunch`).
     g.hero.pos = mathx.ground(0, 0);
     g.hero.facing = 0;
     g.hero.clearForShot();
@@ -1806,7 +1806,7 @@ pub fn runShots(g: *Game) void {
         shootAt(g, "shots/155_mist_bank.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 22.0);
         game.forceFogForShot(g, false);
 
-        // Aimed AT the skein, because the point of the frame is whether a speck 70 m up reads as a bird; and
+        // Aimed AT the skein, because the point of the frame is whether a speck 70 m up reads as a bird.
         game.forceSkeinForShot(g, mathx.radians(24.0));
         stepWorld(g, dt, 0);
         shootAt(g, "shots/157_birds.png", v3(g.hero.pos.x, g.hero.pos.y + 26.0, g.hero.pos.z), LIT_YAW, -0.52, 26.0);
@@ -2679,7 +2679,7 @@ fn knightShots(g: *Game) void {
     run(k, chg.wind + 1.74, skidHero);
     shootAt(g, "shots/121o2_knight_charge_skid.png", v3(k.pos.x, sc.y + 2.2, k.pos.z), LIT_YAW, 0.14, 12.0);
 
-    // THE FALL, all five beats, SHOT IN PROFILE FROM ABOVE. He is stood across the lens (facing 90 deg off
+    // THE FALL, all five beats, SHOT IN PROFILE FROM ABOVE, stood across the lens at 90 deg off `LIT_BACK`.
     const across = mathx.headingXZ(LIT_BACK) + mathx.radians(90.0);
     const backDir = mathx.scaleV(mathx.headingDir(across), -1);
     const behind = along(sc, backDir, 3.6);
@@ -2761,7 +2761,7 @@ fn knightStrokeStrips(
     const across = mathx.headingXZ(LIT_BACK) + mathx.radians(90.0);
     const side = along(sc, mathx.headingDir(across), 4.2);
     // **THE FRAMES ARE SPENT WHERE THE MOTION IS, NOT SPREAD EVENLY OVER THE MOVE.** The sweep is 1.15 s of
-    // wind and 0.42 s of strike, so an even walk lands most frames in the wind and one in the stroke. Two
+    // wind and 0.42 s of strike, so an even walk lands most frames in the wind and one in the stroke.
     const NW = 2;
     const NS = 6;
     inline for (KNIGHT_STRIP) |st| {
@@ -3622,7 +3622,7 @@ fn elevationShots(g: *Game) void {
         g.hero.update(SHOT_DT, heromod.WALK_SPEED * SHOT_DT, heromod.WALK_SPEED, mathx.radians(215));
         g.hero.pose();
     }
-    // PITCHED WELL DOWN: a camera behind a hero on a 34 deg slope looks INTO a rising wedge of ground, so
+    // PITCHED WELL DOWN: a camera behind a hero on a 34 deg slope looks INTO a rising wedge of ground.
     shootClear(g, "shots/102_hill_climb.png", 215, 0.62, 8.0);
     g.menu.stats = true;
     shootClear(g, "shots/103_hill_stats.png", 215, 0.62, 8.0);
@@ -3694,7 +3694,7 @@ fn wolfShots(g: *Game) void {
         game.poseWolfForShot(g, wolfmod.TROT_SPEED, ph);
         shootAt(g, nm, at, 90, 0.05, 3.4);
     }
-    // The GALLOP is a different creature — duty factor under 0.5, so there are frames with nothing on the
+    // The GALLOP is a different creature — duty factor under 0.5.
     game.poseWolfForShot(g, wolfmod.GALLOP_SPEED, 0.25);
     shootAt(g, "shots/135_wolf_gallop.png", at, 90, 0.05, 3.8);
     game.poseWolfGatherForShot(g, 0.5);
@@ -3722,6 +3722,11 @@ const uimod = @import("ui/ui.zig");
 const DIR_ART = DIR ++ "/art";
 
 /// **THE WHOLE 2D SET ON CONTACT SHEETS** — every editor glyph at the 18 px it is drawn at and at 3x, every item
+/// A CONTACT-SHEET CAPTION IS UNDER THE TYPE SCALE, so it is named here rather than typed at four call sites.
+/// `hud.TINY` is 16 and would not fit the cell; the tight one is the 12-column item row.
+const SHEET_CAP: i32 = 14;
+const SHEET_CAP_TIGHT: i32 = 13;
+
 /// picture at its 34 px bag cell and at a plate size, the spells, the ailments and the pad kit. No world, no
 /// camera: `--shot-art` is the one harness that can judge a glyph set as a set.
 pub fn runArtShots(g: *Game) void {
@@ -3774,7 +3779,7 @@ pub fn runArtShots(g: *Game) void {
             var buf: [24]u8 = undefined;
             const name = @tagName(ic);
             const short = std.fmt.bufPrintZ(&buf, "{s}", .{name[0..@min(name.len, 12)]}) catch unreachable;
-            hudmod.mono(short, @intFromFloat(x + 4), @intFromFloat(y + rh - 30), 14, uimod.LABEL);
+            hudmod.mono(short, @intFromFloat(x + 4), @intFromFloat(y + rh - 30), SHEET_CAP, uimod.LABEL);
         }
         snap(DIR_ART ++ "/01_icons_54.png");
     }
@@ -3800,7 +3805,7 @@ pub fn runArtShots(g: *Game) void {
                 const name = item.displayName(kind);
                 var buf: [32]u8 = undefined;
                 const short = std.fmt.bufPrintZ(&buf, "{s}", .{name[0..@min(name.len, if (cols == 12) 11 else 18)]}) catch unreachable;
-                hudmod.mono(short, @intFromFloat(x + 3), @intFromFloat(y + rh - 8 - 16), 13, uimod.LABEL);
+                hudmod.mono(short, @intFromFloat(x + 3), @intFromFloat(y + rh - 8 - 16), SHEET_CAP_TIGHT, uimod.LABEL);
             }
             var nb: [64]u8 = undefined;
             const nm = std.fmt.bufPrintZ(&nb, DIR_ART ++ "/{s}_{d}.png", .{ row[3][0 .. row[3].len - 4], page }) catch unreachable;
@@ -3819,7 +3824,7 @@ pub fn runArtShots(g: *Game) void {
             sheet.cellBg(x, 150, 120, 60);
             itemart.spellArt(sp, x + 30, 180, 34, true);
             itemart.spellArt(sp, x + 90, 180, 34, false);
-            hudmod.mono(f.name, @intFromFloat(x), 214, 14, uimod.LABEL);
+            hudmod.mono(f.name, @intFromFloat(x), 214, SHEET_CAP, uimod.LABEL);
         }
         const ails = @typeInfo(combat.Ail).@"enum".fields;
         inline for (ails, 0..) |f, i| {
@@ -3829,7 +3834,7 @@ pub fn runArtShots(g: *Game) void {
             hudmod.ailGlyph(a, x + 55, 310, 60, hudmod.ailTint(a));
             hudmod.ailGlyph(a, x + 20, 355, 13, hudmod.ailTint(a));
             hudmod.ailGlyph(a, x + 45, 355, 13, uimod.VALUE);
-            hudmod.mono(f.name, @intFromFloat(x), 374, 14, uimod.LABEL);
+            hudmod.mono(f.name, @intFromFloat(x), 374, SHEET_CAP, uimod.LABEL);
         }
         var i: i32 = 0;
         inline for (.{ hudmod.PadBtn.a, hudmod.PadBtn.b, hudmod.PadBtn.x, hudmod.PadBtn.y }) |b| {

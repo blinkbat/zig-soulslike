@@ -1570,7 +1570,7 @@ fn facing(v: View, c: Cand) ?Facing {
     };
 }
 
-/// **ALWAYS THE NUMBER, NEVER A DASH** — `unitStr` hides a zero, and a zero facing a 26 is the whole of what a
+/// **ALWAYS THE NUMBER, NEVER A DASH** — `unitStr` hides a zero, and a zero facing a 26 is the comparison.
 fn dialStr(u: Unit, x: ?f32) [:0]const u8 {
     const val = x orelse return "-";
     return switch (u) {

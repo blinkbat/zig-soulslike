@@ -35,8 +35,8 @@ const SPRUCE = art.SPRUCE;
 const WEAVE = art.WEAVE;
 
 
-/// whole sections spliced end to end, so the rung spacing is the same at 0.9 m and at 12 — the one thing a
-/// **THREE RUNGS, BECAUSE THE SECTION IS THE AUTHORING GRANULARITY.** At eight it was 2.40 m, and a run can
+/// A ladder is whole sections spliced end to end, so the rung spacing is the same at 0.9 m and at 12.
+/// **THREE RUNGS, BECAUSE THE SECTION IS THE AUTHORING GRANULARITY.** At eight it was 2.40 m.
 /// At 0.90 it is finer than the band that exit accepts, so EVERY height has a run that serves it — and that
 /// relation is a comptime assert beside `env.LADDER_PROUD`, not a number to be re-derived here.
 pub const LADDER_SEG: f32 = 0.90;
@@ -176,7 +176,7 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
 }
 
 pub const PLANK_T: f32 = 0.14;
-/// 1.10 through the doubling — that is what keeps the shipped flights lined up on their trapdoors — so the
+/// 1.10 through the doubling is what keeps the shipped flights lined up on their trapdoors.
 pub const WATCH_HATCH_Z: f32 = 1.10;
 pub const WATCH_HATCH_R: f32 = 0.70;
 

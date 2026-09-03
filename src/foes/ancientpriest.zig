@@ -329,7 +329,7 @@ pub const Ancient = struct {
 
     /// **NOT A FLAT 0.95 H**: at a scale of 1.64 that puts the sphere's centre 2.80 m up and its FLOOR at
     /// 2.08 m, over the top of every swing the hero owns. 0.58 H is the trunk — the cyclops's own choice — and
-    /// it lands the sphere at 0.99..2.43 m. The BAR still rides `TOP_F` above the crown. The skeletons left the
+    /// it lands the sphere at 0.99..2.43 m. The BAR still rides `TOP_F` above the crown.
     pub fn centerWorld(self: *const Ancient) rl.Vector3 {
         return foe.bodyPoint(self.pos, CENTER_F * H, self.scale, 0);
     }
@@ -778,7 +778,7 @@ pub const Ancient = struct {
     }
 };
 
-/// **THE TWO SCRIPTS ARE ITS OWN BAND, NOT THE ARCHER'S.** `behave.KITE` opens to 9 m, inside the cone this
+/// **THE TWO SCRIPTS ARE ITS OWN BAND, NOT THE ARCHER'S.** `behave.KITE` opens to 9 m.
 const BAND_SLACK: f32 = 1.5;
 const WITHDRAW = [_]behave.Step{
     .{ .open = .{ .to = WANT_MIN + BAND_SLACK } },

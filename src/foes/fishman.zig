@@ -58,7 +58,7 @@ const A_PROT: f32 = 4.0;
 
 const ROLL_DUR: f32 = 0.60;
 const ROLL_DIST: f32 = 3.30;
-/// 0.23 s of a 0.60 s dive: the launch and the whole rise are real frames, so a stroke that LEADS it still
+/// 0.23 s of a 0.60 s dive: the launch and the whole rise are real frames.
 const ROLL_IFRAME_IN: f32 = 0.15;
 const ROLL_IFRAME_OUT: f32 = 0.38;
 const ROLL_CD: f32 = 3.40;
@@ -95,7 +95,7 @@ const SALT = rgba(214, 214, 204, 255);
 const TOTEM = rgba(84, 62, 44, 255);
 /// The shaman's robe. **SOLVED OFF A SAMPLED RENDER, NOT PICKED** (AGENTS.md): at (46, 62, 66) the cloth came
 /// back at 128,138,125 — paler than the fishman hide beside it at 111,116,97, so the one body in a garment read
-/// as the one body in a bedsheet. Wanted ~85, i.e. (85/130)^2.2 = 0.39 of it. Kelp-dark and COOL against a
+/// as the one body in a bedsheet. Wanted ~85, i.e. (85/130)^2.2 = 0.39 of it. Kelp-dark and COOL.
 const ROBE = rgba(16, 22, 28, 255);
 const ROBE_DK = rgba(10, 14, 19, 255);
 
@@ -432,7 +432,7 @@ pub const Fishman = struct {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt);
     }
 
-    /// -1 gathered, +1 driven through, easing home across the recovery. One shape for all three roles' one
+    /// -1 gathered, +1 driven through, easing home across the recovery.
     fn actAmt(self: *const Fishman, wind: f32, strike: f32, recover: f32) f32 {
         if (self.t < wind) return -mathx.smoothstep(0, wind * 0.92, self.t);
         const s = self.t - wind;
@@ -821,7 +821,7 @@ pub const Shoal = struct {
     model: Model,
     band: [CAP_N]Fishman = undefined,
     n: usize = 0,
-    /// One-frame: seconds of net the hero is owed, or 0. `game` reads it after the group's update, which is
+    /// One-frame: seconds of net the hero is owed, or 0. `game` reads it after the group's update.
     pendingSnare: f32 = 0,
 
     pub fn init(shader: rl.Shader) Shoal {
@@ -912,7 +912,7 @@ pub const Shoal = struct {
     }
 };
 
-/// The body every role shares. `SKULL` and `HELD` are left undefined here and filled by `Model.init` from
+/// The body every role shares. `SKULL` and `HELD` are left undefined here and filled by `Model.init`.
 fn buildBones() [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
     mesh[ROOT] = pelvisMesh(.spearman);

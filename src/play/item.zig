@@ -201,7 +201,7 @@ pub const Class = enum {
 };
 
 /// **WHAT A THING IS WORTH IN COIN, AND 0 MEANS IT DOES NOT TRADE.** Derived from the SHELF it sits on.
-/// **UNTRADEABLE IS A PRICE OF 0** and it is one rule, not a second flag: the two flasks are the ESTUS of this
+/// **UNTRADEABLE IS A PRICE OF 0** and it is one rule, not a second flag.
 pub fn priceBank(k: Kind) u32 {
     return switch (k) {
         .crimson_flask, .cerulean_flask, .iron_key, .soul_binding_ring, .golden_seed => 0,

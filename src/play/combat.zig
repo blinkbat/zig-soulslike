@@ -174,7 +174,11 @@ pub const Doses = struct {
 const REGEN_DELAY = 0.8;
 const POISE_REFILL = 1.3;
 const STANCE_REFILL = 4.6;
-const LIGHT_BREAK_STANCE = 0.40;
+/// **THE ROAD FROM REPEATED LIGHT TO A HEAVY STAGGER** — the share of STANCE one flinch bills, so at 0.40 the
+/// third flinch inside the stance window IS the break. Per body (`Vitals.breakShare`): a global share made
+/// every creature in the game stagger on the same three, with no way to author one that flinches like paper
+/// and still will not go down to flinches alone (0), or one the count comes for quickly.
+pub const LIGHT_BREAK_STANCE: f32 = 0.40;
 const FOE_REGEN_DELAY = 2.2;
 const FOE_REGEN_RATE = 0.45;
 pub const LIGHT_STUN_DUR = 0.46;
@@ -216,6 +220,7 @@ pub const Vitals = struct {
     regenDelay: f32 = REGEN_DELAY,
     regenRate: f32 = 1.0,
     poiseRate: f32 = 1.0,
+    breakShare: f32 = LIGHT_BREAK_STANCE,
     stunLeft: f32 = 0,
     stunAs: StunKind = .none,
     lightStun: f32 = LIGHT_STUN_DUR,
@@ -335,6 +340,19 @@ pub const Vitals = struct {
         return out;
     }
 
+    pub fn withBreak(self: Vitals, share: f32) Vitals {
+        var out = self;
+        out.breakShare = mathx.maxF(share, 0);
+        return out;
+    }
+
+    /// Flinches from a full bar to the stagger, which is what the share MEANS. 0 is a body the count never comes for.
+    /// Saturating: a hand-edited share of 1e-30 is 1e30 flinches, and that is an out-of-range `@intFromFloat`.
+    pub fn flinchesToBreak(self: *const Vitals) u32 {
+        if (self.breakShare <= 0) return 0;
+        return @intFromFloat(mathx.minF(@ceil(1.0 / self.breakShare), 1e9));
+    }
+
     pub fn stunned(self: *const Vitals) bool {
         return self.stunLeft > 0;
     }
@@ -367,7 +385,7 @@ pub const Vitals = struct {
 
     pub fn refuseFlinch(self: *Vitals, poiseWas: f32) void {
         self.poise = poiseWas;
-        self.stance = mathx.minF(self.stanceMax, self.stance + LIGHT_BREAK_STANCE * self.stanceMax);
+        self.stance = mathx.minF(self.stanceMax, self.stance + self.breakShare * self.stanceMax);
         self.beginStun(.none);
         if (self.lightWear >= 1) self.lightWear -= 1;
     }
@@ -468,7 +486,7 @@ pub const Vitals = struct {
         self.poise -= poiseHit / poiseWear;
         if (self.poise <= 0) {
             self.poise = self.poiseMax;
-            self.stance -= LIGHT_BREAK_STANCE * self.stanceMax;
+            self.stance -= self.breakShare * self.stanceMax;
             light = true;
         }
         if (self.stance <= 0) {
@@ -2595,4 +2613,51 @@ test "A SHEAF NEVER CARRIES MORE THAN THE QUIVER HOLDS" {
             else => {},
         }
     }
+}
+
+/// Flinches taken before the stagger, with `lightWear` held out — that channel is its own law, and this
+/// measures the share and nothing else. 0 for a body the count never comes for.
+fn flinchesUntilBreak(share: f32, cap: u32) u32 {
+    var v = Vitals.initFoe(9999, 4, 40).withBreak(share);
+    var n: u32 = 0;
+    var swings: u32 = 0;
+    while (swings < cap) : (swings += 1) {
+        v.stunLeft = 0;
+        v.lightWear = 0;
+        switch (v.hit(.{ .dmg = 6 })) {
+            .heavy => return n + 1,
+            .light => n += 1,
+            else => {},
+        }
+    }
+    return 0;
+}
+
+test "THE FLINCH SHARE IS PER BODY — the count to a stagger is the share, and 0 is a body flinches never break" {
+    const CAP: u32 = 64;
+    const rows = [_]struct { share: f32, want: u32 }{
+        .{ .share = LIGHT_BREAK_STANCE, .want = 3 },
+        .{ .share = LIGHT_BREAK_STANCE / 2.0, .want = 5 },
+        .{ .share = 1.0, .want = 1 },
+        .{ .share = 0, .want = 0 },
+    };
+    std.debug.print("\n  flinch share:", .{});
+    for (rows) |row| {
+        const got = flinchesUntilBreak(row.share, CAP);
+        std.debug.print(" {d:.2} -> {d} flinches;", .{ row.share, got });
+        try std.testing.expectEqual(row.want, got);
+        // The dial the bench prints and the fight it bills have to be the one number.
+        const said = (Vitals.initFoe(9999, 4, 40).withBreak(row.share)).flinchesToBreak();
+        try std.testing.expectEqual(row.want, said);
+    }
+    std.debug.print(" (0 is never)\n", .{});
+}
+
+test "A REFUSED FLINCH HANDS BACK WHATEVER THE SHARE WAS, not a global 0.40" {
+    var v = Vitals.initFoe(400, 4, 40).withBreak(0.10);
+    const was = v.poise;
+    _ = v.hit(.{ .dmg = 6 });
+    try std.testing.expectApproxEqAbs(v.stanceMax * (1.0 - 0.10), v.stance, 1e-4);
+    v.refuseFlinch(was);
+    try std.testing.expectApproxEqAbs(v.stanceMax, v.stance, 1e-4);
 }

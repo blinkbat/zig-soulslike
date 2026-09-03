@@ -2749,7 +2749,7 @@ fn tickPack(g: *Game, dt: f32) void {
     for (g.pack.live()) |*w| if (w.lost()) rematerialize(g, w);
     for (g.pack.live()) |*w| {
         w.quarry = huntFor(g, w);
-        if (w.navWant(g.hero.pos)) |want| markWay(g, &w.nav, w.pos, w.bodyR(), want) else w.nav.dir = null;
+        if (w.navWant(g.hero.pos)) |want| markWay(&g.env, &w.nav, w.pos, w.bodyR(), want) else w.nav.dir = null;
     }
     g.pack.update(dt, g.hero.pos, PLAY_HALF);
     var was: [combat.SUMMON_MAX]rl.Vector3 = undefined;
@@ -3724,21 +3724,23 @@ const WAY_TRUE: f32 = 0.98;
 /// Metres of overlap forgiven: blocked iff the gap closes past `r + s.r - WAY_SLACK`, asked without solving for where the body would end up.
 const WAY_SLACK: f32 = 1e-3;
 
-fn wayClear(g: *const Game, at: rl.Vector3, r: f32, dir: rl.Vector3) bool {
+fn wayClear(env: *const envmod.Env, at: rl.Vector3, r: f32, dir: rl.Vector3) bool {
     const reach = WAY_PROBE + r;
-    const went = mathx.dirXZ(at, g.env.walkStep(at, dir, reach));
+    const went = mathx.dirXZ(at, env.walkStep(at, dir, reach));
     if (mathx.lenXZ(went) < 1e-4) return false;
     if (went.x * dir.x + went.z * dir.z < WAY_TRUE) return false;
     for ([2]f32{ 0.5, 1.0 }) |u| {
         const p = v3(at.x + dir.x * reach * u, at.y, at.z + dir.z * reach * u);
-        if (g.env.blockedNear(p, r - WAY_SLACK, r + 1.0)) return false;
+        if (env.blockedNear(p, r - WAY_SLACK, r + 1.0)) return false;
     }
     return true;
 }
 
-fn markWay(g: *const Game, nav: *foemod.Nav, at: rl.Vector3, r: f32, want: rl.Vector3) void {
+/// The prop grid is all it ever wanted off the `Game`, and taking the whole thing is what kept the
+/// most expensive per-frame walk in the loop out of a headless test.
+fn markWay(env: *const envmod.Env, nav: *foemod.Nav, at: rl.Vector3, r: f32, want: rl.Vector3) void {
     const straight = mathx.dirXZ(at, want);
-    if (mathx.lenXZ(straight) < 1e-4 or wayClear(g, at, r, straight)) {
+    if (mathx.lenXZ(straight) < 1e-4 or wayClear(env, at, r, straight)) {
         nav.dir = null;
         return;
     }
@@ -3746,7 +3748,7 @@ fn markWay(g: *const Game, nav: *foemod.Nav, at: rl.Vector3, r: f32, want: rl.Ve
     for (WAY_FAN) |off| {
         for ([2]f32{ nav.side, -nav.side }) |s| {
             const d = mathx.headingDir(yaw + off * s);
-            if (!wayClear(g, at, r, d)) continue;
+            if (!wayClear(env, at, r, d)) continue;
             nav.dir = d;
             nav.side = s;
             return;
@@ -3768,7 +3770,7 @@ fn markWays(g: *Game) void {
                 f.nav.dir = null;
                 continue;
             };
-            markWay(g, &f.nav, f.pos, f.bodyR(), want);
+            markWay(&g.env, &f.nav, f.pos, f.bodyR(), want);
         }
     }
 }
@@ -6413,4 +6415,42 @@ test "the editor's re-home stamp trips on every edit a placed body can take, and
     try std.testing.expect(foePlacementStamp(m) != at0);
     foestat.mult[k] = .{};
     try std.testing.expectEqual(at0, foePlacementStamp(m));
+}
+
+// The CEILING, not the live figure: `markWays` asks only the bodies whose `navWant` is non-null, and this asks
+// every placed one. At ~0.9 us a body it is the dearest walk in the loop by 50x — `orders` is 0.015 — because
+// each ask is a `walkStep` plus two `blockedNear` against the prop grid, and the fan is ten more of those.
+test "WHAT THE WAY-FINDING COSTS A FRAME — every placed body asking the prop grid for a way past it" {
+    const ta = std.testing.allocator;
+    const m = try ta.create(worldfmt.Map);
+    defer ta.destroy(m);
+    const e = try ta.create(envmod.Env);
+    defer ta.destroy(e);
+    var line: usize = 0;
+    try worldfmt.loadForTest(worldfmt.START_MAP, m, &line);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.materialize(m);
+
+    // The straight ray is the common case and the fan is the expensive one, so ask off the real placements
+    // rather than open ground: a body standing in a thicket is what fans.
+    const BODY_R: f32 = 0.42;
+    var navs: [worldfmt.MAX_FOES]foemod.Nav = undefined;
+    @memset(navs[0..m.nfoes], foemod.Nav{});
+
+    const ROUNDS = 40;
+    var fanned: usize = 0;
+    var timer = try std.time.Timer.start();
+    for (0..ROUNDS) |_| {
+        for (m.foes[0..m.nfoes], 0..) |f, i| {
+            const at = v3(f.x, m.heightAt(f.x, f.z), f.z);
+            markWay(e, &navs[i], at, BODY_R, mathx.zero3);
+            if (navs[i].dir != null) fanned += 1;
+        }
+    }
+    const us = @as(f64, @floatFromInt(timer.read())) / 1000.0 / @as(f64, @floatFromInt(ROUNDS));
+    std.debug.print("\n  ways: {d} bodies asked every frame costs {d:.1} us — {d:.3}% of a 16.7 ms frame ({d} took a fan)\n", .{
+        m.nfoes, us, 100.0 * us / 16700.0, fanned / ROUNDS,
+    });
+    try std.testing.expect(m.nfoes > 0);
+    try std.testing.expect(us < 16700.0 * 0.05);
 }

@@ -873,8 +873,9 @@ takes `wx[0..wolf.N]` as its own array, so no bone it solves has moved.
 
 - **THE FLOWER IS NOT ITS FACE, IT IS ITS ARTILLERY — AND THE TELL IS THE COROLLA, NOT A RISE** (owner: no
   stalk rise; open/close on the spore, bigger instead). The bloom stands off the withers the animal's whole
-  life at ONE stance (`STANCE_FURL`), a bud the size of its own barrel; for the volley it OPENS — blades built
-  as midrib + vanes + membrane lenses, never bare quills (owner: seven spokes read as a whisk) — and spits five
+  life at ONE stance (`STALK_UP` seats it, `BLOOM_TILT` leans it), a bud the size of its own barrel; for the
+  volley it OPENS — blades built as midrib + membrane lenses, never bare quills (owner: seven spokes read as a
+  whisk) — and spits five
   spores straight up. A heavy stun still blows the bud open (`openAmt`'s hurt branch); nothing moves its seat.
 - **THE HANG IS THE MOVE** (owner: they hover for a bit before homing in). `SPORE_HANG` of drifting and
   bobbing before they turn over, then `SPORE_HOME` — under `hero.SPRINT_SPEED`, asserted at comptime,
@@ -906,9 +907,9 @@ takes `wx[0..wolf.N]` as its own array, so no bone it solves has moved.
   `(BOW+RECURVE)·cos f + sin f`, so `PETAL_WIDE` dialled UP past the peak makes the flower NARROWER. 95 puts
   the ring at 86..108 — straddling flat, so the throat faces OUT, which is what a flower spitting UP needs.
   `PETAL_SHUT` is NEGATIVE and solved from the same radial: a bud's petals converge PAST parallel.
-- **THE BLADE IS ONE SURFACE, AND EVERY VANE ENDS ON THE ENVELOPE THE LENSES SEAL TO.** `VANES` a side lie on
-  the midrib's own bow and land on `bladeHalfW`; a vane that stops SHORT of the rim stands out past the
-  membrane as a loose strand, and that fringe is what made a mop of the corolla.
+- **THE BLADE IS ONE SURFACE, AND THE RIB STOPS SHORT OF THE MEMBRANE IT SITS IN.** `buildPetal` runs the
+  midrib to `RIB_END` (0.86) and lets the outer lens run past 1.0 on `bladeHalfW`; a rib that outran its own
+  membrane read as a pin with a bead on the end of it, and that fringe is what made a mop of the corolla.
 - **THE STANCE IS RELATIVE TO THE STALK'S OWN REST LEAN, NOT ABSOLUTE** — STALK→BLOOM is already 26 deg off
   plumb, and an absolute angle folds the flower the WRONG WAY (the old furl at +74 laid it over the animal's
   head, 1.65 m in front of its own hip).
@@ -940,7 +941,7 @@ under it stayed the old build's width.
   separately and the fight is which of them you spend the window on, so one pooled bar would hide the only
   decision in it. Each fades on its own clock, and the chip state is PER RAIL — the knight's bar and the duo's
   swordsman both used to mean rail 0, so every frame each wiped the other's frac, fade and chip tail and the
-  two drew on top of each other whether or not either was awake. `AGGRO_OF` takes each rail's ring off
+  two drew on top of each other whether or not either was awake. `game.aggroRing` takes each rail's ring off
   `FOE_GROUPS`, so a bar cannot wake at a different range from the creature it is showing.
 - **THE BAND IS THE MEASURED REACH OF THE STROKE, NOT A NUMBER BESIDE ONE.** Thrown for real, the slash lands
   out to 2.35 m; it was handed out to 3.3 and drove past the man at every stand past 2.5. A band wider than the
@@ -1400,8 +1401,8 @@ a climb of six ending in its own keystone; 39 nodes.
   fits either way up, and `VIEW_R` is the outer radius of what is actually DRAWN — keystone centre at `RINGS`,
   its disc, and the breathing halo an OPEN one wears. A test pins the hub to the centre at three aspect ratios.
   **THE PAN IS LIVE AT `ZOOM_MIN`** (`PAN_FLOOR`). **THE ARMS ARE NEVER CAPTIONED, so nothing reserves room for
-  one** — `CAP_OUT`/`CAP_HALF`/`onAxis` outlived the labels and went on reserving dead air the fit paid for by
-  drawing every node ~19% smaller.
+  one** — the caption gutters outlived the labels and went on reserving dead air the fit paid for by drawing
+  every node ~19% smaller.
 - **The zoom re-centres on the CURSOR** as it goes in, blended from the hub so nothing moves at `ZOOM_MIN`.
   Read as a HELD LEVEL so it glides; the pad's half is the cross alone.
 - **THE MIDDLE IS A PLACE THE CURSOR MAY REST** (`passivetree.HUB`, indexed one past the last node so every
@@ -2233,7 +2234,8 @@ solid, never a walk of samples. It passes OVER anything whose blocking height is
 **THE GRID IS WALKED, NOT COPIED** (`env.sees`) — `nearSolids` truncates at `MAX_NEAR`, which over a 20 m line
 through a wood quietly drops the wall it was asked about.
 
-**IT IS ASKED ONCE A FRAME, BY THE GAME** (`game.markSight`) for every foe inside `SIGHT_R`, stamped on that
+**IT IS ASKED ONCE A FRAME, BY THE GAME** (`game.markSight`) for every foe inside `game.sightR()` — the widest
+ring in `FOE_GROUPS` plus a metre — stamped on that
 foe's `Leash`. Creatures do not ask it themselves — the prop grid belongs to `env`.
 
 **WHAT IT LOSES IS ITS EYES, NOT ITS MEMORY.** `Leash.blind()` needs `SIGHT_MEMORY` with no line, longer

@@ -10,7 +10,9 @@ pub const Icon = icons.Icon;
 const rgba = mathx.rgba;
 
 
-pub const MSG_CAP = 120;
+/// Holds the widest tip the game builds — the loot row's `item.EFFECT_BUF + 32` = 160 — plus its terminator.
+/// At 120 that row and the bench's `foe.flinch` were both cut mid-sentence by `Ctx.setTip`, silently.
+pub const MSG_CAP = 176;
 
 pub const ROW_H: i32 = hud.monoLineH(hud.MONO) + 6;
 
@@ -42,6 +44,14 @@ pub const Ctx = struct {
     anyHot: bool = false,
     t: f32 = 0,
 
+    /// **AN OPEN DROPDOWN'S LIST OWNS THE POINTER OVER IT.** The list is drawn LAST (`endDropdowns`) but its
+    /// widget is polled in draw order, so without this the one click both picks a row and works whatever the
+    /// list is covering: on the Drops sheet, picking `common` also nudged `odds` and opened `rare`. Taken from
+    /// the rect drawn LAST frame, so it holds for widgets on both sides of the dropdown in this one.
+    ddOver: bool = false,
+    ddPress: bool = false,
+    ddWheel: f32 = 0,
+
     tipBuf: [MSG_CAP]u8 = undefined,
     tipLen: usize = 0,
 
@@ -51,14 +61,36 @@ pub const Ctx = struct {
         kbSeen = false;
         kbTaken = false;
         var c = Ctx{ .mouse = rl.getMousePosition(), .pressed = false, .down = false, .wheel = 0, .t = t };
+        c.ddOver = openId != null and ddBox != null and rl.checkCollisionPointRec(c.mouse, ddBox.?);
         c.setLive(true);
         return c;
     }
 
     pub fn setLive(ctx: *Ctx, live: bool) void {
-        ctx.pressed = live and rl.isMouseButtonPressed(.left);
-        ctx.down = live and rl.isMouseButtonDown(.left);
-        ctx.wheel = if (live) rl.getMouseWheelMove() else 0;
+        ctx.applyRaw(live, .{
+            .press = rl.isMouseButtonPressed(.left),
+            .held = rl.isMouseButtonDown(.left),
+            .notch = rl.getMouseWheelMove(),
+        });
+    }
+
+    const Raw = struct { press: bool, held: bool, notch: f32 };
+
+    fn applyRaw(ctx: *Ctx, live: bool, raw: Raw) void {
+        const press = live and raw.press;
+        const held = live and raw.held;
+        const notch = if (live) raw.notch else 0;
+        ctx.ddPress = ctx.ddOver and press;
+        ctx.ddWheel = if (ctx.ddOver) notch else 0;
+        ctx.pressed = press and !ctx.ddOver;
+        ctx.down = held and !ctx.ddOver;
+        ctx.wheel = if (ctx.ddOver) 0 else notch;
+    }
+
+    /// The click is spent. A widget that ACTED on it says so, or the widgets drawn after it act on it too.
+    pub fn consume(ctx: *Ctx) void {
+        ctx.pressed = false;
+        ctx.down = false;
     }
 
     pub fn owns(ctx: *Ctx, r: rl.Rectangle) bool {
@@ -459,6 +491,8 @@ const DD_MAX_SHOWN: i32 = 10;
 var openId: ?u32 = null;
 var openScroll: i32 = 0;
 var pending: ?Pending = null;
+/// The list rect `endDropdowns` actually drew, and what `Ctx.begin` tests the pointer against.
+var ddBox: ?rl.Rectangle = null;
 
 const DD_ROWS_CAP: usize = 128;
 var ddRows: [DD_ROWS_CAP][:0]const u8 = undefined;
@@ -502,6 +536,7 @@ pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u
     if (h and ctx.pressed) {
         openId = if (isOpen) null else id;
         openScroll = if (isOpen) 0 else @max(0, @as(i32, @intCast(sel)) - DD_MAX_SHOWN + 1);
+        ctx.consume();
         return null;
     }
     if (!isOpen) return null;
@@ -510,12 +545,12 @@ pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u
     const box = ddPanel(r, nRows);
     ctx.anyHot = true;
     if (rl.checkCollisionPointRec(ctx.mouse, box)) {
-        openScroll -= @intFromFloat(ctx.wheel * 3);
+        openScroll -= @intFromFloat(ctx.ddWheel * 3);
         const maxScroll = @max(0, @as(i32, @intCast(nRows)) - DD_MAX_SHOWN);
         openScroll = @max(0, @min(maxScroll, openScroll));
     }
     var picked: ?usize = null;
-    if (ctx.pressed) {
+    if (ctx.pressed or ctx.ddPress) {
         if (rl.checkCollisionPointRec(ctx.mouse, box)) {
             const rel = ctx.mouse.y - (box.y + 3);
             const row = @divFloor(@as(i32, @intFromFloat(rel)), DD_ROW_H);
@@ -539,10 +574,14 @@ pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u
 }
 
 pub fn endDropdowns() void {
-    const p = pending orelse return;
+    const p = pending orelse {
+        ddBox = null;
+        return;
+    };
     pending = null;
     const rows_ = p.labels();
     const box = ddPanel(p.r, rows_.len);
+    ddBox = box;
     uiart.seat(@intFromFloat(box.x), @intFromFloat(box.y), @intFromFloat(box.width), @intFromFloat(box.height));
     rl.drawRectangleRec(box, rgba(0, 0, 0, 255));
     rl.drawRectangleRec(box, rgba(20, 18, 15, 255));
@@ -586,6 +625,7 @@ pub fn closeDropdown() void {
     openId = null;
     openScroll = 0;
     pending = null;
+    ddBox = null;
 }
 
 /// **A STABLE ID FROM WHAT THE ROW EDITS.** Hashed off a tag and two indices, so act row 3 of trigger 7 keeps
@@ -609,4 +649,28 @@ pub fn beginModal(ctx: *Ctx, w: i32, h: i32, title: [:0]const u8) ModalBox {
     hud.mono(title, x + @divTrunc(w - hud.monoW(title, hud.MONO), 2), y + 12, hud.MONO, TITLE);
     uiart.divider(x + @divTrunc(w, 2), y + hud.monoLineH(hud.MONO) + 18, @divTrunc(w, 2) - 20, 140);
     return .{ .x = x, .y = y, .w = w, .h = h };
+}
+
+test "AN OPEN DROPDOWN'S LIST OWNS THE POINTER OVER IT — nothing under it sees the click or the wheel" {
+    var ctx = Ctx{ .mouse = .{ .x = 0, .y = 0 }, .pressed = false, .down = false, .wheel = 0 };
+    const raw = Ctx.Raw{ .press = true, .held = true, .notch = 2.0 };
+
+    ctx.applyRaw(true, raw);
+    try std.testing.expect(ctx.pressed and ctx.down and ctx.wheel == 2.0);
+    try std.testing.expect(!ctx.ddPress and ctx.ddWheel == 0);
+
+    ctx.ddOver = true;
+    ctx.applyRaw(true, raw);
+    try std.testing.expect(!ctx.pressed and !ctx.down and ctx.wheel == 0);
+    try std.testing.expect(ctx.ddPress and ctx.ddWheel == 2.0);
+
+    // A dead frame is dead for the list too, or a modal opening over it would still be picking rows.
+    ctx.applyRaw(false, raw);
+    try std.testing.expect(!ctx.pressed and !ctx.ddPress and ctx.ddWheel == 0);
+}
+
+test "A WIDGET THAT ACTS ON THE CLICK SPENDS IT" {
+    var ctx = Ctx{ .mouse = .{ .x = 0, .y = 0 }, .pressed = true, .down = true, .wheel = 0 };
+    ctx.consume();
+    try std.testing.expect(!ctx.pressed and !ctx.down);
 }

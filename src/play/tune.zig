@@ -65,6 +65,23 @@ pub const Col = struct {
     tip: [:0]const u8 = "",
 };
 
+/// **A COLUMN IS NAMED, NOT COUNTED.** A sheet's getter, setter and `has` all switch on the same ordinal, and a
+/// bare `else` on the last one meant appending a column silently landed it on the one before — or, on the `has`
+/// that nothing tests, hid a live dial. One enum per sheet, sitting field-for-field over its `Col` array and
+/// checked here, so a column added, renamed or moved is a compile error instead of a wrong number.
+fn ColsAre(comptime E: type, comptime cols: []const Col) void {
+    comptime {
+        const fields = @typeInfo(E).@"enum".fields;
+        if (fields.len != cols.len)
+            @compileError("tune: " ++ @typeName(E) ++ " and its column array are different lengths");
+        for (fields, 0..) |f, i| {
+            if (!std.mem.eql(u8, f.name, cols[i].name))
+                @compileError("tune: " ++ @typeName(E) ++ "." ++ f.name ++ " does not sit over column " ++
+                    std.fmt.comptimePrint("{d}", .{i}) ++ " `" ++ cols[i].name ++ "`");
+        }
+    }
+}
+
 pub const Face = enum { none, foe, item };
 
 pub const Table = struct {
@@ -154,6 +171,12 @@ const SPELL_COLS = [_]Col{
     .{ .name = "drip", .hi = 200, .step = 1, .tip = "What a held spell pays out over its whole run, for the ladder to price it" },
 };
 
+const SpellCol = enum { fp, reach, dmg, poise, stance, fire, cold, lightning, chaos, drip };
+const SPELL_ELEM0 = @intFromEnum(SpellCol.fire);
+comptime {
+    ColsAre(SpellCol, &SPELL_COLS);
+}
+
 fn spellName(i: usize) [:0]const u8 {
     return combat.SPELLS[i].name;
 }
@@ -165,45 +188,42 @@ fn spellKey(i: usize) []const u8 {
 fn spellGet(r: usize, c: usize) f32 {
     const row = combat.SPELLS[r];
     const blow = row.blow orelse combat.Hit{};
-    return switch (c) {
-        0 => row.fp,
-        1 => row.reach orelse 0,
-        2 => blow.dmg,
-        3 => blow.poise,
-        4 => blow.stance,
-        5...8 => blow.elem.v[c - 5],
-        else => row.drip,
+    return switch (@as(SpellCol, @enumFromInt(c))) {
+        .fp => row.fp,
+        .reach => row.reach orelse 0,
+        .dmg => blow.dmg,
+        .poise => blow.poise,
+        .stance => blow.stance,
+        .fire, .cold, .lightning, .chaos => blow.elem.v[c - SPELL_ELEM0],
+        .drip => row.drip,
     };
 }
 
 fn spellHas(r: usize, c: usize) bool {
     const row = combat.SPELLS[r];
-    return switch (c) {
-        0 => true,
-        1 => row.reach != null,
-        9 => row.blow == null,
+    return switch (@as(SpellCol, @enumFromInt(c))) {
+        .fp => true,
+        .reach => row.reach != null,
+        .drip => row.blow == null,
         else => row.blow != null,
     };
 }
 
 fn spellSet(r: usize, c: usize, v: f32) void {
     const row = &combat.SPELLS[r];
-    switch (c) {
-        0 => row.fp = v,
-        1 => if (row.reach != null) {
+    switch (@as(SpellCol, @enumFromInt(c))) {
+        .fp => row.fp = v,
+        .reach => if (row.reach != null) {
             row.reach = v;
         },
-        else => {
-            if (c == 9) {
-                row.drip = v;
-                return;
-            }
+        .drip => row.drip = v,
+        .dmg, .poise, .stance, .fire, .cold, .lightning, .chaos => {
             if (row.blow == null) return;
-            switch (c) {
-                2 => row.blow.?.dmg = v,
-                3 => row.blow.?.poise = v,
-                4 => row.blow.?.stance = v,
-                else => row.blow.?.elem.v[c - 5] = v,
+            switch (@as(SpellCol, @enumFromInt(c))) {
+                .dmg => row.blow.?.dmg = v,
+                .poise => row.blow.?.poise = v,
+                .stance => row.blow.?.stance = v,
+                else => row.blow.?.elem.v[c - SPELL_ELEM0] = v,
             }
         },
     }
@@ -218,6 +238,11 @@ const AIL_COLS = [_]Col{
     .{ .name = "flat", .hi = 300, .step = 1, .tip = "A burst's flat payout, which no armour and no column answers" },
 };
 
+const AilCol = enum { max, decay, delay, dur, hpFrac, flat };
+comptime {
+    ColsAre(AilCol, &AIL_COLS);
+}
+
 fn ailName(i: usize) [:0]const u8 {
     return combat.AILS[i].name;
 }
@@ -228,25 +253,25 @@ fn ailKey(i: usize) []const u8 {
 
 fn ailGet(r: usize, c: usize) f32 {
     const row = combat.AILS[r];
-    return switch (c) {
-        0 => row.max,
-        1 => row.decay,
-        2 => row.decayDelay,
-        3 => row.dur,
-        4 => row.hpFrac,
-        else => row.flat,
+    return switch (@as(AilCol, @enumFromInt(c))) {
+        .max => row.max,
+        .decay => row.decay,
+        .delay => row.decayDelay,
+        .dur => row.dur,
+        .hpFrac => row.hpFrac,
+        .flat => row.flat,
     };
 }
 
 fn ailSet(r: usize, c: usize, v: f32) void {
     const row = &combat.AILS[r];
-    switch (c) {
-        0 => row.max = v,
-        1 => row.decay = v,
-        2 => row.decayDelay = v,
-        3 => row.dur = v,
-        4 => row.hpFrac = v,
-        else => row.flat = v,
+    switch (@as(AilCol, @enumFromInt(c))) {
+        .max => row.max = v,
+        .decay => row.decay = v,
+        .delay => row.decayDelay = v,
+        .dur => row.dur = v,
+        .hpFrac => row.hpFrac = v,
+        .flat => row.flat = v,
     }
 }
 
@@ -325,8 +350,8 @@ fn elemBlockAt(comptime cols: []const Col, comptime at: usize) void {
 }
 
 comptime {
-    elemBlockAt(&SPELL_COLS, 5);
-    elemBlockAt(&BLOW_COLS, 3);
+    elemBlockAt(&SPELL_COLS, SPELL_ELEM0);
+    elemBlockAt(&BLOW_COLS, BLOW_ELEM0);
 }
 
 const ARM_COLS = [_]Col{
@@ -340,6 +365,11 @@ const ARM_COLS = [_]Col{
     .{ .name = "venom", .hi = 100, .step = 1, .tip = "Poison a landed stroke puts in the body, absolute and out of 100" },
     PRICE_COL,
 };
+
+const ArmCol = enum { dmg, poise, dur, stam, negate, arc, walk, venom, price };
+comptime {
+    ColsAre(ArmCol, &ARM_COLS);
+}
 
 fn armRowName(i: usize) [:0]const u8 {
     return item.displayName(ARM_ROWS[i]);
@@ -363,16 +393,16 @@ fn armOf(k: item.Kind) item.Arm {
 fn armGet(r: usize, c: usize) f32 {
     const k = ARM_ROWS[r];
     const a = armOf(k);
-    return switch (c) {
-        0 => a.dmg,
-        1 => a.poise,
-        2 => a.dur,
-        3 => a.stam,
-        4 => a.negate,
-        5 => a.arc,
-        6 => a.walk,
-        7 => a.venom,
-        else => priceGet(k),
+    return switch (@as(ArmCol, @enumFromInt(c))) {
+        .dmg => a.dmg,
+        .poise => a.poise,
+        .dur => a.dur,
+        .stam => a.stam,
+        .negate => a.negate,
+        .arc => a.arc,
+        .walk => a.walk,
+        .venom => a.venom,
+        .price => priceGet(k),
     };
 }
 
@@ -384,24 +414,24 @@ fn armSet(r: usize, c: usize, v: f32) void {
     }
     const g = &item.LIVE[@intFromEnum(k)];
     if (std.meta.activeTag(g.equip) != .arm) return;
-    switch (c) {
-        0 => g.equip.arm.dmg = v,
-        1 => g.equip.arm.poise = v,
-        2 => g.equip.arm.dur = v,
-        3 => g.equip.arm.stam = v,
-        4 => g.equip.arm.negate = v,
-        5 => g.equip.arm.arc = v,
-        6 => g.equip.arm.walk = v,
-        else => g.equip.arm.venom = v,
+    switch (@as(ArmCol, @enumFromInt(c))) {
+        .dmg => g.equip.arm.dmg = v,
+        .poise => g.equip.arm.poise = v,
+        .dur => g.equip.arm.dur = v,
+        .stam => g.equip.arm.stam = v,
+        .negate => g.equip.arm.negate = v,
+        .arc => g.equip.arm.arc = v,
+        .walk => g.equip.arm.walk = v,
+        .venom, .price => g.equip.arm.venom = v,
     }
 }
 
 fn armHas(r: usize, c: usize) bool {
     const shield = armOf(ARM_ROWS[r]).slot == .hand_shield;
-    return switch (c) {
-        0, 1, 7 => !shield,
-        4, 5, 6 => shield,
-        else => true,
+    return switch (@as(ArmCol, @enumFromInt(c))) {
+        .dmg, .poise, .venom => !shield,
+        .negate, .arc, .walk => shield,
+        .dur, .stam, .price => true,
     };
 }
 
@@ -415,6 +445,11 @@ const PLATE_COLS = [_]Col{
     .{ .name = "ailrate", .hi = 2, .step = 0.01, .tip = "Multiplier on the ONE meter this piece slows" },
     PRICE_COL,
 };
+
+const PlateCol = enum { armour, fire, cold, lightning, chaos, move, ailrate, price };
+comptime {
+    ColsAre(PlateCol, &PLATE_COLS);
+}
 
 fn plateRowName(i: usize) [:0]const u8 {
     return item.displayName(PLATE_ROWS[i]);
@@ -438,15 +473,15 @@ fn plateOf(k: item.Kind) item.Plate {
 fn plateGet(r: usize, c: usize) f32 {
     const k = PLATE_ROWS[r];
     const q = plateOf(k);
-    return switch (c) {
-        0 => q.a,
-        1 => q.res.fire,
-        2 => q.res.cold,
-        3 => q.res.lightning,
-        4 => q.res.chaos,
-        5 => q.move,
-        6 => if (q.rate) |rt| rt.k else 0,
-        else => priceGet(k),
+    return switch (@as(PlateCol, @enumFromInt(c))) {
+        .armour => q.a,
+        .fire => q.res.fire,
+        .cold => q.res.cold,
+        .lightning => q.res.lightning,
+        .chaos => q.res.chaos,
+        .move => q.move,
+        .ailrate => if (q.rate) |rt| rt.k else 0,
+        .price => priceGet(k),
     };
 }
 
@@ -458,22 +493,22 @@ fn plateSet(r: usize, c: usize, v: f32) void {
     }
     const g = &item.LIVE[@intFromEnum(k)];
     if (std.meta.activeTag(g.equip) != .plate) return;
-    switch (c) {
-        0 => g.equip.plate.a = v,
-        1 => g.equip.plate.res.fire = v,
-        2 => g.equip.plate.res.cold = v,
-        3 => g.equip.plate.res.lightning = v,
-        4 => g.equip.plate.res.chaos = v,
-        5 => g.equip.plate.move = v,
-        6 => if (g.equip.plate.rate != null) {
+    switch (@as(PlateCol, @enumFromInt(c))) {
+        .armour => g.equip.plate.a = v,
+        .fire => g.equip.plate.res.fire = v,
+        .cold => g.equip.plate.res.cold = v,
+        .lightning => g.equip.plate.res.lightning = v,
+        .chaos => g.equip.plate.res.chaos = v,
+        .move => g.equip.plate.move = v,
+        .ailrate => if (g.equip.plate.rate != null) {
             g.equip.plate.rate.?.k = v;
         },
-        else => {},
+        .price => {},
     }
 }
 
 fn plateHas(r: usize, c: usize) bool {
-    return c != 6 or plateOf(PLATE_ROWS[r]).rate != null;
+    return @as(PlateCol, @enumFromInt(c)) != .ailrate or plateOf(PLATE_ROWS[r]).rate != null;
 }
 
 const TRINKET_COLS = [_]Col{
@@ -484,6 +519,11 @@ const TRINKET_COLS = [_]Col{
     .{ .name = "boon", .hi = 20, .step = 1, .int = true, .tip = "Points of the attribute the boon grants" },
     PRICE_COL,
 };
+
+const TrinketCol = enum { leech, hpFrac, spiritFp, fpFrac, boon, price };
+comptime {
+    ColsAre(TrinketCol, &TRINKET_COLS);
+}
 
 fn trinketRowName(i: usize) [:0]const u8 {
     return item.displayName(TRINKET_ROWS[i]);
@@ -501,14 +541,14 @@ fn trinketGet(r: usize, c: usize) f32 {
     const k = TRINKET_ROWS[r];
     if (c == TRINKET_PRICE) return priceGet(k);
     return switch (item.LIVE[@intFromEnum(k)].equip) {
-        .charm => |q| switch (c) {
-            0 => q.leech,
-            1 => q.hpFrac,
-            2 => q.spiritFp,
-            3 => q.fpFrac,
+        .charm => |q| switch (@as(TrinketCol, @enumFromInt(c))) {
+            .leech => q.leech,
+            .hpFrac => q.hpFrac,
+            .spiritFp => q.spiritFp,
+            .fpFrac => q.fpFrac,
             else => 0,
         },
-        .boon => |q| if (c == 4) @floatFromInt(q.n) else 0,
+        .boon => |q| if (@as(TrinketCol, @enumFromInt(c)) == .boon) @floatFromInt(q.n) else 0,
         else => 0,
     };
 }
@@ -521,14 +561,14 @@ fn trinketSet(r: usize, c: usize, v: f32) void {
     }
     const g = &item.LIVE[@intFromEnum(k)];
     switch (g.equip) {
-        .charm => switch (c) {
-            0 => g.equip.charm.leech = v,
-            1 => g.equip.charm.hpFrac = v,
-            2 => g.equip.charm.spiritFp = v,
-            3 => g.equip.charm.fpFrac = v,
+        .charm => switch (@as(TrinketCol, @enumFromInt(c))) {
+            .leech => g.equip.charm.leech = v,
+            .hpFrac => g.equip.charm.hpFrac = v,
+            .spiritFp => g.equip.charm.spiritFp = v,
+            .fpFrac => g.equip.charm.fpFrac = v,
             else => {},
         },
-        .boon => if (c == 4) {
+        .boon => if (@as(TrinketCol, @enumFromInt(c)) == .boon) {
             g.equip.boon.n = @intFromFloat(mathx.clampF(@round(v), 0, 255));
         },
         else => {},
@@ -537,9 +577,13 @@ fn trinketSet(r: usize, c: usize, v: f32) void {
 
 fn trinketHas(r: usize, c: usize) bool {
     if (c == TRINKET_PRICE) return true;
+    const col: TrinketCol = @enumFromInt(c);
     return switch (item.LIVE[@intFromEnum(TRINKET_ROWS[r])].equip) {
-        .charm => c < 4,
-        .boon => c == 4,
+        .charm => switch (col) {
+            .leech, .hpFrac, .spiritFp, .fpFrac => true,
+            else => false,
+        },
+        .boon => col == .boon,
         else => false,
     };
 }
@@ -560,6 +604,11 @@ const USE_COLS = [_]Col{
     PRICE_COL,
 };
 
+const UseCol = enum { dmg, poise, fire, lightning, dose, ward, secs, frac, mult, n, radius, fp, price };
+comptime {
+    ColsAre(UseCol, &USE_COLS);
+}
+
 fn useRowName(i: usize) [:0]const u8 {
     return item.displayName(USE_ROWS[i]);
 }
@@ -575,55 +624,56 @@ fn useFace(i: usize) u32 {
 fn useGet(r: usize, c: usize) f32 {
     const k = USE_ROWS[r];
     if (c == USE_PRICE) return priceGet(k);
+    const col: UseCol = @enumFromInt(c);
     return switch (item.LIVE[@intFromEnum(k)].use) {
         .none, .purge => 0,
-        .arrows => |q| if (c == 9) @floatFromInt(q.n) else 0,
-        .regen => |q| switch (c) {
-            6 => q.secs,
-            7 => q.frac,
+        .arrows => |q| if (col == .n) @floatFromInt(q.n) else 0,
+        .regen => |q| switch (col) {
+            .secs => q.secs,
+            .frac => q.frac,
             else => 0,
         },
-        .lob => |q| switch (c) {
-            0 => q.dmg,
-            1 => q.poise,
-            2 => q.fire,
-            3 => q.lightning,
-            4 => if (q.dose) |d| d.amt else 0,
-            10 => q.r,
+        .lob => |q| switch (col) {
+            .dmg => q.dmg,
+            .poise => q.poise,
+            .fire => q.fire,
+            .lightning => q.lightning,
+            .dose => if (q.dose) |d| d.amt else 0,
+            .radius => q.r,
             else => 0,
         },
-        .ward => |q| switch (c) {
-            5 => q.amount,
-            6 => q.secs,
+        .ward => |q| switch (col) {
+            .ward => q.amount,
+            .secs => q.secs,
             else => 0,
         },
-        .wind => |q| if (c == 7) q.share else 0,
-        .grease => |q| switch (c) {
-            6 => q.secs,
-            7 => q.frac,
+        .wind => |q| if (col == .frac) q.share else 0,
+        .grease => |q| switch (col) {
+            .secs => q.secs,
+            .frac => q.frac,
             else => 0,
         },
-        .souls => |q| if (c == 9) @floatFromInt(q.n) else 0,
-        .brew => |q| switch (c) {
-            6 => q.secs,
-            8 => q.mult,
+        .souls => |q| if (col == .n) @floatFromInt(q.n) else 0,
+        .brew => |q| switch (col) {
+            .secs => q.secs,
+            .mult => q.mult,
             else => 0,
         },
-        .steady => |q| switch (c) {
-            6 => q.secs,
-            8 => q.mult,
+        .steady => |q| switch (col) {
+            .secs => q.secs,
+            .mult => q.mult,
             else => 0,
         },
-        .dose => |q| if (c == 4) q.amt else 0,
-        .coat => |q| switch (c) {
-            4 => q.amt,
-            6 => q.secs,
+        .dose => |q| if (col == .dose) q.amt else 0,
+        .coat => |q| switch (col) {
+            .dose => q.amt,
+            .secs => q.secs,
             else => 0,
         },
-        .toll => |q| switch (c) {
-            4 => q.amt,
-            10 => q.r,
-            11 => q.fp,
+        .toll => |q| switch (col) {
+            .dose => q.amt,
+            .radius => q.r,
+            .fp => q.fp,
             else => 0,
         },
     };
@@ -637,65 +687,66 @@ fn useSet(r: usize, c: usize, v: f32) void {
     }
     const g = &item.LIVE[@intFromEnum(k)];
     const whole: u32 = @intFromFloat(@max(0, @round(v)));
+    const col: UseCol = @enumFromInt(c);
     switch (g.use) {
         .none, .purge => {},
-        .arrows => if (c == 9) {
+        .arrows => if (col == .n) {
             g.use.arrows.n = @intCast(@min(whole, 255));
         },
-        .regen => switch (c) {
-            6 => g.use.regen.secs = v,
-            7 => g.use.regen.frac = v,
+        .regen => switch (col) {
+            .secs => g.use.regen.secs = v,
+            .frac => g.use.regen.frac = v,
             else => {},
         },
-        .lob => switch (c) {
-            0 => g.use.lob.dmg = v,
-            1 => g.use.lob.poise = v,
-            2 => g.use.lob.fire = v,
-            3 => g.use.lob.lightning = v,
-            4 => if (g.use.lob.dose != null) {
+        .lob => switch (col) {
+            .dmg => g.use.lob.dmg = v,
+            .poise => g.use.lob.poise = v,
+            .fire => g.use.lob.fire = v,
+            .lightning => g.use.lob.lightning = v,
+            .dose => if (g.use.lob.dose != null) {
                 g.use.lob.dose.?.amt = v;
             },
-            10 => g.use.lob.r = v,
+            .radius => g.use.lob.r = v,
             else => {},
         },
-        .ward => switch (c) {
-            5 => g.use.ward.amount = v,
-            6 => g.use.ward.secs = v,
+        .ward => switch (col) {
+            .ward => g.use.ward.amount = v,
+            .secs => g.use.ward.secs = v,
             else => {},
         },
-        .wind => if (c == 7) {
+        .wind => if (col == .frac) {
             g.use.wind.share = v;
         },
-        .grease => switch (c) {
-            6 => g.use.grease.secs = v,
-            7 => g.use.grease.frac = v,
+        .grease => switch (col) {
+            .secs => g.use.grease.secs = v,
+            .frac => g.use.grease.frac = v,
             else => {},
         },
-        .souls => if (c == 9) {
+        .souls => if (col == .n) {
             g.use.souls.n = whole;
         },
-        .brew => switch (c) {
-            6 => g.use.brew.secs = v,
-            8 => g.use.brew.mult = v,
+        .brew => switch (col) {
+            .secs => g.use.brew.secs = v,
+            .mult => g.use.brew.mult = v,
             else => {},
         },
-        .steady => switch (c) {
-            6 => g.use.steady.secs = v,
-            8 => g.use.steady.mult = v,
+        .steady => switch (col) {
+            .secs => g.use.steady.secs = v,
+            .mult => g.use.steady.mult = v,
             else => {},
         },
-        .dose => if (c == 4) {
+        .dose => if (col == .dose) {
             g.use.dose.amt = v;
         },
-        .coat => switch (c) {
-            4 => g.use.coat.amt = v,
-            6 => g.use.coat.secs = v,
+        .coat => switch (col) {
+            .dose => g.use.coat.amt = v,
+            .secs => g.use.coat.secs = v,
             else => {},
         },
-        .toll => switch (c) {
-            4 => g.use.toll.amt = v,
-            10 => g.use.toll.r = v,
-            11 => g.use.toll.fp = v,
+        .toll => switch (col) {
+            .dose => g.use.toll.amt = v,
+            .radius => g.use.toll.r = v,
+            .fp => g.use.toll.fp = v,
             else => {},
         },
     }
@@ -703,21 +754,22 @@ fn useSet(r: usize, c: usize, v: f32) void {
 
 fn useHas(r: usize, c: usize) bool {
     if (c == USE_PRICE) return true;
+    const col: UseCol = @enumFromInt(c);
     return switch (item.LIVE[@intFromEnum(USE_ROWS[r])].use) {
         .none, .purge => false,
-        .arrows, .souls => c == 9,
-        .regen, .grease => c == 6 or c == 7,
-        .lob => |q| switch (c) {
-            0, 1, 2, 3, 10 => true,
-            4 => q.dose != null,
+        .arrows, .souls => col == .n,
+        .regen, .grease => col == .secs or col == .frac,
+        .lob => |q| switch (col) {
+            .dmg, .poise, .fire, .lightning, .radius => true,
+            .dose => q.dose != null,
             else => false,
         },
-        .ward => c == 5 or c == 6,
-        .wind => c == 7,
-        .brew, .steady => c == 6 or c == 8,
-        .dose => c == 4,
-        .coat => c == 4 or c == 6,
-        .toll => c == 4 or c == 10 or c == 11,
+        .ward => col == .ward or col == .secs,
+        .wind => col == .frac,
+        .brew, .steady => col == .secs or col == .mult,
+        .dose => col == .dose,
+        .coat => col == .dose or col == .secs,
+        .toll => col == .dose or col == .radius or col == .fp,
     };
 }
 
@@ -725,6 +777,11 @@ const NODE_COLS = [_]Col{
     .{ .name = "grant", .hi = 400, .step = 0.05, .tip = "What the node gives. Its own units — a share, a multiplier, a flat pool, or points of an attribute" },
     .{ .name = "rider", .hi = 20, .step = 1, .int = true, .tip = "The stat-up riding it, in points" },
 };
+
+const NodeCol = enum { grant, rider };
+comptime {
+    ColsAre(NodeCol, &NODE_COLS);
+}
 
 fn nodeName(i: usize) [:0]const u8 {
     return passivetree.NODES[i].name;
@@ -745,13 +802,13 @@ fn grantValue(g: passivetree.Grant) ?f32 {
 
 fn nodeGet(r: usize, c: usize) f32 {
     const n = passivetree.NODES[r];
-    if (c == 1) return if (n.bump) |b| @floatFromInt(b.n) else 0;
+    if (@as(NodeCol, @enumFromInt(c)) == .rider) return if (n.bump) |b| @floatFromInt(b.n) else 0;
     return grantValue(n.grant) orelse 0;
 }
 
 fn nodeSet(r: usize, c: usize, v: f32) void {
     const n = &passivetree.NODES[r];
-    if (c == 1) {
+    if (@as(NodeCol, @enumFromInt(c)) == .rider) {
         if (n.bump) |*b| b.n = @intFromFloat(mathx.clampF(@round(v), 0, 255));
         return;
     }
@@ -768,14 +825,21 @@ fn nodeSet(r: usize, c: usize, v: f32) void {
 
 fn nodeHas(r: usize, c: usize) bool {
     const n = passivetree.NODES[r];
-    return if (c == 1) n.bump != null else grantValue(n.grant) != null;
+    return if (@as(NodeCol, @enumFromInt(c)) == .rider) n.bump != null else grantValue(n.grant) != null;
 }
 
 /// **AN ATTRIBUTE GRANT IS POINTS, AND POINTS ARE WHOLE** — `Grant.attr.n` is a `u8`, so the column's 0.05 step
-/// moved nothing at all on those rows: twenty nudges rounded straight back to where they started, and the 400
+/// moved nothing at all on those rows: twenty nudges rounded straight back to where they started.
 fn nodeLimit(r: usize, c: usize) Col {
-    if (c == 0 and std.meta.activeTag(passivetree.NODES[r].grant) == .attr) {
-        return .{ .name = NODE_COLS[0].name, .hi = NODE_COLS[1].hi, .step = 1, .int = true, .tip = NODE_COLS[0].tip };
+    const grant = NODE_COLS[@intFromEnum(NodeCol.grant)];
+    if (@as(NodeCol, @enumFromInt(c)) == .grant and std.meta.activeTag(passivetree.NODES[r].grant) == .attr) {
+        return .{
+            .name = grant.name,
+            .hi = NODE_COLS[@intFromEnum(NodeCol.rider)].hi,
+            .step = 1,
+            .int = true,
+            .tip = grant.tip,
+        };
     }
     return NODE_COLS[c];
 }
@@ -890,6 +954,12 @@ const BLOW_COLS = [_]Col{
     .{ .name = "launch", .hi = 8, .step = 0.1, .tip = "Metres off the ground it throws him. A LARGE SLAM only" },
 };
 
+const BlowCol = enum { dmg, poise, stance, fire, cold, lightning, chaos, gore, launch };
+const BLOW_ELEM0 = @intFromEnum(BlowCol.fire);
+comptime {
+    ColsAre(BlowCol, &BLOW_COLS);
+}
+
 fn blowName(i: usize) [:0]const u8 {
     return BLOW_NAMES[i];
 }
@@ -904,25 +974,25 @@ fn blowFace(i: usize) u32 {
 
 fn blowGet(r: usize, c: usize) f32 {
     const h = BLOWS[r].p;
-    return switch (c) {
-        0 => h.dmg,
-        1 => h.poise,
-        2 => h.stance,
-        3...6 => h.elem.v[c - 3],
-        7 => h.gore,
-        else => h.launch,
+    return switch (@as(BlowCol, @enumFromInt(c))) {
+        .dmg => h.dmg,
+        .poise => h.poise,
+        .stance => h.stance,
+        .fire, .cold, .lightning, .chaos => h.elem.v[c - BLOW_ELEM0],
+        .gore => h.gore,
+        .launch => h.launch,
     };
 }
 
 fn blowSet(r: usize, c: usize, v: f32) void {
     const h = BLOWS[r].p;
-    switch (c) {
-        0 => h.dmg = v,
-        1 => h.poise = v,
-        2 => h.stance = v,
-        3...6 => h.elem.v[c - 3] = v,
-        7 => h.gore = v,
-        else => h.launch = v,
+    switch (@as(BlowCol, @enumFromInt(c))) {
+        .dmg => h.dmg = v,
+        .poise => h.poise = v,
+        .stance => h.stance = v,
+        .fire, .cold, .lightning, .chaos => h.elem.v[c - BLOW_ELEM0] = v,
+        .gore => h.gore = v,
+        .launch => h.launch = v,
     }
 }
 
@@ -1005,7 +1075,15 @@ const FOE_COLS = [_]Col{
     .{ .name = "stance", .hi = 600, .step = 1, .ratio = true, .tip = "What has to be broken for a critical" },
     .{ .name = "souls", .hi = 20000, .step = 10, .int = true, .tip = "What the body is worth" },
     .{ .name = "aggro", .hi = 80, .step = 0.5, .tip = "Metres at which it notices you" },
+    .{ .name = "flinch", .hi = 1, .step = 0.02, .ratio = true, .tip = "The share of its stance one flinch bills. 0.40 is three flinches to a stagger, 0.25 is four, 0 is a body flinches alone never break" },
 };
+
+/// **THE COLUMN IS NAMED, NOT COUNTED.** The four functions under this switch on the same index, and a bare
+/// `else` arm on the last one meant appending a column silently landed it on `aggro`.
+const FoeCol = enum { hp, poise, stance, souls, aggro, flinch };
+comptime {
+    ColsAre(FoeCol, &FOE_COLS);
+}
 
 fn foeName(i: usize) [:0]const u8 {
     return wf.foeName(@enumFromInt(i));
@@ -1022,12 +1100,13 @@ fn foeFace(i: usize) u32 {
 fn foeGet(r: usize, c: usize) f32 {
     const k: wf.FoeKind = @enumFromInt(r);
     const p = foestat.live(k);
-    return switch (c) {
-        0 => p.hp,
-        1 => p.poise,
-        2 => p.stance,
-        3 => if (foeSouls(k)) |q| @floatFromInt(q.*) else 0,
-        else => if (foeAggro(k)) |q| q.* else 0,
+    return switch (@as(FoeCol, @enumFromInt(c))) {
+        .hp => p.hp,
+        .poise => p.poise,
+        .stance => p.stance,
+        .souls => if (foeSouls(k)) |q| @floatFromInt(q.*) else 0,
+        .aggro => if (foeAggro(k)) |q| q.* else 0,
+        .flinch => p.brk,
     };
 }
 
@@ -1035,51 +1114,56 @@ fn foeSet(r: usize, c: usize, v: f32) void {
     const k: wf.FoeKind = @enumFromInt(r);
     const i = @intFromEnum(k);
     const code = foestat.pools(k);
-    switch (c) {
-        0 => if (code.hp > 0) {
+    switch (@as(FoeCol, @enumFromInt(c))) {
+        .hp => if (code.hp > 0) {
             foestat.mult[i].hp = v / code.hp;
         },
-        1 => if (code.poise > 0) {
+        .poise => if (code.poise > 0) {
             foestat.mult[i].poise = v / code.poise;
         },
-        2 => if (code.stance > 0) {
+        .stance => if (code.stance > 0) {
             foestat.mult[i].stance = v / code.stance;
         },
-        3 => if (foeSouls(k)) |q| {
+        .souls => if (foeSouls(k)) |q| {
             q.* = @intFromFloat(@max(0, @round(v)));
         },
-        else => if (foeAggro(k)) |q| {
+        .aggro => if (foeAggro(k)) |q| {
             q.* = v;
+        },
+        .flinch => if (code.brk > 0) {
+            foestat.mult[i].brk = v / code.brk;
         },
     }
 }
 
 fn foeCode(r: usize, c: usize) f32 {
     const p = foestat.pools(@enumFromInt(r));
-    return switch (c) {
-        0 => p.hp,
-        1 => p.poise,
-        2 => p.stance,
-        else => 0,
+    return switch (@as(FoeCol, @enumFromInt(c))) {
+        .hp => p.hp,
+        .poise => p.poise,
+        .stance => p.stance,
+        .flinch => p.brk,
+        .souls, .aggro => 0,
     };
 }
 
 fn foeRatio(r: usize, c: usize, v: f32) void {
     const m = &foestat.mult[r];
-    switch (c) {
-        0 => m.hp = v,
-        1 => m.poise = v,
-        2 => m.stance = v,
-        else => {},
+    switch (@as(FoeCol, @enumFromInt(c))) {
+        .hp => m.hp = v,
+        .poise => m.poise = v,
+        .stance => m.stance = v,
+        .flinch => m.brk = v,
+        .souls, .aggro => {},
     }
 }
 
 fn foeHas(r: usize, c: usize) bool {
     const k: wf.FoeKind = @enumFromInt(r);
-    return switch (c) {
-        0, 1, 2 => foestat.known(k),
-        3 => foeSouls(k) != null,
-        else => foeAggro(k) != null,
+    return switch (@as(FoeCol, @enumFromInt(c))) {
+        .hp, .poise, .stance, .flinch => foestat.known(k),
+        .souls => foeSouls(k) != null,
+        .aggro => foeAggro(k) != null,
     };
 }
 
@@ -1131,6 +1215,11 @@ const DROP_COLS = [_]Col{
     .{ .name = "purse", .hi = NCOIN - 1, .int = true, .pick = COIN_PICK, .tip = "Which coin band the body carries. A separate roll from the item, and luck does not touch it" },
 };
 
+const DropCol = enum { common, odds, rare, chance, purse };
+comptime {
+    ColsAre(DropCol, &DROP_COLS);
+}
+
 fn dropRowName(i: usize) [:0]const u8 {
     return wf.foeName(@enumFromInt(i));
 }
@@ -1145,30 +1234,30 @@ fn dropFace(i: usize) u32 {
 
 fn dropGet(r: usize, c: usize) f32 {
     const row = &drops.TABLE[r];
-    return switch (c) {
-        0 => itemOrdinal(row.common),
-        1 => row.odds,
-        2 => itemOrdinal(row.rare),
-        3 => row.chance,
-        else => @floatFromInt(@intFromEnum(row.gold)),
+    return switch (@as(DropCol, @enumFromInt(c))) {
+        .common => itemOrdinal(row.common),
+        .odds => row.odds,
+        .rare => itemOrdinal(row.rare),
+        .chance => row.chance,
+        .purse => @floatFromInt(@intFromEnum(row.gold)),
     };
 }
 
 fn dropSet(r: usize, c: usize, v: f32) void {
     const row = &drops.TABLE[r];
-    switch (c) {
-        0 => row.common = itemAt(v),
-        1 => row.odds = v,
-        2 => row.rare = itemAt(v),
-        3 => row.chance = v,
-        else => row.gold = @enumFromInt(@as(u8, @intFromFloat(mathx.clampF(v, 0, NCOIN - 1)))),
+    switch (@as(DropCol, @enumFromInt(c))) {
+        .common => row.common = itemAt(v),
+        .odds => row.odds = v,
+        .rare => row.rare = itemAt(v),
+        .chance => row.chance = v,
+        .purse => row.gold = @enumFromInt(@as(u8, @intFromFloat(mathx.clampF(v, 0, NCOIN - 1)))),
     }
 }
 
 fn dropHas(r: usize, c: usize) bool {
-    return switch (c) {
-        1 => drops.TABLE[r].common != null,
-        3 => drops.TABLE[r].rare != null,
+    return switch (@as(DropCol, @enumFromInt(c))) {
+        .odds => drops.TABLE[r].common != null,
+        .chance => drops.TABLE[r].rare != null,
         else => true,
     };
 }
@@ -1191,6 +1280,11 @@ const SOAK_COLS = [_]Col{
     .{ .name = "dpsFrac", .hi = 0.5, .step = 0.005, .tip = "Share of max HP a second on top of the meter" },
 };
 
+const SoakCol = enum { build, dpsFrac };
+comptime {
+    ColsAre(SoakCol, &SOAK_COLS);
+}
+
 fn soakRowName(i: usize) [:0]const u8 {
     return @as(wf.Liquid, @enumFromInt(SOAK_ROWS[i])).label();
 }
@@ -1201,13 +1295,19 @@ fn soakRowKey(i: usize) []const u8 {
 
 fn soakGet(r: usize, c: usize) f32 {
     const row = liquid.SOAK[SOAK_ROWS[r]] orelse return 0;
-    return if (c == 0) row.build else row.dpsFrac;
+    return switch (@as(SoakCol, @enumFromInt(c))) {
+        .build => row.build,
+        .dpsFrac => row.dpsFrac,
+    };
 }
 
 fn soakSet(r: usize, c: usize, v: f32) void {
     const slot = &liquid.SOAK[SOAK_ROWS[r]];
     if (slot.* == null) return;
-    if (c == 0) slot.*.?.build = v else slot.*.?.dpsFrac = v;
+    switch (@as(SoakCol, @enumFromInt(c))) {
+        .build => slot.*.?.build = v,
+        .dpsFrac => slot.*.?.dpsFrac = v,
+    }
 }
 
 const TRADE_KNOBS = [_]Knob{

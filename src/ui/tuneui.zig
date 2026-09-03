@@ -343,3 +343,25 @@ pub fn panel(st: *State, ctx: *ui.Ctx) bool {
     }
     return true;
 }
+
+test "NO TIP THE BENCH CARRIES IS WIDER THAN THE BUFFER THAT COPIES IT" {
+    var widest: usize = 0;
+    var which: []const u8 = "";
+    for (tune.TABLES, 0..) |tb, t| {
+        if (tb.tip.len > widest) {
+            widest = tb.tip.len;
+            which = tb.name;
+        }
+        for (0..tb.n) |r| {
+            for (0..tb.cols.len) |c| {
+                const tip = tune.colSpec(t, r, c).tip;
+                if (tip.len <= widest) continue;
+                widest = tip.len;
+                which = tip;
+            }
+        }
+    }
+    std.debug.print("\n  widest bench tip: {d} of {d} chars — \"{s}\"\n", .{ widest, ui.MSG_CAP - 1, which });
+    // `ui.Ctx.setTip` copies into `MSG_CAP` bytes and drops the rest without a word.
+    try std.testing.expect(widest < ui.MSG_CAP);
+}

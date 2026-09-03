@@ -923,6 +923,7 @@ pub const Editor = struct {
     path: [wf.PATH_CAP]u8 = undefined,
     pathLen: usize = 0,
     hotFrame: bool = false,
+    wasOverlaid: bool = false,
     editing: bool = false,
     selOwned: usize = 0,
     selMarked: usize = 0,
@@ -3502,7 +3503,10 @@ pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene,
     ui.endDropdowns();
     ui.drawTip(&ctx);
 
-    if (ed.modal == .none and !ed.menuOpen) ui.closeDropdown();
+    // THE EDGE, NOT THE STATE: closing on every un-overlaid frame wiped `openId` before the next frame could
+    // draw the list, so the properties panel's own dropdown (the NPC's `says`) opened for zero frames.
+    if (ed.wasOverlaid and !overlaid) ui.closeDropdown();
+    ed.wasOverlaid = overlaid;
     ed.hotFrame = ctx.anyHot or ui.dropdownOpen();
 }
 

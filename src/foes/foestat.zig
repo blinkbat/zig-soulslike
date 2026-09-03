@@ -9,12 +9,16 @@ pub const Mult = struct {
     hp: f32 = 1,
     poise: f32 = 1,
     stance: f32 = 1,
+    brk: f32 = 1,
 };
 
+/// `brk` is `combat.Vitals.breakShare` — the share of stance one flinch bills. Learned like the pools, so a
+/// creature re-authored in code flows through a `tuning.cfg` that never named it.
 pub const Pools = struct {
     hp: f32 = 0,
     poise: f32 = 0,
     stance: f32 = 0,
+    brk: f32 = 0,
 };
 
 pub var mult: [N]Mult = [_]Mult{.{}} ** N;
@@ -32,26 +36,27 @@ pub fn pools(k: wf.FoeKind) Pools {
 pub fn live(k: wf.FoeKind) Pools {
     const a = authored[@intFromEnum(k)];
     const m = mult[@intFromEnum(k)];
-    return .{ .hp = a.hp * m.hp, .poise = a.poise * m.poise, .stance = a.stance * m.stance };
+    return .{ .hp = a.hp * m.hp, .poise = a.poise * m.poise, .stance = a.stance * m.stance, .brk = a.brk * m.brk };
 }
 
 pub fn edited(k: wf.FoeKind) bool {
     const m = mult[@intFromEnum(k)];
-    return m.hp != 1 or m.poise != 1 or m.stance != 1;
+    return m.hp != 1 or m.poise != 1 or m.stance != 1 or m.brk != 1;
 }
 
 pub fn arm(vit: anytype, k: wf.FoeKind) void {
     const i = @intFromEnum(k);
     if (vit.hpMax <= 0) return;
-    authored[i] = .{ .hp = vit.hpMax, .poise = vit.poiseMax, .stance = vit.stanceMax };
+    authored[i] = .{ .hp = vit.hpMax, .poise = vit.poiseMax, .stance = vit.stanceMax, .brk = vit.breakShare };
     const m = mult[i];
-    if (m.hp == 1 and m.poise == 1 and m.stance == 1) return;
+    if (m.hp == 1 and m.poise == 1 and m.stance == 1 and m.brk == 1) return;
     vit.hpMax = authored[i].hp * m.hp;
     vit.hp = vit.hpMax;
     vit.poiseMax = authored[i].poise * m.poise;
     vit.poise = vit.poiseMax;
     vit.stanceMax = authored[i].stance * m.stance;
     vit.stance = vit.stanceMax;
+    vit.breakShare = authored[i].brk * m.brk;
 }
 
 test "a multiplier of one leaves a body exactly as the code made it" {

@@ -116,6 +116,40 @@ pub fn homeOf(k: wf.FoeKind) props.Biome {
     };
 }
 
+/// **HOW HARD A COHORT IS TO FLINCH, AS A MULTIPLE OF WHAT ITS OWN FILE AUTHORED.** The curve is the MAP's
+/// order and not the creature's, so every body keeps its character against its neighbours — the necromancer
+/// stays the softest thing in the bonefield, it just stops being softer than a toad. One table because a
+/// per-creature pass is twenty numbers to drift; the bench (`foestat.mult`) still layers on top of it.
+pub fn poiseCurve(k: wf.FoeKind) f32 {
+    return switch (homeOf(k)) {
+        .any, .ruins, .village, .wetland => 1.00,
+        .rock, .forest => 1.15,
+        .ash, .bone => 1.35,
+        .fungal => 1.55,
+    };
+}
+
+test "THE CURVE ONLY EVER CLIMBS, and the first ground he walks is the one it leaves alone" {
+    var seen = [_]f32{0} ** props.Biome.N;
+    for (0..@typeInfo(wf.FoeKind).@"enum".fields.len) |i| {
+        const k: wf.FoeKind = @enumFromInt(i);
+        const c = poiseCurve(k);
+        try std.testing.expect(c >= 1.0);
+        const b = @intFromEnum(homeOf(k));
+        if (seen[b] != 0) try std.testing.expectEqual(seen[b], c);
+        seen[b] = c;
+    }
+    try std.testing.expectEqual(@as(f32, 1.0), poiseCurve(.toad));
+    try std.testing.expect(poiseCurve(.necromancer) > poiseCurve(.toad));
+    try std.testing.expect(poiseCurve(.fungal_swordsman) > poiseCurve(.necromancer));
+    std.debug.print("\n  poise curve:", .{});
+    for (seen, 0..) |c, i| {
+        if (c == 0) continue;
+        std.debug.print(" {s} x{d:.2};", .{ @as(props.Biome, @enumFromInt(i)).label(), c });
+    }
+    std.debug.print("\n", .{});
+}
+
 pub fn isBoss(k: wf.FoeKind) bool {
     return switch (k) {
         .bone_knight => true,
@@ -1740,8 +1774,15 @@ pub fn armPost(f: anytype, h: wf.Foe, home: rl.Vector3) void {
     f.post.arm(h.ai, home, h.route(), h.seed);
 }
 
+/// The curve goes on BEFORE `foestat` learns the body, so the bench shows the number the fight actually
+/// uses and a revert hands the curve back rather than the raw figure in the creature's file.
 pub fn armStats(f: anytype, k: wf.FoeKind) void {
     if (comptime !@hasField(@TypeOf(f.*), "vit")) return;
+    const curve = poiseCurve(k);
+    if (curve != 1.0) {
+        f.vit.poiseMax *= curve;
+        f.vit.poise = f.vit.poiseMax;
+    }
     foestat.arm(&f.vit, k);
 }
 
@@ -2734,4 +2775,25 @@ test "WHAT ORDERS COST A FRAME — the idle-frame walk, at the map's own foe lim
     const us = @as(f64, @floatFromInt(timer.read())) / 1000.0 / @as(f64, @floatFromInt(FRAMES));
     std.debug.print("\n  orders: {d} bodies asked every frame costs {d:.1} us — {d:.3}% of a 16.7 ms frame\n", .{ posts.len, us, 100.0 * us / 16700.0 });
     try std.testing.expect(walked > 0);
+}
+
+test "AND IT LANDS ON THE BODY — the bench learns the number the fight uses, not the figure in the file" {
+    const Body = struct { vit: combat.Vitals = combat.Vitals.initFoe(200, 20, 50) };
+    var early = Body{};
+    armStats(&early, .toad);
+    try std.testing.expectApproxEqAbs(@as(f32, 20), early.vit.poiseMax, 1e-3);
+    try std.testing.expectEqual(early.vit.poiseMax, early.vit.poise);
+
+    var late = Body{};
+    armStats(&late, .fungal_magus);
+    try std.testing.expectApproxEqAbs(20.0 * poiseCurve(.fungal_magus), late.vit.poiseMax, 1e-3);
+    try std.testing.expectEqual(late.vit.poiseMax, late.vit.poise);
+    try std.testing.expectApproxEqAbs(late.vit.poiseMax, foestat.pools(.fungal_magus).poise, 1e-3);
+    // HP and stance are the creature's alone — the curve is one channel, not a difficulty multiplier.
+    try std.testing.expectApproxEqAbs(@as(f32, 200), late.vit.hpMax, 1e-3);
+    try std.testing.expectApproxEqAbs(@as(f32, 50), late.vit.stanceMax, 1e-3);
+    std.debug.print(
+        "\n  curve on the body: off the same authored 20 poise, a toad keeps {d:.0} and a fungal magus carries {d:.0}\n",
+        .{ early.vit.poiseMax, late.vit.poiseMax },
+    );
 }

@@ -481,7 +481,7 @@ pub const Ogre = struct {
 
     pub fn navWant(self: *const Ogre, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .approach) return null;
-        return if (self.homing) self.home else hero;
+        return if (self.homing) foe.tetherFor(self) else hero;
     }
 
     pub fn update(self: *Ogre, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
@@ -522,7 +522,7 @@ pub const Ogre = struct {
                 if (self.t >= 0.2) self.decide(d, bearing);
             },
             .approach => {
-                const tgt = if (self.homing) self.home else hero;
+                const tgt = if (self.homing) foe.tetherFor(self) else hero;
                 self.faceToward(self.nav.aim(self.pos, tgt), dt);
                 const f = self.fdir();
                 const moved = WALK_SPEED * dt;
@@ -534,7 +534,7 @@ pub const Ogre = struct {
                     if (d <= AGGRO_R) {
                         self.homing = false;
                         self.decide(d, bearing);
-                    } else if (mathx.distXZ(self.pos, self.home) <= foe.LEASH_HOME_R) self.enterIdle();
+                    } else if (mathx.distXZ(self.pos, foe.tetherFor(self)) <= foe.LEASH_HOME_R) self.enterIdle();
                 } else if (d <= SWIPE_R or d > AGGRO_R or
                     (d >= DRIVE_MIN and d <= DRIVE_MAX and self.driveCd <= 0 and foe.canLeap(&self.root)))
                     self.decide(d, bearing);

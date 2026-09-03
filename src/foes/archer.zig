@@ -899,7 +899,7 @@ pub const Archer = struct {
     fn decide(self: *Archer, dist: f32) void {
         if (self.leash.goingHome()) {
             self.routine.stop();
-            self.kiteDir = mathx.dirXZ(self.pos, self.home);
+            self.kiteDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
             return self.enter(.reposition);
         }
         switch (classify(dist, self.reloadCd <= 0)) {

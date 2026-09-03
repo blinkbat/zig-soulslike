@@ -121,7 +121,7 @@ const TOLL_HIT_AT: f32 = 0.38;
 
 const SPARK_WIND: f32 = 0.72;
 pub const SPARK_N: u8 = 3;
-/// 0.46 s) and not merely over its animation: two sparks inside one set of i-frames are one blow with a fatter shape.
+/// Longer than the hero's roll i-frames (`hero.ROLL_IFRAME_END`, 0.46 s) and not merely than its own animation: two sparks inside one set of i-frames are one blow with a fatter shape.
 const SPARK_GAP: f32 = 0.58;
 const SPARK_RECOVER: f32 = 0.70;
 const SPARK_CD: f32 = 5.5;

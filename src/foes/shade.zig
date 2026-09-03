@@ -614,7 +614,7 @@ pub const Shade = struct {
 
     fn decide(self: *Shade, dist: f32, hero: rl.Vector3) void {
         if (self.leash.goingHome()) {
-            self.driftDir = mathx.dirXZ(self.pos, self.home);
+            self.driftDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
             return self.enter(.drift);
         }
         switch (classify(dist, self.cds[GRASP] <= 0, self.cds[WISP] <= 0)) {

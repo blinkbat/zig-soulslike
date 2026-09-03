@@ -64,7 +64,7 @@ const TURN_RATE: f32 = 4.2;
 /// **MEASURED, NOT ARGUED** — a test walks the stroke frame by frame and brackets it from both sides, which caught the first pass declaring 2.9 m off a limb that arrived at 1.19.
 const CLAW_REACH: f32 = 1.75;
 const CLAW_SWEEP_R: f32 = 0.34;
-/// THE ARC CROSSES HIM, NOT HOW FAR THE TIP GETS** (owner: the moles cannot hit me): `CLAW_REACH + CLAW_SWEEP_R` is the tip's RADIAL reach, achieved out to the SIDE. At 2.09 the outer fifth of the trigger band could not land by construction.
+/// **WHAT A BAND PROMISES IS THAT THE ARC CROSSES HIM, NOT HOW FAR THE TIP GETS** (owner: the moles cannot hit me): `CLAW_REACH + CLAW_SWEEP_R` is the tip's RADIAL reach, achieved out to the SIDE. At 2.09 the outer fifth of the trigger band could not land by construction.
 const CLAW_BAND: f32 = 1.65;
 const CLAW_KEEP: f32 = CLAW_BAND - 0.5;
 pub const CLAW_WIND: f32 = 0.48;
@@ -343,7 +343,7 @@ pub const Delver = struct {
     }
 
     fn goingFor(self: *const Delver, hero: rl.Vector3) rl.Vector3 {
-        return if (self.homing or self.leash.goingHome()) self.home else hero;
+        return if (self.homing or self.leash.goingHome()) foe.tetherFor(self) else hero;
     }
 
     pub fn update(self: *Delver, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
@@ -459,7 +459,7 @@ pub const Delver = struct {
         self.rear = mathx.approach(self.rear, 0, dt * 3.0);
         self.swing = 0.24 * mathx.sinf(self.gait * std.math.tau);
         self.emitScuff(dt);
-        if (self.homing and mathx.distXZ(self.pos, self.home) <= HOME_R) {
+        if (self.homing and mathx.distXZ(self.pos, foe.tetherFor(self)) <= HOME_R) {
             self.homing = false;
             self.enterIdle(0.4);
             return;

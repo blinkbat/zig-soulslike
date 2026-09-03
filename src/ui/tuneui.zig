@@ -6,7 +6,7 @@ const mathx = @import("../core/mathx.zig");
 const tune = @import("../play/tune.zig");
 const ui = @import("ui.zig");
 
-/// the editor's own sheet, and beside the model in `ui/objview.zig`.
+/// Drawn twice: the editor's own Stats sheet, and beside the model in `ui/objview.zig`.
 /// Every number here is `play/tune.zig`'s. Nothing in this file knows what a spell or a shield IS.
 pub const State = struct {
     tab: usize = 0,
@@ -126,8 +126,8 @@ const PICK_LABEL_W: i32 = 96;
 
 const PICK_MIN_W: i32 = 120;
 
-/// **AS WIDE AS THE LONGEST NAME IN THE LIST, MEASURED AND NOT PICKED.** At a round 200 the twenty characters
-/// be solved at comptime — and it is a modal's cost, not the loop's.
+/// **AS WIDE AS THE LONGEST NAME IN THE LIST, MEASURED AND NOT PICKED.** The scan runs over the live labels, so
+/// it cannot be solved at comptime — and it is a modal's cost, not the loop's.
 fn pickWidth(p: tune.Pick, w: i32) i32 {
     var wide: i32 = 0;
     for (0..p.n) |i| wide = @max(wide, hud.monoW(p.label(i), hud.MONO));
@@ -213,7 +213,19 @@ pub fn header(ctx: *ui.Ctx, x: i32, y: i32, w: i32, t: usize, r: usize) void {
     }
 }
 
-pub const FACE_MAX = 20;
+/// Sized off the tables it collects from, never picked: a face cannot match more rows than exist under it, so
+/// the cap in `forFace` is unreachable and cannot drop a dial the "+N more" line would then under-report.
+pub const FACE_MAX = blk: {
+    var m: usize = 0;
+    for (std.meta.tags(tune.Face)) |f| {
+        var n: usize = 0;
+        for (tune.TABLES) |tb| {
+            if (tb.face == f and tb.faceOf != null) n += tb.n;
+        }
+        m = @max(m, n);
+    }
+    break :blk m;
+};
 
 pub const Hit = struct { t: usize, r: usize };
 
@@ -306,7 +318,7 @@ pub fn panel(st: *State, ctx: *ui.Ctx) bool {
 
     const cx = box.x + PAD + LIST_W + 24;
     const cw = W - (cx - box.x) - PAD;
-    // MORE**: 340 is solved for a four-digit readout, and a picker's box is the widest item name in the game
+    // 340 is solved for a four-digit readout; a picker's box is the widest item name in the game, so it takes more
     const fieldW = @min(cw, if (tableHasPick(st.tab)) @as(i32, 520) else 340);
     var cy = listY + 2;
     header(ctx, cx, cy, fieldW, st.tab, st.row);

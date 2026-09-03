@@ -624,7 +624,7 @@ pub const Warrior = struct {
     }
 
     pub fn navWant(self: *const Warrior, hero: rl.Vector3) ?rl.Vector3 {
-        if (self.state == .approach) return if (self.homing) self.home else hero;
+        if (self.state == .approach) return if (self.homing) foe.tetherFor(self) else hero;
         if (self.state != .circle) return null;
         return self.routine.walkTo(self.pos, hero);
     }
@@ -671,7 +671,7 @@ pub const Warrior = struct {
                 if (self.t >= 0.18) self.decide(d);
             },
             .approach => {
-                const tgt = if (self.homing) self.home else hero;
+                const tgt = if (self.homing) foe.tetherFor(self) else hero;
                 self.faceToward(self.nav.aim(self.pos, tgt), dt);
                 const f = self.fdir();
                 moveSpeed = self.approachSpeed(d);
@@ -684,7 +684,7 @@ pub const Warrior = struct {
                     if (d <= AGGRO_R) {
                         self.homing = false;
                         self.decide(d);
-                    } else if (mathx.distXZ(self.pos, self.home) <= foe.LEASH_HOME_R) self.enter(.idle);
+                    } else if (mathx.distXZ(self.pos, foe.tetherFor(self)) <= foe.LEASH_HOME_R) self.enter(.idle);
                 } else if (d <= self.longestTrigger() or d > AGGRO_R) self.decide(d);
             },
             .circle => {

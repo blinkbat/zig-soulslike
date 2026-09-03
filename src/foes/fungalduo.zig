@@ -706,7 +706,7 @@ pub const Swordsman = struct {
     pub fn navWant(self: *const Swordsman, hero: rl.Vector3) ?rl.Vector3 {
         _ = hero;
         if (self.state != .stride) return null;
-        if (self.homing) return self.home;
+        if (self.homing) return foe.tetherFor(self);
         return mathx.addV(self.pos, self.moveDir);
     }
 
@@ -796,7 +796,7 @@ pub const Swordsman = struct {
                 movedDist = moved;
                 moveYaw = mathx.headingXZ(way);
                 self.chanSet(SW_CARRY.chan());
-                if (self.homing and mathx.distXZ(self.pos, self.home) <= foe.LEASH_HOME_R) {
+                if (self.homing and mathx.distXZ(self.pos, foe.tetherFor(self)) <= foe.LEASH_HOME_R) {
                     self.homing = false;
                     self.enter(.idle);
                 } else if (self.t >= 0.22) self.decide(d, hero);
@@ -910,7 +910,7 @@ pub const Swordsman = struct {
     fn decide(self: *Swordsman, dist: f32, toward: rl.Vector3) void {
         if (self.leash.goingHome()) {
             self.homing = true;
-            self.moveDir = mathx.dirXZ(self.pos, self.home);
+            self.moveDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
             return self.enter(.stride);
         }
         self.homing = false;
@@ -941,7 +941,7 @@ pub const Swordsman = struct {
             .hold => {
                 if (mathx.distXZ(self.pos, foe.homeFor(self)) > foe.LEASH_HOME_R) {
                     self.homing = true;
-                    self.moveDir = mathx.dirXZ(self.pos, self.home);
+                    self.moveDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
                     self.enter(.stride);
                 } else self.enter(.idle);
             },
@@ -1238,7 +1238,7 @@ pub const Magus = struct {
     pub fn navWant(self: *const Magus, hero: rl.Vector3) ?rl.Vector3 {
         _ = hero;
         if (self.state != .drift) return null;
-        if (self.homing) return self.home;
+        if (self.homing) return foe.tetherFor(self);
         return mathx.addV(self.pos, self.moveDir);
     }
 
@@ -1324,7 +1324,7 @@ pub const Magus = struct {
                 movedDist = moved;
                 moveYaw = mathx.headingXZ(way);
                 self.chanSet(MG_CARRY.chan());
-                if (self.homing and mathx.distXZ(self.pos, self.home) <= foe.LEASH_HOME_R) {
+                if (self.homing and mathx.distXZ(self.pos, foe.tetherFor(self)) <= foe.LEASH_HOME_R) {
                     self.homing = false;
                     self.enter(.idle);
                 } else if (self.t >= MG_DRIFT_DUR) self.decide(d, hero);
@@ -1428,7 +1428,7 @@ pub const Magus = struct {
     fn decide(self: *Magus, dist: f32, toward: rl.Vector3) void {
         if (self.leash.goingHome()) {
             self.homing = true;
-            self.moveDir = mathx.dirXZ(self.pos, self.home);
+            self.moveDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
             return self.enter(.drift);
         }
         self.homing = false;
@@ -1460,7 +1460,7 @@ pub const Magus = struct {
             .hold => {
                 if (mathx.distXZ(self.pos, foe.homeFor(self)) > foe.LEASH_HOME_R) {
                     self.homing = true;
-                    self.moveDir = mathx.dirXZ(self.pos, self.home);
+                    self.moveDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
                     self.enter(.drift);
                 } else self.enter(.idle);
             },

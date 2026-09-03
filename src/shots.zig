@@ -649,7 +649,7 @@ pub fn runShots(g: *Game) void {
     advanceAttack(g, dt, 999);
     g.menu.hitboxes = false;
 
-    // table are taken from it (`liveMid`, `hitA`/`hitB`). Yaw 53 puts the sun over the lens's shoulder.
+    // Yaw 53 puts the sun over the lens's shoulder.
     const meleeWorn = g.hero.worn;
     g.rig.yaw = mathx.radians(53);
     g.rig.pitch = 0.13;

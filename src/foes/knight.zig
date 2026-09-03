@@ -1850,7 +1850,7 @@ pub const Knight = struct {
 
     pub fn navWant(self: *const Knight, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .approach) return null;
-        return if (self.homing) self.home else hero;
+        return if (self.homing) foe.tetherFor(self) else hero;
     }
 
     pub fn update(self: *Knight, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
@@ -1918,7 +1918,7 @@ pub const Knight = struct {
                 if (self.t >= 0.18) self.decide(d, bearing);
             },
             .approach => {
-                const tgt = if (self.homing) self.home else hero;
+                const tgt = if (self.homing) foe.tetherFor(self) else hero;
                 self.faceToward(self.nav.aim(self.pos, tgt), dt);
                 const f = self.fdir();
                 moveSpeed = WALK_SPEED;
@@ -1931,7 +1931,7 @@ pub const Knight = struct {
                     if (d <= AGGRO_R) {
                         self.homing = false;
                         self.decide(d, bearing);
-                    } else if (mathx.distXZ(self.pos, self.home) <= foe.LEASH_HOME_R) self.enterIdle();
+                    } else if (mathx.distXZ(self.pos, foe.tetherFor(self)) <= foe.LEASH_HOME_R) self.enterIdle();
                 } else if (d <= self.longestTrigger() or d > AGGRO_R or self.wantsFall(d, bearing) or self.chargeReady()) {
                     self.decide(d, bearing);
                 }

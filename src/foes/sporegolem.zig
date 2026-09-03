@@ -244,7 +244,7 @@ pub const Golem = struct {
     }
     pub fn navWant(self: *const Golem, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .walk) return null;
-        return if (self.leash.goingHome()) self.home else hero;
+        return if (self.leash.goingHome()) foe.tetherFor(self) else hero;
     }
     pub fn bodyR(self: *const Golem) f32 {
         return BODY_R * self.scale;
@@ -352,7 +352,7 @@ pub const Golem = struct {
                 if (self.t >= 0.35) self.decide(d);
             },
             .walk => {
-                const tgt = if (self.leash.goingHome()) self.home else hero;
+                const tgt = if (self.leash.goingHome()) foe.tetherFor(self) else hero;
                 self.face(self.nav.aim(self.pos, tgt), dt);
                 const step = WALK_SPEED * dt;
                 mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), step, bounds);

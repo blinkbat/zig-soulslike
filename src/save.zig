@@ -787,7 +787,7 @@ test "a save round-trips through its own text" {
     const d = sample();
     const back = try roundTrip(&d);
     inline for (@typeInfo(Data).@"struct".fields) |f| {
-        // are written, and `Drop.loot` past that is `undefined` on both sides.
+        // Only the first `groundN` drops are written, and `Drop.loot` past that is `undefined` on both sides.
         if (comptime std.mem.eql(u8, f.name, "ground")) continue;
         try expectSame(f.type, f.name, @field(d, f.name), @field(back, f.name));
     }

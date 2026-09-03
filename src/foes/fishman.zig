@@ -506,7 +506,8 @@ pub const Fishman = struct {
                 if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enter(.idle);
             },
             .roll => {
-                // FRAME.** Written as a rate the arc came out at 2.33 m of an advertised 3.30 — the profile's
+                // A ROLL IS A DISTANCE, SO IT IS BILLED OFF THE PROFILE'S OWN INTEGRAL AND NOT PER FRAME.
+                // Written as a rate the arc came out at 2.33 m of an advertised 3.30 — the profile's
                 // own mean silently rescaled it, which is the kind of number a comptime assert cannot see.
                 const u = mathx.clampF(self.t / ROLL_DUR, 0, 1);
                 const was = mathx.clampF((self.t - dt) / ROLL_DUR, 0, 1);

@@ -408,7 +408,7 @@ pub const Ancient = struct {
 
     pub fn navWant(self: *const Ancient, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .drift) return null;
-        if (self.homing) return self.home;
+        if (self.homing) return foe.tetherFor(self);
         if (self.routine.current() != null) return self.routine.walkTo(self.pos, hero);
         return null;
     }
@@ -453,14 +453,15 @@ pub const Ancient = struct {
             .drift => {
                 self.pose_.toward(CARRY, ease);
                 if (self.homing) {
-                    self.faceToward(self.home, dt);
-                    const way = self.nav.along(mathx.dirXZ(self.pos, self.home));
+                    const post = foe.tetherFor(self);
+                    self.faceToward(post, dt);
+                    const way = self.nav.along(mathx.dirXZ(self.pos, post));
                     moveSpeed = WALK_SPEED;
                     const moved = moveSpeed * dt * self.chill.travel();
                     mathx.stepXZ(&self.pos, way, moved, bounds);
                     movedDist = moved;
                     moveYaw = mathx.headingXZ(way);
-                    if (mathx.distXZ(self.pos, self.home) <= foe.LEASH_HOME_R) {
+                    if (mathx.distXZ(self.pos, post) <= foe.LEASH_HOME_R) {
                         self.homing = false;
                         self.enter(.idle);
                     }

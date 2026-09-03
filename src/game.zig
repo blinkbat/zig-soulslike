@@ -3872,6 +3872,9 @@ fn markWade(g: *Game) void {
     }
 }
 
+/// priests × skitterers every frame with no distance gate. Both groups cap at `wf.MAX_PER_KIND`, so the worst
+/// case is 262,144 `distXZ` a frame — `settleGroup`'s order, about a millisecond, and reachable only by a map
+/// that maxes BOTH. Squaring the test would drop the sqrt but moves a body sitting on `RAISE_KEEP_R` by an ulp.
 fn markFlock(g: *Game) void {
     if (g.crypt.n == 0) return;
     for (g.crypt.live()) |*p| {

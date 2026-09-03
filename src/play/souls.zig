@@ -44,7 +44,8 @@ const TAKE_INTO: f32 = 1.05;
 /// THE HUM IS A RETRIGGER, NOT A LOOP (`leechfly.WHINE_EVERY`'s rule — raylib cannot loop a synthesized take). Cut a hair SHORTER than the voice itself so consecutive takes overlap: gapped, a standing hum pulses, and a pulse reads as something arming rather than something waiting.
 const HUM_EVERY: f32 = 1.15;
 
-/// It must read as GOLD and not as BONE. Vertex alpha is the emissive channel (255 = lit by the sun, lower =
+/// It must read as GOLD and not as BONE. Vertex alpha is the emissive channel — the scene shader reads
+/// `1 - fragColor.a`, so 255 is lit by the sun alone and lower is more self-lit.
 /// MEASURED: at alpha 58 screen = 255·(albedo/255 · 1.236)^(1/2.2), so anything over albedo ~205 clips — tips
 /// authored at 246,220,150 came back a white knuckle and read as bone. FOUR TONES: the reds step 150 → 214 → 246 → 254 and the blues 24 → 60 → 100 → 170, so it DESATURATES as it brightens, which is what hot metal does.
 const EMISSIVE: u8 = 58;

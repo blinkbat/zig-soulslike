@@ -408,7 +408,7 @@ pub const Mage = struct {
     pub fn navWant(self: *const Mage, hero: rl.Vector3) ?rl.Vector3 {
         _ = hero;
         if (self.state != .drift) return null;
-        if (self.homing) return self.home;
+        if (self.homing) return foe.tetherFor(self);
         return mathx.addV(self.pos, self.moveDir);
     }
 
@@ -505,7 +505,7 @@ pub const Mage = struct {
                 movedDist = moved;
                 moveYaw = mathx.headingXZ(way);
                 self.chanSet(CARRY);
-                if (self.homing and mathx.distXZ(self.pos, self.home) <= foe.LEASH_HOME_R) {
+                if (self.homing and mathx.distXZ(self.pos, foe.tetherFor(self)) <= foe.LEASH_HOME_R) {
                     self.homing = false;
                     self.enter(.idle);
                 } else if (self.t >= DRIFT_DUR) self.decide(d);
@@ -594,7 +594,7 @@ pub const Mage = struct {
     fn decide(self: *Mage, dist: f32) void {
         if (self.leash.goingHome()) {
             self.homing = true;
-            self.moveDir = mathx.dirXZ(self.pos, self.home);
+            self.moveDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
             return self.enter(.drift);
         }
         self.homing = false;
@@ -625,7 +625,7 @@ pub const Mage = struct {
             .hold => {
                 if (mathx.distXZ(self.pos, foe.homeFor(self)) > foe.LEASH_HOME_R) {
                     self.homing = true;
-                    self.moveDir = mathx.dirXZ(self.pos, self.home);
+                    self.moveDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
                     self.enter(.drift);
                 } else self.enter(.idle);
             },

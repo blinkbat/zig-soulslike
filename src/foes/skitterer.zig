@@ -163,7 +163,7 @@ fn restPose() [N]rl.Vector3 {
     return r;
 }
 
-/// METRE MORE**: a tip at radius `R` swept through ±θ covers `2·R·sin θ`, so the stance half of a stride asks
+/// A tip at radius `R` swept through ±θ covers `2·R·sin θ`, so the stance half of a stride asks
 /// for `θ = asin(STRIDE·RIB_DUTY / 2R)`. Guessed instead of solved, the feet skate.
 /// **SOLVED AT COMPTIME, SIX ROWS, ONCE.** As two functions off the rest pose this was six `asin` calls and six
 /// materialisations of the whole 18-bone rest array per creature per frame, for six numbers that cannot change.

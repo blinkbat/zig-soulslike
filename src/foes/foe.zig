@@ -1648,6 +1648,8 @@ pub fn homeFor(self: anytype) rl.Vector3 {
     return if (self.post.ai == .hold) self.home else self.pos;
 }
 
+/// **THE ANCHOR A GO-HOME WALKS TO, AND NEVER `self.home`** — `Leash.tick` arms and releases `returning`
+/// against THIS point, so a patroller sent home to its spawn pin arrives where the tether is still out.
 pub fn tetherFor(self: anytype) rl.Vector3 {
     const T = @TypeOf(self.*);
     if (comptime !@hasField(T, "post")) return self.home;

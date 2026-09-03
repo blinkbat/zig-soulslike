@@ -562,7 +562,7 @@ pub const Leechfly = struct {
 
     fn decide(self: *Leechfly, dist: f32, hero: rl.Vector3) void {
         if (self.leash.goingHome()) {
-            self.driftDir = mathx.dirXZ(self.pos, self.home);
+            self.driftDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
             return self.enter(.stalk);
         }
         switch (classify(dist, self.feedCd <= 0)) {

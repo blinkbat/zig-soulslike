@@ -127,7 +127,7 @@ const HAM_EL_LO: f32 = 8.0;
 const HAM_EL_HI: f32 = 112.0;
 const HAM_ABD: f32 = 7.0;
 const HAM_WRIST: f32 = 14.0;
-/// **WHERE THE HEAD ACTUALLY POINTS, IN THE WORLD** — degrees it leads FORWARD of plumb (0 down, 90 level, 180
+/// **WHERE THE HEAD ACTUALLY POINTS, IN THE WORLD** — degrees it leads FORWARD of plumb (0 down, 90 level, 180 on end).
 pub const HAM_BEAR_FACE: f32 = 30.0;
 pub const HAM_BEAR_TOP: f32 = 140.0;
 const HAM_TILT_LO: f32 = 63.0;

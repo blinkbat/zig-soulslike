@@ -416,7 +416,12 @@ pub const Wear = enum {
     }
 };
 
+/// **PRICED AS MULTIPLIERS ON THE ONE IT REPLACES**, never a fresh set of absolutes: `hero.ATK_*_HIT`,
+/// `combat.STAM_*` and `combat.GUARD_*` stay the one place a swing, a block and their bills are written, and a
 /// weapon says only how it DIFFERS. Bare-handed every dial is 1.
+///
+/// **WHICH SKILL DRIVES A WEAPON** — ER's scaling letters, ONE per armament. `quality` is the MEAN of the two
+/// curves, so either build carries the starting sword and neither is best with it.
 pub const Scaling = enum { strength, dexterity, quality };
 
 pub const Heft = enum {
@@ -474,6 +479,7 @@ pub const Res = struct {
 
 /// `a` is the armour value in `A/(A + 5*dmg)` (`combat.armourTaken`) and `res` the four elemental columns.
 /// **THE RATE NAMES ITS METER** — a bare `poison: f32` was fine while poison was the only meter; at ten, a piece
+/// that slowed "the status meter" slowed all ten for free.
 pub const Plate = struct { slot: Wear, a: f32 = 0, res: Res = .{}, rate: ?AilRate = null, move: f32 = 1 };
 
 pub const Charm = struct { slot: Wear, leech: f32 = 0, hpFrac: f32 = 0, spiritFp: f32 = 1, fpFrac: f32 = 0 };

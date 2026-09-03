@@ -230,7 +230,7 @@ fn spellSet(r: usize, c: usize, v: f32) void {
 }
 
 const AIL_COLS = [_]Col{
-    .{ .name = "max", .hi = 300, .step = 1, .tip = "The meter's own size — what a full bar is worth in buildup" },
+    .{ .name = "max", .hi = 300, .step = 1, .tip = "The meter's own size - what a full bar is worth in buildup" },
     .{ .name = "decay", .hi = 120, .step = 0.5, .tip = "Meter a second it empties at once nothing is filling it" },
     .{ .name = "delay", .hi = 6, .step = 0.1, .tip = "Seconds after the last dose before it starts emptying" },
     .{ .name = "dur", .hi = 30, .step = 0.2, .tip = "Seconds the proc runs for" },
@@ -355,7 +355,7 @@ comptime {
 }
 
 const ARM_COLS = [_]Col{
-    .{ .name = "dmg", .hi = 4, .step = 0.02, .tip = "Multiplier on the bare stroke's damage — the straight sword is 1 on every dial" },
+    .{ .name = "dmg", .hi = 4, .step = 0.02, .tip = "Multiplier on the bare stroke's damage - the straight sword is 1 on every dial" },
     .{ .name = "poise", .hi = 4, .step = 0.02, .tip = "Multiplier on what the stroke takes off a body's flinch pool" },
     .{ .name = "dur", .hi = 3, .step = 0.02, .tip = "Multiplier on how long the swing takes" },
     .{ .name = "stam", .hi = 3, .step = 0.02, .tip = "Multiplier on what the swing bills in stamina" },
@@ -596,7 +596,7 @@ const USE_COLS = [_]Col{
     .{ .name = "dose", .hi = 200, .step = 1, .tip = "Meter it puts in whatever it lands on" },
     .{ .name = "ward", .hi = 100, .step = 1, .tip = "Points of resistance the tonic wards for" },
     .{ .name = "secs", .hi = 300, .step = 1, .tip = "Seconds the effect runs" },
-    .{ .name = "frac", .hi = 4, .step = 0.01, .tip = "The share this one deals in — of the bar, of the blow, of what is left" },
+    .{ .name = "frac", .hi = 4, .step = 0.01, .tip = "The share this one deals in - of the bar, of the blow, of what is left" },
     .{ .name = "mult", .hi = 6, .step = 0.05, .tip = "What it multiplies while it runs" },
     .{ .name = "n", .hi = 4000, .step = 1, .int = true, .tip = "How many: arrows in a sheaf, souls in a stone" },
     .{ .name = "radius", .hi = 20, .step = 0.1, .tip = "Metres the burst reaches, and 0 where the blow is the shaft's own" },
@@ -774,7 +774,7 @@ fn useHas(r: usize, c: usize) bool {
 }
 
 const NODE_COLS = [_]Col{
-    .{ .name = "grant", .hi = 400, .step = 0.05, .tip = "What the node gives. Its own units — a share, a multiplier, a flat pool, or points of an attribute" },
+    .{ .name = "grant", .hi = 400, .step = 0.05, .tip = "What the node gives. Its own units - a share, a multiplier, a flat pool, or points of an attribute" },
     .{ .name = "rider", .hi = 20, .step = 1, .int = true, .tip = "The stat-up riding it, in points" },
 };
 
@@ -1347,7 +1347,7 @@ pub const TABLES = [_]Table{
     .{
         .name = "Armaments",
         .key = "arm",
-        .tip = "Every dial is a multiple of the bare stroke — the straight sword is 1 on all of them",
+        .tip = "Every dial is a multiple of the bare stroke - the straight sword is 1 on all of them",
         .n = ARM_ROWS.len,
         .cols = &ARM_COLS,
         .rowName = armRowName,
@@ -1375,7 +1375,7 @@ pub const TABLES = [_]Table{
     .{
         .name = "Trinkets",
         .key = "trinket",
-        .tip = "Rings, charms and the neck — what they give and what they cost",
+        .tip = "Rings, charms and the neck - what they give and what they cost",
         .n = TRINKET_ROWS.len,
         .cols = &TRINKET_COLS,
         .rowName = trinketRowName,
@@ -1711,6 +1711,7 @@ pub fn load() void {
     }
 }
 
+/// The bench itself can only ever write `absolute / code` with the absolute already
 /// inside the column, so a hand-edited `hp 1e9` was the one door in with no bound on it at all — and `load`
 /// runs before any body exists, so the code value is usually 0 and there is no absolute to clamp through.
 /// Bounded by the column's own span in that case, which at least refuses a NaN, an infinity and a negative.

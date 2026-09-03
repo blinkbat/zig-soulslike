@@ -167,6 +167,31 @@ pub fn slopeLean(rise: f32) f32 {
     return mathx.clampF(deg, -SLOPE_LEAN_MAX, SLOPE_LEAN_MAX);
 }
 
+/// **THE FALL.** Free under `FALL_FREE`, certain death at `FALL_DEATH`, and a power curve between so the
+/// first metres past the lip cost little and the last cost everything. Fractions of `hpMax`, so a levelled
+/// vitality buys the same number of metres it always did.
+pub const FALL_FREE: f32 = 4.0;
+pub const FALL_DEATH: f32 = 13.0;
+const FALL_POW: f32 = 1.5;
+/// Past `FALL_FREE` it is never a scratch — the floor is what stops dexterity from making a drop free.
+const FALL_MIN_FRAC: f32 = 0.06;
+/// Most a maxed dexterity takes off the landing. It buys a quarter and NOT the height that kills.
+const FALL_DEX_CUT: f32 = 0.25;
+
+pub fn fallDexCut(dex: u8) f32 {
+    const lo: f32 = @floatFromInt(statsmod.START);
+    const hi: f32 = @floatFromInt(statsmod.MAX);
+    return FALL_DEX_CUT * mathx.clampF((@as(f32, @floatFromInt(dex)) - lo) / (hi - lo), 0, 1);
+}
+
+pub fn fallDamage(drop: f32, hpMax: f32, dex: u8) f32 {
+    if (drop <= FALL_FREE) return 0;
+    if (drop >= FALL_DEATH) return hpMax * 1000;
+    const u = (drop - FALL_FREE) / (FALL_DEATH - FALL_FREE);
+    const frac = std.math.pow(f32, u, FALL_POW) * (1.0 - fallDexCut(dex));
+    return hpMax * mathx.maxF(frac, FALL_MIN_FRAC);
+}
+
 pub const JUMP_APEX: f32 = 1.0;
 pub const JUMP_AIR: f32 = 0.72;
 const JUMP_G: f32 = 8.0 * JUMP_APEX / (JUMP_AIR * JUMP_AIR);
@@ -1498,6 +1523,9 @@ pub const Hero = struct {
     /// A WORLD height, integrated under gravity; `lift` is DERIVED off it. A lift integrated over a moving
     /// datum sinks with the ground it was measured from when he runs off a ledge.
     airY: f32 = 0,
+    /// The highest `airY` reached this flight. The DROP is measured off this and not off where the flight
+    /// began, or a jump taken one stride before the lip is a shorter fall than a walk off it.
+    airTop: f32 = 0,
     vertVel: f32 = 0,
     jumping: bool = false,
     launched: bool = false,
@@ -1767,6 +1795,7 @@ pub const Hero = struct {
         self.jumping = true;
         self.jumps +%= 1;
         self.airY = self.pos.y;
+        self.airTop = self.airY;
         self.vertVel = JUMP_V0;
         self.airSpeed = if (mathx.lenXZ(dir) > 0.01) speed else 0;
         self.airYaw = if (self.airSpeed > 0.01) mathx.headingXZ(dir) else self.facing;
@@ -1791,6 +1820,7 @@ pub const Hero = struct {
         self.jumping = false;
         self.launched = true;
         self.airY = mathx.maxF(fromY, self.pos.y);
+        self.airTop = self.airY;
         self.vertVel = launchV0(apex);
         self.airSpeed = launchSpeed(apex);
         self.airYaw = if (mathx.lenXZ(away) > 1e-3) mathx.headingXZ(away) else self.facing + std.math.pi;
@@ -1870,6 +1900,7 @@ pub const Hero = struct {
         self.dropActions();
         self.jumping = true;
         self.airY = mathx.maxF(fromY, self.pos.y);
+        self.airTop = self.airY;
         self.vertVel = 0;
         self.airSpeed = if (mathx.lenXZ(dir) > 0.01) speed else 0;
         self.airYaw = if (self.airSpeed > 0.01) mathx.headingXZ(dir) else self.facing;
@@ -1885,9 +1916,11 @@ pub const Hero = struct {
             return;
         }
         self.airY += self.vertVel * dt - 0.5 * JUMP_G * dt * dt;
+        self.airTop = mathx.maxF(self.airTop, self.airY);
         self.vertVel -= JUMP_G * dt;
         if (self.airY <= self.pos.y) {
             const thrown = self.launched;
+            const drop = self.airTop - self.pos.y;
             self.airY = self.pos.y;
             self.lift = 0;
             self.vertVel = 0;
@@ -1895,6 +1928,7 @@ pub const Hero = struct {
             self.launched = false;
             self.landed = true;
             self.landT = 0;
+            if (self.hitGround(drop) == .death) return;
             // The LIGHT stun, not the heavy one: the flight already is the reaction — 0.66 s of it, and a 1.15 s
             // heavy stun on top made 1.8 s of no control off one blow. At 0.46 it comes to 1.12 s.
             if (thrown) {
@@ -1906,6 +1940,21 @@ pub const Hero = struct {
             return;
         }
         self.lift = self.airY - self.pos.y;
+    }
+
+    /// **THE GROUND IS NOT A BLOW.** Billed straight to `vit`, past armour and past the guard: a shield does
+    /// not catch the floor. It staggers on any drop that hurt, so a hard landing costs the beat as well.
+    fn hitGround(self: *Hero, drop: f32) combat.HitResult {
+        const dmg = fallDamage(drop, self.vit.hpMax, self.sheet.at(.dexterity));
+        if (dmg <= 0 or self.dead) return .none;
+        const r = self.vit.hit(.{ .dmg = dmg });
+        self.hurtFlash = mathx.maxF(self.hurtFlash, if (r == .death) 1.0 else 0.6);
+        if (r == .death) {
+            self.enterDeath();
+            return r;
+        }
+        self.enterStun(.light);
+        return r;
     }
 
     pub fn steerAir(self: *Hero, dt: f32, dir: rl.Vector3) void {
@@ -2584,6 +2633,7 @@ pub const Hero = struct {
     }
 
     /// Off the POSED ROD, so it rides the wrist and the kick. The last centimetres step out along his FACING,
+    /// not the rod's own axis, because `facing` is what the cone is aimed down (`breathDir`).
     pub fn breathMouth(self: *const Hero) rl.Vector3 {
         const tip = self.wandTipWorld();
         const d = mathx.headingDir(self.facing);
@@ -3471,6 +3521,7 @@ pub const Hero = struct {
         self.mantling = false;
         self.lift = 0;
         self.airY = self.pos.y;
+        self.airTop = self.pos.y;
         self.vertVel = 0;
         self.airSpeed = 0;
         self.landT = mathx.LONG_AGO;
@@ -5549,6 +5600,51 @@ test "THE GROUND CATCHES HIS FEET WHEREVER IT IS — a jump onto a ledge lands e
         down.updateAir(1.0 / 60.0, null);
     }
     try std.testing.expect(t > flat);
+}
+
+test "THE FALL — free under the lip, certain at the bottom, and dexterity buys a quarter and not one metre" {
+    const hp = HP_MAX;
+    try std.testing.expectEqual(@as(f32, 0), fallDamage(FALL_FREE, hp, statsmod.MAX));
+    // The height that kills is not for sale: a maxed dexterity still dies at the bottom of the same shaft.
+    try std.testing.expect(fallDamage(FALL_DEATH, hp, statsmod.MAX) >= hp);
+    try std.testing.expect(fallDamage(FALL_DEATH - 0.01, hp, statsmod.MAX) < hp);
+    // Nor is it ever a scratch: one step past the lip already costs the floor.
+    try std.testing.expect(fallDamage(FALL_FREE + 0.01, hp, statsmod.MAX) >= hp * FALL_MIN_FRAC - 1e-3);
+    var d = FALL_FREE;
+    var prev: f32 = -1;
+    while (d < FALL_DEATH) : (d += 0.1) {
+        const cur = fallDamage(d, hp, statsmod.START);
+        try std.testing.expect(cur >= prev - 1e-4);
+        try std.testing.expect(fallDamage(d, hp, statsmod.MAX) <= cur + 1e-4);
+        prev = cur;
+    }
+
+    std.debug.print("  the fall on {d:.0} HP (vit {d}) — drop, then HP lost at dex {d} / dex {d}:\n", .{
+        hp, statsmod.START, statsmod.START, statsmod.MAX,
+    });
+    for ([_]f32{ 2, 4, 5, 6, 8, 10, 12, 13 }) |m| {
+        const raw = fallDamage(m, hp, statsmod.START);
+        const dex = fallDamage(m, hp, statsmod.MAX);
+        if (m >= FALL_DEATH) {
+            std.debug.print("    {d:>5.1} m: death\n", .{m});
+            continue;
+        }
+        std.debug.print("    {d:>5.1} m: {d:>5.1} / {d:>5.1}   ({d:.0}% / {d:.0}% of the pool)\n", .{
+            m, raw, dex, 100 * raw / hp, 100 * dex / hp,
+        });
+    }
+
+    // And it is billed on the LANDING, off the highest point of the flight and not off where it began.
+    var h = testHero();
+    h.pos = v3(0, 9.0, 0);
+    h.startFall(9.0, mathx.zero3, 0);
+    var t: f32 = 0;
+    while (h.airborne() and t < 5) : (t += 1.0 / 60.0) {
+        h.pos.y = 0;
+        h.updateAir(1.0 / 60.0, null);
+    }
+    try std.testing.expect(!h.airborne());
+    try std.testing.expectApproxEqAbs(hp - fallDamage(9.0, hp, statsmod.START), h.vit.hp, 0.5);
 }
 
 test "A JUMP IS COMMITTED: no second one out of the air, and nothing else starts out of it either" {

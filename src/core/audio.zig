@@ -5,8 +5,9 @@ const mathx = @import("mathx.zig");
 
 pub const SR: usize = 22050;
 const SRF: f32 = @floatFromInt(SR);
-/// Ceiling is the CAMPFIRE take (12.8 s); the synthesized voices top out at the 8 s wind bed.
-const MAX_N: usize = 13 * SR;
+/// Ceiling is the TITLE take (14.02 s, nine phrases of 1.5575 s); the campfire is 12.8 s and the synthesized
+/// voices top out at the 8 s wind bed. It sizes `work`/`tape`/`pcm` — 10 bytes a sample, so a second is 220 KB.
+const MAX_N: usize = 15 * SR;
 
 var work: [MAX_N]f32 = undefined;
 var tape: [MAX_N]f32 = undefined;
@@ -2996,19 +2997,24 @@ fn rebakeMix(m: Submix) void {
             bakeTake(@enumFromInt(f.value), idx);
         }
     }
-    if (m == .ambience) redressFire();
+    if (m == .ambience) redressStreams();
 }
 
-fn redressFire() void {
-    const old = restFire orelse return;
+/// Both streams sit on `.ambience`, so a rack edit has to re-dress both or the fire follows the menu's filters
+/// and the title track keeps the ones it was baked under.
+fn redressStreams() void {
+    redressStream(&restFire, dressedFire);
+    redressStream(&introMusic, dressedIntro);
+}
+
+fn redressStream(slot: *?rl.Music, dress: *const fn () []const u8) void {
+    const old = slot.* orelse return;
     const wasPlaying = rl.isMusicStreamPlaying(old);
     rl.stopMusicStream(old);
     rl.unloadMusicStream(old);
-    restFire = rl.loadMusicStreamFromMemory(".wav", dressedFire()) catch null;
-    if (restFire) |*m| {
-        m.looping = true;
-        rl.setMusicVolume(m.*, 0); // `restFireLevel` owns the level, and it re-sets it every frame
-        if (wasPlaying) rl.playMusicStream(m.*);
+    loadStream(slot, dress());
+    if (wasPlaying) {
+        if (slot.*) |m| rl.playMusicStream(m);
     }
 }
 
@@ -3018,11 +3024,8 @@ pub fn init() void {
     if (!rl.isAudioDeviceReady()) return;
     rl.setMasterVolume(MASTER_VOL);
     inline for (@typeInfo(Id).@"enum".fields, 0..) |f, idx| bakeTake(@enumFromInt(f.value), idx);
-    restFire = rl.loadMusicStreamFromMemory(".wav", dressedFire()) catch null;
-    if (restFire) |*m| {
-        m.looping = true;
-        rl.setMusicVolume(m.*, 0);
-    }
+    loadStream(&restFire, dressedFire());
+    loadStream(&introMusic, dressedIntro());
     ready = true;
 }
 
@@ -3045,6 +3048,26 @@ fn put32(b: []u8, at: usize, v: u32) void {
 }
 fn put16(b: []u8, at: usize, v: u16) void {
     std.mem.writeInt(u16, b[at..][0..2], v, .little);
+}
+
+/// The 44-byte canonical PCM header over `n` samples already written at `buf[44..]`. Returns the whole file.
+fn wavHeaderInto(buf: []u8, n: usize, chans: usize, rate: u32) []const u8 {
+    const bytes = 44 + n * 2;
+    const align16: u16 = @intCast(chans * 2);
+    @memcpy(buf[0..4], "RIFF");
+    put32(buf, 4, @intCast(bytes - 8));
+    @memcpy(buf[8..12], "WAVE");
+    @memcpy(buf[12..16], "fmt ");
+    put32(buf, 16, 16);
+    put16(buf, 20, 1);
+    put16(buf, 22, @intCast(chans));
+    put32(buf, 24, rate);
+    put32(buf, 28, rate * align16);
+    put16(buf, 32, align16);
+    put16(buf, 34, 16);
+    @memcpy(buf[36..40], "data");
+    put32(buf, 40, @intCast(n * 2));
+    return buf[0..bytes];
 }
 
 fn dressedFire() []const u8 {
@@ -3087,25 +3110,124 @@ fn dressedFire() []const u8 {
         std.mem.writeInt(i16, fireWav[44 + si * 2 ..][0..2], pcm16(s), .little);
     }
 
-    const rate: u32 = w.sampleRate;
-    const align16: u16 = @intCast(chans * 2);
-    @memcpy(fireWav[0..4], "RIFF");
-    put32(&fireWav, 4, @intCast(bytes - 8));
-    @memcpy(fireWav[8..12], "WAVE");
-    @memcpy(fireWav[12..16], "fmt ");
-    put32(&fireWav, 16, 16);
-    put16(&fireWav, 20, 1);
-    put16(&fireWav, 22, @intCast(chans));
-    put32(&fireWav, 24, rate);
-    put32(&fireWav, 28, rate * align16);
-    put16(&fireWav, 32, align16);
-    put16(&fireWav, 34, 16);
-    @memcpy(fireWav[36..40], "data");
-    put32(&fireWav, 40, @intCast(n * 2));
-    return fireWav[0..bytes];
+    return wavHeaderInto(&fireWav, n, chans, w.sampleRate);
+}
+
+const INTRO_WAV = @embedFile("intro_wav");
+
+/// The fire's chain on the title track, with **THE FILTER MOVED LAST**. The fire adds its hiss AFTER its
+/// lowpass on purpose — it wants the crackle on top of a dull bed. Here that left the two things the chain
+/// GENERATES unfiltered, and both are treble: the 7.5-bit dither floor and the hiss band. Measured, the take's
+/// own 7–9 kHz sits at -61 dB, so a broadband quantisation floor is well above the music up there and reads as
+/// a constant fizz. Driven hard into a two-pole rolloff instead — fuzz then cab, which is where the grit is
+/// supposed to come from.
+const INTRO_BASS_HZ: f32 = 190.0;
+const INTRO_BASS: f32 = 1.10;
+/// Into `x/(1+|x|)`, so this is the fuzz.
+const INTRO_DRIVE: f32 = 4.50;
+const INTRO_BITS: f32 = CRUSH_BITS;
+const INTRO_HOLD: u32 = 1;
+/// TWO poles: one is -6 dB/oct and barely touches the fizz the drive and the crush put up there.
+const INTRO_CUT: f32 = 3200.0;
+const INTRO_HISS: f32 = 0.004;
+/// The saturator lifts the average a long way before the peak moves, so the trim comes down with the drive.
+const INTRO_OUT: f32 = 0.62;
+
+/// **THE TAKE IS ALREADY A WHOLE NUMBER OF PHRASES, SO THE LOOP IS THE TAKE.** Onsets sit on a 1.5575 s grid
+/// (1.557, 3.115, 4.672, …) and 14.016 s is exactly nine of them; the first phrase is the silent lead-in and
+/// the ninth ends on the accent that carries into it. Trimming either end takes the loop off that grid, which
+/// is the one thing you hear. Nothing is cut and nothing is folded — the only touch is a de-click over the
+/// last few milliseconds, because the source ends on a hard step (-968 straight to 0) and the head is silence.
+const INTRO_SEAM: f32 = 0.006;
+
+var introWav: [INTRO_WAV.len + 64]u8 = undefined;
+
+fn dressedIntro() []const u8 {
+    const w = rl.loadWaveFromMemory(".wav", INTRO_WAV) catch return INTRO_WAV;
+    defer rl.unloadWave(w);
+    if (w.sampleSize != 16) return INTRO_WAV;
+    const frames: usize = @intCast(w.frameCount);
+    const chans: usize = @intCast(w.channels);
+    const n = frames * chans;
+    if (n == 0 or 44 + n * 2 > introWav.len or n > MAX_N) return INTRO_WAV;
+    const src: [*]i16 = @ptrCast(@alignCast(w.data));
+
+    var low = Pole{};
+    var lp = Pole{};
+    var lq = Pole{};
+    var hp = Pole{};
+    var hq = Pole{};
+    var r = mathx.Rng.init(0x1470DE);
+    const levels = std.math.pow(f32, 2.0, INTRO_BITS) * 0.5;
+    var held: f32 = 0;
+    var k: u32 = 0;
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        var x = @as(f32, @floatFromInt(src[i])) / 32768.0;
+        x += INTRO_BASS * low.step(x, INTRO_BASS_HZ);
+        const d = x * INTRO_DRIVE;
+        x = d / (1.0 + @abs(d));
+        if (k == 0) held = x;
+        k = (k + 1) % @max(INTRO_HOLD, 1);
+        const dith = (r.signed() + r.signed()) * 0.5 / levels * DITHER_LSB;
+        x = @round((held + dith) * levels) / levels;
+        x += hq.step(hp.step(r.signed(), 5200), 2600) * INTRO_HISS;
+        x = lq.step(lp.step(x, INTRO_CUT), INTRO_CUT);
+        work[i] = mathx.clampF(x * INTRO_OUT, -1, 1);
+    }
+
+    var ir = Rack{ .n = n, .rng = mathx.Rng.init(0x1470DE ^ 0x5EED) };
+    applyFx(&ir, .ambience);
+
+    seamOut(n, INTRO_SEAM);
+    for (work[0..n], 0..) |s, si| {
+        std.mem.writeInt(i16, introWav[44 + si * 2 ..][0..2], pcm16(s), .little);
+    }
+    return wavHeaderInto(&introWav, n, chans, w.sampleRate);
+}
+
+/// Unconditional, because `applyRack`'s own `ends` never runs with the rack off (`applyFx` returns early) and
+/// the step would be back. Length is untouched: the loop has to stay on its own grid.
+fn seamOut(n: usize, secs: f32) void {
+    const k = @min(@as(usize, @intFromFloat(mathx.maxF(secs, 0) * SRF)), n);
+    if (k == 0) return;
+    const span: f32 = @floatFromInt(k);
+    for (0..k) |j| work[n - 1 - j] *= @as(f32, @floatFromInt(j)) / span;
 }
 
 var restFire: ?rl.Music = null;
+var introMusic: ?rl.Music = null;
+
+fn loadStream(slot: *?rl.Music, dressed: []const u8) void {
+    slot.* = rl.loadMusicStreamFromMemory(".wav", dressed) catch null;
+    if (slot.*) |*m| {
+        m.looping = true;
+        rl.setMusicVolume(m.*, 0); // the level setter owns it, and re-sets it every frame
+    }
+}
+
+pub fn introOn(on: bool) void {
+    const m = introMusic orelse return;
+    if (!ready) return;
+    if (on) {
+        if (rl.isMusicStreamPlaying(m)) return;
+        rl.setMusicVolume(m, 0);
+        rl.playMusicStream(m);
+        rl.seekMusicStream(m, 0);
+    } else {
+        rl.stopMusicStream(m);
+    }
+}
+
+pub fn introPlaying() bool {
+    const m = introMusic orelse return false;
+    return rl.isMusicStreamPlaying(m);
+}
+
+pub fn introLevel(v: f32) void {
+    const m = introMusic orelse return;
+    rl.setMusicVolume(m, mathx.clampF(v, 0, 1) * userVol[@intFromEnum(Submix.ambience)]);
+}
 
 pub fn restFireOn(on: bool) void {
     const m = restFire orelse return;
@@ -3125,8 +3247,10 @@ pub fn restFireLevel(v: f32) void {
 }
 
 pub fn tickStreams() void {
-    const m = restFire orelse return;
-    if (rl.isMusicStreamPlaying(m)) rl.updateMusicStream(m);
+    for ([_]?rl.Music{ restFire, introMusic }) |slot| {
+        const m = slot orelse continue;
+        if (rl.isMusicStreamPlaying(m)) rl.updateMusicStream(m);
+    }
 }
 
 /// The CLAMP is what makes this a function rather than a multiply: a sample past ±1.024 is not a clipped take but an out-of-range `@intFromFloat`.
@@ -3151,9 +3275,11 @@ fn bake(r: *Rack) rl.Sound {
 pub fn deinit() void {
     if (!ready) return;
     if (restFire) |m| rl.stopMusicStream(m);
+    if (introMusic) |m| rl.stopMusicStream(m);
     for (0..NV) |idx| stopRow(idx);
     for (0..NV) |idx| freeRow(idx);
     if (restFire) |m| rl.unloadMusicStream(m);
+    if (introMusic) |m| rl.unloadMusicStream(m);
     ready = false;
     rl.closeAudioDevice();
 }
@@ -3353,8 +3479,17 @@ fn bedLevel(row: Row, h: Hour) f32 {
     return levelFor(row, hourGain(h), 1.0);
 }
 
+/// A slow global ramp over every bed. Both the level setter and the hold go through `bedDial`, so this is the
+/// one place it has to be multiplied in — and `ambience`'s own `lvl <= 0.004` floor keeps a bed silent until
+/// the ramp has actually brought it up rather than starting it at nothing.
+var bedFade: f32 = 1.0;
+
+pub fn ambienceFade(v: f32) void {
+    bedFade = mathx.clampF(v, 0, 1);
+}
+
 fn bedDial(b: Bed) f32 {
-    return if (b.dial) |d| d.* else 1.0;
+    return bedFade * if (b.dial) |d| d.* else 1.0;
 }
 
 pub const SETTINGS_PATH = "settings.cfg";
@@ -3769,6 +3904,103 @@ test "the buffer never starts or ends on a step (that is the click you cannot un
     }
 }
 
+fn introSamples(out: []const u8) usize {
+    return std.mem.readInt(u32, out[40..44], .little) / 2;
+}
+
+fn introAt(i: usize) f32 {
+    return @as(f32, @floatFromInt(std.mem.readInt(i16, introWav[44 + i * 2 ..][0..2], .little))) / 32768.0;
+}
+
+var srcTake: ?[*]const i16 = null;
+
+fn takeAt(i: usize) f32 {
+    return @as(f32, @floatFromInt((srcTake orelse return 0)[i])) / 32768.0;
+}
+
+/// Energy above `cut` as a share of the whole, in dB — the one number "how bad is the treble" actually means.
+/// A one-pole split, so it is the same filter the chain itself is built out of.
+fn trebleShare(get: *const fn (usize) f32, n: usize, cut: f32) f32 {
+    var p = Pole{};
+    var hiSum: f64 = 0;
+    var allSum: f64 = 0;
+    for (0..n) |i| {
+        const x = get(i);
+        const hi = x - p.step(x, cut);
+        hiSum += @as(f64, hi) * hi;
+        allSum += @as(f64, x) * x;
+    }
+    if (allSum <= 0) return -120;
+    return @floatCast(10.0 * std.math.log10(hiSum / allSum));
+}
+
+// The seam is the one thing an ear catches and a screenshot cannot show, so it is measured: the step ACROSS
+// the wrap against the steps inside the buffer. A butt-joined loop reads as a click because that one step is
+// orders of magnitude bigger than its neighbours.
+test "THE TITLE TRACK LOOPS WITHOUT A CLICK — the wrap is an ordinary step, with the rack on and with it off" {
+    // **raylib LOGS TO STDOUT, AND UNDER `zig build test` STDOUT IS THE BUILD RUNNER'S IPC CHANNEL.** The wave
+    // loader's `INFO: WAVE: Data loaded` corrupts that protocol: the runner stops understanding the stream, the
+    // binary blocks on it, and the step dies at 255 with every test reported as passed. Bare, it exits 0.
+    // Nothing else in the suite reaches raylib's file IO, which is why this is the only test that has to say so.
+    rl.setTraceLogLevel(.none);
+    defer rl.setTraceLogLevel(.info);
+
+    const was = fxVals[@intFromEnum(Submix.ambience)];
+    defer fxVals[@intFromEnum(Submix.ambience)] = was;
+
+    const srcW = try rl.loadWaveFromMemory(".wav", INTRO_WAV);
+    const srcN: usize = @as(usize, @intCast(srcW.frameCount)) * @as(usize, @intCast(srcW.channels));
+    const srcPtr: [*]const i16 = @ptrCast(@alignCast(srcW.data));
+    srcTake = srcPtr;
+    const srcTreble = trebleShare(takeAt, srcN, 4000);
+    rl.unloadWave(srcW);
+    srcTake = null;
+    try std.testing.expect(srcN > 0 and srcN <= MAX_N);
+    std.debug.print("\n  intro take treble over 4 kHz: {d:.1} dB of the whole", .{srcTreble});
+
+    // The take's own phrase, off its onset grid: 1.557, 3.115, 4.672 … and the whole thing is nine of them.
+    const PHRASE: f32 = 1.5575;
+    const units = @as(f32, @floatFromInt(srcN)) / SRF / PHRASE;
+    std.debug.print("\n  intro take: {d} samples, {d:.3} s = {d:.3} phrases of {d:.4} s", .{ srcN, @as(f32, @floatFromInt(srcN)) / SRF, units, PHRASE });
+    try std.testing.expectApproxEqAbs(@round(units), units, 0.02);
+
+    for ([_]bool{ false, true }) |racked| {
+        fxVals[@intFromEnum(Submix.ambience)] = [_]f32{0} ** AFX_COUNT;
+        // With the rack OFF `applyFx` returns before `ends`, which is why the de-click cannot live in there.
+        if (racked) applyFxPreset(.ambience, &FX_TAPE);
+        const out = dressedIntro();
+        // Not the raw embed: a fallback would make every number below a measurement of the wrong buffer.
+        try std.testing.expect(out.ptr == introWav[0..].ptr);
+
+        const n = introSamples(out);
+        // NOTHING IS CUT. The loop is the take, or it drifts off the grid a phrase at a time.
+        try std.testing.expectEqual(srcN, n);
+
+        var worst: f32 = 0;
+        var sum: f64 = 0;
+        for (1..n) |i| {
+            const d = @abs(introAt(i) - introAt(i - 1));
+            worst = mathx.maxF(worst, d);
+            sum += d;
+        }
+        const mean: f32 = @floatCast(sum / @as(f64, @floatFromInt(n - 1)));
+        const wrap = @abs(introAt(0) - introAt(n - 1));
+        std.debug.print(
+            "\n  intro loop{s}: {d} samples ({d:.2} s) | wrap step {d:.6} against mean {d:.6} and worst {d:.6}",
+            .{ if (racked) " (racked)" else "", n, @as(f32, @floatFromInt(n)) / SRF, wrap, mean, worst },
+        );
+        // The seam has to sit among the ordinary steps, not above them.
+        try std.testing.expect(wrap <= mean);
+
+        const dressed = trebleShare(introAt, n, 4000);
+        std.debug.print("  | treble over 4 kHz {d:.1} dB of the whole", .{dressed});
+        // THE CHAIN MAY NOT BE BRIGHTER THAN THE TAKE. The dither floor and the hiss are both generated up
+        // there, so a filter that does not come last puts fizz where the music measures -61 dB.
+        try std.testing.expect(dressed <= srcTreble + 1.0);
+    }
+    std.debug.print("\n", .{});
+}
+
 test "the world falloff is silent past its own range and loudest underfoot" {
     // and a pan that leaves the 0..1 range is a raylib assert.
     listen(mathx.zero3, mathx.v3(1, 0, 0));
@@ -3854,6 +4086,7 @@ test "THE BACKGROUND IS BACKGROUND — the ambience trim, and only the ambience"
 }
 
 const Rendered = struct {
+    /// Zero crossings a second — a cheap brightness proxy, and the one that catches a voice made of
     /// high partials: a sustained 2.3 kHz cluster crosses an order of magnitude more often than a body at 250.
     fn brightness(n: usize) f32 {
         var crossings: f32 = 0;

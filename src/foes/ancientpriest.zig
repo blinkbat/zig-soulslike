@@ -382,7 +382,7 @@ pub const Ancient = struct {
         };
     }
 
-    /// **THE COLD IT OWES THIS FRAME, OR NULL** — billed through the hero's ordinary door. The arc is measured
+    /// ONE READER for the reach, so the decision and the blow cannot disagree.
     pub fn breathReach(self: *const Ancient) f32 {
         return BREATH_REACH * self.scale;
     }

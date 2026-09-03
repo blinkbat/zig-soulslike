@@ -126,7 +126,6 @@ const G = struct {
         const a = g.p(x - bw * 0.5, y - bh * 0.5);
         rl.drawRectangleLinesEx(.{ .x = a.x, .y = a.y, .width = bw * g.s, .height = bh * g.s }, w * g.s, c);
     }
-    /// raylib culls the back face, so the winding is fixed here and nowhere else.
     fn tri(g: *const G, ax: f32, ay: f32, bx: f32, by: f32, cx_: f32, cy_: f32, c: rl.Color) void {
         triV(g.p(ax, ay), g.p(bx, by), g.p(cx_, cy_), c);
     }
@@ -732,6 +731,7 @@ const G = struct {
     }
 
     /// A lens and a solid pupil — the smallest glyph in the set, about a dozen pixels, where anything more came
+    /// out as one grey blob. `eyeOff` keeps the whole open eye and strikes it: a closed lid is a dash.
     fn eyeInto(g: *const G, struck: bool) void {
         const body = if (struck) g.soft else g.col;
         const w = g.w / g.s;

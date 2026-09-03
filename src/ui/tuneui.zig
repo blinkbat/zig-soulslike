@@ -344,10 +344,15 @@ pub fn panel(st: *State, ctx: *ui.Ctx) bool {
     return true;
 }
 
-test "NO TIP THE BENCH CARRIES IS WIDER THAN THE BUFFER THAT COPIES IT" {
+test "NO TIP THE BENCH CARRIES IS WIDER THAN THE BUFFER THAT COPIES IT, OR CARRIES A GLYPH THE ATLAS HASN'T GOT" {
     var widest: usize = 0;
     var which: []const u8 = "";
+    var tofu: usize = 0;
     for (tune.TABLES, 0..) |tb, t| {
+        if (!hud.drawable(tb.tip)) {
+            tofu += 1;
+            std.debug.print("\n  bench table tip is not ASCII: \"{s}\"\n", .{tb.tip});
+        }
         if (tb.tip.len > widest) {
             widest = tb.tip.len;
             which = tb.name;
@@ -355,12 +360,17 @@ test "NO TIP THE BENCH CARRIES IS WIDER THAN THE BUFFER THAT COPIES IT" {
         for (0..tb.n) |r| {
             for (0..tb.cols.len) |c| {
                 const tip = tune.colSpec(t, r, c).tip;
+                if (!hud.drawable(tip)) {
+                    tofu += 1;
+                    std.debug.print("\n  bench column tip is not ASCII: \"{s}\"\n", .{tip});
+                }
                 if (tip.len <= widest) continue;
                 widest = tip.len;
                 which = tip;
             }
         }
     }
+    try std.testing.expectEqual(@as(usize, 0), tofu);
     std.debug.print("\n  widest bench tip: {d} of {d} chars — \"{s}\"\n", .{ widest, ui.MSG_CAP - 1, which });
     // `ui.Ctx.setTip` copies into `MSG_CAP` bytes and drops the rest without a word.
     try std.testing.expect(widest < ui.MSG_CAP);

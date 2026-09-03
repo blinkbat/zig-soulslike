@@ -133,6 +133,7 @@ const WALK_SPEED = heromod.WALK_SPEED_BANK * 0.72;
 pub var AGGRO_R: f32 = 18.0;
 const SLAM_R = 2.3;
 const SWIPE_R = 4.4;
+/// **THE REFERENCE FOR HOW HARD A BIG BODY FOLLOWS YOU** — PUBLIC because the bone knight is pinned into this
 /// class rather than tuned against nothing (owner: track like the ogre). rad/s; ~195 deg/s.
 pub const TURN_RATE = 3.4;
 pub const SWIPE_TURN = 5.4;
@@ -311,6 +312,7 @@ const SWIPE_NEAR_K = 0.5;
 
 const WIND_TURN_SHARE: f32 = 0.4;
 
+/// The drop itself turns not at all, so all the aiming the slam ever gets is the rear-back's, and its
 /// floor is the wind with no hang on it. Measured before the gate: thrown at a man 170° off he came round to
 /// 64° and billed nothing at three of four stands.
 fn slamBearing(dist: f32, scale: f32) f32 {

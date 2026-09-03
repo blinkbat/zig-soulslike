@@ -97,6 +97,7 @@ fn hearthInto(b: *Builder, rng: *mathx.Rng, cold: bool) void {
 
 /// **IT IS NOT A COPY OF THE BONFIRE.** This hearth is smaller — its stones ring at 0.68 against the bonfire's
 /// 1.08 — so the ash bed, the flame and the smoke are all scaled to it (`CAMP_S`); the same OBJECT, at the size
+/// of the fire that is actually burning.
 const CAMP_S: f32 = 0.72;
 const SMOKE_SRC: f32 = 0.62;
 pub fn campfireMesh(shader: rl.Shader) rl.Model {

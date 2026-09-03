@@ -194,6 +194,7 @@ pub fn foeStunDur(heavy: bool) f32 {
 /// 0.82 puts his base blows on the old scale: 13 damage pours 10.7 where the light swing carried 10 poise, and
 /// 27 pours 22.1 where the heavy carried 22.
 pub var FOE_POISE_PER_DMG: f32 = 0.82;
+/// **YOU CANNOT DO ONE THING OVER AND OVER** (owner). Each light stun, heavy stun and status proc on a creature
 /// leaves WEAR on that channel: the next takes (1 + wear × this) as much. Wear halves every `WEAR_HALFLIFE`.
 pub const LIGHT_WEAR: f32 = 0.60;
 pub const HEAVY_WEAR: f32 = 0.60;
@@ -793,6 +794,7 @@ pub const SIPHON_HIT = Hit{ .elem = elems(.{ .chaos = 18 }) };
 pub const SIPHON_SHARE: f32 = 0.55;
 pub const SIPHON_REACH: f32 = 12.0;
 
+/// The only spell that does not stop at the first body: a LANCE
 /// goes THROUGH. PER BODY and deliberately small, priced where the rime is — what it buys is the SECOND body and the third. Poise under the levin's 34 and over a hero light's.
 pub const LANCE_HIT = Hit{ .poise = 18, .stance = 6, .elem = elems(.{ .fire = 16.5 }) };
 pub const LANCE_REACH: f32 = 20.0;

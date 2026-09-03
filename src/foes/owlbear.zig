@@ -178,6 +178,7 @@ pub const QUILL_LIFE: f32 = 1.3;
 /// quill is heavy and fast, and a visible arc on a 1.3 s shot reads as a lobbed rock.
 const QUILL_FALL: f32 = 1.6;
 /// Three of these land for 33 raw, under one slam — a fan you eat whole is worse than a swing and better
+/// than the launch, which is the right price for standing in it.
 pub const QUILL_HIT = combat.Hit{ .dmg = 11, .poise = 10, .stance = 4 };
 
 const SWAY_HZ: f32 = 0.26;
@@ -842,8 +843,12 @@ pub const Perch = struct {
             if (!q.live) continue;
             q.t += dt;
             q.vel.y -= QUILL_FALL * dt;
+            const was = q.at;
             q.at = mathx.addV(q.at, mathx.scaleV(q.vel, dt));
-            if (mathx.lenV(mathx.subV(q.at, chest)) <= QUILL_R + foe.HERO_R) {
+            // MIDPOINT TOO (`archer.stepArrow`'s rule). At `game.DT_MAX` the step is 0.42 m against a 0.435 m
+            // sphere, so an endpoint sample alone stepped clean through 23% of the disc he presents.
+            const reach = QUILL_R + foe.HERO_R;
+            if (foe.struckSweep(was, q.at, chest, reach)) {
                 q.live = false;
                 self.shatter(q.at, 7);
                 foe.worseBlow(worst, QUILL_HIT, q.at, &AIR_THREAT);

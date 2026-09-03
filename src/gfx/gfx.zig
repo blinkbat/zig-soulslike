@@ -32,6 +32,7 @@ pub const WATER_DEEP_AT: f32 = 11.0;
 pub const WATER_WET_OUT: f32 = 3.4;
 
 /// **THE RAW GL BLEND ENUMS, NAMED ONCE.** `rl.gl.rlSetBlendFactors` takes them as bare ints and two callers
+/// want them: `env`'s occluder pass and the editor's opaque minimap blit.
 pub const GL_ZERO: i32 = 0;
 pub const GL_ONE: i32 = 1;
 pub const GL_FUNC_ADD: i32 = 0x8006;
@@ -720,6 +721,7 @@ pub fn dilateEdges(out: []u8, n: usize, ids: []const u8, edge: []const u8) []con
     }
 
     /// A PER-DRAW share of the world's haze, 1 for everything but the birds. Paired like `beginFade`: whatever
+    /// turns it down puts it back, or the next thing drawn comes out of the distance too clean.
     pub fn setHaze(self: *Scene, amt: f32) void {
         var a = mathx.clampF(amt, 0, 1);
         rl.setShaderValue(self.shader, self.loc_hazeScale, &a, .float);
@@ -829,6 +831,12 @@ pub const Builder = struct {
         self.vert(a, na, col, a.x, a.z);
         self.vert(c, nc, col, c.x, c.z);
         self.vert(d, nd, col, d.x, d.z);
+    }
+
+    pub fn triSmooth(self: *Builder, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, na: rl.Vector3, nb: rl.Vector3, nc: rl.Vector3, col: rl.Color) void {
+        self.vert(a, na, col, a.x, a.z);
+        self.vert(b, nb, col, b.x, b.z);
+        self.vert(c, nc, col, c.x, c.z);
     }
 
     pub fn quadFade(self: *Builder, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3, n: rl.Vector3, ab: rl.Color, cd: rl.Color) void {
@@ -962,6 +970,7 @@ pub const Builder = struct {
     }
 
     /// WALLS AT THE RIM: `addBox` takes HALF-axes, so a radial extent of `(rTop - rBot)/2` centred on the mean
+    /// radius spans one to the other; writing the extents instead gives every panel a solid pie slice.
     pub fn addSkirt(self: *Builder, c: rl.Vector3, rTop: f32, drop: f32, rBot: f32, thick: f32, sides: i32, col: rl.Color, rng: *mathx.Rng) void {
         var i: i32 = 0;
         while (i < sides) : (i += 1) {

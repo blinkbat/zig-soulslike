@@ -71,7 +71,8 @@ comptime {
     if (wf.START_MAP.len > MAP_CAP) @compileError("save: MAP_CAP is shorter than the map path it has to hold");
 }
 
-/// **RAIL 0 IS THE FILE'S ORIGINAL `bosses:` ROW AND STAYS THAT WAY.** Every save written before the duo
+/// **RAIL 0 IS THE FILE'S ORIGINAL `bosses:` ROW AND STAYS THAT WAY.** A save written before the duo existed
+/// describes one rail, and a row nobody wrote reads back as nobody dead.
 pub const BOSS_RAILS: usize = 4;
 pub const BossBits = [BOSS_RAILS][wf.MAX_PER_KIND]bool;
 

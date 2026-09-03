@@ -25,6 +25,15 @@ pub const SMALL: i32 = 20;
 pub const HINT: i32 = 19;
 pub const TINY: i32 = 16;
 
+/// A null codepoint list is raylib's DEFAULT SET — 32 through 126 and nothing else. An `—` or a `·` in a
+/// drawn string comes back as raylib's unknown-glyph `?`, and the atlas is the only place that range is known.
+pub fn drawable(s: []const u8) bool {
+    for (s) |c| {
+        if (c < 32 or c > 126) return false;
+    }
+    return true;
+}
+
 fn atlas(path: [:0]const u8, px: i32) ?rl.Font {
     var f = rl.loadFontEx(path, px, null) catch return null;
     if (f.glyphCount == 0) {
@@ -453,7 +462,7 @@ pub fn ailGlyph(a: combat.Ail, cx: f32, cy: f32, size: f32, col: rl.Color) void 
     const w = mathx.maxF(size * 0.13, 1.0);
     switch (a) {
         .poison => {
-            rl.drawTriangle(
+            uiart.triangle(
                 .{ .x = cx, .y = cy - r },
                 .{ .x = cx - r * 0.62, .y = cy + r * 0.15 },
                 .{ .x = cx + r * 0.62, .y = cy + r * 0.15 },
@@ -468,13 +477,13 @@ pub fn ailGlyph(a: combat.Ail, cx: f32, cy: f32, size: f32, col: rl.Color) void 
             }
         },
         .burning => {
-            rl.drawTriangle(
+            uiart.triangle(
                 .{ .x = cx, .y = cy - r },
                 .{ .x = cx - r * 0.66, .y = cy + r * 0.7 },
                 .{ .x = cx + r * 0.66, .y = cy + r * 0.7 },
                 col,
             );
-            rl.drawTriangle(
+            uiart.triangle(
                 .{ .x = cx, .y = cy + r * 0.7 },
                 .{ .x = cx - r * 0.34, .y = cy - r * 0.15 },
                 .{ .x = cx + r * 0.34, .y = cy - r * 0.15 },
@@ -517,7 +526,7 @@ pub fn ailGlyph(a: combat.Ail, cx: f32, cy: f32, size: f32, col: rl.Color) void 
         .charm => {
             rl.drawCircleV(.{ .x = cx - r * 0.38, .y = cy - r * 0.28 }, r * 0.44, col);
             rl.drawCircleV(.{ .x = cx + r * 0.38, .y = cy - r * 0.28 }, r * 0.44, col);
-            rl.drawTriangle(
+            uiart.triangle(
                 .{ .x = cx, .y = cy + r * 0.82 },
                 .{ .x = cx - r * 0.80, .y = cy - r * 0.16 },
                 .{ .x = cx + r * 0.80, .y = cy - r * 0.16 },
@@ -918,8 +927,11 @@ const FOE_GLYPH: i32 = 6;
 const FOE_GLYPH_S: f32 = 7.0;
 const BOSS_H: i32 = 13;
 const BOSS_LIFT: i32 = 158;
-/// damage. Rail 0 is the lowest. **A RAIL IS A ROW OF `game.BOSS_RAILS` AND NOT A PLACE IN A QUEUE.**
+/// **A BAR PER BOSS ON THE FIELD, EACH KEEPING ITS OWN CHIP** — one set of module scratch across two bosses had
+/// the second replaying the first one's damage. Rail 0 is the lowest. **A RAIL IS A ROW OF `game.BOSS_RAILS`
+/// AND NOT A PLACE IN A QUEUE**: a bar that slid down when another boss died would move mid-fight.
 pub const BOSS_SLOTS: usize = 3;
+/// **THE PITCH BETWEEN TWO BARS IS THE BAR PLUS ITS OWN NAME, NOT A ROUND NUMBER.** The name is engraved ABOVE
 /// the rail (`y - lineH(SMALL) - 3`), so at a 20 px pitch on a 13 px bar the upper bar sat on the lower one.
 const BOSS_NAME_LIFT: i32 = 3;
 const BOSS_GAP: i32 = BOSS_H + BOSS_NAME_LIFT + 8 + lineH(SMALL);

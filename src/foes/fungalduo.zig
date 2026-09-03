@@ -398,6 +398,7 @@ const MG_ORB_MIN: f32 = MG_FLEE_R;
 pub const CAP_GROW: f32 = 3.2;
 pub const CAP_GLOW: f32 = 1.05;
 pub const CAP_BURST_R: f32 = 3.1;
+/// **A BUNCH IS FOUR OF THESE AND THEY POP IN A RUN**, so the cap is priced as one of four and not as one
 /// blow: at 40 apiece, standing in the middle of a bunch was 160 raw — more than three of the knight's overheads.
 pub const CAP_HIT = combat.Hit{ .poise = 34, .stance = 22, .launch = 2.2, .elem = combat.elems(.{ .chaos = 20 }) };
 const MG_SPROUT_WIND: f32 = 0.78;
@@ -2113,10 +2114,11 @@ pub const Conclave = struct {
         for (&self.orbs) |*o| {
             if (!o.live) continue;
             o.t += dt;
+            const was = o.at;
             o.at = mathx.addV(o.at, mathx.scaleV(o.vel, dt));
             o.spin += dt * 9.0;
             const chest = foe.heroChest(hero);
-            if (mathx.lenV(mathx.subV(o.at, chest)) <= ORB_R + foe.HERO_R) {
+            if (foe.struckSweep(was, o.at, chest, ORB_R + foe.HERO_R)) {
                 o.live = false;
                 self.splashAt(o.at, 9);
                 foe.worseBlow(worst, ORB_HIT, o.at, &GROUND_THREAT);

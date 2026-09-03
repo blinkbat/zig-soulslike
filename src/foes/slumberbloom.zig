@@ -56,6 +56,7 @@ pub var SOULS: u32 = 130;
 
 pub const POUR_R: f32 = 5.0;
 pub const POUR_DUR: f32 = 2.0;
+/// **AT THE THROAT, WHICH IS NOT WHAT A WHOLE POUR DELIVERS.** The pressure tails off (`POUR_TAIL`), so what
 /// lands is the AREA under that curve. A pin over the PEAK read 110 against a 100 meter while the thing was
 /// really handing out 80 and could put nobody under.
 pub const POUR_BUILD: f32 = 70.0;

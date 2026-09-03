@@ -18,6 +18,7 @@ pub var COIN_BASE: u32 = COIN_BASE_BANK;
 pub var COIN_PER: u32 = COIN_PER_BANK;
 
 /// Stones to take an armament from `tier` to `tier + 1`. `STONE_PER` is halved into the step so the early
+/// tiers are one stone apiece and the last are five — a run's worth of the delver's drop, not a mine.
 pub fn stoneCost(tier: u8) u32 {
     return STONE_BASE + (STONE_PER * tier) / 2;
 }

@@ -69,6 +69,7 @@ fn tierGain(a: heromod.Armament, h: *const heromod.Hero) f32 {
     return next - now;
 }
 
+/// The tier ladder as PIPS, lit to the tier. A number says where you are; the row of
 /// lamps says how far the road goes, at a glance and without arithmetic.
 fn tierPips(x: i32, cy: i32, tier: u8, r: f32) void {
     var p: u8 = 0;

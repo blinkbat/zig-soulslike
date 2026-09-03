@@ -164,6 +164,7 @@ const LOCK_AT = v3(0, 0.30 * W, 0.10 * W);
 const STALK_UP: f32 = 0.44;
 const BLOOM_TILT: f32 = 24.0;
 
+/// Degrees the head lowers across the charge. The crown has to arrive at chest
 /// height on him or it is a nod: reared it rides at 1.9 m, and 64 degrees brings it into his column.
 const BUTT_DUCK: f32 = 64.0;
 const BUTT_LOAD: f32 = 26.0;
@@ -197,6 +198,7 @@ comptime {
 }
 
 /// **THE OPEN BLOOM IS THE WEAK POINT** — 1.9x while it is wide. DAMAGE ONLY: `poise` and `stance` are left
+/// alone, because `POISE_MAX` is solved to sit between the hero's two swings.
 const BLOOM_FRAIL: f32 = 0.90;
 
 /// One petal. `ang` is degrees round the bloom's axis with 0 at the top; `bias` is degrees of fold.
@@ -236,6 +238,7 @@ comptime {
     }
 }
 
+/// Degrees off the bloom's own axis. SHUT is NEGATIVE — a bud's petals converge PAST parallel, which is what
 /// closes the tip, and it is solved: the quill bows 0.42 of its own length off-axis, so the tip's radial is
 /// `|BLOOM_RIM + len*(0.42*cos f + sin f)|` and landing that on the axis is -33 deg.
 const PETAL_SHUT: f32 = -33.0;
@@ -986,6 +989,7 @@ pub const Herd = struct {
         for (&self.spores) |*s| {
             if (!s.live) continue;
             s.t += dt;
+            const was = s.at;
             if (s.t < SPORE_RISE) {
                 const u = s.t / SPORE_RISE;
                 s.vel = v3(s.vel.x, SPORE_UP * (1.0 - u), s.vel.z);
@@ -1000,7 +1004,7 @@ pub const Herd = struct {
                 s.vel = mathx.scaleV(mathx.turnToward(have, want, SPORE_TURN * dt), SPORE_HOME);
                 s.at = mathx.addV(s.at, mathx.scaleV(s.vel, dt));
             }
-            if (mathx.lenV(mathx.subV(s.at, chest)) <= SPORE_R + foe.HERO_R) {
+            if (foe.struckSweep(was, s.at, chest, SPORE_R + foe.HERO_R)) {
                 s.live = false;
                 self.puff(s.at, 8);
                 foe.worseBlow(worst, SPORE_HIT, s.at, &AIR_THREAT);

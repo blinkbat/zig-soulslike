@@ -325,6 +325,7 @@ fn hueOf(c: rl.Vector3) rl.Vector3 {
 
 /// **HOW MUCH OF THE HOUR'S OWN HUE A BANK OF FOG TAKES.** 0 leaves the mesh its authored grey at every hour,
 /// 1 gives it the full hue the hour's lit haze has. THE one number to move if the banks read too warm at dusk
+/// or too cold at midnight — the brightness beside it is solved and not authored, so this is the whole retune.
 const MIST_HUE: f32 = 0.65;
 const ANCHOR_AMB_LUMA: f32 = luma(v3(0.168, 0.188, 0.244));
 

@@ -308,7 +308,7 @@ fn streak(b: *gfx.Builder, foot: rl.Vector3, len: f32, wide: f32) void {
 }
 
 fn fade(c: rl.Color) rl.Color {
-    return rgba(c.r, c.g, c.b, 205);
+    return mathx.withAlpha(c, 205);
 }
 
 fn card(b: *gfx.Builder, a: rl.Vector3, c: rl.Vector3, off: rl.Vector3, ca: rl.Color, cc: rl.Color) void {
@@ -1014,6 +1014,7 @@ pub const BIRDS_HI: usize = 17;
 // out 11.46 deg above the horizon (`camera.skyTop`), and flying 30–62 m up at 96 m out and crossing to within
 // 56 m, the LOWEST elevation any bird reached over any flight was 15.1 deg and the closest approach 48 deg.
 
+/// **THE CEILING IS A SHARE OF THE RESTING FRAME'S OWN TOP**, so the flock sits in the upper part of the
 /// picture instead of over it. At 0.70 that is 8.0 deg, which leaves the birds a clear third of sky above them.
 const SKY_SHARE: f32 = 0.70;
 

@@ -29,6 +29,15 @@ pub const LANDED_AT: f32 = 0.05;
 pub fn landed(atY: f32, floor: f32, quarryY: f32) bool {
     return atY <= mathx.minF(floor, quarryY) + LANDED_AT;
 }
+
+/// **A FLYING THING IS TESTED OVER THE STEP IT JUST TOOK, NOT WHERE IT ENDED UP** (`archer.stepArrow`'s own
+/// rule, and every `Arrow` shot goes through it). A single endpoint sample misses a grazing pass whenever the
+/// chord `2*sqrt(r^2 - d^2)` through the sphere is shorter than the step: measured on the owlbear's quill,
+/// 12.5 m/s at `game.DT_MAX` is 0.42 m against a 0.435 m sphere and 23% of the disc he presents went through.
+pub fn struckSweep(was: rl.Vector3, now: rl.Vector3, at: rl.Vector3, r: f32) bool {
+    if (mathx.lenV(mathx.subV(now, at)) <= r) return true;
+    return mathx.lenV(mathx.subV(mathx.lerpV(was, now, 0.5), at)) <= r;
+}
 pub fn closestApproach(bodyR: f32) f32 {
     return bodyR + HERO_R;
 }

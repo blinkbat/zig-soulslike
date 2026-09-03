@@ -26,7 +26,7 @@ pub fn build(b: *std.Build) void {
     exe.stack_size = 192 * 1024 * 1024;
     exe.linkLibrary(raylib_artifact);
     exe.root_module.addImport("raylib", raylib);
-    exe.root_module.addAnonymousImport("campfire_wav", .{ .root_source_file = b.path("assets/campfire.wav") });
+    addAssets(b, exe.root_module);
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
@@ -48,7 +48,7 @@ pub fn build(b: *std.Build) void {
     });
     unit_tests.linkLibrary(raylib_artifact);
     unit_tests.root_module.addImport("raylib", raylib);
-    unit_tests.root_module.addAnonymousImport("campfire_wav", .{ .root_source_file = b.path("assets/campfire.wav") });
+    addAssets(b, unit_tests.root_module);
     const run_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
     checkTestRoster(b);
@@ -76,7 +76,7 @@ pub fn build(b: *std.Build) void {
     for ([_]*std.Build.Step.Compile{ check_exe, check_tests }) |c| {
         c.linkLibrary(raylib_artifact);
         c.root_module.addImport("raylib", raylib);
-        c.root_module.addAnonymousImport("campfire_wav", .{ .root_source_file = b.path("assets/campfire.wav") });
+        addAssets(b, c.root_module);
         check_step.dependOn(&c.step);
     }
 }
@@ -91,6 +91,13 @@ pub fn build(b: *std.Build) void {
 /// Bytes under which a `src/**/*.zig` is a truncation rather than a module — the smallest real one is
 /// `foes/foestat.zig` at 2468.
 const MIN_SRC: u64 = 512;
+
+/// **EVERY COMPILE GETS THE SAME ASSETS.** The exe, the test root and the two `check` compiles each named the
+/// embeds themselves; one added to the exe and not to `check` makes `check.cmd` pass on a build that cannot link.
+fn addAssets(b: *std.Build, m: *std.Build.Module) void {
+    m.addAnonymousImport("campfire_wav", .{ .root_source_file = b.path("assets/campfire.wav") });
+    m.addAnonymousImport("intro_wav", .{ .root_source_file = b.path("assets/intro.wav") });
+}
 
 fn checkTestRoster(b: *std.Build) void {
     // A GUARD THAT `catch return`s HAS DISARMED ITSELF, which is the failure it exists to catch.

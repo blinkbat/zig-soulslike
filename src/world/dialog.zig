@@ -56,6 +56,7 @@ pub const Input = struct {
     pick: ?usize = null,
 };
 
+/// **THE PLATE'S HEIGHT, IN THE ORDER THE DRAW WALKS IT** — one pass ahead of the other, so a row added below
 /// cannot silently overflow a box laid out for the row count before it. Its own function so the fit can be
 /// MEASURED with no window open: what a counter's greeting costs is arithmetic, not a screenshot.
 pub fn plateNeed(named: bool, nlines: usize, nchoices: usize, portrait: bool) i32 {

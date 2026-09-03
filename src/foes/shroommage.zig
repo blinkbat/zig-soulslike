@@ -63,6 +63,7 @@ const SOLES = [_]heromod.SolePatch{
 
 // **AUTHOR DARK AND SOLVE IT** — screen goes as albedo^(1/2.2), so the bigger and smoother the mass the darker it has to start. The cloak is the biggest face here.
 
+/// Damp and GREEN-BLACK, and it may NOT go blue-black: that is the necromancer's separation, and two dark
 /// robed things at one colour cannot be told apart at fighting range. **SOLVED OFF THE RENDER**: at (16,22,15)
 /// it sampled 83 luma against ground at 102 — 0.81 of its field. Wanted ~0.64, so the albedo factor is 0.79^2.2 = 0.59.
 const CLOAK = rgba(10, 13, 9, 255);

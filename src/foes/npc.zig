@@ -161,6 +161,7 @@ const Spec = struct {
     faceAt: rl.Vector3,
     top: f32,
     /// **HE TRACKS YOU WITH HIS HEAD AND HIS BODY STAYS PUT** (owner). Degrees of neck; 0 turns the whole body
+    /// instead, which is what the wanderer and the caravaneer do.
     headTrack: f32 = 0,
     headDip: f32 = 0,
 };

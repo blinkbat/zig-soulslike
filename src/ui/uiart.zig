@@ -37,11 +37,10 @@ fn ray(cx: f32, cy: f32, ang: f32, len: f32, wid: f32, col: rl.Color) void {
     const tip = rl.Vector2.init(cx + c * len, cy + s * len);
     const a = rl.Vector2.init(cx - s * wid, cy + c * wid);
     const b = rl.Vector2.init(cx + s * wid, cy - c * wid);
-    rl.drawTriangle(tip, a, b, col);
-    rl.drawTriangle(tip, b, a, col);
+    // The winding flips as the angle passes 180, so the ray is solved rather than drawn twice.
+    triangle(tip, a, b, col);
 }
 
-/// `drawTriangle` is single-sided and the winding flips as the angle passes 180.
 pub fn soulMark(cx: f32, cy: f32, r: f32, a: u8) void {
     const bloom = withAlpha(GILT, u8f(@as(f32, @floatFromInt(a)) * 0.26));
     rl.drawCircleV(rl.Vector2.init(cx, cy), r * 0.92, bloom);
@@ -86,10 +85,19 @@ pub fn numeral(i: usize) [:0]const u8 {
     return if (i < N.len) N[i] else "-";
 }
 
-/// raylib wants ONE winding and silently drops the other.
-pub fn triangle(a: rl.Vector2, b: rl.Vector2, c: rl.Vector2, col: rl.Color) void {
+/// **THE DRAWABLE WINDING IS THE NEGATIVE CROSS, AND EVERY 2D TRIANGLE GOES THROUGH HERE.** raylib's 2D
+/// projection is `rlOrtho(0, w, h, 0, …)`, whose y scale is negative, so a screen-space cross ABOVE zero is
+/// clockwise in window space and `glFrontFace(GL_CCW)` drops it — silently, with culling on from `rlglInit`
+/// and the quad batch indexed `{0,1,2, 0,2,3}` so the order passed is the order drawn. Apex-DOWN shapes land
+/// on that half, which is why this is solved per triangle rather than authored at the call site.
+pub fn wound(a: rl.Vector2, b: rl.Vector2, c: rl.Vector2) [3]rl.Vector2 {
     const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-    if (cross > 0) rl.drawTriangle(a, c, b, col) else rl.drawTriangle(a, b, c, col);
+    return if (cross > 0) .{ a, c, b } else .{ a, b, c };
+}
+
+pub fn triangle(a: rl.Vector2, b: rl.Vector2, c: rl.Vector2, col: rl.Color) void {
+    const v = wound(a, b, c);
+    rl.drawTriangle(v[0], v[1], v[2], col);
 }
 
 pub fn diamond(cx: f32, cy: f32, r: f32, col: rl.Color) void {
@@ -297,4 +305,32 @@ pub fn rail(x: i32, y: i32, h: i32, shown: f32, at: f32) void {
 pub fn tallyShelf(x: i32, y: i32, w: i32, h: i32) void {
     rl.drawRectangle(x, y, w, h, withAlpha(rl.Color.black, 170));
     rl.drawRectangle(x, y, w, 1, withAlpha(GILT_DIM, 70));
+}
+
+fn crossOf(v: [3]rl.Vector2) f32 {
+    return (v[1].x - v[0].x) * (v[2].y - v[0].y) - (v[1].y - v[0].y) * (v[2].x - v[0].x);
+}
+
+test "EVERY TRIANGLE COMES BACK ON THE DRAWABLE SIDE — apex up or apex down, and the shape is the same three points" {
+    const up = [3]rl.Vector2{ .{ .x = 0, .y = -5 }, .{ .x = -4, .y = 3 }, .{ .x = 4, .y = 3 } };
+    const down = [3]rl.Vector2{ .{ .x = -4, .y = -3 }, .{ .x = 4, .y = -3 }, .{ .x = 0, .y = 5 } };
+    // Apex-down is the half a call site gets wrong: cross above zero, which raylib culls.
+    try std.testing.expect(crossOf(down) > 0);
+    try std.testing.expect(crossOf(up) < 0);
+    for ([_][3]rl.Vector2{ up, down }) |t| {
+        const w = wound(t[0], t[1], t[2]);
+        try std.testing.expect(crossOf(w) <= 0);
+        // The same three points, only re-ordered — a fix may not move the shape.
+        var seen: usize = 0;
+        for (t) |p| {
+            for (w) |q| {
+                if (p.x == q.x and p.y == q.y) seen += 1;
+            }
+        }
+        try std.testing.expectEqual(@as(usize, 3), seen);
+    }
+    // Degenerate stays as given rather than flipping on a rounding wobble.
+    const flat = [3]rl.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 4, .y = 0 } };
+    const fw = wound(flat[0], flat[1], flat[2]);
+    try std.testing.expectEqual(flat[1].x, fw[1].x);
 }

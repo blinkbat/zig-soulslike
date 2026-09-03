@@ -83,8 +83,10 @@ fn vnoise(px: f32, pz: f32) f32 {
 }
 
 /// A courtyard is 10 m across and ±1.7 m of wiggle is a torn edge on it; a tarn is 40 m across and the same
+/// 1.7 m is invisible on it, so what makes a coast read is a LOW octave with the shape's own wiggle on top.
 pub const BAY_FREQ: f32 = 0.045; // cycles/metre — about a 22 m bay
 /// **METRES, NOT A MULTIPLE OF THE SHAPE'S OWN WANDER.** As a multiple `jagged` got 8 m of bay and `natural`
+/// 4.25, for no reason anybody authored — the bay is a fact about how big a LAKE is, not how torn its edge is.
 pub const BAY_M: f32 = 3.5;
 
 /// The Zig twin of the shader's `edgeWarp`. Returns the position the field should actually be READ at.

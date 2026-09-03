@@ -388,6 +388,8 @@ pub fn checkbox(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, v: *bool, tip: [
 }
 
 /// **ONE FIELD OWNS THE KEYBOARD, AND IT IS CLAIMED BY BEING CLICKED.** `rl.getCharPressed` DRAINS a global
+/// queue, so two fields drawn eligible in the same frame means the first drawn eats every keystroke and the
+/// second is dead however it is styled. With nobody claiming, the first eligible field drawn keeps it.
 var kbOwner: ?u32 = null;
 var kbSeen = false;
 var kbTaken = false;
@@ -527,7 +529,7 @@ pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u
     const cx = r.x + r.width - 10;
     const cy = r.y + r.height * 0.5;
     const d: f32 = if (isOpen) -1 else 1;
-    rl.drawTriangle(
+    uiart.triangle(
         rl.Vector2.init(cx - 4, cy - 2 * d),
         rl.Vector2.init(cx + 4, cy - 2 * d),
         rl.Vector2.init(cx, cy + 3 * d),

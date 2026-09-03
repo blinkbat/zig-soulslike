@@ -1142,7 +1142,18 @@ where the head would have been.
 ### The jump — A/Cross
 
 Traversal, not a technique (`hud.BTN_JUMP`, keyboard `V` — A is strafe-left, so the letter cannot be mirrored).
-It costs NO STAMINA. No jump attack and no fall damage yet.
+It costs NO STAMINA. No jump attack.
+
+**THE FALL** (`hero.fallDamage`, billed in `hero.hitGround`). Free under `FALL_FREE` 4 m, certain death at
+`FALL_DEATH` 13 m, a power curve between, all as fractions of `hpMax` so a levelled vitality buys the same
+metres it always did. On the starting 70: 5 m costs 4, 8 m costs 21, 12 m costs 59.
+
+- **MEASURED OFF THE HIGHEST POINT OF THE FLIGHT** (`hero.airTop`), not off where it began, or a jump taken
+  one stride before the lip is a shorter fall than a walk off it.
+- **THE GROUND IS NOT A BLOW** — billed straight to `vit`, past armour and past the guard, because a shield
+  does not catch the floor. It takes a light stun on any drop that hurt.
+- **DEXTERITY BUYS A QUARTER AND NOT ONE METRE** (`FALL_DEX_CUT`, nothing at the starting 15 and 25% at 99).
+  It never touches the height that kills, and `FALL_MIN_FRAC` is the floor that stops it making a drop free.
 
 - **`pos.y` IS STILL THE GROUND UNDER HIM** — `game.groundActor` its only writer, `hero.lift` what he is flying
   above it by. The height integrated is `airY` (WORLD height of his feet) and `lift` is DERIVED off it
@@ -1989,7 +2000,8 @@ normals from the FIELD so two tiles agree at their seam.
 - **A FLAT MAP IS THE OLD WORLD, EXACTLY** — `heightAny` false means one world-spanning quad, `groundAt`
   returns `GROUND_Y`, and no `hgt:` record is written.
 - **NOTHING SAMPLES THE MAP DIRECTLY.** Env keeps the live copy the visible mesh was built from and
-  `wf.sampleHeight` is the ONE sampler both owners call.
+  `wf.sampleHeight` is the ONE sampler both owners call. It reads the CLIFF grid beside the height, and a
+  flagged cell steps instead of interpolating — see Cliffs below.
 - **EVERY PROP PLANTS AT THE HEIGHT UNDER IT** — `uploadHeight` must run BEFORE `materialize`, and a sculpt
   stroke re-materializes on RELEASE.
 - **TWO RULES DECIDE EVERY STEP** (`env.walkStep`), either passing: the rise ahead is under `STEP_UP`
@@ -2017,6 +2029,49 @@ normals from the FIELD so two tiles agree at their seam.
   `rx(bodyPitch)` term as the run lean.
 - **THE TERRAIN RECEIVES SHADOWS BUT DOES NOT CAST.** Self-shadowing a heightfield off a 108 m ortho box puts
   acne everywhere the surface grazes the sun.
+
+### Cliffs — a drop drawn as a FACE instead of a ramp
+
+A heightfield holds ONE height per lattice point, so the steepest thing it can make on its own is the whole
+drop spread over one cell — 2.51 m on the shipped map, which is a ramp and not a cliff. A second grid
+(`Map.cliff`, one case per CELL, indexed by its low corner) says which cells cut instead of interpolating.
+Ground layer > Cliff paints it, Slope takes it back.
+
+- **THE FLAG IS OPT-IN AND CHANGES NOTHING ELSE.** No `cliff:` row means the map loads and walks exactly as
+  it did; the dried-lake basin next door stays a bilinear bowl. The same 6 m drop is a wall or a ramp
+  depending on the flag, not on how steeply it was sculpted.
+- **ONE CUT SERVES THE MESH AND THE SAMPLER** (`wf.cliffCut`, `wf.cliffTierAt`). Marching squares on the
+  cell's four corners against the midpoint of its own two tiers: straight chords, because a triangle is all
+  the mesh can draw. **THE SAMPLER FOLLOWS THE MESH, NOT THE BILINEAR** — measured, a saddle cell's true
+  bilinear iso and its chord disagree over a QUARTER of the cell, which is a corner drawn at one tier and
+  walked at the other. A test walks four cases on a 200² grid and prints the residue (worst 0.37%, and that
+  is the grid straddling the chord).
+- **A SADDLE'S MIDDLE IS A TIER, NOT A HOLE.** Four cuts leave a diamond between the corners; the bilinear's
+  own centre decides which tier fills it, and the two chords that then face the other way get the wall.
+- **FLATTEN BOTH TIERS BEFORE PAINTING.** A cliff cell draws its flats at `lo` and `hi`; a lattice point left
+  at some intermediate height is a crack at the seam with the smooth cell next door.
+- **WALKING OFF A LIP IS A FALL, NOT A SNAP** (`game.heroFooting`) — the same `hero.startFall` a deck edge
+  takes, keyed on the LAND dropping more than `STEP_UP` in one step, which a bilinear ramp cannot do at any
+  frame rate.
+- **NOTHING ON FOOT FOLLOWS HIM OFF ONE** (`env.brink`, applied in `game.gateTerrain` after the walk gate).
+  Climbing one was already refused by `MAX_SLOPE`; this is the other direction.
+- **A STAIR CELL IS ONE TREAD** (case 2, `wf.stairTread`): flat at its own mean height snapped to
+  `wf.STAIR_RISE`, with risers drawn down whichever of its four edges faces lower ground. A run of them
+  terraces, and the walk takes it because a probe crosses at most one riser — a comptime assert beside it
+  keeps the riser at or under `STEP_UP`. **A FLIGHT CAN ONLY CLIMB ONE RISER A CELL**, so stairs walk
+  somewhere a ramp cannot only where the cell is under `STAIR_RISE / MAX_SLOPE` = 0.60 m. On the shipped
+  map's 2.51 m cell they are a look and a flat tread, never a shortcut; the bench's 0.538 m cell is where a
+  0.90 grade climbs that a plain ramp refuses.
+- **RAMP IS A REGRADE, NOT A CASE.** Sweeping it drops the cut and smooths what is left, which is the only
+  way to open a walkable breach through a painted line — a single unflagged cell in a cliff is a 67° ramp on
+  the shipped lattice and no more walkable than the wall it replaced. `Slope` still just unpaints.
+- **3..255 ARE UNCLAIMED** and a map using one is a LOAD ERROR on a build that does not know it.
+- `worlds/test_cliff.world` is the bench: a 6 m mesa with a straight face and a ladder up it, a 4 m shelf cut
+  on the diagonal `x + z = 20`, a stair flight up the mesa at a grade past `MAX_SLOPE`, and a 3 m pit with an
+  unflagged ramp down its west side.
+- **THE SHIPPED MAP'S NORTH-WEST BASIN LIP IS ONE OF THESE** — a leaned `cliff4` used to stand in for the
+  face there; the lip is terraced to two tiers now, `-1.75` m over `-15.00`, which is a **13.25 m** face and
+  past `FALL_DEATH`. Walking off it kills.
 
 ### Decks and ladders — the only two ways off the ground
 
@@ -2463,10 +2518,12 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
     filling the same `movedDist`/`moveSpeed`/`moveYaw` its chase branch fills — a helper that advanced the gait
     itself would run the walk cycle at double speed on exactly the frames the body is walking. Arming is free:
     `resetGroup`/`resetRoles` stamp the authored orders on at spawn, duck-typed.
-  - **AND "BACK TO YOUR POST" MEANS THE POST, NOT THE SPAWN PIN** (`foe.homeFor`). Every roamer got three
+  - **AND "BACK TO YOUR POST" MEANS THE POST, NOT THE SPAWN PIN** (`foe.tetherFor`). Every roamer got three
     metres out and turned round, because a creature's own `.hold` arm compares against where it was placed and
     `LEASH_HOME_R` is a stride: the orders and the go-home rule pulled against each other and the orders lost. The
-    same anchor feeds `tickLeash`, or `roam_free` — unleashed BY DEFINITION — is dragged back by the tether.
+    same anchor feeds `tickLeash` at all 27 sites, or `roam_free` — unleashed BY DEFINITION — is dragged back by
+    the tether. `foe.homeFor` is the OTHER half of the same rule and answers `self.pos` under any orders at all,
+    so a creature's own "am I far from home?" arm reads zero and only the round moves it.
   - **WHICH UNITS GET THEM IS THE AUTHOR'S CALL, MADE PER UNIT IN THE EDITOR** (owner: let me assign them).
     So every creature that CAN move takes them — 27 of 30 groups — and `hold` being the default is what keeps a
     map that never says `ai=` unchanged. The three that cannot are the FIXTURES, and `game.NO_ORDERS` names them
@@ -2668,7 +2725,7 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   cast. Every `FOE_GROUPS` row carries a parry window except the ones `game.NO_PARRY` excuses, and the pairing
   is comptime-enforced both ways, so the count here would only ever go stale: what carries none says why at its
   own impact site (projectiles, ground discs, poured elements — broodlings out on purpose).
-- **The jump exists but nothing hangs off it** — no jump ATTACK, no fall damage at any height, and no creature's
+- **The jump exists but little hangs off it** — no jump ATTACK, and no creature's
   move misses him for being over it (a per-move height would be authored at each `toImpact` the way a parry
   window is).
 - **Souls buy levels and nothing else** — the caravaneer is a body on the road, not a shop; nothing in the game

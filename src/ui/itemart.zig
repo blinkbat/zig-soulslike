@@ -147,7 +147,7 @@ fn arrowSheaf(cx: f32, cy: f32, px: f32, hot: bool) void {
             rl.drawCircleV(v2(head.x, head.y + s * 0.03), 3.4 * k, CORD);
             rl.drawCircleV(v2(head.x, head.y + s * 0.01), 2.4 * k, if (@mod(t, 2.0) == 0) FIRE else FIRE_DIM);
         } else {
-            rl.drawTriangle(
+            uiart.triangle(
                 v2(head.x, head.y - s * 0.06),
                 v2(head.x - s * 0.045, head.y + s * 0.05),
                 v2(head.x + s * 0.045, head.y + s * 0.05),
@@ -1210,8 +1210,8 @@ pub fn flask(cx: f32, cy: f32, px: f32, tint: FlaskTint, full: bool) void {
         .crimson => CRIMSON_DK,
         .cerulean => CERULEAN_DK,
     };
-    const fill = if (full) lit else rgba(dk.r, dk.g, dk.b, 150);
-    const deep = if (full) rgba(dk.r, dk.g, dk.b, 255) else rgba(dk.r, dk.g, dk.b, 120);
+    const fill = if (full) lit else mathx.withAlpha(dk, 150);
+    const deep = if (full) mathx.withAlpha(dk, 255) else mathx.withAlpha(dk, 120);
     const body = s * 0.265;
     const bodyY = cy + s * 0.13;
     const lean = rng.range(-0.9, 0.9) * k;
@@ -1242,7 +1242,7 @@ pub fn flask(cx: f32, cy: f32, px: f32, tint: FlaskTint, full: bool) void {
         v2(cx - body * 0.52, bodyY - body * 0.62),
         v2(cx - body * 0.66, bodyY + body * 0.28),
         2.0 * k,
-        rgba(GLASS_LIT.r, GLASS_LIT.g, GLASS_LIT.b, if (full) 200 else 90),
+        mathx.withAlpha(GLASS_LIT, if (full) 200 else 90),
     );
 
     const sx = cx + lean * 1.15;
@@ -1299,7 +1299,7 @@ pub fn sword(cx: f32, cy: f32, px: f32) void {
     rl.drawLineEx(onAxis(gone, pom, solid, -wBase * 0.84), onAxis(shoulder, pom, 0, -wBase * 0.88), 1.1 * k, mathx.withAlpha(STEEL, 215));
     rl.drawLineEx(onAxis(gone, pom, solid, wBase * 0.84), onAxis(shoulder, pom, 0, wBase * 0.88), 0.9 * k, rgba(88, 92, 98, 180));
     const nickAt = rng.range(0.33, 0.43);
-    rl.drawTriangle(
+    uiart.triangle(
         onAxis(gone, pom, nickAt, -wBase * 0.72),
         onAxis(gone, pom, nickAt + 0.022, -wBase * 0.26),
         onAxis(gone, pom, nickAt - 0.016, -wBase * 0.26),
@@ -1398,7 +1398,7 @@ pub fn shield(cx: f32, cy: f32, px: f32) void {
             v2(cx - half * 0.94, cy + dy + 1.2 * k),
             v2(cx + half * 0.94, cy + dy + 1.2 * k),
             0.8 * k,
-            rgba(GRIP_LT.r, GRIP_LT.g, GRIP_LT.b, 150),
+            mathx.withAlpha(GRIP_LT, 150),
         );
     }
     var gi: u32 = 0;
@@ -1410,7 +1410,7 @@ pub fn shield(cx: f32, cy: f32, px: f32) void {
             v2(x0 - half * 0.5, cy + gy),
             v2(x0 + half * 0.5, cy + gy),
             0.7 * k,
-            rgba(BOARD_JOINT.r, BOARD_JOINT.g, BOARD_JOINT.b, 110),
+            mathx.withAlpha(BOARD_JOINT, 110),
         );
     }
 
@@ -1520,9 +1520,9 @@ pub fn spell(cx: f32, cy: f32, px: f32, on: bool) void {
     const k = strokeK(px);
     var rng = mathx.Rng.init(0x3C0BA1);
     const a: u8 = if (on) 255 else 120;
-    const halo = rgba(CHAOS.r, CHAOS.g, CHAOS.b, if (on) 90 else 45);
-    const shell = rgba(CHAOS_DK.r, CHAOS_DK.g, CHAOS_DK.b, a);
-    const core = rgba(CHAOS_LT.r, CHAOS_LT.g, CHAOS_LT.b, a);
+    const halo = mathx.withAlpha(CHAOS, if (on) 90 else 45);
+    const shell = mathx.withAlpha(CHAOS_DK, a);
+    const core = mathx.withAlpha(CHAOS_LT, a);
     const head = v2(cx + s * 0.13, cy - s * 0.04);
     const r = s * 0.135;
     var i: u32 = 0;
@@ -1530,11 +1530,11 @@ pub fn spell(cx: f32, cy: f32, px: f32, on: bool) void {
         const off = (@as(f32, @floatFromInt(i)) - 1.0);
         const lead: f32 = if (off == 0) 1.25 else 0.85;
         const reach = r * rng.range(2.1, 3.4) * lead;
-        rl.drawTriangle(
+        uiart.triangle(
             v2(head.x - reach, head.y + off * r * 0.95 + rng.range(-1.0, 1.0) * k),
             v2(head.x, head.y - r * 0.52),
             v2(head.x, head.y + r * 0.52),
-            if (off == 0) rgba(CHAOS.r, CHAOS.g, CHAOS.b, a) else halo,
+            if (off == 0) mathx.withAlpha(CHAOS, a) else halo,
         );
     }
     rl.drawCircleV(head, r * 1.42, halo);
@@ -1548,11 +1548,11 @@ pub fn roots(cx: f32, cy: f32, px: f32, on: bool) void {
     const k = strokeK(px);
     var rng = mathx.Rng.init(0x600751);
     const a: u8 = if (on) 255 else 120;
-    const bark = rgba(ROOT_BARK.r, ROOT_BARK.g, ROOT_BARK.b, a);
+    const bark = mathx.withAlpha(ROOT_BARK, a);
     const wood = rgba(122, 92, 60, a);
-    const lit = rgba(CHAOS_LT.r, CHAOS_LT.g, CHAOS_LT.b, a);
-    const glow = rgba(CHAOS.r, CHAOS.g, CHAOS.b, a);
-    const halo = rgba(CHAOS.r, CHAOS.g, CHAOS.b, if (on) 80 else 34);
+    const lit = mathx.withAlpha(CHAOS_LT, a);
+    const glow = mathx.withAlpha(CHAOS, a);
+    const halo = mathx.withAlpha(CHAOS, if (on) 80 else 34);
     const soil = cy + s * 0.22;
     var i: u32 = 0;
     while (i < 3) : (i += 1) {
@@ -1571,7 +1571,7 @@ pub fn roots(cx: f32, cy: f32, px: f32, on: bool) void {
         rl.drawCircleV(tip, s * 0.062, glow);
         rl.drawCircleV(v2(tip.x - 0.6 * k, tip.y - 0.8 * k), s * 0.030, lit);
     }
-    const soilCol = rgba(ROOT_SOIL.r, ROOT_SOIL.g, ROOT_SOIL.b, a);
+    const soilCol = mathx.withAlpha(ROOT_SOIL, a);
     rl.drawLineEx(v2(cx - s * 0.36, soil), v2(cx + s * 0.36, soil), 3.4 * k, soilCol);
     rl.drawLineEx(v2(cx - s * 0.34, soil - 1.4 * k), v2(cx + s * 0.34, soil - 1.4 * k), 1.2 * k, wood);
     var j: u32 = 0;
@@ -1586,9 +1586,9 @@ pub fn rime(cx: f32, cy: f32, px: f32, on: bool) void {
     const k = strokeK(px);
     var rng = mathx.Rng.init(0x21C3);
     const a: u8 = if (on) 255 else 120;
-    const ice = rgba(RIME_ICE.r, RIME_ICE.g, RIME_ICE.b, a);
-    const lit = rgba(RIME_LT.r, RIME_LT.g, RIME_LT.b, a);
-    const halo = rgba(RIME_ICE.r, RIME_ICE.g, RIME_ICE.b, if (on) 60 else 26);
+    const ice = mathx.withAlpha(RIME_ICE, a);
+    const lit = mathx.withAlpha(RIME_LT, a);
+    const halo = mathx.withAlpha(RIME_ICE, if (on) 60 else 26);
     const throat = v2(cx - s * 0.34, cy + s * 0.04);
     var w: u32 = 0;
     while (w < 3) : (w += 1) {
@@ -1618,9 +1618,9 @@ pub fn levin(cx: f32, cy: f32, px: f32, on: bool) void {
     const k = strokeK(px);
     var rng = mathx.Rng.init(0x1E7A1);
     const a: u8 = if (on) 255 else 120;
-    const hot = rgba(LEVIN_HOT.r, LEVIN_HOT.g, LEVIN_HOT.b, a);
-    const edge = rgba(LEVIN_EDGE.r, LEVIN_EDGE.g, LEVIN_EDGE.b, a);
-    const halo = rgba(LEVIN_EDGE.r, LEVIN_EDGE.g, LEVIN_EDGE.b, if (on) 66 else 28);
+    const hot = mathx.withAlpha(LEVIN_HOT, a);
+    const edge = mathx.withAlpha(LEVIN_EDGE, a);
+    const halo = mathx.withAlpha(LEVIN_EDGE, if (on) 66 else 28);
     const foot = v2(cx + s * 0.06, cy + s * 0.30);
     const head = v2(cx - s * 0.20, cy - s * 0.34);
     var prev = head;
@@ -1653,10 +1653,10 @@ pub fn siphon(cx: f32, cy: f32, px: f32, on: bool) void {
     const k = strokeK(px);
     var rng = mathx.Rng.init(0x51F0);
     const a: u8 = if (on) 255 else 120;
-    const shell = rgba(CHAOS_DK.r, CHAOS_DK.g, CHAOS_DK.b, a);
-    const body = rgba(CHAOS.r, CHAOS.g, CHAOS.b, a);
-    const core = rgba(CHAOS_LT.r, CHAOS_LT.g, CHAOS_LT.b, a);
-    const halo = rgba(CHAOS.r, CHAOS.g, CHAOS.b, if (on) 80 else 34);
+    const shell = mathx.withAlpha(CHAOS_DK, a);
+    const body = mathx.withAlpha(CHAOS, a);
+    const core = mathx.withAlpha(CHAOS_LT, a);
+    const halo = mathx.withAlpha(CHAOS, if (on) 80 else 34);
     const at = v2(cx - s * 0.04, cy + s * 0.02);
     var i: u32 = 0;
     while (i < 6) : (i += 1) {
@@ -1685,16 +1685,16 @@ pub fn arrow(cx: f32, cy: f32, px: f32, on: bool, fire: bool) void {
     const s = px;
     const k = strokeK(px);
     const half = s * 0.16;
-    const shaft = if (on) BOWWOOD else rgba(BOWWOOD.r, BOWWOOD.g, BOWWOOD.b, 120);
-    const plainHead = if (on) STEEL else rgba(STEEL_DK.r, STEEL_DK.g, STEEL_DK.b, 140);
-    const head = if (fire) (if (on) FIRE else rgba(FIRE.r, FIRE.g, FIRE.b, 140)) else plainHead;
+    const shaft = if (on) BOWWOOD else mathx.withAlpha(BOWWOOD, 120);
+    const plainHead = if (on) STEEL else mathx.withAlpha(STEEL_DK, 140);
+    const head = if (fire) (if (on) FIRE else mathx.withAlpha(FIRE, 140)) else plainHead;
     if (fire) {
-        const hot = if (on) FIRE else rgba(FIRE.r, FIRE.g, FIRE.b, 90);
-        const dim = if (on) FIRE_DIM else rgba(FIRE_DIM.r, FIRE_DIM.g, FIRE_DIM.b, 70);
+        const hot = if (on) FIRE else mathx.withAlpha(FIRE, 90);
+        const dim = if (on) FIRE_DIM else mathx.withAlpha(FIRE_DIM, 70);
         const root = cx + half - 0.8 * k;
         for ([_]f32{ -1, 0, 1 }) |sy| {
             const reach = if (sy == 0) 5.6 * k else 4.0 * k;
-            rl.drawTriangle(
+            uiart.triangle(
                 v2(root - reach, cy + sy * 2.5 * k),
                 v2(root, cy - 1.5 * k),
                 v2(root, cy + 1.5 * k),
@@ -1703,8 +1703,8 @@ pub fn arrow(cx: f32, cy: f32, px: f32, on: bool, fire: bool) void {
         }
     }
     rl.drawLineEx(v2(cx - half, cy), v2(cx + half, cy), 2.0 * k, shaft);
-    rl.drawLineEx(v2(cx - half, cy - 0.7 * k), v2(cx + half * 0.7, cy - 0.7 * k), 0.7 * k, rgba(GRIP_LT.r, GRIP_LT.g, GRIP_LT.b, if (on) 160 else 70));
-    rl.drawTriangle(
+    rl.drawLineEx(v2(cx - half, cy - 0.7 * k), v2(cx + half * 0.7, cy - 0.7 * k), 0.7 * k, mathx.withAlpha(GRIP_LT, if (on) 160 else 70));
+    uiart.triangle(
         v2(cx + half + 3.0 * k, cy),
         v2(cx + half - 1.6 * k, cy - 2.3 * k),
         v2(cx + half - 1.6 * k, cy + 2.3 * k),
@@ -1714,7 +1714,7 @@ pub fn arrow(cx: f32, cy: f32, px: f32, on: bool, fire: bool) void {
     for ([_]f32{ -1, 1 }) |sy| {
         rl.drawLineEx(v2(cx - half + 3.4 * k, cy), v2(cx - half - 0.6 * k, cy + sy * (2.4 + 0.5 * sy) * k), 1.5 * k, shaft);
     }
-    rl.drawLineEx(v2(cx - half - 1.0 * k, cy - 1.5 * k), v2(cx - half - 1.0 * k, cy + 1.5 * k), 1.2 * k, rgba(CORD.r, CORD.g, CORD.b, if (on) 235 else 110));
+    rl.drawLineEx(v2(cx - half - 1.0 * k, cy - 1.5 * k), v2(cx - half - 1.0 * k, cy + 1.5 * k), 1.2 * k, mathx.withAlpha(CORD, if (on) 235 else 110));
 }
 
 fn soulArc(cx: f32, cy: f32, px: f32) void {
@@ -1800,7 +1800,7 @@ fn smithingStone(cx: f32, cy: f32, px: f32) void {
     for (0..N) |i| {
         const a = pts[i];
         const b = pts[(i + 1) % N];
-        rl.drawTriangle(v2(a.x + 1.4 * k, a.y + 1.8 * k), v2(b.x + 1.4 * k, b.y + 1.8 * k), v2(core.x + 1.4 * k, core.y + 1.8 * k), rgba(0, 0, 0, 120));
+        uiart.triangle(v2(a.x + 1.4 * k, a.y + 1.8 * k), v2(b.x + 1.4 * k, b.y + 1.8 * k), v2(core.x + 1.4 * k, core.y + 1.8 * k), rgba(0, 0, 0, 120));
     }
     for (0..N) |i| {
         const a = pts[i];
@@ -1808,14 +1808,14 @@ fn smithingStone(cx: f32, cy: f32, px: f32) void {
         const up = 1.0 - (((a.y + b.y) * 0.5 - cy) / r + 1.0) * 0.5;
         const col = mathx.lerpColor(STONE_DK, STONE_LT, mathx.clampF(up * rng.range(0.75, 1.25), 0, 1));
         quad(a, b, core, core, col);
-        rl.drawLineEx(a, b, 0.9 * k, rgba(STONE.r, STONE.g, STONE.b, 200));
+        rl.drawLineEx(a, b, 0.9 * k, mathx.withAlpha(STONE, 200));
     }
     const li: usize = @intCast(rng.intn(N));
-    quad(pts[li], pts[(li + 1) % N], core, core, rgba(STONE_LT.r, STONE_LT.g, STONE_LT.b, 235));
+    quad(pts[li], pts[(li + 1) % N], core, core, mathx.withAlpha(STONE_LT, 235));
     const sp = v2((pts[li].x + core.x) * 0.5, (pts[li].y + core.y) * 0.5);
-    rl.drawCircleV(sp, 1.6 * k, rgba(SPARK.r, SPARK.g, SPARK.b, 200));
-    rl.drawLineEx(v2(sp.x - 2.6 * k, sp.y), v2(sp.x + 2.6 * k, sp.y), 0.8 * k, rgba(SPARK.r, SPARK.g, SPARK.b, 130));
-    rl.drawLineEx(v2(sp.x, sp.y - 2.6 * k), v2(sp.x, sp.y + 2.6 * k), 0.8 * k, rgba(SPARK.r, SPARK.g, SPARK.b, 130));
+    rl.drawCircleV(sp, 1.6 * k, mathx.withAlpha(SPARK, 200));
+    rl.drawLineEx(v2(sp.x - 2.6 * k, sp.y), v2(sp.x + 2.6 * k, sp.y), 0.8 * k, mathx.withAlpha(SPARK, 130));
+    rl.drawLineEx(v2(sp.x, sp.y - 2.6 * k), v2(sp.x, sp.y + 2.6 * k), 0.8 * k, mathx.withAlpha(SPARK, 130));
 }
 
 fn bloodgrass(cx: f32, cy: f32, px: f32) void {
@@ -1876,7 +1876,7 @@ fn koboldFang(cx: f32, cy: f32, px: f32) void {
     const cB = onAxis(rootP, tipP, 0.22, 2.4 * k);
     rl.drawLineEx(cA, v2((cA.x + cB.x) * 0.5 + 1.2 * k, (cA.y + cB.y) * 0.5), 0.9 * k, rgba(96, 82, 58, 220));
     rl.drawLineEx(v2((cA.x + cB.x) * 0.5 + 1.2 * k, (cA.y + cB.y) * 0.5), cB, 0.9 * k, rgba(96, 82, 58, 220));
-    rl.drawCircleV(rootP, 2.2 * k, rgba(BONE_DK.r, BONE_DK.g, BONE_DK.b, 255));
+    rl.drawCircleV(rootP, 2.2 * k, mathx.withAlpha(BONE_DK, 255));
     rl.drawCircleV(v2(rootP.x + 0.4 * k, rootP.y - 0.3 * k), 1.1 * k, rgba(88, 62, 52, 235));
 }
 
@@ -1891,14 +1891,14 @@ fn ironKey(cx: f32, cy: f32, px: f32) void {
 
     rl.drawLineEx(v2(headP.x + 1.2 * k, headP.y + 1.4 * k), v2(tipP.x + 1.2 * k, tipP.y + 1.4 * k), 3.0 * k, rgba(0, 0, 0, 120));
     rl.drawLineEx(headP, tipP, 2.4 * k, IRON_DK);
-    rl.drawLineEx(onAxis(headP, tipP, 0.18, -0.9 * k), onAxis(headP, tipP, 0.86, -0.9 * k), 0.8 * k, rgba(STEEL_DK.r, STEEL_DK.g, STEEL_DK.b, 170));
+    rl.drawLineEx(onAxis(headP, tipP, 0.18, -0.9 * k), onAxis(headP, tipP, 0.86, -0.9 * k), 0.8 * k, mathx.withAlpha(STEEL_DK, 170));
 
     const ringR = s * 0.145;
     const ringC = onAxis(headP, tipP, -0.12, 0);
     arc(ringC.x, ringC.y, ringR + 0.6 * k, 0, std.math.tau, 18, 3.4 * k, 3.4 * k, rgba(0, 0, 0, 130));
     arc(ringC.x, ringC.y, ringR, 0, std.math.tau, 18, 2.6 * k, 2.6 * k, IRON_DK);
-    arc(ringC.x, ringC.y, ringR, 3.5, 5.4, 9, 1.0 * k, 0.6 * k, rgba(STEEL_DK.r, STEEL_DK.g, STEEL_DK.b, 200));
-    arc(ringC.x, ringC.y, ringR, 0.6, 2.1, 9, 1.4 * k, 1.0 * k, rgba(RUST.r, RUST.g, RUST.b, 220));
+    arc(ringC.x, ringC.y, ringR, 3.5, 5.4, 9, 1.0 * k, 0.6 * k, mathx.withAlpha(STEEL_DK, 200));
+    arc(ringC.x, ringC.y, ringR, 0.6, 2.1, 9, 1.4 * k, 1.0 * k, mathx.withAlpha(RUST, 220));
     rl.drawCircleV(onAxis(headP, tipP, 0.10, 0), 2.0 * k, IRON_DK);
 
     const across = v2(-(tipP.y - headP.y), tipP.x - headP.x);
@@ -1910,7 +1910,7 @@ fn ironKey(cx: f32, cy: f32, px: f32) void {
         const outT = ward[1] * k * rng.range(0.9, 1.1);
         rl.drawLineEx(base, v2(base.x + nx * outT, base.y + ny * outT), 2.2 * k, IRON_DK);
     }
-    rl.drawCircleV(tipP, 1.3 * k, rgba(RUST.r, RUST.g, RUST.b, 200));
+    rl.drawCircleV(tipP, 1.3 * k, mathx.withAlpha(RUST, 200));
 }
 
 fn jerky(cx: f32, cy: f32, px: f32) void {
@@ -1960,8 +1960,7 @@ fn jerky(cx: f32, cy: f32, px: f32) void {
         const shrink = rng.range(0.94, 1.05);
         const p = v2(cx + mathx.cosf(a) * capR * shrink, rimY - mathx.sinf(a) * capH * shrink);
         const shade = mathx.lerpColor(CAP_DK, CAP_LT, mathx.clampF(0.86 - t * 0.86, 0, 1));
-        rl.drawTriangle(v2(cx, rimY), prev, p, shade);
-        rl.drawTriangle(v2(cx, rimY), p, prev, shade);
+        uiart.triangle(v2(cx, rimY), prev, p, shade);
         prev = p;
     }
     rl.drawLineEx(v2(cx - capR, rimY), v2(cx - capR * 0.82, rimY - s * 0.055), 1.2 * k, CAP_LT);
@@ -1983,7 +1982,7 @@ fn jerky(cx: f32, cy: f32, px: f32) void {
         rl.drawCircleV(
             v2(cx + mathx.cosf(a0) * capR * r0, rimY - mathx.sinf(a0) * capH * r0),
             rng.range(0.4, 0.9) * k,
-            rgba(SALT.r, SALT.g, SALT.b, 190),
+            mathx.withAlpha(SALT, 190),
         );
     }
 }

@@ -627,6 +627,7 @@ fn heldSame(h: Hand, v: View) bool {
 }
 
 /// On what is ALREADY equipped, never row 0 — a cursor landing anywhere else tricks you into swapping something
+/// you meant to look at. **ASKED OF THE LIST ITSELF, NEVER COUNTED A SECOND TIME.**
 fn pickIndexOf(s: SlotId, v: View) usize {
     var out: [CAND_MAX]Cand = undefined;
     for (candidates(s, v, &out), 0..) |c, i| {

@@ -259,6 +259,8 @@ pub const Game = struct {
     nNpcPos: usize = 0,
     rest: restmod.Rest = .{},
     bootT: f32 = 0,
+    introK: f32 = 0,
+    audioK: f32 = 0,
     bossBits: savemod.BossBits = NO_BOSSES,
     seenMap: mapart.Seen = .{},
     bossK: [hud_.BOSS_SLOTS]f32 = [_]f32{0} ** hud_.BOSS_SLOTS,
@@ -387,6 +389,8 @@ pub const Game = struct {
         g.award = .{};
         g.day = .{};
         g.bootT = 0;
+        g.introK = 0;
+        g.audioK = 0;
         g.bossK = [_]f32{0} ** hud_.BOSS_SLOTS;
         g.bossFrac = [_]f32{0} ** hud_.BOSS_SLOTS;
         leavePlace(g);
@@ -483,6 +487,28 @@ fn bootLook(g: *const Game, t: f32) rl.Vector3 {
     return v3(x, g.env.groundAt(x, z) + BOOT_LOOK_UP, z);
 }
 
+const INTRO_FADE_IN: f32 = 3.0;
+const INTRO_FADE_OUT: f32 = 1.2;
+/// Headroom under the menu's own voices — the take is normalised to -3 dBFS, which is a foreground level.
+const INTRO_VOL: f32 = 0.55;
+/// The world's own bed, up from nothing at launch. Slower than the track, so the field arrives under it.
+const AUDIO_FADE_IN: f32 = 4.5;
+
+/// **THE TITLE TRACK RIDES THE BOOT MENUS AND NOTHING ELSE.** `menu.booting()` is the boot screen, the slot
+/// picker and Options reached from either; the editor is asked separately because entering it leaves `screen`
+/// where it was, so the menu still reads as booting behind it. The ambience ramp is one-way: the bed belongs
+/// to the world and only ever comes UP, where the track comes back down when the game starts.
+fn tickAudioFades(g: *Game, dt: f32) void {
+    g.audioK = mathx.clampF(g.audioK + dt / AUDIO_FADE_IN, 0, 1);
+    sfx.ambienceFade(g.audioK);
+
+    const want = g.menu.booting() and !g.editor.on;
+    if (want) sfx.introOn(true);
+    g.introK = mathx.clampF(g.introK + (if (want) dt / INTRO_FADE_IN else -dt / INTRO_FADE_OUT), 0, 1);
+    sfx.introLevel(g.introK * g.audioK * INTRO_VOL);
+    if (!want and g.introK <= 0) sfx.introOn(false);
+}
+
 pub fn bootCam(g: *Game, t: f32) void {
     g.rig.yaw = mathx.radians(BOOT_YAW_MID + BOOT_YAW_SWEEP * mathx.sinf(t * std.math.tau / BOOT_YAW_T));
     g.rig.pitch = BOOT_PITCH + BOOT_SWOOP_PITCH * mathx.sinf(t * std.math.tau / BOOT_SWOOP_T);
@@ -523,6 +549,7 @@ fn beginGame(g: *Game) void {
     applyTree(g);
     g.hero.respawnNow();
     seedChart(g);
+    g.bossBits = NO_BOSSES;
     rehomeFoes(g, .blind);
     g.rest = .{};
     rehomeChests(g);
@@ -614,6 +641,9 @@ fn tickEnter(g: *Game, dt: f32) void {
     g.enterIn = mathx.maxF(0, g.enterIn - dt);
 }
 
+/// **A SLOT ONLY EVER DESCRIBES THE START MAP.** `savemod.readFrom` refuses a file whose `map:` differs, so
+/// wiring `Enter.map` up (nothing builds one today) without giving this the map actually loaded writes a save
+/// labelled with one map and holding another's hero position.
 fn saveMap(g: *const Game) []const u8 {
     _ = g;
     return worldfmt.startMap();
@@ -623,21 +653,50 @@ comptime {
     if (BOSS_RAILS.len > savemod.BOSS_RAILS) @compileError("game: more boss rails than the save file has rows for");
 }
 
-fn snapBosses(g: *Game) void {
-    g.bossBits = NO_BOSSES;
-    inline for (BOSS_RAILS, 0..) |row, i| {
-        for (@field(g, row.field).liveConst(), 0..) |*k, j| {
-            if (j < worldfmt.MAX_PER_KIND) g.bossBits[i][j] = k.vit.dead;
-        }
+/// **A RAIL ONLY EVER GAINS A BIT, AND THE RUN'S START IS WHAT CLEARS IT** (`beginGame`). Re-derived off the
+/// live bodies it was wrong at the one place that saves: the bonfire empties every group (`clearFoes`) BEFORE
+/// `saveNow`, so a knight you had killed was written back alive.
+fn snapRail(bits: *savemod.BossBits, i: usize, bodies: anytype) void {
+    for (bodies, 0..) |*k, j| {
+        if (j < worldfmt.MAX_PER_KIND and k.vit.dead) bits[i][j] = true;
     }
 }
 
-fn applyBosses(g: *Game) void {
-    inline for (BOSS_RAILS, 0..) |row, i| {
-        for (@field(g, row.field).live(), 0..) |*k, j| {
-            if (j < worldfmt.MAX_PER_KIND and g.bossBits[i][j]) k.markSlain();
-        }
+fn applyRail(bits: *const savemod.BossBits, i: usize, bodies: anytype) void {
+    for (bodies, 0..) |*k, j| {
+        if (j < worldfmt.MAX_PER_KIND and bits[i][j]) k.markSlain();
     }
+}
+
+fn snapBosses(g: *Game) void {
+    inline for (BOSS_RAILS, 0..) |row, i| snapRail(&g.bossBits, i, @field(g, row.field).liveConst());
+}
+
+fn applyBosses(g: *Game) void {
+    inline for (BOSS_RAILS, 0..) |row, i| applyRail(&g.bossBits, i, @field(g, row.field).live());
+}
+
+test "A BOSS THE BONFIRE CLEARED IS STILL DOWN — the rail ACCUMULATES, it is never re-derived off the bodies" {
+    var bits: savemod.BossBits = NO_BOSSES;
+    var slain = knightmod.Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    var standing = knightmod.Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+    slain.markSlain();
+    const pair = [_]*const knightmod.Knight{ &slain, &standing };
+    for (pair, 0..) |k, j| {
+        if (k.vit.dead) bits[0][j] = true;
+    }
+    try std.testing.expect(bits[0][0] and !bits[0][1]);
+
+    // Sitting down empties the group and THEN saves.
+    snapRail(&bits, 0, &[_]knightmod.Knight{});
+    try std.testing.expect(bits[0][0]);
+
+    // Standing up rehomes him alive, and the save that follows must not read the bit back off him.
+    var fresh = [_]knightmod.Knight{knightmod.Knight.spawn(mathx.zero3, 0, 1.0, 0.3)};
+    snapRail(&bits, 0, fresh[0..]);
+    try std.testing.expect(bits[0][0]);
+    applyRail(&bits, 0, fresh[0..]);
+    try std.testing.expect(fresh[0].vit.dead);
 }
 
 fn slotOf(g: *Game) savemod.Slot {
@@ -1637,6 +1696,9 @@ fn heroFooting(g: *Game, was_: rl.Vector3) void {
     const under = g.env.standAt(h.pos.x, h.pos.z, h.footY());
     if (g.heroDeck) |was| {
         if (!h.airborne() and under < was - envmod.STEP_UP) h.startFall(was, mathx.dirXZ(was_, h.pos), h.speedS);
+    } else if (!h.airborne() and under < h.pos.y - envmod.STEP_UP) {
+        // The LAND cannot drop this far in one step unless a cliff cut it; a bilinear ramp is bounded by MAX_SLOPE.
+        h.startFall(h.pos.y, mathx.dirXZ(was_, h.pos), h.speedS);
     }
     g.heroDeck = if (h.airborne()) null else g.env.deckAt(h.pos.x, h.pos.z, h.pos.y);
 }
@@ -1697,6 +1759,11 @@ fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?F
         else
             foemod.WADE_FRAC * statureOf(f);
         const stepped = g.env.walkSegmentPast(was[i], f.pos, wade);
+        if (g.env.brink(was[i], stepped)) {
+            f.pos.x = was[i].x;
+            f.pos.z = was[i].z;
+            continue;
+        }
         f.pos.x = stepped.x;
         f.pos.z = stepped.z;
     }
@@ -1745,7 +1812,7 @@ test "EVERY LADDER ON THE BENCH TOPS OUT WHERE IT WAS AUTHORED TO, AND THE THREE
     const m = try std.testing.allocator.create(worldfmt.Map);
     defer std.testing.allocator.destroy(m);
     var ln: usize = 0;
-    try worldfmt.loadForTest("worlds/test_ladder.world", m, &ln);
+    try worldfmt.loadForTest(worldfmt.DIR ++ "/test_ladder" ++ worldfmt.EXT, m, &ln);
     const e = try std.testing.allocator.create(envmod.Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
@@ -3150,6 +3217,8 @@ fn tickRest(g: *Game, dt: f32) void {
         g.retro.values = g.restRetro;
         g.hero.sit(false, g.hero.pos, g.hero.facing);
         rehomeFoes(g, .blind);
+        // A bonfire respawns the field. It does NOT raise a boss.
+        applyBosses(g);
         dropRunHud(g);
         saveNow(g, .noShot);
     }
@@ -3882,7 +3951,7 @@ fn markWade(g: *Game) void {
     }
 }
 
-/// priests × skitterers every frame with no distance gate. Both groups cap at `wf.MAX_PER_KIND`, so the worst
+/// Every priest is matched against every skitterer, every frame, with no distance gate. Both groups cap at `wf.MAX_PER_KIND`, so the worst
 /// case is 262,144 `distXZ` a frame — `settleGroup`'s order, about a millisecond, and reachable only by a map
 /// that maxes BOTH. Squaring the test would drop the sqrt but moves a body sitting on `RAISE_KEEP_R` by an ulp.
 fn markFlock(g: *Game) void {
@@ -4249,7 +4318,11 @@ pub fn drawScene(g: *Game) void {
     applyStow(g);
     const cam = sceneCam(g);
     foemod.setLens(cam.position, mathx.normV(mathx.subV(cam.target, cam.position)));
-    g.env.markOccluders(cam.position, if (g.editor.on) cam.position else heroAimPoint(g), g.drawDt);
+    // Eye AND target on the lens is the "no occlusion" idiom (`markOccluders` returns on a zero-length look,
+    // easing every fade back to opaque). The title has no hero to see past, and props ghosting around the
+    // boot camera's drift is nothing but flicker.
+    const seeThrough = g.editor.on or g.menu.booting();
+    g.env.markOccluders(cam.position, if (seeThrough) cam.position else heroAimPoint(g), g.drawDt);
     rl.gl.rlSetClipPlanes(CLIP_NEAR, drawFar(g));
     const casting = !g.editor.on or g.editor.showShadows;
     if (casting) {
@@ -4278,6 +4351,7 @@ pub fn drawScene(g: *Game) void {
     g.scene.setGround(true);
     g.env.drawGround(&view);
     g.scene.setGround(false);
+    g.env.drawCliffFaces(&view);
     if (shows(g, .ground)) g.env.drawWater();
     if (g.menu.wireframe) rl.gl.rlEnableWireMode();
     drawCasters(g, .{ .view = view });
@@ -4659,6 +4733,10 @@ pub fn run(mode: Mode) void {
             std.debug.print("INIT: {s: <10} {d:.1} ms (behind the menu)\n", .{ "audio rest", bankT * 1000.0 });
             bankT = -1;
         }
+        // ONE DRIVER, above every branch that `continue`s: six of them each pumped the streams and the editor
+        // and the boot menu were two that did not, so a title track fading out under either of them stalled.
+        tickAudioFades(g, rawDt);
+        sfx.tickStreams();
 
         if (!g.editor.on and !g.rest.active() and !g.talk.active()) {
             if (rl.isKeyPressed(.escape)) g.menu.onEscape();
@@ -4792,7 +4870,6 @@ pub fn run(mode: Mode) void {
             bHeldT = ROLL_TAP_MAX;
             wasInside = false;
             sfx.ambience(rawDt);
-            sfx.tickStreams();
             drawScene(g);
             takeSlotShot(g);
             hud(g, rawDt);
@@ -4807,7 +4884,6 @@ pub fn run(mode: Mode) void {
             bHeldT = ROLL_TAP_MAX;
             wasInside = false;
             sfx.ambience(rawDt);
-            sfx.tickStreams();
             drawScene(g);
             counterui.draw(&g.counter, &g.hero, &g.bag, g.counterT, counterPortrait(g));
             rl.endDrawing();
@@ -4819,7 +4895,6 @@ pub fn run(mode: Mode) void {
             bHeldT = ROLL_TAP_MAX;
             wasInside = false;
             sfx.ambience(rawDt);
-            sfx.tickStreams();
             drawScene(g);
             hud(g, rawDt);
             g.talk.draw(&g.map, &g.trig, triggerWorld(g), talkPortrait(g));
@@ -4831,7 +4906,6 @@ pub fn run(mode: Mode) void {
         g.rest.look(g.hero.pos);
         g.souls.update(dt);
         g.souls.look(g.hero.pos);
-        sfx.tickStreams();
 
         const lockPressed = !g.hero.aiming and (rl.isMouseButtonPressed(.middle) or padPressed(.right_thumb));
         if (lockPressed) {
@@ -5438,7 +5512,6 @@ fn heldFrame(g: *Game, rawDt: f32, bWasDown: *bool, bHeldT: *f32, wasInside: *bo
     g.rig.follow(g.hero.shoulderPoint());
     g.rumble.update(rawDt, false);
     sfx.ambience(rawDt);
-    sfx.tickStreams();
     drawScene(g);
     hud(g, rawDt);
 }
@@ -6306,6 +6379,8 @@ fn cycleLock(g: *Game, dir: f32) void {
 
 fn resetFoes(g: *Game) void {
     rehomeFoes(g, .blind);
+    // Dying respawns the field. It does NOT raise a boss — `rehomeFoes` calls `T.spawn` on every group.
+    applyBosses(g);
     clearQuivers(g);
     g.lock = null;
     g.pack.clear();

@@ -124,6 +124,7 @@ pub fn restPose(w: f32) [N]rl.Vector3 {
 
 pub const Gait = struct {
     /// Fraction of the stride each foot is ON THE GROUND. Above 0.5 something is always down (a walk); below
+    /// it there are moments with no feet on the earth at all, which is what an aerial phase IS.
     duty: f32,
     /// How far the FOREfoot's strike lags the hind foot on the SAME SIDE, as a fraction of the stride. 0.5 is the trot's diagonal couplets; 0.84 is the lateral-sequence walk.
     lag: f32,

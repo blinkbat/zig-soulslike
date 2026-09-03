@@ -1148,8 +1148,8 @@ fn tatterMesh(pal: Pal, len: f32, ang: f32, seed: u64) rl.Mesh {
 pub fn wispMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     b.setMat(.plain);
-    b.addBlob(mathx.zero3, v3(0.080, 0.080, 0.180), 7, 11, rgba(WISP_DK.r, WISP_DK.g, WISP_DK.b, 120));
-    b.addBlob(v3(0, 0, 0.022), v3(0.042, 0.042, 0.100), 6, 9, rgba(WISP_COL.r, WISP_COL.g, WISP_COL.b, 45));
+    b.addBlob(mathx.zero3, v3(0.080, 0.080, 0.180), 7, 11, mathx.withAlpha(WISP_DK, 120));
+    b.addBlob(v3(0, 0, 0.022), v3(0.042, 0.042, 0.100), 6, 9, mathx.withAlpha(WISP_COL, 45));
     return b.toModel(shader);
 }
 

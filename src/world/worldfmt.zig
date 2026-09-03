@@ -335,6 +335,7 @@ pub const Arena = struct {
     }
 
     /// MEASURED on the shipped room: 11 walls, six bodies, two calls a frame each is **396 crossings a frame**,
+    /// and every map with no `arena:` row pays a zero-length loop. There is nothing there to buy.
     pub fn hold(self: *const Arena, p: rl.Vector3, r: f32) rl.Vector3 {
         if (self.verts() < 3) return p;
         const inside = self.contains(p.x, p.z);
@@ -490,6 +491,7 @@ pub const Foe = struct {
 /// per-kind cap sat under the global one: `foe.resetGroup` fills a fixed slab and `continue`s past the
 /// overflow, so a 25th shroom was a body the map placed, the editor drew, the save counted and the level never
 /// spawned — and `01_fallen_plain` stands on exactly 24. Set to the whole budget it cannot bite. It costs
+/// memory, and how much is `MAX_FOES`' own note: read it off "WHAT THE FRAME COSTS" and not off a comment.
 pub const MAX_PER_KIND: usize = MAX_FOES;
 
 pub const Runway = struct { x: f32 = -3.4, z: f32 = -44, x1: f32 = 3.4, z1: f32 = 30 };
@@ -1288,6 +1290,24 @@ pub const HEIGHT_ZERO: u8 = 64;
 pub const HEIGHT_MIN: f32 = -@as(f32, @floatFromInt(HEIGHT_ZERO)) * HEIGHT_STEP;
 pub const HEIGHT_MAX: f32 = @as(f32, @floatFromInt(255 - HEIGHT_ZERO)) * HEIGHT_STEP;
 
+/// One case per height CELL, indexed by the cell's low corner. 3..255 are unclaimed, and a map that uses
+/// one is a LOAD ERROR on a build that does not know it.
+pub const CLIFF_NONE: u8 = 0;
+pub const CLIFF_FACE: u8 = 1;
+pub const CLIFF_STAIR: u8 = 2;
+pub const CLIFF_N: u16 = 3;
+
+/// One riser. Must stay at or under `env.STEP_UP` or a flight is a wall (asserted there), and a whole
+/// number of `HEIGHT_STEP` or a tread does not land on a height the encoding can hold.
+pub const STAIR_RISE: f32 = 0.5;
+
+/// A stair cell is ONE TREAD: flat at its own mean height snapped to a riser, so a run of cells terraces
+/// and every step up is a riser the walk already accepts.
+pub fn stairTread(h00: f32, h10: f32, h01: f32, h11: f32) f32 {
+    const mean = (h00 + h10 + h01 + h11) * 0.25;
+    return @round(mean / STAIR_RISE) * STAIR_RISE;
+}
+
 pub fn heightOf(b: u8) f32 {
     return (@as(f32, @floatFromInt(b)) - @as(f32, @floatFromInt(HEIGHT_ZERO))) * HEIGHT_STEP;
 }
@@ -1296,7 +1316,112 @@ pub fn heightByte(m: f32) u8 {
     return @intFromFloat(mathx.clampF(q, 0, 255));
 }
 
-pub fn sampleHeight(field: []const u8, half: f32, px: f32, pz: f32) f32 {
+/// The two tiers a cliff cell holds and the iso the face sits on. The mesh cuts where the bilinear
+/// crosses `mid` and the sampler steps there — one line, or the ground you walk is not the ground drawn.
+pub const Tiers = struct {
+    lo: f32,
+    hi: f32,
+    mid: f32,
+};
+
+pub fn cliffTiers(h00: f32, h10: f32, h01: f32, h11: f32) Tiers {
+    const lo = @min(@min(h00, h10), @min(h01, h11));
+    const hi = @max(@max(h00, h10), @max(h01, h11));
+    return .{ .lo = lo, .hi = hi, .mid = (lo + hi) * 0.5 };
+}
+
+/// The cell's own corners, in the order the terrain quad winds them, and the lattice step each one is.
+pub const CLIFF_RING = [4][2]f32{ .{ 0, 0 }, .{ 0, 1 }, .{ 1, 1 }, .{ 1, 0 } };
+const RING_DX = [4]usize{ 0, 0, 1, 1 };
+const RING_DZ = [4]usize{ 0, 1, 1, 0 };
+
+/// How far off the true crossing the face is allowed to wander along its edge. Without it every cut lands
+/// where the arithmetic put it and the lip reads as the lattice it was painted on.
+const CLIFF_WANDER: f32 = 0.30;
+
+fn hash2(a: u32, b: u32) u32 {
+    var h: u32 = a *% 0x9E3779B1;
+    h ^= b *% 0x85EBCA6B;
+    h ^= h >> 15;
+    h *%= 0xC2B2AE35;
+    h ^= h >> 13;
+    return h;
+}
+
+/// −1..1 off an integer key.
+pub fn hashSigned(a: u32, b: u32) f32 {
+    const u: f32 = @floatFromInt(hash2(a, b) >> 8);
+    return u / @as(f32, 1 << 24) * 2.0 - 1.0;
+}
+
+/// **KEYED ON THE EDGE, NOT ON THE CELL.** The two cells either side of an edge hash the same pair of
+/// lattice points, so they wander their shared crossing to the same place and the faces still meet.
+fn edgeWander(ix: usize, iz: usize, e: usize) f32 {
+    const j = (e + 1) % 4;
+    const pa: u32 = @intCast((iz + RING_DZ[e]) * HEIGHT_N + ix + RING_DX[e]);
+    const pb: u32 = @intCast((iz + RING_DZ[j]) * HEIGHT_N + ix + RING_DX[j]);
+    return hashSigned(@min(pa, pb), @max(pa, pb));
+}
+
+/// Where the face crosses the cell's four edges. STRAIGHT CHORDS, not the bilinear's own curve, because
+/// the mesh can only draw straight ones — the sampler follows the mesh here or a corner is drawn at one
+/// tier and walked at the other. Measured: on a saddle the curve and the chord disagree over a quarter
+/// of the cell.
+pub const CliffCut = struct {
+    xp: [4][2]f32 = undefined,
+    cut: [4]bool = .{ false, false, false, false },
+    n: usize = 0,
+    high: [4]bool = .{ false, false, false, false },
+    centreHigh: bool = false,
+};
+
+pub fn cliffCut(h: [4]f32, t: Tiers, ix: usize, iz: usize) CliffCut {
+    var c = CliffCut{};
+    for (0..4) |i| c.high[i] = h[i] > t.mid;
+    for (0..4) |i| {
+        const j = (i + 1) % 4;
+        if (c.high[i] == c.high[j]) continue;
+        const den = h[j] - h[i];
+        const exact = if (@abs(den) < 1e-6) 0.5 else (t.mid - h[i]) / den;
+        const u = mathx.clampF(exact + CLIFF_WANDER * edgeWander(ix, iz, i), 0.10, 0.90);
+        c.xp[i] = .{
+            CLIFF_RING[i][0] + (CLIFF_RING[j][0] - CLIFF_RING[i][0]) * u,
+            CLIFF_RING[i][1] + (CLIFF_RING[j][1] - CLIFF_RING[i][1]) * u,
+        };
+        c.cut[i] = true;
+        c.n += 1;
+    }
+    c.centreHigh = (h[0] + h[1] + h[2] + h[3]) * 0.25 >= t.mid;
+    return c;
+}
+
+fn sideOf(a: [2]f32, b: [2]f32, x: f32, z: f32) f32 {
+    return (b[0] - a[0]) * (z - a[1]) - (b[1] - a[1]) * (x - a[0]);
+}
+
+pub fn cliffTierAt(c: CliffCut, t: Tiers, u: f32, v: f32) f32 {
+    if (c.n == 0) return if (c.high[0]) t.hi else t.lo;
+    if (c.n == 4) {
+        for (0..4) |k| {
+            const prev = (k + 3) % 4;
+            const s = sideOf(c.xp[prev], c.xp[k], u, v);
+            const sc = sideOf(c.xp[prev], c.xp[k], CLIFF_RING[k][0], CLIFF_RING[k][1]);
+            if (s * sc > 0) return if (c.high[k]) t.hi else t.lo;
+        }
+        return if (c.centreHigh) t.hi else t.lo;
+    }
+    var i: usize = 0;
+    while (i < 4 and !c.cut[i]) i += 1;
+    var j = (i + 1) % 4;
+    while (!c.cut[j]) j = (j + 1) % 4;
+    const ref = (i + 1) % 4;
+    const s = sideOf(c.xp[i], c.xp[j], u, v);
+    const sr = sideOf(c.xp[i], c.xp[j], CLIFF_RING[ref][0], CLIFF_RING[ref][1]);
+    const cls = if (s * sr >= 0) c.high[ref] else !c.high[ref];
+    return if (cls) t.hi else t.lo;
+}
+
+pub fn sampleHeight(field: []const u8, cliff: []const u8, half: f32, px: f32, pz: f32) f32 {
     std.debug.assert(field.len == HEIGHT_CELLS);
     const last: f32 = @floatFromInt(HEIGHT_N - 1);
     const step = 2 * half / last;
@@ -1312,15 +1437,22 @@ pub fn sampleHeight(field: []const u8, half: f32, px: f32, pz: f32) f32 {
     const h10 = heightOf(field[z0 * HEIGHT_N + x1]);
     const h01 = heightOf(field[z1 * HEIGHT_N + x0]);
     const h11 = heightOf(field[z1 * HEIGHT_N + x1]);
-    return mathx.lerpF(mathx.lerpF(h00, h10, tx), mathx.lerpF(h01, h11, tx), tz);
+    const case = if (cliff.len == 0) CLIFF_NONE else cliff[z0 * HEIGHT_N + x0];
+    if (case == CLIFF_NONE) {
+        return mathx.lerpF(mathx.lerpF(h00, h10, tx), mathx.lerpF(h01, h11, tx), tz);
+    }
+    if (case == CLIFF_STAIR) return stairTread(h00, h10, h01, h11);
+    const ring = [4]f32{ h00, h01, h11, h10 };
+    const t = cliffTiers(h00, h10, h01, h11);
+    return cliffTierAt(cliffCut(ring, t, x0, z0), t, tx, tz);
 }
 
-pub fn sampleGrad(field: []const u8, half: f32, px: f32, pz: f32) [2]f32 {
+pub fn sampleGrad(field: []const u8, cliff: []const u8, half: f32, px: f32, pz: f32) [2]f32 {
     const step = 2 * half / @as(f32, @floatFromInt(HEIGHT_N - 1));
-    const hx1 = sampleHeight(field, half, px + step, pz);
-    const hx0 = sampleHeight(field, half, px - step, pz);
-    const hz1 = sampleHeight(field, half, px, pz + step);
-    const hz0 = sampleHeight(field, half, px, pz - step);
+    const hx1 = sampleHeight(field, cliff, half, px + step, pz);
+    const hx0 = sampleHeight(field, cliff, half, px - step, pz);
+    const hz1 = sampleHeight(field, cliff, half, px, pz + step);
+    const hz0 = sampleHeight(field, cliff, half, px, pz - step);
     return .{ (hx1 - hx0) / (2 * step), (hz1 - hz0) / (2 * step) };
 }
 
@@ -1390,6 +1522,7 @@ pub const Map = struct {
     waterEdge: [WATER_CELLS]u8 = [_]u8{@intFromEnum(Edge.natural)} ** WATER_CELLS,
     waterKind: [WATER_CELLS]u8 = [_]u8{@intFromEnum(Liquid.water)} ** WATER_CELLS,
     height: [HEIGHT_CELLS]u8 = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS,
+    cliff: [HEIGHT_CELLS]u8 = [_]u8{CLIFF_NONE} ** HEIGHT_CELLS,
 
     pub fn label(self: *const Map) []const u8 {
         return std.mem.sliceTo(&self.name, 0);
@@ -1416,6 +1549,7 @@ pub const Map = struct {
         self.waterKind = [_]u8{@intFromEnum(Liquid.water)} ** WATER_CELLS;
         // To the DATUM, not to zero: `@memset(.., 0)` here would drop the ground to HEIGHT_MIN.
         self.height = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS;
+        self.cliff = [_]u8{CLIFF_NONE} ** HEIGHT_CELLS;
     }
 
     pub fn blank(self: *Map, name: []const u8) void {
@@ -1684,11 +1818,11 @@ pub const Map = struct {
     }
 
     pub fn heightAt(self: *const Map, px: f32, pz: f32) f32 {
-        return sampleHeight(&self.height, self.half, px, pz);
+        return sampleHeight(&self.height, &self.cliff, self.half, px, pz);
     }
 
     pub fn gradAt(self: *const Map, px: f32, pz: f32) [2]f32 {
-        return sampleGrad(&self.height, self.half, px, pz);
+        return sampleGrad(&self.height, &self.cliff, self.half, px, pz);
     }
 
     pub fn anyHeight(self: *const Map) bool {
@@ -1696,6 +1830,40 @@ pub const Map = struct {
             if (v != HEIGHT_ZERO) return true;
         }
         return false;
+    }
+
+    pub fn anyCliff(self: *const Map) bool {
+        for (self.cliff) |v| {
+            if (v != CLIFF_NONE) return true;
+        }
+        return false;
+    }
+
+    /// Paints the CASE onto every cell the disc touches. A cell is its low corner, so the span is the
+    /// same lattice span a sculpt stroke dirties.
+    pub fn paintCliff(self: *Map, px: f32, pz: f32, radius: f32, case: u8, out: *[4]usize) bool {
+        const step = 2 * self.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
+        const r = mathx.maxF(radius, step * 0.5);
+        out.* = EMPTY_SPAN;
+        const xs = pointSpan(px, r, self.half, step) orelse return false;
+        const zs = pointSpan(pz, r, self.half, step) orelse return false;
+        out.* = .{ xs[0], zs[0], xs[1], zs[1] };
+        var changed = false;
+        var iz = zs[0];
+        while (iz <= zs[1]) : (iz += 1) {
+            var ix = xs[0];
+            while (ix <= xs[1]) : (ix += 1) {
+                const p = self.heightPoint(ix, iz);
+                const dx = p[0] - px;
+                const dz = p[1] - pz;
+                if (dx * dx + dz * dz > r * r) continue;
+                const i = iz * HEIGHT_N + ix;
+                if (self.cliff[i] == case) continue;
+                self.cliff[i] = case;
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     pub fn heightPoint(self: *const Map, ix: usize, iz: usize) [2]f32 {
@@ -1859,6 +2027,12 @@ pub fn write(m: *const Map, w: anytype) !void {
     if (m.anyHeight()) {
         try w.writeAll("\n");
         try writeGrid(w, "hgt", &m.height);
+    }
+    // Its OWN test, not `anyHeight`'s: paint a face on a map before sculpting it and a nested write drops
+    // the flags on the way out.
+    if (m.anyCliff()) {
+        try w.writeAll("\n");
+        try writeGrid(w, "cliff", &m.cliff);
     }
 
     if (m.nfoes > 0) try w.writeAll("\n");
@@ -2116,6 +2290,7 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     var wEdgeAt: usize = 0;
     var wKindAt: usize = 0;
     var hgtAt: usize = 0;
+    var cliffAt: usize = 0;
     var cur = Cursor{};
     var lines = std.mem.splitScalar(u8, text, '\n');
     var ln: usize = 0;
@@ -2171,6 +2346,8 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
             wKindAt = try readGrid(&it, &m.waterKind, wKindAt, Liquid.N);
         } else if (std.mem.eql(u8, rec, "hgt")) {
             hgtAt = try readGrid(&it, &m.height, hgtAt, 256);
+        } else if (std.mem.eql(u8, rec, "cliff")) {
+            cliffAt = try readGrid(&it, &m.cliff, cliffAt, CLIFF_N);
         } else if (std.mem.eql(u8, rec, "foe")) {
             if (m.nfoes >= MAX_FOES) return ParseError.TooManyFoes;
             var f = Foe{
@@ -2215,6 +2392,7 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     if (wEdgeAt != 0 and wEdgeAt != m.waterEdge.len) return ParseError.MissingField;
     if (wKindAt != 0 and wKindAt != m.waterKind.len) return ParseError.MissingField;
     if (hgtAt != 0 and hgtAt != m.height.len) return ParseError.MissingField;
+    if (cliffAt != 0 and cliffAt != m.cliff.len) return ParseError.MissingField;
     if (edgeAt == 0) fillLegacyEdges(m);
     lineOut.* = 0;
     try link(m);
@@ -4033,7 +4211,7 @@ test "WHAT A ROOM COSTS A FRAME — the per-body wall test, counted rather than 
     const m = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(m);
     var ln: usize = 0;
-    try loadForTest(DIR ++ "/01_fallen_plain" ++ EXT, m, &ln);
+    try loadForTest(START_MAP, m, &ln);
     if (m.narenas == 0) return error.SkipZigTest;
     const a = &m.arenas[0];
     const n = a.verts();
@@ -4094,7 +4272,7 @@ test "WHAT THE ROOMS PANEL COSTS A FRAME — the op walk that finds a room's gat
     const m = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(m);
     var ln: usize = 0;
-    try loadForTest(DIR ++ "/01_fallen_plain" ++ EXT, m, &ln);
+    try loadForTest(START_MAP, m, &ln);
     if (m.narenas == 0) return error.SkipZigTest;
     const a = &m.arenas[0];
     var timer = try std.time.Timer.start();

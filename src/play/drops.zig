@@ -49,6 +49,7 @@ pub const Row = struct {
     rare: ?item.Kind = null,
     chance: f32 = 0,
     /// **A PURSE, AND IT IS A SEPARATE ROLL FROM THE ITEM.** Defaults to `.none`, which the comptime block below
+    /// refuses for anything `foe.Nature.humanoid` — a man with pockets and nothing in them has to say why.
     gold: Coin = .none,
 };
 

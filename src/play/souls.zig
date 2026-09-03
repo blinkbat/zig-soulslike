@@ -18,6 +18,7 @@ comptime {
 }
 
 /// The gold stands about chest height on the 1.8 m rig — tall enough to find across a clearing, short enough
+/// that it never hides the thing that killed you standing behind it.
 pub const H: f32 = 1.25;
 const TOP_LIFT: f32 = 0.30;
 

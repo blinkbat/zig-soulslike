@@ -3760,6 +3760,7 @@ const DIR_ART = DIR ++ "/art";
 const SHEET_CAP: i32 = 14;
 const SHEET_CAP_TIGHT: i32 = 13;
 
+/// Every editor glyph at the 18 px it is drawn at and at 3x, every item
 /// picture at its 34 px bag cell and at a plate size, the spells, the ailments and the pad kit. No world, no
 /// camera: `--shot-art` is the one harness that can judge a glyph set as a set.
 pub fn runArtShots(g: *Game) void {

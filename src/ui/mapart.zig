@@ -95,9 +95,10 @@ pub fn liquidByte(v: u8) rl.Color {
 }
 
 pub fn toFlat(wx: f32, wz: f32, half: f32, ox: i32, oy: i32, across: f32) rl.Vector2 {
+    const per = perMetre(half, across);
     return .{
-        .x = fi(ox) + (wx + half) / (2 * half) * across,
-        .y = fi(oy) + (wz + half) / (2 * half) * across,
+        .x = fi(ox) + (wx + half) * per,
+        .y = fi(oy) + (wz + half) * per,
     };
 }
 
@@ -105,7 +106,13 @@ pub fn onFlat(wx: f32, wz: f32, half: f32) bool {
     return @abs(wx) <= half and @abs(wz) <= half;
 }
 
+/// Metres to face pixels. The chart and the editor's minimap each derived this inline, at two scales.
+pub fn perMetre(half: f32, across: f32) f32 {
+    return if (half > 0) across / (2.0 * half) else 0;
+}
+
 pub fn blitField(cells: []const u8, n: usize, px: i32, py: i32, inner: f32, swatch: *const fn (u8) rl.Color) void {
+    // Unreachable today (every caller passes a comptime grid width); the same shape was a live crash in `book.rowStep`.
     if (n == 0) return;
     const cellPx = inner / @as(f32, @floatFromInt(n));
     for (0..n) |cz| {
@@ -141,6 +148,13 @@ pub const Lens = struct {
     zoom: f32 = ZOOM_MIN,
     pan: rl.Vector2 = .{ .x = 0, .y = 0 },
 
+    /// **THE ONLY READ OF `zoom`.** `Book.debugMap` writes the field straight through, so a magnification out
+    /// of range reached the scale bar and the grid pitch while the blit was clamped — a ruler under a picture
+    /// it does not measure.
+    pub fn mag(self: Lens) f32 {
+        return mathx.clampF(self.zoom, ZOOM_MIN, ZOOM_MAX);
+    }
+
     pub fn zoomBy(self: *Lens, dv: f32, dt: f32) void {
         if (dv == 0) return;
         self.zoom = mathx.clampF(self.zoom + dv * ZOOM_RATE * dt, ZOOM_MIN, ZOOM_MAX);
@@ -149,7 +163,7 @@ pub const Lens = struct {
 
     pub fn panBy(self: *Lens, v: rl.Vector2, dt: f32) void {
         if (v.x == 0 and v.y == 0) return;
-        const k = PAN_RATE * dt / self.zoom;
+        const k = PAN_RATE * dt / self.mag();
         self.pan.x += v.x * k;
         self.pan.y += v.y * k;
         self.clampPan();
@@ -157,7 +171,7 @@ pub const Lens = struct {
 
     pub fn panStep(self: *Lens, dx: f32, dy: f32) void {
         if (dx == 0 and dy == 0) return;
-        const k = PAN_STEP / self.zoom;
+        const k = PAN_STEP / self.mag();
         self.pan.x += dx * k;
         self.pan.y += dy * k;
         self.clampPan();
@@ -170,7 +184,7 @@ pub const Lens = struct {
     }
 
     fn clampPan(self: *Lens) void {
-        const lim = mathx.maxF(0, 1.0 - 1.0 / mathx.clampF(self.zoom, ZOOM_MIN, ZOOM_MAX));
+        const lim = mathx.maxF(0, 1.0 - 1.0 / self.mag());
         self.pan.x = mathx.clampF(self.pan.x, -lim, lim);
         self.pan.y = mathx.clampF(self.pan.y, -lim, lim);
     }
@@ -308,21 +322,28 @@ fn chart(m: *const wf.Map, env: *const envmod.Env) ?rl.RenderTexture2D {
 
 const SHEET: f32 = @floatFromInt(CHART_N);
 
+/// ONE scratch for both faces: the editor's minimap kept a second `wf.WATER_CELLS` copy of the same bytes.
 var liquidCells: [wf.WATER_CELLS]u8 = [_]u8{0} ** wf.WATER_CELLS;
 
-fn paint(m: *const wf.Map, env: *const envmod.Env) void {
-    rl.drawRectangle(0, 0, CHART_N, CHART_N, PAPER);
-    const perM = SHEET / (2.0 * m.half);
-
+/// **THE PAINTED POOLS AND THE THINGS STANDING IN THEM, ONE IMPLEMENTATION.** The chart and the editor's
+/// minimap are two scales of the same layer, and it was written twice.
+pub fn blitWater(m: *const wf.Map, env: *const envmod.Env, px: i32, py: i32, across: f32) void {
     for (m.water, m.waterKind, 0..) |wet, k, i| liquidCells[i] = if (wet != 0) k + 1 else 0;
-    blitField(liquidCells[0..], wf.WATER_N, 0, 0, SHEET, liquidByte);
+    blitField(liquidCells[0..], wf.WATER_N, px, py, across, liquidByte);
 
+    const perM = perMetre(m.half, across);
     for (env.placed()) |*pr| {
         if (pr.gone or markFor(pr.kind) != .water) continue;
         if (!onFlat(pr.pos.x, pr.pos.z, m.half)) continue;
-        const p = toFlat(pr.pos.x, pr.pos.z, m.half, 0, 0, SHEET);
+        const p = toFlat(pr.pos.x, pr.pos.z, m.half, px, py, across);
         rl.drawCircleV(p, props.info(pr.kind).bound * pr.scale * perM, liquidSwatch(.water));
     }
+}
+
+fn paint(m: *const wf.Map, env: *const envmod.Env) void {
+    rl.drawRectangle(0, 0, CHART_N, CHART_N, PAPER);
+    const perM = perMetre(m.half, SHEET);
+    blitWater(m, env, 0, 0, SHEET);
 
     // UNDER the walls.
     for (env.placed()) |*pr| {
@@ -434,8 +455,7 @@ pub fn niceMetres(want: f32) f32 {
 
 /// TEXELS, top-down. A render texture reads bottom-up: source `y` is off the far edge and the height negative.
 fn windowIn(lens: Lens, across: f32) rl.Rectangle {
-    // `Book.debugMap` writes `zoom` straight through, so the ONE division clamps.
-    const w = across / mathx.clampF(lens.zoom, ZOOM_MIN, ZOOM_MAX);
+    const w = across / lens.mag();
     const cx = (lens.pan.x + 1.0) * 0.5 * across;
     const cy = (lens.pan.y + 1.0) * 0.5 * across;
     const x = mathx.clampF(cx - w * 0.5, 0, across - w);
@@ -477,7 +497,7 @@ pub fn draw(x: i32, y: i32, w: i32, h: i32, world: ?World, lens: Lens) void {
 
     rl.drawTexturePro(fog.texture, windowIn(lens, @floatFromInt(SEEN_N)), dst, .{ .x = 0, .y = 0 }, 0, rl.Color.white);
 
-    const pxPerM = @as(f32, @floatFromInt(side)) * lens.zoom / (2.0 * m.half);
+    const pxPerM = perMetre(m.half, @as(f32, @floatFromInt(side)) * lens.mag());
     drawGrid(fx, fy, side, m.half, lens);
 
     if (onFlat(wd.at.x, wd.at.z, m.half)) {
@@ -502,7 +522,7 @@ fn lensPoint(wx: f32, wz: f32, half: f32, fx: i32, fy: i32, side: i32, lens: Len
 
 /// Screen space, AFTER the blit: one pixel wide at every zoom, and the pitch stays a round number of metres.
 fn drawGrid(fx: i32, fy: i32, side: i32, half: f32, lens: Lens) void {
-    const step = GRID_STEP_M * @max(1.0, @round(2.0 / lens.zoom));
+    const step = GRID_STEP_M * @max(1.0, @round(2.0 / lens.mag()));
     var wx = -half + @mod(half, step);
     while (wx <= half) : (wx += step) {
         const p = lensPoint(wx, 0, half, fx, fy, side, lens);
@@ -570,6 +590,22 @@ test "the window is the whole sheet at rest, and the flip is raylib's own" {
     try std.testing.expectEqual(@as(f32, 0), win.y);
     try std.testing.expectEqual(SHEET, win.width);
     try std.testing.expectEqual(-SHEET, win.height);
+}
+
+test "A MAGNIFICATION OUT OF RANGE IS THE SAME PICTURE AND THE SAME RULER — the blit and the scale bar clamp together" {
+    for ([_]f32{ 0, -3, 1e9, std.math.nan(f32) }) |z| {
+        const wild = Lens{ .zoom = z };
+        try std.testing.expect(wild.mag() >= ZOOM_MIN and wild.mag() <= ZOOM_MAX);
+        const win = windowIn(wild, SHEET);
+        const same = windowIn(.{ .zoom = wild.mag() }, SHEET);
+        try std.testing.expectEqual(same.width, win.width);
+        try std.testing.expectEqual(same.x, win.x);
+        try std.testing.expectEqual(same.y, win.y);
+    }
+    // A pan step at a garbage zoom still lands inside the sheet rather than at infinity.
+    var l = Lens{ .zoom = 0 };
+    l.panStep(1, 1);
+    try std.testing.expect(std.math.isFinite(l.pan.x) and std.math.isFinite(l.pan.y));
 }
 
 test "a point maps to the same place through the lens as it does on the sheet" {

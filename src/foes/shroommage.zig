@@ -234,9 +234,9 @@ const RECOVER_KEYS = [_]PoseKey{
 const State = enum { idle, drift, lob_wind, lob_throw, recover, flick_wind, flick, hop, stunlight, stunheavy, dead };
 
 const Choice = enum { hold, back, lob, keep, flick };
-fn classify(dist: f32, lobReady: bool, flickReady: bool) Choice {
+fn classify(dist: f32, scale: f32, lobReady: bool, flickReady: bool) Choice {
     if (dist > AGGRO_R) return .hold;
-    if (dist <= FLICK_R and flickReady) return .flick;
+    if (dist <= foe.triggerBand(FLICK_R, SCALE, scale) and flickReady) return .flick;
     if (dist < FLEE_R) return .back;
     if (lobReady and dist >= LOB_MIN and dist <= LOB_MAX) return .lob;
     return .keep;
@@ -597,7 +597,7 @@ pub const Mage = struct {
         const f = self.fdir();
         const side: f32 = if (self.seed < 0.5) 1.0 else -1.0;
         const lat = mathx.scaleV(mathx.perpXZ(f), side);
-        switch (classify(dist, self.lobCd <= 0, self.flickCd <= 0)) {
+        switch (classify(dist, self.scale, self.lobCd <= 0, self.flickCd <= 0)) {
             .lob => {
                 self.kindled = true;
                 self.enter(.lob_wind);
@@ -1170,17 +1170,17 @@ test "THE THROW HAS A SHAPE — most of its travel in the first third, and the f
 }
 
 test "IT KEEPS ITS DISTANCE: it throws from its band, backs off inside it, and closes from outside it" {
-    try std.testing.expectEqual(Choice.hold, classify(AGGRO_R + 1.0, true, true));
-    try std.testing.expectEqual(Choice.lob, classify((LOB_MIN + LOB_MAX) * 0.5, true, true));
-    try std.testing.expectEqual(Choice.back, classify(FLEE_R - 0.5, true, true));
-    try std.testing.expectEqual(Choice.keep, classify((LOB_MIN + LOB_MAX) * 0.5, false, true));
-    try std.testing.expectEqual(Choice.keep, classify(LOB_MAX + 2.0, true, true));
+    try std.testing.expectEqual(Choice.hold, classify(AGGRO_R + 1.0, SCALE, true, true));
+    try std.testing.expectEqual(Choice.lob, classify((LOB_MIN + LOB_MAX) * 0.5, SCALE, true, true));
+    try std.testing.expectEqual(Choice.back, classify(FLEE_R - 0.5, SCALE, true, true));
+    try std.testing.expectEqual(Choice.keep, classify((LOB_MIN + LOB_MAX) * 0.5, SCALE, false, true));
+    try std.testing.expectEqual(Choice.keep, classify(LOB_MAX + 2.0, SCALE, true, true));
 }
 
 test "THE FLAME OWNS THE RING THE RETREAT CANNOT, and it is the LAST thing that answers there" {
-    try std.testing.expectEqual(Choice.back, classify(FLICK_R + 0.4, true, true));
-    try std.testing.expectEqual(Choice.flick, classify(FLICK_R - 0.4, true, true));
-    try std.testing.expectEqual(Choice.back, classify(FLICK_R - 0.4, true, false));
+    try std.testing.expectEqual(Choice.back, classify(FLICK_R + 0.4, SCALE, true, true));
+    try std.testing.expectEqual(Choice.flick, classify(FLICK_R - 0.4, SCALE, true, true));
+    try std.testing.expectEqual(Choice.back, classify(FLICK_R - 0.4, SCALE, true, false));
     try std.testing.expect(FLICK_HIT.elem.total() > 0 and FLICK_HIT.elem.total() < EMBER_HIT.elem.total() * 0.7);
 }
 

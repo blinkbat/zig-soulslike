@@ -254,9 +254,9 @@ const REST = blk: {
 const State = enum { idle, drift, circle, wind, strike, recover, blinkout, blinkin, stunlight, stunheavy, dead };
 
 const Choice = enum { hold, close, circle, grasp, wisp };
-fn classify(dist: f32, graspReady: bool, wispReady: bool) Choice {
+fn classify(dist: f32, scale: f32, graspReady: bool, wispReady: bool) Choice {
     if (dist > AGGRO_R) return .hold;
-    if (dist <= MOVES[GRASP].maxR) return if (graspReady) .grasp else .circle;
+    if (dist <= foe.triggerBand(MOVES[GRASP].maxR, 1.0, scale)) return if (graspReady) .grasp else .circle;
     if (dist >= MOVES[WISP].minR and dist <= MOVES[WISP].maxR and wispReady) return .wisp;
     if (dist > CIRCLE_BAND) return .close;
     return .circle;
@@ -616,7 +616,7 @@ pub const Shade = struct {
             self.driftDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
             return self.enter(.drift);
         }
-        switch (classify(dist, self.cds[GRASP] <= 0, self.cds[WISP] <= 0)) {
+        switch (classify(dist, self.scale, self.cds[GRASP] <= 0, self.cds[WISP] <= 0)) {
             .hold => self.enter(.idle),
             .close => {
                 self.driftDir = mathx.dirXZ(self.pos, hero);
@@ -1171,13 +1171,13 @@ test "NO ATTACK COMES OUT OF NOWHERE: every window clears the standard's own flo
 }
 
 test "the bands decide the move, and a spent cooldown never buys a free one" {
-    try std.testing.expectEqual(Choice.hold, classify(AGGRO_R + 1, true, true));
-    try std.testing.expectEqual(Choice.grasp, classify(1.0, true, true));
-    try std.testing.expectEqual(Choice.circle, classify(1.0, false, true));
-    try std.testing.expectEqual(Choice.wisp, classify(7.0, true, true));
-    try std.testing.expectEqual(Choice.close, classify(7.0, true, false));
-    try std.testing.expectEqual(Choice.circle, classify(MOVES[GRASP].maxR + 0.3, false, false));
-    try std.testing.expectEqual(Choice.close, classify(MOVES[WISP].maxR + 2.0, true, true));
+    try std.testing.expectEqual(Choice.hold, classify(AGGRO_R + 1, 1.0, true, true));
+    try std.testing.expectEqual(Choice.grasp, classify(1.0, 1.0, true, true));
+    try std.testing.expectEqual(Choice.circle, classify(1.0, 1.0, false, true));
+    try std.testing.expectEqual(Choice.wisp, classify(7.0, 1.0, true, true));
+    try std.testing.expectEqual(Choice.close, classify(7.0, 1.0, true, false));
+    try std.testing.expectEqual(Choice.circle, classify(MOVES[GRASP].maxR + 0.3, 1.0, false, false));
+    try std.testing.expectEqual(Choice.close, classify(MOVES[WISP].maxR + 2.0, 1.0, true, true));
 }
 
 test "THE BLINK: threatened or wounded, never mid-swing, and never while the roots have it" {

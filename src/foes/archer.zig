@@ -531,8 +531,8 @@ fn wantsBackstep(dist: f32, cd: f32, s: State, rooted: bool) bool {
     };
 }
 
-fn wantsButt(dist: f32, cd: f32, s: State) bool {
-    if (dist > BUTT_R or cd > 0) return false;
+fn wantsButt(dist: f32, scale: f32, cd: f32, s: State) bool {
+    if (dist > foe.triggerBand(BUTT_R, SCALE, scale) or cd > 0) return false;
     return switch (s) {
         .idle, .draw, .hold, .recover, .reposition => true,
         .loose, .backstep, .buttwind, .butt, .stunlight, .stunheavy, .dead => false,
@@ -719,7 +719,7 @@ pub const Archer = struct {
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         if (wantsBackstep(d, self.backstepCd, self.state, !foe.canLeap(&self.root))) {
             self.enterBackstep();
-        } else if (wantsButt(d, self.buttCd, self.state)) self.enterButt();
+        } else if (wantsButt(d, self.scale, self.buttCd, self.state)) self.enterButt();
         switch (self.state) {
             .idle => {
                 self.armT = mathx.approach(self.armT, 0, dt * 4.0);
@@ -1616,11 +1616,11 @@ test "THE BUTT IS THE LEAP'S UNDERSTUDY: it covers the leap's cooldown, and a RO
     try std.testing.expect(BUTT_R < BACKSTEP_R);
     try std.testing.expect(BUTT_WIND > foe.TELL_MIN);
     try std.testing.expect(BUTT_SHOVE < BACKSTEP_DIST * 0.6);
-    try std.testing.expect(wantsButt(BUTT_R - 0.2, 0, .draw));
-    try std.testing.expect(!wantsButt(BUTT_R + 0.2, 0, .draw));
-    try std.testing.expect(!wantsButt(BUTT_R - 0.2, 1.0, .draw));
+    try std.testing.expect(wantsButt(BUTT_R - 0.2, SCALE, 0, .draw));
+    try std.testing.expect(!wantsButt(BUTT_R + 0.2, SCALE, 0, .draw));
+    try std.testing.expect(!wantsButt(BUTT_R - 0.2, SCALE, 1.0, .draw));
     for ([_]State{ .loose, .backstep, .buttwind, .butt, .stunlight, .stunheavy, .dead }) |s| {
-        try std.testing.expect(!wantsButt(0.4, 0, s));
+        try std.testing.expect(!wantsButt(0.4, SCALE, 0, s));
     }
     var a = Archer.spawn(mathx.zero3, 0, 1.0, 0.3);
     _ = a.update(1.0 / 60.0, v3(0, 0, 1.0), 500.0, .{});

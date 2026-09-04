@@ -258,9 +258,9 @@ fn spec(r: Role) Spec {
 
 
 const MChoice = enum { hold, close, spit, bite, lay };
-fn classifyMother(dist: f32, tether: f32, spitReady: bool, biteReady: bool, layWanted: bool) MChoice {
+fn classifyMother(dist: f32, scale: f32, tether: f32, spitReady: bool, biteReady: bool, layWanted: bool) MChoice {
     if (dist > M_AGGRO) return .hold;
-    if (dist <= M_BITE_R) return if (biteReady) .bite else .hold;
+    if (dist <= foe.triggerBand(M_BITE_R, M_SCALE, scale)) return if (biteReady) .bite else .hold;
     if (layWanted and dist > M_BITE_R * 1.6) return .lay;
     if (dist <= M_SPIT_MAX and dist >= M_SPIT_MIN) return if (spitReady) .spit else .hold;
     if (dist < M_SPIT_MIN) return .close;
@@ -269,9 +269,9 @@ fn classifyMother(dist: f32, tether: f32, spitReady: bool, biteReady: bool, layW
 }
 
 const BChoice = enum { idle, chase, leap, bite };
-fn classifyBroodling(dist: f32, leapReady: bool, biteReady: bool) BChoice {
+fn classifyBroodling(dist: f32, scale: f32, leapReady: bool, biteReady: bool) BChoice {
     if (dist > B_AGGRO) return .idle;
-    if (dist <= B_BITE_R) return if (biteReady) .bite else .idle;
+    if (dist <= foe.triggerBand(B_BITE_R, B_SCALE, scale)) return if (biteReady) .bite else .idle;
     if (leapReady and dist >= B_LEAP_MIN and dist <= B_LEAP_MAX) return .leap;
     return .chase;
 }
@@ -1212,7 +1212,7 @@ pub const Spider = struct {
 
     fn decideMother(self: *Spider, d: f32, bounds: f32) void {
         _ = bounds;
-        switch (classifyMother(d, self.tetherOut(), self.spitCd <= 0, self.biteCd <= 0, self.layWanted and self.layCd <= 0)) {
+        switch (classifyMother(d, self.scale, self.tetherOut(), self.spitCd <= 0, self.biteCd <= 0, self.layWanted and self.layCd <= 0)) {
             .hold => self.enterIdle(0.16 + self.seed * 0.5),
             .close => {
                 self.moveDir = self.fdir();
@@ -1284,7 +1284,7 @@ pub const Spider = struct {
     }
 
     fn decideBroodling(self: *Spider, d: f32, hero: rl.Vector3) void {
-        switch (classifyBroodling(d, self.leapCdReady() and foe.canLeap(&self.root), self.biteCd <= 0)) {
+        switch (classifyBroodling(d, self.scale, self.leapCdReady() and foe.canLeap(&self.root), self.biteCd <= 0)) {
             .idle => {
                 if (mathx.distXZ(self.pos, self.home) > B_HOME_R) {
                     self.facing = mathx.headingXZ(mathx.dirXZ(self.pos, self.home));
@@ -2025,18 +2025,18 @@ test "A CAUGHT BITE NEVER REACHES HIM, and the second catch is the punish window
 
 test "SHE HOLDS THE CLUTCH: past her guard radius she stops closing and spits" {
     try std.testing.expect(M_SPIT_MAX + 2 < M_AGGRO);
-    try std.testing.expectEqual(MChoice.hold, classifyMother(M_SPIT_MAX + 2,M_GUARD_R + 1, true, true, false));
-    try std.testing.expectEqual(MChoice.spit, classifyMother(M_SPIT_MAX - 1, M_GUARD_R + 1, true, true, false));
-    try std.testing.expectEqual(MChoice.close, classifyMother(M_SPIT_MAX + 2,1.0, true, true, false));
+    try std.testing.expectEqual(MChoice.hold, classifyMother(M_SPIT_MAX + 2, M_SCALE, M_GUARD_R + 1, true, true, false));
+    try std.testing.expectEqual(MChoice.spit, classifyMother(M_SPIT_MAX - 1, M_SCALE, M_GUARD_R + 1, true, true, false));
+    try std.testing.expectEqual(MChoice.close, classifyMother(M_SPIT_MAX + 2, M_SCALE, 1.0, true, true, false));
 }
 
 test "her order of business: teeth first, then eggs, then the spit" {
-    try std.testing.expectEqual(MChoice.bite, classifyMother(M_BITE_R - 0.2, 0, true, true, true));
-    try std.testing.expectEqual(MChoice.close, classifyMother(M_BITE_R * 1.2, 0, false, false, true));
-    try std.testing.expectEqual(MChoice.lay, classifyMother(8.0, 0, true, true, true));
-    try std.testing.expectEqual(MChoice.spit, classifyMother(8.0, 0, true, true, false));
-    try std.testing.expectEqual(MChoice.close, classifyMother(M_SPIT_MIN - 0.5, 0, true, true, false));
-    try std.testing.expectEqual(MChoice.hold, classifyMother(M_AGGRO + 1, 0, true, true, true));
+    try std.testing.expectEqual(MChoice.bite, classifyMother(M_BITE_R - 0.2, M_SCALE, 0, true, true, true));
+    try std.testing.expectEqual(MChoice.close, classifyMother(M_BITE_R * 1.2, M_SCALE, 0, false, false, true));
+    try std.testing.expectEqual(MChoice.lay, classifyMother(8.0, M_SCALE, 0, true, true, true));
+    try std.testing.expectEqual(MChoice.spit, classifyMother(8.0, M_SCALE, 0, true, true, false));
+    try std.testing.expectEqual(MChoice.close, classifyMother(M_SPIT_MIN - 0.5, M_SCALE, 0, true, true, false));
+    try std.testing.expectEqual(MChoice.hold, classifyMother(M_AGGRO + 1, M_SCALE, 0, true, true, true));
 }
 
 test "range bands are ordered and sit inside her senses" {
@@ -2062,11 +2062,11 @@ test "A HATCHLING IS WIMPY AND FAST, and she is neither" {
 }
 
 test "the broodling pounces only from its band, and bites what is on top of it" {
-    try std.testing.expectEqual(BChoice.leap, classifyBroodling((B_LEAP_MIN + B_LEAP_MAX) * 0.5, true, true));
-    try std.testing.expectEqual(BChoice.chase, classifyBroodling((B_LEAP_MIN + B_LEAP_MAX) * 0.5, false, true));
-    try std.testing.expectEqual(BChoice.chase, classifyBroodling(B_LEAP_MAX + 2, true, true));
-    try std.testing.expectEqual(BChoice.bite, classifyBroodling(B_BITE_R - 0.1, true, true));
-    try std.testing.expectEqual(BChoice.idle, classifyBroodling(B_AGGRO + 1, true, true));
+    try std.testing.expectEqual(BChoice.leap, classifyBroodling((B_LEAP_MIN + B_LEAP_MAX) * 0.5, B_SCALE, true, true));
+    try std.testing.expectEqual(BChoice.chase, classifyBroodling((B_LEAP_MIN + B_LEAP_MAX) * 0.5, B_SCALE, false, true));
+    try std.testing.expectEqual(BChoice.chase, classifyBroodling(B_LEAP_MAX + 2, B_SCALE, true, true));
+    try std.testing.expectEqual(BChoice.bite, classifyBroodling(B_BITE_R - 0.1, B_SCALE, true, true));
+    try std.testing.expectEqual(BChoice.idle, classifyBroodling(B_AGGRO + 1, B_SCALE, true, true));
 }
 
 test "A SAC RIPENS, THEN SPLITS — and a cut one never does" {

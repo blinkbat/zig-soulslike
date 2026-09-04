@@ -40,7 +40,7 @@ fishman shoal (3 roles), blinkbat, the fungal duo (second boss, two bars) and th
 when you walk up to it), plus the spirit wolf that fights on your side. Shared leash, sight, parry, nav-steering
 and dissipation contracts in `foe.zig`.
 
-**World.** 560 m square ringed by cliffs, five regions, 166 prop kinds in three layers each. Sculptable
+**World.** 560 m square ringed by cliffs, five regions, 167 prop kinds in three layers each. Sculptable
 heightfield (40° slope limit, 0.55 m step). Painted soil with coverage and eight edge shapes; painted liquid
 with a derived coast you wade, in four kinds — water, tar, fungal soup (poison) and lava (burning, and it
 bites). All four wade the same; the look, the status and the voice are what differ. Day/night clock (~20 min day) driving every colour and shadow; sun 6→20 then the

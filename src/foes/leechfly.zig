@@ -158,10 +158,11 @@ pub fn feedClock() struct { wind: f32, stab: f32, drink: f32 } {
 const State = enum { idle, stalk, circle, wind, stab, drink, recover, climb, perch, dive, stunlight, stunheavy, dead };
 
 const Choice = enum { hold, close, circle, feed };
-fn classify(dist: f32, feedReady: bool) Choice {
+fn classify(dist: f32, scale: f32, feedReady: bool) Choice {
     if (dist > AGGRO_R) return .hold;
-    if (dist <= STAB_R) return if (feedReady) .feed else .circle;
-    if (dist > STAB_R + 1.4) return .close;
+    const stab = foe.triggerBand(STAB_R, 1.0, scale);
+    if (dist <= stab) return if (feedReady) .feed else .circle;
+    if (dist > stab + 1.4) return .close;
     return .circle;
 }
 
@@ -563,7 +564,7 @@ pub const Leechfly = struct {
             self.driftDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
             return self.enter(.stalk);
         }
-        switch (classify(dist, self.feedCd <= 0)) {
+        switch (classify(dist, self.scale, self.feedCd <= 0)) {
             .hold => self.enter(.idle),
             .close => {
                 self.driftDir = mathx.dirXZ(self.pos, hero);
@@ -1046,13 +1047,13 @@ test "no attack comes out of nowhere" {
 test "the bands never leave a gap the decision falls through" {
     var d: f32 = 0;
     while (d <= AGGRO_R) : (d += 0.25) {
-        _ = classify(d, true);
-        _ = classify(d, false);
+        _ = classify(d, 1.0, true);
+        _ = classify(d, 1.0, false);
     }
-    try std.testing.expectEqual(Choice.hold, classify(AGGRO_R + 0.1, true));
-    try std.testing.expectEqual(Choice.feed, classify(STAB_R * 0.5, true));
-    try std.testing.expectEqual(Choice.circle, classify(STAB_R * 0.5, false));
-    try std.testing.expectEqual(Choice.close, classify(AGGRO_R - 0.1, true));
+    try std.testing.expectEqual(Choice.hold, classify(AGGRO_R + 0.1, 1.0, true));
+    try std.testing.expectEqual(Choice.feed, classify(STAB_R * 0.5, 1.0, true));
+    try std.testing.expectEqual(Choice.circle, classify(STAB_R * 0.5, 1.0, false));
+    try std.testing.expectEqual(Choice.close, classify(AGGRO_R - 0.1, 1.0, true));
 }
 
 test "THE MARK RIDES THE HEAD, four metres up as readily as one" {

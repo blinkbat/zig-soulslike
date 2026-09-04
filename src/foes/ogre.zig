@@ -321,14 +321,23 @@ fn swipeInnerAt(scale: f32) f32 {
     return SWIPE_INNER * scale - HERO_REACH;
 }
 
+/// `SWIPE_R`/`SLAM_R` are the bands measured on the SHIPPED body; the hurt boxes they feed (`swipeReach`, `slamReach`) scale with it, so the bands have to as well or a re-scaled placement swings where it cannot land.
+fn swipeTriggerR(scale: f32) f32 {
+    return foe.triggerBand(SWIPE_R, SCALE, scale);
+}
+fn slamTriggerR(scale: f32) f32 {
+    return foe.triggerBand(SLAM_R, SCALE, scale);
+}
+
 fn classify(dist: f32, bearingDeg: f32, slamReady: bool, swipeReady: bool, driveReady: bool, scale: f32) Choice {
     if (dist > AGGRO_R) return .idle;
     const offFront = @abs(bearingDeg) > SWIPE_BEARING;
     const swipeInner = swipeInnerAt(scale);
-    const inSweep = dist >= swipeInner and dist <= SWIPE_R;
-    const near = swipeInner + (SWIPE_R - swipeInner) * SWIPE_NEAR_K;
+    const swipeOuter = swipeTriggerR(scale);
+    const inSweep = dist >= swipeInner and dist <= swipeOuter;
+    const near = swipeInner + (swipeOuter - swipeInner) * SWIPE_NEAR_K;
     if (inSweep and swipeReady and (offFront or !slamReady or dist <= near)) return .swipe;
-    if (dist <= SLAM_R) return if (slamReady and @abs(bearingDeg) <= slamBearing(dist, scale)) .slam else .wait;
+    if (dist <= slamTriggerR(scale)) return if (slamReady and @abs(bearingDeg) <= slamBearing(dist, scale)) .slam else .wait;
     if (dist >= DRIVE_MIN and dist <= DRIVE_MAX and driveReady) return .drive;
     return .approach;
 }
@@ -534,7 +543,7 @@ pub const Ogre = struct {
                         self.homing = false;
                         self.decide(d, bearing);
                     } else if (mathx.distXZ(self.pos, foe.tetherFor(self)) <= foe.LEASH_HOME_R) self.enterIdle();
-                } else if (d <= SWIPE_R or d > AGGRO_R or
+                } else if (d <= swipeTriggerR(self.scale) or d > AGGRO_R or
                     (d >= DRIVE_MIN and d <= DRIVE_MAX and self.driveCd <= 0 and foe.canLeap(&self.root)))
                     self.decide(d, bearing);
             },

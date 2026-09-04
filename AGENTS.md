@@ -406,6 +406,14 @@ Two things in that table are load-bearing beyond navigation:
     out at any bearing inside `SLAM_R`: thrown at a man 170° off he came round to 64° and billed nothing.
   - **OFF THE GATE HE LOOMS, AND LOOMING IS THE TURN** — `.wait` is `enterIdle`, and idle faces the quarry at
     the FULL rate. A gate is only a hole if the state it falls through does nothing.
+  - **AND A BAND HELD AT A CONSTANT WHILE ITS HURT BOX SCALES ONLY AGREES AT ONE SCALE** (`foe.triggerBand`).
+    The editor posts a body anywhere in `wf.FOE_SCALE_LO`..`HI` and `foe.hurtReach` tracks it; a `classify`
+    that compares against the authored world metre does not, so under the shipped scale the creature commits
+    to a blow that cannot land and — having chosen a strike over a step — never closes. MEASURED at `x0.5`:
+    the ogre swiped from 1.61 m outside its own club and the rooted reached 1.75 m past its hook; twelve moves
+    across ten creatures. `triggerBand(worldR, shipped, scale)` returns `worldR` exactly at the shipped scale,
+    so the authored fight does not move. Where the band IS the bill's own constant, compare against
+    `foe.hurtReach` directly instead (`cinderwake`, `birchwight`, `salthusk`, `owlbear`, and the rest).
 - **A BODY THE NECROMANCER CAN USE IS A `raisable`/`reraise` PAIR AND A `heldOpen` FIELD** — nothing else, and
   no edit to `game.markVigil`/`applyRaises`, which key off `@hasDecl`. The field is named for what it does to
   the BODY, not for the creature doing it: one name for both had `foe.dissipate`'s probe matching the caster.

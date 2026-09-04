@@ -164,11 +164,15 @@ const REST = blk: {
 const State = enum { dormant, wake, idle, wind, strike, recover, sleep, stunlight, stunheavy, dead };
 
 const Choice = enum { sleep, hold, slam, sweep, hook };
-fn classify(dist: f32, ready: [MOVES.len]bool) Choice {
+/// The bands are `reaches`'s own arc measured on a scale-1 body, so they take the same triangle back off it — held at a constant against a hurt box that scales, a 0.5 fixture reaches for a man 1.75 m outside its hook.
+fn bandR(a: Attack, scale: f32) f32 {
+    return foe.triggerBand(a.maxR, 1.0, scale);
+}
+fn classify(dist: f32, scale: f32, ready: [MOVES.len]bool) Choice {
     if (dist > SLEEP_R) return .sleep;
-    if (dist <= MOVES[SLAM].maxR and ready[SLAM]) return .slam;
-    if (dist >= MOVES[SWEEP].minR and dist <= MOVES[SWEEP].maxR and ready[SWEEP]) return .sweep;
-    if (dist >= MOVES[HOOK].minR and dist <= MOVES[HOOK].maxR and ready[HOOK]) return .hook;
+    if (dist <= bandR(MOVES[SLAM], scale) and ready[SLAM]) return .slam;
+    if (dist >= MOVES[SWEEP].minR and dist <= bandR(MOVES[SWEEP], scale) and ready[SWEEP]) return .sweep;
+    if (dist >= MOVES[HOOK].minR and dist <= bandR(MOVES[HOOK], scale) and ready[HOOK]) return .hook;
     return .hold;
 }
 
@@ -452,7 +456,7 @@ pub const Rooted = struct {
     fn decide(self: *Rooted, dist: f32) void {
         var ready: [MOVES.len]bool = undefined;
         for (&ready, self.cds) |*r, c| r.* = c <= 0;
-        switch (classify(dist, ready)) {
+        switch (classify(dist, self.scale, ready)) {
             .sleep => self.enter(.sleep),
             .hold => self.enter(.idle),
             .slam => self.begin(SLAM),
@@ -945,15 +949,15 @@ test "every band is answered, so it cannot be kited" {
     const all = [_]bool{ true, true, true };
     var d: f32 = 0;
     while (d <= MOVES[HOOK].maxR) : (d += 0.2) {
-        try std.testing.expect(classify(d, all) != .hold);
+        try std.testing.expect(classify(d, 1.0, all) != .hold);
     }
-    try std.testing.expectEqual(Choice.slam, classify(1.0, all));
-    try std.testing.expectEqual(Choice.sweep, classify(3.0, all));
-    try std.testing.expectEqual(Choice.hook, classify(4.4, all));
-    try std.testing.expectEqual(Choice.sleep, classify(SLEEP_R + 0.1, all));
+    try std.testing.expectEqual(Choice.slam, classify(1.0, 1.0, all));
+    try std.testing.expectEqual(Choice.sweep, classify(3.0, 1.0, all));
+    try std.testing.expectEqual(Choice.hook, classify(4.4, 1.0, all));
+    try std.testing.expectEqual(Choice.sleep, classify(SLEEP_R + 0.1, 1.0, all));
     try std.testing.expect(MOVES[HOOK].maxR > WAKE_R);
     try std.testing.expect(SLEEP_R > MOVES[HOOK].maxR);
-    try std.testing.expectEqual(Choice.hold, classify(1.0, [_]bool{ false, false, false }));
+    try std.testing.expectEqual(Choice.hold, classify(1.0, 1.0, [_]bool{ false, false, false }));
 }
 
 test "A LIMB GOES WHERE ITS BILL SAYS: the tip crosses the hero column, out near the band's edge" {

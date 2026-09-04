@@ -27,7 +27,6 @@ const BRASS = rgba(66, 51, 22, 255);
 const STRAP = rgba(34, 26, 19, 255);
 const BONE = archermod.BONE;
 const BONE_DK = archermod.BONE_DK;
-const BONE_LT = archermod.BONE_LT;
 /// Solved to near 140: over the plate's brightest rim (112), under the ground (126) on hue.
 const KBONE = rgba(57, 52, 44, 255);
 const KBONE_LT = rgba(90, 83, 70, 255);

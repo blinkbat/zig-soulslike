@@ -29,7 +29,6 @@ const STONE_LT = art.STONE_LT;
 const STONE_MOSS = art.STONE_MOSS;
 const THATCH_DK = art.THATCH_DK;
 const TIMBER_DK = art.TIMBER_DK;
-const WISP = art.WISP;
 const blade = art.blade;
 const chipsInto = art.chipsInto;
 const courseInto = art.courseInto;

@@ -46,6 +46,11 @@ pub fn hurtReach(own: f32, scale: f32) f32 {
     return own * scale + HERO_REACH;
 }
 
+/// A TRIGGER BAND HELD AT A CONSTANT WHILE ITS HURT BOX SCALES ONLY AGREES AT ONE SCALE. `worldR` is the band the author measured on the SHIPPED body; this re-solves it through `hurtReach`'s own triangle for the body actually standing there, so it returns `worldR` exactly at `scale == shipped` and tracks the box either side. Under it the creature commits to a blow that cannot land and — having chosen a strike rather than a step — never closes.
+pub fn triggerBand(worldR: f32, shipped: f32, scale: f32) f32 {
+    return hurtReach((worldR - HERO_REACH) / shipped, scale);
+}
+
 pub const AIRBORNE_LIFT: f32 = 0.04;
 
 pub const Nature = enum {

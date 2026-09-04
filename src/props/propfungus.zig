@@ -15,7 +15,6 @@ const STIPE = art.STIPE;
 const STIPE_DK = art.STIPE_DK;
 const CAP_GLOW = art.CAP_GLOW;
 const SPORE_GLOW = art.SPORE_GLOW;
-const PUNK = art.PUNK;
 const PUNK_DK = art.PUNK_DK;
 const BARK_OLD = art.BARK_OLD;
 

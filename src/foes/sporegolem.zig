@@ -279,7 +279,8 @@ pub const Golem = struct {
 
     fn decide(self: *Golem, dist: f32) void {
         if (self.leash.goingHome()) return self.enter(.walk);
-        if (dist <= SMASH_AT and self.smashCd <= 0) {
+        // The smash disc is laid `SMASH_R * 0.62` ahead and billed at `SMASH_R`, both in the body's own metres, so the band that commits to it takes the same scale back off.
+        if (dist <= foe.triggerBand(SMASH_AT, 1.0, self.scale) and self.smashCd <= 0) {
             self.smashCd = SMASH_CD;
             return self.enter(.smash_wind);
         }

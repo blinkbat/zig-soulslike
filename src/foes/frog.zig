@@ -87,7 +87,6 @@ const TURN_RATE = 5.0;
 const REST_EXT = 0.34;
 const HIP_SWING = 66.0;
 const KNEE_STRAIGHTEN = 104.0;
-const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 7.0;
 const DISS_DUR = 0.95;
 const DISSOLVE = foe.Dissolve{ .rate = 44.0, .spread = 0.55, .rise = 0.35 };
@@ -143,8 +142,8 @@ const State = enum { idle, hop, lunge, recover, chomp, stunlight, stunheavy, dea
 const PANIC_AT = 0.28;
 
 const Choice = enum { rest, hop, lunge, chomp, scatter, wait };
-fn classify(dist: f32, lungeReady: bool, chompReady: bool, rooted: bool, pressed: bool) Choice {
-    if (dist <= BITE_R) return if (chompReady) .chomp else .wait;
+fn classify(dist: f32, scale: f32, lungeReady: bool, chompReady: bool, rooted: bool, pressed: bool) Choice {
+    if (dist <= foe.triggerBand(BITE_R, SCALE, scale)) return if (chompReady) .chomp else .wait;
     if (rooted) return .wait;
     if (dist > AGGRO_R) return .rest;
     if (dist <= LUNGE_R and lungeReady) return .lunge;
@@ -427,7 +426,7 @@ pub const Frog = struct {
 
     fn decide(self: *Frog, hero: rl.Vector3, bounds: f32) void {
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
-        switch (classify(d, self.lungeCd <= 0, self.chompCd <= 0, !foe.canLeap(&self.root), self.sense.pressed(HP_MAX, PANIC_AT))) {
+        switch (classify(d, self.scale, self.lungeCd <= 0, self.chompCd <= 0, !foe.canLeap(&self.root), self.sense.pressed(HP_MAX, PANIC_AT))) {
             .chomp => {
                 self.chompCd = CHOMP_CD;
                 self.startChomp();
@@ -1179,27 +1178,27 @@ test "A CAUGHT LEAP NEVER ARRIVES, and the toad comes straight down out of the a
 }
 
 test "classify: ranges pick chomp < lunge < hop < rest, and cooldowns gate" {
-    try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1, true, true, false, false));
-    try std.testing.expectEqual(Choice.hop, classify((LUNGE_R + AGGRO_R) * 0.5, true, true, false, false));
-    try std.testing.expectEqual(Choice.lunge, classify(LUNGE_R - 0.5, true, true, false, false));
-    try std.testing.expectEqual(Choice.hop, classify(LUNGE_R - 0.5, false, true, false, false));
-    try std.testing.expectEqual(Choice.chomp, classify(BITE_R - 0.2, true, true, false, false));
-    try std.testing.expectEqual(Choice.wait, classify(BITE_R - 0.2, true, false, false, false));
+    try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1, SCALE, true, true, false, false));
+    try std.testing.expectEqual(Choice.hop, classify((LUNGE_R + AGGRO_R) * 0.5, SCALE, true, true, false, false));
+    try std.testing.expectEqual(Choice.lunge, classify(LUNGE_R - 0.5, SCALE, true, true, false, false));
+    try std.testing.expectEqual(Choice.hop, classify(LUNGE_R - 0.5, SCALE, false, true, false, false));
+    try std.testing.expectEqual(Choice.chomp, classify(BITE_R - 0.2, SCALE, true, true, false, false));
+    try std.testing.expectEqual(Choice.wait, classify(BITE_R - 0.2, SCALE, true, false, false, false));
 }
 
 test "ROOTED, A TOAD HAS ONLY ITS JAWS — every other move it owns leaves the ground" {
-    try std.testing.expectEqual(Choice.wait, classify(LUNGE_R - 0.5, true, true, true, false));
-    try std.testing.expectEqual(Choice.wait, classify((LUNGE_R + AGGRO_R) * 0.5, true, true, true, false));
-    try std.testing.expectEqual(Choice.wait, classify(AGGRO_R + 1, true, true, true, false));
-    try std.testing.expectEqual(Choice.chomp, classify(BITE_R - 0.2, true, true, true, false));
-    try std.testing.expectEqual(Choice.wait, classify(LUNGE_R - 0.5, false, true, true, true));
+    try std.testing.expectEqual(Choice.wait, classify(LUNGE_R - 0.5, SCALE, true, true, true, false));
+    try std.testing.expectEqual(Choice.wait, classify((LUNGE_R + AGGRO_R) * 0.5, SCALE, true, true, true, false));
+    try std.testing.expectEqual(Choice.wait, classify(AGGRO_R + 1, SCALE, true, true, true, false));
+    try std.testing.expectEqual(Choice.chomp, classify(BITE_R - 0.2, SCALE, true, true, true, false));
+    try std.testing.expectEqual(Choice.wait, classify(LUNGE_R - 0.5, SCALE, false, true, true, true));
 }
 
 test "THE STARTLE SCATTERS IT SIDEWAYS, AND ONLY WHEN IT CANNOT ANSWER — the lunge still outranks panic" {
-    try std.testing.expectEqual(Choice.lunge, classify(LUNGE_R - 0.5, true, true, false, true));
-    try std.testing.expectEqual(Choice.scatter, classify(LUNGE_R - 0.5, false, true, false, true));
-    try std.testing.expectEqual(Choice.scatter, classify(AGGRO_R - 1.0, true, true, false, true));
-    try std.testing.expectEqual(Choice.chomp, classify(BITE_R - 0.2, true, true, false, true));
+    try std.testing.expectEqual(Choice.lunge, classify(LUNGE_R - 0.5, SCALE, true, true, false, true));
+    try std.testing.expectEqual(Choice.scatter, classify(LUNGE_R - 0.5, SCALE, false, true, false, true));
+    try std.testing.expectEqual(Choice.scatter, classify(AGGRO_R - 1.0, SCALE, true, true, false, true));
+    try std.testing.expectEqual(Choice.chomp, classify(BITE_R - 0.2, SCALE, true, true, false, true));
 
     var f = Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     f.leash.provoke();

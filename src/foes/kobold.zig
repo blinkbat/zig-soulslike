@@ -597,7 +597,7 @@ pub const Kobold = struct {
 
     /// THE BERSERKER RUNS. At `WALK_SPEED * 1.22` he closed at 2.07 m/s against a shieldman charging at 2.92 and a greatsword at 2.52. `warrior.approachSpeed`'s shape: run at distance, walk the last stride in.
     pub fn approachSpeed(self: *const Kobold, dist: f32) f32 {
-        const base = spec(self.role).speed * self.vit.travelMult();
+        const base = spec(self.role).speed * self.vit.foeTravelMult();
         if (self.role != .berserker or dist > AGGRO_R or dist <= self.walkInR()) return WALK_SPEED * base;
         return RUN_SPEED * base;
     }

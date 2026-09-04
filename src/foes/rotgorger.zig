@@ -397,7 +397,7 @@ pub const Gorger = struct {
     }
 
     fn travel(self: *Gorger, dt: f32, bounds: f32) f32 {
-        const step = self.speed * dt * self.chill.travel();
+        const step = self.speed * dt;
         const way = self.nav.along(mathx.headingDir(self.facing));
         mathx.stepXZ(&self.pos, way, step, bounds);
         return step;

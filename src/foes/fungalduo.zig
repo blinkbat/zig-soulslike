@@ -324,13 +324,13 @@ const Recover = enum {
     }
 };
 
-fn swClassify(dist: f32, off: f32, slashReady: bool, heavyReady: bool, lungeReady: bool, backReady: bool, crowded: bool) SwChoice {
+fn swClassify(dist: f32, scale: f32, off: f32, slashReady: bool, heavyReady: bool, lungeReady: bool, backReady: bool, crowded: bool) SwChoice {
     if (dist > AGGRO_R) return .hold;
     if (crowded and backReady) return .back;
     const a = @abs(off);
-    if (dist <= SW_HEAVY_R and heavyReady and a <= swHeavyArc()) return .heavy;
-    if (dist <= SW_SLASH_R and slashReady and a <= swSlashArc()) return .slash;
-    if (lungeReady and dist >= SW_LUNGE_MIN and dist <= SW_LUNGE_MAX and a <= swLungeArc()) return .lunge;
+    if (dist <= foe.triggerBand(SW_HEAVY_R, SCALE, scale) and heavyReady and a <= swHeavyArc()) return .heavy;
+    if (dist <= foe.triggerBand(SW_SLASH_R, SCALE, scale) and slashReady and a <= swSlashArc()) return .slash;
+    if (lungeReady and dist >= SW_LUNGE_MIN and dist <= foe.triggerBand(SW_LUNGE_MAX, SCALE, scale) and a <= swLungeArc()) return .lunge;
     return .close;
 }
 
@@ -744,7 +744,7 @@ pub const Swordsman = struct {
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
-        if (d <= SW_SLASH_R) self.crowd += dt else self.crowd = mathx.maxF(0, self.crowd - dt * 1.6);
+        if (d <= foe.triggerBand(SW_SLASH_R, SCALE, self.scale)) self.crowd += dt else self.crowd = mathx.maxF(0, self.crowd - dt * 1.6);
 
         var movedDist: f32 = 0;
         var moveYaw: ?f32 = null;
@@ -761,7 +761,7 @@ pub const Swordsman = struct {
                 self.faceToward(hero, dt);
                 const way = self.nav.along(self.moveDir);
                 moveSpeed = SW_SPEED;
-                const moved = moveSpeed * dt * self.chill.travel();
+                const moved = moveSpeed * dt;
                 mathx.stepXZ(&self.pos, way, moved, bounds);
                 movedDist = moved;
                 moveYaw = mathx.headingXZ(way);
@@ -886,7 +886,7 @@ pub const Swordsman = struct {
         self.homing = false;
         const f = mathx.dirXZ(self.pos, toward);
         const off = mathx.wrapPi(mathx.headingXZ(f) - self.facing);
-        switch (swClassify(dist, off, self.slashCd <= 0, self.heavyCd <= 0, self.lungeCd <= 0, self.backCd <= 0, self.crowd >= SW_CROWD_HOLD)) {
+        switch (swClassify(dist, self.scale, off, self.slashCd <= 0, self.heavyCd <= 0, self.lungeCd <= 0, self.backCd <= 0, self.crowd >= SW_CROWD_HOLD)) {
             .slash => {
                 self.doubling = self.rng.float() < SW_SLASH2_CHANCE;
                 self.enter(.slash_wind);
@@ -1064,6 +1064,8 @@ pub const Magus = struct {
     chill: combat.Chill = .{},
     threat: foe.Threat = .{},
     nav: foe.Nav = .{},
+    /// TRUE FOR THE FRAME THE BODY WAS SET RATHER THAN STEPPED. `game.gateChill` bills a frame's travel, and a blink is not travel: chilled, the arrival was dragged back to 0.55 of the way to a flank it had already solved.
+    warp: bool = false,
 
     facing: f32 = 0,
     scale: f32 = SCALE,
@@ -1174,6 +1176,9 @@ pub const Magus = struct {
     pub fn staggered(self: *const Magus) bool {
         return self.state == .stunlight or self.state == .stunheavy;
     }
+    pub fn warped(self: *const Magus) bool {
+        return self.warp;
+    }
     pub fn airborne(_: *const Magus) bool {
         return false;
     }
@@ -1235,6 +1240,7 @@ pub const Magus = struct {
     }
 
     pub fn update(self: *Magus, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
+        self.warp = false;
         self.justDied = false;
         self.threw = false;
         self.sowed = false;
@@ -1286,7 +1292,7 @@ pub const Magus = struct {
                 self.faceToward(hero, dt);
                 const way = self.nav.along(self.moveDir);
                 moveSpeed = MG_SPEED;
-                const moved = moveSpeed * dt * self.chill.travel();
+                const moved = moveSpeed * dt;
                 mathx.stepXZ(&self.pos, way, moved, bounds);
                 movedDist = moved;
                 moveYaw = mathx.headingXZ(way);
@@ -1361,6 +1367,7 @@ pub const Magus = struct {
                     self.pos = self.returnTo;
                     self.pos.x = mathx.clampF(self.pos.x, -bounds, bounds);
                     self.pos.z = mathx.clampF(self.pos.z, -bounds, bounds);
+                    self.warp = true;
                     self.facing = mathx.headingXZ(mathx.dirXZ(self.pos, hero));
                     self.enter(.fade_in);
                     sfx.world(.duo_bloom, self.pos);
@@ -2205,22 +2212,22 @@ test "THE TWO BANDS ABUT, so there is no ring where neither of them is answering
 test "EVERY BAND OF THE SWORDSMAN PICKS A MOVE, and a bearing he cannot reach is a hard gate" {
     var d: f32 = 0;
     while (d <= AGGRO_R) : (d += 0.25) {
-        try std.testing.expect(swClassify(d, 0, true, true, true, true, false) != .hold);
+        try std.testing.expect(swClassify(d, SCALE, 0, true, true, true, true, false) != .hold);
     }
-    try std.testing.expectEqual(SwChoice.hold, swClassify(AGGRO_R + 1.0, 0, true, true, true, true, false));
-    try std.testing.expectEqual(SwChoice.back, swClassify(1.0, 0, true, true, true, true, true));
-    try std.testing.expectEqual(SwChoice.heavy, swClassify(1.0, 0, true, true, true, false, true));
-    try std.testing.expectEqual(SwChoice.heavy, swClassify(SW_HEAVY_R - 0.1, 0, true, true, true, false, false));
-    try std.testing.expectEqual(SwChoice.slash, swClassify(SW_HEAVY_R - 0.1, 0, true, false, true, false, false));
-    try std.testing.expectEqual(SwChoice.slash, swClassify(SW_SLASH_R - 0.1, 0, true, false, true, false, false));
-    try std.testing.expectEqual(SwChoice.lunge, swClassify(SW_LUNGE_MIN + 0.1, 0, false, false, true, false, false));
-    try std.testing.expectEqual(SwChoice.close, swClassify(SW_HEAVY_R + 0.3, 0, false, true, false, false, false));
-    try std.testing.expectEqual(SwChoice.close, swClassify(6.0, 0, false, false, false, false, false));
+    try std.testing.expectEqual(SwChoice.hold, swClassify(AGGRO_R + 1.0, SCALE, 0, true, true, true, true, false));
+    try std.testing.expectEqual(SwChoice.back, swClassify(1.0, SCALE, 0, true, true, true, true, true));
+    try std.testing.expectEqual(SwChoice.heavy, swClassify(1.0, SCALE, 0, true, true, true, false, true));
+    try std.testing.expectEqual(SwChoice.heavy, swClassify(SW_HEAVY_R - 0.1, SCALE, 0, true, true, true, false, false));
+    try std.testing.expectEqual(SwChoice.slash, swClassify(SW_HEAVY_R - 0.1, SCALE, 0, true, false, true, false, false));
+    try std.testing.expectEqual(SwChoice.slash, swClassify(SW_SLASH_R - 0.1, SCALE, 0, true, false, true, false, false));
+    try std.testing.expectEqual(SwChoice.lunge, swClassify(SW_LUNGE_MIN + 0.1, SCALE, 0, false, false, true, false, false));
+    try std.testing.expectEqual(SwChoice.close, swClassify(SW_HEAVY_R + 0.3, SCALE, 0, false, true, false, false, false));
+    try std.testing.expectEqual(SwChoice.close, swClassify(6.0, SCALE, 0, false, false, false, false, false));
     inline for (.{ @as(f32, 1.0), @as(f32, -1.0) }) |sgn| {
         const wide = sgn * (swSlashArc() + 0.05);
-        try std.testing.expectEqual(SwChoice.close, swClassify(SW_SLASH_R - 0.1, wide, true, false, false, false, false));
+        try std.testing.expectEqual(SwChoice.close, swClassify(SW_SLASH_R - 0.1, SCALE, wide, true, false, false, false, false));
         const wideL = sgn * (swLungeArc() + 0.05);
-        try std.testing.expectEqual(SwChoice.close, swClassify(SW_LUNGE_MIN + 0.1, wideL, false, false, true, false, false));
+        try std.testing.expectEqual(SwChoice.close, swClassify(SW_LUNGE_MIN + 0.1, SCALE, wideL, false, false, true, false, false));
     }
     std.debug.print("  sword: swings to {d:.1} m inside {d:.0} deg, lunges {d:.1}..{d:.1} inside {d:.0} deg, overhead to {d:.1} m on a {d:.2} s tell\n", .{
         SW_SLASH_R, mathx.degrees(swSlashArc()), SW_LUNGE_MIN, SW_LUNGE_MAX, mathx.degrees(swLungeArc()), SW_HEAVY_R, SW_HEAVY_WIND,
@@ -2399,7 +2406,7 @@ test "THE BLADE LANDS ON THE MAN WHERE HE STANDS - every stroke thrown for real,
             for ([_]f32{ 0.0, 0.34, 0.67, 1.0 }) |u| {
                 const stand = lerpF(mathx.maxF(row.near, apart) + 0.05, row.far * 0.97, u);
                 const off = mathx.radians(deg);
-                if (swClassify(stand, off, row.pick == .slash, row.pick == .heavy, row.pick == .lunge, false, false) != row.pick) {
+                if (swClassify(stand, SCALE, off, row.pick == .slash, row.pick == .heavy, row.pick == .lunge, false, false) != row.pick) {
                     refused += 1;
                     continue;
                 }

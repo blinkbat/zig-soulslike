@@ -500,7 +500,7 @@ pub const Fishman = struct {
                 // A ROLL IS A DISTANCE, SO IT IS BILLED OFF THE PROFILE'S OWN INTEGRAL AND NOT PER FRAME: written as a rate the arc came out at 2.33 m of an advertised 3.30.
                 const u = mathx.clampF(self.t / ROLL_DUR, 0, 1);
                 const was = mathx.clampF((self.t - dt) / ROLL_DUR, 0, 1);
-                movedDist = ROLL_DIST * (rollEase(u) - rollEase(was)) * self.chill.travel();
+                movedDist = ROLL_DIST * (rollEase(u) - rollEase(was));
                 mathx.stepXZ(&self.pos, self.rollDir, movedDist, bounds);
                 moveYaw = mathx.headingXZ(self.rollDir);
                 moveSpeed = if (dt > 1e-5) movedDist / dt else 0;
@@ -564,7 +564,7 @@ pub const Fishman = struct {
                         self.faceToward(self.nav.aim(self.pos, to), dt);
                         self.speed = approach(self.speed, want, ACCEL * dt);
                         moveSpeed = self.speed;
-                        const moved = moveSpeed * dt * self.chill.travel();
+                        const moved = moveSpeed * dt;
                         const face = self.nav.along(mathx.headingDir(self.facing));
                         const way = if (ch == .back) v3(-face.x, 0, -face.z) else face;
                         mathx.stepXZ(&self.pos, way, moved, bounds);

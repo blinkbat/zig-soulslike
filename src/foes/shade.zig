@@ -303,6 +303,8 @@ pub const Shade = struct {
     post: foe.Post = .{},
     root: combat.Root = .{},
     chill: combat.Chill = .{},
+    /// TRUE FOR THE FRAME THE BODY WAS SET RATHER THAN STEPPED. `game.gateChill` bills a frame's travel, and a blink is not travel: chilled, the arrival was dragged back to 0.55 of the way to a flank it had already solved.
+    warp: bool = false,
     facing: f32 = 0,
     scale: f32 = 1.0,
     seed: f32 = 0,
@@ -394,6 +396,9 @@ pub const Shade = struct {
     pub fn staggered(self: *const Shade) bool {
         return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
     }
+    pub fn warped(self: *const Shade) bool {
+        return self.warp;
+    }
     pub fn airborne(self: *const Shade) bool {
         return self.state == .blinkout or self.state == .blinkin;
     }
@@ -414,6 +419,7 @@ pub const Shade = struct {
     }
 
     pub fn update(self: *Shade, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) Act {
+        self.warp = false;
         if (self.gone) {
             foe.tickParticles(&self.parts, dt, self.pos.y);
             return .none;
@@ -511,6 +517,7 @@ pub const Shade = struct {
                 if (self.t >= BLINK_OUT) {
                     self.pos.x = self.blinkTo.x;
                     self.pos.z = self.blinkTo.z;
+                    self.warp = true;
                     mathx.holdXZ(&self.pos, bounds);
                     self.rift();
                     self.enter(.blinkin);

@@ -453,7 +453,7 @@ pub const Skitterer = struct {
             self.faceToward(self.nav.aim(self.pos, want), dt);
             const wantSpeed: f32 = if (hunting) RUN_SPEED else IDLE_SPEED;
             self.speed = mathx.approach(self.speed, wantSpeed, ACCEL * dt);
-            const step = self.speed * dt * self.chill.travel();
+            const step = self.speed * dt;
             mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), step, bounds);
             self.phase = wolf.wrap01(self.phase + step / (STRIDE * self.scale));
             self.state = .move;

@@ -190,7 +190,7 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `ui/menu.zig` | boot screen, pause/debug menu, sound LEVELS, retro filter rack |
 | `ui/editor.zig` | THE EDITOR (Menu > Editor), layered StarEdit-style; biggest file, next split candidate |
 | `ui/tuneui.zig` | the bench's face — the dial column, drawn both in the editor's Stats sheet and beside the model in the object viewer |
-| `ui/objview.zig` | object viewer + the JUKEBOX + the FX BENCH (`elemfx`'s cells with their numbers printed) |
+| `ui/objview.zig` | object viewer + the JUKEBOX + the FX BENCH (`elemfx`'s cells with their numbers printed). **THE RULER** — every body is fitted to the same frame, so a lone one has no scale; `charRuler` stands the hero beside it at his own 1.8 m and the fit widens to hold both (the Rooted is 4.00x him, a broodling 0.67x) |
 | `save.zig` | THE SLOTS — three files in the map's own `key: value` grammar, each with its picture |
 | `core/audio.zig` | ~190 synthesized voices through one tape-style `master`; three submixes; read as recipes |
 | `core/rumble.zig` | XInput directly (raylib's GLFW backend stubs `SetGamepadVibration`); holds `PAD` |
@@ -410,10 +410,16 @@ Two things in that table are load-bearing beyond navigation:
     The editor posts a body anywhere in `wf.FOE_SCALE_LO`..`HI` and `foe.hurtReach` tracks it; a `classify`
     that compares against the authored world metre does not, so under the shipped scale the creature commits
     to a blow that cannot land and — having chosen a strike over a step — never closes. MEASURED at `x0.5`:
-    the ogre swiped from 1.61 m outside its own club and the rooted reached 1.75 m past its hook; twelve moves
-    across ten creatures. `triggerBand(worldR, shipped, scale)` returns `worldR` exactly at the shipped scale,
+    the ogre swiped from 1.61 m outside its own club and the rooted reached 1.75 m past its hook; fourteen moves
+    across eleven creatures. `triggerBand(worldR, shipped, scale)` returns `worldR` exactly at the shipped scale,
     so the authored fight does not move. Where the band IS the bill's own constant, compare against
     `foe.hurtReach` directly instead (`cinderwake`, `birchwight`, `salthusk`, `owlbear`, and the rest).
+    - **AND THE NEAR EDGE IS THE SAME LIMB.** A `minR` left at the authored metre while `maxR` scales INVERTS
+      the band at `FOE_SCALE_LO` — the rooted's hook was 2.80 against a 2.57 — and a FIXTURE cannot walk out of
+      the ring that leaves. `rooted.nearR` beside `bandR`, and its test sweeps LO/1/HI rather than 1 alone.
+      A STAND-OFF rides the band as a SHARE for the same reason (`delver.CLAW_KEEP_SHARE`): a keep held at the
+      authored metre lands outside a shrunken band, and the body waits in a ring it can neither strike from nor
+      close out of.
 - **A BODY THE NECROMANCER CAN USE IS A `raisable`/`reraise` PAIR AND A `heldOpen` FIELD** — nothing else, and
   no edit to `game.markVigil`/`applyRaises`, which key off `@hasDecl`. The field is named for what it does to
   the BODY, not for the creature doing it: one name for both had `foe.dissipate`'s probe matching the caster.
@@ -1320,6 +1326,13 @@ where a BURST status (bleed) resets to nothing and re-procs at once.
   slowed creature, it is one that cannot close. **Deliberately NOT time dilation.** **NOT SKIPPED FOR A
   FLYER** — the one place it parts company with the terrain gate beside it. **Built to be worn by EITHER
   SIDE**: it knows nothing about a foe, holds no position, bills no damage.
+  - **BUT A BLINK IS NOT TRAVEL.** The gate scales a frame's whole DELTA, and a body that WARPS set that delta
+    rather than stepping it: chilled, the blinkbat, the shade and the duo's magus arrived at 0.55 of the way to
+    a flank they had already solved. Each answers `warped()` for the one frame, duck-typed the way `airborne()`
+    is, and the gate skips it. `shade.airborne()` happens to be exactly its blink; the bat's is its whole life.
+  - **WHAT IT STILL DOES NOT TAKE IS THE GAIT.** `movedDist` is filled BEFORE the gate, so a chilled walker's
+    legs cycle 1/`CHILL_TRAVEL` = 1.82x faster than the ground it covers. Either the gate owns the phase too or
+    the movers scale the GAIT (never the step) — the owner's call, not a sweep's.
 - Every foe carries its own table, authored where its HP is (`initFoe(..).withRes(..)`):
 
   | creature | fire | cold | lightning | chaos | why |
@@ -1362,7 +1375,7 @@ Three arms out of one hub. Arms are never NAMED on screen — colour and directi
 
 **EACH ARM OPENS ON ONE CLASS NODE AND RADIATES INTO TWO BRANCHES.** `Arm.stat` is that node — the arm said in
 one attribute. Six `Branch`es, two per arm in arm order (`Branch.arm` is arithmetic, pinned at comptime), each
-a climb of six ending in its own keystone; 39 nodes.
+a climb of `PER_BRANCH` ending in its own keystone. 75 nodes in the arms, plus the six bridges: 81.
 
 | branch | what it is |
 | --- | --- |
@@ -2612,10 +2625,12 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
     with a reason, enforced both ways: a creature added with no `Post` and no line there is an order the editor
     lets you assign that silently does nothing.
   - **AND EACH WALKS IT IN ITS OWN IDIOM.** `foe.postDrive` is the leg-and-gait case (nine of them share it),
-    `postAmble` the four that ease a `self.speed`, and `postWant` hands back only the PLACE — which is what a
+    `postAmble` the five that ease a `self.speed` — and it steps by the speed REACHED, not the one asked for,
+    or `accel` shapes the gait blend and moves no mass, which is how a round started at full pace —
+    and `postWant` hands back only the PLACE — which is what a
     hopper leaps to (`frog`, `shroom`), a flyer cruises to (`leechfly`, `blinkbat` — it drifts its round rather
     than blinking it, or the blink has no tell left for the flank), and a quadruped simply walks to instead of
-    home (`fungaldeer`, `skitterer`). A round stops at `foe.ARRIVE`: the old ravager's own `HOME_R` was 1.2 against it
+    home (`fungaldeer`, `skitterer`, `rotgorger`). A round stops at `foe.ARRIVE`: the old ravager's own `HOME_R` was 1.2 against it
     and the body stalled a tenth of a metre short of a mark it could then never reach.
   - **A UNIT UNDER ORDERS READS AS ONE FROM ACROSS THE MAP** — the editor draws its box in the live tone and a
     leashed roamer's tether as a circle, because which bodies have a round is the one thing you cannot see on a
@@ -2668,6 +2683,11 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   second culler is the empty-world bug. A pool the lens is standing INSIDE always draws.
   - **AND IT IS NOT GATED ON THE EMITTER BEING ALIVE.** A cloud ticks its motes past its own death, so a puff
     laid on the last frame still fades out; `shroom`'s own test pins that.
+  - **IT IS ON THE TWO CLOUDS AND NOTHING ELSE** — 2 of the 40 `drawParticles` call sites (`knight.Gas`,
+    `shroom.Cloud`), which is where the COUNT bites. A creature's own `parts` is 20..176 motes and its two
+    draw passes are 2x a walk `tickParticles` already pays ungated every frame for every body (and always
+    must — a mote off screen has to keep moving). Gating those 38 needs a REACH per creature, and a reach
+    guessed too tight clips a mote you could see, which is the one thing this gate may not do.
 - **A RING THAT OVERWRITES ITS OLDEST DOES IT SILENTLY**, so its size is arithmetic over what feeds it (every
   emitter's worst frame), asserted at comptime — never a round number that looked big enough.
 - **A cylinder is CAPLESS** — an open end shows its culled interior. Cap with `addDome` or an axis-flattened

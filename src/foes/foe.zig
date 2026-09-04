@@ -1742,13 +1742,25 @@ pub fn postAmble(
     moveSpeed: *f32,
     moveYaw: *?f32,
 ) bool {
-    const ps = postStep(self, dt, bounds, speed, sensed, aggroR);
-    const w = ps.yaw orelse {
+    if (speed <= 0) {
+        self.speed = mathx.approach(self.speed, 0, accel * dt);
+        return false;
+    }
+    const go = postWant(self, dt, sensed, aggroR) orelse {
         self.speed = mathx.approach(self.speed, 0, accel * dt);
         return false;
     };
-    self.speed = mathx.approach(self.speed, ps.speed, accel * dt);
-    movedDist.* = ps.moved;
+    const dir = mathx.dirXZ(self.pos, go);
+    if (mathx.lenXZ(dir) < 1e-4) {
+        self.speed = mathx.approach(self.speed, 0, accel * dt);
+        return false;
+    }
+    // THE EASE IS THE BODY'S, NOT THE GAIT BLEND'S: stepped by the speed asked for rather than the one reached, `accel` moved nothing and a round started at full pace.
+    self.speed = mathx.approach(self.speed, speed, accel * dt);
+    const moved = self.speed * dt;
+    const w = mathx.headingXZ(dir);
+    mathx.stepXZ(&self.pos, dir, moved, bounds);
+    movedDist.* = moved;
     moveSpeed.* = self.speed;
     moveYaw.* = w;
     self.facing = mathx.approachAngle(self.facing, w, turn * dt);
@@ -1756,7 +1768,7 @@ pub fn postAmble(
 }
 
 pub fn stride(self: anytype, dt: f32, bounds: f32, movedDist: *f32, moveSpeed: *f32, moveYaw: *?f32) void {
-    const moved = self.speed * dt * self.chill.travel();
+    const moved = self.speed * dt;
     const way = self.nav.along(mathx.headingDir(self.facing));
     mathx.stepXZ(&self.pos, way, moved, bounds);
     movedDist.* = moved;
@@ -2723,6 +2735,30 @@ test "THE JUNKYARD DOG IS LEASHED OR IT IS NOT — one never leaves its post, th
             try std.testing.expect(far > ROAM_R * 3.0);
         }
     }
+}
+
+test "AN AMBLE IS EASED, AND THE EASE IS THE BODY'S — `accel` moves the mass, not just the gait blend" {
+    const Body = struct {
+        pos: rl.Vector3 = mathx.zero3,
+        post: Post = .{},
+        speed: f32 = 0,
+        facing: f32 = 0,
+    };
+    const dt = 1.0 / 60.0;
+    const WALK: f32 = 2.0;
+    const ACCEL: f32 = 4.0;
+    var b = Body{};
+    b.post.arm(.roam_free, mathx.zero3, &.{}, 0.2);
+    var moved: f32 = 0;
+    var spd: f32 = 0;
+    var yaw: ?f32 = null;
+    try std.testing.expect(postAmble(&b, dt, 400, WALK, ACCEL, 99.0, 10.0, 6.0, &moved, &spd, &yaw));
+    try std.testing.expectApproxEqAbs(b.speed * dt, moved, 1e-6);
+    try std.testing.expect(moved < WALK * dt * 0.5);
+    var t: f32 = 0;
+    while (t < 1.0) : (t += dt) _ = postAmble(&b, dt, 400, WALK, ACCEL, 99.0, 10.0, 6.0, &moved, &spd, &yaw);
+    try std.testing.expect(b.speed > WALK * 0.95);
+    std.debug.print("\n  amble: first frame covers {d:.4} m of a {d:.4} m step, and is at speed {d:.2}/{d:.2} after a second\n", .{ WALK * dt * (ACCEL * dt / WALK), WALK * dt, b.speed, WALK });
 }
 
 test "the lurker's water is a band, and the pool the brush digs sits inside it" {

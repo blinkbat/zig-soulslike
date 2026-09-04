@@ -67,6 +67,14 @@ const CLAW_SWEEP_R: f32 = 0.34;
 /// WHAT A BAND PROMISES IS THAT THE ARC CROSSES HIM, NOT HOW FAR THE TIP GETS: `CLAW_REACH + CLAW_SWEEP_R` is the tip's RADIAL reach, achieved out to the SIDE, so at 2.09 the outer fifth of the trigger band could not land by construction.
 const CLAW_BAND: f32 = 1.65;
 const CLAW_KEEP: f32 = CLAW_BAND - 0.5;
+/// `foe.triggerBand`'s law: the arc is the rig's, so it scales, and a band held at the authored metre only agrees at scale 1. The STAND-OFF rides the band as a share, or at `wf.FOE_SCALE_LO` it lands outside it and the body waits in a ring it can neither claw from nor close out of.
+const CLAW_KEEP_SHARE: f32 = CLAW_KEEP / CLAW_BAND;
+fn clawBand(scale: f32) f32 {
+    return foe.triggerBand(CLAW_BAND, 1.0, scale);
+}
+fn clawKeep(scale: f32) f32 {
+    return clawBand(scale) * CLAW_KEEP_SHARE;
+}
 pub const CLAW_WIND: f32 = 0.48;
 const CLAW_STRIKE: f32 = 0.20;
 const CLAW_RECOVER: f32 = 0.40;
@@ -178,11 +186,11 @@ const SWING_YAW: f32 = 46.0;
 const State = enum { idle, walk, claw, rake, recover, dive, under, surge, plough, burst, heave, stunlight, stunheavy, dead };
 
 const Choice = enum { rest, wait, walk, claw, dive };
-fn classify(dist: f32, clawReady: bool, diveReady: bool, rooted: bool) Choice {
+fn classify(dist: f32, scale: f32, clawReady: bool, diveReady: bool, rooted: bool) Choice {
     if (dist > AGGRO_R) return .rest;
     if (diveReady and !rooted) return .dive;
-    if (dist <= CLAW_BAND and clawReady) return .claw;
-    if (dist > CLAW_KEEP) return .walk;
+    if (dist <= clawBand(scale) and clawReady) return .claw;
+    if (dist > clawKeep(scale)) return .walk;
     return .wait;
 }
 
@@ -490,7 +498,7 @@ pub const Delver = struct {
 
     fn wantsRake(self: *Delver, hero: rl.Vector3) bool {
         if (self.raked) return false;
-        if (mathx.distXZ(self.pos, hero) > CLAW_BAND) return false;
+        if (mathx.distXZ(self.pos, hero) > clawBand(self.scale)) return false;
         return self.aiRng.float() < RAKE_CHANCE;
     }
 
@@ -668,7 +676,7 @@ pub const Delver = struct {
     }
 
     fn decide(self: *Delver, d: f32) void {
-        const pick = classify(d, self.clawCd <= 0, self.diveCd <= 0, !foe.canLeap(&self.root));
+        const pick = classify(d, self.scale, self.clawCd <= 0, self.diveCd <= 0, !foe.canLeap(&self.root));
         if (pick != .rest) self.homing = false;
         switch (pick) {
             .rest => {
@@ -1334,10 +1342,10 @@ test "SUBMERGED IT CANNOT BE STRUCK, and the sword answers it the moment it brea
 }
 
 test "THE DIVE IS A LEAP AND THE ROOTS REFUSE IT — at the choose AND at the launch" {
-    try std.testing.expectEqual(Choice.dive, classify(6.0, true, true, false));
-    try std.testing.expectEqual(Choice.walk, classify(6.0, true, true, true));
-    try std.testing.expectEqual(Choice.claw, classify(CLAW_BAND - 0.2, true, false, true));
-    try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1.0, true, true, false));
+    try std.testing.expectEqual(Choice.dive, classify(6.0, 1.0, true, true, false));
+    try std.testing.expectEqual(Choice.walk, classify(6.0, 1.0, true, true, true));
+    try std.testing.expectEqual(Choice.claw, classify(CLAW_BAND - 0.2, 1.0, true, false, true));
+    try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1.0, 1.0, true, true, false));
 
     var d = Delver.spawn(mathx.zero3, 0, 1.0, 0.3);
     d.debugDive();

@@ -496,7 +496,7 @@ pub const Mage = struct {
                 self.faceToward(hero, dt);
                 const way = self.nav.along(self.moveDir);
                 moveSpeed = WALK_SPEED;
-                const moved = moveSpeed * dt * self.chill.travel();
+                const moved = moveSpeed * dt;
                 mathx.stepXZ(&self.pos, way, moved, bounds);
                 movedDist = moved;
                 moveYaw = mathx.headingXZ(way);

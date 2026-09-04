@@ -455,7 +455,7 @@ pub const Ancient = struct {
                     self.faceToward(post, dt);
                     const way = self.nav.along(mathx.dirXZ(self.pos, post));
                     moveSpeed = WALK_SPEED;
-                    const moved = moveSpeed * dt * self.chill.travel();
+                    const moved = moveSpeed * dt;
                     mathx.stepXZ(&self.pos, way, moved, bounds);
                     movedDist = moved;
                     moveYaw = mathx.headingXZ(way);
@@ -470,7 +470,7 @@ pub const Ancient = struct {
                         const way = mathx.dirXZ(self.pos, g);
                         if (mathx.lenXZ(way) > 1e-3) {
                             moveSpeed = WALK_SPEED;
-                            const moved = moveSpeed * dt * self.chill.travel();
+                            const moved = moveSpeed * dt;
                             mathx.stepXZ(&self.pos, way, moved, bounds);
                             movedDist = moved;
                             moveYaw = mathx.headingXZ(way);

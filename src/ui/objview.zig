@@ -43,6 +43,7 @@ const batmod = @import("../foes/blinkbat.zig");
 const owlbearmod = @import("../foes/owlbear.zig");
 const duomod = @import("../foes/fungalduo.zig");
 const combat = @import("../play/combat.zig");
+const heromod = @import("../play/hero.zig");
 const foemod = @import("../foes/foe.zig");
 const elemfx = @import("../gfx/elemfx.zig");
 
@@ -120,6 +121,8 @@ pub fn unload() void {
     bigRT = null;
     if (charSet) |cs| std.heap.c_allocator.destroy(cs);
     charSet = null;
+    if (heroRef) |h| std.heap.c_allocator.destroy(h);
+    heroRef = null;
 }
 
 pub const Mode = enum {
@@ -254,6 +257,7 @@ pub const State = struct {
     charSpin: f32 = 0,
     charDist: f32 = 7.0,
     charT: f32 = 0,
+    charRuler: bool = false,
 
     pub fn poseOf(self: *State, k: Kind) *Pose {
         return &self.pose[@intFromEnum(k)];
@@ -709,12 +713,39 @@ fn seedChar(cs: *CharSet, k: wf.FoeKind) void {
     }
 }
 
-fn renderChar(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, k: wf.FoeKind, pose: Pose, live: bool) void {
+/// A LONE BODY IN A FITTED FRAME HAS NO SCALE — every creature is drawn to fill the same box, so a salt husk and an ogre read the same size. The hero is the ruler: his 1.8 m is the one height the eye already knows.
+const RULER_GAP: f32 = 0.6;
+
+var heroRef: ?*heromod.Hero = null;
+
+fn ensureHero(scene: *gfx.Scene) *heromod.Hero {
+    if (heroRef) |h| return h;
+    const h = std.heap.c_allocator.create(heromod.Hero) catch @panic("objview: the ruler");
+    heroRef = h;
+    h.* = heromod.Hero.init(scene.shader);
+    return h;
+}
+
+fn rulerStandX(bound: f32) f32 {
+    return bound * 0.5 + RULER_GAP + foemod.HERO_R;
+}
+
+fn renderChar(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, k: wf.FoeKind, pose: Pose, live: bool, ruler: bool) void {
     const cs = ensureChars(scene);
     const dims = charDims(k);
     const aspect = rtAspect(rt);
-    openStage(rt, env, scene, fitCam(dims.top, dims.bound, pose, aspect), aspect);
+    const standX = rulerStandX(dims.bound);
+    const top = if (ruler) mathx.maxF(dims.top, heromod.H) else dims.top;
+    const bound = if (ruler) mathx.maxF(dims.bound, (standX + foemod.HERO_R) * 2.0) else dims.bound;
+    openStage(rt, env, scene, fitCam(top, bound, pose, aspect), aspect);
     if (live) drawGroup(cs, k, scene) else drawChar(cs, k, scene);
+    if (ruler) {
+        const h = ensureHero(scene);
+        h.pos = v3(standX, 0, 0);
+        h.facing = 0;
+        h.pose();
+        h.draw(false);
+    }
     closeStage();
 }
 
@@ -1057,7 +1088,7 @@ fn galleryChars(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) b
     while (i < end) : (i += 1) {
         const k = CHAR_KINDS[i];
         const r = gridCell(box, @intCast(i - start));
-        renderChar(target(&thumbRT, THUMB_W, THUMB_H), env, scene, k, st.charPose[i], false);
+        renderChar(target(&thumbRT, THUMB_W, THUMB_H), env, scene, k, st.charPose[i], false, false);
         blit(thumbRT.?, r);
         const on = (hover != null and hover.? == i) or (st.grabbed != null and st.grabbed.? == i);
         rl.drawRectangleLinesEx(r, 1, ui.alpha(if (on) ui.HOT else ui.TRIM, if (on) 220 else 70));
@@ -1101,7 +1132,7 @@ fn bigChar(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, at: us
         st.charSpin += BENCH_ORBIT * dt;
         stepChar(cs, k, dt, quarryAt(st.charDist, st.charSpin));
     }
-    renderChar(target(&bigRT, BIG_W, BIG_H), env, scene, k, p.*, true);
+    renderChar(target(&bigRT, BIG_W, BIG_H), env, scene, k, p.*, true, st.charRuler);
     blit(bigRT.?, viewR);
     rl.drawRectangleLinesEx(viewR, 1, ui.alpha(ui.TRIM, 110));
 
@@ -1118,7 +1149,7 @@ fn bigChar(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, at: us
         y += line;
     }
     y += 6;
-    if (ui.button(ctx, ui.rect(x, y, 78, 24), if (st.charPlay) "Pause" else "Play", hud.MONO, st.charPlay, "Run the creature's own update against a decoy — it walks, turns, closes and strikes on its own")) {
+    if (ui.button(ctx, ui.rect(x, y, 78, 24), if (st.charPlay) "Pause" else "Play", hud.MONO, st.charPlay, "Run the creature's own update against a decoy. It walks, turns, closes and strikes on its own")) {
         st.charPlay = !st.charPlay;
     }
     if (ui.button(ctx, ui.rect(x + 82, y, 78, 24), "Restart", hud.MONO, false, "Put it back on its own first frame")) {
@@ -1127,6 +1158,8 @@ fn bigChar(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, at: us
         st.charT = 0;
     }
     y += 30;
+    _ = ui.checkbox(ctx, x, y, "hero beside it", &st.charRuler, "Stand the hero next to it at his own 1.8 m. Every creature is fitted to the same frame, so this is the only thing that says how big one is");
+    y += 24;
     _ = ui.slider(ctx, x, y, INFO_W - 12, "decoy range (m)", &st.charDist, BENCH_NEAR, BENCH_FAR, "Where the decoy stands. Inside its reach it strikes, outside it closes, past its own aggro it walks its post");
     y += ui.ROW_H + 14;
     const clock = std.fmt.bufPrintZ(&buf, "{s: <7}{d: >7.1}", .{ "played", st.charT }) catch "";
@@ -1538,6 +1571,38 @@ test "THE CHARACTER BENCH'S SLAB, MEASURED — one live group per creature, take
     std.debug.print("\n  objview CharSet: {d:.1} MB over {d} groups\n", .{ @as(f64, @floatFromInt(bytes)) / MB, CHAR_GROUPS });
     try std.testing.expect(bytes < 512 * 1024 * 1024);
     try std.testing.expectEqual(@typeInfo(CharSet).@"struct".fields.len, CHAR_GROUPS);
+}
+
+test "THE RULER STANDS IN FRAME BESIDE EVERY CREATURE — every body is fitted to the same box, which is exactly what hides its size" {
+    const aspect = @as(f32, @floatFromInt(BIG_W)) / @as(f32, @floatFromInt(BIG_H));
+    var tallest: f32 = 0;
+    var tallName: [:0]const u8 = "";
+    var shortest: f32 = 1e9;
+    var shortName: [:0]const u8 = "";
+    for (CHAR_KINDS) |k| {
+        const dims = charDims(k);
+        const standX = rulerStandX(dims.bound);
+        const top = mathx.maxF(dims.top, heromod.H);
+        const bound = mathx.maxF(dims.bound, (standX + foemod.HERO_R) * 2.0);
+        const view = envmod.View.fromCamera(fitCam(top, bound, .{}, aspect), aspect);
+        const pts = [_]rl.Vector3{
+            v3(0, dims.top, 0),          v3(0, 0, 0),
+            v3(standX, heromod.H, 0),    v3(standX, 0, 0),
+        };
+        for (pts) |q| try std.testing.expect(view.visible(q, 0, 1e6));
+        if (dims.top > tallest) {
+            tallest = dims.top;
+            tallName = wf.foeName(k);
+        }
+        if (dims.top < shortest) {
+            shortest = dims.top;
+            shortName = wf.foeName(k);
+        }
+    }
+    std.debug.print("\n  ruler: hero {d:.2} m against {s} at {d:.2} ({d:.2}x) and {s} at {d:.2} ({d:.2}x) — both in frame for all {d}\n", .{
+        heromod.H,  tallName,  tallest,  tallest / heromod.H,
+        shortName,  shortest,  shortest / heromod.H,  CHAR_KINDS.len,
+    });
 }
 
 test "EVERY CREATURE ON THE BENCH CAN BE PLAYED, and the decoy is the only thing it is told" {

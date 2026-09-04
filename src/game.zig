@@ -3764,14 +3764,33 @@ fn drawSiphon(g: *Game) void {
     _ = g.hero.drinkSiphon(hit.took * combat.SIPHON_SHARE);
 }
 
+/// THE ONE PLACE THE COLD TAKES THE FEET — a post-step gate over the whole frame's travel, like the terrain's beside it. A mover that scales its own step by `CHILL_TRAVEL` as well bills the hold twice.
 fn gateChill(foes: anytype, was: []const rl.Vector3) void {
     const T = @typeInfo(@TypeOf(foes)).pointer.child;
     if (comptime !@hasField(T, "chill")) return;
     for (foes, 0..) |*f, i| {
         if (i >= was.len or !f.chill.held()) continue;
+        // A BLINK IS NOT TRAVEL, so the ones that WARP say so: the delta is a set and not a step, and scaling it stood the body 45% short of a flank it had already solved.
+        if (comptime @hasDecl(T, "warped")) {
+            if (f.warped()) continue;
+        }
         f.pos.x = was[i].x + (f.pos.x - was[i].x) * combat.CHILL_TRAVEL;
         f.pos.z = was[i].z + (f.pos.z - was[i].z) * combat.CHILL_TRAVEL;
     }
+}
+
+test "THE COLD TAKES THE FEET, AND A BLINK HAS NONE — the gate bills a step, never a set" {
+    const home = mathx.ground(0, 0);
+    var bats = [_]batmod.Bat{ batmod.Bat.spawn(home, 0, 1.0, 0.3), batmod.Bat.spawn(home, 0, 1.0, 0.3) };
+    const was = [_]rl.Vector3{ home, home };
+    for (&bats) |*b| b.chill.breathe(1.0 / 60.0);
+    bats[0].pos = mathx.ground(0, 1.0);
+    bats[1].pos = mathx.ground(0, 12.0);
+    bats[1].warp = true;
+    const live: []batmod.Bat = &bats;
+    gateChill(live, was[0..]);
+    try std.testing.expectApproxEqAbs(combat.CHILL_TRAVEL, bats[0].pos.z, 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 12.0), bats[1].pos.z, 1e-4);
 }
 
 pub fn castRootsForShot(g: *Game) rl.Vector3 {

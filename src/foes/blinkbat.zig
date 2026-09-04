@@ -241,6 +241,8 @@ pub const Bat = struct {
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     threat: foe.Threat = .{},
+    /// TRUE FOR THE FRAME THE BODY WAS SET RATHER THAN STEPPED. `game.gateChill` bills a frame's travel, and a blink is not travel: chilled, the arrival was dragged back to 0.55 of the way to a flank it had already solved.
+    warp: bool = false,
 
     facing: f32 = 0,
     scale: f32 = 1.0,
@@ -332,6 +334,9 @@ pub const Bat = struct {
     pub fn staggered(self: *const Bat) bool {
         return self.state == .stunlight or self.state == .stunheavy or self.state == .repelled or self.state == .dead;
     }
+    pub fn warped(self: *const Bat) bool {
+        return self.warp;
+    }
     pub fn airborne(self: *const Bat) bool {
         return !self.gone;
     }
@@ -351,6 +356,7 @@ pub const Bat = struct {
     }
 
     pub fn update(self: *Bat, dt: f32, quarry: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
+        self.warp = false;
         if (self.gone) {
             foe.tickParticles(&self.parts, dt, self.pos.y);
             return null;
@@ -395,6 +401,7 @@ pub const Bat = struct {
                 if (self.t >= BLINK_OUT) {
                     self.pos.x = self.blinkTo.x;
                     self.pos.z = self.blinkTo.z;
+                    self.warp = true;
                     mathx.holdXZ(&self.pos, bounds);
                     self.faceNow(quarry);
                     self.enter(.blinkin);
@@ -524,14 +531,14 @@ pub const Bat = struct {
     }
 
     fn travel(self: *Bat, dt: f32, bounds: f32) void {
-        const step = self.speed * dt * self.chill.travel();
+        const step = self.speed * dt;
         mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), step, bounds);
     }
 
     fn driftAway(self: *Bat, quarry: rl.Vector3, dt: f32, bounds: f32, speed: f32) void {
         const away = mathx.dirXZ(quarry, self.pos);
         if (mathx.lenXZ(away) < 1e-4) return;
-        mathx.stepXZ(&self.pos, mathx.normV(away), speed * self.chill.travel() * dt, bounds);
+        mathx.stepXZ(&self.pos, mathx.normV(away), speed * dt, bounds);
     }
 
     fn markSpent(self: *Bat) void {

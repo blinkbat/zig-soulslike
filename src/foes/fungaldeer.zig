@@ -654,7 +654,7 @@ pub const Deer = struct {
     }
 
     fn travel(self: *Deer, dt: f32, bounds: f32) void {
-        const step = self.speed * dt * self.chill.travel();
+        const step = self.speed * dt;
         mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), step, bounds);
         self.phase = wolf.wrap01(self.phase + step / wolf.strideFor(self.speed));
     }

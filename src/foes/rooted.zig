@@ -168,11 +168,15 @@ const Choice = enum { sleep, hold, slam, sweep, hook };
 fn bandR(a: Attack, scale: f32) f32 {
     return foe.triggerBand(a.maxR, 1.0, scale);
 }
+/// THE NEAR EDGE IS THE SAME LIMB, SO IT TAKES THE SAME TRIANGLE. Held raw against a scaled far edge the hook's band INVERTS at `wf.FOE_SCALE_LO` — 2.8 against a 2.58 — and a fixture that cannot close never throws it at all.
+fn nearR(a: Attack, scale: f32) f32 {
+    return foe.triggerBand(a.minR, 1.0, scale);
+}
 fn classify(dist: f32, scale: f32, ready: [MOVES.len]bool) Choice {
     if (dist > SLEEP_R) return .sleep;
     if (dist <= bandR(MOVES[SLAM], scale) and ready[SLAM]) return .slam;
-    if (dist >= MOVES[SWEEP].minR and dist <= bandR(MOVES[SWEEP], scale) and ready[SWEEP]) return .sweep;
-    if (dist >= MOVES[HOOK].minR and dist <= bandR(MOVES[HOOK], scale) and ready[HOOK]) return .hook;
+    if (dist >= nearR(MOVES[SWEEP], scale) and dist <= bandR(MOVES[SWEEP], scale) and ready[SWEEP]) return .sweep;
+    if (dist >= nearR(MOVES[HOOK], scale) and dist <= bandR(MOVES[HOOK], scale) and ready[HOOK]) return .hook;
     return .hold;
 }
 
@@ -958,6 +962,21 @@ test "every band is answered, so it cannot be kited" {
     try std.testing.expect(MOVES[HOOK].maxR > WAKE_R);
     try std.testing.expect(SLEEP_R > MOVES[HOOK].maxR);
     try std.testing.expectEqual(Choice.hold, classify(1.0, 1.0, [_]bool{ false, false, false }));
+
+    // AND AT EVERY SCALE THE MAP CAN POST IT. A fixture cannot walk out of a gap, so a near edge left at the authored metre while the far edge scales is a ring of ground it owns and never swings at.
+    for ([_]f32{ wf.FOE_SCALE_LO, 1.0, wf.FOE_SCALE_HI }) |scale| {
+        const far = bandR(MOVES[HOOK], scale);
+        try std.testing.expect(nearR(MOVES[HOOK], scale) < far);
+        try std.testing.expect(nearR(MOVES[SWEEP], scale) < bandR(MOVES[SWEEP], scale));
+        var s: f32 = 0;
+        while (s <= far) : (s += 0.05) {
+            try std.testing.expect(classify(s, scale, all) != .hold);
+        }
+        std.debug.print("\n  rooted x{d:.2}: slam to {d:.2}, sweep {d:.2}-{d:.2}, hook {d:.2}-{d:.2}\n", .{
+            scale,          bandR(MOVES[SLAM], scale),  nearR(MOVES[SWEEP], scale),
+            bandR(MOVES[SWEEP], scale), nearR(MOVES[HOOK], scale), far,
+        });
+    }
 }
 
 test "A LIMB GOES WHERE ITS BILL SAYS: the tip crosses the hero column, out near the band's edge" {

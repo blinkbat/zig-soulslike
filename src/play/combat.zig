@@ -297,9 +297,13 @@ pub const Vitals = struct {
         self.ails = [_]Status{.{}} ** NAIL;
     }
 
+    /// THE HERO'S: he carries no `Chill` and no post-step gate, so the cold rides in here. A CREATURE's cold is `game.gateChill`'s and may not be billed twice — `foeTravelMult`.
     pub fn travelMult(self: *const Vitals) f32 {
+        return (if (self.ailOn(.chill)) CHILL_TRAVEL else 1.0) * self.foeTravelMult();
+    }
+
+    pub fn foeTravelMult(self: *const Vitals) f32 {
         var k: f32 = 1;
-        if (self.ailOn(.chill)) k *= CHILL_TRAVEL;
         if (self.ailOn(.stupefy)) k *= STUPEFY_TRAVEL;
         if (self.ailOn(.berserk)) k *= BERSERK_TRAVEL;
         return k;
@@ -759,9 +763,6 @@ pub const Chill = struct {
         self.owed = 0;
         return .{ .elem = bite };
     }
-    pub fn travel(self: *const Chill) f32 {
-        return if (self.left > 0) CHILL_TRAVEL else 1.0;
-    }
     pub fn frac(self: *const Chill) f32 {
         return mathx.clampF(self.left / CHILL_HOLD, 0, 1);
     }
@@ -997,11 +998,9 @@ comptime {
 test "the chill outlives the breath, refreshes rather than stacks, and lets go on its own" {
     var c = Chill{};
     try std.testing.expect(!c.held());
-    try std.testing.expectApproxEqAbs(@as(f32, 1.0), c.travel(), 1e-4);
 
     c.breathe(1.0 / 60.0);
     try std.testing.expect(c.held());
-    try std.testing.expectApproxEqAbs(CHILL_TRAVEL, c.travel(), 1e-4);
 
     const bite = c.tick(0).?;
     try std.testing.expect(bite.elem.at(.cold) > 0);
@@ -1017,7 +1016,6 @@ test "the chill outlives the breath, refreshes rather than stacks, and lets go o
     t = 0;
     while (t < CHILL_HOLD + 0.2) : (t += 0.05) _ = c.tick(0.05);
     try std.testing.expect(!c.held());
-    try std.testing.expectApproxEqAbs(@as(f32, 1.0), c.travel(), 1e-4);
 }
 
 test "the whole pour bills less than the roots' grip, and a body resists it as COLD" {

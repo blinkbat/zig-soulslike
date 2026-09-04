@@ -131,7 +131,6 @@ pub fn wellMesh(shader: rl.Shader) rl.Model {
                 v3(-sn * halfArc, rng.signed() * 0.022, cs * halfArc),
                 v3(0, hh, 0),
                 v3(cs * depth, 0, sn * depth),
-                // Mostly ONE stone: 30% pale and 35% mossy was a checkerboard.
                 if (rng.float() < 0.16) STONE_LT else if (rng.float() < 0.22) STONE_DK else STONE,
             );
             a += 2 * dHalf + rng.range(0.015, 0.05) / R;
@@ -574,7 +573,7 @@ pub fn chestMesh(shader: rl.Shader) rl.Model {
 const CHEST_GLOW_EMISSIVE: u8 = 26;
 const CHEST_GLOW = mathx.rgba(226, 170, 78, CHEST_GLOW_EMISSIVE);
 const CHEST_GLOW_HOT = mathx.rgba(244, 216, 152, CHEST_GLOW_EMISSIVE);
-/// How far the seam plate stands PROUD of the carcase's outer face. The iron bands' own 0.010 — this has to clear the wood to be seen at all, and any more is a lit flange round a box rather than a leaking joint.
+/// How far the seam plate stands PROUD of the carcase's outer face — the iron bands' own 0.010.
 const CHEST_SEAM_PROUD: f32 = 0.010;
 const CHEST_SEAM_H: f32 = 0.034;
 

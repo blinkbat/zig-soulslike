@@ -24,7 +24,6 @@ const approach = mathx.approach;
 const setLocal = heromod.setHumanoid;
 
 
-/// Its own stature, in metres — over the birchwight's 2.15 and well under the rooted's 6.9.
 pub const H: f32 = 2.60;
 
 const HIP_HALF = heromod.HIP_HALF * 1.24;
@@ -86,8 +85,7 @@ const CENTER_F: f32 = 0.54;
 const TOP_F: f32 = 1.04;
 const LOCK_AT = v3(0, 0.06 * H, 0);
 
-/// **TOUGH IS HP AND POISE, NOT SPEED** (owner: a tough melee fighter). Between the rooted's 130, which cannot
-/// chase, and the birchwight's 180, which is a slower thing than this.
+/// TOUGH IS HP AND POISE, NOT SPEED. Between the rooted's 130, which cannot chase, and the birchwight's 180.
 const HP_MAX: f32 = 165.0;
 /// **STONE DOES NOT FLINCH OFF A POKE.** Over the hero's heavy (22).
 const POISE_MAX: f32 = 30.0;
@@ -104,7 +102,6 @@ pub const SHOVE = foe.Push{ .light = 0.55, .heavy = 1.35 };
 
 
 const WAKE_DUR: f32 = 1.25;
-/// 0.62 s of two lights in a carving that has not moved.
 const EYE_LEAD: f32 = 0.50;
 const SEAT_DUR: f32 = 1.60;
 const SEAT_R: f32 = 0.85;
@@ -174,11 +171,8 @@ pub const QUILL_R: f32 = 0.075;
 pub const QUILL_SPEED: f32 = 12.5;
 /// Seconds in the air. At 12.5 m/s this is 16 m of reach, past `AGGRO_R` — the fan is spent by distance.
 pub const QUILL_LIFE: f32 = 1.3;
-/// Its gravity, in m/s² — a tenth of the world's, so a full `QUILL_LIFE` of flight drops it 1.35 m. A stone
-/// quill is heavy and fast, and a visible arc on a 1.3 s shot reads as a lobbed rock.
+/// Its gravity, in m/s² — a tenth of the world's, so a full `QUILL_LIFE` of flight drops it 1.35 m.
 const QUILL_FALL: f32 = 1.6;
-/// Three of these land for 33 raw, under one slam — a fan you eat whole is worse than a swing and better
-/// than the launch, which is the right price for standing in it.
 pub const QUILL_HIT = combat.Hit{ .dmg = 11, .poise = 10, .stance = 4 };
 
 const SWAY_HZ: f32 = 0.26;
@@ -198,8 +192,7 @@ const State = enum { stone, wake, seat, idle, walk, rake, slam, burst, stunlight
 
 const Choice = enum { rest, hold, close, rake, slam, burst };
 
-/// Measured EDGE TO EDGE against a centre-to-centre bill: the rake was handed out to 3.33 m and landed to 3.00,
-/// the slam to 3.08 and 2.75.
+/// Measured EDGE TO EDGE against a centre-to-centre bill: the rake was handed out to 3.33 m and landed to 3.00, the slam to 3.08 and 2.75.
 fn classify(gap: f32, sensed: f32, homeGap: f32, scale: f32, rakeReady: bool, slamReady: bool, burstReady: bool, rooted: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     if (gap <= BURST_R and burstReady and !rooted) return .burst;
@@ -697,8 +690,7 @@ pub const Owlbear = struct {
         const u = self.leapU();
         const tuck = if (self.state == .burst) mathx.sinf(u * std.math.pi) else 0;
 
-        // **THE CARVING'S OWN POSE IS A CROUCH**, and `w` is what lets it out: hunched over its feet at 0,
-        // standing at 1. That one number is the difference between the statue and the creature.
+        // THE CARVING'S OWN POSE IS A CROUCH, and `w` is what lets it out: hunched over its feet at 0, standing at 1.
         const settle = (1.0 - w) * (1.0 - dk);
         const sway = SWAY_DEG * mathx.gutter(self.elapsed * SWAY_HZ + self.seed * 6.28, self.seed * 3.7) * (1.0 - m) * w;
         const bodyPitch = 26.0 * mathx.maxF(0, stroke) - 15.0 * mathx.maxF(0, -stroke) - 20.0 * stun + 68.0 * dk + 30.0 * settle - 22.0 * tuck;
@@ -845,8 +837,7 @@ pub const Perch = struct {
             q.vel.y -= QUILL_FALL * dt;
             const was = q.at;
             q.at = mathx.addV(q.at, mathx.scaleV(q.vel, dt));
-            // MIDPOINT TOO (`archer.stepArrow`'s rule). At `game.DT_MAX` the step is 0.42 m against a 0.435 m
-            // sphere, so an endpoint sample alone stepped clean through 23% of the disc he presents.
+            // MIDPOINT TOO (`archer.stepArrow`'s rule): at `game.DT_MAX` the step is 0.42 m against a 0.435 m sphere, so an endpoint sample alone stepped clean through 23% of the disc he presents.
             const reach = QUILL_R + foe.HERO_R;
             if (foe.struckSweep(was, q.at, chest, reach)) {
                 q.live = false;
@@ -1147,8 +1138,6 @@ test "A CARVING IS NOT A THING TO LOCK ON TO, but it is a thing you walk into" {
     try std.testing.expect(!o.hidden());
 }
 
-// an order on stood at its post for the whole round: measured 0.0 m of roam against `foe.ROAM_R`'s 9, while every
-// other creature in `game.FOE_GROUPS` reached ~8. The editor was offering an order that did nothing.
 test "AN ORDERED CARVING IS NOT A CARVING — a post that idles takes the body out of the stone with nobody in sight" {
     const dt: f32 = 1.0 / 60.0;
     const home = mathx.ground(0, 0);

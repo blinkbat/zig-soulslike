@@ -230,12 +230,10 @@ test "A REFUSED DESTINATION IS GIVEN UP ON — a routine may not be the rest of 
 test "the bands are measured to the quarry's SKIN, so one script reads the same on a toad and on a boss" {
     var r = Routine{};
     const script = [_]Step{.{ .close = .{ .to = 1.5 } }};
-    // Standing 2 m off. Against a body with no width that is still outside the band, so it keeps walking…
     r.start(&script, 1);
     const thin = Ctx{ .at = mathx.ground(0, 0), .facing = 0, .quarry = mathx.ground(0, 2.0), .quarryR = 0 };
     _ = r.step(1.0 / 60.0, thin);
     try std.testing.expect(r.running);
-    // …and against a body 1.4 m through, the same 2 m is already inside reach of its SKIN and the step is over. Written as a world distance instead, one script would walk a toad's range into a boss's chest.
     r.start(&script, 1);
     const wide = Ctx{ .at = mathx.ground(0, 0), .facing = 0, .quarry = mathx.ground(0, 2.0), .quarryR = 1.4 };
     _ = r.step(1.0 / 60.0, wide);

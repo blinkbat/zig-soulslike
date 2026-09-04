@@ -101,7 +101,7 @@ fn restPose() [N]rl.Vector3 {
     return r;
 }
 
-// **AUTHOR DARK, AND SOLVE IT** — screen goes as albedo^(1/2.2), so the bigger and smoother the mass the darker it must start. This hide comes up against the WATER SHEET, the brighter backdrop, so it is authored UNDER the ravager's.
+// AUTHOR DARK, AND SOLVE IT — screen goes as albedo^(1/2.2). This hide comes up against the WATER SHEET, the brighter backdrop, so it is authored UNDER the ravager's.
 
 const HIDE = rgba(9, 13, 11, 208);
 const HIDE_LT = rgba(14, 19, 16, 194);
@@ -147,7 +147,7 @@ pub const Lurker = struct {
     elapsed: f32 = 0,
     restT: f32 = 0,
 
-    /// **HOW FAR OUT OF THE WATER IT IS**, 0..1 — one scalar, read off the state's own clock and nowhere else, so the picture cannot promise a body the mechanic says is not there. It is what the pose rides, what `hidden` is asked of, and what decides whether a sword can reach it.
+    /// HOW FAR OUT OF THE WATER IT IS, 0..1 — one scalar, read off the state's own clock and nowhere else. It is what the pose rides, what `hidden` is asked of, and what decides whether a sword can reach it.
     up: f32 = 0,
     swing: f32 = 0,
     swingL1: f32 = 0,
@@ -205,7 +205,7 @@ pub const Lurker = struct {
     pub fn lockPoint(self: *const Lurker) rl.Vector3 {
         return foe.markOn(self.xf[HEAD], v3(0, 0.02 * H, 0.05 * H));
     }
-    /// **HOW TALL THE CREATURE IS, NOT HOW FAR UP IT HAPPENS TO BE.** Scaled by `up` it answered 0.43 m while down, and `shots.runMapShots` solves its camera off this BEFORE the pose — it framed a stone and the real one rose 2.5 m out of frame.
+    /// HOW TALL THE CREATURE IS, NOT HOW FAR UP IT HAPPENS TO BE. Scaled by `up` it answered 0.43 m while down, and `shots.runMapShots` solves its camera off this BEFORE the pose.
     pub fn topWorld(self: *const Lurker) rl.Vector3 {
         return foe.bodyPoint(self.pos, TOP_F * H, self.scale, 0);
     }
@@ -235,7 +235,7 @@ pub const Lurker = struct {
         return self.up <= SHOW_AT;
     }
 
-    /// SEPARATE from `hidden`, which is about being SEEN where this is about being SOLID — the rooted answers them differently, a dormant snag being invisible and still a tree you walk into. Without it `game.collideActors` pushes him out of a sunk lurker's full 2.9 m crown.
+    /// SEPARATE from `hidden`, which is about being SEEN where this is about being SOLID. Without it `game.collideActors` pushes him out of a sunk lurker's full 2.9 m crown.
     pub fn phased(self: *const Lurker) bool {
         return self.hidden();
     }
@@ -338,7 +338,7 @@ pub const Lurker = struct {
             },
             .surge => {
                 self.faceToward(hero, dt);
-                // **A SURGE ONLY EVER RISES.** The clock is resumed part-way through on a chained stroke and on a resurface, and read straight off it a body already up teleported back DOWN 1.7 m the frame the second stroke was chosen.
+                // A SURGE ONLY EVER RISES: the clock is resumed part-way through on a chained stroke, and read straight off it a body already up teleported back DOWN 1.7 m.
                 self.up = mathx.maxF(self.up, mathx.smoothstep(0, SURGE_DUR, self.t));
                 self.swing = -mathx.smoothstep(SURGE_DUR * 0.35, SURGE_DUR, self.t);
                 if (self.t >= SURGE_DUR) {
@@ -525,7 +525,7 @@ pub const Lurker = struct {
         const sink = -(1.0 - self.up) * SUBMERGE * H;
         const breath = mathx.sinf(self.elapsed * 1.35 + self.seed * 6.28) * 0.010 * H * self.up;
 
-        // **THE WHOLE BODY DIVES WITH THE STROKE.** A curled chain moves the head SIDEWAYS more than down — MEASURED off the posed rig, five distributed bends finished the lash at 2.04 m, over his head.
+        // THE WHOLE BODY DIVES WITH THE STROKE. A curled chain moves the head SIDEWAYS more than down — measured, five distributed bends finished the lash at 2.04 m, over his head.
         const dive = LASH_DIVE * mathx.maxF(0, self.swing);
         var wx: [N]rl.Matrix = undefined;
         wx[ROOT] = mul3(
@@ -558,7 +558,7 @@ pub const Lurker = struct {
 const SUBMERGE: f32 = 1.18;
 const SHOW_AT: f32 = 0.06;
 
-/// **THESE COMPOUND** — each joint rotates relative to its PARENT, so the head ends up at the SUM down the chain. Authored as absolutes (9 rising to 27, plus 34) the rear came to 124 degrees and the creature lay flat on the water. `TOTAL_BEND` is the sum and a test pins it.
+/// THESE COMPOUND — each joint rotates relative to its PARENT, so the head ends up at the SUM down the chain. Authored as absolutes (9 rising to 27, plus 34) the rear came to 124 degrees. `TOTAL_BEND` is the sum and a test pins it.
 const SEG_BEND_LO: f32 = 3.5;
 const SEG_BEND_HI: f32 = 11.0;
 const HEAD_BEND: f32 = 15.0;
@@ -573,7 +573,7 @@ const TOTAL_BEND: f32 = blk: {
 comptime {
     std.debug.assert(TOTAL_BEND > 35.0 and TOTAL_BEND < 80.0);
 }
-/// **HOW FAR THE WHOLE COIL TIPS OVER ACROSS THE STROKE.** Comparable to the chain's own total, because it is doing comparable work. Solved against the measured jaw height — at 0 the lash finished at 2.04 m, a third of a metre over his crown.
+/// HOW FAR THE WHOLE COIL TIPS OVER ACROSS THE STROKE. Solved against the measured jaw height — at 0 the lash finished at 2.04 m, a third of a metre over his crown.
 const LASH_DIVE: f32 = 46.0;
 const LAG_1: f32 = 15.0;
 const LAG_2: f32 = 9.0;
@@ -684,7 +684,7 @@ fn buildBone(b: *Builder, i: usize, rest: [N]rl.Vector3) void {
             const above: usize = if (i == S4) HEAD else i + 1;
             const len = mathx.lenV(mathx.subV(rest[above], rest[i]));
             const t = @as(f32, @floatFromInt(i - S0)) / @as(f32, @floatFromInt(NECK.len - 1));
-            // **A NECK, NOT A TENTACLE.** At 0.135·H the base was 0.69 m through on a creature whose skull is 0.75 m wide, and measured off the render it read as an arm. Sized against the HEAD instead.
+            // A NECK, NOT A TENTACLE: at 0.135·H the base was 0.69 m through on a creature whose skull is 0.75 m wide. Sized against the HEAD instead.
             const r0 = lerpF(0.082, 0.058, t) * H;
             const r1 = lerpF(0.074, 0.052, t) * H;
             b.addCapsule(v3(0, 0, 0), v3(0, len * 0.98, 0), r0, r1, 10, HIDE);
@@ -705,7 +705,7 @@ fn buildBone(b: *Builder, i: usize, rest: [N]rl.Vector3) void {
             b.addBlob(v3(0, 0.010 * H, 0.055 * H), v3(HEAD_R * H * 0.86, 0.062 * H, 0.155 * H), 11, 7, HIDE);
             b.addBlob(v3(0, -0.012 * H, 0.030 * H), v3(HEAD_R * H * 0.72, 0.042 * H, 0.120 * H), 9, 6, BELLY);
             b.addBlob(v3(0, 0.004 * H, 0.150 * H), v3(0.082 * H, 0.046 * H, 0.058 * H), 8, 6, HIDE_LT);
-            // **THE EYES SIT PROUD OF THE DOME — THE ONE PLACE THE RELIEF LAW DOES NOT APPLY.** Sunk the few percent everything else is (y 0.048 against a crown at 0.072) they were INSIDE the mass and the render showed two dark slots.
+            // THE EYES SIT PROUD OF THE DOME — the one place the relief law does not apply. Sunk to y 0.048 against a crown at 0.072 they were INSIDE the mass.
             b.addBlob(v3(0.086 * H, 0.064 * H, 0.058 * H), v3(0.030 * H, 0.028 * H, 0.030 * H), 6, 5, EYE);
             b.addBlob(v3(-0.084 * H, 0.063 * H, 0.056 * H), v3(0.029 * H, 0.027 * H, 0.029 * H), 6, 5, EYE);
             b.addBlob(v3(0.094 * H, 0.050 * H, 0.010 * H), v3(0.038 * H, 0.020 * H, 0.048 * H), 6, 4, HIDE_DK);
@@ -984,7 +984,6 @@ test "A LURKER WITH NO POOL IS STILL THERE WHEN NOBODY IS LOOKING" {
 }
 
 test "A CHAINED SECOND STROKE DOES NOT DROP THE BODY BACK IN THE WATER" {
-    // The surge's clock is RESUMED part-way through for a second stroke, and `up` is read off that clock — so read straight it took a creature standing at full height and put it back down 1.7 m for one frame.
     const dt: f32 = 1.0 / 60.0;
     var l = Lurker.spawn(mathx.zero3, 0, 1.0, 0.3);
     l.wade = .{ .here = 1.0, .quarry = 1.0 };

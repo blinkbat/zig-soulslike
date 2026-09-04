@@ -8,11 +8,7 @@ const v3 = mathx.v3;
 const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
-// **THE FORGE YARD** — the smith's four pieces (`npc.zig`'s `.smith`), the way `propmarket` is the caravaneer's.
-// A 0.6 m capsule of `art.TIMBER` reads at 180 on screen where the same albedo on a fence rail reads at 130: a
-// large sunward face takes the full key and the gamma lift does the rest. Solved down the chain
-// (screen = (albedo/255 x 1.72)^(1/2.2) x 255):
-//     16 -> 93    26 -> 114    38 -> 136    58 -> 172    96 -> 210
+// THE FORGE YARD — the smith's four pieces (`npc.zig`'s `.smith`), the way `propmarket` is the caravaneer's. Solved down the chain (screen = (albedo/255 x 1.72)^(1/2.2) x 255): 16 -> 93, 26 -> 114, 38 -> 136, 58 -> 172, 96 -> 210.
 const OAK = rgba(26, 20, 13, 255);
 const OAK_LT = rgba(38, 29, 19, 255);
 const OAK_DK = rgba(15, 12, 8, 255);
@@ -31,8 +27,7 @@ const COAL = rgba(216, 88, 22, 52);
 const COAL_HOT = rgba(250, 182, 84, 20);
 const WATER = rgba(20, 27, 29, 255);
 
-/// **`Builder.addCube` AND `addRoundBox` TAKE A FULL SIZE, NOT HALF-EXTENTS** (`gfx.zig`: `hx = size.x / 2`).
-/// Authored as half-extents every box came out at half its span: the anvil's foot floated 25 mm over its own stump.
+/// `Builder.addCube` AND `addRoundBox` TAKE A FULL SIZE, NOT HALF-EXTENTS (`gfx.zig`: `hx = size.x / 2`).
 fn boxH(b: *Builder, c: rl.Vector3, half: rl.Vector3, col: rl.Color) void {
     b.addCube(c, v3(half.x * 2, half.y * 2, half.z * 2), col);
 }
@@ -55,7 +50,6 @@ pub fn anvilMesh(shader: rl.Shader) rl.Model {
     var rng = mathx.Rng.init(0x5A17);
     stumpInto(&b, &rng, STUMP_H, STUMP_R);
     anvilBodyInto(&b, STUMP_H);
-    // **NO SCATTER ON THE FLOOR.** Hammer scale was authored here as sixteen 6 mm discs.
     return b.toModel(shader);
 }
 
@@ -124,7 +118,6 @@ pub const FORGE_LIGHT_R: f32 = 7.2;
 pub fn forgeMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0B6);
-    // THE BLOCK: one dark mass, with the courses cut INTO its faces rather than glued onto them.
     b.setMat(.stone);
     boxH(&b, v3(0, HEARTH_Y * 0.5, 0), v3(HEARTH_HW, HEARTH_Y * 0.5, HEARTH_HD), MASON_DK);
     var course: i32 = 0;
@@ -147,7 +140,6 @@ pub fn forgeMesh(shader: rl.Shader) rl.Model {
             }
         }
     }
-    // THE TABLE, and a RIM rather than a wall: 0.03 m proud, so the bed inside it is visible from a standing
     boxH(&b, v3(0, HEARTH_Y + 0.022, 0), v3(HEARTH_HW + 0.04, 0.022, HEARTH_HD + 0.04), MASON);
     for ([_][2]f32{ .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 } }) |d| {
         boxH(&b, 
@@ -289,7 +281,6 @@ pub fn toolRackMesh(shader: rl.Shader) rl.Model {
     }
     b.addCylinder(v3(-RACK_HW, RACK_TOP - 0.16, 0), v3(RACK_HW, RACK_TOP - 0.16, 0), 0.046, 0.046, 7, OAK_DK);
     b.addCylinder(v3(-RACK_HW, RACK_TOP * 0.40, 0.02), v3(RACK_HW, RACK_TOP * 0.40, 0.02), 0.040, 0.040, 7, OAK_DK);
-    // display. **THE HEADS ARE BIG**: at 18 m a hammer head under 0.10 m is four grey pixels and says nothing.
     const Tool = enum { hammer, tongs, sledge };
     const hang = [_]struct { x: f32, drop: f32, head: f32, kind: Tool }{
         .{ .x = -0.44, .drop = 0.46, .head = 0.115, .kind = .hammer },
@@ -357,7 +348,6 @@ test "THE ANVIL'S FACE IS THE NUMBER THE SMITH IS BUILT AGAINST, and its waist i
     try std.testing.expect(ANVIL_TOP >= ANVIL_FACE);
     try std.testing.expect(ANVIL_FACE > STUMP_H);
     try std.testing.expect(ANVIL_R >= ANVIL_LEN * 0.5 * 1.36 + 0.02);
-// The pinch has to be TALL to be a pinch: at 0.054 m between a foot and a body it read as a step.
     try std.testing.expect(WAIST_H > (ANVIL_FACE - STUMP_H) * 0.4);
     try std.testing.expect(WAIST_HW < ANVIL_LEN * 0.5 * 0.60);
     std.debug.print("\n  anvil: face {d:.2} m, stump {d:.2} m x r{d:.2}, waist {d:.2} m tall and {d:.2} m wide, horn out to {d:.2} m\n", .{
@@ -366,7 +356,6 @@ test "THE ANVIL'S FACE IS THE NUMBER THE SMITH IS BUILT AGAINST, and its waist i
 }
 
 test "THE FORGE'S FIRE IS VISIBLE FROM ABOVE — the bed stands proud of its own rim" {
-    // The rim tops out at `HEARTH_Y + 0.088` and the coal heap at `HEARTH_Y + 0.12`+. A bed sunk behind its lip
     const rimTop = HEARTH_Y + 0.058 + 0.030;
     const bedTop = HEARTH_Y + 0.075 + 0.045 + 0.082 * 0.62;
     try std.testing.expect(bedTop > rimTop);
@@ -380,7 +369,6 @@ test "THE FORGE'S FIRE IS VISIBLE FROM ABOVE — the bed stands proud of its own
 
 test "THE TROUGH IS A HOLLOW YOU CAN SEE THE WATER IN, and the water is under the rim" {
     try std.testing.expect(QUENCH_HW > LOG_R * 0.55);
-    // …and the sheet sits below the rim, or the thing is a solid block with a gloss on top.
     const rim = QUENCH_TOP - 0.030 + 0.042;
     try std.testing.expect(QUENCH_TOP - 0.062 < rim);
     try std.testing.expect(QUENCH_R > QUENCH_HL + LOG_R * 0.5);

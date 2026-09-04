@@ -32,10 +32,7 @@ pub fn landed(atY: f32, floor: f32, quarryY: f32) bool {
     return atY <= mathx.minF(floor, quarryY) + LANDED_AT;
 }
 
-/// **A FLYING THING IS TESTED OVER THE STEP IT JUST TOOK, NOT WHERE IT ENDED UP** (`archer.stepArrow`'s own
-/// rule, and every `Arrow` shot goes through it). A single endpoint sample misses a grazing pass whenever the
-/// chord `2*sqrt(r^2 - d^2)` through the sphere is shorter than the step: measured on the owlbear's quill,
-/// 12.5 m/s at `game.DT_MAX` is 0.42 m against a 0.435 m sphere and 23% of the disc he presents went through.
+/// A FLYING THING IS TESTED OVER THE STEP IT JUST TOOK, NOT WHERE IT ENDED UP (`archer.stepArrow`'s rule, and every `Arrow` shot goes through it). A single endpoint sample misses a grazing pass whenever the chord `2*sqrt(r^2 - d^2)` is shorter than the step: 12.5 m/s at `game.DT_MAX` is 0.42 m against a 0.435 m sphere.
 pub fn struckSweep(was: rl.Vector3, now: rl.Vector3, at: rl.Vector3, r: f32) bool {
     if (mathx.lenV(mathx.subV(now, at)) <= r) return true;
     return mathx.lenV(mathx.subV(mathx.lerpV(was, now, 0.5), at)) <= r;
@@ -44,8 +41,7 @@ pub fn closestApproach(bodyR: f32) f32 {
     return bodyR + HERO_R;
 }
 
-/// `(own + HERO_REACH) * scale` is +0.55 m of reach on a scale-2 body and -0.28 m on a scale-0.5 one, invisible
-/// at 1.0 where every test spawns. `closestApproach` is the same triangle for COLLISION (`HERO_R`).
+/// `(own + HERO_REACH) * scale` is +0.55 m of reach on a scale-2 body and -0.28 m on a scale-0.5 one, invisible at 1.0 where every test spawns. `closestApproach` is the same triangle for COLLISION (`HERO_R`).
 pub fn hurtReach(own: f32, scale: f32) f32 {
     return own * scale + HERO_REACH;
 }
@@ -127,10 +123,7 @@ pub fn homeOf(k: wf.FoeKind) props.Biome {
     };
 }
 
-/// **HOW HARD A COHORT IS TO FLINCH, AS A MULTIPLE OF WHAT ITS OWN FILE AUTHORED.** The curve is the MAP's
-/// order and not the creature's, so every body keeps its character against its neighbours — the necromancer
-/// stays the softest thing in the bonefield, it just stops being softer than a toad. One table because a
-/// per-creature pass is twenty numbers to drift; the bench (`foestat.mult`) still layers on top of it.
+/// HOW HARD A COHORT IS TO FLINCH, AS A MULTIPLE OF WHAT ITS OWN FILE AUTHORED. The curve is the MAP's order and not the creature's, so every body keeps its character against its neighbours; the bench (`foestat.mult`) still layers on top of it.
 pub fn poiseCurve(k: wf.FoeKind) f32 {
     return switch (homeOf(k)) {
         .any, .ruins, .village, .wetland => 1.00,
@@ -217,9 +210,7 @@ test "EVERY KINGDOM THAT HOLDS A CREATURE HOLDS MORE THAN ONE, and the wanderers
 /// A share of its OWN STATURE — the hips. The hero's own limit is 0.76 of his (`env.WADE_MAX`).
 pub const WADE_FRAC: f32 = 0.45;
 
-/// **THE WATER A POSTED CREATURE MUST STAND IN**, or null for one that does not care. The lurker's: hidden
-/// under `fen.POOL_MIN`, and no deeper than the hero wades or he can never reach the fight. The editor refuses
-/// a post outside it, and the Pool brush digs to `env.dwellerFloor`, inside it.
+/// THE WATER A POSTED CREATURE MUST STAND IN, or null for one that does not care. The editor refuses a post outside it, and the Pool brush digs to `env.dwellerFloor`, inside it.
 pub fn poolBand(k: wf.FoeKind) ?[2]f32 {
     return switch (k) {
         .fen_lurker => .{ fen.POOL_MIN, env.WADE_MAX },
@@ -234,7 +225,7 @@ pub fn wadeLimit(k: wf.FoeKind, stature: f32) f32 {
     };
 }
 
-/// **NO ATTACK COMES OUT OF NOWHERE**: seconds the kit must be VISIBLY MOVING first. A chop at 0.14 and a bite at 0.20 read as INSTANT. A FLOOR under the winds, never the length of one.
+/// NO ATTACK COMES OUT OF NOWHERE: seconds the kit must be VISIBLY MOVING first. A FLOOR under the winds, never the length of one.
 pub const TELL_MIN: f32 = 0.30;
 
 pub const PARRY_LEAD: f32 = 0.18;
@@ -258,7 +249,6 @@ pub fn corporeal(f: anytype) bool {
 }
 
 
-/// Past its own notice ring, before turning for home. Per-creature: one flat 30 m was 2.7x the toad's aggro and the spacing between camps in `worlds/`.
 pub const LEASH_SLACK: f32 = 6.0;
 pub const LEASH_HOME_R: f32 = 3.0;
 pub const LEASH_CALM: f32 = 4.5;
@@ -285,8 +275,7 @@ pub const Leash = struct {
     engagedLeft: f32 = 0,
     returning: bool = false,
 
-    /// Per frame, BEFORE the state machine decides anything. **BOTH RANGES ARE MEASURED FROM THE POST** —
-    /// `out` for the creature, `heroOut` for the hero. Tethers nominally 17–30 m long release at 34 m (ogre) to 176 m (leechfly).
+    /// Per frame, BEFORE the state machine decides anything. BOTH RANGES ARE MEASURED FROM THE POST — `out` for the creature, `heroOut` for the hero.
     pub fn tick(self: *Leash, dt: f32, out: f32, heroOut: f32, aggroR: f32) void {
         self.sinceCombat += dt;
         self.sinceSeen += dt;
@@ -414,7 +403,6 @@ pub const ROAM_R: f32 = 9.0;
 const ROAM_STEP_LO: f32 = 3.0;
 const DWELL_LO: f32 = 1.4;
 const DWELL_HI: f32 = 5.0;
-/// `HOME_R` was 1.2 against this 1.1 and it stalled a tenth of a metre out.
 pub const ARRIVE: f32 = 1.1;
 
 pub const Post = struct {
@@ -802,8 +790,7 @@ pub const BLOOD_STRETCH: f32 = 0.045;
 pub const MOTE = mathx.rgba(252, 198, 92, 170);
 pub const WAKE = mathx.rgba(224, 230, 244, 255);
 
-/// **DRAG COSTS REACH, SO THE SPEED HAS TO BUY IT BACK.** Under drag `k` a mote covers v0/k·(1−e^(−k·t)) where
-/// a free one covers v0·t; a burst moved onto drag without this arrives at a third of where it was aimed.
+/// DRAG COSTS REACH, SO THE SPEED HAS TO BUY IT BACK: under drag `k` a mote covers v0/k·(1−e^(−k·t)) where a free one covers v0·t.
 pub fn dragBoost(k: f32, life: f32) f32 {
     if (k <= 0 or life <= 0) return 1.0;
     return k * life / (1.0 - @exp(-k * life));
@@ -869,8 +856,7 @@ pub const Particle = struct {
     drag: f32 = 0,
     stretch: f32 = 0,
     bounce: f32 = 0,
-    /// >0: a drop that reaches the floor stops and lies as a stain this many times its radius. ONE-OFF BURSTS
-    /// ONLY — a landed mote holds `SPLAT_HOLD`, so brood drool at 8-34/s was 40+ resident stains eating the blood behind them.
+    /// >0: a drop that reaches the floor stops and lies as a stain this many times its radius. ONE-OFF BURSTS ONLY — a landed mote holds `SPLAT_HOLD`.
     splat: f32 = 0,
     add: bool = false,
     landed: bool = false,
@@ -881,7 +867,6 @@ pub fn emitTicks(acc: *f32, dt: f32, rate: f32, cap: usize) usize {
     acc.* += dt * rate;
     var n: usize = 0;
     while (acc.* >= 1.0 and n < cap) : (n += 1) acc.* -= 1.0;
-    // so at any rate under ~24/s the cap *is* one and every ordinary mote tripped it: the fenlurker's 16/s wake ran at 15.
     if (acc.* >= 1.0) acc.* = 0;
     return n;
 }
@@ -1125,8 +1110,7 @@ test "THE PUFF IS THE SIX HAND-WRITTEN LOOPS, MOTE FOR MOTE — and the flat fla
     std.debug.print("\n  puff: {d} motes identical to the hand-written loop; a flat flare shifts the stream\n", .{gotHead});
 }
 
-/// MATTER thrown off a plant or a bootfall: a ring with no bearing, scaled by the body, landing and bouncing.
-/// `Puff` is the LIGHT of the same event and cannot carry it — that one is `DUST_GRAV` and a drag.
+/// MATTER thrown off a plant or a bootfall: a ring with no bearing, scaled by the body, landing and bouncing. `Puff` is the LIGHT of the same event — that one is `DUST_GRAV` and a drag.
 pub const Grit = struct {
     spdLo: f32,
     spdHi: f32,
@@ -1162,8 +1146,6 @@ pub fn grit(pool: []Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3, n: 
     }
 }
 
-/// Struck steel: additive, thrown BACK down the blow's own bearing and fanned about it. Size is absolute —
-/// a spark off a big body is not a bigger spark.
 pub const Sparks = struct {
     spdLo: f32,
     spdHi: f32,
@@ -1364,7 +1346,6 @@ pub fn floorBurst(pool: []Particle, from: usize, to: usize, floor: f32) void {
     while (i != to) : (i = (i + 1) % pool.len) pool[i].floor = floor;
 }
 
-/// **A BODY GOES BY GOING TRANSPARENT, NOT BY GETTING SMALL** — at the 55-85% shrink it had, a corpse walks off into the ground. What is left is a SETTLE, a tenth.
 pub const DEATH_SHRINK: f32 = 0.10;
 pub fn rigScale(scale: f32, fade: f32) f32 {
     return scale * (1.0 - DEATH_SHRINK * fade);
@@ -1565,7 +1546,6 @@ pub fn Trail(comptime N: usize) type {
     };
 }
 
-/// A tail shorter than this many radii collapses back to a dot, so a drag-slowed spark dies as a glowing point rather than a smear standing still.
 const STREAK_MIN_RADII: f32 = 1.6;
 
 var moteSoft: ?rl.Texture2D = null;
@@ -1683,8 +1663,6 @@ fn quad(c0: rl.Vector3, c1: rl.Vector3, c2: rl.Vector3, c3: rl.Vector3) void {
 
 pub const PostStep = struct { moved: f32 = 0, speed: f32 = 0, yaw: ?f32 = null };
 
-/// MEASURED at the map's own foe limit: **512 bodies asked every frame is 7.3 us, 0.044% of a 16.7 ms frame**,
-/// comptime `@hasField`, so a creature without orders pays nothing at all. There is nothing here to buy.
 pub fn postStep(self: anytype, dt: f32, bounds: f32, speed: f32, sensed: f32, aggroR: f32) PostStep {
     const T = @TypeOf(self.*);
     if (comptime !@hasField(T, "post")) return .{};
@@ -1703,8 +1681,7 @@ pub fn homeFor(self: anytype) rl.Vector3 {
     return if (self.post.ai == .hold) self.home else self.pos;
 }
 
-/// **THE ANCHOR A GO-HOME WALKS TO, AND NEVER `self.home`** — `Leash.tick` arms and releases `returning`
-/// against THIS point, so a patroller sent home to its spawn pin arrives where the tether is still out.
+/// THE ANCHOR A GO-HOME WALKS TO, AND NEVER `self.home`: `Leash.tick` arms and releases `returning` against THIS point, so a patroller sent home to its spawn pin arrives where the tether is still out.
 pub fn tetherFor(self: anytype) rl.Vector3 {
     const T = @TypeOf(self.*);
     if (comptime !@hasField(T, "post")) return self.home;
@@ -1795,8 +1772,7 @@ pub fn armPost(f: anytype, h: wf.Foe, home: rl.Vector3) void {
     f.post.arm(h.ai, home, h.route(), h.seed);
 }
 
-/// The curve goes on BEFORE `foestat` learns the body, so the bench shows the number the fight actually
-/// uses and a revert hands the curve back rather than the raw figure in the creature's file.
+/// The curve goes on BEFORE `foestat` learns the body, so the bench shows the number the fight actually uses and a revert hands the curve back.
 pub fn armStats(f: anytype, k: wf.FoeKind) void {
     if (comptime !@hasField(@TypeOf(f.*), "vit")) return;
     const curve = poiseCurve(k);
@@ -2007,7 +1983,6 @@ pub const Threat = struct {
             return;
         }
         if (self.since < THREAT_DWELL) return;
-        // …and the scores are solved BELOW the dwell, not above it: they are pure, so every creature on the field was computing a pair it threw away for the whole 0.65 s after any change of mind.
         const h = score(self.dmgHero, distHero, 1.0);
         const s = score(self.dmgSpirit, distSpirit, SPIRIT_TAUNT);
         const want: Victim = switch (self.on) {
@@ -2490,7 +2465,6 @@ test "THE SWING RIBBON ONLY RECORDS A BLADE THAT MOVED, and it expires" {
 test "A SWING STARTS SLOW ENOUGH TO BE SEEN, then whips" {
     try std.testing.expectApproxEqAbs(@as(f32, 0), swingCurve(0), 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 1), swingCurve(1), 1e-5);
-    // The first quarter of the window moves the limb a TWELFTH of its arc. Front-loaded it moved 58% of it, which is why a parry could only ever be timed off the sound and the clock.
     try std.testing.expect(swingCurve(0.25) < 0.10);
     try std.testing.expect(1.0 - swingCurve(0.75) > 2.0 * swingCurve(0.25));
     var prev: f32 = -1;
@@ -2540,7 +2514,6 @@ test "THE MOTE GATE NEVER DROPS SOMETHING YOU COULD SEE" {
     setLens(mathx.zero3, v3(0, 0, 1));
     var d: f32 = 1.0;
     while (d < MOTE_REACH) : (d += 1.0) try std.testing.expect(motesVisible(v3(0, 0, d), 1.5));
-    // …and off to the side as far as any frustum corner reaches — 60 degrees off axis is well past the widest half-angle this game renders at.
     var deg: f32 = 0;
     while (deg <= 90.0) : (deg += 5.0) {
         const a = mathx.radians(deg);
@@ -2819,7 +2792,6 @@ test "AND IT LANDS ON THE BODY — the bench learns the number the fight uses, n
     try std.testing.expectApproxEqAbs(20.0 * poiseCurve(.fungal_magus), late.vit.poiseMax, 1e-3);
     try std.testing.expectEqual(late.vit.poiseMax, late.vit.poise);
     try std.testing.expectApproxEqAbs(late.vit.poiseMax, foestat.pools(.fungal_magus).poise, 1e-3);
-    // HP and stance are the creature's alone — the curve is one channel, not a difficulty multiplier.
     try std.testing.expectApproxEqAbs(@as(f32, 200), late.vit.hpMax, 1e-3);
     try std.testing.expectApproxEqAbs(@as(f32, 50), late.vit.stanceMax, 1e-3);
     std.debug.print(

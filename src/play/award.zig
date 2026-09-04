@@ -87,8 +87,7 @@ pub const Award = struct {
         self.ntoasts += 1;
     }
 
-    /// **A PURSE TOASTS, IT DOES NOT CARD.** There is no first-time card for money — nothing about the tenth
-    /// pile is different from the first, and a modal over a running fight for 30 coin is an interruption.
+    /// A PURSE TOASTS, IT DOES NOT CARD: there is no first-time card for money.
     pub fn gainCoin(self: *Award, n: u32) void {
         if (n == 0) return;
         for (self.toasts[0..self.ntoasts]) |*t| {

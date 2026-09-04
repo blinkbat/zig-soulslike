@@ -57,9 +57,7 @@ const solePatches = [_]heromod.SolePatch{
     .{ .bone = ANKR, .heel = 0.030 * H, .toe = 0.120 * H, .halfW = 0.052 * H, .drop = 0.026 * H },
 };
 
-// dark. **SOLVED OFF THE CHAIN, NOT PICKED**: `gfx`'s own ladder is albedo 76 -> screen 188 and 109 -> 222,
-// and anything over 148 clips white. Authored at 168 the trunk clipped and the creature read as a bare
-// mannequin with no bark on it at all; at 92 it samples ~205, the palest body on the field.
+// SOLVED OFF THE CHAIN, NOT PICKED: `gfx`'s own ladder is albedo 76 -> screen 188 and 109 -> 222, and anything over 148 clips white. At 92 it samples ~205, the palest body on the field.
 const BARK = rgba(92, 89, 82, 255);
 const BARK_LT = rgba(116, 113, 106, 255);
 const LENTICEL = rgba(38, 36, 32, 255);
@@ -133,8 +131,7 @@ const State = enum { idle, walk, bough, stunlight, stunheavy, dead };
 
 const Choice = enum { rest, hold, close, bough };
 
-/// Measured edge to edge against a centre-to-centre bill, the band ran 0.19 m past the reach at scale 1
-/// and 1.15 m at `wf.FOE_SCALE_LO`.
+/// Measured edge to edge against a centre-to-centre bill, the band ran 0.19 m past the reach at scale 1 and 1.15 m at `wf.FOE_SCALE_LO`.
 fn classify(sensed: f32, homeGap: f32, scale: f32, boughReady: bool, rooted: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     if (sensed <= foe.hurtReach(BOUGH_R, scale) and boughReady) return .bough;
@@ -830,7 +827,6 @@ test "…BUT IT IS A WORSE FIGHT WHILE IT BURNS: faster feet, faster swing, and 
     try std.testing.expect(hot.windDur() < cold.windDur());
     try std.testing.expectApproxEqAbs(@as(f32, 0), cold.boughHit().elem.at(.fire), 1e-6);
     try std.testing.expectApproxEqAbs(LIT_FIRE, hot.boughHit().elem.at(.fire), 1e-6);
-    // The tell survives the haste — that is the line the comptime assert holds and this one measures.
     std.debug.print("  bough wind {d:.2} s cold, {d:.2} s lit (floor {d:.2})\n", .{ cold.windDur(), hot.windDur(), foe.TELL_MIN });
     try std.testing.expect(hot.windDur() >= foe.TELL_MIN);
 }

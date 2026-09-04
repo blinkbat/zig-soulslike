@@ -6,7 +6,6 @@ const mathx = @import("../core/mathx.zig");
 const tune = @import("../play/tune.zig");
 const ui = @import("ui.zig");
 
-/// Drawn twice: the editor's own Stats sheet, and beside the model in `ui/objview.zig`.
 /// Every number here is `play/tune.zig`'s. Nothing in this file knows what a spell or a shield IS.
 pub const State = struct {
     tab: usize = 0,
@@ -31,8 +30,7 @@ fn rowNames(t: usize) []const [:0]const u8 {
     return nameBuf[0..tb.n];
 }
 
-/// Decimals from the STEP, so a 0.01 dial does not read as 0.1 and a whole number does not trail a point. The
-/// stock stepper prints one place for everything, which turned a 0.06 drop rate into 0.1 on the screen.
+/// Decimals from the STEP, so a 0.01 dial does not read as 0.1 and a whole number does not trail a point. The stock stepper prints one place for everything, which turned a 0.06 drop rate into 0.1 on the screen.
 fn places(step: f32, int: bool) u8 {
     if (int) return 0;
     if (step >= 1.0) return 1;
@@ -126,8 +124,7 @@ const PICK_LABEL_W: i32 = 96;
 
 const PICK_MIN_W: i32 = 120;
 
-/// **AS WIDE AS THE LONGEST NAME IN THE LIST, MEASURED AND NOT PICKED.** The scan runs over the live labels, so
-/// it cannot be solved at comptime — and it is a modal's cost, not the loop's.
+/// AS WIDE AS THE LONGEST NAME IN THE LIST, MEASURED AND NOT PICKED: the scan runs over the live labels, so it cannot be solved at comptime — and it is a modal's cost, not the loop's.
 fn pickWidth(p: tune.Pick, w: i32) i32 {
     var wide: i32 = 0;
     for (0..p.n) |i| wide = @max(wide, hud.monoW(p.label(i), hud.MONO));
@@ -213,8 +210,7 @@ pub fn header(ctx: *ui.Ctx, x: i32, y: i32, w: i32, t: usize, r: usize) void {
     }
 }
 
-/// Sized off the tables it collects from, never picked: a face cannot match more rows than exist under it, so
-/// the cap in `forFace` is unreachable and cannot drop a dial the "+N more" line would then under-report.
+/// Sized off the tables it collects from, never picked: a face cannot match more rows than exist under it, so the cap in `forFace` is unreachable.
 pub const FACE_MAX = blk: {
     var m: usize = 0;
     for (std.meta.tags(tune.Face)) |f| {
@@ -285,8 +281,7 @@ fn multiRow(found: []const Hit, t: usize) bool {
     return n > 1;
 }
 
-/// **THIRTEEN TABS WIDE.** The row divides evenly, so the frame is sized off the LONGEST sheet name rather
-/// than the content under it: at 940 the ninth character of "Armaments" sat on top of its neighbour.
+/// THIRTEEN TABS WIDE. The row divides evenly, so the frame is sized off the LONGEST sheet name rather than the content under it: at 940 the ninth character of "Armaments" sat on top of its neighbour.
 pub const W: i32 = 1180;
 pub const H: i32 = 660;
 const LIST_W: i32 = 310;
@@ -336,7 +331,7 @@ pub fn panel(st: *State, ctx: *ui.Ctx) bool {
     bx += 128;
     if (ui.button(ctx, ui.rect(bx, by, 100, 24), "Revert all", hud.MONO, tune.anyEdited(), "Every number in the game back to the code")) tune.revertAll();
     bx += 108;
-    if (ui.button(ctx, ui.rect(bx, by, 100, 24), "Save", hud.MONO, false, "Write the edited numbers over tuning.cfg")) tune.save();
+    if (ui.button(ctx, ui.rect(bx, by, 100, 24), "Save", hud.MONO, false, "Write the edited numbers over " ++ tune.PATH)) tune.save();
     if (ui.button(ctx, ui.rect(box.x + W - PAD - 90, by, 90, 24), "Done", hud.MONO, false, "Close the bench. Edited numbers stay edited until you revert them")) {
         tune.save();
         return false;

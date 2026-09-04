@@ -104,8 +104,7 @@ fn driftInto(b: *Builder, rng: *mathx.Rng, d: Drift, cx: f32, cz: f32, yaw: f32)
     }
 }
 
-// Solved through the chain, not picked (screen = 255 x (albedo x 1.72)^(1/2.2)):
-//   clinker 96 -> 17    clinker face 130 -> 34    dripstone 175 -> 65    dripstone band 140 -> 40
+// Solved through the chain, not picked (screen = 255 x (albedo x 1.72)^(1/2.2)): clinker 96 -> 17, clinker face 130 -> 34, dripstone 175 -> 65, dripstone band 140 -> 40.
 
 /// FUSED ASH, not stone: it ran and set, so it is glassy and the darkest thing in the region by a long way.
 const CLINKER = mathx.rgba(18, 17, 16, 255);
@@ -121,7 +120,6 @@ fn bankInto(b: *Builder, rng: *mathx.Rng, r: f32, high: f32) void {
         const a = -1.0 + fi * 2.0;
         const d = r * rng.range(0.55, 0.92);
         const h = high * (0.40 + 0.60 * mathx.sinf(fi * std.math.pi)) * rng.range(0.85, 1.12);
-        // **SUNK TO THE WAIST, NOT STOOD ON THE GRASS.** Centred at `h * 0.34` these were flat pale discs.
         b.addBlob(
             v3(-mathx.cosf(a) * d, 0, mathx.sinf(a) * d),
             v3(r * rng.range(0.34, 0.52), h, r * rng.range(0.30, 0.44)),
@@ -313,7 +311,6 @@ pub fn stoneCarveMesh(shader: rl.Shader) rl.Model {
             v3(0, tilt * 0.10 * sz, 0.16 * sz),
             art.STONE_LT,
         );
-        // **TWICE AS WIDE AS A REAL GROOVE.** At 0.022 m they vanished at ten paces — legibility beats scale.
         const gz = faceZ + CARVE_R * 0.14 * sz;
         if (sz > 0) {
             const turns: f32 = 2.4;
@@ -371,7 +368,7 @@ pub fn ashDuneMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// **THE ONE GROUND-LEVEL THING IN THE GAME THAT IS ITS OWN LIGHT.** The coals carry a low vertex ALPHA, which the scene shader reads as EMISSIVE — so they hold their glow at any hour without costing a `LightSpec`, and a field of them can be sown by the hundred where sixteen real lights is the whole budget.
+/// THE ONE GROUND-LEVEL THING IN THE GAME THAT IS ITS OWN LIGHT: the coals carry a low vertex ALPHA, which the scene shader reads as EMISSIVE, so a field of them can be sown by the hundred where sixteen real lights is the whole budget.
 pub fn cindersMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xA513);

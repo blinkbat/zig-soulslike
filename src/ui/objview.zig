@@ -161,7 +161,7 @@ const Volume = enum {
     }
 };
 
-/// **THE FX BENCH — `elemfx`'s twelve cells, PLAYING.** The jukebox's arrangement one gallery along: the sounds are auditioned there because a waveform on a page tells you nothing, and `lifeHi 1.15` is not a thing anybody can picture. Four elements against three verbs, side by side and on a loop.
+/// THE FX BENCH — `elemfx`'s twelve cells, PLAYING. Four elements against three verbs, side by side and on a loop.
 const Verb = enum {
     gather,
     burst,
@@ -189,7 +189,7 @@ const BENCH_FX_N = blk: {
     const worst = @as(f32, @floatFromInt(elemfx.pourCount(1))) * elemfx.POUR_RATE * life;
     break :blk @as(usize, @intFromFloat(@ceil(worst))) + 32;
 };
-/// …and the hitch ceiling on ONE frame of it — `elemfx.POUR_CAP`, the same number the fight runs at, because a bench throttled differently from the thing it is tuning is a bench that lies. As a bare `8` it was UNDER what a 60 fps frame owes at `POUR_RATE` (9.3), so it was in permanent hitch: drawing a stream at 480 motes a second against the fight's 560.
+/// …and the hitch ceiling on ONE frame of it — `elemfx.POUR_CAP`, the same number the fight runs at. As a bare `8` it was UNDER what a 60 fps frame owes at `POUR_RATE` (9.3), so it was in permanent hitch.
 const BENCH_POUR_CAP: usize = elemfx.POUR_CAP;
 const BENCH_AT = v3(0, 1.05, 0);
 const BENCH_DIR = v3(0, 0, -1);
@@ -248,6 +248,12 @@ pub const State = struct {
     fxHead: usize = 0,
     fxT: f32 = 0,
     fxAcc: f32 = 0,
+    /// Which creature the shared roster is currently STANDING as. The gallery stomps slot 0 a cell at a time, so a body only stays alive while one is open and nothing else has drawn over it.
+    charLive: ?usize = null,
+    charPlay: bool = true,
+    charSpin: f32 = 0,
+    charDist: f32 = 7.0,
+    charT: f32 = 0,
 
     pub fn poseOf(self: *State, k: Kind) *Pose {
         return &self.pose[@intFromEnum(k)];
@@ -324,7 +330,7 @@ fn render(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, kind: Kin
     closeStage();
 }
 
-// ONE GROUP OF EACH, exactly as the game holds them — the group is every creature's own draw contract (model, flash, scale), so the viewer cannot drift from what the field shows. Members are respawned into slot 0 per render; a spawn poses before it returns, so the cell is the creature's own first frame.
+// ONE GROUP OF EACH, exactly as the game holds them — the group is every creature's own draw contract (model, flash, scale). Members are respawned into slot 0 per render, and a spawn poses before it returns.
 pub const CharSet = struct {
     warren: frogmod.Knot,
     line: archermod.Line,
@@ -357,8 +363,7 @@ pub const CharSet = struct {
     vanguard: duomod.Vanguard,
     conclave: duomod.Conclave,
 };
-/// One group per creature, so it GROWS WITH THE ROSTER and is measured by the test at the foot of this file: as
-/// a figure it read 112.4 MB and was 150.6 by the time anyone looked.
+/// One group per creature, so it GROWS WITH THE ROSTER and is measured by the test at the foot of this file: as a figure it read 112.4 MB and was 150.6 by the time anyone looked.
 var charSet: ?*CharSet = null;
 
 pub const CHAR_GROUPS = @typeInfo(CharSet).@"struct".fields.len;
@@ -412,7 +417,6 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         .brood_sac => .{ .top = 1.2, .bound = 1.0 },
         .shieldman, .greatsword => .{ .top = 2.1, .bound = 1.2 },
         .shade => .{ .top = 2.4, .bound = 1.2 },
-        // The same rig at `shade.SPEC`'s own 1.28, so the viewer frames the body it draws.
         .mourner => .{ .top = 3.1, .bound = 1.6 },
         .slumber_bloom => .{ .top = 1.6, .bound = 1.3 },
         .cinder_wake => .{ .top = 1.9, .bound = 1.2 },
@@ -435,29 +439,145 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         .bone_skitterer => .{ .top = 2.2, .bound = 1.4 },
         .ancient_priest => .{ .top = 3.4, .bound = 1.4 },
         .tolling_hollow => .{ .top = 2.9, .bound = 1.9 },
-        // Both on the shared 1.34 rig, and the swordsman's bound is the SWORD held out to one side.
         .fungal_swordsman => .{ .top = 3.0, .bound = 2.6 },
         .fungal_magus => .{ .top = 3.2, .bound = 1.6 },
     };
 }
 
+/// THE BENCH RUNS THE CREATURE'S OWN `update`, NOT A KEYED REPLAY. The quarry is a DECOY at a settable range on a slow orbit — every input a decision is allowed to read (position, bearing, distance and its own clocks) — and the body is put back on the origin after each step.
+const Drive = enum { group, member, point, hit, yank };
+
+pub const CHAR_DRIVE = [_]struct { field: []const u8, drive: Drive, kinds: []const wf.FoeKind }{
+    .{ .field = "warren", .drive = .group, .kinds = &.{.toad} },
+    .{ .field = "line", .drive = .member, .kinds = &.{.archer} },
+    .{ .field = "grief", .drive = .group, .kinds = &.{.ogre} },
+    .{ .field = "band", .drive = .point, .kinds = &.{ .berserker, .priest, .slinger } },
+    // No `brood_sac`: `CHAR_KINDS` leaves it off the shelf, so it is a body the bench never stands.
+    .{ .field = "brood", .drive = .point, .kinds = &.{ .brood_mother, .broodling } },
+    .{ .field = "muster", .drive = .group, .kinds = &.{ .shieldman, .greatsword } },
+    .{ .field = "haunt", .drive = .point, .kinds = &.{ .shade, .mourner } },
+    .{ .field = "swarm", .drive = .hit, .kinds = &.{.leechfly} },
+    .{ .field = "grove", .drive = .yank, .kinds = &.{.rooted} },
+    .{ .field = "cluster", .drive = .group, .kinds = &.{.shroom} },
+    .{ .field = "warrens", .drive = .group, .kinds = &.{.delver} },
+    .{ .field = "rite", .drive = .group, .kinds = &.{.necromancer} },
+    .{ .field = "vigil", .drive = .group, .kinds = &.{.bone_knight} },
+    .{ .field = "herd", .drive = .group, .kinds = &.{.fungal_deer} },
+    .{ .field = "ring", .drive = .group, .kinds = &.{.mushroom_mage} },
+    .{ .field = "host", .drive = .group, .kinds = &.{.spore_golem} },
+    .{ .field = "marsh", .drive = .group, .kinds = &.{.fen_lurker} },
+    .{ .field = "clatter", .drive = .group, .kinds = &.{.bone_skitterer} },
+    .{ .field = "crypt", .drive = .group, .kinds = &.{.ancient_priest} },
+    .{ .field = "belfry", .drive = .group, .kinds = &.{.tolling_hollow} },
+    .{ .field = "bed", .drive = .group, .kinds = &.{.slumber_bloom} },
+    .{ .field = "scorch", .drive = .group, .kinds = &.{.cinder_wake} },
+    .{ .field = "gorge", .drive = .group, .kinds = &.{.rotgorger} },
+    .{ .field = "stand", .drive = .group, .kinds = &.{.birchwight} },
+    .{ .field = "pan", .drive = .group, .kinds = &.{.salt_husk} },
+    .{ .field = "shoal", .drive = .group, .kinds = &.{ .fish_spearman, .fish_netter, .fish_shaman } },
+    .{ .field = "roost", .drive = .group, .kinds = &.{.blinkbat} },
+    .{ .field = "perch", .drive = .group, .kinds = &.{.owlbear} },
+    .{ .field = "vanguard", .drive = .group, .kinds = &.{.fungal_swordsman} },
+    .{ .field = "conclave", .drive = .group, .kinds = &.{.fungal_magus} },
+};
+
+comptime {
+    @setEvalBranchQuota(30000);
+    if (CHAR_DRIVE.len != CHAR_GROUPS) @compileError("objview: CHAR_DRIVE and CharSet disagree on how many groups there are");
+    for (CHAR_DRIVE) |row| {
+        if (!@hasField(CharSet, row.field)) @compileError("objview: CHAR_DRIVE names `" ++ row.field ++ "`, which is not a CharSet field");
+    }
+    for (CHAR_KINDS) |k| {
+        var found = false;
+        for (CHAR_DRIVE) |row| {
+            for (row.kinds) |kk| {
+                if (kk == k) found = true;
+            }
+        }
+        if (!found) @compileError("objview: " ++ @tagName(k) ++ " has no CHAR_DRIVE row, so the bench can draw it but never play it");
+    }
+    // The shape is the group's OWN `update`, read off it rather than remembered: a callback added to one is a compile error here instead of a bench that silently stopped playing that creature.
+    for (CHAR_DRIVE) |row| {
+        const G = @FieldType(CharSet, row.field);
+        if (row.drive == .member) {
+            if (@hasDecl(G, "update")) @compileError("objview: `" ++ row.field ++ "` has a group `update` now — take it off .member");
+            continue;
+        }
+        const n = @typeInfo(@TypeOf(G.update)).@"fn".params.len;
+        const want: usize = if (row.drive == .group) 5 else 7;
+        if (n != want) @compileError(std.fmt.comptimePrint(
+            "objview: `{s}`.update takes {d} params, and its CHAR_DRIVE row says {d}",
+            .{ row.field, n, want },
+        ));
+    }
+}
+
+/// The bench's own world: wide enough that `stepXZ` never clamps inside one step of the treadmill.
+const BENCH_BOUNDS: f32 = 400.0;
+pub const BENCH_NEAR: f32 = 1.6;
+pub const BENCH_FAR: f32 = 26.0;
+const BENCH_ORBIT: f32 = 0.22; // radians a second the decoy walks round him
+
+const Decoy = struct {};
+fn decoyPoint(_: Decoy, _: rl.Vector3) void {}
+fn decoyHit(_: Decoy, _: combat.Hit) void {}
+fn decoyYank(_: Decoy, _: rl.Vector3, _: f32) void {}
+
+pub fn quarryAt(dist: f32, spin: f32) rl.Vector3 {
+    return v3(mathx.sinf(spin) * dist, 0, mathx.cosf(spin) * dist);
+}
+
+fn stepChar(cs: *CharSet, k: wf.FoeKind, dt: f32, quarry: rl.Vector3) void {
+    inline for (CHAR_DRIVE) |row| {
+        for (row.kinds) |kk| {
+            if (kk != k) continue;
+            const gr = &@field(cs, row.field);
+            if (gr.n == 0) return;
+            switch (row.drive) {
+                .group => _ = gr.update(dt, quarry, BENCH_BOUNDS, .{}),
+                .member => _ = gr.live()[0].update(dt, quarry, BENCH_BOUNDS, .{}),
+                .point => _ = gr.update(dt, quarry, BENCH_BOUNDS, .{}, Decoy{}, decoyPoint),
+                .hit => _ = gr.update(dt, quarry, BENCH_BOUNDS, .{}, Decoy{}, decoyHit),
+                .yank => _ = gr.update(dt, quarry, BENCH_BOUNDS, .{}, Decoy{}, decoyYank),
+            }
+            // XZ only: `pos.y` is the GROUND under a body, and a flyer's whole height is measured off it.
+            gr.live()[0].pos.x = 0;
+            gr.live()[0].pos.z = 0;
+            return;
+        }
+    }
+}
+
+fn drawGroup(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
+    inline for (CHAR_DRIVE) |row| {
+        for (row.kinds) |kk| {
+            if (kk == k) {
+                @field(cs, row.field).draw(scene);
+                return;
+            }
+        }
+    }
+}
+
 fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
+    seedChar(cs, k);
+    drawGroup(cs, k, scene);
+}
+
+fn seedChar(cs: *CharSet, k: wf.FoeKind) void {
     const seed = 0.35;
     switch (k) {
         .toad => {
             cs.warren.n = 1;
             cs.warren.live()[0] = frogmod.Frog.spawn(mathx.zero3, 0, 1.0, seed);
-            cs.warren.draw(scene);
         },
         .archer => {
             cs.line.n = 1;
             cs.line.live()[0] = archermod.Archer.spawn(mathx.zero3, 0, 1.0, seed);
-            cs.line.draw(scene);
         },
         .ogre => {
             cs.grief.n = 1;
             cs.grief.live()[0] = ogremod.Ogre.spawn(mathx.zero3, 0, 1.0, seed);
-            cs.grief.draw(scene);
         },
         .berserker, .priest, .slinger => {
             const role: koboldmod.Role = switch (k) {
@@ -467,53 +587,43 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
             };
             cs.band.n = 1;
             cs.band.live()[0] = koboldmod.Kobold.spawnAs(role, mathx.zero3, 0, 1.0, seed);
-            cs.band.draw(scene);
         },
         .brood_mother, .broodling, .brood_sac => {
             const role: broodmod.Role = if (k == .broodling) .broodling else .mother;
             cs.brood.n = 1;
             cs.brood.live()[0] = broodmod.Spider.spawnAs(role, mathx.zero3, 0, 1.0, seed);
-            cs.brood.draw(scene);
         },
         .shieldman, .greatsword => {
             cs.muster.n = 1;
             cs.muster.live()[0] = warriormod.Warrior.spawnAs(if (k == .shieldman) .shieldman else .greatsword, mathx.zero3, 0, 1.0, seed);
-            cs.muster.draw(scene);
         },
         .fish_spearman, .fish_netter, .fish_shaman => {
             cs.shoal.n = 1;
             cs.shoal.live()[0] = fishmod.Fishman.spawnAs(fishmod.roleOf(k).?, mathx.zero3, 0, 1.0, seed);
-            cs.shoal.draw(scene);
         },
         .blinkbat => {
             cs.roost.n = 1;
             cs.roost.live()[0] = batmod.Bat.spawn(mathx.zero3, 0, 1.0, seed);
-            cs.roost.draw(scene);
         },
         .owlbear => {
             cs.perch.n = 1;
             cs.perch.live()[0] = owlbearmod.Owlbear.spawn(mathx.zero3, 0, 1.0, seed);
-            cs.perch.draw(scene);
         },
         .salt_husk => {
             cs.pan.n = 1;
             cs.pan.live()[0] = huskmod.Husk.spawn(mathx.zero3, 0, 1.0, seed);
-            cs.pan.draw(scene);
         },
         .birchwight => {
             cs.stand.n = 1;
             cs.stand.live()[0] = birchmod.Wight.spawn(mathx.zero3, 0, 1.0, seed);
-            cs.stand.draw(scene);
         },
         .rotgorger => {
             cs.gorge.n = 1;
             cs.gorge.live()[0] = gorgermod.Gorger.spawn(mathx.zero3, 0, 1.0, seed);
-            cs.gorge.draw(scene);
         },
         .cinder_wake => {
             cs.scorch.n = 1;
             cs.scorch.live()[0] = cindermod.Cinder.spawn(mathx.zero3, 0, 1.0, seed);
-            cs.scorch.draw(scene);
         },
         .slumber_bloom => {
             cs.bed.n = 1;
@@ -521,17 +631,14 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
             cs.bed.live()[0].debugWake();
             cs.bed.live()[0].open = 1;
             cs.bed.live()[0].pose();
-            cs.bed.draw(scene);
         },
         .shade, .mourner => {
             cs.haunt.n = 1;
             cs.haunt.live()[0] = shademod.Shade.spawnAs(if (k == .mourner) .mourner else .shade, mathx.zero3, 0, 1.0, seed);
-            cs.haunt.draw(scene);
         },
         .leechfly => {
             cs.swarm.n = 1;
             cs.swarm.live()[0] = leechmod.Leechfly.spawn(mathx.zero3, 0, 1.0, seed);
-            cs.swarm.draw(scene);
         },
         .rooted => {
             cs.grove.n = 1;
@@ -540,88 +647,74 @@ fn drawChar(cs: *CharSet, k: wf.FoeKind, scene: *gfx.Scene) void {
             t.eyes = 1;
             t.pose();
             cs.grove.live()[0] = t;
-            cs.grove.draw(scene);
         },
         .shroom => {
             cs.cluster.n = 1;
             cs.cluster.live()[0] = shroommod.Shroom.spawn(mathx.zero3, 0, 1.0, seed);
-            cs.cluster.draw(scene);
         },
         .bone_knight => {
             cs.vigil.n = 1;
             cs.vigil.live()[0] = knightmod.Knight.spawn(mathx.zero3, 0, 1.0, seed);
-            cs.vigil.draw(scene);
         },
         .delver => {
             cs.warrens.n = 1;
             cs.warrens.live()[0] = delvermod.Delver.spawn(mathx.zero3, 0, 1.0, seed);
-            cs.warrens.draw(scene);
         },
         .necromancer => {
             cs.rite.n = 1;
             cs.rite.live()[0] = necromod.Necro.spawn(mathx.zero3, 0, 1.0, seed);
-            cs.rite.draw(scene);
         },
         .fungal_deer => {
             cs.herd.n = 1;
             cs.herd.live()[0] = deermod.Deer.spawn(mathx.zero3, 0, 1.0, seed);
             cs.herd.live()[0].stageGather(1.0);
-            cs.herd.draw(scene);
         },
         .spore_golem => {
             cs.host.n = 1;
             cs.host.live()[0] = golemmod.Golem.spawn(mathx.zero3, 0, 1.0, seed);
-            cs.host.draw(scene);
         },
         .mushroom_mage => {
             cs.ring.n = 1;
             cs.ring.live()[0] = magemod.Mage.spawn(mathx.zero3, 0, 1.0, seed);
             cs.ring.live()[0].stageGather(1.0);
-            cs.ring.draw(scene);
         },
         .fen_lurker => {
             cs.marsh.n = 1;
             cs.marsh.live()[0] = fenmod.Lurker.spawn(mathx.zero3, 0, 1.0, seed);
             cs.marsh.live()[0].stageGather(1.0);
-            cs.marsh.draw(scene);
         },
         .bone_skitterer => {
             cs.clatter.n = 1;
             cs.clatter.live()[0] = skittermod.Skitterer.spawn(mathx.zero3, 0, 1.0, seed);
             cs.clatter.live()[0].stageGather(0.85);
-            cs.clatter.draw(scene);
         },
         .ancient_priest => {
             cs.crypt.n = 1;
             cs.crypt.live()[0] = priestmod.Ancient.spawn(mathx.zero3, 0, 1.0, seed);
             cs.crypt.live()[0].stageGather(1.0);
-            cs.crypt.draw(scene);
         },
         .tolling_hollow => {
             cs.belfry.n = 1;
             cs.belfry.live()[0] = hollowmod.Hollow.spawn(mathx.zero3, 0, 1.0, seed);
             cs.belfry.live()[0].stageGather(0.9);
-            cs.belfry.draw(scene);
         },
         .fungal_swordsman => {
             cs.vanguard.n = 1;
             cs.vanguard.live()[0] = duomod.Swordsman.spawn(mathx.zero3, 0, 1.0, seed);
-            cs.vanguard.draw(scene);
         },
         .fungal_magus => {
             cs.conclave.n = 1;
             cs.conclave.live()[0] = duomod.Magus.spawn(mathx.zero3, 0, 1.0, seed);
-            cs.conclave.draw(scene);
         },
     }
 }
 
-fn renderChar(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, k: wf.FoeKind, pose: Pose) void {
+fn renderChar(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, k: wf.FoeKind, pose: Pose, live: bool) void {
     const cs = ensureChars(scene);
     const dims = charDims(k);
     const aspect = rtAspect(rt);
     openStage(rt, env, scene, fitCam(dims.top, dims.bound, pose, aspect), aspect);
-    drawChar(cs, k, scene);
+    if (live) drawGroup(cs, k, scene) else drawChar(cs, k, scene);
     closeStage();
 }
 
@@ -959,11 +1052,12 @@ fn galleryChars(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) b
         }
     }
 
+    st.charLive = null;
     i = start;
     while (i < end) : (i += 1) {
         const k = CHAR_KINDS[i];
         const r = gridCell(box, @intCast(i - start));
-        renderChar(target(&thumbRT, THUMB_W, THUMB_H), env, scene, k, st.charPose[i]);
+        renderChar(target(&thumbRT, THUMB_W, THUMB_H), env, scene, k, st.charPose[i], false);
         blit(thumbRT.?, r);
         const on = (hover != null and hover.? == i) or (st.grabbed != null and st.grabbed.? == i);
         rl.drawRectangleLinesEx(r, 1, ui.alpha(if (on) ui.HOT else ui.TRIM, if (on) 220 else 70));
@@ -994,7 +1088,20 @@ fn bigChar(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, at: us
 
     spinView(st, ctx, p, viewR);
 
-    renderChar(target(&bigRT, BIG_W, BIG_H), env, scene, k, p.*);
+    const cs = ensureChars(scene);
+    if (st.charLive == null or st.charLive.? != at) {
+        seedChar(cs, k);
+        st.charLive = at;
+        st.charSpin = 0;
+        st.charT = 0;
+    }
+    if (st.charPlay) {
+        const dt = mathx.minF(rl.getFrameTime(), 0.05);
+        st.charT += dt;
+        st.charSpin += BENCH_ORBIT * dt;
+        stepChar(cs, k, dt, quarryAt(st.charDist, st.charSpin));
+    }
+    renderChar(target(&bigRT, BIG_W, BIG_H), env, scene, k, p.*, true);
     blit(bigRT.?, viewR);
     rl.drawRectangleLinesEx(viewR, 1, ui.alpha(ui.TRIM, 110));
 
@@ -1010,7 +1117,21 @@ fn bigChar(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, at: us
         hud.mono(s, x, y, hud.MONO, ui.VALUE);
         y += line;
     }
-    y += 8;
+    y += 6;
+    if (ui.button(ctx, ui.rect(x, y, 78, 24), if (st.charPlay) "Pause" else "Play", hud.MONO, st.charPlay, "Run the creature's own update against a decoy — it walks, turns, closes and strikes on its own")) {
+        st.charPlay = !st.charPlay;
+    }
+    if (ui.button(ctx, ui.rect(x + 82, y, 78, 24), "Restart", hud.MONO, false, "Put it back on its own first frame")) {
+        seedChar(cs, k);
+        st.charSpin = 0;
+        st.charT = 0;
+    }
+    y += 30;
+    _ = ui.slider(ctx, x, y, INFO_W - 12, "decoy range (m)", &st.charDist, BENCH_NEAR, BENCH_FAR, "Where the decoy stands. Inside its reach it strikes, outside it closes, past its own aggro it walks its post");
+    y += ui.ROW_H + 14;
+    const clock = std.fmt.bufPrintZ(&buf, "{s: <7}{d: >7.1}", .{ "played", st.charT }) catch "";
+    hud.mono(clock, x, y, hud.MONO, ui.alpha(ui.VALUE, if (st.charPlay) 255 else 140));
+    y += line + 8;
     y = tuneui.faceSheet(ctx, x, y, INFO_W, .foe, @intFromEnum(k), box.y + h - FOOT_DROP - 24);
     y += 2;
     hud.mono("drag spins, wheel zooms", x, y, hud.MONO, ui.alpha(ui.LABEL, 170));
@@ -1063,7 +1184,6 @@ fn galleryIcons(st: *State, ctx: *ui.Ctx) bool {
 fn bigIcon(st: *State, ctx: *ui.Ctx, at: usize) bool {
     const sw = rl.getScreenWidth();
     const sh = rl.getScreenHeight();
-    // **A PICTURE OF A THING IS ALSO THE THING'S SHEET.** An editor glyph has no numbers behind it.
     const kind: ?item.Kind = if (at >= GLYPH_N) @enumFromInt(at - GLYPH_N) else null;
     const wide = kind != null;
     const w = @min(sw - 60, @as(i32, if (wide) 900 else 720));
@@ -1171,7 +1291,7 @@ fn volDrawFx(st: *const State) void {
 
 fn renderVolume(st: *State, rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene) void {
     const aspect = rtAspect(rt);
-    // Framed on the volume's OWN reach, not on a fixed box: a 1.55 m pool and a 1.9 m cloud want different cameras, and the whole point of the bench is comparing what they actually cover.
+    // Framed on the volume's OWN reach, not on a fixed box: a 1.55 m pool and a 1.9 m cloud want different cameras.
     const reach = mathx.maxF(volRadius(st), 0.5) * 2.2;
     openStage(rt, env, scene, fitCam(reach * 0.5, reach, st.volPose, aspect), aspect);
     ringOnGround(volRadius(st), ui.LIVE);
@@ -1418,4 +1538,32 @@ test "THE CHARACTER BENCH'S SLAB, MEASURED — one live group per creature, take
     std.debug.print("\n  objview CharSet: {d:.1} MB over {d} groups\n", .{ @as(f64, @floatFromInt(bytes)) / MB, CHAR_GROUPS });
     try std.testing.expect(bytes < 512 * 1024 * 1024);
     try std.testing.expectEqual(@typeInfo(CharSet).@"struct".fields.len, CHAR_GROUPS);
+}
+
+test "EVERY CREATURE ON THE BENCH CAN BE PLAYED, and the decoy is the only thing it is told" {
+    var kinds: usize = 0;
+    var member: usize = 0;
+    var withSpawn: usize = 0;
+    inline for (CHAR_DRIVE) |row| {
+        kinds += row.kinds.len;
+        if (row.drive == .member) member += 1;
+        if (row.drive == .point or row.drive == .hit or row.drive == .yank) withSpawn += 1;
+    }
+    try std.testing.expectEqual(CHAR_KINDS.len, kinds);
+
+    // The decoy is a POSITION at a range and nothing else — it carries no state a decision could read.
+    try std.testing.expect(BENCH_NEAR > 0 and BENCH_FAR > BENCH_NEAR);
+    var far: f32 = 0;
+    var spin: f32 = 0;
+    while (spin < std.math.tau) : (spin += 0.1) {
+        const q = quarryAt(BENCH_FAR, spin);
+        try std.testing.expectApproxEqAbs(@as(f32, 0), q.y, 1e-6);
+        far = @max(far, mathx.lenXZ(q));
+        try std.testing.expectApproxEqAbs(BENCH_FAR, mathx.lenXZ(q), 1e-3);
+    }
+    std.debug.print(
+        "\n  bench roster: {d} creatures over {d} groups — {d} driven per body, {d} through a spawn callback\n" ++
+            "  decoy walks a {d:.0} m ring at {d:.2} rad/s, {d:.1}..{d:.1} m of range\n",
+        .{ kinds, CHAR_DRIVE.len, member, withSpawn, far, BENCH_ORBIT, BENCH_NEAR, BENCH_FAR },
+    );
 }

@@ -33,7 +33,7 @@ pub const Arm = enum {
 
 pub const NARM = @typeInfo(Arm).@"enum".fields.len;
 
-/// **TWO BRANCHES PER ARM** (owner: 2 branches per class, bespoke ideas and stat boosts alike). **IN ARM ORDER, TWO AT A TIME** — a comptime walk pins it, so `Branch.arm` is arithmetic and never a hand-kept table.
+/// TWO BRANCHES PER ARM, IN ARM ORDER, TWO AT A TIME — a comptime walk pins it, so `Branch.arm` is arithmetic and never a hand-kept table.
 pub const Branch = enum {
     warrior_life,
     warrior_berserk,
@@ -56,8 +56,7 @@ pub const Branch = enum {
 
 pub const NBRANCH = @typeInfo(Branch).@"enum".fields.len;
 
-/// TIED TO THE TWO ENUMS, never written as a literal: a third branch on an arm is then a compile error here
-/// rather than six silently-wrong divisions.
+/// TIED TO THE TWO ENUMS, never written as a literal: a third branch on an arm is then a compile error here rather than six silently-wrong divisions.
 pub const PER_ARM_BRANCH: usize = NBRANCH / NARM;
 
 comptime {
@@ -210,7 +209,7 @@ pub const Grant = union(enum) {
     boltCloud,
 };
 
-/// **A STAT-UP RIDING AN IDEA** (owner: at least half the nodes carry one). It may only ride a grant that is not itself a stat-up: `+2 Strength` wearing a `+1 Strength` rider is one number written as two, and the comptime walk refuses it.
+/// A STAT-UP RIDING AN IDEA. It may only ride a grant that is not itself a stat-up — `+2 Strength` wearing a `+1 Strength` rider is one number written as two — and the comptime walk refuses it.
 pub const Bump = struct { a: stats.Attr, n: u8 };
 
 pub const Node = struct {
@@ -256,8 +255,7 @@ pub const NODES_BANK = [N]Node{
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 4, .slot = 2, .name = "Bloodfeast", .grant = .{ .leech = 0.3 } },
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 5, .slot = 0, .name = "Ironbound", .grant = .{ .armour = 14.0 }, .bump = rides(.vitality, 2) },
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 5, .slot = 1, .name = "Long Draught", .grant = .{ .flaskHeal = 1.25 }, .bump = rides(.vitality, 1) },
-    // by the RATE, not the hit: a light chain lands ~1.5 blows/s, so 5.5 → 2.0 → 1.0 per blow. At 2.0 that was
-    // 3 HP/s forever, refilling the whole 70 HP bar every 23 s; at 1.0 it is 1.5/s and a flask charge is ~32 blows.
+    // Billed by the RATE, not the hit: a light chain lands ~1.5 blows/s, so 1.0 per blow is 1.5 HP/s and a flask charge is ~32 blows.
     .{ .arm = .warrior, .branch = .warrior_life, .ring = 6, .name = "Sanguine Pact", .grant = .{ .leech = 0.7 }, .key = true },
 
     .{ .arm = .warrior, .branch = .warrior_berserk, .ring = 1, .name = "Reaver", .grant = .{ .onKill = 1.0 } },
@@ -497,8 +495,7 @@ pub const Bonus = struct {
     }
 };
 
-/// Off the level you are standing on. Quadratic, ER's shape, and MEASURED against what a body is worth: a toad
-/// is 60, an archer 130, a brood mother 240. **THE FIRST NODE COSTS `costAt(1)`, WHICH IS 758** — never `costAt(0)`.
+/// Off the level you are standing on. Quadratic, ER's shape, and MEASURED against what a body is worth: a toad is 60, an archer 130, a brood mother 240. THE FIRST NODE COSTS `costAt(1)`, WHICH IS 758 — never `costAt(0)`.
 pub fn costAt(level: u32) u32 {
     return 600 + 140 * level + 18 * level * level;
 }
@@ -1416,8 +1413,7 @@ test "…and from the MIDDLE each arm is under the thumb that points at it" {
 }
 
 test "POINT AT A NODE AND YOU GO TO THAT NODE — the stick's bearing IS the step" {
-    // 0, 120 and 240 degrees, so ring-0 nodes sit at ∓15, 105, 135, 225 and 255 and every outward step on the
-    // two lower arms runs near 96 or 216 — snapped to four screen axes inside a 32-degree dead cone
+    // 0, 120 and 240 degrees, so ring-0 nodes sit at ∓15, 105, 135, 225 and 255, and every outward step on the two lower arms runs near 96 or 216 — snapped to four screen axes inside a 32-degree dead cone.
     for (0..N) |i| {
         if (NODES[i].ring != 0) continue;
         const p = unitPos(i);
@@ -1517,14 +1513,10 @@ test "SUSTAIN IS PRICED AGAINST THE FLASK, WHICH IS THE ONLY OTHER HEALING IN TH
         .{ bar, charge, budget, all.leech, hitsPerCharge, all.onKill, killsPerCharge },
     );
 
-    // unlimited, because a light chain lands about 1.5 blows a second and that made the bar refill itself
-    // every 23 s while you fought. THIRTY at the very least now, with every node in the tree taken.
     try std.testing.expect(hitsPerCharge >= 30.0);
     try std.testing.expect(killsPerCharge >= 8.0);
     const sixBodies = all.onKill * 6.0;
     try std.testing.expect(sixBodies < budget * 0.4);
-    // **AND THE RING IS NOW CLEAR OF THE WHOLE BRANCH FOR ONE HIT** (`item.leech_signet`: 2.0 for a permanent
-    // 6% of the bar), where the tree used to draw level with it. Points buy the trickle, health buys the size.
     try std.testing.expect(all.leech <= 1.0);
     try std.testing.expect(all.leech > 0.25 and all.onKill >= 2.0);
     const perSecond = all.leech * 1.5 + all.hpRegen;

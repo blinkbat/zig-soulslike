@@ -58,7 +58,6 @@ const A_PROT: f32 = 4.0;
 
 const ROLL_DUR: f32 = 0.60;
 const ROLL_DIST: f32 = 3.30;
-/// 0.23 s of a 0.60 s dive: the launch and the whole rise are real frames.
 const ROLL_IFRAME_IN: f32 = 0.15;
 const ROLL_IFRAME_OUT: f32 = 0.38;
 const ROLL_CD: f32 = 3.40;
@@ -74,10 +73,7 @@ fn rollEase(u: f32) f32 {
     return 1.0 - k * k;
 }
 
-/// **DEGREES THE POINT LEADS FORWARD OF PLUMB, MEASURED ON THIS FILE'S OWN CARRY TEST — never reasoned from
-/// the matrix convention** (AGENTS.md, the knight's carry). Swept in 30-degree steps the axis reads
-/// 0 -> lead 0.99 pitch 7, 60 -> 0.40/63, 180 -> -0.99/-7 (which is the backwards carry this replaces), and
-/// 300 -> 0.59/-50. 350 is that sweep's couched corner: prongs dead down his facing, level with a man's chest.
+/// DEGREES THE POINT LEADS FORWARD OF PLUMB, MEASURED ON THIS FILE'S OWN CARRY TEST — never reasoned from the matrix convention (AGENTS.md). Swept in 30-degree steps: 0 -> lead 0.99 pitch 7, 60 -> 0.40/63, 180 -> -0.99/-7, 300 -> 0.59/-50. 350 is that sweep's couched corner.
 const TRIDENT_TILT: f32 = 350.0;
 
 const SCALE = rgba(52, 66, 58, 255);
@@ -93,9 +89,7 @@ const BONE = rgba(150, 142, 120, 255);
 const CORD = rgba(112, 104, 78, 255);
 const SALT = rgba(214, 214, 204, 255);
 const TOTEM = rgba(84, 62, 44, 255);
-/// The shaman's robe. **SOLVED OFF A SAMPLED RENDER, NOT PICKED** (AGENTS.md): at (46, 62, 66) the cloth came
-/// back at 128,138,125 — paler than the fishman hide beside it at 111,116,97, so the one body in a garment read
-/// as the one body in a bedsheet. Wanted ~85, i.e. (85/130)^2.2 = 0.39 of it. Kelp-dark and COOL.
+/// The shaman's robe. SOLVED OFF A SAMPLED RENDER, NOT PICKED (AGENTS.md): at (46, 62, 66) the cloth came back at 128,138,125 against the fishman hide's 111,116,97. Wanted ~85, i.e. (85/130)^2.2 = 0.39 of it.
 const ROBE = rgba(16, 22, 28, 255);
 const ROBE_DK = rgba(10, 14, 19, 255);
 
@@ -164,9 +158,7 @@ const TOP_F: f32 = 1.02;
 const RESISTS = combat.resists(.{ .cold = -40, .lightning = -30, .fire = 20, .chaos = 25 });
 
 const THRUST_R: f32 = 3.18;
-/// (`knight.SWING_BEARING`'s law). At 0.62 this was a 103-degree cone on the LONGEST reach in the game: a body
-/// standing 2.93 m to the SIDE of the drive was billed by it, which is 12.6 m2 of floor answering to one
-/// forward stab. Solved back to the prongs plus the man's own footprint, it is 1.16 m and 4.4 m2.
+/// (`knight.SWING_BEARING`'s law.) At 0.62 this was a 103-degree cone on the LONGEST reach in the game — 12.6 m2 of floor answering one forward stab. Solved back to the prongs plus the man's own footprint it is 1.16 m and 4.4 m2.
 const THRUST_FRONT_DOT: f32 = 0.95;
 const THRUST_HALF_W: f32 = (THRUST_R + foe.HERO_REACH) * @sqrt(1.0 - THRUST_FRONT_DOT * THRUST_FRONT_DOT);
 const THRUST_WIND: f32 = 0.52;
@@ -455,8 +447,7 @@ pub const Fishman = struct {
     }
 
     pub fn netMat(self: *const Fishman) rl.Matrix {
-        // **THE NET IS THE NETTER'S SIZE.** Asked at the raw placement, a role scaled to 1.12 threw a mesh
-        // still built for 1.00 — the one piece of its kit that leaves the hand and so the one that shows it.
+        // THE NET IS THE NETTER'S SIZE: asked at the raw placement, a role scaled to 1.12 threw a mesh still built for 1.00.
         const s = self.rigSize();
         return mul3(
             mul(scaleM(s, s, s), rx(mathx.degrees(self.net.spin))),
@@ -506,9 +497,7 @@ pub const Fishman = struct {
                 if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enter(.idle);
             },
             .roll => {
-                // A ROLL IS A DISTANCE, SO IT IS BILLED OFF THE PROFILE'S OWN INTEGRAL AND NOT PER FRAME.
-                // Written as a rate the arc came out at 2.33 m of an advertised 3.30 — the profile's
-                // own mean silently rescaled it, which is the kind of number a comptime assert cannot see.
+                // A ROLL IS A DISTANCE, SO IT IS BILLED OFF THE PROFILE'S OWN INTEGRAL AND NOT PER FRAME: written as a rate the arc came out at 2.33 m of an advertised 3.30.
                 const u = mathx.clampF(self.t / ROLL_DUR, 0, 1);
                 const was = mathx.clampF((self.t - dt) / ROLL_DUR, 0, 1);
                 movedDist = ROLL_DIST * (rollEase(u) - rollEase(was)) * self.chill.travel();
@@ -810,8 +799,7 @@ pub const Fishman = struct {
                 setLocal(wx, WRL, rest, rz(6.0));
             },
         }
-        // **ONLY THE TRIDENT OWES THE KIT FIT** (`hero.staffFit`, the warriors' 180-is-plumb convention). At a
-        // bare `ry(0)` the mesh keeps its authored +Y, which off a hanging wrist points back up the forearm —
+        // ONLY THE TRIDENT OWES THE KIT FIT (`hero.staffFit`, the warriors' 180-is-plumb convention): at a bare `ry(0)` the mesh keeps its authored +Y, which off a hanging wrist points back up the forearm.
         heromod.setJoint(wx, &rest, HELD, WRR, if (self.role == .spearman) heromod.staffFit(TRIDENT_TILT) else ry(0));
     }
 };
@@ -988,7 +976,6 @@ fn chestMesh() rl.Mesh {
         const f = @as(f32, @floatFromInt(i)) / 4.0;
         const hgt = (0.030 + 0.026 * mathx.sinf(f * std.math.pi)) * H;
         // 0.116·H seats the sail's roots inside the chest's own crown (top 0.122·H) with the crest proud.
-        // The old `(0.070 + hgt*0.5) * H / H` cancelled its own H and buried the whole ridge mid-chest —
         b.addBlob(
             v3(0, 0.116 * H + hgt * 0.45, (-0.040 + 0.060 * f) * H),
             v3(0.006 * H, hgt, 0.016 * H),

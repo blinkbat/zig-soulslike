@@ -11,7 +11,7 @@ const rgba = mathx.rgba;
 
 pub const DRY_LO: f32 = 150.0;
 pub const DRY_HI: f32 = 420.0;
-/// **THE FIRST GAP IS ITS OWN, AND IT IS SHORT.** The stream is SEEDED once at startup (`game.init`), so a long opening draw is the same wait on every launch of the build. Measured at the game's own seed the opening drew **394 s**.
+/// THE FIRST GAP IS ITS OWN, AND IT IS SHORT. The stream is SEEDED once at startup (`game.init`), so a long opening draw is the same wait on every launch of the build: measured at the game's own seed, 394 s.
 pub const OPEN_LO: f32 = 45.0;
 pub const OPEN_HI: f32 = 110.0;
 pub const WET_LO: f32 = 55.0;
@@ -50,7 +50,7 @@ pub const BOOM_NEAR: f32 = 1.0;
 pub const BOOM_FAR: f32 = 0.34;
 
 pub const Peal = struct { in: f32 = 0, gain: f32 = 0 };
-/// **ARITHMETIC OVER WHAT FEEDS IT** (the ring law): `STRIKE_HI / SOUND_MPS` = 7.58 s of travel against `FLASH_GAP_LO` = 7.0 between strikes, so a SINGLE slot dropped the first roll whenever the two overlapped. Plus one, because a peal due on a full frame lands next.
+/// ARITHMETIC OVER WHAT FEEDS IT (the ring law): `STRIKE_HI / SOUND_MPS` = 7.58 s of travel against `FLASH_GAP_LO` = 7.0 between strikes, so a SINGLE slot dropped the first roll whenever the two overlapped. Plus one, because a peal due on a full frame lands next.
 pub const PEALS: usize = @intFromFloat(@ceil(STRIKE_HI / SOUND_MPS / FLASH_GAP_LO) + 1);
 
 comptime {
@@ -76,8 +76,7 @@ pub const Weather = struct {
     boomGain: f32 = 0,
     boomNow: bool = false,
     t: f32 = 0,
-    /// **THE SLOW CLOCK, AND IT IS `f64` FOR THE SAME REASON `t` IS WRAPPED.** `t` wraps on the rain's own cell
-    /// — 5 m at 13 m/s, so 2.6 times a SECOND. Sporefall needs the opposite: periods of 41 s to 82 s, and on the rain's clock its motes crept three centimetres and snapped back forever.
+    /// THE SLOW CLOCK, and it is `f64` for the same reason `t` is wrapped: `t` wraps on the rain's own cell — 5 m at 13 m/s, so 2.6 times a SECOND — and sporefall needs periods of 41 s to 82 s.
     slowT: f64 = 0,
     gustT: f32 = 0,
 
@@ -95,7 +94,7 @@ pub const Weather = struct {
     }
 
     pub fn tick(self: *Weather, dt: f32) void {
-        // **THE FALL CLOCK WRAPS ON ITS OWN CELL** — `t` exists only to drive a phase already modulo `CELL_H`, and an f32 counting seconds since boot has lost the low bits that phase is made of.
+        // THE FALL CLOCK WRAPS ON ITS OWN CELL: `t` exists only to drive a phase already modulo `CELL_H`, and an f32 counting seconds since boot has lost the low bits that phase is made of.
         self.t = @mod(self.t + dt, CELL_H / FALL_MPS);
         self.slowT += dt;
         self.gustT = @mod(self.gustT + dt, GUST_WRAP);
@@ -132,7 +131,7 @@ pub const Weather = struct {
                 }
             }
         }
-        // THE SOUND IS STILL COMING even if the rain has stopped. **ONE ROLL A FRAME**: two peals due together land on consecutive frames rather than one being lost — a sixtieth against a 7 s travel.
+        // The sound is still coming even if the rain has stopped. ONE ROLL A FRAME: two peals due together land on consecutive frames rather than one being lost.
         var i: usize = 0;
         while (i < self.npeals) : (i += 1) self.peals[i].in -= dt;
         var due: ?usize = null;
@@ -207,17 +206,15 @@ pub const Weather = struct {
 
 
 pub const CELL_H: f32 = 5.0;
-/// **IT HAS TO REACH AS FAR AS THE STORM'S OWN AIR HIDES.** The haze is `1 - exp(-density * dist)`, so at a 24 m
-/// rim a full storm was only 53% thick. Solved against `gfx.HAZE_STORM`: the rim stands where the air is 80%
-/// thick and the taper starts at 70%. **AND THE SPREAD IS ALSO THE THINNING** — streaks are distributed by area (`@sqrt`), so the near field thins as the disc grows.
+/// The haze is `1 - exp(-density * dist)`, so at a 24 m rim a full storm was only 53% thick. Solved against `gfx.HAZE_STORM`: the rim stands where the air is 80% thick and the taper starts at 70%.
+/// AND THE SPREAD IS ALSO THE THINNING — streaks are distributed by area (`@sqrt`), so the near field thins as the disc grows.
 pub const CELL_R: f32 = 40.0;
 const TAPER_FROM: f32 = 0.74;
 /// How many cells are stacked up the camera's column. Four puts the top of the rain 15 m up.
 pub const STACKS: usize = 4;
 pub const STACK_UNDER: f32 = 1.0;
 
-/// Streaks in one cell. **THE ONE PERFORMANCE DIAL, AND THE ONE DENSITY DIAL.** At 820 in an 11.5 m disc the
-/// gentle shower was a curtain. **RAISED WITH THE RADIUS, AND BY LESS THAN IT**: 1000 in the 40 m disc gave 0.20/m2, which is drizzle; 2000 lands 0.40, under the old 0.55.
+/// Streaks in one cell. THE ONE PERFORMANCE DIAL, AND THE ONE DENSITY DIAL. Raised with the radius and by LESS than it: 2000 in the 40 m disc lands 0.40/m², under the old 0.55.
 pub const STREAKS: usize = 2000;
 
 const LEN_LO: f32 = 0.40;
@@ -225,11 +222,11 @@ const LEN_HI: f32 = 0.92;
 const WIDE_LO: f32 = 0.008;
 const WIDE_HI: f32 = 0.016;
 
-/// **WHICH WAY THE WEATHER IS COMING FROM**, as metres of drift per metre of fall — the same slant for every streak, in WORLD space, so turning the camera turns the rain rather than the rain following the lens. MEASURED: at 0.17 a 0.9 m streak leans 15 cm over its whole length, which reads as vertical.
+/// WHICH WAY THE WEATHER IS COMING FROM, as metres of drift per metre of fall — the same slant for every streak, in WORLD space, so turning the camera turns the rain rather than the rain following the lens.
 const SLANT_X: f32 = 0.30;
 const SLANT_Z: f32 = -0.12;
 
-/// Metres a second, at the top of the fall. Real rain runs 7-9 and this sits just over it: at 21 a 0.9 m streak crossed twenty-three times its own body every second, which is a SMEAR.
+/// Metres a second, at the top of the fall. Real rain runs 7-9 and this sits just over it.
 pub const FALL_MPS: f32 = 13.0;
 
 const DROP_HEAD = rgba(176, 190, 205, 96);
@@ -240,7 +237,6 @@ pub const DOUBLE_AT: f32 = 0.60;
 pub const COPY_TOP: f32 = 0.72;
 /// The copy is a cell SHORTER than the column under it — it already starts half a cell up, so its top stack sits 17 m over the eye.
 pub const COPY_STACKS: usize = STACKS - 1;
-/// **AND IT IS OFFSET IN Y, BARELY IN XZ.** A 5 m sideways shift put the heavy sheet's doubled density off to one quarter, with the opposite side at single strength and its taper 5 m nearer. Half a cell of HEIGHT is what decorrelates the two.
 const COPY_OFF = v3(1.6, CELL_H * 0.5, -1.1);
 
 pub fn copyFade(level: f32) f32 {
@@ -272,7 +268,7 @@ pub const Rain = struct {
         return .{ .model = b.toModel(shader) };
     }
 
-    /// **CENTRED ON THE MAN, NOT ON THE LENS** — on the camera the disc reached 24 m behind the lens and 19 ahead of the hero, and it must be a point the CAMERA DOES NOT ROTATE or turning slides the rain.
+    /// CENTRED ON THE MAN, NOT ON THE LENS, and it must be a point the CAMERA DOES NOT ROTATE or turning slides the rain.
     pub fn draw(self: *const Rain, scene: *gfx.Scene, eye: rl.Vector3, at: rl.Vector3, level: f32, t: f32) void {
         if (level <= 0.02) return;
         const lv = mathx.clampF(level, 0, 1);
@@ -330,7 +326,6 @@ pub fn drawOverlay(w: i32, h: i32, dimAmt: f32, flashAmt: f32) void {
     }
     if (flashAmt > 0.004) {
         const a = mathx.clampF(flashAmt, 0, 1);
-        // Two passes: a wide pale wash and a brighter core. **MEASURED OFF THE SHOT** — at 120/70 the strike whited the frame out, every contour gone, which reads as fog arriving rather than as light.
         rl.drawRectangle(0, 0, w, h, rgba(198, 210, 236, mathx.u8f(74.0 * a)));
         rl.drawRectangle(0, 0, w, h, rgba(236, 242, 255, mathx.u8f(46.0 * a * a)));
     }
@@ -531,7 +526,6 @@ test "THE SHEET IS A HANDFUL OF DRAW CALLS, and its cost is written down" {
     const heavyFill = @as(f32, @floatFromInt(STACKS)) + @as(f32, @floatFromInt(COPY_STACKS)) * COPY_TOP;
     const density = @as(f32, @floatFromInt(STREAKS)) / (std.math.pi * CELL_R * CELL_R);
     std.debug.print("  rain: {d} tris in the cell, {d} draws gentle / {d} moderate ({d} tris on screen, {d:.2} columns of fill), {d:.2} streaks/m2 out to {d:.0} m\n", .{ tris, gentleDraws, heavyDraws, tris * heavyDraws, heavyFill, density, CELL_R });
-    // A SHEET YOU CAN SEE THROUGH. At 820 streaks in an 11.5 m disc this was 1.97/m2 — a curtain up against the lens, and the near field is where every one of those pixels was.
     try std.testing.expect(density < 1.0);
     try std.testing.expect(heavyDraws <= 8);
     try std.testing.expect(tris * heavyDraws < 120_000);
@@ -573,7 +567,6 @@ test "THE FALL WRAPS ON THE CELL, so the sheet has no seam and no end" {
 }
 
 test "THE FIRST STORM LANDS INSIDE A SESSION, at the seed the game actually ships" {
-    // Pinned at the REAL seed, not a test one, because the whole failure was that one particular draw is the only draw that ever happens: 394 s of clear sky on EVERY launch.
     const SEED: u64 = 0x5701_A17E;
     var w = Weather.init(SEED);
     const dt = 1.0 / 60.0;
@@ -618,10 +611,8 @@ const SIZE_HI: f32 = 15.0;
 const RISE_LO: f32 = 0.5;
 const RISE_HI: f32 = 2.4;
 
-/// **VERY SLOW** (the owner's own word, twice). Metres a second: the fast end takes 90 s to cross a 15 m bank.
 const DRIFT_LO: f32 = 0.045;
 const DRIFT_HI: f32 = 0.160;
-/// …and it BREATHES rather than only travelling — a slow bob and a slower turn on its own axis, both on periods measured in tens of seconds.
 const BOB: f32 = 0.30;
 const BOB_SECS_LO: f32 = 26.0;
 const BOB_SECS_HI: f32 = 48.0;
@@ -720,8 +711,7 @@ pub const Mist = struct {
         };
     }
 
-    /// THE DRIFT. `at` is the man, `groundY` the height under him, `fog` 0..1 — and at nothing it does nothing.
-    /// It drifts LEVEL rather than following the terrain: at 0.16 m/s nobody can tell, and sampling the heightfield per bank per frame cannot be justified by a picture nobody can see.
+    /// THE DRIFT. `at` is the man, `groundY` the height under him, `fog` 0..1. It drifts LEVEL rather than following the terrain — at 0.16 m/s nobody can tell.
     pub fn tick(self: *Mist, dt: f32, at: rl.Vector3, groundY: f32, fog: f32) void {
         if (fog <= MIST_MIN) {
             self.seeded = false;
@@ -743,7 +733,6 @@ pub const Mist = struct {
         }
     }
 
-    /// **ONE BANK AT A KNOWN PLACE AND FULL STRENGTH** — the shot harness's own. The field seeds itself out at 33..46 m, and a PHOTOGRAPH of a bank has to have one in the frame.
     pub fn stageOne(self: *Mist, at: rl.Vector3, ahead: f32, facing: f32) void {
         self.seeded = true;
         for (&self.banks) |*b| b.* = .{};
@@ -854,9 +843,9 @@ pub const MOTES: usize = 420;
 const MOTE_LO: f32 = 0.016;
 const MOTE_HI: f32 = 0.052;
 
-/// **SPORES DO NOT TRAVEL, THEY HANG.** Metres a second. Rain is 13; this is under a hundredth of it, and one mote takes over a minute to cross its own cell. At the first cut's 0.40 the field read as fine snow.
+/// SPORES DO NOT TRAVEL, THEY HANG. Metres a second — rain is 13, and one mote takes over a minute to cross its own cell.
 pub const SPORE_MPS: f32 = 0.085;
-/// …and it does not settle STRAIGHT. Each shoal swims on two out-of-phase periods, slowed WITH the fall because a slow drift under a fast wobble reads as jitter. Metres, and seconds. **AND EVERY SHOAL SWIMS ITS OWN WAY** — shared, these terms move all 420 motes as one rigid block.
+/// Each shoal swims on two out-of-phase periods, slowed WITH the fall. Metres, and seconds. AND EVERY SHOAL SWIMS ITS OWN WAY — shared, these terms move all 420 motes as one rigid block.
 const SWIM_X: f32 = 1.60;
 const SWIM_Z: f32 = 1.15;
 const SWIM_SECS_X: f32 = 54.0;
@@ -935,7 +924,6 @@ pub const Spore = struct {
     pub fn draw(self: *const Spore, scene: *gfx.Scene, eye: rl.Vector3, at: rl.Vector3, level: f32, t: f32) void {
         if (level <= 0.02) return;
         const lv = mathx.clampF(level, 0, 1);
-        // the camera bobs, and at 13 m/s that snap is a thirteenth of a second. At 0.085 m/s the SAME snap is twelve seconds of drift arriving on one frame.
         var any = false;
         for (&self.shoals, 0..) |*m, si| {
             const amt = SPORE_OPACITY * lv * shoalFade(t, si);
@@ -1010,15 +998,10 @@ pub const SKEIN_AFTER_RAIN: f32 = 22.0;
 pub const BIRDS_LO: usize = 3;
 pub const BIRDS_HI: usize = 17;
 
-// rarity — 62 flights an hour, something in the sky 30% of the time. It was the FRAME. The resting camera tops
-// out 11.46 deg above the horizon (`camera.skyTop`), and flying 30–62 m up at 96 m out and crossing to within
-// 56 m, the LOWEST elevation any bird reached over any flight was 15.1 deg and the closest approach 48 deg.
 
-/// **THE CEILING IS A SHARE OF THE RESTING FRAME'S OWN TOP**, so the flock sits in the upper part of the
-/// picture instead of over it. At 0.70 that is 8.0 deg, which leaves the birds a clear third of sky above them.
+/// THE CEILING IS A SHARE OF THE RESTING FRAME'S OWN TOP (`camera.skyTop`, 11.46 deg): at 0.70 that is 8.0 deg, which leaves the birds a clear third of sky above them.
 const SKY_SHARE: f32 = 0.70;
 
-/// Just clear of a cliff (`props.cliffParts` stands 15.5 m). They used to fly at 30–62 m and it bought nothing:
 pub const HIGH_LO: f32 = 17.0;
 pub const HIGH_HI: f32 = 24.0;
 
@@ -1042,18 +1025,13 @@ pub fn skeinRim() f32 {
     return skeinWide() * 1.20;
 }
 
-/// so exp(−0.013 d) leaves 15% of a thing at 130 m and 4% at 240 m — and the band HAS to be out there now, or
-/// sky, and the haze does not soften it: it deletes it by pulling it to the sky's own colour. At 0.35 the same
-/// two ranges keep 55% and 33%, which is a bird.
+/// exp(−0.013 d) leaves 15% of a thing at 130 m and 4% at 240 m, and the haze does not soften a bird — it pulls it to the sky's own colour. At 0.35 the same two ranges keep 55% and 33%.
 pub const SKEIN_HAZE: f32 = 0.35;
 
-/// Faster than they were, because the crossing is three times as long now and 8 m/s over it was a drift. A
-/// goose flies about 20 m/s.
 const SKEIN_MPS_LO: f32 = 14.0;
 const SKEIN_MPS_HI: f32 = 26.0;
 
 const WING: f32 = 1.0;
-/// Up with the range: at 170 m a 5 m span is 1.7 deg, about 24 px of an 800-line frame.
 const SPAN_LO: f32 = 2.6;
 const SPAN_HI: f32 = 5.0;
 const SPAN_JITTER: f32 = 0.22;
@@ -1064,12 +1042,10 @@ const FLAP_SECS_HI: f32 = 0.72;
 const TRAIL_LO: f32 = 3.0;
 const TRAIL_HI: f32 = 7.0;
 const SPREAD: f32 = 4.5;
-/// and the per-frame step is what "it never pops" actually means. At 70 m the worst step is
-/// `mps*dt*1.5/70` — under a hundredth of the alpha at the fastest a flock flies.
+/// At 70 m the worst per-frame step is `mps*dt*1.5/70` — under a hundredth of the alpha at the fastest a flock flies.
 const SKEIN_FADE_M: f32 = 70.0;
 pub const SKEIN_TOP: f32 = 1.0;
 
-/// 210 they came up self-lit and pale, washing out into the very haze they are supposed to be read against.
 const BIRD_COL = rgba(16, 15, 18, 255);
 
 const Bird = struct {
@@ -1261,7 +1237,6 @@ test "EVERY BIRD IS IN THE PICTURE WITH THE CAMERA WHERE IT RESTS — which is w
 }
 
 test "THE BIRDS ARE AN EVENT, NOT A FLOCK THAT LIVES THERE — infrequent, dry-only, and never twice the same" {
-    // Measured over an hour of dry sky.
     const dt = 1.0 / 60.0;
     var sk = Skein{ .model = undefined };
     var t: f32 = 0;

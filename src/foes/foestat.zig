@@ -1,8 +1,7 @@
 const std = @import("std");
 const wf = @import("../world/worldfmt.zig");
 
-/// **WHAT A BODY IS GIVEN WHEN IT IS MADE** (`play/tune.zig`'s Foes sheet). Every creature's pools are authored
-/// in its own file and half of them are folded into a struct's field default at comptime — `initFoe(HP_MAX, …)`
+/// WHAT A BODY IS GIVEN WHEN IT IS MADE (`play/tune.zig`'s Foes sheet). Every creature's pools are authored in its own file and half of them are folded into a struct's field default at comptime.
 pub const N = @typeInfo(wf.FoeKind).@"enum".fields.len;
 
 pub const Mult = struct {
@@ -12,8 +11,7 @@ pub const Mult = struct {
     brk: f32 = 1,
 };
 
-/// `brk` is `combat.Vitals.breakShare` — the share of stance one flinch bills. Learned like the pools, so a
-/// creature re-authored in code flows through a `tuning.cfg` that never named it.
+/// `brk` is `combat.Vitals.breakShare` — the share of stance one flinch bills. Learned like the pools, so a creature re-authored in code flows through a `tuning.cfg` that never named it.
 pub const Pools = struct {
     hp: f32 = 0,
     poise: f32 = 0,

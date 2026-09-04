@@ -10,12 +10,11 @@ const Kind = props.Kind;
 
 pub const VERSION: u32 = 1;
 
-/// Playable half-extent when a map doesn't say otherwise; the world spans 2x this per axis.
 pub const DEFAULT_HALF: f32 = 280.0;
 
 pub const MAX_DECLARED_HALF: f32 = 312.0;
 
-/// **RAISED FROM 2048 WHEN THE GLOBAL COVER OP WAS BAKED INTO ORDINARY DECOR** — one `cover:` line grew 13,228 plants a man could not select or delete, each its own `at:` op now on top of the map's ~1,290. Raised again when the WOOD went the same way (`env.explodeOp`): a generator op is one thing to delete, so 260 attempts were one tree. This number IS memory: the editor's 24-deep undo ring is whole-`Map` copies.
+/// Raised from 2048 when the global cover op was baked into ordinary decor, and again when the WOOD went the same way (`env.explodeOp`). This number IS memory: the editor's 24-deep undo ring is whole-`Map` copies.
 pub const MAX_OPS: usize = 20480;
 pub const MAX_MIX: usize = 24;
 pub const MAX_LOOT: usize = 8;
@@ -24,8 +23,7 @@ pub const MAX_ZONES: usize = 16;
 pub const MAX_CLEARINGS: usize = 32;
 pub const MAX_ARENAS: usize = 8;
 pub const MAX_ARENA_VERTS: usize = 24;
-/// **THE ONE FOE LIMIT** (owner: can u make it 512, this map is huge). Every group's slab is this wide too, and
-/// `game.zig`'s "WHAT THE FRAME COSTS" prints the live total per group.
+/// THE ONE FOE LIMIT. Every group's slab is this wide too, and `game.zig`'s "WHAT THE FRAME COSTS" prints the live total per group.
 pub const MAX_FOES: usize = 512;
 pub const FOE_SCALE_LO: f32 = 0.5;
 pub const FOE_SCALE_HI: f32 = 2.0;
@@ -81,7 +79,7 @@ pub const Op = struct {
     avoid: Avoid = .{},
     mix: [MAX_MIX]Kind = undefined,
     nmix: u8 = 0,
-    /// What is in the CONTAINER this op placed — a chest, or an item pickup (`props.holdsLoot`). Written and parsed on `nloot > 0` alone and never on the kind, which is why the glow needed no format change.
+    /// What is in the CONTAINER this op placed — a chest, or an item pickup (`props.holdsLoot`). Written and parsed on `nloot > 0` alone and never on the kind.
     loot: [MAX_LOOT]item.Kind = undefined,
     nloot: u8 = 0,
 /// A chest may hold gold and nothing else, or items and no gold. 0 is an empty purse and writes no tail.
@@ -166,7 +164,7 @@ pub const Location = struct {
     z: f32 = 0,
     x1: f32 = 0,
     z1: f32 = 0,
-    /// **THE WEATHER THIS PLACE KEEPS**, or null for "no opinion". There is ONE sky, ONE sun and ONE rain sheet drawn round the camera, so a location cannot make it rain over there while it is dry here: what it does is drive the GLOBAL level while he is inside it, cross-faded over `blend`.
+    /// THE WEATHER THIS PLACE KEEPS, or null for "no opinion". There is ONE sky, ONE sun and ONE rain sheet drawn round the camera, so a location drives the GLOBAL level while he is inside it, cross-faded over `blend`.
     wet: ?f32 = null,
     fog: ?f32 = null,
     spore: ?f32 = null,
@@ -334,8 +332,6 @@ pub const Arena = struct {
         return .{ .at = best, .d = bd };
     }
 
-    /// MEASURED on the shipped room: 11 walls, six bodies, two calls a frame each is **396 crossings a frame**,
-    /// and every map with no `arena:` row pays a zero-length loop. There is nothing there to buy.
     pub fn hold(self: *const Arena, p: rl.Vector3, r: f32) rl.Vector3 {
         if (self.verts() < 3) return p;
         const inside = self.contains(p.x, p.z);
@@ -355,7 +351,6 @@ pub const Arena = struct {
         return self.nearestWall(mathx.ground(px, pz)).d <= GATE_ON_WALL;
     }
 
-    /// nothing else would catch it. O(n2) over at most `MAX_ARENA_VERTS`, and only ever asked offline.
     pub fn simple(self: *const Arena) bool {
         const n = self.verts();
         if (n < 3) return false;
@@ -454,7 +449,6 @@ pub const FoeAi = enum(u8) {
 };
 
 pub const Wp = struct { x: f32 = 0, z: f32 = 0 };
-/// Per unit. Eight legs is a long beat for a guard and keeps the map's foe table at 34 KB across `MAX_FOES`.
 pub const MAX_WP: usize = 8;
 
 pub const Foe = struct {
@@ -487,11 +481,7 @@ pub const Foe = struct {
     }
 };
 
-/// **THERE IS ONE FOE LIMIT AND IT IS `MAX_FOES`** (owner: remove the foe limits, seems dumb to have). At 24 a
-/// per-kind cap sat under the global one: `foe.resetGroup` fills a fixed slab and `continue`s past the
-/// overflow, so a 25th shroom was a body the map placed, the editor drew, the save counted and the level never
-/// spawned — and `01_fallen_plain` stands on exactly 24. Set to the whole budget it cannot bite. It costs
-/// memory, and how much is `MAX_FOES`' own note: read it off "WHAT THE FRAME COSTS" and not off a comment.
+/// THERE IS ONE FOE LIMIT AND IT IS `MAX_FOES`. `foe.resetGroup` fills a fixed slab and `continue`s past the overflow, so a per-kind cap under the global one was a body the map placed, the editor drew and the save counted but the level never spawned.
 pub const MAX_PER_KIND: usize = MAX_FOES;
 
 pub const Runway = struct { x: f32 = -3.4, z: f32 = -44, x1: f32 = 3.4, z1: f32 = 30 };
@@ -1290,19 +1280,16 @@ pub const HEIGHT_ZERO: u8 = 64;
 pub const HEIGHT_MIN: f32 = -@as(f32, @floatFromInt(HEIGHT_ZERO)) * HEIGHT_STEP;
 pub const HEIGHT_MAX: f32 = @as(f32, @floatFromInt(255 - HEIGHT_ZERO)) * HEIGHT_STEP;
 
-/// One case per height CELL, indexed by the cell's low corner. 3..255 are unclaimed, and a map that uses
-/// one is a LOAD ERROR on a build that does not know it.
+/// One case per height CELL, indexed by the cell's low corner. 3..255 are unclaimed, and a map that uses one is a LOAD ERROR on a build that does not know it.
 pub const CLIFF_NONE: u8 = 0;
 pub const CLIFF_FACE: u8 = 1;
 pub const CLIFF_STAIR: u8 = 2;
 pub const CLIFF_N: u16 = 3;
 
-/// One riser. Must stay at or under `env.STEP_UP` or a flight is a wall (asserted there), and a whole
-/// number of `HEIGHT_STEP` or a tread does not land on a height the encoding can hold.
+/// One riser. Must stay at or under `env.STEP_UP` (asserted there) and be a whole number of `HEIGHT_STEP`, or a tread does not land on a height the encoding can hold.
 pub const STAIR_RISE: f32 = 0.5;
 
-/// A stair cell is ONE TREAD: flat at its own mean height snapped to a riser, so a run of cells terraces
-/// and every step up is a riser the walk already accepts.
+/// A stair cell is ONE TREAD: flat at its own mean height snapped to a riser, so a run of cells terraces.
 pub fn stairTread(h00: f32, h10: f32, h01: f32, h11: f32) f32 {
     const mean = (h00 + h10 + h01 + h11) * 0.25;
     return @round(mean / STAIR_RISE) * STAIR_RISE;
@@ -1321,10 +1308,7 @@ pub const MAX_SLOPE: f32 = 0.839;
 /// Two `HEIGHT_STEP` risers walkable, three a wall.
 pub const STEP_UP: f32 = 0.55;
 
-/// **PAINT UNDER A WALKABLE DROP IS INERT.** A painted cell cuts only where a ramp over it could not be
-/// walked anyway; under that it draws and walks as the plain bilinear it is. The shipped map carries
-/// 1,300 painted cells on flat ground and 260 on sculpt noise under 2 m: each of those was a vertical
-/// step at its own midpoint, which was the bouncing, the falls and the shattered read.
+/// PAINT UNDER A WALKABLE DROP IS INERT: a painted cell cuts only where a ramp over it could not be walked anyway. The shipped map carries 1,300 painted cells on flat ground and 260 on sculpt noise under 2 m.
 pub fn cliffMinDrop(step: f32) f32 {
     return @max(STEP_UP, MAX_SLOPE * step);
 }
@@ -1367,11 +1351,8 @@ pub fn hashSigned(a: u32, b: u32) f32 {
     return u / @as(f32, 1 << 24) * 2.0 - 1.0;
 }
 
-/// Where the face crosses the cell's four edges: the MIDPOINT of every edge whose two corners sort to
-/// different sides of `t.mid`. Straight chords between them, because a triangle is all the mesh draws.
-/// **THE CROSSING IS THE SAME FROM BOTH SIDES.** Solved off each cell's own tiers it moved with them, so
-/// on sculpted ground two cells cut their shared edge in two places and the sky showed between; a wander
-/// off the line made every straight run an accordion of facets, one a cell (owner: straight cliffs).
+/// Where the face crosses the cell's four edges: the MIDPOINT of every edge whose two corners sort to different sides of `t.mid`, with straight chords between them.
+/// THE CROSSING IS THE SAME FROM BOTH SIDES — solved off each cell's own tiers it moved with them, so two cells cut their shared edge in two places and the sky showed between.
 pub const CliffCut = struct {
     xp: [4][2]f32 = undefined,
     cut: [4]bool = .{ false, false, false, false },
@@ -1428,11 +1409,8 @@ pub fn ringLerp(vals: [4]f32, u: f32, v: f32) f32 {
     return mathx.lerpF(mathx.lerpF(vals[0], vals[3], u), mathx.lerpF(vals[1], vals[2], u), v);
 }
 
-/// **THE FLOOR EITHER SIDE OF A CUT IS THE TERRAIN, NOT A TIER.** A cut cell walks the bilinear of its own
-/// corners on each side, and a corner across the cut stands in for itself at the level its neighbours on
-/// this side hold: the mean of the eight around it that sit more than `minDrop` off it, else the farthest
-/// that way. Snapped to `lo`/`hi` instead, a cell on sculpted ground stood proud of the plain cell beside
-/// it and the walk stepped at every seam. Read per LATTICE POINT, so both cells on an edge agree on it.
+/// THE FLOOR EITHER SIDE OF A CUT IS THE TERRAIN, NOT A TIER: a cut cell walks the bilinear of its own corners on each side, and a corner across the cut stands in for itself at the mean of the eight around it that sit more than `minDrop` off it, else the farthest that way.
+/// Read per LATTICE POINT, so both cells on an edge agree on it.
 pub const CliffLevels = struct {
     hi: [4]f32,
     lo: [4]f32,
@@ -1618,7 +1596,7 @@ pub const Map = struct {
         self.zones[0] = z;
         self.nzones = 1;
 
-        // **NO GROUND COVER.** A blank map used to open with a global `cover:` op, and it grew thirteen thousand plants nobody could select or delete. Cover is ordinary `at:` decor now.
+        // NO GROUND COVER: a blank map used to open with a global `cover:` op. Cover is ordinary `at:` decor now.
     }
 
     pub fn add(self: *Map, o: Op) !usize {
@@ -1896,8 +1874,7 @@ pub const Map = struct {
         return false;
     }
 
-    /// Paints the CASE onto every cell the disc touches. A cell is its low corner, so the span is the
-    /// same lattice span a sculpt stroke dirties.
+    /// Paints the CASE onto every cell the disc touches. A cell is its low corner, so the span is the same lattice span a sculpt stroke dirties.
     pub fn paintCliff(self: *Map, px: f32, pz: f32, radius: f32, case: u8, out: *[4]usize) bool {
         const step = 2 * self.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
         const r = mathx.maxF(radius, step * 0.5);
@@ -2093,8 +2070,7 @@ pub fn write(m: *const Map, w: anytype) !void {
         try w.writeAll("\n");
         try writeGrid(w, "hgt", &m.height);
     }
-    // Its OWN test, not `anyHeight`'s: paint a face on a map before sculpting it and a nested write drops
-    // the flags on the way out.
+    // Its OWN test, not `anyHeight`'s: paint a face on a map before sculpting it and a nested write drops the flags on the way out.
     if (m.anyCliff()) {
         try w.writeAll("\n");
         try writeGrid(w, "cliff", &m.cliff);
@@ -2181,8 +2157,7 @@ fn writeScript(m: *const Map, w: anytype) !void {
     }
 }
 
-/// **A SLOT PAST THE END OF ITS TABLE IS `undefined` MEMORY, AND THE WRITER MUST NEVER READ IT.** The tables
-/// are sized `MAX_*` and filled to `n*`.
+/// A SLOT PAST THE END OF ITS TABLE IS `undefined` MEMORY, AND THE WRITER MUST NEVER READ IT: the tables are sized `MAX_*` and filled to `n*`.
 fn slotName(table: []const Id, n: usize, i: u16) []const u8 {
     return if (i < n) idText(&table[i]) else "unset";
 }
@@ -3844,7 +3819,6 @@ test "sculpt: the brush tapers, respects its radius, and cannot leave the encodi
     while (f < 6) : (f += 1) _ = m.sculpt(0, 0, 20, .flatten, 1.0, &span);
     try std.testing.expectApproxEqAbs(m.heightAt(0, 0), m.heightAt(10, 0), 0.3);
 
-    // …and to a NAMED height, which is what a pool floor is.
     var k: usize = 0;
     while (k < 8) : (k += 1) _ = m.flattenTo(40, 40, 10, -1.25, 1.0, &span);
     try std.testing.expectApproxEqAbs(@as(f32, -1.25), m.heightAt(40, 40), 1e-4);
@@ -4023,7 +3997,6 @@ test "THE OP CAP IS MEMORY — the editor's undo ring is whole-Map copies" {
     const one = @sizeOf(Map);
     const ring = one * 24;
     std.debug.print("\n  ops: {d} cap, {d} B an Op, {d:.1} MB a Map, {d:.1} MB for a 24-deep undo ring\n", .{ MAX_OPS, @sizeOf(Op), @as(f64, @floatFromInt(one)) / 1048576.0, @as(f64, @floatFromInt(ring)) / 1048576.0 });
-    // The whole reason cover was baked to PATCHES and not to 13,228 individual `at:` ops.
     try std.testing.expect(ring < 200 * 1024 * 1024);
 }
 
@@ -4191,7 +4164,6 @@ test "AN ARENA ROUND-TRIPS WITH ITS SEAL, and a room with under three corners is
     var bad = Map{};
     ln = 0;
     try std.testing.expectError(ParseError.ShortArena, parse("version: 1\narena: thin boss=- 0 0 1 1\n", &bad, &ln));
-    // …and an odd float is a missing field, not a corner at z=0.
     ln = 0;
     try std.testing.expectError(ParseError.MissingField, parse("version: 1\narena: odd boss=- 0 0 1 1 2\n", &bad, &ln));
 }
@@ -4313,7 +4285,6 @@ test "A MAP SAYS WHERE THE PLAYER STARTS, and one that does not says the old har
     try std.testing.expectApproxEqAbs(@as(f32, -137.25), back.start.z, 1e-3);
     try std.testing.expectApproxEqAbs(mathx.radians(65.0), back.start.facing(), 1e-4);
 
-    // **A MAP WITH NO `start:` ROW COMES UP WHERE EVERY MAP USED TO** — (0, 4) facing south.
     var old = Map{};
     ln = 0;
     try parse("version: 1\nname: Old\n", &old, &ln);

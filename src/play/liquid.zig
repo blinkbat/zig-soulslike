@@ -9,9 +9,7 @@ pub const Soak = struct {
     dpsFrac: f32 = 0,
 };
 
-/// `sinceDose` and the delay is 1.1 s (`combat.POISON_DECAY_DELAY`) — so `max/build` IS the seconds to break.
-/// The bar it is set against is the burnt ground the cinder wake leaves, which fills BURNING in 1.7 s: a lake
-/// is scenery you cross and not an attack, so the fungal takes eight times that and the lava four.
+/// `sinceDose` and the delay is 1.1 s (`combat.POISON_DECAY_DELAY`), so `max/build` IS the seconds to break. Set against the cinder wake's burnt ground, which fills BURNING in 1.7 s: the fungal takes eight times that and the lava four.
 pub const SOAK_BANK = [wf.Liquid.N]?Soak{
     null,
     null,

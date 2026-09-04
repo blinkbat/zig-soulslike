@@ -24,9 +24,7 @@ pub const TEXT_HINT = rgba(128, 122, 110, 255);
 pub const GOOD = rgba(146, 194, 118, 255);
 pub const BAD = rgba(206, 96, 78, 255);
 
-// **ONE PAIR OF MARKS, DEFINED HERE AND NOWHERE ELSE** (owner: use global). Souls and gold are both GILT — the
-// drop itself is authored gold (`play/souls.zig`) — so they cannot be told apart by HUE.
-// They separate on SHAPE and on VALUE instead, which survives both the retro filters and a 26 px plate:
+// ONE PAIR OF MARKS, DEFINED HERE AND NOWHERE ELSE. Souls and gold are both GILT, so they cannot be told apart by HUE — they separate on SHAPE and on VALUE, which survives both the retro filters and a 26 px plate.
 
 /// The radius both marks are authored at. A plate is 26–32 px tall, so this is about a third of it.
 pub const MARK_R: f32 = 5.2;
@@ -58,11 +56,8 @@ pub fn soulMark(cx: f32, cy: f32, r: f32, a: u8) void {
 pub fn coinMark(cx: f32, cy: f32, r: f32, a: u8) void {
     const xi: i32 = @intFromFloat(cx);
     const yi: i32 = @intFromFloat(cy);
-    // **WIDER THAN THE SOUL IS TALL, OR THE PAIR IS UNBALANCED.** The spark throws rays to 1.62 r, so a disc
-    // at 1.0 r came back half its visual mass and read as the lesser of the two currencies. Measured against it
-    // rather than picked: 1.30 r across puts the two bounding boxes within a few pixels of each other.
+    // WIDER THAN THE SOUL IS TALL, OR THE PAIR IS UNBALANCED: the spark throws rays to 1.62 r, so 1.30 r across puts the two bounding boxes within a few pixels of each other.
     const rx = r * 1.30;
-    // **FLAT, OR IT IS A BALL.** The first cut ran 0.80 of the width with a big central catch-light and came
     const ry = rx * 0.60;
     rl.drawEllipse(xi, yi + 2, rx, ry, withAlpha(STONE_DK, u8f(@as(f32, @floatFromInt(a)) * 0.9)));
     rl.drawEllipse(xi, yi, rx, ry, withAlpha(GILT, a));
@@ -85,11 +80,7 @@ pub fn numeral(i: usize) [:0]const u8 {
     return if (i < N.len) N[i] else "-";
 }
 
-/// **THE DRAWABLE WINDING IS THE NEGATIVE CROSS, AND EVERY 2D TRIANGLE GOES THROUGH HERE.** raylib's 2D
-/// projection is `rlOrtho(0, w, h, 0, …)`, whose y scale is negative, so a screen-space cross ABOVE zero is
-/// clockwise in window space and `glFrontFace(GL_CCW)` drops it — silently, with culling on from `rlglInit`
-/// and the quad batch indexed `{0,1,2, 0,2,3}` so the order passed is the order drawn. Apex-DOWN shapes land
-/// on that half, which is why this is solved per triangle rather than authored at the call site.
+/// THE DRAWABLE WINDING IS THE NEGATIVE CROSS, AND EVERY 2D TRIANGLE GOES THROUGH HERE. raylib's 2D projection is `rlOrtho(0, w, h, 0, …)`, whose y scale is negative, so a screen-space cross ABOVE zero is clockwise in window space and `glFrontFace(GL_CCW)` drops it silently.
 pub fn wound(a: rl.Vector2, b: rl.Vector2, c: rl.Vector2) [3]rl.Vector2 {
     const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
     return if (cross > 0) .{ a, c, b } else .{ a, b, c };
@@ -174,7 +165,6 @@ pub fn frame(x: i32, y: i32, w: i32, h: i32, a: u8) void {
         const dy = c[3];
         const hx = if (dx > 0) cxi else cxi - arm;
         const vy = if (dy > 0) cyi else cyi - arm;
-        // A 1 px dark offset copy under each bracket, so it reads as raised cast metal.
         rl.drawRectangle(hx + 1, cyi + 1, arm, 2, withAlpha(rl.Color.black, 160));
         rl.drawRectangle(cxi + 1, vy + 1, 2, arm, withAlpha(rl.Color.black, 160));
         rl.drawRectangle(hx, cyi, arm, 2, withAlpha(GILT, a));
@@ -277,7 +267,7 @@ pub fn slotCursor(x: i32, y: i32, w: i32, h: i32, press: f32, travel: f32) void 
     }
 }
 
-/// **THE CURSOR IS A LEADING BAR, AND IT IS THE ONLY THING THAT MARKS A ROW** (owner's call). Every list in the game used to set a `>` glyph in the row's left margin on TOP of the bar this same wash was already drawing — one cursor said twice, in two places that had to be kept in step. The bar is drawn HERE and nowhere else.
+/// THE CURSOR IS A LEADING BAR, AND IT IS THE ONLY THING THAT MARKS A ROW. It is drawn HERE and nowhere else.
 pub const CARET_W: i32 = 3;
 
 pub fn caret(x: i32, y: i32, h: i32, a: u8) void {

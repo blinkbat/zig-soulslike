@@ -584,7 +584,6 @@ pub fn thicketMesh(shader: rl.Shader) rl.Model {
         const low = i < 16;
         const r = rng.range(0.10, 0.21) * (1.0 - 0.25 * d);
         const y = if (low) rng.range(0.10, 0.55) else rng.range(0.35, 1.45) * (1.0 - 0.22 * d);
-        // Gold is a HIGHLIGHT: at 15% it was a spatter of bright yellow plates across the mass.
         const col = if (rng.float() < 0.07) LEAF_GOLD else if (rng.float() < 0.12) BRACKEN_BRN else if (rng.float() < 0.5) LEAF_DK else if (rng.float() < 0.72) LEAF else LEAF_DAMP;
         b.addBlob(v3(mathx.cosf(a) * d, y, mathx.sinf(a) * d), v3(r, r * rng.range(0.78, 1.0), r * rng.range(0.9, 1.15)), 4, 7, col);
     }

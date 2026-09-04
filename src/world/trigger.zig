@@ -220,8 +220,7 @@ pub const Runtime = struct {
     }
 };
 
-// `arm` fills `order` with `@intCast(i)` over `0..n`, so the slot has to hold the last index. Raising
-// `MAX_TRIGGERS` past 256 without widening it truncates the sort in ReleaseFast and panics in Debug.
+// `arm` fills `order` with `@intCast(i)` over `0..n`, so the slot has to hold the last index. Raising `MAX_TRIGGERS` past 256 without widening it truncates the sort in ReleaseFast and panics in Debug.
 comptime {
     std.debug.assert(wf.MAX_TRIGGERS - 1 <= std.math.maxInt(@typeInfo(@FieldType(Runtime, "order")).array.child));
 }

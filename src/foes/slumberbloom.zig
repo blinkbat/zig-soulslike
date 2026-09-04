@@ -22,9 +22,7 @@ const lerpF = mathx.lerpF;
 const placeAt = mathx.placeAt;
 
 
-// **SOLVED, NOT PICKED** (AGENTS.md): `albedo = screen^2.2 / 1.72`. Authored by eye at a mid 96,100,142 the cap
-// came back at 213/255 — a white ball on a stick. HUE separates these as much as value, because a smooth mass
-//   cap 0.42 screen -> 21    crown 0.58 -> 45    gill 0.72 -> 72    deep 0.38 -> 18    mat 0.42 -> 22
+// SOLVED, NOT PICKED (AGENTS.md): `albedo = screen^2.2 / 1.72`. Cap 0.42 screen -> 21, crown 0.58 -> 45, gill 0.72 -> 72, deep 0.38 -> 18, mat 0.42 -> 22. HUE separates these as much as value.
 const CAP_SKIN = rgba(20, 21, 38, 255);
 const CAP_SKIN_DK = rgba(9, 10, 20, 255);
 const CAP_BLOOM = rgba(42, 45, 66, 255);
@@ -56,9 +54,7 @@ pub var SOULS: u32 = 130;
 
 pub const POUR_R: f32 = 5.0;
 pub const POUR_DUR: f32 = 2.0;
-/// **AT THE THROAT, WHICH IS NOT WHAT A WHOLE POUR DELIVERS.** The pressure tails off (`POUR_TAIL`), so what
-/// lands is the AREA under that curve. A pin over the PEAK read 110 against a 100 meter while the thing was
-/// really handing out 80 and could put nobody under.
+/// AT THE THROAT, WHICH IS NOT WHAT A WHOLE POUR DELIVERS: the pressure tails off (`POUR_TAIL`), so what lands is the AREA under that curve. A pin over the PEAK read 110 against a 100 meter while the thing was really handing out 80.
 pub const POUR_BUILD: f32 = 70.0;
 /// The pressure lost by the far end, as `1 - POUR_TAIL*u^2`: a pour that comes out flat and stops dead is a switch.
 const POUR_TAIL: f32 = 0.65;
@@ -72,7 +68,6 @@ const WAKE_DUR: f32 = 0.65;
 
 comptime {
     std.debug.assert(SWELL_DUR >= foe.TELL_MIN);
-    // too much and the tell is decoration. The half integrates on [0, 0.5], which is not half the whole.
     const row = combat.ailBank(.sleep);
     std.debug.assert(POUR_DUR * POUR_BUILD * POUR_SHAPE > row.max);
     const halfArea = 0.5 - POUR_TAIL * 0.125 / 3.0;
@@ -108,8 +103,7 @@ const GILL_N = 6;
 
 const STIPE_Y: f32 = 0.06 * H;
 const BULB_Y: f32 = 0.62 * H;
-/// **UNDER THE BULB, NOT INSIDE IT.** At 0.50 against a bulb spanning 0.42 to 0.82, six lobes were posed and
-/// drawn entirely within the mass that hid them. The underside is 0.62 - 0.085 - 0.100 = 0.435.
+/// UNDER THE BULB, NOT INSIDE IT: at 0.50 against a bulb spanning 0.42 to 0.82, six lobes were posed and drawn entirely within the mass. The underside is 0.62 - 0.085 - 0.100 = 0.435.
 const GILL_Y: f32 = 0.40 * H;
 const GILL_R: f32 = 0.155 * H;
 
@@ -130,8 +124,7 @@ const REST = blk: {
     break :blk r;
 };
 
-// **AND A GILL IS UNDER THE CAP, NOT PAST IT.** At 0.28..0.46 these ran to 0.62 m against a rim 0.317 m out and
-// dived past the mat as PLANKS. Off the rim instead: a 0.209 m collar plus 0.16..0.24 puts the tips at 0.42 m.
+// AND A GILL IS UNDER THE CAP, NOT PAST IT: at 0.28..0.46 these ran to 0.62 m against a rim 0.317 m out. Off the rim instead, a 0.209 m collar plus 0.16..0.24 puts the tips at 0.42 m.
 const GILL_LEN = [GILL_N]f32{ 0.22, 0.16, 0.24, 0.18, 0.20, 0.155 };
 const GILL_DROOP = [GILL_N]f32{ 20.0, 32.0, 16.0, 27.0, 23.0, 35.0 };
 
@@ -167,7 +160,6 @@ pub const Bloom = struct {
     elapsed: f32 = 0,
     cd: f32 = 0,
 
-    /// The unfold, 0 shut to 1 open.
     open: f32 = 0,
     swell: f32 = 0,
     vent: f32 = 0,
@@ -574,8 +566,7 @@ fn bulbMesh() rl.Mesh {
     b.addBlob(v3(0, -0.085 * H, 0.010 * H), v3(0.196 * H, 0.100 * H, 0.186 * H), 5, 11, CAP_SKIN_DK);
     b.addCylinder(v3(0, 0.120 * H, 0), v3(0, 0.168 * H, 0), 0.070 * H, 0.086 * H, 11, CAP_SKIN_DK);
     b.addBlob(v3(0, 0.108 * H, 0), v3(0.062 * H, 0.026 * H, 0.062 * H), 3, 9, GILL_DEEP);
-    // A FEW PERCENT OF THE MASS, not a tenth (the relief law). At 0.030 seated on the surface these were PEGS
-    // stuck in a ball; halved and seated INSIDE the 0.235 bulb, a couple of cm of a thirty-cm mass stays proud.
+    // A FEW PERCENT OF THE MASS, not a tenth (the relief law): halved and seated INSIDE the 0.235 bulb, a couple of cm of a thirty-cm mass stays proud.
     var w: usize = 0;
     while (w < 11) : (w += 1) {
         const a = rng.angle();

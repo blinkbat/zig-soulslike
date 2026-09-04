@@ -36,7 +36,6 @@ pub const Page = enum {
         };
     }
 
-    /// Driven by a LENS, not a row cursor — nothing on them to point at.
     fn panned(p: Page) bool {
         return p == .tree or p == .map;
     }
@@ -78,7 +77,6 @@ pub const View = struct {
     gold: u32 = 0,
     worn: heromod.Worn = .{},
     tiers: [heromod.NARM]u8 = [_]u8{0} ** heromod.NARM,
-    /// Null in the harness and in every headless test.
     world: ?World = null,
 
     pub fn tierOf(self: *const View, a: heromod.Armament) u8 {
@@ -229,7 +227,7 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     for (0..combat.NELEM) |i| d[@intFromEnum(Der.res_fire) + i] = res.at(@enumFromInt(i));
     const guards = heromod.handsHold(l.arm, l.off, .shield);
     const board = heromod.armRow(l.worn, .hand_shield);
-    // THE BOARD'S OWN NEGATION **PLUS THE TREE'S**, capped where the fight caps it (`combat.GUARD_NEGATE_CAP`) — a page promising 97% behind a door the fight holds to 95 is a page lying about the one number it exists to compare.
+    // THE BOARD'S OWN NEGATION PLUS THE TREE'S, capped where the fight caps it (`combat.GUARD_NEGATE_CAP`).
     d[@intFromEnum(Der.guard)] = if (guards) combat.guardNegation(board.negate, perk.guard) * 100.0 else 0;
     d[@intFromEnum(Der.arc)] = if (guards) combat.GUARD_ARC * board.arc else 0;
     const armour = armourOf(l.worn);
@@ -626,8 +624,7 @@ fn heldSame(h: Hand, v: View) bool {
     return v.worn.at(w) == h.kind;
 }
 
-/// On what is ALREADY equipped, never row 0 — a cursor landing anywhere else tricks you into swapping something
-/// you meant to look at. **ASKED OF THE LIST ITSELF, NEVER COUNTED A SECOND TIME.**
+/// On what is ALREADY equipped, never row 0 — a cursor landing anywhere else tricks you into swapping something you meant to look at. ASKED OF THE LIST ITSELF, NEVER COUNTED A SECOND TIME.
 fn pickIndexOf(s: SlotId, v: View) usize {
     var out: [CAND_MAX]Cand = undefined;
     for (candidates(s, v, &out), 0..) |c, i| {
@@ -668,7 +665,6 @@ pub const Book = struct {
         mapart.restage();
     }
 
-    /// He cannot move while the book is open, so centring once on the turn to the page is the whole of it.
     pub fn onMap(self: *Book, v: View) void {
         const w = v.world orelse return;
         self.lens.centreOn(w.at.x, w.at.z, w.map.half);
@@ -841,7 +837,6 @@ pub const Book = struct {
         self.pop = 0;
     }
 
-    /// Stage the chart for the shot harness.
     pub fn debugMap(self: *Book, v: View, zoom: f32, onHero: bool) void {
         self.page = .map;
         self.picking = null;
@@ -1154,7 +1149,7 @@ fn panel(b: Box, title: [:0]const u8) Box {
     return panelInner(b, title.len > 0);
 }
 
-/// Their natural pitch, tightened to fit, and NEVER under the GLYPH height: too short spills off the bottom, where a NEGATIVE pitch stacks them backwards up through the heading. The floor was `lineH`, which twelve rows cannot fit in the half-panel a picker leaves them.
+/// Their natural pitch, tightened to fit, and NEVER under the GLYPH height: too short spills off the bottom, where a NEGATIVE pitch stacks them backwards up through the heading.
 fn rowStep(space: i32, n: usize) i32 {
     const natural = hud.lineH(hud.SMALL) + 7;
     // A picker CAN be open on a slot with nothing to offer (`candidates` returns an empty slice for a locked one), and that reaches here through `pickStep` as a divide by zero.
@@ -1187,7 +1182,6 @@ fn rowValueAt(s: [:0]const u8, right: i32, y: i32, size: i32, col: rl.Color) voi
 
 fn unitStr(u: Unit, x: f32) [:0]const u8 {
     return switch (u) {
-        // the fishmen's -40 cold has to print, and `<= 0.005` swallowed it.
         .flat => if (@abs(x) <= 0.005) "-" else fmt("{d:.0}", .{x}),
         .pct => if (@abs(x) <= 0.005) "-" else fmt("{d:.0}%", .{x}),
         .count => fmt("{d:.0}", .{x}),
@@ -1224,58 +1218,8 @@ pub fn draw(self: *const Book, v: View, portrait: ?Portrait) void {
         );
     }
 
-    const PAGE = hud.Hint{ .glyph = .{ .bumper = "LB/RB" }, .label = "Page" };
-    const CLOSE = hud.Hint{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Close" };
-    const CANCEL = hud.Hint{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Cancel" };
-    var buf: [6]hud.Hint = undefined;
-    const hints: []const hud.Hint = switch (self.page) {
-        .equipment => if (self.picking) |ps| blk: {
-            buf[0] = .{ .glyph = .{ .dpad = .updown }, .label = "Choose" };
-            buf[1] = .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = if (quickIndex(ps) != null) "Socket" else "Equip" };
-            buf[2] = CANCEL;
-            break :blk buf[0..3];
-        } else blk: {
-            buf[0] = .{ .glyph = .{ .dpad = .updown }, .label = "Move" };
-            buf[1] = .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Open" };
-            buf[2] = PAGE;
-            buf[3] = CLOSE;
-            break :blk buf[0..4];
-        },
-        .inventory => blk: {
-            buf[0] = .{ .glyph = .{ .dpad = .updown }, .label = "Move" };
-            buf[1] = .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Use" };
-            buf[2] = PAGE;
-            buf[3] = CLOSE;
-            break :blk buf[0..4];
-        },
-        .stats => blk: {
-            buf[0] = .{ .glyph = .{ .dpad = .updown }, .label = "Read" };
-            buf[1] = .{ .glyph = .{ .dpad = .leftright }, .label = "Turn" };
-            buf[2] = PAGE;
-            buf[3] = CLOSE;
-            break :blk buf[0..4];
-        },
-        .spells => blk: {
-            buf[0] = .{ .glyph = .{ .dpad = .updown }, .label = "Read" };
-            buf[1] = PAGE;
-            buf[2] = CLOSE;
-            break :blk buf[0..3];
-        },
-        .tree => blk: {
-            buf[0] = .{ .glyph = .{ .bumper = "LS" }, .label = "Walk" };
-            buf[1] = .{ .glyph = .{ .bumper = "RS" }, .label = "Zoom" };
-            buf[2] = PAGE;
-            buf[3] = CLOSE;
-            break :blk buf[0..4];
-        },
-        .map => blk: {
-            buf[0] = .{ .glyph = .{ .bumper = "RS" }, .label = "Pan" };
-            buf[1] = .{ .glyph = .{ .dpad = .updown }, .label = "Zoom" };
-            buf[2] = PAGE;
-            buf[3] = CLOSE;
-            break :blk buf[0..4];
-        },
-    };
+    var buf: [FOOT_CAP]hud.Hint = undefined;
+    const hints = footHints(self, &buf);
     const hw = hud.hintRowW(hints, hud.HINT);
     hud.hintRowAt(
         hints,
@@ -1284,6 +1228,66 @@ pub fn draw(self: *const Book, v: View, portrait: ?Portrait) void {
         hud.HINT,
         uiart.TEXT_HINT,
     );
+}
+
+
+/// THE CRIB IS A FUNCTION, NOT A LIMB OF `draw`: a page that pans must name both gestures, and a test now walks every page.
+pub const FOOT_CAP: usize = 6;
+
+fn footHints(self: *const Book, buf: *[FOOT_CAP]hud.Hint) []const hud.Hint {
+    const PAGE = hud.Hint{ .glyph = .{ .bumper = "LB/RB" }, .label = "Page" };
+    const CLOSE = hud.Hint{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Close" };
+    const READ = hud.Hint{ .glyph = .{ .dpad = .updown }, .label = "Read" };
+    const CANCEL = hud.HINT_CANCEL;
+    return switch (self.page) {
+        .equipment => if (self.picking) |ps| blk: {
+            buf.*[0] = hud.HINT_CHOOSE;
+            buf.*[1] = .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = if (quickIndex(ps) != null) "Socket" else "Equip" };
+            buf.*[2] = CANCEL;
+            break :blk buf.*[0..3];
+        } else blk: {
+            buf.*[0] = hud.HINT_MOVE;
+            buf.*[1] = .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Open" };
+            buf.*[2] = PAGE;
+            buf.*[3] = CLOSE;
+            break :blk buf.*[0..4];
+        },
+        .inventory => blk: {
+            buf.*[0] = hud.HINT_MOVE;
+            buf.*[1] = .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Use" };
+            buf.*[2] = PAGE;
+            buf.*[3] = CLOSE;
+            break :blk buf.*[0..4];
+        },
+        .stats => blk: {
+            buf.*[0] = READ;
+            buf.*[1] = .{ .glyph = .{ .dpad = .leftright }, .label = "Turn" };
+            buf.*[2] = PAGE;
+            buf.*[3] = CLOSE;
+            break :blk buf.*[0..4];
+        },
+        .spells => blk: {
+            buf.*[0] = READ;
+            buf.*[1] = PAGE;
+            buf.*[2] = CLOSE;
+            break :blk buf.*[0..3];
+        },
+        .tree => blk: {
+            buf.*[0] = hud.HINT_WALK;
+            buf.*[1] = hud.HINT_PAN;
+            buf.*[2] = hud.HINT_ZOOM;
+            buf.*[3] = PAGE;
+            buf.*[4] = CLOSE;
+            break :blk buf.*[0..5];
+        },
+        .map => blk: {
+            buf.*[0] = hud.HINT_PAN;
+            buf.*[1] = hud.HINT_ZOOM;
+            buf.*[2] = PAGE;
+            buf.*[3] = CLOSE;
+            break :blk buf.*[0..4];
+        },
+    };
 }
 
 const SOULS_GAP: i32 = 26;
@@ -1570,7 +1574,6 @@ fn dialsOf(k: ?item.Kind, socket: ?item.Wear, v: View) Dials {
             }
             if (a.venom > 0) d.set(.venom, a.venom);
             if (a.slot == .hand_shield) {
-                // THE NEGATION THE FIGHT GIVES, capped where it caps it — not "110% of a base nobody is shown".
                 d.set(.negate, combat.guardNegation(a.negate, perk.guard) * 100);
                 d.set(.arc, combat.GUARD_ARC * a.arc);
                 d.set(.walk, a.walk * 100);
@@ -1583,7 +1586,6 @@ fn dialsOf(k: ?item.Kind, socket: ?item.Wear, v: View) Dials {
             if (pl.res.lightning != 0) d.set(.res_lightning, pl.res.lightning);
             if (pl.res.chaos != 0) d.set(.res_chaos, pl.res.chaos);
             if (pl.rate) |r| d.setAt(rateDial(combat.ailOfName(r.ail)), r.k * 100);
-            // A coat that does not move him has no business printing "Walk speed 100%" on a page this narrow.
             if (pl.move != 1) d.set(.walk, pl.move * 100);
         },
         .charm => |c| {
@@ -1782,7 +1784,7 @@ fn drawDerived(box: Box, v: View, cand: ?Cand) void {
     const now = derive(base, v);
     const then = if (cand) |c| derive(withCand(base, c), v) else now;
 
-    // **TAKEN OFF THE ROTATING SCRATCH BEFORE THE ROWS RUN.** `rowSays` builds through `fmt`, which cycles a 16-slot buffer, and the loop below spends 28 slots on `unitStr` — so by the time this is drawn the slot it pointed at holds the tail of a stat value.
+    // TAKEN OFF THE ROTATING SCRATCH BEFORE THE ROWS RUN: `rowSays` builds through `fmt`, which cycles a 16-slot buffer, and the loop below spends 28 slots on `unitStr`.
     const says = saysOwn(if (cand) |c| candSays(c, v) else armSays(v.arm, v.off));
     const foot = hud.proseH(says, inner.w, hud.HINT) + 22;
     const tallest = @max(DER_SPLIT, ND - DER_SPLIT);
@@ -2114,8 +2116,6 @@ fn drawBody(col: Box, v: View) void {
         .{ "Poise", heromod.POISE_MAX },
         .{ "Stance", heromod.STANCE_MAX },
     };
-    // sum of the sockets and the curve is what makes anything of it, so the two go together: 25 armour is
-    // meaningless alone, and "negates 16%" alone hides which of two coats is the bigger number.
     const armour = heromod.armourOf(v.worn);
     const guard = [_]struct { [:0]const u8, f32, Unit }{
         .{ "Armour", armour, .flat },
@@ -2345,7 +2345,6 @@ test "THE NOW COLUMN PRICES WHAT HE HAS ON — every axis of the set in force, `
     try std.testing.expect(worth(geared, .swing) > worth(bareRows, .swing));
     try std.testing.expect(worth(geared, .guard) > worth(bareRows, .guard));
     try std.testing.expect(worth(geared, .arc) > worth(bareRows, .arc));
-    // …and the armour row, which off a bare loadout could only ever print 0.
     try std.testing.expectApproxEqAbs(@as(f32, 0), worth(bareRows, .armour), 1e-6);
     try std.testing.expect(worth(geared, .armour) > 0);
 }
@@ -2699,7 +2698,6 @@ test "BOTH PAGES SPEAK IN NUMBERS, and the three classes are told apart by them"
             d.v[@intFromEnum(GDial.poise)].?,
             secs,
         });
-        // Every one of them is a real blow on a real clock, never a bare multiplier of 1.
         try std.testing.expect(hi > 1.0 and secs > 0.05);
         if (r.arm == .dagger) {
             dirk = hi;
@@ -2712,7 +2710,6 @@ test "BOTH PAGES SPEAK IN NUMBERS, and the three classes are told apart by them"
     }
     try std.testing.expect(club > dirk and clubT > dirkT);
 
-    // a shield, which in percentages was merely noise (Damage 100%) and in numbers is a lie.
     const board = dialsOf(item.Kind.tower_shield, .hand_shield, v);
     try std.testing.expect(board.v[@intFromEnum(GDial.dmg_heavy)] == null);
     try std.testing.expect(board.v[@intFromEnum(GDial.swing)] == null);
@@ -2779,4 +2776,31 @@ test "THE SHEET CARRIES THE FOUR COLUMNS AND THE POOLS, and a swap moves them" {
 
     try std.testing.expect(DER_SPLIT > 0 and DER_SPLIT < ND);
     for (DER) |row| try std.testing.expect(row.name.len > 0);
+}
+
+test "A PAGE THAT PANS SAYS SO — every gesture the book takes is named on the page that takes it" {
+    var b = Book{};
+    var buf: [FOOT_CAP]hud.Hint = undefined;
+    var checked: usize = 0;
+    inline for (@typeInfo(Page).@"enum".fields) |f| {
+        b.page = @enumFromInt(f.value);
+        b.picking = null;
+        const hints = footHints(&b, &buf);
+        try std.testing.expect(hints.len <= FOOT_CAP);
+        var pan = false;
+        var zoom = false;
+        for (hints) |h| {
+            if (std.mem.eql(u8, h.label, hud.HINT_PAN.label)) pan = true;
+            if (std.mem.eql(u8, h.label, hud.HINT_ZOOM.label)) zoom = true;
+        }
+        if (b.page.panned()) {
+            if (!pan or !zoom) std.debug.print("\n  the book's {s} page takes the stick and the d-pad and names pan={} zoom={}\n", .{ f.name, pan, zoom });
+            try std.testing.expect(pan and zoom);
+            checked += 1;
+        } else {
+            try std.testing.expect(!pan and !zoom);
+        }
+    }
+    try std.testing.expect(checked > 0);
+    std.debug.print("\n  book cribs: {d} pages, {d} of them panned and both gestures named on each\n", .{ NPAGE, checked });
 }

@@ -122,7 +122,6 @@ pub const Hit = struct {
     dose: Doses = .{},
     gore: f32 = 0,
 
-    /// THE WHOLE BLOW BEFORE ANYBODY'S RESISTANCES — what a shield's stamina bill and "which of two blows was worse" are measured on.
     pub fn raw(self: Hit) f32 {
         return self.dmg + self.elem.total() + self.gore;
     }
@@ -151,7 +150,6 @@ pub const Hit = struct {
     }
 };
 
-/// Named at the call site (`Doses.one(.poison, 26)`) rather than through a ten-field spread.
 pub const Doses = struct {
     v: [NAIL]f32 = [_]f32{0} ** NAIL,
 
@@ -174,10 +172,7 @@ pub const Doses = struct {
 const REGEN_DELAY = 0.8;
 const POISE_REFILL = 1.3;
 const STANCE_REFILL = 4.6;
-/// **THE ROAD FROM REPEATED LIGHT TO A HEAVY STAGGER** — the share of STANCE one flinch bills, so at 0.40 the
-/// third flinch inside the stance window IS the break. Per body (`Vitals.breakShare`): a global share made
-/// every creature in the game stagger on the same three, with no way to author one that flinches like paper
-/// and still will not go down to flinches alone (0), or one the count comes for quickly.
+/// The share of STANCE one flinch bills, so at 0.40 the third flinch inside the stance window IS the break. Per body (`Vitals.breakShare`): 0 is a creature flinches alone will never take down.
 pub const LIGHT_BREAK_STANCE: f32 = 0.40;
 const FOE_REGEN_DELAY = 2.2;
 const FOE_REGEN_RATE = 0.45;
@@ -190,12 +185,9 @@ pub fn foeStunDur(heavy: bool) f32 {
     return if (heavy) FOE_HEAVY_STUN_DUR else FOE_LIGHT_STUN_DUR;
 }
 
-/// `poiseMax` IS the damage it shrugs off inside the window — the knight's 78 against a 900 bar, a kobold's 12.
-/// 0.82 puts his base blows on the old scale: 13 damage pours 10.7 where the light swing carried 10 poise, and
-/// 27 pours 22.1 where the heavy carried 22.
+/// `poiseMax` IS the damage it shrugs off inside the window — the knight's 78 against a 900 bar, a kobold's 12. 0.82 puts his base blows on the old scale: 13 damage pours 10.7, 27 pours 22.1.
 pub var FOE_POISE_PER_DMG: f32 = 0.82;
-/// **YOU CANNOT DO ONE THING OVER AND OVER** (owner). Each light stun, heavy stun and status proc on a creature
-/// leaves WEAR on that channel: the next takes (1 + wear × this) as much. Wear halves every `WEAR_HALFLIFE`.
+/// Each light stun, heavy stun and status proc on a creature leaves WEAR on that channel: the next takes (1 + wear × this) as much. Wear halves every `WEAR_HALFLIFE`.
 pub const LIGHT_WEAR: f32 = 0.60;
 pub const HEAVY_WEAR: f32 = 0.60;
 pub const AIL_WEAR: f32 = 0.70;
@@ -229,7 +221,6 @@ pub const Vitals = struct {
     res: Resists = .{},
     armour: f32 = 0,
     ails: [NAIL]Status = [_]Status{.{}} ** NAIL,
-/// How fast each meter fills on this body: the hero's perks and what he is wearing, 1 for a creature.
     ailRate: [NAIL]f32 = [_]f32{1} ** NAIL,
     side: Side = .hero,
     lightWear: f32 = 0,
@@ -347,8 +338,7 @@ pub const Vitals = struct {
         return out;
     }
 
-    /// Flinches from a full bar to the stagger, which is what the share MEANS. 0 is a body the count never comes for.
-    /// Saturating: a hand-edited share of 1e-30 is 1e30 flinches, and that is an out-of-range `@intFromFloat`.
+    /// Flinches from a full bar to the stagger. 0 is a body the count never comes for. Saturating: a hand-edited share of 1e-30 is 1e30 flinches, and that is an out-of-range `@intFromFloat`.
     pub fn flinchesToBreak(self: *const Vitals) u32 {
         if (self.breakShare <= 0) return 0;
         return @intFromFloat(mathx.minF(@ceil(1.0 / self.breakShare), 1e9));
@@ -358,7 +348,7 @@ pub const Vitals = struct {
         return self.stunLeft > 0;
     }
 
-    /// **WHICH STAGGER IS IN FLIGHT** — STORED, because it cannot be recovered from the bars: `hit` refills `stance` to full on the frame it breaks, so a `stance <= 0` test for "was that the heavy one" is never true.
+    /// WHICH STAGGER IS IN FLIGHT — STORED, because `hit` refills `stance` to full on the frame it breaks, so a `stance <= 0` test for "was that the heavy one" is never true.
     pub fn stunHeavy(self: *const Vitals) bool {
         return self.stunAs == .heavy;
     }
@@ -505,7 +495,7 @@ pub const Vitals = struct {
     }
 };
 
-// ER's shallow, fast-refilling pool (docs/ELDEN_RING.md §3 — its Endurance-15 numbers): a flat bite per action, pouring back ~4x as fast as a roll spends it, so it paces a FLURRY and not a whole fight.
+// ER's shallow, fast-refilling pool (docs/ELDEN_RING.md §3 — its Endurance-15 numbers): a flat bite per action, pouring back ~4x as fast as a roll spends it.
 pub const STAM_MAX = stats.staminaFor(stats.START); // 105 — ENDURANCE owns the pool size now (`stats.zig`); about eight rolls from full
 pub var STAM_ROLL: f32 = 12.0;
 pub var STAM_LIGHT: f32 = 10.0;
@@ -623,10 +613,9 @@ pub fn armourTaken(a: f32, dmg: f32) f32 {
     return dmg * (1.0 - a / (a + 5.0 * dmg));
 }
 
-/// **A BOARD MAY NEVER STOP A BLOW OUTRIGHT.** With a shield ROW (`item.Arm.negate`) multiplying the base and a tree node adding to it, the two could sum past 1 and make blocking free.
+/// A BOARD MAY NEVER STOP A BLOW OUTRIGHT: a shield ROW (`item.Arm.negate`) multiplies the base and a tree node adds to it, and the two could sum past 1.
 pub const GUARD_NEGATE_CAP: f32 = 0.95;
 
-/// **WHAT A BOARD ACTUALLY TURNS ASIDE, NAMED ONCE.** `hero.blockHit` and the character book's `guard` row both spelled it out — two copies of the one figure the page exists to compare, and a page promising 97% behind a door the fight holds to 95 is a page lying.
 pub fn guardNegation(boardNegate: f32, perkGuard: f32) f32 {
     return mathx.minF(GUARD_NEGATE_CAP, GUARD_NEGATE * boardNegate + perkGuard);
 }
@@ -643,8 +632,7 @@ pub fn guardChipSplit(h: Hit, negate: f32, negateElem: f32) Hit {
 
 
 pub var STAM_PARRY: f32 = 9.0;
-/// Sized so the ogre's 90 stance takes two catches and lighter takes one.
-/// `SLAM_HIT` in `foes/` and by nothing else. Here rather than in `hero.zig` so a creature can say its blow throws him without importing the man it throws.
+/// Sized so the ogre's 90 stance takes two catches and lighter takes one. Here rather than in `hero.zig` so a creature can say its blow throws him without importing the man it throws.
 pub const SLAM_LAUNCH: f32 = 0.85;
 
 pub const PARRY_HIT = Hit{ .stance = 46 };
@@ -705,9 +693,7 @@ pub const SUMMON_MAX: usize = 1;
 
 pub const BOLT_HIT = Hit{ .poise = 14, .stance = 6, .elem = elems(.{ .chaos = 25 }) };
 
-/// **THE HOLD IS WHAT THE SPELL SELLS** (owner: make it last longer) — 3.5 s to 5.0. The DRIP came down to pay
-/// for it: `SPELLS`' ladder is monotone, so 12 FP has a window of (18, 22) between the siphon under it and the
-/// levin over it, and the same hold at the old 5.6/s would have billed 28 and broken the price list at comptime.
+/// 3.5 s to 5.0, and the DRIP came down to pay for it: `SPELLS`' ladder is monotone, so 12 FP has a window of (18, 22), and the same hold at the old 5.6/s would have billed 28 and broken the price list at comptime.
 pub const ROOT_HOLD: f32 = 5.0;
 pub const ROOT_DPS: f32 = 4.0;
 pub const ROOT_R: f32 = 2.6;
@@ -781,21 +767,18 @@ pub const Chill = struct {
     }
 };
 
-/// **THE TWO THAT DO NOT CROSS THE GROUND** — they arrive on ONE named body on the frame they are cast, so they need a REACH and an ARC rather than a speed. Narrower than the rime cone's 30 on purpose: that is a wash, these are aimed.
+/// THE TWO THAT DO NOT CROSS THE GROUND — they arrive on ONE named body on the frame they are cast, so they need a REACH and an ARC rather than a speed. Narrower than the rime cone's 30: that is a wash, these are aimed.
 pub const STRIKE_ARC: f32 = 22.0;
 
-/// POISE PAST EVERY CREATURE'S `POISE_MAX` BAR THE BONE KNIGHT'S 78 (the ogre's 30 is next), where his heavy
-/// swing at 22 leaves the giants standing. STANCE deliberately UNDER that swing's 14: a spell thrown from across the room may not be the better guard-breaker.
+/// Poise past every creature's `POISE_MAX` bar the bone knight's 78 (the ogre's 30 is next). STANCE deliberately UNDER the heavy swing's 14: a spell thrown from across the room may not be the better guard-breaker.
 pub const LEVIN_HIT = Hit{ .poise = 34, .stance = 10, .elem = elems(.{ .lightning = 22 }) };
-/// Well past the roots' 7 m throw, since nothing has to cross the ground, and far short of the bolt's 55: an interrupt thrown from outside the fight is not an interrupt.
 pub const LEVIN_REACH: f32 = 16.0;
 
 pub const SIPHON_HIT = Hit{ .elem = elems(.{ .chaos = 18 }) };
 pub const SIPHON_SHARE: f32 = 0.55;
 pub const SIPHON_REACH: f32 = 12.0;
 
-/// The only spell that does not stop at the first body: a LANCE
-/// goes THROUGH. PER BODY and deliberately small, priced where the rime is — what it buys is the SECOND body and the third. Poise under the levin's 34 and over a hero light's.
+/// The only spell that does not stop at the first body: a LANCE goes THROUGH. PER BODY and deliberately small, priced where the rime is — what it buys is the SECOND body and the third.
 pub const LANCE_HIT = Hit{ .poise = 18, .stance = 6, .elem = elems(.{ .fire = 16.5 }) };
 pub const LANCE_REACH: f32 = 20.0;
 pub const LANCE_R: f32 = 0.55;
@@ -804,7 +787,6 @@ pub const SUNDER_HIT = Hit{ .dmg = 14, .poise = 12, .stance = 40 };
 pub const SUNDER_REACH: f32 = 4.0;
 
 pub const BABBLE_HIT = Hit{ .dose = Doses.one(.confusion, ailBank(.confusion).max) };
-/// PAST THE ROOTS' 7 m AND WELL SHORT OF THE BOLT'S 55 — cast INTO the room, not across the field.
 pub const BABBLE_REACH: f32 = 13.0;
 
 pub const BIDDING_HIT = Hit{ .dose = Doses.one(.charm, ailBank(.charm).max) };
@@ -993,8 +975,7 @@ pub const Memory = struct {
 pub const BOLT_FP: f32 = bankFp(.bolt);
 
 comptime {
-// The ladder is MONOTONE and that is the whole price list: 8→25, 11→22, 12→19.6, 13→18, 14→16.5, 15→15.3,
-// 16→14 — and every rung clears a free light swing (`hero.ATK_LIGHT_HIT`, 13).
+// The ladder is MONOTONE and that is the whole price list: 8→25, 11→22, 12→19.6, 13→18, 14→16.5, 15→15.3, 16→14 — and every rung clears a free light swing (`hero.ATK_LIGHT_HIT`, 13).
     @setEvalBranchQuota(8000);
     for (std.enums.values(Spell)) |a| {
         for (std.enums.values(Spell)) |b| {
@@ -1061,8 +1042,7 @@ test "the whole pour bills less than the roots' grip, and a body resists it as C
 
 pub const FlaskKind = enum { crimson, cerulean };
 
-/// **THE CHARGES ARE ONE POOL AND THE SPLIT IS HIS** (Elden Ring's allotment, at a bonfire): the total never
-/// moves, only where it sits. `FLASK_CRIMSON` is where a fresh run starts it.
+/// THE CHARGES ARE ONE POOL AND THE SPLIT IS HIS (Elden Ring's allotment, at a bonfire): the total never moves, only where it sits.
 pub const FLASK_TOTAL: u8 = 3;
 pub const FLASK_CRIMSON: u8 = 2;
 pub const FLASK_CERULEAN: u8 = FLASK_TOTAL - FLASK_CRIMSON;
@@ -1072,8 +1052,7 @@ pub const FLASK_DRINK_DUR: f32 = 1.05;
 pub const FLASK_POUR_AT: f32 = 0.42;
 
 pub const Flasks = struct {
-    /// The ALLOTMENT — how many of each the bonfire fills. `crimsonMax + ceruleanMax` is the pool and is
-    /// invariant under `allot`; the two live counts below are what is left of it.
+    /// The ALLOTMENT — how many of each the bonfire fills. `crimsonMax + ceruleanMax` is the pool and is invariant under `allot`.
     crimsonMax: u8 = FLASK_CRIMSON,
     ceruleanMax: u8 = FLASK_CERULEAN,
     crimson: u8 = FLASK_CRIMSON,
@@ -1095,7 +1074,6 @@ pub const Flasks = struct {
     pub fn total(self: *const Flasks) u8 {
         return self.crimsonMax + self.ceruleanMax;
     }
-    /// Move the split. The pool is held, and re-allotting FILLS — the bonfire is where it is done.
     pub fn allot(self: *Flasks, crimsonMax: u8) void {
         const n = self.total();
         self.crimsonMax = @min(crimsonMax, n);
@@ -1329,8 +1307,7 @@ pub const AILS_BANK = [_]AilRow{
         .max = 100.0, .decay = 30.0, .dur = 4.6, .hpFrac = 0.22,
     },
     .{
-        // **ITS METER IS SMALL ON PURPOSE**: the rime breath pours 15.3 cold, and a 100 meter would mean the
-        // one spell built for this could not fill it. Pinned against the pour at comptime below.
+        // ITS METER IS SMALL ON PURPOSE: the rime breath pours 15.3 cold, and a 100 meter would mean the one spell built for this could not fill it.
         .ail = .chill, .name = "Chill", .elem = .cold,
         .says = "The feet only. A chilled body cannot close, it is not a slowed one.",
         .max = 14.0, .decay = 6.0, .dur = CHILL_HOLD,
@@ -1515,7 +1492,6 @@ pub fn poisonPulse(amt: f32) Hit {
 }
 
 test "ELEMENTAL DAMAGE BUILDS ITS OWN METER, AFTER RESISTANCES — and a DRIP builds nothing" {
-    // Ten, because the chill meter is 14 and a bigger column would only prove the clamp.
     for (std.enums.values(Elem)) |e| {
         var body = Vitals.initFoe(400, 999, 999);
         var blow = Hit{};
@@ -1529,7 +1505,6 @@ test "ELEMENTAL DAMAGE BUILDS ITS OWN METER, AFTER RESISTANCES — and a DRIP bu
         }
     }
 
-    // A column bigger than the meter fills it and stops — the chill's 14 against the rime's whole 15.3 pour.
     var frosted = Vitals.initFoe(400, 999, 999);
     _ = frosted.hit(.{ .elem = elems(.{ .cold = RIME_DUR * RIME_DPS }) });
     try std.testing.expectApproxEqAbs(ailRow(.chill).max, frosted.ail(.chill).meter, 1e-4);
@@ -1663,7 +1638,6 @@ test "BLEED BURSTS FLAT AND RE-ARMS, AND ARMOUR BARELY ANSWERS IT" {
     plated.build(.bleed, B.max);
     _ = plated.tickAils(1.0 / 60.0);
     try std.testing.expect(plated.ailProcced(.bleed));
-    // Flat and unarmoured: 60 armour turns some of a 45 physical blow aside and NONE of this.
     try std.testing.expectApproxEqAbs(400.0 - B.flat, plated.hp, 0.01);
     try std.testing.expect(armourTaken(60, B.flat) < B.flat);
     std.debug.print("\n  bleed: 60 armour keeps {d:.0} of a {d:.0} physical blow and {d:.0} of the burst\n", .{
@@ -2025,7 +1999,6 @@ test "NOTHING BUILDS ON A BODY ALREADY STUNNED — a heavy landed inside a light
 }
 
 test "A CREATURE'S FLINCH IS A SHARE OF ITS HEALTH IN BLOWS, NOT A COUNT OF THEM — and a drip pours nothing" {
-    // Two blows worth the pool between them flinch it whatever their `poise` says; thirteen pokes of 1 do the same.
     var v = Vitals.initFoe(100, 10, 999);
     try std.testing.expectEqual(HitResult.none, v.hit(.{ .dmg = 7, .poise = 99 }));
     try std.testing.expectEqual(HitResult.light, v.hit(.{ .dmg = 7 }));
@@ -2157,7 +2130,6 @@ test "a foe's chip damage PERSISTS far longer than the hero's" {
     var hero = Vitals.init(100, 20, 40);
     var foeV = Vitals.initFoe(100, 20, 40);
     _ = hero.hit(.{ .poise = 15 });
-    // The damage that pours 15 into a 20 pool — the same chip, the creature's way.
     _ = foeV.hit(.{ .dmg = 15.0 / FOE_POISE_PER_DMG });
     var t: f32 = 0;
     while (t < 2.0) : (t += 1.0 / 60.0) {
@@ -2411,7 +2383,6 @@ test "ALLOTTING MOVES THE SPLIT AND NEVER THE POOL — and it fills, the way a b
     f.allot(0);
     try std.testing.expectEqual(FLASK_TOTAL, f.charges(.cerulean));
     try std.testing.expectEqual(@as(u8, 0), f.charges(.crimson));
-    // Past the pool is clamped to it, never widened.
     f.allot(200);
     try std.testing.expectEqual(FLASK_TOTAL, f.total());
     try std.testing.expectEqual(FLASK_TOTAL, f.allotted(.crimson));
@@ -2658,8 +2629,7 @@ test "A SHEAF NEVER CARRIES MORE THAN THE QUIVER HOLDS" {
     }
 }
 
-/// Flinches taken before the stagger, with `lightWear` held out — that channel is its own law, and this
-/// measures the share and nothing else. 0 for a body the count never comes for.
+/// Flinches taken before the stagger, with `lightWear` held out. 0 for a body the count never comes for.
 fn flinchesUntilBreak(share: f32, cap: u32) u32 {
     var v = Vitals.initFoe(9999, 4, 40).withBreak(share);
     var n: u32 = 0;
@@ -2689,7 +2659,6 @@ test "THE FLINCH SHARE IS PER BODY — the count to a stagger is the share, and 
         const got = flinchesUntilBreak(row.share, CAP);
         std.debug.print(" {d:.2} -> {d} flinches;", .{ row.share, got });
         try std.testing.expectEqual(row.want, got);
-        // The dial the bench prints and the fight it bills have to be the one number.
         const said = (Vitals.initFoe(9999, 4, 40).withBreak(row.share)).flinchesToBreak();
         try std.testing.expectEqual(row.want, said);
     }

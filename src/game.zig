@@ -474,7 +474,6 @@ const BOOT_LOOK_UP: f32 = 6.0;
 pub const BOOT_YAW_MID: f32 = 53.0;
 const BOOT_YAW_SWEEP: f32 = 38.0;
 const BOOT_YAW_T: f32 = 41.0;
-/// 0.44 rad is about 25 degrees under the horizon, which keeps the horizon and its sky in the upper third.
 pub const BOOT_PITCH: f32 = 0.44;
 pub const BOOT_DIST: f32 = 46.0;
 const BOOT_SWOOP_PITCH: f32 = 0.17;
@@ -489,20 +488,13 @@ fn bootLook(g: *const Game, t: f32) rl.Vector3 {
     return v3(x, g.env.groundAt(x, z) + BOOT_LOOK_UP, z);
 }
 
-/// **THE TITLE TRACK SWELLS.** Long enough that it arrives rather than starts; the fade OUT stays short,
-/// because that one has to be gone by the time the world is up.
 const INTRO_FADE_IN: f32 = 14.0;
 const INTRO_FADE_OUT: f32 = 1.2;
-/// Headroom under the menu's own voices — the take is normalised to -3 dBFS, which is a foreground level.
 const INTRO_VOL: f32 = 0.55;
-/// The world's own bed, up from nothing at launch. Slower than the track, so the field arrives under it.
 const AUDIO_FADE_IN: f32 = 4.5;
 
-/// **THE TITLE TRACK RIDES THE BOOT MENUS AND NOTHING ELSE.** `menu.booting()` is the boot screen, the slot
-/// picker and Options reached from either; the editor is asked separately because entering it leaves `screen`
-/// where it was, so the menu still reads as booting behind it. The ambience ramp is one-way: the bed belongs
-/// to the world and only ever comes UP, where the track comes back down when the game starts.
-/// The title track's ramp, apart from the stream so both directions can be measured without a device.
+/// `menu.booting()` is the boot screen, the slot picker and Options; the editor is asked separately because entering it leaves `screen` where it was.
+/// The ambience ramp is ONE-WAY — the bed belongs to the world and only ever comes UP. Apart from the stream, so both directions can be measured without a device.
 fn introRamp(k: f32, want: bool, dt: f32) f32 {
     return mathx.clampF(k + (if (want) dt / INTRO_FADE_IN else -dt / INTRO_FADE_OUT), 0, 1);
 }
@@ -531,15 +523,12 @@ fn beginGame(g: *Game) void {
     g.hero.setSpawn(start, g.map.start.facing());
     g.hero.souls = .{};
     g.hero.gold = .{};
-    // **A NEW RUN IS A SWORD, A BUCKLER AND THREE FLASKS** (owner). The rack holds four DISTINCT armaments
-    // (`tidyHands`), so the two stowed cells are the other melee class and a torch — no bow, wand or bell,
-    // and nothing in the off hand that would fight the sword for the one held bone.
+    // The rack holds four DISTINCT armaments (`tidyHands`), so the two stowed cells are the other melee class and a torch — nothing in the off hand that would fight the sword for the one held bone.
     g.hero.arm = .sword;
     g.hero.armAlt = .dagger;
     g.hero.off = .shield;
     g.hero.offAlt = .torch;
     g.hero.spell = .bolt;
-    // No scrolls in the kit, so no spell in the rack either — `Memory{}` is born holding bolt.
     g.hero.mem = .{ .slots = [_]?combat.Spell{null} ** combat.MEM_SLOTS };
     g.hero.quick = .{};
     g.hero.quiver = .{};
@@ -654,9 +643,7 @@ fn tickEnter(g: *Game, dt: f32) void {
     g.enterIn = mathx.maxF(0, g.enterIn - dt);
 }
 
-/// **A SLOT ONLY EVER DESCRIBES THE START MAP.** `savemod.readFrom` refuses a file whose `map:` differs, so
-/// wiring `Enter.map` up (nothing builds one today) without giving this the map actually loaded writes a save
-/// labelled with one map and holding another's hero position.
+/// A SLOT ONLY EVER DESCRIBES THE START MAP: `savemod.readFrom` refuses a file whose `map:` differs, so wiring `Enter.map` up without giving this the map actually loaded writes a save labelled with one map and holding another's hero position.
 fn saveMap(g: *const Game) []const u8 {
     _ = g;
     return worldfmt.startMap();
@@ -666,9 +653,7 @@ comptime {
     if (BOSS_RAILS.len > savemod.BOSS_RAILS) @compileError("game: more boss rails than the save file has rows for");
 }
 
-/// **A RAIL ONLY EVER GAINS A BIT, AND THE RUN'S START IS WHAT CLEARS IT** (`beginGame`). Re-derived off the
-/// live bodies it was wrong at the one place that saves: the bonfire empties every group (`clearFoes`) BEFORE
-/// `saveNow`, so a knight you had killed was written back alive.
+/// A RAIL ONLY EVER GAINS A BIT, AND THE RUN'S START IS WHAT CLEARS IT (`beginGame`). The bonfire empties every group (`clearFoes`) BEFORE `saveNow`, so re-derived off the live bodies a killed knight was written back alive.
 fn snapRail(bits: *savemod.BossBits, i: usize, bodies: anytype) void {
     for (bodies, 0..) |*k, j| {
         if (j < worldfmt.MAX_PER_KIND and k.vit.dead) bits[i][j] = true;
@@ -700,11 +685,9 @@ test "A BOSS THE BONFIRE CLEARED IS STILL DOWN — the rail ACCUMULATES, it is n
     }
     try std.testing.expect(bits[0][0] and !bits[0][1]);
 
-    // Sitting down empties the group and THEN saves.
     snapRail(&bits, 0, &[_]knightmod.Knight{});
     try std.testing.expect(bits[0][0]);
 
-    // Standing up rehomes him alive, and the save that follows must not read the bit back off him.
     var fresh = [_]knightmod.Knight{knightmod.Knight.spawn(mathx.zero3, 0, 1.0, 0.3)};
     snapRail(&bits, 0, fresh[0..]);
     try std.testing.expect(bits[0][0]);
@@ -866,6 +849,47 @@ test "EVERY FOE_GROUPS ROW IS ACTUALLY UPDATED BY `run` — a row nothing drives
     }
     try std.testing.expectEqual(@as(usize, 0), missing);
     std.debug.print("\n  all {d} foe groups are driven from run\n", .{FOE_GROUPS.len});
+}
+
+/// Seated by a call that writes the WHOLE struct rather than by a plain `g.<field> =`, with the call named so the next reader can check it still does that.
+const SEATED_BY = [_]struct { field: []const u8, by: []const u8 }{
+    .{ .field = "trig", .by = "armScript -> trigger.Runtime.arm, which opens with `self.* = .{}`" },
+};
+
+comptime {
+    for (SEATED_BY) |row| {
+        if (!@hasField(Game, row.field)) @compileError("game: SEATED_BY names `" ++ row.field ++ "`, which is not a Game field");
+    }
+}
+
+test "EVERY DEFAULTED FIELD ON `Game` IS ASSIGNED — `= .{}` never runs on an `alloc.create`" {
+    // It has bitten twice: `pack.n` came up as the fill byte, and `g.day` was never assigned (rate 0 is a held clock, and a NaN hour renders as the anchor hour).
+    const src = try worldfmt.readForTest(std.testing.allocator, "src/game.zig", 1 << 22);
+    defer std.testing.allocator.free(src);
+    var defaulted: usize = 0;
+    var missing: usize = 0;
+    inline for (@typeInfo(Game).@"struct".fields) |f| {
+        if (f.default_value_ptr != null) {
+            defaulted += 1;
+            const plain = "g." ++ f.name ++ " =";
+            const indexed = "g." ++ f.name ++ "[";
+            var seated = std.mem.indexOf(u8, src, plain) != null or std.mem.indexOf(u8, src, indexed) != null;
+            for (SEATED_BY) |row| {
+                if (std.mem.eql(u8, row.field, f.name)) seated = true;
+            }
+            if (!seated) {
+                std.debug.print("\n  `Game.{s}` has a default and nothing in game.zig assigns it — it comes up as the fill byte\n", .{f.name});
+                missing += 1;
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 0), missing);
+    std.debug.print("\n  {d} of Game's {d} fields carry a default, all assigned — {d} through a call ({s})\n", .{
+        defaulted,
+        @typeInfo(Game).@"struct".fields.len,
+        SEATED_BY.len,
+        SEATED_BY[0].by,
+    });
 }
 
 test "A UNIT WALKS ITS ORDERS — every creature that takes them, not just the one it was written on" {
@@ -1075,6 +1099,33 @@ test "A BUTTON IS NAMED ONCE — the press the loop reads IS the letter the crib
     try std.testing.expectEqual(rl.KeyboardKey.y, INTERACT_KEY);
 }
 
+test "THE AIM IS THE OFF HAND'S AND THE LOOSE IS THE WEAPON HAND'S — a bow holds both, and they may not share a button" {
+    const none = HandIn{ .press1 = false, .press2 = false, .held1 = false, .held2 = false };
+    var right = Acts{};
+    handActs(.bow, .{ .press1 = false, .press2 = true, .held1 = false, .held2 = true }, &right);
+    try std.testing.expect(right.aimed and !right.aim);
+
+    inline for (.{ "held1", "held2" }) |f| {
+        var in = none;
+        @field(in, f) = true;
+        var a = Acts{};
+        skillActs(.bow, in, &a);
+        try std.testing.expect(a.aim and !a.aimed and !a.quick);
+    }
+
+    var quick = Acts{};
+    handActs(.bow, .{ .press1 = true, .press2 = false, .held1 = true, .held2 = false }, &quick);
+    try std.testing.expect(quick.quick and !quick.aimed);
+
+    inline for (@typeInfo(heromod.Armament).@"enum".fields) |f| {
+        const a: heromod.Armament = @enumFromInt(f.value);
+        var out = Acts{};
+        skillActs(a, .{ .press1 = true, .press2 = true, .held1 = true, .held2 = true }, &out);
+        if (!heromod.armTwoHanded(a)) try std.testing.expect(!out.aim);
+        try std.testing.expect(!out.light and !out.heavy and !out.quick and !out.aimed and !out.guard and !out.parry);
+    }
+}
+
 test "ONE BUTTON, ONE ORDER — and the enum's own order is what the press goes through" {
     try std.testing.expectEqual(@as(u32, 0), @intFromEnum(Reach.souls));
     try std.testing.expect(@intFromEnum(Reach.pickup) < @intFromEnum(Reach.talk));
@@ -1237,8 +1288,7 @@ const WADE_KNEE: f32 = 0.50;
 const WADE_DEEP: f32 = envmod.WADE_MAX;
 const WADE_SLOWEST: f32 = 0.8;
 
-/// **HE STARTS WITH NOTHING BUT WHAT IS IN HIS HANDS** (owner). Every scroll was granted here, so a fresh
-/// run opened the book already holding the whole spell list.
+/// HE STARTS WITH NOTHING BUT WHAT IS IN HIS HANDS: every scroll was granted here, so a fresh run opened the book already holding the whole spell list.
 const STARTING_KIT = [_]item.Kind{};
 
 comptime {
@@ -1776,15 +1826,11 @@ fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?F
     }
 }
 
-/// The tallest lip a body on foot will drop off, as a share of its own stature.
 const DROP_FRAC: f32 = 0.7;
 
-/// **A BRINK IS PACED, NOT STOOD AT.** The step's share toward the drop is removed and the rest is taken along
-/// the lip, the way the walk gate treats a rise. And a body may CHOOSE the drop when it is short against its
-/// own stature and the hero stands below it — a position read, which any body standing there could make.
+/// A BRINK IS PACED, NOT STOOD AT: the step's share toward the drop is removed and the rest taken along the lip. A body may CHOOSE the drop when it is short against its own stature and the hero stands below it — a position read.
 fn brinkStep(g: *const Game, was: rl.Vector3, to: rl.Vector3, stature: f32) rl.Vector3 {
-    // Off `standAt`, the surface `brink` itself measured: read off the LAND a body on a deck weighs its own
-    // drop against the ground under the deck, which is not the drop it is standing over.
+    // Off `standAt`, the surface `brink` itself measured: read off the LAND, a body on a deck weighs its own drop against the ground under the deck.
     const gFrom = g.env.standAt(was.x, was.z, was.y);
     const gTo = g.env.standAt(to.x, to.z, was.y);
     const drop = gFrom - gTo;
@@ -1833,7 +1879,6 @@ fn gateHeroTerrain(g: *Game, was: rl.Vector3) void {
     g.hero.pos.x = room.x;
     g.hero.pos.z = room.z;
     markWardStep(g, was);
-    // AFTER the gates and the room, or he maps ground a ward just refused him.
     g.seenMap.walked(g.hero.pos, g.map.half);
 }
 
@@ -1855,9 +1900,7 @@ test "EVERY LADDER ON THE BENCH TOPS OUT WHERE IT WAS AUTHORED TO, AND THE THREE
     const e = try std.testing.allocator.create(envmod.Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
-    e.heightField = m.height;
-    e.heightHalf = m.half;
-    e.heightAny = m.anyHeight();
+    e.adoptHeight(m);
     e.materialize(m);
 
     const fl = propsmod.WATCH_FLOORS;
@@ -2490,9 +2533,7 @@ test "A REACH IS REFUSED THROUGH A FLOOR, AND NEVER REFUSED ACROSS THE LAND" {
     const e = try std.testing.allocator.create(envmod.Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
-    e.heightField = m.height;
-    e.heightHalf = m.half;
-    e.heightAny = m.anyHeight();
+    e.adoptHeight(m);
     e.materialize(m);
 
     var boxes: [chestmod.CAP]chestmod.Site = undefined;
@@ -3256,7 +3297,6 @@ fn tickRest(g: *Game, dt: f32) void {
         g.retro.values = g.restRetro;
         g.hero.sit(false, g.hero.pos, g.hero.facing);
         rehomeFoes(g, .blind);
-        // A bonfire respawns the field. It does NOT raise a boss.
         applyBosses(g);
         dropRunHud(g);
         saveNow(g, .noShot);
@@ -3856,8 +3896,7 @@ fn wayClear(env: *const envmod.Env, at: rl.Vector3, r: f32, dir: rl.Vector3) boo
     return true;
 }
 
-/// The prop grid is all it ever wanted off the `Game`, and taking the whole thing is what kept the
-/// most expensive per-frame walk in the loop out of a headless test.
+/// The prop grid is all it ever wanted off the `Game`; taking the whole thing kept the most expensive per-frame walk out of a headless test.
 fn markWay(env: *const envmod.Env, nav: *foemod.Nav, at: rl.Vector3, r: f32, want: rl.Vector3) void {
     const straight = mathx.dirXZ(at, want);
     if (mathx.lenXZ(straight) < 1e-4 or wayClear(env, at, r, straight)) {
@@ -3994,9 +4033,7 @@ fn markWade(g: *Game) void {
     }
 }
 
-/// Every priest is matched against every skitterer, every frame, with no distance gate. Both groups cap at `wf.MAX_PER_KIND`, so the worst
-/// case is 262,144 `distXZ` a frame — `settleGroup`'s order, about a millisecond, and reachable only by a map
-/// that maxes BOTH. Squaring the test would drop the sqrt but moves a body sitting on `RAISE_KEEP_R` by an ulp.
+/// Every priest against every skitterer, every frame, no distance gate: both groups cap at `wf.MAX_PER_KIND`, so the worst case is 262,144 `distXZ` a frame, about a millisecond. Squaring the test would drop the sqrt but moves a body sitting on `RAISE_KEEP_R` by an ulp.
 fn markFlock(g: *Game) void {
     if (g.crypt.n == 0) return;
     for (g.crypt.live()) |*p| {
@@ -4254,17 +4291,13 @@ fn sceneCam(g: *const Game) rl.Camera3D {
     return if (g.editor.on) g.editor.cam else g.rig.cam;
 }
 
-/// **THE TITLE SCREEN DRAWS THE WHOLE WORLD.** Nothing is being played behind it, so the frame is free, and
-/// the boot camera drifts over a landscape that has to read as a landscape and not as a 320 m disc in fog.
-/// The editor already asks for the same reach and is metered by its own boom.
 fn drawFar(g: *const Game) f32 {
     if (g.editor.on) return mathx.clampF(g.editor.dist * 2.0 + CLIP_FAR, CLIP_FAR, FAR_MAX);
     if (g.menu.booting()) return FAR_MAX;
     return CLIP_FAR;
 }
 
-/// Every per-kind LOD reach is lifted to at least this on the boot screen, so what culls is the frustum and
-/// the far plane and never a prop's own view distance.
+/// Every per-kind LOD reach is lifted to at least this on the boot screen, so what culls is the frustum and the far plane.
 fn viewFloorOf(g: *const Game) f32 {
     if (g.editor.on or g.menu.booting()) return drawFar(g);
     return 0;
@@ -4372,9 +4405,7 @@ pub fn drawScene(g: *Game) void {
     applyStow(g);
     const cam = sceneCam(g);
     foemod.setLens(cam.position, mathx.normV(mathx.subV(cam.target, cam.position)));
-    // Eye AND target on the lens is the "no occlusion" idiom (`markOccluders` returns on a zero-length look,
-    // easing every fade back to opaque). The title has no hero to see past, and props ghosting around the
-    // boot camera's drift is nothing but flicker.
+    // Eye AND target on the lens is the "no occlusion" idiom (`markOccluders` returns on a zero-length look, easing every fade back to opaque).
     const seeThrough = g.editor.on or g.menu.booting();
     g.env.markOccluders(cam.position, if (seeThrough) cam.position else heroAimPoint(g), g.drawDt);
     rl.gl.rlSetClipPlanes(CLIP_NEAR, drawFar(g));
@@ -4685,8 +4716,7 @@ fn gaitLabel(moving: f32, speed: f32) [:0]const u8 {
 
 pub const Mode = enum { play, shots, props, land, art };
 
-/// `arrowCover` queries a radius of `speed * dt` against a `MAX_NEAR` pinned over a 2x2 cell window: at 40 m/s
-/// a 0.35 s stall asks for a 3-wide one and the overflow DROPS SILENTLY, which is an arrow through a wall.
+/// `arrowCover` queries a radius of `speed * dt` against a `MAX_NEAR` pinned over a 2x2 cell window: at 40 m/s a 0.35 s stall asks for a 3-wide one and the overflow DROPS SILENTLY.
 const DT_MAX: f32 = 1.0 / 30.0;
 
 pub fn run(mode: Mode) void {
@@ -4697,7 +4727,7 @@ pub fn run(mode: Mode) void {
             std.debug.print("INIT: {s: <10} {d:.1} ms\n", .{ name, @as(f64, @floatFromInt(t.lap())) / 1e6 });
         }
     }.ms;
-    // VSYNC, not `setTargetFPS`: that is a CPU-side frame LIMITER and never tells the driver to swap during vblank, so the swap lands mid-scan and fullscreen tears.
+    // VSYNC, not `setTargetFPS`: that is a CPU-side frame LIMITER and never tells the driver to swap during vblank, so fullscreen tears.
     rl.setConfigFlags(.{ .msaa_4x_hint = true, .vsync_hint = true, .window_hidden = shot, .window_resizable = true });
     rl.initWindow(SCREEN_W, SCREEN_H, "zig-soulslike");
     defer rl.closeWindow();
@@ -4788,8 +4818,7 @@ pub fn run(mode: Mode) void {
             std.debug.print("INIT: {s: <10} {d:.1} ms (behind the menu)\n", .{ "audio rest", bankT * 1000.0 });
             bankT = -1;
         }
-        // ONE DRIVER, above every branch that `continue`s: six of them each pumped the streams and the editor
-        // and the boot menu were two that did not, so a title track fading out under either of them stalled.
+        // ONE DRIVER, above every branch that `continue`s: the editor and the boot menu did not pump the streams, so a title track fading out under either stalled.
         tickAudioFades(g, rawDt);
         sfx.tickStreams();
 
@@ -5082,7 +5111,8 @@ pub fn run(mode: Mode) void {
 
         var acts = Acts{};
         handActs(rightHeld, .{ .press1 = r1, .press2 = r2, .held1 = r1Held, .held2 = r2Held }, &acts);
-        if (leftHeld) |la| handActs(la, .{ .press1 = l1Press, .press2 = l2Press, .held1 = l1Held, .held2 = l2Held }, &acts);
+        const leftIn = HandIn{ .press1 = l1Press, .press2 = l2Press, .held1 = l1Held, .held2 = l2Held };
+        if (leftHeld) |la| handActs(la, leftIn, &acts) else skillActs(rightHeld, leftIn, &acts);
         const lightReq = acts.light;
         const heavyReq = acts.heavy;
         const quickReq = acts.quick;
@@ -5601,7 +5631,6 @@ fn stepOverlay(g: *const Game, x: f32, z: f32) ?sfx.Id {
     };
 }
 
-/// Metres a pool is heard from, and the bound on the scan that finds one.
 const LIQUID_EAR: f32 = 34.0;
 /// Cells inside `LIQUID_EAR` that make a bed full. At 2.5 m a cell, 40 is a pond about 18 m across.
 const LIQUID_FULL: f32 = 40.0;
@@ -5642,7 +5671,6 @@ fn tickLiquid(g: *Game, dt: f32) void {
         const n = worldfmt.WATER_N;
         const cell = g.map.cellSize(n);
         const half = g.map.half;
-        // 27 cells a side out of 224, so the ear costs 729 tests and not 50,176.
         const cz0 = worldfmt.cellAxis(half, n, g.hero.pos.z - LIQUID_EAR);
         const cz1 = worldfmt.cellAxis(half, n, g.hero.pos.z + LIQUID_EAR);
         const cx0 = worldfmt.cellAxis(half, n, g.hero.pos.x - LIQUID_EAR);
@@ -5764,6 +5792,15 @@ const Acts = struct {
     aim: bool = false,
 };
 
+/// A TWO-HANDED ARM HOLDS BOTH HANDS, so the left hand's buttons are its own skill slot: `offInHand` is false with a bow up, so `handActs` never sees the left group.
+/// And the aim may not sit on the same button as the aimed loose, or `requestShot(true)` is asked before `setAim` has run and is refused on the one frame the press exists.
+fn skillActs(a: heromod.Armament, in: HandIn, out: *Acts) void {
+    switch (a) {
+        .bow => out.aim = out.aim or in.held1 or in.held2,
+        .sword, .dagger, .club, .bell, .shield, .wand, .torch => {},
+    }
+}
+
 fn handActs(a: heromod.Armament, in: HandIn, out: *Acts) void {
     switch (a) {
         .sword, .dagger, .club => {
@@ -5773,7 +5810,6 @@ fn handActs(a: heromod.Armament, in: HandIn, out: *Acts) void {
         .bow => {
             out.quick = out.quick or in.press1;
             out.aimed = out.aimed or in.press2;
-            out.aim = out.aim or in.held2;
         },
         .bell => out.ring = out.ring or in.press1,
         .shield => {
@@ -6128,11 +6164,8 @@ fn collideActors(g: *Game, dt: f32) void {
     }
 }
 
-/// n² inside the group, every frame, no distance gate: 24 bodies is 552 `pushOut`, but `MAX_PER_KIND` is 512
-/// and 512 in one group is 261,632 pairs a frame, about a millisecond.
-///
-/// `bodyOf(o)` MAY NOT BE HOISTED OUT OF THE INNER LOOP: `a.pos` is written at the END of each outer pass, so
-/// body i settles against 0..i-1 at their NEW positions — Gauss-Seidel, not Jacobi.
+/// n² inside the group, every frame, no distance gate: `MAX_PER_KIND` is 512, and 512 in one group is 261,632 pairs a frame, about a millisecond.
+/// `bodyOf(o)` MAY NOT BE HOISTED OUT OF THE INNER LOOP: `a.pos` is written at the END of each outer pass, so body i settles against 0..i-1 at their NEW positions — Gauss-Seidel, not Jacobi.
 fn settleGroup(g: *Game, comptime gr: FoeGroup, step: f32) void {
     const foes = @field(g, gr.field).live();
     for (foes, 0..) |*a, i| {
@@ -6434,7 +6467,6 @@ fn cycleLock(g: *Game, dir: f32) void {
 
 fn resetFoes(g: *Game) void {
     rehomeFoes(g, .blind);
-    // Dying respawns the field. It does NOT raise a boss — `rehomeFoes` calls `T.spawn` on every group.
     applyBosses(g);
     clearQuivers(g);
     g.lock = null;
@@ -6455,6 +6487,8 @@ fn dropRunHud(g: *Game) void {
     g.spiritHp = 0;
     hud_.dropBossBars();
     hud_.dropSpiritFace();
+    hud_.dropStatusFlash();
+    hud_.dropVitalsChip();
 }
 
 const HURT_BAR_WINDOW = 5.0;
@@ -6562,9 +6596,7 @@ test "the editor's re-home stamp trips on every edit a placed body can take, and
     try std.testing.expectEqual(at0, foePlacementStamp(m));
 }
 
-// The CEILING, not the live figure: `markWays` asks only the bodies whose `navWant` is non-null, and this asks
-// every placed one. At ~0.9 us a body it is the dearest walk in the loop by 50x — `orders` is 0.015 — because
-// each ask is a `walkStep` plus two `blockedNear` against the prop grid, and the fan is ten more of those.
+// The CEILING, not the live figure: `markWays` asks only the bodies whose `navWant` is non-null. At ~0.9 us a body it is the dearest walk in the loop by 50x — each ask is a `walkStep` plus two `blockedNear` against the prop grid, and the fan is ten more.
 test "WHAT THE WAY-FINDING COSTS A FRAME — every placed body asking the prop grid for a way past it" {
     const ta = std.testing.allocator;
     const m = try ta.create(worldfmt.Map);
@@ -6576,8 +6608,6 @@ test "WHAT THE WAY-FINDING COSTS A FRAME — every placed body asking the prop g
     e.* = .{ .ground = undefined, .models = undefined };
     e.materialize(m);
 
-    // The straight ray is the common case and the fan is the expensive one, so ask off the real placements
-    // rather than open ground: a body standing in a thicket is what fans.
     const BODY_R: f32 = 0.42;
     var navs: [worldfmt.MAX_FOES]foemod.Nav = undefined;
     @memset(navs[0..m.nfoes], foemod.Nav{});
@@ -6607,13 +6637,11 @@ test "THE TITLE TRACK SWELLS IN AND IS GONE BEFORE THE WORLD IS — both ends of
     while (k < 1.0 and t < 60) : (t += dt) k = introRamp(k, true, dt);
     try std.testing.expectApproxEqAbs(INTRO_FADE_IN, t, 2 * dt);
 
-    // …and from full, the way out has to be short: it runs while the world is coming up behind it.
     var out: f32 = 0;
     while (k > 0 and out < 60) : (out += dt) k = introRamp(k, false, dt);
     try std.testing.expectApproxEqAbs(INTRO_FADE_OUT, out, 2 * dt);
     try std.testing.expect(out * 4 < t);
 
-    // Leaving the boot screen part-way up never strands it: the way down is a RATE, so it is always shorter.
     k = introRamp(0, true, 1.0);
     var quick: f32 = 0;
     while (k > 0 and quick < 60) : (quick += dt) k = introRamp(k, false, dt);

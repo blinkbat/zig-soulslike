@@ -158,7 +158,6 @@ pub const LIT_YAW: f32 = 53.0;
 comptime {
     if (LIT_YAW != game.BOOT_YAW_MID) @compileError("shots: LIT_YAW and game.BOOT_YAW_MID are one bearing");
 }
-/// DERIVED (`camera.backDir` at pitch 0). Hand-rounded it was already 0.45° out, so moving `LIT_YAW` left every "lit" framing in the file pointing the old way.
 pub const LIT_BACK = v3(-mathx.sinf(mathx.radians(LIT_YAW)), 0, -mathx.cosf(mathx.radians(LIT_YAW)));
 
 fn along(from: rl.Vector3, dir: rl.Vector3, m: f32) rl.Vector3 {
@@ -233,7 +232,6 @@ fn shootClear(g: *Game, name: [:0]const u8, yaw: f32, pitch: f32, dist: f32) voi
     g.rig.yaw = mathx.radians(yaw);
     g.rig.pitch = pitch;
     g.rig.dist = dist;
-    // A framing is solved fresh: the eased boom is for a moving frame, and a shot has no previous one.
     g.rig.eased = -1;
     g.rig.followClear(g.hero.shoulderPoint(), game.camFloor(g), game.CamFloor.at, 0);
     shoot(g, name);
@@ -386,7 +384,6 @@ pub fn runMapShots(g: *Game) void {
     std.debug.print("MAP SHOTS: {d} body(s) into " ++ DIR_MAP ++ "/\n", .{n});
 }
 
-/// a ring, every one shot from **yaw 53** — the bearing that puts `gfx.SUN_DIR` over the camera's shoulder.
 pub fn runLandShots(g: *Game) void {
     std.fs.cwd().makePath(DIR_LAND) catch {};
     g.drawDt = SETTLE_DT;
@@ -425,8 +422,6 @@ pub fn runLandShots(g: *Game) void {
         shootAt(g, name, aim, LIT_YAW, 0.16, 13.0);
     }
     var frames: usize = 1 + ring.len;
-    // THE CLIFF BENCH gets its faces framed: the mesa with the flight, the pool face, the rim from above and
-    // the painted stair terrace — which is what the saw of dark teeth in the rim frame turned out to be.
     if (std.mem.startsWith(u8, stem, "test_cliff")) {
         const faces = [_]struct { tag: []const u8, hx: f32, hz: f32, ax: f32, az: f32, up: f32, yaw: f32, pitch: f32, dist: f32 }{
             .{ .tag = "face", .hx = 5.0, .hz = -4.0, .ax = 11.5, .az = -7.0, .up = 3.0, .yaw = 78, .pitch = 0.10, .dist = 17.0 },
@@ -447,8 +442,6 @@ pub fn runLandShots(g: *Game) void {
         }
         frames += faces.len;
     }
-    // THE SHIPPED MAP'S OWN FACE: the north-west basin lip, 13.25 m of it, from the basin floor and from
-    // the rim. It is the only painted cliff outside the bench and the only one at a 2.51 m cell.
     if (std.mem.startsWith(u8, stem, "01_")) {
         const basin = [_]struct { tag: []const u8, hx: f32, hz: f32, ax: f32, az: f32, up: f32, yaw: f32, pitch: f32, dist: f32 }{
             .{ .tag = "basinface", .hx = 124, .hz = -26, .ax = 124, .az = -39, .up = 7.0, .yaw = 180, .pitch = 0.10, .dist = 24.0 },
@@ -476,9 +469,7 @@ fn stageOn(tag: []const u8) bool {
     return std.mem.indexOf(u8, tag, onlyStage) != null;
 }
 
-/// **THE RIG ARRANGES ITS OWN KIT.** A fresh run is a sword, a buckler and three flasks (`game.STARTING_KIT`),
-/// so the spell screens had nothing to list and the staged casts had nothing to throw. The harness
-/// photographs the whole surface, not a first hour, so it grants itself every scroll here.
+/// THE RIG ARRANGES ITS OWN KIT. A fresh run is a sword, a buckler and three flasks (`game.STARTING_KIT`), so the harness grants itself every scroll here.
 fn harnessKit(g: *Game) void {
     for (combat.SPELLS) |row| {
         const scroll = combat.spellScroll(row.spell);
@@ -504,7 +495,7 @@ pub fn runShots(g: *Game) void {
     g.drawDt = SETTLE_DT;
     g.menu.screen = .closed;
     g.retro.allOff();
-    // THE HOUR IS PINNED AND THE CLOCK IS STOPPED. Every frame below is framed off the sun's bearing (`LIT_YAW`) and the palette was measured against that one light.
+    // THE HOUR IS PINNED AND THE CLOCK IS STOPPED: every frame below is framed off the sun's bearing (`LIT_YAW`), and the palette was measured against that one light.
     game.pinHourForShot(g, game.daynight.SHOT_HOUR);
 
     g.hero.pos = mathx.ground(0, 26);
@@ -538,7 +529,6 @@ pub fn runShots(g: *Game) void {
         .{ .tag = "b", .adv = 7, .yaw = 270 },
         .{ .tag = "c", .adv = 5, .yaw = 180 },
     }) |hp| {
-        // Re-planted on open ground each time: at a 2.4 m boom the camera is inside whatever he has walked past.
         standHero(g, 2.0, -18.0, std.math.pi);
         var k: i32 = 0;
         while (k < hp.adv) : (k += 1) stepWorld(g, dt, heromod.RUN_SPEED);
@@ -629,7 +619,6 @@ pub fn runShots(g: *Game) void {
     g.rig.follow(jumpGround);
     shoot(g, "shots/9d_jump_land.png");
 
-    // **THE THROW, BESIDE THE JUMP IT IS MEASURED AGAINST** (`hero.startLaunch`).
     g.hero.pos = mathx.ground(0, 0);
     g.hero.facing = 0;
     g.hero.clearForShot();
@@ -708,7 +697,6 @@ pub fn runShots(g: *Game) void {
     advanceAttack(g, dt, 999);
     g.menu.hitboxes = false;
 
-    // Yaw 53 puts the sun over the lens's shoulder.
     const meleeWorn = g.hero.worn;
     g.rig.yaw = mathx.radians(53);
     g.rig.pitch = 0.13;
@@ -807,7 +795,6 @@ pub fn runShots(g: *Game) void {
     }
 
     {
-        // Started COLD, from no guard at all: L2 is the shield's own skill and never asks whether the boards were already up.
         var k: i32 = 0;
         while (k < 30) : (k += 1) stepWorld(g, dt, 0);
         g.hero.pos = mathx.ground(0, 4);
@@ -910,7 +897,6 @@ pub fn runShots(g: *Game) void {
         k = 0;
         while (k < 7) : (k += 1) game.stepShaftsForShot(g, dt);
         shootPortrait(g, "shots/20n_bow_shaft.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.06, 6.0);
-        // In the SAME framing as the plain shaft above so the two are comparable, then cropped onto the head: the flame wad is 10 cm of the frame at 6 m.
         game.clearShaftsForShot(g);
         game.shootShaftForShot(g, SHOT_DOWNRANGE, .fire);
         k = 0;
@@ -994,7 +980,6 @@ pub fn runShots(g: *Game) void {
         game.throwBoltForShot(g, SHOT_DOWNRANGE);
         k = 0;
         while (k < 9) : (k += 1) game.stepShaftsForShot(g, dt);
-        // Framed on the BOLT, not on him: at 30 m/s it has already left any framing that tracks the caster.
         if (game.flyingPointForShot(g, .bolt)) |at| {
             shootPortrait(g, "shots/20zd_wand_bolt.png", at, LIT_YAW + 78, 0.06, 5.0);
             shootPortrait(g, "shots/20ze_wand_bolt_head.png", at, LIT_YAW + 20, 0.04, 1.1);
@@ -1461,7 +1446,6 @@ pub fn runShots(g: *Game) void {
             shootClear(g, "shots/47d_ogre_lock.png", LIT_YAW, 0.10, 6.4);
             g.lock = null;
         }
-        // Scale — the hero standing clearly to the ogre's side (it looms ~1.9x over him).
         g.hero.pos = mathx.ground(oc.x + 4.8, oc.z + 1.4);
         g.hero.facing = mathx.headingXZ(mathx.subV(oc, g.hero.pos));
         g.hero.update(dt, 0, 0, null);
@@ -1539,7 +1523,6 @@ pub fn runShots(g: *Game) void {
         o.stagger(true);
         stepFoe(o, 42, far);
         shootFoe(g, o, "shots/53_ogre_stagger.png", 50, 0.10, 13.0);
-        // STAGGERED OUT OF A RAISED CLUB: interrupted at the top of a windup the posture channels have 163 degrees of shoulder to unwind, and at four degrees a second he reels with the club still overhead.
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
         o.debugSlam();
         stepFoe(o, 64, far);
@@ -1682,7 +1665,6 @@ pub fn runShots(g: *Game) void {
         var g4: i32 = 0;
         while (sling.state != .bite and g4 < 600) : (g4 += 1) _ = sling.update(SHOT_DT, side, game.PLAY_HALF, .{});
         stepFoe(sling, 4, side);
-        // …CENTRED (`shootPortrait`), not `shootFoe`: the rig's shoulder offset is 0.55 m against a 1.3 m subject.
         shootPortrait(g, "shots/69d_kobold_bite_coil.png", sling.centerWorld(), LIT_YAW, 0.06, 4.4);
         stepFoe(sling, 6, side);
         shootPortrait(g, "shots/69c_kobold_bite_side.png", sling.centerWorld(), LIT_YAW, 0.06, 4.4);
@@ -1778,7 +1760,6 @@ pub fn runShots(g: *Game) void {
         shootAt(g, "shots/73_chapel_outside.png", mathx.ground(-30, -66), 270, 0.22, 17.0);
         standHero(g, -29.6, -66.0, -std.math.pi * 0.5);
         shootAt(g, "shots/74_chapel_torchlit.png", v3(-30.7, 1.4, -66.0), 270, 0.05, 4.4);
-        // …and closer on the altar itself, still outside its 1.25 m half-depth.
         standHero(g, -30.6, -66.0, -std.math.pi * 0.5);
         shootAt(g, "shots/75_chapel_altar.png", v3(-32.6, 1.0, -66.0), 270, 0.10, 4.8);
 
@@ -1840,7 +1821,6 @@ pub fn runShots(g: *Game) void {
         const trunk = g.env.nearestFading(v3(-118.0, 0, -14.0), 600.0);
         must(trunk != null, "no fadeable prop in the world to stand behind");
         const tp = trunk.?;
-        // Him 2.4 m the far side of the trunk on a 7 m boom: any longer and the camera is up inside the canopy, photographing foliage.
         standHero(g, tp.x - LIT_BACK.x * 2.4, tp.z - LIT_BACK.z * 2.4, mathx.radians(LIT_YAW + 180.0));
         shootAt(g, "shots/93_occlude_fade.png", g.hero.shoulderPoint(), LIT_YAW, 0.06, 7.0);
         g.retro.values = gfx.RETRO_DEFAULTS;
@@ -1869,7 +1849,6 @@ pub fn runShots(g: *Game) void {
         shootAt(g, "shots/155_mist_bank.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 22.0);
         game.forceFogForShot(g, false);
 
-        // Aimed AT the skein, because the point of the frame is whether a speck 70 m up reads as a bird.
         game.forceSkeinForShot(g, mathx.radians(24.0));
         stepWorld(g, dt, 0);
         shootAt(g, "shots/157_birds.png", v3(g.hero.pos.x, g.hero.pos.y + 26.0, g.hero.pos.z), LIT_YAW, -0.52, 26.0);
@@ -1878,7 +1857,7 @@ pub fn runShots(g: *Game) void {
         shootAt(g, "shots/157a_birds_across.png", game.skeinLeadForShot(g), LIT_YAW, -0.30, 46.0);
         game.forceSkeinForShot(g, mathx.radians(38.0));
         stepWorld(g, dt, 0);
-        // they are the thing under test. The camera yaw is the back-bearing, so it is the look bearing plus 180.
+    // The camera yaw is the back-bearing, so it is the look bearing plus 180.
         const toFlock = mathx.headingXZ(mathx.dirXZ(g.hero.pos, game.skeinLeadForShot(g)));
         shootAt(g, "shots/157b_birds_resting.png", g.hero.shoulderPoint(), mathx.degrees(toFlock) + 180.0, camera.DEFAULT_PITCH, camera.DEFAULT_DIST);
     }
@@ -2182,7 +2161,6 @@ fn warriorShots(g: *Game) void {
     const kneelAt = v3(sm.pos.x, sm.pos.y + 0.55, sm.pos.z);
     shootPortrait(g, "shots/113h_shield_kneel.png", kneelAt, LIT_YAW + 12, 0.02, 4.0);
     shootPortrait(g, "shots/113i_shield_kneel_side.png", kneelAt, LIT_YAW + 66, 0.02, 4.0);
-    // 0.95·H centre — it stayed standing while the man went down — so the wire goes on the KNEEL and not the idle.
     g.menu.hitboxes = true;
     shootPortrait(g, "shots/113h2_shield_kneel_hurt.png", kneelAt, LIT_YAW + 66, 0.02, 4.2);
     g.menu.hitboxes = false;
@@ -2461,7 +2439,6 @@ pub const NIGHT_HOUR: f32 = 1.5;
 
 fn necroShots(g: *Game) void {
     game.clearFoesForShot(g);
-    // too: the first pass staged this at (-46, 4) and put the camera inside a ruin wall.
     const sc = v3(-30.0, game.envGroundAt(&g.env, -30.0, 24.0), 24.0);
     const far = along(sc, LIT_BACK, 100.0);
     const faceCam = mathx.headingXZ(LIT_BACK);
@@ -2480,7 +2457,6 @@ fn necroShots(g: *Game) void {
     }.secs;
     const stand = standSettled;
 
-    // **THE STANDING PORTRAIT.** Framed on the CHEST rather than the middle, because on a rig 2.4 m tall
     spawn(k, sc, faceCam);
     stand(g, sc.x, sc.z - 6.0, 0);
     stepFoe(k, 30, far);
@@ -2498,7 +2474,6 @@ fn necroShots(g: *Game) void {
     body.* = warriormod.Warrior.spawnAs(.greatsword, along(sc, LIT_BACK, -2.6), faceCam, 1.0, 0.3);
     body.pos.y = game.envGroundAt(&g.env, body.pos.x, body.pos.z);
     body.debugKill();
-    // at `DEATH_DUR`, so stamping the hold afterwards froze it 14% dissolved and slightly shrunk.
     body.heldOpen = true;
     stepFoe(body, @as(i32, @intFromFloat(archermod.DEATH_DUR / SHOT_DT)) + 8, far);
     k.vigil.at = body.pos;
@@ -2521,7 +2496,6 @@ fn necroShots(g: *Game) void {
     stand(g, sc.x, sc.z - 9.0, 0);
     k.debugLay(g.hero.pos);
     run(k, FUSE_AT, g.hero.pos);
-    // Back and UP far enough to hold the WHOLE ring: at 5.6 m the rim ran off three sides of the frame.
     shootAt(g, "shots/123f_necro_sigil.png", v3(g.hero.pos.x, g.hero.pos.y + 0.35, g.hero.pos.z), LIT_YAW, 0.60, 10.5);
 
     run(k, (necromod.FROST_FUSE - FUSE_AT) + 0.06, g.hero.pos);
@@ -2596,7 +2570,6 @@ fn knightShots(g: *Game) void {
     const sc = mathx.ground(3.0, -60.0);
     const far = along(sc, LIT_BACK, 120.0);
     const faceCam = mathx.headingXZ(LIT_BACK);
-    // Rail 0 is the knight's row in `game.BOSS_RAILS`; the bar is per-rail now, not one scalar.
     g.bossK[0] = 1.0;
     g.vigil.n = 1;
     const k = &g.vigil.knights[0];
@@ -2612,7 +2585,6 @@ fn knightShots(g: *Game) void {
         }
     }.secs;
 
-    // attacks anything staged inside its own bands. Turned 42 deg off the lens so the door foreshortens.
     spawn(k, sc, mathx.headingXZ(mathx.headingDir(mathx.headingXZ(LIT_BACK) + mathx.radians(42.0))));
     standHero(g, far.x, far.z, mathx.radians(LIT_YAW + 180));
     stepFoe(k, 30, far);
@@ -2733,8 +2705,6 @@ fn knightShots(g: *Game) void {
     k.debugCharge();
     run(k, chg.wind + 1.0, farHero);
     shootAt(g, "shots/121o_knight_charge.png", v3(k.pos.x, sc.y + 2.4, k.pos.z), LIT_YAW, 0.14, 13.0);
-    // …and the SKID. A FRESH, SHORTER run: chasing the 16 m hero to the travel's end parks him inside the
-    // cliffs east of the court. A hero 7 m out is a 9.6 m line (the overrun), ~1.44 s of travel; +0.30
     const skidWay = across2 + std.math.pi;
     const skidHero = along(sc, mathx.headingDir(skidWay), 7.0);
     spawn(k, sc, skidWay);
@@ -2742,7 +2712,6 @@ fn knightShots(g: *Game) void {
     run(k, chg.wind + 1.74, skidHero);
     shootAt(g, "shots/121o2_knight_charge_skid.png", v3(k.pos.x, sc.y + 2.2, k.pos.z), LIT_YAW, 0.14, 12.0);
 
-    // THE FALL, all five beats, SHOT IN PROFILE FROM ABOVE, stood across the lens at 90 deg off `LIT_BACK`.
     const across = mathx.headingXZ(LIT_BACK) + mathx.radians(90.0);
     const backDir = mathx.scaleV(mathx.headingDir(across), -1);
     const behind = along(sc, backDir, 3.6);
@@ -2804,8 +2773,7 @@ fn knightDoorShots(
     g.bossK[0] = bossWas;
 }
 
-/// The boom is solved against the ARC, not picked: `lift` is the measured mid of the whole stroke. At 13-15 m
-/// the four strokes filled 40% of a frame aimed a metre over where the action had moved to.
+/// The boom is solved against the ARC, not picked: `lift` is the measured mid of the whole stroke.
 const STRIP_FILL: f32 = 1.0 / 1.30;
 const KNIGHT_STRIP = [_]struct { i: usize, tag: []const u8, pitch: f32, dist: f32, lift: f32 }{
     .{ .i = knightmod.SWEEP_I, .tag = "x", .pitch = 0.20, .dist = 8.5, .lift = 2.53 },
@@ -2823,8 +2791,6 @@ fn knightStrokeStrips(
     const k = &g.vigil.knights[0];
     const across = mathx.headingXZ(LIT_BACK) + mathx.radians(90.0);
     const side = along(sc, mathx.headingDir(across), 4.2);
-    // **THE FRAMES ARE SPENT WHERE THE MOTION IS, NOT SPREAD EVENLY OVER THE MOVE.** The sweep is 1.15 s of
-    // wind and 0.42 s of strike, so an even walk lands most frames in the wind and one in the stroke.
     const NW = 2;
     const NS = 6;
     inline for (KNIGHT_STRIP) |st| {
@@ -3161,8 +3127,7 @@ fn chestShots(g: *Game) void {
     op.kind = .chest;
     op.x = cx;
     op.z = cz;
-    // Derived, not guessed: `drawModelEx` turns about +Y, sending local +Z to (sin yaw, 0, cos yaw), and
-    // the camera at yaw 53 sits toward (−0.794, 0, −0.608).
+    // Derived, not guessed: `drawModelEx` turns about +Y, sending local +Z to (sin yaw, 0, cos yaw), and the camera at yaw 53 sits toward (−0.794, 0, −0.608).
     op.yaw = 233;
     op.loot[0] = .golden_seed;
     op.loot[1] = .rune_arc;
@@ -3200,7 +3165,6 @@ fn chestShots(g: *Game) void {
         if (item.wearable(k) and g.bag.count(k) == 0) g.bag.add(k, 1);
         if (item.usable(k) and !item.isFlask(k) and g.bag.count(k) == 0) g.bag.add(k, 3);
     }
-    // …AND EVERY SORCERY SCROLL, or the spell page photographs seven dimmed rows and says 0 of 7 carried.
     for (combat.SPELLS) |row| {
         if (g.bag.count(row.scroll) == 0) g.bag.add(row.scroll, 1);
     }
@@ -3210,7 +3174,6 @@ fn chestShots(g: *Game) void {
     bookShot(g, "shots/106f3_book_bell.png", .equipment, bookmod.slotOrdinal(.right), bookmod.slotOrdinal(.right), 2);
     bookShot(g, "shots/106f2_book_quickbar.png", .equipment, bookmod.slotOrdinal(.q2), bookmod.slotOrdinal(.q2), 3);
     bookShot(g, "shots/106g_book_inventory.png", .inventory, 0, null, 0);
-    // staged at cursor 0 shows the oldest twenty rows and nothing else.
     bookShot(g, "shots/106g2_book_inventory_p2.png", .inventory, item.NK - 1, null, 0);
     bookShot(g, "shots/106g3_book_longest_row.png", .inventory, bagOrdinalOf(g, .envenomed_dagger), null, 0);
     bookShot(g, "shots/106h_book_stats.png", .stats, @intFromEnum(stats.Attr.endurance), null, 0);
@@ -3477,8 +3440,6 @@ fn editorShots(g: *Game) void {
     editorSnap(g, "shots/95h_editor_options.png");
     g.editor.closeModalForShot();
 
-    // The item modal on its deepest shelf: the tabs, the rows, what the map holds elsewhere, and the gold
-    // stepper all in one frame, because that is where they were overlapping.
     if (g.editor.lootForShot(&g.map, .consumable)) {
         editorSnap(g, "shots/95k_editor_items.png");
         _ = g.editor.lootForShot(&g.map, .armament);
@@ -3698,7 +3659,6 @@ fn elevationShots(g: *Game) void {
         g.hero.update(SHOT_DT, heromod.WALK_SPEED * SHOT_DT, heromod.WALK_SPEED, mathx.radians(215));
         g.hero.pose();
     }
-    // PITCHED WELL DOWN: a camera behind a hero on a 34 deg slope looks INTO a rising wedge of ground.
     shootClear(g, "shots/102_hill_climb.png", 215, 0.62, 8.0);
     g.menu.stats = true;
     shootClear(g, "shots/103_hill_stats.png", 215, 0.62, 8.0);
@@ -3712,7 +3672,6 @@ fn elevationShots(g: *Game) void {
     g.editor.setLayer(.ground);
     g.editor.brush[@intFromEnum(editormod.Layer.ground)] = @intFromEnum(editormod.GroundBrush.raise);
     g.editor.radius = 14;
-    // The focus rides the GROUND: left at y = 0 over an 11 m ridge it aims inside the hill, and the eye
     g.editor.focus = v3(-30, g.env.groundAt(-30, -8), -8);
     g.editor.pitch = -0.42;
     g.editor.yaw = 2.5;
@@ -3776,14 +3735,12 @@ fn wolfShots(g: *Game) void {
     g.hero.arm = .bell;
     standHero(g, 6.0, 4.0, std.math.pi * 0.5);
     plantHeroForShot(g);
-    // THE BELL IN HIS HAND, close and at the sun's own bearing — a 9 cm object at 4 m is the thin-geometry
     const chest = v3(g.hero.pos.x, game.heroCenterY(g), g.hero.pos.z);
     shootPortrait(g, "shots/130_bell_carry.png", chest, 53, 0.06, 2.2);
     game.ringForShot(g, heromod.RING_AT);
     shootPortrait(g, "shots/131_bell_ring.png", chest, 53, 0.06, 2.4);
 
     const at = mathx.ground(9.0, 4.0);
-    // you cannot see. Gait shots are yaw 90, so it stands at 0.
     game.callWolfForShot(g, at, 0);
     game.poseWolfForShot(g, 0, 0);
     shootAt(g, "shots/132_wolf_stand.png", at, 53, 0.10, 3.4);
@@ -3799,7 +3756,6 @@ fn wolfShots(g: *Game) void {
         game.poseWolfForShot(g, wolfmod.TROT_SPEED, ph);
         shootAt(g, nm, at, 90, 0.05, 3.4);
     }
-    // The GALLOP is a different creature — duty factor under 0.5.
     game.poseWolfForShot(g, wolfmod.GALLOP_SPEED, 0.25);
     shootAt(g, "shots/135_wolf_gallop.png", at, 90, 0.05, 3.8);
     game.poseWolfGatherForShot(g, 0.5);
@@ -3826,15 +3782,11 @@ const itemart = @import("ui/itemart.zig");
 const uimod = @import("ui/ui.zig");
 const DIR_ART = DIR ++ "/art";
 
-/// **THE WHOLE 2D SET ON CONTACT SHEETS** — every editor glyph at the 18 px it is drawn at and at 3x, every item
-/// A CONTACT-SHEET CAPTION IS UNDER THE TYPE SCALE, so it is named here rather than typed at four call sites.
-/// `hud.TINY` is 16 and would not fit the cell; the tight one is the 12-column item row.
+/// A CONTACT-SHEET CAPTION IS UNDER THE TYPE SCALE: `hud.TINY` is 16 and would not fit the cell; the tight one is the 12-column item row.
 const SHEET_CAP: i32 = 14;
 const SHEET_CAP_TIGHT: i32 = 13;
 
-/// Every editor glyph at the 18 px it is drawn at and at 3x, every item
-/// picture at its 34 px bag cell and at a plate size, the spells, the ailments and the pad kit. No world, no
-/// camera: `--shot-art` is the one harness that can judge a glyph set as a set.
+/// Every editor glyph at the 18 px it is drawn at and at 3x, every item picture at its 34 px bag cell and at a plate size, the spells, the ailments and the pad kit. No world, no camera.
 pub fn runArtShots(g: *Game) void {
     _ = g;
     std.fs.cwd().makePath(DIR_ART) catch {};
@@ -3852,7 +3804,6 @@ pub fn runArtShots(g: *Game) void {
         }
     };
 
-    // Editor glyphs at real size, in the button they actually sit in.
     {
         sheet.begin();
         const cols: usize = 5;
@@ -3869,7 +3820,6 @@ pub fn runArtShots(g: *Game) void {
         }
         snap(DIR_ART ++ "/00_icons_18.png");
     }
-    // …and at 3x, where the construction can be read.
     {
         sheet.begin();
         const cols: usize = 10;

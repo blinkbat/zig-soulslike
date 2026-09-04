@@ -72,7 +72,7 @@ pub fn blockerAt(p: rl.Vector3, margin: f32, solids: []const Solid) ?Surface {
     return null;
 }
 
-// A LOOK IS A SEGMENT, AND IT IS TESTED EXACTLY. An arrow's flight is walked in steps because it is a path being simulated anyway (`archer.coverHit`); a sight line is one question, and sampling it would mean either a step fine enough to cost real time over 20 m or a step a fence post fits through.
+// A LOOK IS A SEGMENT, AND IT IS TESTED EXACTLY: sampling it would mean either a step fine enough to cost real time over 20 m or a step a fence post fits through.
 
 fn segDistXZ(a0: rl.Vector3, a1: rl.Vector3, b0: rl.Vector3, b1: rl.Vector3) f32 {
     if (segsCrossXZ(a0, a1, b0, b1)) return 0;

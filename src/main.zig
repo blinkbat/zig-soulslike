@@ -14,7 +14,7 @@ pub fn main() void {
     defer std.process.argsFree(alloc, argv);
 
     if (argv.len >= 2 and std.mem.eql(u8, argv[1], "--bake")) {
-        runBake(alloc) catch |e| {
+        runBake(alloc, hasArg(argv, "--force")) catch |e| {
             std.debug.print("bake FAILED: {s}\n", .{@errorName(e)});
             std.process.exit(1);
         };
@@ -75,7 +75,18 @@ fn hasArg(argv: []const [:0]u8, want: []const u8) bool {
     return false;
 }
 
-fn runBake(alloc: std.mem.Allocator) !void {
+/// THE DOOR IS ONE-WAY AND IT HAS BEEN WALKED THROUGH: the bake emits the ORIGINAL code-authored regions over `START_MAP`, so run today it throws away every op the editor has put there since. `wf.save`'s trap is `is_test` only, so this flag refuses a map that already exists.
+fn runBake(alloc: std.mem.Allocator, force: bool) !void {
+    if (!force) {
+        if (std.fs.cwd().access(wf.START_MAP, .{})) |_| {
+            std.debug.print(
+                "bake REFUSED: {s} already exists, and baking replaces it with the code-authored map.\n" ++
+                    "  Move it aside, or pass --force if that is really what you want.\n",
+                .{wf.START_MAP},
+            );
+            return error.PathAlreadyExists;
+        } else |_| {}
+    }
     const m = try alloc.create(wf.Map);
     defer alloc.destroy(m);
     bake.build(m);
@@ -107,9 +118,7 @@ fn runFixLurkers(alloc: std.mem.Allocator, path: []const u8) !void {
     e.* = .{ .ground = undefined, .models = undefined };
     const moved = env.Env.digPools(m, 5.0);
     e.uploadWater(m);
-    e.heightField = m.height;
-    e.heightHalf = m.half;
-    e.heightAny = m.anyHeight();
+    e.adoptHeight(m);
     for (m.foes[0..m.nfoes]) |f| {
         if (f.kind != .fen_lurker) continue;
         std.debug.print("  fen lurker at {d:.2} {d:.2}: {d:.3} m of water\n", .{ f.x, f.z, e.wadeDepth(f.x, f.z) });

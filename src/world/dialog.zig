@@ -56,9 +56,7 @@ pub const Input = struct {
     pick: ?usize = null,
 };
 
-/// **THE PLATE'S HEIGHT, IN THE ORDER THE DRAW WALKS IT** — one pass ahead of the other, so a row added below
-/// cannot silently overflow a box laid out for the row count before it. Its own function so the fit can be
-/// MEASURED with no window open: what a counter's greeting costs is arithmetic, not a screenshot.
+/// THE PLATE'S HEIGHT, IN THE ORDER THE DRAW WALKS IT — one pass ahead of the other, so a row added below cannot silently overflow a box laid out for the row count before it. Its own function so the fit can be MEASURED with no window open.
 pub fn plateNeed(named: bool, nlines: usize, nchoices: usize, portrait: bool) i32 {
     const bodyH = hud.lineH(hud.BODY);
     const rowStep = bodyH + ROW_GAP;
@@ -202,7 +200,7 @@ pub const Session = struct {
 
         const x = SIDE_MARGIN;
         const wpx = sw - SIDE_MARGIN * 2;
-        // THE PICTURE TAKES ITS COLUMN OUT OF THE PROSE'S: the wrap is measured against what is LEFT, so a portrait cannot push a line past the frame. …AND IT IS DROPPED ENTIRELY RATHER THAN STARVING THE WORDS — without that, the wrap gets a negative width and the plate a negative-sided rectangle.
+        // THE PICTURE TAKES ITS COLUMN OUT OF THE PROSE'S: the wrap is measured against what is LEFT. …AND IT IS DROPPED ENTIRELY RATHER THAN STARVING THE WORDS — without that the wrap gets a negative width and the plate a negative-sided rectangle.
         const room = wpx - PAD * 2 - (PORT_W + PORT_GAP) >= PROSE_MIN_W;
         const showPort = port != null and room;
         const portCol: i32 = if (showPort) PORT_W + PORT_GAP else 0;
@@ -244,7 +242,7 @@ pub const Session = struct {
             cy += RULE_GAP;
         }
 
-        // THE FOOTER IS THE FLOOR EVERYTHING INSIDE THE PLATE IS MEASURED AGAINST — the prose as much as the rows. `need` asked for the height it wanted and `MAX_FRAC` may have refused it on a short window, and a line that will not fit is not drawn OUTSIDE the plate.
+        // THE FOOTER IS THE FLOOR EVERYTHING INSIDE THE PLATE IS MEASURED AGAINST, the prose as much as the rows: `MAX_FRAC` may have refused the height `need` asked for, and a line that will not fit is not drawn OUTSIDE the plate.
         const footer = y + hpx - PAD - hud.lineH(hud.HINT);
         const rowsH: i32 = if (shown.len > 0) RULE_GAP * 2 + @as(i32, @intCast(shown.len)) * rowStep else 0;
         const proseFloor = footer - rowsH;
@@ -274,7 +272,7 @@ pub const Session = struct {
         var hints: [2]hud.Hint = undefined;
         var n: usize = 0;
         if (shown.len > 0) {
-            hints[n] = .{ .glyph = .{ .dpad = .updown }, .label = "Choose" };
+            hints[n] = hud.HINT_CHOOSE;
             n += 1;
         }
         hints[n] = .{ .glyph = .{ .face = hud.BTN_INTERACT }, .label = if (shown.len > 0) "Speak" else "Continue" };
@@ -476,7 +474,6 @@ test "A LINE THAT OPENS A STALL ASKS FOR IT ON THE FRAME IT IS PRESSED, and the 
 }
 
 test "THE PANEL FITS EVERY LINE IT WILL OFFER — the choices are what can be pressed, so they may not be clipped" {
-    // **MEASURED, NOT LOOKED AT.** `MAX_FRAC` of the window is the ceiling; a counter's greeting wraps to a few
     for ([_]i32{ 720, 800, 1009, 1440 }) |sh| {
         const cap = plateCap(sh);
         const bare = plateNeed(true, 0, wf.MAX_CHOICES, false);

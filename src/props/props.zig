@@ -738,9 +738,8 @@ pub const INFO = [NK]Info{
     .{ .kind = .torch, .build = fx.torchMesh, .bound = 2.6, .top = 2.35, .view = 200, .parts = circleParts(0.18, 2.0), .light = .{ .y = 1.98, .col = v3(0.64, 0.34, 0.13), .radius = 6.0, .flicker = 0.15 }, .surf = .metal },
     .{ .kind = .brazier, .build = fx.brazierMesh, .bound = 1.9, .top = 1.55, .view = 210, .parts = circleParts(0.50, 1.2), .light = .{ .y = 1.14, .col = v3(1.55, 0.84, 0.29), .radius = 16.0, .flicker = 0.13 }, .surf = .metal },
     .{ .kind = .campfire, .build = fx.deadCampfireMesh, .bound = 1.5, .top = 0.6, .view = 200, .parts = circleParts(0.45, 0.5), .surf = .stone },
-    // …AND ONE YOU CAN SIT AT. `interact` shelves it under the editor's Interactables layer; `rest.isRestKind` is what makes it a bonfire. `stow` for the bonfire's reason. `bound` is up from 1.5 to hold the rock and the instrument, which stand outside the ring of stones.
-    // **THE BOUND AND THE VIEW ARE THE SMOKE'S NOW, NOT THE STONES'.** At 2.6/1.1 the column was culled the moment
-    // the hearth left frame and the fire read as unlit from any distance; the bonfire's row is 7.2/5.4/300.
+    // …AND ONE YOU CAN SIT AT. `interact` shelves it under the editor's Interactables layer; `rest.isRestKind` is what makes it a bonfire.
+    // THE BOUND AND THE VIEW ARE THE SMOKE'S NOW, NOT THE STONES': at 2.6/1.1 the column was culled the moment the hearth left frame. The bonfire's row is 7.2/5.4/300.
     .{ .kind = .campfire_lit, .build = fx.campfireMesh, .veil = fx.campfireVeilMesh, .stow = fx.campfireGuitarMesh, .bound = 5.6, .top = 4.2, .view = 300, .interact = true, .solid = true, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(1.05, 0.52, 0.17), .radius = 13.0, .flicker = 0.18 } },
     .{ .kind = .water, .build = fx.waterMesh, .bound = 30.0, .top = 0.1, .view = FAR, .solid = true, .casts = false },
     .{ .kind = .tuft, .build = flora.tuftMesh, .bound = 0.9, .top = 0.8, .view = 85, .flora = true, .casts = false },
@@ -767,7 +766,7 @@ pub const INFO = [NK]Info{
     .{ .kind = .thicket, .build = flora.thicketMesh, .bound = 2.8, .top = 1.9, .view = 160, .flora = true, .casts = false },
     .{ .kind = .wildflowers, .build = flora.wildflowersMesh, .bound = 1.5, .top = 0.65, .view = 105, .flora = true, .casts = false },
     .{ .kind = .ivy, .build = flora.ivyMesh, .bound = 2.4, .top = 2.0, .view = 150, .flora = true, .casts = false },
-    // BOLE THEN CROWN, and it takes two blockers because one cylinder cannot be narrow at the foot and wide at the boughs. Sized off `bigTreeMesh`'s own numbers. The three specs differ enough to be worth rows of their own — bigtree2 is squat and broad, bigtree3 tall and narrow.
+    // BOLE THEN CROWN: one cylinder cannot be narrow at the foot and wide at the boughs. Sized off `bigTreeMesh`'s own numbers.
     .{ .kind = .bigtree, .build = wood.bigTree1, .bound = 13.5, .top = 11.0, .view = FAR, .parts = circleParts(0.95, 6.0), .occl = &.{ .{ .r = 1.30, .y1 = 5.0 }, .{ .r = 4.80, .y0 = 4.5, .y1 = 11.0 } }, .surf = .wood },
     .{ .kind = .bigtree2, .build = wood.bigTree2, .bound = 13.0, .top = 8.5, .view = FAR, .parts = circleParts(0.95, 5.0), .occl = &.{ .{ .r = 1.30, .y1 = 3.4 }, .{ .r = 5.40, .y0 = 3.2, .y1 = 8.5 } }, .surf = .wood },
     .{ .kind = .bigtree3, .build = wood.bigTree3, .bound = 14.0, .top = 13.5, .view = FAR, .parts = circleParts(0.90, 6.5), .occl = &.{ .{ .r = 1.25, .y1 = 5.6 }, .{ .r = 3.60, .y0 = 5.4, .y1 = 13.5 } }, .surf = .wood },
@@ -1029,8 +1028,7 @@ comptime {
 }
 
 test "ONLY LAVA IS A LIGHT — no other pool may come back off the top of the screen" {
-    // **SOLVE IT, DO NOT GUESS IT** (AGENTS.md). The fungal stew was authored at 168/92/62 albedo, which is
-    // 255/205/172 through the chain: past the clip on red, brighter on green and blue than lava's own crust,
+    // SOLVE IT, DO NOT GUESS IT (AGENTS.md): the fungal stew authored at 168/92/62 albedo is 255/205/172 through the chain — past the clip on red, and brighter on green and blue than lava's own crust.
     for (LIQUID_TONES[0 .. 3 * 3]) |tone| {
         for ([3]f32{ tone.x, tone.y, tone.z }) |ch| {
             try std.testing.expect(gfx.screenOf(ch * 255.0) < 250.0);

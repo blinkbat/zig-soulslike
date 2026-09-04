@@ -49,7 +49,7 @@ const FACE_AT = mathx.v3(0, 0.045 * H, 0.02 * H);
 pub const PORTRAIT_DIST: f32 = 0.86;
 const REST = heromod.restHumanoid(heromod.HIP_HALF, heromod.SHOULDER_HALF * 0.96, H);
 
-// SOLVED AGAINST THE RENDER, NOT PICKED. Every material sampled 30-36 on screen — a lit figure at the value of ground in SHADOW — where the hero spans 29-50 plus skin near 90: what separates a body is RANGE. On this sun albedo 40 comes back at 142 and 58 at 168, so the layering is on HUE (warm wool, COLD cloak).
+// SOLVED AGAINST THE RENDER, NOT PICKED: on this sun albedo 40 comes back at 142 and 58 at 168, so the layering is on HUE (warm wool, COLD cloak).
 const ROBE = rgba(50, 42, 33, 255);
 const ROBE_LT = rgba(68, 58, 45, 255);
 const ROBE_DK = rgba(30, 25, 20, 255);
@@ -72,8 +72,7 @@ const WOOD_LT = rgba(62, 46, 28, 255);
 const GOURD = rgba(98, 78, 44, 255);
 const IRON = rgba(44, 42, 40, 255);
 
-// Layered on HUE, spanning albedo 24 to 100 — 111 to 213 on screen:
-//   hide 72 -> 183    stripe 88 -> 201    indigo 34 -> 131    hump 38 -> 137    strap 24 -> 111
+// Layered on HUE, spanning albedo 24 to 100 — 111 to 213 on screen.
 const HIDE = rgba(78, 66, 46, 255);
 const HIDE_DK = rgba(48, 40, 30, 255);
 const HUMP = rgba(40, 34, 26, 255);
@@ -90,10 +89,7 @@ const BRASS = rgba(108, 82, 34, 255);
 
 const MERCH_NECK: f32 = 0.100 * H;
 
-// **AUTHOR DARK, AND SOLVE IT OFF THE CHAIN** (AGENTS.md): screen goes as (albedo x 1.72)^(1/2.2), so a big
-// palette here has had to cover. MEASURED down the chain — albedo 20 -> 103 on screen, 30 -> 123, 46 -> 150,
-// 72 -> 183, 104 -> 217:
-//     bark 30 -> 123 (warm)   heart 86 -> 199 (warm)   lichen 104 -> 217 (COLD green)   iron 30 -> 123
+// AUTHOR DARK, AND SOLVE IT OFF THE CHAIN (AGENTS.md): screen goes as (albedo x 1.72)^(1/2.2). MEASURED down the chain — albedo 20 -> 103 on screen, 30 -> 123, 46 -> 150, 72 -> 183, 104 -> 217.
 const BARKS = rgba(30, 25, 20, 255);
 const BARKS_DK = rgba(18, 15, 12, 255);
 const BARKS_LT = rgba(46, 38, 28, 255);
@@ -143,8 +139,7 @@ const HOLD_ABD: f32 = 15.0;
 const HAFT_LEN: f32 = 0.255 * H;
 const HEAD_R: f32 = 0.052 * H;
 
-/// Metres forward of the pin he is placed on, MEASURED off the posed rig at the bottom of the stroke: the head
-/// bottoms at 0.98 m up and 1.00 m out.
+/// Metres forward of the pin he is placed on, MEASURED off the posed rig: the head bottoms at 0.98 m up and 1.00 m out.
 pub const SMITH_ANVIL_Z: f32 = 1.00;
 
 pub const NKIND = @typeInfo(wf.NpcKind).@"enum".fields.len;
@@ -160,8 +155,7 @@ const Spec = struct {
     headFwd: f32,
     faceAt: rl.Vector3,
     top: f32,
-    /// **HE TRACKS YOU WITH HIS HEAD AND HIS BODY STAYS PUT** (owner). Degrees of neck; 0 turns the whole body
-    /// instead, which is what the wanderer and the caravaneer do.
+    /// HE TRACKS YOU WITH HIS HEAD AND HIS BODY STAYS PUT. Degrees of neck; 0 turns the whole body instead, which is what the wanderer and the caravaneer do.
     headTrack: f32 = 0,
     headDip: f32 = 0,
 };
@@ -214,7 +208,7 @@ const STAFF_EL = -34.0;
 const STAFF_ABD = 15.0;
 const STAFF_TILT = 8.0;
 const STAFF_PLANT_SH = 16.0;
-/// FIST → FERRULE. The wrist rides at 0.485·H and the pole is raked a few degrees off plumb, so this is that height less the rake's cost: longer and it drives through the floor and out the far side, which is what 0.66·H did.
+/// FIST → FERRULE. The wrist rides at 0.485·H and the pole is raked a few degrees off plumb, so this is that height less the rake's cost.
 const STAFF_LEN = 0.455 * H;
 const STAFF_UP = 0.32 * H;
 const STAFF_R = 0.020 * H;
@@ -362,8 +356,7 @@ pub const Wanderer = struct {
     gesture: Gesture = .none,
     gt: f32 = 0,
     beat: f32 = TALK_BEAT,
-    /// **THE SMITH'S STROKE, AS A REPEATING PHASE.** 0 is the hammer on the face, `HAMMER_RISE` is the top of
-    /// the raise. Nothing else has one and on every other kind it stays 0.
+    /// THE SMITH'S STROKE, AS A REPEATING PHASE: 0 is the hammer on the face, `HAMMER_RISE` the top of the raise. 0 on every other kind.
     hammer: f32 = 0,
     headYaw: f32 = 0,
     headDip: f32 = 0,
@@ -541,9 +534,7 @@ pub const Wanderer = struct {
         setLocal(wx, SHR, rest, mul(rx(-flex), rz(-HAM_ABD - wonk * 0.4)));
         setLocal(wx, ELR, rest, rx(-elbow));
         setLocal(wx, WRR, rest, mul(rx(-HAM_WRIST * k), rz(-6.0)));
-        // MEASURED at the size he was then, the head swung 1.96 m and topped out at 2.83 m — over his own crown
-        // of 2.80 — which is the executioner `HAM_EL_HI`'s note forbids. The arm's own rx down the chain is
-        // `-(flex + elbow + wrist)`, and the sign is `necro`'s, measured there.
+    // The arm's own rx down the chain is `-(flex + elbow + wrist)`, and the sign is `necro`'s, measured there.
         setLocal(wx, STAFF, rest, heromod.staffFit(lerpF(HAM_TILT_LO, HAM_TILT_HI, k) - flex - elbow - HAM_WRIST * k));
     }
 
@@ -744,12 +735,9 @@ fn merchChestMesh() rl.Mesh {
     b.setMat(.cloth);
     slab(&b, v3(0, -0.005 * H, 0), v3(0.258 * H, 0.118 * H, 0.156 * H), STRIPE);
     striped(&b, v3(0, -0.005 * H, 0), v3(0.262 * H, 0.118 * H, 0.159 * H), 5, &rng);
-    // **BEHIND THE SHOULDERS AND BELOW THE HEAD.** At 0.108 up and 0.086 back its crown stood 1.72 m against a
-    // skull centred at 1.78 and it read as a second head; 0.052 up and 0.128 back puts it where a hump goes,
     b.setMat(.hide);
     b.addBlob(v3(0.008 * H, 0.052 * H, -0.128 * H), v3(0.112 * H, 0.098 * H, 0.106 * H), 6, 12, HUMP);
     b.addBlob(v3(-0.014 * H, 0.020 * H, -0.160 * H), v3(0.074 * H, 0.062 * H, 0.068 * H), 5, 10, HUMP_LT);
-    // The coat on it: A FEW PERCENT OF THE MASS (the relief law). At 0.026 on a 0.112 radius these were a fifth
     var i: i32 = 0;
     while (i < 11) : (i += 1) {
         const a = rng.angle();
@@ -1386,7 +1374,6 @@ fn smithShankMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// every one of them stays inside z −0.05·H…+0.14·H with its sole on the plane.
 fn smithFootMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5B06);
@@ -1457,9 +1444,7 @@ fn smithHandMesh(work: bool) rl.Mesh {
             b.addCapsule(v3(sx * 0.012 * H, -0.070 * H, 0.040 * H), v3(sx * 0.006 * H, -0.086 * H, 0.230 * H), 0.011 * H, 0.008 * H, 5, SIRON);
             b.addCapsule(v3(sx * 0.012 * H, -0.070 * H, 0.040 * H), v3(sx * 0.030 * H, -0.052 * H, -0.090 * H), 0.010 * H, 0.008 * H, 5, SIRON_LT);
         }
-        // **NOT `Mat.ember`.** That id is one of the two VERTEX-ANIMATED branches (`shaders`' `> 11.5 && < 13.5`)
-        // and it is for sparks LEAVING a fire: it rises `life * 5.60` m and drifts sideways, so the bar of stock
-        // already. The GLOW is the low alpha, which is the emissive channel and needs no animation at all.
+        // NOT `Mat.ember`: that id is one of the two VERTEX-ANIMATED branches (`shaders`' `> 11.5 && < 13.5`) and it rises `life * 5.60` m. The GLOW is the low alpha, which is the emissive channel and needs no animation at all.
         b.setMat(.plain);
         b.addCapsule(v3(0, -0.088 * H, 0.210 * H), v3(0, -0.092 * H, 0.330 * H), 0.014 * H, 0.012 * H, 6, rgba(238, 122, 34, 40));
     } else {

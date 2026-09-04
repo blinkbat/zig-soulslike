@@ -76,7 +76,7 @@ pub fn treeMesh(shader: rl.Shader) rl.Model {
     b.addCapsule(j1, j2, 0.165, 0.095, 7, BARK_OLD);
     b.addCapsule(j2, j3, 0.095, 0.035, 6, BARK_DK);
     b.addBlob(j3, v3(0.045, 0.030, 0.045), 3, 5, TIMBER);
-    // Peeling bark: strips SUNK so only an edge breaks the surface, and the loose one curls off at its TOP only. Stood clear along its whole length (0.16 off a bole of radius 0.2) a strip is a dark floating tube.
+    // Peeling bark: strips SUNK so only an edge breaks the surface, and the loose one curls off at its TOP only. Stood clear along its whole length a strip is a dark floating tube.
     var s: i32 = 0;
     while (s < 7) : (s += 1) {
         const a = rng.angle();
@@ -545,7 +545,7 @@ pub fn snagMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.45) TIMBER else BARK_DK,
         );
     }
-    // Broken limb stubs, and one long branch still on — all through `deadLimbInto`, so they elbow, droop and snap blunt instead of standing out as horizontal spears, and all rooted on the trunk's OWN axis (`onTrunk` at full sink), which `lean * 0.4` guessed at.
+    // Broken limb stubs and one long branch still on — all through `deadLimbInto`, and all rooted on the trunk's OWN axis (`onTrunk` at full sink).
     var l: i32 = 0;
     while (l < 4) : (l += 1) {
         const y = rng.range(H * 0.35, H * 0.9);
@@ -558,7 +558,7 @@ pub fn snagMesh(shader: rl.Shader) rl.Model {
         b.addCapsule(v3(0, 0.5, 0), v3(mathx.cosf(a) * rng.range(0.7, 1.2), 0.03, mathx.sinf(a) * rng.range(0.7, 1.2)), 0.15, 0.05, 5, BARK_OLD);
     }
     b.setMat(.plant);
-    // Moss up the weather side, SEATED on the trunk with only a cushion of it proud. Parked at a random offset from the AXIS instead it was a green hexagon bolted to the bark — the offset can exceed the trunk's own radius, and even inside it a 0.28 blob on a 0.48 trunk stands most of the way clear.
+    // Moss up the weather side, SEATED on the trunk with only a cushion of it proud: the offset can exceed the trunk's own radius, and even inside it a 0.28 blob on a 0.48 trunk stands most of the way clear.
     b.addBlob(onTrunk(H, lean, rng.range(0.6, 2.2), rng.angle(), 0.55), v3(0.26, 0.34, 0.22), 3, 6, MOSS_DK);
     var g: i32 = 0;
     while (g < 3) : (g += 1) tuftInto(&b, &rng, rng.signed() * 1.2, rng.signed() * 1.2, 0.85);

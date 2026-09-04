@@ -363,8 +363,7 @@ fn fallenCity(p: *Emit) void {
     p.at(.tower, 132, -78, -30, 1.0);
 }
 
-/// **THE DRESSING IS MEASURED OFF THE WALL, NOT OFF THE MIDDLE.** The shaft doubled, and a brazier at a fixed
-/// 3.6 m from the axis went from standing outside the door to standing inside the tower.
+/// THE DRESSING IS MEASURED OFF THE WALL, NOT OFF THE MIDDLE: the shaft doubled, and a brazier at a fixed 3.6 m from the axis went from standing outside the door to standing inside the tower.
 fn towerSite(p: *Emit, x: f32, z: f32, yaw: f32) void {
     const R = props.TOWER_OUT;
     p.at(.watchtower, x, z, yaw, 1.0);

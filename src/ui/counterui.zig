@@ -13,18 +13,23 @@ const book = @import("book.zig");
 const rgba = mathx.rgba;
 const fi = uiart.fi;
 
-// **THE COUNTER'S PANEL, AND NOTHING ELSE.** Every number on it comes off `play/counter.zig`, which is where the
-// panel over a running frame like `world/dialog.zig` — same plate, same divider, same live portrait of the body
 
 const PAD: i32 = 18;
 const ROW_H: i32 = 34;
 const HEAD_H: i32 = 58;
-const FOOT_H: i32 = 36;
+/// THE FOOT IS TWO LINES, NOT ONE: what he said and the hints are both drawn from `x + PAD`.
+const FOOT_GAP: i32 = 6;
+const FOOT_H: i32 = hud.lineH(hud.HINT) * 2 + FOOT_GAP + 4;
 const W: i32 = 700;
 const PORT_W = dialogmod.PORT_W;
 const PORT_H = dialogmod.PORT_H;
 const PORT_GAP = dialogmod.PORT_GAP;
-const CARD_H: i32 = 104;
+const CARD_PAD: i32 = 10;
+const CARD_NAME_Y: i32 = CARD_PAD;
+const CARD_LINE_Y: i32 = CARD_NAME_Y + hud.lineH(hud.BODY);
+const CARD_PROSE_Y: i32 = CARD_LINE_Y + hud.lineH(hud.MONO);
+const CARD_PROSE_LINES: usize = 2;
+const CARD_H: i32 = CARD_PROSE_Y + hud.lineH(hud.HINT) * @as(i32, CARD_PROSE_LINES) + CARD_PAD;
 const VIS_ROWS: usize = 9;
 const ROW_ART: f32 = 20;
 const CARD_ART: f32 = 46;
@@ -69,8 +74,6 @@ fn tierGain(a: heromod.Armament, h: *const heromod.Hero) f32 {
     return next - now;
 }
 
-/// The tier ladder as PIPS, lit to the tier. A number says where you are; the row of
-/// lamps says how far the road goes, at a glance and without arithmetic.
 fn tierPips(x: i32, cy: i32, tier: u8, r: f32) void {
     var p: u8 = 0;
     while (p < heromod.TIER_MAX) : (p += 1) {
@@ -199,13 +202,13 @@ pub fn draw(c: *const counter.Counter, h: *const heromod.Hero, bag: *const item.
 
     const said = saidLine(c.said, c.trade);
     if (said.len > 0) {
-        hud.text(said, x + PAD, y + height - FOOT_H - 2, hud.HINT, if (counter.Counter.refused(c.said)) COIN_NO else SAID);
+        hud.text(said, x + PAD, y + height - FOOT_H, hud.HINT, if (counter.Counter.refused(c.said)) COIN_NO else SAID);
     }
 
     var hints: [4]hud.Hint = undefined;
     var nh: usize = 0;
     if (len > 1) {
-        hints[nh] = .{ .glyph = .{ .dpad = .updown }, .label = "Choose" };
+        hints[nh] = hud.HINT_CHOOSE;
         nh += 1;
     }
     hints[nh] = .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = if (c.trade == .smithy) "Forge" else if (c.selling) "Sell" else "Buy" };
@@ -216,10 +219,9 @@ pub fn draw(c: *const counter.Counter, h: *const heromod.Hero, bag: *const item.
     }
     hints[nh] = .{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Leave" };
     nh += 1;
-    hud.hintRowAt(hints[0..nh], x + PAD, y + height - @divTrunc(FOOT_H, 2), hud.HINT, uiart.GILT_DIM);
+    hud.hintRowAt(hints[0..nh], x + PAD, y + height - @divTrunc(hud.lineH(hud.HINT), 2) - 4, hud.HINT, uiart.GILT_DIM);
 }
 
-/// the tier and the damage it adds — which the old panel left to be inferred from "+3 -> +4".
 fn drawCard(r: counter.Row, h: *const heromod.Hero, cx: i32, cy: i32) void {
     const cell = CARD_H - 24;
     uiart.slot(cx + 12, cy + 12, cell, cell, true);
@@ -228,24 +230,24 @@ fn drawCard(r: counter.Row, h: *const heromod.Hero, cx: i32, cy: i32) void {
 
     if (r.kind) |k| {
         itemart.draw(k, fi(cx + 12 + @divTrunc(cell, 2)), fi(cy + 12 + @divTrunc(cell, 2)), CARD_ART);
-        hud.text(item.displayName(k), tx, cy + 10, hud.BODY, NAME);
+        hud.text(item.displayName(k), tx, cy + CARD_NAME_Y, hud.BODY, NAME);
         var eb: [item.EFFECT_BUF]u8 = undefined;
-        hud.mono(item.effect(k, &eb), tx, cy + 36, hud.MONO, uiart.TEXT_VALUE);
-        proseClipped(item.describe(k), tx, cy + 58, tw, 2);
+        hud.mono(item.effect(k, &eb), tx, cy + CARD_LINE_Y, hud.MONO, uiart.TEXT_VALUE);
+        proseClipped(item.describe(k), tx, cy + CARD_PROSE_Y, tw, CARD_PROSE_LINES);
     } else if (r.arm) |a| {
         itemart.heldArt(book.armPic(a), heromod.heldGear(a, h.worn), fi(cx + 12 + @divTrunc(cell, 2)), fi(cy + 12 + @divTrunc(cell, 2)), CARD_ART);
         const t = h.tierOf(a);
         var nb: [48]u8 = undefined;
         const nm = std.fmt.bufPrintZ(&nb, "{s}  +{d}", .{ book.armName(a), t }) catch "?";
-        hud.text(nm, tx, cy + 10, hud.BODY, NAME);
-        tierPips(tx, cy + 44, t, 3.2);
+        hud.text(nm, tx, cy + CARD_NAME_Y, hud.BODY, NAME);
+        tierPips(tx, cy + CARD_LINE_Y + @divTrunc(hud.lineH(hud.MONO), 2), t, 3.2);
         if (r.done) {
-            hud.text(MASTERED_LINE, tx, cy + 62, hud.HINT, NAME_OFF);
+            hud.text(MASTERED_LINE, tx, cy + CARD_PROSE_Y, hud.HINT, NAME_OFF);
         } else {
             var gb: [64]u8 = undefined;
             const gain = std.fmt.bufPrintZ(&gb, "damage +{d:.1} a stroke", .{tierGain(a, h)}) catch "";
-            hud.mono(gain, tx + pipsW(3.2) + 18, cy + 38, hud.MONO, uiart.GOOD);
-            proseClipped("Stone is the gate and coin is the tax; the edge keeps what the fire teaches it.", tx, cy + 62, tw, 1);
+            hud.mono(gain, tx + pipsW(3.2) + 18, cy + CARD_LINE_Y, hud.MONO, uiart.GOOD);
+            proseClipped("Stone is the gate and coin is the tax; the edge keeps what the fire teaches it.", tx, cy + CARD_PROSE_Y, tw, 1);
         }
     }
 }
@@ -262,4 +264,38 @@ fn proseClipped(s: []const u8, x: i32, y: i32, w: i32, maxLines: usize) void {
         }
         yy += hud.lineH(hud.HINT);
     }
+}
+
+test "NOTHING ON THE COUNTER IS DRAWN OVER ANYTHING ELSE — every band solved off the type scale" {
+    const said = [2]i32{ FOOT_H - 0, FOOT_H - hud.lineH(hud.HINT) };
+    const hintsTop = @divTrunc(hud.lineH(hud.HINT), 2) + 4 + @divTrunc(hud.lineH(hud.HINT), 2);
+    // Both are measured UP from the panel's bottom edge, so the said line's floor must sit above the hints' ceiling.
+    try std.testing.expect(said[1] > hintsTop);
+
+    const bands = [_]struct { top: i32, h: i32 }{
+        .{ .top = CARD_NAME_Y, .h = hud.lineH(hud.BODY) },
+        .{ .top = CARD_LINE_Y, .h = hud.lineH(hud.MONO) },
+        .{ .top = CARD_PROSE_Y, .h = hud.lineH(hud.HINT) * @as(i32, CARD_PROSE_LINES) },
+    };
+    for (bands[0 .. bands.len - 1], bands[1..]) |a, b| try std.testing.expect(a.top + a.h <= b.top);
+    const last = bands[bands.len - 1];
+    try std.testing.expect(last.top + last.h + CARD_PAD <= CARD_H);
+    try std.testing.expect(12 + (CARD_H - 24) <= CARD_H);
+
+    // The widest thing a row has to fit between its picture and its price, in characters.
+    var widest: usize = 0;
+    for (std.enums.values(item.Kind)) |k| widest = @max(widest, item.displayName(k).len);
+    const lx = PAD + PORT_W + PORT_GAP;
+    const field = W - PAD - lx - 30 - 26;
+    std.debug.print(
+        "\n  counter foot: said {d}..{d} px up from the sill, hints to {d} — {d} px clear\n" ++
+            "  counter card: name {d}, line {d}, prose {d}x{d}, well {d} px deep\n" ++
+            "  counter row: {d} px of name field beside a portrait for the widest of {d} names ({d} chars)\n",
+        .{
+            said[1],           said[0],           hintsTop,          said[1] - hintsTop,
+            CARD_NAME_Y,       CARD_LINE_Y,       CARD_PROSE_Y,      CARD_PROSE_LINES,
+            CARD_H,            field,             std.enums.values(item.Kind).len,
+            widest,
+        },
+    );
 }

@@ -113,7 +113,7 @@ const STEEL = rgba(98, 104, 114, 255);
 const STEEL_DK = rgba(58, 62, 70, 255);
 const BRASS = art.BRASS;
 
-/// One stride's samples. A finer table is silently truncated to the first 8 and the seam test still passes.
+/// One stride's samples; a finer table is silently truncated to the first 8.
 pub const GAIT_N = 8;
 
 /// Antiphase with the same side's hip flex; unit amplitude for the LEFT arm. NOT `sin` — a quarter-cycle off.
@@ -167,15 +167,11 @@ pub fn slopeLean(rise: f32) f32 {
     return mathx.clampF(deg, -SLOPE_LEAN_MAX, SLOPE_LEAN_MAX);
 }
 
-/// **THE FALL.** Free under `FALL_FREE`, certain death at `FALL_DEATH`, and a power curve between so the
-/// first metres past the lip cost little and the last cost everything. Fractions of `hpMax`, so a levelled
-/// vitality buys the same number of metres it always did.
+/// Fractions of `hpMax`, so a levelled vitality buys the same number of metres.
 pub const FALL_FREE: f32 = 4.0;
 pub const FALL_DEATH: f32 = 13.0;
 const FALL_POW: f32 = 1.5;
-/// Past `FALL_FREE` it is never a scratch — the floor is what stops dexterity from making a drop free.
 const FALL_MIN_FRAC: f32 = 0.06;
-/// Most a maxed dexterity takes off the landing. It buys a quarter and NOT the height that kills.
 const FALL_DEX_CUT: f32 = 0.25;
 
 pub fn fallDexCut(dex: u8) f32 {
@@ -197,8 +193,7 @@ pub const JUMP_AIR: f32 = 0.72;
 const JUMP_G: f32 = 8.0 * JUMP_APEX / (JUMP_AIR * JUMP_AIR);
 const JUMP_V0: f32 = JUMP_G * JUMP_AIR * 0.5;
 const AIR_TURN_RATE: f32 = 2.6;
-/// `v = sqrt(2 g h)` off `combat.Hit.launch`: at the slams' 0.85 m that is 5.12 m/s and 0.66 s of air, under his
-/// own jump's 1.0 m / 0.72 s. The distance is authored, not derived — `LAUNCH_BACK` over that flight's airtime.
+/// `v = sqrt(2 g h)`: the slams' 0.85 m is 5.12 m/s and 0.66 s of air. `LAUNCH_BACK` is authored over that airtime.
 pub const LAUNCH_BACK: f32 = 1.6;
 fn launchV0(apex: f32) f32 {
     return @sqrt(2.0 * JUMP_G * mathx.maxF(apex, 0.01));
@@ -206,11 +201,11 @@ fn launchV0(apex: f32) f32 {
 fn launchSpeed(apex: f32) f32 {
     return LAUNCH_BACK * JUMP_G / (2.0 * launchV0(apex));
 }
-/// `2 v / g` — for a harness aiming at a fraction of the flight (`shots.zig`) rather than at a frame count.
+/// `2 v / g`.
 pub fn launchAirFor(apex: f32) f32 {
     return 2.0 * launchV0(apex) / JUMP_G;
 }
-/// Degrees the trunk arches BACK at the apex; over the heavy stagger's own `STAG_LEAN`.
+/// Degrees the trunk arches BACK at the apex.
 const LAUNCH_ARCH: f32 = 54.0;
 const LAUNCH_HEAD: f32 = 40.0;
 const LAUNCH_ARM: f32 = 62.0;
@@ -218,7 +213,6 @@ const LAUNCH_HIP: f32 = 34.0;
 const LAUNCH_KNEE: f32 = 46.0;
 pub const LAUNCH_MAX_APEX: f32 = 1.2;
 comptime {
-    // Pinned here so a foe file can author a launch (`combat.SLAM_LAUNCH`) without importing the hero.
     std.debug.assert(combat.SLAM_LAUNCH < JUMP_APEX);
     std.debug.assert(combat.SLAM_LAUNCH <= LAUNCH_MAX_APEX);
 }
@@ -228,7 +222,7 @@ const LAND_SINK_AT: f32 = 0.22;
 const LAND_REBOUND: f32 = 0.62;
 pub const LAND_SINK_DEEPEST: f32 = LAND_DUR * LAND_SINK_AT;
 const LAND_STOOP: f32 = 7.0;
-/// Degrees. Three terms off the vertical velocity alone.
+/// Degrees.
 const JUMP_TOEOFF: f32 = 26.0;
 const JUMP_TOE_PLANTAR: f32 = 30.0;
 const JUMP_TUCK_HIP: f32 = 62.0;
@@ -250,9 +244,9 @@ const JUMP_LEG_SPLIT: f32 = 5.0;
 pub const CLIMB_SPEED: f32 = 1.35;
 pub const CLIMB_DOWN_SPEED: f32 = 1.70;
 pub const CLIMB_SLIDE_SPEED: f32 = 5.20;
-/// Metres of run one full cycle of hands and feet covers — two rungs, since the limbs alternate.
+/// Metres one full cycle of hands and feet covers — two rungs.
 const CLIMB_RUNG: f32 = 0.60;
-/// Degrees, and the trunk stays near plumb: on a ladder the reach is all arm.
+/// Degrees.
 const CLIMB_SPINE: f32 = 6.0;
 const CLIMB_HEAD: f32 = 14.0;
 const CLIMB_ROCK: f32 = 3.2;
@@ -263,19 +257,18 @@ const CLIMB_ANKLE: f32 = -12.0;
 const CLIMB_LEG_OUT: f32 = 7.0;
 const CLIMB_ARM_LO: f32 = 66.0;
 const CLIMB_ARM_HI: f32 = 128.0;
-/// Well under the walk's `ARM_ABD` — the stiles are 0.52 m apart and a swung-out elbow reads as hugging a tree.
+/// Degrees; the stiles are 0.52 m apart.
 const CLIMB_ARM_ABD: f32 = 4.0;
 const CLIMB_ELBOW_LO: f32 = 14.0;
 const CLIMB_ELBOW_HI: f32 = 74.0;
 const CLIMB_WRIST: f32 = 18.0;
-/// The beat between letting go of the rungs and standing on what the ladder served. A SPEED would be wrong: the
-/// distance is the same every time (`game.MANTLE_RISE` up and one stride out), so the BEAT is what is authored.
+/// Seconds; the distance is fixed (`game.MANTLE_RISE` up, one stride out), so the BEAT is authored, not a speed.
 pub const MANTLE_DUR: f32 = 0.62;
 pub const MANTLE_PRESS: f32 = 0.62;
 const MANTLE_FOLD: f32 = 44.0;
 const MANTLE_POP = 0.045 * H;
 const MANTLE_HEAD_UP: f32 = 18.0;
-/// Positive is BEHIND him: at the top of the press his hands are down by his hips, on the stone.
+/// Degrees; positive is BEHIND him.
 const MANTLE_ARM_PRESS: f32 = 34.0;
 const MANTLE_ELBOW_PRESS: f32 = 12.0;
 const MANTLE_ARM_ABD: f32 = 12.0;
@@ -289,8 +282,7 @@ pub const ROLL_IFRAME_END_BANK: f32 = 0.46;
 pub var ROLL_IFRAME_END: f32 = ROLL_IFRAME_END_BANK;
 
 pub const FOG_GRACE_TAIL: f32 = 1.6;
-/// Ground speed under which he counts as standing. A speed and not a per-frame distance, or the grace lasts
-/// longer on a slower machine.
+/// Ground speed (m/s) under which he counts as standing — a speed, not a per-frame distance.
 const FOG_GRACE_STILL: f32 = 0.20;
 pub var ROLL_DIST: f32 = 3.5;
 const ROLL_BALL_Y = 0.50;
@@ -460,7 +452,7 @@ const CAST_ELBOW = 52.0;
 const CAST_ELBOW_SNAP = 40.0;
 const CAST_SWEEP = 46.0;
 const CAST_WRIST = 38.0;
-/// `yaw` is horizontal abduction; 0 makes `ry` the identity, so the rod goes through the same expression.
+/// `yaw` is horizontal abduction; 0 makes `ry` the identity.
 const Carry = struct {
     flex: f32,
     abd: f32,
@@ -530,7 +522,7 @@ fn offAxis(at: rl.Vector3, r: f32, a: f32) rl.Vector3 {
     return v3(at.x + c * WAND_U.x + s * WAND_V.x, at.y + c * WAND_U.y + s * WAND_V.y, at.z + c * WAND_U.z + s * WAND_V.z);
 }
 
-/// Square across the fist (the rod sits at 55 along it), so the brand stands plumb off a level forearm.
+/// Degrees, square across the fist (the rod sits at 55 along it).
 const TORCH_PITCH = 90.0;
 const TORCH_ULNAR = 5.0;
 const TORCH_PALM = 0.016 * H;
@@ -565,13 +557,12 @@ const CAST_MOTE_R_HI = 0.055;
 const CAST_MOTE_CAP = 8;
 const CAST_MOTE_LIFE_LO = 0.030;
 const CAST_MOTE_LIFE_HI = 0.055;
-/// `drawParticles` fades radius WITH alpha: at 0.04 s a mote is legible on one frame of three, at 0.015 nine showed as three.
+/// `drawParticles` fades radius WITH alpha.
 const CAST_MOTE_R0 = 0.023;
 const CAST_MOTE_R1 = 0.011;
 const CAST_SPARKS = 26;
 const CAST_COLLAR = 12;
 const CAST_COLLAR_SP = 4.4;
-/// SMALL: it is a solid sphere, not additive, so at 0.30 it rendered as a translucent balloon hiding the stone.
 const CAST_FLASH_R = 0.095;
 const CAST_FLASH_LIFE = 0.085;
 const BOLT_BURST = 22;
@@ -581,9 +572,7 @@ const LEVIN_STEPS = 9;
 const LEVIN_SPARKS = 2;
 const LEVIN_BURST = 26;
 const LEVIN_JITTER = 0.11 * H;
-/// MEASURED: a lightning mote is 2 cm and lives 0.04 s — the short life is bought back with radius, never more motes.
 const LEVIN_SPARK_SCALE = 2.2;
-/// 2.4 not 3.2 off the same render: at 7 cm a mote is a soft ball and the shower photographed as SMOKE.
 const LEVIN_BURST_SCALE = 2.4;
 
 const LEVIN_BOLT_PTS = 12;
@@ -603,7 +592,6 @@ const SIPHON_SPREAD = 0.30 * H;
 const LANCE_STEPS = 22;
 const LANCE_SPARKS = 4;
 const LANCE_JITTER = 0.06 * H;
-/// Under the levin's 2.2 — fire lives longer in `elemfx`, and at the same throw the shaft photographed as a hedge.
 const LANCE_SPARK_SCALE = 1.7;
 const LANCE_FLOOR_DROP = 1.05 * H;
 
@@ -621,13 +609,11 @@ const ROOT_LAG: f32 = 0.55;
 const ROOT_PUNCH: f32 = 0.20;
 const ROOT_KINDS = 3;
 const ROOT_SEGS = 10;
-/// ~1.05 m — HIP height on the 1.8 m rig, and bracketed from both sides.
+/// ~1.05 m, hip height on the 1.8 m rig.
 const ROOT_LEN = 0.58 * H;
 const ROOT_R0 = 0.052 * H;
 const ROOT_R1 = 0.019 * H;
-/// MEASURED, NOT GUESSED (AGENTS.md): at `34,25,18` on `.bark` these sampled 115,94,68 against grass at
-/// 110,97,67. Solved from there: screen = (albedo/255 × 1.72)^(1/2.2) × 255, so half the ground's 110 is screen
-/// 55, and 55 back through the chain is albedo 5. `.wood` is the material that does not lift it again.
+/// Solved: screen = (albedo/255 × 1.72)^(1/2.2) × 255. Half the ground's screen 110 is albedo 5; `.wood` does not lift it again.
 const ROOT_BARK = rgba(5, 4, 3, 255);
 const ROOT_BARK_LT = rgba(9, 7, 5, 255);
 const ROOT_HEART = rgba(24, 21, 15, 255);
@@ -643,26 +629,23 @@ const RootSite = struct {
     seed: f32 = 0,
 };
 
-// The mechanic's own numbers (reach, arc, span, what it bills) are `combat.RIME_*`; these are only the picture.
 
 const BREATH_RATE = elemfx.POUR_RATE;
 const BREATH_CAP = elemfx.POUR_CAP;
-// A jet's grain is `elemfx.POUR_GRAIN`, not his: held here and passed through `scale` the bench drew it 60% coarser.
 
 const BREATH_NOZZLE_FWD = 0.030 * H;
-/// Through the WAIST, spine and chest, never the root. Degrees, total across the two.
+/// Degrees, total across spine and chest — never the root.
 const BREATH_LEAN = -13.0;
 const BREATH_HEAD = 6.0;
 const BREATH_REACH = 12.0;
-/// `breathDir` is level and the bite is XZ, so a level shoulder is 40, not 90 (the throw's `CAST_SH_FWD` is 118).
+/// A level shoulder is 40, not 90: `breathDir` is level and the bite is XZ.
 const BREATH_SH_LEVEL = 40.0;
 const BREATH_SHIVER = 1.5;
 const BREATH_SHIVER_HZ = 12.0;
 
 const DUST_MOTES = 96;
 
-/// A ring overwrites its oldest silently, so these ADD rather than taking the largest: a rod burst is exclusive
-/// per CAST but not in the AIR. Worst is 1552 against the 1536 once written here.
+/// A ring overwrites its oldest silently, so these ADD rather than take the largest. Worst is 1552 against 1536.
 const FX_WORST = blk: {
     const gather = CAST_MOTE_RATE_HI * CAST_MOTE_LIFE_HI;
     const release = CAST_SPARKS + CAST_COLLAR + 1;
@@ -682,7 +665,6 @@ const FX_WORST = blk: {
 const FX_N: usize = @intFromFloat(@ceil(FX_WORST));
 
 const WAND_LIT = mathx.colVec(CHAOS_MOTE);
-/// Radius matters more than brightness (the chapel's law): at a torch's 6 m it washed him violet head to foot.
 const WAND_LIT_CARRY = 0.20;
 const WAND_LIT_CARRY_R = 2.6;
 const WAND_LIT_CHARGED = 1.00;
@@ -690,7 +672,6 @@ const WAND_LIT_CHARGED_R = 7.0;
 const WAND_LIT_FLARE = 2.30;
 const WAND_LIT_FLARE_R = 12.0;
 
-/// The world torch's row (`props` `.torch`: 0.64/0.34/0.13 at 6 m) opened out — a fifth again the colour, a third more reach.
 const TORCH_LIT = v3(0.78, 0.42, 0.16);
 const TORCH_LIT_R = 8.0;
 const TORCH_FLICKER = 0.16;
@@ -715,8 +696,7 @@ pub const STANCE_MAX = 90.0;
 pub var ATK_LIGHT_HIT = combat.Hit{ .dmg = 13, .poise = 10 };
 pub var ATK_HEAVY_HIT = combat.Hit{ .dmg = 27, .poise = 22, .stance = 14 };
 
-/// **NOTHING MAY EVER SET `vit.armour`.** `takeHit`/`blockHit` pre-apply it off `armourA()`; both doors at once
-/// is `combat.armourTaken` twice, silently.
+/// NOTHING MAY EVER SET `vit.armour` — `takeHit`/`blockHit` pre-apply it off `armourA()`.
 pub fn freshVitals(sheet: statsmod.Sheet) combat.Vitals {
     return combat.Vitals.init(sheet.hp(), POISE_MAX, STANCE_MAX);
 }
@@ -745,8 +725,7 @@ pub fn armourOf(worn: Worn) f32 {
 
 pub const Suit = struct { plate: item.Plate, charm: item.Charm, rates: [combat.NAIL]f32 = [_]f32{1} ** combat.NAIL };
 
-/// One walk of the sockets for both tables (`settleBody` asks every frame). PHYSICAL AND THE FOUR COLUMNS ADD;
-/// THE RATES MULTIPLY — halving twice leaves a quarter, where subtracting 0.5 twice makes the second piece free immunity.
+/// Physical and the four columns ADD; the rates MULTIPLY.
 pub fn suitOf(worn: Worn) Suit {
     var pl = item.Plate{ .slot = .chest };
     var ch = item.Charm{ .slot = .ring };
@@ -870,9 +849,7 @@ pub fn heldGear(a: Armament, worn: Worn) ?item.Kind {
 }
 
 pub const TIER_MAX: u8 = 10;
-/// A tier is FLAT damage on the base, added BEFORE `row.dmg`, the skill curve and the perks, so every
-/// percentage the build already owns multiplies a bigger number. 1.3 a tier against `ATK_LIGHT_HIT`'s 13, so +10
-/// doubles the base of a light swing; `ATK_HEAVY_HIT` is 27, so the same ten tiers are worth half as much again.
+/// FLAT damage added BEFORE `row.dmg`, the skill curve and the perks. 1.3 a tier against `ATK_LIGHT_HIT`'s 13 and `ATK_HEAVY_HIT`'s 27.
 pub var TIER_FLAT: f32 = 1.3;
 
 pub fn weigh(h: combat.Hit, row: item.Arm, sheet: statsmod.Sheet, tier: u8) combat.Hit {
@@ -919,7 +896,7 @@ const PARRY_OPEN = 0.10;
 const PARRY_SHUT = 0.26;
 pub const PARRY_PUNCH_AT = 0.33;
 const PARRY_REBOUND = 0.75;
-/// PAID FOR AT BOTH JOINTS: `shieldFit` inverts `GUARD_ARM_FOLD` (shoulder flex + elbow), so opening at the elbow alone rotates the shield off its own arm (measured).
+/// `shieldFit` inverts `GUARD_ARM_FOLD` (shoulder flex + elbow); opening at the elbow alone rotates the shield off its own arm.
 const PARRY_PUNCH = 60.0;
 const PARRY_SWEEP = 26.0;
 const PARRY_WRIST = 20.0;
@@ -933,14 +910,12 @@ const PARRY_HAND_LEAD = 0.075 * H;
 const PARRY_SINK = 0.024 * H;
 const PARRY_SWORD_COCK = 18.0;
 const PARRY_HEAD = 12.0;
-/// SEPARATED ON HUE, not value: the boards come back off this sun around 140, and a pale cream spark at 3 cm read as a soft bubble on them (measured, at 30).
 const PARRY_SPARK = rgba(255, 206, 108, 240);
 const PARRY_SPARK_HOT = rgba(255, 250, 232, 250);
 const PARRY_SPARK_COOL = rgba(224, 118, 40, 210);
 const SPARK_STRETCH = 0.055;
 const SPARK_BOUNCE = 0.45;
 const PARRY_SPARKS = 34;
-/// Forward is DOWN THE LENS: at 0.42 of the forward speed most were still inside the disc's outline four frames later (measured).
 const PARRY_SPARK_FAN = 9.0;
 const PARRY_SPARK_OUT_LO = 1.0;
 const PARRY_SPARK_OUT_HI = 3.2;
@@ -948,15 +923,12 @@ const PARRY_SPARK_R0_LO = 0.009;
 const PARRY_SPARK_R0_HI = 0.019;
 const PARRY_SPARK_GRAV = 9.0;
 const SPARK_PROUD: f32 = 0.02;
-/// A solid sphere, not additive: at 0.085 it read as a puff of smoke sat on the boards.
 const PARRY_FLASH_R = 0.05;
 const PARRY_FLASH_LIFE = 0.06;
 const PARRY_GLINT = 18;
-/// TIGHTER than the catch's fan: thrown as far and lived as long, a dozen motes read as litter a metre off the boards (measured).
 const PARRY_GLINT_FAN = 4.5;
 const PARRY_GLINT_SPAN = 0.22;
 const PARRY_GLINT_TRAIL = 0.55;
-/// …and the bloom is UNDER the catch's 0.05, not over it: at 0.075 the first frame was a solid white ball.
 const PARRY_GLINT_FLASH_R = 0.03;
 
 const BLOCK_GRIT = rgba(196, 190, 178, 225);
@@ -972,7 +944,7 @@ const BLOCK_GRIT_LIFE_HI = 0.30;
 const BLOCK_PUFF_R = 0.11;
 const BLOCK_PUFF_LIFE = 0.16;
 
-/// Gravity is NEGATIVE — the one emitter in his kit that rises. Colours are the gate's own (`propfx.FOG_WAKE_*`).
+/// Gravity is NEGATIVE here. Colours are `propfx.FOG_WAKE_*`.
 const FOG_WAKE_OUT_LO = 0.35;
 const FOG_WAKE_OUT_HI = 1.05;
 const FOG_WAKE_RISE = 0.28;
@@ -986,7 +958,6 @@ const FOG_WAKE_THIN = mathx.rgba(206, 214, 226, 0);
 const FOG_WAKE_DRAG: f32 = 2.8;
 pub const FOG_WAKE_RATE: f32 = 26.0;
 pub const FOG_WAKE_CAP: u32 = 8;
-/// Under the parry's shower (`PARRY_SPARKS`, 34): the catch is the earned one.
 const BLOCK_SPARK_MIN = 4;
 const BLOCK_SPARK_MAX = 15;
 const BLOCK_SPARK_FAN_K: f32 = 0.62;
@@ -1003,7 +974,7 @@ const SH_FOLD_S = @sin(radians(GUARD_ARM_FOLD));
 const SH_FOLD_C = @cos(radians(GUARD_ARM_FOLD));
 const SH_CROSS_S = @sin(radians(GUARD_SH_CROSS));
 const SH_CROSS_C = @cos(radians(GUARD_SH_CROSS));
-/// In the WRIST's frame, since the hand grips BEHIND the boss.
+/// In the WRIST's frame.
 const SHIELD_N = v3(SH_CROSS_S, -SH_CROSS_C * SH_FOLD_S, SH_CROSS_C * SH_FOLD_C);
 const SHIELD_HUB = v3(
     SHIELD_STANDOFF * SHIELD_N.x,
@@ -1026,8 +997,7 @@ const FIST_Z = 0.005 * H;
 fn bladeAt(t: f32) rl.Vector3 {
     return v3(-GRIP_SA * OUT_SA * t * H, FIST_Y - GRIP_CA * t * H, FIST_Z + GRIP_SA * OUT_CA * t * H);
 }
-/// `t` is the fraction of STATURE along the grip axis (`bladeAt`), so a reach is metres once `H` is fixed;
-/// `r` is the capsule the fight is fought with, not anything you can see.
+/// `t` is the fraction of STATURE along the grip axis (`bladeAt`); `r` is the fight capsule, not visible geometry.
 pub const Blade = enum { sword, dagger, club };
 
 const BladeSpec = struct { base: f32, tip: f32, r: f32 };
@@ -1055,15 +1025,11 @@ pub fn bladeOf(a: Armament) ?Blade {
     };
 }
 
-/// Six moves, two per class, no strings. `slash`/`chop` the straight sword's diagonal cut and overhead;
-/// `flick`/`thrust` the dagger (DS1's rapid jabs, ER's Main-gauche / Miséricorde / Scorpion's Stinger thrust);
-/// `sweep`/`smash` the club (DS1's Large Club dashing swing, and the great hammer's overhead smash).
+/// Two per class, no strings. DS1/ER: dagger jabs and Main-gauche / Miséricorde / Scorpion's Stinger thrust, Large Club dashing swing, great-hammer smash.
 pub const Stroke = enum { slash, chop, flick, thrust, sweep, smash };
 
-/// Fractions of the stroke's own clock. `dur` is seconds at dial 1 and `item.Arm.dur` multiplies it (`atkDur`),
-/// so every phase scales together. `hitA`..`hitB` is the capsule's live window, `travelA`..`travelB` when the
-/// body covers `lunge` metres, `recovA` where the pose starts home (and re-tracking resumes), `chain` where a
-/// queued press takes over.
+/// Fractions of the stroke's own clock; `dur` is seconds at dial 1, times `item.Arm.dur` (`atkDur`).
+/// `hitA`..`hitB` is the live capsule, `travelA`..`travelB` where the body covers `lunge`, `recovA` where the pose starts home, `chain` where a queued press takes over.
 pub const Timing = struct {
     dur: f32,
     hitA: f32,
@@ -1081,28 +1047,27 @@ pub const Move = struct { stroke: Stroke, t: Timing };
 const SWORD_LIGHT = Timing{ .dur = ATK_LIGHT_DUR, .hitA = AL_HIT_A, .hitB = AL_HIT_B, .travelA = AL_STRIKE_A, .travelB = AL_STRIKE_B, .recovA = AL_RECOV_A, .chain = AL_CHAIN, .lunge = AL_LUNGE };
 const SWORD_HEAVY = Timing{ .dur = ATK_HEAVY_DUR, .hitA = AH_HIT_A, .hitB = AH_HIT_B, .travelA = AH_STRIKE_A, .travelB = AH_STRIKE_B, .recovA = AH_RECOV_A, .chain = AH_CHAIN, .lunge = AH_LUNGE };
 
-/// Indexed `[Blade][heavy]`. **THE SECONDS IN THE COMMENTS BELOW ARE AFTER THE ROW'S DIAL** (dagger 0.78, club 1.34).
+/// Indexed `[Blade][heavy]`. Seconds in the comments below are AFTER the row's dial (dagger 0.78, club 1.34).
 const MOVES = [3][2]Move{
     .{
         .{ .stroke = .slash, .t = SWORD_LIGHT },
         .{ .stroke = .chop, .t = SWORD_HEAVY },
     },
     .{
-        // 0.413 s, live 0.083 — the fastest thing he owns, and it buys that with 0.67 m of reach.
+        // 0.413 s, live 0.083; 0.67 m of reach.
         .{ .stroke = .flick, .t = .{ .dur = 0.53, .hitA = 0.30, .hitB = 0.50, .travelA = 0.26, .travelB = 0.46, .recovA = 0.60, .chain = 0.74, .lunge = 0.35 } },
-        // 0.671 s. THE STEP IS THE MOVE: 1.35 m of it, which is how the shortest weapon reaches anything at all.
+        // 0.671 s; the step is 1.35 m.
         .{ .stroke = .thrust, .t = .{ .dur = 0.86, .hitA = 0.40, .hitB = 0.60, .travelA = 0.34, .travelB = 0.58, .recovA = 0.66, .chain = 0.82, .lunge = 1.35 } },
     },
     .{
-        // 0.884 s, live 0.283 — the longest active window in the kit by 2x.
+        // 0.884 s, live 0.283 — the longest live window in the kit.
         .{ .stroke = .sweep, .t = .{ .dur = 0.66, .hitA = 0.34, .hitB = 0.66, .travelA = 0.30, .travelB = 0.62, .recovA = 0.70, .chain = 0.86, .lunge = 0.60 } },
-        // 1.447 s, and the blow does not arrive until 0.695 of it. The HANG is in the track (`.hold`).
+        // 1.447 s; the blow arrives at 0.695 of it, after the `.hold`.
         .{ .stroke = .smash, .t = .{ .dur = 1.08, .hitA = 0.48, .hitB = 0.66, .travelA = 0.44, .travelB = 0.64, .recovA = 0.72, .chain = 0.90, .lunge = 0.85 } },
     },
 };
 
-// Each mistake fails SILENTLY: `travelB == travelA` divides by zero in `updateAttack`, `hitA >= hitB` is a
-// capsule that never goes live, and a fraction past 1 is a phase the clock never reaches.
+// Each mistake fails SILENTLY: `travelB == travelA` divides by zero in `updateAttack`, `hitA >= hitB` never goes live, a fraction past 1 never runs.
 comptime {
     if (MOVES.len != @typeInfo(Blade).@"enum".fields.len) @compileError("hero: a Blade has no moveset row");
     for (MOVES) |pair| {
@@ -1123,7 +1088,7 @@ pub fn moveOf(b: Blade, heavy: bool) Move {
     return MOVES[@intFromEnum(b)][@intFromBool(heavy)];
 }
 
-/// **SECONDS A STROKE TAKES AT REST** — the class's own clock times the weapon's `dur` dial, and THE one place the swing time is written down. `Hero.atkDur` is this over the live haste.
+/// Seconds a stroke takes at rest: the class's own clock times the weapon's `dur` dial. `Hero.atkDur` is this over the live haste.
 pub fn swingSecs(b: Blade, heavy: bool, row: item.Arm) f32 {
     return moveOf(b, heavy).t.dur * row.dur;
 }
@@ -1132,10 +1097,8 @@ pub fn drawSecs(aimed: bool, row: item.Arm) f32 {
     return @as(f32, if (aimed) BOW_SHOT_DUR else BOW_QUICK_DUR) * row.dur;
 }
 
-/// Degrees except `dip`, which is metres the pelvis drops. Signs are the AUTHORED (right-hand) side's;
-/// `armSide`'s mirror times the alternation flip (`lat`) carries the LATERAL channels over, sagittal alone.
-/// `sh` is how far the weapon shoulder is RAISED, `sweep` its yaw across the body (negative = cocked back),
-/// `grip` the pitch taken out of the grip axis (`GRIP_PITCH` levels the blade, 0 leaves it along the forearm).
+/// Degrees except `dip`, which is metres the pelvis drops. Signs are the AUTHORED (right-hand) side's; `armSide`'s mirror times `lat` carries the LATERAL channels over.
+/// `sh` is the weapon shoulder RAISED, `sweep` its yaw across the body (negative = cocked back), `grip` the pitch out of the grip axis (`GRIP_PITCH` levels the blade).
 const MCH_N = 14;
 
 const MK = struct {
@@ -1154,8 +1117,7 @@ const MK = struct {
     brace: f32 = 0,
     grip: f32 = 0,
 
-    /// Two literal orders, here and in `mkAt`: a field inserted in the middle silently renames every channel
-    /// after it, which is a whole stroke posed through the wrong joints with nothing to see at the call site.
+    /// Two literal orders, here and in `mkAt`: a field inserted in the middle silently renames every channel after it.
     pub fn chan(self: MK) [MCH_N]f32 {
         var c: [MCH_N]f32 = undefined;
         inline for (@typeInfo(MK).@"struct".fields, 0..) |f, i| c[i] = @field(self, f.name);
@@ -1177,16 +1139,13 @@ fn mkAt(keys: []const MKey, u: f32) MK {
     return out;
 }
 
-// NO SPRING BANK HERE ON PURPOSE: every hero pose is a pure function of its own clock (`pose` takes no `dt`,
-// which keeps `--shot` reproducible). Interrupt continuity is `applyXfade`'s job, not a spring's.
-// AN ARRIVAL IS `.accel` INTO THE BLOW AND `.decel` OUT OF IT, NEVER `.snap`: snap is front-loaded (1-(1-f)^5),
-// so on a strike key the dagger's tip crossed 13 of its 84 degrees inside its own live window (measured).
+// No spring bank: every hero pose is a pure function of its own clock (`pose` takes no `dt`), which keeps `--shot` reproducible.
+// An arrival is `.accel` into the blow and `.decel` out of it, never `.snap` — snap is front-loaded, 1-(1-f)^5.
 
 const FLICK_REST = MK{ .sh = 22, .elbow = 44, .sweep = -10, .grip = GRIP_PITCH };
 const FLICK_COCK = MK{ .sh = 52, .elbow = 92, .sweep = -36, .roll = 28, .wrist = 16, .yaw = -8, .chest = -13, .dip = 0.012 * H, .pitch = -4, .free = -14, .brace = 4, .abd = 6, .grip = GRIP_PITCH };
 
-/// DS1's dagger "jabbed in rapid succession". Cocked IN to the far ribs rather than back — elbow and wrist
-/// do the work. The whole gather is 0.075 s at the dial the fight runs it at.
+/// DS1's dagger "jabbed in rapid succession". The whole gather is 0.075 s at the dial the fight runs it at.
 const FLICK_KEYS = [_]MKey{
     .{ .t = 0.00, .p = FLICK_REST },
     .{ .t = 0.16, .p = FLICK_COCK, .ease = .decel },
@@ -1197,16 +1156,13 @@ const FLICK_KEYS = [_]MKey{
 };
 
 const THRUST_REST = MK{ .sh = 12, .elbow = 42, .grip = GRIP_PITCH };
-/// **`sh` IS MEASURED FROM ARM-HANGING-DOWN, SO 90 IS HORIZONTAL FORWARD.** Extended at 40 the point raked 55 deg
-/// into the dirt (measured). The drive is `sh` + `elbow` + the step.
+/// `sh` IS MEASURED FROM ARM-HANGING-DOWN, SO 90 IS HORIZONTAL FORWARD. The drive is `sh` + `elbow` + the step.
 const THRUST_COIL = MK{ .sh = 26, .elbow = 104, .sweep = -4, .roll = 8, .wrist = 14, .yaw = -9, .chest = -11, .dip = 0.030 * H, .pitch = -7, .free = -20, .brace = 10, .abd = 4, .grip = GRIP_PITCH };
 
-/// DS1's dagger R2, and ER's Main-gauche / Miséricorde / Scorpion's Stinger. The shoulder goes FORWARD
-/// rather than up and the trunk SQUARES rather than turning; the 1.35 m step is the reach.
+/// DS1's dagger R2; ER's Main-gauche / Miséricorde / Scorpion's Stinger. The 1.35 m step is the reach.
 const THRUST_KEYS = [_]MKey{
     .{ .t = 0.00, .p = THRUST_REST },
     .{ .t = 0.22, .p = THRUST_COIL, .ease = .decel },
-    // **THE COIL IS HELD, AND THAT IS THE BAIT** (`anim.Ease.hold`) — 0.07 s of a point standing still at the ribs.
     .{ .t = 0.32, .p = THRUST_COIL, .ease = .hold },
     .{ .t = 0.50, .p = .{ .sh = 78, .elbow = 3, .sweep = 0, .roll = 2, .wrist = -6, .yaw = 4, .chest = 6, .dip = 0.014 * H, .pitch = 15, .free = 26, .brace = 5, .grip = GRIP_PITCH }, .ease = .accel },
     .{ .t = 0.60, .p = .{ .sh = 84, .elbow = -3, .sweep = 1, .roll = 1, .wrist = -9, .yaw = 6, .chest = 8, .dip = 0.010 * H, .pitch = 18, .free = 29, .brace = 3, .grip = GRIP_PITCH }, .ease = .decel },
@@ -1217,7 +1173,7 @@ const THRUST_KEYS = [_]MKey{
 const SWEEP_REST = MK{ .sh = 24, .elbow = 32, .grip = GRIP_PITCH };
 const SWEEP_WIND = MK{ .sh = 44, .elbow = 68, .sweep = -94, .roll = 18, .wrist = 22, .yaw = -30, .chest = -35, .dip = 0.030 * H, .pitch = -9, .free = -26, .brace = 13, .abd = 14, .tilt = -6, .grip = GRIP_PITCH };
 
-/// DS1's Large Club dashing horizontal swing. Hips first, and 1.44 m of bog-oak does not stop where the swing did.
+/// DS1's Large Club dashing horizontal swing; 1.44 m of bog-oak.
 const SWEEP_KEYS = [_]MKey{
     .{ .t = 0.00, .p = SWEEP_REST },
     .{ .t = 0.24, .p = SWEEP_WIND, .ease = .decel },
@@ -1229,19 +1185,13 @@ const SWEEP_KEYS = [_]MKey{
 };
 
 const SMASH_REST = MK{ .sh = 16, .elbow = 32, .grip = GRIP_PITCH };
-/// **THE ELBOW IS NEARLY STRAIGHT AT THE TOP, AND THAT IS THE WHOLE TELL.** Folded to 86 the tip clears his
-/// crown by 4 cm (measured) and nobody in front can read it; at 34 it stands 3.3 m up.
 const SMASH_TOP = MK{ .sh = 170, .elbow = 34, .sweep = -6, .wrist = 22, .yaw = -8, .chest = -11, .dip = -0.008 * H, .pitch = -15, .free = -36, .brace = 5, .abd = 8 };
 
-/// DS1's "slow, heavy overhead smash" for the Great Club and two-handed Large Club. He RISES onto it (the dip
-/// goes negative), HANGS, then drops his whole weight behind it; the deepest dip in the kit.
+/// DS1's "slow, heavy overhead smash" (Great Club, two-handed Large Club). The dip goes NEGATIVE — he rises onto it.
 const SMASH_KEYS = [_]MKey{
     .{ .t = 0.00, .p = SMASH_REST },
     .{ .t = 0.28, .p = SMASH_TOP, .ease = .decel },
-    // **THE HANG IS THE TELL, AND IT IS 0.17 s** at the dial the fight runs it at — ten frames. It was 0.37 s
-    // (owner: less hang time before coming down).
     .{ .t = 0.40, .p = SMASH_TOP, .ease = .hold },
-    // `.smooth` not `.accel`: back-loaded, the club was still 3.35 m up when the capsule went live (measured).
     .{ .t = 0.56, .p = .{ .sh = 65, .elbow = 14, .sweep = 4, .wrist = 30, .yaw = 6, .chest = 15, .dip = 0.075 * H, .pitch = 27, .free = 22, .brace = 17 }, .ease = .smooth },
     .{ .t = 0.67, .p = .{ .sh = 58, .elbow = 26, .sweep = 3, .wrist = 16, .yaw = 5, .chest = 12, .dip = 0.066 * H, .pitch = 23, .free = 18, .brace = 14 }, .ease = .decel },
     .{ .t = 0.83, .p = .{ .sh = 40, .elbow = 30, .wrist = 6, .yaw = 3, .chest = 6, .dip = 0.032 * H, .pitch = 12, .free = 9, .brace = 7 } },
@@ -1346,8 +1296,7 @@ pub fn advanceGait(phase: *f32, moving: *f32, fwdB: *f32, latB: *f32, speedS: *f
     phase.* -= @floor(phase.*);
 }
 
-/// The FLAT world's ground plane. The IK takes the actor's own `pos.y`; this is only what a rig posed at the
-/// origin stands on, and what the sole tests measure against.
+/// The FLAT world's ground plane; the IK takes the actor's own `pos.y`.
 pub const SOLE_Y: f32 = 0.0;
 
 pub const SolePatch = struct {
@@ -1439,8 +1388,7 @@ fn burstFrame(axis: rl.Vector3) struct { side: rl.Vector3, up: rl.Vector3 } {
 
 pub const Attack = enum { light, heavy };
 
-/// Appending is free: `save.zig` writes the rack by TAG NAME, and the book's hand menu is folded over these
-/// fields IN THIS ORDER.
+/// `save.zig` writes the rack by TAG NAME and the book's hand menu is folded over these fields IN THIS ORDER.
 pub const Armament = enum { sword, dagger, club, bow, bell, shield, wand, torch };
 pub const NARM = @typeInfo(Armament).@"enum".fields.len;
 
@@ -1464,8 +1412,7 @@ pub fn armTwoHanded(a: Armament) bool {
 pub fn handsHold(arm: Armament, off: Armament, a: Armament) bool {
     if (armTwoHanded(arm)) return a == arm;
     if (armTwoHanded(off)) return a == off;
-    // **THE WEAPON HAND IS ONE HAND.** The rig has ONE held bone (`SWORD`), so a second melee class would
-    // silently not be drawn. The RIGHT cell wins, and `offInHand` reports it so the book can give a reason.
+    // The rig has ONE held bone (`SWORD`), so a second melee class would silently not be drawn; the RIGHT cell wins.
     if (armSwings(arm) and armSwings(off)) return a == arm;
     return arm == a or off == a;
 }
@@ -1502,7 +1449,7 @@ pub const Hero = struct {
     xf: [N]rl.Matrix = undefined,
 
     pos: rl.Vector3 = mathx.zero3,
-    /// Whole-body pitch from the SLOPE he is standing on, in degrees, + = uphill ahead (lean into the climb).
+    /// Degrees, + = uphill ahead.
     slopePitch: f32 = 0,
     facing: f32 = 0, // yaw radians, 0 = +Z
     phase: f32 = 0,
@@ -1520,20 +1467,18 @@ pub const Hero = struct {
     rollVar: f32 = 1,
     fogGraceT: f32 = 0,
     lift: f32 = 0,
-    /// A WORLD height, integrated under gravity; `lift` is DERIVED off it. A lift integrated over a moving
-    /// datum sinks with the ground it was measured from when he runs off a ledge.
+    /// A WORLD height integrated under gravity; `lift` is DERIVED off it.
     airY: f32 = 0,
-    /// The highest `airY` reached this flight. The DROP is measured off this and not off where the flight
-    /// began, or a jump taken one stride before the lip is a shorter fall than a walk off it.
+    /// The highest `airY` this flight; the DROP is measured off this, not off where the flight began.
     airTop: f32 = 0,
     vertVel: f32 = 0,
     jumping: bool = false,
     launched: bool = false,
     climbing: bool = false,
-    /// Rungs crossed, as a repeating phase. Driven by DISTANCE climbed and never by time (the rig's law).
+    /// Rungs crossed as a repeating phase, driven by DISTANCE and never by time.
     climbPhase: f32 = 0,
     mantling: bool = false,
-    /// 0 at the last rung, 1 standing on the lip. Written by `game.updateMantle`, which owns the clock.
+    /// 0 at the last rung, 1 standing on the lip. Written by `game.updateMantle`.
     mantlePhase: f32 = 0,
     jumps: u32 = 0,
     airYaw: f32 = 0,
@@ -1564,8 +1509,7 @@ pub const Hero = struct {
     fp: combat.Focus = .{},
     souls: combat.Souls = .{},
     gold: combat.Gold = .{},
-    /// **WHAT THE SMITH HAS DONE TO EACH ARMAMENT**, 0..`TIER_MAX`. Per ARMAMENT and not per item: the sword
-    /// hand draws whatever is in it (`bladeOf`), so a tier follows the HAND he raised it in.
+    /// 0..`TIER_MAX`, per ARMAMENT and not per item — a tier follows the HAND he raised it in (`bladeOf`).
     tiers: [NARM]u8 = [_]u8{0} ** NARM,
     flasks: combat.Flasks = .{},
     quick: combat.Quick = .{},
@@ -1631,9 +1575,7 @@ pub const Hero = struct {
     parryT: f32 = 0,
     parries: u32 = 0,
     held: bool = false,
-    /// **SECONDS OF NET.** The foes' own law on the hero's side (`foe.grip`): it takes ONE thing, the FEET.
-    /// The state machine still runs, the sword still swings, the shield still blocks — he simply cannot go
-    /// anywhere, and a roll is travel so it is refused with the walk.
+    /// Seconds. Takes ONE thing, the FEET (`foe.grip`); a roll is travel, so it is refused with the walk.
     snare: f32 = 0,
     stun: combat.StunKind = .none,
     stunT: f32 = 0,
@@ -1707,7 +1649,7 @@ pub const Hero = struct {
 
     fn makeWhole(self: *Hero) void {
         self.vit = freshVitals(self.sheet);
-        // The bar's LENGTH, never its refill rate. `poise` is set alongside `poiseMax` because a lengthened bar left at its old fill comes up short.
+        // The bar's LENGTH, never its refill rate. `poise` is set alongside `poiseMax` or a lengthened bar comes up short.
         self.vit.poiseMax = POISE_MAX * self.perk.poiseMax;
         self.vit.poise = self.vit.poiseMax;
         self.refitHp();
@@ -1726,7 +1668,7 @@ pub const Hero = struct {
     }
 
     fn tickClocks(self: *Hero, dt: f32) void {
-        // Cleared HERE, not in each update: a frame long enough to cross both the release knot and the end of the shot sets `loosed` and drops `shooting` in one call.
+        // Cleared HERE, not per update: one long frame can cross both the release knot and the end of the shot.
         self.loosed = false;
         self.thrown = false;
         self.rang = false;
@@ -1735,11 +1677,9 @@ pub const Hero = struct {
         if (self.levinT > 0) self.levinT = mathx.maxF(0, self.levinT - dt);
         self.trail.age(dt);
         self.blendT = @min(self.blendT + dt, mathx.LONG_AGO);
-        // Stamina must advance exactly ONCE per frame whichever path runs, or `--shot` drains every swing it
-        // takes and never refills. The cast is in the PAUSE list but not the DRAIN argument: it bills FP.
+        // Stamina must advance exactly ONCE per frame whichever path runs. The cast is in the PAUSE list but not the DRAIN argument: it bills FP.
         self.stam.regenRate = self.perk.stamRegen;
         if (!self.held) self.stam.tick(dt, self.sprinting, self.attacking or self.rolling or self.guarding or self.casting or self.parrying);
-        // NOT gated on the poise clock — this is a trickle, not the stagger refill. Neither can exceed its pool.
         if (!self.held and !self.dead) {
             if (self.perk.hpRegen > 0) _ = self.vit.heal(self.perk.hpRegen * dt);
             if (self.perk.fpRegen > 0) _ = self.fp.restore(self.perk.fpRegen * dt);
@@ -1785,7 +1725,6 @@ pub const Hero = struct {
         return self.jumping or self.launched;
     }
 
-    /// **THE WHOLE RUN, BOTH HALVES OF IT** — the climb and the haul off the head of it both own his XZ and his height, and the ground under him is a storey down through both.
     pub fn onLadder(self: *const Hero) bool {
         return self.climbing or self.mantling;
     }
@@ -1803,10 +1742,7 @@ pub const Hero = struct {
         return true;
     }
 
-    /// Deliberately NOT gated on `committed()`. The stun is CLEARED on the way up, because the loop asks
-    /// `staggered()` before `airborne()` and a launch that also stunned him would never leave the ground; he is
-    /// stunned on the way down instead (`tickAir`). `held` refuses outright: `tickAir` will not integrate while
-    /// the world is stopped.
+    /// NOT gated on `committed()`. The stun is CLEARED on the way up (the loop asks `staggered()` before `airborne()`) and re-applied on the way down (`tickAir`); `held` refuses outright.
     pub fn startLaunch(self: *Hero, away: rl.Vector3, apex: f32) bool {
         return self.launchFrom(away, apex, self.footY());
     }
@@ -1854,9 +1790,7 @@ pub const Hero = struct {
         self.moving = 0;
     }
 
-    /// **`lift` IS DERIVED, SO IT GOES STALE THE FRAME THE GROUND UNDER HIM MOVES.** `tickAir` recomputes it,
-    /// but that runs at the top of the NEXT frame, and `game.groundActor` writes `pos.y` at the bottom of this
-    /// one — which off a deck edge is a whole storey. The lens reads the pair in between.
+    /// `lift` IS DERIVED and goes stale the frame the ground moves: `tickAir` recomputes it next frame, `game.groundActor` writes `pos.y` at the bottom of this one.
     pub fn syncLift(self: *Hero) void {
         self.lift = if (self.airborne()) mathx.maxF(self.airY - self.pos.y, 0) else 0;
     }
@@ -1883,7 +1817,7 @@ pub const Hero = struct {
         self.startXfade();
     }
 
-    /// `u` is the haul's own 0..1 and belongs to `game.Mantle`; the body only holds the pose (`tickClimb`).
+    /// `u` is the haul's own 0..1 and belongs to `game.Mantle`.
     pub fn tickMantle(self: *Hero, dt: f32, lift: f32, u: f32) void {
         self.tickClocks(dt);
         self.tickFogGrace(dt);
@@ -1929,8 +1863,6 @@ pub const Hero = struct {
             self.landed = true;
             self.landT = 0;
             if (self.hitGround(drop) == .death) return;
-            // The LIGHT stun, not the heavy one: the flight already is the reaction — 0.66 s of it, and a 1.15 s
-            // heavy stun on top made 1.8 s of no control off one blow. At 0.46 it comes to 1.12 s.
             if (thrown) {
                 self.enterStun(.light);
                 return;
@@ -1942,8 +1874,7 @@ pub const Hero = struct {
         self.lift = self.airY - self.pos.y;
     }
 
-    /// **THE GROUND IS NOT A BLOW.** Billed straight to `vit`, past armour and past the guard: a shield does
-    /// not catch the floor. It staggers on any drop that hurt, so a hard landing costs the beat as well.
+    /// THE GROUND IS NOT A BLOW: billed straight to `vit`, past armour and past the guard.
     fn hitGround(self: *Hero, drop: f32) combat.HitResult {
         const dmg = fallDamage(drop, self.vit.hpMax, self.sheet.at(.dexterity));
         if (dmg <= 0 or self.dead) return .none;
@@ -1977,7 +1908,7 @@ pub const Hero = struct {
 
     pub fn startRoll(self: *Hero, dir: rl.Vector3) void {
         if (!self.bodyFree()) return;
-        // A roll is TRAVEL, refused here at the CHOOSE (`foe.canLeap`'s rule) — gated later it would spend the stamina and roll on the spot.
+        // A roll is TRAVEL, refused at the CHOOSE (`foe.canLeap`) — gated later it would spend the stamina and roll on the spot.
         if (self.snared()) {
             self.refuse();
             return;
@@ -2144,8 +2075,7 @@ pub const Hero = struct {
         return self.worn.at(wearFor(a) orelse return false) != null;
     }
 
-    /// A save written before the rack was distinct can hold the same armament twice; the first cell keeps it. The
-    /// filler may not be a weapon he does not own — six fillers always pass `canRack` against four cells.
+    /// A save written before the rack was distinct can hold the same armament twice; the first cell keeps it. Six fillers always pass `canRack` against four cells.
     pub fn tidyHands(self: *Hero) void {
         var seen = std.EnumSet(Armament).initEmpty();
         for (self.rack()) |c| {
@@ -2166,7 +2096,7 @@ pub const Hero = struct {
         self.aiming = want and self.canAim();
     }
 
-    /// WHAT HE IS SWINGING AT, in degrees off his own eye line (+ = below him).
+    /// Degrees off his own eye line, + = below him.
     pub fn aimAtPitch(self: *Hero, deg: ?f32) void {
         self.aimLeanWant = mathx.clampF(AIM_LEAN_BIAS + (deg orelse 0), -AIM_LEAN_UP, AIM_LEAN_DOWN);
     }
@@ -2276,7 +2206,7 @@ pub const Hero = struct {
         return self.canGuard();
     }
 
-    /// NEVER BUFFERED: a parry is a window the player picked a moment for. Reports whether one started.
+    /// NEVER BUFFERED. Reports whether one started.
     pub fn requestParry(self: *Hero) bool {
         if (!self.shieldArm()) return false;
         if (!self.stam.canAct()) {
@@ -2315,8 +2245,7 @@ pub const Hero = struct {
         self.parrySparks();
     }
 
-    /// MEASURED off the fit matrix's own constants and MIRRORED WITH IT (`shieldFit`), since both the hub and
-    /// the normal are lateral. Taken off a fixed `WRL`, boards equipped RIGHT threw every shower off the other hand.
+    /// Measured off the fit matrix's own constants and MIRRORED WITH IT (`shieldFit`) — both the hub and the normal are lateral.
     pub fn shieldFaceWorld(self: *const Hero) struct { at: rl.Vector3, n: rl.Vector3 } {
         const left = self.shieldLeft();
         const sd: f32 = if (left) 1.0 else -1.0;
@@ -2620,9 +2549,7 @@ pub const Hero = struct {
         return self.castT >= breathAt() and self.castT < breathAt() + combat.RIME_DUR;
     }
 
-    /// Billed on the CAST clock, not the wall clock: `breathLive` is a window in `castT`, which `perk.castSpeed`
-    /// advances faster, so a real-time dose made every point of cast speed a cut to the spell — at the tree's
-    /// 1.45x the cone billed 10.5 cold against the 15.3 `combat.SPELLS` prices it at.
+    /// Billed on the CAST clock, not the wall clock: at the tree's 1.45x cast speed a real-time dose billed 10.5 cold against `combat.SPELLS`' 15.3.
     pub fn breathDose(self: *const Hero, dt: f32) f32 {
         return dt * self.castRate();
     }
@@ -2632,8 +2559,7 @@ pub const Hero = struct {
         return mathx.clampF((self.castT - breathAt()) / combat.RIME_DUR, 0, 1);
     }
 
-    /// Off the POSED ROD, so it rides the wrist and the kick. The last centimetres step out along his FACING,
-    /// not the rod's own axis, because `facing` is what the cone is aimed down (`breathDir`).
+    /// Off the POSED ROD. The last centimetres step out along his FACING, not the rod's own axis (`breathDir`).
     pub fn breathMouth(self: *const Hero) rl.Vector3 {
         const tip = self.wandTipWorld();
         const d = mathx.headingDir(self.facing);
@@ -2650,7 +2576,7 @@ pub const Hero = struct {
         const dir = self.breathDir();
         var n = foemod.emitTicks(&self.breathAcc, dt, BREATH_RATE, BREATH_CAP);
         while (n > 0) : (n -= 1) {
-            // RADIANS because a cone's geometry wants them; authored in degrees for `withinArc` and converted here.
+            // RADIANS here; authored in degrees for `withinArc`.
             elemfx.pour(&self.fx, &self.fxHead, &rng, at, dir, .cold, 1, mathx.radians(combat.RIME_ARC), combat.RIME_REACH, 1.0);
         }
     }
@@ -2669,8 +2595,7 @@ pub const Hero = struct {
         return mathx.clampF(self.castT / (CAST_DUR * CAST_AT), 0, 1);
     }
 
-    /// Off the posed wrist THE ROD IS ACTUALLY IN. Measured from the mesh's own constants (`wandMesh` takes no
-    /// fit matrix), so one index and no mirror. Welded to `WRL`, a rod equipped RIGHT threw every bolt out of the empty hand.
+    /// Off the posed wrist the rod is in; measured from `wandMesh`'s own constants, so one index and no mirror.
     pub fn wandTipWorld(self: *const Hero) rl.Vector3 {
         return rl.math.vector3Transform(wandAt(WAND_TIP_T), self.xf[if (self.wandLeft()) WRL else WRR]);
     }
@@ -2679,9 +2604,7 @@ pub const Hero = struct {
         return rl.math.vector3Transform(torchAt(TORCH_FLAME_T), self.xf[if (self.torchLeft()) WRL else WRR]);
     }
 
-    /// SCALED WHOLE, not on the damage alone, or the poise it staggers with stays at its level-1 figure. Null
-    /// for the two that bill over time (`combat.spellBlow`). Intelligence is the other half: the wand has no
-    /// `item.Arm` row to hang a skill scale off (`wearFor` gives it no socket).
+    /// SCALED WHOLE, not on the damage alone, or the poise stays at its level-1 figure. Null for the two that bill over time (`combat.spellBlow`).
     pub fn castBlow(self: *const Hero) ?combat.Hit {
         const base = combat.spellBlow(self.spell) orelse return null;
         return base.scaled(self.perk.spellDmg * self.sheet.scale(.intelligence));
@@ -2873,8 +2796,7 @@ pub const Hero = struct {
 
     fn gatherMotes(self: *Hero, dt: f32) void {
         const at = self.wandTipWorld();
-        // Each mote is solved to ARRIVE at the stone and the stone crosses ~5 m/s through the lift, so without
-        // the tip's velocity they converge on where it WAS. Skipped on frame one: `xf` is undefined until `pose` has run.
+        // Motes are solved to ARRIVE at the stone and the stone crosses ~5 m/s, so without the tip's velocity they converge on where it WAS. `xf` is undefined until `pose` has run.
         const tipV = if (self.castT > dt and dt > 0)
             mathx.scaleV(mathx.subV(at, self.tipPrev), 1.0 / dt)
         else
@@ -3088,8 +3010,7 @@ pub const Hero = struct {
     }
 
     pub fn levinStroke(self: *Hero, from: rl.Vector3, to: rl.Vector3, groundY: f32, salt: u32) void {
-        // THE FLOOR IS THE EARTH UNDER THE STRIKE, not his feet and not the contact (`boltBurst`'s law) — the
-        // contact is a body's CHEST, so floored there a falling spark would stop a metre up. Lightning's grav is 0 today.
+        // THE FLOOR IS THE EARTH UNDER THE STRIKE, not the contact (`boltBurst`) — the contact is a CHEST, a metre up.
         const was = self.fxHead;
         defer foemod.floorBurst(&self.fx, was, self.fxHead, groundY);
         var rng = foemod.fxStream(@floatFromInt(salt), 733.0, 0x8B06);
@@ -3241,8 +3162,7 @@ pub const Hero = struct {
         self.fogGraceT = FOG_GRACE_TAIL;
     }
 
-    /// Asked off `speed` and not off `moving`, because the gait's blend lags a stick let go by ~0.1 s and a
-    /// grace that outlives the step that spent it is a grace that never ends on a man tapping the stick.
+    /// Off `speed`, not `moving`: the gait's blend lags a released stick by ~0.1 s.
     fn tickFogGrace(self: *Hero, dt: f32) void {
         if (self.fogGraceT <= 0 or self.speed <= FOG_GRACE_STILL) return;
         self.fogGraceT = mathx.maxF(0, self.fogGraceT - dt);
@@ -3322,7 +3242,7 @@ pub const Hero = struct {
         refitPool(&self.fp.cur, &self.fp.max, fpMaxOf(self.sheet, self.worn, self.perk));
     }
 
-    /// **THE FRACTION IS KEPT ACROSS THE RESIZE**: taking a ring off may not heal him and putting one on may not kill him.
+    /// The FRACTION is kept across the resize: a ring off may not heal him, a ring on may not kill him.
     fn refitHp(self: *Hero) void {
         const frac = if (self.vit.hpMax > 1e-4) self.vit.hp / self.vit.hpMax else 1.0;
         self.vit.hpMax = hpMaxOf(self.sheet, self.worn, self.perk);
@@ -3398,13 +3318,12 @@ pub const Hero = struct {
             },
             .none => {},
         }
-        // **THE THROW IS LAST, BECAUSE IT BEATS THE STAGGER IT REPLACES.** `startLaunch` clears the stun it finds
-        // and hands it back on the landing, so a slam reads as one reaction rather than a flinch then a flight.
+        // THE THROW IS LAST, because it beats the stagger it replaces: `startLaunch` clears the stun and hands it back on the landing.
         if (r != .death) _ = self.startLaunch(mathx.scaleV(fromDir, -1), h.launch);
         return .taken;
     }
 
-    /// Takes a whole `Hit` because a floor has an ELEMENT. A DRIP, not a blow: its pulse lands inside the regen delay (0.42 against 0.8), so billed through `hit` the gate never opens.
+    /// Takes a whole `Hit` because a floor has an ELEMENT. A DRIP: its pulse lands inside the regen delay (0.42 against 0.8).
     pub fn burn(self: *Hero, h: combat.Hit) combat.HitOutcome {
         if (self.dead or h.raw() <= 0) return .ignored;
         const r = self.vit.drip(h);
@@ -3563,8 +3482,7 @@ pub const Hero = struct {
         self.speedS = mathx.approach(self.speedS, 0, dt * SPEED_SMOOTH);
         const dur = combat.heroStunDur(self.stun == .heavy);
         self.pose();
-        // **ASLEEP IS A STAGGER THAT WILL NOT TIME OUT** (owner: unable to act until hit). The wake is on the
-        // blow path (`takeHit`), so a poison tick leaves him lying there and only a real blow gets him up.
+        // Asleep is a stagger that will not time out; the wake is on the blow path (`takeHit`), so a poison tick will not raise him.
         if (self.stunT >= dur and !self.vit.asleep()) {
             self.stun = .none;
             self.startXfade();
@@ -3602,7 +3520,6 @@ pub const Hero = struct {
         self.trail = .{};
         self.fx = [_]foemod.Particle{.{}} ** FX_N;
         self.fxHead = 0;
-        // Drawn off `rootSites`, not out of `fx`: `ROOT_SITE_LIFE` 5.86 s against `DEATH_DUR` left root fans tearing out of the old spot for 2.26 s of the next run.
         self.rootSites = [_]RootSite{.{}} ** ROOT_SITES;
         self.rootHead = 0;
         self.startXfade();
@@ -3860,9 +3777,6 @@ pub const Hero = struct {
         for (0..N) |i| wx[i] = lerpM(self.blendXf[i], wx[i], k);
     }
 
-    /// Off the vertical velocity, normalised on the launch's own v0 so a bigger throw is not a different
-    /// animation. Where the jump TUCKS at the apex this ARCHES. **AND THE ARCH OVERSHOOTS ITS REST**
-    /// (`AGENTS.md`): it peaks a little past the apex, so he is still laying back once he has started to fall.
     fn poseLaunch(self: *Hero) void {
         const k = mathx.clampF(self.vertVel / launchV0(LAUNCH_MAX_APEX), -1, 1);
         const rise = mathx.clampF(k, 0, 1);
@@ -3929,8 +3843,7 @@ pub const Hero = struct {
         self.publish(&wx);
     }
 
-    /// A cross-crawl: left hand with right foot, one phase driving all four limbs, the arm a half-cycle ahead of
-    /// the leg on the same side. He hugs the rails, so shoulder abduction is a fraction of the walk's.
+    /// A cross-crawl: left hand with right foot, the arm a half-cycle ahead of the leg on the same side.
     fn poseClimb(self: *Hero) void {
         const ph = self.climbPhase;
         const facingDeg = mathx.degrees(self.facing);
@@ -4019,7 +3932,7 @@ pub const Hero = struct {
         self.poseLight();
     }
 
-    /// Four moves, one function. `lat` is the lateral sign (which hand, times the chain's alternation) and it multiplies exactly the channels that mirror.
+    /// `lat` is the lateral sign (which hand × the chain's alternation) and multiplies exactly the channels that mirror.
     fn poseStroke(self: *Hero, keys: []const MKey, mirrors: bool) void {
         const u = mathx.clampF(self.atkT / self.atkDur(self.atkHeavy), 0, 1);
         const k = mkAt(keys, u);
@@ -4030,7 +3943,7 @@ pub const Hero = struct {
         const lat = sd * sw;
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
-        // THE WAIST TAKES THE FOLD, THE PELVIS STAYS NEAR-UPRIGHT (the ogre's `PELVIS_SHARE` law): a quarter of the pitch at the root, the rest split across spine and chest.
+        // The WAIST takes the fold, the pelvis stays near-upright (`ogre.PELVIS_SHARE`): a quarter of the pitch at the root.
         const trunk = 0.5 * (0.75 * k.pitch + self.aimLean);
         const lead: f32 = if (lat > 0) 1.0 else 0.6;
         const trail: f32 = if (lat > 0) 0.6 else 1.0;
@@ -4062,7 +3975,7 @@ pub const Hero = struct {
     }
 
     fn poseLight(self: *Hero) void {
-        // OFF `atkHeavy`, NOT A CONSTANT: `poseAttack` picks by STROKE, so a class mapping `.slash` to its R2 would divide the heavy clock by the light duration.
+        // Off `atkHeavy`, not a constant: `poseAttack` picks by STROKE.
         const u = mathx.clampF(self.atkT / self.atkDur(self.atkHeavy), 0, 1);
         const rec = 1.0 - mathx.smoothstep(AL_RECOV_A, 1.0, u);
         const wind = mathx.smoothstep(0, AL_WIND_B, u) * rec;
@@ -4389,8 +4302,7 @@ pub const Hero = struct {
         self.publish(&wx);
     }
 
-    /// `lit` is FALSE in the depth pass (`game.drawCasters` runs this twice). **A FIRE MAY NOT CAST A SHADOW**:
-    /// the flame is real geometry 0.45 m off his axis, and at the ortho box's 13 mm a texel it laid a 23-texel blob beside him.
+    /// `lit` is FALSE in the depth pass (`game.drawCasters` runs this twice). A FIRE MAY NOT CAST A SHADOW: at the ortho box's 13 mm a texel the flame laid a 23-texel blob.
     pub fn draw(self: *const Hero, lit: bool) void {
         const stowSword = self.resting or self.meleeArm() == null;
         for (0..N) |i| {
@@ -4449,9 +4361,7 @@ pub fn placeSword(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, animRot: rl.Matrix, le
     wx[SWORD] = mul(animRot, gripFrame(wx[if (left) WRL else WRR], rest, left));
 }
 
-/// **A POLE IS AUTHORED POINTING UP OFF THE GRIP** (the warriors' kit convention), so the fit FLIPS it. After
-/// this a caster's `tilt` is degrees the head leads FORWARD of plumb in the WORLD, and the fit bills the ARM
-/// and never the trunk, so a pose that arches the spine pays for it in its own tilt.
+/// A pole is authored pointing UP off the grip, so the fit FLIPS it. After this `tilt` is degrees the head leads FORWARD of plumb in the WORLD, billed to the ARM and never the trunk.
 pub fn staffFit(tilt: f32) rl.Matrix {
     return mul(ry(180.0), rx(180.0 - tilt));
 }
@@ -4483,9 +4393,7 @@ pub fn setJoint(wx: []rl.Matrix, rest: []const rl.Vector3, i: usize, p: usize, a
     wx[i] = mul(mul(animRot, tr(off.x, off.y, off.z)), wx[p]);
 }
 
-/// **`groundY` IS THE ACTOR'S OWN `pos.y`, NEVER A CONSTANT.** The plane the sole is driven to is the ground
-/// UNDER THIS BODY; with a world-space zero the IK asks for the hip's height above sea level, so on sculpted
-/// terrain every leg is solved for the wrong span — folded to nothing in a dug basin, locked straight on a rise.
+/// `groundY` IS THE ACTOR'S OWN `pos.y`, NEVER A CONSTANT — a world-space zero asks for the hip's height above sea level and solves every leg for the wrong span.
 pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, groundY: f32, ph: f32, m: f32, runB: f32, sag: f32, lat: f32, side: f32, hip: usize, knee: usize, sole: SolePatch) void {
     const ank = sole.bone;
     const phS = if (sag >= 0) ph else -ph;
@@ -4555,7 +4463,6 @@ pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, groundY: f32, ph: f32
             }
         }
         if (deepest >= groundY) break;
-        // MEASURED horizontally, not off the foot's length: a steeply pitched foot has most of that length pointing DOWN.
         const ankW = rl.math.vector3Transform(v3(0, 0, 0), wx[ank]);
         const lever = mathx.maxF(0.02 * wscale, mathx.lenXZ(mathx.subV(worst, ankW)));
         const step = mathx.degrees(std.math.asin(mathx.clampF((groundY - deepest) / lever, -1, 1)));
@@ -4640,7 +4547,7 @@ fn rollArm(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, tuck: f32, f: f32, side: f32,
 
 const ROUND_EDGES = true;
 pub const ROUND_E: f32 = 0.34;
-/// A fillet costs a box 6 quads → segs×sides, so the tessellation is sized to the part's largest dimension in units of stature.
+/// A fillet costs a box 6 quads → segs×sides; sized off the part's largest dimension in units of stature.
 pub fn roundGrid(size: rl.Vector3) struct { segs: i32, sides: i32 } {
     const big = @max(@max(@abs(size.x), @abs(size.y)), @abs(size.z)) / H;
     if (big >= 0.12) return .{ .segs = 6, .sides = 12 };
@@ -4692,7 +4599,6 @@ fn swordMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// Ground out of a kobold's tooth (`item.describe`), so the blade is BONE. The visible point is at t 0.28 where the capsule reaches 0.37.
 fn daggerMesh() rl.Mesh {
     var b = Builder.init();
     const s = v3(0.5 * OUT_CA, 0, 0.5 * OUT_SA);
@@ -4761,7 +4667,7 @@ fn bellMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// `u` is 0 at the shoulder, 1 at the mouth. The exponent IS the bell: under 1 it bulges like a pot, at 1 it is a cone, past ~1.5 it tucks in then throws out to the rim.
+/// `u` is 0 at the shoulder, 1 at the mouth. The exponent is the bell: under 1 bulges, 1 is a cone, past ~1.5 tucks then flares to the rim.
 fn bellR(u: f32) f32 {
     return BELL_MOUTH_R * (0.34 + 0.66 * std.math.pow(f32, mathx.clampF(u, 0, 1), 1.7));
 }
@@ -4794,8 +4700,7 @@ fn rootTendrilMesh(variant: u32) rl.Mesh {
     var rng = mathx.Rng.init(0x600751 +% variant *% 7919);
     b.setMat(.wood);
     const bark = mathx.lerpColor(ROOT_BARK, ROOT_BARK_LT, @as(f32, @floatFromInt(variant)) / @as(f32, ROOT_KINDS - 1));
-    // PER SEGMENT — the total arc is `curl` × the segment count. BRACKETED BOTH SIDES: at 0.03–0.065 they read
-    // as grave markers, far past this as croquet hoops.
+    // PER SEGMENT — the total arc is `curl` × the segment count.
     const curl = rng.range(0.069, 0.109);
     const sway = rng.range(-0.07, 0.07);
     var p = v3(0, -0.10 * H, 0);
@@ -4863,7 +4768,6 @@ fn wandMesh() rl.Mesh {
 
     b.setMat(.steel);
     const neck = wandAt(WAND_TIP_T - 0.052);
-    // Barely proud of the rod it bands: at 1.15 of the shaft radius the pair read as a lampshade.
     b.addCapsule(wandAt(WAND_TIP_T - 0.078), neck, WAND_R * 1.02, WAND_R * 0.94, 8, WAND_FERRULE);
     const stone = wandAt(WAND_TIP_T);
     const behind = wandAt(WAND_TIP_T - 0.020);
@@ -4920,8 +4824,7 @@ fn torchMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// **DRAWN IN WORLD SPACE, NOT ON THE WRIST.** The shader's flame billow (`shaders.sceneVS`, mat 11) throws
-/// along the MODEL's +Y, so hung off the wrist it would lash sideways every time he turned his arm over.
+/// Drawn in WORLD space, not on the wrist: the shader's flame billow (`shaders.sceneVS`, mat 11) throws along the MODEL's +Y.
 fn torchFlameMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x70C49);
@@ -5059,18 +4962,13 @@ fn headMesh() rl.Mesh {
 fn thighMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.cloth);
-    // Widest at 0.078 the leg reached 0.30 m off his axis where the belt reaches 0.21, so sealing that mouth with
-    // a ball put a rounded flare at the widest point. Narrowed to 0.055 at the joint and widest a hand below it,
-    // the silhouette runs INWARD to the waist — the ogre's own limb profile (`ogre.limb`), full at 42%.
     b.addCylinder(v3(0, 0.012 * H, 0), v3(0, -0.052 * H, 0), 0.055 * H, 0.078 * H, 10, CLOTHDK);
     b.addCylinder(v3(0, -0.052 * H, 0), v3(0, -SEG_THIGH * H, 0), 0.078 * H, 0.058 * H, 10, CLOTHDK);
-    // **THE KNEE, so the thigh does not end in a cut pipe** (`addCylinder` is CAPLESS). It only shows on a bent
+    // The knee, so the thigh does not end in a cut pipe (`addCylinder` is CAPLESS).
     b.addBlob(v3(0, -SEG_THIGH * H, 0), v3(0.059 * H, 0.038 * H, 0.059 * H), 5, 10, CLOTHDK);
     b.setMat(.leather);
     b.addCylinder(v3(0, -0.002 * H, 0), v3(0, -0.075 * H, 0), 0.088 * H, 0.072 * H, 10, LEATHER_DK);
-    // Both cylinders above are open at the joint. A cap is flush with what it seals and flattened on its axis —
-    // `addCube` takes a FULL size and `addBlob` takes RADII, and mixing them is how this went wrong: 0.079 against
-    // the cloth cylinder's 0.078, inside the leather band's 0.088. At a 0.092 RADIUS it stood 0.12 m proud of the belt.
+    // `addCube` takes a FULL size and `addBlob` takes RADII: at a 0.092 radius this stood 0.12 m proud of the belt.
     b.addBlob(v3(0, 0.012 * H, 0), v3(0.056 * H, 0.030 * H, 0.056 * H), 6, 12, CLOTHDK);
     return b.toMesh();
 }
@@ -5405,7 +5303,6 @@ test "a stagger drops the bow but never the CHOICE of weapon" {
 }
 
 test "THE AIM BLEND EASES DOWN THROUGH A STAGGER, exactly as the guard's does" {
-    // The camera's boom rides `aimB` (AIM_DIST 0.7 against a 4.6 zoom), so zeroing it inside `dropAim` cut the eye four metres in ONE frame.
     var h = testHero();
     _ = h.swapArm();
     h.setAim(true);
@@ -5556,7 +5453,7 @@ fn flyJump(dt: f32) struct { apex: f32, air: f32, frames: usize } {
 }
 
 test "THE JUMP IS THE SAME JUMP AT EVERY FRAME RATE — and it always comes down" {
-    // Semi-implicit Euler's error is O(g·dt²) — 9 mm at 30 fps and nothing above it. Measured in FRAMES it would be a hero who jumps higher on a better machine.
+    // Semi-implicit Euler's error is O(g·dt²) — 9 mm at 30 fps.
     for ([_]f32{ 1.0 / 30.0, 1.0 / 60.0, 1.0 / 144.0, 1.0 / 240.0 }) |dt| {
         const j = flyJump(dt);
         try std.testing.expect(j.frames < 100_000);
@@ -5605,10 +5502,8 @@ test "THE GROUND CATCHES HIS FEET WHEREVER IT IS — a jump onto a ledge lands e
 test "THE FALL — free under the lip, certain at the bottom, and dexterity buys a quarter and not one metre" {
     const hp = HP_MAX;
     try std.testing.expectEqual(@as(f32, 0), fallDamage(FALL_FREE, hp, statsmod.MAX));
-    // The height that kills is not for sale: a maxed dexterity still dies at the bottom of the same shaft.
     try std.testing.expect(fallDamage(FALL_DEATH, hp, statsmod.MAX) >= hp);
     try std.testing.expect(fallDamage(FALL_DEATH - 0.01, hp, statsmod.MAX) < hp);
-    // Nor is it ever a scratch: one step past the lip already costs the floor.
     try std.testing.expect(fallDamage(FALL_FREE + 0.01, hp, statsmod.MAX) >= hp * FALL_MIN_FRAC - 1e-3);
     var d = FALL_FREE;
     var prev: f32 = -1;
@@ -5634,7 +5529,6 @@ test "THE FALL — free under the lip, certain at the bottom, and dexterity buys
         });
     }
 
-    // And it is billed on the LANDING, off the highest point of the flight and not off where it began.
     var h = testHero();
     h.pos = v3(0, 9.0, 0);
     h.startFall(9.0, mathx.zero3, 0);
@@ -5725,7 +5619,7 @@ test "THE BRAND IS HELD CLEAR OF HIM — the flame's own height, reach and stand
     var h = testHero();
     try std.testing.expect(h.equip(LEFT, 0, .torch));
     try std.testing.expect(h.torchOut() and h.torchLeft());
-    // Past the swap's own cross-fade, or this measures the pose he is blending OUT of (the arm still hanging).
+    // Past the swap's cross-fade, or this measures the pose he is blending OUT of.
     h.blendT = mathx.LONG_AGO;
     h.pose();
 
@@ -5744,7 +5638,6 @@ test "THE BRAND IS HELD CLEAR OF HIM — the flame's own height, reach and stand
         .{ at.y, H, side, fwd, off, mathx.degrees(std.math.acos(mathx.clampF(plumb, -1, 1))) },
     );
 
-    // THE BRAND STANDS UP: inside 25 degrees of plumb, or it reads as a club being carried, not a light.
     try std.testing.expect(plumb > 0.90);
     try std.testing.expect(at.y > H - 0.10 and at.y < H + 0.15);
     try std.testing.expect(side > 0.28 and side < 0.48);
@@ -6267,7 +6160,6 @@ test "strafe: the crossing leg passes IN FRONT and its partner passes BEHIND" {
 }
 
 test "strafe: planted feet stay ON the ground and the swing foot actually leaves it" {
-    // 17 deg of knee lift over 13 deg of hip flex netted ~1 cm of clearance once the pelvis dip was subtracted, so the swing foot skimmed the grass.
     const restFootY = restPositions()[ANKL].y;
     var worstPlanted: f32 = 0;
     var bestSwing: f32 = 0;
@@ -6340,8 +6232,7 @@ test "feet do not RAKE through the floor — walking, running, sprinting or side
     try std.testing.expect(deepestSole(SPRINT_SPEED, 0.0) > SOLE_Y - 0.30);
 }
 
-/// The whole leg solve, measured at one ground height: how far the deepest sole sits under the plane the actor
-/// is standing on, and how bent the knee is. Both must be the same at every elevation.
+/// How far the deepest sole sits under the actor's ground plane, and how bent the knee is; both must be equal at every elevation.
 fn strafeAtGround(groundY: f32) struct { sole: f32, knee: f32 } {
     var h = testHero();
     h.pos = v3(0, groundY, 0);
@@ -6493,7 +6384,7 @@ test "ALL THREE CLASSES WORK IN EITHER HAND — the mesh, the pose and the capsu
                 try std.testing.expect(mathx.distXZ(h.bladeA, own) < 0.5);
                 try std.testing.expect(mathx.distXZ(h.bladeA, own) < mathx.distXZ(h.bladeA, other));
             }
-            // The SAGITTAL half is never mirrored: both hands reach as far forward and as high. Getting `armSide`'s `mirror` wrong flips a stroke backwards.
+            // The SAGITTAL half is never mirrored: both hands reach as far forward and as high.
             try std.testing.expectApproxEqAbs(right.bladeB.y, left.bladeB.y, 0.30);
             for ([_]*Hero{ &right, &left }) |h| h.attacking = false;
         }
@@ -6638,8 +6529,7 @@ test "THE HANG IS REAL AND THE SMASH ARRIVES OVERHEAD — measured off the posed
     const overhead = club.bladeB.y;
     const crown = club.pos.y + H;
 
-    // **MEASURED ACROSS THE LIVE WINDOW, NOT AT ITS OPENING FRAME.** The capsule goes live half way down, so
-    // at `hitA` the club is still well overhead; the claim is a span, not a point.
+    // Measured across the LIVE WINDOW, not at its opening frame: the capsule goes live half way down.
     const span = tipSpan(.club, .greatclub, true, .y);
     std.debug.print("  smash tip: {d:.2} m overhead (crown {d:.2}); live window sweeps {d:.2} m -> {d:.2} m\n", .{ overhead, crown, span.hi, span.lo });
     try std.testing.expect(overhead > crown);
@@ -6653,8 +6543,7 @@ test "A CLUB IS SWUNG LIKE ONE — it sinks the hips, the dagger does not, and t
     var club = meleeHero(.club, .greatclub);
     var dagger = meleeHero(.dagger, .fang_dirk);
 
-    // **COMPARED AT EACH STROKE'S OWN DEEPEST FRAME, NOT AT A SHARED `u`**: the smash's midpoint is the HANG,
-    // where he is RISEN onto the club. Asked at 0.5 the club came out above the sword and the claim read backwards.
+    // Compared at each stroke's own deepest frame, not at a shared `u`: the smash's midpoint is the HANG.
     for ([_]Attack{ .light, .heavy }) |kind| {
         const heavy = kind == .heavy;
         var deep: [3]f32 = undefined;
@@ -6703,12 +6592,9 @@ test "A SWEEP RUNS LEVEL AND A SMASH COMES DOWN — the blade's own pitch, not t
     const thrust = bladePitchAt(.dagger, .fang_dirk, true, 0.52);
     const smash = bladePitchAt(.club, .greatclub, true, 0.56); // the impact key, not the window's tail
     std.debug.print("\n  blade pitch (+ = point below the grip): sweep {d:.1} deg, thrust {d:.1}, smash {d:.1}\n", .{ sweep, thrust, smash });
-    // **A HORIZONTAL SWING MUST BE HORIZONTAL.** At 60 deg it rakes the dirt and reads as a failed overhead (measured, the first pass).
     try std.testing.expect(@abs(sweep) < 25);
     try std.testing.expect(@abs(thrust) < 25);
-    // **A 1.44 m CLUB ON A 1.3 m SHOULDER CANNOT BE BOTH VERTICAL AND ON THE GROUND**: solved, the head reaches
-    // the earth with the shaft near 40 deg, and forcing it past that drove the tip 0.81 m UNDER the floor
-    // (measured). The steepness claim is therefore RELATIVE — against the club's own horizontal.
+    // Solved: a 1.44 m club on a 1.3 m shoulder reaches the earth with the shaft near 40 deg, so the steepness claim is RELATIVE to the club's own horizontal.
     try std.testing.expect(smash > 2.0 * @abs(sweep));
     try std.testing.expect(smash > 30);
 }
@@ -7018,8 +6904,7 @@ test "WHAT STARTS IS WHAT LANDS — a variant taken up mid-stroke cannot reach i
     try std.testing.expect(!h.hitActive());
     h.arm = .club; // `equip` refuses mid-swing; this is what holds if something reaches past it
 
-    // Read live, `atkT / dur` fell back to 0.52 of a club's longer clock — inside `AL_HIT_A`..`AL_HIT_B`, which
-    // re-opens a closed window and re-arms `foe.strike`'s one-hit latch.
+    // Read live, `atkT / dur` fell back to 0.52 of a club's longer clock — inside `AL_HIT_A`..`AL_HIT_B`, re-arming `foe.strike`'s one-hit latch.
     try std.testing.expectApproxEqAbs(dur, h.atkDur(false), 1e-6);
     try std.testing.expectApproxEqAbs(dmg, h.attackHit().dmg, 1e-4);
     try std.testing.expect(!h.hitActive());
@@ -7045,7 +6930,7 @@ test "WHAT STARTS IS WHAT LANDS — a variant taken up mid-stroke cannot reach i
 
 const Span = struct { lo: f32, hi: f32, mean: f32 };
 
-/// `.y` is height, `.x` is his own LATERAL (facing is pinned to +Z). As three separate loops the step size and the endpoints were three slightly different questions.
+/// `.y` is height, `.x` is his own LATERAL (facing is pinned to +Z).
 fn tipSpan(a: Armament, k: ?item.Kind, heavy: bool, axis: enum { x, y }) Span {
     var h = meleeHero(a, k);
     h.facing = 0;
@@ -7070,7 +6955,7 @@ fn tipSpan(a: Armament, k: ?item.Kind, heavy: bool, axis: enum { x, y }) Span {
     return out;
 }
 
-/// The MEAN height across the live window — not where the arm ends up and not the highest point the tip reaches.
+/// The MEAN height across the live window.
 fn aimHeightOf(a: Armament, k: ?item.Kind, heavy: bool) f32 {
     return tipSpan(a, k, heavy, .y).mean;
 }
@@ -7083,14 +6968,11 @@ test "EVERY STROKE AIMS AT A BODY — except the one whose target is the ground"
     const thrust = aimHeightOf(.dagger, .fang_dirk, true);
     std.debug.print("\n  aim (mean tip height over the live window, H={d:.2}): slash {d:.2}, flick {d:.2}, thrust {d:.2}, sweep {d:.2}, smash {d:.2}\n", .{ H, slash, flick, thrust, sweep, smash });
 
-    // Authored off the arm rather than off the target, the flick sat at 0.80 m and the sweep at 0.66 — both
-    // raking a standing man's SHINS (measured; owner: they should aim higher with weak).
     for ([_]f32{ flick, sweep }) |aim| {
         try std.testing.expect(aim > 0.55 * H); // a torso, not a knee
         try std.testing.expect(@abs(aim - slash) < 0.35);
     }
     try std.testing.expect(thrust > 0.45 * H);
-    // The smash's MEAN sits well under the club's own horizontal because the window opens overhead and closes on the earth; where it FINISHES is measured next door, at -0.01 m.
     try std.testing.expect(smash < sweep);
     try std.testing.expect(smash < 0.7 * slash);
 }
@@ -7117,7 +6999,6 @@ test "AN ENVENOMED EDGE FILLS A BODY IN FOUR STROKES, and what it becomes is CHA
     _ = body.tickAils(1.0 / 60.0);
     try std.testing.expect(body.ailOn(.poison));
 
-    // …and the bite it turns into is CHAOS, so a creature's own column answers it. The brood's +75 is the cap.
     const hpWas = body.hp;
     _ = body.tickAils(1.0);
     const bare = hpWas - body.hp;

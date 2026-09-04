@@ -159,7 +159,7 @@ const B_HOME_R = 1.8;
 const B_BITE_R = 1.05;
 const B_LEAP_MIN = 2.4;
 const B_LEAP_MAX = 5.4;
-/// Its rear-and-claws-wide tell (`resolveBiteWind` already poses one) — it was 0.20 s, which with a 0.09 s snap behind it is 17 frames from standing to bitten. Still the quickest thing in the game, but now over `foe.TELL_MIN`.
+/// Its rear-and-claws-wide tell — it was 0.20 s, which with a 0.09 s snap behind it is 17 frames from standing to bitten. Still the quickest thing in the game, but now over `foe.TELL_MIN`.
 const B_BITE_WINDUP = 0.34;
 const B_BITE_SNAP = 0.09;
 const B_BITE_RECOVER = 0.26;
@@ -1965,7 +1965,7 @@ test "HER BITE IS AN INSTANT FROM BEING CAUGHT, and nothing else of hers is catc
     try std.testing.expect(PARRY_LEAD < BITE_WINDUP * 0.4);
 
     var m = Spider.spawnAs(.mother, mathx.ground(0, 0), 0, 1.0, 0.0);
-    // MEASURED off the state machine: walk the bite from the first frame of its windup and collect the span that is actually parryable, plus where the fangs actually arrive.
+    // MEASURED off the state machine: the bite is walked from the first frame of its windup and the parryable span collected, plus where the fangs actually arrive.
     const step = 1.0 / 600.0;
     var open: f32 = -1;
     var shut: f32 = -1;
@@ -2118,7 +2118,7 @@ test "A SAC IS A TARGET, and answers everything a target has to answer" {
 }
 
 test "A STRUCK SAC'S BAR GOES AWAY AGAIN — its vitals actually run" {
-    // THE bug: `Sac.update` was the one `combat.Vitals` owner in the game that never ticked, so its clocks stayed pinned at 0 after the first blow and `game.drawFoeBars`' recent-hit window — which is a `sinceHurt` test — never closed again.
+    // THE bug: `Sac.update` was the one `combat.Vitals` owner in the game that never ticked, so its clocks stayed pinned at 0 and `game.drawFoeBars`' recent-hit window never closed again.
     var s = Sac.lay(mathx.ground(0, 0), 0.5, 1.0);
     try std.testing.expect(s.vit.sinceHurt > 100.0);
     s.tryHit(.{

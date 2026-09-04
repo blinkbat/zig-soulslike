@@ -13,7 +13,7 @@ const v3 = mathx.v3;
 
 pub const CAP: usize = 96;
 
-/// METRES on XZ from the glow's own origin. **Wider than the box and narrower than the drop**: `souls.REACH` is wider because you come back for that one under pressure, and this is narrower because a wisp of light has no body to bump into. NOT the widest ring in the game — `rest.REACH` is.
+/// METRES on XZ from the glow's own origin. Wider than the box and narrower than the drop; `rest.REACH` is the widest ring in the game.
 pub const REACH: f32 = 2.4;
 
 pub const FADE_DUR: f32 = 0.42;
@@ -27,8 +27,7 @@ pub const Pickup = struct {
     op: u16 = 0,
     loot: [DROP_MAX]item.Kind = undefined,
     nloot: u8 = 0,
-    /// **COIN THIS GLOW IS CARRYING.** On a MAP glow the purse is the placing op's (`wf.Op.gold`); on a BODY
-    /// drop it is what the corpse was worth, and it rides the SAME glow as the loot.
+    /// COIN THIS GLOW IS CARRYING. On a MAP glow the purse is the placing op's (`wf.Op.gold`); on a BODY drop it is what the corpse was worth, and it rides the SAME glow as the loot.
     gold: u32 = 0,
     taken: bool = false,
     fade: f32 = 0,
@@ -45,7 +44,6 @@ pub const Pickup = struct {
         return 1.0 - self.fade;
     }
 
-    /// but money read as a map glow and `takeNear` went looking for a placing op that was never there.
     pub fn dropped(self: *const Pickup) bool {
         return self.nloot > 0 or self.gold > 0;
     }
@@ -81,7 +79,7 @@ pub const Pickups = struct {
         self.mapped = self.n;
     }
 
-    /// **THE MAP'S HALF ALONE, AND IT IS ONE ACCESSOR BECAUSE TWO CALLERS NEED EXACTLY IT.** Its ORDER is the placing order — what `env.setPickupDraw` is indexed by and what a save slot's `pickups` bits are keyed to. Handed the whole list, both walk off the end and start reading body drops as map glows.
+    /// THE MAP'S HALF ALONE. Its ORDER is the placing order — what `env.setPickupDraw` is indexed by and what a save slot's `pickups` bits are keyed to; handed the whole list, both walk off the end.
     pub fn mappedOnes(self: *Pickups) []Pickup {
         return self.list[0..@min(self.mapped, self.n)];
     }
@@ -102,7 +100,7 @@ pub const Pickups = struct {
     }
 
     /// Refuses an empty list, so `nloot > 0` stays the honest test for "this one is a drop".
-    /// **A FULL LIST RECYCLES A SPENT SLOT BEFORE IT REFUSES** — a session kills far more than the 96 the cap shares with the map's glows, and a picked-up glow is a slot nobody can see. With none spendable the drop is DROPPED rather than overwriting a glow standing in front of you.
+    /// A FULL LIST RECYCLES A SPENT SLOT BEFORE IT REFUSES. With none spendable the drop is DROPPED rather than overwriting a glow standing in front of you.
     pub fn spawn(self: *Pickups, at: rl.Vector3, kinds: []const item.Kind, gold: u32) void {
         if (kinds.len == 0 and gold == 0) return;
         const n = @min(kinds.len, DROP_MAX);

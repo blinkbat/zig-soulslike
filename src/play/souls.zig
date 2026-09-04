@@ -17,8 +17,7 @@ comptime {
     std.debug.assert(REACH > chest.REACH);
 }
 
-/// The gold stands about chest height on the 1.8 m rig — tall enough to find across a clearing, short enough
-/// that it never hides the thing that killed you standing behind it.
+/// The gold stands about chest height on the 1.8 m rig — tall enough to find across a clearing, short enough that it never hides the thing that killed you standing behind it.
 pub const H: f32 = 1.25;
 const TOP_LIFT: f32 = 0.30;
 
@@ -42,13 +41,11 @@ const TAKE_MOTES: f32 = 34.0;
 const TAKE_PULL: f32 = 0.34;
 const TAKE_INTO: f32 = 1.05;
 
-/// THE HUM IS A RETRIGGER, NOT A LOOP (`leechfly.WHINE_EVERY`'s rule — raylib cannot loop a synthesized take). Cut a hair SHORTER than the voice itself so consecutive takes overlap: gapped, a standing hum pulses, and a pulse reads as something arming rather than something waiting.
+/// THE HUM IS A RETRIGGER, NOT A LOOP (raylib cannot loop a synthesized take). Cut a hair SHORTER than the voice itself so consecutive takes overlap.
 const HUM_EVERY: f32 = 1.15;
 
-/// It must read as GOLD and not as BONE. Vertex alpha is the emissive channel — the scene shader reads
-/// `1 - fragColor.a`, so 255 is lit by the sun alone and lower is more self-lit.
-/// MEASURED: at alpha 58 screen = 255·(albedo/255 · 1.236)^(1/2.2), so anything over albedo ~205 clips — tips
-/// authored at 246,220,150 came back a white knuckle and read as bone. FOUR TONES: the reds step 150 → 214 → 246 → 254 and the blues 24 → 60 → 100 → 170, so it DESATURATES as it brightens, which is what hot metal does.
+/// Vertex alpha is the emissive channel — the scene shader reads `1 - fragColor.a`, so 255 is lit by the sun alone and lower is more self-lit.
+/// MEASURED: at alpha 58 screen = 255·(albedo/255 · 1.236)^(1/2.2), so anything over albedo ~205 clips. FOUR TONES: the reds step 150 -> 214 -> 246 -> 254 and the blues 24 -> 60 -> 100 -> 170, so it DESATURATES as it brightens.
 const EMISSIVE: u8 = 58;
 const GOLD_DEEP = rgba(64, 20, 1, EMISSIVE);
 const GOLD = rgba(141, 73, 8, EMISSIVE);
@@ -57,7 +54,7 @@ const GOLD_HOT = rgba(204, 174, 85, EMISSIVE);
 
 const MOTE = rgba(250, 200, 96, 190);
 
-/// The trunk's own dimensions, in metres. The taper is GENTLE: run 0.085 → 0.045 over half a metre and it is a carrot, and a cone that steep on a short shaft is most of why the first pass read as one moulded piece.
+/// The trunk's own dimensions, in metres. The taper is GENTLE: run 0.085 -> 0.045 over half a metre and it is a carrot.
 const BOLE_R0: f32 = 0.082;
 const BOLE_R1: f32 = 0.038;
 const BOLE_TOP: f32 = 0.68;

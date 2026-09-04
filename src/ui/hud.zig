@@ -25,8 +25,7 @@ pub const SMALL: i32 = 20;
 pub const HINT: i32 = 19;
 pub const TINY: i32 = 16;
 
-/// A null codepoint list is raylib's DEFAULT SET — 32 through 126 and nothing else. An `—` or a `·` in a
-/// drawn string comes back as raylib's unknown-glyph `?`, and the atlas is the only place that range is known.
+/// A null codepoint list is raylib's DEFAULT SET — 32 through 126 and nothing else, so an `—` or a `·` in a drawn string comes back as raylib's unknown-glyph `?`.
 pub fn drawable(s: []const u8) bool {
     for (s) |c| {
         if (c < 32 or c > 126) return false;
@@ -221,6 +220,15 @@ pub const BTN_CONFIRM: PadBtn = .a;
 pub const BTN_JUMP: PadBtn = .a;
 pub const BTN_BACK: PadBtn = .b;
 pub const BTN_QUICK: PadBtn = .x;
+
+/// A gesture every panel shares is named ONCE, for the same reason the buttons are: the passive wheel is driven identically from the bonfire and from the book (`menu.stickPan`, `menu.dpadZoom`, `stickPush`), and the two cribs for it had already drifted.
+pub const HINT_WALK = Hint{ .glyph = .{ .bumper = "LS" }, .label = "Walk" };
+pub const HINT_PAN = Hint{ .glyph = .{ .bumper = "RS" }, .label = "Pan" };
+pub const HINT_ZOOM = Hint{ .glyph = .{ .dpad = .updown }, .label = "Zoom" };
+pub const HINT_CHOOSE = Hint{ .glyph = .{ .dpad = .updown }, .label = "Choose" };
+pub const HINT_MOVE = Hint{ .glyph = .{ .dpad = .updown }, .label = "Move" };
+pub const HINT_BACK = Hint{ .glyph = .{ .face = BTN_BACK }, .label = "Back" };
+pub const HINT_CANCEL = Hint{ .glyph = .{ .face = BTN_BACK }, .label = "Cancel" };
 
 pub fn padOf(b: PadBtn) rl.GamepadButton {
     return switch (b) {
@@ -428,6 +436,13 @@ var chipLast: f32 = 1;
 const CHIP_HOLD = 0.42;
 const CHIP_RATE = 0.55;
 
+/// The same law as `dropBossBars` and `dropStatusFlash`. Zero and not one, so the first `vitals` takes the `hp > chip` branch and SNAPS to whatever the slot said.
+pub fn dropVitalsChip() void {
+    chip = 0;
+    chipHold = 0;
+    chipLast = 0;
+}
+
 fn refuseRing(x: i32, y: i32, w: i32, h: i32, k: f32) void {
     if (k <= 0.001) return;
     const a: u8 = @intFromFloat(230 * mathx.clampF(k, 0, 1));
@@ -499,13 +514,11 @@ pub fn ailGlyph(a: combat.Ail, cx: f32, cy: f32, size: f32, col: rl.Color) void 
                 gl(cx - dx, cy - dy, cx + dx, cy + dy, w, col);
             }
         },
-        // The only glyph here with a hard corner in it.
         .stun => {
             gl(cx + r * 0.45, cy - r, cx - r * 0.30, cy - r * 0.05, w * 1.15, col);
             gl(cx - r * 0.30, cy - r * 0.05, cx + r * 0.25, cy - r * 0.05, w * 1.15, col);
             gl(cx + r * 0.25, cy - r * 0.05, cx - r * 0.45, cy + r, w * 1.15, col);
         },
-        // **THE zZZ HE ASKED FOR**, and the one glyph that is a letter — it is the picture everyone already knows.
         .sleep => {
             const zs = [_][3]f32{ .{ -0.55, 0.55, 0.42 }, .{ 0.15, -0.05, 0.55 }, .{ 0.62, -0.62, 0.38 } };
             for (zs) |z| {
@@ -539,7 +552,6 @@ pub fn ailGlyph(a: combat.Ail, cx: f32, cy: f32, size: f32, col: rl.Color) void 
                 gl(cx, cy + r * (off - 0.35), cx + r * 0.75, cy + r * (off + 0.45), w * 1.1, col);
             }
         },
-        // A spiral going in: the one glyph with no straight line in it at all.
         .stupefy => {
             var i: usize = 0;
             const steps = 26;
@@ -558,7 +570,6 @@ pub fn ailGlyph(a: combat.Ail, cx: f32, cy: f32, size: f32, col: rl.Color) void 
 
 const PSN_W: i32 = 196;
 const PSN_H: i32 = 9;
-/// **A ROW PER METER, GLYPH FIRST** (owner: separate rows for each status buildup, along with an icon for each).
 fn statusBarsUp(bottomY: i32, ails: Ails) i32 {
     const x = centreX(PSN_W);
     var yy = bottomY - PSN_H;
@@ -607,8 +618,7 @@ pub const LivePortrait = struct {
 
 const PORT_CLEAR = rgba(13, 12, 11, 255);
 
-/// before it opens and only BLITS within. **RE-TAKEN EVERY FRAME, AND THAT IS MEASURED**: one target switch, one
-/// shader bind and the subject's own meshes — 27 for the wolf, 18 for a wanderer — against a full shadow pass over hundreds.
+/// RE-TAKEN EVERY FRAME, AND THAT IS MEASURED: one target switch, one shader bind and the subject's own meshes — 27 for the wolf, 18 for a wanderer — against a full shadow pass over hundreds.
 pub fn renderPortrait(p: LivePortrait) bool {
     if (portRT == null) portRT = rl.loadRenderTexture(PORT_RT_W, PORT_RT_H) catch null;
     const rt = portRT orelse return false;
@@ -616,7 +626,7 @@ pub fn renderPortrait(p: LivePortrait) bool {
     return true;
 }
 
-/// **THE PHOTOGRAPH ITSELF, INTO WHATEVER TARGET THE CALLER OWNS.** `renderPortrait` and `takeSpiritFace` are this plus a target of their own size; the book's doll is 460x760 against their 320x360 and so keeps its own — but it may not keep its own COPY of the nine calls, and the `endTextureMode` law is stated in exactly one place.
+/// THE PHOTOGRAPH ITSELF, INTO WHATEVER TARGET THE CALLER OWNS. `renderPortrait` and `takeSpiritFace` are this plus a target of their own size, and the `endTextureMode` law is stated in exactly one place.
 pub fn renderIntoTarget(rt: rl.RenderTexture2D, p: LivePortrait) void {
     renderInto(rt, p);
 }
@@ -689,7 +699,6 @@ pub fn livePortrait(p: LivePortrait, dst: rl.Rectangle, tint: rl.Color) void {
 }
 
 
-/// The portrait square (owner: shrink the summon's portrait and bar). It was 52 against a 268 px HP bar — a companion taking a third of the width of the thing keeping you alive.
 const SP_FACE: i32 = 34;
 const SP_BAR_H: i32 = 9;
 const SP_BAR_W: i32 = @divTrunc(HP_W, 2);
@@ -750,6 +759,12 @@ const FLASH_RISE: f32 = 9.0;
 var flashLeft: f32 = 0;
 var flashAil: combat.Ail = .poison;
 var ailWas: [combat.NAIL]bool = [_]bool{false} ** combat.NAIL;
+
+/// The same law as `dropBossBars`: the clock only ticks inside `vitals`, which the chrome fade and `rest.active()` both stop calling, so a word left mid-flash re-draws over the run after it.
+pub fn dropStatusFlash() void {
+    flashLeft = 0;
+    ailWas = [_]bool{false} ** combat.NAIL;
+}
 
 fn watchAils(dt: f32, psn: Ails) void {
     for (psn, 0..) |s, i| {
@@ -891,12 +906,12 @@ const CHILL_STRIP = rgba(148, 202, 232, 235);
 /// A STATUS ROW under a foe's health: 2 px tall on a 5 px bar, one clear pixel above each.
 const STRIP_H: i32 = 2;
 const STRIP_GAP: i32 = 1;
-/// A fraction of stature is wrong the moment you close on a TALL one — the ogre's crown is 4.4 m up — so the bar has a CEILING in screen space: far off it rides the head, walking in it stops climbing and hangs against the body.
+/// A fraction of stature is wrong the moment you close on a TALL one — the ogre's crown is 4.4 m up — so the bar has a CEILING in screen space.
 const FOE_CEIL: f32 = 0.25; // …measured from the TOP, so 0.25 is three quarters up
 
 pub const Ails = [combat.NAIL]Status;
 
-/// **A ROW PER LIVE METER, GLYPH FIRST**, laid in `Ail` order — ten at once would be 30 px of strip under a 5 px bar.
+/// A ROW PER LIVE METER, GLYPH FIRST, laid in `Ail` order — ten at once would be 30 px of strip under a 5 px bar.
 pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool, ails: Ails) void {
     const wf: f32 = @floatFromInt(FOE_W);
     const x: i32 = @intFromFloat(sx - wf * 0.5);
@@ -908,7 +923,6 @@ pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool, ails: Ails) void {
     const fw: i32 = @intFromFloat(wf * mathx.clampF(frac, 0, 1));
     // 5 px tall, so the shade band is 2 rather than the vitals bars' third and the tip is a single column.
     fillThree(x, y, fw, FOE_H, frac, HP_HI, HP_LO, mathx.withAlpha(HP_TP, 200), 2, 1, 120);
-    // A tint on a red bar at 54 px is a hue nobody can name, so every status is its OWN row under the health.
     var row: i32 = 0;
     for (ails, 0..) |s, i| {
         if (s.frac <= 0.001) continue;
@@ -917,7 +931,6 @@ pub fn foeBar(sx: f32, sy: f32, frac: f32, staggered: bool, ails: Ails) void {
         const yy = y + FOE_H + STRIP_GAP * (row + 1) + STRIP_H * row;
         const tint = ailTint(a);
         rl.drawRectangle(x, yy, sw, STRIP_H, if (s.on) tint else mathx.withAlpha(tint, 150));
-        // The glyph rides the left end of its own row, off the bar, so the row is readable without a legend.
         ailGlyph(a, @floatFromInt(x - FOE_GLYPH), @as(f32, @floatFromInt(yy)) + @as(f32, STRIP_H) * 0.5, FOE_GLYPH_S, tint);
         row += 1;
     }
@@ -927,12 +940,9 @@ const FOE_GLYPH: i32 = 6;
 const FOE_GLYPH_S: f32 = 7.0;
 const BOSS_H: i32 = 13;
 const BOSS_LIFT: i32 = 158;
-/// **A BAR PER BOSS ON THE FIELD, EACH KEEPING ITS OWN CHIP** — one set of module scratch across two bosses had
-/// the second replaying the first one's damage. Rail 0 is the lowest. **A RAIL IS A ROW OF `game.BOSS_RAILS`
-/// AND NOT A PLACE IN A QUEUE**: a bar that slid down when another boss died would move mid-fight.
+/// A BAR PER BOSS ON THE FIELD, EACH KEEPING ITS OWN CHIP — one set of module scratch across two bosses had the second replaying the first one's damage. A RAIL IS A ROW OF `game.BOSS_RAILS` AND NOT A PLACE IN A QUEUE.
 pub const BOSS_SLOTS: usize = 3;
-/// **THE PITCH BETWEEN TWO BARS IS THE BAR PLUS ITS OWN NAME, NOT A ROUND NUMBER.** The name is engraved ABOVE
-/// the rail (`y - lineH(SMALL) - 3`), so at a 20 px pitch on a 13 px bar the upper bar sat on the lower one.
+/// THE PITCH BETWEEN TWO BARS IS THE BAR PLUS ITS OWN NAME, NOT A ROUND NUMBER: the name is engraved ABOVE the rail (`y - lineH(SMALL) - 3`), so at a 20 px pitch on a 13 px bar the upper bar sat on the lower one.
 const BOSS_NAME_LIFT: i32 = 3;
 const BOSS_GAP: i32 = BOSS_H + BOSS_NAME_LIFT + 8 + lineH(SMALL);
 var bossChip: [BOSS_SLOTS]f32 = [_]f32{0} ** BOSS_SLOTS;
@@ -953,7 +963,6 @@ pub fn bossBarAt(tier: usize, dt: f32, name: [:0]const u8, frac: f32, staggered:
     }
     const w: i32 = @min(760, @divTrunc(rl.getScreenWidth() * 62, 100));
     const x = @divTrunc(rl.getScreenWidth() - w, 2);
-    // Slot 0 sits where the single tier always sat; each one above it is a tier and a gap higher.
     const y = rl.getScreenHeight() - BOSS_LIFT - @as(i32, @intCast(tier)) * BOSS_GAP;
     if (frac > bossChip[tier]) {
         bossChip[tier] = frac;
@@ -1189,7 +1198,7 @@ const BOTTOM: i32 = 26;
 
 pub const Held = itemart.Arm;
 
-/// **A HAND'S CELL KNOWS WHICH WEAPON IS IN IT, NOT JUST WHICH ARM.** The glyph was the armament's, so a dirk, a club and a warbow all drew as the plain sword and bow down here while the character book — which asks `hero.heldGear` — drew the gear.
+/// A HAND'S CELL KNOWS WHICH WEAPON IS IN IT, NOT JUST WHICH ARM: the glyph was the armament's, so a dirk, a club and a warbow all drew as the plain sword and bow while the character book drew the gear.
 pub const Slot = union(enum) { empty, held: struct { arm: Held, gear: ?item.Kind = null }, sorcery: combat.Spell };
 
 pub fn equipment(left_hand: Slot, right_hand: Slot, up: Slot, castable: bool, quick: ?item.Kind, charges: u8, ammo: ?Ammo) void {
@@ -1280,7 +1289,7 @@ pub fn reticle(k: f32) void {
     }
 }
 
-/// Break `s` to `maxW` pixels at `size`, writing NUL-terminated lines into `buf`. MEASURED WITH THE REAL FACE per candidate word, not a characters-per-line guess: Balthazar is proportional. A word wider than the whole column is taken anyway and overhangs.
+/// Break `s` to `maxW` pixels at `size`, writing NUL-terminated lines into `buf`. MEASURED WITH THE REAL FACE per candidate word — Balthazar is proportional. A word wider than the whole column is taken anyway and overhangs.
 pub fn wrap(s: []const u8, size: i32, maxW: i32, buf: []u8, lines: [][:0]const u8) [][:0]const u8 {
     return wrapBy(textW, s, size, maxW, buf, lines);
 }
@@ -1316,12 +1325,12 @@ pub fn proseWrap(s: []const u8, w: i32, size: i32) []const [:0]const u8 {
     return wrap(s, size, w, &proseBuf, &proseLines);
 }
 
-/// …and the same wrap measured in the MONO face, for the editor's own chrome. Its own entry point rather than a flag, because which font a string will be DRAWN in is not something a wrap may guess.
+/// …and the same wrap measured in the MONO face. Its own entry point rather than a flag, because which font a string will be DRAWN in is not something a wrap may guess.
 pub fn wrapMono(s: []const u8, size: i32, maxW: i32, buf: []u8, lines: [][:0]const u8) [][:0]const u8 {
     return wrapBy(monoW, s, size, maxW, buf, lines);
 }
 
-/// …measured by whatever is passed in. A test binary opens no window and so loads no font, which makes every string zero wide and every wrap one line: the algorithm is only checkable against a ruler the test brings itself.
+/// …measured by whatever is passed in. A test binary opens no window and so loads no font, which makes every string zero wide and every wrap one line.
 fn wrapBy(comptime measure: fn ([:0]const u8, i32) i32, s: []const u8, size: i32, maxW: i32, buf: []u8, lines: [][:0]const u8) [][:0]const u8 {
     var n: usize = 0;
     var used: usize = 0;

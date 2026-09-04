@@ -48,7 +48,6 @@ const STAFF = heromod.HELD;
 
 const H: f32 = heromod.H;
 
-/// 2.95 m to the crown of the ears against the hero's 1.8 — half a head over the necromancer, and it is all neck and shin.
 pub const SCALE = (H + 1.15) / H;
 const HIP_HALF = heromod.HIP_HALF * 0.54;
 const SHOULDER_HALF = heromod.SHOULDER_HALF * 0.58;
@@ -66,7 +65,7 @@ const CENTER_F: f32 = 0.58;
 pub var SOULS: u32 = 480;
 
 const HP_MAX: f32 = 96.0;
-/// **ALMOST NONE** (the necromancer's rule): under the hero's light poke, so anything that lands drops the cast. A creature whose threat is a 1.55 s ritual must be answerable by reaching it.
+/// ALMOST NONE (the necromancer's rule): under the hero's light poke, so anything that lands drops the cast. A creature whose threat is a 1.55 s ritual must be answerable by reaching it.
 const POISE_MAX: f32 = 6.0;
 const STANCE_MAX: f32 = 30.0;
 
@@ -100,7 +99,7 @@ const BREATH_DPS: f32 = 26.0;
 pub const BREATH_DOSE_EVERY: f32 = 0.22;
 const BREATH_DOSE = combat.Hit{ .elem = combat.elems(.{ .cold = BREATH_DPS * BREATH_DOSE_EVERY }) };
 
-/// Where it wants to stand. **OUTSIDE THE CONE IT ACTUALLY THROWS**, which is `BREATH_REACH * SCALE` = 10.2 m and not the bare 6.2: the near band is the breath's ground and this is the raise's.
+/// Where it wants to stand. OUTSIDE THE CONE IT ACTUALLY THROWS, which is `BREATH_REACH * SCALE` = 10.2 m and not the bare 6.2.
 const WANT_MIN: f32 = 12.0;
 const WANT_MAX: f32 = 19.0;
 
@@ -328,9 +327,7 @@ pub const Ancient = struct {
         return .ancient_priest;
     }
 
-    /// **NOT A FLAT 0.95 H**: at a scale of 1.64 that puts the sphere's centre 2.80 m up and its FLOOR at
-    /// 2.08 m, over the top of every swing the hero owns. 0.58 H is the trunk — the cyclops's own choice — and
-    /// it lands the sphere at 0.99..2.43 m. The BAR still rides `TOP_F` above the crown.
+    /// NOT A FLAT 0.95 H: at a scale of 1.64 that puts the sphere's centre 2.80 m up and its FLOOR at 2.08 m, over the top of every swing the hero owns. 0.58 H is the trunk and lands the sphere at 0.99..2.43 m; the BAR still rides `TOP_F` above the crown.
     pub fn centerWorld(self: *const Ancient) rl.Vector3 {
         return foe.bodyPoint(self.pos, CENTER_F * H, self.scale, 0);
     }
@@ -780,7 +777,6 @@ pub const Ancient = struct {
     }
 };
 
-/// **THE TWO SCRIPTS ARE ITS OWN BAND, NOT THE ARCHER'S.** `behave.KITE` opens to 9 m.
 const BAND_SLACK: f32 = 1.5;
 const WITHDRAW = [_]behave.Step{
     .{ .open = .{ .to = WANT_MIN + BAND_SLACK } },

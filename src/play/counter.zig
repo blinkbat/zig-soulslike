@@ -17,8 +17,7 @@ pub var STONE_PER: u32 = STONE_PER_BANK;
 pub var COIN_BASE: u32 = COIN_BASE_BANK;
 pub var COIN_PER: u32 = COIN_PER_BANK;
 
-/// Stones to take an armament from `tier` to `tier + 1`. `STONE_PER` is halved into the step so the early
-/// tiers are one stone apiece and the last are five — a run's worth of the delver's drop, not a mine.
+/// Stones to take an armament from `tier` to `tier + 1`. `STONE_PER` is halved into the step so the early tiers are one stone apiece and the last are five.
 pub fn stoneCost(tier: u8) u32 {
     return STONE_BASE + (STONE_PER * tier) / 2;
 }
@@ -292,7 +291,6 @@ test "THE SMITH EATS STONES AND COIN, ONE TIER AT A TIME, AND STOPS AT THE CAP" 
     std.debug.print("\n  +{d} costs {d} stones and {d} coin all told; the last tier alone is {d} stones / {d} coin\n", .{
         heromod.TIER_MAX, run.stones, run.coin, stoneCost(heromod.TIER_MAX - 1), coinCost(heromod.TIER_MAX - 1),
     });
-    // **THE LADDER HAS TO BE PAYABLE OFF WHAT THE WORLD DROPS.** Humanoids pay ~13 coins a body
     std.debug.print("  ...which is about {d:.0} humanoid corpses at 12.9 coins a body\n", .{
         @as(f64, @floatFromInt(run.coin)) / 12.9,
     });

@@ -90,7 +90,6 @@ pub const GRASP_HIT = combat.Hit{ .dmg = 7, .poise = 12, .fp = 14 };
 pub const MOURN_STUPEFY: f32 = 52.0;
 pub const MOURN_GRASP_HIT = blk: {
     var h = GRASP_HIT;
-    // Twice the shade's own hand and then some: this one stands 166 m out where the shade stands at 32.
     h.dmg = 16;
     h.poise = 20;
     h.dose = combat.Doses.one(.stupefy, MOURN_STUPEFY);
@@ -190,7 +189,7 @@ const BLINK_TURN_MIN: f32 = 105.0;
 const BLINK_TURN_MAX: f32 = 165.0; // which is what puts it off the shoulder a guard cannot cover.
 const SPOOK_DUR: f32 = 7.0;
 
-/// THE ARMS' OWN ARC. The grasp is both hands closing in FRONT of it, so a hero at its back is not somebody it has hold of — tested on distance alone it landed a blow that the shield's own 65° could never answer and that no frame of the animation showed.
+/// THE ARMS' OWN ARC. The grasp is both hands closing in FRONT of it, so a hero at its back is not somebody it has hold of: tested on distance alone it landed a blow the shield's own 65° could never answer.
 const GRASP_ARC: f32 = 78.0;
 const GRASP_IMPACT_K: f32 = 0.42;
 
@@ -209,7 +208,7 @@ const RIFT_N = 14;
 const DRAIN_N = 12;
 const TORN_N = 10;
 const UNRAVEL_N = 26;
-/// Sized by ARITHMETIC over the worst frame (the ring law). At 48 THE DEATH DID NOT FIT ITS OWN BLOW: the killing strike lays `tornMotes` (15) and the shared wound, then `enterDeath` unravels the body over the same frame — 45 on its own, with a blink's rift (14, still up at a 0.30 s life) or the drain under it.
+/// ARITHMETIC over the worst frame (the ring law): the killing strike lays `tornMotes` (15) and the shared wound, then `enterDeath` unravels the body over the same frame — 45 on its own, with a blink's rift (14, still up at a 0.30 s life) under it.
 const PARTS = 64;
 comptime {
     std.debug.assert(PARTS >= RIFT_N + foe.hitParts(TORN_N) + UNRAVEL_N + foe.WOUND_PARTS);
@@ -437,7 +436,7 @@ pub const Shade = struct {
         foe.tickParticles(&self.parts, dt, self.pos.y);
 
         var act: Act = .none;
-        // WHERE THE WISP LEAVES FROM IS READ AFTER THE POSE, not at the release: `reach` snaps from the wind's 0.30 to 1.0 on this exact frame, swinging the shoulder through 94 degrees — so `wispWorld()` taken here answers with the hands still furled at the chest, a metre behind where the frame shows them.
+        // WHERE THE WISP LEAVES FROM IS READ AFTER THE POSE, not at the release: `reach` snaps from the wind's 0.30 to 1.0 on this exact frame, swinging the shoulder through 94 degrees.
         var hurling = false;
         const was = self.pos;
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
@@ -753,7 +752,6 @@ pub const Shade = struct {
                 .p = from,
                 .v = mathx.scaleV(d, 1.0 / life),
                 .life = life,
-                // SIZED BETWEEN TWO FAILURES (AGENTS.md): at 0.09 the stream was a row of beach balls with the arm that caused it hidden behind them. Judged against the CREATURE, not the hero.
                 .r0 = self.fxRng.range(0.026, 0.046),
                 .r1 = 0.008,
                 .col = DRAIN,
@@ -870,7 +868,6 @@ pub const Shade = struct {
             // Its own outward bearing on the ring, ellipse and all (`REST` uses the same 0.86 on Z).
             const outX = mathx.cosf(a);
             const outZ = mathx.sinf(a) * 0.86;
-            // -1 dead astern, +1 dead ahead. Normalised, so the SHAPE of the skirt does not change with speed —
             const facingWind = if (speed > 1e-4) (outX * localX + outZ * localZ) / speed else 0;
             const gain = lerpF(1.0, HEM_LEE, 0.5 + 0.5 * facingWind);
             const phase = self.elapsed * (0.79 + 0.13 * fi) + self.seed * 5.0 + fi * 1.7;
@@ -1227,7 +1224,7 @@ test "a blink puts it down where it said it would, and it is nowhere in between"
         _ = s.update(1.0 / 60.0, hero, 400, .{});
         try std.testing.expect(s.airborne());
     }
-    // MEASURED THE FRAME IT LANDS, not some frames later: the moment it is down it starts orbiting again, and a couple of centimetres of that is not the jump missing its mark.
+    // MEASURED THE FRAME IT LANDS: the moment it is down it starts orbiting again, and a couple of centimetres of that is not the jump missing its mark.
     while (s.airborne() and t < 2.0) : (t += 1.0 / 60.0) _ = s.update(1.0 / 60.0, hero, 400, .{});
     try std.testing.expectApproxEqAbs(want.x, s.pos.x, 1e-3);
     try std.testing.expectApproxEqAbs(want.z, s.pos.z, 1e-3);
@@ -1382,7 +1379,6 @@ test "every world point is measured off the ground under it plus the hover" {
     try std.testing.expectApproxEqAbs(@as(f32, 4.0), high.lockPoint().y - low.lockPoint().y, 1e-4);
     try std.testing.expect(low.topWorld().y > low.lockPoint().y);
     try std.testing.expect(low.lockPoint().y > low.centerWorld().y);
-    // …and it FLOATS: nothing on it is measured from the earth itself.
     try std.testing.expect(low.centerWorld().y > low.pos.y + HOVER * 0.9);
 }
 

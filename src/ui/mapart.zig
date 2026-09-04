@@ -106,7 +106,6 @@ pub fn onFlat(wx: f32, wz: f32, half: f32) bool {
     return @abs(wx) <= half and @abs(wz) <= half;
 }
 
-/// Metres to face pixels. The chart and the editor's minimap each derived this inline, at two scales.
 pub fn perMetre(half: f32, across: f32) f32 {
     return if (half > 0) across / (2.0 * half) else 0;
 }
@@ -148,9 +147,7 @@ pub const Lens = struct {
     zoom: f32 = ZOOM_MIN,
     pan: rl.Vector2 = .{ .x = 0, .y = 0 },
 
-    /// **THE ONLY READ OF `zoom`.** `Book.debugMap` writes the field straight through, so a magnification out
-    /// of range reached the scale bar and the grid pitch while the blit was clamped — a ruler under a picture
-    /// it does not measure.
+    /// THE ONLY READ OF `zoom`: `Book.debugMap` writes the field straight through, so a magnification out of range reached the scale bar and the grid pitch while the blit was clamped.
     pub fn mag(self: Lens) f32 {
         return mathx.clampF(self.zoom, ZOOM_MIN, ZOOM_MAX);
     }
@@ -269,7 +266,7 @@ pub const World = struct {
     facing: f32,
 };
 
-/// Painted ONCE in world space and blitted through the lens: per-prop, `01_fallen_plain` is 16,510 rects a frame.
+/// Painted ONCE in world space and blitted through the lens: per-prop it would be one rect an op a frame, a bill that grows with whatever the author has put on the map.
 const CHART_N: i32 = 2048;
 
 var chartRT: ?rl.RenderTexture2D = null;
@@ -322,11 +319,9 @@ fn chart(m: *const wf.Map, env: *const envmod.Env) ?rl.RenderTexture2D {
 
 const SHEET: f32 = @floatFromInt(CHART_N);
 
-/// ONE scratch for both faces: the editor's minimap kept a second `wf.WATER_CELLS` copy of the same bytes.
 var liquidCells: [wf.WATER_CELLS]u8 = [_]u8{0} ** wf.WATER_CELLS;
 
-/// **THE PAINTED POOLS AND THE THINGS STANDING IN THEM, ONE IMPLEMENTATION.** The chart and the editor's
-/// minimap are two scales of the same layer, and it was written twice.
+/// THE PAINTED POOLS AND THE THINGS STANDING IN THEM, ONE IMPLEMENTATION: the chart and the editor's minimap are two scales of the same layer, and it was written twice.
 pub fn blitWater(m: *const wf.Map, env: *const envmod.Env, px: i32, py: i32, across: f32) void {
     for (m.water, m.waterKind, 0..) |wet, k, i| liquidCells[i] = if (wet != 0) k + 1 else 0;
     blitField(liquidCells[0..], wf.WATER_N, px, py, across, liquidByte);
@@ -345,7 +340,6 @@ fn paint(m: *const wf.Map, env: *const envmod.Env) void {
     const perM = perMetre(m.half, SHEET);
     blitWater(m, env, 0, 0, SHEET);
 
-    // UNDER the walls.
     for (env.placed()) |*pr| {
         if (pr.gone or !bigTree(pr.kind)) continue;
         if (!onFlat(pr.pos.x, pr.pos.z, m.half)) continue;
@@ -390,8 +384,7 @@ fn strokeProp(pr: *const envmod.Prop, half: f32, perM: f32, halo: bool) void {
 
 const UNSEEN = rgba(13, 12, 10, 255);
 
-/// `GL_ONE, GL_ZERO`: raylib blends a target's OWN alpha by `SRC_ALPHA`, so a hole punched with ordinary
-/// blending comes back half-opaque. BILINEAR is what makes a binary mask a soft edge.
+/// `GL_ONE, GL_ZERO`: raylib blends a target's OWN alpha by `SRC_ALPHA`, so a hole punched with ordinary blending comes back half-opaque. BILINEAR is what makes a binary mask a soft edge.
 fn fogSheet(seen: *const Seen) ?rl.RenderTexture2D {
     const n: i32 = @intCast(SEEN_N);
     if (fogRT == null) {
@@ -489,7 +482,6 @@ pub fn draw(x: i32, y: i32, w: i32, h: i32, world: ?World, lens: Lens) void {
 
     rl.beginScissorMode(fx, fy, side, side);
     rl.drawRectangle(fx, fy, side, side, PAPER);
-    // A straight copy, not a blend — see `fogSheet`.
     rl.gl.rlSetBlendFactors(gfx.GL_ONE, gfx.GL_ZERO, gfx.GL_FUNC_ADD);
     rl.beginBlendMode(.custom);
     rl.drawTexturePro(rt.texture, src, dst, .{ .x = 0, .y = 0 }, 0, rl.Color.white);
@@ -602,7 +594,6 @@ test "A MAGNIFICATION OUT OF RANGE IS THE SAME PICTURE AND THE SAME RULER — th
         try std.testing.expectEqual(same.x, win.x);
         try std.testing.expectEqual(same.y, win.y);
     }
-    // A pan step at a garbage zoom still lands inside the sheet rather than at infinity.
     var l = Lens{ .zoom = 0 };
     l.panStep(1, 1);
     try std.testing.expect(std.math.isFinite(l.pan.x) and std.math.isFinite(l.pan.y));

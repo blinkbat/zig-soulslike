@@ -61,15 +61,14 @@ pub const BURST_R: f32 = 1.9;
 const WALK_SPEED: f32 = 2.2;
 const CHASE_SPEED: f32 = 3.9;
 const TURN_RATE: f32 = 4.2;
-/// **MEASURED, NOT ARGUED** — a test walks the stroke frame by frame and brackets it from both sides, which caught the first pass declaring 2.9 m off a limb that arrived at 1.19.
+/// MEASURED, NOT ARGUED — a test walks the stroke frame by frame and brackets it from both sides, which caught the first pass declaring 2.9 m off a limb that arrived at 1.19.
 const CLAW_REACH: f32 = 1.75;
 const CLAW_SWEEP_R: f32 = 0.34;
-/// **WHAT A BAND PROMISES IS THAT THE ARC CROSSES HIM, NOT HOW FAR THE TIP GETS** (owner: the moles cannot hit me): `CLAW_REACH + CLAW_SWEEP_R` is the tip's RADIAL reach, achieved out to the SIDE. At 2.09 the outer fifth of the trigger band could not land by construction.
+/// WHAT A BAND PROMISES IS THAT THE ARC CROSSES HIM, NOT HOW FAR THE TIP GETS: `CLAW_REACH + CLAW_SWEEP_R` is the tip's RADIAL reach, achieved out to the SIDE, so at 2.09 the outer fifth of the trigger band could not land by construction.
 const CLAW_BAND: f32 = 1.65;
 const CLAW_KEEP: f32 = CLAW_BAND - 0.5;
 pub const CLAW_WIND: f32 = 0.48;
 const CLAW_STRIKE: f32 = 0.20;
-/// **VICIOUS ON ITS FEET, NOT ONLY UNDER THEM** (owner: more vicious even when not underground). One stroke every 1.9 s off a body walking 2.2 m/s was a punching bag between dives.
 const CLAW_RECOVER: f32 = 0.40;
 const CLAW_CD: f32 = 1.05;
 
@@ -123,7 +122,7 @@ const MOUND_PLOUGH_LONG: f32 = 2.8;
 
 const RAKE_HIT_BANK = combat.Hit{ .dmg = 12, .poise = 16, .stance = 5 };
 pub var RAKE_HIT = RAKE_HIT_BANK;
-/// **LONG ENOUGH TO BE CAUGHT ON, WHICH IS WHAT SIZES IT FROM BELOW** — `foe.PARRY_LEAD` brackets every wind from above. At 0.33 the one difficulty dial covered 55% of this tell against under half of the claw's beside it.
+/// LONG ENOUGH TO BE CAUGHT ON, WHICH IS WHAT SIZES IT FROM BELOW — `foe.PARRY_LEAD` brackets every wind from above.
 pub const RAKE_WIND: f32 = 0.40;
 const RAKE_STRIKE: f32 = 0.18;
 const RAKE_CHANCE: f32 = 0.55;
@@ -959,7 +958,7 @@ pub const Delver = struct {
             const shoulder = -74.0 * self.rear - 34.0 * own;
             const abd = 16.0 + 26.0 * self.rear + 10.0 * @abs(own);
             const hip = v3(REST[ai].x, REST[ai].y - 0.12 * self.crouch, REST[ai].z);
-            // **THE STROKE NEEDS A LATERAL CHANNEL** (owner: the moles cannot hit me). Spent entirely on `rx` — a SAGITTAL rake — with `abd` on `@abs(own)`, the claw ran x −0.51 to −1.07 and back and never crossed the body's own axis, which RADIAL reach tests satisfy perfectly.
+            // THE STROKE NEEDS A LATERAL CHANNEL. Spent entirely on `rx` — a SAGITTAL rake — with `abd` on `@abs(own)`, the claw ran x −0.51 to −1.07 and back and never crossed the body's own axis, which RADIAL reach tests satisfy perfectly.
             const cross = SWING_YAW * own * -sgn;
             self.xf[ai] = mul(mul(mul3(rz(sgn * abd), rx(shoulder), ry(cross)), tr(hip.x, hip.y, hip.z)), root);
             const elbow = 40.0 - 46.0 * own - 26.0 * self.rear;
@@ -1067,7 +1066,6 @@ fn bodyMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xD31E);
     b.setMat(.skin);
-    // LONG AND LOW. A digger is a wedge lying on the ground, not a boulder standing on it: the first pass was 0.87 m tall on a 1.55 m creature and read as a tortoise.
     b.addBlob(v3(0, 0.26 * H, -0.08), v3(0.42, 0.17 * H, 0.80), 8, 14, HIDE);
     b.addBlob(v3(0, 0.30 * H, 0.30), v3(0.40, 0.15 * H, 0.38), 7, 13, HIDE);
     b.addBlob(v3(0, 0.14 * H, 0.04), v3(0.36, 0.09 * H, 0.66), 6, 12, HIDE_LO);
@@ -1115,7 +1113,6 @@ fn clawMesh(side: f32) rl.Mesh {
     b.addCapsule(v3(0, 0, 0), v3(side * 0.05, -0.09, 0.40), 0.125, 0.10, 9, HIDE_LO);
     b.addBlob(v3(side * 0.05, -0.10, 0.44), v3(0.14, 0.11, 0.13), 5, 10, HIDE_LO);
     b.setMat(.plain);
-    // **THE CLAWS HAVE TO LOOK LIKE THE CREATURE'S POINT** (owner: more pronounced claws and nails). At 0.04
 // **NONE ENDS IN A POINT** — a blunt capsule cap; what reads as sharp is the TAPER (0.062 to 0.020) and the hook.
     inline for (.{
         .{ 0.11, -0.12, 0.50, 0.13, -0.30, 0.92, 0.056, 0.020 },
@@ -1438,7 +1435,7 @@ test "EVERY REACH IS MEASURED, NOT ARGUED — the claw arrives inside what `parr
     try std.testing.expect(far <= CLAW_REACH);
     try std.testing.expect(far > CLAW_REACH * 0.9);
     try std.testing.expect(CLAW_BAND > BODY_R + foe.HERO_R + 0.3);
-    // **AND HEIGHT IS ITS OWN QUESTION.** Its shoulders sit at 0.40 m, so the stroke only ever crosses a standing man because the creature REARS for it — which is why the rear is in the wind and not a flourish. Held flat the rake topped out under his knee.
+    // AND HEIGHT IS ITS OWN QUESTION: its shoulders sit at 0.40 m, so the stroke only ever crosses a standing man because the creature REARS for it. Held flat the rake topped out under his knee.
     var high: f32 = 0;
     var rise: f32 = CLAW_WIND;
     while (rise <= CLAW_WIND + CLAW_STRIKE) : (rise += 1.0 / 240.0) {
@@ -1497,7 +1494,6 @@ test "IT IS VICIOUS ON ITS FEET TOO — it runs him down and its stroke comes ro
     try std.testing.expect(CHASE_SPEED > heromod.RUN_SPEED_BANK);
     try std.testing.expect(CHASE_SPEED < heromod.SPRINT_SPEED_BANK);
     try std.testing.expect(WALK_SPEED < heromod.RUN_SPEED_BANK);
-    // THE STROKE COMES BACK. A claw every 1.9 s off a body that could not close was a punching bag between dives; the whole cycle now fits inside what the dive alone used to cost.
     const cycle = CLAW_WIND + CLAW_STRIKE + CLAW_RECOVER + CLAW_CD;
     try std.testing.expect(cycle < 2.2);
     try std.testing.expect(CLAW_WIND >= foe.TELL_MIN);
@@ -1508,7 +1504,7 @@ test "IT IS VICIOUS ON ITS FEET TOO — it runs him down and its stroke comes ro
 }
 
 test "THE STROKE CROSSES A MAN STANDING IN FRONT — every range inside its own band lands" {
-    // **THE BUG THE REACH TEST COULD NOT SEE**: RADIAL distance and HEIGHT are both satisfied by a swipe raked down the flank. At x −0.51 to −1.07 the closest the swept claw came on the facing line was 0.50 m against a 0.34 m blade.
+    // THE BUG THE REACH TEST COULD NOT SEE: RADIAL distance and HEIGHT are both satisfied by a swipe raked down the flank. At x −0.51 to −1.07 the closest the swept claw came on the facing line was 0.50 m against a 0.34 m blade.
     var dist: f32 = BODY_R + foe.HERO_R;
     var worst: f32 = 0;
     while (dist <= CLAW_BAND + 1e-3) : (dist += 0.05) {

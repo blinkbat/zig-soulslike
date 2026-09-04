@@ -69,7 +69,6 @@ const SLICE_TRIGGER_R: f32 = 1.35;
 /// A share of the trigger ring, not a distance of its own. Under 1, so a creature that has arrived is already committed rather than shuffling on the boundary.
 const STOP_FRAC: f32 = 0.72;
 const TIP_R: f32 = 0.19;
-/// The ravager's bite is 24 off 88 HP, this is 27 off 46, and it stands 170 m out.
 const SLICE_HIT = combat.Hit{ .dmg = 27, .poise = 18, .stance = 9 };
 
 comptime {
@@ -83,18 +82,14 @@ const REAR_BACK: f32 = 62.0;
 const SLICE_THROUGH: f32 = 158.0;
 const SLICE_SETTLE: f32 = 0.62;
 
-/// It crosses ground faster than anything else on foot — over the spirit wolf's 5.2 m/s gallop.
 const RUN_SPEED: f32 = 6.4;
 const IDLE_SPEED: f32 = 1.6;
 const ACCEL: f32 = 16.0;
 const TURN_RATE: f32 = 7.2;
 const GAIT_BLEND: f32 = 11.0;
 
-/// `RUN_SPEED / STRIDE` and nothing else: at 0.52 m that was 12.3 waves a second under a body travelling
-/// 6.4 m/s — a vibration, not a gait. At 1.10 m it is 5.8 a second.
-/// **THE LOWER RIB HAD TO GROW WITH IT.** A tip at radius `R` swept through ±θ covers `2·R·sin θ`, so this
-/// stride off the old 0.31 m rib asked for `sin θ = 1.21` — unsatisfiable, and `RIB`'s clamp would have
-/// silently delivered a short swing under a long stride. `RIB_KNEE_Y` puts the rib at 0.48 m and lands the solve at `sin θ = 0.77`.
+/// `RUN_SPEED / STRIDE` and nothing else: at 0.52 m that was 12.3 waves a second under a body travelling 6.4 m/s. At 1.10 m it is 5.8 a second.
+/// THE LOWER RIB HAD TO GROW WITH IT: a tip at radius `R` swept through ±θ covers `2·R·sin θ`, so this stride off the old 0.31 m rib asked for `sin θ = 1.21`. `RIB_KNEE_Y` puts the rib at 0.48 m and lands the solve at `sin θ = 0.77`.
 const STRIDE: f32 = 1.10;
 /// Fraction of the wave each rib is DOWN. Over 0.5 by a wide margin — with six legs and a metachronal wave most are always planted, which is what stops it hopping.
 const RIB_DUTY: f32 = 0.68;
@@ -163,10 +158,8 @@ fn restPose() [N]rl.Vector3 {
     return r;
 }
 
-/// A tip at radius `R` swept through ±θ covers `2·R·sin θ`, so the stance half of a stride asks
-/// for `θ = asin(STRIDE·RIB_DUTY / 2R)`. Guessed instead of solved, the feet skate.
-/// **SOLVED AT COMPTIME, SIX ROWS, ONCE.** As two functions off the rest pose this was six `asin` calls and six
-/// materialisations of the whole 18-bone rest array per creature per frame, for six numbers that cannot change.
+/// A tip at radius `R` swept through ±θ covers `2·R·sin θ`, so the stance half of a stride asks for `θ = asin(STRIDE·RIB_DUTY / 2R)`. Guessed instead of solved, the feet skate.
+/// SOLVED AT COMPTIME, SIX ROWS, ONCE — as two functions off the rest pose this was six `asin` calls and six materialisations of the whole 18-bone rest array per creature per frame.
 const RIB = blk: {
     @setEvalBranchQuota(4000);
     const rest = restPose();
@@ -607,7 +600,6 @@ pub const Skitterer = struct {
 pub fn triggerR(quarryR: f32) f32 {
     return SLICE_TRIGGER_R + quarryR;
 }
-/// two invert: at `SLICE_TRIGGER_R * scale * STOP_FRAC` a placement at 1.4 halted at 1.91 m outside a trigger ring standing at 1.90.
 fn stopR(quarryR: f32) f32 {
     return SLICE_TRIGGER_R * STOP_FRAC + quarryR;
 }
@@ -787,7 +779,6 @@ fn buildBone(b: *Builder, i: usize, rest: [N]rl.Vector3) void {
             while (f < FALSE_RIBS) : (f += 1) {
                 const t = (@as(f32, @floatFromInt(f)) + 0.5) / @as(f32, FALSE_RIBS);
                 const z = mathx.lerpF(CAGE_Z[0] + 0.10, CAGE_Z[PAIRS - 1] - 0.06, t) * W;
-                // TUCKED UP (owner: less legs): at 0.52+ of drop these dangled to the walkers' own knee line and read as a second set of legs.
                 const drop = (0.40 + 0.13 * mathx.sinf(t * std.math.pi)) * W * rng.range(0.94, 1.06);
                 const out = (0.36 + 0.14 * mathx.sinf(t * std.math.pi)) * W * rng.range(0.92, 1.08);
                 const r = mathx.lerpF(0.042, 0.030, t) * W;
@@ -871,14 +862,13 @@ test "THE HURT SPHERE IS THE CAGE — you hit the body, and the blade over it is
     const r = s.hurtRadius();
     const restTip = s.tipSeg()[1];
     std.debug.print("\n  cage centre {d:.2} m, sphere r {d:.2} m ({d:.2}..{d:.2}); blade tip {d:.2} m up\n", .{ c.y, r, c.y - r, c.y + r, restTip.y });
-    // **THE GAIT'S OWN FREQUENCY, WHICH IS WHAT READ AS FREAKY** — `RUN_SPEED / STRIDE` and nothing else. Under 7 a second, or the cage buzzes instead of loping.
+    // THE GAIT'S OWN FREQUENCY, WHICH IS WHAT READ AS FREAKY — `RUN_SPEED / STRIDE` and nothing else. Under 7 a second, or the cage buzzes instead of loping.
     const waveHz = RUN_SPEED / STRIDE;
     std.debug.print("  …rib wave {d:.1} a second at {d:.1} m/s, swing {d:.0} deg off a {d:.2} m rib (the clamp bites at 58)\n", .{ waveHz, RUN_SPEED, RIB.swing[0], RIB.reach[0] });
     try std.testing.expect(waveHz < 7.0);
     for (RIB.swing) |sw| try std.testing.expect(sw < 57.0);
     try std.testing.expect(c.y - r <= 0.02);
     try std.testing.expect(c.y + r > s.rest[SP1].y);
-    // …and the reared tip stands OUTSIDE it, which is why the radius is not 1.1 m.
     s.stageGather(1.0);
     try std.testing.expect(mathx.lenV(mathx.subV(s.tipSeg()[1], s.centerWorld())) > r);
     try std.testing.expect(r > s.bodyR());
@@ -1070,7 +1060,7 @@ test "A CLAWED BODY CARRIES THE BENCH'S POOLS — the same door the map's own pl
 }
 
 test "A BIG PLACEMENT STILL ATTACKS — the stop ring may never grow past the trigger ring" {
-    // The bug this pins: a `stop` scaled by the body against a `triggerR` that is not. It halted outside its own attack ring at every scale over ~1.4.
+    // The bug this pins: a `stop` scaled by the body against a `triggerR` that is not — it halted outside its own attack ring at every scale over ~1.4.
     for ([_]f32{ wf.FOE_SCALE_LO, 1.0, 1.4, wf.FOE_SCALE_HI }) |sc| {
         var s = Skitterer.spawn(mathx.zero3, 0, sc, 0.3);
         s.leash.noteSeen();

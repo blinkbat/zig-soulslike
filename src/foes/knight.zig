@@ -22,7 +22,6 @@ const IRON = rgba(13, 15, 20, 255);
 const IRON_LT = rgba(42, 46, 54, 255);
 const IRON_MD = rgba(22, 25, 31, 255);
 const IRON_DK = rgba(6, 7, 10, 255);
-/// Not `propart.RUST`: at 2.5 m the door's rims land it at 178 on screen. Solved back down to near 120.
 const RUST = rgba(24, 16, 10, 255);
 const BRASS = rgba(66, 51, 22, 255);
 const STRAP = rgba(34, 26, 19, 255);
@@ -129,14 +128,12 @@ const TOWER_STANCE_PASS: f32 = 0.15;
 
 /// Opens inside the first third — the blade lands at `impactK` 0.22-0.55 — and shuts in the LAST quarter of the recover.
 const SWIPE_OPEN_K: f32 = 0.30;
-/// Share of the WIND the haul is spread over, and how far it gets by the strike. The whole 96 deg of `SWIPE_ABD`
-/// plus 82 of yaw once went in 0.126 s — 762 deg/s. `SWIPE_LEAD_TO` stays under `guardUp`'s 0.5 threshold, so the
-/// flag can never claim the plank is aside before it is.
+/// Share of the WIND the haul is spread over, and how far it gets by the strike. `SWIPE_LEAD_TO` stays under `guardUp`'s 0.5 threshold, so the flag can never claim the plank is aside before it is.
 const SWIPE_LEAD_K: f32 = 0.55;
 const SWIPE_LEAD_TO: f32 = 0.45;
-/// Per second, so also the CEILING on the haul: 3.5 of the swipe's 96 deg of abduction plus 82 of yaw is about 340 deg/s at worst.
+/// Per second, so also the CEILING on the haul: the swipe's 96 deg of abduction plus 82 of yaw is about 340 deg/s at worst.
 const DOOR_EASE: f32 = 3.5;
-/// Degrees a second the plank's FACE may turn on his arm — the last word over every pose. 113 deg in a single frame is 6780.
+/// Degrees a second the plank's FACE may turn on his arm — the last word over every pose.
 const DOOR_TURN_MAX: f32 = 300.0;
 const SWIPE_SHUT_K0: f32 = 0.44;
 const SWIPE_SHUT_K1: f32 = 0.88;
@@ -147,8 +144,7 @@ const P_PARK = P{ .armSh = CARRY_SH - 10.0, .armAbd = CARRY_ABD + 18.0, .lean = 
 comptime {
     std.debug.assert(RECOVER_BACK_K < SWIPE_SHUT_K0 and SWIPE_SHUT_K1 <= RECOVER_PARK_TO);
 }
-/// In the shoulder's own degrees, OUT LEFT AND BACK, EDGE-ON: pitched back 40 and out 52 the plank hangs where
-/// every stroke finishes (0.10 m off the blade). The door hangs 3.7 m below the fist.
+/// Shoulder degrees, OUT LEFT AND BACK, EDGE-ON: pitched back 40 and out 52 the plank hangs 0.10 m off the blade and the door 3.7 m below the fist.
 const SWIPE_SH: f32 = 70.0;
 /// NEGATIVE: on the left arm a positive abduction channel folds it ACROSS the chest, so out to his left is the other sign.
 const SWIPE_ABD: f32 = -96.0;
@@ -237,7 +233,7 @@ const Attack = struct {
     track: f32 = SWING_TURN,
     /// **METRES THE STROKE CARRIES HIM FORWARD, PRE-SCALE** — the LUNGE, on top of the kit's own reach (`bandR`).
     step: f32 = 0,
-/// **THE SHARE OF THE LUNGE LANDED WHEN THE KIT CROSSES HIS FRONT, MEASURED.** A held End Pose keeps the kit out to the end of the stroke (1.0); a sweep passes the front ONCE, part way through its step.
+/// THE SHARE OF THE LUNGE LANDED WHEN THE KIT CROSSES HIS FRONT, MEASURED. A held End Pose keeps the kit out to 1.0; a sweep passes the front once, part way through its step.
     stepLands: f32 = 1.0,
 /// **THE DEAD ZONE, PRE-SCALE, MEASURED** — the nearest stand the kit crosses with the lunge taken.
     reachIn: f32 = 0,
@@ -277,7 +273,6 @@ const SWEEP2 = Attack{
     .bearing = SWEEP_BEARING,
     .track = 2.00,
     .step = 0.34,
-    // MEASURED like the sweep's: a forehand off the same snap crosses his front with most of the step landed.
     .stepLands = 0.80,
 };
 
@@ -309,7 +304,6 @@ const THRUST = Attack{
     .weight = .light,
     .bearing = 54.0,
     .track = 4.40,
-// A POKE, not a lunge (was 0.60): the long step carried his fist PAST a man inside 4 m.
     .step = 0.16,
     .reachIn = 0.90,
 };
@@ -322,8 +316,7 @@ fn thrustBandR(scale: f32) f32 {
     return bandR(THRUST, scale);
 }
 
-/// The shield-side swat is the DOOR's reach, not the sword's 4.96 m: PRE-SCALE, MEASURED down his facing while
-/// live, the door's flick arrives 2.10 m out.
+/// The shield-side swat is the DOOR's reach, not the sword's 4.96 m: PRE-SCALE, MEASURED down his facing while live, the door's flick arrives 2.10 m out.
 const SWAT_SHIELD_REACH_OUT: f32 = 0.72;
 fn swatTriggerR(shieldSide: bool, scale: f32) f32 {
     return if (shieldSide) foe.hurtReach(SWAT_SHIELD_REACH_OUT, scale) else triggerR(SWAT, scale);
@@ -593,7 +586,6 @@ const CHARGE = struct {
     hit: combat.Hit,
 }{
     .windDur = 0.42,
-    // The hero sprints 5.10; at 7.6 he arrived at a jog.
     .speed = 15.4,
     .accel = 0.22,
     .overrun = 2.6,
@@ -622,12 +614,10 @@ const FALL_LEN = 0.95 * H;
 const FALL_HALF_W = SHOULDER_HALF * H * 1.05;
 const FALL_BACK_SLACK = 0.30;
 
-/// Share of the topple the WIND has already taken, in `TOPPLE_DEG` units — 0.16 is ~15°. A giant going over
-/// backwards rotates at his HEELS.
+/// Share of the topple the WIND has already taken, in `TOPPLE_DEG` units — 0.16 is ~15°. He rotates at his HEELS.
 const FALL_WIND_TOPPLE: f32 = 0.16;
 
-/// A ring off the same mark the body lands on, PRE-SCALE and solved against the tell it is drawn through: a RUN
-/// clears it and a WALK does not. Billed only where the crush strip missed.
+/// A ring off the same mark the body lands on, PRE-SCALE and solved against the tell it is drawn through: a RUN clears it and a WALK does not. Billed only where the crush strip missed.
 const FALL_WAVE_R: f32 = 1.38;
 pub const FALL_WAVE_HIT = combat.Hit{ .dmg = 14, .poise = 34, .stance = 16 };
 /// Where along the fallen body the ring is centred, as a share of `FALL_LEN` behind his boots.
@@ -661,7 +651,6 @@ const DISSOLVE = foe.Dissolve{ .rate = 82.0, .spread = 1.15, .rise = 0.72, .flak
 const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 6.0;
 const PARRY_LEAD = foe.PARRY_LEAD;
-/// His own bite, over `combat.PARRY_HIT`'s 46: against 138 of stance that was three parries, and the third never came.
 const PARRY_STANCE: f32 = 70.0;
 comptime {
     std.debug.assert(PARRY_STANCE * 2 >= STANCE_MAX and PARRY_STANCE < STANCE_MAX);
@@ -675,13 +664,12 @@ const STUN_EASE_FRAC = 4.0;
 const A_BOB = heromod.A_BOB;
 const A_PROT = 5.0;
 
-// The carry is PFLUG (Liechtenauer's plough): hilt at the right hip, elbow bent, the point presented
-// forward-down at the man's chest, beside the door's right edge.
+// The carry is PFLUG (Liechtenauer's plough): hilt at the right hip, elbow bent, the point presented forward-down beside the door's right edge.
 const CARRY_SH = 20.0;
 const CARRY_EL = -10.0;
-/// Abducted enough that the hilt clears the door's right edge (x −1.54 at the guard): at 16 the raise into the overhead passed it by 0.12 m.
+/// Abducted enough that the hilt clears the door's right edge (x −1.54 at the guard).
 const CARRY_ABD = -2.0;
-/// deg the blade leads FORWARD of the forearm line — `hero.GRIP_PITCH`'s convention. NEGATIVE here: the forearm is already near level (34 + 48 from vertical).
+/// Degrees the blade leads FORWARD of the forearm line — `hero.GRIP_PITCH`'s convention. NEGATIVE here: the forearm is already near level.
 const CARRY_TILT = 150.0;
 const CARRY_SWEEP = 30.0;
 // MEASURED at sh52/el−92/abd44: the shield hand 1.82 m in front of his chest bone, the door's hub 2.15 m.
@@ -696,16 +684,13 @@ const BASH_WIND_EL = -150.0;
 const BASH_WIND_ABD = 20.0;
 const BASH_WIND_TWIST = -30.0;
 const BASH_WIND_LEAN = -22.0;
-// A straight-arm punch (elbow -14) turned the plank 110 deg with the arm and rammed its edge. The upper arm
-// swings forward 56 deg and the elbow OPENS by the same, so the face on it stays across his front.
+// The upper arm swings forward 56 deg and the elbow OPENS by the same, so the face on it stays across his front.
 const BASH_HIT_SH = 62.0;
 const BASH_HIT_EL = -70.0;
 const BASH_HIT_ABD = 10.0;
-/// Twist turns the plank with the torso now: +22 faced it 46 deg LEFT of the man, -16 squares it.
 const BASH_HIT_TWIST = -16.0;
 const BASH_HIT_LEAN = 22.0;
 
-// Wound high across the body the sweep crossed his front 4.8 m up, a man's height only out on his sword flank.
 const SWP_WIND_SH = 30.0;
 const SWP_WIND_EL = -14.0;
 const SWP_WIND_ABD = 48.0;
@@ -713,10 +698,8 @@ const SWP_WIND_SWEEP = 118.0;
 const SWP_WIND_TWIST = 44.0;
 const SWP_WIND_LEAN = 8.0;
 const SWP_WIND_TILT = 30.0;
-// The arm stays EXTENDED through the front (`SWP_HIT_SH` 52): folded to 22 the blade crossed his front at 3.4 m.
 const SWP_HIT_SWEEP = -60.0;
 const SWP_HIT_TWIST = -30.0;
-// Bent deep (`lean` 40) so the FIST comes down to ~2.3 m: at 2.7 the root of the blade cleared a man at his boots.
 const SWP_HIT_LEAN = 40.0;
 const SWP_HIT_TILT = 44.0;
 const SWP_HIT_SH = 48.0;
@@ -724,7 +707,6 @@ const SWP_HIT_ABD = 8.0;
 
 const SW2_WIND_SWEEP = 110.0;
 const SW2_WIND_TILT = 20.0;
-// Finishes no further left than the sweep does: at -96 the tip ended on the door's forward edge.
 const SW2_HIT_SWEEP = -64.0;
 const SW2_HIT_TWIST = -32.0;
 const SW2_HIT_LEAN = 40.0;
@@ -740,7 +722,6 @@ const OVR_HIT_SH = 64.0;
 const OVR_HIT_TILT = -12.0;
 const OVR_HIT_EL = -8.0;
 const OVR_HIT_LEAN = 32.0;
-/// Torso turned INTO the drop: off the shoulder alone the blade came down 1.2 m right of the man he was squared on.
 const OVR_HIT_TWIST = -16.0;
 const OVR_HIT_SWEEP = -40.0;
 const OVR_HIT_ABD = -10.0;
@@ -794,7 +775,6 @@ const SWEEP2_KEYS = MoveKeys{
 const OVER_KEYS = MoveKeys{
     .wind = &.{
         .{ .t = 0.00, .p = .{} },
-// The raise goes OUT and round the door's right edge: from the old low carry the hilt swung 0.26 m off the plank's lower edge.
         .{ .t = 0.20, .p = .{ .armSh = 20, .armEl = -30, .armAbd = 44, .tilt = -10, .lean = 2, .twist = -6, .brace = 0.30 }, .ease = .decel },
         .{ .t = 0.58, .p = .{ .armSh = OVR_WIND_SH + 30, .armEl = OVR_WIND_EL - 10, .armAbd = OVR_WIND_ABD + 26, .tilt = OVR_WIND_TILT + 24, .lean = -6, .twist = -14, .head = -8, .brace = 0.38 }, .ease = .decel },
         .{ .t = 0.86, .p = .{ .armSh = OVR_WIND_SH, .armEl = OVR_WIND_EL, .armAbd = OVR_WIND_ABD + 12, .tilt = OVR_WIND_TILT, .lean = OVR_WIND_LEAN, .twist = OVR_WIND_TWIST, .head = -14, .brace = 0.55 }, .ease = .accel },
@@ -922,8 +902,7 @@ const SHV_HIT_EL = -104.0;
 const SHOVE_YAW = 26.0;
 const SHOVE_CARRY_X = 0.30 * H;
 const SHOVE_CARRY_Z = 0.10 * H;
-// Never past 0.95 of the sweep's trigger, or the two moves argue over the same stand. Re-measure when
-// `BASH.reachOut` moves — that number went 0.90 to 0.94 when the sword arm's sweep flipped sign under it.
+// Never past 0.95 of the sweep's trigger, or the two moves argue over the same stand. Re-measure when `BASH.reachOut` moves.
 const SHOVE_BAND = 1.18;
 const SHOVE_SHIELD_WIND = 0.60;
 /// 0.52 x 0.58 lands on `foe.TELL_MIN` exactly, and it takes NO `windHold`.
@@ -931,7 +910,6 @@ const SWAT_SHIELD_WIND = 0.58;
 const SWAT_HANG: f32 = 0.26;
 
 const SWAT_SWORD_KEYS = MoveKeys{
-    // THE ELBOW STAYS SHUT AND LOW: straightening threw the tip 5.68 m off a move declared at 3.09.
     .wind = &.{
         .{ .t = 0.00, .p = .{} },
         .{ .t = 1.00, .p = .{ .armSweep = SWT_WIND_SWEEP, .armSh = SWT_SH, .armEl = SWT_EL, .armAbd = SWT_ABD, .tilt = SWT_TILT, .twist = GUARD_TWIST + 14, .lean = SWT_LEAN, .brace = 0.32 }, .ease = .accel },
@@ -949,10 +927,8 @@ const SWAT_SWORD_KEYS = MoveKeys{
         .{ .t = 1.00, .p = .{ .brace = 0.18 }, .ease = .decel },
     },
 };
-// The blade points OUT for the flick to travel: hung near-vertical, 82 deg of shoulder sweep moved the tip 30.
 const SWT_SH = 30.0;
 const SWT_EL = -18.0;
-/// Out past the door's right edge on the cock: at 12 the blade root swung down 0.36 m off the plank.
 const SWT_ABD = 20.0;
 const SWT_TILT = 46.0;
 const SWT_LEAN = 32.0;
@@ -992,11 +968,9 @@ const THR_WIND_EL = -52.0;
 const THR_WIND_ABD = 14.0;
 const THR_WIND_TILT = 60.0;
 const THR_WIND_LEAN = -8.0;
-/// Chambered to the RIGHT of the door: cocked on the centre line the point ran through the door's top edge.
 const THR_WIND_SWEEP = 30.0;
 const THR_OFF_RISE = 9.0;
-// The arm is nearly LEVEL and the blade angles DOWN off it (negative tilt); pitched down 58 with the blade
-// leading it, the point plunged in place 3.6 m out.
+// The arm is nearly LEVEL and the blade angles DOWN off it (negative tilt).
 const THR_HIT_SH = 80.0;
 const THR_HIT_EL = -4.0;
 const THR_HIT_TILT = -10.0;
@@ -1014,7 +988,7 @@ const SLM_HIT_EL = -10.0;
 const SLM_HIT_LEAN = 36.0;
 const SLM_HIT_TWIST = -8.0;
 const SLM_PITCH_UP = -56.0;
-/// Face DOWN when it lands. On the forearm the arm's own drop supplies most of the pitch: at 66 the face came down pointing back at him.
+/// Face DOWN when it lands; on the forearm the arm's own drop supplies most of the pitch.
 const SLM_PITCH_DOWN = 30.0;
 const SLM_CARRY_UP = 0.60 * H;
 const SLM_CARRY_END_Y = -0.10 * H;
@@ -1075,8 +1049,7 @@ const FLOORED_TILT = 4.0;
 const RISE_KNEE = 92.0;
 const RISE_HIP = 72.0;
 
-/// Degrees off the facing the gather started from; the RATE is still his full `TURN_RATE`. Measured before it:
-/// a walker was off his front 21% of a 45 s ring and behind him 17%.
+/// Degrees off the facing the gather started from; the RATE is still his full `TURN_RATE`.
 const GATHER_SWEEP_MAX: f32 = 60.0;
 
 const GATHER_HEAVY = 1.5;
@@ -1147,7 +1120,7 @@ comptime {
 const CHOOSE_N = 4;
 
 const SWEEP_BEARING = 72.0;
-/// EVERY gather aims at full `TURN_RATE` now, and the sweep's runs 1.00 s — 183 deg — so a sweep begun out here arrives well inside `SWEEP_BEARING` under its own steam.
+/// EVERY gather aims at full `TURN_RATE`, and the sweep's runs 1.00 s — 183 deg — so a sweep begun out here arrives well inside `SWEEP_BEARING`.
 const FLANK_BEARING = SWEEP_BEARING + 28.0;
 
 /// docs/ELDEN_RING.md §7: strings run "1-4 hits, variable", recovery "3-4 frames mid-combo, 23-24 at combo end".
@@ -1364,7 +1337,6 @@ fn classify(sit: Sit) Decision {
     }
     if (dist <= thrustBandR(scale)) {
         if (b <= THRUST.bearing and ready[THRUST_I]) return .{ .what = .strike, .mv = THRUST_I };
-// The hop is 3.2 m in 0.54 s.
         if (hopReady) return .{ .what = .hop };
         if (stepReady and b >= STEPTURN.least) return .{ .what = .stepturn };
         return .{ .what = .wait };
@@ -1392,9 +1364,7 @@ fn crushLen(scale: f32) f32 {
 const FIST_Y = -0.05 * H;
 const FIST_Z = 0.02 * H;
 const SW_GUARD = 0.130 * H;
-/// Bracketed from ABOVE by what the sweep may reach: at 0.84·H the blade measured 4.45 m and arrived 6.9 m out.
 const SW_BLADE = 0.57 * H;
-/// Also the swipes' hurt radius. At 0.032·H it was 8:1 across a near-3 m edge, where a greatsword is nearer 20:1.
 const SW_HALF_W = 0.019 * H;
 const SW_SEG = [2]rl.Vector3{
     v3(0, FIST_Y + SW_GUARD, FIST_Z),
@@ -1675,9 +1645,7 @@ pub const Knight = struct {
         };
     }
 
-/// The door is a MASS, so its channel is CHASED and never assigned: `swipeOpenWant`/`shoveAcrossWant` are
-/// schedules with seams in them, and read straight into the arm the hub crossed 4.3 m in one frame. `guardUp`
-/// reads the CHASED value, so the mechanic and the picture cannot part.
+/// The door is a MASS, so its channel is CHASED and never assigned: read straight into the arm, `swipeOpenWant`'s seams crossed the hub 4.3 m in one frame. `guardUp` reads the CHASED value, so the mechanic and the picture cannot part.
     fn swipeOpen(self: *const Knight) f32 {
         return self.openAmt;
     }
@@ -2019,7 +1987,6 @@ pub const Knight = struct {
                 }
             },
             .sweepwind, .chainwind, .overwind, .thrustwind, .bashwind, .swatwind => {
-// At 0.45 of his own turn the overhead brought 16 deg round across a 0.88 s gather, against a walk's 0.80 rad/s.
                 self.faceToward(hero, dt);
                 self.holdWindSweep();
                 const dur = self.windDur();
@@ -3202,7 +3169,7 @@ pub const Knight = struct {
         ));
 
         if (dead) {
-            // **A FELLED STATUE DOES NOT CURL** — flat, both legs are STRAIGHT. Hip/knee bend threw both boots 3.30 m in the air behind him, twice his own knee.
+            // A FELLED STATUE DOES NOT CURL — flat, both legs are STRAIGHT.
             setLocal(wx, HIPL, rest, mul(rx(-5.0 * dk), rz(-6.0)));
             setLocal(wx, KNEEL, rest, rx(6.0 + 5.0 * dk));
             setLocal(wx, ANKL, rest, rx(-9.0 * dk));
@@ -3661,7 +3628,7 @@ fn pelvisMesh() rl.Mesh {
     }
     b.addBlob(v3(mathx.cosf(4.5 / 7.0 * std.math.tau) * 0.118 * H, -0.128 * H, mathx.sinf(4.5 / 7.0 * std.math.tau) * 0.118 * H), v3(0.030 * H, 0.052 * H, 0.028 * H), 6, 10, KBONE);
     b.setMat(.leather);
-    // A BELT GOES ROUND HIM, SO ITS AXIS IS VERTICAL — across his hips it was a 1.5 m drum whose two flat sunlit caps filled his whole back.
+    // A BELT GOES ROUND HIM, SO ITS AXIS IS VERTICAL.
     b.addCylinder(v3(0, 0.034 * H, 0), v3(0, 0.078 * H, 0), 0.140 * H, 0.140 * H, 11, STRAP);
     b.setMat(BRIGHT);
     b.addBox(v3(0, 0.056 * H, 0.138 * H), v3(0.036 * H, 0, 0), v3(0, 0.030 * H, 0), v3(0, 0, 0.010 * H), BRASS);
@@ -4019,7 +3986,6 @@ fn swordMesh() rl.Mesh {
 const SH_TOP = 0.150 * H; // → the top edge at ~4.7 m: his chin
 const SH_BOT = 0.700 * H; // → the foot at ~0.2 m: his ankles
 const SH_CURVE_R = 0.46 * H;
-/// `TOWER_ARC` is derived off these: at 34/30 the honest occlusion was ~35 deg either side against a mechanic claiming 105.
 const SH_ARC_L = mathx.radians(38.0);
 const SH_ARC_R = mathx.radians(34.0);
 pub const SH_CHORD_L = SH_CURVE_R * @sin(mathx.radians(38.0));
@@ -4036,13 +4002,10 @@ pub const SH_RAM_HALF = SH_CURVE_R * @sin(mathx.radians(24.0));
 const SH_THICK = 0.030 * H;
 const SH_STAVES = 9;
 const SH_CENTRE_Y = (SH_TOP - SH_BOT) * 0.5;
-/// **UNDER 1, ON PURPOSE**: at 1.06 the staves overlapped into one sheet and the door sampled as a flat tone.
 const SH_STAVE_FILL = 0.90;
 const SH_STAVE_PROUD = 0.012 * H;
-/// It faces the sun square where his chest is angled away — measured, 112 against the cuirass's 84. Solved to land near 62 on screen.
 const SH_FIELD = rgba(8, 9, 13, 255);
 const SH_BAND = rgba(23, 26, 32, 255);
-/// How far off his FIST the door rides, along his own front: 0.108·H stood 0.57 m off the hand, 0.062·H 0.33 m.
 const SH_STANDOFF = 0.028 * H;
 
 const SH_LOW = v3(0, -SH_BOT, SH_THICK);
@@ -4183,19 +4146,14 @@ fn shieldMesh() rl.Mesh {
 /// How far the FACE may tip off his own horizontal — the SINE of the tip, so 0.50 is 30°. The SLAM is the one move allowed past it (`doorNormal` y −0.95).
 const HANG_TIP: f32 = 0.50;
 
-/// A shield is CARRIED, not welded to the forearm. Strapped rigidly, the plank INVERTED — its own up axis at
-/// −0.82 — and its foot climbed to 6.87 m over a 5.11 m crown. So the arm AIMS it in YAW and nothing else: the
-/// face may tip `HANG_TIP` off his horizontal and no further, and the plank's length is whatever is left of his
-/// up — world up standing, his own toppled. The SLAM is the one exemption and it is a FRACTION, not a flag
-/// (`slamDrive`): laid flat there is no upright to solve for, so the length comes off his FORWARD instead.
+/// A shield is CARRIED, not welded to the forearm: strapped rigidly the plank INVERTED, its own up axis at −0.82. The arm AIMS it in YAW and nothing else — the face may tip `HANG_TIP` off his horizontal and no further, and the plank's length is whatever is left of his up.
+/// The SLAM is the one exemption, and a FRACTION rather than a flag (`slamDrive`): laid flat there is no upright to solve for, so the length comes off his FORWARD instead.
 fn hangUpright(k: *Knight, dt: f32, m: rl.Matrix, bodyUp: rl.Vector3, bodyFwd: rl.Vector3, laid: f32) rl.Matrix {
     const s = mathx.lenV(v3(m.m4, m.m5, m.m6));
     if (s < 1e-5) return m;
     var n = mathx.normV(v3(m.m8, m.m9, m.m10));
     const allow = lerpF(HANG_TIP, 1.0, laid);
-// The face is CHASED, not assigned: the arm's own roll has singularities, and a counter yanking him out of a
-// slam re-aims the whole basis in a frame — 113 deg of face turn in ONE FRAME, standing in idle. And the tip is
-// clamped AFTER the chase: a slerp between two legal near-horizontal faces on opposite bearings runs over the POLE.
+// The face is CHASED, not assigned: the arm's own roll has singularities and a counter yanking him out of a slam re-aims the whole basis in a frame — 113 deg of face turn in ONE. The tip is clamped AFTER the chase, because a slerp between two legal near-horizontal faces on opposite bearings runs over the POLE.
     n = clampTip(turnToward(&k.doorFace, clampTip(n, bodyUp, bodyFwd, allow), dt), bodyUp, bodyFwd, allow);
     const ref = mathx.normV(mathx.lerpV(bodyUp, mathx.scaleV(bodyFwd, -1), laid));
     const y = mathx.normV(mathx.subV(ref, mathx.scaleV(n, n.x * ref.x + n.y * ref.y + n.z * ref.z)));
@@ -4213,9 +4171,7 @@ fn hangUpright(k: *Knight, dt: f32, m: rl.Matrix, bodyUp: rl.Vector3, bodyFwd: r
     return out;
 }
 
-/// Position AND orientation come off the wrist bone through one fix solved at spawn (`calibrateShield`), so the
-/// arm carries the plank rigidly. Oriented off the BODY instead, the fist only supplies a position and the plank
-/// stays square to his front while the arm swings out.
+/// Position AND orientation come off the wrist bone through one fix solved at spawn (`calibrateShield`). Oriented off the BODY instead, the plank stays square to his front while the arm swings out.
 fn shieldXf(k: *Knight, dt: f32) rl.Matrix {
     const fs = k.rigScale();
     const carry = k.slamCarry();
@@ -4254,8 +4210,7 @@ fn shieldXf(k: *Knight, dt: f32) rl.Matrix {
     return m;
 }
 
-/// Solved ONCE, at spawn, in the guard pose: the rotation turning the wrist frame into the door's authored
-/// orientation (`rx(-6)·rz(3)` in his frame), and the grip in the wrist's own units.
+/// Solved ONCE, at spawn, in the guard pose: the rotation turning the wrist frame into the door's authored orientation (`rx(-6)·rz(3)` in his frame), and the grip in the wrist's own units.
 fn calibrateShield(k: *Knight) void {
     const fs = k.rigScale();
     var rw = k.xf[WRL];
@@ -4345,9 +4300,6 @@ test "A BODY ALREADY ON THE GROUND CANNOT BE FLINCHED UPRIGHT — the punish win
 }
 
 test "THE SWORD IS CARRIED HIGH — blade up past his sword shoulder, where it cannot reach the door at all" {
-// The carry was authored as Pflug. On a body whose door covers his whole right side out to 1.54 m the rig cannot
-// put a point past that edge without throwing the arm after it: measured, the point sat 3.66 m off his centre
-// line and 1.37 m BELOW the hilt, which is Alber and not Pflug. So the blade goes UP.
     var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
     k.setCarry(1.0);
     k.seatDoor();
@@ -4482,8 +4434,7 @@ test "A BLOW ON THE DOOR TAKES NO POISE, BUT THE FOOTING BEHIND IT CAN BE WORN T
 }
 
 test "A BLOW THE DOOR STOPPED CANNOT FLINCH HIM — the pool, the footing, the stagger and the wear all refused" {
-// `Vitals.strike` empties the pool and begins the stagger before `tryHit` can answer for the block, and restoring
-// only `poise` left him `stunned()`. The chip is 10% of `dmg` (`TOWER_NEGATE`), so 10 pours 0.82 into a pool left with 0.5 in it.
+// `Vitals.strike` empties the pool and begins the stagger before `tryHit` can answer for the block, and restoring only `poise` left him `stunned()`. The chip is 10% of `dmg` (`TOWER_NEGATE`).
     var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
     k.state = .idle;
     k.covered = true;
@@ -4843,7 +4794,6 @@ test "THE SWIPE-AND-LEAP — one beat, not two, only ever off a flank, and only 
     k.enter(.swat);
     k.leapCd = 0;
     k.sense.hurt(HP_MAX * RETREAT_AT * 1.2);
-// Held on the flank while he TURNS onto it: he tracks at 4.8 rad/s through the swat's own 0.16 s, so a body dropped at 95 deg finishes the stroke squared up.
     const dt = 1.0 / 120.0;
     var t: f32 = 0;
     while (t < SWAT.strikeDur + 0.05 and k.state == .swat) : (t += dt) {
@@ -5227,8 +5177,7 @@ test "THE WINDOW IS AN INSTANT BEFORE THE HIT, on all five strokes — and the F
 }
 
 test "EACH STROKE'S DECLARED REACH IS WHAT THE KIT ACTUALLY ARRIVES AT — ON THE LINE HE IS FACING, WHILE LIVE" {
-// MEASURED DOWN HIS FACING, not at any bearing, and THROUGH THE REAL UPDATE: the springs lag the keyed pose by a
-// few frames, so a keyed replay puts the swat's crossing before its own impact frame and reads a third of its reach.
+// MEASURED DOWN HIS FACING, not at any bearing, and THROUGH THE REAL UPDATE: the springs lag the keyed pose by a few frames, so a keyed replay reads a third of the swat's reach.
     const dt = 1.0 / 240.0;
     const rows = [_]struct { mv: usize, shield: bool }{
         .{ .mv = SWEEP_I, .shield = false },
@@ -5491,7 +5440,6 @@ test "THE SWORD IS SWUNG AT THE MAN WHERE HE STANDS — thrown for real, every s
 }
 
 test "EVERY STROKE COMES DOWN INTO THE HERO'S OWN HEIGHT BAND — a giant's kit swung at a giant's height MISSES" {
-// Authored in its own units a five-metre creature sweeps its kit through ITS chest, 2.5 m over the head of the man it swings at.
     const dt = 1.0 / 120.0;
     const strikeOf = [_]State{ .sweep, .over, .thrust, .bash, .sweep2, .swat };
     for (MOVES, 0..) |a, mv| {
@@ -5715,7 +5663,6 @@ test "HE IS NOT DULL — a man walking circles round him is under attack, not wa
     }
     const share = @as(f32, @floatFromInt(busy)) / @as(f32, @floatFromInt(frames));
     std.debug.print("\n  45 s of a walked circle: {d} blows thrown, {d:.0}% of it committed, longest lull {d:.2} s\n", .{ strokes, share * 100.0, worstQuiet });
-// MEASURED: 21 blows, 93% committed, worst lull 0.73 s — against 30 blows at 91% with a 2.23 s lull before.
     try std.testing.expect(strokes >= 18);
     try std.testing.expect(share > 0.85);
     try std.testing.expect(worstQuiet < SLAM.recoverDur + STEPTURN.windDur + STEPTURN.turnDur + STEPTURN.settleDur);
@@ -5981,7 +5928,6 @@ test "THE SITUATION ARGUES WITH THE ROTATION — and the same situation always l
 }
 
 test "THE CHARGE COMES FROM A STEP OUTSIDE HIS SWORD — not only from across the arena" {
-    // 8.5 m is the spacing a fight is actually held at, past the thrust's own band.
     const k0 = Knight.spawn(mathx.zero3, 0, 1.0, 0.31);
     const kite = 8.5;
     try std.testing.expect(kite > thrustBandR(k0.scale));
@@ -6203,8 +6149,7 @@ test "THE DOOR STAYS OUT ACROSS A FRONT COMBO, and comes back for the strokes th
     try std.testing.expect(moved > 1.0);
 }
 
-/// Hold a face within `allow` of his own horizontal, in the SINE of the tip. With the face straight up or down
-/// there is no bearing to push back onto, so his FORWARD is used. This may not bail out.
+/// Hold a face within `allow` of his own horizontal, in the SINE of the tip. Straight up or down there is no bearing to push back onto, so his FORWARD is used. This may not bail out.
 fn clampTip(n: rl.Vector3, bodyUp: rl.Vector3, bodyFwd: rl.Vector3, allow: f32) rl.Vector3 {
     const tip = n.x * bodyUp.x + n.y * bodyUp.y + n.z * bodyUp.z;
     if (@abs(tip) <= allow) return n;
@@ -6549,7 +6494,6 @@ test "THE DOOR IS CARRIED IN EVERY STATE HE HAS — never inverted, never over h
 }
 
 test "A WIND CANNOT FOLLOW YOU ROUND ONTO HIS BACK — the gather turns his shoulders, the STEP-TURN moves his feet" {
-// Measured: a walked ring drew only 6 step-turns in 45 s. Every GATHER aimed at his full rate for up to 1.15 s, which is 211 deg.
     const dt = 1.0 / 240.0;
     var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
     k.leash.provoke();
@@ -6599,8 +6543,6 @@ test "A WIND CANNOT FOLLOW YOU ROUND ONTO HIS BACK — the gather turns his shou
 
 
 test "THE DOOR IS HELD, NOT FLOWN — no move may whip the plank across the ground in a frame" {
-// `swipeOpen` and `shoveAcross` were schedules with seams read straight into the arm: measured, the hub crossed
-// 4.3 m in ONE FRAME. Chased at `DOOR_EASE`, the worst any move now does is the SLAM's own haul at 1.08 m.
     const dt = 1.0 / 60.0;
     const G = struct {
         fn sweep(k: *Knight) void {

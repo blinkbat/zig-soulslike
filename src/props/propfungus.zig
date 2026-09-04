@@ -36,7 +36,7 @@ pub const DANGLE_PER_M: f32 = 0.017;
 
 const DANGLE_PEAK: f32 = 1.3;
 
-/// **AT THE CAP'S OWN CENTRE, NOT AT THE ORIGIN.** Every cap here LEANS, so its crown sits off the axis its stalk came out of — and the gills were being laid at 0,0 regardless. On a 6-degree lean over 6.4 m that is half a metre of offset, which is why they came out of one side of the brim as a saw blade.
+/// AT THE CAP'S OWN CENTRE, NOT AT THE ORIGIN: every cap here LEANS, so its crown sits off the axis its stalk came out of, and on a 6-degree lean over 6.4 m that is half a metre of offset.
 fn gillsInto(b: *Builder, cx: f32, cz: f32, r: f32, y: f32, drop: f32, n: i32, col: rl.Color) void {
     b.setMat(.plant);
     var i: i32 = 0;
@@ -44,7 +44,6 @@ fn gillsInto(b: *Builder, cx: f32, cz: f32, r: f32, y: f32, drop: f32, n: i32, c
         const a = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(@max(n, 1)));
         const c = mathx.cosf(a);
         const s = mathx.sinf(a);
-        // INSIDE THE RIM. At 0.94 plus the blob's own padding these stood proud of the cap's edge and read as a saw blade; the rim shell is at 1.01.
         const inner = r * 0.18;
         const outer = r * 0.88;
         const mid = (inner + outer) * 0.5;
@@ -313,7 +312,6 @@ test "THE THREE LAYERS ARE ALL FUNGAL — canopy, understorey and floor, and the
     try std.testing.expect(POD_H < BRACKET_H);
     try std.testing.expect(BRACKET_H < GIANT_H * 0.5);
     try std.testing.expect(GLOW_H < GIANT_H * 0.5);
-    // …and you walk UNDER the canopy: the cap's underside clears a 1.8 m man with room over him.
     try std.testing.expect(GIANT_H - GIANT_DROP * 1.35 > 1.8 + 0.4);
     inline for (.{ GIANT_BROAD, GIANT_TALL, GIANT_TABLE }) |sp| {
         try std.testing.expect(sp.h - sp.drop * 1.35 > 2.2);
@@ -420,7 +418,6 @@ pub fn hyphaArchMesh(shader: rl.Shader) rl.Model {
 pub const CLUSTER_GLOW_H: f32 = 1.55;
 pub const CLUSTER_LIGHT_Y: f32 = 1.05;
 
-/// **A KNOT OF LIT CAPS.** Where `glowcap` is one lamp on a stalk, this is a fistful low to the ground — the thing you sow along a path so the floor is legible without a torch.
 pub fn glowClusterMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0AB);
@@ -519,7 +516,6 @@ pub fn fleshFoldMesh(shader: rl.Shader) rl.Model {
 
 pub const VENT_H: f32 = 3.6;
 
-/// **A CHIMNEY THAT BREATHES.** Stacked collars of fused hyphae with a dark throat and a lit gullet. A cylinder is CAPLESS and this one is supposed to be — the mouth is the point, and the glow sits BELOW the rim so you have to walk up to it.
 pub fn sporeVentMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xF0AE);
@@ -540,7 +536,6 @@ pub fn sporeVentMesh(shader: rl.Shader) rl.Model {
         cx += mathx.cosf(lean) * 0.055 + rng.signed() * 0.045;
         cz += mathx.sinf(lean) * 0.055 + rng.signed() * 0.045;
     }
-    // The throat is OPEN — a vent that is capped is a chimney pot. The glow sits down inside it.
     b.addCylinder(v3(cx, y - 0.30, cz), v3(cx, y + 0.16, cz), 0.40, 0.46, 12, PUNK_DK);
     b.addBlob(v3(cx, y - 0.30, cz), v3(0.33, 0.14, 0.33), 3, 10, art.BLOOM_GLOW);
     b.addBlob(v3(cx, y - 0.44, cz), v3(0.19, 0.15, 0.19), 3, 8, art.BLOOM_CORE);

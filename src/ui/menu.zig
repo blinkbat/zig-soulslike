@@ -55,7 +55,7 @@ const DBG_HITBOX = 3;
 const DBG_HOUR = 4;
 const DBG_DAYRATE = 5;
 const DBG_TIMESCALE = 6;
-/// Weather arrives on a clock measured in MINUTES, so "is the rain working" is not a question anybody can sit and answer. Confirm cycles dry → gentle → moderate → dry (`weather.Weather.cycleForce`), as a row and not a submenu because the point is to watch the sky while you turn it.
+/// Weather arrives on a clock measured in MINUTES. Cycles dry -> gentle -> moderate -> dry (`weather.Weather.cycleForce`), as a row and not a submenu so you can watch the sky while you turn it.
 const DBG_WEATHER = 7;
 const DBG_FOG = 8;
 const DBG_BIRDS = 9;
@@ -303,7 +303,7 @@ pub const Menu = struct {
         if (self.screen == .debug and self.cursor == DBG_FOG) {
             if (adjTapped(.left) or adjTapped(.right)) self.cycleFog();
         }
-        // THE HOUR. Its own delta rather than `adjustDelta`'s, which is scaled for a 0..1 dial: an hour is not a hundredth of anything, and a tap of 0.01 h is nine game seconds — a control that does nothing.
+        // THE HOUR: its own delta rather than `adjustDelta`'s, which is scaled for a 0..1 dial — a tap of 0.01 h is nine game seconds.
         if (self.screen == .debug and self.cursor == DBG_HOUR) {
             const step: f32 = if (coarseHeld()) HOUR_COARSE else HOUR_TAP;
             if (adjTapped(.left)) day.nudge(-step);
@@ -529,7 +529,6 @@ pub const Menu = struct {
             daynight.phaseName(day.hour),
             if (day.frozen()) " (held)" else "",
         }) catch "?";
-        // …and the SPEED, said as a day's length rather than as a multiplier: what you are about to watch is the sky going round, and "10 s/day" is that where "120x" is arithmetic.
         var len: [12]u8 = undefined;
         out[DBG_DAYRATE] = std.fmt.bufPrintZ(&dbgRateBuf, "Day Speed: {d:.0}x - {s}/day{s}", .{
             day.speed(),
@@ -575,26 +574,27 @@ pub const Menu = struct {
             .debug => self.drawCard("DEBUG", &self.debugLabels(day, sky), .{}),
             .retro => self.drawCard("RETRO FILTERS", &retroLabels(retro), .{ .gauges = retro.values[0..gfx.RETRO_COUNT] }),
         }
+        const SELECT = hud.Hint{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Select" };
         const bootHints = [_]hud.Hint{
-            .{ .glyph = .{ .dpad = .updown }, .label = "Move" },
-            .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Select" },
+            hud.HINT_MOVE,
+            SELECT,
         };
         const slotHints = [_]hud.Hint{
-            .{ .glyph = .{ .dpad = .updown }, .label = "Move" },
-            .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Select" },
+            hud.HINT_MOVE,
+            SELECT,
             .{ .glyph = .{ .face = hud.BTN_QUICK }, .label = "Delete" },
-            .{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Back" },
+            hud.HINT_BACK,
         };
         const askHints = [_]hud.Hint{
             .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Delete" },
             .{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Keep" },
         };
         const hints = [_]hud.Hint{
-            .{ .glyph = .{ .dpad = .updown }, .label = "Move" },
+            hud.HINT_MOVE,
             .{ .glyph = .{ .dpad = .leftright }, .label = "Adjust" },
             .{ .glyph = .{ .bumper = "LB" }, .label = "Coarse" },
-            .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Select" },
-            .{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Back" },
+            SELECT,
+            hud.HINT_BACK,
             .{ .glyph = .menu, .label = "Character" },
         };
         const row: []const hud.Hint = switch (self.screen) {
@@ -804,7 +804,7 @@ pub fn unload() void {
 /// The widest a row can say, in seconds: 999h 59m.
 const PLAYTIME_CAP: f32 = 999.0 * 3600.0 + 59.0 * 60.0;
 
-/// "2h 14m" — hours and minutes, never seconds. What a slot row answers is "which of these have I played", and a number that ticks is not what that question is asking.
+/// "2h 14m" — hours and minutes, never seconds.
 fn playtimeText(secs: f32, buf: []u8) [:0]const u8 {
     // A slot's `elapsed:` is whatever the file says (`save.float` refuses only non-finite), and a `u32` cast
     const total: u32 = @intFromFloat(mathx.clampF(secs, 0, PLAYTIME_CAP));

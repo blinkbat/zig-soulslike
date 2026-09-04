@@ -95,9 +95,7 @@ fn hearthInto(b: *Builder, rng: *mathx.Rng, cold: bool) void {
     }
 }
 
-/// **IT IS NOT A COPY OF THE BONFIRE.** This hearth is smaller — its stones ring at 0.68 against the bonfire's
-/// 1.08 — so the ash bed, the flame and the smoke are all scaled to it (`CAMP_S`); the same OBJECT, at the size
-/// of the fire that is actually burning.
+/// IT IS NOT A COPY OF THE BONFIRE: this hearth's stones ring at 0.68 against the bonfire's 1.08, so the ash bed, the flame and the smoke are all scaled to it (`CAMP_S`).
 const CAMP_S: f32 = 0.72;
 const SMOKE_SRC: f32 = 0.62;
 pub fn campfireMesh(shader: rl.Shader) rl.Model {
@@ -138,11 +136,10 @@ pub fn campfireVeilMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// Where this camp's rock and guitar sit, in the campfire's own local frame — read by BOTH meshes, so the instrument cannot drift off the rock. **Further out than the bonfire's**: this hearth's kicked stone reaches 1.15 m, so a guitar at the bonfire's 1.62 m radius would be standing in it.
+/// Where this camp's rock and guitar sit, in the campfire's own local frame — read by BOTH meshes, so the instrument cannot drift off the rock. This hearth's kicked stone reaches 1.15 m.
 const GUITAR_CX: f32 = -1.44;
 const GUITAR_CZ: f32 = 0.98;
 const GUITAR_YAW: f32 = -1.56;
-/// …and SMALLER than the bonfire's 1.5. At the bonfire's scale the instrument was taller than the ring of stones it sat beside.
 const GUITAR_S: f32 = 1.18;
 
 pub fn campfireGuitarMesh(shader: rl.Shader) rl.Model {
@@ -156,16 +153,13 @@ const GLOW_HOT = mathx.rgba(240, 236, 212, GLOW_EMISSIVE);
 const GLOW = mathx.rgba(204, 200, 166, GLOW_EMISSIVE);
 const GLOW_DIM = mathx.rgba(150, 146, 112, GLOW_EMISSIVE);
 pub const PICKUP_H: f32 = 0.62;
-/// **AND IT IS A WISP, NOT A POST.** The first pass ran 0.048 of radius the whole way up and read as a bollard — the shape said "solid thing" and no amount of brightness argues with a silhouette.
 const GLOW_R0: f32 = 0.022;
 const GLOW_R1: f32 = 0.007;
 
 const PILLAR_H: f32 = 1.48;
 const PILLAR_R0: f32 = 0.105;
 const PILLAR_R1: f32 = 0.048;
-/// `smoothstep(0.62, 0.90, emis)` with `emis = 1 - a/255`, so the translucent end wants `emis <= 0.62`, any
-/// **IT FADES OUT AS IT GOES UP** (owner's call): the shader FLOORS opacity at the tip value, so a more solid
-/// FOOT makes the gradient — `a = 63` → `emis = 0.753` → `outA ≈ 0.62`, easing to the tip's 0.42.
+/// `smoothstep(0.62, 0.90, emis)` with `emis = 1 - a/255`, so the translucent end wants `emis <= 0.62`. IT FADES OUT AS IT GOES UP: the shader FLOORS opacity at the tip value, so a more solid FOOT makes the gradient — `a = 63` -> `emis = 0.753` -> `outA ~ 0.62`, easing to the tip's 0.42.
 const PILLAR_A_FOOT: u8 = 63;
 const PILLAR_A_HEAD: u8 = 104;
 const PILLAR = mathx.rgba(212, 208, 176, PILLAR_A_FOOT);
@@ -228,7 +222,7 @@ pub fn pickupMesh(shader: rl.Shader) rl.Model {
             prevP.y + PILLAR_H / PSEGF,
             prevP.z + rng.signed() * 0.016,
         );
-        // **THE SEGMENT'S MIDDLE, EASED.** Taken at its FOOT the last segment sampled 0.8 and the head never reached the top colour — the shaft stopped one band short of gone. The ease holds near full through the lower third and reaches the shader's translucent floor before the tip.
+        // THE SEGMENT'S MIDDLE, EASED: taken at its FOOT the last segment sampled 0.8 and the head never reached the top colour.
         const fm = (f + 0.5 / PSEGF);
         const t = fm * @sqrt(fm);
         b.addCapsule(
@@ -322,13 +316,10 @@ pub const FOG_W: f32 = 3.4;
 pub const FOG_H: f32 = 4.2;
 /// Half-thickness of the WARD behind the sheet (`props.Info.ward`) — not of the curtain, whose three panes span 0.22 m. A push-out is a position test, so a wall thinner than one frame of travel is one a charge steps clean through: the knight's 12.4 m/s covers 0.21 m at 60 fps and 0.41 m at 30.
 pub const FOG_WARD_R: f32 = 0.40;
-// THE UNDULATION IS PER-VERTEX, so the grid IS the amplitude it can carry: at 10x9 the roll had two and a half
-// **AND THIS IS THE EXPENSIVE PROP IN THE GAME, ON PURPOSE**: 16x14x5x2 = 2240 quads, 4480 tris (it was 1080),
 const FOG_COLS: i32 = 16;
 const FOG_ROWS: i32 = 14;
 const FOG_SHEETS: i32 = 5; // depth: five curtains a hand apart, so the billow has something to move THROUGH
-// **SOLVED AGAINST THE RENDER** — at (190,198,210) it measured 220,209,201 beside a cliff at 151,137,105, so
-// far up the curve that the curdle and billow clipped flat. 220 → 130 wants (130/220)^2.2 = 0.314.
+// SOLVED AGAINST THE RENDER: at (190,198,210) it measured 220,209,201 beside a cliff at 151,137,105, so far up the curve that the curdle and billow clipped flat. 220 -> 130 wants (130/220)^2.2 = 0.314.
 const FOG_PALE = mathx.rgba(38, 44, 58, 176);
 const FOG_DEEP = mathx.rgba(20, 24, 36, 176);
 const WAKE_LIFT: f32 = 0.40;

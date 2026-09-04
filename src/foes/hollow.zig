@@ -48,7 +48,6 @@ const CLAPPER = heromod.HELD;
 
 const H: f32 = heromod.H;
 
-/// 3.25 m of stature bent through `HUNCH`'s 52 degrees at the waist: crown at ~2.4 m, shoulders at 2.2 —
 pub const SCALE = (H + 1.45) / H;
 const HIP_HALF = heromod.HIP_HALF * 1.55;
 const SHOULDER_HALF = heromod.SHOULDER_HALF * 1.62;
@@ -76,9 +75,7 @@ const BODY_R: f32 = 0.62;
 const HURT_R: f32 = 0.78;
 pub var SOULS: u32 = 420;
 
-/// Over the cyclops's 300, and it is the whole creature: there is no armour under it.
 const HP_MAX: f32 = 340.0;
-/// Over the cyclops's 30 and well under the bone knight's 78: the hero's heavy swing at 22 does not flinch it.
 const POISE_MAX: f32 = 34.0;
 const STANCE_MAX: f32 = 62.0;
 const RESISTS = combat.resists(.{ .fire = -30, .cold = 55, .lightning = -70, .chaos = 40 });
@@ -101,10 +98,7 @@ const BITE_STRIKE: f32 = 0.20;
 const BITE_RECOVER: f32 = 0.62;
 const BITE_COOL: f32 = 1.55;
 const BITE_LUNGE: f32 = 0.62;
-/// **MEASURED AGAINST THE FIELD, NOT CHOSEN.** At 1.85 the whole reach came to 3.17 m at this scale — further
-/// than the cyclops's slam, on the weakest blow in the game. Then measured off the posed jaws: they arrive
-/// 1.55 m out, so 1.25 still answered for 0.77 m of clear air past them. 1.10 promises 2.11 m against a
-/// 1.55 m arrival plus the hero's own 0.55 m footprint. The test prints both.
+/// MEASURED off the posed jaws: they arrive 1.55 m out, so 1.10 promises 2.11 m against that plus the hero's own 0.55 m footprint. The test prints both.
 const BITE_R: f32 = 1.10;
 const BITE_TRIGGER_R: f32 = BITE_R + BITE_LUNGE * 0.7;
 const STOP_FRAC: f32 = 0.8;
@@ -127,8 +121,7 @@ const SPARK_RECOVER: f32 = 0.70;
 const SPARK_CD: f32 = 5.5;
 pub const SPARK_MAX: f32 = 16.0;
 pub const SPARK_SPEED: f32 = 17.0;
-/// **THE VOLLEY CARRIES ITS DAMAGE, BECAUSE THE BITE MAY NOT** — that one is pinned under 16 and under half the
-/// ogre's slam. Three of these is 45 through no armour against the bite's 13. Pure lightning: resists answer.
+/// THE VOLLEY CARRIES ITS DAMAGE, BECAUSE THE BITE MAY NOT. Pure lightning: resists answer.
 pub var SPARK_HIT = combat.Hit{ .poise = 8, .elem = combat.elems(.{ .lightning = 15 }) };
 
 fn volleySpan() f32 {
@@ -157,8 +150,7 @@ const HIDE_DK = rgba(30, 27, 25, 255);
 const GUT = rgba(22, 18, 17, 255);
 const BONE = archermod.BONE;
 const BONE_DK = archermod.BONE_DK;
-/// (104, 88, 46) the lit skirt came back at 182 luma against the hide's 128 and the ground's 106. Wanted ~140,
-/// i.e. 0.77 on screen, and screen goes as albedo^(1/2.2), so 0.77^2.2 = 0.56 on the albedo.
+/// Wanted ~140 luma, i.e. 0.77 on screen, and screen goes as albedo^(1/2.2), so 0.77^2.2 = 0.56 on the albedo.
 const BRONZE = rgba(58, 49, 26, 255);
 const BRONZE_DK = rgba(35, 30, 17, 255);
 const BRONZE_LIP = rgba(74, 65, 37, 255);
@@ -176,24 +168,20 @@ fn classify(dist: f32, biteR: f32, biteReady: bool, tollReady: bool, sparkReady:
     return .walk;
 }
 
-/// `zeta` under 1 so it RINGS on rather than arriving (`AGENTS.md`). **SOLVED**: the haul is driven over
-/// `TOLL_SWING` and natural frequency is sqrt(stiff) rad/s — at 46 the period was 0.93 s and the bell
-/// reached 37 of the 52 degrees it was pulled through. 165 gives 12.8 rad/s and a 0.49 s period, so the mass
-/// arrives inside the drive and carries PAST it.
+/// `zeta` under 1 so it RINGS on rather than arriving (AGENTS.md). SOLVED: natural frequency is sqrt(stiff) rad/s, so 165 gives 12.8 rad/s and a 0.49 s period — the mass arrives inside the drive and carries PAST it.
 const BELL_STIFF: f32 = 165.0;
 const BELL_ZETA: f32 = 0.30;
 const BELL_DRAG: f32 = 5.2;
-/// Degrees the toll drives it through — 5x anything walking can produce. THE TOLL IS THE ONLY TIME THE BELL IS A WEAPON.
+/// Degrees the toll drives it through. THE TOLL IS THE ONLY TIME THE BELL IS A WEAPON.
 const BELL_HAUL: f32 = 52.0;
-/// **CLEAR OF THE BACK, OR IT IS A LUMP.** Measured: at -0.088 H it sat inside the chest mass and nothing showed. -0.215 H hangs the crown a hand's breadth off the spine.
+/// CLEAR OF THE BACK, OR IT IS A LUMP: -0.215 H hangs the crown a hand's breadth off the spine.
 const BELL_AT = v3(0, 0.052 * H, -0.215 * H);
 const CLAPPER_LAG: f32 = 1.35;
 const BELL_R: f32 = 0.150 * H;
 const BELL_DROP: f32 = 0.235 * H;
 
 
-/// Stature in shares of the hero's. MEASURED AGAINST THE BELL, not the hero: at 0.34 H it came out 1.10 m —
-/// as tall as the bronze is wide, a second creature rather than a passenger. 0.20 H is 0.65 m.
+/// Stature in shares of the hero's; 0.20 H is 0.65 m.
 const G_H: f32 = 0.20 * H;
 const G_RUMP = 0;
 const G_TORSO = 1;
@@ -224,9 +212,7 @@ const G_REST = [G_N]rl.Vector3{
 /// In the arm bone's own frame. THREE things read it — the fist mesh, the glow sunk into it, and `sparkWorld`; a muzzle that disagrees with the picture is a bolt out of clear air.
 const G_FIST = v3(0.05 * G_H, -0.30 * G_H, 0.06 * G_H);
 
-// **IT HAS TO SILHOUETTE AGAINST THE BELL IT SITS ON.** SAMPLED (`AGENTS.md`): at (64,52,40) the rider came
-// back at 142 luma against bronze reading 139-153 and hide at 112-128 — the same value as its own perch.
-// Wanted ~100, i.e. 0.70 on screen, and 0.70^2.2 = 0.45 on the albedo. Separated on HUE too: the one COOL grey.
+// IT HAS TO SILHOUETTE AGAINST THE BELL IT SITS ON. Wanted ~100 luma, i.e. 0.70 on screen, and 0.70^2.2 = 0.45 on the albedo. Separated on HUE too: the one COOL grey.
 const G_HIDE = rgba(28, 26, 27, 255);
 const G_HIDE_LT = rgba(41, 38, 39, 255);
 const G_HIDE_DK = rgba(17, 15, 16, 255);
@@ -511,7 +497,6 @@ pub const Hollow = struct {
                 }
             },
             .toll => {
-                // No travel at all through the whole 2.77 s, which is what makes ringing the bell a thing it PAYS for.
                 self.faceToward(hero, dt * 0.3);
                 self.speed = 0;
                 const swingT = self.t - TOLL_WIND;
@@ -818,7 +803,7 @@ pub const Hollow = struct {
         return mathx.scaleV(mathx.addV(l, r), 0.5);
     }
 
-    /// 0..1 off the toll's own clock and nothing else, so the arms and the bronze cannot tell different stories about when it was rung.
+    /// 0..1 off the toll's own clock and nothing else.
     fn haulAmt(self: *const Hollow) f32 {
         if (self.state != .toll) return 0;
         if (self.t < TOLL_WIND) return mathx.smoothstep(0, TOLL_WIND * 0.92, self.t);
@@ -875,7 +860,6 @@ pub const Hollow = struct {
 pub fn triggerR(quarryR: f32) f32 {
     return BITE_TRIGGER_R + quarryR;
 }
-/// or the two invert: at `BITE_R * scale * STOP_FRAC` a placement at 1.25 halted 3.0 m out with a trigger ring at 2.08.
 fn stopR(quarryR: f32) f32 {
     return BITE_R * STOP_FRAC + quarryR;
 }
@@ -1054,7 +1038,6 @@ fn pelvisMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xB301);
     b.setMat(.hide);
-    // CHUBSY (owner: it looked anemic, no mass) — the glutes overlap the thighs' own sockets.
     b.addBlob(v3(0, 0.010 * H, 0), v3(0.142 * H, 0.094 * H, 0.114 * H), 6, 10, HIDE);
     b.addBlob(v3(0, -0.030 * H, 0.008 * H), v3(0.122 * H, 0.064 * H, 0.094 * H), 5, 9, HIDE_DK);
     inline for (.{ 1.0, -1.0 }) |side| {
@@ -1321,7 +1304,7 @@ test "THE RIDER SITS ON THE BELL AND THE SPARK LEAVES ITS FISTS — both measure
     const head = foe.markOn(h.gxf[G_HEAD], mathx.zero3);
     const fists = h.sparkWorld();
     std.debug.print("\n  hollow {d:.2} m tall, hunched {d:.0} deg; bell at {d:.2} m, rider's rump {d:.2} m, its head {d:.2} m\n", .{ h.topWorld().y - h.pos.y, HUNCH, bell.y, rump.y, head.y });
-    // **ITS RUMP IS THE SEAT**, to the millimetre: `G_REST[G_RUMP]` is the rig's zero, so no leg pose can lift the rider off the bronze (a feet-rooted rig left 0.3 m of daylight).
+    // ITS RUMP IS THE SEAT, to the millimetre: `G_REST[G_RUMP]` is the rig's zero, so no leg pose can lift the rider off the bronze.
     try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.lenV(mathx.subV(rump, seat)), 1e-4);
     const crownTop = foe.markOn(h.bellMat, v3(0, BELL_R * 0.30, 0));
     try std.testing.expect(seat.y >= crownTop.y - 1e-4);
@@ -1437,7 +1420,7 @@ test "IT BITES ONCE PER GAPE, and only what is in front of it" {
 }
 
 test "A BIG PLACEMENT STILL BITES — the stop ring may never grow past the trigger ring" {
-    // The bug this pins: a `stop` scaled by the body against a `triggerR` that is not. It halted outside its own bite ring at every map scale over ~1.23.
+    // The bug this pins: a `stop` scaled by the body against a `triggerR` that is not — it halted outside its own bite ring at every map scale over ~1.23.
     for ([_]f32{ wf.FOE_SCALE_LO, 1.0, 1.3, wf.FOE_SCALE_HI }) |sc| {
         var h = Hollow.spawn(mathx.zero3, 0, sc, 0.3);
         h.leash.noteSeen();

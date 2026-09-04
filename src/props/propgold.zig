@@ -9,15 +9,13 @@ const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
 
-// **SOLVE IT, DO NOT GUESS IT** (AGENTS.md): screen = 255 x (albedo x 1.72)^(1/2.2). MEASURED through that
-// chain, `propart.DRIFT` lands at 161 and ordinary `STONE` at 168, so an "off-white" authored by eye comes up
-// the same value as the ground. Wanted ~1.15x the drift, i.e. 188: (188/255)^2.2 = 0.510, / 1.72 = 0.297 -> 76.
+// SOLVE IT, DO NOT GUESS IT (AGENTS.md): screen = 255 x (albedo x 1.72)^(1/2.2). Wanted ~1.15x `propart.DRIFT`'s 161, i.e. 188: (188/255)^2.2 = 0.510, / 1.72 -> 76.
 pub const ASHLAR = rgba(76, 70, 58, 255);
 pub const ASHLAR_LT = rgba(92, 85, 70, 255);
 pub const ASHLAR_DK = rgba(54, 50, 42, 255);
 /// The SAME stone with the fire's mark on it, not a third stone. Solved to 126, half the ashlar's screen value.
 pub const SCORCH = rgba(30, 27, 23, 255);
-/// Leaf over stone, solved to 178 — a hair UNDER the ashlar in diffuse, because `Mat.gilt` puts a 2.4 hotspot and a warm rim on top of it and a bright base under that is a flat lemon.
+/// Leaf over stone, solved to 178 — a hair UNDER the ashlar in diffuse, because `Mat.gilt` puts a 2.4 hotspot and a warm rim on top of it.
 pub const GOLD = rgba(67, 47, 17, 255);
 pub const GOLD_LT = rgba(86, 62, 24, 255);
 pub const GOLD_DK = rgba(38, 30, 14, 255);
@@ -26,7 +24,7 @@ pub const GOLD_DK = rgba(38, 30, 14, 255);
 const HORSE_EXTRA: f32 = 32.0;
 
 const MUQ_TIERS: i32 = 4;
-// Share of the whole rise each tier hangs out past the one below. At 0.34 the top tier cantilevered a metre off a metre-high corbel. Real ones project under half.
+// Share of the whole rise each tier hangs out past the one below. Real ones project under half.
 const MUQ_STEP: f32 = 0.15;
 comptime {
     // `muqarnasInto` widens each tier over `MUQ_TIERS - 1`; at one tier that is a divide by zero.
@@ -36,8 +34,7 @@ comptime {
 /// **THE FAMILY'S PLAN IS AN OCTAGON.** One number: two meshes each declaring `SIDES = 8` is two chances for a nine-sided minaret on an eight-sided plinth.
 const OCTAGON: i32 = 8;
 
-/// and `addDome` spends `sides * 3` triangles on each. At 8 that is 2,688 triangles of niche on one column; at
-/// 6 it is 2,016, and the difference is invisible on a hollow 0.34 m across at the 320 m the kind is drawn to.
+/// `addDome` spends `sides * 3` triangles on each niche: at 8 that is 2,688 on one column, at 6 it is 2,016, and the difference is invisible on a hollow 0.34 m across at the 320 m the kind is drawn to.
 const NICHE_SIDES: i32 = 6;
 
 fn ashlarTone(r: *mathx.Rng) rl.Color {
@@ -166,9 +163,7 @@ pub const ARCH_SPRING: f32 = 3.10;
 pub const ARCH_R: f32 = 2.35;
 pub const ARCH_TOP: f32 = ARCH_SPRING + ARCH_R + 1.05;
 
-// **MARBLE, AND IT IS NOT `propart.MARBLE`** — that one comes back at 160 screen, DARKER than this family's own
-// ashlar at 188, which makes marble in a gilded city read as the dirty stone. Solved through the same chain
-// (`albedo = screen^2.2 / 1.72`): body 208 -> 95, lit 222 -> 109, break 168 -> 59.
+// MARBLE, AND IT IS NOT `propart.MARBLE` — that one comes back at 160 screen, DARKER than this family's own ashlar at 188. Solved through the same chain (`albedo = screen^2.2 / 1.72`): body 208 -> 95, lit 222 -> 109, break 168 -> 59.
 pub const MARBLE = rgba(95, 93, 88, 255);
 pub const MARBLE_LT = rgba(109, 107, 101, 255);
 pub const MARBLE_DK = rgba(59, 57, 54, 255);
@@ -553,7 +548,6 @@ pub fn giltDomeMesh(shader: rl.Shader) rl.Model {
             const rm = (mathx.cosf(e0) + mathx.cosf(e1)) * 0.5 * DOME_R;
             const ym = DOME_DRUM + (mathx.sinf(e0) + mathx.sinf(e1)) * 0.5 * DOME_R * 0.92;
             const along = (mathx.sinf(e1) - mathx.sinf(e0)) * DOME_R * 0.60;
-            // NARROW: at 0.46 of the pitch the ribs met their neighbours and the shell read as scales.
             const wide = std.math.tau * rm / @as(f32, DOME_RIBS) * 0.30;
             b.setMat(if (gilded) .gilt else .stone);
             b.addBox(
@@ -706,7 +700,7 @@ pub fn jaliScreenMesh(shader: rl.Shader) rl.Model {
         );
     }
     b.addBox(at(0, JALI_H + 0.10, 0, cl, sl), v3(JALI_W * 0.5 + 0.26, 0, 0), v3(0, 0.19, 0), v3(0, 0, 0.30), ASHLAR);
-    // ONE PLATE along the panel — `giltBandInto` runs four plates round a square shaft, and on something 3.2 m wide and 0.3 m deep its cross-plates stuck out like gold planks.
+    // ONE PLATE along the panel: `giltBandInto` runs four plates round a square shaft, and on something 3.2 m wide its cross-plates stuck out like gold planks.
     b.setMat(.gilt);
     var gx: i32 = 0;
     while (gx < 7) : (gx += 1) {
@@ -740,7 +734,6 @@ pub fn jaliScreenMesh(shader: rl.Shader) rl.Model {
                 const a = mathx.radians(deg + rng.signed() * 2.0);
                 const ca = mathx.cosf(a);
                 const sa = mathx.sinf(a);
-                // INTERLOCKING: at 0.46 of the pitch the cells stood apart and the panel read as a rack of biscuits. Past 0.5 they touch.
             const arm = @min(cw, rh) * 0.68;
                 b.addBox(
                     at(cx, cy, 0, cl, sl),
@@ -921,7 +914,6 @@ test "the palette reads PALE against ash and the gold is authored DIM for its ow
     const drift = lit(art.DRIFT);
     std.debug.print("\n  gilt family: ashlar {d:.0} on screen, ash drift {d:.0}, gold base {d:.0} (its shine is the shader's)\n", .{ ashlar, drift, lit(GOLD) });
     try std.testing.expect(ashlar > drift * 1.10);
-    // …and the gold's albedo stays under the stone's screen value: `Mat.gilt` adds a 2.4 hotspot and a warm rim, and a bright base under that is a flat lemon.
     try std.testing.expect(lit(GOLD) < ashlar);
     try std.testing.expect(@as(f32, @floatFromInt(GOLD.r)) > @as(f32, @floatFromInt(GOLD.b)) * 3.0 and GOLD.g > GOLD.b);
 }

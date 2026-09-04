@@ -31,8 +31,7 @@ pub const WATER_SHORE: u8 = glsl.WATER_SHORE;
 pub const WATER_DEEP_AT: f32 = 11.0;
 pub const WATER_WET_OUT: f32 = 3.4;
 
-/// **THE RAW GL BLEND ENUMS, NAMED ONCE.** `rl.gl.rlSetBlendFactors` takes them as bare ints and two callers
-/// want them: `env`'s occluder pass and the editor's opaque minimap blit.
+/// THE RAW GL BLEND ENUMS, NAMED ONCE: `rl.gl.rlSetBlendFactors` takes them as bare ints, and two callers want them.
 pub const GL_ZERO: i32 = 0;
 pub const GL_ONE: i32 = 1;
 pub const GL_FUNC_ADD: i32 = 0x8006;
@@ -107,7 +106,7 @@ pub const Sky = struct {
     loc_stars: i32,
     loc_pal: [PAL_FIELDS.len]i32,
 
-    /// The palette fields the sky colours come off, IN UNIFORM ORDER — the one place the two lists are tied together, so a renamed palette field is a compile error instead of a colour that stops arriving. **AND THE COUNT IS THIS LIST'S**: written out as three literal `8`s, a ninth colour was three edits.
+    /// The palette fields the sky colours come off, IN UNIFORM ORDER — the one place the two lists are tied together, so a renamed palette field is a compile error instead of a colour that stops arriving. AND THE COUNT IS THIS LIST'S.
     const PAL_FIELDS = [_][:0]const u8{ "skyLow", "skyMid", "skyHigh", "skyBank", "skyGlow", "skyDisc", "cloudDark", "cloudLit" };
     comptime {
         for (PAL_FIELDS) |name| {
@@ -522,7 +521,7 @@ pub const Scene = struct {
         return out;
     }
 
-    /// **THE STORM IS A LAYER ON TOP** (`daynight.overcast`, owner: affect lighting depending on weather). `wet` is `weather.Weather.rain()`, 0 leaving the hour's palette untouched; `fogK` is the DEBUG haze override, 1 in the game; `spore` turns the distance PEACH and shortens it.
+    /// THE STORM IS A LAYER ON TOP (`daynight.overcast`). `wet` is `weather.Weather.rain()`, 0 leaving the hour's palette untouched; `fogK` is the DEBUG haze override, 1 in the game; `spore` turns the distance PEACH and shortens it.
     pub fn setHour(self: *Scene, hour: f32, wet: f32, fogK: f32, spore: f32) void {
         const p = daynight.bloom(daynight.overcast(daynight.paletteAt(hour), wet), spore);
         sun = daynight.keyDir(hour);
@@ -590,7 +589,7 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_time, &t, .float);
     }
 
-    /// TAKE CAST SHADOWS OFF the draws that follow, until the next `bind`. The translate ALONE left a live 2 m box at the origin whose fragments still passed the shader's in-range test and sampled a stale depth map; the zero scale collapses every world point out of range.
+    /// TAKE CAST SHADOWS OFF the draws that follow, until the next `bind`. The translate ALONE left a live 2 m box at the origin whose fragments still passed the shader's in-range test; the zero scale collapses every world point out of range.
     pub fn shadowsOff(self: *Scene) void {
         const kill = rl.math.matrixMultiply(rl.math.matrixScale(0, 0, 0), rl.math.matrixTranslate(0, 0, 5));
         rl.setShaderValueMatrix(self.shader, self.loc_lightVP, kill);
@@ -721,8 +720,7 @@ pub fn dilateEdges(out: []u8, n: usize, ids: []const u8, edge: []const u8) []con
         rl.setShaderValue(self.shader, self.loc_frost, &a, .float);
     }
 
-    /// A PER-DRAW share of the world's haze, 1 for everything but the birds. Paired like `beginFade`: whatever
-    /// turns it down puts it back, or the next thing drawn comes out of the distance too clean.
+    /// A PER-DRAW share of the world's haze, 1 for everything but the birds. Paired like `beginFade`: whatever turns it down puts it back.
     pub fn setHaze(self: *Scene, amt: f32) void {
         var a = mathx.clampF(amt, 0, 1);
         rl.setShaderValue(self.shader, self.loc_hazeScale, &a, .float);
@@ -745,7 +743,6 @@ pub fn dilateEdges(out: []u8, n: usize, ids: []const u8, edge: []const u8) []con
 
 pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble, flame, smoke, ember, bark, fog, gilt };
 comptime {
-    // **THE HEAD IS PINNED AS WELL AS THE TAIL.** `water == 9` catches an INSERT below it, but the shader
     std.debug.assert(@intFromEnum(Mat.stone) == 1);
     std.debug.assert(@intFromEnum(Mat.wood) == 2);
     std.debug.assert(@intFromEnum(Mat.cloth) == 3);
@@ -970,8 +967,7 @@ pub const Builder = struct {
         }
     }
 
-    /// WALLS AT THE RIM: `addBox` takes HALF-axes, so a radial extent of `(rTop - rBot)/2` centred on the mean
-    /// radius spans one to the other; writing the extents instead gives every panel a solid pie slice.
+    /// WALLS AT THE RIM: `addBox` takes HALF-axes, so a radial extent of `(rTop - rBot)/2` centred on the mean radius spans one to the other; writing the extents instead gives every panel a solid pie slice.
     pub fn addSkirt(self: *Builder, c: rl.Vector3, rTop: f32, drop: f32, rBot: f32, thick: f32, sides: i32, col: rl.Color, rng: *mathx.Rng) void {
         var i: i32 = 0;
         while (i < sides) : (i += 1) {
@@ -1067,9 +1063,7 @@ pub const Builder = struct {
         return mesh;
     }
 
-    /// **STAMP ANOTHER BUILDER'S MESH INTO THIS ONE** — turned about Y, scaled per axis and moved. The source
-    /// keeps its own per-vertex material and colour, so a prop built as `.stone` is still stone wherever it
-    /// lands. Normals take the inverse scale, or a squashed copy shades as if it had never been squashed.
+    /// STAMP ANOTHER BUILDER'S MESH INTO THIS ONE — turned about Y, scaled per axis and moved. The source keeps its own per-vertex material and colour, and normals take the INVERSE scale.
     pub fn stamp(self: *Builder, src: *const Builder, origin: rl.Vector3, yaw: f32, scale: rl.Vector3) void {
         const c = @cos(yaw);
         const s = @sin(yaw);
@@ -1097,8 +1091,7 @@ pub const Builder = struct {
         }
     }
 
-    /// The extent of one MATERIAL's vertices. A cliff prop's ivy and grass carry a third of its height again,
-    /// so anything sizing the ROCK to a drop has to ask the stone and not the whole mesh.
+    /// The extent of one MATERIAL's vertices. A cliff prop's ivy and grass carry a third of its height again, so anything sizing the ROCK to a drop has to ask the stone and not the whole mesh.
     pub fn boundsOf(self: *const Builder, m: Mat) struct { lo: rl.Vector3, hi: rl.Vector3 } {
         const want: f32 = @floatFromInt(@intFromEnum(m));
         var lo = rl.Vector3{ .x = 0, .y = 0, .z = 0 };

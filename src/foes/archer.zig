@@ -124,7 +124,6 @@ const RANGE_MAX = 20.0;
 const TURN_RATE = 6.0;
 const BODY_R = 0.34;
 const HURT_R = 0.42;
-// MEASURED off `footMesh`: the metatarsal plate and heel, with the toe bones fanning out to ~0.245·H ahead.
 /// WHERE THE HP BAR HANGS, as a fraction of stature. Shared with `warrior.zig` and `necro.zig`.
 pub const TOP_F: f32 = 1.15;
 pub const LOCK_AT = v3(0, 0.015 * H, 0);
@@ -161,8 +160,7 @@ const BUTT_STEP = 0.30; // metres he steps into it — a jab off planted feet re
 const BUTT_FRONT_DOT = 0.47;
 const BUTT_IMPACT_K: f32 = 0.45;
 const BUTT_HIT = combat.Hit{ .dmg = 8, .poise = 14 };
-/// Metres it puts between them, well under the leap's 4.7 — this returns him to a shot.
-/// At 2.2 it moved the hero further in ONE frame than the archer's own 0.30 m step into the jab, and `heroShoved` is an instant `walkStep`, so the magnitude read as a teleport.
+/// Metres it puts between them, well under the leap's 4.7 — this returns him to a shot. `heroShoved` is an instant `walkStep`, so at 2.2 the magnitude read as a teleport.
 pub const BUTT_SHOVE = 0.40;
 
 const BACKSTEP_R = 3.9;
@@ -233,7 +231,7 @@ const TRAIL_LIFE = 0.17;
 const TRAIL_W = 0.055;
 const TRAIL_COL = rgba(214, 198, 158, 255);
 const TRAIL_FIRE = rgba(255, 146, 40, 255);
-/// **THE FUNGAL DETONATOR IS NOT A CAMPFIRE** (owner: pink/orange). It shares the fire trail's heat and disagrees with it in hue, so a mage's shot is legible against an archer's fire arrow at a glance.
+/// THE FUNGAL DETONATOR IS NOT A CAMPFIRE: it shares the fire trail's heat and disagrees with it in hue, so a mage's shot is legible against an archer's fire arrow at a glance.
 const TRAIL_SPORE = rgba(255, 108, 152, 255);
 const TRAIL_BOLT = rgba(178, 92, 224, 255);
 const TRAIL_WISP = rgba(96, 118, 176, 255);
@@ -302,13 +300,12 @@ const EMBER_BOUNCES: u8 = 3;
 const BOUNCE_KEEP_Y: f32 = 0.56;
 const BOUNCE_KEEP_XZ: f32 = 0.86;
 const BOUNCE_MIN_UP: f32 = 1.0;
-/// and is sized against `BOUNCE_KEEP_Y` at 0.56. The detonator keeps 0.42, so on the shared floor its third touch never happened, and the whole read of this weapon is that you have to think about where it will be TWICE.
 const EMBER_MIN_UP: f32 = 0.45;
 fn minUp(s: Shot) f32 {
     return if (s == .emberball) EMBER_MIN_UP else BOUNCE_MIN_UP;
 }
 
-/// HOW LONG EACH THING STAYS UP. The fireball's is its own: at `EMBER_GRAV` and three bounces its whole journey is most of four seconds, and on the shared 3.5 it winked out mid-arc on the last one.
+/// HOW LONG EACH THING STAYS UP. The fireball's is its own: at `EMBER_GRAV` and three bounces its whole journey is most of four seconds, and on the shared 3.5 it winked out mid-arc.
 fn lifeOf(s: Shot) f32 {
     return switch (s) {
         .emberball => EMBER_LIFE,
@@ -646,9 +643,7 @@ pub const Archer = struct {
         return a;
     }
 
-    /// **THE HURT SPHERE RIDES THE CHEST BONE, NOT A FRACTION OF STATURE.** At a flat 0.95·H it sat at 1.71 m
-    /// — above the skull joint's own 1.593 — so half of it was empty air and everything under 1.29 m, pelvis
-    /// kneeling body (`KNEEL_SINK`, 0.567 m) was unreachable: the sphere stayed standing while the man went down.
+    /// THE HURT SPHERE RIDES THE CHEST BONE, NOT A FRACTION OF STATURE. At a flat 0.95·H it sat at 1.71 m — above the skull joint's own 1.593 — and everything under 1.29 m was unreachable: the sphere stayed standing while the man went down.
     pub fn centerWorld(self: *const Archer) rl.Vector3 {
         return foe.markOn(self.xf[CHEST], mathx.zero3);
     }
@@ -1830,8 +1825,7 @@ test "a shot that is aimed at a standing hero HITS him, at every range and eithe
 }
 
 test "COVER IS SAMPLED BY LENGTH, so a fast shaft cannot tunnel a thin post" {
-    // THE bug: midpoint + endpoint was honest at a skeleton's 15 m/s and stopped being honest at the hero's
-    // 40 m/s aimed shaft, which opens the gaps to 0.33 m at 60 fps and 0.67 m on a slow frame.
+    // Midpoint + endpoint was honest at a skeleton's 15 m/s and stopped being honest at the hero's 40 m/s aimed shaft, which opens the gaps to 0.33 m at 60 fps and 0.67 m on a slow frame.
     var post = [_]collision.Solid{collision.circle(-0.5, 0, 0.09)};
     post[0].h = 4.0;
     const prev = v3(-1, 1, 0);
@@ -1919,7 +1913,7 @@ test "A FIREBALL BOUNCES, AND EACH ARC IS SHORTER THAN THE ONE BEFORE IT" {
     try std.testing.expect(n >= 2 and n <= bouncesOf(.emberball));
     try std.testing.expect(a.stuck);
 
-    // **IT LANDS SHORT ON PURPOSE** (`EMBER_LOFT`). It used to touch down on the aim point at 11 m; a detonator dropped on your head is undodgeable, so its FIRST touch is roughly the loft's share of the way there — the rest is the bounce line.
+    // IT LANDS SHORT ON PURPOSE (`EMBER_LOFT`): a detonator dropped on your head is undodgeable, so its FIRST touch is roughly the loft's share of the way there and the rest is the bounce line.
     try std.testing.expect(touches[0] < 11.0 * 0.85);
     try std.testing.expect(touches[0] > 11.0 * EMBER_LOFT * 0.7);
     try std.testing.expect(a.pos.z > touches[0] + 2.0);

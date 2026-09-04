@@ -158,7 +158,7 @@ pub var AGGRO_R: f32 = 16.0;
 const HOME_R = 1.5;
 const TURN_RATE = 5.2;
 const WALK_SPEED = heromod.WALK_SPEED_BANK;
-/// …and what the BERSERKER closes at, which is the hero's own run scaled by his spec (`approachSpeed`). At 1.22 of it that is 4.15 m/s: past the hero's run (3.4) so backing off on foot does not shake him, and well under the sprint (5.1) so the sprint still does.
+/// …and what the BERSERKER closes at, which is the hero's own run scaled by his spec (`approachSpeed`). At 1.22 of it that is 4.15 m/s: past the hero's run (3.4) so backing off on foot does not shake him, and under the sprint (5.1) so the sprint still does.
 const RUN_SPEED = heromod.RUN_SPEED_BANK;
 const ZERK_WALK_IN = 0.9;
 const DEATH_DUR = 1.0;
@@ -198,7 +198,6 @@ pub const ZERK_HIT = combat.Hit{ .dmg = 11, .poise = 9 };
 const CAST_DUR = 1.25;
 const CAST_CD = 9.0;
 const HEAL_AMT = 30.0;
-/// (`combat.AILS`' berserk row decays at 16/s), so the rite would visibly do nothing.
 const RITE_ZERK = combat.ailBank(.berserk).max;
 const HEAL_SLACK = 4.0;
 const HEAL_RANGE = 14.0;
@@ -208,7 +207,7 @@ const WHIRL_DUR = 0.70;
 const SLING_CD = 1.9;
 const BITE_R = 1.45;
 const BITE_PREFER_R = 5.0;
-/// The jaws arrive at `BITE_DUR * BITE_HIT_A` = 0.34 s — over `foe.TELL_MIN`, and with real margin over the parry window. At the old 0.52 x 0.30 the snap landed at 0.156 s: HALF the tell floor, and the fairness test never caught it because it compared the FRACTION against the SECONDS.
+/// The jaws arrive at `BITE_DUR * BITE_HIT_A` = 0.34 s — over `foe.TELL_MIN`. At the old 0.52 x 0.30 the snap landed at 0.156 s, and the fairness test never caught it because it compared the FRACTION against the SECONDS.
 const BITE_DUR = 0.62;
 const BITE_HIT_A = 0.55;
 const BITE_HIT_B = 0.76;
@@ -248,7 +247,7 @@ fn legSink(crouch: f32) f32 {
     return (SEG_THIGH + SEG_SHANK) * H * (1.0 - mathx.cosf(mathx.radians(crouch)));
 }
 
-/// ARITHMETIC over the worst frame (the ring law): at 22 the HEAL BLOOM ALONE OVERFLOWED IT, 34 motes on one frame into 22 slots. Worst frame is the bloom's 34 on the ~14 `emitCastMotes` leaves resident (34/s at a 0.42 s life), with a blow landing the same frame for `emitBlood`'s 14 and the wound — 65.
+/// ARITHMETIC over the worst frame (the ring law): the bloom's 34 on the ~14 `emitCastMotes` leaves resident (34/s at a 0.42 s life), with a blow landing the same frame for `emitBlood`'s 14 and the wound — 65.
 const NPART = 68;
 comptime {
     // THE RING LAW, EXECUTABLE — the assert that was missing when 22 could not hold HEAL_BLOOM's 34.
@@ -385,7 +384,7 @@ pub const Kobold = struct {
     pub fn centerWorld(self: *const Kobold) rl.Vector3 {
         return foe.bodyPoint(self.pos, 0.80 * H, self.scale, 0);
     }
-    /// THE MARK RIDES THE SKULL, and this is the creature it matters most on: a kobold is HUNCHED, so its head sits well below the 0.885·H the shared rest puts the joint at, and the flat 0.78·H this used to be was a guess. It also ducks, lunges and whips its head through a flurry.
+    /// THE MARK RIDES THE SKULL: a kobold is HUNCHED, so its head sits well below the 0.885·H the shared rest puts the joint at.
     pub fn lockPoint(self: *const Kobold) rl.Vector3 {
         return foe.markOn(self.xf[SKULL], LOCK_AT);
     }
@@ -596,7 +595,7 @@ pub const Kobold = struct {
         }
     }
 
-    /// **THE BERSERKER RUNS** (owner: always run unless very close, and faster than the other skels). At `WALK_SPEED * 1.22` he closed at 2.07 m/s against a shieldman charging at 2.92 and a greatsword at 2.52. `warrior.approachSpeed`'s shape: run at distance, walk the last stride in.
+    /// THE BERSERKER RUNS. At `WALK_SPEED * 1.22` he closed at 2.07 m/s against a shieldman charging at 2.92 and a greatsword at 2.52. `warrior.approachSpeed`'s shape: run at distance, walk the last stride in.
     pub fn approachSpeed(self: *const Kobold, dist: f32) f32 {
         const base = spec(self.role).speed * self.vit.travelMult();
         if (self.role != .berserker or dist > AGGRO_R or dist <= self.walkInR()) return WALK_SPEED * base;
@@ -1055,7 +1054,6 @@ pub const Kobold = struct {
 
         const nod = 3.6 * mathx.sinf(2.0 * twoPi * ph) * m;
         const counter = -0.62 * prot;
-        // THE WAIST TAKES THE FOLD, over knees that pay for it (`legCrouch`). 46 deg through the lumbar and 30
         const lunge = self.biteLunge();
         const coil = self.biteCoil();
         const fold = 46.0 * heave + BITE_FOLD * lunge - BITE_ARCH * coil + DASH_LEAN * self.dashFly();
@@ -1129,7 +1127,6 @@ pub const Kobold = struct {
             eL = 30.0 + 46.0 * f;
             eR = 30.0 + 38.0 * f;
         }
-        // ARMS FLY UP ON A HIT, and REACTIONS ARE HUGE (owner's law) — 30 deg was a shrug.
         const flail = 52.0 * stunAmt + 40.0 * dk;
         setLocal(wx, SHL, self.rest, mul3(rx(aL - flail * 0.78), ry(-8.0 - 14.0 * stunAmt), rz(abd + 20.0 * stunAmt)));
         setLocal(wx, ELL, self.rest, rx(-eL - 18.0 * stunAmt));
@@ -1816,14 +1813,12 @@ pub const Warband = struct {
 
 
 test "the role table, the enum and the map's foe kinds agree" {
-    // The comptime block above pins the ordinal shift; this pins the accessor built on it, and that non-kobold
     try std.testing.expectEqual(Role.berserker, roleOf(.berserker).?);
     try std.testing.expectEqual(Role.priest, roleOf(.priest).?);
     try std.testing.expectEqual(Role.slinger, roleOf(.slinger).?);
     try std.testing.expect(roleOf(.toad) == null);
     try std.testing.expect(roleOf(.archer) == null);
     try std.testing.expect(roleOf(.ogre) == null);
-    // …and `kindOf` is its INVERSE, the direction the lock-on takes: game.zig used to spell this arithmetic
     for (0..SPEC.len) |i| {
         const r: Role = @enumFromInt(i);
         try std.testing.expectEqual(r, roleOf(kindOf(r)).?);
@@ -1916,8 +1911,7 @@ test "BOTH KOBOLD STROKES CAN BE CAUGHT, and the DASH cannot — a leap is not a
 test "NO ATTACK COMES OUT OF NOWHERE: every kobold move is visible before it can hurt" {
     try std.testing.expect(ZERK_CHOP * ZERK_HIT_A >= foe.TELL_MIN);
     try std.testing.expect(ZERK_CHOP * (ZERK_HIT_B - ZERK_HIT_A) > 0.10);
-    // IN SECONDS, NOT AS A FRACTION — the old `BITE_HIT_A >= TELL_MIN` compared 0.30 of a clock against
-    // 0.30 of a second and passed while the snap landed at 0.156 s.
+    // IN SECONDS, NOT AS A FRACTION — the old `BITE_HIT_A >= TELL_MIN` compared 0.30 of a clock against 0.30 of a second and passed while the snap landed at 0.156 s.
     try std.testing.expect(BITE_DUR * BITE_HIT_A >= foe.TELL_MIN);
     try std.testing.expect(BITE_DUR * BITE_HIT_A > foe.PARRY_LEAD * 1.5);
     try std.testing.expect(WHIRL_DUR >= foe.TELL_MIN);

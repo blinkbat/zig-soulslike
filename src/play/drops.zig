@@ -44,12 +44,11 @@ pub const Row = struct {
     /// WHOSE ROW THIS IS, written out so the table can be read (and reordered) without counting — the comptime walk below pins it against `wf.FoeKind`'s own order.
     foe: wf.FoeKind,
     common: ?item.Kind,
-    /// **HOW OFTEN IT ACTUALLY LEAVES IT.** Guaranteed first time out and it was far too much — every corpse in a warband a glow. A drop has to be a small event. The boss is the one row that never rolls (`BOSS_ALWAYS`): a 2400-soul body that leaves nothing is the worst outcome this table has.
+    /// HOW OFTEN IT ACTUALLY LEAVES IT. The boss is the one row that never rolls (`BOSS_ALWAYS`): a 2400-soul body that leaves nothing is the worst outcome this table has.
     odds: f32 = COMMON,
     rare: ?item.Kind = null,
     chance: f32 = 0,
-    /// **A PURSE, AND IT IS A SEPARATE ROLL FROM THE ITEM.** Defaults to `.none`, which the comptime block below
-    /// refuses for anything `foe.Nature.humanoid` — a man with pockets and nothing in them has to say why.
+    /// A PURSE, AND IT IS A SEPARATE ROLL FROM THE ITEM. Defaults to `.none`, which the comptime block below refuses for anything `foe.Nature.humanoid`.
     gold: Coin = .none,
 };
 
@@ -61,8 +60,6 @@ pub const MAX_PER_BODY: usize = 2;
 pub const BANK = [_]Row{
     .{ .foe = .toad, .common = .bloodgrass, .rare = .toadflesh_broth, .chance = 0.14 },
 
-    // free refill gone that left the whole map holding four sheaves in two containers — a bow with 40 shots in it
-    // and then never again. `BIG` because this is the only tap: a sheaf is 10, and the archer is common.
     .{ .foe = .archer, .common = .plain_arrows, .odds = BIG, .rare = .fire_arrows, .chance = 0.14, .gold = .few },
 
     .{ .foe = .ogre, .common = .second_wind, .odds = BIG, .rare = .bloodtinge_signet, .chance = 0.12, .gold = .heavy },
@@ -75,7 +72,6 @@ pub const BANK = [_]Row{
     .{ .foe = .broodling, .common = .bloodgrass },
     .{ .foe = .brood_sac, .common = null },
 
-    // was carrying alone — 30 stones takes an armament to `hero.TIER_MAX` and one uncommon body could not pay it.
     .{ .foe = .shieldman, .common = .pitted_helm, .odds = UNCOMMON, .rare = .smithing_stone, .chance = 0.12, .gold = .few },
     .{ .foe = .greatsword, .common = .quilted_gambeson, .odds = UNCOMMON, .rare = .smithing_stone, .chance = 0.14, .gold = .purse },
 
@@ -238,7 +234,6 @@ test "THE COMMON ROW LANDS AT ABOUT THE ODDS IT ADVERTISES, and a fight is mostl
     }
     const seen = @as(f32, @floatFromInt(hits)) / @as(f32, @floatFromInt(N));
     try std.testing.expectApproxEqAbs(COMMON, seen, 0.01);
-    // …and the thing that made it "way too common" cannot come back: nothing on the rank and file is a certainty, and a six-body fight leaves a glow well under half the time.
     try std.testing.expect(COMMON < 0.10);
     const emptyFight = std.math.pow(f32, 1.0 - COMMON, 6);
     try std.testing.expect(emptyFight > 0.5);

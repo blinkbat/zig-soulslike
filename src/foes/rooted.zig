@@ -30,7 +30,7 @@ const MOSS_DK = art.MOSS_DK;
 const EYE_DIM = rgba(120, 42, 14, 255);
 const EYE_LIT = rgba(255, 132, 42, 255);
 const SPLINTER = rgba(84, 66, 44, 235);
-/// A LIMB IS A BIG SMOOTH SUNWARD FACE — 0.28 of a metre thick and near three long — so it needs a near-black albedo where the snag's thin 0.13 stubs get away with `BARK_DK` (AGENTS.md). At the stub's own tone these came back pale tan beside the real trees they are pretending to be.
+/// A LIMB IS A BIG SMOOTH SUNWARD FACE — 0.28 m thick and near three long — so it needs a near-black albedo where the snag's thin 0.13 stubs get away with `BARK_DK` (AGENTS.md).
 const LIMB_BARK = rgba(13, 10, 8, 255);
 const LIMB_LT = rgba(24, 19, 15, 255);
 
@@ -48,7 +48,6 @@ const CENTER_F: f32 = 0.17;
 const TOP_F: f32 = 0.96;
 const LOCK_AT = v3(0, 0.30 * H, 0.34);
 
-/// TOUGH, AND DELIBERATELY EXPENSIVE TO SHOOT. It cannot chase, so a bow at range is free damage and the only thing between that and a trivial kill is the size of the bill: at 130 it costs nine of ten plain shafts.
 const HP_MAX: f32 = 130.0;
 const POISE_MAX: f32 = 28.0;
 const STANCE_MAX: f32 = 40.0;
@@ -81,7 +80,7 @@ const Attack = struct {
 pub const SLAM: usize = 0;
 pub const SWEEP: usize = 1;
 pub const HOOK: usize = 2;
-/// Wind-ups are LONG — it is a tree, and its reach is what makes it dangerous. Every one clears `foe.TELL_MIN`. The bands are MEASURED off the posed tip: the old 7.4 m hook billed a blow off a limb that passed three metres over his head.
+/// Wind-ups are LONG and every one clears `foe.TELL_MIN`. The bands are MEASURED off the posed tip: the old 7.4 m hook billed a blow off a limb that passed three metres over his head.
 const MOVES_BANK = [_]Attack{
     .{ .windDur = 0.86, .strikeDur = 0.26, .recoverDur = 0.95, .cd = 3.4, .minR = 0, .maxR = 2.4, .arc = 46.0, .hit = SLAM_HIT, .limb = LIMB_H },
     .{ .windDur = 0.70, .strikeDur = 0.32, .recoverDur = 0.80, .cd = 2.8, .minR = 1.2, .maxR = 3.8, .arc = 82.0, .hit = SWEEP_HIT, .limb = LIMB_L },
@@ -108,7 +107,6 @@ const SLEEP_DUR: f32 = 1.30;
 
 const SWAY_HZ: f32 = 0.21;
 const SWAY_DEG: f32 = 3.2;
-/// …and it is heard on this cadence while it is awake. THINNED from 2.6: the creak is what says the thing is alive, and once it has said so a second time you know.
 const CREAK_EVERY: f32 = 4.4;
 const EYES_RATE: f32 = 0.7;
 const LID_SWING: f32 = 96.0;
@@ -143,7 +141,7 @@ const BOLE_Y: f32 = 0.42 * H;
 const BOLE2_Y: f32 = 0.34 * H;
 const LIMB_Y = [_]f32{ 0.46 * H, 0.42 * H, 0.60 * H };
 const LIMB_A = [_]f32{ 52.0, -58.0, 6.0 };
-/// THE LIMB IS AS LONG AS ITS REACH SAYS — and no longer. At 0.40/0.36/0.30 the three spanned 7.3 m: poles crossing the whole clearing, hovering three metres over the hero's head while the hurt test billed him anyway. 4.1 m of limb plus the bole's own LUNGE covers the hook's 5.0.
+/// THE LIMB IS AS LONG AS ITS REACH SAYS — and no longer. At 0.40/0.36/0.30 the three spanned 7.3 m; 4.1 m of limb plus the bole's own LUNGE covers the hook's 5.0.
 const SEG_LEN = [_]f32{ 0.24 * H, 0.20 * H, 0.15 * H };
 
 const REST = blk: {
@@ -959,7 +957,7 @@ test "every band is answered, so it cannot be kited" {
 }
 
 test "A LIMB GOES WHERE ITS BILL SAYS: the tip crosses the hero column, out near the band's edge" {
-    // The old tree's whole dishonesty in one number: a hook billed at 7.4 m off a limb whose tip hung 2.8 m over the hero's head. Walk each move's strike and measure the POSED tip.
+    // Walk each move's strike and measure the POSED tip: a hook billed at 7.4 m off a limb whose tip hung 2.8 m over the hero's head.
     for (0..MOVES.len) |which| {
         const a = MOVES[which];
         var t = Rooted.spawn(mathx.zero3, 0, 1.0, 0.3);

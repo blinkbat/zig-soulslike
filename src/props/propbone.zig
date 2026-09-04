@@ -26,8 +26,7 @@ pub const RibKind = struct {
     yawPer: f32 = 0,
 };
 
-// SOLVED, NOT PICKED. `curl` is what decides the height-to-reach ratio: at 88 degrees the shaft ends horizontal
-// and two of them make a SEMICIRCLE (span = twice the crown, an arch you walk under); under 60 it stays steep and stands alone. The table's `bound`/`top` come off the same solve.
+// SOLVED, NOT PICKED. `curl` is what decides the height-to-reach ratio: at 88 degrees the shaft ends horizontal and two of them make a SEMICIRCLE; under 60 it stays steep and stands alone. The table's `bound`/`top` come off the same solve.
 pub const RIB_TALL = RibKind{ .arc = 10.4, .curl = 58.0, .tilt0 = 6.0, .r0 = 0.52, .r1 = 0.20, .segs = 11, .yawPer = 0.9, .foot = BONE_DK, .tip = BONE_LT };
 pub const RIB_STOUT = RibKind{ .arc = 7.6, .curl = 88.0, .tilt0 = 2.0, .r0 = 0.60, .r1 = 0.26, .segs = 10, .yawPer = -1.1, .foot = BONE_DK, .tip = BONE_OLD };
 pub const RIB_SPLIT = RibKind{ .arc = 7.2, .curl = 42.0, .tilt0 = 4.0, .r0 = 0.44, .r1 = 0.17, .segs = 9, .yawPer = 2.1, .foot = BONE_OLD, .tip = MARROW };
@@ -56,7 +55,6 @@ pub const RibPath = struct {
 
 /// THE SHAFT'S LINE, SOLVED ONCE — the mesh draws it and the table's `bound`/`top` are measured off it, so a re-tuned curl cannot leave a rib poking out of its own bounding sphere.
 pub fn ribPath(k: RibKind) RibPath {
-    // The table's `bound`/`top` are four of these solved at COMPTIME, and a shaft is a dozen trig steps.
     @setEvalBranchQuota(40000);
     // CLAMPED AT BOTH ENDS. `segs` is an i32 on a public spec: at 0 the two divisions below are a divide by zero, and below that the cast itself traps.
     const segs: usize = @intCast(mathx.clampI(k.segs, 1, RIB_MAX_SEGS));
@@ -131,7 +129,7 @@ fn ribModel(shader: rl.Shader, seed: u64, k: RibKind) rl.Model {
     return b.toModel(shader);
 }
 
-/// **THE TABLE'S NUMBERS COME OFF THE SOLVE, NOT OFF A RULER.** `props.INFO` had them typed beside a comment claiming they were measured — true when written and false the moment a curl moved. The arch proved it: its keystone stands above the crown, so its `top` was short by 0.29 m and the shadow pass could drop it while you were standing under it.
+/// THE TABLE'S NUMBERS COME OFF THE SOLVE, NOT OFF A RULER: the arch's keystone stands above the crown, so a typed `top` was short by 0.29 m and the shadow pass could drop it while you were standing under it.
 pub fn ribTop(k: RibKind) f32 {
     return ribPath(k).height() + k.r1;
 }
@@ -139,7 +137,6 @@ pub fn ribBound(k: RibKind) f32 {
     return ribPath(k).reach() + k.r0 * 2.0;
 }
 pub fn archTop() f32 {
-    // The keystone is two blobs, the upper one at `r1*0.9` with a radius of `r1*0.8`.
     return ribPath(RIB_STOUT).tip().y + RIB_STOUT.r1 * 1.7;
 }
 pub fn archBound() f32 {

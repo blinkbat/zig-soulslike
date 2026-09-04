@@ -2722,8 +2722,9 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   **227 ms** at the parser's own floor; a rebuild fires `editor.REBUILD_QUIET` after every edit and a map
   holds 20,480 ops. Every generator now spends from a per-op candidate budget: 0.6 ms in both cases, and a belt of
   two million stops at the budget instead of reaching the `MAX_PROPS` panic. **NO SILENT CAP** — `opsCapped`
-  counts the ops that hit it, and a test pins that `01_fallen_plain` builds all 16,563 of its props with ZERO
-  capped, because a budget that bites real content has made the world quietly smaller.
+  counts the ops that hit it, and a test pins that `01_fallen_plain` builds with ZERO capped and PRINTS the op
+  and prop counts rather than pinning them, because a budget that bites real content has made the world quietly
+  smaller and a pinned count on the map he edits goes red on every authoring session.
 - **A PANEL MAY NOT SPEND A DRAW CALL PER OP** (`editor.blitMinimap`, `miniGen` — same owner, same freeze).
   `drawMinimap` walked the whole op list and issued one `drawRectangleV` apiece: **16,510 immediate-mode rects a
   frame** on `01_fallen_plain`, and the bill GROWS every time a scatter is exploded into `at:` ops, which is

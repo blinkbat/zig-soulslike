@@ -10,8 +10,7 @@ pub const Icon = icons.Icon;
 const rgba = mathx.rgba;
 
 
-/// Holds the widest tip the game builds — the loot row's `item.EFFECT_BUF + 32` = 160 — plus its terminator.
-/// At 120 that row and the bench's `foe.flinch` were both cut mid-sentence by `Ctx.setTip`, silently.
+/// Holds the widest tip the game builds — the loot row's `item.EFFECT_BUF + 32` = 160 — plus its terminator. At 120 that row and the bench's `foe.flinch` were both cut mid-sentence by `Ctx.setTip`, silently.
 pub const MSG_CAP = 176;
 
 pub const ROW_H: i32 = hud.monoLineH(hud.MONO) + 6;
@@ -44,10 +43,7 @@ pub const Ctx = struct {
     anyHot: bool = false,
     t: f32 = 0,
 
-    /// **AN OPEN DROPDOWN'S LIST OWNS THE POINTER OVER IT.** The list is drawn LAST (`endDropdowns`) but its
-    /// widget is polled in draw order, so without this the one click both picks a row and works whatever the
-    /// list is covering: on the Drops sheet, picking `common` also nudged `odds` and opened `rare`. Taken from
-    /// the rect drawn LAST frame, so it holds for widgets on both sides of the dropdown in this one.
+    /// AN OPEN DROPDOWN'S LIST OWNS THE POINTER OVER IT. The list is drawn LAST (`endDropdowns`) but its widget is polled in draw order, so without this one click both picks a row and works whatever the list is covering. Taken from the rect drawn LAST frame.
     ddOver: bool = false,
     ddPress: bool = false,
     ddWheel: f32 = 0,
@@ -150,8 +146,7 @@ pub fn panel(ctx: *Ctx, r: rl.Rectangle, title: ?[:0]const u8) void {
     }
 }
 
-/// A tip is not optional: a button has four characters of room ("lean", "take", "r1") and what a thing DOES lives here or
-/// nowhere. Zig has no default arguments, which is the point: a widget added without a tip does not compile.
+/// A tip is not optional: a button has four characters of room and what a thing DOES lives here or nowhere. Zig has no default arguments, which is the point — a widget added without a tip does not compile.
 pub fn button(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, size: i32, active: bool, tip: [:0]const u8) bool {
     tipFor(ctx, r, tip);
     const h = ctx.hot(r);
@@ -206,7 +201,6 @@ pub fn layerButton(ctx: *Ctx, r: rl.Rectangle, ic: Icon, label: [:0]const u8, si
     const face = if (active) ACTIVE_FILL else if (h) HOVER_FILL else IDLE_FILL;
     rl.drawRectangleRec(r, face);
     rl.drawRectangleLinesEx(r, 1, alpha(TRIM, if (active) 220 else if (h) 170 else 80));
-    // A HIDDEN LAYER READS AS HIDDEN FROM THE LABEL, not only from the glyph: the whole row goes dim, which is the state you need to spot at a glance when you have forgotten why the wood is missing.
     const fg = if (!shown) LABEL else if (active) HOT else VALUE;
     const isz: f32 = @floatFromInt(size);
     icons.draw(ic, r.x + @as(f32, @floatFromInt(ICON_PAD)) + isz * 0.5, r.y + r.height * 0.5, isz, fg);
@@ -387,9 +381,7 @@ pub fn checkbox(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, v: *bool, tip: [
     return false;
 }
 
-/// **ONE FIELD OWNS THE KEYBOARD, AND IT IS CLAIMED BY BEING CLICKED.** `rl.getCharPressed` DRAINS a global
-/// queue, so two fields drawn eligible in the same frame means the first drawn eats every keystroke and the
-/// second is dead however it is styled. With nobody claiming, the first eligible field drawn keeps it.
+/// ONE FIELD OWNS THE KEYBOARD, AND IT IS CLAIMED BY BEING CLICKED. `rl.getCharPressed` DRAINS a global queue, so two fields drawn eligible in the same frame means the first drawn eats every keystroke and the second is dead however it is styled. With nobody claiming, the first eligible field drawn keeps it.
 var kbOwner: ?u32 = null;
 var kbSeen = false;
 var kbTaken = false;
@@ -421,8 +413,7 @@ pub fn textField(ctx: *Ctx, r: rl.Rectangle, buf: []u8, len: *usize, id: u32, el
     buf[len.*] = 0;
     const s: [:0]const u8 = buf[0..len.* :0];
 
-    // **THE FIELD SCROLLS, IT DOES NOT SPILL.** A `worldfmt.TALK_SAY_CAP` greeting is 240 characters in a box
-    // 60 wide; unclipped, the tail and the caret both ran out over the panel and off the window.
+    // THE FIELD SCROLLS, IT DOES NOT SPILL: a `worldfmt.TALK_SAY_CAP` greeting is 240 characters in a box 60 wide.
     const bx: i32 = @intFromFloat(r.x);
     const bw: i32 = @intFromFloat(r.width);
     const bh: i32 = @intFromFloat(r.height);
@@ -630,8 +621,7 @@ pub fn closeDropdown() void {
     ddBox = null;
 }
 
-/// **A STABLE ID FROM WHAT THE ROW EDITS.** Hashed off a tag and two indices, so act row 3 of trigger 7 keeps
-/// its identity while the panel is open and cannot collide with condition row 3 of the same trigger.
+/// A STABLE ID FROM WHAT THE ROW EDITS: hashed off a tag and two indices, so act row 3 of trigger 7 keeps its identity while the panel is open and cannot collide with condition row 3 of the same trigger.
 pub fn ddId(tag: u8, a: usize, b: usize) u32 {
     return (@as(u32, tag) << 24) ^ (@as(u32, @truncate(a)) << 12) ^ @as(u32, @truncate(b));
 }

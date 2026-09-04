@@ -23,26 +23,20 @@ const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 
 
-/// Height at the WITHERS, over the ravager's 1.34 and leggier with it.
 pub const W: f32 = 1.46;
 
-/// A ranged body sees further than a biting one — twice the ravager's 11.
 pub var AGGRO_R: f32 = 22.0;
 const HOME_R: f32 = 1.2;
 
 const BODY_R: f32 = 0.46;
-/// The bloom keeps ONE seat (1.89 m, test-pinned), 0.33 m inside this sphere off a centre at 1.39 m. A
-/// quadruped's nose and hooves stay OUTSIDE, as the wolf's do at 0.42 on a 1.12 body.
+/// The bloom keeps ONE seat (1.89 m, test-pinned), 0.33 m inside this sphere off a centre at 1.39 m. A quadruped's nose and hooves stay OUTSIDE.
 const HURT_R: f32 = 1.12;
 const CENTER_F: f32 = 0.95;
-/// `wx[ROOT]` translates in Y ONLY, so the whole trunk hangs 0.84 W FORWARD of `pos` and a ball over `pos` sits
-/// on the animal's tail. MEASURED: the withers came out 1.23 m in front of the centre and outside a 1.12 m
-/// sphere. Half the trunk would be 0.42; 0.30 is what keeps the risen flower inside as well.
+/// `wx[ROOT]` translates in Y ONLY, so the whole trunk hangs 0.84 W FORWARD of `pos` and a ball over `pos` sits on the animal's tail. MEASURED: the withers came out 1.23 m in front of the centre. Half the trunk would be 0.42; 0.30 keeps the risen flower inside as well.
 const BARREL_MID: f32 = 0.30;
 const TOP_F: f32 = 1.62;
 
 const HP_MAX: f32 = 96.0;
-/// Between the hero's two swings, not under both: his light is 10 poise and his heavy 22.
 const POISE_MAX: f32 = 14.0;
 const STANCE_MAX: f32 = 44.0;
 const RESISTS = combat.resists(.{ .fire = -45, .cold = 30, .lightning = 0, .chaos = 20 });
@@ -75,14 +69,10 @@ pub const SPORE_HANG: f32 = 1.55;
 const SPORE_BOB: f32 = 0.16;
 const SPORE_BOB_HZ: f32 = 1.3;
 const SPORE_BOB_W: f32 = SPORE_BOB_HZ * std.math.tau;
-/// Slower than he sprints, deliberately: `hero.SPRINT_SPEED` is 5.1 against this 4.4.
 pub const SPORE_HOME: f32 = 4.4;
 /// Radians a second the homing steer may bend. Capped, so a ROLL beats it: at 2.2 it needs 1.43 s to reverse.
 const SPORE_TURN: f32 = 2.2;
-/// **THE CHASE IS SHORT** (owner: less chase time) — 3.5 s of homing after the hang, against 5.9 before.
-/// Still over twice the 1.43 s a dead-opposite reversal costs, so the cap test's claim stands.
 pub const SPORE_LIFE: f32 = 5.6;
-/// Five of these land for 45 raw, under the bone knight's own overhead — and no volley ever lands whole.
 pub var SPORE_HIT = combat.Hit{ .dmg = 3, .poise = 12, .elem = combat.elems(.{ .chaos = 6 }) };
 
 comptime {
@@ -131,7 +121,6 @@ const CLOSE_SPEED: f32 = wolf.TROT_SPEED * 1.15;
 pub const SHOVE = foe.Push{ .light = 1.20, .heavy = 2.90 };
 const SHOVE_DECAY: f32 = 6.0;
 
-/// The corolla's count, and every bone after it is measured off it: written out it sat in five places.
 const NPETAL = 7;
 
 const STALK = wolf.N + 0;
@@ -164,8 +153,6 @@ const LOCK_AT = v3(0, 0.30 * W, 0.10 * W);
 const STALK_UP: f32 = 0.44;
 const BLOOM_TILT: f32 = 24.0;
 
-/// Degrees the head lowers across the charge. The crown has to arrive at chest
-/// height on him or it is a nod: reared it rides at 1.9 m, and 64 degrees brings it into his column.
 const BUTT_DUCK: f32 = 64.0;
 const BUTT_LOAD: f32 = 26.0;
 const CROUCH: f32 = 0.10;
@@ -183,7 +170,6 @@ const DEAD_BUCKLE: f32 = 0.20;
 
 const CLAMP_BY: f32 = 0.15;
 const BLOOM_CLAMP: f32 = 0.17;
-/// **WIDE BEFORE ANYTHING LEAVES IT.** The release is at `SPIT_WIND + SPIT_DUR * 0.30`.
 const OPEN_BY: f32 = 0.46;
 const SETTLE_BY: f32 = 0.68;
 const BLOOM_SNAP: f32 = 0.15;
@@ -197,8 +183,7 @@ comptime {
     std.debug.assert(CLAMP_BY < OPEN_BY and OPEN_BY < SETTLE_BY and SETTLE_BY < 1.0);
 }
 
-/// **THE OPEN BLOOM IS THE WEAK POINT** — 1.9x while it is wide. DAMAGE ONLY: `poise` and `stance` are left
-/// alone, because `POISE_MAX` is solved to sit between the hero's two swings.
+/// THE OPEN BLOOM IS THE WEAK POINT — 1.9x while it is wide. DAMAGE ONLY: `poise` and `stance` are left alone, because `POISE_MAX` is solved to sit between the hero's two swings.
 const BLOOM_FRAIL: f32 = 0.90;
 
 /// One petal. `ang` is degrees round the bloom's axis with 0 at the top; `bias` is degrees of fold.
@@ -215,8 +200,7 @@ const Petal = struct {
     tone: u8 = 1,
 };
 
-/// **HAND-AUTHORED, NOT STEPPED ROUND A CIRCLE** — a ring off `k/7 * 360` reads as a gear however good the
-/// quill is. Gaps of 34 to 64 against a mean of 51, and no gap over 64.
+/// HAND-AUTHORED, NOT STEPPED ROUND A CIRCLE — a ring off `k/7 * 360` reads as a gear. Gaps of 34 to 64 against a mean of 51, and no gap over 64.
 const PETALS = [NPETAL]Petal{
     .{ .bone = PET0 + 0, .ang = 196, .root = 1.00, .len = 1.34, .wide = 1.16, .bias = 0, .gain = 1.05, .sag = 34, .tone = 1 },
     .{ .bone = PET0 + 1, .ang = 96, .root = 0.94, .len = 1.04, .wide = 0.98, .bias = -3, .gain = 0.97, .sag = 21, .tone = 0 },
@@ -238,22 +222,14 @@ comptime {
     }
 }
 
-/// Degrees off the bloom's own axis. SHUT is NEGATIVE — a bud's petals converge PAST parallel, which is what
-/// closes the tip, and it is solved: the quill bows 0.42 of its own length off-axis, so the tip's radial is
-/// `|BLOOM_RIM + len*(0.42*cos f + sin f)|` and landing that on the axis is -33 deg.
+/// Degrees off the bloom's own axis. SHUT is NEGATIVE — a bud's petals converge PAST parallel. Solved: the quill bows 0.42 of its own length off-axis, so the tip's radial is `|BLOOM_RIM + len*(0.42*cos f + sin f)|` and landing that on the axis is -33 deg.
 const PETAL_SHUT: f32 = -33.0;
-/// The bow peaks at `atan(1/0.42)` = 67 deg and falls away after; 80 with the gains at 0.90..1.05 folds the family 69..86.
 const PETAL_WIDE: f32 = 80.0;
 
-/// ONE BLADE, THREE LENSES AND A RIB (owner: much simpler, way too much going on) — 7 parts against the old
-/// 27, one outline. 0.62 against the old 0.48: the flower buys its tell with SIZE rather than a rise.
 const PETAL_LEN: f32 = 0.62 * W;
-/// The rib's root radius. SUNK: the lens is 0.019 W half-thick and the rib has to sit mostly inside it.
 const QUILL_R: f32 = 0.015 * W;
 const PETAL_SEGS: u32 = 3;
-/// The blade's half-width at its widest, as a share of its own length. 0.26 puts a petal near 2:1.
 const PETAL_HALFW: f32 = 0.26;
-/// 0.42, is the tip's own off-axis share and it is what `PETAL_SHUT` and the width peak are solved against.
 const PETAL_BOW: f32 = 0.24;
 const PETAL_RECURVE: f32 = 0.18;
 
@@ -281,8 +257,6 @@ fn rowFor(bone: usize) Petal {
     unreachable;
 }
 
-/// **A DEER CARRIES ITS HEAD HIGH AND FORWARD, NOT SLUNG LIKE A DOG'S.** Wolf's chain puts the skull at 0.82 W
-/// on a level neck; this lifts it to 1.16 and pushes it out.
 const HEAD_UP: f32 = 1.10;
 const HEAD_OUT: f32 = 0.52;
 const NECK_MID: f32 = 0.46;
@@ -305,9 +279,7 @@ fn restPose() [N]rl.Vector3 {
     return r;
 }
 
-// **AUTHOR DARK, AND SOLVE IT RATHER THAN GUESS** — screen goes as albedo^(1/2.2), and a big smooth mass comes
-// back brighter than the field it stands in. **AND ALPHA IS INVERSE EMISSIVE, NOT OPACITY** (`shaders.zig`:
-// `emis = 1 - fragColor.a`): matter goes to 248+, and only the throat and the stamens keep the low alpha,
+// AUTHOR DARK AND SOLVE IT: screen goes as albedo^(1/2.2), and a big smooth mass comes back brighter than the field it stands in. AND ALPHA IS INVERSE EMISSIVE, NOT OPACITY (`shaders.zig`: `emis = 1 - fragColor.a`) — matter goes to 248+, and only the throat and the stamens keep the low alpha.
 const HIDE = rgba(13, 11, 9, 250);
 const HIDE_DK = rgba(7, 6, 6, 252);
 const HIDE_LT = rgba(20, 17, 13, 248);
@@ -470,8 +442,7 @@ pub const Deer = struct {
         return foe.markOn(self.xf[HEAD], v3(0, 0, 0.06 * W));
     }
 
-    /// 0 shut, 1 wide, **read off the volley's own clock or the stun's and nowhere else**. Out of range at both
-    /// ends on purpose — under 0 through the tightening, over 1 through the fling.
+    /// 0 shut, 1 wide, read off the volley's own clock or the stun's and nowhere else. Out of range at both ends on purpose — under 0 through the tightening, over 1 through the fling.
     pub fn openAmt(self: *const Deer) f32 {
         switch (self.state) {
             .dead => return self.deathOpen * (1.0 - mathx.smoothstep(0, WILT_DUR, self.t)),
@@ -1342,8 +1313,6 @@ fn bladeHalfW(u: f32, maxW: f32) f32 {
     return maxW * std.math.pow(f32, mathx.sinf(std.math.pi * (0.06 + 0.94 * uc)), 1.1);
 }
 
-/// is an outline and a tone, and seven of them make the corolla. **THE RIB STOPS AT 0.86 AND THE OUTER LENS
-/// RUNS PAST 1.0**: a rib that outran its own membrane read as a pin with a bead on the end of it.
 fn buildPetal(b: *Builder, q: Petal) void {
     const len = PETAL_LEN * q.len;
     const maxW = PETAL_HALFW * len * q.wide;
@@ -1360,7 +1329,6 @@ fn buildPetal(b: *Builder, q: Petal) void {
         at = to;
     }
 
-    // its own curve. A single lens cannot: the tip stands 0.42 of the length off the axis.
     for ([_][2]f32{ .{ 0.30, 0.34 }, .{ 0.74, 0.32 } }, 0..) |row, li| {
         const u = row[0];
         const mp = spineAt(len, u);
@@ -1474,7 +1442,7 @@ test "THE FLOWER OPENS FOR THE VOLLEY AND NEVER MOVES HOUSE — the tell is the 
     std.debug.print("\n  deer: the bloom stands {d:.2} m at rest and {d:.2} m at the volley on a {d:.2} m animal\n", .{ atRest.y, atSpit.y, W });
     try std.testing.expect(@abs(atSpit.y - atRest.y) < 0.12);
     try std.testing.expect(atRest.y > heromod.H);
-    // **AND IT STANDS OVER ITS OWN BACK, NOT OVER THE ANIMAL'S HEAD** — measured against the WITHERS.
+    // AND IT STANDS OVER ITS OWN BACK, NOT OVER THE ANIMAL'S HEAD — measured against the WITHERS.
     const withers = rl.math.vector3Transform(mathx.zero3, d.xf[CHEST]).z;
     std.debug.print("    fore-aft: withers at {d:.2} m, the flower at {d:.2} m — {d:.2} m BEHIND the shoulder\n", .{ withers, atSpit.z, withers - atSpit.z });
     try std.testing.expect(atSpit.z < withers and atRest.z < withers);
@@ -1567,8 +1535,6 @@ test "A VOLLEY THROWN FROM BELOW HIM SURVIVES THE THROAT — the earth is not wh
 }
 
 test "THE STEER IS A CAP AND NOT A LERP — a spore he rolled behind still comes round inside its own life" {
-    // The lerp form this replaced took 5.15 s to reverse against the 1.43 s `SPORE_TURN` claims, on a
-    // post-hang life of 5.90 s — so the one bearing the hang exists for was the one that did not work.
     const dt = 1.0 / 60.0;
     const hero = mathx.ground(0, 0);
     var s = Spore{ .live = true, .at = v3(0, foe.HERO_CHEST, -12.0), .vel = v3(0, 0, -SPORE_HOME), .t = SPORE_RISE + SPORE_HANG };

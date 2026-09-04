@@ -84,8 +84,7 @@ pub fn cliffSeatZ(bs: []const CliffBody, x: f32, y: f32, halfW: f32, halfH: f32)
     return back;
 }
 
-/// **THE CLIFF FACES A PAINTED WALL CAN WEAR.** One row each; `env.cliffWall` picks one at random per stretch
-/// and sinks it half into the wall, so adding a face here is the whole job of adding a face.
+/// THE CLIFF FACES A PAINTED WALL CAN WEAR. One row each; `env.cliffWall` picks one at random per stretch and sinks it half into the wall.
 pub const CliffFace = struct { name: []const u8, seed: u64, kind: CliffKind };
 pub const CLIFF_FACES = [_]CliffFace{
     .{ .name = "Rocky Cliff", .seed = 90210, .kind = CLIFF_ROUND },
@@ -333,7 +332,6 @@ pub fn cliffBuild(seed: u64, k: CliffKind) Builder {
                 }
             }
         }
-        // Moss packed into the seams: low wide pads pressed flat onto the face, on the same measured surface.
         b.setMat(.plant);
         var ms: i32 = 0;
         while (ms < 16) : (ms += 1) {
@@ -712,9 +710,7 @@ test "a formation is top-heavy, a spire is not, and both know their own height" 
 
 pub const SHARD_H: f32 = 0.58;
 
-/// **A 4-SIDED TAPERED CYLINDER, NOT A BOX** (`fingersMesh`'s reason): a box face square-on to the key takes the
-/// whole of it, so `ROCK_DEEP` at 23,22,21 renders light grey, and boxes sharing the lean plane z-fought where
-/// they touched. The LEAN is shared because one bed failed; the YAW is not, or it is the barber's pole stood on end. **AND THEY LEAN HARD AND STAY LOW** — at 0.86 m upright with a fat cap they were a row of gravestones.
+/// A 4-SIDED TAPERED CYLINDER, NOT A BOX (`fingersMesh`'s reason): a box face square-on to the key takes the whole of it, so `ROCK_DEEP` at 23,22,21 renders light grey, and boxes sharing the lean plane z-fought where they touched. The LEAN is shared because one bed failed; the YAW is not.
 pub fn shardsMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5A11D);
@@ -733,7 +729,6 @@ pub fn shardsMesh(shader: rl.Shader) rl.Model {
         const foot = v3(x, -0.04, z);
         const head = v3(x + mathx.cosf(plane) * h * lean, h, z + mathx.sinf(plane) * h * lean);
         b.addCylinder(foot, head, w, w * rng.range(0.12, 0.30), 4, stratumCol(i, N));
-        // A broken crown — nothing dead ends in a point, and it kills the flat top face as well. At 0.62 of the width these read as headstones.
         b.addDome(head, mathx.normV(mathx.subV(head, foot)), w * 0.26, 5, CLIFF_DK);
     }
     art.chipsInto(&b, &rng, 0, 0, 1.15, 0.05, 0.13, 9);

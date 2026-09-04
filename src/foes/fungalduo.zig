@@ -21,9 +21,7 @@ const setLocal = heromod.setHumanoid;
 
 const H: f32 = heromod.H;
 
-/// 0.86 puts a 2.66 m crown on the swordsman, over the mushroom mage's 2.04 and under the bone knight.
 pub const SCALE = (heromod.H + 0.86) / heromod.H;
-/// The widths ride the height at 0.97 of the hip's share — a stalk, not a barrel.
 const HIP_HALF = heromod.HIP_HALF * SCALE;
 const SHOULDER_HALF = heromod.SHOULDER_HALF * SCALE * 0.97;
 const REST = heromod.restHumanoid(HIP_HALF, SHOULDER_HALF, H);
@@ -53,9 +51,7 @@ const SOLES = [_]heromod.SolePatch{
     .{ .bone = ANKR, .heel = 0.048 * H, .toe = 0.192 * H, .halfW = 0.064 * H, .drop = 0.038 * H },
 };
 
-// AUTHOR DARK AND SOLVE IT: screen goes as albedo^(1/2.2) and `.skin` only mottles (x0.94..1.05), so the albedo
-// IS the read. `RIND` at (112,96,74) came back at 187 luma against the mushroom mage's cloak at (10,13,9), which
-// lands at 58; 26 puts the rind at 90 on screen and the magus's body at 63.
+// AUTHOR DARK AND SOLVE IT: screen goes as albedo^(1/2.2) and `.skin` only mottles (x0.94..1.05), so the albedo IS the read. 26 puts the rind at 90 on screen and the magus's body at 63.
 const RIND = rgba(26, 22, 17, 255);
 const RIND_DK = rgba(16, 14, 11, 255);
 const RIND_LT = rgba(42, 36, 28, 255);
@@ -66,8 +62,6 @@ const CAP_COL = shroommod.CAP_COL;
 const CAP_DK = shroommod.CAP_DK;
 const WART = shroommod.WART;
 const FLESH = rgba(30, 26, 20, 255);
-// A blade may not be the brightest thing in the frame: at 104 it came off the chain at 170 luma against a body
-// at 90, and `.steel`'s specular is catastrophic on a flat face. 58 lands it at 128.
 const STEEL = rgba(58, 61, 66, 255);
 const STEEL_DK = rgba(30, 32, 36, 255);
 const VENOM = rgba(150, 206, 120, 210);
@@ -76,8 +70,7 @@ const EYE = rgba(214, 232, 150, 44);
 const CHAOS_CORE = elemfx.sig(.chaos).core;
 const CHAOS_EDGE = elemfx.sig(.chaos).edge;
 
-/// It must reach past where the pair themselves stand: at 26 the magus could blink outside the ring its own boss bar wakes on.
-/// The ring as authored — what the comptime pin below is asked of, since the ring itself is live now.
+/// The ring as authored — what the comptime pin below is asked of, since the ring itself is live now. It must reach past where the pair themselves stand.
 pub const AGGRO_R_BANK: f32 = 30.0;
 pub var AGGRO_R: f32 = AGGRO_R_BANK;
 
@@ -100,12 +93,9 @@ const CH_RABD = 4;
 const CH_REL = 5;
 const CH_LSH = 6;
 const CH_LEL = 7;
-/// **WHERE THE KIT POINTS, AS A POSE CHANNEL** — degrees the weapon leads FORWARD of the forearm line (0 down,
-/// 90 level, 180 on end), the warriors' own convention (`hero.staffFit`).
+/// WHERE THE KIT POINTS, AS A POSE CHANNEL — degrees the weapon leads FORWARD of the forearm line (0 down, 90 level, 180 on end), the warriors' own convention (`hero.staffFit`).
 const CH_TILT = 8;
-/// Prepended in the BONE's frame so the lateral offset survives the swing — once an arm has swung forward,
-/// abduction is a near no-op (34 deg of it moved the off fist 0.13 m). The hand sits `armLen · sin(clasp)` off
-/// its shoulder, so on 0.57 m shoulders and a 0.88 m arm the midline is `asin(0.57/0.88)` = 40 deg.
+/// Prepended in the BONE's frame so the lateral offset survives the swing. The hand sits `armLen · sin(clasp)` off its shoulder, so on 0.57 m shoulders and a 0.88 m arm the midline is `asin(0.57/0.88)` = 40 deg.
 const CH_CLASP = 9;
 
 const P = struct {
@@ -161,7 +151,6 @@ pub var SW_SOULS: u32 = 1500;
 const SW_TURN_RATE: f32 = 3.05;
 const SW_SPEED: f32 = heromod.RUN_SPEED_BANK * 0.92;
 const SW_BODY_R: f32 = 0.56;
-/// 1.05 m about a centre 1.45 m up on a 2.42 m body — the crown at `SW_TOP_F` without dropping below the knee.
 const SW_HURT_R: f32 = 0.78;
 const SW_CENTER_F: f32 = 0.60;
 const SW_TOP_F: f32 = 1.06;
@@ -171,7 +160,6 @@ const SW_DISS_DUR: f32 = 1.15;
 const SW_DISSOLVE = foe.Dissolve{ .rate = 62.0, .spread = 0.95, .rise = 1.05, .flake = WART };
 const SW_SHOVE = foe.Push{ .light = 1.05, .heavy = 2.35 };
 
-/// The blade, from the fist. A longsword on a 2.41 m body: 1.62 m of it past the hand.
 const SW_BLADE_LEN: f32 = 0.90 * H;
 const SW_KIT_R: f32 = 0.30;
 
@@ -181,8 +169,6 @@ const SW_SLASH_R: f32 = 2.2;
 /// Half the arc the stroke sweeps on its own, in degrees — measured off the blade's own path.
 const SW_SWEEP_HALF: f32 = 46.0;
 
-/// Thrown at a man 165 deg off he came round to 72 and billed nothing; given the slash's allowance he was handed
-/// out at 100 deg and drove past the man at every stand in its band.
 fn swSlashArc() f32 {
     return SW_TURN_RATE * SW_SLASH_WIND + mathx.radians(SW_SWEEP_HALF);
 }
@@ -193,8 +179,6 @@ fn swHeavyArc() f32 {
     return SW_TURN_RATE * SW_HEAVY_WIND;
 }
 
-/// Priced by its CLOCK, not by its row: measured through his own update at his slash band he billed 22.7 a second
-/// against the first boss's 22.0, and he is one of TWO bodies. Cooldowns up about 40% carry the chain to ~13 a second.
 const SW_SLASH_WIND: f32 = 0.62;
 const SW_SLASH_DUR: f32 = 0.26;
 const SW_SLASH_REC: f32 = 0.62;
@@ -206,7 +190,6 @@ const SW_LUNGE_MAX: f32 = 7.3;
 const SW_LUNGE_WIND: f32 = 0.70;
 const SW_LUNGE_DUR: f32 = 0.34;
 const SW_LUNGE_REC: f32 = 0.72;
-/// At 3.6 it came round every 4.6 s measured, close enough to the slash's own cadence to read as one move on repeat; at 6.4 it is one throw in ~7.7 s.
 const SW_LUNGE_CD: f32 = 6.4;
 /// Metres pre-scale, so the travel is `× SCALE`: 7.68 m on the ground, down from the 10.94 m that 7.4 bought.
 const SW_LUNGE_DIST: f32 = 5.2;
@@ -218,12 +201,7 @@ const SW_BACK_UP: f32 = 0.52;
 const SW_BACK_LAND: f32 = 0.20;
 const SW_BACK_CD: f32 = 6.5;
 
-/// The knight's overhead is 46 and his bread-and-butter sweep 33; the slash was landing 56 raw and the lunge 72,
-/// out of a stroke that CHAINS. Now 18 on the slash and 25 on the lunge, all of it off `dmg`, so the venom clock
-/// the fight is built on is untouched.
 const SW_SLASH_HIT = combat.Hit{ .dmg = 7, .poise = 30, .stance = 26, .elem = combat.elems(.{ .chaos = 11 }) };
-/// A thrust does not throw a man off his feet: `launch = 3.4` is 1.33 s off the ground per hit from a move that
-/// closes 7.7 m. The throw moved to the OVERHEAD.
 const SW_LUNGE_HIT = combat.Hit{ .dmg = 13, .poise = 44, .stance = 34, .elem = combat.elems(.{ .chaos = 12 }) };
 
 const SW_HEAVY_R: f32 = 2.1;
@@ -300,7 +278,6 @@ const SW_HEAVY_KEYS = [_]PoseKey{
     .{ .t = 1.00, .p = .{ .lean = 27.0, .head = -14.0, .rsh = 80.0, .rabd = 6.0, .rel = 13.0, .lsh = 80.0, .lel = 13.0, .clasp = SW_HEAVY_CLASP, .tilt = 48.0 } },
 };
 
-/// `.slash2` opens 88 deg of twist off its own end pose and the magus's `.orb` 84 of `lsh`, which the spring bank whips through in a tenth of a second.
 fn recTrack(comptime keys: []const PoseKey, comptime carry: P) [2]PoseKey {
     return .{
         .{ .t = 0.00, .p = keys[keys.len - 1].p },
@@ -351,7 +328,6 @@ fn swClassify(dist: f32, off: f32, slashReady: bool, heavyReady: bool, lungeRead
     if (dist > AGGRO_R) return .hold;
     if (crowded and backReady) return .back;
     const a = @abs(off);
-// An 8.5 s clock only asked when the 1.35 s one happens to be cold is a move you see once a fight.
     if (dist <= SW_HEAVY_R and heavyReady and a <= swHeavyArc()) return .heavy;
     if (dist <= SW_SLASH_R and slashReady and a <= swSlashArc()) return .slash;
     if (lungeReady and dist >= SW_LUNGE_MIN and dist <= SW_LUNGE_MAX and a <= swLungeArc()) return .lunge;
@@ -381,11 +357,9 @@ const MG_FLEE_R: f32 = 7.0;
 const MG_KEEP_R: f32 = 16.0;
 const MG_DRIFT_DUR: f32 = 0.85;
 
-/// At 15 m/s it crossed the caster's own keep-band in 1.07 s; at 9.5 that is 1.68 s, and 0.74 s out of `MG_ORB_MIN` — still nearly twice the hero's sprint.
 pub const ORB_SPEED: f32 = 9.5;
 pub const ORB_R: f32 = 0.32;
 pub const ORB_LIFE: f32 = 3.6;
-/// ATTRITION, and the knight's gas is the tier: 14 raw, thrown often, and never the thing that kills you.
 pub const ORB_HIT = combat.Hit{ .poise = 14, .elem = combat.elems(.{ .chaos = 14 }) };
 const MG_ORB_WIND: f32 = 0.36;
 const MG_ORB_DUR: f32 = 0.16;
@@ -394,12 +368,9 @@ const MG_ORB_CD: f32 = 2.3;
 const MG_ORB_RELEASE_K: f32 = 0.34;
 const MG_ORB_MIN: f32 = MG_FLEE_R;
 
-/// At 1.9 s of growing, a bunch sown under you went off inside one of the swordsman's own chains; 3.2 s is two of his slashes plus the tail.
 pub const CAP_GROW: f32 = 3.2;
 pub const CAP_GLOW: f32 = 1.05;
 pub const CAP_BURST_R: f32 = 3.1;
-/// **A BUNCH IS FOUR OF THESE AND THEY POP IN A RUN**, so the cap is priced as one of four and not as one
-/// blow: at 40 apiece, standing in the middle of a bunch was 160 raw — more than three of the knight's overheads.
 pub const CAP_HIT = combat.Hit{ .poise = 34, .stance = 22, .launch = 2.2, .elem = combat.elems(.{ .chaos = 20 }) };
 const MG_SPROUT_WIND: f32 = 0.78;
 const MG_SPROUT_DUR: f32 = 0.30;
@@ -416,7 +387,6 @@ const MG_FADE_IN: f32 = 0.60;
 const MG_FADE_CD: f32 = 9.0;
 const MG_REAPPEAR_R: f32 = 13.0;
 pub const MIST_R: f32 = 3.4;
-/// At 5.5 s the ground it denied was clear again before it had cast anything from the new spot; 9.5 s leaves it standing across a whole cast cycle.
 pub const MIST_LIFE: f32 = 9.5;
 pub const MIST_BUILD: f32 = 16.0;
 
@@ -506,7 +476,6 @@ pub const Cap = struct {
     seed: f32 = 0,
     burst: bool = false,
 
-    /// 0 while it grows, climbing to 1 over the glow — the picture and the clock are one number.
     pub fn heat(self: *const Cap) f32 {
         if (self.t <= CAP_GROW) return 0;
         return mathx.clampF((self.t - CAP_GROW) / CAP_GLOW, 0, 1);
@@ -961,7 +930,6 @@ pub const Swordsman = struct {
         };
     }
 
-    /// **THE RETURN CUT IS NOT PARRYABLE AND THAT IS THE POINT OF IT** — `.slash2` is off the follow-through.
     fn parryable(self: *const Swordsman) ?f32 {
         const left = self.toImpact() orelse return null;
         if (!foe.inParryWindow(left)) return null;
@@ -1065,8 +1033,6 @@ pub const Swordsman = struct {
 
 const MG_PRESS_HOLD: f32 = 2.4;
 const MG_PRESS_HP: f32 = 0.86;
-/// `mgHarm` is 0 at the threshold the press clock starts at and 1 at nothing left: at full HP the caster owes
-/// 2.4 s of being stood on and 9 s between blinks; at death's door 1.0 s and 4.0 s.
 const MG_PRESS_RATE_HURT: f32 = 2.4;
 const MG_FADE_CD_HURT: f32 = 4.0;
 
@@ -1611,14 +1577,11 @@ fn poseBody(self: anytype, deathDur: f32) void {
     setLocal(&wx, ELL, rest, mathx.rx(-(self.lel - wonk * 0.6)));
     setLocal(&wx, WRL, rest, mathx.rz(8.0));
 
-// After the fit, `tilt` is degrees the kit leads FORWARD of the forearm — 0 down, 90 level, 180 on end. Measured
-// in the forearm's frame instead, a `tilt` of 94 put the point 3.73 m up and the whole stroke reached 1.85 m on a
-// body carrying 2.17 m of sword.
+// After the fit, `tilt` is degrees the kit leads FORWARD of the forearm — 0 down, 90 level, 180 on end.
     setLocal(&wx, HELD, rest, heromod.staffFit(self.tilt - (self.rsh - swing)));
     self.xf = wx;
 }
 
-/// A staff is shoulder-tall on the body carrying it: measured off the posed grip at 1.27 m, 1.05·H stood the head 3.67 m up over a 2.42 m creature.
 pub const STAFF_LEN: f32 = 0.86 * H;
 
 comptime {
@@ -1813,7 +1776,6 @@ fn mgChest() rl.Mesh {
     return b.toMesh();
 }
 
-/// At 0.132 of H the cap was a smooth ball sitting on the shoulders; the mushroom mage's own rim is 0.200 — the read is the OVERHANG and the dark ring under it.
 const MG_RIM: f32 = 0.196 * H;
 
 comptime {
@@ -1908,8 +1870,7 @@ fn handMesh(side: f32) rl.Mesh {
 
 fn swordMesh() rl.Mesh {
     var b = Builder.init();
-// `Mat.steel`'s specular is catastrophic on a FACE — a blinding `pow(nh,96)` however dark it was authored, so
-// dropping the albedo from 104 to 58 changed nothing on screen.
+// `Mat.steel`'s specular is catastrophic on a FACE — a blinding `pow(nh,96)` however dark it was authored.
     b.setMat(.plain);
     const half = 0.030 * H;
     inline for (.{ .{ 0.00, 0.42, 1.00 }, .{ 0.42, 0.78, 0.84 }, .{ 0.78, 1.00, 0.62 } }) |seg| {
@@ -1966,7 +1927,6 @@ fn staffMesh() rl.Mesh {
 pub fn orbMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     b.setMat(.flame);
-    // A CORE INSIDE A SKIN: at one blob on 90 alpha the whole thing was a smear the ground showed through.
     b.addBlob(mathx.zero3, v3(ORB_R, ORB_R, ORB_R), 8, 7, mathx.withAlpha(CHAOS_EDGE, 120));
     b.addBlob(mathx.zero3, v3(ORB_R * 0.62, ORB_R * 0.62, ORB_R * 0.62), 7, 6, mathx.withAlpha(CHAOS_CORE, 235));
     return b.toModel(shader);
@@ -2189,7 +2149,6 @@ pub const Conclave = struct {
         for (&self.orbs) |*o| {
             if (!o.live) continue;
             rl.drawModelEx(self.orbModel, o.at, v3(0, 1, 0), mathx.degrees(o.spin), v3(1, 1, 1), rl.Color.white);
-            // The halo is what carries at range — the mesh alone is a 0.32 m ball 16 m away.
             rl.drawSphereEx(o.at, ORB_R * (2.1 + 0.16 * mathx.sinf(o.t * 16.0)), 8, 6, mathx.withAlpha(CHAOS_CORE, 64));
         }
         for (&self.mists) |*g| {
@@ -2224,7 +2183,6 @@ fn drawCap(c: *const Cap) void {
     const up = c.r * (0.34 + 0.66 * @sqrt(g));
     const stem = v3(c.at.x, c.at.y + up * 0.46, c.at.z);
     rl.drawCylinderEx(c.at, stem, c.r * 0.17, c.r * 0.24, 6, RIND_LT);
-// The cap's colour IS its clock; against moss and rind a (52,18,14) cap was a dark lump on dark ground.
     const heat = c.heat();
     const head = v3(stem.x, stem.y + up * 0.24, stem.z);
     const col = mathx.lerpColor(mathx.withAlpha(CHAOS_EDGE, 255), mathx.withAlpha(CHAOS_CORE, 255), heat);

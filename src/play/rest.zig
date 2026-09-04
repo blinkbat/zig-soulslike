@@ -47,8 +47,6 @@ pub const Row = enum {
 
 pub const NROW = @typeInfo(Row).@"enum".fields.len;
 
-/// **THE WAITS ARE THE `Rest...` ROW'S OWN LIST.** Two rows that each ended the sit sat beside three that
-/// opened something, so the one verb the fire is named for read as two more options.
 pub const NWAIT = @typeInfo(daynight.Until).@"enum".fields.len;
 
 pub const Screen = enum { list, tree, spells, flasks, waits };
@@ -95,8 +93,7 @@ pub const Rest = struct {
     memPick: ?usize = null,
 
     waitRow: usize = 0,
-    /// The split being STAGED on the flask screen — nothing moves until it is confirmed, the way a spell
-    /// is picked before it is memorised.
+    /// The split being STAGED on the flask screen — nothing moves until it is confirmed.
     allotCrimson: u8 = combat.FLASK_CRIMSON,
     allotTotal: u8 = combat.FLASK_TOTAL,
 
@@ -391,7 +388,7 @@ pub fn back(self: *Rest) void {
 
 const Tree = ptree.Tree;
 
-/// Stage a screen for the shot harness (`book.debugShow`'s pattern): a photograph of the wheel zoomed onto a keystone cannot be got by pretending to press buttons at 1/60 s a frame.
+/// Stage a screen for the shot harness (`book.debugShow`'s pattern).
 pub fn debugShow(self: *Rest, screen: Screen, row: usize, node: usize, mag: f32) void {
     self.screen = screen;
     self.row = @min(row, NROW - 1);
@@ -442,8 +439,7 @@ fn ink(c: rl.Color, a: f32) rl.Color {
 
 const PAD_X: i32 = 24;
 
-/// The bonfire panel: a title and `n` rows, one of them under the cursor. The list and both of its
-/// sub-lists are the same picture, so a sub-option cannot grow its own shape.
+/// The bonfire panel: a title and `n` rows, one of them under the cursor. The list and both of its sub-lists are the same picture, so a sub-option cannot grow its own shape.
 const Panel = struct {
     x: i32,
     y: i32,
@@ -486,8 +482,7 @@ fn drawWaits(self: *const Rest, a: f32) void {
     for (0..NWAIT) |i| _ = p.row(@as(daynight.Until, @enumFromInt(i)).label(), i == self.waitRow, a);
 }
 
-/// **ONE POOL, TWO ROWS, AND THE ARROWS ARE ON THE ONE THAT MOVES.** The cerulean row is the remainder and
-/// carries no cursor of its own — it is the same charge seen from the other end.
+/// ONE POOL, TWO ROWS, AND THE ARROWS ARE ON THE ONE THAT MOVES: the cerulean row is the remainder and carries no cursor of its own.
 fn drawFlasks(self: *const Rest, a: f32) void {
     var p = Panel.open("FLASKS", 3, a);
     var buf: [48]u8 = undefined;
@@ -542,11 +537,11 @@ fn drawTree(self: *const Rest, t: *const Tree, souls: u32, a: f32) void {
     const box = bigScreen("PASSIVES", foot, a);
     ptree.drawPage(t, self.wheel, box.x, box.y, box.w, box.h, true, souls);
     footRow(&[_]hud.Hint{
-        .{ .glyph = .{ .bumper = "LS" }, .label = "Walk" },
-        .{ .glyph = .{ .bumper = "RS" }, .label = "Pan" },
-        .{ .glyph = .{ .dpad = .updown }, .label = "Zoom" },
+        hud.HINT_WALK,
+        hud.HINT_PAN,
+        hud.HINT_ZOOM,
         .{ .glyph = .{ .face = hud.BTN_CONFIRM }, .label = "Take" },
-        .{ .glyph = .{ .face = hud.BTN_BACK }, .label = "Back" },
+        hud.HINT_BACK,
     }, box, foot, a);
 }
 

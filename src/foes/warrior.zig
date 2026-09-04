@@ -38,7 +38,6 @@ const SPARK_COOL = rgba(226, 116, 38, 200);
 const SPLINTER = rgba(86, 64, 44, 240);
 
 const TRAIL_N = 22;
-/// Outlasts the 0.26 s stroke on purpose — the whip curve spends the travel in its first third, so a tighter life leaves the ribbon gone by the frame the point arrives.
 const TRAIL_LIFE = 0.30;
 const TRAIL_ROOT = 0.24;
 const TRAIL_PEAK = 158.0;
@@ -65,7 +64,7 @@ const WPN = heromod.HELD;
 
 const H: f32 = heromod.H;
 const REST = heromod.restHumanoid(heromod.HIP_HALF, heromod.SHOULDER_HALF, H);
-/// A HAND TALLER AGAIN THAN THE ARCHER (owner: "make them a bit bigger too"). DERIVED off the archer's own stature, which is itself derived off the hero's, so nothing here is a magic 1.26.
+/// A HAND TALLER AGAIN THAN THE ARCHER, DERIVED off the archer's own stature, which is itself derived off the hero's — so nothing here is a magic 1.26.
 pub const SCALE = archermod.SCALE + 0.155 / H;
 const solePatches = archermod.solePatches;
 
@@ -84,13 +83,12 @@ const FIST_Z = 0.02 * H;
 
 const wpnFit = heromod.staffFit;
 
-/// Authors where the kit POINTS in the world (deg forward of straight down: 0 down, 90 level, 180 on end) and
-/// hands the wrist whatever that costs. A `wpnTilt` held steady through a 220-deg sweep leaves the weapon radial to the arm at the bottom — measured 0.44 m under the turf beside his own boot. The LUNGE opts out.
+/// Authors where the kit POINTS in the world (deg forward of straight down: 0 down, 90 level, 180 on end) and hands the wrist whatever that costs. A `wpnTilt` held steady through a 220-deg sweep leaves the weapon radial to the arm at the bottom — 0.44 m under the turf. The LUNGE opts out.
 fn swingTilt(windAtt: f32, endAtt: f32, k: f32, armSh: f32) f32 {
     return lerpF(windAtt, endAtt, k) - armSh;
 }
 
-/// The same trick with the ELBOW PAID FOR TOO. `swingTilt` reads the shoulder alone, honest while a wind keeps the elbow near straight (the mace's is -22); the horizontal's is not, and it MEASURED 0.8 m of blade height for 18 deg of fold. Relation: attitude = tilt + shoulder - elbow.
+/// The same trick with the ELBOW paid for too. `swingTilt` reads the shoulder alone, honest while a wind keeps the elbow near straight; the relation is attitude = tilt + shoulder - elbow.
 fn levelTilt(windAtt: f32, endAtt: f32, k: f32, armSh: f32, armEl: f32) f32 {
     return lerpF(windAtt, endAtt, k) - armSh + armEl;
 }
@@ -136,7 +134,7 @@ const Style = enum { mace, slam, lunge, sweep };
 
 const Attack = struct {
     style: Style,
-    /// The AI's TRIGGER RANGE only, pre-scale and measured off the posed kit. What the blow hits is the swept weapon (`tryReach`), so this cannot grow a hurt box the swing never enters — it shipped that way once, a mace head that never left 0.6 m of his own axis firing a 2.8 m sector.
+    /// The AI's TRIGGER RANGE only, pre-scale and measured off the posed kit. What the blow hits is the swept weapon (`tryReach`), so this cannot grow a hurt box the swing never enters.
     reachOut: f32,
     windDur: f32,
     swingDur: f32,
@@ -182,7 +180,6 @@ const SLAM = Attack{
 const LUNGE = Attack{
     .style = .lunge,
     .reachOut = 1.98, // MEASURED: the point driven straight out — shorter than the slam's whole arc
-    // Was 0.34, which is a two-metre thrust arriving barely over the tell floor. It stays UNDER 0.4 of the slam's haul, because "the lunge is the quick one" is the pair's whole shape.
     .windDur = 0.52,
     .swingDur = 0.26,
     .impactK = 0.46,
@@ -195,10 +192,8 @@ const LUNGE = Attack{
     .hop = 0.40,
 };
 
-/// THE STRAFE TAX. The slam is a vertical and the lunge a straight line: one sidestep answered the whole kit, so this is the stroke that owns the ground BESIDE him. `reachOut` and the arc it sweeps are both MEASURED (`swung`).
 const SWEEP = Attack{
     .style = .sweep,
-    // MEASURED: the tip gets 2.79 m out at full stretch. Held a hair UNDER the slam's 2.18 — `pick` answers at the longest reach in range, and the slam stays the greatsword's first word.
     .reachOut = 2.15,
     .windDur = 0.98,
     .swingDur = 0.34,
@@ -292,7 +287,6 @@ const GUARD_SH = 24.0;
 const GUARD_EL = -52.0;
 const NAKED_TWIST = -6.0;
 
-// THE MACE SWING, in four beats: gather, cock, step into it, follow through past his centre line. THE ARM GOES LONG AT THE BLOW — a folded elbow at impact keeps the head inside his own silhouette, which is what "the weapon barely moves but I get hit" was: 0.20 m of head travel behind a 2.8 m hurt box.
 const MACE_GATHER_SH = -22.0;
 const MACE_GATHER_EL = -38.0;
 const MACE_WIND_SH = -140.0;
@@ -329,7 +323,6 @@ const GS_WIND_ATT = GS_WIND_SH + GS_WIND_TILT + 360.0;
 const MACE_END_TILT = MACE_END_ATT - (MACE_HIT_SH + MACE_OVER_SH);
 const GS_END_TILT = GS_END_ATT - GS_HIT_SH;
 
-// THE HORIZONTAL. The blade is held LEVEL the whole way (the attitude barely moves, 96 deg to 88) and what travels is the SHOULDER'S YAW, `armSweep`, from behind his off hip to past his sword side. That is why a sidestep does not answer it, and why it never touches the turf.
 const SWEEP_WIND_SH = 68.0;
 const SWEEP_WIND_EL = -66.0;
 const SWEEP_WIND_ABD = 28.0;
@@ -379,7 +372,7 @@ const KNEEL_TRAIL_KNEE = 122.0;
 const KNEEL_FOLD = 19.0;
 const KNEEL_HEAD = 40.0;
 
-/// ARITHMETIC over the worst frame (the ring law). At 56 A KILLING BLOW OVERFLOWED IT ON ITS OWN: `chips(20)` (30) + the death `chips(22)` (33) + the wound = 66 into 56. The real worst frame is that blow landing on the KICK, which lays `kickBurst`'s 36 and `grit`'s 18 together: 54 + 66 = 120.
+/// ARITHMETIC over the worst frame (the ring law): that frame is a killing blow landing on the KICK, which lays `kickBurst`'s 36 and `grit`'s 18 together — 54 + 66 = 120.
 const NPART = 124;
 comptime {
     // THE RING LAW, EXECUTABLE: the kick's 36 + 18 with a killing heavy blow's two chip sprays and the shared wound.
@@ -420,7 +413,6 @@ fn pick(r: Role, dist: f32, scale: f32, ready: []const bool) ?usize {
     return best;
 }
 
-/// For the shot harness to aim its beats WITH: a portrait pinned to a literal 0.58 s silently photographs a different beat the next time the timing is tuned.
 pub const Clock = struct { wind: f32, swing: f32, chain: f32, recover: f32 };
 pub fn moveClock(role: Role, mv: usize) Clock {
     const moves = spec(role).moves;
@@ -781,7 +773,6 @@ pub const Warrior = struct {
     fn walkInR(self: *const Warrior) f32 {
         return self.longestTrigger() + WALK_IN * self.scale;
     }
-    /// Inside `walkInR`, or homeward, he walks. Slower than the hero's run either way. PUBLIC because it is one half of a CROSS-CREATURE comparison — the berserker is pinned above every skeleton that charges (`game.zig`).
     pub fn approachSpeed(self: *const Warrior, dist: f32) f32 {
         const base = spec(self.role).speed;
         if (self.homing or dist <= self.walkInR()) return WALK_SPEED * base;
@@ -945,7 +936,6 @@ pub const Warrior = struct {
         };
     }
 
-    /// HOW FAR OUT THE KIT ACTUALLY ARRIVES at the impact frame, hero footprint included — the MOVE's own rather than one number per warrior: a mace lands at 1.23 m, the slam at 2.18.
     fn parryReach(self: *const Warrior, a: Attack) f32 {
         return foe.hurtReach(a.reachOut, self.scale);
     }
@@ -1734,7 +1724,6 @@ fn greatswordMesh() rl.Mesh {
     const fy = FIST_Y;
     const fz = FIST_Z;
     const guardY = fy + GS_GUARD;
-    // ABOVE THE GUARD, like every other feature of this blade — measured off the FIST it lands BELOW the last blade segment's top, drawing the point inside the steel and cutting the hurt segment 0.12 m short.
     const tipY = guardY + GS_BLADE;
 
     b.setMat(.wood);
@@ -1899,7 +1888,7 @@ fn shieldMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// THE SHIELD IS NOT A BONE (hero.zig's rule): it rides the LEFT WRIST's matrix. The long axis of a strapped kite shield runs DOWN the forearm — the wrist frame's own −Y — so the boards need no turning, only standing off the fist and raked a few degrees off the arm.
+/// THE SHIELD IS NOT A BONE (hero.zig's rule): it rides the LEFT WRIST's matrix. A strapped kite shield's long axis runs DOWN the forearm — the wrist frame's own −Y — so the boards need no turning, only standing off the fist and raked a few degrees off the arm.
 const SH_HUB = v3(-0.028 * H, FIST_Y + 0.175 * H, FIST_Z + SH_STANDOFF);
 const SH_RAKE_X = -9.0;
 const SH_RAKE_Z = 4.0;
@@ -1933,9 +1922,8 @@ test "THE WINDOW IS AN INSTANT BEFORE THE HIT, on every stroke a warrior throws"
         var w = Warrior.spawnAs(role, mathx.ground(0, 0), 0, 1.0, 0.0);
         for (spec(role).moves, 0..) |a, mv| {
             const impact = a.swingDur * a.impactK;
-            // It is an INSTANT, not a slice of the tell — a 1.34 s haul must not be catchable for a fifth of it.
             try std.testing.expect(PARRY_LEAD < a.windDur * 0.4);
-            // MEASURED off the state machine rather than asserted about the constants: walk the move frame by frame from the first of its windup and collect the span that is actually parryable.
+            // MEASURED off the state machine rather than asserted about the constants: the move is walked frame by frame from the first of its windup and the parryable span collected.
             const step = 1.0 / 600.0;
             var open: f32 = -1;
             var shut: f32 = -1;
@@ -1970,9 +1958,7 @@ test "THE WINDOW IS AN INSTANT BEFORE THE HIT, on every stroke a warrior throws"
             const first = w.toImpact().?;
             w.stroke = 1;
             const chained = w.toImpact().?;
-            // The follow-up's blow is nearer BY THE WHOLE DIFFERENCE between the two winds — 0.22 s of it — which is exactly what reading `windDur()` rather than `a.windDur` buys.
             try std.testing.expectApproxEqAbs(a.windDur - a.chainWind, first - chained, 1e-5);
-            // …and it really is catchable. Both windows land inside the STROKE rather than the wind, because the point goes live 0.12 s in and the lead is shorter than that.
             w.state = .swing;
             w.t = a.swingDur * a.impactK - PARRY_LEAD * 0.5;
             try std.testing.expect(w.parryable() != null);
@@ -2061,7 +2047,7 @@ test "the greatsword answers at his own reach with the slam, and LEAPS the gap w
     try std.testing.expect(pick(.greatsword, 1.2, 1.0, &none) == null);
 }
 
-/// THE SECTOR A STROKE ACTUALLY COVERS, in degrees off his facing, measured by standing a hero on a ring at `r` and asking every 5 deg whether the swept kit reaches him. The tip's own bearing is NOT this number — a vertical's tip passes over his skull, where a 2 cm radius spins the bearing through 159 deg of nothing.
+/// THE SECTOR A STROKE ACTUALLY COVERS, in degrees off his facing, measured by standing a hero on a ring at `r` and asking every 5 deg whether the swept kit reaches him. The tip's own bearing is NOT this number.
 fn covered(mv: usize, r: f32) struct { lo: f32, hi: f32, deg: f32 } {
     var lo: f32 = 999;
     var hi: f32 = -999;
@@ -2078,13 +2064,10 @@ fn covered(mv: usize, r: f32) struct { lo: f32, hi: f32, deg: f32 } {
 test "THE SWEEP IS THE STRAFE TAX: a wide LEVEL sector where the slam and the lunge are both a line" {
     const sw = swung(.greatsword, 2, 0, 2.0);
     const slam = swung(.greatsword, 0, 0, 2.0);
-    // MEASURED: 2.79 m of tip, held level between 1.28 m and 2.01 m — never the turf, never over his skull.
     try std.testing.expect(sw.maxD > 2.7 and sw.lowY > 0.9 and sw.apex < slam.apex);
     try std.testing.expect(sw.apex - sw.lowY < 1.0);
-    // THE TELL IS LATERAL, the one thing this stroke may have instead of a raised weapon: at the top of the wind the blade is out past a metre and a half on his sword side, and level. MEASURED 1.92 m.
     try std.testing.expect(sw.windLat > 1.4);
     try std.testing.expect(@abs(sw.windY - sw.lowY) < 0.9);
-    // AND THE SECTOR IS THE POINT. MEASURED 95 deg at 1.4 m and 85 at 2.0 — where the vertical's own sector COLLAPSES with distance (65 -> 45), because a line only ever covers the line.
     const near = covered(2, 1.4);
     const far = covered(2, 2.0);
     std.debug.print("\n  sweep: tip {d:.2} m out, {d:.2}..{d:.2} m up, cocked {d:.2} m aside; covers {d:.0} deg at 1.4 m, {d:.0} at 2.0 (slam {d:.0}/{d:.0})\n", .{
@@ -2379,7 +2362,6 @@ fn swungAt(role: Role, mv: usize, stroke: u8, hero: rl.Vector3) Swung {
 }
 
 test "THE HURT SHAPE IS THE POSED WEAPON: every stroke reaches what its own kit reaches, and no further" {
-    // THE BUG THIS FILE SHIPPED WITH: a mace whose head never left 0.6 m of his own chest, firing an annulus at 2.8 m. So the contract is now geometric — `reachOut` is a MEASUREMENT of the swing.
     for ([_]struct { r: Role, mv: usize }{
         .{ .r = .shieldman, .mv = 0 },
         .{ .r = .greatsword, .mv = 0 },
@@ -2404,7 +2386,6 @@ test "THE HURT SHAPE IS THE POSED WEAPON: every stroke reaches what its own kit 
 }
 
 test "A TELL YOU CAN SEE: both kits are carried ABOVE THE SKULL at the top of the windup" {
-    // Owner: "windup hard to see". It shipped with the mace head at 1.34 m — chest height on its own owner — so the cock did not break his silhouette at all. Judged against the SHOULDER line.
     const shoulder = REST[CHEST].y * SCALE;
     const mace = swung(.shieldman, 0, 0, 1.2);
     const slam = swung(.greatsword, 0, 0, 2.0);
@@ -2414,8 +2395,7 @@ test "A TELL YOU CAN SEE: both kits are carried ABOVE THE SKULL at the top of th
 }
 
 test "NO STROKE PLOUGHS THE TURF BESIDE HIM, and the slam's point really does reach the earth" {
-    // A weapon held radial to the arm through the bottom of an arc goes UNDER the ground — this measured
-    // 0.44 m beneath it, next to his own boot, which is why `swingTilt` drives the attitude instead.
+    // A weapon held radial to the arm through the bottom of an arc goes UNDER the ground — measured 0.44 m beneath it, which is why `swingTilt` drives the attitude instead.
     try std.testing.expect(swung(.shieldman, 0, 0, 1.2).lowY > 0.35);
     try std.testing.expect(swung(.greatsword, 1, 0, 2.0).lowY > 0.35);
     try std.testing.expect(swung(.greatsword, 2, 0, 2.0).lowY > 0.60);
@@ -2464,7 +2444,6 @@ test "HE STEPS INTO THE BLOW: the mace's stroke covers its own ground, and never
 }
 
 test "EVERY STROKE'S COMMITTED TRAVEL STARTS AT ZERO, whichever stroke of the combo it is" {
-    // BACKWARD out of the gate. Zeroed on entering `.wind` instead, only stroke 0 was ever safe.
     var g = Warrior.spawnAs(.greatsword, mathx.zero3, 0, 1.0, 0.4);
     g.debugSwing(1);
     g.enter(.swing);
@@ -2601,7 +2580,6 @@ test "THE HURT SPHERE IS ON THE BODY, AND IT KNEELS WHEN HE DOES" {
     const skull = w.rest[SKULL].y * w.scale;
     const r = w.hurtRadius();
 
-    // 0.95*H put its floor at 1.29 m, above the hips, and half of it in the air over his head.
     const up = w.centerWorld().y - w.pos.y;
     try std.testing.expect(up - r <= hip);
     try std.testing.expect(up + r >= skull);
@@ -2700,7 +2678,6 @@ test "AND A PATROL WALKS ITS LEGS, out and back rather than round and round" {
 test "AN ORDERED UNIT IS STILL ON A TETHER — only the free roamer is off it, and it is off it by definition" {
     const dt: f32 = 1.0 / 60.0;
     const home = mathx.ground(0, 0);
-    // Fed the go-home anchor it measured zero for ever, and an ordered guard followed him across the map.
     for ([_]wf.FoeAi{ .hold, .roam, .patrol }) |ai| {
         var w = Warrior.spawnAs(.shieldman, home, 0, 1.0, 0.4);
         w.post.arm(ai, home, &.{.{ .x = 6, .z = 0 }}, 0.4);

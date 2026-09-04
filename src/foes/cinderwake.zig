@@ -56,8 +56,7 @@ const solePatches = [_]heromod.SolePatch{
     .{ .bone = ANKR, .heel = 0.040 * H, .toe = 0.158 * H, .halfW = 0.048 * H, .drop = 0.032 * H },
 };
 
-// screen ∝ albedo^(1/2.2) puts it well above its albedo; the seam has to out-read it by a lot or the creature
-// is a grey man. Crust 34 -> screen ~112, seam 226 clips toward white, which is the point.
+// screen ∝ albedo^(1/2.2) puts it well above its albedo: crust 34 -> screen ~112, seam 226 clips toward white, which is the point.
 const CRUST = rgba(34, 30, 28, 255);
 const CRUST_LT = rgba(52, 46, 42, 255);
 const CHAR = rgba(16, 14, 13, 255);
@@ -96,9 +95,7 @@ pub var RAKE_HIT = combat.Hit{ .dmg = 13, .poise = 12, .stance = 9, .elem = comb
 pub const EMBER_R: f32 = 0.52;
 pub const EMBER_LIFE: f32 = 6.5;
 const TRAIL_SPACING: f32 = 0.42;
-/// **PER SECOND STANDING IN IT.** Burning decays at 30/s (`combat.AILS`), so this is net +28 and a stand-in
-/// fills the meter in 3.6 s. Crossing costs the entry bolus alone (`foe.ENTRY_BOLUS`) — a fifth of the bar,
-/// gone in 0.66 s — so one crossing is a real bill and three in a row is a burn.
+/// PER SECOND STANDING IN IT. Burning decays at 30/s (`combat.AILS`), so this is net +28 and a stand-in fills the meter in 3.6 s. Crossing costs the entry bolus alone (`foe.ENTRY_BOLUS`) — a fifth of the bar, gone in 0.66 s.
 pub const TRAIL_BUILD: f32 = 58.0;
 
 comptime {
@@ -132,8 +129,7 @@ const State = enum { idle, walk, rake, stunlight, stunheavy, dead };
 
 const Choice = enum { rest, hold, close, rake };
 
-/// Measured edge to edge against a centre-to-centre bill, the band ran 0.24 m past the reach at scale 1
-/// and 1.00 m at `wf.FOE_SCALE_LO`.
+/// Measured edge to edge against a centre-to-centre bill, the band ran 0.24 m past the reach at scale 1 and 1.00 m at `wf.FOE_SCALE_LO`.
 fn classify(sensed: f32, homeGap: f32, scale: f32, rakeReady: bool, rooted: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     if (sensed <= foe.hurtReach(RAKE_R, scale) and rakeReady) return .rake;

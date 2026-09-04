@@ -28,8 +28,7 @@ const v3 = mathx.v3;
 
 const LOOK_SENS: f32 = cameramod.LOOK_SENS;
 
-/// **THE WINDOW THE PANELS HAVE TO FIT, READ AND NOT COPIED.** `game.SCREEN_H` is the authority (AGENTS.md);
-/// two fit tests carried their own `800` and would have kept passing against a window that had moved.
+/// THE WINDOW THE PANELS HAVE TO FIT, READ AND NOT COPIED — `game.SCREEN_H` is the authority (AGENTS.md); two fit tests carried their own `800` and would have kept passing against a window that had moved.
 const SCREEN_H: i32 = @import("../game.zig").SCREEN_H;
 const UNDO_CAP: usize = 24;
 const DRAG_PX = ui.DRAG_PX;
@@ -214,8 +213,7 @@ const GROUND_SOIL_0: usize = GROUND_CLIFF_0 + GROUND_CLIFF_N;
 
 const SCULPT_EVEN: f32 = 0.5;
 
-/// The brush shortcuts, and the count the panel numbers its buttons off — one declaration, because a tenth
-/// key added to the list and not to the count is a button that answers to a press it does not advertise.
+/// The brush shortcuts, and the count the panel numbers its buttons off — ONE declaration, because a tenth key added to the list and not to the count is a button that answers a press it does not advertise.
 const DIGITS = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine };
 const DIGIT_KEYS: usize = DIGITS.len;
 
@@ -699,20 +697,12 @@ const DLG_FOOT: i32 = 44;
 const TAB_H: i32 = 26;
 const LOOT_ROW_H: i32 = 26;
 const LOOT_TOP: i32 = 84;
-/// **THE ITEM SHELVES, LAID OUT LIKE THE ZONE MIX'S.** Eleven of them across one row would be 38 px a tab.
-/// Its own width, wider than `LIST_W`: the row carries a name, what the map holds elsewhere, the count here
-/// and two buttons, and the shelf tabs have to spell a word.
 const LOOT_W: i32 = 540;
 const LOOT_TAB_COLS: i32 = 3;
 const LOOT_TAB_ROWS: i32 = (@as(i32, item.NCLASS) + LOOT_TAB_COLS - 1) / LOOT_TAB_COLS;
-/// The gold stepper stands between the last row and the foot, and the box has to be told about it: measured,
-/// the 22-row `tool` shelf put it straight on top of the last item's own -/+ pair.
 const LOOT_GOLD_H: i32 = ROW_H + 12;
-/// Characters a shelf tab has room for. `LOOT_W` gives 162 px a tab and Balthazar at `hud.MONO` runs under
-/// 11 px a character on an upper-case-heavy word, so 14 is the budget - pinned by a test, since the atlas is
-/// not loaded in one and `hud.monoW` answers 0 there.
+/// Characters a shelf tab has room for. `LOOT_W` gives 162 px a tab and Balthazar at `hud.MONO` runs under 11 px a character, so 14 is the budget — pinned by a test, since `hud.monoW` answers 0 with no atlas loaded.
 const LOOT_TAB_CHARS: usize = 14;
-/// The rows one shelf can hold, and the modal's own height for that many.
 fn lootRowsIn(n: usize) i32 {
     return @intCast(@max(n, 1));
 }
@@ -733,12 +723,9 @@ const Rect = struct {
     }
 };
 
-/// A stepper is 102 px of furniture before it is anything else (`ui.stepper`: two 20 px buttons and a 62 px
-/// readout). Handed less it lays its minus button out to the LEFT of the x it was given.
+/// A stepper is 102 px of furniture before it is anything else (`ui.stepper`: two 20 px buttons and a 62 px readout). Handed less it lays its minus button out to the LEFT of the x it was given.
 const STEP_MIN_W: i32 = 112;
 
-/// Walks the whole op list, once a frame: MEASURED at 22.8 us over `01_fallen_plain`'s 16,637 ops, 0.14% of a
-/// 16.7 ms frame in Debug.
 fn gateOnWall(m: *const wf.Map, a: *const wf.Arena) ?*const wf.Op {
     for (m.ops[0..m.nops]) |*o| {
         if (props.info(o.kind).ward and a.onWall(o.x, o.z)) return o;
@@ -790,8 +777,7 @@ fn aiTip(a: wf.FoeAi) [:0]const u8 {
 /// Smallest a clearing may be dragged or stepped down to, in metres.
 const MIN_CLEARING_R: f32 = 2.0;
 
-/// The payload is WHICH HANDLE: a rect's corner 0..3 in `(x,z) (x1,z) (x1,z1) (x,z1)` order, a room's corner
-/// index, or the clearing's rim. `null` — and `false` for the clearing — is the BODY.
+/// The payload is WHICH HANDLE: a rect's corner 0..3 in `(x,z) (x1,z) (x1,z1) (x,z1)` order, a room's corner index, or the clearing's rim. `null` — and `false` for the clearing — is the BODY.
 const Grab = union(enum) {
     arena: ?u8,
     zone: ?u8,
@@ -1362,8 +1348,6 @@ pub const Editor = struct {
         self.menuOpen = false;
         self.modal = .options;
     }
-    /// Open the item modal on the first container the map holds, on the DEEPEST shelf — the one frame that
-    /// shows whether the rows and the gold stepper still fit each other.
     pub fn lootForShot(self: *Editor, m: *const wf.Map, tab: item.Class) bool {
         for (m.ops[0..m.nops], 0..) |*o, i| {
             if (!isContainer(o)) continue;
@@ -1678,8 +1662,7 @@ pub const Editor = struct {
         if (self.rebuildDue) self.rebuild(m, env);
     }
 
-    /// **THE CAP COMES OFF THE BUFFER.** Four selectors wrote this out, each with its own `NAME_CAP - 1`, and
-    /// one of them holds an `ID_CAP` field — a buffer resized on its own would keep the other's bound.
+    /// THE CAP COMES OFF THE BUFFER: four selectors wrote this out, each with its own `NAME_CAP - 1`, and one of them holds an `ID_CAP` field.
     fn loadField(buf: []u8, len: *usize, s: []const u8) void {
         @memset(buf, 0);
         len.* = @min(s.len, buf.len - 1);
@@ -1812,8 +1795,7 @@ pub const Editor = struct {
                                 self.heightStroke = true;
                             }
                         },
-                        // The cut goes first: a flagged cell steps, and a stroke that only smoothed it would move
-                        // heights the face was still snapping away.
+                        // The cut goes first: a flagged cell steps, and a stroke that only smoothed it would move heights the face was still snapping away.
                         .ramp => {
                             var span: [4]usize = wf.EMPTY_SPAN;
                             var moved = m.paintCliff(g.x, g.z, self.radius, wf.CLIFF_NONE, &span);
@@ -2549,7 +2531,6 @@ pub const Editor = struct {
 
     const HANDLE_R: f32 = ARENA_CLOSE_R;
 
-    /// How near the first corner closes the run, in metres — forgiving, because the camera is usually wide.
     const ARENA_CLOSE_R: f32 = 2.5;
 
     fn arenaCorner(self: *Editor, m: *wf.Map, at: rl.Vector3) void {
@@ -3112,8 +3093,7 @@ pub const Editor = struct {
         const typed: ?[]const u8 = if (self.nameLen > 0) self.nameBuf[0..self.nameLen] else null;
         var buf: [wf.PATH_CAP]u8 = undefined;
         const p = wf.pathFor(&buf, typed orelse m.label());
-        // The file carries `name:` (`worldfmt.write`), so the rename lands BEFORE the write or the new
-        // path holds the old map's name and the two disagree from the moment it is saved.
+        // The file carries `name:` (`worldfmt.write`), so the rename lands BEFORE the write or the new path holds the old map's name.
         const was = m.name;
         if (typed) |t| m.setName(t);
         wf.save(p, m) catch |e| {
@@ -3553,8 +3533,7 @@ const SIDE_W: i32 = 268;
 const PROP_W: i32 = 300;
 const STATUS_H: i32 = 28;
 const MINI_W: i32 = 190;
-/// The face inside the panel's border. Said three times — the caller's span, the held texture's side and the
-/// ground rect — and the held face stops filling its own texture the moment two of them disagree.
+/// The face inside the panel's border. Said three times — the caller's span, the held texture's side and the ground rect — and the held face stops filling its own texture the moment two of them disagree.
 const MINI_INNER: i32 = MINI_W - 8;
 const CHROME_PAD: i32 = 10;
 const GUTTER: i32 = 30;
@@ -3613,8 +3592,7 @@ pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene,
     ui.endDropdowns();
     ui.drawTip(&ctx);
 
-    // THE EDGE, NOT THE STATE: closing on every un-overlaid frame wiped `openId` before the next frame could
-    // draw the list, so the properties panel's own dropdown (the NPC's `says`) opened for zero frames.
+    // THE EDGE, NOT THE STATE: closing on every un-overlaid frame wiped `openId` before the next frame could draw the list.
     if (ed.wasOverlaid and !overlaid) ui.closeDropdown();
     ed.wasOverlaid = overlaid;
     ed.hotFrame = ctx.anyHot or ui.dropdownOpen();
@@ -4648,8 +4626,6 @@ fn drawMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.C
     ui.tipFor(ctx, r, "Click to fly there");
 }
 
-/// Painted on change, not per frame: one rectangle per op, and `01_fallen_plain` stands at 16,563 of them —
-/// measured, they collapse only 1.33x onto the 182x182 face.
 var miniRT: ?rl.RenderTexture2D = null;
 var miniPainted: u64 = std.math.maxInt(u64);
 var miniLayer: Layer = .ground;
@@ -4677,8 +4653,7 @@ fn blitMinimap(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, px: i32, p
         paintMinimap(m, env, 0, 0, inner);
         rl.endTextureMode();
     }
-    // A straight copy, not a blend: raylib blends the target's OWN alpha by `SRC_ALPHA` like the colour, and
-    // blending that back over the panel multiplies the face a second time — measured, 49/765 darker over 78% of it.
+    // A straight copy, not a blend: raylib blends the target's OWN alpha by `SRC_ALPHA` like the colour, so blending that back over the panel multiplies the face a second time — 49/765 darker over 78% of it.
     rl.gl.rlSetBlendFactors(gfx.GL_ONE, gfx.GL_ZERO, gfx.GL_FUNC_ADD);
     rl.beginBlendMode(.custom);
     // A render texture reads bottom-up, so the source height is negative.
@@ -4878,7 +4853,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             const total = std.fmt.bufPrintZ(&buf, "{d} / {d} here   -   {d} placed on the map", .{ o.nloot, wf.MAX_LOOT, placed }) catch "";
             hud.mono(total, box.x + DLG_PAD, box.y + 58, hud.MONO, ui.LABEL);
 
-            // Every shelf gets a tab because the enum is walked whole - a new one cannot be forgotten here.
             const tabW: i32 = @divTrunc(box.w - DLG_PAD * 2 - (LOOT_TAB_COLS - 1) * 3, LOOT_TAB_COLS);
             for (0..item.NCLASS) |ci| {
                 const c: item.Class = @enumFromInt(ci);
@@ -4905,7 +4879,6 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 const tip = std.fmt.bufPrintZ(&tbuf, "{s}  -  {s}", .{ item.class(k).label(), item.effect(k, &ebuf) }) catch item.effect(k, &ebuf);
                 ui.tipFor(ctx, ui.rect(box.x + DLG_PAD, y, box.w - 200, LOOT_ROW_H), tip);
                 const n = lootCount(o, k);
-                // What the REST of the map holds, so a unique is not placed twice by accident.
                 const away = tally[@intFromEnum(k)] - @as(u16, n);
                 const plus = box.x + box.w - DLG_PAD - 24;
                 const minus = plus - 28;
@@ -5187,7 +5160,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
 
             const by = box.y + box.h - DLG_FOOT;
             if (ui.button(ctx, ui.rect(box.x + 20, by, 150, DLG_BTN_H), "Play again", hud.MONO, false, "Hear the selected voice again (Enter)") or confirm) ed.jukePlay();
-            if (ui.button(ctx, ui.rect(box.x + 180, by, 120, DLG_BTN_H), "Save", hud.MONO, false, "Write the edited voices over settings.cfg")) {
+            if (ui.button(ctx, ui.rect(box.x + 180, by, 120, DLG_BTN_H), "Save", hud.MONO, false, "Write the edited voices over " ++ sfx.SETTINGS_PATH)) {
                 sfx.saveSettings();
                 ed.say("sounds saved");
             }
@@ -5289,15 +5262,10 @@ fn countUnfilled(m: *const wf.Map) usize {
     return n;
 }
 
-/// MEASURED over the format's 20,480 ops: 78.9 us a frame walked, 0.002 us held. Every container edit banks
-/// first, so `miniGen` is an exact stamp.
 var unfilledAt: u64 = std.math.maxInt(u64);
 var unfilledOps: usize = std.math.maxInt(usize);
 var unfilledWas: usize = 0;
 
-/// **HOW MANY OF EACH KIND THE WHOLE MAP ALREADY HOLDS** (owner: show what is placed elsewhere). Held on
-/// `miniGen` for the same reason the count above is: walked, it is 20,480 ops times eight loot slots every
-/// frame the modal is open, for a number that only moves when a container is edited.
 var tallyAt: u64 = std.math.maxInt(u64);
 var tallyOps: usize = std.math.maxInt(usize);
 var tallyWas: [item.NK]u16 = [_]u16{0} ** item.NK;
@@ -5539,8 +5507,7 @@ fn drawOptionsModal(ed: *Editor, ctx: *ui.Ctx) void {
 
 
 comptime {
-    // `openTalk` copies a node in AT the format's cap and `ui.textField` writes the terminator at `len`, so a
-    // buffer merely as wide as the cap is a write one past its end.
+    // `openTalk` copies a node in AT the format's cap and `ui.textField` writes the terminator at `len`, so a buffer merely as wide as the cap is a write one past its end.
     const E = Editor{};
     if (E.talkSay.len <= wf.TALK_SAY_CAP) @compileError("editor: talkSay must be wider than wf.TALK_SAY_CAP");
     if (E.talkWho.len <= wf.TALK_LABEL_CAP) @compileError("editor: talkWho must be wider than wf.TALK_LABEL_CAP");
@@ -6209,7 +6176,7 @@ const WORLD_W: i32 = 420;
 const WORLD_H: i32 = 56 + 16 * ROW_H + 4 * hud.monoLineH(hud.MONO) + 62 + DLG_FOOT;
 
 const HOUR_STEP: f32 = 0.25;
-/// THE HOURS WORTH AUTHORING AT. The anchor is not negotiable — every albedo in the game was measured under it.
+/// The anchor is not negotiable — every albedo in the game was measured under it.
 const HourMark = struct { name: [:0]const u8, at: f32, tip: [:0]const u8 };
 const HOUR_MARKS = [_]HourMark{
     .{ .name = "Dawn", .at = 6.5, .tip = "First light - the coldest key in the day" },
@@ -6289,7 +6256,6 @@ fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32, voice: ?sfx.Id) void {
     );
 }
 
-/// A slider is a label line plus a 12 px bar plus its seat: at 30 the bars sat on the next label.
 const RACK_ROW: i32 = ui.ROW_H + 14;
 
 fn menuEnabled(ed: *const Editor, m: *const wf.Map, act: MenuItem) bool {
@@ -6500,8 +6466,6 @@ test "EVERY UNIT IS REACHABLE FROM EXACTLY ONE TAB, and the tallest list now fit
 test "EVERY LIST MODAL FITS THE WINDOW IT OPENS IN" {
     const foot = 8 + DLG_FOOT;
 
-    // **THE ITEM SHELVES.** One `tool` shelf held 22 rows and the gold stepper was drawn on top of the last
-    // one; every shelf is measured here so a new item cannot push a row off the bottom unseen.
     var perShelf = [_]usize{0} ** item.NCLASS;
     for (0..item.NK) |ki| perShelf[@intFromEnum(item.class(@enumFromInt(ki)))] += 1;
     var deepest: usize = 0;
@@ -6517,13 +6481,11 @@ test "EVERY LIST MODAL FITS THE WINDOW IT OPENS IN" {
     for (perShelf) |n| shelved += n;
     try std.testing.expectEqual(item.NK, shelved);
 
-    // The tab is as wide as the grid makes it; a name that overruns it is a name you cannot read. Counted in
-    // CHARACTERS because `hud.monoW` answers 0 with no atlas loaded, which made the pixel form of this vacuous.
+    // Counted in CHARACTERS because `hud.monoW` answers 0 with no atlas loaded, which made the pixel form of this vacuous.
     const tabW: i32 = @divTrunc(LOOT_W - DLG_PAD * 2 - (LOOT_TAB_COLS - 1) * 3, LOOT_TAB_COLS);
     var widest: usize = 0;
     var widestName: []const u8 = "";
     for (0..item.NCLASS) |ci| {
-        // The " *" is what a shelf that already holds something wears.
         const n = @as(item.Class, @enumFromInt(ci)).shelf().len + 2;
         if (n > widest) {
             widest = n;
@@ -6571,9 +6533,7 @@ test "EVERY LIST MODAL FITS THE WINDOW IT OPENS IN" {
     try std.testing.expect(sealH <= SCREEN_H);
     try std.testing.expect(mixH <= SCREEN_H);
 
-    // **EVERY MODAL, MEASURED IN ONE PLACE.** `beginModal` centres on the window, so one that is taller runs
-    // off BOTH ends and its title and its Done button are the halves you lose. Eyeballing found the item
-    // shelf and missed the rest; this is the table.
+    // EVERY MODAL, MEASURED IN ONE PLACE: `beginModal` centres on the window, so one that is taller runs off BOTH ends and its title and its Done button are the halves you lose.
     const boxes = [_]struct { name: []const u8, h: i32 }{
         .{ .name = "items    ", .h = lootModalH(lootRowsIn(deepest)) },
         .{ .name = "gate seal", .h = sealH },

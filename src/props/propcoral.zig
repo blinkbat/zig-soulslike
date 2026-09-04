@@ -15,7 +15,7 @@ const STIPE_DK = art.STIPE_DK;
 const PUNK_DK = art.PUNK_DK;
 
 
-// **NEAR-BLACK, LIKE EVERYTHING ELSE BIG AND SMOOTH IN THIS GAME** — screen goes as albedo^(1/2.2), so a mid-grey mass comes out chalk: the spire at 150,96,92 photographed as a pink concrete slab eight metres high. These sit with `CAP_FLESH_DK` (29,23,28) and `FLESH_PINK` (74,44,54).
+// NEAR-BLACK, LIKE EVERYTHING ELSE BIG AND SMOOTH IN THIS GAME — screen goes as albedo^(1/2.2), so a mid-grey mass comes out chalk: the spire at 150,96,92 photographed as a pink concrete slab eight metres high.
 const TUBE = rgba(34, 20, 22, 255);
 const TUBE_LT = rgba(58, 35, 34, 255);
 const TUBE_MOUTH = rgba(10, 6, 8, 255);
@@ -90,7 +90,6 @@ pub fn tubeSpireMesh(shader: rl.Shader) rl.Model {
     while (i < 26) : (i += 1) {
         const t = rng.range(0.22, 0.94);
         const a = rng.angle();
-        // RECESSED, not stuck on: at 0.90 of the wall the blob sits INSIDE it and reads as an opening.
         const rr = 1.22 * swell(t) * 0.80;
         b.addBlob(
             v3(mathx.cosf(a) * rr, SPIRE_H * t, mathx.sinf(a) * rr),
@@ -347,7 +346,6 @@ pub fn pipeClutchMesh(shader: rl.Shader) rl.Model {
 
 pub const CCRUST_R: f32 = 1.20;
 
-/// PLATED. Encrusting coral: overlapping shelves creeping out from one centre, each plate a little proud of the one under it. It has EDGES where the fungal crust has lobes — the whole difference between the two at a glance.
 pub fn coralCrustMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xCC2057);

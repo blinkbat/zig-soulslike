@@ -182,10 +182,7 @@ pub fn displayName(k: Kind) [:0]const u8 {
     };
 }
 
-/// **THE SHELF A THING SITS ON.** One shelf per KIND OF THING rather than per broad category: `tool` held the
-/// flasks, the arrows, the soul stones and fifteen consumables on one 22-row list, and `gear` held every
-/// weapon, coat and ring on another. The three equipment shelves are read off the SOCKET (`gearClass`), so a
-/// new piece shelves itself.
+/// THE SHELF A THING SITS ON. One shelf per KIND OF THING rather than per broad category; the three equipment shelves are read off the SOCKET (`gearClass`), so a new piece shelves itself.
 pub const Class = enum {
     flask,
     consumable,
@@ -199,7 +196,6 @@ pub const Class = enum {
     treasure,
     key,
 
-    /// What ONE of them is, for the card under the cursor and the discovery card.
     pub fn label(c: Class) [:0]const u8 {
         return switch (c) {
             .flask => "Flask",
@@ -216,7 +212,6 @@ pub const Class = enum {
         };
     }
 
-    /// What the SHELF is called, for a tab over a list of them.
     pub fn shelf(c: Class) [:0]const u8 {
         return switch (c) {
             .flask => "Flasks",
@@ -236,18 +231,15 @@ pub const Class = enum {
 
 pub const NCLASS = @typeInfo(Class).@"enum".fields.len;
 
-/// A shelf whose things are SPENT: one press and it is gone out of the bag.
 pub fn consumedClass(c: Class) bool {
     return c == .consumable or c == .ammo or c == .soul;
 }
 
-/// A shelf whose things fill a SOCKET - held, worn or on a finger.
 pub fn equipClass(c: Class) bool {
     return c == .armament or c == .armour or c == .trinket;
 }
 
-/// **WHAT A THING IS WORTH IN COIN, AND 0 MEANS IT DOES NOT TRADE.** Derived from the SHELF it sits on.
-/// **UNTRADEABLE IS A PRICE OF 0** and it is one rule, not a second flag.
+/// WHAT A THING IS WORTH IN COIN, derived from the SHELF it sits on. UNTRADEABLE IS A PRICE OF 0, and it is one rule rather than a second flag.
 pub fn priceBank(k: Kind) u32 {
     return switch (k) {
         .crimson_flask, .cerulean_flask, .iron_key, .soul_binding_ring, .golden_seed => 0,
@@ -270,8 +262,7 @@ pub fn priceBank(k: Kind) u32 {
     };
 }
 
-/// **THE SHELF PRICE, LIVE.** Filled from the switch above at comptime, so nothing waits on an init, and the
-/// bench writes over it — `priceBank` stays the thing a comptime check reads.
+/// THE SHELF PRICE, LIVE: filled from the switch above at comptime, and the bench writes over it. `priceBank` stays the thing a comptime check reads.
 pub var PRICE: [NK]u32 = blk: {
     var out: [NK]u32 = undefined;
     for (0..NK) |i| out[i] = priceBank(@enumFromInt(i));
@@ -295,7 +286,6 @@ pub fn class(k: Kind) Class {
     return switch (k) {
         .crimson_flask, .cerulean_flask => .flask,
         .plain_arrows, .fire_arrows => .ammo,
-        // A soul stone is spent to BE souls; it shelves with what it pays out, not with the food.
         .nameless_soul, .pilgrims_salt, .pilgrims_offering => .soul,
         .spirit_scroll_wolf,
         .scroll_bolt,
@@ -315,15 +305,12 @@ pub fn class(k: Kind) Class {
     };
 }
 
-/// A ring or a neck piece is a TRINKET; everything else worn is armour. Named here rather than at the shelf,
-/// because the doll already sorts the body this way.
+/// A ring or a neck piece is a TRINKET; everything else worn is armour.
 fn trinketSlot(w: Wear) bool {
     return w == .ring or w == .ring2 or w == .neck;
 }
 
-/// **THE EQUIPMENT SHELVES ARE THE SOCKET.** Read off `equipBank` — the authored table, never the tuned one —
-/// so a piece added to `GEAR` lands on the right shelf without a second list to keep in step. Anything the
-/// switch above did not name and that fills no socket is a consumable: it is USED and it is gone.
+/// THE EQUIPMENT SHELVES ARE THE SOCKET, read off `equipBank` — the authored table, never the tuned one. Anything the switch above did not name and that fills no socket is a consumable.
 fn gearClass(k: Kind) Class {
     return switch (equipBank(k)) {
         .arm => .armament,
@@ -440,12 +427,8 @@ pub const Wear = enum {
     }
 };
 
-/// **PRICED AS MULTIPLIERS ON THE ONE IT REPLACES**, never a fresh set of absolutes: `hero.ATK_*_HIT`,
-/// `combat.STAM_*` and `combat.GUARD_*` stay the one place a swing, a block and their bills are written, and a
-/// weapon says only how it DIFFERS. Bare-handed every dial is 1.
-///
-/// **WHICH SKILL DRIVES A WEAPON** — ER's scaling letters, ONE per armament. `quality` is the MEAN of the two
-/// curves, so either build carries the starting sword and neither is best with it.
+/// PRICED AS MULTIPLIERS ON THE ONE IT REPLACES, never a fresh set of absolutes: `hero.ATK_*_HIT`, `combat.STAM_*` and `combat.GUARD_*` stay the one place a swing, a block and their bills are written. Bare-handed every dial is 1.
+/// WHICH SKILL DRIVES A WEAPON — ER's scaling letters, ONE per armament. `quality` is the MEAN of the two curves, so either build carries the starting sword.
 pub const Scaling = enum { strength, dexterity, quality };
 
 pub const Heft = enum {
@@ -484,7 +467,7 @@ pub const Arm = struct {
     negate: f32 = 1,
     arc: f32 = 1,
     walk: f32 = 1,
-    /// **WHAT A LANDED STROKE PUTS IN THE BODY'S POISON METER** (`combat.Hit.dose`'s poison column, out of `combat.POISON_MAX`), and 0 for every clean edge. An ABSOLUTE, not a multiplier: the dose is the coating's, so it does not ride the damage dial or the skill.
+    /// What a landed stroke puts in the body's poison meter (`combat.Hit.dose`, out of `combat.POISON_MAX`), 0 for every clean edge. An ABSOLUTE, not a multiplier: it does not ride the damage dial or the skill.
     venom: f32 = 0,
 };
 
@@ -501,9 +484,7 @@ pub const Res = struct {
     }
 };
 
-/// `a` is the armour value in `A/(A + 5*dmg)` (`combat.armourTaken`) and `res` the four elemental columns.
-/// **THE RATE NAMES ITS METER** — a bare `poison: f32` was fine while poison was the only meter; at ten, a piece
-/// that slowed "the status meter" slowed all ten for free.
+/// `a` is the armour value in `A/(A + 5*dmg)` (`combat.armourTaken`) and `res` the four elemental columns. THE RATE NAMES ITS METER — a bare `poison: f32` slowed all ten meters for free.
 pub const Plate = struct { slot: Wear, a: f32 = 0, res: Res = .{}, rate: ?AilRate = null, move: f32 = 1 };
 
 pub const Charm = struct { slot: Wear, leech: f32 = 0, hpFrac: f32 = 0, spiritFp: f32 = 1, fpFrac: f32 = 0 };
@@ -521,7 +502,7 @@ pub const Equip = union(enum) {
     bind: Bind,
 };
 
-/// **A MELEE CLASS'S OWN ROW, WRITTEN ONCE.** The straight sword is the reference and is 1 on every dial — `hero.ATK_LIGHT_HIT`/`ATK_HEAVY_HIT` are literally its blow — and the other two classes say only how they differ. The two weapons standing in those sockets ARE these rows.
+/// A MELEE CLASS'S OWN ROW, WRITTEN ONCE. The straight sword is the reference and is 1 on every dial — `hero.ATK_LIGHT_HIT`/`ATK_HEAVY_HIT` are literally its blow — and the other two say only how they differ.
 pub const DAGGER = Arm{ .slot = .hand_dagger, .heft = .light, .dmg = 0.74, .poise = 0.72, .dur = 0.78, .stam = 0.76, .scales = .dexterity };
 pub const CLUB = Arm{ .slot = .hand_club, .heft = .heavy, .dmg = 1.48, .poise = 1.60, .dur = 1.34, .stam = 1.48, .scales = .strength };
 
@@ -532,7 +513,7 @@ pub const ENVENOMED = blk: {
     break :blk a;
 };
 
-/// **THE BARE ARMAMENT'S ROW** — every dial 1, and the skill that drives the thing he was born holding. An empty socket may not inherit the sword's `quality` default and quietly pay a bowman for his strength.
+/// THE BARE ARMAMENT'S ROW — every dial 1. An empty socket may not inherit the sword's `quality` default and quietly pay a bowman for his strength.
 pub fn bareArm(w: Wear) Arm {
     return switch (w) {
         .hand_dagger => DAGGER,
@@ -558,8 +539,7 @@ pub const GEAR = [_]Gear{
     .{ .kind = .grave_warbow, .equip = .{ .arm = .{ .slot = .hand_bow, .heft = .heavy, .reach = .ranged, .dmg = 1.62, .poise = 1.45, .dur = 1.28, .stam = 1.34, .scales = .dexterity } } },
 // `combat.GUARD_NEGATE_CAP` sits just under 1 on the base, so anything past ~1.118 is silently clamped.
     .{ .kind = .tower_shield, .equip = .{ .arm = .{ .slot = .hand_shield, .heft = .heavy, .negate = 1.10, .arc = 1.45, .walk = 0.80, .stam = 1.30 } } },
-    // **A WHOLE SUIT IS WORTH 25, NOT 45** (owner: too much armour). The curve is `a/(a + 5*dmg)`, so at 45 a
-    // best-in-slot kit turned aside HALF of every rank-and-file blow before the tree's own 32 went on top.
+    // The curve is `a/(a + 5*dmg)`, so at 45 a best-in-slot kit turned aside HALF of every rank-and-file blow before the tree's own 32 went on top.
     .{ .kind = .quilted_gambeson, .equip = .{ .plate = .{ .slot = .chest, .a = 12.0 } } },
     .{ .kind = .leech_signet, .equip = .{ .charm = .{ .slot = .ring, .leech = 2.0, .hpFrac = 0.06 } } },
     .{ .kind = .pitted_helm, .equip = .{ .plate = .{ .slot = .helm, .a = 8.0 } } },
@@ -570,7 +550,7 @@ pub const GEAR = [_]Gear{
     .{ .kind = .bloodtinge_signet, .equip = .{ .boon = .{ .slot = .ring, .attr = .vitality, .n = 5 } } },
     .{ .kind = .loop_of_chance, .equip = .{ .boon = .{ .slot = .ring2, .attr = .luck, .n = 4 } } },
     .{ .kind = .ashen_amulet, .equip = .{ .boon = .{ .slot = .neck, .attr = .intelligence, .n = 3 } } },
-    // **THE FIRST COLD RESISTANCE ANYWHERE ON HIS SIDE** — the necromancer's rune ring is the game's one source of cold and the sheet showed 0%. PHYSICAL under the gambeson's on purpose: a chest socket strictly better than the coat already in it retires that coat instead of competing with it.
+    // PHYSICAL under the gambeson's on purpose: a chest socket strictly better than the coat already in it retires that coat instead of competing with it.
     .{ .kind = .rimeward_mantle, .equip = .{ .plate = .{ .slot = .chest, .a = 7.0, .res = .{ .cold = 35 } } } },
     .{ .kind = .sporecrown, .equip = .{ .plate = .{ .slot = .helm, .a = 5.0, .rate = .{ .ail = .poison, .k = 0.55 } } } },
     .{ .kind = .gravebell_amulet, .equip = .{ .charm = .{ .slot = .neck, .spiritFp = 0.60, .fpFrac = 0.10 } } },
@@ -589,7 +569,7 @@ pub const GEAR = [_]Gear{
     .{ .kind = .kiln_draught, .use = .{ .ward = .{ .elem = .fire, .amount = 40, .secs = 60 } } },
     .{ .kind = .rimewax, .use = .{ .grease = .{ .elem = .cold, .frac = 0.5, .secs = 60 } } },
     .{ .kind = .pilgrims_offering, .use = .{ .souls = .{ .n = 2000 } } },
-    // **AMMUNITION IS AN ITEM NOW** (owner: arrows need to be droppable, placeable, all kinds) — both banks. **SIZED TO THE BANK, NOT GUESSED**: 12 into a quiver of 10 wasted two shafts on every pickup. This file imports nothing but std, so a test holds the two together.
+    // SIZED TO THE BANK, NOT GUESSED: 12 into a quiver of 10 wasted two shafts on every pickup. This file imports nothing but std, so a test holds the two together.
     .{ .kind = .plain_arrows, .use = .{ .arrows = .{ .fire = false, .n = 10 } } },
     .{ .kind = .fire_arrows, .use = .{ .arrows = .{ .fire = true, .n = 5 } } },
     .{ .kind = .nightcap_grease, .use = .{ .coat = .{ .ail = .sleep, .amt = 26, .secs = 60 } } },
@@ -787,9 +767,8 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
             if (a.venom > 0) n += (std.fmt.bufPrint(buf[n..], ", +{d:.0} poison a hit", .{a.venom}) catch return "Held: a coated edge.").len;
             return sentence(buf, n) orelse "Held: its own weight and speed.";
         },
-        // **THE ROW PRINTS WHAT IT ACTUALLY CARRIES, NOT ALL FOUR COLUMNS.** A coat that turns no cold has no business saying "0% cold" on the one panel a player compares two coats on. A CLAUSE PER DIAL rather than a branch per combination — four dials is sixteen sentences to write out.
+        // THE ROW PRINTS WHAT IT ACTUALLY CARRIES, NOT ALL FOUR COLUMNS. A CLAUSE PER DIAL rather than a branch per combination — four dials is sixteen sentences to write out.
         .plate => |p| {
-            // **A PIECE THAT TURNS NO DAMAGE DOES NOT OPEN WITH "0 ARMOUR."**
             const head = if (p.a > 0)
                 std.fmt.bufPrint(buf, "Worn: {d:.0} armour", .{p.a}) catch return "Worn: armour."
             else
@@ -801,7 +780,6 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
             if (n == head.len) n += (std.fmt.bufPrint(buf[n..], " against physical damage", .{}) catch return "Worn: armour.").len;
             return sentence(buf, n) orelse "Worn: armour.";
         },
-        // …AND THE CHARM SAYS WHICHEVER BARGAIN IT IS. Both halves on one line would price the gravebell's leech at zero and the signet's call at 100%.
         .charm => |c| {
             if (c.spiritFp != 1 or c.fpFrac > 0) return std.fmt.bufPrintZ(buf, "Worn: a spirit costs {d:.0}% focus, -{d:.0}% max focus.", .{
                 c.spiritFp * 100,
@@ -1190,15 +1168,13 @@ test "A WEAPON ROW TRADES: nothing is better than the plain thing on every dial 
         const k: Kind = @enumFromInt(i);
         switch (equip(k)) {
             .arm => |a| {
-                // Every dial is a multiple of what the bare armament already does, so a row of all 1s is a piece of gear that exists and changes nothing.
                 try std.testing.expect(a.dmg > 0 and a.poise > 0 and a.dur > 0 and a.stam > 0);
                 try std.testing.expect(a.negate > 0 and a.arc > 0 and a.walk > 0);
                 const gains = (a.dmg > 1) or (a.poise > 1) or (a.negate > 1) or (a.arc > 1) or (a.dur < 1) or (a.stam < 1) or (a.walk > 1);
                 const costs = (a.dmg < 1) or (a.poise < 1) or (a.negate < 1) or (a.arc < 1) or (a.dur > 1) or (a.stam > 1) or (a.walk < 1);
                 try std.testing.expect(gains and costs);
             },
-            // **A PIECE MUST CARRY SOMETHING, AND ARMOUR IS ONE OF FOUR THINGS IT CAN BE.** Asking `a > 0` means
-            // writing 0 armour on a ring whose whole worth is a rate, just to get it past this.
+            // A PIECE MUST CARRY SOMETHING, AND ARMOUR IS ONE OF FOUR THINGS IT CAN BE: asking `a > 0` means writing 0 armour on a ring whose whole worth is a rate.
             .plate => |p| {
                 const res = p.res.fire != 0 or p.res.cold != 0 or p.res.lightning != 0 or p.res.chaos != 0;
                 try std.testing.expect(p.a > 0 or res or p.rate != null or p.move != 1);
@@ -1210,7 +1186,6 @@ test "A WEAPON ROW TRADES: nothing is better than the plain thing on every dial 
                 try std.testing.expect(gives and takes);
             },
             .boon => |b| try std.testing.expect(b.n > 0),
-            // A BIND HAS NO DIALS TO TRADE — the socket is the price, and it is spent by dying. What it owes instead is a finger, which the comptime block over `GEAR` already refuses to let it skip.
             .bind => {},
             .none => {},
         }

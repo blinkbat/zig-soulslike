@@ -76,8 +76,7 @@ pub const Icon = enum {
     eyeOff,
 };
 
-/// Filled silhouettes, drawn in ONE colour: the glyph sits on a button face that changes with state, so
-/// every face. Every stroke is `s * 0.12` — 2.2 px at the 18 px the editor draws at.
+/// Filled silhouettes, drawn in ONE colour. Every stroke is `s * 0.12` — 2.2 px at the 18 px the editor draws at.
 pub fn draw(ic: Icon, cx: f32, cy: f32, size: f32, col: rl.Color) void {
     var g = G{ .cx = cx, .cy = cy, .s = size, .w = @max(2.0, size * 0.12), .col = col, .cut = cutOf(col), .soft = softOf(col) };
     g.glyph(ic);
@@ -183,7 +182,6 @@ const G = struct {
         triV(tip, l, rr, c);
     }
 
-    // Shared bodies: a hooded figure and a fishman, each used by several glyphs.
     fn hooded(g: *const G, x: f32, headY: f32, headR: f32, hemY: f32, hemW: f32) void {
         g.disc(x, headY, headR, g.col);
         g.trap(x, headY, hemY, headR * 2.0, hemW, g.col);
@@ -434,7 +432,6 @@ const G = struct {
                 g.disc(-0.36, -0.36, 0.035, cut);
             },
             .smith => {
-                // **THE MOUSTACHE AND THE RAISED HAMMER, AND NOTHING ELSE FITS AT 18 px.**
                 g.trap(-0.04, -0.10, 0.46, 0.30, 0.44, col);
                 g.disc(-0.02, -0.28, 0.19, col);
                 g.bar(-0.16, -0.22, -0.28, 0.10, 0.075, col);
@@ -608,8 +605,6 @@ const G = struct {
                 g.disc(0.34, -0.43, 0.035, cut);
             },
             .fungal_deer => {
-                // A QUADRUPED WITH A FLOWER OVER ITS BACK AND A RACK ON ITS HEAD. At 18 px the ring and the
-                // antlers are the whole glyph — the body under them only has to say "four legs".
                 g.hbar(-0.04, 0.08, 0.50, 0.13, col);
                 for ([_]f32{ -0.22, -0.04, 0.16 }) |x| g.vbar(x, 0.34, 0.38, 0.06, col);
                 g.bar(-0.28, 0.04, -0.40, -0.08, 0.06, col);
@@ -730,8 +725,7 @@ const G = struct {
         }
     }
 
-    /// A lens and a solid pupil — the smallest glyph in the set, about a dozen pixels, where anything more came
-    /// out as one grey blob. `eyeOff` keeps the whole open eye and strikes it: a closed lid is a dash.
+    /// A lens and a solid pupil — the smallest glyph in the set, about a dozen pixels. `eyeOff` keeps the whole open eye and strikes it.
     fn eyeInto(g: *const G, struck: bool) void {
         const body = if (struck) g.soft else g.col;
         const w = g.w / g.s;

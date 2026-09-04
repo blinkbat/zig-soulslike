@@ -132,8 +132,7 @@ const State = enum { idle, walk, clout, bursting, stunlight, stunheavy, dead };
 
 const Choice = enum { rest, hold, close, clout };
 
-/// Measured edge to edge against a centre-to-centre bill, the band ran 0.21 m past the reach at scale 1
-/// and 0.87 m at `wf.FOE_SCALE_LO`.
+/// Measured edge to edge against a centre-to-centre bill, the band ran 0.21 m past the reach at scale 1 and 0.87 m at `wf.FOE_SCALE_LO`.
 fn classify(sensed: f32, homeGap: f32, scale: f32, cloutReady: bool, rooted: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     if (sensed <= foe.hurtReach(CLOUT_R, scale) and cloutReady) return .clout;

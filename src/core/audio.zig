@@ -5,15 +5,14 @@ const mathx = @import("mathx.zig");
 
 pub const SR: usize = 22050;
 const SRF: f32 = @floatFromInt(SR);
-/// Ceiling is the TITLE take (14.02 s, nine phrases of 1.5575 s); the campfire is 12.8 s and the synthesized
-/// voices top out at the 8 s wind bed. It sizes `work`/`tape`/`pcm` — 10 bytes a sample, so a second is 220 KB.
+/// Ceiling is the TITLE take (14.02 s, nine phrases of 1.5575 s). Sizes `work`/`tape`/`pcm` — 10 bytes a sample, so a second is 220 KB.
 const MAX_N: usize = 15 * SR;
 
 var work: [MAX_N]f32 = undefined;
 var tape: [MAX_N]f32 = undefined;
 var pcm: [MAX_N]i16 = undefined;
 
-/// Chamberlin state-variable filter coefficients. Separate from the filter step because for a FIXED cutoff they never change, and the per-sample `sin` was 90 ms of the heal's bake time (measured).
+/// Chamberlin state-variable filter coefficients, hoisted: for a FIXED cutoff they never change, and the per-sample `sin` was 90 ms of the heal's bake time.
 const SvfCoef = struct { f: f32, q: f32 };
 
 fn svfCoef(cut: f32, res: f32) SvfCoef {
@@ -72,7 +71,7 @@ const Span = struct {
 const Rack = struct {
     n: usize = 0,
     rng: mathx.Rng,
-    /// Layers that rendered nothing — authored past the voice's own length, so they emit zero samples silently. A test bakes the bank and asserts this stays 0.
+    /// Layers that rendered nothing — authored past the voice's own length, so they emit zero samples silently.
     dropped: usize = 0,
 
     fn init(seed: u64, secs: f32) Rack {
@@ -95,9 +94,7 @@ const Rack = struct {
         return .{ .a = a, .b = b };
     }
 
-    /// **THE RATIO DOES NOT MOVE, SO ITS LOG IS TAKEN ONCE.** `f0*(f1/f0)^u` is a `pow` — a log AND an exp —
-    /// per SAMPLE, and this loop and `air`'s are where the 4.4 s of synthesis is spent. Hoisted, a sample costs
-    /// one `exp2`.
+    /// The ratio does not move, so its log is taken once: `f0*(f1/f0)^u` is a `pow` per SAMPLE, and hoisted a sample costs one `exp2`.
     fn body(r: *Rack, t0: f32, dur: f32, f0: f32, f1: f32, amp: f32, curve: f32) void {
         const s = r.span(t0, dur) orelse return;
         const oct = std.math.log2(f1 / f0);
@@ -183,8 +180,6 @@ const Rack = struct {
         r.grit(t0, 0.012, amp, cut, 0.0, 5.0);
     }
 
-    /// Detuned unison "ahh"s. Formants (~730 and ~1090 Hz for "ah") plus per-voice detune/vibrato/entry, whose
-    /// BEATING is the choral sound. The bank's most expensive layer (~70 ms of the heal's bake, Debug); a table LFO would trade that beating away.
     fn choir(r: *Rack, t0: f32, dur: f32, f0: f32, amp: f32, voices: u32, peak: f32) void {
         const s = r.span(t0, dur) orelse return;
         const a = s.a;
@@ -402,9 +397,7 @@ const AIR_FAR_CRY: f32 = 1950;
 const AIR_NEAR_DARKEST: f32 = 2200;
 const AIR_NEAR_GRASS: f32 = 4200;
 
-// Order is the BANK table's order below, pinned at comptime. Each take's noise comes from `0x9E3779B9 *% (idx + 1)`,
-// so inserting an id in the MIDDLE re-rolls every voice under it: `gremlin_spark` moved the knight's heave 2% off
-// the cyclops's, under the 3% a test demands.
+// Order is the BANK table's order below, pinned at comptime. Each take's noise comes from `0x9E3779B9 *% (idx + 1)`, so inserting an id in the MIDDLE re-rolls every voice under it.
 pub const Id = enum {
     step_soft,
     step_hard,
@@ -931,14 +924,10 @@ fn mkLavaBed(r: *Rack) void {
     liquidBed(r, .{ .bodyHz = 108, .bodySwing = 0.40, .pops = 6.2, .popLo = 90, .popHi = 340, .popRise = 0.45, .popHold = 0.9974, .hissAmt = 0.26, .topHz = 5200, .trim = 2600 });
 }
 
-// whole of what `mkStepWater` does that `mkStepSoft` does not (700 -> 3200 Hz under a rising bubble). Authored
-// without one, all three of these came out as textures over a thud: measured they were LOUDER than water's
-// (rms 0.18 against 0.11) and none of them said liquid. Each carries water's sweep now, moved to its own body,
 
 fn mkStepOil(r: *Rack) void {
     r.air(0.0, 0.26, 0.38, 220, 2100, 0.34, 2.4);
     r.body(0.010, 0.09, 150 + r.rng.signed() * 14, 460, 0.62, 5.4);
-    // as a splash at all (measured: crossings x0.98 over its own length, against water's x1.60).
     r.body(0.085, 0.12, 130, 620, 0.40, 3.8);
     r.grit(0.03, 0.14, 0.10, 1600, 0.40, 3.4);
     r.master(1.6, 2600);
@@ -1105,8 +1094,6 @@ fn mkStagger(r: *Rack) void {
     r.master(1.35, 2000);
 }
 
-/// **THE BOARDS ARE IRON-BOUND, AND YOU HEAR THE BAND** (owner: a more metallic sound). It was one short 940 Hz
-/// partial pair dead inside 90 ms, which is a knock on wood. The master lowpass opens with it: at 4200 the partials that make it metal never left the rack.
 fn mkGuardBlock(r: *Rack) void {
     r.tick(0.0, 0.42, 4200);
     r.body(0.0, 0.13, 190, 78, 0.95, 5.0);
@@ -1393,7 +1380,6 @@ fn mkWandCharge(r: *Rack) void {
     r.master(1.5, 4400);
 }
 
-/// A CRACK, not a boom: the bolt is 24 damage of the most-resisted element, and a cannon would promise a hit the numbers cannot pay for.
 fn mkWandCast(r: *Rack) void {
     r.tick(0.0, 0.44, 5200);
     r.ring(0.0, 0.26, 620, 0.24, 5.5, 3);
@@ -1720,7 +1706,6 @@ fn mkKnightDie(r: *Rack) void {
     r.growl(0.0, 0.90, 84, 30, 0.90, 0.26, 0.08);
     r.ring(0.0, 0.70, 150, 0.22, 2.2, 4);
     r.body(0.0, 1.10, 72, 44, 0.42, 1.2);
-    // The topple lands at `knight.DEATH_LAND` = 1.36 s, and the crash is written to arrive with it.
     r.tick(1.36, 0.60, 2600);
     r.body(1.36, 0.80, 88, 18, 1.35, 1.6);
     r.grit(1.36, 0.66, 0.70, 2400, 0.92, 1.9);
@@ -2015,7 +2000,6 @@ fn mkFlaskDrink(r: *Rack) void {
     r.body(0.46, 0.13, 118, 72, 0.65, 4.4);
     r.grit(0.10, 0.45, 0.10, 900, 0.5, 2.2);
     r.body(0.58, 0.42, 90, 150, 0.5, 1.7);
-    // A slight sparkle on the bloom (owner's call), UNDER the master's 2.8 kHz so it is felt not heard.
     r.sparkle(0.56, 0.34, 0.035, 1320, 4);
     r.master(1.8, 2800);
 }
@@ -2089,9 +2073,7 @@ fn mkFogPass(r: *Rack) void {
     r.ends(0.16, 0.42);
 }
 
-/// THE FOG GATE SHUTTING ON A BOSS FIGHT (owner: an ominous, low tone arrangement, about 5 s). Built on the
-/// INTERVAL, not the timbre: A1 (55 Hz) against E-flat above it is a TRITONE, the one interval nobody hears as
-/// resolved, and the two are laid a beat apart so the dissonance ARRIVES. The sub sags a semitone across the take.
+/// Built on the INTERVAL, not the timbre: A1 (55 Hz) against the E-flat above it is a TRITONE, and the two are laid a beat apart so the dissonance ARRIVES. The sub sags a semitone across the take.
 fn mkFogSeal(r: *Rack) void {
     r.body(0.00, 1.60, 96, 44, 0.55, 2.2); // the stone hitting its seat
     r.grit(0.00, 0.90, 0.30, 520, 0.85, 2.6);
@@ -2105,8 +2087,7 @@ fn mkFogSeal(r: *Rack) void {
     r.ends(0.03, 1.10);
 }
 
-/// Same architecture, opposite interval: root A1 55 Hz, then the PERFECT FIFTH (E2, 82.41) and the MAJOR THIRD
-/// (C#2, 69.30) last — an A major triad. DARK is not the same dial as FRIGHTENING, so the register does not move.
+/// Same architecture, opposite interval: root A1 55 Hz, then the PERFECT FIFTH (E2, 82.41) and the MAJOR THIRD (C#2, 69.30) last — an A major triad. The register does not move.
 fn mkFogFelled(r: *Rack) void {
     r.body(0.00, 1.40, 82, 55, 0.42, 2.0);      // the weight coming off — not a stone finding its seat
     r.body(0.05, 4.90, 38.9, 41.2, 0.60, 0.8);  // the sub, rising the semitone
@@ -2265,7 +2246,7 @@ fn mkRain(r: *Rack) void {
     r.wow(0.002, 0.5);
     r.hiss(0.030);
     r.norm(0.60);
-    // A BED'S ENDS ARE LONG (the wind's own 0.9 s): a short one is a click, and a bed clicks every loop.
+    // A bed's ends are LONG (the wind's own 0.9 s): a short one is a click, and a bed clicks every loop.
     r.ends(0.9, 0.9);
 }
 
@@ -2308,7 +2289,6 @@ fn mkTorchFire(r: *Rack) void {
     r.wow(0.002, 0.45);
     r.hiss(0.028);
     r.norm(0.62);
-    // A BED'S ENDS ARE LONG (the wind's own 0.9 s): a short one is a click, and a bed clicks every loop.
     r.ends(0.9, 0.9);
 }
 
@@ -2758,8 +2738,7 @@ const BANK = [NV]Row{
     .{ .id = .fog_felled, .make = mkFogFelled, .gain = 0.60, .jit = 0.0, .vjit = 0.0, .vars = 1, .poly = 1 },
     .{ .id = .fog_pass, .make = mkFogPass, .gain = 0.44, .jit = 0.04, .vjit = 0.08, .vars = 2, .poly = 1 },
     .{ .id = .torch_fire, .make = mkTorchFire, .gain = 0.075, .mix = .ambience, .jit = 0.0, .vjit = 0.0, .vars = 2, .poly = 1 },
-    // **A SHOT COMING AT YOU FROM 16 M HAS TO BE HEARD FROM 16 M** (`hollow.SPARK_MAX`) — the volley's fairness
-    // is three separate arrivals. `poly` is 4 because three are in the air at once and a second rider may fire.
+    // A shot coming from 16 m has to be heard from 16 m (`hollow.SPARK_MAX`). `poly` is 4 because three are in the air at once and a second rider may fire.
     .{ .id = .gremlin_spark, .make = mkGremlinSpark, .gain = battle(0.58), .mix = .combat, .jit = 0.10, .vjit = 0.22, .vars = 4, .poly = 4, .reach = 40 },
     .{ .id = .skitter_clack, .make = mkSkitterClack, .gain = battle(0.34), .mix = .combat, .jit = 0.18, .vjit = 0.30, .vars = 4, .poly = 6, .reach = 24 },
     .{ .id = .skitter_slice, .make = mkSkitterSlice, .gain = battle(0.72), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 4, .poly = 4, .reach = 30 },
@@ -2814,7 +2793,6 @@ fn seconds(id: Id) f32 {
         .death => 3.2,
         .owl => 1.6,
         .ogre_die => 2.2,
-        // The boss falls for DEATH_DUR (2.20 s, `knight.zig`) and the crash is written at 1.30.
         .knight_die => 2.45,
         .knight_roar => 1.35,
         .knight_slam => 1.15,
@@ -2833,9 +2811,8 @@ fn seconds(id: Id) f32 {
         .ogre_slam, .bow_draw, .flask_drink => 1.05,
         .chest_open => 0.9,
         .arrow_hit, .arrow_dirt, .arrow_wood, .arrow_stone, .arrow_metal => 0.36,
-        // The climb has to RESOLVE at the throw, and the raise is CAST_DUR × CAST_AT ≈ 0.30 s.
+        // The climb has to RESOLVE at the throw: the raise is CAST_DUR × CAST_AT ≈ 0.30 s.
         .wand_charge => 0.40,
-        // SHORT ON PURPOSE (see mkParry): a long tail is what made it a ping. Spent by 0.21.
         .parry => 0.28,
         .birds => 1.3, // long enough for a phrase plus the answer that can start at 0.72
         .birdsong => 1.0,
@@ -2861,7 +2838,6 @@ fn seconds(id: Id) f32 {
         .delver_surge => 1.25,
         .delver_die => 0.85,
         .leech_die => 0.65, // the run-down, then the body arriving at 0.44
-        // The bell's HUM is the sound; cut to the default 0.5 s it was a hammer on a pipe.
         .hollow_toll => 3.4,
         .hollow_clank => 0.55,
         .priest_call => 1.6,
@@ -2869,7 +2845,7 @@ fn seconds(id: Id) f32 {
         .skitter_slice => 0.55,
         .gremlin_spark => 0.45,
         .souls_spill => 0.9,
-        // The retrigger fires every HUM_EVERY (1.15 s); the take must outlast it or the hum chatters.
+        // The retrigger fires every `HUM_EVERY` (1.15 s); the take must outlast it or the hum chatters.
         .souls_hum => 1.30,
         else => 0.5,
     };
@@ -2935,8 +2911,7 @@ fn bakeTake(id: Id, idx: usize) void {
     slots[idx].next = 0;
 }
 
-/// A few ms a frame behind the menu; whole, it was 4.4 s of synthesis on the main thread. A TAKE IS INDIVISIBLE
-/// — the budget bounds what we START, so one 8 s bed take is a ~300 ms hole in the frame that picks it up, hence `longOk`. Seconds of AUDIO, the cheap proxy for cost.
+/// Seconds of AUDIO, the cheap proxy for cost. A TAKE IS INDIVISIBLE, so the budget bounds only what we START: one 8 s bed take is a ~300 ms hole in the frame that picks it up, hence `longOk`.
 const LONG_TAKE: f32 = 1.4;
 
 pub fn pump(budgetNs: u64, longOk: bool) bool {
@@ -3000,8 +2975,7 @@ fn rebakeMix(m: Submix) void {
     if (m == .ambience) redressStreams();
 }
 
-/// Both streams sit on `.ambience`, so a rack edit has to re-dress both or the fire follows the menu's filters
-/// and the title track keeps the ones it was baked under.
+/// Both streams sit on `.ambience`, so a rack edit has to re-dress both or the fire follows the menu's filters and the title track keeps the ones it was baked under.
 fn redressStreams() void {
     redressStream(&restFire, dressedFire);
     redressStream(&introMusic, dressedIntro);
@@ -3115,12 +3089,7 @@ fn dressedFire() []const u8 {
 
 const INTRO_WAV = @embedFile("intro_wav");
 
-/// The fire's chain on the title track, with **THE FILTER MOVED LAST**. The fire adds its hiss AFTER its
-/// lowpass on purpose — it wants the crackle on top of a dull bed. Here that left the two things the chain
-/// GENERATES unfiltered, and both are treble: the 7.5-bit dither floor and the hiss band. Measured, the take's
-/// own 7–9 kHz sits at -61 dB, so a broadband quantisation floor is well above the music up there and reads as
-/// a constant fizz. Driven hard into a two-pole rolloff instead — fuzz then cab, which is where the grit is
-/// supposed to come from.
+/// The fire's chain on the title track, with THE FILTER MOVED LAST. What the chain GENERATES is treble — the 7.5-bit dither floor and the hiss band — and the take's own 7–9 kHz sits at -61 dB, so an unfiltered floor reads as a constant fizz.
 const INTRO_BASS_HZ: f32 = 190.0;
 const INTRO_BASS: f32 = 1.10;
 /// Into `x/(1+|x|)`, so this is the fuzz.
@@ -3130,14 +3099,9 @@ const INTRO_HOLD: u32 = 1;
 /// TWO poles: one is -6 dB/oct and barely touches the fizz the drive and the crush put up there.
 const INTRO_CUT: f32 = 3200.0;
 const INTRO_HISS: f32 = 0.004;
-/// The saturator lifts the average a long way before the peak moves, so the trim comes down with the drive.
 const INTRO_OUT: f32 = 0.62;
 
-/// **THE TAKE IS ALREADY A WHOLE NUMBER OF PHRASES, SO THE LOOP IS THE TAKE.** Onsets sit on a 1.5575 s grid
-/// (1.557, 3.115, 4.672, …) and 14.016 s is exactly nine of them; the first phrase is the silent lead-in and
-/// the ninth ends on the accent that carries into it. Trimming either end takes the loop off that grid, which
-/// is the one thing you hear. Nothing is cut and nothing is folded — the only touch is a de-click over the
-/// last few milliseconds, because the source ends on a hard step (-968 straight to 0) and the head is silence.
+/// THE LOOP IS THE TAKE. Onsets sit on a 1.5575 s grid and 14.016 s is exactly nine of them, so trimming either end takes the loop off that grid. The only touch is a de-click over the last few ms, because the source ends on a hard step (-968 straight to 0).
 const INTRO_SEAM: f32 = 0.006;
 
 var introWav: [INTRO_WAV.len + 64]u8 = undefined;
@@ -3186,8 +3150,7 @@ fn dressedIntro() []const u8 {
     return wavHeaderInto(&introWav, n, chans, w.sampleRate);
 }
 
-/// Unconditional, because `applyRack`'s own `ends` never runs with the rack off (`applyFx` returns early) and
-/// the step would be back. Length is untouched: the loop has to stay on its own grid.
+/// Unconditional, because `applyRack`'s own `ends` never runs with the rack off (`applyFx` returns early). Length is untouched: the loop has to stay on its own grid.
 fn seamOut(n: usize, secs: f32) void {
     const k = @min(@as(usize, @intFromFloat(mathx.maxF(secs, 0) * SRF)), n);
     if (k == 0) return;
@@ -3219,11 +3182,6 @@ pub fn introOn(on: bool) void {
     }
 }
 
-pub fn introPlaying() bool {
-    const m = introMusic orelse return false;
-    return rl.isMusicStreamPlaying(m);
-}
-
 pub fn introLevel(v: f32) void {
     const m = introMusic orelse return;
     rl.setMusicVolume(m, mathx.clampF(v, 0, 1) * userVol[@intFromEnum(Submix.ambience)]);
@@ -3253,7 +3211,7 @@ pub fn tickStreams() void {
     }
 }
 
-/// The CLAMP is what makes this a function rather than a multiply: a sample past ±1.024 is not a clipped take but an out-of-range `@intFromFloat`.
+/// The CLAMP is what makes this a function rather than a multiply: a sample past ±1.024 is an out-of-range `@intFromFloat`.
 fn pcm16(s: f32) i16 {
     return @intFromFloat(mathx.clampF(s, -1, 1) * 32000.0);
 }
@@ -3310,7 +3268,7 @@ var voiceDirty: [NV]bool = [_]bool{false} ** NV;
 
 pub const Dial = enum { gain, pitch, reach, jit, vjit };
 
-/// A runtime table: the bench lists off it and `settings.cfg` is keyed on it. An `inline for` over the enum instead unrolls its whole body ~190 times per call site and blows the comptime branch quota.
+/// A runtime table: the bench lists off it and `settings.cfg` is keyed on it. An `inline for` over the enum unrolls its whole body ~190 times per call site and blows the comptime branch quota.
 pub const NAMES: [NV][:0]const u8 = blk: {
     var out: [NV][:0]const u8 = undefined;
     for (@typeInfo(Id).@"enum".fields, 0..) |f, i| out[i] = f.name;
@@ -3479,9 +3437,7 @@ fn bedLevel(row: Row, h: Hour) f32 {
     return levelFor(row, hourGain(h), 1.0);
 }
 
-/// A slow global ramp over every bed. Both the level setter and the hold go through `bedDial`, so this is the
-/// one place it has to be multiplied in — and `ambience`'s own `lvl <= 0.004` floor keeps a bed silent until
-/// the ramp has actually brought it up rather than starting it at nothing.
+/// Both the level setter and the hold go through `bedDial`, so this is the one place it is multiplied in; `ambience`'s own `lvl <= 0.004` floor keeps a bed silent until the ramp has brought it up.
 var bedFade: f32 = 1.0;
 
 pub fn ambienceFade(v: f32) void {
@@ -3597,8 +3553,7 @@ pub fn worldAt(id: Id, at: rl.Vector3, gain: f32) void {
     worldThrough(id, at, gain, 1.0);
 }
 
-/// **WHAT A WALL DOES TO A SOUND.** `clear` is 1 on an open line and 0 with rock in the way.
-/// **IT IS A CUT AND A DROOP, NOT A FILTER** — raylib cannot filter a playing voice (AGENTS.md).
+/// `clear` is 1 on an open line and 0 with rock in the way. IT IS A CUT AND A DROOP, NOT A FILTER — raylib cannot filter a playing voice (AGENTS.md).
 pub const MUFFLE_GAIN: f32 = 0.34;
 pub const MUFFLE_DROOP: f32 = 0.06;
 
@@ -3918,8 +3873,7 @@ fn takeAt(i: usize) f32 {
     return @as(f32, @floatFromInt((srcTake orelse return 0)[i])) / 32768.0;
 }
 
-/// Energy above `cut` as a share of the whole, in dB — the one number "how bad is the treble" actually means.
-/// A one-pole split, so it is the same filter the chain itself is built out of.
+/// Energy above `cut` as a share of the whole, in dB. A one-pole split, so it is the same filter the chain is built out of.
 fn trebleShare(get: *const fn (usize) f32, n: usize, cut: f32) f32 {
     var p = Pole{};
     var hiSum: f64 = 0;
@@ -3934,14 +3888,9 @@ fn trebleShare(get: *const fn (usize) f32, n: usize, cut: f32) f32 {
     return @floatCast(10.0 * std.math.log10(hiSum / allSum));
 }
 
-// The seam is the one thing an ear catches and a screenshot cannot show, so it is measured: the step ACROSS
-// the wrap against the steps inside the buffer. A butt-joined loop reads as a click because that one step is
-// orders of magnitude bigger than its neighbours.
+// The seam is the step ACROSS the wrap measured against the steps inside the buffer: a butt-joined loop clicks because that one step is orders of magnitude bigger than its neighbours.
 test "THE TITLE TRACK LOOPS WITHOUT A CLICK — the wrap is an ordinary step, with the rack on and with it off" {
-    // **raylib LOGS TO STDOUT, AND UNDER `zig build test` STDOUT IS THE BUILD RUNNER'S IPC CHANNEL.** The wave
-    // loader's `INFO: WAVE: Data loaded` corrupts that protocol: the runner stops understanding the stream, the
-    // binary blocks on it, and the step dies at 255 with every test reported as passed. Bare, it exits 0.
-    // Nothing else in the suite reaches raylib's file IO, which is why this is the only test that has to say so.
+// raylib LOGS TO STDOUT, AND UNDER `zig build test` STDOUT IS THE BUILD RUNNER'S IPC CHANNEL: the wave loader's `INFO: WAVE: Data loaded` corrupts that protocol and the step dies at 255 with every test reported as passed.
     rl.setTraceLogLevel(.none);
     defer rl.setTraceLogLevel(.info);
 
@@ -3958,7 +3907,7 @@ test "THE TITLE TRACK LOOPS WITHOUT A CLICK — the wrap is an ordinary step, wi
     try std.testing.expect(srcN > 0 and srcN <= MAX_N);
     std.debug.print("\n  intro take treble over 4 kHz: {d:.1} dB of the whole", .{srcTreble});
 
-    // The take's own phrase, off its onset grid: 1.557, 3.115, 4.672 … and the whole thing is nine of them.
+        // The take's own phrase, off its onset grid; the whole thing is nine of them.
     const PHRASE: f32 = 1.5575;
     const units = @as(f32, @floatFromInt(srcN)) / SRF / PHRASE;
     std.debug.print("\n  intro take: {d} samples, {d:.3} s = {d:.3} phrases of {d:.4} s", .{ srcN, @as(f32, @floatFromInt(srcN)) / SRF, units, PHRASE });
@@ -3973,7 +3922,7 @@ test "THE TITLE TRACK LOOPS WITHOUT A CLICK — the wrap is an ordinary step, wi
         try std.testing.expect(out.ptr == introWav[0..].ptr);
 
         const n = introSamples(out);
-        // NOTHING IS CUT. The loop is the take, or it drifts off the grid a phrase at a time.
+        // NOTHING IS CUT: the loop is the take, or it drifts off the grid a phrase at a time.
         try std.testing.expectEqual(srcN, n);
 
         var worst: f32 = 0;
@@ -3989,20 +3938,17 @@ test "THE TITLE TRACK LOOPS WITHOUT A CLICK — the wrap is an ordinary step, wi
             "\n  intro loop{s}: {d} samples ({d:.2} s) | wrap step {d:.6} against mean {d:.6} and worst {d:.6}",
             .{ if (racked) " (racked)" else "", n, @as(f32, @floatFromInt(n)) / SRF, wrap, mean, worst },
         );
-        // The seam has to sit among the ordinary steps, not above them.
         try std.testing.expect(wrap <= mean);
 
         const dressed = trebleShare(introAt, n, 4000);
         std.debug.print("  | treble over 4 kHz {d:.1} dB of the whole", .{dressed});
-        // THE CHAIN MAY NOT BE BRIGHTER THAN THE TAKE. The dither floor and the hiss are both generated up
-        // there, so a filter that does not come last puts fizz where the music measures -61 dB.
+        // THE CHAIN MAY NOT BE BRIGHTER THAN THE TAKE: the dither floor and the hiss are both generated up there.
         try std.testing.expect(dressed <= srcTreble + 1.0);
     }
     std.debug.print("\n", .{});
 }
 
 test "the world falloff is silent past its own range and loudest underfoot" {
-    // and a pan that leaves the 0..1 range is a raylib assert.
     listen(mathx.zero3, mathx.v3(1, 0, 0));
     try std.testing.expect(mathx.distXZ(mathx.v3(FALLOFF + 1, 0, 0), lisPos) > FALLOFF);
     const near = 1.0 - 0.0 / FALLOFF;
@@ -4086,8 +4032,7 @@ test "THE BACKGROUND IS BACKGROUND — the ambience trim, and only the ambience"
 }
 
 const Rendered = struct {
-    /// Zero crossings a second — a cheap brightness proxy, and the one that catches a voice made of
-    /// high partials: a sustained 2.3 kHz cluster crosses an order of magnitude more often than a body at 250.
+    /// Zero crossings a second — a cheap brightness proxy: a sustained 2.3 kHz cluster crosses an order of magnitude more often than a body at 250.
     fn brightness(n: usize) f32 {
         var crossings: f32 = 0;
         var i: usize = 1;
@@ -4151,7 +4096,6 @@ test "THE FOG GATE STING IS FIVE SECONDS OF SOUND, not one second and four of si
     BANK[@intFromEnum(id)].make(&r);
     try std.testing.expectEqual(@as(usize, 0), r.dropped);
 
-    // second two is a one-second sound with a four-second gap after it, which is what "about 5s" is not.
     var rms: [5]f32 = undefined;
     for (&rms, 0..) |*v, sec| {
         const a0 = r.at(@as(f32, @floatFromInt(sec)));
@@ -4279,15 +4223,12 @@ test "THE HEAL IS CHORAL AND IT IS IN A ROOM — the parts of that a render can 
             return @floatCast(@sqrt(e / @as(f64, @floatFromInt(@max(to - from, 1)))));
         }
     }.of;
-    // IT SWELLS: the middle is louder than the first 40 ms, which is what "sung" means against "struck".
     const attack = rms(0, @intFromFloat(SRF * 0.04));
     const middle = rms(n / 3, n * 2 / 3);
     try std.testing.expect(middle > attack * 1.5);
-    // …AND IT HAS A TAIL: real energy is still there at 90% through, where an unreverbed chord has stopped.
     const tail = rms(n * 9 / 10, n);
     try std.testing.expect(tail > middle * 0.02);
     try std.testing.expect(tail < middle);
-    // THE SPARKLE IS ACTUAL HIGH CONTENT, measured as zero crossings against the chord's own root.
     var cross: f32 = 0;
     var i: usize = 1;
     while (i < n) : (i += 1) {
@@ -4367,7 +4308,7 @@ test "THE NOISE FLOOR IS THE CRUSH'S, and it has to stay down" {
         n += 1;
     }
     const tailDb = 20.0 * std.math.log10(@max(@sqrt(e / @as(f32, @floatFromInt(n))), 1e-9));
-    // MEASURED: −34.7 dBFS at 5.5 bits with ±1 LSB dither, −50.8 dBFS as it stands.
+// MEASURED: −34.7 dBFS at 5.5 bits with ±1 LSB dither, −50.8 dBFS as it stands.
     try std.testing.expect(tailDb < -44.0);
 }
 
@@ -4398,7 +4339,6 @@ test "THE BOSS HAS HIS OWN THROAT — no cue of his measures as the ogre's, and 
         const k = crossingsPerSec(p[0]);
         const o = crossingsPerSec(p[1]);
         std.debug.print("    {s:<13}{d:7.0}  vs  {s:<11}{d:7.0}   ({d:.0}%)\n", .{ @tagName(p[0]), k, @tagName(p[1]), o, 100.0 * (k - o) / o });
-        // NOT A COPY, cue for cue: a family that measured the same as what it replaced would be a rename.
         try std.testing.expect(@abs(k - o) > 0.03 * o);
     }
     for ([_][2]Id{ .{ .knight_slam, .ogre_slam }, .{ .knight_heave, .ogre_heave }, .{ .knight_hurt, .ogre_hurt } }) |p| {
@@ -4456,15 +4396,12 @@ test "THE BENCH NEVER OVERWRITES THE ORIGINAL — that is what makes revert free
 }
 
 test "A LIQUID FOOTFALL IS A NOISE BAND SWEEPING UP, and all four carry one" {
-    // three textures over a thud is how the liquids came out louder than water (rms 0.18 against 0.11) and
-    // still did not say liquid. Measured as the ZERO-CROSSING RATE — the cheap stand-in for spectral centre
     const wet = [_]Id{ .step_water, .step_oil, .step_fungal, .step_lava };
     var wetLow: f32 = 1e9;
     inline for (wet) |id| {
         const idx = @intFromEnum(id);
         var r = Rack.init(0x9E3779B9 *% (@as(u64, idx) + 1), seconds(id));
         BANK[idx].make(&r);
-// Measured silence against silence, it handed back 0% for all seven.
         var last: usize = 0;
         var peak: f32 = 0;
         for (work[0..r.n]) |v| peak = @max(peak, @abs(v));

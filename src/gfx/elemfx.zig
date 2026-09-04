@@ -185,7 +185,7 @@ pub fn burst(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3
     }
 }
 
-/// MOTES A SECOND. Part of the LANGUAGE, not of whoever is pouring, so the bench and the fight run the same rate. MEASURED OFF A RENDER: at 70 the breath came back as eight dots over six metres. What has to be continuous is the FAR end, where the motes are spread over the widest part of the cone.
+/// MOTES A SECOND. Part of the LANGUAGE, not of whoever is pouring, so the bench and the fight run the same rate. MEASURED OFF A RENDER: at 70 the breath came back as eight dots over six metres.
 pub const POUR_RATE: f32 = 560.0;
 
 pub const POUR_CAP: usize = foe.emitCap(POUR_RATE);
@@ -195,7 +195,7 @@ const POUR_GRAIN: f32 = 0.62;
 const POUR_SIZE_LO: f32 = 0.45;
 const POUR_SIZE_HI: f32 = 1.55;
 
-/// **EVERY POUR HAS A KNOT AT ITS NOZZLE** — one root mote per this many stream motes, inside this much of `r0` of the source. Without it a cone is a drift of dots that happens to start near the emitter. Here and not at the call site because a caller picks the VERB and the ELEMENT, never a colour, life or gravity.
+/// EVERY POUR HAS A KNOT AT ITS NOZZLE — one root mote per this many stream motes, inside this much of `r0` of the source. Here and not at the call site because a caller picks the VERB and the ELEMENT, never a colour, life or gravity.
 const POUR_ROOT_EVERY: usize = 4;
 const POUR_ROOT_R: f32 = 1.6;
 const POUR_ROOT_LIFE_LO: f32 = 0.05;
@@ -210,9 +210,7 @@ pub fn pour(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, from: rl.Vector
     if (mathx.lenV(dir) < 1e-3) return;
     const scale = callerScale * POUR_GRAIN;
     const axis = mathx.normV(dir);
-    // (`game.rimeBreathe`, `shroommage.flick`). Off a full 3D unit vector the offset's own axial component skews
-    // the angle: MEASURED, 7.6% of the rime stream landed outside its 30 deg and the widest reached 35.2, which
-    // is 0.78 m of frost past the arc at six metres.
+    // Off a full 3D unit vector the offset's own axial component skews the angle: MEASURED, 7.6% of the rime stream landed outside its 30 deg and the widest reached 35.2 — 0.78 m of frost past the arc at six metres.
     var side = mathx.perpXZ(axis);
     if (mathx.lenV(side) < 1e-3) side = v3(1, 0, 0);
     side = mathx.normV(side);
@@ -358,7 +356,6 @@ test "a gather actually converges" {
 }
 
 test "A POURED CONE IS THE SECTOR THAT BITES — no mote lands outside the arc the hitbox uses" {
-    // body taking none. BEFORE: p99 33.7 deg, widest 35.2 against a claimed 30 — 0.78 m of overspray at six metres.
     var pool = [_]foe.Particle{.{}} ** 4096;
     var head: usize = 0;
     var rng = mathx.Rng.init(0x51E);

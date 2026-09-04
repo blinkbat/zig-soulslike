@@ -85,17 +85,17 @@ pub const NEEDLE_DK = rgba(15, 24, 21, 255);
 pub const BIRCH_BARK = rgba(104, 100, 90, 255);
 pub const BIRCH_SCAR = rgba(44, 42, 38, 255);
 pub const BONE = rgba(108, 104, 92, 255);
-// **GREAT BONE IS NOT SCATTERED BONE** — a rib nine metres tall is a BIG SMOOTH MASS, and at albedo 108 the key and the gamma lift bring it back at 221/255, a white plastic tube. 60 comes back at 172, and NEUTRAL, since every other outdoor albedo here is warm.
+// GREAT BONE IS NOT SCATTERED BONE: a rib nine metres tall is a BIG SMOOTH MASS, and at albedo 108 the key and the gamma lift bring it back at 221/255. 60 comes back at 172, and NEUTRAL.
 pub const BONE_OLD = rgba(44, 45, 41, 255);
 pub const BONE_LT = rgba(58, 59, 53, 255);
 pub const BONE_DK = rgba(28, 29, 27, 255);
 pub const MARROW = rgba(70, 63, 50, 255);
-// **CHARCOAL IS THE DARKEST ALBEDO IN THE WORLD** and has to be: a burnt spar is a tall smooth mass, and anything above the oldest bark comes back off the hot key as grey. 18 lands at 98/255 on screen.
+// CHARCOAL IS THE DARKEST ALBEDO IN THE WORLD and has to be: a burnt spar is a tall smooth mass. 18 lands at 98/255 on screen.
 pub const CHAR = rgba(18, 16, 15, 255);
 pub const CHAR_LT = rgba(30, 27, 24, 255);
 pub const EMBER_LIVE = rgba(198, 92, 26, 60);
 pub const CINDER_GREY = rgba(46, 42, 39, 255);
-// **A DRIFT IS NOT THE CAMPFIRE'S ASH.** `ASH`/`ASH_LT` are a handful in a hearth; a two-metre dune is a BIG SMOOTH MASS and at 96 it came back at 214/255 — a snowbank. Same material solved for the size it is drawn at.
+// A DRIFT IS NOT THE CAMPFIRE'S ASH: `ASH`/`ASH_LT` are a handful in a hearth, and a two-metre dune at 96 came back at 214/255. Same material solved for the size it is drawn at.
 pub const DRIFT = rgba(54, 50, 47, 255);
 pub const DRIFT_LT = rgba(70, 66, 62, 255);
 pub const DRIFT_DK = rgba(37, 34, 32, 255);
@@ -125,10 +125,7 @@ pub const WATER_MUD = rgba(40, 35, 25, 255);
 pub const OIL_SHALLOW = rgba(20, 17, 14, 255);
 pub const OIL_MID = rgba(11, 10, 9, 255);
 pub const OIL_DEEP = rgba(5, 5, 6, 255);
-// **THE STEW IS NOT A LIGHT** (owner: too bright, hurts my eyes). Sampled through the chain (albedo x1.72 ->
-// gamma 1/2.2) the old rim came back 255/205/172 — past the clip on red, and BRIGHTER on green and blue than
-// lava's own crust — over a fungal bloom that reads 121/87/98. Solved back against that bank rather than
-// picked: the rim now lands a shade over it at 145/95/84 and the deep well under it at 87/43/59, so a pool
+// THE STEW IS NOT A LIGHT. Sampled through the chain (albedo x1.72 -> gamma 1/2.2) the old rim came back 255/205/172 — past the clip on red — over a fungal bloom that reads 121/87/98. Solved back against that bank: the rim lands at 145/95/84 and the deep well at 87/43/59.
 pub const FUNGAL_SHALLOW = rgba(43, 17, 13, 255);
 pub const FUNGAL_MID = rgba(26, 8, 9, 255);
 pub const FUNGAL_DEEP = rgba(14, 4, 6, 255);
@@ -136,14 +133,12 @@ pub const LAVA_SHALLOW = rgba(150, 40, 18, 255);
 pub const LAVA_MID = rgba(238, 122, 34, 255);
 pub const LAVA_DEEP = rgba(255, 232, 148, 255);
 
-/// `y0` is the collider's FOOT and is 0 for every wall: raise it and the capsule becomes a LINTEL
-/// (`collision.Solid.y0`) — the stone over a doorway, open to a body on the ground and solid to one on a deck.
+/// `y0` is the collider's FOOT and is 0 for every wall: raise it and the capsule becomes a LINTEL (`collision.Solid.y0`) — the stone over a doorway, open to a body on the ground and solid to one on a deck.
 pub const Part = struct { ax: f32 = 0, az: f32 = 0, bx: f32 = 0, bz: f32 = 0, r: f32, h: f32, y0: f32 = 0 };
 
 pub const Deck = struct { x: f32 = 0, z: f32 = 0, r: f32, y: f32, hole: bool = false };
 
-/// A STACKED kind that is walked rather than climbed: each section also advances `run` along local −Z and
-/// its walkable surface is `treads` level steps, `halfW` wide. Read with `Info.stack` (the section's rise).
+/// A STACKED kind that is walked rather than climbed: each section also advances `run` along local −Z and its walkable surface is `treads` level steps, `halfW` wide. Read with `Info.stack` (the section's rise).
 pub const Flight = struct { run: f32, halfW: f32, treads: u32 };
 
 /// A volume a prop blocks the VIEW with (`props.Info.occl`). Here beside `Part` rather than in `props.zig` because a family file that builds its own colliders needs to build its own occluders too, and `props.zig` imports the families.
@@ -354,8 +349,7 @@ pub const MADDER_LT = rgba(86, 48, 38, 255);
 pub const HEARTH_FLAMES = [3]f32{ 2.20, 1.45, 1.05 };
 
 
-/// Drab, because a bedroll is not a banner. Solved (`albedo = screen^2.2 / 1.72`): mat 157 -> 52, wool 141 -> 40,
-/// sack 131 -> 34. **THE ONE WARM STRIPE IS THE WHOLE ACCENT** — authored in the hero's crimson (`CLOTH`, 76,20,12)
+/// Drab, because a bedroll is not a banner. Solved (`albedo = screen^2.2 / 1.72`): mat 157 -> 52, wool 141 -> 40, sack 131 -> 34. THE ONE WARM STRIPE IS THE WHOLE ACCENT, authored in the hero's crimson (`CLOTH`, 76,20,12).
 pub const MAT = rgba(52, 46, 32, 255);
 pub const MAT_DK = rgba(34, 30, 21, 255);
 pub const WOOL = rgba(40, 38, 34, 255);
@@ -372,7 +366,6 @@ pub fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) voi
     const HALF: f32 = 0.88;
     const WIDE: f32 = 0.34;
 
-    // THE GROUNDSHEET, on the earth. 10 cm, because the step above it has to have something to stand on.
     b.setMat(.cloth);
     b.addBox(
         v3(cx, 0.048, cz),

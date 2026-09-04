@@ -35,10 +35,7 @@ const SPRUCE = art.SPRUCE;
 const WEAVE = art.WEAVE;
 
 
-/// A ladder is whole sections spliced end to end, so the rung spacing is the same at 0.9 m and at 12.
-/// **THREE RUNGS, BECAUSE THE SECTION IS THE AUTHORING GRANULARITY.** At eight it was 2.40 m.
-/// At 0.90 it is finer than the band that exit accepts, so EVERY height has a run that serves it — and that
-/// relation is a comptime assert beside `env.LADDER_PROUD`, not a number to be re-derived here.
+/// A ladder is whole sections spliced end to end, so the rung spacing is the same at 0.9 m and at 12. THREE RUNGS, BECAUSE THE SECTION IS THE AUTHORING GRANULARITY: at 0.90 m it is finer than the band that exit accepts, and that relation is a comptime assert beside `env.LADDER_PROUD`.
 pub const LADDER_SEG: f32 = 0.90;
 const LADDER_RUNGS: i32 = 3;
 pub const LADDER_HALF: f32 = 0.26;
@@ -91,10 +88,7 @@ pub fn ladderMesh(shader: rl.Shader) rl.Model {
 
 
 
-/// **A FLIGHT IS SECTIONS, LIKE THE LADDER** (`props.Info.stack` + `flight`): one section climbs `STAIR_SEG`
-/// over `STAIR_RUN` in `STAIR_TREADS` risers of 0.25 m — one `wf.HEIGHT_STEP`, so a tread lands on a height
-/// the lattice can hold. Local −Z is the wall it climbs to, the ladder's own convention. One riser a cell
-/// was the most a painted stair cell could climb; this stands on `rise=` instead, the way the ladder does.
+/// A FLIGHT IS SECTIONS, LIKE THE LADDER (`props.Info.stack` + `flight`): one section climbs `STAIR_SEG` over `STAIR_RUN` in `STAIR_TREADS` risers of 0.25 m — one `wf.HEIGHT_STEP`, so a tread lands on a height the lattice can hold. Local −Z is the wall it climbs to, the ladder's own convention.
 pub const STAIR_SEG: f32 = 1.0;
 pub const STAIR_RUN: f32 = 1.6;
 pub const STAIR_TREADS: u32 = 4;
@@ -106,7 +100,6 @@ pub fn stairMesh(shader: rl.Shader) rl.Model {
     b.setMat(.stone);
     const riser = STAIR_SEG / @as(f32, @floatFromInt(STAIR_TREADS));
     const tread = STAIR_RUN / @as(f32, @floatFromInt(STAIR_TREADS));
-    // The core: a slanted slab under the treads, so the flank is stone and not a hollow.
     b.addBox(v3(0, 0.30, -STAIR_RUN * 0.5), v3(STAIR_HALF * 0.96, 0, 0), v3(0, 0.16, 0), v3(0, STAIR_SEG * 0.5, -STAIR_RUN * 0.5), STONE_DK);
     for (0..STAIR_TREADS) |k| {
         const kf = @as(f32, @floatFromInt(k));
@@ -201,7 +194,6 @@ pub fn chapelMesh(shader: rl.Shader) rl.Model {
             const z = -1.9 + @as(f32, @floatFromInt(ci)) * 1.9;
             const h = rng.range(1.1, 2.4);
             b.addCylinder(v3(cx, 0.16, z), v3(cx + rng.signed() * 0.04, 0.16 + h, z), 0.24, 0.21, 8, STONE);
-            // The broken tops are ALWAYS capped — the capital below is only a 40% variant, and the other 60% left an open tube inside a room the camera rides above head height in.
             b.addBlob(v3(cx + rng.signed() * 0.04, 0.16 + h, z), v3(0.21, 0.03, 0.21), 3, 8, STONE_DK);
             if (rng.float() < 0.4) b.addCube(v3(cx, 0.16 + h + 0.08, z), v3(0.6, 0.16, 0.6), STONE_LT);
         }
@@ -234,9 +226,7 @@ pub const Storey = struct {
     }
 };
 
-/// **THE FIRST TWO DID NOT MOVE WHEN THE SHAFT DOUBLED.** The shipped map's flights are authored against 4.69
-/// and 11.90 (`worlds/01_fallen_plain.world`), so the tower grew UPWARD out of the building that was already
-/// comptime block below is what says the two still agree.
+/// THE FIRST TWO DID NOT MOVE WHEN THE SHAFT DOUBLED: the shipped map's flights are authored against 4.69 and 11.90 (`worlds/01_fallen_plain.world`), and the comptime block below is what says the two still agree.
 pub const WATCH_STOREYS = [_]Storey{
     .{ .y = 4.62, .hz = WATCH_HATCH_Z },
     .{ .y = 11.83, .hz = -WATCH_HATCH_Z },
@@ -363,8 +353,7 @@ fn watchtowerInto(b: *Builder) void {
             const fi = @as(f32, @floatFromInt(i)) + skew;
             const a = std.math.tau * fi / @as(f32, @floatFromInt(sides));
             if (c < art.TOWER_DOOR_COURSES and towerDoorway(i)) continue;
-            // — so a 30-course tower gets two bands and the top storey none. The bearing is a sixth of the
-            // circle off the doorway, which the comptime block below pins clear of the opening's own sides.
+            // The bearing is a sixth of the circle off the doorway, which the comptime block below pins clear of the opening's own sides.
             const band = @mod(c, SLIT_BAND);
             if ((band == SLIT_LO or band == SLIT_HI) and (i == SLIT_SIDE or i == SLIT_SIDE + @divTrunc(sides, 2))) continue;
             if (rng.float() < crumble) continue;

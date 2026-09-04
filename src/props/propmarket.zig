@@ -8,8 +8,7 @@ const v3 = mathx.v3;
 const rgba = mathx.rgba;
 const Builder = gfx.Builder;
 
-// Solved, not picked (`albedo = screen^2.2 / 1.72`, AGENTS.md): the awning has to be the PALEST thing in the
-//   canvas 196 -> 82    canvas lit 214 -> 102    sack 150 -> 46    bale 124 -> 31    rope 168 -> 59
+// Solved, not picked (`albedo = screen^2.2 / 1.72`, AGENTS.md): canvas 196 -> 82, canvas lit 214 -> 102, sack 150 -> 46, bale 124 -> 31, rope 168 -> 59.
 
 pub const CANVAS = rgba(82, 78, 66, 255);
 pub const CANVAS_LT = rgba(102, 97, 84, 255);
@@ -63,8 +62,6 @@ fn baleInto(b: *Builder, rng: *mathx.Rng, c: rl.Vector3, half: rl.Vector3, yaw: 
         v3(-sy * half.z, rng.signed() * 0.02, cy * half.z),
         tone,
     );
-    // **THE LUMPS BREAK THE CORNERS, SO THEY HAVE TO BE BIG.** At 0.6 of the half-extent they sat inside the box
-    // and the box was the silhouette; at 0.95 they push past it and the thing reads as a bag with stuff in it.
     var i: i32 = 0;
     while (i < 4) : (i += 1) {
         const rr = rng.range(0.72, 0.98);
@@ -532,8 +529,6 @@ pub fn waterJarsMesh(shader: rl.Shader) rl.Model {
         const hh = (JARS_TOP - 0.16) * j[2];
         const rr = hh * 0.30;
         b.setMat(.stone);
-        // **THE SHOULDER HAS TO PULL IN HARD OR IT IS A BARREL.** At 0.72 of the belly the taper was invisible and
-        // five of these read as casks; 0.46 leaves a real neck standing above a real shoulder.
         b.addBlob(v3(bx, hh * 0.36, bz), v3(rr, hh * 0.38, rr), 5, 11, if (@mod(ji, 2) == 0) CLAY else CLAY_LT);
         b.addBlob(v3(bx, hh * 0.62, bz), v3(rr * 0.46, hh * 0.16, rr * 0.46), 4, 10, CLAY_LT);
         b.addCylinder(v3(bx, hh * 0.66, bz), v3(bx + rng.signed() * 0.014, hh, bz), rr * 0.26, rr * 0.22, 9, CLAY);

@@ -514,8 +514,7 @@ pub fn bonfireMesh(shader: rl.Shader) rl.Model {
     flameInto(&b, &rng, rng.signed() * 0.05, 0.16, rng.signed() * 0.05, F[0]);
     flameInto(&b, &rng, rng.signed() * 0.30, 0.13, rng.signed() * 0.30, F[1]);
     flameInto(&b, &rng, rng.signed() * 0.34, 0.12, rng.signed() * 0.34, F[2]);
-    // Tangential to the ring, its near edge 1.55 m out against a stone circle that reaches 1.08: pointed AT the
-    // fire (yaw 2.42) the head end lay in the flames.
+    // Tangential to the ring, its near edge 1.55 m out against a stone circle that reaches 1.08: pointed AT the fire (yaw 2.42) the head end lay in the flames.
     art.bedrollInto(&b, &rng, 1.62, -1.02, 1.02);
     art.guitarRockInto(&b, &rng, GUITAR_CX, GUITAR_CZ);
     b.setMat(.plant);
@@ -813,7 +812,6 @@ pub fn statueMesh(shader: rl.Shader) rl.Model {
     b.addBlob(v3(rng.range(0.35, 0.62), 0.16, rng.range(-0.7, -0.4)), v3(0.22, 0.16, 0.20), 3, 5, STONE_MOSS);
     var ins: i32 = 0;
     while (ins < 3) : (ins += 1) {
-        // Spaced to stay on the LOWER plinth's face (it tops out at 0.32): the old 0.075 step put the third line above the stone and 11 cm in front of the upper one — a bar hanging in the air.
         b.addBox(v3(rng.signed() * 0.10, 0.16 + @as(f32, @floatFromInt(ins)) * 0.05, -0.79), v3(rng.range(0.28, 0.52), 0, 0), v3(0, 0.016, 0), v3(0, 0, 0.02), STONE_DK);
     }
     b.setMat(.marble);

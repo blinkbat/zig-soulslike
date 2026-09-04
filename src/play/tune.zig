@@ -39,8 +39,7 @@ const wolfmod = @import("../foes/wolf.zig");
 const mathx = @import("../core/mathx.zig");
 const wf = @import("../world/worldfmt.zig");
 
-/// **A CHOICE, NOT A DIAL** — one `f32` through the table's own `get`/`set`, but an ORDINAL into a named list,
-/// and the FILE carries the NAME: an ordinal written against 59 item kinds lands on a different item the day one is added.
+/// A CHOICE, NOT A DIAL — one `f32` through the table's own `get`/`set`, but an ORDINAL into a named list, and the FILE carries the NAME: an ordinal written against 59 item kinds lands on a different item the day one is added.
 pub const Pick = struct {
     n: usize,
     label: *const fn (usize) [:0]const u8,
@@ -65,10 +64,7 @@ pub const Col = struct {
     tip: [:0]const u8 = "",
 };
 
-/// **A COLUMN IS NAMED, NOT COUNTED.** A sheet's getter, setter and `has` all switch on the same ordinal, and a
-/// bare `else` on the last one meant appending a column silently landed it on the one before — or, on the `has`
-/// that nothing tests, hid a live dial. One enum per sheet, sitting field-for-field over its `Col` array and
-/// checked here, so a column added, renamed or moved is a compile error instead of a wrong number.
+/// A COLUMN IS NAMED, NOT COUNTED. A sheet's getter, setter and `has` all switch on the same ordinal, and a bare `else` on the last one meant appending a column silently landed it on the one before. One enum per sheet, sitting field-for-field over its `Col` array and checked here.
 fn ColsAre(comptime E: type, comptime cols: []const Col) void {
     comptime {
         const fields = @typeInfo(E).@"enum".fields;
@@ -325,7 +321,6 @@ fn priceSet(k: item.Kind, v: f32) void {
 
 const PRICE_COL = Col{ .name = "price", .hi = 4000, .step = 10, .int = true, .tip = "What a counter charges. 0 is untradeable" };
 
-/// The getter, the setter and the `has` of each sheet each carried their own literal 5, 7, 8 and 12.
 fn priceAt(comptime cols: []const Col) usize {
     comptime {
         if (!std.mem.eql(u8, cols[cols.len - 1].name, PRICE_COL.name))
@@ -828,8 +823,7 @@ fn nodeHas(r: usize, c: usize) bool {
     return if (@as(NodeCol, @enumFromInt(c)) == .rider) n.bump != null else grantValue(n.grant) != null;
 }
 
-/// **AN ATTRIBUTE GRANT IS POINTS, AND POINTS ARE WHOLE** — `Grant.attr.n` is a `u8`, so the column's 0.05 step
-/// moved nothing at all on those rows: twenty nudges rounded straight back to where they started.
+/// AN ATTRIBUTE GRANT IS POINTS, AND POINTS ARE WHOLE — `Grant.attr.n` is a `u8`, so the column's 0.05 step moved nothing at all on those rows.
 fn nodeLimit(r: usize, c: usize) Col {
     const grant = NODE_COLS[@intFromEnum(NodeCol.grant)];
     if (@as(NodeCol, @enumFromInt(c)) == .grant and std.meta.activeTag(passivetree.NODES[r].grant) == .attr) {
@@ -844,8 +838,7 @@ fn nodeLimit(r: usize, c: usize) Col {
     return NODE_COLS[c];
 }
 
-/// `play/hero.zig` and `play/combat.zig` call the place to retune feel. A creature's pace is NOT here: every
-/// foe solves its walk off `hero.WALK_SPEED_BANK` at comptime, so this moves the man and not the field.
+/// A creature's pace is NOT here: every foe solves its walk off `hero.WALK_SPEED_BANK` at comptime, so this moves the man and not the field.
 const HERO_KNOBS = [_]Knob{
     .{ .name = "walk", .key = "walk", .p = .{ .f = &heromod.WALK_SPEED }, .lo = 0.2, .hi = 12, .step = 0.1, .tip = "Metres a second with the stick eased over" },
     .{ .name = "run", .key = "run", .p = .{ .f = &heromod.RUN_SPEED }, .lo = 0.5, .hi = 16, .step = 0.1, .tip = "Metres a second at a full stick" },
@@ -1058,7 +1051,6 @@ fn foeSouls(k: wf.FoeKind) ?*u32 {
         .bone_skitterer => &skitterermod.SOULS,
         .fungal_swordsman => &fungalduomod.SW_SOULS,
         .fungal_magus => &fungalduomod.MG_SOULS,
-        // **THE FOUR ROLE GROUPS ARE NAMED, NOT LEFT TO AN `else`.** They keep theirs in a comptime role table,
         .berserker, .priest, .slinger => null,
         .brood_mother, .broodling, .brood_sac => null,
         .shieldman, .greatsword => null,
@@ -1066,9 +1058,7 @@ fn foeSouls(k: wf.FoeKind) ?*u32 {
     };
 }
 
-/// **THE POOLS ARE ABSOLUTE ON THE SCREEN AND A MULTIPLIER UNDERNEATH** (`foestat`). Typing 200 into a 96 HP
-/// creature stores ×2.08, which is what makes the dial survive the creature being re-authored in code: the
-/// bench's edit is "twice as tough", not "96 was wrong".
+/// THE POOLS ARE ABSOLUTE ON THE SCREEN AND A MULTIPLIER UNDERNEATH (`foestat`): typing 200 into a 96 HP creature stores ×2.08, so the dial survives the creature being re-authored in code.
 const FOE_COLS = [_]Col{
     .{ .name = "hp", .hi = 8000, .step = 5, .ratio = true, .tip = "The body's health, as the code's own number times the bench's dial" },
     .{ .name = "poise", .hi = 400, .step = 1, .ratio = true, .tip = "What a stroke has to beat to flinch it" },
@@ -1078,8 +1068,7 @@ const FOE_COLS = [_]Col{
     .{ .name = "flinch", .hi = 1, .step = 0.02, .ratio = true, .tip = "The share of its stance one flinch bills. 0.40 is three flinches to a stagger, 0.25 is four, 0 is a body flinches alone never break" },
 };
 
-/// **THE COLUMN IS NAMED, NOT COUNTED.** The four functions under this switch on the same index, and a bare
-/// `else` arm on the last one meant appending a column silently landed it on `aggro`.
+/// THE COLUMN IS NAMED, NOT COUNTED. The four functions under this switch on the same index, and a bare `else` arm on the last one meant appending a column silently landed it on `aggro`.
 const FoeCol = enum { hp, poise, stance, souls, aggro, flinch };
 comptime {
     ColsAre(FoeCol, &FOE_COLS);
@@ -1711,10 +1700,7 @@ pub fn load() void {
     }
 }
 
-/// The bench itself can only ever write `absolute / code` with the absolute already
-/// inside the column, so a hand-edited `hp 1e9` was the one door in with no bound on it at all — and `load`
-/// runs before any body exists, so the code value is usually 0 and there is no absolute to clamp through.
-/// Bounded by the column's own span in that case, which at least refuses a NaN, an infinity and a negative.
+/// A hand-edited `hp 1e9` is the one door in with no bound on it at all, and `load` runs before any body exists, so the code value is usually 0 and there is no absolute to clamp through. Bounded by the column's own span in that case.
 fn ratioIn(t: usize, r: usize, c: usize, v: f32) f32 {
     const col = colSpec(t, r, c);
     const code = baseValue(t, r, c);

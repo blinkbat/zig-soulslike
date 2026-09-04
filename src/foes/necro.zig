@@ -59,7 +59,6 @@ const STAFF = heromod.HELD;
 
 const H: f32 = heromod.H;
 
-/// 2.85 m to the crown against the hero's 1.8 — it looks DOWN at him from across the field.
 pub const SCALE = (H + 1.05) / H;
 const HIP_HALF = heromod.HIP_HALF * 0.60;
 const SHOULDER_HALF = heromod.SHOULDER_HALF * 0.64;
@@ -100,7 +99,6 @@ const DISS_DUR = archermod.DISS_DUR;
 const SHOVE_DECAY = 7.0;
 const A_PROT = 2.6;
 
-// **THE CORPSE IS THE MECHANIC, AND THE WINDOW HAD TO BE MADE TO EXIST.** A skeleton is 2.05 s from the killing
 pub const RAISE_R: f32 = 11.0;
 pub const RAISE_WIND: f32 = 1.90;
 const RAISE_DUR: f32 = 0.42;
@@ -112,18 +110,18 @@ pub const RAISE_MATCH_R: f32 = 1.2;
 const FROST_HIT_BANK = combat.Hit{ .poise = 18, .stance = 8, .elem = combat.elems(.{ .cold = 38 }) };
 pub var FROST_HIT = FROST_HIT_BANK;
 pub const FROST_R: f32 = 2.4;
-/// The cast — the staff comes up and the hand goes out over the mark. PUBLIC because the harness aims a beat with it (`shots.FROST_TELL_AT`): a portrait pinned to a literal 0.65 s photographs somewhere else later.
+/// The cast — the staff comes up and the hand goes out over the mark. PUBLIC because the harness aims a beat with it (`shots.FROST_TELL_AT`).
 pub const FROST_WIND: f32 = 0.72;
 const FROST_CAST_DUR: f32 = 0.30;
 const FROST_RECOVER: f32 = 0.70;
-/// **AND IT GREW WITH THE CASTER.** The ring lands at `FROST_R * SCALE`, so making the necromancer taller widened it from 3.80 m to 4.16 m of ground to clear. 2.4 m/s of walking over 2.7 s clears 4.59 m.
+/// AND IT GREW WITH THE CASTER: the ring lands at `FROST_R * SCALE`, so a taller necromancer widened it from 3.80 m to 4.16 m of ground to clear. 2.4 m/s of walking over 2.7 s clears 4.59 m.
 pub const FROST_FUSE: f32 = 2.70;
 const FROST_CD: f32 = 4.2;
 const FROST_R_MIN: f32 = 3.0;
 const FROST_R_MAX: f32 = 18.0;
 
 comptime {
-    // The ring lands centred on him, so he must clear its radius plus his own footprint. **MEASURED AT THE SCALE IT IS DRAWN AT** — the field radius is `FROST_R * scale`, and asserting the bare `FROST_R` would pass on a ring a third wider.
+    // The ring lands centred on him, so he must clear its radius plus his own footprint. MEASURED AT THE SCALE IT IS DRAWN AT — asserting the bare `FROST_R` would pass on a ring a third wider.
     std.debug.assert(FROST_FUSE * 1.7 > FROST_R * SCALE + foe.HERO_R);
     std.debug.assert(FROST_WIND >= foe.TELL_MIN);
     std.debug.assert(RAISE_WIND > FROST_WIND + FROST_CAST_DUR);
@@ -135,8 +133,7 @@ comptime {
     std.debug.assert(WANT_MIN > FROST_R * SCALE);
 }
 
-/// Sized by ARITHMETIC over the worst FRAME, not over the biggest burst — which is what 104 was.
-/// The fuse runs on its own clock, so the ring going off (60) lands on the creep it has been laying the whole 2.70 s (22/s at a 1.0 s life).
+/// Sized by ARITHMETIC over the worst FRAME, not over the biggest burst: the fuse runs on its own clock, so the ring going off (60) lands on the creep it has been laying the whole 2.70 s (22/s at a 1.0 s life).
 const NPART = 144;
 const RAISE_BLOOM: u32 = 40;
 const FROST_BLOOM: u32 = 30;
@@ -173,7 +170,6 @@ const LEAP_R: f32 = 4.2;
 const LEAP_DUR: f32 = 0.34;
 const LEAP_SPEED: f32 = 4.6;
 const LEAP_CD: f32 = 2.2;
-/// A hop, not a glide. Metres at the top of the arc — enough to read as leaving the ground and not enough to clear anything.
 const LEAP_UP: f32 = 0.55;
 
 const WANT_MIN: f32 = 8.0;
@@ -260,7 +256,7 @@ pub const Necro = struct {
     raiseAt: rl.Vector3 = mathx.zero3,
     spent: Spent = .frost,
     sigil: Sigil = .{},
-    /// **A RING WENT INTO THE GROUND THIS FRAME** — a one-frame edge, reset at the TOP of `update`. As a window on the fuse's own clock it read true for three frames at 60 fps: one cast, three shakes.
+    /// A RING WENT INTO THE GROUND THIS FRAME — a one-frame edge, reset at the TOP of `update`. As a window on the fuse's own clock it read true for three frames at 60 fps.
     laid: bool = false,
     heroHit: ?combat.Hit = null,
     hitFrom: rl.Vector3 = mathx.zero3,
@@ -452,7 +448,7 @@ pub const Necro = struct {
                 } else if (self.t >= DRIFT_DUR) self.decide(d);
             },
             .raise_wind => {
-                // **IT TURNS TO THE BODY IT COMMITTED TO, NOT TO HIM** — and that IS the tell. `raiseAt` and never `vigil.at`: the spot is committed at the START of the gather, so a nearer body falling mid-tell cannot swing 1.9 s of announcement onto somewhere else.
+                // IT TURNS TO THE BODY IT COMMITTED TO, NOT TO HIM — and that IS the tell. `raiseAt` and never `vigil.at`: the spot is committed at the START of the gather.
                 self.faceToward(self.raiseAt, dt);
                 const u = mathx.clampF(self.t / RAISE_WIND, 0, 1);
                 self.setRaiseWind(u);
@@ -660,7 +656,6 @@ pub const Necro = struct {
         self.headYaw = easeTo(self.headYaw, 0, e);
     }
 
-    /// **THE GATHER TRAVELS HARD, AND IT TRAVELS AWAY FROM WHERE IT ENDS** (the knight's tell lesson). Every channel is moving for the whole 1.9 s, because a committed action that shows nothing never began.
     fn setRaiseWind(self: *Necro, u: f32) void {
         const e = mathx.smoothstep(0, 0.92, u);
         self.staffSh = lerpF(STAFF_CARRY_SH, RAISE_STAFF_SH, e);
@@ -1084,8 +1079,7 @@ fn easeTo(cur: f32, want: f32, e: f32) f32 {
     return lerpF(cur, want, mathx.clampF(e, 0, 1));
 }
 
-// **BUILT OUT OF `drawSphereEx` AND NOTHING ELSE.** Do not replace it with line or strip geometry: `rl.drawLine3D`
-// MEASURED: 157 `drawSphereEx` calls at 4x6, ~7.5k CPU-transformed triangles a frame per live sigil, ~23k for three casters.
+// BUILT OUT OF `drawSphereEx` AND NOTHING ELSE. MEASURED: 157 calls at 4x6, ~7.5k CPU-transformed triangles a frame per live sigil, ~23k for three casters.
 const RUNE_N: i32 = 14;
 const RUNE_R: f32 = 0.89;
 const RING_INNER: f32 = 0.78;
@@ -1150,7 +1144,7 @@ const FREE_CARRY_ABD = 7.0;
 const RAISE_STAFF_SH = 26.0;
 const RAISE_STAFF_EL = 12.0;
 const RAISE_STAFF_ABD = 8.0;
-/// **THE TRUNK IS NOT BILLED BY THE FIT, ONLY THE ARM IS — so a pose that arches the spine pays for it here.** `RAISE_LEAN` takes the chest back 22 degrees and the staff inherits every one of them, so the same 180-is-plumb number that stands the pole up at the carry laid it out at nearly 50 degrees.
+/// THE TRUNK IS NOT BILLED BY THE FIT, ONLY THE ARM IS — so a pose that arches the spine pays for it here. `RAISE_LEAN` takes the chest back 22 degrees and the staff inherits every one of them.
 const RAISE_STAFF_TILT = 150.0;
 const RAISE_FREE_SH = -128.0;
 const RAISE_FREE_EL = 58.0;
@@ -1181,7 +1175,7 @@ const FROST_THROW_LEAN = 24.0;
 
 const staffFit = heromod.staffFit;
 
-// **BOTH ENDS ARE SOLVED AGAINST THE BODY, not chosen.** The fist rides at `rest[WRR].y` = 0.485·H, which on this rig is 1.17 m off the ground: the ferrule is the drop that puts it ON the ground (0.30·H left it floating half a metre up) and the head is the rise that puts it just over the helm.
+// BOTH ENDS ARE SOLVED AGAINST THE BODY, not chosen: the fist rides at `rest[WRR].y` = 0.485·H, which on this rig is 1.17 m off the ground.
 const STAFF_UP = 0.65 * H; // fist → the head, landing ~2.74 m: a hand over the crown
 const STAFF_DOWN = 0.46 * H; // …and down past the fist to the ferrule, landing ~0.06 m: on the ground
 const STAFF_SEGS = 7;
@@ -1234,7 +1228,7 @@ fn chestMesh() rl.Mesh {
     b.setMat(.cloth);
     b.addBlob(v3(0, -0.012 * H, 0), v3(0.072 * H, 0.082 * H, 0.056 * H), 4, 10, ROBE);
     b.addBlob(v3(0, 0.048 * H, 0), v3(0.082 * H, 0.052 * H, 0.060 * H), 4, 10, ROBE_LT);
-    // **THE YOKE, and without it the arms hang in mid-air.** `restHumanoid` puts the shoulder joints at ±0.117·H while this chest is 0.072·H across, so there is 0.045·H of daylight either side of a sleeve 0.023·H thick. The ONE place this creature may carry width.
+    // THE YOKE, and without it the arms hang in mid-air: `restHumanoid` puts the shoulder joints at ±0.117·H while this chest is 0.072·H across. The ONE place this creature may carry width.
     const shx = SHOULDER_HALF * H;
     const shy = (0.818 - 0.760) * H;
     b.addCapsule(v3(-shx, shy, 0), v3(shx, shy, 0), 0.030 * H, 0.030 * H, 8, ROBE);
@@ -1381,7 +1375,6 @@ fn shankMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// **THE SLEEVES ARE THE THINNEST THING ON HIM.** At 0.038·H of radius each arm was 0.14 wide against a 0.26 chest, so the pair hung off the shoulders as bolsters.
 fn sleeveMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.cloth);
@@ -1502,7 +1495,6 @@ test "TALL AND SKINNY is two dials, and the RATIO is what either of them alone c
     const scaffold = heromod.restHumanoid(heromod.HIP_HALF, heromod.SHOULDER_HALF, H);
     try std.testing.expect(SCALE > archermod.SCALE);
     try std.testing.expect(SCALE * H > 2.3);
-    // SKINNY: narrower than the shared scaffold at the shoulder AND at the hip. Measured off the rest pose rather than off the constants, and against the SCAFFOLD's own rest.
     try std.testing.expect(REST[SHL].x < scaffold[SHL].x);
     try std.testing.expect(@abs(REST[HIPL].x) < @abs(scaffold[HIPL].x));
     const mySpan = 2.0 * REST[SHL].x * SCALE;
@@ -1532,7 +1524,6 @@ test "THE STAFF STANDS UP, ON ITS OWN SIDE, AND ITS FOOT IS ON THE GROUND — me
         },
     );
     try std.testing.expect(head.y > foot.y);
-    // **SHARES OF THE CREATURE, NOT METRE MARKS.** Both of these were the OLD necromancer's proportions written down as absolutes — 0.30 m of ground clearance and 0.90 m of reach.
     try std.testing.expect(foot.y < crown * 0.13);
     try std.testing.expect(mathx.lenXZ(mathx.subV(foot, k.pos)) < crown * 0.36);
     try std.testing.expect(head.y > k.centerWorld().y);
@@ -1575,8 +1566,7 @@ test "…AND IT STAYS A STAFF THROUGH BOTH CASTS — the trunk's own lean is bil
     const fSeg = f.staffSeg();
     std.debug.print("  necro frost: staff lean {d:.1} deg, ferrule y {d:.2}\n", .{ at(&f), fSeg[0].y });
     try std.testing.expect(fSeg[1].y > fSeg[0].y);
-    // The old 0.30 m gap was bought with a BACKWARD elbow: arm pitch 108, ferrule 0.86. Bent the right way it
-    // is pitch 40 and ferrule 0.47, still clear of the planted raise's 0.31. The ORDER is what this pins.
+    // The ORDER is what this pins: bent the right way the arm is pitch 40 and the ferrule 0.47, still clear of the planted raise's 0.31.
     try std.testing.expect(fSeg[0].y > rSeg[0].y + 0.12);
 }
 

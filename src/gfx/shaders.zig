@@ -24,8 +24,7 @@ pub const LIQUID_MASK: u8 = 3;
 
 pub const LIQUID_N: usize = 4;
 
-/// It was `128` in Zig against `0.5005` and two bare `0.5`s in the GLSL — 128/255 is **0.501961** — so the drawn
-/// waterline and the walkable one were set against three different thresholds.
+/// It was `128` in Zig against `0.5005` and two bare `0.5`s in the GLSL — 128/255 is 0.501961 — so the drawn waterline and the walkable one were set against three different thresholds.
 pub const WATER_SHORE: u8 = 128;
 
 /// `f` is the field normalized 0..1, so the shore sits here and the deep at 1.
@@ -82,11 +81,9 @@ fn vnoise(px: f32, pz: f32) f32 {
     return (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fz;
 }
 
-/// A courtyard is 10 m across and ±1.7 m of wiggle is a torn edge on it; a tarn is 40 m across and the same
-/// 1.7 m is invisible on it, so what makes a coast read is a LOW octave with the shape's own wiggle on top.
+/// A courtyard is 10 m across and ±1.7 m of wiggle is a torn edge on it; a tarn is 40 m across and the same 1.7 m is invisible on it, so what makes a coast read is a LOW octave with the shape's own wiggle on top.
 pub const BAY_FREQ: f32 = 0.045; // cycles/metre — about a 22 m bay
-/// **METRES, NOT A MULTIPLE OF THE SHAPE'S OWN WANDER.** As a multiple `jagged` got 8 m of bay and `natural`
-/// 4.25, for no reason anybody authored — the bay is a fact about how big a LAKE is, not how torn its edge is.
+/// METRES, NOT A MULTIPLE OF THE SHAPE'S OWN WANDER: as a multiple `jagged` got 8 m of bay and `natural` 4.25. The bay is a fact about how big a LAKE is, not how torn its edge is.
 pub const BAY_M: f32 = 3.5;
 
 /// The Zig twin of the shader's `edgeWarp`. Returns the position the field should actually be READ at.
@@ -129,8 +126,7 @@ const EDGE_ID_GLSL = std.fmt.comptimePrint(
     .{ TILED, SCALLOP, SPECKLE },
 );
 
-/// One value-noise basis, spliced into every program that wants it: GLSL has no linker here, so each magic
-/// tuple in `hash21` has to be the SAME tuple in all of them.
+/// One value-noise basis, spliced into every program that wants it: GLSL has no linker here, so each magic tuple in `hash21` has to be the SAME tuple in all of them.
 const HASH21 =
     \\float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
     \\

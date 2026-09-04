@@ -28,7 +28,6 @@ const setLocal = heromod.setHumanoid;
 
 // Measured: a ball aimed at 11 m touches at 11.9, 18.1 and 21.0 and rests at 22.4.
 
-/// **IT STANDS OVER YOU NOW** (owner: taller, bigger). It was a head shorter than the hero at 0.82; at 1.13 it is 2.04 m to the crown of the cap.
 pub const SCALE = (heromod.H + 0.24) / heromod.H;
 const HIP_HALF = heromod.HIP_HALF * 1.26;
 const SHOULDER_HALF = heromod.SHOULDER_HALF * 1.14;
@@ -61,11 +60,9 @@ const SOLES = [_]heromod.SolePatch{
     .{ .bone = ANKR, .heel = 0.045 * H, .toe = 0.180 * H, .halfW = 0.058 * H, .drop = 0.036 * H },
 };
 
-// **AUTHOR DARK AND SOLVE IT** — screen goes as albedo^(1/2.2), so the bigger and smoother the mass the darker it has to start. The cloak is the biggest face here.
+// AUTHOR DARK AND SOLVE IT — screen goes as albedo^(1/2.2), so the bigger and smoother the mass the darker it has to start. The cloak is the biggest face here.
 
-/// Damp and GREEN-BLACK, and it may NOT go blue-black: that is the necromancer's separation, and two dark
-/// robed things at one colour cannot be told apart at fighting range. **SOLVED OFF THE RENDER**: at (16,22,15)
-/// it sampled 83 luma against ground at 102 — 0.81 of its field. Wanted ~0.64, so the albedo factor is 0.79^2.2 = 0.59.
+/// Damp and GREEN-BLACK, and it may NOT go blue-black: that is the necromancer's separation. SOLVED OFF THE RENDER: at (16,22,15) it sampled 83 luma against ground at 102, and wanted 0.64 of its field, so the albedo factor is 0.79^2.2 = 0.59.
 const CLOAK = rgba(10, 13, 9, 255);
 const CLOAK_LT = rgba(15, 19, 13, 255);
 const HEM = rgba(6, 9, 6, 255);
@@ -88,7 +85,7 @@ const TURN_RATE: f32 = 2.6;
 const WALK_SPEED: f32 = heromod.WALK_SPEED_BANK * 0.60;
 
 const BODY_R: f32 = 0.43;
-/// **IT HAS TO HOLD THE CAP, NOT JUST THE BARREL** (the ravager's lesson). Fitted to the body the sphere stopped at 1.45 m with the mark 1.35 m up on its own rim. MEASURED off the posed rig: head bone at 0.885·H, crown 0.17·H above it.
+/// IT HAS TO HOLD THE CAP, NOT JUST THE BARREL (the ravager's lesson). MEASURED off the posed rig: head bone at 0.885·H, crown 0.17·H above it.
 const HURT_R: f32 = 0.88;
 const CENTER_F: f32 = 0.66;
 const TOP_F: f32 = 1.10;
@@ -103,9 +100,7 @@ pub var SOULS: u32 = 260;
 const DEATH_DUR: f32 = 1.15;
 const DISS_DUR: f32 = 1.0;
 const DISSOLVE = foe.Dissolve{ .rate = 54.0, .spread = 0.8, .rise = 0.95, .flake = WART };
-/// **THE RING LAW, EXECUTABLE** (see the assert below), AND SOLVED RATHER THAN GUESSED. It went to 108 by eye
-/// when the flame was added and the assert's own floor is 57 — and this pool is most of the creature: MEASURED,
-/// a `foe.Particle` is 80 B, a `Mage` 7 kB, and `Ring` holds `wf.MAX_PER_KIND` = 512, so every slot over the floor costs 40 kB of `Game`. The guessed 48 were 1.9 MB.
+/// THE RING LAW, EXECUTABLE (see the assert below), AND SOLVED RATHER THAN GUESSED: a `foe.Particle` is 80 B, a `Mage` 7 kB, and `Ring` holds `wf.MAX_PER_KIND` = 512, so every slot over the assert's own floor of 57 costs 40 kB of `Game`.
 const NPART = 64;
 const SHOVE_DECAY: f32 = 6.5;
 const A_PROT: f32 = 3.2;
@@ -117,7 +112,7 @@ const LOB_RECOVER: f32 = 0.54;
 const LOB_CD: f32 = 3.4;
 const RELEASE_K: f32 = 0.34;
 
-/// **SLOWER AND FLATTER** (owner: slower bounce, lower lob). At 8.0 with a full ballistic loft the shot went up and came down on you; at 6.4 with `archer.EMBER_LOFT` at 0.52 it comes ACROSS the ground.
+/// SLOWER AND FLATTER: at 8.0 with a full ballistic loft the shot went up and came down on you; at 6.4 with `archer.EMBER_LOFT` at 0.52 it comes ACROSS the ground.
 pub const EMBER_SPEED: f32 = 6.4;
 pub var EMBER_HIT = combat.Hit{ .poise = 20, .elem = combat.elems(.{ .fire = 36 }) };
 
@@ -915,7 +910,7 @@ fn neckMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// **THE CAP IS THE READ AND IT GOT BIGGER** (owner: bigger shroom head). 0.150 -> 0.200 of H, which with the new `SCALE` puts the brim at 0.41 m of half-width against the old 0.22.
+/// THE CAP IS THE READ AND IT GOT BIGGER: 0.150 -> 0.200 of H, which with the new `SCALE` puts the brim at 0.41 m of half-width against the old 0.22.
 const RIM: f32 = 0.200 * H;
 comptime {
     std.debug.assert(RIM > SHOULDER_HALF * 1.35);
@@ -965,7 +960,7 @@ fn cloakMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// One band of the cloak: a ring of overlapping vertical folds from `r0` to `r1` over `drop`. **AUTHORED AS FOLDS AND NOT AS A CONE** — a turned surface reads as a lampshade however good the colour is.
+/// One band of the cloak: a ring of overlapping vertical folds from `r0` to `r1` over `drop`. AUTHORED AS FOLDS AND NOT AS A CONE — a turned surface reads as a lampshade however good the colour is.
 fn skirt(b: *Builder, at: rl.Vector3, r0: f32, drop: f32, r1: f32, n: u32, col: rl.Color, rng: *mathx.Rng) void {
     var i: u32 = 0;
     while (i < n) : (i += 1) {
@@ -1205,7 +1200,6 @@ test "IT BURNS ONCE AND THEN LEAVES — the spring lands it back in its own band
     }
     try std.testing.expectEqual(@as(u32, 1), lands);
     try std.testing.expectEqual(@as(u32, 0), duringWind);
-    // IT LEFT. Measured off its own feet: the spring covers most of `HOP_DIST` and lands it where the ball works again.
     const gap = mathx.distXZ(m.pos, hero);
     std.debug.print("\n  mage flame: burns to {d:.1} m, springs to {d:.1} m (lob wants {d:.1})\n", .{ FLICK_R, gap, LOB_MIN });
     try std.testing.expect(gap >= LOB_MIN);
@@ -1301,7 +1295,6 @@ test "THE CUP IS BETWEEN THE HANDS AND IN FRONT OF THE BODY, at the frame it thr
     std.debug.print("  mushroom mage cup: {d:.2} m up of {d:.2}, {d:.2} m out, hands {d:.2} m apart, ball {d:.2} across\n", .{ at.y, tall, at.z, apart, BALL_R * 2.0 * SCALE });
     // In FRONT of it (it faces +Z at yaw 0) and up at its own chest.
     try std.testing.expect(at.z > 0.10);
-    // **SHARES OF THE CREATURE, NOT METRE MARKS.** It grew (`SCALE`) and both bounds here were the OLD mage written down as constants — 1.35 m of chest height and 0.55 m of shoulder span.
     try std.testing.expect(at.y > tall * 0.30 and at.y < tall * 0.85);
     try std.testing.expect(apart < BALL_R * 4.0 * SCALE);
 }

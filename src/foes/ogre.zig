@@ -127,17 +127,16 @@ fn setLocal(wx: *[N]rl.Matrix, i: usize, rest: [N]rl.Vector3, animRot: rl.Matrix
     heromod.setJoint(wx, &rest, i, @intCast(parent[i]), animRot);
 }
 
-// A hulking giant — ~4.1 m to the crown, a shade over twice the hero. The dial has been walked: 2.5 rejected as too big, 2.1 as too small, 2.4 read big again, and the owner has now asked for a bit off it.
+// A hulking giant — ~4.1 m to the crown, a shade over twice the hero.
 pub const SCALE = 2.3;
 const WALK_SPEED = heromod.WALK_SPEED_BANK * 0.72;
 pub var AGGRO_R: f32 = 18.0;
 const SLAM_R = 2.3;
 const SWIPE_R = 4.4;
-/// **THE REFERENCE FOR HOW HARD A BIG BODY FOLLOWS YOU** — PUBLIC because the bone knight is pinned into this
-/// class rather than tuned against nothing (owner: track like the ogre). rad/s; ~195 deg/s.
+/// THE REFERENCE FOR HOW HARD A BIG BODY FOLLOWS YOU — PUBLIC because the bone knight is pinned into this class rather than tuned against nothing. rad/s; ~195 deg/s.
 pub const TURN_RATE = 3.4;
 pub const SWIPE_TURN = 5.4;
-/// DOWN off the CHEST joint (which sits at the top of the barrel, 0.775·H) — owner's call, the mark rode too high. Now ~0.715·H, 2.9 m of a 4.1 m creature, inside the hurt sphere (0.8..4.1 m) and clear of the skull at 0.925·H. It still HINGES with the chest through the slam.
+/// DOWN off the CHEST joint (which sits at the top of the barrel, 0.775·H), so ~0.715·H — 2.9 m of a 4.1 m creature, inside the hurt sphere (0.8..4.1 m) and clear of the skull at 0.925·H. It still HINGES with the chest through the slam.
 const LOCK_AT = v3(0, -0.06 * H, 0);
 const BODY_R = 0.55; // ground footprint (pre-scale) — broad
 const HURT_R = 0.72; // hurt-sphere radius the hero's blade tests against (pre-scale) — a big target
@@ -213,7 +212,7 @@ const CARRY_EL = -13.0;
 const CARRY_TILT = 44.0;
 const WIND_TILT = 30.0;
 const SLAM_TILT = -14.0;
-// REACH against DEPTH along one arc: raked further ahead the head lands further out but higher — measured, −30 put the crater 2.1 out and 0.66 in the air, a slam that missed the earth.
+// REACH against DEPTH along one arc: raked further ahead the head lands further out but higher — at −30 the crater sat 2.1 out and 0.66 in the air, a slam that missed the earth.
 const OVER_SH = -158.0;
 const WIND_EL = -78.0;
 const SLAM_SH = -56.0;
@@ -307,14 +306,12 @@ const State = enum { idle, approach, windup, slam, swipewind, swipe, backwind, b
 
 const Choice = enum { slam, swipe, drive, approach, wait, idle };
 const SWIPE_BEARING = 32.0;
-/// UP IN HIS FACE THE QUICK ONE WINS (owner's call). Fraction of the sweep band, out from its inner edge, inside which the swipe beats the slam even squared up with the slam ready — the 0.52 s cock-back rather than the 1.35 s rear.
+/// UP IN HIS FACE THE QUICK ONE WINS. Fraction of the sweep band, out from its inner edge, inside which the swipe beats the slam even squared up with the slam ready — the 0.52 s cock-back rather than the 1.35 s rear.
 const SWIPE_NEAR_K = 0.5;
 
 const WIND_TURN_SHARE: f32 = 0.4;
 
-/// The drop itself turns not at all, so all the aiming the slam ever gets is the rear-back's, and its
-/// floor is the wind with no hang on it. Measured before the gate: thrown at a man 170° off he came round to
-/// 64° and billed nothing at three of four stands.
+/// The drop itself turns not at all, so all the aiming the slam ever gets is the rear-back's, and its floor is the wind with no hang on it.
 fn slamBearing(dist: f32, scale: f32) f32 {
     return mathx.degrees(TURN_RATE * WIND_TURN_SHARE * WINDUP_DUR) +
         combat.subtendedArc(foe.hurtReach(SLAM_HALF_W, scale), dist);
@@ -444,7 +441,7 @@ pub const Ogre = struct {
     pub fn bodyR(self: *const Ogre) f32 {
         return BODY_R * self.scale;
     }
-    /// HIS MARK RIDES THE CHEST, NOT THE SKULL — the one creature where that is the right part. His crown is 4.4 m up, and a reticle bolted to it would sit at the top of the frame through every exchange. It still HINGES: he folds at the waist through the slam.
+    /// HIS MARK RIDES THE CHEST, NOT THE SKULL — his crown is 4.4 m up, and a reticle bolted to it would sit at the top of the frame through every exchange. It still HINGES: he folds at the waist through the slam.
     pub fn lockPoint(self: *const Ogre) rl.Vector3 {
         return foe.markOn(self.xf[CHEST], LOCK_AT);
     }
@@ -753,7 +750,7 @@ pub const Ogre = struct {
             },
             .wait => self.enterIdle(),
             .idle => {
-                // ONE RADIUS DECIDES "AM I AT MY POST", and it is the LEASH's own (`foe.LEASH_HOME_R`), because that is where the tether stops caring. Setting off at 3 m and arriving at 2 m leaves him trudging a metre past the boundary that sent him.
+                // ONE RADIUS DECIDES "AM I AT MY POST", and it is the LEASH's own (`foe.LEASH_HOME_R`): setting off at 3 m and arriving at 2 m leaves him trudging a metre past the boundary that sent him.
                 if (mathx.distXZ(self.pos, foe.homeFor(self)) > foe.LEASH_HOME_R) {
                     self.homing = true;
                     self.enter(.approach);
@@ -953,7 +950,7 @@ pub const Ogre = struct {
         self.jawOpen = mathx.approach(self.jawOpen, JAW_REST + JAW_BREATHE * breathe + 6.0 * sigh + JAW_STALK * stalk, e * 0.8);
         self.girdle = mathx.approach(self.girdle, GIRDLE_HEAVE * mathx.sinf(self.elapsed * BREATHE_RATE + self.seed * 6.28 - 0.7) - 2.0 * sigh, e);
     }
-    /// `mathx.approach` steps in the units of what it moves, so ONE rate cannot serve both an angle and a fraction: at the 4 the leg brace wants, the club arm crawled home from OVER_SH at four degrees a second — forty seconds for 163. At `STUN_EASE_DEG` it is home in ~0.6 s.
+    /// `mathx.approach` steps in the units of what it moves, so ONE rate cannot serve both an angle and a fraction: at the 4 the leg brace wants, the club arm crawled home from `OVER_SH` at four degrees a second.
     fn easeChannelsNeutral(self: *Ogre, dt: f32) void {
         const d = dt * STUN_EASE_DEG;
         self.clubShoulder = mathx.approach(self.clubShoulder, CARRY_SH, d);
@@ -994,7 +991,7 @@ pub const Ogre = struct {
         self.clubElbow = lerpF(WIND_EL, SLAM_EL, kArm);
         self.offShoulder = lerpF(-74.0, 8.0, kArm);
         self.offElbow = lerpF(-44.0, -22.0, kArm);
-        // …and the trunk drives DEEP: with the legs planted and the club shortened, the waist fold is the only thing that can carry the head to the earth (a straight arm leaves it 0.46 short, measured).
+        // …and the trunk drives DEEP: with the legs planted and the club shortened, the waist fold is the only thing that can carry the head to the earth (a straight arm leaves it 0.46 m short).
         self.bodyLean = lerpF(-24.0, 62.0, k);
         self.headPitch = lerpF(-20.0, 24.0, kArm);
         self.twist = lerpF(-26.0, 12.0, kArm);
@@ -1037,7 +1034,7 @@ pub const Ogre = struct {
         self.jawOpen = lerpF(JAW_ROAR * 0.55, JAW_GRIT, mathx.smoothstep(0.1, 0.7, k));
         self.girdle = lerpF(9.0, -2.0, kW);
     }
-    // FROM THE OVERSWING, NOT THE CARRY: the swipe ends slung across him (twist 52, sweep 52, kW = 1), so these lerps start there and the chain is continuous. The re-cock is a DRAG, not a lift — re-shouldered, the whole return passed over the hero's head and the sector could not bill it.
+    // FROM THE OVERSWING, NOT THE CARRY: the swipe ends slung across him (twist 52, sweep 52, kW = 1), so these lerps start there and the chain is continuous. The re-cock is a DRAG, not a lift.
     fn setBackwind(self: *Ogre, k: f32) void {
         self.twist = lerpF(52.0, 52.0, k);
         self.clubShoulder = lerpF(-6.0, -6.0, k);
@@ -1592,9 +1589,6 @@ fn headMesh() rl.Mesh {
     b.addBlob(v3(-0.062 * H, 0.060 * H, 0.090 * H), v3(0.046 * H, 0.022 * H, 0.032 * H), 6, 11, HIDE_DK);
     b.addBlob(v3(0, 0.030 * H, 0.086 * H), v3(0.084 * H, 0.058 * H, 0.030 * H), 7, 13, EYE_RIM);
     b.setMat(.plain);
-    // The orb between its two failures: at 0.046 it filled the face and read as a blank cream mask, and at
-    // 0.036 the brow hid it from the game's own high camera on a drooped head — a cyclops with no visible
-    // eye. 0.042, proud of the socket, under a THINNER brow: hooded, but it burns out from under it.
     b.addBlob(v3(0, 0.030 * H, 0.106 * H), v3(0.042 * H, 0.040 * H, 0.036 * H), 9, 14, EYE);
     b.addBlob(v3(0, 0.028 * H, 0.134 * H), v3(0.021 * H, 0.023 * H, 0.011 * H), 6, 11, PUPIL);
     b.setMat(.skin);
@@ -1689,7 +1683,6 @@ fn toeMesh(side: f32) rl.Mesh {
 fn upperArmMesh(girth: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    // Leaner than it was (0.088/0.072): the mass moved to the fists.
     limb(&b, v3(0, 0, 0), v3(0, -SEG_UPARM * H, 0), 0.077 * H * girth, 0.063 * H * girth, HIDE);
     b.addBlob(v3(0, -0.064 * H, 0.046 * H), v3(0.055 * H * girth, 0.064 * H, 0.036 * H * girth), 7, 12, HIDE);
     b.addBlob(v3(0, -0.078 * H, -0.043 * H), v3(0.050 * H * girth, 0.070 * H, 0.032 * H * girth), 7, 12, HIDE);

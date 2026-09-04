@@ -19,7 +19,6 @@ const mul = mathx.mul;
 const mul3 = mathx.mul3;
 const lerpF = mathx.lerpF;
 
-// At 220 armour a light landed 3.0 of a 210 bar — 71 swings, and 21 heavies against the OGRE's 11. At 80 a light lands 5.8 and a heavy 17.0.
 
 pub const H: f32 = 3.15;
 pub const SCALE: f32 = 1.0;
@@ -76,8 +75,6 @@ pub const SLAM_R: f32 = 2.05;
 const SLAM_HIT_BANK = combat.Hit{ .dmg = 48, .poise = 44, .stance = 26, .launch = combat.SLAM_LAUNCH };
 pub var SLAM_HIT = SLAM_HIT_BANK;
 
-// **AND THE ANSWER TO WALKING AWAY.** Past the slam's 7.2 m this creature had nothing: at 1.05 m/s against a
-// hero who runs at 3.4 the whole band out to its aggro ring was free. A SAC OF SPORES, LOBBED.
 pub const SAC_WIND: f32 = 1.55;
 const SAC_THROW: f32 = 0.24;
 const SAC_RECOVER: f32 = 1.30;
@@ -125,10 +122,9 @@ const LEGL = 4;
 const LEGR = 5;
 
 const CAP_Y: f32 = 0.70 * H;
-/// **WIDER THAN THE BODY, NOT WIDER THAN THE CREATURE IS TALL** — 0.62 of H on a 3.15 m creature is a 3.9 m brim, which photographed as a pink pancake with legs under it (`shroommage.RIM`'s ceiling).
+/// WIDER THAN THE BODY, NOT WIDER THAN THE CREATURE IS TALL — 0.62 of H on a 3.15 m creature is a 3.9 m brim (`shroommage.RIM`'s ceiling).
 const CAP_R: f32 = 0.33 * H;
 const ARM_Y: f32 = 0.52 * H;
-/// Hugging the trunk, not hung off it — at 0.27 the two slabs read as separate blocks standing beside the body.
 const ARM_X: f32 = 0.205 * H;
 const LEG_X: f32 = 0.13 * H;
 
@@ -491,7 +487,6 @@ pub const Golem = struct {
         wx[i] = mul(mul(local, tr(off.x, off.y, off.z)), wx[BODY]);
     }
 
-    /// 0..1 of the gather, on whichever move is gathering.
     fn rearAmt(self: *const Golem) f32 {
         return switch (self.state) {
             .smash_wind => mathx.smoothstep(0, SMASH_WIND * 0.66, self.t),
@@ -509,7 +504,6 @@ pub const Golem = struct {
             else => 0,
         };
     }
-    /// 0..1 of the blow itself.
     fn foldAmt(self: *const Golem) f32 {
         return switch (self.state) {
             .smash_fall => mathx.smoothstep(0, SMASH_FALL, self.t),
@@ -671,8 +665,7 @@ test "THE HOMUNCULUS IS ANSWERED WITH FIRE, NOT WITH A SWORD" {
     try std.testing.expect(took_l < 13.0 * 0.55);
     try std.testing.expect(took_h < 27.0 * 0.70);
     try std.testing.expect(took_f > 27.0 * 1.5);
-    // **A MARGIN, NOT A WALL** (owner: seems impossible to hit with melee). At 4x the fight was 21 heavy swings
-    // against the ogre's 11. Bounded at BOTH ends: under 2 the armour says nothing, over 3.5 the sword stops being a choice a player can make badly.
+    // A MARGIN, NOT A WALL. Bounded at BOTH ends: under 2 the armour says nothing, over 3.5 the sword stops being a choice a player can make badly.
     const margin = took_f / took_h;
     try std.testing.expect(margin > 2.0 and margin < 3.5);
     try std.testing.expect(HP_MAX / took_h < 300.0 / 27.0 * 1.25);

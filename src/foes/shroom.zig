@@ -50,7 +50,7 @@ const RESISTS = combat.resists(.{ .fire = -50, .cold = 15, .chaos = 75 });
 pub var SOULS: u32 = 70;
 
 pub var FLING_HIT = combat.Hit{ .dmg = 12, .poise = 20, .stance = 8 };
-/// **POISON PER SECOND STANDING IN IT** (owner: accrue more rapidly). Nearly double: at 24 a sporeling's cloud was something you could walk through while reading the room, which is not what a gas is for.
+/// POISON PER SECOND STANDING IN IT. Nearly double: at 24 a sporeling's cloud was something you could walk through while reading the room.
 pub const SPORE_BUILD: f32 = 42.0;
 
 const HOP_REACH: f32 = 1.05;
@@ -613,7 +613,7 @@ const CLOUD_RATE_FRESH: f32 = 26.0;
 const CLOUD_PUFF_MIN: f32 = 1.1;
 const CLOUD_PUFF_MAX: f32 = 1.7;
 const CLOUD_PARTS = 112;
-// **WHAT THE CLOUDS COST, MEASURED.** Worst case is `CLOUD_CAP` live clouds of `CLOUD_PARTS` motes. Eight at once needs eight flings inside one `CLOUD_LIFE` against a `FLING_CD` of 4.6 s — more sporelings than a cluster fields; two or three is the real number.
+// WHAT THE CLOUDS COST, MEASURED: worst case is `CLOUD_CAP` live clouds of `CLOUD_PARTS` motes. Eight at once needs eight flings inside one `CLOUD_LIFE` against a `FLING_CD` of 4.6 s.
 comptime {
     std.debug.assert(@as(f32, @floatFromInt(CLOUD_PARTS)) >= (CLOUD_RATE + CLOUD_RATE_FRESH) * CLOUD_PUFF_MAX);
 }
@@ -645,7 +645,6 @@ pub const Cloud = struct {
             self.live = false;
             return;
         }
-        // **IT HAS TO BE A VOLUME, AND IT HAS TO HAVE AN EDGE** (owner's call). Thirty-odd puffs over a 1.9 m disc
         const emitRate = (CLOUD_RATE + CLOUD_RATE_FRESH * (1.0 - self.t / CLOUD_LIFE));
         var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {

@@ -29,8 +29,7 @@ const SAC_DK = rgba(20, 11, 10, 255);
 const BEAK = rgba(30, 24, 20, 255);
 const BEAK_TIP = rgba(58, 46, 38, 255);
 const LEG = rgba(16, 15, 20, 255);
-/// THE WING. NEARLY BLACK and NORMALLY LIT (alpha 255): the emissive channel runs the other way — a low alpha
-/// is SELF-lit, and at 74 the membrane ignored the sun and came back a pale feather. What makes it read as a membrane rather than a paddle is the VEINS across it.
+/// THE WING. Nearly black and NORMALLY LIT (alpha 255): the emissive channel runs the other way — a low alpha is SELF-lit, and at 74 the membrane ignored the sun and came back a pale feather.
 const WING = rgba(27, 29, 39, 255);
 const WING_RIB = rgba(72, 74, 92, 255);
 const EYE = rgba(38, 9, 10, 255);
@@ -39,7 +38,7 @@ const BLOOD = rgba(126, 20, 18, 235);
 const BLOOD_DRY = rgba(56, 9, 8, 225);
 const CHIP = rgba(74, 70, 86, 235);
 
-/// ITS OWN STATURE — nose to tail, and NOT the shared humanoid scaffold: it has no legs to walk on. SIZED AGAINST A TOAD, then grown (owner): 1.3 m of body with a wingspan half again as wide.
+/// ITS OWN STATURE — nose to tail, and NOT the shared humanoid scaffold: it has no legs to walk on. 1.3 m of body with a wingspan half again as wide.
 pub const H: f32 = 1.3;
 
 const HOVER_LOW: f32 = 1.18;
@@ -76,7 +75,6 @@ pub var STAB_HIT = combat.Hit{ .dmg = 6, .poise = 9 };
 pub const DRINK_DPS: f32 = 10.0;
 const LEECH_SHARE: f32 = 0.55;
 const DRINK_DUR: f32 = 1.45;
-/// …and how often the pull of it is heard under the wingbeat. THINNED from 0.48: a hold runs for seconds and a swallow twice a second is texture pretending to be an event. The BEAK GOING IN is the event.
 const DRINK_EVERY: f32 = 0.80;
 const FEED_CD: f32 = 3.4;
 const STAB_R: f32 = 1.30;
@@ -101,7 +99,7 @@ const BANK_MAX: f32 = 26.0;
 const PITCH_MAX: f32 = 22.0;
 const BOB_AMP: f32 = 0.035 * H;
 const BOB_HZ: f32 = 3.1;
-/// THE WHINE COMES AND GOES (owner: it was too constant). raylib cannot loop a synthesized take, so a note is a short voice retriggered — but retriggered forever it is a drill. A phrase is a run of overlapping takes, and hushes outlast phrases, so mostly you should not hear it.
+/// raylib cannot loop a synthesized take, so a note is a short voice retriggered; a phrase is a run of overlapping takes, and hushes outlast phrases.
 const WHINE_EVERY: f32 = 0.26; // the retrigger INSIDE a phrase, under the take's own 0.32 so they overlap
 const PHRASE_MIN: f32 = 0.30;
 const PHRASE_MAX: f32 = 0.95;
@@ -788,7 +786,6 @@ fn thoraxMesh() rl.Mesh {
 fn abdomenMesh(seg: usize) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5AC0 + @as(u64, seg));
-    // LONG AND SLENDER, not a sausage. At 0.070 radius over 0.27 of stature the first segment was as thick as it was long and the creature read as a bee — the taper is what says which insect this is.
     const fat: f32 = if (seg == 0) 1.0 else 0.72;
     const len: f32 = if (seg == 0) 0.175 else 0.165;
     b.addCapsule(
@@ -998,7 +995,6 @@ test "IT CLIMBS OUT OF SWORD REACH AND NOT OUT OF THE WORLD" {
     const low = f.centerWorld().y;
     f.hover = HOVER_HIGH;
     try std.testing.expect(f.centerWorld().y > low + 3.0);
-    // …and it is above the arc of a blade swung off a 1.8 m man's shoulder.
     try std.testing.expect(f.centerWorld().y - f.hurtRadius() > 2.6);
 }
 

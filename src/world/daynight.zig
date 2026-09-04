@@ -4,9 +4,7 @@ const mathx = @import("../core/mathx.zig");
 
 const v3 = mathx.v3;
 
-// **THE SKY DRAWS THE TRUE PATH; THE SHADOWS DO NOT.** A sun at two degrees throws a 300 m shadow, which the
-// 108 m ortho box cannot hold, so `keyDir` FLOORS the altitude (`KEY_ALT_MIN`) while `sunDir`/`moonDir` keep
-// (`shots.LIT_YAW` = 53). Retuning the path without moving the anchor silently re-lights 362 photographs.
+// THE SKY DRAWS THE TRUE PATH; THE SHADOWS DO NOT: a sun at two degrees throws a 300 m shadow the 108 m ortho box cannot hold, so `keyDir` FLOORS the altitude (`KEY_ALT_MIN`) while `sunDir`/`moonDir` keep it.
 
 pub const HOURS: f32 = 24.0;
 pub const SUNRISE: f32 = 6.0;
@@ -18,14 +16,12 @@ pub const NIGHT_SPAN: f32 = HOURS - DAY_SPAN;
 const AZ_RISE: f32 = 100.0;
 const AZ_SET: f32 = 262.0;
 
-/// THE ANCHOR, and the two constants below are SOLVED from it. `gfx.SUN_DIR` = norm(-0.60, 0.50, -0.46) is
-/// bearing 180 + atan(0.60/0.46) = 232.5256 deg at altitude atan(0.50 / hypot(0.60, 0.46)) = 33.4793 deg; that
-/// bearing is 0.8180593 of the `AZ_RISE`..`AZ_SET` sweep, giving the hour, and the altitude is that fraction of
-/// the arch's sine, giving the peak: 33.4793 / sin(pi * 0.8180593) = 61.8895. **MOVE `AZ_RISE`/`AZ_SET` AND BOTH MOVE WITH THEM** — solve them again, do not nudge them.
+/// THE ANCHOR, and the two constants below are SOLVED from it. `gfx.SUN_DIR` = norm(-0.60, 0.50, -0.46) is bearing 180 + atan(0.60/0.46) = 232.5256 deg at altitude atan(0.50 / hypot(0.60, 0.46)) = 33.4793 deg; that bearing is 0.8180593 of the `AZ_RISE`..`AZ_SET` sweep, and 33.4793 / sin(pi * 0.8180593) = 61.8895.
+/// MOVE `AZ_RISE`/`AZ_SET` AND BOTH MOVE WITH THEM — solve them again, do not nudge them.
 pub const SUN_ALT_MAX: f32 = 61.8895;
 pub const SHOT_HOUR: f32 = 17.45283;
 
-/// 9 pm, and **the sun is DOWN there** (owner's call) — deliberately NOT `SHOT_HOUR`, which is the golden hour with the sun well up. An hour past `SUNSET`, pinned past the horizon by a comptime assert.
+/// 9 pm, an hour past `SUNSET` and pinned past the horizon by a comptime assert. Deliberately NOT `SHOT_HOUR`, which is the golden hour with the sun well up.
 pub const EVENING_HOUR: f32 = 21.0;
 comptime {
     std.debug.assert(EVENING_HOUR > SUNSET);
@@ -45,7 +41,6 @@ const KEY_SWAP_FADE: f32 = 0.45;
 
 fn moonShare(hour: f32) f32 {
     const h = wrapHour(hour);
-    // The dusk crossing, and the dawn one measured the same way on the other side of midnight. Both windows are well inside the night, which the comptime block above pins.
     if (h > SUNSET) return mathx.smoothstep(KEY_SWAP_DUSK - KEY_SWAP_FADE, KEY_SWAP_DUSK + KEY_SWAP_FADE, h);
     if (h < SUNRISE) return 1.0 - mathx.smoothstep(KEY_SWAP_DAWN - KEY_SWAP_FADE, KEY_SWAP_DAWN + KEY_SWAP_FADE, h);
     return 0;
@@ -93,7 +88,6 @@ pub const Clock = struct {
         return (if (self.rate == 0) self.resumeRate else self.rate) / RATE_DEFAULT;
     }
 
-    /// …and how long a whole day takes at that speed, in REAL seconds — what the debug row says, since "120x" means nothing and "10 s/day" is the thing you are about to watch.
     pub fn dayLen(self: *const Clock) f32 {
         return HOURS / mathx.maxF(self.speed() * RATE_DEFAULT, 1e-6);
     }
@@ -133,7 +127,7 @@ pub fn isDay(hour: f32) bool {
     return h >= SUNRISE and h <= SUNSET;
 }
 
-/// HOW FAR THROUGH ITS OWN SPAN THE HOUR IS: 0 at the horizon it left and 1 at the one it is heading for, for whichever span `isDay` says it is in. Off `dayU`, the same progression the sun's azimuth is swept by, so a dial drawn from it cannot disagree with the light behind it.
+/// HOW FAR THROUGH ITS OWN SPAN THE HOUR IS: 0 at the horizon it left and 1 at the one it is heading for, for whichever span `isDay` says it is in. Off `dayU`, the same progression the sun's azimuth is swept by.
 pub fn spanU(hour: f32) f32 {
     const u = dayU(hour);
     return if (u <= 1.0) u else u - 1.0;
@@ -154,7 +148,7 @@ fn dirFrom(azDeg: f32, altDeg: f32) rl.Vector3 {
 pub fn sunDir(hour: f32) rl.Vector3 {
     const u = dayU(hour);
     const alt = SUN_ALT_MAX * mathx.sinf(std.math.pi * u);
-    // **THE BEARING GOES ALL THE WAY ROUND ONCE A DAY, AND THE NIGHT CARRIES THE PART OF THE CIRCLE THE DAY DOES NOT.** Swept at the day's own rate through the night, `u = 2` lands 36 degrees short of a full turn on a 162 degree day, so at 06:00 every shadow steps 36 degrees sideways on one frame.
+    // THE BEARING GOES ALL THE WAY ROUND ONCE A DAY, AND THE NIGHT CARRIES THE PART OF THE CIRCLE THE DAY DOES NOT: swept at the day's own rate, `u = 2` lands 36 degrees short of a full turn on a 162 degree day.
     const az = if (u <= 1.0)
         AZ_RISE + (AZ_SET - AZ_RISE) * u
     else
@@ -167,12 +161,8 @@ pub fn moonDir(hour: f32) rl.Vector3 {
     return v3(-s.x, -s.y, -s.z);
 }
 
-/// **THE SWAP GOES OVER THE TOP, IN THE DARK.** The moon is the anti-sun, so the two casters stand on
-/// opposite bearings and one has to become the other. Turned around the compass at the 15 degree floor,
-/// every shadow in the world wheeled half a circle in 45 real seconds (owner: nauseous). The key now goes
-/// from the floored sun UP through the zenith and down onto the floored moon, in the sun's own vertical
-/// plane: a shadow shrinks to its foot and grows out the other side, and never turns. Linear in the
-/// shadow's LENGTH (cot), so the fast middle is the short part; `keyDim` puts the key out at the crossing.
+/// THE SWAP GOES OVER THE TOP, IN THE DARK. The moon is the anti-sun, so the key goes from the floored sun UP through the zenith and down onto the floored moon, in the sun's own vertical plane: a shadow shrinks to its foot and grows out the other side, and never turns.
+/// Linear in the shadow's LENGTH (cot), so the fast middle is the short part; `keyDim` puts the key out at the crossing.
 pub fn keyDir(hour: f32) rl.Vector3 {
     const s = sunDir(hour);
     const share = moonShare(hour);
@@ -202,7 +192,7 @@ pub fn reachOf(d: rl.Vector3) f32 {
 
 
 pub const Palette = struct {
-    /// The KEY, colour and strength in one: the shader multiplies it by the hot 1.72 and the wrap term, so dropping this toward black IS nightfall. The moon's is cold and about a tenth of noon's.
+    /// The KEY, colour and strength in one: the shader multiplies it by the hot 1.72 and the wrap term, so dropping this toward black IS nightfall.
     key: rl.Vector3,
     ambGround: rl.Vector3,
     ambSky: rl.Vector3,
@@ -235,7 +225,7 @@ pub const Palette = struct {
     }
 };
 
-// `weather.zig` because it is a PALETTE operation. **AND EVERY TERM IS A FACTOR ON THE HOUR'S OWN VALUE, NEVER A CONSTANT** — absolute storm colours would light the world at 3 a.m.
+// EVERY TERM IS A FACTOR ON THE HOUR'S OWN VALUE, NEVER A CONSTANT — absolute storm colours would light the world at 3 a.m.
 
 const STORM_KEY: f32 = 0.34;
 const STORM_HAZE: f32 = 1.70;
@@ -278,13 +268,12 @@ pub fn overcast(p: Palette, wet: f32) Palette {
 }
 
 
-/// **A FACTOR ON THE HOUR'S OWN VALUE, NEVER A CONSTANT** (`overcast`'s law): lerping toward an absolute peach DARKENED noon's horizon by 0.140 while lifting its zenith. `peach` is `slate` written warm — take the luminance the hour actually has and re-split it toward the red end.
+/// A FACTOR ON THE HOUR'S OWN VALUE, NEVER A CONSTANT (`overcast`'s law): lerping toward an absolute peach DARKENED noon's horizon by 0.140 while lifting its zenith.
 fn peach(c: rl.Vector3) rl.Vector3 {
     const l = luma(c);
     return v3(l * 1.62, l * 0.90, l * 0.74);
 }
 
-/// How much brighter than the hour a full bloom is. Over 1 in every channel-weighted sense, which is the whole claim: a bloom is a source.
 const BLOOM_LIFT: f32 = 1.08;
 const BLOOM_HAZE_LIFT: f32 = 2.10;
 const BLOOM_BANK_LIFT: f32 = 1.35;
@@ -293,8 +282,7 @@ pub const HAZE_SPORE_D: f32 = 2.30;
 const BLOOM_AMB: f32 = 1.35;
 const BLOOM_STARS: f32 = 0.25;
 
-/// **AND IT MAY NOT CLIP.** A channel over 1 is a white hole in the dome, and the bands that blow first are
-/// noon's. Scaled as a WHOLE VECTOR rather than clamped per channel: clamping red at 1 while green climbs turns peach into yellow on exactly the hours it is loudest.
+/// AND IT MAY NOT CLIP: a channel over 1 is a white hole in the dome. Scaled as a WHOLE VECTOR rather than clamped per channel — clamping red at 1 while green climbs turns peach into yellow.
 fn ceiling(c: rl.Vector3) rl.Vector3 {
     const hi = @max(c.x, @max(c.y, c.z));
     return if (hi <= 1.0) c else mathx.scaleV(c, 1.0 / hi);
@@ -335,14 +323,11 @@ fn hueOf(c: rl.Vector3) rl.Vector3 {
     return v3(c.x / l, c.y / l, c.z / l);
 }
 
-/// **HOW MUCH OF THE HOUR'S OWN HUE A BANK OF FOG TAKES.** 0 leaves the mesh its authored grey at every hour,
-/// 1 gives it the full hue the hour's lit haze has. THE one number to move if the banks read too warm at dusk
-/// or too cold at midnight — the brightness beside it is solved and not authored, so this is the whole retune.
+/// HOW MUCH OF THE HOUR'S OWN HUE A BANK OF FOG TAKES: 0 leaves the mesh its authored grey, 1 gives it the full hue the hour's lit haze has. THE one number to move — the brightness beside it is solved, not authored.
 const MIST_HUE: f32 = 0.65;
 const ANCHOR_AMB_LUMA: f32 = luma(v3(0.168, 0.188, 0.244));
 
-/// A warm hour puts red over 1 on its own (1.146 at 8.30 am, measured), and clamping red at 1 while green rides
-/// under it turns the morning's warmth into yellow.
+/// A warm hour puts red over 1 on its own (1.146 at 8.30 am), and clamping red at 1 while green rides under it turns the morning's warmth into yellow.
 pub fn mistTint(hour: f32, wet: f32) rl.Vector3 {
     const p = overcast(paletteAt(hour), wet);
     const dim = mathx.clampF(luma(p.ambSky) / ANCHOR_AMB_LUMA, 0, 1);
@@ -368,7 +353,7 @@ const NIGHT_P = Palette{
     .stars = 1.0,
 };
 
-/// Ordered, first key at 0 and last at 24 with the SAME palette on both, so the wrap through midnight is a blend and not a seam. **THE `SHOT_HOUR` ROW IS THE ANCHOR AND MAY NOT BE RETUNED CASUALLY** — those numbers are baked into the two shaders and every reference frame in `shots/`.
+/// Ordered, first key at 0 and last at 24 with the SAME palette on both, so the wrap through midnight is a blend and not a seam. THE `SHOT_HOUR` ROW IS THE ANCHOR: those numbers are baked into the two shaders and every reference frame in `shots/`.
 const KEYS = [_]Key{
     .{ .at = 0.0, .p = NIGHT_P },
     .{ .at = 5.0, .p = .{
@@ -392,7 +377,6 @@ const KEYS = [_]Key{
         .ambGround = v3(0.046, 0.038, 0.038),
         .ambSky = v3(0.120, 0.124, 0.166),
         .haze = v3(0.056, 0.046, 0.048),
-        // …AND THE BANK IS KEPT UNDER THE ANCHOR'S REACH. At 0.52 the cliffs forty metres out went to flat pink — the mid-ground stopped existing, which is a wash and not a sunrise.
         .hazeBank = v3(0.255, 0.122, 0.055),
         .skyLow = v3(0.640, 0.330, 0.205),
         .skyMid = v3(0.335, 0.250, 0.270),
@@ -421,7 +405,6 @@ const KEYS = [_]Key{
         .stars = 0.0,
     } },
     .{ .at = 12.0, .p = .{
-        // NOT HOTTER THAN THE ANCHOR, just WHITER. The anchor's key was measured against real renders to sit just under the clip, so a noon that pushed every channel past it blew the pale surfaces out. What makes midday read as midday is the warmth LEAVING.
         .key = v3(1.310, 1.280, 1.180),
         .ambGround = v3(0.090, 0.092, 0.092),
         .ambSky = v3(0.196, 0.232, 0.310),
@@ -557,7 +540,7 @@ pub fn phaseName(hour: f32) [:0]const u8 {
 }
 
 
-/// THE ANCHOR SUN — the light this whole game was authored, measured and photographed under. **AND IT IS THE ONE COPY**: `gfx.SUN_DIR` is this, not a second triple beside it. Written out in both files, the test below compared the clock against `daynight`'s own copy.
+/// THE ANCHOR SUN, and it is the ONE COPY: `gfx.SUN_DIR` is this, not a second triple beside it.
 pub const ANCHOR_DIR = mathx.normV(v3(-0.60, 0.50, -0.46));
 
 test "A BANK OF FOG IS THE HOUR'S OWN COLOUR, and the night never lights one" {
@@ -587,7 +570,6 @@ test "A BANK OF FOG IS THE HOUR'S OWN COLOUR, and the night never lights one" {
         try std.testing.expect(l > 0.0);
     }
     std.debug.print("  midnight is {d:.2}x noon\n", .{dark / noon});
-    // banks move 0.129 across the 5 am hour because the PALETTE does, which is a fast ramp and not a seam.
     const fine = worstStep(1.0 / 240.0);
     const coarse = worstStep(1.0 / 120.0);
     std.debug.print("  worst step {d:.5} per 15 s against {d:.5} per 30 s — a ramp halves, a seam would not\n", .{ fine, coarse });
@@ -741,7 +723,6 @@ fn poleTip(d: rl.Vector3) [2]f32 {
 }
 
 test "THE CASTER CHANGES HANDS OVER THE TOP, IN THE DARK — a pole's shadow moves no faster lit than it does by day" {
-    // A hundredth of an hour is half a real second of the standard day. The old compass turn at the floor moved the tip 0.39 m a step, 0.053 lit; the sun leaving the floor at 07:06 is the day's own fastest.
     const STEP: f32 = 0.01;
     var h: f32 = 0;
     var worstRaw: f32 = 0;
@@ -770,8 +751,7 @@ test "THE CASTER CHANGES HANDS OVER THE TOP, IN THE DARK — a pole's shadow mov
     std.debug.print("\n  pole shadow, m per 0.01 h lit: day {d:.4} at {d:.2}, swap {d:.4} at {d:.2}; fastest unlit {d:.3}\n", .{ worstDay, dayAt, worstSwap, swapAt, worstRaw });
     try std.testing.expect(worstSwap < worstDay * 0.5);
     try std.testing.expect(worstRaw < 0.2);
-    // Over the top, never around: the key stays in the sun's own vertical plane at every hour, so its bearing
-    // is the sun's or the moon's and nothing between. At the crossing it is out.
+    // Over the top, never around: the key stays in the sun's own vertical plane at every hour, so its bearing is the sun's or the moon's and nothing between.
     h = 0;
     while (h < HOURS) : (h += STEP) {
         const k = keyDir(h);

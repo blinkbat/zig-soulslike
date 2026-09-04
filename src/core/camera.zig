@@ -13,7 +13,7 @@ pub const DEFAULT_PITCH = 0.28;
 const ZOOM_STEP = 0.6;
 /// Radians per pixel of mouse motion. Public because the EDITOR's fly camera looks with the same hand.
 pub const LOOK_SENS = 0.0032;
-/// ~ -22 deg, looking UP from below. Wider than the -0.20 the free look ever asked for, because the LOCK now tilts the rig onto whatever it is fixed on (`game.lockPitch`): an ogre's chest is two and a half metres up and eleven degrees of lift clipped short of framing it.
+/// ~ -22 deg, looking UP from below. Wider than the -0.20 the free look ever asked for, because the LOCK tilts the rig onto whatever it is fixed on (`game.lockPitch`).
 const PITCH_MIN = -0.38;
 const PITCH_MAX = 1.15; // ~  66 deg (looking down)
 pub const SHOULDER = 0.55;
@@ -25,12 +25,9 @@ pub fn skyTop() f32 {
     return std.math.degreesToRadians(FOVY * 0.5) - DEFAULT_PITCH;
 }
 const GROUND_CLEAR = 0.7;
-/// …and how much boom one probe of that search gives up. Named beside the clearance it is searching for: the two are only ever chosen against each other, and a bare 0.25 in the loop reads as arbitrary.
 const GROUND_PROBE = 0.25;
 const GROUND_RISE = 0.2;
-/// Metres a second the boom is GIVEN BACK once the ground behind him stops asking for it. Shortening is
-/// immediate — the eye may never be in the rock — but a cliff behind him is a step in the solve, and a step
-/// in the frame is a cut.
+/// Metres a second the boom is GIVEN BACK once the ground behind him stops asking for it. Shortening is immediate — the eye may never be in the rock.
 const CLEAR_REGAIN = 8.0;
 
 const AIM_DIST = 0.7;

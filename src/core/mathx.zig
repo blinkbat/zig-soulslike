@@ -151,9 +151,7 @@ pub fn lerpV(a: rl.Vector3, b: rl.Vector3, t: f32) rl.Vector3 {
     return v3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
 }
 
-/// the angle grows and at dead opposite is `(1-2k)*from`, a fixed point: measured, a 2.2 rad/s steer took
-/// 5.15 s to reverse against the 1.43 s a cap gives. Dead opposite also has no slerp axis (`sin(ang)` → 0 →
-/// NaN), so any perpendicular does for one step.
+/// At dead opposite `(1-2k)*from` is a fixed point: measured, a 2.2 rad/s steer took 5.15 s to reverse against the 1.43 s a cap gives. Dead opposite also has no slerp axis (`sin(ang)` -> 0 -> NaN), so any perpendicular does for one step.
 pub fn turnToward(from: rl.Vector3, want: rl.Vector3, maxRad: f32) rl.Vector3 {
     const a = normV(from);
     const b = normV(want);
@@ -259,7 +257,7 @@ pub fn approachAngle(cur: f32, target: f32, maxStep: f32) f32 {
     return cur + std.math.sign(d) * maxStep;
 }
 
-/// HOW FAR THE SEGMENT `a`→`b` LEANS OFF WORLD UP, in degrees — 0 is plumb, 90 is flat, past 90 is upside down. `headingXZ`'s companion: that one asks which way a thing points on the ground, this one how far off vertical it stands. The staff's plumb test, the trunk's tilt and the necromancer's three were one arctangent written four ways.
+/// HOW FAR THE SEGMENT `a`->`b` LEANS OFF WORLD UP, in degrees — 0 is plumb, 90 is flat, past 90 is upside down.
 pub fn tiltDeg(a: rl.Vector3, b: rl.Vector3) f32 {
     const d = subV(b, a);
     return degrees(std.math.atan2(lenXZ(d), d.y));

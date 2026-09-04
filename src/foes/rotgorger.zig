@@ -114,8 +114,7 @@ const State = enum { idle, prowl, bite, rush, feed, stunlight, stunheavy, dead }
 
 const Choice = enum { rest, hold, close, bite, feed };
 
-/// Measured edge to edge against a centre-to-centre bill, the band ran 0.33 m past the reach at scale 1
-/// and 0.84 m at `wf.FOE_SCALE_LO`.
+/// Measured edge to edge against a centre-to-centre bill, the band ran 0.33 m past the reach at scale 1 and 0.84 m at `wf.FOE_SCALE_LO`.
 fn classify(sensed: f32, homeGap: f32, scale: f32, hpFrac: f32, food: ?f32, biteReady: bool, rooted: bool) Choice {
     if (food) |d| {
         if (hpFrac < HUNGER_FRAC and d <= SMELL_R and !rooted) return .feed;

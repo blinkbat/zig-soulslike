@@ -30,12 +30,14 @@ pub const CliffKind = struct {
     broken: f32 = 0,
 };
 
-const CLIFF_ROUND = CliffKind{ .H = 13.5, .wLo = 2.9, .wHi = 5.0, .cleft = 0.55, .blocky = 0.15, .bands = 7 };
-const CLIFF_BLOCKY = CliffKind{ .H = 12.2, .wLo = 2.4, .wHi = 4.2, .cleft = 1.15, .blocky = 0.85, .bands = 10 };
-const CLIFF_RAGGED = CliffKind{ .H = 14.6, .wLo = 3.2, .wHi = 5.6, .cleft = 0.85, .blocky = 0.5, .bands = 8 };
-const CLIFF_IVIED = CliffKind{ .H = 13.0, .wLo = 3.0, .wHi = 5.2, .cleft = 0.70, .blocky = 0.22, .bands = 8, .ivy = 1.0 };
-const CLIFF_SHATTERED = CliffKind{ .H = 11.6, .wLo = 2.2, .wHi = 4.6, .cleft = 1.35, .blocky = 0.90, .bands = 5, .broken = 1.0 };
-const CLIFF_OVERGROWN = CliffKind{ .H = 12.6, .wLo = 2.7, .wHi = 4.8, .cleft = 0.95, .blocky = 0.45, .bands = 7, .ivy = 0.8, .broken = 0.55 };
+pub const CLIFF_ROUND = CliffKind{ .H = 13.5, .wLo = 2.9, .wHi = 5.0, .cleft = 0.55, .blocky = 0.15, .bands = 7 };
+pub const CLIFF_BLOCKY = CliffKind{ .H = 12.2, .wLo = 2.4, .wHi = 4.2, .cleft = 1.15, .blocky = 0.85, .bands = 10 };
+pub const CLIFF_RAGGED = CliffKind{ .H = 14.6, .wLo = 3.2, .wHi = 5.6, .cleft = 0.85, .blocky = 0.5, .bands = 8 };
+pub const CLIFF_IVIED = CliffKind{ .H = 13.0, .wLo = 3.0, .wHi = 5.2, .cleft = 0.70, .blocky = 0.22, .bands = 8, .ivy = 1.0 };
+pub const CLIFF_SHATTERED = CliffKind{ .H = 11.6, .wLo = 2.2, .wHi = 4.6, .cleft = 1.35, .blocky = 0.90, .bands = 5, .broken = 1.0 };
+pub const CLIFF_OVERGROWN = CliffKind{ .H = 12.6, .wLo = 2.7, .wHi = 4.8, .cleft = 0.95, .blocky = 0.45, .bands = 7, .ivy = 0.8, .broken = 0.55 };
+/// The painted faces (`env.cliffWall`) draw from the same six, so a face and the prop beside it are one geology.
+pub const CLIFF_KINDS = [_]CliffKind{ CLIFF_ROUND, CLIFF_BLOCKY, CLIFF_RAGGED, CLIFF_IVIED, CLIFF_SHATTERED, CLIFF_OVERGROWN };
 
 pub fn cliff1(shader: rl.Shader) rl.Model {
     return cliffMesh(shader, 90210, CLIFF_ROUND);
@@ -82,7 +84,25 @@ pub fn cliffSeatZ(bs: []const CliffBody, x: f32, y: f32, halfW: f32, halfH: f32)
     return back;
 }
 
+/// **THE CLIFF FACES A PAINTED WALL CAN WEAR.** One row each; `env.cliffWall` picks one at random per stretch
+/// and sinks it half into the wall, so adding a face here is the whole job of adding a face.
+pub const CliffFace = struct { name: []const u8, seed: u64, kind: CliffKind };
+pub const CLIFF_FACES = [_]CliffFace{
+    .{ .name = "Rocky Cliff", .seed = 90210, .kind = CLIFF_ROUND },
+    .{ .name = "Rocky Cliff II", .seed = 41077, .kind = CLIFF_ROUND },
+    .{ .name = "Blocky Cliff", .seed = 4471, .kind = CLIFF_BLOCKY },
+    .{ .name = "Ragged Cliff", .seed = 7331, .kind = CLIFF_RAGGED },
+    .{ .name = "Shattered Cliff", .seed = 1999, .kind = CLIFF_SHATTERED },
+    .{ .name = "Ivied Cliff", .seed = 6160, .kind = CLIFF_IVIED },
+};
+
 pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
+    var b = cliffBuild(seed, k);
+    return b.toModel(shader);
+}
+
+/// The mesh before it is a model, so it can be stamped into a wall instead of drawn as a prop.
+pub fn cliffBuild(seed: u64, k: CliffKind) Builder {
     const H = k.H;
     var b = Builder.init();
     var rng = mathx.Rng.init(seed);
@@ -349,7 +369,7 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
             art.lichenInto(&b, &frng, v3(cxp, cyp + r * 0.28, czp), v3(r * 1.05, 0.07, r * 0.95), 3);
         }
     }
-    return b.toModel(shader);
+    return b;
 }
 
 pub fn boulderMesh(shader: rl.Shader) rl.Model {

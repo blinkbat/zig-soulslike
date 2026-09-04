@@ -103,6 +103,9 @@ pub const Data = struct {
     arrows: u8 = combat.ARROWS_MAX,
     fireArrows: u8 = combat.FIRE_ARROWS_MAX,
     flask: combat.FlaskKind = .crimson,
+    /// The ALLOTMENT, not what is left in them - a bonfire fills to it. Appended to `ready:`, so a file
+    /// written before the split existed still loads and takes the default.
+    crimsonMax: u8 = combat.FLASK_CRIMSON,
     quick: [combat.QUICK_SLOTS]?item.Kind = [_]?item.Kind{null} ** combat.QUICK_SLOTS,
     quickSel: usize = 0,
     worn: heromod.Worn = .{},
@@ -295,6 +298,7 @@ pub fn gather(s: Slot) Data {
     d.arrows = h.quiver.arrows;
     d.fireArrows = h.quiver.fire;
     d.flask = h.flasks.sel;
+    d.crimsonMax = h.flasks.crimsonMax;
     d.quick = h.quick.slots;
     d.quickSel = h.quick.sel;
     d.worn = h.worn;
@@ -356,6 +360,7 @@ pub fn scatter(d: *const Data, s: Slot) void {
     h.quiver.arrows = @min(d.arrows, combat.Quiver.cap(.plain));
     h.quiver.fire = @min(d.fireArrows, combat.Quiver.cap(.fire));
     h.flasks.sel = d.flask;
+    h.flasks.allot(d.crimsonMax);
     h.quick.slots = d.quick;
     h.quick.sel = @min(d.quickSel, combat.QUICK_SLOTS - 1);
 
@@ -416,7 +421,7 @@ pub fn render(w: anytype, d: *const Data) !void {
         try w.writeAll("\n");
     }
     try w.print("hands: {s} {s} {s} {s} {s}\n", .{ @tagName(d.arm), @tagName(d.off), @tagName(d.spell), @tagName(d.armAlt), @tagName(d.offAlt) });
-    try w.print("ready: {s} {s}\n", .{ @tagName(d.arrow), @tagName(d.flask) });
+    try w.print("ready: {s} {s} {d}\n", .{ @tagName(d.arrow), @tagName(d.flask), d.crimsonMax });
     try w.print("quiver: {d} {d}\n", .{ d.arrows, d.fireArrows });
     try w.writeAll("memory:");
     for (d.memory) |m| try w.print(" {s}", .{if (m) |sp| @tagName(sp) else "-"});
@@ -514,6 +519,7 @@ pub fn parse(text: []const u8, d: *Data) !void {
         } else if (std.mem.eql(u8, key, "ready:")) {
             d.arrow = try tagged(combat.ArrowKind, &it);
             d.flask = try tagged(combat.FlaskKind, &it);
+            if (it.next()) |tok| d.crimsonMax = std.fmt.parseInt(u8, tok, 10) catch return Error.BadField;
         } else if (std.mem.eql(u8, key, "quiver:")) {
             d.arrows = try int(u8, &it);
             d.fireArrows = try int(u8, &it);

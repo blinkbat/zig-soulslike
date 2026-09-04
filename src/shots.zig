@@ -233,7 +233,9 @@ fn shootClear(g: *Game, name: [:0]const u8, yaw: f32, pitch: f32, dist: f32) voi
     g.rig.yaw = mathx.radians(yaw);
     g.rig.pitch = pitch;
     g.rig.dist = dist;
-    g.rig.followClear(g.hero.shoulderPoint(), game.camFloor(g), game.CamFloor.at);
+    // A framing is solved fresh: the eased boom is for a moving frame, and a shot has no previous one.
+    g.rig.eased = -1;
+    g.rig.followClear(g.hero.shoulderPoint(), game.camFloor(g), game.CamFloor.at, 0);
     shoot(g, name);
 }
 
@@ -422,7 +424,49 @@ pub fn runLandShots(g: *Game) void {
         const aim = v3(at[0], g.env.groundAt(at[0], at[1]) + 1.4, at[1]);
         shootAt(g, name, aim, LIT_YAW, 0.16, 13.0);
     }
-    std.debug.print("LAND SHOTS: {s} - 7 frames, {d} props / {d} solids / {d} lights into " ++ DIR_LAND ++ "/\n", .{ stem, g.env.propCount(), g.env.solidCount(), g.env.lightCount() });
+    var frames: usize = 1 + ring.len;
+    // THE CLIFF BENCH gets its faces framed: the mesa with the flight, the pool face, the rim from above and
+    // the painted stair terrace — which is what the saw of dark teeth in the rim frame turned out to be.
+    if (std.mem.startsWith(u8, stem, "test_cliff")) {
+        const faces = [_]struct { tag: []const u8, hx: f32, hz: f32, ax: f32, az: f32, up: f32, yaw: f32, pitch: f32, dist: f32 }{
+            .{ .tag = "face", .hx = 5.0, .hz = -4.0, .ax = 11.5, .az = -7.0, .up = 3.0, .yaw = 78, .pitch = 0.10, .dist = 17.0 },
+            .{ .tag = "flight", .hx = 4.0, .hz = -3.0, .ax = 8.5, .az = -4.0, .up = 1.8, .yaw = 112, .pitch = 0.18, .dist = 9.0 },
+            .{ .tag = "pool", .hx = 6.5, .hz = 4.0, .ax = 11.6, .az = 4.0, .up = 1.2, .yaw = 90, .pitch = 0.08, .dist = 8.0 },
+            .{ .tag = "rim", .hx = 15.0, .hz = -10.0, .ax = 12.4, .az = -10.0, .up = 6.2, .yaw = 250, .pitch = 0.42, .dist = 7.0 },
+            .{ .tag = "diagonal", .hx = 6.0, .hz = 6.0, .ax = 11.0, .az = 9.0, .up = 2.0, .yaw = 40, .pitch = 0.14, .dist = 14.0 },
+            .{ .tag = "terrace", .hx = 8.0, .hz = -18.0, .ax = 8.5, .az = -24.0, .up = 2.0, .yaw = 160, .pitch = 0.30, .dist = 13.0 },
+            .{ .tag = "over", .hx = 8.0, .hz = -10.0, .ax = 10.0, .az = -10.0, .up = 2.0, .yaw = 250, .pitch = 1.15, .dist = 26.0 },
+        };
+        for (faces, 0..) |f, i| {
+            standHero(g, f.hx, f.hz, std.math.pi);
+            g.hero.pos.y = g.env.groundAt(f.hx, f.hz);
+            g.hero.pose();
+            game.pinSkyForShot(g);
+            const name = std.fmt.bufPrintZ(&buf, DIR_LAND ++ "/{s}_{d:0>2}_{s}.png", .{ stem, i + 10, f.tag }) catch unreachable;
+            shootAt(g, name, v3(f.ax, g.env.groundAt(f.ax, f.az) + f.up, f.az), f.yaw, f.pitch, f.dist);
+        }
+        frames += faces.len;
+    }
+    // THE SHIPPED MAP'S OWN FACE: the north-west basin lip, 13.25 m of it, from the basin floor and from
+    // the rim. It is the only painted cliff outside the bench and the only one at a 2.51 m cell.
+    if (std.mem.startsWith(u8, stem, "01_")) {
+        const basin = [_]struct { tag: []const u8, hx: f32, hz: f32, ax: f32, az: f32, up: f32, yaw: f32, pitch: f32, dist: f32 }{
+            .{ .tag = "basinface", .hx = 124, .hz = -26, .ax = 124, .az = -39, .up = 7.0, .yaw = 180, .pitch = 0.10, .dist = 24.0 },
+            .{ .tag = "basinfoot", .hx = 128, .hz = -30, .ax = 126, .az = -40, .up = 2.0, .yaw = 205, .pitch = 0.06, .dist = 13.0 },
+            .{ .tag = "basinrim", .hx = 124, .hz = -48, .ax = 124, .az = -43, .up = 3.0, .yaw = 12, .pitch = 0.34, .dist = 15.0 },
+            .{ .tag = "basinover", .hx = 124, .hz = -46, .ax = 126, .az = -40, .up = 4.0, .yaw = 200, .pitch = 1.15, .dist = 44.0 },
+        };
+        for (basin, 0..) |f, i| {
+            standHero(g, f.hx, f.hz, std.math.pi);
+            g.hero.pos.y = g.env.groundAt(f.hx, f.hz);
+            g.hero.pose();
+            game.pinSkyForShot(g);
+            const name = std.fmt.bufPrintZ(&buf, DIR_LAND ++ "/{s}_{d:0>2}_{s}.png", .{ stem, i + 20, f.tag }) catch unreachable;
+            shootAt(g, name, v3(f.ax, g.env.groundAt(f.ax, f.az) + f.up, f.az), f.yaw, f.pitch, f.dist);
+        }
+        frames += basin.len;
+    }
+    std.debug.print("LAND SHOTS: {s} - {d} frames, {d} props / {d} solids / {d} lights into " ++ DIR_LAND ++ "/\n", .{ stem, frames, g.env.propCount(), g.env.solidCount(), g.env.lightCount() });
 }
 
 /// DEV ONLY: `--shot-only <substr>` names one stage, because a full harness run is 3m38s.
@@ -430,6 +474,20 @@ pub var onlyStage: []const u8 = "";
 fn stageOn(tag: []const u8) bool {
     if (onlyStage.len == 0) return true;
     return std.mem.indexOf(u8, tag, onlyStage) != null;
+}
+
+/// **THE RIG ARRANGES ITS OWN KIT.** A fresh run is a sword, a buckler and three flasks (`game.STARTING_KIT`),
+/// so the spell screens had nothing to list and the staged casts had nothing to throw. The harness
+/// photographs the whole surface, not a first hour, so it grants itself every scroll here.
+fn harnessKit(g: *Game) void {
+    for (combat.SPELLS) |row| {
+        const scroll = combat.spellScroll(row.spell);
+        g.bag.add(scroll, 1);
+        g.award.markKnown(scroll);
+    }
+    g.bag.add(.spirit_scroll_wolf, 1);
+    g.award.markKnown(.spirit_scroll_wolf);
+    g.hero.mem.put(0, .bolt);
 }
 
 pub fn runShots(g: *Game) void {
@@ -441,6 +499,7 @@ pub fn runShots(g: *Game) void {
         );
         @panic("shot harness: the map posts no foes to photograph");
     }
+    harnessKit(g);
     const dt: f32 = SHOT_DT;
     g.drawDt = SETTLE_DT;
     g.menu.screen = .closed;
@@ -1687,6 +1746,10 @@ pub fn runShots(g: *Game) void {
         game.applyTree(g);
         restmod.debugShow(&g.rest, .list, 0, 0, 1.0);
         bonfireShoot(g, "shots/71h_bonfire_list.png");
+        restmod.debugShow(&g.rest, .waits, 0, 0, 1.0);
+        bonfireShoot(g, "shots/71m_bonfire_rest.png");
+        restmod.debugShow(&g.rest, .flasks, 0, 0, 1.0);
+        bonfireShoot(g, "shots/71n_bonfire_flasks.png");
         restmod.debugShow(&g.rest, .tree, 0, ptree.armFirst(.warrior) + 3, 1.0);
         bonfireShoot(g, "shots/71i_bonfire_tree.png");
         restmod.debugShow(&g.rest, .tree, 0, ptree.armFirst(.warrior) + 3, 2.3);
@@ -3413,6 +3476,15 @@ fn editorShots(g: *Game) void {
     g.editor.optionsForShot();
     editorSnap(g, "shots/95h_editor_options.png");
     g.editor.closeModalForShot();
+
+    // The item modal on its deepest shelf: the tabs, the rows, what the map holds elsewhere, and the gold
+    // stepper all in one frame, because that is where they were overlapping.
+    if (g.editor.lootForShot(&g.map, .consumable)) {
+        editorSnap(g, "shots/95k_editor_items.png");
+        _ = g.editor.lootForShot(&g.map, .armament);
+        editorSnap(g, "shots/95l_editor_items_arms.png");
+        g.editor.closeModalForShot();
+    }
 
     for (0..g.map.nnpcs) |ni| {
         g.editor.talkForShot(&g.map, ni);

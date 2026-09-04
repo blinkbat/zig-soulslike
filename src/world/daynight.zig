@@ -51,8 +51,6 @@ fn moonShare(hour: f32) f32 {
     return 0;
 }
 
-const KEY_SWEEP: f32 = if (AZ_SET > AZ_RISE) 1.0 else -1.0;
-
 pub const DAY_MINUTES: f32 = 20.0;
 pub const RATE_DEFAULT: f32 = HOURS / (DAY_MINUTES * 60.0);
 
@@ -169,15 +167,29 @@ pub fn moonDir(hour: f32) rl.Vector3 {
     return v3(-s.x, -s.y, -s.z);
 }
 
+/// **THE SWAP GOES OVER THE TOP, IN THE DARK.** The moon is the anti-sun, so the two casters stand on
+/// opposite bearings and one has to become the other. Turned around the compass at the 15 degree floor,
+/// every shadow in the world wheeled half a circle in 45 real seconds (owner: nauseous). The key now goes
+/// from the floored sun UP through the zenith and down onto the floored moon, in the sun's own vertical
+/// plane: a shadow shrinks to its foot and grows out the other side, and never turns. Linear in the
+/// shadow's LENGTH (cot), so the fast middle is the short part; `keyDim` puts the key out at the crossing.
 pub fn keyDir(hour: f32) rl.Vector3 {
     const s = sunDir(hour);
     const share = moonShare(hour);
-    const az = std.math.atan2(s.x, s.z) + std.math.pi * share * KEY_SWEEP;
-    const alt = std.math.asin(mathx.clampF(s.y, -1, 1)) * (1.0 - 2.0 * share);
-    const minY = mathx.sinf(mathx.radians(KEY_ALT_MIN));
-    const y = mathx.maxF(mathx.sinf(alt), minY);
-    const c = @sqrt(mathx.maxF(0, 1.0 - y * y));
-    return v3(mathx.sinf(az) * c, y, mathx.cosf(az) * c);
+    const az = std.math.atan2(s.x, s.z);
+    const sunAlt = std.math.asin(mathx.clampF(s.y, -1, 1));
+    const floorA = mathx.radians(KEY_ALT_MIN);
+    const tipSun = 1.0 / std.math.tan(mathx.maxF(sunAlt, floorA));
+    const tipMoon = -1.0 / std.math.tan(mathx.maxF(-sunAlt, floorA));
+    const elev = std.math.atan2(1.0, mathx.lerpF(tipSun, tipMoon, share));
+    const c = mathx.cosf(elev);
+    return v3(mathx.sinf(az) * c, mathx.sinf(elev), mathx.cosf(az) * c);
+}
+
+/// The key's strength through the swap: 1 either side of it, 0 at the crossing.
+pub fn keyDim(hour: f32) f32 {
+    const k = 1.0 - 2.0 * moonShare(hour);
+    return k * k;
 }
 
 pub fn shadowReach(hour: f32) f32 {
@@ -723,20 +735,57 @@ test "THE DAY SPEED AND THE HOLD ARE TWO QUESTIONS — neither row reaches into 
     try std.testing.expect(c.dayLen() < 15.0);
 }
 
-test "THE CASTER MAY ONLY CHANGE HANDS IN THE DARK — the moonrise light switch" {
-    // Two opposite bearings cannot avoid the half turn; WHEN can be arranged. This weights the swing by how bright the key is while it swings: on `isDay` it measured 67.8 (179.9 deg at 19.99 h, key at 0.471). The STEP is part of the measurement.
+/// The shadow of a 1 m pole, on the ground.
+fn poleTip(d: rl.Vector3) [2]f32 {
+    return .{ -d.x / d.y, -d.z / d.y };
+}
+
+test "THE CASTER CHANGES HANDS OVER THE TOP, IN THE DARK — a pole's shadow moves no faster lit than it does by day" {
+    // A hundredth of an hour is half a real second of the standard day. The old compass turn at the floor moved the tip 0.39 m a step, 0.053 lit; the sun leaving the floor at 07:06 is the day's own fastest.
     const STEP: f32 = 0.01;
     var h: f32 = 0;
-    var worst: f32 = 0;
-    var worstLit: f32 = 0;
+    var worstRaw: f32 = 0;
+    var worstDay: f32 = 0;
+    var worstSwap: f32 = 0;
+    var swapAt: f32 = 0;
+    var dayAt: f32 = 0;
     while (h < HOURS) : (h += STEP) {
-        const swing = @abs(mathx.degrees(mathx.wrapPi(mathx.headingXZ(keyDir(h + STEP)) - mathx.headingXZ(keyDir(h)))));
-        worst = mathx.maxF(worst, swing);
-        worstLit = mathx.maxF(worstLit, swing * keyAmt(paletteAt(h)));
+        const a = poleTip(keyDir(h));
+        const b = poleTip(keyDir(h + STEP));
+        const raw = @sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1]));
+        try std.testing.expect(std.math.isFinite(raw));
+        const lit = raw * keyAmt(paletteAt(h)) * keyDim(h);
+        worstRaw = mathx.maxF(worstRaw, raw);
+        const share = moonShare(h);
+        if (share > 0 and share < 1) {
+            if (lit > worstSwap) {
+                worstSwap = lit;
+                swapAt = h;
+            }
+        } else if (lit > worstDay) {
+            worstDay = lit;
+            dayAt = h;
+        }
     }
-    try std.testing.expect(worstLit < 2.0);
-    // …and NOTHING anywhere on the clock jumps, lit or not. A hundredth of an hour is 30 real seconds of the standard day: the key may turn, and it may not teleport.
-    try std.testing.expect(worst < 6.0);
+    std.debug.print("\n  pole shadow, m per 0.01 h lit: day {d:.4} at {d:.2}, swap {d:.4} at {d:.2}; fastest unlit {d:.3}\n", .{ worstDay, dayAt, worstSwap, swapAt, worstRaw });
+    try std.testing.expect(worstSwap < worstDay * 0.5);
+    try std.testing.expect(worstRaw < 0.2);
+    // Over the top, never around: the key stays in the sun's own vertical plane at every hour, so its bearing
+    // is the sun's or the moon's and nothing between. At the crossing it is out.
+    h = 0;
+    while (h < HOURS) : (h += STEP) {
+        const k = keyDir(h);
+        const s = sunDir(h);
+        const kl = mathx.lenXZ(k);
+        const sl = mathx.lenXZ(s);
+        if (kl < 1e-3 or sl < 1e-3) continue;
+        try std.testing.expect(@abs(k.x * s.z - k.z * s.x) / (kl * sl) < 1e-3);
+    }
+    try std.testing.expect(keyDir(KEY_SWAP_DUSK).y > 0.9);
+    try std.testing.expect(keyDir(KEY_SWAP_DAWN).y > 0.9);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), keyDim(KEY_SWAP_DUSK), 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), keyDim(SUNSET), 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), keyDim(SUNRISE), 1e-4);
 
     try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.distXZ(keyDir(12.0), mathx.normV(sunDir(12.0))), 1e-4);
     try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.distXZ(keyDir(0.0), mathx.normV(moonDir(0.0))), 1e-4);

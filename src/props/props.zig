@@ -191,6 +191,7 @@ pub const Kind = enum(u8) {
     forge,
     quenchtrough,
     toolrack,
+    stairflight,
 };
 
 
@@ -408,6 +409,7 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .forge => "Forge",
         .quenchtrough => "Quench Trough",
         .toolrack => "Tool Rack",
+        .stairflight => "Stair Flight",
     };
 }
 
@@ -418,7 +420,7 @@ pub fn group(k: Kind) Group {
         .banner, .sword, .graves, .sarcophagus, .bones,
         .gibbet, .cairn,
         => .ruins,
-        .chapel, .watchtower, .cottage, .tower, .gate, .causeway, .foggate, .ladder => .buildings,
+        .chapel, .watchtower, .cottage, .tower, .gate, .causeway, .foggate, .ladder, .stairflight => .buildings,
         .obelisk, .plinth, .altar => .ruins,
         .well, .shrine, .lantern, .fence, .barrels, .woodpile, .cart, .bonfire => .village,
         .anvil, .quenchtrough, .toolrack => .village,
@@ -479,7 +481,7 @@ pub const Biome = enum {
 
 pub fn biome(k: Kind) Biome {
     return switch (k) {
-        .rubble, .chest, .pickup, .water, .foggate, .ladder,
+        .rubble, .chest, .pickup, .water, .foggate, .ladder, .stairflight,
         .torch, .brazier, .campfire, .campfire_lit,
         .tuft, .patch, .shrub, .flowers, .glow, .grasstall, .clover,
         .thistle, .foxglove, .heather, .gorse, .wildflowers,
@@ -598,6 +600,7 @@ comptime {
 pub const Part = art.Part;
 
 pub const Deck = art.Deck;
+pub const Flight = art.Flight;
 
 pub const LADDER_STANDOFF = build.LADDER_STANDOFF;
 
@@ -631,6 +634,8 @@ pub const Info = struct {
     parts: []const Part = &.{},
     /// **METRES OF LOCAL HEIGHT ONE COPY OF THE MESH SPANS**, or 0 for everything else — one mesh, one draw.
     stack: f32 = 0,
+    /// A stacked kind that is WALKED: its sections advance along −Z and its surface is a deck of treads.
+    flight: ?Flight = null,
     decks: []const Deck = &.{},
     climb: bool = false,
     light: ?LightSpec = null,
@@ -891,6 +896,7 @@ pub const INFO = [NK]Info{
     }, .light = .{ .y = forge.FORGE_LIGHT_Y, .col = v3(1.0, 0.52, 0.18), .radius = forge.FORGE_LIGHT_R, .flicker = 0.16 } },
     .{ .kind = .quenchtrough, .build = forge.quenchMesh, .bound = forge.QUENCH_R + 0.2, .top = forge.QUENCH_TOP, .view = 170, .parts = &.{.{ .ax = -0.62, .bx = 0.62, .r = 0.30, .h = forge.QUENCH_TOP }}, .surf = .wood },
     .{ .kind = .toolrack, .build = forge.toolRackMesh, .bound = forge.RACK_TOP + 0.6, .top = forge.RACK_TOP, .view = 220, .parts = &.{.{ .ax = -forge.RACK_HW, .bx = forge.RACK_HW, .r = 0.22, .h = forge.RACK_TOP * 0.9 }}, .surf = .wood },
+    .{ .kind = .stairflight, .build = build.stairMesh, .bound = build.STAIR_RUN + 0.4, .top = build.STAIR_SEG, .view = 240, .stack = build.STAIR_SEG, .flight = .{ .run = build.STAIR_RUN, .halfW = build.STAIR_HALF, .treads = build.STAIR_TREADS }, .surf = .stone },
 };
 
 pub fn info(k: Kind) *const Info {

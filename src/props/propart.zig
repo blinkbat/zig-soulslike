@@ -142,6 +142,10 @@ pub const Part = struct { ax: f32 = 0, az: f32 = 0, bx: f32 = 0, bz: f32 = 0, r:
 
 pub const Deck = struct { x: f32 = 0, z: f32 = 0, r: f32, y: f32, hole: bool = false };
 
+/// A STACKED kind that is walked rather than climbed: each section also advances `run` along local −Z and
+/// its walkable surface is `treads` level steps, `halfW` wide. Read with `Info.stack` (the section's rise).
+pub const Flight = struct { run: f32, halfW: f32, treads: u32 };
+
 /// A volume a prop blocks the VIEW with (`props.Info.occl`). Here beside `Part` rather than in `props.zig` because a family file that builds its own colliders needs to build its own occluders too, and `props.zig` imports the families.
 pub const Blocker = struct { r: f32, y0: f32 = 0, y1: f32, x: f32 = 0, z: f32 = 0 };
 

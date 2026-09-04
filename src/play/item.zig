@@ -182,23 +182,69 @@ pub fn displayName(k: Kind) [:0]const u8 {
     };
 }
 
+/// **THE SHELF A THING SITS ON.** One shelf per KIND OF THING rather than per broad category: `tool` held the
+/// flasks, the arrows, the soul stones and fifteen consumables on one 22-row list, and `gear` held every
+/// weapon, coat and ring on another. The three equipment shelves are read off the SOCKET (`gearClass`), so a
+/// new piece shelves itself.
 pub const Class = enum {
-    tool,
-    treasure,
+    flask,
+    consumable,
+    ammo,
+    soul,
+    spell,
+    armament,
+    armour,
+    trinket,
     material,
+    treasure,
     key,
-    gear,
 
+    /// What ONE of them is, for the card under the cursor and the discovery card.
     pub fn label(c: Class) [:0]const u8 {
         return switch (c) {
-            .tool => "Tool",
-            .treasure => "Treasure",
+            .flask => "Flask",
+            .consumable => "Consumable",
+            .ammo => "Ammunition",
+            .soul => "Soul",
+            .spell => "Spell Scroll",
+            .armament => "Armament",
+            .armour => "Armour",
+            .trinket => "Trinket",
             .material => "Material",
+            .treasure => "Treasure",
             .key => "Key Item",
-            .gear => "Equipment",
+        };
+    }
+
+    /// What the SHELF is called, for a tab over a list of them.
+    pub fn shelf(c: Class) [:0]const u8 {
+        return switch (c) {
+            .flask => "Flasks",
+            .consumable => "Consumables",
+            .ammo => "Arrows",
+            .soul => "Souls",
+            .spell => "Spells",
+            .armament => "Armaments",
+            .armour => "Armour",
+            .trinket => "Trinkets",
+            .material => "Materials",
+            .treasure => "Treasures",
+            .key => "Key Items",
         };
     }
 };
+
+pub const NCLASS = @typeInfo(Class).@"enum".fields.len;
+
+/// A shelf whose things are SPENT: one press and it is gone out of the bag.
+pub fn consumedClass(c: Class) bool {
+    return c == .consumable or c == .ammo or c == .soul;
+}
+
+/// A shelf whose things fill a SOCKET - held, worn or on a finger.
+pub fn equipClass(c: Class) bool {
+    return c == .armament or c == .armour or c == .trinket;
+}
 
 /// **WHAT A THING IS WORTH IN COIN, AND 0 MEANS IT DOES NOT TRADE.** Derived from the SHELF it sits on.
 /// **UNTRADEABLE IS A PRICE OF 0** and it is one rule, not a second flag.
@@ -215,11 +261,11 @@ pub fn priceBank(k: Kind) u32 {
         .rune_arc => 520,
 
         else => switch (class(k)) {
-            .tool => 60,
-            .treasure => 400,
+            .flask, .key => 0,
+            .consumable, .ammo, .soul => 60,
             .material => 40,
-            .key => 0,
-            .gear => 300,
+            .armament, .armour, .trinket => 300,
+            .spell, .treasure => 400,
         },
     };
 }
@@ -247,54 +293,11 @@ pub fn sellPrice(k: Kind) u32 {
 
 pub fn class(k: Kind) Class {
     return switch (k) {
-        // **ONE PER LINE.** This is the table you read to find out where a thing shelves, and both of the long arms ran past 200 columns.
-        .crimson_flask,
-        .cerulean_flask,
-        .mushroom_jerky,
-        .ember_candle,
-        .sporeling_cap,
-        .second_wind,
-        .fire_tallow,
-        .thundercrock,
-        .nameless_soul,
-        .toadflesh_broth,
-        .purgeleaf,
-        .pilgrims_salt,
-        .ironwort_tea,
-        .kiln_draught,
-        .rimewax,
-        .pilgrims_offering,
-        .nightcap_grease,
-        .madcap_powder,
-        .stolen_gravebell,
-        .bloodwine,
-        => .tool,
-        .rune_arc,
-        .golden_seed,
-        => .treasure,
-        .tower_shield,
-        .greatclub,
-        .leech_signet,
-        .fang_dirk,
-        .grave_warbow,
-        .quilted_gambeson,
-        .pitted_helm,
-        .ashen_amulet,
-        .banded_warbelt,
-        .marchboots,
-        .deft_signet,
-        .rimeward_mantle,
-        .sporecrown,
-        .gravebell_amulet,
-        .envenomed_dagger,
-        .spidersilk_moccasins,
-        .bloodtinge_signet,
-        .loop_of_chance,
-        .wakers_nail,
-        .wax_stopped_hood,
-        => .gear,
-        .soul_binding_ring => .gear,
-        .spirit_scroll_wolf => .treasure,
+        .crimson_flask, .cerulean_flask => .flask,
+        .plain_arrows, .fire_arrows => .ammo,
+        // A soul stone is spent to BE souls; it shelves with what it pays out, not with the food.
+        .nameless_soul, .pilgrims_salt, .pilgrims_offering => .soul,
+        .spirit_scroll_wolf,
         .scroll_bolt,
         .scroll_roots,
         .scroll_rime,
@@ -304,10 +307,31 @@ pub fn class(k: Kind) Class {
         .scroll_sunder,
         .scroll_babble,
         .scroll_bidding,
-        => .treasure,
-        .plain_arrows, .fire_arrows => .tool,
+        => .spell,
         .smithing_stone, .bloodgrass, .kobold_fang => .material,
+        .rune_arc, .golden_seed => .treasure,
         .iron_key => .key,
+        else => gearClass(k),
+    };
+}
+
+/// A ring or a neck piece is a TRINKET; everything else worn is armour. Named here rather than at the shelf,
+/// because the doll already sorts the body this way.
+fn trinketSlot(w: Wear) bool {
+    return w == .ring or w == .ring2 or w == .neck;
+}
+
+/// **THE EQUIPMENT SHELVES ARE THE SOCKET.** Read off `equipBank` — the authored table, never the tuned one —
+/// so a piece added to `GEAR` lands on the right shelf without a second list to keep in step. Anything the
+/// switch above did not name and that fills no socket is a consumable: it is USED and it is gone.
+fn gearClass(k: Kind) Class {
+    return switch (equipBank(k)) {
+        .arm => .armament,
+        .plate => |p| if (trinketSlot(p.slot)) .trinket else .armour,
+        .charm => |c| if (trinketSlot(c.slot)) .trinket else .armour,
+        .boon => |b| if (trinketSlot(b.slot)) .trinket else .armour,
+        .bind => .trinket,
+        .none => .consumable,
     };
 }
 
@@ -717,8 +741,8 @@ pub fn isSpellScroll(k: Kind) bool {
 comptime {
     for (0..NK) |i| {
         const k: Kind = @enumFromInt(i);
-        if (isSpellScroll(k) and class(k) != .treasure)
-            @compileError("item: " ++ @tagName(k) ++ " is a sorcery scroll that `class` does not shelve as treasure");
+        if (isSpellScroll(k) and class(k) != .spell)
+            @compileError("item: " ++ @tagName(k) ++ " is a sorcery scroll that `class` does not shelve under Spells");
     }
 }
 
@@ -929,7 +953,7 @@ test "every kind is described and shelved, and no two share a description" {
     }
     for (0..NK) |i| {
         const k: Kind = @enumFromInt(i);
-        if (usable(k)) try std.testing.expectEqual(Class.tool, class(k));
+        if (usable(k)) try std.testing.expect(consumedClass(class(k)));
     }
 }
 
@@ -1103,7 +1127,7 @@ test "EVERY PIECE OF GEAR GOES IN A SOCKET, SAYS WHAT IT DOES IN NUMBERS, AND SH
         }
         worn += 1;
         try std.testing.expect(!usable(k));
-        try std.testing.expectEqual(Class.gear, class(k));
+        try std.testing.expect(equipClass(class(k)));
         try std.testing.expect(wearSlot(k) != null);
         const said = effect(k, &buf);
         try std.testing.expect(said.len > 0);

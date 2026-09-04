@@ -30,38 +30,36 @@ const SEAT_TURN: f32 = 0.20;
 pub const Row = enum {
     level,
     memorize,
-    untilMorning,
-    untilEvening,
+    flasks,
+    rest,
     leave,
 
     pub fn label(r: Row) [:0]const u8 {
         return switch (r) {
             .level => "Level Up",
             .memorize => "Memorize Spells",
-            .untilMorning => daynight.Until.morning.label(),
-            .untilEvening => daynight.Until.evening.label(),
+            .flasks => "Allot Flasks",
+            .rest => "Rest...",
             .leave => "Leave Bonfire",
-        };
-    }
-
-    pub fn until(r: Row) ?daynight.Until {
-        return switch (r) {
-            .level, .memorize, .leave => null,
-            .untilMorning => .morning,
-            .untilEvening => .evening,
         };
     }
 };
 
 pub const NROW = @typeInfo(Row).@"enum".fields.len;
 
-pub const Screen = enum { list, tree, spells };
+/// **THE WAITS ARE THE `Rest...` ROW'S OWN LIST.** Two rows that each ended the sit sat beside three that
+/// opened something, so the one verb the fire is named for read as two more options.
+pub const NWAIT = @typeInfo(daynight.Until).@"enum".fields.len;
+
+pub const Screen = enum { list, tree, spells, flasks, waits };
 
 pub const Pick = union(enum) {
     none,
     take: usize,
     wait: daynight.Until,
     memorize: struct { slot: usize, spell: ?combat.Spell },
+    /// How many of the pool go to CRIMSON; the rest are cerulean (`combat.Flasks.allot`).
+    allot: u8,
     leave,
 };
 
@@ -95,6 +93,12 @@ pub const Rest = struct {
 
     memRow: usize = 0,
     memPick: ?usize = null,
+
+    waitRow: usize = 0,
+    /// The split being STAGED on the flask screen — nothing moves until it is confirmed, the way a spell
+    /// is picked before it is memorised.
+    allotCrimson: u8 = combat.FLASK_CRIMSON,
+    allotTotal: u8 = combat.FLASK_TOTAL,
 
     pub fn reset(self: *Rest, sites: []const Site) void {
         self.n = 0;
@@ -213,6 +217,7 @@ pub const View = struct {
     souls: u32,
     mem: *const combat.Memory,
     bag: *const item.Bag,
+    flasks: *const combat.Flasks,
 };
 
 /// +1 for the EMPTY row: a slot you cannot clear is a slot the player is stuck with.
@@ -236,20 +241,31 @@ fn memPickRow(self: *const Rest, v: View) ?combat.Spell {
     return if (at < cs.len) cs[at] else null;
 }
 
+fn cycleRow(row: *usize, dy: f32, n: i32) bool {
+    const dv = mathx.signI(dy);
+    if (dv == 0 or n <= 0) return false;
+    const at: i32 = @intCast(row.*);
+    const next = @mod(at + dv + n, n);
+    if (next == at) return false;
+    row.* = @intCast(next);
+    return true;
+}
+
 pub fn navigate(self: *Rest, dx: f32, dy: f32) void {
     switch (self.screen) {
-        .list => {
-            const dv = mathx.signI(dy);
-            if (dv == 0) return;
-            const n: i32 = NROW;
-            const at: i32 = @intCast(self.row);
-            const next = @mod(at + dv + n, n);
-            if (next == at) return;
-            self.row = @intCast(next);
-            sfx.play(.menu_move);
-        },
+        .list => if (cycleRow(&self.row, dy, NROW)) sfx.play(.menu_move),
+        .waits => if (cycleRow(&self.waitRow, dy, NWAIT)) sfx.play(.menu_move),
         .tree => if (self.wheel.move(dx, dy)) sfx.play(.menu_move),
         .spells => {},
+        .flasks => {
+            const dv = mathx.signI(dx);
+            if (dv == 0) return;
+            const at: i32 = @intCast(self.allotCrimson);
+            const want = mathx.clampI(at + dv, 0, @intCast(self.allotTotal));
+            if (want == at) return;
+            self.allotCrimson = @intCast(want);
+            sfx.play(.menu_move);
+        },
     }
 }
 
@@ -281,9 +297,7 @@ pub fn pan(self: *Rest, v: rl.Vector2, dt: f32) void {
 pub fn confirm(self: *Rest, v: View) Pick {
     switch (self.screen) {
         .list => {
-            const r: Row = @enumFromInt(self.row);
-            if (r.until()) |u| return .{ .wait = u };
-            switch (r) {
+            switch (@as(Row, @enumFromInt(self.row))) {
                 .level => {
                     self.screen = .tree;
                     sfx.play(.menu_pick);
@@ -296,9 +310,26 @@ pub fn confirm(self: *Rest, v: View) Pick {
                     sfx.play(.menu_pick);
                     return .none;
                 },
+                .flasks => {
+                    self.screen = .flasks;
+                    self.allotTotal = v.flasks.total();
+                    self.allotCrimson = @min(v.flasks.allotted(.crimson), self.allotTotal);
+                    sfx.play(.menu_pick);
+                    return .none;
+                },
+                .rest => {
+                    self.screen = .waits;
+                    self.waitRow = 0;
+                    sfx.play(.menu_pick);
+                    return .none;
+                },
                 .leave => return .leave,
-                .untilMorning, .untilEvening => unreachable,
             }
+        },
+        .waits => return .{ .wait = @enumFromInt(self.waitRow) },
+        .flasks => {
+            sfx.play(.item_get);
+            return .{ .allot = self.allotCrimson };
         },
         .tree => {
             const i = self.wheel.cursor;
@@ -364,6 +395,7 @@ const Tree = ptree.Tree;
 pub fn debugShow(self: *Rest, screen: Screen, row: usize, node: usize, mag: f32) void {
     self.screen = screen;
     self.row = @min(row, NROW - 1);
+    self.waitRow = @min(row, NWAIT - 1);
     self.wheel = .{ .cursor = node, .zoom = mag };
 }
 
@@ -393,6 +425,8 @@ pub fn drawScreen(self: *const Rest, v: View) void {
     if (a <= 0.02) return;
     switch (self.screen) {
         .list => drawList(self, a),
+        .waits => drawWaits(self, a),
+        .flasks => drawFlasks(self, a),
         .tree => drawTree(self, v.tree, v.souls, a),
         .spells => drawSpells(self, v, a),
     }
@@ -408,31 +442,63 @@ fn ink(c: rl.Color, a: f32) rl.Color {
 
 const PAD_X: i32 = 24;
 
-fn drawList(self: *const Rest, a: f32) void {
-    const w = panelW();
-    const sh = rl.getScreenHeight();
-    const head = hud.lineH(hud.TITLE) + 40;
-    const body = rowH() * @as(i32, NROW);
-    const foot: i32 = 26;
-    const h = head + body + foot;
-    const x = MARGIN;
-    const y = @divTrunc(sh - h, 2);
+/// The bonfire panel: a title and `n` rows, one of them under the cursor. The list and both of its
+/// sub-lists are the same picture, so a sub-option cannot grow its own shape.
+const Panel = struct {
+    x: i32,
+    y: i32,
+    w: i32,
+    body: i32,
 
-    uiart.seat(x, y, w, h);
-    uiart.plate(x, y, w, h, alpha(236.0, a));
-    uiart.frame(x, y, w, h, alpha(200.0, a));
+    fn open(title: [:0]const u8, rows: i32, a: f32) Panel {
+        const w = panelW();
+        const head = hud.lineH(hud.TITLE) + 40;
+        const foot: i32 = 26;
+        const h = head + rowH() * rows + foot;
+        const x = MARGIN;
+        const y = @divTrunc(rl.getScreenHeight() - h, 2);
 
-    hud.engraved("BONFIRE", x + PAD_X, y + 20, hud.TITLE, ink(uiart.TEXT_TITLE, a));
-    uiart.divider(x + @divTrunc(w, 2), y + hud.lineH(hud.TITLE) + 30, @divTrunc(w, 2) - PAD_X, alpha(170.0, a));
+        uiart.seat(x, y, w, h);
+        uiart.plate(x, y, w, h, alpha(236.0, a));
+        uiart.frame(x, y, w, h, alpha(200.0, a));
 
-    var ry = y + head;
-    for (0..NROW) |i| {
-        const r: Row = @enumFromInt(i);
-        const on = i == self.row;
-        if (on) uiart.rowHilite(x + 14, ry - 4, w - 28, rowH() - 8);
-        hud.text(r.label(), x + PAD_X + 6, ry, hud.BODY, ink(if (on) uiart.HOT else uiart.TEXT_VALUE, a));
-        ry += rowH();
+        hud.engraved(title, x + PAD_X, y + 20, hud.TITLE, ink(uiart.TEXT_TITLE, a));
+        uiart.divider(x + @divTrunc(w, 2), y + hud.lineH(hud.TITLE) + 30, @divTrunc(w, 2) - PAD_X, alpha(170.0, a));
+        return .{ .x = x, .y = y + head, .w = w, .body = 0 };
     }
+
+    fn row(self: *Panel, label: [:0]const u8, on: bool, a: f32) i32 {
+        const ry = self.y + self.body;
+        if (on) uiart.rowHilite(self.x + 14, ry - 4, self.w - 28, rowH() - 8);
+        hud.text(label, self.x + PAD_X + 6, ry, hud.BODY, ink(if (on) uiart.HOT else uiart.TEXT_VALUE, a));
+        self.body += rowH();
+        return ry;
+    }
+};
+
+fn drawList(self: *const Rest, a: f32) void {
+    var p = Panel.open("BONFIRE", NROW, a);
+    for (0..NROW) |i| _ = p.row(@as(Row, @enumFromInt(i)).label(), i == self.row, a);
+}
+
+fn drawWaits(self: *const Rest, a: f32) void {
+    var p = Panel.open("REST", NWAIT, a);
+    for (0..NWAIT) |i| _ = p.row(@as(daynight.Until, @enumFromInt(i)).label(), i == self.waitRow, a);
+}
+
+/// **ONE POOL, TWO ROWS, AND THE ARROWS ARE ON THE ONE THAT MOVES.** The cerulean row is the remainder and
+/// carries no cursor of its own — it is the same charge seen from the other end.
+fn drawFlasks(self: *const Rest, a: f32) void {
+    var p = Panel.open("FLASKS", 3, a);
+    var buf: [48]u8 = undefined;
+    const cerulean = self.allotTotal - @min(self.allotCrimson, self.allotTotal);
+    const crimsonRow = std.fmt.bufPrintZ(&buf, "< Crimson  {d} >", .{self.allotCrimson}) catch "Crimson";
+    _ = p.row(crimsonRow, true, a);
+    var b2: [48]u8 = undefined;
+    _ = p.row(std.fmt.bufPrintZ(&b2, "  Cerulean {d}", .{cerulean}) catch "Cerulean", false, a);
+    var b3: [48]u8 = undefined;
+    const foot = std.fmt.bufPrintZ(&b3, "{d} charges in all", .{self.allotTotal}) catch "";
+    hud.text(foot, p.x + PAD_X + 6, p.y + p.body + 4, hud.SMALL, ink(uiart.TEXT_HINT, a));
 }
 
 fn bigScreen(title: [:0]const u8, foot: i32, a: f32) struct { x: i32, y: i32, w: i32, h: i32, headY: i32, right: i32, bottom: i32 } {
@@ -597,7 +663,8 @@ test "THE FIRE OFFERS ONLY THE SCROLLS HE CARRIES, and a slot is filled in two p
     const tree = Tree{};
     bag.add(combat.spellScroll(.bolt), 1);
     bag.add(combat.spellScroll(.sunder), 1);
-    const v = View{ .tree = &tree, .souls = 0, .mem = &mem, .bag = &bag };
+    var flasks = combat.Flasks{};
+    const v = View{ .tree = &tree, .souls = 0, .mem = &mem, .bag = &bag, .flasks = &flasks };
 
     var buf: [MEM_CANDS]?combat.Spell = undefined;
     const cs = memCands(v, &buf);
@@ -618,7 +685,7 @@ test "THE FIRE OFFERS ONLY THE SCROLLS HE CARRIES, and a slot is filled in two p
 
     var none = combat.Memory{ .slots = [_]?combat.Spell{null} ** combat.MEM_SLOTS };
     var empty = item.Bag{};
-    const bare = View{ .tree = &tree, .souls = 0, .mem = &none, .bag = &empty };
+    const bare = View{ .tree = &tree, .souls = 0, .mem = &none, .bag = &empty, .flasks = &flasks };
     var r2 = Rest{ .phase = .sit, .screen = .spells };
     try std.testing.expectEqual(Pick.none, confirm(&r2, bare));
     try std.testing.expect(r2.memPick == null);

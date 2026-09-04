@@ -6,6 +6,8 @@ const gfx = @import("../gfx/gfx.zig");
 const wf = @import("../world/worldfmt.zig");
 const foestat = @import("foestat.zig");
 const props = @import("../props/props.zig");
+const fen = @import("fenlurker.zig");
+const env = @import("../world/env.zig");
 
 const v3 = mathx.v3;
 
@@ -214,6 +216,16 @@ test "EVERY KINGDOM THAT HOLDS A CREATURE HOLDS MORE THAN ONE, and the wanderers
 
 /// A share of its OWN STATURE — the hips. The hero's own limit is 0.76 of his (`env.WADE_MAX`).
 pub const WADE_FRAC: f32 = 0.45;
+
+/// **THE WATER A POSTED CREATURE MUST STAND IN**, or null for one that does not care. The lurker's: hidden
+/// under `fen.POOL_MIN`, and no deeper than the hero wades or he can never reach the fight. The editor refuses
+/// a post outside it, and the Pool brush digs to `env.dwellerFloor`, inside it.
+pub fn poolBand(k: wf.FoeKind) ?[2]f32 {
+    return switch (k) {
+        .fen_lurker => .{ fen.POOL_MIN, env.WADE_MAX },
+        else => null,
+    };
+}
 
 pub fn wadeLimit(k: wf.FoeKind, stature: f32) f32 {
     return switch (traitsOf(k).gait) {
@@ -2733,6 +2745,15 @@ test "THE JUNKYARD DOG IS LEASHED OR IT IS NOT — one never leaves its post, th
             try std.testing.expect(far > ROAM_R * 3.0);
         }
     }
+}
+
+test "the lurker's water is a band, and the pool the brush digs sits inside it" {
+    const band = poolBand(.fen_lurker).?;
+    try std.testing.expect(band[0] < band[1]);
+    try std.testing.expect(env.dwellerDepth() > band[0] and env.dwellerDepth() <= band[1]);
+    try std.testing.expect(poolBand(.toad) == null);
+    try std.testing.expectApproxEqAbs(env.dwellerFloor(), wf.heightOf(wf.heightByte(env.dwellerFloor())), 1e-5);
+    std.debug.print("\n  water-dweller pool: floor {d:.2} m, {d:.3} m of water; the lurker's band {d:.2}..{d:.2}\n", .{ env.dwellerFloor(), env.dwellerDepth(), band[0], band[1] });
 }
 
 test "A PATROL WALKS ITS ROUTE AND TURNS ROUND — post out to the last point and back, never teleporting" {

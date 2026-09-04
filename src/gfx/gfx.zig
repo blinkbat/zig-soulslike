@@ -529,7 +529,8 @@ pub const Scene = struct {
         sunReach = daynight.shadowReach(hour);
         var d = sun;
         rl.setShaderValue(self.shader, self.loc_sun, &d, .vec3);
-        var key = p.key;
+        const dim = daynight.keyDim(hour);
+        var key = mathx.scaleV(p.key, dim);
         rl.setShaderValue(self.shader, self.loc_key, &key, .vec3);
         var ag = p.ambGround;
         rl.setShaderValue(self.shader, self.loc_ambGround, &ag, .vec3);
@@ -539,7 +540,7 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_haze, &hz, .vec3);
         var hb = p.hazeBank;
         rl.setShaderValue(self.shader, self.loc_hazeBank, &hb, .vec3);
-        var ka = daynight.keyAmt(p);
+        var ka = daynight.keyAmt(p) * dim;
         rl.setShaderValue(self.shader, self.loc_keyAmt, &ka, .float);
         var density: f32 = HAZE_DENSITY * (1.0 + (HAZE_STORM - 1.0) * mathx.clampF(wet, 0, 1)) *
             (1.0 + (daynight.HAZE_SPORE_D - 1.0) * mathx.clampF(spore, 0, 1)) * mathx.maxF(fogK, 0);
@@ -1064,6 +1065,80 @@ pub const Builder = struct {
         mesh.colors = col.ptr;
         rl.uploadMesh(&mesh, false);
         return mesh;
+    }
+
+    /// **STAMP ANOTHER BUILDER'S MESH INTO THIS ONE** — turned about Y, scaled per axis and moved. The source
+    /// keeps its own per-vertex material and colour, so a prop built as `.stone` is still stone wherever it
+    /// lands. Normals take the inverse scale, or a squashed copy shades as if it had never been squashed.
+    pub fn stamp(self: *Builder, src: *const Builder, origin: rl.Vector3, yaw: f32, scale: rl.Vector3) void {
+        const c = @cos(yaw);
+        const s = @sin(yaw);
+        const inv = rl.Vector3{ .x = 1.0 / scale.x, .y = 1.0 / scale.y, .z = 1.0 / scale.z };
+        const n = src.pos.items.len / 3;
+        self.pos.ensureUnusedCapacity(src.pos.items.len) catch @panic("oom");
+        self.nrm.ensureUnusedCapacity(src.nrm.items.len) catch @panic("oom");
+        self.uv.ensureUnusedCapacity(src.uv.items.len) catch @panic("oom");
+        self.uv2.ensureUnusedCapacity(src.uv2.items.len) catch @panic("oom");
+        self.col.ensureUnusedCapacity(src.col.items.len) catch @panic("oom");
+        for (0..n) |i| {
+            const px = src.pos.items[i * 3] * scale.x;
+            const py = src.pos.items[i * 3 + 1] * scale.y;
+            const pz = src.pos.items[i * 3 + 2] * scale.z;
+            self.pos.appendSliceAssumeCapacity(&.{ origin.x + px * c + pz * s, origin.y + py, origin.z - px * s + pz * c });
+            const nx = src.nrm.items[i * 3] * inv.x;
+            const ny = src.nrm.items[i * 3 + 1] * inv.y;
+            const nz = src.nrm.items[i * 3 + 2] * inv.z;
+            const l = @sqrt(nx * nx + ny * ny + nz * nz);
+            const k = if (l > 1e-6) 1.0 / l else 0;
+            self.nrm.appendSliceAssumeCapacity(&.{ (nx * c + nz * s) * k, ny * k, (-nx * s + nz * c) * k });
+            self.uv.appendSliceAssumeCapacity(&.{ src.uv.items[i * 2], src.uv.items[i * 2 + 1] });
+            self.uv2.appendSliceAssumeCapacity(&.{ src.uv2.items[i * 2], src.uv2.items[i * 2 + 1] });
+            self.col.appendSliceAssumeCapacity(src.col.items[i * 4 ..][0..4]);
+        }
+    }
+
+    /// The extent of one MATERIAL's vertices. A cliff prop's ivy and grass carry a third of its height again,
+    /// so anything sizing the ROCK to a drop has to ask the stone and not the whole mesh.
+    pub fn boundsOf(self: *const Builder, m: Mat) struct { lo: rl.Vector3, hi: rl.Vector3 } {
+        const want: f32 = @floatFromInt(@intFromEnum(m));
+        var lo = rl.Vector3{ .x = 0, .y = 0, .z = 0 };
+        var hi = lo;
+        var any = false;
+        var i: usize = 0;
+        while (i * 3 + 2 < self.pos.items.len) : (i += 1) {
+            if (@abs(self.uv2.items[i * 2] - want) > 0.01) continue;
+            const p = rl.Vector3{ .x = self.pos.items[i * 3], .y = self.pos.items[i * 3 + 1], .z = self.pos.items[i * 3 + 2] };
+            if (!any) {
+                lo = p;
+                hi = p;
+                any = true;
+                continue;
+            }
+            lo.x = @min(lo.x, p.x);
+            lo.y = @min(lo.y, p.y);
+            lo.z = @min(lo.z, p.z);
+            hi.x = @max(hi.x, p.x);
+            hi.y = @max(hi.y, p.y);
+            hi.z = @max(hi.z, p.z);
+        }
+        return .{ .lo = lo, .hi = hi };
+    }
+
+    /// The mesh's extent in its own space, for anything that has to place it against something else.
+    pub fn bounds(self: *const Builder) struct { lo: rl.Vector3, hi: rl.Vector3 } {
+        if (self.pos.items.len == 0) return .{ .lo = .{ .x = 0, .y = 0, .z = 0 }, .hi = .{ .x = 0, .y = 0, .z = 0 } };
+        var lo = rl.Vector3{ .x = self.pos.items[0], .y = self.pos.items[1], .z = self.pos.items[2] };
+        var hi = lo;
+        var i: usize = 0;
+        while (i + 2 < self.pos.items.len) : (i += 3) {
+            lo.x = @min(lo.x, self.pos.items[i]);
+            lo.y = @min(lo.y, self.pos.items[i + 1]);
+            lo.z = @min(lo.z, self.pos.items[i + 2]);
+            hi.x = @max(hi.x, self.pos.items[i]);
+            hi.y = @max(hi.y, self.pos.items[i + 1]);
+            hi.z = @max(hi.z, self.pos.items[i + 2]);
+        }
+        return .{ .lo = lo, .hi = hi };
     }
 
     pub fn toModel(self: *Builder, shader: rl.Shader) rl.Model {

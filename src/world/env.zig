@@ -8,11 +8,13 @@ const props = @import("../props/props.zig");
 const propbuild = @import("../props/propbuild.zig");
 const propfx = @import("../props/propfx.zig");
 const art = @import("../props/propart.zig");
+const proprock = @import("../props/proprock.zig");
 const wf = @import("worldfmt.zig");
 const chestmod = @import("../play/chest.zig");
 const pickupmod = @import("../play/pickup.zig");
 const item = @import("../play/item.zig");
 const restmod = @import("../play/rest.zig");
+const foemod = @import("../foes/foe.zig");
 
 const v3 = mathx.v3;
 const Kind = props.Kind;
@@ -120,10 +122,13 @@ const TCHUNK: usize = 16;
 const TILES: usize = (wf.HEIGHT_N - 2) / (TCHUNK - 1) + 1;
 const NTILES: usize = TILES * TILES;
 
-/// How steep the ground may be and still be walked, as the TANGENT of the slope angle (rise over run). tan 40 deg
-pub const MAX_SLOPE: f32 = 0.839;
-pub const STEP_UP: f32 = 0.55;
+pub const MAX_SLOPE = wf.MAX_SLOPE;
+pub const STEP_UP = wf.STEP_UP;
 pub const STEP_PROBE: f32 = 0.5;
+/// Where along the probe the rise is read, besides the step's own end.
+const STEP_TAPS: usize = 4;
+/// The baseline a riser's landing is judged over: a tread is level across it, a bank is not.
+const TREAD_READ: f32 = 0.25;
 
 /// HOW DEEP ANYTHING ON FOOT MAY WADE, in metres — CHEST HEIGHT, the thorax at 0.760·H on the 1.8 m rig. Past it the water is a WALL. Written out rather than read off `hero.H` because env sits BELOW hero in the import graph.
 pub const WADE_MAX: f32 = 1.37;
@@ -135,6 +140,16 @@ fn digTone(metres: f32) f32 {
 }
 
 const WATER_Y: f32 = 0.055;
+
+/// **THE WATER-DWELLER FLOOR**, as the map stores it: the deepest lattice height the hero still wades
+/// (`WADE_MAX`), so a lurker's pool is one he can be drawn into. Ground > Pool digs to it.
+pub fn dwellerFloor() f32 {
+    return @ceil((WATER_Y - GROUND_Y - WADE_MAX) / wf.HEIGHT_STEP) * wf.HEIGHT_STEP;
+}
+
+pub fn dwellerDepth() f32 {
+    return WATER_Y - GROUND_Y - dwellerFloor();
+}
 
 var scratchIn: [wf.WATER_CELLS]f32 = undefined;
 var scratchOut: [wf.WATER_CELLS]f32 = undefined;
@@ -182,7 +197,34 @@ pub const Prop = struct {
     rise: f32 = 0,
 };
 
-pub const WorldDeck = struct { x: f32, z: f32, r: f32, y: f32, hole: bool };
+pub const WorldDeck = struct {
+    x: f32,
+    z: f32,
+    r: f32,
+    y: f32,
+    hole: bool,
+    /// A FLIGHT: `run` metres from (`x`,`z`) along (`ax`,`az`), rising `rise` in `treads` level steps,
+    /// `halfW` wide. `run` 0 is a disc at `y`.
+    run: f32 = 0,
+    ax: f32 = 0,
+    az: f32 = 0,
+    rise: f32 = 0,
+    halfW: f32 = 0,
+    treads: u32 = 0,
+
+    /// The tread under (x, z), or null off the flight. A disc answers `y` everywhere inside it.
+    fn floorAt(d: WorldDeck, x: f32, z: f32) ?f32 {
+        if (d.run <= 0) return if (inDisc(d, x, z)) d.y else null;
+        const dx = x - d.x;
+        const dz = z - d.z;
+        const t = dx * d.ax + dz * d.az;
+        const s = -dx * d.az + dz * d.ax;
+        if (t < -0.05 or t > d.run + 0.05 or @abs(s) > d.halfW) return null;
+        const n: f32 = @floatFromInt(@max(d.treads, 1));
+        const k = mathx.clampF(@floor(t / (d.run / n)), 0, n - 1);
+        return d.y + (k + 1) * (d.rise / n);
+    }
+};
 
 pub const Rung = struct {
     foot: rl.Vector3,
@@ -197,10 +239,17 @@ pub fn runOf(pr: *const Prop, nfo: *const props.Info) f32 {
     return nfo.top * pr.scale;
 }
 
+/// How far a flight's foot is from its head along the ground, for the rise it was given.
+pub fn flightRun(pr: *const Prop, nfo: *const props.Info) f32 {
+    const fl = nfo.flight orelse return 0;
+    if (nfo.stack <= 0 or pr.rise <= 0) return 0;
+    return pr.rise * fl.run / nfo.stack;
+}
+
 /// The culling sphere about the prop's foot: a ladder's mesh is 2.4 m and its run can be twelve.
 pub fn reachOf(pr: *const Prop, nfo: *const props.Info) f32 {
     const b = nfo.bound * pr.scale;
-    if (nfo.stack > 0 and pr.rise > 0) return pr.rise + b;
+    if (nfo.stack > 0 and pr.rise > 0) return pr.rise + flightRun(pr, nfo) + b;
     return b;
 }
 
@@ -441,6 +490,10 @@ pub const Env = struct {
     /// the `cliff*` props are made of.
     faces: [NTILES]rl.Model = undefined,
     faceBuilt: [NTILES]bool = [_]bool{false} ** NTILES,
+    /// What the faces CAST: a plate set `FACE_SHADOW_IN` behind each cut, drawn in the depth pass only.
+    /// The visible face never shadows itself off it, because it is always that far in front.
+    casters: [NTILES]rl.Model = undefined,
+    casterBuilt: [NTILES]bool = [_]bool{false} ** NTILES,
     tileMid: [NTILES]rl.Vector3 = [_]rl.Vector3{mathx.zero3} ** NTILES,
     tileRad: [NTILES]f32 = [_]f32{0} ** NTILES,
     skirt: rl.Model = undefined,
@@ -479,8 +532,11 @@ pub const Env = struct {
         self.waterReady = false;
         self.soilReady = false;
         @memset(&self.sgrid_start, 0);
+        // `Game` is created UNINITIALISED and `build` is the only thing that zeroes `Env`, so every array
+        // that gates an `unloadModel` is reset HERE or the first `dropTile` frees a wild pointer.
         self.tileBuilt = [_]bool{false} ** NTILES;
         self.faceBuilt = [_]bool{false} ** NTILES;
+        self.casterBuilt = [_]bool{false} ** NTILES;
         self.tileRad = [_]f32{0} ** NTILES;
         self.tileMid = [_]rl.Vector3{mathx.zero3} ** NTILES;
         self.skirtBuilt = false;
@@ -569,6 +625,10 @@ pub const Env = struct {
             unloadTerrain(self.faces[i]);
             self.faceBuilt[i] = false;
         }
+        if (self.casterBuilt[i]) {
+            unloadTerrain(self.casters[i]);
+            self.casterBuilt[i] = false;
+        }
         if (!self.tileBuilt[i]) return;
         unloadTerrain(self.tiles[i]);
         self.tileBuilt[i] = false;
@@ -588,8 +648,11 @@ pub const Env = struct {
         var b = gfx.Builder.init();
         var fb = gfx.Builder.init();
         fb.setMat(.stone);
+        var sb = gfx.Builder.init();
+        const face = Face{ .b = &fb, .sb = &sb, .env = self };
         var yLo: f32 = std.math.floatMax(f32);
         var yHi: f32 = -std.math.floatMax(f32);
+        const minDrop = wf.cliffMinDrop(step);
         var iz = z0;
         while (iz < z1) : (iz += 1) {
             var ix = x0;
@@ -610,16 +673,30 @@ pub const Env = struct {
                     const tread = self.cellSurface(ix, iz);
                     yLo = @min(yLo, tread);
                     yHi = @max(yHi, tread);
-                    stairCell(&b, &fb, .{ xa, za }, .{ xb, zb }, tread, .{
+                    stairCell(&b, face, .{ xa, za }, .{ xb, zb }, tread, .{
                         self.cellSurface(ix -| 1, iz),
                         self.cellSurface(ix, iz -| 1),
                         self.cellSurface(ix + 1, iz),
                         self.cellSurface(ix, iz + 1),
-                    });
+                    }, .{ ha, hd, hc, hb });
                     continue;
                 }
-                if (case != wf.CLIFF_NONE and t.hi > t.lo) {
-                    cliffCell(&b, &fb, ix, iz, .{ xa, za }, .{ xb, zb }, .{ ha, hd, hc, hb }, t);
+                if (case == wf.CLIFF_FACE and wf.cliffCuts(t, minDrop)) {
+                    const ring = [4]f32{ ha, hd, hc, hb };
+                    const cut = wf.cliffCut(ring, t);
+                    var lv = wf.cliffLevels(&self.heightField, ix, iz, minDrop, cut);
+                    for (&lv.hi, &lv.lo) |*p, *q| {
+                        p.* += GROUND_Y;
+                        q.* += GROUND_Y;
+                        yLo = @min(yLo, q.*);
+                        yHi = @max(yHi, p.*);
+                    }
+                    cliffCell(&b, face, .{ xa, za }, .{ xb, zb }, ring, cut, lv, .{
+                        self.treadOf(ix -| 1, iz),
+                        self.treadOf(ix, iz + 1),
+                        self.treadOf(ix + 1, iz),
+                        self.treadOf(ix, iz -| 1),
+                    });
                     continue;
                 }
                 b.quadSmooth(
@@ -642,6 +719,10 @@ pub const Env = struct {
             self.faces[i] = fb.toModel(sh);
             self.faceBuilt[i] = true;
         } else fb.deinit();
+        if (sb.pos.items.len > 0) {
+            self.casters[i] = sb.toModel(sh);
+            self.casterBuilt[i] = true;
+        } else sb.deinit();
         const cx = -half + (@as(f32, @floatFromInt(x0)) + @as(f32, @floatFromInt(x1))) * 0.5 * step;
         const cz = -half + (@as(f32, @floatFromInt(z0)) + @as(f32, @floatFromInt(z1))) * 0.5 * step;
         const spanX = @as(f32, @floatFromInt(x1 - x0)) * step;
@@ -705,19 +786,46 @@ pub const Env = struct {
         return self.groundAt(x, z);
     }
 
+    fn lattice(self: *const Env) f32 {
+        return 2 * self.heightHalf / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
+    }
+
     fn caseAt(self: *const Env, ix: usize, iz: usize) u8 {
         if (ix + 1 >= wf.HEIGHT_N or iz + 1 >= wf.HEIGHT_N) return wf.CLIFF_NONE;
         return self.cliffField[iz * wf.HEIGHT_N + ix];
     }
 
+    /// A stair neighbour's tread, the one surface a cell edge cannot read off the shared corners.
+    fn treadOf(self: *const Env, ix: usize, iz: usize) ?f32 {
+        if (self.caseAt(ix, iz) != wf.CLIFF_STAIR) return null;
+        return self.cellSurface(ix, iz);
+    }
+
+    fn caseAtWorld(self: *const Env, x: f32, z: f32) u8 {
+        const step = self.lattice();
+        const last: f32 = @floatFromInt(wf.HEIGHT_N - 1);
+        const ix: usize = @intFromFloat(mathx.clampF(@floor((x + self.heightHalf) / step), 0, last));
+        const iz: usize = @intFromFloat(mathx.clampF(@floor((z + self.heightHalf) / step), 0, last));
+        return self.caseAt(ix, iz);
+    }
+
+    /// Whether the cell actually steps: a stair always, a painted face only over `wf.cliffMinDrop`.
+    fn cellCuts(self: *const Env, ix: usize, iz: usize) bool {
+        const case = self.caseAt(ix, iz);
+        if (case == wf.CLIFF_STAIR) return true;
+        if (case != wf.CLIFF_FACE) return false;
+        const t = wf.cliffTiers(self.pointY(ix, iz), self.pointY(ix + 1, iz), self.pointY(ix, iz + 1), self.pointY(ix + 1, iz + 1));
+        return wf.cliffCuts(t, wf.cliffMinDrop(self.lattice()));
+    }
+
     /// Whether the lattice step from (ix, iz) to its `+x` (or `+z`) neighbour crosses a cut. Either of the
-    /// two cells sharing that edge carrying a case is enough.
+    /// two cells sharing that edge stepping is enough.
     fn cutAlong(self: *const Env, ix: usize, iz: usize, alongX: bool) bool {
         const a = if (alongX)
-            (if (iz > 0) self.caseAt(ix, iz - 1) else wf.CLIFF_NONE)
+            (if (iz > 0) self.cellCuts(ix, iz - 1) else false)
         else
-            (if (ix > 0) self.caseAt(ix - 1, iz) else wf.CLIFF_NONE);
-        return a != wf.CLIFF_NONE or self.caseAt(ix, iz) != wf.CLIFF_NONE;
+            (if (ix > 0) self.cellCuts(ix - 1, iz) else false);
+        return a or self.cellCuts(ix, iz);
     }
 
     /// **A NORMAL NEVER READS ACROSS A FACE.** Differenced through a 13 m cut the lattice point beside a
@@ -1234,13 +1342,14 @@ pub const Env = struct {
         var k = self.dgrid_start[c];
         while (k < self.dgrid_start[c + 1]) : (k += 1) {
             const d = self.deck_buf[self.dgrid_items[k]];
-            if (d.hole or !inDisc(d, x, z)) continue;
-            if (d.y > footY + STEP_UP) continue;
+            if (d.hole) continue;
+            const y = d.floorAt(x, z) orelse continue;
+            if (y > footY + STEP_UP) continue;
             if (best) |b| {
-                if (d.y <= b) continue;
+                if (y <= b) continue;
             }
-            if (self.holedAt(c, d, x, z)) continue;
-            best = d.y;
+            if (d.run <= 0 and self.holedAt(c, d, x, z)) continue;
+            best = y;
         }
         return best;
     }
@@ -1354,9 +1463,10 @@ pub const Env = struct {
 
     /// A lip a ground creature will not step off. Only a cliff cell can make one — a ramp's descent over a
     /// frame's travel is bounded by `MAX_SLOPE`, which at any frame rate is a fraction of `STEP_UP`.
+    /// Measured where a body STANDS (`standAt` off `from.y`), so the head of a flight is not a lip.
     pub fn brink(self: *const Env, from: rl.Vector3, to: rl.Vector3) bool {
         if (!self.heightAny) return false;
-        return self.groundAt(to.x, to.z) < self.groundAt(from.x, from.z) - STEP_UP;
+        return self.standAt(to.x, to.z, from.y) < self.standAt(from.x, from.z, from.y) - STEP_UP;
     }
 
     pub fn flyStep(self: *const Env, from: rl.Vector3, dir: rl.Vector3, dist: f32, footY: f32) rl.Vector3 {
@@ -1366,12 +1476,35 @@ pub const Env = struct {
         return v3(from.x, from.y, from.z);
     }
 
+    /// **THE RISE IS MEASURED FROM WHERE HE STANDS.** `from.y` is the actor's own height (a deck's when he is
+    /// on one), so the head of a flight meets the shelf at a step and not at the whole drop the LAND takes.
+    /// **THE STEP ALLOWANCE IS FOR A RISER, NOT A GRADE.** `STEP_UP` over the half-metre probe is a 47.7 degree
+    /// climb, and read at the probe's end alone it let a body up any bank under that, and through the corner
+    /// of a cut whose far side the probe happened to land past. Read at the step's own end and at four taps
+    /// along the probe; a rise past the slope's share is a riser, and a riser must land on a TREAD.
     fn stepOk(self: *const Env, from: rl.Vector3, dir: rl.Vector3, dist: f32) bool {
         const probe = mathx.maxF(dist, STEP_PROBE);
-        const h0 = self.groundAt(from.x, from.z);
-        const h1 = self.groundAt(from.x + dir.x * probe, from.z + dir.z * probe);
-        const rise = h1 - h0;
-        return rise <= mathx.maxF(STEP_UP, MAX_SLOPE * probe);
+        const h0 = self.standAt(from.x, from.z, from.y);
+        var k: usize = 0;
+        while (k <= STEP_TAPS) : (k += 1) {
+            const d = if (k == 0) dist else probe * @as(f32, @floatFromInt(k)) / @as(f32, @floatFromInt(STEP_TAPS));
+            const x = from.x + dir.x * d;
+            const z = from.z + dir.z * d;
+            const rise = self.standAt(x, z, from.y) - h0;
+            if (rise <= MAX_SLOPE * d) continue;
+            if (rise > STEP_UP or !self.treadAt(x, z, from.y)) return false;
+        }
+        return true;
+    }
+
+    /// Ground a riser may land on: a deck, a stair cell, or terrain under `MAX_SLOPE` read over `TREAD_READ`
+    /// either way. A kerb is stepped; a bank the same height is not.
+    fn treadAt(self: *const Env, x: f32, z: f32, footY: f32) bool {
+        if (self.deckAt(x, z, footY) != null) return true;
+        if (self.caseAtWorld(x, z) == wf.CLIFF_STAIR) return true;
+        const gx = (self.groundAt(x + TREAD_READ, z) - self.groundAt(x - TREAD_READ, z)) / (2 * TREAD_READ);
+        const gz = (self.groundAt(x, z + TREAD_READ) - self.groundAt(x, z - TREAD_READ)) / (2 * TREAD_READ);
+        return gx * gx + gz * gz <= MAX_SLOPE * MAX_SLOPE;
     }
 
     pub fn rayGround(self: *const Env, origin: rl.Vector3, dir: rl.Vector3) ?rl.Vector3 {
@@ -1476,6 +1609,43 @@ pub const Env = struct {
         return (v - shore) / (255.0 - shore);
     }
 
+    /// **SET EVERY WATER DWELLER'S POOL FLOOR TO `dwellerFloor`** — the editor's flatten with its taper, both
+    /// ways, masked to the PAINTED water cells so the shore is never carved; the water is first painted one
+    /// lattice step round the post so the lattice under it is wet. Eight passes converge the inner disc.
+    /// Returns the lattice points moved; `--fix-lurkers` runs it and saves.
+    pub fn digPools(m: *wf.Map, radius: f32) usize {
+        const step = 2 * m.half / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
+        const target = dwellerFloor();
+        var moved: usize = 0;
+        for (m.foes[0..m.nfoes]) |f| {
+            if (foemod.poolBand(f.kind) == null) continue;
+            _ = m.paintWater(f.x, f.z, step, true, null, null);
+            const xs = wf.pointSpan(f.x, radius, m.half, step) orelse continue;
+            const zs = wf.pointSpan(f.z, radius, m.half, step) orelse continue;
+            for (0..8) |_| {
+                var iz = zs[0];
+                while (iz <= zs[1]) : (iz += 1) {
+                    var ix = xs[0];
+                    while (ix <= xs[1]) : (ix += 1) {
+                        const p = m.heightPoint(ix, iz);
+                        const d = @sqrt((p[0] - f.x) * (p[0] - f.x) + (p[1] - f.z) * (p[1] - f.z));
+                        if (d > radius) continue;
+                        const wc = wf.gridIndex(m.half, wf.WATER_N, p[0], p[1]) orelse continue;
+                        if (m.water[wc] == 0) continue;
+                        const i = iz * wf.HEIGHT_N + ix;
+                        const cur = wf.heightOf(m.height[i]);
+                        const want = mathx.lerpF(cur, target, mathx.smoothstep(radius, radius * 0.15, d));
+                        const v = wf.heightByte(want);
+                        if (m.height[i] == v) continue;
+                        m.height[i] = v;
+                        moved += 1;
+                    }
+                }
+            }
+        }
+        return moved;
+    }
+
     pub fn wadeDepth(self: *const Env, x: f32, z: f32) f32 {
         if (self.paintedDepth(x, z) <= 0) return 0;
         return mathx.maxF(0, WATER_Y - self.groundAt(x, z));
@@ -1552,6 +1722,9 @@ pub const Env = struct {
         for (self.faces[0..], self.faceBuilt[0..]) |*f, built| {
             if (built) f.materials[0].shader = sh;
         }
+        for (self.casters[0..], self.casterBuilt[0..]) |*f, built| {
+            if (built) f.materials[0].shader = sh;
+        }
         if (self.skirtBuilt) self.skirt.materials[0].shader = sh;
     }
 
@@ -1583,6 +1756,17 @@ pub const Env = struct {
             }
             self.stat_draws += 1;
             rl.drawModel(f, mathx.zero3, 1.0, rl.Color.white);
+        }
+    }
+
+    /// **THE FACES CAST; THE TERRAIN STILL DOES NOT.** Depth pass only — the plate stands inside the rock.
+    pub fn drawCliffCasters(self: *Env, focus: rl.Vector3) void {
+        if (!self.heightAny) return;
+        for (self.casters[0..], self.casterBuilt[0..], self.tileMid[0..], self.tileRad[0..]) |c, built, mid, rad| {
+            if (!built) continue;
+            if (!castsInto(focus, mid, rad, 0)) continue;
+            self.stat_draws += 1;
+            rl.drawModel(c, mathx.zero3, 1.0, rl.Color.white);
         }
     }
 
@@ -1776,10 +1960,14 @@ pub const Env = struct {
         const seg = nfo.stack * pr.scale;
         if (seg <= 1e-3) return;
         const n = sectionsIn(pr.rise, seg);
+        const run: f32 = if (nfo.flight) |fl| fl.run * pr.scale else 0;
+        const th = mathx.radians(pr.yaw);
         var i: u32 = 0;
         while (i < n) : (i += 1) {
-            const at = v3(pr.pos.x, pr.pos.y + @as(f32, @floatFromInt(i)) * seg * pr.shrink, pr.pos.z);
-            const yaw = pr.yaw + if (i % 2 == 1) @as(f32, 180) else 0;
+            const k = @as(f32, @floatFromInt(i)) * pr.shrink;
+            const at = v3(pr.pos.x - mathx.sinf(th) * run * k, pr.pos.y + k * seg, pr.pos.z - mathx.cosf(th) * run * k);
+            // A ladder turns every other section or its wabi-sabi bands the run; a flight keeps climbing.
+            const yaw = pr.yaw + if (run == 0 and i % 2 == 1) @as(f32, 180) else 0;
             rl.drawModelEx(self.models[@intFromEnum(pr.kind)], at, v3(0, 1, 0), yaw, sc, rl.Color.white);
         }
     }
@@ -1904,41 +2092,262 @@ fn cellRing(a: [2]f32, c: [2]f32) [4][2]f32 {
     return out;
 }
 
-fn cliffFan(b: *gfx.Builder, poly: []const [2]f32, y: f32) void {
+fn cellWorld(uv: [2]f32, a: [2]f32, c: [2]f32) [2]f32 {
+    return .{ a[0] + uv[0] * (c[0] - a[0]), a[1] + uv[1] * (c[1] - a[1]) };
+}
+
+/// A point of a cut cell's flat: on the side's own bilinear, with that surface's normal.
+fn fanPoint(uv: [2]f32, a: [2]f32, c: [2]f32, vals: [4]f32) struct { p: rl.Vector3, n: rl.Vector3 } {
+    const w = cellWorld(uv, a, c);
+    const cellW = c[0] - a[0];
+    const du = mathx.lerpF(vals[3] - vals[0], vals[2] - vals[1], uv[1]) / cellW;
+    const dv = mathx.lerpF(vals[1] - vals[0], vals[2] - vals[3], uv[0]) / cellW;
+    return .{ .p = v3(w[0], wf.ringLerp(vals, uv[0], uv[1]), w[1]), .n = mathx.normV(v3(-du, 1, -dv)) };
+}
+
+/// A fan over a polygon given in CELL units, every vertex on the side's bilinear — the flat drawn is the
+/// flat `wf.sampleHeight` walks, corner for corner.
+fn cliffFan(b: *gfx.Builder, poly: []const [2]f32, a: [2]f32, c: [2]f32, vals: [4]f32) void {
     if (poly.len < 3) return;
-    const a = v3(poly[0][0], y, poly[0][1]);
+    const p0 = fanPoint(poly[0], a, c, vals);
     var i: usize = 1;
     while (i + 1 < poly.len) : (i += 1) {
-        b.triSmooth(a, v3(poly[i][0], y, poly[i][1]), v3(poly[i + 1][0], y, poly[i + 1][1]), UP3, UP3, UP3, rl.Color.white);
+        const p1 = fanPoint(poly[i], a, c, vals);
+        const p2 = fanPoint(poly[i + 1], a, c, vals);
+        b.triSmooth(p0.p, p1.p, p2.p, p0.n, p1.n, p2.n, rl.Color.white);
     }
 }
 
-/// **THE FACE IS NOT A QUAD.** One flat plate per cell is the Minecraft read: the same grey, the same
-/// plane, and a lit surface with no relief at all. It is a lattice of `FACE_SPANS`×`FACE_BANDS` instead,
-/// bellied OUT over the low ground and coursed like the `cliff*` props' own bands.
-const FACE_SPANS: usize = 3;
-const FACE_BANDS: usize = 5;
-/// How far the belly stands proud of the cut, as a share of the drop. Outward only — inward would cut
-/// under the shelf above and open a gap at the lip.
-const FACE_BELLY: f32 = 0.16;
-/// The belly is capped in METRES as well: a 13 m face bulging a sixth of its height is a hillside.
-const FACE_BELLY_MAX: f32 = 0.9;
-/// How far a course may sag off its own level, as a share of the band.
-const FACE_SAG: f32 = 0.45;
+/// Where a cut cell meets a cell that does not cut, its side surface and the neighbour's bilinear part
+/// company — a painted run dying into a ramp, or one steep cell in a band of gentle ones. The skirt is the
+/// vertical strip between OUR floor and THEIRS along the edge, both windings, whichever stands higher:
+/// dropped only downward it left the neighbour's ramp hanging over our low floor, and the sky showed under it.
+fn cellSkirt(b: *gfx.Builder, q0: [2]f32, q1: [2]f32, y0: f32, y1: f32, o0: f32, o1: f32) void {
+    if (@abs(y0 - o0) < 1e-4 and @abs(y1 - o1) < 1e-4) return;
+    const dx = q1[0] - q0[0];
+    const dz = q1[1] - q0[1];
+    const l = @sqrt(dx * dx + dz * dz);
+    if (l < 1e-5) return;
+    const n = v3(dz / l, 0, -dx / l);
+    const a0 = v3(q0[0], y0, q0[1]);
+    const a1 = v3(q1[0], y1, q1[1]);
+    const b0 = v3(q0[0], o0, q0[1]);
+    const b1 = v3(q1[0], o1, q1[1]);
+    b.quadSmooth(a0, a1, b1, b0, n, n, n, n, rl.Color.white);
+    b.quadSmooth(a0, b0, b1, a1, n, n, n, n, rl.Color.white);
+}
 
-fn faceShade(key: u32, band: usize, span: usize) rl.Color {
-    const r = wf.hashSigned(key ^ 0x9E37, @intCast(band * 7 + span));
-    if (r < -0.28) return art.CLIFF_DK;
-    if (r > 0.42) return art.CLIFF_LT;
+/// The neighbour's surface at a point of the shared edge `eg`: a stair's tread, else the line through the
+/// two corners they share — which is what a plain cell, an inert painted one, or a cut one draws there.
+fn edgeOther(uv: [2]f32, eg: usize, h: [4]f32, tread: ?f32) f32 {
+    if (tread) |y| return y;
+    const j = (eg + 1) % 4;
+    const t = (uv[0] - wf.CLIFF_RING[eg][0]) * (wf.CLIFF_RING[j][0] - wf.CLIFF_RING[eg][0]) +
+        (uv[1] - wf.CLIFF_RING[eg][1]) * (wf.CLIFF_RING[j][1] - wf.CLIFF_RING[eg][1]);
+    return mathx.lerpF(h[eg], h[j], mathx.clampF(t, 0, 1));
+}
+
+/// **THE FACE IS NOT A QUAD, AND IT IS NOT ONE ROCK.** A painted face is built from the `cliff*` props' own
+/// vocabulary (`proprock.CliffKind`): the kind's courses set the band height, `blocky` how proud the strata
+/// stand, `cleft` the vertical grooves, `ivy` the curtains and `broken` the talus. The kind is a field
+/// ~27 m wide, so a run reads as one geology and the next bay as another.
+///
+/// **THE WALL IS A PLANE AND THE ROCK IS SHAPES ON IT** (owner: straight cliffs, never the jagged look).
+/// Bellied per cell, a 0.54 m lattice read as a palisade — one fin a cell — and a wandered cut as an
+/// accordion. The plane now barely moves (`FACE_RELIEF_CELL`, a field of world position so shared columns
+/// agree); what makes it rock is the `cliff*` props' own vocabulary stood against it: half-sunk boulders,
+/// ledge courses keyed on WORLD height so they run level through every cell, vertical ribs, a brow under the
+/// lip, talus at the foot — and a normal bump so the flat between them shades like stone.
+const FACE_SPAN_M: f32 = 0.7;
+const FACE_SPANS_MAX: usize = 6;
+const FACE_ROWS_MAX: usize = 14;
+/// The geometry hugs the cut within this of the lip, so the shelf edge meets it; the foot may batter out.
+const FACE_EASE: f32 = 0.50;
+/// The shadow plate: this far inside the rock and this far under the lip, so neither the face nor the shelf
+/// behind the lip ever reads its own depth back.
+const FACE_SHADOW_IN: f32 = 0.7;
+const FACE_SHADOW_LIP: f32 = 0.2;
+/// The relief the SHADING sees, in metres: the core barely moves, the normals do.
+const FACE_BUMP: f32 = 0.45;
+/// Metres of run between stamped faces. One is about `drop` wide at the scale it is stood at, so under a tall
+/// wall they lap over each other and under a short one they sit apart with plain sheet between.
+const FACE_PROP_M: f32 = 3.0;
+/// Below this a face is a step, not a cliff, and gets no rock stood against it.
+const FACE_PROP_MIN_DROP: f32 = 1.6;
+/// Metres of the stamped face that stand in FRONT of the cut. The rest is inside the hill.
+const FACE_PROP_PROUD: f32 = 0.55;
+/// The share of the prop's own stone height that is sized to the drop. Under 1, its tallest spikes stand
+/// a little over the lip and the body of it reaches.
+const FACE_PROP_FILL: f32 = 0.86;
+const FACE_SINK: f32 = 0.78;
+/// A face standing in water: wet stone to `FACE_WET_H` over the sheet, a pale tide line to `FACE_TIDE_H`.
+const FACE_WET_H: f32 = 0.45;
+const FACE_TIDE_H: f32 = 0.9;
+const FACE_FILLET_MIN: f32 = 0.14;
+const FACE_FILLET_MAX: f32 = 0.55;
+
+pub const Face = struct {
+    b: *gfx.Builder,
+    sb: ?*gfx.Builder,
+    env: ?*const Env,
+    dress: bool = true,
+
+    fn ground(self: Face, x: f32, z: f32, fallback: f32) f32 {
+        const e = self.env orelse return fallback;
+        return e.groundAt(x, z);
+    }
+    fn wet(self: Face, x: f32, z: f32) bool {
+        const e = self.env orelse return false;
+        return e.paintedDepth(x, z) > 0;
+    }
+};
+
+/// A chord of the cut and the two outward directions its ends may move in: along their own lattice edge,
+/// toward the low corner, which is the one direction the cell either side agrees on. Null is the normal.
+pub const Chord = struct {
+    u: [2]f32,
+    w: [2]f32,
+    outU: ?[2]f32 = null,
+    outW: ?[2]f32 = null,
+};
+
+fn faceKind(x: f32, z: f32) *const proprock.CliffKind {
+    const n = vnoise2(x / 27.0 + 5.3, z / 27.0 - 2.1);
+    const i: usize = @intFromFloat(@floor(mathx.clampF(n, 0, 0.999) * @as(f32, @floatFromInt(proprock.CLIFF_KINDS.len))));
+    return &proprock.CLIFF_KINDS[i];
+}
+
+fn heightKey(y: f32, courseH: f32) u32 {
+    return @bitCast(@as(i32, @intFromFloat(@floor(y / courseH))) + 2048);
+}
+
+/// Strata keyed on WORLD height, so a course runs level through every cell of a face.
+fn strataTone(y: f32, courseH: f32) rl.Color {
+    const r = wf.hashSigned(heightKey(y, courseH) *% 2654435761, 0x5A7A);
+    if (r < -0.35) return art.CLIFF_DK;
+    if (r > 0.72) return art.CLIFF_LT;
     return art.CLIFF_ROCK;
 }
 
-/// `highRef` is any point on the standing side, and only decides which way the face looks.
-fn cliffWall(b: *gfx.Builder, u: [2]f32, w: [2]f32, lo: f32, hi: f32, highRef: [2]f32) void {
+fn rockTone(rng: *mathx.Rng) rl.Color {
+    const r = rng.float();
+    if (r < 0.28) return art.CLIFF_LT;
+    if (r < 0.52) return art.CLIFF_DK;
+    return art.CLIFF_ROCK;
+}
+
+fn wetTone(c: rl.Color) rl.Color {
+    return .{
+        .r = @intFromFloat(@as(f32, @floatFromInt(c.r)) * 0.50),
+        .g = @intFromFloat(@as(f32, @floatFromInt(c.g)) * 0.53),
+        .b = @intFromFloat(@as(f32, @floatFromInt(c.b)) * 0.64),
+        .a = 255,
+    };
+}
+
+/// The relief field, 0..1, over world position — two octaves, the coarse one leaning on the height so a
+/// bulge is a boss and not a pillar.
+fn reliefAt(x: f32, y: f32, z: f32) f32 {
+    const big = vnoise2(x / 3.1 + y * 0.21 + 7.7, z / 3.1 - y * 0.17 + 2.9);
+    const fine = vnoise2(x / 1.15 - y * 0.55 + 31.7, z / 1.15 + y * 0.48 - 12.3);
+    return mathx.clampF(big * 0.68 + fine * 0.32, 0, 1);
+}
+
+/// The field's slope along the face and up it, for the normals — a function of world position, so the
+/// cell either side of a shared column tilts it the same way.
+fn reliefGrad(x: f32, y: f32, z: f32, ax: f32, az: f32) [2]f32 {
+    const h: f32 = 0.15;
+    const da = reliefAt(x + ax * h, y, z + az * h) - reliefAt(x - ax * h, y, z - az * h);
+    const dy = reliefAt(x, y + h, z) - reliefAt(x, y - h, z);
+    return .{ da / (2 * h), dy / (2 * h) };
+}
+
+/// An up-facing strip quad whatever way the chord runs: `p0`,`p1` take `near`, `q1`,`q0` take `far`.
+fn fadeQuadUp(b: *gfx.Builder, p0: rl.Vector3, p1: rl.Vector3, q1: rl.Vector3, q0: rl.Vector3, near: rl.Color, far: rl.Color) void {
+    var n = mathx.normV(mathx.crossV(mathx.subV(p1, p0), mathx.subV(q1, p0)));
+    if (n.y < 0) {
+        n = mathx.scaleV(n, -1);
+        b.quadFade(p1, p0, q0, q1, n, near, far);
+    } else {
+        b.quadFade(p0, p1, q1, q0, n, near, far);
+    }
+}
+
+/// **THE FACE IS ONE OF THE `cliff*` PROPS, SUNK HALF INTO THE WALL.** The wall itself is a plain sheet; the
+/// rock is `proprock.CLIFF_FACES` stamped along the run at world stations, scaled so its own top lands on the
+/// lip, turned so its front looks out, and bisected at the cut so the front half stands proud and the back
+/// half is inside the hill. Each prototype is built ONCE and stamped, so a forty-metre run costs one mesh.
+var faceProto: [proprock.CLIFF_FACES.len]?gfx.Builder = [_]?gfx.Builder{null} ** proprock.CLIFF_FACES.len;
+
+fn faceProtoOf(i: usize) *const gfx.Builder {
+    if (faceProto[i] == null) faceProto[i] = proprock.cliffBuild(proprock.CLIFF_FACES[i].seed, proprock.CLIFF_FACES[i].kind);
+    return &faceProto[i].?;
+}
+
+/// What the LAND actually does across the cut at one point on the run: how far it steps, and where the low
+/// side is. A stamp is sized and stood on this rather than on the cell's own two tiers, so where a painted
+/// run meets ground that is only half as deep the rock is only half as tall — the face DIES INTO the slope
+/// instead of stopping square, which is the whole of the transition.
+fn faceStep(f: Face, px: f32, pz: f32, nx: f32, nz: f32, out: f32) struct { drop: f32, lo: f32 } {
+    const e = f.env orelse return .{ .drop = 0, .lo = 0 };
+    const loSide = e.groundAt(px + nx * out, pz + nz * out);
+    const hiSide = e.groundAt(px - nx * out, pz - nz * out);
+    return .{ .drop = @max(hiSide - loSide, 0), .lo = loSide };
+}
+
+fn faceStamp(f: Face, u: [2]f32, ax: f32, az: f32, nx: f32, nz: f32, lo: f32, hi: f32, len: f32, cell: f32) void {
+    const drop = hi - lo;
+    if (drop < FACE_PROP_MIN_DROP) return;
+    // The along-run coordinate the whole face agrees on, so a station belongs to exactly one chord however
+    // the cut is broken up into cells.
+    const alongX = -nz;
+    const alongZ = nx;
+    const sU = u[0] * alongX + u[1] * alongZ;
+    const dot = ax * alongX + az * alongZ;
+    if (@abs(dot) < 0.5) return;
+    const s0 = @min(sU, sU + len * dot);
+    const s1 = @max(sU, sU + len * dot);
+    const yaw = std.math.atan2(-nx, -nz);
+    var k: i32 = @intFromFloat(@floor(s0 / FACE_PROP_M) + 1);
+    while (@as(f32, @floatFromInt(k)) * FACE_PROP_M < s1) : (k += 1) {
+        const kk: u32 = @bitCast(k +% 0x51F);
+        const st = @as(f32, @floatFromInt(k)) * FACE_PROP_M + wf.hashSigned(kk, 0x5EED) * FACE_PROP_M * 0.35;
+        const t = (st - sU) / dot;
+        const px = u[0] + ax * t;
+        const pz = u[1] + az * t;
+        // Read a cell out either side, so the taper starts a cell BEFORE the run runs out rather than at it.
+        const land = faceStep(f, px, pz, nx, nz, cell * 0.8);
+        const useDrop = mathx.minF(drop, land.drop);
+        if (useDrop < FACE_PROP_MIN_DROP) continue;
+        const pick: usize = @intFromFloat(@abs(wf.hashSigned(kk, 0xFACE)) * @as(f32, @floatFromInt(proprock.CLIFF_FACES.len)) * 0.999);
+        const proto = faceProtoOf(pick);
+        // The STONE's extent, not the mesh's: the prop's ivy and grass carry a third of its height again, and
+        // sized to those the rock tops out well under the lip with plain sheet showing over it.
+        const bb = proto.boundsOf(.stone);
+        if (bb.hi.y <= 0.1) continue;
+        // …and to the BULK of the stone, not its tallest spike: sized to the spike, the body of the rock tops
+        // out well under the lip and leaves a strip of plain sheet over it. A spike that overshoots is a rock
+        // on the rim, which the rim scatters anyway.
+        const sc = useDrop / (bb.hi.y * FACE_PROP_FILL) * (1.0 + 0.10 * wf.hashSigned(kk, 0x512E));
+        // Bisected at the cut, but at the depth the wall can afford: the ground at its foot is walked right
+        // up to the line, so what stands past it is what the hero walks into.
+        const sink = -bb.lo.z * sc - FACE_PROP_PROUD;
+        // Stood on the ground that is actually THERE, so a tapering rock walks up the slope with it.
+        f.b.stamp(proto, v3(px - nx * sink, land.lo, pz - nz * sink), yaw + wf.hashSigned(kk, 0x7A11) * 0.18, v3(sc, sc, sc));
+    }
+}
+
+/// `loEnd`/`hiEnd` are the floors either side of the cut at the chord's two ends, so on sloping ground the
+/// wall runs with them instead of standing between two tiers.
+fn cliffWall(f: Face, ch: Chord, loEnd: [2]f32, hiEnd: [2]f32, highRef: [2]f32, cell: f32) void {
+    const u = ch.u;
+    const w = ch.w;
     const ex = w[0] - u[0];
     const ez = w[1] - u[1];
     const len = @sqrt(ex * ex + ez * ez);
-    if (len < 1e-4 or hi <= lo) return;
+    const lo = (loEnd[0] + loEnd[1]) * 0.5;
+    const hi = (hiEnd[0] + hiEnd[1]) * 0.5;
+    if (len < 1e-4 or hi <= lo + 1e-3) return;
     var nx = ez / len;
     var nz = -ex / len;
     const mx = (u[0] + w[0]) * 0.5;
@@ -1948,46 +2357,255 @@ fn cliffWall(b: *gfx.Builder, u: [2]f32, w: [2]f32, lo: f32, hi: f32, highRef: [
         nx = -nx;
         nz = -nz;
     }
-    // Keyed on the chord's own place in the world, so the same face rebuilds the same way and two cells
-    // meeting at a crossing do not each invent their own rock.
+    // Keyed on the chord's own place in the world, so the same face rebuilds the same way.
     const key = @as(u32, @bitCast(@as(i32, @intFromFloat(@round(mx * 16))))) ^
         (@as(u32, @bitCast(@as(i32, @intFromFloat(@round(mz * 16))))) *% 0x85EBCA6B);
+    var rng = mathx.Rng.init(@as(u64, key) | (@as(u64, 0xC11FF) << 32));
+    const kind = faceKind(mx, mz);
     const drop = hi - lo;
-    const belly = mathx.minF(drop * FACE_BELLY, FACE_BELLY_MAX) * (0.6 + 0.4 * @abs(wf.hashSigned(key, 3)));
+    const spans: usize = @intFromFloat(mathx.clampF(@round(len / FACE_SPAN_M), 2, @as(f32, @floatFromInt(FACE_SPANS_MAX))));
+    const courseH = kind.H / @as(f32, @floatFromInt(kind.bands));
+    var bands: usize = @intFromFloat(mathx.clampF(@round(drop / courseH), 1, 10));
+    if (drop > 1.0 and bands < 2) bands = 2;
 
-    var grid: [FACE_SPANS + 1][FACE_BANDS + 1]rl.Vector3 = undefined;
-    for (0..FACE_SPANS + 1) |i| {
-        const s = @as(f32, @floatFromInt(i)) / FACE_SPANS;
-        // Zero at both ends: the crossings are shared with the cells either side and may not move.
-        const endT = mathx.sinf(s * std.math.pi);
-        for (0..FACE_BANDS + 1) |j| {
-            const t = @as(f32, @floatFromInt(j)) / FACE_BANDS;
-            const topT = mathx.sinf(t * std.math.pi);
-            const d = belly * endT * @sqrt(topT) * (0.45 + 0.55 * @abs(wf.hashSigned(key, @intCast(i * 31 + j))));
-            const sag = if (j == 0 or j == FACE_BANDS) 0 else
-                FACE_SAG * (drop / FACE_BANDS) * wf.hashSigned(key ^ 0x51F7, @intCast(i * 17 + j));
-            grid[i][j] = v3(
-                u[0] + ex * s + nx * d,
-                mathx.lerpF(lo, hi, t) + sag,
-                u[1] + ez * s + nz * d,
-            );
+    // Rows as a share of each column's own foot-to-lip, so a course stays a course where the floors slope.
+    var fr: [FACE_ROWS_MAX]f32 = undefined;
+    var nrow: usize = 0;
+    for (0..bands + 1) |j| {
+        fr[nrow] = @as(f32, @floatFromInt(j)) / @as(f32, @floatFromInt(bands));
+        nrow += 1;
+    }
+    const wet = lo < WATER_Y and f.wet(mx + nx * 0.3, mz + nz * 0.3);
+    if (wet) {
+        for ([_]f32{ WATER_Y + FACE_WET_H, WATER_Y + FACE_TIDE_H }) |yw| {
+            if (yw <= lo + 0.05 or yw >= hi - 0.05 or nrow >= FACE_ROWS_MAX) continue;
+            const fw = (yw - lo) / drop;
+            var k = nrow;
+            while (k > 0 and fr[k - 1] > fw) : (k -= 1) fr[k] = fr[k - 1];
+            fr[k] = fw;
+            nrow += 1;
         }
     }
 
-    for (0..FACE_SPANS) |i| {
-        for (0..FACE_BANDS) |j| {
+    // **THE WALL IS A PLAIN SHEET.** Everything that made it rock is one of `proprock.CLIFF_FACES` sunk half
+    // into it below; a sheet that tries to be rock as well only ever reads as plates pasted on a wall.
+    var grid: [FACE_SPANS_MAX + 1][FACE_ROWS_MAX]rl.Vector3 = undefined;
+    var hiCol: [FACE_SPANS_MAX + 1]f32 = undefined;
+    for (0..spans + 1) |i| {
+        const s = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(spans));
+        const cx = u[0] + ex * s;
+        const cz = u[1] + ez * s;
+        const loC = mathx.lerpF(loEnd[0], loEnd[1], s);
+        hiCol[i] = mathx.lerpF(hiEnd[0], hiEnd[1], s);
+        for (0..nrow) |j| grid[i][j] = v3(cx, mathx.lerpF(loC, hiCol[i], fr[j]), cz);
+    }
+
+    // Every vertex takes the plane's normal tilted by the world field alone — a function of position, so the
+    // cell either side of a shared column shades it the same and nothing flutes at the seams.
+    var vn: [FACE_SPANS_MAX + 1][FACE_ROWS_MAX]rl.Vector3 = undefined;
+    for (0..spans + 1) |i| {
+        for (0..nrow) |j| {
+            const bp = grid[i][j];
+            const lipEase = mathx.clampF((hiCol[i] - bp.y) / FACE_EASE, 0, 1);
+            const gr = reliefGrad(bp.x, bp.y, bp.z, ex / len, ez / len);
+            const k = FACE_BUMP * lipEase;
+            vn[i][j] = mathx.normV(v3(nx - gr[0] * ex / len * k, -gr[1] * k, nz - gr[0] * ez / len * k));
+        }
+    }
+
+    for (0..spans) |i| {
+        for (0..nrow - 1) |j| {
             const a = grid[i][j + 1];
             const c = grid[i + 1][j + 1];
             const d = grid[i + 1][j];
             const e = grid[i][j];
-            var n = mathx.normV(mathx.crossV(mathx.subV(c, a), mathx.subV(d, a)));
-            if (n.x * nx + n.z * nz < 0) n = mathx.scaleV(n, -1);
-            const col = faceShade(key, j, i);
-            if (flip) {
-                b.quadSmooth(a, e, d, c, n, n, n, n, col);
-            } else {
-                b.quadSmooth(a, c, d, e, n, n, n, n, col);
+            const ymid = (grid[i][j].y + grid[i][j + 1].y + grid[i + 1][j].y + grid[i + 1][j + 1].y) * 0.25;
+            const smid = (@as(f32, @floatFromInt(i)) + 0.5) / @as(f32, @floatFromInt(spans));
+            var col = strataTone(ymid, courseH);
+            // A slow wash along the run, so a course is not one flat tone for forty metres.
+            const wash = vnoise2((u[0] + ex * smid) / 2.6 + ymid * 0.3 + 11.1, (u[1] + ez * smid) / 2.6 - ymid * 0.2 + 3.3);
+            if (wash > 0.66) col = mathx.lerpColor(col, art.CLIFF_LT, (wash - 0.66) * 2.2) else if (wash < 0.36) col = mathx.lerpColor(col, art.CLIFF_DK, (0.36 - wash) * 2.2);
+            // The core is a JOINT, not a face: pulled under the masses that stand on it so the gaps read deep.
+            col = mathx.lerpColor(col, art.CLIFF_DK, 0.24 + 0.3 * (1.0 - mathx.clampF((ymid - lo) / 1.2, 0, 1)));
+            var mat: gfx.Mat = .stone;
+            if (wet) {
+                if (ymid < WATER_Y + FACE_WET_H) {
+                    col = wetTone(col);
+                    mat = .marble;
+                } else if (ymid < WATER_Y + FACE_TIDE_H) {
+                    col = mathx.lerpColor(col, art.CLIFF_LT, 0.4);
+                }
             }
+            f.b.setMat(mat);
+            const na = vn[i][j + 1];
+            const nc = vn[i + 1][j + 1];
+            const nd = vn[i + 1][j];
+            const ne = vn[i][j];
+            if (flip) {
+                f.b.quadSmooth(a, e, d, c, na, ne, nd, nc, col);
+            } else {
+                f.b.quadSmooth(a, c, d, e, na, nc, nd, ne, col);
+            }
+        }
+    }
+
+    f.b.setMat(.stone);
+
+    if (f.sb) |sb| {
+        // A stair riser is one `wf.HEIGHT_STEP`, so there is no `FACE_SHADOW_IN` of rock behind it to bury the
+        // plate in: it lands under the next tread and bands every step. `dress` is the same face/riser split.
+        if (f.dress) {
+            const bx = -nx * FACE_SHADOW_IN;
+            const bz = -nz * FACE_SHADOW_IN;
+            const pa = v3(u[0] + bx, loEnd[0] - 0.3, u[1] + bz);
+            const pb = v3(w[0] + bx, loEnd[1] - 0.3, w[1] + bz);
+            const pc = v3(w[0] + bx, hiEnd[1] - FACE_SHADOW_LIP, w[1] + bz);
+            const pd = v3(u[0] + bx, hiEnd[0] - FACE_SHADOW_LIP, u[1] + bz);
+            const n = v3(nx, 0, nz);
+            // Both windings: the depth pass culls back faces and the sun stands behind half the walls.
+            sb.quadSmooth(pa, pb, pc, pd, n, n, n, n, rl.Color.white);
+            sb.quadSmooth(pa, pd, pc, pb, n, n, n, n, rl.Color.white);
+        }
+    }
+
+    if (!f.dress or f.env == null) return;
+    const hx = -nx;
+    const hz = -nz;
+    const dropK = mathx.clampF(drop / 6.0, 0, 1);
+
+    faceStamp(f, u, ex / len, ez / len, nx, nz, lo, hi, len, cell);
+
+    // THE RIM: loose stones and grass leaning over the drop. (A cap strip of bare rock along the lip was
+    // tried and read as a saw of dark teeth from above; the stones carry the weathered edge on their own.)
+    {
+        const nRim: usize = @intFromFloat(@round(len * (0.5 + 1.0 * rng.float()) * (0.5 + 0.5 * dropK)));
+        for (0..nRim) |_| {
+            const s = rng.range(0.08, 0.92);
+            const in_ = rng.range(0.06, 0.42);
+            const r = rng.range(0.07, 0.2) * (0.8 + 0.5 * kind.broken);
+            const x = u[0] + ex * s + hx * in_;
+            const z = u[1] + ez * s + hz * in_;
+            const gy = f.ground(x, z, hi);
+            f.b.addBlob(v3(x, gy + r * 0.3, z), v3(r, r * rng.range(0.5, 0.7), r * rng.range(0.8, 1.25)), 3, if (kind.blocky > 0.5) 5 else 6, rockTone(&rng));
+        }
+        const cover = coverField(mx, mz);
+        const nTuft: usize = @intFromFloat(@round(len * 2.2 * cover * (0.5 + 0.5 * rng.float())));
+        f.b.setMat(.plant);
+        for (0..nTuft) |_| {
+            const s = rng.range(0.05, 0.95);
+            const in_ = rng.range(0.02, 0.2);
+            const x = u[0] + ex * s + hx * in_;
+            const z = u[1] + ez * s + hz * in_;
+            const gy = f.ground(x, z, hi);
+            const nb = 4 + rng.intn(4);
+            var k: i32 = 0;
+            while (k < nb) : (k += 1) {
+                const a = rng.angle();
+                const rr = rng.range(0.02, 0.09);
+                const bx = x + mathx.cosf(a) * rr;
+                const bz = z + mathx.sinf(a) * rr;
+                const h = rng.range(0.22, 0.48);
+                const out = rng.range(0.12, 0.34);
+                const lx = nx * out + rng.signed() * 0.08;
+                const lz = nz * out + rng.signed() * 0.08;
+                f.b.addCylinder(v3(bx, gy, bz), v3(bx + lx, gy + h * 0.85, bz + lz), 0.016, 0.003, 4, art.bladeColor(&rng));
+            }
+        }
+        f.b.setMat(.stone);
+    }
+
+    // IVY AND MOSS on the kinds that carry them, hung off the lattice the face was built on.
+    if (kind.ivy > 0 and drop > 1.2 and spans > 2) {
+        const nCur: usize = @intFromFloat(@round(len * kind.ivy * 0.9 * (0.5 + rng.float())));
+        for (0..nCur) |_| {
+            const i: usize = 1 + @as(usize, @intCast(rng.intn(@intCast(spans - 1))));
+            const hang = drop * rng.range(0.35, 0.8);
+            var prev: ?rl.Vector3 = null;
+            var j = nrow - 1;
+            while (j > 0) : (j -= 1) {
+                const p = grid[i][j];
+                if (hiCol[i] - p.y > hang) break;
+                const q = v3(p.x + nx * 0.06, p.y, p.z + nz * 0.06);
+                if (prev) |pp| {
+                    const mid = v3((pp.x + q.x) * 0.5 + ex / len * rng.signed() * 0.12 + nx * 0.04, (pp.y + q.y) * 0.5, (pp.z + q.z) * 0.5 + ez / len * rng.signed() * 0.12 + nz * 0.04);
+                    f.b.setMat(.wood);
+                    f.b.addCapsule(pp, mid, 0.028, 0.034, 5, art.BARK_DK);
+                    f.b.addCapsule(mid, q, 0.034, 0.038, 5, art.BARK_DK);
+                    f.b.setMat(.plant);
+                    const nLeaf = 2 + rng.intn(3);
+                    var lf: i32 = 0;
+                    while (lf < nLeaf) : (lf += 1) {
+                        const tt = rng.float();
+                        const lx = mathx.lerpF(pp.x, q.x, tt) + ex / len * rng.signed() * 0.3;
+                        const ly = mathx.lerpF(pp.y, q.y, tt);
+                        const lz = mathx.lerpF(pp.z, q.z, tt) + ez / len * rng.signed() * 0.3;
+                        const r = rng.range(0.14, 0.3);
+                        f.b.addBlob(v3(lx + nx * r * 0.5, ly, lz + nz * r * 0.5), v3(r, r * rng.range(0.7, 1.1), r), 3, 6, if (rng.float() < 0.35) art.SCRUB_DK else art.IVY_GRN);
+                    }
+                }
+                prev = q;
+            }
+        }
+        f.b.setMat(.plant);
+        const nMoss: usize = @intFromFloat(@round(len * kind.ivy * 1.4));
+        for (0..nMoss) |_| {
+            const i: usize = 1 + @as(usize, @intCast(rng.intn(@intCast(spans - 1))));
+            const j: usize = 1 + @as(usize, @intCast(rng.intn(@intCast(nrow - 2))));
+            const p = grid[i][j];
+            const wd = rng.range(0.25, 0.6);
+            const hh = wd * rng.range(0.3, 0.55);
+            f.b.addBlob(v3(p.x + nx * 0.08, p.y, p.z + nz * 0.08), v3(wd, hh, wd), 3, 6, if (rng.float() < 0.5) art.MOSS_DK else art.STONE_MOSS);
+        }
+        f.b.setMat(.stone);
+    }
+
+    // THE FOOT: a scree fillet, then talus scattered past it — more for a taller face and a broken kind.
+    {
+        const hf = mathx.clampF(0.10 + 0.035 * drop, FACE_FILLET_MIN, FACE_FILLET_MAX);
+        var filH: [FACE_SPANS_MAX + 1]f32 = undefined;
+        var filOut: [FACE_SPANS_MAX + 1]f32 = undefined;
+        for (0..spans + 1) |i| {
+            filH[i] = hf * rng.range(0.7, 1.2);
+            filOut[i] = hf * 2.4 * rng.range(0.7, 1.3);
+        }
+        const wallCol = mathx.lerpColor(art.CLIFF_DK, art.CLIFF_ROCK, 0.35);
+        const soilCol = mathx.lerpColor(art.ROCK_DEEP, art.SOIL, 0.5);
+        for (0..spans) |i| {
+            const p0 = v3(grid[i][0].x, grid[i][0].y + filH[i], grid[i][0].z);
+            const p1 = v3(grid[i + 1][0].x, grid[i + 1][0].y + filH[i + 1], grid[i + 1][0].z);
+            const q0x = p0.x + nx * filOut[i];
+            const q0z = p0.z + nz * filOut[i];
+            const q1x = p1.x + nx * filOut[i + 1];
+            const q1z = p1.z + nz * filOut[i + 1];
+            const q0 = v3(q0x, f.ground(q0x, q0z, lo) + 0.02, q0z);
+            const q1 = v3(q1x, f.ground(q1x, q1z, lo) + 0.02, q1z);
+            fadeQuadUp(f.b, p0, p1, q1, q0, wallCol, soilCol);
+        }
+        const nTal: usize = @intFromFloat(@round(len * (0.9 + 1.8 * kind.broken) * (0.4 + 0.6 * dropK)));
+        for (0..nTal) |_| {
+            const s = rng.range(0.02, 0.98);
+            const outT = std.math.pow(f32, rng.float(), 1.5);
+            const out = 0.12 + hf * 0.5 + outT * (0.5 + 1.1 * dropK);
+            const r = rng.range(0.10, 0.40) * (0.75 + 0.5 * kind.broken) * (1.0 - 0.45 * outT);
+            const x = u[0] + ex * s + nx * out;
+            const z = u[1] + ez * s + nz * out;
+            const gy = f.ground(x, z, lo);
+            f.b.addBlob(v3(x, gy + r * 0.4, z), v3(r * rng.range(0.85, 1.25), r * rng.range(0.55, 0.85), r * rng.range(0.8, 1.2)), 3 + rng.intn(2), if (kind.blocky > 0.5) 5 else 7, rockTone(&rng));
+        }
+        if (kind.broken > 0.4 and len > 0.9 and drop > 2.0 and rng.float() < 0.7) {
+            const s = rng.range(0.25, 0.75);
+            const hh = 0.4 + rng.range(0.6, 1.4) * mathx.minF(drop / 4.0, 1.0);
+            const wdt = rng.range(0.4, 0.9);
+            const bx = u[0] + ex * s + nx * hh * 0.35;
+            const bz = u[1] + ez * s + nz * hh * 0.35;
+            const gy = f.ground(bx, bz, lo);
+            f.b.addBox(
+                v3(bx, gy + hh * 0.42, bz),
+                v3(ex / len * wdt * 0.5, 0, ez / len * wdt * 0.5),
+                v3(-nx * hh * 0.25, hh * 0.45, -nz * hh * 0.25),
+                v3(nx * 0.12, 0, nz * 0.12),
+                if (rng.float() < 0.5) art.CLIFF_LT else art.CLIFF_DK,
+            );
         }
     }
 }
@@ -1999,19 +2617,26 @@ comptime {
 
 /// A tread, and the risers that face DOWN off it. Only the low side is walled: the neighbour standing
 /// higher draws that riser itself, so no face is drawn twice.
-fn stairCell(b: *gfx.Builder, fb: *gfx.Builder, a: [2]f32, c: [2]f32, y: f32, nb: [4]f32) void {
+fn stairCell(b: *gfx.Builder, fb: Face, a: [2]f32, c: [2]f32, y: f32, nb: [4]f32, h: [4]f32) void {
     const p = cellRing(a, c);
-    cliffFan(b, &p, y);
+    cliffFan(b, &wf.CLIFF_RING, a, c, .{ y, y, y, y });
     const edges = [4][2][2]f32{
         .{ p[0], p[1] },
         .{ p[3], p[0] },
         .{ p[2], p[3] },
         .{ p[1], p[2] },
     };
+    // **THE RISER GOES DOWN TO THE LOWEST THE NEIGHBOUR REACHES ON THIS EDGE**, not to its CENTRE. A tread is
+    // flat at its own mean; the cell beside it is a bilinear through the two corners they SHARE, so its
+    // surface at the edge runs below its centre and the riser stopped short of it — a hole per step.
+    const ends = [4][2]usize{ .{ 0, 1 }, .{ 3, 0 }, .{ 2, 3 }, .{ 1, 2 } };
     const mid = [2]f32{ (a[0] + c[0]) * 0.5, (a[1] + c[1]) * 0.5 };
-    for (edges, nb) |e, ny| {
-        if (ny >= y - 1e-4) continue;
-        cliffWall(fb, e[0], e[1], ny, y, mid);
+    var riser = fb;
+    riser.dress = false;
+    for (edges, nb, ends) |e, ny, k| {
+        const lowest = @min(ny, @min(h[k[0]], h[k[1]]));
+        if (lowest >= y - 1e-4) continue;
+        cliffWall(riser, .{ .u = e[0], .w = e[1] }, .{ lowest, lowest }, .{ y, y }, mid, c[0] - a[0]);
     }
 }
 
@@ -2026,29 +2651,45 @@ fn polyMid(poly: []const [2]f32) [2]f32 {
     return .{ sx * k, sz * k };
 }
 
-/// One cell of the height lattice drawn as TWO FLATS AND A FACE, cut where the bilinear crosses
-/// `t.mid` — the same line `wf.sampleHeight` steps on, so the floor drawn is the floor walked.
-/// `h` is the ring the terrain quad already winds: (xa,za), (xa,zb), (xb,zb), (xb,za).
-fn cliffCell(b: *gfx.Builder, fb: *gfx.Builder, ix: usize, iz: usize, a: [2]f32, c: [2]f32, h: [4]f32, t: wf.Tiers) void {
+/// One cell of the height lattice drawn as TWO FLOORS AND A FACE, cut at the edge midpoints
+/// `wf.cliffCut` names — the same line `wf.sampleHeight` steps on, so the floor drawn is the floor walked.
+/// `h` is the ring the terrain quad already winds: (xa,za), (xa,zb), (xb,zb), (xb,za); `lv` the two side
+/// surfaces at those corners.
+fn cliffCell(b: *gfx.Builder, fb: Face, a: [2]f32, c: [2]f32, h: [4]f32, cw: wf.CliffCut, lv: wf.CliffLevels, nb: [4]?f32) void {
     const p = cellRing(a, c);
-    const cw = wf.cliffCut(h, t, ix, iz);
     const high = cw.high;
     const cut = cw.cut;
     const ncut = cw.n;
     var xp: [4][2]f32 = undefined;
+    var hiAt: [4]f32 = undefined;
+    var loAt: [4]f32 = undefined;
+    // The way along edge i from its crossing to its LOW corner: the one outward direction both cells agree on.
+    var lowWay: [4][2]f32 = undefined;
     for (0..4) |i| {
         if (!cut[i]) continue;
-        xp[i] = .{ a[0] + cw.xp[i][0] * (c[0] - a[0]), a[1] + cw.xp[i][1] * (c[1] - a[1]) };
+        const j = (i + 1) % 4;
+        xp[i] = cellWorld(cw.xp[i], a, c);
+        hiAt[i] = (lv.hi[i] + lv.hi[j]) * 0.5;
+        loAt[i] = (lv.lo[i] + lv.lo[j]) * 0.5;
+        const toNext = [2]f32{ wf.CLIFF_RING[j][0] - wf.CLIFF_RING[i][0], wf.CLIFF_RING[j][1] - wf.CLIFF_RING[i][1] };
+        lowWay[i] = if (high[i]) toNext else .{ -toNext[0], -toNext[1] };
     }
+    const cellW = c[0] - a[0];
     var start: usize = 0;
     while (start < 4 and !cut[start]) start += 1;
     if (start == 4) {
-        cliffFan(b, &p, if (high[0]) t.hi else t.lo);
+        const vals = if (high[0]) lv.hi else lv.lo;
+        cliffFan(b, &wf.CLIFF_RING, a, c, vals);
+        for (0..4) |i| {
+            const j = (i + 1) % 4;
+            cellSkirt(b, p[i], p[j], vals[i], vals[j], nb[i] orelse h[i], nb[i] orelse h[j]);
+        }
         return;
     }
 
     const centreHigh = cw.centreHigh;
     var chord: [4][2][2]f32 = undefined;
+    var chordEdge: [4][2]usize = undefined;
     var chordHigh: [4]bool = undefined;
     var chordMid: [4][2]f32 = undefined;
     var nrun: usize = 0;
@@ -2056,23 +2697,41 @@ fn cliffCell(b: *gfx.Builder, fb: *gfx.Builder, ix: usize, iz: usize, a: [2]f32,
     var e = start;
     while (true) {
         var poly: [6][2]f32 = undefined;
+        // Which of the cell's own edges each polygon segment lies on; the last one is the chord and skirts none.
+        var onEdge: [6]usize = undefined;
         var n: usize = 0;
-        poly[n] = xp[e];
+        poly[n] = cw.xp[e];
+        onEdge[n] = e;
         n += 1;
         var k = (e + 1) % 4;
         while (true) {
-            poly[n] = p[k];
+            poly[n] = wf.CLIFF_RING[k];
+            onEdge[n] = k;
             n += 1;
             if (cut[k]) break;
             k = (k + 1) % 4;
         }
-        poly[n] = xp[k];
+        poly[n] = cw.xp[k];
         n += 1;
         const cls = high[(e + 1) % 4];
-        cliffFan(b, poly[0..n], if (cls) t.hi else t.lo);
+        const vals = if (cls) lv.hi else lv.lo;
+        cliffFan(b, poly[0..n], a, c, vals);
+        for (0..n - 1) |q| {
+            const eg = onEdge[q];
+            cellSkirt(
+                b,
+                cellWorld(poly[q], a, c),
+                cellWorld(poly[q + 1], a, c),
+                wf.ringLerp(vals, poly[q][0], poly[q][1]),
+                wf.ringLerp(vals, poly[q + 1][0], poly[q + 1][1]),
+                edgeOther(poly[q], eg, h, nb[eg]),
+                edgeOther(poly[q + 1], eg, h, nb[eg]),
+            );
+        }
         chord[nrun] = .{ xp[e], xp[k] };
+        chordEdge[nrun] = .{ e, k };
         chordHigh[nrun] = cls;
-        chordMid[nrun] = polyMid(poly[0..n]);
+        chordMid[nrun] = cellWorld(polyMid(poly[0..n]), a, c);
         nrun += 1;
         e = k;
         if (e == start) break;
@@ -2083,20 +2742,26 @@ fn cliffCell(b: *gfx.Builder, fb: *gfx.Builder, ix: usize, iz: usize, a: [2]f32,
         var n: usize = 0;
         for (0..4) |i| {
             if (!cut[i]) continue;
-            mid[n] = xp[i];
+            mid[n] = cw.xp[i];
             n += 1;
         }
-        cliffFan(b, mid[0..n], if (centreHigh) t.hi else t.lo);
-        const cm = polyMid(mid[0..n]);
+        cliffFan(b, mid[0..n], a, c, if (centreHigh) lv.hi else lv.lo);
+        const cm = cellWorld(polyMid(mid[0..n]), a, c);
         for (0..nrun) |i| {
             if (chordHigh[i] == centreHigh) continue;
-            cliffWall(fb, chord[i][0], chord[i][1], t.lo, t.hi, if (centreHigh) cm else chordMid[i]);
+            const eu = chordEdge[i][0];
+            const ew = chordEdge[i][1];
+            const ch = Chord{ .u = chord[i][0], .w = chord[i][1], .outU = lowWay[eu], .outW = lowWay[ew] };
+            cliffWall(fb, ch, .{ loAt[eu], loAt[ew] }, .{ hiAt[eu], hiAt[ew] }, if (centreHigh) cm else chordMid[i], cellW);
         }
         return;
     }
     for (0..nrun) |i| {
         if (!chordHigh[i]) continue;
-        cliffWall(fb, chord[i][0], chord[i][1], t.lo, t.hi, chordMid[i]);
+        const eu = chordEdge[i][0];
+        const ew = chordEdge[i][1];
+        const ch = Chord{ .u = chord[i][0], .w = chord[i][1], .outU = lowWay[eu], .outW = lowWay[ew] };
+        cliffWall(fb, ch, .{ loAt[eu], loAt[ew] }, .{ hiAt[eu], hiAt[ew] }, chordMid[i], cellW);
     }
 }
 
@@ -2543,6 +3208,31 @@ fn buildDecks(e: *Env) void {
     e.ndecks = 0;
     for (e.props[0..e.nprops]) |*pr| {
         const nfo = props.info(pr.kind);
+        if (nfo.flight) |fl| {
+            if (pr.rise <= 0 or nfo.stack <= 0) continue;
+            if (e.ndecks >= MAX_DECKS) @panic("env: MAX_DECKS exceeded — raise the cap");
+            const run = flightRun(pr, nfo);
+            const th = mathx.radians(pr.yaw);
+            const ax = -mathx.sinf(th);
+            const az = -mathx.cosf(th);
+            const n = sectionsIn(pr.rise, nfo.stack * pr.scale);
+            const halfW = fl.halfW * pr.scale;
+            e.deck_buf[e.ndecks] = .{
+                .x = pr.pos.x,
+                .z = pr.pos.z,
+                .r = @sqrt(run * run * 0.25 + halfW * halfW) + 0.1,
+                .y = pr.pos.y,
+                .hole = false,
+                .run = run,
+                .ax = ax,
+                .az = az,
+                .rise = pr.rise,
+                .halfW = halfW,
+                .treads = n * fl.treads,
+            };
+            e.ndecks += 1;
+            continue;
+        }
         if (nfo.decks.len == 0) continue;
         const fr = PropFrame.of(pr);
         for (nfo.decks) |d| {
@@ -2554,7 +3244,7 @@ fn buildDecks(e: *Env) void {
     }
     var counts = [_]u32{0} ** NCELL;
     for (e.deck_buf[0..e.ndecks]) |d| {
-        var it = SolidCells.init(collision.circle(d.x, d.z, d.r));
+        var it = SolidCells.init(collision.circle(d.x + d.ax * d.run * 0.5, d.z + d.az * d.run * 0.5, d.r));
         while (it.next()) |c| counts[c] += 1;
     }
     var total: u32 = 0;
@@ -2566,7 +3256,7 @@ fn buildDecks(e: *Env) void {
     if (total > MAX_DECK_REFS) @panic("env: MAX_DECK_REFS exceeded — raise the cap");
     var cursor = e.dgrid_start;
     for (e.deck_buf[0..e.ndecks], 0..) |d, di| {
-        var it = SolidCells.init(collision.circle(d.x, d.z, d.r));
+        var it = SolidCells.init(collision.circle(d.x + d.ax * d.run * 0.5, d.z + d.az * d.run * 0.5, d.r));
         while (it.next()) |c| {
             e.dgrid_items[cursor[c]] = @intCast(di);
             cursor[c] += 1;
@@ -3095,6 +3785,20 @@ test "walkStep: an incline inside the limit is taken, a cliff face is refused" {
         const up = e.walkStep(v3(0, 0, 0), v3(1, 0, 0), 0.1);
         try std.testing.expectApproxEqAbs(@as(f32, 0.1), up.x, 1e-4);
     }
+    // A 45 deg bank (tan 1.0) — 0.5 m over the half-metre probe, UNDER `STEP_UP`, and it is not a riser.
+    {
+        const e = try envWithRamp(1.0);
+        defer std.testing.allocator.destroy(e);
+        const up = e.walkStep(v3(0, 0, 0), v3(1, 0, 0), 0.1);
+        try std.testing.expectApproxEqAbs(@as(f32, 0), up.x, 1e-4);
+    }
+    // 38 deg (tan 0.78) — inside the limit, taken.
+    {
+        const e = try envWithRamp(0.78);
+        defer std.testing.allocator.destroy(e);
+        const up = e.walkStep(v3(0, 0, 0), v3(1, 0, 0), 0.1);
+        try std.testing.expectApproxEqAbs(@as(f32, 0.1), up.x, 1e-4);
+    }
     // A 60 deg face (tan 1.73) — past MAX_SLOPE, so the climb is refused outright.
     {
         const e = try envWithRamp(1.73);
@@ -3491,7 +4195,8 @@ test "A RUN IS WHOLE SECTIONS, AND THE FILE MAY NOT SHOW A HEIGHT THE WORLD ROUN
     const seg = props.info(.ladder).stack;
     try std.testing.expect(seg > 0);
     for (props.INFO) |row| {
-        if (row.stack > 0) try std.testing.expectEqual(props.Kind.ladder, row.kind);
+        if (row.stack > 0) try std.testing.expect(row.kind == .ladder or row.kind == .stairflight);
+        if (row.flight != null) try std.testing.expect(row.stack > 0);
     }
     try std.testing.expectApproxEqAbs(seg * 8, snapRise(.ladder, 1, 7.15), 1e-4);
     try std.testing.expectApproxEqAbs(seg * 8, snapRise(.ladder, 1, 7.20), 1e-4);
@@ -3534,24 +4239,37 @@ fn triHit(p: [3][2]f32, x: f32, z: f32) bool {
     return !(pos and neg);
 }
 
-test "THE FLOOR DRAWN IS THE FLOOR WALKED — a cliff cell's flats against `wf.sampleHeight`'s own step" {
-    const cases = [_]struct { name: []const u8, h: [4]f32 }{
-        .{ .name = "straight", .h = .{ 0, 0, 4, 4 } },
-        .{ .name = "diagonal", .h = .{ 0, 0, 4, 0 } },
-        .{ .name = "notch   ", .h = .{ 0, 4, 4, 4 } },
-        .{ .name = "saddle  ", .h = .{ 4, 0, 4, 0 } },
+/// The drawn triangle's height at (u, v), which is what a foot planted there stands on.
+fn triY(p: [3][2]f32, y: [3]f32, u: f32, v: f32) f32 {
+    const det = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[2][0] - p[0][0]) * (p[1][1] - p[0][1]);
+    const l1 = ((p[1][0] - p[0][0]) * (v - p[0][1]) - (p[1][1] - p[0][1]) * (u - p[0][0])) / det;
+    const l2 = ((u - p[0][0]) * (p[2][1] - p[0][1]) - (v - p[0][1]) * (p[2][0] - p[0][0])) / det;
+    return y[0] * (1 - l1 - l2) + y[1] * l2 + y[2] * l1;
+}
+
+test "THE FLOOR DRAWN IS THE FLOOR WALKED — a cliff cell's floors against `wf.sampleHeight`'s own step" {
+    // `wall` is the cut's own length times the drop: a saddle is TWO chords, so it is twice a diagonal's. The
+    // last two stand on SLOPING ground: both floors run with it and the wall's lip and foot with them.
+    const cases = [_]struct { name: []const u8, h: [4]f32, hi: [4]f32, lo: [4]f32, wall: f32 }{
+        .{ .name = "straight", .h = .{ 0, 0, 4, 4 }, .hi = .{ 4, 4, 4, 4 }, .lo = .{ 0, 0, 0, 0 }, .wall = 4.0 },
+        .{ .name = "diagonal", .h = .{ 0, 0, 4, 0 }, .hi = .{ 4, 4, 4, 4 }, .lo = .{ 0, 0, 0, 0 }, .wall = 2.8284 },
+        .{ .name = "notch   ", .h = .{ 0, 4, 4, 4 }, .hi = .{ 4, 4, 4, 4 }, .lo = .{ 0, 0, 0, 0 }, .wall = 2.8284 },
+        .{ .name = "saddle  ", .h = .{ 4, 0, 4, 0 }, .hi = .{ 4, 4, 4, 4 }, .lo = .{ 0, 0, 0, 0 }, .wall = 5.6569 },
+        .{ .name = "sloped  ", .h = .{ 0, 0.5, 4.5, 4 }, .hi = .{ 4, 4.5, 4.5, 4 }, .lo = .{ 0, 0.5, 0.5, 0 }, .wall = 4.0 },
+        .{ .name = "tilted  ", .h = .{ 0, 0, 5, 4 }, .hi = .{ 4.5, 4.5, 5, 4 }, .lo = .{ 0, 0, 0, 0 }, .wall = 4.5 },
     };
     for (cases) |c| {
-        const t = wf.cliffTiers(c.h[0], c.h[1], c.h[2], c.h[3]);
+        const t = wf.cliffTiers(c.h[0], c.h[3], c.h[1], c.h[2]);
+        const cut = wf.cliffCut(c.h, t);
+        const lv = wf.CliffLevels{ .hi = c.hi, .lo = c.lo };
         var b = gfx.Builder.init();
         defer b.deinit();
         var fb = gfx.Builder.init();
         defer fb.deinit();
-        cliffCell(&b, &fb, 0, 0, .{ 0, 0 }, .{ 1, 1 }, c.h, t);
+        cliffCell(&b, .{ .b = &fb, .sb = null, .env = null }, .{ 0, 0 }, .{ 1, 1 }, c.h, cut, lv, .{ null, null, null, null });
 
         const ntri = b.pos.items.len / 9;
         var flat: f32 = 0;
-        var wall: usize = 0;
         for (0..ntri) |i| {
             const o = i * 9;
             const up = b.nrm.items[i * 9 + 1] > 0.5;
@@ -3563,26 +4281,60 @@ test "THE FLOOR DRAWN IS THE FLOOR WALKED — a cliff cell's flats against `wf.s
             const area = @abs((p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[2][0] - p[0][0]) * (p[1][1] - p[0][1])) * 0.5;
             if (up) {
                 flat += area;
+                // Every floor vertex sits on one of the two side surfaces, at ITS height there.
                 for (0..3) |k| {
                     const y = b.pos.items[o + k * 3 + 1];
-                    try std.testing.expect(@abs(y - t.lo) < 1e-5 or @abs(y - t.hi) < 1e-5);
+                    const onHi = @abs(y - wf.ringLerp(c.hi, p[k][0], p[k][1])) < 1e-4;
+                    const onLo = @abs(y - wf.ringLerp(c.lo, p[k][0], p[k][1])) < 1e-4;
+                    try std.testing.expect(onHi or onLo);
                 }
-            } else wall += 1;
+            } else {
+                // The only thing in the terrain builder that is not floor is a `cellSkirt`, and a skirt is
+                // VERTICAL: anything else here is a floor drawn on the slant, which is a floor you slide off.
+                try std.testing.expect(@abs(b.nrm.items[o + 1]) < 0.01);
+            }
         }
         // Every square metre of the cell is floored exactly once, or there is a hole to fall through.
         try std.testing.expectApproxEqAbs(@as(f32, 1.0), flat, 1e-4);
-        try std.testing.expectEqual(@as(usize, 0), wall);
-        // The face is a mesh of its own, and it is never one plate.
-        try std.testing.expect(fb.pos.items.len / 9 >= FACE_SPANS * FACE_BANDS * 2);
+        // The face is a mesh of its own, and it is never one plate: two spans by two courses at the least.
+        try std.testing.expect(fb.pos.items.len / 9 >= 2 * 2 * 2);
+        // …and it covers the WHOLE cut. A saddle that walls one of its two chords passes every other check here.
+        var faceArea: f32 = 0;
+        for (0..fb.pos.items.len / 9) |i| {
+            const o = i * 9;
+            const ux = fb.pos.items[o + 3] - fb.pos.items[o];
+            const uy = fb.pos.items[o + 4] - fb.pos.items[o + 1];
+            const uz = fb.pos.items[o + 5] - fb.pos.items[o + 2];
+            const vx = fb.pos.items[o + 6] - fb.pos.items[o];
+            const vy = fb.pos.items[o + 7] - fb.pos.items[o + 1];
+            const vz = fb.pos.items[o + 8] - fb.pos.items[o + 2];
+            const cx = uy * vz - uz * vy;
+            const cy = uz * vx - ux * vz;
+            const cz = ux * vy - uy * vx;
+            faceArea += 0.5 * @sqrt(cx * cx + cy * cy + cz * cz);
+        }
+        std.debug.print("  cliff cell {s}: face {d:.3} m2 against the cut's own {d:.3}\n", .{ c.name, faceArea, c.wall });
+        // The wall is a PLAIN SHEET over the cut, so this is exact: a saddle that walls one of its two chords
+        // halves it, and anything that starts bellying the sheet out again shows up here as slack.
+        try std.testing.expectApproxEqRel(c.wall, faceArea, 0.01);
 
+        // A fan of planar triangles over a bilinear misses it by up to a quarter of the TWIST (the corners'
+        // second difference), exactly as `quadSmooth` misses `wf.sampleHeight` on every plain cell; the two
+        // cases on sloping ground carry one, so that is the slack, and no more.
+        const twist = @max(
+            @abs(c.hi[0] - c.hi[1] + c.hi[2] - c.hi[3]),
+            @abs(c.lo[0] - c.lo[1] + c.lo[2] - c.lo[3]),
+        );
+        const slack = twist * 0.25 + 1e-3;
         const NS = 200;
         var off: usize = 0;
         var total: usize = 0;
+        var worst: f32 = 0;
         for (0..NS) |iz| {
             const v = (@as(f32, @floatFromInt(iz)) + 0.5) / NS;
             for (0..NS) |ix| {
                 const u = (@as(f32, @floatFromInt(ix)) + 0.5) / NS;
-                const want = wf.cliffTierAt(wf.cliffCut(c.h, t, 0, 0), t, u, v);
+                const want = wf.ringLerp(if (wf.cliffHigh(cut, u, v)) c.hi else c.lo, u, v);
                 var drawn: ?f32 = null;
                 for (0..ntri) |i| {
                     const o = i * 9;
@@ -3593,18 +4345,109 @@ test "THE FLOOR DRAWN IS THE FLOOR WALKED — a cliff cell's flats against `wf.s
                         .{ b.pos.items[o + 6], b.pos.items[o + 8] },
                     };
                     if (!triHit(p, u, v)) continue;
-                    drawn = b.pos.items[o + 1];
+                    drawn = triY(p, .{ b.pos.items[o + 1], b.pos.items[o + 4], b.pos.items[o + 7] }, u, v);
                     break;
                 }
                 total += 1;
-                if (drawn == null or @abs(drawn.? - want) > 1e-4) off += 1;
+                if (drawn == null or @abs(drawn.? - want) > slack) off += 1;
+                if (drawn) |d| worst = @max(worst, @abs(d - want));
             }
         }
         const pct = 100.0 * @as(f32, @floatFromInt(off)) / @as(f32, @floatFromInt(total));
-        std.debug.print("  cliff cell {s}: {d} tris, {d:.2}% of the floor drawn at the other tier\n", .{ c.name, ntri, pct });
+        std.debug.print("  cliff cell {s}: {d} tris, {d:.2}% of the floor drawn at the other side, worst {d:.3} m off the walked (twist {d:.2})\n", .{ c.name, ntri, pct, worst, twist });
         // What is left is the sample grid straddling the chord, not a disagreement about where it runs.
         try std.testing.expect(pct < 1.0);
     }
+}
+
+/// Two SCULPTED levels — a plain that wanders a riser either way, a floor twelve metres down that wanders
+/// the same — with the drop on one lattice row and cliff painted `bandCells` wide either side of it, which
+/// is how the shipped lip is painted.
+fn envWithSculptedLip(drop: f32, lipRow: usize, bandCells: usize) !*Env {
+    const e = try std.testing.allocator.create(Env);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.heightHalf = wf.DEFAULT_HALF;
+    e.heightAny = true;
+    for (0..wf.HEIGHT_N) |iz| {
+        for (0..wf.HEIGHT_N) |ix| {
+            const wobble = wf.HEIGHT_STEP * (@as(f32, @floatFromInt((ix * 7 + iz * 13) % 3)) - 1.0);
+            const base: f32 = if (iz < lipRow) 0 else -drop;
+            e.heightField[iz * wf.HEIGHT_N + ix] = wf.heightByte(base + wobble);
+            if (iz + bandCells >= lipRow and iz < lipRow + bandCells and iz + 1 < wf.HEIGHT_N and ix + 1 < wf.HEIGHT_N) {
+                e.cliffField[iz * wf.HEIGHT_N + ix] = wf.CLIFF_FACE;
+            }
+        }
+    }
+    return e;
+}
+
+test "PAINT ON SCULPTED GROUND — no step but the cut itself, and nothing gets up it or through it" {
+    const DROP: f32 = 12.0;
+    const LIP: usize = 100;
+    const e = try envWithSculptedLip(DROP, LIP, 4);
+    defer std.testing.allocator.destroy(e);
+    const step = e.lattice();
+    const lipZ = -e.heightHalf + @as(f32, @floatFromInt(LIP)) * step;
+
+    // Along the lip, two cells inside the paint on the high side, then two cells inside on the low side: the
+    // walked ground moves as the sculpt does and never steps. Per cell the tiers stepped at every seam.
+    const fine: f32 = 0.01;
+    for ([_]f32{ lipZ - 2.5 * step, lipZ + 2.5 * step }) |z| {
+        var prev = e.groundAt(-50, z);
+        var worst: f32 = 0;
+        var steps: usize = 0;
+        var x: f32 = -50;
+        while (x <= 50) : (x += fine) {
+            const cur = e.groundAt(x, z);
+            const d = @abs(cur - prev);
+            worst = @max(worst, d);
+            if (d > 0.05) steps += 1;
+            prev = cur;
+        }
+        std.debug.print("  sculpted lip, 100 m along at z {d:.1}: {d} steps over 5 cm, worst {d:.4} m a centimetre\n", .{ z, steps, worst });
+        try std.testing.expectEqual(@as(usize, 0), steps);
+    }
+    // Across it: exactly one step, and it is the whole drop.
+    {
+        var prev = e.groundAt(3.3, lipZ - 12);
+        var over: usize = 0;
+        var biggest: f32 = 0;
+        var z: f32 = lipZ - 12;
+        while (z <= lipZ + 12) : (z += fine) {
+            const cur = e.groundAt(3.3, z);
+            const d = prev - cur;
+            if (d > STEP_UP) over += 1;
+            biggest = @max(biggest, d);
+            prev = cur;
+        }
+        std.debug.print("  sculpted lip, across: {d} step(s) over STEP_UP, the biggest {d:.2} m\n", .{ over, biggest });
+        try std.testing.expectEqual(@as(usize, 1), over);
+        try std.testing.expect(biggest > DROP - 1.0);
+    }
+    // The cut is on the lattice row's midline, from both sides, everywhere along it.
+    {
+        var x: f32 = -60;
+        while (x <= 60) : (x += 0.37) {
+            const above = e.groundAt(x, lipZ - 0.5 * step + 0.02);
+            const below = e.groundAt(x, lipZ - 0.5 * step - 0.02);
+            try std.testing.expect(below - above > DROP - 1.0);
+        }
+    }
+    // Nothing on foot gets up it, from straight on or grazing — at any frame rate, for a hundred frames.
+    for ([_]f32{ 1.0 / 30.0, 1.0 / 144.0 }) |dt| {
+        for ([_]f32{ 0.0, 1.2, 1.45 }) |ang| {
+            var p = v3(7.7, 0, lipZ + 1.5);
+            p.y = e.groundAt(p.x, p.z);
+            const dir = v3(mathx.sinf(ang), 0, -mathx.cosf(ang));
+            for (0..100) |_| {
+                p = e.walkStep(p, dir, 6.0 * dt);
+                p.y = e.groundAt(p.x, p.z);
+            }
+            try std.testing.expect(p.y < -DROP + 1.0);
+        }
+    }
+    // And from above the lip is a brink, not a slope.
+    try std.testing.expect(e.brink(v3(1, e.groundAt(1, lipZ - 1.5), lipZ - 1.5), v3(1, 0, lipZ - 0.5 * step + 0.05)));
 }
 
 /// Widest x over which the ground climbs from `lo` to `hi`, walked at a millimetre.
@@ -3788,6 +4631,61 @@ test "a group with nothing left standing leaves no op behind" {
     try std.testing.expectEqual(@as(usize, 0), try e.explodeOp(m, 0));
     try std.testing.expectEqual(@as(usize, 1), m.nops);
     try std.testing.expectEqual(Kind.lantern, m.ops[0].kind);
+}
+
+test "A FLIGHT IS WALKED TO THE SHELF, AND ITS HEAD IS NOT A LIP" {
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    var ln: usize = 0;
+    try wf.loadForTest(wf.DIR ++ "/test_cliff" ++ wf.EXT, m, &ln);
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.heightField = m.height;
+    e.cliffField = m.cliff;
+    e.heightHalf = m.half;
+    e.heightAny = m.anyHeight();
+    e.materialize(m);
+
+    var flight: ?*const Prop = null;
+    for (e.placed()) |*pr| {
+        if (pr.kind == .stairflight) flight = pr;
+    }
+    const fl = flight orelse return error.TestUnexpectedResult;
+    const z = fl.pos.z;
+    const shelf = e.groundAt(20, z);
+    const foot = e.groundAt(fl.pos.x - 0.5, z);
+    try std.testing.expectApproxEqAbs(foot + 6.0, shelf, 1e-3);
+    try std.testing.expectApproxEqAbs(@as(f32, 6.0), fl.rise, 1e-4);
+
+    // Up: a body walking east arrives on the shelf, standing on what is under it after every step.
+    var p = v3(fl.pos.x - 0.5, foot, z);
+    var top: f32 = foot;
+    var steps: usize = 0;
+    while (steps < 4000 and p.x < 12.8) : (steps += 1) {
+        const q = e.walkStep(p, v3(1, 0, 0), 0.05);
+        if (q.x <= p.x + 1e-6) break;
+        p = q;
+        p.y = e.standAt(p.x, p.z, p.y);
+        top = mathx.maxF(top, p.y);
+    }
+    try std.testing.expect(p.x >= 12.8);
+    try std.testing.expectApproxEqAbs(shelf, p.y, 1e-3);
+    try std.testing.expectApproxEqAbs(shelf, top, 1e-3);
+    // No single step up the flight is more than one tread.
+    try std.testing.expect(e.standAt(fl.pos.x + 0.2, z, foot) - foot <= 0.25 + 1e-4);
+
+    // Down: from the shelf onto the head of the flight is a step, not a lip — so a foe follows him down.
+    const onShelf = v3(12.3, shelf, z);
+    const onHead = v3(11.7, shelf, z);
+    try std.testing.expect(!e.brink(onShelf, onHead));
+    // Off the side of the flight the LAND is what he lands on, and mid-flight that is a fall.
+    const mid = v3(fl.pos.x + 4.8, e.standAt(fl.pos.x + 4.8, z, foot + 3.0), z);
+    try std.testing.expect(mid.y > foot + 2.0);
+    try std.testing.expect(e.brink(mid, v3(mid.x, mid.y, z + 1.4)));
+    // A ground-level walk next to the flight never mounts it sideways.
+    try std.testing.expectApproxEqAbs(foot, e.standAt(fl.pos.x + 4.8, z + 1.4, foot), 1e-3);
+    std.debug.print("\nflight: run {d:.2} m, {d} treads, head at {d:.2} against a shelf at {d:.2}\n", .{ flightRun(fl, props.info(fl.kind)), sectionsIn(fl.rise, props.info(fl.kind).stack) * props.info(fl.kind).flight.?.treads, fl.pos.y + fl.rise, shelf });
 }
 
 test "a cliff stood at the map's edge is still inside the grid" {
@@ -4338,6 +5236,27 @@ test "THE FOOTING READS THE LIQUID THE SHADER PAINTED - every pool on the bench 
     std.debug.print("\n  footing: four pools, each answering with its own kind, dry in the middle\n", .{});
 }
 
+test "DIGGING A POOL puts the dweller's floor at the dweller depth and leaves the shore alone" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++ "foe: fen_lurker 0 0 0 1 0.5\n");
+    defer std.testing.allocator.destroy(m);
+    _ = m.paintWater(0, 0, 15, true, .speckle, .water);
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    const dryBefore = m.heightAt(30, 0);
+    const moved = Env.digPools(m, 5.0);
+    try std.testing.expect(moved > 0);
+    e.uploadWater(m);
+    e.heightField = m.height;
+    e.heightHalf = m.half;
+    e.heightAny = m.anyHeight();
+    try std.testing.expectApproxEqAbs(dwellerDepth(), e.wadeDepth(0, 0), 1e-3);
+    try std.testing.expectApproxEqAbs(dryBefore, m.heightAt(30, 0), 1e-6);
+    // Nothing past the dig radius moved, wet or not.
+    try std.testing.expectApproxEqAbs(@as(f32, 0), m.heightAt(8.5, 0), 1e-6);
+    std.debug.print("\n  dug pool: {d} lattice points, {d:.3} m of water at the post\n", .{ moved, e.wadeDepth(0, 0) });
+}
+
 test "A FEN LURKER IS SUBMERGED WHEREVER IT IS POSTED, on every map but the bench's dry control" {
     const fen = @import("../foes/fenlurker.zig");
     var dir = std.fs.cwd().openDir(wf.DIR, .{ .iterate = true }) catch return error.SkipZigTest;
@@ -4369,10 +5288,8 @@ test "A FEN LURKER IS SUBMERGED WHEREVER IT IS POSTED, on every map but the benc
         for (m.foes[0..m.nfoes]) |f| {
             if (f.kind != .fen_lurker) continue;
             const d = e.wadeDepth(f.x, f.z);
-            if (d < fen.POOL_MIN or d > WADE_MAX) {
-                std.debug.print("{s}: fen lurker at {d:.2} {d:.2} stands in {d:.3} m of water\n", .{ ent.name, f.x, f.z, d });
-                return error.LurkerOutOfItsWater;
-            }
+            std.debug.print("  {s}: fen lurker at {d:.2} {d:.2} in {d:.3} m of water (the pool floor wants {d:.3})\n", .{ ent.name, f.x, f.z, d, dwellerDepth() });
+            if (d < fen.POOL_MIN or d > WADE_MAX) return error.LurkerOutOfItsWater;
             checked += 1;
         }
     }

@@ -1061,14 +1061,21 @@ test "the whole pour bills less than the roots' grip, and a body resists it as C
 
 pub const FlaskKind = enum { crimson, cerulean };
 
+/// **THE CHARGES ARE ONE POOL AND THE SPLIT IS HIS** (Elden Ring's allotment, at a bonfire): the total never
+/// moves, only where it sits. `FLASK_CRIMSON` is where a fresh run starts it.
+pub const FLASK_TOTAL: u8 = 3;
 pub const FLASK_CRIMSON: u8 = 2;
-pub const FLASK_CERULEAN: u8 = 1;
+pub const FLASK_CERULEAN: u8 = FLASK_TOTAL - FLASK_CRIMSON;
 pub const FLASK_HP_FRAC: f32 = 0.45;
 pub const FLASK_FP_FRAC: f32 = 0.50;
 pub const FLASK_DRINK_DUR: f32 = 1.05;
 pub const FLASK_POUR_AT: f32 = 0.42;
 
 pub const Flasks = struct {
+    /// The ALLOTMENT — how many of each the bonfire fills. `crimsonMax + ceruleanMax` is the pool and is
+    /// invariant under `allot`; the two live counts below are what is left of it.
+    crimsonMax: u8 = FLASK_CRIMSON,
+    ceruleanMax: u8 = FLASK_CERULEAN,
     crimson: u8 = FLASK_CRIMSON,
     cerulean: u8 = FLASK_CERULEAN,
     sel: FlaskKind = .crimson,
@@ -1078,6 +1085,22 @@ pub const Flasks = struct {
             .crimson => self.crimson,
             .cerulean => self.cerulean,
         };
+    }
+    pub fn allotted(self: *const Flasks, k: FlaskKind) u8 {
+        return switch (k) {
+            .crimson => self.crimsonMax,
+            .cerulean => self.ceruleanMax,
+        };
+    }
+    pub fn total(self: *const Flasks) u8 {
+        return self.crimsonMax + self.ceruleanMax;
+    }
+    /// Move the split. The pool is held, and re-allotting FILLS — the bonfire is where it is done.
+    pub fn allot(self: *Flasks, crimsonMax: u8) void {
+        const n = self.total();
+        self.crimsonMax = @min(crimsonMax, n);
+        self.ceruleanMax = n - self.crimsonMax;
+        self.refill();
     }
     pub fn ready(self: *const Flasks) u8 {
         return self.charges(self.sel);
@@ -1096,8 +1119,8 @@ pub const Flasks = struct {
         return true;
     }
     pub fn refill(self: *Flasks) void {
-        self.crimson = FLASK_CRIMSON;
-        self.cerulean = FLASK_CERULEAN;
+        self.crimson = self.crimsonMax;
+        self.cerulean = self.ceruleanMax;
     }
 };
 
@@ -2375,6 +2398,24 @@ test "flasks: a drink spends exactly one charge, and an empty flask refuses" {
     try std.testing.expectEqual(FLASK_CERULEAN, f.ready());
     f.sel = .crimson;
     try std.testing.expectEqual(FLASK_CRIMSON, f.ready());
+}
+
+test "ALLOTTING MOVES THE SPLIT AND NEVER THE POOL — and it fills, the way a bonfire does" {
+    var f = Flasks{};
+    try std.testing.expectEqual(FLASK_TOTAL, f.total());
+    try std.testing.expect(f.take());
+    f.allot(FLASK_TOTAL);
+    try std.testing.expectEqual(FLASK_TOTAL, f.total());
+    try std.testing.expectEqual(FLASK_TOTAL, f.charges(.crimson));
+    try std.testing.expectEqual(@as(u8, 0), f.charges(.cerulean));
+    f.allot(0);
+    try std.testing.expectEqual(FLASK_TOTAL, f.charges(.cerulean));
+    try std.testing.expectEqual(@as(u8, 0), f.charges(.crimson));
+    // Past the pool is clamped to it, never widened.
+    f.allot(200);
+    try std.testing.expectEqual(FLASK_TOTAL, f.total());
+    try std.testing.expectEqual(FLASK_TOTAL, f.allotted(.crimson));
+    std.debug.print("\n  flasks: a pool of {d}, split anywhere in 0..{d}\n", .{ FLASK_TOTAL, FLASK_TOTAL });
 }
 
 test "focus refuses a pour it cannot take, so a full bar never eats a charge" {

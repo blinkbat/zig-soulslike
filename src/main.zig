@@ -20,6 +20,15 @@ pub fn main() void {
         };
         return;
     }
+    // DEV ONLY: dig every water dweller's pool on a map to the dweller floor and save it.
+    if (argv.len >= 2 and std.mem.eql(u8, argv[1], "--fix-lurkers")) {
+        const path = if (argv.len >= 3) argv[2] else wf.START_MAP;
+        runFixLurkers(alloc, path) catch |e| {
+            std.debug.print("fix-lurkers FAILED: {s}\n", .{@errorName(e)});
+            std.process.exit(1);
+        };
+        return;
+    }
     if (argv.len >= 2 and std.mem.eql(u8, argv[1], "--explode")) {
         const path = if (argv.len >= 3) argv[2] else wf.START_MAP;
         runExplode(alloc, path) catch |e| {
@@ -45,6 +54,7 @@ pub fn main() void {
             break;
         }
     }
+    game.dbgBright = hasArg(argv, "--bright");
     const mode: game.Mode = if (hasArg(argv, "--shot-props"))
         .props
     else if (hasArg(argv, "--shot-land"))
@@ -85,6 +95,27 @@ fn runBake(alloc: std.mem.Allocator) !void {
         "baked {s} — {d} ops, {d} zones, {d} clearings ({d} bytes)\n",
         .{ wf.START_MAP, m.nops, m.nzones, m.nclearings, text.len },
     );
+}
+
+fn runFixLurkers(alloc: std.mem.Allocator, path: []const u8) !void {
+    const m = try alloc.create(wf.Map);
+    defer alloc.destroy(m);
+    var line: usize = 0;
+    try wf.load(path, m, &line);
+    const e = try alloc.create(env.Env);
+    defer alloc.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    const moved = env.Env.digPools(m, 5.0);
+    e.uploadWater(m);
+    e.heightField = m.height;
+    e.heightHalf = m.half;
+    e.heightAny = m.anyHeight();
+    for (m.foes[0..m.nfoes]) |f| {
+        if (f.kind != .fen_lurker) continue;
+        std.debug.print("  fen lurker at {d:.2} {d:.2}: {d:.3} m of water\n", .{ f.x, f.z, e.wadeDepth(f.x, f.z) });
+    }
+    std.debug.print("{s}: {d} lattice points dug to {d:.2}\n", .{ path, moved, env.dwellerFloor() });
+    if (moved > 0) try wf.save(path, m);
 }
 
 fn runExplode(alloc: std.mem.Allocator, path: []const u8) !void {

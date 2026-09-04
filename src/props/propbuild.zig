@@ -91,6 +91,50 @@ pub fn ladderMesh(shader: rl.Shader) rl.Model {
 
 
 
+/// **A FLIGHT IS SECTIONS, LIKE THE LADDER** (`props.Info.stack` + `flight`): one section climbs `STAIR_SEG`
+/// over `STAIR_RUN` in `STAIR_TREADS` risers of 0.25 m — one `wf.HEIGHT_STEP`, so a tread lands on a height
+/// the lattice can hold. Local −Z is the wall it climbs to, the ladder's own convention. One riser a cell
+/// was the most a painted stair cell could climb; this stands on `rise=` instead, the way the ladder does.
+pub const STAIR_SEG: f32 = 1.0;
+pub const STAIR_RUN: f32 = 1.6;
+pub const STAIR_TREADS: u32 = 4;
+pub const STAIR_HALF: f32 = 0.75;
+
+pub fn stairMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(7741);
+    b.setMat(.stone);
+    const riser = STAIR_SEG / @as(f32, @floatFromInt(STAIR_TREADS));
+    const tread = STAIR_RUN / @as(f32, @floatFromInt(STAIR_TREADS));
+    // The core: a slanted slab under the treads, so the flank is stone and not a hollow.
+    b.addBox(v3(0, 0.30, -STAIR_RUN * 0.5), v3(STAIR_HALF * 0.96, 0, 0), v3(0, 0.16, 0), v3(0, STAIR_SEG * 0.5, -STAIR_RUN * 0.5), STONE_DK);
+    for (0..STAIR_TREADS) |k| {
+        const kf = @as(f32, @floatFromInt(k));
+        const zc = -(kf + 0.5) * tread;
+        const yc = kf * riser + riser * 0.5;
+        const hw = STAIR_HALF * rng.range(0.97, 1.03);
+        // A slab lipped 3 cm over the riser below; two tones alternate BETWEEN treads, never along one.
+        b.addBox(
+            v3(rng.signed() * 0.02, yc, zc + rng.signed() * 0.01),
+            v3(hw, rng.signed() * 0.006, 0),
+            v3(rng.signed() * 0.01, riser * 0.5, rng.signed() * 0.008),
+            v3(0, 0, tread * 0.5 + 0.03),
+            if (k % 2 == 0) STONE else STONE_LT,
+        );
+        if (rng.float() < 0.45) {
+            const mx = rng.signed() * (STAIR_HALF - 0.2);
+            b.setMat(.plant);
+            b.addBlob(v3(mx, yc + riser * 0.5, zc - tread * 0.5 + 0.08), v3(rng.range(0.10, 0.22), 0.025, rng.range(0.05, 0.10)), 3, 6, STONE_MOSS);
+            b.setMat(.stone);
+        }
+    }
+    for ([_]f32{ -1, 1 }) |sgn| {
+        const x = sgn * (STAIR_HALF + 0.07);
+        b.addBox(v3(x + rng.signed() * 0.01, 0.42, -STAIR_RUN * 0.5), v3(0.085, 0, 0), v3(rng.signed() * 0.015, 0.24, 0), v3(0, STAIR_SEG * 0.5, -STAIR_RUN * 0.5), if (sgn < 0) STONE_DK else MORTAR);
+    }
+    return b.toModel(shader);
+}
+
 pub fn chapelMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(5150);

@@ -28,6 +28,10 @@ const GROUND_CLEAR = 0.7;
 /// …and how much boom one probe of that search gives up. Named beside the clearance it is searching for: the two are only ever chosen against each other, and a bare 0.25 in the loop reads as arbitrary.
 const GROUND_PROBE = 0.25;
 const GROUND_RISE = 0.2;
+/// Metres a second the boom is GIVEN BACK once the ground behind him stops asking for it. Shortening is
+/// immediate — the eye may never be in the rock — but a cliff behind him is a step in the solve, and a step
+/// in the frame is a cut.
+const CLEAR_REGAIN = 8.0;
 
 const AIM_DIST = 0.7;
 const AIM_SHOULDER = 0.30;
@@ -50,6 +54,7 @@ pub const CamRig = struct {
     trauma: f32 = 0,
     shakeT: f32 = 0,
     shakeOff: rl.Vector3 = mathx.zero3,
+    eased: f32 = -1,
 
     pub fn forwardXZ(c: *const CamRig) rl.Vector3 {
         return mathx.headingDir(c.yaw);
@@ -142,7 +147,7 @@ pub const CamRig = struct {
         return .{ .origin = c.cam.position, .dir = mathx.normV(mathx.subV(c.cam.target, c.cam.position)) };
     }
 
-    pub fn followClear(c: *CamRig, shoulder: rl.Vector3, ctx: anytype, comptime groundAt: fn (@TypeOf(ctx), f32, f32) f32) void {
+    pub fn followClear(c: *CamRig, shoulder: rl.Vector3, ctx: anytype, comptime groundAt: fn (@TypeOf(ctx), f32, f32) f32, dt: f32) void {
         const target = c.targetFor(shoulder);
         const back = c.backDir();
         const shortest = c.boomFloor();
@@ -154,7 +159,8 @@ pub const CamRig = struct {
             if (p.y >= g + GROUND_CLEAR or g <= g0 + GROUND_RISE) break;
             d = mathx.maxF(d - GROUND_PROBE, shortest);
         }
-        c.place(target, d);
+        c.eased = if (c.eased < 0 or d < c.eased) d else mathx.approach(c.eased, d, CLEAR_REGAIN * dt);
+        c.place(target, c.eased);
         const floor = groundAt(ctx, c.cam.position.x, c.cam.position.z) + GROUND_CLEAR;
         if (c.cam.position.y < floor) c.cam.position.y = floor;
     }
@@ -192,7 +198,7 @@ test "AN UP-TILT IS NOT A ZOOM — flat ground costs no boom, a hill behind stil
         }
     };
     var rig = CamRig{ .cam = undefined, .yaw = 0, .pitch = PITCH_MIN, .dist = DEFAULT_DIST };
-    rig.followClear(v3(0, 1.4, 0), {}, Flat.ground);
+    rig.followClear(v3(0, 1.4, 0), {}, Flat.ground, 1.0);
     // The skim clamp lifts the eye a little, so measure against 0.9.
     const boomKept = mathx.lenV(mathx.subV(rig.cam.position, rig.cam.target));
     try std.testing.expect(boomKept > DEFAULT_DIST * 0.9);
@@ -203,9 +209,35 @@ test "AN UP-TILT IS NOT A ZOOM — flat ground costs no boom, a hill behind stil
         }
     };
     var rig2 = CamRig{ .cam = undefined, .yaw = 0, .pitch = 0.1, .dist = MAX_DIST };
-    rig2.followClear(v3(0, 1.4, 0), {}, Hill.ground);
+    rig2.followClear(v3(0, 1.4, 0), {}, Hill.ground, 1.0);
     const boomPaid = mathx.lenV(mathx.subV(rig2.cam.position, rig2.cam.target));
     try std.testing.expect(boomPaid < MAX_DIST - GROUND_PROBE);
+}
+
+test "A WALL BEHIND HIM SHORTENS THE BOOM AT ONCE, AND GIVES IT BACK AT A RATE" {
+    const Wall = struct {
+        var on: bool = true;
+        fn ground(_: void, _: f32, z: f32) f32 {
+            return if (on and z < -3.5) 6.0 else 0.0;
+        }
+    };
+    var rig = CamRig{ .cam = undefined, .yaw = 0, .pitch = 0.1, .dist = MAX_DIST };
+    Wall.on = false;
+    rig.followClear(v3(0, 1.4, 0), {}, Wall.ground, 1.0 / 60.0);
+    const open = mathx.lenV(mathx.subV(rig.cam.position, rig.cam.target));
+    Wall.on = true;
+    rig.followClear(v3(0, 1.4, 0), {}, Wall.ground, 1.0 / 60.0);
+    const walled = mathx.lenV(mathx.subV(rig.cam.position, rig.cam.target));
+    try std.testing.expect(walled < open - 3.0);
+    try std.testing.expect(rig.cam.position.z > -3.5);
+    Wall.on = false;
+    rig.followClear(v3(0, 1.4, 0), {}, Wall.ground, 1.0 / 60.0);
+    const regained = mathx.lenV(mathx.subV(rig.cam.position, rig.cam.target));
+    try std.testing.expect(regained > walled);
+    try std.testing.expect(regained < walled + CLEAR_REGAIN / 60.0 + 0.2);
+    var i: usize = 0;
+    while (i < 120) : (i += 1) rig.followClear(v3(0, 1.4, 0), {}, Wall.ground, 1.0 / 60.0);
+    try std.testing.expect(mathx.lenV(mathx.subV(rig.cam.position, rig.cam.target)) > open - 0.3);
 }
 
 test "the centre ray is the line the reticle marks" {

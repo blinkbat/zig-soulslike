@@ -78,6 +78,11 @@ implement what's asked and nothing extra. Don't commit, push, or create branches
 - **A SUBJECT MUST BE LIT, NOT JUST IN FRAME.** `gfx.SUN_DIR` puts the sun over the shoulder of a camera at
   **yaw ≈ 53** and into the lens of one at **≈ 233**. A foe turns to face the hero, so "photograph its front"
   means putting the sensed hero on the SUN's bearing and shooting from ~53; the 180–215 band shadows its front.
+- **A HOLE IN THE WORLD ONLY SHOWS AGAINST A BRIGHT BACKGROUND** — `--bright` drops the sky and clears
+  MAGENTA (`game.dbgBright`), so anything you can see through glows. Against the 17:27 sky a gap reads as one
+  more dark patch and you will walk past it: it found a full-height crack down the shipped map's cliff, a
+  hole under every stair riser, and nothing at all in the frames that looked fine. Count the magenta BELOW
+  the skyline rather than judging by eye — grass and crenellations are see-through and do not count.
 - **Thin geometry needs a CROP.** Strings, nocked arrows, flutes, setts and HUD rims are invisible at 1:1.
   Nearby clutter can masquerade as the part you are looking for.
   ```powershell
@@ -1854,6 +1859,12 @@ One number — `Game.day.hour` — and every colour and shadow in the world is a
 - **THE SKY DRAWS THE TRUE PATH, THE SHADOWS DO NOT.** `keyDir` FLOORS the casting altitude at `KEY_ALT_MIN`
   (15°) while `sunDir`/`moonDir` keep the honest angle for the disc. A 2° sun throws a 300 m shadow the 108 m
   ortho box cannot hold. The one place the two are allowed to disagree.
+- **THE SWAP GOES OVER THE TOP, IN THE DARK** (`keyDir`, `keyDim`). The moon is the anti-sun, so the key
+  changes bearing by 180 at dusk and at dawn. Turned around the compass at the floor it wheeled every shadow
+  half a circle in 45 real seconds. It now climbs from the floored sun through the zenith onto the floored
+  moon in the sun's own vertical plane, linear in the shadow's LENGTH, and `keyDim` takes the key to black
+  at the crossing — fade, flip, fade back, which is what every engine with one caster does. A test measures
+  a pole's shadow: lit, it moves under half as fast in the swap as when the sun leaves the floor at 07:06.
 - **THE TEXEL SNAP IS TAKEN IN THE LIGHT'S OWN BASIS** (`gfx.lightBasis`). A world-axis snap stops snapping
   under a sweeping sun and the shadow edges crawl.
 - **`Palette` IS THE WHOLE LOOK OF AN HOUR**, keyframed at nine hours and blended with the ease taken off both
@@ -2004,8 +2015,12 @@ normals from the FIELD so two tiles agree at their seam.
   flagged cell steps instead of interpolating — see Cliffs below.
 - **EVERY PROP PLANTS AT THE HEIGHT UNDER IT** — `uploadHeight` must run BEFORE `materialize`, and a sculpt
   stroke re-materializes on RELEASE.
-- **TWO RULES DECIDE EVERY STEP** (`env.walkStep`), either passing: the rise ahead is under `STEP_UP`
-  (sized to the encoding — two risers walkable, three a wall), or within `MAX_SLOPE` (tan 40°).
+- **TWO RULES DECIDE EVERY STEP** (`env.walkStep`): the rise ahead is within `MAX_SLOPE` (tan 40°), or it is
+  under `STEP_UP` (two risers, three a wall) **AND LANDS ON A TREAD** (`treadAt`: a deck, a stair cell, or
+  ground under `MAX_SLOPE` read a quarter-metre either way). `STEP_UP` over the probe alone was a 47.7° climb
+  and the constant was never the limit — 288 cells of the shipped map sit in that band. Read at the step's
+  own end and at four taps along `STEP_PROBE`: a probe that landed past the corner of a cut put the body on
+  top of the wall.
 - **MEASURED OVER A FIXED LOOKAHEAD (`STEP_PROBE`), NEVER THE FRAME'S OWN TRAVEL.** Against frame distance a
   240 fps hero ratchets up a vertical cliff. A test pins the rule across four frame rates.
 - **A REFUSED STEP IS NOT A STOP** — the uphill component is removed and the rest is taken at full length.
@@ -2015,6 +2030,10 @@ normals from the FIELD so two tiles agree at their seam.
   height on the 1.8 m rig and HIS choice. A creature turns back at `foe.WADE_FRAC` of its own stature,
   read off `topWorld`. **THE WATER IS A DOOR FOR EXACTLY TWO THINGS**: the gait table hands `.waterfaring` an
   infinite limit — the toad and the fen lurker. The gate only refuses a step that goes DEEPER.
+- **A WATER DWELLER IS POSTED IN ITS OWN BAND** (`foe.poolBand`): the editor refuses a lurker outside
+  `fen.POOL_MIN`..`WADE_MAX` (place and paste both, and says why), and Ground > Pool digs to
+  `env.dwellerFloor` — the deepest lattice height the hero still wades, 1.295 m of water. One place holds
+  the band; the shipped-map test reads the same one.
 - **`pos.y` IS THE GROUND UNDER AN ACTOR**, written in ONE place (`game.groundActor`), EASED not snapped
   (`GROUND_RISE_RATE`/`GROUND_FALL_RATE`) — the camera rides the shoulder, so snapping kicks the frame. Past
   `GROUND_SNAP` it plants.
@@ -2028,7 +2047,13 @@ normals from the FIELD so two tiles agree at their seam.
 - **THE HERO LEANS INTO THE HILL** (`hero.slopeLean`, 0.55 of the slope capped at 16°) through the SAME
   `rx(bodyPitch)` term as the run lean.
 - **THE TERRAIN RECEIVES SHADOWS BUT DOES NOT CAST.** Self-shadowing a heightfield off a 108 m ortho box puts
-  acne everywhere the surface grazes the sun.
+  acne everywhere the surface grazes the sun. **THE PAINTED CLIFF FACES DO CAST** (`env.drawCliffCasters`) —
+  off a PLATE set `FACE_SHADOW_IN` inside the rock and `FACE_SHADOW_LIP` under the lip, drawn in the depth
+  pass only, so neither the face nor the shelf behind it can read its own depth back. Both windings, because
+  the depth pass culls back faces and the sun stands behind half the walls.
+- **THE BOOM IS SHORTENED AT ONCE AND GIVEN BACK AT A RATE** (`camera.CLEAR_REGAIN`, `CamRig.eased`). A cliff
+  behind him is a step in the solve; taken raw it was a cut in the frame. The shot harness solves fresh
+  (`eased = -1`) — a shot has no previous frame.
 
 ### Cliffs — a drop drawn as a FACE instead of a ramp
 
@@ -2040,35 +2065,82 @@ Ground layer > Cliff paints it, Slope takes it back.
 - **THE FLAG IS OPT-IN AND CHANGES NOTHING ELSE.** No `cliff:` row means the map loads and walks exactly as
   it did; the dried-lake basin next door stays a bilinear bowl. The same 6 m drop is a wall or a ramp
   depending on the flag, not on how steeply it was sculpted.
-- **ONE CUT SERVES THE MESH AND THE SAMPLER** (`wf.cliffCut`, `wf.cliffTierAt`). Marching squares on the
-  cell's four corners against the midpoint of its own two tiers: straight chords, because a triangle is all
-  the mesh can draw. **THE SAMPLER FOLLOWS THE MESH, NOT THE BILINEAR** — measured, a saddle cell's true
-  bilinear iso and its chord disagree over a QUARTER of the cell, which is a corner drawn at one tier and
-  walked at the other. A test walks four cases on a 200² grid and prints the residue (worst 0.37%, and that
-  is the grid straddling the chord).
+- **ONE CUT SERVES THE MESH AND THE SAMPLER** (`wf.cliffCut`, `wf.cliffHigh`, `wf.cliffLevels`). Marching
+  squares on the cell's four corners against the midpoint of its two tiers, crossing every cut edge at its
+  MIDPOINT — the one place both cells on that edge agree. Solved off each cell's own tiers the cut stepped
+  sideways at every seam of the sculpted shipped lip and the sky showed through. **THE FLOOR EITHER SIDE IS
+  THE TERRAIN, NOT A TIER**: each side walks the bilinear of its own corners, a corner across the cut standing
+  in at the level its neighbours on this side hold (per lattice point, so the two cells on an edge agree).
+  Snapped to `lo`/`hi`, a cell on sculpted ground stood proud of the plain cell beside it and the walk stepped
+  at every seam — 67 steps in 75 m along the shipped lip, 20 of them falls. A test walks six cases on a 200²
+  grid (worst residue 0.37%, the grid straddling the chord) and a sculpted two-level bench end to end.
 - **A SADDLE'S MIDDLE IS A TIER, NOT A HOLE.** Four cuts leave a diamond between the corners; the bilinear's
   own centre decides which tier fills it, and the two chords that then face the other way get the wall.
-- **FLATTEN BOTH TIERS BEFORE PAINTING.** A cliff cell draws its flats at `lo` and `hi`; a lattice point left
-  at some intermediate height is a crack at the seam with the smooth cell next door.
+- **PAINT UNDER A WALKABLE DROP IS INERT** (`wf.cliffMinDrop` = max(`STEP_UP`, `MAX_SLOPE`·cell), 2.1 m on
+  the shipped lattice). A painted cell cuts only where a ramp over it could not be walked; under that it is
+  the bilinear it always was, and a normal reads across it (`env.cellCuts`). The shipped map carries 1,300
+  painted cells on flat ground and 260 on sculpt noise under 2 m, each of which was a vertical step at its own
+  midpoint. Paint generously; it costs nothing.
 - **WALKING OFF A LIP IS A FALL, NOT A SNAP** (`game.heroFooting`) — the same `hero.startFall` a deck edge
   takes, keyed on the LAND dropping more than `STEP_UP` in one step, which a bilinear ramp cannot do at any
   frame rate.
 - **NOTHING ON FOOT FOLLOWS HIM OFF ONE** (`env.brink`, applied in `game.gateTerrain` after the walk gate).
-  Climbing one was already refused by `MAX_SLOPE`; this is the other direction.
-- **A STAIR CELL IS ONE TREAD** (case 2, `wf.stairTread`): flat at its own mean height snapped to
+  Climbing one was already refused by `MAX_SLOPE`; this is the other direction. **BUT A BRINK IS PACED, NOT
+  STOOD AT** (`game.brinkStep`): the step's share toward the drop is removed and the rest is taken along the
+  lip, the way the walk gate treats a rise — and a body DROPS a lip under `DROP_FRAC` of its own stature when
+  the hero stands below it, which is a position read and legal.
+- **THE FACE IS THE PROPS' OWN ROCK** (`env.cliffWall`, `proprock.CLIFF_KINDS`). One flat plate per cell was
+  the Minecraft read. A face is now a lattice of spans (`FACE_SPAN_M`) by courses (the kind's `H / bands`),
+  bellied out over the low ground and swept by a 9 m bay field so some stretches bulge and others stand
+  flat; `blocky` sets how proud the strata stand (keyed on WORLD height, so a course runs level through every
+  cell), `cleft` the vertical grooves, `ivy` hangs curtains and presses moss into the seams, `broken` scatters
+  talus and leans a slab. The kind is a 27 m field, so a run reads as one geology. **THE LIP IS STRAIGHT AND
+  THE CUT IS EXACT** (owner: "straight cliffs, never the jagged minecraft look") — a ±0.3-cell wander made
+  every straight line an accordion of facets, one a cell, which is the palisade read.
+  **AND THE FACADE IS ONE OF THE `cliff*` PROPS, BISECTED INTO IT** (owner: "a smooth wall, then juxtapose
+  one of our cliff faces onto it halfway bisected"). The wall itself is a PLAIN SHEET on the cut, its lip and
+  foot on the two floors at the chord's ends so it runs with sloping ground — the test measures its area
+  against the cut's own and they agree to 1% — and the rock is `proprock.CLIFF_FACES`
+  (one row per face; "Rocky Cliff" is the first) stamped along the run by `env.faceStamp` at world stations
+  `FACE_PROP_M` apart, turned so its front looks out, scaled off its own STONE height (`Builder.boundsOf`,
+  because a cliff prop's ivy carries a third of its height again) and sunk until `FACE_PROP_PROUD` of it
+  stands in front of the cut. `Builder.stamp` copies a prototype mesh in turned, scaled and moved, so a
+  forty-metre run costs ONE built mesh. Everything before this tried to make the sheet itself into rock —
+  bellied cells, half-sunk masses on a recessed core — and every version of it read as plates pasted on a
+  wall. Adding a face is one row in `CLIFF_FACES`.
+  **THE RIM AND THE FOOT ARE AUTO-SCATTER ALONG
+  THE CUT**, never hand-placed: a cap of bare rock the soil has left, loose stones and grass leaning over the
+  drop above; a scree fillet whose height grows with the drop and talus past it below. Everything sits on
+  `groundAt`, so it follows the neighbour cell's floor. **A FACE STANDING IN WATER IS WET** — `.marble` and a
+  darker, cooler tone to `FACE_WET_H` over the sheet, a pale tide line to `FACE_TIDE_H` — decided by
+  `paintedDepth` at its foot, so it needs the water uploaded before the tiles (`replay` does).
+  Stair risers take none of the dressing (`Face.dress`).
+- **A STAIR CELL IS ONE TREAD** (case 2, `wf.stairTread`), and **ITS RISER GOES DOWN TO THE LOWEST THE
+  NEIGHBOUR REACHES ON THAT EDGE**, not to the neighbour's CENTRE: a tread is flat at its own mean, the cell
+  beside it is a bilinear through the two corners they share, so its surface at the edge runs below its
+  centre and the riser stopped short of it — a hole under every step of a terrace. Flat at its mean snapped to
   `wf.STAIR_RISE`, with risers drawn down whichever of its four edges faces lower ground. A run of them
   terraces, and the walk takes it because a probe crosses at most one riser — a comptime assert beside it
   keeps the riser at or under `STEP_UP`. **A FLIGHT CAN ONLY CLIMB ONE RISER A CELL**, so stairs walk
   somewhere a ramp cannot only where the cell is under `STAIR_RISE / MAX_SLOPE` = 0.60 m. On the shipped
   map's 2.51 m cell they are a look and a flat tread, never a shortcut; the bench's 0.538 m cell is where a
   0.90 grade climbs that a plain ramp refuses.
+- **A STAIR THAT CLIMBS MORE THAN ONE RISER A CELL IS A PROP** (`props.stairflight`, `propbuild.stairMesh`,
+  `Info.flight`). Sections like the ladder's — `rise=` snaps to whole `STAIR_SEG` (1.0 m over `STAIR_RUN`
+  1.6 m, four 0.25 m treads, one `wf.HEIGHT_STEP` each) — but each section also ADVANCES `flight.run` along
+  local −Z (`env.drawStack`), and the whole run is ONE `WorldDeck` with `run > 0`: `floorAt` answers the
+  tread under a point, so `standAt` walks it. **THE WALK GATE AND THE BRINK MEASURE FROM WHERE HE STANDS**
+  (`stepOk`, `brink` off `from.y` through `standAt`), so the head of a flight meets the shelf at a step and
+  not at the drop the LAND takes — and a foe follows him down one. Local −Z is the wall it climbs to, the
+  ladder's convention; the head may sit up to two risers off the shelf (`STEP_UP`) and still be a step.
 - **RAMP IS A REGRADE, NOT A CASE.** Sweeping it drops the cut and smooths what is left, which is the only
   way to open a walkable breach through a painted line — a single unflagged cell in a cliff is a 67° ramp on
   the shipped lattice and no more walkable than the wall it replaced. `Slope` still just unpaints.
 - **3..255 ARE UNCLAIMED** and a map using one is a LOAD ERROR on a build that does not know it.
-- `worlds/test_cliff.world` is the bench: a 6 m mesa with a straight face and a ladder up it, a 4 m shelf cut
-  on the diagonal `x + z = 20`, a stair flight up the mesa at a grade past `MAX_SLOPE`, and a 3 m pit with an
-  unflagged ramp down its west side.
+- `worlds/test_cliff.world` is the bench: a 6 m mesa with a straight face, a ladder and a `stairflight` up
+  it, a 4 m shelf cut on the diagonal `x + z = 20`, a painted stair terrace up the mesa at a grade past
+  `MAX_SLOPE`, and a 3 m pit with an unflagged ramp down its west side — FLOODED, so its east wall is the wet
+  face.
 - **THE SHIPPED MAP'S NORTH-WEST BASIN LIP IS ONE OF THESE** — a leaned `cliff4` used to stand in for the
   face there; the lip is terraced to two tiers now, `-1.75` m over `-15.00`, which is a **13.25 m** face and
   past `FALL_DEATH`. Walking off it kills.
@@ -2447,6 +2519,8 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   (`setCasterShaders`) and runs BEFORE `beginDrawing`. Terrain and FLORA receive but do not cast. The ortho box
   tracks the hero, snapped to shadow texels, and tracks Y as well.
 - **The hero is per-bone matrices, not `drawModelEx`.**
+- **A TEST MAY ONLY WRITE `worlds/test_*.world`** — `wf.save` panics on any other path under `is_test`. The
+  suite rewrote the shipped map once and the cause was never found; the trap is cheaper than the search.
 - **THE CHART IS TWO HELD SHEETS AND A LENS** (`ui/mapart.zig`). The map is painted ONCE into a 2048 texture in
   world space and the fog into a 128 one; the lens only ever blits a sub-rect of each. Per-prop per-frame is
   `editor.blitMinimap`'s 16,510 rects, and re-running that walk on every notch of a zoom is the same freeze with
@@ -2746,8 +2820,8 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
 - **Rig:** no foot IK — `rx(bodyPitch)` rotates about the WORLD ORIGIN, so a deep lean levers a forward-swung
   foot down and feet clip a few cm on slopes. The roll has front-loaded i-frames but no collision. One leg-cycle
   is reused across run and sprint.
-- **Elevation exists but nothing is authored with it:** no falling, terrain casts no shadows, painted water is
-  one level plane.
+- **Elevation exists but nothing is authored with it:** terrain casts no shadows (the painted faces do),
+  painted water is one level plane.
 - **The script layer is foundations only, but it is AUTHORABLE now** (`editor.drawScriptModal`, the top bar's
   Script button beside Objects/World/Sounds). Triggers, their conditions and their actions are made, named,
   re-kinded and thrown away from a modal — and a MODAL rather than a map layer, because a trigger is not a

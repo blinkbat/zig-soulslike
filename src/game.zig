@@ -184,6 +184,8 @@ const LOCK_REARM_STICK: f32 = 0.3;
 const LOCK_BLIND_HOLD: f32 = 1.1;
 
 const CLEAR = rgba(80, 76, 69, 255);
+/// TEMP DEV: `--bright` drops the sky and clears MAGENTA, so every hole in the world reads as a hole.
+pub var dbgBright = false;
 
 const LookProbe = struct {
     mdx: f32 = 0,
@@ -487,7 +489,9 @@ fn bootLook(g: *const Game, t: f32) rl.Vector3 {
     return v3(x, g.env.groundAt(x, z) + BOOT_LOOK_UP, z);
 }
 
-const INTRO_FADE_IN: f32 = 3.0;
+/// **THE TITLE TRACK SWELLS.** Long enough that it arrives rather than starts; the fade OUT stays short,
+/// because that one has to be gone by the time the world is up.
+const INTRO_FADE_IN: f32 = 14.0;
 const INTRO_FADE_OUT: f32 = 1.2;
 /// Headroom under the menu's own voices — the take is normalised to -3 dBFS, which is a foreground level.
 const INTRO_VOL: f32 = 0.55;
@@ -498,13 +502,18 @@ const AUDIO_FADE_IN: f32 = 4.5;
 /// picker and Options reached from either; the editor is asked separately because entering it leaves `screen`
 /// where it was, so the menu still reads as booting behind it. The ambience ramp is one-way: the bed belongs
 /// to the world and only ever comes UP, where the track comes back down when the game starts.
+/// The title track's ramp, apart from the stream so both directions can be measured without a device.
+fn introRamp(k: f32, want: bool, dt: f32) f32 {
+    return mathx.clampF(k + (if (want) dt / INTRO_FADE_IN else -dt / INTRO_FADE_OUT), 0, 1);
+}
+
 fn tickAudioFades(g: *Game, dt: f32) void {
     g.audioK = mathx.clampF(g.audioK + dt / AUDIO_FADE_IN, 0, 1);
     sfx.ambienceFade(g.audioK);
 
     const want = g.menu.booting() and !g.editor.on;
     if (want) sfx.introOn(true);
-    g.introK = mathx.clampF(g.introK + (if (want) dt / INTRO_FADE_IN else -dt / INTRO_FADE_OUT), 0, 1);
+    g.introK = introRamp(g.introK, want, dt);
     sfx.introLevel(g.introK * g.audioK * INTRO_VOL);
     if (!want and g.introK <= 0) sfx.introOn(false);
 }
@@ -522,12 +531,16 @@ fn beginGame(g: *Game) void {
     g.hero.setSpawn(start, g.map.start.facing());
     g.hero.souls = .{};
     g.hero.gold = .{};
+    // **A NEW RUN IS A SWORD, A BUCKLER AND THREE FLASKS** (owner). The rack holds four DISTINCT armaments
+    // (`tidyHands`), so the two stowed cells are the other melee class and a torch — no bow, wand or bell,
+    // and nothing in the off hand that would fight the sword for the one held bone.
     g.hero.arm = .sword;
-    g.hero.armAlt = .bell;
+    g.hero.armAlt = .dagger;
     g.hero.off = .shield;
-    g.hero.offAlt = .wand;
+    g.hero.offAlt = .torch;
     g.hero.spell = .bolt;
-    g.hero.mem = .{};
+    // No scrolls in the kit, so no spell in the rack either — `Memory{}` is born holding bolt.
+    g.hero.mem = .{ .slots = [_]?combat.Spell{null} ** combat.MEM_SLOTS };
     g.hero.quick = .{};
     g.hero.quiver = .{};
     g.hero.worn = .{};
@@ -1224,16 +1237,9 @@ const WADE_KNEE: f32 = 0.50;
 const WADE_DEEP: f32 = envmod.WADE_MAX;
 const WADE_SLOWEST: f32 = 0.8;
 
-const STARTING_KIT = [_]item.Kind{
-    .spirit_scroll_wolf,
-    .scroll_bolt,
-    .scroll_roots,
-    .scroll_rime,
-    .scroll_levin,
-    .scroll_siphon,
-    .scroll_lance,
-    .scroll_sunder,
-};
+/// **HE STARTS WITH NOTHING BUT WHAT IS IN HIS HANDS** (owner). Every scroll was granted here, so a fresh
+/// run opened the book already holding the whole spell list.
+const STARTING_KIT = [_]item.Kind{};
 
 comptime {
     std.debug.assert(@abs(envmod.WADE_MAX - 0.760 * heromod.H) < 0.005);
@@ -1760,13 +1766,46 @@ fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?F
             foemod.WADE_FRAC * statureOf(f);
         const stepped = g.env.walkSegmentPast(was[i], f.pos, wade);
         if (g.env.brink(was[i], stepped)) {
-            f.pos.x = was[i].x;
-            f.pos.z = was[i].z;
+            const kept = brinkStep(g, was[i], stepped, statureOf(f));
+            f.pos.x = kept.x;
+            f.pos.z = kept.z;
             continue;
         }
         f.pos.x = stepped.x;
         f.pos.z = stepped.z;
     }
+}
+
+/// The tallest lip a body on foot will drop off, as a share of its own stature.
+const DROP_FRAC: f32 = 0.7;
+
+/// **A BRINK IS PACED, NOT STOOD AT.** The step's share toward the drop is removed and the rest is taken along
+/// the lip, the way the walk gate treats a rise. And a body may CHOOSE the drop when it is short against its
+/// own stature and the hero stands below it — a position read, which any body standing there could make.
+fn brinkStep(g: *const Game, was: rl.Vector3, to: rl.Vector3, stature: f32) rl.Vector3 {
+    // Off `standAt`, the surface `brink` itself measured: read off the LAND a body on a deck weighs its own
+    // drop against the ground under the deck, which is not the drop it is standing over.
+    const gFrom = g.env.standAt(was.x, was.z, was.y);
+    const gTo = g.env.standAt(to.x, to.z, was.y);
+    const drop = gFrom - gTo;
+    if (drop <= DROP_FRAC * stature and g.hero.pos.y < gFrom - drop * 0.5) return to;
+    const gr = g.env.gradAt((was.x + to.x) * 0.5, (was.z + to.z) * 0.5);
+    const gl = @sqrt(gr[0] * gr[0] + gr[1] * gr[1]);
+    if (gl < 1e-5) return was;
+    const ux = -gr[0] / gl;
+    const uz = -gr[1] / gl;
+    const dx = to.x - was.x;
+    const dz = to.z - was.z;
+    const along = dx * ux + dz * uz;
+    if (along <= 0) return was;
+    const tx = dx - ux * along;
+    const tz = dz - uz * along;
+    const d = @sqrt(dx * dx + dz * dz);
+    const tl = @sqrt(tx * tx + tz * tz);
+    if (tl < 1e-5) return was;
+    const slid = v3(was.x + tx / tl * d, was.y, was.z + tz / tl * d);
+    if (g.env.brink(was, slid)) return was;
+    return slid;
 }
 
 fn bodyRadiusOf(f: anytype) f32 {
@@ -3255,7 +3294,7 @@ fn bonfireInput(g: *Game, dt: f32) void {
 }
 
 pub fn restView(g: *Game) restmod.View {
-    return .{ .tree = &g.tree, .souls = g.hero.souls.total, .mem = &g.hero.mem, .bag = &g.bag };
+    return .{ .tree = &g.tree, .souls = g.hero.souls.total, .mem = &g.hero.mem, .bag = &g.bag, .flasks = &g.hero.flasks };
 }
 
 fn bonfirePick(g: *Game, pick: restmod.Pick) void {
@@ -3276,6 +3315,10 @@ fn bonfirePick(g: *Game, pick: restmod.Pick) void {
             g.rest.leave();
         },
         .memorize => |m| g.hero.memorize(m.slot, m.spell),
+        .allot => |n| {
+            g.hero.flasks.allot(n);
+            g.rest.screen = .list;
+        },
     }
     if (std.meta.activeTag(pick) != .none and g.rest.listening()) saveNow(g, .noShot);
 }
@@ -4211,12 +4254,23 @@ fn sceneCam(g: *const Game) rl.Camera3D {
     return if (g.editor.on) g.editor.cam else g.rig.cam;
 }
 
+/// **THE TITLE SCREEN DRAWS THE WHOLE WORLD.** Nothing is being played behind it, so the frame is free, and
+/// the boot camera drifts over a landscape that has to read as a landscape and not as a 320 m disc in fog.
+/// The editor already asks for the same reach and is metered by its own boom.
 fn drawFar(g: *const Game) f32 {
-    if (!g.editor.on) return CLIP_FAR;
-    return mathx.clampF(g.editor.dist * 2.0 + CLIP_FAR, CLIP_FAR, EDITOR_CLIP_FAR);
+    if (g.editor.on) return mathx.clampF(g.editor.dist * 2.0 + CLIP_FAR, CLIP_FAR, FAR_MAX);
+    if (g.menu.booting()) return FAR_MAX;
+    return CLIP_FAR;
 }
 
-const EDITOR_CLIP_FAR: f32 = 2600.0;
+/// Every per-kind LOD reach is lifted to at least this on the boot screen, so what culls is the frustum and
+/// the far plane and never a prop's own view distance.
+fn viewFloorOf(g: *const Game) f32 {
+    if (g.editor.on or g.menu.booting()) return drawFar(g);
+    return 0;
+}
+
+const FAR_MAX: f32 = 2600.0;
 
 fn shadowSpanOf(g: *const Game) f32 {
     if (!g.editor.on) return gfx.SHADOW_ORTHO;
@@ -4330,18 +4384,19 @@ pub fn drawScene(g: *Game) void {
         g.scene.beginShadowPass(focus, shadowSpanOf(g));
         setCasterShaders(g, g.scene.depthShader);
         drawCasters(g, .{ .sun = focus });
+        g.env.drawCliffCasters(focus);
         setCasterShaders(g, g.scene.shader);
         g.scene.endShadowPass();
     }
 
     rl.beginDrawing();
     const filtered = if (g.editor.on) false else g.retro.begin();
-    rl.clearBackground(CLEAR);
-    g.sky.draw(cam);
+    rl.clearBackground(if (dbgBright) rgba(255, 0, 255, 255) else CLEAR);
+    if (!dbgBright) g.sky.draw(cam);
 
     const aspect = @as(f32, @floatFromInt(rl.getScreenWidth())) / @as(f32, @floatFromInt(rl.getScreenHeight()));
     var view = envmod.View.fromCamera(cam, aspect);
-    if (g.editor.on) view.floor = drawFar(g);
+    view.floor = viewFloorOf(g);
 
     rl.beginMode3D(cam);
     g.scene.bind(cam.position);
@@ -5450,7 +5505,7 @@ pub fn run(mode: Mode) void {
         g.rig.tickShake(rawDt);
         g.rig.aimB = g.hero.aimB;
         g.rig.tickLift(g.hero.lift, liftShare(&g.hero), dt);
-        g.rig.followClear(g.hero.shoulderPoint(), camFloor(g), CamFloor.at);
+        g.rig.followClear(g.hero.shoulderPoint(), camFloor(g), CamFloor.at, dt);
         sfx.listen(g.rig.cam.position, g.rig.rightXZ());
         sfx.ambience(rawDt);
         footsteps(g, &lastPhase);
@@ -6543,4 +6598,26 @@ test "WHAT THE WAY-FINDING COSTS A FRAME — every placed body asking the prop g
     });
     try std.testing.expect(m.nfoes > 0);
     try std.testing.expect(us < 16700.0 * 0.05);
+}
+
+test "THE TITLE TRACK SWELLS IN AND IS GONE BEFORE THE WORLD IS — both ends of the one ramp, in seconds" {
+    const dt: f32 = 1.0 / 60.0;
+    var k: f32 = 0;
+    var t: f32 = 0;
+    while (k < 1.0 and t < 60) : (t += dt) k = introRamp(k, true, dt);
+    try std.testing.expectApproxEqAbs(INTRO_FADE_IN, t, 2 * dt);
+
+    // …and from full, the way out has to be short: it runs while the world is coming up behind it.
+    var out: f32 = 0;
+    while (k > 0 and out < 60) : (out += dt) k = introRamp(k, false, dt);
+    try std.testing.expectApproxEqAbs(INTRO_FADE_OUT, out, 2 * dt);
+    try std.testing.expect(out * 4 < t);
+
+    // Leaving the boot screen part-way up never strands it: the way down is a RATE, so it is always shorter.
+    k = introRamp(0, true, 1.0);
+    var quick: f32 = 0;
+    while (k > 0 and quick < 60) : (quick += dt) k = introRamp(k, false, dt);
+    try std.testing.expect(quick < INTRO_FADE_OUT);
+    try std.testing.expectEqual(@as(f32, 0), k);
+    std.debug.print("  title track: {d:.1} s in, {d:.1} s out, {d:.2} s out from one second in\n", .{ t, out, quick });
 }

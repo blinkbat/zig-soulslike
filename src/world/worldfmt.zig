@@ -1316,8 +1316,20 @@ pub fn heightByte(m: f32) u8 {
     return @intFromFloat(mathx.clampF(q, 0, 255));
 }
 
-/// The two tiers a cliff cell holds and the iso the face sits on. The mesh cuts where the bilinear
-/// crosses `mid` and the sampler steps there — one line, or the ground you walk is not the ground drawn.
+/// How steep the ground may be and still be walked, as the TANGENT of the slope angle. tan 40 deg.
+pub const MAX_SLOPE: f32 = 0.839;
+/// Two `HEIGHT_STEP` risers walkable, three a wall.
+pub const STEP_UP: f32 = 0.55;
+
+/// **PAINT UNDER A WALKABLE DROP IS INERT.** A painted cell cuts only where a ramp over it could not be
+/// walked anyway; under that it draws and walks as the plain bilinear it is. The shipped map carries
+/// 1,300 painted cells on flat ground and 260 on sculpt noise under 2 m: each of those was a vertical
+/// step at its own midpoint, which was the bouncing, the falls and the shattered read.
+pub fn cliffMinDrop(step: f32) f32 {
+    return @max(STEP_UP, MAX_SLOPE * step);
+}
+
+/// The two tiers a cliff cell spans and the level its corners are sorted against.
 pub const Tiers = struct {
     lo: f32,
     hi: f32,
@@ -1330,14 +1342,15 @@ pub fn cliffTiers(h00: f32, h10: f32, h01: f32, h11: f32) Tiers {
     return .{ .lo = lo, .hi = hi, .mid = (lo + hi) * 0.5 };
 }
 
+pub fn cliffCuts(t: Tiers, minDrop: f32) bool {
+    return t.hi - t.lo > minDrop;
+}
+
 /// The cell's own corners, in the order the terrain quad winds them, and the lattice step each one is.
 pub const CLIFF_RING = [4][2]f32{ .{ 0, 0 }, .{ 0, 1 }, .{ 1, 1 }, .{ 1, 0 } };
 const RING_DX = [4]usize{ 0, 0, 1, 1 };
 const RING_DZ = [4]usize{ 0, 1, 1, 0 };
 
-/// How far off the true crossing the face is allowed to wander along its edge. Without it every cut lands
-/// where the arithmetic put it and the lip reads as the lattice it was painted on.
-const CLIFF_WANDER: f32 = 0.30;
 
 fn hash2(a: u32, b: u32) u32 {
     var h: u32 = a *% 0x9E3779B1;
@@ -1354,19 +1367,11 @@ pub fn hashSigned(a: u32, b: u32) f32 {
     return u / @as(f32, 1 << 24) * 2.0 - 1.0;
 }
 
-/// **KEYED ON THE EDGE, NOT ON THE CELL.** The two cells either side of an edge hash the same pair of
-/// lattice points, so they wander their shared crossing to the same place and the faces still meet.
-fn edgeWander(ix: usize, iz: usize, e: usize) f32 {
-    const j = (e + 1) % 4;
-    const pa: u32 = @intCast((iz + RING_DZ[e]) * HEIGHT_N + ix + RING_DX[e]);
-    const pb: u32 = @intCast((iz + RING_DZ[j]) * HEIGHT_N + ix + RING_DX[j]);
-    return hashSigned(@min(pa, pb), @max(pa, pb));
-}
-
-/// Where the face crosses the cell's four edges. STRAIGHT CHORDS, not the bilinear's own curve, because
-/// the mesh can only draw straight ones — the sampler follows the mesh here or a corner is drawn at one
-/// tier and walked at the other. Measured: on a saddle the curve and the chord disagree over a quarter
-/// of the cell.
+/// Where the face crosses the cell's four edges: the MIDPOINT of every edge whose two corners sort to
+/// different sides of `t.mid`. Straight chords between them, because a triangle is all the mesh draws.
+/// **THE CROSSING IS THE SAME FROM BOTH SIDES.** Solved off each cell's own tiers it moved with them, so
+/// on sculpted ground two cells cut their shared edge in two places and the sky showed between; a wander
+/// off the line made every straight run an accordion of facets, one a cell (owner: straight cliffs).
 pub const CliffCut = struct {
     xp: [4][2]f32 = undefined,
     cut: [4]bool = .{ false, false, false, false },
@@ -1375,18 +1380,15 @@ pub const CliffCut = struct {
     centreHigh: bool = false,
 };
 
-pub fn cliffCut(h: [4]f32, t: Tiers, ix: usize, iz: usize) CliffCut {
+pub fn cliffCut(h: [4]f32, t: Tiers) CliffCut {
     var c = CliffCut{};
     for (0..4) |i| c.high[i] = h[i] > t.mid;
     for (0..4) |i| {
         const j = (i + 1) % 4;
         if (c.high[i] == c.high[j]) continue;
-        const den = h[j] - h[i];
-        const exact = if (@abs(den) < 1e-6) 0.5 else (t.mid - h[i]) / den;
-        const u = mathx.clampF(exact + CLIFF_WANDER * edgeWander(ix, iz, i), 0.10, 0.90);
         c.xp[i] = .{
-            CLIFF_RING[i][0] + (CLIFF_RING[j][0] - CLIFF_RING[i][0]) * u,
-            CLIFF_RING[i][1] + (CLIFF_RING[j][1] - CLIFF_RING[i][1]) * u,
+            (CLIFF_RING[i][0] + CLIFF_RING[j][0]) * 0.5,
+            (CLIFF_RING[i][1] + CLIFF_RING[j][1]) * 0.5,
         };
         c.cut[i] = true;
         c.n += 1;
@@ -1399,16 +1401,17 @@ fn sideOf(a: [2]f32, b: [2]f32, x: f32, z: f32) f32 {
     return (b[0] - a[0]) * (z - a[1]) - (b[1] - a[1]) * (x - a[0]);
 }
 
-pub fn cliffTierAt(c: CliffCut, t: Tiers, u: f32, v: f32) f32 {
-    if (c.n == 0) return if (c.high[0]) t.hi else t.lo;
+/// Which side of the cut a point of the cell is on.
+pub fn cliffHigh(c: CliffCut, u: f32, v: f32) bool {
+    if (c.n == 0) return c.high[0];
     if (c.n == 4) {
         for (0..4) |k| {
             const prev = (k + 3) % 4;
             const s = sideOf(c.xp[prev], c.xp[k], u, v);
             const sc = sideOf(c.xp[prev], c.xp[k], CLIFF_RING[k][0], CLIFF_RING[k][1]);
-            if (s * sc > 0) return if (c.high[k]) t.hi else t.lo;
+            if (s * sc > 0) return c.high[k];
         }
-        return if (c.centreHigh) t.hi else t.lo;
+        return c.centreHigh;
     }
     var i: usize = 0;
     while (i < 4 and !c.cut[i]) i += 1;
@@ -1417,8 +1420,59 @@ pub fn cliffTierAt(c: CliffCut, t: Tiers, u: f32, v: f32) f32 {
     const ref = (i + 1) % 4;
     const s = sideOf(c.xp[i], c.xp[j], u, v);
     const sr = sideOf(c.xp[i], c.xp[j], CLIFF_RING[ref][0], CLIFF_RING[ref][1]);
-    const cls = if (s * sr >= 0) c.high[ref] else !c.high[ref];
-    return if (cls) t.hi else t.lo;
+    return if (s * sr >= 0) c.high[ref] else !c.high[ref];
+}
+
+/// Bilinear over four values in `CLIFF_RING` order.
+pub fn ringLerp(vals: [4]f32, u: f32, v: f32) f32 {
+    return mathx.lerpF(mathx.lerpF(vals[0], vals[3], u), mathx.lerpF(vals[1], vals[2], u), v);
+}
+
+/// **THE FLOOR EITHER SIDE OF A CUT IS THE TERRAIN, NOT A TIER.** A cut cell walks the bilinear of its own
+/// corners on each side, and a corner across the cut stands in for itself at the level its neighbours on
+/// this side hold: the mean of the eight around it that sit more than `minDrop` off it, else the farthest
+/// that way. Snapped to `lo`/`hi` instead, a cell on sculpted ground stood proud of the plain cell beside
+/// it and the walk stepped at every seam. Read per LATTICE POINT, so both cells on an edge agree on it.
+pub const CliffLevels = struct {
+    hi: [4]f32,
+    lo: [4]f32,
+};
+
+fn levelAt(field: []const u8, ix: usize, iz: usize, up: bool, minDrop: f32) f32 {
+    const here = heightOf(field[iz * HEIGHT_N + ix]);
+    var sum: f32 = 0;
+    var n: usize = 0;
+    var far: f32 = here;
+    var dz: isize = -1;
+    while (dz <= 1) : (dz += 1) {
+        var dx: isize = -1;
+        while (dx <= 1) : (dx += 1) {
+            if (dx == 0 and dz == 0) continue;
+            const x = @as(isize, @intCast(ix)) + dx;
+            const z = @as(isize, @intCast(iz)) + dz;
+            if (x < 0 or z < 0 or x >= HEIGHT_N or z >= HEIGHT_N) continue;
+            const h = heightOf(field[@as(usize, @intCast(z)) * HEIGHT_N + @as(usize, @intCast(x))]);
+            const off = if (up) h - here else here - h;
+            if (off > minDrop) {
+                sum += h;
+                n += 1;
+            }
+            if (off > 0 and (if (up) h > far else h < far)) far = h;
+        }
+    }
+    return if (n > 0) sum / @as(f32, @floatFromInt(n)) else far;
+}
+
+pub fn cliffLevels(field: []const u8, x0: usize, z0: usize, minDrop: f32, cut: CliffCut) CliffLevels {
+    var out: CliffLevels = undefined;
+    for (RING_DX, RING_DZ, 0..) |dx, dz, i| {
+        const ix = @min(x0 + dx, HEIGHT_N - 1);
+        const iz = @min(z0 + dz, HEIGHT_N - 1);
+        const own = heightOf(field[iz * HEIGHT_N + ix]);
+        out.hi[i] = if (cut.high[i]) own else levelAt(field, ix, iz, true, minDrop);
+        out.lo[i] = if (cut.high[i]) levelAt(field, ix, iz, false, minDrop) else own;
+    }
+    return out;
 }
 
 pub fn sampleHeight(field: []const u8, cliff: []const u8, half: f32, px: f32, pz: f32) f32 {
@@ -1438,13 +1492,16 @@ pub fn sampleHeight(field: []const u8, cliff: []const u8, half: f32, px: f32, pz
     const h01 = heightOf(field[z1 * HEIGHT_N + x0]);
     const h11 = heightOf(field[z1 * HEIGHT_N + x1]);
     const case = if (cliff.len == 0) CLIFF_NONE else cliff[z0 * HEIGHT_N + x0];
-    if (case == CLIFF_NONE) {
+    if (case == CLIFF_STAIR) return stairTread(h00, h10, h01, h11);
+    const t = cliffTiers(h00, h10, h01, h11);
+    const minDrop = cliffMinDrop(step);
+    if (case != CLIFF_FACE or !cliffCuts(t, minDrop)) {
         return mathx.lerpF(mathx.lerpF(h00, h10, tx), mathx.lerpF(h01, h11, tx), tz);
     }
-    if (case == CLIFF_STAIR) return stairTread(h00, h10, h01, h11);
     const ring = [4]f32{ h00, h01, h11, h10 };
-    const t = cliffTiers(h00, h10, h01, h11);
-    return cliffTierAt(cliffCut(ring, t, x0, z0), t, tx, tz);
+    const cut = cliffCut(ring, t);
+    const lv = cliffLevels(field, x0, z0, minDrop, cut);
+    return ringLerp(if (cliffHigh(cut, tx, tz)) lv.hi else lv.lo, tx, tz);
 }
 
 pub fn sampleGrad(field: []const u8, cliff: []const u8, half: f32, px: f32, pz: f32) [2]f32 {
@@ -1458,7 +1515,7 @@ pub fn sampleGrad(field: []const u8, cliff: []const u8, half: f32, px: f32, pz: 
 
 pub const EMPTY_SPAN: [4]usize = .{ 1, 1, 0, 0 };
 
-fn pointSpan(c: f32, r: f32, half: f32, step: f32) ?[2]usize {
+pub fn pointSpan(c: f32, r: f32, half: f32, step: f32) ?[2]usize {
     const last: f32 = @floatFromInt(HEIGHT_N - 1);
     const a = @ceil((c - r + half) / step);
     const b = @floor((c + r + half) / step);
@@ -1872,6 +1929,15 @@ pub const Map = struct {
     }
 
     pub fn sculpt(self: *Map, px: f32, pz: f32, radius: f32, mode: Sculpt, amount: f32, out: *[4]usize) bool {
+        return self.sculptTo(px, pz, radius, mode, self.heightAt(px, pz), amount, out);
+    }
+
+    /// Flatten toward a GIVEN height instead of the one under the brush — the Pool brush, to `env.dwellerFloor`.
+    pub fn flattenTo(self: *Map, px: f32, pz: f32, radius: f32, target: f32, amount: f32, out: *[4]usize) bool {
+        return self.sculptTo(px, pz, radius, .flatten, target, amount, out);
+    }
+
+    fn sculptTo(self: *Map, px: f32, pz: f32, radius: f32, mode: Sculpt, target: f32, amount: f32, out: *[4]usize) bool {
         const step = 2 * self.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
         const r = mathx.maxF(radius, step * 0.5);
         out.* = EMPTY_SPAN;
@@ -1882,7 +1948,6 @@ pub const Map = struct {
         const hi = xs[1];
         const zlo = zs[0];
         const zhi = zs[1];
-        const target = self.heightAt(px, pz);
         var before: [HEIGHT_N]f32 = undefined;
         var above: [HEIGHT_N]f32 = undefined;
         var changed = false;
@@ -3091,6 +3156,9 @@ pub fn pathFor(dst: []u8, name: []const u8) []const u8 {
 }
 
 pub fn save(path: []const u8, m: *const Map) !void {
+    // A test writes `test_*` or nothing: the suite rewrote the shipped map once and the cause was never found.
+    if (@import("builtin").is_test and !std.mem.startsWith(u8, std.fs.path.basename(path), "test_"))
+        std.debug.panic("wf.save: a test may only write worlds/test_*{s}, not {s}", .{ EXT, path });
     try std.fs.cwd().makePath(DIR);
     var tmpBuf: [PATH_CAP + 8]u8 = undefined;
     const tmp = try std.fmt.bufPrint(&tmpBuf, "{s}.tmp", .{path});
@@ -3775,6 +3843,11 @@ test "sculpt: the brush tapers, respects its radius, and cannot leave the encodi
     var f: usize = 0;
     while (f < 6) : (f += 1) _ = m.sculpt(0, 0, 20, .flatten, 1.0, &span);
     try std.testing.expectApproxEqAbs(m.heightAt(0, 0), m.heightAt(10, 0), 0.3);
+
+    // …and to a NAMED height, which is what a pool floor is.
+    var k: usize = 0;
+    while (k < 8) : (k += 1) _ = m.flattenTo(40, 40, 10, -1.25, 1.0, &span);
+    try std.testing.expectApproxEqAbs(@as(f32, -1.25), m.heightAt(40, 40), 1e-4);
 
     var i: usize = 0;
     while (i < 40) : (i += 1) _ = m.sculpt(0, 0, 20, .lower, 12.0, &span);

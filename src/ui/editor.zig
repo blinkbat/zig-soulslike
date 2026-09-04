@@ -134,6 +134,7 @@ const groundBrushes = [_][:0]const u8{
     "Lower",
     "Smooth",
     "Flat",
+    "Pool",
     "Cliff",
     "Stair",
     "Ramp",
@@ -207,7 +208,7 @@ const MAX_BRUSHES: usize = blk: {
     break :blk most;
 };
 
-const GROUND_CLIFF_0: usize = @typeInfo(wf.Sculpt).@"enum".fields.len;
+const GROUND_CLIFF_0: usize = @intFromEnum(GroundBrush.cliff);
 const GROUND_CLIFF_N: usize = 4;
 const GROUND_SOIL_0: usize = GROUND_CLIFF_0 + GROUND_CLIFF_N;
 
@@ -231,6 +232,7 @@ const groundTips = [_][:0]const u8{
     "Sweep to lower",
     "Sweep to smooth a lump into a walkable slope",
     "Sweep to flatten toward the height the stroke started on",
+    "Sweep to dig a POOL FLOOR at the water-dweller depth - the deepest the hero still wades. Paint water over it",
     "Sweep to CUT the drop under the brush into a face. Flatten both tiers first or the seam cracks",
     "Sweep to TERRACE the ground under the brush. One tread a cell, one riser a step, so a grade becomes a flight",
     "Sweep across a face to open a WAY UP it: drops the cut and grades what is left until it is walkable",
@@ -496,7 +498,7 @@ comptime {
     }
 }
 
-pub const GroundBrush = enum { raise, lower, smooth, flat, cliff, stair, ramp, slope, dirt, turf, stone, silt, ash, moss, bone, cinder, spore, bloom, water, oil, fungal, lava, erase };
+pub const GroundBrush = enum { raise, lower, smooth, flat, pool, cliff, stair, ramp, slope, dirt, turf, stone, silt, ash, moss, bone, cinder, spore, bloom, water, oil, fungal, lava, erase };
 
 fn cliffCaseOf(b: GroundBrush) ?u8 {
     return switch (b) {
@@ -697,6 +699,26 @@ const DLG_FOOT: i32 = 44;
 const TAB_H: i32 = 26;
 const LOOT_ROW_H: i32 = 26;
 const LOOT_TOP: i32 = 84;
+/// **THE ITEM SHELVES, LAID OUT LIKE THE ZONE MIX'S.** Eleven of them across one row would be 38 px a tab.
+/// Its own width, wider than `LIST_W`: the row carries a name, what the map holds elsewhere, the count here
+/// and two buttons, and the shelf tabs have to spell a word.
+const LOOT_W: i32 = 540;
+const LOOT_TAB_COLS: i32 = 3;
+const LOOT_TAB_ROWS: i32 = (@as(i32, item.NCLASS) + LOOT_TAB_COLS - 1) / LOOT_TAB_COLS;
+/// The gold stepper stands between the last row and the foot, and the box has to be told about it: measured,
+/// the 22-row `tool` shelf put it straight on top of the last item's own -/+ pair.
+const LOOT_GOLD_H: i32 = ROW_H + 12;
+/// Characters a shelf tab has room for. `LOOT_W` gives 162 px a tab and Balthazar at `hud.MONO` runs under
+/// 11 px a character on an upper-case-heavy word, so 14 is the budget - pinned by a test, since the atlas is
+/// not loaded in one and `hud.monoW` answers 0 there.
+const LOOT_TAB_CHARS: usize = 14;
+/// The rows one shelf can hold, and the modal's own height for that many.
+fn lootRowsIn(n: usize) i32 {
+    return @intCast(@max(n, 1));
+}
+fn lootModalH(rows: i32) i32 {
+    return LOOT_TOP + LOOT_TAB_ROWS * TAB_H + rows * LOOT_ROW_H + LOOT_GOLD_H + 8 + DLG_FOOT;
+}
 
 pub const Pending = enum { none, new, open, leave };
 
@@ -929,7 +951,7 @@ pub const Editor = struct {
     pendX: [wf.MAX_ARENA_VERTS]f32 = [_]f32{0} ** wf.MAX_ARENA_VERTS,
     pendZ: [wf.MAX_ARENA_VERTS]f32 = [_]f32{0} ** wf.MAX_ARENA_VERTS,
     nPend: u8 = 0,
-    lootTab: item.Class = .tool,
+    lootTab: item.Class = .flask,
     mixTab: props.Group = FIRST_MIX_GROUP,
     talkNpc: ?usize = null,
     talkDlg: u16 = wf.NO_DIALOG,
@@ -1339,6 +1361,20 @@ pub const Editor = struct {
     pub fn optionsForShot(self: *Editor) void {
         self.menuOpen = false;
         self.modal = .options;
+    }
+    /// Open the item modal on the first container the map holds, on the DEEPEST shelf — the one frame that
+    /// shows whether the rows and the gold stepper still fit each other.
+    pub fn lootForShot(self: *Editor, m: *const wf.Map, tab: item.Class) bool {
+        for (m.ops[0..m.nops], 0..) |*o, i| {
+            if (!isContainer(o)) continue;
+            self.menuOpen = false;
+            self.setLayer(layerOf(o));
+            self.sel = i;
+            self.lootTab = tab;
+            self.modal = .loot;
+            return true;
+        }
+        return false;
     }
     pub fn talkForShot(self: *Editor, m: *wf.Map, rec: usize) void {
         self.menuOpen = false;
@@ -1761,6 +1797,14 @@ pub const Editor = struct {
                                 self.heightStroke = true;
                             }
                         },
+                        .pool => {
+                            var span: [4]usize = wf.EMPTY_SPAN;
+                            const amt = mathx.minF(self.sculptRate * dt * SCULPT_EVEN, 0.9);
+                            if (m.flattenTo(g.x, g.z, self.radius, envmod.dwellerFloor(), amt, &span)) {
+                                env.sculptHeight(m, span);
+                                self.heightStroke = true;
+                            }
+                        },
                         .cliff, .stair, .slope => |b| {
                             var span: [4]usize = wf.EMPTY_SPAN;
                             if (m.paintCliff(g.x, g.z, self.radius, cliffCaseOf(b).?, &span)) {
@@ -1862,7 +1906,9 @@ pub const Editor = struct {
             }
             switch (self.layer) {
                 .units => {
-                    if (ground) |g| self.addUnit(m, g);
+                    if (ground) |g| {
+                        if (!self.dwellerMisplaced(env, g)) self.addUnit(m, g);
+                    }
                 },
                 .locations, .decor, .props, .interact => {
                     if (ground) |g| {
@@ -2553,6 +2599,18 @@ pub const Editor = struct {
         self.nPend = 0;
     }
 
+    /// A water dweller posted outside its band (`foe.poolBand`) is refused, and the panel says what it wanted.
+    fn dwellerMisplaced(self: *Editor, env: *const envmod.Env, at: rl.Vector3) bool {
+        const bi = self.brushIdx();
+        if (bi >= NFOE_KIND) return false;
+        const kind: wf.FoeKind = @enumFromInt(bi);
+        const band = foemod.poolBand(kind) orelse return false;
+        const d = env.wadeDepth(at.x, at.z);
+        if (d >= band[0] and d <= band[1]) return false;
+        self.sayFmt("{s} wants {d:.2}-{d:.2} m of water, this is {d:.2} - Ground > Pool digs it", .{ wf.foeName(kind), band[0], band[1], d });
+        return true;
+    }
+
     fn addUnit(self: *Editor, m: *wf.Map, at: rl.Vector3) void {
         if (self.erasing()) return;
         const bi = self.brushIdx();
@@ -2935,6 +2993,7 @@ pub const Editor = struct {
             self.mark(idx);
             landed += 1;
         }
+        var dry: usize = 0;
         for (clipFoes[0..nFoes]) |src| {
             if (m.nfoes >= wf.MAX_FOES) {
                 self.say(FOES_FULL_MSG);
@@ -2942,6 +3001,13 @@ pub const Editor = struct {
             }
             var f = src;
             f.translate(at.x, at.z);
+            if (foemod.poolBand(f.kind)) |band| {
+                const d = env.wadeDepth(f.x, f.z);
+                if (d < band[0] or d > band[1]) {
+                    dry += 1;
+                    continue;
+                }
+            }
             m.foes[m.nfoes] = f;
             self.mark(m.nfoes);
             m.nfoes += 1;
@@ -2951,6 +3017,8 @@ pub const Editor = struct {
         const want = nOps + nFoes;
         if (landed == want) {
             self.sayFmt("pasted {d}", .{landed});
+        } else if (dry > 0) {
+            self.sayFmt("pasted {d} of {d} - {d} out of their water", .{ landed, want, dry });
         } else if (landed > 0) {
             self.sayFmt("pasted {d} of {d} - cap reached", .{ landed, want });
         }
@@ -3803,7 +3871,7 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
             else switch (@as(GroundBrush, @enumFromInt(i))) {
                 .raise => ui.swatchButton(ctx, r, RAISE_SWATCH, s, hud.MONO, on, tips[i]),
                 .lower => ui.swatchButton(ctx, r, LOWER_SWATCH, s, hud.MONO, on, tips[i]),
-                .smooth, .flat => ui.swatchButton(ctx, r, EVEN_SWATCH, s, hud.MONO, on, tips[i]),
+                .smooth, .flat, .pool => ui.swatchButton(ctx, r, EVEN_SWATCH, s, hud.MONO, on, tips[i]),
                 .cliff => ui.swatchButton(ctx, r, CLIFF_SWATCH, s, hud.MONO, on, tips[i]),
                 .stair => ui.swatchButton(ctx, r, STAIR_SWATCH, s, hud.MONO, on, tips[i]),
                 .ramp => ui.swatchButton(ctx, r, RAMP_SWATCH, s, hud.MONO, on, tips[i]),
@@ -3961,7 +4029,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         const wet = liquid != null;
         const cliffing = cliffCaseOf(brush) != null;
         const sculpting = cliffing or switch (brush) {
-            .raise, .lower, .smooth, .flat, .ramp => true,
+            .raise, .lower, .smooth, .flat, .pool, .ramp => true,
             else => false,
         };
         const title: [:0]const u8 = if (cliffing) "RELIEF" else if (sculpting) "SCULPT" else if (liquid) |l| switch (l) {
@@ -4798,63 +4866,66 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 shown[nshown] = k;
                 nshown += 1;
             }
-            const rows: i32 = @intCast(@max(nshown, 1));
+            const rows = lootRowsIn(nshown);
             const title: [:0]const u8 = if (m.ops[sPre].kind == .chest) "Chest contents" else "Item contents";
-            const box = ui.beginModal(ctx, LIST_W, LOOT_TOP + TAB_H + rows * LOOT_ROW_H + 8 + DLG_FOOT, title);
+                    const box = ui.beginModal(ctx, LOOT_W, lootModalH(rows), title);
             const s = sPre;
             const o = &m.ops[s];
-            var buf: [48]u8 = undefined;
-            const total = std.fmt.bufPrintZ(&buf, "{d} / {d} items", .{ o.nloot, wf.MAX_LOOT }) catch "";
+            const tally = placedTally(ed, m);
+            var placed: u32 = 0;
+            for (tally) |c| placed += c;
+            var buf: [64]u8 = undefined;
+            const total = std.fmt.bufPrintZ(&buf, "{d} / {d} here   -   {d} placed on the map", .{ o.nloot, wf.MAX_LOOT, placed }) catch "";
             hud.mono(total, box.x + DLG_PAD, box.y + 58, hud.MONO, ui.LABEL);
 
-            const CLASSES = [_]item.Class{ .tool, .gear, .material, .treasure, .key };
-            comptime {
-                for (@typeInfo(item.Class).@"enum".fields) |f| {
-                    var found = false;
-                    for (CLASSES) |c| {
-                        if (@intFromEnum(c) == f.value) found = true;
-                    }
-                    if (!found) @compileError("editor: the loot modal has no tab for item.Class." ++ f.name);
-                }
-                if (CLASSES.len != @typeInfo(item.Class).@"enum".fields.len) @compileError("editor: the loot modal names a class twice");
-            }
-            const tabW: i32 = @divTrunc(box.w - DLG_PAD * 2, @as(i32, CLASSES.len));
-            for (CLASSES, 0..) |c, ci| {
+            // Every shelf gets a tab because the enum is walked whole - a new one cannot be forgotten here.
+            const tabW: i32 = @divTrunc(box.w - DLG_PAD * 2 - (LOOT_TAB_COLS - 1) * 3, LOOT_TAB_COLS);
+            for (0..item.NCLASS) |ci| {
+                const c: item.Class = @enumFromInt(ci);
                 var tb: [24]u8 = undefined;
                 var carried: u8 = 0;
                 for (o.loot[0..o.nloot]) |it| {
                     if (item.class(it) == c) carried += 1;
                 }
                 const lab = if (carried > 0)
-                    std.fmt.bufPrintZ(&tb, "{s} *", .{c.label()}) catch c.label()
+                    std.fmt.bufPrintZ(&tb, "{s} *", .{c.shelf()}) catch c.shelf()
                 else
-                    c.label();
-                const r = ui.rect(box.x + DLG_PAD + @as(i32, @intCast(ci)) * tabW, box.y + LOOT_TOP, tabW - 3, TAB_H - 4);
+                    c.shelf();
+                const col: i32 = @intCast(ci % @as(usize, LOOT_TAB_COLS));
+                const trow: i32 = @intCast(ci / @as(usize, LOOT_TAB_COLS));
+                const r = ui.rect(box.x + DLG_PAD + col * (tabW + 3), box.y + LOOT_TOP + trow * TAB_H, tabW, TAB_H - 4);
                 if (ui.button(ctx, r, lab, hud.MONO, ed.lootTab == c, "Show this shelf - a * means this container already holds one")) ed.lootTab = c;
             }
 
             for (shown[0..nshown], 0..) |k, row| {
-                const y = box.y + LOOT_TOP + TAB_H + @as(i32, @intCast(row)) * LOOT_ROW_H;
+                const y = box.y + LOOT_TOP + LOOT_TAB_ROWS * TAB_H + @as(i32, @intCast(row)) * LOOT_ROW_H;
                 hud.mono(item.displayName(k), box.x + DLG_PAD, y + 5, hud.MONO, ui.VALUE);
                 var ebuf: [item.EFFECT_BUF]u8 = undefined;
                 var tbuf: [item.EFFECT_BUF + 32]u8 = undefined;
                 const tip = std.fmt.bufPrintZ(&tbuf, "{s}  -  {s}", .{ item.class(k).label(), item.effect(k, &ebuf) }) catch item.effect(k, &ebuf);
-                ui.tipFor(ctx, ui.rect(box.x + DLG_PAD, y, 360 - DLG_PAD, LOOT_ROW_H), tip);
+                ui.tipFor(ctx, ui.rect(box.x + DLG_PAD, y, box.w - 200, LOOT_ROW_H), tip);
                 const n = lootCount(o, k);
+                // What the REST of the map holds, so a unique is not placed twice by accident.
+                const away = tally[@intFromEnum(k)] - @as(u16, n);
+                const plus = box.x + box.w - DLG_PAD - 24;
+                const minus = plus - 28;
+                var abuf: [16]u8 = undefined;
+                const as_ = std.fmt.bufPrintZ(&abuf, "{d} elsewhere", .{away}) catch "";
+                hud.mono(as_, minus - 168, y + 5, hud.MONO, if (away > 0) ui.TRIM else ui.LABEL);
                 var nbuf: [8]u8 = undefined;
                 const ns = std.fmt.bufPrintZ(&nbuf, "{d}", .{n}) catch "0";
-                hud.mono(ns, box.x + 340, y + 5, hud.MONO, if (n > 0) ui.VALUE else ui.LABEL);
-                if (ui.button(ctx, ui.rect(box.x + 368, y, 24, 22), "-", hud.MONO, false, "One fewer of this item in the container") and n > 0) {
+                hud.mono(ns, minus - 24, y + 5, hud.MONO, if (n > 0) ui.VALUE else ui.LABEL);
+                if (ui.button(ctx, ui.rect(minus, y, 24, 22), "-", hud.MONO, false, "One fewer of this item in the container") and n > 0) {
                     ed.bank(m);
                     lootRemove(o, k);
                 }
-                if (ui.button(ctx, ui.rect(box.x + 396, y, 24, 22), "+", hud.MONO, false, "One more of this item. A container holds eight kinds") and o.nloot < wf.MAX_LOOT) {
+                if (ui.button(ctx, ui.rect(plus, y, 24, 22), "+", hud.MONO, false, "One more of this item. A container holds eight kinds") and o.nloot < wf.MAX_LOOT) {
                     ed.bank(m);
                     lootAdd(o, k);
                 }
             }
             var coin: i32 = @intCast(@min(o.gold, GOLD_LIM));
-            if (ui.stepperI(ctx, box.x + DLG_PAD, box.y + box.h - DLG_FOOT - ROW_H - 6, 420, "gold", &coin, GOLD_STEP, 0, GOLD_LIM, "Coin in this container. It goes straight into his purse on opening, and is not one of the eight item kinds")) {
+            if (ui.stepperI(ctx, box.x + DLG_PAD, box.y + box.h - DLG_FOOT - ROW_H - 6, box.w - DLG_PAD * 2, "gold", &coin, GOLD_STEP, 0, GOLD_LIM, "Coin in this container. It goes straight into his purse on opening, and is not one of the eight item kinds")) {
                 ed.bank(m);
                 o.gold = @intCast(@max(coin, 0));
             }
@@ -5223,6 +5294,28 @@ fn countUnfilled(m: *const wf.Map) usize {
 var unfilledAt: u64 = std.math.maxInt(u64);
 var unfilledOps: usize = std.math.maxInt(usize);
 var unfilledWas: usize = 0;
+
+/// **HOW MANY OF EACH KIND THE WHOLE MAP ALREADY HOLDS** (owner: show what is placed elsewhere). Held on
+/// `miniGen` for the same reason the count above is: walked, it is 20,480 ops times eight loot slots every
+/// frame the modal is open, for a number that only moves when a container is edited.
+var tallyAt: u64 = std.math.maxInt(u64);
+var tallyOps: usize = std.math.maxInt(usize);
+var tallyWas: [item.NK]u16 = [_]u16{0} ** item.NK;
+
+fn placedTally(ed: *const Editor, m: *const wf.Map) *const [item.NK]u16 {
+    if (tallyAt == ed.miniGen and tallyOps == m.nops) return &tallyWas;
+    tallyAt = ed.miniGen;
+    tallyOps = m.nops;
+    tallyWas = [_]u16{0} ** item.NK;
+    for (m.ops[0..m.nops]) |*o| {
+        if (!isContainer(o)) continue;
+        for (o.loot[0..o.nloot]) |k| {
+            const i = @intFromEnum(k);
+            if (tallyWas[i] < std.math.maxInt(u16)) tallyWas[i] += 1;
+        }
+    }
+    return &tallyWas;
+}
 
 fn unfilledCount(ed: *const Editor, m: *const wf.Map) usize {
     if (unfilledAt == ed.miniGen and unfilledOps == m.nops) return unfilledWas;
@@ -6407,6 +6500,44 @@ test "EVERY UNIT IS REACHABLE FROM EXACTLY ONE TAB, and the tallest list now fit
 test "EVERY LIST MODAL FITS THE WINDOW IT OPENS IN" {
     const foot = 8 + DLG_FOOT;
 
+    // **THE ITEM SHELVES.** One `tool` shelf held 22 rows and the gold stepper was drawn on top of the last
+    // one; every shelf is measured here so a new item cannot push a row off the bottom unseen.
+    var perShelf = [_]usize{0} ** item.NCLASS;
+    for (0..item.NK) |ki| perShelf[@intFromEnum(item.class(@enumFromInt(ki)))] += 1;
+    var deepest: usize = 0;
+    var deepestAt: item.Class = .flask;
+    for (perShelf, 0..) |n, ci| {
+        try std.testing.expect(n > 0);
+        if (n > deepest) {
+            deepest = n;
+            deepestAt = @enumFromInt(ci);
+        }
+    }
+    var shelved: usize = 0;
+    for (perShelf) |n| shelved += n;
+    try std.testing.expectEqual(item.NK, shelved);
+
+    // The tab is as wide as the grid makes it; a name that overruns it is a name you cannot read. Counted in
+    // CHARACTERS because `hud.monoW` answers 0 with no atlas loaded, which made the pixel form of this vacuous.
+    const tabW: i32 = @divTrunc(LOOT_W - DLG_PAD * 2 - (LOOT_TAB_COLS - 1) * 3, LOOT_TAB_COLS);
+    var widest: usize = 0;
+    var widestName: []const u8 = "";
+    for (0..item.NCLASS) |ci| {
+        // The " *" is what a shelf that already holds something wears.
+        const n = @as(item.Class, @enumFromInt(ci)).shelf().len + 2;
+        if (n > widest) {
+            widest = n;
+            widestName = @as(item.Class, @enumFromInt(ci)).shelf();
+        }
+    }
+    std.debug.print("  item tabs: {d} px each, widest name \"{s} *\" is {d} of {d} characters\n", .{ tabW, widestName, widest, LOOT_TAB_CHARS });
+    try std.testing.expect(widest <= LOOT_TAB_CHARS);
+    std.debug.print("\n  items: {d} kinds over {d} shelves, deepest is {s} at {d} rows -> {d} px in a {d} window (one shelf of {d} was {d})\n", .{
+        item.NK,          item.NCLASS,           deepestAt.shelf(), deepest,
+        lootModalH(lootRowsIn(deepest)), SCREEN_H, item.NK,          LOOT_TOP + TAB_H + @as(i32, item.NK) * LOOT_ROW_H + LOOT_GOLD_H + foot,
+    });
+    try std.testing.expect(lootModalH(lootRowsIn(deepest)) <= SCREEN_H);
+
     var bosses: usize = 0;
     for (0..NFOE_KIND) |i| {
         if (foemod.isBoss(@enumFromInt(i))) bosses += 1;
@@ -6439,6 +6570,28 @@ test "EVERY LIST MODAL FITS THE WINDOW IT OPENS IN" {
     );
     try std.testing.expect(sealH <= SCREEN_H);
     try std.testing.expect(mixH <= SCREEN_H);
+
+    // **EVERY MODAL, MEASURED IN ONE PLACE.** `beginModal` centres on the window, so one that is taller runs
+    // off BOTH ends and its title and its Done button are the halves you lose. Eyeballing found the item
+    // shelf and missed the rest; this is the table.
+    const boxes = [_]struct { name: []const u8, h: i32 }{
+        .{ .name = "items    ", .h = lootModalH(lootRowsIn(deepest)) },
+        .{ .name = "gate seal", .h = sealH },
+        .{ .name = "zone mix ", .h = mixH },
+        .{ .name = "world    ", .h = WORLD_H },
+        .{ .name = "options  ", .h = OPT_H },
+        .{ .name = "script   ", .h = SCRIPT_H },
+        .{ .name = "sounds   ", .h = JUKE_H },
+        .{ .name = "talk     ", .h = talkModalH(wf.MAX_CHOICES) },
+        .{ .name = "talk none", .h = talkNoticeH() },
+        .{ .name = "open map ", .h = 380 },
+        .{ .name = "save as  ", .h = 180 },
+        .{ .name = "confirm  ", .h = 170 },
+    };
+    for (boxes) |b| {
+        std.debug.print("  modal {s} {d} px of {d}\n", .{ b.name, b.h, SCREEN_H });
+        try std.testing.expect(b.h <= SCREEN_H);
+    }
     try std.testing.expect(LOOT_TOP + (NFOE_KIND + 1) * LOOT_ROW_H + foot > SCREEN_H);
     try std.testing.expect(LOOT_TOP + @as(i32, @intCast(props.FLORA_KINDS.len)) * LOOT_ROW_H + foot > SCREEN_H);
 }

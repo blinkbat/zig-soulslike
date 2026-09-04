@@ -1279,7 +1279,7 @@ death takes the RING instead of the souls.
 - **IT IS NOT A TOOL.** `usable` false, off the quick bar. The one piece of gear spent by DYING.
 - **ASKED OF THE ITEM, NOT THE KIND** (`item.bindsSouls`, read off the `Bind` payload), which is why
   `game.bindingWorn` walks every socket.
-- **ONE IN THE WORLD**, in a chest, test-pinned.
+- **ONE IN THE WORLD**, and the BONE KNIGHT carries it (`drops.BANK`, `BOSS_ALWAYS`) — nothing places it.
 
 ### Status effects — POISON, and the shape every one after it takes
 
@@ -2885,8 +2885,8 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
 - **The jump exists but little hangs off it** — no jump ATTACK, and no creature's
   move misses him for being over it (a per-move height would be authored at each `toImpact` the way a parry
   window is).
-- **Souls buy levels and nothing else** — the caravaneer is a body on the road, not a shop; nothing in the game
-  buys or sells. The PASSIVE TREE is 81 nodes with no respec, no jewel sockets, no second grant on a node. Every
+- **Souls buy levels and nothing else** — COIN is the other purse and the counter is what takes it
+  (`play/counter.zig`, the `merchant` and `smith` folk). The PASSIVE TREE is 81 nodes with no respec, no jewel sockets, no second grant on a node. Every
   attribute is raised by at least one node (test-pinned) and NO attribute is inert; `stats.inert` stays and
   answers false for all seven, because the next attribute arrives dead the way LUCK did.
 - **TEN METERS NOW, AND EACH SAYS WHO CAN CARRY IT** (`combat.Ail`, `combat.AILS`) — poison, burning, chill,

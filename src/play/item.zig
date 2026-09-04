@@ -242,10 +242,13 @@ pub fn equipClass(c: Class) bool {
     return c == .armament or c == .armour or c == .trinket;
 }
 
+/// FOUR SOULS TO THE COIN on the soul shelf — well under the ~15 a humanoid body pays in souls against its own purse, so coin is never the quick road up the tree.
+pub const SOULS_PER_COIN: u32 = 4;
+
 /// WHAT A THING IS WORTH IN COIN, derived from the SHELF it sits on. UNTRADEABLE IS A PRICE OF 0, and it is one rule rather than a second flag.
 pub fn priceBank(k: Kind) u32 {
     return switch (k) {
-        .crimson_flask, .cerulean_flask, .iron_key, .soul_binding_ring, .golden_seed, .gold_purse => 0,
+        .soul_binding_ring, .gold_purse => 0,
 
         .envenomed_dagger => 900,
         .grave_warbow => 850,
@@ -257,12 +260,26 @@ pub fn priceBank(k: Kind) u32 {
 
         else => switch (class(k)) {
             .flask, .key => 0,
-            .consumable, .ammo, .soul => 60,
+            // A SOUL SHELF PRICES ITSELF off what crushing it renders; flat, the 2000-soul offering cost what the 150-soul lump did.
+            .soul => switch (useBank(k)) {
+                .souls => |s| s.n / SOULS_PER_COIN,
+                else => 60,
+            },
+            .consumable, .ammo => 60,
             .material => 40,
             .armament, .armour, .trinket => 300,
             .spell, .treasure => 400,
         },
     };
+}
+
+comptime {
+    for (0..NK) |i| {
+        const k: Kind = @enumFromInt(i);
+        if (class(k) != .soul) continue;
+        if (std.meta.activeTag(useBank(k)) != .souls) @compileError("item: " ++ @tagName(k) ++
+            " is on the soul shelf but renders no souls — its price has nothing to derive from");
+    }
 }
 
 /// THE SHELF PRICE, LIVE: filled from the switch above at comptime, and the bench writes over it. `priceBank` stays the thing a comptime check reads.

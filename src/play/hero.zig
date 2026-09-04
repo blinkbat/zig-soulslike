@@ -1409,6 +1409,14 @@ pub fn armTwoHanded(a: Armament) bool {
     return a == .bow;
 }
 
+/// WHAT THE SMITHY WILL TAKE TO THE STONE. Exhaustive, so a new armament cannot arrive without saying whether it forges — `counter.FORGEABLE` is built off this and a hand-kept list would have dropped it in silence.
+pub fn armForges(a: Armament) bool {
+    return switch (a) {
+        .sword, .dagger, .club, .bow => true,
+        .bell, .shield, .wand, .torch => false,
+    };
+}
+
 pub fn handsHold(arm: Armament, off: Armament, a: Armament) bool {
     if (armTwoHanded(arm)) return a == arm;
     if (armTwoHanded(off)) return a == off;

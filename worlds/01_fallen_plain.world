@@ -15,7 +15,7 @@ location: loc2 -32.8 -109.3 15.1 -52.4 wet=0.000 fog=0.394 spore=0.000 blend=1.9
 location: loc1 -233.8 -185.6 -136.5 -30.0 wet=0.000 fog=0.000 spore=0.754
 clear: -98.0 -16.0 18.0
 clear: -74.0 30.0 15.0
-arena: fungal_hollowa boss=fungal_swordsman,fungal_magus -177.14 -127.05 -166.44 -124.05 -155.98 -118.51 -147.49 -127.91 -154.51 -135.47 -161.12 -137.32 -161.91 -142.09 -162.84 -146.35 -170.74 -152.35 -181.64 -152.35 -192.54 -147.15 -197.44 -136.05 -198.14 -130.45 -188.84 -123.05
+arena: fungal_hollow boss=fungal_swordsman,fungal_magus -177.14 -127.05 -166.44 -124.05 -155.98 -118.51 -147.49 -127.91 -154.51 -135.47 -161.12 -137.32 -161.91 -142.09 -162.84 -146.35 -170.74 -152.35 -181.64 -152.35 -192.54 -147.15 -197.44 -136.05 -198.14 -130.45 -188.84 -123.05
 
 at: broken -6 -16 0 1
 at: pillar 6 -16 12 1
@@ -2455,7 +2455,7 @@ at: boulder 4.3850946 36.486008 40 1
 at: boulder 5.644925 35.58229 25 1
 at: cliff4 35.523308 47.30874 30 1 lean=9 leanDir=-105
 at: cliff4 41.71763 37.725925 125 1 lean=5
-at: chest -0.8820944 44.309277 120 1 leanDir=30 loot=ashen_amulet
+at: chest -0.8820944 44.309277 120 1 leanDir=30 gold=45 loot=ashen_amulet
 at: cliff3 -17.344637 0.8332672 95 0.6499999
 at: birch 8.689278 1.582593 0 1 lean=2
 at: sapling 9.547991 -0.34965706 0 1
@@ -3473,13 +3473,13 @@ at: glow -57.475212 -86.07784 0 1
 at: glow -58.259018 -87.98888 0 1
 at: cliff -71.08909 -74.810555 0 0.5999999
 at: cliff -78.64811 -74.75725 -20 0.49999988
-at: chest -65.610016 -76.684105 200 1 loot=spidersilk_moccasins,pilgrims_salt,toadflesh_broth
+at: chest -65.610016 -76.684105 200 1 gold=80 loot=spidersilk_moccasins,pilgrims_salt,toadflesh_broth
 at: pickup -20.090546 -4.690786 0 1 loot=smithing_stone,ember_candle,ember_candle,ember_candle
 at: pickup 32.73991 -6.384436 0 1 loot=fire_arrows,fire_arrows,fire_tallow,sporeling_cap
-at: pickup -31.69429 -64.822624 0 1.3499997 loot=gravebell_amulet
+at: pickup -31.69429 -64.822624 0 1.3499997 gold=25 loot=gravebell_amulet
 at: pickup 12.699394 -42.347057 0 1 loot=tower_shield
 at: pickup -37.529385 -45.327354 0 1 loot=loop_of_chance
-at: pickup -98.94065 -17.500525 0 1 loot=greatclub,pilgrims_offering
+at: pickup -98.94065 -17.500525 0 1 gold=60 loot=greatclub,pilgrims_offering
 at: chest -74.93457 28.546747 50 1 loot=mushroom_jerky,mushroom_jerky,crimson_flask,plain_arrows,plain_arrows,pilgrims_salt
 at: cliff6 -42.012745 11.0029335 75 0.84999996
 at: cliff5 1.1265416 30.752016 0 1
@@ -3643,7 +3643,7 @@ at: rocks 15.537249 -65.37834 0 1
 at: outcrop 14.948542 -64.23855 0 1
 at: pickup 17.277428 -67.45147 0 1 loot=pilgrims_salt,toadflesh_broth,purgeleaf,rimewax
 at: pickup -12.007288 -61.98085 0 1 loot=nightcap_grease,marchboots
-at: pickup -70.48561 -127.43801 0 1 loot=banded_warbelt,mushroom_jerky,nameless_soul,nameless_soul
+at: pickup -70.48561 -127.43801 0 1 gold=35 loot=banded_warbelt,mushroom_jerky,nameless_soul,nameless_soul
 at: pickup 32.58292 -36.324352 0 1 loot=pilgrims_offering,scroll_rime
 at: pickup 75.70958 -18.9836 0 1 loot=scroll_babble
 at: pickup 53.78853 -21.032747 0 1 loot=smithing_stone,smithing_stone,pilgrims_offering
@@ -15726,7 +15726,7 @@ at: boulder 17.855022 -116.025795 0 1
 at: boulder 19.416546 -108.12015 0 0.6999999
 at: outcrop -22.221142 -99.53345 0 1
 at: pickup -26.992933 -98.74292 0 1 loot=sporeling_cap,sporeling_cap,fire_arrows,fire_arrows,fang_dirk
-at: pickup 17.434315 -120.44568 0 1 loot=sporecrown,pilgrims_salt
+at: pickup 17.434315 -120.44568 0 1 gold=40 loot=sporecrown,pilgrims_salt
 at: gibbet 19.497458 -118.93693 0 1
 at: plinth 19.429379 -121.44347 0 1
 at: plinth 13.229858 -116.491104 0 1
@@ -15841,7 +15841,7 @@ at: glowcluster -196.4895 -91.80412 0 1
 at: glowcluster -191.52258 -92.601204 0 1
 at: glowcluster -207.65048 -113.27047 0 1
 at: glowcluster -199.95413 -117.54712 0 1
-at: chest -199.9717 -121.063934 260 1 loot=scroll_siphon,pilgrims_offering,nightcap_grease
+at: chest -199.9717 -121.063934 260 1 gold=190 loot=scroll_siphon,pilgrims_offering,nightcap_grease
 at: sporevent -233.25822 -80.93289 0 1
 at: sporevent -233.3867 -76.9309 0 1
 at: captower -233.56792 -79.38143 0 1
@@ -16283,7 +16283,7 @@ at: lampstalk -239.38939 -89.81044 0 1
 at: lampstalk -193.81348 -151.69818 0 1
 at: lampstalk -141.99048 -161.17651 0 1
 at: lampstalk -146.67647 -144.37569 0 1
-at: pickup -165.92365 -16.89042 0 1 loot=spirit_scroll_wolf,pilgrims_salt,pilgrims_salt,fire_arrows,fire_arrows
+at: pickup -165.92365 -16.89042 0 1 gold=70 loot=spirit_scroll_wolf,pilgrims_salt,pilgrims_salt,fire_arrows,fire_arrows
 at: wall -175.64009 -15.124878 -90 1
 at: wall -170.68456 -4.850811 0 1
 at: paving -164.83904 -18.087687 0 1
@@ -16658,7 +16658,7 @@ at: antlercoral -170.68068 -126.80591 0 1
 at: antlercoral -158.38567 -123.38228 0 1
 at: antlercoral -185.42358 -125.062546 0 1
 at: antlercoral -194.88632 -128.86255 0 1
-at: chest -154.55833 -41.885036 -75 1 loot=pilgrims_offering,scroll_bidding
+at: chest -154.55833 -41.885036 -75 1 gold=130 loot=pilgrims_offering,scroll_bidding
 at: antlercoral -183.08195 -35.474926 0 1
 at: hangcurtain -183.91591 -28.351154 -90 1
 at: fleshfold -182.6425 -32.710667 -110 0.74999994

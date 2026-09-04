@@ -74,7 +74,17 @@ comptime {
     }
 }
 
-pub const FORGEABLE = [_]heromod.Armament{ .sword, .dagger, .club, .bow };
+pub const FORGEABLE = blk: {
+    var out: [heromod.NARM]heromod.Armament = undefined;
+    var n: usize = 0;
+    for (0..heromod.NARM) |i| {
+        const a: heromod.Armament = @enumFromInt(i);
+        if (!heromod.armForges(a)) continue;
+        out[n] = a;
+        n += 1;
+    }
+    break :blk out[0..n].*;
+};
 
 pub const Counter = struct {
     trade: Trade = .shop,

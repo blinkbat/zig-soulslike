@@ -82,7 +82,7 @@ pub const Op = struct {
     /// What is in the CONTAINER this op placed — a chest, or an item pickup (`props.holdsLoot`). Written and parsed on `nloot > 0` alone and never on the kind.
     loot: [MAX_LOOT]item.Kind = undefined,
     nloot: u8 = 0,
-/// A chest may hold gold and nothing else, or items and no gold. 0 is an empty purse and writes no tail.
+    /// COIN IN THE CONTAINER, alongside the loot rather than instead of it — `chest.openNear` and `pickup.takeNear` hand back both. 0 is an empty purse and writes no tail.
     gold: u32 = 0,
     boss: [MAX_SEAL]FoeKind = [_]FoeKind{.bone_knight} ** MAX_SEAL,
     nboss: u8 = 1,

@@ -3002,6 +3002,7 @@ fn openChest(g: *Game) void {
     const got = g.chests.openNear(&g.map) orelse return;
     awardLoot(g, got.loot, got.at);
     g.hero.gold.gain(got.gold);
+    g.award.gainCoin(got.gold);
     g.rig.addShake(SHAKE_CHEST);
     g.rumble.play(rumblemod.hit_light);
 }

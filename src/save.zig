@@ -994,7 +994,7 @@ test "THE SLOT CARRIES EVERY FIELD IT NAMES — live game out, text, live game b
     a.chests.list[2].opened = true;
     a.bosses[0][1] = true; // …one of the knight's two is down
     a.bosses[2][0] = true; // …and one HALF of the duo behind the second gate, which rail 0 could never say
-    a.seenMap.walked(.{ .x = 40, .y = 0, .z = -60 }, 280);
+    a.seenMap.walked(.{ .x = 40, .y = 0, .z = -60 }, 280, {});
 
     const out = gather(a.slot());
     const back = try roundTrip(&out);

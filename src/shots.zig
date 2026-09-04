@@ -21,6 +21,7 @@ const shademod = @import("foes/shade.zig");
 const leechmod = @import("foes/leechfly.zig");
 const rootedmod = @import("foes/rooted.zig");
 const npcmod = @import("foes/npc.zig");
+const foemod = @import("foes/foe.zig");
 const countermod = @import("play/counter.zig");
 const counterui = @import("ui/counterui.zig");
 const wolfmod = @import("foes/wolf.zig");
@@ -3717,7 +3718,8 @@ fn walkTheMap(g: *Game) void {
         while (t <= 1.0) : (t += 0.02) {
             const x = a[0] + (b[0] - a[0]) * t;
             const z = a[1] + (b[1] - a[1]) * t;
-            g.seenMap.walked(v3(x, 0, z), g.map.half);
+            const eye = v3(x, g.env.groundAt(x, z) + foemod.HERO_EYE, z);
+            g.seenMap.walked(eye, g.map.half, &g.env);
         }
     }
 }

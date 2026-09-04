@@ -82,6 +82,10 @@ const REAR_BACK: f32 = 62.0;
 const SLICE_THROUGH: f32 = 158.0;
 const SLICE_SETTLE: f32 = 0.62;
 
+/// **IT WILL NOT WALK INTO A FLAME** — and a blow breaks that outright (`foe.shyOfFlame`). The share is the
+/// standard's, so what "backs off slower than it closes" means is one number for every light-shy body.
+const SHY_SPEED: f32 = RUN_SPEED * foe.SHY_SHARE;
+
 const RUN_SPEED: f32 = 6.4;
 const IDLE_SPEED: f32 = 1.6;
 const ACCEL: f32 = 16.0;
@@ -216,6 +220,7 @@ pub const Skitterer = struct {
     threat: foe.Threat = .{},
     nav: foe.Nav = .{},
     parry: foe.Parry = .{},
+    glare: foe.Glare = .{},
 
     facing: f32 = 0,
     scale: f32 = 1.0,
@@ -449,6 +454,13 @@ pub const Skitterer = struct {
             self.dealt = false;
             self.speed = 0;
             self.reared = true;
+        } else if (foe.shyOfFlame(self)) {
+            // Eyes on him the whole way out: it is the FLAME it is backing away from, not the man carrying it.
+            self.faceToward(hero, dt);
+            self.speed = mathx.approach(self.speed, SHY_SPEED, ACCEL * dt);
+            const back = foe.shyStep(self, dt, bounds, self.speed);
+            self.phase = wolf.wrap01(self.phase + back / (STRIDE * self.scale));
+            self.state = if (back > 0) .move else .idle;
         } else if (gap > stop) {
             self.faceToward(self.nav.aim(self.pos, want), dt);
             const wantSpeed: f32 = if (hunting) RUN_SPEED else IDLE_SPEED;
@@ -1110,4 +1122,40 @@ test "THE CAGE IS LONGER THAN IT IS TALL AND WIDER THAN IT IS DEEP — a frame, 
         }
     }
     try std.testing.expect(same == 0);
+}
+
+test "A LIT TORCH HOLDS IT OFF, AND ONE BLOW UNDOES THAT" {
+    const dt: f32 = 1.0 / 60.0;
+    const hero = mathx.ground(0, 0);
+    const flame = mathx.ground(0, 1.6);
+    var s = Skitterer.spawn(mathx.ground(0, 7.0), 0, 1.0, 0.3);
+
+    // No flame: it comes on.
+    var t: f32 = 0;
+    while (t < 1.5) : (t += dt) _ = s.update(dt, hero, 400, .{});
+    try std.testing.expect(mathx.distXZ(s.pos, hero) < 7.0);
+
+    // Lit, and inside the shy share of its radius: it turns round and backs out.
+    const was = mathx.distXZ(s.pos, flame);
+    s.glare = .{ .k = foe.SHY_ON + 0.05, .at = flame, .shy = true };
+    t = 0;
+    while (t < 1.5) : (t += dt) {
+        _ = s.update(dt, hero, 400, .{});
+        s.glare.at = flame;
+    }
+    const off = mathx.distXZ(s.pos, flame);
+    std.debug.print("\n  skitterer: backs off {d:.2} m of flame in 1.5 s ({d:.2} -> {d:.2} m), at {d:.1} m/s against a run of {d:.1}\n", .{ off - was, was, off, SHY_SPEED, RUN_SPEED });
+    try std.testing.expect(off > was);
+    try std.testing.expect(SHY_SPEED < RUN_SPEED);
+
+    // A BLOW OUTRANKS THE LIGHT: struck, it comes on with the torch still burning.
+    s.leash.provoke();
+    const before = mathx.distXZ(s.pos, hero);
+    t = 0;
+    while (t < 1.5) : (t += dt) {
+        _ = s.update(dt, hero, 400, .{});
+        s.glare.at = flame;
+    }
+    std.debug.print("  ...and struck it closes anyway: {d:.2} -> {d:.2} m\n", .{ before, mathx.distXZ(s.pos, hero) });
+    try std.testing.expect(mathx.distXZ(s.pos, hero) < before);
 }

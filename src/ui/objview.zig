@@ -605,13 +605,17 @@ fn seedChar(cs: *CharSet, k: wf.FoeKind) void {
             cs.shoal.n = 1;
             cs.shoal.live()[0] = fishmod.Fishman.spawnAs(fishmod.roleOf(k).?, mathx.zero3, 0, 1.0, seed);
         },
+        // THE GALLERY IS THE RULER, so a nocturnal body stands in it at ITS OWN HOUR: by day the bat hangs
+        // folded upside down and the carving never leaves the stone, and neither is the thing being measured.
         .blinkbat => {
             cs.roost.n = 1;
             cs.roost.live()[0] = batmod.Bat.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.roost.live()[0].sky.night = 1.0;
         },
         .owlbear => {
             cs.perch.n = 1;
             cs.perch.live()[0] = owlbearmod.Owlbear.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.perch.live()[0].sky.night = 1.0;
         },
         .salt_husk => {
             cs.pan.n = 1;

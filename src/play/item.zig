@@ -85,6 +85,7 @@ pub const Kind = enum(u8) {
     wax_stopped_hood,
     scroll_babble,
     scroll_bidding,
+    gold_purse,
 };
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
@@ -105,6 +106,7 @@ const ORDER = [_][]const u8{
     "spidersilk_moccasins", "bloodtinge_signet", "loop_of_chance",
     "nightcap_grease", "wakers_nail",       "madcap_powder",  "stolen_gravebell",
     "bloodwine",       "wax_stopped_hood",  "scroll_babble",  "scroll_bidding",
+    "gold_purse",
 };
 
 comptime {
@@ -120,6 +122,7 @@ comptime {
 
 pub fn displayName(k: Kind) [:0]const u8 {
     return switch (k) {
+        .gold_purse => "Gold Purse",
         .crimson_flask => "Flask of Crimson Tears",
         .cerulean_flask => "Flask of Cerulean Tears",
         .rune_arc => "Rune Arc",
@@ -242,7 +245,7 @@ pub fn equipClass(c: Class) bool {
 /// WHAT A THING IS WORTH IN COIN, derived from the SHELF it sits on. UNTRADEABLE IS A PRICE OF 0, and it is one rule rather than a second flag.
 pub fn priceBank(k: Kind) u32 {
     return switch (k) {
-        .crimson_flask, .cerulean_flask, .iron_key, .soul_binding_ring, .golden_seed => 0,
+        .crimson_flask, .cerulean_flask, .iron_key, .soul_binding_ring, .golden_seed, .gold_purse => 0,
 
         .envenomed_dagger => 900,
         .grave_warbow => 850,
@@ -299,7 +302,7 @@ pub fn class(k: Kind) Class {
         .scroll_bidding,
         => .spell,
         .smithing_stone, .bloodgrass, .kobold_fang => .material,
-        .rune_arc, .golden_seed => .treasure,
+        .rune_arc, .golden_seed, .gold_purse => .treasure,
         .iron_key => .key,
         else => gearClass(k),
     };
@@ -324,6 +327,7 @@ fn gearClass(k: Kind) Class {
 
 pub fn describe(k: Kind) [:0]const u8 {
     return switch (k) {
+        .gold_purse => "Coin, and the leather it is carried in. What the counter takes and the smithy asks for; nothing here trades in anything else.",
         .crimson_flask => "A flask of clouded red glass, refilled at any bonfire. The draught it holds closes wounds that ought to have been mortal.",
         .cerulean_flask => "The crimson's blue twin, filled at the same fires. What the rod spends, the draught in part restores; the road back to the fire can wait a while longer.",
         .rune_arc => "A shard of a shattered great rune, still lit from within. Whatever it once carried leaks out of the break, and nothing now stands in these lands that could catch it.",
@@ -587,6 +591,7 @@ pub const INERT = [_]Kind{
     .scroll_bolt,    .scroll_roots,   .scroll_rime, .scroll_levin,
     .scroll_siphon,  .scroll_lance,   .scroll_sunder,
     .scroll_babble,  .scroll_bidding,
+    .gold_purse,
 };
 
 comptime {

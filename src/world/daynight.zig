@@ -138,6 +138,20 @@ pub fn dayAmt(hour: f32) f32 {
     return mathx.sinf(std.math.pi * dayU(hour));
 }
 
+/// Hours either side of the horizon a body takes to come or go. A game hour is `DAY_MINUTES * 60 / HOURS` of real time, so this is ~37 s of fade.
+pub const WINDOW_FADE: f32 = 0.75;
+
+/// **WHOSE HOUR IT IS**: 1 broad day, 0 dead of night, ramping across `WINDOW_FADE` either side of sunrise and sunset and exactly 0.5 at the horizon. `dayAmt` is the SUN'S HEIGHT and eases over the whole span — half of it at 09:00 — which is far too slow to be a body's cue.
+pub fn dayShare(hour: f32) f32 {
+    const h = wrapHour(hour);
+    const inside = if (h < SUNRISE) h - SUNRISE else if (h > SUNSET) SUNSET - h else @min(h - SUNRISE, SUNSET - h);
+    return mathx.smoothstep(-WINDOW_FADE, WINDOW_FADE, inside);
+}
+
+pub fn nightShare(hour: f32) f32 {
+    return 1.0 - dayShare(hour);
+}
+
 fn dirFrom(azDeg: f32, altDeg: f32) rl.Vector3 {
     const az = mathx.radians(azDeg);
     const alt = mathx.radians(altDeg);
@@ -842,4 +856,25 @@ test "A BLOOM BRIGHTENS THE DISTANCE, and it thins with altitude — every other
     try std.testing.expect(half.haze.x > noon.haze.x and half.haze.x < lit.haze.x);
     try std.testing.expect(bloom(noon, 0).stars == noon.stars);
     try std.testing.expect(paletteAt(0.0).stars > bloom(paletteAt(0.0), 1.0).stars);
+}
+
+test "THE HOUR A BODY READS IS A RAMP ACROSS THE HORIZON, not the sun's height" {
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), dayShare(SUNRISE), 1e-4);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), dayShare(SUNSET), 1e-4);
+    try std.testing.expectEqual(@as(f32, 1.0), dayShare(12.0));
+    try std.testing.expectEqual(@as(f32, 0.0), dayShare(0.0));
+    try std.testing.expectEqual(@as(f32, 0.0), dayShare(23.5));
+    try std.testing.expectEqual(@as(f32, 1.0), nightShare(0.0));
+    // The sun's height is the thing this is NOT: half a day's worth of it is gone by mid-morning.
+    try std.testing.expect(dayShare(8.0) > 0.99 and dayAmt(8.0) < 0.5);
+    const secs = 2.0 * WINDOW_FADE * (DAY_MINUTES * 60.0 / HOURS);
+    std.debug.print("\n  window: {d:.2} h of fade either side of the horizon, {d:.0} s of real time end to end\n", .{ WINDOW_FADE, secs });
+    var h: f32 = 0;
+    var rose: usize = 0;
+    while (h < HOURS) : (h += 0.05) {
+        const s = dayShare(h);
+        try std.testing.expect(s >= 0 and s <= 1);
+        if (s > 0.5) rose += 1;
+    }
+    std.debug.print("  ...and the day's half of the clock is {d:.1} h of the 24\n", .{@as(f32, @floatFromInt(rose)) * 0.05});
 }

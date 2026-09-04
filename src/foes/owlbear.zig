@@ -101,6 +101,14 @@ const DISSOLVE = foe.Dissolve{ .rate = 54.0, .spread = 0.75, .rise = 0.45, .flak
 pub const SHOVE = foe.Push{ .light = 0.55, .heavy = 1.35 };
 
 
+/// The carving is a carving while the sun is up however close you stand, and the ring is live from the moment
+/// it goes down. Its own name so it can be retuned deeper into the night than the horizon.
+const WAKE_NIGHT: f32 = foe.NIGHTFALL;
+/// How lit a SLEEPING one's eyes are once night is full, and the share of the night the catch starts at — the
+/// tell is that you can see which carvings are somebody tonight before any of them has moved.
+const STONE_EYE: f32 = 0.55;
+const STONE_EYE_FROM: f32 = 0.18;
+
 const WAKE_DUR: f32 = 1.25;
 const EYE_LEAD: f32 = 0.50;
 const SEAT_DUR: f32 = 1.60;
@@ -226,6 +234,7 @@ pub const Owlbear = struct {
     chill: combat.Chill = .{},
     threat: foe.Threat = .{},
     nav: foe.Nav = .{},
+    sky: foe.Sky = .{},
 
     facing: f32 = 0,
     perchYaw: f32 = 0,
@@ -331,7 +340,16 @@ pub const Owlbear = struct {
     /// **HOW LIT THE EYES ARE**, 0..1 — the first half of the wake has them to itself.
     pub fn eyeGlow(self: *const Owlbear) f32 {
         if (self.state == .dead) return 0;
-        return mathx.clampF(self.rouse / EYE_LEAD, 0, 1);
+        const stirring = if (self.state == .stone)
+            STONE_EYE * mathx.smoothstep(STONE_EYE_FROM, WAKE_NIGHT, self.sky.night)
+        else
+            0;
+        return mathx.maxF(stirring, mathx.clampF(self.rouse / EYE_LEAD, 0, 1));
+    }
+
+    /// STONE UNTIL DARK — `foe.dozing`'s rules, and orders take a body out of the stone here for the same reason.
+    pub fn dozing(self: *const Owlbear) bool {
+        return foe.dozing(self, WAKE_NIGHT);
     }
     fn woke(self: *const Owlbear) f32 {
         return mathx.smoothstep(EYE_LEAD, 1.0, self.rouse);
@@ -454,11 +472,21 @@ pub const Owlbear = struct {
             },
             .burst => self.tickBurst(dt, bounds, &movedDist, &moveSpeed, &moveYaw),
             .idle, .walk => {
-                const sensed = foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R);
+                const sensed = if (self.dozing()) mathx.LONG_AGO else foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R);
                 const gap = mathx.maxF(0, sensed - foe.closestApproach(self.bodyR()));
                 const homeGap = mathx.distXZ(self.pos, foe.homeFor(self));
-                if (!self.post.idles() and self.leash.goingHome() and homeGap <= SEAT_R and sensed > AGGRO_R) {
+                // **A CARVING PUTS ITSELF BACK ON ITS OWN PLINTH, and it has to be WALKED there.** `classify`
+                // stops a walk home at `HOME_R`, which is wider than the plinth, so the seat was unreachable and
+                // a woken one never went back into the stone at all: measured, it stalled at 2.20 m for 90 s.
+                const seating = !self.post.idles() and sensed > AGGRO_R and (self.leash.goingHome() or self.dozing());
+                if (seating and homeGap <= SEAT_R) {
                     self.enter(.seat);
+                } else if (seating) {
+                    const back = foe.homeFor(self);
+                    self.faceToward(self.nav.aim(self.pos, back), dt);
+                    self.speed = approach(self.speed, WALK_SPEED, ACCEL * dt);
+                    foe.stride(self, dt, bounds, &movedDist, &moveSpeed, &moveYaw);
+                    self.state = .walk;
                 } else switch (classify(gap, sensed, homeGap, self.scale, self.rakeCd <= 0, self.slamCd <= 0, self.burstCd <= 0 and foe.canLeap(&self.root), self.root.held())) {
                     .rest => {
                         if (sensed <= AGGRO_R) self.faceToward(quarry, dt);
@@ -512,6 +540,7 @@ pub const Owlbear = struct {
             self.enter(.idle);
             return;
         }
+        if (self.dozing()) return;
         if (mathx.distXZ(self.pos, quarry) > WAKE_R * self.scale) return;
         self.justWoke = true;
         self.leash.provoke();
@@ -1102,15 +1131,47 @@ fn lichen(b: *Builder, rx0: f32, ry0: f32, rng: *mathx.Rng, n: u32) void {
     b.setMat(.stone);
 }
 
+/// AFTER DARK, which is the only hour it is a creature at all.
 fn testBear() Owlbear {
-    return Owlbear.spawn(mathx.ground(0, 0), 0, 1.0, 0.31);
+    var o = Owlbear.spawn(mathx.ground(0, 0), 0, 1.0, 0.31);
+    o.sky.night = 1.0;
+    return o;
 }
 
 fn offBy(a: f32, b: f32) f32 {
     return @abs(mathx.degrees(mathx.wrapPi(a - b)));
 }
 
-test "THE WAKE ASKS ABOUT DISTANCE AND NOTHING ELSE, and it shows the eyes before it shows the body" {
+test "IT IS STONE WHILE THE SUN IS UP, and the eyes catch before any of them has moved" {
+    const dt: f32 = 1.0 / 60.0;
+    const under = mathx.ground(0, WAKE_R - 0.5);
+    var day = testBear();
+    day.sky.night = 0;
+    var t: f32 = 0;
+    while (t < 6.0) : (t += dt) _ = day.update(dt, under, 400, .{});
+    try std.testing.expectEqual(State.stone, day.state);
+    try std.testing.expectEqual(@as(f32, 0), day.eyeGlow());
+
+    // …and the hour alone brings the eyes up, with the body still stone.
+    day.sky.night = 1.0;
+    try std.testing.expectApproxEqAbs(STONE_EYE, day.eyeGlow(), 1e-4);
+    try std.testing.expectEqual(State.stone, day.state);
+    _ = day.update(dt, under, 400, .{});
+    try std.testing.expectEqual(State.wake, day.state);
+
+    // A DAWN FIGHT FINISHES: a blow outranks the hour the way it outranks blindness.
+    var struck = testBear();
+    struck.rouse = 1.0;
+    struck.state = .idle;
+    struck.leash.provoke();
+    struck.sky.night = 0;
+    try std.testing.expect(!struck.dozing());
+    struck.leash = .{};
+    try std.testing.expect(struck.dozing());
+    std.debug.print("\n  owlbear: wakes past night {d:.2} (the horizon), sleeping eyes to {d:.2} of full\n", .{ WAKE_NIGHT, STONE_EYE });
+}
+
+test "THE WAKE ASKS ABOUT DISTANCE AND THE HOUR, and it shows the eyes before it shows the body" {
     const dt: f32 = 1.0 / 60.0;
     var far = testBear();
     var t: f32 = 0;
@@ -1125,7 +1186,7 @@ test "THE WAKE ASKS ABOUT DISTANCE AND NOTHING ELSE, and it shows the eyes befor
     try std.testing.expect(eyesOnly >= foe.TELL_MIN * 2.0);
     t = 0;
     while (t < eyesOnly * 0.9) : (t += dt) _ = near.update(dt, mathx.ground(0, WAKE_R - 0.5), 400, .{});
-    try std.testing.expect(near.eyeGlow() > 0.5);
+    try std.testing.expect(near.eyeGlow() > STONE_EYE);
     try std.testing.expectApproxEqAbs(@as(f32, 0), near.woke(), 1e-6);
     std.debug.print("\n  owlbear: wakes inside {d:.2} m, eyes lit {d:.2} s before the body moves (tell floor {d:.2})\n", .{ WAKE_R, eyesOnly, foe.TELL_MIN });
 }
@@ -1308,4 +1369,28 @@ test "THE TALONS LAND ON THE MAN WHERE HE STANDS — both close moves thrown for
     }
     std.debug.print("\n  owlbear: {d} stands thrown across three scales, {d} billed nothing\n", .{ thrown, misses });
     try std.testing.expectEqual(@as(usize, 0), misses);
+}
+
+test "AND DAWN PUTS IT BACK INTO THE STONE — it walks its own plinth down and seats on it" {
+    const dt: f32 = 1.0 / 60.0;
+    const home = mathx.ground(0, 0);
+    const away = mathx.ground(0, AGGRO_R * 6);
+    var o = testBear();
+    o.pos = mathx.ground(0, 9.0);
+    o.debugWake();
+    o.sky.night = 0;
+
+    var seated = false;
+    var t: f32 = 0;
+    while (t < 90.0) : (t += dt) {
+        _ = o.update(dt, away, 400, .{});
+        if (o.state == .stone) {
+            seated = true;
+            break;
+        }
+    }
+    std.debug.print("\n  owlbear: back in the stone after {d:.1} s, {d:.2} m off its post\n", .{ t, mathx.distXZ(o.pos, home) });
+    try std.testing.expect(seated);
+    try std.testing.expect(mathx.distXZ(o.pos, home) <= SEAT_R);
+    try std.testing.expectApproxEqAbs(HP_MAX, o.vit.hp, 1e-3);
 }

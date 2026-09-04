@@ -119,6 +119,22 @@ const RETREAT_SPEED: f32 = DRIFT_SPEED * 1.7;
 const RETREAT_MAX: f32 = 1.70;
 const RETREAT_R: f32 = BLINK_FAR * 0.82;
 
+/// **IT FLIES AFTER DARK AND HANGS THROUGH THE DAY.** Its own name so it can be retuned off the horizon.
+const ROOST_NIGHT: f32 = foe.NIGHTFALL;
+/// Hung by its feet the anatomy is upside down, so the hover is RE-SOLVED to put the body back in the band it
+/// occupies coming in to bite — which is what leaves it inside sword reach, since a roost nobody can strike
+/// cannot be the thing that wakes the rest of them.
+const ROOST_HOVER: f32 = HOVER_BITE + TOP_F * H - 2.0 * REST[ROOT].y;
+/// Seconds^-1 of the fold and the barrel-roll back upright — the 180 degrees are lerped, so waking IS the roll.
+const ROOST_FURL: f32 = 2.6;
+/// How far the shriek off a struck roost carries. Every bat inside it is on the wing by the time you look up.
+const ROOST_CALL_R: f32 = 9.0;
+const ROOST_R: f32 = HOME_R;
+
+comptime {
+    std.debug.assert(ROOST_HOVER > 0.2);
+}
+
 const WAIT_MIN: f32 = 0.55;
 const WAIT_MAX: f32 = 1.15;
 
@@ -199,7 +215,7 @@ const CHIP_HEAVY: i32 = 18;
 const CHIP_DEATH: i32 = 26;
 const PARTS: usize = 96;
 
-const State = enum { hang, wait, retreat, blinkout, blinkin, wind, strike, recover, feed, repelled, stunlight, stunheavy, dead };
+const State = enum { roost, hang, wait, retreat, blinkout, blinkin, wind, strike, recover, feed, repelled, stunlight, stunheavy, dead };
 
 const Choice = enum { blink, retreat, bite, drift, hold, rest };
 
@@ -241,6 +257,7 @@ pub const Bat = struct {
     root: combat.Root = .{},
     chill: combat.Chill = .{},
     threat: foe.Threat = .{},
+    sky: foe.Sky = .{},
     /// TRUE FOR THE FRAME THE BODY WAS SET RATHER THAN STEPPED. `game.gateChill` bills a frame's travel, and a blink is not travel: chilled, the arrival was dragged back to 0.55 of the way to a flank it had already solved.
     warp: bool = false,
 
@@ -259,6 +276,10 @@ pub const Bat = struct {
     hoverTo: f32 = HOVER_IDLE,
     /// 0 solid, 1 gone. The blink's own fade, and what `Model.draw` reads.
     thin: f32 = 0,
+    /// 0 on the wing, 1 hung up and wrapped.
+    roostK: f32 = 0,
+    /// TRUE FOR THE FRAME A HANGING ONE WAS STRUCK — the group turns it into a call over `ROOST_CALL_R`.
+    startled: bool = false,
     blinkTo: rl.Vector3 = mathx.zero3,
     blinkNear: bool = false,
     arcSign: f32 = 1,
@@ -355,6 +376,15 @@ pub const Bat = struct {
         return self.state == .feed;
     }
 
+    /// HUNG UP UNTIL DARK — `foe.dozing`'s rules, so a struck roost is a fight whatever the hour.
+    pub fn dozing(self: *const Bat) bool {
+        return foe.dozing(self, ROOST_NIGHT);
+    }
+
+    pub fn roosting(self: *const Bat) bool {
+        return self.state == .roost;
+    }
+
     pub fn update(self: *Bat, dt: f32, quarry: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
         self.warp = false;
         if (self.gone) {
@@ -364,6 +394,7 @@ pub const Bat = struct {
         self.heroHit = null;
         self.bit = false;
         self.drank = false;
+        self.startled = false;
         self.justDied = false;
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
@@ -480,11 +511,23 @@ pub const Bat = struct {
                     self.enter(.hang);
                 }
             },
+            .roost => {
+                self.hoverTo = ROOST_HOVER;
+                self.speed = approach(self.speed, 0, ACCEL * dt);
+                self.jawOpen = 0;
+                if (!self.dozing()) {
+                    self.enter(.hang);
+                    sfx.world(.leech_wing, self.pos);
+                }
+            },
             .hang => {
-                const sensed = foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R);
+                const sensed = if (self.dozing()) mathx.LONG_AGO else foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R);
                 const homeGap = mathx.distXZ(self.pos, foe.homeFor(self));
                 self.hoverTo = HOVER_IDLE;
-                switch (classify(sensed, homeGap, self.scale, self.blinkCd <= 0, !foe.canLeap(&self.root), self.spent, self.wantRun)) {
+                if (self.dozing() and homeGap <= ROOST_R) {
+                    self.speed = approach(self.speed, 0, ACCEL * dt);
+                    self.enter(.roost);
+                } else switch (classify(sensed, homeGap, self.scale, self.blinkCd <= 0, !foe.canLeap(&self.root), self.spent, self.wantRun)) {
                     .rest => {
                         if (foe.postWant(self, dt, sensed, AGGRO_R)) |go| {
                             self.faceToward(go, dt);
@@ -517,6 +560,9 @@ pub const Bat = struct {
         }
 
         self.hover = approach(self.hover, self.hoverTo, HOVER_RATE * dt);
+        // Seated on the first frame, or a level loaded in daylight watches every bat right itself and fold back up.
+        const furled: f32 = if (self.state == .roost) 1 else 0;
+        self.roostK = if (self.elapsed <= dt) furled else approach(self.roostK, furled, ROOST_FURL * dt);
         const beating = self.state == .blinkin or self.state == .wind or self.speed > 0.1;
         self.wingPhase += dt * (if (beating) WING_HZ_BEAT else WING_HZ_HOVER);
         self.wingPhase -= @floor(self.wingPhase);
@@ -580,7 +626,9 @@ pub const Bat = struct {
 
     pub fn tryHit(self: *Bat, blade: foe.Blade) void {
         if (self.state == .dead or self.hidden()) return;
+        const hung = self.roosting();
         const s = foe.reached(self, blade) orelse return;
+        self.startled = hung;
         const heavy = foe.wounded(self, s, blade, SHOVE);
         self.chips(s.contact, s.dir, if (heavy) CHIP_HEAVY else CHIP_LIGHT, if (heavy) 3.0 else 2.1);
         sfx.world(.leech_hurt, self.pos);
@@ -705,7 +753,7 @@ pub const Bat = struct {
     pub fn drawFx(self: *const Bat) void {
         foe.drawParticles(&self.parts);
         if (self.gone or self.hidden()) return;
-        const glow = 0.34 + 0.66 * self.gorge;
+        const glow = (0.34 + 0.66 * self.gorge) * (1.0 - self.roostK);
         const r = (0.026 + 0.012 * self.gorge) * H * self.scale * (1.0 - self.fade);
         if (r <= 0) return;
         inline for (.{ 1.0, -1.0 }) |side| {
@@ -726,7 +774,8 @@ pub const Bat = struct {
         const feed = if (self.state == .feed) mathx.smoothstep(0, 0.18, self.t) else 0;
         const run = self.retreatAmt();
         const beat = mathx.sinf(self.wingPhase * std.math.tau);
-        const wing = beat * (1.0 - dk);
+        const furl = self.roostK;
+        const wing = beat * (1.0 - dk) * (1.0 - furl);
         const bob = mathx.sinf((self.elapsed + self.seed) * 1.6) * 0.045 * H * (1.0 - dk);
 
         const bodyPitch = 16.0 + 30.0 * bite + 46.0 * feed - 34.0 * stun - 30.0 * run + 74.0 * dk;
@@ -735,7 +784,7 @@ pub const Bat = struct {
 
         var wx: [N]rl.Matrix = undefined;
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
-            mul(rz(24.0 * dk), rx(leanX)),
+            mul(rz(24.0 * dk), rx(leanX * (1.0 - furl) + 180.0 * furl)),
             mul(tr(0, hipY * fs + bob, 0), ry(facingDeg)),
             heromod.rootAt(v3(self.pos.x, self.pos.y + self.lift(), self.pos.z)),
         ));
@@ -746,13 +795,14 @@ pub const Bat = struct {
         setLocal(&wx, NECK, self.rest, rx(neckPitch * 0.45));
         setLocal(&wx, SKULL, self.rest, mul(rx(neckPitch * 0.55), rz(4.0 * mathx.sinf(self.elapsed * 0.7 + self.seed))));
 
-        setLocal(&wx, JAW, self.rest, rx(6.0 + 42.0 * self.jawOpen - 30.0 * feed));
+        setLocal(&wx, JAW, self.rest, rx((6.0 + 42.0 * self.jawOpen - 30.0 * feed) * (1.0 - furl)));
         const flick = mathx.sinf(self.elapsed * 2.3 + self.seed * 6.28) * 5.0;
         setLocal(&wx, EARL, self.rest, mul(rz(-16.0 - 10.0 * bite + flick), rx(-10.0)));
         setLocal(&wx, EARR, self.rest, mul(rz(16.0 + 10.0 * bite - flick), rx(-10.0)));
 
-        const sweep = 62.0 + 26.0 * wing - 34.0 * bite + 18.0 * dk;
-        const fold = 34.0 - 22.0 * wing + 40.0 * bite + 30.0 * feed - 44.0 * dk;
+        // Wrapped: the wings come DOWN the body it is hanging from and the elbows shut over it.
+        const sweep = 62.0 + 26.0 * wing - 34.0 * bite + 18.0 * dk - 46.0 * furl;
+        const fold = 34.0 - 22.0 * wing + 40.0 * bite + 30.0 * feed - 44.0 * dk + 62.0 * furl;
         const cam = 12.0 + 16.0 * wing;
         inline for (.{ .{ SHL, ELL, WRL, 1.0 }, .{ SHR, ELR, WRR, -1.0 } }) |w| {
             const side: f32 = w[3];
@@ -763,7 +813,8 @@ pub const Bat = struct {
             setLocal(&wx, w[2], self.rest, mul(rz(side * (fold * 0.7 + 18.0 * lagW)), rx(-6.0 - 12.0 * lagW)));
         }
 
-        const tuck = 46.0 + 16.0 * bite + 26.0 * feed - 30.0 * dk;
+        // …and the legs go STRAIGHT, because they are what it is hanging by.
+        const tuck = (46.0 + 16.0 * bite + 26.0 * feed - 30.0 * dk) * (1.0 - furl);
         const swayL = mathx.sinf((self.elapsed * 1.1 + self.seed) * std.math.tau) * 4.0;
         inline for (.{ .{ HIPL, KNEEL, ANKL, 1.0 }, .{ HIPR, KNEER, ANKR, -1.0 } }) |l| {
             const side: f32 = l[3];
@@ -833,6 +884,7 @@ pub const Roost = struct {
     pub fn update(self: *Roost, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {
         var worst: ?foe.Blow = null;
         self.bitter = null;
+        var shrieked: ?rl.Vector3 = null;
         for (self.live(), 0..) |*b, i| {
             if (b.update(dt, b.threat.aim(hero), bounds, blade)) |h| {
                 foe.worseBlow(&worst, h, b.pos, &b.threat);
@@ -840,6 +892,11 @@ pub const Roost = struct {
                     if (w.from.x == b.pos.x and w.from.y == b.pos.y and w.from.z == b.pos.z) self.bitter = i;
                 }
             }
+            if (b.startled) shrieked = b.pos;
+        }
+        // **STRIKE ONE AND THE ROOST IS AWAKE.** A `call` and not a `provoke`: the shriek is a sound, so it is measured from where the blow landed.
+        if (shrieked) |at| {
+            if (foe.rouseWithin(self.live(), at, ROOST_CALL_R) > 0) sfx.world(.leech_wing, at);
         }
         return worst;
     }
@@ -1083,8 +1140,11 @@ fn boneMesh(i: usize) rl.Mesh {
 }
 
 
+/// AFTER DARK, which is the only hour it is on the wing.
 fn testBat() Bat {
-    return Bat.spawn(mathx.ground(0, 0), 0, 1.0, 0.31);
+    var b = Bat.spawn(mathx.ground(0, 0), 0, 1.0, 0.31);
+    b.sky.night = 1.0;
+    return b;
 }
 
 test "IT ARRIVES INSIDE ITS OWN REACH AND WITHDRAWS OUT OF IT — hit and run is a distance, not a mood" {
@@ -1334,6 +1394,7 @@ test "THE JAWS SHUT ON THE MAN WHERE HE STANDS — thrown for real, anywhere its
                 thrown += 1;
                 const a = mathx.radians(deg);
                 var c = Bat.spawn(mathx.ground(0, 0), 0, scale, 0.31);
+                c.sky.night = 1.0;
                 const hero = v3(@sin(a) * stand, 0, @cos(a) * stand);
                 c.enter(.wind);
                 var hit = false;
@@ -1355,4 +1416,61 @@ test "THE JAWS SHUT ON THE MAN WHERE HE STANDS — thrown for real, anywhere its
     std.debug.print("\n  blinkbat: {d} stands thrown across three scales, {d} billed nothing; band overruns its reach by at most {d:.2} m\n", .{ thrown, misses, widest });
     try std.testing.expectEqual(@as(usize, 0), misses);
     try std.testing.expect(widest <= 0.001);
+}
+
+test "IT HANGS THROUGH THE DAY, AND STRIKING ONE PUTS THE WHOLE ROOST ON THE WING" {
+    const dt: f32 = 1.0 / 60.0;
+    const hero = mathx.ground(0, 3.0);
+    var b = testBat();
+    b.sky.night = 0;
+    var t: f32 = 0;
+    while (t < 3.0) : (t += dt) _ = b.update(dt, hero, 400, .{});
+    try std.testing.expect(b.roosting());
+    try std.testing.expectApproxEqAbs(@as(f32, 1), b.roostK, 1e-3);
+    try std.testing.expect(b.heroHit == null);
+
+    // A ROOST NOBODY CAN REACH CANNOT BE THE THING THAT WAKES THE REST: it hangs no higher than it bites from.
+    const hung = b.centerWorld().y;
+    const biting = foe.bodyPoint(b.pos, CENTER_F * H, b.scale, HOVER_BITE * b.scale).y;
+    std.debug.print("\n  blinkbat: roosts at hover {d:.2} m, hurt sphere at {d:.2} m against {d:.2} m coming in to bite (r {d:.2})\n", .{ ROOST_HOVER, hung, biting, b.hurtRadius() });
+    try std.testing.expect(hung <= biting);
+
+    // Night alone puts it back on the wing.
+    b.sky.night = 1.0;
+    _ = b.update(dt, hero, 400, .{});
+    try std.testing.expect(!b.roosting());
+    t = 0;
+    while (t < 1.0) : (t += dt) _ = b.update(dt, hero, 400, .{});
+    try std.testing.expect(b.roostK < 0.05);
+}
+
+test "A STRUCK ROOST CALLS EVERY BAT INSIDE ITS OWN SHRIEK, and one further off sleeps on" {
+    const dt: f32 = 1.0 / 60.0;
+    var roost = Roost{ .model = undefined };
+    roost.n = 3;
+    roost.bats[0] = Bat.spawn(mathx.ground(0, 0), 0, 1.0, 0.11);
+    roost.bats[1] = Bat.spawn(mathx.ground(ROOST_CALL_R - 1.0, 0), 0, 1.0, 0.37);
+    roost.bats[2] = Bat.spawn(mathx.ground(ROOST_CALL_R + 4.0, 0), 0, 1.0, 0.63);
+    const hero = mathx.ground(0, 60);
+    var t: f32 = 0;
+    while (t < 2.0) : (t += dt) _ = roost.update(dt, hero, 400, .{});
+    for (roost.live()) |*b| try std.testing.expect(b.roosting());
+
+    const at = roost.bats[0].centerWorld();
+    _ = roost.update(dt, hero, 400, .{
+        .active = true,
+        .r = 0.4,
+        .a = at,
+        .b = at,
+        .a0 = at,
+        .b0 = at,
+        .hit = .{ .dmg = 4, .poise = 1, .stance = 1 },
+    });
+    try std.testing.expect(roost.bats[0].leash.roused());
+    try std.testing.expect(roost.bats[1].leash.roused());
+    try std.testing.expect(!roost.bats[2].leash.roused());
+    _ = roost.update(dt, hero, 400, .{});
+    try std.testing.expect(!roost.bats[0].roosting() and !roost.bats[1].roosting());
+    try std.testing.expect(roost.bats[2].roosting());
+    std.debug.print("  ...the shriek carries {d:.1} m: 2 of 3 on the wing, the third still hung up\n", .{ROOST_CALL_R});
 }

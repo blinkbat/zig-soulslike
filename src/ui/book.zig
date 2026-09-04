@@ -692,7 +692,7 @@ pub const Book = struct {
     }
 
     fn clamp(self: *Book, v: View) void {
-        const bag = @max(v.bag.distinct(), 1);
+        const bag = bagCells(v);
         self.cur[idx(.inventory)] = @min(self.cur[idx(.inventory)], bag - 1);
         self.cur[idx(.equipment)] = @min(self.cur[idx(.equipment)], NSLOT - 1);
         self.cur[idx(.stats)] = @min(self.cur[idx(.stats)], stats.NA - 1);
@@ -811,7 +811,7 @@ pub const Book = struct {
                 sfx.play(.menu_pick);
             },
             .inventory => {
-                if (v.bag.nth(self.cur[idx(.inventory)])) |k| {
+                if (bagAt(v, self.cur[idx(.inventory)])) |k| {
                     if (item.usable(k) and !v.inCombat) {
                         self.thump();
                         sfx.play(.menu_pick);
@@ -1139,6 +1139,40 @@ fn saysHeld(s: []const u8) [:0]const u8 {
     return heldBuf[0..n :0];
 }
 
+/// **THE PURSE IS A MIRROR, NOT A STACK.** Gold is a `u32` on the hero and `item.Bag`'s counts are `u16`, so it
+/// could not live in the bag if it wanted to: it stands in the first cell and what the bag really holds follows it.
+fn bagCells(v: View) usize {
+    return v.bag.distinct() + 1;
+}
+
+fn bagAt(v: View, i: usize) ?item.Kind {
+    return if (i == 0) .gold_purse else v.bag.nth(i - 1);
+}
+
+fn heldOf(v: View, k: item.Kind) u32 {
+    return if (k == .gold_purse) v.gold else v.bag.count(k);
+}
+
+/// Both purses, where the tab strip used to carry the souls alone. `notAbove` keeps the line clear of whatever
+/// the page has already written down there — the doll's panel is only as tall as the window is.
+fn drawWealth(inner: Box, v: View, notAbove: i32) void {
+    const souls = fmt("{d}", .{v.souls});
+    const gold = fmt("{d}", .{v.gold});
+    const gap: i32 = 22;
+    const markW: i32 = 15;
+    const w = (markW + hud.textW(souls, hud.BODY)) + gap + (markW + hud.textW(gold, hud.BODY));
+    var x = inner.x + @divTrunc(inner.w - w, 2);
+    const y = @max(inner.y + inner.h - hud.lineH(hud.BODY), notAbove);
+    const mid = fi(y) + fi(hud.lineH(hud.BODY)) * 0.5;
+    uiart.soulMark(fi(x) + 5, mid, uiart.MARK_R * 0.86, 225);
+    x += markW;
+    hud.text(souls, x, y, hud.BODY, uiart.TEXT_VALUE);
+    x += hud.textW(souls, hud.BODY) + gap;
+    uiart.coinMark(fi(x) + 5, mid, uiart.MARK_R * 0.86, 225);
+    x += markW;
+    hud.text(gold, x, y, hud.BODY, uiart.TEXT_VALUE);
+}
+
 fn panel(b: Box, title: [:0]const u8) Box {
     uiart.well(b.x, b.y, b.w, b.h, 210);
     rl.drawRectangleLinesEx(rect(b.x, b.y, b.w, b.h), 1, mathx.withAlpha(uiart.GILT_DIM, 90));
@@ -1196,7 +1230,7 @@ pub fn draw(self: *const Book, v: View, portrait: ?Portrait) void {
     uiart.plate(card.x, card.y, card.w, card.h, 236);
     uiart.frame(card.x, card.y, card.w, card.h, uiart.flick(200, card.x));
 
-    drawTabs(self, card, v);
+    drawTabs(self, card);
     const body = bodyBox(card);
     switch (self.page) {
         .equipment => drawEquipment(self, body, v),
@@ -1290,10 +1324,9 @@ fn footHints(self: *const Book, buf: *[FOOT_CAP]hud.Hint) []const hud.Hint {
     };
 }
 
-const SOULS_GAP: i32 = 26;
 const TAB_GAP_MIN: i32 = 26;
 
-fn drawTabs(self: *const Book, card: Box, v: View) void {
+fn drawTabs(self: *const Book, card: Box) void {
     const y = card.y + 12;
     var w: [NPAGE]i32 = undefined;
     var total: i32 = 0;
@@ -1302,12 +1335,9 @@ fn drawTabs(self: *const Book, card: Box, v: View) void {
         w[i] = hud.textW(p.label(), hud.TITLE);
         total += w[i];
     }
-    // Centred in what is left BESIDE the souls block: centred in the whole card, a sixth tab ran under it.
-    const souls = fmt("{d}", .{v.souls});
-    const keep = PAD + hud.textW(souls, hud.BODY) + 13 + hud.textW("SOULS", hud.TINY) + 10 + SOULS_GAP;
-    const room = card.w - keep;
+    const room = card.w - PAD * 2;
     const gap: i32 = @max(TAB_GAP_MIN, @divTrunc(room - total, @as(i32, NPAGE) + 1));
-    var x = card.x + @divTrunc(room - (total + gap * (@as(i32, NPAGE) - 1)), 2);
+    var x = card.x + PAD + @divTrunc(room - (total + gap * (@as(i32, NPAGE) - 1)), 2);
     inline for (0..NPAGE) |i| {
         const p: Page = @enumFromInt(i);
         if (self.page == p) {
@@ -1321,10 +1351,6 @@ fn drawTabs(self: *const Book, card: Box, v: View) void {
         }
         x += w[i] + gap;
     }
-    const rx = card.right() - PAD - hud.textW(souls, hud.BODY);
-    hud.text(souls, rx, y + 8, hud.BODY, uiart.TEXT_VALUE);
-    uiart.soulMark(fi(rx) - 13, fi(y + 8) + fi(hud.lineH(hud.BODY)) * 0.5, uiart.MARK_R * 0.86, 225);
-    hud.text("SOULS", rx - hud.textW("SOULS", hud.TINY) - 10, y + 12, hud.TINY, uiart.TEXT_DIM);
     uiart.divider(card.x + @divTrunc(card.w, 2), card.y + headH(), @divTrunc(card.w, 2) - 30, 170);
 }
 
@@ -1339,13 +1365,15 @@ fn drawEquipment(self: *const Book, body: Box, v: View) void {
     const on: SlotId = @enumFromInt(if (self.picking) |s| @intFromEnum(s) else cur);
     const name = slotFilled(on, v);
     const q = slotRect(body, NSLOT - 1);
+    const nameY = @as(i32, @intFromFloat(q.y + q.height)) + 12;
     hud.text(
         name,
         inner.x + @divTrunc(inner.w - hud.textW(name, hud.BODY), 2),
-        @as(i32, @intFromFloat(q.y + q.height)) + 12,
+        nameY,
         hud.BODY,
         uiart.HOT,
     );
+    drawWealth(inner, v, nameY + hud.lineH(hud.BODY) + 6);
 
     var buf: [CAND_MAX]Cand = undefined;
     const cs = if (self.picking) |s| candidates(s, v, &buf) else buf[0..0];
@@ -1893,15 +1921,15 @@ fn drawPicker(self: *const Book, col: Box, s: SlotId, v: View) void {
 
 fn drawInventory(self: *const Book, body: Box, v: View) void {
     const cols = bagCols(body);
-    const n = v.bag.distinct();
-    _ = panel(cols[0], fmt("CARRIED    {d} kinds, {d} in all", .{ n, v.bag.total() }));
+    const n = bagCells(v);
+    _ = panel(cols[0], fmt("CARRIED    {d} kinds, {d} in all", .{ v.bag.distinct(), v.bag.total() }));
     const g = bagGrid(body);
     for (0..BAG_ROWS * BAG_COLS) |cell| {
         const at = cell + self.scroll * BAG_COLS;
-        const kind = v.bag.nth(at);
-        drawBagCell(self, g.at(cell), kind, if (kind) |k| v.bag.count(k) else 0, self.cur[idx(.inventory)] == at and kind != null);
+        const kind = bagAt(v, at);
+        drawBagCell(self, g.at(cell), kind, if (kind) |k| heldOf(v, k) else 0, self.cur[idx(.inventory)] == at and kind != null);
     }
-    const rows = (@max(n, 1) + BAG_COLS - 1) / BAG_COLS;
+    const rows = (n + BAG_COLS - 1) / BAG_COLS;
     uiart.rail(
         g.x + g.stepX * @as(i32, BAG_COLS) - CELL_GAP + 4,
         g.y,
@@ -1909,10 +1937,10 @@ fn drawInventory(self: *const Book, body: Box, v: View) void {
         @as(f32, BAG_ROWS) / @as(f32, @floatFromInt(@max(rows, BAG_ROWS))),
         if (rows > BAG_ROWS) @as(f32, @floatFromInt(self.scroll)) / @as(f32, @floatFromInt(rows - BAG_ROWS)) else 0,
     );
-    drawItemDetail(cols[1], v.bag.nth(self.cur[idx(.inventory)]), v);
+    drawItemDetail(cols[1], bagAt(v, self.cur[idx(.inventory)]), v);
 }
 
-fn drawBagCell(self: *const Book, r: rl.Rectangle, kind: ?item.Kind, count: u16, sel: bool) void {
+fn drawBagCell(self: *const Book, r: rl.Rectangle, kind: ?item.Kind, count: u32, sel: bool) void {
     const x: i32 = @intFromFloat(r.x);
     const y: i32 = @intFromFloat(r.y);
     const cell: i32 = @intFromFloat(r.width);
@@ -1944,7 +1972,7 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
     y += hud.lineH(hud.BODY) + 6;
     hud.text(item.class(k).label(), tx, y, hud.SMALL, mathx.withAlpha(uiart.GILT, 200));
     y += hud.lineH(hud.SMALL) + 2;
-    hud.text(fmt("Held: {d}", .{v.bag.count(k)}), tx, y, hud.SMALL, uiart.TEXT_DIM);
+    hud.text(fmt("Held: {d}", .{heldOf(v, k)}), tx, y, hud.SMALL, uiart.TEXT_DIM);
 
     y = hud.prose(item.describe(k), inner.x, inner.y + plateH + 16, inner.w, hud.SMALL, uiart.TEXT_VALUE) + 10;
     uiart.divider(inner.x + @divTrunc(inner.w, 2), y, @divTrunc(inner.w, 2) - 10, 120);
@@ -2073,7 +2101,7 @@ fn drawStats(self: *const Book, body: Box, v: View, portrait: ?Portrait) void {
     const cols = statsCols(body);
     drawAttributes(self, cols[0], v);
     drawBody(cols[1], v);
-    drawPortrait(self, cols[2], portrait, fmt("Level {d}    {d} souls", .{ v.tree.level(), v.souls }));
+    drawPortrait(self, cols[2], portrait, fmt("Level {d}    {d} souls    {d} gold", .{ v.tree.level(), v.souls, v.gold }));
 }
 
 fn drawAttributes(self: *const Book, col: Box, v: View) void {
@@ -2532,17 +2560,19 @@ test "the bag cursor is pulled back onto a real cell when the last of something 
     bag.add(.bloodgrass, 1);
     bag.add(.kobold_fang, 1);
     bag.add(.iron_key, 1);
-    // Named, not counted — a positional literal goes stale the moment a page is added.
+    // Named, not counted — a positional literal goes stale the moment a page is added. Cell 0 is the PURSE, so
+    // three carried kinds are cells 1..3.
     var b = Book{ .page = .inventory };
-    b.cur[idx(.inventory)] = 2;
+    b.cur[idx(.inventory)] = 3;
     b.clamp(testView(&bag, &sheet, &res, &flasks, &quiver, .sword));
-    try std.testing.expectEqual(@as(usize, 2), b.cur[idx(.inventory)]);
+    try std.testing.expectEqual(@as(usize, 3), b.cur[idx(.inventory)]);
     _ = bag.take(.iron_key, 1);
     b.clamp(testView(&bag, &sheet, &res, &flasks, &quiver, .sword));
-    try std.testing.expectEqual(@as(usize, 1), b.cur[idx(.inventory)]);
+    try std.testing.expectEqual(@as(usize, 2), b.cur[idx(.inventory)]);
     bag.clear();
     b.clamp(testView(&bag, &sheet, &res, &flasks, &quiver, .sword));
     try std.testing.expectEqual(@as(usize, 0), b.cur[idx(.inventory)]);
+    try std.testing.expectEqual(item.Kind.gold_purse, bagAt(testView(&bag, &sheet, &res, &flasks, &quiver, .sword), 0).?);
     try std.testing.expectEqual(@as(usize, 0), b.scroll);
 }
 
@@ -2560,8 +2590,8 @@ test "IN COMBAT THE BAG IS SHUT: the inventory refuses Use and the panel says wh
 
     var b = Book{};
     b.page = .inventory;
-    b.cur[idx(.inventory)] = 0;
-    try std.testing.expectEqual(item.Kind.mushroom_jerky, bag.nth(0).?);
+    b.cur[idx(.inventory)] = 1;
+    try std.testing.expectEqual(item.Kind.mushroom_jerky, bagAt(calm, 1).?);
     try std.testing.expectEqual(Action{ .use = .mushroom_jerky }, b.confirm(calm));
     try std.testing.expectEqual(Action.none, b.confirm(fighting));
 }

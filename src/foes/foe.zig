@@ -249,6 +249,16 @@ pub fn anyParried(foes: anytype) bool {
     return false;
 }
 
+pub fn winOf(f: anytype) Win {
+    if (comptime !@hasField(std.meta.Child(@TypeOf(f)), "leash")) return .{};
+    return f.leash.win;
+}
+
+/// Placed, but not out at this hour — see `Win`.
+pub fn offField(f: anytype) bool {
+    return winOf(f).shut();
+}
+
 pub fn corporeal(f: anytype) bool {
     return f.alive() and !f.dying();
 }
@@ -271,7 +281,52 @@ pub fn leashR(aggroR: f32) f32 {
     return aggroR + LEASH_SLACK;
 }
 
+pub const WIN_SOLID: f32 = 0.5;
+
+/// **WHETHER THIS BODY IS ON THE FIELD THIS HOUR** (`wf.Foe.window`, stamped by `game.markHour`). A SHARE and
+/// not a flag: `in` is what `drawGroup` hands the shader, so a body comes and goes across the horizon rather
+/// than popping. Under `WIN_SOLID` it is not there at all — nothing locks it, nothing collides with it, no
+/// blade reaches it, and `sensedDist` bends its sense of the hero past its own ring, which is what takes every
+/// state machine to a hold at home without a second decision tree in any of them. It rides the LEASH because
+/// that is the one struct every creature embeds and the one `senseHero` already has in its hand.
+pub const Win = struct {
+    when: wf.FoeWhen = .any,
+    in: f32 = 1,
+
+    pub fn shut(self: *const Win) bool {
+        return self.in < WIN_SOLID;
+    }
+
+    /// The share for an hour, `day` being `daynight.dayShare`. `armWindow` resolves `derived` off the KIND, so
+    /// one reaching here is a body nothing armed — always out, which is what an unarmed body was before this.
+    pub fn shareOf(when: wf.FoeWhen, day: f32) f32 {
+        return switch (when) {
+            .derived, .any => 1.0,
+            .day => day,
+            .night => 1.0 - day,
+        };
+    }
+};
+
+/// **THE WORLD'S NIGHT** — 0 broad day, 1 dead of night (`daynight.nightShare`), stamped by `game.markHour`
+/// on the creatures whose BEHAVIOUR turns on the clock. Presence is `Win`'s business; this is for a body that
+/// is there either way and does something else after dark.
+pub const Sky = struct { night: f32 = 0 };
+
+/// **THE SUN IS DOWN.** `daynight.dayShare` is exactly 0.5 AT the horizon, so this is the one number every
+/// nocturnal gate compares against — named once, because two creatures reading 0.5 is two things to retune.
+pub const NIGHTFALL: f32 = 0.5;
+
+/// **DARK IS WHAT WAKES IT** — the shared gate behind `owlbear.dozing` and `blinkbat.dozing`. A blow outranks
+/// the hour the way it outranks blindness, so a fight carried into the dawn finishes; ORDERS outrank it
+/// outright, since a route the map authored is the author saying this one is about.
+pub fn dozing(self: anytype, nightAt: f32) bool {
+    if (self.post.idles()) return false;
+    return self.sky.night < nightAt and !self.leash.roused();
+}
+
 pub const Leash = struct {
+    win: Win = .{},
     sinceCombat: f32 = mathx.LONG_AGO,
     sinceSeen: f32 = 0,
     provoked: f32 = 0,
@@ -347,6 +402,7 @@ pub const Leash = struct {
 };
 
 pub fn sensedDist(l: *const Leash, real: f32, aggroR: f32) f32 {
+    if (l.win.shut()) return mathx.LONG_AGO;
     if (l.blind()) return mathx.LONG_AGO;
     if (l.goingHome()) return mathx.LONG_AGO;
     if (l.roused()) return mathx.minF(real, aggroR);
@@ -358,6 +414,8 @@ pub fn rouseWithin(foes: anytype, at: rl.Vector3, r: f32) u32 {
     var n: u32 = 0;
     for (foes) |*f| {
         if (!corporeal(f)) continue;
+        // A body that is not out at this hour cannot be called out of it — the bell would have raised a shade at noon.
+        if (offField(f)) continue;
         if (mathx.distXZ(f.pos, at) > r) continue;
         f.leash.call();
         n += 1;
@@ -634,6 +692,7 @@ pub fn moveClock(row: anytype) Clock {
 }
 
 pub fn reached(self: anytype, blade: Blade) ?Strike {
+    if (offField(self)) return null;
     const s = strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return null;
     self.leash.provoke();
     self.threat.hurtBy(blade.by, blade.hit.raw());
@@ -746,6 +805,40 @@ pub const Wade = struct {
 
 pub fn setWade(foes: anytype, at: anytype, quarry: f32, comptime depthAt: anytype) void {
     for (foes) |*f| f.wade = .{ .here = depthAt(at, f.pos), .quarry = quarry };
+}
+
+/// Share of a flame's own radius at which a light-shy body turns away, and the share it has to fall back to
+/// before it will come on again — a bare threshold flickers on the boundary while the hero walks it forward.
+/// At the torch's 8 m these are 3.60 m and 4.64 m.
+pub const SHY_ON: f32 = 0.55;
+pub const SHY_OFF: f32 = 0.42;
+
+/// Share of its OWN walk a light-shy body backs off at. Under 1, so a hero who wants the fight can close it.
+pub const SHY_SHARE: f32 = 0.58;
+
+/// **THE STRONGEST FLAME REACHING THIS BODY** (`game.markGlare`) — `k` as a share of that flame's own radius,
+/// 1 at the wick and 0 at its edge, and `at` where it burns. A fact about the light standing in the world,
+/// which is what keeps NO INPUT READING: nothing here asks what the hero is holding or doing. `shy` is the
+/// latch, held by the stamp for the same reason `Nav.side` is.
+pub const Glare = struct {
+    k: f32 = 0,
+    at: rl.Vector3 = mathx.zero3,
+    shy: bool = false,
+};
+
+/// Flame enough to hold it off — **AND ONE BLOW UNDOES IT**, which is what stops a torch being an off switch.
+pub fn shyOfFlame(self: anytype) bool {
+    if (comptime !@hasField(std.meta.Child(@TypeOf(self)), "glare")) return false;
+    return self.glare.shy and !self.leash.roused();
+}
+
+/// Straight back down the flame's bearing. Its own speed, because backing off is not a retreat from the hero.
+pub fn shyStep(self: anytype, dt: f32, bounds: f32, speed: f32) f32 {
+    const away = mathx.dirXZ(self.glare.at, self.pos);
+    if (mathx.lenXZ(away) < 1e-4) return 0;
+    const step = speed * dt;
+    mathx.stepXZ(&self.pos, mathx.normV(away), step, bounds);
+    return step;
 }
 
 pub const SPLAT_DRY_MAX: f32 = 0.05;
@@ -1789,6 +1882,11 @@ pub fn armPost(f: anytype, h: wf.Foe, home: rl.Vector3) void {
     f.post.arm(h.ai, home, h.route(), h.seed);
 }
 
+/// The authored window onto the body, since the map row is gone by the time the hour turns.
+pub fn armWindow(f: anytype, h: wf.Foe) void {
+    f.leash.win.when = h.window();
+}
+
 /// The curve goes on BEFORE `foestat` learns the body, so the bench shows the number the fight actually uses and a revert hands the curve back.
 pub fn armStats(f: anytype, k: wf.FoeKind) void {
     if (comptime !@hasField(@TypeOf(f.*), "vit")) return;
@@ -1809,6 +1907,7 @@ pub fn resetGroup(comptime T: type, out: []T, n: *usize, m: *const wf.Map, want:
         out[n.*] = T.spawn(home, mathx.radians(h.yaw), h.scale, h.seed);
         armStats(&out[n.*], want);
         armPost(&out[n.*], h, home);
+        armWindow(&out[n.*], h);
         n.* += 1;
     }
 }
@@ -1829,6 +1928,7 @@ pub fn resetRoles(
         out[n.*] = T.spawnAs(role, home, mathx.radians(h.yaw), h.scale, h.seed);
         armStats(&out[n.*], h.kind);
         armPost(&out[n.*], h, home);
+        armWindow(&out[n.*], h);
         n.* += 1;
     }
 }
@@ -1837,8 +1937,8 @@ pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
     var lit: f32 = -1;
     var iced: f32 = -1;
     for (foes) |*f| {
-        if (!f.alive()) continue;
-        var thin: f32 = 1;
+        if (!f.alive() or offField(f)) continue;
+        var thin: f32 = winOf(f).in;
         if (scene) |sc| {
             const want = FLASH_GAIN * f.flashFrac();
             if (want != lit) {
@@ -1852,7 +1952,7 @@ pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
                     iced = cold;
                 }
             }
-            if (comptime @hasField(@TypeOf(f.*), "fade")) thin = 1.0 - f.fade;
+            if (comptime @hasField(@TypeOf(f.*), "fade")) thin = mathx.minF(thin, 1.0 - f.fade);
             if (thin < 0.999) sc.beginFade(thin);
         }
         f.draw(model);
@@ -2839,4 +2939,89 @@ test "AND IT LANDS ON THE BODY — the bench learns the number the fight uses, n
         "\n  curve on the body: off the same authored 20 poise, a toad keeps {d:.0} and a fungal magus carries {d:.0}\n",
         .{ early.vit.poiseMax, late.vit.poiseMax },
     );
+}
+
+test "A BODY OUTSIDE ITS HOUR IS NOT THERE — the sense is bent, the blade misses, and the fade is the window itself" {
+    const Body = struct {
+        pos: rl.Vector3 = mathx.zero3,
+        leash: Leash = .{},
+        threat: Threat = .{},
+        facing: f32 = 0,
+        hitLatch: bool = false,
+        vit: combat.Vitals = combat.Vitals.initFoe(100, 10, 20),
+        fn centerWorld(_: *const @This()) rl.Vector3 {
+            return mathx.zero3;
+        }
+        fn hurtRadius(_: *const @This()) f32 {
+            return 1.0;
+        }
+    };
+    const blade = Blade{ .active = true, .r = 0.4, .hit = .{ .dmg = 9, .poise = 2, .stance = 2 } };
+
+    var out = Body{};
+    out.leash.win = .{ .when = .night, .in = 0 };
+    try std.testing.expect(offField(&out));
+    try std.testing.expectEqual(mathx.LONG_AGO, senseHero(&out.leash, mathx.zero3, mathx.ground(0, 1), 15));
+    try std.testing.expect(reached(&out, blade) == null);
+    try std.testing.expectEqual(@as(f32, 100), out.vit.hp);
+
+    var here = Body{};
+    here.leash.win = .{ .when = .night, .in = 1 };
+    try std.testing.expect(!offField(&here));
+    try std.testing.expectApproxEqAbs(@as(f32, 1), senseHero(&here.leash, mathx.zero3, mathx.ground(0, 1), 15), 1e-4);
+    try std.testing.expect(reached(&here, blade) != null);
+    try std.testing.expect(here.vit.hp < 100);
+
+    // The three windows over one clock, and WIN_SOLID is where the fade stops being scenery.
+    try std.testing.expectEqual(@as(f32, 1), Win.shareOf(.any, 0));
+    try std.testing.expectEqual(@as(f32, 1), Win.shareOf(.any, 1));
+    try std.testing.expectEqual(@as(f32, 0), Win.shareOf(.night, 1));
+    try std.testing.expectEqual(@as(f32, 1), Win.shareOf(.night, 0));
+    try std.testing.expectEqual(@as(f32, 1), Win.shareOf(.day, 1));
+    var edge = Win{ .when = .night, .in = WIN_SOLID };
+    try std.testing.expect(!edge.shut());
+    edge.in = WIN_SOLID - 0.01;
+    try std.testing.expect(edge.shut());
+    std.debug.print("\n  window: a body is real from {d:.2} of its share up, and that share IS its alpha\n", .{WIN_SOLID});
+
+    // A creature with no leash at all — a sac, a pool — is always on the field.
+    var loose = struct { pos: rl.Vector3 = mathx.zero3 }{};
+    try std.testing.expect(!offField(&loose));
+}
+
+test "AND THE HOUR IS ARMED OFF THE MAP ROW, both ways a group is filled" {
+    const Body = struct {
+        pos: rl.Vector3 = mathx.zero3,
+        leash: Leash = .{},
+        vit: combat.Vitals = combat.Vitals.initFoe(10, 1, 1),
+        fn spawn(home: rl.Vector3, _: f32, _: f32, _: f32) @This() {
+            return .{ .pos = home };
+        }
+        fn spawnAs(_: u8, home: rl.Vector3, _: f32, _: f32, _: f32) @This() {
+            return .{ .pos = home };
+        }
+    };
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    m.blank("hours");
+    m.foes[0] = .{ .kind = .shade, .x = 0, .z = 0 };
+    m.foes[1] = .{ .kind = .shade, .x = 3, .z = 0, .when = .day };
+    m.nfoes = 2;
+
+    var out: [4]Body = undefined;
+    var n: usize = 0;
+    resetGroup(Body, &out, &n, m, .shade);
+    try std.testing.expectEqual(@as(usize, 2), n);
+    try std.testing.expectEqual(wf.FoeWhen.night, out[0].leash.win.when);
+    try std.testing.expectEqual(wf.FoeWhen.day, out[1].leash.win.when);
+
+    n = 0;
+    const Role = struct {
+        fn of(k: wf.FoeKind) ?u8 {
+            return if (k == .shade) 0 else null;
+        }
+    };
+    resetRoles(Body, u8, &out, &n, m, Role.of);
+    try std.testing.expectEqual(wf.FoeWhen.night, out[0].leash.win.when);
+    try std.testing.expectEqual(wf.FoeWhen.day, out[1].leash.win.when);
 }

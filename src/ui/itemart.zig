@@ -162,6 +162,7 @@ fn arrowSheaf(cx: f32, cy: f32, px: f32, hot: bool) void {
 
 pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
     switch (k) {
+        .gold_purse => goldPurse(cx, cy, px),
         .crimson_flask => flask(cx, cy, px, .crimson, any),
         .cerulean_flask => flask(cx, cy, px, .cerulean, any),
         .rune_arc => soulArc(cx, cy, px),
@@ -1732,6 +1733,62 @@ fn soulArc(cx: f32, cy: f32, px: f32) void {
         const a = gapAt + rng.range(-0.5, 0.5);
         const rr = r * rng.range(0.55, 1.35);
         rl.drawCircleV(v2(cx + mathx.cosf(a) * rr, cy + mathx.sinf(a) * rr), rng.range(0.5, 1.1) * k, rgba(255, 232, 176, 190));
+    }
+}
+
+fn goldPurse(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0xC0157E);
+    const bellyY = cy + s * 0.13;
+    const rx = s * 0.28;
+    const ry = s * 0.235;
+    const neckY = bellyY - ry * 1.00;
+    const lean = rng.range(-0.035, 0.035) * s;
+    const pi = std.math.pi;
+
+    ellipseV(cx + 1.0 * k, bellyY + 1.5 * k, rx, ry, SHADOW);
+    // Two swells rather than one circle: the weight sits low in a sack.
+    ellipseV(cx, bellyY - ry * 0.10, rx * 0.90, ry * 0.86, GRIP);
+    ellipseV(cx - s * 0.008, bellyY + ry * 0.24, rx, ry * 0.72, GRIP);
+
+    const gather = rx * 0.30;
+    quad(
+        v2(cx - gather, neckY + ry * 0.34),
+        v2(cx + gather, neckY + ry * 0.34),
+        v2(cx + lean + gather * 0.56, neckY - ry * 0.34),
+        v2(cx + lean - gather * 0.64, neckY - ry * 0.34),
+        mathx.lerpColor(GRIP, BOARD_JOINT, 0.34),
+    );
+    // Folds FAN OUT OF THE CINCH. Banded round the belly instead, it read as a barrel.
+    for (0..3) |i| {
+        const t = -0.9 + @as(f32, @floatFromInt(i)) * 0.9;
+        const top = v2(cx + lean + gather * 0.5 * t, neckY + ry * 0.30);
+        const foot = v2(cx + rx * 0.60 * t + rng.range(-0.012, 0.012) * s, bellyY + ry * 0.22);
+        rl.drawLineEx(top, foot, 1.2 * k, BOARD_JOINT);
+    }
+    arc(cx, bellyY - ry * 0.06, rx * 0.68, pi * 1.02, pi * 1.46, 10, 2.8 * k, 0.9 * k, mathx.lerpColor(GRIP, GRIP_LT, 0.80));
+
+    // The cinch bows DOWN round the narrowest point. Bowed up over it, it read as a bail handle.
+    arc(cx + lean * 0.5, neckY - gather * 0.42, gather * 1.30, pi * 0.16, pi * 0.84, 8, 2.6 * k, 2.6 * k, CORD);
+    // …and the ends hang off the knot, near enough straight: a curl makes another loop.
+    const knot = v2(cx + lean + gather * 1.02, neckY + ry * 0.02);
+    const bend = v2(knot.x + gather * 0.62, knot.y + ry * 0.30);
+    rl.drawLineEx(knot, bend, 1.6 * k, CORD);
+    rl.drawLineEx(bend, v2(bend.x + gather * 0.20, bend.y + ry * 0.30), 1.1 * k, CORD);
+    rl.drawLineEx(knot, v2(knot.x - gather * 0.30, knot.y + ry * 0.34), 1.3 * k, CORD);
+
+    // Coin out on the ground to one side, overlapped and uneven — a sack with nothing showing is a bag of anything.
+    const coinR = s * 0.082;
+    for (0..3) |i| {
+        const f = @as(f32, @floatFromInt(i));
+        const x = cx + rx * 0.50 + f * coinR * 1.35 + rng.range(-0.010, 0.010) * s;
+        const y = bellyY + ry * 0.96 - f * coinR * 0.20 + rng.range(-0.015, 0.010) * s;
+        const r = coinR * rng.range(0.88, 1.04);
+        ellipseV(x + 0.8 * k, y + 1.0 * k, r, r * 0.40, SHADOW);
+        ellipseV(x, y, r, r * 0.40, BRONZE);
+        ellipseV(x, y - r * 0.06, r * 0.80, r * 0.28, RING_GOLD);
+        ellipseV(x - r * 0.20, y - r * 0.12, r * 0.34, r * 0.12, RING_GOLD_LT);
     }
 }
 

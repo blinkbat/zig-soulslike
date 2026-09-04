@@ -5212,12 +5212,13 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
     }
 }
 
-const MenuItem = enum { view, loot, boss, focus, reroll, explode, duplicate, delete, close };
+const MenuItem = enum { view, loot, boss, spawns, focus, reroll, explode, duplicate, delete, close };
 
 const menuRows = [_]struct { act: MenuItem, label: [:0]const u8, tip: [:0]const u8 }{
     .{ .act = .view, .label = "View...", .tip = "Open this kind alone in the object viewer" },
     .{ .act = .loot, .label = "Items...", .tip = "What this container holds when it is opened" },
     .{ .act = .boss, .label = "Sealed by...", .tip = "Which creatures must die before this gate opens - name every body in the fight" },
+    .{ .act = .spawns, .label = "Spawns...", .tip = "Which half of the clock this body is out in. Click to step through it; the kind's own default is what a fresh spawn keeps" },
     .{ .act = .focus, .label = "Focus", .tip = "Put the camera on it (F)" },
     .{ .act = .reroll, .label = "Re-roll", .tip = "A different arrangement, same meaning (R)" },
     .{ .act = .explode, .label = "Break apart", .tip = "One op per instance, so a single one can be moved or deleted. No way back but undo" },
@@ -5230,10 +5231,16 @@ fn menuWhy(act: MenuItem) [:0]const u8 {
     return switch (act) {
         .close => "",
         .focus, .view, .reroll, .duplicate, .delete => "Select an object first",
+        .spawns => "Select a spawn - a creature on the Units layer",
         .loot => "Select a container - a chest, or something that can hold items",
         .boss => "Select a fog gate",
         .explode => "Select a group op - a belt, a scatter, a ring or a row. A single placement has nothing to break apart",
     };
+}
+
+fn nextWhen(w: wf.FoeWhen) wf.FoeWhen {
+    const n = @typeInfo(wf.FoeWhen).@"enum".fields.len;
+    return @enumFromInt((@intFromEnum(w) + 1) % n);
 }
 
 const MENU_W: i32 = 150;
@@ -6267,9 +6274,25 @@ fn menuEnabled(ed: *const Editor, m: *const wf.Map, act: MenuItem) bool {
         .loot => lootOp(ed, m) != null,
         .boss => bossOp(ed, m) != null,
         .reroll, .duplicate => op != null,
+        .spawns => selFoe(ed, m) != null,
         .explode => groupOp(ed, m) != null,
         .delete => op != null or (ed.layer == .units and ed.selUnit != null),
     };
+}
+
+fn selFoe(ed: *const Editor, m: *const wf.Map) ?usize {
+    const su = ed.selUnit orelse return null;
+    return switch (su) {
+        .foe => |i| if (i < m.nfoes) i else null,
+        .npc => null,
+    };
+}
+
+fn spawnsLabel(ed: *const Editor, m: *const wf.Map, buf: []u8) [:0]const u8 {
+    const i = selFoe(ed, m) orelse return "Spawns...";
+    const f = &m.foes[i];
+    const own: [:0]const u8 = if (f.when == .derived) " (kind's own)" else "";
+    return std.fmt.bufPrintZ(buf, "Spawns: {s}{s}", .{ f.window().label(), own }) catch "Spawns...";
 }
 
 fn viewLabel(ed: *const Editor, m: *const wf.Map, buf: []u8) [:0]const u8 {
@@ -6281,10 +6304,16 @@ fn viewLabel(ed: *const Editor, m: *const wf.Map, buf: []u8) [:0]const u8 {
 fn drawContextMenu(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx) void {
     const menuH: i32 = ROW_H * @as(i32, @intCast(menuRows.len)) + 6;
     var lbuf: [64]u8 = undefined;
+    var sbuf: [64]u8 = undefined;
     const viewRow = viewLabel(ed, m, &lbuf);
+    const spawnRow = spawnsLabel(ed, m, &sbuf);
     var menuW: i32 = MENU_W;
     for (menuRows) |row| {
-        const label = if (row.act == .view) viewRow else row.label;
+        const label = switch (row.act) {
+            .view => viewRow,
+            .spawns => spawnRow,
+            else => row.label,
+        };
         menuW = @max(menuW, hud.monoW(label, hud.MONO) + 26);
     }
     const x: i32 = @intFromFloat(@min(ed.menuAt.x, @as(f32, @floatFromInt(rl.getScreenWidth() - menuW - MENU_EDGE))));
@@ -6292,7 +6321,11 @@ fn drawContextMenu(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx) void
     const box = ui.rect(x, y, menuW, menuH);
     ui.panel(ctx, box, null);
     for (menuRows, 0..) |row, i| {
-        const label = if (row.act == .view) viewRow else row.label;
+        const label = switch (row.act) {
+            .view => viewRow,
+            .spawns => spawnRow,
+            else => row.label,
+        };
         const r = ui.rect(x + 3, y + 3 + @as(i32, @intCast(i)) * ROW_H, menuW - 6, ROW_H - 2);
         if (!menuEnabled(ed, m, row.act)) {
             ui.disabled(ctx, r, label, hud.MONO, menuWhy(row.act));
@@ -6309,6 +6342,13 @@ fn drawContextMenu(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx) void
             },
             .loot => ed.modal = .loot,
             .boss => ed.modal = .boss,
+            // The one row that STAYS OPEN: it is a four-way value, and shutting the menu per step makes reading it four gestures.
+            .spawns => if (selFoe(ed, m)) |fi_| {
+                ed.bank(m);
+                m.foes[fi_].when = nextWhen(m.foes[fi_].when);
+                ed.menuOpen = true;
+                ed.sayFmt("#{d} spawns {s}", .{ fi_, m.foes[fi_].window().label() });
+            },
             .focus => if (ed.sel) |s| ed.focusOn(m, s),
             .reroll => ed.rerollSel(m, env),
             .explode => ed.explodeSel(m, env),

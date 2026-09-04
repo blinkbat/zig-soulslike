@@ -154,7 +154,7 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `foes/shroommage.zig` | mushroom mage + `Ring` — the fireball BOUNCES, so it punishes backing off |
 | `foes/fenlurker.zig` | fen lurker + `Marsh` — never leaves the water; sunk it is unreachable. Counter is DRY LAND |
 | `foes/sporegolem.zig` | spore homunculus + `Host` — `ARMOUR` is the creature; fire and lightning pass through |
-| `foes/skitterer.zig` | bone skitterer + `Clatter` — walks ON ITS RIBS; the eye SHUTS before the spine slams. What a priest raises |
+| `foes/skitterer.zig` | bone skitterer + `Clatter` — walks ON ITS RIBS; the eye SHUTS before the spine slams. What a priest raises, and it will not walk into a flame |
 | `foes/ancientpriest.zig` | ancient priest + `Crypt` — never melees; claws a skitterer out of bare earth far off, breathes COLD close |
 | `foes/hollow.zig` | tolling hollow + `Belfry` — the BELL on its back calls every body inside `TOLL_R`; refused inside bite reach |
 | `foes/slumberbloom.zig` | slumber bloom + `Bed` — a rooted FIXTURE with no blow at all; the only SLEEP source, and it cannot follow |
@@ -163,9 +163,9 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `foes/birchwight.zig` | birchwight + `Stand` — the only counter that is also an escalation: CAUGHT it is faster and sets you alight |
 | `foes/salthusk.zig` | salt husk + `Pan` — the weakest thing on the field and the only one whose KILL is the dangerous part |
 | `foes/fishman.zig` | fishmen + `Shoal` — the SECOND warband, held together by a NET; netter, spearman, shaman are one move in three |
-| `foes/blinkbat.zig` | blinkbat + `Roost` — a flyer that never travels: it BLINKS onto your flank, bites once, blinks out |
+| `foes/blinkbat.zig` | blinkbat + `Roost` — a flyer that never travels: it BLINKS onto your flank, bites once, blinks out. Hangs inverted and wrapped through the day, and striking one hanging puts the whole roost on the wing |
 | `foes/fungalduo.zig` | THE FUNGAL DUO + `Vanguard`/`Conclave` — swordsman and magus, one encounter, two bars |
-| `foes/owlbear.zig` | owlbear + `Perch` — THE FIRST CONSTRUCT, and a carving until you walk inside `WAKE_R`: the eyes lead the stone by half the wake, and the answer to being crowded is a hop back that fans stone quills down the bearing it left on |
+| `foes/owlbear.zig` | owlbear + `Perch` — THE FIRST CONSTRUCT, and a carving until DARK and you walk inside `WAKE_R`: the eyes lead the stone by half the wake, dawn walks it back onto its own plinth, and the answer to being crowded is a hop back that fans stone quills down the bearing it left on |
 | `play/combat.zig` | `Vitals`, `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`, spirits. THE place to retune feel |
 | `play/liquid.zig` | WHAT STANDING IN A PAINTED POOL COSTS — one `Soak` row per `wf.Liquid`, billed the way a cloud bills |
 | `play/stats.zig` | the sheet — seven attributes, the bar curves, the ONE skill curve (`scaleFor`), `inert` |
@@ -1236,6 +1236,16 @@ refused while a fight is on and the panel says where to go instead.
   he carries (`quickOffered`) and carry an empty row, so a kind's ordinal is not its row and `pickIndexOf`
   counts it out the way `candidates` builds it.
 
+### The two purses, in the book
+
+- **NEITHER ONE IS ON THE TAB STRIP** (owner: don't show souls on top right of all book). Souls AND gold sit
+  under the portrait on STATS and at the foot of the doll on EQUIPMENT (`book.drawWealth`), which is the only
+  place a total is stated.
+- **THE GOLD PURSE IN THE BAG IS A MIRROR, NOT A STACK.** `item.gold_purse` stands in the first cell of the
+  grid with the coin count as its tally, and `item.Bag` never holds one: gold is a `u32` on the hero and the
+  bag's counts are `u16`, so 65,535 coins is where a real stack would stop. Everything the bag really holds
+  follows it, so the inventory cursor is one past the bag's own ordinal (`book.bagAt`, `bagCells`, `heldOf`).
+
 ### Souls — the drop, and the ring that refuses it
 
 Everything comes off him on the frame he DIES rather than at the respawn, so the spill plays under the YOU DIED
@@ -1912,6 +1922,39 @@ One number — `Game.day.hour` — and every colour and shadow in the world is a
   `148*` three overheads. The arc is the test — a frame that reads like its neighbour is an hour the palette is
   not earning.
 
+### What the hour does to a creature
+
+- **A BODY READS `daynight.dayShare`, NEVER `dayAmt`.** `dayAmt` is the SUN'S HEIGHT and eases over the whole
+  span — half of it is gone by 09:00 — so it cannot tell a creature whether it is day. `dayShare` is a ramp
+  across `WINDOW_FADE` (0.75 h) either side of each horizon, exactly 0.5 AT the horizon: 75 s of real fade at
+  `DAY_MINUTES`, and every gate in the game is `< 0.5` / `>= 0.5`, which is "the sun is down".
+- **WHEN A PLACED BODY IS OUT IS AUTHORED, AND DERIVED UNTIL IT IS** (`wf.FoeWhen`, `wf.Foe.window`,
+  `wf.foeWhen`). A row with no `when=` means *the kind's own answer*, so a default can be retuned in one
+  exhaustive switch without touching a map on disk; the editor's right-click carries `Spawns: …` and steps
+  through derived / day & night / day only / night only. Both shade roles are `night`; everything else is
+  `any`. **A STATUE AND A ROOST ARE NOT ABSENCES** — those bodies are present and inert, which is a creature's
+  own business, not the window's.
+- **AND ABSENCE REACHES EVERYTHING THROUGH ONE FIELD** (`foe.Win` on the `Leash`, stamped by `game.markHour`).
+  `in` is a SHARE, and it is the alpha `foe.drawGroup` hands the shader, so a body comes and goes across the
+  horizon instead of popping. Under `foe.WIN_SOLID` it is not there at all: `drawGroup` skips it,
+  `foe.reached` refuses every blade, `game.disguised`/`phased` take it out of lock-on, AoE and collision, and
+  `foe.sensedDist` bends its sense of the hero past its own ring — which is what holds every state machine at
+  home without a second decision tree in any of them. It rides the leash because that is the one struct every
+  creature embeds and the one `senseHero` already has in its hand.
+- **A CREATURE WHOSE BEHAVIOUR TURNS ON THE CLOCK OWES A `foe.Sky`** and reads `sky.night`. Two do: the owlbear
+  is stone until dark (`owlbear.dozing`, eyes catching from `STONE_EYE_FROM` of the night so you can see which
+  carvings are somebody tonight), and the blinkbat hangs inverted and wrapped through the day
+  (`blinkbat.ROOST_HOVER`, re-solved so a roost hangs in the band it BITES from — a roost nobody can reach
+  cannot be the thing that wakes the rest of them, and striking one calls every bat inside `ROOST_CALL_R`).
+  **A BLOW OUTRANKS THE HOUR, and ORDERS outrank it outright**: a fight carried into the dawn finishes, and a
+  route the map authored is the author saying this one is about.
+- **FLAME IS A FACT ABOUT THE WORLD, NOT A READ OF WHAT HE IS HOLDING** (`foe.Glare`, `game.markGlare`) — `k`
+  is the share of the flame's own radius the body stands inside, `shy` the latch (`SHY_ON` 0.55 / `SHY_OFF`
+  0.42, so 3.60 m and 4.64 m off the torch's 8 m). ONLY THE FLAME HE CARRIES: letting a brazier the map placed
+  hold a camp off would silently retune every encounter standing near one. The skitterer and both spiders back
+  out of it (`foe.shyOfFlame`, `foe.shyStep`), **and one blow undoes that**, which is what stops a torch being
+  an off switch — cornered they still strike, and the mother still spits from outside the light.
+
 ### The weather (`weather.zig`)
 
 **IT IS AN EVENT, NOT A SETTING.** A storm arrives every `DRY_LO`..`DRY_HI`, runs
@@ -1946,7 +1989,10 @@ window.
   - `FALL_MPS` is just over real rain's 7–9. At 21 a streak crossed twenty-three times its own body in a
     second, which is a smear.
   - **A STREAK IS TWO CROSSED CARDS** — a single card is invisible edge-on. Two segments each, so the tail
-    fades in the GEOMETRY (`propfx`'s pillar law).
+    fades in the GEOMETRY (`propfx`'s pillar law). **AND THE SHEET DRAWS WITH BACKFACE CULLING OFF**: a card
+    is ONE winding (fronts +Z and −X), so under raylib's default cull a lens in the streaks' −X/+Z quadrant
+    saw NEITHER face — the rain stood on one heading and vanished on the turn, or fell on one side of the
+    frame only. Test-measured: two-sided the worst heading reads a card at 0.69, one-sided at 0.
   - **THE SLANT IS WORLD-FIXED** (0.30 across the fall) so turning the camera turns the rain, MEASURED off the
     first shot where 0.17 read as vertical.
   - Draws LAST, through `Scene.beginFade`: no depth written, still depth TESTED, which is what puts it behind
@@ -2552,6 +2598,14 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   - **REVEALED ONCE A CELL, NOT ONCE A FRAME**, after the gates and the room have had their say, and the reach is
     CAPPED at the sheet or a map smaller than `REVEAL_R` walks (2n+1)^2 cells of nothing. Seeded at the spawn, so
     the sheet shows where he stands before he has taken a step. Saved as `seenmap:`, the widest row the file has.
+  - **AND IT IS WHAT HE HAS SEEN, NOT WHERE HE HAS BEEN** (owner: don't expose map beyond walls — you have to
+    see the other side of a wall to map that side). Every unrevealed cell in the disc costs one `env.sees` from
+    his EYE down onto the ground out there, and the look STOPS SHORT by `NEAR_FACE` (half a cell) so the wall's
+    own cell charts and the ground behind it does not. Measured: a wall 12 m out leaves 254 of 376 cells, and a
+    kerb leaves all 376 — `blocksSight` passes over anything under both ends of the look. The `self.cell[i]`
+    test comes BEFORE the look, so re-treading known ground pays nothing and the 376-look case is the spawn;
+    walking, it is the crescent. Every solid blocks, not only the wall-marked ones, so a wood charts speckled
+    and fills in as he moves — the mask is cumulative, a cell needs seeing once from anywhere.
 - **AN ELBOW BENDS ONE WAY, AND THAT WAY IS `rx(NEGATIVE)`.** The bow arm settles it: `BOW_SH_FLEX` 88 goes in
   as `rx(-shFlex)` and points the bow AT the target, and `BOW_DRAW_ELBOW` 152 as `rx(-)` folds the string to the
   cheek. So a positive number is negated at the joint (`rx(-el)`, the folk and the two staff casters) or the

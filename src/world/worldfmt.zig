@@ -441,6 +441,46 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
     };
 }
 
+/// **WHEN A PLACED BODY IS ON THE FIELD.** `derived` is the creature's own answer (`foeWhen`) and is what a row with no `when=` means, so a kind's default can be retuned without touching a map.
+pub const FoeWhen = enum(u8) {
+    derived,
+    any,
+    day,
+    night,
+
+    pub fn label(w: FoeWhen) [:0]const u8 {
+        return switch (w) {
+            .derived => "kind's own",
+            .any => "day & night",
+            .day => "day only",
+            .night => "night only",
+        };
+    }
+};
+
+/// THE KIND'S OWN WINDOW, which is what `derived` resolves to. Exhaustive, so a creature cannot be added without saying when it is out.
+pub fn foeWhen(k: FoeKind) FoeWhen {
+    return switch (k) {
+        // The dead do not walk in daylight. Both shade roles, and nothing else — a statue and a roost are BODIES that are present and inert, not absences.
+        .shade, .mourner => .night,
+        .toad, .archer, .ogre, .berserker, .priest, .slinger => .any,
+        .brood_mother, .broodling, .brood_sac, .shieldman, .greatsword => .any,
+        .leechfly, .rooted, .shroom, .bone_knight, .delver, .necromancer => .any,
+        .fungal_deer, .mushroom_mage, .fen_lurker, .spore_golem => .any,
+        .bone_skitterer, .ancient_priest, .tolling_hollow => .any,
+        .slumber_bloom, .cinder_wake, .rotgorger, .birchwight, .salt_husk => .any,
+        .fish_spearman, .fish_netter, .fish_shaman => .any,
+        .blinkbat, .fungal_swordsman, .fungal_magus, .owlbear => .any,
+    };
+}
+
+comptime {
+    for (@typeInfo(FoeKind).@"enum".fields) |f| {
+        if (foeWhen(@enumFromInt(f.value)) == .derived) @compileError("worldfmt: foeWhen(" ++ f.name ++
+            ") is `derived`, which is not an answer — it is the map row asking for one");
+    }
+}
+
 pub const FoeAi = enum(u8) {
     hold,
     roam,
@@ -459,8 +499,14 @@ pub const Foe = struct {
     scale: f32 = 1,
     seed: f32 = 0,
     ai: FoeAi = .hold,
+    when: FoeWhen = .derived,
     wp: [MAX_WP]Wp = [_]Wp{.{}} ** MAX_WP,
     nwp: u8 = 0,
+
+    /// The window this body actually keeps — `derived` answered by the kind.
+    pub fn window(self: *const Foe) FoeWhen {
+        return if (self.when == .derived) foeWhen(self.kind) else self.when;
+    }
 
     pub fn route(self: *const Foe) []const Wp {
         return self.wp[0..@min(self.nwp, MAX_WP)];
@@ -2080,6 +2126,7 @@ pub fn write(m: *const Map, w: anytype) !void {
     for (m.foes[0..m.nfoes]) |f| {
         try w.print("foe: {s} {d:.2} {d:.2} {d:.1} {d:.2} {d:.2}", .{ @tagName(f.kind), f.x, f.z, f.yaw, f.scale, f.seed });
         if (f.ai != .hold) try w.print(" ai={s}", .{@tagName(f.ai)});
+        if (f.when != .derived) try w.print(" when={s}", .{@tagName(f.when)});
         for (f.route()) |q| try w.print(" wp={d:.2},{d:.2}", .{ q.x, q.z });
         try w.print("\n", .{});
     }
@@ -2404,6 +2451,8 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
                 const val = tok[eq + 1 ..];
                 if (std.mem.eql(u8, key, "ai")) {
                     f.ai = try enumFromName(FoeAi, val);
+                } else if (std.mem.eql(u8, key, "when")) {
+                    f.when = try enumFromName(FoeWhen, val);
                 } else if (std.mem.eql(u8, key, "wp")) {
                     if (f.nwp >= MAX_WP) return ParseError.TooManyWaypoints;
                     const comma = std.mem.indexOfScalar(u8, val, ',') orelse return ParseError.MissingField;
@@ -4772,4 +4821,41 @@ test "A DEFAULT IS NEVER MISTAKEN FOR THE AUTHOR'S — a named conversation wins
     try std.testing.expect(!m.dialogs[named].synth);
     try std.testing.expect(m.npcs[1].dlg != named);
     try std.testing.expect(m.dialogs[m.npcs[1].dlg].synth);
+}
+
+test "A SPAWN'S HOUR IS DERIVED UNTIL THE EDITOR SAYS OTHERWISE, and an old map keeps its kind's own answer" {
+    const head = "version: 1\n";
+    var m: Map = undefined;
+    var ln: usize = 0;
+    // No `when=` at all: the shade is night because the CREATURE is, not because a row on disk says so.
+    try parse(head ++ "foe: shade 0 0 0 1 0\nfoe: toad 4 0 0 1 0\n", &m, &ln);
+    try std.testing.expectEqual(FoeWhen.derived, m.foes[0].when);
+    try std.testing.expectEqual(FoeWhen.night, m.foes[0].window());
+    try std.testing.expectEqual(FoeWhen.any, m.foes[1].window());
+
+    var buf: [4096]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(&m, fbs.writer());
+    try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "when=") == null);
+
+    // …and an override rides out and back.
+    m.foes[0].when = .day;
+    fbs.reset();
+    try write(&m, fbs.writer());
+    const out = fbs.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, out, "when=day") != null);
+    var back: Map = undefined;
+    var bl: usize = 0;
+    try parse(out, &back, &bl);
+    try std.testing.expectEqual(FoeWhen.day, back.foes[0].when);
+    try std.testing.expectEqual(FoeWhen.day, back.foes[0].window());
+
+    ln = 0;
+    try std.testing.expectError(ParseError.BadKind, parse(head ++ "foe: toad 0 0 0 1 0 when=dusk\n", &m, &ln));
+
+    var nocturnal: usize = 0;
+    inline for (@typeInfo(FoeKind).@"enum".fields) |f| {
+        if (foeWhen(@enumFromInt(f.value)) != .any) nocturnal += 1;
+    }
+    std.debug.print("\n  spawns: {d} of {d} kinds keep half the clock by default\n", .{ nocturnal, @typeInfo(FoeKind).@"enum".fields.len });
 }

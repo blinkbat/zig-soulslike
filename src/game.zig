@@ -1879,7 +1879,7 @@ fn gateHeroTerrain(g: *Game, was: rl.Vector3) void {
     g.hero.pos.x = room.x;
     g.hero.pos.z = room.z;
     markWardStep(g, was);
-    g.seenMap.walked(g.hero.pos, g.map.half);
+    g.seenMap.walked(heroEye(g), g.map.half, &g.env);
 }
 
 fn gatedXZ(e: *const envmod.Env, was: rl.Vector3, to: rl.Vector3, airborne: bool) rl.Vector3 {
@@ -4037,6 +4037,39 @@ fn spendTurnedBlows(g: *Game) void {
 const TURNED_R: f32 = 0.45;
 const TURNED_SELF: f32 = 0.30;
 
+/// The hour onto every body: its own window (`foe.Win`) and, for the creatures whose BEHAVIOUR turns on the clock, the night itself.
+fn markHour(g: *Game) void {
+    const day = daynight.dayShare(g.day.hour);
+    inline for (FOE_GROUPS) |gr| {
+        const M = std.meta.Child(@TypeOf(@field(g, gr.field).live()));
+        for (@field(g, gr.field).live()) |*f| {
+            const share = foemod.Win.shareOf(f.leash.win.when, day);
+            // A FIGHT IN PROGRESS OUTRANKS THE HOUR, as it outranks the tether: a body cannot go unhittable
+            // mid-stroke and bill the blow out of nothing.
+            f.leash.win.in = if (f.leash.roused()) mathx.maxF(share, foemod.WIN_SOLID) else share;
+            if (comptime @hasField(M, "sky")) f.sky.night = 1.0 - day;
+        }
+    }
+}
+
+/// ONLY THE FLAME HE CARRIES. A brazier the map placed is scenery: letting a fixed light hold a camp off would silently retune every encounter standing near one.
+fn markGlare(g: *Game) void {
+    const flame = g.hero.torchLight();
+    inline for (FOE_GROUPS) |gr| {
+        const M = std.meta.Child(@TypeOf(@field(g, gr.field).live()));
+        if (comptime !@hasField(M, "glare")) continue;
+        for (@field(g, gr.field).live()) |*f| {
+            const t = flame orelse {
+                f.glare = .{ .at = f.pos };
+                continue;
+            };
+            f.glare.k = mathx.clampF(1.0 - mathx.distXZ(f.pos, t.pos) / t.radius, 0, 1);
+            f.glare.at = t.pos;
+            f.glare.shy = f.glare.k >= (if (f.glare.shy) foemod.SHY_OFF else foemod.SHY_ON);
+        }
+    }
+}
+
 fn markWade(g: *Game) void {
     const quarry = g.env.wadeDepth(g.hero.pos.x, g.hero.pos.z);
     const Depth = struct {
@@ -5242,6 +5275,8 @@ pub fn run(mode: Mode) void {
         if (g.hero.loosed) looseShaft(g);
         if (g.hero.rang) summonSpirit(g);
         const hitsBefore = allHits(g);
+        markHour(g);
+        markGlare(g);
         markSight(g);
         markThreat(g, dt);
         markWays(g);
@@ -6378,11 +6413,13 @@ fn memberKind(f: anytype, group: ?FoeKind) FoeKind {
 }
 
 fn disguised(f: anytype) bool {
+    if (foemod.offField(f)) return true;
     if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "hidden")) return f.hidden();
     return false;
 }
 
 fn phased(f: anytype) bool {
+    if (foemod.offField(f)) return true;
     if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "phased")) return f.phased();
     return false;
 }
@@ -6496,7 +6533,7 @@ fn resetFoes(g: *Game) void {
 // The mask is cells of THIS map, and the sheet has to show where he is STANDING before he has taken a step.
 fn seedChart(g: *Game) void {
     g.seenMap.clear();
-    g.seenMap.walked(g.hero.pos, g.map.half);
+    g.seenMap.walked(heroEye(g), g.map.half, &g.env);
 }
 
 fn dropRunHud(g: *Game) void {

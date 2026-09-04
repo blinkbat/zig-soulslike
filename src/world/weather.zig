@@ -275,6 +275,9 @@ pub const Rain = struct {
         const phase = @mod(t * FALL_MPS, CELL_H);
         const baseY = @floor(eye.y) - STACK_UNDER * CELL_H - phase;
         scene.beginFade(OPACITY * lv);
+        // One winding a card: with the cull on, a lens in the streaks' -X/+Z quadrant saw neither face.
+        rl.gl.rlDisableBackfaceCulling();
+        defer rl.gl.rlEnableBackfaceCulling();
         self.column(v3(at.x, baseY, at.z), STACKS);
         const cf = copyFade(lv);
         if (cf > 0.004) {
@@ -564,6 +567,48 @@ test "THE FALL WRAPS ON THE CELL, so the sheet has no seam and no end" {
     const tall = @as(f32, @floatFromInt(STACKS)) * CELL_H - STACK_UNDER * CELL_H;
     try std.testing.expect(tall > 5.5);
     try std.testing.expect(FALL_MPS > LEN_HI * 10.0);
+}
+
+test "A STREAK READS FROM EVERY HEADING - which takes BOTH faces of its cards, so the sheet draws with the cull off" {
+    var b = gfx.Builder.init();
+    defer b.deinit();
+    streak(&b, mathx.zero3, LEN_HI, WIDE_HI);
+    // A card is two quads of two tris, 12 verts; the crossed card starts at vert 12.
+    const p = b.pos.items;
+    try std.testing.expectEqual(@as(usize, 24 * 3), p.len);
+    var normals: [2]rl.Vector3 = undefined;
+    for (0..2) |ci| {
+        const o = ci * 12 * 3;
+        const a = v3(p[o], p[o + 1], p[o + 2]);
+        const bb = v3(p[o + 3], p[o + 4], p[o + 5]);
+        const c = v3(p[o + 6], p[o + 7], p[o + 8]);
+        normals[ci] = mathx.normV(mathx.crossV(mathx.subV(bb, a), mathx.subV(c, a)));
+    }
+    try std.testing.expect(@abs(mathx.dotV(normals[0], normals[1])) < 0.35);
+
+    var worstBoth: f32 = 1;
+    var worstFront: f32 = 1;
+    var worstAt: f32 = 0;
+    var k: usize = 0;
+    while (k < 360) : (k += 1) {
+        const h = std.math.tau * @as(f32, @floatFromInt(k)) / 360.0;
+        const d = v3(mathx.cosf(h), 0, mathx.sinf(h));
+        var both: f32 = 0;
+        var front: f32 = 0;
+        for (normals) |n| {
+            const f = mathx.dotV(n, d);
+            both = @max(both, @abs(f));
+            front = @max(front, -f);
+        }
+        worstBoth = @min(worstBoth, both);
+        if (front < worstFront) {
+            worstFront = front;
+            worstAt = h;
+        }
+    }
+    std.debug.print("  rain: two-sided the worst heading reads a card at {d:.2}; one-sided the lens at {d:.0} deg reads {d:.2} - a quadrant with no rain in it\n", .{ worstBoth, worstAt * 180.0 / std.math.pi, worstFront });
+    try std.testing.expect(worstBoth > 0.65);
+    try std.testing.expect(worstFront <= 0);
 }
 
 test "THE FIRST STORM LANDS INSIDE A SESSION, at the seed the game actually ships" {

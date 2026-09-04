@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const props = @import("../props/props.zig");
 const envmod = @import("../world/env.zig");
+const collision = @import("../core/collision.zig");
 const wf = @import("../world/worldfmt.zig");
 const gfx = @import("../gfx/gfx.zig");
 const hud = @import("hud.zig");
@@ -194,6 +195,27 @@ pub const SEEN_CELLS: usize = SEEN_N * SEEN_N;
 /// Metres. Over the widest creature ring (`fungalduo`'s 30), under a third of the 320 m draw distance.
 pub const REVEAL_R: f32 = 48.0;
 
+/// **THE CHART IS WHAT HE HAS SEEN, NOT WHERE HE HAS BEEN.** The look is taken from his eye down onto the
+/// ground out there, so this is how far under the eye the far end sits — knee height on his own body.
+pub const EYE_DROP: f32 = 0.65;
+
+/// How far the look STOPS SHORT of the cell it is asking about, as a share of a cell. The near face of a wall
+/// is a thing you can stand and look at, so the cell holding it charts; the ground behind it does not.
+pub const NEAR_FACE: f32 = 0.5;
+
+/// `look` answers `sees(from, to)` — the `Env` in the game, and `{}` where there is no world to be blocked by.
+fn clearTo(look: anytype, from: rl.Vector3, to: rl.Vector3) bool {
+    if (comptime @TypeOf(look) == void) return true;
+    return look.sees(from, to);
+}
+
+/// `to` hauled back toward `from` by `d`, and never past `from` itself.
+fn shortOf(from: rl.Vector3, to: rl.Vector3, d: f32) rl.Vector3 {
+    const len = mathx.lenV(mathx.subV(to, from));
+    if (len <= d) return from;
+    return mathx.lerpV(from, to, (len - d) / len);
+}
+
 pub const Seen = struct {
     cell: [SEEN_CELLS]bool = [_]bool{false} ** SEEN_CELLS,
     /// Bumped only when a cell TURNS — the fog sheet repaints off this and nothing else.
@@ -215,12 +237,17 @@ pub const Seen = struct {
         return n;
     }
 
-    /// Asked once a CELL, not once a frame: re-marking the same disc is 380 cells of nothing.
-    pub fn walked(self: *Seen, at: rl.Vector3, half: f32) void {
+    /// Asked once a CELL, not once a frame: re-marking the same disc is 380 cells of nothing. `at` is his EYE.
+    pub fn walked(self: *Seen, at: rl.Vector3, half: f32, look: anytype) void {
         if (!(half > 0)) return;
         const here = cellOf(at.x, at.z, half) orelse return;
         if (self.at == @as(i32, @intCast(here))) return;
         self.at = @intCast(here);
+        // The cell he is standing in, whatever he is standing in: a doorway is inside a solid.
+        if (!self.cell[here]) {
+            self.cell[here] = true;
+            self.gen +%= 1;
+        }
         const per = 2.0 * half / @as(f32, @floatFromInt(SEEN_N));
         // Capped at the sheet: uncapped, a map smaller than the radius walks (2n+1)^2 cells of nothing.
         const reach: i32 = @min(@as(i32, @intFromFloat(@ceil(REVEAL_R / per))), @as(i32, @intCast(SEEN_N)));
@@ -242,7 +269,10 @@ pub const Seen = struct {
                 const ez = wz - at.z;
                 if (ex * ex + ez * ez > r2) continue;
                 const i = @as(usize, @intCast(z)) * SEEN_N + @as(usize, @intCast(x));
+                // BEFORE the look, not after: re-treading known ground would pay for the whole disc again.
                 if (self.cell[i]) continue;
+                const onto = v3(wx, at.y - EYE_DROP, wz);
+                if (!clearTo(look, at, shortOf(at, onto, per * NEAR_FACE))) continue;
                 self.cell[i] = true;
                 self.gen +%= 1;
             }
@@ -659,7 +689,7 @@ test "THE SHEET STARTS BLANK, AND WALKING IT REVEALS A DISC — not a square, an
     var seen = Seen{};
     try std.testing.expectEqual(@as(usize, 0), seen.count());
 
-    seen.walked(mathx.zero3, half);
+    seen.walked(mathx.zero3, half, {});
     const first = seen.count();
     try std.testing.expect(first > 0);
 
@@ -671,11 +701,11 @@ test "THE SHEET STARTS BLANK, AND WALKING IT REVEALS A DISC — not a square, an
     try std.testing.expectApproxEqRel(disc, @as(f32, @floatFromInt(first)), 0.12);
 
     const gen = seen.gen;
-    seen.walked(mathx.zero3, half);
+    seen.walked(mathx.zero3, half, {});
     try std.testing.expectEqual(first, seen.count());
     try std.testing.expectEqual(gen, seen.gen);
 
-    seen.walked(v3(90, 0, 0), half);
+    seen.walked(v3(90, 0, 0), half, {});
     try std.testing.expect(seen.count() > first);
     try std.testing.expect(seen.gen > gen);
     std.debug.print("\n  chart reveal: {d} m radius is {d} of {d} cells ({d:.1}% of the sheet), cell {d:.2} m\n", .{
@@ -694,7 +724,7 @@ test "A REVEAL IS ASKED ONCE A CELL — sixty frames on one spot is one sweep" {
     const FRAMES = 600;
     for (0..FRAMES) |i| {
         const x = @as(f32, @floatFromInt(i)) * per * 0.1;
-        seen.walked(v3(x, 0, 0), half);
+        seen.walked(v3(x, 0, 0), half, {});
     }
     const us = @as(f64, @floatFromInt(timer.read())) / 1000.0 / @as(f64, @floatFromInt(FRAMES));
     std.debug.print("  reveal costs {d:.3} us a frame — {d:.4}% of a 16.7 ms frame\n", .{ us, us / 16700.0 * 100.0 });
@@ -704,7 +734,7 @@ test "A REVEAL IS ASKED ONCE A CELL — sixty frames on one spot is one sweep" {
 test "A MAP SMALLER THAN THE RADIUS IS ONE SWEEP, NOT MILLIONS OF CELLS OF NOTHING" {
     var seen = Seen{};
     var timer = try std.time.Timer.start();
-    seen.walked(mathx.zero3, 4.0);
+    seen.walked(mathx.zero3, 4.0, {});
     const us = @as(f64, @floatFromInt(timer.read())) / 1000.0;
     try std.testing.expectEqual(SEEN_CELLS, seen.count());
     try std.testing.expect(us < 20000.0);
@@ -713,12 +743,12 @@ test "A MAP SMALLER THAN THE RADIUS IS ONE SWEEP, NOT MILLIONS OF CELLS OF NOTHI
 test "THE EDGE OF THE MAP IS NOT A CLIFF THE MASK FALLS OFF" {
     const half: f32 = 280;
     var seen = Seen{};
-    seen.walked(v3(-half, 0, -half), half);
+    seen.walked(v3(-half, 0, -half), half, {});
     try std.testing.expect(seen.count() > 0);
-    seen.walked(v3(half, 0, half), half);
+    seen.walked(v3(half, 0, half), half, {});
     try std.testing.expect(seen.count() > 0);
     const was = seen.count();
-    seen.walked(v3(half * 4, 0, 0), half);
+    seen.walked(v3(half * 4, 0, 0), half, {});
     try std.testing.expectEqual(was, seen.count());
 }
 
@@ -735,4 +765,86 @@ test "A BIG TREE IS A LANDMARK AND A SAPLING IS SCENERY" {
     }
     std.debug.print("  chart: {d} prop kinds draw as a CANOPY (bound >= {d:.0} m)\n", .{ n, BIG_TREE_R });
     try std.testing.expect(n > 0);
+}
+
+/// One wall across the world, `at` metres out on +Z, standing `high` metres tall — everything `Seen` asks of a world.
+const OneWall = struct {
+    at: f32,
+    high: f32 = 6.0,
+    r: f32 = 0.4,
+    asked: usize = 0,
+
+    fn sees(self: *OneWall, from: rl.Vector3, to: rl.Vector3) bool {
+        self.asked += 1;
+        var wall = collision.capsule(-260, self.at, 260, self.at, self.r);
+        wall.h = self.high;
+        return !collision.blocksSight(from, to, wall);
+    }
+};
+
+test "A WALL IS THE EDGE OF THE CHART — the near face is drawn, the ground behind it is not" {
+    const half: f32 = 280;
+    const per = 2.0 * half / @as(f32, @floatFromInt(SEEN_N));
+    var wall = OneWall{ .at = 12.0 };
+    var seen = Seen{};
+    seen.walked(v3(0, EYE_DROP + 1.25, 0), half, &wall);
+
+    const Q = struct {
+        fn on(s: *const Seen, x: f32, z: f32) bool {
+            const i = cellOf(x, z, half) orelse return false;
+            return s.cell[i];
+        }
+    };
+    // In front of it, and the face itself.
+    try std.testing.expect(Q.on(&seen, 0, 0));
+    try std.testing.expect(Q.on(&seen, 0, 8));
+    try std.testing.expect(Q.on(&seen, 0, wall.at - per * 0.5));
+    // …and nothing beyond, out to the reveal ring, either straight ahead or off the shoulder.
+    try std.testing.expect(!Q.on(&seen, 0, wall.at + per * 2.0));
+    try std.testing.expect(!Q.on(&seen, 0, 40));
+    try std.testing.expect(!Q.on(&seen, 20, 40));
+    // Behind him is his own side of the wall, so it charts.
+    try std.testing.expect(Q.on(&seen, 0, -40));
+
+    // The whole disc against what the wall leaves: a look now costs cells, so the count IS the mechanic.
+    var open = Seen{};
+    open.walked(v3(0, EYE_DROP + 1.25, 0), half, {});
+    std.debug.print("\n  chart LoS: a wall {d:.0} m out leaves {d} of {d} cells, {d} looks taken\n", .{ wall.at, seen.count(), open.count(), wall.asked });
+    try std.testing.expect(seen.count() < open.count());
+    try std.testing.expect(seen.count() > open.count() / 4);
+
+    // A KERB IS NOT A WALL: the look passes over anything shorter than both ends of it.
+    var kerb = OneWall{ .at = 12.0, .high = 0.30 };
+    var over = Seen{};
+    over.walked(v3(0, EYE_DROP + 1.25, 0), half, &kerb);
+    try std.testing.expectEqual(open.count(), over.count());
+}
+
+test "AND THE LOOK IS PAID FOR ONCE A CELL, so the cold disc is the whole bill" {
+    const ta = std.testing.allocator;
+    const m = try ta.create(wf.Map);
+    defer ta.destroy(m);
+    const e = try ta.create(envmod.Env);
+    defer ta.destroy(e);
+    const text = try wf.readForTest(ta, wf.START_MAP, wf.TEXT_CAP);
+    defer ta.free(text);
+    var line: usize = 0;
+    try wf.parse(text, m, &line);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.materialize(m);
+
+    var seen = Seen{};
+    var t = try std.time.Timer.start();
+    seen.walked(v3(0, e.groundAt(0, 0) + 1.25, 0), m.half, e);
+    const cold = @as(f64, @floatFromInt(t.read())) / 1000.0;
+    const first = seen.count();
+
+    // A step to the next cell over: the crescent, which is what walking actually costs.
+    const per = 2.0 * m.half / @as(f32, @floatFromInt(SEEN_N));
+    t.reset();
+    seen.walked(v3(per, e.groundAt(per, 0) + 1.25, 0), m.half, e);
+    const step = @as(f64, @floatFromInt(t.read())) / 1000.0;
+    std.debug.print("\n  chart cost over {d} solids: {d:.0} us for the cold disc ({d} cells), {d:.0} us for a step ({d} more)\n", .{ e.solidCount(), cold, first, step, seen.count() - first });
+    try std.testing.expect(cold < 8000.0);
+    try std.testing.expect(step < cold);
 }

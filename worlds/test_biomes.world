@@ -32,7 +32,7 @@ at: bonfire 0 2 0 1
 # Cold answers the cinder wake; fire answers the birchwight and then makes it worse.
 at: chest 4.5 6 190 1 loot=rimewax,scroll_rime,rimeward_mantle
 at: chest -4.5 6 170 1 loot=fire_tallow,fire_arrows,kiln_draught
-at: chest 0 8.5 180 1 loot=crimson_flask,cerulean_flask,plain_arrows
+at: chest 0 8.5 180 1 loot=empty_flask,empty_flask,plain_arrows
 at: chest 7.5 4 200 1 loot=grave_warbow,scroll_bolt,purgeleaf
 
 at: pillar -14 12 0 1

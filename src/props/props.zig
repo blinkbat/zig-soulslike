@@ -192,6 +192,7 @@ pub const Kind = enum(u8) {
     quenchtrough,
     toolrack,
     stairflight,
+    illusory,
 };
 
 
@@ -410,6 +411,7 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .quenchtrough => "Quench Trough",
         .toolrack => "Tool Rack",
         .stairflight => "Stair Flight",
+        .illusory => "Illusory Wall",
     };
 }
 
@@ -427,7 +429,7 @@ pub fn group(k: Kind) Group {
         .chest, .pickup => .treasure,
         .boulder, .rocks, .outcrop, .scree, .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6, .stump, .log,
         .shards, .slabs, .cobbles, .whaleback,
-        .hoodoo, .spire, .balanced, .fingers, .rotlog, .deadfall,
+        .hoodoo, .spire, .balanced, .fingers, .rotlog, .deadfall, .illusory,
         => .rock,
         .tree, .bigtree, .bigtree2, .bigtree3, .willow, .conifer, .birch, .snag, .sapling => .trees,
         .torch, .brazier, .campfire, .campfire_lit, .forge => .fire,
@@ -481,7 +483,7 @@ pub const Biome = enum {
 
 pub fn biome(k: Kind) Biome {
     return switch (k) {
-        .rubble, .chest, .pickup, .water, .foggate, .ladder, .stairflight,
+        .rubble, .chest, .pickup, .water, .foggate, .ladder, .stairflight, .illusory,
         .torch, .brazier, .campfire, .campfire_lit,
         .tuft, .patch, .shrub, .flowers, .glow, .grasstall, .clover,
         .thistle, .foxglove, .heather, .gorse, .wildflowers,
@@ -631,6 +633,8 @@ pub const Info = struct {
     occl: []const Blocker = &.{},
     casts: bool = true,
     ward: bool = false,
+    /// A wall that is not there: solid and sight-blocking until the hero's blade, roll or arrow touches it, then gone (`env.dispelIllusion`).
+    illusion: bool = false,
     parts: []const Part = &.{},
     /// **METRES OF LOCAL HEIGHT ONE COPY OF THE MESH SPANS**, or 0 for everything else — one mesh, one draw.
     stack: f32 = 0,
@@ -663,6 +667,9 @@ pub const WATCH_FLOORS = blk: {
     break :blk out;
 };
 
+/// The illusory wall is `cliff2`'s face, so it shares the row's dimensions.
+const CLIFF2_BOUND: f32 = 17.0;
+const CLIFF2_TOP: f32 = 14.0;
 const cliffParts = [_]Part{
     .{ .ax = -5.4, .bx = 5.4, .r = 2.9, .h = 15.5 },
     .{ .ax = -2.2, .az = 2.1, .bx = 2.6, .bz = 2.4, .r = 2.2, .h = 15.5 },
@@ -712,7 +719,7 @@ pub const INFO = [NK]Info{
     .{ .kind = .cart, .build = village.cartMesh, .bound = 3.4, .top = 1.7, .view = 170, .parts = &.{.{ .ax = -1.1, .bx = 1.1, .r = 0.55, .h = 1.3 }}, .surf = .wood },
     .{ .kind = .monolith, .build = rock.monolithMesh, .bound = 5.2, .top = 4.9, .view = FAR, .parts = circleParts(0.62, 4.6) },
     .{ .kind = .cliff, .build = rock.cliff1, .bound = 18.0, .top = 15.5, .view = FAR, .solid = true, .parts = &cliffParts },
-    .{ .kind = .cliff2, .build = rock.cliff2, .bound = 17.0, .top = 14.0, .view = FAR, .solid = true, .parts = &cliffParts },
+    .{ .kind = .cliff2, .build = rock.cliff2, .bound = CLIFF2_BOUND, .top = CLIFF2_TOP, .view = FAR, .solid = true, .parts = &cliffParts },
     .{ .kind = .cliff3, .build = rock.cliff3, .bound = 19.0, .top = 16.8, .view = FAR, .solid = true, .parts = &cliffParts },
     .{ .kind = .cliff4, .build = rock.cliff4, .bound = 17.5, .top = 14.9, .view = FAR, .solid = true, .parts = &cliffParts },
     .{ .kind = .cliff5, .build = rock.cliff5, .bound = 17.0, .top = 13.3, .view = FAR, .solid = true, .parts = &cliffParts },
@@ -896,6 +903,7 @@ pub const INFO = [NK]Info{
     .{ .kind = .quenchtrough, .build = forge.quenchMesh, .bound = forge.QUENCH_R + 0.2, .top = forge.QUENCH_TOP, .view = 170, .parts = &.{.{ .ax = -0.62, .bx = 0.62, .r = 0.30, .h = forge.QUENCH_TOP }}, .surf = .wood },
     .{ .kind = .toolrack, .build = forge.toolRackMesh, .bound = forge.RACK_TOP + 0.6, .top = forge.RACK_TOP, .view = 220, .parts = &.{.{ .ax = -forge.RACK_HW, .bx = forge.RACK_HW, .r = 0.22, .h = forge.RACK_TOP * 0.9 }}, .surf = .wood },
     .{ .kind = .stairflight, .build = build.stairMesh, .bound = build.STAIR_RUN + 0.4, .top = build.STAIR_SEG, .view = 240, .stack = build.STAIR_SEG, .flight = .{ .run = build.STAIR_RUN, .halfW = build.STAIR_HALF, .treads = build.STAIR_TREADS }, .surf = .stone },
+    .{ .kind = .illusory, .build = rock.illusoryMesh, .bound = CLIFF2_BOUND, .top = CLIFF2_TOP, .view = FAR, .solid = true, .illusion = true, .parts = &cliffParts },
 };
 
 pub fn info(k: Kind) *const Info {
@@ -916,6 +924,7 @@ comptime {
         if (row.veil != null or row.stow != null) std.debug.assert(row.solid);
         std.debug.assert(!(row.solid and row.occl.len > 0));
         if (row.ward) std.debug.assert(row.parts.len > 0);
+        if (row.illusion) std.debug.assert(row.solid and row.parts.len > 0);
         for (row.occl) |bl| {
             std.debug.assert(bl.y1 > bl.y0);
             std.debug.assert(bl.y1 <= row.top + 0.001);

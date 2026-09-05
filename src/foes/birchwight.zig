@@ -88,6 +88,8 @@ const BOUGH_R: f32 = 2.30;
 const BOUGH_FRONT_DOT: f32 = 0.34;
 const BOUGH_WIND: f32 = 0.86;
 const BOUGH_STRIKE: f32 = 0.22;
+/// The bough is still back at the strike's first frame; it arrives from here.
+const BOUGH_IMPACT_K: f32 = 0.4;
 const BOUGH_RECOVER: f32 = 0.95;
 const BOUGH_CD: f32 = 3.0;
 pub var BOUGH_HIT = combat.Hit{ .dmg = 22, .poise = 22, .stance = 14 };
@@ -345,7 +347,7 @@ pub const Wight = struct {
                 const wind = self.windDur();
                 if (self.t < wind) self.faceToward(quarry, dt);
                 const s = self.t - wind;
-                if (s >= 0 and s < self.strikeDur()) self.tryBough(quarry);
+                if (s >= self.strikeDur() * BOUGH_IMPACT_K and s < self.strikeDur()) self.tryBough(quarry);
                 if (self.t >= wind + self.strikeDur() + self.recoverDur()) {
                     self.heroLatch = false;
                     self.enter(.idle);
@@ -576,6 +578,9 @@ pub const Stand = struct {
     }
     pub fn reset(self: *Stand, m: *const wf.Map) void {
         foe.resetGroup(Wight, &self.wights, &self.n, m, .birchwight);
+    }
+    pub fn summon(self: *Stand, at: rl.Vector3, faceYaw: f32, seed: f32) void {
+        foe.summonInto(Wight, &self.wights, &self.n, .birchwight, Wight.spawn(at, faceYaw, 1.0, seed));
     }
     pub fn clear(self: *Stand) void {
         self.n = 0;

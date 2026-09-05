@@ -24,6 +24,9 @@ const koboldmod = @import("../foes/kobold.zig");
 const leechflymod = @import("../foes/leechfly.zig");
 const necromod = @import("../foes/necro.zig");
 const ogremod = @import("../foes/ogre.zig");
+const druidmod = @import("../foes/druidess.zig");
+const mimicmod = @import("../foes/mimic.zig");
+const mastodonmod = @import("../foes/mastodon.zig");
 const owlbearmod = @import("../foes/owlbear.zig");
 const rootedmod = @import("../foes/rooted.zig");
 const rotgorgermod = @import("../foes/rotgorger.zig");
@@ -913,6 +916,17 @@ const BLOWS = [_]Blow{
     .{ .of = .blinkbat, .move = "bite", .p = &blinkbatmod.BITE_HIT },
     .{ .of = .owlbear, .move = "rake", .p = &owlbearmod.MOVES[owlbearmod.RAKE].hit },
     .{ .of = .owlbear, .move = "slam", .p = &owlbearmod.MOVES[owlbearmod.SLAM].hit },
+    .{ .of = .druidess, .move = "whip", .p = &druidmod.WHIP_HIT },
+    .{ .of = .druidess, .move = "snare", .p = &druidmod.SNARE_HIT },
+    .{ .of = .druidess, .move = "spear", .p = &druidmod.SPEAR_HIT },
+    .{ .of = .druidess, .move = "pod", .p = &druidmod.POD_HIT },
+    .{ .of = .bone_mimic, .move = "bite", .p = &mimicmod.BITE_HIT },
+    .{ .of = .bone_mimic, .move = "swing", .p = &mimicmod.SWING_HIT },
+    .{ .of = .mastodon, .move = "butt", .p = &mastodonmod.BUTT_HIT },
+    .{ .of = .mastodon, .move = "bite", .p = &mastodonmod.BITE_HIT },
+    .{ .of = .mastodon, .move = "charge", .p = &mastodonmod.CHARGE_HIT },
+    .{ .of = .mastodon, .move = "lunge", .p = &mastodonmod.LUNGE_HIT },
+    .{ .of = .mastodon, .move = "tail", .p = &mastodonmod.TAIL_HIT },
     .{ .of = null, .move = "wolf bite", .p = &wolfmod.BITE_HIT },
 };
 
@@ -1020,6 +1034,9 @@ fn foeAggro(k: wf.FoeKind) ?*f32 {
         .blinkbat => &blinkbatmod.AGGRO_R,
         .fungal_swordsman, .fungal_magus => &fungalduomod.AGGRO_R,
         .owlbear => &owlbearmod.AGGRO_R,
+        .druidess => &druidmod.AGGRO_R,
+        .bone_mimic => &mimicmod.AGGRO_R,
+        .mastodon => &mastodonmod.AGGRO_R,
     };
 }
 
@@ -1047,6 +1064,9 @@ fn foeSouls(k: wf.FoeKind) ?*u32 {
         .salt_husk => &salthuskmod.SOULS,
         .blinkbat => &blinkbatmod.SOULS,
         .owlbear => &owlbearmod.SOULS,
+        .druidess => &druidmod.SOULS,
+        .bone_mimic => &mimicmod.SOULS,
+        .mastodon => &mastodonmod.SOULS,
         .fungal_deer => &fungaldeermod.SOULS,
         .bone_skitterer => &skitterermod.SOULS,
         .fungal_swordsman => &fungalduomod.SW_SOULS,
@@ -1912,8 +1932,8 @@ test "WHAT A BODY LEAVES IS A CHOICE ON THE SHEET, AND THE FILE CARRIES ITS NAME
     try std.testing.expectEqual(@as(f32, 0), value(dt, sac, cCommon));
     try std.testing.expectEqual(@as(?item.Kind, null), drops.TABLE[sac].rare);
     try std.testing.expect(!shows(dt, sac, cChance));
-    setValue(dt, sac, cRare, itemOrdinal(.golden_seed));
-    try std.testing.expectEqual(item.Kind.golden_seed, drops.TABLE[sac].rare.?);
+    setValue(dt, sac, cRare, itemOrdinal(.empty_flask));
+    try std.testing.expectEqual(item.Kind.empty_flask, drops.TABLE[sac].rare.?);
     try std.testing.expect(shows(dt, sac, cChance));
     try std.testing.expectEqual(@as(f32, 0), value(dt, sac, cChance));
     setValue(dt, sac, cChance, 0.25);
@@ -1926,7 +1946,7 @@ test "WHAT A BODY LEAVES IS A CHOICE ON THE SHEET, AND THE FILE CARRIES ITS NAME
     const text = st.getWritten();
     std.debug.print("\n  drop sheet writes:\n{s}", .{text});
     try std.testing.expect(std.mem.indexOf(u8, text, "drop.toad.common smithing_stone") != null);
-    try std.testing.expect(std.mem.indexOf(u8, text, "drop.brood_sac.rare golden_seed") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "drop.brood_sac.rare empty_flask") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "drop.brood_sac.purse heavy") != null);
 
     revertAll();
@@ -1942,7 +1962,7 @@ test "WHAT A BODY LEAVES IS A CHOICE ON THE SHEET, AND THE FILE CARRIES ITS NAME
         applyText(parts.next().?, parts.next().?, parts.next().?, it.next().?);
     }
     try std.testing.expectEqual(item.Kind.smithing_stone, drops.TABLE[toad].common.?);
-    try std.testing.expectEqual(item.Kind.golden_seed, drops.TABLE[sac].rare.?);
+    try std.testing.expectEqual(item.Kind.empty_flask, drops.TABLE[sac].rare.?);
     try std.testing.expectEqual(drops.Coin.heavy, drops.TABLE[sac].gold);
 
     applyText("drop", "toad", "common", "a_thing_that_was_cut");

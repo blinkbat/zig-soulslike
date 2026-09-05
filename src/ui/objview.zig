@@ -42,6 +42,9 @@ const fishmod = @import("../foes/fishman.zig");
 const batmod = @import("../foes/blinkbat.zig");
 const owlbearmod = @import("../foes/owlbear.zig");
 const duomod = @import("../foes/fungalduo.zig");
+const druidmod = @import("../foes/druidess.zig");
+const mimicmod = @import("../foes/mimic.zig");
+const mastodonmod = @import("../foes/mastodon.zig");
 const combat = @import("../play/combat.zig");
 const heromod = @import("../play/hero.zig");
 const foemod = @import("../foes/foe.zig");
@@ -366,6 +369,9 @@ pub const CharSet = struct {
     perch: owlbearmod.Perch,
     vanguard: duomod.Vanguard,
     conclave: duomod.Conclave,
+    coven: druidmod.Coven,
+    hoard: mimicmod.Hoard,
+    drove: mastodonmod.Drove,
 };
 /// One group per creature, so it GROWS WITH THE ROSTER and is measured by the test at the foot of this file: as a figure it read 112.4 MB and was 150.6 by the time anyone looked.
 var charSet: ?*CharSet = null;
@@ -406,6 +412,9 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
     cs.perch = owlbearmod.Perch.init(scene.shader);
     cs.vanguard = duomod.Vanguard.init(scene.shader);
     cs.conclave = duomod.Conclave.init(scene.shader);
+    cs.coven = druidmod.Coven.init(scene.shader);
+    cs.hoard = mimicmod.Hoard.init(scene.shader);
+    cs.drove = mastodonmod.Drove.init(scene.shader);
     inline for (@typeInfo(CharSet).@"struct".fields) |f| @field(cs, f.name).n = 0;
     return cs;
 }
@@ -429,7 +438,10 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         .salt_husk => .{ .top = 1.9, .bound = 1.2 },
         .fish_spearman, .fish_netter, .fish_shaman => .{ .top = 2.3, .bound = 1.3 },
         .blinkbat => .{ .top = 4.2, .bound = 3.2 },
-        .owlbear => .{ .top = 3.0, .bound = 1.9 },
+        .owlbear => .{ .top = 3.6, .bound = 2.3 },
+        .druidess => .{ .top = 2.7, .bound = 2.2 },
+        .bone_mimic => .{ .top = 3.0, .bound = 1.8 },
+        .mastodon => .{ .top = 3.2, .bound = 3.4 },
         .leechfly => .{ .top = 2.9, .bound = 1.8 },
         .rooted => .{ .top = 7.2, .bound = 3.6 },
         .shroom => .{ .top = 1.2, .bound = 1.0 },
@@ -483,6 +495,9 @@ pub const CHAR_DRIVE = [_]struct { field: []const u8, drive: Drive, kinds: []con
     .{ .field = "perch", .drive = .group, .kinds = &.{.owlbear} },
     .{ .field = "vanguard", .drive = .group, .kinds = &.{.fungal_swordsman} },
     .{ .field = "conclave", .drive = .group, .kinds = &.{.fungal_magus} },
+    .{ .field = "coven", .drive = .group, .kinds = &.{.druidess} },
+    .{ .field = "hoard", .drive = .group, .kinds = &.{.bone_mimic} },
+    .{ .field = "drove", .drive = .group, .kinds = &.{.mastodon} },
 };
 
 comptime {
@@ -713,6 +728,20 @@ fn seedChar(cs: *CharSet, k: wf.FoeKind) void {
         .fungal_magus => {
             cs.conclave.n = 1;
             cs.conclave.live()[0] = duomod.Magus.spawn(mathx.zero3, 0, 1.0, seed);
+        },
+        .druidess => {
+            cs.coven.n = 1;
+            cs.coven.live()[0] = druidmod.Druidess.spawn(mathx.zero3, 0, 1.0, seed);
+        },
+        // THE GALLERY SHOWS THE CREATURE, not the box it hides in.
+        .bone_mimic => {
+            cs.hoard.n = 1;
+            cs.hoard.live()[0] = mimicmod.Mimic.spawn(mathx.zero3, 0, 1.0, seed);
+            cs.hoard.live()[0].debugWake();
+        },
+        .mastodon => {
+            cs.drove.n = 1;
+            cs.drove.live()[0] = mastodonmod.Mastodon.spawn(mathx.zero3, 0, 1.0, seed);
         },
     }
 }

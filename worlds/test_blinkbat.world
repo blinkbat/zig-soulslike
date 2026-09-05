@@ -7,7 +7,7 @@ zone: plain -400.0 -400.0 400.0 400.0 0.480 grasstall,patch,tuft,clover,moss,net
 clear: 0.0 0.0 34.0
 
 at: bonfire -2 -24 0 1
-at: chest 3.5 -22 190 1 loot=crimson_flask,bloodgrass,fire_tallow
+at: chest 3.5 -22 190 1 loot=empty_flask,bloodgrass,fire_tallow
 at: chest -5.5 -22.5 170 1 loot=purgeleaf,rimeward_mantle,gravebell_amulet
 
 # Cover, so a blink that lands inside geometry shows up as one. The ring it withdraws to is 6.4 m, which is

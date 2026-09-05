@@ -201,8 +201,8 @@ const SW_BACK_UP: f32 = 0.52;
 const SW_BACK_LAND: f32 = 0.20;
 const SW_BACK_CD: f32 = 6.5;
 
-const SW_SLASH_HIT = combat.Hit{ .dmg = 7, .poise = 30, .stance = 26, .elem = combat.elems(.{ .chaos = 11 }) };
-const SW_LUNGE_HIT = combat.Hit{ .dmg = 13, .poise = 44, .stance = 34, .elem = combat.elems(.{ .chaos = 12 }) };
+const SW_SLASH_HIT = combat.Hit{ .dmg = 7, .poise = 30, .stance = 26, .elem = combat.elems(.{ .chaos = 11 }), .venom = true };
+const SW_LUNGE_HIT = combat.Hit{ .dmg = 13, .poise = 44, .stance = 34, .elem = combat.elems(.{ .chaos = 12 }), .venom = true };
 
 const SW_HEAVY_R: f32 = 2.1;
 const SW_HEAVY_WIND: f32 = 1.15;
@@ -210,7 +210,7 @@ const SW_HEAVY_DUR: f32 = 0.30;
 const SW_HEAVY_REC: f32 = 0.98;
 const SW_HEAVY_CD: f32 = 8.5;
 const SW_HEAVY_LAUNCH: f32 = 1.2;
-const SW_HEAVY_HIT = combat.Hit{ .dmg = 24, .poise = 58, .stance = 42, .launch = SW_HEAVY_LAUNCH, .elem = combat.elems(.{ .chaos = 14 }) };
+const SW_HEAVY_HIT = combat.Hit{ .dmg = 24, .poise = 58, .stance = 42, .launch = SW_HEAVY_LAUNCH, .elem = combat.elems(.{ .chaos = 14 }), .venom = true };
 
 const SW_NPART = 40;
 
@@ -360,7 +360,7 @@ const MG_DRIFT_DUR: f32 = 0.85;
 pub const ORB_SPEED: f32 = 9.5;
 pub const ORB_R: f32 = 0.32;
 pub const ORB_LIFE: f32 = 3.6;
-pub const ORB_HIT = combat.Hit{ .poise = 14, .elem = combat.elems(.{ .chaos = 14 }) };
+pub const ORB_HIT = combat.Hit{ .poise = 14, .elem = combat.elems(.{ .chaos = 14 }), .venom = true };
 const MG_ORB_WIND: f32 = 0.36;
 const MG_ORB_DUR: f32 = 0.16;
 const MG_REC: f32 = 0.26;
@@ -371,7 +371,7 @@ const MG_ORB_MIN: f32 = MG_FLEE_R;
 pub const CAP_GROW: f32 = 3.2;
 pub const CAP_GLOW: f32 = 1.05;
 pub const CAP_BURST_R: f32 = 3.1;
-pub const CAP_HIT = combat.Hit{ .poise = 34, .stance = 22, .launch = 2.2, .elem = combat.elems(.{ .chaos = 20 }) };
+pub const CAP_HIT = combat.Hit{ .poise = 34, .stance = 22, .launch = 2.2, .elem = combat.elems(.{ .chaos = 20 }), .venom = true };
 const MG_SPROUT_WIND: f32 = 0.78;
 const MG_SPROUT_DUR: f32 = 0.30;
 const MG_SPROUT_CD: f32 = 6.2;

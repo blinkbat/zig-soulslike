@@ -95,9 +95,13 @@ const NPART = 84;
 
 const BITE_WIND: f32 = 0.46;
 const BITE_STRIKE: f32 = 0.20;
+/// Where in the strike the jaws arrive: the bill and the parry window read the same number.
+const BITE_IMPACT_K: f32 = 0.45;
 const BITE_RECOVER: f32 = 0.62;
 const BITE_COOL: f32 = 1.55;
 const BITE_LUNGE: f32 = 0.62;
+/// Share of the wind gone before the body starts forward; the lunge is spread over the rest of it and the strike.
+const BITE_LUNGE_FROM: f32 = 0.55;
 /// MEASURED off the posed jaws: they arrive 1.55 m out, so 1.10 promises 2.11 m against that plus the hero's own 0.55 m footprint. The test prints both.
 const BITE_R: f32 = 1.10;
 const BITE_TRIGGER_R: f32 = BITE_R + BITE_LUNGE * 0.7;
@@ -141,6 +145,7 @@ comptime {
     std.debug.assert(SPARK_MAX < AGGRO_R_BANK);
     std.debug.assert(SPARK_N >= 2);
     std.debug.assert(NPART >= foe.hitParts(CHIP_HEAVY) + foe.hitParts(CHIP_DEATH) + foe.WOUND_PARTS);
+    std.debug.assert(NPART >= foe.hitParts(G_CHIP) + foe.hitParts(G_SPARK_N)); // a frame lands on the rider OR the host, never both
     std.debug.assert(HP_MAX > 300.0); // over the cyclops: the sponge IS the creature
 }
 
@@ -219,6 +224,51 @@ const G_HIDE_DK = rgba(17, 15, 16, 255);
 const G_SPARK = rgba(196, 214, 255, 255);
 const G_EYE = rgba(226, 236, 255, 110);
 
+/// THE RIDER IS ITS OWN BODY ON THE HOST'S SWING LATCH (`foe.reachedPart`): a sphere about its torso, tested before the host's, with its own pool. 20 HP is one aimed arrow (23) or two quick ones (10).
+const G_HP: f32 = 20.0;
+const G_HURT_R: f32 = 0.55 * G_H;
+/// Flung off the seat DOWN THE BLOW, m/s along the blade and up, under a gravity heavier than the world's — a 0.65 m body on the world's 9.8 floats.
+const G_FLING: f32 = 2.8;
+const G_FLING_UP: f32 = 2.4;
+const G_GRAV: f32 = 12.0;
+const G_TUMBLE: f32 = 420.0;
+const G_BOUNCE: f32 = 0.25;
+/// How far the rump root lies over the ground once it is down — the body's own half-thickness, or the corpse is buried to the waist.
+const G_LIE: f32 = 0.16 * G_H;
+const G_CHIP = 8;
+const G_SPARK_N = 12;
+const G_CHIP_SPRAY = foe.Spray{
+    .fanLo = 0.3,  .fanHi = 1.3,
+    .upLo = 0.6,   .upHi = 2.4,
+    .lifeLo = 0.28, .lifeHi = 0.50,
+    .rLo = 0.016,  .rHi = 0.034,
+    .r1 = 0.006,   .col = G_HIDE_LT, .grav = 8.0,
+    .stretch = 0.02, .bounce = 0.35,
+};
+/// Its lightning going out: fast, short, weightless, and the one cold-blue thing in the air (`archer.zig`'s law on the spark).
+const G_BURST = foe.Spray{
+    .fanLo = 0.8,  .fanHi = 3.0,
+    .upLo = 0.4,   .upHi = 2.6,
+    .lifeLo = 0.10, .lifeHi = 0.28,
+    .rLo = 0.018,  .rHi = 0.040,
+    .r1 = 0.004,   .col = G_SPARK, .grav = 0.0,
+    .col1 = rgba(120, 140, 220, 0), .drag = 4.0,
+};
+
+const RiderState = enum { seated, flung, down };
+const Rider = struct {
+    vit: combat.Vitals = combat.Vitals.initFoe(G_HP, 999, 999),
+    state: RiderState = .seated,
+    at: rl.Vector3 = mathx.zero3,
+    vel: rl.Vector3 = mathx.zero3,
+    yaw: f32 = 0,
+    tumble: f32 = 0,
+    spin: f32 = 0,
+    restTumble: f32 = 90.0,
+    landings: u8 = 0,
+    flungFor: f32 = 0,
+};
+
 pub const Model = struct {
     bone: [N]rl.Mesh,
     bell: rl.Mesh,
@@ -290,6 +340,7 @@ pub const Hollow = struct {
 
     bell: anim.Spring = .{},
     bellAng: f32 = 0,
+    rider: Rider = .{},
 
     vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
     hits: u32 = 0,
@@ -308,6 +359,7 @@ pub const Hollow = struct {
     heaved: bool = false,
     clanked: bool = false,
     yelped: bool = false,
+    unseated: bool = false,
 
     phase: f32 = 0,
     moving: f32 = 0,
@@ -395,6 +447,22 @@ pub const Hollow = struct {
     pub fn bellWorld(self: *const Hollow) rl.Vector3 {
         return foe.markOn(self.xf[CHEST], BELL_AT);
     }
+    pub fn riderSeated(self: *const Hollow) bool {
+        return self.rider.state == .seated;
+    }
+    /// The rider's torso off the POSE: the point its mark rides and the centre of the sphere a blade is tested against.
+    pub fn riderWorld(self: *const Hollow) rl.Vector3 {
+        return foe.markOn(self.gxf[G_TORSO], mathx.zero3);
+    }
+    pub fn lockParts(self: *const Hollow) u8 {
+        return if (self.riderSeated()) 2 else 1;
+    }
+    pub fn lockPointAt(self: *const Hollow, i: u8) rl.Vector3 {
+        return if (i == 1) self.riderWorld() else self.lockPoint();
+    }
+    fn riderPart(self: *const Hollow) foe.Part {
+        return .{ .center = self.riderWorld(), .r = G_HURT_R * self.scale };
+    }
 
     pub fn navWant(self: *const Hollow, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .idle and self.state != .walk) return null;
@@ -409,7 +477,7 @@ pub const Hollow = struct {
 
     fn toImpact(self: *const Hollow) ?f32 {
         if (self.state != .bite) return null;
-        return BITE_WIND + BITE_STRIKE * 0.45 - self.t;
+        return BITE_WIND + BITE_STRIKE * BITE_IMPACT_K - self.t;
     }
 
     fn parryable(self: *const Hollow) ?f32 {
@@ -439,6 +507,7 @@ pub const Hollow = struct {
         self.heaved = false;
         self.clanked = false;
         self.yelped = false;
+        self.unseated = false;
         if (self.gone) {
             foe.tickParticles(&self.parts, dt, self.pos.y);
             return null;
@@ -485,11 +554,11 @@ pub const Hollow = struct {
             .bite => {
                 if (self.t < BITE_WIND) self.faceToward(hero, dt);
                 self.speed = 0;
-                if (self.t >= BITE_WIND * 0.55 and self.t < BITE_WIND + BITE_STRIKE) {
-                    const span = BITE_WIND * 0.45 + BITE_STRIKE;
+                if (self.t >= BITE_WIND * BITE_LUNGE_FROM and self.t < BITE_WIND + BITE_STRIKE) {
+                    const span = BITE_WIND * (1.0 - BITE_LUNGE_FROM) + BITE_STRIKE;
                     mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), BITE_LUNGE * self.scale * (dt / span), bounds);
                 }
-                if (self.t >= BITE_WIND and self.t < BITE_WIND + BITE_STRIKE) self.tryBite(hero);
+                if (self.t >= BITE_WIND + BITE_STRIKE * BITE_IMPACT_K and self.t < BITE_WIND + BITE_STRIKE) self.tryBite(hero);
                 if (self.t >= BITE_WIND + BITE_STRIKE + BITE_RECOVER) {
                     self.biteCool = BITE_COOL;
                     self.heroLatch = false;
@@ -513,7 +582,7 @@ pub const Hollow = struct {
                 self.faceToward(hero, dt * 0.5);
                 self.speed = 0;
                 const since = self.t - SPARK_WIND;
-                if (since >= 0 and self.sparksOut < SPARK_N and
+                if (since >= 0 and self.sparksOut < SPARK_N and self.riderSeated() and
                     since >= @as(f32, @floatFromInt(self.sparksOut)) * SPARK_GAP)
                 {
                     self.sparksOut += 1;
@@ -526,7 +595,7 @@ pub const Hollow = struct {
             },
             .idle, .walk => {
                 const sensed = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
-                switch (classify(sensed, triggerR(foe.HERO_R), self.biteCool <= 0, self.tollCool <= 0, self.sparkCool <= 0)) {
+                switch (classify(sensed, triggerR(foe.HERO_R), self.biteCool <= 0, self.tollCool <= 0, self.sparkCool <= 0 and self.riderSeated())) {
                     .bite => {
                         self.speed = 0;
                         self.heroLatch = false;
@@ -579,7 +648,51 @@ pub const Hollow = struct {
 
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, moveSpeed, moveYaw, self.facing);
         self.tickBell(dt);
+        self.tickRider(dt);
         self.pose();
+    }
+
+    fn tickRider(self: *Hollow, dt: f32) void {
+        const r = &self.rider;
+        const floor = self.pos.y + G_LIE * self.scale;
+        switch (r.state) {
+            .seated => {},
+            .flung => {
+                r.flungFor += dt;
+                r.vel.y -= G_GRAV * dt;
+                r.at = mathx.addV(r.at, mathx.scaleV(r.vel, dt));
+                r.tumble += r.spin * dt;
+                if (r.at.y > floor) return;
+                r.at.y = floor;
+                r.landings += 1;
+                // ONE bounce, then it lies: a mass in motion overshoots its rest.
+                if (r.landings == 1 and -r.vel.y > 1.2) {
+                    r.vel = v3(r.vel.x * 0.5, -r.vel.y * G_BOUNCE, r.vel.z * 0.5);
+                    r.spin *= 0.35;
+                } else {
+                    r.vel = mathx.zero3;
+                    r.spin = 0;
+                    r.restTumble = 90.0 + 180.0 * @round((r.tumble - 90.0) / 180.0);
+                    r.state = .down;
+                }
+            },
+            .down => r.tumble = approach(r.tumble, r.restTumble, dt * 300.0),
+        }
+    }
+
+    fn unseat(self: *Hollow, dir: rl.Vector3) void {
+        const seat = foe.markOn(self.gxf[G_RUMP], mathx.zero3);
+        self.rider = .{
+            .vit = self.rider.vit,
+            .state = .flung,
+            .at = seat,
+            .vel = v3(dir.x * G_FLING, G_FLING_UP, dir.z * G_FLING),
+            .yaw = mathx.headingXZ(dir),
+            .spin = G_TUMBLE,
+        };
+        self.unseated = true;
+        foe.spray(&self.parts, &self.fxHead, &self.fxRng, seat, dir, G_SPARK_N, 3.2, self.scale, G_BURST);
+        if (self.state == .spark) self.enter(.idle);
     }
 
     fn tickBell(self: *Hollow, dt: f32) void {
@@ -608,6 +721,14 @@ pub const Hollow = struct {
 
     pub fn tryHit(self: *Hollow, blade: foe.Blade) void {
         if (self.state == .dead) return;
+        if (self.riderSeated()) {
+            if (foe.reachedPart(self, &self.rider.vit, blade, self.riderPart())) |s| {
+                self.hits += 1;
+                foe.spray(&self.parts, &self.fxHead, &self.fxRng, s.contact, s.dir, G_CHIP, 2.4, self.scale, G_CHIP_SPRAY);
+                if (s.reaction == .death) self.unseat(s.dir);
+                return;
+            }
+        }
         const s = foe.reached(self, blade) orelse return;
         const heavy = foe.wounded(self, s, blade, .{ .light = 0.55, .heavy = 1.30 });
         self.chips(s.contact, s.dir, if (heavy) CHIP_HEAVY else CHIP_LIGHT, if (heavy) 3.0 else 2.0);
@@ -747,41 +868,53 @@ pub const Hollow = struct {
     }
 
     fn poseGremlin(self: *Hollow, fs: f32, dead: bool, dk: f32) void {
-        const seat = foe.markOn(self.bellMat, v3(0, G_SEAT, 0));
         const gs = fs;
+        const seated = self.riderSeated();
         // -1..+1 of the bell's own haul, so the lean is the SWING and never a second clock.
-        const swing = mathx.clampF(self.bellAng / BELL_HAUL, -1, 1);
-        const haul = self.haulAmt();
-        const aim = self.aimAmt();
-        const stoop = G_STOOP + 34.0 * haul - 16.0 * aim + 40.0 * dk;
-        const fidget = if (dead) 0 else mathx.sinf(self.elapsed * 5.4 + self.seed * 6.28) * 3.4;
+        const swing = if (seated) mathx.clampF(self.bellAng / BELL_HAUL, -1, 1) else 0;
+        const haul = if (seated) self.haulAmt() else 0;
+        const aim = if (seated) self.aimAmt() else 0;
+        // Off the seat it is a thrown thing: limbs out through the air, and the host's own death channel is what lays it limp on the ground.
+        const flung: f32 = if (self.rider.state == .flung) mathx.smoothstep(0, 0.12, self.rider.flungFor) else 0;
+        const limp: f32 = if (self.rider.state == .down) 1 else 0;
+        const dead_k = mathx.maxF(dk, limp);
+        const stoop = G_STOOP + 34.0 * haul - 16.0 * aim + 40.0 * dead_k - 30.0 * flung;
+        const fidget = if (dead or !seated) 0 else mathx.sinf(self.elapsed * 5.4 + self.seed * 6.28) * 3.4;
 
         var g: [G_N]rl.Matrix = undefined;
-        g[G_RUMP] = mul(
-            mul(scaleM(gs, gs, gs), mul3(
-                rz(-18.0 * swing + fidget * 0.4 + 26.0 * dk),
-                rx(-G_BRACE * swing * BELL_HAUL * 0.5),
-                ry(mathx.degrees(self.facing)),
-            )),
-            heromod.rootAt(seat),
-        );
+        if (seated) {
+            const seat = foe.markOn(self.bellMat, v3(0, G_SEAT, 0));
+            g[G_RUMP] = mul(
+                mul(scaleM(gs, gs, gs), mul3(
+                    rz(-18.0 * swing + fidget * 0.4 + 26.0 * dk),
+                    rx(-G_BRACE * swing * BELL_HAUL * 0.5),
+                    ry(mathx.degrees(self.facing)),
+                )),
+                heromod.rootAt(seat),
+            );
+        } else {
+            g[G_RUMP] = mul(
+                mul(scaleM(gs, gs, gs), mul(rx(self.rider.tumble), ry(mathx.degrees(self.rider.yaw)))),
+                heromod.rootAt(self.rider.at),
+            );
+        }
         heromod.setJoint(&g, &G_REST, G_TORSO, G_RUMP, mul(rx(stoop * 0.55), rz(fidget * 0.5)));
         heromod.setJoint(&g, &G_REST, G_HEAD, G_TORSO, mul3(
-            rx(stoop * 0.45 - 30.0 * aim + 24.0 * dk),
+            rx(stoop * 0.45 - 30.0 * aim + 24.0 * dead_k),
             ry(fidget * 1.6),
             rz(fidget),
         ));
         inline for (.{ G_ARML, G_ARMR }, .{ 1.0, -1.0 }) |arm, side| {
-            const lift = -86.0 * haul - 62.0 * aim + 14.0 * side * fidget;
+            const lift = -86.0 * haul - 62.0 * aim + 14.0 * side * fidget - 110.0 * flung;
             heromod.setJoint(&g, &G_REST, arm, G_TORSO, mul(
-                rx(lift + 40.0 * dk),
-                rz(side * (26.0 - 14.0 * aim - 10.0 * haul)),
+                rx(lift + 40.0 * dead_k),
+                rz(side * (26.0 - 14.0 * aim - 10.0 * haul + 30.0 * flung)),
             ));
         }
         inline for (.{ G_LEGL, G_LEGR }, .{ 1.0, -1.0 }) |leg, side| {
             heromod.setJoint(&g, &G_REST, leg, G_RUMP, mul(
-                rx(38.0 + 12.0 * haul - 24.0 * dk),
-                rz(side * (30.0 + 6.0 * @abs(swing))),
+                rx(38.0 + 12.0 * haul - 24.0 * dead_k - 26.0 * flung),
+                rz(side * (30.0 + 6.0 * @abs(swing) + 18.0 * flung)),
             ));
         }
         self.gxf = g;
@@ -1505,4 +1638,75 @@ test "IT HINGES AT THE WAIST AND ITS LEGS STAY PLANTED" {
     const heelR = foe.markOn(h.xf[ANKR], mathx.zero3);
     std.debug.print("\n  hollow hunch {d:.0} deg: pelvis takes {d:.0} deg, the waist {d:.0}; heels at {d:.2} m / {d:.2} m\n", .{ HUNCH, PELVIS_SHARE * HUNCH, (1.0 - PELVIS_SHARE) * HUNCH, heelL.y, heelR.y });
     try std.testing.expect(heelL.y < 0.35 and heelR.y < 0.35);
+}
+
+test "THE RIDER IS SHOT OFF THE BELL — the shaft is spent on it, the host is untouched, the volley dies with it, and it lands" {
+    var h = Hollow.spawn(mathx.zero3, 0, 1.0, 0.3);
+    h.leash.noteSeen();
+    const rider = h.riderWorld();
+    const centre = h.centerWorld();
+    std.debug.print("\n  rider torso {d:.2} m up, {d:.2} m off the host's hurt centre (host sphere r {d:.2}, rider sphere r {d:.2})\n", .{ rider.y - h.pos.y, mathx.lenV(mathx.subV(rider, centre)), h.hurtRadius(), G_HURT_R * h.scale });
+    try std.testing.expectEqual(@as(u8, 2), h.lockParts());
+    try std.testing.expectEqual(rider, h.lockPointAt(1));
+    try std.testing.expectEqual(h.lockPoint(), h.lockPointAt(0));
+
+    h.state = .spark;
+    h.t = 0;
+    h.sparksOut = 0;
+    const hpWas = h.vit.hp;
+    h.tryHit(foe.shaftThrough(rider, heromod.BOW_AIMED_HIT));
+    try std.testing.expectEqual(@as(u32, 1), h.hits);
+    try std.testing.expectApproxEqAbs(hpWas, h.vit.hp, 1e-6);
+    try std.testing.expect(!h.riderSeated() and h.unseated);
+    try std.testing.expectEqual(@as(u8, 1), h.lockParts());
+    try std.testing.expectEqual(State.idle, h.state);
+    try std.testing.expect(!h.staggered());
+
+    const far = mathx.ground(0, AGGRO_R * 4.0);
+    const seat = h.rider.at;
+    var peak = seat.y;
+    var landedAt: ?f32 = null;
+    var t: f32 = 0;
+    while (t < 3.0) : (t += 1.0 / 60.0) {
+        _ = h.update(1.0 / 60.0, far, 200.0, .{});
+        peak = @max(peak, h.rider.at.y);
+        if (h.rider.state == .down and landedAt == null) landedAt = t;
+    }
+    const flew = mathx.distXZ(h.rider.at, seat);
+    std.debug.print("  …flung: rose {d:.2} m over the seat, landed {d:.2} m out after {d:.2} s, lying {d:.2} m over the ground, tumbled to {d:.0} deg\n", .{ peak - seat.y, flew, landedAt orelse -1.0, h.rider.at.y - h.pos.y, h.rider.tumble });
+    try std.testing.expect(landedAt != null and landedAt.? < 1.5);
+    try std.testing.expect(peak > seat.y + 0.15);
+    try std.testing.expect(flew > 0.8 and flew < 4.0);
+    try std.testing.expect(h.rider.at.y < seat.y);
+    try std.testing.expectApproxEqAbs(h.rider.restTumble, h.rider.tumble, 0.5);
+
+    h.sparkCool = 0;
+    h.tollCool = 99;
+    var sparks: u32 = 0;
+    t = 0;
+    while (t < 3.0) : (t += 1.0 / 60.0) {
+        _ = h.update(1.0 / 60.0, mathx.ground(0, 9.0), 200.0, .{});
+        if (h.sparked) sparks += 1;
+        try std.testing.expect(h.state != .spark);
+    }
+    try std.testing.expectEqual(@as(u32, 0), sparks);
+}
+
+test "A QUICK SHOT ONLY WOUNDS THE RIDER, THE SECOND TAKES IT — and a shaft past it still wounds the host" {
+    var h = Hollow.spawn(mathx.zero3, 0, 1.0, 0.3);
+    h.tryHit(foe.shaftThrough(h.riderWorld(), heromod.BOW_QUICK_HIT));
+    try std.testing.expect(h.riderSeated() and h.hits == 1);
+    try std.testing.expect(h.rider.vit.hp < G_HP and h.rider.vit.hp > 0);
+    h.tryHit(foe.shaftThrough(h.riderWorld(), heromod.BOW_QUICK_HIT));
+    try std.testing.expect(!h.riderSeated() and h.hits == 2);
+    try std.testing.expectApproxEqAbs(@as(f32, HP_MAX), h.vit.hp, 1e-6);
+
+    var host = Hollow.spawn(mathx.zero3, 0, 1.0, 0.3);
+    const skull = host.lockPoint();
+    std.debug.print("\n  hollow skull {d:.2} m from the rider's torso (rider sphere r {d:.2})\n", .{ mathx.lenV(mathx.subV(skull, host.riderWorld())), G_HURT_R * host.scale });
+    try std.testing.expect(mathx.lenV(mathx.subV(skull, host.riderWorld())) > G_HURT_R * host.scale + 0.06);
+    host.tryHit(foe.shaftThrough(skull, heromod.BOW_AIMED_HIT));
+    try std.testing.expect(host.riderSeated() and host.hits == 1);
+    try std.testing.expect(host.vit.hp < HP_MAX);
+    try std.testing.expectApproxEqAbs(@as(f32, G_HP), host.rider.vit.hp, 1e-6);
 }

@@ -46,6 +46,13 @@ pub fn hurtReach(own: f32, scale: f32) f32 {
     return own * scale + HERO_REACH;
 }
 
+/// Degrees off `facing` that `at` stands, signed, -180..180; 0 for a point under the body.
+pub fn bearingDeg(pos: rl.Vector3, facing: f32, at: rl.Vector3) f32 {
+    const d = mathx.dirXZ(pos, at);
+    if (mathx.lenXZ(d) < 1e-3) return 0;
+    return mathx.degrees(mathx.wrapPi(mathx.headingXZ(d) - facing));
+}
+
 /// A TRIGGER BAND HELD AT A CONSTANT WHILE ITS HURT BOX SCALES ONLY AGREES AT ONE SCALE. `worldR` is the band the author measured on the SHIPPED body; this re-solves it through `hurtReach`'s own triangle for the body actually standing there, so it returns `worldR` exactly at `scale == shipped` and tracks the box either side. Under it the creature commits to a blow that cannot land and — having chosen a strike rather than a step — never closes.
 pub fn triggerBand(worldR: f32, shipped: f32, scale: f32) f32 {
     return hurtReach((worldR - HERO_REACH) / shipped, scale);
@@ -107,6 +114,9 @@ pub fn traitsOf(k: wf.FoeKind) Traits {
         .shroom, .mushroom_mage, .spore_golem, .birchwight => .{ .nature = .plant },
         .fungal_swordsman, .fungal_magus => .{ .nature = .plant },
         .owlbear => .{ .nature = .construct },
+        .druidess => .{ .nature = .humanoid },
+        .bone_mimic => .{ .nature = .undead },
+        .mastodon => .{ .nature = .beast },
     };
 }
 
@@ -125,6 +135,9 @@ pub fn homeOf(k: wf.FoeKind) props.Biome {
         .shroom, .mushroom_mage, .spore_golem, .fungal_deer => .fungal,
         .fungal_swordsman, .fungal_magus => .fungal,
         .owlbear => .ruins,
+        .druidess => .forest,
+        .bone_mimic => .bone,
+        .mastodon => .rock,
     };
 }
 
@@ -163,6 +176,7 @@ pub fn isBoss(k: wf.FoeKind) bool {
     return switch (k) {
         .bone_knight => true,
         .fungal_swordsman, .fungal_magus => true,
+        .druidess => true,
         .toad, .archer, .ogre, .berserker, .priest, .slinger => false,
         .brood_mother, .broodling, .brood_sac => false,
         .shieldman, .greatsword, .shade, .mourner => false,
@@ -171,7 +185,7 @@ pub fn isBoss(k: wf.FoeKind) bool {
         .bone_skitterer, .ancient_priest, .tolling_hollow => false,
         .slumber_bloom, .cinder_wake, .rotgorger, .birchwight, .salt_husk => false,
         .fish_spearman, .fish_netter, .fish_shaman, .blinkbat => false,
-        .owlbear => false,
+        .owlbear, .bone_mimic, .mastodon => false,
     };
 }
 
@@ -692,12 +706,21 @@ pub fn moveClock(row: anytype) Clock {
 }
 
 pub fn reached(self: anytype, blade: Blade) ?Strike {
+    return reachedPart(self, &self.vit, blade, .{ .center = self.centerWorld(), .r = self.hurtRadius() });
+}
+
+/// A PART is a sphere tested BEFORE the body's, on the body's own swing latch — so one swing lands on the rider or the host, never both. `vit` is whose pool the blow goes into: the host's for a head, the rider's own for a rider.
+pub fn reachedPart(self: anytype, vit: *combat.Vitals, blade: Blade, part: Part) ?Strike {
     if (offField(self)) return null;
-    const s = strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return null;
+    const s = strikeAt(vit, &self.hitLatch, part, blade) orelse return null;
+    noteStruck(self, blade, s);
+    return s;
+}
+
+pub fn noteStruck(self: anytype, blade: Blade, s: Strike) void {
     self.leash.provoke();
     self.threat.hurtBy(blade.by, blade.hit.raw());
     if (blade.pierce) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
-    return s;
 }
 
 pub fn wounded(self: anytype, s: Strike, blade: Blade, push: Push) bool {
@@ -832,12 +855,18 @@ pub fn shyOfFlame(self: anytype) bool {
     return self.glare.shy and !self.leash.roused();
 }
 
-/// Straight back down the flame's bearing. Its own speed, because backing off is not a retreat from the hero.
-pub fn shyStep(self: anytype, dt: f32, bounds: f32, speed: f32) f32 {
+/// Straight back down the flame's bearing, or null standing in the wick, where there is no bearing to take.
+pub fn shyAway(self: anytype) ?rl.Vector3 {
     const away = mathx.dirXZ(self.glare.at, self.pos);
-    if (mathx.lenXZ(away) < 1e-4) return 0;
+    if (mathx.lenXZ(away) < 1e-4) return null;
+    return mathx.normV(away);
+}
+
+/// Its own speed, because backing off is not a retreat from the hero. Returns the distance actually taken.
+pub fn shyStep(self: anytype, dt: f32, bounds: f32, speed: f32) f32 {
+    const away = shyAway(self) orelse return 0;
     const step = speed * dt;
-    mathx.stepXZ(&self.pos, mathx.normV(away), step, bounds);
+    mathx.stepXZ(&self.pos, away, step, bounds);
     return step;
 }
 
@@ -1898,6 +1927,33 @@ pub fn armStats(f: anytype, k: wf.FoeKind) void {
     foestat.arm(&f.vit, k);
 }
 
+/// THE GROUND UNDER A POINT, ASKED THROUGH THE GAME: stamped onto any creature with a `ground` field (`game.stampRooms`), so a body choosing where to LAND can refuse water it cannot walk out of. Unstamped — the test bench — every point is dry.
+pub const Ground = struct {
+    ctx: ?*const anyopaque = null,
+    depthAt: ?*const fn (*const anyopaque, f32, f32) f32 = null,
+
+    pub fn depth(self: Ground, x: f32, z: f32) f32 {
+        const f = self.depthAt orelse return 0;
+        return f(self.ctx.?, x, z);
+    }
+};
+
+/// A BODY CALLED ONTO THE FIELD MID-FIGHT — into a gone slot first, else appended, and the cap is the map's. It comes up roused, with the spot it stands on for a home.
+pub fn summonInto(comptime T: type, band: []T, n: *usize, kind: wf.FoeKind, body: T) void {
+    var b = body;
+    armStats(&b, kind);
+    b.leash.call();
+    for (band[0..n.*]) |*s| {
+        if (s.gone) {
+            s.* = b;
+            return;
+        }
+    }
+    if (n.* >= band.len) return;
+    band[n.*] = b;
+    n.* += 1;
+}
+
 pub fn resetGroup(comptime T: type, out: []T, n: *usize, m: *const wf.Map, want: wf.FoeKind) void {
     n.* = 0;
     for (m.foes[0..m.nfoes]) |h| {
@@ -1956,7 +2012,10 @@ pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
             if (thin < 0.999) sc.beginFade(thin);
         }
         f.draw(model);
-        if (thin < 0.999) scene.?.endFade();
+        // THE DEPTH PASS HAS NO SCENE: a body fading in by the hour (a shade at dusk) is thin here too, and unwrapping the null was the crash in the shadow pass.
+        if (scene) |sc| {
+            if (thin < 0.999) sc.endFade();
+        }
     }
     if (scene) |sc| {
         if (lit > 0) sc.setFlash(0);
@@ -2031,6 +2090,13 @@ pub const Blade = struct {
     through: bool = false,
     by: Victim = .hero,
 };
+
+/// THE BENCH'S ARROW: an 8 m pierce line through `at` along X, the bow's own 0.06 m shaft. Every creature's "a shaft to the X" test throws this one.
+pub fn shaftThrough(at: rl.Vector3, hit: combat.Hit) Blade {
+    const a = v3(at.x - 4.0, at.y, at.z);
+    const b = v3(at.x + 4.0, at.y, at.z);
+    return .{ .active = true, .pierce = true, .r = 0.06, .a = a, .b = b, .a0 = a, .b0 = b, .hit = hit };
+}
 
 
 pub const Victim = enum { hero, spirit, foe };
@@ -2279,7 +2345,14 @@ pub const Strike = struct {
     reaction: combat.HitResult,
 };
 
+/// A hurt sphere and what a blow into it is worth: `poiseK` scales the poise pour alone (`Vitals.hitPoise`).
+pub const Part = struct { center: rl.Vector3, r: f32, poiseK: f32 = 1.0 };
+
 pub fn strike(vit: *combat.Vitals, hitLatch: *bool, center: rl.Vector3, hurtR: f32, blade: Blade) ?Strike {
+    return strikeAt(vit, hitLatch, .{ .center = center, .r = hurtR }, blade);
+}
+
+pub fn strikeAt(vit: *combat.Vitals, hitLatch: *bool, part: Part, blade: Blade) ?Strike {
     if (blade.pierce) {
         if (!blade.active) return null;
     } else {
@@ -2289,7 +2362,8 @@ pub fn strike(vit: *combat.Vitals, hitLatch: *bool, center: rl.Vector3, hurtR: f
         }
         if (hitLatch.*) return null;
     }
-    const reach = hurtR + blade.r;
+    const center = part.center;
+    const reach = part.r + blade.r;
     const q1 = mathx.closestOnSegV(center, blade.a, blade.b);
     const hit1 = mathx.lenV(mathx.subV(center, q1)) <= reach;
     const q0 = mathx.closestOnSegV(center, blade.a0, blade.b0);
@@ -2305,9 +2379,9 @@ pub fn strike(vit: *combat.Vitals, hitLatch: *bool, center: rl.Vector3, hurtR: f
     if (blade.cullAt > 0 and !vit.dead and vit.hpFrac() <= blade.cullAt) {
         var out = blade.hit;
         out.dmg += vit.hp;
-        return .{ .contact = contact, .dir = dir, .reaction = vit.hit(out) };
+        return .{ .contact = contact, .dir = dir, .reaction = vit.hitPoise(out, part.poiseK) };
     }
-    return .{ .contact = contact, .dir = dir, .reaction = vit.hit(blade.hit) };
+    return .{ .contact = contact, .dir = dir, .reaction = vit.hitPoise(blade.hit, part.poiseK) };
 }
 
 test "A SHAFT IS SPENT ON THE FIRST BODY AND A LANCE GOES THROUGH THE LINE" {

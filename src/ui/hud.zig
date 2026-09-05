@@ -941,7 +941,7 @@ const FOE_GLYPH_S: f32 = 7.0;
 const BOSS_H: i32 = 13;
 const BOSS_LIFT: i32 = 158;
 /// A BAR PER BOSS ON THE FIELD, EACH KEEPING ITS OWN CHIP — one set of module scratch across two bosses had the second replaying the first one's damage. A RAIL IS A ROW OF `game.BOSS_RAILS` AND NOT A PLACE IN A QUEUE.
-pub const BOSS_SLOTS: usize = 3;
+pub const BOSS_SLOTS: usize = 4;
 /// THE PITCH BETWEEN TWO BARS IS THE BAR PLUS ITS OWN NAME, NOT A ROUND NUMBER: the name is engraved ABOVE the rail (`y - lineH(SMALL) - 3`), so at a 20 px pitch on a 13 px bar the upper bar sat on the lower one.
 const BOSS_NAME_LIFT: i32 = 3;
 const BOSS_GAP: i32 = BOSS_H + BOSS_NAME_LIFT + 8 + lineH(SMALL);

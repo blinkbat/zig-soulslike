@@ -694,6 +694,9 @@ pub const Cluster = struct {
         self.clearClouds();
         foe.resetGroup(Shroom, &self.shrooms, &self.n, m, .shroom);
     }
+    pub fn summon(self: *Cluster, at: rl.Vector3, faceYaw: f32, seed: f32) void {
+        foe.summonInto(Shroom, &self.shrooms, &self.n, .shroom, Shroom.spawn(at, faceYaw, 1.0, seed));
+    }
     pub fn clear(self: *Cluster) void {
         self.n = 0;
         self.clearClouds();

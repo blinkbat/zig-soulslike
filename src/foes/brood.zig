@@ -175,6 +175,8 @@ const B_LEAP_FRONT_DOT = 0.20;
 /// The three reaches above are WORLD metres at each role's shipped scale — what `classifyMother`/`classifyBroodling` measure a raw `distXZ` against. A HURT BOX is the creature's OWN metres (`foe.hurtReach`), so it is those divided back out by the role's own stature.
 const M_BITE_OWN = M_BITE_R / M_SCALE;
 const B_BITE_OWN = B_BITE_R / B_SCALE;
+/// cos 72 deg: the jaws' own half-cone, wide for a thing that turns as she winds but not the whole circle.
+const BITE_FRONT_DOT: f32 = 0.30;
 const B_LEAP_IMPACT_OWN = B_LEAP_IMPACT_R / B_SCALE;
 
 pub const B_BITE_HIT = combat.Hit{ .dmg = 3, .poise = 4 };
@@ -1039,8 +1041,7 @@ pub const Spider = struct {
     }
     /// Straight back down the flame's bearing, and its own facing if it is standing in the wick.
     fn offFlame(self: *const Spider) rl.Vector3 {
-        const away = mathx.dirXZ(self.glare.at, self.pos);
-        return if (mathx.lenXZ(away) < 1e-4) self.fdir() else mathx.normV(away);
+        return foe.shyAway(self) orelse self.fdir();
     }
     pub fn navWant(self: *const Spider, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .walk) return null;
@@ -1417,13 +1418,13 @@ pub const Spider = struct {
         }
     }
 
+    /// The fangs are at the FRONT: a man who got round behind her through the windup is not bitten by it.
     fn tryReach(self: *Spider, hero: rl.Vector3, range: f32, h: combat.Hit) void {
         if (self.heroLatch) return;
-        if (mathx.distXZ(self.pos, hero) <= foe.hurtReach(range, self.scale)) {
-            self.heroHit = h;
-            self.heroLatch = true;
-            self.leash.noteCombat();
-        }
+        if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(range, self.scale), BITE_FRONT_DOT)) return;
+        self.heroHit = h;
+        self.heroLatch = true;
+        self.leash.noteCombat();
     }
 
     fn tryImpact(self: *Spider, hero: rl.Vector3, h: combat.Hit) void {

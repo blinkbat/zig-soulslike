@@ -17,6 +17,8 @@ pub const Solid = struct {
     surf: Surface = .stone,
     /// THE FOG GATE'S RULE, and the only thing in the world that has one: a wall to every BODY but the hero's own side, in both directions, and a wall to every LOOK without exception. It is the gate's slot in `env.wardProps` PLUS ONE, so 0 is an ordinary solid; only `env.resolveHeroSide` lets an OPEN one through.
     ward: u8 = 0,
+    /// An illusory wall's slot in `env.illusionProps` PLUS ONE; `env.eachSolid` drops it the frame the wall is struck.
+    illusion: u8 = 0,
 };
 
 pub fn circle(x: f32, z: f32, r: f32) Solid {

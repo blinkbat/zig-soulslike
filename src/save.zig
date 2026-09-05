@@ -104,6 +104,8 @@ pub const Data = struct {
     flask: combat.FlaskKind = .crimson,
     /// The ALLOTMENT, not what is left in them — a bonfire fills to it. Appended to `ready:`, so a file written before the split existed still loads and takes the default.
     crimsonMax: u8 = combat.FLASK_CRIMSON,
+    /// The whole pool, grown by every empty flask found; also appended to `ready:`, so an older file keeps the default.
+    flaskTotal: u8 = combat.FLASK_TOTAL,
     quick: [combat.QUICK_SLOTS]?item.Kind = [_]?item.Kind{null} ** combat.QUICK_SLOTS,
     quickSel: usize = 0,
     worn: heromod.Worn = .{},
@@ -297,6 +299,7 @@ pub fn gather(s: Slot) Data {
     d.fireArrows = h.quiver.fire;
     d.flask = h.flasks.sel;
     d.crimsonMax = h.flasks.crimsonMax;
+    d.flaskTotal = h.flasks.total();
     d.quick = h.quick.slots;
     d.quickSel = h.quick.sel;
     d.worn = h.worn;
@@ -358,7 +361,7 @@ pub fn scatter(d: *const Data, s: Slot) void {
     h.quiver.arrows = @min(d.arrows, combat.Quiver.cap(.plain));
     h.quiver.fire = @min(d.fireArrows, combat.Quiver.cap(.fire));
     h.flasks.sel = d.flask;
-    h.flasks.allot(d.crimsonMax);
+    h.flasks.pool(@min(d.flaskTotal, combat.FLASK_CAP), d.crimsonMax);
     h.quick.slots = d.quick;
     h.quick.sel = @min(d.quickSel, combat.QUICK_SLOTS - 1);
 
@@ -419,7 +422,7 @@ pub fn render(w: anytype, d: *const Data) !void {
         try w.writeAll("\n");
     }
     try w.print("hands: {s} {s} {s} {s} {s}\n", .{ @tagName(d.arm), @tagName(d.off), @tagName(d.spell), @tagName(d.armAlt), @tagName(d.offAlt) });
-    try w.print("ready: {s} {s} {d}\n", .{ @tagName(d.arrow), @tagName(d.flask), d.crimsonMax });
+    try w.print("ready: {s} {s} {d} {d}\n", .{ @tagName(d.arrow), @tagName(d.flask), d.crimsonMax, d.flaskTotal });
     try w.print("quiver: {d} {d}\n", .{ d.arrows, d.fireArrows });
     try w.writeAll("memory:");
     for (d.memory) |m| try w.print(" {s}", .{if (m) |sp| @tagName(sp) else "-"});
@@ -518,6 +521,7 @@ pub fn parse(text: []const u8, d: *Data) !void {
             d.arrow = try tagged(combat.ArrowKind, &it);
             d.flask = try tagged(combat.FlaskKind, &it);
             if (it.next()) |tok| d.crimsonMax = std.fmt.parseInt(u8, tok, 10) catch return Error.BadField;
+            if (it.next()) |tok| d.flaskTotal = std.fmt.parseInt(u8, tok, 10) catch return Error.BadField;
         } else if (std.mem.eql(u8, key, "quiver:")) {
             d.arrows = try int(u8, &it);
             d.fireArrows = try int(u8, &it);
@@ -552,7 +556,11 @@ pub fn parse(text: []const u8, d: *Data) !void {
         } else if (std.mem.eql(u8, key, "bag:")) {
             d.bag = [_]u16{0} ** item.NK;
             while (it.next()) |tok| {
-                const k = item.fromTag(tok) orelse return Error.BadField;
+                const k = item.fromTag(tok) orelse {
+                    if (!item.retired(tok)) return Error.BadField;
+                    _ = try int(u16, &it);
+                    continue;
+                };
                 d.bag[@intFromEnum(k)] = try int(u16, &it);
             }
         } else if (std.mem.eql(u8, key, "tree:")) {
@@ -878,6 +886,26 @@ test "A NON-FINITE NUMBER IS REFUSED IN EVERY RUN, not just the scalar rows" {
 test "a bag tag this build does not know is a load error" {
     var d = Data{};
     try testing.expectError(Error.BadField, parse("version: 1\nbag: dragon_hoard 3\n", &d));
+}
+
+test "A RETIRED TAG IS SKIPPED, NOT REFUSED — the golden seeds in an older bag load as nothing and the rest of the row survives" {
+    var d = Data{};
+    try parse("version: 1\nbag: golden_seed 2 rune_arc 1\n", &d);
+    try testing.expectEqual(@as(u16, 1), d.bag[@intFromEnum(item.Kind.rune_arc)]);
+    try testing.expectEqual(@as(u16, 0), d.bag[@intFromEnum(item.Kind.empty_flask)]);
+}
+
+test "THE FLASK POOL SURVIVES THE FILE — a found flask is still his after a load, and a file from before the pool grew keeps the default" {
+    var d = sample();
+    d.flaskTotal = 5;
+    d.crimsonMax = 4;
+    const back = try roundTrip(&d);
+    try testing.expectEqual(@as(u8, 5), back.flaskTotal);
+    try testing.expectEqual(@as(u8, 4), back.crimsonMax);
+    var old = Data{};
+    try parse("version: 1\nready: plain crimson 2\n", &old);
+    try testing.expectEqual(combat.FLASK_TOTAL, old.flaskTotal);
+    try testing.expectEqual(@as(u8, 2), old.crimsonMax);
 }
 
 test "WHAT HE WAS WEARING SURVIVES THE FILE, a short line loads bare, and a MOVED socket still loads" {

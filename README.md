@@ -18,8 +18,11 @@ Zig is not on PATH; the scripts use the vendored toolchain at
 `..\.zigtoolchain\zig-x86_64-windows-0.14.1\zig.exe` (shared with the sibling repos). raylib is static-linked
 from source — there is no `raylib.dll`. `zig build test` runs the unit tests.
 
-Flags: `--shot` (headless screenshot harness), `--shot-props` (every prop kind alone), `--map worlds/x.world`,
-`--explode worlds/x.world` (break every generator op into one `at:` per prop, in place).
+Flags: `--shot` (headless screenshot harness), `--shot-only <stage>` (one stage of it), `--shot-props` (every prop
+kind alone), `--shot-art` (the 2D set on contact sheets), `--shot-land` (the loaded map, overhead and at eye level), `--bright` (magenta
+clear, no sky), `--map worlds/x.world`, `--explode worlds/x.world` (break every generator op into one `at:` per
+prop, in place), `--fix-lurkers [map]` (dig every lurker pool to the dweller floor), `--bake [--force]` (emit the
+code-authored map; refuses to overwrite).
 
 ## What exists
 
@@ -32,15 +35,15 @@ each), bow, wand, torch.
 block, L2 parry with a 0.16 s window, four PoE2 resistances plus an armour curve, ten status meters built the
 way poison is — poison, burning, chill, stun, bleed, sleep, confusion, charm, berserk, stupefy.
 
-**Foes.** 38 kinds in 30 groups: toad, skeletal archer, ogre, kobold warband (3 roles), brood mother + sacs +
+**Foes.** 41 kinds in 33 groups: toad, skeletal archer, ogre, kobold warband (3 roles), brood mother + sacs +
 broodlings, skeletal warriors (2), Bone Knight (boss, with boss bar and fog gate), shade + mourner, leechfly,
 rooted, sporeling, delver, necromancer, fungal deer, mushroom mage, fen lurker, spore homunculus, bone
 skitterer, ancient priest, tolling hollow, slumber bloom, cinder wake, rotgorger, birchwight, salt husk,
-fishman shoal (3 roles), blinkbat, the fungal duo (second boss, two bars) and the owlbear (a carving that wakes
-when you walk up to it), plus the spirit wolf that fights on your side. Shared leash, sight, parry, nav-steering
+fishman shoal (3 roles), blinkbat, the fungal duo (second boss, two bars), the owlbear (a carving that wakes
+when you walk up to it), the corrupted druidess (third boss), the bone mimic and the mastodon, plus the spirit wolf that fights on your side. Shared leash, sight, parry, nav-steering
 and dissipation contracts in `foe.zig`.
 
-**World.** 560 m square ringed by cliffs, five regions, 167 prop kinds in three layers each. Sculptable
+**World.** 560 m square ringed by cliffs, five regions, 168 prop kinds in three layers each. Sculptable
 heightfield (40° slope limit, 0.55 m step). Painted soil with coverage and eight edge shapes; painted liquid
 with a derived coast you wade, in four kinds — water, tar, fungal soup (poison) and lava (burning, and it
 bites). All four wade the same; the look, the status and the voice are what differ. Day/night clock (~20 min day) driving every colour and shadow; sun 6→20 then the
@@ -48,7 +51,7 @@ moon as anti-sun. Intermittent rain in two strengths with lightning, late thunde
 
 **Progression.** Souls drop where you die and are spent only on an 81-node radial passive tree (PoE2-shaped,
 three arms, six branches, six bridges). Taking a node IS the level-up — no point pool. Seven attributes, all
-raised via nodes. Equipment: 21 pieces, one row each, across 12 doll sockets, every socket real. Three
+raised via nodes. Equipment: 41 pieces, one row each, across 12 doll sockets, every socket real. Three
 memorized sorcery slots off nine scrolls. Gold is the second currency and is kept on death — it buys the
 shelf, and with smithing stone it buys weapon tiers, +0 to +10 per armament.
 

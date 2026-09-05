@@ -88,6 +88,8 @@ const RAKE_R: f32 = 1.95;
 const RAKE_FRONT_DOT: f32 = 0.42;
 const RAKE_WIND: f32 = 0.44;
 const RAKE_STRIKE: f32 = 0.20;
+/// The hands are still up at the strike's first frame; the rake arrives from here.
+const RAKE_IMPACT_K: f32 = 0.4;
 const RAKE_RECOVER: f32 = 0.72;
 const RAKE_CD: f32 = 2.4;
 pub var RAKE_HIT = combat.Hit{ .dmg = 13, .poise = 12, .stance = 9, .elem = combat.elems(.{ .fire = 11 }) };
@@ -311,7 +313,7 @@ pub const Cinder = struct {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 if (self.t < RAKE_WIND) self.faceToward(quarry, dt);
                 const s = self.t - RAKE_WIND;
-                if (s >= 0 and s < RAKE_STRIKE) self.tryRake(quarry);
+                if (s >= RAKE_STRIKE * RAKE_IMPACT_K and s < RAKE_STRIKE) self.tryRake(quarry);
                 if (self.t >= RAKE_WIND + RAKE_STRIKE + RAKE_RECOVER) {
                     self.heroLatch = false;
                     self.enter(.idle);

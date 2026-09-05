@@ -62,6 +62,9 @@ pub const Icon = enum {
     fungal_swordsman,
     fungal_magus,
     owlbear,
+    druidess,
+    bone_mimic,
+    mastodon,
     wanderer,
     merchant,
     smith,
@@ -549,6 +552,33 @@ const G = struct {
                 g.disc(0.13, -0.26, 0.075, cut);
                 g.tri(-0.05, -0.14, 0.05, -0.14, 0, 0.02, cut);
                 g.hbar(0, 0.14, 0.30, 0.04, cut);
+            },
+            .bone_mimic => {
+                g.rect(0, 0.28, 0.56, 0.30, col);
+                g.hbar(0, 0.16, 0.56, 0.05, cut);
+                g.vbar(0, -0.02, 0.36, 0.08, col);
+                g.disc(0, -0.34, 0.14, col);
+                g.tri(-0.10, -0.30, -0.02, -0.30, -0.06, -0.14, cut);
+                g.tri(0.02, -0.30, 0.10, -0.30, 0.06, -0.14, cut);
+            },
+            .mastodon => {
+                g.ellipse(0, 0.06, 0.46, 0.26, 0, col);
+                g.legs(0, 0.30, 0.30, 0.22, 0.12);
+                g.disc(0.42, -0.06, 0.20, col);
+                g.tri(0.40, -0.26, 0.56, -0.20, 0.50, -0.50, col);
+                g.tri(0.26, -0.24, 0.40, -0.26, 0.30, -0.48, col);
+                g.tri(-0.06, -0.20, 0.06, -0.20, 0.00, -0.44, col);
+                g.tri(-0.24, -0.16, -0.12, -0.18, -0.20, -0.40, col);
+                g.bar(-0.44, 0.02, -0.60, 0.30, 0.05, col);
+            },
+            .druidess => {
+                g.trap(0, 0.14, 0.40, 0.62, 0.52, col);
+                g.trap(0, -0.18, 0.18, 0.26, 0.24, col);
+                g.disc(0, -0.40, 0.17, col);
+                g.disc(0, -0.36, 0.09, cut);
+                g.disc(0.38, -0.20, 0.11, col);
+                g.disc(0.38, -0.20, 0.045, cut);
+                g.hbar(0, 0.46, 0.50, 0.05, cut);
             },
             .fungal_swordsman => {
                 g.bar(0.14, 0.06, 0.44, -0.30, 0.09, col);

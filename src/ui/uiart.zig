@@ -297,6 +297,46 @@ pub fn tallyShelf(x: i32, y: i32, w: i32, h: i32) void {
     rl.drawRectangle(x, y, w, 1, withAlpha(GILT_DIM, 70));
 }
 
+/// A RULE: one gilt hairline fading out at both ends — what a section head sits on.
+pub fn rule(x: i32, y: i32, w: i32, a: u8) void {
+    if (w <= 4) return;
+    const half = @divTrunc(w, 2);
+    rl.drawRectangleGradientH(x, y, half, 1, withAlpha(GILT, 0), withAlpha(GILT, a));
+    rl.drawRectangleGradientH(x + half, y, w - half, 1, withAlpha(GILT, a), withAlpha(GILT, 0));
+}
+
+/// A chevron pointing right: what stands between a NOW and a THEN.
+pub fn arrow(cx: f32, cy: f32, r: f32, col: rl.Color) void {
+    const tip = rl.Vector2{ .x = cx + r * 0.6, .y = cy };
+    rl.drawLineEx(.{ .x = cx - r, .y = cy }, tip, 1.6, col);
+    rl.drawLineEx(tip, .{ .x = cx - r * 0.1, .y = cy - r * 0.7 }, 1.6, col);
+    rl.drawLineEx(tip, .{ .x = cx - r * 0.1, .y = cy + r * 0.7 }, 1.6, col);
+}
+
+/// A METER: a well with a fill.
+pub fn meter(x: i32, y: i32, w: i32, h: i32, frac: f32, col: rl.Color) void {
+    well(x, y, w, h, 220);
+    const f = mathx.clampF(frac, 0, 1);
+    const fw: i32 = @intFromFloat(fi(w) * f);
+    if (fw > 0) rl.drawRectangle(x, y, fw, h, col);
+}
+
+/// …and the band a change would move its fill through: green out to a rise, red back over a fall.
+pub fn meterShift(x: i32, y: i32, w: i32, h: i32, from: f32, to: f32) void {
+    const lo = mathx.clampF(@min(from, to), 0, 1);
+    const hi = mathx.clampF(@max(from, to), 0, 1);
+    const x0 = x + @as(i32, @intFromFloat(fi(w) * lo));
+    const x1 = x + @as(i32, @intFromFloat(fi(w) * hi));
+    if (x1 <= x0) return;
+    rl.drawRectangle(x0, y, x1 - x0, h, withAlpha(if (to > from) GOOD else BAD, 210));
+}
+
+/// A PILL behind a tag word.
+pub fn pill(x: i32, y: i32, w: i32, h: i32, a: u8) void {
+    rl.drawRectangle(x, y, w, h, withAlpha(rl.Color.black, @intCast(@as(u16, a) * 150 / 255)));
+    rl.drawRectangleLinesEx(rect(x, y, w, h), 1, withAlpha(GILT_DIM, a));
+}
+
 fn crossOf(v: [3]rl.Vector2) f32 {
     return (v[1].x - v[0].x) * (v[2].y - v[0].y) - (v[1].y - v[0].y) * (v[2].x - v[0].x);
 }

@@ -49,6 +49,9 @@ const huskmod = @import("foes/salthusk.zig");
 const fishmod = @import("foes/fishman.zig");
 const batmod = @import("foes/blinkbat.zig");
 const owlbearmod = @import("foes/owlbear.zig");
+const druidmod = @import("foes/druidess.zig");
+const mimicmod = @import("foes/mimic.zig");
+const mastodonmod = @import("foes/mastodon.zig");
 const leechmod = @import("foes/leechfly.zig");
 const shademod = @import("foes/shade.zig");
 const chestmod = @import("play/chest.zig");
@@ -244,6 +247,9 @@ pub const Game = struct {
     shoal: fishmod.Shoal,
     roost: batmod.Roost,
     perch: owlbearmod.Perch,
+    coven: druidmod.Coven,
+    hoard: mimicmod.Hoard,
+    drove: mastodonmod.Drove,
     vigil: knightmod.Vigil,
     vanguard: duomod.Vanguard,
     conclave: duomod.Conclave,
@@ -304,6 +310,7 @@ pub const Game = struct {
     boltModel: rl.Model,
     emberModel: rl.Model,
     sacModel: rl.Model,
+    rockModel: rl.Model,
     wispModel: rl.Model,
     sparkModel: rl.Model,
     arrows: [MAX_ARROWS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_ARROWS,
@@ -327,6 +334,9 @@ pub const Game = struct {
     boltGas: [BOLT_GAS_CAP]knightmod.Gas = undefined,
     boltGasHead: usize = 0,
     boltGasT: f32 = 0,
+    illusionMotes: [ILLUSION_MOTES]foemod.Particle = [_]foemod.Particle{.{}} ** ILLUSION_MOTES,
+    illusionHead: usize = 0,
+    illusionRng: mathx.Rng = mathx.Rng.init(0x1117A11),
     liquidSoak: foemod.Soak = .{},
     popT: [worldfmt.Liquid.N]f32 = [_]f32{0} ** worldfmt.Liquid.N,
     searT: f32 = 0,
@@ -378,6 +388,9 @@ pub const Game = struct {
         g.shoal = fishmod.Shoal.init(g.scene.shader);
         g.roost = batmod.Roost.init(g.scene.shader);
         g.perch = owlbearmod.Perch.init(g.scene.shader);
+        g.coven = druidmod.Coven.init(g.scene.shader);
+        g.hoard = mimicmod.Hoard.init(g.scene.shader);
+        g.drove = mastodonmod.Drove.init(g.scene.shader);
         g.vigil = knightmod.Vigil.init(g.scene.shader);
         g.vanguard = duomod.Vanguard.init(g.scene.shader);
         g.conclave = duomod.Conclave.init(g.scene.shader);
@@ -425,6 +438,7 @@ pub const Game = struct {
         g.boltModel = heromod.boltMesh(g.scene.shader);
         g.emberModel = magemod.emberMesh(g.scene.shader);
         g.sacModel = golemmod.sacMesh(g.scene.shader);
+        g.rockModel = delvermod.rockModel(g.scene.shader);
         g.wispModel = shademod.wispMesh(g.scene.shader);
         g.sparkModel = hollowmod.sparkMesh(g.scene.shader);
         g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
@@ -444,6 +458,9 @@ pub const Game = struct {
         g.boltGas = [_]knightmod.Gas{.{}} ** BOLT_GAS_CAP;
         g.boltGasHead = 0;
         g.boltGasT = 0;
+        g.illusionMotes = [_]foemod.Particle{.{}} ** ILLUSION_MOTES;
+        g.illusionHead = 0;
+        g.illusionRng = mathx.Rng.init(0x1117A11);
         g.dropRng = mathx.Rng.init(0xD0DEC0DE);
         g.bossBits = NO_BOSSES;
         g.seenMap = .{};
@@ -465,8 +482,9 @@ pub const Game = struct {
 const SHOT_CLEAR: f32 = 0.02;
 
 
-const BOOT_AT_X: f32 = -104.0;
-const BOOT_AT_Z: f32 = 18.0;
+// Owner: away from the tower. The old mark (-104, 18) drifted under the watchtower at (-119, 23); the wooded downs here have the well, the graves and the big trees, and nothing tall for seventy metres.
+const BOOT_AT_X: f32 = -60.0;
+const BOOT_AT_Z: f32 = 60.0;
 const BOOT_DRIFT_R: f32 = 26.0;
 const BOOT_DRIFT_RATE: f32 = 0.036;
 const BOOT_LOOK_UP: f32 = 6.0;
@@ -768,6 +786,9 @@ pub const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "shoal", .kind = null, .aggro = aggroRing(fishmod) },
     .{ .field = "roost", .kind = .blinkbat, .aggro = aggroRing(batmod) },
     .{ .field = "perch", .kind = .owlbear, .aggro = aggroRing(owlbearmod) },
+    .{ .field = "coven", .kind = .druidess, .aggro = aggroRing(druidmod), .vs = &WAVE_FIELDS },
+    .{ .field = "hoard", .kind = .bone_mimic, .aggro = aggroRing(mimicmod) },
+    .{ .field = "drove", .kind = .mastodon, .aggro = aggroRing(mastodonmod), .vsHero = false, .vs = &.{ "warren", "line", "band" } },
     .{ .field = "vigil", .kind = .bone_knight, .aggro = aggroRing(knightmod), .vsHero = false, .vs = &.{ "line", "muster" } },
     .{ .field = "vanguard", .kind = .fungal_swordsman, .aggro = aggroRing(duomod), .vs = &.{ "cluster", "ring" } },
     .{ .field = "conclave", .kind = .fungal_magus, .aggro = aggroRing(duomod), .vs = &.{ "cluster", "ring" } },
@@ -800,6 +821,7 @@ const NO_PARRY = [_]struct { field: []const u8, why: []const u8 }{
     .{ .field = "crypt", .why = "the ancient priest never melees; the breath is a cone you walk out of" },
     .{ .field = "bed", .why = "the slumber bloom has no blow at all — the gas is a ring you walk out of" },
     .{ .field = "conclave", .why = "the fungal magus never melees; the orbs and the bunches are not strokes" },
+    .{ .field = "coven", .why = "the druidess never melees; the vines are things on the ground you walk out of, and the spear is a line you step off" },
 };
 
 const NO_ORDERS = [_]struct { field: []const u8, why: []const u8 }{
@@ -1076,8 +1098,8 @@ test "A DETONATOR RESOLVES ONE WAY — caught on the chest and rolled to a stop 
     inline for (@typeInfo(archermod.Shot).@"enum".fields) |f| {
         if (detonates(@enumFromInt(f.value))) bombs += 1;
     }
-    try std.testing.expectEqual(@as(usize, 1), bombs);
-    try std.testing.expect(detonates(.emberball));
+    try std.testing.expectEqual(@as(usize, 2), bombs);
+    try std.testing.expect(detonates(.emberball) and detonates(.rock));
     try std.testing.expect(!detonates(.arrow) and !detonates(.firearrow) and !detonates(.bolt));
 
     const dt: f32 = 1.0 / 60.0;
@@ -1300,6 +1322,7 @@ const BOSS_RAILS = [_]struct { field: []const u8, kind: FoeKind }{
     .{ .field = "vigil", .kind = .bone_knight },
     .{ .field = "vanguard", .kind = .fungal_swordsman },
     .{ .field = "conclave", .kind = .fungal_magus },
+    .{ .field = "coven", .kind = .druidess },
 };
 
 comptime {
@@ -1479,11 +1502,15 @@ fn wadeDragAt(d: f32) f32 {
 const Mark = struct { swing: f32, out: f32, lo: f32, hi: f32 };
 
 fn markSwing(f: anytype, hero: rl.Vector3) Mark {
+    return markSwingAt(f, hero, 0);
+}
+
+fn markSwingAt(f: anytype, hero: rl.Vector3, part: u8) Mark {
     var m = Mark{ .swing = 0, .out = 0, .lo = 1e9, .hi = -1e9 };
     var i: u32 = 0;
     while (i < 300) : (i += 1) {
         _ = f.update(1.0 / 60.0, hero, PLAY_HALF, .{});
-        const at = f.lockPoint();
+        const at = lockPointOf(f, part);
         m.swing = @max(m.swing, mathx.distXZ(at, f.pos));
         m.out = @max(m.out, mathx.distXZ(at, f.pos) - f.bodyR());
         m.out = @max(m.out, at.y - f.topWorld().y);
@@ -1522,6 +1549,23 @@ test "THE MARK RIDES THE BODY, on every creature that has one" {
         try std.testing.expect(m.out <= 0.60);
     }
     std.debug.print("\n", .{});
+}
+
+test "EVERY OTHER POINT A BODY OFFERS RIDES IT THE SAME WAY — the ogre's head and the hollow's rider" {
+    const hero = v3(0, 0, 1.7);
+    var giant = ogremod.Ogre.spawn(mathx.zero3, 0, 1.0, 0.3);
+    var belled = hollowmod.Hollow.spawn(mathx.zero3, 0, 1.0, 0.3);
+    inline for (.{ .{ "ogre head", &giant }, .{ "hollow rider", &belled } }) |row| {
+        try std.testing.expectEqual(@as(u8, 2), partsOf(row[1]));
+        const m = markSwingAt(row[1], hero, 1);
+        std.debug.print("\n  {s}: point swings {d:.2} m, sits {d:.2}..{d:.2} m up, worst {d:.2} m out of the standing box", .{ row[0], m.swing, m.lo, m.hi, m.out });
+        try std.testing.expect(m.swing > 0.02);
+        try std.testing.expect(m.out <= 0.60);
+    }
+    std.debug.print("\n", .{});
+    var plain = frogmod.Frog.spawn(mathx.zero3, 0, 1.0, 0.3);
+    try std.testing.expectEqual(@as(u8, 1), partsOf(&plain));
+    try std.testing.expectEqual(plain.lockPoint(), lockPointOf(&plain, 0));
 }
 
 const Chase = struct { turned: ?f32, out: f32, gap: f32 };
@@ -2483,6 +2527,7 @@ const Reach = enum {
     rest,
     pickup,
     talk,
+    mimic,
     chest,
     ladder,
     gate,
@@ -2493,7 +2538,8 @@ const Reach = enum {
             .rest => "Rest",
             .pickup => "Take",
             .talk => "Speak",
-            .chest => "Open",
+            // THE SAME WORD AS THE CHEST'S, or the prompt is the tell.
+            .mimic, .chest => "Open",
             .ladder => "Climb",
             .gate => "Enter",
         } };
@@ -2571,6 +2617,7 @@ fn inReach(g: *const Game, r: Reach) bool {
         .rest => if (g.rest.near) |i| atHisLevel(g, g.rest.list[i].pos.y) else false,
         .pickup => if (g.pickups.near) |i| atHisLevel(g, g.pickups.list[i].pos.y) else false,
         .talk => talkable(g),
+        .mimic => if (g.hoard.near) |i| atHisLevel(g, g.hoard.band[i].pos.y) else false,
         .chest => if (g.chests.near) |i| atHisLevel(g, g.chests.list[i].pos.y) else false,
         .ladder => ladderAt(g) != null,
         .gate => gateAt(g) != null,
@@ -2602,6 +2649,7 @@ fn interact(g: *Game) void {
         .rest => _ = g.rest.begin(),
         .pickup => takePickup(g),
         .talk => _ = startTalk(g),
+        .mimic => _ = g.hoard.wakeNear(),
         .chest => openChest(g),
         .ladder => mountLadder(g),
         .gate => enterGate(g),
@@ -3039,6 +3087,11 @@ fn drawDrops(g: *Game) void {
 
 fn awardLoot(g: *Game, loot: []const item.Kind, at: rl.Vector3) void {
     for (loot) |it| {
+        if (item.class(it) == .flask) {
+            _ = g.hero.flasks.found();
+            g.award.gain(.empty_flask);
+            continue;
+        }
         g.bag.add(it, 1);
         g.award.gain(it);
     }
@@ -3833,6 +3886,7 @@ const RayCtx = struct {
     fn visit(self: *RayCtx, foes: anytype, _: ?FoeKind) void {
         for (foes) |*f| {
             if (!foemod.corporeal(f)) continue;
+            if (disguised(f)) continue; // aim may not converge on a body no blade of his reaches
             const oc = mathx.subV(f.centerWorld(), self.origin);
             const along = oc.x * self.dir.x + oc.y * self.dir.y + oc.z * self.dir.z;
             if (along <= 0) continue;
@@ -3854,7 +3908,7 @@ fn stepShafts(g: *Game, dt: f32) void {
     for (&g.shafts) |*ar| {
         if (!ar.live) continue;
         const seg = archermod.stepShaft(ar, g.env.groundAt(ar.pos.x, ar.pos.z), arrowCover(g, ar, dt), dt) orelse {
-            planted(g, ar);
+            planted(g, ar, true);
             continue;
         };
         const blade = foemod.Blade{
@@ -4203,6 +4257,71 @@ fn applyRaises(g: *Game) void {
     }
 }
 
+fn envDepthAt(ctx: *const anyopaque, x: f32, z: f32) f32 {
+    const e: *const envmod.Env = @ptrCast(@alignCast(ctx));
+    return e.wadeDepth(x, z);
+}
+
+/// THE ROOM A BODY FIGHTS IN IS STAMPED, NOT ASKED FOR: any creature with a `room` field gets a copy of the arena it stands in each frame (null on open ground), and one with a `ground` field gets the world's water to ask, so its own moves can keep to dry ground inside the walls before the hold ever has to.
+fn stampRooms(g: *Game) void {
+    inline for (FOE_GROUPS) |gr| {
+        const M = memberOf(gr.field);
+        if (comptime !@hasField(M, "room") and !@hasField(M, "ground")) continue;
+        for (@field(g, gr.field).live()) |*f| {
+            if (comptime @hasField(M, "room")) f.room = if (g.map.arenaIndexAt(f.pos.x, f.pos.z)) |i| g.map.arenas[i] else null;
+            if (comptime @hasField(M, "ground")) f.ground = .{ .ctx = &g.env, .depthAt = envDepthAt };
+        }
+    }
+}
+
+/// The group each of the druidess's waves comes up in — the same four she fights beside (`FOE_GROUPS`' coven row). Checked at comptime against `druidess.waveKind`, so the two cannot drift.
+const WAVES = [_]struct { wave: druidmod.Wave, field: []const u8 }{
+    .{ .wave = .deer, .field = "herd" },
+    .{ .wave = .sporelings, .field = "cluster" },
+    .{ .wave = .wights, .field = "stand" },
+    .{ .wave = .frogs, .field = "warren" },
+};
+const WAVE_FIELDS = blk: {
+    var out: [WAVES.len][]const u8 = undefined;
+    for (WAVES, 0..) |row, i| out[i] = row.field;
+    break :blk out;
+};
+
+comptime {
+    @setEvalBranchQuota(20000);
+    for (@typeInfo(druidmod.Wave).@"enum".fields) |f| {
+        const w: druidmod.Wave = @enumFromInt(f.value);
+        var rows: usize = 0;
+        for (WAVES) |row| {
+            if (row.wave != w) continue;
+            rows += 1;
+            var kind: ?FoeKind = null;
+            for (FOE_GROUPS) |gr| {
+                if (std.mem.eql(u8, gr.field, row.field)) kind = gr.kind;
+            }
+            if (kind == null or kind.? != druidmod.waveKind(w)) @compileError("game: WAVES sends `" ++ f.name ++ "` to `" ++ row.field ++ "`, which is not the kind `druidess.waveKind` names");
+        }
+        if (rows != 1) @compileError("game: the druidess's wave `" ++ f.name ++ "` needs exactly one row in WAVES");
+    }
+}
+
+/// THE CREATURE ONLY REPORTS IT (the necromancer's rule): the wave comes up on the ground under each spot, in the groups those kinds already live in.
+fn summonWave(g: *Game, d: *const druidmod.Druidess, w: druidmod.Wave) void {
+    const n = druidmod.waveCount(w);
+    var i: u8 = 0;
+    while (i < n) : (i += 1) {
+        const spot = d.summonSpot(i, n);
+        const at = v3(spot.x, g.env.groundAt(spot.x, spot.z), spot.z);
+        const yaw = mathx.headingXZ(mathx.dirXZ(at, g.hero.pos));
+        const seed = 0.17 + 0.23 * @as(f32, @floatFromInt(i));
+        inline for (WAVES) |row| {
+            if (w == row.wave) @field(g, row.field).summon(at, yaw, seed);
+        }
+    }
+    g.rumble.play(rumblemod.hit_heavy);
+    g.rig.addShake(SHAKE_RAISE);
+}
+
 fn canSee(g: *const Game, r: FoeRef) bool {
     return g.env.sees(heroEye(g), foeLockPoint(g, r));
 }
@@ -4232,9 +4351,12 @@ fn justLanded(ar: *const archermod.Arrow) bool {
     return ar.stuck and ar.age == 0;
 }
 
-fn planted(g: *Game, ar: *const archermod.Arrow) void {
+fn planted(g: *Game, ar: *const archermod.Arrow, his: bool) void {
     if (!justLanded(ar)) return;
     if (ar.shot != .venom) sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
+    if (his) {
+        if (g.env.illusionTouched(ar.pos, ILLUSION_ARROW_R)) |i| dispelIllusion(g, i, ar.pos);
+    }
     splashOf(g, ar);
 }
 
@@ -4256,14 +4378,29 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
             g.cluster.spawnCloud(ground);
         },
         .powder => powderBurst(g, ground),
+        .rock => rockBurst(g, ground),
         .arrow, .firearrow, .wisp, .crock, .spark => {},
     }
+}
+
+/// THE DELVER'S STONE COMES DOWN: a ring about where it lands, billed once whether it met him in the air or on the ground (`detonates`), and a roll through it is a roll through it.
+fn rockBurst(g: *Game, ground: rl.Vector3) void {
+    sfx.world(.ogre_slam, ground);
+    g.rig.addShake(SHAKE_HIT_HEAVY);
+    g.hero.dustPuff(ground, delvermod.ROCK_SPLASH_R, foemod.DUST, g.hero.casts);
+    if (g.hero.iFramed()) return;
+    if (mathx.distXZ(ground, g.hero.pos) > delvermod.ROCK_SPLASH_R + HERO_R) return;
+    _ = heroTakes(g, .{ .hit = delvermod.ROCK_HIT, .from = ground }, true, true);
+}
+
+fn spawnRock(g: *Game, from: rl.Vector3) void {
+    poolPut(g, archermod.launchShaft(from, mathx.addV(g.hero.pos, v3(0, 0.3, 0)), delvermod.ROCK_SPEED, delvermod.ROCK_HIT, true, .rock));
 }
 
 fn shotBuildup(s: archermod.Shot) f32 {
     return switch (s) {
         .venom => broodmod.M_SPIT_BUILD,
-        .arrow, .firearrow, .clump, .crock, .bolt, .wisp, .emberball, .sac, .spark, .powder => 0,
+        .arrow, .firearrow, .clump, .crock, .bolt, .wisp, .emberball, .sac, .spark, .powder, .rock => 0,
     };
 }
 
@@ -4286,7 +4423,7 @@ test "A GLOB THAT LANDS CARRIES ITS VENOM — the constant the meter is written 
 }
 
 fn detonates(s: archermod.Shot) bool {
-    return s == .emberball;
+    return s == .emberball or s == .rock;
 }
 
 const BLAST_R: f32 = 3.1;
@@ -4326,6 +4463,7 @@ fn drawArrows(g: *Game) void {
                 .bolt => &g.boltModel,
                 .emberball => &g.emberModel,
                 .sac => &g.sacModel,
+                .rock => &g.rockModel,
                 .wisp => &g.wispModel,
                 .spark => &g.sparkModel,
             };
@@ -4503,6 +4641,7 @@ pub fn drawScene(g: *Game) void {
     g.souls.draw();
     drawDrops(g);
     for (&g.boltGas) |*c| c.drawFx();
+    foemod.drawParticles(&g.illusionMotes);
     if (shows(g, .props)) g.env.drawThinned(&view);
     if (g.menu.wireframe) rl.gl.rlDisableWireMode();
     if (shows(g, .interact)) g.env.drawVeils(&view);
@@ -4782,7 +4921,7 @@ pub fn run(mode: Mode) void {
     }.ms;
     // VSYNC, not `setTargetFPS`: that is a CPU-side frame LIMITER and never tells the driver to swap during vblank, so fullscreen tears.
     rl.setConfigFlags(.{ .msaa_4x_hint = true, .vsync_hint = true, .window_hidden = shot, .window_resizable = true });
-    rl.initWindow(SCREEN_W, SCREEN_H, "zig-soulslike");
+    rl.initWindow(SCREEN_W, SCREEN_H, "Gloamfall");
     defer rl.closeWindow();
     rl.setExitKey(.null);
     stamp(&runTimer, "window");
@@ -5053,6 +5192,10 @@ pub fn run(mode: Mode) void {
                 if (g.lock == null and rl.isGamepadAvailable(PAD)) g.rig.recenter(g.hero.facing);
             }
         }
+        if (g.lock) |*li| {
+            // The rider is shot off: the point it rode is gone, and the lock falls back onto the body that carried it.
+            if (refInBounds(g, li.*) and li.part >= foeParts(g, li.*)) li.part = 0;
+        }
         if (g.lock) |li| {
             if (!lockValid(g, li)) {
                 g.lock = null;
@@ -5286,6 +5429,7 @@ pub fn run(mode: Mode) void {
         markVigil(g);
         markFlock(g);
         const bladeNow = heroBlade(g);
+        revealIllusions(g, bladeNow);
         if (g.warren.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.heavy(), true);
         }
@@ -5296,10 +5440,7 @@ pub fn run(mode: Mode) void {
             if (a.update(dt, a.threat.aim(g.hero.pos), PLAY_HALF, bladeNow)) {
                 spawnArrow(g, a.nockWorld(), heroAimPoint(g));
             }
-            if (a.heroHit) |h| {
-                const out = heroTakes(g, .{ .hit = h, .from = a.pos, .on = a.threat.on }, false, true);
-                heroShoved(g, a.pos, archermod.BUTT_SHOVE, out);
-            }
+            if (a.heroHit) |h| _ = heroTakes(g, .{ .hit = h, .from = a.pos, .on = a.threat.on }, false, true);
         }
         if (g.band.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnClump)) |b| {
             _ = heroTakes(g, b, b.hit.poise >= koboldmod.ZERK_HIT.poise, true);
@@ -5322,6 +5463,12 @@ pub fn run(mode: Mode) void {
         }
         if (g.warrens.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.stance >= delvermod.BURST_HIT.stance, true);
+        }
+        for (g.warrens.live()) |*d| {
+            if (d.threw) {
+                sfx.world(.delver_claw, d.throwFrom);
+                spawnRock(g, d.throwFrom);
+            }
         }
         if (g.warrens.anySurged()) {
             g.rumble.play(rumblemod.hit_heavy);
@@ -5452,6 +5599,7 @@ pub fn run(mode: Mode) void {
                 sfx.world(.gremlin_spark, at);
             }
             if (h.yelped) sfx.world(.bone_hurt, h.pos);
+            if (h.unseated) sfx.world(.kobold_die, h.riderWorld());
             if (h.justDied) sfx.world(.bone_die, h.pos);
             if (h.tolled) {
                 const at = h.bellWorld();
@@ -5475,7 +5623,49 @@ pub fn run(mode: Mode) void {
         if (g.conclave.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
             _ = heroTakes(g, b, b.hit.launch > 0, true);
         }
+        stampRooms(g);
+        if (g.coven.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.heavy(), true);
+        }
+        g.hero.snareFor(g.coven.takeSnare());
+        if (g.coven.holdDose(dt)) |b| _ = heroTakes(g, b, false, false);
+        for (g.coven.live()) |*d| {
+            if (d.summoned) |w| summonWave(g, d, w);
+        }
+        if (g.hoard.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.heavy(), true);
+        }
+        for (g.hoard.live()) |*m| {
+            if (m.justWoke) {
+                sfx.world(.chest_open, m.pos);
+                sfx.world(.skitter_clack, m.pos);
+                g.rumble.play(rumblemod.hit_heavy);
+                g.rig.addShake(SHAKE_ROUSE);
+            }
+            if (m.snapped) sfx.world(.toad_chomp, m.headWorld());
+            if (m.swept) sfx.world(.ogre_swipe, m.headWorld());
+            if (m.justDied) sfx.world(.bone_die, m.pos);
+        }
+        if (g.drove.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
+            _ = heroTakes(g, b, b.hit.launch > 0, true);
+        }
+        for (g.drove.live()) |*m| {
+            if (m.bellowed) sfx.world(.ogre_roar, m.pos);
+            if (m.swept) sfx.world(.ogre_swipe, m.pos);
+            if (m.snapped) sfx.world(.toad_chomp, m.lockPoint());
+            if (m.stamped) {
+                sfx.world(.ogre_step, m.pos);
+                g.rig.addShake(SHAKE_HIT_LIGHT);
+            }
+            if (m.landed) {
+                sfx.world(.ogre_slam, m.pos);
+                g.rumble.play(rumblemod.hit_heavy);
+                g.rig.addShake(SHAKE_RAISE);
+            }
+            if (m.justDied) sfx.world(.ogre_die, m.pos);
+        }
         tickBoltGas(g, dt);
+        tickIllusions(g, dt);
         if (g.vigil.gasDose(dt, g.hero.pos)) |b| {
             _ = heroTakes(g, b, false, false);
             sfx.play(.acid_burn);
@@ -5551,7 +5741,7 @@ pub fn run(mode: Mode) void {
                 splashOf(g, ar);
                 emberBlast(g, ar);
             } else if (justLanded(ar)) {
-                planted(g, ar);
+                planted(g, ar, false);
                 emberBlast(g, ar);
             }
         }
@@ -5993,6 +6183,7 @@ fn doseRing(g: *Game, at: rl.Vector3, r: f32, a: combat.Ail, amt: f32) u32 {
     inline for (FOE_GROUPS) |gr| {
         for (@field(g, gr.field).live()) |*f| {
             if (!foemod.corporeal(f)) continue;
+            if (disguised(f)) continue; // the breath cone's rule: a cloud is poured over the field, not under it
             if (mathx.distXZ(at, f.pos) - f.bodyR() > r) continue;
             const was = f.vit.ail(a).meter;
             f.vit.build(a, amt);
@@ -6019,6 +6210,7 @@ fn heroTakes(g: *Game, b: foemod.Blow, heavy: bool, voice: bool) combat.HitOutco
             sfx.play(.guard_break);
         },
     }
+    if (b.hit.shove > 0) heroShoved(g, b.from, b.hit.shove, out);
     return out;
 }
 
@@ -6175,6 +6367,52 @@ pub fn heroBlade(g: *const Game) foemod.Blade {
     };
 }
 
+/// One reveal is the worst frame: every solid of the face puffed on a `ILLUSION_PUFF_COLS` x `ILLUSION_PUFF_ROWS` grid, `ILLUSION_PUFF_N` motes a puff. The ring is that arithmetic, not a round number.
+const ILLUSION_PUFF_COLS: usize = 5;
+const ILLUSION_PUFF_ROWS: usize = 4;
+const ILLUSION_PUFF_N: i32 = 6;
+const ILLUSION_MOTES: usize = propsmod.info(.illusory).parts.len * ILLUSION_PUFF_COLS * ILLUSION_PUFF_ROWS * @as(usize, @intCast(ILLUSION_PUFF_N));
+/// A roll that brushes the face counts, as does an arrow planted in it; a blade has to reach the stone.
+const ILLUSION_ROLL_REACH: f32 = 0.35;
+const ILLUSION_ARROW_R: f32 = 0.30;
+const VEIL_MOTE = mathx.rgba(168, 176, 214, 200);
+const VEIL_MOTE_THIN = mathx.rgba(214, 220, 244, 0);
+const VEIL_PUFF = foemod.Puff{ .blast = foemod.Blast.of(foemod.DUST_DRAG, 0.7, 1.4), .spdLo = 0.35, .upLo = 0.6, .upHi = 1.8, .rLo = 0.08, .rHi = 0.20, .col = VEIL_MOTE, .col1 = VEIL_MOTE_THIN };
+
+fn revealIllusions(g: *Game, blade: foemod.Blade) void {
+    if (blade.active) {
+        if (g.env.illusionStruck(blade.a, blade.b, blade.r)) |i| dispelIllusion(g, i, mathx.scaleV(mathx.addV(blade.a, blade.b), 0.5));
+    }
+    if (g.hero.rolling) {
+        if (g.env.illusionTouched(g.hero.pos, HERO_R + ILLUSION_ROLL_REACH)) |i| dispelIllusion(g, i, g.hero.pos);
+    }
+}
+
+fn dispelIllusion(g: *Game, i: u8, at: rl.Vector3) void {
+    if (!g.env.dispelIllusion(i)) return;
+    sfx.world(.veil_break, at);
+    for (g.env.illusionSolids(i)) |s| {
+        var k: usize = 0;
+        while (k < ILLUSION_PUFF_COLS) : (k += 1) {
+            const t = (@as(f32, @floatFromInt(k)) + 0.5) / @as(f32, @floatFromInt(ILLUSION_PUFF_COLS));
+            const x = mathx.lerpF(s.a.x, s.b.x, t);
+            const z = mathx.lerpF(s.a.z, s.b.z, t);
+            const base = g.env.groundAt(x, z);
+            const top = @min(s.h, base + 6.5);
+            var j: usize = 0;
+            while (j < ILLUSION_PUFF_ROWS) : (j += 1) {
+                const y = mathx.lerpF(base + 0.5, top, (@as(f32, @floatFromInt(j)) + 0.5) / @as(f32, @floatFromInt(ILLUSION_PUFF_ROWS)));
+                foemod.puff(&g.illusionMotes, &g.illusionHead, &g.illusionRng, v3(x, y, z), ILLUSION_PUFF_N, 1.4, 0.9, 1.0, VEIL_PUFF);
+            }
+        }
+    }
+}
+
+fn tickIllusions(g: *Game, dt: f32) void {
+    g.env.tickIllusions(dt);
+    foemod.tickParticles(&g.illusionMotes, dt, -1e9);
+}
+
 fn inBounds(p: rl.Vector3) rl.Vector3 {
     return mathx.clampXZ(p, PLAY_HALF);
 }
@@ -6249,7 +6487,33 @@ fn settleGroup(g: *Game, comptime gr: FoeGroup, step: f32) void {
 }
 
 const FoeKind = worldfmt.FoeKind;
-const FoeRef = struct { kind: FoeKind, idx: usize };
+/// `part` is WHICH POINT on the body the lock rides: 0 is its `lockPoint`, the rest are what `lockPointAt` offers (the ogre's head, the hollow's rider). A body offers `lockParts` of them; one without the decl offers one.
+const FoeRef = struct { kind: FoeKind, idx: usize, part: u8 = 0 };
+
+fn partsOf(f: anytype) u8 {
+    if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "lockParts")) return f.lockParts();
+    return 1;
+}
+
+fn lockPointOf(f: anytype, part: u8) rl.Vector3 {
+    if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "lockPointAt")) return f.lockPointAt(part);
+    return f.lockPoint();
+}
+
+/// The flick walks a LINE: every point on this body in part order, then the next body over. Null is "off this body".
+fn stepPart(part: u8, parts: u8, dir: f32) ?u8 {
+    if (dir > 0) return if (part + 1 < parts) part + 1 else null;
+    return if (part > 0) part - 1 else null;
+}
+
+test "THE FLICK WALKS THE BODY BEFORE IT LEAVES IT — up in part order, back down the same way, one body at a time" {
+    try std.testing.expectEqual(@as(?u8, 1), stepPart(0, 2, 1));
+    try std.testing.expectEqual(@as(?u8, null), stepPart(1, 2, 1));
+    try std.testing.expectEqual(@as(?u8, 0), stepPart(1, 2, -1));
+    try std.testing.expectEqual(@as(?u8, null), stepPart(0, 2, -1));
+    try std.testing.expectEqual(@as(?u8, null), stepPart(0, 1, 1));
+    try std.testing.expectEqual(@as(?u8, null), stepPart(0, 1, -1));
+}
 const ROLE_GROUPS = .{
     .{ "band", koboldmod },
     .{ "haunt", shademod },
@@ -6311,59 +6575,66 @@ comptime {
 
 fn askFoe(comptime T: type, g: *const Game, r: FoeRef, comptime ask: anytype) T {
     inline for (ROLE_GROUPS) |rg| {
-        if (roleIdx(rg[1], r)) |i| return ask(&@field(g, rg[0]).liveConst()[i]);
+        if (roleIdx(rg[1], r)) |i| return ask(&@field(g, rg[0]).liveConst()[i], r);
     }
-    if (r.kind == .brood_sac) return ask(&g.brood.liveSacsConst()[r.idx]);
+    if (r.kind == .brood_sac) return ask(&g.brood.liveSacsConst()[r.idx], r);
     inline for (SOLO_GROUPS) |s| {
-        if (r.kind == s.kind) return ask(&@field(g, s.field).liveConst()[r.idx]);
+        if (r.kind == s.kind) return ask(&@field(g, s.field).liveConst()[r.idx], r);
     }
     unreachable; // the comptime partition above is what makes this dead
 }
 fn foePos(g: *const Game, r: FoeRef) rl.Vector3 {
     return askFoe(rl.Vector3, g, r, struct {
-        fn ask(f: anytype) rl.Vector3 {
+        fn ask(f: anytype, _: FoeRef) rl.Vector3 {
             return f.pos;
         }
     }.ask);
 }
 fn foeResists(g: *const Game, r: FoeRef) combat.Resists {
     return askFoe(combat.Resists, g, r, struct {
-        fn ask(f: anytype) combat.Resists {
+        fn ask(f: anytype, _: FoeRef) combat.Resists {
             return f.vit.res;
         }
     }.ask);
 }
 fn foeLockPoint(g: *const Game, r: FoeRef) rl.Vector3 {
     return askFoe(rl.Vector3, g, r, struct {
-        fn ask(f: anytype) rl.Vector3 {
-            return f.lockPoint();
+        fn ask(f: anytype, ref: FoeRef) rl.Vector3 {
+            return lockPointOf(f, ref.part);
+        }
+    }.ask);
+}
+fn foeParts(g: *const Game, r: FoeRef) u8 {
+    return askFoe(u8, g, r, struct {
+        fn ask(f: anytype, _: FoeRef) u8 {
+            return partsOf(f);
         }
     }.ask);
 }
 fn foeTopWorld(g: *const Game, r: FoeRef) rl.Vector3 {
     return askFoe(rl.Vector3, g, r, struct {
-        fn ask(f: anytype) rl.Vector3 {
+        fn ask(f: anytype, _: FoeRef) rl.Vector3 {
             return f.topWorld();
         }
     }.ask);
 }
 fn foeLockable(g: *const Game, r: FoeRef) bool {
     return askFoe(bool, g, r, struct {
-        fn ask(f: anytype) bool {
+        fn ask(f: anytype, _: FoeRef) bool {
             return foemod.corporeal(f);
         }
     }.ask);
 }
 fn foeStaggered(g: *const Game, r: FoeRef) bool {
     return askFoe(bool, g, r, struct {
-        fn ask(f: anytype) bool {
+        fn ask(f: anytype, _: FoeRef) bool {
             return f.staggered();
         }
     }.ask);
 }
 fn foeDisguised(g: *const Game, r: FoeRef) bool {
     return askFoe(bool, g, r, struct {
-        fn ask(f: anytype) bool {
+        fn ask(f: anytype, _: FoeRef) bool {
             return disguised(f);
         }
     }.ask);
@@ -6516,10 +6787,15 @@ const CYCLE_MIN_GAP: f32 = 5.0;
 
 fn cycleLock(g: *Game, dir: f32) void {
     const cur = g.lock orelse return;
-    const curX = lockScreenX(g, cur) orelse return;
-    var ctx = CycleCtx{ .g = g, .cur = cur, .curX = curX, .dir = dir };
+    if (stepPart(cur.part, foeParts(g, cur), dir)) |p| {
+        g.lock = .{ .kind = cur.kind, .idx = cur.idx, .part = p };
+        return;
+    }
+    const body = FoeRef{ .kind = cur.kind, .idx = cur.idx };
+    const curX = lockScreenX(g, body) orelse return;
+    var ctx = CycleCtx{ .g = g, .cur = body, .curX = curX, .dir = dir };
     eachTarget(g, &ctx, CycleCtx.visit);
-    if (ctx.best) |b| g.lock = b;
+    if (ctx.best) |b| g.lock = .{ .kind = b.kind, .idx = b.idx, .part = if (dir > 0) 0 else foeParts(g, b) - 1 };
 }
 
 fn resetFoes(g: *Game) void {

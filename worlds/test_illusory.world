@@ -1,0 +1,16 @@
+version: 1
+name: Illusory Wall Test
+half: 70.0
+runway: -6.00 -26.00 6.00 -14.00
+
+zone: plain -400.0 -400.0 400.0 400.0 0.460 grasstall,patch,tuft,clover,moss,nettles,wildflowers
+clear: 0.0 0.0 34.0
+
+at: bonfire -2 -24 0 1
+
+# THREE FACES IN A ROW, ONE OF THEM A LIE: the middle wall is off-colour and comes down to a swing, a roll or an arrow.
+# The chest sits behind it, so finding the wall is worth something.
+at: cliff2 -15.0 6.0 0 1
+at: illusory 0.0 6.0 0 1
+at: cliff2 15.0 6.0 0 1
+at: chest 0.0 13.0 180 1 loot=empty_flask,purgeleaf

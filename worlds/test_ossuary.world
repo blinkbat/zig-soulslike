@@ -8,7 +8,7 @@ clear: 0.0 0.0 30.0
 
 at: bonfire -2 -24 0 1
 at: chest 3.5 -22 190 1 loot=thundercrock,fire_tallow,scroll_levin
-at: chest -5.5 -22.5 170 1 loot=rimeward_mantle,gravebell_amulet,crimson_flask
+at: chest -5.5 -22.5 170 1 loot=rimeward_mantle,gravebell_amulet,empty_flask
 at: boulder -11 -6 20 1.3
 at: boulder 12 -4 40 1.1
 at: pillar -16 10 0 1

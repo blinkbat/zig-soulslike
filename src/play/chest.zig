@@ -197,7 +197,7 @@ test "opening hands back the placing op's loot, and only once" {
     m.blank("chest");
     m.ops[0] = wf.defaults(.at);
     m.ops[0].kind = .chest;
-    m.ops[0].loot[0] = .golden_seed;
+    m.ops[0].loot[0] = .empty_flask;
     m.ops[0].loot[1] = .rune_arc;
     m.ops[0].nloot = 2;
     m.nops = 1;
@@ -207,7 +207,7 @@ test "opening hands back the placing op's loot, and only once" {
     cs.update(1.0 / 60.0, v3(0.5, 0, 0));
     const got = cs.openNear(m).?;
     try std.testing.expectEqual(@as(usize, 2), got.loot.len);
-    try std.testing.expectEqual(item.Kind.golden_seed, got.loot[0]);
+    try std.testing.expectEqual(item.Kind.empty_flask, got.loot[0]);
     cs.update(1.0 / 60.0, v3(0.5, 0, 0));
     try std.testing.expect(cs.openNear(m) == null);
 }

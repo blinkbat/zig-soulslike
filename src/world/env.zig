@@ -44,6 +44,9 @@ comptime {
 const MAX_PROPS = 24576;
 const MAX_SOLIDS = 8192;
 pub const MAX_WARDS = 64;
+pub const MAX_ILLUSIONS = 32;
+/// Seconds an illusory wall takes to thin to nothing once struck; it stops being a wall on the first frame.
+pub const ILLUSION_FADE: f32 = 0.7;
 /// Metres past a fog gate a crossing puts him down — clear of the sheet AND of the prompt's own reach; `game.zig` asserts the second half.
 pub const WARD_CLEAR: f32 = 1.30;
 const MAX_SOLID_REFS = 4 * MAX_SOLIDS;
@@ -184,11 +187,15 @@ pub const Prop = struct {
     op: u16 = 0,
     /// Its slot in `wardProps` PLUS ONE, 0 for everything else — the same number `collision.Solid.ward` carries.
     ward: u8 = 0,
+    /// Its slot in `illusionProps` PLUS ONE, 0 for everything else.
+    illusion: u8 = 0,
     fade: f32 = 1,
     fadeTo: f32 = 1,
     gone: bool = false,
     shrink: f32 = 1,
     rise: f32 = 0,
+    /// 0 standing, 1 gone: the alpha an illusory wall has lost, kept apart from `shrink` so the face fades in place instead of sinking.
+    dissolve: f32 = 0,
 };
 
 pub const WorldDeck = struct {
@@ -437,6 +444,13 @@ pub const Env = struct {
     wardShut: [MAX_WARDS]bool = [_]bool{false} ** MAX_WARDS,
     /// 1 while it stands, running to 0 once the fight it sealed is over. At 0 the gate is GONE, and `eachSolid` is where that is enforced.
     wardLife: [MAX_WARDS]f32 = [_]f32{1} ** MAX_WARDS,
+    /// THE ILLUSORY WALLS, in the order `buildSolids` met them; `collision.Solid.illusion` is a slot here PLUS ONE.
+    illusionProps: [MAX_ILLUSIONS]u32 = undefined,
+    illusionSolid0: [MAX_ILLUSIONS]u32 = undefined,
+    illusionSolidN: [MAX_ILLUSIONS]u8 = [_]u8{0} ** MAX_ILLUSIONS,
+    nillusions: usize = 0,
+    /// 1 while it stands; anything under 1 is no longer a wall, and at 0 it is not drawn.
+    illusionLife: [MAX_ILLUSIONS]f32 = [_]f32{1} ** MAX_ILLUSIONS,
     stx: Index = .{},
     flx: Index = .{},
     occl: [OCCL_MAX]u32 = undefined,
@@ -501,7 +515,9 @@ pub const Env = struct {
         self.nprops = 0;
         self.nsolids = 0;
         self.nwards = 0;
+        self.nillusions = 0;
         self.openWards();
+        self.restoreIllusions();
         self.nlights = 0;
         self.npools = 0;
         self.noccl = 0;
@@ -965,7 +981,9 @@ pub const Env = struct {
         self.lightsCapped = 0;
         self.nsolids = 0;
         self.nwards = 0;
+        self.nillusions = 0;
         self.openWards();
+        self.restoreIllusions();
         self.nlights = 0;
         self.npools = 0;
         self.noccl = 0;
@@ -1031,6 +1049,7 @@ pub const Env = struct {
         }
         buildSolids(self);
         self.openWards();
+        self.restoreIllusions();
         indexProps(self);
     }
 
@@ -1146,6 +1165,7 @@ pub const Env = struct {
                 while (k < self.sgrid_start[c + 1]) : (k += 1) {
                     const sol = self.solid_buf[self.sgrid_items[k]];
                     if (sol.ward > 0 and self.wardLife[sol.ward - 1] <= 0) continue;
+                    if (sol.illusion > 0 and self.illusionLife[sol.illusion - 1] < 1) continue;
                     if (!visit(ctx, sol)) return;
                 }
             }
@@ -1258,6 +1278,65 @@ pub const Env = struct {
         self.wardLife = [_]f32{1} ** MAX_WARDS;
         for (self.wardProps[0..self.nwards]) |pi| {
             self.props[pi].shrink = 1;
+            self.props[pi].gone = false;
+        }
+    }
+
+    pub fn illusionSolids(self: *const Env, i: u8) []const collision.Solid {
+        if (i >= self.nillusions) return &.{};
+        const a = self.illusionSolid0[i];
+        return self.solid_buf[a .. a + self.illusionSolidN[i]];
+    }
+
+    pub fn illusionStands(self: *const Env, i: u8) bool {
+        return i < self.nillusions and self.illusionLife[i] >= 1;
+    }
+
+    /// The standing illusory wall a blade of radius `r` swung from `a` to `b` reaches, if any.
+    pub fn illusionStruck(self: *const Env, a: rl.Vector3, b: rl.Vector3, r: f32) ?u8 {
+        for (0..self.nillusions) |i| {
+            if (self.illusionLife[i] < 1) continue;
+            for (self.illusionSolids(@intCast(i))) |s| {
+                var wide = s;
+                wide.r += r;
+                if (collision.blocksSight(a, b, wide)) return @intCast(i);
+            }
+        }
+        return null;
+    }
+
+    /// The standing illusory wall a body of radius `margin` at `p` is pressed against, if any.
+    pub fn illusionTouched(self: *const Env, p: rl.Vector3, margin: f32) ?u8 {
+        for (0..self.nillusions) |i| {
+            if (self.illusionLife[i] < 1) continue;
+            for (self.illusionSolids(@intCast(i))) |s| {
+                if (collision.blocksPoint(p, margin, s)) return @intCast(i);
+            }
+        }
+        return null;
+    }
+
+    /// Stops being a wall THIS frame; `tickIllusions` thins the face over `ILLUSION_FADE`. False if it was already going.
+    pub fn dispelIllusion(self: *Env, i: u8) bool {
+        if (!self.illusionStands(i)) return false;
+        self.illusionLife[i] = 1.0 - 1e-4;
+        return true;
+    }
+
+    pub fn tickIllusions(self: *Env, dt: f32) void {
+        for (0..self.nillusions) |i| {
+            if (self.illusionLife[i] >= 1 or self.illusionLife[i] <= 0) continue;
+            self.illusionLife[i] = mathx.maxF(0, self.illusionLife[i] - dt / ILLUSION_FADE);
+            const pr = &self.props[self.illusionProps[i]];
+            pr.dissolve = 1.0 - self.illusionLife[i];
+            pr.gone = self.illusionLife[i] <= 0;
+        }
+    }
+
+    pub fn restoreIllusions(self: *Env) void {
+        self.illusionLife = [_]f32{1} ** MAX_ILLUSIONS;
+        for (self.illusionProps[0..self.nillusions]) |pi| {
+            self.props[pi].dissolve = 0;
             self.props[pi].gone = false;
         }
     }
@@ -1872,8 +1951,9 @@ pub const Env = struct {
                 }
                 if (!casters_only and pr.fade < FADE_SOLID) continue;
                 self.stat_draws += 1;
-                if (!casters_only and pr.shrink < 1.0) {
-                    if (self.scene) |s| s.beginFade(pr.shrink);
+                const alpha = pr.shrink * (1.0 - pr.dissolve);
+                if (!casters_only and alpha < 1.0) {
+                    if (self.scene) |s| s.beginFade(alpha);
                     self.drawProp(pr);
                     if (self.scene) |s| s.endFade();
                 } else {
@@ -3014,6 +3094,7 @@ pub fn coverField(x: f32, z: f32) f32 {
 fn buildSolids(e: *Env) void {
     e.nsolids = 0;
     e.nwards = 0;
+    e.nillusions = 0;
     for (e.props[0..e.nprops], 0..) |*pr, pi| {
         const nfo = props.info(pr.kind);
         const s = pr.scale;
@@ -3028,6 +3109,16 @@ fn buildSolids(e: *Env) void {
             ward = @intCast(e.nwards);
         }
         pr.ward = ward;
+        var illusion: u8 = 0;
+        if (nfo.illusion) {
+            if (e.nillusions >= MAX_ILLUSIONS) @panic("env: MAX_ILLUSIONS exceeded — raise the cap");
+            e.illusionProps[e.nillusions] = @intCast(pi);
+            e.illusionSolid0[e.nillusions] = @intCast(e.nsolids);
+            e.illusionSolidN[e.nillusions] = @intCast(nfo.parts.len);
+            e.nillusions += 1;
+            illusion = @intCast(e.nillusions);
+        }
+        pr.illusion = illusion;
         for (nfo.parts) |part| {
             if (e.nsolids >= MAX_SOLIDS) @panic("env: MAX_SOLIDS exceeded — raise the cap");
             const a = fr.at(part.ax, 0, part.az);
@@ -3037,6 +3128,7 @@ fn buildSolids(e: *Env) void {
             if (part.y0 > 0) sol.y0 = pr.pos.y + part.y0 * s;
             sol.surf = nfo.surf;
             sol.ward = ward;
+            sol.illusion = illusion;
             if (pr.lean != 0) {
                 var off = leanSwing(pr, part.h * s * 0.5);
                 const lim = part.r * s;
@@ -3660,6 +3752,46 @@ test "A SHUT GATE IS A WALL TO HIM TOO, and an open one is not" {
     try std.testing.expectEqual(at.z, e.resolveHeroSide(at, R, 0).z);
     try std.testing.expect(!e.wardClear(0, at, R));
     try std.testing.expect(e.wardClear(0, v3(0, 0, 4), R));
+}
+
+fn envWithIllusion() !*Env {
+    const e = try std.testing.allocator.create(Env);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.props[0] = .{ .kind = .illusory, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
+    e.nprops = 1;
+    buildSolids(e);
+    return e;
+}
+
+test "AN ILLUSORY WALL IS A WALL UNTIL IT IS TOUCHED — then a look and a step pass it the same frame while the face thins" {
+    const e = try envWithIllusion();
+    defer std.testing.allocator.destroy(e);
+    try std.testing.expectEqual(@as(usize, 1), e.nillusions);
+    const eye = v3(0, 1.3, -9);
+    const far = v3(0, 1.3, 9);
+    try std.testing.expect(!e.sees(eye, far));
+    const face = props.info(.illusory).parts[0].r;
+    // A swing that stops short of the stone finds nothing; one whose edge reaches it does.
+    try std.testing.expectEqual(@as(?u8, null), e.illusionStruck(v3(-0.6, 1.0, -face - 1.0), v3(0.6, 1.0, -face - 1.0), 0.2));
+    try std.testing.expectEqual(@as(?u8, 0), e.illusionStruck(v3(-0.6, 1.0, -face - 0.1), v3(0.6, 1.0, -face - 0.1), 0.2));
+    try std.testing.expectEqual(@as(?u8, null), e.illusionTouched(v3(0, 0, -face - 1.0), 0.42));
+    try std.testing.expectEqual(@as(?u8, 0), e.illusionTouched(v3(0, 0, -face - 0.2), 0.42));
+    var buf: [8]collision.Solid = undefined;
+    try std.testing.expect(e.nearSolids(v3(0, 0, 0), 1.0, &buf).len > 0);
+
+    try std.testing.expect(e.dispelIllusion(0));
+    try std.testing.expect(!e.dispelIllusion(0));
+    try std.testing.expect(e.sees(eye, far));
+    try std.testing.expectEqual(@as(usize, 0), e.nearSolids(v3(0, 0, 0), 1.0, &buf).len);
+    try std.testing.expectEqual(@as(?u8, null), e.illusionTouched(v3(0, 0, -face - 0.2), 0.42));
+    e.tickIllusions(ILLUSION_FADE * 0.5);
+    try std.testing.expect(e.props[0].dissolve > 0.45 and e.props[0].dissolve < 0.55);
+    try std.testing.expect(!e.props[0].gone);
+    e.tickIllusions(ILLUSION_FADE);
+    try std.testing.expect(e.props[0].gone);
+    e.restoreIllusions();
+    try std.testing.expect(!e.sees(eye, far));
+    try std.testing.expect(!e.props[0].gone and e.props[0].dissolve == 0);
 }
 
 fn envWithRamp(rise: f32) !*Env {

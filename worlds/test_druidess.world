@@ -1,0 +1,23 @@
+version: 1
+name: Druidess Test
+half: 70.0
+runway: -6.00 -26.00 6.00 -14.00
+
+zone: plain -400.0 -400.0 400.0 400.0 0.460 grasstall,patch,tuft,clover,moss,nettles,wildflowers
+clear: 0.0 0.0 40.0
+
+at: bonfire -2 -24 0 1
+at: chest 3.5 -22 190 1 loot=empty_flask,purgeleaf,fire_tallow
+
+# THE ROOM AND ITS DOOR. She never leaps, retreats, drifts or steps out of the room, and cornered against its
+# wall she goes over your head instead. The gate stands on the south wall and seals on her name, as the duo's
+# does on theirs, so the seal holds you both while she stands and the bar comes up as you cross.
+at: foggate 0 -6 0 2.4 boss=druidess
+at: wall -6.2 -6 0 1.0
+at: wall 6.2 -6 0 1.0
+arena: druid_glade boss=druidess -15.0 -6.0 15.0 -6.0 18.0 10.0 11.0 24.0 -11.0 24.0 -18.0 10.0
+
+# ONE, ALONE. She wants 7-13 m of you: walk in from the bonfire and the first vine comes up where you stood.
+# Inside 6.5 m a rush draws the spear, inside 4.6 m she leaps clear and seeds the ground she left, inside 3.4 m
+# a rush is answered with a sidestep. Nothing else is posted, so every body past this one is a wave SHE called.
+foe: druidess 0.00 14.00 180.0 1.00 0.37

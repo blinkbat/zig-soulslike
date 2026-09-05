@@ -350,7 +350,8 @@ pub const Lurker = struct {
                 self.up = 1.0;
                 const u = mathx.clampF(self.t / LASH_DUR, 0, 1);
                 self.swing = lerpF(-1.0, 1.0, foe.swingCurve(u));
-                self.tryLash(hero);
+                // The skull is still reared at u 0; it is down from `LASH_IMPACT_K`, which is where the parry window says it is.
+                if (u >= LASH_IMPACT_K) self.tryLash(hero);
                 if (self.t >= LASH_DUR) self.enter(.recover);
             },
             .recover => {

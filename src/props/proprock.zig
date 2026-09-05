@@ -58,6 +58,15 @@ pub fn cliff6(shader: rl.Shader) rl.Model {
     return cliffMesh(shader, 90539, CLIFF_OVERGROWN);
 }
 
+/// `cliff2`'s own face washed toward slate: near enough to pass at a glance, off enough to be found by someone who looks.
+pub const ILLUSION_WASH = mathx.rgba(96, 104, 134, 255);
+pub const ILLUSION_WASH_T: f32 = 0.36;
+pub fn illusoryMesh(shader: rl.Shader) rl.Model {
+    var b = cliffBuild(90277, CLIFF_BLOCKY);
+    b.wash(ILLUSION_WASH, ILLUSION_WASH_T);
+    return b.toModel(shader);
+}
+
 pub const CliffBody = struct { x: f32, y: f32, z: f32, rx: f32, ry: f32, rz: f32 };
 
 pub fn cliffFaceZ(bs: []const CliffBody, x: f32, y: f32) ?f32 {

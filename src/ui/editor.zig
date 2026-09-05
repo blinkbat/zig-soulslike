@@ -315,6 +315,9 @@ const foeTips = [NFOE_KIND][:0]const u8{
     "Half of the DUO. Fast, lunges to close, poisoned longsword, and he jumps back to come at you again",
     "The other half. Keeps its distance, sprouts BUNCHES that swell and burst, throws chaos orbs, and DISSOLVES when pressed",
     "A carving until you walk close. It wakes, rakes and slams, and hops back to fan stone quills down its own bearing",
+    "BOSS. Keeps away: vines that snare where you stood, vines that whip, a vine SPEAR down the line as you close. Leaps clear, sidesteps a rush. At half health she calls a wave and jumps off to HEAL - go and hit her",
+    "A chest, glowing BLUE, until you open it: then a bone stalk on small legs with the box for a head. Lunging bite, a full-circle head swing. Dangerous",
+    "LARGE beast, horns over head and shoulders. Headbutt and bite up close, a CHARGE from a distance, a jump-lunge with a long recovery, and a tail swipe that turns him if you get behind",
 };
 const npcTips = [NNPC_KIND][:0]const u8{
     "Talks. Roams its own leash, carries a staff. Give it a `dlg=` in the file to say anything",
@@ -384,6 +387,9 @@ const unitIcons = [_]ui.Icon{
     .fungal_swordsman,
     .fungal_magus,
     .owlbear,
+    .druidess,
+    .bone_mimic,
+    .mastodon,
     .wanderer,
     .merchant,
     .smith,
@@ -565,6 +571,9 @@ const UnitBrush = enum {
     fungal_swordsman,
     fungal_magus,
     owlbear,
+    druidess,
+    bone_mimic,
+    mastodon,
     wanderer,
     merchant,
     smith,
@@ -3427,6 +3436,9 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         .fish_netter => ui.col(120, 156, 138, 255),
         .fish_shaman => ui.col(158, 186, 150, 255),
         .owlbear => ui.col(150, 148, 142, 255),
+        .druidess => ui.col(112, 96, 140, 255),
+        .bone_mimic => ui.col(120, 160, 230, 255),
+        .mastodon => ui.col(132, 112, 92, 255),
         .blinkbat => ui.col(170, 108, 176, 255),
         .fungal_swordsman => ui.col(196, 176, 132, 255),
         .fungal_magus => ui.col(112, 140, 96, 255),
@@ -4838,6 +4850,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             for (0..item.NK) |ki| {
                 const k: item.Kind = @enumFromInt(ki);
                 if (item.class(k) != ed.lootTab) continue;
+                if (!item.placeable(k)) continue;
                 shown[nshown] = k;
                 nshown += 1;
             }

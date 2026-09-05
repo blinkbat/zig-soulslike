@@ -106,11 +106,14 @@ pub const BANK = [_]Row{
     .{ .foe = .salt_husk, .common = .pilgrims_salt, .rare = .ironwort_tea, .chance = 0.12, .gold = .few },
     .{ .foe = .fish_spearman, .common = .bloodgrass, .rare = .fang_dirk, .chance = 0.10, .gold = .few },
     .{ .foe = .fish_netter, .common = .spidersilk_moccasins, .odds = UNCOMMON, .rare = .marchboots, .chance = 0.12, .gold = .few },
-    .{ .foe = .fish_shaman, .common = .crimson_flask, .odds = UNCOMMON, .rare = .second_wind, .chance = 0.14, .gold = .purse },
-    .{ .foe = .blinkbat, .common = .bloodgrass, .odds = UNCOMMON, .rare = .crimson_flask, .chance = 0.16 },
+    .{ .foe = .fish_shaman, .common = .ironwort_tea, .odds = UNCOMMON, .rare = .second_wind, .chance = 0.14, .gold = .purse },
+    .{ .foe = .blinkbat, .common = .bloodgrass, .odds = UNCOMMON, .rare = .ember_candle, .chance = 0.16 },
     .{ .foe = .fungal_swordsman, .common = .purgeleaf, .odds = BOSS_ALWAYS, .rare = .envenomed_dagger, .chance = 0.5, .gold = .hoard },
     .{ .foe = .fungal_magus, .common = .purgeleaf, .odds = BOSS_ALWAYS, .rare = .scroll_babble, .chance = 0.5, .gold = .hoard },
     .{ .foe = .owlbear, .common = null },
+    .{ .foe = .druidess, .common = .purgeleaf, .odds = BOSS_ALWAYS, .rare = .sporecrown, .chance = 0.5, .gold = .hoard },
+    .{ .foe = .bone_mimic, .common = .rune_arc, .odds = UNCOMMON, .rare = .fang_dirk, .chance = 0.22, .gold = .purse },
+    .{ .foe = .mastodon, .common = .fire_tallow, .odds = UNCOMMON, .rare = .ashen_amulet, .chance = 0.14, .gold = .few },
 };
 
 pub const NFOE = @typeInfo(wf.FoeKind).@"enum".fields.len;

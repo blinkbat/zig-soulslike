@@ -7,7 +7,7 @@ zone: plain -400.0 -400.0 400.0 400.0 0.460 grasstall,patch,tuft,clover,moss,net
 clear: 0.0 0.0 34.0
 
 at: bonfire -2 -24 0 1
-at: chest 3.5 -22 190 1 loot=crimson_flask,purgeleaf,fire_tallow
+at: chest 3.5 -22 190 1 loot=empty_flask,purgeleaf,fire_tallow
 
 # ONE, ALONE, ON OPEN GROUND WITH NOTHING NEAR IT. The whole creature is the wake: walk in from the bonfire
 # and the eyes come up at 4.6 m with 0.63 s of tell before the body moves. Nothing else on the bench may be

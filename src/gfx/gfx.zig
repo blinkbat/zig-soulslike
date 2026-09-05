@@ -796,6 +796,22 @@ pub const Builder = struct {
         self.matf = @floatFromInt(@intFromEnum(m));
     }
 
+    /// Every vertex colour so far pulled `t` of the way toward one tone; alpha keeps.
+    pub fn wash(self: *Builder, toward: rl.Color, t: f32) void {
+        var i: usize = 0;
+        while (i + 3 < self.col.items.len) : (i += 4) {
+            self.col.items[i] = washByte(self.col.items[i], toward.r, t);
+            self.col.items[i + 1] = washByte(self.col.items[i + 1], toward.g, t);
+            self.col.items[i + 2] = washByte(self.col.items[i + 2], toward.b, t);
+        }
+    }
+
+    fn washByte(a: u8, b: u8, t: f32) u8 {
+        const fa: f32 = @floatFromInt(a);
+        const fb: f32 = @floatFromInt(b);
+        return @intFromFloat(@round(@min(255.0, @max(0.0, fa + (fb - fa) * t))));
+    }
+
     pub fn setAnimY(self: *Builder, y: f32) void {
         self.animY = y;
     }

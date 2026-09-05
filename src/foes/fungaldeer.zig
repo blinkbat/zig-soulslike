@@ -73,7 +73,7 @@ pub const SPORE_HOME: f32 = 4.4;
 /// Radians a second the homing steer may bend. Capped, so a ROLL beats it: at 2.2 it needs 1.43 s to reverse.
 const SPORE_TURN: f32 = 2.2;
 pub const SPORE_LIFE: f32 = 5.6;
-pub var SPORE_HIT = combat.Hit{ .dmg = 3, .poise = 12, .elem = combat.elems(.{ .chaos = 6 }) };
+pub var SPORE_HIT = combat.Hit{ .dmg = 3, .poise = 12, .elem = combat.elems(.{ .chaos = 6 }), .venom = true };
 
 comptime {
     std.debug.assert(SPIT_WIND >= foe.TELL_MIN);
@@ -591,7 +591,8 @@ pub const Deer = struct {
             if (self.t < BUTT_WIND) self.faceToward(hero, dt);
             if (self.t >= BUTT_WIND and self.t < BUTT_WIND + BUTT_STRIKE) {
                 mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), BUTT_DRIVE * self.scale * (dt / BUTT_STRIKE), bounds);
-                self.tryButt(hero);
+                // Billed from the impact `toImpact` names, not the drive's first frame.
+                if (self.t >= BUTT_WIND + BUTT_STRIKE * BUTT_IMPACT_K) self.tryButt(hero);
             }
             if (self.t >= BUTT_WIND + BUTT_STRIKE + BUTT_RECOVER) {
                 self.state = .idle;
@@ -908,6 +909,9 @@ pub const Herd = struct {
     pub fn reset(self: *Herd, m: *const wf.Map) void {
         self.clearAir();
         foe.resetGroup(Deer, &self.deer, &self.n, m, .fungal_deer);
+    }
+    pub fn summon(self: *Herd, at: rl.Vector3, faceYaw: f32, seed: f32) void {
+        foe.summonInto(Deer, &self.deer, &self.n, .fungal_deer, Deer.spawn(at, faceYaw, 1.0, seed));
     }
     pub fn clear(self: *Herd) void {
         self.n = 0;

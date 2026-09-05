@@ -291,6 +291,7 @@ pub fn runPropShots(g: *Game) void {
     g.retro.allOff();
     game.clearFoesForShot(g);
     for (props.INFO, 0..) |row, i| {
+        if (!stageOn(@tagName(row.kind))) continue;
         g.env.stageOne(row.kind);
         const staged = &g.env.props[0];
         const r = mathx.maxF(env.reachOf(staged, &row), 0.9);
@@ -3130,7 +3131,7 @@ fn chestShots(g: *Game) void {
     op.z = cz;
     // Derived, not guessed: `drawModelEx` turns about +Y, sending local +Z to (sin yaw, 0, cos yaw), and the camera at yaw 53 sits toward (−0.794, 0, −0.608).
     op.yaw = 233;
-    op.loot[0] = .golden_seed;
+    op.loot[0] = .empty_flask;
     op.loot[1] = .rune_arc;
     op.loot[2] = .mushroom_jerky;
     op.loot[3] = .kobold_fang;
@@ -3158,7 +3159,7 @@ fn chestShots(g: *Game) void {
         shootPortrait(g, names[i], aim, LIT_YAW, 0.16, 4.4);
     }
 
-    for ([_]item.Kind{ .mushroom_jerky, .bloodgrass, .kobold_fang, .rune_arc, .golden_seed, .smithing_stone, .iron_key, .fire_tallow, .thundercrock, .nameless_soul, .toadflesh_broth, .spirit_scroll_wolf }) |k| {
+    for ([_]item.Kind{ .mushroom_jerky, .bloodgrass, .kobold_fang, .rune_arc, .purgeleaf, .smithing_stone, .iron_key, .fire_tallow, .thundercrock, .nameless_soul, .toadflesh_broth, .spirit_scroll_wolf }) |k| {
         if (g.bag.count(k) == 0) g.bag.add(k, if (k == .bloodgrass) 12 else 3);
     }
     for (0..item.NK) |i| {

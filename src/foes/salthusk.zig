@@ -85,6 +85,8 @@ const CLOUT_R: f32 = 1.72;
 const CLOUT_FRONT_DOT: f32 = 0.45;
 const CLOUT_WIND: f32 = 0.42;
 const CLOUT_STRIKE: f32 = 0.18;
+/// The arm is still back at the strike's first frame; the clout arrives from here.
+const CLOUT_IMPACT_K: f32 = 0.4;
 const CLOUT_RECOVER: f32 = 0.66;
 const CLOUT_CD: f32 = 2.2;
 pub var CLOUT_HIT = combat.Hit{ .dmg = 9, .poise = 8 };
@@ -324,7 +326,7 @@ pub const Husk = struct {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 if (self.t < CLOUT_WIND) self.faceToward(quarry, dt);
                 const s = self.t - CLOUT_WIND;
-                if (s >= 0 and s < CLOUT_STRIKE) self.tryClout(quarry);
+                if (s >= CLOUT_STRIKE * CLOUT_IMPACT_K and s < CLOUT_STRIKE) self.tryClout(quarry);
                 if (self.t >= CLOUT_WIND + CLOUT_STRIKE + CLOUT_RECOVER) {
                     self.heroLatch = false;
                     self.enter(.idle);

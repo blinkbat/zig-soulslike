@@ -163,6 +163,8 @@ const THRUST_FRONT_DOT: f32 = 0.95;
 const THRUST_HALF_W: f32 = (THRUST_R + foe.HERO_REACH) * @sqrt(1.0 - THRUST_FRONT_DOT * THRUST_FRONT_DOT);
 const THRUST_WIND: f32 = 0.52;
 const THRUST_STRIKE: f32 = 0.16;
+/// The point is still couched at the strike's first frame; it arrives from here.
+const THRUST_IMPACT_K: f32 = 0.4;
 const THRUST_RECOVER: f32 = 0.86;
 const THRUST_CD: f32 = 2.6;
 pub const THRUST_HIT = combat.Hit{ .dmg = 32, .poise = 26, .stance = 16 };
@@ -514,7 +516,7 @@ pub const Fishman = struct {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 if (self.t < THRUST_WIND) self.faceToward(quarry, dt);
                 const s = self.t - THRUST_WIND;
-                if (s >= 0 and s < THRUST_STRIKE) self.tryThrust(quarry);
+                if (s >= THRUST_STRIKE * THRUST_IMPACT_K and s < THRUST_STRIKE) self.tryThrust(quarry);
                 if (self.t >= THRUST_WIND + THRUST_STRIKE + THRUST_RECOVER) {
                     self.heroLatch = false;
                     self.enter(.idle);

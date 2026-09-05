@@ -77,6 +77,8 @@ const LUNGE_LAND = 0.12;
 const RECOVER_DUR = 0.78;
 const CHOMP_GAPE = 0.42;
 const CHOMP_SNAP = 0.11;
+/// cos 63 deg: the jaws' own half-cone.
+const CHOMP_FRONT_DOT: f32 = 0.45;
 const CHOMP_RECOVER = 0.42;
 const CHOMP_JAW = 64.0;
 const CHOMP_SAC = 1.95;
@@ -346,13 +348,13 @@ pub const Frog = struct {
     pub fn debugKill(self: *Frog) void {
         self.enterDeath();
     }
+    /// The mouth is at the FRONT: the gape turns to follow him, the snap does not, so a man who rolled round it is not bitten.
     fn tryBite(self: *Frog, hero: rl.Vector3, range: f32, h: combat.Hit) void {
         if (self.heroLatch) return;
-        if (mathx.distXZ(self.pos, hero) <= foe.hurtReach(range, self.scale)) {
-            self.heroHit = h;
-            self.heroLatch = true;
-            self.leash.noteCombat();
-        }
+        if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(range, self.scale), CHOMP_FRONT_DOT)) return;
+        self.heroHit = h;
+        self.heroLatch = true;
+        self.leash.noteCombat();
     }
     fn tryImpact(self: *Frog, hero: rl.Vector3, h: combat.Hit) void {
         if (self.heroLatch) return;
@@ -895,6 +897,9 @@ pub const Knot = struct {
     }
     pub fn reset(self: *Knot, m: *const wf.Map) void {
         foe.resetGroup(Frog, &self.frogs, &self.n, m, .toad);
+    }
+    pub fn summon(self: *Knot, at: rl.Vector3, faceYaw: f32, seed: f32) void {
+        foe.summonInto(Frog, &self.frogs, &self.n, .toad, Frog.spawn(at, faceYaw, 1.0, seed));
     }
     pub fn live(self: *Knot) []Frog {
         return self.frogs[0..self.n];

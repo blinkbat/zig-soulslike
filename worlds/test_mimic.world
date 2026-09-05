@@ -1,0 +1,23 @@
+version: 1
+name: Bone Mimic Test
+half: 70.0
+runway: -6.00 -26.00 6.00 -14.00
+
+zone: plain -400.0 -400.0 400.0 400.0 0.460 grasstall,patch,tuft,clover,moss,nettles,wildflowers
+clear: 0.0 0.0 34.0
+
+at: bonfire -2 -24 0 1
+
+# THE LINE-UP THE THING LIVES OR DIES ON: two real chests and the mimic in a row, same yaw, same spacing. If the
+# box with the blue seam picks itself out of the row before you press Y, the disguise is not one. Open the
+# real ones, then it.
+at: chest -6.0 6.0 180 1 loot=empty_flask,purgeleaf
+foe: bone_mimic 0.00 6.00 180.0 1.00 0.37
+at: chest 6.0 6.0 180 1 loot=fire_tallow
+
+# ONE ALONE, for the fight: room to see the head go round and the lunge come.
+foe: bone_mimic 0.00 26.00 180.0 1.00 0.71
+
+# A SMALL ONE AND A BIG ONE, for the bands at the scales the editor posts.
+foe: bone_mimic -18.00 18.00 120.0 0.70 0.12
+foe: bone_mimic 18.00 18.00 240.0 1.40 0.88

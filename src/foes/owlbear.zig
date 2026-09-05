@@ -24,10 +24,11 @@ const approach = mathx.approach;
 const setLocal = heromod.setHumanoid;
 
 
-pub const H: f32 = 2.60;
+/// OWNER: BIGGER. 1.75 of the hero; the halves below ride the same 1.21 over the 2.60 m it was authored at.
+pub const H: f32 = 3.15;
 
-const HIP_HALF = heromod.HIP_HALF * 1.24;
-const SHOULDER_HALF = heromod.SHOULDER_HALF * 1.32;
+const HIP_HALF = heromod.HIP_HALF * 1.50;
+const SHOULDER_HALF = heromod.SHOULDER_HALF * 1.60;
 const REST = heromod.restHumanoid(HIP_HALF, SHOULDER_HALF, H);
 
 const N = heromod.N;
@@ -79,19 +80,19 @@ const CHASE_SPEED: f32 = heromod.WALK_SPEED_BANK * 1.02;
 const ACCEL: f32 = 3.2;
 const TURN_RATE: f32 = 2.1;
 
-const BODY_R: f32 = 0.52;
-const HURT_R: f32 = 0.88;
+const BODY_R: f32 = 0.63;
+const HURT_R: f32 = 1.06;
 const CENTER_F: f32 = 0.54;
 const TOP_F: f32 = 1.04;
 const LOCK_AT = v3(0, 0.06 * H, 0);
 
-/// TOUGH IS HP AND POISE, NOT SPEED. Between the rooted's 130, which cannot chase, and the birchwight's 180.
-const HP_MAX: f32 = 165.0;
-/// **STONE DOES NOT FLINCH OFF A POKE.** Over the hero's heavy (22).
-const POISE_MAX: f32 = 30.0;
-const STANCE_MAX: f32 = 46.0;
+/// TOUGH IS HP AND POISE, NOT SPEED (owner: tougher). Over the birchwight's 180, well under the mastodon's 560.
+const HP_MAX: f32 = 300.0;
+/// **STONE DOES NOT FLINCH OFF A POKE, NOR OFF TWO.** Over two of the hero's heavies (22 each).
+const POISE_MAX: f32 = 48.0;
+const STANCE_MAX: f32 = 72.0;
 const RESISTS = combat.resists(.{ .fire = 55, .cold = -45, .lightning = -30, .chaos = 25 });
-pub var SOULS: u32 = 240;
+pub var SOULS: u32 = 380;
 
 const DEATH_DUR: f32 = 1.45;
 const DISS_DUR: f32 = 1.05;
@@ -137,8 +138,8 @@ pub const RAKE_HIT = combat.Hit{ .dmg = 19, .poise = 20, .stance = 8 };
 pub const SLAM_HIT = combat.Hit{ .dmg = 33, .poise = 32, .stance = 16, .launch = combat.SLAM_LAUNCH };
 
 const MOVES_BANK = [_]Attack{
-    .{ .windDur = 0.58, .strikeDur = 0.20, .recoverDur = 0.52, .cd = 2.3, .minR = 0, .maxR = 2.45, .frontDot = 0.40, .hit = RAKE_HIT },
-    .{ .windDur = 0.94, .strikeDur = 0.24, .recoverDur = 0.98, .cd = 5.2, .minR = 0, .maxR = 2.20, .frontDot = 0.52, .hit = SLAM_HIT },
+    .{ .windDur = 0.58, .strikeDur = 0.20, .recoverDur = 0.52, .cd = 2.3, .minR = 0, .maxR = 2.95, .frontDot = 0.40, .hit = RAKE_HIT },
+    .{ .windDur = 0.94, .strikeDur = 0.24, .recoverDur = 0.98, .cd = 5.2, .minR = 0, .maxR = 2.65, .frontDot = 0.52, .hit = SLAM_HIT },
 };
 pub var MOVES = MOVES_BANK;
 
@@ -464,7 +465,8 @@ pub const Owlbear = struct {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 if (self.t < mv.windDur) self.faceToward(quarry, dt);
                 const s = self.t - mv.windDur;
-                if (s >= 0 and s < mv.strikeDur) self.tryStroke(quarry, mv);
+                // Billed from the IMPACT the parry window names, not the strike's first frame — at s 0 the paws are still up.
+                if (s >= mv.strikeDur * IMPACT_K and s < mv.strikeDur) self.tryStroke(quarry, mv);
                 if (self.t >= mv.windDur + mv.strikeDur + mv.recoverDur) {
                     self.heroLatch = false;
                     self.enter(.idle);

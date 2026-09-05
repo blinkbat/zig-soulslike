@@ -127,7 +127,9 @@ fn arc(cx: f32, cy: f32, r: f32, from: f32, to: f32, segs: u32, w0: f32, w1: f32
     }
 }
 
-pub const FlaskTint = enum { crimson, cerulean };
+pub const FlaskTint = enum { crimson, cerulean, empty };
+const EMPTY_GLASS = rgba(152, 168, 178, 255);
+const EMPTY_GLASS_DK = rgba(62, 76, 86, 255);
 
 pub fn draw(k: item.Kind, cx: f32, cy: f32, px: f32) void {
     drawHeld(k, cx, cy, px, true);
@@ -166,7 +168,7 @@ pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
         .crimson_flask => flask(cx, cy, px, .crimson, any),
         .cerulean_flask => flask(cx, cy, px, .cerulean, any),
         .rune_arc => soulArc(cx, cy, px),
-        .golden_seed => goldenSeed(cx, cy, px),
+        .empty_flask => flask(cx, cy, px, .empty, false),
         .smithing_stone => smithingStone(cx, cy, px),
         .bloodgrass => bloodgrass(cx, cy, px),
         .kobold_fang => koboldFang(cx, cy, px),
@@ -1200,10 +1202,12 @@ pub fn flask(cx: f32, cy: f32, px: f32, tint: FlaskTint, full: bool) void {
     const lit = switch (tint) {
         .crimson => CRIMSON,
         .cerulean => CERULEAN,
+        .empty => EMPTY_GLASS,
     };
     const dk = switch (tint) {
         .crimson => CRIMSON_DK,
         .cerulean => CERULEAN_DK,
+        .empty => EMPTY_GLASS_DK,
     };
     const fill = if (full) lit else mathx.withAlpha(dk, 150);
     const deep = if (full) mathx.withAlpha(dk, 255) else mathx.withAlpha(dk, 120);
@@ -1790,46 +1794,6 @@ fn goldPurse(cx: f32, cy: f32, px: f32) void {
         ellipseV(x, y - r * 0.06, r * 0.80, r * 0.28, RING_GOLD);
         ellipseV(x - r * 0.20, y - r * 0.12, r * 0.34, r * 0.12, RING_GOLD_LT);
     }
-}
-
-fn goldenSeed(cx: f32, cy: f32, px: f32) void {
-    const s = px;
-    const k = strokeK(px);
-    var rng = mathx.Rng.init(0x60D5EE);
-    const rootY = cy + s * 0.34;
-    const tipY = cy - s * 0.30;
-    const lean = rng.range(-0.06, 0.06) * s;
-    const stem = v2(cx + lean * 0.35, rootY);
-    const crown = v2(cx + lean, tipY);
-
-    rl.drawLineEx(stem, crown, 2.0 * k, rgba(96, 84, 44, 255));
-    for ([_]f32{ -1, 1 }) |side| {
-        const at = 0.34 + side * rng.range(0.04, 0.13);
-        const root = onAxis(stem, crown, at, 0);
-        const len = s * rng.range(0.22, 0.30);
-        const tip = v2(root.x + side * len, root.y - len * rng.range(0.35, 0.62));
-        const mid = v2((root.x + tip.x) * 0.5, (root.y + tip.y) * 0.5 - len * 0.22);
-        quad(root, mid, tip, v2(mid.x, mid.y + len * 0.30), rgba(104, 96, 52, 255));
-        rl.drawLineEx(root, tip, 0.8 * k, rgba(140, 130, 74, 220));
-    }
-    const podR = s * 0.155;
-    const podY = tipY + podR * 0.55;
-    rl.drawCircleV(v2(cx + lean + 0.9 * k, podY + 1.0 * k), podR, SHADOW);
-    var i: u32 = 0;
-    while (i < 7) : (i += 1) {
-        const t = @as(f32, @floatFromInt(i)) / 6.0;
-        const rr = podR * (1.0 - 0.78 * t * t);
-        const yy = podY - podR * 1.15 * t;
-        rl.drawCircleV(v2(cx + lean * (1.0 + t * 0.4), yy), rr, mathx.lerpColor(uiart.GILT, uiart.GILT_BRIGHT, t * 0.7));
-    }
-    rl.drawCircleV(v2(cx + lean - podR * 0.34, podY - podR * 0.22), podR * 0.34, rgba(255, 246, 210, 190));
-    rl.drawLineEx(
-        v2(cx + lean + podR * 0.10, podY + podR * 0.55),
-        v2(cx + lean + podR * 0.22, podY - podR * 0.95),
-        1.1 * k,
-        rgba(126, 96, 30, 200),
-    );
-    rl.drawCircleV(v2(cx + lean + podR * 0.24, podY - podR * 1.05), 1.2 * k, uiart.CATCH);
 }
 
 fn smithingStone(cx: f32, cy: f32, px: f32) void {

@@ -1810,9 +1810,7 @@ pub const Knight = struct {
     }
     /// The hero's bearing off his facing, in degrees (0 dead ahead, +-180 behind).
     fn bearingTo(self: *const Knight, hero: rl.Vector3) f32 {
-        const d = mathx.dirXZ(self.pos, hero);
-        if (mathx.lenXZ(d) < 1e-3) return 0;
-        return mathx.degrees(mathx.wrapPi(mathx.headingXZ(d) - self.facing));
+        return foe.bearingDeg(self.pos, self.facing, hero);
     }
 
     pub fn navWant(self: *const Knight, hero: rl.Vector3) ?rl.Vector3 {

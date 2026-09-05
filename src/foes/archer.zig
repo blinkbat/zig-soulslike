@@ -159,7 +159,7 @@ const BUTT_STEP = 0.30; // metres he steps into it — a jab off planted feet re
 /// cos 62 deg: the front the stave answers for. A hero round the back of the shoulder driving it is not in it.
 const BUTT_FRONT_DOT = 0.47;
 const BUTT_IMPACT_K: f32 = 0.45;
-const BUTT_HIT = combat.Hit{ .dmg = 8, .poise = 14 };
+const BUTT_HIT = combat.Hit{ .dmg = 8, .poise = 14, .shove = BUTT_SHOVE };
 /// Metres it puts between them, well under the leap's 4.7 — this returns him to a shot. `heroShoved` is an instant `walkStep`, so at 2.2 the magnitude read as a teleport.
 pub const BUTT_SHOVE = 0.40;
 
@@ -219,7 +219,7 @@ const ARROW_STICK_FADE = 1.4;
 pub fn lingerOf(s: Shot) f32 {
     return switch (s) {
         .arrow, .firearrow => ARROW_STICK_FADE,
-        .clump, .crock, .venom, .bolt, .wisp, .emberball, .sac, .spark, .powder => 0,
+        .clump, .crock, .venom, .bolt, .wisp, .emberball, .sac, .spark, .powder, .rock => 0,
     };
 }
 pub const ARROW_COVER_MARGIN: f32 = 0.04;
@@ -252,11 +252,13 @@ fn trailCol(s: Shot) rl.Color {
         .sac => TRAIL_SAC,
         .spark => TRAIL_SPARK,
         .powder => TRAIL_POWDER,
+        .rock => TRAIL_ROCK,
         .arrow, .venom => TRAIL_COL,
     };
 }
+const TRAIL_ROCK = rgba(150, 132, 96, 255);
 
-pub const Shot = enum { arrow, clump, venom, firearrow, bolt, wisp, crock, emberball, sac, spark, powder };
+pub const Shot = enum { arrow, clump, venom, firearrow, bolt, wisp, crock, emberball, sac, spark, powder, rock };
 
 pub fn dropOf(s: Shot) f32 {
     return switch (s) {
@@ -269,14 +271,17 @@ pub fn dropOf(s: Shot) f32 {
         .wisp => WISP_GRAV,
         .emberball => EMBER_GRAV,
         .powder => POWDER_GRAV,
+        .rock => ROCK_GRAV,
     };
 }
+/// The delver's stone: the heaviest thing in the air, so the lob is a real arc you watch come down.
+const ROCK_GRAV: f32 = 14.0;
 
 /// **HOW MUCH OF THE BALLISTIC SOLVE A SHOT ACTUALLY TAKES.** 1.0 is the honest arc that lands on the target;
 fn loftOf(s: Shot) f32 {
     return switch (s) {
         .emberball => EMBER_LOFT,
-        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder => 1.0,
+        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder, .rock => 1.0,
     };
 }
 pub const EMBER_LOFT: f32 = 0.52;
@@ -293,7 +298,7 @@ const EMBER_KEEP_XZ: f32 = 0.66;
 pub fn bouncesOf(s: Shot) u8 {
     return switch (s) {
         .emberball => EMBER_BOUNCES,
-        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder => 0,
+        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder, .rock => 0,
     };
 }
 const EMBER_BOUNCES: u8 = 3;
@@ -309,7 +314,7 @@ fn minUp(s: Shot) f32 {
 fn lifeOf(s: Shot) f32 {
     return switch (s) {
         .emberball => EMBER_LIFE,
-        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder => ARROW_LIFE,
+        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder, .rock => ARROW_LIFE,
     };
 }
 const EMBER_LIFE: f32 = 6.0;
@@ -469,9 +474,12 @@ fn hitBoxOf(s: Shot) struct { r: f32, halfH: f32 } {
     return switch (s) {
         .emberball => .{ .r = EMBER_HIT_R, .halfH = EMBER_HIT_HALF_H },
         .sac => .{ .r = SAC_HIT_R, .halfH = SAC_HIT_HALF_H },
+        .rock => .{ .r = ROCK_HIT_R, .halfH = ROCK_HIT_HALF_H },
         .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .spark, .powder => .{ .r = ARROW_HIT_R, .halfH = ARROW_HIT_HALF_H },
     };
 }
+const ROCK_HIT_R: f32 = 0.62;
+const ROCK_HIT_HALF_H: f32 = 1.15;
 const EMBER_HIT_R: f32 = 0.62;
 const EMBER_HIT_HALF_H: f32 = 1.15;
 const SAC_HIT_R: f32 = 0.58;
@@ -826,7 +834,7 @@ pub const Archer = struct {
                 const want = BUTT_STEP * self.scale * e;
                 mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), want - self.buttDone, bounds);
                 self.buttDone = want;
-                self.tryButt(hero);
+                if (self.t >= BUTT_STRIKE * BUTT_IMPACT_K) self.tryButt(hero);
                 if (self.t >= BUTT_STRIKE) self.enter(.recover);
             },
             .stunlight => {

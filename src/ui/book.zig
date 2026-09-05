@@ -145,29 +145,30 @@ fn worth(d: [ND]f32, k: Der) f32 {
     return d[@intFromEnum(k)];
 }
 
-const DerivedRow = struct { name: [:0]const u8, unit: Unit, cost: bool = false };
+/// `short` is the word a picker row leads with ("+6 heavy"); empty means the name serves.
+const DerivedRow = struct { name: [:0]const u8, unit: Unit, cost: bool = false, short: [:0]const u8 = "" };
 
 const DER = blk: {
     var rows = [_]DerivedRow{.{ .name = "", .unit = .flat }} ** ND;
-    rows[@intFromEnum(Der.light)] = .{ .name = "Light attack", .unit = .flat };
-    rows[@intFromEnum(Der.heavy)] = .{ .name = "Heavy attack", .unit = .flat };
-    rows[@intFromEnum(Der.elem)] = .{ .name = "Elemental damage", .unit = .flat };
-    rows[@intFromEnum(Der.swing)] = .{ .name = "Swing time", .unit = .secs, .cost = true };
-    rows[@intFromEnum(Der.poise)] = .{ .name = "Poise damage", .unit = .flat };
-    rows[@intFromEnum(Der.stance)] = .{ .name = "Stance damage", .unit = .flat };
-    rows[@intFromEnum(Der.hp)] = .{ .name = "HP", .unit = .flat };
-    rows[@intFromEnum(Der.fp)] = .{ .name = "Focus", .unit = .flat };
-    rows[@intFromEnum(Der.armour)] = .{ .name = "Armour", .unit = .flat };
-    rows[@intFromEnum(Der.negate)] = .{ .name = "Damage negated", .unit = .pct };
-    rows[@intFromEnum(Der.guard)] = .{ .name = "Guard negation", .unit = .pct };
-    rows[@intFromEnum(Der.arc)] = .{ .name = "Guard arc", .unit = .flat };
+    rows[@intFromEnum(Der.light)] = .{ .name = "Light attack", .unit = .flat, .short = "light" };
+    rows[@intFromEnum(Der.heavy)] = .{ .name = "Heavy attack", .unit = .flat, .short = "heavy" };
+    rows[@intFromEnum(Der.elem)] = .{ .name = "Elemental damage", .unit = .flat, .short = "elemental" };
+    rows[@intFromEnum(Der.swing)] = .{ .name = "Swing time", .unit = .secs, .cost = true, .short = "swing" };
+    rows[@intFromEnum(Der.poise)] = .{ .name = "Poise damage", .unit = .flat, .short = "poise" };
+    rows[@intFromEnum(Der.stance)] = .{ .name = "Stance damage", .unit = .flat, .short = "stance" };
+    rows[@intFromEnum(Der.hp)] = .{ .name = "HP", .unit = .flat, .short = "HP" };
+    rows[@intFromEnum(Der.fp)] = .{ .name = "Focus", .unit = .flat, .short = "Focus" };
+    rows[@intFromEnum(Der.armour)] = .{ .name = "Armour", .unit = .flat, .short = "armour" };
+    rows[@intFromEnum(Der.negate)] = .{ .name = "Damage negated", .unit = .pct, .short = "negated" };
+    rows[@intFromEnum(Der.guard)] = .{ .name = "Guard negation", .unit = .pct, .short = "guard" };
+    rows[@intFromEnum(Der.arc)] = .{ .name = "Guard arc", .unit = .flat, .short = "arc" };
     for (0..combat.NELEM) |i| {
-        rows[@intFromEnum(Der.res_fire) + i] = .{ .name = combat.elemName(@enumFromInt(i)) ++ " resistance", .unit = .pct };
+        rows[@intFromEnum(Der.res_fire) + i] = .{ .name = combat.elemName(@enumFromInt(i)) ++ " resistance", .unit = .pct, .short = combat.elemName(@enumFromInt(i)) ++ " res" };
     }
-    rows[@intFromEnum(Der.spell)] = .{ .name = "Sorcery damage", .unit = .flat };
-    rows[@intFromEnum(Der.spell_fp)] = .{ .name = "Focus, per cast", .unit = .flat, .cost = true };
-    rows[@intFromEnum(Der.quick)] = .{ .name = "Quick item restores", .unit = .flat };
-    rows[@intFromEnum(Der.ammo)] = .{ .name = "Ammunition", .unit = .count };
+    rows[@intFromEnum(Der.spell)] = .{ .name = "Sorcery damage", .unit = .flat, .short = "sorcery" };
+    rows[@intFromEnum(Der.spell_fp)] = .{ .name = "Focus, per cast", .unit = .flat, .cost = true, .short = "FP a cast" };
+    rows[@intFromEnum(Der.quick)] = .{ .name = "Quick item restores", .unit = .flat, .short = "restores" };
+    rows[@intFromEnum(Der.ammo)] = .{ .name = "Ammunition", .unit = .count, .short = "shafts" };
     for (rows, 0..) |r, i| {
         if (r.name.len == 0) @compileError("book: `Der." ++ @typeInfo(Der).@"enum".fields[i].name ++
             "` has no row — the sheet would print a blank line with a number beside it");
@@ -1089,11 +1090,14 @@ fn bagGrid(body: Box) Grid {
     };
 }
 
-fn statsCols(body: Box) [3]Box {
-    const portW = @min(@divTrunc(body.w * 34, 100), 470);
+/// FOUR PANELS, ER's status screen read left to right: the attributes, the body (vitals, attack, defence), the wards (resistance, ailments, passives), and the man himself.
+fn statsCols(body: Box) [4]Box {
+    const portW = @min(@divTrunc(body.w * 28, 100), 400);
     const rest = body.cut(body.w - portW - GUTTER);
-    const two = rest[0].cut(@divTrunc(rest[0].w - GUTTER, 2));
-    return .{ two[0], two[1], rest[1] };
+    const attrW = @divTrunc((rest[0].w - GUTTER * 2) * 36, 100);
+    const left = rest[0].cut(attrW);
+    const two = left[1].cut(@divTrunc(left[1].w - GUTTER, 2));
+    return .{ left[0], two[0], two[1], rest[1] };
 }
 
 fn attrStep() i32 {
@@ -1530,6 +1534,184 @@ comptime {
         @compileError("book: the `rate_*` dials are not one contiguous run of `combat.NAIL` — `rateDial` indexes off the first");
 }
 
+/// THE DIALS ARE READ IN SECTIONS, ER's way: a weapon's numbers under ATTACK, a board's under GUARD, a coat's under DEFENCE and RESISTANCE, and what it does to HIM under BODY. The switch is exhaustive, so a dial added without a home does not compile; `GDial` lists them in section order, which is what lets one pass insert the heads.
+const GSection = enum { attack, guard, defence, resistance, ailments, body };
+const NGS = @typeInfo(GSection).@"enum".fields.len;
+
+fn gsectionOf(d: GDial) GSection {
+    return switch (d) {
+        .dmg_light, .dmg_heavy, .swing, .poise, .stance, .venom => .attack,
+        .negate, .arc => .guard,
+        .armour => .defence,
+        .res_fire, .res_cold, .res_lightning, .res_chaos => .resistance,
+        .rate_poison, .rate_burning, .rate_chill, .rate_stun, .rate_bleed, .rate_sleep, .rate_confusion, .rate_charm, .rate_berserk, .rate_stupefy => .ailments,
+        .walk, .leech, .hp_frac, .spirit_fp, .fp_frac, .boon => .body,
+    };
+}
+
+fn gsectionName(s: GSection) [:0]const u8 {
+    return switch (s) {
+        .attack => "ATTACK",
+        .guard => "GUARD",
+        .defence => "DEFENCE",
+        .resistance => "RESISTANCE",
+        .ailments => "AILMENTS",
+        .body => "BODY",
+    };
+}
+
+/// Whether two readings of one dial are DIFFERENT to a reader: a whole unit on a counted number, a hundredth on a clock.
+fn moves(u: Unit, a: f32, b: f32) bool {
+    const d = @abs(b - a);
+    return switch (u) {
+        .secs => d >= 0.005,
+        .flat, .pct, .count => d >= 0.5,
+    };
+}
+
+/// "+12", "-3", "+35%", "+0.08s": what a swap does to one number, with its sign.
+fn deltaStr(u: Unit, a: f32, b: f32) [:0]const u8 {
+    const d = b - a;
+    const sign: []const u8 = if (d >= 0) "+" else "-";
+    const m = @abs(d);
+    return switch (u) {
+        .pct => fmt("{s}{d:.0}%", .{ sign, m }),
+        .secs => fmt("{s}{d:.2}s", .{ sign, m }),
+        .flat, .count => fmt("{s}{d:.0}", .{ sign, m }),
+    };
+}
+
+fn sectH() i32 {
+    return hud.lineH(hud.TINY) + 8;
+}
+
+/// A section head: the title in small gilt caps, and a rule running from it to the panel's edge.
+fn head(inner: Box, y: i32, title: [:0]const u8) i32 {
+    const tw = hud.textW(title, hud.TINY);
+    const ty = y + 4;
+    hud.text(title, inner.x, ty, hud.TINY, mathx.withAlpha(uiart.GILT, 210));
+    uiart.rule(inner.x + tw + 10, ty + @divTrunc(hud.lineH(hud.TINY), 2), inner.w - tw - 10, 110);
+    return ty + hud.lineH(hud.TINY) + 4;
+}
+
+/// Where a comparison's four columns fall: the label at the left edge, NOW a quarter in from THEN, THEN clear of the difference, the difference at the right edge.
+const Cols = struct { label: i32, now: i32, then: i32, delta: i32 };
+
+fn colsFor(inner: Box) Cols {
+    const dW = hud.textW("+100%", hud.TINY) + 8;
+    const then = inner.right() - dW;
+    return .{ .label = inner.x, .now = then - @divTrunc(inner.w, 4), .then = then, .delta = inner.right() };
+}
+
+fn unitStrOpt(u: Unit, x: ?f32) [:0]const u8 {
+    return unitStr(u, x orelse 0);
+}
+
+/// One line of a comparison: the label, NOW dim, a chevron when it moves, THEN in the colour of the news, and the difference at the edge.
+fn cmpRow(cols: Cols, y: i32, size: i32, label: [:0]const u8, u: Unit, av: ?f32, bv: ?f32, cost: bool, comptime show: fn (Unit, ?f32) [:0]const u8) void {
+    const a = av orelse 0;
+    const b = bv orelse 0;
+    const moved = moves(u, a, b);
+    rowLabelAt(label, cols.label, y, size, if (moved) uiart.TEXT_VALUE else uiart.TEXT_DIM);
+    rowValueAt(show(u, av), cols.now, y, size, mathx.withAlpha(uiart.TEXT_DIM, 200));
+    const rose = b > a;
+    const col = if (!moved) uiart.TEXT_DIM else if (rose != cost) uiart.GOOD else uiart.BAD;
+    rowValueAt(show(u, bv), cols.then, y, size, col);
+    if (moved) {
+        uiart.arrow(fi(cols.now + 14), fi(y) + fi(hud.lineH(size)) * 0.5, 5.0, mathx.withAlpha(col, 200));
+        rowValueAt(deltaStr(u, a, b), cols.delta, y, hud.TINY, col);
+    }
+}
+
+fn scalingTag(sc: item.Scaling) [:0]const u8 {
+    return switch (sc) {
+        .strength => stats.displayName(.strength),
+        .dexterity => stats.displayName(.dexterity),
+        .quality => "Quality",
+    };
+}
+
+/// The words a piece wears on its sleeve: heft, reach and what drives it for an arm; the shelf it came off for anything else.
+fn tagsOf(k: ?item.Kind, socket: ?item.Wear, out: *[5][:0]const u8) []const [:0]const u8 {
+    var n: usize = 0;
+    if (armIn(k, socket)) |a| {
+        out[n] = a.heft.label();
+        n += 1;
+        out[n] = a.reach.label();
+        n += 1;
+        if (a.slot == .hand_shield) {
+            out[n] = "Board";
+            n += 1;
+        } else {
+            out[n] = scalingTag(a.scales);
+            n += 1;
+        }
+        if (a.slot == .hand_bow) {
+            out[n] = "Two-handed";
+            n += 1;
+        }
+        if (a.venom > 0) {
+            out[n] = "Coated";
+            n += 1;
+        }
+        return out[0..n];
+    }
+    if (k) |kk| {
+        out[0] = item.class(kk).label();
+        return out[0..1];
+    }
+    return out[0..0];
+}
+
+fn tagsW(tags: []const [:0]const u8) i32 {
+    var w: i32 = 0;
+    for (tags, 0..) |t, i| w += hud.textW(t, hud.TINY) + 12 + (if (i > 0) @as(i32, 6) else 0);
+    return w;
+}
+
+fn drawTags(x: i32, y: i32, tags: []const [:0]const u8) i32 {
+    var cx = x;
+    for (tags) |t| {
+        const w = hud.textW(t, hud.TINY) + 12;
+        uiart.pill(cx, y, w, hud.lineH(hud.TINY) + 2, 150);
+        hud.text(t, cx + 6, y + 1, hud.TINY, mathx.withAlpha(uiart.TEXT_VALUE, 210));
+        cx += w + 6;
+    }
+    return cx;
+}
+
+fn tagRowH() i32 {
+    return hud.lineH(hud.TINY) + 10;
+}
+
+fn nowNameOf(f: Facing) [:0]const u8 {
+    return f.nowName;
+}
+
+/// THE ONE NUMBER A PICKER ROW LEADS WITH: the sheet figure the swap moves most, as a share of what it is now, signed and named short. Resistances are left to the compare — they are never the headline of a coat.
+const HEADLINE_ROWS = [_]Der{ .light, .heavy, .elem, .spell, .quick, .ammo, .hp, .fp, .armour, .negate, .guard };
+const Headline = struct { text: [:0]const u8, good: bool };
+
+fn headline(c: Cand, v: View, base: Loadout, now: [ND]f32) ?Headline {
+    const then = derive(withCand(base, c), v);
+    var best: ?Der = null;
+    var bestShare: f32 = 0;
+    for (HEADLINE_ROWS) |k| {
+        const i = @intFromEnum(k);
+        if (!moves(DER[i].unit, now[i], then[i])) continue;
+        const share = @abs(then[i] - now[i]) / @max(@abs(now[i]), 1.0);
+        if (best == null or share > bestShare) {
+            bestShare = share;
+            best = k;
+        }
+    }
+    const k = best orelse return null;
+    const i = @intFromEnum(k);
+    const row = DER[i];
+    const short = if (row.short.len > 0) row.short else row.name;
+    return .{ .text = fmt("{s} {s}", .{ deltaStr(row.unit, now[i], then[i]), short }), .good = (then[i] > now[i]) != row.cost };
+}
+
 fn armInSocket(w: item.Wear) ?heromod.Armament {
     for (0..heromod.NARM) |i| {
         const a: heromod.Armament = @enumFromInt(i);
@@ -1630,7 +1812,19 @@ fn dialsOf(k: ?item.Kind, socket: ?item.Wear, v: View) Dials {
     return d;
 }
 
-const Facing = struct { now: ?item.Kind, then: ?item.Kind, socket: ?item.Wear };
+/// `socket` is the CANDIDATE's class — the dials are read within it — while `nowName` is what is actually in the hand or on the body, which is not the same thing when a sword is being swapped for a dirk.
+const Facing = struct { now: ?item.Kind, then: ?item.Kind, socket: ?item.Wear, nowName: [:0]const u8 };
+
+fn wornName(v: View, w: item.Wear) [:0]const u8 {
+    if (v.worn.at(w)) |k| return item.displayName(k);
+    if (armInSocket(w)) |a| return armName(a);
+    return "Nothing";
+}
+
+fn liveName(live: heromod.Armament, worn: heromod.Worn) [:0]const u8 {
+    if (heromod.heldGear(live, worn)) |k| return item.displayName(k);
+    return armName(live);
+}
 
 fn facing(v: View, c: Cand) ?Facing {
     const held = struct {
@@ -1639,6 +1833,7 @@ fn facing(v: View, c: Cand) ?Facing {
                 .now = heromod.heldGear(live, w),
                 .then = h.kind,
                 .socket = heromod.wearFor(h.a) orelse heromod.wearFor(live),
+                .nowName = liveName(live, w),
             };
         }
     }.of;
@@ -1647,7 +1842,7 @@ fn facing(v: View, c: Cand) ?Facing {
         .off => |h| held(v.off, h, v.worn),
         .armAlt => |h| held(v.armAlt, h, v.worn),
         .offAlt => |h| held(v.offAlt, h, v.worn),
-        .wear => |wr| .{ .now = v.worn.at(wr.slot), .then = wr.kind, .socket = wr.slot },
+        .wear => |wr| .{ .now = v.worn.at(wr.slot), .then = wr.kind, .socket = wr.slot, .nowName = wornName(v, wr.slot) },
         else => null,
     };
 }
@@ -1662,59 +1857,110 @@ fn dialStr(u: Unit, x: ?f32) [:0]const u8 {
     };
 }
 
+/// How many of the sheet's moving rows the compare shows under ON THE SHEET before it runs out of panel.
+const SHEET_ROWS_MAX: usize = 6;
+
+/// THE COMPARE, ER's way: the two names across the top, the candidate's tags under its own name, the piece's dials in sections with NOW, a chevron, THEN and the difference, then ON THE SHEET — every derived figure the swap moves, so a boon's +3 Strength is read as the damage it buys.
 fn drawGearCompare(box: Box, v: View, c: Cand, f: Facing) void {
     const inner = panel(box, "");
     const a = dialsOf(f.now, f.socket, v);
     const b = dialsOf(f.then, f.socket, v);
+    const base = inForce(v);
+    const now = derive(base, v);
+    const then = derive(withCand(base, c), v);
 
+    // ONLY THE DIALS THAT CHANGE, or appear, or go — a like-for-like swap (the dirk for the dirk) falls back to reading the piece whole, so the card is never blank.
+    var show = [_]bool{false} ** NGD;
     var shown: usize = 0;
     for (0..NGD) |i| {
-        if (a.v[i] != null or b.v[i] != null) shown += 1;
-    }
-
-    const saysThen = saysOwn(if (armIn(f.then, f.socket) != null) armWords(f.then, f.socket) else candSays(c, v));
-    const saysNow = saysHeld(if (f.now != null or armIn(null, f.socket) != null) pieceSays(f.now, f.socket) else "");
-
-    const capH = hud.lineH(hud.SMALL) + 4;
-    const legH = hud.lineH(hud.TINY) + 2;
-    const nowH = if (saysNow.len > 0) hud.proseH(saysNow, inner.w, hud.HINT) + legH + 6 else 0;
-    const thenH = if (saysThen.len > 0) hud.proseH(saysThen, inner.w, hud.HINT) + legH + 6 else 0;
-    const foot = nowH + thenH + 18;
-    const step = rowStep(inner.h - foot - capH, @max(shown, 1));
-    const size = rowSize(step);
-    const colB = inner.right();
-    const colA = colB - @divTrunc(inner.w, 3);
-
-    var y = inner.y;
-    rowValueAt("NOW", colA, y, size, uiart.TEXT_DIM);
-    rowValueAt("THEN", colB, y, size, mathx.withAlpha(uiart.GILT, 220));
-    y += capH;
-
-    for (GROW, 0..) |row, i| {
         const av = a.v[i];
         const bv = b.v[i];
         if (av == null and bv == null) continue;
-        const moved = @abs((bv orelse 0) - (av orelse 0)) > 0.005;
-        const label = b.boonName orelse a.boonName orelse row.name;
-        rowLabelAt(if (i == @intFromEnum(GDial.boon)) label else row.name, inner.x, y, size, if (moved) uiart.TEXT_VALUE else uiart.TEXT_DIM);
-        rowValueAt(dialStr(row.unit, av), colA, y, size, mathx.withAlpha(uiart.TEXT_DIM, 200));
-        const rose = (bv orelse 0) > (av orelse 0);
-        const col = if (!moved) uiart.TEXT_DIM else if (rose != row.cost) uiart.GOOD else uiart.BAD;
-        rowValueAt(dialStr(row.unit, bv), colB, y, size, col);
-        if (moved) uiart.diamond(fi(colA + 20), fi(y) + fi(hud.lineH(size)) * 0.45, if (rose) 3.4 else 2.2, col);
+        const appears = (av == null) != (bv == null);
+        if (!appears and !moves(GROW[i].unit, av orelse 0, bv orelse 0)) continue;
+        show[i] = true;
+        shown += 1;
+    }
+    var sheetRows: usize = 0;
+    for (0..ND) |i| {
+        if (moves(DER[i].unit, now[i], then[i])) sheetRows += 1;
+    }
+    if (shown == 0 and sheetRows == 0) {
+        for (0..NGD) |i| {
+            if (a.v[i] == null and b.v[i] == null) continue;
+            show[i] = true;
+            shown += 1;
+        }
+    }
+    var sections: usize = 0;
+    var last: ?GSection = null;
+    for (0..NGD) |i| {
+        if (!show[i]) continue;
+        const s = gsectionOf(@enumFromInt(i));
+        if (last != s) {
+            sections += 1;
+            last = s;
+        }
+    }
+    var sheetShown: usize = @min(sheetRows, SHEET_ROWS_MAX);
+
+    // FITTED TO THE PANEL, in this order of sacrifice: the prose goes first, then the sheet's tail. Rows never run under the footer.
+    const says = saysOwn(if (armIn(f.then, f.socket) != null) armWords(f.then, f.socket) else candSays(c, v));
+    const nameH = hud.lineH(hud.SMALL) + 4;
+    var foot: i32 = if (says.len > 0) hud.proseH(says, inner.w, hud.HINT) + 14 else 0;
+    const heads: i32 = @intCast(sections + @intFromBool(sheetShown > 0));
+    const fixedNoFoot = nameH + tagRowH() + heads * sectH() + 6;
+    var maxRows: usize = @intCast(@max(@divTrunc(inner.h - fixedNoFoot - foot, rowFloor()), 0));
+    if (maxRows < shown + sheetShown and foot > 0) {
+        foot = 0;
+        maxRows = @intCast(@max(@divTrunc(inner.h - fixedNoFoot, rowFloor()), 0));
+    }
+    if (maxRows < shown + sheetShown) sheetShown = maxRows -| shown;
+    const step = rowStep(inner.h - fixedNoFoot - foot, shown + sheetShown);
+    const size = rowSize(step);
+    const cols = colsFor(inner);
+
+    var y = inner.y;
+    const nowTag = "NOW";
+    hud.text(nowTag, inner.x, y + 3, hud.TINY, uiart.TEXT_DIM);
+    hud.text(nowNameOf(f), inner.x + hud.textW(nowTag, hud.TINY) + 8, y, hud.SMALL, uiart.TEXT_VALUE);
+    const thenTag = "THEN";
+    const thenW = hud.textW(c.name, hud.SMALL);
+    hud.text(c.name, inner.right() - thenW, y, hud.SMALL, uiart.HOT);
+    hud.text(thenTag, inner.right() - thenW - hud.textW(thenTag, hud.TINY) - 8, y + 3, hud.TINY, mathx.withAlpha(uiart.GILT, 220));
+    y += nameH;
+    var tb: [5][:0]const u8 = undefined;
+    const tags = tagsOf(f.then, f.socket, &tb);
+    if (tags.len > 0) _ = drawTags(inner.right() - tagsW(tags), y, tags);
+    y += tagRowH();
+
+    last = null;
+    for (GROW, 0..) |row, i| {
+        if (!show[i]) continue;
+        const s = gsectionOf(@enumFromInt(i));
+        if (last != s) {
+            y = head(inner, y, gsectionName(s));
+            last = s;
+        }
+        const label = if (i == @intFromEnum(GDial.boon)) (b.boonName orelse a.boonName orelse row.name) else row.name;
+        cmpRow(cols, y, size, label, row.unit, a.v[i], b.v[i], row.cost, dialStr);
         y += step;
     }
-
-    var footY = @max(inner.y + inner.h - foot + 18, y + 8);
+    if (sheetShown > 0) {
+        y = head(inner, y, "ON THE SHEET");
+        var n: usize = 0;
+        for (DER, 0..) |row, i| {
+            if (!moves(row.unit, now[i], then[i])) continue;
+            if (n == sheetShown) break;
+            cmpRow(cols, y, size, row.name, row.unit, now[i], then[i], row.cost, unitStrOpt);
+            y += step;
+            n += 1;
+        }
+    }
+    if (foot == 0) return;
+    const footY = @max(inner.y + inner.h - foot + 14, y + 6);
     uiart.divider(inner.x + @divTrunc(inner.w, 2), @max(footY - 10, y + 2), @divTrunc(inner.w, 2) - 10, 120);
-    if (saysNow.len > 0) {
-        hud.text("NOW", inner.x, footY, hud.TINY, uiart.TEXT_DIM);
-        footY = hud.prose(saysNow, inner.x, footY + legH, inner.w, hud.HINT, uiart.TEXT_HINT) + 6;
-    }
-    if (saysThen.len > 0) {
-        hud.text("THEN", inner.x, footY, hud.TINY, mathx.withAlpha(uiart.GILT, 220));
-        _ = hud.prose(saysThen, inner.x, footY + legH, inner.w, hud.HINT, uiart.TEXT_VALUE);
-    }
+    _ = hud.prose(says, inner.x, footY, inner.w, hud.HINT, uiart.TEXT_HINT);
 }
 
 fn derSplitX(inner: Box, size: i32) i32 {
@@ -1723,27 +1969,25 @@ fn derSplitX(inner: Box, size: i32) i32 {
     return inner.x + mathx.clampI(widest + 96, @divTrunc(inner.w, 3), @divTrunc(inner.w, 2));
 }
 
+fn derHeadH(cand: ?Cand) i32 {
+    return sectH() + (if (cand != null) hud.lineH(hud.TINY) + 4 else 0);
+}
+
 fn derColumn(inner: Box, x: i32, right: i32, cap: [:0]const u8, now: [ND]f32, then: [ND]f32, cand: ?Cand, size: i32, step: i32, lo: usize, hi: usize) i32 {
-    var y = inner.y;
-    hud.text(cap, x, y, hud.TINY, mathx.withAlpha(uiart.GILT, 200));
-    const colB = right;
-    const colA = colB - @divTrunc(right - x, 3);
+    const sub = Box{ .x = x, .y = inner.y, .w = right - x, .h = inner.h };
+    var y = head(sub, inner.y, cap);
+    const cols = colsFor(sub);
     if (cand != null) {
-        rowValueAt("NOW", colA, y, hud.TINY, uiart.TEXT_DIM);
-        rowValueAt("THEN", colB, y, hud.TINY, mathx.withAlpha(uiart.GILT, 220));
+        rowValueAt("NOW", cols.now, y, hud.TINY, uiart.TEXT_DIM);
+        rowValueAt("THEN", cols.then, y, hud.TINY, mathx.withAlpha(uiart.GILT, 220));
+        y += hud.lineH(hud.TINY) + 4;
     }
-    y += hud.lineH(hud.TINY) + 6;
     for (DER[lo..hi], lo..) |row, i| {
-        const moved = @abs(then[i] - now[i]) > 0.005;
-        rowLabelAt(row.name, x, y, size, if (moved) uiart.TEXT_VALUE else uiart.TEXT_DIM);
         if (cand == null) {
-            rowValueAt(unitStr(row.unit, now[i]), colB, y, size, uiart.TEXT_VALUE);
+            rowLabelAt(row.name, x, y, size, uiart.TEXT_DIM);
+            rowValueAt(unitStr(row.unit, now[i]), right, y, size, if (@abs(now[i]) > 0.005) uiart.TEXT_VALUE else uiart.TEXT_DIM);
         } else {
-            rowValueAt(unitStr(row.unit, now[i]), colA, y, size, mathx.withAlpha(uiart.TEXT_DIM, 200));
-            const rose = then[i] > now[i];
-            const col = if (!moved) uiart.TEXT_DIM else if (rose != row.cost) uiart.GOOD else uiart.BAD;
-            rowValueAt(unitStr(row.unit, then[i]), colB, y, size, col);
-            if (moved) uiart.diamond(fi(colA + 18), fi(y) + fi(hud.lineH(size)) * 0.45, if (rose) 3.4 else 2.2, col);
+            cmpRow(cols, y, size, row.name, row.unit, now[i], then[i], row.cost, unitStrOpt);
         }
         y += step;
     }
@@ -1751,7 +1995,7 @@ fn derColumn(inner: Box, x: i32, right: i32, cap: [:0]const u8, now: [ND]f32, th
 }
 
 fn browsing(s: SlotId, v: View) ?Facing {
-    if (wearOf(s)) |w| return .{ .now = v.worn.at(w), .then = null, .socket = w };
+    if (wearOf(s)) |w| return .{ .now = v.worn.at(w), .then = null, .socket = w, .nowName = wornName(v, w) };
     const live: heromod.Armament = switch (s) {
         .right => v.arm,
         .left => if (v.offInHand()) v.off else return null,
@@ -1760,41 +2004,61 @@ fn browsing(s: SlotId, v: View) ?Facing {
         else => return null,
     };
     const w = heromod.wearFor(live) orelse return null;
-    return .{ .now = heromod.heldGear(live, v.worn), .then = null, .socket = w };
+    return .{ .now = heromod.heldGear(live, v.worn), .then = null, .socket = w, .nowName = liveName(live, v.worn) };
 }
 
-fn cardRows(v: View, f: Facing) usize {
+const CardShape = struct { rows: usize, sections: usize };
+
+fn cardShape(v: View, f: Facing) CardShape {
     const d = dialsOf(f.now, f.socket, v);
-    var n: usize = 0;
-    for (d.v) |x| n += @intFromBool(x != null);
-    return n;
+    var out = CardShape{ .rows = 0, .sections = 0 };
+    var last: ?GSection = null;
+    for (0..NGD) |i| {
+        if (d.v[i] == null) continue;
+        out.rows += 1;
+        const s = gsectionOf(@enumFromInt(i));
+        if (last != s) {
+            out.sections += 1;
+            last = s;
+        }
+    }
+    return out;
 }
 
 fn cardBoxIn(col: Box, v: View, f: Facing, says: [:0]const u8) Box {
-    const rows: i32 = @intCast(@max(cardRows(v, f), 1));
+    const shape = cardShape(v, f);
+    const rows: i32 = @intCast(@max(shape.rows, 1));
     const foot: i32 = if (says.len > 0) hud.proseH(says, col.w - 28, hud.HINT) + 12 else 0;
-    const want = 28 + hud.lineH(hud.BODY) + 6 + (hud.lineH(hud.SMALL) + 7) * rows + foot;
+    const want = 28 + hud.lineH(hud.BODY) + 4 + tagRowH() + @as(i32, @intCast(shape.sections)) * sectH() + (hud.lineH(hud.SMALL) + 7) * rows + foot;
     const room = @max(hud.lineH(hud.BODY) + 46, col.h - derivedNeedH() - GUTTER);
     return .{ .x = col.x, .y = col.y, .w = col.w, .h = @min(want, room) };
 }
 
+/// The piece in the socket under the cursor, read like a shop tag: its name, its tags, its dials by section.
 fn drawGearCard(box: Box, v: View, f: Facing, says: [:0]const u8) void {
     const inner = panel(box, "");
     const d = dialsOf(f.now, f.socket, v);
-    var shown: usize = 0;
-    for (d.v) |x| shown += @intFromBool(x != null);
+    const shape = cardShape(v, f);
 
-    const cap: [:0]const u8 = if (f.now) |k| item.displayName(k) else "Bare";
-    const capH = hud.lineH(hud.BODY) + 6;
+    const capH = hud.lineH(hud.BODY) + 4;
     const foot: i32 = if (says.len > 0) hud.proseH(says, inner.w, hud.HINT) + 12 else 0;
-    const step = rowStep(inner.h - capH - foot, @max(shown, 1));
+    const step = rowStep(inner.h - capH - tagRowH() - @as(i32, @intCast(shape.sections)) * sectH() - foot, @max(shape.rows, 1));
     const size = rowSize(step);
 
     var y = inner.y;
-    hud.text(cap, inner.x, y, hud.BODY, uiart.HOT);
+    hud.text(nowNameOf(f), inner.x, y, hud.BODY, uiart.HOT);
     y += capH;
+    var tb: [5][:0]const u8 = undefined;
+    _ = drawTags(inner.x, y, tagsOf(f.now, f.socket, &tb));
+    y += tagRowH();
+    var last: ?GSection = null;
     for (GROW, 0..) |row, i| {
         const val = d.v[i] orelse continue;
+        const s = gsectionOf(@enumFromInt(i));
+        if (last != s) {
+            y = head(inner, y, gsectionName(s));
+            last = s;
+        }
         const label = if (i == @intFromEnum(GDial.boon)) (d.boonName orelse row.name) else row.name;
         rowLabelAt(label, inner.x, y, size, uiart.TEXT_DIM);
         rowValueAt(dialStr(row.unit, val), inner.right(), y, size, uiart.TEXT_VALUE);
@@ -1816,8 +2080,7 @@ fn drawDerived(box: Box, v: View, cand: ?Cand) void {
     const says = saysOwn(if (cand) |c| candSays(c, v) else armSays(v.arm, v.off));
     const foot = hud.proseH(says, inner.w, hud.HINT) + 22;
     const tallest = @max(DER_SPLIT, ND - DER_SPLIT);
-    const head = hud.lineH(hud.TINY) + 6;
-    const step = rowStep(inner.h - foot - head, tallest);
+    const step = rowStep(inner.h - foot - derHeadH(cand), tallest);
     const size = rowSize(step);
     const mid = derSplitX(inner, size);
     var y = derColumn(inner, inner.x, mid - GUTTER, DER_CAPS[0], now, then, cand, size, step, 0, DER_SPLIT);
@@ -1901,19 +2164,25 @@ fn drawPicker(self: *const Book, col: Box, s: SlotId, v: View) void {
     const box = pickBox(col, cs.len);
     const step = pickStep(box, cs.len);
     const inner = panel(box, fmt("{s}  >", .{slotName(s)}));
+    const base = inForce(v);
+    const now = derive(base, v);
     for (cs, 0..) |c, i| {
         const y = inner.y + @as(i32, @intCast(i)) * step;
         const on = self.pick == i;
         if (on) uiart.rowHilite(inner.x - 8, y - 6, inner.w + 16, step - 2);
         const size = pickSize(step);
         hud.text(c.name, inner.x + 10, y, size, if (on) uiart.HOT else uiart.TEXT_DIM);
-        if (equipped(c, v)) {
-            const tag = "EQUIPPED";
-            hud.text(tag, inner.right() - hud.textW(tag, hud.TINY) - 46, y + 3, hud.TINY, mathx.withAlpha(uiart.GILT, 200));
-        }
         if (c.tally) |n| {
             const str = fmt("{d}", .{n});
             hud.text(str, inner.right() - hud.textW(str, size), y, size, if (n > 0) uiart.TEXT_VALUE else uiart.BAD);
+        }
+        const right = inner.right() - 46;
+        if (equipped(c, v)) {
+            const tag = "EQUIPPED";
+            hud.text(tag, right - hud.textW(tag, hud.TINY), y + 3, hud.TINY, mathx.withAlpha(uiart.GILT, 200));
+        } else if (headline(c, v, base, now)) |h| {
+            // THE ROW SAYS WHAT IT IS WORTH before it is picked: the biggest thing it moves, in the colour of the news.
+            hud.text(h.text, right - hud.textW(h.text, hud.TINY), y + 3, hud.TINY, if (h.good) uiart.GOOD else uiart.BAD);
         }
     }
 }
@@ -2101,7 +2370,34 @@ fn drawStats(self: *const Book, body: Box, v: View, portrait: ?Portrait) void {
     const cols = statsCols(body);
     drawAttributes(self, cols[0], v);
     drawBody(cols[1], v);
-    drawPortrait(self, cols[2], portrait, fmt("Level {d}    {d} souls    {d} gold", .{ v.tree.level(), v.souls, v.gold }));
+    drawWards(cols[2], v);
+    drawPortrait(self, cols[3], portrait, fmt("Level {d}    {d} souls    {d} gold", .{ v.tree.level(), v.souls, v.gold }));
+}
+
+/// What one attribute is buying him right now, in the unit it governs.
+fn attrFigure(a: stats.Attr, s: *const stats.Sheet) [:0]const u8 {
+    return switch (a) {
+        .vitality => fmt("{d:.0} HP", .{s.hp()}),
+        .mind => fmt("{d:.0} FP", .{s.fp()}),
+        .endurance => fmt("{d:.0} stamina", .{s.stamina()}),
+        .strength, .dexterity, .intelligence => fmt("x{d:.2}", .{s.scale(a)}),
+        .luck => fmt("x{d:.2} finds", .{s.finds()}),
+    };
+}
+
+/// …and what the NEXT point would buy, so a level is spent with its eyes open.
+fn nextPointSays(a: stats.Attr, s: *const stats.Sheet) [:0]const u8 {
+    const p = s.at(a);
+    if (p >= stats.MAX) return "At its ceiling.";
+    var next = s.*;
+    next.set(a, p + 1);
+    return switch (a) {
+        .vitality => fmt("The next point is +{d:.0} HP.", .{next.hp() - s.hp()}),
+        .mind => fmt("The next point is +{d:.0} FP.", .{next.fp() - s.fp()}),
+        .endurance => fmt("The next point is +{d:.0} stamina.", .{next.stamina() - s.stamina()}),
+        .strength, .dexterity, .intelligence => fmt("The next point takes x{d:.2} to x{d:.2}.", .{ s.scale(a), next.scale(a) }),
+        .luck => fmt("The next point takes finds from x{d:.2} to x{d:.2}.", .{ s.finds(), next.finds() }),
+    };
 }
 
 fn drawAttributes(self: *const Book, col: Box, v: View) void {
@@ -2115,7 +2411,11 @@ fn drawAttributes(self: *const Book, col: Box, v: View) void {
         const col2 = if (on) uiart.HOT else if (inert) mathx.withAlpha(uiart.TEXT_DIM, 170) else uiart.TEXT_VALUE;
         hud.text(stats.displayName(a), inner.x, y, hud.BODY, col2);
         const val = fmt("{d}", .{v.sheet.at(a)});
-        hud.text(val, inner.right() - hud.textW(val, hud.BODY), y, hud.BODY, col2);
+        const valX = inner.right() - hud.textW(val, hud.BODY);
+        hud.text(val, valX, y, hud.BODY, col2);
+        // What the points are worth, in the unit they govern, beside the count.
+        const fig = attrFigure(a, v.sheet);
+        hud.text(fig, valX - 14 - hud.textW(fig, hud.TINY), y + @divTrunc(hud.lineH(hud.BODY) - hud.lineH(hud.TINY), 2), hud.TINY, mathx.withAlpha(uiart.TEXT_DIM, if (on) 230 else 170));
         const barY = y + hud.lineH(hud.BODY) + 1;
         uiart.well(inner.x, barY, inner.w, 3, 220);
         rl.drawRectangle(inner.x, barY, inner.w, 3, rgba(52, 46, 38, 190));
@@ -2128,78 +2428,241 @@ fn drawAttributes(self: *const Book, col: Box, v: View) void {
     y += 6;
     uiart.divider(inner.x + @divTrunc(inner.w, 2), y, @divTrunc(inner.w, 2) - 10, 120);
     const a: stats.Attr = @enumFromInt(@min(self.cur[idx(.stats)], stats.NA - 1));
-    const says = if (v.sheet.barFor(a) == null and !stats.inert(a))
-        fmt("{s}  x{d:.2}", .{ stats.governs(a), v.sheet.scale(a) })
-    else
-        stats.governs(a);
+    const says = saysOwn(fmt("{s} {s}", .{ stats.governs(a), nextPointSays(a, v.sheet) }));
     _ = hud.prose(says, inner.x, y + 12, inner.w, hud.HINT, uiart.TEXT_HINT);
 }
 
+/// A LIST OF FIGURES IN SECTIONS, built first and drawn after, so the pitch can be solved for the whole column. Values are printed into the list's own store: `fmt`'s ring is sixteen deep and a column is longer.
+const StatList = struct {
+    const Row = struct { name: [:0]const u8, val: [:0]const u8, col: rl.Color, sect: u8 };
+    /// The longest column the sheet can ask for: every resistance, every ailment and every passive at once, plus the two "nothing" rows.
+    const CAP = combat.NELEM + combat.NAIL + @typeInfo(ptree.Bonus).@"struct".fields.len + 2;
+    rows: [CAP]Row = undefined,
+    store: [CAP][24]u8 = undefined,
+    n: usize = 0,
+    sects: [8][:0]const u8 = undefined,
+    nsect: usize = 0,
+
+    fn section(self: *StatList, title: [:0]const u8) void {
+        if (self.nsect >= self.sects.len) return;
+        self.sects[self.nsect] = title;
+        self.nsect += 1;
+    }
+    fn put(self: *StatList, name: [:0]const u8, comptime f: []const u8, args: anytype, col: rl.Color) void {
+        if (self.n >= CAP or self.nsect == 0) return;
+        const s = std.fmt.bufPrintZ(&self.store[self.n], f, args) catch "?";
+        self.rows[self.n] = .{ .name = name, .val = s, .col = col, .sect = @intCast(self.nsect - 1) };
+        self.n += 1;
+    }
+    fn draw(self: *const StatList, inner: Box, foot: i32) i32 {
+        const step = rowStep(inner.h - @as(i32, @intCast(self.nsect)) * sectH() - foot, @max(self.n, 1));
+        const size = rowSize(step);
+        var y = inner.y;
+        var cur: ?u8 = null;
+        for (self.rows[0..self.n]) |r| {
+            if (cur != r.sect) {
+                y = head(inner, y, self.sects[r.sect]);
+                cur = r.sect;
+            }
+            rowLabelAt(r.name, inner.x, y, size, uiart.TEXT_DIM);
+            rowValueAt(r.val, inner.right(), y, size, r.col);
+            y += step;
+        }
+        return y;
+    }
+};
+
+fn goodIf(up: bool) rl.Color {
+    return if (up) uiart.GOOD else uiart.BAD;
+}
+
+/// THE BODY, ER's Base Power and Attack Power: the pools, what the hands in force actually deal, and what stands between him and a blow.
 fn drawBody(col: Box, v: View) void {
     const inner = panel(col, "BODY");
-    const pools = [_]struct { [:0]const u8, f32 }{
-        .{ "HP", heromod.hpMaxOf(v.sheet.*, v.worn, v.tree.bonus()) },
-        .{ "FP", heromod.fpMaxOf(v.sheet.*, v.worn, v.tree.bonus()) },
-        .{ "Stamina", v.sheet.stamina() },
-        .{ "Poise", heromod.POISE_MAX },
-        .{ "Stance", heromod.STANCE_MAX },
-    };
-    const armour = heromod.armourOf(v.worn);
-    const guard = [_]struct { [:0]const u8, f32, Unit }{
-        .{ "Armour", armour, .flat },
-        .{ "Damage negated", 100.0 * (1.0 - combat.armourTaken(armour, heromod.ATK_HEAVY_HIT.dmg) / heromod.ATK_HEAVY_HIT.dmg), .pct },
-    };
-    var granted = false;
-    for (0..combat.NELEM) |i| {
-        if (@abs(v.res.at(@enumFromInt(i))) > 0.05) granted = true;
-    }
-    const says = saysOwn(if (granted)
-        fmt("Capped at {d:.0}%.", .{combat.RES_CAP})
-    else
-        "");
+    const perk = v.tree.bonus();
+    const d = derive(inForce(v), v);
+    var L = StatList{};
+    L.section("VITALS");
+    L.put("HP", "{d:.0}", .{worth(d, .hp)}, uiart.TEXT_VALUE);
+    L.put("Focus", "{d:.0}", .{worth(d, .fp)}, uiart.TEXT_VALUE);
+    L.put("Stamina", "{d:.0}", .{v.sheet.stamina() * perk.stamMax}, uiart.TEXT_VALUE);
+    L.put("Poise", "{d:.0}", .{heromod.POISE_MAX * perk.poiseMax}, uiart.TEXT_VALUE);
+    L.put("Stance", "{d:.0}", .{heromod.STANCE_MAX}, uiart.TEXT_VALUE);
+    if (perk.hpRegen > 0) L.put("HP regen", "{d:.1}/s", .{perk.hpRegen}, uiart.GOOD);
+    if (perk.fpRegen > 0) L.put("Focus regen", "{d:.1}/s", .{perk.fpRegen}, uiart.GOOD);
 
-    const sect = hud.lineH(hud.TINY) + 6 + 22;
-    const nRows = pools.len + guard.len + combat.NELEM;
-    const fixed = sect * 2 + hud.proseH(says, inner.w, hud.HINT) + 10;
-    const step = rowStep(inner.h - fixed, nRows);
-
-    var y = inner.y;
-    const rows = struct {
-        fn draw(list: anytype, x: i32, right: i32, at: i32, pitch: i32) i32 {
-            var yy = at;
-            for (list) |r| {
-                rowLabel(r[0], x, yy, uiart.TEXT_DIM);
-                rowValue(fmt("{d:.0}", .{r[1]}), right, yy, uiart.TEXT_VALUE);
-                yy += pitch;
-            }
-            return yy;
-        }
-    }.draw;
-    y = rows(pools, inner.x, inner.right(), y, step);
-    y = section(inner, y, "DEFENCE");
-    for (guard) |g| {
-        rowLabel(g[0], inner.x, y, uiart.TEXT_DIM);
-        rowValue(unitStr(g[2], g[1]), inner.right(), y, if (g[1] > 0.005) uiart.TEXT_VALUE else uiart.TEXT_DIM);
-        y += step;
+    L.section("ATTACK");
+    if (worth(d, .light) > 0) {
+        L.put("Light attack", "{d:.0}", .{worth(d, .light)}, uiart.TEXT_VALUE);
+        L.put("Heavy attack", "{d:.0}", .{worth(d, .heavy)}, uiart.TEXT_VALUE);
+        if (worth(d, .elem) > 0.5) L.put("Elemental", "{d:.0}", .{worth(d, .elem)}, uiart.TEXT_VALUE);
+        L.put("Swing time", "{d:.2}s", .{worth(d, .swing)}, uiart.TEXT_VALUE);
+        L.put("Poise damage", "{d:.0}", .{worth(d, .poise)}, uiart.TEXT_VALUE);
+        L.put("Stance damage", "{d:.0}", .{worth(d, .stance)}, uiart.TEXT_VALUE);
+    } else {
+        L.put("Nothing in hand swings", "-", .{}, uiart.TEXT_DIM);
     }
-    y = section(inner, y, "RESISTANCE");
+    if (worth(d, .spell) > 0) {
+        L.put("Sorcery", "{d:.0}", .{worth(d, .spell)}, uiart.TEXT_VALUE);
+        L.put("Focus a cast", "{d:.0}", .{worth(d, .spell_fp)}, uiart.TEXT_VALUE);
+    }
+    if (v.holds(.bow)) L.put("Arrows carried", "{d:.0}", .{worth(d, .ammo)}, if (worth(d, .ammo) > 0) uiart.TEXT_VALUE else uiart.BAD);
+
+    L.section("DEFENCE");
+    const armour = worth(d, .armour);
+    L.put("Armour", "{d:.0}", .{armour}, if (armour > 0.5) uiart.TEXT_VALUE else uiart.TEXT_DIM);
+    L.put("Damage negated", "{d:.0}%", .{worth(d, .negate)}, if (armour > 0.5) uiart.TEXT_VALUE else uiart.TEXT_DIM);
+    if (worth(d, .guard) > 0) {
+        L.put("Guard negation", "{d:.0}%", .{worth(d, .guard)}, uiart.TEXT_VALUE);
+        L.put("Guard arc", "{d:.0} deg", .{worth(d, .arc)}, uiart.TEXT_VALUE);
+    }
+    L.put("Roll i-frames", "{d:.2}s", .{heromod.ROLL_IFRAME_END_BANK + perk.iframe}, if (perk.iframe > 0) uiart.GOOD else uiart.TEXT_VALUE);
+    L.put("Roll costs", "{d:.0} stamina", .{combat.STAM_ROLL * perk.rollStam}, if (perk.rollStam < 1) uiart.GOOD else uiart.TEXT_VALUE);
+    const move = heromod.moveRateOf(v.worn, perk);
+    if (@abs(move - 1) > 0.005) L.put("Move speed", "{d:.0}%", .{move * 100}, goodIf(move > 1));
+    _ = L.draw(inner, 0);
+}
+
+/// THE WARDS: what he shrugs off, what fills slower on him, and everything the tree has made of him in words — the passives, one line per `ptree.Bonus` field; `BONUS_SHOWN` refuses to compile a field no panel says.
+fn drawWards(col: Box, v: View) void {
+    const inner = panel(col, "WARDS");
+    const perk = v.tree.bonus();
+    var L = StatList{};
+    L.section("RESISTANCE");
     for (0..combat.NELEM) |i| {
         const e: combat.Elem = @enumFromInt(i);
         const raw = v.res.raw(e);
         const eff = v.res.at(e);
-        rowLabel(combat.elemName(e), inner.x, y, uiart.TEXT_DIM);
-        const s = if (@abs(raw - eff) < 0.05) fmt("{d:.0}%", .{raw}) else fmt("{d:.0}% ({d:.0}%)", .{ raw, eff });
-        rowValue(s, inner.right(), y, if (eff > 0.05) uiart.GOOD else if (eff < -0.05) uiart.BAD else uiart.TEXT_DIM);
-        y += step;
+        const col2 = if (eff > 0.05) uiart.GOOD else if (eff < -0.05) uiart.BAD else uiart.TEXT_DIM;
+        if (@abs(raw - eff) < 0.05) L.put(combat.elemName(e), "{d:.0}%", .{raw}, col2) else L.put(combat.elemName(e), "{d:.0}% ({d:.0}%)", .{ raw, eff }, col2);
     }
-    _ = hud.prose(says, inner.x, y + 6, inner.w, hud.HINT, uiart.TEXT_HINT);
+
+    L.section("AILMENTS");
+    const suit = heromod.suitOf(v.worn);
+    var slowed = false;
+    for (0..combat.NAIL) |i| {
+        const a: combat.Ail = @enumFromInt(i);
+        var k = suit.rates[i];
+        if (a == .poison) k *= perk.poison;
+        if (@abs(k - 1) < 0.005) continue;
+        slowed = true;
+        L.put(combat.ailName(a), "fills at {d:.0}%", .{k * 100}, goodIf(k < 1));
+    }
+    if (!slowed) L.put("Every meter fills at", "100%", .{}, uiart.TEXT_DIM);
+
+    L.section("PASSIVES");
+    var taken = false;
+    if (perk.dmg != 1) {
+        L.put("Damage", "x{d:.2}", .{perk.dmg}, goodIf(perk.dmg > 1));
+        taken = true;
+    }
+    if (perk.bowDmg != 1) {
+        L.put("Bow damage", "x{d:.2}", .{perk.bowDmg}, goodIf(perk.bowDmg > 1));
+        taken = true;
+    }
+    if (perk.thrownDmg != 1) {
+        L.put("Thrown damage", "x{d:.2}", .{perk.thrownDmg}, goodIf(perk.thrownDmg > 1));
+        taken = true;
+    }
+    if (perk.spellDmg != 1) {
+        L.put("Sorcery damage", "x{d:.2}", .{perk.spellDmg}, goodIf(perk.spellDmg > 1));
+        taken = true;
+    }
+    if (perk.spellCost != 1) {
+        L.put("Sorcery costs", "x{d:.2}", .{perk.spellCost}, goodIf(perk.spellCost < 1));
+        taken = true;
+    }
+    if (perk.castSpeed != 1) {
+        L.put("Cast speed", "x{d:.2}", .{perk.castSpeed}, goodIf(perk.castSpeed > 1));
+        taken = true;
+    }
+    if (perk.guard != 0) {
+        L.put("Guard", "+{d:.0}%", .{perk.guard * 100}, goodIf(perk.guard > 0));
+        taken = true;
+    }
+    if (perk.iframe != 0) {
+        L.put("Roll i-frames", "+{d:.2}s", .{perk.iframe}, goodIf(perk.iframe > 0));
+        taken = true;
+    }
+    if (perk.rollStam != 1) {
+        L.put("Roll costs", "x{d:.2}", .{perk.rollStam}, goodIf(perk.rollStam < 1));
+        taken = true;
+    }
+    if (perk.stamMax != 1) {
+        L.put("Stamina", "x{d:.2}", .{perk.stamMax}, goodIf(perk.stamMax > 1));
+        taken = true;
+    }
+    if (perk.stamRegen != 1) {
+        L.put("Stamina regen", "x{d:.2}", .{perk.stamRegen}, goodIf(perk.stamRegen > 1));
+        taken = true;
+    }
+    if (perk.moveSpeed != 1) {
+        L.put("Move speed", "x{d:.2}", .{perk.moveSpeed}, goodIf(perk.moveSpeed > 1));
+        taken = true;
+    }
+    if (perk.armour != 0) {
+        L.put("Armour", "+{d:.0}", .{perk.armour}, goodIf(perk.armour > 0));
+        taken = true;
+    }
+    if (perk.leech != 0) {
+        L.put("HP a swing landed", "+{d:.1}", .{perk.leech}, goodIf(perk.leech > 0));
+        taken = true;
+    }
+    if (perk.poiseMax != 1) {
+        L.put("Poise", "x{d:.2}", .{perk.poiseMax}, goodIf(perk.poiseMax > 1));
+        taken = true;
+    }
+    if (perk.flaskHeal != 1) {
+        L.put("Flask heals", "x{d:.2}", .{perk.flaskHeal}, goodIf(perk.flaskHeal > 1));
+        taken = true;
+    }
+    if (perk.fpMax != 1) {
+        L.put("Focus", "x{d:.2}", .{perk.fpMax}, goodIf(perk.fpMax > 1));
+        taken = true;
+    }
+    if (perk.hpFrac != 0) {
+        L.put("Max HP", "-{d:.0}%", .{perk.hpFrac * 100}, uiart.BAD);
+        taken = true;
+    }
+    if (perk.poison != 1) {
+        L.put("Poison fills at", "x{d:.2}", .{perk.poison}, goodIf(perk.poison < 1));
+        taken = true;
+    }
+    if (perk.cull > 0) {
+        L.put("Culls below", "{d:.0}% HP", .{perk.cull * 100}, uiart.GOOD);
+        taken = true;
+    }
+    if (perk.onKill > 0) {
+        L.put("On a kill", "+{d:.0}", .{perk.onKill}, uiart.GOOD);
+        taken = true;
+    }
+    if (perk.boltCloud) {
+        L.put("The bolt", "leaves a cloud", .{}, uiart.GOOD);
+        taken = true;
+    }
+    if (!taken) L.put("Nothing taken yet", "-", .{}, uiart.TEXT_DIM);
+    _ = L.draw(inner, 0);
 }
 
-fn section(inner: Box, y: i32, title: [:0]const u8) i32 {
-    uiart.divider(inner.x + @divTrunc(inner.w, 2), y + 6, @divTrunc(inner.w, 2) - 10, 120);
-    hud.text(title, inner.x, y + 14, hud.TINY, mathx.withAlpha(uiart.GILT, 200));
-    return y + 14 + hud.lineH(hud.TINY) + 6;
+/// Every `ptree.Bonus` field a panel prints: the PASSIVES rows above, VITALS for the regens, ATTRIBUTES for `attrs`, RESISTANCE for `res`.
+const BONUS_SHOWN = [_][]const u8{
+    "attrs",     "res",       "hpRegen",  "fpRegen",  "dmg",      "bowDmg",   "thrownDmg", "spellDmg", "spellCost",
+    "castSpeed", "guard",     "iframe",   "rollStam", "stamMax",  "stamRegen", "moveSpeed", "armour",   "leech",
+    "poiseMax",  "flaskHeal", "fpMax",    "hpFrac",   "poison",   "cull",     "onKill",    "boltCloud",
+};
+
+comptime {
+    @setEvalBranchQuota(20000);
+    for (@typeInfo(ptree.Bonus).@"struct".fields) |f| {
+        var shown = false;
+        for (BONUS_SHOWN) |name| shown = shown or std.mem.eql(u8, name, f.name);
+        if (!shown) @compileError("book: `ptree.Bonus." ++ f.name ++ "` is on no panel — give it a row in drawWards or drawBody and name it in BONUS_SHOWN");
+    }
+    for (BONUS_SHOWN) |name| {
+        if (!@hasField(ptree.Bonus, name)) @compileError("book: BONUS_SHOWN names `" ++ name ++ "`, which `ptree.Bonus` no longer has");
+    }
 }
+
 
 
 const PORT_W: i32 = 460;
@@ -2759,7 +3222,7 @@ test "BOTH PAGES SPEAK IN NUMBERS, and the three classes are told apart by them"
         try std.testing.expect(f.socket != null);
         if (f.socket.?.held()) {
             held += 1;
-            try std.testing.expect(cardRows(v, f) > 0);
+            try std.testing.expect(cardShape(v, f).rows > 0);
         }
     }
     try std.testing.expect(held >= 2);
@@ -2806,6 +3269,77 @@ test "THE SHEET CARRIES THE FOUR COLUMNS AND THE POOLS, and a swap moves them" {
 
     try std.testing.expect(DER_SPLIT > 0 and DER_SPLIT < ND);
     for (DER) |row| try std.testing.expect(row.name.len > 0);
+}
+
+test "A DIFFERENCE IS SAID WITH ITS SIGN, and a hair of drift is not a difference" {
+    try std.testing.expectEqualStrings("+12", deltaStr(.flat, 10, 22));
+    try std.testing.expectEqualStrings("-3", deltaStr(.flat, 10, 7));
+    try std.testing.expectEqualStrings("+35%", deltaStr(.pct, 0, 35));
+    try std.testing.expectEqualStrings("+0.08s", deltaStr(.secs, 0.67, 0.75));
+    try std.testing.expect(!moves(.flat, 10, 10.2));
+    try std.testing.expect(moves(.flat, 10, 11));
+    try std.testing.expect(!moves(.secs, 0.67, 0.672));
+    try std.testing.expect(moves(.secs, 0.67, 0.69));
+}
+
+test "EVERY GEAR DIAL SITS IN ONE SECTION, the sections run in the enum's order, and none is empty" {
+    var count = [_]usize{0} ** NGS;
+    var last: ?GSection = null;
+    for (0..NGD) |i| {
+        const s = gsectionOf(@enumFromInt(i));
+        count[@intFromEnum(s)] += 1;
+        if (last) |l| try std.testing.expect(@intFromEnum(s) >= @intFromEnum(l));
+        last = s;
+    }
+    for (count) |n| try std.testing.expect(n > 0);
+}
+
+test "A CANDIDATE LEADS WITH THE NUMBER IT MOVES MOST — the club its damage, the mantle its armour, and a swap for the same thing says nothing" {
+    var bag = item.Bag{};
+    bag.add(.greatclub, 1);
+    bag.add(.rimeward_mantle, 1);
+    const sheet = stats.Sheet{};
+    const res = combat.Resists{};
+    const flasks = combat.Flasks{};
+    const quiver = combat.Quiver{};
+    const v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
+    const base = inForce(v);
+    const now = derive(base, v);
+
+    const club = Cand{ .name = "club", .act = .{ .arm = .{ .a = .club, .kind = .greatclub } } };
+    const h = headline(club, v, base, now).?;
+    const mantle = Cand{ .name = "mantle", .act = .{ .wear = .{ .slot = .chest, .kind = .rimeward_mantle } } };
+    const m = headline(mantle, v, base, now).?;
+    std.debug.print("\n  headlines: club '{s}', mantle '{s}'\n", .{ h.text, m.text });
+    try std.testing.expect(std.mem.indexOf(u8, h.text, "heavy") != null or std.mem.indexOf(u8, h.text, "light") != null);
+    try std.testing.expect(h.good);
+    try std.testing.expect(std.mem.indexOf(u8, m.text, "armour") != null);
+    try std.testing.expect(m.good);
+
+    const same = Cand{ .name = "sword", .act = .{ .arm = .{ .a = .sword } } };
+    try std.testing.expect(headline(same, v, base, now) == null);
+}
+
+test "the stats page is FOUR panels that tile the body, the attributes the widest of the three sheets" {
+    const body = Box{ .x = 40, .y = 90, .w = 1200, .h = 600 };
+    const c = statsCols(body);
+    try std.testing.expectEqual(body.x, c[0].x);
+    try std.testing.expectEqual(body.right(), c[3].right());
+    try std.testing.expectEqual(c[0].right() + GUTTER, c[1].x);
+    try std.testing.expectEqual(c[1].right() + GUTTER, c[2].x);
+    try std.testing.expectEqual(c[2].right() + GUTTER, c[3].x);
+    try std.testing.expect(c[0].w > c[1].w);
+    try std.testing.expect(@abs(c[1].w - c[2].w) <= 1);
+    for (c) |b| try std.testing.expectEqual(body.h, b.h);
+}
+
+test "the next point is priced in the unit the attribute governs, and a ceiling says so" {
+    var s = stats.Sheet{};
+    const says = nextPointSays(.vitality, &s);
+    try std.testing.expect(std.mem.indexOf(u8, says, "HP") != null);
+    try std.testing.expect(std.mem.indexOf(u8, attrFigure(.endurance, &s), "stamina") != null);
+    s.set(.luck, stats.MAX);
+    try std.testing.expectEqualStrings("At its ceiling.", nextPointSays(.luck, &s));
 }
 
 test "A PAGE THAT PANS SAYS SO — every gesture the book takes is named on the page that takes it" {

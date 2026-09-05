@@ -588,6 +588,22 @@ pub const Id = enum {
     duo_bloom,
     deer_spit,
     smith_ring,
+    // THE DRUIDESS: a corrupted human under the robes — a woman's voice with a growl under it, never a scream.
+    druid_cast,
+    druid_release,
+    druid_whip,
+    druid_sprout,
+    druid_snare,
+    druid_spear,
+    druid_leap,
+    druid_land,
+    druid_step,
+    druid_summon,
+    druid_hum,
+    druid_pod,
+    druid_hurt,
+    druid_die,
+    veil_break,
 };
 const NV = @typeInfo(Id).@"enum".fields.len;
 
@@ -2063,6 +2079,18 @@ fn mkSoulsTake(r: *Rack) void {
     r.master(2.0, 6400);
 }
 
+/// Glass and air, no stone: the wall was never there. Two thin rings a fifth apart climb out of a breath, and nothing is struck.
+fn mkVeilBreak(r: *Rack) void {
+    r.tick(0.00, 0.20, 3200);
+    r.ring(0.00, 1.10, 1480, 0.15, 1.5, 3);
+    r.ring(0.05, 1.25, 2220, 0.09, 1.7, 2);
+    r.air(0.00, 1.15, 0.24, 900, 2800, 0.30, 1.2);
+    r.air(0.12, 0.90, 0.16, 2600, 500, 0.36, 1.4);
+    r.hall(1.10, 2400);
+    r.master(1.2, 3400);
+    r.ends(0.02, 0.50);
+}
+
 fn mkFogPass(r: *Rack) void {
     r.air(0.00, 1.55, 0.34, 260, 1500, 0.30, 1.1);
     r.air(0.10, 1.35, 0.24, 1700, 320, 0.34, 1.3);
@@ -2576,6 +2604,147 @@ fn battle(old: f32) f32 {
     return @sqrt(BATTLE_FLOOR * old);
 }
 
+// THE DRUIDESS'S VOICE. A woman, low, with the corruption as a second growl an octave under her and a rasp in the
+// breath — never a scream and never a hiss: every take is authored soft, warmed, and driven gently.
+
+/// The gather: an indrawn breath and a murmur held on one note, the orb ringing faintly under it.
+fn mkDruidCast(r: *Rack) void {
+    r.air(0.0, 0.52, 0.24, 560, 1900, 0.42, 1.3);
+    r.growl(0.06, 0.46, 182 + r.rng.signed() * 10, 208, 0.26, 0.20, 0.30);
+    r.growl(0.10, 0.42, 92, 104, 0.12, 0.34, 0.30);
+    r.ring(0.12, 0.42, 524, 0.07, 2.4, 3);
+    r.crackle(0.08, 10.0);
+    r.warm(3200);
+    r.master(1.25, 3600);
+}
+
+/// The release: one exhaled syllable, the pitch falling, the rasp on the tail of it.
+fn mkDruidRelease(r: *Rack) void {
+    r.growl(0.0, 0.24, 236 + r.rng.signed() * 14, 168, 0.50, 0.28, 0.34);
+    r.growl(0.02, 0.22, 118, 84, 0.22, 0.42, 0.30);
+    r.air(0.0, 0.28, 0.28, 1300, 520, 0.48, 2.8);
+    r.grit(0.03, 0.16, 0.16, 1400, 0.45, 3.0);
+    r.warm(3800);
+    r.master(1.5, 4000);
+}
+
+/// The lash: a wet crack — the snap of a stalk through the air and a slap of leaf at the end.
+fn mkDruidWhip(r: *Rack) void {
+    r.body(0.0, 0.08, 250 + r.rng.signed() * 30, 88, 0.80, 6.0);
+    r.air(0.01, 0.26, 0.48, 2700, 420, 0.58, 2.8);
+    r.grit(0.0, 0.12, 0.26, 2300, 0.48, 3.4);
+    r.ring(0.02, 0.10, 176, 0.14, 6.0, 2);
+    r.tick(0.05, 0.30, 2200);
+    r.master(1.9, 3200);
+}
+
+/// A stalk coming up through turf: soil, a low thud, the green squeak of it rising.
+fn mkDruidSprout(r: *Rack) void {
+    r.body(0.0, 0.30, 64, 170, 0.70, 2.6);
+    r.grit(0.0, 0.36, 0.38, 850, 0.68, 2.4);
+    r.air(0.10, 0.28, 0.22, 700, 2300, 0.34, 3.0);
+    r.ring(0.14, 0.18, 1180, 0.05, 5.0, 2);
+    r.master(1.4, 3000);
+}
+
+/// Roots taking hold: a grab of gravel and creaking wood, the earth heaving under it.
+fn mkDruidSnare(r: *Rack) void {
+    r.grit(0.0, 0.52, 0.50, 900, 0.74, 1.8);
+    r.body(0.0, 0.32, 70, 180, 0.66, 2.6);
+    r.air(0.05, 0.42, 0.28, 520, 2000, 0.38, 2.2);
+    r.growl(0.10, 0.36, 60, 44, 0.24, 0.60, 0.40);
+    r.crackle(0.24, 28.0);
+    r.master(1.6, 3000);
+}
+
+/// The spear: a tearing rush along the ground and the thud of the shaft arriving.
+fn mkDruidSpear(r: *Rack) void {
+    r.air(0.0, 0.32, 0.66, 1600, 300, 0.56, 2.2);
+    r.body(0.0, 0.16, 118, 46, 0.86, 3.2);
+    r.grit(0.0, 0.28, 0.48, 1500, 0.70, 2.4);
+    r.tick(0.15, 0.46, 2600);
+    r.body(0.15, 0.10, 210, 90, 0.40, 5.0);
+    r.master(2.1, 3000);
+}
+
+/// Take-off: robes through the air and a breath out of her.
+fn mkDruidLeap(r: *Rack) void {
+    r.air(0.0, 0.50, 0.34, 420, 1500, 0.40, 1.6);
+    r.growl(0.02, 0.26, 262 + r.rng.signed() * 16, 330, 0.26, 0.20, 0.30);
+    r.growl(0.04, 0.24, 131, 165, 0.10, 0.36, 0.30);
+    r.grit(0.0, 0.20, 0.12, 1100, 0.50, 3.0);
+    r.warm(3400);
+    r.master(1.35, 3600);
+}
+
+/// Landing gently: a soft thump and the robes settling on the grass.
+fn mkDruidLand(r: *Rack) void {
+    r.body(0.0, 0.18, 86, 40, 0.48, 3.4);
+    r.grit(0.0, 0.22, 0.26, 1100, 0.60, 3.0);
+    r.air(0.02, 0.32, 0.20, 620, 220, 0.30, 2.0);
+    r.master(1.35, 2800);
+}
+
+/// The sidestep: a scuff and a whisk of cloth.
+fn mkDruidStep(r: *Rack) void {
+    r.grit(0.0, 0.12, 0.30, 1300, 0.55, 4.0);
+    r.air(0.0, 0.20, 0.26, 900, 2200, 0.30, 3.0);
+    r.master(1.3, 3200);
+}
+
+/// The call: a held note that climbs, the growl under it swelling, a choir of one voice ringing off the orb.
+fn mkDruidSummon(r: *Rack) void {
+    r.growl(0.0, 1.15, 172, 238, 0.46, 0.24, 0.42);
+    r.growl(0.10, 1.05, 86, 119, 0.30, 0.40, 0.40);
+    r.ring(0.20, 0.95, 428, 0.09, 1.6, 4);
+    r.ring(0.40, 0.80, 642, 0.05, 1.8, 3);
+    r.air(0.10, 1.05, 0.22, 700, 2400, 0.42, 1.2);
+    r.crackle(0.10, 16.0);
+    r.warm(3400);
+    r.master(1.55, 3600);
+}
+
+/// The channel: a hum on one note, hers and the thing under her together, retriggered while she mends.
+fn mkDruidHum(r: *Rack) void {
+    r.growl(0.0, 1.15, 196, 204, 0.28, 0.16, 0.50);
+    r.growl(0.0, 1.15, 98, 102, 0.18, 0.30, 0.40);
+    r.ring(0.0, 1.05, 392, 0.07, 1.2, 4);
+    r.air(0.0, 1.15, 0.12, 500, 1600, 0.50, 1.0);
+    r.warm(3000);
+    r.master(1.15, 3400);
+}
+
+/// A pod going off: a wet pop and the splinters ticking away.
+fn mkDruidPod(r: *Rack) void {
+    r.body(0.0, 0.06, 186 + r.rng.signed() * 24, 520, 0.82, 5.5);
+    r.air(0.004, 0.11, 0.24, 900, 2600, 0.34, 4.5);
+    r.grit(0.0, 0.12, 0.22, 1700, 0.45, 4.5);
+    r.crackle(0.10, 40.0);
+    r.master(1.4, 3200);
+}
+
+/// Hurt: a woman's gasp, cut off, with the rasp of the other thing coming up through it.
+fn mkDruidHurt(r: *Rack) void {
+    r.growl(0.0, 0.16, 296 + r.rng.signed() * 22, 212, 0.56, 0.32, 0.26);
+    r.growl(0.02, 0.24, 148, 106, 0.26, 0.48, 0.30);
+    r.air(0.0, 0.22, 0.28, 1400, 720, 0.48, 3.0);
+    r.grit(0.01, 0.12, 0.18, 2000, 0.40, 4.0);
+    r.warm(3800);
+    r.master(1.45, 3800);
+}
+
+/// Death: a long falling cry that breaks into breath, the growl outlasting the voice by a beat and then going too.
+fn mkDruidDie(r: *Rack) void {
+    r.growl(0.0, 0.92, 262, 148, 0.66, 0.30, 0.40);
+    r.growl(0.06, 1.15, 131, 72, 0.38, 0.50, 0.40);
+    r.air(0.30, 1.35, 0.28, 1800, 320, 0.40, 1.2);
+    r.ring(0.40, 1.00, 330, 0.07, 1.5, 3);
+    r.grit(0.90, 0.60, 0.14, 900, 0.50, 1.6);
+    r.crackle(0.18, 14.0);
+    r.warm(3000);
+    r.master(1.5, 3200);
+}
+
 const BANK = [NV]Row{
     .{ .id = .step_soft, .make = mkStepSoft, .gain = 0.075, .jit = 0.13, .vjit = 0.30, .vars = 4, .poly = 3 },
     .{ .id = .step_hard, .make = mkStepHard, .gain = 0.100, .jit = 0.12, .vjit = 0.26, .vars = 4, .poly = 3 },
@@ -2767,6 +2936,21 @@ const BANK = [NV]Row{
     .{ .id = .duo_bloom, .make = mkDuoBloom, .gain = battle(0.60), .mix = .combat, .jit = 0.08, .vjit = 0.12, .vars = 3, .poly = 2, .reach = 65 },
     .{ .id = .deer_spit, .make = mkDeerSpit, .gain = battle(0.60), .mix = .combat, .jit = 0.10, .vjit = 0.18, .vars = 5, .poly = 4, .reach = 44 },
     .{ .id = .smith_ring, .make = mkSmithRing, .gain = 0.66, .jit = 0.05, .vjit = 0.11, .vars = 5, .poly = 3, .reach = 92 },
+    .{ .id = .druid_cast, .make = mkDruidCast, .gain = battle(0.52), .mix = .combat, .jit = 0.06, .vjit = 0.14, .vars = 4, .poly = 2, .reach = 40 },
+    .{ .id = .druid_release, .make = mkDruidRelease, .gain = battle(0.58), .mix = .combat, .jit = 0.08, .vjit = 0.16, .vars = 4, .poly = 3, .reach = 44 },
+    .{ .id = .druid_whip, .make = mkDruidWhip, .gain = battle(0.60), .mix = .combat, .jit = 0.10, .vjit = 0.18, .vars = 5, .poly = 4, .reach = 40 },
+    .{ .id = .druid_sprout, .make = mkDruidSprout, .gain = battle(0.50), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 4, .poly = 4, .reach = 36 },
+    .{ .id = .druid_snare, .make = mkDruidSnare, .gain = battle(0.60), .mix = .combat, .jit = 0.08, .vjit = 0.14, .vars = 4, .poly = 3, .reach = 40 },
+    .{ .id = .druid_spear, .make = mkDruidSpear, .gain = battle(0.66), .mix = .combat, .jit = 0.06, .vjit = 0.12, .vars = 4, .poly = 3, .reach = 44 },
+    .{ .id = .druid_leap, .make = mkDruidLeap, .gain = battle(0.52), .mix = .combat, .jit = 0.08, .vjit = 0.14, .vars = 4, .poly = 2, .reach = 40 },
+    .{ .id = .druid_land, .make = mkDruidLand, .gain = battle(0.48), .mix = .combat, .jit = 0.08, .vjit = 0.14, .vars = 4, .poly = 2, .reach = 34 },
+    .{ .id = .druid_step, .make = mkDruidStep, .gain = battle(0.44), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 4, .poly = 2, .reach = 30 },
+    .{ .id = .druid_summon, .make = mkDruidSummon, .gain = battle(0.62), .mix = .combat, .jit = 0.0, .vjit = 0.06, .vars = 3, .poly = 1, .reach = 60 },
+    .{ .id = .druid_hum, .make = mkDruidHum, .gain = battle(0.42), .mix = .combat, .jit = 0.04, .vjit = 0.06, .vars = 4, .poly = 2, .reach = 48 },
+    .{ .id = .druid_pod, .make = mkDruidPod, .gain = battle(0.54), .mix = .combat, .jit = 0.12, .vjit = 0.20, .vars = 5, .poly = 5, .reach = 36 },
+    .{ .id = .druid_hurt, .make = mkDruidHurt, .gain = battle(0.56), .mix = .combat, .jit = 0.10, .vjit = 0.18, .vars = 6, .poly = 3, .reach = 44 },
+    .{ .id = .druid_die, .make = mkDruidDie, .gain = battle(0.70), .mix = .combat, .jit = 0.0, .vjit = 0.0, .vars = 1, .poly = 1, .reach = 90 },
+    .{ .id = .veil_break, .make = mkVeilBreak, .gain = 0.58, .jit = 0.03, .vjit = 0.06, .vars = 2, .poly = 1, .reach = 60 },
 };
 
 fn seconds(id: Id) f32 {
@@ -2844,6 +3028,15 @@ fn seconds(id: Id) f32 {
         .priest_breath => 1.15,
         .skitter_slice => 0.55,
         .gremlin_spark => 0.45,
+        .druid_cast => 0.62,
+        .druid_snare => 0.72,
+        .druid_spear => 0.60,
+        .druid_leap => 0.70,
+        .druid_summon => 1.45,
+        .druid_hum => 1.25,
+        .druid_hurt => 0.60,
+        .druid_die => 1.90,
+        .veil_break => 1.50,
         .souls_spill => 0.9,
         // The retrigger fires every `HUM_EVERY` (1.15 s); the take must outlast it or the hum chatters.
         .souls_hum => 1.30,

@@ -138,6 +138,10 @@ pub const TURN_RATE = 3.4;
 pub const SWIPE_TURN = 5.4;
 /// DOWN off the CHEST joint (which sits at the top of the barrel, 0.775·H), so ~0.715·H — 2.9 m of a 4.1 m creature, inside the hurt sphere (0.8..4.1 m) and clear of the skull at 0.925·H. It still HINGES with the chest through the slam.
 const LOCK_AT = v3(0, -0.06 * H, 0);
+/// THE HEAD IS THE PART THAT FLINCHES: its own sphere about the cranium, tested before the body's, pouring twice the poise. An aimed arrow (23 dmg → 18.9 poise, doubled 37.7) flinches a 30-poise giant off the head and not off the chest; a quick shot (10) flinches him nowhere.
+const HEAD_AT = v3(0, CRANIUM_Y, 0);
+const HEAD_R = 0.12 * H;
+pub const HEAD_POISE_K: f32 = 2.0;
 const BODY_R = 0.55; // ground footprint (pre-scale) — broad
 const HURT_R = 0.72; // hurt-sphere radius the hero's blade tests against (pre-scale) — a big target
 const A_BOB = 0.030 * H;
@@ -458,7 +462,16 @@ pub const Ogre = struct {
         return foe.bodyPoint(self.pos, 1.02 * H, self.scale, 0);
     }
     pub fn headWorld(self: *const Ogre) rl.Vector3 {
-        return v3(self.pos.x, self.pos.y + 0.86 * H * self.scale, self.pos.z);
+        return foe.markOn(self.xf[SKULL], HEAD_AT);
+    }
+    pub fn lockParts(_: *const Ogre) u8 {
+        return 2;
+    }
+    pub fn lockPointAt(self: *const Ogre, i: u8) rl.Vector3 {
+        return if (i == 1) self.headWorld() else self.lockPoint();
+    }
+    fn headPart(self: *const Ogre) foe.Part {
+        return .{ .center = self.headWorld(), .r = HEAD_R * self.scale, .poiseK = HEAD_POISE_K };
     }
     pub fn clubLowWorld(self: *const Ogre) rl.Vector3 {
         return rl.math.vector3Transform(CLUB_LOW, self.xf[CLUB]);
@@ -742,9 +755,7 @@ pub const Ogre = struct {
 
     // The hero's bearing off his facing, in degrees (0 = dead ahead, ±180 = behind) — what decides whether he can drop the club on you or has to SWEEP round to reach you.
     fn bearingTo(self: *const Ogre, hero: rl.Vector3) f32 {
-        const d = mathx.dirXZ(self.pos, hero);
-        if (mathx.lenXZ(d) < 1e-3) return 0;
-        return mathx.degrees(mathx.wrapPi(mathx.headingXZ(d) - self.facing));
+        return foe.bearingDeg(self.pos, self.facing, hero);
     }
 
     fn decide(self: *Ogre, dist: f32, bearingDeg: f32) void {
@@ -770,7 +781,7 @@ pub const Ogre = struct {
 
     pub fn tryHit(self: *Ogre, blade: foe.Blade) void {
         if (self.state == .dead) return;
-        const s = foe.reached(self, blade) orelse return;
+        const s = foe.reachedPart(self, &self.vit, blade, self.headPart()) orelse foe.reached(self, blade) orelse return;
         const heavyBlow = foe.wounded(self, s, blade, .{ .light = 0.4, .heavy = 0.7 });
         self.bloodBurst(s.contact, s.dir, if (heavyBlow) BLOOD_HEAVY else BLOOD_LIGHT, if (heavyBlow) BLOOD_SPD_HEAVY else BLOOD_SPD_LIGHT);
         sfx.world(.ogre_hurt, self.pos);
@@ -933,7 +944,7 @@ pub const Ogre = struct {
             self.headLook = mathx.approach(self.headLook, 0, dt * 30.0);
             return;
         }
-        const bearing = mathx.degrees(mathx.wrapPi(mathx.headingXZ(mathx.dirXZ(self.pos, hero)) - self.facing));
+        const bearing = self.bearingTo(hero);
         self.headYaw = mathx.approach(self.headYaw, mathx.clampF(bearing, -HEAD_YAW_MAX, HEAD_YAW_MAX), dt * HEAD_TRACK_RATE);
         const near = 1.0 - mathx.smoothstep(SLAM_R, AGGRO_R * 0.6, d);
         self.headLook = mathx.approach(self.headLook, HEAD_LOOK_DOWN * near, dt * 40.0);
@@ -2277,4 +2288,45 @@ test "THE WOUND OPENS: five frames on, a giant's blood is a spray across the thr
         try std.testing.expect(m.open > 0.50);
         try std.testing.expect(m.splats * 2 >= m.motes);
     }
+}
+
+test "AN ARROW TO THE HEAD FLINCHES HIM WHERE ONE TO THE CHEST DOES NOT — same wound, twice the poise; a quick shot flinches nowhere" {
+    var head = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.4);
+    head.tryHit(foe.shaftThrough(head.headWorld(), heromod.BOW_AIMED_HIT));
+    try std.testing.expectEqual(@as(u32, 1), head.hits);
+    try std.testing.expect(head.staggered());
+
+    var chest = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.4);
+    chest.tryHit(foe.shaftThrough(chest.lockPoint(), heromod.BOW_AIMED_HIT));
+    try std.testing.expectEqual(@as(u32, 1), chest.hits);
+    try std.testing.expect(!chest.staggered());
+    try std.testing.expectApproxEqAbs(head.vit.hp, chest.vit.hp, 1e-4);
+    const pour = POISE_MAX - chest.vit.poise;
+    std.debug.print("\n  ogre: an aimed arrow pours {d:.1} poise into the chest, {d:.1} into the head, against a pool of {d:.0}\n", .{ pour, pour * HEAD_POISE_K, POISE_MAX });
+    try std.testing.expect(pour < POISE_MAX and pour * HEAD_POISE_K >= POISE_MAX);
+
+    var quick = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.4);
+    quick.tryHit(foe.shaftThrough(quick.headWorld(), heromod.BOW_QUICK_HIT));
+    try std.testing.expectEqual(@as(u32, 1), quick.hits);
+    try std.testing.expect(!quick.staggered());
+}
+
+test "THE HEAD IS A PART, NOT THE BODY — it rides the skull over the chest mark, and its sphere never reaches that mark" {
+    var o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.4);
+    var gap: f32 = 1e9;
+    var over: f32 = 1e9;
+    var k: i32 = 0;
+    while (k < 300) : (k += 1) {
+        _ = o.update(1.0 / 60.0, v3(0, 0, 15), 60, .{});
+        const h = o.headWorld();
+        gap = @min(gap, mathx.lenV(mathx.subV(h, o.lockPoint())));
+        over = @min(over, h.y - o.lockPoint().y);
+        try std.testing.expect(h.y <= o.topWorld().y + HEAD_R * o.scale);
+    }
+    std.debug.print("\n  ogre head: sphere r {d:.2} m, {d:.2} m over the chest mark at the least, never nearer it than {d:.2} m\n", .{ HEAD_R * o.scale, over, gap });
+    try std.testing.expect(over > 0);
+    try std.testing.expect(gap > HEAD_R * o.scale);
+    try std.testing.expectEqual(@as(u8, 2), o.lockParts());
+    try std.testing.expectEqual(o.headWorld(), o.lockPointAt(1));
+    try std.testing.expectEqual(o.lockPoint(), o.lockPointAt(0));
 }

@@ -4193,14 +4193,26 @@ pub const Hero = struct {
         for ([_]usize{ NECK, HEAD, SHL, ELL, WRL }) |i| wx[i] = dp[i];
     }
 
+    /// THE PLAYING IS SOLVED ONTO THE INSTRUMENT, NOT POSED NEAR IT (owner: very important details). The guitar rides the ROOT; both hands are placed on it in the ROOT's own frame — the right over the strings between the soundhole and the bridge, sweeping across them on the beat and turning at each end; the left BEHIND the neck, thumb side, walking the frets a position at a time and shivering a vibrato while it holds — and the arms are solved back from the hands (`armTo`). The head follows the fret hand on a shift and nods on the beat between; the right foot keeps the time.
     pub fn poseRest(self: *Hero, dt: f32) void {
         self.restT += dt;
         const t = self.restT;
         const phrase = 0.5 - 0.5 * mathx.cosf(t * 0.55);
-        const strum = mathx.sinf((t * 1.15 - @floor(t * 1.15)) * std.math.tau) * (0.55 + 0.45 * phrase);
+        const beat = t * REST_BEAT;
+        const beatU = beat - @floor(beat);
+        // THE STRUM: down across the strings on the beat, back up slower, never a sine — a pick moves fast one way and drifts back.
+        const sweep = if (beatU < 0.32) mathx.lerpF(-1.0, 1.0, smoothstep01(beatU / 0.32)) else mathx.lerpF(1.0, -1.0, smoothstep01((beatU - 0.32) / 0.68));
+        const attack = mathx.maxF(0, 1.0 - beatU / 0.18);
         const breathe = 0.010 * H * mathx.sinf(t * 1.05);
         const lilt = 5.2 * mathx.sinf(t * 0.62) + 1.8 * mathx.sinf(t * 0.29 + 1.1);
         const facingDeg = mathx.degrees(self.facing);
+        // THE FRET HAND WALKS: a new position every couple of bars, eased over a third of a second, with a shiver of vibrato while it holds a note.
+        const shiftN = @floor(t / REST_SHIFT_EVERY);
+        const shiftU = smoothstep01((t - shiftN * REST_SHIFT_EVERY) / REST_SHIFT_DUR);
+        const posWas = fretPosition(shiftN - 1.0);
+        const posNow = fretPosition(shiftN);
+        const fretAlong = mathx.lerpF(posWas, posNow, shiftU) + 0.0035 * mathx.sinf(t * 31.0) * (1.0 - attack) * (1.0 - shiftU * (1.0 - shiftU) * 4.0);
+        const glance = (1.0 - shiftU) * (1.0 - smoothstep01((t - shiftN * REST_SHIFT_EVERY) / (REST_SHIFT_DUR * 2.2)));
 
         var wx: [N]rl.Matrix = undefined;
         wx[ROOT] = mul3(
@@ -4208,19 +4220,35 @@ pub const Hero = struct {
             mul(tr(0, SIT_Y * H + breathe, 0), mul(rx(SIT_PITCH), ry(facingDeg))),
             rootAt(self.footPos()),
         );
-        setLocal(&wx, SPINE, self.rest, mul(rx(SIT_SPINE + 0.6 * strum), rz(lilt * 0.45)));
-        setLocal(&wx, CHEST, self.rest, mul(rx(SIT_CHEST), rz(lilt * 0.37)));
-        setLocal(&wx, NECK, self.rest, mul(rx(5.0), rz(-lilt * 0.30)));
-        setLocal(&wx, HEAD, self.rest, mul3(rx(HEAD_WALK + 13.0 - 4.0 * phrase), ry(11.0), rz(-lilt * 0.40)));
+        setLocal(&wx, SPINE, self.rest, mul(rx(SIT_SPINE + 1.2 * attack), rz(lilt * 0.45)));
+        setLocal(&wx, CHEST, self.rest, mul(rx(SIT_CHEST + 0.8 * attack), rz(lilt * 0.37)));
+        setLocal(&wx, NECK, self.rest, mul(rx(5.0 + 4.0 * glance), rz(-lilt * 0.30)));
+        // The head: down and left onto the fret hand at a shift, else a nod on the beat with the eyes closed.
+        setLocal(&wx, HEAD, self.rest, mul3(rx(HEAD_WALK + 11.0 - 4.0 * phrase + 3.0 * attack + 9.0 * glance), ry(9.0 + 14.0 * glance), rz(-lilt * 0.40 - 4.0 * glance)));
         sitLeg(&wx, self.rest, 1.0, HIPL, KNEEL, ANKL);
         sitLeg(&wx, self.rest, -1.0, HIPR, KNEER, ANKR);
-        const fret = 6.0 * phrase;
-        setLocal(&wx, SHL, self.rest, mul(rx(-14.0 - fret), rz(ARM_ABD + 46.0)));
-        setLocal(&wx, ELL, self.rest, rx(-(IDLE_ELBOW + 52.0 + fret)));
-        setLocal(&wx, WRL, self.rest, rz(-26.0));
-        setLocal(&wx, SHR, self.rest, mul(rx(-48.0 + 1.2 * strum), rz(-ARM_ABD - 34.0)));
-        setLocal(&wx, ELR, self.rest, rx(-(IDLE_ELBOW + 88.0 + 3.5 * strum)));
-        setLocal(&wx, WRR, self.rest, rz(9.0 * strum));
+        // The right foot keeps time: up through the off-beat, down on the beat.
+        const tap = 12.0 * (0.5 - 0.5 * mathx.cosf(beatU * std.math.tau));
+        wx[ANKR] = mul(rx(-tap), wx[ANKR]);
+
+        const gf = guitarFrame();
+        // The pick hand: above the strings, a hand's thickness off the top, between the soundhole and the bridge, swept across the six strings and a little past either side.
+        const strumAt = gf.at(sweep * 0.036, 0.235 + 0.010 * sweep, 0.085 - 0.012 * attack);
+        // The fret hand: the wrist stands BEHIND the fretboard (the thumb side), a shade toward the bass strings, with the fingers wrapping over onto the frets.
+        const fretAt = gf.at(-0.018, fretAlong, -0.056);
+        const strumWorld = rl.math.vector3Transform(strumAt, wx[ROOT]);
+        const fretWorld = rl.math.vector3Transform(fretAt, wx[ROOT]);
+        const rootO = rl.math.vector3Transform(mathx.zero3, wx[ROOT]);
+        const dirOf = struct {
+            fn f(v: rl.Vector3, m: rl.Matrix, o: rl.Vector3) rl.Vector3 {
+                return mathx.normV(mathx.subV(rl.math.vector3Transform(v, m), o));
+            }
+        }.f;
+        // Elbow hints in the ROOT's frame: the pick arm's elbow hangs down and back off the body's right; the fret arm's stands out to the left and a touch forward.
+        const rightHint = dirOf(v3(-0.55, -0.55, -0.62), wx[ROOT], rootO);
+        const leftHint = dirOf(v3(0.72, -0.62, 0.30), wx[ROOT], rootO);
+        armTo(&wx, self.rest, SHR, ELR, WRR, strumWorld, rightHint, dirOf(gf.axis(0, -1, 0), wx[ROOT], rootO), dirOf(gf.axis(0, 0, 1), wx[ROOT], rootO));
+        armTo(&wx, self.rest, SHL, ELL, WRL, fretWorld, leftHint, dirOf(gf.axis(0, 1, 0), wx[ROOT], rootO), dirOf(gf.axis(0, 0, -1), wx[ROOT], rootO));
         placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         self.publishRaw(&wx);
     }
@@ -4680,19 +4708,91 @@ fn bellR(u: f32) f32 {
     return BELL_MOUTH_R * (0.34 + 0.66 * std.math.pow(f32, mathx.clampF(u, 0, 1), 1.7));
 }
 
-fn guitarMesh() rl.Mesh {
-    var b = Builder.init();
+/// WHERE THE GUITAR IS, in the ROOT's frame — the mesh is built in it and the hands are solved onto it, so the two cannot disagree. `a` runs up the neck, `n` stands off the soundboard, `w` across the strings.
+fn guitarFrame() art.Frame {
     const a = mathx.normV(v3(0.74, 0.62, 0.26));
     const d = v3(0, 0.40, 0.92);
     const n = mathx.normV(mathx.subV(d, mathx.scaleV(a, d.x * a.x + d.y * a.y + d.z * a.z)));
-    art.guitarInto(&b, .{
+    return .{
         .o = v3(-0.30, -0.09, 0.14),
         .w = mathx.crossV(a, n),
         .a = a,
         .n = n,
         .s = 1.35,
-    });
+    };
+}
+
+fn guitarMesh() rl.Mesh {
+    var b = Builder.init();
+    art.guitarInto(&b, guitarFrame());
     return b.toMesh();
+}
+
+const REST_BEAT: f32 = 1.15;
+const REST_SHIFT_EVERY: f32 = 3.2;
+const REST_SHIFT_DUR: f32 = 0.34;
+/// Fret positions the left hand walks between, in the guitar's `along`: the nut is at 0.868 and the body joins the neck near 0.45, so these are the first eight frets or so.
+const REST_POSITIONS = [_]f32{ 0.80, 0.735, 0.775, 0.69, 0.75, 0.655, 0.79, 0.715 };
+fn fretPosition(shift: f32) f32 {
+    const i: usize = @intFromFloat(@mod(mathx.maxF(shift, 0), @as(f32, @floatFromInt(REST_POSITIONS.len))));
+    return REST_POSITIONS[i];
+}
+fn smoothstep01(u: f32) f32 {
+    return mathx.smoothstep(0, 1, mathx.clampF(u, 0, 1));
+}
+
+/// A rotation from the images of the three local axes, in the convention the whole rig transforms by (`vector3Transform`): local X lands on `x`, Y on `y`, Z on `z`.
+fn axesM(x: rl.Vector3, y: rl.Vector3, z: rl.Vector3) rl.Matrix {
+    var m = rl.math.matrixIdentity();
+    m.m0 = x.x;
+    m.m1 = x.y;
+    m.m2 = x.z;
+    m.m4 = y.x;
+    m.m5 = y.y;
+    m.m6 = y.z;
+    m.m8 = z.x;
+    m.m9 = z.y;
+    m.m10 = z.z;
+    return m;
+}
+
+/// TWO-BONE ARM SOLVE, in the world. The wrist is put AT `target` (or as near as the arm reaches), the elbow is bent toward `elbowHint`, and the hand is turned so its own down runs along `handDown` with its palm toward `palm`. The bones' lengths are the rest chain's, so nothing stretches.
+fn armTo(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, sh: usize, el: usize, wr: usize, target: rl.Vector3, elbowHint: rl.Vector3, handDown: rl.Vector3, palm: rl.Vector3) void {
+    const parent: usize = @intCast(PARENT[sh]);
+    const shoulder = rl.math.vector3Transform(mathx.subV(rest[sh], rest[parent]), wx[parent]);
+    const upper = mathx.lenV(mathx.subV(rest[el], rest[sh]));
+    const fore = mathx.lenV(mathx.subV(rest[wr], rest[el]));
+    var to = mathx.subV(target, shoulder);
+    var d = mathx.lenV(to);
+    if (d < 1e-4) {
+        to = v3(0, -1, 0);
+        d = 1e-4;
+    }
+    const reach = mathx.clampF(d, @abs(upper - fore) + 1e-3, upper + fore - 1e-3);
+    const u = mathx.scaleV(to, 1.0 / d);
+    // The bend plane holds the shoulder-to-wrist line and the elbow hint; the upper arm leaves the line by the law-of-cosines angle, toward the hint.
+    var side = mathx.subV(elbowHint, mathx.scaleV(u, mathx.dotV(elbowHint, u)));
+    if (mathx.lenV(side) < 1e-4) side = v3(0, -1, 0);
+    side = mathx.normV(side);
+    const cosB = mathx.clampF((upper * upper + reach * reach - fore * fore) / (2.0 * upper * reach), -1, 1);
+    const b = std.math.acos(cosB);
+    const a = mathx.normV(mathx.addV(mathx.scaleV(u, mathx.cosf(b)), mathx.scaleV(side, mathx.sinf(b))));
+    const elbow = mathx.addV(shoulder, mathx.scaleV(a, upper));
+    const wrist = mathx.addV(shoulder, mathx.scaleV(u, reach));
+    const f = mathx.normV(mathx.subV(wrist, elbow));
+    // Each bone hangs down its own -Y; its X is the bend normal, so the forearm folds in the plane the elbow chose.
+    const bend = mathx.normV(mathx.crossV(a, f));
+    const upperY = mathx.scaleV(a, -1.0);
+    wx[sh] = mul(axesM(bend, upperY, mathx.crossV(bend, upperY)), tr(shoulder.x, shoulder.y, shoulder.z));
+    const foreY = mathx.scaleV(f, -1.0);
+    wx[el] = mul(axesM(bend, foreY, mathx.crossV(bend, foreY)), tr(elbow.x, elbow.y, elbow.z));
+    // The hand: down along the strings' line, palm to the instrument.
+    const hy = mathx.scaleV(mathx.normV(handDown), -1.0);
+    var hz = mathx.subV(palm, mathx.scaleV(hy, mathx.dotV(palm, hy)));
+    if (mathx.lenV(hz) < 1e-4) hz = mathx.crossV(bend, hy);
+    hz = mathx.normV(hz);
+    const hx = mathx.crossV(hy, hz);
+    wx[wr] = mul(axesM(hx, hy, hz), tr(wrist.x, wrist.y, wrist.z));
 }
 
 pub fn boltMesh(shader: rl.Shader) rl.Model {
@@ -5768,6 +5868,48 @@ test "A SPELL'S BURST SETTLES ON THE GROUND IT WENT OFF ON, not on the one under
     for (own.fx) |q| {
         if (q.life > 0) try std.testing.expect(q.floor == null);
     }
+}
+
+test "HE PLAYS THE GUITAR HE IS HOLDING — both wrists land ON the instrument, the pick over the strings and the fret hand behind the neck, and no bone stretches" {
+    var h = testHero();
+    const gf = guitarFrame();
+    var strumAlong: [2]f32 = .{ 1e9, -1e9 };
+    var strumAcross: [2]f32 = .{ 1e9, -1e9 };
+    var fretAlong: [2]f32 = .{ 1e9, -1e9 };
+    var fretOut: f32 = 0;
+    var strumOut: f32 = 0;
+    var stretch: f32 = 0;
+    var t: f32 = 0;
+    while (t < 8.0) : (t += 1.0 / 60.0) {
+        h.poseRest(1.0 / 60.0);
+        const inv = rl.math.matrixInvert(h.xf[ROOT]);
+        inline for (.{ .{ WRR, ELR, SHR, true }, .{ WRL, ELL, SHL, false } }) |row| {
+            const wristW = rl.math.vector3Transform(mathx.zero3, h.xf[row[0]]);
+            const elbowW = rl.math.vector3Transform(mathx.zero3, h.xf[row[1]]);
+            const shoulderW = rl.math.vector3Transform(mathx.zero3, h.xf[row[2]]);
+            stretch = @max(stretch, @abs(mathx.lenV(mathx.subV(wristW, elbowW)) - mathx.lenV(mathx.subV(h.rest[row[0]], h.rest[row[1]]))));
+            stretch = @max(stretch, @abs(mathx.lenV(mathx.subV(elbowW, shoulderW)) - mathx.lenV(mathx.subV(h.rest[row[1]], h.rest[row[2]]))));
+            const p = mathx.subV(rl.math.vector3Transform(wristW, inv), gf.o);
+            const along = mathx.dotV(p, gf.a) / gf.s;
+            const across = mathx.dotV(p, gf.w) / gf.s;
+            const out = mathx.dotV(p, gf.n) / gf.s;
+            if (row[3]) {
+                strumAlong = .{ @min(strumAlong[0], along), @max(strumAlong[1], along) };
+                strumAcross = .{ @min(strumAcross[0], across), @max(strumAcross[1], across) };
+                strumOut = out;
+            } else {
+                fretAlong = .{ @min(fretAlong[0], along), @max(fretAlong[1], along) };
+                fretOut = out;
+            }
+        }
+    }
+    std.debug.print("\n  guitar: pick hand along {d:.3}..{d:.3} (soundhole 0.330, bridge 0.128), sweeping {d:.3}..{d:.3} across the strings, {d:.3} off the top; fret hand along {d:.3}..{d:.3} (nut 0.868), {d:.3} behind the board; worst bone stretch {d:.4} m\n", .{ strumAlong[0], strumAlong[1], strumAcross[0], strumAcross[1], strumOut, fretAlong[0], fretAlong[1], fretOut, stretch });
+    try std.testing.expect(strumAlong[0] > 0.15 and strumAlong[1] < 0.34);
+    try std.testing.expect(strumAcross[0] < -0.02 and strumAcross[1] > 0.02);
+    try std.testing.expect(strumOut > 0.04 and strumOut < 0.12);
+    try std.testing.expect(fretAlong[0] > 0.60 and fretAlong[1] < 0.84 and fretAlong[1] - fretAlong[0] > 0.05);
+    try std.testing.expect(fretOut < -0.02 and fretOut > -0.10);
+    try std.testing.expect(stretch < 0.002);
 }
 
 test "A NET TAKES THE FEET AND NOTHING ELSE — no walk, no roll, and the sword still swings" {

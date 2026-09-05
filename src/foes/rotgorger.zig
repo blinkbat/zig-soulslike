@@ -75,9 +75,11 @@ const BITE_R: f32 = 1.55;
 const BITE_FRONT_DOT: f32 = 0.55;
 const BITE_WIND: f32 = 0.38;
 const BITE_STRIKE: f32 = 0.16;
+/// The jaws are still open at the strike's first frame; they close from here.
+const BITE_IMPACT_K: f32 = 0.4;
 const BITE_RECOVER: f32 = 0.60;
 const BITE_CD: f32 = 1.9;
-pub var BITE_HIT = combat.Hit{ .dmg = 15, .poise = 13, .stance = 8, .elem = combat.elems(.{ .chaos = 9 }) };
+pub var BITE_HIT = combat.Hit{ .dmg = 15, .poise = 13, .stance = 8, .elem = combat.elems(.{ .chaos = 9 }), .venom = true };
 
 pub const CARRION_LIFE: f32 = 30.0;
 pub const SMELL_R: f32 = 22.0;
@@ -316,7 +318,7 @@ pub const Gorger = struct {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 if (self.t < BITE_WIND) self.faceToward(quarry, dt);
                 const s = self.t - BITE_WIND;
-                if (s >= 0 and s < BITE_STRIKE) self.tryBite(quarry);
+                if (s >= BITE_STRIKE * BITE_IMPACT_K and s < BITE_STRIKE) self.tryBite(quarry);
                 if (self.t >= BITE_WIND + BITE_STRIKE + BITE_RECOVER) {
                     self.heroLatch = false;
                     self.enter(.idle);

@@ -7,6 +7,7 @@ const foe = @import("foe.zig");
 const wf = @import("../world/worldfmt.zig");
 const sfx = @import("../core/audio.zig");
 const heromod = @import("../play/hero.zig");
+const archermod = @import("archer.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -128,6 +129,31 @@ const MOUND_PLOUGH_R: f32 = MOUND_TRAVEL_R * 1.1;
 const MOUND_PLOUGH_H: f32 = MOUND_TRAVEL_H * 1.45;
 const MOUND_PLOUGH_LONG: f32 = 2.8;
 
+/// THE ROCK (owner: dig up and throw a rock at range, long cd). Surfaced and far, with the dive cooling, it claws a stone out of the ground — the dig IS the tell, and the earth flying is what you read — heaves it overhead and lobs it at where you stand. It comes down hard in a ring (`game.rockBurst`); the counter is to be somewhere else, since the lob is aimed at a standing man.
+pub const ROCK_MIN: f32 = 6.5;
+pub const DIG_DUR: f32 = 0.95;
+pub const HEAVE_DUR: f32 = 0.40;
+pub const THROW_DUR: f32 = 0.32;
+/// Where in the throw the stone leaves the claws.
+pub const THROW_RELEASE: f32 = 0.38;
+const ROCK_RECOVER: f32 = 0.75;
+pub const ROCK_CD: f32 = 16.0;
+pub const ROCK_SPEED: f32 = 13.0;
+pub const ROCK_SPLASH_R: f32 = 1.8;
+/// The stone's own radius, held and thrown alike.
+pub const ROCK_R: f32 = 0.34;
+const ROCK_HIT_BANK = combat.Hit{ .dmg = 30, .poise = 44, .stance = 14, .launch = 1.2 };
+pub var ROCK_HIT = ROCK_HIT_BANK;
+const STONE = rgba(72, 66, 58, 255);
+const STONE_DK = rgba(44, 40, 36, 255);
+const STONE_LT = rgba(98, 90, 78, 255);
+
+comptime {
+    std.debug.assert(DIG_DUR + HEAVE_DUR >= foe.TELL_MIN * 3.0);
+    std.debug.assert(ROCK_MIN > CLAW_BAND * 2.0);
+    std.debug.assert(ROCK_CD > DIVE_CD * 2.0);
+}
+
 const RAKE_HIT_BANK = combat.Hit{ .dmg = 12, .poise = 16, .stance = 5 };
 pub var RAKE_HIT = RAKE_HIT_BANK;
 /// LONG ENOUGH TO BE CAUGHT ON, WHICH IS WHAT SIZES IT FROM BELOW — `foe.PARRY_LEAD` brackets every wind from above.
@@ -152,7 +178,7 @@ const DISSOLVE = foe.Dissolve{ .rate = 58.0, .spread = 0.9, .rise = 0.75, .flake
 /// ARITHMETIC over the worst frame (the ring law), and it is the PLOUGH'S LAST frame: the furrow can land its blow as the run ends, so the 12-clod hit burst and `burstDirt`'s 40 go in together, on the ~22 `emitWake` and `emitSpray` leave resident at 0.3-0.7 s lives.
 const PARTS = 96;
 
-const N = 10;
+const N = 11;
 const BODY = 0;
 const HEAD = 1;
 const ARML = 2;
@@ -163,6 +189,8 @@ const HINDL = 6;
 const HINDR = 7;
 const TAIL = 8;
 const MOUND = 9;
+/// The held stone: posed between the claw tips, drawn only while `rockHeld`.
+const ROCK = 10;
 
 const REST = [N]rl.Vector3{
     v3(0, 0, 0),
@@ -175,6 +203,7 @@ const REST = [N]rl.Vector3{
     v3(-0.30, 0.21 * H, -0.48),
     v3(0, 0.26 * H, -0.82),
     v3(0, 0, 0),
+    v3(0, 0, 0),
 };
 
 /// The far end of the middle digging claw, in the claw bone's own frame — what the stroke actually swings, and what `parryable` hands over as its reach. MEASURED off the mesh, never argued (the ogre's club law).
@@ -183,12 +212,14 @@ const CLAW_TIP = v3(0, -0.16, 0.78);
 /// DEGREES at the shoulder — the lateral half of `swing`. The shoulder sits 0.34 m off the axis and the claw rides ~1.2 m out, so this is SOLVED against the crossing: the tip must pass THROUGH the body's own forward line inside the strike window.
 const SWING_YAW: f32 = 46.0;
 
-const State = enum { idle, walk, claw, rake, recover, dive, under, surge, plough, burst, heave, stunlight, stunheavy, dead };
+const State = enum { idle, walk, claw, rake, recover, dig, throw, dive, under, surge, plough, burst, heave, stunlight, stunheavy, dead };
 
-const Choice = enum { rest, wait, walk, claw, dive };
-fn classify(dist: f32, scale: f32, clawReady: bool, diveReady: bool, rooted: bool) Choice {
+const Choice = enum { rest, wait, walk, claw, dive, dig };
+/// The dive is the answer to range while it has one; the rock is what it does with range when the dive is cooling, and only from outside its own claw's world.
+fn classify(dist: f32, scale: f32, clawReady: bool, diveReady: bool, rooted: bool, rockReady: bool) Choice {
     if (dist > AGGRO_R) return .rest;
     if (diveReady and !rooted) return .dive;
+    if (rockReady and dist >= ROCK_MIN) return .dig;
     if (dist <= clawBand(scale) and clawReady) return .claw;
     if (dist > clawKeep(scale)) return .walk;
     return .wait;
@@ -210,6 +241,8 @@ pub const Model = struct {
         for (0..N) |i| {
             if (i == MOUND) {
                 if (!d.mounded()) continue;
+            } else if (i == ROCK) {
+                if (!d.rockHeld or buried) continue;
             } else if (buried) continue;
             rl.drawMesh(self.mesh[i], self.mat, d.xf[i]);
         }
@@ -235,10 +268,18 @@ pub const Delver = struct {
     idleWait: f32 = 0.3,
     clawCd: f32 = 0,
     diveCd: f32 = 0,
+    /// Never a rock in the first breath of a fight: a fresh body waits this long before the dig is a choice.
+    rockCd: f32 = 5.0,
     heroLatch: bool = false,
     raked: bool = false,
     homing: bool = false,
     surged: bool = false,
+    /// ONE FRAME: the stone left the claws this frame, from `throwFrom` — the game lobs it (`game.spawnRock`).
+    threw: bool = false,
+    throwFrom: rl.Vector3 = mathx.zero3,
+    rockHeld: bool = false,
+    /// -1 both claws driven into the earth, +1 both raised overhead with the stone.
+    arms: f32 = 0,
 
     /// HOW FAR UNDER ITS OWN GROUND THE BODY IS RIDING, metres. 0 at the surface; every world point on it is measured with this as a NEGATIVE lift, so the whole creature goes down together.
     depth: f32 = 0,
@@ -362,6 +403,7 @@ pub const Delver = struct {
         self.justDied = false;
         self.parried = false;
         self.surged = false;
+        self.threw = false;
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
@@ -371,6 +413,7 @@ pub const Delver = struct {
         self.t += dt;
         self.clawCd = mathx.maxF(0, self.clawCd - dt);
         self.diveCd = mathx.maxF(0, self.diveCd - dt);
+        self.rockCd = mathx.maxF(0, self.rockCd - dt);
         foe.fadeFlash(&self.flash, dt);
         foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
@@ -396,6 +439,8 @@ pub const Delver = struct {
                 if (self.t < BURST_RECOVER * 0.4) self.emitScuff(dt);
                 if (self.t >= BURST_RECOVER) self.enterIdle(0.12);
             },
+            .dig => self.updateDig(dt, hero),
+            .throw => self.updateThrow(dt, hero),
             .dive => self.updateDive(dt, hero),
             .under => self.updateUnder(dt, hero, bounds),
             .surge => self.updateSurge(dt),
@@ -493,6 +538,77 @@ pub const Delver = struct {
             self.enter(.rake);
         } else {
             self.enter(.recover);
+        }
+    }
+
+    fn updateDig(self: *Delver, dt: f32, hero: rl.Vector3) void {
+        self.faceToward(hero, TURN_RATE * 0.8, dt);
+        // Both claws in the ground and the body down over them, WORKING — the earth flying is the tell.
+        const u = mathx.smoothstep(0, DIG_DUR * 0.35, self.t);
+        self.crouch = lerpF(0.05, 0.34, u);
+        self.rear = lerpF(0.04, -0.18, u);
+        self.arms = lerpF(0, -0.6, u);
+        self.swing = 0.30 * mathx.sinf(self.t * 24.0) * u;
+        self.emitClods(dt, 26.0);
+        if (self.t >= DIG_DUR) {
+            self.rockHeld = true;
+            sfx.world(.delver_burst, self.pos);
+            self.enter(.throw);
+        }
+    }
+
+    fn updateThrow(self: *Delver, dt: f32, hero: rl.Vector3) void {
+        if (self.t < HEAVE_DUR) {
+            // UP: the stone comes out and over the head, the body rearing under it.
+            const u = mathx.smoothstep(0, HEAVE_DUR, self.t);
+            self.faceToward(hero, TURN_RATE * 0.5, dt);
+            self.crouch = lerpF(0.34, -0.06, u);
+            self.rear = lerpF(-0.18, 0.62, u);
+            self.arms = lerpF(-0.6, 1.0, u);
+            self.swing = lerpF(0.30 * mathx.sinf(self.t * 24.0), 0, u);
+            if (self.t < HEAVE_DUR * 0.5) self.emitClods(dt, 14.0);
+        } else if (self.t < HEAVE_DUR + THROW_DUR) {
+            const u = (self.t - HEAVE_DUR) / THROW_DUR;
+            const k = foe.swingCurve(mathx.clampF(u, 0, 1));
+            self.rear = lerpF(0.62, 0.10, k);
+            self.crouch = lerpF(-0.06, 0.22, k);
+            self.arms = lerpF(1.0, -0.2, k);
+            if (u >= THROW_RELEASE and self.rockHeld) {
+                self.rockHeld = false;
+                self.threw = true;
+                self.throwFrom = self.rockWorld();
+                self.rockCd = ROCK_CD * self.aiRng.range(0.9, 1.2);
+            }
+        } else {
+            self.arms = mathx.approach(self.arms, 0, dt * 4.0);
+            self.rear = mathx.approach(self.rear, 0, dt * 2.5);
+            self.crouch = mathx.approach(self.crouch, 0.05, dt * 1.6);
+            if (self.t >= HEAVE_DUR + THROW_DUR + ROCK_RECOVER) self.enterIdle(0.15);
+        }
+    }
+
+    pub fn rockWorld(self: *const Delver) rl.Vector3 {
+        return foe.markOn(self.xf[ROCK], mathx.zero3);
+    }
+
+    fn emitClods(self: *Delver, dt: f32, rate: f32) void {
+        var owed = foe.emitDue(&self.fxAccum, dt, rate);
+        const at = self.clawSeg()[1];
+        while (owed > 0) : (owed -= 1) {
+            const a = self.fxRng.angle();
+            const B = comptime foe.Blast.of(CLOD_DRAG, 0.5, 0.9);
+            const out = self.fxRng.range(0.6, 1.6) * B.boost;
+            foe.emitPart(&self.parts, &self.fxHead, .{
+                .p = v3(at.x + mathx.cosf(a) * 0.25, self.pos.y + 0.05, at.z + mathx.sinf(a) * 0.25),
+                .v = v3(mathx.cosf(a) * out, self.fxRng.range(1.4, 3.2) * B.boost, mathx.sinf(a) * out),
+                .life = B.life(&self.fxRng),
+                .r0 = 0.05,
+                .r1 = 0.09,
+                .col = if (self.fxRng.float() < 0.5) CLOD else CLOD_DK,
+                .col1 = CLOD_DRY,
+                .grav = 7.5,
+                .drag = CLOD_DRAG,
+            });
         }
     }
 
@@ -676,7 +792,7 @@ pub const Delver = struct {
     }
 
     fn decide(self: *Delver, d: f32) void {
-        const pick = classify(d, self.scale, self.clawCd <= 0, self.diveCd <= 0, !foe.canLeap(&self.root));
+        const pick = classify(d, self.scale, self.clawCd <= 0, self.diveCd <= 0, !foe.canLeap(&self.root), self.rockCd <= 0);
         if (pick != .rest) self.homing = false;
         switch (pick) {
             .rest => {
@@ -697,6 +813,12 @@ pub const Delver = struct {
             .dive => {
                 sfx.world(.delver_dig, self.pos);
                 self.enter(.dive);
+            },
+            .dig => {
+                self.heroLatch = false;
+                self.rockHeld = false;
+                sfx.world(.delver_dig, self.pos);
+                self.enter(.dig);
             },
         }
     }
@@ -736,11 +858,13 @@ pub const Delver = struct {
         self.moundR = 0;
         self.moundH = 0;
         self.heroLatch = false;
+        self.rockHeld = false;
     }
     fn enterDeath(self: *Delver) void {
         self.state = .dead;
         self.t = 0;
         self.justDied = true;
+        self.rockHeld = false;
     }
 
     pub fn debugDive(self: *Delver) void {
@@ -775,7 +899,7 @@ pub const Delver = struct {
         return switch (self.state) {
             .claw => CLAW_WIND - self.t,
             .rake => RAKE_WIND - self.t,
-            .idle, .walk, .recover, .dive, .under, .surge, .plough, .burst, .heave, .stunlight, .stunheavy, .dead => null,
+            .idle, .walk, .recover, .dig, .throw, .dive, .under, .surge, .plough, .burst, .heave, .stunlight, .stunheavy, .dead => null,
         };
     }
 
@@ -963,15 +1087,21 @@ pub const Delver = struct {
 
         for ([_]usize{ ARML, ARMR }, [_]usize{ CLAWL, CLAWR }, [_]f32{ 1, -1 }) |ai, ci, sgn| {
             const own = if (sgn < 0) self.swing else self.swing * 0.45;
-            const shoulder = -74.0 * self.rear - 34.0 * own;
-            const abd = 16.0 + 26.0 * self.rear + 10.0 * @abs(own);
+            const up = mathx.maxF(0, self.arms);
+            const shoulder = -74.0 * self.rear - 34.0 * own - 96.0 * up + 40.0 * mathx.maxF(0, -self.arms);
+            const abd = 16.0 + 26.0 * self.rear + 10.0 * @abs(own) - 9.0 * up;
             const hip = v3(REST[ai].x, REST[ai].y - 0.12 * self.crouch, REST[ai].z);
             // THE STROKE NEEDS A LATERAL CHANNEL. Spent entirely on `rx` — a SAGITTAL rake — with `abd` on `@abs(own)`, the claw ran x −0.51 to −1.07 and back and never crossed the body's own axis, which RADIAL reach tests satisfy perfectly.
             const cross = SWING_YAW * own * -sgn;
             self.xf[ai] = mul(mul(mul3(rz(sgn * abd), rx(shoulder), ry(cross)), tr(hip.x, hip.y, hip.z)), root);
-            const elbow = 40.0 - 46.0 * own - 26.0 * self.rear;
+            const elbow = 40.0 - 46.0 * own - 26.0 * self.rear - 30.0 * up;
             self.xf[ci] = mul(mul(rx(elbow), tr(REST[ci].x, REST[ci].y, REST[ci].z)), self.xf[ai]);
         }
+        // The stone rides between the claw tips while it is held.
+        const tipL = foe.markOn(self.xf[CLAWL], CLAW_TIP);
+        const tipR = foe.markOn(self.xf[CLAWR], CLAW_TIP);
+        const held = mathx.scaleV(mathx.addV(tipL, tipR), 0.5);
+        self.xf[ROCK] = mul3(scaleM(fs, fs, fs), ry(mathx.degrees(self.facing) + 37.0 * self.arms), tr(held.x, held.y + ROCK_R * 0.7 * fs, held.z));
 
         const step = mathx.sinf(self.gait * std.math.tau);
         for ([_]usize{ HINDL, HINDR }, [_]f32{ 1, -1 }) |bi, sgn| {
@@ -1067,7 +1197,28 @@ fn buildMeshes() [N]rl.Mesh {
     mesh[HINDR] = hindMesh(-1);
     mesh[TAIL] = tailMesh();
     mesh[MOUND] = moundMesh();
+    mesh[ROCK] = rockMesh();
     return mesh;
+}
+
+fn rockInto(b: *Builder) void {
+    b.setMat(.stone);
+    b.addBlob(mathx.zero3, v3(ROCK_R, ROCK_R * 0.82, ROCK_R * 0.92), 6, 7, STONE);
+    b.addBlob(v3(ROCK_R * 0.25, ROCK_R * 0.2, -ROCK_R * 0.15), v3(ROCK_R * 0.55, ROCK_R * 0.5, ROCK_R * 0.5), 5, 6, STONE_DK);
+    b.addBlob(v3(-ROCK_R * 0.3, -ROCK_R * 0.1, ROCK_R * 0.2), v3(ROCK_R * 0.45, ROCK_R * 0.4, ROCK_R * 0.42), 5, 6, STONE_LT);
+}
+
+fn rockMesh() rl.Mesh {
+    var b = Builder.init();
+    rockInto(&b);
+    return b.toMesh();
+}
+
+/// The same stone as a model, for the arrow pool to draw in flight.
+pub fn rockModel(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    rockInto(&b);
+    return b.toModel(shader);
 }
 
 fn bodyMesh() rl.Mesh {
@@ -1342,10 +1493,10 @@ test "SUBMERGED IT CANNOT BE STRUCK, and the sword answers it the moment it brea
 }
 
 test "THE DIVE IS A LEAP AND THE ROOTS REFUSE IT — at the choose AND at the launch" {
-    try std.testing.expectEqual(Choice.dive, classify(6.0, 1.0, true, true, false));
-    try std.testing.expectEqual(Choice.walk, classify(6.0, 1.0, true, true, true));
-    try std.testing.expectEqual(Choice.claw, classify(CLAW_BAND - 0.2, 1.0, true, false, true));
-    try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1.0, 1.0, true, true, false));
+    try std.testing.expectEqual(Choice.dive, classify(6.0, 1.0, true, true, false, false));
+    try std.testing.expectEqual(Choice.walk, classify(6.0, 1.0, true, true, true, false));
+    try std.testing.expectEqual(Choice.claw, classify(CLAW_BAND - 0.2, 1.0, true, false, true, false));
+    try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1.0, 1.0, true, true, false, false));
 
     var d = Delver.spawn(mathx.zero3, 0, 1.0, 0.3);
     d.debugDive();
@@ -1553,4 +1704,45 @@ test "THE STROKE CROSSES A MAN STANDING IN FRONT — every range inside its own 
     }
     std.debug.print("  ...and the tip sweeps x {d:.2} -> {d:.2}, through its own axis\n", .{ lo, hi });
     try std.testing.expect(lo < 0 and hi > 0);
+}
+
+test "IT DIGS UP A ROCK AND THROWS IT FROM RANGE — a long tell, a long clock, never inside its own claw, and the lob lands where the man stood" {
+    const dt: f32 = 1.0 / 120.0;
+    try std.testing.expectEqual(Choice.claw, classify(CLAW_BAND - 0.2, 1.0, true, false, false, true));
+    try std.testing.expectEqual(Choice.dive, classify(ROCK_MIN + 1.0, 1.0, true, true, false, true));
+    try std.testing.expectEqual(Choice.dig, classify(ROCK_MIN + 1.0, 1.0, true, false, false, true));
+    try std.testing.expectEqual(Choice.walk, classify(ROCK_MIN - 0.5, 1.0, true, false, false, true));
+    try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1.0, 1.0, true, false, false, true));
+
+    var d = Delver.spawn(mathx.zero3, 0, 1.0, 0.3);
+    d.leash.noteSeen();
+    d.diveCd = 99;
+    d.rockCd = 0;
+    const hero = mathx.ground(0, 10.0);
+    var t: f32 = 0;
+    var dug: ?f32 = null;
+    var threwAt: f32 = 0;
+    var threw: u32 = 0;
+    var from = mathx.zero3;
+    while (t < 6.0) : (t += dt) {
+        _ = d.update(dt, hero, 400.0, .{});
+        if (d.state == .dig and dug == null) dug = t;
+        if (d.threw) {
+            threw += 1;
+            threwAt = t;
+            from = d.throwFrom;
+        }
+    }
+    try std.testing.expectEqual(@as(u32, 1), threw);
+    try std.testing.expect(threwAt - dug.? >= foe.TELL_MIN * 3.0);
+    try std.testing.expect(d.rockCd > ROCK_CD * 0.8);
+    try std.testing.expect(from.y > d.pos.y + 0.6);
+
+    var a = archermod.launchShaft(from, v3(hero.x, hero.y + 0.3, hero.z), ROCK_SPEED, ROCK_HIT, true, .rock);
+    var flight: f32 = 0;
+    while (a.live and !a.stuck and flight < 5.0) : (flight += dt) _ = archermod.stepShaft(&a, 0, &.{}, dt);
+    const miss = mathx.distXZ(a.pos, hero);
+    std.debug.print("\n  delver rock: dug at {d:.2} s, threw at {d:.2} s from {d:.2} m up, {d:.2} s in the air, landed {d:.2} m off the man (ring {d:.1} m)\n", .{ dug.?, threwAt, from.y, flight, miss, ROCK_SPLASH_R });
+    try std.testing.expect(a.stuck);
+    try std.testing.expect(miss < ROCK_SPLASH_R);
 }

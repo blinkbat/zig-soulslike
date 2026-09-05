@@ -69,7 +69,8 @@ pub const Award = struct {
             return;
         }
         for (self.toasts[0..self.ntoasts]) |*t| {
-            if (t.kind != k) continue;
+            // A purse's `kind` is the field's default, not a thing picked up: match it and the pickup is eaten.
+            if (t.coin != 0 or t.kind != k) continue;
             t.n += 1;
             t.t = 0;
             return;
@@ -179,9 +180,6 @@ pub const Award = struct {
     }
 
 
-    var proseBuf: [512]u8 = undefined;
-    var proseLines: [8][:0]const u8 = undefined;
-
     pub fn drawCard(self: *const Award) void {
         const k = self.front() orelse return;
         const sw = rl.getScreenWidth();
@@ -211,13 +209,7 @@ pub const Award = struct {
 
         uiart.divider(x + @divTrunc(CARD_W, 2), py + PIC_BOX + 18, @divTrunc(CARD_W, 2) - 40, 170);
 
-        const proseW = CARD_W - 68;
-        const lines = hud.wrap(item.describe(k), hud.SMALL, proseW, &proseBuf, &proseLines);
-        var ly = py + PIC_BOX + 34;
-        for (lines) |ln| {
-            hud.text(ln, x + 34, ly, hud.SMALL, uiart.TEXT_VALUE);
-            ly += hud.lineH(hud.SMALL);
-        }
+        _ = hud.prose(item.describe(k), x + 34, py + PIC_BOX + 34, CARD_W - 68, hud.SMALL, uiart.TEXT_VALUE);
 
         var foot: [48]u8 = undefined;
         const s: [:0]const u8 = if (self.ncards > 1)
@@ -270,10 +262,29 @@ test "A REPEAT IS A COUNT ON ONE TOAST, and it refreshes rather than stacking" {
     try std.testing.expectApproxEqAbs(@as(f32, 0), a.toasts[0].t, 1e-6);
 }
 
+test "A PURSE IS NOT A PICKUP — coin and the kind sitting on the `kind` default keep their own toasts" {
+    var a = Award{};
+    for (0..item.NK) |i| a.seen[i] = true;
+    const dflt = (Toast{}).kind;
+    a.gainCoin(40);
+    a.gain(dflt);
+    try std.testing.expectEqual(@as(usize, 2), a.ntoasts);
+    try std.testing.expectEqual(@as(u32, 40), a.toasts[0].coin);
+    try std.testing.expectEqual(@as(u16, 1), a.toasts[0].n);
+    try std.testing.expectEqual(@as(u32, 0), a.toasts[1].coin);
+    try std.testing.expectEqual(dflt, a.toasts[1].kind);
+
+    a.gainCoin(15);
+    a.gain(dflt);
+    try std.testing.expectEqual(@as(usize, 2), a.ntoasts);
+    try std.testing.expectEqual(@as(u32, 55), a.toasts[0].coin);
+    try std.testing.expectEqual(@as(u16, 2), a.toasts[1].n);
+}
+
 test "TOASTS EXPIRE, and a full stack drops its OLDEST rather than refusing the newest" {
     var a = Award{};
     for (0..item.NK) |i| a.seen[i] = true;
-    const kinds = [_]item.Kind{ .crimson_flask, .cerulean_flask, .rune_arc, .golden_seed, .smithing_stone, .bloodgrass, .kobold_fang };
+    const kinds = [_]item.Kind{ .crimson_flask, .cerulean_flask, .rune_arc, .empty_flask, .smithing_stone, .bloodgrass, .kobold_fang };
     for (kinds) |k| a.gain(k);
     try std.testing.expectEqual(TOAST_CAP, a.ntoasts);
     try std.testing.expectEqual(item.Kind.kobold_fang, a.toasts[a.ntoasts - 1].kind);
@@ -287,7 +298,7 @@ test "EVERY TOAST IS TICKED even when one in front of it expires the same frame"
     var a = Award{};
     for (0..item.NK) |i| a.seen[i] = true;
     a.gain(.rune_arc);
-    a.gain(.golden_seed);
+    a.gain(.empty_flask);
     a.gain(.iron_key);
     try std.testing.expectEqual(@as(usize, 3), a.ntoasts);
     a.update(TOAST_LIFE + TOAST_OUT + 0.01);
@@ -363,13 +374,13 @@ test "WHAT HE STARTED WITH IS NOT A DISCOVERY" {
 
 test "the pending notices clear without un-discovering anything" {
     var a = Award{};
-    a.gain(.golden_seed);
+    a.gain(.empty_flask);
     a.seen[@intFromEnum(item.Kind.iron_key)] = true;
     a.gain(.iron_key);
     try std.testing.expect(a.carding() and a.ntoasts == 1);
     a.clearPending();
     try std.testing.expect(!a.carding());
     try std.testing.expectEqual(@as(usize, 0), a.ntoasts);
-    try std.testing.expect(a.seen[@intFromEnum(item.Kind.golden_seed)]);
+    try std.testing.expect(a.seen[@intFromEnum(item.Kind.empty_flask)]);
     try std.testing.expect(a.seen[@intFromEnum(item.Kind.iron_key)]);
 }

@@ -121,6 +121,10 @@ pub const Hit = struct {
     launch: f32 = 0,
     dose: Doses = .{},
     gore: f32 = 0,
+    /// CHAOS DOES NOT POISON BY ITSELF (owner): a blow's chaos builds the poison meter only if the source SAYS so. Fire, cold and lightning still build their own.
+    venom: bool = false,
+    /// Metres the man is pushed off the blow when it is taken (`game.heroShoved`); 0 for a blow that only wounds.
+    shove: f32 = 0,
 
     pub fn raw(self: Hit) f32 {
         return self.dmg + self.elem.total() + self.gore;
@@ -146,6 +150,8 @@ pub const Hit = struct {
             .launch = self.launch,
             .dose = self.dose,
             .gore = self.gore,
+            .venom = self.venom,
+            .shove = self.shove,
         };
     }
 };
@@ -452,7 +458,16 @@ pub const Vitals = struct {
         return self.strike(h, true);
     }
 
+    /// A blow on a PART that flinches harder than the body — the ogre's head. `poiseK` scales only the poise pour; HP and stance are the blow's own.
+    pub fn hitPoise(self: *Vitals, h: Hit, poiseK: f32) HitResult {
+        return self.strikeK(h, true, poiseK);
+    }
+
     fn strike(self: *Vitals, h: Hit, builds: bool) HitResult {
+        return self.strikeK(h, builds, 1.0);
+    }
+
+    fn strikeK(self: *Vitals, h: Hit, builds: bool, poiseK: f32) HitResult {
         if (self.dead) return .none;
         self.sinceHurt = 0;
         const taken = self.damageFrom(h);
@@ -468,6 +483,7 @@ pub const Vitals = struct {
             for (h.elem.v, 0..) |amt, i| {
                 if (amt == 0) continue;
                 const e: Elem = @enumFromInt(i);
+                if (e == .chaos and !h.venom) continue;
                 self.build(ailOf(e), self.res.taken(e, amt) * BUILD_PER_DMG);
             }
         }
@@ -478,7 +494,7 @@ pub const Vitals = struct {
         var light = false;
         const poiseHit = if (foe) (if (builds) taken * FOE_POISE_PER_DMG else 0) else h.poise;
         const poiseWear = if (foe) 1.0 + LIGHT_WEAR * self.lightWear else 1.0;
-        self.poise -= poiseHit / poiseWear;
+        self.poise -= poiseHit * poiseK / poiseWear;
         if (self.poise <= 0) {
             self.poise = self.poiseMax;
             self.stance -= self.breakShare * self.stanceMax;
@@ -1044,6 +1060,8 @@ pub const FlaskKind = enum { crimson, cerulean };
 pub const FLASK_TOTAL: u8 = 3;
 pub const FLASK_CRIMSON: u8 = 2;
 pub const FLASK_CERULEAN: u8 = FLASK_TOTAL - FLASK_CRIMSON;
+/// ER's Sacred Flask tops out at 14 charges; an empty flask found past that is only a toast.
+pub const FLASK_CAP: u8 = 14;
 pub const FLASK_HP_FRAC: f32 = 0.45;
 pub const FLASK_FP_FRAC: f32 = 0.50;
 pub const FLASK_DRINK_DUR: f32 = 1.05;
@@ -1073,10 +1091,19 @@ pub const Flasks = struct {
         return self.crimsonMax + self.ceruleanMax;
     }
     pub fn allot(self: *Flasks, crimsonMax: u8) void {
-        const n = self.total();
+        self.pool(self.total(), crimsonMax);
+    }
+    pub fn pool(self: *Flasks, whole: u8, crimsonMax: u8) void {
+        const n = @max(whole, 1);
         self.crimsonMax = @min(crimsonMax, n);
         self.ceruleanMax = n - self.crimsonMax;
         self.refill();
+    }
+    /// An empty flask found in the field: one more in the pool, on the crimson side until he allots it, and EMPTY until the next fire.
+    pub fn found(self: *Flasks) bool {
+        if (self.total() >= FLASK_CAP) return false;
+        self.crimsonMax += 1;
+        return true;
     }
     pub fn ready(self: *const Flasks) u8 {
         return self.charges(self.sel);
@@ -1099,6 +1126,25 @@ pub const Flasks = struct {
         self.cerulean = self.ceruleanMax;
     }
 };
+
+test "AN EMPTY FLASK FOUND IS ONE MORE IN THE POOL — empty until the fire, kept through an allot, and capped" {
+    var f = Flasks{};
+    try std.testing.expect(f.found());
+    try std.testing.expectEqual(FLASK_TOTAL + 1, f.total());
+    try std.testing.expectEqual(FLASK_CRIMSON + 1, f.crimsonMax);
+    try std.testing.expectEqual(FLASK_CRIMSON, f.crimson);
+    f.refill();
+    try std.testing.expectEqual(FLASK_CRIMSON + 1, f.crimson);
+    f.allot(1);
+    try std.testing.expectEqual(FLASK_TOTAL + 1, f.total());
+    try std.testing.expectEqual(FLASK_TOTAL, f.ceruleanMax);
+    f.pool(5, 9);
+    try std.testing.expectEqual(@as(u8, 5), f.crimsonMax);
+    try std.testing.expectEqual(@as(u8, 0), f.ceruleanMax);
+    while (f.found()) {}
+    try std.testing.expectEqual(FLASK_CAP, f.total());
+    try std.testing.expect(!f.found());
+}
 
 pub fn flaskOf(k: item.Kind) ?FlaskKind {
     return switch (k) {
@@ -1492,7 +1538,8 @@ pub fn poisonPulse(amt: f32) Hit {
 test "ELEMENTAL DAMAGE BUILDS ITS OWN METER, AFTER RESISTANCES — and a DRIP builds nothing" {
     for (std.enums.values(Elem)) |e| {
         var body = Vitals.initFoe(400, 999, 999);
-        var blow = Hit{};
+        // Chaos is the one element that builds only when the blow says so.
+        var blow = Hit{ .venom = true };
         blow.elem.v[@intFromEnum(e)] = 10;
         _ = body.hit(blow);
         const built = body.ail(ailOf(e)).meter;
@@ -1509,11 +1556,19 @@ test "ELEMENTAL DAMAGE BUILDS ITS OWN METER, AFTER RESISTANCES — and a DRIP bu
 
     // **RESISTANCE CUTS THE METER AS WELL AS THE TICK** (owner: so resists can help). 75 chaos is a quarter dose.
     var warded = Vitals.initFoe(400, 999, 999).withRes(resists(.{ .chaos = 75 }));
-    _ = warded.hit(.{ .elem = elems(.{ .chaos = 40 }) });
+    _ = warded.hit(.{ .elem = elems(.{ .chaos = 40 }), .venom = true });
     try std.testing.expectApproxEqAbs(@as(f32, 10), warded.ail(.poison).meter, 1e-4);
     var bare = Vitals.initFoe(400, 999, 999).withRes(resists(.{ .chaos = -50 }));
-    _ = bare.hit(.{ .elem = elems(.{ .chaos = 40 }) });
+    _ = bare.hit(.{ .elem = elems(.{ .chaos = 40 }), .venom = true });
     try std.testing.expectApproxEqAbs(@as(f32, 60), bare.ail(.poison).meter, 1e-4);
+    // AND CHAOS ON ITS OWN IS DAMAGE AND NOTHING ELSE — the same blow with no venom on it leaves the meter alone.
+    var clean = Vitals.initFoe(400, 999, 999).withRes(resists(.{ .chaos = -50 }));
+    _ = clean.hit(.{ .elem = elems(.{ .chaos = 40 }) });
+    try std.testing.expectApproxEqAbs(@as(f32, 0), clean.ail(.poison).meter, 1e-6);
+    try std.testing.expectApproxEqAbs(bare.hp, clean.hp, 1e-4);
+    var scorched = Vitals.initFoe(400, 999, 999);
+    _ = scorched.hit(.{ .elem = elems(.{ .fire = 40 }) });
+    try std.testing.expect(scorched.ail(.burning).meter > 0);
     std.debug.print("\n  40 chaos builds {d:.0} poison bare, {d:.0} at +75, {d:.0} at -50\n", .{
         @as(f32, 40), warded.ail(.poison).meter, bare.ail(.poison).meter,
     });
@@ -1952,6 +2007,21 @@ test "emptying poise triggers a light stun and resets poise" {
     try std.testing.expectEqual(HitResult.light, v.hit(.{ .poise = 12 }));
     try std.testing.expectApproxEqAbs(@as(f32, 20), v.poise, 1e-5);
     try std.testing.expect(v.stance < v.stanceMax);
+}
+
+test "A PART'S POISE WEIGHT SCALES THE POUR AND NOTHING ELSE — same HP, same stance, twice the flinch" {
+    var body = Vitals.initFoe(300, 30, 90);
+    var head = Vitals.initFoe(300, 30, 90);
+    const arrow = Hit{ .dmg = 23, .poise = 11, .stance = 8 };
+    try std.testing.expectEqual(HitResult.none, body.hit(arrow));
+    try std.testing.expectEqual(HitResult.light, head.hitPoise(arrow, 2.0));
+    try std.testing.expectApproxEqAbs(body.hp, head.hp, 1e-6);
+    const pour = body.poiseMax - body.poise;
+    try std.testing.expectApproxEqAbs(23.0 * FOE_POISE_PER_DMG, pour, 1e-4);
+    try std.testing.expect(pour < body.poiseMax and pour * 2.0 >= body.poiseMax);
+    var hero = Vitals.init(100, 20, 40);
+    _ = hero.hitPoise(.{ .dmg = 5, .poise = 8 }, 2.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 4), hero.poise, 1e-5);
 }
 
 test "enough light breaks cascade into a heavy stun (keep pressure on)" {

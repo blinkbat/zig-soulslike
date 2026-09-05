@@ -1,0 +1,21 @@
+version: 1
+name: Mastodon Test
+half: 90.0
+runway: -6.00 -40.00 6.00 -28.00
+
+zone: downs -400.0 -400.0 400.0 400.0 0.400 heather,heather,gorse,patch,tuft,moss,thistle,bracken
+clear: 0.0 0.0 60.0
+
+at: bonfire -2 -38 0 1
+at: chest 4.0 -36 190 1 loot=empty_flask,empty_flask,fire_tallow
+
+# ONE, ON OPEN GROUND, FAR ENOUGH OUT FOR THE CHARGE: it notices at 22 m, charges from 6-16, and the jump-lunge
+# comes from 3.5-8. Walk in from the bonfire and the first thing it does is come at you down a line.
+foe: mastodon 0.00 20.00 180.0 1.00 0.37
+
+# FOR SIZE: the cyclops beside it says whether 2.35 m at the withers reads LARGE.
+foe: ogre 34.00 24.00 250.0 1.00 0.29
+
+# A BOULDER TO STEP BEHIND: the charge is a line it can barely bend, and this is what a line is stopped by.
+at: boulder -8 14 20 1.6
+at: boulder 9 30 130 1.3

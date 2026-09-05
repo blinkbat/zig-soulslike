@@ -29,7 +29,7 @@ pub const Kind = enum(u8) {
     crimson_flask,
     cerulean_flask,
     rune_arc,
-    golden_seed,
+    empty_flask,
     smithing_stone,
     bloodgrass,
     kobold_fang,
@@ -91,7 +91,7 @@ pub const Kind = enum(u8) {
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
 
 const ORDER = [_][]const u8{
-    "crimson_flask",   "cerulean_flask", "rune_arc",     "golden_seed",
+    "crimson_flask",   "cerulean_flask", "rune_arc",     "empty_flask",
     "smithing_stone",  "bloodgrass",     "kobold_fang",  "iron_key",
     "mushroom_jerky",  "ember_candle",   "sporeling_cap", "second_wind",
     "tower_shield",    "greatclub",      "leech_signet", "soul_binding_ring",
@@ -126,7 +126,7 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .crimson_flask => "Flask of Crimson Tears",
         .cerulean_flask => "Flask of Cerulean Tears",
         .rune_arc => "Rune Arc",
-        .golden_seed => "Golden Seed",
+        .empty_flask => "Empty Flask",
         .smithing_stone => "Smithing Stone",
         .bloodgrass => "Bloodgrass",
         .kobold_fang => "Kobold Fang",
@@ -304,7 +304,7 @@ pub fn sellPrice(k: Kind) u32 {
 
 pub fn class(k: Kind) Class {
     return switch (k) {
-        .crimson_flask, .cerulean_flask => .flask,
+        .crimson_flask, .cerulean_flask, .empty_flask => .flask,
         .plain_arrows, .fire_arrows => .ammo,
         .nameless_soul, .pilgrims_salt, .pilgrims_offering => .soul,
         .spirit_scroll_wolf,
@@ -319,7 +319,7 @@ pub fn class(k: Kind) Class {
         .scroll_bidding,
         => .spell,
         .smithing_stone, .bloodgrass, .kobold_fang => .material,
-        .rune_arc, .golden_seed, .gold_purse => .treasure,
+        .rune_arc, .gold_purse => .treasure,
         .iron_key => .key,
         else => gearClass(k),
     };
@@ -348,7 +348,7 @@ pub fn describe(k: Kind) [:0]const u8 {
         .crimson_flask => "A flask of clouded red glass, refilled at any bonfire. The draught it holds closes wounds that ought to have been mortal.",
         .cerulean_flask => "The crimson's blue twin, filled at the same fires. What the rod spends, the draught in part restores; the road back to the fire can wait a while longer.",
         .rune_arc => "A shard of a shattered great rune, still lit from within. Whatever it once carried leaks out of the break, and nothing now stands in these lands that could catch it.",
-        .golden_seed => "A sprout of gilded stalk, pulled up whole. In another age these bought another swallow from the flask. This one is only precious.",
+        .empty_flask => "A flask of clouded glass with nothing in it, the wax long gone from its neck. Carried to a bonfire it takes its share of the tears, and there is one more draught to the road.",
         .smithing_stone => "A flake of a far greater stone, hard enough to bite steel. In the right hands it teaches an edge what it was short of.",
         .bloodgrass => "A tuft of the red grass that grows thickest where something bled out. Common as dirt, and worth about as much.",
         .kobold_fang => "A tooth taken out of a jaw that was still using it. The crack across the root says how.",
@@ -602,7 +602,7 @@ pub const GEAR = [_]Gear{
 };
 
 pub const INERT = [_]Kind{
-    .crimson_flask,  .cerulean_flask, .rune_arc,    .golden_seed,
+    .crimson_flask,  .cerulean_flask, .rune_arc,    .empty_flask,
     .smithing_stone, .bloodgrass,     .kobold_fang, .iron_key,
     .spirit_scroll_wolf,
     .scroll_bolt,    .scroll_roots,   .scroll_rime, .scroll_levin,
@@ -761,6 +761,7 @@ pub fn dosed(k: Kind) bool {
 pub const NO_USE_LINE = "No use in the field.";
 
 pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
+    if (k == .empty_flask) return "Found: one more charge in the pool, drawn at the next bonfire.";
     if (isFlask(k)) return switch (k) {
         .crimson_flask => "Heals. Charges refill at a bonfire, not from the bag.",
         else => "Restores Focus. Charges refill at a bonfire, not from the bag.",
@@ -879,6 +880,19 @@ pub fn tag(k: Kind) []const u8 {
 
 pub fn fromTag(s: []const u8) ?Kind {
     return std.meta.stringToEnum(Kind, s);
+}
+
+/// Names a save from an older build may still carry; a loader skips them instead of refusing the file.
+pub const RETIRED_TAGS = [_][]const u8{"golden_seed"};
+
+pub fn retired(s: []const u8) bool {
+    for (RETIRED_TAGS) |t| if (std.mem.eql(u8, t, s)) return true;
+    return false;
+}
+
+/// What the editor may put in a chest or on a plinth: a full flask is never found, only an empty one.
+pub fn placeable(k: Kind) bool {
+    return !isFlask(k);
 }
 
 pub const CAP: u16 = 999;
@@ -1099,19 +1113,19 @@ test "the bag counts, caps, and never wraps" {
     try std.testing.expectEqual(@as(usize, 1), b.distinct());
     b.add(.rune_arc, CAP);
     try std.testing.expectEqual(CAP, b.count(.rune_arc));
-    try std.testing.expectEqual(@as(u16, 0), b.take(.golden_seed, 1));
+    try std.testing.expectEqual(@as(u16, 0), b.take(.empty_flask, 1));
     try std.testing.expectEqual(@as(u16, 4), b.take(.rune_arc, 4));
 }
 
 test "nth walks only the rows that have something in them" {
     var b = Bag{};
-    b.add(.golden_seed, 1);
+    b.add(.empty_flask, 1);
     const last: Kind = @enumFromInt(NK - 1);
     b.add(last, 1);
-    try std.testing.expectEqual(Kind.golden_seed, b.nth(0).?);
+    try std.testing.expectEqual(Kind.empty_flask, b.nth(0).?);
     try std.testing.expectEqual(last, b.nth(1).?);
     try std.testing.expect(b.nth(2) == null);
-    _ = b.take(.golden_seed, 1);
+    _ = b.take(.empty_flask, 1);
     try std.testing.expectEqual(last, b.nth(0).?);
     try std.testing.expectEqual(@as(usize, 1), b.distinct());
 }

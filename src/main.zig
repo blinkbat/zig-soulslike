@@ -214,6 +214,9 @@ test {
     _ = @import("play/liquid.zig");
     _ = @import("foes/fungalduo.zig");
     _ = @import("foes/owlbear.zig");
+    _ = @import("foes/druidess.zig");
+    _ = @import("foes/mimic.zig");
+    _ = @import("foes/mastodon.zig");
     _ = @import("core/collision.zig");
     _ = @import("gfx/gfx.zig");
     _ = @import("world/daynight.zig");

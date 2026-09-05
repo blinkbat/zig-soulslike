@@ -138,7 +138,7 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `foes/npc.zig` | THE FOLK, all three on the hero's scaffold — the wanderer's staff, the caravaneer's neck and muzzle, and MOSSBEARD, the tree smith whose idle IS a hammer stroke |
 | `foes/frog.zig` | gaping toad + `Knot` |
 | `foes/archer.zig` | skeletal archer + `Line`; kite-only, arrows that stick and fade |
-| `foes/ogre.zig` | one-eyed ogre + `Grief`; 24 bones, high poise, slam / swipe / drive; never strafes |
+| `foes/ogre.zig` | one-eyed ogre + `Grief`; 24 bones, high poise, slam / swipe / drive; never strafes. The HEAD is a second lock point, its own sphere at 2× poise |
 | `foes/kobold.zig` | warband + `Warband` — berserker/priest/slinger; the priest is why they are one group |
 | `foes/brood.zig` | brood mother, sacs, broodlings + `Brood`; guard not hunter, venom POOLS poison |
 | `foes/warrior.zig` | skeletal warriors + `Muster` — shieldman (blocks, guard-breaks) and greatsword (hyper armour) |
@@ -147,7 +147,7 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `foes/leechfly.zig` | first FLYER + `Swarm`; never lands, drinks HP and heals off it, zooms out of sword reach |
 | `foes/rooted.zig` | snag-mimic fixture + `Grove`; eyes open outside its reach, three limb strikes, never moves |
 | `foes/shroom.zig` | sporeling + `Cluster`; flings itself, bursts a spore cloud that poisons. Sometimes TRIPS |
-| `foes/delver.zig` | THE DELVER + `Warrens` — goes UNDER; bursts underfoot or ploughs a furrow. No lock-on while down |
+| `foes/delver.zig` | THE DELVER + `Warrens` — goes UNDER; bursts underfoot or ploughs a furrow. No lock-on while down. From range with the dive cooling it DIGS UP A ROCK and lobs it (`Shot.rock`, a 16 s clock) |
 | `foes/necro.zig` | THE NECROMANCER + `Rite` — holds a corpse open and raises it once; the only COLD source |
 | `foes/wolf.zig` | first SPIRIT + `Pack`, what the BELL calls. NOT a foe; first QUADRUPED, 27 bones |
 | `foes/fungaldeer.zig` | fungal deer + `Herd` — quadruped rig's FOURTH user + a stalk, a bloom, 7 petals and a rack. The flower stands off its back for good and OPENS to spit spores that HANG before they home; the antlers are what it does cornered |
@@ -156,7 +156,7 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `foes/sporegolem.zig` | spore homunculus + `Host` — `ARMOUR` is the creature; fire and lightning pass through |
 | `foes/skitterer.zig` | bone skitterer + `Clatter` — walks ON ITS RIBS; the eye SHUTS before the spine slams. What a priest raises, and it will not walk into a flame |
 | `foes/ancientpriest.zig` | ancient priest + `Crypt` — never melees; claws a skitterer out of bare earth far off, breathes COLD close |
-| `foes/hollow.zig` | tolling hollow + `Belfry` — the BELL on its back calls every body inside `TOLL_R`; refused inside bite reach |
+| `foes/hollow.zig` | tolling hollow + `Belfry` — the BELL on its back calls every body inside `TOLL_R`; refused inside bite reach. The GREMLIN on the bell is a second lock point with its own 20 HP: shot off, it is flung down the blow and the volley goes with it |
 | `foes/slumberbloom.zig` | slumber bloom + `Bed` — a rooted FIXTURE with no blow at all; the only SLEEP source, and it cannot follow |
 | `foes/cinderwake.zig` | cinder wake + `Scorch` — the hazard is LAID by its own feet, continuously; a standing wake is safe ground |
 | `foes/rotgorger.zig` | rotgorger + `Gorge` — quadruped rig's THIRD user; EATS THE DEAD, kin included, and breaks off mid-fight to do it |
@@ -165,7 +165,10 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `foes/fishman.zig` | fishmen + `Shoal` — the SECOND warband, held together by a NET; netter, spearman, shaman are one move in three |
 | `foes/blinkbat.zig` | blinkbat + `Roost` — a flyer that never travels: it BLINKS onto your flank, bites once, blinks out. Hangs inverted and wrapped through the day, and striking one hanging puts the whole roost on the wing |
 | `foes/fungalduo.zig` | THE FUNGAL DUO + `Vanguard`/`Conclave` — swordsman and magus, one encounter, two bars |
-| `foes/owlbear.zig` | owlbear + `Perch` — THE FIRST CONSTRUCT, and a carving until DARK and you walk inside `WAKE_R`: the eyes lead the stone by half the wake, dawn walks it back onto its own plinth, and the answer to being crowded is a hop back that fans stone quills down the bearing it left on |
+| `foes/owlbear.zig` | owlbear + `Perch` — THE FIRST CONSTRUCT, 3.15 m of it (owner: bigger and tougher — 300 HP, poise over two heavies), and a carving until DARK and you walk inside `WAKE_R`: the eyes lead the stone by half the wake, dawn walks it back onto its own plinth, and the answer to being crowded is a hop back that fans stone quills down the bearing it left on |
+| `foes/druidess.zig` | THE CORRUPTED DRUIDESS + `Coven` — third boss, a keepaway caster under a tangle of robes: vines that SNARE where you stood and vines that WHIP (field objects, no HP), a leap that hangs and lands gently, a sidestep that answers a RUSH. At half health she calls a wave off the roster and jumps off to HEAL until hit |
+| `foes/mimic.zig` | bone mimic + `Hoard` — a CHEST until you press Y on it or hit it (the seam glows blue where a real one glows gold), then a bone stalk on four short legs with the chest for a head: a lunging BITE worth a knight's overhead, and a full-circle head SWING for whoever is on its flank. Its own 17-bone rig |
+| `foes/mastodon.zig` | mastodon + `Drove` — the quadruped rig's biggest user at 2.35 m withers, walked and AMBLED (elephant gaits, never a trot): headbutt, bite, a CHARGE from range down a line it can barely bend, a jump-lunge with a 2.2 s recovery, and a TAIL SWIPE for whoever is behind it that turns it round. The bite LUNGES the whole beast and shoves; the tail loads against itself, whips past the mark and settles back, and takes him off his feet |
 | `play/combat.zig` | `Vitals`, `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`, spirits. THE place to retune feel |
 | `play/liquid.zig` | WHAT STANDING IN A PAINTED POOL COSTS — one `Soak` row per `wf.Liquid`, billed the way a cloud bills |
 | `play/stats.zig` | the sheet — seven attributes, the bar curves, the ONE skill curve (`scaleFor`), `inert` |
@@ -312,12 +315,34 @@ Two things in that table are load-bearing beyond navigation:
   drifting roll to roll — cosmetic only), then a spin-free rise. No float.
 - Blends: idle↔walk by a `moving` ease; walk↔run↔sprint by ground speed. Pose discontinuities cross-fade
   ~0.09 s; stances never snap while mechanics stay instant.
+- **REST — HE PLAYS THE GUITAR HE IS HOLDING.** The instrument has ONE frame (`hero.guitarFrame`, shared by
+  the mesh and the pose) and both arms are SOLVED onto it by two-bone IK that keeps the bone lengths
+  (`hero.armTo`): the pick hand sweeps the strings over the soundhole, down fast and up slow on `REST_BEAT`,
+  the fret hand sits behind the neck and shifts position every few bars with a glance down at it, and a foot
+  taps. The test measures the pick against the strings and the fingers against the neck; a pose that
+  "looks about right" and floats a hand off the instrument fails it.
 
 ## Adding a foe (`foe.zig`)
 
 - **Satisfy the contract:** `pos`, an embedded `combat.Vitals` (`vit`), `hits`, `justDied`, and the accessors
   `alive/dying/staggered/airborne/bodyR/hurtRadius/centerWorld/lockPoint/topWorld/flashFrac` +
   `tryHit(foe.Blade)`.
+- **A BODY MAY OFFER MORE THAN ONE POINT** — `lockParts()` and `lockPointAt(i)`, found by `@hasDecl`
+  (`game.partsOf`/`lockPointOf`); part 0 is `lockPoint`. Two do: the ogre's HEAD and the hollow's RIDER. **A PART IS A
+  SPHERE TESTED BEFORE THE BODY'S, ON THE BODY'S OWN SWING LATCH** (`foe.reachedPart`, `foe.Part`) — one swing lands
+  on the head or the chest, the rider or the host, never both. What the blow is worth is the part's: `poiseK` scales
+  the poise pour alone (`Vitals.hitPoise`; the ogre's head is 2×, so one aimed arrow flinches him there and not on the
+  chest), and the pool it goes into is whoever's the caller hands over (the rider's own 20 HP). A point that GOES (the
+  rider shot off) is a count that drops, and the lock falls back onto the body that carried it.
+- **A BLOW IS BILLED FROM ITS IMPACT, NOT FROM THE STRIKE'S FIRST FRAME.** At `s = 0` of every strike the limb is
+  still where the wind left it; it arrives at `*_IMPACT_K` of the strike (0.4–0.5, the owlbear's 0.42, the
+  hollow's 0.45), and that ONE number is what `toImpact` hands the parry window AND where the `try*` gate opens
+  (`s >= STRIKE * IMPACT_K`). Billing from `s >= 0` landed the owlbear's slam up to 0.10 s before the paws did
+  and the lurker's skull while it was still reared. A stroke judged off a SWEPT SEGMENT (`foe.weaponReaches`,
+  the delver's claw, the skitterer's tip) is exempt: it bills when the edge actually crosses him.
+- **A FRONTAL ANIMATION BILLS A FRONTAL CONE.** Jaws, horns and hands answer for what is in front of them
+  (`foe.inFront` with a `*_FRONT_DOT`), never for a radius — the toad's chomp and the brood's bites once billed a
+  man who had rolled round behind them. Only a RING (a slam's shockwave, the delver's burst, the rock) is 360°.
 - **Reuse the behaviour.** `tryHit` is TWO shared calls then what is yours: `foe.reached(self, blade) orelse
   return` (swept test, one-hit latch, anti-cheese rouse, the facing snap a `pierce` earns) then
   `foe.wounded(self, s, blade, .{ .light, .heavy })` (hit count, flash, shove — returning whether the BLOW was
@@ -790,6 +815,14 @@ plus swat / hop / leap / shove / charge / fall. Memorization and attrition, neve
   shoulder, no steering, no jaws from the wolf, no spirit. NOT exempt from `env.resolveActor`.
 - **THE DIVE IS A LEAP AND THE ROOTS REFUSE IT** (`foe.canLeap`) — gated at the choose AND re-asked at the
   launch, since a root closing during the wind arrives after the decision.
+- **THE ROCK IS WHAT IT DOES WITH RANGE WHEN THE DIVE IS COOLING** (owner: dig up and throw a rock at range,
+  long cd). From `ROCK_MIN` (6.5 m) out to its notice, dive on cooldown, rock off its own `ROCK_CD` (16 s): it
+  DIGS for `DIG_DUR` (0.95 s — both claws in the earth, clods flying, THE tell), heaves the stone overhead
+  (`HEAVE_DUR`, a real held bone `ROCK` between the claw tips) and lobs it at where he STANDS
+  (`threw`/`throwFrom` one-frame, `game.spawnRock` → `archer.Shot.rock`, `ROCK_GRAV` 14 so the arc is
+  watchable). It DETONATES: a ring `ROCK_SPLASH_R` (1.8 m) at the landing billed once whether it met him in
+  the air or the ground (`game.rockBurst`, `ROCK_HIT` 30 dmg, launch), and a roll's i-frames pass it. The
+  counter is to not be standing where you were.
 - **IT STAYS DOWN** (`UNDER_MIN`) whatever it finds, and never past `UNDER_MAX`.
 - **TWO WAYS OUT.** Under him it BURSTS — a ring round the hole, counter is your feet. In front of him it
   PLOUGHS: the ridge stops turning, STRETCHES down its existing heading (`moundLong`, not a bigger `moundR`)
@@ -1001,6 +1034,67 @@ under it stayed the old build's width.
   per 30 deg, each on the nearest cliff's own collision radius, the fog gate standing as the corner at due west).
 - The bench is `worlds/test_fungalduo.world` — the pair on an arena floor with one pillar, at the distance the
   fight is meant to hold. `--map worlds/test_fungalduo.world`.
+
+### The corrupted druidess (`druidess.zig`) — third boss
+
+Owner's brief: robes, an orb, vines, keepaway, a dodge, and a phase two that heals unless you go and stop it.
+Shared humanoid rig at 1.36 of the hero under a wide hem and THREE trailing tails; the orb rides `HELD` in the
+right hand. Bench her in `worlds/test_druidess.world`, never the shipped map.
+
+- **THE VINES ARE THE COVEN'S, NOT HERS** (`Coven.vines`, the magus's bunch pattern). She reports `sowed` and
+  `snared` for one frame; the group plants, ticks, bills and draws them. They are not bodies: no HP, no lock, no
+  `tryHit` — a whip stands `WHIP_GROW + WHIP_LIFE` and withers, a snare ring `SNARE_SHOW`.
+- **A CAST IS COMMITTED WHERE HE STOOD WHEN THE GATHER BEGAN** (`castAt`, the necromancer's frost rule), and the
+  buds drawn through the wind stand exactly where the vines will (`whipSpots` are rolled at the gather). Walk, and
+  the ring comes up behind you. The snare is `hero.snareFor(SNARE_HOLD)` through `Coven.takeSnare`, the shoal's
+  net path, and `SNARE_HOLD` is under two whip periods so a snare is one lash taken and one rolled.
+- **THE WHIP TURNS ONTO THE MAN WHILE IT REARS AND HOLDS ITS LINE THROUGH THE STRIKE** (`WHIP_TELL` over
+  `TELL_MIN` and under the roll's i-frames) — the tell is where it points.
+- **THE SIDESTEP READS CLOSING SPEED, NEVER THE PRESS.** She cannot see a swing (the LAW), so a rush is his
+  position over the last frame (`closing`) inside `STEP_R`, on `STEP_CD`. A man standing still in her face is not a
+  rush and draws the drift instead.
+- **THE SPEAR IS THE ANSWER TO CLOSING** (`SPEAR_R`, `SPEAR_CLOSE`, `SPEAR_CD`) — the same read, further out. A
+  third of a second of cock (the ground heaving along the line she is bringing round IS the tell, and it turns with
+  her), then a shaft runs `SPEAR_LEN` down her facing in `SPEAR_STRIKE`, billed once as the TIP PASSES HIM
+  (`Coven.tickVines`, the strip from her feet to wherever the point has got to). It is the coven's, like every vine.
+  Thrown for real at every stand in its band by the test beside it; a comptime assert keeps the reach past the ring.
+- **THE LEAP IS AN ARC WITH A HANG AND NO SLOPE AT THE GROUND** (`Arc`, `arcHop`/`arcAlong`): up on a quarter
+  sine, held at `up`, down on `1 - smoothstep`, the ground covered on a half-cosine so the speed is nothing at
+  touchdown. `airborne()` while `hop` stands, so collision and steering leave her alone; it is a JUMP, so the roots
+  refuse it (`foe.canLeap`). A stagger mid-air drops her at 6 m/s rather than snapping her down.
+- **PHASE TWO IS ONE CALL AND ONE CHANNEL** (`phase2`, `healed`), latched the frame she commits so a stagger through
+  the gather cannot buy a second wave. `summoned` is a one-frame report and `game.summonWave` does the spawning
+  (`foe.summonInto`, into the groups those kinds already live in, on the ground under `summonSpot`, roused by
+  `Leash.call`). Then the retreat arc and `passive`: `HEAL_RATE` of max HP a second, the channel drawn as a column
+  from the orb to the ground. **ANY BLOW THAT LANDS ENDS IT FOR GOOD** — that is the whole of "go and stop her".
+- **THE TANGLE IS THREE SPRINGS ON HER HEADING** (`trailYaw`, `tickTrails`): each tail chases her facing through its
+  own stiffness and rings past it, so a turn swings the robes round after her and they settle in three beats. The
+  drag lean is the necromancer's hem, and the flare in the air is the leap's `hop`.
+- **SHE NEVER LEAVES THE ROOM, AND NEVER THE DRY GROUND** (owner: the land before the water; she went into deep
+  water to heal once, and that was very bad). The arena she stands in is stamped onto her each frame (`room`) and so
+  is a way to ask the world's water (`ground`, `foe.Ground` — `game.stampRooms`, both off `@hasField`, so any
+  creature that grows either gets it). `inRoom` is dry (`DRY_MAX`) AND inside the walls, and every move of hers lands
+  there. **OVER HIS HEAD FIRST** (owner: readily): the leap that gets away from him and from whatever is behind her
+  is the same arc the other way, landing past him (`overHead`); back is for when the ground past him is out or wet,
+  and if that is out too, the bearing with the most room, cut to what the room allows (`roomReach`). The retreat is
+  the same solve. A drift that would cross the wall or the water turns along it (`steerInRoom`), and a sidestep into
+  either is the other side's, or none. The game's `holdInRoom` still stands behind all of it.
+- **SHE IS THE TELL, NOT THE SPEAR** (owner). Nothing is drawn on the ground through the wind: the coil is the
+  whole of it — orb hand hauled back past the shoulder, trunk reared and wound away from him, head down, and the
+  free arm pointing straight down the line — held for `SPEAR_WIND` with the orb lit, then the whole body unwinds into
+  the thrust. Every tell of hers is a POSE first; a mark on the ground is only ever where a thing will stand.
+- **THE PODS GO OUT AS SHE LEAVES** (`Coven.pods`, `scatter`): `POD_N` seed pods lobbed off the orb the frame she
+  takes off, landing in a fan on the side she left, SWELLING through `POD_FUSE` with a heartbeat that quickens, then
+  POPPING into splinters (`POD_HIT` inside `POD_R`). The ground she vacates is the ground you chase her across.
+- **ALL OF HER DAMAGE IS PHYSICAL BUT THE WHIPS**, which cut with chaos that is corruption and not venom (no
+  `Hit.venom`). The whips and the spear BUILD BLEED (`WHIP_BLEED`, `SPEAR_BLEED`, the blinkbat's dose pattern); a
+  snare BITES WHILE IT HOLDS — `Coven.holdDose`, a physical pulse every `SNARE_PULSE_EVERY` with no poise, on the
+  knight's gas pattern, read by the game after the snare itself.
+- **THE VINES ARE ALIVE, NOT POSTS.** A sprout overshoots and settles (`sproutCurve`), a whip writhes and sways
+  between lashes and CRACKS past the mark and rings back (`Vine.lash`), the snare's stalks beat on their own clocks
+  and clutch harder with hold of someone (`lashed` on a snare is "it has him"), and the spear runs a wave down its
+  shaft going out and quivers once it has arrived. All of it is draw-side off the vine's own clock; the bills do not
+  move.
 
 ## Combat
 
@@ -1231,10 +1325,43 @@ refused while a fight is on and the panel says where to go instead.
 - **CYCLE STAMPS `flasks.sel`, it does not cycle it** (`hero.cycleQuick` → `syncFlask`). `Flasks` has no
   `cycle` of its own — `Quick.cycle` is the only one, and `sel` is only ever STAMPED.
 - **A REMOVAL LEAVES ITS HOLE.** A list that compacts under you mid-fight is one you cannot learn.
+- **THE ONLY FLASK THE MAP CAN PLACE IS AN EMPTY ONE** (`item.empty_flask`, `item.placeable`; the editor's flask
+  shelf shows nothing else). Found, it is not an item: `game.awardLoot` calls `Flasks.found`, which is ONE MORE
+  IN THE POOL on the crimson side, EMPTY until the next fire, and he re-allots it there like any other. ER's
+  Sacred Flask tops out at 14 and so does `FLASK_CAP`. The pool rides the save's `ready:` row as a fourth
+  number, so an older file keeps the default three. There are no golden seeds: `golden_seed` is a
+  `RETIRED_TAG`, skipped by the bag loader instead of refusing the file.
 - **EACH BAR ENTRY IS ITS OWN SOCKET ON THE PAGE** — two rows of five, Confirm puts a kind in THAT socket
   (`combat.Quick.put`, which MOVES a kind already on the bar rather than copying). Rows are FILTERED to what
   he carries (`quickOffered`) and carry an empty row, so a kind's ordinal is not its row and `pickIndexOf`
   counts it out the way `candidates` builds it.
+
+### The compare, the card and the sheet (`book.zig`) — ER's status screen, read in sections
+
+**THE PICKER ROW SAYS WHAT IT IS WORTH BEFORE IT IS PICKED** (`headline`): the biggest thing the swap moves on
+the derived sheet, as a share of what it is now, signed and named short ("+6 heavy", "-5 armour"), in the
+colour of the news. Resistances are never a headline — a coat's cold ward is read in the compare.
+
+- **THE COMPARE IS FOUR COLUMNS UNDER SECTION HEADS** (`drawGearCompare`, `cmpRow`, `head`): the two names
+  across the top with the candidate's TAGS under its own (heft, reach, what drives it, Board / Two-handed /
+  Coated, or the shelf a coat came off), then every dial the piece carries under ATTACK / GUARD / DEFENCE /
+  RESISTANCE / AILMENTS / BODY — NOW dim, a chevron when it moves, THEN in green or red (`cost` rows flip the
+  colour), the signed difference at the edge (`deltaStr`). `GDial` lists the dials in section order and
+  `gsectionOf` is an exhaustive switch, so a dial without a home does not compile and one pass inserts the heads.
+- **ON THE SHEET is the swap priced in HIS numbers**: every derived figure (`derive`) that MOVES, so a boon's
+  +3 Strength is read as the light and heavy attack it buys, a board as the guard it brings and the swing it
+  costs. Capped at `SHEET_ROWS_MAX`.
+- **A DIFFERENCE IS A WHOLE UNIT** (`moves`): half a point on a counted figure or a hundredth on a clock is
+  drift, printed as no change — never "10 → 10, +0".
+- **THE STATS PAGE IS FOUR PANELS** (`statsCols`): ATTRIBUTES (each point-count beside what it is buying —
+  "70 HP", "x1.00" — and the cursor row's prose ends with what the NEXT point buys, `nextPointSays`), BODY
+  (VITALS / ATTACK / DEFENCE — the pools, what the hands in force deal, armour, guard, the roll's i-frames and
+  cost), WARDS (RESISTANCE / AILMENTS — every meter a coat or the tree slows — / PASSIVES, read off
+  `ptree.Bonus` itself so a node the tree grows tomorrow shows up here without a hand), and the portrait.
+  `StatList` builds a column first and draws it after, into its own store: `hud.fmt`'s ring is sixteen deep
+  and a column is longer.
+- **THE PRIMS ARE `uiart`'S**: `rule`, `arrow`, `pill`, `meter`/`meterShift`. Text stays in `book.zig`
+  (`uiart` does not import `hud`).
 
 ### The two purses, in the book
 
@@ -1295,6 +1422,10 @@ where a BURST status (bleed) resets to nothing and re-procs at once.
 - **AND IT IS BILLED AS CHAOS** (`combat.poisonPulse`, PoE2's). **BUILDUP AND RESISTANCE ARE TWO DIALS AND BOTH
   ARE LIVE**: the tree's Warded Blood and `item.sporecrown` slow the METER filling (`hero.perk.poison`) while
   chaos resistance cuts each TICK.
+- **BUT CHAOS DOES NOT POISON BY ITSELF** (owner: not all chaos damage causes poison — only what was meant to).
+  A blow's chaos builds the meter only with `Hit.venom` set; fire, cold and lightning still build their own. What
+  poisons (owner's list): the duo's strokes, orb and bunch, the deer's spores, the rotgorger's bite. What is only
+  damage: the bolt, the siphon, the bolt's gas, the knight's lit stroke and his gas, and the druidess's whip.
 - **THE DRAIN IS SILENT AND UNFLASHED.** The red edge and the beat belong to a BLOW. **The PROC gets the whole
   of the feedback, once** — one shake, one voice, one flash.
 - **THE BAR HAS TWO FACES OFF ONE NUMBER** — violet FILLING, toxic YELLOW once it has gone off, and **nothing
@@ -2212,6 +2343,28 @@ Ground layer > Cliff paints it, Slope takes it back.
   face there; the lip is terraced to two tiers now, `-1.75` m over `-15.00`, which is a **13.25 m** face and
   past `FALL_DEATH`. Walking off it kills.
 
+### Illusory walls — a cliff face that is not there
+
+**`props.illusory` IS `cliff2`'S OWN MESH WASHED TOWARD SLATE** (`proprock.illusoryMesh`, `Builder.wash` at
+`ILLUSION_WASH_T`): it stands in a line of real faces and reads as one at a glance, and as the odd one to
+someone who looks. It is SOLID and BLOCKS SIGHT like any cliff until touched, and the map places it like any
+prop (`at: illusory x z yaw scale`; `worlds/test_illusory.world` is the bench, three faces in a row with a
+chest behind the middle one).
+
+- **THREE THINGS BRING IT DOWN, ALL THE HERO'S**: a blade that reaches the stone (`env.illusionStruck` off
+  `heroBlade`, the blade's own radius inflating the face), a ROLL pressed against it (`env.illusionTouched`
+  at `HERO_R + ILLUSION_ROLL_REACH`), or an arrow planted in it (`game.planted`). ER's walls fall to any hit;
+  the roll is the owner's addition. A foe cannot dispel one.
+- **IT STOPS BEING A WALL THE FRAME IT IS STRUCK**, and only LOOKS like one for `env.ILLUSION_FADE` (0.7 s):
+  `eachSolid` drops every solid whose `illusion` slot has `illusionLife` under 1, so the look, the step, the
+  arrow and the roll all pass at once while the face thins in place (`Prop.dissolve`, alpha only — never
+  `shrink`, which would sink it). The game marks the break with `veil_break` (glass and air, no stone) and a
+  wash of pale motes up the face (`game.dispelIllusion`).
+- **THE BOOKKEEPING IS THE FOG GATE'S**: `Info.illusion` on the row, a slot PLUS ONE on both `Prop.illusion`
+  and `collision.Solid.illusion`, `illusionProps/Solid0/SolidN` filled by `buildSolids`. Walls come back with
+  the map (`restoreIllusions` beside every `openWards` in `env`'s own load paths), and NOT at a bonfire —
+  `game.rehomeFoes` does not touch them.
+
 ### Decks and ladders — the only two ways off the ground
 
 **A DECK IS THE FIRST WALKABLE SURFACE THAT IS NOT THE LAND** (`props.Info.decks`, `env.deckAt`/`standAt`). Props
@@ -2490,6 +2643,8 @@ a second on a guaranteed miss. A choose site tests the move's OWN band, not just
 - **THE BARS ARE NOT IN THE FILE, AND THAT IS THE POINT.** `hero.sit` runs `makeWhole` before the write. The
   SHEET is out for the same reason: it is `ptree.Bonus.sheet()` of the tree below, and `game.applyTree`
   re-derives it on the way back in.
+- **THE BOOT SCREEN STANDS AWAY FROM THE TOWER** (`game.BOOT_AT_X/Z` = −60, 60): the owner asked for the
+  intro camera moved off it, so the boot view is open plain and sky, not the tower's flank.
 - **IT IS GATHERED AND SCATTERED THROUGH ONE VIEW** (`save.Slot`, `game.slotOf`): the save file owns no game
   state and reaches for nothing. Parsing goes into a `save.Data` on the stack FIRST and is committed only if the
   whole file read.
@@ -2563,7 +2718,10 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
 - **Lock-on:** R3 / middle mouse; a flick cycles. Suspended entirely while aiming. Two ER exceptions: a hold-B
   sprint faces TRAVEL, and an attack's recovery tail re-squares (`ATK_RETRACK`). **YOU CANNOT FIX ON WHAT YOU
   CANNOT SEE** — a foe behind a wall is not offered (`game.canSee`), but a HELD lock fades rather than switching
-  (`LOCK_BLIND_HOLD`).
+  (`LOCK_BLIND_HOLD`). **THE FLICK WALKS A LINE** (`game.stepPart`, `FoeRef.part`): every point this body offers in
+  part order, then the next body over at ITS first point — and back the same way, arriving on the last. R3 fixes on a
+  body's first point. A point is offered whether or not the kit in hand can reach it: locked to the ogre's head, the
+  sword swings at the head.
 - **Cross/A = JUMP** (keyboard `V`). Not a clash with the menu Confirm: every screen that takes Confirm holds
   the world still. `hud.BTN_JUMP` is named apart from `BTN_CONFIRM` because a rebind of one is not a rebind of
   the other.
@@ -2571,6 +2729,9 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
 ## Hard invariants & gotchas
 
 - **Coordinates:** ground is XZ, Y up. Hero faces +Z at yaw 0; `atan2(facing.x, facing.z)` is the facing angle.
+- **`Env` IS `alloc.create`d LIKE `Game`, SO ITS DEFAULTS NEVER RAN.** Every counter `build`/reload reads
+  before the props exist is zeroed there by hand (`nprops`, `nsolids`, `nwards`, `nillusions`) — `restoreIllusions`
+  once walked `illusionProps[0..fill byte]` and the prop gallery died on its first frame.
 - **Strafe sign:** the camera looks +Z from behind, so screen-right is world −X → `camera.rightXZ` MUST be
   `(−cos yaw, 0, sin yaw)`. Flipping it mirrors L/R walking.
 - **VSYNC, not `setTargetFPS`.** `vsync_hint` before `initWindow`, no frame cap — `setTargetFPS` is a CPU-side
@@ -2670,11 +2831,11 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   - **AND "BACK TO YOUR POST" MEANS THE POST, NOT THE SPAWN PIN** (`foe.tetherFor`). Every roamer got three
     metres out and turned round, because a creature's own `.hold` arm compares against where it was placed and
     `LEASH_HOME_R` is a stride: the orders and the go-home rule pulled against each other and the orders lost. The
-    same anchor feeds `tickLeash` at all 27 sites, or `roam_free` — unleashed BY DEFINITION — is dragged back by
+    same anchor feeds `tickLeash` at every call site, or `roam_free` — unleashed BY DEFINITION — is dragged back by
     the tether. `foe.homeFor` is the OTHER half of the same rule and answers `self.pos` under any orders at all,
     so a creature's own "am I far from home?" arm reads zero and only the round moves it.
   - **WHICH UNITS GET THEM IS THE AUTHOR'S CALL, MADE PER UNIT IN THE EDITOR** (owner: let me assign them).
-    So every creature that CAN move takes them — 27 of 30 groups — and `hold` being the default is what keeps a
+    So every creature that CAN move takes them — 30 of 33 groups — and `hold` being the default is what keeps a
     map that never says `ai=` unchanged. The three that cannot are the FIXTURES, and `game.NO_ORDERS` names them
     with a reason, enforced both ways: a creature added with no `Post` and no line there is an order the editor
     lets you assign that silently does nothing.

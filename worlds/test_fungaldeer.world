@@ -12,7 +12,7 @@ zone: meadow -400.0 -400.0 400.0 400.0 0.300 grasstall,patch,tuft,clover,moss,wi
 clear: 0.0 0.0 30.0
 
 at: bonfire -2 -24 0 1
-at: chest 5.0 -22 190 1 loot=purgeleaf,crimson_flask,wax_stopped_hood
+at: chest 5.0 -22 190 1 loot=purgeleaf,empty_flask,wax_stopped_hood
 
 # THE OPEN FIELD. Two of them, far enough apart that their volleys arrive on different clocks — five spores
 # hanging over you from one animal is a pattern; ten from two is the thing to actually look at.

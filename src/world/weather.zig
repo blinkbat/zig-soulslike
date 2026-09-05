@@ -927,17 +927,6 @@ pub const SPORE_OPACITY: f32 = 0.62;
 const SPORE_TAPER: f32 = 0.70;
 const SPORE_BANK_PEACH = v3(1.0, 196.0 / 255.0, 170.0 / 255.0);
 
-pub fn bankTint(hour: rl.Vector3, spore: f32) rl.Color {
-    const t = mathx.clampF(spore, 0, 1);
-    const peach = mathx.lerpV(v3(1, 1, 1), SPORE_BANK_PEACH, t);
-    return rgba(
-        mathx.u8f(hour.x * peach.x * 255.0),
-        mathx.u8f(hour.y * peach.y * 255.0),
-        mathx.u8f(hour.z * peach.z * 255.0),
-        255,
-    );
-}
-
 pub const Spore = struct {
     shoals: [SPORE_SHOALS]rl.Model,
 
@@ -1032,6 +1021,196 @@ test "THE SPORE FIELD IS NOT ON THE RAIN'S CLOCK - that one wraps 2.6 times a se
         const b = swimOf(17.0, k);
         try std.testing.expect(mathx.lenV(mathx.subV(a, b)) > 0.15);
     }
+}
+
+
+pub const EMBER_R: f32 = 22.0;
+pub const EMBER_CELL_H: f32 = 6.0;
+pub const EMBER_STACKS: usize = 3;
+
+pub const EMBER_MOTES: usize = 360;
+/// Metres. Under the stroke's own 7 cm: at that size a mote is a soft ball and a field of them reads as smoke.
+const EMBER_LO: f32 = 0.012;
+const EMBER_HI: f32 = 0.030;
+
+/// EMBERS RISE, THEY DO NOT FALL. Metres a second UP — rain is 13 down and a spore 0.085 down; a spark off a fire climbs a man's height in two seconds and then slows.
+pub const EMBER_MPS: f32 = 0.85;
+/// The gust every shoal rides sideways as it climbs, metres and seconds, each shoal on its own period so the field never moves as one block.
+const GUST_X: f32 = 1.40;
+const GUST_Z: f32 = 0.90;
+const GUST_SECS: f32 = 7.0;
+const GUST_SPREAD: f32 = 0.38;
+
+fn gustOf(t: f32, i: usize) rl.Vector3 {
+    const k = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(EMBER_SHOALS)) - 0.5;
+    const px = GUST_SECS * (1.0 + GUST_SPREAD * k * 2.0);
+    const pz = GUST_SECS * 1.37 * (1.0 - GUST_SPREAD * k * 1.5);
+    const off = @as(f32, @floatFromInt(i)) * 1.913;
+    return v3(
+        mathx.sinf(std.math.tau * t / px + off) * GUST_X * (0.7 + 0.6 * @abs(k * 2.0)),
+        0,
+        mathx.cosf(std.math.tau * t / pz + off * 0.8) * GUST_Z * (0.7 + 0.6 * @abs(k * 2.0)),
+    );
+}
+
+/// HOT, AND EMISSIVE. Alpha is the emissive channel: 40 is a mote that is its own light in the dark, and the dull one at 110 is a coal going out.
+const MOTE_HOT = rgba(255, 190, 96, 40);
+const MOTE_EMBER = rgba(240, 120, 36, 62);
+const MOTE_DULL = rgba(170, 60, 20, 110);
+
+pub const EMBER_SHOALS: usize = 6;
+/// THE WINK. A shoal is lit and gone inside this, so the field flickers the way sparks do — a sixth of the spore's 41 s. Held off zero for the spore's reason: a shoal that vanishes outright pops on the frame it comes back.
+pub const EMBER_WINK_SECS: f32 = 6.5;
+
+pub fn emberWink(t: f32, i: usize) f32 {
+    const off = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(EMBER_SHOALS));
+    const u = @mod(t / EMBER_WINK_SECS + off, 1.0);
+    const c = 0.5 - 0.5 * mathx.cosf(std.math.tau * u);
+    return 0.08 + 0.92 * c * c;
+}
+
+pub const EMBER_OPACITY: f32 = 0.85;
+const EMBER_TAPER: f32 = 0.66;
+/// Smoke is a bank of the same mist, pulled toward a warm dark grey: darker than the fog's own white because smoke takes light rather than scattering it.
+const SMOKE_BANK = v3(0.62, 0.50, 0.42);
+
+pub fn bankTint(hour: rl.Vector3, spore: f32, ember: f32) rl.Color {
+    const t = mathx.clampF(spore, 0, 1);
+    const e = mathx.clampF(ember, 0, 1);
+    const peach = mathx.lerpV(v3(1, 1, 1), SPORE_BANK_PEACH, t);
+    const tone = mathx.lerpV(peach, SMOKE_BANK, e);
+    return rgba(
+        mathx.u8f(hour.x * tone.x * 255.0),
+        mathx.u8f(hour.y * tone.y * 255.0),
+        mathx.u8f(hour.z * tone.z * 255.0),
+        255,
+    );
+}
+
+pub const Ember = struct {
+    shoals: [EMBER_SHOALS]rl.Model,
+
+    pub fn build(shader: rl.Shader) Ember {
+        var out: Ember = .{ .shoals = undefined };
+        var rng = mathx.Rng.init(0xE3BE_7F1E);
+        for (&out.shoals) |*into| {
+            var b = gfx.Builder.init();
+            b.setMat(.plain);
+            b.setAnimY(0);
+            for (0..EMBER_MOTES / EMBER_SHOALS) |_| {
+                const a = rng.angle();
+                const rr = EMBER_R * @sqrt(rng.float());
+                const t = mathx.smoothstep(EMBER_TAPER * EMBER_R, EMBER_R, rr);
+                const r = rng.range(EMBER_LO, EMBER_HI) * (1.0 - t * 0.55);
+                const u = rng.float();
+                b.addBlob(
+                    v3(mathx.cosf(a) * rr, rng.float() * EMBER_CELL_H, mathx.sinf(a) * rr),
+                    v3(r, r * rng.range(0.8, 1.4), r),
+                    2,
+                    4,
+                    if (u < 0.22) MOTE_HOT else if (u < 0.78) MOTE_EMBER else MOTE_DULL,
+                );
+            }
+            into.* = b.toModel(shader);
+        }
+        return out;
+    }
+
+    /// THE COLUMN CLIMBS: the phase is ADDED to the base, so the stack slides up and wraps a cell at a time, where the rain's is subtracted. Two cells under the eye, so the ground round his feet is inside the field at every phase.
+    pub fn draw(self: *const Ember, scene: *gfx.Scene, eye: rl.Vector3, at: rl.Vector3, level: f32, t: f32) void {
+        if (level <= 0.02) return;
+        const lv = mathx.clampF(level, 0, 1);
+        var any = false;
+        for (&self.shoals, 0..) |*m, si| {
+            const amt = EMBER_OPACITY * lv * emberWink(t, si);
+            if (amt <= 0.004) continue;
+            if (!any) {
+                scene.beginFade(amt);
+                any = true;
+            } else scene.setFade(amt);
+            const g = gustOf(t, si);
+            const lead = @as(f32, @floatFromInt(si)) * EMBER_CELL_H / @as(f32, @floatFromInt(EMBER_SHOALS));
+            const phase = @mod(t * EMBER_MPS + lead, EMBER_CELL_H);
+            const baseY = eye.y - EMBER_CELL_H * 2.0 + phase;
+            for (0..EMBER_STACKS) |i| {
+                const y = baseY + @as(f32, @floatFromInt(i)) * EMBER_CELL_H;
+                rl.drawModelEx(m.*, v3(at.x + g.x, y, at.z + g.z), v3(0, 1, 0), 0, v3(1, 1, 1), rl.Color.white);
+            }
+        }
+        if (any) scene.endFade();
+    }
+};
+
+test "AN EMBER RISES, IT DOES NOT FALL — up the column at a walking pace, on its own clock" {
+    const cross = EMBER_CELL_H / EMBER_MPS;
+    std.debug.print("\n  embers: {d:.2} m/s UP, one mote crosses its {d:.0} m cell in {d:.1} s ({d:.0}x slower than the rain, {d:.0}x faster than a spore)\n", .{ EMBER_MPS, EMBER_CELL_H, cross, FALL_MPS / EMBER_MPS, EMBER_MPS / SPORE_MPS });
+    try std.testing.expect(EMBER_MPS > 0);
+    try std.testing.expect(EMBER_MPS < FALL_MPS * 0.1);
+    try std.testing.expect(EMBER_MPS > SPORE_MPS * 5.0);
+    try std.testing.expect(cross > 3.0);
+    try std.testing.expect(GUST_SECS > cross * 0.5);
+    // The phase is what the draw lifts the column by, and it may never leave [0, CELL_H): past it a whole cell of embers pops a body length up the screen.
+    var t: f32 = 0;
+    while (t < 200.0) : (t += 1.0 / 60.0) {
+        for (0..EMBER_SHOALS) |si| {
+            const lead = @as(f32, @floatFromInt(si)) * EMBER_CELL_H / @as(f32, @floatFromInt(EMBER_SHOALS));
+            const phase = @mod(t * EMBER_MPS + lead, EMBER_CELL_H);
+            try std.testing.expect(phase >= 0 and phase < EMBER_CELL_H);
+        }
+    }
+    try std.testing.expect(EMBER_HI < 0.07);
+}
+
+test "THE FIELD FLICKERS BUT NEVER BLINKS — the shoals wink out of phase and the sum holds" {
+    var lo: f32 = 1e9;
+    var hi: f32 = -1e9;
+    var step: f32 = 0;
+    while (step < EMBER_WINK_SECS) : (step += 0.05) {
+        var sum: f32 = 0;
+        for (0..EMBER_SHOALS) |i| sum += emberWink(step, i);
+        lo = @min(lo, sum);
+        hi = @max(hi, sum);
+    }
+    std.debug.print("  ...{d} shoals on a {d:.1} s wink: the field holds between {d:.2} and {d:.2} shoals lit\n", .{ EMBER_SHOALS, EMBER_WINK_SECS, lo, hi });
+    try std.testing.expect(lo > @as(f32, @floatFromInt(EMBER_SHOALS)) * 0.25);
+    try std.testing.expect((hi - lo) / hi < 0.12);
+    try std.testing.expect(EMBER_WINK_SECS < SHOAL_SECS * 0.25);
+    for (0..EMBER_SHOALS) |i| {
+        var mn: f32 = 1;
+        var mx: f32 = 0;
+        var u: f32 = 0;
+        while (u < EMBER_WINK_SECS) : (u += 0.02) {
+            mn = @min(mn, emberWink(u, i));
+            mx = @max(mx, emberWink(u, i));
+        }
+        try std.testing.expect(mn > 0.05 and mn < 0.12);
+        try std.testing.expect(mx > 0.98);
+    }
+    for (1..EMBER_SHOALS) |k| {
+        const a = gustOf(11.0, 0);
+        const b = gustOf(11.0, k);
+        try std.testing.expect(mathx.lenV(mathx.subV(a, b)) > 0.15);
+    }
+    const tris = EMBER_MOTES * 2 * 4 * 2;
+    const draws = EMBER_SHOALS * EMBER_STACKS;
+    std.debug.print("  ...{d} motes, {d} tris over the field, {d} draws at full - the rain is {d} tris in {d}\n", .{ EMBER_MOTES, tris, draws, STREAKS * 2, STACKS });
+    try std.testing.expect(draws <= 20);
+    try std.testing.expect(MOTE_HOT.a < MOTE_EMBER.a and MOTE_EMBER.a < MOTE_DULL.a);
+    try std.testing.expect(MOTE_DULL.a < 128);
+}
+
+test "SMOKE IS A DARKER BANK THAN FOG, and the ember tint takes over from the spore's peach" {
+    const white = v3(1, 1, 1);
+    const fog = bankTint(white, 0, 0);
+    const smoke = bankTint(white, 0, 1);
+    const peach = bankTint(white, 1, 0);
+    try std.testing.expectEqual(@as(u8, 255), fog.r);
+    try std.testing.expect(smoke.r < fog.r and smoke.g < fog.g and smoke.b < fog.b);
+    try std.testing.expect(smoke.r > smoke.g and smoke.g > smoke.b);
+    try std.testing.expect(peach.r >= smoke.r);
+    const half = bankTint(white, 0, 0.5);
+    try std.testing.expect(half.r < fog.r and half.r > smoke.r);
+    std.debug.print("  smoke bank {d}/{d}/{d} against fog {d}/{d}/{d}\n", .{ smoke.r, smoke.g, smoke.b, fog.r, fog.g, fog.b });
 }
 
 

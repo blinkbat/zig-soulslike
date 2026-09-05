@@ -134,7 +134,8 @@ pub const LAVA_MID = rgba(238, 122, 34, 255);
 pub const LAVA_DEEP = rgba(255, 232, 148, 255);
 
 /// `y0` is the collider's FOOT and is 0 for every wall: raise it and the capsule becomes a LINTEL (`collision.Solid.y0`) — the stone over a doorway, open to a body on the ground and solid to one on a deck.
-pub const Part = struct { ax: f32 = 0, az: f32 = 0, bx: f32 = 0, bz: f32 = 0, r: f32, h: f32, y0: f32 = 0 };
+/// `flat` gives the capsule square ends (`collision.Solid.flat`): a wall or a block is its bounding rectangle, not a sausage.
+pub const Part = struct { ax: f32 = 0, az: f32 = 0, bx: f32 = 0, bz: f32 = 0, r: f32, h: f32, y0: f32 = 0, flat: bool = false };
 
 pub const Deck = struct { x: f32 = 0, z: f32 = 0, r: f32, y: f32, hole: bool = false };
 

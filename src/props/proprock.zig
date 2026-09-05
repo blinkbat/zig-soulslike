@@ -39,35 +39,113 @@ pub const CLIFF_OVERGROWN = CliffKind{ .H = 12.6, .wLo = 2.7, .wHi = 4.8, .cleft
 /// The painted faces (`env.cliffWall`) draw from the same six, so a face and the prop beside it are one geology.
 pub const CLIFF_KINDS = [_]CliffKind{ CLIFF_ROUND, CLIFF_BLOCKY, CLIFF_RAGGED, CLIFF_IVIED, CLIFF_SHATTERED, CLIFF_OVERGROWN };
 
+pub const CliffRow = struct { seed: u64, kind: CliffKind };
+/// The six placeable cliffs; `cliffColliders` fits each row's colliders off the same seed its mesh is drawn from.
+pub const CLIFF_PROPS = [_]CliffRow{
+    .{ .seed = 90210, .kind = CLIFF_ROUND },
+    .{ .seed = 90277, .kind = CLIFF_BLOCKY },
+    .{ .seed = 90341, .kind = CLIFF_RAGGED },
+    .{ .seed = 90407, .kind = CLIFF_IVIED },
+    .{ .seed = 90473, .kind = CLIFF_SHATTERED },
+    .{ .seed = 90539, .kind = CLIFF_OVERGROWN },
+};
+
 pub fn cliff1(shader: rl.Shader) rl.Model {
-    return cliffMesh(shader, 90210, CLIFF_ROUND);
+    return cliffMesh(shader, CLIFF_PROPS[0].seed, CLIFF_PROPS[0].kind);
 }
 pub fn cliff2(shader: rl.Shader) rl.Model {
-    return cliffMesh(shader, 90277, CLIFF_BLOCKY);
+    return cliffMesh(shader, CLIFF_PROPS[1].seed, CLIFF_PROPS[1].kind);
 }
 pub fn cliff3(shader: rl.Shader) rl.Model {
-    return cliffMesh(shader, 90341, CLIFF_RAGGED);
+    return cliffMesh(shader, CLIFF_PROPS[2].seed, CLIFF_PROPS[2].kind);
 }
 pub fn cliff4(shader: rl.Shader) rl.Model {
-    return cliffMesh(shader, 90407, CLIFF_IVIED);
+    return cliffMesh(shader, CLIFF_PROPS[3].seed, CLIFF_PROPS[3].kind);
 }
 pub fn cliff5(shader: rl.Shader) rl.Model {
-    return cliffMesh(shader, 90473, CLIFF_SHATTERED);
+    return cliffMesh(shader, CLIFF_PROPS[4].seed, CLIFF_PROPS[4].kind);
 }
 pub fn cliff6(shader: rl.Shader) rl.Model {
-    return cliffMesh(shader, 90539, CLIFF_OVERGROWN);
+    return cliffMesh(shader, CLIFF_PROPS[5].seed, CLIFF_PROPS[5].kind);
 }
 
 /// `cliff2`'s own face washed toward slate: near enough to pass at a glance, off enough to be found by someone who looks.
 pub const ILLUSION_WASH = mathx.rgba(96, 104, 134, 255);
 pub const ILLUSION_WASH_T: f32 = 0.36;
 pub fn illusoryMesh(shader: rl.Shader) rl.Model {
-    var b = cliffBuild(90277, CLIFF_BLOCKY);
+    var b = cliffBuild(CLIFF_PROPS[1].seed, CLIFF_PROPS[1].kind);
     b.wash(ILLUSION_WASH, ILLUSION_WASH_T);
     return b.toModel(shader);
 }
 
 pub const CliffBody = struct { x: f32, y: f32, z: f32, rx: f32, ry: f32, rz: f32 };
+
+/// The rock's solid masses in its own frame, recorded as the mesh is built: the five bodies and every base or apron boulder big enough to stop a body.
+/// A shattered kind can record 5 bodies, 9 base boulders, 14 apron boulders, 12 rib joints and 3 slabs; the cap is a panic because a dropped mass is a walk-through lobe.
+pub const MASS_CAP = 64;
+pub const Masses = struct {
+    items: [MASS_CAP]CliffBody = undefined,
+    n: usize = 0,
+
+    fn push(self: *Masses, b: CliffBody) void {
+        if (self.n >= MASS_CAP) @panic("proprock: MASS_CAP exceeded — raise the cap");
+        self.items[self.n] = b;
+        self.n += 1;
+    }
+};
+/// A boulder under this radius is stepped over, not walked round.
+const MASS_MIN_R: f32 = 0.45;
+/// His feet and his crown, in metres: a mass is fitted where it is widest between them.
+const FIT_BAND_LO: f32 = 0.1;
+const FIT_BAND_HI: f32 = 1.8;
+pub const FIT_CAP = MASS_CAP;
+
+/// One capsule per mass, through its widest section inside the walk band at `scale`: the ellipse's long axis carries the segment, the short one is the radius, `h` its crown. A mass that never reaches the band is dropped.
+pub fn fitParts(ms: *const Masses, scale: f32, out: []art.Part) []art.Part {
+    const lo = FIT_BAND_LO / scale;
+    const hi = FIT_BAND_HI / scale;
+    var n: usize = 0;
+    for (ms.items[0..ms.n]) |m| {
+        if (n >= out.len) break;
+        if (m.y + m.ry <= lo or m.y - m.ry >= hi) continue;
+        const u = (mathx.clampF(m.y, lo, hi) - m.y) / m.ry;
+        const f = @sqrt(mathx.maxF(1.0 - u * u, 0));
+        const a = m.rx * f;
+        const b = m.rz * f;
+        if (a < 0.2 or b < 0.2) continue;
+        var p = art.Part{ .r = @min(a, b), .h = m.y + m.ry };
+        if (a >= b) {
+            p.ax = m.x - (a - b);
+            p.bx = m.x + (a - b);
+            p.az = m.z;
+            p.bz = m.z;
+        } else {
+            p.ax = m.x;
+            p.bx = m.x;
+            p.az = m.z - (b - a);
+            p.bz = m.z + (b - a);
+        }
+        out[n] = p;
+        n += 1;
+    }
+    return out[0..n];
+}
+
+var fitStore: [CLIFF_PROPS.len][FIT_CAP]art.Part = undefined;
+var fitN: [CLIFF_PROPS.len]usize = [_]usize{0} ** CLIFF_PROPS.len;
+var fitDone: [CLIFF_PROPS.len]bool = [_]bool{false} ** CLIFF_PROPS.len;
+
+/// A row's colliders, fitted once off a throwaway build of its own seed.
+pub fn cliffColliders(i: usize) []const art.Part {
+    if (!fitDone[i]) {
+        var ms = Masses{};
+        var b = cliffBuildOpt(CLIFF_PROPS[i].seed, CLIFF_PROPS[i].kind, true, &ms);
+        b.deinit();
+        fitN[i] = fitParts(&ms, 1.0, &fitStore[i]).len;
+        fitDone[i] = true;
+    }
+    return fitStore[i][0..fitN[i]];
+}
 
 pub fn cliffFaceZ(bs: []const CliffBody, x: f32, y: f32) ?f32 {
     var best: ?f32 = null;
@@ -111,6 +189,11 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
 
 /// The mesh before it is a model, so it can be stamped into a wall instead of drawn as a prop.
 pub fn cliffBuild(seed: u64, k: CliffKind) Builder {
+    return cliffBuildOpt(seed, k, true, null);
+}
+
+/// `fissures` false leaves out the six dark capsules that stand at the front as cracks: bisected into a sheet (`env.faceStamp`) the body sits behind the plane and they stood alone as a comb of dark spikes. The rng stream is kept, so the rest of the rock is the same either way. `masses` collects what `fitParts` colliders.
+pub fn cliffBuildOpt(seed: u64, k: CliffKind, fissures: bool, masses: ?*Masses) Builder {
     const H = k.H;
     var b = Builder.init();
     var rng = mathx.Rng.init(seed);
@@ -134,6 +217,7 @@ pub fn cliffBuild(seed: u64, k: CliffKind) Builder {
         const fz = inOut + rng.signed() * 0.4;
         b.addBlob(v3(cx, hgt * 0.34, fz), v3(rx, hgt * 0.42, rz), rings, sides, if (@mod(m, 2) == 0) CLIFF_ROCK else CLIFF_DK);
         bodies[nbody] = .{ .x = cx, .y = hgt * 0.34, .z = fz, .rx = rx, .ry = hgt * 0.42, .rz = rz };
+        if (masses) |ms| ms.push(bodies[nbody]);
         nbody += 1;
         const sx = cx + rng.signed() * 0.9;
         const sz = inOut * 0.7 + 0.5 + rng.signed() * 0.7;
@@ -184,21 +268,22 @@ pub fn cliffBuild(seed: u64, k: CliffKind) Builder {
         const bold = rng.float() < 0.3;
         const rr = if (bold) rng.range(0.42, 0.60) else rng.range(0.20, 0.34);
         const z0: f32 = if (bold) -1.55 else -1.25;
-        b.addCapsule(
-            v3(cx, 0.2, z0 + rng.signed() * 0.14),
-            v3(cx + rng.signed() * 0.34, h, z0 + 0.35 + rng.signed() * 0.18),
-            rr,
-            rr * rng.range(0.70, 0.92),
-            @as(i32, if (bold) 9 else 7),
-            CLIFF_DK,
-        );
+        const a = v3(cx, 0.2, z0 + rng.signed() * 0.14);
+        const c = v3(cx + rng.signed() * 0.34, h, z0 + 0.35 + rng.signed() * 0.18);
+        const rTop = rr * rng.range(0.70, 0.92);
+        if (fissures) b.addCapsule(a, c, rr, rTop, @as(i32, if (bold) 9 else 7), CLIFF_DK);
     }
     var t: i32 = 0;
     while (t < 9) : (t += 1) {
         const cx = rng.range(-6.4, 6.4);
         const cz = rng.range(-2.1, -0.7);
         const r = rng.range(0.35, 1.25) * (1.0 - 0.4 * @abs(cz + 0.7) / 1.4);
-        b.addBlob(v3(cx, r * 0.55, cz), v3(r, r * 0.7, r * rng.range(0.8, 1.2)), 4, 6, if (rng.float() < 0.3) CLIFF_LT else CLIFF_ROCK);
+        const rz = r * rng.range(0.8, 1.2);
+        const lt = rng.float() < 0.3;
+        b.addBlob(v3(cx, r * 0.55, cz), v3(r, r * 0.7, rz), 4, 6, if (lt) CLIFF_LT else CLIFF_ROCK);
+        if (masses) |ms| {
+            if (r >= MASS_MIN_R) ms.push(.{ .x = cx, .y = r * 0.55, .z = cz, .rx = r, .ry = r * 0.7, .rz = rz });
+        }
     }
     if (k.broken > 0) {
         const gx = frng.range(-3.0, 3.0);
@@ -223,6 +308,9 @@ pub fn cliffBuild(seed: u64, k: CliffKind) Builder {
                 };
                 const proud: f32 = if (st == rSegs) 0.85 else 0.25;
                 const p = v3(cx, y, fz + rw * proud);
+                if (masses) |ms| {
+                    if (y < 4.0) ms.push(.{ .x = cx, .y = y, .z = p.z, .rx = rw, .ry = rw, .rz = rw });
+                }
                 if (prev) |q| b.addCapsule(q, p, prevR, rw, 9, if (frng.float() < 0.3) CLIFF_DK else CLIFF_ROCK);
                 prev = p;
                 prevR = rw;
@@ -251,19 +339,28 @@ pub fn cliffBuild(seed: u64, k: CliffKind) Builder {
             const cx = gx + frng.signed() * (1.3 + 2.6 * out);
             const cz = -1.0 - out * frng.range(1.2, 2.8);
             const r = frng.range(0.30, 1.15) * (1.0 - 0.45 * out);
-            b.addBlob(v3(cx, r * 0.5, cz), v3(r, r * frng.range(0.55, 0.80), r * frng.range(0.80, 1.25)), 4, 6, if (frng.float() < 0.28) CLIFF_LT else CLIFF_ROCK);
+            const ry = r * frng.range(0.55, 0.80);
+            const rz = r * frng.range(0.80, 1.25);
+            const lt = frng.float() < 0.28;
+            b.addBlob(v3(cx, r * 0.5, cz), v3(r, ry, rz), 4, 6, if (lt) CLIFF_LT else CLIFF_ROCK);
+            if (masses) |ms| {
+                if (r >= MASS_MIN_R) ms.push(.{ .x = cx, .y = r * 0.5, .z = cz, .rx = r, .ry = ry, .rz = rz });
+            }
         }
         var sl: i32 = 0;
         while (sl < 3) : (sl += 1) {
             const hh = frng.range(1.1, 2.0);
             const lean = frng.range(0.45, 0.95) * (if (frng.float() < 0.5) @as(f32, -1) else 1);
-            b.addBox(
-                v3(gx + frng.signed() * 3.4, hh * 0.42, -2.8 + frng.signed() * 0.9),
-                v3(frng.range(0.70, 1.40), 0, frng.signed() * 0.20),
-                v3(lean * hh, hh, frng.signed() * 0.30),
-                v3(0, 0, frng.range(0.22, 0.42)),
-                if (frng.float() < 0.4) CLIFF_LT else CLIFF_DK,
-            );
+            const sx = gx + frng.signed() * 3.4;
+            const sz = -2.8 + frng.signed() * 0.9;
+            const hw = frng.range(0.70, 1.40);
+            const skx = frng.signed() * 0.20;
+            const sky = frng.signed() * 0.30;
+            const hd = frng.range(0.22, 0.42);
+            const lt = frng.float() < 0.4;
+            b.addBox(v3(sx, hh * 0.42, sz), v3(hw, 0, skx), v3(lean * hh, hh, sky), v3(0, 0, hd), if (lt) CLIFF_LT else CLIFF_DK);
+            // The slab through the walk band: it leans `lean` per metre of height, so its middle sits over by then and it is widened by the lean across the band.
+            if (masses) |ms| ms.push(.{ .x = sx + lean * (1.15 - 0.42 * hh), .y = 1.15, .z = sz, .rx = hw + @abs(lean) * 0.6, .ry = 1.0, .rz = hd + 0.05 });
         }
     }
     var c: i32 = 0;

@@ -1,0 +1,31 @@
+version: 1
+name: Firelands Test
+half: 80.0
+runway: -6.00 -30.00 6.00 -18.00
+
+# THE FIRELANDS BENCH: the ember weather (`ember=` on the location) over one of every fiery rock, and the
+# lava-ish ground decor sown across the floor. --map worlds/test_firelands.world and walk out from the bonfire;
+# the weather is the location's, so it is on the moment he stands up.
+
+zone: floor -400.0 -400.0 400.0 400.0 0.240 scoria,scoria,lavacrust,emberbed,magmavein,cinders
+
+location: firelands -80.0 -80.0 80.0 80.0 wet=0.000 fog=0.150 ember=0.850 blend=8.00
+
+clear: 0.0 -24.0 8.0
+
+at: bonfire 0 -24 0 1
+
+# The tall things at the back, the ground things in the middle, all inside a 24 m walk of the fire.
+at: firespire 0 24 0 1
+at: cindercone -17 15 30 1
+at: emberarch 17 15 90 1
+at: emberpillar -21 -2 0 1
+at: basaltcolumns 21 -2 45 1
+at: emberrock -12 3 120 1
+at: burningrock 12 3 200 1
+at: emberrocks -6 9 0 1
+at: crackedslab 6 9 30 1
+at: magmavein 0 0 0 1
+at: lavacrust -4 -8 0 1
+at: emberbed 4 -8 0 1
+at: scoria 0 -12 0 1

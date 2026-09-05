@@ -1037,9 +1037,10 @@ fn big(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, kind: Kind
     }) catch "";
     hud.mono(flags, x, y, hud.MONO, ui.alpha(ui.VALUE, 220));
     y += line;
+    const nparts = props.partsOf(nfo.kind).len;
     const solids = std.fmt.bufPrintZ(&buf, "{d} collider{s}, {s}", .{
-        nfo.parts.len,
-        if (nfo.parts.len == 1) "" else "s",
+        nparts,
+        if (nparts == 1) "" else "s",
         @tagName(nfo.surf),
     }) catch "";
     hud.mono(solids, x, y, hud.MONO, ui.alpha(ui.VALUE, 220));

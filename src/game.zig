@@ -288,16 +288,21 @@ pub const Game = struct {
     wetNow: f32 = 0,
     fogNow: f32 = 0,
     sporeNow: f32 = 0,
+    emberNow: f32 = 0,
+    /// A shot's override on the location's own ember level; null in the game.
+    emberForce: ?f32 = null,
     hourLit: f32 = std.math.nan(f32),
     wetLit: f32 = std.math.nan(f32),
     fogLit: f32 = std.math.nan(f32),
     sporeLit: f32 = std.math.nan(f32),
+    emberLit: f32 = std.math.nan(f32),
     souls: soulsmod.Souls,
     weather: weathermod.Weather,
     rainfall: weathermod.Rain,
     mist: weathermod.Mist,
     skein: weathermod.Skein,
     sporefall: weathermod.Spore,
+    emberfall: weathermod.Ember,
     tree: ptree.Tree = .{},
     restRetro: [gfx.RETRO_COUNT]f32 = [_]f32{0} ** gfx.RETRO_COUNT,
     bag: item.Bag = .{},
@@ -418,16 +423,20 @@ pub const Game = struct {
         g.wetNow = 0;
         g.fogNow = 0;
         g.sporeNow = 0;
+        g.emberNow = 0;
+        g.emberForce = null;
         g.hourLit = std.math.nan(f32);
         g.wetLit = std.math.nan(f32);
         g.fogLit = std.math.nan(f32);
         g.sporeLit = std.math.nan(f32);
+        g.emberLit = std.math.nan(f32);
         g.souls = soulsmod.Souls.init(g.scene.shader);
         g.weather = weathermod.Weather.init(0x5701_A17E);
         g.rainfall = weathermod.Rain.build(g.scene.shader);
         g.mist = weathermod.Mist.build(g.scene.shader);
         g.skein = weathermod.Skein.build(g.scene.shader);
         g.sporefall = weathermod.Spore.build(g.scene.shader);
+        g.emberfall = weathermod.Ember.build(g.scene.shader);
         phase(&initTimer, "foes");
         g.arrowModel = archermod.arrowMesh(g.scene.shader);
         g.clumpModel = koboldmod.clumpMesh(g.scene.shader);
@@ -1712,6 +1721,12 @@ test "THE JUMP IS SIZED AGAINST THE TERRAIN IT EXISTS TO CROSS, not against a nu
     try std.testing.expect(heromod.JUMP_APEX > envmod.STEP_UP);
     try std.testing.expect(heromod.JUMP_APEX < 6.0 * worldfmt.HEIGHT_STEP);
     try std.testing.expect(heromod.SPRINT_SPEED * heromod.JUMP_AIR > heromod.ROLL_DIST);
+    // A painted face on the default lattice is a wall to the jump too: his feet plus the walk's allowance stop under the least drop that cuts.
+    const step = 2.0 * worldfmt.DEFAULT_HALF / @as(f32, @floatFromInt(worldfmt.HEIGHT_N - 1));
+    std.debug.print("\n  jump reach {d:.2} m against the least cut {d:.2} m; melee reach refused over {d:.2} m\n", .{ heromod.JUMP_APEX + envmod.STEP_UP, worldfmt.cliffMinDrop(step), foemod.REACH_RISE });
+    try std.testing.expect(heromod.JUMP_APEX + envmod.STEP_UP < worldfmt.cliffMinDrop(step));
+    try std.testing.expect(foemod.REACH_RISE < worldfmt.cliffMinDrop(step));
+    try std.testing.expect(foemod.REACH_RISE > heromod.JUMP_APEX);
 }
 
 fn standHeight(f: anytype) f32 {
@@ -2391,6 +2406,10 @@ pub fn clearWeatherForShot(g: *Game) void {
 
 pub fn forceFogForShot(g: *Game, on: bool) void {
     g.menu.forceFog(on);
+}
+pub fn forceEmberForShot(g: *Game, level: ?f32) void {
+    g.emberForce = level;
+    g.emberNow = level orelse 0;
 }
 pub fn forceMistForShot(g: *Game, ahead: f32) void {
     const p = v3(g.hero.pos.x, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), g.hero.pos.z);
@@ -3240,7 +3259,7 @@ test "A CLIFF TURNS THE ANVIL INTO A HINT — the ring carries in the open and i
     e.materialize(m);
 
     const ear = v3(0, foemod.HERO_EYE, 0);
-    // The cliff's own capsule is 10.8 m long with a 2.9 m girth (`props.cliffParts`).
+    // The cliff's colliders are its five lobes, 10.4 m across the run (`props.partsOf`).
     const behindTheCliff = v3(34, ANVIL_EAR, 0);
     const sameSide = v3(3, ANVIL_EAR, 0);
     try std.testing.expect(!e.sees(ear, behindTheCliff));
@@ -3437,7 +3456,7 @@ fn saveMark(g: *Game, dt: f32) void {
 }
 
 fn bankTint(g: *const Game) rl.Color {
-    return weathermod.bankTint(daynight.mistTint(g.day.hour, g.wetNow), g.sporeNow);
+    return weathermod.bankTint(daynight.mistTint(g.day.hour, g.wetNow), g.sporeNow, g.emberNow);
 }
 
 fn applyStow(g: *Game) void {
@@ -3448,13 +3467,15 @@ fn applyHour(g: *Game) void {
     const wet = @round(g.wetNow * WET_STEPS) / WET_STEPS;
     const fog = hazeK(g);
     const spore = @round(g.sporeNow * WET_STEPS) / WET_STEPS;
-    if (g.day.hour == g.hourLit and wet == g.wetLit and fog == g.fogLit and spore == g.sporeLit) return;
+    const ember = @round(g.emberNow * WET_STEPS) / WET_STEPS;
+    if (g.day.hour == g.hourLit and wet == g.wetLit and fog == g.fogLit and spore == g.sporeLit and ember == g.emberLit) return;
     g.hourLit = g.day.hour;
     g.wetLit = wet;
     g.fogLit = fog;
     g.sporeLit = spore;
-    g.scene.setHour(g.day.hour, wet, fog, spore);
-    g.sky.setHour(g.day.hour, wet, spore);
+    g.emberLit = ember;
+    g.scene.setHour(g.day.hour, wet, fog, spore, ember);
+    g.sky.setHour(g.day.hour, wet, spore, ember);
     sfx.setDaylight(daynight.dayAmt(g.day.hour));
 }
 
@@ -3476,7 +3497,8 @@ pub fn pinSkyForShot(g: *Game) void {
     g.wetNow = mathx.clampF(if (here) |l| l.wet orelse g.weather.rain() else g.weather.rain(), 0, 1);
     g.fogNow = mathx.clampF(if (here) |l| l.fog orelse 0 else 0, 0, 1);
     g.sporeNow = mathx.clampF(if (here) |l| l.spore orelse 0 else 0, 0, 1);
-    if (g.sporeNow > weathermod.MIST_MIN) {
+    g.emberNow = mathx.clampF(g.emberForce orelse (if (here) |l| l.ember orelse 0 else 0), 0, 1);
+    if (g.sporeNow > weathermod.MIST_MIN or g.emberNow > weathermod.MIST_MIN) {
         g.mist.tick(SHOT_SETTLE, g.hero.pos, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), fogAmt(g));
     }
     applyHour(g);
@@ -3733,6 +3755,7 @@ fn strikeVictim(g: *const Game, reach: f32) ?RootPick {
             if (disguised(a)) continue;
             const d = mathx.distXZ(a.pos, g.hero.pos) - a.bodyR();
             if (d > reach) continue;
+            if (@abs(a.pos.y - g.hero.pos.y) > foemod.REACH_RISE) continue;
             if (!g.env.sees(eye, a.lockPoint())) continue;
             if (locked) |l| {
                 if (l.idx == i and l.kind == memberKind(a, f.kind)) return .{ .group = gi, .idx = i };
@@ -4558,16 +4581,19 @@ fn settleSkyAt(g: *Game, dt: f32, at: rl.Vector3) void {
         g.wetNow = 0;
         g.fogNow = 0;
         g.sporeNow = 0;
+        g.emberNow = 0;
         return;
     }
     const here = g.map.weatherAt(at.x, at.z);
     const wantWet = if (here) |l| l.wet orelse g.weather.rain() else g.weather.rain();
     const wantFog = if (here) |l| l.fog orelse 0 else 0;
     const wantSpore = if (here) |l| l.spore orelse 0 else 0;
+    const wantEmber = g.emberForce orelse (if (here) |l| l.ember orelse 0 else 0);
     if (g.editor.on) {
         g.wetNow = mathx.clampF(wantWet, 0, 1);
         g.fogNow = mathx.clampF(wantFog, 0, 1);
         g.sporeNow = mathx.clampF(wantSpore, 0, 1);
+        g.emberNow = mathx.clampF(wantEmber, 0, 1);
         return;
     }
     const secs = if (here) |l| l.blend else SKY_SETTLE;
@@ -4575,16 +4601,19 @@ fn settleSkyAt(g: *Game, dt: f32, at: rl.Vector3) void {
     g.wetNow = mathx.approach(g.wetNow, mathx.clampF(wantWet, 0, 1), rate * dt);
     g.fogNow = mathx.approach(g.fogNow, mathx.clampF(wantFog, 0, 1), rate * dt);
     g.sporeNow = mathx.approach(g.sporeNow, mathx.clampF(wantSpore, 0, 1), rate * dt);
+    g.emberNow = mathx.approach(g.emberNow, mathx.clampF(wantEmber, 0, 1), rate * dt);
 }
 
 const SKY_SETTLE: f32 = 6.0;
 
 fn fogAmt(g: *const Game) f32 {
     if (!skyLive(g)) return 0;
-    return mathx.maxF(mathx.maxF(g.menu.fogAmt(g.wetNow), g.fogNow), g.sporeNow * SPORE_BANKS);
+    return mathx.maxF(mathx.maxF(g.menu.fogAmt(g.wetNow), g.fogNow), mathx.maxF(g.sporeNow * SPORE_BANKS, g.emberNow * EMBER_BANKS));
 }
 
 const SPORE_BANKS: f32 = 0.45;
+/// The smoke over an ember field is the mist banks under `bankTint`'s smoke tone — light, so the coals still read through it.
+const EMBER_BANKS: f32 = 0.35;
 
 fn drawWeatherOverlay(g: *Game) void {
     if (g.editor.on) return;
@@ -4607,6 +4636,9 @@ pub fn drawScene(g: *Game) void {
         setCasterShaders(g, g.scene.depthShader);
         drawCasters(g, .{ .sun = focus });
         g.env.drawCliffCasters(focus);
+        rl.gl.rlSetCullFace(@intFromEnum(rl.gl.rlCullMode.rl_cull_face_front));
+        g.env.drawGroundCasters(focus);
+        rl.gl.rlSetCullFace(@intFromEnum(rl.gl.rlCullMode.rl_cull_face_back));
         setCasterShaders(g, g.scene.shader);
         g.scene.endShadowPass();
     }
@@ -4670,6 +4702,7 @@ pub fn drawScene(g: *Game) void {
         if (!g.editor.on) g.rainfall.draw(&g.scene, cam.position, g.hero.pos, g.wetNow, g.weather.t);
         if (!g.editor.on) g.mist.draw(&g.scene, cam.position, fogAmt(g), bankTint(g));
         g.sporefall.draw(&g.scene, cam.position, if (g.editor.on) cam.position else g.hero.pos, g.sporeNow, g.weather.slowSecs());
+        g.emberfall.draw(&g.scene, cam.position, if (g.editor.on) cam.position else g.hero.pos, g.emberNow, g.weather.slowSecs());
         if (!g.editor.on) g.skein.draw(&g.scene);
     }
     rl.endMode3D();
@@ -4995,8 +5028,9 @@ pub fn run(mode: Mode) void {
         const dt = mathx.minF(rawDt, DT_MAX) * g.menu.timeScale;
         g.drawDt = rawDt;
         PLAY_HALF = playHalfOf(g.map.half);
-        if (!g.editor.on and !g.menu.isOpen() and !g.rest.active() and !g.talk.active() and !g.award.carding()) {
-            g.day.tick(dt);
+        // The hour holds while he rests or talks; the weather does NOT — a frozen sheet hung in the air over the bonfire scene and the bed stopped answering the storm.
+        if (!g.editor.on and !g.menu.isOpen() and !g.rest.active() and !g.talk.active() and !g.award.carding()) g.day.tick(dt);
+        if (!g.editor.on and !g.menu.isOpen()) {
             tickWeather(g, dt);
         } else if (g.editor.on) {
             settleSkyAt(g, dt, g.editor.cursor orelse g.hero.pos);
@@ -6371,7 +6405,7 @@ pub fn heroBlade(g: *const Game) foemod.Blade {
 const ILLUSION_PUFF_COLS: usize = 5;
 const ILLUSION_PUFF_ROWS: usize = 4;
 const ILLUSION_PUFF_N: i32 = 6;
-const ILLUSION_MOTES: usize = propsmod.info(.illusory).parts.len * ILLUSION_PUFF_COLS * ILLUSION_PUFF_ROWS * @as(usize, @intCast(ILLUSION_PUFF_N));
+const ILLUSION_MOTES: usize = propsmod.FIT_CAP * ILLUSION_PUFF_COLS * ILLUSION_PUFF_ROWS * @as(usize, @intCast(ILLUSION_PUFF_N));
 /// A roll that brushes the face counts, as does an arrow planted in it; a blade has to reach the stone.
 const ILLUSION_ROLL_REACH: f32 = 0.35;
 const ILLUSION_ARROW_R: f32 = 0.30;

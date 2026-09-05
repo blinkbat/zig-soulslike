@@ -4319,6 +4319,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 var wet = l.wet orelse 0;
                 var fog = l.fog orelse 0;
                 var spore = l.spore orelse 0;
+                var emberv = l.ember orelse 0;
                 var has = l.hasWeather();
                 var usedW: i32 = 0;
                 if (ui.chip(ctx, x + 8, y, "weather", has, &usedW, "Give this region its own sky. OFF is not the same as dry - it leaves the world's own storm alone")) {
@@ -4326,6 +4327,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                     l.wet = if (has) wet else null;
                     l.fog = if (has) fog else null;
                     l.spore = if (has) spore else null;
+                    l.ember = if (has) emberv else null;
                     lchanged = true;
                 }
                 y += ROW_H;
@@ -4342,6 +4344,11 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                     y += ROW_H + SLIDER_DROP;
                     if (ui.slider(ctx, x + 8, y, w - 16, "spore", &spore, 0, 1, "How much sporefall drifts here")) {
                         l.spore = spore;
+                        lchanged = true;
+                    }
+                    y += ROW_H + SLIDER_DROP;
+                    if (ui.slider(ctx, x + 8, y, w - 16, "ember", &emberv, 0, 1, "How many embers rise here, and how much smoke hangs over them")) {
+                        l.ember = emberv;
                         lchanged = true;
                     }
                     y += ROW_H + SLIDER_DROP;
@@ -5506,7 +5513,7 @@ fn drawOptionsModal(ed: *Editor, ctx: *ui.Ctx) void {
     hud.mono("the far falloff - on, and cheaper to look at", x + 24, y, hud.MONO, ui.alpha(ui.LABEL, 160));
     y += hud.monoLineH(hud.MONO) + 8;
 
-    _ = ui.checkbox(ctx, x, y, "weather", &ed.showWeather, "Rain, mist and sporefall. Off on entry: it is the one overlay that hides the ground you came in to sculpt");
+    _ = ui.checkbox(ctx, x, y, "weather", &ed.showWeather, "Rain, mist, sporefall and rising embers. Off on entry: it is the one overlay that hides the ground you came in to sculpt");
     y += ROW_H;
     hud.mono("needs the Locations eye open too", x + 24, y, hud.MONO, ui.alpha(ui.LABEL, 160));
     y += hud.monoLineH(hud.MONO) + 8;

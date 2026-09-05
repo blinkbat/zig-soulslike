@@ -168,13 +168,14 @@ pub const Location = struct {
     wet: ?f32 = null,
     fog: ?f32 = null,
     spore: ?f32 = null,
+    ember: ?f32 = null,
     blend: f32 = 6.0,
 
     pub fn contains(self: *const Location, px: f32, pz: f32) bool {
         return inRect(px, pz, self.x, self.z, self.x1, self.z1);
     }
     pub fn hasWeather(self: *const Location) bool {
-        return self.wet != null or self.fog != null or self.spore != null;
+        return self.wet != null or self.fog != null or self.spore != null or self.ember != null;
     }
     pub fn label(self: *const Location) []const u8 {
         return std.mem.sliceTo(&self.name, 0);
@@ -2065,6 +2066,7 @@ pub fn write(m: *const Map, w: anytype) !void {
         if (l.wet) |v| try w.print(" wet={d:.3}", .{v});
         if (l.fog) |v| try w.print(" fog={d:.3}", .{v});
         if (l.spore) |v| try w.print(" spore={d:.3}", .{v});
+        if (l.ember) |v| try w.print(" ember={d:.3}", .{v});
         if (l.blend != 6.0) try w.print(" blend={d:.2}", .{l.blend});
         try w.writeAll("\n");
     }
@@ -2807,7 +2809,7 @@ fn nodeIn(m: *const Map, d: *const Dialog, name: []const u8) !u16 {
     return ParseError.UnknownRef;
 }
 
-/// `location: <name> <x> <z> <x1> <z1> [wet=..] [fog=..] [spore=..] [blend=..]` — the rectangle is positional and the sky is optional, because most locations will never have anything to do with the weather.
+/// `location: <name> <x> <z> <x1> <z1> [wet=..] [fog=..] [spore=..] [ember=..] [blend=..]` — the rectangle is positional and the sky is optional, because most locations will never have anything to do with the weather.
 fn parseLocation(it: *std.mem.TokenIterator(u8, .any)) !Location {
     var l = Location{};
     l.setName(it.next() orelse return ParseError.MissingField);
@@ -2825,6 +2827,8 @@ fn parseLocation(it: *std.mem.TokenIterator(u8, .any)) !Location {
             l.fog = try band01(val);
         } else if (std.mem.eql(u8, key, "spore")) {
             l.spore = try band01(val);
+        } else if (std.mem.eql(u8, key, "ember")) {
+            l.ember = try band01(val);
         } else if (std.mem.eql(u8, key, "blend")) {
             l.blend = try finiteFloat(f32, val);
             if (!(l.blend >= 0 and l.blend <= 120)) return ParseError.BadNumber;
@@ -2873,13 +2877,18 @@ test "a location round-trips through the format with and without its weather" {
         "version: 1\n" ++
         "half: 100\n" ++
         "location: plain -20 -20 20 20\n" ++
-        "location: storm 0 0 40 40 wet=0.750 fog=0.300 blend=9.00\n";
+        "location: storm 0 0 40 40 wet=0.750 fog=0.300 blend=9.00\n" ++
+        "location: firelands -40 -40 0 0 ember=0.850\n";
     try parse(text, m, &line);
-    try std.testing.expectEqual(@as(usize, 2), m.nlocations);
+    try std.testing.expectEqual(@as(usize, 3), m.nlocations);
     try std.testing.expect(!m.locations[0].hasWeather());
     try std.testing.expect(m.locations[1].hasWeather());
     try std.testing.expectApproxEqAbs(@as(f32, 0.75), m.locations[1].wet.?, 1e-4);
     try std.testing.expectApproxEqAbs(@as(f32, 9.0), m.locations[1].blend, 1e-4);
+    // An ember field alone is weather: it has to silence the world's own storm over the coals.
+    try std.testing.expect(m.locations[2].hasWeather());
+    try std.testing.expect(m.locations[2].wet == null);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.85), m.locations[2].ember.?, 1e-4);
     // Out of range is refused rather than clamped: a wet of 4 is a typo, not an intention.
     var bad: usize = 0;
     try std.testing.expectError(ParseError.BadNumber, parse(

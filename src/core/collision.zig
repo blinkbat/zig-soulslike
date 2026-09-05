@@ -19,6 +19,8 @@ pub const Solid = struct {
     ward: u8 = 0,
     /// An illusory wall's slot in `env.illusionProps` PLUS ONE; `env.eachSolid` drops it the frame the wall is struck.
     illusion: u8 = 0,
+    /// SQUARE ENDS: the solid is the capsule's own bounding rectangle in the segment's frame (`r` across, the segment plus `r` each way along). A wall or a block, whose corners a round end cut off.
+    flat: bool = false,
 };
 
 pub fn circle(x: f32, z: f32, r: f32) Solid {
@@ -29,7 +31,63 @@ pub fn capsule(ax: f32, az: f32, bx: f32, bz: f32, r: f32) Solid {
     return .{ .a = v3(ax, 0, az), .b = v3(bx, 0, bz), .r = r };
 }
 
+pub fn box(ax: f32, az: f32, bx: f32, bz: f32, r: f32) Solid {
+    return .{ .a = v3(ax, 0, az), .b = v3(bx, 0, bz), .r = r, .flat = true };
+}
+
+/// A flat solid's rectangle: centre, unit axis along the segment, and half-length INCLUDING the end radius (the half-width is `r`).
+pub const Frame = struct { cx: f32, cz: f32, ux: f32, uz: f32, hl: f32 };
+
+pub fn frameOf(s: Solid) Frame {
+    const dx = s.b.x - s.a.x;
+    const dz = s.b.z - s.a.z;
+    const l = @sqrt(dx * dx + dz * dz);
+    const ux: f32 = if (l > 1e-5) dx / l else 1.0;
+    const uz: f32 = if (l > 1e-5) dz / l else 0.0;
+    return .{ .cx = (s.a.x + s.b.x) * 0.5, .cz = (s.a.z + s.b.z) * 0.5, .ux = ux, .uz = uz, .hl = l * 0.5 + s.r };
+}
+
+const Gap = struct { d: f32, nx: f32, nz: f32 };
+
+/// Signed distance from `p` to a flat solid's edge, negative inside, with the way out.
+fn rectGap(p: rl.Vector3, s: Solid) Gap {
+    const f = frameOf(s);
+    const rx = p.x - f.cx;
+    const rz = p.z - f.cz;
+    const t = rx * f.ux + rz * f.uz;
+    const w = -rx * f.uz + rz * f.ux;
+    const dt = f.hl - @abs(t);
+    const dw = s.r - @abs(w);
+    if (dt >= 0 and dw >= 0) {
+        if (dw <= dt) {
+            const sg: f32 = if (w >= 0) 1.0 else -1.0;
+            return .{ .d = -dw, .nx = -f.uz * sg, .nz = f.ux * sg };
+        }
+        const sg: f32 = if (t >= 0) 1.0 else -1.0;
+        return .{ .d = -dt, .nx = f.ux * sg, .nz = f.uz * sg };
+    }
+    const qt = mathx.clampF(t, -f.hl, f.hl);
+    const qw = mathx.clampF(w, -s.r, s.r);
+    const ex = (t - qt) * f.ux - (w - qw) * f.uz;
+    const ez = (t - qt) * f.uz + (w - qw) * f.ux;
+    const d = @sqrt(ex * ex + ez * ez);
+    return .{ .d = d, .nx = ex / d, .nz = ez / d };
+}
+
+/// Signed distance from `p` to the solid's edge in XZ: past 0 is outside, whatever its shape.
+pub fn gap(p: rl.Vector3, s: Solid) f32 {
+    if (s.flat) return rectGap(p, s).d;
+    const q = mathx.closestOnSegXZ(p, s.a, s.b);
+    return mathx.distXZ(p, q) - s.r;
+}
+
 pub fn pushOut(p: rl.Vector3, pr: f32, s: Solid) rl.Vector3 {
+    if (s.flat) {
+        const g = rectGap(p, s);
+        if (g.d >= pr) return p;
+        const k = pr - g.d;
+        return v3(p.x + g.nx * k, p.y, p.z + g.nz * k);
+    }
     const q = mathx.closestOnSegXZ(p, s.a, s.b);
     const dx = p.x - q.x;
     const dz = p.z - q.z;
@@ -56,6 +114,7 @@ pub fn resolve(p: rl.Vector3, pr: f32, solids: []const Solid) rl.Vector3 {
 
 pub fn blocksPoint(p: rl.Vector3, margin: f32, s: Solid) bool {
     if (p.y > s.h or p.y < s.y0) return false;
+    if (s.flat) return rectGap(p, s).d < margin;
     const q = mathx.closestOnSegXZ(p, s.a, s.b);
     const dx = p.x - q.x;
     const dz = p.z - q.z;
@@ -101,7 +160,37 @@ pub fn blocksSight(a: rl.Vector3, b: rl.Vector3, s: Solid) bool {
     if (@max(a.y, b.y) < s.y0) return false;
     if (@min(s.a.x, s.b.x) - s.r > @max(a.x, b.x) or @max(s.a.x, s.b.x) + s.r < @min(a.x, b.x)) return false;
     if (@min(s.a.z, s.b.z) - s.r > @max(a.z, b.z) or @max(s.a.z, s.b.z) + s.r < @min(a.z, b.z)) return false;
+    if (s.flat) {
+        if (rectGap(a, s).d < 0) return true;
+        const f = frameOf(s);
+        var c: [4]rl.Vector3 = undefined;
+        for ([_][2]f32{ .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 } }, 0..) |k, i| {
+            c[i] = v3(f.cx + f.ux * f.hl * k[0] - f.uz * s.r * k[1], 0, f.cz + f.uz * f.hl * k[0] + f.ux * s.r * k[1]);
+        }
+        for (0..4) |i| {
+            if (segsCrossXZ(a, b, c[i], c[(i + 1) % 4])) return true;
+        }
+        return false;
+    }
     return segDistXZ(a, b, s.a, s.b) < s.r;
+}
+
+test "A FLAT SOLID HAS CORNERS — a body reaches the corner of a wall a round end cut off, and a look through it is stopped" {
+    const wall = box(-3, 0, 3, 0, 0.4);
+    // The corner is at (3.4, 0.4): a body of radius 0.3 just off it is pushed to 0.3 from the CORNER, where the round end had already stopped it 0.3 from the axis.
+    const at = pushOut(v3(3.45, 0, 0.45), 0.3, wall);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.3), @sqrt((at.x - 3.4) * (at.x - 3.4) + (at.z - 0.4) * (at.z - 0.4)), 1e-4);
+    // The round end has no corner there, so it moves the same body less.
+    const round = capsule(-3, 0, 3, 0, 0.4);
+    const rounded = pushOut(v3(3.45, 0, 0.45), 0.3, round);
+    try std.testing.expect(at.x > rounded.x + 0.05);
+    // Inside, the way out is the nearer face.
+    const out = pushOut(v3(2.9, 0, 0.1), 0.3, wall);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.7), out.z, 1e-4);
+    try std.testing.expect(blocksSight(v3(0, 1, -3), v3(0, 1, 3), wall));
+    try std.testing.expect(blocksSight(v3(3.35, 1, -3), v3(3.35, 1, 3), wall));
+    try std.testing.expect(!blocksSight(v3(3.45, 1, -3), v3(3.45, 1, 3), wall));
+    try std.testing.expect(gap(v3(0, 0, 0), wall) < 0 and gap(v3(0, 0, 1), wall) > 0.59);
 }
 
 test "a look is stopped by what stands in it and by nothing else" {

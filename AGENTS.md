@@ -126,13 +126,13 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `gfx/shaders.zig` | every line of GLSL and nothing else; the contract with `gfx.zig` is at its top |
 | `gfx/elemfx.zig` | the elements' particle language — one signature per `combat.Elem`, `gather`/`burst`/`pour` |
 | `world/daynight.zig` | the world clock — sun/moon path, the hour's palette, the anchor hour `--shot` pins |
-| `world/weather.zig` | intermittent rain in two strengths, lightning, the one rain mesh, the mist banks |
+| `world/weather.zig` | intermittent rain in two strengths, lightning, the one rain mesh, the mist banks, sporefall, the rising ember field |
 | `world/worldfmt.zig` | THE MAP FORMAT — ops, zone/foe/npc/trigger/dialog tables, one comptime field table |
 | `world/trigger.zig` | SC1's conditions + actions, and the switches / counters / timers they compose through |
 | `world/dialog.zig` | one conversation: the node-tree walk and the BG2-style panel, with a live portrait |
 | `world/env.zig` | THE WORLD — terrain, op replay, `coverField`, uniform grid, cullers, occluder fade, lights |
 | `props/props.zig` | prop vocabulary + the `INFO` table; `displayName`/`group`/`stock` are exhaustive switches. `decks`/`stack`/`climb` are the ladder's and the deck's |
-| `prop*.zig` | meshes by family — `propart` (palette + weathering), `propruins`, `propgold`, `propbuild`, `propvillage`, `propmarket`, `propforge`, `proprock`, `propwood`, `propflora`, `propfungus`, `propcoral`, `propash`, `propbone`, `propfx` |
+| `prop*.zig` | meshes by family — `propart` (palette + weathering), `propruins`, `propgold`, `propbuild`, `propvillage`, `propmarket`, `propforge`, `proprock`, `propwood`, `propflora`, `propfungus`, `propcoral`, `propash`, `propbone`, `propember` (the Firelands — basalt riven by glowing seams), `propfx` |
 | `foes/foestat.zig` | the pools the bench lays over a fresh body — one multiplier per kind, applied in `foe.resetGroup`/`resetRoles`, and where the authored HP is LEARNED from the first body made |
 | `foes/foe.zig` | THE FOE STANDARD — contract, `Blade`/`strike`/`weaponReaches`/`Blow`, `Trail`, particles, `Leash` |
 | `foes/npc.zig` | THE FOLK, all three on the hero's scaffold — the wanderer's staff, the caravaneer's neck and muzzle, and MOSSBEARD, the tree smith whose idle IS a hammer stroke |
@@ -1272,9 +1272,12 @@ metres it always did. On the starting 70: 5 m costs 4, 8 m costs 21, 12 m costs 
   above it by. The height integrated is `airY` (WORLD height of his feet) and `lift` is DERIVED off it
   (`airY − pos.y`) every frame — which is what makes running off a ledge work. **`lift` is ZERO unless he is
   airborne**, so a teleport can never strand him standing on nothing.
-- **TWO NUMBERS ARE THE DECISION AND THE OTHER TWO ARE SOLVED** — `JUMP_APEX` and `JUMP_AIR`;
-  `JUMP_G` and `JUMP_V0` fall out. The apex clears THREE terrain risers where a walk gets two (`env.STEP_UP`),
-  pinned in `game.zig` against `wf.HEIGHT_STEP` from both sides.
+- **TWO NUMBERS ARE THE DECISION AND THE OTHER TWO ARE SOLVED** — `JUMP_APEX` (1.4 m) and `JUMP_AIR`
+  (0.852 s, solved so `JUMP_G` stays 15.43 and the launches keep their numbers); `JUMP_G` and `JUMP_V0` fall
+  out. The apex clears FIVE terrain risers where a walk gets two (`env.STEP_UP`), pinned in `game.zig`
+  against `wf.HEIGHT_STEP` from both sides — **AND HIS REACH (`JUMP_APEX + STEP_UP`) STAYS UNDER THE LEAST
+  DROP THAT CUTS** (`wf.cliffMinDrop` on the default lattice, 2.1 m), so a painted face is a wall to the jump
+  as it is to the walk.
 - **THE INTEGRATOR IS THE CLOSED FORM**, not `v -= g·dt; y += v·dt` — that pair loses `g·t·dt/2`: nine
   centimetres of apex at 30 fps and none at 240. A test flies all four rates.
 - **GRAVITY LIVES IN `tickClocks`** — a blow mid-air routes to `updateStun` and a death to `updateDeath`, and a
@@ -1292,8 +1295,13 @@ metres it always did. On the starting 70: 5 m costs 4, 8 m costs 21, 12 m costs 
   takes his `footY` and skips any collider whose `Solid.h` is under it. `buildSolids` has always stamped that
   height and `blocksPoint`/`blocksSight` have always read it — the PUSH-OUT was the one consumer that did not.
   A wall is still a wall at any altitude (`h` 3 m against `JUMP_APEX`). **NO `STEP_UP` allowance there**,
-  unlike `flyStep`: there is no step-over-props rule to stay level with. **FOES are deliberately still measured
-  at `pos.y`** — nothing but the hero has a real integrated height yet.
+  unlike `flyStep`: there is no step-over-props rule to stay level with. **REFUSED, `flyStep` SLIDES** along
+  the wall off the same gradient the walk uses, instead of stopping dead against it. **FOES are deliberately
+  still measured at `pos.y`** — nothing but the hero has a real integrated height yet.
+- **MELEE REACH IS REFUSED ACROSS A DROP** (`foe.REACH_RISE`, 2 m of GROUND between the two, both ways:
+  `foe.inArc`/`inFront` for theirs, `game.strikeVictim` for his). Under the least cut and over any bank a
+  walk climbs, so nothing at the foot of a face trades blows with the lip. Arrows and blasts fly their own
+  path and are not gated.
 - **THE LENS TAKES ONLY A SHARE OF IT** (`camera.LIFT_SHARE`, eased). `hero.shoulderPoint` is over the
   GROUND under him; how much of a jump the camera takes is decided once, in `camera.zig`.
 - **THE POSE IS THREE TERMS OFF ONE NUMBER — the vertical velocity.** DRIVE up, TUCK where velocity passes
@@ -2145,6 +2153,23 @@ window.
   draws, ~10.8k tris, `MIST_TOP` at full fog. **THE SLOWEST THING IN THE GAME** — 0.045–0.16 m/s, 94 s to
   cross its own width. Banks ramp in and out over 9 s and are re-seeded out past `MIST_R`, never in view. Three
   mesh variants (the repeated-big-prop law).
+- **EMBERS RISE, THEY DO NOT FALL** (`weather.Ember`, the `ember=` band on a `location:`). The spore field's own
+  construction — `EMBER_MOTES` motes in a `EMBER_CELL_H` cell, `EMBER_STACKS` up the column, `EMBER_SHOALS` shoals
+  — with the phase ADDED to the base so the stack climbs, at `EMBER_MPS` (0.85 m/s, a cell in 7 s: 15x slower than
+  the rain, 10x faster than a spore). **THE FIELD FLICKERS BUT NEVER BLINKS**: a shoal winks on `EMBER_WINK_SECS`
+  (6.5 s, a sixth of the spore's breath), squared so it is lit briefly and dark longer the way sparks are, held off
+  zero, and a test pins the sum's swing under 12%. Every shoal rides its own gust sideways (`gustOf`). Motes are
+  1.2–3 cm and EMISSIVE (alpha 40/62/110, hot to going-out) — under the stroke's 7 cm, or a field of them reads as
+  smoke.
+  - **THE SMOKE IS THE MIST, TINTED.** `bankTint` takes an `ember` term that pulls the banks toward `SMOKE_BANK`,
+    a warm dark grey (smoke TAKES light, fog scatters it), and `game.EMBER_BANKS` (0.35) puts banks up under the
+    field — lighter than the spore's 0.45 so the coals still read through it.
+  - **AND THE SKY IS A LAYER ON THE HOUR** (`daynight.smolder`, on top of `bloom` as `bloom` is on `overcast`):
+    haze darker and warmer, the horizon band thrown to orange, the key warmed a little, the stars mostly gone,
+    `HAZE_EMBER_D` 1.75 on the distance. Every term a factor on the hour's own value, so a smoking field at 3 a.m.
+    is a darker night with an orange horizon and not a lit one — tested at noon and at 3.
+  - `worlds/test_firelands.world` is the bench: the location at 0.85 over one of every `propember` kind.
+    `shots/158`–`158b` are the field and its smoke, forced through `game.forceEmberForShot`.
 - **THE DRY SKY HAS BIRDS IN IT** (`weather.Skein`, owner: bird packs of different sizes across the sky,
   distantly, from different angles, infrequently, "just to feel alive"). **IT IS AN EVENT, NOT A FLOCK THAT LIVES
   THERE** — the storm's own law. One flight arrives, crosses, and is gone: measured over an hour, **63 crossings,
@@ -2244,11 +2269,21 @@ normals from the FIELD so two tiles agree at their seam.
   centimetres and the boom stays the player's.
 - **THE HERO LEANS INTO THE HILL** (`hero.slopeLean`, 0.55 of the slope capped at 16°) through the SAME
   `rx(bodyPitch)` term as the run lean.
-- **THE TERRAIN RECEIVES SHADOWS BUT DOES NOT CAST.** Self-shadowing a heightfield off a 108 m ortho box puts
-  acne everywhere the surface grazes the sun. **THE PAINTED CLIFF FACES DO CAST** (`env.drawCliffCasters`) —
-  off a PLATE set `FACE_SHADOW_IN` inside the rock and `FACE_SHADOW_LIP` under the lip, drawn in the depth
-  pass only, so neither the face nor the shelf behind it can read its own depth back. Both windings, because
-  the depth pass culls back faces and the sun stands behind half the walls.
+- **THE TERRAIN CASTS FROM ITS FAR SIDE ONLY** (`env.drawGroundCasters`, drawn with FRONT faces culled). Drawn
+  whole, a heightfield off a 108 m ortho box put acne everywhere the surface grazed the sun, so for a long time
+  it did not cast at all — and a smooth hill stood beside a painted cut of the same height with no shadow while
+  the cut threw one (owner: "notable shadow diff between cliff and smooth"). Only the triangles facing AWAY
+  from the sun write depth now: the lit slope never meets its own depth, the far slope is the silhouette that
+  throws, and the seam between hill and cut is gone. The grazing band at the terminator still carries the
+  wrap light's 10% and the 0.22 m bias. **THE PAINTED CLIFF FACES CAST TOO** (`env.drawCliffCasters`) —
+  the SHEET off a PLATE set `FACE_SHADOW_IN` inside the rock and `FACE_SHADOW_LIP` under the lip, drawn in the
+  depth pass only, so neither the sheet nor the shelf behind it can read its own depth back (both windings,
+  because the depth pass culls back faces and the sun stands behind half the walls); **EVERYTHING STOOD
+  AGAINST IT CASTS AS ITSELF** (`Face.cast` copies what the lit builder took since a mark into the caster):
+  the stamped rock, the rim stones, the ivy curtains, the talus and the leaned slab. Without them the rock
+  read as pasted on — sampled, sheet and stone were the same value. Moss and grass tufts do not cast. The
+  tile cull hands `castsInto` the tile's own height (`tileH`), so a tall face just outside the box still
+  throws into it.
 - **THE BOOM IS SHORTENED AT ONCE AND GIVEN BACK AT A RATE** (`camera.CLEAR_REGAIN`, `CamRig.eased`). A cliff
   behind him is a step in the solve; taken raw it was a cut in the frame. The shot harness solves fresh
   (`eased = -1`) — a shot has no previous frame.
@@ -2302,7 +2337,16 @@ Ground layer > Cliff paints it, Slope takes it back.
   (one row per face; "Rocky Cliff" is the first) stamped along the run by `env.faceStamp` at world stations
   `FACE_PROP_M` apart, turned so its front looks out, scaled off its own STONE height (`Builder.boundsOf`,
   because a cliff prop's ivy carries a third of its height again) and sunk until `FACE_PROP_PROUD` of it
-  stands in front of the cut. `Builder.stamp` copies a prototype mesh in turned, scaled and moved, so a
+  stands in front of the cut — BOTH SPREAD PER STAMP (`FACE_PROP_FILL_VAR`, `FACE_PROP_PROUD_VAR`): sized to
+  one number every stamp crested the same 16% over the lip and the rim read as a picket of boulders; now a
+  third stop short of the lip as buttresses and the rest crest by up to a quarter of the drop. **THE SHEET
+  IS DIMMED UNDER THEM** (`FACE_SHEET_DIM`), the recess darker than the rock in front. **EVERY LOBE THAT STANDS PAST
+  THE CUT IS SOLID** (`stampSolids` off the prototype's `Masses` → `StampSolids` → `Env.cliffSolids`: one
+  capsule along the run per lobe, as deep as it protrudes and as wide as the lobe, `h` at its crown, appended
+  by `buildSolids` after the props' and dropped with its tile), so nothing walks into the stone and nothing
+  stops in the air between two lobes; the cut itself was already the wall. **AND NO STAMP GOES OVER A LADDER'S FOOT OR A FLIGHT'S HEAD**
+  (`climbsNear`, `FACE_PROP_CLEAR`) — which is why `Env.replay` adopts the fields, materializes the props and
+  only then builds the tiles. `Builder.stamp` copies a prototype mesh in turned, scaled and moved, so a
   forty-metre run costs ONE built mesh. Everything before this tried to make the sheet itself into rock —
   bellied cells, half-sunk masses on a recessed core — and every version of it read as plates pasted on a
   wall. Adding a face is one row in `CLIFF_FACES`.
@@ -2313,6 +2357,15 @@ Ground layer > Cliff paints it, Slope takes it back.
   darker, cooler tone to `FACE_WET_H` over the sheet, a pale tide line to `FACE_TIDE_H` — decided by
   `paintedDepth` at its foot, so it needs the water uploaded before the tiles (`replay` does).
   Stair risers take none of the dressing (`Face.dress`).
+- **A CUT EDGE SHARED WITH ANOTHER CUTTING CELL GETS NO SKIRT** (`cliffCell`'s `nbCut`, off `faceCutsAt`).
+  `edgeOther` reads a neighbour as the line through the two corners they share, which across a cut is a
+  ramp, and the skirt closing our low floor against it stood a fin HALF THE DROP tall at every cell of every
+  straight face — a comb of dark spikes the stamps half hid, and the "chevrons" on every shadowed wall. A
+  stair neighbour still takes the skirt (its tread is the surface), and so does a painted cell under
+  `cliffMinDrop`, which really is a ramp. **THE FACE PROTOTYPES ARE BUILT WITHOUT THE PROP'S FISSURES**
+  (`proprock.cliffBuildOpt`, `fissures = false`): the six dark capsules that stand at a cliff prop's front as
+  cracks stood alone once the body was bisected behind the sheet. **THE SHEET'S SHADING BUMP IS 0.10 m**
+  (`FACE_BUMP`); at 0.45 the relief noise tilted its normals past 45°.
 - **A STAIR CELL IS ONE TREAD** (case 2, `wf.stairTread`), and **ITS RISER GOES DOWN TO THE LOWEST THE
   NEIGHBOUR REACHES ON THAT EDGE**, not to the neighbour's CENTRE: a tread is flat at its own mean, the cell
   beside it is a bilinear through the two corners they share, so its surface at the edge runs below its
@@ -2338,7 +2391,8 @@ Ground layer > Cliff paints it, Slope takes it back.
 - `worlds/test_cliff.world` is the bench: a 6 m mesa with a straight face, a ladder and a `stairflight` up
   it, a 4 m shelf cut on the diagonal `x + z = 20`, a painted stair terrace up the mesa at a grade past
   `MAX_SLOPE`, and a 3 m pit with an unflagged ramp down its west side — FLOODED, so its east wall is the wet
-  face.
+  face. `--shot-land` also walks him into the face for two `_foot` frames and prints how far short of the cut
+  the stamped stone stops him.
 - **THE SHIPPED MAP'S NORTH-WEST BASIN LIP IS ONE OF THESE** — a leaned `cliff4` used to stand in for the
   face there; the lip is terraced to two tiers now, `-1.75` m over `-15.00`, which is a **13.25 m** face and
   past `FALL_DEATH`. Walking off it kills.
@@ -2387,6 +2441,28 @@ where there is one and `groundAt` stays the question about the LAND.
   body on the floor and wall to one up on a deck. Four consumers and they must all know: `blocksPoint`,
   `blocksSight`, `env.resolveActorPast`, and **`buildSolids`, which has to carry `y0` into the collider the way
   it already carried `h`** — left behind, the watchtower's doorway came out sealed from the ground up.
+- **A COLLIDER IS THE SHAPE OF WHAT IT STANDS FOR, AND `props.partsOf` IS THE ONE PLACE TO ASK** — nothing
+  that builds, draws or counts a collider reads `Info.parts` itself. **A CLIFF'S ARE FITTED OFF ITS OWN ROCK**
+  (`proprock.Masses`, recorded as the mesh is built; `fitParts`; `cliffColliders` once per row): one capsule
+  per lobe and per boulder big enough to stop a body (`MASS_MIN_R`), through the section between his feet
+  and his crown (`FIT_BAND_LO..HI`, at the stamp's own scale for a painted face). The hand pair it replaced
+  was 2.9 m deep against lobes 2–3.4 m deep, so a body stood inside the stone and stopped in the air beside
+  it (owner: "bad collision feels janky and ppl get frustrated and quit"). **MEASURE IT**: `--shot-props`
+  prints a `COLLIDER` line per kind — stone past the collider (a walk-through), collider past the stone (an
+  invisible wall), flagged `LOOK` over 0.5 / 0.6 m — off the model's own vertices (`props.colliderAudit`),
+  and the cliff test pins the same numbers off the builder. Under the line it prints the kind's FOOTPRINT MAP
+  through the walk band (`#` stone over a metre, `=` over the step, `_` a step a body walks over, `o`
+  collider, `@`/`+`/`,` both), which is what every part in `INFO` was sized off — author a collider from the
+  map, never from the number that looked right. Stone under `STEP_UP` owes no collider and the audit does not
+  count it. **FIVE KINDS ARE LOOSE ON PURPOSE AND STAY FLAGGED**: the conifer and the willow (boughs and
+  fronds are walked through; the collider is the bole), the ash dune (walked round, its collider the ridge),
+  the fog gate (the ward is the wall) and the awning (cloth over two posts). Everything else under `LOOK` is
+  a defect.
+- **A COLLIDER MAY HAVE SQUARE ENDS** (`Part.flat`, `collision.Solid.flat`, `collision.box`): the solid is the
+  capsule's own bounding rectangle in the segment's frame, so a wall, a block, a plinth or a house has
+  corners. Round ends left a 7.7 m keep's corners 2 m in the open and every altar and slab with a phantom
+  bulge at both ends. Rings and posts stay round (`art.towerRing`, `DOME_RING`): a polygon of round-ended
+  segments joins without gaps.
 
 **A LADDER IS THE ONE PROP YOU GET ON** (`props.Info.climb`, `game.Climb`). Its own local **+Z is the open side**
 he mounts from and stands off (`propbuild.LADDER_STANDOFF`); local −Z is the wall it leans on.
@@ -2423,7 +2499,8 @@ he mounts from and stands off (`propbuild.LADDER_STANDOFF`); local −Z is the w
 - **THE DEPTH PASS culls by SHADOW REACH, not camera distance.** A caster throws its shadow `gfx.sunReach`
   times its height sideways — the cotangent of the sun's elevation, solved from the HOUR
   (`daynight.shadowReach`, written only by `Scene.setHour`). A prop matters iff its footprint plus that reach
-  can touch the ortho box (`castsInto`).
+  can touch the ortho box (`castsInto`); a terrain tile or cliff caster asks the same with its own height
+  (`tileH`).
 - **COLLISION + ARROW FLIGHT query the grid**, never the whole solid list.
 - **Check it, don't trust it.** Menu > Debug > Stats prints the live counts and `--shot` captures them. If
   `drawn` approaches `props`, a culler has been defeated. Caps are init-time PANICS

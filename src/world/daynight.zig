@@ -324,6 +324,78 @@ pub fn bloom(p: Palette, spore: f32) Palette {
     return o;
 }
 
+/// Smoke: the hour's own colour pulled warm, at UNIT luma so the factor beside it is the whole of the dimming.
+fn smoke(c: rl.Vector3) rl.Vector3 {
+    const l = luma(c);
+    return v3(l * 1.132, l * 0.967, l * 0.823);
+}
+
+/// The glow under the smoke: the hour's own luma, thrown to orange, unit luma again.
+fn embers(c: rl.Vector3) rl.Vector3 {
+    const l = luma(c);
+    return v3(l * 1.443, l * 0.857, l * 0.577);
+}
+
+comptime {
+    const s = luma(smoke(v3(1, 1, 1)));
+    const e = luma(embers(v3(1, 1, 1)));
+    std.debug.assert(s > 0.995 and s < 1.005);
+    std.debug.assert(e > 0.995 and e < 1.005);
+}
+
+const SMOLDER_HAZE: f32 = 0.78;
+const SMOLDER_BANK: f32 = 0.55;
+const SMOLDER_LOW: f32 = 1.12;
+const SMOLDER_KEY: f32 = 0.80;
+const SMOLDER_GROUND: f32 = 1.25;
+const SMOLDER_STARS: f32 = 0.35;
+pub const HAZE_EMBER_D: f32 = 1.75;
+
+/// THE EMBER FIELD'S OWN SKY, a layer on top of `bloom` as `bloom` is on `overcast`. Every term is a factor on the hour's own value (`overcast`'s law), so a smoking field at 3 a.m. is a darker night with an orange horizon, not a lit one.
+pub fn smolder(p: Palette, ember: f32) Palette {
+    const k = mathx.clampF(ember, 0, 1);
+    if (k <= 0) return p;
+    var o = p;
+    o.key = toward(p.key, mathx.scaleV(embers(p.key), SMOLDER_KEY), k * 0.6);
+    o.haze = toward(p.haze, mathx.scaleV(smoke(p.haze), SMOLDER_HAZE), k);
+    o.hazeBank = ceiling(toward(p.hazeBank, mathx.scaleV(embers(p.hazeBank), SMOLDER_BANK), k));
+    o.skyLow = ceiling(toward(p.skyLow, mathx.scaleV(embers(p.skyLow), SMOLDER_LOW), k));
+    o.skyMid = toward(p.skyMid, smoke(p.skyMid), k * 0.7);
+    o.skyHigh = toward(p.skyHigh, mathx.scaleV(smoke(p.skyHigh), 0.90), k * 0.5);
+    o.skyBank = ceiling(toward(p.skyBank, mathx.scaleV(embers(p.skyBank), 0.60), k));
+    o.cloudDark = toward(p.cloudDark, mathx.scaleV(smoke(p.cloudDark), 0.85), k);
+    o.cloudLit = toward(p.cloudLit, mathx.scaleV(embers(p.cloudLit), 0.90), k);
+    o.ambSky = toward(p.ambSky, mathx.scaleV(smoke(p.ambSky), 0.92), k);
+    o.ambGround = toward(p.ambGround, mathx.scaleV(embers(p.ambGround), SMOLDER_GROUND), k);
+    o.stars = p.stars * (1.0 - k * (1.0 - SMOLDER_STARS));
+    return o;
+}
+
+test "SMOKE IS A LAYER ON THE HOUR — darker and warmer than the hour's own air, and it does not light the night" {
+    const noon = paletteAt(12.0);
+    const lit = smolder(noon, 1.0);
+    std.debug.print("\n  smolder: noon haze {d:.3},{d:.3},{d:.3} -> {d:.3},{d:.3},{d:.3}, density x{d:.2}\n", .{ noon.haze.x, noon.haze.y, noon.haze.z, lit.haze.x, lit.haze.y, lit.haze.z, HAZE_EMBER_D });
+    try std.testing.expect(luma(lit.haze) < luma(noon.haze));
+    try std.testing.expect(lit.haze.x / luma(lit.haze) > noon.haze.x / luma(noon.haze));
+    try std.testing.expect(lit.skyLow.x > lit.skyLow.z);
+    try std.testing.expect(lit.stars <= noon.stars);
+    try std.testing.expect(HAZE_EMBER_D > 1.0 and HAZE_EMBER_D < HAZE_SPORE_D);
+    const night = paletteAt(3.0);
+    const dark = smolder(night, 1.0);
+    inline for (@typeInfo(Palette).@"struct".fields) |f| {
+        if (f.type == rl.Vector3) {
+            const c = @field(dark, f.name);
+            try std.testing.expect(c.x <= 1.0 and c.y <= 1.0 and c.z <= 1.0);
+        }
+    }
+    try std.testing.expect(luma(dark.ambGround) <= luma(night.ambGround) * SMOLDER_GROUND + 1e-5);
+    try std.testing.expect(luma(dark.key) <= luma(night.key) + 1e-5);
+    try std.testing.expect(dark.stars < night.stars);
+    // Half is halfway: the layer is a ramp, never a switch.
+    const half = smolder(noon, 0.5);
+    try std.testing.expect(luma(half.haze) < luma(noon.haze) and luma(half.haze) > luma(lit.haze));
+}
+
 
 pub fn keyAmt(p: Palette) f32 {
     return mathx.clampF(luma(p.key) / ANCHOR_KEY_LUMA, 0, 4);

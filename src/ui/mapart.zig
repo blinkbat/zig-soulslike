@@ -22,6 +22,7 @@ pub const WALL_W: f32 = 4.0;
 
 fn footprintW(k: Kind) f32 {
     var w: f32 = 0;
+    // The row's own parts, not `partsOf`: this classifies a glyph at comptime, and a cliff's fitted set is a runtime build.
     for (props.info(k).parts) |p| {
         const dx = @abs(p.bx - p.ax);
         const dz = @abs(p.bz - p.az);
@@ -392,18 +393,29 @@ fn strokeProp(pr: *const envmod.Prop, half: f32, perM: f32, halo: bool) void {
     const nfo = props.info(pr.kind);
     const col = if (halo) WALL_EDGE else WALL;
     const grow: f32 = if (halo) HALO_M else 0;
-    if (nfo.parts.len == 0) {
+    const parts = props.partsOf(pr.kind);
+    if (parts.len == 0) {
         const p = toFlat(pr.pos.x, pr.pos.z, half, 0, 0, SHEET);
         rl.drawCircleV(p, (nfo.bound * pr.scale + grow) * perM, col);
         return;
     }
     const fr = envmod.PropFrame.of(pr);
-    for (nfo.parts) |part| {
+    for (parts) |part| {
         const a3 = fr.at(part.ax, 0, part.az);
         const b3 = fr.at(part.bx, 0, part.bz);
+        const r = mathx.maxF((part.r * pr.scale + grow) * perM, 1.0);
+        if (part.flat) {
+            // Square ends: the box is one thick line run out by its own radius, no caps.
+            var sol = collision.capsule(a3.x, a3.z, b3.x, b3.z, part.r * pr.scale + grow);
+            sol.flat = true;
+            const f = collision.frameOf(sol);
+            const p0 = toFlat(f.cx - f.ux * f.hl, f.cz - f.uz * f.hl, half, 0, 0, SHEET);
+            const p1 = toFlat(f.cx + f.ux * f.hl, f.cz + f.uz * f.hl, half, 0, 0, SHEET);
+            rl.drawLineEx(p0, p1, r * 2.0, col);
+            continue;
+        }
         const a = toFlat(a3.x, a3.z, half, 0, 0, SHEET);
         const b = toFlat(b3.x, b3.z, half, 0, 0, SHEET);
-        const r = mathx.maxF((part.r * pr.scale + grow) * perM, 1.0);
         rl.drawCircleV(a, r, col);
         if (mathx.dist2XZ(a3, b3) > 1e-6) {
             rl.drawCircleV(b, r, col);

@@ -51,6 +51,7 @@ pub const ILLUSION_FADE: f32 = 0.7;
 pub const WARD_CLEAR: f32 = 1.30;
 const MAX_SOLID_REFS = 4 * MAX_SOLIDS;
 const MAX_DECKS = 512;
+const MAX_CLIFF_SOLIDS = 2048;
 const MAX_DECK_REFS = 4 * MAX_DECKS;
 
 comptime {
@@ -112,7 +113,8 @@ const OCCL_TALL: f32 = 1.15;
 const OCCL_REACH: f32 = CELL;
 const OCCL_DEPTH_BAND: f32 = 1.6;
 
-pub const MAX_NEAR = 160;
+/// Room for a corner where four dense cells meet: the fitted cliffs stand up ten to twenty-seven solids each where the old pair stood two.
+pub const MAX_NEAR = 256;
 
 const GROUND_Y: f32 = 0.01;
 
@@ -497,6 +499,11 @@ pub const Env = struct {
     casterBuilt: [NTILES]bool = [_]bool{false} ** NTILES,
     tileMid: [NTILES]rl.Vector3 = [_]rl.Vector3{mathx.zero3} ** NTILES,
     tileRad: [NTILES]f32 = [_]f32{0} ** NTILES,
+    tileH: [NTILES]f32 = [_]f32{0} ** NTILES,
+    /// The stamped rock's colliders (`faceStamp`), tagged by tile; `buildSolids` appends them after the props'.
+    cliffSolids: [MAX_CLIFF_SOLIDS]collision.Solid = undefined,
+    cliffSolidTile: [MAX_CLIFF_SOLIDS]u16 = undefined,
+    ncliffSolids: usize = 0,
     skirt: rl.Model = undefined,
     skirtBuilt: bool = false,
     stat_draws: u32 = 0,
@@ -514,6 +521,7 @@ pub const Env = struct {
         self.waterSheet = waterQuad(shader, GROUND_HALF);
         self.nprops = 0;
         self.nsolids = 0;
+        self.ncliffSolids = 0;
         self.nwards = 0;
         self.nillusions = 0;
         self.openWards();
@@ -540,6 +548,7 @@ pub const Env = struct {
         self.faceBuilt = [_]bool{false} ** NTILES;
         self.casterBuilt = [_]bool{false} ** NTILES;
         self.tileRad = [_]f32{0} ** NTILES;
+        self.tileH = [_]f32{0} ** NTILES;
         self.tileMid = [_]rl.Vector3{mathx.zero3} ** NTILES;
         self.skirtBuilt = false;
         self.heightField = [_]u8{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS;
@@ -548,12 +557,15 @@ pub const Env = struct {
         self.heightAny = false;
     }
 
+    /// Fields first, then the props, then the tiles: `faceStamp` asks where the ladders and flights stand.
     pub fn replay(self: *Env, m: *const wf.Map) void {
         self.mapHalf = m.half;
         self.uploadSoil(m);
         self.uploadWater(m);
-        self.uploadHeight(m);
+        const fresh = self.heightStale(m);
+        self.adoptHeight(m);
         self.materialize(m);
+        if (fresh) self.rebuildTerrain();
     }
 
     pub fn uploadSoil(self: *Env, m: *const wf.Map) void {
@@ -581,12 +593,16 @@ pub const Env = struct {
 
     /// `rebuildTerrain` remakes all 225 tiles: 12.5 MB of vertices, 1350 GL objects, 27.6 ms.
     pub fn uploadHeight(self: *Env, m: *const wf.Map) void {
-        if (self.heightHalf == m.half and
-            std.mem.eql(u8, &self.heightField, &m.height) and
-            std.mem.eql(u8, &self.cliffField, &m.cliff) and
-            self.heightAny == m.anyHeight()) return;
+        if (!self.heightStale(m)) return;
         self.adoptHeight(m);
         self.rebuildTerrain();
+    }
+
+    fn heightStale(self: *const Env, m: *const wf.Map) bool {
+        return !(self.heightHalf == m.half and
+            std.mem.eql(u8, &self.heightField, &m.height) and
+            std.mem.eql(u8, &self.cliffField, &m.cliff) and
+            self.heightAny == m.anyHeight());
     }
 
     pub fn sculptHeight(self: *Env, m: *const wf.Map, span: [4]usize) void {
@@ -605,6 +621,7 @@ pub const Env = struct {
             while (tx <= hi) : (tx += 1) self.buildTile(tz * TILES + tx);
         }
         if (span[0] == 0 or span[1] == 0 or span[2] >= wf.HEIGHT_N - 1 or span[3] >= wf.HEIGHT_N - 1) self.buildSkirt();
+        buildSolids(self);
     }
 
     fn rebuildTerrain(self: *Env) void {
@@ -622,9 +639,18 @@ pub const Env = struct {
             unloadTerrain(self.skirt);
             self.skirtBuilt = false;
         }
+        buildSolids(self);
     }
 
     fn dropTile(self: *Env, i: usize) void {
+        var k: usize = 0;
+        for (0..self.ncliffSolids) |j| {
+            if (self.cliffSolidTile[j] == @as(u16, @intCast(i))) continue;
+            self.cliffSolids[k] = self.cliffSolids[j];
+            self.cliffSolidTile[k] = self.cliffSolidTile[j];
+            k += 1;
+        }
+        self.ncliffSolids = k;
         if (self.faceBuilt[i]) {
             unloadTerrain(self.faces[i]);
             self.faceBuilt[i] = false;
@@ -653,7 +679,8 @@ pub const Env = struct {
         var fb = gfx.Builder.init();
         fb.setMat(.stone);
         var sb = gfx.Builder.init();
-        const face = Face{ .b = &fb, .sb = &sb, .env = self };
+        var stamps = StampSolids{};
+        const face = Face{ .b = &fb, .sb = &sb, .env = self, .solids = &stamps };
         var yLo: f32 = std.math.floatMax(f32);
         var yHi: f32 = -std.math.floatMax(f32);
         const minDrop = wf.cliffMinDrop(step);
@@ -700,6 +727,11 @@ pub const Env = struct {
                         self.treadOf(ix, iz + 1),
                         self.treadOf(ix + 1, iz),
                         self.treadOf(ix, iz -| 1),
+                    }, .{
+                        self.faceCutsAt(ix -| 1, iz),
+                        self.faceCutsAt(ix, iz + 1),
+                        self.faceCutsAt(ix + 1, iz),
+                        self.faceCutsAt(ix, iz -| 1),
                     });
                     continue;
                 }
@@ -733,6 +765,13 @@ pub const Env = struct {
         const spanZ = @as(f32, @floatFromInt(z1 - z0)) * step;
         self.tileMid[i] = v3(cx, (yLo + yHi) * 0.5, cz);
         self.tileRad[i] = 0.5 * @sqrt(spanX * spanX + spanZ * spanZ + (yHi - yLo) * (yHi - yLo));
+        self.tileH[i] = yHi - yLo;
+        for (stamps.buf[0..stamps.n]) |s| {
+            if (self.ncliffSolids >= MAX_CLIFF_SOLIDS) @panic("env: MAX_CLIFF_SOLIDS exceeded — raise the cap");
+            self.cliffSolids[self.ncliffSolids] = s;
+            self.cliffSolidTile[self.ncliffSolids] = @intCast(i);
+            self.ncliffSolids += 1;
+        }
     }
 
     fn buildSkirt(self: *Env) void {
@@ -802,6 +841,11 @@ pub const Env = struct {
     fn treadOf(self: *const Env, ix: usize, iz: usize) ?f32 {
         if (self.caseAt(ix, iz) != wf.CLIFF_STAIR) return null;
         return self.cellSurface(ix, iz);
+    }
+
+    /// A painted neighbour that steps: along a shared cut edge its floor is ours, not the line through the two corners.
+    fn faceCutsAt(self: *const Env, ix: usize, iz: usize) bool {
+        return self.caseAt(ix, iz) == wf.CLIFF_FACE and self.cellCuts(ix, iz);
     }
 
     fn caseAtWorld(self: *const Env, x: f32, z: f32) u8 {
@@ -1532,6 +1576,20 @@ pub const Env = struct {
         const to = v3(from.x + dir.x * dist, from.y, from.z + dir.z * dist);
         if (!self.heightAny or dist <= 0) return to;
         if (self.groundAt(to.x, to.z) <= footY + STEP_UP) return to;
+        // Refused, so slide along the wall the way the walk does: the step's share up the gradient is removed.
+        const g = self.gradAt(from.x, from.z);
+        const gl = @sqrt(g[0] * g[0] + g[1] * g[1]);
+        if (gl < 1e-5) return v3(from.x, from.y, from.z);
+        const ux = g[0] / gl;
+        const uz = g[1] / gl;
+        const along = dir.x * ux + dir.z * uz;
+        if (along <= 0) return v3(from.x, from.y, from.z);
+        const tx = dir.x - ux * along;
+        const tz = dir.z - uz * along;
+        const tl = @sqrt(tx * tx + tz * tz);
+        if (tl < 1e-5) return v3(from.x, from.y, from.z);
+        const slide = v3(from.x + tx / tl * dist, from.y, from.z + tz / tl * dist);
+        if (self.groundAt(slide.x, slide.z) <= footY + STEP_UP) return slide;
         return v3(from.x, from.y, from.z);
     }
 
@@ -1806,12 +1864,24 @@ pub const Env = struct {
         }
     }
 
-    /// Depth pass only — the plate stands inside the rock. The terrain still does not cast.
+    /// Depth pass only, and only the triangles that face AWAY from the sun (the caller culls front faces): the lit
+    /// side of a hill never meets its own depth, so it cannot acne, and the far side is the silhouette that throws.
+    pub fn drawGroundCasters(self: *Env, focus: rl.Vector3) void {
+        if (!self.heightAny) return;
+        for (self.tiles[0..], self.tileBuilt[0..], self.tileMid[0..], self.tileRad[0..], self.tileH[0..]) |t, built, mid, rad, top| {
+            if (!built) continue;
+            if (!castsInto(focus, mid, rad, top)) continue;
+            self.stat_draws += 1;
+            rl.drawModel(t, mathx.zero3, 1.0, rl.Color.white);
+        }
+    }
+
+    /// Depth pass only — the plate stands inside the rock.
     pub fn drawCliffCasters(self: *Env, focus: rl.Vector3) void {
         if (!self.heightAny) return;
-        for (self.casters[0..], self.casterBuilt[0..], self.tileMid[0..], self.tileRad[0..]) |c, built, mid, rad| {
+        for (self.casters[0..], self.casterBuilt[0..], self.tileMid[0..], self.tileRad[0..], self.tileH[0..]) |c, built, mid, rad, top| {
             if (!built) continue;
-            if (!castsInto(focus, mid, rad, 0)) continue;
+            if (!castsInto(focus, mid, rad, top)) continue;
             self.stat_draws += 1;
             rl.drawModel(c, mathx.zero3, 1.0, rl.Color.white);
         }
@@ -2198,16 +2268,24 @@ const FACE_EASE: f32 = 0.50;
 /// The shadow plate: this far inside the rock and this far under the lip, so neither the face nor the shelf reads its own depth back.
 const FACE_SHADOW_IN: f32 = 0.7;
 const FACE_SHADOW_LIP: f32 = 0.2;
-/// The relief the SHADING sees, in metres.
-const FACE_BUMP: f32 = 0.45;
+/// The relief the SHADING sees, in metres. 0.45 tilted the sheet's normals past 45° where the noise is steep; the wall is a plane and the rock stood on it carries the relief.
+const FACE_BUMP: f32 = 0.10;
 /// Metres of run between stamped faces; one is about `drop` wide at the scale it is stood at.
 const FACE_PROP_M: f32 = 3.0;
 /// Below this a face is a step, not a cliff, and gets no rock stood against it.
 const FACE_PROP_MIN_DROP: f32 = 1.6;
-/// Metres of the stamped face that stand in FRONT of the cut. The rest is inside the hill.
+/// Metres of the stamped face that stand in FRONT of the cut, ± the spread per stamp. The rest is inside the hill.
 const FACE_PROP_PROUD: f32 = 0.55;
-/// The share of the prop's own stone height sized to the drop; under 1 its tallest spikes stand a little over the lip.
-const FACE_PROP_FILL: f32 = 0.86;
+const FACE_PROP_PROUD_VAR: f32 = 0.20;
+/// The drop as a share of the stamped stone's height, ± the spread: under 1 the rock crests over the lip, over 1 it stops short as a buttress.
+const FACE_PROP_FILL: f32 = 1.0;
+const FACE_PROP_FILL_VAR: f32 = 0.12;
+/// No stamp whose middle half comes within this of a ladder's foot or a flight's head. The stone is ~7 m wide at a 6 m drop, so clearing its whole width emptied the face for 5 m either side.
+const FACE_PROP_CLEAR: f32 = 1.0;
+/// A lobe standing less than this past the cut is the cut's own wall.
+const FACE_SOLID_MIN: f32 = 0.08;
+/// Albedo factor on the sheet behind the stamped rock, so the recess reads darker than the rock (screen 0.66^(1/2.2) = 0.83).
+const FACE_SHEET_DIM: f32 = 0.66;
 /// A face standing in water: wet stone to `FACE_WET_H` over the sheet, a pale tide line to `FACE_TIDE_H`.
 const FACE_WET_H: f32 = 0.45;
 const FACE_TIDE_H: f32 = 0.9;
@@ -2219,6 +2297,7 @@ pub const Face = struct {
     sb: ?*gfx.Builder,
     env: ?*const Env,
     dress: bool = true,
+    solids: ?*StampSolids = null,
 
     fn ground(self: Face, x: f32, z: f32, fallback: f32) f32 {
         const e = self.env orelse return fallback;
@@ -2228,7 +2307,18 @@ pub const Face = struct {
         const e = self.env orelse return false;
         return e.paintedDepth(x, z) > 0;
     }
+    /// Everything `b` has taken since `from` casts too.
+    fn cast(self: Face, from: usize) void {
+        if (self.sb) |sb| sb.copyFrom(self.b, from);
+    }
 };
+
+/// One tile's stamped-rock colliders, gathered while it builds; `Env.cliffSolids` owns them after. A 16-cell tile can hold some forty stamps of a dozen lobes each; the cap is a panic like every other collider cap.
+pub const StampSolids = struct {
+    buf: [MAX_TILE_STAMPS]collision.Solid = undefined,
+    n: usize = 0,
+};
+const MAX_TILE_STAMPS = 640;
 
 /// A chord of the cut and the two outward directions its ends may move in: along their own lattice edge, toward the low corner. Null is the normal.
 pub const Chord = struct {
@@ -2261,6 +2351,15 @@ fn rockTone(rng: *mathx.Rng) rl.Color {
     if (r < 0.28) return art.CLIFF_LT;
     if (r < 0.52) return art.CLIFF_DK;
     return art.CLIFF_ROCK;
+}
+
+fn dimTone(c: rl.Color, k: f32) rl.Color {
+    return .{
+        .r = @intFromFloat(@as(f32, @floatFromInt(c.r)) * k),
+        .g = @intFromFloat(@as(f32, @floatFromInt(c.g)) * k),
+        .b = @intFromFloat(@as(f32, @floatFromInt(c.b)) * k),
+        .a = c.a,
+    };
 }
 
 fn wetTone(c: rl.Color) rl.Color {
@@ -2300,9 +2399,11 @@ fn fadeQuadUp(b: *gfx.Builder, p0: rl.Vector3, p1: rl.Vector3, q1: rl.Vector3, q
 
 /// The wall is a plain sheet; the rock is `proprock.CLIFF_FACES` stamped along the run at world stations, scaled so its own top lands on the lip and bisected at the cut. Each prototype is built ONCE and stamped.
 var faceProto: [proprock.CLIFF_FACES.len]?gfx.Builder = [_]?gfx.Builder{null} ** proprock.CLIFF_FACES.len;
+/// The prototype's masses, for the colliders each stamp stands up.
+var faceMass: [proprock.CLIFF_FACES.len]proprock.Masses = [_]proprock.Masses{.{}} ** proprock.CLIFF_FACES.len;
 
 fn faceProtoOf(i: usize) *const gfx.Builder {
-    if (faceProto[i] == null) faceProto[i] = proprock.cliffBuild(proprock.CLIFF_FACES[i].seed, proprock.CLIFF_FACES[i].kind);
+    if (faceProto[i] == null) faceProto[i] = proprock.cliffBuildOpt(proprock.CLIFF_FACES[i].seed, proprock.CLIFF_FACES[i].kind, false, &faceMass[i]);
     return &faceProto[i].?;
 }
 
@@ -2339,10 +2440,80 @@ fn faceStamp(f: Face, u: [2]f32, ax: f32, az: f32, nx: f32, nz: f32, lo: f32, hi
         const proto = faceProtoOf(pick);
         const bb = proto.boundsOf(.stone);
         if (bb.hi.y <= 0.1) continue;
-        const sc = useDrop / (bb.hi.y * FACE_PROP_FILL) * (1.0 + 0.10 * wf.hashSigned(kk, 0x512E));
-        const sink = -bb.lo.z * sc - FACE_PROP_PROUD;
-        f.b.stamp(proto, v3(px - nx * sink, land.lo, pz - nz * sink), yaw + wf.hashSigned(kk, 0x7A11) * 0.18, v3(sc, sc, sc));
+        const fill = FACE_PROP_FILL + FACE_PROP_FILL_VAR * wf.hashSigned(kk, 0x512E);
+        const sc = useDrop / (bb.hi.y * fill);
+        const proud = FACE_PROP_PROUD + FACE_PROP_PROUD_VAR * wf.hashSigned(kk, 0x9D0D);
+        const halfW = (bb.hi.x - bb.lo.x) * sc * 0.5;
+        const midW = (bb.lo.x + bb.hi.x) * 0.5 * sc;
+        const cx = px + alongX * midW;
+        const cz = pz + alongZ * midW;
+        if (f.env) |e| {
+            // The bulge is the middle half of the stone; a flank over the rungs is thin enough to keep.
+            if (climbsNear(e, cx, cz, halfW * 0.5 + FACE_PROP_CLEAR)) continue;
+        }
+        const sink = -bb.lo.z * sc - proud;
+        const turn = yaw + wf.hashSigned(kk, 0x7A11) * 0.18;
+        const ox = px - nx * sink;
+        const oz = pz - nz * sink;
+        const mark = f.b.vertCount();
+        f.b.stamp(proto, v3(ox, land.lo, oz), turn, v3(sc, sc, sc));
+        f.cast(mark);
+        if (f.solids) |sl| stampSolids(sl, &faceMass[pick], ox, oz, turn, sc, land.lo, px, pz, nx, nz, alongX, alongZ);
     }
+}
+
+/// Each lobe of the stamped rock that stands past the cut becomes a capsule along the run, as deep as it protrudes and as wide as the lobe: the cut itself is already the wall, so nothing is stood up behind it.
+fn stampSolids(sl: *StampSolids, ms: *const proprock.Masses, ox: f32, oz: f32, turn: f32, sc: f32, floor: f32, px: f32, pz: f32, nx: f32, nz: f32, alongX: f32, alongZ: f32) void {
+    const c = @cos(turn);
+    const s = @sin(turn);
+    const origin = v3(ox, floor, oz);
+    const scale = v3(sc, sc, sc);
+    var fit: [proprock.FIT_CAP]props.Part = undefined;
+    for (proprock.fitParts(ms, sc, &fit)) |p| {
+        const pa = gfx.Builder.stampAt(origin, c, s, scale, p.ax, 0, p.az);
+        const pb = gfx.Builder.stampAt(origin, c, s, scale, p.bx, 0, p.bz);
+        const ax = pa.x;
+        const az = pa.z;
+        const bx = pb.x;
+        const bz = pb.z;
+        const r = p.r * sc;
+        const front = @max((ax - px) * nx + (az - pz) * nz, (bx - px) * nx + (bz - pz) * nz) + r;
+        if (front < FACE_SOLID_MIN) continue;
+        const ta = (ax - px) * alongX + (az - pz) * alongZ;
+        const tb = (bx - px) * alongX + (bz - pz) * alongZ;
+        const t0 = @min(ta, tb) - r;
+        const t1 = @max(ta, tb) + r;
+        const rr = front * 0.5;
+        const half = mathx.maxF((t1 - t0) * 0.5 - rr, 0.05);
+        const tm = (t0 + t1) * 0.5;
+        const mx = px + alongX * tm + nx * rr;
+        const mz = pz + alongZ * tm + nz * rr;
+        var sol = collision.capsule(mx - alongX * half, mz - alongZ * half, mx + alongX * half, mz + alongZ * half, rr);
+        sol.h = floor + p.h * sc;
+        if (sl.n >= MAX_TILE_STAMPS) @panic("env: MAX_TILE_STAMPS exceeded — raise the cap");
+        sl.buf[sl.n] = sol;
+        sl.n += 1;
+    }
+}
+
+/// A ladder's foot or a flight's head within `r`: the rung line and the top tread meet the wall there, so no rock goes over them.
+fn climbsNear(e: *const Env, x: f32, z: f32, r: f32) bool {
+    for (e.props[0..e.nprops]) |*pr| {
+        const nfo = props.info(pr.kind);
+        if (!nfo.climb and nfo.flight == null) continue;
+        var hx = pr.pos.x;
+        var hz = pr.pos.z;
+        if (nfo.flight != null) {
+            const run = flightRun(pr, nfo);
+            const th = mathx.radians(pr.yaw);
+            hx -= mathx.sinf(th) * run;
+            hz -= mathx.cosf(th) * run;
+        }
+        const dx = hx - x;
+        const dz = hz - z;
+        if (dx * dx + dz * dz < r * r) return true;
+    }
+    return false;
 }
 
 /// `loEnd`/`hiEnd` are the floors either side of the cut at the chord's two ends, so on sloping ground the wall runs with them.
@@ -2426,6 +2597,7 @@ fn cliffWall(f: Face, ch: Chord, loEnd: [2]f32, hiEnd: [2]f32, highRef: [2]f32, 
             const wash = vnoise2((u[0] + ex * smid) / 2.6 + ymid * 0.3 + 11.1, (u[1] + ez * smid) / 2.6 - ymid * 0.2 + 3.3);
             if (wash > 0.66) col = mathx.lerpColor(col, art.CLIFF_LT, (wash - 0.66) * 2.2) else if (wash < 0.36) col = mathx.lerpColor(col, art.CLIFF_DK, (0.36 - wash) * 2.2);
             col = mathx.lerpColor(col, art.CLIFF_DK, 0.24 + 0.3 * (1.0 - mathx.clampF((ymid - lo) / 1.2, 0, 1)));
+            if (f.dress) col = dimTone(col, FACE_SHEET_DIM);
             var mat: gfx.Mat = .stone;
             if (wet) {
                 if (ymid < WATER_Y + FACE_WET_H) {
@@ -2475,6 +2647,7 @@ fn cliffWall(f: Face, ch: Chord, loEnd: [2]f32, hiEnd: [2]f32, highRef: [2]f32, 
 
     {
         const nRim: usize = @intFromFloat(@round(len * (0.5 + 1.0 * rng.float()) * (0.5 + 0.5 * dropK)));
+        const rimMark = f.b.vertCount();
         for (0..nRim) |_| {
             const s = rng.range(0.08, 0.92);
             const in_ = rng.range(0.06, 0.42);
@@ -2484,6 +2657,7 @@ fn cliffWall(f: Face, ch: Chord, loEnd: [2]f32, hiEnd: [2]f32, highRef: [2]f32, 
             const gy = f.ground(x, z, hi);
             f.b.addBlob(v3(x, gy + r * 0.3, z), v3(r, r * rng.range(0.5, 0.7), r * rng.range(0.8, 1.25)), 3, if (kind.blocky > 0.5) 5 else 6, rockTone(&rng));
         }
+        f.cast(rimMark);
         const cover = coverField(mx, mz);
         const nTuft: usize = @intFromFloat(@round(len * 2.2 * cover * (0.5 + 0.5 * rng.float())));
         f.b.setMat(.plant);
@@ -2512,6 +2686,7 @@ fn cliffWall(f: Face, ch: Chord, loEnd: [2]f32, hiEnd: [2]f32, highRef: [2]f32, 
 
     if (kind.ivy > 0 and drop > 1.2 and spans > 2) {
         const nCur: usize = @intFromFloat(@round(len * kind.ivy * 0.9 * (0.5 + rng.float())));
+        const ivyMark = f.b.vertCount();
         for (0..nCur) |_| {
             const i: usize = 1 + @as(usize, @intCast(rng.intn(@intCast(spans - 1))));
             const hang = drop * rng.range(0.35, 0.8);
@@ -2541,6 +2716,7 @@ fn cliffWall(f: Face, ch: Chord, loEnd: [2]f32, hiEnd: [2]f32, highRef: [2]f32, 
                 prev = q;
             }
         }
+        f.cast(ivyMark);
         f.b.setMat(.plant);
         const nMoss: usize = @intFromFloat(@round(len * kind.ivy * 1.4));
         for (0..nMoss) |_| {
@@ -2576,6 +2752,7 @@ fn cliffWall(f: Face, ch: Chord, loEnd: [2]f32, hiEnd: [2]f32, highRef: [2]f32, 
             fadeQuadUp(f.b, p0, p1, q1, q0, wallCol, soilCol);
         }
         const nTal: usize = @intFromFloat(@round(len * (0.9 + 1.8 * kind.broken) * (0.4 + 0.6 * dropK)));
+        const talMark = f.b.vertCount();
         for (0..nTal) |_| {
             const s = rng.range(0.02, 0.98);
             const outT = std.math.pow(f32, rng.float(), 1.5);
@@ -2601,6 +2778,7 @@ fn cliffWall(f: Face, ch: Chord, loEnd: [2]f32, hiEnd: [2]f32, highRef: [2]f32, 
                 if (rng.float() < 0.5) art.CLIFF_LT else art.CLIFF_DK,
             );
         }
+        f.cast(talMark);
     }
 }
 
@@ -2644,7 +2822,8 @@ fn polyMid(poly: []const [2]f32) [2]f32 {
 
 /// One cell of the height lattice drawn as TWO FLOORS AND A FACE, cut at the edge midpoints `wf.cliffCut` names — the same line `wf.sampleHeight` steps on.
 /// `h` is the ring the terrain quad already winds: (xa,za), (xa,zb), (xb,zb), (xb,za); `lv` the two side surfaces at those corners.
-fn cliffCell(b: *gfx.Builder, fb: Face, a: [2]f32, c: [2]f32, h: [4]f32, cw: wf.CliffCut, lv: wf.CliffLevels, nb: [4]?f32) void {
+/// `nb` is a stair neighbour's tread per edge, `nbCut` whether a painted neighbour steps there: a cut edge shared with one needs no skirt — both floors are the same tier to the midpoint, and the line through the two corners is a ramp that drew a fin half the drop tall at every cell.
+fn cliffCell(b: *gfx.Builder, fb: Face, a: [2]f32, c: [2]f32, h: [4]f32, cw: wf.CliffCut, lv: wf.CliffLevels, nb: [4]?f32, nbCut: [4]bool) void {
     const p = cellRing(a, c);
     const high = cw.high;
     const cut = cw.cut;
@@ -2705,6 +2884,7 @@ fn cliffCell(b: *gfx.Builder, fb: Face, a: [2]f32, c: [2]f32, h: [4]f32, cw: wf.
         cliffFan(b, poly[0..n], a, c, vals);
         for (0..n - 1) |q| {
             const eg = onEdge[q];
+            if (cut[eg] and nbCut[eg] and nb[eg] == null) continue;
             cellSkirt(
                 b,
                 cellWorld(poly[q], a, c),
@@ -2795,12 +2975,13 @@ fn thinFor(pr: *const Prop, nfo: *const props.Info, eye: rl.Vector3, at: rl.Vect
         }
         return thin;
     }
-    for (nfo.parts) |part| {
+    const parts = props.partsOf(pr.kind);
+    for (parts) |part| {
         const hl = 0.5 * mathx.lenXZ(v3(part.bx - part.ax, 0, part.bz - part.az));
         const r = (part.r + hl) * pr.scale + OCCL_SKIRT;
         thin = mathx.maxF(thin, thinOf(eye, at, fr.partFoot(part), part.h * pr.scale, r));
     }
-    if (nfo.parts.len == 0) {
+    if (parts.len == 0) {
         thin = thinOf(eye, at, pr.pos, runOf(pr, nfo), nfo.bound * pr.scale * OCCL_GIRTH);
     }
     return thin;
@@ -3097,6 +3278,7 @@ fn buildSolids(e: *Env) void {
     e.nillusions = 0;
     for (e.props[0..e.nprops], 0..) |*pr, pi| {
         const nfo = props.info(pr.kind);
+        const parts = props.partsOf(pr.kind);
         const s = pr.scale;
         const fr = PropFrame.of(pr);
         var ward: u8 = 0;
@@ -3104,7 +3286,7 @@ fn buildSolids(e: *Env) void {
             if (e.nwards >= MAX_WARDS) @panic("env: MAX_WARDS exceeded — raise the cap");
             e.wardProps[e.nwards] = @intCast(pi);
             e.wardSolid0[e.nwards] = @intCast(e.nsolids);
-            e.wardSolidN[e.nwards] = @intCast(nfo.parts.len);
+            e.wardSolidN[e.nwards] = @intCast(parts.len);
             e.nwards += 1;
             ward = @intCast(e.nwards);
         }
@@ -3114,16 +3296,17 @@ fn buildSolids(e: *Env) void {
             if (e.nillusions >= MAX_ILLUSIONS) @panic("env: MAX_ILLUSIONS exceeded — raise the cap");
             e.illusionProps[e.nillusions] = @intCast(pi);
             e.illusionSolid0[e.nillusions] = @intCast(e.nsolids);
-            e.illusionSolidN[e.nillusions] = @intCast(nfo.parts.len);
+            e.illusionSolidN[e.nillusions] = @intCast(parts.len);
             e.nillusions += 1;
             illusion = @intCast(e.nillusions);
         }
         pr.illusion = illusion;
-        for (nfo.parts) |part| {
+        for (parts) |part| {
             if (e.nsolids >= MAX_SOLIDS) @panic("env: MAX_SOLIDS exceeded — raise the cap");
             const a = fr.at(part.ax, 0, part.az);
             const b = fr.at(part.bx, 0, part.bz);
             var sol = collision.capsule(a.x, a.z, b.x, b.z, part.r * s);
+            sol.flat = part.flat;
             sol.h = pr.pos.y + part.h * s;
             if (part.y0 > 0) sol.y0 = pr.pos.y + part.y0 * s;
             sol.surf = nfo.surf;
@@ -3142,6 +3325,11 @@ fn buildSolids(e: *Env) void {
             e.solid_buf[e.nsolids] = sol;
             e.nsolids += 1;
         }
+    }
+    for (e.cliffSolids[0..e.ncliffSolids]) |s| {
+        if (e.nsolids >= MAX_SOLIDS) @panic("env: MAX_SOLIDS exceeded by the cliff stamps — raise the cap");
+        e.solid_buf[e.nsolids] = s;
+        e.nsolids += 1;
     }
     buildDecks(e);
     var counts = [_]u32{0} ** NCELL;
@@ -3770,11 +3958,21 @@ test "AN ILLUSORY WALL IS A WALL UNTIL IT IS TOUCHED — then a look and a step 
     const eye = v3(0, 1.3, -9);
     const far = v3(0, 1.3, 9);
     try std.testing.expect(!e.sees(eye, far));
-    const face = props.info(.illusory).parts[0].r;
+    // How far the stone stands toward -z: at x = 0 (`face`), and anywhere across the swing's width (`front`).
+    var face: f32 = 0;
+    var front: f32 = 0;
+    for (props.partsOf(.illusory)) |p| {
+        const lo = @min(p.ax, p.bx);
+        const hi = @max(p.ax, p.bx);
+        const dx: f32 = if (lo > 0) lo else if (hi < 0) -hi else 0;
+        if (dx < p.r) face = @max(face, -@min(p.az, p.bz) + @sqrt(p.r * p.r - dx * dx));
+        if (lo - p.r <= 0.7 and hi + p.r >= -0.7) front = @max(front, -@min(p.az, p.bz) + p.r);
+    }
+    try std.testing.expect(face > 1.0 and front >= face);
     // A swing that stops short of the stone finds nothing; one whose edge reaches it does.
-    try std.testing.expectEqual(@as(?u8, null), e.illusionStruck(v3(-0.6, 1.0, -face - 1.0), v3(0.6, 1.0, -face - 1.0), 0.2));
+    try std.testing.expectEqual(@as(?u8, null), e.illusionStruck(v3(-0.6, 1.0, -front - 1.0), v3(0.6, 1.0, -front - 1.0), 0.2));
     try std.testing.expectEqual(@as(?u8, 0), e.illusionStruck(v3(-0.6, 1.0, -face - 0.1), v3(0.6, 1.0, -face - 0.1), 0.2));
-    try std.testing.expectEqual(@as(?u8, null), e.illusionTouched(v3(0, 0, -face - 1.0), 0.42));
+    try std.testing.expectEqual(@as(?u8, null), e.illusionTouched(v3(0, 0, -front - 1.0), 0.42));
     try std.testing.expectEqual(@as(?u8, 0), e.illusionTouched(v3(0, 0, -face - 0.2), 0.42));
     var buf: [8]collision.Solid = undefined;
     try std.testing.expect(e.nearSolids(v3(0, 0, 0), 1.0, &buf).len > 0);
@@ -3873,6 +4071,10 @@ test "flyStep: a jump crosses what it is OVER, and a cliff is a wall at any alti
     try std.testing.expectApproxEqAbs(at.x, e.flyStep(at, east, 2.0, foot).x, 1e-4);
     try std.testing.expectApproxEqAbs(at.x, e.flyStep(at, east, 2.0, foot + 1.0).x, 1e-4);
     try std.testing.expect(e.flyStep(at, east, 2.0, foot + WALL).x > at.x);
+    // Refused into the wall, the step slides along it.
+    const slid = e.flyStep(at, mathx.normV(v3(1, 0, 1)), 2.0, foot);
+    try std.testing.expectApproxEqAbs(at.x, slid.x, 1e-4);
+    try std.testing.expect(slid.z > at.z + 1.5);
     const low = try envWithRamp(0.30);
     defer std.testing.allocator.destroy(low);
     const g0 = low.groundAt(0, 0);
@@ -4287,7 +4489,7 @@ test "THE FLOOR DRAWN IS THE FLOOR WALKED — a cliff cell's floors against `wf.
         defer b.deinit();
         var fb = gfx.Builder.init();
         defer fb.deinit();
-        cliffCell(&b, .{ .b = &fb, .sb = null, .env = null }, .{ 0, 0 }, .{ 1, 1 }, c.h, cut, lv, .{ null, null, null, null });
+        cliffCell(&b, .{ .b = &fb, .sb = null, .env = null }, .{ 0, 0 }, .{ 1, 1 }, c.h, cut, lv, .{ null, null, null, null }, .{ false, false, false, false });
 
         const ntri = b.pos.items.len / 9;
         var flat: f32 = 0;
@@ -4828,6 +5030,7 @@ test "no grid query can overflow MAX_NEAR, which is the one cap here that drops 
             worst = @max(worst, sum);
         }
     }
+    std.debug.print("\n  densest 2x2 of the solid grid holds {d} solids against MAX_NEAR {d}\n", .{ worst, MAX_NEAR });
     try std.testing.expect(worst > 0);
     try std.testing.expect(worst <= MAX_NEAR);
 }

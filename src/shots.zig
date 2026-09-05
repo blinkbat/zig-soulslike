@@ -293,6 +293,7 @@ pub fn runPropShots(g: *Game) void {
     for (props.INFO, 0..) |row, i| {
         if (!stageOn(@tagName(row.kind))) continue;
         g.env.stageOne(row.kind);
+        colliderAudit(g, row.kind);
         const staged = &g.env.props[0];
         const r = mathx.maxF(env.reachOf(staged, &row), 0.9);
         const top = env.runOf(staged, &row);
@@ -302,6 +303,99 @@ pub fn runPropShots(g: *Game) void {
         var buf: [96]u8 = undefined;
         const name = std.fmt.bufPrintZ(&buf, DIR_PROPS ++ "/{d:0>2}_{s}.png", .{ i, @tagName(row.kind) }) catch unreachable;
         shootAt(g, name, aim, 35, 0.30, dist);
+    }
+}
+
+/// Collider against mesh for one kind, off the model's own vertices (`Builder.toMesh` leaves them with the mesh): how deep a body could stand in the stone and how far a collider stands from any.
+fn colliderAudit(g: *Game, kind: props.Kind) void {
+    const parts = props.partsOf(kind);
+    if (parts.len == 0) return;
+    const mdl = g.env.models[@intFromEnum(kind)];
+    if (mdl.meshCount < 1) return;
+    const mesh = mdl.meshes[0];
+    const n: usize = @intCast(mesh.vertexCount);
+    if (n == 0 or mesh.vertices == null or mesh.texcoords2 == null) return;
+    const pos = mesh.vertices[0 .. n * 3];
+    const uv2 = mesh.texcoords2[0 .. n * 2];
+    const a = props.colliderAudit(pos, uv2, parts);
+    if (a.stone == 0) return;
+    const look = a.pen > LOOK_PEN or a.over > LOOK_OVER;
+    const flag: []const u8 = if (look) "  <-- LOOK" else "";
+    std.debug.print("COLLIDER {s: <14} {d:2} part(s): stone past them {d:.2} m ({d:2.0}%), collider past the stone {d:.2} m{s}\n", .{ @tagName(kind), parts.len, a.pen, 100 * a.outside, a.over, flag });
+    if (a.pen > MAP_FROM or a.over > MAP_FROM or onlyStage.len > 0) footprintMap(pos, uv2, parts);
+}
+
+/// A body standing this far inside stone, or a collider this far out in the open, is flagged; the map prints from a lower bar so the fix can be read off it.
+const LOOK_PEN: f32 = 0.5;
+const LOOK_OVER: f32 = 0.6;
+const MAP_FROM: f32 = 0.3;
+
+/// The kind's footprint through the walk band as text, +x right and +z down: `#` stone, `o` collider, `@` both.
+fn footprintMap(pos: []const f32, uv2: []const f32, parts: []const props.Part) void {
+    const LO = props.AUDIT_LO;
+    const HI = props.AUDIT_HI;
+    const n = pos.len / 3;
+    var x0: f32 = 1e9;
+    var x1: f32 = -1e9;
+    var z0: f32 = 1e9;
+    var z1: f32 = -1e9;
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        const y = pos[i * 3 + 1];
+        if (y < LO or y > HI or !props.solidMat(uv2[i * 2])) continue;
+        x0 = @min(x0, pos[i * 3]);
+        x1 = @max(x1, pos[i * 3]);
+        z0 = @min(z0, pos[i * 3 + 2]);
+        z1 = @max(z1, pos[i * 3 + 2]);
+    }
+    for (parts) |p| {
+        x0 = @min(x0, @min(p.ax, p.bx) - p.r);
+        x1 = @max(x1, @max(p.ax, p.bx) + p.r);
+        z0 = @min(z0, @min(p.az, p.bz) - p.r);
+        z1 = @max(z1, @max(p.az, p.bz) + p.r);
+    }
+    if (x1 <= x0 or z1 <= z0) return;
+    x0 -= 0.3;
+    x1 += 0.3;
+    z0 -= 0.3;
+    z1 += 0.3;
+    const COLS: usize = 56;
+    const cell = @max((x1 - x0) / @as(f32, COLS), (z1 - z0) / 40.0);
+    const cols: usize = @intFromFloat(@ceil((x1 - x0) / cell));
+    const rows: usize = @intFromFloat(@ceil((z1 - z0) / cell));
+    std.debug.print("  x {d:.2}..{d:.2}  z {d:.2}..{d:.2}  one cell {d:.2} m\n", .{ x0, x1, z0, z1, cell });
+    var r: usize = 0;
+    while (r < rows) : (r += 1) {
+        var line: [128]u8 = undefined;
+        var c: usize = 0;
+        while (c < cols and c < 120) : (c += 1) {
+            const px = x0 + (@as(f32, @floatFromInt(c)) + 0.5) * cell;
+            const pz = z0 + (@as(f32, @floatFromInt(r)) + 0.5) * cell;
+            const q = v3(px, 0, pz);
+            var top: f32 = -1;
+            var t: usize = 0;
+            while (t + 2 < n) : (t += 3) {
+                const ya = pos[t * 3 + 1];
+                const yb = pos[(t + 1) * 3 + 1];
+                const yc = pos[(t + 2) * 3 + 1];
+                const yt = @max(ya, @max(yb, yc));
+                if (yt < LO or @min(ya, @min(yb, yc)) > HI or !props.solidMat(uv2[t * 2]) or yt <= top) continue;
+                if (props.triGapXZ(q, v3(pos[t * 3], 0, pos[t * 3 + 2]), v3(pos[(t + 1) * 3], 0, pos[(t + 1) * 3 + 2]), v3(pos[(t + 2) * 3], 0, pos[(t + 2) * 3 + 2])) <= 0) top = yt;
+            }
+            var hit = false;
+            for (parts) |p| {
+                if (props.partGap(q, p) <= 0) {
+                    hit = true;
+                    break;
+                }
+            }
+            // `#`/`@` stone over a metre, `=`/`+` stone over the step but under a metre, `_`/`,` a step a body walks over.
+            const tall = top >= 1.0;
+            const blocks = top >= worldfmt.STEP_UP;
+            line[c] = if (top >= 0 and hit) (if (tall) '@' else if (blocks) '+' else ',') else if (top >= 0) (if (tall) '#' else if (blocks) '=' else '_') else if (hit) 'o' else '.';
+        }
+        const zc = z0 + (@as(f32, @floatFromInt(r)) + 0.5) * cell;
+        std.debug.print("  {s} z{d:6.2}\n", .{ line[0..@min(cols, 120)], zc });
     }
 }
 
@@ -443,6 +537,24 @@ pub fn runLandShots(g: *Game) void {
             shootAt(g, name, v3(f.ax, g.env.groundAt(f.ax, f.az) + f.up, f.az), f.yaw, f.pitch, f.dist);
         }
         frames += faces.len;
+        // The foot of the face, walked into until the cut and its stamped stone (`Env.cliffSolids`) refuse him.
+        const feet = [_]f32{ -9.0, -6.5 };
+        for (feet, 0..) |fz, i| {
+            standHero(g, 9.0, fz, mathx.headingXZ(v3(1, 0, 0)));
+            g.hero.pos.y = g.env.groundAt(9.0, fz);
+            var w: usize = 0;
+            while (w < 120) : (w += 1) {
+                g.hero.pos = g.env.walkStep(g.hero.pos, v3(1, 0, 0), 0.05);
+                g.hero.pos = g.env.resolveHeroSide(g.hero.pos, foemod.HERO_R, g.hero.pos.y);
+                g.hero.pos.y = g.env.groundAt(g.hero.pos.x, g.hero.pos.z);
+            }
+            g.hero.pose();
+            game.pinSkyForShot(g);
+            std.debug.print("  foot of the face at z {d:.1}: stopped {d:.2} m short of the cut\n", .{ fz, 12.0 - g.hero.pos.x });
+            const name = std.fmt.bufPrintZ(&buf, DIR_LAND ++ "/{s}_{d:0>2}_foot.png", .{ stem, i + 10 + faces.len }) catch unreachable;
+            shootAt(g, name, v3(g.hero.pos.x, g.hero.pos.y + 1.0, g.hero.pos.z), 20, 0.12, 6.0);
+        }
+        frames += feet.len;
     }
     if (std.mem.startsWith(u8, stem, "01_")) {
         const basin = [_]struct { tag: []const u8, hx: f32, hz: f32, ax: f32, az: f32, up: f32, yaw: f32, pitch: f32, dist: f32 }{
@@ -1850,6 +1962,13 @@ pub fn runShots(g: *Game) void {
         shootAt(g, "shots/154_fog.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
         shootAt(g, "shots/155_mist_bank.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 22.0);
         game.forceFogForShot(g, false);
+
+        game.forceEmberForShot(g, 0.9);
+        game.forceMistForShot(g, 16.0);
+        stepWorld(g, dt, 0);
+        shootAt(g, "shots/158_embers.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
+        shootAt(g, "shots/158b_embers_smoke.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 22.0);
+        game.forceEmberForShot(g, null);
 
         game.forceSkeinForShot(g, mathx.radians(24.0));
         stepWorld(g, dt, 0);

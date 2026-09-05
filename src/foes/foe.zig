@@ -146,7 +146,7 @@ pub fn poiseCurve(k: wf.FoeKind) f32 {
     return switch (homeOf(k)) {
         .any, .ruins, .village, .wetland => 1.00,
         .rock, .forest => 1.15,
-        .ash, .bone => 1.35,
+        .ash, .bone, .firelands => 1.35,
         .fungal => 1.55,
     };
 }
@@ -450,9 +450,12 @@ pub fn senseHero(l: *const Leash, at: rl.Vector3, hero: rl.Vector3, aggroR: f32)
     return sensedDist(l, mathx.distXZ(at, hero), aggroR);
 }
 
+/// Metres of GROUND between two bodies over which a melee reach is refused, both ways. Under the shipped lattice's `wf.cliffMinDrop` (2.1 m), so nothing at the foot of a painted face reaches the lip; over any bank a walk climbs.
+pub const REACH_RISE: f32 = 2.0;
+
 pub fn inFront(pos: rl.Vector3, facing: f32, at: rl.Vector3, reach: f32, dot: f32) bool {
     const d = mathx.distXZ(pos, at);
-    if (d > reach) return false;
+    if (d > reach or @abs(pos.y - at.y) > REACH_RISE) return false;
     if (d <= POINT_BLANK) return true;
     const to = mathx.dirXZ(pos, at);
     const fwd = mathx.headingDir(facing);
@@ -460,10 +463,21 @@ pub fn inFront(pos: rl.Vector3, facing: f32, at: rl.Vector3, reach: f32, dot: f3
 }
 
 pub fn inArc(pos: rl.Vector3, facing: f32, at: rl.Vector3, reach: f32, arcDeg: f32) bool {
-    if (mathx.distXZ(pos, at) > reach) return false;
+    if (mathx.distXZ(pos, at) > reach or @abs(pos.y - at.y) > REACH_RISE) return false;
     const to = mathx.dirXZ(pos, at);
     if (mathx.lenXZ(to) < 1e-4) return true;
     return combat.withinArc(mathx.headingXZ(to), facing, arcDeg);
+}
+
+test "MELEE REACH IS REFUSED ACROSS A DROP — the same reach lands over a bank" {
+    const fwd = mathx.headingDir(0);
+    const flat = v3(fwd.x, 0, fwd.z);
+    try std.testing.expect(inArc(mathx.zero3, 0, flat, 2.0, 90));
+    try std.testing.expect(inFront(mathx.zero3, 0, flat, 2.0, 0.5));
+    try std.testing.expect(inArc(mathx.zero3, 0, v3(fwd.x, REACH_RISE - 0.1, fwd.z), 2.0, 90));
+    try std.testing.expect(!inArc(mathx.zero3, 0, v3(fwd.x, REACH_RISE + 0.1, fwd.z), 2.0, 90));
+    try std.testing.expect(!inArc(mathx.zero3, 0, v3(fwd.x, -REACH_RISE - 0.1, fwd.z), 2.0, 90));
+    try std.testing.expect(!inFront(mathx.zero3, 0, v3(fwd.x, REACH_RISE + 0.1, fwd.z), 2.0, 0.5));
 }
 
 pub fn faceToward(pos: rl.Vector3, facing: *f32, target: rl.Vector3, rate: f32, dt: f32) void {

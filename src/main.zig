@@ -264,4 +264,5 @@ test {
     _ = @import("props/propfungus.zig");
     _ = @import("props/propcoral.zig");
     _ = @import("props/propgold.zig");
+    _ = @import("props/propember.zig");
 }

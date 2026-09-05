@@ -130,12 +130,12 @@ pub const Sky = struct {
             .loc_stars = rl.getShaderLocation(sh, "stars"),
             .loc_pal = pal,
         };
-        out.setHour(daynight.SHOT_HOUR, 0, 0);
+        out.setHour(daynight.SHOT_HOUR, 0, 0, 0);
         return out;
     }
 
-    pub fn setHour(self: *Sky, hour: f32, wet: f32, spore: f32) void {
-        const p = daynight.bloom(daynight.overcast(daynight.paletteAt(hour), wet), spore);
+    pub fn setHour(self: *Sky, hour: f32, wet: f32, spore: f32, ember: f32) void {
+        const p = daynight.smolder(daynight.bloom(daynight.overcast(daynight.paletteAt(hour), wet), spore), ember);
         var s = daynight.sunDir(hour);
         var m = daynight.moonDir(hour);
         rl.setShaderValue(self.shader, self.loc_sun, &s, .vec3);
@@ -517,13 +517,13 @@ pub const Scene = struct {
             .loc_hazeD = rl.getShaderLocation(shader, "hazeDensity"),
             .loc_hazeScale = rl.getShaderLocation(shader, "hazeScale"),
         };
-        out.setHour(daynight.SHOT_HOUR, 0, 1.0, 0);
+        out.setHour(daynight.SHOT_HOUR, 0, 1.0, 0, 0);
         return out;
     }
 
-    /// THE STORM IS A LAYER ON TOP (`daynight.overcast`). `wet` is `weather.Weather.rain()`, 0 leaving the hour's palette untouched; `fogK` is the DEBUG haze override, 1 in the game; `spore` turns the distance PEACH and shortens it.
-    pub fn setHour(self: *Scene, hour: f32, wet: f32, fogK: f32, spore: f32) void {
-        const p = daynight.bloom(daynight.overcast(daynight.paletteAt(hour), wet), spore);
+    /// THE STORM IS A LAYER ON TOP (`daynight.overcast`). `wet` is `weather.Weather.rain()`, 0 leaving the hour's palette untouched; `fogK` is the DEBUG haze override, 1 in the game; `spore` turns the distance PEACH and shortens it; `ember` turns it to SMOKE and shortens it less.
+    pub fn setHour(self: *Scene, hour: f32, wet: f32, fogK: f32, spore: f32, ember: f32) void {
+        const p = daynight.smolder(daynight.bloom(daynight.overcast(daynight.paletteAt(hour), wet), spore), ember);
         sun = daynight.keyDir(hour);
         sunReach = daynight.shadowReach(hour);
         var d = sun;
@@ -542,7 +542,8 @@ pub const Scene = struct {
         var ka = daynight.keyAmt(p) * dim;
         rl.setShaderValue(self.shader, self.loc_keyAmt, &ka, .float);
         var density: f32 = HAZE_DENSITY * (1.0 + (HAZE_STORM - 1.0) * mathx.clampF(wet, 0, 1)) *
-            (1.0 + (daynight.HAZE_SPORE_D - 1.0) * mathx.clampF(spore, 0, 1)) * mathx.maxF(fogK, 0);
+            (1.0 + (daynight.HAZE_SPORE_D - 1.0) * mathx.clampF(spore, 0, 1)) *
+            (1.0 + (daynight.HAZE_EMBER_D - 1.0) * mathx.clampF(ember, 0, 1)) * mathx.maxF(fogK, 0);
         rl.setShaderValue(self.shader, self.loc_hazeD, &density, .float);
     }
 
@@ -1091,10 +1092,8 @@ pub const Builder = struct {
         self.uv2.ensureUnusedCapacity(src.uv2.items.len) catch @panic("oom");
         self.col.ensureUnusedCapacity(src.col.items.len) catch @panic("oom");
         for (0..n) |i| {
-            const px = src.pos.items[i * 3] * scale.x;
-            const py = src.pos.items[i * 3 + 1] * scale.y;
-            const pz = src.pos.items[i * 3 + 2] * scale.z;
-            self.pos.appendSliceAssumeCapacity(&.{ origin.x + px * c + pz * s, origin.y + py, origin.z - px * s + pz * c });
+            const p = stampAt(origin, c, s, scale, src.pos.items[i * 3], src.pos.items[i * 3 + 1], src.pos.items[i * 3 + 2]);
+            self.pos.appendSliceAssumeCapacity(&.{ p.x, p.y, p.z });
             const nx = src.nrm.items[i * 3] * inv.x;
             const ny = src.nrm.items[i * 3 + 1] * inv.y;
             const nz = src.nrm.items[i * 3 + 2] * inv.z;
@@ -1105,6 +1104,27 @@ pub const Builder = struct {
             self.uv2.appendSliceAssumeCapacity(&.{ src.uv2.items[i * 2], src.uv2.items[i * 2 + 1] });
             self.col.appendSliceAssumeCapacity(src.col.items[i * 4 ..][0..4]);
         }
+    }
+
+    pub fn vertCount(self: *const Builder) usize {
+        return self.pos.items.len / 3;
+    }
+
+    /// Where `stamp` puts a source point: scaled per axis, turned about Y by the yaw whose cosine and sine are `c` and `s`, moved to `origin`. Anything fitted to a stamped mesh goes through the same frame.
+    pub fn stampAt(origin: rl.Vector3, c: f32, s: f32, scale: rl.Vector3, lx: f32, ly: f32, lz: f32) rl.Vector3 {
+        const px = lx * scale.x;
+        const pz = lz * scale.z;
+        return v3(origin.x + px * c + pz * s, origin.y + ly * scale.y, origin.z - px * s + pz * c);
+    }
+
+    /// Every vertex `src` has added since `fromVert`, as is.
+    pub fn copyFrom(self: *Builder, src: *const Builder, fromVert: usize) void {
+        if (fromVert * 3 >= src.pos.items.len) return;
+        self.pos.appendSlice(src.pos.items[fromVert * 3 ..]) catch @panic("oom");
+        self.nrm.appendSlice(src.nrm.items[fromVert * 3 ..]) catch @panic("oom");
+        self.uv.appendSlice(src.uv.items[fromVert * 2 ..]) catch @panic("oom");
+        self.uv2.appendSlice(src.uv2.items[fromVert * 2 ..]) catch @panic("oom");
+        self.col.appendSlice(src.col.items[fromVert * 4 ..]) catch @panic("oom");
     }
 
     /// The extent of one MATERIAL's vertices. A cliff prop's ivy and grass carry a third of its height again, so anything sizing the ROCK to a drop has to ask the stone and not the whole mesh.

@@ -188,8 +188,9 @@ pub fn fallDamage(drop: f32, hpMax: f32, dex: u8) f32 {
     return hpMax * mathx.maxF(frac, FALL_MIN_FRAC);
 }
 
-pub const JUMP_APEX: f32 = 1.0;
-pub const JUMP_AIR: f32 = 0.72;
+pub const JUMP_APEX: f32 = 1.4;
+/// Solved off the apex so `JUMP_G` stays 15.43 and the slams' launch numbers below hold.
+pub const JUMP_AIR: f32 = 0.852;
 const JUMP_G: f32 = 8.0 * JUMP_APEX / (JUMP_AIR * JUMP_AIR);
 const JUMP_V0: f32 = JUMP_G * JUMP_AIR * 0.5;
 const AIR_TURN_RATE: f32 = 2.6;
@@ -4223,8 +4224,9 @@ pub const Hero = struct {
         setLocal(&wx, SPINE, self.rest, mul(rx(SIT_SPINE + 1.2 * attack), rz(lilt * 0.45)));
         setLocal(&wx, CHEST, self.rest, mul(rx(SIT_CHEST + 0.8 * attack), rz(lilt * 0.37)));
         setLocal(&wx, NECK, self.rest, mul(rx(5.0 + 4.0 * glance), rz(-lilt * 0.30)));
-        // The head: down and left onto the fret hand at a shift, else a nod on the beat with the eyes closed.
-        setLocal(&wx, HEAD, self.rest, mul3(rx(HEAD_WALK + 11.0 - 4.0 * phrase + 3.0 * attack + 9.0 * glance), ry(9.0 + 14.0 * glance), rz(-lilt * 0.40 - 4.0 * glance)));
+        // The head: down and left onto the fret hand at a shift, else a slow nod with the eyes closed — one every two beats and eased, not the strum's own jolt (owner: slower and gentler).
+        const nod = 0.5 - 0.5 * mathx.cosf(beat * std.math.pi);
+        setLocal(&wx, HEAD, self.rest, mul3(rx(HEAD_WALK + 11.0 - 4.0 * phrase + REST_NOD * nod + 9.0 * glance), ry(9.0 + 14.0 * glance), rz(-lilt * 0.40 - 4.0 * glance)));
         sitLeg(&wx, self.rest, 1.0, HIPL, KNEEL, ANKL);
         sitLeg(&wx, self.rest, -1.0, HIPR, KNEER, ANKR);
         // The right foot keeps time: up through the off-beat, down on the beat.
@@ -4729,6 +4731,8 @@ fn guitarMesh() rl.Mesh {
 }
 
 const REST_BEAT: f32 = 1.15;
+/// Degrees of nod, over a two-beat cosine (1.74 s). The strum's `attack` used to drive it at 3 deg inside 0.18 of a beat.
+const REST_NOD: f32 = 1.6;
 const REST_SHIFT_EVERY: f32 = 3.2;
 const REST_SHIFT_DUR: f32 = 0.34;
 /// Fret positions the left hand walks between, in the guitar's `along`: the nut is at 0.868 and the body joins the neck near 0.45, so these are the first eight frets or so.

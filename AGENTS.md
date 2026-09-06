@@ -40,6 +40,10 @@ implement what's asked and nothing extra. Don't commit, push, or create branches
 - **RELIEF IS SUBTLE.** A few PERCENT of the mass's radius, not a tenth. Sink the proud primitive most of the
   way in. Prefer more SIDES on the mass over more relief on top. Judge against the ASSEMBLED thing. Cut
   AMPLITUDE, never irregularity.
+- **CLOTH IS ONE FOLDED SURFACE** (`propart.clothInto`, shared by the kobold priest and the necromancer): rings
+  of `[x, y, z, radiusX, radiusZ]` in stature-relative units, BOTTOM ROW FIRST, every row sharing one set of
+  angular samples so a fold runs the whole drop instead of stopping at each seam. Stacked skirts read as rigid
+  sections; a second cloth implementation is how they come back.
 - **PACKED STONE HAS A CORE.** A row of blocks is only the FACING; without a substrate the joints leak sky.
   Overlap well past the slot — `propart.courseInto`/`courseStack` do both.
 - **DENSITY VARIES.** A flat per-region density is a carpet. `env.coverField` (two octaves of value noise)
@@ -251,6 +255,10 @@ Two things in that table are load-bearing beyond navigation:
   pelvis. A ball at each joint seals the mouth and reads as the joint: wider than either cylinder there, and
   inside the belt's own half-width (0.235 H against the hip's 0.090), so no standing silhouette changed. The ogre
   had this right from the start (`ogre.limb` caps with a blob) — **the reference rig was the one breaking the law.**
+- **THE DEAD COLLAPSE DROPS THE PELVIS FASTER THAN `deadLegs` FOLDS THE LEGS.** Measured on the necromancer, a
+  corpse's soles finish about 1.0 m × scale under the turf during `DEATH_DUR`, on every humanoid that shares
+  `heromod.deadLegs`. Invisible — the ground is opaque and the heap above it reads right — so it is recorded,
+  not patched: lifting the rig onto the floor instead keeps the body STANDING while it sinks, which is worse.
 - **A SCALE≠1 humanoid must scale its pelvis HEIGHT** (`pelvY*fs`) or the legs sink.
 - **EITHER HAND MAY HOLD ANYTHING, AND THAT IS THREE THINGS PER ARMAMENT, NOT ONE** (`hero.Armament`): the
   MESH (`drawHand`), the POSE of the arm, and every WORLD POINT taken off it. All three ask one question —
@@ -883,15 +891,45 @@ Never touches you; priority target on any field. 84 HP, 5 poise, 520 souls.
   `hx`/`sx` narrowed. Either alone is satisfiable by the wrong creature. A test measures stature over shoulder
   SPAN against the archer beside it.
 - **THE DRAGGING HEM IS NOT A BONE** — it rides the ROOT through a lag matrix, and it is a SPRING not an ease:
-  the lean opposes the travel, OVERSHOOTS and settles (test-pinned, since an ease cannot overshoot). **Skirt
-  panels are thin walls at the RIM**: `addBox` takes HALF-axes, so a radial extent of `r/2` centred at `r/2`
-  spans axis to rim and every panel comes out a solid pie slice.
+  the lean opposes the travel, OVERSHOOTS and settles (test-pinned, since an ease cannot overshoot). It is the
+  shared `anim.Spring` now; the hand-rolled `1 - HEM_EASE * dt` damping went NEGATIVE past 154 ms a frame.
+  **And the robe is ONE folded surface** (`propart.clothInto`), not a stack of skirts: three independently
+  generated rings of 10, 11 and 13 sides read as rigid sections however they are tuned. Its lower rows have to
+  reach past the toes, or the feet stand clean outside the front of the robe.
 - **THE STAFF ARM MUST BE THE RIGHT ONE.** `heromod.PARENT[HELD]` is `WRR`; authored on the left, the pole's
   matrix was built against an unwritten `wx[WRR]` — undefined memory, staff transformed to the world origin.
   `poseUpper` poses that arm LAST, with the staff after its own wrist.
 - **`staffTilt` IS 180-IS-PLUMB** (the warriors' `wpnTilt` convention). **The fit bills the ARM but not the
-  TRUNK**, so a pose that arches the spine pays at its own constant (`RAISE_LEAN` 22°). All three poses are
-  MEASURED and bracketed — carry 16° ferrule down, raise 9° planted, frost 31° ferrule LIFTED.
+  TRUNK**, so a pose that arches the spine pays at its own constant (`RAISE_LEAN` 22°) — and so does a THROW that
+  pitches the trunk 52° (`RAISE_THROW_TILT`) and a LANDING that drops the grip 0.24 m (`CROUCH_TILT`). Unbilled,
+  the planted pole swings out flat or its ferrule goes through the turf. Measured: carry 16° ferrule down,
+  raise 9° planted, frost 30° ferrule LIFTED.
+- **THE POLE IS ONE PATH, AND EVERYTHING IS MEASURED OFF IT** (`staffPath`, `STAFF_FOOT`/`STAFF_HEAD`). The mesh,
+  the grip calibration and `staffSeg` read the same deterministic curve; the curve steps by ARC, not by height,
+  or a bent 2.00 m pole comes out longer than 2.00 m of wood. It is anchored by translating the whole path so
+  its arc-length grip lands on `(0, FIST_Y, FIST_Z)`, and **it turns about that GRIP** — `staffFit` pivots on the
+  bone origin, which is the WRIST 0.09·H above the palm, so every degree of tilt swung the pole out of the hand.
+- **A FIXED STATURE FRACTION IS NOT A CROWN.** `topWorld` reads the POSED hulls; borrowing `archermod.TOP_F`
+  reported 3.28 m for a 2.78 m body and made the staff's height unmeasurable.
+- **THE BLADE FINDS A THIN BODY THROUGH TEN POSED HULLS** (`HULLS`, `foe.hullTouches`), with `centerWorld` /
+  `hurtRadius` only the enclosing broad phase. The old chest-centred 0.42 sphere missed the skull and the shins
+  and landed in the empty air beside the robe.
+- **THE RING IS A BURST, NOT A COLUMN.** `FROST_WALL_H` 2.10 m is ABSOLUTE — the ring's radius grows with the
+  caster, its height does not, because what it has to reach is the hero. It clears his 1.4 m jump apex on
+  purpose: this is not a move he hops over. XZ alone billed a hero standing on the deck above it.
+- **THE SPELL IS BILLED AFTER THE BLADE IS.** `update` holds the raise edge and the ring as `pendRaise`/`pendLay`
+  until `tryHit` has resolved, so a stroke on the release frame cancels them — and cancels NOTHING else: a ring
+  already in the ground keeps its fuse and its damage due that frame, and the cooldown stays spent.
+- **THE HOP IS INTEGRATED, NOT SAMPLED.** `LEAP_SPEED * sin(pi*u)` is integrated across the clamped slice of each
+  frame inside the window, so 30, 60 and 144 Hz all travel 0.9957 m. `airborne()` is real, the root restraint
+  yields to it, and a stagger or death in flight keeps height and vertical velocity and falls under `LEAP_GRAV`.
+- **THE POSE IS ELEVEN KEYED CHANNELS THROUGH ONE BANK** (`P`, `Poser`, `POSE_STIFF`), ordered trunk → shoulder →
+  head → elbow → hand so the pole arrives last, advanced ONCE per `update`. Landing compression, the stun brace
+  and the leg tuck have their own springs; the hem's is far softer, because cloth moves last.
+- **THE FLIGHT TUCK IS FOLDED ONTO THE GROUND SOLVE, NOT SWAPPED FOR IT** (`foldInto`) — an extra rotation at the
+  hip and knee carrying its children, so the legs cannot pop the frame the soles leave the floor and a rotation
+  cannot change a bone's length. It fades with the hop, and `levelSole` takes the tuck out of the foot exactly
+  as fast as the floor arrives.
 - **THE FROST NEEDS TWO PALETTES FOR ONE SUBSTANCE** — `RIME_ALB` goes into meshes (×1.72 → gamma); `RIME` is
   drawn unlit and is a literal screen value.
 - **THE ROBE'S HUE HAS TO BE LAID ON THICK** — the warm key multiplies through, so blue must run at better than

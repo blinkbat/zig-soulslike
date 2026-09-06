@@ -1412,7 +1412,7 @@ pub fn armTwoHanded(a: Armament) bool {
     return a == .bow;
 }
 
-/// WHAT THE SMITHY WILL TAKE TO THE STONE. Exhaustive, so a new armament cannot arrive without saying whether it forges — `counter.FORGEABLE` is built off this and a hand-kept list would have dropped it in silence.
+/// Exhaustive so a new armament cannot arrive without saying whether it forges; `counter.FORGEABLE` is built off this.
 pub fn armForges(a: Armament) bool {
     return switch (a) {
         .sword, .dagger, .club, .bow => true,
@@ -2217,7 +2217,7 @@ pub const Hero = struct {
         return self.canGuard();
     }
 
-    /// NEVER BUFFERED. Reports whether one started.
+    /// NEVER BUFFERED.
     pub fn requestParry(self: *Hero) bool {
         if (!self.shieldArm()) return false;
         if (!self.stam.canAct()) {
@@ -4204,20 +4204,19 @@ pub const Hero = struct {
         for ([_]usize{ NECK, HEAD, SHL, ELL, WRL }) |i| wx[i] = dp[i];
     }
 
-    /// THE PLAYING IS SOLVED ONTO THE INSTRUMENT, NOT POSED NEAR IT (owner: very important details). The guitar rides the ROOT; both hands are placed on it in the ROOT's own frame — the right over the strings between the soundhole and the bridge, sweeping across them on the beat and turning at each end; the left BEHIND the neck, thumb side, walking the frets a position at a time and shivering a vibrato while it holds — and the arms are solved back from the hands (`armTo`). The head follows the fret hand on a shift and nods on the beat between; the right foot keeps the time.
+    /// SOLVED ONTO THE INSTRUMENT, NOT POSED NEAR IT (owner: very important details): the guitar rides the ROOT, both hands are placed in the ROOT's own frame, and the arms are solved back from them (`armTo`).
     pub fn poseRest(self: *Hero, dt: f32) void {
         self.restT += dt;
         const t = self.restT;
         const phrase = 0.5 - 0.5 * mathx.cosf(t * 0.55);
         const beat = t * REST_BEAT;
         const beatU = beat - @floor(beat);
-        // THE STRUM: down across the strings on the beat, back up slower, never a sine — a pick moves fast one way and drifts back.
+        // Never a sine — a pick moves fast one way and drifts back.
         const sweep = if (beatU < 0.32) mathx.lerpF(-1.0, 1.0, smoothstep01(beatU / 0.32)) else mathx.lerpF(1.0, -1.0, smoothstep01((beatU - 0.32) / 0.68));
         const attack = mathx.maxF(0, 1.0 - beatU / 0.18);
         const breathe = 0.010 * H * mathx.sinf(t * 1.05);
         const lilt = 5.2 * mathx.sinf(t * 0.62) + 1.8 * mathx.sinf(t * 0.29 + 1.1);
         const facingDeg = mathx.degrees(self.facing);
-        // THE FRET HAND WALKS: a new position every couple of bars, eased over a third of a second, with a shiver of vibrato while it holds a note.
         const shiftN = @floor(t / REST_SHIFT_EVERY);
         const shiftU = smoothstep01((t - shiftN * REST_SHIFT_EVERY) / REST_SHIFT_DUR);
         const posWas = fretPosition(shiftN - 1.0);
@@ -4234,19 +4233,16 @@ pub const Hero = struct {
         setLocal(&wx, SPINE, self.rest, mul(rx(SIT_SPINE + 1.2 * attack), rz(lilt * 0.45)));
         setLocal(&wx, CHEST, self.rest, mul(rx(SIT_CHEST + 0.8 * attack), rz(lilt * 0.37)));
         setLocal(&wx, NECK, self.rest, mul(rx(5.0 + 4.0 * glance), rz(-lilt * 0.30)));
-        // The head: down and left onto the fret hand at a shift, else a slow nod with the eyes closed — one every two beats and eased, not the strum's own jolt (owner: slower and gentler).
+        // Eased, never the strum's own jolt (owner: slower and gentler).
         const nod = 0.5 - 0.5 * mathx.cosf(beat * std.math.pi);
         setLocal(&wx, HEAD, self.rest, mul3(rx(HEAD_WALK + 11.0 - 4.0 * phrase + REST_NOD * nod + 9.0 * glance), ry(9.0 + 14.0 * glance), rz(-lilt * 0.40 - 4.0 * glance)));
         sitLeg(&wx, self.rest, 1.0, HIPL, KNEEL, ANKL);
         sitLeg(&wx, self.rest, -1.0, HIPR, KNEER, ANKR);
-        // The right foot keeps time: up through the off-beat, down on the beat.
         const tap = 12.0 * (0.5 - 0.5 * mathx.cosf(beatU * std.math.tau));
         wx[ANKR] = mul(rx(-tap), wx[ANKR]);
 
         const gf = guitarFrame();
-        // The pick hand: above the strings, a hand's thickness off the top, between the soundhole and the bridge, swept across the six strings and a little past either side.
         const strumAt = gf.at(sweep * 0.036, 0.235 + 0.010 * sweep, 0.085 - 0.012 * attack);
-        // The fret hand: the wrist stands BEHIND the fretboard (the thumb side), a shade toward the bass strings, with the fingers wrapping over onto the frets.
         const fretAt = gf.at(-0.018, fretAlong, -0.056);
         const strumWorld = rl.math.vector3Transform(strumAt, wx[ROOT]);
         const fretWorld = rl.math.vector3Transform(fretAt, wx[ROOT]);
@@ -4256,7 +4252,7 @@ pub const Hero = struct {
                 return mathx.normV(mathx.subV(rl.math.vector3Transform(v, m), o));
             }
         }.f;
-        // Elbow hints in the ROOT's frame: the pick arm's elbow hangs down and back off the body's right; the fret arm's stands out to the left and a touch forward.
+        // Elbow hints in the ROOT's frame.
         const rightHint = dirOf(v3(-0.55, -0.55, -0.62), wx[ROOT], rootO);
         const leftHint = dirOf(v3(0.72, -0.62, 0.30), wx[ROOT], rootO);
         armTo(&wx, self.rest, SHR, ELR, WRR, strumWorld, rightHint, dirOf(gf.axis(0, -1, 0), wx[ROOT], rootO), dirOf(gf.axis(0, 0, 1), wx[ROOT], rootO));
@@ -4454,7 +4450,7 @@ pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, groundY: f32, ph: f32
     const shank = rest[knee].y - rest[ank].y;
     const legLen = thigh + shank;
     const rigS = legLen / LEG_LEN;
-    const reach = STRAFE_REACH * rigS; // the measured sweep, scaled onto THIS rig
+    const reach = STRAFE_REACH * rigS;
     const q = ph - @floor(ph);
     const swingLen = 1.0 - STRAFE_STANCE;
     var s: f32 = undefined;
@@ -4746,7 +4742,7 @@ fn guitarMesh() rl.Mesh {
 }
 
 const REST_BEAT: f32 = 1.15;
-/// Degrees of nod, over a two-beat cosine (1.74 s). The strum's `attack` used to drive it at 3 deg inside 0.18 of a beat.
+/// Degrees of nod, over a two-beat cosine (1.74 s).
 const REST_NOD: f32 = 1.6;
 const REST_SHIFT_EVERY: f32 = 3.2;
 const REST_SHIFT_DUR: f32 = 0.34;
@@ -4775,7 +4771,7 @@ fn axesM(x: rl.Vector3, y: rl.Vector3, z: rl.Vector3) rl.Matrix {
     return m;
 }
 
-/// TWO-BONE ARM SOLVE, in the world. The wrist is put AT `target` (or as near as the arm reaches), the elbow is bent toward `elbowHint`, and the hand is turned so its own down runs along `handDown` with its palm toward `palm`. The bones' lengths are the rest chain's, so nothing stretches.
+/// TWO-BONE ARM SOLVE, in the world. The bones' lengths are the rest chain's, so nothing stretches.
 pub fn armTo(wx: anytype, rest: anytype, sh: usize, el: usize, wr: usize, target: rl.Vector3, elbowHint: rl.Vector3, handDown: rl.Vector3, palm: rl.Vector3) void {
     const parent: usize = @intCast(PARENT[sh]);
     const shoulder = rl.math.vector3Transform(mathx.subV(rest[sh], rest[parent]), wx[parent]);
@@ -4795,7 +4791,6 @@ pub fn armTo(wx: anytype, rest: anytype, sh: usize, el: usize, wr: usize, target
     wx[sh] = mul3(size, axesM(bend, upperY, mathx.crossV(bend, upperY)), tr(shoulder.x, shoulder.y, shoulder.z));
     const foreY = mathx.scaleV(f, -1.0);
     wx[el] = mul3(size, axesM(bend, foreY, mathx.crossV(bend, foreY)), tr(elbow.x, elbow.y, elbow.z));
-    // The hand: down along the strings' line, palm to the instrument.
     const hy = mathx.scaleV(mathx.normV(handDown), -1.0);
     var hz = mathx.subV(palm, mathx.scaleV(hy, mathx.dotV(palm, hy)));
     if (mathx.lenV(hz) < 1e-4) hz = mathx.crossV(bend, hy);
@@ -7269,7 +7264,7 @@ test "THE FOG GRACE HOLDS WHILE HE STANDS AND ONLY THE STEP HE TAKES HIMSELF SPE
     h.startFogGrace();
     h.vit.hp = 1;
     _ = h.takeHit(.{ .dmg = 999 }, v3(1, 0, 0));
-    try std.testing.expect(!h.dead); // …and it ate that blow, which is the point of it
+    try std.testing.expect(!h.dead);
     h.startFogGrace();
     h.enterDeath();
     var d: f32 = 0;

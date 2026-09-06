@@ -360,10 +360,9 @@ pub const sceneFS =
     \\// the CPU reads (`env.paintedDepth`) and the function the GPU runs cannot drift apart.
     \\
 ++ EDGE_SHAPE_GLSL ++ EDGE_ID_GLSL ++ LIQUID_GLSL ++ BAY_GLSL ++ WATER_GLSL ++
-    \\// WHERE THE LOOKUP ACTUALLY READS FROM. This is the whole fix: the displacement used to be one fixed
-    \\// noise applied to EVERY material before anything else was asked, so the material BOUNDARY wandered
-    \\// +/-1.7 m whatever its policy said — and `soilCovAt`'s `snap` only ever snapped the COVERAGE. Nothing could
-    \\// produce a straight edge because the thing being straightened was not the thing being bent.
+    \\// WHERE THE LOOKUP ACTUALLY READS FROM. The READ POSITION is warped per shape, never the material after it: one
+    \\// fixed noise over every material wandered the BOUNDARY +/-1.7 m whatever its policy said, and `soilCovAt`'s
+    \\// `snap` only ever snapped the COVERAGE.
     \\vec2 edgeWarp(vec2 p, int e, vec3 k){
     \\  if (k.x <= 0.0001) return p;
     \\  if (e==E_SCALLOP){
@@ -418,12 +417,10 @@ pub const sceneFS =
     \\  if (snap){ float n = 2.0*waterHalf/waterCell; uv = (floor(uv*n) + 0.5)/n; }
     \\  return texture(waterMap, uv).r;
     \\}
-    \\// **THE COAST IS SHAPED HERE, PER FRAGMENT, AND NOT BAKED INTO THE FIELD.** It used to be the other way
-    \\// round: a per-cell `coastWarp` written into a 224² byte grid, then a 3.6 m triangular re-facet over the
-    \\// top of it. Between them a `natural` coast kept 1.6% more waterline than `straight`, which applies no
-    \\// wander at all — every shape came out the same smooth blob. The soil has always done it this way, so
-    \\// this is the SAME `edgeShape`/`edgeWarp` the ground uses and "jagged" means one thing in the map now.
-    \\// Every reader goes through here, or the wet sand and the sheet would part company at the waterline.
+    \\// **THE COAST IS SHAPED HERE, PER FRAGMENT, AND NOT BAKED INTO THE FIELD.** Baked per cell, a `natural` coast
+    \\// kept 1.6% more waterline than `straight`, which applies no wander at all — every shape came out the same
+    \\// blob. It is the SAME `edgeShape`/`edgeWarp` the ground uses, and every reader goes through here, or the wet
+    \\// sand and the sheet part company at the waterline.
     \\// **THE COAST TAKES A LOW OCTAVE ON TOP** — bays and headlands at tens of metres. Without it the shape's
     \\// own wander is sized for a soil patch and vanishes against the straight runs a brush leaves on a lake.
     \\vec2 coastWarp(vec2 p, int e, vec3 k){

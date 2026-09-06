@@ -2177,7 +2177,6 @@ fn trailMesh(comptime i: usize) rl.Mesh {
     return b.toMesh();
 }
 
-// ---------------------------------------------------------------------------------------------------------------
 
 test "IT IS A BOSS, ON THE FOREST'S CURVE, AND ITS MARK STANDS INSIDE ITS HURT SPHERE" {
     var d = Druidess.spawn(mathx.zero3, 0, 1.0, 0.3);
@@ -2351,7 +2350,6 @@ test "THE SNARE TAKES THE FEET OF WHOEVER STANDS IN THE RING, AND NOBODY OUTSIDE
     try std.testing.expect(worst != null);
     try std.testing.expectApproxEqAbs(SNARE_HOLD, c.takeSnare(), 1e-6);
     try std.testing.expectApproxEqAbs(@as(f32, 0), c.takeSnare(), 1e-6);
-    // …and it BITES while it holds: physical pulses through the hold and none after.
     const dt: f32 = 1.0 / 60.0;
     var bitten: f32 = 0;
     var pulses: u32 = 0;
@@ -2423,7 +2421,6 @@ test "THE SPEAR COMES OUT AS YOU CLOSE — thrown for real at every stand in its
             if (c.band[0].state == .spear_wind and wound == null) wound = t;
         }
         std.debug.print("\n  druidess spear at a {d:.1} m stand: wound at {d:.2} s, landed={}", .{ stand, wound orelse -1.0, hit });
-        // The far stand starts outside the ring and walks into it; the near ones are inside from the first frame.
         try std.testing.expect(wound != null and wound.? < 0.25);
         try std.testing.expect(hit);
     }
@@ -2770,7 +2767,6 @@ test "THE PODS GO OUT AS SHE LEAVES, LAND BETWEEN HER AND THE MAN, SWELL, AND PO
         if (p.to.z > 0) toward += 1;
     }
     try std.testing.expectEqual(POD_N, toward);
-    // Stand on the first pod's spot and take the pop.
     hero = c.pods[0].to;
     var hit = false;
     var poppedAt: ?f32 = null;

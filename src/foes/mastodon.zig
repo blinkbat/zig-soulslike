@@ -1179,7 +1179,6 @@ fn footMesh() rl.Mesh {
     return b.toMesh();
 }
 
-// ---------------------------------------------------------------------------------------------------------------
 
 test "IT IS AN ELEPHANT ON ITS FEET: lateral sequence at every speed, never an aerial phase, a stride a beast's length" {
     const walk = gaitAt(WALK_SPEED);

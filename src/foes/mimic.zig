@@ -929,7 +929,6 @@ fn fangsMesh(dir: f32) rl.Mesh {
     return b.toMesh();
 }
 
-// ---------------------------------------------------------------------------------------------------------------
 
 test "ASLEEP IT IS A CHEST: on the ground, hidden from the lock, glowing, and the prompt is a chest's" {
     var h = Hoard{ .model = undefined };

@@ -2170,7 +2170,7 @@ fn unitStudyViewFrame(g: *Game, rt: rl.RenderTexture2D, body: anytype, model: an
                 p.body.draw(p.model);
                 if (thin < 0.999) p.scene.endFade();
             }
-            if (@TypeOf(p.body.*) == rootedmod.Rooted or @TypeOf(p.body.*) == delvermod.Delver) p.body.drawFx();
+            if (@TypeOf(p.body.*) == rootedmod.Rooted or @TypeOf(p.body.*) == delvermod.Delver or @TypeOf(p.body.*) == necromod.Necro) p.body.drawFx();
         }
     };
     const p = Plate{ .body = body, .model = model, .scene = &g.scene };
@@ -2488,46 +2488,132 @@ fn delverStudyShots(g: *Game) void {
     }
     }
 }
+const NECRO_MODES = 11;
+
+const NecroCase = struct { interrupt: f32, quarry: rl.Vector3 };
+
+/// One necromancer, posed for a plate, with the quarry it is posed AGAINST — spelled out at each call site instead,
+/// the two lists of "which modes stand near" drifted apart. `interrupt` is the clock a blade lands at; a plate of a
+/// cast cancelled ON its release frame is the only way to see that the gesture stays continuous.
+fn necroCase(mode: usize, forward: rl.Vector3, yaw: f32, size: f32, body: *necromod.Necro) NecroCase {
+    body.* = necromod.Necro.spawn(mathx.zero3, yaw, size, 0.3);
+    body.raiseCd = 100;
+    body.frostCd = 100;
+    body.leapCd = 100;
+    switch (mode) {
+        1, 8, 10 => body.debugRaise(mathx.scaleV(forward, 5)),
+        2 => body.debugFrost(),
+        3, 9 => {
+            body.state = .leap;
+            body.moveDir = mathx.scaleV(forward, -1);
+        },
+        4 => body.stagger(true),
+        5 => {
+            body.state = .drift;
+            body.moveDir = mathx.headingDir(yaw + std.math.pi * 0.5);
+        },
+        6 => body.debugKill(),
+        7 => body.stagger(false),
+        else => {},
+    }
+    const near: f32 = switch (mode) {
+        1, 2, 5, 8, 10 => 10,
+        else => 90,
+    };
+    return .{
+        .interrupt = switch (mode) {
+            8 => necromod.RAISE_WIND + 0.42,
+            9 => 0.15,
+            else => -1,
+        },
+        .quarry = mathx.scaleV(forward, near),
+    };
+}
+
+fn necroStamps(mode: usize) [10]f32 {
+    return switch (mode) {
+        1 => .{ 0, 0.3, 0.8, 1.3, 1.8, 1.95, 2.15, 2.35, 2.8, 3.6 },
+        2 => .{ 0, 0.16, 0.4, 0.65, 0.74, 0.85, 1.04, 1.25, 1.5, 1.9 },
+        3, 9 => .{ 0, 0.04, 0.10, 0.17, 0.23, 0.30, 0.34, 0.40, 0.5, 0.8 },
+        8 => .{ 1.80, 1.95, 2.10, 2.30, 2.32, 2.38, 2.50, 2.70, 3.0, 3.6 },
+        // THE SETTLE IN FULL: the release, the carry-past, the crossing back through rest and the stop.
+        10 => .{ 2.32, 2.45, 2.60, 2.80, 3.00, 3.20, 3.40, 3.60, 3.9, 4.4 },
+        else => .{ 0, 0.05, 0.13, 0.3, 0.5, 0.8, 1.2, 1.7, 2.2, 3.2 },
+    };
+}
+
+fn necroRun(body: *necromod.Necro, clock: *f32, to: f32, quarry: rl.Vector3, interrupt: f32) void {
+    while (clock.* + 0.0001 < to) {
+        const dt = @min(SHOT_DT, to - clock.*);
+        const was = clock.*;
+        _ = body.update(dt, quarry, game.PLAY_HALF, .{});
+        clock.* += dt;
+        if (interrupt > 0 and was < interrupt and clock.* >= interrupt) body.stagger(true);
+    }
+}
+
 fn necroStudyShots(g: *Game) void {
     const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("necro plate target");
     defer rl.unloadRenderTexture(rt);
+    var body: necromod.Necro = undefined;
     for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
         const yaw = mathx.radians(LIT_YAW + turn);
         const forward = mathx.headingDir(yaw);
-        for (0..7) |mode| {
-            var body = necromod.Necro.spawn(mathx.zero3, yaw, 1, 0.3);
-            body.raiseCd = 100;
-            body.frostCd = 100;
-            body.leapCd = 100;
-            const quarry = mathx.scaleV(forward, if (mode == 1 or mode == 2 or mode == 5) @as(f32, 10) else 90);
-            switch (mode) {
-                1 => body.debugRaise(mathx.scaleV(forward, 5)),
-                2 => body.debugFrost(),
-                3 => { body.state = .leap; body.moveDir = mathx.scaleV(forward, -1); },
-                4 => body.stagger(true),
-                5 => { body.state = .drift; body.moveDir = mathx.headingDir(yaw + std.math.pi * 0.5); },
-                6 => body.debugKill(),
-                else => {},
-            }
-            const stamps = switch (mode) {
-                1 => [_]f32{ 0, 0.3, 0.8, 1.3, 1.8, 1.95, 2.15, 2.35, 2.8, 3.6 },
-                2 => [_]f32{ 0, 0.16, 0.4, 0.65, 0.74, 0.85, 1.04, 1.25, 1.5, 1.9 },
-                3 => [_]f32{ 0, 0.04, 0.10, 0.17, 0.23, 0.30, 0.34, 0.40, 0.5, 0.8 },
-                else => [_]f32{ 0, 0.05, 0.13, 0.3, 0.5, 0.8, 1.2, 1.7, 2.2, 3.2 },
-            };
+        for (0..NECRO_MODES) |mode| {
+            const set = necroCase(mode, forward, yaw, 1, &body);
             var clock: f32 = 0;
-            for (stamps, 0..) |at, frame| {
-                while (clock + 0.0001 < at) {
-                    const dt = @min(SHOT_DT, at - clock);
-                    _ = body.update(dt, quarry, game.PLAY_HALF, .{});
-                    clock += dt;
-                }
+            for (necroStamps(mode), 0..) |at, frame| {
+                necroRun(&body, &clock, at, set.quarry, set.interrupt);
                 var tag: [80]u8 = undefined;
-                unitStudyFrame(g, rt, &body, &g.rite.model, std.fmt.bufPrint(&tag, "necro_study_{d}_{d}_{d}", .{ side, mode, frame }) catch unreachable, 4.5, 1.65 + body.hop);
+                unitStudyFrame(g, rt, &body, &g.rite.model, std.fmt.bufPrint(&tag, "necro_study_{d}_{d}_{d}", .{ side, mode, frame }) catch unreachable, 4.5, if (mode == 3 or mode == 9) 1.85 else 1.65 + body.hop);
+            }
+        }
+        // THE GRIP AND THE HEM ARE NOT JUDGED FROM A CONTACT SHEET — a close view of each, from all four sides.
+        for ([_]usize{ 0, 2 }) |mode| {
+            const set = necroCase(mode, forward, yaw, 1, &body);
+            var clock: f32 = 0;
+            necroRun(&body, &clock, if (mode == 2) necromod.FROST_WIND * 0.95 else 1.2, set.quarry, set.interrupt);
+            var tag: [80]u8 = undefined;
+            unitStudyViewFrame(g, rt, &body, &g.rite.model, std.fmt.bufPrint(&tag, "necro_study_hand_{d}_{d}", .{ side, mode }) catch unreachable, .{ .offset = v3(0, 1.30, 0), .dist = 1.9 });
+            unitStudyViewFrame(g, rt, &body, &g.rite.model, std.fmt.bufPrint(&tag, "necro_study_hem_{d}_{d}", .{ side, mode }) catch unreachable, .{ .offset = v3(0, 0.45, 0), .dist = 2.2 });
+        }
+    }
+    // SIZE VARIANTS: the hop and the reaction are the two that scale badly.
+    const yaw = mathx.radians(LIT_YAW);
+    const forward = mathx.headingDir(yaw);
+    for ([_]f32{ 0.5, 1.8 }) |size| {
+        for ([_]usize{ 1, 3, 4 }) |mode| {
+            const set = necroCase(mode, forward, yaw, size, &body);
+            var clock: f32 = 0;
+            for (necroStamps(mode), 0..) |at, frame| {
+                necroRun(&body, &clock, at, set.quarry, set.interrupt);
+                var tag: [80]u8 = undefined;
+                unitStudyFrame(g, rt, &body, &g.rite.model, std.fmt.bufPrint(&tag, "necro_study_x{d}_{d}_{d}", .{ @as(u32, @intFromFloat(size * 10)), mode, frame }) catch unreachable, 4.5 * size, (1.65 + body.hop) * size);
             }
         }
     }
+    necroRingStudy(g, rt);
 }
+
+/// THE RING IS THE OTHER HALF OF THE MOVE AND IT IS 9 M AWAY. The body-framed frost strip ends before the fuse does and never shows the mark at all; this one holds both for all 2.70 s and the burst after it.
+fn necroRingStudy(g: *Game, rt: rl.RenderTexture2D) void {
+    const yaw = mathx.radians(LIT_YAW);
+    const forward = mathx.headingDir(yaw);
+    const mark = mathx.scaleV(forward, 9.0);
+    var body = necromod.Necro.spawn(mathx.zero3, yaw, 1, 0.3);
+    body.raiseCd = 100;
+    body.frostCd = 100;
+    body.leapCd = 100;
+    body.debugFrost();
+    var clock: f32 = 0;
+    const stamps = [_]f32{ 0, 0.72, 1.02, 1.35, 1.70, 2.05, 2.40, 3.00, 3.30, 3.72, 4.10 };
+    for (stamps, 0..) |at, frame| {
+        necroRun(&body, &clock, at, mark, -1);
+        var tag: [80]u8 = undefined;
+        unitStudyViewFrame(g, rt, &body, &g.rite.model, std.fmt.bufPrint(&tag, "necro_study_ring_{d}", .{frame}) catch unreachable, .{ .offset = v3(mark.x * 0.5, 1.4, mark.z * 0.5), .dist = 13.5 });
+    }
+}
+
 fn sacStudyShots(g: *Game) void {
     const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("sac plate target");
     defer rl.unloadRenderTexture(rt);

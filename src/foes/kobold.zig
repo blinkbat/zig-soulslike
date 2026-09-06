@@ -1406,31 +1406,7 @@ fn loinMesh(r: Role) rl.Mesh {
 }
 
 fn clothLoft(b: *Builder, rings: []const [5]f32, seed: u64, ragged: bool) void {
-    const sides = 24;
-    var rng = mathx.Rng.init(seed);
-    var fold: [sides]f32 = undefined;
-    var hem: [sides]f32 = undefined;
-    var col: [sides]rl.Color = undefined;
-    for (0..sides) |i| {
-        fold[i] = 1 + rng.signed() * 0.035;
-        hem[i] = if (ragged) rng.range(-0.024, 0.016) else 0;
-        col[i] = mathx.lerpColor(fabric(.priest)[0], fabric(.priest)[1], rng.range(0, 0.4));
-    }
-    for (rings[0 .. rings.len - 1], rings[1..], 0..) |lo, hi, row| {
-        for (0..sides) |i| {
-            const j = (i + 1) % sides;
-            var points: [4]rl.Vector3 = undefined;
-            for ([_][2]usize{ .{ i, 0 }, .{ i, 1 }, .{ j, 1 }, .{ j, 0 } }, 0..) |at, n| {
-                const ring = if (at[1] == 0) lo else hi;
-                const angle = std.math.tau * @as(f32, @floatFromInt(at[0])) / sides;
-                const y = ring[1] + (if (row == 0 and at[1] == 0) hem[at[0]] else 0);
-                points[n] = v3((ring[0] + ring[3] * mathx.cosf(angle) * fold[at[0]]) * H, y * H, (ring[2] + ring[4] * mathx.sinf(angle) * fold[at[0]]) * H);
-            }
-            const normal = mathx.normV(mathx.crossV(mathx.subV(points[1], points[0]), mathx.subV(points[2], points[0])));
-            b.quad(points[0], points[1], points[2], points[3], normal, col[i]);
-            b.quad(points[3], points[2], points[1], points[0], mathx.scaleV(normal, -1), col[i]);
-        }
-    }
+    propart.clothInto(b, rings, seed, fabric(.priest)[0], fabric(.priest)[1], .{ .ragged = ragged, .scale = H });
 }
 
 fn hatMesh() rl.Mesh {

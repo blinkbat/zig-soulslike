@@ -826,7 +826,6 @@ fn clipBand(tri: [3]rl.Vector3, lo: f32, hi: f32, out: []rl.Vector3) usize {
     a[2] = tri[2];
     var b: [8]rl.Vector3 = undefined;
     var nb: usize = 0;
-    // Keep y >= lo.
     for (0..na) |i| {
         const p = a[i];
         const q = a[(i + 1) % na];
@@ -842,7 +841,6 @@ fn clipBand(tri: [3]rl.Vector3, lo: f32, hi: f32, out: []rl.Vector3) usize {
             nb += 1;
         }
     }
-    // Keep y <= hi.
     var n: usize = 0;
     for (0..nb) |i| {
         const p = b[i];

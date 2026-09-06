@@ -736,3 +736,47 @@ pub fn guitarInto(b: *Builder, fr: Frame) void {
     }
 }
 
+
+pub const CLOTH_SIDES_MAX = 40;
+
+/// ONE FOLDED SURFACE, not a stack of skirts. `rings` are `[x, y, z, radiusX, radiusZ]` in STATURE-RELATIVE units with the BOTTOM ROW FIRST; every row shares one set of angular samples, so a fold runs the whole drop instead of stopping at each seam.
+pub const Cloth = struct {
+    sides: usize = 24,
+    /// Radial wobble as a fraction of the ring radius — the vertical folds. A few percent; more and the surface reads as a gear.
+    fold: f32 = 0.035,
+    ragged: bool = false,
+    hemLo: f32 = -0.024,
+    hemHi: f32 = 0.016,
+    scale: f32 = 1.0,
+    mix: f32 = 0.4,
+};
+
+pub fn clothInto(b: *Builder, rings: []const [5]f32, seed: u64, dark: rl.Color, light: rl.Color, o: Cloth) void {
+    if (rings.len < 2) return; // `rings.len - 1` underflows usize, and one row is not a surface
+    const sides = @min(o.sides, CLOTH_SIDES_MAX);
+    var rng = mathx.Rng.init(seed);
+    var fold: [CLOTH_SIDES_MAX]f32 = undefined;
+    var hem: [CLOTH_SIDES_MAX]f32 = undefined;
+    var col: [CLOTH_SIDES_MAX]rl.Color = undefined;
+    for (0..sides) |i| {
+        fold[i] = 1 + rng.signed() * o.fold;
+        hem[i] = if (o.ragged) rng.range(o.hemLo, o.hemHi) else 0;
+        col[i] = mathx.lerpColor(dark, light, rng.range(0, o.mix));
+    }
+    const fs: f32 = @floatFromInt(sides);
+    for (rings[0 .. rings.len - 1], rings[1..], 0..) |lo, hi, row| {
+        for (0..sides) |i| {
+            const j = (i + 1) % sides;
+            var points: [4]rl.Vector3 = undefined;
+            for ([_][2]usize{ .{ i, 0 }, .{ i, 1 }, .{ j, 1 }, .{ j, 0 } }, 0..) |at, n| {
+                const ring = if (at[1] == 0) lo else hi;
+                const angle = std.math.tau * @as(f32, @floatFromInt(at[0])) / fs;
+                const y = ring[1] + (if (row == 0 and at[1] == 0) hem[at[0]] else 0);
+                points[n] = v3((ring[0] + ring[3] * mathx.cosf(angle) * fold[at[0]]) * o.scale, y * o.scale, (ring[2] + ring[4] * mathx.sinf(angle) * fold[at[0]]) * o.scale);
+            }
+            const normal = mathx.normV(mathx.crossV(mathx.subV(points[1], points[0]), mathx.subV(points[2], points[0])));
+            b.quad(points[0], points[1], points[2], points[3], normal, col[i]);
+            b.quad(points[3], points[2], points[1], points[0], mathx.scaleV(normal, -1), col[i]);
+        }
+    }
+}

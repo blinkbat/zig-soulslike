@@ -4008,7 +4008,6 @@ test "AN ILLUSORY WALL IS A WALL UNTIL IT IS TOUCHED — then a look and a step 
         if (lo - p.r <= 0.7 and hi + p.r >= -0.7) front = @max(front, -@min(p.az, p.bz) + p.r);
     }
     try std.testing.expect(face > 1.0 and front >= face);
-    // A swing that stops short of the stone finds nothing; one whose edge reaches it does.
     try std.testing.expectEqual(@as(?u8, null), e.illusionStruck(v3(-0.6, 1.0, -front - 1.0), v3(0.6, 1.0, -front - 1.0), 0.2));
     try std.testing.expectEqual(@as(?u8, 0), e.illusionStruck(v3(-0.6, 1.0, -face - 0.1), v3(0.6, 1.0, -face - 0.1), 0.2));
     try std.testing.expectEqual(@as(?u8, null), e.illusionTouched(v3(0, 0, -front - 1.0), 0.42));
@@ -4110,7 +4109,6 @@ test "flyStep: a jump crosses what it is OVER, and a cliff is a wall at any alti
     try std.testing.expectApproxEqAbs(at.x, e.flyStep(at, east, 2.0, foot).x, 1e-4);
     try std.testing.expectApproxEqAbs(at.x, e.flyStep(at, east, 2.0, foot + 1.0).x, 1e-4);
     try std.testing.expect(e.flyStep(at, east, 2.0, foot + WALL).x > at.x);
-    // Refused into the wall, the step slides along it.
     const slid = e.flyStep(at, mathx.normV(v3(1, 0, 1)), 2.0, foot);
     try std.testing.expectApproxEqAbs(at.x, slid.x, 1e-4);
     try std.testing.expect(slid.z > at.z + 1.5);

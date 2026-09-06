@@ -750,6 +750,16 @@ pub fn partsOf(k: Kind) []const Part {
         else => info(k).parts,
     };
 }
+
+// The six `cliffN` tags index `rock.CLIFF_PROPS` by their own order, in `partsOf` and again in `rock.cliff1`..`cliff6`. Reordering the enum or the table silently hands a face someone else's colliders.
+comptime {
+    const first = @intFromEnum(Kind.cliff);
+    for ([_]Kind{ .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6 }, 0..) |k, i| {
+        if (@intFromEnum(k) != first + i) @compileError("props: the `cliffN` tags are no longer consecutive — `partsOf` indexes `rock.CLIFF_PROPS` by that run");
+    }
+    if (rock.CLIFF_PROPS.len != 6) @compileError("props: `rock.CLIFF_PROPS` is no longer six rows — `partsOf` names one `cliffN` tag per row");
+}
+
 pub const FIT_CAP = rock.FIT_CAP;
 
 pub const Audit = struct { pen: f32 = 0, over: f32 = 0, outside: f32 = 0, stone: usize = 0 };

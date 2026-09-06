@@ -881,11 +881,8 @@ pub const Ogre = struct {
 
     fn takeParry(self: *Ogre) void {
         const reach = self.parryable() orelse return;
-        if (!self.parry.catches(self.pos, reach)) return;
-        self.parried = true;
-        self.flash = FLASH_DUR;
+        if (!foe.caught(self, reach)) return;
         self.judder = 1.0;
-        self.leash.noteCombat();
         if (self.slamMove()) {
             self.slamCd = SLAM_CD;
         } else if (self.driveMove()) {

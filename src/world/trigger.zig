@@ -11,7 +11,7 @@ pub const REPEAT_GUARD: f32 = 0.5;
 pub const BANNER_DUR: f32 = 4.5;
 pub const BANNER_CAP: usize = 120;
 
-const NFOE = @typeInfo(wf.FoeKind).@"enum".fields.len;
+const NFOE = wf.NFOE;
 
 comptime {
     std.debug.assert(wf.MAX_TRIGGERS <= std.math.maxInt(u8) + 1);

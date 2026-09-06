@@ -153,7 +153,7 @@ pub fn poiseCurve(k: wf.FoeKind) f32 {
 
 test "THE CURVE ONLY EVER CLIMBS, and the first ground he walks is the one it leaves alone" {
     var seen = [_]f32{0} ** props.Biome.N;
-    for (0..@typeInfo(wf.FoeKind).@"enum".fields.len) |i| {
+    for (0..wf.NFOE) |i| {
         const k: wf.FoeKind = @enumFromInt(i);
         const c = poiseCurve(k);
         try std.testing.expect(c >= 1.0);
@@ -191,7 +191,7 @@ pub fn isBoss(k: wf.FoeKind) bool {
 
 test "A BOSS IS FILED, AND THE SET IS SMALL ENOUGH TO BE A LIST" {
     var n: usize = 0;
-    const total = @typeInfo(wf.FoeKind).@"enum".fields.len;
+    const total = wf.NFOE;
     std.debug.print("\n  bosses:", .{});
     for (0..total) |i| {
         const k: wf.FoeKind = @enumFromInt(i);
@@ -212,7 +212,7 @@ pub fn atHome(k: wf.FoeKind, b: props.Biome) bool {
 
 test "EVERY KINGDOM THAT HOLDS A CREATURE HOLDS MORE THAN ONE, and the wanderers are in every list" {
     var n = [_]usize{0} ** props.Biome.N;
-    for (0..@typeInfo(wf.FoeKind).@"enum".fields.len) |i| n[@intFromEnum(homeOf(@enumFromInt(i)))] += 1;
+    for (0..wf.NFOE) |i| n[@intFromEnum(homeOf(@enumFromInt(i)))] += 1;
     std.debug.print("\n  foe homes:", .{});
     for (n, 0..) |c, i| {
         if (c == 0) continue;

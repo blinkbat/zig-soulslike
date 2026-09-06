@@ -400,6 +400,31 @@ fn footprintMap(pos: []const f32, uv2: []const f32, parts: []const props.Part) v
     }
 }
 
+/// The `_move` frame poses a creature off ONE decl name, so a pose authored under any other is never photographed and nothing says so — which is how the deer's charge went unshot.
+const STAGE_SHOT = [_][]const u8{ "stagePounce", "stageGather" };
+/// A `stage*` the harness does NOT reach, and who drives it instead.
+const STAGE_UNSHOT = [_]struct { decl: []const u8, why: []const u8 }{
+    .{ .decl = "stageBiteAt", .why = "the wolf's aim, held by `game.zig`'s own bite tests" },
+    .{ .decl = "stageLash", .why = "the lurker's second reach, posed by its own tests" },
+    .{ .decl = "stageBreath", .why = "the priest's COLD, a second pose behind the raise `stageGather` already shoots" },
+    .{ .decl = "stageCharge", .why = "the deer's antlers, a second pose behind the spit `stageGather` already shoots" },
+};
+
+fn checkStageDecls() void {
+    @setEvalBranchQuota(60000);
+    inline for (game.FOE_GROUPS) |gr| {
+        const T = game.memberOf(gr.field);
+        inline for (@typeInfo(T).@"struct".decls) |d| {
+            if (comptime !std.mem.startsWith(u8, d.name, "stage")) continue;
+            comptime var known = false;
+            inline for (STAGE_SHOT) |s| known = known or std.mem.eql(u8, s, d.name);
+            inline for (STAGE_UNSHOT) |s| known = known or std.mem.eql(u8, s.decl, d.name);
+            if (!known) @compileError("shots: `" ++ @typeName(T) ++ "." ++ d.name ++
+                "` is a staged pose runMapShots never asks for — rename it to one of STAGE_SHOT, or say why not in STAGE_UNSHOT");
+        }
+    }
+}
+
 pub fn runMapShots(g: *Game) void {
     std.fs.cwd().makePath(DIR_MAP) catch {};
     g.drawDt = SETTLE_DT;
@@ -408,8 +433,10 @@ pub fn runMapShots(g: *Game) void {
     game.pinHourForShot(g, game.daynight.SHOT_HOUR);
 
 
+    comptime checkStageDecls();
+
     var n: usize = 0;
-    var shot = [_]bool{false} ** @typeInfo(worldfmt.FoeKind).@"enum".fields.len;
+    var shot = [_]bool{false} ** worldfmt.NFOE;
     inline for (game.FOE_GROUPS) |gr| {
         for (@field(g, gr.field).live()) |*f| {
             const T = @TypeOf(f.*);

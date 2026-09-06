@@ -149,7 +149,7 @@ pub const Hit = struct {
             .fp = self.fp * k,
             .launch = self.launch,
             .dose = self.dose,
-            .gore = self.gore,
+            .gore = self.gore * k,
             .venom = self.venom,
             .shove = self.shove,
         };

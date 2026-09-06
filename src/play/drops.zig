@@ -116,7 +116,7 @@ pub const BANK = [_]Row{
     .{ .foe = .mastodon, .common = .fire_tallow, .odds = UNCOMMON, .rare = .ashen_amulet, .chance = 0.14, .gold = .few },
 };
 
-pub const NFOE = @typeInfo(wf.FoeKind).@"enum".fields.len;
+pub const NFOE = wf.NFOE;
 
 pub const LEAVES_NOTHING = [_]wf.FoeKind{ .brood_sac, .bone_skitterer, .owlbear };
 

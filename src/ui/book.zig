@@ -1202,16 +1202,8 @@ fn rowSize(step: i32) i32 {
     return if (step >= hud.lineH(hud.SMALL)) hud.SMALL else hud.TINY;
 }
 
-fn rowLabel(s: [:0]const u8, x: i32, y: i32, col: rl.Color) void {
-    rowLabelAt(s, x, y, hud.SMALL, col);
-}
-
 fn rowLabelAt(s: [:0]const u8, x: i32, y: i32, size: i32, col: rl.Color) void {
     hud.text(s, x, y, size, col);
-}
-
-fn rowValue(s: [:0]const u8, right: i32, y: i32, col: rl.Color) void {
-    rowValueAt(s, right, y, hud.SMALL, col);
 }
 
 fn rowValueAt(s: [:0]const u8, right: i32, y: i32, size: i32, col: rl.Color) void {

@@ -838,7 +838,7 @@ const NO_ORDERS = [_]struct { field: []const u8, why: []const u8 }{
     .{ .field = "bed", .why = "the slumber bloom is rooted and cannot follow — that is the fight" },
 };
 
-fn memberOf(comptime field: []const u8) type {
+pub fn memberOf(comptime field: []const u8) type {
     return @typeInfo(@typeInfo(@TypeOf(@FieldType(Game, field).live)).@"fn".return_type.?).pointer.child;
 }
 
@@ -1440,7 +1440,7 @@ test "AND THE ROOM'S SEAL IS SOLVED OFF THE SAME TALLY THE GATE'S IS" {
     m.arenas[1] = .{ .n = 3, .nboss = 0 };
     m.narenas = 2;
 
-    var alive = [_]u32{0} ** @typeInfo(FoeKind).@"enum".fields.len;
+    var alive = [_]u32{0} ** worldfmt.NFOE;
     var shut = [_]bool{false} ** worldfmt.MAX_ARENAS;
     alive[@intFromEnum(FoeKind.fungal_magus)] = 1;
     solveArenaSeals(m, alive, &shut);
@@ -1448,7 +1448,7 @@ test "AND THE ROOM'S SEAL IS SOLVED OFF THE SAME TALLY THE GATE'S IS" {
     alive[@intFromEnum(FoeKind.fungal_swordsman)] = 1;
     solveArenaSeals(m, alive, &shut);
     try std.testing.expect(shut[0]);
-    alive = [_]u32{0} ** @typeInfo(FoeKind).@"enum".fields.len;
+    alive = [_]u32{0} ** worldfmt.NFOE;
     solveArenaSeals(m, alive, &shut);
     try std.testing.expect(!shut[0] and !shut[1]);
 }
@@ -3119,7 +3119,7 @@ fn awardLoot(g: *Game, loot: []const item.Kind, at: rl.Vector3) void {
 fn triggerWorld(g: *const Game) trigmod.World {
     var w = trigmod.World{ .heroPos = g.hero.pos, .npcs = g.npcPos[0..g.nNpcPos] };
     const Ctx = struct {
-        alive: *[@typeInfo(FoeKind).@"enum".fields.len]u32,
+        alive: *[worldfmt.NFOE]u32,
         fn visit(self: *const @This(), foes: anytype, kind: ?FoeKind) void {
             for (foes) |*f| {
                 if (!foemod.corporeal(f)) continue;
@@ -3167,14 +3167,14 @@ fn tickTriggers(g: *Game, dt: f32) void {
 
 const WARD_FADE: f32 = 2.6;
 
-fn solveArenaSeals(m: *const worldfmt.Map, alive: [@typeInfo(FoeKind).@"enum".fields.len]u32, shut: []bool) void {
+fn solveArenaSeals(m: *const worldfmt.Map, alive: [worldfmt.NFOE]u32, shut: []bool) void {
     for (m.arenas[0..m.narenas], 0..) |*a, i| {
         if (i >= shut.len) return;
         shut[i] = worldfmt.sealStanding(a.seal(), &alive);
     }
 }
 
-fn markWards(g: *Game, alive: [@typeInfo(FoeKind).@"enum".fields.len]u32, dt: f32) void {
+fn markWards(g: *Game, alive: [worldfmt.NFOE]u32, dt: f32) void {
     solveArenaSeals(&g.map, alive, &g.arenaShut);
     for (0..g.env.nwards) |i| {
         const pr = &g.env.props[g.env.wardProps[i]];

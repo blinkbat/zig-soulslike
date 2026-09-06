@@ -145,7 +145,7 @@ pub const Data = struct {
     }
 };
 
-const NFOE = @typeInfo(wf.FoeKind).@"enum".fields.len;
+const NFOE = wf.NFOE;
 const NWEAR = @typeInfo(item.Wear).@"enum".fields.len;
 
 const CAP: usize =

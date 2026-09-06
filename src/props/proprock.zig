@@ -36,9 +36,6 @@ pub const CLIFF_RAGGED = CliffKind{ .H = 14.6, .wLo = 3.2, .wHi = 5.6, .cleft = 
 pub const CLIFF_IVIED = CliffKind{ .H = 13.0, .wLo = 3.0, .wHi = 5.2, .cleft = 0.70, .blocky = 0.22, .bands = 8, .ivy = 1.0 };
 pub const CLIFF_SHATTERED = CliffKind{ .H = 11.6, .wLo = 2.2, .wHi = 4.6, .cleft = 1.35, .blocky = 0.90, .bands = 5, .broken = 1.0 };
 pub const CLIFF_OVERGROWN = CliffKind{ .H = 12.6, .wLo = 2.7, .wHi = 4.8, .cleft = 0.95, .blocky = 0.45, .bands = 7, .ivy = 0.8, .broken = 0.55 };
-/// The painted faces (`env.cliffWall`) draw from the same six, so a face and the prop beside it are one geology.
-pub const CLIFF_KINDS = [_]CliffKind{ CLIFF_ROUND, CLIFF_BLOCKY, CLIFF_RAGGED, CLIFF_IVIED, CLIFF_SHATTERED, CLIFF_OVERGROWN };
-
 pub const CliffRow = struct { seed: u64, kind: CliffKind };
 /// The six placeable cliffs; `cliffColliders` fits each row's colliders off the same seed its mesh is drawn from.
 pub const CLIFF_PROPS = [_]CliffRow{
@@ -48,6 +45,13 @@ pub const CLIFF_PROPS = [_]CliffRow{
     .{ .seed = 90407, .kind = CLIFF_IVIED },
     .{ .seed = 90473, .kind = CLIFF_SHATTERED },
     .{ .seed = 90539, .kind = CLIFF_OVERGROWN },
+};
+
+/// The painted faces (`env.cliffWall`) draw from the same six, so a face and the prop beside it are one geology — `CLIFF_PROPS`'s own column, derived rather than a second list to keep in step.
+pub const CLIFF_KINDS = blk: {
+    var out: [CLIFF_PROPS.len]CliffKind = undefined;
+    for (CLIFF_PROPS, 0..) |row, i| out[i] = row.kind;
+    break :blk out;
 };
 
 pub fn cliff1(shader: rl.Shader) rl.Model {

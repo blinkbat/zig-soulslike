@@ -992,10 +992,7 @@ pub const Delver = struct {
 
     fn takeParry(self: *Delver, touching: bool) void {
         const reach = self.parryable() orelse if (touching) foe.hurtReach(CLAW_BAND, self.scale) else return;
-        if (!self.parry.catches(self.pos, reach)) return;
-        self.parried = true;
-        self.flash = foe.FLASH_DUR;
-        self.leash.noteCombat();
+        if (!foe.caught(self, reach)) return;
         self.clawCd = CLAW_CD;
         self.heroLatch = false;
         sfx.world(.delver_hurt, self.pos);

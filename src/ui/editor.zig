@@ -44,7 +44,7 @@ const WATER_EDGE: wf.Edge = .speckle;
 const Unit = union(enum) { foe: usize, npc: usize };
 const Hover = union(enum) { none, prop: usize, foe: usize, npc: usize };
 
-const NFOE_KIND = @typeInfo(wf.FoeKind).@"enum".fields.len;
+const NFOE_KIND = wf.NFOE;
 const NNPC_KIND = @typeInfo(wf.NpcKind).@"enum".fields.len;
 
 const MAX_MARKED: usize = 512;

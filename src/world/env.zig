@@ -542,7 +542,9 @@ pub const Env = struct {
         self.waterHalf = 0;
         self.waterReady = false;
         self.soilReady = false;
+        self.ndecks = 0;
         @memset(&self.sgrid_start, 0);
+        @memset(&self.dgrid_start, 0);
         // `Game` is created UNINITIALISED and `build` is the only thing that zeroes `Env`, so every array that gates an `unloadModel` is reset HERE or the first `dropTile` frees a wild pointer.
         self.tileBuilt = [_]bool{false} ** NTILES;
         self.faceBuilt = [_]bool{false} ** NTILES;
